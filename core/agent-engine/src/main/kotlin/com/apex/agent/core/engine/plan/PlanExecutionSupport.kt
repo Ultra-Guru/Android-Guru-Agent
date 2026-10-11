@@ -27,12 +27,23 @@ internal const val PLAN_CONFIRMATION_TIMEOUT_MS: Long = 5L * 60 * 1000 // 5 minu
  *  - `submitPlanConfirmation(confirmed, enabledSteps, order)` 三参重载承接
  *    UI 人控三元组。
  */
-internal suspend fun ApexAgentEngine.awaitPlanConfirmationDecision(): PlanDecision {
-    val deferred = CompletableDeferred<PlanDecision>()
-    planConfirmationDeferred = deferred
+internal suspend fun ApexAgentEngine.awaitPlanConfirmationDecision(
+    beforeWait: (suspend () -> Unit)? = null
+): PlanDecision {
+    // #340 注册先行：deferred 注册（与 abort 同锁互斥）先于 emit（beforeWait），
+    // 消除「submit 在注册前到达 → complete 落空 → 引擎挂满 5 分钟」窗口。
+    val deferred = synchronized(confirmationLock) {
+        val d = CompletableDeferred<PlanDecision>()
+        planConfirmationDeferred = d
+        d
+    }
+    beforeWait?.invoke()
     return try {
         withTimeout(PLAN_CONFIRMATION_TIMEOUT_MS) { deferred.await() }
     } finally {
-        planConfirmationDeferred = null
+        // 条件清理（不覆盖 abort 之后新注册的通道；与 abort 同锁）。
+        synchronized(confirmationLock) {
+            if (planConfirmationDeferred === deferred) planConfirmationDeferred = null
+        }
     }
 }
