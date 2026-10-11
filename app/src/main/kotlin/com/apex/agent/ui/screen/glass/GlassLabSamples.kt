@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -58,7 +57,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -70,7 +68,6 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
-import kotlin.math.roundToInt
 
 /**
  * ═══════════════════════════════════════════════════════════════
@@ -669,7 +666,15 @@ private fun DraggableLiveChip(state: Backdrop, mode: GlassLabMode, zoneSize: Int
     SpecimenGlass(
         spec = spec, state = state,
         modifier = Modifier
-            .offset { IntOffset(dragOffset.x.roundToInt(), dragOffset.y.roundToInt()) }
+            // diag-20261011（GlassLab 续）：拖拽位移改纯 draw 通道 —— 与 DraggableGlassChip
+            // 同配方同根因（offset{} 延迟 lambda 在 placement 通道读 dragOffset，拖动每帧
+            // 布局类失效，与换页 dispose 同帧竞争时撞上已脱离 owner 的节点，
+            // crash-1791688161738）。graphicsLayer translation 视觉/命中等效，
+            // 测量/布局通道零失效。
+            .graphicsLayer {
+                translationX = dragOffset.x
+                translationY = dragOffset.y
+            }
             .fillMaxWidth(0.40f)
             .height(CompareChipHeight)
             .pointerInput(Unit) {
