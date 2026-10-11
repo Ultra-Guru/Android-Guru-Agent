@@ -21,6 +21,25 @@ data class EditorFile(
 )
 
 /**
+ * 编辑器加载失败的稳定错误码（#312）：纯数据层不依赖 Android 资源，
+ * UI 层（CodeViewModel）按码映射 R.string 取词。
+ */
+enum class EditorLoadError { EMPTY_PATH, PATH_ESCAPE, NOT_FOUND, IS_DIRECTORY, TOO_LARGE }
+
+/**
+ * 编辑器加载失败异常：携带稳定 [EditorLoadError] 码与上下文（路径 / 字节数）。
+ *
+ * [message] 为机器可读形态（editor:CODE，供日志与排查），不是用户可见文案
+ * ——用户文案由 UI 层按 [code] 从 strings_code.xml 的 code_editor_err_* 键取。
+ */
+class EditorFileException(
+    val code: EditorLoadError,
+    val path: String? = null,
+    val byteCount: Long = 0L,
+    cause: Throwable? = null
+) : IllegalArgumentException("editor:${code.name}", cause)
+
+/**
  * # 编辑器文件加载器（纯 Kotlin，零 Android / Compose 依赖）
  *
  * 面向 Code 屏编辑器面板的文件读取契约，与 code_read 工具同源的防线与上限：
@@ -35,12 +54,14 @@ data class EditorFile(
  *   maxLines 行内容，但完整数出真实总行数 —— 大文件不整载内存；
  * - 单行超 2000 字符截断并追加省略号（与 code_read 的单行上限一致）。
  *
- * 异常契约（调用方 = CodeViewModel，catch 后写入 UI 错误态展示）：
+ * 异常契约（调用方 = CodeViewModel，catch 后写入 UI 错误态展示；#312 起
+ * 携带稳定错误码，由 VM 层按码取资源文案）：
  * - [root] 为 null → **不抛**，返回 [EditorFile] 空壳（path=入参、
  *   lines 空、totalLines=0、truncated=false、binary=false）。工作区未就绪
  *   是用户状态而非编程错误，VM 侧应优先检查根目录并展示引导文案；
  * - 路径空白 / 路径越界（穿越、逃逸根目录）/ 文件不存在 / 目标是目录 /
- *   文件超 5MB → [IllegalArgumentException]，message 为可直接展示的中文；
+ *   文件超 5MB → [EditorFileException]（[IllegalArgumentException] 子类，
+ *   携带稳定 [EditorLoadError] 码与上下文）；
  * - 底层读 IO 失败（磁盘、权限突变等）→ [IOException] 原样上抛。
  */
 object EditorFileLoader {
@@ -60,12 +81,12 @@ object EditorFileLoader {
      * [maxLines] 会被收敛到 1..[DEFAULT_MAX_LINES]；返回的 [EditorFile.lines]
      * 长度不超过该值，[EditorFile.totalLines] 始终是文件真实行数。
      *
-     * @throws IllegalArgumentException 见类 KDoc「异常契约」一节
+     * @throws EditorFileException 见类 KDoc「异常契约」一节（#312 稳定错误码）
      * @throws IOException 底层读取失败
      */
     fun loadEditorFile(root: File?, relPath: String, maxLines: Int = DEFAULT_MAX_LINES): EditorFile {
         val path = relPath.trim()
-        require(path.isNotEmpty()) { "文件路径为空" }
+        if (path.isEmpty()) throw EditorFileException(EditorLoadError.EMPTY_PATH, path)
 
         // 根未就绪：返回空壳由调用方展示（见类 KDoc）
         if (root == null) {
@@ -76,13 +97,13 @@ object EditorFileLoader {
         val file = try {
             FilePathSafety.safeResolve(root, path)
         } catch (e: SecurityException) {
-            throw IllegalArgumentException("路径越界，已拒绝访问：$path", e)
+            throw EditorFileException(EditorLoadError.PATH_ESCAPE, path, cause = e)
         }
 
-        if (!file.exists()) throw IllegalArgumentException("文件不存在：$path")
-        if (file.isDirectory) throw IllegalArgumentException("目标是目录，不支持预览：$path")
+        if (!file.exists()) throw EditorFileException(EditorLoadError.NOT_FOUND, path)
+        if (file.isDirectory) throw EditorFileException(EditorLoadError.IS_DIRECTORY, path)
         if (file.length() > MAX_FILE_BYTES) {
-            throw IllegalArgumentException("文件过大（${file.length()} 字节，上限 5MB），不支持预览")
+            throw EditorFileException(EditorLoadError.TOO_LARGE, path, byteCount = file.length())
         }
 
         // 二进制嗅探：前 8KB 内 NUL 命中即判定；辅以不可打印占比（同 code_read）

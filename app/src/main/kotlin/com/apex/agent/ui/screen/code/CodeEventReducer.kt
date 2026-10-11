@@ -1,5 +1,6 @@
 package com.apex.agent.ui.screen.code
 
+import com.apex.agent.R
 import com.apex.agent.core.codetools.tools.CodeTodoTool
 import com.apex.agent.core.engine.AgentEvent
 import kotlinx.coroutines.flow.update
@@ -18,8 +19,12 @@ import kotlinx.serialization.json.jsonPrimitive
  * - ResponseChunk → 当前助手消息增量 append（编码回复长度可控，不做 16ms 节流）；
  * - ToolCallStart/Complete → 工具卡（code_edit/write 成功后编辑器跟随最新现场）；
  * - UserInputRequired/UserInputExpired → 挂起/关闭结构化提问输入框；
- * - Plan 确认 / 压缩 / Complete → 系统消息 + todo/仪表刷新；
- * - Error → 错误条（#209：recoverable 透传为「重试」入口）。
+ * - Plan 确认 / 压缩 / Complete → 系统消息 + todo/仪表刷新（#312：气泡文案经
+ *   VM 已开放的 [CodeViewModel.languageManager] 资源取词——消息以已解析文本
+ *   落会话快照，与 appendSystemMessage 既有口径一致，不引入事件码的持久化
+ *   兼容负担）；
+ * - Error → 错误条（#209：recoverable 透传为「重试」入口；文案由引擎侧给出，
+ *   引擎侧 LlmErrorText 资源化另行跟踪）。
  */
 internal fun CodeViewModel.reduce(event: AgentEvent) {
     when (event) {
@@ -132,7 +137,7 @@ internal fun CodeViewModel.reduce(event: AgentEvent) {
                 messages = it.messages + CodeChatMessage(
                     id = idGen.incrementAndGet(),
                     role = CodeChatMessage.Role.SYSTEM,
-                    text = "计划已确认，开始执行（${event.plan.steps.size} 步）"
+                    text = languageManager.getString(R.string.code_plan_confirmed_fmt, event.plan.steps.size)
                 )
             )
         }
@@ -151,7 +156,10 @@ internal fun CodeViewModel.reduce(event: AgentEvent) {
                     messages = it.messages + CodeChatMessage(
                         id = idGen.incrementAndGet(),
                         role = CodeChatMessage.Role.SYSTEM,
-                        text = "上下文已压缩（${event.beforeTokens} → ${event.afterTokens} tokens，${event.strategy}）"
+                        text = languageManager.getString(
+                            R.string.code_context_compressed_fmt,
+                            event.beforeTokens, event.afterTokens, event.strategy
+                        )
                     )
                 )
             }
@@ -159,9 +167,10 @@ internal fun CodeViewModel.reduce(event: AgentEvent) {
         }
 
         is AgentEvent.Complete -> {
-            val summary = buildString {
-                append("完成 · ${event.totalIterations} 轮 · ${event.totalToolCalls} 次工具 · ${event.totalDurationMs / 1000}s")
-            }
+            val summary = languageManager.getString(
+                R.string.code_run_complete_fmt,
+                event.totalIterations, event.totalToolCalls, event.totalDurationMs / 1000
+            )
             _uiState.update {
                 it.copy(
                     messages = it.messages + CodeChatMessage(
