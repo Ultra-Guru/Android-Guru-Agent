@@ -172,9 +172,9 @@ apex-agent/
 │   ├── :tool-registry ─────────── AgentTool 接口 + catalog/（v4 渐进披露）+ builtin ~44 工具类
 │   ├── :logging / :code-tools / :code-engine
 ├── platform/（Android 平台能力层）
-│   ├── :privilege / :terminal / :cs-mem / :code-workspace / :mcp-host / :persistence（保活引擎）
+│   ├── :privilege / :terminal / :cs-mem / :code-workspace / :mcp-host / :persistence（保活引擎）/ :browser-agent（浏览器大功能，v1.5.0）
 ├── :terminal-emulator（Kotlin VT100）+ :terminal-native（C++17 热路径）
-└── :plugin-sdk:plugin-api / :plugin-sdk:plugin-host + :plugins:plugin-workflow / :plugins:plugin-web-automation
+└── :plugin-sdk:plugin-api / :plugin-sdk:plugin-host + :plugins:plugin-workflow
 ```
 
 - 证据：`apex: settings.gradle.kts`；分层语义见 `apex: docs/task-execution-architecture.md`。
@@ -1074,7 +1074,8 @@ apex：双模块自研
   models 剥离))`——zxing QRCodeWriter 画 BitMatrix（512px 主题色）、quickie 扫码 + MLKit 相册识别 +
   粘贴板三通道导入；前缀版本号预留格式演进。**社群传播成本最低的供应商配置方式**。
 - **apex：插件 SDK（AIDL 进程间）+ ClawHub/ModelScope 市场 + 10 个捆绑技能**。
-  插件是独立 App（plugin-api/plugin-host 两模块 + plugin-workflow/plugin-web-automation 两个官方插件）；
+  插件是独立 App（plugin-api/plugin-host 两模块 + plugin-workflow 官方参考插件；
+  网页自动化插件 v1.5.0 已退役，浏览器自动化内置为 :platform:browser-agent 大功能）；
   技能是 apex-skill-v1 JSON manifest（4 类型 composite/script/prompt/connector）+ SkillRegistry
   （幂等内置释放 + .disabled sidecar + 路径穿越防御）+ 市场 SKILL.md→prompt 型转换。
 

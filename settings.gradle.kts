@@ -104,5 +104,3 @@ include(":plugin-sdk:plugin-host")
 
 // 插件APK
 include(":plugins:plugin-workflow")
-// 网页自动化插件：声明并分发 browser_* 工具（执行逻辑经 IApexPluginHost 回宿主 BrowserEngine）
-include(":plugins:plugin-web-automation")

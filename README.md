@@ -325,13 +325,13 @@ flowchart TB
 | `:platform:cs-mem` | Android Lib | 认知记忆系统（本仓库的差异化核心，见下节） |
 | `:platform:code-workspace` | Android Lib | 编码工作区：安全根目录与生命周期 |
 | `:platform:mcp-host` | 纯 JVM | 逆向 MCP Host：把手机工具暴露给 PC 客户端（零第三方依赖） |
+| `:platform:browser-agent` | Android Lib | 浏览器自动化大功能：browser_* 工具协议 + apex-browser-kit DI 接线 |
 | `:terminal-emulator` | 纯 Kotlin | 自研 VT100/ANSI 终端模拟器（零依赖）+ `TerminalEngine` 引擎抽象 |
 | `:terminal-native` | Android Lib | apex-vt-native C++17 零分配 VT 引擎（vendored + JNI，运行时回退 Kotlin） |
 | `:terminal-view` | Android Lib | Compose 终端视图层：画布渲染 / 手势 / 选区 / IME 连接 |
 | `:plugin-sdk:plugin-api` | Android Lib | AIDL `IApexPlugin` + PluginContract 常量 |
 | `:plugin-sdk:plugin-host` | Android Lib | 插件发现/绑定/工具桥接 |
 | `:plugins:plugin-workflow` | Android App | 参考插件 APK（工作流三工具） |
-| `:plugins:plugin-web-automation` | Android App | 参考插件 APK：浏览器自动化工具目录 |
 
 > [!NOTE]
 > 📌 `ComposeFoundry/` 是**独立的 Gradle 工程**（有自己的 `settings.gradle.kts`），
