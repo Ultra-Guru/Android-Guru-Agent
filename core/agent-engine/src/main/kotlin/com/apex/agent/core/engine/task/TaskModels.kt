@@ -317,6 +317,7 @@ enum class CheckpointBoundary(val description: String) {
     STEP_FINISHED("步骤完成/失败/跳过"),
     CONTEXT_COMPRESSED("上下文压缩边界（historyAnchor 更新 + 状态重注入）"),
     WAITING_USER("等待用户输入/确认（WAITING_USER 落盘）"),
+    WAITING_USER_RESUMED("用户已应答、引擎恢复执行（WAITING_USER→RUNNING，#335）"),
     ERROR("错误边界（FAILED 落盘）"),
     PAUSED("暂停落盘（PAUSED）"),
     CANCELLED("取消落盘（CANCELLED）"),

@@ -265,6 +265,83 @@ class TaskRuntimeTest {
         assertEquals(0, rt2.loadTaskHistory().count { it.isActive })
     }
 
+    // ═══ #335: ask_user 全链回归（TaskRuntime 砖化修复）═══
+
+    @Test
+    fun `ask_user answered then complete reaches COMPLETED and releases claim`() = runBlocking<Unit> {
+        // 旧缺陷链：UserInputRequired → WAITING_USER 落盘 → 用户应答 → 引擎继续
+        // 至 Complete，但 onEngineEvent 无 WAITING_USER→RUNNING 回迁 →
+        // finalizeStream 走 WAITING_USER→COMPLETED（非法边）必抛
+        // IllegalTaskTransition → 清理三连被跳过 → claiming 永久 true → 砖化。
+        val llm = FakeLlmClient(
+            listOf(
+                FakeLlmClient.ScriptedResponse.Ok(
+                    toolCalls = listOf(ToolCall("c1", "ask_user", """{"question":"继续吗?","type":"text"}"""))
+                ),
+                FakeLlmClient.ScriptedResponse.Ok(content = "all done"),
+                // 第二次 execute（claim 释放验证）的收尾轮
+                FakeLlmClient.ScriptedResponse.Ok(content = "second done")
+            )
+        )
+        val tools = FakeToolExecutor()
+        val engine = newEngine(llm, tools)
+        val rt = newRuntime(engine, CoroutineScope(SupervisorJob() + Dispatchers.IO))
+
+        val job = launch(Dispatchers.Unconfined) {
+            rt.execute(UserInput.text("问个问题")).collect { event ->
+                if (event is AgentEvent.UserInputRequired) {
+                    engine.submitUserInputIfAwaiting("继续")
+                }
+            }
+        }
+        job.join()
+        val task = waitTerminal(TaskStatus.COMPLETED)
+        assertEquals(TaskStatus.COMPLETED, store.load(task.taskId)!!.status)
+
+        // 关键回归断言：claiming 已释放 —— 旧实现在此必砖（互斥拒绝后续 execute）
+        val second = launch(Dispatchers.Unconfined) {
+            rt.execute(UserInput.text("第二条消息")).collect { }
+        }
+        withTimeout(15_000L) { second.join() }
+        val task2 = waitTerminal(TaskStatus.COMPLETED)
+        assertEquals(TaskStatus.COMPLETED, store.load(task2.taskId)!!.status)
+    }
+
+    @Test
+    fun `double ask_user keeps WAITING_USER idempotent and completes`() = runBlocking<Unit> {
+        // 同任务第二次 ask_user：WAITING_USER→WAITING_USER 自环非法，旧实现
+        // 从 collect lambda 直接抛 IllegalTaskTransition → 镜像 catch 误标
+        // FAILED + 引擎流被拆断。幂等化后应保持 WAITING_USER 并继续。
+        val llm = FakeLlmClient(
+            listOf(
+                FakeLlmClient.ScriptedResponse.Ok(
+                    toolCalls = listOf(ToolCall("c1", "ask_user", """{"question":"第一个问题?","type":"text"}"""))
+                ),
+                FakeLlmClient.ScriptedResponse.Ok(
+                    toolCalls = listOf(ToolCall("c2", "ask_user", """{"question":"第二个问题?","type":"text"}"""))
+                ),
+                FakeLlmClient.ScriptedResponse.Ok(content = "done after two asks")
+            )
+        )
+        val tools = FakeToolExecutor()
+        val engine = newEngine(llm, tools)
+        val rt = newRuntime(engine, CoroutineScope(SupervisorJob() + Dispatchers.IO))
+
+        val askCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val job = launch(Dispatchers.Unconfined) {
+            rt.execute(UserInput.text("连续两问")).collect { event ->
+                if (event is AgentEvent.UserInputRequired) {
+                    engine.submitUserInputIfAwaiting("答${askCount.incrementAndGet()}")
+                }
+            }
+        }
+        job.join()
+        // 双问全程无异常逃逸：任务终态 COMPLETED（而非 FAILED），两次 ask 均被应答
+        assertEquals(2, askCount.get())
+        val task = waitTerminal(TaskStatus.COMPLETED)
+        assertEquals(TaskStatus.COMPLETED, store.load(task.taskId)!!.status)
+    }
+
     // ═══ F: 崩溃恢复（模拟进程死亡）═══
 
     @Test

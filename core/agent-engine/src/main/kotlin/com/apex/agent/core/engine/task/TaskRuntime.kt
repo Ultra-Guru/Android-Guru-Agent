@@ -185,7 +185,16 @@ class TaskRuntime(
         tagsSetter(task.taskId, null) // N-12：诊断四元 ID 贯通开始
         persist(task, CheckpointBoundary.TASK_CREATED)
 
-        val tap = Channel<AgentEvent>(capacity = Channel.UNLIMITED)
+        // #351③：UI 转发通道改有界 + DROP_OLDEST —— 旧 UNLIMITED 在订阅者被取消
+        // 而任务继续（Activity 销毁、LOOP 后台轮次、长任务）时，全部 AgentEvent
+        //（含每 token 一条 ResponseChunk）积压到任务结束，长任务数万事件对象
+        // MB 级内存。改有界后：UI 正常收集时缓冲迅速排空、实际不丢；无人收集时
+        // 流式 chunk 可丢（UI 重建状态来自 activeTask/runtimeEvents 而非重放），
+        // checkpoint 职责不受影响（onEngineEvent 先于 tap.send 落盘）。
+        val tap = Channel<AgentEvent>(
+            capacity = EVENT_TAP_CAPACITY,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST
+        )
         eventTap = tap
         val done = CompletableDeferred<Unit>()
         streamDone = done
@@ -233,7 +242,25 @@ class TaskRuntime(
     // ═══ 事件 → Checkpoint（核心推导表，N-4）═══
 
     private suspend fun onEngineEvent(taskId: String, event: AgentEvent) {
-        val task = _activeTask.value?.takeIf { it.taskId == taskId } ?: return
+        val initial = _activeTask.value?.takeIf { it.taskId == taskId } ?: return
+        // #335 修复：等待用户输入期间收到任何非 UserInputRequired 事件，意味着
+        // 用户已应答、引擎恢复执行 —— 先回迁 WAITING_USER→RUNNING（表内合法边）。
+        // 旧实现无此回迁：ask_user 应答后引擎继续执行直至 Complete，收尾
+        // finalizeStream 的 else 分支走 WAITING_USER→COMPLETED（表内无此边）
+        // 必抛 IllegalTaskTransitionException，异常被 finally 的 runCatching 吞掉，
+        // 但位于 throw 之后的清理三连被跳过（eventTap/streamDone/claiming）——
+        // claiming 永久为 true，后续 execute/resume/retry 全部被互斥拒绝，
+        // TaskRuntime 被砖化直到进程重启（issue #335 P0）。
+        val task = if (initial.status == TaskStatus.WAITING_USER &&
+            event !is AgentEvent.UserInputRequired
+        ) {
+            val resumed = TaskStatusMachine.transition(initial, TaskStatus.RUNNING, clock())
+            persist(resumed, CheckpointBoundary.WAITING_USER_RESUMED)
+            emitRuntimeSync(TaskRuntimeEvent.StatusChanged(resumed.taskId, TaskStatus.RUNNING))
+            resumed
+        } else {
+            initial
+        }
         when (event) {
             is AgentEvent.PlanConfirmed,
             is AgentEvent.SpecConfirmed -> {
@@ -308,7 +335,15 @@ class TaskRuntime(
             }
 
             is AgentEvent.UserInputRequired -> {
-                transitionAndPersist(task, TaskStatus.WAITING_USER, CheckpointBoundary.WAITING_USER)
+                if (task.status == TaskStatus.WAITING_USER) {
+                    // #335：同一任务第二次 ask_user（WAITING_USER→WAITING_USER
+                    // 自环非法）幂等处理 —— 保持原态仅补落盘，不再抛
+                    // IllegalTaskTransition（该异常会从 collect lambda 直接逃逸，
+                    // 镜像 catch 把任务误标 FAILED、引擎流被拆断）。
+                    persist(task, CheckpointBoundary.WAITING_USER)
+                } else {
+                    transitionAndPersist(task, TaskStatus.WAITING_USER, CheckpointBoundary.WAITING_USER)
+                }
             }
 
             is AgentEvent.Error -> {
@@ -351,24 +386,38 @@ class TaskRuntime(
             claiming.set(false)
             return
         }
-        when {
-            pauseRequested -> transitionAndPersist(task, TaskStatus.PAUSED, CheckpointBoundary.PAUSED)
-            cancelRequested -> {
-                // CANCELLING → CANCELLED 链（流已收尾，无再等待的执行）
-                val cancelling = TaskStatusMachine.transition(task, TaskStatus.CANCELLING, clock())
-                transitionAndPersist(cancelling, TaskStatus.CANCELLED, CheckpointBoundary.CANCELLED)
+        try {
+            when {
+                pauseRequested -> transitionAndPersist(task, TaskStatus.PAUSED, CheckpointBoundary.PAUSED)
+                cancelRequested -> {
+                    // CANCELLING → CANCELLED 链（流已收尾，无再等待的执行）
+                    val cancelling = TaskStatusMachine.transition(task, TaskStatus.CANCELLING, clock())
+                    transitionAndPersist(cancelling, TaskStatus.CANCELLED, CheckpointBoundary.CANCELLED)
+                }
+                task.status == TaskStatus.FAILED -> {
+                    // 失败已在 Error 事件中终态化；此处理论上不应到达——幂等保护
+                    AppLogger.instance.warn(LogCategory.ENGINE, TAG, "finalize on already-FAILED task")
+                }
+                else -> {
+                    // #335 防御：终态化前若停在 WAITING_USER/PLANNING 等中间态
+                    //（事件序列未回迁的边角，如 Complete 被异常路径吞掉），先经
+                    // RUNNING 再 COMPLETED，不再抛 IllegalTaskTransition 砖化互斥位。
+                    val base = if (TaskStatusMachine.isLegal(task.status, TaskStatus.COMPLETED)) task
+                    else TaskStatusMachine.transition(task, TaskStatus.RUNNING, clock())
+                    transitionAndPersist(base, TaskStatus.COMPLETED, CheckpointBoundary.COMPLETED)
+                }
             }
-            task.status == TaskStatus.FAILED -> {
-                // 失败已在 Error 事件中终态化；此处理论上不应到达——幂等保护
-                AppLogger.instance.warn(LogCategory.ENGINE, TAG, "finalize on already-FAILED task")
-            }
-            else -> transitionAndPersist(task, TaskStatus.COMPLETED, CheckpointBoundary.COMPLETED)
+            emitRuntime(TaskRuntimeEvent.Finished(taskId, _activeTask.value?.status ?: TaskStatus.COMPLETED))
+            tagsSetter(null, null) // 诊断 ID 清理
+        } finally {
+            // #335：清理三连必须无条件执行 —— 任何状态迁移异常
+            //（IllegalTaskTransition 等）都不得跳过清理，否则 claiming 永久
+            // 为 true、TaskRuntime 被砖化（任务停在第后一个 checkpoint，后续
+            // execute/resume/retry 全部被互斥拒绝直到进程重启）。
+            eventTap = null
+            streamDone = null
+            claiming.set(false)
         }
-        emitRuntime(TaskRuntimeEvent.Finished(taskId, _activeTask.value?.status ?: TaskStatus.COMPLETED))
-        tagsSetter(null, null) // 诊断 ID 清理
-        eventTap = null
-        streamDone = null
-        claiming.set(false)
     }
 
     private suspend fun finalizeWith(taskId: String, status: TaskStatus, error: String?) {
@@ -412,7 +461,21 @@ class TaskRuntime(
         cancelRequested = true
         if (streamDone != null) {
             engine.abort()
-            streamDone?.await()
+            // #351④：与 pause() 对齐加超时 —— 旧实现裸 await()，引擎挂在 LLM
+            // readTimeout / 孤儿 deferred（最长 5 分钟）/ 不可中断工具时，cancel
+            // 调用协程（abort()/sendMessage 串行化/LOOP 提交）同步挂起同样时长。
+            // 超时后按标志位返回（取消已请求，CANCELLED 落盘由镜像 collector 的
+            // finally 迟到补齐，与 pause 的迟到 PAUSED 同语义）。
+            try {
+                streamDone?.let { withTimeout(CANCEL_AWAIT_TIMEOUT_MS) { it.await() } }
+            } catch (e: TimeoutCancellationException) {
+                AppLogger.instance.warn(
+                    LogCategory.ENGINE, TAG,
+                    "cancel(): stream finalize did not complete within " +
+                        "${CANCEL_AWAIT_TIMEOUT_MS / 1000}s; CANCELLED checkpoint will be persisted late"
+                )
+                return cancelRequested
+            }
         } else {
             // 无执行流（PAUSED/WAITING/FAILED 态直接取消）：
             // FAILED→CANCELLED 是表内直达边（放弃路径）；其余经 CANCELLING 瞬态链
@@ -691,6 +754,12 @@ class TaskRuntime(
 
         /** P2-14：pause() 等待引擎流收尾的上限（引擎可能挂在最长 readTimeout 的 LLM 调用上）。 */
         internal const val PAUSE_AWAIT_TIMEOUT_MS = 10_000L
+
+        /** #351④：cancel() 等待引擎流收尾的上限（与 pause 对齐，同一受害链）。 */
+        internal const val CANCEL_AWAIT_TIMEOUT_MS = 10_000L
+
+        /** #351③：UI 转发通道的有界容量（DROP_OLDEST；正常收集时远用不满）。 */
+        internal const val EVENT_TAP_CAPACITY = 512
 
         /** 用户显式重试上限（任务书 §7：不允许无限 retry）。 */
         const val DEFAULT_RETRY_LIMIT = 3
