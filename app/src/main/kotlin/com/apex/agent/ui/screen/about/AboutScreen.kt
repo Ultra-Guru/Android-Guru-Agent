@@ -124,7 +124,7 @@ import kotlin.math.sin
  */
 
 /** 项目仓库地址 —— 关于页所有外链的基地址。 */
-private const val REPO_URL = "https://github.com/AceGuru-mjh/Android-Guru-Agent"
+private const val REPO_URL = "https://github.com/Ultra-Guru/Android-Guru-Agent"
 
 /** 发布仓库（双仓库发布架构的产物存放处）。 */
 private const val RELEASE_URL = "https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases"

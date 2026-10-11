@@ -58,9 +58,12 @@ when {
 // 主APK
 include(":app")
 
-// Liquid Glass 底层引擎 —— vendored kyant0/AndroidLiquidGlass（backdrop @ 1.0.0，
-// Apache-2.0）。Maven 版需 Kotlin 2.2+/Compose 1.9+，本仓工具链消费不了 ——
-// 源码内嵌，仅 ui/glass 包单点消费，详见 vendor/backdrop/README.md。
+// Liquid Glass 底层引擎 —— vendored kyant0/AndroidLiquidGlass（上游 tag 1.0.0
+// 血统 + 本仓 diag-20261011 热修 + PR #364 彩色 DefaultHighlight，Apache-2.0）。
+// 工具链（Kotlin 2.3.21 / BOM 2026.02.00）已具备消费 Maven 线
+// io.github.kyant0:backdrop 的能力，但上游 1.0.6 二进制不含 diag-20261011
+// 两项 internal 级热修 —— 去 vendored 化在 PR #362 合并时显式回退，
+// 详见 vendor/backdrop/README.md。
 include(":vendor:backdrop")
 
 // 核心引擎（纯Kotlin JVM，零Android依赖）
@@ -93,7 +96,7 @@ include(":platform:mcp-host")
 include(":terminal-emulator")
 
 // Terminal native hot path — vendored apex-vt-native C++17 VT engine (JNI)
-// 上游：AceGuru-mjh/apex-vt-native（129 项奇偶校验测试 + NDK CI）
+// 上游：Ultra-Guru/apex-vt-native（129 项奇偶校验测试 + NDK CI）
 include(":terminal-native")
 
 // Terminal view — T88 Termux 级自定义 View 渲染层（Canvas 网格 / 滚动 / 选择 / IME）

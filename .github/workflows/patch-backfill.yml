@@ -53,7 +53,7 @@ concurrency:
 
 env:
   RELEASE_REPO: Ultra-Guru/Android-Guru-Agent-Release
-  DEV_REPO: AceGuru-mjh/Android-Guru-Agent
+  DEV_REPO: Ultra-Guru/Android-Guru-Agent
 
 permissions:
   contents: read

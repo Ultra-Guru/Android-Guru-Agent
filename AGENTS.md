@@ -8,9 +8,12 @@
 ## 构建与验证
 
 - **模块**：多模块 Gradle（app / core×6 / platform×6 / 终端双模块），
-  Kotlin 2.0.21 + AGP 8.7.3 + JDK 17 + Compose BOM 2024.12.01；
+  Kotlin 2.3.21 + AGP 8.13.2 + Gradle 8.14 + JDK 17 + Compose BOM 2026.02.00
+  （KSP2 2.3.12 / Hilt 2.58 / Room 2.8.5 配套矩阵；液态玻璃 backdrop 保持
+  vendored —— 上游 1.0.6 二进制缺 diag-20261011 热修，
+  详见 gradle/libs.versions.toml 与 vendor/backdrop/README.md）；
 - **浏览器库（拆库后）**：BrowserEngine / chrome UI / DOM 解析已抽出为
-  [apex-browser-kit](https://github.com/AceGuru-mjh/apex-browser-kit)
+  [apex-browser-kit](https://github.com/Ultra-Guru/apex-browser-kit)
   （坐标 `com.apex.browser:{core,engine,chrome}`）。本地构建把库克隆成
   **兄弟目录** `../apex-browser-kit` 即自动 composite build（settings
   条件 includeBuild）；CI 由 workflow 检出兄弟目录。改浏览器行为去库仓库
