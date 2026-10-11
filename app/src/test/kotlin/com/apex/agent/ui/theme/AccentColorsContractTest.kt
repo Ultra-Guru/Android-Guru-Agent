@@ -2,10 +2,7 @@ package com.apex.agent.ui.theme
 
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.blue
-import androidx.compose.ui.graphics.green
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.red
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -60,8 +57,16 @@ class AccentColorsContractTest {
         val mono = accentColors(AccentPalette.MONO)
         for (c in listOf(mono.dark.primary, mono.dark.secondary, mono.dark.tertiary,
             mono.light.primary, mono.light.secondary, mono.light.tertiary)) {
-            assertEquals("灰阶要求 R=G 通道一致", c.red, c.green, 1e-4f)
-            assertEquals("灰阶要求 R=B 通道一致", c.red, c.blue, 1e-4f)
+            // ⚠️ Compose 的 red/green/blue 是 inline val 扩展属性，纯 JVM unit test
+            // classpath 下不可解析（luminance/toArgb 等顶层函数无此问题，实测
+            // CI run 38112396663）—— 改走 toArgb() 位提取，语义等价
+            //（AccentPalette 颜色均为 Color(0xFF…) 字面 sRGB 构造，量化无差）。
+            val argb = c.toArgb()
+            val r = (argb ushr 16) and 0xFF
+            val g = (argb ushr 8) and 0xFF
+            val b = argb and 0xFF
+            assertEquals("灰阶要求 R=G 通道一致", r, g)
+            assertEquals("灰阶要求 R=B 通道一致", r, b)
         }
     }
 
