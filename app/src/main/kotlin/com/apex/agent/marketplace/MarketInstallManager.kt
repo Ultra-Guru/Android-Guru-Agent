@@ -413,7 +413,7 @@ class MarketInstallManager @Inject constructor(
             }
         }
 
-    // ═══ Skill：GitHub 仓库安装（真实联网，多用形态兜底）═══
+    // ═══ Skill：GitHub 仓库安装（真实联网，技能形态严格校验）═══
 
     /**
      * GitHub 仓库安装。
@@ -423,8 +423,21 @@ class MarketInstallManager @Inject constructor(
      * 现在的策略：
      *  1. 先查 GitHub API 拿到**真实默认分支**（有的仓库只有 master）；
      *  2. manifest 候选路径扩到常见约定（含 `.apex/` 子目录）；
-     *  3. 找不到 `apex-skill-v1` manifest 时，退化为读取 `SKILL.md` →
-     *     转成 prompt 型技能安装（社区仓库最普遍的技能形态）。
+     *  3. 找不到 `apex-skill-v1` manifest 时，读取 `SKILL.md` / `skill.md`
+     *     —— 必须含 Agent Skills 规范的 YAML frontmatter（name 必填）才
+     *     转成 prompt 型技能安装。
+     *
+     * diag-20261011 修复（用户反馈「从 GitHub 安装的不是技能，有什么装什么」）：
+     * 旧实现把 `README.md` 也列为 markdown 兜底路径 —— GitHub 上几乎每个仓库
+     * 都有 README，于是**任意仓库**都能被转成 prompt 型"技能"装入，README
+     * 全文经 promptInjection 直接注入对话系统提示词（既是静默假安装，也是
+     * 提示词注入安全洞）。现在：
+     *  - README.md 不再参与安装；
+     *  - markdown 路径要求 frontmatter（Agent Skills 规范的技能声明）；
+     *  - manifest 判定收紧为必须 `schema == "apex-skill-v1"`（旧的
+     *    id+name+tools 三键兜底会把大量普通 JSON 当 manifest）；
+     *  - 不满足形态 → 明确报错（与 strings_market 文案承诺一致：
+     *    「仓库里没有这些内容时会明确报错，不会静默假安装」）。
      */
     suspend fun installSkillFromGitHubRepo(owner: String, repo: String): Result<String> =
         withContext(Dispatchers.IO) {
@@ -433,7 +446,7 @@ class MarketInstallManager @Inject constructor(
                 "manifest.json", "skill.json", "apex-skill.json", "apex_skill.json",
                 "$repo.json", "skills/$repo.json", ".apex/skill.json", "skill/manifest.json"
             )
-            val markdownPaths = listOf("SKILL.md", "skill.md", "README.md")
+            val skillDocPaths = listOf("SKILL.md", "skill.md")
 
             for (branch in branches) {
                 for (path in manifestPaths) {
@@ -444,25 +457,37 @@ class MarketInstallManager @Inject constructor(
                         return@withContext installSkillFromJson(content)
                     }
                 }
-                for (path in markdownPaths) {
+                for (path in skillDocPaths) {
                     val markdown = tryDownload(
                         "https://raw.githubusercontent.com/$owner/$repo/$branch/$path"
                     ) ?: continue
                     if (markdown.isBlank()) continue
-                    val (name, description) = parseMarkdownHeading(markdown, fallbackName = repo)
+                    // 技能形态判定：Agent Skills 规范要求 SKILL.md 带含
+                    // name/description 的 YAML frontmatter —— 没有即普通
+                    // markdown 仓库，不装（README 式「有什么装什么」终结）。
+                    val (fmName, fmDescription, fmLicense) = parseSkillFrontmatter(markdown)
+                    if (fmName.isNullOrBlank()) continue
+                    val (_, headingDesc) = parseMarkdownHeading(markdown, fallbackName = fmName)
                     return@withContext installSkillFromJson(
                         promptManifest(
                             id = "gh-${owner.lowercase()}-${repo.lowercase()}",
-                            name = name,
-                            description = description,
+                            name = fmName,
+                            description = fmDescription ?: headingDesc,
                             author = "github:$owner",
-                            markdown = markdown
+                            markdown = markdown,
+                            homepage = "https://github.com/$owner/$repo",
+                            license = fmLicense
                         )
                     )
                 }
             }
             Result.failure(
-                Exception("仓库 $owner/$repo 中未找到可安装内容（已试 ${branches.size} 个分支的 manifest 与 SKILL.md）")
+                Exception(
+                    "仓库 $owner/$repo 不是可安装的技能（已探测 ${branches.size} 个分支）：" +
+                        "需要 apex-skill-v1 manifest（manifest.json / skill.json 等）或" +
+                        "含 name/description frontmatter 的 SKILL.md。" +
+                        "普通仓库（仅 README 等）不会假安装。"
+                )
             )
         }
 
@@ -676,9 +701,9 @@ class MarketInstallManager @Inject constructor(
     }
 
     private fun looksLikeApexManifest(content: String): Boolean = runCatching {
-        val obj = json.parseToJsonElement(content).jsonObject
-        obj["schema"]?.jsonPrimitive?.content == "apex-skill-v1" ||
-            (obj.containsKey("id") && obj.containsKey("name") && obj.containsKey("tools"))
+        // diag-20261011：收紧为必须显式声明 apex-skill-v1 —— 旧的 id+name+tools
+        // 三键兜底会把任意带这些键的普通 JSON（package 清单等）当技能装入。
+        json.parseToJsonElement(content).jsonObject["schema"]?.jsonPrimitive?.content == "apex-skill-v1"
     }.getOrDefault(false)
 
     /** 完整 JSON 字符串转义（含换行/回车/制表符）。 */

@@ -348,10 +348,15 @@ private class DrawBackdropNode(
     }
 
     override fun onObservedReadsChanged() {
+        // diag-20261011：脱离后到达的观察回调直接忽略 —— 节点已不持有
+        // owner，重订阅 observeReads / 失效 draw 缓存都可能访问已脱离的
+        // LayoutNode（detached-remeasure 崩溃的同类时序缝隙）。
+        if (!isAttached) return
         invalidateDrawCache()
     }
 
     fun invalidateDrawCache() {
+        if (!isAttached) return
         observeEffects()
     }
 

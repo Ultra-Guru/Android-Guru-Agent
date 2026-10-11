@@ -198,7 +198,7 @@
     <string name="market_github_install_title">Install skill from GitHub</string>
     <string name="market_github_input_label">owner/repo or repository link</string>
     <string name="market_github_input_hint">e.g. owner/repo or https://github.com/owner/repo</string>
-    <string name="market_github_install_body">Reads manifest.json / skill.json / SKILL.md from the repository default branch; if none of these exist, a clear error is reported \u2014 no silent fake installs.</string>
+    <string name="market_github_install_body">Reads an apex-skill-v1 manifest (manifest.json / skill.json etc.) or a SKILL.md with name/description frontmatter from the default branch; plain repos (README only) get a clear error \u2014 no fake installs.</string>
     <string name="market_github_fetch_install">Fetch &amp; install</string>
 
     <!-- ═══ Dialogs · Dependency graph ═══ -->

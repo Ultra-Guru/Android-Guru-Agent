@@ -1,6 +1,6 @@
 package com.apex.agent.ui.glass
 
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -28,6 +28,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -229,8 +233,15 @@ fun GlassNavigationItem(
     val scheme = MaterialTheme.colorScheme
     val itemAccent = if (accent.alpha > 0f) accent else scheme.primary
     val interaction = remember { MutableInteractionSource() }
-    val indicatorWidth by animateDpAsState(
-        targetValue = if (selected) 3.dp else 0.dp,
+    // diag-20261011：指示条动画改为纯 draw 通道 —— 旧实现 animateDpAsState 喂
+    // Modifier.width，选中态翻转时每帧 remeasure 整列导航项（抽屉 verticalScroll
+    // Column）；与目的地切换（旧屏子树 dispose，SaveableStateProvider 换页）同帧
+    // 竞争时，draw 派发中的 measureAndLayout 会撞上已脱离 owner 的节点 ——
+    // 「LayoutNode should be attached to an owner」崩溃（crash-1791678670852 栈
+    // 形态：Scroll→Column→Row→Padding→Box/width）。固定 3dp 槽位 + drawBehind
+    // 内读动画分数：只失效 draw，零测量失效，视效保留（宽度生长）。
+    val indicatorFraction by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
         animationSpec = tween(durationMillis = 180),
         label = "glass_nav_indicator"
     )
@@ -252,13 +263,21 @@ fun GlassNavigationItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 霓虹指示条 —— 既有品牌元素，玻璃化后保留
+            // 霓虹指示条 —— 既有品牌元素；draw 通道动画（宽度分数），零测量失效
             Box(
                 modifier = Modifier
-                    .width(indicatorWidth)
+                    .width(3.dp)
                     .height(24.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(itemAccent)
+                    .drawBehind {
+                        if (indicatorFraction > 0.01f) {
+                            drawRoundRect(
+                                color = itemAccent,
+                                topLeft = Offset.Zero,
+                                size = Size(size.width * indicatorFraction, size.height),
+                                cornerRadius = CornerRadius(2.dp.toPx())
+                            )
+                        }
+                    }
             )
             // 圆形图标井：选中态主色浸染，常态中性
             Box(contentAlignment = Alignment.Center) {

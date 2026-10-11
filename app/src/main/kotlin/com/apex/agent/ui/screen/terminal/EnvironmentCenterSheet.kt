@@ -543,6 +543,6 @@ internal fun ActionButton(label: String, loading: Boolean, modifier: Modifier = 
 
 @Composable
 private fun Modifier.clickableSafe(enabled: Boolean, onClick: () -> Unit): Modifier =
-    this.then(
-        this.clickable(enabled = enabled, onClick = onClick)
-    )
+    // diag-20261011：旧实现 `this.then(this.clickable(...))` 把接收者链应用了两遍
+    //（调用点的 clip 等全部翻倍）；直接在接收者上追加 clickable 即可。
+    this.clickable(enabled = enabled, onClick = onClick)
