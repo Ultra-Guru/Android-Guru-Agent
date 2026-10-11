@@ -66,10 +66,6 @@
     <string name="settings_thinking_budget_label">Thinking Budget (tokens)</string>
     <string name="settings_thinking_budget_auto">Auto</string>
     <string name="settings_show_thinking_label">Show Thinking</string>
-    <string name="settings_reasoning_effort_label">Reasoning Effort</string>
-    <string name="settings_thinking_budget_label">Thinking Budget (tokens)</string>
-    <string name="settings_thinking_budget_auto">Auto</string>
-    <string name="settings_show_thinking_label">Show Thinking</string>
     <string name="settings_effort_desc">The model\'s native thinking intensity (OpenAI o-series / DeepSeek-R1 / Qwen3 etc.); ignored automatically by unsupported models</string>
     <string name="settings_budget_desc">Chain-of-thought token budget; not hard-tied to Effort (providers differ in semantics)</string>
     <string name="settings_show_thinking_desc">Show the model\'s thinking process in the chat stream (data plumbed; chat rendering comes later)</string>
