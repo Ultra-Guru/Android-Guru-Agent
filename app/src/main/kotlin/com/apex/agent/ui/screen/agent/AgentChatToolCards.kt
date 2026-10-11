@@ -438,6 +438,21 @@ internal fun ToolCallCard(
                 }
                 if (results.isNotEmpty()) {
                     WebSearchResultsCard(results, query = extractSearchQuery(outputText))
+                } else if (toolCall.toolName == BROWSER_SCREENSHOT_TOOL_ID &&
+                    isBrowserScreenshotPayload(outputText)
+                ) {
+                    // 浏览器截图：base64 文本墙 → 圆角缩略图（点击放大；
+                    // 解码失败回退 [fallback] 原文渲染，见 BrowserToolCards.kt）。
+                    BrowserScreenshotOutput(output = outputText) {
+                        SmartToolOutput(
+                            toolName = toolCall.toolName,
+                            args = toolCall.args,
+                            output = outputText,
+                            fullOutput = toolCall.fullOutput,
+                            expanded = true,
+                            isError = isError
+                        )
+                    }
                 } else {
                     // 智能输出渲染：按工具类型自动选择 代码高亮 / 文件卡 / JSON树 / Shell / 文本 卡片。
                     SmartToolOutput(
