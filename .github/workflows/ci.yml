@@ -104,7 +104,10 @@ jobs:
       - name: Compile core:tool-registry
         run: |
           SER_PLUGIN=$HOME/kotlinc/lib/kotlinx-serialization-compiler-plugin.jar
-          CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')/tmp/build/llm-adapter"
+          # SsrfGuard（issue #341）引用 core:logging（AppLogger/LogCategory）——
+          # 镜像编译须挂载 /tmp/build/logging，否则 unresolved reference（Gradle 侧
+          # build.gradle.kts 已声明 implementation(project(":core:logging"))，本步同步）。
+          CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')/tmp/build/llm-adapter:/tmp/build/logging"
           kotlinc -Xplugin=$SER_PLUGIN -cp "$CLASSPATH" -d /tmp/build/tool-registry \
             $(find core/tool-registry/src/main/kotlin -name "*.kt") \
             -jvm-target 17

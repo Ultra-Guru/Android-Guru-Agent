@@ -134,7 +134,9 @@ object SsrfGuard {
             throw IOException("重定向 Location 无法解析为合法 http(s) URL: '$location'（SSRF 防护）")
         }
         if (from.scheme == "https" && resolved.scheme == "http") {
-            throw IOException("重定向从 https 降级到 http（${from.url} → ${resolved.url}），已拒绝（SSRF 防护）")
+            // ⚠️ OkHttp 4 中 HttpUrl.url 为 private（Java 时代 URL url() 已 Kotlin 化为
+            // toUrl()）—— 直接用 HttpUrl.toString()（即完整 URL 字符串）。
+            throw IOException("重定向从 https 降级到 http（$from → $resolved），已拒绝（SSRF 防护）")
         }
         return resolved
     }
