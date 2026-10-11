@@ -228,11 +228,15 @@ private const val REPEAT_PERIOD_MS = 60L
  *
  * P2-1：与 ConsoleTheme 同值的色锄到单一来源（bg=bar、keyHi=accent、
  * keyTextHi=TerminalConsoleTheme onPrimary）—— 旧版三处色源各自硬编码，
- * 改主题要记得同步；键帽/键面文字等键栏特有色保留在此（单一职责归宿）。 */
+ * 改主题要记得同步；键帽/键面文字等键栏特有色保留在此（单一职责归宿）。
+ *
+ * #278：keyHi 走 ConsoleTheme.accent（强调色单一事实源，随设置改色
+ * 即时跟随）；其余键栏色是恒深 chrome 中性色，保持静态。 */
 internal object KeybarChrome {
     val bg = ConsoleTheme.bar
     val key = Color(0xFF1A2420)
-    val keyHi = ConsoleTheme.accent
+    val keyHi: Color
+        @Composable get() = ConsoleTheme.accent
     val keyEmph = Color(0xFF223729)
     val keyText = Color(0xFFE8F2ED)
     val keyTextHi = Color(0xFF06120D)
