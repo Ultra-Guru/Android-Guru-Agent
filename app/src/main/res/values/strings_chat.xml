@@ -121,6 +121,7 @@
     <string name="chat_toolkind_github">GitHub</string>
     <string name="chat_toolkind_web_search">Web search</string>
     <string name="chat_toolkind_web_fetch">Web fetch</string>
+    <string name="chat_toolkind_browser">Browser</string>
     <string name="chat_toolkind_connector">Connector</string>
     <string name="chat_toolkind_plugin">Plugin</string>
     <string name="chat_status_done">Done</string>

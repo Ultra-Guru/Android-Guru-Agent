@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Preview
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -105,6 +106,13 @@ internal fun toolKindStyle(kind: ToolKind): ToolKindStyle = when (kind) {
     )
     ToolKind.WEB_FETCH -> ToolKindStyle(
         R.string.chat_toolkind_web_fetch, Icons.Default.Language,
+        MaterialTheme.colorScheme.secondary
+    )
+    // 浏览器自动化（内置大功能）：rounded globe + web 族 accent（secondary 琥珀）。
+    // 用色惯例：主题槽位多 kind 共享（primary=LOCAL/SKILL、secondary=WEB_*），
+    // 浏览器归 web 族取 secondary，与 WEB_FETCH 的差异靠图标与「浏览器」标签承载。
+    ToolKind.BROWSER -> ToolKindStyle(
+        R.string.chat_toolkind_browser, Icons.Rounded.Public,
         MaterialTheme.colorScheme.secondary
     )
     ToolKind.SKILL -> ToolKindStyle(

@@ -121,6 +121,7 @@
     <string name="chat_toolkind_github">GitHub</string>
     <string name="chat_toolkind_web_search">联网搜索</string>
     <string name="chat_toolkind_web_fetch">网页抓取</string>
+    <string name="chat_toolkind_browser">浏览器</string>
     <string name="chat_toolkind_connector">连接器</string>
     <string name="chat_toolkind_plugin">插件</string>
     <string name="chat_status_done">完成</string>
