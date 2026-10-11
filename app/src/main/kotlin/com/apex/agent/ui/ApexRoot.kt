@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DataUsage
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Info
@@ -68,6 +69,7 @@ import com.apex.agent.ui.component.OfflineBanner
 import com.apex.agent.ui.component.UpdateBanner
 import com.apex.agent.ui.glass.GlassIconButton
 import com.apex.agent.ui.screen.about.AboutScreen
+import com.apex.agent.ui.screen.browser.BrowserScreen
 import com.apex.agent.ui.screen.agent.AgentChatScreen
 import com.apex.agent.ui.screen.agent.AgentChatViewModel
 import com.apex.agent.ui.screen.code.CodeScreen
@@ -110,6 +112,9 @@ sealed class DrawerDestination(
     // Skill 屏已移除 —— 技能的安装/启停统一由「市场 · Skills」页承担，
     // 抽屉里再放一个只读列表是重复入口（两者数据源同一份 SkillRegistry）。
     data object Market : DrawerDestination("market", R.string.drawer_market, Icons.Default.Storefront)
+    // 浏览器大功能（v1.5.0 内置化）：会话状态/标签/最近动作驾驶舱 + 人工接管入口。
+    // Language 图标即地球，与浏览器语义天然契合。
+    data object Browser : DrawerDestination("browser", R.string.drawer_browser, Icons.Default.Language)
     data object Memory : DrawerDestination("memory", R.string.drawer_memory, Icons.Default.Storage)
     // 任务历史（T76 审计 §7：TaskRuntime.loadTaskHistory 首次接线 —— 步骤回放/统计）
     data object Tasks : DrawerDestination("tasks", R.string.drawer_tasks, Icons.Default.Checklist)
@@ -329,6 +334,7 @@ fun ApexRoot() {
                                 onOpenNavDrawer = { scope.launch { drawerState.open() } }
                             )
                             DrawerDestination.Market -> MarketScreen()
+                            DrawerDestination.Browser -> BrowserScreen()
                             DrawerDestination.Memory -> MemoryScreen()
                             DrawerDestination.Tasks -> TaskHistoryScreen()
                             DrawerDestination.Storage -> StorageScreen()

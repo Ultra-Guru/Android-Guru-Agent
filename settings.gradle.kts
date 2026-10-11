@@ -83,6 +83,8 @@ include(":platform:persistence")
 include(":platform:terminal")
 include(":platform:cs-mem")
 include(":platform:code-workspace")
+// 浏览器自动化大功能：browser_* 工具协议 + apex-browser-kit 库 DI 接线
+include(":platform:browser-agent")
 
 // 逆向 MCP Host（#173）：手机作为 MCP Server，PC 端 AI 经 streamable HTTP 控制手机
 include(":platform:mcp-host")
@@ -104,5 +106,3 @@ include(":plugin-sdk:plugin-host")
 
 // 插件APK
 include(":plugins:plugin-workflow")
-// 网页自动化插件：声明并分发 browser_* 工具（执行逻辑经 IApexPluginHost 回宿主 BrowserEngine）
-include(":plugins:plugin-web-automation")

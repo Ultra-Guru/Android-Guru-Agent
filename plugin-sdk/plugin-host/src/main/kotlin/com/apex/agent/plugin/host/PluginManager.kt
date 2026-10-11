@@ -52,6 +52,15 @@ import javax.inject.Singleton
  *   卸载/插件进程死亡时降级为 [HostFallbackTool]（宿主直调），不挖空注册表。
  * - **API 33+ 弃用**：queryIntentServices 改用 ResolveInfoFlags 变体（旧行为保留）。
  *
+ * ## v1.5.0 退役插件拦截门
+ * 浏览器自动化已内置为宿主大功能（:platform:browser-agent，24 个 browser_*
+ * 工具），旧网页自动化插件 APK（metadata.id = [RETIRED_WEB_AUTOMATION_PLUGIN_ID]）
+ * 不再需要。已侧载旧插件的用户若不卸载，其 15 工具旧清单会在 REPLACE 语义下
+ * 覆盖内置 24 工具（v1.1.0+ 的 pressKey/hover/drag/extractContent/executeJs/
+ * getCookies/locate 等被挖掉，Agent 能力静默降级）——故在注册早期（metadata
+ * 解析后、版本门之前）直接拒绝：日志警告引导卸载 + 解绑，不注册任何工具，
+ * 与签名门同款 fail-closed 语义。
+ *
  * ## v4 信任边界（第二轮加固）
  * 任意三方 App 声明 action `com.apex.agent.plugin.PLUGIN` 即被发现并绑定、
  * 工具风险由自报 id 字符串推断（`helper_query` → LOW/readOnly → 双门全过）
@@ -228,6 +237,19 @@ class PluginManager @Inject constructor(
             // 信任门 2（版本）：getMetadataJson 拿不到 / 非法 JSON → 拒绝（fail
             // closed）；字段缺失按 0（无要求，老插件兼容）。
             val metadataJson = plugin.getMetadataJson()
+
+            // 退役插件门（v1.5.0）：旧网页自动化插件直接拒绝——功能已内置为宿主
+            // 大功能，旧壳的 15 工具清单 REPLACE 覆盖会挖掉内置 24 工具。拒绝
+            // 语义与签名门一致：不注册任何工具 + post 解绑，日志引导卸载。
+            if (parsePluginId(metadataJson) == RETIRED_WEB_AUTOMATION_PLUGIN_ID) {
+                Log.w(
+                    TAG,
+                    "plugin $pkg retired: 浏览器自动化已内置为宿主大功能，旧插件不再需要，建议卸载"
+                )
+                mainHandler.post { unloadPlugin(pkg) }
+                return
+            }
+
             val minHostVersion = parseMinHostVersion(metadataJson)
             if (minHostVersion == null) {
                 Log.w(
@@ -327,6 +349,17 @@ class PluginManager @Inject constructor(
     }.getOrNull()
 
     /**
+     * 退役插件门：解析插件 getMetadataJson 的 id 字段。
+     * 与 [parseMinHostVersion] 同口径——非法 JSON / 非对象 / 字段缺失返回 null
+     * （不可解析的 metadata 本就会被版本门拒绝，此处 null 不等于任何退役 id）。
+     */
+    private fun parsePluginId(metadataJson: String): String? = runCatching {
+        val obj = json.parseToJsonElement(metadataJson) as? JsonObject
+            ?: return@runCatching null
+        obj["id"]?.jsonPrimitive?.contentOrNull
+    }.getOrNull()
+
+    /**
      * 解析插件 getToolsJson()：`[{"id":..,"name":..,"description":..,"parametersSchema":..}]`。
      * parametersSchema 是字符串字段（值为 JSON 文本本身）。字段缺失跳过该条目；
      * 整串非法回退空列表——绝不让插件的数据形态炸掉宿主注册流程。
@@ -348,6 +381,9 @@ class PluginManager @Inject constructor(
 
     private companion object {
         const val TAG = "PluginManager"
+
+        /** v1.5.0 退役的网页自动化插件 id（浏览器自动化已内置为宿主大功能，拦截防旧 15 工具清单覆盖内置 24 工具）。 */
+        const val RETIRED_WEB_AUTOMATION_PLUGIN_ID = "com.apex.agent.plugin.webautomation"
     }
 }
 

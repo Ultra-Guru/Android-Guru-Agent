@@ -259,3 +259,51 @@ Operit 的网页自动化 = 内置 `WebView` + 把渲染后 DOM 精简成「带*
 **未做（P1 剩余 / P2）**：#7 的持久化 trace 落盘/OpenTelemetry（仅内存）、#8 的 Agent 框架层完整滑动窗口（本层只提供摘要工具）、#10 已在 P0 做、#11 已在 P0 做、#12 权限请求、#13 反爬隐身、#14 下载、#15 内存维护、#16 多标签并发上限、#17 Accessibility Tree、#18 网络拦截、#19 任务规划、#20 可编程剪枝。**浮窗 UI（BrowserOverlay）已完成**（P1 最后一步，按用户要求延后至此）。
 
 **验证**：`RetryPolicyTest`/`BrowserTracerTest` 验证重试熔断与上下文压缩意图；lint 0 错误；完整编译/测试依赖 CI。
+
+---
+
+## 13. v1.5.0 插件形态退役（浏览器自动化内置化）
+
+> 本章为主项目改造（Android-Guru-Agent `feat/browser-agent-builtin`）的定论记录。
+
+### 13.1 动机
+
+- **清单漂移**：插件 APK 声明 15 个 `browser_*` 工具描述符，而宿主
+  BrowserAgentTools 实际注册 24 个（v1.1.0 库升级新增 press_key / hover /
+  drag / extract_content / execute_js / get_cookies / locate / wait_for /
+  page_type 后插件壳未同步）——插件 REPLACE 覆盖内置注册时，Agent 能力
+  静默降级回 15 工具；
+- **双源维护**：同一功能两份清单（插件 BrowserToolCatalog 与宿主
+  BrowserAgentTools），每次工具增删都要跨仓同步，漂移只是时间问题；
+- **IPC 绕行无增益**：插件进程没有浏览器引擎，执行恒经 IApexPluginHost
+  回宿主 BrowserEngine——跨进程 binder 往返 + 120s runBlocking 超时包装，
+  只增加延迟与故障面（宿主桥断连时错误文案直接进模型上下文）；进程隔离
+  对浏览器自动化没有安全收益（引擎本就活在宿主进程）。
+
+### 13.2 改造内容
+
+| 项 | 位置 | 说明 |
+| --- | --- | --- |
+| 删除插件壳 | `plugins/` 下的网页自动化插件目录（整目录删除）+ settings include + apk.yml / release.yml 构建与发布段 | 15 工具声明壳退役；官方参考插件只剩 plugin-workflow |
+| 新建平台模块 | `:platform:browser-agent` | 对齐 platform:* 大功能范式：BrowserAgentTools（工具协议）+ BrowserKitModule（库 DI 接线）迁入，只改 package 声明；apex-browser-kit 三层经 `api` 传递给 app；namespace `com.apex.agent.platform.browser` |
+| app 侧接线 | `app/build.gradle.kts` / `di/ToolModule.kt` / `plugin/host/PluginHostBridge.kt` | 三条库坐标替换为模块依赖；import 更新为新包；CyberNeonBallManager / NeonRingView 视觉装饰留 app（LanguageManager 与 app 资源依赖），悬浮球/浮窗链路零变化 |
+| 旧插件拦截 | `PluginManager`（plugin-sdk/plugin-host） | metadata.id 命中退役 id 时拒绝加载：日志警告「已内置，建议卸载」+ post 解绑，不注册任何工具（防旧 15 工具清单 REPLACE 覆盖内置 24 工具，与签名门同款 fail-closed 语义） |
+| 一级 UI 入口 | `DrawerDestination.Browser` + `ui/screen/browser/BrowserScreen.kt` / `BrowserViewModel.kt` | 抽屉「浏览器」页（Market 之后 Memory 之前，Language 地球图标）：会话状态卡（状态机四态人话解释 + 当前页面）+ 标签列表（tabsSnapshot）+ 最近自动化动作（tracer.recent(10)：工具/结果摘要/耗时/状态）+ 人工操作（newTab / releaseBrowser / enterHandoffMode / completeHandoff 按 WAITING_HUMAN 切换）+ 内置说明卡 |
+
+### 13.3 旧插件用户引导
+
+**无需任何操作即可获得完整功能**：24 个 `browser_*` 工具随宿主 APK 内置，
+Agent 对话中直接可用（浏览器被使用后悬浮球 / 浮窗照常出现）。已侧载旧
+插件 APK 的用户**卸载它即可**——宿主 PluginManager 会在加载时拦截并
+日志引导卸载；旧插件不再注册任何工具，留着无害但无益。
+
+### 13.4 与 apex-browser-kit v1.2.0 的协同
+
+- 主项目消费坐标仍为 `com.apex.browser:{core,engine,chrome}`（composite
+  build / 远端 Maven 双通道不变），本次模块化改造对库**零要求**——v1.1.0
+  即可跑通全部 24 工具；
+- 库侧 v1.2.0（ChromeStrings 注入接口，additive API）将消解 chrome 逻辑层
+  硬编码中文的已知取舍（5 条 snackbar / 4 条建议副标题 / 3 条 JS 弹窗
+  按钮），宿主升级坐标即可获得完整 i18n；两仓各自发版、互不阻塞；
+- 拆库边界进一步清晰：库管引擎与 chrome UI，工具协议（AgentTool 契约）
+  与 DI 接线归宿主 `:platform:browser-agent` ——「协议在宿主、引擎在库」。
