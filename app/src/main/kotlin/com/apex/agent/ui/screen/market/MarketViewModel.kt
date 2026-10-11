@@ -25,6 +25,9 @@ import com.apex.agent.core.tools.skill.SkillRegistry
 import com.apex.agent.marketplace.MarketInstallManager
 import com.apex.agent.platform.csmem.store.MemoryGraphStore
 import com.apex.agent.plugin.host.PluginManager
+import com.apex.agent.plugin.host.functional.FunctionalPluginStore
+import com.apex.agent.plugin.host.functional.UnifiedPluginEntry
+import com.apex.agent.plugin.host.functional.UnifiedPluginRegistry
 import com.apex.agent.ui.language.LanguageManager
 import com.apex.agent.R
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -168,8 +171,10 @@ data class MarketUiState(
     val mcps: List<MarketMcpRow> = emptyList(),
     // 连接器
     val connectors: List<ConnectorDef> = emptyList(),
-    // 插件
+    // 插件（BROWSE 视图：APK 发现态）
     val plugins: List<MarketPluginRow> = emptyList(),
+    // 插件（INSTALLED 视图：统一目录 —— 功能性 + APK 双形态合并）
+    val installedPlugins: List<UnifiedPluginEntry> = emptyList(),
     // 集成：魔搭
     val modelScopeSkills: List<ModelScopeSource.ModelScopeSkill> = emptyList(),
     val modelScopeLoading: Boolean = false,
@@ -264,6 +269,8 @@ class MarketViewModel @Inject constructor(
     internal val mcpManager: McpManager,
     private val connectorRegistry: ConnectorRegistry,
     private val pluginManager: PluginManager,
+    // Plugin System v2：统一插件门面（双形态目录 / 功能插件启停装卸）
+    private val unifiedPluginRegistry: UnifiedPluginRegistry,
     private val installManager: MarketInstallManager,
     private val modelScopeSource: ModelScopeSource,
     private val clawHubSource: ClawHubSource,
@@ -508,12 +515,17 @@ class MarketViewModel @Inject constructor(
             val plugins = pluginManager.discoverPlugins().map {
                 MarketPluginRow(it.packageName, it.label, it.packageName in loaded)
             }
+            // Plugin System v2：统一目录对账（功能性插件磁盘扫描 + APK
+            // 已加载快照合并——同一 IO 调度器上扫盘，与既有插件发现同轮次）。
+            unifiedPluginRegistry.refresh()
+            val installedPlugins = unifiedPluginRegistry.catalog.value
             MarketUiState(
                 skills = skills,
                 skillTemplates = templates,
                 mcps = mcps,
                 connectors = connectors,
                 plugins = plugins,
+                installedPlugins = installedPlugins,
                 installedModelScopeIds = installedIds
             )
         }.getOrNull()
@@ -726,6 +738,68 @@ class MarketViewModel @Inject constructor(
             // unbindService 同样需在主线程执行
             withContext(Dispatchers.Main) { pluginManager.unloadPlugin(packageName) }
             message(languageManager.getString(R.string.market_plugin_unloaded).format(packageName))
+            refresh()
+        }
+    }
+
+    // ═══ Plugin System v2：功能性插件启停 / 卸载 / 导入（统一门面路由） ═══
+
+    /**
+     * 功能性插件启停：标记文件 + 工具宏注册/回收 + 目录刷新（一体化，
+     * 见 UnifiedPluginRegistry.setEnabledFunctional）。磁盘标记写入与
+     * 注册表操作在 IO 调度器上执行（对齐 toggleSkill 的线程纪律）。
+     */
+    fun toggleFunctionalPlugin(id: String, enabled: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = unifiedPluginRegistry.setFunctionalEnabled(id, enabled)
+            if (!ok) {
+                message(languageManager.getString(R.string.market_plugin_not_found).format(id))
+            }
+            refresh()
+        }
+    }
+
+    /**
+     * 功能性插件卸载：工具回收 + 目录删除 + 刷新。结果如实反馈
+     * （market_plugin_uninstalled / market_plugin_not_found）。
+     */
+    fun uninstallFunctionalPlugin(id: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = unifiedPluginRegistry.uninstallFunctionalPlugin(id)
+            message(
+                if (ok) {
+                    languageManager.getString(R.string.market_plugin_functional_uninstalled).format(id)
+                } else {
+                    languageManager.getString(R.string.market_plugin_not_found).format(id)
+                }
+            )
+            refresh()
+        }
+    }
+
+    /**
+     * 功能性插件导入（plugin.json 文本）：校验 → 落盘 → 默认启用态激活。
+     * 安装结果分档反馈（成功 / 升级 / 幂等 / 拒绝理由），全部人话。
+     */
+    fun importFunctionalPlugin(manifestJson: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = unifiedPluginRegistry.installFunctionalPlugin(manifestJson)
+            message(
+                when (result) {
+                    is FunctionalPluginStore.InstallResult.Installed ->
+                        languageManager.getString(R.string.market_plugin_functional_installed)
+                            .format(result.manifest.displayName)
+                    is FunctionalPluginStore.InstallResult.Upgraded ->
+                        languageManager.getString(R.string.market_plugin_functional_upgraded)
+                            .format(result.manifest.displayName)
+                    is FunctionalPluginStore.InstallResult.Unchanged ->
+                        languageManager.getString(R.string.market_plugin_functional_unchanged)
+                            .format(result.manifest.displayName)
+                    is FunctionalPluginStore.InstallResult.Rejected ->
+                        languageManager.getString(R.string.market_plugin_functional_rejected)
+                            .format(result.reason)
+                }
+            )
             refresh()
         }
     }

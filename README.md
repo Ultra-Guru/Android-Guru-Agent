@@ -215,7 +215,7 @@ Root → Shizuku → 沙箱 Shell 自动降级<br/>无 Root 也能执行特权�
 | 🗜️ | **上下文工程** | 三级压缩（工具输出智能截断 → 滑动窗口 → LLM 摘要），双引擎统一水位检查，长任务不爆上下文窗口 |
 | 🛰️ | **BYO-LLM** | OpenAI 兼容协议 + DeepSeek / OpenRouter / Ollama / 自定义端点预设；多模型运行时按角色路由（含图片自动走 VISION）；原生支持 `reasoning_content` 思维链（R1 / Qwen3-thinking / o 系列） |
 | ⚡ | **三级权限链** | Root → Shizuku → 普通沙箱 shell 自动降级选择，无 Root 设备也能执行特权命令 |
-| 🧩 | **插件 SDK + 技能市场** | AIDL 跨进程插件 SDK + 技能市场（工具/技能/MCP/插件/连接器五个货架）+ 40+ 可安装技能模板；插件系统本身保留（plugin-workflow 为参考插件） |
+| 🧩 | **插件 SDK v2（双类型）+ 技能市场** | 功能性插件（plugin.json 声明式贡献点：工具宏/斜杠指令，零代码执行面）+ APK 插件（AIDL 跨进程）统一管理；技能市场（工具/技能/MCP/插件/连接器五个货架）+ 40+ 可安装技能模板；plugin-workflow 为参考 APK 插件、functional-samples 为功能性插件样本 |
 | 🌐 | **内置浏览器大功能（v1.5.0 起非插件）** | 24 个 `browser_*` 工具（DOM 级操控 + 高级键鼠/抽取/JS 逃生舱）+ 悬浮球 + 浮窗浏览器，Agent 对话中直接指挥 |
 | 💭 | **七档思考系统（Coding 页专属）** | NONE→ULTRACODE→APEXCODE 七深度档 + AUTO 预检自适应（发送前选档 + 深水区升级）；档位驱动提示词 / 模型参数 / 迭代倍率 / 压缩阈值 / 输出预算**全执行画像**，档位效能用历史数据说话（Agent 聊天页为独立六档体系） |
 | 🕓 | **长任务中心（v1.2）** | 超阈值运行自动留档；检查点时间线回看（轮次 / 相对时间 / todo 完成度）+ 续跑不从头、复制带上下文重跑、同目标运行对比、8 模板一键启动 |
@@ -804,13 +804,26 @@ GitHub Token）。
 ---
 
 <a id="plugin-sdk"></a>
-## 🔌 插件 SDK
+## 🔌 插件 SDK（v2 双类型体系）
 
-跨进程插件体系：插件是独立 APK，声明 `IApexPlugin` AIDL 服务；宿主
-`PluginManager` 经 PackageManager 发现 → 绑定 → 把插件声明的工具桥接进
-`ToolRegistry`（签名门 + 版本门 + metadata 钳制三道 fail-closed 防线）。
-参考实现 `plugins:plugin-workflow` 暴露三个工具：
-`workflow/save`、`workflow/execute`、`workflow/list`。
+插件分两种形态（详见 [docs/plugin-system-v2.md](docs/plugin-system-v2.md)）：
+
+- **功能性插件（FUNCTIONAL）**——进程内的**声明式数据**（一个
+  `plugin.json`，类比 coding 平台扩展的 contributes 段）：声明「贡献点」
+  （工具宏 / 斜杠指令 / 预留提示词注入），宿主适配成进程内能力。工具宏
+  = 对既有宿主工具的声明式组合（`{{input.field}}` 变量插值 / 步间数据流
+  / 失败短路），**零代码执行面**——经市场导入或 JSON 粘贴即装即生效；
+  工具 id 冲突 REJECT（数据永不覆盖二进制能力）。参考样本
+  `plugins/functional-samples/`；
+- **APK 插件（APK）**——独立 APK 声明 `IApexPlugin` AIDL 服务；宿主
+  `PluginManager` 经 PackageManager 发现 → 绑定 → 把插件声明的工具桥接进
+  `ToolRegistry`（签名门 + 版本门 + metadata 钳制三道 fail-closed 防线，
+  同签名信任下 REPLACE 语义）。参考实现 `plugins:plugin-workflow` 暴露
+  三个工具：`workflow/save`、`workflow/execute`、`workflow/list`。
+
+统一注册表 `UnifiedPluginRegistry` 把两种形态合并成一份目录、一套启停
+装卸语义——市场「已安装 · 插件」页双形态徽章并列管理，斜杠菜单插件类目
+合并展示，`/plugin:<id>` 命中功能性指令时注入插件声明的定制 prompt。
 
 > [!NOTE]
 > v1.5.0 起浏览器自动化已内置为宿主大功能（`:platform:browser-agent`，

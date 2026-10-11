@@ -1,9 +1,12 @@
 package com.apex.agent.slash
 
+import com.apex.agent.plugin.host.functional.FunctionalSlashCommand
+
 /**
  * Runtime context the [SlashCommandRouter] consults to decide how a command
  * should be routed. Currently GitHub connection state (for the
- * `/mcp:github` real binding) and live MCP server connection state are needed,
+ * `/mcp:github` real binding), live MCP server connection state, and
+ * functional plugin slash commands (Plugin System v2) are needed,
  * but the shape is extensible: future connectors / plugins plug in by adding
  * fields here.
  *
@@ -21,11 +24,16 @@ package com.apex.agent.slash
  * @param mcpConnected 已连接的 MCP 服务器名快照（路由时点）。`/mcp:<id>` 对已
  *   连接的服务器注入 mcp_call 引导提示词；未携带快照的旧调用方退回
  *   Token 连接态判定（内置 github 服务器随启动自动连接，两者语义一致）。
+ * @param functionalCommands Plugin System v2：已激活功能性插件的斜杠指令
+ *   贡献快照（指令 id → 贡献）。`/plugin:<id>` 命中时路由注入插件声明的
+ *   定制 prompt；未命中或调用方未携带（旧路径）退化为通用插件路由文案
+ *   ——向后兼容，不破坏既有 APK 插件指令。
  */
 data class SlashRouteContext(
     val githubConnected: Boolean = false,
     val githubUsername: String? = null,
-    val mcpConnected: Set<String> = emptySet()
+    val mcpConnected: Set<String> = emptySet(),
+    val functionalCommands: Map<String, FunctionalSlashCommand> = emptyMap()
 ) {
     companion object {
         /** Sentinel used when no live connection state is available. */
@@ -160,7 +168,42 @@ object SlashCommandRouter {
             routeKind = "connector",
             sourceName = command.id
         )
-        is SlashCommand.Plugin -> SlashCommandRoute(
+        is SlashCommand.Plugin -> routePlugin(command, context)
+        is SlashCommand.Unknown -> SlashCommandRoute(
+            systemMessage = "⚡ 指令: ${command.raw.trim()}",
+            // Forward the raw input verbatim — the user typed it on purpose
+            // and the agent is best placed to interpret free-form commands.
+            agentPrompt = command.raw
+        )
+    }
+
+    /**
+     * Plugin routing（Plugin System v2 双形态）：
+     *
+     * - **功能性插件指令**（[SlashRouteContext.functionalCommands] 命中）：
+     *   注入插件声明的定制 prompt（`/plugin:briefing` → 每日简报工作流），
+     *   系统消息携带插件名徽章；
+     * - **APK 插件 / 未命中**：既有通用路由——插件工具已注册进
+     *   ToolRegistry（PluginManager 真实注册），引导模型直接调用插件工具
+     *   （如 browser_* 网页自动化工具）；不存在时如实引导去市场页安装。
+     */
+    private fun routePlugin(command: SlashCommand.Plugin, context: SlashRouteContext): SlashCommandRoute {
+        val functional = context.functionalCommands[command.id]
+        if (functional != null) {
+            val promptBody = functional.prompt.ifBlank {
+                "插件 ${functional.pluginName} 已激活，其工具已注册进 ToolRegistry —— 请直接调用对应的插件工具完成任务。"
+            }
+            return SlashCommandRoute(
+                systemMessage = "📦 功能插件: ${functional.pluginName} · ${command.id}",
+                agentPrompt = command.buildAgentPrompt(
+                    verb = promptBody,
+                    toolHint = "插件 ${functional.pluginName} 的工具"
+                ),
+                routeKind = "plugin",
+                sourceName = command.id
+            )
+        }
+        return SlashCommandRoute(
             // 插件工具桥已激活（IApexPluginHost 宿主桥 + PluginManager 真实注册）：
             // 插件加载后其工具已注册进 ToolRegistry，模型可直接调用。
             // 未加载（loadedPlugins 不含该包）时如实引导去市场页安装/启用。
@@ -171,12 +214,6 @@ object SlashCommandRouter {
             ),
             routeKind = "plugin",
             sourceName = command.id
-        )
-        is SlashCommand.Unknown -> SlashCommandRoute(
-            systemMessage = "⚡ 指令: ${command.raw.trim()}",
-            // Forward the raw input verbatim — the user typed it on purpose
-            // and the agent is best placed to interpret free-form commands.
-            agentPrompt = command.raw
         )
     }
 

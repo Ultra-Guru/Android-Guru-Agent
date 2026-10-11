@@ -1,6 +1,9 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
+    // Plugin System v2：功能性插件 manifest（@Serializable 数据模型）需要
+    // 序列化编译器插件（对齐 core:tool-registry 的配置）。
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
 }
@@ -28,4 +31,10 @@ dependencies {
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+
+    // Plugin System v2：功能性插件（manifest 解析 / 目录存储 / 宏执行 /
+    // 统一注册表）全部纯 JVM —— 与 WorkflowStore 同款纪律（#256 防回退：
+    // 假成功桩无测试报警）。
+    testImplementation(libs.junit)
+    testImplementation(libs.coroutines.test)
 }

@@ -12,6 +12,7 @@ import com.apex.agent.core.tools.mcp.McpManager
 import com.apex.agent.core.tools.skill.SkillMenuProvider
 import com.apex.agent.core.tools.skill.SkillRegistry
 import com.apex.agent.plugin.host.PluginManager
+import com.apex.agent.plugin.host.functional.UnifiedPluginRegistry
 import com.apex.agent.ui.language.LanguageManager
 import com.apex.agent.R
 import kotlinx.coroutines.CoroutineScope
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -56,6 +58,8 @@ class SlashMenuProvider @Inject constructor(
     private val skillRegistry: SkillRegistry,
     private val mcpManager: McpManager,
     private val pluginManager: PluginManager,
+    // Plugin System v2：功能性插件的斜杠指令贡献（已激活插件快照）。
+    private val unifiedPluginRegistry: UnifiedPluginRegistry,
     private val connectorRegistry: ConnectorRegistry,
     // i18n：菜单分组/提示文案按当前语言取词（组合外场景）
     private val languageManager: LanguageManager
@@ -91,6 +95,14 @@ class SlashMenuProvider @Inject constructor(
                 pluginCacheAt = 0L // 插件加载状态变化，强制下次重建时重新发现
                 rebuild()
             }
+            .launchIn(scope)
+
+        // Plugin System v2：功能性插件启停/装卸/激活去激活 → 斜杠指令贡献
+        // 变化（changes 递增计数）→ 菜单重建（与去抖洪峰合并到同一次重建）。
+        unifiedPluginRegistry.changes
+            .drop(1) // StateFlow 首帧是初值 0，跳过避免无谓重建
+            .debounce(300)
+            .onEach { rebuild() }
             .launchIn(scope)
     }
 
@@ -175,11 +187,24 @@ class SlashMenuProvider @Inject constructor(
         )
     }
 
-    // ── 插件：从系统已安装的 Apex 插件中实时发现（10s TTL 缓存），区分「已加载」与「未加载」 ──
+    // ── 插件：Plugin System v2 双形态合并类目 ──
+    // 功能性插件：已激活插件的斜杠指令贡献（functionalSlashCommands 快照，
+    // 无 IPC / 无扫盘——纯内存读）+ unified changes 流驱动重建；
+    // APK 插件：既有发现缓存（10s TTL，跨进程 IPC）区分已加载/未加载。
     private fun buildPluginsCategory(): SlashMenuCategory {
+        // 功能性插件指令贡献：插件名前缀区分来源（同一类目内双形态并列）。
+        val functionalItems = unifiedPluginRegistry.functionalSlashCommands().map { command ->
+            SlashMenuItem(
+                label = command.title,
+                command = "/plugin:${command.commandId} ",
+                description = command.pluginName +
+                    (if (command.description.isNotBlank()) " · " + command.description else ""),
+                status = SlashItemStatus.READY
+            )
+        }
         val discovered = discoverPluginsCached()
         val loaded = pluginManager.loadedPlugins.value.keys
-        val items = discovered.map { info ->
+        val apkItems = discovered.map { info ->
             val isLoaded = info.packageName in loaded
             SlashMenuItem(
                 label = info.label,
@@ -188,6 +213,7 @@ class SlashMenuProvider @Inject constructor(
                 status = if (isLoaded) SlashItemStatus.CONNECTED else SlashItemStatus.NOT_INSTALLED
             )
         }
+        val items = functionalItems + apkItems
         return SlashMenuCategory(
             id = "plugins",
             title = languageManager.getString(R.string.chat_slash_plugins),

@@ -23,7 +23,10 @@ internal fun AgentChatViewModel.handleSlashCommand(command: String) {
         githubTokenManager,
         mcpConnected = runCatching { mcpManager.getConnectedServers().toSet() }.getOrDefault(emptySet()),
         // /skill:<id> 路由时同步装备（写入激活存储，本轮提示词即携带方法论）
-        skillActivation = skillActivation
+        skillActivation = skillActivation,
+        // Plugin System v2：/plugin:<id> 命中功能性指令时注入定制 prompt
+        functionalCommands = unifiedPluginRegistry.functionalSlashCommands()
+            .associateBy { it.commandId }
     )
 
     // 指令会取消上一个流式任务：先清空流式缓冲，防残留文本串入新一轮。
@@ -112,6 +115,9 @@ internal fun AgentChatViewModel.handleMultiChipPipeline(
 ) {
     val mcpConnected = runCatching { mcpManager.getConnectedServers().toSet() }
         .getOrDefault(emptySet())
+    // Plugin System v2：多 chip 管线同样携带功能性插件指令贡献快照。
+    val functionalCommands = unifiedPluginRegistry.functionalSlashCommands()
+        .associateBy { it.commandId }
 
     val banners = mutableListOf<AgentUiMessage>()
     var githubConnectRequested = false
@@ -124,7 +130,8 @@ internal fun AgentChatViewModel.handleMultiChipPipeline(
             chip.toCommandToken(),
             githubTokenManager,
             mcpConnected = mcpConnected,
-            skillActivation = skillActivation
+            skillActivation = skillActivation,
+            functionalCommands = functionalCommands
         )
         banners += result.banner
         when (result) {
