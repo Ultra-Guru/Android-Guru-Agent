@@ -215,7 +215,8 @@ Root → Shizuku → 沙箱 Shell 自动降级<br/>无 Root 也能执行特权�
 | 🗜️ | **上下文工程** | 三级压缩（工具输出智能截断 → 滑动窗口 → LLM 摘要），双引擎统一水位检查，长任务不爆上下文窗口 |
 | 🛰️ | **BYO-LLM** | OpenAI 兼容协议 + DeepSeek / OpenRouter / Ollama / 自定义端点预设；多模型运行时按角色路由（含图片自动走 VISION）；原生支持 `reasoning_content` 思维链（R1 / Qwen3-thinking / o 系列） |
 | ⚡ | **三级权限链** | Root → Shizuku → 普通沙箱 shell 自动降级选择，无 Root 设备也能执行特权命令 |
-| 🧩 | **全插件化** | AIDL 跨进程插件 SDK + 技能市场（工具/技能/MCP/插件/连接器五个货架）+ 40+ 可安装技能模板 |
+| 🧩 | **插件 SDK + 技能市场** | AIDL 跨进程插件 SDK + 技能市场（工具/技能/MCP/插件/连接器五个货架）+ 40+ 可安装技能模板；插件系统本身保留（plugin-workflow 为参考插件） |
+| 🌐 | **内置浏览器大功能（v1.5.0 起非插件）** | 24 个 `browser_*` 工具（DOM 级操控 + 高级键鼠/抽取/JS 逃生舱）+ 悬浮球 + 浮窗浏览器，Agent 对话中直接指挥 |
 | 💭 | **七档思考系统（Coding 页专属）** | NONE→ULTRACODE→APEXCODE 七深度档 + AUTO 预检自适应（发送前选档 + 深水区升级）；档位驱动提示词 / 模型参数 / 迭代倍率 / 压缩阈值 / 输出预算**全执行画像**，档位效能用历史数据说话（Agent 聊天页为独立六档体系） |
 | 🕓 | **长任务中心（v1.2）** | 超阈值运行自动留档；检查点时间线回看（轮次 / 相对时间 / todo 完成度）+ 续跑不从头、复制带上下文重跑、同目标运行对比、8 模板一键启动 |
 
@@ -325,13 +326,13 @@ flowchart TB
 | `:platform:cs-mem` | Android Lib | 认知记忆系统（本仓库的差异化核心，见下节） |
 | `:platform:code-workspace` | Android Lib | 编码工作区：安全根目录与生命周期 |
 | `:platform:mcp-host` | 纯 JVM | 逆向 MCP Host：把手机工具暴露给 PC 客户端（零第三方依赖） |
+| `:platform:browser-agent` | Android Lib | 浏览器自动化大功能：browser_* 工具协议 + apex-browser-kit DI 接线 |
 | `:terminal-emulator` | 纯 Kotlin | 自研 VT100/ANSI 终端模拟器（零依赖）+ `TerminalEngine` 引擎抽象 |
 | `:terminal-native` | Android Lib | apex-vt-native C++17 零分配 VT 引擎（vendored + JNI，运行时回退 Kotlin） |
 | `:terminal-view` | Android Lib | Compose 终端视图层：画布渲染 / 手势 / 选区 / IME 连接 |
 | `:plugin-sdk:plugin-api` | Android Lib | AIDL `IApexPlugin` + PluginContract 常量 |
 | `:plugin-sdk:plugin-host` | Android Lib | 插件发现/绑定/工具桥接 |
 | `:plugins:plugin-workflow` | Android App | 参考插件 APK（工作流三工具） |
-| `:plugins:plugin-web-automation` | Android App | 参考插件 APK：浏览器自动化工具目录 |
 
 > [!NOTE]
 > 📌 `ComposeFoundry/` 是**独立的 Gradle 工程**（有自己的 `settings.gradle.kts`），
@@ -646,9 +647,12 @@ linux_bootstrap / linux_status / linux_packages / linux_network / ubuntu_install
 
 对标 Operit 的 `BrowserAgent`：DOM 级网页操控而非截图盲点。
 
-- **15 个 `browser_*` 工具**：`navigate / click / input / scroll / select /
-  screenshot / snapshot / toggle / show / download_list / file_upload /
-  date_input / context_summary / network_log / debug_dump`；
+- **24 个 `browser_*` 工具（v1.5.0 起内置大功能，非插件）**：基础 15 项
+  `navigate / click / input / scroll / select / screenshot / snapshot /
+  toggle / show / download_list / file_upload / date_input /
+  context_summary / network_log / debug_dump` + 高级动作 9 项
+  `press_key / hover / drag / extract_content / execute_js / get_cookies /
+  locate / wait_for / page_type`；
 - **语义哈希稳定 ref**：元素引用基于语义哈希而非 DOM 序号，SPA 局部刷新后
   ref 依然有效；
 - `BrowserTracer`（容量 100 的操作轨迹）+ `RetryPolicy` 支撑断点续控。
@@ -681,11 +685,16 @@ linux_bootstrap / linux_status / linux_packages / linux_network / ubuntu_install
 | 🧱 结构化 v2（15） | `regex_extract` `regex_replace` `text_diff` `json_path` `xml_extract` `csv_query` `base_convert` `unit_convert` `duration_convert` `string_distance` `random_generate` `uuid_generate` `file_hash` `datetime` `cron_next`（全部纯 JVM / 离线 / 确定性） |
 | ⚡ 执行硬化 v3（7） | `wait`（≤300s 可取消等待）· `json_transform`（jq 风格七操作管线）· `version_compare`（SemVer 排序）· `tool_batch_run`（批量首错即停 + 步间引用）· `shortcut_define` / `shortcut_list` / `shortcut_run`（组合动作：定义→热注册、清单+挖掘建议、执行）——详见 [docs/tool-system-v3.md](docs/tool-system-v3.md) |
 
-**app 模块 —— 22 个**
+**platform:browser-agent —— 24 个 `browser_*`（v1.5.0 起内置大功能，非插件）**
 
 | 类别 | 工具 |
 |------|------|
-| 🌐 浏览器（15） | `browser_navigate/click/input/scroll/select/screenshot/snapshot/toggle/show/download_list/file_upload/date_input/context_summary/network_log/debug_dump` |
+| 🌐 浏览器（24） | 基础 15：`browser_navigate/click/input/scroll/select/screenshot/snapshot/toggle/show/download_list/file_upload/date_input/context_summary/network_log/debug_dump` · 高级 9：`browser_press_key/hover/drag/extract_content/execute_js/get_cookies/locate/wait_for/page_type` |
+
+**app 模块 —— 7 个**
+
+| 类别 | 工具 |
+|------|------|
 | 🐙 GitHub（7） | `github_get_user/list_repos/read_file/write_file/create_issue/list_issues/search_code`（配置 PAT 后注册） |
 
 **platform:terminal —— 18 个** `terminal.*`（见[终端运行时](#terminal-runtime)；T82 新增 `terminal.ubuntu.ensure` / `terminal.ubuntu.status` 一键生命周期编排）
@@ -799,8 +808,15 @@ GitHub Token）。
 
 跨进程插件体系：插件是独立 APK，声明 `IApexPlugin` AIDL 服务；宿主
 `PluginManager` 经 PackageManager 发现 → 绑定 → 把插件声明的工具桥接进
-`ToolRegistry`。参考实现 `plugins:plugin-workflow` 暴露三个工具：
+`ToolRegistry`（签名门 + 版本门 + metadata 钳制三道 fail-closed 防线）。
+参考实现 `plugins:plugin-workflow` 暴露三个工具：
 `workflow/save`、`workflow/execute`、`workflow/list`。
+
+> [!NOTE]
+> v1.5.0 起浏览器自动化已内置为宿主大功能（`:platform:browser-agent`，
+> 24 个 `browser_*` 工具），旧网页自动化插件退役：已侧载旧 APK 的用户
+> 直接卸载即可——宿主会在加载时拦截并日志引导卸载（防旧 15 工具清单
+> REPLACE 覆盖内置 24 工具）。
 
 <p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
 
@@ -978,8 +994,8 @@ chmod +x gradlew
 Android-Guru-Agent/
 ├── app/                          # 主应用（Compose UI + Hilt 装配）
 │   └── src/main/kotlin/com/apex/agent/
-│       ├── ui/                   #   ApexRoot（抽屉导航）+ screen/（8 屏）
-│       ├── browser/              #   浏览器智能体（15 工具）
+│       ├── ui/                   #   ApexRoot（抽屉导航）+ screen/（含浏览器大功能页 BrowserScreen）
+│       ├── browser/              #   浏览器视觉装饰（霓虹球/霓虹环；工具协议在 platform:browser-agent）
 │       ├── github/               #   GitHub 工具（7 个）
 │       ├── slash/                #   斜杠命令（纯 JVM 可测）
 │       └── di/                   #   Hilt 模块（工具/引擎接线）
@@ -991,6 +1007,7 @@ Android-Guru-Agent/
 ├── platform/
 │   ├── privilege/                # Root/Shizuku/无障碍三级链
 │   ├── persistence/              # 前台服务 + 看门狗
+│   ├── browser-agent/            # 浏览器自动化大功能（browser_* 工具协议 + 库 DI 接线，v1.5.0 内置化）
 │   ├── terminal/                 # 终端运行时 2.0（rootfs/PRoot/PTY/工具）
 │   │   ├── src/main/cpp/         #   C++ forkpty/JNI 桥
 │   │   └── src/main/jniLibs/     #   预编译 PRoot 二进制（sha256 锁定）

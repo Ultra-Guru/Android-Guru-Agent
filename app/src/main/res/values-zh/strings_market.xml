@@ -198,7 +198,7 @@
     <string name="market_github_install_title">从 GitHub 安装技能</string>
     <string name="market_github_input_label">owner/repo 或 仓库链接</string>
     <string name="market_github_input_hint">例如 owner/repo 或 https://github.com/owner/repo</string>
-    <string name="market_github_install_body">将读取仓库默认分支的 manifest.json / skill.json / SKILL.md；仓库里没有这些内容时会明确报错，不会静默假安装。</string>
+    <string name="market_github_install_body">将读取仓库默认分支的 apex-skill-v1 manifest（manifest.json / skill.json 等）或含 name/description frontmatter 的 SKILL.md；普通仓库（仅 README）会明确报错，不会假安装。</string>
     <string name="market_github_fetch_install">获取并安装</string>
 
     <!-- ═══ 对话框 · 依赖图 ═══ -->

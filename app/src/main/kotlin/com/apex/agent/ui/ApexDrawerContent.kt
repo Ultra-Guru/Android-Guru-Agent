@@ -177,6 +177,8 @@ fun ApexDrawerContent(
                         DrawerDestination.Templates,
                         DrawerDestination.Terminal,
                         DrawerDestination.Market,
+                        // 浏览器大功能（v1.5.0 内置化）：市场后的高频工作流入口
+                        DrawerDestination.Browser,
                         DrawerDestination.Memory,
                         DrawerDestination.Tasks,
                         // v1.4.4 #6：用量仪表盘（数据洞察，与任务历史相邻）

@@ -1,4 +1,4 @@
-package com.apex.agent.browser
+package com.apex.agent.platform.browser
 
 import android.content.Context
 import com.apex.agent.core.tools.AgentTool

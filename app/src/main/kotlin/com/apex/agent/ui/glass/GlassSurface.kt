@@ -21,10 +21,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.dp
 import com.apex.agent.ui.theme.LocalUiStyle
 import com.apex.agent.ui.theme.UiStyle
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.BackdropEffectScope
 import com.kyant.backdrop.backdrops.emptyBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
@@ -147,6 +149,71 @@ fun GlassSurface(
         )
     }
 
+    // ═══ diag-20261011：drawBackdrop 全部 lambda 记忆化 ═══
+    // ModifierNodeElement.equals 对 lambda 按身份比较 —— 每次重组新建 lambda
+    // 恒不等 → 每次重组都 update() → invalidateDraw/DrawCache → 启动期大量
+    // 玻璃件（抽屉 16 项/气泡/输入栏）形成 draw 失效风暴，放大换页 dispose
+    // 与在途回调帧的竞争窗口（detached-remeasure 崩溃）。记忆化后等值重组
+    // 零 update；键即各 lambda 捕获的全部值。
+    val shapeBlock = remember(shape) { { shape } }
+    // 显式带接收者类型：嵌套在 remember 内的 lambda 需要期望类型传播，
+    // 否则 vibrancy/blur/lens/drawRect 无接收者上下文无法解析。
+    val effectsBlock: BackdropEffectScope.() -> Unit = remember(style, canRender) {
+        {
+            if (canRender) {
+                if (style.vibrancy > 0f) runCatching { vibrancy() }
+                runCatching { blur(style.blurRadius.toPx()) }
+                if (style.lensHeight > 0.dp) {
+                    runCatching {
+                        lens(
+                            refractionHeight = style.lensHeight.toPx(),
+                            refractionAmount = style.lensAmount.toPx(),
+                            chromaticAberration = style.chromaticAberration
+                        )
+                    }
+                }
+            }
+        }
+    }
+    val highlightBlock = remember(highlightAlpha, highlightColor) {
+        {
+            Highlight(
+                width = 0.8.dp,
+                blurRadius = 1.2.dp,
+                alpha = highlightAlpha,
+                style = HighlightStyle.Plain(
+                    color = highlightColor,
+                    blendMode = androidx.compose.ui.graphics.BlendMode.Plus
+                )
+            )
+        }
+    }
+    val innerShadowBlock = remember(palette.dark) {
+        {
+            InnerShadow(
+                radius = 6.dp,
+                offset = DpOffset(0.dp, 3.dp),
+                color = Color.Black.copy(
+                    alpha = if (palette.dark) 0.35f else 0.18f
+                ),
+                alpha = 0.6f
+            )
+        }
+    }
+    val surfaceBlock: DrawScope.() -> Unit = remember(canRender, palette, frostBrush) {
+        {
+            if (canRender) {
+                drawRect(palette.glassTint)
+            } else {
+                drawRect(frostBrush)
+            }
+        }
+    }
+    // activationState 是跨重组稳定的 State 实例（#262 延迟读取），不需作键。
+    val scaleLayerBlock = remember(style, scaleOnPress) {
+        glassScaleLayerBlock(style, activationState, scaleOnPress)
+    }
+
     Box(
         modifier = modifier
             // 深度：外阴影在最外层，不被裁剪（Compose shadow 形状感知；
@@ -173,59 +240,20 @@ fun GlassSurface(
             // 无该效果（Frosted 观感），组合树与进程存活优先。
             .drawBackdrop(
                 backdrop = effectiveBackdrop,
-                shape = { shape },
-                effects = {
-                    if (canRender) {
-                        if (style.vibrancy > 0f) runCatching { vibrancy() }
-                        runCatching { blur(style.blurRadius.toPx()) }
-                        if (style.lensHeight > 0.dp) {
-                            runCatching {
-                                lens(
-                                    refractionHeight = style.lensHeight.toPx(),
-                                    refractionAmount = style.lensAmount.toPx(),
-                                    chromaticAberration = style.chromaticAberration
-                                )
-                            }
-                        }
-                    }
-                },
-                highlight = {
-                    Highlight(
-                        width = 0.8.dp,
-                        blurRadius = 1.2.dp,
-                        alpha = highlightAlpha,
-                        style = HighlightStyle.Plain(
-                            color = highlightColor,
-                            blendMode = androidx.compose.ui.graphics.BlendMode.Plus
-                        )
-                    )
-                },
+                shape = shapeBlock,
+                effects = effectsBlock,
+                highlight = highlightBlock,
                 // 深度走外层 Compose shadow（可外溢）；kyant0 Shadow 元素
                 // 会被本组件的裁剪层截断，故不启用。
                 shadow = { null },
-                innerShadow = {
-                    InnerShadow(
-                        radius = 6.dp,
-                        offset = DpOffset(0.dp, 3.dp),
-                        color = Color.Black.copy(
-                            alpha = if (palette.dark) 0.35f else 0.18f
-                        ),
-                        alpha = 0.6f
-                    )
-                },
+                innerShadow = innerShadowBlock,
                 // 按压缩放：graphicsLayer 块内读 State（#262 零重组）；
                 // kyant0 把同一 layerBlock 反演到 backdrop 采样 —— 表面
                 // 形变时镜中世界保持对位（液态玻璃的「果冻挤压」语义）。
-                layerBlock = glassScaleLayerBlock(style, activationState, scaleOnPress),
+                layerBlock = scaleLayerBlock,
                 // ═══ 霜面染色：绘制在模糊材质之上、内容之下 ═══
                 // Backdrop/Ambient 档 = 透出模糊材质的 tint；Frosted 档 = 霜面渐变。
-                onDrawSurface = {
-                    if (canRender) {
-                        drawRect(palette.glassTint)
-                    } else {
-                        drawRect(frostBrush)
-                    }
-                }
+                onDrawSurface = surfaceBlock
             ),
         contentAlignment = Alignment.Center
     ) {

@@ -214,14 +214,12 @@ dependencies {
     implementation(project(":platform:mcp-host"))
     implementation(project(":plugin-sdk:plugin-host"))
 
-    // ── 浏览器库（拆库 E1 迁移期 composite build）──────────────────────────
-    // 从本仓库抽出的 apex-browser-kit（兄弟目录 includeBuild 时自动替换为本地构建；
-    // 无本地目录时走远端坐标 —— E3 GitHub Packages 发布后生效）。
-    // BrowserAgentTools（browser_* 工具协议，留在 app）消费这三层：
-    //   core（DomParser 剪枝）+ engine（BrowserEngine 自动化）+ chrome（Overlay 浮窗）。
-    implementation(libs.browser.core)
-    implementation(libs.browser.engine)
-    implementation(libs.browser.chrome)
+    // ── 浏览器自动化大功能（v1.5.0 内置化）───────────────────────────────
+    // :platform:browser-agent 以 api 传递 apex-browser-kit 三层坐标
+    // （core/engine/chrome），app 仍直接消费 BrowserEngine / BrowserTracer /
+    // BrowserOverlay / ApexChromeWiring 类型（ApexCoreService / CyberNeonBallManager /
+    // BrowserScreen）；BrowserAgentTools 与库 DI 接线（BrowserKitModule）在该模块内。
+    implementation(project(":platform:browser-agent"))
 
     // Compose
     implementation(platform(libs.compose.bom))
@@ -280,13 +278,12 @@ dependencies {
 
     // 赛博霓虹悬浮球：全局低侵入 WindowManager 管理（JitPack，已做仓库过滤+版本锁定）
     implementation(libs.easyfloat)
-    // Liquid Glass UI System 底层引擎 —— io.github.kyant0:backdrop 1.0.6（Maven Central，
-    // Apache-2.0；上游 Kyant0/AndroidLiquidGlass）。POM 以 kotlin-stdlib 2.3.10 +
-    // Compose 1.10.3 + shapes 1.2.0 构建发布，与本仓 Kotlin 2.3.21 / BOM 2026.02.00
-    // 精确配套 —— 内容完整覆盖原 vendored 模块 + PR #364 的彩色 DefaultHighlight +
-    // Lens RoundedRectangularShape（shapes 传递依赖）。包名 com.kyant.backdrop 源兼容，
-    // 消费层：ui/glass 包（业务层经 Glass 组件 API 访问）。
-    implementation(libs.backdrop)
+    // Liquid Glass UI System 底层引擎 —— vendored kyant0/AndroidLiquidGlass（上游
+    // tag 1.0.0 血统 + diag-20261011 热修 + PR #364 彩色 DefaultHighlight，Apache-2.0）。
+    // 工具链已可消费 Maven 线（1.0.6 与本仓构建矩阵精确配套），但上游 1.0.6 二进制
+    // 不含 isAttached 守卫与 ShapeProvider 值语义两项热修 —— 保留 vendored，
+    // 消费层：ui/glass 包（业务层经 Glass 组件 API 访问，vendor/backdrop/README.md）。
+    implementation(project(":vendor:backdrop"))
     // Vico 开源图表库（稳定线 1.13.1）—— 任务历史页「近 7 日任务量」柱状图 +
     // 记忆页类型分布；只引 compose 核心（主题色手动映射，不引 m2/m3 主题模块）
     implementation(libs.vico.compose)

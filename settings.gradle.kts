@@ -58,6 +58,14 @@ when {
 // 主APK
 include(":app")
 
+// Liquid Glass 底层引擎 —— vendored kyant0/AndroidLiquidGlass（上游 tag 1.0.0
+// 血统 + 本仓 diag-20261011 热修 + PR #364 彩色 DefaultHighlight，Apache-2.0）。
+// 工具链（Kotlin 2.3.21 / BOM 2026.02.00）已具备消费 Maven 线
+// io.github.kyant0:backdrop 的能力，但上游 1.0.6 二进制不含 diag-20261011
+// 两项 internal 级热修 —— 去 vendored 化在 PR #362 合并时显式回退，
+// 详见 vendor/backdrop/README.md。
+include(":vendor:backdrop")
+
 // 核心引擎（纯Kotlin JVM，零Android依赖）
 include(":core:agent-engine")
 include(":core:llm-adapter")
@@ -78,6 +86,8 @@ include(":platform:persistence")
 include(":platform:terminal")
 include(":platform:cs-mem")
 include(":platform:code-workspace")
+// 浏览器自动化大功能：browser_* 工具协议 + apex-browser-kit 库 DI 接线
+include(":platform:browser-agent")
 
 // 逆向 MCP Host（#173）：手机作为 MCP Server，PC 端 AI 经 streamable HTTP 控制手机
 include(":platform:mcp-host")
@@ -99,5 +109,3 @@ include(":plugin-sdk:plugin-host")
 
 // 插件APK
 include(":plugins:plugin-workflow")
-// 网页自动化插件：声明并分发 browser_* 工具（执行逻辑经 IApexPluginHost 回宿主 BrowserEngine）
-include(":plugins:plugin-web-automation")

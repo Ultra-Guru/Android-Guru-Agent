@@ -8,7 +8,7 @@
 | 1 | 模型不会主动调用命令 | 系统提示词被动措辞；BUILD 模式鼓励"少调工具"；无已连接服务状态 | Tool-Use Policy 段 + Connected Services 段 + BUILD 模式重写 |
 | 2 | 工具只有几个能用 | PluginManager.registerPluginTools 是 TODO（插件工具从未注册）；web_search 依赖单一 DDG 抓取常失败；GitHub 未连接时错误文案不可行动 | 插件工具真实注册 + web_search 三端点容错 + GitHub 错误引导 |
 | 3 | 不会使用模型内置的网络搜索 | StreamingOpenAiClient 不发送任何原生搜索参数；无配置字段；不解析引用 | WebSearchMode 按 Provider 分支注入 + 引用解析 + 会话开关贯通 |
-| 4 | 网页自动化要插件化；连接器要加微信/飞书/Telegram；GitHub 连接没用 | AIDL 无宿主回调通道；连接器只是数据壳；GitHub 连接状态对模型不可见 | IApexPluginHost 宿主桥 + plugin-web-automation + ConnectorMessenger/工具 + GitHub 状态注入 |
+| 4 | 网页自动化要插件化；连接器要加微信/飞书/Telegram；GitHub 连接没用 | AIDL 无宿主回调通道；连接器只是数据壳；GitHub 连接状态对模型不可见 | IApexPluginHost 宿主桥 + 网页自动化插件（v1.5.0 起退役并内置化）+ ConnectorMessenger/工具 + GitHub 状态注入 |
 
 ---
 
@@ -126,15 +126,19 @@ onServiceConnected → attachHost(hostBinder) → getToolsJson() → 解析
 降级安全网：插件工具与宿主内置 browser_* 同 id（REPLACE 覆盖），直接 unregister
 会把工具位挖空；HostFallbackTool 保证"插件卸载后工具依旧可用"。
 
-### 4.3 plugin-web-automation（新模块）
+### 4.3 网页自动化插件（历史形态，v1.5.0 起退役内置化）
 
-- 独立 APK（`com.apex.agent.plugin.webautomation`），15 个 browser_* 工具描述符
+- 独立插件 APK，15 个 browser_* 工具描述符
   （navigate/snapshot/click/input/select/toggle/scroll/screenshot/show/fileUpload/
   dateInput/debugDump/contextSummary/networkLog/downloadList）
 - 插件声明与分发工具清单；执行经宿主桥回到 BrowserEngine（WebView 引擎活在
   宿主进程，插件是"工具层"——与 operit 包模型同构）
 - `ApexCoreService` 启动时自动发现并加载已安装插件（安装即生效）
 - 未安装插件时宿主内置注册兜底（ToolModule 仍注册 BrowserAgentTools）
+- **v1.5.0 退役**：清单漂移（宿主内置 24 工具 vs 插件声明 15）+ 双源维护 +
+  IPC 绕行无增益 → 浏览器自动化改为宿主内置大功能（:platform:browser-agent），
+  插件壳删除，PluginManager 对旧插件 id 拦截并引导卸载（详见
+  docs/web-browser-automation-final.md 末章）
 
 ---
 

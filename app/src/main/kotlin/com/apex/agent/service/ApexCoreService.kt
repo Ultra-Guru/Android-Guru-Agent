@@ -40,7 +40,7 @@ class ApexCoreService : LifecycleService() {
     @Inject
     lateinit var browserEngine: BrowserEngine
 
-    // 插件管理器：启动时自动发现并加载已安装插件（如 plugin-web-automation），
+    // 插件管理器：启动时自动发现并加载已安装插件（如 plugin-workflow），
     // 其工具随绑定回调注册进 ToolRegistry —— "安装即生效"，不再要求用户去
     // 市场页手动加载一次。未安装插件时这里是空操作（discovery 无匹配）。
     @Inject

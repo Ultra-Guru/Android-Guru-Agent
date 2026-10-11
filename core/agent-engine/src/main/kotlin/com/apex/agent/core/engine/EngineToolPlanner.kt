@@ -205,6 +205,24 @@ internal object EngineToolPlanner {
     }
 
     /**
+     * diag-20261011：判定异常是否为「tool_calls 配对类 400」——报错文案形如
+     * "An assistant message with 'tool_calls' must be followed by tool
+     * messages responding to each 'tool_call_id'. (insufficient tool
+     * messages following tool_calls message)"。
+     *
+     * 这是**消息历史结构错误**，不是 tools 载荷被拒：降级（砍工具清单/去
+     * tool_choice）改不了消息序列，重试必然同样失败，只会烧掉两级降级并
+     * 掩盖真错。归为非工具类 → 由 DanglingToolCallRepair 归一化历史 +
+     * 配对自愈重试（每任务一次）兜底。
+     */
+    fun isDanglingPairRejection(e: Throwable): Boolean {
+        val msg = (e.message ?: "").lowercase()
+        return msg.contains("must be followed by tool") ||
+            msg.contains("tool messages responding to each") ||
+            msg.contains("insufficient tool messages following")
+    }
+
+    /**
      * 判定异常是否与工具负载相关（降级重试的前置条件）。
      *
      * 覆盖：①模型/网关拒绝带 tools 请求的典型报错文案（函数名/schema/
@@ -219,21 +237,12 @@ internal object EngineToolPlanner {
      * 401/403（鉴权）始终排除。
      */
     fun isToolsRelatedRejection(e: Throwable): Boolean {
-        val msg = (e.message ?: "").lowercase()
-        // 历史配对类 400（诊断包 2026-10-07 crash 复盘）：报错文案形如
-        // "An assistant message with 'tool_calls' must be followed by tool
-        // messages responding to each 'tool_call_id'. (insufficient tool
-        // messages following tool_calls message)" —— 这是**消息历史结构
-        // 错误**，不是 tools 载荷被拒：降级（砍工具清单/去 tool_choice）
-        // 改不了消息序列，重试必然同样失败，只会烧掉两级降级并掩盖真错。
-        // 归为非工具类 → 直接上抛真实错误（修复由 DanglingToolCallRepair
-        // 在构建请求前完成，正常流程不应再见到此报错）。
-        if (msg.contains("must be followed by tool") ||
-            msg.contains("tool messages responding to each") ||
-            msg.contains("insufficient tool messages following")
-        ) {
+        // 历史配对类 400（诊断包 2026-10-07 crash 复盘；判定提取见
+        // [isDanglingPairRejection]）：非工具载荷问题，不降级。
+        if (isDanglingPairRejection(e)) {
             return false
         }
+        val msg = (e.message ?: "").lowercase()
         val msgHitsToolKeyword = TOOLS_REJECTION_KEYWORDS.any { msg.contains(it) }
         if (e is LlmException.Http) {
             // 413（载荷超限）：报错体常为空 —— 保留「降级探测」语义（去掉最大

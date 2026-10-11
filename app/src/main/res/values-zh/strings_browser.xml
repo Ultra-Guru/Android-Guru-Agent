@@ -1,7 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 浏览器浮层字符串（中文）—— 英文默认在 values/strings_browser.xml；
+<!-- 浏览器字符串（中文）—— 英文默认在 values/strings_browser.xml；
      语言切换经 LanguageManager + MainActivity attachBaseContext/recreate 生效。 -->
 <resources>
     <!-- 长按悬浮球结束浏览器会话的 Toast -->
     <string name="browser_session_released">已结束浏览器会话，悬浮球已收起</string>
+
+    <!-- ═══ 浏览器大功能页（v1.5.0 一级入口，Compose）═══ -->
+    <!-- 页头 -->
+    <string name="browser_screen_title">浏览器自动化</string>
+    <string name="browser_screen_subtitle">会话状态、标签页与最近自动化动作</string>
+    <string name="browser_screen_refresh">刷新</string>
+    <!-- 会话状态卡 -->
+    <string name="browser_screen_session_title">会话状态</string>
+    <string name="browser_screen_state_hidden">空闲</string>
+    <string name="browser_screen_state_agent_driving">Agent 驾驶中</string>
+    <string name="browser_screen_state_waiting_human">等待人工操作</string>
+    <string name="browser_screen_state_recovering">恢复中</string>
+    <string name="browser_screen_state_hidden_desc">浏览器未在运行——在 Agent 对话里让它打开网页，或点下方「新建浏览器会话」。</string>
+    <string name="browser_screen_state_agent_driving_desc">Agent 正在自动浏览网页（导航/点击/输入）。悬浮球可唤起浮窗实时查看。</string>
+    <string name="browser_screen_state_waiting_human_desc">人工接管中：在浮窗里直接操作网页，Agent 工具暂时锁定；完成后点「交还 Agent」。</string>
+    <string name="browser_screen_state_recovering_desc">网页渲染进程崩溃，正在自动重建。</string>
+    <string name="browser_screen_page_none">尚未加载页面</string>
+    <!-- 标签列表 -->
+    <string name="browser_screen_tabs_title">标签页</string>
+    <string name="browser_screen_tabs_empty">暂无标签页</string>
+    <string name="browser_screen_tab_untitled">（无标题）</string>
+    <!-- 最近自动化动作 -->
+    <string name="browser_screen_actions_title">最近自动化动作</string>
+    <string name="browser_screen_actions_empty">暂无自动化动作——在 Agent 对话里说「打开 example.com」试试</string>
+    <string name="browser_screen_duration_ms">%1$d 毫秒</string>
+    <!-- 操作按钮 -->
+    <string name="browser_screen_new_session">新建浏览器会话</string>
+    <string name="browser_screen_end_session">结束会话</string>
+    <string name="browser_screen_take_over">人工接管</string>
+    <string name="browser_screen_hand_back">交还 Agent</string>
+    <!-- 底部说明卡 -->
+    <string name="browser_screen_builtin_title">浏览器自动化已内置</string>
+    <string name="browser_screen_builtin_desc">24 个 browser_* 工具随 App 内置（v1.5.0 起非插件）——在 Agent 对话中直接指挥它打开网页、点击、输入、截图。浏览器被使用后会出现悬浮球，点击可展开完整浮窗浏览器。</string>
 </resources>

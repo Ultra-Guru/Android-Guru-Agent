@@ -13,8 +13,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.BackdropEffectScope
 import com.kyant.backdrop.backdrops.emptyBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
@@ -90,6 +92,53 @@ fun TerminalGlassSurface(
         )
     }
 
+    // diag-20261011：drawBackdrop lambda 记忆化（同 GlassSurface —— 消除每
+    // 次重组的 update/invalidateDraw churn；显式带接收者类型保期望类型传播）。
+    val shapeBlock = remember(shape) { { shape } }
+    val effectsBlock: BackdropEffectScope.() -> Unit = remember(tier, canSample) {
+        {
+            if (canSample) {
+                blur(tier.blurRadius.toPx())
+                lens(
+                    refractionHeight = 8.dp.toPx(),
+                    refractionAmount = 14.dp.toPx()
+                )
+            }
+        }
+    }
+    val highlightBlock = remember(Unit) {
+        {
+            Highlight(
+                width = 0.8.dp,
+                blurRadius = 1.dp,
+                alpha = 0.45f,
+                style = HighlightStyle.Plain(
+                    color = Color.White.copy(alpha = 0.10f),
+                    blendMode = androidx.compose.ui.graphics.BlendMode.Plus
+                )
+            )
+        }
+    }
+    val innerShadowBlock = remember(Unit) {
+        {
+            InnerShadow(
+                radius = 6.dp,
+                offset = androidx.compose.ui.unit.DpOffset(0.dp, 3.dp),
+                color = Color.Black.copy(alpha = 0.40f),
+                alpha = 0.6f
+            )
+        }
+    }
+    val surfaceBlock: DrawScope.() -> Unit = remember(canSample, frostBrush) {
+        {
+            if (canSample) {
+                drawRect(TERMINAL_BASE.copy(alpha = TERMINAL_GLASS_ALPHA))
+            } else {
+                drawRect(frostBrush)
+            }
+        }
+    }
+
     Box(
         modifier = modifier
             .shadow(elevation = tier.elevation, shape = shape, clip = false)
@@ -100,43 +149,12 @@ fun TerminalGlassSurface(
             }
             .drawBackdrop(
                 backdrop = effectiveBackdrop,
-                shape = { shape },
-                effects = {
-                    if (canSample) {
-                        blur(tier.blurRadius.toPx())
-                        lens(
-                            refractionHeight = 8.dp.toPx(),
-                            refractionAmount = 14.dp.toPx()
-                        )
-                    }
-                },
-                highlight = {
-                    Highlight(
-                        width = 0.8.dp,
-                        blurRadius = 1.dp,
-                        alpha = 0.45f,
-                        style = HighlightStyle.Plain(
-                            color = Color.White.copy(alpha = 0.10f),
-                            blendMode = androidx.compose.ui.graphics.BlendMode.Plus
-                        )
-                    )
-                },
+                shape = shapeBlock,
+                effects = effectsBlock,
+                highlight = highlightBlock,
                 shadow = { null },
-                innerShadow = {
-                    InnerShadow(
-                        radius = 6.dp,
-                        offset = androidx.compose.ui.unit.DpOffset(0.dp, 3.dp),
-                        color = Color.Black.copy(alpha = 0.40f),
-                        alpha = 0.6f
-                    )
-                },
-                onDrawSurface = {
-                    if (canSample) {
-                        drawRect(TERMINAL_BASE.copy(alpha = TERMINAL_GLASS_ALPHA))
-                    } else {
-                        drawRect(frostBrush)
-                    }
-                }
+                innerShadow = innerShadowBlock,
+                onDrawSurface = surfaceBlock
             ),
         contentAlignment = Alignment.Center
     ) {

@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
+import com.apex.agent.core.llm.EndpointResolver
 import com.apex.agent.core.llm.ModelCapabilities
 import com.apex.agent.core.llm.ModelCapabilityHeuristics
 import com.apex.agent.core.llm.ModelProfile
@@ -424,7 +425,13 @@ internal fun ModelSetupCard(
                     Column {
                         Text(
                             if (baseUrl.isBlank()) stringResource(R.string.model_base_url_blank_hint)
-                            else stringResource(R.string.model_request_url_hint, baseUrl.trimEnd('/')),
+                            // 完全自定义预览：与客户端同一份归一化（EndpointResolver）——
+                            // 已填 /chat/completions 完整端点显示原样直发，否则显示追加后
+                            // 的真实请求地址，杜绝「提示显示 A、实际请求 B」。
+                            else stringResource(
+                                R.string.model_request_url_hint,
+                                EndpointResolver.chatCompletions(baseUrl)
+                            ),
                             style = MaterialTheme.typography.labelSmall
                         )
                         if (urlDeviated) {

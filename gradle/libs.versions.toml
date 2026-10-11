@@ -41,15 +41,16 @@ junit = "4.13.2"
 room = "2.8.5"
 # 赛博霓虹悬浮球（JitPack；仅允许该 group 走 jitpack 仓库，版本固定避免动态解析）
 easyfloat = "2.0.4"
-# Liquid Glass 底层：Maven Central 坐标 io.github.kyant0:backdrop（上游
-# Kyant0/AndroidLiquidGlass，Apache-2.0）。1.0.6 是 androidx Compose 生态的
-# 天花板版（2.x 已切 JetBrains Compose 坐标系）：POM 以 kotlin-stdlib 2.3.10 +
-# Compose 1.10.3 + shapes 1.2.0 构建发布，与本仓 Kotlin 2.3.21 / BOM 2026.02.00
-# 精确配套。内容完整覆盖原 vendored 模块 + PR #364 的彩色 DefaultHighlight
-#（上游 1.0.3 起）+ Lens RoundedRectangularShape（1.0.6，依赖 shapes）+
-# InverseLayerScope blendMode/colorFilter（Compose 1.9 起）。
-# 注意：2.0.x 需 Kotlin 2.4 + JetBrains Compose 1.12 —— 升级前先核 POM 依赖矩阵。
-backdrop = "1.0.6"
+# Liquid Glass 底层：vendored 模块（vendor/backdrop，上游 Kyant0/AndroidLiquidGlass，
+# Apache-2.0；上游 tag 1.0.0 血统 + 本仓 diag-20261011 热修 + PR #364 彩色
+# DefaultHighlight）。工具链（Kotlin 2.3.21 / BOM 2026.02.00）已具备消费 Maven 线
+# io.github.kyant0:backdrop 的能力——1.0.6 与本仓构建矩阵精确配套（kotlin-stdlib
+# 2.3.10 + Compose 1.10.3 + shapes 1.2.0），PR #362 曾实施去 vendored 化
+#（f86fc28e / 39a93c3e），但在合并 main 的 diag-20261011 热修（b4648f22：
+# DrawBackdropNode isAttached 守卫 / ShapeProvider 值语义 equals）时显式回退
+#——上游 1.0.6 二进制不含这两项 internal 级补丁，直接换 Maven 会回退
+# detached-remeasure 崩溃修复与 draw 失效风暴修复。待上游吸收后一行切回
+# Maven 坐标。注意：2.0.x 需 Kotlin 2.4 + JetBrains Compose 1.12。
 # Lucide 图标集（composablehorizons/compose-icons, MIT）。2.2.1 以 Kotlin 2.2.21 +
 # foundation 1.9.3 构建 —— Kotlin 2.3.21 消费端向后兼容；当前仓库代码零处使用
 # IconsLucide（仅 McpSoSource 抓取的网页 CSS class 字符串撞名），无 API 迁移面。
@@ -127,10 +128,10 @@ security-crypto = { group = "androidx.security", name = "security-crypto", versi
 # 赛博霓虹悬浮球（JitPack 发布，坐标 group 为 com.github.princekin-f）
 easyfloat = { group = "com.github.princekin-f", name = "EasyFloat", version.ref = "easyfloat" }
 
-# Liquid Glass 底层引擎（Maven Central）—— 全仓玻璃渲染统一走 kyant0 backdrop
-#（blur / lens 折射 / vibrancy；原 Haze 与 Cloudy 已在液态玻璃统一迁移中移除）。
-# 唯一消费层：app 的 ui/glass 包（GlassSurface / TerminalGlass 单点集成）。
-backdrop = { group = "io.github.kyant0", name = "backdrop", version.ref = "backdrop" }
+# Liquid Glass 底层引擎：vendored（vendor/backdrop 模块，无 Maven 坐标）——
+# 全仓玻璃渲染统一走 kyant backdrop（blur / lens 折射 / vibrancy；原 Haze 与
+# Cloudy 已在液态玻璃统一迁移中移除）。唯一消费层：app 的 ui/glass 包
+#（GlassSurface / TerminalGlass 单点集成）。回退原因见 [versions] backdrop 注释。
 
 # Lucide 图标集（Maven Central，com.composables）—— 斜杠菜单分类图标
 lucide-icons = { group = "com.composables", name = "icons-lucide-android", version.ref = "lucide-icons" }
