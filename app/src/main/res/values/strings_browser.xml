@@ -29,6 +29,11 @@
     <string name="browser_screen_tabs_title">Tabs</string>
     <string name="browser_screen_tabs_empty">No tabs yet</string>
     <string name="browser_screen_tab_untitled">(untitled)</string>
+    <!-- 标签可操作（v1.5 UX 增强：点击切换 / 尾部关闭 / 失败反馈） -->
+    <string name="browser_screen_cd_switch_tab">Switch to tab #%1$d</string>
+    <string name="browser_screen_cd_close_tab">Close tab #%1$d</string>
+    <string name="browser_screen_switch_failed">Failed to switch tab; try again later</string>
+    <string name="browser_screen_close_failed">Failed to close tab; try again later</string>
     <!-- 最近自动化动作 -->
     <string name="browser_screen_actions_title">Recent automation actions</string>
     <string name="browser_screen_actions_empty">No automation yet — ask the Agent in chat to open a page</string>
