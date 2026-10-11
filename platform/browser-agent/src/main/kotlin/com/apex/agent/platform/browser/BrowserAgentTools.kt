@@ -15,7 +15,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import javax.inject.Inject
 
 /**
@@ -23,7 +25,9 @@ import javax.inject.Inject
  *
  * 2026 裁决最终形态（综合 Qwen 评审）：
  * - 全部工具以语义哈希 [ref]（如 "r_3k9f"）定位元素，替代旧顺序 [bid]。
- * - 每个工具执行前调用 [BrowserEngine.assertAgentControl] 守卫：人工接管期间返回 SYSTEM_LOCKED。
+ * - 每个工具执行前调用 [BrowserEngine.assertAgentControl] 守卫：人工接管期间返回
+ *   结构化 SYSTEM_LOCKED JSON（status/reason/hint，见 [guard]）——模型能稳定区分
+ *   「可等待恢复的锁定」与「永久失败」，不再靠裸前缀猜语义。
  * - 点击/输入/选择返回动作后验证摘要（URL 变化 / 新增元素数），供 Agent 做下一步决策。
  * - 新增 [select]/[toggle]/[show]/[dialog]/[file_upload] 补齐动作空间与显式握手。
  * - v1.1.0 高级动作空间接入（apex-browser-kit PR #3）：[pressKey]/[hover]/[drag]
@@ -71,12 +75,21 @@ class BrowserAgentTools @Inject constructor(
         else null
     }
 
-    /** 守卫：人工接管期间拒绝执行，返回友好锁定提示 */
+    /**
+     * 守卫：人工接管期间拒绝执行。返回结构化 JSON（status=SYSTEM_LOCKED）——
+     * reason 为引擎锁定原因原文，hint 给 Agent 可执行指引（等待 browser_show
+     * 展开确认人类完成 / 先做其他任务稍后重试）。结构化返回让模型能稳定区分
+     * 「可等待恢复的锁定」与「永久失败」，不再靠裸文本前缀猜语义。
+     */
     private fun guard(engine: BrowserEngine): String? = try {
         engine.assertAgentControl()
         null
     } catch (e: BrowserEngine.HandoffLockedException) {
-        "SYSTEM_LOCKED: ${e.message}"
+        buildJsonObject {
+            put("status", "SYSTEM_LOCKED")
+            put("reason", e.message ?: "human handoff in progress")
+            put("hint", "用户正在浮窗中人工操作，自动化工具已锁定。请等待 browser_show 展开确认用户完成，或改做其他任务，稍后重试。")
+        }.toString()
     }
 
     /** 跳转到 URL（支持 wait_for 元素等待 + 超时兜底） */
@@ -359,7 +372,8 @@ class BrowserAgentTools @Inject constructor(
         override val id = "browser_show"
         override val name = "browser_show"
         override val description =
-            "展开内置浏览器浮窗，进入人工接管模式（用于登录/过验证码）。人类完成后应点击浮窗上的「我已完成操作」交还 Agent。expand=false 收起浮窗。"
+            "展开内置浏览器浮窗，进入人工接管模式（用于登录/过验证码）。人类完成后应点击浮窗上的「我已完成操作」交还 Agent。expand=false 收起浮窗。" +
+                "接管期间全部 browser_* 自动化工具返回 SYSTEM_LOCKED（结构化 JSON：status/reason/hint）——这是可等待恢复的锁定，不是失败；交还后自动解锁。"
         override val parametersSchema = """{
             "type":"object",
             "properties":{"expand":{"type":"boolean","description":"true 展开并进入接管，false 收起，默认 true"}}

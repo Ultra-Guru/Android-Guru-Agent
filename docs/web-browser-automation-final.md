@@ -124,7 +124,7 @@ Operit 的网页自动化 = 内置 `WebView` + 把渲染后 DOM 精简成「带*
 - 新增 `BrowserSessionState` 枚举：`HIDDEN` / `AGENT_DRIVING` / `WAITING_HUMAN` / `HANDOFF_COMPLETE`。
 - `BrowserEngine`：`enterHandoffMode()` / `completeHandoff()` / `assertAgentControl()`（抛 `HandoffLockedException`）。
 - `BrowserOverlay`：`WAITING_HUMAN` 态常驻「我已完成操作」按钮；`AGENT_DRIVING` 态半透明遮罩防人类误触；地址栏/前进后退在 `WAITING_HUMAN` 隐藏。
-- 所有 `BrowserAgentTools` 执行前调用 `assertAgentControl()`，锁定期返回友好 `SYSTEM_LOCKED` 提示。
+- 所有 `BrowserAgentTools` 执行前调用 `assertAgentControl()`，锁定期返回结构化 `SYSTEM_LOCKED` JSON（`status`/`reason`/`hint`）——模型能稳定区分「可等待恢复的锁定」与「永久失败」。
 - `browser_show` 工具：展开浮窗并 `enterHandoffMode()`；人类点完成后 `completeHandoff()` + 自动 `snapshot`。
 
 ### [P1] Token 预算与剪枝测试

@@ -2,6 +2,7 @@ package com.apex.agent.ui.screen.browser
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Public
@@ -40,6 +42,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
+import com.apex.agent.ui.component.FeedbackSeverity
+import com.apex.agent.ui.component.LocalFeedbackController
 import com.apex.agent.ui.glass.GlassButton
 import com.apex.agent.ui.glass.GlassCard
 import com.apex.agent.ui.glass.GlassIconButton
@@ -56,16 +60,35 @@ import com.apex.browser.engine.BrowserTracer
  *
  * 浏览器自动化已内置（24 个 browser_* 工具，Agent 对话中直接指挥）；本页是
  * 人侧的观测/干预面板：会话状态卡（显式握手状态机的人话解释 + 当前页面）→
- * 标签列表（[BrowserEngine.tabsSnapshot]）→ 最近自动化动作（[BrowserTracer.recent]）
- * → 人工操作（新建会话 / 结束会话 / 人工接管 / 交还 Agent，均为引擎 suspend API）
- * → 底部内置说明卡。悬浮球与浮窗浏览器入口见说明卡。
+ * 标签列表（[BrowserEngine.tabsSnapshot]，可点切/可关闭）→ 最近自动化动作
+ * （[BrowserTracer.recent]，AGENT_DRIVING 时 ViewModel 1.5s 实时轮询滚动）→
+ * 人工操作（新建会话 / 结束会话 / 人工接管 / 交还 Agent，均为引擎 suspend API）
+ * → 底部内置说明卡。悬浮球与浮窗浏览器入口见说明卡。动作失败经
+ * [LocalFeedbackController] snackbar 反馈（不静默）。
  */
 @Composable
 fun BrowserScreen(viewModel: BrowserViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val actionError by viewModel.actionError.collectAsStateWithLifecycle()
+    val feedback = LocalFeedbackController.current
 
-    // 进入页面拉一次当前快照（此后由引擎状态回调驱动；trace 动作列表随状态变更顺带刷新）
+    // 进入页面拉一次当前快照（此后由引擎状态回调 + 驾驶态轮询驱动）
     LaunchedEffect(Unit) { viewModel.refresh() }
+
+    // 动作失败反馈：一次性事件（snackbar 展示后消费，旋转/重组不重复弹）。
+    // 文案在组合内预取（LaunchedEffect 体内非组合上下文，不调 stringResource）。
+    val switchFailMsg = stringResource(R.string.browser_screen_switch_failed)
+    val closeFailMsg = stringResource(R.string.browser_screen_close_failed)
+    LaunchedEffect(actionError) {
+        when (actionError) {
+            BrowserViewModel.BrowserActionError.SWITCH_TAB ->
+                feedback.show(switchFailMsg, FeedbackSeverity.ERROR)
+            BrowserViewModel.BrowserActionError.CLOSE_TAB ->
+                feedback.show(closeFailMsg, FeedbackSeverity.ERROR)
+            null -> Unit
+        }
+        viewModel.consumeActionError()
+    }
 
     Column(
         modifier = Modifier
@@ -96,7 +119,11 @@ fun BrowserScreen(viewModel: BrowserViewModel = hiltViewModel()) {
         }
 
         SessionCard(state)
-        TabsCard(state.tabs)
+        TabsCard(
+            tabs = state.tabs,
+            onSwitchTab = viewModel::switchTab,
+            onCloseTab = viewModel::closeTab,
+        )
         ActionsCard(state.actions)
         OperationsCard(
             state = state.state,
@@ -164,9 +191,17 @@ private fun SessionCard(state: BrowserViewModel.BrowserUiState) {
     }
 }
 
-/** 标签列表卡：tabsSnapshot（index/url/title），空态「暂无标签页」。 */
+/**
+ * 标签列表卡：tabsSnapshot（id/url/title），每项可操作——点击整块切换激活
+ * 标签（[onSwitchTab]），尾部关闭按钮销毁该标签（[onCloseTab]）；空态「暂无标签页」。
+ * 触达性：切换用 clickable 的 onClickLabel、关闭用 IconButton contentDescription。
+ */
 @Composable
-private fun TabsCard(tabs: List<Triple<Int, String, String>>) {
+private fun TabsCard(
+    tabs: List<Triple<Int, String, String>>,
+    onSwitchTab: (Int) -> Unit,
+    onCloseTab: (Int) -> Unit,
+) {
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             CardHeader(icon = Icons.Outlined.Tab, title = stringResource(R.string.browser_screen_tabs_title))
@@ -174,22 +209,35 @@ private fun TabsCard(tabs: List<Triple<Int, String, String>>) {
                 EmptyHint(stringResource(R.string.browser_screen_tabs_empty))
             } else {
                 tabs.forEach { (id, url, title) ->
-                    Column {
-                        Text(
-                            "#$id · " + (title.ifBlank { stringResource(R.string.browser_screen_tab_untitled) }),
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (url.isNotBlank()) {
+                    val switchCd = stringResource(R.string.browser_screen_cd_switch_tab, id)
+                    val closeCd = stringResource(R.string.browser_screen_cd_close_tab, id)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(onClickLabel = switchCd) { onSwitchTab(id) }
+                        ) {
                             Text(
-                                url,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                "#$id · " + (title.ifBlank { stringResource(R.string.browser_screen_tab_untitled) }),
+                                style = MaterialTheme.typography.bodyMedium,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            if (url.isNotBlank()) {
+                                Text(
+                                    url,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
+                        GlassIconButton(
+                            icon = Icons.Outlined.Close,
+                            contentDescription = closeCd,
+                            onClick = { onCloseTab(id) },
+                        )
                     }
                 }
             }
@@ -197,7 +245,9 @@ private fun TabsCard(tabs: List<Triple<Int, String, String>>) {
     }
 }
 
-/** 最近自动化动作卡：tracer.recent(10) —— 工具 / 结果摘要 / 耗时 / 状态。 */
+/** 最近自动化动作卡：tracer.recent(10) —— 工具 / 结果摘要 / 耗时 / 状态。
+ *  AGENT_DRIVING 期间由 ViewModel 1.5s 轮询驱动，动作实时滚动；非驾驶态
+ *  静止（状态回调仍会顺带刷新）。 */
 @Composable
 private fun ActionsCard(actions: List<BrowserTracer.Entry>) {
     GlassCard(modifier = Modifier.fillMaxWidth()) {

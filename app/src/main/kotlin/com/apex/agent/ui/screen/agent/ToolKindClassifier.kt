@@ -19,8 +19,11 @@ private val SERVER_FIELD_REGEX = Regex("""(?i)"server"\s*:\s*"([^"]+)"""")
  * - `mcp_call` / `mcp_call_<server>_<tool>` → MCP，并从参数中解析 server；
  * - **元数据优先**（v2）：注册表能查到元数据时按类别直接映射
  *   （GITHUB→GitHub（官方 mark）、http_request→连接器、SKILL/PLUGIN/MCP 同名、
- *   WEB→搜索/抓取）——新工具零改动获得正确分类，不再依赖 id 前缀启发式；
+ *   WEB→搜索/抓取、BROWSER→浏览器自动化）——新工具零改动获得正确分类，
+ *   不再依赖 id 前缀启发式；
  * - `web_search` → 联网搜索；`web_fetch` → 网页抓取；
+ * - `browser_` 前缀 → 浏览器自动化（内置大功能，v1.5.0 起非插件；
+ *   元数据缺位时的前缀兜底）；
  * - `plugin*` 前缀 → 插件（plugin-sdk 经 ToolRegistry 注册的工具）；
  * - `github_*` 前缀 → GitHub（官方 mark + 品牌灰，与通用连接器区分）；
  * - `connector*` / `http_request` → 连接器（连接外部服务的 API 调用）；
@@ -47,6 +50,7 @@ fun classifyTool(
             ToolCategory.GITHUB -> ToolKind.GITHUB
             ToolCategory.SKILL -> ToolKind.SKILL
             ToolCategory.PLUGIN -> ToolKind.PLUGIN
+            ToolCategory.BROWSER -> ToolKind.BROWSER
             ToolCategory.WEB -> when (toolName) {
                 "web_search" -> ToolKind.WEB_SEARCH
                 "web_fetch" -> ToolKind.WEB_FETCH
@@ -59,6 +63,9 @@ fun classifyTool(
     }
     if (toolName == "web_search") return ToolKind.WEB_SEARCH to null
     if (toolName == "web_fetch") return ToolKind.WEB_FETCH to null
+    // 浏览器自动化（内置 24 个 browser_* 工具）：前缀兜底 —— 元数据未命中
+    // （注册表尚未装载 / 老会话回放）时也能拿到正确徽章。
+    if (toolName.startsWith("browser_")) return ToolKind.BROWSER to null
     if (toolName.startsWith("plugin")) return ToolKind.PLUGIN to null
     // github_* 前缀 → GITHUB（官方 mark 展示，与通用连接器区分）
     if (toolName.startsWith("github_")) return ToolKind.GITHUB to null

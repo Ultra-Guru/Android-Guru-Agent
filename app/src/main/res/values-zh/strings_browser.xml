@@ -25,6 +25,11 @@
     <string name="browser_screen_tabs_title">标签页</string>
     <string name="browser_screen_tabs_empty">暂无标签页</string>
     <string name="browser_screen_tab_untitled">（无标题）</string>
+    <!-- 标签可操作（v1.5 UX 增强：点击切换 / 尾部关闭 / 失败反馈） -->
+    <string name="browser_screen_cd_switch_tab">切换到标签页 #%1$d</string>
+    <string name="browser_screen_cd_close_tab">关闭标签页 #%1$d</string>
+    <string name="browser_screen_switch_failed">切换标签页失败，请稍后重试</string>
+    <string name="browser_screen_close_failed">关闭标签页失败，请稍后重试</string>
     <!-- 最近自动化动作 -->
     <string name="browser_screen_actions_title">最近自动化动作</string>
     <string name="browser_screen_actions_empty">暂无自动化动作——在 Agent 对话里说「打开 example.com」试试</string>

@@ -121,8 +121,14 @@
     <string name="chat_toolkind_github">GitHub</string>
     <string name="chat_toolkind_web_search">联网搜索</string>
     <string name="chat_toolkind_web_fetch">网页抓取</string>
+    <string name="chat_toolkind_browser">浏览器</string>
     <string name="chat_toolkind_connector">连接器</string>
     <string name="chat_toolkind_plugin">插件</string>
+    <!-- 浏览器截图渲染（BrowserToolCards.kt） -->
+    <string name="chat_browser_screenshot_label">截图预览</string>
+    <string name="chat_browser_screenshot_size">%1$d × %2$d px</string>
+    <string name="chat_cd_enlarge_screenshot">放大截图</string>
+    <string name="chat_cd_close_screenshot">关闭截图</string>
     <string name="chat_status_done">完成</string>
     <string name="chat_status_failed">失败</string>
     <string name="chat_status_running">运行</string>

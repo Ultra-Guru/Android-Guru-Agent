@@ -43,7 +43,8 @@ object ToolTierPolicy {
      *
      * Selection criteria:
      * 1. Covers the agent's headline capabilities (ask / files / web /
-     *    terminal / memory / apps / device / MCP / skills / connectors);
+     *    terminal / memory / apps / device / MCP / skills / connectors /
+     *    browser automation);
      * 2. Each is individually useful without prior setup;
      * 3. Total schema payload stays ~20 KB — safe for every provider.
      */
@@ -65,6 +66,15 @@ object ToolTierPolicy {
 
         // ── web ──
         "web_search", "web_fetch", "http_request", "download_file",
+
+        // ── browser (内置浏览器自动化 v1.5.0) ──
+        // 一级大功能 ≠ 一级工具地位：24 个 browser_* 只有「Agent 零前置知识也
+        // 高频用到」的 5 个入口进 CORE（打开页面 → 看页面 → 点/填 → 读内容，
+        // 恰好覆盖一次网页任务的主干路径，schema 增量 ~2KB）；其余 19 个
+        // （select/scroll/截图/JS 逃生舱/Cookie 等长尾动作与可观测性工具）
+        // 留在 CATALOG 走 tool_search 渐进披露 —— 与 operit 渐进激活同款哲学。
+        "browser_navigate", "browser_snapshot", "browser_click",
+        "browser_input", "browser_extract_content",
 
         // ── terminal (agent-native PTY; dotted ids are provider-sanitised) ──
         // terminal.exec = one-shot structured execution（无需先建会话，

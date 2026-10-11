@@ -7,9 +7,14 @@ import com.apex.agent.core.logging.LogCategory
 import com.apex.browser.engine.BrowserEngine
 import com.apex.browser.engine.BrowserTracer
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -25,9 +30,19 @@ import javax.inject.Inject
  * CyberNeonBallManager 的订阅同款线程模型）——经 viewModelScope（Main.immediate）
  * 主线程化后连同标签快照 / trace 尾部一并推入 StateFlow；[onCleared] 注销回调。
  *
+ * 实时动作流（v1.5 UX 增强）：AGENT_DRIVING 期间以 [DRIVING_POLL_INTERVAL_MS]
+ * 周期轮询发布（tracer.recent + tabsSnapshot）——驾驶舱动作卡从「手动刷新」
+ * 变「实时滚动」；非驾驶态自动暂停（状态回调与手动刷新仍在，HIDDEN 无可轮）。
+ * 轮询经 uiState.state 的 distinctUntilChanged 驱动，publish 不改 state →
+ * 无自激循环。
+ *
  * 操作按钮走引擎 suspend API（newTab / releaseBrowser / enterHandoffMode /
- * completeHandoff）：引擎内部以 stateMutex 串行化，非法状态迁移是幂等空操作
- * （如 RECOVERING 期间不介入、非 WAITING_HUMAN 交还无效），UI 无需本地状态机。
+ * completeHandoff）与 chrome 层同款主线程 API（switchTab / closeTab）：
+ * 引擎内部以 stateMutex 串行化，非法状态迁移是幂等空操作（如 RECOVERING
+ * 期间不介入、非 WAITING_HUMAN 交还无效），UI 无需本地状态机。
+ *
+ * 失败反馈（v1.5 UX 增强）：动作失败不再静默——[actionError] 一次性事件流
+ * 暴露给 UI（LocalFeedbackController snackbar），AppLogger 照旧留痕。
  */
 @HiltViewModel
 class BrowserViewModel @Inject constructor(
@@ -45,8 +60,26 @@ class BrowserViewModel @Inject constructor(
         val actions: List<BrowserTracer.Entry> = emptyList(),
     )
 
+    /**
+     * 动作失败语义（UI 据此映射本地化文案；ViewModel 不持有资源上下文，
+     * i18n 留在 Compose 层取词）。
+     */
+    enum class BrowserActionError(val action: String) {
+        SWITCH_TAB("switchTab"),
+        CLOSE_TAB("closeTab"),
+    }
+
     private val _uiState = MutableStateFlow(BrowserUiState())
     val uiState: StateFlow<BrowserUiState> = _uiState.asStateFlow()
+
+    /** 一次性动作失败事件（UI 收集 → snackbar；展示后调 [consumeActionError] 清空）。 */
+    private val _actionError = MutableStateFlow<BrowserActionError?>(null)
+    val actionError: StateFlow<BrowserActionError?> = _actionError.asStateFlow()
+
+    /** 消费当前失败事件（防止旋转/重组重复弹同一条反馈）。 */
+    fun consumeActionError() {
+        _actionError.value = null
+    }
 
     /** 引擎状态订阅者：回调线程不确定（Agent 工具线程 / 主线程混杂）→ 主线程统一快照。 */
     private val callback = object : BrowserEngine.BrowserUiCallback {
@@ -59,8 +92,25 @@ class BrowserViewModel @Inject constructor(
         }
     }
 
+    /** AGENT_DRIVING 期间的实时轮询任务（状态离开驾驶态即被取消）。 */
+    private var drivingPollJob: Job? = null
+
     init {
         engine.addUiCallback(callback)
+        // 实时动作流驱动：state 变化（回调/刷新发布）→ 按需启停轮询。
+        viewModelScope.launch {
+            uiState.map { it.state }.distinctUntilChanged().collect { state ->
+                drivingPollJob?.cancel()
+                if (state == BrowserEngine.BrowserSessionState.AGENT_DRIVING) {
+                    drivingPollJob = launch {
+                        while (isActive) {
+                            delay(DRIVING_POLL_INTERVAL_MS)
+                            refresh()
+                        }
+                    }
+                }
+            }
+        }
     }
 
     override fun onCleared() {
@@ -98,14 +148,38 @@ class BrowserViewModel @Inject constructor(
         engine.completeHandoff()
     }
 
-    /** 统一动作出口：runCatching 兜底（异常不杀进程）+ 动作后即时刷新镜像。 */
-    private inline fun launchAction(action: String, crossinline block: suspend () -> Unit) {
+    /**
+     * 切换激活标签页（chrome 层 TabStrip 同款主线程路径）。
+     * 引擎返回 false = 标签已不存在（并发关闭竞态）→ 失败事件，不静默。
+     */
+    fun switchTab(id: Int) = launchAction("switchTab", BrowserActionError.SWITCH_TAB) {
+        check(engine.switchTab(id)) { "tab #$id not found" }
+    }
+
+    /**
+     * 关闭标签页并销毁其 WebView（关掉激活页时引擎自动回落首个标签）。
+     * 引擎返回 false = 标签已不存在 → 失败事件，不静默。
+     */
+    fun closeTab(id: Int) = launchAction("closeTab", BrowserActionError.CLOSE_TAB) {
+        check(engine.closeTab(id)) { "tab #$id not found" }
+    }
+
+    /**
+     * 统一动作出口：runCatching 兜底（异常不杀进程）+ 失败事件（[failure]
+     * 非空时暴露给 UI snackbar，AppLogger 照旧留痕）+ 动作后即时刷新镜像。
+     */
+    private inline fun launchAction(
+        action: String,
+        failure: BrowserActionError? = null,
+        crossinline block: suspend () -> Unit,
+    ) {
         viewModelScope.launch {
             runCatching { block() }
                 .onFailure {
                     AppLogger.instance.warn(
                         LogCategory.UI, TAG, "browser screen action '$action' failed: ${it.message}"
                     )
+                    if (failure != null) _actionError.value = failure
                 }
             refresh()
         }
@@ -130,5 +204,8 @@ class BrowserViewModel @Inject constructor(
 
     private companion object {
         const val TAG = "BrowserScreen"
+
+        /** AGENT_DRIVING 实时轮询周期：1.5s —— 动作卡滚动跟手且不打爆 trace 读。 */
+        const val DRIVING_POLL_INTERVAL_MS = 1_500L
     }
 }
