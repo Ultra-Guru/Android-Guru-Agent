@@ -189,6 +189,21 @@ fun MarketScreen(viewModel: MarketViewModel = hiltViewModel()) {
             onDismiss = viewModel::dismissPendingInstall
         )
     }
+
+    // ═══ GitHub 智能安装：多候选选择弹窗（技能集合 / MCP monorepo 仓库）═══
+    // 探测发现多个可装项（如 anthropics/skills 的 21 个技能、
+    // modelcontextprotocol/servers 的 7 台 server）时置入；单候选不弹直接装。
+    val githubCandidates = state.githubCandidates
+    if (githubCandidates.isNotEmpty()) {
+        GithubCandidatesPickDialog(
+            repoTitle = state.githubCandidatesRepo ?: "",
+            candidates = githubCandidates,
+            busy = state.busy,
+            onInstallOne = viewModel::installGithubCandidate,
+            onInstallAll = viewModel::installAllGithubCandidates,
+            onDismiss = viewModel::dismissGithubCandidates
+        )
+    }
 }
 
 /**

@@ -181,6 +181,10 @@ data class MarketUiState(
     val githubHits: List<MarketInstallManager.GitHubRepoHit> = emptyList(),
     val githubSearching: Boolean = false,
     val githubError: String? = null,
+    // GitHub 智能安装：多候选选择弹窗（技能集合 / MCP monorepo 仓库发现
+    // 多个可装项时非空；单候选不弹直接装）。关闭 = null。
+    val githubCandidates: List<MarketInstallManager.GithubRepoCandidate> = emptyList(),
+    val githubCandidatesRepo: String? = null,
     // Skills：ClawHub 技能仓库（源切换 + 列表/搜索/安装状态）
     val skillSource: SkillRepoSource = SkillRepoSource.LOCAL,
     val clawHubSkills: List<ClawHubSource.ClawHubSkillEntry> = emptyList(),
@@ -425,6 +429,13 @@ class MarketViewModel @Inject constructor(
                 githubHits = state.githubHits,
                 githubSearching = state.githubSearching,
                 githubError = state.githubError,
+                // GitHub 智能安装候选弹窗跨 refresh 保留（与 installPreview 同类
+                // 修复）：PickNeeded 置入候选后本方法会以 refresh() 收尾 ——
+                // 不保留的话快照新建的 UiState 把候选抹回空表，多候选弹窗
+                // 刚弹即被清除（用户视角「点了没反应」）；逐个挑选流程同样
+                // 依赖剩余候选跨 refresh 存活。
+                githubCandidates = state.githubCandidates,
+                githubCandidatesRepo = state.githubCandidatesRepo,
                 skillSource = state.skillSource,
                 clawHubSkills = state.clawHubSkills,
                 clawHubLoading = state.clawHubLoading,
@@ -800,14 +811,30 @@ class MarketViewModel @Inject constructor(
     fun installGithubRepo(fullName: String) = installFromRepoInput(fullName)
 
     /**
-     * 真实联网安装：接受 `owner/repo`、GitHub 链接、git@ 链接任一种写法。
-     * 走 raw.githubusercontent.com 取 manifest / SKILL.md —— 不再"点一下就假装装好了"。
+     * 真实联网智能安装：接受 `owner/repo`、GitHub 链接、git@ 链接任一种写法。
+     * 按内容类型自动路由（技能 / MCP server / 技能集合）：
+     * - 根技能形态 → 原路径直装（零行为回归）；
+     * - MCP 形态（server.json / .mcp.json / src monorepo，如
+     *   modelcontextprotocol/servers）→ RegistryMcpInstaller 决策树；
+     * - 技能集合（子目录 SKILL.md，如 anthropics/skills）→ 候选列表；
+     * 多候选时置入 githubCandidates 弹选择框，单候选直接装完。
      */
     fun installFromRepoInput(input: String) {
+        if (_uiState.value.busy) return
         viewModelScope.launch {
             _uiState.update { it.copy(busy = true) }
-            installManager.installSkillFromRepoInput(input).fold(
-                onSuccess = { message(it) },
+            installManager.installSmartFromGithub(input).fold(
+                onSuccess = { outcome ->
+                    when (outcome) {
+                        is MarketInstallManager.GithubInstallOutcome.Done -> message(outcome.message)
+                        is MarketInstallManager.GithubInstallOutcome.PickNeeded -> _uiState.update {
+                            it.copy(
+                                githubCandidates = outcome.candidates,
+                                githubCandidatesRepo = outcome.repoTitle
+                            )
+                        }
+                    }
+                },
                 onFailure = {
                     message(languageManager.getString(R.string.market_install_failed).format(it.message ?: ""))
                 }
@@ -816,6 +843,58 @@ class MarketViewModel @Inject constructor(
             refresh()
         }
     }
+
+    /** 安装单个 GitHub 候选（用户在候选列表点选）。 */
+    fun installGithubCandidate(candidate: MarketInstallManager.GithubRepoCandidate) {
+        if (_uiState.value.busy) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(busy = true) }
+            installManager.installGithubCandidate(candidate).fold(
+                onSuccess = { msg ->
+                    // 装完该项后从候选列表移除（支持逐个挑选）；列表清空
+                    // 时一并关弹窗
+                    _uiState.update { state ->
+                        val rest = state.githubCandidates.filterNot { it.key == candidate.key }
+                        if (rest.isEmpty()) {
+                            state.copy(githubCandidates = emptyList(), githubCandidatesRepo = null)
+                        } else {
+                            state.copy(githubCandidates = rest)
+                        }
+                    }
+                    message(msg)
+                },
+                onFailure = {
+                    message(languageManager.getString(R.string.market_install_failed).format(it.message ?: ""))
+                }
+            )
+            _uiState.update { it.copy(busy = false) }
+            refresh()
+        }
+    }
+
+    /** 一键安装全部 GitHub 候选（逐个顺序装，失败项点名不中断）。 */
+    fun installAllGithubCandidates() {
+        val candidates = _uiState.value.githubCandidates
+        if (candidates.isEmpty() || _uiState.value.busy) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(busy = true) }
+            installManager.installAllGithubCandidates(candidates).fold(
+                onSuccess = { msg ->
+                    _uiState.update { it.copy(githubCandidates = emptyList(), githubCandidatesRepo = null) }
+                    message(msg)
+                },
+                onFailure = {
+                    message(languageManager.getString(R.string.market_install_failed).format(it.message ?: ""))
+                }
+            )
+            _uiState.update { it.copy(busy = false) }
+            refresh()
+        }
+    }
+
+    /** 关闭 GitHub 候选选择弹窗（不安装任何内容）。 */
+    fun dismissGithubCandidates() =
+        _uiState.update { it.copy(githubCandidates = emptyList(), githubCandidatesRepo = null) }
 
     // ═══ Skills 页签：ClawHub 技能仓库 ═══
 

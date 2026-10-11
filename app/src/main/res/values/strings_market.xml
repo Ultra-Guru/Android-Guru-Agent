@@ -82,6 +82,8 @@
     <string name="market_mcp_header">MCP is not necessarily a server: the STDIO form is just a local command (e.g. npx -y @modelcontextprotocol/server-memory) that the App launches as a child process communicating over stdin/stdout. Added tool sources appear in the / menu once enabled (/mcp:&lt;name&gt;).</string>
     <string name="market_mcp_add_title">Add tool source</string>
     <string name="market_mcp_add_desc">Remote HTTP / SSE or local command STDIO, with apiKey support; connects automatically after adding.</string>
+    <string name="market_mcp_github_card_title">Install MCP from GitHub</string>
+    <string name="market_mcp_github_card_desc">Smart routing: root server.json / .mcp.json or src monorepo packages (e.g. modelcontextprotocol/servers) install via the registry decision tree (remote direct or sandboxed npm).</string>
     <string name="market_mcp_import_card_title">Import config</string>
     <string name="market_mcp_import_desc">Paste the community-standard MCP config JSON ({\"mcpServers\": \u2026}), supporting both command/args/env and url forms.</string>
     <string name="market_mcp_import_file_title">Import from local file</string>
@@ -195,11 +197,17 @@
     <string name="market_skill_json_title">Import Skill JSON</string>
     <string name="market_skill_json_label">Paste an apex-skill-v1 manifest JSON</string>
     <string name="market_url_download_install">Download &amp; install</string>
-    <string name="market_github_install_title">Install skill from GitHub</string>
+    <string name="market_github_install_title">Install from GitHub</string>
     <string name="market_github_input_label">owner/repo or repository link</string>
     <string name="market_github_input_hint">e.g. owner/repo or https://github.com/owner/repo</string>
-    <string name="market_github_install_body">Reads an apex-skill-v1 manifest (manifest.json / skill.json etc.) or a SKILL.md with name/description frontmatter from the default branch; plain repos (README only) get a clear error \u2014 no fake installs.</string>
+    <string name="market_github_install_body">Smart routing by content type: skills (root manifest or SKILL.md with frontmatter), MCP servers (root server.json / .mcp.json, or src sub-packages with mcpName \u2014 e.g. modelcontextprotocol/servers), or skill collections (sub-folder SKILL.md \u2014 e.g. anthropics/skills). Plain repos get a clear error \u2014 no fake installs.</string>
     <string name="market_github_fetch_install">Fetch &amp; install</string>
+    <string name="market_github_pick_title">Choose what to install</string>
+    <string name="market_github_pick_subtitle">%1$s \u2014 %2$d installable items found</string>
+    <string name="market_github_pick_kind_mcp">MCP</string>
+    <string name="market_github_pick_kind_skill">Skill</string>
+    <string name="market_github_pick_install_one">Install</string>
+    <string name="market_github_pick_install_all">Install all</string>
 
     <!-- ═══ Dialogs · Dependency graph ═══ -->
     <string name="market_depgraph_missing">\u26A0 %1$d missing dependencies:</string>

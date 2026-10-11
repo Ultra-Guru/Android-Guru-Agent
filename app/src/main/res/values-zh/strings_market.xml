@@ -82,6 +82,8 @@
     <string name="market_mcp_header">MCP 不一定是服务器：STDIO 型就是一条本地命令（如 npx -y @modelcontextprotocol/server-memory），由 App 拉起子进程通过 stdin/stdout 通信。添加的工具源启用后出现在 / 菜单（/mcp:&lt;名称&gt;）。</string>
     <string name="market_mcp_add_title">添加工具源</string>
     <string name="market_mcp_add_desc">远端 HTTP / SSE 或本地命令 STDIO，含 apiKey 支持；添加后自动尝试连接。</string>
+    <string name="market_mcp_github_card_title">从 GitHub 安装 MCP</string>
+    <string name="market_mcp_github_card_desc">智能路由：根 server.json / .mcp.json 或 src monorepo 形态（如 modelcontextprotocol/servers），经 Registry 决策树安装（远端直装或沙箱 npm 预装）。</string>
     <string name="market_mcp_import_card_title">导入配置</string>
     <string name="market_mcp_import_desc">粘贴社区通用 MCP 配置 JSON（{\"mcpServers\": \u2026}），支持 command/args/env 与 url 两种形态。</string>
     <string name="market_mcp_import_file_title">从本地文件导入</string>
@@ -195,11 +197,17 @@
     <string name="market_skill_json_title">导入 Skill JSON</string>
     <string name="market_skill_json_label">粘贴 apex-skill-v1 manifest JSON</string>
     <string name="market_url_download_install">下载并安装</string>
-    <string name="market_github_install_title">从 GitHub 安装技能</string>
+    <string name="market_github_install_title">从 GitHub 智能安装</string>
     <string name="market_github_input_label">owner/repo 或 仓库链接</string>
     <string name="market_github_input_hint">例如 owner/repo 或 https://github.com/owner/repo</string>
-    <string name="market_github_install_body">将读取仓库默认分支的 apex-skill-v1 manifest（manifest.json / skill.json 等）或含 name/description frontmatter 的 SKILL.md；普通仓库（仅 README）会明确报错，不会假安装。</string>
+    <string name="market_github_install_body">按内容类型智能路由：技能（根 manifest 或带 frontmatter 的 SKILL.md）、MCP server（根 server.json / .mcp.json，或 src 子包 mcpName 形态，如 modelcontextprotocol/servers）、技能集合（子目录 SKILL.md，如 anthropics/skills）；普通仓库（仅 README）会明确报错，不会假安装。</string>
     <string name="market_github_fetch_install">获取并安装</string>
+    <string name="market_github_pick_title">选择要安装的内容</string>
+    <string name="market_github_pick_subtitle">%1$s 发现 %2$d 个可安装项</string>
+    <string name="market_github_pick_kind_mcp">MCP</string>
+    <string name="market_github_pick_kind_skill">技能</string>
+    <string name="market_github_pick_install_one">安装</string>
+    <string name="market_github_pick_install_all">全部安装</string>
 
     <!-- ═══ 对话框 · 依赖图 ═══ -->
     <string name="market_depgraph_missing">⚠ 缺失依赖 %1$d 个：</string>
