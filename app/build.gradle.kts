@@ -14,7 +14,7 @@ plugins {
 
 android {
     namespace = "com.apex.agent"
-    compileSdk = 35
+    compileSdk = 36
 
     // ═══ 固定发布签名 keystore（v1.4.8 签名漂移根因修复）══════════════════════
     //
@@ -280,11 +280,12 @@ dependencies {
 
     // 赛博霓虹悬浮球：全局低侵入 WindowManager 管理（JitPack，已做仓库过滤+版本锁定）
     implementation(libs.easyfloat)
-    // Liquid Glass UI System 底层引擎 —— io.github.kyant0:backdrop 1.0.1（Maven Central，
-    // Apache-2.0；上游 Kyant0/AndroidLiquidGlass）。POM 以 kotlin-stdlib 2.2.21 +
-    // Compose 1.9.5 构建发布，与本仓工具链精确配套 —— 原 vendored vendor/backdrop
-    //（上游 tag 1.0.0）已整体移除，包名 com.kyant.backdrop 与公共 API 源兼容，
-    // 消费层仅 ui/glass 包（业务层经 Glass 组件 API 访问）。
+    // Liquid Glass UI System 底层引擎 —— io.github.kyant0:backdrop 1.0.6（Maven Central，
+    // Apache-2.0；上游 Kyant0/AndroidLiquidGlass）。POM 以 kotlin-stdlib 2.3.10 +
+    // Compose 1.10.3 + shapes 1.2.0 构建发布，与本仓 Kotlin 2.3.21 / BOM 2026.02.00
+    // 精确配套 —— 内容完整覆盖原 vendored 模块 + PR #364 的彩色 DefaultHighlight +
+    // Lens RoundedRectangularShape（shapes 传递依赖）。包名 com.kyant.backdrop 源兼容，
+    // 消费层：ui/glass 包（业务层经 Glass 组件 API 访问）。
     implementation(libs.backdrop)
     // Vico 开源图表库（稳定线 1.13.1）—— 任务历史页「近 7 日任务量」柱状图 +
     // 记忆页类型分布；只引 compose 核心（主题色手动映射，不引 m2/m3 主题模块）

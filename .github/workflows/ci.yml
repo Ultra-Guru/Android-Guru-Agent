@@ -38,12 +38,12 @@ jobs:
           path: |
             ~/kotlinc
             /tmp/apex-libs
-          key: kotlinc-2.2.21-libs-v1
+          key: kotlinc-2.3.21-libs-v1
 
       - name: Install Kotlin compiler
         run: |
           if [ ! -x "$HOME/kotlinc/bin/kotlinc" ]; then
-            curl -sL https://github.com/JetBrains/kotlin/releases/download/v2.2.21/kotlin-compiler-2.2.21.zip -o /tmp/kotlin.zip
+            curl -sL https://github.com/JetBrains/kotlin/releases/download/v2.3.21/kotlin-compiler-2.3.21.zip -o /tmp/kotlin.zip
             unzip -q /tmp/kotlin.zip -d $HOME/
           fi
           echo "$HOME/kotlinc/bin" >> $GITHUB_PATH
@@ -53,7 +53,7 @@ jobs:
           mkdir -p /tmp/apex-libs
           # Skip downloads when the cache hit already provisioned every jar.
           NEED_DL=0
-          for jar in kotlin-stdlib-2.2.21.jar \
+          for jar in kotlin-stdlib-2.3.21.jar \
                      kotlinx-coroutines-core-jvm-1.10.2.jar \
                      kotlinx-serialization-json-jvm-1.9.0.jar \
                      kotlinx-serialization-core-jvm-1.9.0.jar \
@@ -65,7 +65,7 @@ jobs:
             echo "✅ All Maven jars restored from cache"
             exit 0
           fi
-          KOTLIN_VER=2.2.21
+          KOTLIN_VER=2.3.21
           COROUTINES_VER=1.10.2
           SERIALIZATION_VER=1.9.0
           OKHTTP_VER=4.12.0

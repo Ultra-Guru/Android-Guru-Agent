@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.apex.agent.plugin.workflow"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.apex.agent.plugin.workflow"

@@ -9,7 +9,7 @@ plugins {
 
 android {
     namespace = "com.apex.agent.platform.persistence"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26

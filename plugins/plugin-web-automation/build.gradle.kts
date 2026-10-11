@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.apex.agent.plugin.webautomation"
-    compileSdk = 35
+    compileSdk = 36
 
     // ═══ 宿主同源发布签名（v1.4.9 插件分发链路）══════════════════════
     //
