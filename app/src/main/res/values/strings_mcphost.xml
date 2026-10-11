@@ -28,7 +28,7 @@
     <!-- ═══ Category whitelist ═══ -->
     <string name="mcphost_categories_title">Tool category whitelist</string>
     <string name="mcphost_categories_hint">Only tools in allowed categories are exposed to external AI. Default set is read-friendly; high-risk categories are off.</string>
-    <string name="mcphost_categories_risky">⚠ High-risk categories enabled (SHELL / TERMINAL / APP / UI / GITHUB / SECURITY): external AI can act directly on your phone. Enable with care.</string>
+    <string name="mcphost_categories_risky">⚠ Dangerous categories enabled (SHELL / TERMINAL / APP / UI / GITHUB / SECURITY): external AI can act directly on your phone. Enable with care.</string>
 
     <!-- ═══ Hard blacklist ═══ -->
     <string name="mcphost_blacklist_title">Blocked tools (read-only)</string>

@@ -689,11 +689,14 @@
     <string name="gate_mode_default">默认（DEFAULT）</string>
     <string name="gate_mode_accept_edits">接受编辑（ACCEPT_EDITS）</string>
     <string name="gate_mode_plan">只读规划（PLAN）</string>
-    <string name="gate_risk_title_fmt">高风险工具需要确认：%1$s</string>
+    <string name="gate_risk_title_fmt">危险工具需要确认：%1$s</string>
     <string name="gate_file_write_title_fmt">文件写入确认：%1$s</string>
-    <string name="gate_risk_hint_high">高风险：破坏性或不可逆操作</string>
-    <string name="gate_risk_hint_medium">中风险：会修改数据或状态</string>
+    <string name="gate_risk_hint_high">危险：破坏性或不可逆操作</string>
+    <string name="gate_risk_hint_medium">平衡：会修改数据或状态</string>
     <string name="gate_risk_line_fmt">%1$s（%2$s）</string>
+    <string name="risk_label_dangerous">危险</string>
+    <string name="risk_label_balanced">平衡</string>
+    <string name="risk_label_safe">无危险</string>
     <string name="gate_opt_allow_session">本会话允许</string>
     <string name="gate_opt_allow_session_desc">本次会话中该工具不再询问</string>
     <string name="gate_opt_allow_once">仅允许一次</string>

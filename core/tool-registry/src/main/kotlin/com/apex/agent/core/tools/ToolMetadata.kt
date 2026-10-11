@@ -135,13 +135,20 @@ enum class ToolDomain(
  * tools prompt the user for a session-scoped approval on first use; MEDIUM
  * and LOW tools execute directly (the engine's existing command-level gate
  * still applies to shell commands inside those tools).
+ *
+ * Labels are **qualitative** (定性档位) instead of numeric grades: a tool is
+ * either "无危险" (safe), "平衡" (balanced — useful but mutates state) or
+ * "危险" (dangerous — destructive/irreversible). Percent-based risk scores
+ * were deliberately avoided: they imply false precision that users cannot
+ * act on, whereas a three-word verdict maps directly to "should I allow
+ * this?" decisions.
  */
 enum class ToolRisk(val label: String) {
     /** Read-only or pure computation — no approval ever needed. */
-    LOW("低"),
+    LOW("无危险"),
 
     /** Reads/writes within the sandbox, or executes non-destructive commands. */
-    MEDIUM("中"),
+    MEDIUM("平衡"),
 
     /**
      * Destructive, irreversible, or system-wide effects. The gate asks the
@@ -149,7 +156,7 @@ enum class ToolRisk(val label: String) {
      * (it already runs its own, finer-grained confirmation flow — e.g.
      * `shell_execute` routes through [CommandPermissionGate]).
      */
-    HIGH("高");
+    HIGH("危险");
 }
 
 /**

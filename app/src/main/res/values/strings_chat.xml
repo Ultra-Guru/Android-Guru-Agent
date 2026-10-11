@@ -67,6 +67,10 @@
     <string name="plan_planning_readonly">Planning · read-only</string>
     <string name="chat_spec_title">📐 Requirements spec</string>
     <string name="chat_risk_level">Risk %1$s</string>
+    <string name="chat_risk_low">No danger</string>
+    <string name="chat_risk_medium">Balanced</string>
+    <string name="chat_risk_high">Dangerous</string>
+    <string name="chat_risk_critical">Critical</string>
     <string name="chat_spec_goal">Goal</string>
     <string name="chat_spec_requirements">Requirements</string>
     <string name="chat_spec_constraints">Constraints</string>

@@ -89,7 +89,8 @@ class CommandPermissionGate(
         }
 
         val question = AgentQuestion(
-            title = "高风险命令需要确认",
+            // #365：定性档位（危险）而非「高风险」数字化等级措辞
+            title = "危险命令需要确认",
             description = normalized,
             options = listOf(
                 AgentQuestionOption(

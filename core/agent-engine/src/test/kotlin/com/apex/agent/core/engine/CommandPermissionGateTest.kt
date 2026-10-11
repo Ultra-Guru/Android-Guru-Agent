@@ -79,7 +79,7 @@ class CommandPermissionGateTest {
         assertFalse(gate.ensureAllowed("rm -rf /data/local/tmp/x"))
         assertEquals(1, gateway.askCount)
         assertNotNull(gateway.lastQuestion)
-        assertEquals("高风险命令需要确认", gateway.lastQuestion?.title)
+        assertEquals("危险命令需要确认", gateway.lastQuestion?.title)
     }
 
     @Test

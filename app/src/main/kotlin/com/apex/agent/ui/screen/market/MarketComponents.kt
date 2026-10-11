@@ -41,6 +41,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
+import com.apex.agent.ui.component.ReliabilityTier
+import com.apex.agent.ui.component.reliabilityTierOf
 
 /**
  * ═══ 市场共享 UI 件 ═══
@@ -376,21 +378,26 @@ internal fun MarketLowEnergyBadge(modifier: Modifier = Modifier) {
 }
 
 /**
- * 成功率微型显示 —— 用于卡片角落。
+ * 可靠性定性档位微型显示 —— 用于卡片角落。
+ *
+ * #365 反馈：百分比评分（「87%」）是假精确，用户无法据此行动。改为
+ * 定性档位（稳定/一般/不稳定/未使用），语义色沿用旧阈值：
+ * 稳定→primary、一般→tertiary、不稳定→error、未使用→中性「—」。
  */
 @Composable
 internal fun MarketSuccessRateChip(successRate: Float) {
-    val text = if (successRate > 0f) String.format(java.util.Locale.US, "%.0f%%", successRate * 100) else "—"
-    val color = when {
-        successRate >= 0.9f -> MaterialTheme.colorScheme.primary
-        successRate >= 0.5f -> MaterialTheme.colorScheme.tertiary
-        successRate > 0f -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    val tier = reliabilityTierOf(successRate, successRate > 0f)
+    val text = tier.label()
+    val color = when (tier) {
+        ReliabilityTier.STABLE -> MaterialTheme.colorScheme.primary
+        ReliabilityTier.FAIR -> MaterialTheme.colorScheme.tertiary
+        ReliabilityTier.UNSTABLE -> MaterialTheme.colorScheme.error
+        ReliabilityTier.UNUSED -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     Text(
         text,
         style = MaterialTheme.typography.labelSmall,
-        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.SemiBold,
         color = color
     )
 }

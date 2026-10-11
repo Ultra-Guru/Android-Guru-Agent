@@ -57,6 +57,8 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
+import com.apex.agent.ui.component.ReliabilityTier
+import com.apex.agent.ui.component.reliabilityTierOf
 import com.apex.agent.platform.csmem.model.SemanticNode
 import com.apex.agent.platform.csmem.store.EpisodeSummary
 import com.apex.agent.platform.csmem.store.FSMMacro
@@ -386,6 +388,13 @@ private fun NodeCard(node: SemanticNode) {
     }
 }
 
+/**
+ * 宏技能卡：名称 + 应用 + 成功/失败计数 + 可靠性定性徽标。
+ *
+ * #365：百分比评分改为定性档位（稳定/一般/不稳定/未使用）——
+ * 计数保留（真实事实），但不把用户推向「成功率 87%」这种假精确数字；
+ * 徽标颜色沿用语义色（稳定→primary、一般→tertiary、不稳定→error）。
+ */
 @Composable
 private fun MacroCard(macro: FSMMacro) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
@@ -411,6 +420,31 @@ private fun MacroCard(macro: FSMMacro) {
                         color = MaterialTheme.colorScheme.primary)
                 }
             }
+            // 可靠性定性徽标（基于成功/失败计数的档位投影）
+            val tier = reliabilityTierOf(
+                if (macro.successCount + macro.failureCount == 0) 0f
+                else macro.successCount.toFloat() / (macro.successCount + macro.failureCount),
+                macro.successCount + macro.failureCount > 0
+            )
+            val tierColor = when (tier) {
+                ReliabilityTier.STABLE -> MaterialTheme.colorScheme.primary
+                ReliabilityTier.FAIR -> MaterialTheme.colorScheme.tertiary
+                ReliabilityTier.UNSTABLE -> MaterialTheme.colorScheme.error
+                ReliabilityTier.UNUSED -> MaterialTheme.colorScheme.onSurfaceVariant
+            }
+            Surface(
+                color = tierColor.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(6.dp)
+            ) {
+                Text(
+                    tier.label(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tierColor,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                )
+            }
+            Spacer(Modifier.width(8.dp))
             Text(stringResource(R.string.memory_steps, macro.transitions.size), style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary)
         }

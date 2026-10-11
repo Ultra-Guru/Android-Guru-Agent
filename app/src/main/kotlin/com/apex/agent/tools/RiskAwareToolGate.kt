@@ -148,14 +148,15 @@ class RiskAwareToolGate(
     }
 
     private fun buildQuestion(metadata: ToolMetadata, arguments: String): AgentQuestion {
+        // 定性档位（危险/平衡/无危险）而非数字评分 —— 用户能直接映射到「该不该放行」
         val riskHint = when (metadata.risk) {
-            ToolRisk.HIGH -> "高风险：破坏性或不可逆操作"
-            ToolRisk.MEDIUM -> "中风险：会修改数据或状态"
-            ToolRisk.LOW -> "低风险"
+            ToolRisk.HIGH -> "危险：破坏性或不可逆操作"
+            ToolRisk.MEDIUM -> "平衡：会修改数据或状态"
+            ToolRisk.LOW -> "无危险"
         }
         return AgentQuestion(
-            // 标题按来源区分：HIGH = 高风险；第三方动态 MEDIUM = 未审计能力首次过目
-            title = if (metadata.risk == ToolRisk.HIGH) "高风险工具需要确认：${metadata.id}"
+            // 标题按来源区分：HIGH = 危险；第三方动态 MEDIUM = 未审计能力首次过目
+            title = if (metadata.risk == ToolRisk.HIGH) "危险工具需要确认：${metadata.id}"
             else "第三方工具需要确认：${metadata.id}",
             description = "$riskHint（${categoryLabel(metadata.category)}）\n" +
                 "参数摘要：${arguments.take(200).replace('\n', ' ')}",

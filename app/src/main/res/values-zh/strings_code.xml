@@ -155,7 +155,10 @@
     <string name="code_longtask_stats_empty">暂无档位效能数据</string>
     <string name="code_longtask_stats_empty_hint">长任务留档后按档位自动聚合统计</string>
     <string name="code_longtask_stats_runs_fmt">%1$d 次运行</string>
-    <string name="code_longtask_stats_row_fmt">成功率 %1$d%% · 平均 %2$d 轮 · %3$d 工具 · %4$s</string>
+    <string name="code_longtask_stats_row_fmt">可靠性 %1$s · 平均 %2$d 轮 · %3$d 工具 · %4$s</string>
+    <string name="code_reliability_stable">稳定</string>
+    <string name="code_reliability_fair">一般</string>
+    <string name="code_reliability_unstable">不稳定</string>
 
     <!-- v1.2 检查点时间线（CodeLongTaskSheet 展开区） -->
     <string name="code_longtask_cp_round_fmt">第 %1$d 轮</string>
