@@ -192,10 +192,24 @@ class TaskRuntime(
         _activeTask.value = task
 
         scope.launch {
+            var droppedUnderPressure = 0L
             try {
                 engine.execute(input).collect { event ->
                     onEngineEvent(task.taskId, event)   // checkpoint 边界（先落盘）
-                    tap.send(event)                     // 再转发给 UI（UNLIMITED 不阻塞）
+                    // ═══ #351③ 守护：UNLIMITED tap 在 UI 不收集时无界堆积 ═══
+                    // VM 收集者被取消而任务继续（Activity 销毁、LOOP 后台轮次、
+                    // ask_user 挂起期间用户切走）时，每 token 一条事件全部积压到
+                    // 任务结束——长任务数万事件对象 MB 级内存，低内存设备放大
+                    // LMK 杀进程风险（用户看到的即「卡死后重启」）。高水位后
+                    // 丢弃可丢的流式 chunk（UI 最终文本由 Complete/ToolCallComplete
+                    // 全量携带，丢过程不丢结果）；边界事件（Error/Complete/Aborted/
+                    // UserInputRequired/确认类）永不丢。checkpoint 不受影响
+                    // （onEngineEvent 先于本转发执行）。
+                    if (tap.size >= TAP_HIGH_WATERMARK && event.isDroppableUnderPressure()) {
+                        droppedUnderPressure++
+                    } else {
+                        tap.send(event)
+                    }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // 引擎流被取消（罕见：runtimeScope 关闭）→ 走 finalize 兜底
@@ -222,6 +236,13 @@ class TaskRuntime(
                         "finalizeStream failed (task left at last checkpoint): ${e.message}", e
                     )
                 }
+                if (droppedUnderPressure > 0L) {
+                    AppLogger.instance.warn(
+                        LogCategory.ENGINE, TAG,
+                        "UI tap backpressure: $droppedUnderPressure streaming events dropped " +
+                            "(collector absent/slow; final texts intact via Complete events)"
+                    )
+                }
                 tap.close() // 订阅端 receiveAsFlow 完成（UI collect 正常返回）
                 done.complete(Unit)
             }
@@ -233,7 +254,22 @@ class TaskRuntime(
     // ═══ 事件 → Checkpoint（核心推导表，N-4）═══
 
     private suspend fun onEngineEvent(taskId: String, event: AgentEvent) {
-        val task = _activeTask.value?.takeIf { it.taskId == taskId } ?: return
+        var task = _activeTask.value?.takeIf { it.taskId == taskId } ?: return
+        // ═══ #335（P0）：WAITING_USER 回迁缺失 → TaskRuntime 砖化 ═══
+        // ask_user 触发 UserInputRequired 把任务迁入 WAITING_USER 后，引擎继续
+        // 流转（用户已回答/超时收场/abort 空答案）——后续任何事件（ToolResult、
+        // Complete、Error、下一迭代的各类事件）都意味着执行已恢复，但旧实现
+        // 没有任何 WAITING_USER→RUNNING 的回迁点，任务永远停在 WAITING_USER：
+        // 收尾 finalizeStream 走 WAITING_USER→COMPLETED 非法迁移抛
+        // IllegalTaskTransitionException，且异常跳过清理三连 → claiming 永久
+        // true（此后所有 execute/resume/retry 被互斥拒绝，直到进程重启），
+        // HUMAN_ASSIST 模式必踩。此处补上回迁：WAITING_USER 期间到达的任何
+        // 非 UserInputRequired 事件（UserInputRequired 本身是重复提问，保持）
+        // 先回迁 RUNNING（状态机出边已有），后续迁移/finalize 从 RUNNING 出发。
+        if (task.status == TaskStatus.WAITING_USER && event !is AgentEvent.UserInputRequired) {
+            transitionAndPersist(task, TaskStatus.RUNNING, CheckpointBoundary.USER_INPUT_RESUMED)
+            task = _activeTask.value?.takeIf { it.taskId == taskId } ?: task
+        }
         when (event) {
             is AgentEvent.PlanConfirmed,
             is AgentEvent.SpecConfirmed -> {
@@ -351,24 +387,34 @@ class TaskRuntime(
             claiming.set(false)
             return
         }
-        when {
-            pauseRequested -> transitionAndPersist(task, TaskStatus.PAUSED, CheckpointBoundary.PAUSED)
-            cancelRequested -> {
-                // CANCELLING → CANCELLED 链（流已收尾，无再等待的执行）
-                val cancelling = TaskStatusMachine.transition(task, TaskStatus.CANCELLING, clock())
-                transitionAndPersist(cancelling, TaskStatus.CANCELLED, CheckpointBoundary.CANCELLED)
+        // ═══ #335 修复②：清理段 try/finally 兜底，迁移异常不再砖化互斥位 ═══
+        // 旧实现清理四连（tagsSetter/eventTap/streamDone/claiming）位于 when
+        // 之后——when 内任何状态迁移抛 IllegalTaskTransitionException（如旧数据
+        // WAITING_USER→COMPLETED）即跳过清理，claiming 永久 true，此后所有
+        // execute/resume/retry 被互斥拒绝直到进程重启。现在 finally 无条件执行
+        // 清理：任务可能停在最后一个 checkpoint（镜像 finally 已留痕），但运行
+        // 时资源与互斥位完整释放，砖化路径被结构性消除。
+        try {
+            when {
+                pauseRequested -> transitionAndPersist(task, TaskStatus.PAUSED, CheckpointBoundary.PAUSED)
+                cancelRequested -> {
+                    // CANCELLING → CANCELLED 链（流已收尾，无再等待的执行）
+                    val cancelling = TaskStatusMachine.transition(task, TaskStatus.CANCELLING, clock())
+                    transitionAndPersist(cancelling, TaskStatus.CANCELLED, CheckpointBoundary.CANCELLED)
+                }
+                task.status == TaskStatus.FAILED -> {
+                    // 失败已在 Error 事件中终态化；此处理论上不应到达——幂等保护
+                    AppLogger.instance.warn(LogCategory.ENGINE, TAG, "finalize on already-FAILED task")
+                }
+                else -> transitionAndPersist(task, TaskStatus.COMPLETED, CheckpointBoundary.COMPLETED)
             }
-            task.status == TaskStatus.FAILED -> {
-                // 失败已在 Error 事件中终态化；此处理论上不应到达——幂等保护
-                AppLogger.instance.warn(LogCategory.ENGINE, TAG, "finalize on already-FAILED task")
-            }
-            else -> transitionAndPersist(task, TaskStatus.COMPLETED, CheckpointBoundary.COMPLETED)
+            emitRuntime(TaskRuntimeEvent.Finished(taskId, _activeTask.value?.status ?: TaskStatus.COMPLETED))
+        } finally {
+            tagsSetter(null, null) // 诊断 ID 清理
+            eventTap = null
+            streamDone = null
+            claiming.set(false)
         }
-        emitRuntime(TaskRuntimeEvent.Finished(taskId, _activeTask.value?.status ?: TaskStatus.COMPLETED))
-        tagsSetter(null, null) // 诊断 ID 清理
-        eventTap = null
-        streamDone = null
-        claiming.set(false)
     }
 
     private suspend fun finalizeWith(taskId: String, status: TaskStatus, error: String?) {
@@ -412,7 +458,24 @@ class TaskRuntime(
         cancelRequested = true
         if (streamDone != null) {
             engine.abort()
-            streamDone?.await()
+            // ═══ #351④ 修复：与 pause() 对齐加 withTimeout ═══
+            // 旧实现裸 await()：引擎挂在最长 5 分钟的孤儿 deferred / LLM
+            // readTimeout / 不可中断工具上时，cancel 调用协程同步挂起同样
+            // 时长——受害链：AgentChatViewModel.abort()、sendMessage 的
+            // 串行化（taskController.cancel() 后才 executeNormalMessage）、
+            // LOOP 的 submitLoopTurn——用户看到的就是「发新消息卡死」。
+            // 超时后放弃等待返回；CANCELLED 落盘由镜像 collector 的 finally
+            // 迟到补齐（cancelRequested 已置位，终态裁决不受影响）。
+            try {
+                streamDone?.let { withTimeout(CANCEL_AWAIT_TIMEOUT_MS) { it.await() } }
+            } catch (e: TimeoutCancellationException) {
+                AppLogger.instance.warn(
+                    LogCategory.ENGINE, TAG,
+                    "cancel(): stream finalize did not complete within " +
+                        "${CANCEL_AWAIT_TIMEOUT_MS / 1000}s; " +
+                        "CANCELLED checkpoint will be persisted late"
+                )
+            }
         } else {
             // 无执行流（PAUSED/WAITING/FAILED 态直接取消）：
             // FAILED→CANCELLED 是表内直达边（放弃路径）；其余经 CANCELLING 瞬态链
@@ -692,8 +755,37 @@ class TaskRuntime(
         /** P2-14：pause() 等待引擎流收尾的上限（引擎可能挂在最长 readTimeout 的 LLM 调用上）。 */
         internal const val PAUSE_AWAIT_TIMEOUT_MS = 10_000L
 
+        /**
+         * #351④：cancel() 等待引擎流收尾的上限，与 [PAUSE_AWAIT_TIMEOUT_MS] 同源
+         * （引擎可挂点同族：LLM readTimeout / 孤儿确认 deferred 最长 5 分钟 /
+         * 不可中断工具）。超时后放弃等待返回，CANCELLED 落盘由镜像 finally 迟到补齐。
+         */
+        internal const val CANCEL_AWAIT_TIMEOUT_MS = 10_000L
+
+        /**
+         * #351③：UI 转发 tap 的高水位线。正常收集时积压不过几十；只在
+         * 收集者消失（Activity 销毁/后台 LOOP）时持续攀升——越线后丢弃
+         * 可丢的流式 chunk，把无界堆积（数万事件 MB 级 → LMK）封顶在
+         * ~千级事件（约 1-2MB）。
+         */
+        internal const val TAP_HIGH_WATERMARK = 1024
+
         /** 用户显式重试上限（任务书 §7：不允许无限 retry）。 */
         const val DEFAULT_RETRY_LIMIT = 3
+    }
+
+    /**
+     * #351③：高水位下可丢的事件族（仅流式过程 chunk——丢过程不丢结果：
+     * UI 最终回复文本由 Complete 携带、工具最终输出由 ToolCallComplete 携带）。
+     * 边界/确认/终态事件（Error、Complete、Aborted、UserInputRequired、
+     * Plan/Spec 确认类、Usage/压缩）永不丢。
+     */
+    private fun AgentEvent.isDroppableUnderPressure(): Boolean = when (this) {
+        is AgentEvent.ResponseChunk,
+        is AgentEvent.ThinkingChunk,
+        is AgentEvent.ToolOutputChunk,
+        is AgentEvent.ToolProgress -> true
+        else -> false
     }
 }
 

@@ -291,6 +291,18 @@ class ApexAgentEngine(
     @Volatile
     private var userInputDeferred: CompletableDeferred<String>? = null
 
+    /**
+     * #340：确认通道三件套（userInput/plan/spec）的注册/中止互斥锁。
+     *
+     * 旧 abort() 的“complete-then-null”两步与注册方（await* 的 deferred 赋值）
+     * 之间无 happens-before——abort 恰在两步之间执行时，引擎新注册的
+     * deferred 会被 null 覆盖，UI 后续提交全部落空，引擎挂满 5 分钟超时
+     * （用户看到的就是「chat 卡死」）。注册与 abort 全部收进同一把锁，
+     * 窗口结构性消除；锁内无挂起点（complete/赋值均同步），不阻塞调度。
+     * internal：plan/EngineSpecFlow 扩展的注册/清理与 abort 同锁。
+     */
+    internal val confirmationLock = Any()
+
     fun updateConfig(newConfig: AgentConfig) {
         val old = config
         config = newConfig
@@ -690,8 +702,12 @@ class ApexAgentEngine(
 
         // Phase 3: await user confirmation（#169：Boolean → PlanDecision，
         // 可携带步骤勾选 enabledSteps 与重排 order，见 plan/PlanConfirmationRequest）。
-        emit(AgentEvent.PlanAwaitingConfirmation(plan))
-        val decision = awaitPlanConfirmationDecision()
+        // #340：注册先行——emit 必须发生在 deferred 注册之后，否则 submit 在
+        // 注册前到达（tap 快速消费使 emit 立即返回）→ complete 落空 → 引擎挂满
+        // 5 分钟。改走 beforeWait 回调（注册 → emit → 等待）。
+        val decision = awaitPlanConfirmationDecision(
+            beforeWait = { emit(AgentEvent.PlanAwaitingConfirmation(plan)) }
+        )
         if (!decision.confirmed) {
             emit(AgentEvent.Aborted)
             return 0
@@ -1139,12 +1155,16 @@ class ApexAgentEngine(
 
     override suspend fun abort() {
         isRunning = false
-        planConfirmationDeferred?.complete(PlanDecision.legacy(false))
-        planConfirmationDeferred = null
-        specConfirmationDeferred?.complete(false)
-        specConfirmationDeferred = null
-        userInputDeferred?.complete("")
-        userInputDeferred = null
+        // #340：三对“complete-then-null”收进 confirmationLock —— 与注册方
+        // （await* 入口）互斥，消除“新注册被 null 覆盖”的窗口；锁内无挂起点。
+        synchronized(confirmationLock) {
+            planConfirmationDeferred?.complete(PlanDecision.legacy(false))
+            planConfirmationDeferred = null
+            specConfirmationDeferred?.complete(false)
+            specConfirmationDeferred = null
+            userInputDeferred?.complete("")
+            userInputDeferred = null
+        }
     }
 
     override fun submitUserInput(answer: String) {
@@ -1174,9 +1194,21 @@ class ApexAgentEngine(
      *   再触发 [onExpired]（调用方发射 UserInputExpired 让 UI 关对话框），
      *   返回 null 让调用方产生「用户输入超时」的显式结果。
      */
-    internal suspend fun awaitUserInput(onExpired: (suspend () -> Unit)? = null): String? {
-        val deferred = CompletableDeferred<String>()
-        userInputDeferred = deferred
+    internal suspend fun awaitUserInput(
+        onExpired: (suspend () -> Unit)? = null,
+        beforeWait: (suspend () -> Unit)? = null
+    ): String? {
+        // #340 注册先行：deferred 赋值必须先于 emit —— 旧实现 emit(UserInputRequired)
+        // 在调用方、注册在本函数内部，emit 经镜像 tap 快速消费后立即返回，
+        // 与注册之间无 happens-before：submit 在注册前到达 → complete 落空 →
+        // 引擎挂满 5 分钟（chat 模式卡死观感的直接机制之一）。
+        // 现在注册与 abort 同锁互斥，且 beforeWait（emit）严格发生在注册之后。
+        val deferred = synchronized(confirmationLock) {
+            val d = CompletableDeferred<String>()
+            userInputDeferred = d
+            d
+        }
+        beforeWait?.invoke()
         return try {
             // 与 awaitPlanConfirmation / awaitSpecConfirmation 保持一致：
             // 5 分钟超时，避免 ask_user 工具因用户遗忘而把引擎永久挂起。
@@ -1187,11 +1219,15 @@ class ApexAgentEngine(
                 "ask_user 输入超时 (${PLAN_CONFIRMATION_TIMEOUT_MS / 1000}s)，按超时未决收场"
             )
             // 先关投递通道再通知：保证 UI 先看到对话框关闭，迟交才有失败提示。
-            userInputDeferred = null
+            synchronized(confirmationLock) { userInputDeferred = null }
             onExpired?.invoke()
             null
         } finally {
-            userInputDeferred = null
+            // 条件清理：只清本次等待挂的 deferred——不覆盖 abort 之后/并行等待
+            // 注册的新通道（与 abort 同锁，防 #340 同源窗口）。
+            synchronized(confirmationLock) {
+                if (userInputDeferred === deferred) userInputDeferred = null
+            }
         }
     }
 

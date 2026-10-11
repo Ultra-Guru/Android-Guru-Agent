@@ -317,6 +317,12 @@ enum class CheckpointBoundary(val description: String) {
     STEP_FINISHED("步骤完成/失败/跳过"),
     CONTEXT_COMPRESSED("上下文压缩边界（historyAnchor 更新 + 状态重注入）"),
     WAITING_USER("等待用户输入/确认（WAITING_USER 落盘）"),
+    // #335（chat 模式卡死根因之一）：WAITING_USER 期间到达的任何后续引擎事件
+    // （用户已回答/超时收场后的 ToolResult、Complete、Error……）触发回迁
+    // WAITING_USER→RUNNING，否则 finalizeStream 走 WAITING_USER→COMPLETED
+    // 非法迁移抛异常，清理三连被跳过 → claiming 永久为 true，TaskRuntime 砖化
+    // （此后所有 execute/resume/retry 被互斥拒绝，直到进程重启）。
+    USER_INPUT_RESUMED("用户输入结束/后续事件到达，回迁 RUNNING"),
     ERROR("错误边界（FAILED 落盘）"),
     PAUSED("暂停落盘（PAUSED）"),
     CANCELLED("取消落盘（CANCELLED）"),
