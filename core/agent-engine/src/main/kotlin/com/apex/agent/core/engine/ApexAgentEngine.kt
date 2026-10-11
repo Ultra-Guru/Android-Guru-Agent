@@ -39,7 +39,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -283,13 +282,15 @@ class ApexAgentEngine(
 
     /**
      * Channel for the UI to deliver user-input answers back to the engine
-     * while [executeBuildLoop] is suspended on [awaitUserInput].
+     * while [executeBuildLoop] is suspended on awaitUserInput
+     * （ConfirmationChannels.kt 扩展）。
      *
      * #214：@Volatile —— [submitUserInputIfAwaiting] 在 VM 主线程读、
      * 引擎协程写，投递回执（超时后迟到提交必须拿到 false）依赖可见性。
+     * #340：internal——同包 ConfirmationChannels.kt 扩展的注册/清理同锁。
      */
     @Volatile
-    private var userInputDeferred: CompletableDeferred<String>? = null
+    internal var userInputDeferred: CompletableDeferred<String>? = null
 
     /**
      * #340：确认通道三件套（userInput/plan/spec）的注册/中止互斥锁。
@@ -1155,16 +1156,10 @@ class ApexAgentEngine(
 
     override suspend fun abort() {
         isRunning = false
-        // #340：三对“complete-then-null”收进 confirmationLock —— 与注册方
-        // （await* 入口）互斥，消除“新注册被 null 覆盖”的窗口；锁内无挂起点。
-        synchronized(confirmationLock) {
-            planConfirmationDeferred?.complete(PlanDecision.legacy(false))
-            planConfirmationDeferred = null
-            specConfirmationDeferred?.complete(false)
-            specConfirmationDeferred = null
-            userInputDeferred?.complete("")
-            userInputDeferred = null
-        }
+        // #340：三对“complete-then-null”收进 confirmationLock（见
+        // ConfirmationChannels.kt）——与注册方互斥，消除“新注册被 null
+        // 覆盖”的窗口；锁内无挂起点。
+        abortConfirmationChannels()
     }
 
     override fun submitUserInput(answer: String) {
@@ -1185,52 +1180,10 @@ class ApexAgentEngine(
         userInputDeferred?.complete("")
     }
 
-    /**
-     * 挂起等待 UI 回传用户输入。
-     *
-     * @return 用户答案（cancelUserInput/abort 路径为空串）；
-     *   null = 等待超时 —— #214 语义：不再静默以空串继续，而是先关闭
-     *   投递通道（迟到的 [submitUserInputIfAwaiting] 拿到 false），
-     *   再触发 [onExpired]（调用方发射 UserInputExpired 让 UI 关对话框），
-     *   返回 null 让调用方产生「用户输入超时」的显式结果。
-     */
-    internal suspend fun awaitUserInput(
-        onExpired: (suspend () -> Unit)? = null,
-        beforeWait: (suspend () -> Unit)? = null
-    ): String? {
-        // #340 注册先行：deferred 赋值必须先于 emit —— 旧实现 emit(UserInputRequired)
-        // 在调用方、注册在本函数内部，emit 经镜像 tap 快速消费后立即返回，
-        // 与注册之间无 happens-before：submit 在注册前到达 → complete 落空 →
-        // 引擎挂满 5 分钟（chat 模式卡死观感的直接机制之一）。
-        // 现在注册与 abort 同锁互斥，且 beforeWait（emit）严格发生在注册之后。
-        val deferred = synchronized(confirmationLock) {
-            val d = CompletableDeferred<String>()
-            userInputDeferred = d
-            d
-        }
-        beforeWait?.invoke()
-        return try {
-            // 与 awaitPlanConfirmation / awaitSpecConfirmation 保持一致：
-            // 5 分钟超时，避免 ask_user 工具因用户遗忘而把引擎永久挂起。
-            withTimeout(PLAN_CONFIRMATION_TIMEOUT_MS) { deferred.await() }
-        } catch (e: TimeoutCancellationException) {
-            AppLogger.instance.warn(
-                LogCategory.ENGINE, "ApexAgentEngine",
-                "ask_user 输入超时 (${PLAN_CONFIRMATION_TIMEOUT_MS / 1000}s)，按超时未决收场"
-            )
-            // 先关投递通道再通知：保证 UI 先看到对话框关闭，迟交才有失败提示。
-            synchronized(confirmationLock) { userInputDeferred = null }
-            onExpired?.invoke()
-            null
-        } finally {
-            // 条件清理：只清本次等待挂的 deferred——不覆盖 abort 之后/并行等待
-            // 注册的新通道（与 abort 同锁，防 #340 同源窗口）。
-            synchronized(confirmationLock) {
-                if (userInputDeferred === deferred) userInputDeferred = null
-            }
-        }
-    }
-
     // maybeCompressContext 迁至 EngineCompressionGate.kt（同包顶层扩展，
     // 调用点零改动 —— 模式与 EnginePromptDelegates / EngineAskUserFlow 一致）。
+    // awaitUserInput / abortConfirmationChannels 迁至 ConfirmationChannels.kt
+    //（同包顶层扩展，#340 确认通道治理 + God-file 预算）；
+    // awaitPlanConfirmationDecision / awaitSpecConfirmation 分别留在
+    // plan/PlanExecutionSupport.kt 与 EngineSpecFlow.kt（同步治理）。
 }
