@@ -106,7 +106,6 @@ class SessionManagerImpl(
         shell: String, cwd: String, rows: Int, cols: Int,
         env: Map<String, String>, privilege: PrivilegeLevel
     ): Result<TerminalSession> = mutex.withLock {
-        val sessionId = idCounter.incrementAndGet()
         // 1. forkpty（旧路径：单 shell + env 数组；与 LocalShellBackend.prepare
         //    产出的 argv 路径在 C++ 层逐字节等价 —— T73 统一路由后仅作兼容入口保留）
         val envArray = env.map { "${it.key}=${it.value}" }.toTypedArray()
@@ -114,8 +113,11 @@ class SessionManagerImpl(
         if (nativeId < 0) {
             return@withLock Result.failure(RuntimeException("TerminalError:PtyUnavailable"))
         }
+        // T95：会话号在 native 成功后才领取 —— 旧版先领号后 fork，失败也烧号，
+        // 首会话从 #2 起跳（用户反馈「没有 #1，像丢了会话」）。恢复态的
+        // ensureIdFloor 语义不受影响（floor 只抬高到已存活会话的最大号）。
         assembleAndStart(
-            sessionId = sessionId, nativeId = nativeId,
+            sessionId = idCounter.incrementAndGet(), nativeId = nativeId,
             shell = shell, initialCwd = cwd,
             rows = rows, cols = cols, privilege = privilege,
             backend = null
@@ -129,7 +131,6 @@ class SessionManagerImpl(
     override suspend fun createFromSpec(
         spec: SpawnSpec, rows: Int, cols: Int, privilege: PrivilegeLevel
     ): Result<TerminalSession> = mutex.withLock {
-        val sessionId = idCounter.incrementAndGet()
         if (spec.argv.isEmpty()) {
             return@withLock Result.failure(RuntimeException("TerminalError:InvalidInput — empty argv"))
         }
@@ -154,12 +155,12 @@ class SessionManagerImpl(
                 )
             )
         }
-        // 展示语义：LINUX 会话 shell=/bin/bash、cwd=guest -w；LOCAL 与旧路径一致。
-        val shellDisplay = spec.shellDisplay ?: spec.argv[0]
-        val cwdDisplay = spec.cwdDisplay ?: spec.metadata.guestCwd ?: spec.cwd
+        // T95：同 create() —— 号在 native 成功 + execv 无报错后才领取，失败路径
+        // 不烧号（首会话从 #1 开始，见 create() 同名注释）。
         assembleAndStart(
-            sessionId = sessionId, nativeId = nativeId,
-            shell = shellDisplay, initialCwd = cwdDisplay,
+            sessionId = idCounter.incrementAndGet(), nativeId = nativeId,
+            shell = spec.shellDisplay ?: spec.argv[0],
+            initialCwd = spec.cwdDisplay ?: spec.metadata.guestCwd ?: spec.cwd,
             rows = rows, cols = cols, privilege = privilege,
             backend = spec.metadata
         )

@@ -215,8 +215,14 @@ fun ApexRoot() {
     // 包在最外层：任何页面的 Toast/Snackbar 反馈都走统一视觉（严重级配色 +
     // SnackbarHost 底部弹出）。子树未消费无副作用；Noop 默认保证预览可用。
     FeedbackHost {
+    // ★ 抽屉手势修复（用户反馈：终端页左滑会再次拉出抽屉）：
+    // M3 ModalNavigationDrawer 默认 gesturesEnabled=true —— 终端页的横向
+    // 手势（选区拖选 / 键区横滚 / 未来 VT 鼠标上报）会被边缘滑动抢消费，
+    // 误触即弹抽屉盖住终端。终端页禁用手势抽屉：入口收敛为顶栏返回钮
+    // （返回上一页 = 回到抽屉可达的主页），其余页面保留标准边缘滑动。
     ModalNavigationDrawer(
         drawerState = drawerState,
+        gesturesEnabled = currentDestination != DrawerDestination.Terminal,
         drawerContent = {
             ApexDrawerContent(
                 currentDestination = currentDestination,
@@ -338,7 +344,9 @@ fun ApexRoot() {
                             )
                             DrawerDestination.Templates -> TemplateStudioScreen()
                             DrawerDestination.Terminal -> TerminalScreen(
-                                onOpenNavDrawer = { scope.launch { drawerState.open() } }
+                                // 终端页不再有汉堡/边缘滑动拉抽屉 —— 返回钮走统一
+                                // 返回链（弹历史栈；栈空兑底回 Agent 主页，抽屉在那里可达）
+                                onBack = navigateBack
                             )
                             DrawerDestination.Market -> MarketScreen()
                             DrawerDestination.Browser -> BrowserScreen()
