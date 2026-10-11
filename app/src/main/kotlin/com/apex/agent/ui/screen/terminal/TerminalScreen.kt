@@ -22,17 +22,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
@@ -101,7 +102,7 @@ import java.util.Locale
  */
 @Composable
 fun TerminalScreen(
-    onOpenNavDrawer: () -> Unit,
+    onBack: () -> Unit,
     viewModel: TerminalViewModel = hiltViewModel()
 ) {
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
@@ -181,7 +182,7 @@ fun TerminalScreen(
             ubuntuPercent = ubuntuProgress?.percent ?: 0,
             envBusy = envBusy,
             notice = notice,
-            onOpenNavDrawer = onOpenNavDrawer,
+            onBack = onBack,
             onNewSession = { showNewSessionDialog = true },
             onOpenCenter = { showEnvironmentCenter = true },
             onOpenSettings = { showSettings = true },
@@ -383,7 +384,7 @@ private fun TerminalChrome(
     ubuntuPercent: Int,
     envBusy: Boolean,
     notice: TerminalViewModel.TerminalNotice?,
-    onOpenNavDrawer: () -> Unit,
+    onBack: () -> Unit,
     onNewSession: () -> Unit,
     onOpenCenter: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -397,7 +398,7 @@ private fun TerminalChrome(
         ubuntuPhase = ubuntuPhase,
         ubuntuPercent = ubuntuPercent,
         semantic = semantic,
-        onOpenNavDrawer = onOpenNavDrawer,
+        onBack = onBack,
         onNewSession = onNewSession,
         onOpenCenter = onOpenCenter,
         onOpenSettings = onOpenSettings
@@ -453,12 +454,18 @@ private fun TerminalChrome(
  *  - ERROR → 红系 + Warning 图标；
  *  - FALLBACK（降级：Ubuntu 失败自动切 Android Shell）→ amber 警示 + Warning；
  *  - INFO → mint 信息色 + CheckCircle。
+ *
+ * T95：点击横幅展开全文（错误类常被两行截断 —— 用户反馈里
+ * 「backend prepare failed: /data/user/0/com…」被截尾的路径就是根因线索，
+ * 看不到完整错误就无法自查）；× 钮独立关闭，不再承担双重职责。
  */
 @Composable
 private fun NoticeBanner(
     notice: TerminalViewModel.TerminalNotice,
     onDismiss: () -> Unit
 ) {
+    // 新 notice 到达重置展开态（remember 键含 notice 身份）
+    var expanded by remember(notice) { mutableStateOf(false) }
     val bg = when (notice.kind) {
         TerminalViewModel.TerminalNotice.Kind.ERROR -> ConsoleTheme.dangerSoft
         TerminalViewModel.TerminalNotice.Kind.FALLBACK -> ConsoleTheme.warnSoft
@@ -473,7 +480,7 @@ private fun NoticeBanner(
         modifier = Modifier
             .fillMaxWidth()
             .background(bg)
-            .clickable(onClick = onDismiss)
+            .clickable(onClick = { expanded = !expanded })
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -494,14 +501,20 @@ private fun NoticeBanner(
             fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
             color = fg,
-            maxLines = 2,
+            maxLines = if (expanded) Int.MAX_VALUE else 2,
             overflow = TextOverflow.Ellipsis
         )
+        // × 关闭钮独立触控（36dp 触控区 + 16dp 图标）；旧版整行点击关闭会把
+        // 「想看全文」的点击误当关闭，与 T95 展开语义冲突
         Icon(
             Icons.Default.Close,
             contentDescription = stringResource(R.string.term_close),
             tint = ConsoleTheme.dim,
-            modifier = Modifier.size(14.dp)
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .clickable(onClick = onDismiss)
+                .padding(10.dp)
         )
     }
 }
@@ -577,7 +590,7 @@ private fun ConsoleTopBar(
     ubuntuPhase: UbuntuLifecycleCoordinator.Phase,
     ubuntuPercent: Int,
     semantic: com.apex.agent.platform.terminal.state.TerminalSemanticState?,
-    onOpenNavDrawer: () -> Unit,
+    onBack: () -> Unit,
     onNewSession: () -> Unit,
     onOpenCenter: () -> Unit,
     onOpenSettings: () -> Unit
@@ -589,8 +602,15 @@ private fun ConsoleTopBar(
             .padding(horizontal = 4.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onOpenNavDrawer) {
-            Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.term_cd_nav), tint = ConsoleTheme.text)
+        // ★ 返回钮（用户反馈：终端页不要汉堡/左滑拉抽屉）—— 取代旧 Menu 钮。
+        // 语义与系统返回键一致（弹历史栈，栈空兑底回 Agent 主页）；AutoMirrored
+        // 图标在 RTL 布局下自动镜像。抽屉在返回后的页面正常可达。
+        IconButton(onClick = onBack) {
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = stringResource(R.string.term_back_to_drawer),
+                tint = ConsoleTheme.text
+            )
         }
         Column(
             modifier = Modifier
@@ -652,7 +672,15 @@ private fun SessionStrip(
     onSelect: (Long) -> Unit,
     onClose: (Long) -> Unit
 ) {
+    val listState = rememberLazyListState()
+    // T95：活跃会话 chip 始终滚入视野 —— 横向 LazyRow 里 chip 会被屏幕边缘
+    // 裁半截（用户反馈「#4 A…」），新建/切换会话后自动滚到该 chip 完整可见。
+    val activeIndex = sessions.indexOfFirst { it.id == activeId }
+    LaunchedEffect(activeId, sessions.size) {
+        if (activeIndex >= 0) listState.animateScrollToItem(activeIndex)
+    }
     LazyRow(
+        state = listState,
         modifier = Modifier
             .fillMaxWidth()
             .background(ConsoleTheme.bg)
@@ -753,361 +781,6 @@ private fun sessionStateLabel(state: String): String = when (state.uppercase(Loc
     else -> state.take(6)
 }
 
-// ═══════════════════════ 环境面板（无会话时的主区）═══════════════════════
-
-/**
- * 无会话时的主区面板 —— 三个形态：
- *  - **准备中**（NOT_INSTALLED/INSTALLING/ROOTFS_READY/BOOTSTRAPPING/RECOVERING）：
- *    三步进度（解压内置环境 → 配置系统 → 初始化工具链）+ 百分比/字节 + 当前阶段消息；
- *    T85 自动预备语义：App 启动即后台进行，用户无需任何操作，完成后自动进终端；
- *  - **失败**（FAILED）：错误详情 + 重试 + 环境中心；
- *  - **就绪空态**（READY，会话被用户全部关闭）：快捷新建入口。
- */
-@Composable
-private fun EnvironmentPanel(
-    phase: UbuntuLifecycleCoordinator.Phase,
-    progress: UbuntuLifecycleCoordinator.LifecycleProgress?,
-    lastError: String?,
-    onRetry: () -> Unit,
-    onNewUbuntu: () -> Unit,
-    onNewLocal: () -> Unit,
-    onOpenCenter: () -> Unit
-) {
-    // M3：verticalScroll + Arrangement.Center 是 Compose 已知坑组合 —— 内容
-    // 超视口时 Arrangement 对齐失效/顶部被裁且滚不回去（横屏、小屏、大字号
-    // 下本面板内容 ≈450dp+ 必现）。改为外层 Box 居中 + 内层滚动列：
-    // 内容矮于视口 → 整体垂直居中；高于视口 → 从顶部开始完整滚动、绝不裁头。
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 28.dp, vertical = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            when (phase) {
-                UbuntuLifecycleCoordinator.Phase.FAILED -> EnvironmentFailureContent(
-                    lastError = lastError,
-                    onRetry = onRetry,
-                    onOpenCenter = onOpenCenter
-                )
-                UbuntuLifecycleCoordinator.Phase.READY -> EnvironmentReadyEmptyContent(
-                    onNewUbuntu = onNewUbuntu,
-                    onNewLocal = onNewLocal
-                )
-                else -> EnvironmentPreparingContent(
-                    phase = phase,
-                    progress = progress,
-                    onNewLocal = onNewLocal,
-                    onOpenCenter = onOpenCenter
-                )
-            }
-        }
-    }
-}
-
-/** 环境准备步骤序号：0 解压内置档案 → 1 配置系统 → 2 初始化工具链。 */
-private fun setupStepIndex(stage: String?): Int = when {
-    stage == null -> 0
-    stage.startsWith("install:CONFIGURING") ||
-        stage.startsWith("install:ACTIVATING") ||
-        stage.startsWith("install:VALIDATING") -> 1
-    stage.startsWith("bootstrap:") -> 2
-    else -> 0 // install:RESOLVING/DOWNLOADING/VERIFYING/EXTRACTING
-}
-
-@Composable
-private fun EnvironmentPreparingContent(
-    phase: UbuntuLifecycleCoordinator.Phase,
-    progress: UbuntuLifecycleCoordinator.LifecycleProgress?,
-    onNewLocal: () -> Unit,
-    onOpenCenter: () -> Unit
-) {
-    // ── 顶部图标：呼吸光晕的终端符号 ──
-    val transition = rememberInfiniteTransition(label = "env-glow")
-    val glow by transition.animateFloat(
-        initialValue = 0.55f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1400), RepeatMode.Reverse),
-        label = "env-glow-alpha"
-    )
-    Box(contentAlignment = Alignment.Center) {
-        Box(
-            Modifier
-                .size(84.dp)
-                .background(ConsoleTheme.accent.copy(alpha = 0.14f * glow), CircleShape)
-        )
-        Surface(
-            shape = CircleShape,
-            color = ConsoleTheme.accentSoft,
-            border = androidx.compose.foundation.BorderStroke(1.dp, ConsoleTheme.accent.copy(alpha = 0.35f))
-        ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(64.dp)) {
-                Icon(
-                    Icons.Default.Terminal, contentDescription = null,
-                    tint = ConsoleTheme.accent,
-                    modifier = Modifier.size(30.dp)
-                )
-            }
-        }
-    }
-    Spacer(Modifier.height(22.dp))
-    Text(
-        stringResource(R.string.term_env_prep_title),
-        fontSize = 19.sp,
-        fontWeight = FontWeight.Bold,
-        color = ConsoleTheme.text
-    )
-    Spacer(Modifier.height(6.dp))
-    Text(
-        stringResource(R.string.term_env_prep_desc),
-        fontSize = 12.sp,
-        color = ConsoleTheme.dim,
-        textAlign = TextAlign.Center
-    )
-    Spacer(Modifier.height(28.dp))
-
-    // ── 三步进度 ──
-    val currentStep = setupStepIndex(progress?.stage)
-    val steps = listOf(
-        stringResource(R.string.term_step_unpack),
-        stringResource(R.string.term_step_configure),
-        stringResource(R.string.term_step_toolchain)
-    )
-    steps.forEachIndexed { index, label ->
-        SetupStepRow(
-            label = label,
-            state = when {
-                index < currentStep -> SetupStepState.DONE
-                index == currentStep -> SetupStepState.ACTIVE
-                else -> SetupStepState.PENDING
-            }
-        )
-    }
-    Spacer(Modifier.height(26.dp))
-
-    // ── 进度条 + 百分比 / 字节 ──
-    val percent = progress?.percent ?: 0
-    val bytes = progress?.bytesTransferred ?: 0L
-    val bytesTotal = progress?.bytesTotal
-    val determinate = percent > 0 || (bytesTotal != null && bytesTotal > 0L)
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(ConsoleTheme.bar)
-            .border(androidx.compose.foundation.BorderStroke(1.dp, ConsoleTheme.stroke), RoundedCornerShape(12.dp))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                when {
-                    progress == null -> stringResource(R.string.term_starting)
-                    else -> progress.message.ifBlank { progress.stage }
-                },
-                fontSize = 11.sp,
-                fontFamily = FontFamily.Monospace,
-                color = ConsoleTheme.dim,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-            if (determinate) {
-                Text(
-                    "$percent%",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    fontFamily = FontFamily.Monospace,
-                    color = ConsoleTheme.accent
-                )
-            }
-        }
-        if (determinate) {
-            LinearProgressIndicator(
-                progress = { (percent.coerceIn(0, 100)) / 100f },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(5.dp)
-                    .clip(RoundedCornerShape(3.dp)),
-                color = ConsoleTheme.accent,
-                trackColor = ConsoleTheme.accentSoft
-            )
-            if (bytesTotal != null && bytesTotal > 0L) {
-                Text(
-                    "${formatMb(bytes)} / ${formatMb(bytesTotal)}",
-                    fontSize = 10.5.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = ConsoleTheme.dim
-                )
-            }
-        } else {
-            LinearProgressIndicator(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(5.dp)
-                    .clip(RoundedCornerShape(3.dp)),
-                color = ConsoleTheme.accent,
-                trackColor = ConsoleTheme.accentSoft
-            )
-        }
-        Text(
-            stringResource(R.string.term_prep_footnote),
-            fontSize = 10.5.sp,
-            color = ConsoleTheme.dim
-        )
-    }
-    Spacer(Modifier.height(18.dp))
-
-    // ── 次级入口：不等环境，先用 Android Shell / 环境中心（纵向堆叠，
-    //    旧版两个横排 TextButton 在窄屏溢出）──
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        TextButton(onClick = onNewLocal) {
-            Icon(Icons.Default.Android, null, Modifier.size(15.dp), tint = ConsoleTheme.dim)
-            Spacer(Modifier.width(6.dp))
-            Text(stringResource(R.string.term_use_android_first), color = ConsoleTheme.dim, fontSize = 12.sp)
-        }
-        TextButton(onClick = onOpenCenter) {
-            Icon(Icons.Default.Layers, null, Modifier.size(15.dp), tint = ConsoleTheme.dim)
-            Spacer(Modifier.width(6.dp))
-            Text(stringResource(R.string.term_env_center), color = ConsoleTheme.dim, fontSize = 12.sp)
-        }
-    }
-}
-
-private enum class SetupStepState { DONE, ACTIVE, PENDING }
-
-@Composable
-private fun SetupStepRow(label: String, state: SetupStepState) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        when (state) {
-            SetupStepState.DONE -> Icon(
-                Icons.Default.CheckCircle, contentDescription = null,
-                tint = ConsoleTheme.accent, modifier = Modifier.size(18.dp)
-            )
-            SetupStepState.ACTIVE -> CircularProgressIndicator(
-                modifier = Modifier.size(16.dp),
-                strokeWidth = 1.8.dp,
-                color = ConsoleTheme.accent
-            )
-            SetupStepState.PENDING -> Box(
-                Modifier
-                    .size(16.dp)
-                    .background(ConsoleTheme.stroke, CircleShape)
-            )
-        }
-        Text(
-            label,
-            fontSize = 13.sp,
-            color = when (state) {
-                SetupStepState.DONE -> ConsoleTheme.text
-                SetupStepState.ACTIVE -> ConsoleTheme.accent
-                SetupStepState.PENDING -> ConsoleTheme.dim
-            },
-            fontWeight = if (state == SetupStepState.ACTIVE) FontWeight.SemiBold else FontWeight.Normal
-        )
-    }
-}
-
-@Composable
-private fun EnvironmentFailureContent(
-    lastError: String?,
-    onRetry: () -> Unit,
-    onOpenCenter: () -> Unit
-) {
-    Icon(
-        Icons.Default.Warning, contentDescription = null,
-        tint = ConsoleTheme.danger, modifier = Modifier.size(56.dp)
-    )
-    Spacer(Modifier.height(18.dp))
-    Text(stringResource(R.string.term_env_failed_title), fontSize = 19.sp, fontWeight = FontWeight.Bold, color = ConsoleTheme.text)
-    Spacer(Modifier.height(8.dp))
-    if (!lastError.isNullOrBlank()) {
-        Text(
-            lastError.take(300),
-            fontSize = 10.5.sp,
-            fontFamily = FontFamily.Monospace,
-            color = ConsoleTheme.dim,
-            textAlign = TextAlign.Center,
-            maxLines = 6,
-            overflow = TextOverflow.Ellipsis
-        )
-        Spacer(Modifier.height(10.dp))
-    }
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = ConsoleTheme.dangerSoft,
-        modifier = Modifier.clip(RoundedCornerShape(12.dp))
-    ) {
-        Row(
-            Modifier
-                .clickable(onClick = onRetry)
-                .padding(horizontal = 26.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(Icons.Default.Refresh, contentDescription = null, tint = ConsoleTheme.danger, modifier = Modifier.size(17.dp))
-            Text(stringResource(R.string.term_retry), color = ConsoleTheme.danger, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-        }
-    }
-    Spacer(Modifier.height(14.dp))
-    TextButton(onClick = onOpenCenter) {
-        Text(stringResource(R.string.term_open_env_center_diag), color = ConsoleTheme.dim, fontSize = 12.sp)
-    }
-}
-
-@Composable
-private fun EnvironmentReadyEmptyContent(
-    onNewUbuntu: () -> Unit,
-    onNewLocal: () -> Unit
-) {
-    Icon(
-        Icons.Default.Terminal, contentDescription = null,
-        tint = ConsoleTheme.accent, modifier = Modifier.size(52.dp)
-    )
-    Spacer(Modifier.height(18.dp))
-    Text(stringResource(R.string.term_no_terminal_session), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ConsoleTheme.text)
-    Spacer(Modifier.height(6.dp))
-    Text(
-        stringResource(R.string.term_env_ready_hint),
-        fontSize = 12.sp,
-        color = ConsoleTheme.dim,
-        textAlign = TextAlign.Center
-    )
-    Spacer(Modifier.height(24.dp))
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = ConsoleTheme.accentSoft,
-        border = androidx.compose.foundation.BorderStroke(1.dp, ConsoleTheme.accent.copy(alpha = 0.4f)),
-        modifier = Modifier.clip(RoundedCornerShape(12.dp))
-    ) {
-        Row(
-            Modifier
-                .clickable(onClick = onNewUbuntu)
-                .padding(horizontal = 30.dp, vertical = 13.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(9.dp)
-        ) {
-            Icon(Icons.Default.Terminal, contentDescription = null, tint = ConsoleTheme.accent, modifier = Modifier.size(18.dp))
-            Text(stringResource(R.string.term_new_ubuntu_session), color = ConsoleTheme.accent, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-        }
-    }
-    Spacer(Modifier.height(12.dp))
-    TextButton(onClick = onNewLocal) {
-        Icon(Icons.Default.Android, null, Modifier.size(15.dp), tint = ConsoleTheme.dim)
-        Spacer(Modifier.width(6.dp))
-        Text("Android Shell", color = ConsoleTheme.dim, fontSize = 12.sp)
-    }
-}
-
 // ═══════════════════════ 新建会话对话框 ═══════════════════════
 
 @Composable
@@ -1172,6 +845,3 @@ private fun SessionTypeCard(
     }
 }
 
-/** 字节 → MB 文本（1 位小数）。 */
-private fun formatMb(bytes: Long): String =
-    String.format(java.util.Locale.US, "%.1f MB", bytes / 1024.0 / 1024.0)

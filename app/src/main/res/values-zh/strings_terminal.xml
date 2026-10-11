@@ -5,7 +5,7 @@
 
     <!-- ═══ TerminalScreen ═══ -->
     <string name="term_title">终端</string>
-    <string name="term_cd_nav">打开导航</string>
+    <string name="term_back_to_drawer">返回抽屉页面</string>
     <string name="term_cd_env_center">环境中心</string>
     <string name="term_cd_settings">终端设置</string>
     <string name="term_new_session_title">新建终端会话</string>

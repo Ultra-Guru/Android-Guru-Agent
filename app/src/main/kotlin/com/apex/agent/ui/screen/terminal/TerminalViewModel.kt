@@ -380,7 +380,9 @@ class TerminalViewModel @Inject constructor(
                 ubuntuLifecycle.ensureReady()
             }
             if (r is UbuntuLifecycleCoordinator.EnsureResult.Failed) {
-                notifyError(R.string.term_notice_ubuntu_unavailable, r.message.take(120))
+                // T95：截断放宽 120→200 —— 错误路径是用户唯一能看到的根因线索
+                // （配合横幅点击展开全文；120 字会把关键路径截成「/data/user/0/com…」）
+                notifyError(R.string.term_notice_ubuntu_unavailable, r.message.take(200))
                 return
             }
         }
@@ -396,7 +398,8 @@ class TerminalViewModel @Inject constructor(
             terminalRuntime.create(backendId = backendId, env = localEnv)
         }
         val result = created.getOrElse { e ->
-            notifyError(R.string.term_notice_create_failed, e.message?.take(120) ?: "")
+            // T95：同上 —— 保留更多根因文本，横幅可点击展开全文
+            notifyError(R.string.term_notice_create_failed, e.message?.take(200) ?: "")
             return
         }
         registry.recordBackend(result.sessionId, result.backendId, result.runtimeType)

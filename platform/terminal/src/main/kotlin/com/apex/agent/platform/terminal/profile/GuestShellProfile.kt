@@ -3,12 +3,15 @@ package com.apex.agent.platform.terminal.profile
 /**
  * T87：Android 本地 Shell（mksh）rc 生成器 —— Shell 模式体验补全。
  *
- * 用户反馈「Shell 模式只有部分命令可以用」的三类根因与对策：
+ * 用户反馈「Shell 模式只有部分命令可以用」的四类根因与对策：
  *  1. **提示符裸奔**（`$ ` 无上下文）→ rc 提供 user@host:cwd 提示符 +
  *     历史记录（HISTFILE 需可写 HOME —— 由 app 层注入 $filesDir 路径）。
  *  2. **命令发现性差**（toybox 工具存在但用户不知道）→ `cmds` 函数列出
  *     PATH 上全部可用命令（按目录分组），`help` 打印速查卡。
  *  3. **无常用别名** → ll/la/l 等零成本别名（仅用 toybox 确定支持的形态）。
+ *  4. **宿主工具误用**（T95 真机日志：adb/systemd-analyze/lsb_release 在
+ *     设备 shell 里裸报 not found）→ 同款引导函数：说明工具属性 + 给出
+ *     设备侧正确替代（getprop/pm/am/dumpsys），把 404 变成路标。
  *
  * 兼容性纪律（mksh ≠ bash）：
  *  - PS1 不用 ANSI 色转义：mksh 的提示符宽度计算不认识 \[ \]（bash readline
@@ -81,6 +84,35 @@ object GuestShellProfile {
         appendLine("    echo \"当前是 Android 本地 shell（toybox 工具集，cmds 查看全部命令）。\"")
         appendLine("    return 127")
         appendLine("}")
+        appendLine("apt-get() { apt \"\$@\"; }")
+        appendLine()
+        appendLine("# ── 宿主工具引导（T95：真机日志实锤 —— 用户在设备 shell 里跑")
+        appendLine("# adb shell getprop / systemd-analyze / lsb_release，全是 PC 侧工具，")
+        appendLine("# mksh 无 command_not_found 钩子，只能得到一句裸的 not found。")
+        appendLine("# 这里按 apt() 同款范式给出口径 + 正确替代，把 404 变成路标）──")
+        appendLine("adb() {")
+        appendLine("    echo \"adb 是 PC 侧工具，设备上不存在 —— 就在本机直接跑：\"")
+        appendLine("    echo \"  getprop <name>      # 例：getprop ro.build.version.release\"")
+        appendLine("    echo \"  pm / am / dumpsys    # 包管理 / 组件 / 诊断（cmds 看全集）\"")
+        appendLine("    return 127")
+        appendLine("}")
+        appendLine("systemd-analyze() {")
+        appendLine("    echo \"Android 无 systemd —— 启动耗时看：dmesg | grep -i init\"")
+        appendLine("    echo \"或 logcat -b events | grep boot。\"")
+        appendLine("    return 127")
+        appendLine("}")
+        appendLine("systemctl() {")
+        appendLine("    echo \"Android 无 systemd —— 服务由 init 解析 .rc 启动：\"")
+        appendLine("    echo \"  getprop | grep init.  /  ps -A | grep <name>\"")
+        appendLine("    return 127")
+        appendLine("}")
+        appendLine("lsb_release() {")
+        appendLine("    echo \"本机是 Android，不是 Linux 发行版 —— 版本信息：\"")
+        appendLine("    echo \"  getprop ro.build.version.release   # Android 大版本\"")
+        appendLine("    echo \"  getprop ro.product.model / ro.product.brand\"")
+        appendLine("    echo \"  uname -a                           # 内核\"")
+        appendLine("    return 127")
+        appendLine("}")
         appendLine()
         appendLine("# ── help 速查卡 ──")
         appendLine("guru_help() {")
@@ -89,6 +121,7 @@ object GuestShellProfile {
         appendLine("    echo '  cmdf <cmd>      查命令位置与类型'")
         appendLine("    echo '  ll / la / l     ls 别名'")
         appendLine("    echo '  Ubuntu 会话      顶栏 + → Ubuntu（apt/python3/gcc/git 可用）'")
+        appendLine("    echo '  本机即设备      adb/systemd 系命令不存在：getprop/pm/am/dumpsys 直用'")
         appendLine("}")
         appendLine("alias help=guru_help")
         appendLine()
