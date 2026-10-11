@@ -132,13 +132,16 @@ fun CodeThinkingGuideSheet(
                 item { TierLadderTable() }
 
                 // ── 原生参数不生效提示（能力位门控；档位引擎侧效果照常）──
+                // （LazyListScope 非组合域 —— Composable 调用必须收进 item 块）
                 if (!nativeEffortActive) {
-                    Text(
-                        text = stringResource(R.string.code_thinking_no_native_effort),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
+                    item {
+                        Text(
+                            text = stringResource(R.string.code_thinking_no_native_effort),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
                 }
 
                 item {
