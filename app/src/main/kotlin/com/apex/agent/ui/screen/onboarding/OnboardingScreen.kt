@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Terminal
@@ -66,7 +67,8 @@ object OnboardingFlow {
  *
  * 页面结构（v2）：
  *  1. 欢迎 —— Viro 品牌吉祥物（与启动器图标同源的像素侵略者）+ 应用定位一句话
- *  2. 能力 —— 对话智能体 / Ubuntu 终端 / 技能与市场 三大核心能力卡片
+ *  2. 能力 —— 对话智能体 / Ubuntu 终端 / 浏览器自动化 / 技能与市场 四大核心能力卡片
+ *     （v1.5：新增浏览器自动化卡 —— 内置大功能，首次上手即知无需装插件）
  *  3. 权限 —— 八步授权引导（存储/所有文件/系统设置/安装未知应用/电池优化/
  *     悬浮窗/通知/无障碍进阶），全部可跳过（OnboardingPermissionsPage）
  *  4. 工作区 —— 操控所有（默认）或 SAF 选定文件夹（OnboardingWorkspacePage）
@@ -288,6 +290,13 @@ private fun CapabilitiesPage() {
             Icons.Default.Terminal,
             stringResource(R.string.onboarding_cap_terminal_title),
             stringResource(R.string.onboarding_cap_terminal_desc)
+        ),
+        Capability(
+            // v1.5：浏览器自动化内置大功能首次上手即布道（globe 图标与
+            // 聊天流 BROWSER 工具徽章同源，能力认知两处一致）。
+            Icons.Default.Public,
+            stringResource(R.string.onboarding_cap_browser_title),
+            stringResource(R.string.onboarding_cap_browser_desc)
         ),
         Capability(
             Icons.Default.Storefront,

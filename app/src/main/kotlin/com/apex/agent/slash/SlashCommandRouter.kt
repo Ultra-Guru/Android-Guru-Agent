@@ -164,10 +164,12 @@ object SlashCommandRouter {
             // 插件工具桥已激活（IApexPluginHost 宿主桥 + PluginManager 真实注册）：
             // 插件加载后其工具已注册进 ToolRegistry，模型可直接调用。
             // 未加载（loadedPlugins 不含该包）时如实引导去市场页安装/启用。
+            // v1.5 话术清理：浏览器自动化已内置（非插件），示例不再指 browser_* ——
+            // 指引改为按插件名检索其注册工具，避免把内置能力误归为插件语境。
             systemMessage = "📦 插件: ${command.id}（工具已注册进 Agent 工具表）",
             agentPrompt = command.buildAgentPrompt(
-                verb = "插件 ${command.id} 已加载，其工具已注册进 ToolRegistry —— 请直接调用对应的插件工具完成任务（如 browser_* 网页自动化工具）。若工具不存在，提示用户去 市场 → 插件 页面安装/启用该插件后重试",
-                toolHint = "插件工具（browser_* 等）"
+                verb = "插件 ${command.id} 已加载，其工具已注册进 ToolRegistry —— 请直接调用该插件注册的工具完成任务（可先用 tool_search 按插件名检索其工具清单）。若工具不存在，提示用户去 市场 → 插件 页面安装/启用该插件后重试",
+                toolHint = "插件工具"
             ),
             routeKind = "plugin",
             sourceName = command.id
