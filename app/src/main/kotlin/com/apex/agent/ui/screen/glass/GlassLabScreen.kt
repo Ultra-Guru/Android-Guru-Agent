@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -53,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -61,7 +61,6 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -769,11 +768,18 @@ private fun DraggableGlassChip(state: Backdrop, zoneSize: IntSize) {
 
     GlassCard(
         modifier = Modifier
-            .offset {
-                IntOffset(
-                    x = chipOffset.x.roundToInt(),
-                    y = chipOffset.y.roundToInt()
-                )
+            // diag-20261011（GlassLab 续）：拖拽位移改纯 draw 通道（graphicsLayer
+            // translation）—— 旧实现 offset{} 延迟 lambda 在 placement 通道读
+            // chipOffset（OffsetPxNode.layout 块内求值），拖动每帧触发布局类失
+            // 效；与换页 dispose（SaveableStateProvider 换目的地/模式切换）同帧
+            // 竞争时，draw 派发中的 measureAndLayout 会撞上已脱离 owner 的节点
+            //——「LayoutNode should be attached to an owner」（crash-1791688161738，
+            // 栈形态 Scroll→Column→子 remeasure）。与 b4648f22 同配方：translation
+            // 保持视觉/命中等效（层变换参与命中测试，芯片在位移后位置仍可抓取），
+            // 测量/布局通道零失效。
+            .graphicsLayer {
+                translationX = chipOffset.x
+                translationY = chipOffset.y
             }
             .size(width = ChipWidth, height = ChipHeight)
             .pointerInput(Unit) {
