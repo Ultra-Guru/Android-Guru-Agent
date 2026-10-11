@@ -31,6 +31,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -69,6 +70,8 @@ import com.apex.agent.update.UpdateManifest
 import com.apex.agent.update.UpdateTarget
 import com.apex.agent.update.resolveAuto
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.apex.agent.ui.screen.settings.SettingsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -117,6 +120,15 @@ internal fun UpdatePanel() {
     val probe = remember { MirrorSpeedProbe() }
     val downloader = remember { UpdateDownloader(context) }
 
+    // ═══ 自动更新总开关（用户反馈：不想更新时后台仍在检查/下载）═══
+    // 设置层 AgentSettings.autoUpdateCheck 持久化；开 = 保持既有行为（启动
+    // 静默检查 + 浮窗 + 进页自动检查），关 = 后台零检查零下载（手动按钮
+    // 不受限）。SettingsRepository 为 @Singleton —— 这里独立取 VM 只为读写
+    // 该设置，不与设置页共享导航栈。
+    val settingsVm: SettingsViewModel = hiltViewModel()
+    val agentSettings by settingsVm.agentSettings.collectAsStateWithLifecycle()
+    val autoUpdate = agentSettings.autoUpdateCheck
+
     // 中枢状态 → 组合（单一真相源：浮窗与本页共享同一份检查结果）
     val checkStateRaw by center.checkState.collectAsStateWithLifecycle()
     val patchIndex by center.patchIndex.collectAsStateWithLifecycle()
@@ -157,8 +169,12 @@ internal fun UpdatePanel() {
         )
     }
 
-    // ── 进入页面自动静默检查一次（v1.4.3：不必再手动点第一次）────────────────
-    LaunchedEffect(Unit) { triggerCheck() }
+    // ── 进入页面自动静默检查一次（v1.4.3：不必再手动点第一次）──────────────
+    // 自动更新开关门控：关闭后进页不检查（启动侧门控见 ApexRoot）——
+    // 后台零检查零下载，手动「检查更新」按钮仍可用。
+    LaunchedEffect(Unit) {
+        if (settingsVm.agentSettings.value.autoUpdateCheck) triggerCheck()
+    }
 
     // ── 引擎就绪 → 登记重入口（「稍后安装」后动作区仍可一键回弹）──────────────
     // 中枢状态流变 Ready 时同步本地 readyPatch（磁盘复核扫描的运行时孪生）
@@ -477,6 +493,33 @@ internal fun UpdatePanel() {
                 }
             }
 
+            // ═══ 自动更新总开关行（面板顶部，用户反馈补齐）════════════════
+            // 开 = 既有行为（启动静默检查 + 浮窗 + 进页自动检查）；
+            // 关 = 后台零检查零下载补丁包 —— 更新节奏完全交给手动按钮。
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.about_update_auto_toggle),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        stringResource(R.string.about_update_auto_toggle_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                Switch(
+                    checked = autoUpdate,
+                    onCheckedChange = { on ->
+                        settingsVm.updateAgentSettings { copy(autoUpdateCheck = on) }
+                    }
+                )
+            }
+
             // ═══ v1.4.8 本地更新包常驻区 ══════════════════════════════════════
             // 用户反馈：「补丁合成的 APK 装完后在关于页消失，得去 MT 管理器找」。
             // 现常驻列出 Download/ApexAgent/ 下所有 APK（合成包 + 全量包），
@@ -496,7 +539,8 @@ internal fun UpdatePanel() {
             when (val state = updateState) {
                 UpdateUiState.Idle -> {
                     Text(
-                        stringResource(R.string.about_update_auto_hint),
+                        text = if (autoUpdate) stringResource(R.string.about_update_auto_hint)
+                        else stringResource(R.string.about_update_auto_off_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline
                     )
@@ -996,7 +1040,7 @@ internal fun UpdatePanel() {
             val result = (updateState as? UpdateUiState.Done)?.result
             val manifest = (result as? UpdateCheckResult.Available)?.latest
             val probeUrl = manifest?.let { checker.preferredAsset(it)?.url }
-                ?: "https://github.com/AceGuru-mjh/Android-Guru-Agent-Release/releases/latest"
+                ?: "https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases/latest"
             probing = true
             speeds = probe.probeAll(probeUrl)
             probing = false

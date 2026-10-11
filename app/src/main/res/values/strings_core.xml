@@ -63,6 +63,10 @@
 
     <!-- Reasoning -->
     <string name="settings_section_reasoning">Reasoning</string>
+    <string name="settings_reasoning_effort_label">Reasoning Effort</string>
+    <string name="settings_thinking_budget_label">Thinking Budget (tokens)</string>
+    <string name="settings_thinking_budget_auto">Auto</string>
+    <string name="settings_show_thinking_label">Show Thinking</string>
     <string name="settings_effort_desc">The model\'s native thinking intensity (OpenAI o-series / DeepSeek-R1 / Qwen3 etc.); ignored automatically by unsupported models</string>
     <string name="settings_budget_desc">Chain-of-thought token budget; not hard-tied to Effort (providers differ in semantics)</string>
     <string name="settings_show_thinking_desc">Show the model\'s thinking process in the chat stream (data plumbed; chat rendering comes later)</string>
@@ -302,8 +306,8 @@
     <string name="model_profile_name">Profile name</string>
     <string name="model_no_provider_selected">No provider selected</string>
     <string name="model_select_provider">Select model provider</string>
-    <string name="model_base_url_blank_hint">Enter your custom endpoint here, e.g. https://api.xxx.com/v1</string>
-    <string name="model_request_url_hint">Requests go to %1$s/chat/completions</string>
+    <string name="model_base_url_blank_hint">Fully custom: e.g. https://api.xxx.com/v1 (we append /chat/completions), or a full path ending in /chat/completions (used as-is)</string>
+    <string name="model_request_url_hint">Requests go to %1$s</string>
     <string name="model_url_deviated">⚠ The current Base URL deviates from the official %1$s preset (official: %2$s). The fetched model list is returned by that endpoint — every model id in it (including test / incomplete names) comes from there, not from the official list.</string>
     <string name="model_restore_official">Restore official endpoint %1$s</string>
     <string name="model_hide_key">Hide</string>
@@ -584,6 +588,9 @@
     <string name="about_section_links">Links</string>
     <string name="about_update_current">Currently on v%1$s (%2$d)</string>
     <string name="about_update_auto_hint">Checks automatically each time this page opens</string>
+    <string name="about_update_auto_toggle">Auto-install update patches</string>
+    <string name="about_update_auto_toggle_desc">On: silently check for new versions at startup and prompt. Off: zero background checks or downloads — control updates yourself with the Check now button</string>
+    <string name="about_update_auto_off_hint">Auto-update is off — check manually below</string>
     <string name="about_update_retry">Retry</string>
     <string name="about_update_new_badge">NEW</string>
     <string name="about_update_progress_mb">Downloading… %1$d%% · %2$s downloaded</string>

@@ -152,8 +152,11 @@ class StreamingOpenAiClient(
     // ═══ 内部方法 ═══
     
     private fun buildRequest(body: JsonObject): Request {
+        // 完全自定义端点（用户反馈）：baseUrl 已含 /chat/completions（或旧版
+        // /completions）时原样直发，不再双拼；根路径 / /v1 等照旧追加。
+        // 归一化口径见 [EndpointResolver.chatCompletions]（设置页预览同源）。
         val builder = Request.Builder()
-            .url("${config.baseUrl.trimEnd('/')}/chat/completions")
+            .url(EndpointResolver.chatCompletions(config.baseUrl))
             .addHeader("Content-Type", "application/json")
             .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
         
@@ -207,11 +210,11 @@ class StreamingOpenAiClient(
         }
 
         // ── B3/T4：OpenAI 官方严格推理模型识别（o1/o3/o4-mini/gpt-5）──────────
-        // 这些模型的 API 硬性拒绝 temperature 与 max_tokens：
-        //  - 带 temperature → 400 "Unsupported parameter: 'temperature'"
-        //  - 带 max_tokens → 400 "…'max_tokens' is not supported with this model"
-        //    （必须改用 max_completion_tokens）
-        val isStrictOpenAiReasoner = OPENAI_STRICT_REASONER.containsMatchIn(config.model)
+        // 这些模型的 API 硬性拒绝 temperature 与 max_tokens（400
+        // "Unsupported parameter"）；正则口径统一收口至
+        // [EndpointResolver.isStrictOpenAiReasoner]（Coding 屏思考档位生效
+        // 提示与其共用同一份判定，防两处漂移）。
+        val isStrictOpenAiReasoner = EndpointResolver.isStrictOpenAiReasoner(config.model)
         // T4：OpenAI 官方端点 + 推理模型 → max_tokens 必须换成 max_completion_tokens。
         // 官方端点判定 = baseUrl 含 "api.openai.com"（第三方 OpenAI 兼容网关大多
         // 仍接受 max_tokens，不误伤）。
@@ -812,24 +815,11 @@ class StreamingOpenAiClient(
         )
 
         /**
-         * B3/T4：OpenAI 官方"严格"推理模型（硬性拒绝 temperature / max_tokens）。
-         *
-         * 词边界正则（大小写不敏感），单测风格边界示例：
-         *  - 命中："o1"、"o3"、"o3-mini"、"o3-mini-high"、"o1-preview"、
-         *    "o4-mini"、"gpt-5"、"gpt-5-mini"、"gpt-5-chat-latest"、
-         *    "chatgpt-5-latest"、"O3-MINI"
-         *  - 不命中："neo3x"（o3 前是字母，lookbehind 拦截）、"hero1"（同上）、
-         *    "o1abc"（o1 后紧跟字母，lookahead 拦截）、"gpt-4o"、"gpt-4.1"、
-         *    "deepseek-chat"
-         */
-        val OPENAI_STRICT_REASONER: Regex = Regex(
-            "(?<![a-z0-9])o[134](-mini|-preview)?(?![a-z0-9])|gpt-5",
-            RegexOption.IGNORE_CASE
-        )
-
-        /**
          * T1/T3：Anthropic `thinking.budget_tokens` 的 effort 档位映射
          * （thinkingBudget 未显式设置时使用）。
+         *
+         * 注：OPENAI_STRICT_REASONER 正则已上提至
+         * [EndpointResolver.isStrictOpenAiReasoner]（单一口径）。
          */
         val EFFORT_THINKING_BUDGETS: Map<ReasoningEffort, Int> = mapOf(
             ReasoningEffort.LOW to 2048,

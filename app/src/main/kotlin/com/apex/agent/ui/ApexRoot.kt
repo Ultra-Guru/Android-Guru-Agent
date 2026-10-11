@@ -170,13 +170,17 @@ fun ApexRoot() {
     // ═══ v1.4.5：启动即检查更新（UpdateCenter 内部 6h 节流；进程重建不重复拉）═══
     // v1.4.9 闪退防御：整体 runCatching —— requireContext 在中枢未就绪时
     // error() 抛 ISE，裸 LaunchedEffect 协程异常同样杀死进程。
+    // 自动更新总开关（设置→关于页可关）：关闭后启动零检查零浮窗 ——
+    // 用户显式控制更新节奏（后台不再有任何更新流量）。
     LaunchedEffect(Unit) {
         runCatching {
-            UpdateCenter.checkForUpdate(
-                currentVersionCode = BuildConfig.VERSION_CODE,
-                force = false,
-                fromTrigger = "app-start"
-            )
+            if (agentVm.uiSettings.value.autoUpdateCheck) {
+                UpdateCenter.checkForUpdate(
+                    currentVersionCode = BuildConfig.VERSION_CODE,
+                    force = false,
+                    fromTrigger = "app-start"
+                )
+            }
         }.onFailure {
             android.util.Log.w("ApexRoot", "startup update check failed: ${it.message}")
         }
@@ -327,7 +331,10 @@ fun ApexRoot() {
                                 onOpenSettings = { navStack.push(DrawerDestination.Settings) }
                             )
                             DrawerDestination.Code -> CodeScreen(
-                                viewModel = hiltViewModel()
+                                viewModel = hiltViewModel(),
+                                // 「小大脑」菜单 → 配置模型：跳设置页（压栈语义，
+                                // 改完返回 Coding 上下文 —— 与 Agent 屏同款）
+                                onOpenSettings = { navStack.push(DrawerDestination.Settings) }
                             )
                             DrawerDestination.Templates -> TemplateStudioScreen()
                             DrawerDestination.Terminal -> TerminalScreen(

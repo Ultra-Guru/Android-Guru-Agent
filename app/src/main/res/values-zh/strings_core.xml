@@ -63,6 +63,10 @@
 
     <!-- Reasoning -->
     <string name="settings_section_reasoning">Reasoning · 推理</string>
+    <string name="settings_reasoning_effort_label">思考强度</string>
+    <string name="settings_thinking_budget_label">思考预算（tokens）</string>
+    <string name="settings_thinking_budget_auto">自动</string>
+    <string name="settings_show_thinking_label">显示思考过程</string>
     <string name="settings_effort_desc">模型原生思考强度（OpenAI o 系 / DeepSeek-R1 / Qwen3 等）；不支持的模型自动忽略</string>
     <string name="settings_budget_desc">思维链 token 预算；与 Effort 不强行绑定（不同 Provider 语义不同）</string>
     <string name="settings_show_thinking_desc">在对话流中展示模型的思考过程（数据预埋，对话渲染层后续接入）</string>
@@ -302,8 +306,8 @@
     <string name="model_profile_name">档案名称</string>
     <string name="model_no_provider_selected">未选择服务商</string>
     <string name="model_select_provider">选择模型服务商</string>
-    <string name="model_base_url_blank_hint">自定义端点请在此填写，例：https://api.xxx.com/v1</string>
-    <string name="model_request_url_hint">请求发往 %1$s/chat/completions</string>
+    <string name="model_base_url_blank_hint">完全自定义：填 https://api.xxx.com/v1（自动补 /chat/completions），或以 /chat/completions 结尾的完整路径（原样直发）</string>
+    <string name="model_request_url_hint">请求发往 %1$s</string>
     <string name="model_url_deviated">⚠ 当前 Base URL 偏离「%1$s」官方预设（官方：%2$s）。拉到的模型清单由该端点返回，出现的 model id（含 test / 命名不完整项）均来自它，非官方列表。</string>
     <string name="model_restore_official">恢复官方端点 %1$s</string>
     <string name="model_hide_key">隐藏</string>
@@ -584,6 +588,9 @@
     <string name="about_section_links">相关链接</string>
     <string name="about_update_current">当前版本 v%1$s (%2$d)</string>
     <string name="about_update_auto_hint">每次进入本页自动检查一次</string>
+    <string name="about_update_auto_toggle">自动安装更新补丁</string>
+    <string name="about_update_auto_toggle_desc">开启：启动时静默检查新版本并提示更新。关闭：后台零检查、零下载补丁包 —— 用「检查更新」按钮手动控制更新节奏</string>
+    <string name="about_update_auto_off_hint">自动更新已关闭 —— 可在下方手动检查新版本</string>
     <string name="about_update_retry">重试</string>
     <string name="about_update_new_badge">新版本</string>
     <string name="about_update_progress_mb">下载中 %1$d%% · 已下载 %2$s</string>

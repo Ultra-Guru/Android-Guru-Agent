@@ -127,7 +127,7 @@ import kotlin.math.sin
 private const val REPO_URL = "https://github.com/AceGuru-mjh/Android-Guru-Agent"
 
 /** 发布仓库（双仓库发布架构的产物存放处）。 */
-private const val RELEASE_URL = "https://github.com/AceGuru-mjh/Android-Guru-Agent-Release/releases"
+private const val RELEASE_URL = "https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases"
 
 /** Star 引导行图标色：琥珀色，与 M3 主色拉开距离，白/深底上都醒目。 */
 private val StarAmber = Color(0xFFF59E0B)
