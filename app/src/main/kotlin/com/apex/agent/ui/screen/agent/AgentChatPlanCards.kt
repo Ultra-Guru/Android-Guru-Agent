@@ -397,6 +397,21 @@ internal fun riskColor(level: RiskLevel): Color {
 }
 
 /**
+ * #365 风险等级 → 定性标签（无危险/平衡/危险/极度危险）。
+ *
+ * 旧实现直接拼 `spec.riskLevel.name`（英文枚举名 LOW/MEDIUM/HIGH），中文用户
+ * 看到「风险 LOW」既不本地化也无法行动；百分比/枚举名是假精确，定性档位
+ * 才对应「我要不要多问一句」的决策。四档标签经 stringResource 双语解析。
+ */
+@Composable
+internal fun riskLevelLabel(level: RiskLevel): String = when (level) {
+    RiskLevel.LOW -> stringResource(R.string.chat_risk_low)
+    RiskLevel.MEDIUM -> stringResource(R.string.chat_risk_medium)
+    RiskLevel.HIGH -> stringResource(R.string.chat_risk_high)
+    RiskLevel.CRITICAL -> stringResource(R.string.chat_risk_critical)
+}
+
+/**
  * 需求规格卡片（Spec 模式确认通过后展示）：
  * 目标 / 需求 / 约束 / 验收标准 / 交付物，分节呈现。
  */
@@ -429,14 +444,14 @@ internal fun SpecCard(spec: ExecutionSpec) {
                 }
                 Text(stringResource(R.string.chat_spec_title), style = MaterialTheme.typography.titleSmall)
                 Spacer(modifier = Modifier.weight(1f))
-                // 风险徽章
+                // 风险徽章：定性档位（无危险/平衡/危险/极度危险）
                 val risk = riskColor(spec.riskLevel)
                 Surface(
                     color = risk.copy(alpha = 0.14f),
                     shape = RoundedCornerShape(6.dp)
                 ) {
                     Text(
-                        text = stringResource(R.string.chat_risk_level, spec.riskLevel.name),
+                        text = stringResource(R.string.chat_risk_level, riskLevelLabel(spec.riskLevel)),
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Medium,
                         color = risk,

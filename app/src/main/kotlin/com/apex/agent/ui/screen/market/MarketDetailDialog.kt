@@ -40,6 +40,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apex.agent.R
+import com.apex.agent.ui.component.ReliabilityTier
+import com.apex.agent.ui.component.reliabilityTierOf
 
 /**
  * # 技能详情对话框
@@ -253,7 +255,12 @@ private fun CognitiveHealthPanel(state: SkillDetailUiState) {
                     )
                     StatChip(
                         stringResource(R.string.market_stat_success_rate),
-                        String.format("%.0f%%", macro.successRate * 100),
+                        tierLabel(
+                            reliabilityTierOf(
+                                macro.successRate,
+                                macro.successCount + macro.failureCount > 0
+                            )
+                        ),
                         MaterialTheme.colorScheme.tertiary
                     )
                     StatChip(
@@ -428,7 +435,7 @@ private fun UsageSummaryPanel(state: SkillDetailUiState) {
             )
             StatChip(
                 stringResource(R.string.market_stat_success_rate),
-                String.format("%.0f%%", state.successRate * 100),
+                tierLabel(reliabilityTierOf(state.successRate, state.hasUsage)),
                 MaterialTheme.colorScheme.tertiary
             )
         }
@@ -471,13 +478,18 @@ private fun ToolStatRow(row: ToolUsageRow) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.width(8.dp))
+            // #365：百分比→定性档位（稳定/一般/不稳定），语义色不变
+            val tier = reliabilityTierOf(row.successRate, row.invocations > 0)
             Text(
-                String.format("%.0f%%", row.successRate * 100),
+                tierLabel(tier),
                 style = MaterialTheme.typography.labelSmall,
-                fontFamily = FontFamily.Monospace,
-                color = if (row.successRate >= 0.9) MaterialTheme.colorScheme.primary
-                else if (row.successRate >= 0.5) MaterialTheme.colorScheme.tertiary
-                else MaterialTheme.colorScheme.error
+                fontWeight = FontWeight.SemiBold,
+                color = when (tier) {
+                    ReliabilityTier.STABLE -> MaterialTheme.colorScheme.primary
+                    ReliabilityTier.FAIR -> MaterialTheme.colorScheme.tertiary
+                    ReliabilityTier.UNSTABLE -> MaterialTheme.colorScheme.error
+                    ReliabilityTier.UNUSED -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
             )
             Spacer(Modifier.width(8.dp))
             Text(
@@ -559,3 +571,7 @@ private fun formatRelative(timestampMs: Long): String {
         else -> stringResource(R.string.market_time_months_ago, delta / (30L * 86_400_000))
     }
 }
+
+/** #365：可靠性档位的本地化标签（稳定/一般/不稳定/未使用）。 */
+@Composable
+private fun tierLabel(tier: ReliabilityTier): String = tier.label()

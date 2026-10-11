@@ -27,7 +27,7 @@
     <!-- ═══ 分类白名单 ═══ -->
     <string name="mcphost_categories_title">工具分类白名单</string>
     <string name="mcphost_categories_hint">仅白名单分类内的工具会暴露给外部 AI。默认只读友好集，高风险分类默认关闭。</string>
-    <string name="mcphost_categories_risky">⚠ 已启用高风险分类（SHELL / TERMINAL / APP / UI / GITHUB / SECURITY）：外部 AI 将可直接操控手机，请谨慎开启。</string>
+    <string name="mcphost_categories_risky">⚠ 已启用危险分类（SHELL / TERMINAL / APP / UI / GITHUB / SECURITY）：外部 AI 将可直接操控手机，请谨慎开启。</string>
 
     <!-- ═══ 硬黑名单 ═══ -->
     <string name="mcphost_blacklist_title">强制禁用工具（只读）</string>

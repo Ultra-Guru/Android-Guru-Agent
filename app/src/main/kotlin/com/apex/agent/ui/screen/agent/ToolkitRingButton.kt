@@ -358,7 +358,9 @@ private fun outputFormatLabel(fmt: OutputFormat): String = when (fmt) {
 
 /**
  * 函数调用二级菜单的单个工具行（Checkbox + 名称 + id + 风险徽标）。
- * 高风险工具的 ⚠ 徽标提示：勾选后首次执行仍会弹用户确认（v2 风险门）。
+ * 危险工具的 ⚠ 徽标提示：勾选后首次执行仍会弹用户确认（v2 风险门）。
+ * #365：徽标从孤立「⚠」升级为「⚠ 危险」定性徽标 —— 单独一个符号对新用户
+ * 语义不明，文字档位（危险/平衡/无危险）可直接读到。
  */
 @Composable
 private fun ToolCheckboxRow(
@@ -387,12 +389,18 @@ private fun ToolCheckboxRow(
         )
         if (tool.highRisk) {
             Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                "⚠",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 2.dp)
-            )
+            Surface(
+                color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(4.dp)
+            ) {
+                Text(
+                    stringResource(R.string.risk_label_dangerous),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                )
+            }
         }
     }
 }

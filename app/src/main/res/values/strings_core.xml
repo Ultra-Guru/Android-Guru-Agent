@@ -681,11 +681,14 @@
     <string name="gate_mode_default">Default (DEFAULT)</string>
     <string name="gate_mode_accept_edits">Accept edits (ACCEPT_EDITS)</string>
     <string name="gate_mode_plan">Read-only planning (PLAN)</string>
-    <string name="gate_risk_title_fmt">High-risk tool requires confirmation: %1$s</string>
+    <string name="gate_risk_title_fmt">Dangerous tool requires confirmation: %1$s</string>
     <string name="gate_file_write_title_fmt">File write confirmation: %1$s</string>
-    <string name="gate_risk_hint_high">High risk: destructive or irreversible</string>
-    <string name="gate_risk_hint_medium">Medium risk: modifies data or state</string>
+    <string name="gate_risk_hint_high">Dangerous: destructive or irreversible</string>
+    <string name="gate_risk_hint_medium">Balanced: modifies data or state</string>
     <string name="gate_risk_line_fmt">%1$s (%2$s)</string>
+    <string name="risk_label_dangerous">Dangerous</string>
+    <string name="risk_label_balanced">Balanced</string>
+    <string name="risk_label_safe">No danger</string>
     <string name="gate_opt_allow_session">Allow for this session</string>
     <string name="gate_opt_allow_session_desc">This tool will not ask again in this session</string>
     <string name="gate_opt_allow_once">Allow once</string>

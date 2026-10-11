@@ -63,6 +63,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
+import com.apex.agent.ui.component.ReliabilityTier
+import com.apex.agent.ui.component.reliabilityTierOf
 import com.apex.agent.core.code.longtask.LongTaskCheckpoint
 import com.apex.agent.core.code.longtask.LongTaskCopyOptions
 import com.apex.agent.core.code.longtask.LongTaskDetector
@@ -881,8 +883,10 @@ private fun SwitchRow(label: String, checked: Boolean, onChecked: (Boolean) -> U
 // ═══ 档位效能页签 ═══
 
 /**
- * 档位效能表：工作区 × 档位的长任务聚合（runs/成功率/平均迭代/工具/时长）。
+ * 档位效能表：工作区 × 档位的长任务聚合（runs/可靠性定性/平均迭代/工具/时长）。
  * 数据源 ThinkingEvolutionTracker——帮用户用自己的历史选档，而非凭感觉。
+ * #365：成功率百分比→定性档位（稳定/一般/不稳定）——「87% vs 91%」在
+ * 选档决策上无差别，档位词可直接读到结论。
  */
 @Composable
 private fun ThinkingStatsTab(stats: CodeThinkingEvolutionTracker.WorkspaceThinkingStats?) {
@@ -936,10 +940,17 @@ private fun ThinkingStatsTab(stats: CodeThinkingEvolutionTracker.WorkspaceThinki
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    // #365：可靠性定性档位（runs>0 必有数据，无需 UNUSED 分支）
+                    val reliability = when (reliabilityTierOf(stat.successRate, stat.runs > 0)) {
+                        ReliabilityTier.STABLE -> stringResource(R.string.code_reliability_stable)
+                        ReliabilityTier.FAIR -> stringResource(R.string.code_reliability_fair)
+                        ReliabilityTier.UNSTABLE -> stringResource(R.string.code_reliability_unstable)
+                        ReliabilityTier.UNUSED -> stringResource(R.string.market_reliability_unused)
+                    }
                     Text(
                         text = stringResource(
                             R.string.code_longtask_stats_row_fmt,
-                            (stat.successRate * 100).toInt(),
+                            reliability,
                             stat.avgIterations,
                             stat.avgToolCalls,
                             formatDuration(stat.avgDurationMs)

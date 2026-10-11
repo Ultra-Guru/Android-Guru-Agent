@@ -155,7 +155,10 @@
     <string name="code_longtask_stats_empty">No tier stats yet</string>
     <string name="code_longtask_stats_empty_hint">Stats aggregate automatically from archived long tasks per tier</string>
     <string name="code_longtask_stats_runs_fmt">%1$d runs</string>
-    <string name="code_longtask_stats_row_fmt">success %1$d%% · avg %2$d iters · %3$d tools · %4$s</string>
+    <string name="code_longtask_stats_row_fmt">reliability %1$s · avg %2$d iters · %3$d tools · %4$s</string>
+    <string name="code_reliability_stable">Stable</string>
+    <string name="code_reliability_fair">Fair</string>
+    <string name="code_reliability_unstable">Unstable</string>
 
     <!-- v1.2 checkpoint timeline (CodeLongTaskSheet expanded section) -->
     <string name="code_longtask_cp_round_fmt">Round %1$d</string>
