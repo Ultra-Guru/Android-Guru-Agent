@@ -5,6 +5,7 @@ import com.apex.agent.core.tools.connector.ConnectorDef
 import com.apex.agent.core.tools.connector.ConnectorRegistry
 import com.apex.agent.core.tools.marketplace.ClawHubSource
 import com.apex.agent.core.tools.marketplace.ModelScopeSource
+import com.apex.agent.core.tools.marketplace.RawGitHubMirrors
 import com.apex.agent.core.tools.mcp.McpManager
 import com.apex.agent.core.tools.mcp.McpServerConfig
 import com.apex.agent.core.tools.skill.SafeZipExtractor
@@ -22,6 +23,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.io.IOException
 import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -67,7 +69,10 @@ class MarketInstallManager @Inject constructor(
     //
     // P1（市场审计）：安装确认门禁 —— 市场加载的 Skill JSON 是不可信第三方内容
     // （promptInjection 直接进下一轮系统提示词），落盘+自动激活前给用户一次目检。
-    // 宿主（MarketViewModel）注入 UI 确认实现；null = 无门禁（单测/直连，旧行为）。
+    // 宿主（MarketViewModel）注入 UI 确认实现。
+    // #347（fail-closed）：gate 为 null 时**拒绝**安装而不是放行 —— 双 VM 互踩/
+    // 页面销毁后单例控制器发起的安装，宁可明确报错引导重新发起，也不允许
+    // 不可信内容绕过目检直接落盘（null 永不等于放行）。
     // @Volatile：主线程注入与 IO 线程安装读的可见性。
     @Volatile
     var installConfirmGate: (suspend (ManifestPreview) -> Boolean)? = null
@@ -78,7 +83,13 @@ class MarketInstallManager @Inject constructor(
     suspend fun installSkillFromJson(content: String, trusted: Boolean = false): Result<String> =
         withContext(Dispatchers.IO) {
             val gate = installConfirmGate
-            if (!trusted && gate != null) {
+            if (!trusted) {
+                if (gate == null) {
+                    // #347 fail-closed：确认通道缺失 = 拒绝，绝不静默跳过门禁
+                    return@withContext Result.failure(
+                        Exception("确认通道未初始化：请从市场页面重新发起安装")
+                    )
+                }
                 val preview = dryRunInstall(content).getOrNull()
                     ?: return@withContext Result.failure(
                         Exception("manifest 解析失败，已拒绝安装（无法预览的内容不盲装）")
@@ -503,7 +514,11 @@ class MarketInstallManager @Inject constructor(
             .build()
         httpClient.newCall(request).execute().use { resp ->
             if (!resp.isSuccessful) return@use null
-            json.parseToJsonElement(resp.body?.string() ?: return@use null)
+            // #345：流式限读（与同文件其他下载点同口径）—— 旧 `body?.string()`
+            // 先整体读入内存，异常网关返回超大响应即 OOM。
+            val bodyBytes = resp.body?.byteStream()?.use { it.readBytesLimited(MAX_DOWNLOAD_BYTES) }
+                ?: return@use null
+            json.parseToJsonElement(String(bodyBytes, Charsets.UTF_8))
                 .jsonObject["default_branch"]?.jsonPrimitive?.contentOrNull
         }
     }.getOrNull()
@@ -614,7 +629,13 @@ class MarketInstallManager @Inject constructor(
                     if (!resp.isSuccessful) {
                         return@withContext Result.failure(Exception("GitHub 搜索失败: HTTP ${resp.code}"))
                     }
-                    val root = json.parseToJsonElement(resp.body?.string() ?: "").jsonObject
+                    // #345：流式限读（2MB，与同文件其他下载点同口径）——
+                    // 旧 `body?.string()` 无上限整体读入。
+                    val bodyBytes = resp.body?.byteStream()?.use { it.readBytesLimited(MAX_DOWNLOAD_BYTES) }
+                        ?: return@withContext Result.failure(
+                            Exception("GitHub 搜索响应为空或超过大小上限（2MB）")
+                        )
+                    val root = json.parseToJsonElement(String(bodyBytes, Charsets.UTF_8)).jsonObject
                     val hits = root["items"]?.jsonArray?.mapNotNull { item ->
                         val obj = item.jsonObject
                         GitHubRepoHit(
@@ -650,15 +671,19 @@ class MarketInstallManager @Inject constructor(
         return dir
     }
 
-    private fun tryDownload(url: String): String? = runCatching {
-        val request = Request.Builder().url(url).header("User-Agent", "ApexAgent/1.0").build()
-        httpClient.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) return@use null
-            val bytes = resp.body?.byteStream()?.use { it.readBytesLimited(MAX_DOWNLOAD_BYTES) }
-                ?: return@use null
-            if (bytes == null) null else String(bytes, Charsets.UTF_8)
-        }
-    }.getOrNull()
+    // #339：raw.githubusercontent.com 直连在国内大面积不可达 —— 统一走
+    // 镜像 fallback（jsdelivr 三级 CDN → 直连；非 raw URL 原样直取）。
+    // 失败（全部源不可达）返回 null，由调用方继续尝试下一候选路径。
+    private suspend fun tryDownload(url: String): String? = try {
+        val bytes = RawGitHubMirrors.fetchWithFallback(
+            client = httpClient,
+            rawUrl = url,
+            maxBytes = MAX_DOWNLOAD_BYTES
+        )
+        String(bytes, Charsets.UTF_8)
+    } catch (e: IOException) {
+        null
+    }
 
     /** 读取至多 [max] 字节；超限返回 null。 */
     private fun java.io.InputStream.readBytesLimited(max: Int): ByteArray? {

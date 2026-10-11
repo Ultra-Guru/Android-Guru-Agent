@@ -1,5 +1,6 @@
 package com.apex.agent.marketplace
 
+import com.apex.agent.core.tools.marketplace.MarketNames
 import com.apex.agent.core.tools.marketplace.RegistryServer
 import com.apex.agent.core.tools.mcp.McpManager
 import kotlinx.coroutines.CancellationException
@@ -57,11 +58,13 @@ class RegistryMcpInstaller @Inject constructor(
     private suspend fun installRemote(server: RegistryServer): Result<String> {
         val config = server.toMcpServerConfig()
             ?: return Result.failure(Exception(unsupportedMessage(server)))
-        // 同名配置不覆盖（与官方 Hub / mcp.so 同口径）
-        if (mcpManager.getConfigs().any { it.name == config.name }) {
-            return Result.failure(
-                Exception("同名服务器「${config.name}」已配置——如需重装请先在「已安装管理」中删除")
-            )
+        // 同名配置不覆盖（与官方 Hub / mcp.so 同口径）；#346：判定用
+        // 归一化比较键 —— 跨源同名/大小写/分隔符变体同样拦截重复安装。
+        val existing = mcpManager.getConfigs().firstOrNull {
+            MarketNames.isSameServer(it.name, config.name)
+        }
+        if (existing != null) {
+            return Result.failure(Exception(MarketNames.duplicateMessage(existing.name, config.name)))
         }
         return mcpManager.addServer(config).map {
             buildString {
@@ -82,10 +85,12 @@ class RegistryMcpInstaller @Inject constructor(
             ?: return Result.failure(Exception(unsupportedMessage(server)))
         val config = server.toMcpServerConfig()
             ?: return Result.failure(Exception(unsupportedMessage(server)))
-        if (mcpManager.getConfigs().any { it.name == config.name }) {
-            return Result.failure(
-                Exception("同名服务器「${config.name}」已配置——如需重装请先在「已安装管理」中删除")
-            )
+        // #346：同 installRemote，归一化比较键拦截跨源重复安装。
+        val existing = mcpManager.getConfigs().firstOrNull {
+            MarketNames.isSameServer(it.name, config.name)
+        }
+        if (existing != null) {
+            return Result.failure(Exception(MarketNames.duplicateMessage(existing.name, config.name)))
         }
         // 供应链硬化：identifier 必须是 npm 包名形态。官方源有校验，但
         // Pulse 源是合作方提交的数据——URL / git spec / 前导 - 这类形态

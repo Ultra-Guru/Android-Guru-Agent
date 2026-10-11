@@ -195,7 +195,9 @@ class McpManager(
         val staleClient: McpClient?
         val error = synchronized(lock) {
             val existing = configs[name]
-                ?: return@withContext Result.failure(Exception("Server '$name' not configured"))
+                ?: return@withContext Result.failure(
+                    Exception("服务器「$name」尚未配置（可能刚被删除，请刷新后重试）")
+                )
             // v3 修复（竞态）：禁用打断在途连接的注册资格（代数 +1）。
             if (!enabled) bumpGenerationLocked(name)
             staleClient = if (enabled) null else clients.remove(name)
@@ -225,7 +227,9 @@ class McpManager(
         startupListener: McpStartupListener? = null
     ): Result<McpCapabilities> {
         val config = synchronized(lock) { configs[name] }
-            ?: return Result.failure(Exception("Server '$name' not configured"))
+            ?: return Result.failure(
+                Exception("服务器「$name」尚未配置（可能刚被删除，请刷新后重试）")
+            )
 
         // v3 S3（G8 令牌桥）：headers/env 值含 ${GITHUB_TOKEN} 占位符时，从
         // 宿主注入的 provider 取 PAT 填充到本次连接的内存副本（占位符原样
@@ -301,8 +305,13 @@ class McpManager(
                 fireConnected(name)
             } else {
                 runCatching { client.shutdown() }
+                // #338：文案中文化并说明可行动原因 —— 旧英文文案暗示「竞态」，
+                // 而市场安装（enabled=false）后直接 connect 的用户看到的就是它。
                 return Result.failure(
-                    Exception("Server '$name' was disconnected or disabled during connect")
+                    Exception(
+                        "服务器「$name」在连接过程中被禁用或断开；若反复出现，" +
+                            "请到已安装页检查开关状态后重试"
+                    )
                 )
             }
         } else {

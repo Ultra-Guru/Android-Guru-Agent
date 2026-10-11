@@ -1,5 +1,6 @@
 package com.apex.agent.core.tools.mcp
 
+import com.apex.agent.core.tools.network.BoundedReads
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -17,7 +18,15 @@ import okhttp3.RequestBody.Companion.toRequestBody
  * - 非 2xx → 抛 [McpException]（旧实现把它折叠成 null，
  *   上层再折叠成"已连接、零工具"）；
  * - HTTP 200 但响应体不是 JSON（网关/鉴权拦截页同理处理）；
+ * - HTTP 200 但响应体为空或纯空白（Issue #348：网关误路由/健康检查
+ *   探测返回空体，旧实现 `?: return@use null` 折叠成假成功）；
  * - 鉴权头缺失会让服务端直接 401 —— 因此 key/headers 一定带上。
+ *
+ * ## 响应体有界读取（Issue #345）
+ *
+ * 错误体限 64KB 截断读取、正常响应体限 16MB —— HTTP 传输长期持有
+ * 远端服务器响应（resources/read 可返回大块内容），被劫持的 DNS/代理
+ * 返回超大响应时无上限读入会直接 OOM。
  *
  * ## Streamable HTTP 会话头（P1 修复）
  *
@@ -86,14 +95,36 @@ class McpHttpTransport(
                 sessionId = it
             }
             if (!response.isSuccessful) {
-                val errBody = runCatching { response.body?.string() }.getOrNull()
-                val snippet = errBody?.take(200)?.trim().orEmpty().ifEmpty { response.message }
+                // #345：错误体限 64KB 截断读取（旧 `body?.string()` 无上限，
+                // 异常网关返回超大错误页即 OOM）；反正摘要只取前 200 字符。
+                val errBody = runCatching {
+                    response.body?.byteStream()?.use { BoundedReads.readHead(it, MAX_ERROR_BODY_BYTES) }
+                }.getOrNull()
+                val snippet = errBody?.toString(charsetOf(response))
+                    ?.take(200)?.trim().orEmpty().ifEmpty { response.message }
                 throw McpException("HTTP ${response.code}: $snippet")
             }
             // P3 修复：通知（id == null）按规范收 202/204 —— 2xx 即送达，
             // 不解析响应体（空体不是错误）。
             if (id == null) return@use null
-            val responseBody = response.body?.string() ?: return@use null
+            // #348：请求路径（id != null）空体/纯空白 = 网关误路由或服务器
+            // 异常，不再折叠成 null（上层会置 initialized=true 装出
+            // 「握手成功、零工具」的假成功）。注：OkHttp 对空体返回非 null
+            // body（读出空串），body 缺失与空流经 orEmpty 归一后再判 isBlank。
+            val responseBody = response.body?.byteStream()?.use { stream ->
+                val bytes = BoundedReads.readAtMost(stream, MAX_RESPONSE_BODY_BYTES)
+                    ?: throw McpException(
+                        "HTTP ${response.code} 响应体超过 " +
+                            "${MAX_RESPONSE_BODY_BYTES / 1024 / 1024}MB 上限（不可信远端，拒绝整体读入）"
+                    )
+                String(bytes, charsetOf(response))
+            }.orEmpty()
+            if (responseBody.isBlank()) {
+                throw McpException(
+                    "HTTP ${response.code} 空响应体：远端未返回合法 JSON-RPC 帧" +
+                        "（网关误路由或服务器异常）"
+                )
+            }
             parseBody(responseBody, response.code)
         }
     }
@@ -102,25 +133,28 @@ class McpHttpTransport(
      * 解析响应体。兼容两种形态：
      * - 裸 JSON-RPC 对象（多数 Streamable HTTP 实现）；
      * - SSE 分帧（`event: message` / `data: {...}`）—— 取出最后一个 `data:` 载荷。
+     *
+     * #348：任一形态解析不出 JSON-RPC 帧都抛 [McpException]（旧实现返回
+     * null，上层折叠成「工具已运行但无输出」的假成功）。
      */
-    private fun parseBody(raw: String, code: Int): JsonObject? {
+    private fun parseBody(raw: String, code: Int): JsonObject {
         val candidate = raw.trim()
-        if (candidate.isEmpty()) return null
         if (candidate.startsWith("data:")) {
             val last = candidate.lineSequence()
                 .filter { it.startsWith("data:") }
                 .map { it.removePrefix("data:").trim() }
                 .lastOrNull { it.isNotBlank() && it != "[DONE]" }
-                ?: return null
+                ?: throw McpException(
+                    "HTTP $code SSE 响应中不含 data 帧（疑似网关拦截页或服务器异常输出）"
+                )
             return parseJson(last, code)
         }
         return parseJson(candidate, code)
     }
 
-    private fun parseJson(text: String, code: Int): JsonObject? {
+    private fun parseJson(text: String, code: Int): JsonObject {
         return try {
-            val element = json.parseToJsonElement(text)
-            element as? JsonObject
+            json.parseToJsonElement(text) as? JsonObject
                 ?: throw McpException("HTTP $code 返回的不是 JSON 对象：${text.take(120)}")
         } catch (e: McpException) {
             throw e
@@ -132,6 +166,10 @@ class McpHttpTransport(
         }
     }
 
+    /** 响应体字符集（Content-Type 声明优先，缺省 UTF-8 —— JSON-RPC 规范恒 UTF-8）。 */
+    private fun charsetOf(response: okhttp3.Response) =
+        response.body?.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8
+
     companion object {
         /** Streamable HTTP 会话头（客户端回带服务端分配的会话 id）。 */
         const val SESSION_ID_HEADER = "Mcp-Session-Id"
@@ -141,5 +179,11 @@ class McpHttpTransport(
 
         /** 客户端宣告/协商的协议版本（与 initialize 参数一致）。 */
         const val PROTOCOL_VERSION = "2024-11-05"
+
+        /** 错误体读取上限（截断语义：摘要只取前 200 字符，Issue #345）。 */
+        const val MAX_ERROR_BODY_BYTES = 64 * 1024
+
+        /** 正常响应体上限（16MB：resources/read 可返回大块内容，Issue #345）。 */
+        const val MAX_RESPONSE_BODY_BYTES = 16 * 1024 * 1024
     }
 }

@@ -10,7 +10,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
-import okhttp3.Request
+import java.io.IOException
 
 /**
  * ═══ 官方 Hub 仓库源（技能 + MCP 双目录）═══
@@ -58,43 +58,36 @@ class HubSource(
 
     /**
      * 拉取技能仓库目录（`index.json`）。成功返回全部条目，调用方按工位/查询过滤。
+     *
+     * #339：index.json 直连 raw.githubusercontent.com（国内大面积不可达）
+     * 改走 [RawGitHubMirrors.fetchWithFallback]（jsdelivr 三级 CDN → 直连）。
      */
     suspend fun listSkills(): Result<List<HubSkillEntry>> = withContext(Dispatchers.IO) {
-        val resp = fetchJsonText(SKILL_HUB_INDEX_URL)
-            ?: return@withContext Result.failure(Exception(hubUnavailableMessage("skill")))
-        if (resp.code !in 200..299) {
-            return@withContext Result.failure(Exception("技能仓库目录获取失败：HTTP ${resp.code}"))
+        val body = try {
+            RawGitHubMirrors.fetchWithFallback(httpClient, SKILL_HUB_INDEX_URL, MAX_JSON_BYTES)
+                .toString(Charsets.UTF_8)
+        } catch (e: IOException) {
+            return@withContext Result.failure(Exception(hubUnavailableMessage("skill", e.message)))
         }
-        val body = resp.body
-            ?: return@withContext Result.failure(Exception("技能仓库目录响应为空或超过大小上限（2MB）"))
         parseSkillIndex(body)
     }
 
     /**
      * 下载单个技能的完整 manifest JSON 文本（apex-skill-v1），交给
      * MarketInstallManager.installSkillFromJson 走统一安装管道。
+     *
+     * #339：manifest 直链改走镜像 fallback（jsdelivr 三级 CDN → 直连）。
      */
     suspend fun downloadSkillManifest(entry: HubSkillEntry): Result<String> =
         withContext(Dispatchers.IO) {
-            val url = "$SKILL_HUB_RAW_BASE/${entry.file}"
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", USER_AGENT)
-                .header("Accept", "application/json")
-                .build()
             try {
-                httpClient.newCall(request).execute().use { resp ->
-                    if (!resp.isSuccessful) {
-                        return@use Result.failure(Exception("HTTP ${resp.code}"))
-                    }
-                    val body = resp.body ?: return@use Result.failure(Exception("空响应"))
-                    val bytes = body.byteStream().use { it.readBytesLimited(MAX_JSON_BYTES) }
-                        ?: return@use Result.failure(
-                            Exception("技能包过大（超过 ${MAX_JSON_BYTES / 1024 / 1024}MB）")
-                        )
-                    Result.success(bytes.toString(Charsets.UTF_8))
-                }
-            } catch (e: Exception) {
+                val bytes = RawGitHubMirrors.fetchWithFallback(
+                    httpClient,
+                    skillManifestUrl(entry),
+                    MAX_JSON_BYTES
+                )
+                Result.success(bytes.toString(Charsets.UTF_8))
+            } catch (e: IOException) {
                 Result.failure(Exception("下载失败: ${e.message}"))
             }
         }
@@ -134,55 +127,20 @@ class HubSource(
 
     /**
      * 拉取 MCP 仓库目录（`index.json`，配置内联 —— 单次请求即完整目录）。
+     *
+     * #339：同 [listSkills]，改走镜像 fallback。
      */
     suspend fun listMcpServers(): Result<List<HubMcpEntry>> = withContext(Dispatchers.IO) {
-        val resp = fetchJsonText(MCP_HUB_INDEX_URL)
-            ?: return@withContext Result.failure(Exception(hubUnavailableMessage("mcp")))
-        if (resp.code !in 200..299) {
-            return@withContext Result.failure(Exception("MCP 仓库目录获取失败：HTTP ${resp.code}"))
+        val body = try {
+            RawGitHubMirrors.fetchWithFallback(httpClient, MCP_HUB_INDEX_URL, MAX_JSON_BYTES)
+                .toString(Charsets.UTF_8)
+        } catch (e: IOException) {
+            return@withContext Result.failure(Exception(hubUnavailableMessage("mcp", e.message)))
         }
-        val body = resp.body
-            ?: return@withContext Result.failure(Exception("MCP 仓库目录响应为空或超过大小上限（2MB）"))
         parseMcpIndex(body)
     }
 
     // ── 内部实现 ──
-
-    /** JSON GET（2MB 上限；IO 异常/超时返回 null，由调用方转 Result.failure）。 */
-    private fun fetchJsonText(url: String): HttpReply? {
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", USER_AGENT)
-            .header("Accept", "application/json")
-            .build()
-        return try {
-            httpClient.newCall(request).execute().use { resp ->
-                val body = resp.body?.byteStream()?.use { stream ->
-                    stream.readBytesLimited(MAX_JSON_BYTES)?.toString(Charsets.UTF_8)
-                }
-                HttpReply(resp.code, body)
-            }
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    private class HttpReply(val code: Int, val body: String?)
-
-    /** 读取至多 [max] 字节；超限返回 null（防御恶意超大响应 OOM）。 */
-    private fun java.io.InputStream.readBytesLimited(max: Int): ByteArray? {
-        val out = java.io.ByteArrayOutputStream()
-        val buf = ByteArray(16 * 1024)
-        var total = 0
-        while (total < max) {
-            val n = read(buf, 0, minOf(buf.size, max - total))
-            if (n < 0) break
-            out.write(buf, 0, n)
-            total += n
-        }
-        if (total >= max && read() >= 0) return null
-        return out.toByteArray()
-    }
 
     // JsonObject 安全取值：字段缺失 / 类型不符 / null 均返回安全默认
     private fun JsonObject?.str(key: String): String? =
@@ -203,8 +161,11 @@ class HubSource(
         }.toMap()
     }
 
-    private fun hubUnavailableMessage(kind: String): String =
-        "无法连接官方${if (kind == "mcp") " MCP " else " "}仓库（网络不可用或超时）"
+    private fun hubUnavailableMessage(kind: String, detail: String? = null): String {
+        val reason = detail?.let { "：$it" }.orEmpty()
+        return "无法连接官方${if (kind == "mcp") " MCP " else " "}仓库（网络不可用或超时，" +
+            "jsdelivr 镜像与直连均已尝试$reason）——国内网络可能需要镜像加速"
+    }
 
     companion object {
         /** 官方技能仓库（AceGuru-mjh/apex-skill-hub）。 */
@@ -218,7 +179,6 @@ class HubSource(
         private const val SKILL_HUB_INDEX_URL = "$SKILL_HUB_RAW_BASE/index.json"
         private const val MCP_HUB_INDEX_URL =
             "https://raw.githubusercontent.com/$MCP_HUB_REPO/main/index.json"
-        private const val USER_AGENT = "ApexAgent/1.0"
 
         /** JSON 响应上限 2MB（与 ClawHubSource 一致）。 */
         private const val MAX_JSON_BYTES = 2 * 1024 * 1024
@@ -252,14 +212,14 @@ class HubSource(
         }
 
         /** MCP 目录 index.json 文本 → 条目列表（坏条目跳过，整体损坏转 failure；
-         * 重复条目按 name 去重 —— 消费点列表 key 为 "hub-" + name，
-         * 不去重会撞 LazyColumn 重复 key 崩溃）。 */
+         * 重复条目按归一化 name 去重（#346：大小写与分隔符变体也折叠）——
+         * 消费点列表 key 为 "hub-" + name，不去重会撞 LazyColumn 重复 key 崩溃）。 */
         fun parseMcpIndex(body: String): Result<List<HubMcpEntry>> = try {
             val root = json.parseToJsonElement(body).jsonObject
             val raw = root["servers"]?.jsonArray ?: emptyList()
             Result.success(
                 raw.mapNotNull { el -> (el as? JsonObject)?.let(::parseMcpEntry) }
-                    .distinctBy { it.name }
+                    .distinctBy { MarketNames.normalize(it.name) }
             )
         } catch (e: Exception) {
             Result.failure(Exception("MCP 仓库目录解析失败: ${e.message}"))
