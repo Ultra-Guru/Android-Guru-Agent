@@ -19,12 +19,14 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * T76 — TaskRuntime：Agent 长任务执行体系总装（D-2 方案 B）。
@@ -187,6 +189,11 @@ class TaskRuntime(
 
         val tap = Channel<AgentEvent>(capacity = Channel.UNLIMITED)
         eventTap = tap
+        // #351③：积压计数（生产侧 +1 / 消费侧 -1）。镜像 collector 是唯一
+        // 生产者；UI 单收集者经下方包装流 onEach 递减。Channel.size 是
+        // @ExperimentalCoroutinesApi（CI 裸 kotlinc classpath 版本敏感），
+        // 自维护原子计数零依赖。
+        val tapBacklog = AtomicInteger(0)
         val done = CompletableDeferred<Unit>()
         streamDone = done
         _activeTask.value = task
@@ -205,7 +212,9 @@ class TaskRuntime(
                     // 全量携带，丢过程不丢结果）；边界事件（Error/Complete/Aborted/
                     // UserInputRequired/确认类）永不丢。checkpoint 不受影响
                     // （onEngineEvent 先于本转发执行）。
-                    if (tap.size >= TAP_HIGH_WATERMARK && event.isDroppableUnderPressure()) {
+                    val backlog = tapBacklog.incrementAndGet()
+                    if (backlog >= TAP_HIGH_WATERMARK && event.isDroppableUnderPressure()) {
+                        tapBacklog.decrementAndGet() // 不入队，回退计数
                         droppedUnderPressure++
                     } else {
                         tap.send(event)
@@ -248,7 +257,10 @@ class TaskRuntime(
             }
         }
 
-        return tap.receiveAsFlow()
+        // 消费侧递减包装：UI 收集者每取走一条事件，积压计数 -1（守护判定的
+        // 消费信号源）。receiveAsFlow 单收集者语义不变；late/重订阅由镜像
+        // 侧 close 兜底，与旧返回值行为一致。
+        return tap.receiveAsFlow().onEach { tapBacklog.decrementAndGet() }
     }
 
     // ═══ 事件 → Checkpoint（核心推导表，N-4）═══
