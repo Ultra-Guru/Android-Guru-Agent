@@ -81,6 +81,7 @@ import androidx.compose.material.icons.filled.CallSplit
 import com.apex.agent.ui.screen.agent.CODING_SCREEN_MODES
 import com.apex.agent.ui.screen.agent.AgentModeSelector
 import com.apex.agent.ui.screen.agent.AgentRoleSelector
+import com.apex.agent.ui.screen.agent.BrainMenuButton
 import com.apex.agent.ui.screen.agent.PendingPipelineCommand
 import com.apex.agent.ui.screen.agent.PlanConfirmationCard
 import com.apex.agent.ui.screen.agent.QuestionCard
@@ -90,6 +91,7 @@ import com.apex.agent.ui.screen.agent.ToolkitRingButton
 import com.apex.agent.core.code.standard.StandardLogicMode
 import com.apex.agent.core.code.stream.StreamEntry
 import com.apex.agent.core.code.stream.StreamToolCall
+import com.apex.agent.core.llm.EndpointResolver
 import com.apex.agent.ui.screen.agent.toolkit.OutputFormat
 import com.apex.agent.ui.screen.code.editor.CodeEditorPanel
 import com.apex.agent.ui.screen.code.longtask.CodeLongTaskSheet
@@ -113,7 +115,10 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 @Composable
 fun CodeScreen(
     viewModel: CodeViewModel,
-    slashMenuProvider: SlashMenuProvider = rememberSlashMenuProvider()
+    slashMenuProvider: SlashMenuProvider = rememberSlashMenuProvider(),
+    // 「小大脑」菜单 → 配置模型：跳转设置页模型配置区（与 Agent 屏同款
+    // 压栈语义，改完返回 Coding 上下文）
+    onOpenSettings: () -> Unit = {}
 ) {
     // #184：长任务导出需要 applicationContext（落盘 + 分享；VM 非 AndroidViewModel）
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -126,6 +131,26 @@ fun CodeScreen(
     val pendingAgentQuestion by viewModel.pendingAgentQuestion.collectAsStateWithLifecycle()
     val pendingCommands by viewModel.pendingCommands.collectAsStateWithLifecycle()
     val llmConfigured by viewModel.llmConfigured.collectAsStateWithLifecycle()
+
+    // ═══ 「小大脑」模型选择数据面（用户反馈：Coding 模式此前无模型入口）═══
+    // 扩展属性/函数见 CodeModelSelection.kt（God-file 预算拆分同款模式）。
+    // 当前 id 从列表派生（扩展转发的是仓库同一 StateFlow 实例，收集安全）。
+    val codeProfiles by viewModel.codeProfiles.collectAsStateWithLifecycle()
+    val codeProviders by viewModel.codeProviders.collectAsStateWithLifecycle()
+    val codeCurrentProfileId = codeProfiles.firstOrNull { it.isDefault }?.id
+        ?: codeProfiles.firstOrNull()?.id
+    // 输入行为设置（sendKeyBehavior：send 回车直发 / newline 回车换行）
+    val uiSettings by viewModel.codeUiSettings.collectAsStateWithLifecycle()
+    // 原生 reasoning 参数生效判定（与客户端能力位门控同口径：Profile 勾了
+    // reasoning 或 o-series/gpt-5 模型名才随请求发 reasoning_effort ——
+    // 思考选择器/指南据此出「不生效」提示，回答用户「切换是不是真实的」）
+    val nativeEffortActive = remember(codeProfiles, codeCurrentProfileId) {
+        val cur = codeProfiles.firstOrNull { it.id == codeCurrentProfileId }
+            ?: codeProfiles.firstOrNull()
+        cur?.let {
+            it.capabilities.reasoning || EndpointResolver.isStrictOpenAiReasoner(it.modelId)
+        } ?: false
+    }
 
     // ═══ #197 「小圆环」工具菜单状态（Coding 工位独占）═══
     val toolkit = viewModel.toolkitStore
@@ -307,7 +332,8 @@ fun CodeScreen(
                         current = state.thinkingLevel,
                         adaptiveDecision = state.adaptiveDecision,
                         onSelect = viewModel::setThinkingLevel,
-                        onOpenGuide = { showThinkingGuide = true }
+                        onOpenGuide = { showThinkingGuide = true },
+                        nativeEffortActive = nativeEffortActive
                     )
                 }
 
@@ -333,6 +359,25 @@ fun CodeScreen(
                     backdrop = streamBackdrop,
                     githubTokenManager = viewModel.githubTokenManager,
                     toolkit = toolkit,
+                    // 回车键行为（与 Agent 屏同源设置；此前 Coding 屏落默认值，
+                    // Enter 被消费却无动作 —— 换不了行的直接根因）
+                    sendKeyBehavior = uiSettings.sendKeyBehavior,
+                    // 「小大脑」模型菜单插槽（Agent 屏同款组件；providerNameOf
+                    // 回调在非 @Composable 上下文触发 —— 兜底文案预解析）
+                    modelMenu = {
+                        val unknownProviderLabel = stringResource(R.string.chat_unknown_provider)
+                        BrainMenuButton(
+                            profiles = codeProfiles,
+                            currentProfileId = codeCurrentProfileId ?: "",
+                            providerNameOf = { providerId ->
+                                codeProviders.firstOrNull { it.id == providerId }?.displayName
+                                    ?: unknownProviderLabel
+                            },
+                            onSelectProfile = { viewModel.selectCodeModel(it) },
+                            onParamsChanged = { t, p, m -> viewModel.updateCodeModelParams(t, p, m) },
+                            onConfigure = onOpenSettings
+                        )
+                    },
                     toolkitState = ToolkitUiState(
                         webSearchEnabled = webSearchEnabled,
                         timeEnabled = timeEnabled,
@@ -383,7 +428,8 @@ fun CodeScreen(
         CodeThinkingGuideSheet(
             currentLevel = state.thinkingLevel,
             onDismiss = { showThinkingGuide = false },
-            onSelect = viewModel::setThinkingLevel
+            onSelect = viewModel::setThinkingLevel,
+            nativeEffortActive = nativeEffortActive
         )
     }
 
@@ -734,6 +780,11 @@ private fun CodeInputBar(
     backdrop: Backdrop,
     githubTokenManager: com.apex.agent.github.GithubTokenManager,
     toolkit: com.apex.agent.ui.screen.agent.toolkit.ChatToolkitStore,
+    // 回车键行为（send | newline，设置页可配；Agent 屏同款消费）
+    sendKeyBehavior: String = "send",
+    // 「小大脑」模型菜单插槽（Agent 屏同款 BrainMenuButton；插槽化避免
+    // 参数爆炸 —— 数据与回调由 CodeScreen 组合层闭合）
+    modelMenu: @Composable () -> Unit = {},
     toolkitState: ToolkitUiState
 ) {
     // ═══ v5 玻璃输入栏（Agent 屏同款）：Floating 档 + 顶部双角圆角，悬浮栈
@@ -824,6 +875,11 @@ private fun CodeInputBar(
                     onDeleteRule = { toolkit.deleteRule(it) },
                     onToggleRule = { id, enabled -> toolkit.setRuleEnabled(id, enabled) }
                 )
+
+                // ═══ 小大脑：模型切换 + 参数调节 + 配置跳转（用户反馈补齐）═══
+                // Coding 工位此前无模型入口 —— 共享 LlmClient 恒用默认 Profile；
+                // 现与 Agent 屏同款（AgentChatScreen 输入栏同位置）。
+                modelMenu()
             }
             Spacer(Modifier.height(4.dp))
 
@@ -833,6 +889,10 @@ private fun CodeInputBar(
             ) {
                 Box(modifier = Modifier.weight(1f)) {
                     // ═══ v5 技能 chip 输入框（与 Agent 屏同款组件）═══
+                    // 回车行为接线（修复：此前未传 sendKeyBehavior/onSend ——
+                    // Enter 被 IME_ACTION_SEND 消费后回调为空，既不发送也插不进
+                    // 换行，「只能看到一行输入」的直接根因）。逻辑与发送按钮
+                    // 同口径：未配置拦截 → 空内容忽略 → GOAL 首条转设定弹层。
                     SkillChipInputField(
                         value = draft,
                         onValueChange = onDraftChange,
@@ -841,7 +901,17 @@ private fun CodeInputBar(
                         placeholder = stringResource(
                             if (llmConfigured) R.string.code_input_hint
                             else R.string.code_input_hint_no_api
-                        )
+                        ),
+                        sendKeyBehavior = sendKeyBehavior,
+                        onSend = {
+                            if (!llmConfigured) {
+                                onSendBlocked()
+                                return@SkillChipInputField
+                            }
+                            if (draft.isNotBlank() || pendingCommands.isNotEmpty()) {
+                                onSend(draft)
+                            }
+                        }
                     )
                     // / 实时联想（coding 域）
                     SlashAutoCompleteHost(

@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.apex.agent.R
 import com.apex.agent.core.code.thinking.CodeThinkingLevel
 import com.apex.agent.core.code.thinking.CodeThinkingProfile
+import com.apex.agent.core.llm.ReasoningEffort
 
 /**
  * # Code Thinking Guide Sheet — Coding 屏思考档位指南（coding 专属七档）
@@ -75,14 +76,18 @@ import com.apex.agent.core.code.thinking.CodeThinkingProfile
  *
  * 挂载点：由 CodeScreen 在思考选择器下拉底部「查看档位指南」入口打开
  * （接线归主控——本组件只交付 public API：currentLevel / onDismiss /
- * onSelect 三参数）。
+ * onSelect 三参数 + nativeEffortActive 提示位）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CodeThinkingGuideSheet(
     currentLevel: CodeThinkingLevel,
     onDismiss: () -> Unit,
-    onSelect: (CodeThinkingLevel) -> Unit
+    onSelect: (CodeThinkingLevel) -> Unit,
+    // 原生 reasoning 参数是否会随请求发送（当前默认模型能力位门控：
+    // Profile 未勾 reasoning 且非 o-series 时为 false，总表下出提示行——
+    // 档位的引擎侧效果照常，仅 API 原生思考参数不发，防 400）
+    nativeEffortActive: Boolean = true
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -125,6 +130,16 @@ fun CodeThinkingGuideSheet(
                     .heightIn(max = 520.dp)
             ) {
                 item { TierLadderTable() }
+
+                // ── 原生参数不生效提示（能力位门控；档位引擎侧效果照常）──
+                if (!nativeEffortActive) {
+                    Text(
+                        text = stringResource(R.string.code_thinking_no_native_effort),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
 
                 item {
                     Text(
@@ -176,19 +191,39 @@ private fun TierLadderTable() {
             output = stringResource(R.string.code_thinking_guide_col_output),
             header = true
         )
-        // 数据行：枚举声明序 = 阶梯深度序（NONE→…→APEXCODE，AUTO 恒最后）
+        // 数据行：枚举声明序 = 阶梯深度序（NONE→…→APEXCODE，AUTO 恒最后）。
+        // 档位/effort 名称本地化（用户反馈：中文环境满屏英文，旧版直渲裸枚举名）
         CodeThinkingLevel.entries.forEach { level ->
             val profile = CodeThinkingProfile.forLevel(level)
             LadderRow(
-                level = level.name,
+                level = codeThinkingShortName(level),
                 budget = profile.thinkingBudget?.toString() ?: "—",
                 effort = profile.reasoningEffortName
+                    ?.let { localizedEffortShortName(it) }
                     ?: stringResource(R.string.code_thinking_guide_auto_row),
                 iters = "×${profile.maxIterationsScale}",
                 output = profile.toolOutputBudget.toString()
             )
         }
     }
+}
+
+/**
+ * 原生 effort 枚举名 → 本地化短名（LOW→低 / MEDIUM→中 / HIGH→高 / MAX→最大）。
+ * 复用聊天页 chat_effort_* 键（zh / en 对称已存在，不新增资源）。
+ */
+@Composable
+private fun localizedEffortShortName(effortName: String): String {
+    val effort = runCatching { ReasoningEffort.valueOf(effortName) }.getOrNull()
+    return stringResource(
+        when (effort) {
+            ReasoningEffort.LOW -> R.string.chat_effort_low
+            ReasoningEffort.MEDIUM -> R.string.chat_effort_medium
+            ReasoningEffort.HIGH -> R.string.chat_effort_high
+            ReasoningEffort.MAX -> R.string.chat_effort_max
+            else -> R.string.chat_effort_none
+        }
+    )
 }
 
 /** 总表单行（header = true 时表头样式：primary 色 + SemiBold）。 */
@@ -311,7 +346,8 @@ private fun TierBadge(level: CodeThinkingLevel) {
     }
     Surface(shape = RoundedCornerShape(4.dp), color = color.copy(alpha = 0.12f)) {
         Text(
-            text = level.name,
+            // 本地化短名（同触发胶囊/下拉/总表；旧版渲染裸枚举名）
+            text = codeThinkingShortName(level),
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
             color = color,

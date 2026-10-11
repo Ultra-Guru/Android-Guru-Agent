@@ -53,6 +53,11 @@ import com.apex.agent.core.code.thinking.CodeThinkingLevel
  *      仅选中档展开一行画像说明（避免文字墙）；
  *   2. 分隔线 + AUTO 元档 —— AutoAwesome 图标 + 预检决策回显（AUTO 时）；
  *   3. 分隔线 + 档位指南入口（[CodeThinkingGuideSheet]）。
+ * - **原生参数生效提示**（用户反馈「切换是不是真实的」）：
+ *   [nativeEffortActive] 为 false 时下拉底部出一行说明 —— 档位的引擎侧
+ *   效果照常，但 API 原生 reasoning 参数不发（能力位门控防 400），
+ *   引导去设置开能力位。切档本身真实生效（见 CodeThinkingGuideSheet
+ *   联动说明）。
  *
  * 档位枚举为 coding 专属的 [CodeThinkingLevel]（与 Agent 聊天页六档分立）。
  */
@@ -61,7 +66,10 @@ internal fun CodeThinkingSelector(
     current: CodeThinkingLevel,
     adaptiveDecision: String?,
     onSelect: (CodeThinkingLevel) -> Unit,
-    onOpenGuide: () -> Unit
+    onOpenGuide: () -> Unit,
+    // 原生 reasoning 参数是否随请求发送（当前默认模型能力位门控；
+    // false 时下拉底部出提示行，见类 KDoc）
+    nativeEffortActive: Boolean = true
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -228,6 +236,16 @@ internal fun CodeThinkingSelector(
                     onOpenGuide()
                 }
             )
+
+            // 段 4：原生参数不生效提示（能力位门控；档位引擎侧效果照常）
+            if (!nativeEffortActive) {
+                Text(
+                    text = stringResource(R.string.code_thinking_no_native_effort),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
         }
     }
 }

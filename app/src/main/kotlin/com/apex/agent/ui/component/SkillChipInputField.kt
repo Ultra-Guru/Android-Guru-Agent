@@ -128,7 +128,8 @@ import com.apex.agent.ui.screen.agent.PendingPipelineCommand
  * ## 保留能力（对齐 AdaptiveInputField（已由本组件取代））
  *
  * 字符计数（>200 显示）、全屏分层编辑对话框、发送键行为可配置
- * （"send" 回车直发 / "newline" 回车仅换行）、自动增高 1→5 行。
+ * （"send" 回车直发 / "newline" 回车仅换行；send 模式 Shift+Enter
+ * 插入换行）、自动增高 1→8 行。
  *
  * @param value 纯文本草稿（不含 \uFFFC）
  * @param onValueChange 纯文本变更（已剥离 chip 字符）
@@ -447,14 +448,16 @@ private fun syncChips(editText: EditText, desired: List<PendingPipelineCommand>,
 }
 
 /**
- * 组装 EditText：透明背景 + 多行自适应（1→5 行）+ IME 可靠性兜底 +
+ * 组装 EditText：透明背景 + 多行自适应（1→8 行）+ IME 可靠性兜底 +
  * chip 触摸删除（touchSlop 防滚动误删）+ TextWatcher 双通道上报。
  */
 private fun createChipEditText(context: Context, callbacks: ChipCallbacks): EditText {
     val editText = EditText(context)
     editText.background = null
     editText.isSingleLine = false
-    editText.maxLines = 5
+    // 多行自适应 1→8 行（用户反馈「只能看到一行」：5 行上限对长 prompt
+    // 偏紧；全屏编辑按钮仍在，超过 8 行走全屏分层编辑）
+    editText.maxLines = 8
     editText.minLines = 1
     editText.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
     editText.imeOptions = EditorInfo.IME_ACTION_SEND
@@ -506,12 +509,24 @@ private fun createChipEditText(context: Context, callbacks: ChipCallbacks): Edit
     }
 
     // ── IME 发送动作（send 模式；newline 模式回车由系统插入换行）──
+    // Shift+Enter 例外：手动插入换行并消费 —— send 模式 inputType 不带
+    // MULTI_LINE flag，交回系统不会落换行（多行草稿的标准习惯：send 模式
+    // 也能换行，长 prompt 不必切设置或开全屏编辑）。
     editText.setOnEditorActionListener { _, actionId, keyEvent ->
-        val sendAction = actionId == EditorInfo.IME_ACTION_SEND ||
-            (keyEvent?.keyCode == KeyEvent.KEYCODE_ENTER &&
-                keyEvent.action == KeyEvent.ACTION_UP &&
-                callbacks.sendKeyBehavior == "send")
-        if (sendAction) {
+        val shiftEnter = keyEvent?.keyCode == KeyEvent.KEYCODE_ENTER &&
+            keyEvent.action == KeyEvent.ACTION_UP &&
+            keyEvent.isShiftPressed
+        if (shiftEnter) {
+            val caret = editText.selectionStart.coerceIn(0, editText.text?.length ?: 0)
+            editText.editableText.insert(caret, "\n")
+            editText.setSelection(caret + 1)
+            return@setOnEditorActionListener true
+        }
+        val fromImeAction = actionId == EditorInfo.IME_ACTION_SEND && keyEvent == null
+        val fromEnterKey = keyEvent?.keyCode == KeyEvent.KEYCODE_ENTER &&
+            keyEvent.action == KeyEvent.ACTION_UP &&
+            callbacks.sendKeyBehavior == "send"
+        if (fromImeAction || fromEnterKey) {
             callbacks.onSend()
             true
         } else {

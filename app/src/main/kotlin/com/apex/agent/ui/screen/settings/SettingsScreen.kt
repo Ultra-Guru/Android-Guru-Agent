@@ -571,28 +571,55 @@ private fun GenerationSection(p: ModelProfile, onUpdate: (ModelProfile) -> Unit)
 @Composable
 private fun ReasoningSection(p: ModelProfile, onUpdate: (ModelProfile) -> Unit) {
     SectionCard(stringResource(R.string.settings_section_reasoning), Icons.Outlined.Psychology) {
-        Text("Reasoning Effort", style = MaterialTheme.typography.labelMedium)
+        // 本地化（用户反馈：中文环境满屏英文；旧版硬编码 "Reasoning Effort"）
+        Text(
+            stringResource(R.string.settings_reasoning_effort_label),
+            style = MaterialTheme.typography.labelMedium
+        )
         LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             items(ReasoningEffort.values().toList(), key = { it.name }) { eff ->
                 FilterChip(selected = p.reasoningEffort == eff,
                     onClick = { onUpdate(p.copy(reasoningEffort = eff)) },
-                    label = { Text(eff.name) })
+                    label = { Text(localizedEffortLabel(eff)) })
             }
         }
         DescriptionText(stringResource(R.string.settings_effort_desc))
-        DropdownRow("Thinking Budget (tokens)",
-            listOf(null to "Auto", 1024 to "1024", 2048 to "2048", 4096 to "4096",
-                8192 to "8192", 16384 to "16384", 32768 to "32768", 65536 to "65536"),
+        DropdownRow(
+            stringResource(R.string.settings_thinking_budget_label),
+            listOf(
+                null to stringResource(R.string.settings_thinking_budget_auto),
+                1024 to "1024", 2048 to "2048", 4096 to "4096",
+                8192 to "8192", 16384 to "16384", 32768 to "32768", 65536 to "65536"
+            ),
             p.thinkingBudget,
             description = stringResource(R.string.settings_budget_desc)) {
             onUpdate(p.copy(thinkingBudget = it))
         }
-        SwitchRow("Show Thinking", p.showThinking,
+        SwitchRow(
+            stringResource(R.string.settings_show_thinking_label),
+            p.showThinking,
             description = stringResource(R.string.settings_show_thinking_desc)) {
             onUpdate(p.copy(showThinking = it))
         }
     }
 }
+
+/**
+ * ReasoningEffort → 本地化标签（默认/低/中/高/最大）。
+ *
+ * 复用聊天页 chat_effort_* 键（zh / en 对称已存在）；旧版直渲裸枚举名
+ * NONE/LOW/MEDIUM/HIGH/MAX —— 中文环境下整行英文（用户反馈修复）。
+ */
+@Composable
+private fun localizedEffortLabel(effort: ReasoningEffort): String = stringResource(
+    when (effort) {
+        ReasoningEffort.NONE -> R.string.chat_effort_none
+        ReasoningEffort.LOW -> R.string.chat_effort_low
+        ReasoningEffort.MEDIUM -> R.string.chat_effort_medium
+        ReasoningEffort.HIGH -> R.string.chat_effort_high
+        ReasoningEffort.MAX -> R.string.chat_effort_max
+    }
+)
 
 @Composable
 private fun ContextSection(p: ModelProfile, onUpdate: (ModelProfile) -> Unit) {
