@@ -41,12 +41,16 @@ internal suspend fun ApexAgentEngine.handleAskUserToolCall(
         "choice" -> InputType.CHOICE
         else -> InputType.TEXT
     }
-    emit(AgentEvent.UserInputRequired(question, eventType))
     // 等待时长回填（旧实现硬编码 0）：用户等 5 分钟与 1 秒在统计上无差别。
     // core 纯 JVM —— 用 System.nanoTime 差值（不受墙钟回拨影响）。
     val waitStartNs = System.nanoTime()
-    // #214：onExpired 回调发射 UserInputExpired（超时未决显式事件）。
-    val answer = awaitUserInput { emit(AgentEvent.UserInputExpired) }
+    // #214：onExpired 回调发射 UserInputExpired（超时未决显式事件）；
+    // #340：onRegistered 先注册 deferred 再发射 UserInputRequired ——
+    // 提交与注册之间的 happens-before 窗口结构性消除（PR #330 根因）。
+    val answer = awaitUserInput(
+        onRegistered = { emit(AgentEvent.UserInputRequired(question, eventType)) },
+        onExpired = { emit(AgentEvent.UserInputExpired) }
+    )
     val waitedMs = (System.nanoTime() - waitStartNs) / 1_000_000L
     if (answer == null) {
         // #214 超时未决：显式失败收场（UserInputExpired 已由 onExpired 发射）。

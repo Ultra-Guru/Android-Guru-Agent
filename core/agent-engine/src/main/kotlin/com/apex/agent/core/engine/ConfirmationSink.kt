@@ -19,12 +19,17 @@ interface ConfirmationSink {
     /**
      * User confirmed or rejected the plan awaiting confirmation
      * ([AgentEvent.PlanAwaitingConfirmation]).
+     *
+     * #340：Boolean 回执 —— true = 已送达挂起等待；false = 无挂起等待或
+     * 已被 abort/超时收场，调用方（VM）据此给出「未送达」提示（#214 同型）。
      */
-    fun submitPlanConfirmation(confirmed: Boolean)
+    fun submitPlanConfirmation(confirmed: Boolean): Boolean
 
     /**
      * User confirmed or rejected the spec awaiting confirmation
      * ([AgentEvent.SpecAwaitingConfirmation]).
+     *
+     * #340：Boolean 回执，语义同 [submitPlanConfirmation]。
      */
-    fun submitSpecConfirmation(confirmed: Boolean)
+    fun submitSpecConfirmation(confirmed: Boolean): Boolean
 }

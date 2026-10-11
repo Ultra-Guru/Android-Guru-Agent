@@ -50,8 +50,9 @@ internal suspend fun ApexAgentEngine.executeSpecMode(
     emit(AgentEvent.SpecGenerated(spec))
 
     // Phase 3: await user confirmation
-    emit(AgentEvent.SpecAwaitingConfirmation(spec))
-    val confirmed = awaitSpecConfirmation()
+    // #340：注册先行（deferred 先于 SpecAwaitingConfirmation 的 emit 创建，
+    // 消除提交与注册之间的 happens-before 窗口）。
+    val confirmed = awaitSpecConfirmation { emit(AgentEvent.SpecAwaitingConfirmation(spec)) }
     if (!confirmed) {
         emit(AgentEvent.Aborted)
         return 0
@@ -92,12 +93,16 @@ internal suspend fun ApexAgentEngine.executeSpecMode(
 }
 
 /** UI 确认挂起等待（与 awaitPlanConfirmationDecision 同语义：超时=拒绝）。 */
-internal suspend fun ApexAgentEngine.awaitSpecConfirmation(): Boolean {
+internal suspend fun ApexAgentEngine.awaitSpecConfirmation(
+    onRegistered: (suspend () -> Unit)? = null
+): Boolean {
     val deferred = CompletableDeferred<Boolean>()
-    specConfirmationDeferred = deferred
+    // #340：注册先行 + 代际清理（同 plan 通道，见 PlanExecutionSupport）。
+    specConfirmationDeferred.set(deferred)
     return try {
+        onRegistered?.invoke()
         withTimeout(PLAN_CONFIRMATION_TIMEOUT_MS) { deferred.await() }
     } finally {
-        specConfirmationDeferred = null
+        specConfirmationDeferred.compareAndSet(deferred, null)
     }
 }

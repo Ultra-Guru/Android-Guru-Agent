@@ -288,6 +288,8 @@
     <string name="chat_user_input_expired">⏱ No answer within 5 minutes — the question was closed and the agent continued. Ask again anytime.</string>
     <string name="chat_user_input_late">⚠️ This question already timed out; your answer arrived too late and was not delivered. Please send it as a new message.</string>
     <string name="chat_question_expired">⏱ Confirmation timed out (5 min) with no answer — treated as undecided: nothing was executed and you will be asked again next time.</string>
+    <string name="chat_plan_confirm_late">⚠️ The plan confirmation was not delivered (no pending confirmation or it already timed out). You can resend it as a new message.</string>
+    <string name="chat_spec_confirm_late">⚠️ The spec confirmation was not delivered (no pending confirmation or it already timed out). You can resend it as a new message.</string>
 
     <!-- ═══ SlashMenuProvider (slash menu groups) ═══ -->
     <string name="chat_slash_no_skills">No active skills</string>

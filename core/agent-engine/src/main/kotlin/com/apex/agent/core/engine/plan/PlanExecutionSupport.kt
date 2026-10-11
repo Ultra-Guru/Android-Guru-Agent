@@ -27,12 +27,21 @@ internal const val PLAN_CONFIRMATION_TIMEOUT_MS: Long = 5L * 60 * 1000 // 5 minu
  *  - `submitPlanConfirmation(confirmed, enabledSteps, order)` 三参重载承接
  *    UI 人控三元组。
  */
-internal suspend fun ApexAgentEngine.awaitPlanConfirmationDecision(): PlanDecision {
+internal suspend fun ApexAgentEngine.awaitPlanConfirmationDecision(
+    onRegistered: (suspend () -> Unit)? = null
+): PlanDecision {
     val deferred = CompletableDeferred<PlanDecision>()
-    planConfirmationDeferred = deferred
+    // #340：注册先行 —— deferred 先于 PlanAwaitingConfirmation 的 emit
+    //（onRegistered）创建。旧顺序「先 emit 再创建 deferred」在 TaskRuntime
+    // 镜像收集（UNLIMITED tap 使 emit 立即返回）下无 happens-before 保证，
+    // 迟到的 submit 在 deferred 创建前到达 → complete 落空 → 引擎挂 5 分钟
+    //（PR #330 实证竞态，测试侧轮询补丁由此退役）。
+    planConfirmationDeferred.set(deferred)
     return try {
+        onRegistered?.invoke()
         withTimeout(PLAN_CONFIRMATION_TIMEOUT_MS) { deferred.await() }
     } finally {
-        planConfirmationDeferred = null
+        // #340：仅清理自己那一代（不覆写 abort 后的新注册）。
+        planConfirmationDeferred.compareAndSet(deferred, null)
     }
 }

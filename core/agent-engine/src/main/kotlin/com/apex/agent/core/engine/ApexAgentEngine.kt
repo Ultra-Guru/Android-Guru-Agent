@@ -48,6 +48,10 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Apex Agent Engine — production implementation.
@@ -239,7 +243,11 @@ class ApexAgentEngine(
     private var toolDegradationLevel = 0
 
     // internal —— EngineCompressionGate.kt 传入压缩器/持久化。
-    internal val conversationHistory: MutableList<LlmMessage> = mutableListOf<LlmMessage>().apply {
+    // #351①：CopyOnWriteArrayList —— UI 仪表盘「压缩上下文」（compressNow，
+    // viewModelScope）在引擎运行中可点击，引擎协程同时 addMessage/
+    // buildMessages/sumOf 迭代同一 ArrayList 会抛 ConcurrentModificationException
+    // 直接崩溃；COW 写时复制使迭代恒为快照语义（写频率为每消息一次，代价可忽）。
+    internal val conversationHistory: MutableList<LlmMessage> = CopyOnWriteArrayList<LlmMessage>().apply {
         memory?.load()?.let { addAll(it) }
     }
     // P2-10 修复：isRunning 由 UI/abort 线程跨线程读写（abort() 在引擎循环外被调用），
@@ -262,30 +270,25 @@ class ApexAgentEngine(
     internal var anyActionFailed = false
 
     /**
-     * Channel for the UI to deliver plan-confirmation decisions back to the engine
-     * while [executePlanMode] is suspended on `awaitPlanConfirmationDecision`.
-     *
-     * #169：Boolean → [PlanDecision]（可携带步骤勾选/重排）。internal 供
-     * plan/PlanExecutionSupport.kt 扩展注册与清理（同模块拆分模式）。
-     * Reset to a fresh [CompletableDeferred] every time a new plan is awaiting confirmation.
-     * @Volatile（#214 同型）：引擎协程写、UI/测试线程读，跨挂起点可见性依赖此标记。
+     * #340：三通道 deferred 改 [AtomicReference] 持有 —— abort 的
+     * 「complete 后置 null」两步跨协程非原子（引擎恰在两步间完成新注册时，
+     * 新 deferred 被 null 覆盖，UI 后续提交全部落空、引擎挂满 5 分钟），
+     * 换引用改用 getAndSet 原子完成。注册先行（emit 之前 set）见
+     * PlanExecutionSupport / EngineSpecFlow / EngineAskUserFlow。
      */
-    @Volatile
-    internal var planConfirmationDeferred: CompletableDeferred<PlanDecision>? = null
+    internal val planConfirmationDeferred = AtomicReference<CompletableDeferred<PlanDecision>?>(null)
 
-    /** UI 回投 SPEC 确认（[executeSpecMode] 挂在 [awaitSpecConfirmation] 时）。@Volatile 同 plan 通道。 */
-    @Volatile
-    internal var specConfirmationDeferred: CompletableDeferred<Boolean>? = null
+    /** UI 回投 SPEC 确认；#340 同 plan 通道（AtomicReference + 注册先行）。 */
+    internal val specConfirmationDeferred = AtomicReference<CompletableDeferred<Boolean>?>(null)
 
     /**
      * Channel for the UI to deliver user-input answers back to the engine
      * while [executeBuildLoop] is suspended on [awaitUserInput].
      *
-     * #214：@Volatile —— [submitUserInputIfAwaiting] 在 VM 主线程读、
-     * 引擎协程写，投递回执（超时后迟到提交必须拿到 false）依赖可见性。
+     * #214/#340：AtomicReference —— VM 主线程读、引擎协程写，投递回执
+     * （超时后迟到提交必须拿到 false）依赖可见性 + abort 原子换引用。
      */
-    @Volatile
-    private var userInputDeferred: CompletableDeferred<String>? = null
+    private val userInputDeferred = AtomicReference<CompletableDeferred<String>?>(null)
 
     fun updateConfig(newConfig: AgentConfig) {
         val old = config
@@ -404,28 +407,17 @@ class ApexAgentEngine(
         memory?.append(message)
     }
 
-    /**
-     * Called from the UI (e.g. `ChatViewModel.confirmPlan`) to resume the suspended
-     * plan-mode execution. No-op if no plan is currently awaiting confirmation.
-     * Exposed to the orchestrator via the [ConfirmationSink] interface.
-     */
-    override fun submitPlanConfirmation(confirmed: Boolean) {
-        planConfirmationDeferred?.complete(PlanDecision.legacy(confirmed))
-    }
+    /** #340：回执 = false 表示无挂起等待或已被 abort/超时收场，调用方提示「未送达」。（[ConfirmationSink]） */
+    override fun submitPlanConfirmation(confirmed: Boolean): Boolean =
+        planConfirmationDeferred.get()?.complete(PlanDecision.legacy(confirmed)) ?: false
 
     /** #169：带步骤勾选/重排的确认重载（UI 人控透传，语义见 [PlanDecision]）。 */
-    fun submitPlanConfirmation(confirmed: Boolean, enabledSteps: List<Int>?, order: List<Int>?) {
-        planConfirmationDeferred?.complete(PlanDecision(confirmed, enabledSteps, order))
-    }
+    fun submitPlanConfirmation(confirmed: Boolean, enabledSteps: List<Int>?, order: List<Int>?): Boolean =
+        planConfirmationDeferred.get()?.complete(PlanDecision(confirmed, enabledSteps, order)) ?: false
 
-    /**
-     * Called from the UI (e.g. `ChatViewModel.submitSpecConfirmation`) to resume the
-     * suspended spec-mode execution. No-op if no spec is currently awaiting confirmation.
-     * Exposed to the orchestrator via the [ConfirmationSink] interface.
-     */
-    override fun submitSpecConfirmation(confirmed: Boolean) {
-        specConfirmationDeferred?.complete(confirmed)
-    }
+    /** #340：同 plan 通道的 Boolean 回执（[ConfirmationSink]）。 */
+    override fun submitSpecConfirmation(confirmed: Boolean): Boolean =
+        specConfirmationDeferred.get()?.complete(confirmed) ?: false
 
     /**
      * 兼容旧接口：纯文本输入委托给多模态入口。
@@ -636,10 +628,9 @@ class ApexAgentEngine(
             chatMemoryNote = null
             chatSignal = null
             // Cancel any dangling plan-confirmation deferred so it doesn't leak.
-            planConfirmationDeferred?.complete(PlanDecision.legacy(false))
-            planConfirmationDeferred = null
-            specConfirmationDeferred?.complete(false)
-            specConfirmationDeferred = null
+            // #340：原子换引用（getAndSet）—— 两步读写会抹掉并发新注册。
+            planConfirmationDeferred.getAndSet(null)?.complete(PlanDecision.legacy(false))
+            specConfirmationDeferred.getAndSet(null)?.complete(false)
             emit(
                 AgentEvent.Complete(
                     summary = "",
@@ -690,8 +681,8 @@ class ApexAgentEngine(
 
         // Phase 3: await user confirmation（#169：Boolean → PlanDecision，
         // 可携带步骤勾选 enabledSteps 与重排 order，见 plan/PlanConfirmationRequest）。
-        emit(AgentEvent.PlanAwaitingConfirmation(plan))
-        val decision = awaitPlanConfirmationDecision()
+        // #340：注册先行（deferred 先于 emit 创建，消除提交与注册间的窗口）
+        val decision = awaitPlanConfirmationDecision { emit(AgentEvent.PlanAwaitingConfirmation(plan)) }
         if (!decision.confirmed) {
             emit(AgentEvent.Aborted)
             return 0
@@ -1139,16 +1130,15 @@ class ApexAgentEngine(
 
     override suspend fun abort() {
         isRunning = false
-        planConfirmationDeferred?.complete(PlanDecision.legacy(false))
-        planConfirmationDeferred = null
-        specConfirmationDeferred?.complete(false)
-        specConfirmationDeferred = null
-        userInputDeferred?.complete("")
-        userInputDeferred = null
+        // #340：原子换引用后 complete —— 旧两步（读 ?.complete → = null）
+        // 与引擎新注册竞态时新 deferred 被抹，后续提交全部落空。
+        planConfirmationDeferred.getAndSet(null)?.complete(PlanDecision.legacy(false))
+        specConfirmationDeferred.getAndSet(null)?.complete(false)
+        userInputDeferred.getAndSet(null)?.complete("")
     }
 
     override fun submitUserInput(answer: String) {
-        userInputDeferred?.complete(answer)
+        userInputDeferred.get()?.complete(answer)
     }
 
     /**
@@ -1156,13 +1146,11 @@ class ApexAgentEngine(
      * 等待已超时收场（或无 pending 请求）→ false —— 调用方（VM）据此
      * 给出「回答未送达」的显式提示，迟到的输入不再被静默丢弃。
      */
-    fun submitUserInputIfAwaiting(answer: String): Boolean {
-        val deferred = userInputDeferred ?: return false
-        return deferred.complete(answer)
-    }
+    fun submitUserInputIfAwaiting(answer: String): Boolean =
+        userInputDeferred.get()?.complete(answer) ?: false
 
     override fun cancelUserInput() {
-        userInputDeferred?.complete("")
+        userInputDeferred.get()?.complete("")
     }
 
     /**
@@ -1174,10 +1162,17 @@ class ApexAgentEngine(
      *   再触发 [onExpired]（调用方发射 UserInputExpired 让 UI 关对话框），
      *   返回 null 让调用方产生「用户输入超时」的显式结果。
      */
-    internal suspend fun awaitUserInput(onExpired: (suspend () -> Unit)? = null): String? {
+    internal suspend fun awaitUserInput(
+        onRegistered: (suspend () -> Unit)? = null,
+        onExpired: (suspend () -> Unit)? = null
+    ): String? {
         val deferred = CompletableDeferred<String>()
-        userInputDeferred = deferred
+        // #340：注册先行 —— deferred 先于 UserInputRequired 的 emit（
+        // onRegistered）创建，提交方与注册方之间的 happens-before 窗口
+        // 结构性消除（PR #330 实证的 5 分钟挂起根因）。
+        userInputDeferred.set(deferred)
         return try {
+            onRegistered?.invoke()
             // 与 awaitPlanConfirmation / awaitSpecConfirmation 保持一致：
             // 5 分钟超时，避免 ask_user 工具因用户遗忘而把引擎永久挂起。
             withTimeout(PLAN_CONFIRMATION_TIMEOUT_MS) { deferred.await() }
@@ -1187,11 +1182,12 @@ class ApexAgentEngine(
                 "ask_user 输入超时 (${PLAN_CONFIRMATION_TIMEOUT_MS / 1000}s)，按超时未决收场"
             )
             // 先关投递通道再通知：保证 UI 先看到对话框关闭，迟交才有失败提示。
-            userInputDeferred = null
+            userInputDeferred.compareAndSet(deferred, null)
             onExpired?.invoke()
             null
         } finally {
-            userInputDeferred = null
+            // #340：仅清理自己那一代（不覆写 abort 后的新注册）。
+            userInputDeferred.compareAndSet(deferred, null)
         }
     }
 

@@ -48,7 +48,9 @@ class PlanModeHumanControlTest {
         timeoutMs: Long = 10_000
     ) {
         val deadline = System.currentTimeMillis() + timeoutMs
-        while (engine.planConfirmationDeferred == null &&
+        // #340 注册先行后此轮询理论上不再必要（事件发出时 deferred 已注册），
+        // 保留为 CI 高负载兜底；字段改 AtomicReference 后用 .get() 判空。
+        while (engine.planConfirmationDeferred.get() == null &&
             System.currentTimeMillis() < deadline
         ) {
             delay(20)

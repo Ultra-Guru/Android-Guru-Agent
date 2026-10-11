@@ -51,12 +51,12 @@ interface CodeEngineFacade : AgentEngine {
      */
     fun updateMode(mode: AgentMode)
 
-    /** PLAN 模式计划确认/驳回（勾选与重排按原 index 口径）。 */
+    /** PLAN 模式计划确认/驳回（勾选与重排按原 index 口径）。#340：Boolean 回执 = 是否送达挂起等待。 */
     fun submitPlanConfirmation(
         confirmed: Boolean,
         enabledSteps: List<Int>? = null,
         order: List<Int>? = null
-    )
+    ): Boolean
 
     /** 「小圆环」会话上下文附加段（coding 工位独占）。 */
     fun updateSessionExtras(extras: String?)
