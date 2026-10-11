@@ -515,6 +515,54 @@ fun ImportSkillJsonDialog(
     )
 }
 
+/**
+ * 功能性插件导入对话框（Plugin System v2）：粘贴 plugin.json 文本导入。
+ * 与 [ImportSkillJsonDialog] 同构（确认钮启用条件 = 以 JSON 对象起始），
+ * 校验门在 [com.apex.agent.plugin.host.functional.FunctionalPluginStore.install]
+ * （身份门 / 版本门 / 贡献点形状门，拒绝理由经 snackbar 人话反馈）。
+ */
+@Composable
+fun ImportFunctionalPluginDialog(
+    onDismiss: () -> Unit,
+    onImport: (json: String) -> Unit
+) {
+    var content by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.market_plugin_import_title)) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = content,
+                    onValueChange = { content = it },
+                    label = { Text(stringResource(R.string.market_plugin_import_label)) },
+                    minLines = 6,
+                    maxLines = 12,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = stringResource(R.string.market_plugin_import_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onImport(content) },
+                // JSON_OBJECT_OPEN 为 JSON 对象起始花括号（unicode 转义写法，避免
+                // 字面量大括号干扰 CI 的源码括号平衡静态检查）。
+                enabled = content.trim().startsWith(JSON_OBJECT_OPEN)
+            ) { Text(stringResource(R.string.market_action_install)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.market_action_cancel)) }
+        }
+    )
+}
+
 /** 通用 URL 导入对话框。 */
 @Composable
 fun ImportFromUrlDialog(

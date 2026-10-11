@@ -18,6 +18,7 @@ import com.apex.agent.browser.CyberNeonBallManager
 import com.apex.agent.loop.LoopScheduler
 import com.apex.agent.notify.ForegroundTracker
 import com.apex.agent.plugin.host.PluginManager
+import com.apex.agent.plugin.host.functional.UnifiedPluginRegistry
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
 import com.apex.agent.ui.language.LanguageManager
 import dagger.hilt.android.AndroidEntryPoint
@@ -45,6 +46,12 @@ class ApexCoreService : LifecycleService() {
     // 市场页手动加载一次。未安装插件时这里是空操作（discovery 无匹配）。
     @Inject
     lateinit var pluginManager: PluginManager
+
+    // Plugin System v2 — 统一插件注册表：启动时激活全部「已启用且合规」的
+    // 功能性插件（plugin.json 数据，工具宏注册进 ToolRegistry）——与上方
+    // APK 插件自动加载同一哲学（安装即生效）；扫描失败不阻断启动。
+    @Inject
+    lateinit var unifiedPluginRegistry: UnifiedPluginRegistry
 
     // v4 — MCP 会话引导：注入 McpToolRegistrar（构造时已挂到 McpManager 的
     // 会话监听）+ McpManager（启动自动连接 enabled 服务器，连接成功后远程工具
@@ -92,6 +99,17 @@ class ApexCoreService : LifecycleService() {
             runCatching {
                 pluginManager.discoverPlugins().forEach(pluginManager::loadPlugin)
             }.onFailure { android.util.Log.w("ApexCoreService", "auto-load plugins failed: ${it.message}") }
+        }
+        // Plugin System v2 — 激活已启用的功能性插件（磁盘扫描在 IO 调度器，
+        // 工具宏注册同步完成后 unified 目录即终态；BROKEN 插件跳过并留痕）。
+        scope.launch(Dispatchers.IO) {
+            runCatching { unifiedPluginRegistry.activateEnabledFunctionalPlugins() }
+                .onFailure {
+                    android.util.Log.w(
+                        "ApexCoreService",
+                        "activate functional plugins failed: ${it.message}"
+                    )
+                }
         }
         // v4 — 自动连接已启用的 MCP 服务器：连接成功 → McpManager 会话监听 →
         // McpToolRegistrar 把远程工具注册为一等函数（"配置即生效"，与插件同一

@@ -7,13 +7,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -31,12 +35,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import com.apex.agent.core.tools.connector.ConnectorDef
 import com.apex.agent.core.tools.mcp.McpTransport
+import com.apex.agent.plugin.api.PluginKind
+import com.apex.agent.plugin.host.functional.UnifiedPluginEntry
+import com.apex.agent.plugin.host.functional.UnifiedPluginState
 
 /**
  * ═══ 市场 · 已安装管理视图（INSTALLED）═══
  *
  * 顶栏「已安装管理」视图下的五个子页签，只放「管理」语义的内容：
- * - 插件：已加载插件的卸载（解除服务绑定）；
+ * - 插件：Plugin System v2 双形态统一目录（功能性 plugin.json + APK 插件）
+ *   的启停 / 卸载 / 导入；
  * - Skills：已安装技能的启停 / 卸载；
  * - MCP：已配置工具源的连接 / 断开 / 启停 / 删除；
  * - 连接器：已有连接器的启停 / 删除；
@@ -64,70 +72,215 @@ private fun rememberSandboxAvailable(key: Any? = Unit): Boolean {
     }
 }
 
-// ═══ 已安装管理 · 插件 ═══
+// ═══ 已安装管理 · 插件（Plugin System v2：双形态统一目录） ═══
 
+/**
+ * Plugin System v2：统一插件管理视图（功能性 + APK 双形态合并，数据源
+ * MarketUiState.installedPlugins ← UnifiedPluginRegistry.catalog）。
+ *
+ * - **类型徽章**：「功能」（进程内 plugin.json 数据）与「APK」（独立 APK
+ *   + AIDL 跨进程）并列展示——用户在同一页理解两种插件生态；
+ * - **功能性插件**：启停 Switch（工具宏实时注册/回收）+ 卸载（目录删除）；
+ *   BROKEN 态如实展示原因并引导重装；
+ * - **APK 插件**：保持既有语义——卸载 = 解除绑定（APK 留在系统，可重载）；
+ * - **导入**：头部「导入插件 JSON」按钮（粘贴 plugin.json 文本）——功能性
+ *   插件的本地分发入口（市场仓库分发是后续路线，见设计文档）。
+ */
 @Composable
 internal fun InstalledPluginsTab(state: MarketUiState, viewModel: MarketViewModel) {
-    var pendingUnload by remember { mutableStateOf<MarketPluginRow?>(null) }
-    val loaded = state.plugins.filter { it.loaded }
+    var pendingApkUnload by remember { mutableStateOf<UnifiedPluginEntry?>(null) }
+    var pendingFunctionalUninstall by remember { mutableStateOf<UnifiedPluginEntry?>(null) }
+    var showImportDialog by remember { mutableStateOf(false) }
+    val installed = state.installedPlugins
 
-    if (loaded.isEmpty()) {
-        MarketEmptyState(
-            hint = stringResource(R.string.market_installed_plugins_empty),
-            actionLabel = stringResource(R.string.market_installed_plugins_go),
-            onAction = { goToBrowse(viewModel) }
-        )
+    if (installed.isEmpty()) {
+        Column {
+            MarketEmptyState(
+                hint = stringResource(R.string.market_installed_plugins_empty),
+                actionLabel = stringResource(R.string.market_installed_plugins_go),
+                onAction = { goToBrowse(viewModel) }
+            )
+            // 空态同样提供导入入口——首个功能性插件的冷启动路径不能藏在非空态里。
+            OutlinedButton(
+                onClick = { showImportDialog = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+            ) {
+                Icon(
+                    Icons.Default.FileDownload,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    stringResource(R.string.market_plugin_import_json),
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
+        }
     } else {
         MarketList(
-            items = loaded,
-            key = { it.packageName },
+            items = installed,
+            key = { "${it.kind.name}:${it.id}" },
             header = {
                 item {
-                    MarketHeader(
-                        stringResource(R.string.market_installed_plugins_header, loaded.size)
-                    )
+                    Column {
+                        MarketHeader(
+                            stringResource(
+                                R.string.market_installed_plugins_header_v2,
+                                installed.count { it.kind == PluginKind.FUNCTIONAL },
+                                installed.count { it.kind == PluginKind.APK }
+                            )
+                        )
+                        // 功能性插件本地导入入口（plugin.json 粘贴导入）。
+                        OutlinedButton(
+                            onClick = { showImportDialog = true },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.FileDownload,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                stringResource(R.string.market_plugin_import_json),
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                    }
                 }
             }
         ) { plugin ->
             MarketCard(
-                title = plugin.label,
-                subtitle = plugin.packageName,
-                description = null,
+                title = plugin.name,
+                subtitle = plugin.id,
+                description = buildString {
+                    append(plugin.description)
+                    if (plugin.description.isNotBlank()) append('\n')
+                    append("v").append(plugin.version)
+                },
                 trailing = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        // 类型徽章：功能（进程内数据）/ APK（独立应用）。
                         MarketStatusChip(
-                            text = stringResource(R.string.market_status_loaded),
-                            positive = true
+                            text = if (plugin.kind == PluginKind.FUNCTIONAL) {
+                                stringResource(R.string.market_plugin_kind_functional)
+                            } else {
+                                stringResource(R.string.market_plugin_kind_apk)
+                            },
+                            positive = false
                         )
-                        TextButton(onClick = { pendingUnload = plugin }) {
-                            Text(stringResource(R.string.market_action_uninstall))
+                        when (plugin.state) {
+                            UnifiedPluginState.ACTIVE -> MarketStatusChip(
+                                text = stringResource(
+                                    if (plugin.kind == PluginKind.FUNCTIONAL) {
+                                        R.string.market_plugin_state_active
+                                    } else {
+                                        R.string.market_status_loaded
+                                    }
+                                ),
+                                positive = true
+                            )
+                            UnifiedPluginState.INSTALLED -> MarketStatusChip(
+                                text = stringResource(R.string.market_plugin_state_installed),
+                                positive = false
+                            )
+                            UnifiedPluginState.BROKEN -> MarketStatusChip(
+                                text = stringResource(R.string.market_plugin_state_broken),
+                                positive = false
+                            )
+                        }
+                        if (plugin.kind == PluginKind.FUNCTIONAL) {
+                            // 功能性插件：启停开关（BROKEN 态禁用——坏数据
+                            // 不允许激活，先修好或卸载）。
+                            Switch(
+                                checked = plugin.enabled && plugin.state == UnifiedPluginState.ACTIVE,
+                                enabled = plugin.state != UnifiedPluginState.BROKEN,
+                                onCheckedChange = { viewModel.toggleFunctionalPlugin(plugin.id, it) }
+                            )
+                            TextButton(onClick = { pendingFunctionalUninstall = plugin }) {
+                                Text(stringResource(R.string.market_action_uninstall))
+                            }
+                        } else {
+                            // APK 插件：既有语义（卸载 = 解绑，APK 留存可重载）。
+                            TextButton(onClick = { pendingApkUnload = plugin }) {
+                                Text(stringResource(R.string.market_action_uninstall))
+                            }
                         }
                     }
                 }
             )
+            // 状态补充说明（BROKEN 原因 / 工具 id 冲突拒绝记录）——如实呈现，
+            // 引导用户重装或检查插件数据。
+            plugin.detail?.takeIf { it.isNotBlank() }?.let { detail ->
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = detail,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
         }
     }
 
-    pendingUnload?.let { plugin ->
+    // APK 插件解绑确认（既有文案与行为不变）。
+    pendingApkUnload?.let { plugin ->
         AlertDialog(
-            onDismissRequest = { pendingUnload = null },
+            onDismissRequest = { pendingApkUnload = null },
             title = { Text(stringResource(R.string.market_plugins_uninstall_title)) },
             text = {
-                Text(stringResource(R.string.market_plugins_uninstall_text, plugin.label))
+                Text(stringResource(R.string.market_plugins_uninstall_text, plugin.name))
             },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.unloadPlugin(plugin.packageName)
-                    pendingUnload = null
+                    viewModel.unloadPlugin(plugin.id)
+                    pendingApkUnload = null
                 }) { Text(stringResource(R.string.market_action_uninstall), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingUnload = null }) {
+                TextButton(onClick = { pendingApkUnload = null }) {
                     Text(stringResource(R.string.market_action_cancel))
                 }
+            }
+        )
+    }
+
+    // 功能性插件卸载确认（真删除：目录 + 工具注册一并回收）。
+    pendingFunctionalUninstall?.let { plugin ->
+        AlertDialog(
+            onDismissRequest = { pendingFunctionalUninstall = null },
+            title = { Text(stringResource(R.string.market_plugin_functional_uninstall_title)) },
+            text = {
+                Text(stringResource(R.string.market_plugin_functional_uninstall_text, plugin.name))
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.uninstallFunctionalPlugin(plugin.id)
+                    pendingFunctionalUninstall = null
+                }) { Text(stringResource(R.string.market_action_uninstall), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingFunctionalUninstall = null }) {
+                    Text(stringResource(R.string.market_action_cancel))
+                }
+            }
+        )
+    }
+
+    if (showImportDialog) {
+        ImportFunctionalPluginDialog(
+            onDismiss = { showImportDialog = false },
+            onImport = { json ->
+                viewModel.importFunctionalPlugin(json)
+                showImportDialog = false
             }
         )
     }

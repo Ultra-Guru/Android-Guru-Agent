@@ -106,12 +106,30 @@
     <string name="market_github_query_label">仓库名 / 关键词</string>
     <string name="market_github_error_title">GitHub 搜索失败</string>
 
-    <!-- ═══ 已安装管理 · 插件 ═══ -->
-    <string name="market_installed_plugins_empty">尚未加载任何插件 —— 到「市场」加载设备上发现的插件 APK</string>
+    <!-- ═══ 已安装管理 · 插件（Plugin System v2：功能 + APK 双形态）═══ -->
+    <string name="market_installed_plugins_empty">尚未安装任何插件 —— 功能性插件可在下方导入 JSON，市场发现的插件 APK 加载后自动出现</string>
     <string name="market_installed_plugins_go">去市场加载</string>
     <string name="market_installed_plugins_header">已加载 %1$d 个插件；卸载仅解除服务绑定，APK 仍在设备上，可随时重新加载。</string>
+    <string name="market_installed_plugins_header_v2">功能性 %1$d · APK %2$d。功能性插件开关即时生效（工具实时注册/回收）；APK 卸载仅解绑，APK 仍留在设备。</string>
     <string name="market_plugins_uninstall_title">卸载插件</string>
     <string name="market_plugins_uninstall_text">解除与 %1$s 的绑定？可随时重新加载。</string>
+    <string name="market_plugin_kind_functional">功能</string>
+    <string name="market_plugin_kind_apk">APK</string>
+    <string name="market_plugin_state_active">已激活</string>
+    <string name="market_plugin_state_installed">未激活</string>
+    <string name="market_plugin_state_broken">损坏</string>
+    <string name="market_plugin_import_json">导入插件 JSON</string>
+    <string name="market_plugin_import_title">导入功能性插件</string>
+    <string name="market_plugin_import_label">plugin.json 内容</string>
+    <string name="market_plugin_import_hint">粘贴功能性插件清单（plugin.json）。id 须为小写点分形式（如 functional.daily-briefing）；工具宏仅组合既有宿主工具，不执行任何代码。</string>
+    <string name="market_plugin_functional_uninstall_title">卸载功能性插件</string>
+    <string name="market_plugin_functional_uninstall_text">删除 %1$s 及其贡献的工具？随时可重新导入清单。</string>
+    <string name="market_plugin_functional_uninstalled">功能性插件已卸载：%1$s</string>
+    <string name="market_plugin_functional_installed">功能性插件已安装：%1$s</string>
+    <string name="market_plugin_functional_upgraded">功能性插件已升级：%1$s</string>
+    <string name="market_plugin_functional_unchanged">已安装同版本或更高版本：%1$s</string>
+    <string name="market_plugin_functional_rejected">安装被拒绝：%1$s</string>
+    <string name="market_plugin_not_found">未找到插件：%1$s</string>
 
     <!-- ═══ 已安装管理 · Skills ═══ -->
     <string name="market_installed_skills_empty">暂无已安装技能 —— 到「市场」从 GitHub / URL / 魔搭安装</string>

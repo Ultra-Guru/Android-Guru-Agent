@@ -106,12 +106,30 @@
     <string name="market_github_query_label">Repo name / keyword</string>
     <string name="market_github_error_title">GitHub search failed</string>
 
-    <!-- ═══ Installed · Plugins ═══ -->
-    <string name="market_installed_plugins_empty">No plugins loaded yet \u2014 load discovered plugin APKs in \u201CMarket\u201D</string>
+    <!-- ═══ Installed · Plugins (Plugin System v2: functional + APK dual-kind) ═══ -->
+    <string name="market_installed_plugins_empty">No plugins installed yet \u2014 functional plugins can be imported from JSON below, and plugin APKs discovered in \u201CMarket\u201D load here automatically</string>
     <string name="market_installed_plugins_go">Load in Market</string>
     <string name="market_installed_plugins_header">%1$d plugins loaded; unloading only unbinds the service \u2014 the APK stays on the device and can be reloaded anytime.</string>
+    <string name="market_installed_plugins_header_v2">%1$d functional · %2$d APK plugins. Functional plugins toggle instantly (tools register/unregister); APK unloading only unbinds \u2014 the APK stays on the device.</string>
     <string name="market_plugins_uninstall_title">Unload plugin</string>
     <string name="market_plugins_uninstall_text">Unbind %1$s? It can be reloaded anytime.</string>
+    <string name="market_plugin_kind_functional">Functional</string>
+    <string name="market_plugin_kind_apk">APK</string>
+    <string name="market_plugin_state_active">Active</string>
+    <string name="market_plugin_state_installed">Inactive</string>
+    <string name="market_plugin_state_broken">Broken</string>
+    <string name="market_plugin_import_json">Import plugin JSON</string>
+    <string name="market_plugin_import_title">Import functional plugin</string>
+    <string name="market_plugin_import_label">plugin.json content</string>
+    <string name="market_plugin_import_hint">Paste a functional plugin manifest (plugin.json). Id must use lowercase dot-notation (e.g. functional.daily-briefing); tool macros compose existing host tools only \u2014 no code is executed.</string>
+    <string name="market_plugin_functional_uninstall_title">Uninstall functional plugin</string>
+    <string name="market_plugin_functional_uninstall_text">Remove %1$s and its contributed tools? You can re-import the manifest anytime.</string>
+    <string name="market_plugin_functional_uninstalled">Functional plugin uninstalled: %1$s</string>
+    <string name="market_plugin_functional_installed">Functional plugin installed: %1$s</string>
+    <string name="market_plugin_functional_upgraded">Functional plugin upgraded: %1$s</string>
+    <string name="market_plugin_functional_unchanged">Already installed at same or higher version: %1$s</string>
+    <string name="market_plugin_functional_rejected">Install rejected: %1$s</string>
+    <string name="market_plugin_not_found">Plugin not found: %1$s</string>
 
     <!-- ═══ Installed · Skills ═══ -->
     <string name="market_installed_skills_empty">No skills installed yet \u2014 install from GitHub / URL / ModelScope in \u201CMarket\u201D</string>

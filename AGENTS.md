@@ -27,6 +27,12 @@
 - **本地验证顺序**：改 core 层先跑对应模块 `test`，改 app 层跑
   `:app:compileDebugKotlin`；CI（pr 触发）跑静态分析 + app 编译 +
   9 步测试 + debug APK + 结构质量四门禁；
+- **插件体系（Plugin System v2，双类型）**：功能性插件
+  （`:plugin-sdk:plugin-host` functional 包）与 APK 插件（PluginManager
+  AIDL）统一经 `UnifiedPluginRegistry` 门面；改 functional 包跑
+  `:plugin-sdk:plugin-host:testDebugUnitTest`（纯 JVM，51 项契约锁），
+  契约与设计见 docs/plugin-system-v2.md——**功能性插件是数据永不 REPLACE
+  内置工具（REJECT），APK 插件同签名才 REPLACE**，改冲突语义前先读文档；
 - **绝不**在本地跑 `assembleRelease` 之外的东西来验证 UI——Compose
   编译过了 UI 仍可能崩，真机回归是最终验收。
 

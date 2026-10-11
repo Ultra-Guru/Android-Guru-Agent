@@ -151,6 +151,9 @@ class CodeViewModel @Inject constructor(
     internal val githubTokenManager: GithubTokenManager,
     /** 斜杠路由需要 MCP 连接快照（/mcp:<id> 引导提示词据此生成）。 */
     private val mcpManager: com.apex.agent.core.tools.mcp.McpManager,
+    // Plugin System v2：斜杠路由需要功能性插件指令贡献快照
+    // （/plugin:<id> 命中时注入插件声明的定制 prompt）。
+    private val unifiedPluginRegistry: com.apex.agent.plugin.host.functional.UnifiedPluginRegistry,
     // i18n：用户可见系统消息按当前语言取词（组合外场景）
     //（GOAL 扩展同包消费：目标设定/停止/重启回执）
     internal val languageManager: com.apex.agent.ui.language.LanguageManager,
@@ -387,7 +390,9 @@ class CodeViewModel @Inject constructor(
         val context = SlashRouteContext(
             githubConnected = githubTokenManager.isConnected(),
             githubUsername = githubTokenManager.getUsername(),
-            mcpConnected = mcpManager.getConnectedServers().toSet()
+            mcpConnected = mcpManager.getConnectedServers().toSet(),
+            functionalCommands = unifiedPluginRegistry.functionalSlashCommands()
+                .associateBy { it.commandId }
         )
         val route = SlashCommandRouter.route(parsed, context)
         _uiState.update { state ->
@@ -420,7 +425,9 @@ class CodeViewModel @Inject constructor(
         val context = SlashRouteContext(
             githubConnected = githubTokenManager.isConnected(),
             githubUsername = githubTokenManager.getUsername(),
-            mcpConnected = mcpManager.getConnectedServers().toSet()
+            mcpConnected = mcpManager.getConnectedServers().toSet(),
+            functionalCommands = unifiedPluginRegistry.functionalSlashCommands()
+                .associateBy { it.commandId }
         )
         val prompts = mutableListOf<String>()
         chips.forEach { chip ->
