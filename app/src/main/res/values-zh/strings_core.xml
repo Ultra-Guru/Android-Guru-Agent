@@ -330,6 +330,20 @@
     <string name="model_use_custom_id">使用自定义 ID</string>
     <string name="model_close">关闭</string>
 
+    <!-- ═══ 模型配置导入弹窗（ModelConfigImportDialog —— 粘贴 JSON / Python / YAML / TOML）═══ -->
+    <string name="model_import">导入配置</string>
+    <string name="model_import_title">导入模型配置</string>
+    <string name="model_import_hint">粘贴 JSON / Python 字典 / YAML / TOML 配置，自动识别并导入服务商与模型。</string>
+    <string name="model_import_paste_hint">在此粘贴配置文本…</string>
+    <string name="model_import_detected">识别格式：%1$s</string>
+    <string name="model_import_summary">将导入 %1$d 个模型 · %2$s</string>
+    <string name="model_import_parse_error">解析失败：%1$s</string>
+    <string name="model_import_nothing">未识别到模型配置（需要 base_url / api_key / model 至少其一）</string>
+    <string name="model_import_button">导入</string>
+    <string name="model_import_done">已导入 %1$d 个模型到「%2$s」</string>
+    <string name="model_import_cancel">取消</string>
+    <string name="model_import_apply_error">导入失败：%1$s</string>
+
     <!-- ═══ 存储与数据管理（StorageScreen）═══ -->
     <string name="storage_title">存储</string>
     <string name="storage_refresh">刷新</string>

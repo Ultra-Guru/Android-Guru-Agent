@@ -330,6 +330,20 @@
     <string name="model_use_custom_id">Use custom ID</string>
     <string name="model_close">Close</string>
 
+    <!-- ═══ Model config import dialog (ModelConfigImportDialog — paste JSON / Python / YAML / TOML) ═══ -->
+    <string name="model_import">Import config</string>
+    <string name="model_import_title">Import model configuration</string>
+    <string name="model_import_hint">Paste JSON / Python dict / YAML / TOML config — provider and models are detected and imported automatically.</string>
+    <string name="model_import_paste_hint">Paste config text here…</string>
+    <string name="model_import_detected">Detected format: %1$s</string>
+    <string name="model_import_summary">Will import %1$d model(s) · %2$s</string>
+    <string name="model_import_parse_error">Parse failed: %1$s</string>
+    <string name="model_import_nothing">No model config recognized (need at least one of base_url / api_key / model)</string>
+    <string name="model_import_button">Import</string>
+    <string name="model_import_done">Imported %1$d model(s) to \"%2$s\"</string>
+    <string name="model_import_cancel">Cancel</string>
+    <string name="model_import_apply_error">Import failed: %1$s</string>
+
     <!-- ═══ Storage and data management (StorageScreen) ═══ -->
     <string name="storage_title">Storage</string>
     <string name="storage_refresh">Refresh</string>
