@@ -139,7 +139,7 @@ import com.apex.agent.core.tools.hook.HookEvent
 import com.apex.agent.core.tools.hook.HookRegistry
 import com.apex.agent.core.tools.skill.SkillHotReloadLogLevel
 import com.apex.agent.core.tools.skill.SkillHotReloader
-import com.apex.agent.browser.BrowserAgentTools
+import com.apex.agent.platform.browser.BrowserAgentTools
 import com.apex.browser.engine.BrowserEngine
 import com.apex.browser.engine.BrowserTracer
 // #167 加密剪切板金库：仓库/脱敏器/工具集/执行器装饰器
