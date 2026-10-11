@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Terminal
@@ -78,6 +79,7 @@ import com.apex.agent.ui.screen.glass.GlassLabScreen
 import com.apex.agent.ui.screen.log.LogViewerScreen
 import com.apex.agent.ui.screen.market.MarketScreen
 import com.apex.agent.ui.screen.permissions.PermissionsScreen
+import com.apex.agent.ui.screen.playground.PlaygroundScreen
 import com.apex.agent.ui.screen.settings.SettingsScreen
 import com.apex.agent.ui.screen.memory.MemoryScreen
 import com.apex.agent.ui.screen.storage.StorageScreen
@@ -125,6 +127,9 @@ sealed class DrawerDestination(
     data object Vault : DrawerDestination("vault", R.string.drawer_vault, Icons.Default.Lock)
     data object Log : DrawerDestination("log", R.string.drawer_log, Icons.Filled.Info)
     data object Settings : DrawerDestination("settings", R.string.drawer_settings, Icons.Default.Settings)
+    // 游乐场（玻璃实验室正上方）：《字符风暴 GLYPH STORM》—— pretext 实测字符宽度
+    // 驱动的物理拼词街机（chenglou/pretext 测量理念，与官网游乐场一体两面）。
+    data object Playground : DrawerDestination("playground", R.string.drawer_playground, Icons.Default.SportsEsports)
     // 玻璃实验室 —— 内部 Liquid Glass 验收页（Spec §20：背景变化/网格/高对比文字/移动元素）
     data object GlassLab : DrawerDestination("glasslab", R.string.drawer_glasslab, Icons.Default.BlurOn)
     // v1.4.4 #6：用量仪表盘 —— 按天/按模型/按会话的 token 消耗分解（持久化账本）
@@ -365,6 +370,7 @@ fun ApexRoot() {
                                 // 来源页（如聊天页），栈空兜底回 Agent。
                                 onBack = navigateBack
                             )
+                            DrawerDestination.Playground -> PlaygroundScreen()
                             DrawerDestination.GlassLab -> GlassLabScreen()
                             DrawerDestination.About -> AboutScreen()
                         }

@@ -143,6 +143,7 @@ internal fun destinationFromRoute(route: String): DrawerDestination = when (rout
     DrawerDestination.Vault.route -> DrawerDestination.Vault
     DrawerDestination.Log.route -> DrawerDestination.Log
     DrawerDestination.Settings.route -> DrawerDestination.Settings
+    DrawerDestination.Playground.route -> DrawerDestination.Playground
     DrawerDestination.GlassLab.route -> DrawerDestination.GlassLab
     DrawerDestination.Usage.route -> DrawerDestination.Usage
     DrawerDestination.Diagnostics.route -> DrawerDestination.Diagnostics
