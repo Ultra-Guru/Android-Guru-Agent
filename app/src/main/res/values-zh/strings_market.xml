@@ -122,6 +122,7 @@
     <string name="market_plugin_import_hint">粘贴功能性插件清单（plugin.json）。id 须为小写点分形式（如 functional.daily-briefing）；工具宏仅组合既有宿主工具，不执行任何代码。</string>
     <string name="market_plugin_functional_uninstall_title">卸载功能性插件</string>
     <string name="market_plugin_functional_uninstall_text">删除 %1$s 及其贡献的工具？随时可重新导入清单。</string>
+    <string name="market_plugin_functional_uninstalled">功能性插件已卸载：%1$s</string>
     <string name="market_plugin_functional_installed">功能性插件已安装：%1$s</string>
     <string name="market_plugin_functional_upgraded">功能性插件已升级：%1$s</string>
     <string name="market_plugin_functional_unchanged">已安装同版本或更高版本：%1$s</string>

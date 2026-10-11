@@ -122,6 +122,7 @@
     <string name="market_plugin_import_hint">Paste a functional plugin manifest (plugin.json). Id must use lowercase dot-notation (e.g. functional.daily-briefing); tool macros compose existing host tools only \u2014 no code is executed.</string>
     <string name="market_plugin_functional_uninstall_title">Uninstall functional plugin</string>
     <string name="market_plugin_functional_uninstall_text">Remove %1$s and its contributed tools? You can re-import the manifest anytime.</string>
+    <string name="market_plugin_functional_uninstalled">Functional plugin uninstalled: %1$s</string>
     <string name="market_plugin_functional_installed">Functional plugin installed: %1$s</string>
     <string name="market_plugin_functional_upgraded">Functional plugin upgraded: %1$s</string>
     <string name="market_plugin_functional_unchanged">Already installed at same or higher version: %1$s</string>
