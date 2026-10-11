@@ -145,7 +145,9 @@ class AppDownloadInstallToolTest {
     @Test
     fun `download_install downloads and installs from a fake server`() = runTest {
         val installer = FakeApkInstaller()
-        val tool = AppDownloadInstallTool(httpClient, tempDir, installer)
+        // #341：MockWebServer 绑定环回地址，SSRF 防护下无法充当下载源 ——
+        // 下载链路用例统一关闭防护（防护自身的拒绝行为另有专项用例）。
+        val tool = AppDownloadInstallTool(httpClient, tempDir, installer, ssrfProtectionEnabled = false)
         // 准备假 APK bytes（4KB+，足以通过最小校验）
         val apkBytes = ByteArray(8 * 1024) { (it and 0xFF).toByte() }
         server.enqueue(
@@ -169,7 +171,7 @@ class AppDownloadInstallToolTest {
     @Test
     fun `download_install detects sha256 mismatch and aborts`() = runTest {
         val installer = FakeApkInstaller()
-        val tool = AppDownloadInstallTool(httpClient, tempDir, installer)
+        val tool = AppDownloadInstallTool(httpClient, tempDir, installer, ssrfProtectionEnabled = false)
         val apkBytes = ByteArray(8 * 1024) { (it and 0xFF).toByte() }
         server.enqueue(
             MockResponse()
@@ -193,7 +195,7 @@ class AppDownloadInstallToolTest {
     @Test
     fun `download_install rejects text response (HTML page instead of APK)`() = runTest {
         val installer = FakeApkInstaller()
-        val tool = AppDownloadInstallTool(httpClient, tempDir, installer)
+        val tool = AppDownloadInstallTool(httpClient, tempDir, installer, ssrfProtectionEnabled = false)
         server.enqueue(
             MockResponse()
                 .setResponseCode(200)
@@ -211,7 +213,7 @@ class AppDownloadInstallToolTest {
     @Test
     fun `download_install rejects filename with path separators`() = runTest {
         val installer = FakeApkInstaller()
-        val tool = AppDownloadInstallTool(httpClient, tempDir, installer)
+        val tool = AppDownloadInstallTool(httpClient, tempDir, installer, ssrfProtectionEnabled = false)
         val result = tool.execute(
             """{"url": "${server.url("/app.apk")}", "filename": "../escape.apk"}"""
         )
@@ -224,7 +226,7 @@ class AppDownloadInstallToolTest {
     @Test
     fun `download_install passes source_url to_installer`() = runTest {
         val installer = FakeApkInstaller()
-        val tool = AppDownloadInstallTool(httpClient, tempDir, installer)
+        val tool = AppDownloadInstallTool(httpClient, tempDir, installer, ssrfProtectionEnabled = false)
         val apkBytes = ByteArray(8 * 1024) { (it and 0xFF).toByte() }
         server.enqueue(
             MockResponse()
@@ -237,6 +239,36 @@ class AppDownloadInstallToolTest {
             """{"url": "${server.url("/app.apk")}", "filename": "test.apk", "source_url": "$customSource"}"""
         )
         assertEquals(customSource, installer.lastSourceUrl)
+    }
+
+    // ── SSRF 防护（#341 回归）─────────────────────────────────────────
+
+    @Test
+    fun `download_install rejects loopback address with ssrf guard enabled`() = runTest {
+        val installer = FakeApkInstaller()
+        // 生产默认（防护开启）：环回地址在入口即被拒绝，表现为普通工具失败
+        val tool = AppDownloadInstallTool(httpClient, tempDir, installer)
+        val result = tool.execute(
+            """{"url": "${server.url("/app.apk")}", "filename": "test.apk"}"""
+        )
+        assertTrue("should fail: $result", result.startsWith("Error"))
+        assertTrue(
+            "should mention SSRF rejection: $result",
+            result.contains("SSRF") || result.contains("内网") || result.contains("环回")
+        )
+        assertEquals("install must not be called", 0, installer.installCallCount)
+    }
+
+    @Test
+    fun `download_install rejects cloud metadata address with ssrf guard enabled`() = runTest {
+        val installer = FakeApkInstaller()
+        val tool = AppDownloadInstallTool(httpClient, tempDir, installer)
+        // 云元数据端点（169.254.169.254 / metadata.google.internal）直接拒绝
+        val result = tool.execute(
+            """{"url": "http://169.254.169.254/latest/meta-data/app.apk"}"""
+        )
+        assertTrue("should fail: $result", result.startsWith("Error"))
+        assertEquals(0, installer.installCallCount)
     }
 
     // ── Fake installer ─────────────────────────────────────────────────

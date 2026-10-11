@@ -8,11 +8,15 @@ import com.apex.agent.core.tools.ToolMetadata
 import com.apex.agent.core.tools.ToolResult
 import com.apex.agent.core.tools.ToolRisk
 import com.apex.agent.core.tools.ToolSchema
+import com.apex.agent.core.tools.network.SsrfGuard
 import com.apex.agent.core.tools.toolSchema
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.security.MessageDigest
 
 /**
@@ -38,6 +42,9 @@ import java.security.MessageDigest
  *
  * 安全契约：
  * - HIGH 风险（系统层状态变化，安装来源不可控），会话级确认；
+ * - **#341 SSRF 防护**：只允许公网 http(s) 地址——环回 / 内网 / 链路本地
+ *   （含云元数据 169.254.169.254）/ 保留段一律拒绝，重定向逐跳校验且
+ *   https 降级拒绝（见 [SsrfGuard]）；
  * - 非幂等：每次调用都触发新的 install session；
  * - 不联网则拒绝（`app_download_install` 走 OkHttp，会带 openWorld 标记）。
  *
@@ -192,7 +199,12 @@ class AppInstallApkTool(
 class AppDownloadInstallTool(
     private val httpClient: OkHttpClient,
     private val downloadDir: File,
-    private val installer: ApkInstaller
+    private val installer: ApkInstaller,
+    /**
+     * #341 SSRF 防护开关：生产恒为默认 true；仅 JVM 单测注入 false
+     * （MockWebServer 绑定环回地址，严格策略下无法充当下载源）。
+     */
+    private val ssrfProtectionEnabled: Boolean = true
 ) : BaseTool(
     id = "app_download_install",
     name = "Download + Install APK",
@@ -213,6 +225,11 @@ class AppDownloadInstallTool(
 
         Returns the install result. Downloaded APK is kept at the local path
         reported in the result (for re-installation if needed).
+
+        Security (#341): only public-internet http(s) URLs are accepted —
+        loopback / private / link-local (cloud metadata) addresses are
+        rejected (SSRF guard); redirects are validated hop by hop and
+        https-to-http downgrades are refused.
 
         Examples:
         - {"url": "https://example.com/app-release.apk"}
@@ -264,6 +281,26 @@ class AppDownloadInstallTool(
                 message = "url must be an http(s) URL (got '$url')",
                 suggestion = "if you have a local path already, use app_install_apk instead"
             )
+        }
+
+        // #341 SSRF 防护：入口先做 host 校验（环回 / 内网 / 链路本地 /
+        // 保留段 / 云元数据拒绝），拒绝表现为普通工具失败（参数错误）。
+        if (ssrfProtectionEnabled) {
+            try {
+                SsrfGuard.assertPublicHttpUrl(url.toHttpUrl())
+            } catch (e: IllegalArgumentException) {
+                return ToolResult.invalid(
+                    field = "url",
+                    message = "malformed url '${e.message}'",
+                    suggestion = "pass a well-formed absolute http(s) URL"
+                )
+            } catch (e: IOException) {
+                return ToolResult.invalid(
+                    field = "url",
+                    message = "下载被拒绝：${e.message}",
+                    suggestion = "SSRF 防护：仅允许公网 http(s) 地址；内网 / 环回 / 云元数据地址不可用"
+                )
+            }
         }
 
         val filename = args.optionalString("filename")
@@ -350,9 +387,18 @@ class AppDownloadInstallTool(
     }
 
     /**
+     * #341：从 DI 注入的基础 client 派生关闭自动重定向的包装 client
+     * （共享连接池 / 线程池）——基础 client 是 followRedirects(true)，
+     * 公网 URL 可经 302 跳内网，重定向必须交给 [SsrfGuard.executeValidated]
+     * 逐跳校验后手动跟随。ToolModule 因此无需改动。
+     */
+    private val noRedirectClient: OkHttpClient by lazy { SsrfGuard.noRedirectClient(httpClient) }
+
+    /**
      * 用 OkHttp 流式下载 APK 到 [target]。
      * 同 [DownloadFileTool] 的安全模式：Content-Length 预检 + 拷贝循环里逐块强制。
-     * 返回写入字节数。
+     * #341：经 [SsrfGuard.executeValidated] 受控执行——首跳与每一跳重定向
+     * 都过公网校验，https 降级拒绝，最多跟 5 跳。返回写入字节数。
      */
     private fun downloadApk(url: String, target: File): Long {
         val request = Request.Builder()
@@ -360,7 +406,13 @@ class AppDownloadInstallTool(
             .header("User-Agent", "ApexAgent/1.0 (app_download_install)")
             .header("Accept", "application/vnd.android.package-archive, application/octet-stream, */*")
             .build()
-        httpClient.newCall(request).execute().use { response ->
+        val executed: Response = if (ssrfProtectionEnabled) {
+            SsrfGuard.executeValidated(noRedirectClient, request)
+        } else {
+            // 测试通道：MockWebServer 在环回地址上充当下载源，绕过 SSRF 校验
+            httpClient.newCall(request).execute()
+        }
+        executed.use { response ->
             if (!response.isSuccessful) {
                 throw RuntimeException("HTTP ${response.code} ${response.message}")
             }

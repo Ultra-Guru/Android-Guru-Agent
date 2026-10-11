@@ -1000,12 +1000,11 @@ object ToolModule {
         // ═══ 14e/f/g. v5 — Agent 自主设置 + 下载安装 APK + 更多能力（共 18 工具）═══
         // 注册体拆至 [ToolModuleV5Registration.kt]（SRP 预算：本文件已逼近 1200 行
         // 上限）。设计文档：[docs/v5-capability-enhancement.md]。
+        // #336：传入金库同源 SecretRedactor（provider key 写入后登记进兜底擦洗）。
         registerV5EnhancementTools(
-            registry = registry,
-            context = context,
-            httpClient = httpClient,
-            downloadDir = downloadDir,
-            settingsRepository = settingsRepository
+            registry = registry, context = context, httpClient = httpClient,
+            downloadDir = downloadDir, settingsRepository = settingsRepository,
+            secretRedactor = vaultRepository.secretRedactor
         )
 
         // ═══ 主执行器（v3：环境门+风险门 → 校验 → 限流 → 熔断 → 超时/重试 → 追踪）═══

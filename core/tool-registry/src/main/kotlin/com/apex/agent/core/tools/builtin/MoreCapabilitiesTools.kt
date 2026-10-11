@@ -164,7 +164,9 @@ class ContactSearchTool(
  * 参数：phone（必填，目标手机号）、message（必填，短信正文）、
  *        slot_id（可选，双卡 SIM 槽位 0/1，默认自动选择）。
  *
- * 风险 HIGH（涉及短信发送费用 + 第三方通信），会话级确认。
+ * 风险 HIGH（涉及短信发送费用 + 第三方通信）。#342：逐次确认（风险门
+ * 不提供会话级放行）+ 宿主侧硬限流（每分钟最多 5 条，相同内容
+ * 10 分钟内不重复，超限直接失败）。
  * 需要 SEND_SMS 权限（普通权限，运行时无需弹窗）。
  */
 class SmsSendTool(
@@ -175,7 +177,8 @@ class SmsSendTool(
     description = """
         Send an SMS message to a phone number. Risk: HIGH (sends a real SMS —
         cost and side effects). Requires SEND_SMS permission. Confirm with the
-        user before sending; the risk gate will prompt once per session.
+        user before sending; the risk gate prompts on EVERY send (SMS has no
+        session-level allow — each message is confirmed individually).
 
         Parameters:
         - phone (required): target phone number (international format recommended,
@@ -184,6 +187,10 @@ class SmsSendTool(
           longer messages are auto-split into multi-segment)
         - slot_id (optional): SIM slot for dual-SIM devices (0 or 1). Omit for
           auto-select.
+
+        Rate limit (#342): at most 5 messages per minute; identical content
+        (same recipient + same body) is not re-sent within 10 minutes;
+        exceeding the limit fails immediately — do not retry in a tight loop.
 
         Examples:
         - {"phone": "+8613800138000", "message": "Hello from Apex Agent"}
