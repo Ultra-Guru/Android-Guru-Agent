@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
@@ -7,7 +9,8 @@ plugins {
 
 android {
     namespace = "com.apex.agent.platform.browser"
-    compileSdk = 35
+    // 35 → 36：随 PR #362 矩阵对齐宿主 app（Compose 1.10.3 线 aar-metadata 门槛）。
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26
@@ -17,8 +20,14 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
+}
+
+// KGP 2.2+：kotlinOptions DSL 已是 error（KGP 3.0 移除）—— 随 PR #362
+// 工具链升级（Kotlin 2.3.21）补齐迁移：项目级 compilerOptions DSL
+//（语义等价：对全部 Kotlin 编译任务生效）。
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
