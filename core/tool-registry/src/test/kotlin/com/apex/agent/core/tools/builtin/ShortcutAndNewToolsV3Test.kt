@@ -360,7 +360,7 @@ class ShortcutSystemTest {
             skeleton,
             setOf("Read", "Write")
         )
-        assertEquals("shortcut.read_file_then_write_file", parsed.id)
+        assertEquals("shortcut.read_then_write", parsed.id)
         assertEquals(2, parsed.steps.size)
     }
 }
