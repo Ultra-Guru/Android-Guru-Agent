@@ -43,14 +43,14 @@ class HookRegistryTest {
     fun `matcher accepts prefix with trailing star`() {
         assertTrue(HookRegistry.matches("CodeGit*", "CodeGitCommit"))
         assertTrue(HookRegistry.matches("CodeGit*", "CodeGit"))
-        assertFalse(HookRegistry.matches("CodeGit*", "CodeGithub"))
+        assertFalse(HookRegistry.matches("CodeGit*", "CodeGrep"))
         assertFalse(HookRegistry.matches("CodeGit*", "ShellExecute"))
     }
 
     @Test
     fun `matcher single star matches everything`() {
         assertTrue(HookRegistry.matches("*", "ShellExecute"))
-        assertTrue(HookRegistry.matches("*", "mcp__github__create_issue"))
+        assertTrue(HookRegistry.matches("*", "McpGithubCreateIssue"))
     }
 
     @Test
@@ -75,7 +75,7 @@ class HookRegistryTest {
                 HookRegistry.HookConfig(
                     id = "block-shell", name = "拦截 shell",
                     event = HookEventType.PRE_TOOL_USE,
-                    pattern = "shell_*",
+                    pattern = "Shell*",
                     action = HookRegistry.HookAction.BLOCK,
                     reason = "shell is forbidden in this session"
                 )
@@ -281,7 +281,7 @@ class HookRegistryTest {
         val userConfig = HookRegistry.HookConfig(
             id = "my-block", name = "我的拦截",
             event = HookEventType.PRE_TOOL_USE,
-            pattern = "shell_*",
+            pattern = "Shell*",
             action = HookRegistry.HookAction.BLOCK,
             reason = "user rule",
             enabled = false
@@ -294,7 +294,7 @@ class HookRegistryTest {
         assertEquals("自定义 + 三内置", 4, reloaded.size)
         val mine = reloaded.first { it.id == "my-block" }
         assertEquals(HookEventType.PRE_TOOL_USE, mine.event)
-        assertEquals("shell_*", mine.pattern)
+        assertEquals("Shell*", mine.pattern)
         assertFalse(mine.enabled)
     }
 
