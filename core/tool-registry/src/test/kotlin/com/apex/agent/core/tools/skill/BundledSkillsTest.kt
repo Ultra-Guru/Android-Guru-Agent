@@ -74,23 +74,23 @@ class BundledSkillsTest {
     fun `first release installs all and patches bundled flag`() {
         val result = registry.installBundled(
             listOf(
-                manifestJson("alpha", "1.0.0"),
+                manifestJson("Alpha", "1.0.0"),
                 // 资产作者显式漏写 bundled：释放通道必须补齐，否则卸载守卫漏防
-                manifestJson("beta", "1.0.0", bundled = false)
+                manifestJson("Beta", "1.0.0", bundled = false)
             )
         )
 
         assertEquals(2, result.getOrThrow())
-        assertNotNull(installed("alpha"))
-        assertTrue("漏写 bundled 的资产经释放通道后必须补齐", installed("beta")!!.manifest.bundled)
+        assertNotNull(installed("Alpha"))
+        assertTrue("漏写 bundled 的资产经释放通道后必须补齐", installed("Beta")!!.manifest.bundled)
         assertTrue("落盘文件存在", File(skillsDir, "alpha.json").exists())
     }
 
     @Test
     fun `second release is idempotent with zero additions`() {
-        registry.installBundled(listOf(manifestJson("alpha", "1.0.0")))
+        registry.installBundled(listOf(manifestJson("Alpha", "1.0.0")))
 
-        val result = registry.installBundled(listOf(manifestJson("alpha", "1.0.0")))
+        val result = registry.installBundled(listOf(manifestJson("Alpha", "1.0.0")))
 
         assertEquals("同版本二次释放零新增", 0, result.getOrThrow())
         assertEquals(1, registry.getInstalled().size)
@@ -100,65 +100,65 @@ class BundledSkillsTest {
 
     @Test
     fun `higher asset version upgrades and keeps user disabled state`() {
-        registry.installBundled(listOf(manifestJson("alpha", "1.0.0")))
-        registry.setEnabled("alpha", false)
-        assertFalse("禁用态先落定", installed("alpha")!!.enabled)
+        registry.installBundled(listOf(manifestJson("Alpha", "1.0.0")))
+        registry.setEnabled("Alpha", false)
+        assertFalse("禁用态先落定", installed("Alpha")!!.enabled)
 
-        val result = registry.installBundled(listOf(manifestJson("alpha", "1.1.0")))
+        val result = registry.installBundled(listOf(manifestJson("Alpha", "1.1.0")))
 
         assertEquals("升级不计入新增", 0, result.getOrThrow())
-        val upgraded = installed("alpha")!!
+        val upgraded = installed("Alpha")!!
         assertEquals("1.1.0", upgraded.manifest.version)
         assertFalse("用户禁用态跨升级保留", upgraded.enabled)
     }
 
     @Test
     fun `same or lower asset version is skipped`() {
-        registry.installBundled(listOf(manifestJson("alpha", "2.0.0")))
+        registry.installBundled(listOf(manifestJson("Alpha", "2.0.0")))
 
         val result = registry.installBundled(
             listOf(
-                manifestJson("alpha", "2.0.0"),  // 相同
-                manifestJson("alpha", "1.9.9")   // 更低（同 id 后写入列表，先到的先处理）
+                manifestJson("Alpha", "2.0.0"),  // 相同
+                manifestJson("Alpha", "1.9.9")   // 更低（同 id 后写入列表，先到的先处理）
             )
         )
 
         assertEquals(0, result.getOrThrow())
-        assertEquals("不降级", "2.0.0", installed("alpha")!!.manifest.version)
+        assertEquals("不降级", "2.0.0", installed("Alpha")!!.manifest.version)
     }
 
     // ═══ 卸载守卫 ═════════════════════════════════════════════════════
 
     @Test
     fun `bundled skill cannot be uninstalled but normal skill can`() {
-        registry.installBundled(listOf(manifestJson("bundled-one", "1.0.0")))
-        registry.install(manifestJson("normal-one", "1.0.0")).getOrThrow()
+        registry.installBundled(listOf(manifestJson("BundledOne", "1.0.0")))
+        registry.install(manifestJson("NormalOne", "1.0.0")).getOrThrow()
 
-        assertFalse("bundled 恒拒卸载", registry.uninstall("bundled-one"))
-        assertNotNull("bundled 仍在", installed("bundled-one"))
-        assertTrue("普通技能照常卸载", registry.uninstall("normal-one"))
-        assertEquals(null, installed("normal-one"))
+        assertFalse("bundled 恒拒卸载", registry.uninstall("BundledOne"))
+        assertNotNull("bundled 仍在", installed("BundledOne"))
+        assertTrue("普通技能照常卸载", registry.uninstall("NormalOne"))
+        assertEquals(null, installed("NormalOne"))
     }
 
     @Test
     fun `bundled field round-trips through disk`() {
-        registry.installBundled(listOf(manifestJson("alpha", "1.0.0")))
+        registry.installBundled(listOf(manifestJson("Alpha", "1.0.0")))
 
         // 新实例从盘读回（模拟重启）——bundled 标记必须持久化
         val reloaded = SkillRegistry(skillsDir)
 
-        assertTrue(reloaded.getInstalled().first { it.manifest.id == "alpha" }.manifest.bundled)
+        assertTrue(reloaded.getInstalled().first { it.manifest.id == "Alpha" }.manifest.bundled)
     }
 
     @Test
     fun `legacy manifest without bundled field defaults to false`() {
-        registry.install(manifestJson("legacy", "1.0.0")).getOrThrow()
+        registry.install(manifestJson("Legacy", "1.0.0")).getOrThrow()
 
         assertFalse(
             "旧 manifest（无 bundled 字段）反序列化默认 false，可正常卸载",
-            installed("legacy")!!.manifest.bundled
+            installed("Legacy")!!.manifest.bundled
         )
-        assertTrue(registry.uninstall("legacy"))
+        assertTrue(registry.uninstall("Legacy"))
     }
 
     // ═══ 损坏隔离 ═════════════════════════════════════════════════════
@@ -168,12 +168,12 @@ class BundledSkillsTest {
         val result = registry.installBundled(
             listOf(
                 "{ this is not valid json ]",
-                manifestJson("good-one", "1.0.0")
+                manifestJson("GoodOne", "1.0.0")
             )
         )
 
         assertEquals("坏条目不计入，好条目照常释放", 1, result.getOrThrow())
         assertTrue(result.isSuccess)
-        assertNotNull(installed("good-one"))
+        assertNotNull(installed("GoodOne"))
     }
 }

@@ -49,15 +49,20 @@ class ToolSystemV4CatalogTest {
     // ── ToolNameSanitizer ─────────────────────────────────────────
 
     @Test
-    fun `dots become underscores`() {
-        assertEquals("TerminalExecLegacy", ToolNameSanitizer.sanitize("TerminalExec"))
-        assertEquals("terminal_linux_bootstrap", ToolNameSanitizer.sanitize("TerminalLinuxBootstrap"))
+    fun `pascal case ids stay untouched and legacy spellings fold to pascal case`() {
+        // v5：注册表 id 本身就是无分隔符 PascalCase → 清洗是恒等映射
+        assertEquals("TerminalExec", ToolNameSanitizer.sanitize("TerminalExec"))
+        assertEquals("TerminalLinuxBootstrap", ToolNameSanitizer.sanitize("TerminalLinuxBootstrap"))
+        // 旧书写（点号/下划线/连字符）折叠成 PascalCase，不再产出下划线
+        assertEquals("TerminalExec", ToolNameSanitizer.sanitize("terminal.exec"))
+        assertEquals("ReadFile", ToolNameSanitizer.sanitize("read_file"))
+        assertEquals("WebSearch", ToolNameSanitizer.sanitize("web-search"))
     }
 
     @Test
-    fun `illegal characters fold and empty becomes tool`() {
-        assertEquals("a_b-c", ToolNameSanitizer.sanitize("a b-c!"))
-        assertEquals("tool", ToolNameSanitizer.sanitize("..."))
+    fun `illegal characters fold to pascal case and empty becomes Tool`() {
+        assertEquals("ABC", ToolNameSanitizer.sanitize("a b-c!"))
+        assertEquals("Tool", ToolNameSanitizer.sanitize("..."))
     }
 
     @Test
@@ -67,22 +72,21 @@ class ToolSystemV4CatalogTest {
     }
 
     @Test
-    fun `modern dotted id wins the slot over legacy alias`() {
-        val mapping = ToolNameSanitizer.buildMapping(
-            listOf("TerminalExec", "TerminalExecLegacy")
-        )
-        assertEquals("TerminalExecLegacy", mapping["TerminalExec"])
-        // legacy alias disambiguated, not silently overwritten
-        assertTrue(mapping["TerminalExecLegacy"] != "TerminalExecLegacy")
-        assertNotNull(mapping["TerminalExecLegacy"])
+    fun `colliding sanitized names are disambiguated deterministically`() {
+        // a.b 与 a_b 都折叠成 AB → 后缀消解，映射不互踩
+        val mapping = ToolNameSanitizer.buildMapping(listOf("a.b", "a_b"))
+        assertEquals("AB", mapping["a.b"])
+        assertEquals("AB2", mapping["a_b"])
     }
 
     @Test
-    fun `resolveRegistryId round trips and falls back`() {
+    fun `resolveRegistryId round trips and falls back to legacy aliases`() {
         val ids = listOf("TerminalExec", "Read")
         val mapping = ToolNameSanitizer.buildMapping(ids)
-        assertEquals("TerminalExec", ToolNameSanitizer.resolveRegistryId("TerminalExecLegacy", mapping))
+        assertEquals("TerminalExec", ToolNameSanitizer.resolveRegistryId("TerminalExec", mapping))
         assertEquals("Read", ToolNameSanitizer.resolveRegistryId("Read", mapping))
+        // v5：模型回显改名前的旧 id 时经 ToolIdAliases 归一（read_file → Read）
+        assertEquals("Read", ToolNameSanitizer.resolveRegistryId("read_file", mapping))
         // unknown name falls back to itself (registry id direct lookup path)
         assertEquals("whatever", ToolNameSanitizer.resolveRegistryId("whatever", mapping))
     }

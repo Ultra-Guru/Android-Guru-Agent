@@ -371,7 +371,9 @@ class SkillRegistry(
                 } else {
                     json.encodeToString(SkillManifest.serializer(), manifest.copy(bundled = true))
                 }
-                val existing = synchronized(lock) { installedSkills[manifest.id] }
+                val existing = synchronized(lock) {
+                    installedSkills[SkillNaming.canonicalId(manifest.id)]
+                }
                 if (existing == null) {
                     install(payload).getOrThrow()
                     added++
@@ -473,16 +475,18 @@ class SkillRegistry(
      * 文件已被外部清理时会误报失败（状态撕裂）。
      */
     fun uninstall(skillId: String): Boolean {
+        // v5：入参可能是旧 kebab 名（老设备/老调用点），统一归一到 PascalCase 键。
+        val id = SkillNaming.canonicalId(skillId)
         val removed = synchronized(lock) {
-            val target = installedSkills[skillId]
+            val target = installedSkills[id]
             if (target != null && target.manifest.bundled) return false
-            val existed = installedSkills.remove(skillId) != null
+            val existed = installedSkills.remove(id) != null
             if (existed) {
-                disabledIds.remove(skillId)
+                disabledIds.remove(id)
                 persistDisabledIds()
-                runCatching { File(skillsDir, "$skillId.json").delete() }
+                runCatching { File(skillsDir, "$id.json").delete() }
                 // 清理 ZIP 安装产生的资源目录，避免孤儿文件累积
-                runCatching { File(skillsDir, skillId).deleteRecursively() }
+                runCatching { File(skillsDir, id).deleteRecursively() }
             }
             existed
         }
@@ -565,7 +569,7 @@ class SkillRegistry(
         if (activeIds.isEmpty()) return emptyList()
         return synchronized(lock) {
             activeIds.asSequence()
-                .mapNotNull { installedSkills[it] }
+                .mapNotNull { installedSkills[SkillNaming.canonicalId(it)] }
                 .filter { it.enabled }
                 .filter { scope.isNullOrBlank() || it.manifest.scope == "all" || it.manifest.scope == scope }
                 .mapNotNull { it.manifest.promptInjection }
@@ -610,12 +614,13 @@ class SkillRegistry(
      * 启用/禁用 Skill
      */
     fun setEnabled(skillId: String, enabled: Boolean) {
+        val id = SkillNaming.canonicalId(skillId)
         val changed = synchronized(lock) {
-            val before = installedSkills[skillId]?.enabled
-            installedSkills[skillId]?.let {
-                installedSkills[skillId] = it.copy(enabled = enabled)
+            val before = installedSkills[id]?.enabled
+            installedSkills[id]?.let {
+                installedSkills[id] = it.copy(enabled = enabled)
             }
-            if (enabled) disabledIds.remove(skillId) else disabledIds.add(skillId)
+            if (enabled) disabledIds.remove(id) else disabledIds.add(id)
             persistDisabledIds()
             before != enabled
         }

@@ -36,7 +36,8 @@ class SkillToolAdapter(
     private val skillScope: String = "all"
 ) : AgentTool {
 
-    override val id = skillTool.id
+    // v5：技能作者贡献的工具 id 同样归一无分隔符 PascalCase
+    override val id = SkillNaming.canonicalId(skillTool.id)
     override val name = skillTool.name
     override val description = skillTool.description
     override val parametersSchema = skillTool.parameters
@@ -46,7 +47,7 @@ class SkillToolAdapter(
      * 显式覆盖接口默认的 id 推断元数据只为携带 scope——category / risk /
      * annotations 仍走同款推断，除 scope 外逐字段等值，存量行为零变化。
      */
-    override val metadata: ToolMetadata = ToolMetadata.meta(skillTool.id) {
+    override val metadata: ToolMetadata = ToolMetadata.meta(id) {
         scope(ToolMetadata.normalizeScope(skillScope))
     }
 
@@ -82,7 +83,8 @@ class SkillToolAdapter(
             val resolvedArgs = resolveTemplate(step, argsMap, lastOutput)
 
             val stepOutput = try {
-                toolExecutor.execute(step.tool, resolvedArgs)
+                // v5：组合步骤引用旧写法（skill_a_tool）时归一到现役 id
+                toolExecutor.execute(SkillNaming.canonicalId(step.tool), resolvedArgs)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // Rethrow: toolExecutor.execute is a suspend call; CancellationException
                 // must propagate so abort() works through composite skill execution.

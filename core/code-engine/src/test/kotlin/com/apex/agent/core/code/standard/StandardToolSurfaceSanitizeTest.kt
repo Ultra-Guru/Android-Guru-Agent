@@ -12,13 +12,16 @@ import org.junit.Test
  *
  * 用户报错（Coding 模式发「你好」即失败）：
  * `Invalid 'tools[14].function.name': string does not match pattern
- * '^[a-zA-Z0-9_-]+$'` —— 根因是注册表原始 id（terminal.* 点号名 /
- * 含中文的 mcp 名）未经清洗直发请求体，严格 OpenAI 兼容端点拒绝整个
- * 请求。本组测试锁定 [StandardToolSurface.buildToolPlan] 的清洗契约：
+ * '^[a-zA-Z0-9_-]+$'` —— 根因是注册表原始 id（点号名 / 含中文的 mcp 名）
+ * 未经清洗直发请求体，严格 OpenAI 兼容端点拒绝整个请求。
  *
- * 1. 所有 definitions.name 匹配 `^[a-zA-Z0-9_-]{1,64}$`；
+ * v5 起注册表 id 自身即无分隔符 PascalCase，清洗退化为第三方脏名的兜底层
+ * （插件宏 / 远端 MCP / 历史写法），契约不变：本组测试锁定
+ * [StandardToolSurface.buildToolPlan] 的清洗行为：
+ *
+ * 1. 所有 definitions.name 匹配 `^[a-zA-Z0-9]{1,64}$`（无 `_` / `-`）；
  * 2. 反查表（providerNameToId）双向可解析（执行路由不丢工具）；
- * 3. synthetic task 工具保留且自映射；
+ * 3. 合成 Task 工具保留且自映射；
  * 4. allowlist 前缀过滤语义不变（过滤发生在清洗前的 registry id 上）；
  * 5. MAX_TOOLS 截断仍生效（优先序在截断前评估）；
  * 6. 清洗后冲突的名被确定性消解（双工具不互踩）；
@@ -27,7 +30,7 @@ import org.junit.Test
 class StandardToolSurfaceSanitizeTest {
 
     /** OpenAI function-name 语法（长度 1..64）。 */
-    private val providerLegal = Regex("^[a-zA-Z0-9_-]{1,64}$")
+    private val providerLegal = Regex("^[a-zA-Z0-9]{1,64}$")
 
     private class FakeTool(override val id: String) : AgentTool {
         override val name: String get() = id
@@ -68,19 +71,20 @@ class StandardToolSurfaceSanitizeTest {
     fun `dotted spaced and overlong ids sanitize deterministically`() {
         val plan = StandardToolSurface.buildToolPlan(StandardAgentCatalog.BUILD, dirtyRegistry())
         val names = plan.definitions.map { it.name }
-        // 点号 → 下划线（terminal.* 是用户报错里的第 14 号工具族）
-        assertTrue(names.contains("TerminalExecLegacy"))
-        assertTrue(names.contains("terminal_linux_bootstrap"))
-        // 空格 → 下划线
-        assertTrue(names.contains("space_tool"))
-        // 中文全替换为下划线且尾下划线被裁 → 合法短名（合法即可过端点校验）
+        // PascalCase id 原样保留（不再有下划线）
+        assertTrue(names.contains("TerminalExec"))
+        assertTrue(names.contains("TerminalLinuxBootstrap"))
+        // 空格 → 逐段大写连写
+        assertTrue(names.contains("SpaceTool"))
+        // 中文不在 [A-Za-z0-9] 内 → 整段剥掉，仅剩前缀 MCP 标记
         val chineseProviderName = plan.providerNameToId.entries
             .single { it.value == "mcp__天气服务__查天气" }.key
+        assertEquals("Mcp", chineseProviderName)
         assertTrue(providerLegal.matches(chineseProviderName))
         assertTrue(names.contains(chineseProviderName))
-        // 超长 → 64 封顶，且反查表还原原始 id
+        // 超长 → 64 封顶（首字母大写），且反查表还原原始 id
         val capped = plan.definitions.single { it.name.length == 64 }
-        assertEquals("x".repeat(64), capped.name)
+        assertEquals("X" + "x".repeat(63), capped.name)
         assertEquals("x".repeat(80), plan.providerNameToId[capped.name])
     }
 
@@ -122,17 +126,17 @@ class StandardToolSurfaceSanitizeTest {
 
     @Test
     fun `collision pair disambiguated without losing either tool`() {
-        // a.b 与 a_b 都清洗成 a_b → 确定性后缀消解，路由不互踩
+        // a.b 与 a_b 都清洗成 AB → 确定性后缀消解，路由不互踩
         val plan = StandardToolSurface.buildToolPlan(
             StandardAgentCatalog.BUILD,
             registry("a.b", "a_b", "CodeRead")
         )
         val names = plan.definitions.map { it.name }
-        assertTrue(names.contains("a_b"))
-        assertTrue(names.contains("a_b_2"))
-        // a.b 更短字典序在前拿到干净名（确定性：非 legacy 优先 → 等长 → 字典序）
-        assertEquals("a.b", plan.providerNameToId["a_b"])
-        assertEquals("a_b", plan.providerNameToId["a_b_2"])
+        assertTrue(names.contains("AB"))
+        assertTrue(names.contains("AB2"))
+        // a.b 字典序在前拿到干净名（确定性：非 legacy 优先 → 等长 → 字典序）
+        assertEquals("a.b", plan.providerNameToId["AB"])
+        assertEquals("a_b", plan.providerNameToId["AB2"])
     }
 
     @Test
@@ -158,16 +162,17 @@ class StandardToolSurfaceSanitizeTest {
         val names = plan.definitions.map { it.name }
         // PLAN 是主代理画像 → 合成 task 照常在场（既有语义）
         assertEquals(listOf("CodeGitStatus", "CodeGrep", "CodeRead", "Task"), names)
-        // 写工具 / 终端点号名 / 中文 mcp 名 / 探针脏名都不在 PLAN 只读面
+        // 写工具 / 终端 / 中文 mcp 名 / 探针脏名都不在 PLAN 只读面
         assertFalse(names.contains("CodeWrite"))
-        assertFalse(names.contains("TerminalExecLegacy"))
-        assertFalse(names.contains("mcp"))
+        assertFalse(names.contains("TerminalExec"))
+        assertFalse(names.contains("Mcp"))
+        assertFalse(plan.providerNameToId.containsValue("mcp__天气服务__查天气"))
     }
 
     @Test
-    fun `max tools truncation still effective and priority keeps dotted terminal`() {
-        // 60 个无前缀填充 + 点号终端名：截断按优先序（registry id 评估），
-        // TerminalExec 必存活；task 合成不占预算恒在场。
+    fun `max tools truncation still effective and priority keeps terminal`() {
+        // 60 个无前缀填充 + 终端族：截断按优先序（registry id 评估），
+        // TerminalExec 必存活；Task 合成不占预算恒在场。
         val ids = buildList {
             add("TerminalExec")
             repeat(60) { add("zz_filler_%02d".format(it + 1)) }
@@ -181,9 +186,9 @@ class StandardToolSurfaceSanitizeTest {
             plan.definitions.size
         )
         val names = plan.definitions.map { it.name }
-        assertTrue("优先序评估在清洗前（registry id terminal. 前缀）", names.contains("TerminalExecLegacy"))
+        assertTrue("优先序评估在清洗前（registry id Terminal 前缀）", names.contains("TerminalExec"))
         assertTrue(names.contains("Task"))
-        assertTrue("填充名被截到 47 个", names.count { it.startsWith("zz_filler_") } == 47)
+        assertTrue("填充名被截到 47 个", names.count { it.startsWith("ZzFiller") } == 47)
         names.forEach { assertTrue(providerLegal.matches(it)) }
     }
 
