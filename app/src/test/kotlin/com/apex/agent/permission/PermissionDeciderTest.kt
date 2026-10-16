@@ -179,7 +179,8 @@ class PermissionDeciderTest {
         // v5：MCP 一等工具 id 形如 Mcp{Server}{Tool}，前缀通配照样命中运行期才知道的 id
         assertTrue(PermissionRuleMatcher.matches("McpGithub*", "McpGithubCreateIssue"))
         assertTrue(PermissionRuleMatcher.matches("CodeGit*", "CodeGitCommit"))
-        assertFalse(PermissionRuleMatcher.matches("CodeGit*", "CodeGitx"))
+        // PascalCase 无分隔符：通配是纯前缀语义，跨族名（CodeGrep）才是反例
+        assertFalse(PermissionRuleMatcher.matches("CodeGit*", "CodeGrep"))
         // 决策层集成：通配规则放行运行期才知道 id 的 MCP 写工具
         val decision = PermissionDecider.decide(
             PermissionMode.DEFAULT,
