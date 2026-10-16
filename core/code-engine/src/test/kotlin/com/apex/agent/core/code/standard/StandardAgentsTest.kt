@@ -60,7 +60,7 @@ class StandardAgentsTest {
         // 前缀白名单不包含通配空串 → 规划师不会看到 CodeWrite / ShellExecute
         assertFalse(allow.any { it.isEmpty() })
         assertTrue(allow.contains("CodeRead"))
-        assertTrue(allow.any { it.startsWith("code_git_") })
+        assertTrue(allow.any { it.startsWith("CodeGit") })
     }
 
     @Test

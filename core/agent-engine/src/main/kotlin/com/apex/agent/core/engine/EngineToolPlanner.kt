@@ -46,13 +46,13 @@ internal object EngineToolPlanner {
 
     /**
      * #197 AGENT 模式的编码类工具前缀黑名单——全能智能体是**非编程**工位：
-     * code_* / code_git_*（编码工作区）、github_*（GitHub 连接）与
-     * `mcp__github__*`（GitHub MCP）均属于 Coding 屏管辖，Agent 屏不可见，
+     * Code* / CodeGit*（编码工作区）、Github*（GitHub 连接）与
+     * McpGithub*（GitHub MCP）均属于 Coding 屏管辖，Agent 屏不可见，
      * 从根上避免“问什么都会答编程相关的”（编程引导由提示词层完成）。
      * v3 起 LOOP（Agent 工位）同样走这条隔离。
      */
     private val AGENT_EXCLUDED_TOOL_PREFIXES = listOf(
-        "code_", "github_", "mcp__github__"
+        "Code", "Github", "McpGithub"
     )
 
     /** #197 [AGENT_EXCLUDED_TOOL_PREFIXES] 判定（纯函数，便于单测）。 */

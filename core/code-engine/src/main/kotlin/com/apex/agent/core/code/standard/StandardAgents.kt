@@ -19,8 +19,8 @@ package com.apex.agent.core.code.standard
  * [StandardToolSurface] 按前缀集过滤注册表：
  * - `""`（空串）= 通配一切（构建者/通用）；
  * - `CodeRead` = 精确 id；
- * - `code_git_` = 前缀（命中 CodeGitStatus / CodeGitDiff / …）；
- * - `mcp__` = 前缀（MCP 一等工具动态注册，全部放行给构建者/通用/调研）。
+ * - `CodeGit` = 前缀（命中 CodeGitStatus / CodeGitDiff / …）；
+ * - `Mcp` = 前缀（MCP 一等工具动态注册 Mcp{Server}{Tool}，放行给构建者/通用/调研）。
  */
 object StandardAgentCatalog {
 
@@ -85,9 +85,9 @@ object StandardAgentCatalog {
         description = "调研员：联网检索（web 搜索 / 抓取 / HTTP）+ 本地只读，" +
             "返回带来源 URL 的结论。",
         toolAllowlist = setOf(
-            "WebSearch", "WebFetch", "HttpRequest", "http",
+            "WebSearch", "WebFetch", "HttpRequest", "Http",
             "CodeRead", "CodeGrep", "CodeGlob",
-            "mcp__"
+            "Mcp"
         ),
         writeToolsAllowed = false,
         defaultMaxTurns = 16,

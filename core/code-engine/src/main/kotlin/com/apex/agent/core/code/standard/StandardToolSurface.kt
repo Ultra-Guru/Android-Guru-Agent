@@ -283,7 +283,7 @@ object StandardToolSurface {
         appendLine("todo→CodeTodo, check→CodeCheck) — but prefer the exact names above.")
         if (planToolIds.contains(SYNTHETIC_TASK_ID)) {
             appendLine()
-            appendLine("`task` dispatches an isolated sub-agent. It does NOT see this")
+            appendLine("`Task` dispatches an isolated sub-agent. It does NOT see this")
             appendLine("conversation — the prompt you pass must be fully self-contained")
             appendLine("(goal, scope, expected output format, write-code-or-research-only,")
             appendLine("how to verify). subagent_type:")

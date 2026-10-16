@@ -47,18 +47,31 @@ sealed interface ToolKind {
     data object MCP_CUSTOM : ToolKind
 
     companion object {
-        /** 工具 id → 胶囊族。 */
-        fun fromToolName(toolName: String): ToolKind = when {
-            toolName == "CodeRead" || toolName == "Read" -> READ_FILE
-            toolName == "CodeWrite" || toolName == "Write" -> WRITE_FILE
-            toolName == "CodeEdit" || toolName == "Edit" -> EDIT_FILE
-            toolName == "CodeGrep" || toolName == "grep" || toolName == "search" -> GREP_SEARCH
-            toolName == "TerminalExec" || toolName == "ShellExecute" || toolName == "bash" -> BASH
-            toolName == "Git" || toolName == "CodeGit" || toolName == "CodeGitDiff" -> GIT
-            toolName == "Lint" || toolName == "CodeLint" -> LINT
-            toolName == "Test" || toolName == "CodeTest" -> TEST
-            toolName == "CodeTodo" || toolName == "todo" || toolName == "plan" -> PLAN
-            else -> MCP_CUSTOM
+        /**
+         * 工具 id → 胶囊族。
+         *
+         * v5：注册表 id 是无分隔符 PascalCase，但模型仍可能回显业界短名
+         * （read / bash / grep / git / lint / test / todo…）—— 先做"小写 +
+         * 去分隔符"归一，再按现役 id 与历史写法两套键匹配。
+         */
+        fun fromToolName(toolName: String): ToolKind {
+            val key = toolName.trim().lowercase().filter { it.isLetterOrDigit() }
+            return when {
+                key == "coderead" || key == "read" || key == "readfile" -> READ_FILE
+                key == "codewrite" || key == "write" || key == "writefile" -> WRITE_FILE
+                key == "codeedit" || key == "edit" || key == "editfile" ||
+                    key == "multiedit" -> EDIT_FILE
+                key == "codegrep" || key == "grep" || key == "search" ||
+                    key == "grepsearch" -> GREP_SEARCH
+                key == "terminalexec" || key == "shellexecute" || key == "bash" ||
+                    key == "shell" || key == "execute" -> BASH
+                key.startsWith("codegit") || key == "git" -> GIT
+                key == "codelint" || key == "lint" -> LINT
+                key == "codetest" || key == "test" -> TEST
+                key == "codetodo" || key == "todo" || key == "todowrite" ||
+                    key == "plan" -> PLAN
+                else -> MCP_CUSTOM
+            }
         }
     }
 }

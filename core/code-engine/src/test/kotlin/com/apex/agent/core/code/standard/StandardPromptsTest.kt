@@ -116,7 +116,7 @@ class StandardPromptsTest {
         assertTrue(d.contains("NOT `echo`/`printf`"))
         assertTrue(d.contains("&&"))
         assertTrue(d.contains("Do not separate commands with newlines"))
-        assertTrue(d.contains("sub-agent via `task`"))
+        assertTrue(d.contains("sub-agent via `Task`"))
     }
 
     @Test
