@@ -83,8 +83,10 @@ class SkillToolAdapter(
             val resolvedArgs = resolveTemplate(step, argsMap, lastOutput)
 
             val stepOutput = try {
-                // v5：组合步骤引用旧写法（skill_a_tool）时归一到现役 id
-                toolExecutor.execute(SkillNaming.canonicalId(step.tool), resolvedArgs)
+                // v5：步骤里的工具名保持原样透传 —— 归一兜底在注册表查找侧
+                // （DefaultToolRegistry：别名 / 大小写 / PascalCase 清洗三层），
+                // 这样插件注册的任意 id 写法都不会被本层改坏。
+                toolExecutor.execute(step.tool, resolvedArgs)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // Rethrow: toolExecutor.execute is a suspend call; CancellationException
                 // must propagate so abort() works through composite skill execution.

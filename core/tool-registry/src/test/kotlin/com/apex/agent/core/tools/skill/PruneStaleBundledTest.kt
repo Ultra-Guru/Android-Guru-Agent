@@ -91,12 +91,12 @@ class PruneStaleBundledTest {
             installedIds()
         )
         // 离场者四清：manifest 文件也被删除
-        assertFalse(File(skillsDir, "cooking-master.json").exists())
-        assertFalse(File(skillsDir, "travel-planner.json").exists())
+        assertFalse(File(skillsDir, "CookingMaster.json").exists())
+        assertFalse(File(skillsDir, "TravelPlanner.json").exists())
         // 幸存者文件保留
-        assertTrue(File(skillsDir, "code-review.json").exists())
+        assertTrue(File(skillsDir, "CodeReview.json").exists())
         // 社区技能文件保留
-        assertTrue(File(skillsDir, "hub-installed-extra.json").exists())
+        assertTrue(File(skillsDir, "HubInstalledExtra.json").exists())
     }
 
     @Test

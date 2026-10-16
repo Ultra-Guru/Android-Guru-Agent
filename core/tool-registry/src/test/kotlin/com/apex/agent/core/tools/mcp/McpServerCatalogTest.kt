@@ -124,9 +124,10 @@ class McpServerCatalogTest {
 
     @Test
     fun `duplicate and illegal ids are flagged`() {
+        // v5：大写已是合法命名（PascalCase）；非法样例改为下划线写法
         val entries = listOf(
-            McpServerCatalog.McpCatalogEntry(id = "UPPER", name = "x", description = "d", transport = McpTransport.STDIO, command = "npx"),
-            McpServerCatalog.McpCatalogEntry(id = "UPPER", name = "x", description = "d", transport = McpTransport.STDIO, command = "npx")
+            McpServerCatalog.McpCatalogEntry(id = "Bad_Id", name = "x", description = "d", transport = McpTransport.STDIO, command = "npx"),
+            McpServerCatalog.McpCatalogEntry(id = "Bad_Id", name = "x", description = "d", transport = McpTransport.STDIO, command = "npx")
         )
         val issues = McpServerCatalog.validateEntries(entries)
         assertTrue(issues.any { it.reason.contains("非法") })

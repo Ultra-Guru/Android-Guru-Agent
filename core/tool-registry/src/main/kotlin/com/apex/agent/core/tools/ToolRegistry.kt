@@ -1,6 +1,7 @@
 package com.apex.agent.core.tools
 
 import com.apex.agent.core.tools.catalog.ToolIdAliases
+import com.apex.agent.core.tools.catalog.ToolNameSanitizer
 
 import com.apex.agent.core.llm.ToolDefinition
 import kotlinx.coroutines.CancellationException
@@ -210,6 +211,7 @@ class DefaultToolRegistry : ToolRegistry {
         tools[toolId]
             ?: tools[ToolIdAliases.canonical(toolId)]
             ?: tools.entries.firstOrNull { it.key.equals(toolId, ignoreCase = true) }?.value
+            ?: tools[ToolNameSanitizer.sanitize(toolId)]
     }
 
     override fun getAllTools(): List<AgentTool> = synchronized(this) { tools.values.toList() }

@@ -83,7 +83,7 @@ class BundledSkillsTest {
         assertEquals(2, result.getOrThrow())
         assertNotNull(installed("Alpha"))
         assertTrue("漏写 bundled 的资产经释放通道后必须补齐", installed("Beta")!!.manifest.bundled)
-        assertTrue("落盘文件存在", File(skillsDir, "alpha.json").exists())
+        assertTrue("落盘文件存在", File(skillsDir, "Alpha.json").exists())
     }
 
     @Test

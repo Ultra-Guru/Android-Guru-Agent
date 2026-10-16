@@ -306,8 +306,9 @@ class ToolSystemV4CatalogTest {
     @Test
     fun `mcp tool ids are namespaced and collision free`() {
         // v5：Mcp{Server}{Tool}，无分隔符 PascalCase（用户规格：名字里没有 - / _）
+        // 服务器名自报大小写原样保留（GitHub → McpGitHub…），工具名逐段首字母大写
         assertEquals(
-            "McpGithubCreateIssue",
+            "McpGitHubCreateIssue",
             McpToolNaming.toolId("GitHub", "create_issue")
         )
         assertEquals(

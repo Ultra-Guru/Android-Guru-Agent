@@ -41,10 +41,10 @@ class HookRegistryTest {
 
     @Test
     fun `matcher accepts prefix with trailing star`() {
-        assertTrue(HookRegistry.matches("code_git_*", "CodeGitCommit"))
-        assertTrue(HookRegistry.matches("code_git_*", "code_git_"))
-        assertFalse(HookRegistry.matches("code_git_*", "code_github"))
-        assertFalse(HookRegistry.matches("code_git_*", "ShellExecute"))
+        assertTrue(HookRegistry.matches("CodeGit*", "CodeGitCommit"))
+        assertTrue(HookRegistry.matches("CodeGit*", "CodeGit"))
+        assertFalse(HookRegistry.matches("CodeGit*", "CodeGithub"))
+        assertFalse(HookRegistry.matches("CodeGit*", "ShellExecute"))
     }
 
     @Test
@@ -58,7 +58,7 @@ class HookRegistryTest {
         assertFalse(HookRegistry.matches("", "ShellExecute"))
         assertFalse(HookRegistry.matches("Shell_Execute", "ShellExecute"))
         // 中间通配不支持：按精确匹配处理，永远不命中。
-        assertFalse(HookRegistry.matches("code_*_commit", "CodeGitCommit"))
+        assertFalse(HookRegistry.matches("Code*Commit", "CodeGitCommit"))
     }
 
     // ═══ dispatch：拦截 / 改写 / 异常隔离 / 顺序 ═══════════════════════
@@ -100,7 +100,7 @@ class HookRegistryTest {
                 HookRegistry.HookConfig(
                     id = "block-git", name = "拦截 git",
                     event = HookEventType.PRE_TOOL_USE,
-                    pattern = "code_git_*",
+                    pattern = "CodeGit*",
                     action = HookRegistry.HookAction.BLOCK,
                     reason = "no git"
                 )
