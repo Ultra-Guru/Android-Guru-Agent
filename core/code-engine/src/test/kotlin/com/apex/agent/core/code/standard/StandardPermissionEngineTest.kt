@@ -31,11 +31,11 @@ class StandardPermissionEngineTest {
     @Test
     fun `prefix wildcard rule matches dynamic mcp ids`() {
         val e = engine()
-        e.updateRules(listOf(StandardPermissionRule("mcp__github_*", StandardPermissionEffect.ALLOW)))
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("mcp__github__create_issue", "{}").effect)
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("mcp__github__list_prs", "{}").effect)
-        // 非同前缀不命中（gitlab 无 mcp 前缀 → 非 only 读分类 → 走 ASK 兑底）
-        assertEquals(StandardPermissionEffect.ASK, e.decide("gitlab__x", "{}").effect)
+        e.updateRules(listOf(StandardPermissionRule("McpGithub*", StandardPermissionEffect.ALLOW)))
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("McpGithubCreateIssue", "{}").effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("McpGithubListPrs", "{}").effect)
+        // 非同前缀不命中（Gitlab 无 Mcp 前缀 → 非只读分类 → 走 ASK 兜底）
+        assertEquals(StandardPermissionEffect.ASK, e.decide("GitlabX", "{}").effect)
     }
 
     @Test
@@ -182,7 +182,7 @@ class StandardPermissionEngineTest {
     fun `readonly classification`() {
         assertTrue(StandardPermissionEngine.isReadOnlyTool("CodeRead"))
         assertTrue(StandardPermissionEngine.isReadOnlyTool("CodeTodo"))
-        assertTrue(StandardPermissionEngine.isReadOnlyTool("mcp__github__get"))
+        assertTrue(StandardPermissionEngine.isReadOnlyTool("McpGithubGet"))
         assertTrue(!StandardPermissionEngine.isReadOnlyTool("CodeWrite"))
         assertTrue(!StandardPermissionEngine.isReadOnlyTool("ShellExecute"))
     }
@@ -190,9 +190,9 @@ class StandardPermissionEngineTest {
     @Test
     fun `tool id pattern matcher semantics`() {
         assertTrue(StandardPermissionEngine.matches("CodeRead", "CodeRead"))
-        assertTrue(!StandardPermissionEngine.matches("CodeRead", "code_read2"))
-        assertTrue(StandardPermissionEngine.matches("code_git_*", "CodeGitLog"))
-        assertTrue(!StandardPermissionEngine.matches("code_git_*", "CodeGrep"))
+        assertTrue(!StandardPermissionEngine.matches("CodeRead", "CodeRead2"))
+        assertTrue(StandardPermissionEngine.matches("CodeGit*", "CodeGitLog"))
+        assertTrue(!StandardPermissionEngine.matches("CodeGit*", "CodeGrep"))
         assertTrue(StandardPermissionEngine.matches("*", "whatever"))
         assertTrue(!StandardPermissionEngine.matches("", "whatever"))
     }
@@ -334,7 +334,7 @@ class StandardPermissionEngineTest {
     fun `any path-bearing tool hitting sensitive path asks`() {
         val e = engine()
         // 非 CodeRead/write/edit 的工具（如 mcp 文件读取），参数带敏感路径同样拦截
-        val d = e.decide("mcp__fs__read_file", readArgs("/app/secrets.yaml"))
+        val d = e.decide("McpFsReadFile", readArgs("/app/secrets.yaml"))
         assertEquals(StandardPermissionEffect.ASK, d.effect)
         assertTrue(d.reason.contains("敏感文件保护"))
         // 参数不带路径字段的工具不受影响

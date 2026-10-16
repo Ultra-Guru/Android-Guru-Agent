@@ -303,19 +303,20 @@ class ToolSystemV4CatalogTest {
 
     @Test
     fun `mcp tool ids are namespaced and collision free`() {
+        // v5：Mcp{Server}{Tool}，无分隔符 PascalCase（用户规格：名字里没有 - / _）
         assertEquals(
-            "mcp__github__create_issue",
+            "McpGithubCreateIssue",
             McpToolNaming.toolId("GitHub", "create_issue")
         )
         assertEquals(
-            "mcp__my_server__list",
+            "McpMyServerList",
             McpToolNaming.toolId("My Server", "list")
         )
         assertEquals(
             McpToolNaming.toolId("My Server", "x"),
             McpToolNaming.toolId("my-server", "x")
         )
-        assertEquals("srv", McpToolNaming.slug("!!!"))
+        assertEquals("Srv", McpToolNaming.slug("!!!"))
     }
 
     @Test

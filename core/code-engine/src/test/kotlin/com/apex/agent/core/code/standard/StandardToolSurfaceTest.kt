@@ -46,7 +46,7 @@ class StandardToolSurfaceTest {
 
     @Test
     fun `unknown and mcp names pass through unchanged`() {
-        assertEquals("mcp__github__create_issue", StandardToolSurface.resolveRegistryId("mcp__github__create_issue"))
+        assertEquals("McpGithubCreateIssue", StandardToolSurface.resolveRegistryId("McpGithubCreateIssue"))
         assertEquals("CodeRead", StandardToolSurface.resolveRegistryId("CodeRead"))
         assertEquals("WebSearch", StandardToolSurface.resolveRegistryId("WebSearch"))
     }
@@ -108,12 +108,12 @@ class StandardToolSurfaceTest {
 
     @Test
     fun `build profile sees full registry plus task tool`() {
-        val r = registry("CodeRead", "CodeEdit", "ShellExecute", "WebSearch", "mcp__x__y")
+        val r = registry("CodeRead", "CodeEdit", "ShellExecute", "WebSearch", "McpXy")
         val plan = StandardToolSurface.buildToolPlan(StandardAgentCatalog.BUILD, r)
         val names = plan.definitions.map { it.name }
         assertTrue(names.contains("CodeRead"))
         assertTrue(names.contains("ShellExecute"))
-        assertTrue(names.contains("mcp__x__y"))
+        assertTrue(names.contains("McpXy"))
         assertTrue("合成 task 恒在场", names.contains("Task"))
     }
 
