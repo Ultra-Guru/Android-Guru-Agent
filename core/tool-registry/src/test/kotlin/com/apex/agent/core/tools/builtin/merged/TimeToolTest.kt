@@ -212,7 +212,7 @@ class TimeToolTest {
     fun `CronNextLegacy computes the next run from a fixed instant`() = runTest {
         val out = run(
             jsonArgs(
-                "op" to "CronNextLegacy",
+                "op" to "CronNext",
                 "expression" to "30 8 * * MON",
                 "from" to "2024-01-01T00:00:00Z",
                 "zone" to "UTC"
@@ -226,7 +226,7 @@ class TimeToolTest {
     fun `CronNextLegacy count returns consecutive runs`() = runTest {
         val out = run(
             jsonArgs(
-                "op" to "CronNextLegacy",
+                "op" to "CronNext",
                 "expression" to "*/15 * * * *",
                 "from" to "2024-01-01T00:00:00Z",
                 "zone" to "UTC",
@@ -241,16 +241,16 @@ class TimeToolTest {
     @Test
     fun `CronNextLegacy explain reads like a human`() = runTest {
         val out = run(
-            jsonArgs("op" to "CronNextLegacy", "expression" to "30 8 * * MON", "mode" to "explain")
+            jsonArgs("op" to "CronNext", "expression" to "30 8 * * MON", "mode" to "explain")
         )
         assertEquals("Runs at 08:30 on Monday.", out)
     }
 
     @Test
     fun `CronNextLegacy validate accepts a good expression and names the bad field`() = runTest {
-        assertEquals("valid", run(jsonArgs("op" to "CronNextLegacy", "expression" to "30 8 * * MON", "mode" to "validate")))
+        assertEquals("valid", run(jsonArgs("op" to "CronNext", "expression" to "30 8 * * MON", "mode" to "validate")))
 
-        val bad = structured(jsonArgs("op" to "CronNextLegacy", "expression" to "65 8 * * *", "mode" to "validate"))
+        val bad = structured(jsonArgs("op" to "CronNext", "expression" to "65 8 * * *", "mode" to "validate"))
         assertFalse(bad.isSuccess)
         assertEquals(ToolErrorCode.INVALID_ARGUMENT, bad.error!!.code)
         assertTrue(bad.error!!.message!!.contains("minute field '65' out of range"))
@@ -263,7 +263,7 @@ class TimeToolTest {
         // 之后的下一个“1号或周一” = 1月8日（周一）。
         val out = run(
             jsonArgs(
-                "op" to "CronNextLegacy",
+                "op" to "CronNext",
                 "expression" to "0 0 1 * 1",
                 "from" to "2024-01-01T00:00:00Z",
                 "zone" to "UTC"
@@ -279,7 +279,7 @@ class TimeToolTest {
         val result = structured(jsonArgs("op" to "yesterday"))
         assertFalse(result.isSuccess)
         assertEquals(ToolErrorCode.INVALID_ARGUMENT, result.error!!.code)
-        assertTrue(result.error!!.suggestion!!.contains("CronNextLegacy"))
+        assertTrue(result.error!!.suggestion!!.contains("CronNext"))
     }
 
     @Test

@@ -63,7 +63,7 @@ class TimeTool : BaseTool(
         | {"op":"parse","value":"2024-01-01T00:00:00Z"} | {"op":"add","value":"...","amount":3,"unit":"days"}
         | {"op":"diff","value":"...","value2":"..."} | {"op":"convert_tz","value":"...","zone":"Asia/Tokyo"}
         | {"op":"duration","value":"1h30m"} (auto: value2->compare, bare int->format)
-        | {"op":"CronNextLegacy","expression":"30 8 * * MON","count":3}
+        | {"op":"CronNext","expression":"30 8 * * MON","count":3}
         op: now (default) | format | parse | add | diff | convert_tz | duration | CronNextLegacy.
         Time values accept ISO-8601, epoch s/ms, "yyyy-MM-dd HH:mm[:ss]", RFC-1123.
         Durations accept "1h30m", "1.5h", "500ms", bare seconds, "PT1H30M".
@@ -73,7 +73,7 @@ class TimeTool : BaseTool(
         string(
             "op",
             description = "now | format | parse | add | diff | convert_tz | duration | CronNextLegacy (default now)",
-            enumValues = listOf("now", "format", "parse", "add", "diff", "convert_tz", "duration", "CronNextLegacy"),
+            enumValues = listOf("now", "format", "parse", "add", "diff", "convert_tz", "duration", "CronNext"),
             defaultValue = "now"
         )
         string("value", description = "Primary value: date/time (most ops), duration string (duration), integer in 'unit' (duration format mode)")
@@ -117,7 +117,7 @@ class TimeTool : BaseTool(
             "diff" -> opDiff(args)
             "convert_tz" -> opConvertTz(args)
             "duration" -> opDuration(args)
-            "CronNextLegacy" -> opCronNext(args)
+            "CronNext" -> opCronNext(args)
             else -> ToolResult.fail(ToolErrorCode.EXECUTION_FAILED, "unreachable op $op")
         }
     }
@@ -787,7 +787,7 @@ class TimeTool : BaseTool(
     private fun padded(v: Int): String = String.format(Locale.ROOT, "%02d", v)
 
     private companion object {
-        val OPERATIONS = setOf("now", "format", "parse", "add", "diff", "convert_tz", "duration", "CronNextLegacy")
+        val OPERATIONS = setOf("now", "format", "parse", "add", "diff", "convert_tz", "duration", "CronNext")
         val ADD_UNITS = setOf("second", "minute", "hour", "day", "week", "month", "year")
         val CRON_MODES = setOf("next", "explain", "validate")
         const val MAX_CRON_COUNT = 20
