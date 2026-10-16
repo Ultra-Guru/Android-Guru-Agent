@@ -336,9 +336,8 @@ class CodeViewModel @Inject constructor(
     /** #197 PLAN 模式计划确认/驳回（人控门；勾选/重排同 Agent 屏口径）。 */
     fun confirmPlan(confirmed: Boolean, enabledSteps: List<Int>? = null, order: List<Int>? = null) {
         _uiState.update { it.copy(awaitingPlanConfirmation = false) }
-        // #340：回执 = false 表示无挂起等待（迟到/被 abort）——显式提示。
-        val delivered = codeEngineImpl?.submitPlanConfirmation(confirmed, enabledSteps, order) ?: false
-        if (!delivered) {
+        // #340：回执 false/null = 无挂起等待（迟到/被 abort）——显式提示「未送达」。
+        if (codeEngineImpl?.submitPlanConfirmation(confirmed, enabledSteps, order) != true) {
             appendSystemMessage(languageManager.getString(R.string.chat_plan_confirm_late))
         }
     }

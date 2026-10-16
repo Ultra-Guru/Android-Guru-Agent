@@ -268,14 +268,14 @@ data class McpStartupUi(
 @HiltViewModel
 class MarketViewModel @Inject constructor(
     @ApplicationContext internal val appContext: Context,
-    private val skillRegistry: SkillRegistry,
+    internal val skillRegistry: SkillRegistry,
     private val skillMenuProvider: SkillMenuProvider,
     internal val mcpManager: McpManager,
     private val connectorRegistry: ConnectorRegistry,
     private val pluginManager: PluginManager,
     // Plugin System v2：统一插件门面（双形态目录 / 功能插件启停装卸）
     private val unifiedPluginRegistry: UnifiedPluginRegistry,
-    private val installManager: MarketInstallManager,
+    internal val installManager: MarketInstallManager,
     private val modelScopeSource: ModelScopeSource,
     private val clawHubSource: ClawHubSource,
     // 官方 Hub 仓库（技能 + MCP 双目录）——独立状态域，God-file 预算拆分
@@ -586,114 +586,12 @@ class MarketViewModel @Inject constructor(
 
     internal fun message(msg: String) = _uiState.update { it.copy(lastMessage = msg) }
 
-    // ═══ Skills ═══
-
-    fun toggleSkill(skillId: String, enabled: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) {
-            skillRegistry.setEnabled(skillId, enabled)
-            refresh()
-        }
-    }
-
-    fun uninstallSkill(skillId: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            // Issue #166：内置技能不可卸载（SkillRegistry.uninstall 对 bundled 恒 false），
-            // 提前拦下并给出正确提示——否则会落进「未找到技能」的误导文案。
-            if (_uiState.value.skills.any { it.id == skillId && it.bundled }) {
-                message(languageManager.getString(R.string.market_skill_bundled_uninstall_blocked_hint))
-                return@launch
-            }
-            val ok = skillRegistry.uninstall(skillId)
-            message(
-                if (ok) {
-                    languageManager.getString(R.string.market_skill_uninstalled).format(skillId)
-                } else {
-                    languageManager.getString(R.string.market_skill_not_found).format(skillId)
-                }
-            )
-            refresh()
-        }
-    }
-
-    fun installSkillTemplate(templateId: String) {
-        viewModelScope.launch {
-            installManager.installSkillTemplate(templateId).fold(
-                onSuccess = { message(it) },
-                onFailure = {
-                    message(languageManager.getString(R.string.market_install_failed).format(it.message ?: ""))
-                }
-            )
-            refresh()
-        }
-    }
-
-    /** 导入自定义 Skill JSON（粘贴内容）。 */
-    fun importSkillJson(content: String) {
-        viewModelScope.launch {
-            installManager.installSkillFromJson(content).fold(
-                onSuccess = { message(it) },
-                onFailure = {
-                    message(languageManager.getString(R.string.market_import_failed).format(it.message ?: ""))
-                }
-            )
-            refresh()
-        }
-    }
-
-    /** 从 URL 导入 Skill manifest。 */
-    fun importSkillFromUrl(url: String) {
-        viewModelScope.launch {
-            installManager.installSkillFromUrl(url).fold(
-                onSuccess = { message(it) },
-                onFailure = {
-                    message(languageManager.getString(R.string.market_import_failed).format(it.message ?: ""))
-                }
-            )
-            refresh()
-        }
-    }
-
-    /**
-     * 从本地文件导入 Skill（.zip / .json 自动识别）。
-     *
-     * 用户反馈"Skills 不能自己导入"：本地 skill 包此前没有任何入口。
-     * zip 走 SafeZipExtractor（路径穿越 / zip bomb 防御），json 直接装 manifest。
-     */
-    fun importSkillFromFile(uri: android.net.Uri) {
-        viewModelScope.launch {
-            installManager.installSkillFromFile(uri).fold(
-                onSuccess = { message(it) },
-                onFailure = {
-                    message(it.message ?: languageManager.getString(R.string.market_local_import_failed))
-                }
-            )
-            refresh()
-        }
-    }
-
-    /**
-     * 从本地文件导入 MCP 配置（`{"mcpServers": {...}}` 形态的 .json）。
-     * 复用 [importMcpConfig] 的解析与逐条报错管道。
-     */
-    fun importMcpConfigFromFile(uri: android.net.Uri) {
-        viewModelScope.launch {
-            installManager.readTextFile(uri).fold(
-                onSuccess = { text -> importMcpConfig(text) },
-                onFailure = {
-                    message(
-                        languageManager.getString(R.string.market_read_file_failed)
-                            .format(it.message ?: "")
-                    )
-                }
-            )
-        }
-    }
-
     // ═══ MCP ═══
 
-    // MCP 工位服务器操作 / 精选目录 / 启动时间线已按 God-file 预算拆至
-    // MarketViewModelMcpOps.kt 与 MarketViewModelMcpCatalog.kt（internal 扩展，
-    // 模式同 CodeLongTaskCenterOps.kt —— 调用点与方法引用语义不变）。
+    // MCP 工位服务器操作 / 精选目录 / 启动时间线 / Skills 安装卸载导入已按
+    // God-file 预算拆至 MarketViewModelMcpOps.kt、MarketViewModelMcpCatalog.kt
+    // 与 MarketViewModelSkills.kt（internal 扩展，模式同 CodeLongTaskCenterOps.kt
+    // —— 调用点与方法引用语义不变）。
 
     // ═══ MCP · 配置编辑（已安装管理「编辑」入口）═══
 

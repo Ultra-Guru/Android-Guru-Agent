@@ -156,10 +156,10 @@ class LlmContextTagIntegrationTest {
                 if (event is AgentEvent.PlanAwaitingConfirmation) {
                     // #340 注册先行后此轮询理论上不再必要（事件发出时 deferred
                     // 已注册），保留为防御：CI 高负载下的兜底等待（同模块可见
-                    // internal 字段，AtomicReference.get 判空）。
+                    // internal 字段，可空 var 直接判空）。
                     kotlinx.coroutines.withContext(Dispatchers.Default) {
                         val deadline = System.currentTimeMillis() + 10_000
-                        while (engine.planConfirmationDeferred.get() == null &&
+                        while (engine.planConfirmationDeferred == null &&
                             System.currentTimeMillis() < deadline
                         ) {
                             kotlinx.coroutines.delay(20)
