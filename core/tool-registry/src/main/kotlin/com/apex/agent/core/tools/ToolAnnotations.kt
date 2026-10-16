@@ -160,7 +160,7 @@ data class ToolAnnotations(
             // ── Read-only families (deterministic queries) ──
             toolId == "GetTimeLegacy" || toolId == "GetDeviceInfo" ||
                 toolId == "AppList" || toolId == "AppInfo" ||
-                toolId == "UiDump" || toolId == "logcat" ||
+                toolId == "UiDump" || toolId == "Logcat" ||
                 toolId == "NotificationRead" ||
                 toolId == "ListFiles" || toolId == "GlobFiles" ||
                 toolId == "SearchFiles" || toolId == "Read" ||

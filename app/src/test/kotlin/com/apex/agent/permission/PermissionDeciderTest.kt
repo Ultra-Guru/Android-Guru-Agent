@@ -64,7 +64,7 @@ class PermissionDeciderTest {
         )
         // 普通编辑写（非破坏非幂等）：可恢复操作，静默放行
         val plainWrite = PermissionDecider.decide(
-            PermissionMode.DEFAULT, emptyList(), writeCtx("code_edit_file")
+            PermissionMode.DEFAULT, emptyList(), writeCtx("CodeEditFile")
         )
         // 幂等覆写（破坏但可重放恢复，如 Write）：不算删除类，放行
         val idempotentOverwrite = PermissionDecider.decide(
@@ -104,7 +104,7 @@ class PermissionDeciderTest {
     @Test
     fun `ACCEPT_EDITS 模式自动放行编辑写类工具`() {
         val decision = PermissionDecider.decide(
-            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("code_edit_file")
+            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("CodeEditFile")
         )
         assertTrue(decision is PermissionDecision.AllowExplicit)
     }
@@ -132,11 +132,11 @@ class PermissionDeciderTest {
     @Test
     fun `PLAN 模式拒绝非只读并给出中文原因`() {
         val decision = PermissionDecider.decide(
-            PermissionMode.PLAN, emptyList(), writeCtx("code_edit_file")
+            PermissionMode.PLAN, emptyList(), writeCtx("CodeEditFile")
         )
         val deny = decision as PermissionDecision.Deny
         assertTrue(deny.reason.contains("只读"))
-        assertTrue(deny.reason.contains("code_edit_file"))
+        assertTrue(deny.reason.contains("CodeEditFile"))
     }
 
     @Test
@@ -166,24 +166,25 @@ class PermissionDeciderTest {
         val decision = PermissionDecider.decide(
             PermissionMode.ACCEPT_EDITS,
             listOf(
-                PermissionRule("code_edit_file", PermissionEffect.DENY),
-                PermissionRule("code_edit_*", PermissionEffect.ALLOW)
+                PermissionRule("CodeEditFile", PermissionEffect.DENY),
+                PermissionRule("CodeEdit*", PermissionEffect.ALLOW)
             ),
-            writeCtx("code_edit_file")
+            writeCtx("CodeEditFile")
         )
         assertTrue(decision is PermissionDecision.Deny)
     }
 
     @Test
     fun `尾缀通配匹配 MCP 动态注册工具 id`() {
-        assertTrue(PermissionRuleMatcher.matches("mcp__github__*", "mcp__github__create_issue"))
-        assertTrue(PermissionRuleMatcher.matches("code_git_*", "CodeGitCommit"))
-        assertFalse(PermissionRuleMatcher.matches("code_git_*", "code_gitx"))
+        // v5：MCP 一等工具 id 形如 Mcp{Server}{Tool}，前缀通配照样命中运行期才知道的 id
+        assertTrue(PermissionRuleMatcher.matches("McpGithub*", "McpGithubCreateIssue"))
+        assertTrue(PermissionRuleMatcher.matches("CodeGit*", "CodeGitCommit"))
+        assertFalse(PermissionRuleMatcher.matches("CodeGit*", "CodeGitx"))
         // 决策层集成：通配规则放行运行期才知道 id 的 MCP 写工具
         val decision = PermissionDecider.decide(
             PermissionMode.DEFAULT,
-            listOf(PermissionRule("mcp__github__*", PermissionEffect.ALLOW)),
-            writeCtx("mcp__github__create_issue")
+            listOf(PermissionRule("McpGithub*", PermissionEffect.ALLOW)),
+            writeCtx("McpGithubCreateIssue")
         )
         assertTrue(decision is PermissionDecision.AllowExplicit)
     }
@@ -191,7 +192,7 @@ class PermissionDeciderTest {
     @Test
     fun `单独星号规则匹配一切工具`() {
         assertTrue(PermissionRuleMatcher.matches("*", "ShellExecute"))
-        assertTrue(PermissionRuleMatcher.matches("*", "mcp__anything__goes"))
+        assertTrue(PermissionRuleMatcher.matches("*", "McpAnythingGoes"))
         val decision = PermissionDecider.decide(
             PermissionMode.DEFAULT,
             listOf(PermissionRule("*", PermissionEffect.ALLOW)),
@@ -233,15 +234,15 @@ class PermissionDeciderTest {
     @Test
     fun `编辑写类前缀判定覆盖正反例`() {
         val editLike = listOf(
-            "code_edit_file", "code_write_block", "CodeGitCommit",
-            "code_git_branch_create", "Write", "Edit",
+            "CodeEditFile", "CodeWriteBlock", "CodeGitCommit",
+            "CodeGitBranchCreate", "Write", "Edit",
             "DeleteFile", "CopyMoveFile"
         )
         editLike.forEach { id ->
             assertTrue("应判定为编辑类：$id", PermissionDecider.isEditLike(id))
         }
         val notEditLike = listOf(
-            "CodeRead", "code_search", "CodeTask",
+            "CodeRead", "CodeSearch", "CodeTask",
             "CodeGitStatus", "CodeGitDiff", "CodeGitLog",
             "ShellExecute", "WebFetch"
         )
@@ -466,7 +467,7 @@ class PermissionDeciderTest {
         PermissionContext(toolId, readOnlyHint = true, destructiveHint = false, sensitiveAction = false)
 
     /** 普通写上下文（非只读、非破坏、非敏感、非幂等——如 Edit）。 */
-    private fun writeCtx(toolId: String = "code_edit_file") =
+    private fun writeCtx(toolId: String = "CodeEditFile") =
         PermissionContext(toolId, readOnlyHint = false, destructiveHint = false, sensitiveAction = false)
 
     /** 元数据完全可控的假工具（annotations 决策三注解的载体）。 */

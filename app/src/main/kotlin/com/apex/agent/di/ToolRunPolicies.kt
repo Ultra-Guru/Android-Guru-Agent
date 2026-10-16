@@ -21,7 +21,7 @@ val TERMINAL_TOOL_RUN_POLICIES: Map<String, ToolRunPolicy> = mapOf(
     // shell 命令有自己的命令级确认与用户交互窗口：长超时不重试。
     "ShellExecute" to ToolRunPolicy(timeoutMs = 120_000L, maxRetries = 0),
     // 抓屏/敲链可能被系统限速：给一次重试余量。
-    "screenshot" to ToolRunPolicy(timeoutMs = 30_000L, maxRetries = 1, baseRetryDelayMs = 500L),
+    "Screenshot" to ToolRunPolicy(timeoutMs = 30_000L, maxRetries = 1, baseRetryDelayMs = 500L),
     // ═══ P0 修复（超时错配）：TerminalExec 自身管理 timeout_ms
     // （schema 声明 1000..600000ms，默认 30s），但默认推断策略是
     // mutating() 60s —— 执行器 withTimeout 会先于工具自身的超时
