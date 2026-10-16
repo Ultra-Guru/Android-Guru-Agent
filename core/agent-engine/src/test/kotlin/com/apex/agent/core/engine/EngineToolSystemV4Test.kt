@@ -156,7 +156,7 @@ class EngineToolSystemV4Test {
         assertEquals(1, client.calls.size)
         val names = client.calls[0].tools.map { it.name }.toSet()
         assertTrue("Read" in names)
-        assertTrue("TerminalExecLegacy" in names)   // dotted id sanitized
+        assertTrue("TerminalExec" in names)   // PascalCase id, provider-legal as-is
         assertTrue("ToolSearch" in names)     // catalog meta tools ship
         assertFalse("GithubCreateIssue" in names) // catalog-only: NOT shipped
         assertNull(client.calls[0].toolChoice) // default mode: no forcing
