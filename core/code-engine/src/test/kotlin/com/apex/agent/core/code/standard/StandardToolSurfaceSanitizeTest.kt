@@ -200,7 +200,8 @@ class StandardToolSurfaceSanitizeTest {
             StandardAgentCatalog.BUILD, dirtyRegistry(),
             forcedToolIds = setOf("TerminalExec")
         )
-        assertEquals(listOf("TerminalExecLegacy"), plan.definitions.map { it.name })
-        assertEquals("TerminalExec", plan.providerNameToId["TerminalExecLegacy"])
+        // v5：现役 id 自身已是 provider 合法名 → forced 面直接透传
+        assertEquals(listOf("TerminalExec"), plan.definitions.map { it.name })
+        assertEquals("TerminalExec", plan.providerNameToId["TerminalExec"])
     }
 }

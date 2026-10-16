@@ -299,9 +299,9 @@ class StandardModeEngineResilienceTest {
     @Test
     fun `dotted and unicode names are sanitized in request and routed back`() = runTest {
         val llm = ScriptedLlm()
-        // 模型按 tools 数组里的 provider 名调用（"mcp" = 中文 MCP 工具的清洗名）
+        // 模型按 tools 数组里的 provider 名调用（"Mcp" = 中文 MCP 工具清洗后的名字）
         llm.enqueue(
-            LlmStreamChunk(toolCalls = listOf(ToolCall(id = "c1", name = "mcp", arguments = "{}")))
+            LlmStreamChunk(toolCalls = listOf(ToolCall(id = "c1", name = "Mcp", arguments = "{}")))
         )
         llm.enqueue(LlmStreamChunk(content = "查到了天气", isFinish = true))
 
@@ -319,11 +319,11 @@ class StandardModeEngineResilienceTest {
         requestToolNames.forEach {
             assertTrue("request tool name not provider-safe: '$it'", providerLegal.matches(it))
         }
-        assertTrue(requestToolNames.contains("TerminalExecLegacy"))
-        assertTrue(requestToolNames.contains("mcp"))
+        assertTrue(requestToolNames.contains("TerminalExec"))
+        assertTrue(requestToolNames.contains("Mcp"))
         assertFalseRawNames(requestToolNames)
 
-        // 执行路由：回显名 "mcp" → 注册表 id（事件与执行同口径，胶囊分族一致）
+        // 执行路由：回显名 "Mcp" → 注册表 id（事件与执行同口径，胶囊分族一致）
         val start = events.filterIsInstance<AgentEvent.ToolCallStart>().single()
         assertEquals("mcp__天气服务__查天气", start.toolName)
         assertEquals(1, executor.executed.count { it.first == "mcp__天气服务__查天气" })
