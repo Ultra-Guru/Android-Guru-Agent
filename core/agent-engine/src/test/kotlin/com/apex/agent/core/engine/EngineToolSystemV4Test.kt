@@ -180,12 +180,12 @@ class EngineToolSystemV4Test {
             .messages.filterIsInstance<LlmMessage.System>().first().content
         assertTrue(systemPrompt.contains("ToolSearch"))
         assertTrue(systemPrompt.contains("Tool Catalog"))
-        // prompt must NOT advertise the raw dotted id when names differ
+        // prompt 列的必须是注册表 id（v5 起 provider 名与注册表 id 一致）
         val registry2 = FakeRegistry(listOf(FakeTool("TerminalExec"), FakeTool("ToolSearch")))
         val client2 = RecordingLlmClient(listOf(RecordingLlmClient.Script.Respond("done")))
         runEngine(registry2, client2, baseConfig)
         val prompt2 = client2.calls[0].messages.filterIsInstance<LlmMessage.System>().first().content
-        assertTrue(prompt2.contains("- TerminalExecLegacy:"))
+        assertTrue(prompt2.contains("- TerminalExec:"))
     }
 
     // ── 2. forced mode («调用函数» selection) ─────────────────────

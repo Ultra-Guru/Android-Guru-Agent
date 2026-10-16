@@ -174,9 +174,11 @@ class ToolSystemV4CatalogTest {
         assertFalse("GithubCreateIssue" in names)
         // 长尾浏览器工具（Cookie 凭据读取）仍走 ToolSearch 渐进披露
         assertFalse("BrowserGetCookies" in names)
-        // legacy alias never ships (its slot is taken by the modern tool)
-        assertTrue("TerminalExecLegacy" in names)
-        assertEquals("TerminalExec", plan.providerNameToId["TerminalExecLegacy"])
+        // v5：现役 id 与旧别名不再撞名（TerminalExec vs TerminalExecLegacy）——
+        // CORE 里发的是现役 id，legacy 别名永不下发。
+        assertTrue("TerminalExec" in names)
+        assertFalse("TerminalExecLegacy" in names)
+        assertEquals("TerminalExec", plan.providerNameToId["TerminalExec"])
     }
 
     @Test
