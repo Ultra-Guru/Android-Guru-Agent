@@ -235,7 +235,8 @@ class ToolSystemV2InfraTest {
     @Test
     fun `suggester ranks close typos first`() {
         val candidates = listOf("RegexExtractLegacy", "RegexReplaceLegacy", "WebSearch", "Calculate")
-        val suggestions = ToolSuggester.suggest("regex_extact", candidates)
+        // v5：候选是 PascalCase 全名（RegexExtractLegacy），输入用一位手误（少一个 r）
+        val suggestions = ToolSuggester.suggest("RegexExtractLegcy", candidates)
         assertTrue(suggestions.isNotEmpty())
         assertEquals("RegexExtractLegacy", suggestions[0])
     }
@@ -250,7 +251,7 @@ class ToolSystemV2InfraTest {
 
     @Test
     fun `suggestionLine renders a model-facing hint`() {
-        val line = ToolSuggester.suggestionLine("regex_extact", listOf("RegexExtractLegacy"))
+        val line = ToolSuggester.suggestionLine("RegexExtractLegcy", listOf("RegexExtractLegacy"))
         assertNotNull(line)
         assertTrue(line!!.startsWith("Did you mean:"))
         assertTrue(line.contains("RegexExtractLegacy"))
@@ -448,7 +449,7 @@ class ToolSystemV2InfraTest {
         registry.register(legacyTool("RegexReplaceLegacy"))
         val executor = DefaultToolExecutor(registry)
 
-        val err = executor.execute("regex_extact", "{}")
+        val err = executor.execute("RegexExtractLegcy", "{}")
         assertTrue(err.startsWith("Error:"))
         assertTrue(err.contains("Did you mean:"))
         assertTrue(err.contains("RegexExtractLegacy"))
