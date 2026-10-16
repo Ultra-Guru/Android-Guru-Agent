@@ -53,7 +53,7 @@ class LongTaskTrackerTest {
     /** 一轮「迭代 + 工具调用」的标准事件对。 */
     private fun iterationWithTool(
         index: Int,
-        toolName: String = "code_edit",
+        toolName: String = "CodeEdit",
         arguments: String = """{"path":"src/Main.kt"}""",
         success: Boolean = true
     ): List<AgentEvent> = listOf(
@@ -117,7 +117,7 @@ class LongTaskTrackerTest {
         assertEquals(9, record.toolCalls)
         assertEquals(200_000L, record.durationMs)
         assertEquals(listOf("src/Main.kt"), record.filesTouched)
-        assertEquals(mapOf("code_edit" to 9), record.toolsUsed)
+        assertEquals(mapOf("CodeEdit" to 9), record.toolsUsed)
         assertEquals(listOf("☐ 拆分 ViewModel", "☑ 读代码"), record.todoSnapshot)
         assertNotNull(record.endedAt)
         assertNull(record.errorMessage)
@@ -132,7 +132,7 @@ class LongTaskTrackerTest {
         val tracker = newTracker(this)
         tracker.beginRun("等待型任务", "ws-a", "工作区A", "STANDARD", "BUILD")
         for (i in 1..2) {
-            iterationWithTool(i, toolName = "code_read", arguments = """{"path":"a.kt"}""")
+            iterationWithTool(i, toolName = "CodeRead", arguments = """{"path":"a.kt"}""")
                 .forEach { tracker.onEvent(it) }
         }
         fakeNow += 150_000L
@@ -145,21 +145,21 @@ class LongTaskTrackerTest {
     fun `files touched extracted from successful code edit and write`() = runTest {
         val tracker = newTracker(this)
         tracker.beginRun("改一批文件", "ws-a", "工作区A", "DEEP", "BUILD")
-        iterationWithTool(1, toolName = "code_edit", arguments = """{"path":"src/A.kt","new_text":"x"}""")
+        iterationWithTool(1, toolName = "CodeEdit", arguments = """{"path":"src/A.kt","new_text":"x"}""")
             .forEach { tracker.onEvent(it) }
-        iterationWithTool(2, toolName = "code_write", arguments = """{"path":"src/B.kt","content":"y"}""")
+        iterationWithTool(2, toolName = "CodeWrite", arguments = """{"path":"src/B.kt","content":"y"}""")
             .forEach { tracker.onEvent(it) }
-        iterationWithTool(3, toolName = "code_edit", arguments = """{"path":"src/A.kt","new_text":"z"}""")
+        iterationWithTool(3, toolName = "CodeEdit", arguments = """{"path":"src/A.kt","new_text":"z"}""")
             .forEach { tracker.onEvent(it) }
         // 失败的编辑不落盘 → 不计入
-        iterationWithTool(4, toolName = "code_edit", arguments = """{"path":"src/C.kt"}""", success = false)
+        iterationWithTool(4, toolName = "CodeEdit", arguments = """{"path":"src/C.kt"}""", success = false)
             .forEach { tracker.onEvent(it) }
         // 非文件工具即使带 path 也不计入
-        iterationWithTool(5, toolName = "code_read", arguments = """{"path":"src/D.kt"}""")
+        iterationWithTool(5, toolName = "CodeRead", arguments = """{"path":"src/D.kt"}""")
             .forEach { tracker.onEvent(it) }
-        // 补足 MEDIUM 门槛：用 code_read 填迭代（不污染 filesTouched）
+        // 补足 MEDIUM 门槛：用 CodeRead 填迭代（不污染 filesTouched）
         for (i in 6..9) {
-            iterationWithTool(i, toolName = "code_read", arguments = """{"path":"src/Main.kt"}""")
+            iterationWithTool(i, toolName = "CodeRead", arguments = """{"path":"src/Main.kt"}""")
                 .forEach { tracker.onEvent(it) }
         }
         val record = tracker.endRun(LongTaskStatus.COMPLETED)!!
@@ -170,13 +170,13 @@ class LongTaskTrackerTest {
     fun `malformed tool arguments never crash the tracker`() = runTest {
         val tracker = newTracker(this)
         tracker.beginRun("防御式", "ws-a", "工作区A", "DEEP", "BUILD")
-        iterationWithTool(1, toolName = "code_edit", arguments = "not-a-json{{{")
+        iterationWithTool(1, toolName = "CodeEdit", arguments = "not-a-json{{{")
             .forEach { tracker.onEvent(it) }
-        iterationWithTool(2, toolName = "code_edit", arguments = "")
+        iterationWithTool(2, toolName = "CodeEdit", arguments = "")
             .forEach { tracker.onEvent(it) }
-        iterationWithTool(3, toolName = "code_edit", arguments = """{"path": 123}""") // path 非字符串
+        iterationWithTool(3, toolName = "CodeEdit", arguments = """{"path": 123}""") // path 非字符串
             .forEach { tracker.onEvent(it) }
-        iterationWithTool(4, toolName = "code_edit", arguments = """{"other":"field"}""")
+        iterationWithTool(4, toolName = "CodeEdit", arguments = """{"other":"field"}""")
             .forEach { tracker.onEvent(it) }
         for (i in 5..9) {
             iterationWithTool(i, arguments = """{"path":"src/ok.kt"}""").forEach { tracker.onEvent(it) }
@@ -189,15 +189,15 @@ class LongTaskTrackerTest {
     fun `tools used counts failed calls too`() = runTest {
         val tracker = newTracker(this)
         tracker.beginRun("失败统计", "ws-a", "工作区A", "DEEP", "BUILD")
-        iterationWithTool(1, toolName = "shell_execute", arguments = "ls", success = false)
+        iterationWithTool(1, toolName = "ShellExecute", arguments = "ls", success = false)
             .forEach { tracker.onEvent(it) }
-        iterationWithTool(2, toolName = "shell_execute", arguments = "ls", success = false)
+        iterationWithTool(2, toolName = "ShellExecute", arguments = "ls", success = false)
             .forEach { tracker.onEvent(it) }
         for (i in 3..9) {
             iterationWithTool(i).forEach { tracker.onEvent(it) }
         }
         val record = tracker.endRun(LongTaskStatus.COMPLETED)!!
-        assertEquals(mapOf("shell_execute" to 2, "code_edit" to 7), record.toolsUsed)
+        assertEquals(mapOf("ShellExecute" to 2, "CodeEdit" to 7), record.toolsUsed)
         assertEquals(9, record.toolCalls)
     }
 
@@ -218,7 +218,7 @@ class LongTaskTrackerTest {
         assertEquals(5, first.toolCallCount)
         assertEquals(1, first.filesTouchedCount)
         assertTrue(first.recentExchange.any { it.startsWith("用户: 检查点节奏") })
-        assertTrue(first.recentExchange.any { it.contains("code_edit ✓") })
+        assertTrue(first.recentExchange.any { it.contains("CodeEdit ✓") })
         assertTrue(first.recentExchange.size <= LongTaskCheckpoint.RECENT_EXCHANGE_MAX)
     }
 
@@ -244,7 +244,7 @@ class LongTaskTrackerTest {
             iterationWithTool(i).forEach { tracker2.onEvent(it) }
         }
         fakeNow += 61_000L
-        tracker2.onEvent(AgentEvent.ToolCallStart("call-x", "code_read", """{"path":"a.kt"}"""))
+        tracker2.onEvent(AgentEvent.ToolCallStart("call-x", "CodeRead", """{"path":"a.kt"}"""))
         fakeNow += 200_000L
         val record = tracker2.endRun(LongTaskStatus.COMPLETED)!!
         assertEquals(1, record.checkpoints.size)

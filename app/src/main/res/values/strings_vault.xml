@@ -5,7 +5,7 @@
 <resources>
     <!-- ═══ Security notes / empty state ═══ -->
     <string name="vault_security_note_title">How the vault works</string>
-    <string name="vault_security_note_body">Secrets are encrypted at rest. The agent can only see labels and notes — never the content. It can deliver a secret directly to the clipboard, a terminal session or an HTTP request (vault_paste) without ever reading it back.</string>
+    <string name="vault_security_note_body">Secrets are encrypted at rest. The agent can only see labels and notes — never the content. It can deliver a secret directly to the clipboard, a terminal session or an HTTP request (VaultPaste) without ever reading it back.</string>
     <string name="vault_empty">No secrets yet. Tap \"Add secret\" to store a GitHub token or an AI API key.</string>
 
     <!-- ═══ Entry card ═══ -->
@@ -18,7 +18,7 @@
     <string name="vault_show">Show secret</string>
     <string name="vault_hide">Hide secret</string>
     <string name="vault_edit">Edit</string>
-    <string name="vault_delete">Delete</string>
+    <string name="VaultDelete">Delete</string>
     <string name="vault_delete_confirm_title">Delete this secret?</string>
     <string name="vault_delete_confirm_body">Entry \"%1$s\" will be permanently removed. This cannot be undone.</string>
 

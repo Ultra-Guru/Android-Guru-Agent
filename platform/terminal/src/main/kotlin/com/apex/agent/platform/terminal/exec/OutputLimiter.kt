@@ -1,4 +1,4 @@
-package com.apex.agent.platform.terminal.exec
+package com.apex.agent.platform.TerminalExec
 
 /**
  * Agent 输出限长器 —— 「避免 Agent 被海量输出淹没」的最后一道防线。

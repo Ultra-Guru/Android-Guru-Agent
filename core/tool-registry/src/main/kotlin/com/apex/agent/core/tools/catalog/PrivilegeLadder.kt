@@ -9,7 +9,7 @@ package com.apex.agent.core.tools.catalog
  *
  * 本对象是权限知识的**单一真值源**，两个消费方永远输出同一份内容：
  * - [com.apex.agent.core.engine.EnginePrompts]（系统提示词段）；
- * - [CapabilityReportTool]（capability_report 工具输出）；
+ * - [CapabilityReportTool]（CapabilityReport 工具输出）；
  * - [com.apex.agent.core.engine.orchestrator.OrchestratorPrompts]（BUILD
  *   编排线的一行简介）。
  *

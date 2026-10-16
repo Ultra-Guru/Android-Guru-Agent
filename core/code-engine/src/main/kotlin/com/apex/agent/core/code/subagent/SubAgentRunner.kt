@@ -116,7 +116,7 @@ class SubAgentRunner(
     /**
      * 子代理内置类型：决定系统提示词与可用工具集。
      *
-     * @param key 对外标识（code_task 的 subagent_type 参数取值）
+     * @param key 对外标识（CodeTask 的 subagent_type 参数取值）
      * @param displayName 中文展示名（日志 / 结果标题用）
      * @param toolIds 工具集白名单（allowedToolIds）；空集 = 默认 CORE 计划
      */
@@ -125,11 +125,11 @@ class SubAgentRunner(
         val displayName: String,
         val toolIds: Set<String>
     ) {
-        /** 只读代码探索员：code_read / code_grep / code_glob。 */
-        EXPLORE("explore", "代码探索", setOf("code_read", "code_grep", "code_glob")),
+        /** 只读代码探索员：CodeRead / CodeGrep / CodeGlob。 */
+        EXPLORE("explore", "代码探索", setOf("CodeRead", "CodeGrep", "CodeGlob")),
 
-        /** 联网调研员：web_search / web_fetch / http_request。 */
-        RESEARCH("research", "联网调研", setOf("web_search", "web_fetch", "http_request")),
+        /** 联网调研员：WebSearch / WebFetch / HttpRequest。 */
+        RESEARCH("research", "联网调研", setOf("WebSearch", "WebFetch", "HttpRequest")),
 
         /** 通用执行员：默认 CORE 工具集（allowedToolIds 为空走 planDefault）。 */
         GENERAL("general", "通用执行", emptySet()),
@@ -140,8 +140,8 @@ class SubAgentRunner(
          * 输出分级发现（阻断/警告/建议）与合入结论。
          */
         REVIEWER("reviewer", "代码评审", setOf(
-            "code_read", "code_grep", "code_glob", "code_check",
-            "code_git_status", "code_git_diff"
+            "CodeRead", "CodeGrep", "CodeGlob", "CodeCheck",
+            "CodeGitStatus", "CodeGitDiff"
         ));
 
         companion object {
@@ -483,7 +483,7 @@ class SubAgentRunner(
         /** 默认整体超时（含闸门排队；未接线设置层时的构造基线）。 */
         const val DEFAULT_TIMEOUT_MS = 300_000L
 
-        /** custom 自定义类型的对外标识（code_task 的 subagent_type 取值）。 */
+        /** custom 自定义类型的对外标识（CodeTask 的 subagent_type 取值）。 */
         const val CUSTOM_TYPE_KEY = "custom"
 
         /** 自定义类型轮数覆盖硬顶（防手改 JSON 配出天价轮数）。 */

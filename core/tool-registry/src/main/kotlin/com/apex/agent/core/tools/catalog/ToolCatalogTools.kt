@@ -31,12 +31,12 @@ import com.apex.agent.core.tools.builtin.BaseTool
 class ToolSearchTool(
     private val registry: ToolRegistry
 ) : BaseTool(
-    id = "tool_search",
+    id = "ToolSearch",
     name = "Tool Search",
     description = """
         Search the full tool catalog (every capability this agent has,
         including tools not currently loaded). Returns matching tool ids with
-        one-line descriptions. Call tool_open with an id to load and use it.
+        one-line descriptions. Call ToolOpen with an id to load and use it.
         Use this whenever no loaded tool fits the task.
     """.trimIndent(),
     declaredSchema = toolSchema {
@@ -102,7 +102,7 @@ class ToolSearchTool(
 
         if (scored.isEmpty()) {
             return ToolResult.ok(
-                "No tools matched '$query'. Try broader keywords, or call tool_list " +
+                "No tools matched '$query'. Try broader keywords, or call ToolList " +
                     "to see all categories."
             )
         }
@@ -112,7 +112,7 @@ class ToolSearchTool(
         }
         return ToolResult.ok(
             "Matched tools (${scored.size}):\n$lines\n\n" +
-                "Call tool_open(tool_name) to load any of these for use."
+                "Call ToolOpen(tool_name) to load any of these for use."
         )
     }
 }
@@ -121,19 +121,19 @@ class ToolOpenTool(
     private val registry: ToolRegistry,
     private val activation: ToolActivationStore
 ) : BaseTool(
-    id = "tool_open",
+    id = "ToolOpen",
     name = "Tool Open",
     description = """
         Load a catalog tool into this session. Returns its full description
         and parameter schema; the tool becomes callable on your next turn.
-        Use ids returned by tool_search or tool_list.
+        Use ids returned by ToolSearch or ToolList.
     """.trimIndent(),
     declaredSchema = toolSchema {
         string(
             "tool_name",
             required = true,
-            description = "Tool id from the catalog (e.g. 'github_create_issue', " +
-                "'terminal.linux.bootstrap')"
+            description = "Tool id from the catalog (e.g. 'GithubCreateIssue', " +
+                "'TerminalLinuxBootstrap')"
         )
     }
 ) {
@@ -162,7 +162,7 @@ class ToolOpenTool(
         if (resolved == null) {
             return ToolResult.fail(
                 ToolErrorCode.NOT_FOUND,
-                "Unknown tool '$requested'. Call tool_search(query) to find the right id."
+                "Unknown tool '$requested'. Call ToolSearch(query) to find the right id."
             )
         }
 
@@ -188,7 +188,7 @@ class ToolOpenTool(
 class ToolListTool(
     private val registry: ToolRegistry
 ) : BaseTool(
-    id = "tool_list",
+    id = "ToolList",
     name = "Tool List",
     description = """
         List tool categories with counts, plus which tools are currently
@@ -243,7 +243,7 @@ class ToolListTool(
             }
             sb.appendLine()
         }
-        sb.appendLine("★ = loaded by default. Others: tool_search to find, tool_open to load.")
+        sb.appendLine("★ = loaded by default. Others: ToolSearch to find, ToolOpen to load.")
         return ToolResult.ok(sb.toString().trim())
     }
 }

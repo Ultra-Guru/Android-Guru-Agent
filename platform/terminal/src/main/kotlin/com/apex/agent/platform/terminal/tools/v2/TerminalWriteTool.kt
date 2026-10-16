@@ -12,7 +12,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.jsonArray
 
 /**
- * Agent tool: terminal.write
+ * Agent tool: TerminalWrite
  *
  * Spec ref: ATR 2.0 Final Spec §34.5
  *
@@ -34,7 +34,7 @@ import kotlinx.serialization.json.jsonArray
 class TerminalWriteTool(
     private val runtime: TerminalRuntime
 ) : TerminalTool {
-    override val id: String = "terminal.write"
+    override val id: String = "TerminalWrite"
     override val name: String = id
     override val description: String = """
         Write input to a Session. Owner is assigned automatically by Runtime (Agent tool calls →

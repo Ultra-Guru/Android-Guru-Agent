@@ -184,13 +184,13 @@ internal fun smartToolSummary(toolName: String, args: String, kind: ToolKind, se
         .find(args)?.groupValues?.getOrNull(1)
     return when {
         name in FILE_OP_TOOLS -> path
-        name == "shell_execute" ->
+        name == "ShellExecute" ->
             Regex(""""command"\s*:\s*"([^"]+)"""").find(args)?.groupValues?.getOrNull(1)
                 ?.take(80)
-        name == "web_fetch" -> path
-        name == "web_search" ->
+        name == "WebFetch" -> path
+        name == "WebSearch" ->
             Regex(""""query"\s*:\s*"([^"]+)"""").find(args)?.groupValues?.getOrNull(1)
-        name.startsWith("github_") -> githubSummary(name, args)
+        name.startsWith("Github") -> githubSummary(name, args)
         kind == ToolKind.MCP -> server ?: path
         else -> null
     }
@@ -642,7 +642,7 @@ internal fun RetryChip(onRetry: () -> Unit, enabled: Boolean = true) {
 internal fun parseWebSearchResults(text: String): List<WebSearchItem> {
     val items = mutableListOf<WebSearchItem>()
     val pattern = Regex(
-        """(\d+)\.\s+(.+?)\s*\n\s*URL:\s*(\S+)\s*\n\s*(.*?)(?=\n\s*\n\s*\d+\.\s|\n\s*\nUse web_fetch|$)""",
+        """(\d+)\.\s+(.+?)\s*\n\s*URL:\s*(\S+)\s*\n\s*(.*?)(?=\n\s*\n\s*\d+\.\s|\n\s*\nUse WebFetch|$)""",
         RegexOption.DOT_MATCHES_ALL
     )
     for (m in pattern.findAll(text)) {

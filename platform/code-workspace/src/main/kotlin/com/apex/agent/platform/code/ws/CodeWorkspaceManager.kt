@@ -30,7 +30,7 @@ data class CodeWorkspaceIndex(
  *
  * 与 [com.apex.agent.platform.terminal.workspace.LinuxWorkspaceManager] 的关系：
  * 共享同一父目录（`<filesDir>/linux/workspaces/`）但索引独立 —— 终端侧的
- * workspace 生命周期工具（terminal.workspaces）与本管理器互不干扰，同一物理
+ * workspace 生命周期工具（TerminalWorkspaces）与本管理器互不干扰，同一物理
  * 目录可以被两边引用（这就是文件层互用）。
  */
 class CodeWorkspaceManager(

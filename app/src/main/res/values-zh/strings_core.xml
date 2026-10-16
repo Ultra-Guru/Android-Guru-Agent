@@ -389,13 +389,13 @@
 
     <!-- ═══ 记忆（MemoryScreen）═══ -->
     <string name="memory_title">记忆</string>
-    <string name="memory_search_nodes">搜索节点</string>
+    <string name="MemorySearchNodes">搜索节点</string>
     <string name="memory_got_it">知道了</string>
     <string name="memory_nodes">节点</string>
     <string name="memory_macros">宏技能</string>
     <string name="memory_search_label">搜索节点（文本 / 关键词）</string>
     <string name="memory_no_match">没有匹配 \"%1$s\" 的记忆节点</string>
-    <string name="memory_recent_episodes">近期会话</string>
+    <string name="MemoryRecentEpisodes">近期会话</string>
     <string name="memory_empty_episodes">还没有任何记忆会话\nAgent 执行任务后这里会沉淀 Episode</string>
     <string name="memory_frequent_macros">高频宏技能</string>
     <string name="memory_empty_macros">还没有蒸馏出的宏技能\n任务成功后 Agent 会沉淀可复用 FSM 宏</string>

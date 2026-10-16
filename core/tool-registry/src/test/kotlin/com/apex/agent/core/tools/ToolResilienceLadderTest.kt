@@ -107,7 +107,7 @@ class ToolResilienceLadderTest {
     fun `executor retries a flaky network tool through the whole ladder then succeeds`() = runTest {
         // 前六次全失败（网络类瞬时错误），第七次成功 —— 阶梯全程顶住。
         val tool = ScriptedTool(
-            "web_fetch",
+            "WebFetch",
             listOf(
                 "Error: execution failed: socket reset",
                 "Error: execution failed: socket reset",
@@ -122,7 +122,7 @@ class ToolResilienceLadderTest {
             registry = DefaultToolRegistry().apply { register(tool) },
             policyResolver = StaticPolicyResolver(ToolRunPolicy.agentLadder())
         )
-        val result = executor.execute("web_fetch", "{}")
+        val result = executor.execute("WebFetch", "{}")
         assertEquals("final payload", result)
         // 1 次初始 + 6 次阶梯重试 = 7 次尝试
         assertEquals(7, tool.calls.get())
@@ -131,12 +131,12 @@ class ToolResilienceLadderTest {
     @Test
     fun `executor auto-stops after the ladder is exhausted - task error is structured`() = runTest {
         // 永久失败的 retrySafe 工具：阶梯 7 级重试后自动停止（不会无限重试）
-        val tool = ScriptedTool("web_fetch", listOf("Error: execution failed: down"))
+        val tool = ScriptedTool("WebFetch", listOf("Error: execution failed: down"))
         val executor = EnhancedToolExecutor(
             registry = DefaultToolRegistry().apply { register(tool) },
             policyResolver = StaticPolicyResolver(ToolRunPolicy.agentLadder())
         )
-        val result = executor.execute("web_fetch", "{}")
+        val result = executor.execute("WebFetch", "{}")
         assertTrue(result.startsWith("Error"))
         // 1 + 7 级阶梯 = 8 次尝试后封顶自停
         assertEquals(1 + ToolRetrySchedules.AGENT_LADDER_MS.size, tool.calls.get())
@@ -144,12 +144,12 @@ class ToolResilienceLadderTest {
 
     @Test
     fun `permission denials are never retried even under the ladder policy`() = runTest {
-        val tool = ScriptedTool("web_fetch", listOf("Error: permission denied: user said no"))
+        val tool = ScriptedTool("WebFetch", listOf("Error: permission denied: user said no"))
         val executor = EnhancedToolExecutor(
             registry = DefaultToolRegistry().apply { register(tool) },
             policyResolver = StaticPolicyResolver(ToolRunPolicy.agentLadder())
         )
-        val result = executor.execute("web_fetch", "{}")
+        val result = executor.execute("WebFetch", "{}")
         assertTrue(result.startsWith("Error: permission denied"))
         // 终态分类生效：一次即停，不消耗阶梯
         assertEquals(1, tool.calls.get())
@@ -170,7 +170,7 @@ class ToolResilienceLadderTest {
     fun `mcp transport failure carries reconnect hint and fallback guidance`() {
         val rendered = McpAgentTool.renderTransportFailure("github", "create_issue", "connection reset")
         assertTrue(rendered.startsWith("Error:"))
-        assertTrue(rendered.contains("mcp_connect('github')"))
+        assertTrue(rendered.contains("McpConnect('github')"))
         assertTrue(rendered.contains("NOT aborted"))
     }
 

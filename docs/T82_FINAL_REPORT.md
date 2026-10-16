@@ -16,7 +16,7 @@ androidTest 4 个编译错误 / 括号平衡），PR #96 已全绿。
 |------|------|------|
 | B-1 App 启动无 Ubuntu 生命周期 | ApexApp.onCreate 仅 Shizuku/CS-Mem | `initUbuntuLifecycleRecovery()` → warmUp |
 | B-2 依赖安装中心失效（apt 命令跑在 Android shell） | TerminalViewModel.ensureSession() 无 backendId；DepCatalog 全 apt 命令 | EnvironmentProvisioner.ensureUbuntuSession + VM 路由 |
-| B-3 Agent 三步三状态机 | install/bootstrap/capabilities 三个独立工具 | terminal.ubuntu.ensure 聚合入口 |
+| B-3 Agent 三步三状态机 | install/bootstrap/capabilities 三个独立工具 | TerminalUbuntuEnsure 聚合入口 |
 | B-4 crash 现场无产品级恢复 | bootstrap isInProgress 无人消费 | warmUp reconcile + 派生 |
 | N/A Code Mode | 仓库无 Code Mode UI（搜索确认） | 未来入口已备好（ensureReady + linux-ubuntu create），如实报告非本任务交付 |
 
@@ -29,8 +29,8 @@ Ubuntu On-Demand 安装语义**保留**（首次安装仍是显式动作 —— 
 - `ubuntu/lifecycle/UbuntuLifecycleCoordinator.kt`（577 行）—— 7-phase 产品级
   状态机 + ensureReady/warmUp/refreshState/cancelInstall/repair/stateFlow/
   progressFlow；函数端口注入（无第二套抽象）；
-- `tools/v2/TerminalUbuntuLifecycleTool.kt`（174 行）—— terminal.ubuntu.ensure +
-  terminal.ubuntu.status（机器可决策 JSON 契约）；
+- `tools/v2/TerminalUbuntuLifecycleTool.kt`（174 行）—— TerminalUbuntuEnsure +
+  TerminalUbuntuStatus（机器可决策 JSON 契约）；
 - 测试 2 个文件 41 用例（30 coordinator + 11 tools），全绿。
 
 **修改（app，均为 Terminal/Ubuntu 集成必需）**：
@@ -78,9 +78,9 @@ Ubuntu On-Demand 安装语义**保留**（首次安装仍是显式动作 —— 
 
 ## 6. 与既有系统的关系
 
-- 保留：terminal.ubuntu.install / terminal.linux.bootstrap /
-  terminal.linux.capabilities / terminal.linux.repair / terminal.linux.status /
-  terminal.backends —— 全部细粒度入口不删；
+- 保留：TerminalUbuntuInstall / TerminalLinuxBootstrap /
+  TerminalLinuxCapabilities / TerminalLinuxRepair / TerminalLinuxStatus /
+  TerminalBackends —— 全部细粒度入口不删；
 - 复用：RootfsProvisioner（T72）、UbuntuBootstrapManager（T76）、
   LinuxCapabilityProbe（T81 §29）、EnvironmentRepairService（T81 §30）、
   LinuxEnvironmentHealth（T76）；

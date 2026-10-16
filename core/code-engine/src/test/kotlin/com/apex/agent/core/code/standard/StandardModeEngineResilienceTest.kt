@@ -127,7 +127,7 @@ class StandardModeEngineResilienceTest {
         llm: ScriptedLlm,
         executor: FakeExecutor,
         delays: MutableList<Long>,
-        tools: List<String> = listOf("code_read", "code_edit", "code_write")
+        tools: List<String> = listOf("CodeRead", "CodeEdit", "CodeWrite")
     ): StandardModeEngine {
         val registry = DefaultToolRegistry().apply { tools.forEach { register(FakeTool(it)) } }
         return StandardModeEngine(
@@ -309,7 +309,7 @@ class StandardModeEngineResilienceTest {
         val executor = FakeExecutor()
         val engine = engine(
             llm, executor, delays,
-            tools = listOf("terminal.exec", "mcp__天气服务__查天气", "code_read")
+            tools = listOf("TerminalExec", "mcp__天气服务__查天气", "CodeRead")
         )
         val events = engine.execute("q").toList()
 
@@ -319,7 +319,7 @@ class StandardModeEngineResilienceTest {
         requestToolNames.forEach {
             assertTrue("request tool name not provider-safe: '$it'", providerLegal.matches(it))
         }
-        assertTrue(requestToolNames.contains("terminal_exec"))
+        assertTrue(requestToolNames.contains("TerminalExecLegacy"))
         assertTrue(requestToolNames.contains("mcp"))
         assertFalseRawNames(requestToolNames)
 

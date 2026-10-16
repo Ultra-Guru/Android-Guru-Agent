@@ -22,8 +22,8 @@ class StandardPermissionEngineTest {
     @Test
     fun `deny rule short-circuits even under bypass`() {
         val e = engine(StandardPermissionMode.BYPASS)
-        e.updateRules(listOf(StandardPermissionRule("code_edit", StandardPermissionEffect.DENY)))
-        val d = e.decide("code_edit", "{}")
+        e.updateRules(listOf(StandardPermissionRule("CodeEdit", StandardPermissionEffect.DENY)))
+        val d = e.decide("CodeEdit", "{}")
         assertEquals(StandardPermissionEffect.DENY, d.effect)
         assertTrue(d.reason.contains("DENY"))
     }
@@ -50,7 +50,7 @@ class StandardPermissionEngineTest {
         val e = engine()
         e.updateRules(listOf(StandardPermissionRule("  ", StandardPermissionEffect.ALLOW)))
         // 空模式在 updateRules 已被过滤；裁决回退模式兜底
-        assertEquals(StandardPermissionEffect.ASK, e.decide("code_write", "{}").effect)
+        assertEquals(StandardPermissionEffect.ASK, e.decide("CodeWrite", "{}").effect)
     }
 
     // ═══ 模式兜底 ═══
@@ -58,35 +58,35 @@ class StandardPermissionEngineTest {
     @Test
     fun `default mode allows readonly and asks for writes`() {
         val e = engine()
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_read", "{}").effect)
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_grep", "{}").effect)
-        assertEquals(StandardPermissionEffect.ASK, e.decide("code_write", "{}").effect)
-        assertEquals(StandardPermissionEffect.ASK, e.decide("shell_execute", "{}").effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeRead", "{}").effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeGrep", "{}").effect)
+        assertEquals(StandardPermissionEffect.ASK, e.decide("CodeWrite", "{}").effect)
+        assertEquals(StandardPermissionEffect.ASK, e.decide("ShellExecute", "{}").effect)
     }
 
     @Test
     fun `bypass mode allows everything except deny rules`() {
         val e = engine(StandardPermissionMode.BYPASS)
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_write", "{}").effect)
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("shell_execute", "{}").effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeWrite", "{}").effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("ShellExecute", "{}").effect)
     }
 
     @Test
     fun `accept_edits allows edit-family but still asks for shell`() {
         val e = engine(StandardPermissionMode.ACCEPT_EDITS)
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_edit", "{}").effect)
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_write", "{}").effect)
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_git_commit", "{}").effect)
-        assertEquals(StandardPermissionEffect.ASK, e.decide("shell_execute", "{}").effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeEdit", "{}").effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeWrite", "{}").effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeGitCommit", "{}").effect)
+        assertEquals(StandardPermissionEffect.ASK, e.decide("ShellExecute", "{}").effect)
     }
 
     @Test
     fun `plan mode hard-denies writes regardless of allow rules`() {
         val e = engine(StandardPermissionMode.PLAN)
         // 显式 ALLOW 规则也不可越级（规划阶段零副作用硬承诺）
-        e.updateRules(listOf(StandardPermissionRule("code_write", StandardPermissionEffect.ALLOW)))
-        assertEquals(StandardPermissionEffect.DENY, e.decide("code_write", "{}").effect)
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_read", "{}").effect)
+        e.updateRules(listOf(StandardPermissionRule("CodeWrite", StandardPermissionEffect.ALLOW)))
+        assertEquals(StandardPermissionEffect.DENY, e.decide("CodeWrite", "{}").effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeRead", "{}").effect)
     }
 
     // ═══ 会话记忆 ═══
@@ -94,9 +94,9 @@ class StandardPermissionEngineTest {
     @Test
     fun `session memory allows subsequent calls without asking`() {
         val e = engine()
-        assertEquals(StandardPermissionEffect.ASK, e.decide("code_write", "{}").effect)
-        e.rememberSessionAllow("code_write")
-        val d = e.decide("code_write", "{}")
+        assertEquals(StandardPermissionEffect.ASK, e.decide("CodeWrite", "{}").effect)
+        e.rememberSessionAllow("CodeWrite")
+        val d = e.decide("CodeWrite", "{}")
         assertEquals(StandardPermissionEffect.ALLOW, d.effect)
         assertTrue(d.reason.contains("会话记忆"))
     }
@@ -104,18 +104,18 @@ class StandardPermissionEngineTest {
     @Test
     fun `reset session memory restores asking`() {
         val e = engine()
-        e.rememberSessionAllow("shell_execute")
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("shell_execute", "{}").effect)
+        e.rememberSessionAllow("ShellExecute")
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("ShellExecute", "{}").effect)
         e.resetSessionMemory()
-        assertEquals(StandardPermissionEffect.ASK, e.decide("shell_execute", "{}").effect)
+        assertEquals(StandardPermissionEffect.ASK, e.decide("ShellExecute", "{}").effect)
     }
 
     @Test
     fun `deny rule outranks session memory`() {
         val e = engine(StandardPermissionMode.BYPASS)
-        e.rememberSessionAllow("code_edit")
-        e.updateRules(listOf(StandardPermissionRule("code_edit", StandardPermissionEffect.DENY)))
-        assertEquals(StandardPermissionEffect.DENY, e.decide("code_edit", "{}").effect)
+        e.rememberSessionAllow("CodeEdit")
+        e.updateRules(listOf(StandardPermissionRule("CodeEdit", StandardPermissionEffect.DENY)))
+        assertEquals(StandardPermissionEffect.DENY, e.decide("CodeEdit", "{}").effect)
     }
 
     // ═══ 子代理上下文 ═══
@@ -123,7 +123,7 @@ class StandardPermissionEngineTest {
     @Test
     fun `ask folds to deny in sub-agent context`() {
         val e = engine()
-        val d = e.decide("code_write", "{}", subAgentContext = true)
+        val d = e.decide("CodeWrite", "{}", subAgentContext = true)
         assertEquals(StandardPermissionEffect.DENY, d.effect)
         assertTrue(d.reason.contains("子代理"))
     }
@@ -139,10 +139,10 @@ class StandardPermissionEngineTest {
                 StandardPermissionRule("rm*", StandardPermissionEffect.DENY)
             )
         )
-        val ok = e.decide("shell_execute", """{"command":"git status --short"}""")
+        val ok = e.decide("ShellExecute", """{"command":"git status --short"}""")
         assertEquals(StandardPermissionEffect.ALLOW, ok.effect)
 
-        val denied = e.decide("shell_execute", """{"command":"rm -rf /data"}""")
+        val denied = e.decide("ShellExecute", """{"command":"rm -rf /data"}""")
         assertEquals(StandardPermissionEffect.DENY, denied.effect)
     }
 
@@ -152,12 +152,12 @@ class StandardPermissionEngineTest {
         e.rememberSessionAllow("git status", isCommand = true)
         assertEquals(
             StandardPermissionEffect.ALLOW,
-            e.decide("shell_execute", """{"command":"git status"}""").effect
+            e.decide("ShellExecute", """{"command":"git status"}""").effect
         )
         // 同工具不同命令仍走 ASK
         assertEquals(
             StandardPermissionEffect.ASK,
-            e.decide("shell_execute", """{"command":"git push"}""").effect
+            e.decide("ShellExecute", """{"command":"git push"}""").effect
         )
     }
 
@@ -180,19 +180,19 @@ class StandardPermissionEngineTest {
 
     @Test
     fun `readonly classification`() {
-        assertTrue(StandardPermissionEngine.isReadOnlyTool("code_read"))
-        assertTrue(StandardPermissionEngine.isReadOnlyTool("code_todo"))
+        assertTrue(StandardPermissionEngine.isReadOnlyTool("CodeRead"))
+        assertTrue(StandardPermissionEngine.isReadOnlyTool("CodeTodo"))
         assertTrue(StandardPermissionEngine.isReadOnlyTool("mcp__github__get"))
-        assertTrue(!StandardPermissionEngine.isReadOnlyTool("code_write"))
-        assertTrue(!StandardPermissionEngine.isReadOnlyTool("shell_execute"))
+        assertTrue(!StandardPermissionEngine.isReadOnlyTool("CodeWrite"))
+        assertTrue(!StandardPermissionEngine.isReadOnlyTool("ShellExecute"))
     }
 
     @Test
     fun `tool id pattern matcher semantics`() {
-        assertTrue(StandardPermissionEngine.matches("code_read", "code_read"))
-        assertTrue(!StandardPermissionEngine.matches("code_read", "code_read2"))
-        assertTrue(StandardPermissionEngine.matches("code_git_*", "code_git_log"))
-        assertTrue(!StandardPermissionEngine.matches("code_git_*", "code_grep"))
+        assertTrue(StandardPermissionEngine.matches("CodeRead", "CodeRead"))
+        assertTrue(!StandardPermissionEngine.matches("CodeRead", "code_read2"))
+        assertTrue(StandardPermissionEngine.matches("code_git_*", "CodeGitLog"))
+        assertTrue(!StandardPermissionEngine.matches("code_git_*", "CodeGrep"))
         assertTrue(StandardPermissionEngine.matches("*", "whatever"))
         assertTrue(!StandardPermissionEngine.matches("", "whatever"))
     }
@@ -200,11 +200,11 @@ class StandardPermissionEngineTest {
     @Test
     fun `update mode hot-switches`() {
         val e = engine()
-        assertEquals(StandardPermissionEffect.ASK, e.decide("code_edit", "{}").effect)
+        assertEquals(StandardPermissionEffect.ASK, e.decide("CodeEdit", "{}").effect)
         e.updateMode(StandardPermissionMode.ACCEPT_EDITS)
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_edit", "{}").effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeEdit", "{}").effect)
         e.updateMode(StandardPermissionMode.PLAN)
-        assertEquals(StandardPermissionEffect.DENY, e.decide("code_edit", "{}").effect)
+        assertEquals(StandardPermissionEffect.DENY, e.decide("CodeEdit", "{}").effect)
         assertNotNull(e.currentMode())
     }
 
@@ -214,35 +214,35 @@ class StandardPermissionEngineTest {
     fun `plan gate denies writes even under bypass mode`() {
         // planGate 是引擎级硬门，与权限模式正交：BYPASS 下同样拒写
         val e = engine(StandardPermissionMode.BYPASS)
-        assertEquals(StandardPermissionEffect.DENY, e.decide("code_write", "{}", planGate = true).effect)
-        assertEquals(StandardPermissionEffect.DENY, e.decide("code_edit", "{}", planGate = true).effect)
-        assertEquals(StandardPermissionEffect.DENY, e.decide("shell_execute", "{}", planGate = true).effect)
-        assertEquals(StandardPermissionEffect.DENY, e.decide("code_git_commit", "{}", planGate = true).effect)
+        assertEquals(StandardPermissionEffect.DENY, e.decide("CodeWrite", "{}", planGate = true).effect)
+        assertEquals(StandardPermissionEffect.DENY, e.decide("CodeEdit", "{}", planGate = true).effect)
+        assertEquals(StandardPermissionEffect.DENY, e.decide("ShellExecute", "{}", planGate = true).effect)
+        assertEquals(StandardPermissionEffect.DENY, e.decide("CodeGitCommit", "{}", planGate = true).effect)
     }
 
     @Test
     fun `plan gate allows readonly tools`() {
         val e = engine()
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_read", "{}", planGate = true).effect)
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_grep", "{}", planGate = true).effect)
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_todo", "{}", planGate = true).effect)
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("web_search", "{}", planGate = true).effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeRead", "{}", planGate = true).effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeGrep", "{}", planGate = true).effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeTodo", "{}", planGate = true).effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("WebSearch", "{}", planGate = true).effect)
     }
 
     @Test
     fun `plan gate outranks allow rules and session memory`() {
         val e = engine()
         // 显式 ALLOW 规则也不可越级（硬门在规则/会话记忆之前）
-        e.updateRules(listOf(StandardPermissionRule("code_write", StandardPermissionEffect.ALLOW)))
-        e.rememberSessionAllow("code_edit")
-        assertEquals(StandardPermissionEffect.DENY, e.decide("code_write", "{}", planGate = true).effect)
-        assertEquals(StandardPermissionEffect.DENY, e.decide("code_edit", "{}", planGate = true).effect)
+        e.updateRules(listOf(StandardPermissionRule("CodeWrite", StandardPermissionEffect.ALLOW)))
+        e.rememberSessionAllow("CodeEdit")
+        assertEquals(StandardPermissionEffect.DENY, e.decide("CodeWrite", "{}", planGate = true).effect)
+        assertEquals(StandardPermissionEffect.DENY, e.decide("CodeEdit", "{}", planGate = true).effect)
     }
 
     @Test
     fun `plan gate reason carries hard-gate attribution`() {
         val e = engine(StandardPermissionMode.BYPASS)
-        val d = e.decide("code_write", "{}", planGate = true)
+        val d = e.decide("CodeWrite", "{}", planGate = true)
         assertEquals(StandardPermissionEffect.DENY, d.effect)
         assertTrue(d.reason.contains("PLAN 档只读硬门"))
     }
@@ -251,8 +251,8 @@ class StandardPermissionEngineTest {
     fun `plan gate off keeps prior behavior`() {
         val e = engine()
         // 默认 false：既有裁决不受影响（既有调用点全部未传 planGate）
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_read", "{}").effect)
-        assertEquals(StandardPermissionEffect.ASK, e.decide("code_write", "{}", planGate = false).effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeRead", "{}").effect)
+        assertEquals(StandardPermissionEffect.ASK, e.decide("CodeWrite", "{}", planGate = false).effect)
     }
 
     // ═══ 敏感文件保护（.env 族，业界标准 read 默认询问语义）═══
@@ -262,7 +262,7 @@ class StandardPermissionEngineTest {
     @Test
     fun `sensitive env file read asks for confirmation`() {
         val e = engine()
-        val d = e.decide("code_read", readArgs("/app/.env"))
+        val d = e.decide("CodeRead", readArgs("/app/.env"))
         assertEquals(StandardPermissionEffect.ASK, d.effect)
         assertTrue(d.reason.contains("敏感文件保护"))
         assertTrue(d.reason.contains(".env"))
@@ -271,33 +271,33 @@ class StandardPermissionEngineTest {
     @Test
     fun `env template files are not sensitive`() {
         val e = engine()
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_read", readArgs(".env.example")).effect)
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_read", readArgs("config/.env.sample")).effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeRead", readArgs(".env.example")).effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeRead", readArgs("config/.env.sample")).effect)
     }
 
     @Test
     fun `env variants and key files are sensitive`() {
         val e = engine()
-        assertEquals(StandardPermissionEffect.ASK, e.decide("code_read", readArgs(".env.local")).effect)
-        assertEquals(StandardPermissionEffect.ASK, e.decide("code_read", readArgs("/app/.env.production")).effect)
-        assertEquals(StandardPermissionEffect.ASK, e.decide("code_read", readArgs("keys/server.pem")).effect)
-        assertEquals(StandardPermissionEffect.ASK, e.decide("code_read", readArgs("signing.key")).effect)
-        assertEquals(StandardPermissionEffect.ASK, e.decide("code_read", readArgs("ssh/id_rsa")).effect)
-        assertEquals(StandardPermissionEffect.ASK, e.decide("code_read", readArgs("gcp/credentials.json")).effect)
-        assertEquals(StandardPermissionEffect.ASK, e.decide("code_read", readArgs("config/secrets.yaml")).effect)
+        assertEquals(StandardPermissionEffect.ASK, e.decide("CodeRead", readArgs(".env.local")).effect)
+        assertEquals(StandardPermissionEffect.ASK, e.decide("CodeRead", readArgs("/app/.env.production")).effect)
+        assertEquals(StandardPermissionEffect.ASK, e.decide("CodeRead", readArgs("keys/server.pem")).effect)
+        assertEquals(StandardPermissionEffect.ASK, e.decide("CodeRead", readArgs("signing.key")).effect)
+        assertEquals(StandardPermissionEffect.ASK, e.decide("CodeRead", readArgs("ssh/id_rsa")).effect)
+        assertEquals(StandardPermissionEffect.ASK, e.decide("CodeRead", readArgs("gcp/credentials.json")).effect)
+        assertEquals(StandardPermissionEffect.ASK, e.decide("CodeRead", readArgs("config/secrets.yaml")).effect)
     }
 
     @Test
     fun `bypass mode skips sensitive file protection`() {
         val e = engine(StandardPermissionMode.BYPASS)
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_read", readArgs("/app/.env")).effect)
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_write", readArgs("/app/.env")).effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeRead", readArgs("/app/.env")).effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeWrite", readArgs("/app/.env")).effect)
     }
 
     @Test
     fun `sub agent context folds sensitive ask to deny`() {
         val e = engine()
-        val d = e.decide("code_read", readArgs("/app/.env"), subAgentContext = true)
+        val d = e.decide("CodeRead", readArgs("/app/.env"), subAgentContext = true)
         assertEquals(StandardPermissionEffect.DENY, d.effect)
         assertTrue(d.reason.contains("子代理"))
         assertTrue(d.reason.contains("敏感文件保护"))
@@ -307,45 +307,45 @@ class StandardPermissionEngineTest {
     fun `explicit allow rule lets sensitive file through`() {
         val e = engine()
         // 保护位于规则裁决之后：用户显式放行即不拦
-        e.updateRules(listOf(StandardPermissionRule("code_read", StandardPermissionEffect.ALLOW)))
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_read", readArgs("/app/.env")).effect)
+        e.updateRules(listOf(StandardPermissionRule("CodeRead", StandardPermissionEffect.ALLOW)))
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeRead", readArgs("/app/.env")).effect)
     }
 
     @Test
     fun `sensitive write still asks under accept_edits`() {
         val e = engine(StandardPermissionMode.ACCEPT_EDITS)
         // 编辑类本应自动放行 → 敏感文件保护拦截为 ASK
-        val d = e.decide("code_edit", readArgs("deploy/.env"))
+        val d = e.decide("CodeEdit", readArgs("deploy/.env"))
         assertEquals(StandardPermissionEffect.ASK, d.effect)
         assertTrue(d.reason.contains("敏感文件保护"))
         // 普通文件照常 ACCEPT_EDITS 放行
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_edit", readArgs("deploy/App.kt")).effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeEdit", readArgs("deploy/App.kt")).effect)
     }
 
     @Test
     fun `session grant bypasses sensitive protection`() {
         val e = engine()
         // 会话记忆在保护之前：用户本会话总允许过 = 已授权
-        e.rememberSessionAllow("code_read")
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_read", readArgs("/app/.env")).effect)
+        e.rememberSessionAllow("CodeRead")
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeRead", readArgs("/app/.env")).effect)
     }
 
     @Test
     fun `any path-bearing tool hitting sensitive path asks`() {
         val e = engine()
-        // 非 code_read/write/edit 的工具（如 mcp 文件读取），参数带敏感路径同样拦截
+        // 非 CodeRead/write/edit 的工具（如 mcp 文件读取），参数带敏感路径同样拦截
         val d = e.decide("mcp__fs__read_file", readArgs("/app/secrets.yaml"))
         assertEquals(StandardPermissionEffect.ASK, d.effect)
         assertTrue(d.reason.contains("敏感文件保护"))
         // 参数不带路径字段的工具不受影响
-        assertEquals(StandardPermissionEffect.ALLOW, e.decide("code_read", "{}").effect)
+        assertEquals(StandardPermissionEffect.ALLOW, e.decide("CodeRead", "{}").effect)
     }
 
     @Test
     fun `plan mode still asks before sensitive read`() {
         val e = engine(StandardPermissionMode.PLAN)
         // 只读工具过 PLAN 硬门 → 敏感文件保护仍拦截（规划阶段也不该偷读密钥）
-        assertEquals(StandardPermissionEffect.ASK, e.decide("code_read", readArgs("/app/.env")).effect)
+        assertEquals(StandardPermissionEffect.ASK, e.decide("CodeRead", readArgs("/app/.env")).effect)
     }
 
     // ═══ 路径提取与敏感判定（静态纯函数）═══

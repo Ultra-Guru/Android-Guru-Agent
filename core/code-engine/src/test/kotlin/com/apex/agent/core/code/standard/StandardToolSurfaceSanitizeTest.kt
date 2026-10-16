@@ -42,8 +42,8 @@ class StandardToolSurfaceSanitizeTest {
 
     /** 脏名动物园：触发 400 的全部形态（点号 / 中文 / 空格 / 超长 / 冲突对）。 */
     private fun dirtyRegistry(): DefaultToolRegistry = registry(
-        "code_read", "code_write",
-        "terminal.exec", "terminal.linux.bootstrap",
+        "CodeRead", "CodeWrite",
+        "TerminalExec", "TerminalLinuxBootstrap",
         "mcp__天气服务__查天气",
         "space tool",
         "x".repeat(80),
@@ -69,7 +69,7 @@ class StandardToolSurfaceSanitizeTest {
         val plan = StandardToolSurface.buildToolPlan(StandardAgentCatalog.BUILD, dirtyRegistry())
         val names = plan.definitions.map { it.name }
         // 点号 → 下划线（terminal.* 是用户报错里的第 14 号工具族）
-        assertTrue(names.contains("terminal_exec"))
+        assertTrue(names.contains("TerminalExecLegacy"))
         assertTrue(names.contains("terminal_linux_bootstrap"))
         // 空格 → 下划线
         assertTrue(names.contains("space_tool"))
@@ -103,9 +103,9 @@ class StandardToolSurfaceSanitizeTest {
         // 全部原始 id（含脏名）都能从反查表找回——执行路由零丢失
         //（synthetic task 自映射也在表内）
         val expectedIds = setOf(
-            "code_read", "code_write", "terminal.exec", "terminal.linux.bootstrap",
+            "CodeRead", "CodeWrite", "TerminalExec", "TerminalLinuxBootstrap",
             "mcp__天气服务__查天气", "space tool", "x".repeat(80), "a.b", "a_b",
-            "task"
+            "Task"
         )
         assertEquals(expectedIds, plan.providerNameToId.values.toSet())
     }
@@ -114,8 +114,8 @@ class StandardToolSurfaceSanitizeTest {
     fun `synthetic task tool stays legal and self-mapped`() {
         val plan = StandardToolSurface.buildToolPlan(StandardAgentCatalog.BUILD, dirtyRegistry())
         val names = plan.definitions.map { it.name }
-        assertTrue("合成 task 恒在场", names.contains("task"))
-        assertEquals("task", plan.providerNameToId["task"])
+        assertTrue("合成 task 恒在场", names.contains("Task"))
+        assertEquals("Task", plan.providerNameToId["Task"])
     }
 
     // ═══ 冲突消解：清洗后撞名的两个工具都在 ═══
@@ -125,7 +125,7 @@ class StandardToolSurfaceSanitizeTest {
         // a.b 与 a_b 都清洗成 a_b → 确定性后缀消解，路由不互踩
         val plan = StandardToolSurface.buildToolPlan(
             StandardAgentCatalog.BUILD,
-            registry("a.b", "a_b", "code_read")
+            registry("a.b", "a_b", "CodeRead")
         )
         val names = plan.definitions.map { it.name }
         assertTrue(names.contains("a_b"))
@@ -146,30 +146,30 @@ class StandardToolSurfaceSanitizeTest {
 
     @Test
     fun `allowlist filters on registry ids before sanitization`() {
-        // 探针：registry id `code.git_status` 清洗后恰为 `code_git_status`——
+        // 探针：registry id `code.git_status` 清洗后恰为 `CodeGitStatus`——
         // 若过滤发生在清洗后它会混进 PLAN 面并撞名；正确语义（先过滤后
-        // 清洗）下它应被白名单挡住（id 不以 code_git_status 开头）。
+        // 清洗）下它应被白名单挡住（id 不以 CodeGitStatus 开头）。
         val r = registry(
-            "code_read", "code_grep", "code_git_status",
-            "code.git_status", "terminal.exec", "code_write",
+            "CodeRead", "CodeGrep", "CodeGitStatus",
+            "code.git_status", "TerminalExec", "CodeWrite",
             "mcp__天气服务__查天气"
         )
         val plan = StandardToolSurface.buildToolPlan(StandardAgentCatalog.PLAN, r)
         val names = plan.definitions.map { it.name }
         // PLAN 是主代理画像 → 合成 task 照常在场（既有语义）
-        assertEquals(listOf("code_git_status", "code_grep", "code_read", "task"), names)
+        assertEquals(listOf("CodeGitStatus", "CodeGrep", "CodeRead", "Task"), names)
         // 写工具 / 终端点号名 / 中文 mcp 名 / 探针脏名都不在 PLAN 只读面
-        assertFalse(names.contains("code_write"))
-        assertFalse(names.contains("terminal_exec"))
+        assertFalse(names.contains("CodeWrite"))
+        assertFalse(names.contains("TerminalExecLegacy"))
         assertFalse(names.contains("mcp"))
     }
 
     @Test
     fun `max tools truncation still effective and priority keeps dotted terminal`() {
         // 60 个无前缀填充 + 点号终端名：截断按优先序（registry id 评估），
-        // terminal.exec 必存活；task 合成不占预算恒在场。
+        // TerminalExec 必存活；task 合成不占预算恒在场。
         val ids = buildList {
-            add("terminal.exec")
+            add("TerminalExec")
             repeat(60) { add("zz_filler_%02d".format(it + 1)) }
         }
         val plan = StandardToolSurface.buildToolPlan(
@@ -181,8 +181,8 @@ class StandardToolSurfaceSanitizeTest {
             plan.definitions.size
         )
         val names = plan.definitions.map { it.name }
-        assertTrue("优先序评估在清洗前（registry id terminal. 前缀）", names.contains("terminal_exec"))
-        assertTrue(names.contains("task"))
+        assertTrue("优先序评估在清洗前（registry id terminal. 前缀）", names.contains("TerminalExecLegacy"))
+        assertTrue(names.contains("Task"))
         assertTrue("填充名被截到 47 个", names.count { it.startsWith("zz_filler_") } == 47)
         names.forEach { assertTrue(providerLegal.matches(it)) }
     }
@@ -193,9 +193,9 @@ class StandardToolSurfaceSanitizeTest {
     fun `forced path is sanitized too`() {
         val plan = StandardToolSurface.buildToolPlan(
             StandardAgentCatalog.BUILD, dirtyRegistry(),
-            forcedToolIds = setOf("terminal.exec")
+            forcedToolIds = setOf("TerminalExec")
         )
-        assertEquals(listOf("terminal_exec"), plan.definitions.map { it.name })
-        assertEquals("terminal.exec", plan.providerNameToId["terminal_exec"])
+        assertEquals(listOf("TerminalExecLegacy"), plan.definitions.map { it.name })
+        assertEquals("TerminalExec", plan.providerNameToId["TerminalExecLegacy"])
     }
 }

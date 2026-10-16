@@ -12,13 +12,13 @@ import javax.inject.Singleton
  *
  * 系统提示词 "## Connected Services" 段的数据源：
  * - GitHub：Token 已配置 → 登录名 + 默认仓库 + **主动使用指令**（v3 S3
- *   升级：明确告知 agent 现在就能自主使用 github_* 工具、优先于 web_fetch、
+ *   升级：明确告知 agent 现在就能自主使用 github_* 工具、优先于 WebFetch、
  *   沙箱内 git clone/push 亦可用凭据 —— 用户核心诉求「确保 agent 会主动
  *   利用这个方式调用 GitHub，他要能知道自己能够使用」）；未配置 → 一行
  *   可行动指引（Coding 屏 GitHub 图标）——9 个 github_* 工具在 ToolModule
  *   无条件注册、工具目录里始终可见，沉默会让 agent 撞工具报错才知未连；
  * - 消息连接器：微信 / 飞书 / Telegram 已启用且配置凭据 → 告知
- *   connector_list / connector_send_message 可用。
+ *   ConnectorList / ConnectorSendMessage 可用。
  *
  * 设计要点：
  * - 只读快照，无 IO（TokenManager / ConnectorRegistry 均为内存 + 本地
@@ -43,19 +43,19 @@ class AndroidConnectedServicesProvider @Inject constructor(
         // ═══ GitHub ═══
         if (githubTokenManager.isConnected()) {
             val login = githubTokenManager.getUsername() ?: "(unknown)"
-            // 默认仓库未设置时同样可行动：问用户或用 github_search_repos 自找
+            // 默认仓库未设置时同样可行动：问用户或用 GithubSearchRepos 自找
             val repo = githubTokenManager.defaultRepo.value.ifBlank {
-                "not set — ask the user or use github_search_repos"
+                "not set — ask the user or use GithubSearchRepos"
             }
             sections.add(
                 "GitHub: CONNECTED as $login.\n" +
                     "  Default workspace repo: $repo.\n" +
                     "  You CAN and SHOULD use GitHub autonomously right now: verify with\n" +
-                    "  github_get_user, read/write files with github_read_file / github_write_file,\n" +
-                    "  manage issues with github_create_issue / github_list_issues, search code\n" +
-                    "  with github_search_code. Prefer github_* tools over generic web_fetch\n" +
+                    "  GithubGetUser, read/write files with GithubReadFile / GithubWriteFile,\n" +
+                    "  manage issues with GithubCreateIssue / GithubListIssues, search code\n" +
+                    "  with GithubSearchCode. Prefer github_* tools over generic WebFetch\n" +
                     "  for ANY github.com task. git clone/push inside the Ubuntu sandbox also\n" +
-                    "  works with your credentials (terminal.exec / git tools inject them)."
+                    "  works with your credentials (TerminalExec / git tools inject them)."
             )
         } else {
             // v3 S3：未连接也注入一行可行动指引（github_* 工具恒注册在场，
@@ -77,8 +77,8 @@ class AndroidConnectedServicesProvider @Inject constructor(
                 }
                 sections.add(
                     "Messaging/service connectors (ENABLED):\n$lines\n" +
-                        "  Call connector_list to see live status; send messages with\n" +
-                        "  connector_send_message (WeChat Work bot / Feishu bot / Telegram bot)."
+                        "  Call ConnectorList to see live status; send messages with\n" +
+                        "  ConnectorSendMessage (WeChat Work bot / Feishu bot / Telegram bot)."
                 )
             }
         }
@@ -111,9 +111,9 @@ class AndroidConnectedServicesProvider @Inject constructor(
     companion object {
         /** GithubTools.kt 注册的 9 个原生工具 id（连接即全部可见）。 */
         private val GITHUB_TOOL_IDS: Set<String> = setOf(
-            "github_get_user", "github_list_repos", "github_read_file",
-            "github_write_file", "github_create_issue", "github_list_issues",
-            "github_search_code", "github_list_branches", "github_search_repos"
+            "GithubGetUser", "GithubListRepos", "GithubReadFile",
+            "GithubWriteFile", "GithubCreateIssue", "GithubListIssues",
+            "GithubSearchCode", "GithubListBranches", "GithubSearchRepos"
         )
 
         /**

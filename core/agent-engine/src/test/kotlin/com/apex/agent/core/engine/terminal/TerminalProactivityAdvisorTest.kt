@@ -9,7 +9,7 @@ import org.junit.Test
 
 /**
  * #170 TerminalProactivityAdvisor 单测 —— 连发一次性 shell 触发 SESSION_FLOW /
- * terminal.create 清零 / 工具链关键词触发 ENSURE_UBUNTU 一次性 / 失败连击提示 /
+ * TerminalCreate 清零 / 工具链关键词触发 ENSURE_UBUNTU 一次性 / 失败连击提示 /
  * 无关工具不触发。
  */
 class TerminalProactivityAdvisorTest {
@@ -20,27 +20,27 @@ class TerminalProactivityAdvisorTest {
     fun `three consecutive one-shot shells trigger SESSION_FLOW`() {
         val advisor = TerminalProactivityAdvisor()
         // 未达阈值前不触发
-        repeat(2) { advisor.onToolCallCompleted("terminal.exec", succeeded = true) }
+        repeat(2) { advisor.onToolCallCompleted("TerminalExec", succeeded = true) }
         assertNull(advisor.onIterationStart("hello"))
         // 第 3 次后触发
-        advisor.onToolCallCompleted("shell_execute", succeeded = true)
+        advisor.onToolCallCompleted("ShellExecute", succeeded = true)
         val advice = advisor.onIterationStart("hello")
         assertNotNull(advice)
         assertEquals(Kind.SESSION_FLOW, advice!!.kind)
-        assertTrue("建议应提到 terminal.create：${advice.systemNote}", advice.systemNote.contains("terminal.create"))
+        assertTrue("建议应提到 TerminalCreate：${advice.systemNote}", advice.systemNote.contains("TerminalCreate"))
     }
 
     @Test
     fun `session flow tool resets the one-shot streak`() {
         val advisor = TerminalProactivityAdvisor()
-        repeat(2) { advisor.onToolCallCompleted("shell_execute", succeeded = true) }
+        repeat(2) { advisor.onToolCallCompleted("ShellExecute", succeeded = true) }
         // 模型切换会话流 → streak 清零
-        advisor.onToolCallCompleted("terminal.create", succeeded = true)
-        advisor.onToolCallCompleted("terminal.exec", succeeded = true)
+        advisor.onToolCallCompleted("TerminalCreate", succeeded = true)
+        advisor.onToolCallCompleted("TerminalExec", succeeded = true)
         assertNull("create 后仅 1 次一次性命令不应触发", advisor.onIterationStart("hello"))
         // 重新攒满阈值才再次触发
         repeat(TerminalProactivityAdvisor.SESSION_FLOW_THRESHOLD - 1) {
-            advisor.onToolCallCompleted("terminal.exec", succeeded = true)
+            advisor.onToolCallCompleted("TerminalExec", succeeded = true)
         }
         assertEquals(Kind.SESSION_FLOW, advisor.onIterationStart("hello")!!.kind)
     }
@@ -48,13 +48,13 @@ class TerminalProactivityAdvisorTest {
     @Test
     fun `session flow advice does not repeat every iteration when streak stalls`() {
         val advisor = TerminalProactivityAdvisor()
-        repeat(3) { advisor.onToolCallCompleted("terminal.exec", succeeded = true) }
+        repeat(3) { advisor.onToolCallCompleted("TerminalExec", succeeded = true) }
         assertNotNull(advisor.onIterationStart("x"))
         // streak 停在 3（模型停止调用工具）→ 不重复唠叨
         assertNull(advisor.onIterationStart("x"))
         assertNull(advisor.onIterationStart("x"))
         // 攒到 6 才再次提醒
-        repeat(3) { advisor.onToolCallCompleted("shell_execute", succeeded = true) }
+        repeat(3) { advisor.onToolCallCompleted("ShellExecute", succeeded = true) }
         assertEquals(Kind.SESSION_FLOW, advisor.onIterationStart("x")!!.kind)
     }
 
@@ -66,7 +66,7 @@ class TerminalProactivityAdvisorTest {
         val advice = advisor.onIterationStart("帮我在项目里 npm install 并构建")
         assertNotNull(advice)
         assertEquals(Kind.ENSURE_UBUNTU, advice!!.kind)
-        assertTrue(advice.systemNote.contains("terminal.ubuntu.ensure"))
+        assertTrue(advice.systemNote.contains("TerminalUbuntuEnsure"))
         // 每会话最多一次
         assertNull(advisor.onIterationStart("继续 cargo build"))
     }
@@ -74,7 +74,7 @@ class TerminalProactivityAdvisorTest {
     @Test
     fun `toolchain keyword in recent one-shot args triggers ENSURE_UBUNTU`() {
         val advisor = TerminalProactivityAdvisor()
-        advisor.onToolCallCompleted("shell_execute", succeeded = true, args = """{"command":"git clone https://example.com/repo"}""")
+        advisor.onToolCallCompleted("ShellExecute", succeeded = true, args = """{"command":"git clone https://example.com/repo"}""")
         val advice = advisor.onIterationStart("继续")
         assertNotNull("近期命令参数含 git clone 应触发", advice)
         assertEquals(Kind.ENSURE_UBUNTU, advice!!.kind)
@@ -83,9 +83,9 @@ class TerminalProactivityAdvisorTest {
     @Test
     fun `ubuntu probe seen suppresses ENSURE_UBUNTU`() {
         val advisor = TerminalProactivityAdvisor()
-        advisor.onToolCallCompleted("terminal.backends", succeeded = true)
+        advisor.onToolCallCompleted("TerminalBackends", succeeded = true)
         assertNull("模型已探测过后端，不再给预备建议", advisor.onIterationStart("pip install requests"))
-        advisor.onToolCallCompleted("terminal.ubuntu.status", succeeded = true)
+        advisor.onToolCallCompleted("TerminalUbuntuStatus", succeeded = true)
         assertNull(advisor.onIterationStart("apt install curl"))
     }
 
@@ -101,9 +101,9 @@ class TerminalProactivityAdvisorTest {
     @Test
     fun `two consecutive one-shot failures trigger failure recovery advice`() {
         val advisor = TerminalProactivityAdvisor()
-        advisor.onToolCallCompleted("terminal.exec", succeeded = false)
+        advisor.onToolCallCompleted("TerminalExec", succeeded = false)
         assertNull("单次失败不触发", advisor.onIterationStart("x"))
-        advisor.onToolCallCompleted("terminal.exec", succeeded = false)
+        advisor.onToolCallCompleted("TerminalExec", succeeded = false)
         val advice = advisor.onIterationStart("x")
         assertNotNull(advice)
         assertEquals(Kind.FAILURE_RECOVERY, advice!!.kind)
@@ -114,9 +114,9 @@ class TerminalProactivityAdvisorTest {
     @Test
     fun `successful one-shot resets the failure streak`() {
         val advisor = TerminalProactivityAdvisor()
-        advisor.onToolCallCompleted("terminal.exec", succeeded = false)
-        advisor.onToolCallCompleted("terminal.exec", succeeded = true)
-        advisor.onToolCallCompleted("shell_execute", succeeded = false)
+        advisor.onToolCallCompleted("TerminalExec", succeeded = false)
+        advisor.onToolCallCompleted("TerminalExec", succeeded = true)
+        advisor.onToolCallCompleted("ShellExecute", succeeded = false)
         // streak=3 触发 SESSION_FLOW（一次性计数正常工作），但失败不连续 →
         // 不是 FAILURE_RECOVERY，且无失败附注。
         val advice = advisor.onIterationStart("x")
@@ -127,7 +127,7 @@ class TerminalProactivityAdvisorTest {
     @Test
     fun `failure note attached when failures continue alongside session flow`() {
         val advisor = TerminalProactivityAdvisor()
-        repeat(3) { advisor.onToolCallCompleted("shell_execute", succeeded = false) }
+        repeat(3) { advisor.onToolCallCompleted("ShellExecute", succeeded = false) }
         val advice = advisor.onIterationStart("x")
         assertEquals(Kind.SESSION_FLOW, advice!!.kind)
         assertTrue("连败附注应拼进建议：${advice.systemNote}", advice.systemNote.contains("also failed"))
@@ -138,8 +138,8 @@ class TerminalProactivityAdvisorTest {
     @Test
     fun `unrelated tools never trigger any advice`() {
         val advisor = TerminalProactivityAdvisor()
-        repeat(10) { advisor.onToolCallCompleted("read_file", succeeded = true) }
-        advisor.onToolCallCompleted("web_search", succeeded = false)
+        repeat(10) { advisor.onToolCallCompleted("Read", succeeded = true) }
+        advisor.onToolCallCompleted("WebSearch", succeeded = false)
         assertNull(advisor.onIterationStart("随便聊聊"))
     }
 }

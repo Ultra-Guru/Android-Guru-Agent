@@ -195,8 +195,8 @@ class StandardPromptsTest {
 
     @Test
     fun `permission denial tool result is model-actionable`() {
-        val out = StandardPrompts.permissionDeniedToolResult("shell_execute", "DEFAULT 模式兜底")
-        assertTrue(out.contains("shell_execute"))
+        val out = StandardPrompts.permissionDeniedToolResult("ShellExecute", "DEFAULT 模式兜底")
+        assertTrue(out.contains("ShellExecute"))
         assertTrue(out.contains("safer route"))
         assertFalse(out.contains("{"))
     }
@@ -210,9 +210,9 @@ class StandardPromptsTest {
 
     @Test
     fun `repetitive call warning includes count and tool`() {
-        val w = StandardPrompts.repetitiveCallWarning(3, "code_grep")
+        val w = StandardPrompts.repetitiveCallWarning(3, "CodeGrep")
         assertTrue(w.contains("3 times"))
-        assertTrue(w.contains("code_grep"))
+        assertTrue(w.contains("CodeGrep"))
     }
 
     @Test
@@ -256,9 +256,9 @@ class StandardPromptsTest {
 
     @Test
     fun `unknown tool result suggests near misses`() {
-        val out = StandardPrompts.unknownToolResult("red", listOf("code_read", "code_edit"))
+        val out = StandardPrompts.unknownToolResult("red", listOf("CodeRead", "CodeEdit"))
         assertTrue(out.contains("Unknown tool: 'red'."))
-        assertTrue(out.contains("Did you mean: code_read, code_edit?"))
+        assertTrue(out.contains("Did you mean: CodeRead, CodeEdit?"))
         assertTrue(out.contains("available tools list"))
         assertTrue(out.contains("exact name"))
     }
@@ -310,9 +310,9 @@ class StandardPromptsTest {
 
     @Test
     fun `tool surface section embeds the dynamic guide`() {
-        val s = StandardPrompts.toolSurfaceSection("Available: code_read, code_edit")
+        val s = StandardPrompts.toolSurfaceSection("Available: CodeRead, CodeEdit")
         assertTrue(s.contains("## Tool Surface"))
-        assertTrue(s.contains("code_edit"))
+        assertTrue(s.contains("CodeEdit"))
     }
 
     @Test

@@ -57,9 +57,9 @@ class StandardAgentsTest {
     @Test
     fun `plan profile tool surface excludes write tools`() {
         val allow = StandardAgentCatalog.PLAN.toolAllowlist
-        // 前缀白名单不包含通配空串 → 规划师不会看到 code_write / shell_execute
+        // 前缀白名单不包含通配空串 → 规划师不会看到 CodeWrite / ShellExecute
         assertFalse(allow.any { it.isEmpty() })
-        assertTrue(allow.contains("code_read"))
+        assertTrue(allow.contains("CodeRead"))
         assertTrue(allow.any { it.startsWith("code_git_") })
     }
 

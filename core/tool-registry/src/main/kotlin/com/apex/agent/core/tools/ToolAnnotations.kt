@@ -18,7 +18,7 @@ package com.apex.agent.core.tools
  *
  *  - **Retry safety** — the v3 executor retries transient failures. An
  *    idempotent tool can be retried blindly; a non-idempotent one must not
- *    (retrying `app_uninstall` after a "timeout" that actually succeeded is
+ *    (retrying `AppUninstall` after a "timeout" that actually succeeded is
  *    data loss). `idempotentHint` drives [ToolRunPolicy.maxRetries].
  *  - **Batch replay safety** — [ToolBatchRunner] reports halt causes; a
  *    destructive step that already ran must never be re-run from scratch.
@@ -121,7 +121,7 @@ data class ToolAnnotations(
             idempotentHint = true
         )
 
-        /** Defaults for an append/patch-style write (edit_file, clipboard). */
+        /** Defaults for an append/patch-style write (Edit, clipboard). */
         @JvmStatic
         fun mutating(): ToolAnnotations = ToolAnnotations(
             readOnlyHint = false,
@@ -158,61 +158,61 @@ data class ToolAnnotations(
         @JvmStatic
         fun infer(toolId: String, risk: ToolRisk): ToolAnnotations = when {
             // ── Read-only families (deterministic queries) ──
-            toolId == "get_time" || toolId == "get_device_info" ||
-                toolId == "app_list" || toolId == "app_info" ||
-                toolId == "ui_dump" || toolId == "logcat" ||
-                toolId == "notification_read" ||
-                toolId == "list_files" || toolId == "glob_files" ||
-                toolId == "search_files" || toolId == "read_file" ||
+            toolId == "GetTimeLegacy" || toolId == "GetDeviceInfo" ||
+                toolId == "AppList" || toolId == "AppInfo" ||
+                toolId == "UiDump" || toolId == "logcat" ||
+                toolId == "NotificationRead" ||
+                toolId == "ListFiles" || toolId == "GlobFiles" ||
+                toolId == "SearchFiles" || toolId == "Read" ||
                 // #171/#172：合并工具与上下文回顾三件套 / 图片元信息 ——
                 // 纯确定性计算或会话只读视图（显式声明缺位时的兜底口径）。
-                toolId == "time" || toolId == "image_info" ||
-                toolId == "context_recap" || toolId == "context_search" ||
-                toolId == "session_stats" ||
+                toolId == "Time" || toolId == "ImageInfo" ||
+                toolId == "ContextRecap" || toolId == "ContextSearch" ||
+                toolId == "SessionStats" ||
                 // v5：agent 自省 / 通讯录 / 日历 读类（只读，sensitiveAction 由
                 // 工具自身显式声明覆盖）。
-                toolId == "agent_setting_get" || toolId == "agent_profile_list" ||
-                toolId == "agent_role_list" || toolId == "agent_mode_preset_list" ||
-                toolId.startsWith("memory_") ||
-                toolId.startsWith("terminal.linux.status") ||
-                toolId.startsWith("terminal.ubuntu.status") ||
-                toolId.startsWith("terminal.snapshot") ||
-                toolId.startsWith("terminal.observe") ||
-                toolId.startsWith("terminal.backends") ||
-                (toolId.startsWith("terminal.workspaces") && toolId.endsWith("list")) -> readOnly()
+                toolId == "AgentSettingGet" || toolId == "AgentProfileList" ||
+                toolId == "AgentRoleList" || toolId == "AgentModePresetList" ||
+                toolId.startsWith("Memory") ||
+                toolId.startsWith("TerminalLinuxStatus") ||
+                toolId.startsWith("TerminalUbuntuStatus") ||
+                toolId.startsWith("TerminalSnapshot") ||
+                toolId.startsWith("TerminalObserve") ||
+                toolId.startsWith("TerminalBackends") ||
+                (toolId.startsWith("TerminalWorkspaces") && toolId.endsWith("list")) -> readOnly()
 
             // ── Open-world reads (web / MCP / GitHub) ──
-            toolId == "web_fetch" || toolId == "web_search" ||
-                toolId == "http_request" ||
-                toolId == "mcp_list" || toolId == "mcp_connect" ||
-                (toolId.startsWith("github_") && (
-                    toolId.startsWith("github_get") ||
-                        toolId.startsWith("github_read") ||
-                        toolId.startsWith("github_search") ||
-                        toolId.startsWith("github_list")
+            toolId == "WebFetch" || toolId == "WebSearch" ||
+                toolId == "HttpRequest" ||
+                toolId == "McpList" || toolId == "McpConnect" ||
+                (toolId.startsWith("Github") && (
+                    toolId.startsWith("GithubGet") ||
+                        toolId.startsWith("GithubRead") ||
+                        toolId.startsWith("GithubSearch") ||
+                        toolId.startsWith("GithubList")
                     )) -> openWorldRead()
 
             // ── Destructive one-shots ──
-            toolId == "delete_file" || toolId == "app_uninstall" ||
-                toolId == "app_force_stop" ||
-                toolId.startsWith("terminal.close") || toolId.startsWith("terminal.signal") ||
-                toolId.startsWith("skill_uninstall") -> destructive()
+            toolId == "DeleteFile" || toolId == "AppUninstall" ||
+                toolId == "AppForceStop" ||
+                toolId.startsWith("TerminalClose") || toolId.startsWith("TerminalSignal") ||
+                toolId.startsWith("SkillUninstall") -> destructive()
 
             // ── Idempotent overwrite writes ──
-            toolId == "write_file" || toolId == "download_file" ||
-                toolId == "app_launch" || toolId == "app_install" ||
+            toolId == "Write" || toolId == "DownloadFile" ||
+                toolId == "AppLaunch" || toolId == "AppInstall" ||
                 // v5：通知发布 / 角色激活 / 设置应用 / 预设选择 / provider key 写入
                 // 均为覆盖式幂等写（同参数重放不产生新状态）。
-                toolId == "notification_post" || toolId == "agent_role_activate" ||
-                toolId == "agent_setting_set" || toolId == "agent_profile_set_default" ||
-                toolId == "agent_mode_preset_select" || toolId == "agent_provider_set_key" ||
-                toolId.startsWith("terminal.write") ||
-                toolId.startsWith("terminal.resize") -> idempotentWrite()
+                toolId == "NotificationPost" || toolId == "AgentRoleActivate" ||
+                toolId == "AgentSettingSet" || toolId == "AgentProfileSetDefault" ||
+                toolId == "AgentModePresetSelect" || toolId == "AgentProviderSetKey" ||
+                toolId.startsWith("TerminalWrite") ||
+                toolId.startsWith("TerminalResize") -> idempotentWrite()
 
             // ── Mutating, non-idempotent ──
-            toolId == "edit_file" || toolId == "copy_move_file" ||
-                toolId == "input_text" || toolId == "ui_tap" || toolId == "ui_swipe" ||
-                toolId == "clipboard" || toolId == "screenshot" -> mutating()
+            toolId == "Edit" || toolId == "CopyMoveFile" ||
+                toolId == "InputText" || toolId == "UiTap" || toolId == "UiSwipe" ||
+                toolId == "Clipboard" || toolId == "Screenshot" -> mutating()
 
             // ── 浏览器敏感动作（v1.5）──
             // 三者均已升 HIGH（ToolMetadata.inferRisk），但注解语义各异、
@@ -225,21 +225,21 @@ data class ToolAnnotations(
             //   get_cookies：敏感读（会话凭据），readOnly 但 sensitiveAction
             //     —— 与「读通讯录」同款：读也该问；
             //   file_upload：本地文件外发到网页 = openWorld 出境写。
-            toolId == "browser_execute_js" -> ToolAnnotations(
+            toolId == "BrowserExecuteJs" -> ToolAnnotations(
                 readOnlyHint = false,
                 destructiveHint = false,
                 idempotentHint = false,
                 openWorldHint = false,
                 sensitiveAction = true
             )
-            toolId == "browser_get_cookies" -> ToolAnnotations(
+            toolId == "BrowserGetCookies" -> ToolAnnotations(
                 readOnlyHint = true,
                 destructiveHint = false,
                 idempotentHint = true,
                 openWorldHint = false,
                 sensitiveAction = true
             )
-            toolId == "browser_file_upload" -> ToolAnnotations(
+            toolId == "BrowserFileUpload" -> ToolAnnotations(
                 readOnlyHint = false,
                 destructiveHint = false,
                 idempotentHint = false,

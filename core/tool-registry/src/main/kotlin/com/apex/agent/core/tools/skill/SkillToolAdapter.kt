@@ -16,7 +16,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * 执行时按步骤调用底层 Tool：
  * - "composite" — 按顺序执行 steps，每步调用一个 Tool，{{var}} 从 arguments 解析，
  *   {{prev_output}} 替换为上一步输出（截断到 2000 字符防止爆炸）
- * - "script"    — 通过 shell_execute 运行脚本
+ * - "script"    — 通过 ShellExecute 运行脚本
  *
  * ## v3 作用域打标
  *
@@ -162,6 +162,6 @@ class SkillToolAdapter(
             else -> script
         }
         val args = JsonObject(mapOf("command" to JsonPrimitive(cmd)))
-        return toolExecutor.execute("shell_execute", args.toString())
+        return toolExecutor.execute("ShellExecute", args.toString())
     }
 }

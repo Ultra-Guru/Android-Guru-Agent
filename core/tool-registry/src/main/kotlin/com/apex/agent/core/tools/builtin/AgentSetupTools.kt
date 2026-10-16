@@ -20,11 +20,11 @@ import kotlinx.serialization.json.Json
  * 的"调优"环节，无需引导用户翻设置页。
  *
  * 安全契约：
- * - 读类工具（`agent_setting_get` / `agent_profile_list` / `agent_role_list`）
+ * - 读类工具（`AgentSettingGet` / `AgentProfileList` / `AgentRoleList`）
  *   无副作用，LOW 风险，无门控；
- * - 写类工具（`agent_setting_set` / `agent_profile_*` / `agent_role_activate`
- *   / `agent_mode_preset_select`）MEDIUM 风险，走风险门确认一次（HIGH 风险的
- *   `agent_provider_set_key` 走会话级确认）；
+ * - 写类工具（`AgentSettingSet` / `agent_profile_*` / `AgentRoleActivate`
+ *   / `AgentModePresetSelect`）MEDIUM 风险，走风险门确认一次（HIGH 风险的
+ *   `AgentProviderSetKey` 走会话级确认）；
  * - 写入的字段集是**白名单**：只允许 [AgentSettingsPatch] 中显式声明的字段，
  *   未知字段直接忽略——防 LLM 越权改 `permissionMode`/`permissionRules`
  *   （属安全相关字段，工具不暴露修改入口；如需修改，让用户去设置页改）。
@@ -197,11 +197,11 @@ interface AgentSettingsHost {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 工具 1: agent_setting_get
+// 工具 1: AgentSettingGet
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * `agent_setting_get` — 读取 Agent 自身运行时配置快照（无参数）。
+ * `AgentSettingGet` — 读取 Agent 自身运行时配置快照（无参数）。
  *
  * 输出 JSON：当前 [AgentSettingsSnapshot] 全字段，便于 LLM 决定下一步要改什么。
  * 风险 LOW（只读），无门控。
@@ -209,12 +209,12 @@ interface AgentSettingsHost {
 class AgentSettingGetTool(
     private val host: AgentSettingsHost
 ) : BaseTool(
-    id = "agent_setting_get",
+    id = "AgentSettingGet",
     name = "Get Agent Settings",
     description = """
         Read a snapshot of the agent's own runtime configuration: default mode,
         thinking level, retry policy, context window, theme, language and more.
-        Use this before [agent_setting_set] to see what is currently in effect,
+        Use this before [AgentSettingSet] to see what is currently in effect,
         and before reporting "I cannot do X" — your limits may be configurable.
         No arguments. 返回当前 Agent 配置快照（JSON）。
     """.trimIndent(),
@@ -235,11 +235,11 @@ class AgentSettingGetTool(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 工具 2: agent_setting_set
+// 工具 2: AgentSettingSet
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * `agent_setting_set` — 增量修改 Agent 自身配置。
+ * `AgentSettingSet` — 增量修改 Agent 自身配置。
  *
  * 参数：[AgentSettingsPatch] 中任意子集（其余字段忽略）。
  * 至少需 1 个字段；空白 patch 返回 INVALID_ARGUMENT。
@@ -255,7 +255,7 @@ class AgentSettingGetTool(
 class AgentSettingSetTool(
     private val host: AgentSettingsHost
 ) : BaseTool(
-    id = "agent_setting_set",
+    id = "AgentSettingSet",
     name = "Set Agent Settings",
     description = """
         Incrementally update the agent's own runtime configuration. Only the
@@ -353,9 +353,9 @@ class AgentSettingSetTool(
         if (patch.isEmpty()) {
             return ToolResult.invalid(
                 field = "<patch>",
-                message = "agent_setting_set requires at least one field to change; " +
+                message = "AgentSettingSet requires at least one field to change; " +
                     "the patch is empty. See tool description for allowed fields.",
-                suggestion = "use agent_setting_get first to see what's currently set, " +
+                suggestion = "use AgentSettingGet first to see what's currently set, " +
                     "then send the fields you want to change"
             )
         }
@@ -522,7 +522,7 @@ class AgentSettingSetTool(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 工具 3-4: agent_profile_list / agent_profile_set_default
+// 工具 3-4: AgentProfileList / AgentProfileSetDefault
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -543,18 +543,18 @@ data class ModelProfileSummary(
 )
 
 /**
- * `agent_profile_list` — 列出所有模型 Profile 摘要（无密钥）。
+ * `AgentProfileList` — 列出所有模型 Profile 摘要（无密钥）。
  */
 class AgentProfileListTool(
     private val listProvider: suspend () -> List<ModelProfileSummary>
 ) : BaseTool(
-    id = "agent_profile_list",
+    id = "AgentProfileList",
     name = "List Model Profiles",
     description = """
         List all configured model profiles (id/name/provider/model/context window/
         capabilities/temperature) without exposing API keys. Use this to inspect
         which models the user has set up before suggesting a profile switch via
-        [agent_profile_set_default]. No arguments.
+        [AgentProfileSetDefault]. No arguments.
     """.trimIndent(),
     declaredSchema = toolSchema { }
 ) {
@@ -579,21 +579,21 @@ class AgentProfileListTool(
 }
 
 /**
- * `agent_profile_set_default` — 切换默认模型 Profile（影响下一轮 LLM 调用）。
+ * `AgentProfileSetDefault` — 切换默认模型 Profile（影响下一轮 LLM 调用）。
  */
 class AgentProfileSetDefaultTool(
     private val setDefault: suspend (String) -> Boolean,
     private val listProvider: suspend () -> List<ModelProfileSummary>
 ) : BaseTool(
-    id = "agent_profile_set_default",
+    id = "AgentProfileSetDefault",
     name = "Set Default Model Profile",
     description = """
         Switch the default model profile used for the next LLM call.
-        Pass a profile id obtained from [agent_profile_list]. The change takes
+        Pass a profile id obtained from [AgentProfileList]. The change takes
         effect on the next conversation turn. Risk: MEDIUM (mutating runtime model).
     """.trimIndent(),
     declaredSchema = toolSchema {
-        string("profile_id", required = true, description = "Profile id from agent_profile_list")
+        string("profile_id", required = true, description = "Profile id from AgentProfileList")
     }
 ) {
     override fun buildMetadata(): ToolMetadata = ToolMetadata.meta(id) {
@@ -615,7 +615,7 @@ class AgentProfileSetDefaultTool(
             return ToolResult.invalid(
                 field = "profile_id",
                 message = "no model profile with id '$profileId' is configured",
-                suggestion = "use agent_profile_list to enumerate valid profile ids"
+                suggestion = "use AgentProfileList to enumerate valid profile ids"
             )
         }
         val ok = setDefault(profileId)
@@ -628,11 +628,11 @@ class AgentProfileSetDefaultTool(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 工具 5: agent_provider_set_key
+// 工具 5: AgentProviderSetKey
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * `agent_provider_set_key` — 为某个 Provider 写入 API Key（加密存储）。
+ * `AgentProviderSetKey` — 为某个 Provider 写入 API Key（加密存储）。
  *
  * 风险 HIGH（涉及凭据），会话级确认（每会话首次使用弹窗）。
  * 工具本身不返回 key（写入后不可读），仅返回状态。
@@ -642,7 +642,7 @@ class AgentProfileSetDefaultTool(
 class AgentProviderSetKeyTool(
     private val setKey: suspend (providerId: String, apiKey: String) -> Boolean
 ) : BaseTool(
-    id = "agent_provider_set_key",
+    id = "AgentProviderSetKey",
     name = "Set Provider API Key",
     description = """
         Set the API key for a provider (encrypted at rest in Android Keystore).
@@ -697,7 +697,7 @@ class AgentProviderSetKeyTool(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 工具 6-7: agent_role_list / agent_role_activate
+// 工具 6-7: AgentRoleList / AgentRoleActivate
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -713,17 +713,17 @@ data class AgentRoleConfigSnapshot(
 )
 
 /**
- * `agent_role_list` — 读取当前 Agent 角色映射（哪个角色用哪个 Profile）。
+ * `AgentRoleList` — 读取当前 Agent 角色映射（哪个角色用哪个 Profile）。
  */
 class AgentRoleListTool(
     private val reader: suspend () -> AgentRoleConfigSnapshot
 ) : BaseTool(
-    id = "agent_role_list",
+    id = "AgentRoleList",
     name = "List Agent Role Bindings",
     description = """
         Read the current agent role bindings (which profile is used for primary /
         vision / reasoning / fast / summary tasks). Use this before
-        [agent_role_activate] to see the current binding. No arguments.
+        [AgentRoleActivate] to see the current binding. No arguments.
     """.trimIndent(),
     declaredSchema = toolSchema { }
 ) {
@@ -742,12 +742,12 @@ class AgentRoleListTool(
 }
 
 /**
- * `agent_role_activate` — 修改某个角色的 Profile 绑定。
+ * `AgentRoleActivate` — 修改某个角色的 Profile 绑定。
  */
 class AgentRoleActivateTool(
     private val activator: suspend (role: String, profileId: String) -> Boolean
 ) : BaseTool(
-    id = "agent_role_activate",
+    id = "AgentRoleActivate",
     name = "Activate Role Profile",
     description = """
         Bind a profile to an agent role. Roles route different task types to
@@ -798,7 +798,7 @@ class AgentRoleActivateTool(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 工具 8-9: agent_mode_preset_list / agent_mode_preset_select
+// 工具 8-9: AgentModePresetList / AgentModePresetSelect
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -813,18 +813,18 @@ data class ModePresetSummary(
 )
 
 /**
- * `agent_mode_preset_list` — 列出所有内置 + 用户自定义模式预设。
+ * `AgentModePresetList` — 列出所有内置 + 用户自定义模式预设。
  */
 class AgentModePresetListTool(
     private val listProvider: suspend () -> List<ModePresetSummary>
 ) : BaseTool(
-    id = "agent_mode_preset_list",
+    id = "AgentModePresetList",
     name = "List Mode Presets",
     description = """
         List all custom mode presets (built-in + user-defined). Each preset is
         a named instruction injected into the system prompt when CUSTOM mode is
         active. Use this to discover available presets before
-        [agent_mode_preset_select]. No arguments.
+        [AgentModePresetSelect]. No arguments.
     """.trimIndent(),
     declaredSchema = toolSchema { }
 ) {
@@ -849,16 +849,16 @@ class AgentModePresetListTool(
 }
 
 /**
- * `agent_mode_preset_select` — 选中某个预设作为当前 CUSTOM 模式指令源。
+ * `AgentModePresetSelect` — 选中某个预设作为当前 CUSTOM 模式指令源。
  */
 class AgentModePresetSelectTool(
     private val selector: suspend (String) -> Boolean
 ) : BaseTool(
-    id = "agent_mode_preset_select",
+    id = "AgentModePresetSelect",
     name = "Select Mode Preset",
     description = """
         Select a custom mode preset as the active instruction source for
-        CUSTOM mode. Pass a preset id from [agent_mode_preset_list], or pass
+        CUSTOM mode. Pass a preset id from [AgentModePresetList], or pass
         empty string "" to clear the selection.
         Examples:
         - {"preset_id": "builtin_translator"}
@@ -866,7 +866,7 @@ class AgentModePresetSelectTool(
     """.trimIndent(),
     declaredSchema = toolSchema {
         string("preset_id", required = true,
-            description = "Preset id (from agent_mode_preset_list) or \"\" to clear")
+            description = "Preset id (from AgentModePresetList) or \"\" to clear")
     }
 ) {
     override fun buildMetadata(): ToolMetadata = ToolMetadata.meta(id) {
@@ -887,7 +887,7 @@ class AgentModePresetSelectTool(
             val msg = if (presetId.isBlank()) {
                 "OK: mode preset selection cleared. CUSTOM mode will fall back to the legacy custom instruction (or no instruction if none set)."
             } else {
-                "OK: mode preset '$presetId' selected. Switch to CUSTOM mode (agent_setting_set with default_mode=custom) to activate."
+                "OK: mode preset '$presetId' selected. Switch to CUSTOM mode (AgentSettingSet with default_mode=custom) to activate."
             }
             ToolResult.ok(msg)
         } else {

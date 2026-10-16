@@ -11,10 +11,10 @@
 
 | 场景 | 旧行为 | 新行为 |
 |---|---|---|
-| 只读工具（read_file / web_search…） | 放行（经风险门兜底） | 放行（不变） |
-| 普通编辑写（edit_file / code_edit…） | **Ask** | **放行** |
-| 幂等覆写（write_file / download_file…） | **Ask** | **放行** |
-| 删除类（delete_file / app_uninstall / app_force_stop / terminal.signal…） | Ask | Ask（不变） |
+| 只读工具（Read / WebSearch…） | 放行（经风险门兜底） | 放行（不变） |
+| 普通编辑写（Edit / CodeEdit…） | **Ask** | **放行** |
+| 幂等覆写（Write / DownloadFile…） | **Ask** | **放行** |
+| 删除类（DeleteFile / AppUninstall / AppForceStop / TerminalSignal…） | Ask | Ask（不变） |
 | 敏感动作（sensitiveAction 注解） | Ask | Ask（不变） |
 | shell 高危命令（rm / dd / pm uninstall…） | CommandPermissionGate Ask | Ask（不变） |
 | 第三方动态工具（mcp__ / plugin，MEDIUM） | Ask | Ask（会话内一次） |
@@ -26,9 +26,9 @@
 
 - `destructive()` 预设（delete / uninstall / force-stop / signal 族）→ 破坏且
   非幂等 → **删除类**，Ask；
-- `idempotentWrite()` 预设（write_file / download_file / app_launch…）→ 破坏
+- `idempotentWrite()` 预设（Write / DownloadFile / AppLaunch…）→ 破坏
   但幂等（重放收敛、可再次写入恢复）→ **非删除类**，放行；
-- `mutating()` 预设（edit_file / ui_tap / clipboard…）→ 非破坏 → 放行。
+- `mutating()` 预设（Edit / UiTap / clipboard…）→ 非破坏 → 放行。
 
 ### 分层改动
 
@@ -39,7 +39,7 @@
 3. **RiskAwareToolGate**（风险门兜底）：撤回 #230 的「MEDIUM 文件改写类
    确认链」，收敛为 HIGH + 第三方动态族（mcp_ / plugin 前缀）——内置
    MEDIUM 全部静默；标题按来源区分「高风险工具 / 第三方工具」。
-4. **ToolModule**（命令级）：`shell_execute` 与 `terminal.exec` 的
+4. **ToolModule**（命令级）：`ShellExecute` 与 `TerminalExec` 的
    CommandPermissionGate 调用点在 BYPASS 模式下短路（实时读设置，切回
    其他模式立即恢复拦截）——「完全不用确认」承诺覆盖全链路。
 5. **设置 UI 文案**：BYPASS 更名「全自动」，DEFAULT 标注「默认（推荐）」，

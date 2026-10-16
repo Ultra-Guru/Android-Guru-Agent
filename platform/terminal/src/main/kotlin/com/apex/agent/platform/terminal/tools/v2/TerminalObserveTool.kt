@@ -11,7 +11,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Agent tool: terminal.observe
+ * Agent tool: TerminalObserve
  *
  * Spec ref: ATR 2.0 Final Spec §34.3 — the core perception API.
  *
@@ -32,7 +32,7 @@ import kotlinx.serialization.json.jsonPrimitive
 class TerminalObserveTool(
     private val runtime: TerminalRuntime
 ) : TerminalTool {
-    override val id: String = "terminal.observe"
+    override val id: String = "TerminalObserve"
     override val name: String = id
     override val description: String = """
         Observe terminal state. Default mode=SEMANTIC returns machine-readable state (session/job/input/cursor)

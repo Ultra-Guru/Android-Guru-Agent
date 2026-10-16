@@ -28,8 +28,8 @@ import kotlinx.coroutines.TimeoutCancellationException
  * `dollar-curly` placeholder syntax:
  *
  * ```
- * [ { "tool": "ui_dump", "arguments": "{}" },
- *   { "tool": "write_file", "arguments": "{'path':'dump.txt','content':'{0}'}" } ]
+ * [ { "tool": "UiDump", "arguments": "{}" },
+ *   { "tool": "Write", "arguments": "{'path':'dump.txt','content':'{0}'}" } ]
  * ```
  *
  * `{0}` inserts step 0's output (head-truncated to [referenceHeadLimit]

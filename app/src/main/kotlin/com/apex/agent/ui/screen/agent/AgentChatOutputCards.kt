@@ -90,9 +90,9 @@ import com.apex.agent.R
 // 流水线智能输出渲染器
 //
 // 依据"工具类型 + 工具名 + 参数 + 输出内容"自动选择最佳呈现方式：
-// - 代码输出（read_file 等）        → 语法高亮代码卡
+// - 代码输出（Read 等）        → 语法高亮代码卡
 // - 文件操作（write/edit/delete…）  → 文件操作卡（图标 + 大小/行数变更徽章）
-// - Shell 执行（shell_execute）     → 命令 + 输出卡
+// - Shell 执行（ShellExecute）     → 命令 + 输出卡
 // - JSON 输出（MCP/设备信息等）     → 可折叠 JSON 树
 // - 其余                            → 带复制按钮与统计信息的文本块
 // ═══════════════════════════════════════════════════════════════════════
@@ -130,14 +130,14 @@ internal fun formatDuration(ms: Long): String = when {
 internal enum class ToolOutputView { CODE, FILE_OP, JSON, SHELL, PLAIN }
 
 /** 文件操作类工具集合（输出可解析出结构化文件信息）。 */
-internal val FILE_OP_TOOLS = setOf("write_file", "edit_file", "delete_file", "copy_move_file")
+internal val FILE_OP_TOOLS = setOf("Write", "Edit", "DeleteFile", "CopyMoveFile")
 
 /** 根据工具名/参数/输出推断输出视图类型。 */
 internal fun detectOutputView(toolName: String, output: String): ToolOutputView {
     val name = toolName.lowercase()
     if (name in FILE_OP_TOOLS) return ToolOutputView.FILE_OP
-    if (name == "shell_execute") return ToolOutputView.SHELL
-    if (name == "read_file") return ToolOutputView.CODE
+    if (name == "ShellExecute") return ToolOutputView.SHELL
+    if (name == "Read") return ToolOutputView.CODE
     val trimmed = output.trim()
     if (trimmed.length >= 2 &&
         ((trimmed.startsWith("{") && trimmed.endsWith("}")) ||
@@ -309,7 +309,7 @@ internal fun TextOutputBlock(
 
 /** 从参数 JSON 或输出头部推断代码语言标签。 */
 internal fun langFromArgs(toolName: String, args: String): String {
-    // read_file/write_file 的参数里有 path，按扩展名推断。
+    // Read/Write 的参数里有 path，按扩展名推断。
     val pathMatch = Regex("\"(?:path|file|source|dest|target)\"\\s*:\\s*\"([^\"]+)\"").find(args)
     val path = pathMatch?.groupValues?.getOrNull(1)
     if (!path.isNullOrBlank()) {
@@ -467,7 +467,7 @@ internal fun highlightCode(code: String, lang: String, colors: CodeColorScheme):
 
 /**
  * 语法高亮代码输出卡：深色容器 + 语言标签 + 行数统计 + 复制。
- * read_file 等自带行号的输出原样保留行号前缀。
+ * Read 等自带行号的输出原样保留行号前缀。
  */
 @Composable
 internal fun CodeOutputCard(
@@ -577,10 +577,10 @@ internal fun parseFileOp(toolName: String, args: String, output: String): FileOp
         firstLine.contains("Deleted", ignoreCase = true) -> R.string.chat_fileop_deleted
         firstLine.contains("Moved", ignoreCase = true) -> R.string.chat_fileop_moved
         firstLine.contains("Copied", ignoreCase = true) -> R.string.chat_fileop_copied
-        toolName == "write_file" -> R.string.chat_fileop_write
-        toolName == "edit_file" -> R.string.chat_fileop_edit
-        toolName == "delete_file" -> R.string.chat_fileop_delete
-        toolName == "copy_move_file" -> R.string.chat_fileop_copy_move
+        toolName == "Write" -> R.string.chat_fileop_write
+        toolName == "Edit" -> R.string.chat_fileop_edit
+        toolName == "DeleteFile" -> R.string.chat_fileop_delete
+        toolName == "CopyMoveFile" -> R.string.chat_fileop_copy_move
         else -> R.string.chat_fileop_generic
     }
 
@@ -589,7 +589,7 @@ internal fun parseFileOp(toolName: String, args: String, output: String): FileOp
         ?: Regex("\\(\\+(?:(\\d+\\.?\\d*[KMG]?B))\\)").find(output)?.groupValues?.getOrNull(1)
             ?.let { "+$it" }
 
-    // 行数统计：优先 "File now: N lines, size"（edit_file），回退到首个 "N lines, size"（write_file）。
+    // 行数统计：优先 "File now: N lines, size"（Edit），回退到首个 "N lines, size"（Write）。
     // 注意不要命中 edit 输出中的 "Net change: +X lines"（统计的是变更行而非总行数）。
     // i18n：行数与大小拆开存，展示层本地化拼装。
     val statMatch = (Regex("File now:\\s*(\\d+) lines(?:,\\s*(\\S+))?").find(output)

@@ -39,7 +39,7 @@ import kotlinx.coroutines.withTimeout
  */
 
 /**
- * 挂起等待 UI 回传用户输入（ask_user / HUMAN_ASSIST 决策点共用）。
+ * 挂起等待 UI 回传用户输入（AskUser / HUMAN_ASSIST 决策点共用）。
  *
  * @param onExpired 超时回调（调用方发射 UserInputExpired 让 UI 关对话框）
  * @param beforeWait 注册完成之后、挂起等待之前的回调（#340 注册先行：
@@ -62,12 +62,12 @@ internal suspend fun ApexAgentEngine.awaitUserInput(
     beforeWait?.invoke()
     return try {
         // 与 awaitPlanConfirmation / awaitSpecConfirmation 保持一致：
-        // 5 分钟超时，避免 ask_user 工具因用户遗忘而把引擎永久挂起。
+        // 5 分钟超时，避免 AskUser 工具因用户遗忘而把引擎永久挂起。
         withTimeout(PLAN_CONFIRMATION_TIMEOUT_MS) { deferred.await() }
     } catch (e: TimeoutCancellationException) {
         AppLogger.instance.warn(
             LogCategory.ENGINE, "ApexAgentEngine",
-            "ask_user 输入超时 (${PLAN_CONFIRMATION_TIMEOUT_MS / 1000}s)，按超时未决收场"
+            "AskUser 输入超时 (${PLAN_CONFIRMATION_TIMEOUT_MS / 1000}s)，按超时未决收场"
         )
         // 先关投递通道再通知：保证 UI 先看到对话框关闭，迟交才有失败提示。
         synchronized(confirmationLock) { userInputDeferred = null }

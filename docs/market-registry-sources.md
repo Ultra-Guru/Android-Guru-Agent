@@ -99,7 +99,7 @@ remotes[] 有端点 ──────────→ REMOTE（streamable-http �
 packages[] 有 npm+stdio 包 ─→ NPM
                               → ① identifier 包名形态校验（供应链硬化：
                                 拒绝 URL / git spec / 前导 - 等任意源拉取）
-                              → ② rootfs 门禁（未装引导 terminal.ubuntu.install；
+                              → ② rootfs 门禁（未装引导 TerminalUbuntuInstall；
                                 版本标记指向缺失目录 → 已损坏请重装）
                               → ③ 沙箱真实 npm install -g {identifier}（5 分钟超时）
                               → ④ 写 npx -y [runtimeArguments…] {identifier}

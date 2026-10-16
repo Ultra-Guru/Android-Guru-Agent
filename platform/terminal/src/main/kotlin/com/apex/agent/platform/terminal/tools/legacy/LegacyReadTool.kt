@@ -10,24 +10,24 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Legacy compat tool: terminal_read
+ * Legacy compat tool: TerminalReadLegacy
  *
  * Spec ref: ATR 2.0 Final Spec §35
  *
  * Preserves the OLD contract: read pending output from a session (best-effort, non-blocking).
  *
- * Maps to: terminal.observe(mode=RAW). The new observe() is strictly better (cursor-based,
- * incremental, no duplicates) but terminal_read keeps the old simple "give me what's there" API.
+ * Maps to: TerminalObserve(mode=RAW). The new observe() is strictly better (cursor-based,
+ * incremental, no duplicates) but TerminalReadLegacy keeps the old simple "give me what's there" API.
  *
- * NOTE: old terminal_read had no cursor concept — it returned whatever the manager had buffered.
+ * NOTE: old TerminalReadLegacy had no cursor concept — it returned whatever the manager had buffered.
  * This compat version uses afterCursor=0 internally which means it returns ALL retained output
- * (up to maxBytes). For incremental reads, Agent should use terminal.observe(afterCursor=...).
+ * (up to maxBytes). For incremental reads, Agent should use TerminalObserve(afterCursor=...).
  */
-@Deprecated("ATR 2.0 compat alias — use the new terminal.observe/write/signal/snapshot/close API instead. Scheduled for removal in a future version.")
+@Deprecated("ATR 2.0 compat alias — use the new TerminalObserve/write/signal/snapshot/close API instead. Scheduled for removal in a future version.")
 class LegacyReadTool(
     private val runtime: TerminalRuntime
 ) : TerminalTool {
-    override val id: String = "terminal_read"
+    override val id: String = "TerminalReadLegacy"
     override val name: String = id
     override val parametersSchema: String = """
         {
@@ -42,7 +42,7 @@ class LegacyReadTool(
     """.trimIndent()
     override val description: String = """
         [COMPAT] Read pending output from a session (non-blocking, returns all retained output
-        up to maxBytes). For incremental cursor-based reads, prefer terminal.observe(mode=RAW,
+        up to maxBytes). For incremental cursor-based reads, prefer TerminalObserve(mode=RAW,
         afterCursor=...). Kept for backward compat.
     """.trimIndent()
 

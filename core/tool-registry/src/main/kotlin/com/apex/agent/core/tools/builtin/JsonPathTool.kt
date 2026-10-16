@@ -16,10 +16,10 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 
 /**
- * `json_path` — query JSON documents with a practical JSONPath subset.
+ * `JsonPathLegacy` — query JSON documents with a practical JSONPath subset.
  *
  * Why: agents receive JSON constantly (tool outputs, API responses,
- * settings files). v1's only lever was `text_transform`'s pretty-printer —
+ * settings files). v1's only lever was `TextTransform`'s pretty-printer —
  * extracting `store.book[2].title` meant the model had to *re-print* the
  * whole document and eyeball it, burning context on every hop. This tool
  * makes extraction a single deterministic call.
@@ -47,7 +47,7 @@ import kotlinx.serialization.json.doubleOrNull
  * guessing.
  */
 class JsonPathTool : BaseTool(
-    id = "json_path",
+    id = "JsonPathLegacy",
     name = "JSON Path Query",
     description = """
         Query a JSON document with JSONPath and return matching values.

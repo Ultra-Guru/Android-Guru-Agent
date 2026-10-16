@@ -32,35 +32,35 @@ class StandardToolSurfaceTest {
 
     @Test
     fun `aliases resolve to registry ids`() {
-        assertEquals("code_read", StandardToolSurface.resolveRegistryId("read"))
-        assertEquals("code_read", StandardToolSurface.resolveRegistryId("read_file"))
-        assertEquals("code_write", StandardToolSurface.resolveRegistryId("write"))
-        assertEquals("code_edit", StandardToolSurface.resolveRegistryId("edit"))
-        assertEquals("code_edit", StandardToolSurface.resolveRegistryId("multiedit"))
-        assertEquals("shell_execute", StandardToolSurface.resolveRegistryId("bash"))
-        assertEquals("code_grep", StandardToolSurface.resolveRegistryId("grep"))
-        assertEquals("code_glob", StandardToolSurface.resolveRegistryId("glob"))
-        assertEquals("code_todo", StandardToolSurface.resolveRegistryId("todowrite"))
-        assertEquals("code_check", StandardToolSurface.resolveRegistryId("lint"))
+        assertEquals("CodeRead", StandardToolSurface.resolveRegistryId("read"))
+        assertEquals("CodeRead", StandardToolSurface.resolveRegistryId("Read"))
+        assertEquals("CodeWrite", StandardToolSurface.resolveRegistryId("write"))
+        assertEquals("CodeEdit", StandardToolSurface.resolveRegistryId("edit"))
+        assertEquals("CodeEdit", StandardToolSurface.resolveRegistryId("multiedit"))
+        assertEquals("ShellExecute", StandardToolSurface.resolveRegistryId("bash"))
+        assertEquals("CodeGrep", StandardToolSurface.resolveRegistryId("grep"))
+        assertEquals("CodeGlob", StandardToolSurface.resolveRegistryId("glob"))
+        assertEquals("CodeTodo", StandardToolSurface.resolveRegistryId("todowrite"))
+        assertEquals("CodeCheck", StandardToolSurface.resolveRegistryId("lint"))
     }
 
     @Test
     fun `unknown and mcp names pass through unchanged`() {
         assertEquals("mcp__github__create_issue", StandardToolSurface.resolveRegistryId("mcp__github__create_issue"))
-        assertEquals("code_read", StandardToolSurface.resolveRegistryId("code_read"))
-        assertEquals("web_search", StandardToolSurface.resolveRegistryId("web_search"))
+        assertEquals("CodeRead", StandardToolSurface.resolveRegistryId("CodeRead"))
+        assertEquals("WebSearch", StandardToolSurface.resolveRegistryId("WebSearch"))
     }
 
     @Test
     fun `resolveRegistryId tolerates case and separator drift`() {
         // 大小写漂移
-        assertEquals("shell_execute", StandardToolSurface.resolveRegistryId("Bash"))
-        assertEquals("code_todo", StandardToolSurface.resolveRegistryId("TODO"))
-        assertEquals("task", StandardToolSurface.resolveRegistryId("TASK"))
+        assertEquals("ShellExecute", StandardToolSurface.resolveRegistryId("Bash"))
+        assertEquals("CodeTodo", StandardToolSurface.resolveRegistryId("TODO"))
+        assertEquals("Task", StandardToolSurface.resolveRegistryId("TASK"))
         // 连字符 / 点号 → 下划线（multiedit 别名无分隔符，大小写变体单独验）
-        assertEquals("code_read", StandardToolSurface.resolveRegistryId("Read-File"))
-        assertEquals("code_read", StandardToolSurface.resolveRegistryId("read.file"))
-        assertEquals("code_edit", StandardToolSurface.resolveRegistryId("MultiEdit"))
+        assertEquals("CodeRead", StandardToolSurface.resolveRegistryId("Read-File"))
+        assertEquals("CodeRead", StandardToolSurface.resolveRegistryId("read.file"))
+        assertEquals("CodeEdit", StandardToolSurface.resolveRegistryId("MultiEdit"))
         // 归一后仍未命中 → 原名原样返回（既有语义，不改写大小写/分隔符）
         assertEquals("Totally-Unknown", StandardToolSurface.resolveRegistryId("Totally-Unknown"))
     }
@@ -68,18 +68,18 @@ class StandardToolSurfaceTest {
     @Test
     fun `suggestToolIds finds near misses within distance or prefix`() {
         val surface = listOf(
-            "code_read", "code_edit", "code_write", "code_grep", "shell_execute", "task"
+            "CodeRead", "CodeEdit", "CodeWrite", "CodeGrep", "ShellExecute", "Task"
         )
         // 编辑距离 ≤ 2（red → read 距离1 / grep 距离2，均命中，保持原序）
         assertEquals(
-            listOf("code_read", "code_grep"),
+            listOf("CodeRead", "CodeGrep"),
             StandardToolSurface.suggestToolIds("red", surface)
         )
         // 前缀/包含（tas → task）
-        assertEquals(listOf("task"), StandardToolSurface.suggestToolIds("tas", surface))
+        assertEquals(listOf("Task"), StandardToolSurface.suggestToolIds("tas", surface))
         // 归一后完全命中（大小写 + 连字符 + code_ 前缀）
-        assertEquals(listOf("code_grep"), StandardToolSurface.suggestToolIds("Code-Grep", surface))
-        assertEquals(listOf("code_read"), StandardToolSurface.suggestToolIds("READ", surface))
+        assertEquals(listOf("CodeGrep"), StandardToolSurface.suggestToolIds("Code-Grep", surface))
+        assertEquals(listOf("CodeRead"), StandardToolSurface.suggestToolIds("READ", surface))
         // 无相近候选 → 空
         assertEquals(emptyList<String>(), StandardToolSurface.suggestToolIds("frobnicate", surface))
         // 空名/只剩前缀 → 空（防短名噪音）
@@ -89,82 +89,82 @@ class StandardToolSurfaceTest {
 
     @Test
     fun `suggestToolIds caps at three candidates in available order`() {
-        val surface = listOf("code_read", "code_edit", "code_grep", "shell_execute")
+        val surface = listOf("CodeRead", "CodeEdit", "CodeGrep", "ShellExecute")
         // “e” 前缀/包含命中多个 → 只取前 3（保持 available 原序）
         assertEquals(
-            listOf("code_read", "code_edit", "code_grep"),
+            listOf("CodeRead", "CodeEdit", "CodeGrep"),
             StandardToolSurface.suggestToolIds("e", surface)
         )
     }
 
     @Test
     fun `task tool detection`() {
-        assertTrue(StandardToolSurface.isSyntheticTaskTool("task"))
+        assertTrue(StandardToolSurface.isSyntheticTaskTool("Task"))
         assertTrue(StandardToolSurface.isSyntheticTaskTool("subagent"))
-        assertFalse(StandardToolSurface.isSyntheticTaskTool("code_read"))
+        assertFalse(StandardToolSurface.isSyntheticTaskTool("CodeRead"))
     }
 
     // ═══ 工具面构建 ═══
 
     @Test
     fun `build profile sees full registry plus task tool`() {
-        val r = registry("code_read", "code_edit", "shell_execute", "web_search", "mcp__x__y")
+        val r = registry("CodeRead", "CodeEdit", "ShellExecute", "WebSearch", "mcp__x__y")
         val plan = StandardToolSurface.buildToolPlan(StandardAgentCatalog.BUILD, r)
         val names = plan.definitions.map { it.name }
-        assertTrue(names.contains("code_read"))
-        assertTrue(names.contains("shell_execute"))
+        assertTrue(names.contains("CodeRead"))
+        assertTrue(names.contains("ShellExecute"))
         assertTrue(names.contains("mcp__x__y"))
-        assertTrue("合成 task 恒在场", names.contains("task"))
+        assertTrue("合成 task 恒在场", names.contains("Task"))
     }
 
     @Test
     fun `plan profile filters to readonly allowlist without task`() {
         val r = registry(
-            "code_read", "code_grep", "code_glob", "code_check",
-            "code_git_status", "code_git_diff", "code_git_log",
-            "code_write", "code_edit", "shell_execute", "web_search"
+            "CodeRead", "CodeGrep", "CodeGlob", "CodeCheck",
+            "CodeGitStatus", "CodeGitDiff", "CodeGitLog",
+            "CodeWrite", "CodeEdit", "ShellExecute", "WebSearch"
         )
         val plan = StandardToolSurface.buildToolPlan(StandardAgentCatalog.PLAN, r)
         val names = plan.definitions.map { it.name }
-        assertTrue(names.contains("code_read"))
-        assertTrue(names.contains("code_git_status"))
-        assertFalse("规划师不该看到写工具", names.contains("code_write"))
-        assertFalse(names.contains("code_edit"))
-        assertFalse(names.contains("shell_execute"))
-        // web_search 不在 PLAN 白名单（提示词宣告其不可用）
-        assertFalse(names.contains("web_search"))
+        assertTrue(names.contains("CodeRead"))
+        assertTrue(names.contains("CodeGitStatus"))
+        assertFalse("规划师不该看到写工具", names.contains("CodeWrite"))
+        assertFalse(names.contains("CodeEdit"))
+        assertFalse(names.contains("ShellExecute"))
+        // WebSearch 不在 PLAN 白名单（提示词宣告其不可用）
+        assertFalse(names.contains("WebSearch"))
     }
 
     @Test
     fun `explore subagent gets readonly surface and no task tool`() {
-        val r = registry("code_read", "code_grep", "code_write", "shell_execute")
+        val r = registry("CodeRead", "CodeGrep", "CodeWrite", "ShellExecute")
         val plan = StandardToolSurface.buildToolPlan(StandardAgentCatalog.EXPLORE, r)
         val names = plan.definitions.map { it.name }
-        assertTrue(names.contains("code_read"))
-        assertFalse(names.contains("code_write"))
-        assertFalse(names.contains("shell_execute"))
-        assertFalse("子代理不能再派子代理", names.contains("task"))
+        assertTrue(names.contains("CodeRead"))
+        assertFalse(names.contains("CodeWrite"))
+        assertFalse(names.contains("ShellExecute"))
+        assertFalse("子代理不能再派子代理", names.contains("Task"))
     }
 
     @Test
     fun `forced tools narrow the surface and drop task`() {
-        val r = registry("code_read", "code_edit", "code_write")
+        val r = registry("CodeRead", "CodeEdit", "CodeWrite")
         val plan = StandardToolSurface.buildToolPlan(
             StandardAgentCatalog.BUILD, r,
-            forcedToolIds = setOf("code_edit")
+            forcedToolIds = setOf("CodeEdit")
         )
         val names = plan.definitions.map { it.name }
-        assertEquals(listOf("code_edit"), names)
+        assertEquals(listOf("CodeEdit"), names)
     }
 
     @Test
     fun `exposeAll overrides profile allowlist`() {
-        val r = registry("code_read", "code_write", "shell_execute")
+        val r = registry("CodeRead", "CodeWrite", "ShellExecute")
         val plan = StandardToolSurface.buildToolPlan(
             StandardAgentCatalog.PLAN, r, exposeAll = true
         )
         val names = plan.definitions.map { it.name }
-        assertTrue(names.contains("code_write"))
+        assertTrue(names.contains("CodeWrite"))
     }
 
     @Test
@@ -181,7 +181,7 @@ class StandardToolSurfaceTest {
     @Test
     fun `synthetic task tool definition has description and schema`() {
         val def = StandardToolSurface.syntheticTaskTool()
-        assertEquals("task", def.name)
+        assertEquals("Task", def.name)
         assertTrue(def.description.contains("sub-agent"))
         // 四种子代理类型（explore / research / general / reviewer，v3）
         assertTrue(def.parameters.contains("\"enum\": [\"explore\", \"research\", \"general\", \"reviewer\"]"))
@@ -205,11 +205,11 @@ class StandardToolSurfaceTest {
     fun `tool guide lists tools and aliases`() {
         val guide = StandardToolSurface.buildToolGuide(
             StandardAgentCatalog.BUILD,
-            listOf("code_read", "code_edit", "task")
+            listOf("CodeRead", "CodeEdit", "Task")
         )
-        assertTrue(guide.contains("code_read"))
-        assertTrue(guide.contains("task"))
-        assertTrue(guide.contains("read→code_read"))
+        assertTrue(guide.contains("CodeRead"))
+        assertTrue(guide.contains("Task"))
+        assertTrue(guide.contains("read→CodeRead"))
         assertTrue(guide.contains("subagent_type"))
         // 三类型 + 结果对用户不可见需自己转述
         assertTrue(guide.contains("explore ="))
@@ -227,15 +227,15 @@ class StandardToolSurfaceTest {
     @Test
     fun `readonly guide declares the boundary`() {
         val guide = StandardToolSurface.buildToolGuide(
-            StandardAgentCatalog.PLAN, listOf("code_read")
+            StandardAgentCatalog.PLAN, listOf("CodeRead")
         )
         assertTrue(guide.contains("READ-ONLY"))
     }
 
     @Test
     fun `planHasTodo detection`() {
-        assertTrue(StandardToolSurface.planHasTodo(listOf("code_todo")))
+        assertTrue(StandardToolSurface.planHasTodo(listOf("CodeTodo")))
         assertTrue(StandardToolSurface.planHasTodo(listOf("todo")))
-        assertFalse(StandardToolSurface.planHasTodo(listOf("code_read")))
+        assertFalse(StandardToolSurface.planHasTodo(listOf("CodeRead")))
     }
 }

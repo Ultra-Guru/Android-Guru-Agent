@@ -41,12 +41,12 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * ## 只读面判定（[isReadOnlyTool]）
  *
- * 注册表元数据可用时按 id 前缀静态表判定（code_read / code_grep /
- * code_glob / code_git_status / code_git_diff / code_git_log / web 检索 /
- * code_todo 只写自己的状态文件，计为只读）——不依赖注册表实例，
+ * 注册表元数据可用时按 id 前缀静态表判定（CodeRead / CodeGrep /
+ * CodeGlob / CodeGitStatus / CodeGitDiff / CodeGitLog / web 检索 /
+ * CodeTodo 只写自己的状态文件，计为只读）——不依赖注册表实例，
  * 纯函数可单测。
  *
- * ## 命令级通配（shell_execute 专属）
+ * ## 命令级通配（ShellExecute 专属）
  *
  * bash 类工具参数是命令字符串——规则可以对**命令首词**做尾缀通配
  * （如 `ls*`、`git status*`）。[commandPatternMatches] 只解析参数 JSON
@@ -284,20 +284,20 @@ class StandardPermissionEngine(
 
         /** 只读工具 id 前缀表（静态——不依赖注册表实例）。 */
         private val READONLY_EXACT = setOf(
-            "code_read", "code_grep", "code_glob", "code_check",
-            "code_git_status", "code_git_diff", "code_git_log",
-            "web_search", "web_fetch",
-            "task", "code_todo"
+            "CodeRead", "CodeGrep", "CodeGlob", "CodeCheck",
+            "CodeGitStatus", "CodeGitDiff", "CodeGitLog",
+            "WebSearch", "WebFetch",
+            "Task", "CodeTodo"
         )
 
-        private val READONLY_PREFIXES = listOf("mcp__", "skill_")
+        private val READONLY_PREFIXES = listOf("Mcp", "Skill")
 
         /** shell 执行类工具 id 集（命令级规则的作用域）。 */
-        private val SHELL_TOOLS = setOf("shell_execute", "terminal.exec", "bash")
+        private val SHELL_TOOLS = setOf("ShellExecute", "TerminalExec", "bash")
 
         /** 编辑/写类工具 id 集（ACCEPT_EDITS 放行面）。 */
         private val EDIT_TOOLS = setOf(
-            "code_edit", "code_write", "code_git_commit", "code_git_branch"
+            "CodeEdit", "CodeWrite", "CodeGitCommit", "CodeGitBranch"
         )
 
         /** 是否只读工具（无环境副作用；todo 只写自有状态文件）。 */

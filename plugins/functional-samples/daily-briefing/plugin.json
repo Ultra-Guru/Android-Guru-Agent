@@ -17,8 +17,8 @@
         "description": "打开指定新闻站点并抽取正文要点，把结果通知给用户。site 参数为新闻站 URL。",
         "parametersSchema": "{\"type\":\"object\",\"properties\":{\"site\":{\"type\":\"string\",\"description\":\"要抓取的新闻站点 URL\"}},\"required\":[\"site\"]}",
         "steps": [
-          { "tool": "browser_navigate", "args": { "url": "{{input.site}}" }, "output": "nav" },
-          { "tool": "browser_extract_content", "output": "body" },
+          { "tool": "BrowserNavigate", "args": { "url": "{{input.site}}" }, "output": "nav" },
+          { "tool": "BrowserExtractContent", "output": "body" },
           { "tool": "agent_notify_user", "args": { "message": "今日简报（来源 {{input.site}}）：{{body}}" } }
         ]
       }

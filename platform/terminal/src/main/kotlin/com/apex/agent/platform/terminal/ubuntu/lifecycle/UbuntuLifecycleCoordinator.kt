@@ -25,8 +25,8 @@ import kotlinx.coroutines.withTimeoutOrNull
  *   - ApexApp 启动不触发任何 Ubuntu 生命周期；
  *   - Terminal UI 的 `ensureSession()` 永远走 local backend；
  *   - DepCatalog 的 apt 命令被投进 Android shell（必然 command not found）；
- *   - Agent 需要**三次**工具调用（terminal.ubuntu.install → terminal.linux.bootstrap
- *     → terminal.linux.capabilities）才能把 Ubuntu 拉到可用，还要自己解读三套状态机。
+ *   - Agent 需要**三次**工具调用（TerminalUbuntuInstall → TerminalLinuxBootstrap
+ *     → TerminalLinuxCapabilities）才能把 Ubuntu 拉到可用，还要自己解读三套状态机。
  *
  * ## 本类职责（编排，不重复实现）
  * 把两阶段初始化合成一个产品级入口：
@@ -275,7 +275,7 @@ class UbuntuLifecycleCoordinator(
      *
      * P1 修复（锁等待纳入超时）：旧实现 `withTimeoutOrNull` 在 `mutex.withLock`
      * **内部** —— 第二个 caller 的 timeoutMs 不覆盖锁排队时间。首个 caller 解包
-     * 最长 30 分钟，期间 Agent 的 terminal.ubuntu.ensure（工具层 1,830s 策略）或
+     * 最长 30 分钟，期间 Agent 的 TerminalUbuntuEnsure（工具层 1,830s 策略）或
      * UI 的任何 ensureReady 调用会挂在锁上直到外层 ToolRunPolicy 击杀（或无限
      * 等待）。现在 timeout 包住「锁等待 + 编排步骤」全程：等待超锁预算一半即
      * 诚实返回 InProgress（调用方可重试续跑），绝不无限阻塞。

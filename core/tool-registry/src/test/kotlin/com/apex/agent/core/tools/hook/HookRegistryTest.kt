@@ -35,30 +35,30 @@ class HookRegistryTest {
 
     @Test
     fun `matcher accepts exact ids`() {
-        assertTrue(HookRegistry.matches("shell_execute", "shell_execute"))
-        assertFalse(HookRegistry.matches("shell_execute", "shell_exec"))
+        assertTrue(HookRegistry.matches("ShellExecute", "ShellExecute"))
+        assertFalse(HookRegistry.matches("ShellExecute", "shell_exec"))
     }
 
     @Test
     fun `matcher accepts prefix with trailing star`() {
-        assertTrue(HookRegistry.matches("code_git_*", "code_git_commit"))
+        assertTrue(HookRegistry.matches("code_git_*", "CodeGitCommit"))
         assertTrue(HookRegistry.matches("code_git_*", "code_git_"))
         assertFalse(HookRegistry.matches("code_git_*", "code_github"))
-        assertFalse(HookRegistry.matches("code_git_*", "shell_execute"))
+        assertFalse(HookRegistry.matches("code_git_*", "ShellExecute"))
     }
 
     @Test
     fun `matcher single star matches everything`() {
-        assertTrue(HookRegistry.matches("*", "shell_execute"))
+        assertTrue(HookRegistry.matches("*", "ShellExecute"))
         assertTrue(HookRegistry.matches("*", "mcp__github__create_issue"))
     }
 
     @Test
     fun `matcher rejects empty pattern and is case sensitive`() {
-        assertFalse(HookRegistry.matches("", "shell_execute"))
-        assertFalse(HookRegistry.matches("Shell_Execute", "shell_execute"))
+        assertFalse(HookRegistry.matches("", "ShellExecute"))
+        assertFalse(HookRegistry.matches("Shell_Execute", "ShellExecute"))
         // 中间通配不支持：按精确匹配处理，永远不命中。
-        assertFalse(HookRegistry.matches("code_*_commit", "code_git_commit"))
+        assertFalse(HookRegistry.matches("code_*_commit", "CodeGitCommit"))
     }
 
     // ═══ dispatch：拦截 / 改写 / 异常隔离 / 顺序 ═══════════════════════
@@ -83,7 +83,7 @@ class HookRegistryTest {
         )
 
         val result = registry.dispatch(
-            HookEvent.PreToolUse("shell_execute", args("""{"cmd": "ls"}"""))
+            HookEvent.PreToolUse("ShellExecute", args("""{"cmd": "ls"}"""))
         )
         assertTrue(result.blocked)
         assertEquals("shell is forbidden in this session", result.blockReason)
@@ -107,7 +107,7 @@ class HookRegistryTest {
             )
         )
 
-        val result = registry.dispatch(HookEvent.PreToolUse("shell_execute", args("{}")))
+        val result = registry.dispatch(HookEvent.PreToolUse("ShellExecute", args("{}")))
         assertFalse(result.blocked)
         assertEquals("pattern 不匹配的声明式钩子不算触发", 0, result.firedCount)
     }
@@ -127,7 +127,7 @@ class HookRegistryTest {
             )
         )
 
-        val result = registry.dispatch(HookEvent.PreToolUse("read_file", args("{}")))
+        val result = registry.dispatch(HookEvent.PreToolUse("Read", args("{}")))
         assertTrue(result.blocked)
         assertTrue(result.blockReason!!.contains("block-any"))
     }
@@ -150,7 +150,7 @@ class HookRegistryTest {
             }
         })
 
-        val result = registry.dispatch(HookEvent.PreToolUse("read_file", args("""{"path": "a.txt"}""")))
+        val result = registry.dispatch(HookEvent.PreToolUse("Read", args("""{"path": "a.txt"}""")))
         assertFalse(result.blocked)
         assertEquals("""{"path": "rewritten.txt"}""", result.modifiedArgs!!.raw)
         // 链式语义：后注册的钩子看到的是前面钩子改写后的参数。
@@ -176,7 +176,7 @@ class HookRegistryTest {
             }
         })
 
-        val result = registry.dispatch(HookEvent.PostToolUse("read_file", args("{}"), "ok", false, 1L))
+        val result = registry.dispatch(HookEvent.PostToolUse("Read", args("{}"), "ok", false, 1L))
         assertFalse(result.blocked)
         assertEquals("坏钩子被隔离，好钩子照常触发（且坏钩子计入 fired）", 2, result.firedCount)
         assertEquals(listOf("after-boom"), fired)
@@ -216,7 +216,7 @@ class HookRegistryTest {
             }
         })
 
-        val result = registry.dispatch(HookEvent.PreToolUse("read_file", args("{}")))
+        val result = registry.dispatch(HookEvent.PreToolUse("Read", args("{}")))
         assertTrue(result.blocked)
         assertEquals("首个 Deny 胜出（对齐 CompositeToolGate）", "first", result.blockReason)
         assertEquals(listOf("blocker"), fired)
@@ -362,7 +362,7 @@ class HookRegistryTest {
         registry.setEnabled(HookRegistry.BUILTIN_ID_TOOL_USAGE_LOG, false)
 
         val result = registry.dispatch(
-            HookEvent.PostToolUse("read_file", args("{}"), "ok", false, 5L)
+            HookEvent.PostToolUse("Read", args("{}"), "ok", false, 5L)
         )
         assertEquals("禁用的钩子不参与派发（连 fired 都不计）", 0, result.firedCount)
         assertFalse(result.blocked)
@@ -383,7 +383,7 @@ class HookRegistryTest {
 
         hook.onEvent(
             HookEvent.PostToolUse(
-                "shell_execute", args("""{"cmd": "ls -la"}"""),
+                "ShellExecute", args("""{"cmd": "ls -la"}"""),
                 "total 0\nfoo.txt", isError = false, durationMs = 42L
             )
         )
@@ -392,7 +392,7 @@ class HookRegistryTest {
         val line = lines[0]
         assertTrue(line.startsWith("["))
         assertTrue(line.contains("] POST_TOOL_USE "))
-        assertTrue(line.contains("tool=shell_execute"))
+        assertTrue(line.contains("tool=ShellExecute"))
         assertTrue(line.contains("ok=true"))
         assertTrue(line.contains("durationMs=42"))
         // 结果预览：换行压平。
@@ -427,13 +427,13 @@ class HookRegistryTest {
     fun `builtin audit hook appends to hooks log through the registry`() = runTest {
         val dir = tmp.newFolder()
         val registry = HookRegistry(dir) { }
-        registry.dispatch(HookEvent.PostToolUse("read_file", args("{}"), "ok", false, 1L))
+        registry.dispatch(HookEvent.PostToolUse("Read", args("{}"), "ok", false, 1L))
 
         val log = java.io.File(dir, "hooks.log")
         assertTrue(log.exists())
         val content = log.readText()
         assertTrue(content.contains("POST_TOOL_USE"))
-        assertTrue(content.contains("tool=read_file"))
+        assertTrue(content.contains("tool=Read"))
     }
 
     @Test
@@ -443,11 +443,11 @@ class HookRegistryTest {
         log.writeText("x".repeat((HookRegistry.LOG_MAX_BYTES + 1).toInt()))
         val registry = HookRegistry(dir) { }
 
-        registry.dispatch(HookEvent.PostToolUse("read_file", args("{}"), "ok", false, 1L))
+        registry.dispatch(HookEvent.PostToolUse("Read", args("{}"), "ok", false, 1L))
 
         assertTrue("旧日志滚动为 .1", java.io.File(dir, "hooks.log.1").exists())
         assertTrue("滚动后重开新档", log.length() < HookRegistry.LOG_MAX_BYTES)
-        assertTrue(log.readText().contains("tool=read_file"))
+        assertTrue(log.readText().contains("tool=Read"))
     }
 
     // ═══ fire-and-forget ═══════════════════════════════════════════════

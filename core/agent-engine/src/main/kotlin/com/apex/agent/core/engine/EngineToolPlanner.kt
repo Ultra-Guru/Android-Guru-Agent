@@ -293,7 +293,7 @@ internal object EngineToolPlanner {
 
 /**
  * 多模态用户输入 → 文本上下文（图片/文件以路径清单形式告知 Agent，
- * Agent 可用 read_file 等工具读取）。纯函数，无引擎状态。
+ * Agent 可用 Read 等工具读取）。纯函数，无引擎状态。
  */
 internal fun buildUserText(input: UserInput): String {
     if (input.images.isEmpty() && input.files.isEmpty()) return input.text
@@ -304,11 +304,11 @@ internal fun buildUserText(input: UserInput): String {
         if (input.files.isNotEmpty()) {
             appendLine("[用户附加文件]")
             input.files.forEach { f ->
-                // 文档类附件标注「已支持文本提取」——引导模型放心用 read_file 读正文，
+                // 文档类附件标注「已支持文本提取」——引导模型放心用 Read 读正文，
                 // 而不是看到 .pdf 就当作二进制放弃（旧链路确实读不了，现在能读）。
                 val docHint = when {
-                    f.mimeType.contains("pdf", ignoreCase = true) || f.name.endsWith(".pdf", true) -> "，read_file 可提取文本"
-                    f.mimeType.contains("wordprocessingml", ignoreCase = true) || f.name.endsWith(".docx", true) -> "，read_file 可提取文本"
+                    f.mimeType.contains("pdf", ignoreCase = true) || f.name.endsWith(".pdf", true) -> "，Read 可提取文本"
+                    f.mimeType.contains("wordprocessingml", ignoreCase = true) || f.name.endsWith(".docx", true) -> "，Read 可提取文本"
                     else -> ""
                 }
                 appendLine("- ${f.name} (${f.mimeType}, ${f.sizeBytes} bytes$docHint) path=${f.localPath}")

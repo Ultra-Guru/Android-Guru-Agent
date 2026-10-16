@@ -37,7 +37,7 @@ class WebFetchTool(
     private val httpClient: OkHttpClient = defaultClient()
 ) : AgentTool {
 
-    override val id = "web_fetch"
+    override val id = "WebFetch"
     override val name = "Fetch URL"
     override val description = """
         Fetch and extract content from a URL.
@@ -122,7 +122,7 @@ class WebFetchTool(
 
     private fun extractReadableText(html: String, maxChars: Int): String {
         // v2：正则全部提升为顶层预编译常量（旧实现每次调用现编 ~15 个正则，
-        // web_fetch 高频调用时 CPU 浪费显著）
+        // WebFetch 高频调用时 CPU 浪费显著）
         val text = html
             // 移除噪音
             .replace(RX_SCRIPT, "")
@@ -256,12 +256,12 @@ class WebSearchTool(
     private val httpClient: OkHttpClient = WebFetchTool.defaultClient()
 ) : AgentTool {
 
-    override val id = "web_search"
+    override val id = "WebSearch"
     override val name = "Web Search"
     override val description = """
         Search the web for information. Returns a list of search results with titles, URLs, and snippets.
         Use this to find documentation, articles, or any web content.
-        After finding relevant results, use web_fetch to read the full content.
+        After finding relevant results, use WebFetch to read the full content.
 
         Examples:
         - {"query": "Kotlin coroutines tutorial"}
@@ -328,7 +328,7 @@ class WebSearchTool(
             ?: attempt("bing") { searchBing(query, maxResults) }
             ?: return "Error: search failed for \"$query\" — all 3 providers exhausted " +
                 "(${failures.joinToString("; ")}). Likely network blocking or anti-bot " +
-                "interception. Try web_fetch on a specific URL instead, or rephrase the query."
+                "interception. Try WebFetch on a specific URL instead, or rephrase the query."
 
         return formatResults(query, results)
     }
@@ -390,7 +390,7 @@ class WebSearchTool(
             appendLine("   ${result.snippet}")
             appendLine()
         }
-        appendLine("Use web_fetch to read full content of any result.")
+        appendLine("Use WebFetch to read full content of any result.")
     }
 
     // ── 解析器：DDG HTML（result__a / result__snippet） ──
@@ -515,14 +515,14 @@ class WebSearchTool(
 /**
  * 通用HTTP请求工具
  *
- * More flexible than web_fetch: supports all HTTP methods (GET/POST/PUT/DELETE/PATCH),
+ * More flexible than WebFetch: supports all HTTP methods (GET/POST/PUT/DELETE/PATCH),
  * custom bodies, and arbitrary headers. Returns status code, key headers, and body.
  */
 class HttpRequestTool(
     private val httpClient: OkHttpClient = WebFetchTool.defaultClient()
 ) : AgentTool {
 
-    override val id = "http_request"
+    override val id = "HttpRequest"
     override val name = "HTTP Request"
     override val description = """
         Make an HTTP request (GET, POST, PUT, DELETE, PATCH).
@@ -605,7 +605,7 @@ class HttpRequestTool(
 
             val response = httpClient.newCall(requestBuilder.build()).awaitOk()
             response.use {
-                // P1（OOM）：同 web_fetch —— 限流读体防超大响应闪退（下游 take(5000)）。
+                // P1（OOM）：同 WebFetch —— 限流读体防超大响应闪退（下游 take(5000)）。
                 val responseBody = it.body?.byteStream()?.use { s ->
                     s.readBodyLimited(MAX_RESPONSE_BODY_BYTES)
                 } ?: ""
@@ -691,13 +691,13 @@ private val RX_P_OPEN = Regex("<p[^>]*>")
 private val RX_IMG_OPEN = Regex("<img[^>]*>")
 private val RX_A_HREF_TEXT = Regex("href=\"([^\"]+)\"[^>]*>(.*?)</a>", RegexOption.DOT_MATCHES_ALL)
 
-// ═══ P1（OOM）响应体限流：web_fetch / http_request 共用 ═══
+// ═══ P1（OOM）响应体限流：WebFetch / HttpRequest 共用 ═══
 // 旧实现 body?.string() 无上限整体入内存 —— 高速网络下 30s readTimeout 可拉
 // 数百 MB 直接 OOM 闪退。下游只消费 maxChars / take(5000) 级别，8MB 上限绰绰
 // 有余；超限按前 8MB 处理（与 ClawHubSource.readBytesLimited 同思路，但超限
 // 截断而非失败 —— 抓取场景下“前 8MB 的可用内容”仍优于整体报错）。
 
-/** 工具直读 HTTP 响应体的字节上限（web_fetch / http_request）。 */
+/** 工具直读 HTTP 响应体的字节上限（WebFetch / HttpRequest）。 */
 internal const val MAX_RESPONSE_BODY_BYTES = 8 * 1024 * 1024
 
 /** 读至多 [max] 字节（超限截断，不失败）。 */

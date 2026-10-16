@@ -25,7 +25,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * T82 — terminal.ubuntu.ensure / terminal.ubuntu.status 工具 JSON 契约。
+ * T82 — TerminalUbuntuEnsure / TerminalUbuntuStatus 工具 JSON 契约。
  *
  * Agent 消费这两个工具的输出做机器决策（retry / repair / ask / abort），
  * 契约字段必须稳定：status / phase / rootfsState / bootstrapState /
@@ -112,7 +112,7 @@ class TerminalUbuntuLifecycleToolTest {
         )
     }
 
-    // ─────────────── terminal.ubuntu.ensure ───────────────
+    // ─────────────── TerminalUbuntuEnsure ───────────────
 
     @Test
     fun `01 ensure READY emits full contract`() = runBlocking {
@@ -201,12 +201,12 @@ class TerminalUbuntuLifecycleToolTest {
     fun `08 ensure tool id and schema are stable`() {
         val env = ToolEnv()
         val tool = TerminalUbuntuEnsureTool(env.coordinator)
-        assertEquals("terminal.ubuntu.ensure", tool.id)
+        assertEquals("TerminalUbuntuEnsure", tool.id)
         assertTrue(tool.parametersSchema.contains("\"force\""))
         assertTrue(tool.description.contains("linux-ubuntu"))
     }
 
-    // ─────────────── terminal.ubuntu.status ───────────────
+    // ─────────────── TerminalUbuntuStatus ───────────────
 
     @Test
     fun `09 status after ensure is complete`() = runBlocking {
@@ -231,7 +231,7 @@ class TerminalUbuntuLifecycleToolTest {
         assertEquals("NOT_INSTALLED", out["phase"]!!.jsonPrimitive.content)
         assertEquals("false", out["ready"]!!.jsonPrimitive.content)
         assertEquals("IDLE", out["rootfsState"]!!.jsonPrimitive.content) // 底层真实状态（IDLE=未装）
-        assertTrue(out["message"]!!.jsonPrimitive.content.contains("terminal.ubuntu.ensure"))
+        assertTrue(out["message"]!!.jsonPrimitive.content.contains("TerminalUbuntuEnsure"))
         assertEquals(0, env.bootstrapCalls) // 只读：零动作
     }
 
@@ -239,7 +239,7 @@ class TerminalUbuntuLifecycleToolTest {
     fun `11 status tool id is stable`() {
         val env = ToolEnv()
         val tool = TerminalUbuntuStatusTool(env.coordinator)
-        assertEquals("terminal.ubuntu.status", tool.id)
-        assertEquals("terminal.ubuntu.status", tool.name)
+        assertEquals("TerminalUbuntuStatus", tool.id)
+        assertEquals("TerminalUbuntuStatus", tool.name)
     }
 }

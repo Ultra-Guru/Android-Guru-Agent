@@ -110,9 +110,9 @@ class JsonRpcTest {
     fun `paramString and paramJson`() {
         val rpc = JsonRpc.parseRequest(
             """{"jsonrpc":"2.0","id":1,"method":"tools/call",
-               "params":{"name":"calculate","arguments":{"a":1,"b":2}}}"""
+               "params":{"name":"Calculate","arguments":{"a":1,"b":2}}}"""
         )!!
-        assertEquals("calculate", rpc.paramString("name"))
+        assertEquals("Calculate", rpc.paramString("name"))
         assertEquals("""{"a":1,"b":2}""", rpc.paramJson("arguments"))
         assertNull(rpc.paramString("missing"))
         assertNull(rpc.paramJson("missing"))

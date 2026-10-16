@@ -37,12 +37,12 @@ import kotlinx.coroutines.launch
  * GitHub 断开后重连即失败并给出可行动指引。
  *
  * ## 预置语义（安装 ≠ 启动）
- * `enabled=false` 预置：mcp_list / 市场页可见，用户手动启用后连接；
+ * `enabled=false` 预置：McpList / 市场页可见，用户手动启用后连接；
  * 同名条目已存在（用户自建或旧版预置）→ 不动（enabled 偏好跨升级保留）。
  */
 object OfficialGithubMcp {
 
-    /** 服务器名（= mcp_servers.json 配置名 = mcp_connect/mcp_call 的 server 参数）。 */
+    /** 服务器名（= mcp_servers.json 配置名 = McpConnect/McpCall 的 server 参数）。 */
     const val SERVER_NAME = "github-official"
 
     /** 官方远程 MCP 端点（GitHub 托管，HTTP 传输）。 */

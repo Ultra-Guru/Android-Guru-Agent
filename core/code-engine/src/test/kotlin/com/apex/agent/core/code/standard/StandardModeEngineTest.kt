@@ -102,8 +102,8 @@ class StandardModeEngineTest {
         llm: ScriptedLlm,
         executor: FakeExecutor,
         tools: List<String> = listOf(
-            "code_read", "code_edit", "code_write", "code_grep", "code_glob",
-            "code_todo", "shell_execute", "code_check"
+            "CodeRead", "CodeEdit", "CodeWrite", "CodeGrep", "CodeGlob",
+            "CodeTodo", "ShellExecute", "CodeCheck"
         )
     ): StandardModeEngine {
         val registry = DefaultToolRegistry().apply { tools.forEach { register(FakeTool(it)) } }
@@ -139,7 +139,7 @@ class StandardModeEngineTest {
         val system = llm.chatRequests.single().first() as LlmMessage.System
         assertTrue(system.content.contains("BUILD agent"))
         assertTrue(system.content.contains("Task Methodology"))
-        assertTrue(system.content.contains("task"))
+        assertTrue(system.content.contains("Task"))
     }
 
     @Test
@@ -161,7 +161,7 @@ class StandardModeEngineTest {
         // 第一轮：调用工具；第二轮：收官
         llm.enqueue(
             LlmStreamChunk(
-                toolCalls = listOf(ToolCall(id = "call_1", name = "code_read", arguments = """{"path":"a.kt"}"""))
+                toolCalls = listOf(ToolCall(id = "call_1", name = "CodeRead", arguments = """{"path":"a.kt"}"""))
             )
         )
         llm.enqueue(LlmStreamChunk(content = "已读取完成", isFinish = true))
@@ -173,12 +173,12 @@ class StandardModeEngineTest {
 
         // 工具事件：Start + OutputChunk + Complete
         val start = events.filterIsInstance<AgentEvent.ToolCallStart>().single()
-        assertEquals("code_read", start.toolName)
+        assertEquals("CodeRead", start.toolName)
         val output = events.filterIsInstance<AgentEvent.ToolOutputChunk>().single()
         assertEquals("FILE CONTENT 42", output.chunk)
         val toolComplete = events.filterIsInstance<AgentEvent.ToolCallComplete>().single()
         assertTrue(toolComplete.success)
-        assertEquals("code_read", toolComplete.toolName)
+        assertEquals("CodeRead", toolComplete.toolName)
 
         // 第二轮请求包含 assistant(toolCalls) + toolResult（OpenAI 消息协议）
         val secondRequest = llm.chatRequests[1]
@@ -200,8 +200,8 @@ class StandardModeEngineTest {
         llm.enqueue(LlmStreamChunk(content = "done", isFinish = true))
         val engine = engine(llm, FakeExecutor())
         val events = engine.execute("q").toList()
-        // 模型用别名 read，事件与执行都走注册表 id code_read（胶囊分族一致）
-        assertEquals("code_read", events.filterIsInstance<AgentEvent.ToolCallStart>().single().toolName)
+        // 模型用别名 read，事件与执行都走注册表 id CodeRead（胶囊分族一致）
+        assertEquals("CodeRead", events.filterIsInstance<AgentEvent.ToolCallStart>().single().toolName)
     }
 
     @Test
@@ -209,7 +209,7 @@ class StandardModeEngineTest {
         val llm = ScriptedLlm()
         // OpenAI 并行流式：首片 id+index，续片只有 index
         llm.enqueue(
-            LlmStreamChunk(toolCalls = listOf(ToolCall(id = "call_a", name = "code_read", arguments = """{"pa""", index = 0))),
+            LlmStreamChunk(toolCalls = listOf(ToolCall(id = "call_a", name = "CodeRead", arguments = """{"pa""", index = 0))),
             LlmStreamChunk(toolCalls = listOf(ToolCall(id = "", name = "", arguments = """th":"a"}""", index = 0)))
         )
         llm.enqueue(LlmStreamChunk(content = "ok", isFinish = true))
@@ -228,7 +228,7 @@ class StandardModeEngineTest {
         // 写文件（DEFAULT 模式 → ASK）
         llm.enqueue(
             LlmStreamChunk(
-                toolCalls = listOf(ToolCall(id = "w", name = "code_write", arguments = """{"path":"x","content":"y"}"""))
+                toolCalls = listOf(ToolCall(id = "w", name = "CodeWrite", arguments = """{"path":"x","content":"y"}"""))
             )
         )
         llm.enqueue(LlmStreamChunk(content = "已写入", isFinish = true))
@@ -249,9 +249,9 @@ class StandardModeEngineTest {
         job.await()
 
         val question = collected.filterIsInstance<AgentEvent.UserInputRequired>().single()
-        assertTrue(question.prompt.contains("code_write"))
+        assertTrue(question.prompt.contains("CodeWrite"))
         // 允许后工具被执行
-        assertTrue(executor.executed.any { it.first == "code_write" })
+        assertTrue(executor.executed.any { it.first == "CodeWrite" })
         assertTrue(collected.filterIsInstance<AgentEvent.ToolCallComplete>().single().success)
     }
 
@@ -260,7 +260,7 @@ class StandardModeEngineTest {
         val llm = ScriptedLlm()
         llm.enqueue(
             LlmStreamChunk(
-                toolCalls = listOf(ToolCall(id = "w", name = "code_write", arguments = """{"path":"x"}"""))
+                toolCalls = listOf(ToolCall(id = "w", name = "CodeWrite", arguments = """{"path":"x"}"""))
             )
         )
         llm.enqueue(LlmStreamChunk(content = "好的，我改用其他方式", isFinish = true))
@@ -291,9 +291,9 @@ class StandardModeEngineTest {
     fun `session allow answer remembers tool for the session`() = runTest {
         val llm = ScriptedLlm()
         // 两次写调用（两轮）
-        llm.enqueue(LlmStreamChunk(toolCalls = listOf(ToolCall(id = "w1", name = "code_write", arguments = """{"path":"a"}"""))))
+        llm.enqueue(LlmStreamChunk(toolCalls = listOf(ToolCall(id = "w1", name = "CodeWrite", arguments = """{"path":"a"}"""))))
         llm.enqueue(LlmStreamChunk(content = "第一个写完", isFinish = true))
-        llm.enqueue(LlmStreamChunk(toolCalls = listOf(ToolCall(id = "w2", name = "code_write", arguments = """{"path":"b"}"""))))
+        llm.enqueue(LlmStreamChunk(toolCalls = listOf(ToolCall(id = "w2", name = "CodeWrite", arguments = """{"path":"b"}"""))))
         llm.enqueue(LlmStreamChunk(content = "第二个写完", isFinish = true))
         val engine = engine(llm, FakeExecutor())
 
@@ -322,7 +322,7 @@ class StandardModeEngineTest {
             LlmStreamChunk(
                 toolCalls = listOf(
                     ToolCall(
-                        id = "t1", name = "task",
+                        id = "t1", name = "Task",
                         arguments = """{"description":"找调用点","prompt":"扫描 A 模块","subagent_type":"explore"}"""
                     )
                 )
@@ -330,7 +330,7 @@ class StandardModeEngineTest {
         )
         // 子代理轮（隔离引擎自己的请求）：先探索再结论
         llm.enqueue(
-            LlmStreamChunk(toolCalls = listOf(ToolCall(id = "s1", name = "code_grep", arguments = """{"pattern":"x"}""")))
+            LlmStreamChunk(toolCalls = listOf(ToolCall(id = "s1", name = "CodeGrep", arguments = """{"pattern":"x"}""")))
         )
         llm.enqueue(LlmStreamChunk(content = "结论：3 处调用（path:line 各异）", isFinish = true))
         // 主代理收官
@@ -343,7 +343,7 @@ class StandardModeEngineTest {
         // 子代理工具事件以 sub_ 前缀进父流（id 前缀重写）
         val subStart = events.filterIsInstance<AgentEvent.ToolCallStart>()
             .single { it.callId.startsWith(StandardSubAgentDispatcher.SUB_PREFIX) }
-        assertEquals("code_grep", subStart.toolName)
+        assertEquals("CodeGrep", subStart.toolName)
 
         // 子代理的正文不进父流（隔离语义）：父流 ResponseComplete 只有主代理结论
         val completes = events.filterIsInstance<AgentEvent.ResponseComplete>()
@@ -352,7 +352,7 @@ class StandardModeEngineTest {
 
         // task 工具结果包含子代理统计与结论
         val toolComplete = events.filterIsInstance<AgentEvent.ToolCallComplete>()
-            .single { it.toolName == "task" }
+            .single { it.toolName == "Task" }
         assertTrue(toolComplete.success)
         assertTrue(toolComplete.output.contains("结论：3 处调用"))
         assertTrue(toolComplete.output.contains("explore"))
@@ -361,19 +361,19 @@ class StandardModeEngineTest {
     @Test
     fun `sub-agent readonly profile denies write attempts`() = runTest {
         val llm = ScriptedLlm()
-        // 主代理派 explore；子代理尝试 code_write（画像面无此工具，但模型可能幻觉调用）
+        // 主代理派 explore；子代理尝试 CodeWrite（画像面无此工具，但模型可能幻觉调用）
         llm.enqueue(
             LlmStreamChunk(
                 toolCalls = listOf(
                     ToolCall(
-                        id = "t1", name = "task",
+                        id = "t1", name = "Task",
                         arguments = """{"description":"d","prompt":"p","subagent_type":"explore"}"""
                     )
                 )
             )
         )
         llm.enqueue(
-            LlmStreamChunk(toolCalls = listOf(ToolCall(id = "s1", name = "code_write", arguments = """{"path":"x"}""")))
+            LlmStreamChunk(toolCalls = listOf(ToolCall(id = "s1", name = "CodeWrite", arguments = """{"path":"x"}""")))
         )
         llm.enqueue(LlmStreamChunk(content = "只读探索完成", isFinish = true))
         llm.enqueue(LlmStreamChunk(content = "主代理收官", isFinish = true))
@@ -388,7 +388,7 @@ class StandardModeEngineTest {
         assertFalse(subWrite.success)
         assertTrue(subWrite.output.contains("Permission denied"))
         // 执行器从未收到写调用
-        assertTrue(executor.executed.none { it.first == "code_write" })
+        assertTrue(executor.executed.none { it.first == "CodeWrite" })
     }
 
     // ═══ PLAN 人控门 ═══
@@ -403,7 +403,7 @@ class StandardModeEngineTest {
             )
         )
         // 确认后执行轮：一次工具 + 收官
-        llm.enqueue(LlmStreamChunk(toolCalls = listOf(ToolCall(id = "e", name = "code_edit", arguments = """{"path":"a"}"""))))
+        llm.enqueue(LlmStreamChunk(toolCalls = listOf(ToolCall(id = "e", name = "CodeEdit", arguments = """{"path":"a"}"""))))
         llm.enqueue(LlmStreamChunk(content = "执行完毕", isFinish = true))
 
         val engine = engine(llm, FakeExecutor())
@@ -459,7 +459,7 @@ class StandardModeEngineTest {
         repeat(4) {
             llm.enqueue(
                 LlmStreamChunk(
-                    toolCalls = listOf(ToolCall(id = "r$it", name = "code_grep", arguments = """{"pattern":"same"}"""))
+                    toolCalls = listOf(ToolCall(id = "r$it", name = "CodeGrep", arguments = """{"pattern":"same"}"""))
                 )
             )
         }
@@ -474,7 +474,7 @@ class StandardModeEngineTest {
         assertEquals("按当前最佳答案收尾", completes.last().fullText)
         // 恰好执行 4 次后强收敛（第 5 次同参调用被止损）
         val grepCalls = events.filterIsInstance<AgentEvent.ToolCallComplete>()
-            .count { it.toolName == "code_grep" }
+            .count { it.toolName == "CodeGrep" }
         assertEquals(4, grepCalls)
     }
 
@@ -484,7 +484,7 @@ class StandardModeEngineTest {
         // 写文件（DEFAULT 模式 → ASK）→ abort 打断挂起中的问答
         llm.enqueue(
             LlmStreamChunk(
-                toolCalls = listOf(ToolCall(id = "w", name = "code_write", arguments = """{"path":"x"}"""))
+                toolCalls = listOf(ToolCall(id = "w", name = "CodeWrite", arguments = """{"path":"x"}"""))
             )
         )
         llm.enqueue(LlmStreamChunk(content = "已收尾", isFinish = true))
@@ -521,7 +521,7 @@ class StandardModeEngineTest {
         engine.updateMode(com.apex.agent.core.engine.AgentMode.BUILD)
         engine.updateGlobalRules("规则：测试")
         engine.updateSessionExtras("附加：时间感知")
-        engine.updateForcedTools(setOf("code_read"), exposeAll = false)
+        engine.updateForcedTools(setOf("CodeRead"), exposeAll = false)
         engine.prepareForTask()
         assertEquals(0, engine.historyCount())
         assertNotNull(engine.currentTokenCount())
@@ -569,7 +569,7 @@ class StandardModeEngineTest {
         memory.save(
             listOf(
                 LlmMessage.User("q"),
-                LlmMessage.Assistant("a", listOf(ToolCall("c9", "code_read", "{}")))
+                LlmMessage.Assistant("a", listOf(ToolCall("c9", "CodeRead", "{}")))
                 // 缺 ToolResult → 恢复时补占位
             )
         )
@@ -582,7 +582,7 @@ class StandardModeEngineTest {
         assertTrue("memory file should persist", wsFile.exists())
         val wired = StandardModeEngine(
             runtime = SingleClientModelRuntime(llm),
-            toolRegistry = DefaultToolRegistry().apply { register(FakeTool("code_read")) },
+            toolRegistry = DefaultToolRegistry().apply { register(FakeTool("CodeRead")) },
             toolExecutor = FakeExecutor(),
             memory = memory
         )
@@ -602,8 +602,8 @@ class StandardModeEngineTest {
         val engine = StandardModeEngine(
             runtime = SingleClientModelRuntime(llm),
             toolRegistry = DefaultToolRegistry().apply {
-                register(FakeTool("code_read"))
-                register(FakeTool("shell_execute"))
+                register(FakeTool("CodeRead"))
+                register(FakeTool("ShellExecute"))
             },
             toolExecutor = FakeExecutor(),
             modelInfoProvider = { StandardModeEngine.ModelInfo(modelId = "test-model-x", contextWindow = 200_000) }
@@ -627,7 +627,7 @@ class StandardModeEngineTest {
         // PLAN 档：写尝试（被档位硬门拒绝，无问答弹窗）→ 纯文本收官
         llm.enqueue(
             LlmStreamChunk(
-                toolCalls = listOf(ToolCall(id = "w", name = "code_write", arguments = """{"path":"x","content":"y"}"""))
+                toolCalls = listOf(ToolCall(id = "w", name = "CodeWrite", arguments = """{"path":"x","content":"y"}"""))
             )
         )
         llm.enqueue(LlmStreamChunk(content = "已按只读约束给出计划", isFinish = true))
@@ -658,27 +658,27 @@ class StandardModeEngineTest {
         llm.enqueue(
             LlmStreamChunk(
                 toolCalls = listOf(
-                    ToolCall(id = "e1", name = "code_edit", arguments = """{"path":"src/App.kt","old_string":"a","new_string":"b"}""")
+                    ToolCall(id = "e1", name = "CodeEdit", arguments = """{"path":"src/App.kt","old_string":"a","new_string":"b"}""")
                 )
             )
         )
         llm.enqueue(
             LlmStreamChunk(
-                toolCalls = listOf(ToolCall(id = "r1", name = "code_read", arguments = """{"path":"src/App.kt"}"""))
+                toolCalls = listOf(ToolCall(id = "r1", name = "CodeRead", arguments = """{"path":"src/App.kt"}"""))
             )
         )
         llm.enqueue(
             LlmStreamChunk(
                 toolCalls = listOf(
-                    ToolCall(id = "e2", name = "code_edit", arguments = """{"path":"src/App.kt","old_string":"a","new_string":"b"}""")
+                    ToolCall(id = "e2", name = "CodeEdit", arguments = """{"path":"src/App.kt","old_string":"a","new_string":"b"}""")
                 )
             )
         )
         llm.enqueue(LlmStreamChunk(content = "编辑完成", isFinish = true))
         val executor = FakeExecutor()
-        // 权限源接入测试：ALLOW 规则注入 code_edit（同时验证设置层规则接线）
+        // 权限源接入测试：ALLOW 规则注入 CodeEdit（同时验证设置层规则接线）
         val registry = DefaultToolRegistry().apply {
-            listOf("code_read", "code_edit").forEach { register(FakeTool(it)) }
+            listOf("CodeRead", "CodeEdit").forEach { register(FakeTool(it)) }
         }
         val engine = StandardModeEngine(
             runtime = SingleClientModelRuntime(llm),
@@ -687,14 +687,14 @@ class StandardModeEngineTest {
             permissionSource = object : StandardPermissionSource {
                 override fun snapshot() = StandardPermissionSource.Snapshot(
                     rules = listOf(
-                        StandardPermissionRule("code_edit", StandardPermissionEffect.ALLOW)
+                        StandardPermissionRule("CodeEdit", StandardPermissionEffect.ALLOW)
                     )
                 )
             }
         )
         val events = engine.execute("改文件").toList()
 
-        val edits = events.filterIsInstance<AgentEvent.ToolCallComplete>().filter { it.toolName == "code_edit" }
+        val edits = events.filterIsInstance<AgentEvent.ToolCallComplete>().filter { it.toolName == "CodeEdit" }
         assertEquals(2, edits.size)
         // 未读先编：拒绝并引导先读
         assertFalse(edits[0].success)
@@ -702,8 +702,8 @@ class StandardModeEngineTest {
         // 读取成功登记后，编辑放行
         assertTrue(edits[1].success)
         // 执行器只收到放行的那次编辑
-        assertEquals(1, executor.executed.count { it.first == "code_edit" })
-        assertEquals(1, executor.executed.count { it.first == "code_read" })
+        assertEquals(1, executor.executed.count { it.first == "CodeEdit" })
+        assertEquals(1, executor.executed.count { it.first == "CodeRead" })
     }
 
     @Test
@@ -712,7 +712,7 @@ class StandardModeEngineTest {
         // 新文件（路径不存在）写：免检放行（新建合法），但 DEFAULT 模式会 ASK
         llm.enqueue(
             LlmStreamChunk(
-                toolCalls = listOf(ToolCall(id = "w", name = "code_write", arguments = """{"path":"brand_new_dir/Nuke.kt","content":"x"}"""))
+                toolCalls = listOf(ToolCall(id = "w", name = "CodeWrite", arguments = """{"path":"brand_new_dir/Nuke.kt","content":"x"}"""))
             )
         )
         llm.enqueue(LlmStreamChunk(content = "新建完成", isFinish = true))
@@ -732,7 +732,7 @@ class StandardModeEngineTest {
     @Test
     fun `unknown tool returns correction suggestions`() = runTest {
         val llm = ScriptedLlm()
-        // 模型幻觉调用 code_reads（多打一个 s）→ 修正建议指向 code_read
+        // 模型幻觉调用 code_reads（多打一个 s）→ 修正建议指向 CodeRead
         llm.enqueue(
             LlmStreamChunk(
                 toolCalls = listOf(ToolCall(id = "u1", name = "code_reads", arguments = """{"path":"x"}"""))
@@ -745,7 +745,7 @@ class StandardModeEngineTest {
         val toolComplete = events.filterIsInstance<AgentEvent.ToolCallComplete>().single()
         assertFalse(toolComplete.success)
         assertTrue(toolComplete.output.contains("Unknown tool"))
-        assertTrue(toolComplete.output.contains("code_read"))
+        assertTrue(toolComplete.output.contains("CodeRead"))
         // 第二轮请求里模型拿到修正建议（自纠闭环）
         val toolResult = llm.chatRequests[1].filterIsInstance<LlmMessage.ToolResult>().single()
         assertTrue(toolResult.content.contains("Did you mean"))
@@ -756,7 +756,7 @@ class StandardModeEngineTest {
         val llm = ScriptedLlm()
         llm.enqueue(
             LlmStreamChunk(
-                toolCalls = listOf(ToolCall(id = "w", name = "code_write", arguments = """{"path":"x","content":"y"}"""))
+                toolCalls = listOf(ToolCall(id = "w", name = "CodeWrite", arguments = """{"path":"x","content":"y"}"""))
             )
         )
         llm.enqueue(LlmStreamChunk(content = "按用户指示换方式", isFinish = true))

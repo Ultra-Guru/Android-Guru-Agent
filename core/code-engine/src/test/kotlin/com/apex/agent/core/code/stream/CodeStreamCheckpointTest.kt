@@ -27,19 +27,19 @@ class CodeStreamCheckpointTest {
         s.onEvent(AgentEvent.ThinkingComplete("思考中"))
         s.onEvent(
             AgentEvent.ToolCallStart(
-                "c1", "code_edit",
+                "c1", "CodeEdit",
                 """{"path":"src/App.kt","diff":"@@ -1 +1 @@"}"""
             )
         )
         s.onEvent(
             AgentEvent.ToolCallComplete(
-                "c1", "code_edit", """{"path":"src/App.kt"}""",
+                "c1", "CodeEdit", """{"path":"src/App.kt"}""",
                 "ok",
                 "--- a/src/App.kt\n+++ b/src/App.kt\n@@ -1,1 +1,2 @@\n ctx\n+new\n(1 added, 0 removed)",
                 true, 42
             )
         )
-        s.onEvent(AgentEvent.ToolCallStart("b1", "terminal.exec", """{"command":"make"}"""))
+        s.onEvent(AgentEvent.ToolCallStart("b1", "TerminalExec", """{"command":"make"}"""))
         // b1 未完成（模拟中断）
         return s
     }
@@ -76,8 +76,8 @@ class CodeStreamCheckpointTest {
     fun `verify cycle entry survives round trip with red green state`() {
         val s = CodeStreamSession()
         s.beginRun("轮次测试")
-        s.onEvent(AgentEvent.ToolCallStart("e1", "code_edit", """{"path":"A.kt"}"""))
-        s.onEvent(AgentEvent.ToolCallComplete("e1", "code_edit", "{}", "ok", "", true, 5))
+        s.onEvent(AgentEvent.ToolCallStart("e1", "CodeEdit", """{"path":"A.kt"}"""))
+        s.onEvent(AgentEvent.ToolCallComplete("e1", "CodeEdit", "{}", "ok", "", true, 5))
         s.onEvent(AgentEvent.ToolCallStart("t1", "test", """{"path":"A.kt"}"""))
         s.onEvent(AgentEvent.ToolCallComplete("t1", "test", "{}", "pass", "", true, 5))
         s.onEvent(AgentEvent.Complete("done", 1, 2, 10))
@@ -116,10 +116,10 @@ class CodeStreamCheckpointTest {
         val s = CodeStreamSession()
         s.beginRun("大量条目")
         repeat(500) {
-            s.onEvent(AgentEvent.ToolCallStart("c$it", "code_read", """{"path":"f$it.kt"}"""))
+            s.onEvent(AgentEvent.ToolCallStart("c$it", "CodeRead", """{"path":"f$it.kt"}"""))
             s.onEvent(
                 AgentEvent.ToolCallComplete(
-                    "c$it", "code_read", "{}", "ok", "", true, 1
+                    "c$it", "CodeRead", "{}", "ok", "", true, 1
                 )
             )
         }

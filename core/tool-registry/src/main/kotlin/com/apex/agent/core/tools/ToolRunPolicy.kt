@@ -11,7 +11,7 @@ import kotlin.random.Random
  * ToolNode, AndroidWorld, Anthropic computer-use):
  *
  * - **Timeout**: the MCP spec makes client-side tool-call timeouts a MUST;
- *   a hung `http_request` on a dead network otherwise hangs the whole agent
+ *   a hung `HttpRequest` on a dead network otherwise hangs the whole agent
  *   loop, because v1/v2 execute with no deadline at all.
  * - **Retry**: LangGraph's `wrap_tool_call` interceptor retries
  *   transient failures; AutoGPT classifies errors into retryable
@@ -132,7 +132,7 @@ data class ToolRunPolicy(
  *
  * [DefaultToolRunPolicyResolver] resolves from annotations + id families,
  * with an explicit per-id override map winning over everything (the app
- * can pin `shell_execute` to a longer timeout without touching inference).
+ * can pin `ShellExecute` to a longer timeout without touching inference).
  */
 interface ToolRunPolicyResolver {
     fun resolve(tool: AgentTool): ToolRunPolicy
@@ -146,7 +146,7 @@ interface ToolRunPolicyResolver {
  * 2. explicit [prefixOverrides] entry for the tool id's prefix family
  *    (longest match wins) —— 动态 id 族（mcp__server__tool、browser_*）
  *    无法逐个列进静态表，按前缀给整族策略；
- * 3. `ask_user*` → no timeout (the user might take minutes to answer) and
+ * 3. `AskUser*` → no timeout (the user might take minutes to answer) and
  *    no retry (re-asking after a denial is pestering);
  * 4. open-world tools (web/MCP/GitHub) → [ToolRunPolicy.network];
  * 5. read-only / idempotent local tools → [ToolRunPolicy.quickRead];
@@ -167,7 +167,7 @@ class DefaultToolRunPolicyResolver(
             .maxByOrNull { it.key.length }
             ?.let { return it.value }
 
-        if (tool.id == "ask_user" || tool.id == "ask_user_choice") {
+        if (tool.id == "AskUser" || tool.id == "AskUserChoice") {
             return ToolRunPolicy(timeoutMs = 0L, maxRetries = 0)
         }
 

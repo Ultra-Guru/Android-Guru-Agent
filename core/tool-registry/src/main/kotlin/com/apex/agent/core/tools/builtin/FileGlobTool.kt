@@ -11,10 +11,10 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * 文件发现工具（glob_files）
+ * 文件发现工具（GlobFiles）
  *
  * 按模式匹配查找文件（类似find/glob）。
- * 与search_files不同：search_files搜索文件内容，glob_files搜索文件名/路径。
+ * 与SearchFiles不同：SearchFiles搜索文件内容，GlobFiles搜索文件名/路径。
  *
  * 用途：
  * - 找到所有Python文件
@@ -41,7 +41,7 @@ class FileGlobTool(
         }
     }
 
-    override val id = "glob_files"
+    override val id = "GlobFiles"
     override val name = "Find Files"
     override val description = """
         Find files by name pattern, extension, size, or modification time.

@@ -14,7 +14,7 @@ import java.io.File
  * 四种 Skill 类型：
  * 1. Composite — 由多个现有 Tool 组合而成（步骤序列）
  * 2. Prompt    — 不添加新 Tool，注入专用 System Prompt
- * 3. Script    — 包含可执行脚本（Python/Shell），通过 shell_execute 运行
+ * 3. Script    — 包含可执行脚本（Python/Shell），通过 ShellExecute 运行
  * 4. Connector — 连接外部服务（API/SSH/数据库）
  */
 @Serializable
@@ -212,7 +212,9 @@ class SkillRegistry(
 
     private fun loadDisabledIds() {
         if (disabledFile.exists()) {
-            disabledFile.readLines().forEach { if (it.isNotBlank()) disabledIds.add(it.trim()) }
+            disabledFile.readLines().forEach {
+                if (it.isNotBlank()) disabledIds.add(SkillNaming.canonicalId(it))
+            }
         }
     }
 
@@ -233,12 +235,7 @@ class SkillRegistry(
      * 校验 skill id 可用作安全文件名（防路径穿越）。
      * 只允许字母、数字、下划线、连字符、点，且不得含 `..` 段、不得以点开头。
      */
-    private fun validateSkillId(id: String): Boolean {
-        if (id.isBlank() || id.length > 128) return false
-        if (!id.matches(Regex("[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*"))) return false
-        if (id.startsWith(".") || id.contains("..")) return false
-        return true
-    }
+    private fun validateSkillId(id: String): Boolean = SkillNaming.isSafeId(id)
 
     /** autoSetup path 清洗：只允许相对 skillsDir 的路径，拒绝绝对路径与 `..` 逃逸。 */
     private fun safeSetupPath(path: String): File? {
@@ -256,13 +253,15 @@ class SkillRegistry(
     fun install(manifestJson: String): Result<SkillManifest> {
         val result = synchronized(lock) {
             try {
-                val manifest = json.decodeFromString<SkillManifest>(manifestJson)
+                val decoded = json.decodeFromString<SkillManifest>(manifestJson)
+                // v5：技能 id 归一无分隔符 PascalCase（kebab/snake 第三方源同样收敛）。
+                val manifest = decoded.copy(id = SkillNaming.canonicalId(decoded.id))
 
                 if (manifest.id.isBlank()) return Result.failure(Exception("Skill ID is empty"))
                 if (manifest.name.isBlank()) return Result.failure(Exception("Skill name is empty"))
                 if (!validateSkillId(manifest.id)) {
                     return Result.failure(
-                        Exception("Invalid skill id '${manifest.id}': only [A-Za-z0-9_.-] allowed, no path separators")
+                        Exception("Invalid skill id '${manifest.id}': only [A-Za-z0-9] allowed, no path separators")
                     )
                 }
 
@@ -273,7 +272,7 @@ class SkillRegistry(
                 }
 
                 val skillFile = File(skillsDir, "${manifest.id}.json")
-                skillFile.writeText(manifestJson)
+                skillFile.writeText(json.encodeToString(SkillManifest.serializer(), manifest))
 
                 installedSkills[manifest.id] = InstalledSkill(manifest)
 
@@ -303,11 +302,12 @@ class SkillRegistry(
                     ?.firstOrNull { it.extension == "json" && it.name != "installed.json" }
                     ?: return Result.failure(Exception("No skill manifest .json found in zip"))
 
-                val manifest = json.decodeFromString<SkillManifest>(manifestFile.readText())
+                val decoded = json.decodeFromString<SkillManifest>(manifestFile.readText())
+                val manifest = decoded.copy(id = SkillNaming.canonicalId(decoded.id))
 
                 if (!validateSkillId(manifest.id)) {
                     return Result.failure(
-                        Exception("Invalid skill id '${manifest.id}': only [A-Za-z0-9_.-] allowed, no path separators")
+                        Exception("Invalid skill id '${manifest.id}': only [A-Za-z0-9] allowed, no path separators")
                     )
                 }
 
@@ -325,7 +325,7 @@ class SkillRegistry(
                     ?.forEach { it.copyRecursively(File(skillHome, it.name), overwrite = true) }
 
                 val skillFile = File(skillsDir, "${manifest.id}.json")
-                skillFile.writeText(manifestFile.readText())
+                skillFile.writeText(json.encodeToString(SkillManifest.serializer(), manifest))
 
                 installedSkills[manifest.id] = InstalledSkill(manifest)
                 executeAutoSetup(manifest)
@@ -555,7 +555,7 @@ class SkillRegistry(
      * 渐进披露：仅返回「已激活且启用」技能的 Prompt 注入。
      *
      * 技能库扩到 40+ 后全量注入会撞请求体积上限；激活集外的技能只经
-     * [getSkillDigests] 目录（一行摘要）暴露，需要时由模型调 skill_activate
+     * [getSkillDigests] 目录（一行摘要）暴露，需要时由模型调 SkillActivate
      * 或 [SkillAutoActivator] 自动装备。激活 id 里已卸载/禁用的条目自然过滤。
      *
      * #197 双工位：[scope] 非空时在激活集上再按工位作用域过滤
@@ -640,11 +640,15 @@ class SkillRegistry(
     private fun loadInstalledSkills() {
         skillsDir.listFiles()?.filter { it.extension == "json" }?.forEach { file ->
             try {
-                val manifest = json.decodeFromString<SkillManifest>(file.readText())
-                if (validateSkillId(manifest.id)) {
+                val decoded = json.decodeFromString<SkillManifest>(file.readText())
+                // v5：磁盘上的 id 可能是旧 kebab 名（老设备已装技能），读取时归一，
+                // 于是新旧命名在内存里是同一把键（不会并存两份）。
+                val id = SkillNaming.canonicalId(decoded.id)
+                if (validateSkillId(id)) {
+                    val manifest = if (id == decoded.id) decoded else decoded.copy(id = id)
                     synchronized(lock) {
-                        installedSkills[manifest.id] =
-                            InstalledSkill(manifest, enabled = manifest.id !in disabledIds)
+                        installedSkills[id] =
+                            InstalledSkill(manifest, enabled = id !in disabledIds)
                     }
                 }
             } catch (_: Exception) { /* skip malformed */ }
@@ -654,7 +658,9 @@ class SkillRegistry(
     /**
      * 读取指定 Skill（安装管理页 / 市场详情用）。
      */
-    fun get(skillId: String): InstalledSkill? = synchronized(lock) { installedSkills[skillId] }
+    fun get(skillId: String): InstalledSkill? = synchronized(lock) {
+        installedSkills[skillId] ?: installedSkills[SkillNaming.canonicalId(skillId)]
+    }
 
     /**
      * # 目录协调（热加载）：把磁盘上 skillsDir 目录的 JSON 清单与内存安装表对齐。

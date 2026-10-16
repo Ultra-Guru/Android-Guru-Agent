@@ -104,7 +104,7 @@ data class LlmConfig(
      * - OFF（默认）：不发送任何原生搜索参数 —— 请求体与旧版完全一致，兼容所有端点；
      * - AUTO：按 baseUrl/providerId 自动选择各 Provider 的原生搜索策略（推断不出 → OFF）。
      *
-     * 与 Agent 内置 web_search 工具（客户端 HTML 抓取，脆弱且常被反爬）互补：
+     * 与 Agent 内置 WebSearch 工具（客户端 HTML 抓取，脆弱且常被反爬）互补：
      * 原生搜索由服务端执行并注入上下文，引用随响应返回（annotations/search_result）。
      * 详见 [WebSearchMode]。
      */
@@ -351,10 +351,10 @@ enum class ReasoningEffort(val apiValue: String?, val displayName: String) {
  * - AUTO：按 baseUrl/providerId 自动选择下述策略（推断不出 → OFF）
  * - OPENAI：`web_search_options`（gpt-4o-search-preview 系）
  * - DASHSCOPE：`enable_search: true`（阿里百炼 Qwen compatible-mode）
- * - ZHIPU：tools 数组追加 `{"type":"web_search",...}`（智谱 GLM server tool）
+ * - ZHIPU：tools 数组追加 `{"type":"WebSearch",...}`（智谱 GLM server tool）
  * - OPENROUTER：`plugins: [{"id":"web"}]`（等价模型名 `:online` 后缀）
  * - ANTHROPIC：tools 数组追加 `web_search_20250305`（Anthropic server tool）
- * - DEEPSEEK：tools 数组追加 `{"type":"web_search"}`（Responses 兼容端点）
+ * - DEEPSEEK：tools 数组追加 `{"type":"WebSearch"}`（Responses 兼容端点）
  *
  * 作为 [ModelProfile] 的序列化字段（带默认值 OFF，旧持久化 JSON 兼容），
  * 故标注 @Serializable（与 [ToolChoiceMode]/[StructuredOutputMode] 同风格）。
@@ -373,17 +373,17 @@ enum class WebSearchMode(val displayName: String) {
     /** 阿里百炼 DashScope compatible-mode 的 enable_search 顶层开关 */
     DASHSCOPE("DashScope enable_search"),
 
-    /** 智谱 GLM 的 web_search server-side tool（入 tools 数组） */
-    ZHIPU("Zhipu web_search tool"),
+    /** 智谱 GLM 的 WebSearch server-side tool（入 tools 数组） */
+    ZHIPU("Zhipu WebSearch tool"),
 
     /** OpenRouter 的 web 插件（等价模型名 :online 后缀） */
     OPENROUTER("OpenRouter :online"),
 
     /** Anthropic 的 web_search_20250305 server-side tool */
-    ANTHROPIC("Anthropic web_search tool"),
+    ANTHROPIC("Anthropic WebSearch tool"),
 
-    /** DeepSeek Responses 兼容端点的 web_search server tool */
-    DEEPSEEK("DeepSeek web_search tool");
+    /** DeepSeek Responses 兼容端点的 WebSearch server tool */
+    DEEPSEEK("DeepSeek WebSearch tool");
 
     /**
      * 解析该模式在给定端点下实际生效的策略（实例入口，

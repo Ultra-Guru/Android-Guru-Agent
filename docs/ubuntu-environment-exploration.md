@@ -15,7 +15,7 @@
 | 探索问题 | 结论 | 依据 |
 |---|---|---|
 | ① Ubuntu 终端能否正常使用 | ✅ **架构完整可用**（PTY 交互 + VT100 + 真实退出码 + workspace 隔离 + 持久 home） | §2 + 既有 1000+ JVM 测试矩阵 |
-| ② 能否正常被 Agent 调用 | 🔴→✅ **会话类工具可用；环境入口类工具修复前 100% 被 60s 截杀**（`terminal.ubuntu.ensure` / `capabilities ensure` / `workspace.environment ensure` / `repair` / `network` / `status`），**本 PR 已修** | §6 + 新增 `TerminalToolPolicyTest` |
+| ② 能否正常被 Agent 调用 | 🔴→✅ **会话类工具可用；环境入口类工具修复前 100% 被 60s 截杀**（`TerminalUbuntuEnsure` / `capabilities ensure` / `workspace.environment ensure` / `repair` / `network` / `status`），**本 PR 已修** | §6 + 新增 `TerminalToolPolicyTest` |
 | ③ 开发环境：内置了什么 | ✅ **58 包开箱即用**（gcc/g++/make/cmake/gdb、python3 全量+pip+venv+dev、nodejs+npm、git、curl/wget/openssl、sqlite3/jq/ripgrep、vim/tmux/man），**离线可用** | §3 + `scripts/rootfs-packages.txt` |
 | ④ SDK / JDK 能否正常下载 | 🟡 **JDK：apt 可装但装完 JAVA_HOME 缺失（本 PR 已修）；Android SDK：`DepCatalog` 链路是死代码（sdkmanager 无安装来源），诚实判定不可用** | §7 / §8 |
 
@@ -33,7 +33,7 @@
 ## 2. ① 终端可用性 —— 架构层结论
 
 ```
-terminal.create(backend="linux-ubuntu")
+TerminalCreate(backend="linux-ubuntu")
   → LinuxPRootBackend.prepare()
       proot -r <rootfs> -0 --kill-on-exit
             -b <filesDir>/linux/home:/root          ← 持久用户 home（跨 rootfs 版本存活）
@@ -47,7 +47,7 @@ terminal.create(backend="linux-ubuntu")
 
 - **交互语义完整**：真实 PTY + VT 解析（DECCKM/括号粘贴/OSC 52/scrollback 可读）、
   OSC 633 shell marker 拿到**每命令真实退出码**、前台组精确信号（Ctrl-C 只杀
-  前台作业不杀 shell）。`terminal.run/write/observe/wait/signal/resize/snapshot/close`
+  前台作业不杀 shell）。`TerminalRun/write/observe/wait/signal/resize/snapshot/close`
   九件套 + 4 个 legacy 别名覆盖完整会话生命周期。
 - **双执行路径共享同一 rootfs**：交互 PTY 会话（`LinuxPRootBackend`）与
   非交互批处理（`ProotExecutor`，apt/探测用）—— 同一 rootfs / workspace /
@@ -81,7 +81,7 @@ ffmpeg 等重型运行时**不内置**，走 apt 在线扩展 —— 交付体�
 
 ## 4. ③-可下载 开发环境供给链（apt 扩展）
 
-- **apt 通道**：`terminal.linux.packages`（结构化 API：update/install/remove/
+- **apt 通道**：`TerminalLinuxPackages`（结构化 API：update/install/remove/
   upgrade/search/info/isInstalled/installed/status/autoremove/clean/mirror）。
   结构化 argv（绝无 shell 拼接注入）、跨实例 OS 文件锁、磁盘预检（DISK_FULL
   先拒）、有界输出（head 512KB + tail 512KB）、600s apt 超时 + TIMED_OUT 与
@@ -89,10 +89,10 @@ ffmpeg 等重型运行时**不内置**，走 apt 在线扩展 —— 交付体�
   PACKAGE_NOT_FOUND→换请求）。
 - **镜像**：官方（arm: ports.ubuntu.com；x86_64: archive.ubuntu.com）+
   TUNA/USTC/Aliyun 一键切换（大陆网络友好）。
-- **一发式工具链供给**：`terminal.linux.capabilities {ensure:[...]}` ——
+- **一发式工具链供给**：`TerminalLinuxCapabilities {ensure:[...]}` ——
   probe → 缺什么取 aptPackage → 批量安装 → invalidate → 复测汇报前后状态。
   覆盖 java/javac（default-jdk）、golang-go、rustc/cargo、clang、python3-venv 等。
-- **项目感知闭环**：`terminal.workspace.environment {action:"ensure"}` ——
+- **项目感知闭环**：`TerminalWorkspaceEnvironment {action:"ensure"}` ——
   扫描 workspace 标记文件（requirements.txt / package.json / build.gradle.kts /
   Cargo.toml / go.mod / CMakeLists.txt…）→ 检出语言 → 缺失工具链批量补装 →
   复测。**Gradle 项目会触发 default-jdk 安装** —— 与 §7 的 JAVA_HOME 修复
@@ -109,9 +109,9 @@ Agent → `TerminalToolAdapter`（JSON 字符串进出，模块边界防腐）�
 工具。会话生命周期（create/run/observe/wait/write/signal/resize/snapshot/
 close/backends/workspaces/fs/bridge）为快操作或非阻塞操作：
 
-- `terminal.run` **非阻塞**返回 job 句柄（超时压力不存在）；
-- `terminal.wait` 阻塞但自身管理 `timeoutMs`（见 §6 修复项）；
-- 文件工具（read_file/write_file/edit_file…）沙箱根 = default workspace =
+- `TerminalRun` **非阻塞**返回 job 句柄（超时压力不存在）；
+- `TerminalWait` 阻塞但自身管理 `timeoutMs`（见 §6 修复项）；
+- 文件工具（Read/Write/Edit…）沙箱根 = default workspace =
   guest `/workspace` —— **Agent 写的文件与 Ubuntu 会话同一份**（无双轨盲区）。
 
 ## 6. ② Agent 调用链路 —— 环境入口类工具（🔴 P0 超时错配，本 PR 修复）
@@ -119,36 +119,36 @@ close/backends/workspaces/fs/bridge）为快操作或非阻塞操作：
 **发现方法**：预算对账 —— `DefaultToolRunPolicyResolver` 对未显式覆盖的
 mutating 工具推断 `mutating()` = **60s 执行预算 + 0 重试**；而环境工具自身
 管理分钟级~半小时级预算。执行器 `withTimeout` 先于工具自身超时逻辑杀掉调用
-（与既有 `terminal.exec` P0 修复注释描述的同类 bug，但波及面是整个环境链路）。
+（与既有 `TerminalExec` P0 修复注释描述的同类 bug，但波及面是整个环境链路）。
 
 **修复前实况**（Agent 视角的确定性故障）：
 
 | 工具 | 工具自身预算 | 执行器预算（修复前） | Agent 调用结果 |
 |---|---|---|---|
-| `terminal.ubuntu.ensure` | 30min（`DEFAULT_ENSURE_TIMEOUT_MS=1800s`） | 60s | 🔴 100% "timeout: tool call exceeded 60000ms budget"（解压需 2~5min） |
-| `terminal.workspace.environment` ensure | 15min（900s 内部） | 60s | 🔴 同上（ensureReady + 批量 apt） |
-| `terminal.linux.capabilities` ensure | 600s apt + 探测 | 60s | 🔴 装任何工具链必死；probeAll 冷缓存 ~15 次 proot exec 也可能超 |
-| `terminal.linux.repair` | rootfs 重解包（分钟级） | 60s | 🔴 修复轮必死 |
-| `terminal.linux.network` diagnose | 端到端 = 真实 apt-get update（600s apt 超时） | 60s | 🔴 慢网络必死 |
-| `terminal.linux.status`（全量） | 6 维 × proot exec（10~30s/维） | **30s**（annotations 推断 readOnly → quickRead，比 mutating 更短） | 🔴 全量检查必死 |
-| `terminal.wait` | schema 无上限（模型可请求 > 60s） | 60s | 🟡 默认值恰好撞线 |
+| `TerminalUbuntuEnsure` | 30min（`DEFAULT_ENSURE_TIMEOUT_MS=1800s`） | 60s | 🔴 100% "timeout: tool call exceeded 60000ms budget"（解压需 2~5min） |
+| `TerminalWorkspaceEnvironment` ensure | 15min（900s 内部） | 60s | 🔴 同上（ensureReady + 批量 apt） |
+| `TerminalLinuxCapabilities` ensure | 600s apt + 探测 | 60s | 🔴 装任何工具链必死；probeAll 冷缓存 ~15 次 proot exec 也可能超 |
+| `TerminalLinuxRepair` | rootfs 重解包（分钟级） | 60s | 🔴 修复轮必死 |
+| `TerminalLinuxNetwork` diagnose | 端到端 = 真实 apt-get update（600s apt 超时） | 60s | 🔴 慢网络必死 |
+| `TerminalLinuxStatus`（全量） | 6 维 × proot exec（10~30s/维） | **30s**（annotations 推断 readOnly → quickRead，比 mutating 更短） | 🔴 全量检查必死 |
+| `TerminalWait` | schema 无上限（模型可请求 > 60s） | 60s | 🟡 默认值恰好撞线 |
 
-已覆盖的（对照，说明这是**增量遗漏**而非设计缺失）：`terminal.ubuntu.install`
-（20min）、`terminal.linux.bootstrap`（20min）、`terminal.linux.packages`
-（10min）、`terminal.exec`（610s）。
+已覆盖的（对照，说明这是**增量遗漏**而非设计缺失）：`TerminalUbuntuInstall`
+（20min）、`TerminalLinuxBootstrap`（20min）、`TerminalLinuxPackages`
+（10min）、`TerminalExec`（610s）。
 
 **修复**（`app/di/ToolModule.kt`）：策略表提取为公开常量
 `TERMINAL_TOOL_RUN_POLICIES` 并补齐 7 项（预算 = 内部预算 + 余量，均不盲重试
 —— 幂等由工具状态机保证，IN_PROGRESS 可续跑）：
 
 ```
-terminal.ubuntu.ensure        1_830_000ms（30min + 30s）
-terminal.workspace.environment  960_000ms（15min + 1min）
-terminal.linux.capabilities     660_000ms（600s apt + 1min）
-terminal.linux.repair         1_260_000ms（21min）
-terminal.linux.network          660_000ms
-terminal.linux.status           300_000ms
-terminal.wait                   660_000ms
+TerminalUbuntuEnsure        1_830_000ms（30min + 30s）
+TerminalWorkspaceEnvironment  960_000ms（15min + 1min）
+TerminalLinuxCapabilities     660_000ms（600s apt + 1min）
+TerminalLinuxRepair         1_260_000ms（21min）
+TerminalLinuxNetwork          660_000ms
+TerminalLinuxStatus           300_000ms
+TerminalWait                   660_000ms
 ```
 
 **回归锚点**：新增 `app/src/test/.../TerminalToolPolicyTest.kt` ——
@@ -159,7 +159,7 @@ terminal.wait                   660_000ms
 ## 7. ④-JDK 链路 —— apt 可装，但 JAVA_HOME 从不导出（🟡 本 PR 修复）
 
 **探索发现**（三处证据交叉）：
-1. `terminal.linux.capabilities ensure ["java"]` → apt 装 `default-jdk` →
+1. `TerminalLinuxCapabilities ensure ["java"]` → apt 装 `default-jdk` →
    `java/javac` 经 PATH 可用（probe 复测 AVAILABLE）—— 安装侧 ✅；
 2. `LinuxEnvironmentManager.interactiveGuestEnv` 恰好 11 键
    （TERM/LANG/LC_ALL/HOME/USER/LOGNAME/SHELL/PATH/TMPDIR/PWD/OLDPWD）——
@@ -219,8 +219,8 @@ install 命令全部是 `sdkmanager "…"` —— 但：
 3. `sdkmanager` 硬依赖 JAVA_HOME（§7 已修），修复前即便手工装了也跑不起来。
 
 **结论**：设备上 `DepCatalog` ANDROID 组 100% `sdkmanager: command not found`
-—— 链路是死代码。修复方向（后续 PR 候选）：`download_file` 拉取 Google
-cmdline-tools zip → 解压到 `~/android-sdk`（`terminal.fs` guest API 可用）→
+—— 链路是死代码。修复方向（后续 PR 候选）：`DownloadFile` 拉取 Google
+cmdline-tools zip → 解压到 `~/android-sdk`（`TerminalFs` guest API 可用）→
 §7 的受管块自动导出 ANDROID_HOME → `sdkmanager --licenses`（需交互/自动
 接受）→ 按需装 platform-tools/build-tools。本次探索将其记录为**已知缺口**
 而非冒然实现 —— 涉及 license 交互与镜像策略，需独立设计评审。
@@ -229,7 +229,7 @@ cmdline-tools zip → 解压到 `~/android-sdk`（`terminal.fs` guest API 可用
 
 | # | 问题 | 判定 | 备注 |
 |---|---|---|---|
-| 1 | 无「一发式 Ubuntu 内执行」工具（`terminal.exec`/`shell_execute` 跑在 Android 宿主，Ubuntu 内执行需 create→run→wait→observe 3~4 调） | 📋 设计取舍 | `ProotExecutor` 批处理路径已存在（apt/探测共用），工具化是后续增强候选 |
+| 1 | 无「一发式 Ubuntu 内执行」工具（`TerminalExec`/`ShellExecute` 跑在 Android 宿主，Ubuntu 内执行需 create→run→wait→observe 3~4 调） | 📋 设计取舍 | `ProotExecutor` 批处理路径已存在（apt/探测共用），工具化是后续增强候选 |
 | 2 | apt 600s 内部超时 == packages 工具 600s 执行器预算（无余量） | 🟡 临界 | 慢网络长安装可被竞态截杀；后续对齐为 660s |
 | 3 | `TerminalExecTool` env 参数仅 local-sh 通道生效（su 通道 env_applied=false） | 📋 已知 | 工具 JSON 有诚实标记 |
 | 4 | 全量 rootfs 真机链路（安装→引导→会话→apt 可见）12 用例注释状态 | NOT VERIFIED | 维持 T82 口径；本 PR 修复均 JVM 可验证 |
@@ -238,11 +238,11 @@ cmdline-tools zip → 解压到 `~/android-sdk`（`terminal.fs` guest API 可用
 ## 10. Agent 使用指引（修复后的推荐编排）
 
 ```
-1. terminal.ubuntu.ensure                     ← 一发式：安装→引导→能力快照（≤30min，可续跑）
-2. terminal.create {backend:"linux-ubuntu"}   ← 开交互会话（新会话自动 source 工具链块）
-3. terminal.linux.capabilities {ensure:["java","python3"]}   ← 按项目补装工具链
-4. terminal.run / terminal.wait / terminal.observe           ← 在 Ubuntu 里构建/运行
-5. terminal.workspace.environment {action:"ensure"}          ← 项目级一键环境
+1. TerminalUbuntuEnsure                     ← 一发式：安装→引导→能力快照（≤30min，可续跑）
+2. TerminalCreate {backend:"linux-ubuntu"}   ← 开交互会话（新会话自动 source 工具链块）
+3. TerminalLinuxCapabilities {ensure:["java","python3"]}   ← 按项目补装工具链
+4. TerminalRun / TerminalWait / TerminalObserve           ← 在 Ubuntu 里构建/运行
+5. TerminalWorkspaceEnvironment {action:"ensure"}          ← 项目级一键环境
 ```
 
 修复后：步骤 1/3/5 不会再被 60s 执行器预算截杀；步骤 3 装完 JDK 后，

@@ -10,7 +10,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.jsonArray
 
 /**
- * Agent tool: terminal.close
+ * Agent tool: TerminalClose
  *
  * Spec ref: ATR 2.0 Final Spec §34.9
  *
@@ -26,7 +26,7 @@ import kotlinx.serialization.json.jsonArray
 class TerminalCloseTool(
     private val runtime: TerminalRuntime
 ) : TerminalTool {
-    override val id: String = "terminal.close"
+    override val id: String = "TerminalClose"
     override val name: String = id
     override val description: String = """
         Close a Session: sends SIGHUP to foreground, reaps child, closes master fd, frees resources.

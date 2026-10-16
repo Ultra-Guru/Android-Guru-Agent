@@ -29,12 +29,12 @@ import kotlin.math.abs
 /**
  * `time` — 时间/日期/时长/cron 八合一工具（#171 四族合并）。
  *
- * 合并自 `get_time`（v1 现在时刻）/ `datetime`（六操作）/ `cron_next` /
- * `duration_convert`（#171）。旧工具保留注册以兼容既有会话与技能，新会话
+ * 合并自 `GetTimeLegacy`（v1 现在时刻）/ `datetime`（六操作）/ `CronNextLegacy` /
+ * `DurationConvertLegacy`（#171）。旧工具保留注册以兼容既有会话与技能，新会话
  * 的模型只见本工具（旧 id 进 LEGACY_ALIAS_IDS，不再随请求下发）。
  *
  * Why merge: 四个工具分散了同一族"确定性时间计算"能力，模型要先在目录里
- * 找到它们再逐个打开 schema；合并后一次 `tool_open` 拿到全部能力，且操作
+ * 找到它们再逐个打开 schema；合并后一次 `ToolOpen` 拿到全部能力，且操作
  * 间的组合（parse 结果喂 format / cron 下次触发转时区）不再跨工具往返。
  *
  * Operations（`op` 参数）：
@@ -46,7 +46,7 @@ import kotlin.math.abs
  * - `convert_tz` — 时区转换（无偏输入按系统时区，zone 指定目标时区）；
  * - `duration`   — 时长解析/格式化/比较（自动分派：value2→compare、
  *                  裸整数→format（unit=seconds|milliseconds）、否则 parse）；
- * - `cron_next`  — 标准 5 字段 cron（mode: next|explain|validate）。
+ * - `CronNextLegacy`  — 标准 5 字段 cron（mode: next|explain|validate）。
  *
  * 时间输入宽松解析：ISO-8601（带/不带 zone）、epoch 秒（≤10 位）/毫秒、
  * `yyyy-MM-dd [HH:mm[:ss]]` 等常见格式、RFC-1123。时长输入：`1h30m`、
@@ -54,7 +54,7 @@ import kotlin.math.abs
  * 列表与 JAN-DEC/MON-SUN 名称，DOM/DOW 同时受限按标准 OR 语义。
  */
 class TimeTool : BaseTool(
-    id = "time",
+    id = "Time",
     name = "Time Toolkit",
     description = """
         All-in-one time toolkit: current time, format/parse, calendar arithmetic,
@@ -63,8 +63,8 @@ class TimeTool : BaseTool(
         | {"op":"parse","value":"2024-01-01T00:00:00Z"} | {"op":"add","value":"...","amount":3,"unit":"days"}
         | {"op":"diff","value":"...","value2":"..."} | {"op":"convert_tz","value":"...","zone":"Asia/Tokyo"}
         | {"op":"duration","value":"1h30m"} (auto: value2->compare, bare int->format)
-        | {"op":"cron_next","expression":"30 8 * * MON","count":3}
-        op: now (default) | format | parse | add | diff | convert_tz | duration | cron_next.
+        | {"op":"CronNextLegacy","expression":"30 8 * * MON","count":3}
+        op: now (default) | format | parse | add | diff | convert_tz | duration | CronNextLegacy.
         Time values accept ISO-8601, epoch s/ms, "yyyy-MM-dd HH:mm[:ss]", RFC-1123.
         Durations accept "1h30m", "1.5h", "500ms", bare seconds, "PT1H30M".
         zone accepts IANA ids ("Asia/Shanghai") or offsets ("+08:00"); default system zone.
@@ -72,23 +72,23 @@ class TimeTool : BaseTool(
     declaredSchema = toolSchema {
         string(
             "op",
-            description = "now | format | parse | add | diff | convert_tz | duration | cron_next (default now)",
-            enumValues = listOf("now", "format", "parse", "add", "diff", "convert_tz", "duration", "cron_next"),
+            description = "now | format | parse | add | diff | convert_tz | duration | CronNextLegacy (default now)",
+            enumValues = listOf("now", "format", "parse", "add", "diff", "convert_tz", "duration", "CronNextLegacy"),
             defaultValue = "now"
         )
         string("value", description = "Primary value: date/time (most ops), duration string (duration), integer in 'unit' (duration format mode)")
         string("value2", description = "Second value: diff end / duration compare right-hand side")
         string("format", description = "Output pattern for op=format (java.time DateTimeFormatter syntax)")
-        string("zone", description = "Target IANA zone id or ±HH:mm offset (format/parse/add/convert_tz/cron_next; default system zone)")
+        string("zone", description = "Target IANA zone id or ±HH:mm offset (format/parse/add/convert_tz/CronNextLegacy; default system zone)")
         number("amount", description = "Amount for op=add (may be negative; whole numbers)")
         string(
             "unit",
             description = "Unit for add (seconds..years) or duration-format input unit (seconds|milliseconds)",
             enumValues = listOf("seconds", "minutes", "hours", "days", "weeks", "months", "years", "milliseconds")
         )
-        string("expression", description = "5-field cron expression for op=cron_next: minute hour day-of-month month day-of-week")
-        string("mode", description = "cron_next sub-mode: next | explain | validate (default next)", enumValues = listOf("next", "explain", "validate"))
-        string("from", description = "cron_next search start time (ISO-8601 or epoch s/ms; default now)")
+        string("expression", description = "5-field cron expression for op=CronNextLegacy: minute hour day-of-month month day-of-week")
+        string("mode", description = "CronNextLegacy sub-mode: next | explain | validate (default next)", enumValues = listOf("next", "explain", "validate"))
+        string("from", description = "CronNextLegacy search start time (ISO-8601 or epoch s/ms; default now)")
         integer("count", description = "How many: cron next runs (1..20, default 1)", defaultValue = 1, minimum = 1.0, maximum = 20.0)
     }
 ) {
@@ -117,7 +117,7 @@ class TimeTool : BaseTool(
             "diff" -> opDiff(args)
             "convert_tz" -> opConvertTz(args)
             "duration" -> opDuration(args)
-            "cron_next" -> opCronNext(args)
+            "CronNextLegacy" -> opCronNext(args)
             else -> ToolResult.fail(ToolErrorCode.EXECUTION_FAILED, "unreachable op $op")
         }
     }
@@ -220,7 +220,7 @@ class TimeTool : BaseTool(
         return ToolResult.ok(describe(converted))
     }
 
-    // ═══ duration（移植自 duration_convert：parse / format / compare 自动分派）═══
+    // ═══ duration（移植自 DurationConvertLegacy：parse / format / compare 自动分派）═══
 
     /**
      * 分派规则（无额外子参数，模型最省心）：
@@ -275,7 +275,7 @@ class TimeTool : BaseTool(
         "examples: 1h30m, 1.5h, 2d, 45s, 500ms, 5400, PT1H30M"
     )
 
-    // ═══ cron_next（移植自 cron_next：next / explain / validate）═══
+    // ═══ CronNextLegacy（移植自 CronNextLegacy：next / explain / validate）═══
 
     private fun opCronNext(args: ToolArguments): ToolResult {
         val expression = args.requireString("expression")
@@ -400,7 +400,7 @@ class TimeTool : BaseTool(
         }.trim()
     }
 
-    // ── 时长解析 / 渲染（duration_convert 同源逻辑）───────────────
+    // ── 时长解析 / 渲染（DurationConvertLegacy 同源逻辑）───────────────
 
     /**
      * 时长 → 纳秒。接受 ISO-8601（`PT1H30M`，大小写不敏感，可带符号）、
@@ -509,7 +509,7 @@ class TimeTool : BaseTool(
         return text
     }
 
-    // ── cron 解析 / next / explain（cron_next 同源逻辑）────────────
+    // ── cron 解析 / next / explain（CronNextLegacy 同源逻辑）────────────
 
     /** 一个 cron 字段：允许值位图 + 是否受限（驱动 DOM/DOW OR 语义）。 */
     private class CronField(val values: BooleanArray, val restricted: Boolean)
@@ -787,7 +787,7 @@ class TimeTool : BaseTool(
     private fun padded(v: Int): String = String.format(Locale.ROOT, "%02d", v)
 
     private companion object {
-        val OPERATIONS = setOf("now", "format", "parse", "add", "diff", "convert_tz", "duration", "cron_next")
+        val OPERATIONS = setOf("now", "format", "parse", "add", "diff", "convert_tz", "duration", "CronNextLegacy")
         val ADD_UNITS = setOf("second", "minute", "hour", "day", "week", "month", "year")
         val CRON_MODES = setOf("next", "explain", "validate")
         const val MAX_CRON_COUNT = 20

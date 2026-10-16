@@ -171,19 +171,19 @@ class BypassExecutionEngine @Inject constructor(
     private suspend fun executeTransition(transition: FSMTransition): Boolean {
         return try {
             val uiAction = when (transition.actionType) {
-                "ui_tap" -> {
+                "UiTap" -> {
                     parseTapAction(transition.actionParams)?.let { (x, y) ->
                         UiAction.Click(x, y)
                     } ?: return false
                 }
-                "ui_swipe" -> {
+                "UiSwipe" -> {
                     parseSwipeAction(transition.actionParams)?.let { (x1, y1, x2, y2) ->
                         UiAction.Swipe(x1, y1, x2, y2)
                     } ?: return false
                 }
-                "input_text" -> {
+                "InputText" -> {
                     // 双保险：TraceDistiller 已在蒸馏期提取纯参数，但旧库中的
-                    // 宏可能仍存完整描述（input_text("hello")）。这里兼容两种
+                    // 宏可能仍存完整描述（InputText("hello")）。这里兼容两种
                     // 形态，避免把整串字面量输入进输入框。
                     UiAction.InputText(extractInputText(transition.actionParams))
                 }
@@ -200,14 +200,14 @@ class BypassExecutionEngine @Inject constructor(
     }
 
     /**
-     * 提取 input_text 的纯文本参数，兼容三种历史形态：
+     * 提取 InputText 的纯文本参数，兼容三种历史形态：
      * - "hello"（新蒸馏，纯参数）
-     * - input_text("hello") / input_text(hello)（旧库存的完整描述）
+     * - InputText("hello") / InputText(hello)（旧库存的完整描述）
      */
     internal fun extractInputText(params: String): String {
         val trimmed = params.trim()
         // 非括号包裹形态：直接去引号返回
-        if (!trimmed.startsWith("input_text") && !trimmed.startsWith("input")) {
+        if (!trimmed.startsWith("InputText")) {
             return trimmed.removeSurrounding("\"")
         }
         // 兼容旧形态：提取首个平衡括号对内内容

@@ -76,7 +76,7 @@ import kotlinx.coroutines.withContext
  *
  * 此前 refreshStatus() 全仓零调用：用户在 Shizuku/无障碍授权后，
  * DefaultPrivilegeManager 的 StateFlow 恒为初始值 false，PrivilegeUiProvider
- * 判定不可用，ui_tap/ui_swipe 永远回退 input 命令。现在 ON_RESUME 与授权
+ * 判定不可用，UiTap/UiSwipe 永远回退 input 命令。现在 ON_RESUME 与授权
  * 动作返回时都会重探并回灌（事件驱动的 binder/服务监听之外的双保险）。
  */
 @HiltViewModel

@@ -12,7 +12,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
- * T81 (D-7 / §29/§52)：terminal.linux.capabilities —— Agent 查询 Ubuntu 环境
+ * T81 (D-7 / §29/§52)：TerminalLinuxCapabilities —— Agent 查询 Ubuntu 环境
  * 真实能力（不再 shell 猜测）。
  *
  * 输入 JSON（均可选）：
@@ -31,7 +31,7 @@ class TerminalLinuxCapabilitiesTool(
     private val packages: com.apex.agent.platform.terminal.pkg.LinuxPackageManager? = null
 ) : TerminalTool {
 
-    override val id: String = "terminal.linux.capabilities"
+    override val id: String = "TerminalLinuxCapabilities"
     override val name: String = id
     override val parametersSchema: String = """
         {"type":"object","properties":{"capability":{"type":"string","description":"Single capability to probe (default: all)"},"refresh":{"type":"boolean","default":false,"description":"Bypass the TTL cache and re-probe"},"ensure":{"type":"array","items":{"type":"string"},"description":"T82: install missing apt packages for the named capabilities, then re-probe"},"ensureExtras":{"type":"array","items":{"type":"string"},"description":"Extra apt packages to install alongside ensure (e.g. python3-venv, default-jdk)"}},"required":[]}
@@ -132,14 +132,14 @@ class TerminalLinuxCapabilitiesTool(
 }
 
 /**
- * T81 (D-7 / §30/§52)：terminal.linux.repair —— 单轮自动修复编排
+ * T81 (D-7 / §30/§52)：TerminalLinuxRepair —— 单轮自动修复编排
  * （detect → repair（每维度一次）→ verify；无循环）。
  */
 class TerminalLinuxRepairTool(
     private val repairService: com.apex.agent.platform.terminal.health.EnvironmentRepairService
 ) : TerminalTool {
 
-    override val id: String = "terminal.linux.repair"
+    override val id: String = "TerminalLinuxRepair"
     override val name: String = id
     override val parametersSchema: String = """
         {"type":"object","properties":{},"required":[]}

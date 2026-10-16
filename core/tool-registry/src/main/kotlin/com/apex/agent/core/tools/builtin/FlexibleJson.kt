@@ -13,8 +13,8 @@ import kotlinx.serialization.json.jsonObject
 /**
  * # Tool System v3 — Flexible JSON Argument Reading
  *
- * Composite-argument tools (`tool_batch_run`, `json_transform`,
- * `shortcut_define`, `shortcut_run`) accept one argument that is *itself
+ * Composite-argument tools (`ToolBatchRun`, `JsonTransformLegacy`,
+ * `ShortcutDefine`, `ShortcutRun`) accept one argument that is *itself
  * structured JSON*. Models emit it in either of two shapes, both valid:
  *
  * - **inline (preferred)**: `"operations": [{"op": "pick", …}]` — the

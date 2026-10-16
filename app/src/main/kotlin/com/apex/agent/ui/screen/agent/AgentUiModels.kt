@@ -95,13 +95,13 @@ data class PendingPipelineCommand(
     val id: String,
     val label: String
 ) {
-    /** 拼回斜杠命令首词：`/skill:web_search`。 */
+    /** 拼回斜杠命令首词：`/skill:WebSearch`。 */
     fun toCommandToken(): String = "/$type:$id"
 
     companion object {
         /**
          * 从斜杠菜单命令串解析胶囊（宽容失败 → null 走旧文本插入路径）。
-         * 输入形态：`/skill:web_search `（菜单命令自带尾随空格）或无空格裸命令。
+         * 输入形态：`/skill:WebSearch `（菜单命令自带尾随空格）或无空格裸命令。
          */
         fun fromCommand(command: String, label: String): PendingPipelineCommand? {
             val token = command.trim()

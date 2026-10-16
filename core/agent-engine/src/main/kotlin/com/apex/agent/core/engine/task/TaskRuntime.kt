@@ -205,7 +205,7 @@ class TaskRuntime(
                     onEngineEvent(task.taskId, event)   // checkpoint 边界（先落盘）
                     // ═══ #351③ 守护：UNLIMITED tap 在 UI 不收集时无界堆积 ═══
                     // VM 收集者被取消而任务继续（Activity 销毁、LOOP 后台轮次、
-                    // ask_user 挂起期间用户切走）时，每 token 一条事件全部积压到
+                    // AskUser 挂起期间用户切走）时，每 token 一条事件全部积压到
                     // 任务结束——长任务数万事件对象 MB 级内存，低内存设备放大
                     // LMK 杀进程风险（用户看到的即「卡死后重启」）。高水位后
                     // 丢弃可丢的流式 chunk（UI 最终文本由 Complete/ToolCallComplete
@@ -268,7 +268,7 @@ class TaskRuntime(
     private suspend fun onEngineEvent(taskId: String, event: AgentEvent) {
         var task = _activeTask.value?.takeIf { it.taskId == taskId } ?: return
         // ═══ #335（P0）：WAITING_USER 回迁缺失 → TaskRuntime 砖化 ═══
-        // ask_user 触发 UserInputRequired 把任务迁入 WAITING_USER 后，引擎继续
+        // AskUser 触发 UserInputRequired 把任务迁入 WAITING_USER 后，引擎继续
         // 流转（用户已回答/超时收场/abort 空答案）——后续任何事件（ToolResult、
         // Complete、Error、下一迭代的各类事件）都意味着执行已恢复，但旧实现
         // 没有任何 WAITING_USER→RUNNING 的回迁点，任务永远停在 WAITING_USER：

@@ -27,8 +27,8 @@ data class StandardToolPlan(
  *    过滤注册表（`""` = 通配全量；`code_git_` = 前缀；`mcp__` 动态注册的
  *    MCP 一等工具天然命中），叠加 v4 强制函数（forcedToolIds）收窄；
  * 2. **别名归一**：模型可能输出业界惯用名（read/write/edit/bash/grep/
- *    glob/todo/task…），[resolveRegistryId] 归一到注册表 id（code_read /
- *    code_write / code_edit / shell_execute / …）——**胶囊时间轴按
+ *    glob/todo/task…），[resolveRegistryId] 归一到注册表 id（CodeRead /
+ *    CodeWrite / CodeEdit / ShellExecute / …）——**胶囊时间轴按
  *    注册表 id 分族渲染**，归一保证两套引擎的胶囊表现完全一致；
  *    未知名归一失败时 [suggestToolIds] 给出相近候选，供错误文案引导；
  * 3. **合成工具**：`task`（子代理委派）不在注册表——[syntheticTaskTool]
@@ -63,49 +63,58 @@ object StandardToolSurface {
      * 分族（ToolKind.fromToolName）与深潜引擎完全一致。
      */
     private val ALIAS_TO_REGISTRY: Map<String, String> = mapOf(
-        "read" to "code_read",
-        "read_file" to "code_read",
-        "write" to "code_write",
-        "write_file" to "code_write",
-        "edit" to "code_edit",
-        "edit_file" to "code_edit",
-        "multiedit" to "code_edit",
-        "bash" to "shell_execute",
-        "shell" to "shell_execute",
-        "execute" to "shell_execute",
-        "grep" to "code_grep",
-        "search" to "code_grep",
-        "grep_search" to "code_grep",
-        "glob" to "code_glob",
-        "list" to "code_glob",
-        "ls" to "code_glob",
-        "todo" to "code_todo",
-        "todo_write" to "code_todo",
-        "todo_read" to "code_todo",
-        "todowrite" to "code_todo",
-        "check" to "code_check",
-        "lint" to "code_check",
-        "task" to "task", // 合成工具（自映射：resolve 层面已归一）
-        "subagent" to "task",
-        "dispatch" to "task"
+        // 业界惯用短名（模型读过画像提示词后倾向用短名 read/edit/bash…）
+        "read" to "CodeRead",
+        "Read" to "CodeRead",
+        "read_file" to "CodeRead",
+        "readfile" to "CodeRead",
+        "write" to "CodeWrite",
+        "Write" to "CodeWrite",
+        "write_file" to "CodeWrite",
+        "writefile" to "CodeWrite",
+        "edit" to "CodeEdit",
+        "Edit" to "CodeEdit",
+        "edit_file" to "CodeEdit",
+        "editfile" to "CodeEdit",
+        "multiedit" to "CodeEdit",
+        "bash" to "ShellExecute",
+        "shell" to "ShellExecute",
+        "execute" to "ShellExecute",
+        "grep" to "CodeGrep",
+        "search" to "CodeGrep",
+        "grep_search" to "CodeGrep",
+        "glob" to "CodeGlob",
+        "list" to "CodeGlob",
+        "ls" to "CodeGlob",
+        "todo" to "CodeTodo",
+        "todo_write" to "CodeTodo",
+        "todo_read" to "CodeTodo",
+        "todowrite" to "CodeTodo",
+        "check" to "CodeCheck",
+        "lint" to "CodeCheck",
+        "Task" to "Task", // 合成工具（自映射：resolve 层面已归一）
+        "task" to "Task",
+        "subagent" to "Task",
+        "dispatch" to "Task"
     )
 
     /** 编码相关前缀优先序（截断时的稳定排序依据）。 */
     private val PRIORITY_PREFIXES = listOf(
-        "code_", "shell_execute", "terminal.", "code_git_", "web_", "http_",
-        "skill_", "mcp__"
+        "Code", "ShellExecute", "Terminal", "Web", "Http", "Skill", "Mcp"
     )
 
     // ═══════════════════════ 归一 API ═══════════════════════
 
     /**
-     * 名字归一（比较用）：去空白 + 小写 + 连字符/点号 → 下划线。
+     * 名字归一（比较用）：去空白 + 小写 + **去掉一切非字母数字字符**。
      *
-     * 模型偶发输出 `Read-File` / `Bash` / `TODO` 这类大小写或分隔符漂移；
+     * 模型偶发输出 `Read-File` / `read_file` / `Bash` / `TODO` 这类大小写或
+     * 分隔符漂移；v5 起注册表 id 本身无分隔符，归一同样把分隔符全部抹掉，
+     * 于是 `read_file`、`ReadFile`、`readfile` 三种写法落到同一把键。
      * 归一只影响比较，不改变原名（MCP/skill 动态 id 原样放行）。
      */
     private fun normalizeKey(raw: String): String =
-        raw.trim().lowercase().replace('-', '_').replace('.', '_')
+        raw.trim().lowercase().filter { it.isLetterOrDigit() }
 
     /** 归一键 → 注册表 id（大小写/分隔符漂移容错层）。 */
     private val NORMALIZED_ALIAS_TO_REGISTRY: Map<String, String> by lazy {
@@ -125,15 +134,15 @@ object StandardToolSurface {
     /**
      * 给未知工具名找相近候选（前 3 个，保持 available 原序）。
      *
-     * 比较前做宽松归一（小写 + `-`/`.` → `_` + 双方去 `code_` 前缀），
+     * 比较前做宽松归一（小写 + 去分隔符 + 双方去 `Code` 前缀），
      * 命中条件：编辑距离 ≤ 2 或前缀/包含匹配。纯函数，供
      * [StandardPrompts.unknownToolResult] 拼修正建议。
      */
     fun suggestToolIds(attempted: String, available: List<String>): List<String> {
-        val target = normalizeKey(attempted).removePrefix("code_")
+        val target = normalizeKey(attempted).removePrefix("code")
         if (target.isEmpty()) return emptyList()
         return available.filter { candidate ->
-            val normalized = normalizeKey(candidate).removePrefix("code_")
+            val normalized = normalizeKey(candidate).removePrefix("code")
             normalized.isNotEmpty() && (
                 levenshteinWithin(target, normalized, limit = 2) ||
                     normalized.startsWith(target) ||
@@ -174,7 +183,7 @@ object StandardToolSurface {
         resolveRegistryId(name) == SYNTHETIC_TASK_ID
 
     /** 合成工具 id。 */
-    const val SYNTHETIC_TASK_ID = "task"
+    const val SYNTHETIC_TASK_ID = "Task"
 
     // ═══════════════════════ 工具面构建 ═══════════════════════
 
@@ -269,9 +278,9 @@ object StandardToolSurface {
             appendLine("  " + chunk.joinToString(", "))
         }
         appendLine()
-        appendLine("Common aliases are auto-resolved (read→code_read, write→code_write,")
-        appendLine("edit→code_edit, bash→shell_execute, grep→code_grep, glob→code_glob,")
-        appendLine("todo→code_todo, check→code_check) — but prefer the exact names above.")
+        appendLine("Common aliases are auto-resolved (read→CodeRead, write→CodeWrite,")
+        appendLine("edit→CodeEdit, bash→ShellExecute, grep→CodeGrep, glob→CodeGlob,")
+        appendLine("todo→CodeTodo, check→CodeCheck) — but prefer the exact names above.")
         if (planToolIds.contains(SYNTHETIC_TASK_ID)) {
             appendLine()
             appendLine("`task` dispatches an isolated sub-agent. It does NOT see this")
@@ -303,7 +312,7 @@ object StandardToolSurface {
      *
      * subagent_type 取值域 = explore / research / general / reviewer 四种
      * （与 [StandardAgentKind.fromKey] 的解析域一致；custom 自定义类型为
-     * 深潜线 code_task 专属，标准线画像封闭），描述对齐业界标准
+     * 深潜线 CodeTask 专属，标准线画像封闭），描述对齐业界标准
      * task 工具的用法精华：自包含 prompt / 明确写码或纯调研 /
      * 结果仅主代理可见需自己转述。
      */
@@ -361,5 +370,5 @@ object StandardToolSurface {
      * 工具面里是否包含 todo 工具（决定提示词是否拼 Todo 指引段）。
      */
     fun planHasTodo(planToolIds: List<String>): Boolean =
-        planToolIds.any { it == "code_todo" || it == "todo" }
+        planToolIds.any { it == "CodeTodo" || it == "todo" }
 }
