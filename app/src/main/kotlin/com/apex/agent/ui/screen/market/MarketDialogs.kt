@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -514,6 +515,54 @@ fun ImportSkillJsonDialog(
     )
 }
 
+/**
+ * 功能性插件导入对话框（Plugin System v2）：粘贴 plugin.json 文本导入。
+ * 与 [ImportSkillJsonDialog] 同构（确认钮启用条件 = 以 JSON 对象起始），
+ * 校验门在 [com.apex.agent.plugin.host.functional.FunctionalPluginStore.install]
+ * （身份门 / 版本门 / 贡献点形状门，拒绝理由经 snackbar 人话反馈）。
+ */
+@Composable
+fun ImportFunctionalPluginDialog(
+    onDismiss: () -> Unit,
+    onImport: (json: String) -> Unit
+) {
+    var content by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.market_plugin_import_title)) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = content,
+                    onValueChange = { content = it },
+                    label = { Text(stringResource(R.string.market_plugin_import_label)) },
+                    minLines = 6,
+                    maxLines = 12,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = stringResource(R.string.market_plugin_import_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onImport(content) },
+                // JSON_OBJECT_OPEN 为 JSON 对象起始花括号（unicode 转义写法，避免
+                // 字面量大括号干扰 CI 的源码括号平衡静态检查）。
+                enabled = content.trim().startsWith(JSON_OBJECT_OPEN)
+            ) { Text(stringResource(R.string.market_action_install)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.market_action_cancel)) }
+        }
+    )
+}
+
 /** 通用 URL 导入对话框。 */
 @Composable
 fun ImportFromUrlDialog(
@@ -774,4 +823,116 @@ private fun PreviewChip(label: String, value: String) {
             )
         }
     }
+}
+
+// ═══ GitHub 智能安装：候选选择弹窗 ═══
+
+/**
+ * GitHub 仓库多候选选择弹窗（技能集合 / MCP monorepo 仓库）。
+ *
+ * 探测发现多个可装项时由 [MarketViewModel.installFromRepoInput] 置入状态；
+ * 每行：类型徽标（技能 / MCP）+ 名称 + 描述 + 单项安装按钮；
+ * confirmButton = 一键全部安装。安装中的项与全局 busy 互斥（行按钮禁用）。
+ *
+ * 长列表用 LazyColumn + max-h-72（约 300dp）内滚动 —— 与市场其他弹窗
+ * 的滚动列表口径一致（AlertDialog 内 LazyColumn 是官方支持形态）。
+ */
+@Composable
+internal fun GithubCandidatesPickDialog(
+    repoTitle: String,
+    candidates: List<com.apex.agent.marketplace.MarketInstallManager.GithubRepoCandidate>,
+    busy: Boolean,
+    onInstallOne: (com.apex.agent.marketplace.MarketInstallManager.GithubRepoCandidate) -> Unit,
+    onInstallAll: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text(
+                    stringResource(R.string.market_github_pick_title),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    stringResource(R.string.market_github_pick_subtitle, repoTitle, candidates.size),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        text = {
+            androidx.compose.foundation.lazy.LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 300.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(
+                    count = candidates.size,
+                    key = { candidates[it].key }
+                ) { index ->
+                    val candidate = candidates[index]
+                    val kindLabel = if (candidate.kind ==
+                        com.apex.agent.marketplace.MarketInstallManager.GithubRepoCandidate.Kind.MCP
+                    ) {
+                        stringResource(R.string.market_github_pick_kind_mcp)
+                    } else {
+                        stringResource(R.string.market_github_pick_kind_skill)
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        kindLabel,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        candidate.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                                if (candidate.description.isNotBlank()) {
+                                    Text(
+                                        candidate.description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            TextButton(
+                                onClick = { onInstallOne(candidate) },
+                                enabled = !busy
+                            ) { Text(stringResource(R.string.market_github_pick_install_one)) }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onInstallAll,
+                enabled = !busy && candidates.isNotEmpty()
+            ) { Text(stringResource(R.string.market_github_pick_install_all)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.market_action_cancel)) }
+        }
+    )
 }

@@ -321,7 +321,11 @@ data class RegistryServer(
     val repositoryUrl: String,
     val version: String,
     val remotes: List<RegistryRemote>,
-    val packages: List<RegistryPackage>
+    val packages: List<RegistryPackage>,
+    /** 环境变量默认值（GitHub .mcp.json 的 env 块等来源；键并入
+     * packages 的 envVarNames 提示，值在安装时透传 —— 旧实现只传键名
+     * 丢值，依赖 env 默认值的 server 装完启动即失败且无引导）。 */
+    val environmentValues: Map<String, String> = emptyMap()
 ) {
     /** 条目唯一键（列表 key 去重用）。 */
     val key: String get() = "registry/" + name.lowercase()
@@ -369,7 +373,8 @@ data class RegistryServer(
                 url = remote.url,
                 transport = if (remote.isSse) McpTransport.SSE else McpTransport.HTTP,
                 enabled = false,
-                headers = remote.headers
+                headers = remote.headers,
+                env = environmentValues
             )
         }
         InstallKind.NPM -> {
@@ -378,6 +383,7 @@ data class RegistryServer(
                 name = configName,
                 transport = McpTransport.STDIO,
                 command = "npx",
+                env = environmentValues,
                 args = buildList {
                     add("-y")
                     // P2-3：registry 声明的运行时旗标走白名单 —— 黑名单挡不住

@@ -2,6 +2,7 @@ package com.apex.agent.ui.screen.agent
 
 import com.apex.agent.core.tools.skill.SkillActivationStore
 import com.apex.agent.github.GithubTokenManager
+import com.apex.agent.plugin.host.functional.FunctionalSlashCommand
 import com.apex.agent.slash.SlashCommandParser
 import com.apex.agent.slash.SlashCommandRouter
 import com.apex.agent.slash.SlashRouteContext
@@ -80,19 +81,24 @@ internal object SlashCommands {
      * @param skillActivation 技能激活存储：/skill:<id> 路由时同步装备该技能
      *   （渐进披露用户路——本轮系统提示词即携带方法论全文，而非仅一段引导词）；
      *   null = 未接入（不装备，行为与旧版一致）。
+     * @param functionalCommands Plugin System v2：已激活功能性插件的指令贡献快照
+     *   （路由器命中 /plugin:<id> 时注入插件声明的定制 prompt）；缺省空
+     *   ——退化为既有通用插件路由文案，向后兼容。
      */
     fun handle(
         command: String,
         githubTokenManager: GithubTokenManager,
         mcpConnected: Set<String> = emptySet(),
-        skillActivation: SkillActivationStore? = null
+        skillActivation: SkillActivationStore? = null,
+        functionalCommands: Map<String, FunctionalSlashCommand> = emptyMap()
     ): Result {
         val parsed = SlashCommandParser.parse(command)
         val githubState = githubTokenManager.connectionState.value
         val context = SlashRouteContext(
             githubConnected = githubState.isConnected,
             githubUsername = githubState.username,
-            mcpConnected = mcpConnected
+            mcpConnected = mcpConnected,
+            functionalCommands = functionalCommands
         )
         val route = SlashCommandRouter.route(parsed, context)
 

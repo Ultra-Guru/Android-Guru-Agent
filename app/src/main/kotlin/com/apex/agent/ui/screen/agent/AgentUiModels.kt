@@ -63,12 +63,16 @@ data class UserInputRequest(
  *
  * 引擎事件本身没有"类型"字段，ViewModel 在 [classifyTool] 中根据
  * toolName 前缀与已知 id 推断。这样用户能一眼区分本地工具 / MCP /
- * 联网搜索 / 网页抓取 / Skill / GitHub / 连接器 / 插件调用。
+ * 联网搜索 / 网页抓取 / 浏览器自动化 / Skill / GitHub / 连接器 / 插件调用。
  *
  * GITHUB 独立于 CONNECTOR：官方 Octocat mark + GitHub 品牌灰，
  * 与通用连接器（Link 图标 + 紫色）视觉区分。
+ *
+ * BROWSER 独立于 WEB_FETCH（v1.5.0）：浏览器自动化是内置大功能，
+ * globe 图标 + 专属徽章让聊天流里的 browser_* 调用一眼可辨 ——
+ * WEB_FETCH 是「抓一个 URL 的文本」，BROWSER 是「在页面里开车」。
  */
-enum class ToolKind { LOCAL, MCP, WEB_SEARCH, WEB_FETCH, SKILL, GITHUB, CONNECTOR, PLUGIN }
+enum class ToolKind { LOCAL, MCP, WEB_SEARCH, WEB_FETCH, BROWSER, SKILL, GITHUB, CONNECTOR, PLUGIN }
 
 /**
  * 待发送的流水线指令（迷你胶囊）。

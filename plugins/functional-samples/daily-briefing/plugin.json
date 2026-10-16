@@ -1,0 +1,35 @@
+{
+  "id": "functional.daily-briefing",
+  "kind": "functional",
+  "name": "每日简报",
+  "version": 1,
+  "versionName": "1.0.0",
+  "minHostVersion": 1,
+  "description": "组合浏览器导航、正文抽取与用户通知工具，一键生成站点要闻简报。纯声明式宏，不执行任何代码。",
+  "author": "Apex Sample",
+  "tags": ["productivity", "report", "browser"],
+  "scope": "all",
+  "contributions": {
+    "tools": [
+      {
+        "id": "briefing_run",
+        "name": "Run Daily Briefing",
+        "description": "打开指定新闻站点并抽取正文要点，把结果通知给用户。site 参数为新闻站 URL。",
+        "parametersSchema": "{\"type\":\"object\",\"properties\":{\"site\":{\"type\":\"string\",\"description\":\"要抓取的新闻站点 URL\"}},\"required\":[\"site\"]}",
+        "steps": [
+          { "tool": "browser_navigate", "args": { "url": "{{input.site}}" }, "output": "nav" },
+          { "tool": "browser_extract_content", "output": "body" },
+          { "tool": "agent_notify_user", "args": { "message": "今日简报（来源 {{input.site}}）：{{body}}" } }
+        ]
+      }
+    ],
+    "slashCommands": [
+      {
+        "id": "briefing",
+        "title": "每日简报",
+        "description": "抓取新闻站点并生成简报",
+        "prompt": "使用 briefing_run 工具生成今日简报：若用户未给出站点，使用参数 site=https://news.ycombinator.com；完成后用两三句话向用户总结要点。"
+      }
+    ]
+  }
+}

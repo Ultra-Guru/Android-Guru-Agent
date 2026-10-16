@@ -1,9 +1,49 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Browser overlay strings (English default) — CyberNeonBallManager floating ball
-     feedback (non-Compose, resolved via LanguageManager.getString). Chinese in
-     values-zh/strings_browser.xml; language switching via LanguageManager +
-     MainActivity attachBaseContext/recreate. -->
+<!-- Browser strings (English default). Two consumers:
+     1. CyberNeonBallManager floating ball feedback (non-Compose, resolved via
+        LanguageManager.getString) — browser_session_released;
+     2. BrowserScreen (v1.5.0 一级入口, Compose) — browser_screen_* via
+        stringResource. Chinese in values-zh/strings_browser.xml; language
+        switching via LanguageManager + MainActivity attachBaseContext/recreate. -->
 <resources>
     <!-- 长按悬浮球结束浏览器会话的 Toast -->
     <string name="browser_session_released">Browser session ended; floating ball dismissed</string>
+
+    <!-- ═══ 浏览器大功能页（v1.5.0 一级入口，Compose）═══ -->
+    <!-- 页头 -->
+    <string name="browser_screen_title">Browser Automation</string>
+    <string name="browser_screen_subtitle">Session state, tabs and recent automation actions</string>
+    <string name="browser_screen_refresh">Refresh</string>
+    <!-- 会话状态卡 -->
+    <string name="browser_screen_session_title">Session</string>
+    <string name="browser_screen_state_hidden">Idle</string>
+    <string name="browser_screen_state_agent_driving">Agent driving</string>
+    <string name="browser_screen_state_waiting_human">Waiting for human</string>
+    <string name="browser_screen_state_recovering">Recovering</string>
+    <string name="browser_screen_state_hidden_desc">Browser not running. Ask the Agent in chat to open a page, or start a session below.</string>
+    <string name="browser_screen_state_agent_driving_desc">The Agent is browsing automatically (navigate / click / type). Tap the floating ball for the live overlay browser.</string>
+    <string name="browser_screen_state_waiting_human_desc">You are in control: operate the page directly in the overlay; Agent tools are locked until you hand back.</string>
+    <string name="browser_screen_state_recovering_desc">The page renderer crashed and is being rebuilt automatically.</string>
+    <string name="browser_screen_page_none">No page loaded yet</string>
+    <!-- 标签列表 -->
+    <string name="browser_screen_tabs_title">Tabs</string>
+    <string name="browser_screen_tabs_empty">No tabs yet</string>
+    <string name="browser_screen_tab_untitled">(untitled)</string>
+    <!-- 标签可操作（v1.5 UX 增强：点击切换 / 尾部关闭 / 失败反馈） -->
+    <string name="browser_screen_cd_switch_tab">Switch to tab #%1$d</string>
+    <string name="browser_screen_cd_close_tab">Close tab #%1$d</string>
+    <string name="browser_screen_switch_failed">Failed to switch tab; try again later</string>
+    <string name="browser_screen_close_failed">Failed to close tab; try again later</string>
+    <!-- 最近自动化动作 -->
+    <string name="browser_screen_actions_title">Recent automation actions</string>
+    <string name="browser_screen_actions_empty">No automation yet — ask the Agent in chat to open a page</string>
+    <string name="browser_screen_duration_ms">%1$d ms</string>
+    <!-- 操作按钮 -->
+    <string name="browser_screen_new_session">New session</string>
+    <string name="browser_screen_end_session">End session</string>
+    <string name="browser_screen_take_over">Take over</string>
+    <string name="browser_screen_hand_back">Hand back to Agent</string>
+    <!-- 底部说明卡 -->
+    <string name="browser_screen_builtin_title">Browser automation is built in</string>
+    <string name="browser_screen_builtin_desc">24 browser_* tools ship inside the app (built-in since v1.5.0, no plugin needed). Direct the Agent in chat to open pages, click, type or take screenshots. A floating ball appears once the browser is used — tap it for the full overlay browser.</string>
 </resources>

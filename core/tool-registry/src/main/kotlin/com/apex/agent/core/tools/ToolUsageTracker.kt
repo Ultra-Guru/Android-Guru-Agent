@@ -57,9 +57,17 @@ class ToolUsageStat(
         append(failures).append(" failed")
         if (invocations > 0) {
             append(", ").append("%.0f".format(meanDurationMs)).append("ms avg")
-            append(String.format(" (成功率 %.0f%%)", successRate * 100))
+            // #365：定性档位替代百分比评分 —— 87% vs 91% 在决策上无差别
+            append(" (可靠性：").append(reliabilityWord(successRate)).append(')')
         }
         lastError?.let { append(" | last: ").append(it.take(80)) }
+    }
+
+    /** 成功率 → 定性档位词（与 UI 层 ReliabilityTier 同阈值）。 */
+    private fun reliabilityWord(rate: Double): String = when {
+        rate >= 0.90 -> "稳定"
+        rate >= 0.50 -> "一般"
+        else -> "不稳定"
     }
 }
 

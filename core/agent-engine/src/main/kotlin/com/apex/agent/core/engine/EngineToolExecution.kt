@@ -20,7 +20,35 @@ import kotlinx.coroutines.delay
  *   TRANSIENT/TIMEOUT）指数退避自动重试（任务级预算）；权限/致命失败不重试，
  *   立刻回灌 LLM 自行换路（旧语义）；
  * - 连续 N 个工具调用失败 → 注入系统级换路提示（换工具/换参数/换分解）。
+ *
+ * diag-20261011 修复（配对类 400 会话级报废的成因）：本文件内三处
+ * System 提示（韧性换路 / 思考自检 / 循环恢复）曾直接 `addMessage` ——
+ * 注入点落在 Assistant(tool_calls) 与其 ToolResult 之间或并行批中间，
+ * 违反「tool 消息必须紧随 tool_calls 消息」→ Provider 400 且旧修复器
+ * 无法归位（隔块 ToolResult 不参与配对）→ 损坏持久化、会话报废。现在统一
+ * **延迟注入**（[deferSystemNote]）：先入引擎缓冲队列，整批工具结果写完后
+ * 由主循环统一 [flushPendingSystemNotes]（位置永远在完整 tool 块之后）。
  */
+
+/**
+ * 延迟注入的系统提示入队（位置安全性见文件头）。
+ *
+ * 任何在工具执行期产生的 System 提示都走此队列，绝不直接写历史 ——
+ * OpenAI 兼容端点要求 tool 消息紧随 tool_calls 消息，批中插队即 400。
+ */
+internal fun ApexAgentEngine.deferSystemNote(note: String) {
+    pendingSystemNotes.addLast(note)
+}
+
+/**
+ * 冲刷延迟注入的系统提示：整批 ToolResult 落盘后调用（迭代尾/迭代头两个
+ * 安全点），保证提示落在完整 tool 块之后、下一轮请求之前。
+ */
+internal fun ApexAgentEngine.flushPendingSystemNotes() {
+    while (pendingSystemNotes.isNotEmpty()) {
+        addMessage(LlmMessage.System(pendingSystemNotes.removeFirst()))
+    }
+}
 /**
  * 流式执行单个工具调用。
  *
@@ -171,12 +199,14 @@ internal suspend fun ApexAgentEngine.executeToolCallStreaming(
     val actionSuccess = !hadStreamError && !result.startsWith("Error")
     if (!actionSuccess) anyActionFailed = true
 
-    // ═══ 长任务韧性：连续失败 → 注入换路提示 ═══
+    // ═══ 长任务韧性：连续失败 → 延迟注入换路提示 ═══
     // 连续 N 个工具调用失败时，向历史注入一条系统级 recovery 提示，
     // 明确要求模型换工具/换参数/换分解方式 ——「不会用其他方式」的闭环；
     // 预算用尽/未达阈值返回 null 零开销。
+    // diag-20261011：经 [deferSystemNote] 延迟到整批工具结果之后落盘 ——
+    // 此处直接 addMessage 会插在 ToolResult 之前，破坏配对（400 根因）。
     resilience.onToolCallOutcome(toolCall.name, actionSuccess)?.let {
-        addMessage(LlmMessage.System(it))
+        deferSystemNote(it)
     }
 
     emit(
@@ -193,10 +223,12 @@ internal suspend fun ApexAgentEngine.executeToolCallStreaming(
 
     // 截断后的结果存入历史（节省后续 token）
     addMessage(LlmMessage.ToolResult(toolCall.id, result))
-    // #168：工具计数 + DEEP/MAXIMUM 档在失败/HIGH 风险后注入自检提示（下一轮 LLM 可见）。
+    // #168：工具计数 + DEEP/MAXIMUM 档在失败/HIGH 风险后注入自检提示（下一轮
+    // LLM 可见）。diag-20261011：经 [deferSystemNote] 延迟落盘 —— 并行工具批
+    // 中直接 addMessage 会插在本批后续 ToolResult 之前，破坏配对（400 根因）。
     thinkingController.postToolCheckPrompt(
         registryToolId, actionSuccess, toolRegistry.metadataOf(registryToolId)?.isHighRisk == true
-    )?.let { addMessage(LlmMessage.System(it)) }
+    )?.let { deferSystemNote(it) }
 
     // #170：终端主动性 —— 一次性 shell 连击/失败连击滑窗（下一迭代判定建议）。
     terminalAdvisor.onToolCallCompleted(registryToolId, actionSuccess, toolCall.arguments)
@@ -210,11 +242,12 @@ internal suspend fun ApexAgentEngine.executeToolCallStreaming(
     loopDetector.detect()?.let { signal ->
         loopDetector.acknowledge()
         if (loopRecovery.canRecover()) {
-            addMessage(LlmMessage.System(loopRecovery.buildLoopRecoveryPrompt(signal)))
+            // diag-20261011：同上，延迟落盘防插队。
+            deferSystemNote(loopRecovery.buildLoopRecoveryPrompt(signal))
             AppLogger.instance.warn(
                 LogCategory.TOOL, "ApexAgentEngine",
                 "loop detected (${signal::class.simpleName}) after '${toolCall.name}' — " +
-                    "recovery prompt injected"
+                    "recovery prompt deferred"
             )
         }
     }

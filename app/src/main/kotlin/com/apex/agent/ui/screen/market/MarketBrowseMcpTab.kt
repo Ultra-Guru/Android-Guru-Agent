@@ -50,6 +50,8 @@ import com.apex.agent.core.tools.marketplace.MarketNames
 internal fun BrowseMcpTab(state: MarketUiState, viewModel: MarketViewModel) {
     var showAddDialog by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
+    // 从 GitHub 安装 MCP（智能路由：modelcontextprotocol/servers 等仓库直装）
+    var showGithubInstallDialog by remember { mutableStateOf(false) }
 
     // 本地配置文件导入：选 .json（{"mcpServers": {...}} 社区通用格式）
     val mcpFilePicker = rememberLauncherForActivityResult(
@@ -372,6 +374,21 @@ internal fun BrowseMcpTab(state: MarketUiState, viewModel: MarketViewModel) {
                 }
             }
         }
+        // ═══ 从 GitHub 安装 MCP（智能路由：server.json / .mcp.json /
+        // src monorepo 形态 → RegistryMcpInstaller 决策树）═══
+        item {
+            MarketInstallActionCard(
+                title = stringResource(R.string.market_mcp_github_card_title),
+                description = stringResource(R.string.market_mcp_github_card_desc)
+            ) {
+                TextButton(
+                    onClick = { showGithubInstallDialog = true },
+                    enabled = !state.busy
+                ) {
+                    Text(stringResource(R.string.market_action_install))
+                }
+            }
+        }
         item {
             MarketInstallActionCard(
                 title = stringResource(R.string.market_mcp_import_card_title),
@@ -422,6 +439,18 @@ internal fun BrowseMcpTab(state: MarketUiState, viewModel: MarketViewModel) {
             onImport = { json ->
                 viewModel.importMcpConfig(json)
                 showImportDialog = false
+            }
+        )
+    }
+    // 从 GitHub 安装（智能路由入口：多候选时 MarketScreen 全局弹
+    // GithubCandidatesPickDialog，本弹窗只收输入）
+    if (showGithubInstallDialog) {
+        GitHubRepoInstallDialog(
+            busy = state.busy,
+            onDismiss = { showGithubInstallDialog = false },
+            onConfirm = { input ->
+                viewModel.installFromRepoInput(input)
+                showGithubInstallDialog = false
             }
         )
     }

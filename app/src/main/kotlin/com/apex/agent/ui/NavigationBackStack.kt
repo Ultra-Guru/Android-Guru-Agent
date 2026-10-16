@@ -135,6 +135,7 @@ internal fun destinationFromRoute(route: String): DrawerDestination = when (rout
     // "skill" route 保留兜底：老用户重建时若停留在原 Skill 页，落到市场
     "skill" -> DrawerDestination.Market
     DrawerDestination.Market.route -> DrawerDestination.Market
+    DrawerDestination.Browser.route -> DrawerDestination.Browser
     DrawerDestination.Memory.route -> DrawerDestination.Memory
     DrawerDestination.Tasks.route -> DrawerDestination.Tasks
     DrawerDestination.Storage.route -> DrawerDestination.Storage
@@ -142,6 +143,7 @@ internal fun destinationFromRoute(route: String): DrawerDestination = when (rout
     DrawerDestination.Vault.route -> DrawerDestination.Vault
     DrawerDestination.Log.route -> DrawerDestination.Log
     DrawerDestination.Settings.route -> DrawerDestination.Settings
+    DrawerDestination.Playground.route -> DrawerDestination.Playground
     DrawerDestination.GlassLab.route -> DrawerDestination.GlassLab
     DrawerDestination.Usage.route -> DrawerDestination.Usage
     DrawerDestination.Diagnostics.route -> DrawerDestination.Diagnostics

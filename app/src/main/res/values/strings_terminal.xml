@@ -5,7 +5,7 @@
 
     <!-- ═══ TerminalScreen ═══ -->
     <string name="term_title">Terminal</string>
-    <string name="term_cd_nav">Open navigation</string>
+    <string name="term_back_to_drawer">Back to drawer</string>
     <string name="term_cd_env_center">Environment center</string>
     <string name="term_cd_settings">Terminal settings</string>
     <string name="term_new_session_title">New terminal session</string>

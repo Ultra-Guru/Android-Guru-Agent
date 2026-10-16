@@ -39,7 +39,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -48,8 +47,6 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Apex Agent Engine — production implementation.
@@ -197,6 +194,16 @@ class ApexAgentEngine(
         conversationHistory.add(LlmMessage.System(content))
     }
 
+    /**
+     * diag-20261011：工具执行期 System 提示的延迟队列（[deferSystemNote] /
+     * [flushPendingSystemNotes]，见 EngineToolExecution.kt 文件头）——
+     * 保证任何 System 提示永远落在完整 tool 块之后，不破坏配对。
+     */
+    internal val pendingSystemNotes: ArrayDeque<String> = ArrayDeque()
+
+    /** diag-20261011：配对类 400 自愈重试已用次数（每任务至多 1 次）。 */
+    private var pairingRepairAttempts = 0
+
     /** T76 — TaskRuntime 设置当前任务/步骤诊断标签（null = 清理）。 */
     fun setLlmExecutionTags(taskId: String?, stepId: String?) {
         executionTags = taskId?.let { it to stepId }
@@ -241,52 +248,61 @@ class ApexAgentEngine(
     private var toolDegradationLevel = 0
 
     // internal —— EngineCompressionGate.kt 传入压缩器/持久化。
-    // #351①：CopyOnWriteArrayList —— UI 仪表盘「压缩上下文」（compressNow，
-    // viewModelScope）在引擎运行中可点击，引擎协程同时 addMessage/
-    // buildMessages/sumOf 迭代同一 ArrayList 会抛 ConcurrentModificationException
-    // 直接崩溃；COW 写时复制使迭代恒为快照语义（写频率为每消息一次，代价可忽）。
-    internal val conversationHistory: MutableList<LlmMessage> = CopyOnWriteArrayList<LlmMessage>().apply {
+    internal val conversationHistory: MutableList<LlmMessage> = mutableListOf<LlmMessage>().apply {
         memory?.load()?.let { addAll(it) }
     }
-    // P2-10 修复：isRunning 由 UI/abort 线程跨线程读写（abort() 在引擎循环外被调用），
-    // 非 volatile 时 JMM 不保证写入对其他线程可见 → abort 后引擎状态卡在“运行中”。
-    // TODO(结构化改造): conversationHistory 被 TaskRuntime 的 contextInjector /
-    // tagsSetter 钩子从其他线程裸写，当前只能靠调用方自律；后续应改为注入
-    // 显式消息队列（Channel）或统一在引擎调度器内串行化所有历史变更。
+    // P2-10：isRunning 跨线程读写需 volatile（abort 在引擎循环外调用）。
+    // TODO(结构化改造): conversationHistory 的跨协程写入（contextInjector）应
+    // 收敛为显式队列（diag-20261011 已消主要并发源：compressNow 运行期拒绝）。
     @Volatile
     internal var isRunning = false
 
     /**
-     * 任务内是否有任何工具动作失败（跨 [executeToolCallStreaming] 调用累计）。
-     * 因为流式工具执行是独立成员函数，无法访问 [execute] 内的局部变量，
-     * 故用实例字段累计，并在每次 [execute] 入口重置。
+     * 任务内是否有任何工具动作失败（跨 [executeToolCallStreaming] 调用累计；
+     * execute 入口重置）。@Volatile：跨挂起点与诊断线程读写可见性。
      */
-    // internal —— EngineToolExecution.kt 同包扩展直调（任务失败标记）。
-    // @Volatile：写发生在引擎循环协程，读发生在 execute 的 finally
-    // （同一字段跨挂起点）与外部诊断线程 —— 与 isRunning 同一可见性顾虑。
     @Volatile
     internal var anyActionFailed = false
 
     /**
-     * #340：三通道 deferred 改 [AtomicReference] 持有 —— abort 的
-     * 「complete 后置 null」两步跨协程非原子（引擎恰在两步间完成新注册时，
-     * 新 deferred 被 null 覆盖，UI 后续提交全部落空、引擎挂满 5 分钟），
-     * 换引用改用 getAndSet 原子完成。注册先行（emit 之前 set）见
-     * PlanExecutionSupport / EngineSpecFlow / EngineAskUserFlow。
+     * Channel for the UI to deliver plan-confirmation decisions back to the engine
+     * while [executePlanMode] is suspended on `awaitPlanConfirmationDecision`.
+     *
+     * #169：Boolean → [PlanDecision]（可携带步骤勾选/重排）。internal 供
+     * plan/PlanExecutionSupport.kt 扩展注册与清理（同模块拆分模式）。
+     * Reset to a fresh [CompletableDeferred] every time a new plan is awaiting confirmation.
+     * @Volatile（#214 同型）：引擎协程写、UI/测试线程读，跨挂起点可见性依赖此标记。
      */
-    internal val planConfirmationDeferred = AtomicReference<CompletableDeferred<PlanDecision>?>(null)
+    @Volatile
+    internal var planConfirmationDeferred: CompletableDeferred<PlanDecision>? = null
 
-    /** UI 回投 SPEC 确认；#340 同 plan 通道（AtomicReference + 注册先行）。 */
-    internal val specConfirmationDeferred = AtomicReference<CompletableDeferred<Boolean>?>(null)
+    /** UI 回投 SPEC 确认（[executeSpecMode] 挂在 [awaitSpecConfirmation] 时）。@Volatile 同 plan 通道。 */
+    @Volatile
+    internal var specConfirmationDeferred: CompletableDeferred<Boolean>? = null
 
     /**
      * Channel for the UI to deliver user-input answers back to the engine
-     * while [executeBuildLoop] is suspended on [awaitUserInput].
+     * while [executeBuildLoop] is suspended on awaitUserInput
+     * （ConfirmationChannels.kt 扩展）。
      *
-     * #214/#340：AtomicReference —— VM 主线程读、引擎协程写，投递回执
-     * （超时后迟到提交必须拿到 false）依赖可见性 + abort 原子换引用。
+     * #214：@Volatile —— [submitUserInputIfAwaiting] 在 VM 主线程读、
+     * 引擎协程写，投递回执（超时后迟到提交必须拿到 false）依赖可见性。
+     * #340：internal——同包 ConfirmationChannels.kt 扩展的注册/清理同锁。
      */
-    private val userInputDeferred = AtomicReference<CompletableDeferred<String>?>(null)
+    @Volatile
+    internal var userInputDeferred: CompletableDeferred<String>? = null
+
+    /**
+     * #340：确认通道三件套（userInput/plan/spec）的注册/中止互斥锁。
+     *
+     * 旧 abort() 的“complete-then-null”两步与注册方（await* 的 deferred 赋值）
+     * 之间无 happens-before——abort 恰在两步之间执行时，引擎新注册的
+     * deferred 会被 null 覆盖，UI 后续提交全部落空，引擎挂满 5 分钟超时
+     * （用户看到的就是「chat 卡死」）。注册与 abort 全部收进同一把锁，
+     * 窗口结构性消除；锁内无挂起点（complete/赋值均同步），不阻塞调度。
+     * internal：plan/EngineSpecFlow 扩展的注册/清理与 abort 同锁。
+     */
+    internal val confirmationLock = Any()
 
     fun updateConfig(newConfig: AgentConfig) {
         val old = config
@@ -385,6 +401,16 @@ class ApexAgentEngine(
      */
     suspend fun compressNow(): CompressionReport? {
         val compressor = contextCompressor ?: return null
+        // diag-20261011：任务运行中禁止手动压缩 —— 压缩器原地改写共享
+        // conversationHistory，与引擎循环的 append 并发交错会撕裂
+        // tool_calls 配对（同样的 400 根因，chaos-audit D-05）。改为拒绝。
+        if (isRunning) {
+            AppLogger.instance.warn(
+                LogCategory.ENGINE, "ApexAgentEngine",
+                "compressNow skipped: task running (concurrent history rewrite breaks tool pairing)"
+            )
+            return null
+        }
         // #165：PreCompact——手动压缩（压缩器动历史前）。
         sessionHooks?.onPreCompact()
         val report = runCatching {
@@ -405,17 +431,28 @@ class ApexAgentEngine(
         memory?.append(message)
     }
 
-    /** #340：回执 = false 表示无挂起等待或已被 abort/超时收场，调用方提示「未送达」。（[ConfirmationSink]） */
-    override fun submitPlanConfirmation(confirmed: Boolean): Boolean =
-        planConfirmationDeferred.get()?.complete(PlanDecision.legacy(confirmed)) ?: false
+    /**
+     * Called from the UI (e.g. `ChatViewModel.confirmPlan`) to resume the suspended
+     * plan-mode execution. No-op if no plan is currently awaiting confirmation.
+     * Exposed to the orchestrator via the [ConfirmationSink] interface.
+     */
+    override fun submitPlanConfirmation(confirmed: Boolean) {
+        planConfirmationDeferred?.complete(PlanDecision.legacy(confirmed))
+    }
 
     /** #169：带步骤勾选/重排的确认重载（UI 人控透传，语义见 [PlanDecision]）。 */
-    fun submitPlanConfirmation(confirmed: Boolean, enabledSteps: List<Int>?, order: List<Int>?): Boolean =
-        planConfirmationDeferred.get()?.complete(PlanDecision(confirmed, enabledSteps, order)) ?: false
+    fun submitPlanConfirmation(confirmed: Boolean, enabledSteps: List<Int>?, order: List<Int>?) {
+        planConfirmationDeferred?.complete(PlanDecision(confirmed, enabledSteps, order))
+    }
 
-    /** #340：同 plan 通道的 Boolean 回执（[ConfirmationSink]）。 */
-    override fun submitSpecConfirmation(confirmed: Boolean): Boolean =
-        specConfirmationDeferred.get()?.complete(confirmed) ?: false
+    /**
+     * Called from the UI (e.g. `ChatViewModel.submitSpecConfirmation`) to resume the
+     * suspended spec-mode execution. No-op if no spec is currently awaiting confirmation.
+     * Exposed to the orchestrator via the [ConfirmationSink] interface.
+     */
+    override fun submitSpecConfirmation(confirmed: Boolean) {
+        specConfirmationDeferred?.complete(confirmed)
+    }
 
     /**
      * 兼容旧接口：纯文本输入委托给多模态入口。
@@ -430,11 +467,12 @@ class ApexAgentEngine(
         // v4：新任务开始 —— 会话激活的工具不跨任务泄漏；降级状态复位。
         toolActivation.reset()
         toolDegradationLevel = 0
-        // 长任务韧性：新任务重置重试/换路预算（与降级复位同位）；同步清零
-        // 熔断计数（P1：上一任务的连续探索失败不应把冷却期带进新任务开局）。
+        pairingRepairAttempts = 0
+        pendingSystemNotes.clear()
+        // 长任务韧性：新任务重置重试/换路/熔断预算（冷却期不跨任务）。
         resilience.resetForTask()
         runCatching { toolExecutor.resetBreakers() }
-        // 循环检测：新任务清空检测窗口与恢复预算（与编排器 reset 语义一致）。
+        // 循环检测：新任务清空检测窗口与恢复预算。
         loopDetector.reset()
         loopRecovery.reset()
         // #165：SessionStart 开号 + UserPromptSubmit。
@@ -444,13 +482,12 @@ class ApexAgentEngine(
         var totalToolCalls = 0
         var totalIterations = 0
         var taskHadFailure = false
-        // 本轮历史起点（记忆沉淀用）：try 外声明，finally 里从该下标之后找
-        // 最终助手回复；异常路径下若尚未进入 try 体则为 -1（跳过沉淀）。
+        // 本轮历史起点（记忆沉淀用）：finally 里从该下标之后找最终助手回复；
+        // 异常路径下未进入 try 体则为 -1（跳过沉淀）。
         var turnHistoryStart = -1
 
         try {
-            // 隐式记忆采集（P2）：观察者异常再包一层防线（与编排器一致），
-            // 防泄漏导致 isRunning 卡死、onTaskFinish 永不调用。
+            // 隐式记忆采集：观察者异常包防线，防 isRunning 卡死。
             try {
                 memoryObserver?.onTaskStart(input.text, null)
             } catch (e: Throwable) {
@@ -461,9 +498,7 @@ class ApexAgentEngine(
             }
 
             // ═══ 首轮问候检测 + 聊天记忆召回（发送前、历史追加前）═══
-            // 首轮判定口径：追加本轮用户消息前，历史里还没有任何 User 消息
-            // （含从 ConversationMemory 载入的跨启动历史）——即「本次对话的第
-            // 一句话」。纯问候 → firstTurnGreeting 置位，系统提示词注入硬约束段。
+            // 首轮 = 历史尚无任何 User 消息；纯问候 → 系统提示词注入硬约束段。
             firstGreetingTurn =
                 conversationHistory.none { it is LlmMessage.User } &&
                     SmallTalkDetector.isGreetingOnly(input.text)
@@ -484,9 +519,8 @@ class ApexAgentEngine(
             val userText = buildUserText(input)
             val userMessage = LlmMessage.User(content = userText, images = input.images)
 
-            // 内存历史保留完整图片（当前会话后续轮次需要 Vision 上下文）。
+            // 内存历史保留完整图片；持久化只存文本副本（防存储爆炸）。
             conversationHistory.add(userMessage)
-            // 持久化记忆不保存 base64 图片，避免存储爆炸；仅存文本副本 + 提示。
             memory?.append(
                 userMessage.copy(
                     images = emptyList(),
@@ -506,10 +540,8 @@ class ApexAgentEngine(
                     }
                     totalIterations = maxOf(totalIterations, iter)
                 }
-                // #197 Agent 屏双模式：CHAT（零工具纯对话）与 AGENT（全能非编程）
-                // 都跑 ReAct 主循环——差异在工具计划（EngineToolPlanner：CHAT=空、
-                // AGENT=剔除编码工具）与提示词模式段（EnginePrompts），复用同一执行器。
-                // v3 LOOP（Agent 工位周期任务）同款复用：调度在 VM 层，引擎只跑单次。
+                // #197：CHAT（零工具）/ AGENT（非编程全能）/ LOOP 共享 ReAct 主循环，
+                // 差异在工具计划与提示词模式段；调度在 VM 层，引擎只跑单次。
                 AgentMode.CHAT, AgentMode.AGENT, AgentMode.LOOP -> {
                     val iter = executeBuildLoop { event ->
                         if (event is AgentEvent.ToolCallComplete) totalToolCalls++
@@ -540,9 +572,8 @@ class ApexAgentEngine(
                     }
                     totalIterations = maxOf(totalIterations, specIterations)
                 }
-                // REFLECTION / HUMAN_ASSIST / CUSTOM / GOAL（v3）共享 ReAct 主循环：
-                // 行为差异全部由 buildSystemPrompt 注入的 Mode 段落驱动；REFLECTION
-                // 触发生成→评审→修正；GOAL 触发快速验收（executeBuildLoop 钩子）。
+                // REFLECTION / HUMAN_ASSIST / CUSTOM / GOAL 共享 ReAct 主循环：差异由
+                // buildSystemPrompt 的 Mode 段驱动；GOAL 走 executeBuildLoop 钩子。
                 AgentMode.REFLECTION, AgentMode.HUMAN_ASSIST, AgentMode.CUSTOM, AgentMode.GOAL -> {
                     val iter = executeBuildLoop { event ->
                         if (event is AgentEvent.ToolCallComplete) totalToolCalls++
@@ -558,9 +589,8 @@ class ApexAgentEngine(
             // #165：Stop——本回合正常完成（错误/中止不触发）。
             sessionHooks?.onTurnCompleted()
         } catch (e: TimeoutCancellationException) {
-            // P2-4/A-3：TCE 是 CancellationException 子类，必须先于父类 catch；
-            // 协程已不活跃（外层超时穿透）必须重抛，仅自身活跃（本层确认超时）
-            // 才折叠为 Error 事件，避免吞掉外层取消并误报。
+            // P2-4/A-3：TCE 先于父类 catch；协程不活跃（外层超时穿透）必须重抛，
+            // 仅自身活跃才折叠为 Error（避免吞外层取消）。
             if (!currentCoroutineContext().isActive) {
                 AppLogger.instance.warn(LogCategory.ENGINE, "ApexAgentEngine", "外层超时取消穿透引擎，重抛 TCE")
                 throw e
@@ -572,12 +602,9 @@ class ApexAgentEngine(
             AppLogger.instance.warn(LogCategory.ENGINE, "ApexAgentEngine", "任务被中止 (CancellationException)")
             emit(AgentEvent.Aborted)
         } catch (e: ModelRuntimeException) {
-            // T72 §十四：模型运行时错误（能力不匹配 / 降级耗尽 / 限流 / 超时…），
-            // 单独分类记录，便于诊断。可降级类（限流/超时/不可用/鉴权）标记 recoverable，
-            // 配置/能力类标记不可恢复（需用户改设置）。
+            // T72 §十四：可降级类（限流/超时/不可用/鉴权）标记 recoverable，
+            // 配置/能力类不可恢复；#213 细节只进日志，用户文案中文映射。
             val fatal = !e.isFallbackEligible && e !is ModelRuntimeException.ModelFallbackExhausted
-            // #213：原始错误细节只进日志（body 含服务端英文 JSON，不透传给用户）；
-            // 用户可见文案经 LlmErrorText 映射为中文指引（原因 + 下一步动作）。
             AppLogger.instance.error(
                 LogCategory.LLM, "ApexAgentEngine",
                 "模型运行时错误 [${e::class.simpleName}]: ${e.message}"
@@ -585,17 +612,14 @@ class ApexAgentEngine(
             taskHadFailure = true
             emit(AgentEvent.Error(LlmErrorText.userMessage(e), recoverable = !fatal))
         } catch (e: Exception) {
-            // #213：原始 message 落日志，用户气泡给中文指引（LlmErrorText 兜底）。
-            // recoverable=true：未识别异常往往是一次性抖动，用户应能手动重试恢复
-            //（与「最大迭代超限」分支同款）；自动重试交给 EngineResilienceGuard。
+            // #213：原始 message 落日志，用户气泡中文指引；recoverable=true
+            //（未识别异常往往是一次性抖动，可手动重试；自动重试交给韧性守卫）。
             AppLogger.instance.error(LogCategory.ENGINE, "ApexAgentEngine", "运行异常: ${e.message}", e)
             taskHadFailure = true
             emit(AgentEvent.Error(LlmErrorText.userMessage(e), recoverable = true))
         } finally {
             isRunning = false
-            // 隐式记忆采集（报告 P2）：任务结束，提交 episode。
-            // 放在 finally 保证无论成功/失败/中止都会关闭会话。
-            // 观察者异常同样兜底，避免吞掉后续 Complete 事件发射。
+            // 隐式记忆采集：finally 保证无论成败都关闭会话；观察者异常兜底不阻断 Complete。
             try {
                 memoryObserver?.onTaskFinish(success = !taskHadFailure && !anyActionFailed)
             } catch (e: Throwable) {
@@ -604,8 +628,7 @@ class ApexAgentEngine(
                     "memoryObserver.onTaskFinish threw: ${e.message}"
                 )
             }
-            // 聊天记忆自动沉淀：取本轮起点后最后一条有正文的 Assistant 交观察者
-            //（中间轮叙述不是最终答案；异常兜底，不阻断 Complete）。
+            // 聊天记忆自动沉淀：取本轮起点后最后一条有正文的 Assistant（异常兜底）。
             try {
                 val finalAssistantText = if (turnHistoryStart >= 0) {
                     conversationHistory.drop(turnHistoryStart)
@@ -626,9 +649,10 @@ class ApexAgentEngine(
             chatMemoryNote = null
             chatSignal = null
             // Cancel any dangling plan-confirmation deferred so it doesn't leak.
-            // #340：原子换引用（getAndSet）—— 两步读写会抹掉并发新注册。
-            planConfirmationDeferred.getAndSet(null)?.complete(PlanDecision.legacy(false))
-            specConfirmationDeferred.getAndSet(null)?.complete(false)
+            planConfirmationDeferred?.complete(PlanDecision.legacy(false))
+            planConfirmationDeferred = null
+            specConfirmationDeferred?.complete(false)
+            specConfirmationDeferred = null
             emit(
                 AgentEvent.Complete(
                     summary = "",
@@ -679,8 +703,12 @@ class ApexAgentEngine(
 
         // Phase 3: await user confirmation（#169：Boolean → PlanDecision，
         // 可携带步骤勾选 enabledSteps 与重排 order，见 plan/PlanConfirmationRequest）。
-        // #340：注册先行（deferred 先于 emit 创建，消除提交与注册间的窗口）
-        val decision = awaitPlanConfirmationDecision { emit(AgentEvent.PlanAwaitingConfirmation(plan)) }
+        // #340：注册先行——emit 必须发生在 deferred 注册之后，否则 submit 在
+        // 注册前到达（tap 快速消费使 emit 立即返回）→ complete 落空 → 引擎挂满
+        // 5 分钟。改走 beforeWait 回调（注册 → emit → 等待）。
+        val decision = awaitPlanConfirmationDecision(
+            beforeWait = { emit(AgentEvent.PlanAwaitingConfirmation(plan)) }
+        )
         if (!decision.confirmed) {
             emit(AgentEvent.Aborted)
             return 0
@@ -744,11 +772,12 @@ class ApexAgentEngine(
             iteration++
             // #168：解析本轮生效思考档位（AUTO → 复杂度选档；工具计数由控制器自持）。
             thinkingController.onIterationStart(config, iteration, userText = lastUserPromptText(conversationHistory))
+            // diag-20261011：冲刷上一批延迟 System 提示（位置安全点：完整 tool 块之后）。
+            flushPendingSystemNotes()
             // #170：终端主动性 —— 轮次级建议注入（会话流切换/Ubuntu 预备/失败恢复）。
             terminalAdvisor.onIterationStart(lastUserPromptText(conversationHistory) ?: "")
                 ?.let { addMessage(LlmMessage.System(it.systemNote)) }
-            // 每轮迭代都需要重新触发 ThinkingStart，否则 UI 的思考指示器
-            // 在第 2..N 轮迭代不会刷新（与 orchestrator 路径行为一致）。
+            // 每轮迭代重新触发 ThinkingStart（第 2..N 轮 UI 指示器刷新）。
             var thinkingEmittedForIteration = false
             emit(AgentEvent.IterationStart(iteration))
 
@@ -760,9 +789,8 @@ class ApexAgentEngine(
                 thinkingEmittedForIteration = true
             }
 
-            // 隐式记忆旁路：在 LLM 推理前尝试"肌肉记忆"执行（报告 P3/P4 闭环）。
-            // 若记忆中存在匹配当前 UI 的 FSM 宏且验证通过，直接执行并跳过本轮 LLM，
-            // 节省数百毫秒~数秒延迟与 Token；不匹配/失败则照常走 LLM。
+            // 隐式记忆旁路：LLM 推理前尝试"肌肉记忆"FSM 宏执行，命中则跳过
+            // 本轮 LLM；不匹配/失败照常走 LLM。
             when (val bypass = memoryObserver?.tryBypass()) {
                 is BypassOutcome.Executed -> {
                     emit(
@@ -783,13 +811,9 @@ class ApexAgentEngine(
             }
 
             // ═══ Tool System v4：先建工具计划，再建消息 ═══
-            // 计划决定请求 tools 数组（provider 安全名 + 预算钳制）与 system
-            // prompt 工具清单（同一份 plan.visibleRegistryIds）——两侧永远
-            // 一致；tool_open 激活的工具从下一轮自动进入计划。
-            // P0 修复（连接即可见）：已连接服务（GitHub 等）的工具 id 并入计划 ——
-            // 否则 "## Connected Services" 宣称 github_* 可用而 tools 数组里
-            // 根本没有这些函数，provider 拒绝未声明调用（用户反馈"密钥连接
-            // 没有一点作用"的机制根因）。
+            // 计划决定请求 tools 数组与 system prompt 工具清单（同一份
+            // plan.visibleRegistryIds）——两侧永远一致；已连接服务的工具 id
+            // 并入计划（P0：否则宣称可用而 tools 数组里没有，provider 拒绝）。
             val plan = EngineToolPlanner.buildToolPlan(
                 config, toolRegistry, toolActivation, toolDegradationLevel,
                 serviceToolIds = connectedServicesProvider?.connectedToolIds() ?: emptySet()
@@ -800,14 +824,12 @@ class ApexAgentEngine(
 
             val contentBuilder = StringBuilder()
             val reasoningBuilder = StringBuilder()
-            // 累加器键策略：OpenAI 并行工具调用的首个片段携带 id + index，后续片段只带
-            // index 而 id 为空。旧实现以 id 为键，导致后续片段被误开新累加器、
-            // 参数拼不全。现在以 "id || idx_N" 为复合键，保证同一工具的片段都能落到同一累加器。
+            // 累加器键策略：并行工具调用首片段携带 id+index，后续只带 index ——
+            // 以 index 优先的复合键防同调用撕裂（详见循环内注释）。
             val toolCallsAccumulator = mutableMapOf<String, StreamingToolCallAccumulator>()
 
-            // T72 §九 / §十一：主 ReAct 流——含图片时路由到 VISION 角色（要求 vision+imageInput），
-            // 路由器会校验能力并在不满足时降级到具备视觉能力的 PRIMARY；全链无视觉模型时
-            // 抛 ModelCapabilityMismatch 而非静默丢图（§七）。
+            // T72：含图片时路由到 VISION 角色（不满足降级 PRIMARY；全链无视觉
+            // 抛 ModelCapabilityMismatch 而非静默丢图）。
             val reactContext = if (messagesContainImages(messages)) {
                 tagged(LlmRequestContext.vision("react_loop"))
             } else {
@@ -832,12 +854,10 @@ class ApexAgentEngine(
                     contentBuilder.append(it)
                     emit(AgentEvent.ResponseChunk(it))
                 }
-                // 真实用量统计帧（include_usage 流尾帧 / DeepSeek 末帧）：
-                // 记录 + 发射 UsageUpdated —— 仪表盘显示服务端真实 token。
+                // 真实用量统计帧（流尾帧）：记录 + 发射 UsageUpdated。
                 recordAndEmitUsage(chunk.usage, emit)
-                // 多模态输出：图片/视频模型生成的媒体（OpenRouter image part /
-                // CogView chat 生图 / video_url）转 markdown 注入回复流，
-                // 复用 ResponseChunk 管线直达 UI（MarkdownText 渲染 + Lightbox）。
+                // 多模态输出：模型生成的图片/视频转 markdown 注入回复流
+                //（复用 ResponseChunk 管线直达 UI）。
                 MediaMarkdown.from(chunk.images, chunk.videos)?.let { mediaMd ->
                     contentBuilder.append(mediaMd)
                     emit(AgentEvent.ResponseChunk(mediaMd))
@@ -849,10 +869,8 @@ class ApexAgentEngine(
                     emit(AgentEvent.ThinkingChunk(it))
                 }
                 for (tc in chunk.toolCalls) {
-                    // 并行工具调用：首个片段带 id+index，后续片段只带 index 而 id 为空。
-                    // 键以 index 优先（index 在全部分片中稳定；id 只在首片出现）——
-                    // 若以 id 优先，首片键 "call_x" 与续片键 "_idx_0" 不一致，同一
-                    // 调用被撕裂成两个累加器、参数 JSON 被裁断。index<0 时回退 id。
+                    // 并行工具调用分片键：index 优先（全分片稳定；id 只在首片），
+                    // 防同调用撕裂；index<0 回退 id。
                     val key = if (tc.index >= 0) "_idx_${tc.index}" else tc.id
                     if (key.isBlank()) continue  // 既无 id 又无 index 的畸形片段，跳过
                     val acc = toolCallsAccumulator.getOrPut(key) {
@@ -864,11 +882,23 @@ class ApexAgentEngine(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                // ═══ diag-20261011：配对类 400 自愈（每任务至多一次）═══
+                // 历史里存在修复器来不及归位的配对破坏（遗留会话/极端 provider
+                // 分片）时，就地归一化后重试本轮，而不是直接报废任务。
+                if (pairingRepairAttempts < 1 && EngineToolPlanner.isDanglingPairRejection(e)) {
+                    pairingRepairAttempts++
+                    if (repairDanglingToolCalls()) {
+                        AppLogger.instance.warn(
+                            LogCategory.ENGINE, "ApexAgentEngine",
+                            "pairing-400 self-healed by history normalization; retrying iteration $iteration"
+                        )
+                        iteration--
+                        continue
+                    }
+                }
                 // ═══ Tool System v4：工具请求降级重试 ═══
-                // Provider 拒带 tools 请求（400/13/schema/tool_choice；覆盖
-                // ModelRequestRejected 与裸 Http 两路径）时逐级降级（1=纯 CORE；
-                // 2=无工具）重试同一轮，仅本轮零输出时（防重复拼接）。
-                // #242：降级同时发用户可见提示（EngineDegradationNotice）。
+                // Provider 拒带 tools 请求时逐级降级（1=纯 CORE；2=无工具）重试
+                // 同一轮（仅本轮零输出时防重复拼接）；#242 同时发可见提示。
                 if (contentBuilder.isEmpty() && reasoningBuilder.isEmpty() &&
                     toolCallsAccumulator.isEmpty() && toolDegradationLevel < 2 &&
                     plan.tools.isNotEmpty() && EngineToolPlanner.isToolsRelatedRejection(e)
@@ -879,13 +909,11 @@ class ApexAgentEngine(
                         "Tools rejected by provider (level ${toolDegradationLevel}): " +
                             "${e.message ?: e::class.simpleName} — degrading tool payload and retrying"
                     )
-                    EngineDegradationNotice.noticeFor(toolDegradationLevel)?.let { emit(AgentEvent.ThinkingChunk(it)) } // #242 降级可见提示（文案见 EngineDegradationNotice.kt）
+                    EngineDegradationNotice.noticeFor(toolDegradationLevel)?.let { emit(AgentEvent.ThinkingChunk(it)) } // #242 降级可见提示
                     continue
                 }
-                // ═══ 长任务韧性：LLM 瞬时错误退避重试 ═══
-                // 退避后重试同一轮（不消耗迭代配额）；预算用尽或非瞬时错误才抛出。
-                // P2：Retry 前置「本轮零输出」——防整轮重放洗出半截回答
-                //（重复拼接 + 四层重试叠加放大 ~60 请求）。
+                // ═══ 长任务韧性：LLM 瞬时错误退避重试（不消耗迭代配额；P2 前置
+                // 「本轮零输出」防重放拼接半截回答）。═══
                 val hasPartialOutput = contentBuilder.isNotEmpty() ||
                     reasoningBuilder.isNotEmpty() || toolCallsAccumulator.isNotEmpty()
                 when (val retryDecision = resilience.onLlmFailure(e)) {
@@ -911,9 +939,8 @@ class ApexAgentEngine(
                 }
             }
 
-            // ═══ P1 修复（降级自动恢复）：本轮 LLM 交互成功 → 降级等级归零。
-            // 旧状态机只在下一次 execute() 复位，任务内一次误判就永久降级；
-            // 现在每轮成功即恢复，孤立失败无跨轮记忆。
+            // ═══ P1 修复（降级自动恢复）：本轮成功 → 降级等级归零（孤立失败
+            // 无跨轮记忆，旧状态机一次误判就永久降级）。═══
             if (toolDegradationLevel > 0) {
                 AppLogger.instance.debug(
                     LogCategory.ENGINE, "ApexAgentEngine",
@@ -940,12 +967,15 @@ class ApexAgentEngine(
                         if (handleAskUserToolCall(toolCall, emit)) continue
                         executeToolCallStreaming(toolCall, emit)
                     }
+                    // diag-20261011：整批 ToolResult 落盘后冲刷延迟 System 提示
+                    //（位置安全点：完整 tool 块之后，下一轮请求之前）。
+                    flushPendingSystemNotes()
                 }
 
                 contentBuilder.isNotEmpty() -> {
                     // ═══ #168 HUMAN_ASSIST 模式：决策点后置检测 ═══
-                    // 模型常不调 ask_user_choice 直接写对比文本——后置检测：检出 →
-                    // 挂起等选择 → 回填 continue；无/超时 → null 照常收尾（不丢回复）。
+                    // 模型常不调 ask_user_choice 直接写对比文本 —— 检出 → 挂起等选择
+                    // → 回填 continue；无/超时 → null 照常收尾（不丢回复）。
                     // 规则见 assist/DecisionPointDetector.kt；流程见 assist/HumanAssistFlow.kt。
                     if (config.mode == AgentMode.HUMAN_ASSIST) {
                         // #214：超时发 UserInputExpired 关闭挂起对话框；空答复折叠为空串照常收尾。
@@ -976,14 +1006,11 @@ class ApexAgentEngine(
                         return iteration
                     }
 
-                    // ═══ P0 修复（承诺未执行催促，BUILD 模式）：用户反馈"Agent 不会主动调用命令"═══
-                    // 纯文本轮是 BUILD 循环的终止条件 —— 弱模型常第一轮叙述计划（"我现在去
-                    // 执行 XX…"）而不带 tool_calls，任务即告结束，观感"只说不做"。这里对
-                    // 响应文本做后置检测（assist/PromiseDetector.kt，刻意保守）：
-                    // - 检出强承诺语迹 且 本任务尚未催促过 且 未到迭代上限 → 注入
-                    //   System 催促并 continue（模型获得一次"真做"的机会；每任务至多
-                    //   一次 —— 催促后仍不行动 = 合法收尾，不无限循环）；
-                    // - 未检出 / 已催促 → 照常 ResponseComplete（绝不丢已生成的回复）。
+                    // ═══ P0 修复（承诺未执行催促，BUILD 模式）═══
+                    // 纯文本轮是 BUILD 循环的终止条件 —— 弱模型常只叙述计划不调
+                    // tool_calls。后置检测（assist/PromiseDetector，保守）：检出强
+                    // 承诺且未催促过 → System 催促并 continue（每任务至多一次，
+                    // 催促后仍不行动 = 合法收尾）；否则照常 ResponseComplete。
                     if (config.mode == AgentMode.BUILD && !promiseNudged &&
                         iteration < thinkingController.effectiveMaxIterations(config.maxIterations) - 1 &&
                         com.apex.agent.core.engine.assist.PromiseDetector
@@ -997,9 +1024,8 @@ class ApexAgentEngine(
                         continue
                     }
 
-                    // ═══ v3 GOAL 模式：每轮自然收尾 → 快速模型验收 ═══
-                    // 验收未达标 → 注入差距说明（System）继续跑；达标/轮次耗尽/无活动
-                    // 目标 → 照常收尾（不丢已生成回复）；验收逻辑全在 GoalModeCoordinator。
+                    // ═══ v3 GOAL 模式：每轮自然收尾 → 快速模型验收；未达标注入差距
+                    // 说明继续跑，达标/轮次耗尽/无目标 → 照常收尾。═══
                     if (config.mode == AgentMode.GOAL && goalCoordinator != null) {
                         val decision = goalCoordinator.onAgentTurn(contentBuilder.toString())
                         when (decision) {
@@ -1021,9 +1047,8 @@ class ApexAgentEngine(
                 }
 
                 else -> {
-                    // ═══ 长任务韧性：空响应退避重试 ═══
-                    // 弱网/网关抖动下的空响应不再立即报错 —— 退避后重试同一轮
-                    //（预算 maxEmptyResponseRetries 次）；用尽才按旧语义报 Error。
+                    // ═══ 长任务韧性：空响应退避重试（弱网抖动不立即报错，
+                    // 预算用尽才按旧语义报 Error）。═══
                     val emptyRetry = resilience.onEmptyResponse()
                     if (emptyRetry != null) {
                         AppLogger.instance.warn(
@@ -1040,17 +1065,15 @@ class ApexAgentEngine(
                         iteration--
                         continue
                     }
-                    // #213：空响应属于模型响应无效类错误，用户文案走统一中文映射
+                    // #213：空响应用户文案统一中文映射。
                     emit(AgentEvent.Error(LlmErrorText.RESPONSE_INVALID))
                     return iteration
                 }
             }
         }
 
-        // #216：最大迭代超限不是死局 —— 对话上下文仍在，用户点「重试/继续」
-        // 即可接着推进。recoverable=true 让 UI 渲染重试入口（Agent 屏
-        // ErrorBlock 的 RetryChip / Coding 屏错误条的重试按钮）；文案与
-        // LlmErrorText 同口径：中文、先说原因、再给下一步动作。
+        // #216：最大迭代超限不是死局 —— 上下文仍在，可点击重试继续推进
+        //（recoverable=true 让 UI 渲染重试入口）。
         if (iteration >= thinkingController.effectiveMaxIterations(config.maxIterations)) {
             val maxIterations = thinkingController.effectiveMaxIterations(config.maxIterations)
             emit(
@@ -1082,21 +1105,26 @@ class ApexAgentEngine(
      * （cancel/进程被杀/ask_user 等待中退出）→ 历史末尾留下无配对 tool_calls
      * → OpenAI 兼容端点对后续每次请求都 400，会话级报废。现每次构建请求前
      * 幂等修补（[DanglingToolCallRepair]）：无悬空零开销，有则改写内存历史
-     * 并持久化，合成文本提示模型"结果未知、重做前先验证"。
+     * 并持久化。diag-20261011：修复器升级为全面归一化（分离应答回迁/孤儿
+     * 丢弃/重复 id 剥离），返回是否有修补供自愈重试判定。
+     *
+     * @return true = 历史被归一化改写（调用方可安全重试请求）
      */
-    private fun repairDanglingToolCalls() {
+    private fun repairDanglingToolCalls(): Boolean {
         val report = DanglingToolCallRepair.repair(conversationHistory)
-        if (!report.hasRepairs) return
+        if (!report.hasRepairs) return false
         conversationHistory.clear()
         conversationHistory.addAll(report.repairedHistory)
         memory?.save(conversationHistory)
         AppLogger.instance.warn(
             LogCategory.ENGINE, "AgentEngine",
-            "Repaired ${report.repairedCallIds.size} dangling tool_call(s): " +
-                report.repairedCallIds.joinToString(", ") +
-                " (interrupted before ToolResult was recorded)",
+            "History normalized: ${report.repairedCallIds.size} synthesized, " +
+                "${report.movedCallIds.size} moved back, " +
+                "${report.droppedToolResultIds.size} orphan toolResults dropped, " +
+                "${report.strippedCallIds.size} duplicate declarations stripped",
             tags = arrayOf("dangling-repair")
         )
+        return true
     }
 
     internal fun buildSystemPrompt(planningPhase: Boolean = false): String = EnginePrompts.buildSystemPrompt(
@@ -1128,15 +1156,14 @@ class ApexAgentEngine(
 
     override suspend fun abort() {
         isRunning = false
-        // #340：原子换引用后 complete —— 旧两步（读 ?.complete → = null）
-        // 与引擎新注册竞态时新 deferred 被抹，后续提交全部落空。
-        planConfirmationDeferred.getAndSet(null)?.complete(PlanDecision.legacy(false))
-        specConfirmationDeferred.getAndSet(null)?.complete(false)
-        userInputDeferred.getAndSet(null)?.complete("")
+        // #340：三对“complete-then-null”收进 confirmationLock（见
+        // ConfirmationChannels.kt）——与注册方互斥，消除“新注册被 null
+        // 覆盖”的窗口；锁内无挂起点。
+        abortConfirmationChannels()
     }
 
     override fun submitUserInput(answer: String) {
-        userInputDeferred.get()?.complete(answer)
+        userInputDeferred?.complete(answer)
     }
 
     /**
@@ -1144,51 +1171,19 @@ class ApexAgentEngine(
      * 等待已超时收场（或无 pending 请求）→ false —— 调用方（VM）据此
      * 给出「回答未送达」的显式提示，迟到的输入不再被静默丢弃。
      */
-    fun submitUserInputIfAwaiting(answer: String): Boolean =
-        userInputDeferred.get()?.complete(answer) ?: false
-
-    override fun cancelUserInput() {
-        userInputDeferred.get()?.complete("")
+    fun submitUserInputIfAwaiting(answer: String): Boolean {
+        val deferred = userInputDeferred ?: return false
+        return deferred.complete(answer)
     }
 
-    /**
-     * 挂起等待 UI 回传用户输入。
-     *
-     * @return 用户答案（cancelUserInput/abort 路径为空串）；
-     *   null = 等待超时 —— #214 语义：不再静默以空串继续，而是先关闭
-     *   投递通道（迟到的 [submitUserInputIfAwaiting] 拿到 false），
-     *   再触发 [onExpired]（调用方发射 UserInputExpired 让 UI 关对话框），
-     *   返回 null 让调用方产生「用户输入超时」的显式结果。
-     */
-    internal suspend fun awaitUserInput(
-        onRegistered: (suspend () -> Unit)? = null,
-        onExpired: (suspend () -> Unit)? = null
-    ): String? {
-        val deferred = CompletableDeferred<String>()
-        // #340：注册先行 —— deferred 先于 UserInputRequired 的 emit（
-        // onRegistered）创建，提交方与注册方之间的 happens-before 窗口
-        // 结构性消除（PR #330 实证的 5 分钟挂起根因）。
-        userInputDeferred.set(deferred)
-        return try {
-            onRegistered?.invoke()
-            // 与 awaitPlanConfirmation / awaitSpecConfirmation 保持一致：
-            // 5 分钟超时，避免 ask_user 工具因用户遗忘而把引擎永久挂起。
-            withTimeout(PLAN_CONFIRMATION_TIMEOUT_MS) { deferred.await() }
-        } catch (e: TimeoutCancellationException) {
-            AppLogger.instance.warn(
-                LogCategory.ENGINE, "ApexAgentEngine",
-                "ask_user 输入超时 (${PLAN_CONFIRMATION_TIMEOUT_MS / 1000}s)，按超时未决收场"
-            )
-            // 先关投递通道再通知：保证 UI 先看到对话框关闭，迟交才有失败提示。
-            userInputDeferred.compareAndSet(deferred, null)
-            onExpired?.invoke()
-            null
-        } finally {
-            // #340：仅清理自己那一代（不覆写 abort 后的新注册）。
-            userInputDeferred.compareAndSet(deferred, null)
-        }
+    override fun cancelUserInput() {
+        userInputDeferred?.complete("")
     }
 
     // maybeCompressContext 迁至 EngineCompressionGate.kt（同包顶层扩展，
     // 调用点零改动 —— 模式与 EnginePromptDelegates / EngineAskUserFlow 一致）。
+    // awaitUserInput / abortConfirmationChannels 迁至 ConfirmationChannels.kt
+    //（同包顶层扩展，#340 确认通道治理 + God-file 预算）；
+    // awaitPlanConfirmationDecision / awaitSpecConfirmation 分别留在
+    // plan/PlanExecutionSupport.kt 与 EngineSpecFlow.kt（同步治理）。
 }

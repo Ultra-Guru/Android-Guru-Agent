@@ -155,13 +155,17 @@
     <string name="code_longtask_stats_empty">暂无档位效能数据</string>
     <string name="code_longtask_stats_empty_hint">长任务留档后按档位自动聚合统计</string>
     <string name="code_longtask_stats_runs_fmt">%1$d 次运行</string>
-    <string name="code_longtask_stats_row_fmt">成功率 %1$d%% · 平均 %2$d 轮 · %3$d 工具 · %4$s</string>
+    <string name="code_longtask_stats_row_fmt">可靠性 %1$s · 平均 %2$d 轮 · %3$d 工具 · %4$s</string>
+    <string name="code_reliability_stable">稳定</string>
+    <string name="code_reliability_fair">一般</string>
+    <string name="code_reliability_unstable">不稳定</string>
 
     <!-- v1.2 检查点时间线（CodeLongTaskSheet 展开区） -->
     <string name="code_longtask_cp_round_fmt">第 %1$d 轮</string>
     <string name="code_longtask_cp_counts_fmt">%1$d 工具 · %2$d 文件</string>
     <string name="code_longtask_cp_todos_fmt">☑%1$d ☐%2$d</string>
     <string name="code_thinking_guide_open">查看档位指南</string>
+    <string name="code_thinking_no_native_effort">ℹ 当前模型未开启 reasoning 能力位：原生 reasoning_effort 参数不会随请求发送（档位的引擎侧效果——迭代倍率/压缩阈值/提示词——照常生效）。可在 设置 → 模型 → Reasoning 打开后生效</string>
     <!-- ═══ 胶囊流式输出（Coding 工作流时间轴）═══ -->
     <string name="code_stream_group_more_fmt">已收起 %1$d 颗工具胶囊</string>
     <string name="code_stream_group_expand">展开</string>

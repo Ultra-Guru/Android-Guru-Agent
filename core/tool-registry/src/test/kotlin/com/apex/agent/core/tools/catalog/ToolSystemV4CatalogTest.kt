@@ -157,16 +157,19 @@ class ToolSystemV4CatalogTest {
     fun `default plan exposes core only and catalog meta tools`() {
         val registry = registryOf(
             "read_file", "web_search", "ask_user", "tool_search", "tool_open", "tool_list",
-            "github_create_issue", "terminal.exec", "browser_click", "terminal_exec"
+            "github_create_issue", "terminal.exec", "browser_click", "browser_get_cookies", "terminal_exec"
         )
         val plan = ToolRequestBudget.planDefault(registry, ToolActivationStore())
         val names = plan.tools.map { it.name }.toSet()
         assertTrue("read_file" in names)
         assertTrue("web_search" in names)
         assertTrue("tool_search" in names)
+        // 浏览器高频入口随 CORE 预载（v1.5.0：一级大功能的主干路径直达）
+        assertTrue("browser_click" in names)
         // non-core capabilities stay OUT of the request payload
         assertFalse("github_create_issue" in names)
-        assertFalse("browser_click" in names)
+        // 长尾浏览器工具（Cookie 凭据读取）仍走 tool_search 渐进披露
+        assertFalse("browser_get_cookies" in names)
         // legacy alias never ships (its slot is taken by the modern tool)
         assertTrue("terminal_exec" in names)
         assertEquals("terminal.exec", plan.providerNameToId["terminal_exec"])

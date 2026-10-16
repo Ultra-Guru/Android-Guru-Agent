@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
+import com.apex.agent.core.llm.EndpointResolver
 import com.apex.agent.core.llm.ModelCapabilities
 import com.apex.agent.core.llm.ModelCapabilityHeuristics
 import com.apex.agent.core.llm.ModelProfile
@@ -125,6 +126,9 @@ internal fun ModelSetupCard(
     var modelsError by remember { mutableStateOf<String?>(null) }
     var discoveredModels by remember { mutableStateOf(emptyList<RemoteModelInfo>()) }
     var showModelPicker by remember { mutableStateOf(false) }
+
+    // 多语言配置导入弹窗（粘贴 JSON / Python / YAML / TOML 一键导入）
+    var showImportDialog by remember { mutableStateOf(false) }
 
     // 删除 / 重置参数的确认框（自 SettingsScreen.ModelsSection 迁入）
     var deleteTarget by remember { mutableStateOf<ModelProfile?>(null) }
@@ -327,7 +331,7 @@ internal fun ModelSetupCard(
                 }
             }
 
-            // ── 档案操作：新建 / 复制 / 重置参数（带确认）/ 删除（带确认）──
+            // ── 档案操作：新建 / 复制 / 重置参数（带确认）/ 删除（带确认）/ 导入配置 ──
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = { createProfile() }) { Text(stringResource(R.string.model_new), fontSize = 12.sp) }
                 TextButton(onClick = { viewModel.duplicateProfile(sel.id) }) { Text(stringResource(R.string.model_duplicate), fontSize = 12.sp) }
@@ -336,6 +340,10 @@ internal fun ModelSetupCard(
                     enabled = profiles.size > 1 && !sel.isDefault,
                     onClick = { deleteTarget = sel }
                 ) { Text(stringResource(R.string.model_delete), fontSize = 12.sp) }
+                TextButton(
+                    // 粘贴 JSON / Python / YAML / TOML 配置直接建 Provider + 档案
+                    onClick = { showImportDialog = true }
+                ) { Text(stringResource(R.string.model_import), fontSize = 12.sp) }
             }
 
             // ── 档案名称 ──
@@ -424,7 +432,13 @@ internal fun ModelSetupCard(
                     Column {
                         Text(
                             if (baseUrl.isBlank()) stringResource(R.string.model_base_url_blank_hint)
-                            else stringResource(R.string.model_request_url_hint, baseUrl.trimEnd('/')),
+                            // 完全自定义预览：与客户端同一份归一化（EndpointResolver）——
+                            // 已填 /chat/completions 完整端点显示原样直发，否则显示追加后
+                            // 的真实请求地址，杜绝「提示显示 A、实际请求 B」。
+                            else stringResource(
+                                R.string.model_request_url_hint,
+                                EndpointResolver.chatCompletions(baseUrl)
+                            ),
                             style = MaterialTheme.typography.labelSmall
                         )
                         if (urlDeviated) {
@@ -591,6 +605,15 @@ internal fun ModelSetupCard(
                 }
                 showModelPicker = false
             }
+        )
+    }
+
+    // 多语言配置导入弹窗：导入成功后自动选中新档案
+    if (showImportDialog) {
+        ModelConfigImportDialog(
+            viewModel = viewModel,
+            onDismiss = { showImportDialog = false },
+            onImported = { onSelect(it) }
         )
     }
 

@@ -7,11 +7,17 @@ import com.apex.agent.R
 import com.apex.agent.core.llm.LlmClientFactory
 import com.apex.agent.core.llm.LlmConfig
 import com.apex.agent.core.llm.LlmErrorText
+import com.apex.agent.core.llm.ModelCapabilities
+import com.apex.agent.core.llm.ModelCapabilityHeuristics
 import com.apex.agent.core.llm.ModelProfile
 import com.apex.agent.core.llm.ModelRoleConfig
 import com.apex.agent.core.llm.ModelsCatalog
 import com.apex.agent.core.llm.ProviderConfig
 import com.apex.agent.core.llm.RemoteModelInfo
+import com.apex.agent.core.llm.share.ImportedModel
+import com.apex.agent.core.llm.share.ModelConfigFormat
+import com.apex.agent.core.llm.share.ModelConfigImportException
+import com.apex.agent.core.llm.share.ModelConfigImporter
 import com.apex.agent.core.tools.hook.HookRegistry
 import com.apex.agent.github.GithubConnectionState
 import com.apex.agent.github.GithubTokenManager
@@ -115,6 +121,78 @@ class SettingsViewModel @Inject constructor(
                 apiKey = repo.getProviderApiKey(resolved.id),
                 extraHeaders = resolved.defaultHeaders
             )
+        }
+
+    /**
+     * 导入模型配置（多语言格式文本 → provider + profiles 落盘；返回导入摘要）。
+     *
+     * 用户需求：模型配置支持直接粘贴 Python / JSON / YAML / TOML 导入。
+     * 文本 → 载荷的识别在 [ModelConfigImporter]（纯 JVM、可单测）；本方法只做
+     * 落盘编排：建 Provider（imported_ 前缀 + 时间戳防撞）→ 加密写 Key →
+     * 逐模型建 Profile（能力位与 [ModelCapabilityHeuristics] 推断合并，只加不减）。
+     * 模型清单为空时仍建一个空白档（modelId 留空由用户补）—— 导入动作有落点。
+     */
+    suspend fun importModelConfig(text: String, format: ModelConfigFormat): Result<ModelImportSummary> =
+        withContext(Dispatchers.IO) {
+            val cfg = try {
+                ModelConfigImporter.import(text, format)
+            } catch (e: ModelConfigImportException.ParseFailure) {
+                return@withContext Result.failure(
+                    Exception(
+                        languageManager.getString(R.string.model_import_parse_error).format(e.message)
+                    )
+                )
+            } catch (e: ModelConfigImportException.NothingRecognized) {
+                return@withContext Result.failure(
+                    Exception(languageManager.getString(R.string.model_import_nothing))
+                )
+            } catch (e: ModelConfigImportException) {
+                // 分型外的兜底（未来新增子类先不至于裸奔）
+                return@withContext Result.failure(
+                    Exception(languageManager.getString(R.string.model_import_apply_error).format(e.message ?: ""))
+                )
+            }
+
+            val ts = System.currentTimeMillis()
+            val providerName = cfg.providerName.ifBlank { "Imported" }
+            val provider = ProviderConfig(
+                id = "imported_$ts",
+                displayName = providerName,
+                baseUrl = cfg.baseUrl,
+                defaultHeaders = cfg.headers,
+                isBuiltIn = false,
+            )
+            repo.upsertProvider(provider)
+            cfg.apiKey?.takeIf { it.isNotBlank() }?.let { repo.setProviderApiKey(provider.id, it) }
+
+            // 空模型清单 → 单个空白档（用户稍后补 modelId），导入计数按 1 计
+            val entries = cfg.models.ifEmpty {
+                listOf(ImportedModel(modelId = "", displayName = providerName))
+            }
+            var firstProfileId = ""
+            entries.forEachIndexed { index, m ->
+                // 显式声明的能力位打底，再叠加命名启发式（只加不减）
+                val caps = ModelCapabilityHeuristics.enrichCapabilities(
+                    m.modelId,
+                    ModelCapabilities(
+                        vision = m.vision ?: false,
+                        imageInput = m.vision ?: false,
+                        toolCalling = m.toolCalling ?: true,
+                        reasoning = m.reasoning ?: false,
+                    )
+                )
+                val profile = ModelProfile(
+                    id = "profile_${ts}_$index",
+                    name = m.displayName.ifBlank { m.modelId.ifBlank { "${providerName} ${index + 1}" } },
+                    providerId = provider.id,
+                    modelId = m.modelId,
+                    contextWindow = m.contextWindow ?: 128_000,
+                    capabilities = caps,
+                )
+                if (index == 0) firstProfileId = profile.id
+                repo.upsertProfile(profile)
+            }
+            Result.success(ModelImportSummary(entries.size, firstProfileId, providerName))
         }
 
     // ── 角色 / Agent ───────────────────────────────────────────
@@ -292,4 +370,14 @@ AGENTS.md，越靠近当前文件的越优先）。
 data class TestResult(
     val success: Boolean,
     val message: String
+)
+
+/**
+ * 模型配置导入结果摘要：导入模型数 + 首个档案 id（供导入后自动选中）+
+ * 落盘的服务商名（完成提示 / 二次导入去重提示用）。
+ */
+data class ModelImportSummary(
+    val count: Int,
+    val firstProfileId: String,
+    val providerName: String,
 )

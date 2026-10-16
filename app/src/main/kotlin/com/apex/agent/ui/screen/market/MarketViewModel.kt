@@ -25,6 +25,9 @@ import com.apex.agent.core.tools.skill.SkillRegistry
 import com.apex.agent.marketplace.MarketInstallManager
 import com.apex.agent.platform.csmem.store.MemoryGraphStore
 import com.apex.agent.plugin.host.PluginManager
+import com.apex.agent.plugin.host.functional.FunctionalPluginStore
+import com.apex.agent.plugin.host.functional.UnifiedPluginEntry
+import com.apex.agent.plugin.host.functional.UnifiedPluginRegistry
 import com.apex.agent.ui.language.LanguageManager
 import com.apex.agent.R
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -168,8 +171,10 @@ data class MarketUiState(
     val mcps: List<MarketMcpRow> = emptyList(),
     // 连接器
     val connectors: List<ConnectorDef> = emptyList(),
-    // 插件
+    // 插件（BROWSE 视图：APK 发现态）
     val plugins: List<MarketPluginRow> = emptyList(),
+    // 插件（INSTALLED 视图：统一目录 —— 功能性 + APK 双形态合并）
+    val installedPlugins: List<UnifiedPluginEntry> = emptyList(),
     // 集成：魔搭
     val modelScopeSkills: List<ModelScopeSource.ModelScopeSkill> = emptyList(),
     val modelScopeLoading: Boolean = false,
@@ -181,6 +186,10 @@ data class MarketUiState(
     val githubHits: List<MarketInstallManager.GitHubRepoHit> = emptyList(),
     val githubSearching: Boolean = false,
     val githubError: String? = null,
+    // GitHub 智能安装：多候选选择弹窗（技能集合 / MCP monorepo 仓库发现
+    // 多个可装项时非空；单候选不弹直接装）。关闭 = null。
+    val githubCandidates: List<MarketInstallManager.GithubRepoCandidate> = emptyList(),
+    val githubCandidatesRepo: String? = null,
     // Skills：ClawHub 技能仓库（源切换 + 列表/搜索/安装状态）
     val skillSource: SkillRepoSource = SkillRepoSource.LOCAL,
     val clawHubSkills: List<ClawHubSource.ClawHubSkillEntry> = emptyList(),
@@ -264,6 +273,8 @@ class MarketViewModel @Inject constructor(
     internal val mcpManager: McpManager,
     private val connectorRegistry: ConnectorRegistry,
     private val pluginManager: PluginManager,
+    // Plugin System v2：统一插件门面（双形态目录 / 功能插件启停装卸）
+    private val unifiedPluginRegistry: UnifiedPluginRegistry,
     private val installManager: MarketInstallManager,
     private val modelScopeSource: ModelScopeSource,
     private val clawHubSource: ClawHubSource,
@@ -446,6 +457,13 @@ class MarketViewModel @Inject constructor(
                 githubHits = state.githubHits,
                 githubSearching = state.githubSearching,
                 githubError = state.githubError,
+                // GitHub 智能安装候选弹窗跨 refresh 保留（与 installPreview 同类
+                // 修复）：PickNeeded 置入候选后本方法会以 refresh() 收尾 ——
+                // 不保留的话快照新建的 UiState 把候选抹回空表，多候选弹窗
+                // 刚弹即被清除（用户视角「点了没反应」）；逐个挑选流程同样
+                // 依赖剩余候选跨 refresh 存活。
+                githubCandidates = state.githubCandidates,
+                githubCandidatesRepo = state.githubCandidatesRepo,
                 skillSource = state.skillSource,
                 clawHubSkills = state.clawHubSkills,
                 clawHubLoading = state.clawHubLoading,
@@ -529,12 +547,17 @@ class MarketViewModel @Inject constructor(
             val plugins = pluginManager.discoverPlugins().map {
                 MarketPluginRow(it.packageName, it.label, it.packageName in loaded)
             }
+            // Plugin System v2：统一目录对账（功能性插件磁盘扫描 + APK
+            // 已加载快照合并——同一 IO 调度器上扫盘，与既有插件发现同轮次）。
+            unifiedPluginRegistry.refresh()
+            val installedPlugins = unifiedPluginRegistry.catalog.value
             MarketUiState(
                 skills = skills,
                 skillTemplates = templates,
                 mcps = mcps,
                 connectors = connectors,
                 plugins = plugins,
+                installedPlugins = installedPlugins,
                 installedModelScopeIds = installedIds
             )
         }.getOrNull()
@@ -751,6 +774,68 @@ class MarketViewModel @Inject constructor(
         }
     }
 
+    // ═══ Plugin System v2：功能性插件启停 / 卸载 / 导入（统一门面路由） ═══
+
+    /**
+     * 功能性插件启停：标记文件 + 工具宏注册/回收 + 目录刷新（一体化，
+     * 见 UnifiedPluginRegistry.setEnabledFunctional）。磁盘标记写入与
+     * 注册表操作在 IO 调度器上执行（对齐 toggleSkill 的线程纪律）。
+     */
+    fun toggleFunctionalPlugin(id: String, enabled: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = unifiedPluginRegistry.setFunctionalEnabled(id, enabled)
+            if (!ok) {
+                message(languageManager.getString(R.string.market_plugin_not_found).format(id))
+            }
+            refresh()
+        }
+    }
+
+    /**
+     * 功能性插件卸载：工具回收 + 目录删除 + 刷新。结果如实反馈
+     * （market_plugin_uninstalled / market_plugin_not_found）。
+     */
+    fun uninstallFunctionalPlugin(id: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ok = unifiedPluginRegistry.uninstallFunctionalPlugin(id)
+            message(
+                if (ok) {
+                    languageManager.getString(R.string.market_plugin_functional_uninstalled).format(id)
+                } else {
+                    languageManager.getString(R.string.market_plugin_not_found).format(id)
+                }
+            )
+            refresh()
+        }
+    }
+
+    /**
+     * 功能性插件导入（plugin.json 文本）：校验 → 落盘 → 默认启用态激活。
+     * 安装结果分档反馈（成功 / 升级 / 幂等 / 拒绝理由），全部人话。
+     */
+    fun importFunctionalPlugin(manifestJson: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = unifiedPluginRegistry.installFunctionalPlugin(manifestJson)
+            message(
+                when (result) {
+                    is FunctionalPluginStore.InstallResult.Installed ->
+                        languageManager.getString(R.string.market_plugin_functional_installed)
+                            .format(result.manifest.displayName)
+                    is FunctionalPluginStore.InstallResult.Upgraded ->
+                        languageManager.getString(R.string.market_plugin_functional_upgraded)
+                            .format(result.manifest.displayName)
+                    is FunctionalPluginStore.InstallResult.Unchanged ->
+                        languageManager.getString(R.string.market_plugin_functional_unchanged)
+                            .format(result.manifest.displayName)
+                    is FunctionalPluginStore.InstallResult.Rejected ->
+                        languageManager.getString(R.string.market_plugin_functional_rejected)
+                            .format(result.reason)
+                }
+            )
+            refresh()
+        }
+    }
+
     // ═══ 集成：魔搭 ═══
 
     fun updateModelScopeQuery(query: String) =
@@ -821,14 +906,30 @@ class MarketViewModel @Inject constructor(
     fun installGithubRepo(fullName: String) = installFromRepoInput(fullName)
 
     /**
-     * 真实联网安装：接受 `owner/repo`、GitHub 链接、git@ 链接任一种写法。
-     * 走 raw.githubusercontent.com 取 manifest / SKILL.md —— 不再"点一下就假装装好了"。
+     * 真实联网智能安装：接受 `owner/repo`、GitHub 链接、git@ 链接任一种写法。
+     * 按内容类型自动路由（技能 / MCP server / 技能集合）：
+     * - 根技能形态 → 原路径直装（零行为回归）；
+     * - MCP 形态（server.json / .mcp.json / src monorepo，如
+     *   modelcontextprotocol/servers）→ RegistryMcpInstaller 决策树；
+     * - 技能集合（子目录 SKILL.md，如 anthropics/skills）→ 候选列表；
+     * 多候选时置入 githubCandidates 弹选择框，单候选直接装完。
      */
     fun installFromRepoInput(input: String) {
+        if (_uiState.value.busy) return
         viewModelScope.launch {
             _uiState.update { it.copy(busy = true) }
-            installManager.installSkillFromRepoInput(input).fold(
-                onSuccess = { message(it) },
+            installManager.installSmartFromGithub(input).fold(
+                onSuccess = { outcome ->
+                    when (outcome) {
+                        is MarketInstallManager.GithubInstallOutcome.Done -> message(outcome.message)
+                        is MarketInstallManager.GithubInstallOutcome.PickNeeded -> _uiState.update {
+                            it.copy(
+                                githubCandidates = outcome.candidates,
+                                githubCandidatesRepo = outcome.repoTitle
+                            )
+                        }
+                    }
+                },
                 onFailure = {
                     message(languageManager.getString(R.string.market_install_failed).format(it.message ?: ""))
                 }
@@ -837,6 +938,58 @@ class MarketViewModel @Inject constructor(
             refresh()
         }
     }
+
+    /** 安装单个 GitHub 候选（用户在候选列表点选）。 */
+    fun installGithubCandidate(candidate: MarketInstallManager.GithubRepoCandidate) {
+        if (_uiState.value.busy) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(busy = true) }
+            installManager.installGithubCandidate(candidate).fold(
+                onSuccess = { msg ->
+                    // 装完该项后从候选列表移除（支持逐个挑选）；列表清空
+                    // 时一并关弹窗
+                    _uiState.update { state ->
+                        val rest = state.githubCandidates.filterNot { it.key == candidate.key }
+                        if (rest.isEmpty()) {
+                            state.copy(githubCandidates = emptyList(), githubCandidatesRepo = null)
+                        } else {
+                            state.copy(githubCandidates = rest)
+                        }
+                    }
+                    message(msg)
+                },
+                onFailure = {
+                    message(languageManager.getString(R.string.market_install_failed).format(it.message ?: ""))
+                }
+            )
+            _uiState.update { it.copy(busy = false) }
+            refresh()
+        }
+    }
+
+    /** 一键安装全部 GitHub 候选（逐个顺序装，失败项点名不中断）。 */
+    fun installAllGithubCandidates() {
+        val candidates = _uiState.value.githubCandidates
+        if (candidates.isEmpty() || _uiState.value.busy) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(busy = true) }
+            installManager.installAllGithubCandidates(candidates).fold(
+                onSuccess = { msg ->
+                    _uiState.update { it.copy(githubCandidates = emptyList(), githubCandidatesRepo = null) }
+                    message(msg)
+                },
+                onFailure = {
+                    message(languageManager.getString(R.string.market_install_failed).format(it.message ?: ""))
+                }
+            )
+            _uiState.update { it.copy(busy = false) }
+            refresh()
+        }
+    }
+
+    /** 关闭 GitHub 候选选择弹窗（不安装任何内容）。 */
+    fun dismissGithubCandidates() =
+        _uiState.update { it.copy(githubCandidates = emptyList(), githubCandidatesRepo = null) }
 
     // ═══ Skills 页签：ClawHub 技能仓库 ═══
 

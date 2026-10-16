@@ -97,11 +97,16 @@ object ModelsCatalog {
         }
     }
 
-    /** `{baseUrl}` → `{baseUrl}/models`，容忍结尾斜杠与 `/chat/completions` 误粘。 */
+    /**
+     * `{baseUrl}` → `{baseUrl}/models`（归一化见 [EndpointResolver.models]）：
+     * 容忍结尾斜杠、误粘的 `/chat/completions` 尾巴（剥掉再拼）、以及用户
+     * 已填完整 `/models` 路径的完全自定义端点（原样直发，不双拼）。
+     * 非 http(s) scheme 一律折返空串（调用方据此报人话错误）。
+     */
     private fun buildEndpoint(baseUrl: String): String {
-        val trimmed = baseUrl.trim().trimEnd('/')
-        if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) return ""
-        return "$trimmed/models"
+        val resolved = EndpointResolver.models(baseUrl)
+        if (!resolved.startsWith("http://") && !resolved.startsWith("https://")) return ""
+        return resolved
     }
 
     /** Anthropic 官方端点（鉴权头分叉判定，见 fetchModels）。 */

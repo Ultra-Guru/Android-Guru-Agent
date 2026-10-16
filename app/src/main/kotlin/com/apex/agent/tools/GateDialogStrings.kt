@@ -36,7 +36,7 @@ interface GateDialogStrings {
 
     // ── RiskAwareToolGate ───────────────────────────────────────────
 
-    /** 高风险工具确认标题。 */
+    /** 危险工具确认标题。 */
     fun riskTitle(toolId: String): String
 
     /** #230：MEDIUM 文件改写类确认标题（不谎称高风险）。 */
@@ -70,10 +70,10 @@ interface GateDialogStrings {
         override fun argsLine(arguments: String) =
             "参数摘要：${SensitiveArgRedactor.redact(arguments).take(300).replace('\n', ' ')}"
 
-        override fun riskTitle(toolId: String) = "高风险工具需要确认：$toolId"
+        override fun riskTitle(toolId: String) = "危险工具需要确认：$toolId"
         override fun fileWriteTitle(toolId: String) = "文件写入确认：$toolId"
         override fun riskLine(riskHintIsHigh: Boolean, category: ToolCategory): String {
-            val hint = if (riskHintIsHigh) "高风险：破坏性或不可逆操作" else "中风险：会修改数据或状态"
+            val hint = if (riskHintIsHigh) "危险：破坏性或不可逆操作" else "平衡：会修改数据或状态"
             return "$hint（${category.label}）"
         }
 

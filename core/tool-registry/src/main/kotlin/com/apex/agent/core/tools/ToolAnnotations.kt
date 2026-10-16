@@ -214,6 +214,39 @@ data class ToolAnnotations(
                 toolId == "input_text" || toolId == "ui_tap" || toolId == "ui_swipe" ||
                 toolId == "clipboard" || toolId == "screenshot" -> mutating()
 
+            // ── 浏览器敏感动作（v1.5）──
+            // 三者均已升 HIGH（ToolMetadata.inferRisk），但注解语义各异、
+            // 不能共用 destructive() 兜底：敏感 ≠ 破坏。共同点是
+            // sensitiveAction=true（AutoGPT 语义：会话内需用户明示同意），
+            // PermissionModeGate DEFAULT 模式即触发授权询问，与
+            // RiskAwareToolGate 的 HIGH 弹窗构成双通道（AllowExplicit 去重，
+            // 不双弹窗）。
+            //   execute_js：任意 JS = 能力不可枚举的页面内变更（非幂等）；
+            //   get_cookies：敏感读（会话凭据），readOnly 但 sensitiveAction
+            //     —— 与「读通讯录」同款：读也该问；
+            //   file_upload：本地文件外发到网页 = openWorld 出境写。
+            toolId == "browser_execute_js" -> ToolAnnotations(
+                readOnlyHint = false,
+                destructiveHint = false,
+                idempotentHint = false,
+                openWorldHint = false,
+                sensitiveAction = true
+            )
+            toolId == "browser_get_cookies" -> ToolAnnotations(
+                readOnlyHint = true,
+                destructiveHint = false,
+                idempotentHint = true,
+                openWorldHint = false,
+                sensitiveAction = true
+            )
+            toolId == "browser_file_upload" -> ToolAnnotations(
+                readOnlyHint = false,
+                destructiveHint = false,
+                idempotentHint = false,
+                openWorldHint = true,
+                sensitiveAction = true
+            )
+
             // ── Risk-level fallback for unknown/dynamic ids ──
             else -> when (risk) {
                 ToolRisk.LOW -> readOnly()

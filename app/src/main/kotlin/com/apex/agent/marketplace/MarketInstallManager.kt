@@ -4,8 +4,10 @@ import com.apex.agent.core.tools.builtin.SkillInstallTool
 import com.apex.agent.core.tools.connector.ConnectorDef
 import com.apex.agent.core.tools.connector.ConnectorRegistry
 import com.apex.agent.core.tools.marketplace.ClawHubSource
+import com.apex.agent.core.tools.marketplace.GithubMcpSource
 import com.apex.agent.core.tools.marketplace.ModelScopeSource
 import com.apex.agent.core.tools.marketplace.RawGitHubMirrors
+import com.apex.agent.core.tools.marketplace.RegistryServer
 import com.apex.agent.core.tools.mcp.McpManager
 import com.apex.agent.core.tools.mcp.McpServerConfig
 import com.apex.agent.core.tools.skill.SafeZipExtractor
@@ -52,7 +54,12 @@ class MarketInstallManager @Inject constructor(
     private val httpClient: OkHttpClient,
     private val modelScopeSource: ModelScopeSource,
     private val clawHubSource: ClawHubSource,
-    private val githubTokenManager: GithubTokenManager
+    private val githubTokenManager: GithubTokenManager,
+    // GitHub MCP 探测源 + Registry 安装器：「从 GitHub 安装」的 MCP 分支
+    //（Anthropic 官方 modelcontextprotocol/servers 等仓库直装）。
+    // 依赖无环：RegistryMcpInstaller 只依赖 McpManager + 沙箱执行器。
+    private val githubMcpSource: GithubMcpSource,
+    private val registryMcpInstaller: RegistryMcpInstaller
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -424,69 +431,379 @@ class MarketInstallManager @Inject constructor(
             }
         }
 
-    // ═══ Skill：GitHub 仓库安装（真实联网，多用形态兜底）═══
+    // ═══ GitHub 仓库安装（真实联网，技能形态严格校验 + MCP / 技能集合智能路由）═══
 
     /**
-     * GitHub 仓库安装。
+     * GitHub 仓库安装（纯技能分支，旧调用方兼容）。
      *
      * 旧实现只试 `main` 分支下的 5 个候选路径，绝大多数第三方仓库打不到 ——
      * 按钮点了永远是「仓库中未找到可安装的 manifest」，与市场期望不符（摆设）。
      * 现在的策略：
      *  1. 先查 GitHub API 拿到**真实默认分支**（有的仓库只有 master）；
      *  2. manifest 候选路径扩到常见约定（含 `.apex/` 子目录）；
-     *  3. 找不到 `apex-skill-v1` manifest 时，退化为读取 `SKILL.md` →
-     *     转成 prompt 型技能安装（社区仓库最普遍的技能形态）。
+     *  3. 找不到 `apex-skill-v1` manifest 时，读取 `SKILL.md` / `skill.md`
+     *     —— 必须含 Agent Skills 规范的 YAML frontmatter（name 必填）才
+     *     转成 prompt 型技能安装。
+     *
+     * diag-20261011 修复（用户反馈「从 GitHub 安装的不是技能，有什么装什么」）：
+     * 旧实现把 `README.md` 也列为 markdown 兜底路径 —— GitHub 上几乎每个仓库
+     * 都有 README，于是**任意仓库**都能被转成 prompt 型"技能"装入，README
+     * 全文经 promptInjection 直接注入对话系统提示词（既是静默假安装，也是
+     * 提示词注入安全洞）。现在：
+     *  - README.md 不再参与安装；
+     *  - markdown 路径要求 frontmatter（Agent Skills 规范的技能声明）；
+     *  - manifest 判定收紧为必须 `schema == "apex-skill-v1"`（旧的
+     *    id+name+tools 三键兜底会把大量普通 JSON 当 manifest）；
+     *  - 不满足形态 → 明确报错（与 strings_market 文案承诺一致：
+     *    「仓库里没有这些内容时会明确报错，不会静默假安装」）。
      */
     suspend fun installSkillFromGitHubRepo(owner: String, repo: String): Result<String> =
         withContext(Dispatchers.IO) {
-            val branches = listOfNotNull(resolveDefaultBranch(owner, repo), "main", "master").distinct()
-            val manifestPaths = listOf(
-                "manifest.json", "skill.json", "apex-skill.json", "apex_skill.json",
-                "$repo.json", "skills/$repo.json", ".apex/skill.json", "skill/manifest.json"
-            )
-            val markdownPaths = listOf("SKILL.md", "skill.md", "README.md")
-
-            for (branch in branches) {
-                for (path in manifestPaths) {
-                    val content = tryDownload(
-                        "https://raw.githubusercontent.com/$owner/$repo/$branch/$path"
-                    ) ?: continue
-                    if (looksLikeApexManifest(content)) {
-                        return@withContext installSkillFromJson(content)
-                    }
-                }
-                for (path in markdownPaths) {
-                    val markdown = tryDownload(
-                        "https://raw.githubusercontent.com/$owner/$repo/$branch/$path"
-                    ) ?: continue
-                    if (markdown.isBlank()) continue
-                    val (name, description) = parseMarkdownHeading(markdown, fallbackName = repo)
-                    return@withContext installSkillFromJson(
-                        promptManifest(
-                            id = "gh-${owner.lowercase()}-${repo.lowercase()}",
-                            name = name,
-                            description = description,
-                            author = "github:$owner",
-                            markdown = markdown
-                        )
-                    )
-                }
+            val branch = resolveDefaultBranch(owner, repo) ?: "main"
+            // distinct：默认分支为 main 时避免重复探测同一分支（10 个候选路径
+            // 全部重复 404，浪费请求与时间）
+            val probe = probeRootSkill(owner, repo, listOf(branch, "main", "master").distinct())
+            if (probe != null) {
+                return@withContext installProbeResult(probe)
             }
-            Result.failure(
-                Exception("仓库 $owner/$repo 中未找到可安装内容（已试 ${branches.size} 个分支的 manifest 与 SKILL.md）")
-            )
+            Result.failure(Exception(githubNoSkillMessage(owner, repo)))
         }
 
+    /** 根技能探测命中结果（manifest JSON 或 SKILL.md 文本二选一，由[probeRootSkill]产出）。 */
+    private sealed interface RootSkillProbe {
+        val branch: String
+
+        data class ManifestFound(override val branch: String, val json: String) : RootSkillProbe
+
+        data class SkillDocFound(
+            override val branch: String,
+            val owner: String,
+            val repo: String,
+            val markdown: String,
+            val fmName: String,
+            val fmDescription: String?,
+            val fmLicense: String?
+        ) : RootSkillProbe
+    }
+
     /**
-     * 从任意形式的 GitHub 输入安装：`owner/repo` / 完整 https 链接 / git@ SSH 链接。
+     * 根路径技能探测（不改任何状态）：manifest 候选 → SKILL.md frontmatter。
+     * 命中返回 [RootSkillProbe]；未命中返回 null（调用方继续 MCP / 技能集合分支）。
+     */
+    private fun probeRootSkill(owner: String, repo: String, branches: List<String>): RootSkillProbe? {
+        val manifestPaths = listOf(
+            "manifest.json", "skill.json", "apex-skill.json", "apex_skill.json",
+            "$repo.json", "skills/$repo.json", ".apex/skill.json", "skill/manifest.json"
+        )
+        val skillDocPaths = listOf("SKILL.md", "skill.md")
+
+        for (branch in branches) {
+            for (path in manifestPaths) {
+                val content = tryDownload(
+                    "https://raw.githubusercontent.com/$owner/$repo/$branch/$path"
+                ) ?: continue
+                if (looksLikeApexManifest(content)) {
+                    return RootSkillProbe.ManifestFound(branch, content)
+                }
+            }
+            for (path in skillDocPaths) {
+                val markdown = tryDownload(
+                    "https://raw.githubusercontent.com/$owner/$repo/$branch/$path"
+                ) ?: continue
+                if (markdown.isBlank()) continue
+                // 技能形态判定：Agent Skills 规范要求 SKILL.md 带含
+                // name/description 的 YAML frontmatter —— 没有即普通
+                // markdown 仓库，不装（README 式「有什么装什么」终结）。
+                val (fmName, fmDescription, fmLicense) = parseSkillFrontmatter(markdown)
+                if (fmName.isNullOrBlank()) continue
+                return RootSkillProbe.SkillDocFound(
+                    branch, owner, repo, markdown, fmName, fmDescription, fmLicense
+                )
+            }
+        }
+        return null
+    }
+
+    /** 把根技能探测命中结果送入统一安装管道。 */
+    private suspend fun installProbeResult(probe: RootSkillProbe): Result<String> = when (probe) {
+        is RootSkillProbe.ManifestFound -> installSkillFromJson(probe.json)
+        is RootSkillProbe.SkillDocFound -> {
+            val (heading, headingDesc) = parseMarkdownHeading(probe.markdown, fallbackName = probe.fmName)
+            installSkillFromJson(
+                promptManifest(
+                    id = "gh-${probe.owner.lowercase()}-${probe.repo.lowercase()}",
+                    name = heading,
+                    description = probe.fmDescription ?: headingDesc,
+                    author = "github:${probe.owner}",
+                    markdown = probe.markdown,
+                    homepage = "https://github.com/${probe.owner}/${probe.repo}",
+                    license = probe.fmLicense
+                )
+            )
+        }
+    }
+
+    /**
+     * 从任意形式的 GitHub 输入安装（纯技能分支，旧调用方兼容）：
+     * `owner/repo` / 完整 https 链接 / git@ SSH 链接。
      */
     suspend fun installSkillFromRepoInput(input: String): Result<String> {
-        val raw = input.trim().trimEnd('/')
-        if (raw.isBlank()) return Result.failure(Exception("请输入 owner/repo 或 GitHub 链接"))
-        val (owner, repo) = parseRepoSpec(raw)
-            ?: return Result.failure(Exception("无法解析仓库地址：$input"))
-        return installSkillFromGitHubRepo(owner, repo)
+        val spec = parseGithubInput(input) ?: return Result.failure(parseGithubInputError(input))
+        return installSkillFromGitHubRepo(spec.first, spec.second)
     }
+
+    // ═══ GitHub 智能安装（技能 ⇄ MCP ⇄ 技能集合 内容类型路由）═══
+    //
+    // 背景（用户诉求「市场能安装 Anthropic 的 MCP」）：GitHub 上有两类
+    // 官方形态此前装不上 ——
+    //  1. MCP server 仓库（modelcontextprotocol/servers：根 .mcp.json 或
+    //     src 一级子目录 package.json 带 mcpName/bin）；
+    //  2. 技能集合仓库（anthropics/skills：skills 一级子目录各含 SKILL.md）。
+    // 旧入口只认「根技能形态」，这两类仓库一律报「不是可安装的技能」。
+    //
+    // 智能路由（探测优先级 = 安装确定性从高到低）：
+    //  1. 根技能形态（apex-skill-v1 manifest / 根 SKILL.md frontmatter）→
+    //     原路径直装（零行为回归 —— 单技能仓库行为与 diag-20261011 修复
+    //     后完全一致）；
+    //  2. MCP 形态（根 server.json / 根 .mcp.json / src monorepo）→
+    //     RegistryServer → [RegistryMcpInstaller] 决策树（远端直装 /
+    //     npm 沙箱预装 + 回滚 / 诚实 UNSUPPORTED）；
+    //  3. 技能集合形态（子目录 SKILL.md 带 frontmatter）→ 候选列表由
+    //     用户选择安装（全部 / 单个）；
+    //  4. 全部未命中 → 明确报错（列支持形态，绝不假安装）。
+    //  命中多个候选（>1）时返回 PickNeeded —— 单候选直装不打扰。
+
+    /** GitHub 仓库中单个可安装候选（技能或 MCP server）。 */
+    data class GithubRepoCandidate(
+        val kind: Kind,
+        val name: String,
+        val description: String,
+        /** SKILL：manifest 安装 id（gh-owner-repo-subdir 形态）。 */
+        val skillId: String? = null,
+        /** SKILL：SKILL.md 的 raw 绝对 URL。 */
+        val skillMarkdownUrl: String? = null,
+        /** SKILL：仓库归属（author 字段与 id 去重用）。 */
+        val skillOwner: String? = null,
+        /** MCP：安装决策树输入。 */
+        val server: RegistryServer? = null
+    ) {
+        enum class Kind { SKILL, MCP }
+
+        /** 候选列表 key（去重与 LazyColumn key 用）。 */
+        val key: String get() = "${kind.name}:${skillId ?: server?.key ?: name}"
+    }
+
+    /** 智能安装结果：直接装完，或需要用户从候选中选择。 */
+    sealed interface GithubInstallOutcome {
+        data class Done(val message: String) : GithubInstallOutcome
+
+        data class PickNeeded(
+            val repoTitle: String,
+            val candidates: List<GithubRepoCandidate>
+        ) : GithubInstallOutcome
+    }
+
+    /**
+     * 智能安装入口：按内容类型自动路由。多候选时返回 [GithubInstallOutcome.PickNeeded]
+     *（VM 置入 UI 状态弹候选列表）；单候选直接装完返回 Done。
+     */
+    suspend fun installSmartFromGithub(input: String): Result<GithubInstallOutcome> {
+        val spec = parseGithubInput(input) ?: return Result.failure(parseGithubInputError(input))
+        val (owner, repo) = spec
+        return withContext(Dispatchers.IO) {
+            // ① 根技能形态（单技能仓库 —— 行为与旧版严格一致）
+            val branches = listOfNotNull(resolveDefaultBranch(owner, repo), "main", "master").distinct()
+            val rootSkill = probeRootSkill(owner, repo, branches)
+            if (rootSkill != null) {
+                return@withContext installProbeResult(rootSkill)
+                    .map { GithubInstallOutcome.Done(it) }
+            }
+
+            // ② MCP 形态：server.json / .mcp.json / src monorepo
+            val branch = branches.firstOrNull() ?: "main"
+            val mcpServers = githubMcpSource.detectServers(owner, repo, listOf(branch))
+                .getOrNull().orEmpty()
+            if (mcpServers.isNotEmpty()) {
+                return@withContext routeMcpServers(owner, repo, mcpServers)
+            }
+
+            // ③ 技能集合形态（子目录 SKILL.md，anthropics/skills 血统）
+            val skillCandidates = discoverSkillCollectionCandidates(owner, repo, branch)
+            if (skillCandidates.isNotEmpty()) {
+                if (skillCandidates.size == 1) {
+                    return@withContext installGithubCandidate(skillCandidates.first())
+                        .map { GithubInstallOutcome.Done(it) }
+                }
+                return@withContext Result.success(
+                    GithubInstallOutcome.PickNeeded(
+                        repoTitle = "$owner/$repo",
+                        candidates = skillCandidates
+                    )
+                )
+            }
+
+            // ④ 全部未命中 —— 诚实报错（列支持形态，绝不假安装）
+            Result.failure(
+                Exception(
+                    "仓库 $owner/$repo 未探测到可安装内容。支持三种形态：" +
+                        "① 技能（根 apex-skill-v1 manifest 或带 frontmatter 的 SKILL.md）；" +
+                        "② MCP server（根 server.json / .mcp.json，或 src 一级子目录含 mcpName 的 " +
+                        "package.json，如 modelcontextprotocol/servers）；" +
+                        "③ 技能集合（子目录各含 SKILL.md，如 anthropics/skills）。" +
+                        "普通仓库（仅 README）不会假安装。"
+                )
+            )
+        }
+    }
+
+    /** MCP 候选路由：单台直装，多台交用户选择。 */
+    private suspend fun routeMcpServers(
+        owner: String,
+        repo: String,
+        servers: List<RegistryServer>
+    ): Result<GithubInstallOutcome> {
+        if (servers.size == 1) {
+            return registryMcpInstaller.install(servers.first())
+                .map { GithubInstallOutcome.Done(it) }
+        }
+        return Result.success(
+            GithubInstallOutcome.PickNeeded(
+                repoTitle = "$owner/$repo",
+                candidates = servers.map { server ->
+                    GithubRepoCandidate(
+                        kind = GithubRepoCandidate.Kind.MCP,
+                        name = server.displayName,
+                        description = server.description,
+                        server = server
+                    )
+                }
+            )
+        )
+    }
+
+    /**
+     * 技能集合候选发现：仓库树 → 子目录 SKILL.md（深度 1-2，非根）→
+     * 逐个拉取验 frontmatter（name 必填 —— 与根 SKILL.md 同一严格门槛，
+     * 普通 markdown 仓库不进候选）。上限 [MAX_SKILL_COLLECTION_CANDIDATES]。
+     */
+    private suspend fun discoverSkillCollectionCandidates(
+        owner: String,
+        repo: String,
+        branch: String
+    ): List<GithubRepoCandidate> {
+        val paths = githubMcpSource.fetchRepoTreePaths(owner, repo, branch) ?: return emptyList()
+        val skillDocPaths = paths.filter { path ->
+            val depth = path.count { it == '/' }
+            (depth == 1 || depth == 2) &&
+                path.substringAfterLast('/') == "SKILL.md" &&
+                path.substringBeforeLast('/').isNotBlank()
+        }.take(MAX_SKILL_COLLECTION_CANDIDATES)
+        val candidates = mutableListOf<GithubRepoCandidate>()
+        for (path in skillDocPaths) {
+            val markdown = tryDownload(
+                "https://raw.githubusercontent.com/$owner/$repo/$branch/$path"
+            ) ?: continue
+            if (markdown.isBlank()) continue
+            val (fmName, fmDescription, _) = parseSkillFrontmatter(markdown)
+            if (fmName.isNullOrBlank()) continue
+            val subdir = path.substringBeforeLast('/')
+            val (_, headingDesc) = parseMarkdownHeading(markdown, fallbackName = fmName)
+            candidates += GithubRepoCandidate(
+                kind = GithubRepoCandidate.Kind.SKILL,
+                name = fmName,
+                description = (fmDescription ?: headingDesc).take(160),
+                skillId = "gh-${owner.lowercase()}-${repo.lowercase()}-${subdir.lowercase().replace('/', '-')}",
+                skillMarkdownUrl = "https://raw.githubusercontent.com/$owner/$repo/$branch/$path",
+                skillOwner = owner,
+                server = null
+            )
+            // license frontmatter 不暂存 —— 安装时从 markdown 全量重读
+        }
+        // P2：skillId 按 subdir 归一化（a-b 与 a/b 的子目录都会折叠成 a-b）——
+        // 同仓同名候选按 id 去重，防 LazyColumn 撞 key 崩溃
+        return candidates.distinctBy { it.skillId }
+    }
+
+    /** 安装单个 GitHub 候选（用户在候选列表点选，或单候选直装）。 */
+    suspend fun installGithubCandidate(candidate: GithubRepoCandidate): Result<String> =
+        withContext(Dispatchers.IO) {
+            when (candidate.kind) {
+                GithubRepoCandidate.Kind.MCP -> {
+                    val server = candidate.server
+                        ?: return@withContext Result.failure(Exception("候选缺少 MCP server 元数据"))
+                    registryMcpInstaller.install(server)
+                }
+                GithubRepoCandidate.Kind.SKILL -> installGithubSkillCandidate(candidate)
+            }
+        }
+
+    /** 技能候选安装：拉 SKILL.md → frontmatter 严格校验 → prompt 型安装。 */
+    private suspend fun installGithubSkillCandidate(candidate: GithubRepoCandidate): Result<String> {
+        val markdown = candidate.skillMarkdownUrl?.let { tryDownload(it) }
+            ?: return Result.failure(Exception("技能文档下载失败（${candidate.name}）"))
+        val (fmName, fmDescription, fmLicense) = parseSkillFrontmatter(markdown)
+        if (fmName.isNullOrBlank()) {
+            return Result.failure(
+                Exception("SKILL.md 缺少 name frontmatter —— 不满足技能形态，拒绝安装")
+            )
+        }
+        val (heading, headingDesc) = parseMarkdownHeading(markdown, fallbackName = fmName)
+        val owner = candidate.skillOwner ?: "github"
+        val id = candidate.skillId ?: "gh-${owner.lowercase()}-${heading.lowercase().replace(Regex("[^a-z0-9-]"), "-")}"
+        // homepage 指向仓库页（与根技能路径口径一致）；raw SKILL.md 直链
+        // 反推：raw.githubusercontent.com/owner/repo/branch/path → github.com/owner/repo
+        val repoHomepage = candidate.skillMarkdownUrl
+            ?.removePrefix("https://raw.githubusercontent.com/")
+            ?.split('/')
+            ?.take(2)
+            ?.joinToString("/", prefix = "https://github.com/")
+        return installSkillFromJson(
+            promptManifest(
+                id = id,
+                name = heading,
+                description = fmDescription ?: headingDesc,
+                author = "github:$owner",
+                markdown = markdown,
+                homepage = repoHomepage ?: candidate.skillMarkdownUrl,
+                license = fmLicense
+            )
+        )
+    }
+
+    /** 批量安装候选（用户点「全部安装」）：逐个顺序装，失败项点名不中断。 */
+    suspend fun installAllGithubCandidates(
+        candidates: List<GithubRepoCandidate>
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val installed = mutableListOf<String>()
+        val failed = mutableListOf<String>()
+        for (candidate in candidates) {
+            installGithubCandidate(candidate).fold(
+                onSuccess = { installed += candidate.name },
+                onFailure = { failed += "${candidate.name}（${it.message}）" }
+            )
+        }
+        buildString {
+            append("批量安装完成：成功 ${installed.size}、失败 ${failed.size}")
+            if (installed.isNotEmpty()) append("。成功：${installed.joinToString("、")}")
+            if (failed.isNotEmpty()) append("。失败：${failed.joinToString("、")}")
+        }.let { Result.success(it) }
+    }
+
+    /** 解析 GitHub 输入为 owner/repo。 */
+    private fun parseGithubInput(input: String): Pair<String, String>? {
+        val raw = input.trim().trimEnd('/')
+        if (raw.isBlank()) return null
+        return parseRepoSpec(raw)
+    }
+
+    private fun parseGithubInputError(input: String): Exception =
+        Exception(if (input.isBlank()) "请输入 owner/repo 或 GitHub 链接" else "无法解析仓库地址：$input")
+
+    /** 根技能形态未命中的错误文案（纯技能分支口径）。 */
+    private fun githubNoSkillMessage(owner: String, repo: String): String =
+        "仓库 $owner/$repo 不是可安装的技能（根路径无 apex-skill-v1 manifest 或带" +
+            " frontmatter 的 SKILL.md）。如需安装 MCP server 或技能集合，" +
+            "请使用智能安装入口（也支持 modelcontextprotocol/servers 与 anthropics/skills）。"
 
     /** 解析仓库归属：支持 owner/repo、https://github.com/owner/repo[.git]、git@github.com:owner/repo.git。 */
     private fun parseRepoSpec(input: String): Pair<String, String>? {
@@ -701,9 +1018,9 @@ class MarketInstallManager @Inject constructor(
     }
 
     private fun looksLikeApexManifest(content: String): Boolean = runCatching {
-        val obj = json.parseToJsonElement(content).jsonObject
-        obj["schema"]?.jsonPrimitive?.content == "apex-skill-v1" ||
-            (obj.containsKey("id") && obj.containsKey("name") && obj.containsKey("tools"))
+        // diag-20261011：收紧为必须显式声明 apex-skill-v1 —— 旧的 id+name+tools
+        // 三键兜底会把任意带这些键的普通 JSON（package 清单等）当技能装入。
+        json.parseToJsonElement(content).jsonObject["schema"]?.jsonPrimitive?.content == "apex-skill-v1"
     }.getOrDefault(false)
 
     /** 完整 JSON 字符串转义（含换行/回车/制表符）。 */
@@ -719,5 +1036,8 @@ class MarketInstallManager @Inject constructor(
 
         /** 本地 skill 包上限：ZIP 可能携带 scripts/references 资源，放宽到 20MB。 */
         private const val MAX_LOCAL_FILE_BYTES = 20 * 1024 * 1024
+
+        /** 技能集合候选上限（防恶意仓库塞爆候选列表）。 */
+        private const val MAX_SKILL_COLLECTION_CANDIDATES = 48
     }
 }

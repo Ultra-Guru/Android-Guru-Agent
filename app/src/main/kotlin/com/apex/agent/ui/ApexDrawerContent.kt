@@ -177,6 +177,8 @@ fun ApexDrawerContent(
                         DrawerDestination.Templates,
                         DrawerDestination.Terminal,
                         DrawerDestination.Market,
+                        // 浏览器大功能（v1.5.0 内置化）：市场后的高频工作流入口
+                        DrawerDestination.Browser,
                         DrawerDestination.Memory,
                         DrawerDestination.Tasks,
                         // v1.4.4 #6：用量仪表盘（数据洞察，与任务历史相邻）
@@ -189,6 +191,8 @@ fun ApexDrawerContent(
                         // v1.4.4 #7：诊断中心（日志/崩溃/设备信息，与日志页相邻）
                         DrawerDestination.Diagnostics,
                         DrawerDestination.Settings,
+                        // 游乐场（玻璃实验室正上方）：《字符风暴》pretext 物理拼词街机
+                        DrawerDestination.Playground,
                         DrawerDestination.GlassLab
                     )
 

@@ -9,6 +9,7 @@
 <!-- #197 模板工坊 -->
     <string name="drawer_templates">模板工坊</string>
     <string name="drawer_market">市场</string>
+    <string name="drawer_browser">浏览器</string>
     <string name="drawer_memory">记忆</string>
     <string name="drawer_tasks">任务</string>
     <string name="drawer_storage">存储</string>
@@ -16,6 +17,7 @@
     <string name="drawer_vault">保险库</string>
     <string name="drawer_log">运行日志</string>
     <string name="drawer_settings">设置</string>
+    <string name="drawer_playground">游乐场</string>
     <string name="drawer_glasslab">玻璃实验室</string>
     <string name="drawer_about">关于</string>
     <string name="drawer_open_nav">打开导航</string>
@@ -62,6 +64,10 @@
 
     <!-- Reasoning -->
     <string name="settings_section_reasoning">Reasoning · 推理</string>
+    <string name="settings_reasoning_effort_label">思考强度</string>
+    <string name="settings_thinking_budget_label">思考预算（tokens）</string>
+    <string name="settings_thinking_budget_auto">自动</string>
+    <string name="settings_show_thinking_label">显示思考过程</string>
     <string name="settings_effort_desc">模型原生思考强度（OpenAI o 系 / DeepSeek-R1 / Qwen3 等）；不支持的模型自动忽略</string>
     <string name="settings_budget_desc">思维链 token 预算；与 Effort 不强行绑定（不同 Provider 语义不同）</string>
     <string name="settings_show_thinking_desc">在对话流中展示模型的思考过程（数据预埋，对话渲染层后续接入）</string>
@@ -301,8 +307,8 @@
     <string name="model_profile_name">档案名称</string>
     <string name="model_no_provider_selected">未选择服务商</string>
     <string name="model_select_provider">选择模型服务商</string>
-    <string name="model_base_url_blank_hint">自定义端点请在此填写，例：https://api.xxx.com/v1</string>
-    <string name="model_request_url_hint">请求发往 %1$s/chat/completions</string>
+    <string name="model_base_url_blank_hint">完全自定义：填 https://api.xxx.com/v1（自动补 /chat/completions），或以 /chat/completions 结尾的完整路径（原样直发）</string>
+    <string name="model_request_url_hint">请求发往 %1$s</string>
     <string name="model_url_deviated">⚠ 当前 Base URL 偏离「%1$s」官方预设（官方：%2$s）。拉到的模型清单由该端点返回，出现的 model id（含 test / 命名不完整项）均来自它，非官方列表。</string>
     <string name="model_restore_official">恢复官方端点 %1$s</string>
     <string name="model_hide_key">隐藏</string>
@@ -329,6 +335,20 @@
     <string name="model_manual_id_label">或手动填写模型 ID</string>
     <string name="model_use_custom_id">使用自定义 ID</string>
     <string name="model_close">关闭</string>
+
+    <!-- ═══ 模型配置导入弹窗（ModelConfigImportDialog —— 粘贴 JSON / Python / YAML / TOML）═══ -->
+    <string name="model_import">导入配置</string>
+    <string name="model_import_title">导入模型配置</string>
+    <string name="model_import_hint">粘贴 JSON / Python 字典 / YAML / TOML 配置，自动识别并导入服务商与模型。</string>
+    <string name="model_import_paste_hint">在此粘贴配置文本…</string>
+    <string name="model_import_detected">识别格式：%1$s</string>
+    <string name="model_import_summary">将导入 %1$d 个模型 · %2$s</string>
+    <string name="model_import_parse_error">解析失败：%1$s</string>
+    <string name="model_import_nothing">未识别到模型配置（需要 base_url / api_key / model 至少其一）</string>
+    <string name="model_import_button">导入</string>
+    <string name="model_import_done">已导入 %1$d 个模型到「%2$s」</string>
+    <string name="model_import_cancel">取消</string>
+    <string name="model_import_apply_error">导入失败：%1$s</string>
 
     <!-- ═══ 存储与数据管理（StorageScreen）═══ -->
     <string name="storage_title">存储</string>
@@ -513,6 +533,9 @@
     <string name="onboarding_cap_terminal_desc">手机上跑真实的 Linux 环境：apt 装包、bash 脚本、完整文件系统（rootfs 随 APK 内置，离线即用）</string>
     <string name="onboarding_cap_market_title">技能与市场</string>
     <string name="onboarding_cap_market_desc">100+ 内置工具按需取用，技能市场持续扩展 Agent 的能力边界</string>
+    <!-- v1.5：浏览器自动化能力卡（内置大功能，Onboarding 页 2） -->
+    <string name="onboarding_cap_browser_title">浏览器自动化</string>
+    <string name="onboarding_cap_browser_desc">内置浏览器由 Agent 驾驶：打开网页、点击、输入、抽取内容 —— 24 个 browser_* 工具随 App 内置，无需插件</string>
     <string name="onboarding_what_title">它能做什么</string>
     <!-- ═══ Onboarding v2：权限全量引导（第 3 页）+ 工作区选择（第 4 页）═══ -->
     <string name="onboarding_perms_title">权限授权</string>
@@ -583,6 +606,9 @@
     <string name="about_section_links">相关链接</string>
     <string name="about_update_current">当前版本 v%1$s (%2$d)</string>
     <string name="about_update_auto_hint">每次进入本页自动检查一次</string>
+    <string name="about_update_auto_toggle">自动安装更新补丁</string>
+    <string name="about_update_auto_toggle_desc">开启：启动时静默检查新版本并提示更新。关闭：后台零检查、零下载补丁包 —— 用「检查更新」按钮手动控制更新节奏</string>
+    <string name="about_update_auto_off_hint">自动更新已关闭 —— 可在下方手动检查新版本</string>
     <string name="about_update_retry">重试</string>
     <string name="about_update_new_badge">新版本</string>
     <string name="about_update_progress_mb">下载中 %1$d%% · 已下载 %2$s</string>
@@ -681,11 +707,14 @@
     <string name="gate_mode_default">默认（DEFAULT）</string>
     <string name="gate_mode_accept_edits">接受编辑（ACCEPT_EDITS）</string>
     <string name="gate_mode_plan">只读规划（PLAN）</string>
-    <string name="gate_risk_title_fmt">高风险工具需要确认：%1$s</string>
+    <string name="gate_risk_title_fmt">危险工具需要确认：%1$s</string>
     <string name="gate_file_write_title_fmt">文件写入确认：%1$s</string>
-    <string name="gate_risk_hint_high">高风险：破坏性或不可逆操作</string>
-    <string name="gate_risk_hint_medium">中风险：会修改数据或状态</string>
+    <string name="gate_risk_hint_high">危险：破坏性或不可逆操作</string>
+    <string name="gate_risk_hint_medium">平衡：会修改数据或状态</string>
     <string name="gate_risk_line_fmt">%1$s（%2$s）</string>
+    <string name="risk_label_dangerous">危险</string>
+    <string name="risk_label_balanced">平衡</string>
+    <string name="risk_label_safe">无危险</string>
     <string name="gate_opt_allow_session">本会话允许</string>
     <string name="gate_opt_allow_session_desc">本次会话中该工具不再询问</string>
     <string name="gate_opt_allow_once">仅允许一次</string>

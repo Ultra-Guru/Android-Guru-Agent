@@ -2,6 +2,7 @@ package com.apex.agent.platform.terminal.runtime
 
 import com.apex.agent.platform.terminal.buffer.TerminalOutputBuffer
 import com.apex.agent.platform.terminal.errors.TerminalError
+import com.apex.agent.platform.terminal.errors.asTerminalError
 import com.apex.agent.platform.terminal.events.TerminalEvent
 import com.apex.agent.platform.terminal.events.TerminalEventBus
 import com.apex.agent.platform.terminal.events.TerminalEventBusImpl
@@ -251,7 +252,22 @@ class TerminalRuntimeImpl(
             workspaceId = workspaceId
         )
         val spec = backend.prepare(request).getOrElse { e ->
-            return Result.failure(com.apex.agent.platform.terminal.errors.TerminalOperationException(com.apex.agent.platform.terminal.errors.TerminalError.PtyUnavailable, "backend prepare failed: ${e.message}", e))
+            // T95：prepare 失败根因保真 —— 旧版一律包成 PtyUnavailable，
+            // 「RootfsNotReady / PRootError:*」被降维，真因（多为裸
+            // FileNotFoundException，message 只剩一条路径）被「Pty 不可用」
+            // 误导。现在：已带 TerminalError 语义的异常原样透传；未知异常
+            // 补上异常类名再包（用户反馈：「backend prepare failed:
+            // /data/user/0/com…」看不出哪里坏了）。
+            val failure: Throwable = if (e.asTerminalError() != null) {
+                e
+            } else {
+                com.apex.agent.platform.terminal.errors.TerminalOperationException(
+                    com.apex.agent.platform.terminal.errors.TerminalError.PtyUnavailable,
+                    "backend prepare failed: ${e.javaClass.simpleName}: ${e.message}",
+                    e
+                )
+            }
+            return Result.failure(failure)
         }
         val r = sessionManager.createFromSpec(spec, rows, cols, privilege)
         return r.map { s ->

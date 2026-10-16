@@ -1,13 +1,29 @@
 [versions]
-kotlin = "2.0.21"
-agp = "8.7.3"
-compose-bom = "2024.12.01"
+# Kotlin 2.3.21（2.3.x 稳定线最新 patch）：升级动机是液态玻璃 backdrop 的 Maven 版本阶梯 ——
+# 彩色 DefaultHighlight（PR #364 从上游同步的特性）在 backdrop 1.0.3 起才进入 Maven 线，
+# 而 1.0.3+ 需 Kotlin 2.3.0+ / Compose 1.10+；1.0.6（androidx Compose 生态天花板）需
+# kotlin-stdlib 2.3.10 + Compose 1.10.3 + shapes 1.2.0。2.2.21 + backdrop 1.0.1 会回退
+# PR #364 刚合入的彩色高光，放奔 2.4.x 因 backdrop 2.x 已切换 JetBrains Compose 坐标系。
+# 配套：KSP 2.3.12（Kotlin 2.3 时代起 KSP 脱离 <kotlin>-<ksp> 版本格式独立演进）/ 
+# AGP 8.13.2（不变；Hilt 2.58 门禁 AGP ≥ 8.4）/ Gradle 8.14（不变）。
+kotlin = "2.3.21"
+agp = "8.13.2"
+# Compose BOM 2026.02.00（Compose 1.10.3 / material3 1.4.0）：与 backdrop 1.0.6 的
+# POM 声明（kotlin-stdlib 2.3.10 + Compose 1.10.3）精确配套；ui-android 1.10.3 的
+# lifecycle-runtime-compose 2.8.7 与本仓 pin 一致、minCompileSdk=35 不变。
+compose-bom = "2026.02.00"
 activity-compose = "1.9.3"
 lifecycle = "2.8.7"
-hilt = "2.53.1"
-hilt-nav-compose = "1.2.0"
-coroutines = "1.9.0"
-serialization = "1.7.3"
+# Hilt 2.58：Dagger 2.57+ 完全适配 KSP2 与 Kotlin 2.2+（KSP 2.x 已移除 KSP1 兼容层）。
+# 注意：2.59.x 的 Gradle 插件要求 AGP ≥ 9.0.0（hilt-android-gradle-plugin 内置
+# 版本门禁，实测报错），与本仓 AGP 8.13.2 冲突 —— 2.58 是 AGP 8.x 线最高版
+#（其门禁为 AGP ≥ 8.4.0）。AGP 9 时代再评估 2.59+。
+hilt = "2.58"
+# androidx.hilt 1.3.0：hilt-compiler 修复 KSP2 兼容（1.2.0 的 KSP1 API 在 KSP2 下不可用）
+hilt-nav-compose = "1.3.0"
+coroutines = "1.10.2"
+# serialization 1.9.0：以 Kotlin 2.1.21 构建（语言版本 2.1），Kotlin 2.3.21 消费端完全兼容
+serialization = "1.9.0"
 okhttp = "4.12.0"
 # XZ for Java —— 增量更新的 VCDIFF LZMA 二级压缩解码（纯 Java，无传递依赖，公有领域）
 xz = "1.9"
@@ -15,29 +31,41 @@ shizuku = "13.1.5"
 core-ktx = "1.15.0"
 navigation = "2.8.5"
 work = "2.10.0"
-ksp = "2.0.21-1.0.28"
+# KSP 2.3.12（KSP2）：Kotlin 2.3 时代起 KSP 版本脱离 <kotlin>-<ksp> 格式独立演进
+#（旧式 2.2.21-2.0.5 是最后的合并版本号），2.3.x KSP 支持全部 2.3.x Kotlin。
+ksp = "2.3.12"
 coil = "2.6.0"
 security-crypto = "1.1.0-alpha06"
 junit = "4.13.2"
-room = "2.6.1"
+# Room 2.8.x：2.7.0 起支持 KSP2（2.6.1 的 processor 基于 KSP1 API，KSP 2.x 下不可用）
+room = "2.8.5"
 # 赛博霓虹悬浮球（JitPack；仅允许该 group 走 jitpack 仓库，版本固定避免动态解析）
 easyfloat = "2.0.4"
-# Liquid Glass 底层：vendored kyant0/AndroidLiquidGlass（vendor/backdrop 模块内嵌，
-# 无 Maven 坐标）。原 Haze / Cloudy 已随液态玻璃统一迁移移除 —— 见 vendor/backdrop/README.md。
-# Lucide 图标集（composablehorizons/compose-icons, MIT）：斜杠菜单分类图标。
-# 固定 1.1.0：2.x 由 Kotlin 2.2 构建，与本项目 Kotlin 2.0.21 toolchain 元数据不兼容。
-lucide-icons = "1.1.0"
+# Liquid Glass 底层：vendored 模块（vendor/backdrop，上游 Kyant0/AndroidLiquidGlass，
+# Apache-2.0；上游 tag 1.0.0 血统 + 本仓 diag-20261011 热修 + PR #364 彩色
+# DefaultHighlight）。工具链（Kotlin 2.3.21 / BOM 2026.02.00）已具备消费 Maven 线
+# io.github.kyant0:backdrop 的能力——1.0.6 与本仓构建矩阵精确配套（kotlin-stdlib
+# 2.3.10 + Compose 1.10.3 + shapes 1.2.0），PR #362 曾实施去 vendored 化
+#（f86fc28e / 39a93c3e），但在合并 main 的 diag-20261011 热修（b4648f22：
+# DrawBackdropNode isAttached 守卫 / ShapeProvider 值语义 equals）时显式回退
+#——上游 1.0.6 二进制不含这两项 internal 级补丁，直接换 Maven 会回退
+# detached-remeasure 崩溃修复与 draw 失效风暴修复。待上游吸收后一行切回
+# Maven 坐标。注意：2.0.x 需 Kotlin 2.4 + JetBrains Compose 1.12。
+# Lucide 图标集（composablehorizons/compose-icons, MIT）。2.2.1 以 Kotlin 2.2.21 +
+# foundation 1.9.3 构建 —— Kotlin 2.3.21 消费端向后兼容；当前仓库代码零处使用
+# IconsLucide（仅 McpSoSource 抓取的网页 CSS class 字符串撞名），无 API 迁移面。
+lucide-icons = "2.2.1"
 # 物理弹力手势（SpringAnimation 按压挤压形变 / 吸附）
 dynamicanimation = "1.0.0"
 # apex-browser-kit（拆库 E1 迁移期；兄弟目录 includeBuild 时坐标被本地构建替换）
 browser-kit = "1.1.0"
-# material-icons 显式 pin：1.7.8 高于 BOM 2024.12.01 映射的 1.7.6，
-# 保持既有解析结果（Gradle 取高版本）不变 —— 升 BOM 前先复核此 pin。
+# material-icons 显式 pin 1.7.8：官方已停止演进（BOM 2026.02.00 仍映射 1.7.8，
+# 解析结果不变）。长期迁移 material-symbols 待后续大版本时评估。
 compose-material-icons = "1.7.8"
 # Vico —— 开源图表库（Maven Central，稳定线 1.13.1）：任务历史/记忆统计可视化。
-# 选型 1.13.1（稳定版，非 2.x beta）：依赖 Compose 1.5+（本项目 1.7.6 向后兼容），
-# Kotlin 1.9 编译产物对 2.0.21 消费端零影响；仅引 compose 核心（不引 m2/m3 主题模块，
-# 避免与本项目 Material3 主题冲突）。
+# 选型 1.13.1（稳定版，非 2.x beta）：依赖 Compose 1.5+（Compose 向后二进制兼容，
+# 1.10.3 消费端可用）；仅引 compose 核心（不引 m2/m3 主题模块，避免与本项目
+# Material3 主题冲突）。
 vico = "1.13.1"
 
 [libraries]
@@ -65,8 +93,8 @@ navigation-compose = { group = "androidx.navigation", name = "navigation-compose
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }
 hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hilt-nav-compose" }
-hilt-work = { group = "androidx.hilt", name = "hilt-work", version = "1.2.0" }
-hilt-work-compiler = { group = "androidx.hilt", name = "hilt-compiler", version = "1.2.0" }
+hilt-work = { group = "androidx.hilt", name = "hilt-work", version.ref = "hilt-nav-compose" }
+hilt-work-compiler = { group = "androidx.hilt", name = "hilt-compiler", version.ref = "hilt-nav-compose" }
 
 # Coroutines
 coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -99,10 +127,11 @@ security-crypto = { group = "androidx.security", name = "security-crypto", versi
 
 # 赛博霓虹悬浮球（JitPack 发布，坐标 group 为 com.github.princekin-f）
 easyfloat = { group = "com.github.princekin-f", name = "EasyFloat", version.ref = "easyfloat" }
-# Liquid Glass 底层引擎：vendored kyant0/AndroidLiquidGlass（vendor/backdrop 模块，
-# Maven 版 io.github.kyant0:backdrop 需 Kotlin 2.2+/Compose 1.9+，本仓工具链消费不了）。
-# 原 Haze（dev.chrisbanes.haze）与 Cloudy（com.github.skydoves）已在液态玻璃统一
-# 迁移中移除 —— 全仓玻璃渲染统一走 kyant0 backdrop（blur/lens/vibrancy）。
+
+# Liquid Glass 底层引擎：vendored（vendor/backdrop 模块，无 Maven 坐标）——
+# 全仓玻璃渲染统一走 kyant backdrop（blur / lens 折射 / vibrancy；原 Haze 与
+# Cloudy 已在液态玻璃统一迁移中移除）。唯一消费层：app 的 ui/glass 包
+#（GlassSurface / TerminalGlass 单点集成）。回退原因见 [versions] backdrop 注释。
 
 # Lucide 图标集（Maven Central，com.composables）—— 斜杠菜单分类图标
 lucide-icons = { group = "com.composables", name = "icons-lucide-android", version.ref = "lucide-icons" }

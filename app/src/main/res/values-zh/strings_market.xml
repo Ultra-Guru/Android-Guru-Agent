@@ -82,6 +82,8 @@
     <string name="market_mcp_header">MCP 不一定是服务器：STDIO 型就是一条本地命令（如 npx -y @modelcontextprotocol/server-memory），由 App 拉起子进程通过 stdin/stdout 通信。添加的工具源启用后出现在 / 菜单（/mcp:&lt;名称&gt;）。</string>
     <string name="market_mcp_add_title">添加工具源</string>
     <string name="market_mcp_add_desc">远端 HTTP / SSE 或本地命令 STDIO，含 apiKey 支持；添加后自动尝试连接。</string>
+    <string name="market_mcp_github_card_title">从 GitHub 安装 MCP</string>
+    <string name="market_mcp_github_card_desc">智能路由：根 server.json / .mcp.json 或 src monorepo 形态（如 modelcontextprotocol/servers），经 Registry 决策树安装（远端直装或沙箱 npm 预装）。</string>
     <string name="market_mcp_import_card_title">导入配置</string>
     <string name="market_mcp_import_desc">粘贴社区通用 MCP 配置 JSON（{\"mcpServers\": \u2026}），支持 command/args/env 与 url 两种形态。</string>
     <string name="market_mcp_import_file_title">从本地文件导入</string>
@@ -104,12 +106,30 @@
     <string name="market_github_query_label">仓库名 / 关键词</string>
     <string name="market_github_error_title">GitHub 搜索失败</string>
 
-    <!-- ═══ 已安装管理 · 插件 ═══ -->
-    <string name="market_installed_plugins_empty">尚未加载任何插件 —— 到「市场」加载设备上发现的插件 APK</string>
+    <!-- ═══ 已安装管理 · 插件（Plugin System v2：功能 + APK 双形态）═══ -->
+    <string name="market_installed_plugins_empty">尚未安装任何插件 —— 功能性插件可在下方导入 JSON，市场发现的插件 APK 加载后自动出现</string>
     <string name="market_installed_plugins_go">去市场加载</string>
     <string name="market_installed_plugins_header">已加载 %1$d 个插件；卸载仅解除服务绑定，APK 仍在设备上，可随时重新加载。</string>
+    <string name="market_installed_plugins_header_v2">功能性 %1$d · APK %2$d。功能性插件开关即时生效（工具实时注册/回收）；APK 卸载仅解绑，APK 仍留在设备。</string>
     <string name="market_plugins_uninstall_title">卸载插件</string>
     <string name="market_plugins_uninstall_text">解除与 %1$s 的绑定？可随时重新加载。</string>
+    <string name="market_plugin_kind_functional">功能</string>
+    <string name="market_plugin_kind_apk">APK</string>
+    <string name="market_plugin_state_active">已激活</string>
+    <string name="market_plugin_state_installed">未激活</string>
+    <string name="market_plugin_state_broken">损坏</string>
+    <string name="market_plugin_import_json">导入插件 JSON</string>
+    <string name="market_plugin_import_title">导入功能性插件</string>
+    <string name="market_plugin_import_label">plugin.json 内容</string>
+    <string name="market_plugin_import_hint">粘贴功能性插件清单（plugin.json）。id 须为小写点分形式（如 functional.daily-briefing）；工具宏仅组合既有宿主工具，不执行任何代码。</string>
+    <string name="market_plugin_functional_uninstall_title">卸载功能性插件</string>
+    <string name="market_plugin_functional_uninstall_text">删除 %1$s 及其贡献的工具？随时可重新导入清单。</string>
+    <string name="market_plugin_functional_uninstalled">功能性插件已卸载：%1$s</string>
+    <string name="market_plugin_functional_installed">功能性插件已安装：%1$s</string>
+    <string name="market_plugin_functional_upgraded">功能性插件已升级：%1$s</string>
+    <string name="market_plugin_functional_unchanged">已安装同版本或更高版本：%1$s</string>
+    <string name="market_plugin_functional_rejected">安装被拒绝：%1$s</string>
+    <string name="market_plugin_not_found">未找到插件：%1$s</string>
 
     <!-- ═══ 已安装管理 · Skills ═══ -->
     <string name="market_installed_skills_empty">暂无已安装技能 —— 到「市场」从 GitHub / URL / 魔搭安装</string>
@@ -195,11 +215,17 @@
     <string name="market_skill_json_title">导入 Skill JSON</string>
     <string name="market_skill_json_label">粘贴 apex-skill-v1 manifest JSON</string>
     <string name="market_url_download_install">下载并安装</string>
-    <string name="market_github_install_title">从 GitHub 安装技能</string>
+    <string name="market_github_install_title">从 GitHub 智能安装</string>
     <string name="market_github_input_label">owner/repo 或 仓库链接</string>
     <string name="market_github_input_hint">例如 owner/repo 或 https://github.com/owner/repo</string>
-    <string name="market_github_install_body">将读取仓库默认分支的 manifest.json / skill.json / SKILL.md；仓库里没有这些内容时会明确报错，不会静默假安装。</string>
+    <string name="market_github_install_body">按内容类型智能路由：技能（根 manifest 或带 frontmatter 的 SKILL.md）、MCP server（根 server.json / .mcp.json，或 src 子包 mcpName 形态，如 modelcontextprotocol/servers）、技能集合（子目录 SKILL.md，如 anthropics/skills）；普通仓库（仅 README）会明确报错，不会假安装。</string>
     <string name="market_github_fetch_install">获取并安装</string>
+    <string name="market_github_pick_title">选择要安装的内容</string>
+    <string name="market_github_pick_subtitle">%1$s 发现 %2$d 个可安装项</string>
+    <string name="market_github_pick_kind_mcp">MCP</string>
+    <string name="market_github_pick_kind_skill">技能</string>
+    <string name="market_github_pick_install_one">安装</string>
+    <string name="market_github_pick_install_all">全部安装</string>
 
     <!-- ═══ 对话框 · 依赖图 ═══ -->
     <string name="market_depgraph_missing">⚠ 缺失依赖 %1$d 个：</string>
@@ -227,8 +253,12 @@
     <string name="market_energy">能量</string>
     <string name="market_stat_success">成功</string>
     <string name="market_stat_failure">失败</string>
-    <string name="market_stat_success_rate">成功率</string>
+    <string name="market_stat_success_rate">可靠性</string>
     <string name="market_stat_transitions">转移</string>
+    <string name="market_reliability_stable">稳定</string>
+    <string name="market_reliability_fair">一般</string>
+    <string name="market_reliability_unstable">不稳定</string>
+    <string name="market_reliability_unused">未使用</string>
     <string name="market_stat_total">总调用</string>
     <string name="market_detail_last_executed">最近执行：%1$s</string>
     <string name="market_detail_crystallized">✦ 已结晶 —— 命中初始状态时可跳过 LLM 直接回放（毫秒级响应）</string>
@@ -305,14 +335,14 @@
     <string name="market_mcp_catalog_cat_location">地图位置</string>
     <string name="market_mcp_catalog_cat_data">数据源</string>
     <string name="market_mcp_catalog_cat_remote">托管远端</string>
-    <string name="market_mcp_catalog_risk_high">高风险</string>
-    <string name="market_mcp_catalog_risk_medium">中风险</string>
-    <string name="market_mcp_catalog_risk_low">低风险</string>
+    <string name="market_mcp_catalog_risk_high">危险</string>
+    <string name="market_mcp_catalog_risk_medium">平衡</string>
+    <string name="market_mcp_catalog_risk_low">无危险</string>
     <string name="market_mcp_catalog_needs_key">需 API 密钥</string>
     <string name="market_mcp_catalog_installed">已安装</string>
     <string name="market_mcp_catalog_install">安装</string>
     <string name="market_mcp_catalog_env_title">配置 %1$s</string>
-    <string name="market_mcp_catalog_env_high_risk">高风险条目：会执行命令 / 真实计费。建议测试凭证 + 沙箱模式。</string>
+    <string name="market_mcp_catalog_env_high_risk">危险条目：会执行命令 / 真实计费。建议测试凭证 + 沙箱模式。</string>
     <string name="market_mcp_catalog_missing_env">缺少必填环境变量：%1$s</string>
     <string name="market_mcp_catalog_preflight_failed">预检未通过：%1$s</string>
     <string name="market_mcp_catalog_error">目录部分异常：%1$s</string>

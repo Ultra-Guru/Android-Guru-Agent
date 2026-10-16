@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DataUsage
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Info
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Terminal
@@ -68,6 +70,7 @@ import com.apex.agent.ui.component.OfflineBanner
 import com.apex.agent.ui.component.UpdateBanner
 import com.apex.agent.ui.glass.GlassIconButton
 import com.apex.agent.ui.screen.about.AboutScreen
+import com.apex.agent.ui.screen.browser.BrowserScreen
 import com.apex.agent.ui.screen.agent.AgentChatScreen
 import com.apex.agent.ui.screen.agent.AgentChatViewModel
 import com.apex.agent.ui.screen.code.CodeScreen
@@ -76,6 +79,7 @@ import com.apex.agent.ui.screen.glass.GlassLabScreen
 import com.apex.agent.ui.screen.log.LogViewerScreen
 import com.apex.agent.ui.screen.market.MarketScreen
 import com.apex.agent.ui.screen.permissions.PermissionsScreen
+import com.apex.agent.ui.screen.playground.PlaygroundScreen
 import com.apex.agent.ui.screen.settings.SettingsScreen
 import com.apex.agent.ui.screen.memory.MemoryScreen
 import com.apex.agent.ui.screen.storage.StorageScreen
@@ -110,6 +114,9 @@ sealed class DrawerDestination(
     // Skill 屏已移除 —— 技能的安装/启停统一由「市场 · Skills」页承担，
     // 抽屉里再放一个只读列表是重复入口（两者数据源同一份 SkillRegistry）。
     data object Market : DrawerDestination("market", R.string.drawer_market, Icons.Default.Storefront)
+    // 浏览器大功能（v1.5.0 内置化）：会话状态/标签/最近动作驾驶舱 + 人工接管入口。
+    // Language 图标即地球，与浏览器语义天然契合。
+    data object Browser : DrawerDestination("browser", R.string.drawer_browser, Icons.Default.Language)
     data object Memory : DrawerDestination("memory", R.string.drawer_memory, Icons.Default.Storage)
     // 任务历史（T76 审计 §7：TaskRuntime.loadTaskHistory 首次接线 —— 步骤回放/统计）
     data object Tasks : DrawerDestination("tasks", R.string.drawer_tasks, Icons.Default.Checklist)
@@ -120,6 +127,9 @@ sealed class DrawerDestination(
     data object Vault : DrawerDestination("vault", R.string.drawer_vault, Icons.Default.Lock)
     data object Log : DrawerDestination("log", R.string.drawer_log, Icons.Filled.Info)
     data object Settings : DrawerDestination("settings", R.string.drawer_settings, Icons.Default.Settings)
+    // 游乐场（玻璃实验室正上方）：《字符风暴 GLYPH STORM》—— pretext 实测字符宽度
+    // 驱动的物理拼词街机（chenglou/pretext 测量理念，与官网游乐场一体两面）。
+    data object Playground : DrawerDestination("playground", R.string.drawer_playground, Icons.Default.SportsEsports)
     // 玻璃实验室 —— 内部 Liquid Glass 验收页（Spec §20：背景变化/网格/高对比文字/移动元素）
     data object GlassLab : DrawerDestination("glasslab", R.string.drawer_glasslab, Icons.Default.BlurOn)
     // v1.4.4 #6：用量仪表盘 —— 按天/按模型/按会话的 token 消耗分解（持久化账本）
@@ -165,13 +175,17 @@ fun ApexRoot() {
     // ═══ v1.4.5：启动即检查更新（UpdateCenter 内部 6h 节流；进程重建不重复拉）═══
     // v1.4.9 闪退防御：整体 runCatching —— requireContext 在中枢未就绪时
     // error() 抛 ISE，裸 LaunchedEffect 协程异常同样杀死进程。
+    // 自动更新总开关（设置→关于页可关）：关闭后启动零检查零浮窗 ——
+    // 用户显式控制更新节奏（后台不再有任何更新流量）。
     LaunchedEffect(Unit) {
         runCatching {
-            UpdateCenter.checkForUpdate(
-                currentVersionCode = BuildConfig.VERSION_CODE,
-                force = false,
-                fromTrigger = "app-start"
-            )
+            if (agentVm.uiSettings.value.autoUpdateCheck) {
+                UpdateCenter.checkForUpdate(
+                    currentVersionCode = BuildConfig.VERSION_CODE,
+                    force = false,
+                    fromTrigger = "app-start"
+                )
+            }
         }.onFailure {
             android.util.Log.w("ApexRoot", "startup update check failed: ${it.message}")
         }
@@ -206,8 +220,14 @@ fun ApexRoot() {
     // 包在最外层：任何页面的 Toast/Snackbar 反馈都走统一视觉（严重级配色 +
     // SnackbarHost 底部弹出）。子树未消费无副作用；Noop 默认保证预览可用。
     FeedbackHost {
+    // ★ 抽屉手势修复（用户反馈：终端页左滑会再次拉出抽屉）：
+    // M3 ModalNavigationDrawer 默认 gesturesEnabled=true —— 终端页的横向
+    // 手势（选区拖选 / 键区横滚 / 未来 VT 鼠标上报）会被边缘滑动抢消费，
+    // 误触即弹抽屉盖住终端。终端页禁用手势抽屉：入口收敛为顶栏返回钮
+    // （返回上一页 = 回到抽屉可达的主页），其余页面保留标准边缘滑动。
     ModalNavigationDrawer(
         drawerState = drawerState,
+        gesturesEnabled = currentDestination != DrawerDestination.Terminal,
         drawerContent = {
             ApexDrawerContent(
                 currentDestination = currentDestination,
@@ -322,13 +342,19 @@ fun ApexRoot() {
                                 onOpenSettings = { navStack.push(DrawerDestination.Settings) }
                             )
                             DrawerDestination.Code -> CodeScreen(
-                                viewModel = hiltViewModel()
+                                viewModel = hiltViewModel(),
+                                // 「小大脑」菜单 → 配置模型：跳设置页（压栈语义，
+                                // 改完返回 Coding 上下文 —— 与 Agent 屏同款）
+                                onOpenSettings = { navStack.push(DrawerDestination.Settings) }
                             )
                             DrawerDestination.Templates -> TemplateStudioScreen()
                             DrawerDestination.Terminal -> TerminalScreen(
-                                onOpenNavDrawer = { scope.launch { drawerState.open() } }
+                                // 终端页不再有汉堡/边缘滑动拉抽屉 —— 返回钮走统一
+                                // 返回链（弹历史栈；栈空兑底回 Agent 主页，抽屉在那里可达）
+                                onBack = navigateBack
                             )
                             DrawerDestination.Market -> MarketScreen()
+                            DrawerDestination.Browser -> BrowserScreen()
                             DrawerDestination.Memory -> MemoryScreen()
                             DrawerDestination.Tasks -> TaskHistoryScreen()
                             DrawerDestination.Storage -> StorageScreen()
@@ -344,6 +370,7 @@ fun ApexRoot() {
                                 // 来源页（如聊天页），栈空兜底回 Agent。
                                 onBack = navigateBack
                             )
+                            DrawerDestination.Playground -> PlaygroundScreen()
                             DrawerDestination.GlassLab -> GlassLabScreen()
                             DrawerDestination.About -> AboutScreen()
                         }

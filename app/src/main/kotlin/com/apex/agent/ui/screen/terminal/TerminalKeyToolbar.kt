@@ -10,9 +10,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -24,11 +26,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import com.apex.agent.R
 import com.apex.agent.platform.terminal.io.TerminalKey
@@ -41,8 +45,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  * 12 F 键 + 粘贴），加上扩展宏行默认 8 键 —— 键区泛滥成两行滚动条，被用户
  * 直接吐槽。新版结构（Termux extra-keys 心智模型）：
  *
- *  - **主行（恒显，13 键不滚动）**：拉键盘 / 退格 / ESC / TAB / CTRL·SHIFT·ALT
- *    锁存 / 方向键 / 粘贴 / FN 展开钮 —— 覆盖 99% 的触屏终端操作；
+ *  - **主行（恒显，可横滚 + 渐隐提示）**：拉键盘 / 退格 / ESC / TAB /
+ *    CTRL·SHIFT·ALT 锁存 / 方向键 / 粘贴 / FN 展开钮 —— 覆盖 99% 的触屏
+ *    终端操作（窄屏溢出侧渐隐明示可滚，见 [FadeScrollableKeyRow]）；
  *  - **FN 行（点 FN 展开，可横滚）**：控制码（^C ^D ^Z ^L ^U）+ 导航
  *    （HOME/END/PGUP/PGDN）+ F1-F12 —— 低频键折叠，不再常驻吃屏；
  *  - 符号键删除：软键盘自带完整符号面板，与 IME 重复的 12 个符号键纯属噪音。
@@ -75,17 +80,11 @@ internal fun TerminalKeyToolbar(
             .background(KeybarChrome.bg)
             .animateContentSize()
     ) {
-        // ── 主行（T90：可横滚 —— 13 键 ≈ 560-620dp，在 360-412dp 窄屏上旧版不
-        // 滚动会把右侧方向键/粘贴/FN 裁出屏外（页面不对称的直接观感）；与 FN
-        // 行同用 horizontalScroll，宽屏无差异、窄屏可滚到全部键）──
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 5.dp, vertical = 5.dp),
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        // ── 主行（T90 可横滚；T95 双修正：①键帽收紧 —— padding 11→8dp /
+        //    12sp / 单字符键 32dp 最小触控宽，ESC→ALT 主簇在 360dp 窄屏全量
+        //    可见；②两端渐隐遮罩明示「还有键可滚」，取代旧版裸裁切 ——
+        //    用户看到「AL…」被屏幕边缘切一半，第一观感是键区坏了）──
+        FadeScrollableKeyRow {
             // 显式拉起输入法：触屏上"点一下没反应"的兜底入口
             ToolbarKey("⌨", emphasized = true) { onShowKeyboard() }
             // 退格：IME 桥的组合区差分已覆盖多数场景，但触屏仍需确定可用的删除键。
@@ -112,15 +111,7 @@ internal fun TerminalKeyToolbar(
 
         // ── FN 行（低频键折叠；展开后可横滚）──
         if (fnExpanded) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 5.dp)
-                    .padding(bottom = 5.dp),
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            FadeScrollableKeyRow(verticalPadding = 0.dp) {
                 // 控制码：^C 中断 / ^D EOF / ^Z 挂起 / ^L 清屏 / ^U 清行
                 ToolbarKey("^C") { onControl('c') }
                 ToolbarKey("^D") { onControl('d') }
@@ -163,6 +154,9 @@ private fun ToolbarKey(
     Box(
         modifier = Modifier
             .height(36.dp)
+            // T95：单字符键（⌨/⌫/方向）收 32dp 最小触控宽（旧版纯内容宽
+            // ≈ 23dp，低于可用触控下限）；长标签键不受影响（按内容自适应）
+            .widthIn(min = 32.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(
                 when {
@@ -175,15 +169,70 @@ private fun ToolbarKey(
                 if (repeatOnHold) base.keyRepeatModifier(label, onClick)
                 else base.clickable(onClick = onClick)
             }
-            .padding(horizontal = 11.dp),
+            .padding(horizontal = 8.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             label,
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             fontFamily = FontFamily.Monospace,
             color = if (highlighted) KeybarChrome.keyTextHi else KeybarChrome.keyText
         )
+    }
+}
+
+/**
+ * 横滚键行 + 两端渐隐遮罩（T95：可滚行没有视觉提示 = 「按键被截断坏了」）。
+ *
+ * 键行本身 [horizontalScroll]（宽屏全部可见无滚动），窄屏溢出时在溢出方向
+ * 绘一条 → 键栏底色的 18% 宽渐隐带，明示「这行能滚」。遮罩 Box 不装任何
+ * pointerInput，不拦截下方键区的触摸/滚动。
+ */
+@Composable
+private fun FadeScrollableKeyRow(
+    /** 上下内边距（主行 5dp；FN 行紧贴主行 → 0 仅留底部 5dp）。 */
+    verticalPadding: Dp = 5.dp,
+    content: @Composable RowScope.() -> Unit
+) {
+    val scroll = rememberScrollState()
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(scroll)
+                .padding(horizontal = 5.dp)
+                .let { m ->
+                    if (verticalPadding > 0.dp) m.padding(vertical = verticalPadding)
+                    else m.padding(bottom = 5.dp)
+                },
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            content = content
+        )
+        if (scroll.value > 0) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.horizontalGradient(
+                            0f to KeybarChrome.bg,
+                            0.18f to Color.Transparent
+                        )
+                    )
+            )
+        }
+        if (scroll.canScrollForward) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.horizontalGradient(
+                            0.82f to Color.Transparent,
+                            1f to KeybarChrome.bg
+                        )
+                    )
+            )
+        }
     }
 }
 

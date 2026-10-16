@@ -5,6 +5,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.nio.file.Files
 
 /**
  * #206 单测：[SkillCategory] 24 域体系 + [SkillRegistry] 的分类感知查询
@@ -65,7 +66,9 @@ class SkillCategoryTest {
     // ═══ Registry 分类感知查询（真实临时目录实例）═══
 
     private fun registryWith(vararg manifests: String): SkillRegistry {
-        val dir = createTempDir()
+        // Kotlin 2.3：kotlin.io.createTempDir 弃用升级为 ERROR —— 改用 NIO
+        //（与同仓其他测试的 Files.createTempDirectory 惯例对齐）。
+        val dir = Files.createTempDirectory("skill-category-test").toFile()
         manifests.forEach { json -> File(dir, "${jsonToId(json)}.json").writeText(json) }
         return SkillRegistry(dir)
     }

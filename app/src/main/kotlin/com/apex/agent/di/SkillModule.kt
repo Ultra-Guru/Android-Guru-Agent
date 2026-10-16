@@ -229,6 +229,8 @@ object SkillModule {
         skillRegistry: SkillRegistry,
         mcpManager: McpManager,
         pluginManager: PluginManager,
+        // Plugin System v2：统一插件门面（功能性插件斜杠指令贡献数据源）。
+        unifiedPluginRegistry: com.apex.agent.plugin.host.functional.UnifiedPluginRegistry,
         connectorRegistry: ConnectorRegistry,
         languageManager: LanguageManager
     ): SlashMenuProvider {
@@ -237,6 +239,7 @@ object SkillModule {
             skillRegistry = skillRegistry,
             mcpManager = mcpManager,
             pluginManager = pluginManager,
+            unifiedPluginRegistry = unifiedPluginRegistry,
             connectorRegistry = connectorRegistry,
             languageManager = languageManager
         )

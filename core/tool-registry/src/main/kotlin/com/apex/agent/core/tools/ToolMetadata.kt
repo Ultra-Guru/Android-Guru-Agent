@@ -135,13 +135,20 @@ enum class ToolDomain(
  * tools prompt the user for a session-scoped approval on first use; MEDIUM
  * and LOW tools execute directly (the engine's existing command-level gate
  * still applies to shell commands inside those tools).
+ *
+ * Labels are **qualitative** (定性档位) instead of numeric grades: a tool is
+ * either "无危险" (safe), "平衡" (balanced — useful but mutates state) or
+ * "危险" (dangerous — destructive/irreversible). Percent-based risk scores
+ * were deliberately avoided: they imply false precision that users cannot
+ * act on, whereas a three-word verdict maps directly to "should I allow
+ * this?" decisions.
  */
 enum class ToolRisk(val label: String) {
     /** Read-only or pure computation — no approval ever needed. */
-    LOW("低"),
+    LOW("无危险"),
 
     /** Reads/writes within the sandbox, or executes non-destructive commands. */
-    MEDIUM("中"),
+    MEDIUM("平衡"),
 
     /**
      * Destructive, irreversible, or system-wide effects. The gate asks the
@@ -149,7 +156,7 @@ enum class ToolRisk(val label: String) {
      * (it already runs its own, finer-grained confirmation flow — e.g.
      * `shell_execute` routes through [CommandPermissionGate]).
      */
-    HIGH("高");
+    HIGH("危险");
 }
 
 /**
@@ -353,6 +360,15 @@ data class ToolMetadata(
             //   sms_send：发送短信（费用 + 第三方通信）
             id.startsWith("app_install_apk") || id.startsWith("app_download_install") ||
                 id == "agent_provider_set_key" || id == "sms_send" -> ToolRisk.HIGH
+
+            // v1.5 浏览器敏感三件套 —— HIGH：
+            //   browser_execute_js：页面内执行任意 JS（等效任意代码，能力不可枚举）
+            //   browser_get_cookies：读取会话凭据（可冒充用户身份）
+            //   browser_file_upload：把本地文件外发到网页（数据出境）
+            // 三个动作的后果都不可由工具侧收窄，须用户会话级确认
+            // （RiskAwareToolGate 弹窗 + sensitiveAction 双通道，见 ToolAnnotations）。
+            id == "browser_execute_js" || id == "browser_get_cookies" ||
+                id == "browser_file_upload" -> ToolRisk.HIGH
 
             // Mutating but recoverable / sandbox-scoped operations → MEDIUM.
             // #167：金库写入（覆写式）与盲投递（剪贴板/终端/HTTP 副作用）。

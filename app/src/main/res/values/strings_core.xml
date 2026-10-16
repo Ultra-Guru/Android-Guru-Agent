@@ -9,6 +9,7 @@
 <!-- #197 Template Studio -->
     <string name="drawer_templates">Template Studio</string>
     <string name="drawer_market">Market</string>
+    <string name="drawer_browser">Browser</string>
     <string name="drawer_memory">Memory</string>
     <string name="drawer_tasks">Tasks</string>
     <string name="drawer_storage">Storage</string>
@@ -16,6 +17,7 @@
     <string name="drawer_vault">Vault</string>
     <string name="drawer_log">Logs</string>
     <string name="drawer_settings">Settings</string>
+    <string name="drawer_playground">Playground</string>
     <string name="drawer_glasslab">Glass Lab</string>
     <string name="drawer_about">About</string>
     <string name="drawer_open_nav">Open navigation</string>
@@ -62,6 +64,10 @@
 
     <!-- Reasoning -->
     <string name="settings_section_reasoning">Reasoning</string>
+    <string name="settings_reasoning_effort_label">Reasoning Effort</string>
+    <string name="settings_thinking_budget_label">Thinking Budget (tokens)</string>
+    <string name="settings_thinking_budget_auto">Auto</string>
+    <string name="settings_show_thinking_label">Show Thinking</string>
     <string name="settings_effort_desc">The model\'s native thinking intensity (OpenAI o-series / DeepSeek-R1 / Qwen3 etc.); ignored automatically by unsupported models</string>
     <string name="settings_budget_desc">Chain-of-thought token budget; not hard-tied to Effort (providers differ in semantics)</string>
     <string name="settings_show_thinking_desc">Show the model\'s thinking process in the chat stream (data plumbed; chat rendering comes later)</string>
@@ -301,8 +307,8 @@
     <string name="model_profile_name">Profile name</string>
     <string name="model_no_provider_selected">No provider selected</string>
     <string name="model_select_provider">Select model provider</string>
-    <string name="model_base_url_blank_hint">Enter your custom endpoint here, e.g. https://api.xxx.com/v1</string>
-    <string name="model_request_url_hint">Requests go to %1$s/chat/completions</string>
+    <string name="model_base_url_blank_hint">Fully custom: e.g. https://api.xxx.com/v1 (we append /chat/completions), or a full path ending in /chat/completions (used as-is)</string>
+    <string name="model_request_url_hint">Requests go to %1$s</string>
     <string name="model_url_deviated">⚠ The current Base URL deviates from the official %1$s preset (official: %2$s). The fetched model list is returned by that endpoint — every model id in it (including test / incomplete names) comes from there, not from the official list.</string>
     <string name="model_restore_official">Restore official endpoint %1$s</string>
     <string name="model_hide_key">Hide</string>
@@ -329,6 +335,20 @@
     <string name="model_manual_id_label">Or enter a model ID manually</string>
     <string name="model_use_custom_id">Use custom ID</string>
     <string name="model_close">Close</string>
+
+    <!-- ═══ Model config import dialog (ModelConfigImportDialog — paste JSON / Python / YAML / TOML) ═══ -->
+    <string name="model_import">Import config</string>
+    <string name="model_import_title">Import model configuration</string>
+    <string name="model_import_hint">Paste JSON / Python dict / YAML / TOML config — provider and models are detected and imported automatically.</string>
+    <string name="model_import_paste_hint">Paste config text here…</string>
+    <string name="model_import_detected">Detected format: %1$s</string>
+    <string name="model_import_summary">Will import %1$d model(s) · %2$s</string>
+    <string name="model_import_parse_error">Parse failed: %1$s</string>
+    <string name="model_import_nothing">No model config recognized (need at least one of base_url / api_key / model)</string>
+    <string name="model_import_button">Import</string>
+    <string name="model_import_done">Imported %1$d model(s) to \"%2$s\"</string>
+    <string name="model_import_cancel">Cancel</string>
+    <string name="model_import_apply_error">Import failed: %1$s</string>
 
     <!-- ═══ Storage and data management (StorageScreen) ═══ -->
     <string name="storage_title">Storage</string>
@@ -513,6 +533,9 @@
     <string name="onboarding_cap_terminal_desc">A real Linux environment on your phone: apt packages, bash scripts, a full filesystem (rootfs ships inside the APK — works offline)</string>
     <string name="onboarding_cap_market_title">Skills &amp; marketplace</string>
     <string name="onboarding_cap_market_desc">100+ built-in tools on demand; the skill marketplace keeps expanding the Agent\'s capabilities</string>
+    <!-- v1.5：浏览器自动化能力卡（内置大功能，Onboarding 页 2） -->
+    <string name="onboarding_cap_browser_title">Browser automation</string>
+    <string name="onboarding_cap_browser_desc">A built-in browser the Agent drives for you: open pages, click, type and extract content — 24 browser_* tools ship inside the app, no plugin needed</string>
     <string name="onboarding_what_title">What it can do</string>
     <!-- ═══ Onboarding v2：权限全量引导（第 3 页）+ 工作区选择（第 4 页）═══ -->
     <string name="onboarding_perms_title">Permission setup</string>
@@ -583,6 +606,9 @@
     <string name="about_section_links">Links</string>
     <string name="about_update_current">Currently on v%1$s (%2$d)</string>
     <string name="about_update_auto_hint">Checks automatically each time this page opens</string>
+    <string name="about_update_auto_toggle">Auto-install update patches</string>
+    <string name="about_update_auto_toggle_desc">On: silently check for new versions at startup and prompt. Off: zero background checks or downloads — control updates yourself with the Check now button</string>
+    <string name="about_update_auto_off_hint">Auto-update is off — check manually below</string>
     <string name="about_update_retry">Retry</string>
     <string name="about_update_new_badge">NEW</string>
     <string name="about_update_progress_mb">Downloading… %1$d%% · %2$s downloaded</string>
@@ -681,11 +707,14 @@
     <string name="gate_mode_default">Default (DEFAULT)</string>
     <string name="gate_mode_accept_edits">Accept edits (ACCEPT_EDITS)</string>
     <string name="gate_mode_plan">Read-only planning (PLAN)</string>
-    <string name="gate_risk_title_fmt">High-risk tool requires confirmation: %1$s</string>
+    <string name="gate_risk_title_fmt">Dangerous tool requires confirmation: %1$s</string>
     <string name="gate_file_write_title_fmt">File write confirmation: %1$s</string>
-    <string name="gate_risk_hint_high">High risk: destructive or irreversible</string>
-    <string name="gate_risk_hint_medium">Medium risk: modifies data or state</string>
+    <string name="gate_risk_hint_high">Dangerous: destructive or irreversible</string>
+    <string name="gate_risk_hint_medium">Balanced: modifies data or state</string>
     <string name="gate_risk_line_fmt">%1$s (%2$s)</string>
+    <string name="risk_label_dangerous">Dangerous</string>
+    <string name="risk_label_balanced">Balanced</string>
+    <string name="risk_label_safe">No danger</string>
     <string name="gate_opt_allow_session">Allow for this session</string>
     <string name="gate_opt_allow_session_desc">This tool will not ask again in this session</string>
     <string name="gate_opt_allow_once">Allow once</string>

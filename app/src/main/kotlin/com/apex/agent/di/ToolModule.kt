@@ -139,7 +139,7 @@ import com.apex.agent.core.tools.hook.HookEvent
 import com.apex.agent.core.tools.hook.HookRegistry
 import com.apex.agent.core.tools.skill.SkillHotReloadLogLevel
 import com.apex.agent.core.tools.skill.SkillHotReloader
-import com.apex.agent.browser.BrowserAgentTools
+import com.apex.agent.platform.browser.BrowserAgentTools
 import com.apex.browser.engine.BrowserEngine
 import com.apex.browser.engine.BrowserTracer
 // #167 加密剪切板金库：仓库/脱敏器/工具集/执行器装饰器
@@ -1110,8 +1110,9 @@ object ToolModule {
         // 仍注册不下发）+ 3 上下文回顾（context_recap/context_search/session_stats）+
         // 9 高级设备（torch/vibrate/battery_status/network_info/tts_speak/share_content/
         // deep_link/image_info/image_convert）。
-        // 插件注册：PluginManager 加载插件后动态注册（plugin-web-automation → 15 个 browser_*，
-        // REPLACE 覆盖内置注册；卸载时降级为 HostFallbackTool 宿主直调，不挖空）。
+        // 插件注册：PluginManager 加载插件后动态注册（同 id REPLACE 覆盖内置注册；
+        // 卸载时降级为 HostFallbackTool 宿主直调，不挖空）。旧网页自动化插件 id
+        // 会被 PluginManager 拦截（v1.5.0 内置化，防 15 工具旧清单覆盖内置 24 工具）。
     }
 
     @Provides

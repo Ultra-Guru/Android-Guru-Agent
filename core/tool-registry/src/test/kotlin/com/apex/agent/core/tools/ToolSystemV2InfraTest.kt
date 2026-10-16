@@ -186,6 +186,49 @@ class ToolSystemV2InfraTest {
     }
 
     // ═════════════════════════════════════════════════════════════════
+    // 浏览器敏感三件套（v1.5）：execute_js / get_cookies / file_upload
+    // —— HIGH + sensitiveAction 双通道门控的推断口径回归
+    // ═════════════════════════════════════════════════════════════════
+
+    @Test
+    fun `browser sensitive trio infers HIGH risk and sensitiveAction`() {
+        val trio = listOf("browser_execute_js", "browser_get_cookies", "browser_file_upload")
+        trio.forEach { id ->
+            val meta = ToolMetadata.infer(id)
+            assertEquals("risk of $id", ToolRisk.HIGH, meta.risk)
+            assertEquals("category of $id", ToolCategory.BROWSER, meta.category)
+            assertTrue("sensitiveAction of $id", meta.annotations.sensitiveAction)
+        }
+    }
+
+    @Test
+    fun `browser routine tools stay MEDIUM non-sensitive`() {
+        // 常规动作（导航/点击/输入）保持 MEDIUM：确认预算只留给敏感三件套，
+        // 不把整个浏览器大功能都变成弹窗骚扰。
+        listOf("browser_navigate", "browser_click", "browser_input", "browser_snapshot").forEach { id ->
+            val meta = ToolMetadata.infer(id)
+            assertEquals("risk of $id", ToolRisk.MEDIUM, meta.risk)
+            assertFalse("sensitiveAction of $id", meta.annotations.sensitiveAction)
+        }
+    }
+
+    @Test
+    fun `browser cookie read is readOnly-sensitive while js and upload are mutating`() {
+        // 注解语义各异（见 ToolAnnotations.infer 的浏览器分支注释）：
+        // get_cookies 是敏感读（readOnly+idempotent），execute_js 是页面内
+        // 任意变更，file_upload 是 openWorld 出境写 —— 三者都敏感但非破坏。
+        val cookies = ToolMetadata.infer("browser_get_cookies").annotations
+        assertTrue(cookies.readOnlyHint)
+        assertTrue(cookies.idempotentHint)
+        val js = ToolMetadata.infer("browser_execute_js").annotations
+        assertFalse(js.readOnlyHint)
+        assertFalse(js.destructiveHint)
+        val upload = ToolMetadata.infer("browser_file_upload").annotations
+        assertTrue(upload.openWorldHint)
+        assertFalse(upload.destructiveHint)
+    }
+
+    // ═════════════════════════════════════════════════════════════════
     // ToolSuggester
     // ═════════════════════════════════════════════════════════════════
 

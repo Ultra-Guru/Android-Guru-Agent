@@ -77,6 +77,9 @@ class AgentChatViewModel @Inject constructor(
     private val languageManager: LanguageManager,
     // v2：斜杠路由需要 MCP 连接快照（/mcp:<id> 引导提示词据此生成）
     internal val mcpManager: com.apex.agent.core.tools.mcp.McpManager,
+    // Plugin System v2：斜杠路由需要功能性插件指令贡献快照
+    // （/plugin:<id> 命中时注入插件声明的定制 prompt）。
+    internal val unifiedPluginRegistry: com.apex.agent.plugin.host.functional.UnifiedPluginRegistry,
     // P2：删除/清空历史会话时同步清理附件文件（AgentChatHistoryController 扩展使用）
     internal val attachmentCleanup: AttachmentCleanupManager,
     // 技能渐进披露：自动装备（消息命中 tags 零成本预激活）+ 斜杠装备写入。

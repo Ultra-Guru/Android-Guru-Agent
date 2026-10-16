@@ -511,6 +511,18 @@ data class AgentSettings(
     val taskCompletionNotify: Boolean = true,
 
     /**
+     * 自动更新总开关（用户反馈：不想自动更新时应用仍在后台检查/下载）。
+     *
+     * 关闭后：
+     * - App 启动不再静默检查更新（ApexRoot 门控）→ 无新版本浮窗；
+     * - 关于页进入也不再自动检查（UpdatePanel 门控；手动「检查更新」
+     *   按钮仍可用 —— 显式操作不受限）；
+     * - 所有下载本就只由用户按钮触发，检查关掉即后台零流量。
+     * 默认开（保持既有行为）。
+     */
+    val autoUpdateCheck: Boolean = true,
+
+    /**
      * #218：聊天记忆自动摄取总开关（默认开，保持既有行为）。
      *
      * 关闭后：对话内容不再自动沉淀到画像/近况/里程碑（含 LLM 蒸馏与

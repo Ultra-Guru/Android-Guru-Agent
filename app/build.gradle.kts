@@ -1,3 +1,4 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.security.MessageDigest
 
 plugins {
@@ -13,7 +14,7 @@ plugins {
 
 android {
     namespace = "com.apex.agent"
-    compileSdk = 35
+    compileSdk = 36
 
     // ═══ 固定发布签名 keystore（v1.4.8 签名漂移根因修复）══════════════════════
     //
@@ -117,9 +118,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
 
     lint {
         // ExpiredTargetSdkVersion 的豁免理由（targetSdk=28 是有意为之，见上方红线注释）：
@@ -177,6 +175,14 @@ android {
     }
 }
 
+// KGP 2.2：kotlinOptions DSL 已 deprecation（KGP 3.0 移除）—— 迁移到
+// 项目级 compilerOptions DSL（语义等价：等价于对全部 Kotlin 编译任务生效）。
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
+}
+
 dependencies {
     // 内部模块
     implementation(project(":core:agent-engine"))
@@ -208,14 +214,12 @@ dependencies {
     implementation(project(":platform:mcp-host"))
     implementation(project(":plugin-sdk:plugin-host"))
 
-    // ── 浏览器库（拆库 E1 迁移期 composite build）──────────────────────────
-    // 从本仓库抽出的 apex-browser-kit（兄弟目录 includeBuild 时自动替换为本地构建；
-    // 无本地目录时走远端坐标 —— E3 GitHub Packages 发布后生效）。
-    // BrowserAgentTools（browser_* 工具协议，留在 app）消费这三层：
-    //   core（DomParser 剪枝）+ engine（BrowserEngine 自动化）+ chrome（Overlay 浮窗）。
-    implementation(libs.browser.core)
-    implementation(libs.browser.engine)
-    implementation(libs.browser.chrome)
+    // ── 浏览器自动化大功能（v1.5.0 内置化）───────────────────────────────
+    // :platform:browser-agent 以 api 传递 apex-browser-kit 三层坐标
+    // （core/engine/chrome），app 仍直接消费 BrowserEngine / BrowserTracer /
+    // BrowserOverlay / ApexChromeWiring 类型（ApexCoreService / CyberNeonBallManager /
+    // BrowserScreen）；BrowserAgentTools 与库 DI 接线（BrowserKitModule）在该模块内。
+    implementation(project(":platform:browser-agent"))
 
     // Compose
     implementation(platform(libs.compose.bom))
@@ -227,8 +231,9 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.core)
     implementation(libs.compose.material.icons)
-    // Lucide 图标集（composablehorizons/compose-icons, MIT）：斜杠菜单分类图标更精致
-    // 固定 1.1.0：2.x 由 Kotlin 2.2 构建，与本项目 Kotlin 2.0.21 toolchain 元数据不兼容。
+    // Lucide 图标集（composablehorizons/compose-icons, MIT）：斜杠菜单分类图标预留。
+    // 2.2.1（Kotlin 2.2.21 + foundation 1.9.3 构建）—— 与本仓工具链配套；
+    // 当前代码零处使用 IconsLucide（预留位，见 libs.versions.toml 注释）。
     implementation(libs.lucide.icons)
     debugImplementation(libs.compose.ui.tooling)
 
@@ -273,9 +278,11 @@ dependencies {
 
     // 赛博霓虹悬浮球：全局低侵入 WindowManager 管理（JitPack，已做仓库过滤+版本锁定）
     implementation(libs.easyfloat)
-    // Liquid Glass UI System 底层引擎 —— vendored kyant0/AndroidLiquidGlass（backdrop @ 1.0.0，
-    // Apache-2.0）。Maven 版需 Kotlin 2.2+/Compose 1.9+，本仓工具链消费不了故源码内嵌 ——
-    // 仅 ui/glass 包内部使用，业务层经 Glass 组件 API 访问（vendor/backdrop/README.md）。
+    // Liquid Glass UI System 底层引擎 —— vendored kyant0/AndroidLiquidGlass（上游
+    // tag 1.0.0 血统 + diag-20261011 热修 + PR #364 彩色 DefaultHighlight，Apache-2.0）。
+    // 工具链已可消费 Maven 线（1.0.6 与本仓构建矩阵精确配套），但上游 1.0.6 二进制
+    // 不含 isAttached 守卫与 ShapeProvider 值语义两项热修 —— 保留 vendored，
+    // 消费层：ui/glass 包（业务层经 Glass 组件 API 访问，vendor/backdrop/README.md）。
     implementation(project(":vendor:backdrop"))
     // Vico 开源图表库（稳定线 1.13.1）—— 任务历史页「近 7 日任务量」柱状图 +
     // 记忆页类型分布；只引 compose 核心（主题色手动映射，不引 m2/m3 主题模块）

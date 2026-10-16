@@ -2,6 +2,7 @@ package com.apex.agent.di
 
 import android.content.Context
 import com.apex.agent.core.tools.marketplace.ClawHubSource
+import com.apex.agent.core.tools.marketplace.GithubMcpSource
 import com.apex.agent.core.tools.marketplace.HubSource
 import com.apex.agent.core.tools.marketplace.McpSoSource
 import com.apex.agent.core.tools.marketplace.ModelScopeSource
@@ -85,6 +86,25 @@ object MarketplaceModule {
     @Singleton
     fun provideOfficialRegistrySource(httpClient: OkHttpClient): OfficialRegistrySource {
         return OfficialRegistrySource(httpClient)
+    }
+
+    /**
+     * GitHub MCP 探测源：「从 GitHub 安装」的 MCP 分支 —— 探测仓库的
+     * server.json / .mcp.json / src monorepo 形态并转 RegistryServer，
+     * 走 RegistryMcpInstaller 安装决策树（Anthropic 官方
+     * modelcontextprotocol/servers 仓库直装）。GitHub token 可选注入提配额
+     * （与 ModelScope / Operit 同构 —— provider 而非快照，登录后即时生效）。
+     */
+    @Provides
+    @Singleton
+    fun provideGithubMcpSource(
+        httpClient: OkHttpClient,
+        githubTokenManager: GithubTokenManager
+    ): GithubMcpSource {
+        // token 为空时返回空 map（匿名访问）；GithubMcpSource 跳过空值头
+        return GithubMcpSource(httpClient) {
+            githubTokenManager.getToken()?.let { mapOf("Authorization" to "Bearer $it") }.orEmpty()
+        }
     }
 
     /**
