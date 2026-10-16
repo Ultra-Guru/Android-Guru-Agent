@@ -216,8 +216,15 @@ class McpClient(
                 )
             )
 
+            // P1 修复（空响应假成功）：HTTP 200 + 空 body（或 SSE 无 data 帧）
+            // 会被传输层折叠成 null，旧实现照旧置 initialized=true 并返回成功
+            // —— 用户看到"已连接、0 工具"，模型把失败的调用当成功。空响应在
+            // 带 id 的请求上永远是协议错误。
             val response = sendRequest(request)
-            val result = response?.get("result")?.jsonObject
+                ?: return@withContext Result.failure(
+                    McpException("服务器返回空响应（HTTP 200 无 body / SSE 无 data 帧）：initialize")
+                )
+            val result = response["result"]?.jsonObject
             val capabilities = result?.get("capabilities")?.jsonObject
 
             serverCapabilities = McpCapabilities(
@@ -313,7 +320,10 @@ class McpClient(
                 )
 
                 val response = sendRequest(request)
-                val result = response?.get("result")?.jsonObject
+                    ?: return@withContext Result.failure(
+                        McpException("服务器返回空响应（HTTP 200 无 body / SSE 无 data 帧）：tools/list")
+                    )
+                val result = response["result"]?.jsonObject
                 val tools = result?.get("tools")?.jsonArray ?: JsonArray(emptyList())
 
                 tools.forEach { toolJson ->
@@ -360,7 +370,10 @@ class McpClient(
             )
 
             val response = sendRequest(request)
-            val result = response?.get("result")?.jsonObject
+                ?: return@withContext Result.failure(
+                    McpException("服务器返回空响应（HTTP 200 无 body / SSE 无 data 帧）：tools/call")
+                )
+            val result = response["result"]?.jsonObject
 
             val content = result?.get("content")?.jsonArray?.mapNotNull { item ->
                 val obj = item.jsonObject
