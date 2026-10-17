@@ -4,8 +4,8 @@ import com.apex.agent.core.tools.fusion.rea.ReaCommandOutput
 import com.apex.agent.core.tools.fusion.rea.ReaCommandRunner
 import com.apex.agent.core.tools.fusion.rea.ReaPageContent
 import com.apex.agent.core.tools.fusion.rea.ReaPageFetcher
-import com.apex.agent.platform.terminal.exec.ExecEngine
-import com.apex.agent.platform.terminal.exec.ExecRequest
+import com.apex.agent.platform.TerminalExec.ExecEngine
+import com.apex.agent.platform.TerminalExec.ExecRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -16,7 +16,7 @@ import java.security.MessageDigest
  * # REA 运行时端口的 app 层实现
  *
  * - [ReaCommandRunnerImpl]：桥接到**既有**终端执行链（[ExecEngine] +
- *   ProotCommandSpawner —— 与 shell_execute/terminal.exec 同一条链）：
+ *   ProotCommandSpawner —— 与 ShellExecute/TerminalExec 同一条链）：
  *   PRoot Ubuntu rootfs 就绪 → 沙箱内执行（apt 装的 objdump/rizin/jadx
  *   天然可见）；否则回落 su > Shizuku > local-sh（设备本地 am/pm/dumpsys
  *   直接可用）。超时/双流采集/退出码语义全部复用。

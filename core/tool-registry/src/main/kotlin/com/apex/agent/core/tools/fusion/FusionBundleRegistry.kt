@@ -28,7 +28,7 @@ class FusionBundleRegistry(
     private val installed = LinkedHashMap<String, FusionBundleManifest>()
     private val installedAt = HashMap<String, Long>()
 
-    /** 安装/卸载变更通知（订阅者：UI 控制器、fusion_list 工具快照）。 */
+    /** 安装/卸载变更通知（订阅者：UI 控制器、FusionList 工具快照）。 */
     private val _changes = MutableSharedFlow<Unit>(extraBufferCapacity = 16)
     val changes: SharedFlow<Unit> = _changes.asSharedFlow()
 
@@ -129,7 +129,7 @@ class FusionBundleRegistry(
         installed.values.sortedBy { it.name.lowercase() }
     }
 
-    /** 目录摘要（fusion_list 工具 + UI 列表行数据）。 */
+    /** 目录摘要（FusionList 工具 + UI 列表行数据）。 */
     fun digests(): List<FusionBundleDigest> = list().map { m ->
         FusionBundleDigest(
             id = m.id,

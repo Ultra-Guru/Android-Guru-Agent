@@ -52,7 +52,8 @@ data class FusionBundleManifest(
     /** 聚合的 MCP 服务器（完整 McpServerConfig 内联 —— 连进 McpManager 复用其全部管道）。 */
     val mcpServers: List<FusionMcpServerRef> = emptyList(),
     /**
-     * 工具激活提示（mcp__rea__open_binary 这类一等工具 id）：服务器连上后
+     * 工具激活提示（McpReaOpenBinary 这类一等工具 id，v5 组合规则
+     * Mcp{Server}{Tool}）：服务器连上后
      * 工具自动进入引擎计划池（渐进披露），此处声明帮助模型优先关注旗舰工具。
      */
     val toolActivationHints: List<String> = emptyList(),
@@ -184,7 +185,7 @@ data class FusionRuntimeEngine(
     val installHint: String = ""
 )
 
-/** 包目录摘要（fusion_list 工具与 UI 列表的行级数据）。 */
+/** 包目录摘要（FusionList 工具与 UI 列表的行级数据）。 */
 data class FusionBundleDigest(
     val id: String,
     val name: String,

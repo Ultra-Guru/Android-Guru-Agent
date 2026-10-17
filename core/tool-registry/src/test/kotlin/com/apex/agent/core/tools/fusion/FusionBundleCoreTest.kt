@@ -41,8 +41,8 @@ class FusionBundleCoreTest {
         assertTrue(manifest.bundled)
         assertEquals("agent", manifest.scope)
         assertEquals(1, manifest.skills.size)
-        assertEquals("rea-workflow", manifest.skills[0].skillId)
-        assertEquals("rea-workflow", manifest.skills[0].manifest.id)
+        assertEquals("ReaWorkflow", manifest.skills[0].skillId)
+        assertEquals("ReaWorkflow", manifest.skills[0].manifest.id)
         assertEquals(1, manifest.mcpServers.size)
         assertEquals("rea", manifest.mcpServers[0].serverId)
         assertTrue(manifest.toolActivationHints.isNotEmpty())
@@ -175,7 +175,7 @@ class FusionBundleCoreTest {
         override fun isInstalled(skillId: String): Boolean = skillId in onDisk
 
         override suspend fun ensureInstalled(manifestJson: String): Result<Unit> {
-            val id = Regex("\"id\"\\s*:\\s*\"([a-z0-9_-]+)\"")
+            val id = Regex("\"id\"\\s*:\\s*\"([a-zA-Z0-9_-]+)\"")
                 .find(manifestJson)?.groupValues?.get(1)
                 ?: return Result.failure(Exception("manifest 无 id"))
             if (id in failIds) return Result.failure(Exception("注入失败（$id）"))
@@ -226,14 +226,14 @@ class FusionBundleCoreTest {
         assertTrue("激活必须成功: ${r.exceptionOrNull()?.message}", r.isSuccess)
         val act = r.getOrThrow()
 
-        assertEquals(listOf("rea-workflow"), skills.installed)
+        assertEquals(listOf("ReaWorkflow"), skills.installed)
         assertEquals(listOf("rea"), mcp.connected)
         assertNotNull(prompt.applied)
         assertTrue("注入人设须含 REA 工作流", prompt.applied!!.contains("REA 逆向工程体系"))
-        assertTrue("注入人设须含旗舰工具清单", prompt.applied!!.contains("mcp__rea__open_binary"))
+        assertTrue("注入人设须含旗舰工具清单", prompt.applied!!.contains("McpReaOpenBinary"))
         assertTrue("注入人设须含证据纪律段", prompt.applied!!.contains("证据纪律"))
         assertEquals("rea", act.bundleId)
-        assertEquals(listOf("rea-workflow"), act.installedSkills)
+        assertEquals(listOf("ReaWorkflow"), act.installedSkills)
         assertEquals(listOf("rea"), act.connectedServers)
         assertTrue(act.skipped.isEmpty())
         assertEquals("rea", activator.activeBundle?.id)
@@ -252,14 +252,14 @@ class FusionBundleCoreTest {
         val act2 = activator.activate("rea").getOrThrow()
         assertEquals("技能装一次（幂等分支）", 1, skills.installed.size)
         assertEquals("MCP 可重复连接（ensureConnected 幂等语义）", 2, mcp.connected.size)
-        assertTrue(act2.installedSkills.contains("rea-workflow"))
+        assertTrue(act2.installedSkills.contains("ReaWorkflow"))
     }
 
     @Test
     fun `组件失败进 skipped 且整体仍激活（聚合容错）`() = runTest {
         val registry = FusionBundleRegistry(tmp.newFolder("a3"))
         registry.install(FusionBundlePresets.REA_BUNDLE_JSON)
-        val skills = FakeSkillInstaller(failIds = setOf("rea-workflow"))
+        val skills = FakeSkillInstaller(failIds = setOf("ReaWorkflow"))
         val mcp = FakeMcpConnector(failServers = setOf("rea"))
         val prompt = FakePromptInjector()
         val activator = FusionBundleActivator(registry, skills, mcp, prompt)

@@ -32,7 +32,7 @@ import javax.inject.Singleton
  * # FusionBundle 控制器 —— 聊天输入框入口的后端
  *
  * UI（输入栏 FusionBundleButton + PickerSheet）与 agent 工具族
- * （fusion_list / fusion_activate）共用的单一控制面：
+ * （FusionList / FusionActivate）共用的单一控制面：
  * - [bundles]：已装包清单（registry + changes 流自动刷新）；
  * - [activeBundle]：当前激活的包（null = 无）；
  * - [activate] / [deactivate]：编排三端口（技能装 SkillRegistry、MCP 连
@@ -98,7 +98,7 @@ class FusionBundleController @Inject constructor(
         _bundles.value = registry.digests()
     }
 
-    /** 激活（UI 按钮 / fusion_activate 工具共用）。 */
+    /** 激活（UI 按钮 / FusionActivate 工具共用）。 */
     suspend fun activate(bundleId: String): Result<FusionActivation> {
         val r = activator.activate(bundleId)
         r.onSuccess {

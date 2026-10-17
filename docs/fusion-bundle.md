@@ -41,7 +41,7 @@ Engine Anything，morluto/rea，MIT，npm rea-agents，Trendshift 榜）为
 
 ```
       输入栏 FusionBundleButton ──► FusionBundlePickerSheet（选用/停用）
-      fusion_list / fusion_info / fusion_activate（模型侧自主闭环）
+      FusionList / FusionInfo / FusionActivate（模型侧自主闭环，v5 PascalCase）
                         │ （两者共用同一控制面）
               ┌─────────▼──────────┐
               │ FusionBundleController（app 层 @Singleton）
@@ -68,7 +68,7 @@ Engine Anything，morluto/rea，MIT，npm rea-agents，Trendshift 榜）为
 | `core/tool-registry/.../fusion/FusionBundleManifest.kt` | manifest 模型 + 校验（id 路径安全 / skillId 一致 / schema 门） |
 | `core/tool-registry/.../fusion/FusionBundleRegistry.kt` | 存储/装卸/changes 流/bundled 保护 |
 | `core/tool-registry/.../fusion/FusionBundleActivator.kt` | 三端口编排 + 激活提示组装 + 聚合容错 |
-| `core/tool-registry/.../fusion/FusionBundleTools.kt` | fusion_list / fusion_info / fusion_activate 工具族 |
+| `core/tool-registry/.../fusion/FusionBundleTools.kt` | FusionList / FusionInfo / FusionActivate 工具族 |
 | `core/tool-registry/.../fusion/FusionBundlePresets.kt` | 内置预置（首发 REA） |
 | `core/tool-registry/.../fusion/rea/` | REA 引擎全套（见 §4） |
 | `app/.../fusion/FusionBundleController.kt` | 控制面 + 三端口适配 + 持久化重激活 |
@@ -89,12 +89,12 @@ Engine Anything，morluto/rea，MIT，npm rea-agents，Trendshift 榜）为
     "routingHints": "ASAR→analyze_javascript_application；APK→inspect_android_package…"
   },
   "skills": [
-    { "skillId": "rea-workflow", "manifest": { "…完整 apex-skill-v1 manifest…" } }
+    { "skillId": "ReaWorkflow", "manifest": { "…完整 apex-skill-v1 manifest…" } }
   ],
   "mcpServers": [
     { "serverId": "rea", "transport": "BUILTIN", "autoConnect": true, "scope": "agent" }
   ],
-  "toolActivationHints": ["mcp__rea__open_binary", "…"],
+  "toolActivationHints": ["McpReaOpenBinary", "…"],
   "runtime": {
     "engines": [
       { "name": "objdump", "purpose": "…", "optional": true,
@@ -141,7 +141,7 @@ export_evidence_bundle / import_evidence_bundle）。
 **载体**：第六台进程内内置 MCP 服务器 `rea`（`ReaBuiltinMcpTransport`，
 架构同 search/fs/memory/thinking 五件套）—— McpManager 工厂注册，
 FusionBundle 激活器负责 ensureBuiltinServer + connect（未激活不自动连）。
-连接后 207 工具经 McpToolRegistrar 自动一等公民化（`mcp__rea__*`），
+连接后 207 工具经 McpToolRegistrar 自动一等公民化（`McpRea*`，v5 组合规则 Mcp{Server}{Tool}），
 引擎 64 工具预算 + 渐进披露（tool_search/tool_open）自然裁剪 —— 与
 MCP 生态的注册表模式完全同轨。
 

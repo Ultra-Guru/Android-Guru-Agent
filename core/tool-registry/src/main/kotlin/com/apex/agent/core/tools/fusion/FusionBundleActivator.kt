@@ -43,7 +43,7 @@ class FusionBundleActivator(
      */
     suspend fun activate(bundleId: String, scope: String = "agent"): Result<FusionActivation> {
         val manifest = registry.get(bundleId)
-            ?: return Result.failure(Exception("FusionBundle '$bundleId' 未安装（可用 fusion_list 查看已装包）"))
+            ?: return Result.failure(Exception("FusionBundle '$bundleId' 未安装（可用 FusionList 查看已装包）"))
         if (manifest.scope != "all" && manifest.scope != scope) {
             return Result.failure(
                 Exception("包 '$bundleId' 作用域为 ${manifest.scope}，当前工位 $scope 不适用")
@@ -135,7 +135,7 @@ class FusionBundleActivator(
         }
         if (manifest.toolActivationHints.isNotEmpty()) {
             segments.add(
-                "### 旗舰工具（优先关注，其余经 tool_search 渐进披露）\n" +
+                "### 旗舰工具（优先关注，其余经 ToolSearch 渐进披露）\n" +
                     manifest.toolActivationHints.joinToString("\n") { "- $it" }
             )
         }

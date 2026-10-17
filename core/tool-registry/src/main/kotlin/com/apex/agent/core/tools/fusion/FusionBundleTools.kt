@@ -12,26 +12,26 @@ import com.apex.agent.core.tools.builtin.BaseTool
 import com.apex.agent.core.tools.toolSchema
 
 /**
- * # fusion_* 工具族 —— Agent 自主闭环的 FusionBundle 入口
+ * # Fusion 工具族（v5 PascalCase）—— Agent 自主闭环的 FusionBundle 入口
  *
- * 与 skill_* 族同构的三件套（模型可在对话里自主发现、安装、激活复合包）：
- * - `fusion_list`：已装包目录（digest 行 + 组件计数 + 分层统计）；
- * - `fusion_info`：单包详情（agent 人设路由 + 技能/MCP/引擎清单）；
- * - `fusion_activate`：**激活**（装技能 + 连 MCP + 注入人设）—— 激活后
+ * 与 Skill 族同构的三件套（模型可在对话里自主发现、激活复合包）：
+ * - `FusionList`：已装包目录（digest 行 + 组件计数 + 分层统计）；
+ * - `FusionInfo`：单包详情（agent 人设路由 + 技能/MCP/引擎清单）；
+ * - `FusionActivate`：**激活**（装技能 + 连 MCP + 注入人设）—— 激活后
  *   该体系的全部工具与工作流立即可用（「直接使用这个体系 agent」）。
  *
- * 注册：app 层 ToolModule 卫星文件（registerFusionTools），scope=agent。
+ * 注册：app 层 ToolModule 卫星文件（registerFusionBundleTools），scope=agent。
  */
 class FusionListTool(
     private val registry: FusionBundleRegistry
 ) : BaseTool(
-    id = "fusion_list",
+    id = "FusionList",
     name = "FusionBundle Catalog",
     description = """
         List installed FusionBundles (compound capability packs aggregating
         skills + MCP servers + tools + an agent workflow). Each row: id, name,
         version, component counts (skills/mcp/toolHints/engines), scope, trust.
-        Use fusion_info for one pack's full capability surface, fusion_activate
+        Use FusionInfo for one pack's full capability surface, FusionActivate
         to turn the whole system on for this session.
     """.trimIndent(),
     declaredSchema = toolSchema { }
@@ -46,7 +46,7 @@ class FusionListTool(
     override suspend fun executeStructured(arguments: String): ToolResult {
         val digests = registry.digests()
         if (digests.isEmpty()) {
-            return ToolResult.ok("未安装任何 FusionBundle（可用 fusion_install 从 manifest JSON 安装）")
+            return ToolResult.ok("未安装任何 FusionBundle（内置包随首启释放；市场与 manifest JSON 安装即将就结）")
         }
         val rows = digests.joinToString("\n") { d ->
             "- ${d.id}「${d.name}」v${d.version} [${d.scope}] trust=${d.trustLevel}" +
@@ -60,7 +60,7 @@ class FusionListTool(
 class FusionInfoTool(
     private val registry: FusionBundleRegistry
 ) : BaseTool(
-    id = "fusion_info",
+    id = "FusionInfo",
     name = "FusionBundle Detail",
     description = """
         Full detail of one FusionBundle: agent persona & routing, aggregated
@@ -68,7 +68,7 @@ class FusionInfoTool(
         and tool activation hints. Input: {"id":"rea"}.
     """.trimIndent(),
     declaredSchema = toolSchema {
-        string("id", required = true, description = "FusionBundle id（见 fusion_list）")
+        string("id", required = true, description = "FusionBundle id（见 FusionList）")
     }
 ) {
     override fun buildMetadata(): ToolMetadata = ToolMetadata.meta(id) {
@@ -85,7 +85,7 @@ class FusionInfoTool(
         }
         val id = args.requireString("id")
         val m = registry.get(id)
-            ?: return ToolResult.fail(ToolErrorCode.NOT_FOUND, "FusionBundle '$id' 未安装（fusion_list 查看）")
+            ?: return ToolResult.fail(ToolErrorCode.NOT_FOUND, "FusionBundle '$id' 未安装（FusionList 查看）")
         val sb = StringBuilder()
         sb.appendLine("「${m.name}」v${m.version} —— ${m.description}")
         if (m.agent.persona.isNotBlank()) sb.appendLine("人设：${m.agent.persona}")
@@ -117,7 +117,7 @@ class FusionActivateTool(
     private val registry: FusionBundleRegistry,
     private val activator: FusionBundleActivator
 ) : BaseTool(
-    id = "fusion_activate",
+    id = "FusionActivate",
     name = "FusionBundle Activate",
     description = """
         Activate a FusionBundle: installs its skills, connects its MCP servers

@@ -13,7 +13,7 @@ import com.apex.agent.fusion.ReaPageFetcherImpl
 import com.apex.agent.github.GithubTokenManager
 import com.apex.agent.platform.terminal.proot.PRootCapabilitySource
 import com.apex.agent.platform.terminal.proot.PRootHostEnvironment
-import com.apex.agent.platform.terminal.exec.ExecEngine
+import com.apex.agent.platform.TerminalExec.ExecEngine
 import com.apex.agent.tools.ProotCommandSpawner
 import com.apex.agent.tools.PrivilegedCommandSpawner
 import dagger.Module
@@ -68,10 +68,10 @@ object FusionModule {
         ReaWorkspace(root = File(context.filesDir, "fusion"))
 
     /**
-     * REA 命令执行端口 —— 复用 terminal.exec 的同一条执行链
+     * REA 命令执行端口 —— 复用 TerminalExec 的同一条执行链
      * （ExecEngine + ProotCommandSpawner：rootfs 就绪进沙箱，Android 命令
      * 回落 su > Shizuku > local-sh）。构造参数与 ToolModule 的
-     * terminal.exec 装配逐项对齐（同一 rootfs/家目录/能力门语义）。
+     * TerminalExec 装配逐项对齐（同一 rootfs/家目录/能力门语义）。
      */
     @Provides
     @Singleton

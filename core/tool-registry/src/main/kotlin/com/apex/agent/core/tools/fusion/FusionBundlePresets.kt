@@ -6,7 +6,7 @@ package com.apex.agent.core.tools.fusion
  * 上游（morluto/rea，MIT，npm rea-agents v6.5.0）的「MCP 服务器 + 工作流
  * 技能 + 工具」三位一体，经 FusionBundle 装载进 AGA：
  * - MCP 服务器 `rea`：207 个工具全目录（[com.apex.agent.core.tools.fusion.rea.ReaToolCatalog]）；
- * - 工作流技能 `rea-workflow`（apex-skill-v1）：目标路由 + 证据纪律
+ * - 工作流技能 `ReaWorkflow`（apex-skill-v1，v5 PascalCase）：目标路由 + 证据纪律
  *   （由上游 SKILL.md 的 routing/evidence 章节重构筑）；
  * - agent 人设：激活即注入的逆向工程智能体工作流。
  *
@@ -38,11 +38,11 @@ object FusionBundlePresets {
   },
   "skills": [
     {
-      "skillId": "rea-workflow",
+      "skillId": "ReaWorkflow",
       "role": "目标路由与证据纪律工作流",
       "manifest": {
         "schema": "apex-skill-v1",
-        "id": "rea-workflow",
+        "id": "ReaWorkflow",
         "name": "REA 逆向工程工作流",
         "version": "6.5.0",
         "description": "逆向调查的目标路由决策与证据纪律：先判目标类型（ASAR/JS、归档、APK、原生二进制、网站、固件），再选 REA 工具；结论必须携带 findings/evidence 并如实转述 limitations。",
@@ -66,14 +66,14 @@ object FusionBundlePresets {
     }
   ],
   "toolActivationHints": [
-    "mcp__rea__open_binary",
-    "mcp__rea__binary_session",
-    "mcp__rea__inspect_artifact",
-    "mcp__rea__inspect_binary_layout",
-    "mcp__rea__inspect_android_package",
-    "mcp__rea__analyze_javascript_application",
-    "mcp__rea__search_android_classes",
-    "mcp__rea__identify_flutter_build"
+    "McpReaOpenBinary",
+    "McpReaBinarySession",
+    "McpReaInspectArtifact",
+    "McpReaInspectBinaryLayout",
+    "McpReaInspectAndroidPackage",
+    "McpReaAnalyzeJavascriptApplication",
+    "McpReaSearchAndroidClasses",
+    "McpReaIdentifyFlutterBuild"
   ],
   "runtime": {
     "engines": [
