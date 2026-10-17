@@ -1,6 +1,6 @@
 package com.apex.agent.codenative
 
-import com.apex.agent.core.code.standard.StandardTextKernel
+import com.apex.agent.core.code.StandardTextKernel
 
 /**
  * # Native Text Kernel — 标准引擎文本加速核的 JNI 实现

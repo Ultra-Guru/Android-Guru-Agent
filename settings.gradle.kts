@@ -55,6 +55,20 @@ when {
     browserKitNested.isDirectory -> includeBuild(browserKitNested)
 }
 
+// ── 标准任务循环库 composite build（同款拆库模式）─────────────────────────
+// apex-agent-kit 从本仓库抽出为独立库（com.apex.agentkit:agent-loop ——
+// Coding「标准思考逻辑线」的循环内核：画像/权限门/压缩/子代理/并行工具/
+// 续跑语义/MCP 指引）。兄弟目录存在时自动接入（本地开发改一处两边生效）；
+// CI 由 workflow 按 gradle/agent-kit.lock 锁定版本检出（ci.yml / apk.yml /
+// release.yml 的 pinned checkout 步骤）；目录不存在时跳过 —— 走远端
+// Maven 坐标。子目录兜底位供库仓 consumer-check 双仓布局复用。
+val agentKitSibling = file("../apex-agent-kit")
+val agentKitNested = file("apex-agent-kit")
+when {
+    agentKitSibling.isDirectory -> includeBuild(agentKitSibling)
+    agentKitNested.isDirectory -> includeBuild(agentKitNested)
+}
+
 // 主APK
 include(":app")
 

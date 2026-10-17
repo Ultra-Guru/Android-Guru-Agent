@@ -6,13 +6,18 @@ import com.apex.agent.core.code.CodeAgentEngine
 import com.apex.agent.core.code.CodeContextProvider
 import com.apex.agent.core.code.CodeConversationMemory
 import com.apex.agent.core.code.RulesProvider
+import com.apex.agent.core.code.StandardTextKernel
 import com.apex.agent.core.code.standard.DualLogicCodeEngine
-import com.apex.agent.core.code.standard.StandardModeEngine
-import com.apex.agent.core.code.standard.StandardPermissionEffect
-import com.apex.agent.core.code.standard.StandardPermissionMode
-import com.apex.agent.core.code.standard.StandardPermissionRule
-import com.apex.agent.core.code.standard.StandardPermissionSource
-import com.apex.agent.core.code.standard.StandardTextKernel
+import com.apex.agent.core.code.standard.StandardKitAdapter
+import com.apex.agent.core.tools.catalog.McpToolNaming
+import com.apex.agent.core.tools.mcp.McpManager
+import com.apex.agentkit.loop.KitMcpInstructionSource
+import com.apex.agentkit.loop.KitMcpServerInstructions
+import com.apex.agentkit.loop.KitModelInfo
+import com.apex.agentkit.loop.KitPermissionEffect
+import com.apex.agentkit.loop.KitPermissionMode
+import com.apex.agentkit.loop.KitPermissionRule
+import com.apex.agentkit.loop.KitPermissionSource
 import com.apex.agent.core.llm.ModelRole
 import com.apex.agent.core.llm.runtime.ModelRoleRouter
 import com.apex.agent.permission.PermissionEffect
@@ -192,13 +197,14 @@ object CodeModule {
      *
      * ```
      * DualLogicCodeEngine ──┬── CodeAgentEngine（深潜线：七档思考，v1.2 既有行为）
-     *                       └── StandardModeEngine（标准线：标准任务循环）
+     *                       └── StandardKitAdapter → agent-loop 库（标准线：标准任务循环）
      * ```
      *
      * 深潜线配置取向（与 Agent 默认差异）：BUILD 循环 + 更高迭代上限
      * （编码任务链路长）+ 更大工具输出配额（code_read 输出被 2000 字符
-     * 默认值截断会毁掉编码循环）。标准线由 [StandardModeEngine] 自持
-     * 配置（画像回合预算 + 权限门 + 会话压缩 + 子代理派发）。
+     * 默认值截断会毁掉编码循环）。标准线由 [StandardKitAdapter] 接线
+     * apex-agent-kit 库内核（画像回合预算 + 权限门 + 会话压缩 + 子代理
+     * 派发 + 并行工具执行 + 续跑语义 + MCP 指引——循环语义全部在库中）。
      *
      * CodeViewModel 只面向 [CodeEngineFacade] / AgentEngine 编程，
      * 右上角「思考逻辑」切换经 DualLogicCodeEngine.switchLogic 路由。
@@ -228,8 +234,11 @@ object CodeModule {
         // v1.5 标准线：独立记忆通道 + C++ 文本加速核
         @Named("codeStandard") standardMemory: CodeConversationMemory,
         standardTextKernel: StandardTextKernel,
-        // #230 收尾：标准线专用执行器（仅环境门 —— StandardModeEngine 自带
+        // #230 收尾：标准线专用执行器（仅环境门 —— 标准线引擎自带
         // 业界标准式权限门，共用主执行器的组合门会双弹窗）
+        // MCP 服务器指引源（initialize 握手的 instructions 字段——标准线
+        // 注入系统提示词，模型拿到服务器官方用法指引）
+        mcpManager: McpManager,
         @javax.inject.Named("standardEngineTools") standardToolExecutor: ToolExecutor,
         // 权限设置源（设置层 → 标准线权限门的实时快照通道）
         settingsRepository: com.apex.agent.ui.screen.settings.SettingsRepository,
@@ -281,15 +290,15 @@ object CodeModule {
         // 设置层权限快照源：模式 + 规则三元组实时读取（与 PermissionModeGate
         // 的 settingsProvider 同款模式——改设置即时生效）；含空格的模式串
         // 视为 shell 命令模式（如 "git push*"），其余为工具 id 模式。
-        val standardPermissionSource = object : StandardPermissionSource {
-            override fun snapshot(): StandardPermissionSource.Snapshot {
+        val standardPermissionSource = object : KitPermissionSource {
+            override fun snapshot(): KitPermissionSource.Snapshot {
                 val settings = settingsRepository.agentSettings.value
-                return StandardPermissionSource.Snapshot(
+                return KitPermissionSource.Snapshot(
                     mode = when (settings.permissionMode) {
-                        PermissionMode.BYPASS -> StandardPermissionMode.BYPASS
-                        PermissionMode.DEFAULT -> StandardPermissionMode.DEFAULT
-                        PermissionMode.ACCEPT_EDITS -> StandardPermissionMode.ACCEPT_EDITS
-                        PermissionMode.PLAN -> StandardPermissionMode.PLAN
+                        PermissionMode.BYPASS -> KitPermissionMode.BYPASS
+                        PermissionMode.DEFAULT -> KitPermissionMode.DEFAULT
+                        PermissionMode.ACCEPT_EDITS -> KitPermissionMode.ACCEPT_EDITS
+                        PermissionMode.PLAN -> KitPermissionMode.PLAN
                     },
                     rules = settings.permissionRules
                         .filter { !it.pattern.contains(' ') }
@@ -302,16 +311,28 @@ object CodeModule {
         }
         // 模型信息源：PRIMARY 角色解析链首选项（模型 id + 真实上下文窗口）
         // ——标准线 env 块注入与压缩预算消费（修复恒 128K 的窗口盲区）。
-        val standardModelInfoProvider: () -> StandardModeEngine.ModelInfo? = {
+        val standardModelInfoProvider: () -> KitModelInfo? = {
             try {
                 (modelRuntime.resolve(ModelRole.PRIMARY) as? ModelRoleRouter.ResolutionResult.Success)
                     ?.primary?.profile
-                    ?.let { StandardModeEngine.ModelInfo(modelId = it.name, contextWindow = it.contextWindow) }
+                    ?.let { KitModelInfo(modelId = it.name, contextWindow = it.contextWindow) }
             } catch (t: Throwable) {
                 null // 解析失败 → 静态 128K 兜底，env 块省略模型行
             }
         }
-        val standard = StandardModeEngine(
+        // MCP 服务器指引源：已连接服务器的 initialize instructions →
+        // （服务器名 → 指引 + 注册表 id 前缀）。引擎按当前工具面过滤——
+        // 只有该服务器工具真的在面上，指引才注入（防幻觉指引）。
+        val standardMcpInstructionSource = KitMcpInstructionSource {
+            mcpManager.getServerInstructions().map { (server, instructions) ->
+                KitMcpServerInstructions(
+                    serverName = server,
+                    instructions = instructions,
+                    toolIdPrefix = "mcp__" + McpToolNaming.slug(server) + "__"
+                )
+            }
+        }
+        val standard = StandardKitAdapter(
             runtime = modelRuntime,
             toolRegistry = toolRegistry,
             // #230：标准线走引擎级权限门 + 仅环境门的执行器（防双弹窗）；
@@ -325,6 +346,8 @@ object CodeModule {
             permissionSource = standardPermissionSource,
             // 模型感知上下文窗口（env 块 + 压缩预算）
             modelInfoProvider = standardModelInfoProvider,
+            // MCP 服务器使用指引（initialize 握手透传）
+            mcpInstructionSource = standardMcpInstructionSource,
             // v3 子代理预算：标准线派发器与深潜线 SubAgentRunner 同源消费
             // （设置 → 子代理 的快照，改设置即时生效）
             subAgentSettingsProvider = {
@@ -335,13 +358,13 @@ object CodeModule {
     }
 
     /** 设置层规则 → 标准线规则（效应枚举一一对应）。 */
-    private fun PermissionRule.toStandard(): StandardPermissionRule =
-        StandardPermissionRule(
+    private fun PermissionRule.toStandard(): KitPermissionRule =
+        KitPermissionRule(
             pattern = pattern,
             effect = when (effect) {
-                PermissionEffect.ALLOW -> StandardPermissionEffect.ALLOW
-                PermissionEffect.ASK -> StandardPermissionEffect.ASK
-                PermissionEffect.DENY -> StandardPermissionEffect.DENY
+                PermissionEffect.ALLOW -> KitPermissionEffect.ALLOW
+                PermissionEffect.ASK -> KitPermissionEffect.ASK
+                PermissionEffect.DENY -> KitPermissionEffect.DENY
             }
         )
 }

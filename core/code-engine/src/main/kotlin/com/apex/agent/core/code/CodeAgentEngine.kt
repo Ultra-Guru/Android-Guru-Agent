@@ -32,7 +32,7 @@ import java.io.File
  *
  * # 双思考逻辑（v1.5）：本类是「深潜」线——自研七档思考逻辑；对外的
  * Coding 屏契约统一为 [CodeEngineFacade]，与「标准」线
- * （com.apex.agent.core.code.standard.StandardModeEngine）同构并联，
+ * （standard/StandardKitAdapter → agent-loop 库）同构并联，
  * 由 com.apex.agent.core.code.standard.DualLogicCodeEngine 按用户选择路由。
  * 本类行为零变化，只是显式落实接口（方法签名本就是这份契约的出处）。
  */

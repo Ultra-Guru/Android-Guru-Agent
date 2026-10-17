@@ -271,6 +271,22 @@ jobs:
           ref: ${{ steps.bkitpin.outputs.sha }}
           path: apex-browser-kit
 
+      - name: Read apex-agent-kit pin
+        id: akitpin
+        # 锁定文件 gradle/agent-kit.lock 由 sync-agent-kit 工作流自动维护：
+        # agent-kit main 有新绿提交 → 锁文件 bump → 本仓库 push → 全流水线
+        # 以新锁定版本构建。缺锁回退 main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/agent-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-agent-kit (agent-loop composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-agent-kit
+          ref: ${{ steps.akitpin.outputs.sha }}
+          path: apex-agent-kit
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:

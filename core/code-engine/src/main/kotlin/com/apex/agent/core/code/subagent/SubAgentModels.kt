@@ -7,7 +7,7 @@ import kotlinx.serialization.Serializable
  *
  * 此前子代理全部预算硬编码（3 并发 / 300s / 15 轮 / 8K 输出，封闭三类型），
  * 用户零可配置。v3 起预算走设置层（AgentSettings.subagent 快照经 DI 注入
- * [SubAgentRunner] / StandardSubAgentDispatcher），并开放自定义子代理类型。
+ * [SubAgentRunner] / 标准线库内派发器），并开放自定义子代理类型。
  */
 @Serializable
 data class SubAgentSettings(

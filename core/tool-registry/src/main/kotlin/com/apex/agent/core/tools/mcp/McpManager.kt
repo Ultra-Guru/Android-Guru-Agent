@@ -385,6 +385,21 @@ class McpManager(
     fun getConnectedServers(): List<String> = synchronized(lock) { clients.keys.toList() }
 
     /**
+     * 已连接服务器的使用指引快照（MCP 规范 initialize 响应的 `instructions`
+     * 字段；未上报的服务器不出现在结果里）。
+     *
+     * 消费方：标准任务循环引擎（经适配层）——服务器指引注入系统提示词的
+     * `<mcp_instructions>` 段（仅当该服务器工具在当前工具面上，防幻觉指引）。
+     */
+    fun getServerInstructions(): Map<String, String> = synchronized(lock) {
+        clients.entries.mapNotNull { (name, client) ->
+            runCatching { client.serverInstructions }.getOrNull()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { name to it }
+        }.toMap()
+    }
+
+    /**
      * 健康探针（[McpSupervisor] 看门狗用）：已连接且底层传输仍存活。
      *
      * - 未连接 → false；

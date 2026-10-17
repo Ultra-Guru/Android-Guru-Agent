@@ -1,4 +1,4 @@
-package com.apex.agent.core.code.standard
+package com.apex.agent.core.code
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -32,11 +32,14 @@ class StandardTextKernelTest {
     }
 
     @Test
-    fun `estimate tokens parity with session estimator`() {
+    fun `estimate tokens stable across lengths`() {
+        // 会话口径一致性的历史断言（原 StandardSession 估算器已随标准线
+        // 提取进库）——这里改为锁公式本身：ASCII ~4 chars/token。
         val samples = listOf("hello world", "中文与 English 混排", "a".repeat(999))
         samples.forEach { s ->
             assertEquals(
-                StandardSession.defaultTokenEstimator(s),
+                (s.count { it.code in 0x2E80..0x9FFF || it.code in 0xFF00..0xFFEF || it.code in 0x3000..0x303F } * 3) / 2 +
+                    s.count { it.code !in 0x2E80..0x9FFF && it.code !in 0xFF00..0xFFEF && it.code !in 0x3000..0x303F } / 4,
                 kernel.estimateTokens(s)
             )
         }

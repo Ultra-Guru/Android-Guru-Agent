@@ -1,4 +1,4 @@
-package com.apex.agent.core.code.standard
+package com.apex.agent.core.code
 
 /**
  * # Standard Text Kernel — 标准引擎的文本加速核（可选 SPI）
