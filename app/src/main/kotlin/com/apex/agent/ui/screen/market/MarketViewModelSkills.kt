@@ -18,17 +18,27 @@ import kotlinx.coroutines.launch
 //    importMcpConfig 管道）。
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 当前市场分级的 scope 值（安装默认启用工位 / 分级开关写入口径）。 */
-private fun MarketViewModel.tierScope(): String = _uiState.value.tier.name.lowercase()
-
 /**
  * 分级独立启停（per-scope）：开关只写当前 [MarketTier] 对应的工位 ——
  * Coding 市场里关掉不影响 Agent 市场（修「两分级同步」问题；另一侧
  * 的开关状态由 [MarketSkillRow.enabledAgent]/[enabledCoding] 各自展示）。
+ * （tierScope() 为 VM internal 成员，见 MarketViewModel.kt）
  */
 fun MarketViewModel.toggleSkill(skillId: String, enabled: Boolean) {
     viewModelScope.launch(Dispatchers.IO) {
         skillRegistry.setEnabledForScope(skillId, tierScope(), enabled)
+        refresh()
+    }
+}
+
+/**
+ * 保存技能配置值（详情对话框表单）：写入后 SkillRegistry 发 changes ——
+ * 斜杠菜单自动重建（配置齐了条目即刻出现），市场行「需配置」徽标即时消隐。
+ */
+fun MarketViewModel.saveSkillConfig(skillId: String, values: Map<String, String>) {
+    viewModelScope.launch(Dispatchers.IO) {
+        skillRegistry.setConfigValues(skillId, values)
+        message(languageManager.getString(R.string.market_skill_config_saved))
         refresh()
     }
 }

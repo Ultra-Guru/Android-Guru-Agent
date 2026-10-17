@@ -384,6 +384,9 @@ class MarketViewModel @Inject constructor(
 
     internal fun message(msg: String) = _uiState.update { it.copy(lastMessage = msg) }
 
+    /** 当前市场分级的 scope 值（安装默认启用工位 / 分级开关写入口径；PR378 per-scope）。 */
+    internal fun tierScope(): String = _uiState.value.tier.name.lowercase()
+
     // ═══ MCP ═══
 
     // MCP 工位服务器操作 / 精选目录 / 启动时间线 / Skills 安装卸载导入已按

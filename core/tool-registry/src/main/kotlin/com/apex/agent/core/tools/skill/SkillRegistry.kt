@@ -272,7 +272,8 @@ class SkillRegistry(
                 for ((k, v) in fields) {
                     (v as? kotlinx.serialization.json.JsonPrimitive)?.let { map[k] = it.content }
                 }
-                configValues[skillId] = map
+                // 键同样走 canonicalId 归一（老设备 sidecar 存 kebab/snake 旧名）
+                configValues[SkillNaming.canonicalId(skillId)] = map
             }
         }.onFailure {
             logger.log(SkillHotReloadLogLevel.WARN, "技能配置值加载失败（已忽略，按未配置处理）：${it.message}")
@@ -795,7 +796,8 @@ class SkillRegistry(
     fun isEnabledForScope(skillId: String, scope: String): Boolean {
         val normalized = normalizeScopeOrAll(scope)
         return synchronized(lock) {
-            val skill = installedSkills[skillId] ?: return@synchronized false
+            val skill = installedSkills[skillId] ?: installedSkills[SkillNaming.canonicalId(skillId)]
+                ?: return@synchronized false
             when (normalized) {
                 SCOPE_CODING -> skill.enabledCoding
                 SCOPE_AGENT -> skill.enabledAgent
@@ -809,7 +811,10 @@ class SkillRegistry(
      * manifest 声明 ∩ 双工位启用集合；未安装 = 空集。
      */
     fun effectiveScopesOf(skillId: String): Set<String> =
-        synchronized(lock) { installedSkills[skillId]?.let { effectiveScopes(it) } ?: emptySet() }
+        synchronized(lock) {
+            (installedSkills[skillId] ?: installedSkills[SkillNaming.canonicalId(skillId)])
+                ?.let { effectiveScopes(it) } ?: emptySet()
+        }
 
     /**
      * 技能生效工位集合：manifest 声明 ∩ 双工位启用集合。
@@ -835,8 +840,10 @@ class SkillRegistry(
     // ═══ 用户配置值（就绪门禁：没有配置好的不进斜杠菜单）═══
 
     /** 读取某技能的用户配置值（未配置 = 空表）。 */
-    fun getConfigValues(skillId: String): Map<String, String> =
-        synchronized(lock) { configValues[skillId]?.toMap() ?: emptyMap() }
+    fun getConfigValues(skillId: String): Map<String, String> = synchronized(lock) {
+        val id = skillId.takeIf { it in configValues || it in installedSkills } ?: SkillNaming.canonicalId(skillId)
+        configValues[id]?.toMap() ?: emptyMap()
+    }
 
     /**
      * 整表写入某技能的配置值（市场详情表单保存；覆盖写，空白值剔除）。
@@ -844,15 +851,16 @@ class SkillRegistry(
      */
     fun setConfigValues(skillId: String, values: Map<String, String>) {
         val changed = synchronized(lock) {
-            if (installedSkills[skillId] == null) return@synchronized false
+            val id = skillId.takeIf { it in installedSkills } ?: SkillNaming.canonicalId(skillId)
+            if (installedSkills[id] == null) return@synchronized false
             val cleaned = values.filterValues { it.isNotBlank() }
-            val before = configValues[skillId]
-            if (cleaned.isEmpty()) configValues.remove(skillId) else configValues[skillId] = cleaned.toMutableMap()
-            installedSkills[skillId]?.let {
-                installedSkills[skillId] = it.copy(config = configValues[skillId]?.toMutableMap() ?: mutableMapOf())
+            val before = configValues[id]
+            if (cleaned.isEmpty()) configValues.remove(id) else configValues[id] = cleaned.toMutableMap()
+            installedSkills[id]?.let {
+                installedSkills[id] = it.copy(config = configValues[id]?.toMutableMap() ?: mutableMapOf())
             }
             persistConfigValues()
-            before != configValues[skillId]
+            before != configValues[id]
         }
         if (changed) notifyChanged()
     }
@@ -862,8 +870,10 @@ class SkillRegistry(
      * 未安装 / 无配置声明 = true（就绪）。斜杠菜单与自动装备据此门禁。
      */
     fun isConfigured(skillId: String): Boolean = synchronized(lock) {
-        val skill = installedSkills[skillId] ?: return@synchronized true
-        SkillConfigRules.isConfigured(skill.manifest, configValues[skillId] ?: emptyMap())
+        val skill = installedSkills[skillId] ?: installedSkills[SkillNaming.canonicalId(skillId)]
+            ?: return@synchronized true
+        val id = if (skill.manifest.id in configValues) skill.manifest.id else SkillNaming.canonicalId(skillId)
+        SkillConfigRules.isConfigured(skill.manifest, configValues[id] ?: emptyMap())
     }
 
     /**
