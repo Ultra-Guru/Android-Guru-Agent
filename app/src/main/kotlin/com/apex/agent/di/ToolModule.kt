@@ -441,6 +441,9 @@ object ToolModule {
         memorySearchNodesTool: MemorySearchNodesTool,
         memoryRecallMacroTool: MemoryRecallMacroTool,
         browserAgentTools: BrowserAgentTools,
+        // FusionBundle 复合技能包体系：fusion_* 工具族注册依赖（输入栏入口
+        // 与模型侧入口共用同一控制器）。
+        fusionController: com.apex.agent.fusion.FusionBundleController,
         // T76: Linux environment productionization 依赖
         linuxEnvironmentHealth: LinuxEnvironmentHealth,
         ubuntuBootstrapManager: UbuntuBootstrapManager,
@@ -974,6 +977,11 @@ object ToolModule {
         // 技能渐进披露：模型侧装载入口。目录在系统提示词，方法论全文经本工具
         // 装载（工具结果即时返回全文 + 写入激活集持续注入后续轮次）。
         registry.register(SafeAgentTool(SkillActivateTool(skillRegistry, skillActivation)))
+
+        // ═══ 13b. FusionBundle 工具族（fusion_list / fusion_info /
+        // fusion_activate —— 复合包的模型侧入口；注册体在卫星文件
+        // [ToolModuleFusionRegistration.kt]，本文件预算已顶）═══
+        registerFusionBundleTools(registry, fusionController)
 
         // ═══ 14. Tool System v3/v5 新工具（纯 JVM）—— 注册体拆至同文件（同上 SRP 预算）═══
         registerToolSystemV3V5Tools(registry, conversationMemory)
