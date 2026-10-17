@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Tab
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -119,6 +120,10 @@ fun BrowserScreen(viewModel: BrowserViewModel = hiltViewModel()) {
         }
 
         SessionCard(state)
+        LiveCard(
+            state = state.state,
+            onViewLivePage = viewModel::viewLivePage
+        )
         TabsCard(
             tabs = state.tabs,
             onSwitchTab = viewModel::switchTab,
@@ -187,6 +192,40 @@ private fun SessionCard(state: BrowserViewModel.BrowserUiState) {
                     overflow = TextOverflow.Ellipsis
                 )
             }
+        }
+    }
+}
+
+/**
+ * 实时页面卡（v1.4.1）：Agent 驾驶的实时画面入口 —— 透明悬浮窗随浏览器使用
+ * 自动弹出，这里始终可一键唤起；HIDDEN 时按钮变为「打开浏览器」（新建会话
+ * 进人工接管，全屏浮窗给用户直接用）。状态文案随会话状态切换。
+ */
+@Composable
+private fun LiveCard(
+    state: BrowserEngine.BrowserSessionState,
+    onViewLivePage: () -> Unit,
+) {
+    GlassCard(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            CardHeader(icon = Icons.Outlined.Visibility, title = stringResource(R.string.browser_screen_live_title))
+            Text(
+                stringResource(liveCardDescRes(state)),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            GlassButton(
+                text = stringResource(
+                    if (state == BrowserEngine.BrowserSessionState.HIDDEN) {
+                        R.string.browser_screen_live_open
+                    } else {
+                        R.string.browser_screen_live_view
+                    }
+                ),
+                onClick = onViewLivePage,
+                modifier = Modifier.fillMaxWidth(),
+                leadingIcon = Icons.Outlined.Visibility
+            )
         }
     }
 }
@@ -410,4 +449,13 @@ private fun sessionStateDescRes(state: BrowserEngine.BrowserSessionState): Int =
     BrowserEngine.BrowserSessionState.AGENT_DRIVING -> R.string.browser_screen_state_agent_driving_desc
     BrowserEngine.BrowserSessionState.WAITING_HUMAN -> R.string.browser_screen_state_waiting_human_desc
     BrowserEngine.BrowserSessionState.RECOVERING -> R.string.browser_screen_state_recovering_desc
+}
+
+/** 实时页面卡：状态 → 引导文案资源。 */
+@StringRes
+private fun liveCardDescRes(state: BrowserEngine.BrowserSessionState): Int = when (state) {
+    BrowserEngine.BrowserSessionState.HIDDEN -> R.string.browser_screen_live_desc_idle
+    BrowserEngine.BrowserSessionState.AGENT_DRIVING -> R.string.browser_screen_live_desc_driving
+    BrowserEngine.BrowserSessionState.WAITING_HUMAN -> R.string.browser_screen_live_desc_handoff
+    BrowserEngine.BrowserSessionState.RECOVERING -> R.string.browser_screen_live_desc_recovering
 }
