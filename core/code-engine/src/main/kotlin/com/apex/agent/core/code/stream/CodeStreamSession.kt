@@ -88,6 +88,9 @@ class CodeStreamSession {
         streamingThinking = null
         streamingAssistant?.let { closeStreamingEntry(it) }
         streamingAssistant = null
+        // 上一轮的在飞胶囊同样静默收口（防御：中止事件未达且本地收尾
+        // 遗漏的路径，RUNNING/WAITING 胶囊带进新 run 会无限计时转圈）
+        finalizeInFlightCapsules(System.currentTimeMillis())
         // 文档语义：「本轮运行」触碰的文件 —— 每 run 归零重新累计
         affectedFiles.clear()
         append(StreamEntry.UserEntry(nextId(), userText))
@@ -96,6 +99,25 @@ class CodeStreamSession {
         terminalBusy = false
         terminalCommandSummary = ""
         terminalExitCode = null
+    }
+
+    /**
+     * VM 侧本地防御式收尾（用户点「停止」时调用，对齐 Agent 屏
+     * AgentChatViewModel.abort 的防御语义）。
+     *
+     * 收集协程取消后，引擎 catch(CancellationException) 里的
+     * emit(AgentEvent.Aborted) 会在已取消协程上再次抛出取消异常——
+     * 收尾事件永远到不了本会话；不本地收口，时间轴将冻结在流式态
+     * （结论气泡永远挂「▍」光标、RUNNING 胶囊无限计时）。
+     *
+     * 幂等安全：无任何在飞条目（正常完成后误调）时 no-op，
+     * 不落多余的「已中止」卡。
+     */
+    fun abortLocally(nowMs: Long = System.currentTimeMillis()) {
+        val hadInFlight = streamingThinking != null || streamingAssistant != null ||
+            toolCalls.values.any { !it.isTerminal }
+        if (!hadInFlight) return
+        finalizeAbortedState(nowMs)
     }
 
     /** VM 注入系统说明行（AUTO 预检决策 / 深水区升级等）。 */
@@ -127,7 +149,11 @@ class CodeStreamSession {
                     streamingThinking = StreamEntry.ThinkingEntry(nextId(), event.text, true)
                     append(streamingThinking!!)
                 } else {
-                    replaceEntry(cur.id, cur.copy(text = cur.text + event.text, isStreaming = true))
+                    // 引用同步回写：不回写则 cur 永远停在首块快照，第三个
+                    // Chunk 起条目被「首块+最新块」覆盖（中间块丢失）。
+                    val merged = cur.copy(text = cur.text + event.text, isStreaming = true)
+                    streamingThinking = merged
+                    replaceEntry(merged.id, merged)
                 }
             }
 
@@ -142,6 +168,9 @@ class CodeStreamSession {
                     // 全程空白思考（模型未思考/网关空串）：移除占位卡而非留白
                     removeEntry(cur.id)
                 } else {
+                    // 引用同步回写后 cur.text 即全量累积；ThinkingComplete
+                    // 的 fullThought 与本轮窗口同源（引擎 reasoningBuilder
+                    // 每轮局部重建、UI 引用同轮首块起累积），保持 ifBlank 兑底。
                     replaceEntry(cur.id, cur.copy(text = event.fullThought.ifBlank { cur.text }, isStreaming = false))
                 }
                 streamingThinking = null
@@ -177,7 +206,12 @@ class CodeStreamSession {
                     streamingAssistant = StreamEntry.AssistantEntry(nextId(), event.text, true)
                     append(streamingAssistant!!)
                 } else {
-                    replaceEntry(cur.id, cur.copy(text = cur.text + event.text, isStreaming = true))
+                    // 引用同步回写（同 ThinkingChunk）：不回写则流式条目
+                    // 从第三个 Chunk 起丢失中间块——旧代码靠 Complete 的
+                    // fullText 整体覆写掩盖，本次改为累积优先后必须修。
+                    val merged = cur.copy(text = cur.text + event.text, isStreaming = true)
+                    streamingAssistant = merged
+                    replaceEntry(merged.id, merged)
                 }
             }
 
@@ -192,7 +226,15 @@ class CodeStreamSession {
                     // 全程空白回复（纯工具调用轮）：移除空气泡而非留白
                     removeEntry(cur.id)
                 } else {
-                    replaceEntry(cur.id, cur.copy(text = event.fullText.ifBlank { cur.text }, isStreaming = false))
+                    // ═══ 一致性修复（对齐 Agent 屏 AgentChatEventApplier 同款）═══
+                    // 引擎 contentBuilder 每轮迭代局部重建（ReAct 多轮只带
+                    // 末轮文本），完成事件用 fullText 整体覆写会把跨轮累积
+                    // 的气泡截成末轮残句（用户实测：多轮工具调用后结论
+                    // 只剩末轮两三个字）。UI 已流式累积的文本才是用户看到
+                    // 的全文；fullText 仅在 UI 侧为空时兑底（反思修正轮等
+                    // 文本可能从未流经 UI，避免落空气泡）。
+                    val finalText = cur.text.ifBlank { event.fullText }
+                    replaceEntry(cur.id, cur.copy(text = finalText, isStreaming = false))
                 }
                 streamingAssistant = null
             }
@@ -232,15 +274,10 @@ class CodeStreamSession {
 
             is AgentEvent.Aborted -> {
                 closeOpenCycle()
-                // 中止同样收口流式条目（与 beginRun 双保险：Aborted 后可能
-                // 没有下一轮 beginRun，气泡不能永远挂「生成中」）
-                streamingThinking?.let { closeStreamingEntry(it) }
-                streamingThinking = null
-                streamingAssistant?.let { closeStreamingEntry(it) }
-                streamingAssistant = null
-                // 中止时终端命令不会再来 Complete —— 运行中信号就地收束
-                terminalBusy = false
-                append(StreamEntry.StopEntry(nextId(), "已中止"))
+                // 中止同样收口流式条目与在飞胶囊（与 beginRun 双保险：
+                // Aborted 后可能没有下一轮 beginRun，气泡不能永远挂
+                // 「生成中」，RUNNING 胶囊不能无限计时）
+                finalizeAbortedState()
             }
 
             is AgentEvent.UserInputRequired -> {
@@ -445,6 +482,42 @@ class CodeStreamSession {
             terminalExitCode = exitCode
         }
         trackVerifyCycleEnd(existing.kind, event.callId, event.success)
+    }
+
+    // ═══ 内部：中止收尾 ═══
+
+    /** 中止态统一收口：流式思考/结论落终态（已累积文本保留）+ 在飞胶囊
+     * 置 PARTIAL + 「已中止」停止卡。事件路径（[AgentEvent.Aborted]）与
+     * VM 本地收尾（[abortLocally]）共用。 */
+    private fun finalizeAbortedState(nowMs: Long = System.currentTimeMillis()) {
+        streamingThinking?.let { closeStreamingEntry(it) }
+        streamingThinking = null
+        streamingAssistant?.let { closeStreamingEntry(it) }
+        streamingAssistant = null
+        // 中止时终端命令不会再来 Complete —— 运行中信号就地收束
+        terminalBusy = false
+        finalizeInFlightCapsules(nowMs)
+        append(StreamEntry.StopEntry(nextId(), ABORTED_TEXT))
+    }
+
+    /**
+     * 在飞（RUNNING/WAITING）胶囊置 PARTIAL：没有结局的调用按中断折叠
+     * 计时 —— 与检查点恢复同语义（CodeStreamCheckpoint.toEntries：正在跑
+     * 的调用没有结局，恢复后由用户决定单工具重试或整轮重跑）。
+     */
+    private fun finalizeInFlightCapsules(nowMs: Long) {
+        terminalBuffers.values.forEach { it.flush() }
+        toolCalls.values
+            .filter { it.status == ToolCallStatus.RUNNING || it.status == ToolCallStatus.WAITING }
+            .forEach { call ->
+                updateCall(
+                    call.copy(
+                        status = ToolCallStatus.PARTIAL,
+                        endAt = if (call.startAt > 0) nowMs else call.endAt,
+                        summary = ABORTED_TEXT
+                    )
+                )
+            }
     }
 
     // ═══ 内部：验证闭环 ═══
@@ -653,6 +726,9 @@ class CodeStreamSession {
         const val SUMMARY_MAX = 24
         const val NON_BASH_LOG_TAIL_CHARS = 2000
         const val EXIT_CODE_TAIL_LINES = 8
+
+        /** 中止文案：停止卡与中断胶囊的副标题共用。 */
+        const val ABORTED_TEXT = "已中止"
         val EXIT_CODE_REGEX = Regex("""(?:exit(?:\s+code)?|Exit:)[:\s]+(\d+)\b""", RegexOption.IGNORE_CASE)
         val ENTRY_SEQ_REGEX = Regex("""(?:^|-)e-(\d+)$""")
     }

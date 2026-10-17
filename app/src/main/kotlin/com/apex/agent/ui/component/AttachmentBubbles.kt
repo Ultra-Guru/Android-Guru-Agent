@@ -40,7 +40,9 @@ fun MessageAttachmentList(
 
 @Composable
 private fun FileBubble(attachment: MessageAttachment, onClick: () -> Unit) {
-    val cardBg = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.08f)
+    // 用户气泡已改实色 primary（与回复气泡区分）：附件卡配色同步跟随
+    // onPrimary 口径，保证在主色实底上可读。
+    val cardBg = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.08f)
     Surface(onClick = onClick, shape = RoundedCornerShape(10.dp), color = cardBg, modifier = Modifier.fillMaxWidth()) {
         Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Surface(modifier = Modifier.size(38.dp), shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
@@ -55,10 +57,10 @@ private fun FileBubble(attachment: MessageAttachment, onClick: () -> Unit) {
                 }
             }
             Column(modifier = Modifier.weight(1f)) {
-                Text(attachment.name, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                Text("${getTypeLabel(attachment.mimeType)} · ${formatFileSize(attachment.sizeBytes)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f))
+                Text(attachment.name, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onPrimary)
+                Text("${getTypeLabel(attachment.mimeType)} · ${formatFileSize(attachment.sizeBytes)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f))
             }
-            Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f))
+            Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f))
         }
     }
 }
@@ -75,8 +77,8 @@ private fun ImageBubble(attachment: MessageAttachment, onClick: () -> Unit) {
             )
         }
         Row(modifier = Modifier.padding(top = 3.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(attachment.name, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(formatFileSize(attachment.sizeBytes), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.4f))
+            Text(attachment.name, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(formatFileSize(attachment.sizeBytes), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.4f))
         }
     }
 }

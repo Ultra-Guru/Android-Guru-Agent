@@ -68,6 +68,26 @@ val TERMINAL_TOOL_RUN_POLICIES: Map<String, ToolRunPolicy> = mapOf(
 )
 
 /**
+ * ═══ 市场目录检索工具的执行器策略（P0 超时错配修复）═══
+ *
+ * 背景（用户实测 app-20261017 日志）：MarketSearch 拉取官方技能/目录双源
+ * （GitHub raw / hub index），注入的 OkHttp 客户端 connect 15s + read 30s；
+ * readOnly() 注解经 DefaultToolRunPolicyResolver 推断为 quickRead() ——
+ * **30s 执行预算先于工具自身的网络超时窗口杀掉调用**，慢网下必然
+ * "Error: timeout: tool call exceeded 30000ms budget"。SkillSearch（GitHub
+ * API 检索）同理落在推断的 60s 线附近。
+ *
+ * 原则（与终端族同款）：执行器预算 = 工具自身内部预算 + 余量；不盲重试
+ * （引擎侧瞬时失败阶梯已带退避重试，执行器层再重试只会叠加等待）。
+ */
+val MARKET_TOOL_RUN_POLICIES: Map<String, ToolRunPolicy> = mapOf(
+    // kind=all 顺序拉双源（skills + mcp servers），每源最坏 15+30s → 90s，加余量。
+    "MarketSearch" to ToolRunPolicy(timeoutMs = 120_000L, maxRetries = 0),
+    // 单次 GitHub API 检索（最坏 45s）+ 本地模板匹配。
+    "SkillSearch" to ToolRunPolicy(timeoutMs = 90_000L, maxRetries = 0)
+)
+
+/**
  * ═══ P2 修复（开放世界工具族超时错配）：前缀策略表 ═══
  *
  * 背景：browser_*（15 个）/ McpCall / mcp__server__tool（动态一等工具）/

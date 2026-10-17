@@ -211,7 +211,11 @@ internal fun UserBubble(
         horizontalArrangement = Arrangement.End
     ) {
         Surface(
-            color = MaterialTheme.colorScheme.primaryContainer,
+            // 用户/回复气泡区分（用户反馈「两者颜色一样」）：回复气泡是 primary
+            // 玻璃薄霜，用户侧旧值 primaryContainer 在浅色主题下同为淡薄荷系——
+            // 肉眼不可分。改实色 primary + onPrimary：实色 vs 玻璃、饱和 vs 淡染
+            // （与 Code 屏 UserBubble 同口径，双屏一致）。
+            color = MaterialTheme.colorScheme.primary,
             shape = RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp),
             modifier = Modifier.widthIn(max = 320.dp)
         ) {
@@ -232,7 +236,7 @@ internal fun UserBubble(
                         style = MaterialTheme.typography.labelSmall,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        color = MaterialTheme.colorScheme.onPrimary
                     )
                     Spacer(modifier = Modifier.weight(1f))
                     // 时间戳可由设置中心关闭（关闭时不渲染，行内其余元素对齐不变）
@@ -241,7 +245,7 @@ internal fun UserBubble(
                             text = timeStr,
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f)
                         )
                     }
                     Box {
@@ -252,7 +256,7 @@ internal fun UserBubble(
                             Icon(
                                 imageVector = Icons.Default.MoreVert,
                                 contentDescription = stringResource(R.string.chat_cd_message_actions),
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                                tint = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f),
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -285,7 +289,7 @@ internal fun UserBubble(
                         Text(
                             text = message.text,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onPrimary
                         )
                     }
                 }
