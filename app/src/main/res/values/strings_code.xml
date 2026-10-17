@@ -239,4 +239,5 @@
     <string name="code_git_commit_hint">Commit message</string>
     <string name="code_git_commit">Commit all changes</string>
     <string name="code_git_new_file">New untracked file (not in index yet)</string>
+    <string name="code_stream_terminal_running">Running</string>
 </resources>

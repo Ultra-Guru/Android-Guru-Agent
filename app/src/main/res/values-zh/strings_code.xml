@@ -238,4 +238,5 @@
     <string name="code_git_commit_hint">提交说明</string>
     <string name="code_git_commit">提交全部变更</string>
     <string name="code_git_new_file">新的未跟踪文件（尚未加入索引）</string>
+    <string name="code_stream_terminal_running">运行中</string>
 </resources>
