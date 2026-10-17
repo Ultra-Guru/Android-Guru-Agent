@@ -125,7 +125,7 @@ class SkillRegistryScopeTest {
         registry.setEnabled("legacy", false)
         // 旧格式即 .disabled 平面文件（无 per-scope 行）
         val disabledText = File(skillsDir, ".disabled").readText()
-        assertTrue("旧格式文件含禁用 id", disabledText.contains("legacy"))
+        assertTrue("旧格式文件含禁用 id（v5 归一后为 canonical 形）", disabledText.contains("Legacy"))
 
         val reloaded = SkillRegistry(skillsDir)
         assertFalse(reloaded.isEnabledForScope("legacy", SkillRegistry.SCOPE_AGENT))
@@ -157,11 +157,11 @@ class SkillRegistryScopeTest {
 
         assertTrue(
             "agent 目录不含该技能",
-            registry.getSkillDigests(SkillRegistry.SCOPE_AGENT).none { it.id == "shared" }
+            registry.getSkillDigests(SkillRegistry.SCOPE_AGENT).none { it.id == "Shared" }
         )
         assertTrue(
             "coding 目录仍含该技能",
-            registry.getSkillDigests(SkillRegistry.SCOPE_CODING).any { it.id == "shared" }
+            registry.getSkillDigests(SkillRegistry.SCOPE_CODING).any { it.id == "Shared" }
         )
         assertTrue(
             "agent prompt 注入不含该技能",
@@ -249,11 +249,11 @@ class SkillRegistryScopeTest {
 
         assertTrue(
             "未配置好的技能不进菜单",
-            provider.getActiveSkills().none { it.id == "gated" }
+            provider.getActiveSkills().none { it.id == "Gated" }
         )
 
         registry.setConfigValues("gated", mapOf("token" to "tk-1"))
-        val item = provider.getActiveSkills().first { it.id == "gated" }
+        val item = provider.getActiveSkills().first { it.id == "Gated" }
         assertEquals(
             "配置齐后出现且生效工位为双工位",
             setOf(SkillRegistry.SCOPE_AGENT, SkillRegistry.SCOPE_CODING),
@@ -270,11 +270,11 @@ class SkillRegistryScopeTest {
 
         assertTrue(
             "agent 菜单不含该技能",
-            provider.getActiveSkills(SkillRegistry.SCOPE_AGENT).none { it.id == "scoped" }
+            provider.getActiveSkills(SkillRegistry.SCOPE_AGENT).none { it.id == "Scoped" }
         )
         assertTrue(
             "coding 菜单仍含该技能",
-            provider.getActiveSkills(SkillRegistry.SCOPE_CODING).any { it.id == "scoped" }
+            provider.getActiveSkills(SkillRegistry.SCOPE_CODING).any { it.id == "Scoped" }
         )
     }
 
