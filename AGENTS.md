@@ -20,11 +20,14 @@
   提 PR（其 consumer-check 会对本仓库跑编译防下游崩）。v1.5.0 起浏览器
   自动化为**内置大功能**：BrowserAgentTools（browser_* 工具协议）与 DI
   接线（`BrowserKitModule`，三层坐标 + LiveViewOverlay 实时页面悬浮窗
-  单例经 api 传递给 app）住在 `:platform:browser-agent`；app 侧只留
-  CyberNeonBallManager / NeonRingView（透明玻璃球视觉装饰，依赖 app 的
-  LanguageManager 与资源；点击球切换实时页面悬浮窗）、BrowserScreen
-  一级入口（含「实时页面」卡）与悬浮球接线；网页自动化插件壳已删除
-  （PluginManager 对旧插件 id 拦截并引导卸载）；
+  与 InAppChromeHost 内嵌宿主单例经 api 传递给 app）住在
+  `:platform:browser-agent`；app 侧只留 CyberNeonBallManager /
+  NeonRingView（透明玻璃球视觉装饰，依赖 app 的 LanguageManager 与资源；
+  点击球切换实时页面悬浮窗）、BrowserScreen 一级入口（v1.5.1 双页签：
+  浏览器页签 = App 内嵌完整浏览器 InAppBrowserPane（BrowserChrome +
+  引擎 WebView，零悬浮窗权限；承载互斥见库侧 InAppHostingArbiter），
+  仪表盘页签 = 观测/干预面板 + 悬浮窗权限引导卡）与悬浮球接线；网页
+  自动化插件壳已删除（PluginManager 对旧插件 id 拦截并引导卸载）；
 - **本地验证顺序**：改 core 层先跑对应模块 `test`，改 app 层跑
   `:app:compileDebugKotlin`；CI（pr 触发）跑静态分析 + app 编译 +
   9 步测试 + debug APK + 结构质量四门禁；
