@@ -359,7 +359,7 @@ jobs:
 
       - name: Diagnose foundation dependency
         run: |
-          ./gradlew :app:dependencies --configuration debugCompileClasspath 2>&1 | grep -iE "foundation|compose-bom|compose-ui|material3" | head -50
+          ./gradlew :app:dependencies --configuration debugCompileClasspath 2>&1 | grep -iE "foundation|compose-bom|compose-ui|material3" | sed -n '1,50p'
 
       - name: Prewarm dependencies (retry on JitPack flakiness)
         run: |
@@ -409,7 +409,7 @@ jobs:
           if [ "$KOTLIN_ERRORS" -gt 0 ]; then
             echo ""
             echo "❌ Kotlin compilation errors (must fix):"
-            grep -E "^e: " compile.log | grep -v "\[ksp\]" | head -30
+            grep -E "^e: " compile.log | grep -v "\[ksp\]" | sed -n '1,30p'
             exit 1
           fi
 
