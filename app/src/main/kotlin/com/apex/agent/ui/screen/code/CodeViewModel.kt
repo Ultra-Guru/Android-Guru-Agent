@@ -42,7 +42,9 @@ import com.apex.agent.ui.screen.agent.CODING_SCREEN_MODES
 import com.apex.agent.ui.screen.agent.PendingPipelineCommand
 import com.apex.agent.ui.screen.agent.llmConfiguredFlow
 import com.apex.agent.ui.screen.code.editor.AtRefParser
+import com.apex.agent.ui.screen.code.editor.EditorFileException
 import com.apex.agent.ui.screen.code.editor.EditorFileLoader
+import com.apex.agent.ui.screen.code.editor.EditorLoadError
 import com.apex.agent.ui.screen.code.session.CodeSessionSnapshot
 import com.apex.agent.ui.screen.code.session.CodeSessionStore
 import com.apex.agent.ui.screen.code.session.toStreamEntries
@@ -77,47 +79,41 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * # Code ViewModel — Coding 模式屏的状态与事件归约
  *
- * 与 AgentChatViewModel 的关系：**平行实现而非复用**（两模式的交互面差异大 ——
- * Code 屏以工作区为中心、工具卡以 diff/验证为核心），但引擎侧契约完全一致：
+ * 与 AgentChatViewModel 的关系：**平行实现而非复用**（两模式交互面差异大
+ * —— Code 屏以工作区为中心、工具卡以 diff/验证为核心），但引擎侧契约一致：
  * AgentEvent 流 → UI 状态归约 → ConfirmationSink/submitUserInput 回传。
  *
- * 精简的事件归约（16ms 级流式节流不做 —— 编码回复长度可控，直接增量 append），
- * 实现已按 God-file 预算拆至同包扩展 [CodeEventReducer.kt]（模式同
- * AgentChatEventApplier）：
- * - ResponseChunk → 当前助手消息追加；
- * - ToolCallStart/Complete → 工具卡（CodeEdit/write 渲染 diff 摘要）；
- * - UserInputRequired → 挂起等待用户输入（AskUser）；
- * - Complete/Aborted/Error → 收尾 + todo 快照刷新。
+ * 精简的事件归约（16ms 级流式节流不做 —— 编码回复长度可控，直接增量
+ * append），实现已按 God-file 预算拆至同包扩展 [CodeEventReducer.kt]
+ * （模式同 AgentChatEventApplier）：ResponseChunk → 助手消息追加；
+ * ToolCallStart/Complete → 工具卡（CodeEdit/write 渲染 diff 摘要）；
+ * UserInputRequired → 挂起等输入（AskUser）；Complete/Aborted/Error →
+ * 收尾 + todo 快照刷新。
  *
  * ## v1.0 会话恢复（#152）
  *
- * 引擎侧上下文由 CodeConversationMemory 按 workspaceId 持久化（API 级完整
- * 历史，setActiveWorkspace 时自动恢复）；本层补齐 **UI 快照**——消息列表 /
- * todos / 当前文件存 `code_sessions/ws_<id>.json`，进程被杀后回到现场：
- * - bindWorkspace 时「冲刷旧快照 → 恢复新快照」串行（Mutex 防快速切换交错）；
- * - 消息变更后 800ms 防抖落盘（对齐 Agent 模式 ChatHistoryManager 惯例）；
- * - onCleared 时经独立 IO scope 最后冲刷一次（viewModelScope 在 onCleared
- *   前已被取消，防抖窗口内的尾巴变更不能丢）。
+ * 引擎侧上下文由 CodeConversationMemory 按 workspaceId 持久化（API 级
+ * 完整历史，setActiveWorkspace 时自动恢复）；本层补齐 **UI 快照**——
+ * 消息列表 / todos / 当前文件存 `code_sessions/ws_<id>.json`：bindWorkspace
+ * 「冲刷旧快照 → 恢复新快照」串行（Mutex 防快速切换交错）；消息变更后
+ * 800ms 防抖落盘（对齐 Agent 屏惯例）；onCleared 经独立 IO scope 最后
+ * 冲刷（viewModelScope 届时已取消，防抖尾巴不能丢）。
  *
  * ## v1.0 编辑器面板与 @ 引用（#154）
  *
- * - sendMessage 前经 AtRefParser 提取 `@file:line` 选区引用：引用块拼进
- *   引擎输入（用户消息 UI 展示保持原文），首个引用设为当前文件并打开面板；
- * - CodeEdit / CodeWrite 成功后自动跟随被改文件（编辑器显示最新现场）；
- * - 面板数据直读工作区文件（EditorFileLoader，绕开工具输出的 8000 字符
- *   截断），行点击回填 `@file:line` 到输入草稿。
+ * sendMessage 前经 AtRefParser 提取 `@file:line` 选区引用：引用块拼进
+ * 引擎输入（用户消息 UI 展示保持原文），首个引用设为当前文件并打开面板；
+ * CodeEdit / CodeWrite 成功后自动跟随被改文件；面板数据直读工作区文件
+ * （EditorFileLoader，绕开工具输出 8000 字符截断），行点击回填 `@file:line`。
  *
  * ## 文件拆分（God-file 预算纪律）
  *
  * VM 行数守 1200 门禁（quality-gate check_file_size）：**只减不增**。
  * 已拆出的本包内 internal 扩展文件（模式同 Agent 屏 AgentChat* 拆分，
- * 调用点无感知，依赖成员开放 internal）：
- * - `CodeLongTaskCenterOps.kt` — v1.2 长任务中心用户操作流（面板开关/
- *   刷新、复制/重跑/续跑/删除/父对比/模板启动；run 生命周期钩子仍在
- *   本文件的 runEngine 内）。
- * - `CodeGoalController.kt` — v3 GOAL 目标模式控制（协调器状态同步/设定
- *   弹层/开始/停止/重启/首条拦截/深潜线保障；模式附属动作经 setMode 尾部
- *   的 onEnterGoalMode 单点接入）。
+ * 调用点无感知，依赖成员开放 internal）：`CodeLongTaskCenterOps.kt`（v1.2
+ * 长任务中心用户操作流；run 生命周期钩子仍在 runEngine 内）；
+ * `CodeGoalController.kt`（v3 GOAL 目标模式控制全链；模式附属动作经
+ * setMode 尾部 onEnterGoalMode 单点接入）。
  */
 @HiltViewModel
 class CodeViewModel @Inject constructor(
@@ -127,15 +123,13 @@ class CodeViewModel @Inject constructor(
     private val codeSessionStore: CodeSessionStore,
     private val workspaceRoots: CodeWorkspaceRoots,
     private val userQuestionBridge: UserQuestionBridge,
-    // Issue #164：全局规则（设置页 RulesSettingsSection 编辑）——每次发送前
-    // 同步到引擎，refreshContext 时经 RulesProvider 注入 additionalSystemContext
-    //（goal 控制器扩展 CodeGoalController.kt 同包消费：轮次默认值/深潜线持久化）
+    // Issue #164：全局规则（设置页编辑）——发送前同步到引擎，refreshContext 时
+    // 经 RulesProvider 注入（goal 扩展 CodeGoalController.kt 同包消费）
     internal val settingsRepository: com.apex.agent.ui.screen.settings.SettingsRepository,
-    // v1.2 长任务中心：追踪器（事件流聚合）+ 复制引擎 + 存储（列表面板直读）
-    // + 档位效能统计（长任务记录 → 工作区×档位聚合，档位效能页签数据源）
-    // 可见性：longTaskTracker 开放供 CodeEventReducer.kt（main 侧拆分）消费；
-    // taskCopyEngine / longTaskStore / thinkingEvolutionTracker 开放供
-    // CodeLongTaskCenterOps.kt（PR 侧拆分）消费——两个拆分文件并存所需。
+    // v1.2 长任务中心：追踪器（事件流聚合）+ 复制引擎 + 存储（面板直读）+ 档位
+    // 效能统计。可见性：longTaskTracker 供 CodeEventReducer.kt（main 侧拆分）；
+    // taskCopyEngine / longTaskStore / thinkingEvolutionTracker 供
+    // CodeLongTaskCenterOps.kt（PR 侧拆分）——两拆分文件并存所需。
     internal val longTaskTracker: LongTaskTracker,
     internal val taskCopyEngine: TaskCopyEngine,
     internal val longTaskStore: LongTaskStore,
@@ -160,9 +154,16 @@ class CodeViewModel @Inject constructor(
     // v3 GOAL 目标模式：全局目标协调器（与深潜线引擎共享单例；每轮验收钩子
     // 在引擎侧，UI 侧驱动设定弹层/状态卡——扩展接线见 CodeGoalController.kt）
     internal val goalCoordinator: GoalModeCoordinator,
-    // ═══ v6 Git 工作区（右上角面板直读）：Proot 沙箱 git 执行器 ═══
+    // ═══ v6 Git 工作区（右上角面板直读）：PRoot 沙箱 git 执行器 ═══
     private val gitRunner: com.apex.agent.core.codetools.git.GitCommandRunner
 ) : ViewModel() {
+
+    // ═══ v1.6 工作区浏览器（全屏页，apex-workspace-kit）═══
+    // 适配层薄包装（git 通道/工作区根/日志/引擎事件映射）住 WorkspaceKitHolder.kt；
+    // 控制器随 VM 生命周期，导航往返保持状态。
+    internal val workspaceKit by lazy {
+        WorkspaceKitHolder(gitRunner, workspaceRoots, viewModelScope)
+    }
 
     internal val _uiState = MutableStateFlow(CodeUiState())
     val uiState: StateFlow<CodeUiState> = _uiState.asStateFlow()
@@ -177,9 +178,8 @@ class CodeViewModel @Inject constructor(
     private var sessionLoadJob: Job? = null
 
     // ═══ 胶囊时间轴（渲染通道数据源）═══
-    // 渲染半边：事件归约进 session，25ms ticker 拉快照进 uiState.stream；
-    // 副作用半边（长任务追踪/深水区观察器/落盘）仍走既有 reduce——双通道
-    // 彻底分流，引擎与既有功能零改动。
+    // 渲染半边：事件归约进 session，25ms ticker 拉快照进 uiState.stream；副作用
+    // 半边（长任务追踪/深水区观察器/落盘）仍走既有 reduce——双通道彻底分流。
 
     /** 胶囊时间轴会话（VM 自持，跨 run 累积；恢复/清空见 bind/clear）。 */
     private val streamSession = CodeStreamSession()
@@ -251,12 +251,11 @@ class CodeViewModel @Inject constructor(
         if (active != null) {
             bindWorkspace(active)
         }
-        // v1.2 七档思考系统：恢复持久化档位（codeThinkingLevel 与聊天页
-        // thinkingLevelOverride 互不干扰，两模式各自记忆）
+        // v1.2 七档思考系统：恢复持久化档位（与聊天页 thinkingLevelOverride
+        // 互不干扰，两模式各自记忆）
         restoreThinkingLevel()
-        // v1.5 双思考逻辑：恢复持久化档位（空/未知 → 深潜，历史行为零变化）。
-        // 先于 setMode：GOAL 恢复会强制深潜线，若在其后恢复会反切回持久化
-        // 逻辑线、破坏「GOAL 恒走深潜」不变量。
+        // v1.5 双思考逻辑：恢复持久化档位（空/未知 → 深潜）。先于 setMode：
+        // GOAL 恢复强制深潜线，在后恢复会反切持久化线、破坏「GOAL 恒走深潜」。
         restoreLogicMode()
         // #197：Coding 屏模式同步（引擎侧恒为 BUILD/PLAN；未知值回退 BUILD）
         val startupMode = settingsRepository.agentSettings.value.let { s ->
@@ -334,7 +333,10 @@ class CodeViewModel @Inject constructor(
     /** #197 PLAN 模式计划确认/驳回（人控门；勾选/重排同 Agent 屏口径）。 */
     fun confirmPlan(confirmed: Boolean, enabledSteps: List<Int>? = null, order: List<Int>? = null) {
         _uiState.update { it.copy(awaitingPlanConfirmation = false) }
-        codeEngineImpl?.submitPlanConfirmation(confirmed, enabledSteps, order)
+        // #340：回执 false/null = 无挂起等待（迟到/被 abort）——显式提示「未送达」。
+        if (codeEngineImpl?.submitPlanConfirmation(confirmed, enabledSteps, order) != true) {
+            appendSystemMessage(languageManager.getString(R.string.chat_plan_confirm_late))
+        }
     }
 
     // ═══ #197 斜杠指令管线（Coding 工位：coding 域技能/MCP）；v5 多选 chip ═══
@@ -624,6 +626,9 @@ class CodeViewModel @Inject constructor(
                         streamSession.onEvent(event)
                     }
                     reduce(event)
+                    // v1.6 工作区浏览器实时跟随：文件类工具事件 → 库控制器
+                    //（callId 幂等去重在库内；浏览器未打开时仅进 feed，零开销）
+                    workspaceKit.onAgentEvent(event)
                 }
             } catch (e: CancellationException) {
                 aborted = true
@@ -731,6 +736,35 @@ class CodeViewModel @Inject constructor(
         _uiState.update { it.copy(error = message, errorRetriable = retriable) }
     }
 
+    /**
+     * 异常 → 错误条可读文案（#209；#312 资源化）：
+     * 1. 高频类型直接映射资源（见 [ERROR_FRIENDLY_RES]）；
+     * 2. 其余取 message 首个有意义行（过滤空行/null 字样/堆栈帧/类名前缀）；
+     * 3. 全部无效时回退「执行失败（异常类型）」—— 堆栈与 null 字样绝不直出。
+     */
+    internal fun sanitizeErrorText(e: Throwable): String {
+        ERROR_FRIENDLY_RES[e::class.simpleName]?.let { return languageManager.getString(it) }
+        val detail = e.message
+            ?.lineSequence()
+            ?.map { it.trim() }
+            ?.firstOrNull { line ->
+                line.isNotEmpty() &&
+                    !line.equals("null", ignoreCase = true) &&
+                    !line.startsWith("Caused by:") &&
+                    !STACK_FRAME_LINE.containsMatchIn(line)
+            }
+            ?.let { EXCEPTION_NAME_PREFIX.replace(it, "").trim() }
+            .orEmpty()
+        return if (detail.isEmpty()) {
+            languageManager.getString(
+                R.string.code_err_execute_failed_fmt,
+                e::class.simpleName ?: languageManager.getString(R.string.code_err_unknown_exception)
+            )
+        } else {
+            detail
+        }
+    }
+
     fun clearConversation() {
         if (_uiState.value.isRunning) return
         codeEngineImpl?.clearConversation()
@@ -815,7 +849,8 @@ class CodeViewModel @Inject constructor(
         effectiveRunLevel = decision.level
         codeEngineImpl?.updateThinkingLevel(decision.level)
         _uiState.update { it.copy(adaptiveDecision = decision.reason) }
-        appendSystemMessage("🧠 自适应预检：$decision.reason")
+        // #312：前缀文案资源化（decision.reason 为 core 侧生成，另行跟踪）
+        appendSystemMessage(languageManager.getString(R.string.code_adaptive_precheck_fmt, decision.reason))
     }
 
     /**
@@ -891,6 +926,11 @@ class CodeViewModel @Inject constructor(
                 }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: EditorFileException) {
+                // #312：数据层稳定错误码 → 本地化文案（编辑器面板错误行）。
+                if (_uiState.value.editorFilePath == trimmed) {
+                    _uiState.update { it.copy(editorLoading = false, editorError = editorErrorText(e)) }
+                }
             } catch (e: Exception) {
                 if (_uiState.value.editorFilePath == trimmed) {
                     // #209 收尾：编辑器加载失败同样走 sanitize —— 裸 message
@@ -911,6 +951,18 @@ class CodeViewModel @Inject constructor(
         _uiState.update { it.copy(editorError = null) }
     }
 
+    /**
+     * #312：EditorFileLoader 稳定错误码 → 本地化文案（纯数据层不依赖
+     * Android 资源，UI 侧按码取词；上下文变量：路径 / 字节数）。
+     */
+    private fun editorErrorText(e: EditorFileException): String = when (e.code) {
+        EditorLoadError.EMPTY_PATH -> languageManager.getString(R.string.code_editor_err_empty_path)
+        EditorLoadError.PATH_ESCAPE -> languageManager.getString(R.string.code_editor_err_escape_fmt, e.path.orEmpty())
+        EditorLoadError.NOT_FOUND -> languageManager.getString(R.string.code_editor_err_not_found_fmt, e.path.orEmpty())
+        EditorLoadError.IS_DIRECTORY -> languageManager.getString(R.string.code_editor_err_directory_fmt, e.path.orEmpty())
+        EditorLoadError.TOO_LARGE -> languageManager.getString(R.string.code_editor_err_too_large_fmt, e.byteCount)
+    }
+
     // ═══ 工作区管理 ═══
 
     fun refreshWorkspaces() {
@@ -925,7 +977,7 @@ class CodeViewModel @Inject constructor(
     fun createWorkspace(name: String) {
         val created = workspaceManager.create(name)
         if (created == null) {
-            showError("无法创建工作区（名称为空或已存在）")
+            showError(languageManager.getString(R.string.code_ws_create_failed))
             return
         }
         bindWorkspace(created)
@@ -938,11 +990,11 @@ class CodeViewModel @Inject constructor(
 
     fun deleteWorkspace(workspaceId: String) {
         if (_uiState.value.isRunning) {
-            showError("任务运行中，不能删除工作区")
+            showError(languageManager.getString(R.string.code_ws_delete_blocked_running))
             return
         }
         if (workspaceId == "default") {
-            showError("默认工作区不可删除")
+            showError(languageManager.getString(R.string.code_ws_delete_default))
             return
         }
         workspaceManager.delete(workspaceId)
@@ -1033,13 +1085,13 @@ class CodeViewModel @Inject constructor(
                     stream = CodeStreamSnapshot()
                 )
             }
-            val env = ws.detectedEnvironment ?: "空工作区"
+            val env = ws.detectedEnvironment ?: languageManager.getString(R.string.code_ws_empty_env)
             _uiState.update { state ->
                 state.copy(
                     messages = state.messages + CodeChatMessage(
                         id = idGen.incrementAndGet(),
                         role = CodeChatMessage.Role.SYSTEM,
-                        text = "已切换到工作区「${ws.name}」（$env）。描述你的编码任务开始吧。"
+                        text = languageManager.getString(R.string.code_ws_switched_fmt, ws.name, env)
                     )
                 )
             }
@@ -1129,19 +1181,23 @@ class CodeViewModel @Inject constructor(
         /** 渲染攒批窗口：25ms = 上限 40Hz（规格书：脉冲式输出）。 */
         const val RENDER_TICK_MS = 25L
 
-        // ═══ #209 错误文案净化（错误条不直出裸异常文本）═══
+        // ═══ #209 错误文案净化（错误条不直出裸异常文本；#312 文案资源化）═══
 
-        /** 高频异常类型 → 中文可读文案（模型运行时类与 llm-adapter 的 LlmErrorText 口径对齐）。 */
-        private val ERROR_FRIENDLY_TEXT: Map<String, String> = mapOf(
-            "SocketTimeoutException" to "网络请求超时，请检查网络后重试",
-            "ConnectException" to "网络连接失败，请检查网络或服务地址",
-            "UnknownHostException" to "无法解析服务地址，请检查网络或 API 配置",
-            "SocketException" to "网络连接异常断开，请检查网络后重试",
-            "SSLException" to "安全连接（SSL/TLS）失败，请检查证书或代理设置",
-            "EOFException" to "连接被服务端提前关闭，请稍后重试",
-            "IOException" to "数据读写异常，请检查网络或存储后重试",
-            "SerializationException" to "响应数据解析失败，请重试或更换模型",
-            "JsonEncodingException" to "响应数据解析失败（非 JSON 内容），请重试"
+        /**
+         * 高频异常类型 → 可读文案资源（模型运行时类与 llm-adapter 的
+         * LlmErrorText 口径对齐；取词在实例层 sanitizeErrorText 经
+         * languageManager 按当前语言解析）。
+         */
+        private val ERROR_FRIENDLY_RES: Map<String, Int> = mapOf(
+            "SocketTimeoutException" to R.string.code_err_socket_timeout,
+            "ConnectException" to R.string.code_err_connect,
+            "UnknownHostException" to R.string.code_err_unknown_host,
+            "SocketException" to R.string.code_err_socket,
+            "SSLException" to R.string.code_err_ssl,
+            "EOFException" to R.string.code_err_eof,
+            "IOException" to R.string.code_err_io,
+            "SerializationException" to R.string.code_err_serialization,
+            "JsonEncodingException" to R.string.code_err_json_encoding
         )
 
         /** 堆栈帧样式行（at com.example.Foo.bar(Foo.kt:12)）——过滤目标。 */
@@ -1149,31 +1205,5 @@ class CodeViewModel @Inject constructor(
 
         /** 「a.b.ClassName: 前缀」样式 —— 剥离类名前缀只留可读描述。 */
         private val EXCEPTION_NAME_PREFIX = Regex("^[\\w.$]+(?:Exception|Error)\\s*:\\s*")
-
-        /**
-         * 异常 → 错误条可读文案（#209）：
-         * 1. 高频类型直接映射中文（见 [ERROR_FRIENDLY_TEXT]）；
-         * 2. 其余取 message 首个有意义行（过滤空行/null 字样/堆栈帧/类名前缀）；
-         * 3. 全部无效时回退「执行失败（异常类型）」—— 堆栈与 null 字样绝不直出。
-         */
-        fun sanitizeErrorText(e: Throwable): String {
-            ERROR_FRIENDLY_TEXT[e::class.simpleName]?.let { return it }
-            val detail = e.message
-                ?.lineSequence()
-                ?.map { it.trim() }
-                ?.firstOrNull { line ->
-                    line.isNotEmpty() &&
-                        !line.equals("null", ignoreCase = true) &&
-                        !line.startsWith("Caused by:") &&
-                        !STACK_FRAME_LINE.containsMatchIn(line)
-                }
-                ?.let { EXCEPTION_NAME_PREFIX.replace(it, "").trim() }
-                .orEmpty()
-            return if (detail.isEmpty()) {
-                "执行失败（${e::class.simpleName ?: "未知异常"}）"
-            } else {
-                detail
-            }
-        }
     }
 }

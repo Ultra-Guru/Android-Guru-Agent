@@ -1,5 +1,6 @@
 package com.apex.agent.ui.screen.agent
 
+import com.apex.agent.R
 import com.apex.agent.core.engine.AgentMode
 import com.apex.agent.core.engine.ApexAgentEngine
 import com.apex.agent.core.engine.ThinkingLevel
@@ -50,7 +51,13 @@ fun AgentChatViewModel.upsertModePreset(preset: ModePreset) {
 /** 用户确认/驳回了 Spec 模式的规格，恢复引擎执行。 */
 fun AgentChatViewModel.submitSpecConfirmation(confirmed: Boolean) {
     _uiState.update { it.copy(awaitingSpecConfirmation = false) }
-    (agentEngine as? ApexAgentEngine)?.submitSpecConfirmation(confirmed)
+    // #340：回执 = false 表示无挂起等待（迟到/被 abort）——显式提示。
+    val delivered = (agentEngine as? ApexAgentEngine)?.submitSpecConfirmation(confirmed) ?: false
+    if (!delivered) {
+        _uiState.update { s ->
+            s.copy(messages = s.messages + AgentUiMessage.System(str(R.string.chat_spec_confirm_late)))
+        }
+    }
 }
 
 /** 选择思考档位（六档 + AUTO 自适应）。 */

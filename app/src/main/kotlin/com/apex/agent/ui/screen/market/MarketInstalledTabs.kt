@@ -313,6 +313,15 @@ internal fun InstalledSkillsTab(state: MarketUiState, viewModel: MarketViewModel
                 MarketHeader(
                     stringResource(R.string.market_installed_skills_header, state.skills.size)
                 )
+                // per-scope 启停提示：开关只写当前分级工位（另一侧独立）
+                Text(
+                    text = stringResource(
+                        R.string.market_installed_skills_tier_hint,
+                        stringResource(state.tier.labelRes)
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     ) { skill ->
@@ -343,13 +352,20 @@ internal fun InstalledSkillsTab(state: MarketUiState, viewModel: MarketViewModel
                                 text = stringResource(R.string.market_skill_bundled_badge),
                                 positive = true
                             )
+                        } else if (skill.needsConfig) {
+                            // 就绪门禁：必填配置未填齐 —— 点卡片进详情配置
+                            MarketStatusChip(
+                                text = stringResource(R.string.market_skill_needs_config),
+                                positive = false
+                            )
                         } else if (skill.isCrystallized) {
                             MarketCrystallizedBadge()
                         } else if (skill.isLowEnergy) {
                             MarketLowEnergyBadge()
                         }
                         Switch(
-                            checked = skill.enabled,
+                            // per-scope：开关读写当前市场分级对应工位（另一侧独立）
+                            checked = skill.enabledForTier(state.tier),
                             onCheckedChange = { viewModel.toggleSkill(skill.id, it) }
                         )
                         // Issue #166：内置技能不可卸载（可禁用）——不渲染删除按钮，
@@ -715,8 +731,15 @@ internal fun InstalledIntegrationsTab(state: MarketUiState, viewModel: MarketVie
                         },
                         positive = false
                     )
+                    if (skill.needsConfig) {
+                        MarketStatusChip(
+                            text = stringResource(R.string.market_skill_needs_config),
+                            positive = false
+                        )
+                    }
                     Switch(
-                        checked = skill.enabled,
+                        // per-scope：开关读写当前市场分级对应工位（另一侧独立）
+                        checked = skill.enabledForTier(state.tier),
                         onCheckedChange = { viewModel.toggleSkill(skill.id, it) }
                     )
                     IconButton(onClick = { pendingUninstall = skill }) {

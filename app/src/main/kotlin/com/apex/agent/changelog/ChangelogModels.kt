@@ -41,10 +41,20 @@ data class ChangelogEntry(
     @SerialName("date") val date: String? = null,
     /** 弹窗标题（构建期生成「vX.Y.Z 更新内容」）。 */
     @SerialName("title") val title: String? = null,
-    /** 要点列表（片段列表项剥壳）—— UI 首选渲染源。 */
+    /** 一级日志要点（管理软件发送片段的列表项剥壳）—— 弹窗置顶展示。 */
     @SerialName("notes") val notes: List<String> = emptyList(),
-    /** 片段原文（Markdown）—— notes 为空时的纯文本降级源，不引渲染器。 */
+    /** 二级日志分组（PR 片段）：一级要点下方下滑区，每组 = 一条 PR 摘要。
+     *  v2 schema 新增；旧清单（v1）无此字段 → 空列表，渲染自动跳过。 */
+    @SerialName("pr") val pr: List<ChangelogPrGroup> = emptyList(),
+    /** 片段原文（Markdown）—— notes 与 pr 均为空时的纯文本降级源。 */
     @SerialName("markdown") val markdown: String? = null,
     /** 本版 Release 页（「发现新版本」弹窗的前往下载出口）。 */
     @SerialName("releaseUrl") val releaseUrl: String? = null,
+)
+
+/** 二级日志分组（PR 片段，每组 = 一条 PR 的新增功能 / 修复摘要）。 */
+@Serializable
+data class ChangelogPrGroup(
+    @SerialName("title") val title: String = "",
+    @SerialName("notes") val notes: List<String> = emptyList(),
 )

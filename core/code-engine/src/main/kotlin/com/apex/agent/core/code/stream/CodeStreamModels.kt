@@ -229,7 +229,17 @@ data class CodeStreamSnapshot(
     /** 终端面板内容（活跃 BASH 胶囊的脉冲缓冲尾窗；面板独立锚定渲染）。 */
     val terminalContent: String = "",
     /** 本轮运行触碰的文件（去重，最新在后）。 */
-    val affectedFiles: List<String> = emptyList()
+    val affectedFiles: List<String> = emptyList(),
+    /**
+     * 终端面板「运行中」信号（流水式折叠开关）：true = 活跃 BASH 正在
+     * 执行（面板保持展开跟随输出）；false = 已收束（UI 自动折叠成头行
+     * 胶囊，保留 [terminalCommandSummary] 与退出码供回看）。
+     */
+    val terminalBusy: Boolean = false,
+    /** 终端面板头行展示的命令摘要（活跃/最近 BASH 的首行命令；空 = 无）。 */
+    val terminalCommandSummary: String = "",
+    /** 最近一次终端命令的退出码（null = 未知 / 无命令）；完成态头行展示。 */
+    val terminalExitCode: Int? = null
 ) {
     /** 结构化错误信息（CodeUiState.error 通道共用）。 */
     data class ErrorInfo(val message: String, val recoverable: Boolean)

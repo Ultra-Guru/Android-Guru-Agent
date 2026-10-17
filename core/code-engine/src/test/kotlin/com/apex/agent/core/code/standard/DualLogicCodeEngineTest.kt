@@ -42,8 +42,9 @@ class DualLogicCodeEngineTest {
         override fun prepareForTask() { calls += "prepare" }
         override fun updateGlobalRules(rules: String) { calls += "rules" }
         override fun updateMode(mode: AgentMode) { calls += "mode:${mode.name}" }
-        override fun submitPlanConfirmation(confirmed: Boolean, enabledSteps: List<Int>?, order: List<Int>?) {
+        override fun submitPlanConfirmation(confirmed: Boolean, enabledSteps: List<Int>?, order: List<Int>?): Boolean {
             calls += "plan:$confirmed"
+            return true
         }
         override fun updateSessionExtras(extras: String?) { calls += "extras" }
         override fun updateRolePersona(roleDefinition: String, rolePrompt: String?) { calls += "persona" }

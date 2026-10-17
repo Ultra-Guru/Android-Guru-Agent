@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Browser strings (English default). Two consumers:
+<!-- Browser strings (English default). Three consumers:
      1. CyberNeonBallManager floating ball feedback (non-Compose, resolved via
         LanguageManager.getString) — browser_session_released;
-     2. BrowserScreen (v1.5.0 一级入口, Compose) — browser_screen_* via
-        stringResource. Chinese in values-zh/strings_browser.xml; language
-        switching via LanguageManager + MainActivity attachBaseContext/recreate. -->
+     2. BrowserScreen (v1.5.0 一级入口, v1.5.1 双页签, Compose) —
+        browser_screen_* via stringResource; browser tab (in-app full browser,
+        InAppBrowserPane) + dashboard;
+     3. InAppBrowserPane (v1.5.1 in-app browser pane + overlay permission card).
+     Chinese in values-zh/strings_browser.xml; language switching via
+     LanguageManager + MainActivity attachBaseContext/recreate. -->
 <resources>
     <!-- 长按悬浮球结束浏览器会话的 Toast -->
     <string name="browser_session_released">Browser session ended; floating ball dismissed</string>
@@ -45,14 +48,28 @@
     <string name="browser_screen_hand_back">Hand back to Agent</string>
     <!-- 底部说明卡 -->
     <string name="browser_screen_builtin_title">Browser automation is built in</string>
-    <string name="browser_screen_builtin_desc">24 browser_* tools ship inside the app (built-in since v1.5.0, no plugin needed). Direct the Agent in chat to open pages, click, type or take screenshots. A transparent live-view window pops up automatically while the Agent browses; tap the floating ball to show or hide it, long-press to end the session.</string>
+    <string name="browser_screen_builtin_desc">24 browser_* tools ship inside the app (built-in since v1.5.0, no plugin needed). Direct the Agent in chat to open pages, click, type or take screenshots. The Browser tab is a full browser that always works; with the floating-window permission, a transparent live overlay follows the Agent while you use other apps (tap the ball to toggle, long-press to end the session).</string>
 
-    <!-- 实时页面卡（v1.4.1：LiveViewOverlay 入口） -->
+    <!-- 实时页面卡（v1.4.1 引入；v1.5.1 语义升级：一键切浏览器页签） -->
     <string name="browser_screen_live_title">Live page</string>
     <string name="browser_screen_live_view">View live page</string>
     <string name="browser_screen_live_open">Open browser</string>
-    <string name="browser_screen_live_desc_idle">When the Agent uses the browser, a transparent floating window pops up automatically showing the live page. You can also open the browser yourself.</string>
-    <string name="browser_screen_live_desc_driving">The Agent is browsing — the live floating window is up. Tap the floating ball anytime to show or hide it.</string>
-    <string name="browser_screen_live_desc_handoff">Human takeover in progress — the full-screen browser window is open for you.</string>
+    <string name="browser_screen_live_desc_idle">Open the full browser right here, or let the Agent browse — a transparent live-page window pops up automatically over other apps.</string>
+    <string name="browser_screen_live_desc_driving">The Agent is browsing — tap to watch the live page full-screen on the browser tab, or use the floating ball overlay while in other apps.</string>
+    <string name="browser_screen_live_desc_handoff">Human takeover in progress — the browser tab is the full browser; Agent tools stay locked until you hand back.</string>
     <string name="browser_screen_live_desc_recovering">The renderer is being rebuilt — the live view will resume automatically.</string>
+    <!-- ═══ App 内嵌浏览器（v1.5.1：浏览器页签，零悬浮窗权限）═══ -->
+    <!-- 双页签切换 -->
+    <string name="browser_screen_tab_browser">Browser</string>
+    <string name="browser_screen_tab_dashboard">Dashboard</string>
+    <!-- 浏览器页签空态引导卡 -->
+    <string name="browser_screen_inapp_hero_title">Built-in browser</string>
+    <string name="browser_screen_inapp_hero_desc">A full browser opens right here — address bar, tabs, find-in-page, downloads. No special permission needed. The Agent drives the same pages, so you can watch it browse live or take over anytime.</string>
+    <string name="browser_screen_inapp_open">Open browser</string>
+    <!-- 人工接管横幅（注入 chrome 头部） -->
+    <string name="browser_screen_inapp_handoff">You are in control — Agent tools are locked</string>
+    <!-- 悬浮窗权限引导卡（实时浮窗/悬浮球需要；浏览器页签本身不需要） -->
+    <string name="browser_screen_overlay_title">Floating window permission</string>
+    <string name="browser_screen_overlay_desc">The browser tab above works without any permission. The floating ball, the live-page overlay and the full-screen takeover window are system floating windows — they need the "display over other apps" permission to appear while you use other apps.</string>
+    <string name="browser_screen_overlay_grant">Grant permission</string>
 </resources>

@@ -69,6 +69,19 @@ when {
     standardKitNested.isDirectory -> includeBuild(standardKitNested)
 }
 
+// ── 工作区浏览器库 composite build（拆库 E1 迁移期）───────────────────────
+// apex-workspace-kit（com.apex.workspace:{core,explorer}）：Coding 模式
+// 全屏工作区浏览器（文件树 / 多格式预览 / Git 面板 / 变更和产物 / 实时跟随）。
+// 接线方式与 apex-browser-kit 完全同构：兄弟目录本地开发、嵌套目录 CI
+// consumer-check 兜底、目录不存在时走远端 Maven 坐标。
+// 库仓库：Ultra-Guru/apex-workspace-kit（含独立 CI + 宿主 consumer-check）。
+val workspaceKitSibling = file("../apex-workspace-kit")
+val workspaceKitNested = file("apex-workspace-kit")
+when {
+    workspaceKitSibling.isDirectory -> includeBuild(workspaceKitSibling)
+    workspaceKitNested.isDirectory -> includeBuild(workspaceKitNested)
+}
+
 // 主APK
 include(":app")
 

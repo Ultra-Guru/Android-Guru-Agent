@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -99,7 +100,9 @@ import com.apex.agent.ui.screen.code.stream.CodeStreamTimeline
 import com.apex.agent.ui.screen.code.stream.CodeTerminalPanel
 import com.apex.agent.ui.screen.code.stream.CodeToolDetailSheet
 import com.apex.agent.ui.glass.GlassCard
+import com.apex.agent.ui.glass.GlassModalScrim
 import com.apex.agent.ui.glass.GlassStyle
+import com.apex.agent.ui.glass.glassModalBlur
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 
@@ -118,7 +121,9 @@ fun CodeScreen(
     slashMenuProvider: SlashMenuProvider = rememberSlashMenuProvider(),
     // 「小大脑」菜单 → 配置模型：跳转设置页模型配置区（与 Agent 屏同款
     // 压栈语义，改完返回 Coding 上下文）
-    onOpenSettings: () -> Unit = {}
+    onOpenSettings: () -> Unit = {},
+    // v1.6 工作区浏览器全屏页（右上角文件图标 → 压栈；页面内叉号弹栈返回）
+    onOpenWorkspaceBrowser: () -> Unit = {}
 ) {
     // #184：长任务导出需要 applicationContext（落盘 + 分享；VM 非 AndroidViewModel）
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -180,8 +185,22 @@ fun CodeScreen(
     // 状态/耗时/Diff 永不更新；存 id 每次重组从活快照重查）。
     // rememberSaveable：旋转/重建后详情弹层不丢（String? 可入 Bundle）。
     var selectedToolCallId by rememberSaveable { mutableStateOf<String?>(null) }
-    // 终端面板折叠态（默认展开——BASH 是 Coding 工作流主舞台）
+    // 终端面板折叠态 + 用户手动态（流水式折叠，用户需求：「终端命令等流水
+    // 似输出：运行时保持展开跟随输出，完成后自动折叠成胶囊」）。
+    // 语义与 ThinkingCard 的 userToggled 守卫同款：
+    // - 新命令开跑（terminalBusy=true）→ 强制展开并重置手动态（新输出值得被看到）；
+    // - 命令收束（terminalBusy=false）→ 未手动干预过则自动折叠（头行保留
+    //   命令摘要 + exit 码供回看）；手动展开/收起过则尊重用户选择。
     var terminalCollapsed by rememberSaveable { mutableStateOf(false) }
+    var terminalUserToggled by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(state.stream.terminalBusy) {
+        if (state.stream.terminalBusy) {
+            terminalCollapsed = false
+            terminalUserToggled = false
+        } else if (!terminalUserToggled) {
+            terminalCollapsed = true
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
     Column(
@@ -202,7 +221,9 @@ fun CodeScreen(
             logicMode = state.logicMode,
             onSwitchLogic = viewModel::setLogicMode,
             // v6 右上角 Git 工作区（变更文件 + git 功能）
-            onOpenGit = { showGitPanel = true }
+            onOpenGit = { showGitPanel = true },
+            // v1.6 工作区浏览器（文件树/预览/Git/变更产物全屏页）
+            onOpenWorkspaceBrowser = onOpenWorkspaceBrowser
         )
 
         if (state.todos.isNotEmpty()) {
@@ -248,8 +269,19 @@ fun CodeScreen(
                 isStreaming = state.isRunning,
                 bottomInset = lowerStackInsetDp,
                 backdrop = streamBackdrop,
-                onToolClick = { call -> selectedToolCallId = call.id }
+                onToolClick = { call -> selectedToolCallId = call.id },
+                // ═══ 玻璃幕帘（2026-10 用户反馈）：提问卡挂起时时间轴整体模糊 ═══
+                // 液态玻璃的 backdrop 采样存在盲区（动画图层/采样时序差），盲区
+                // 文字会以锐利形态透过霜面与卡内内容叠字 —— 被覆盖内容自身先
+                // blur（修饰序在 layerBackdrop 外层，采样源不失真），屏幕透出的
+                // 只能是模糊像素。
+                modifier = Modifier.glassModalBlur(pendingAgentQuestion != null)
             )
+
+            // ═══ 模态幕帘：scrim 兜底（API < 31 无 blur）+ 点击拦截（门控必须先作答）═══
+            if (pendingAgentQuestion != null) {
+                GlassModalScrim(modifier = Modifier.matchParentSize())
+            }
 
             // ═══ 底部悬浮栈：悬浮于时间轴之上（backdrop 采样前提）═══
             Column(
@@ -262,9 +294,14 @@ fun CodeScreen(
                 if (state.stream.activeTerminalCallId != null || state.stream.terminalContent.isNotBlank()) {
                     CodeTerminalPanel(
                         content = state.stream.terminalContent,
-                        activeCommand = state.stream.activeTerminalCallId,
+                        activeCommand = state.stream.terminalCommandSummary.ifBlank { null },
+                        busy = state.stream.terminalBusy,
+                        exitCode = state.stream.terminalExitCode,
                         collapsed = terminalCollapsed,
-                        onToggleCollapse = { terminalCollapsed = !terminalCollapsed },
+                        onToggleCollapse = {
+                            terminalUserToggled = true
+                            terminalCollapsed = !terminalCollapsed
+                        },
                         backdrop = streamBackdrop
                     )
                 }
@@ -521,7 +558,8 @@ private fun WorkspaceBar(
     onOpenLongTasks: () -> Unit,
     logicMode: StandardLogicMode = StandardLogicMode.DEEP_DIVE,
     onSwitchLogic: (StandardLogicMode) -> Boolean = { false },
-    onOpenGit: () -> Unit = {}
+    onOpenGit: () -> Unit = {},
+    onOpenWorkspaceBrowser: () -> Unit = {}
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     // v1.5 切换被拒提示（运行中拒绝；2s 自清，行内告警形态）
@@ -641,6 +679,17 @@ private fun WorkspaceBar(
             )
 
             Spacer(Modifier.width(4.dp))
+
+            // ═══ v1.6 工作区浏览器（右上角：文件树/预览/变更产物全屏页）═══
+            // FolderOpen 图标即「浏览工作区」；页面内右上角叉号返回 Coding
+            IconButton(onClick = onOpenWorkspaceBrowser, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                Icon(
+                    Icons.Outlined.FolderOpen,
+                    contentDescription = stringResource(R.string.code_workspace_browser_cd),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
 
             // ═══ v6 Git 工作区（右上角：变更文件 + git 功能）═══
             // 48dp 触区（主操作红线；CallSplit 即分支意象）

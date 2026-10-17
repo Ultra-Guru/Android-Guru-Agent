@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import com.apex.agent.core.tools.marketplace.HubSource
+import com.apex.agent.core.tools.marketplace.MarketNames
 import com.apex.agent.ui.component.GithubTokenDialog
 
 /**
@@ -161,7 +162,9 @@ internal fun HubMcpCatalogCard(
     hubState: MarketHubController.HubUiState,
     viewModel: MarketViewModel
 ) {
-    val installedRow = state.mcps.firstOrNull { it.name == entry.name }
+    // #346：已安装行匹配用归一化比较键（与安装防重同口径：同名服务器从
+    // 其他源安装、大小写/分隔符变体也识别为已安装）
+    val installedRow = state.mcps.firstOrNull { MarketNames.isSameServer(it.name, entry.name) }
     val installing = hubState.installingMcpName == entry.name
     Column {
         MarketCard(

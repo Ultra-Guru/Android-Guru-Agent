@@ -18,6 +18,7 @@ import com.apex.agent.core.codetools.CodeWorkspaceRoots
 import com.apex.agent.core.tools.ToolRegistry
 import com.apex.agent.core.tools.skill.SkillActivationStore
 import com.apex.agent.core.tools.skill.SkillAutoActivator
+import com.apex.agent.core.tools.skill.SkillRegistry
 import com.apex.agent.platform.csmem.session.CsMemSessionManager
 import com.apex.agent.github.GithubTokenManager
 import com.apex.agent.loop.LoopScheduler
@@ -799,7 +800,9 @@ class AgentChatViewModel @Inject constructor(
     ) {
         // 技能自动装备（渐进披露零成本路）：消息命中已安装技能的 tags/id/name
         // → 发送前预激活（≤ 2 个），本轮提示词即携带方法论全文；异常静默不阻断发送。
-        runCatching { skillAutoActivator.autoEquip(text) }
+        // per-scope：Agent 屏传 agent 工位 —— 只在 Coding 市场开启的技能不会被
+        // Agent 屏消息误装备（双工位隔离）。
+        runCatching { skillAutoActivator.autoEquip(text, SkillRegistry.SCOPE_AGENT) }
 
         // 异步落盘附件（IO 线程）
         // 优先使用预拷贝结果，未预拷贝的回退到同步拷贝
@@ -966,7 +969,15 @@ class AgentChatViewModel @Inject constructor(
      */
     fun confirmPlan(confirmed: Boolean, enabledSteps: List<Int>? = null, order: List<Int>? = null) {
         _uiState.update { it.copy(awaitingPlanConfirmation = false) }
-        (agentEngine as? ApexAgentEngine)?.submitPlanConfirmation(confirmed, enabledSteps, order)
+        // #340：回执 = false 表示无挂起等待（迟到/被 abort）——显式提示，
+        // 不再静默丢弃（#214 用户输入通道同款收口）。
+        val delivered = (agentEngine as? ApexAgentEngine)
+            ?.submitPlanConfirmation(confirmed, enabledSteps, order) ?: false
+        if (!delivered) {
+            _uiState.update { s ->
+                s.copy(messages = s.messages + AgentUiMessage.System(str(R.string.chat_plan_confirm_late)))
+            }
+        }
     }
 
     /** 用户回答了 Agent 的提问，恢复引擎执行（#214 迟到投递回执在 AgentChatQuestionHandler 扩展内收口）。 */
