@@ -64,6 +64,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.BuildConfig
 import com.apex.agent.R
+import com.apex.agent.changelog.ChangelogStartupHost
 import com.apex.agent.ui.component.ContextMeterBar
 import com.apex.agent.ui.component.FeedbackHost
 import com.apex.agent.ui.component.OfflineBanner
@@ -313,6 +314,14 @@ fun ApexRoot() {
                     visible = updateBanner,
                     // #224：压栈语义 —— 「查看」进关于页后按返回回原页
                     onOpenAbout = { navStack.push(DrawerDestination.About) }
+                )
+
+                // ═══ 更新日志弹窗（changelog 通道 v1）═══
+                // 升级/热更后首启弹「本次更新内容」（每版一次，「知道了」落已读）；
+                // 远端领先且自动检查开启时弹「发现新版本」（日志 + 前往下载）。
+                // 离线/异常静默降级，绝不阻塞启动；详见 com.apex.agent.changelog 包。
+                ChangelogStartupHost(
+                    autoUpdateCheck = agentVm.uiSettings.value.autoUpdateCheck
                 )
 
                 // ═══ 顶部上下文仪表盘长条（全局）═══
