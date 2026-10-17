@@ -7,7 +7,6 @@ import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicReference
 
 /**
  * #381 P1 回归锁：Shizuku 命令通道 100% 失败的根因是
@@ -36,48 +35,49 @@ class ShizukuProcessAdapterTimeoutWaitTest {
      * 与 Shizuku 服务端语义对齐的假远端进程：
      * - 未退出：exitValue() 抛 IllegalStateException("process hasn't exited")
      * - 退出：正常返回退出码
-     * - 退出时机由 [exitAfter] 挂钩控制（跨线程翻转，模拟远端进程结束）
+     * - 退出时机由 [exitAfter] 挂钩控制（后台线程翻转，模拟远端进程结束）
+     *
+     * 形状对齐真实 AIDL（dev.rikka.shizuku:aidl 13.1.5 编译产物）：流通道是
+     * getter 方法形态（Kotlin 实现侧不能写成 val），接口还带 alive() /
+     * waitForTimeout(long, String) / asBinder() —— 本测试路径不触及的成员
+     * 一律 UnsupportedOperationException，防止静默假成功。
      */
     private class FakeRemoteProcess(exitAfter: CountDownLatch) : IRemoteProcess {
         private val exited = AtomicInteger(0)
-        private val thrown: AtomicReference<IllegalStateException> = AtomicReference()
-        private val exitLatch = exitAfter
+        private val exitThread: Thread = Thread {
+            exitAfter.await()
+            exited.set(42)
+        }.also { it.start() }
 
-        init {
-            // 模拟远端进程：退出信号到达后置退出码
-            Thread {
-                exitLatch.await()
-                exited.set(42)
-            }.start()
-        }
+        /** 阻塞至内部退出传播线程写完退出码（测试侧替代 Thread.sleep 轮询，纪律 #276）。 */
+        fun awaitExitPropagation() = exitThread.join()
 
-        override fun waitFor(): Int {
-            while (exited.get() == 0) Thread.sleep(5)
-            return exited.get()
-        }
+        override fun waitFor(): Int =
+            throw UnsupportedOperationException("无超时 waitFor 不在本测试路径（适配器带超时轮询走 exitValue）")
 
         override fun exitValue(): Int {
             val code = exited.get()
             if (code == 0) {
                 // 与 Shizuku 服务端一致的"未退出"异常（#381 根因字符串）
-                thrown.compareAndSet(
-                    null,
-                    IllegalStateException("process hasn't exited")
-                )
-                throw thrown.get()
+                throw IllegalStateException("process hasn't exited")
             }
             return code
         }
 
         override fun destroy() {}
 
-        // 流通道惰性：本测试不触碰（真实 Android ParcelFileDescriptor）
-        override val outputStream: android.os.ParcelFileDescriptor
-            get() = throw UnsupportedOperationException("not used in this test")
-        override val inputStream: android.os.ParcelFileDescriptor
-            get() = throw UnsupportedOperationException("not used in this test")
-        override val errorStream: android.os.ParcelFileDescriptor
-            get() = throw UnsupportedOperationException("not used in this test")
+        // ── 以下成员仅满足真实 AIDL 接口形状，本测试不触及 ──
+        override fun getOutputStream(): android.os.ParcelFileDescriptor =
+            throw UnsupportedOperationException("not used in this test")
+        override fun getInputStream(): android.os.ParcelFileDescriptor =
+            throw UnsupportedOperationException("not used in this test")
+        override fun getErrorStream(): android.os.ParcelFileDescriptor =
+            throw UnsupportedOperationException("not used in this test")
+        override fun asBinder(): android.os.IBinder =
+            throw UnsupportedOperationException("not used in this test")
+        override fun alive(): Boolean = exited.get() != 0
+        override fun waitForTimeout(timeout: Long, unit: String): Boolean =
+            throw UnsupportedOperationException("适配器自带超时轮询，远端侧不在测试路径")
     }
 
     @Test
@@ -103,11 +103,9 @@ class ShizukuProcessAdapterTimeoutWaitTest {
     fun `远端退出后 waitFor 带超时返回 true`() {
         val exited = CountDownLatch(1)
         val adapter = ShizukuProcessAdapter(FakeRemoteProcess(exited))
-        // 另一线程在 100ms 后让"远端进程"退出
-        Thread {
-            Thread.sleep(100)
-            exited.countDown()
-        }.start()
+        // 让"远端进程"退出：latch 翻转后后台线程写入退出码，适配器轮询
+        // exitValue 即可观察到（无需延时线程——纪律 #276：不引入睡眠轮询）
+        exited.countDown()
 
         val completed = adapter.waitFor(5_000, TimeUnit.MILLISECONDS)
         assertTrue("进程退出后 waitFor 必须返回 true", completed)
@@ -125,19 +123,16 @@ class ShizukuProcessAdapterTimeoutWaitTest {
     @Test
     fun `isAlive 在未退出时为 true 退出后为 false 不抛异常`() {
         val exited = CountDownLatch(1)
-        val adapter = ShizukuProcessAdapter(FakeRemoteProcess(exited))
+        val fake = FakeRemoteProcess(exited)
+        val adapter = ShizukuProcessAdapter(fake)
 
         // 未退出 —— 旧实现的默认 isAlive() 在这里直接抛 ISE（finally 块
         // 的 `it.isAlive` 会吞掉命令的真实结果）
         assertTrue("未退出时 isAlive 必须为 true", adapter.isAlive)
 
         exited.countDown()
-        // 等待 fake 内部线程把退出码写进去
-        val deadline = System.currentTimeMillis() + 2_000
-        while (System.currentTimeMillis() < deadline) {
-            if (!adapter.isAlive) break
-            Thread.sleep(10)
-        }
+        // 等 fake 内部线程把退出码写完（join 替代睡眠轮询，纪律 #276）
+        fake.awaitExitPropagation()
         assertFalse("退出后 isAlive 必须为 false", adapter.isAlive)
     }
 }

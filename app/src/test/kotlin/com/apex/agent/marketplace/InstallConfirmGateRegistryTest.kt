@@ -1,6 +1,7 @@
 package com.apex.agent.marketplace
 
 import com.apex.agent.marketplace.MarketInstallManager.ManifestPreview
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -146,7 +147,7 @@ class InstallConfirmGateRegistryTest {
     // ── 生效门禁可被调用（安装管道的实际消费方式）────────────────────
 
     @Test
-    fun `生效门禁可挂起调用并返回结果`() {
+    fun `生效门禁可挂起调用并返回结果`() = runTest {
         val registry = InstallConfirmGateRegistry()
         val aCalls = mutableListOf<Int>()
         val bCalls = mutableListOf<Int>()
@@ -157,7 +158,7 @@ class InstallConfirmGateRegistryTest {
 
         val current = registry.current
         assertNotNull(current)
-        val outcome = kotlinx.coroutines.runBlocking { current!!.invoke(preview()) }
+        val outcome = current!!.invoke(preview())
 
         assertTrue("生效门禁是 B（返回 false）", !outcome)
         assertEquals("B 被调用一次", 1, bCalls.size)
