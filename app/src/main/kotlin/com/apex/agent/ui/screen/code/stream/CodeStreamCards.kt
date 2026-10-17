@@ -75,7 +75,11 @@ internal fun StreamCard(entry: StreamEntry, onToolClick: (StreamToolCall) -> Uni
 private fun UserBubble(text: String) {
     Surface(
         shape = RoundedCornerShape(topStart = 4.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 16.dp),
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+        // 用户/结论气泡区分（用户反馈「两者颜色一样」）：结论气泡是 primary
+        // 玻璃薄霜（≈16% 染色），用户侧旧值 primary@10% 与之同色相仅差 6 个
+        // 百分点透明度——肉眼不可分。改实色 primary + onPrimary：实色 vs 玻璃、
+        // 饱和 vs 淡染，「谁说的」一眼可辨（与 Agent 屏 UserBubble 同口径）。
+        color = MaterialTheme.colorScheme.primary,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
@@ -83,7 +87,7 @@ private fun UserBubble(text: String) {
         Text(
             text = text,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = MaterialTheme.colorScheme.onPrimary,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
         )
     }
