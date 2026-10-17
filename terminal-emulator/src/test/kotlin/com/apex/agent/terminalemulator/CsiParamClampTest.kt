@@ -31,7 +31,8 @@ class CsiParamClampTest {
         feed(c, "\u001B[1;1H")   // 行首
         feed(c, "\u001B[2147483647@")  // INT32_MAX 插入
         assertEquals("光标不移动（ICH 语义）", 0, c.snapshot().cursorRow)
-        assertEquals("饱和插入 = 整行空白", " ".repeat(10), text(c, 0))
+        // 渲染层裁剪行尾默认空白（RenderRowMapper.renderRow）→ 整行空白呈空串
+        assertEquals("饱和插入 = 整行空白", "", text(c, 0))
     }
 
     @Test fun `ICH with INT32_MAX at mid-row survives`() {
@@ -40,7 +41,7 @@ class CsiParamClampTest {
         feed(c, "\u001B[1;5H")   // col 4（0 基）
         feed(c, "\u001B[2147483647@")
         assertEquals("光标列不越界", 4, c.snapshot().cursorCol)
-        assertEquals("起点前内容保留、起点起饱和补空白", "abcd      ", text(c, 0))
+        assertEquals("起点前内容保留、起点起饱和补空白（行尾空白被渲染裁剪）", "abcd", text(c, 0))
     }
 
     @Test fun `DCH with INT32_MAX saturates and survives`() {
@@ -48,7 +49,7 @@ class CsiParamClampTest {
         feed(c, "abcdefghij")
         feed(c, "\u001B[1;3H")   // col 2
         feed(c, "\u001B[2147483647P")
-        assertEquals("起点前内容保留、起点起全删补空白", "ab        ", text(c, 0))
+        assertEquals("起点前内容保留、起点起全删补空白（行尾空白被渲染裁剪）", "ab", text(c, 0))
     }
 
     @Test fun `ECH with INT32_MAX saturates and survives`() {
@@ -57,17 +58,20 @@ class CsiParamClampTest {
         feed(c, "\u001B[1;4H")   // col 3
         feed(c, "\u001B[2147483647X")
         assertEquals("光标不越界", 3, c.snapshot().cursorCol)
-        assertEquals("起点起饱和擦除到行尾", "abc       ", text(c, 0))
+        assertEquals("起点起饱和擦除到行尾（行尾空白被渲染裁剪）", "abc", text(c, 0))
     }
 
     @Test fun `wide-char row survives INT32_MAX ops`() {
         val c = core()
-        // 中文宽字符行 + 大参数三连 —— 配对腰斩探测路径不得越界
+        // 中文宽字符行 + 大参数三连（从行首发起，饱和钳位后覆盖整行）——
+        // 宽字符配对腰斩探测路径不得越界。行首饱和 ICH = 整行空白：
+        // 宽 trail 折叠进 lead + 行尾空白渲染裁剪 → 呈空串，关键是不崩不挂。
         feed(c, "中文测试")
+        feed(c, "\u001B[1;1H")
         feed(c, "\u001B[2147483647@")
         feed(c, "\u001B[2147483647P")
         feed(c, "\u001B[2147483647X")
-        assertEquals("存活且行内无孤儿残留", 10, text(c, 0).length)
+        assertEquals("", text(c, 0))
     }
 
     // ═══ 常规参数语义不回归 ═══
@@ -101,6 +105,6 @@ class CsiParamClampTest {
         feed(c, "abc")
         feed(c, "\u001B[1;1H")
         feed(c, "\u001B[500X")   // 超行宽 → 钳到行尾（不是溢出，是常规饱和）
-        assertEquals(" ".repeat(10), text(c, 0))
+        assertEquals("", text(c, 0))  // 行尾空白被渲染裁剪 → 空串
     }
 }

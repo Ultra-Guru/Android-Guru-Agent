@@ -1,8 +1,11 @@
 package com.apex.agent.core.engine
 
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.async
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -20,66 +23,67 @@ import org.junit.Test
  * complete within 10s"（5 连）→ UI「取消卡死」。
  *
  * 修复：UserQuestionGateway.abortActiveQuestion() 默认收口接口 + 桥实现 +
- * ApexAgentEngine.abort() 调用链。本测试锁定：桥收口语义（skipped/弹窗清除/
- * 无挂起返回 false）与引擎 abort 调用链（abort 必调 gateway 收口）。
+ * abortConfirmationChannels 统一调用链。本测试锁定：桥收口语义
+ * （skipped/弹窗清除/无挂起返回 false/迟到 submit 安全）与引擎 abort 调用链。
+ *
+ * 测试纪律（AGENTS.md / #276 棘轮）：runTest 虚拟钟 + runCurrent/advanceUntilIdle
+ * 推进 —— 不用墙钟睡眠、不用阻塞等待原语。ask 的注册段（synchronized 内
+ * deferred 赋值 + pendingQuestion 置值）先于 await 挂起点同步执行，
+ * runCurrent 一拍即可见。
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class UserQuestionBridgeAbortTest {
 
     // ═══ 桥收口语义 ═══
 
-    @Test fun `abortActiveQuestion completes pending ask with skipped answer`() = runBlocking {
+    @Test fun `abortActiveQuestion completes pending ask with skipped answer`() = runTest {
         val bridge = UserQuestionBridge()
         val question = AgentQuestion(
             title = "选一个",
             options = listOf(AgentQuestionOption("a", "A"), AgentQuestionOption("b", "B"))
         )
+        val answered = CompletableDeferred<AgentAnswer>()
+        launch { answered.complete(bridge.ask(question)) }
 
-        val askDeferred = CompletableDeferred<AgentAnswer>()
-        val askJob = async {
-            val answer = withTimeout(5_000) { bridge.ask(question) }
-            askDeferred.complete(answer)
-            answer
-        }
-
-        // 等待挂起注册（pendingQuestion 可见即注册完成）
-        awaitUntil { bridge.pendingQuestion.value != null }
+        runCurrent() // ask 注册段同步执行完（挂起在 deferred.await()）
+        assertEquals("提问已注册（UI 可见弹窗）", question.id, bridge.pendingQuestion.value?.id)
 
         assertTrue("存在挂起提问 → 收口返回 true", bridge.abortActiveQuestion())
 
-        val answer = askJob.await()
+        val answer = withTimeout(5_000) { answered.await() }
         assertTrue("收口 = skipped 答案", answer.skipped)
         assertFalse("收口 ≠ 超时（timedOut 与显式收口可区分）", answer.timedOut)
         assertEquals(question.id, answer.questionId)
-        // finally 条件回收：挂起者自己的 deferred 被清、弹窗状态复位
+        advanceUntilIdle() // ask 的 finally 条件回收执行
         assertNull("pendingQuestion 应随收口复位（UI 弹窗关闭）", bridge.pendingQuestion.value)
     }
 
-    @Test fun `abortActiveQuestion returns false when nothing pending`() = runBlocking {
+    @Test fun `abortActiveQuestion returns false when nothing pending`() = runTest {
         val bridge = UserQuestionBridge()
         assertFalse("无挂起提问 → false（调用方零副作用）", bridge.abortActiveQuestion())
-        Unit
     }
 
-    @Test fun `abortActiveQuestion keeps later submissions no-op safe`() = runBlocking {
+    @Test fun `abortActiveQuestion keeps later submissions no-op safe`() = runTest {
         val bridge = UserQuestionBridge()
         val question = AgentQuestion(
             title = "确认？",
             options = listOf(AgentQuestionOption("ok", "OK"))
         )
-        val askJob = async { withTimeout(5_000) { bridge.ask(question) } }
-        awaitUntil { bridge.pendingQuestion.value != null }
+        val answered = CompletableDeferred<AgentAnswer>()
+        launch { answered.complete(bridge.ask(question)) }
+        runCurrent()
 
         assertTrue(bridge.abortActiveQuestion())
-        val answer = askJob.await()
+        val answer = withTimeout(5_000) { answered.await() }
         assertTrue(answer.skipped)
         // 收口后再 submit（迟到的 UI 回答）→ 无 deferred 可喂，不崩不挂
         bridge.submit(AgentAnswer(questionId = question.id, selectedOptionId = "ok"))
-        Unit
+        assertNull(bridge.pendingQuestion.value)
     }
 
     // ═══ 引擎 abort 调用链 ═══
 
-    @Test fun `engine abort invokes gateway abortActiveQuestion`() = runBlocking {
+    @Test fun `engine abort invokes gateway abortActiveQuestion`() = runTest {
         val recording = RecordingGateway()
         val engine = ApexAgentEngine(
             llmClient = com.apex.agent.core.engine.orchestrator.FakeLlmClient(
@@ -94,7 +98,6 @@ class UserQuestionBridgeAbortTest {
         )
         engine.abort()
         assertTrue("abort() 必须调用 gateway.abortActiveQuestion()", recording.abortCalled)
-        Unit
     }
 
     // ═══ helpers ═══
@@ -107,14 +110,6 @@ class UserQuestionBridgeAbortTest {
         override fun abortActiveQuestion(): Boolean {
             abortCalled = true
             return false
-        }
-    }
-
-    private fun awaitUntil(timeoutMs: Long = 5_000, condition: () -> Boolean) {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (!condition()) {
-            check(System.currentTimeMillis() < deadline) { "condition not met within ${timeoutMs}ms" }
-            Thread.sleep(10)
         }
     }
 }
