@@ -25,40 +25,53 @@ package com.apex.agent.core.code.stream
  *   轮次胶囊，轮内明细默认收起。
  */
 sealed interface ToolKind {
-    /** 读文件（code_read 等）。 */
+    /** 读文件（CodeRead 等）。 */
     data object READ_FILE : ToolKind
-    /** 写文件（code_write）。 */
+    /** 写文件（CodeWrite）。 */
     data object WRITE_FILE : ToolKind
-    /** 增量 patch 编辑（code_edit）。 */
+    /** 增量 patch 编辑（CodeEdit）。 */
     data object EDIT_FILE : ToolKind
-    /** 内容搜索（code_grep / grep_search）。 */
+    /** 内容搜索（CodeGrep / grep_search）。 */
     data object GREP_SEARCH : ToolKind
-    /** 终端会话命令（terminal.exec / shell_execute）。 */
+    /** 终端会话命令（TerminalExec / ShellExecute）。 */
     data object BASH : ToolKind
-    /** git 操作（git / code_git_diff）。 */
+    /** git 操作（git / CodeGitDiff）。 */
     data object GIT : ToolKind
     /** lint / 诊断。 */
     data object LINT : ToolKind
     /** 测试运行。 */
     data object TEST : ToolKind
-    /** 计划 / todo 变更（code_todo / plan）。 */
+    /** 计划 / todo 变更（CodeTodo / plan）。 */
     data object PLAN : ToolKind
     /** MCP 自定义工具（mcp.* 与未知名——保守展示为自定义工具）。 */
     data object MCP_CUSTOM : ToolKind
 
     companion object {
-        /** 工具 id → 胶囊族。 */
-        fun fromToolName(toolName: String): ToolKind = when {
-            toolName == "code_read" || toolName == "read_file" -> READ_FILE
-            toolName == "code_write" || toolName == "write_file" -> WRITE_FILE
-            toolName == "code_edit" || toolName == "edit_file" -> EDIT_FILE
-            toolName == "code_grep" || toolName == "grep" || toolName == "search" -> GREP_SEARCH
-            toolName == "terminal.exec" || toolName == "shell_execute" || toolName == "bash" -> BASH
-            toolName == "git" || toolName == "code_git" || toolName == "code_git_diff" -> GIT
-            toolName == "lint" || toolName == "code_lint" -> LINT
-            toolName == "test" || toolName == "code_test" -> TEST
-            toolName == "code_todo" || toolName == "todo" || toolName == "plan" -> PLAN
-            else -> MCP_CUSTOM
+        /**
+         * 工具 id → 胶囊族。
+         *
+         * v5：注册表 id 是无分隔符 PascalCase，但模型仍可能回显业界短名
+         * （read / bash / grep / git / lint / test / todo…）—— 先做"小写 +
+         * 去分隔符"归一，再按现役 id 与历史写法两套键匹配。
+         */
+        fun fromToolName(toolName: String): ToolKind {
+            val key = toolName.trim().lowercase().filter { it.isLetterOrDigit() }
+            return when {
+                key == "coderead" || key == "read" || key == "readfile" -> READ_FILE
+                key == "codewrite" || key == "write" || key == "writefile" -> WRITE_FILE
+                key == "codeedit" || key == "edit" || key == "editfile" ||
+                    key == "multiedit" -> EDIT_FILE
+                key == "codegrep" || key == "grep" || key == "search" ||
+                    key == "grepsearch" -> GREP_SEARCH
+                key == "terminalexec" || key == "shellexecute" || key == "bash" ||
+                    key == "shell" || key == "execute" -> BASH
+                key.startsWith("codegit") || key == "git" -> GIT
+                key == "codelint" || key == "lint" -> LINT
+                key == "codetest" || key == "test" -> TEST
+                key == "codetodo" || key == "todo" || key == "todowrite" ||
+                    key == "plan" -> PLAN
+                else -> MCP_CUSTOM
+            }
         }
     }
 }

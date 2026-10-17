@@ -10,7 +10,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.jsonArray
 
 /**
- * Agent tool: terminal.resize
+ * Agent tool: TerminalResize
  *
  * Spec ref: ATR 2.0 Final Spec §34.7
  *
@@ -26,7 +26,7 @@ import kotlinx.serialization.json.jsonArray
 class TerminalResizeTool(
     private val runtime: TerminalRuntime
 ) : TerminalTool {
-    override val id: String = "terminal.resize"
+    override val id: String = "TerminalResize"
     override val name: String = id
     override val description: String = """
         Resize the Session's PTY (sends SIGWINCH). Updates VirtualTerminal dimensions. Useful

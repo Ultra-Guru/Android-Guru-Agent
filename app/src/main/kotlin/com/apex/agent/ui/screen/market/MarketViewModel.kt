@@ -56,13 +56,9 @@ enum class MarketTab(@StringRes val labelRes: Int) {
 }
 
 /**
- * 市场顶栏视图：
- * - [BROWSE] 市场 —— 发现与安装入口（模板 / GitHub / URL / 魔搭 / 添加表单）；
- * - [INSTALLED] 已安装管理 —— 管理已装/已加载内容（启停 / 卸载 / 连接）。
- *
- * 两个视图下均保留同一套 [MarketTab] 子导航（插件 / Skills / MCP / 连接器 / 集成），
- * 切换视图不重置子页签 —— 用户在「Skills · 市场」看完安装源，切到
- * 「已安装管理」还在 Skills 分类下，上下文不断裂。
+ * 市场顶栏视图：[BROWSE] 市场（发现与安装）/ [INSTALLED] 已安装管理（启停 / 卸载 / 连接）。
+ * 两视图共享同一套 [MarketTab] 子导航（插件 / Skills / MCP / 连接器 / 集成），切换视图
+ * 不重置子页签 —— 在「Skills · 市场」看完安装源切到「已安装管理」仍在同一分类。
  */
 enum class MarketScope(@StringRes val labelRes: Int) {
     BROWSE(R.string.market_scope_browse),
@@ -91,73 +87,6 @@ enum class SkillRepoSource(@StringRes val labelRes: Int) {
     HUB(R.string.market_skill_source_hub),
     CLAWHUB(R.string.market_skill_source_clawhub)
 }
-
-// ═══ UI 行数据（避免界面直接依赖各注册表内部类型）═══
-
-data class MarketSkillRow(
-    val id: String,
-    val name: String,
-    val description: String,
-    val installed: Boolean,
-    val enabled: Boolean,
-    val source: String = "",   // local / modelscope / github
-    /**
-     * true = App 内置模板：能力已在二进制里（工具原生注册），不存在"下载/安装"这一步。
-     * UI 显示为「内置」标记而不是「安装」按钮 —— 旧实现给它一个安装按钮，
-     * 点了只是往本地写一份 JSON，观感是装了，实际什么外部内容都没拉取。
-     */
-    val builtin: Boolean = false,
-    // ── cs-mem 认知健康（v2 增强：让市场"活"起来）──
-    /** 能量 [0.01, 10.0]；衰减到 0.05 以下会被梦境折叠。1.0 = 默认/新装。 */
-    val energy: Float = 1.0f,
-    /** 已结晶为可跳过 LLM 的确定性宏（高频成功技能）。 */
-    val isCrystallized: Boolean = false,
-    /** 最近一次执行时间戳（ms）；0 = 从未执行。 */
-    val lastUsedAt: Long = 0,
-    val successCount: Int = 0,
-    val failureCount: Int = 0,
-    // ── 市场元数据（来自 manifest，用于分类过滤与详情页）──
-    val category: String? = null,
-    val tags: List<String> = emptyList(),
-    val author: String = "",
-    val version: String = "",
-    val trustLevel: String = "community",
-    /**
-     * Issue #166：manifest.bundled——APK assets（assets/skills/）首启幂等释放的内置优质技能。
-     * 市场卡 / 详情显示「内置」徽标；卸载入口降级（内置可禁用不可卸载，
-     * SkillRegistry.uninstall 对 bundled 恒 false）。
-     */
-    val bundled: Boolean = false,
-    /** #197 工位作用域（"agent"/"coding"/"all"）—— 市场分级的过滤口径。 */
-    val scope: String = "all"
-) {
-    /** 成功率 0..1。 */
-    val successRate: Float get() =
-        if (successCount + failureCount == 0) 0f
-        else successCount.toFloat() / (successCount + failureCount)
-
-    /** 是否低能量（需要被使用否则会衰减）。 */
-    val isLowEnergy: Boolean get() = installed && energy < 0.5f && !isCrystallized
-}
-
-data class MarketMcpRow(
-    val name: String,
-    /** 端点摘要：远端显示 URL，STDIO 显示完整命令行。 */
-    val endpoint: String,
-    val transport: McpTransport,
-    val enabled: Boolean,
-    val connected: Boolean,
-    /** 内置服务器（BUILTIN 进程内 transport，如内置 GitHub）：不可删除。 */
-    val builtin: Boolean = false,
-    /** #197 工位作用域（"agent"/"coding"/"all"）。 */
-    val scope: String = "all"
-)
-
-data class MarketPluginRow(
-    val packageName: String,
-    val label: String,
-    val loaded: Boolean
-)
 
 data class MarketUiState(
     val scope: MarketScope = MarketScope.BROWSE,
@@ -1059,10 +988,7 @@ class MarketViewModel @Inject constructor(
         _uiState.update { it.copy(categoryFilter = category) }
     }
 
-    /**
-     * 本地技能搜索：对已安装 + 内置模板做 ToolSuggester 模糊匹配。
-     * 输入空时清空建议并显示全部。
-     */
+    /** 本地技能搜索：对已安装 + 内置模板做 ToolSuggester 模糊匹配；输入空时清空建议并显示全部。 */
     fun setSkillQuery(query: String) {
         val trimmed = query.trim()
         _uiState.update { it.copy(skillQuery = trimmed) }

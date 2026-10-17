@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
+import com.apex.browser.chrome.LiveViewOverlay
 import com.apex.browser.engine.BrowserEngine
 import com.apex.browser.engine.BrowserTracer
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -48,6 +49,8 @@ import javax.inject.Inject
 class BrowserViewModel @Inject constructor(
     private val engine: BrowserEngine,
     private val tracer: BrowserTracer,
+    // v1.4.1：「查看实时页面」入口（透明悬浮窗强制唤起；HIDDEN 时另走人工接管）
+    private val liveView: LiveViewOverlay,
 ) : ViewModel() {
 
     data class BrowserUiState(
@@ -131,6 +134,22 @@ class BrowserViewModel @Inject constructor(
     /** 新建浏览器会话（空白页起步；页面加载后状态回调自然驱动 UI）。 */
     fun newSession() = launchAction("newTab") {
         engine.newTab()
+    }
+
+    /**
+     * 查看实时页面（v1.4.1）：
+     * - 会话激活（驾驶/接管/恢复）→ 强制唤起实时页面悬浮窗（复位用户收起标记，
+     *   透明卡片显示 Agent 正在开的真实页面）；
+     * - HIDDEN（从未开会话）→ 新建空白会话并进入人工接管 —— 全屏浏览器浮窗
+     *   直接给用户用（「从抽屉栏打开浏览器」的完整体验，与悬浮球点击同源）。
+     */
+    fun viewLivePage() = launchAction("viewLivePage") {
+        if (engine.currentState == BrowserEngine.BrowserSessionState.HIDDEN) {
+            engine.newTab()
+            engine.enterHandoffMode()
+        } else {
+            liveView.show()
+        }
     }
 
     /** 结束会话：状态回落 HIDDEN，浮窗/悬浮球随之收起。 */

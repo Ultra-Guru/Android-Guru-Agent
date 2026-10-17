@@ -349,7 +349,7 @@ class AlarmSetter(private val context: Context) {
  * 文件选择器——经 SAF (ACTION_OPEN_DOCUMENT)。
  *
  * **注意**：本实现是 fire-and-forget——返回 SAF picker 启动结果，但 URIs
- * 不通过工具结果回传。Agent 拿到结果后，可经 [shell] / [terminal.write]
+ * 不通过工具结果回传。Agent 拿到结果后，可经 [shell] / [TerminalWrite]
  * 命令用户复制文件（用户也可在 SAF UI 内手动选文件）。
  *
  * 完整 Activity Result API 接入需要宿主 Activity 注册 launcher——本实现

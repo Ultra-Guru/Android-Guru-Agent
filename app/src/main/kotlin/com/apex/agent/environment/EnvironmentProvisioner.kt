@@ -3,7 +3,7 @@ package com.apex.agent.environment
 import com.apex.agent.platform.terminal.io.InputOwner
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
 import com.apex.agent.platform.terminal.ubuntu.lifecycle.UbuntuLifecycleCoordinator
-import com.apex.agent.platform.terminal.wait.WaitCondition
+import com.apex.agent.platform.TerminalWait.WaitCondition
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,14 +18,14 @@ import kotlinx.coroutines.flow.asStateFlow
  * Gradle / NDK / SDK mirrors — those belong here, in the `DeveloperEnvironment` module.
  *
  * Install flow (per dep):
- *   1. Run checkCommand via terminal.run + wait(PROCESS_EXITED)
+ *   1. Run checkCommand via TerminalRun + wait(PROCESS_EXITED)
  *      → if exit 0, already installed, skip
- *   2. Otherwise run installCommand(useMirror) via terminal.run
+ *   2. Otherwise run installCommand(useMirror) via TerminalRun
  *   3. Wait PROCESS_EXITED (reliable, no settle-time)
  *   4. Stream output to installLog StateFlow
  *   5. Re-run checkCommand to verify
  *
- * Uses the new Runtime API (terminal.run + terminal.wait + terminal.observe), NOT the old
+ * Uses the new Runtime API (TerminalRun + TerminalWait + TerminalObserve), NOT the old
  * TerminalManager.execute with settle-time.
  *
  * T82 断点修复：[DepCatalog] 的命令全部是 Ubuntu（proot）内的 apt 命令 ——
@@ -176,18 +176,18 @@ class EnvironmentProvisioner(
             return -1
         }
         val exitCode = when (wait) {
-            is com.apex.agent.platform.terminal.wait.WaitResult.Matched -> {
+            is com.apex.agent.platform.TerminalWait.WaitResult.Matched -> {
                 val ev = wait.event
                 if (ev is com.apex.agent.platform.terminal.events.TerminalEvent.ProcessExited)
                     ev.exitCode ?: -1
                 else 0
             }
-            is com.apex.agent.platform.terminal.wait.WaitResult.Timeout -> {
+            is com.apex.agent.platform.TerminalWait.WaitResult.Timeout -> {
                 appendLog("TIMEOUT\n")
                 runtime.signal(sessionId, com.apex.agent.platform.terminal.io.UnixSignal.SIGKILL, InputOwner.SYSTEM, run.jobId)
                 -1
             }
-            is com.apex.agent.platform.terminal.wait.WaitResult.SessionGone -> -1
+            is com.apex.agent.platform.TerminalWait.WaitResult.SessionGone -> -1
         }
         // observe the command's output (since its startCursor)
         val obs = runtime.observe(

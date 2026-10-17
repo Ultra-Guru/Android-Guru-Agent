@@ -5,14 +5,14 @@ import com.apex.agent.core.tools.AgentTool
 /**
  * # GitTools — Coding 模式 git 工具集聚合入口（Issue #153）
  *
- * 五个 git 工具（status / diff / log / commit / branch），与 code_read 等
+ * 五个 git 工具（status / diff / log / commit / branch），与 CodeRead 等
  * 文件工具同族：
  *
  * - 全部经注入的 [GitCommandRunner] 执行——生产实现是 app 层的
  *   ProotGitCommandRunner（git 二进制在 PRoot Ubuntu 沙箱内，工作区恒定
  *   bind 为 guest /workspace）；测试注入脚本化假 runner，纯 JVM 可跑；
  * - Agent 模式与 Code 模式互用（注册进 ToolRegistry 后两模式共享）；
- * - diff 视图复用 UI 侧已有的 DiffOutput 渲染（code_git_diff 输出统一
+ * - diff 视图复用 UI 侧已有的 DiffOutput 渲染（CodeGitDiff 输出统一
  *   diff 原文，+/- 行着色由渲染层完成）；
  * - 全部工具输出超过 [MAX_TOOL_OUTPUT_CHARS] 字符即截断——对齐执行器的
  *   maxToolOutputLength=8000 预算，给工具调用包装信息留出余量。
@@ -58,9 +58,9 @@ internal fun boundedToolOutput(text: String): String {
  * 可操作的下一步（初始化 or 装环境）。
  */
 internal fun notRepoGuidance(): String =
-    "当前工作区还不是 git 仓库。可先调用 code_git_commit 创建首次提交（会自动 " +
+    "当前工作区还不是 git 仓库。可先调用 CodeGitCommit 创建首次提交（会自动 " +
         "git init 初始化仓库），或让用户在终端的 Ubuntu 环境里手动执行 git init" +
-        "（若终端尚未安装 Ubuntu，先执行 terminal.ubuntu.install 安装环境）"
+        "（若终端尚未安装 Ubuntu，先执行 TerminalUbuntuInstall 安装环境）"
 
 /**
  * 清洗模型传入的相对路径参数（diff/log 的 pathspec）。

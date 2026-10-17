@@ -11,9 +11,9 @@ import javax.inject.Singleton
  *
  * 此前旧 memorize/recall 工具被移除但新工具未注册，导致系统提示与实际工具集不一致。
  * 这组工具补齐"只读召回"能力，安全且无副作用：
- *   - memory_recent_episodes：最近的任务会话（了解我做过什么）
- *   - memory_search_nodes：   按文本搜索历史 UI 节点（了解屏幕长什么样）
- *   - memory_recall_macro：   列出高成功率自动蒸馏出的宏技能（可复用的程序性记忆）
+ *   - MemoryRecentEpisodes：最近的任务会话（了解我做过什么）
+ *   - MemorySearchNodes：   按文本搜索历史 UI 节点（了解屏幕长什么样）
+ *   - MemoryRecallMacro：   列出高成功率自动蒸馏出的宏技能（可复用的程序性记忆）
  *
  * 注意：这些是"观察"工具，不直接触发 Bypass 执行；Bypass 仍由引擎内部决策。
  */
@@ -22,7 +22,7 @@ import javax.inject.Singleton
 class MemoryRecentEpisodesTool @Inject constructor(
     private val store: MemoryGraphStore
 ) : AgentTool {
-    override val id = "memory_recent_episodes"
+    override val id = "MemoryRecentEpisodes"
     override val name = "Memory: Recent Episodes"
     override val description = """
         Recall recent agent task sessions recorded by CS-Mem long-term memory.
@@ -60,7 +60,7 @@ class MemoryRecentEpisodesTool @Inject constructor(
 class MemorySearchNodesTool @Inject constructor(
     private val store: MemoryGraphStore
 ) : AgentTool {
-    override val id = "memory_search_nodes"
+    override val id = "MemorySearchNodes"
     override val name = "Memory: Search UI Nodes"
     override val description = """
         Search historical UI semantic nodes by text in CS-Mem long-term memory.
@@ -101,7 +101,7 @@ class MemorySearchNodesTool @Inject constructor(
 class MemoryRecallMacroTool @Inject constructor(
     private val store: MemoryGraphStore
 ) : AgentTool {
-    override val id = "memory_recall_macro"
+    override val id = "MemoryRecallMacro"
     override val name = "Memory: Recall Macros"
     override val description = """
         Recall high-success-rate auto-distilled macro skills (procedural memory) from CS-Mem.

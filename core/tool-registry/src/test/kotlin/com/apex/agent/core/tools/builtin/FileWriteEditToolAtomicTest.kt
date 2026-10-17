@@ -11,7 +11,7 @@ import java.io.File
 import java.nio.file.Files
 
 /**
- * #258 回归：write_file / edit_file 的原子写（AGENTS「持久化一律
+ * #258 回归：Write / Edit 的原子写（AGENTS「持久化一律
  * tmp+renameTo」纪律）。
  *
  * 旧实现直接 writeText 覆盖目标文件 —— 写一半崩溃/断电会留下截断的用户
@@ -43,7 +43,7 @@ class FileWriteEditToolAtomicTest {
         root.walkTopDown().filter { it.name.startsWith(".tmp_") }.toList()
 
     @Test
-    fun `write_file overwrite lands content without tmp residue`() = runTest {
+    fun `Write overwrite lands content without tmp residue`() = runTest {
         val tool = FileWriteTool(root)
         val out = tool.execute(
             """{"path":"notes.md","content":"line1\nline2\n"}"""
@@ -59,7 +59,7 @@ class FileWriteEditToolAtomicTest {
     }
 
     @Test
-    fun `write_file removes stale tmp left by a previous failed attempt`() = runTest {
+    fun `Write removes stale tmp left by a previous failed attempt`() = runTest {
         // 模拟上次写 tmp 后、rename 前进程被杀留下的孤儿临时文件
         File(root, ".tmp_notes.md").writeText("STALE-PARTIAL-CONTENT")
 
@@ -76,7 +76,7 @@ class FileWriteEditToolAtomicTest {
     }
 
     @Test
-    fun `edit_file writes merged content without tmp residue`() = runTest {
+    fun `Edit writes merged content without tmp residue`() = runTest {
         File(root, "main.py").writeText("x = 10\nprint(x)\n")
 
         val tool = FileEditTool(root)

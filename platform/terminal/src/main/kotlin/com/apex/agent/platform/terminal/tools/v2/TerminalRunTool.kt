@@ -14,13 +14,13 @@ import kotlinx.serialization.json.jsonArray
 // This file is a SCAFFOLD — wire to the real AgentTool base in Phase 2.
 
 /**
- * Agent tool: terminal.run
+ * Agent tool: TerminalRun
  *
  * Spec ref: ATR 2.0 Final Spec §34.2
  *
  * Runs a command in a Session. NON-BLOCKING: returns a Job handle immediately.
- * Use terminal.wait(PROCESS_EXITED, jobId) to block until done.
- * Use terminal.observe(afterCursor=startCursor) to read this job's output incrementally.
+ * Use TerminalWait(PROCESS_EXITED, jobId) to block until done.
+ * Use TerminalObserve(afterCursor=startCursor) to read this job's output incrementally.
  *
  * Long-running / interactive / background commands are all supported.
  *
@@ -34,11 +34,11 @@ import kotlinx.serialization.json.jsonArray
 class TerminalRunTool(
     private val runtime: TerminalRuntime
 ) : TerminalTool {
-    override val id: String = "terminal.run"
+    override val id: String = "TerminalRun"
     override val name: String = id
     override val description: String = """
         Run a command in a Session. Non-blocking: returns a Job immediately.
-        Use terminal.wait(PROCESS_EXITED) to block until done, and terminal.observe(afterCursor=startCursor)
+        Use TerminalWait(PROCESS_EXITED) to block until done, and TerminalObserve(afterCursor=startCursor)
         to read incremental output. Long-running / interactive / background commands are all supported.
     """.trimIndent()
 

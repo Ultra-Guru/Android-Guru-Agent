@@ -9,7 +9,7 @@
 ## 0. TL;DR（给评审人一句话）
 
 Operit 的网页自动化 = 内置 WebView + 把渲染后 DOM 精简成「带稳定索引的可交互元素列表」让 Agent 直接操作。
-本项目已有 44 个 `AgentTool`（含静态 `web_fetch`/`web_search` 和整屏坐标 `UiTools`），但缺「浏览器内 DOM 级操控」这一层。
+本项目已有 44 个 `AgentTool`（含静态 `WebFetch`/`WebSearch` 和整屏坐标 `UiTools`），但缺「浏览器内 DOM 级操控」这一层。
 **本方案补上这层，并额外做了摘要压缩 / 坐标兜底双通道 / 双模态（DOM+截图），比 Operit 更省 token、更稳。**
 
 ---
@@ -65,8 +65,8 @@ ui/common/browser/BrowserCallbackDialog.kt  # JS alert/confirm/prompt 回调弹�
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │  Agent (LLM)                                                   │
-│   工具调用: browser_navigate / snapshot / click / input / ...  │
-│   人工接管: browser_show   (展开浮窗，交人类登录/过验证)         │
+│   工具调用: BrowserNavigate / snapshot / click / input / ...  │
+│   人工接管: BrowserShow   (展开浮窗，交人类登录/过验证)         │
 └───────┬───────────────────────────────────┬──────────────────┘
         │ (ToolRegistry)                      │ 人类触控 (同一 WebView)
 ┌───────▼──────────────────────┐  ┌──────────▼──────────────────────────┐
@@ -86,7 +86,7 @@ ui/common/browser/BrowserCallbackDialog.kt  # JS alert/confirm/prompt 回调弹�
 └────────────────────────────────────────────────────────────────┘
 ```
 
-数据流：`navigate` → `snapshot`（拿 ref 列表）→ `input`+`click` → `screenshot`（视觉确认）→ 遇登录/验证码 `browser_show` 展开浮窗 → 人类操作后 Agent 继续。
+数据流：`navigate` → `snapshot`（拿 ref 列表）→ `input`+`click` → `screenshot`（视觉确认）→ 遇登录/验证码 `BrowserShow` 展开浮窗 → 人类操作后 Agent 继续。
 
 ---
 
@@ -104,7 +104,7 @@ ui/common/browser/BrowserCallbackDialog.kt  # JS alert/confirm/prompt 回调弹�
 | 文件 | 内容 |
 | --- | --- |
 | `app/.../browser/BrowserEngine.kt` | `@Singleton` WebView 宿主：多 session/历史/截图/点击/输入/scroll，全部 `Dispatchers.Main` |
-| `app/.../browser/BrowserAgentTools.kt` | 6 个 `AgentTool`（含 `browser_show` 展开浮窗），对齐现有风格 |
+| `app/.../browser/BrowserAgentTools.kt` | 6 个 `AgentTool`（含 `BrowserShow` 展开浮窗），对齐现有风格 |
 | `app/.../browser/BrowserOverlay.kt` | **浮窗浏览器 UI**：`WindowManager`+`ComposeView`（`TYPE_APPLICATION_OVERLAY`）挂系统窗口；展开=`BrowserScreen`（地址栏/标签/前进后退），收起=`FloatingBall`（可拖动小窗）。对应 Operit 的 `WebSessionBrowserHost` |
 | `app/.../browser/BrowserOverlayLifecycleOwner.kt` | 浮窗内 Compose 的 Lifecycle/ViewModelStore/SavedStateRegistry 模拟（对应 Operit `WebSessionOverlayLifecycleOwner`） |
 | `app/.../di/ToolModule.kt` | 提供 `BrowserEngine`/`BrowserAgentTools`/`BrowserOverlay` 并注册工具 |
@@ -115,15 +115,15 @@ ui/common/browser/BrowserCallbackDialog.kt  # JS alert/confirm/prompt 回调弹�
 
 | 工具 | 参数 | 返回 |
 | --- | --- | --- |
-| `browser_navigate` | `url`, `new_tab?` | 加载后页面概要 |
-| `browser_snapshot` | — | 带 `ref` 的可交互元素列表 + 页面概要（YAML 风格） |
-| `browser_click` | `ref` | 点击结果 |
-| `browser_input` | `ref`, `text` | 填值结果 |
-| `browser_scroll` | `delta_y?` | 滚动结果 |
-| `browser_screenshot` | — | PNG base64（`data:image/png;base64,...`） |
-| **`browser_show`** | `expand?`(默认 true) | 展开/收起浮窗，**交人类登录或过点机验证**；人类操作与 Agent 共享同一 WebView |
+| `BrowserNavigate` | `url`, `new_tab?` | 加载后页面概要 |
+| `BrowserSnapshot` | — | 带 `ref` 的可交互元素列表 + 页面概要（YAML 风格） |
+| `BrowserClick` | `ref` | 点击结果 |
+| `BrowserInput` | `ref`, `text` | 填值结果 |
+| `BrowserScroll` | `delta_y?` | 滚动结果 |
+| `BrowserScreenshot` | — | PNG base64（`data:image/png;base64,...`） |
+| **`BrowserShow`** | `expand?`(默认 true) | 展开/收起浮窗，**交人类登录或过点机验证**；人类操作与 Agent 共享同一 WebView |
 
-`browser_snapshot` 返回示例（已压缩，ref 稳定）：
+`BrowserSnapshot` 返回示例（已压缩，ref 稳定）：
 ```
 ⊕ 页面可交互元素（共 12 个，ref 稳定）：
   [r3] 链接 首页
@@ -138,9 +138,9 @@ ui/common/browser/BrowserCallbackDialog.kt  # JS alert/confirm/prompt 回调弹�
 
 1. **DOM 级 + 坐标兜底双通道**：`DomElement` 保留 `rect`/`isVisible`，既能 `el.click()`，也能在必要时回落 `UiTapTool`（AccessibilityService）。
 2. **LLM 摘要压缩**：`DomParser.buildSummary` 按 token 预算裁剪深层非交互节点为 `[折叠 N 项]`，避免整页 HTML 灌 prompt（Operit 仅扁平化）。
-3. **复用现有特权/无障碍体系**：`browser_click` 失败 → 自然降级到 `UiTools`，形成"浏览器内 DOM → 全屏坐标"降级链。
-4. **双模态理解**：`browser_snapshot`（结构化 DOM）+ `browser_screenshot`（PNG）可同时进 prompt，省 token 又保视觉保真。
-5. **（新增）人工接管浮窗**：`browser_show` 复用 Operit 思路——常驻 WebView 浮窗，人类直接触控即可登录/过验证，Agent 与人类共享同一实例，无需复杂 IPC。
+3. **复用现有特权/无障碍体系**：`BrowserClick` 失败 → 自然降级到 `UiTools`，形成"浏览器内 DOM → 全屏坐标"降级链。
+4. **双模态理解**：`BrowserSnapshot`（结构化 DOM）+ `BrowserScreenshot`（PNG）可同时进 prompt，省 token 又保视觉保真。
+5. **（新增）人工接管浮窗**：`BrowserShow` 复用 Operit 思路——常驻 WebView 浮窗，人类直接触控即可登录/过验证，Agent 与人类共享同一实例，无需复杂 IPC。
 
 ---
 
@@ -159,9 +159,9 @@ ui/common/browser/BrowserCallbackDialog.kt  # JS alert/confirm/prompt 回调弹�
 1. **（已确认方向）稳定 ref**：实测 Operit 用 `aria-ref` 稳定引用 + YAML 快照，非每帧重排。本方案改用 `data-apex-ref` 同思路，Qwen 是否认可？是否要一步到位做跨 iframe 递归（Operit 的 `browserRefResolverScript`）？
 2. **DOM 级点击 vs 坐标点击**：`clickElement(ref)` 用 `el.click()` 派发，对"靠 JS 事件委托 / hover 才出现的菜单"可能不触发。是否应默认对 `<a>`/按钮用坐标（`rect` 中心）点击更稳？还是保留 DOM 级优先 + 失败回落坐标？
 3. **摘要压缩策略**：当前按"字符预算"粗略估算 token。是否应接入真实 tokenizer（如 tiktoken 近似）更准？还是字符预算够用？
-4. **浮窗人工接管形态**：`browser_show` 展开浮窗交人类登录/过验证——Qwen 认可"Agent 与人类共享同一 WebView 实例"这个极简方案吗？还是要做"Agent 暂停等待人类信号再继续"的显式握手（更可控但更复杂）？
+4. **浮窗人工接管形态**：`BrowserShow` 展开浮窗交人类登录/过验证——Qwen 认可"Agent 与人类共享同一 WebView 实例"这个极简方案吗？还是要做"Agent 暂停等待人类信号再继续"的显式握手（更可控但更复杂）？
 5. **沙箱限制**：本机无 `gradlew`，仅能做 lint 检查；完整编译/单测需在 CI（GitHub Actions）跑。方案是否接受此验证路径？
-6. **截图时机**：`browser_screenshot` 截的是当前 WebView 视口（非完整长图）。是否需要做"全页长截图"（分片拼接）？
+6. **截图时机**：`BrowserScreenshot` 截的是当前 WebView 视口（非完整长图）。是否需要做"全页长截图"（分片拼接）？
 
 ---
 
@@ -169,7 +169,7 @@ ui/common/browser/BrowserCallbackDialog.kt  # JS alert/confirm/prompt 回调弹�
 
 - [ ] 评审开放问题 → 收尾 `BrowserEngine` / `BrowserAgentTools` / `DomParser`（稳定 ref）
 - [ ] `ApexCoreService` 注入 `BrowserEngine` + `BrowserOverlay` 单例（确认常驻）
-- [ ] **实现 `BrowserOverlay` 浮窗浏览器（展开/收起/可拖动小窗）+ `browser_show` 工具**（对标 Operit 悬浮球人工接管）
+- [ ] **实现 `BrowserOverlay` 浮窗浏览器（展开/收起/可拖动小窗）+ `BrowserShow` 工具**（对标 Operit 悬浮球人工接管）
 - [ ] CI 跑 `DomParserTest` + 全量 assemble
 - [ ] 跨 iframe `data-apex-ref` 递归解析（对标 Operit `browserRefResolverScript`）
 - [ ] 用户脚本注入（`UserScriptManager`）

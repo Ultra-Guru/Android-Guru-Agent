@@ -12,7 +12,7 @@ import java.util.concurrent.locks.ReentrantLock
  * # FileWriteGuard — code-tools 写路径统一守卫（原子写 + 跨工具按路径互斥）
  *
  * AGENTS.md「原子写：持久化一律 tmp + renameTo，rename 失败直写目标兜底」
- * 铁律在 code-tools 的落地。此前 code_edit / code_write 各自裸 `writeText()`
+ * 铁律在 code-tools 的落地。此前 CodeEdit / CodeWrite 各自裸 `writeText()`
  * （同仓 LongTaskStore / CodeConversationMemory 是正例，coding 工具是落后者）：
  * 进程在写中途死亡即留下半写文件，模型下一轮读到的是撕裂内容。
  *
@@ -25,9 +25,9 @@ import java.util.concurrent.locks.ReentrantLock
  *    保持原样，绝不在失败路径上截断用户源码（BaseTool 会折叠为
  *    EXECUTION_FAILED 回给模型，诚实可重试）。
  * 2. **[withPathLock]**：per-path [ReentrantLock] 池（canonical path 为键）。
- *    code_edit 的「读原文 → 模糊替换 → 写回」与 code_write 的「读 before →
+ *    CodeEdit 的「读原文 → 模糊替换 → 写回」与 CodeWrite 的「读 before →
  *    覆盖」是完整临界区，共享同一把锁后互斥——此前两工具各有各的锁池
- *    （code_write 干脆没有），并发写同一路径必然撕裂。
+ *    （CodeWrite 干脆没有），并发写同一路径必然撕裂。
  */
 object FileWriteGuard {
 
@@ -100,7 +100,7 @@ object FileWriteGuard {
 }
 
 /**
- * 文本风格（BOM / CRLF）探测与还原 —— code_edit / code_write 的共享契约：
+ * 文本风格（BOM / CRLF）探测与还原 —— CodeEdit / CodeWrite 的共享契约：
  * 改写既有文件时保留原 BOM 与原行尾风格，不让全量写悄悄改变文件形态
  * （与 git diff 噪音 / Windows 工程兼容性直接相关）。
  *

@@ -22,7 +22,7 @@
     <string name="code_stop">Stop</string>
     <string name="code_dismiss">Dismiss</string>
 
-    <!-- ask_user dialog -->
+    <!-- AskUser dialog -->
     <string name="code_question_title">Agent needs your input</string>
     <string name="code_question_hint">Type your answer…</string>
     <string name="code_question_default_yes">yes</string>
@@ -237,7 +237,7 @@
     <string name="code_git_changes_fmt">%1$d changed files</string>
     <string name="code_git_refresh">Refresh git status</string>
     <string name="code_git_commit_hint">Commit message</string>
-    <string name="code_git_commit">Commit all changes</string>
+    <string name="CodeGitCommit">Commit all changes</string>
     <string name="code_git_new_file">New untracked file (not in index yet)</string>
 
     <!-- ═══ #312 i18n batch 2: VM / reducer / editor user-visible copy ═══ -->
@@ -280,7 +280,7 @@
     <string name="code_thinking_view_none">Copy tweaks, constant changes, comment-level micro-edits — the target spot is clear and no logic branches are involved. Fastest tier to run (iterations x0.8, earlier compaction), but the model does no upfront reasoning at all, so slightly complex tasks can go badly wrong; fall back to LIGHT when unsure.</string>
     <string name="code_thinking_view_light">Single-spot small changes: one function, one config block, one style tweak — the blast radius is obvious at a glance. The glance-edit discipline (scan before editing, scan the diff after) is enough to cover the risk, and the only cost is a 256-token thinking budget — the default for everyday small fixes.</string>
     <string name="code_thinking_view_standard">Regular feature changes: one complete but bounded mini-requirement (add a validation, cover a branch, wire a callback). The standard read → edit → verify → re-read loop plus minimal-diff discipline, at a moderate cost. Escalate to DEEP once a change spans more than two files.</string>
-    <string name="code_thinking_view_deep">Multi-file features or changes with ripple effects: build the changeset list before touching anything, tie every change to a verification, and delegate exploratory work to code_task sub-agents. Tool failures automatically append a self-check. Costs start to matter (iterations x1.2), but it prevents editing A and forgetting B.</string>
+    <string name="code_thinking_view_deep">Multi-file features or changes with ripple effects: build the changeset list before touching anything, tie every change to a verification, and delegate exploratory work to CodeTask sub-agents. Tool failures automatically append a self-check. Costs start to matter (iterations x1.2), but it prevents editing A and forgetting B.</string>
     <string name="code_thinking_view_maximum">Danger-zone refactors: core data structures, shared utility functions, state-machine transitions — one broken invariant cascades into a chain of bugs. Invariant identification, ripple-effect review and the final three-question checklist are all enabled, at iterations x1.5. Worth it only where a wrong edit costs more to roll back than the thinking does.</string>
     <string name="code_thinking_view_ultracode">Cross-module deep changes: one edit ripples into three or more modules, or you must map the whole call chain before starting. The coding loop of dependency map → candidate edits → risk ranking → minimal change → immediate verification → regression sweep, at iterations x2.0 with an output budget of 12000 — several times the token cost of STANDARD, in exchange for verified edits and no regression debt.</string>
     <string name="code_thinking_view_apexcode">Architecture-scale changes: framework swaps, data-layer migrations, redrawing module boundaries — the kind of work where a wrong edit sinks the project. Impact-radius mapping, a multi-option comparison matrix, adversarial self-review, a full verification matrix and evidence-chain reporting, at iterations x3.0, budget 65536, with later compaction preserving the full evidence chain — the cost ceiling of the whole ladder. Reserve it for genuinely big jobs: enabling it for daily tasks just burns tokens.</string>

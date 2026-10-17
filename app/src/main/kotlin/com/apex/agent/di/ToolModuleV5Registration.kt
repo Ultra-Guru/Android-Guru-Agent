@@ -52,13 +52,13 @@ import java.io.File
  * [ToolModuleJvmToolsRegistration] / [ToolModuleRegistrySections] 同款拆分模式。
  *
  * 三段：
- * - **§14e**：Agent 自主设置（9 工具）——agent_setting_get/set、agent_profile_*、
- *   agent_provider_set_key、agent_role_*、agent_mode_preset_*；agent_provider_set_key
+ * - **§14e**：Agent 自主设置（9 工具）——AgentSettingGet/set、agent_profile_*、
+ *   AgentProviderSetKey、agent_role_*、agent_mode_preset_*；AgentProviderSetKey
  *   写入成功后同步登记进 [SecretRedactor]（#336：工具输出层兜底擦洗从此
  *   覆盖 provider key，此前仅 VaultRepository 登记、任何一层都擦不到）；
- * - **§14f**：下载 + 安装 APK（2 工具）——app_install_apk / app_download_install；
- * - **§14g**：更多能力（7 工具）——contact_search / sms_send / calendar_event_list /
- *   alarm_set / file_pick / image_capture / notification_post
+ * - **§14f**：下载 + 安装 APK（2 工具）——AppInstallApk / AppDownloadInstall；
+ * - **§14g**：更多能力（7 工具）——ContactSearch / SmsSend / CalendarEventList /
+ *   AlarmSet / FilePick / ImageCapture / NotificationPost
  *
  * 设计文档：[docs/v5-capability-enhancement.md]
  */
@@ -115,16 +115,16 @@ internal fun registerV5EnhancementTools(
 
     // ═══ §14f. v5 — 下载 + 安装 APK（2 个工具，无需 Shizuku/root）═══
     // 用户原始诉求："增加 download 工具，可以利用网页自动化安装应用"。
-    // - app_install_apk：本地 APK → PackageInstaller（无特权安装路径）
-    // - app_download_install：URL → 下载 → 校验 → 安装（一站式）
-    // 与现有 app_install（pm install，需 Shizuku/root）互补。
+    // - AppInstallApk：本地 APK → PackageInstaller（无特权安装路径）
+    // - AppDownloadInstall：URL → 下载 → 校验 → 安装（一站式）
+    // 与现有 AppInstall（pm install，需 Shizuku/root）互补。
     val apkInstaller = AndroidApkInstaller(context)
     registry.register(SafeAgentTool(AppInstallApkTool(apkInstaller)))
     registry.register(SafeAgentTool(AppDownloadInstallTool(httpClient, downloadDir, apkInstaller)))
 
     // ═══ §14g. v5 — 更多能力（7 个工具：联系人/SMS/日历/闹钟/文件选择/拍照/通知）═══
-    // 与 #172 高级设备工具包（torch/vibrate/battery_status/network_info/
-    // tts_speak/share_content/deep_link/image_info/image_convert）互补。
+    // 与 #172 高级设备工具包（torch/vibrate/BatteryStatus/NetworkInfo/
+    // TtsSpeak/ShareContent/DeepLink/ImageInfo/ImageConvert）互补。
     // 风险与权限：每个工具的元数据显式声明风险级别与必要权限（用户/会话
     // 门控会处理 HIGH/MEDIUM 的弹窗确认）。
     val contactsReader = ContactsReader(context)

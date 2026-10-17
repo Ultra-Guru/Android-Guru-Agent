@@ -1,0 +1,71 @@
+name: Changelog Gate
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 更新日志门禁（changelog 通道 v1）—— 「改码必写日志」纪律的 CI 强制点：
+#
+#   PR 触碰代码（.kt/.kts/.java/.xml/.gradle/.pro/.svg/.json 等）时，必须同时
+#   新增 .changelog/unreleased/ 下的片段文件；纯内部/基建变更可打
+#   skip-changelog 标签豁免。片段本身的规范性由 scripts/changelog.py
+#   validate 兜底（非空 / 文件名合法 / ≤32KB）。
+#
+# 设计要点：
+#   • 只拦 PR —— 发布器 App 的片段走直推 main（changelog-only 提交），
+#     不经过本门禁；main push 由 release.yml 的聚合步骤自然消费。
+#   • labeled/unlabeled 也触发 —— 补打 skip-changelog 标签即时解除红叉。
+#   • fork PR 兼容：fetch-depth 0 后 merge ref 的双亲（base/head SHA）皆可达。
+# ═════════════════════════════════════════════════════════════════════════════
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+concurrency:
+  group: changelog-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Changelog fragment required
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate fragments
+        run: python3 scripts/changelog.py validate
+
+      - name: Code change requires changelog fragment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # ── 1) PR 是否触碰「用户可感知」的代码面 ─────────────────────
+          if ! git diff --name-only "$BASE_SHA"..."$HEAD_SHA" \
+              | grep -Eq '\.(kt|kts|java|xml|gradle|pro|svg|json)$'; then
+            echo "ℹ️  未触碰代码 —— 无需更新日志片段"
+            exit 0
+          fi
+          # ── 2) skip-changelog 标签豁免 ──────────────────────────────
+          LABELS=$(gh api "repos/${{ github.repository }}/issues/${PR_NUMBER}/labels" \
+            --jq '.[].name' 2>/dev/null || true)
+          if grep -qx 'skip-changelog' <<<"$LABELS"; then
+            echo "⏭️  PR 带 skip-changelog 标签 —— 豁免"
+            exit 0
+          fi
+          # ── 3) 必须新增至少一个未发布片段 ───────────────────────────
+          if git diff --name-only --diff-filter=A "$BASE_SHA"..."$HEAD_SHA" \
+              | grep -Eq '^\.changelog/unreleased/[^/]+\.md$'; then
+            echo "✅ 已携带更新日志片段"
+            exit 0
+          fi
+          echo "::error::本 PR 修改了代码但未新增更新日志片段（.changelog/unreleased/ 下的 .md）。"
+          echo "::error::请在合并前补写面向用户的更新日志；纯内部/基建变更可打 skip-changelog 标签豁免。"
+          exit 1

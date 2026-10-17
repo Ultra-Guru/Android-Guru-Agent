@@ -22,7 +22,7 @@ import kotlin.math.floor
  */
 class CalculateTool : AgentTool {
 
-    override val id = "calculate"
+    override val id = "Calculate"
     override val name = "Calculate"
     override val description = """
         Evaluate a mathematical expression.
@@ -234,7 +234,7 @@ class CalculateTool : AgentTool {
  */
 class TextTransformTool : AgentTool {
 
-    override val id = "text_transform"
+    override val id = "TextTransform"
     override val name = "Transform Text"
     override val description = """
         Transform text: encode/decode, case conversion, hash, etc.

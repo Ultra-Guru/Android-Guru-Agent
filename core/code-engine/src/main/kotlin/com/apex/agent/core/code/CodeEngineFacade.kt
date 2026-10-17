@@ -11,7 +11,7 @@ import java.io.File
  *
  * Coding 屏的「思考逻辑」有两条引擎线（见 [StandardLogicMode]）：
  * - **深潜**（[CodeAgentEngine]，自研七档思考）；
- * - **标准**（`StandardModeEngine`，业界标准 Agent 任务循环）。
+ * - **标准**（`StandardKitAdapter` → standard-loop 库，业界标准 Agent 任务循环）。
  *
  * 两条线都实现本接口，[CodeViewModel] 只面向本接口编程，
  * [com.apex.agent.core.code.standard.DualLogicCodeEngine] 按
@@ -73,9 +73,9 @@ interface CodeEngineFacade : AgentEngine {
     fun updateForcedTools(forcedToolIds: Set<String>, exposeAll: Boolean)
 
     /**
-     * 思考档位（七档）：标准引擎把它映射为**回合预算倍率**与采样温度取向
-     * （NONE/LIGHT 收紧、MAXIMUM 以上放开），语义见
-     * `StandardModeEngine.updateThinkingLevel`。
+     * 思考档位（七档）：标准引擎把它映射为**回合预算倍率**与推理努力取向
+     * （NONE/LIGHT 收紧、MAXIMUM 以上放开），语义见 standard-loop 库
+     * `AgentLoopEngine.updateThinkingLevel`。
      */
     fun updateThinkingLevel(level: CodeThinkingLevel)
 

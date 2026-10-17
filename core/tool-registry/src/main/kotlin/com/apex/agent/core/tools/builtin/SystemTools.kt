@@ -14,7 +14,7 @@ class DeviceInfoTool(
     private val shellExecutor: suspend (String) -> String
 ) : AgentTool {
 
-    override val id = "get_device_info"
+    override val id = "GetDeviceInfo"
     override val name = "Device Info"
     override val description = """
         Get device information: model, Android version, battery, storage, network, display.
@@ -77,7 +77,7 @@ class AppListTool(
     private val shellExecutor: suspend (String) -> String
 ) : AgentTool {
 
-    override val id = "app_list"
+    override val id = "AppList"
     override val name = "List Apps"
     override val description = """
         List installed applications.
@@ -141,11 +141,11 @@ class AppLaunchTool(
     private val shellExecutor: suspend (String) -> String
 ) : AgentTool {
 
-    override val id = "app_launch"
+    override val id = "AppLaunch"
     override val name = "Launch App"
     override val description = """
         Launch an Android app by package name.
-        Use app_list first if you don't know the package name.
+        Use AppList first if you don't know the package name.
 
         Examples:
         - {"package": "com.android.settings"}

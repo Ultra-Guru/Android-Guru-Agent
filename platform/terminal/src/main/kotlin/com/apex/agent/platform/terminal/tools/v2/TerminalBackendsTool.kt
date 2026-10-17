@@ -10,17 +10,17 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Agent tool: terminal.backends — T73（后端能力发现）
+ * Agent tool: TerminalBackends — T73（后端能力发现）
  *
  * ExecutionBackend.kt 注释指定的 P73 交付物：availability() 的 Agent 出口。
  *
  * 列出所有已注册执行后端及其真实可用性：
  *   - local          ANDROID_LOCAL  恒 READY
  *   - linux-ubuntu   LINUX          READY（rootfs 已装）/ NEEDS_ROOTFS（先用
- *                                   terminal.ubuntu.install 引导）/ FAILED（proot 缺失等）
+ *                                   TerminalUbuntuInstall 引导）/ FAILED（proot 缺失等）
  *
- * Agent 决策链：backends() → 需要 Ubuntu 但 NEEDS_ROOTFS → terminal.ubuntu.install
- * → READY 后 terminal.create(backend="linux-ubuntu") → run/observe/write …
+ * Agent 决策链：backends() → 需要 Ubuntu 但 NEEDS_ROOTFS → TerminalUbuntuInstall
+ * → READY 后 TerminalCreate(backend="linux-ubuntu") → run/observe/write …
  *
  * JSON Schema (input):  { }（无参数）
  * JSON Schema (output): { backends: [ { id, runtimeType, available, state, detail? } ] }
@@ -28,12 +28,12 @@ import kotlinx.serialization.json.jsonPrimitive
 class TerminalBackendsTool(
     private val runtime: TerminalRuntime
 ) : TerminalTool {
-    override val id: String = "terminal.backends"
+    override val id: String = "TerminalBackends"
     override val name: String = id
     override val description: String = """
         Discover available terminal execution backends and their real availability.
-        Returns each backend's id (use as terminal.create's "backend" parameter), runtime type,
-        and state: READY (usable now) / NEEDS_ROOTFS (bundled archive not yet extracted — call terminal.ubuntu.install, offline, minutes for the full ~1GB environment) /
+        Returns each backend's id (use as TerminalCreate's "backend" parameter), runtime type,
+        and state: READY (usable now) / NEEDS_ROOTFS (bundled archive not yet extracted — call TerminalUbuntuInstall, offline, minutes for the full ~1GB environment) /
         FAILED (with reason). Check this before creating a linux-ubuntu session.
     """.trimIndent()
 

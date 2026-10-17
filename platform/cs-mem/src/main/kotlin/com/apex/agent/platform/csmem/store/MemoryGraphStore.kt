@@ -184,7 +184,7 @@ data class FSMMacro(
 @Serializable
 data class FSMTransition(
     val fromState: String,
-    val actionType: String,    // "click", "swipe", "input_text", "back", "home"
+    val actionType: String,    // "click", "swipe", "InputText", "back", "home"
     val actionParams: String,  // JSON: {"x":100,"y":200} 或 {"text":"hello"}
     val toState: String
 )

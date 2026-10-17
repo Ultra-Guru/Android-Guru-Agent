@@ -22,7 +22,7 @@
     <string name="code_stop">停止</string>
     <string name="code_dismiss">关闭</string>
 
-    <!-- ask_user 对话框 -->
+    <!-- AskUser 对话框 -->
     <string name="code_question_title">智能体需要你的输入</string>
     <string name="code_question_hint">输入你的回答…</string>
     <string name="code_question_default_yes">是</string>
@@ -236,7 +236,7 @@
     <string name="code_git_changes_fmt">%1$d 个变更文件</string>
     <string name="code_git_refresh">刷新 git 状态</string>
     <string name="code_git_commit_hint">提交说明</string>
-    <string name="code_git_commit">提交全部变更</string>
+    <string name="CodeGitCommit">提交全部变更</string>
     <string name="code_git_new_file">新的未跟踪文件（尚未加入索引）</string>
 
     <!-- ═══ #312 i18n 批次 2：VM / 归约层 / 编辑器用户可见文案 ═══ -->
@@ -279,7 +279,7 @@
     <string name="code_thinking_view_none">改文案、改常量、注释级微调——目标位置明确、不涉及逻辑分支。跑得最快（迭代×0.8、更早压缩），但模型完全不做前置推理，复杂一点的任务容易瞎改；拿不准就退回 LIGHT。</string>
     <string name="code_thinking_view_light">单点小改：改一个函数 / 一段配置 / 一处样式，改动半径一目了然。一读一改的纪律（改前扫一眼、改完扫一眼 diff）足够兜住风险，成本只有 256 token 的思考预算——日常小修的默认选择。</string>
     <string name="code_thinking_view_standard">常规功能改动：一个完整但有边界的小需求（加个校验 / 补个分支 / 接个回调）。读→改→验→回读的标准循环 + 最小 diff 纪律，成本适中。跨文件改动超过两处时建议升 DEEP。</string>
-    <string name="code_thinking_view_deep">多文件特性 / 有连锁反应的改动：先建「改动集清单」再动手，每处改动关联验证方式，探索类工作委派 code_task 子代理。工具失败后自动追加自检，成本开始显著（迭代×1.2），但能防住「改了 A 忘了 B」。</string>
+    <string name="code_thinking_view_deep">多文件特性 / 有连锁反应的改动：先建「改动集清单」再动手，每处改动关联验证方式，探索类工作委派 CodeTask 子代理。工具失败后自动追加自检，成本开始显著（迭代×1.2），但能防住「改了 A 忘了 B」。</string>
     <string name="code_thinking_view_maximum">危险区重构：动核心数据结构 / 公共工具函数 / 状态机转移——不变量一破就是连环 bug。识别不变量 + 连锁影响核对 + 终检三问清单全开，迭代×1.5。改错了回滚成本高于思考成本的地方，才值得开这档。</string>
     <string name="code_thinking_view_ultracode">跨模块深改：一次改动波及 3 个以上模块 / 需要摸清整条调用链再动手。依赖地图→候选改法→风险排序→最小修改→即时验证→回归扫描的编码闭环，迭代×2.0、输出预算 12000——token 花费约为 STANDARD 的数倍，但换来「改完即验证、不留回归债」。</string>
     <string name="code_thinking_view_apexcode">架构级大改：换框架 / 迁移数据层 / 重定义模块边界这类「改错就翻车」的工程。影响半径测绘 + 多方案对比矩阵 + 对抗性自审 + 全量验证矩阵 + 证据链汇报，迭代×3.0、budget 65536、更晚压缩保留完整证据链——全梯度成本天花板。只对真正的大活开：日常任务开它纯属烧 token。</string>

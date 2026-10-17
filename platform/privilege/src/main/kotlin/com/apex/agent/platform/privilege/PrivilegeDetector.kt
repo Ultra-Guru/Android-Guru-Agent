@@ -19,7 +19,7 @@ import java.util.concurrent.TimeUnit
  */
 object PrivilegeDetector {
 
-    // ★ 缓存：避免每次 shell_execute 都 fork `su --version` 子进程（3s 延迟）。
+    // ★ 缓存：避免每次 ShellExecute 都 fork `su --version` 子进程（3s 延迟）。
     // 缓存 30s 或直到调用 [invalidateCache]（Shizuku binder 死亡 / 用户起停 Shizuku 时主动调用）。
     @Volatile private var cachedLevel: PrivilegeLevel? = null
     @Volatile private var cachedAt: Long = 0L
@@ -115,7 +115,7 @@ object PrivilegeDetector {
      * （via 通道 / exit 退出码 / 耗时 / 截断后的命令）—— 一条命令到底走了
      * root、shizuku 还是普通 shell，日志中枢可查、可筛选、可回放。
      *
-     * @param workDir 工作目录（null = 各通道默认）。用于 shell_execute 的
+     * @param workDir 工作目录（null = 各通道默认）。用于 ShellExecute 的
      * 工作目录记忆 —— cd 状态由调用方（ToolModule 会话跟踪）解析并传入。
      */
     fun executeShell(command: String, timeoutMs: Long = 30000, workDir: String? = null): ShellExecResult {

@@ -1,13 +1,13 @@
 package com.apex.agent.platform.terminal.tools.v2
 
-import com.apex.agent.platform.terminal.exec.AnsiMode
-import com.apex.agent.platform.terminal.exec.ExecEngine
-import com.apex.agent.platform.terminal.exec.ExecRequest
-import com.apex.agent.platform.terminal.exec.ProcessBuilderSpawner
-import com.apex.agent.platform.terminal.exec.CommandResult
-import com.apex.agent.platform.terminal.exec.CommandSpawner
-import com.apex.agent.platform.terminal.exec.SpawnRequest
-import com.apex.agent.platform.terminal.exec.SpawnedCommand
+import com.apex.agent.platform.TerminalExec.AnsiMode
+import com.apex.agent.platform.TerminalExec.ExecEngine
+import com.apex.agent.platform.TerminalExec.ExecRequest
+import com.apex.agent.platform.TerminalExec.ProcessBuilderSpawner
+import com.apex.agent.platform.TerminalExec.CommandResult
+import com.apex.agent.platform.TerminalExec.CommandSpawner
+import com.apex.agent.platform.TerminalExec.SpawnRequest
+import com.apex.agent.platform.TerminalExec.SpawnedCommand
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -23,7 +23,7 @@ import java.io.ByteArrayInputStream
 import java.io.File
 
 /**
- * terminal.exec 工具层契约测试 —— 锁定 Agent 可见的 JSON 形态
+ * TerminalExec 工具层契约测试 —— 锁定 Agent 可见的 JSON 形态
  * （用户契约：stdout/stderr/exit_code/duration_ms/truncated，snake_case）。
  */
 class TerminalExecToolTest {
@@ -183,7 +183,7 @@ class TerminalExecToolTest {
 
     @Test fun `schema and id are stable`() {
         val tool = TerminalExecTool(scriptedEngine())
-        assertEquals("terminal.exec", tool.id)
+        assertEquals("TerminalExec", tool.id)
         val schema = Json.parseToJsonElement(tool.parametersSchema).jsonObject
         val props = schema["properties"]!!.jsonObject
         for (key in listOf("command", "cwd", "timeout_ms", "max_output_chars", "max_error_chars", "head_lines", "tail_lines", "ansi", "env")) {

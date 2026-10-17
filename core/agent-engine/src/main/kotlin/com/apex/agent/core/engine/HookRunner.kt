@@ -28,7 +28,7 @@ import kotlinx.coroutines.launch
  *
  * ## SubagentStop 契约（装配层接线，引擎不经手）
  *
- * `HookEvent.SubagentStop(sessionId, subagentId)` 在 code_task 子代理工具
+ * `HookEvent.SubagentStop(sessionId, subagentId)` 在 CodeTask 子代理工具
  * 完成处派发（ToolModule 装配 SubAgentRunner 的工具实现内，工具结果返回
  * 前），经 `hookRegistry.dispatchFireAndForget(...)` 非阻断发出——子代理
  * 回合的收官点在工具执行侧，不在主引擎循环里。

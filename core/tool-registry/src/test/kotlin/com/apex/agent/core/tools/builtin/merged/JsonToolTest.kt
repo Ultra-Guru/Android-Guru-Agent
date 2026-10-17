@@ -17,7 +17,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * #171 四族合并 —— `json` 工具单测（合并 json_path + json_transform，
+ * #171 四族合并 —— `json` 工具单测（合并 JsonPathLegacy + JsonTransformLegacy，
  * 新增 validate / format）。
  */
 class JsonToolTest {
@@ -50,7 +50,7 @@ class JsonToolTest {
         ]},"expensive":true}
     """.trimIndent().replace("\n", "")
 
-    // ═══ query（移植自 json_path）════════════════════════════════════
+    // ═══ query（移植自 JsonPathLegacy）════════════════════════════════════
 
     @Test
     fun `query extracts a single value as compact json`() = runTest {
@@ -90,7 +90,7 @@ class JsonToolTest {
         assertEquals("json", result.error!!.field)
     }
 
-    // ═══ transform（七操作，与 json_transform 同源）═══════════════════
+    // ═══ transform（七操作，与 JsonTransformLegacy 同源）═══════════════════
 
     private suspend fun transform(json: String, vararg ops: Pair<String, Any>): ToolResult {
         val opsArray = buildJsonObject {
@@ -170,7 +170,7 @@ class JsonToolTest {
     }
 
     @Test
-    fun `transform parity with legacy json_transform tool`() = runTest {
+    fun `transform parity with legacy JsonTransformLegacy tool`() = runTest {
         // 同一管线在旧工具与合并工具上的输出必须一致（#171 语义零漂移）。
         val ops = """[{"op":"pick","keys":["a"]}]"""
         val legacy = com.apex.agent.core.tools.builtin.JsonTransformTool().executeSafe(

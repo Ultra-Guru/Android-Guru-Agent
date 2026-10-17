@@ -56,7 +56,7 @@ AUTO）：
 | 文本长度 | >500 字 +2；>1500 字 +3 | 长需求含隐式多步 |
 | 多步指示词 | 先/然后/接着/步骤/first/then/step/plan | +2 |
 | 代码/命令含量 | ``` 围栏 / `$ ` / git·npm·gradle 等 | +2 |
-| **编码意图**（coding 专有） | @file 引用 / code_edit·code_grep 语义词 / 「实现/重构+函数/类」形态 | **+1** |
+| **编码意图**（coding 专有） | @file 引用 / CodeEdit·CodeGrep 语义词 / 「实现/重构+函数/类」形态 | **+1** |
 | 风险词 | rm -rf/删除/uninstall/格式化/刷机/权限 | +3（硬保底 DEEP） |
 | 错误史 | 上一轮 run 有失败 | +2 且显式升一档 |
 

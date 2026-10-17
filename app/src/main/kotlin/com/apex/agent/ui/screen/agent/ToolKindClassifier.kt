@@ -16,17 +16,17 @@ private val SERVER_FIELD_REGEX = Regex("""(?i)"server"\s*:\s*"([^"]+)"""")
  * 根据工具名推断调用来源分类，用于 UI 差异化呈现。
  *
  * 规则（按优先级）：
- * - `mcp_call` / `mcp_call_<server>_<tool>` → MCP，并从参数中解析 server；
+ * - `McpCall` / `mcp_call_<server>_<tool>` → MCP，并从参数中解析 server；
  * - **元数据优先**（v2）：注册表能查到元数据时按类别直接映射
- *   （GITHUB→GitHub（官方 mark）、http_request→连接器、SKILL/PLUGIN/MCP 同名、
+ *   （GITHUB→GitHub（官方 mark）、HttpRequest→连接器、SKILL/PLUGIN/MCP 同名、
  *   WEB→搜索/抓取、BROWSER→浏览器自动化）——新工具零改动获得正确分类，
  *   不再依赖 id 前缀启发式；
- * - `web_search` → 联网搜索；`web_fetch` → 网页抓取；
+ * - `WebSearch` → 联网搜索；`WebFetch` → 网页抓取；
  * - `browser_` 前缀 → 浏览器自动化（内置大功能，v1.5.0 起非插件；
  *   元数据缺位时的前缀兜底）；
  * - `plugin*` 前缀 → 插件（plugin-sdk 经 ToolRegistry 注册的工具）；
  * - `github_*` 前缀 → GitHub（官方 mark + 品牌灰，与通用连接器区分）；
- * - `connector*` / `http_request` → 连接器（连接外部服务的 API 调用）；
+ * - `connector*` / `HttpRequest` → 连接器（连接外部服务的 API 调用）；
  * - 其余含 "skill" → Skill；
  * - 均未命中但当前处于 Skill/连接器/插件路由上下文 → 归入该上下文来源；
  * - 其余 → 本地工具。
@@ -37,7 +37,7 @@ fun classifyTool(
     contextKind: ToolKind? = null,
     metadata: ToolMetadata? = null
 ): Pair<ToolKind, String?> {
-    if (toolName.startsWith("mcp_call")) {
+    if (toolName.startsWith("McpCall")) {
         // RouterMcpTool 通过 arguments 的 "server" 字段传入 server 名。
         val server = SERVER_FIELD_REGEX.find(args)
             ?.groupValues?.getOrNull(1)
@@ -52,29 +52,29 @@ fun classifyTool(
             ToolCategory.PLUGIN -> ToolKind.PLUGIN
             ToolCategory.BROWSER -> ToolKind.BROWSER
             ToolCategory.WEB -> when (toolName) {
-                "web_search" -> ToolKind.WEB_SEARCH
-                "web_fetch" -> ToolKind.WEB_FETCH
-                "http_request" -> ToolKind.CONNECTOR
+                "WebSearch" -> ToolKind.WEB_SEARCH
+                "WebFetch" -> ToolKind.WEB_FETCH
+                "HttpRequest" -> ToolKind.CONNECTOR
                 else -> ToolKind.WEB_FETCH
             }
             else -> null
         }
         if (kind != null) return kind to null
     }
-    if (toolName == "web_search") return ToolKind.WEB_SEARCH to null
-    if (toolName == "web_fetch") return ToolKind.WEB_FETCH to null
-    // 浏览器自动化（内置 24 个 browser_* 工具）：前缀兜底 —— 元数据未命中
+    if (toolName == "WebSearch") return ToolKind.WEB_SEARCH to null
+    if (toolName == "WebFetch") return ToolKind.WEB_FETCH to null
+    // 浏览器自动化（内置 24 个 Browser* 工具）：前缀兜底 —— 元数据未命中
     // （注册表尚未装载 / 老会话回放）时也能拿到正确徽章。
-    if (toolName.startsWith("browser_")) return ToolKind.BROWSER to null
-    if (toolName.startsWith("plugin")) return ToolKind.PLUGIN to null
-    // github_* 前缀 → GITHUB（官方 mark 展示，与通用连接器区分）
-    if (toolName.startsWith("github_")) return ToolKind.GITHUB to null
-    if (toolName.startsWith("connector") || toolName == "http_request") {
+    if (toolName.startsWith("Browser")) return ToolKind.BROWSER to null
+    if (toolName.startsWith("Plugin")) return ToolKind.PLUGIN to null
+    // Github* 前缀 → GITHUB（官方 mark 展示，与通用连接器区分）
+    if (toolName.startsWith("Github")) return ToolKind.GITHUB to null
+    if (toolName.startsWith("Connector") || toolName == "HttpRequest") {
         return ToolKind.CONNECTOR to null
     }
     if (toolName.contains("skill", ignoreCase = true)) return ToolKind.SKILL to null
     // 路由上下文兜底：Skill/连接器/插件流水线内产生的未匹配工具归入该来源，
-    // 让 `/connector:ssh` 会话里的 shell_execute 也能带上连接器链路徽章。
+    // 让 `/connector:ssh` 会话里的 ShellExecute 也能带上连接器链路徽章。
     if (contextKind != null) return contextKind to null
     return ToolKind.LOCAL to null
 }

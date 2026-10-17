@@ -1,6 +1,6 @@
 package com.apex.agent.tools
 
-import com.apex.agent.platform.terminal.exec.SpawnRequest
+import com.apex.agent.platform.TerminalExec.SpawnRequest
 import com.apex.agent.platform.terminal.proot.PRootHostEnvironment
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -15,9 +15,9 @@ import java.io.File
 import java.io.FileNotFoundException
 
 /**
- * T92（#255 权限链审计）—— terminal.exec 路由决策锁。
+ * T92（#255 权限链审计）—— TerminalExec 路由决策锁。
  *
- * ProotCommandSpawner 是 `terminal.exec` 的第一跳路由（PRoot Ubuntu 优先，
+ * ProotCommandSpawner 是 `TerminalExec` 的第一跳路由（PRoot Ubuntu 优先，
  * 未就绪/Android 专有命令回落宿主三级链）。此前路由逻辑（ANDROID_ONLY_COMMANDS
  * 判定 / host→guest cwd 映射 / rootfs 解析）零单测 —— 路由错一步模型就会
  * 在错误的执行环境里拿到 "not found"。这里把三条路由轴固化为回归锁：

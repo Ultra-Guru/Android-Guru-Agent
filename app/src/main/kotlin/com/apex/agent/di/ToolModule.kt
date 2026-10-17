@@ -35,7 +35,7 @@ import com.apex.agent.platform.terminal.tools.v2.TerminalDiagnosticsTool
 import com.apex.agent.platform.terminal.tools.v2.TerminalCloseTool
 import com.apex.agent.platform.terminal.tools.v2.TerminalCreateTool
 import com.apex.agent.platform.terminal.tools.v2.TerminalExecTool
-import com.apex.agent.platform.terminal.exec.ExecEngine
+import com.apex.agent.platform.TerminalExec.ExecEngine
 import com.apex.agent.tools.PrivilegedCommandSpawner
 import com.apex.agent.tools.ProotCommandSpawner
 import com.apex.agent.platform.terminal.proot.PRootHostEnvironment
@@ -332,7 +332,7 @@ object ToolModule {
     @Singleton
     fun provideToolCircuitBreaker(): ToolCircuitBreaker = ToolCircuitBreaker()
 
-    /** 组合动作注册表（v3）：shortcut_define 定义 → 热注册为一等工具。 */
+    /** 组合动作注册表（v3）：ShortcutDefine 定义 → 热注册为一等工具。 */
     @Provides
     @Singleton
     fun provideShortcutRegistry(): ShortcutRegistry = ShortcutRegistry()
@@ -441,6 +441,7 @@ object ToolModule {
         memorySearchNodesTool: MemorySearchNodesTool,
         memoryRecallMacroTool: MemoryRecallMacroTool,
         browserAgentTools: BrowserAgentTools,
+        fusionController: com.apex.agent.fusion.FusionBundleController,
         // T76: Linux environment productionization 依赖
         linuxEnvironmentHealth: LinuxEnvironmentHealth,
         ubuntuBootstrapManager: UbuntuBootstrapManager,
@@ -449,15 +450,14 @@ object ToolModule {
         linuxCapabilityProbe: com.apex.agent.platform.terminal.environment.LinuxCapabilityProbe,
         environmentRepairService: com.apex.agent.platform.terminal.health.EnvironmentRepairService,
         ubuntuLifecycle: com.apex.agent.platform.terminal.ubuntu.lifecycle.UbuntuLifecycleCoordinator,
-        // P83 (T4): 项目感知环境闭环（terminal.workspace.environment 工具）
+        // P83 (T4): 项目感知环境闭环（TerminalWorkspaceEnvironment 工具）
         projectEnvironment: com.apex.agent.platform.terminal.environment.ProjectEnvironmentCoordinator,
-        // T82：guest fs API + apexctl 桥 + 镜像/ensure 接线
-        // 注：rootfsTarget 已在上方 P83 参数区声明（同一类型），此处不重复。
-        guestFilesystem: com.apex.agent.platform.terminal.fs.GuestFilesystem,
-        guestBridgeService: com.apex.agent.platform.terminal.bridge.GuestBridgeService,
+        // T82：guest fs API + apexctl 桥 + 镜像/ensure 接线（rootfsTarget 见上方 P83 区）
+        guestFilesystem: com.apex.agent.platform.TerminalFs.GuestFilesystem,
+        guestBridgeService: com.apex.agent.platform.TerminalBridge.GuestBridgeService,
         ubuntuSourcesList: com.apex.agent.platform.terminal.ubuntu.UbuntuSourcesList,
         rootfsBaseDir: java.io.File,
-        // P0 修复（用户反馈"Ubuntu 用不了/Shell 用不了"）：terminal.exec 的
+        // P0 修复（用户反馈"Ubuntu 用不了/Shell 用不了"）：TerminalExec 的
         // Ubuntu 沙箱通道依赖（ProotCommandSpawner）。
         hostEnvironment: PRootHostEnvironment,
         // T92（D5 完成度）：argv 能力源（两处 ProotCommandSpawner 的能力门输入）
@@ -482,7 +482,7 @@ object ToolModule {
         // Coding 模式：工作区根解析（code_* 工具的动态沙箱根）+ 共享 todo 单例
         codeWorkspaceRoots: CodeWorkspaceRoots,
         codeTodoTool: CodeTodoTool,
-        // v0.2 #147：子代理引擎工厂的共享单例集（每次 code_task 构造全新
+        // v0.2 #147：子代理引擎工厂的共享单例集（每次 CodeTask 构造全新
         // ApexAgentEngine 实例，隔离上下文；依赖均为无环叶子见各 Module）
         llmClient: LlmClient,
         modelRuntime: ModelRuntime,
@@ -493,9 +493,9 @@ object ToolModule {
         vaultRepository: VaultRepository,
         // #172 上下文回顾三件套的数据源：当前会话持久化消息（SharedPrefs 单例）。
         conversationMemory: com.apex.agent.core.engine.ConversationMemory,
-        // 技能渐进披露：skill_activate 工具 + 子代理引擎工厂共享的激活存储。
+        // 技能渐进披露：SkillActivate 工具 + 子代理引擎工厂共享的激活存储。
         skillActivation: com.apex.agent.core.tools.skill.SkillActivationStore,
-        // 能力自省：官方市场源（MarketplaceModule 单例）—— market_search
+        // 能力自省：官方市场源（MarketplaceModule 单例）—— MarketSearch
         // 工具检索技能+MCP 双 hub 目录。
         hubSource: HubSource,
         // v3 子代理预算接线（设置 → 子代理）：SubAgentRunner 每次运行读快照。
@@ -505,7 +505,7 @@ object ToolModule {
         val registry = DefaultToolRegistry()
 
         // P83 (T5) Workspace 统一：文件沙箱根迁移到 LinuxWorkspaceManager 的 default
-        // workspace（bind Ubuntu guest /workspace）—— read_file/write_file 与 terminal 看到同一份
+        // workspace（bind Ubuntu guest /workspace）—— Read/Write 与 terminal 看到同一份
         // 文件；旧目录内容一次性搬入，解析失败诚实降级旧路径（工具仍可用，只是未统一）。
         val flatLegacyDir = File(context.filesDir, "workspace")
         val workspaceDir = runCatching {
@@ -516,7 +516,7 @@ object ToolModule {
         }.getOrElse { File(context.filesDir, "workspace").apply { mkdirs() } }
         val downloadDir = File(context.getExternalFilesDir(null), "Download").apply { mkdirs() }
 
-        // ★ 工作目录记忆：兑现 shell_execute "cd 后续命令保持同目录" 的承诺。
+        // ★ 工作目录记忆：兑现 ShellExecute "cd 后续命令保持同目录" 的承诺。
         // 命令以纯 cd <dir> 结尾且执行成功 → 记录新目录，后续命令以它为起始目录。
         val shellWorkDir = com.apex.agent.tools.ShellWorkDirTracker()
 
@@ -531,7 +531,7 @@ object ToolModule {
             if (!bypassCommandGate && !commandPermissionGate.ensureAllowed(cmd)) {
                 // #F-⑯：工具层审计（拒绝也留痕）；结构化结果见下方 T92 注释。
                 toolAuditLogger.log(ToolAuditLogger.Event(
-                    tool = "shell_execute", decision = "denied_by_user", command = cmd,
+                    tool = "ShellExecute", decision = "denied_by_user", command = cmd,
                     detail = "CommandPermissionGate rejected"
                 ))
                 ShellExecResult(
@@ -550,7 +550,7 @@ object ToolModule {
                     // shell）、耗时、结果，全部落盘可举证（工具层；平台层逐命令
                     // 遥测见 PrivilegeDetector —— T92 / #255 双层互补）。
                     toolAuditLogger.log(ToolAuditLogger.Event(
-                        tool = "shell_execute", decision = "executed", command = cmd,
+                        tool = "ShellExecute", decision = "executed", command = cmd,
                         tier = result.via, durationMs = System.currentTimeMillis() - startedAt,
                         success = result.success, exitCode = result.exitCode
                     ))
@@ -559,7 +559,7 @@ object ToolModule {
                     throw e
                 } catch (e: Throwable) {
                     toolAuditLogger.log(ToolAuditLogger.Event(
-                        tool = "shell_execute", decision = "failed", command = cmd,
+                        tool = "ShellExecute", decision = "failed", command = cmd,
                         durationMs = System.currentTimeMillis() - startedAt,
                         detail = e::class.simpleName
                     ))
@@ -574,9 +574,9 @@ object ToolModule {
         }
 
         // 面向模型的输出格式化（单源，两个消费方共用）：
-        // 设备工具通道保持与旧版逐字节一致；shell_execute 专属通道在成功输出
-        // 尾部附 [executed via: x]（T92 / #255 —— terminal.exec 恒有 channel
-        // 字段，shell_execute 此前仅失败时才带 via，成功时通道对模型不可见）。
+        // 设备工具通道保持与旧版逐字节一致；ShellExecute 专属通道在成功输出
+        // 尾部附 [executed via: x]（T92 / #255 —— TerminalExec 恒有 channel
+        // 字段，ShellExecute 此前仅失败时才带 via，成功时通道对模型不可见）。
         fun formatShellResult(result: ShellExecResult, cmd: String, withVia: Boolean): String {
             if (result.via == VIA_GATE_DENIED || result.via == VIA_EXCEPTION) {
                 return result.output
@@ -604,7 +604,7 @@ object ToolModule {
             formatShellResult(shellExecResult(cmd, DEFAULT_SHELL_TIMEOUT_MS), cmd, withVia = false)
         }
 
-        // shell_execute 专属通道：成功输出尾部附通道标记；超时按工具传入的
+        // ShellExecute 专属通道：成功输出尾部附通道标记；超时按工具传入的
         // 秒数透传（P1 修复 —— schema 的 timeout 参数真实生效）。
         val shellExecAudited: suspend (String, Int) -> String = { cmd, timeoutSec ->
             val timeoutMs = (timeoutSec * 1000L).coerceIn(
@@ -617,8 +617,8 @@ object ToolModule {
         // ═══ 1. Shell (1) ═══
         registry.register(SafeAgentTool(ShellExecuteTool(shellExecAudited)))
 
-        // ═══ 1b. terminal.exec —— 一次性结构化命令执行（stdout/stderr/exit_code/duration_ms/truncated）═══
-        // 与 shell_execute 共享门禁（commandPermissionGate）与 cd 工作目录记忆（shellWorkDir）；
+        // ═══ 1b. TerminalExec —— 一次性结构化命令执行（stdout/stderr/exit_code/duration_ms/truncated）═══
+        // 与 ShellExecute 共享门禁（commandPermissionGate）与 cd 工作目录记忆（shellWorkDir）；
         // 通道 Root > Shizuku > app-shell（PrivilegedCommandSpawner），双流分离采集 + waitpid 退出码。
         // 必须经 TerminalToolAdapter：TerminalExecTool 实现的是 platform:terminal 的 TerminalTool
         //（模块边界禁依赖 core:tool-registry 的 AgentTool），直塞 SafeAgentTool(AgentTool) 无法编译。
@@ -639,12 +639,12 @@ object ToolModule {
                 gitHubTokenProvider = { githubTokenManager.getToken() }
             )),
             approvalGate = { cmd ->
-                // 全自动模式（BYPASS）与 shell_execute 同口径：跳过命令级确认门。
+                // 全自动模式（BYPASS）与 ShellExecute 同口径：跳过命令级确认门。
                 val bypassCommandGate = settingsRepository.agentSettings.value.permissionMode ==
                     PermissionMode.BYPASS
                 if (bypassCommandGate || commandPermissionGate.ensureAllowed(cmd)) {
                     toolAuditLogger.log(ToolAuditLogger.Event(
-                        tool = "terminal.exec",
+                        tool = "TerminalExec",
                         decision = "approved",
                         command = cmd,
                         detail = if (bypassCommandGate) "BYPASS mode auto-allowed"
@@ -653,7 +653,7 @@ object ToolModule {
                     null
                 } else {
                     toolAuditLogger.log(ToolAuditLogger.Event(
-                        tool = "terminal.exec", decision = "denied_by_user", command = cmd,
+                        tool = "TerminalExec", decision = "denied_by_user", command = cmd,
                         detail = "CommandPermissionGate rejected"
                     ))
                     "用户拒绝执行该命令。不要重试相同命令；改用更安全或更低风险的方案，并告知用户原因。"
@@ -666,12 +666,12 @@ object ToolModule {
         // ═══ Agent 主动提问工具 ═══
         registry.register(SafeAgentTool(AskUserChoiceTool(userQuestionGateway)))
         registry.register(SafeAgentTool(AskUserTool()))
-        // StreamingTerminalExecTool removed (§46 id collision); streaming = terminal.run + terminal.observe
+        // StreamingTerminalExecTool removed (§46 id collision); streaming = TerminalRun + TerminalObserve
 
-        // ═══ 2. 文件操作 (7 + P83 补齐 edit_file) ═══
+        // ═══ 2. 文件操作 (7 + P83 补齐 Edit) ═══
         // P83 (T5)：basePath 统一指向 default Linux workspace（见上方 workspaceDir 说明）
         // —— Agent 写入的文件对 linux-ubuntu 会话可见（guest /workspace），
-        //   终端构建产物同样可被 read_file/search_files 读到。
+        //   终端构建产物同样可被 Read/SearchFiles 读到。
         registry.register(SafeAgentTool(FileReadTool(workspaceDir)))
         registry.register(SafeAgentTool(FileWriteTool(workspaceDir)))
         registry.register(SafeAgentTool(ListFilesTool(workspaceDir)))
@@ -679,16 +679,16 @@ object ToolModule {
         registry.register(SafeAgentTool(FileSearchTool(workspaceDir)))
         registry.register(SafeAgentTool(CopyMoveFileTool(workspaceDir)))
         registry.register(SafeAgentTool(FileGlobTool(workspaceDir)))
-        // P83：edit_file 已建成但从未注册（搜索-替换块编辑，原子失败语义）—— 补接线
+        // P83：Edit 已建成但从未注册（搜索-替换块编辑，原子失败语义）—— 补接线
         registry.register(SafeAgentTool(FileEditTool(workspaceDir)))
 
         // ═══ 2b. Coding 模式工具（Code Mode 与 Agent 模式互用）═══
-        // code_read/edit/write/grep/glob/todo/check —— 业界标准契约的编码工具集。
+        // CodeRead/edit/write/grep/glob/todo/check —— 业界标准契约的编码工具集。
         // 根目录经 CodeWorkspaceRoots 动态解析（Code 屏切换工作区即时生效），
         // 默认工作区与上方 workspaceDir 同源（linux/workspaces/default），
         // 两模式看到同一份文件。CORE 集已加入（ToolTierPolicy），两模式默认可见。
-        // v0.2 #148：注入进程内诊断引擎 —— code_edit/code_write 成功后自动
-        // 附加语法诊断（JSON/XML/括号/缩进/死链），模型即错即修；code_check
+        // v0.2 #148：注入进程内诊断引擎 —— CodeEdit/CodeWrite 成功后自动
+        // 附加语法诊断（JSON/XML/括号/缩进/死链），模型即错即修；CodeCheck
         // 随 CodeTools.all 一并注册，可主动检查任意文件。
         CodeTools.all(
             roots = codeWorkspaceRoots,
@@ -699,7 +699,7 @@ object ToolModule {
         }
 
         // ═══ 2c. Git 工具（v1.0 #153，两模式互用）═══
-        // code_git_status/diff/log/commit/branch —— git 二进制经 PRoot Ubuntu
+        // CodeGitStatus/diff/log/commit/branch —— git 二进制经 PRoot Ubuntu
         // 沙箱执行（rootfs 预装），工作区恒定 bind 为 guest /workspace；
         // diff 输出统一 diff 原文，UI 侧 DiffOutput 复用 +/- 行着色；
         // commit 幂等自动 init + -c 注入身份。沙箱未装时降级为引导文本。
@@ -789,7 +789,7 @@ object ToolModule {
         registerTerminalPtyTools(registry, terminalRuntime, toolAuditLogger)
 
         // T87：终端栈自诊断（会话/后端/exec 探针自证 —— Agent 可先诊断后行动）。
-        // 探针与 terminal.exec 共用同一 ExecEngine/ProotCommandSpawner 构造参数
+        // 探针与 TerminalExec 共用同一 ExecEngine/ProotCommandSpawner 构造参数
         //（rootfs 就绪 → Ubuntu；否则回退 su>Shizuku>local-sh）—— 探到的就是
         // Agent 实际会走的那条链路。
         registry.register(SafeAgentTool(TerminalToolAdapter(
@@ -804,13 +804,13 @@ object ToolModule {
                             defaultWorkspaceDir = File(context.filesDir, "linux/workspaces/default"),
                             persistentHomeDir = File(context.filesDir, "linux/home"),
                             fallback = PrivilegedCommandSpawner(),
-                            // T92：argv 能力门（探针与 terminal.exec 同款链路同款能力源）
+                            // T92：argv 能力门（探针与 TerminalExec 同款链路同款能力源）
                             capabilities = capabilitySource::invoke,
-                            // v3 S3（G2）：与 terminal.exec 同链路同凭据（探到的即真实行为）
+                            // v3 S3（G2）：与 TerminalExec 同链路同凭据（探到的即真实行为）
                             gitHubTokenProvider = { githubTokenManager.getToken() }
                         ))
                         val result = probeEngine.execute(
-                            com.apex.agent.platform.terminal.exec.ExecRequest(
+                            com.apex.agent.platform.TerminalExec.ExecRequest(
                                 command = cmd,
                                 timeoutMs = 120_000L
                             )
@@ -828,10 +828,10 @@ object ToolModule {
         // P83 (T4): 项目感知开发环境 —— analyze（只读）/ ensure（Ubuntu 就绪 + 按项目补装工具链）。
         registry.register(SafeAgentTool(TerminalToolAdapter(TerminalWorkspaceEnvironmentTool(projectEnvironment))))
         // T76: Ubuntu Linux Environment Productionization —— 4 个 Agent 工具
-        //   terminal.linux.status    统一健康快照（6 维度 + bootstrap）
-        //   terminal.linux.bootstrap  rootfs→sources→network→apt-update→base-packages→READY
-        //   terminal.linux.network    DNS/HTTP/HTTPS/APT_REPOSITORY 分维诊断
-        //   terminal.linux.packages   结构化 apt API（update/install/remove/upgrade/search/...）
+        //   TerminalLinuxStatus    统一健康快照（6 维度 + bootstrap）
+        //   TerminalLinuxBootstrap  rootfs→sources→network→apt-update→base-packages→READY
+        //   TerminalLinuxNetwork    DNS/HTTP/HTTPS/APT_REPOSITORY 分维诊断
+        //   TerminalLinuxPackages   结构化 apt API（update/install/remove/upgrade/search/...）
         registry.register(SafeAgentTool(TerminalToolAdapter(TerminalLinuxStatusTool(linuxEnvironmentHealth))))
         registry.register(SafeAgentTool(TerminalToolAdapter(TerminalLinuxBootstrapTool(ubuntuBootstrapManager))))
         registry.register(SafeAgentTool(TerminalToolAdapter(TerminalLinuxNetworkTool(linuxNetworkProbe))))
@@ -875,7 +875,7 @@ object ToolModule {
         registerGithubTools(registry, githubApiService)
 
         // ═══ 11b. 消息连接器（微信/飞书/Telegram，2 个工具）═══
-        // connector_list：列出启用的连接器与凭据状态；connector_send_message：
+        // ConnectorList：列出启用的连接器与凭据状态；ConnectorSendMessage：
         // 经企业微信机器人/飞书机器人/Telegram Bot 发送文本消息。
         // 与 Connected Services 段（系统提示词）联动：模型知道已连接后即可主动使用。
         val connectorMessenger = ConnectorMessenger(httpClient)
@@ -883,10 +883,10 @@ object ToolModule {
         registry.register(SafeAgentTool(ConnectorSendMessageTool(connectorRegistry, connectorMessenger)))
 
         // ═══ 11c. 加密剪切板金库（#167，4 个工具）═══
-        // 安全契约：Agent 只见标签与备注 —— vault_list 输出脱敏快照；
-        // vault_save write-only（成功返回仅 label+id，写完自己也读不回）；
-        // vault_paste 三通道直投（clipboard/terminal/http），返回仅字节数/
-        // 状态码/脱敏响应体，内容永不回显；vault_delete HIGH 风险门控。
+        // 安全契约：Agent 只见标签与备注 —— VaultList 输出脱敏快照；
+        // VaultSave write-only（成功返回仅 label+id，写完自己也读不回）；
+        // VaultPaste 三通道直投（clipboard/terminal/http），返回仅字节数/
+        // 状态码/脱敏响应体，内容永不回显；VaultDelete HIGH 风险门控。
         // 人类可经抽屉「保险库」页储放 GitHub token / AI API 密钥。
         VaultAgentTools.all(
             repository = vaultRepository,
@@ -921,17 +921,17 @@ object ToolModule {
         // ═══ 12. Tool System v4 — 工具目录元工具（渐进披露）═══
         // 注册表 ~110 工具不再全量随请求发送（根因：请求体撑爆 + 非法函数名
         // 直接 400）。CORE 集常驻，其余能力经目录按需加载：
-        //   tool_search 找 → tool_open 加载（描述+schema 作为工具结果注入，
-        //   下一轮即可调用）→ tool_list 总览。
+        //   ToolSearch 找 → ToolOpen 加载（描述+schema 作为工具结果注入，
+        //   下一轮即可调用）→ ToolList 总览。
         registry.register(SafeAgentTool(ToolSearchTool(registry)))
         registry.register(SafeAgentTool(ToolOpenTool(registry, toolActivation)))
         registry.register(SafeAgentTool(ToolListTool(registry)))
 
         // ═══ 12b. 能力自省元工具（「agent 不懂自己能干什么」的根因修复）═══
-        // capability_report：权限阶梯（与系统提示词同源）/ 实时环境 / 工具与
+        // CapabilityReport：权限阶梯（与系统提示词同源）/ 实时环境 / 工具与
         // 技能与 MCP 库存 + 扩展梯度，一键自省——遇 permission denied 或
         // 「我能做 X 吗」时先自省再行动，不猜不弃；
-        // market_search：官方技能+MCP 市场检索（此前 7 个市场源只服务 UI，
+        // MarketSearch：官方技能+MCP 市场检索（此前 7 个市场源只服务 UI，
         // agent 侧完全不可见）——「没装的能力一步之遥」。
         registry.register(
             SafeAgentTool(
@@ -943,7 +943,7 @@ object ToolModule {
                     configuredMcpCount = { mcpManager.getConfigs().size },
                     connectedMcpCount = { mcpManager.getConnectedServers().size },
                     // v3 S3：GitHub 连接快照（"login|repo"，未设置仓库 = "-"；
-                    // 未连接 = null）—— capability_report 的 GitHub 行数据源
+                    // 未连接 = null）—— CapabilityReport 的 GitHub 行数据源
                     githubStateProvider = {
                         githubTokenManager.connectionState.value.takeIf { it.isConnected }
                             ?.let { s ->
@@ -964,24 +964,25 @@ object ToolModule {
             )
         )
 
-        // ═══ 13. Skill 工具接线（此前缺口：skill_* 管理工具与已启用技能的
-        // composite/script 工具从未注册进 ToolRegistry，安装后形同虚设）═══
+        // ═══ 13. Skill 工具接线（管理工具 + composite/script 装载注册）═══
         registry.register(SafeAgentTool(SkillSearchTool(httpClient)))
         registry.register(SafeAgentTool(SkillInstallTool(skillRegistry, httpClient, skillActivation)))
         registry.register(SafeAgentTool(SkillCreateTool(skillRegistry)))
         registry.register(SafeAgentTool(SkillListTool(skillRegistry)))
         registry.register(SafeAgentTool(SkillUninstallTool(skillRegistry)))
-        // 技能渐进披露：模型侧装载入口。目录在系统提示词，方法论全文经本工具
-        // 装载（工具结果即时返回全文 + 写入激活集持续注入后续轮次）。
+        // 技能渐进披露：模型侧装载入口（全文返回 + 写入激活集持续注入）。
         registry.register(SafeAgentTool(SkillActivateTool(skillRegistry, skillActivation)))
+
+        // ═══ 13b. FusionBundle 工具族（FusionList/FusionInfo/FusionActivate —— 注册体在卫星文件）═══
+        registerFusionBundleTools(registry, fusionController)
 
         // ═══ 14. Tool System v3/v5 新工具（纯 JVM）—— 注册体拆至同文件（同上 SRP 预算）═══
         registerToolSystemV3V5Tools(registry, conversationMemory)
 
         // ═══ 14d. Tool System v5 —— #172 高级设备工具包（lambda 注入）═══
-        // torch/vibrate/battery_status/network_info/tts_speak（SYSTEM）+
-        // share_content（SYSTEM）/ deep_link（APP）+ image_info（只读）/
-        // image_convert（MEDIUM）。工具本体只做参数解析（companion 纯函数
+        // torch/vibrate/BatteryStatus/NetworkInfo/TtsSpeak（SYSTEM）+
+        // ShareContent（SYSTEM）/ DeepLink（APP）+ ImageInfo（只读）/
+        // ImageConvert（MEDIUM）。工具本体只做参数解析（companion 纯函数
         // 可测），Android 侧实现见各工具文件底部的生产接线类（operator
         // invoke 类经 ::invoke 绑定为函数引用注入）。
         val torchController = CameraTorchController(context)
@@ -1048,7 +1049,7 @@ object ToolModule {
             }
         ).start()
 
-        // ═══ 17. #147 子代理 task 工具（code_task）═══
+        // ═══ 17. #147 子代理 task 工具（CodeTask）═══
         // 主代理把探索/调研类工作委派给隔离上下文的子代理：全新引擎实例跑
         // 完整 ReAct 循环，结论作为工具结果返回（中间过程不进入主对话）。
         // 工厂每次构造全新 ApexAgentEngine（共享单例依赖；memory=null 会话即焚，
@@ -1083,7 +1084,7 @@ object ToolModule {
                 hookRegistry.dispatchFireAndForget(
                     HookEvent.SubagentStop(
                         sessionId = "",
-                        subagentId = "code_task-$typeKey-${description.take(32)}" +
+                        subagentId = "CodeTask-$typeKey-${description.take(32)}" +
                             (if (success) "" else " (failed)")
                     )
                 )
@@ -1092,7 +1093,7 @@ object ToolModule {
         registry.register(SafeAgentTool(CodeTaskTool(subAgentRunner)))
 
         // ═══ 15. v3 批量执行 + 组合动作（依赖主执行器，循环依赖断点在此）═══
-        // tool_batch_run：模型一次性声明有序步骤（首错即停 + NOT_EXECUTED 标记 +
+        // ToolBatchRun：模型一次性声明有序步骤（首错即停 + NOT_EXECUTED 标记 +
         // {n} 步间输出引用）；shortcut_*：Mobile-Agent-E 自进化组合动作。
         registry.register(SafeAgentTool(ToolBatchRunTool(mainExecutor)))
         registry.register(SafeAgentTool(ShortcutDefineTool(shortcutRegistry, registry, mainExecutor)))
@@ -1101,15 +1102,15 @@ object ToolModule {
 
         return registry
         // 总计：44 基础 + 15 v2 + 3 MCP + 2 T73 + 1 T75 + 1 P83 环境闭环 +
-        // 4 T76 + 5 Skill 管理 + 3 v3 新工具（wait/json_transform/version_compare）+
-        // 4 v3 编排工具（tool_batch_run + shortcut_define/list/run）+
+        // 4 T76 + 5 Skill 管理 + 3 v3 新工具（wait/JsonTransformLegacy/VersionCompare）+
+        // 4 v3 编排工具（ToolBatchRun + ShortcutDefine/list/run）+
         // N 已启用技能 composite + 9 GitHub（无条件注册，未连接时返回明确错误引导）+
-        // 2 消息连接器（connector_list / connector_send_message：微信/飞书/Telegram）+
-        // 4 金库工具（vault_list/save/paste/delete：#167 加密剪切板金库，Agent 只见标签不见明文）+
+        // 2 消息连接器（ConnectorList / ConnectorSendMessage：微信/飞书/Telegram）+
+        // 4 金库工具（VaultList/save/paste/delete：#167 加密剪切板金库，Agent 只见标签不见明文）+
         // v5（#171+#172）：4 合并工具（time/random/regex/json，旧 10 个 id 转 legacy alias
-        // 仍注册不下发）+ 3 上下文回顾（context_recap/context_search/session_stats）+
-        // 9 高级设备（torch/vibrate/battery_status/network_info/tts_speak/share_content/
-        // deep_link/image_info/image_convert）。
+        // 仍注册不下发）+ 3 上下文回顾（ContextRecap/ContextSearch/SessionStats）+
+        // 9 高级设备（torch/vibrate/BatteryStatus/NetworkInfo/TtsSpeak/ShareContent/
+        // DeepLink/ImageInfo/ImageConvert）。
         // 插件注册：PluginManager 加载插件后动态注册（同 id REPLACE 覆盖内置注册；
         // 卸载时降级为 HostFallbackTool 宿主直调，不挖空）。旧网页自动化插件 id
         // 会被 PluginManager 拦截（v1.5.0 内置化，防 15 工具旧清单覆盖内置 24 工具）。
@@ -1127,7 +1128,7 @@ object ToolModule {
         hookRegistry: HookRegistry,
         secretRedactor: SecretRedactor
     ): ToolExecutor {
-        // Issue #230 收尾（防双弹窗）：StandardModeEngine 自带业界标准式权限门
+        // Issue #230 收尾（防双弹窗）：标准线引擎（standard-loop 库）自带业界标准式权限门
         //（规则 → 会话记忆 → 模式兜底 → ASK 弹窗，见 executeOneToolCall）。
         // #230 起 executeStream 也会咨询执行器门控 —— 标准线若共用主执行器
         //（PermissionAwareToolGate 组合门），同一动作会被问两次。这里给
@@ -1190,9 +1191,9 @@ object ToolModule {
 /**
  * 会话级 terminal 工具审计装饰器（D5）。
  *
- * shell_execute / terminal.exec 有完整 ToolAuditLogger 链，但 terminal.create /
+ * ShellExecute / TerminalExec 有完整 ToolAuditLogger 链，但 TerminalCreate /
  * run / write / signal / resize / snapshot / close 此前直接注册零审计 ——
  * Agent 对会话的全部破坏性操作不可举证。装饰 [TerminalTool]：invoke 首尾插桩
  * 记 tool / command（参数截断）/ decision / durationMs / success，与
- * shell_execute 的 executed/failed 词汇表对齐。审计异常静默（绝不阻断工具本身）。
+ * ShellExecute 的 executed/failed 词汇表对齐。审计异常静默（绝不阻断工具本身）。
  */

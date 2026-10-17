@@ -25,18 +25,18 @@ import java.security.MessageDigest
  * 用户原始诉求："增加 download 工具，可以利用网页自动化安装应用"。
  *
  * 设计：
- * - 已有的 `download_file`（[WebToolsExtra.kt]）只下载文件，不安装；
- * - 已有的 `app_install`（[AppToolsExtra.kt]）走 `pm install -r <path>`，
+ * - 已有的 `DownloadFile`（[WebToolsExtra.kt]）只下载文件，不安装；
+ * - 已有的 `AppInstall`（[AppToolsExtra.kt]）走 `pm install -r <path>`，
  *   **需要 Shizuku 或 root**（普通 shell 无权 `pm install`）。
  *
  * 新工具解决两个痛点：
  *
- * 1. **`app_install_apk`** — 使用 Android **`PackageInstaller` session API**（
+ * 1. **`AppInstallApk`** — 使用 Android **`PackageInstaller` session API**（
  *    走系统级 [Intent.ACTION_INSTALL_PACKAGE] 用户确认 UI）安装 APK。
  *    **不需要 Shizuku 或 root**——仅依赖 `REQUEST_INSTALL_PACKAGES` 普通
- *    权限（已在 `AndroidManifest.xml` 声明）。是 `app_install` 的无特权替代。
+ *    权限（已在 `AndroidManifest.xml` 声明）。是 `AppInstall` 的无特权替代。
  *
- * 2. **`app_download_install`** — 一站式：URL → 下载 → 校验 → 安装。
+ * 2. **`AppDownloadInstall`** — 一站式：URL → 下载 → 校验 → 安装。
  *    内部调用 [downloadApk]，再走 [ApkInstaller] lambda 安装。
  *    支持 SHA-256 / MD5 校验和（可选），失败自动清理半成品文件。
  *
@@ -46,7 +46,7 @@ import java.security.MessageDigest
  *   （含云元数据 169.254.169.254）/ 保留段一律拒绝，重定向逐跳校验且
  *   https 降级拒绝（见 [SsrfGuard]）；
  * - 非幂等：每次调用都触发新的 install session；
- * - 不联网则拒绝（`app_download_install` 走 OkHttp，会带 openWorld 标记）。
+ * - 不联网则拒绝（`AppDownloadInstall` 走 OkHttp，会带 openWorld 标记）。
  *
  * 工具本体只做参数解析与下载逻辑；Android `PackageInstaller` 实际调用由
  * 注入的 [ApkInstaller] lambda 完成（app 侧 [com.apex.agent.tools.ApkInstaller]
@@ -86,32 +86,32 @@ interface ApkInstaller {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 工具 1: app_install_apk
+// 工具 1: AppInstallApk
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * `app_install_apk` — 通过 Android `PackageInstaller` session API 安装本地 APK。
+ * `AppInstallApk` — 通过 Android `PackageInstaller` session API 安装本地 APK。
  *
- * 与 `app_install`（`pm install`，需要 Shizuku/root）不同，本工具使用 Android
+ * 与 `AppInstall`（`pm install`，需要 Shizuku/root）不同，本工具使用 Android
  * 系统 API，仅需 [REQUEST_INSTALL_PACKAGES] 普通权限——安装会弹出系统确认 UI，
  * 用户点"安装"后才会真正安装（无 silent install 风险）。
  *
- * 适合：从 [download_file] / [app_download_install] 拿到的 APK 文件后调用。
+ * 适合：从 [DownloadFile] / [AppDownloadInstall] 拿到的 APK 文件后调用。
  */
 class AppInstallApkTool(
     private val installer: ApkInstaller
 ) : BaseTool(
-    id = "app_install_apk",
+    id = "AppInstallApk",
     name = "Install APK (Unprivileged)",
     description = """
         Install an APK file via Android's PackageInstaller session API.
-        Unlike `app_install` (which uses `pm install` and requires Shizuku or
+        Unlike `AppInstall` (which uses `pm install` and requires Shizuku or
         root), this tool works with only the REQUEST_INSTALL_PACKAGES permission
         — the system shows an install confirmation dialog and the user must
         tap "Install".
 
         Pass an absolute path to an APK file already on device storage.
-        Use `app_download_install` for the URL → download → install one-shot.
+        Use `AppDownloadInstall` for the URL → download → install one-shot.
 
         Examples:
         - {"path": "/sdcard/Download/app.apk"}
@@ -143,7 +143,7 @@ class AppInstallApkTool(
             return ToolResult.invalid(
                 field = "path",
                 message = "path must be an absolute filesystem path (got '$path')",
-                suggestion = "use download_file first to put the APK on storage, then call app_install_apk"
+                suggestion = "use DownloadFile first to put the APK on storage, then call AppInstallApk"
             )
         }
         val file = File(path)
@@ -151,7 +151,7 @@ class AppInstallApkTool(
             return ToolResult.invalid(
                 field = "path",
                 message = "APK file not found at '$path' (or not a regular file)",
-                suggestion = "verify the path; download_file returns the absolute save path in its result"
+                suggestion = "verify the path; DownloadFile returns the absolute save path in its result"
             )
         }
         if (file.length() < MIN_APK_BYTES) {
@@ -181,19 +181,19 @@ class AppInstallApkTool(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 工具 2: app_download_install
+// 工具 2: AppDownloadInstall
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * `app_download_install` — 一站式：URL → 下载 APK → 安装。
+ * `AppDownloadInstall` — 一站式：URL → 下载 APK → 安装。
  *
  * 与现有 [DownloadFileTool] + [AppInstallTool] 链式调用相比：
  * - 自动校验：URL MIME 类型、文件大小、SHA-256/MD5 哈希（可选）；
  * - 失败自动清理：下载失败或哈希校验失败时删除半成品文件；
  * - 内部使用 [PackageInstaller]（无特权），不依赖 Shizuku/root；
- * - 单次调用，省去 tool_batch_run 编排。
+ * - 单次调用，省去 ToolBatchRun 编排。
  *
- * **适用场景**：用户说"帮我装一个 XXX 应用"，Agent 通过 web_search / 浏览器
+ * **适用场景**：用户说"帮我装一个 XXX 应用"，Agent 通过 WebSearch / 浏览器
  * 自动化找到下载 URL 后，调用本工具一键下载安装。
  */
 class AppDownloadInstallTool(
@@ -206,7 +206,7 @@ class AppDownloadInstallTool(
      */
     private val ssrfProtectionEnabled: Boolean = true
 ) : BaseTool(
-    id = "app_download_install",
+    id = "AppDownloadInstall",
     name = "Download + Install APK",
     description = """
         One-shot: download an APK from a URL, optionally verify its hash, then
@@ -214,7 +214,7 @@ class AppDownloadInstallTool(
         confirmation dialog — the user must tap "Install").
 
         Use this when the user asks you to "install an app from a URL" or when
-        you found an APK download URL via web_search / browser automation.
+        you found an APK download URL via WebSearch / browser automation.
 
         Parameters:
         - url (required): direct download URL for the APK
@@ -279,7 +279,7 @@ class AppDownloadInstallTool(
             return ToolResult.invalid(
                 field = "url",
                 message = "url must be an http(s) URL (got '$url')",
-                suggestion = "if you have a local path already, use app_install_apk instead"
+                suggestion = "if you have a local path already, use AppInstallApk instead"
             )
         }
 
@@ -316,7 +316,7 @@ class AppDownloadInstallTool(
             return ToolResult.invalid(
                 field = "filename",
                 message = "filename '$filename' does not end with .apk",
-                suggestion = "the URL likely points to an HTML page, not an APK file. Use browser_navigate / browser_snapshot to confirm the download URL first."
+                suggestion = "the URL likely points to an HTML page, not an APK file. Use BrowserNavigate / BrowserSnapshot to confirm the download URL first."
             )
         }
 
@@ -369,7 +369,7 @@ class AppDownloadInstallTool(
                 ToolErrorCode.EXECUTION_FAILED,
                 "download succeeded (${downloadResult} bytes at ${apkFile.absolutePath}) " +
                     "but install failed: ${installResult.message}\n" +
-                    "The APK file is kept for retry; you can call app_install_apk again with the same path."
+                    "The APK file is kept for retry; you can call AppInstallApk again with the same path."
             )
         }
     }
@@ -403,7 +403,7 @@ class AppDownloadInstallTool(
     private fun downloadApk(url: String, target: File): Long {
         val request = Request.Builder()
             .url(url)
-            .header("User-Agent", "ApexAgent/1.0 (app_download_install)")
+            .header("User-Agent", "ApexAgent/1.0 (AppDownloadInstall)")
             .header("Accept", "application/vnd.android.package-archive, application/octet-stream, */*")
             .build()
         val executed: Response = if (ssrfProtectionEnabled) {
@@ -427,7 +427,7 @@ class AppDownloadInstallTool(
             if (mime != null && mime.type == "text") {
                 throw RuntimeException(
                     "server returned text/${mime.subtype} — likely an HTML error page, not an APK. " +
-                        "Open the URL in browser_navigate / browser_snapshot first to find the real download link."
+                        "Open the URL in BrowserNavigate / BrowserSnapshot first to find the real download link."
                 )
             }
             var copied = 0L

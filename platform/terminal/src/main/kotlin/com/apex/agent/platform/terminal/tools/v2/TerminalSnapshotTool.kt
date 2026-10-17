@@ -12,7 +12,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.add
 
 /**
- * Agent tool: terminal.snapshot
+ * Agent tool: TerminalSnapshot
  *
  * Spec ref: ATR 2.0 Final Spec §34.8
  *
@@ -28,7 +28,7 @@ import kotlinx.serialization.json.add
 class TerminalSnapshotTool(
     private val runtime: TerminalRuntime
 ) : TerminalTool {
-    override val id: String = "terminal.snapshot"
+    override val id: String = "TerminalSnapshot"
     override val name: String = id
     override val description: String = """
         Return a global snapshot of all Sessions + recent events + recent output. Primary entry

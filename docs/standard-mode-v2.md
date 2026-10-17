@@ -43,8 +43,8 @@ v1 标准线搭好了「标准件」骨架，但对照业界标杆仍有明显�
   文件不建新文件）、不主动 commit / push、代码引用统一 `file:line`
   格式、`<system-reminder>` 标签只由系统使用；
 - **工具纪律**（`toolDiscipline`）：专用工具优先映射表——查文件用
-  `code_read` 不用 shell cat、搜代码用 `code_grep` 不用 grep、改文件
-  用 `code_edit` 不用 sed/echo、找文件用 `code_glob` 不用 find/ls -R；
+  `CodeRead` 不用 shell cat、搜代码用 `CodeGrep` 不用 grep、改文件
+  用 `CodeEdit` 不用 sed/echo、找文件用 `CodeGlob` 不用 find/ls -R；
   命令行仅用于真正需要 shell 的场景（构建/测试/git 操作）；
 - **PLAN 回合级提醒**（`planModeReminder`）：请求级注入（不进会话
   时间线）——每回合提醒「当前处于规划阶段，只调查不修改，计划确认
@@ -107,10 +107,10 @@ SettingsRepository.agentSettings（StateFlow）
 业界标准 edit/write 契约的铁律：**编辑文件前必须先读过**——否则
 模型对文件真实内容的认知是幻觉，old/new 精确替换必然失准。
 
-- `check`：`code_edit` / `code_write`（覆盖已存在文件）执行前校验，
+- `check`：`CodeEdit` / `CodeWrite`（覆盖已存在文件）执行前校验，
   未读先编直接拒绝并引导（「先用 read 工具读，再改；新建文件请用
-  code_write」）；**新建文件免检**（创建合法）；
-- `record`：`code_read` / `code_edit` / `code_write` 成功后登记读
+  CodeWrite」）；**新建文件免检**（创建合法）；
+- `record`：`CodeRead` / `CodeEdit` / `CodeWrite` 成功后登记读
   状态（写过的文件内容已知，等价于读过）；
 - **路径归一**：raw 绝对路径 / workspace 相对路径 / guest 前缀
   `/workspace/...` 三形态统一归一到规范绝对路径，防「读 A 形态、
@@ -128,7 +128,7 @@ SettingsRepository.agentSettings（StateFlow）
   名修正建议（Levenshtein ≤2 / 前缀 / 包含，前 3 候选），模型下一
   轮自纠，不浪费回合；
 - **工具名容错**：别名归一升级（大小写不敏感 + 连字符/下划线归一，
-  如 `Code-Read` / `codeRead` → `code_read`）；
+  如 `Code-Read` / `codeRead` → `CodeRead`）；
 - **task 子代理 general 档**：新增 general 类型子代理（全工具面通用
   执行者——子代理上下文不能再派发、不能询问，写操作受权限门约束），
   子代理结果统一 XML 信封（`<task state="completed|partial|error">`）。
@@ -149,16 +149,16 @@ SettingsRepository.agentSettings（StateFlow）
 七个编码工具的 description 全面对齐业界契约语义（纯提示词层改动，
 执行逻辑 / schema / 工具 id 零变更）：
 
-- `code_read`：offset 续读语义、目录模式说明（每行一条 + 尾随 `/`）、
+- `CodeRead`：offset 续读语义、目录模式说明（每行一条 + 尾随 `/`）、
   使用指引（避免碎片小读 / 单回合批量读 / 读 `.env` 类敏感文件可能
   需要用户确认）；
-- `code_write`：**优先编辑既有文件**（本工具主要用于新建与全量重写）+
+- `CodeWrite`：**优先编辑既有文件**（本工具主要用于新建与全量重写）+
   **不主动创建文档文件**（`*.md` / README 除非用户明确要求）；
-- `code_edit`：read-before-edit 声明（运行时强制）+ oldString 精确匹配
+- `CodeEdit`：read-before-edit 声明（运行时强制）+ oldString 精确匹配
   规则（含缩进空白 / 多处命中需更多上下文 / 模糊兜底不可依赖）；
-- `code_todo`：完整状态机说明（When to use / When NOT to use /
+- `CodeTodo`：完整状态机说明（When to use / When NOT to use /
   States / Rules）；
-- `code_grep` / `code_glob`：开放性探索委派子代理指引。
+- `CodeGrep` / `CodeGlob`：开放性探索委派子代理指引。
 
 ## 八、PLAN 档解析独立（`StandardPlanParser.kt`）
 

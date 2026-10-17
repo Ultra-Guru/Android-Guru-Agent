@@ -136,13 +136,13 @@ class TaskRuntimeTest {
     fun `tool call boundaries are journaled to checkpoint`() {
         val llm = FakeLlmClient(
             listOf(
-                // 轮1：调 read_file
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("call_1", "read_file", """{"path":"a"}"""))),
+                // 轮1：调 Read
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("call_1", "Read", """{"path":"a"}"""))),
                 // 轮2：纯文本收尾
                 FakeLlmClient.ScriptedResponse.Ok(content = "done")
             )
         )
-        val tools = FakeToolExecutor().apply { registerSuccess("read_file", "content-a") }
+        val tools = FakeToolExecutor().apply { registerSuccess("Read", "content-a") }
         val engine = newEngine(llm, tools)
         val rt = newRuntime(engine, CoroutineScope(SupervisorJob() + Dispatchers.IO))
 
@@ -152,7 +152,7 @@ class TaskRuntimeTest {
         assertEquals(1, task.operations.size)
         val op = task.operations[0]
         assertEquals("call_1", op.llmCallId)
-        assertEquals("read_file", op.toolName)
+        assertEquals("Read", op.toolName)
         assertEquals(OperationStatus.SUCCEEDED, op.status)
         assertEquals(ToolIdempotencyClass.READ_ONLY, op.idempotency)
         assertEquals("content-a", op.outputDigest)
@@ -167,12 +167,12 @@ class TaskRuntimeTest {
     fun `failed tool operation is journaled as FAILED`() {
         val llm = FakeLlmClient(
             listOf(
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("call_1", "shell_execute", "{}"))),
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("call_1", "ShellExecute", "{}"))),
                 FakeLlmClient.ScriptedResponse.Ok(content = "recovered")
             )
         )
         val tools = FakeToolExecutor().apply {
-            register("shell_execute", FakeToolExecutor.ScriptedTool.Events(listOf(ToolStreamEvent.Error("boom"))))
+            register("ShellExecute", FakeToolExecutor.ScriptedTool.Events(listOf(ToolStreamEvent.Error("boom"))))
         }
         val engine = newEngine(llm, tools)
         val rt = newRuntime(engine, CoroutineScope(SupervisorJob() + Dispatchers.IO))
@@ -192,15 +192,15 @@ class TaskRuntimeTest {
         // 3 轮脚本：工具 → 工具 → 文本。工具慢速执行（Delay）制造可捕获的暂停窗口。
         val llm = FakeLlmClient(
             listOf(
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "read_file", "{}"))),
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c2", "read_file", "{}"))),
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "Read", "{}"))),
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c2", "Read", "{}"))),
                 FakeLlmClient.ScriptedResponse.Ok(content = "all done"),
                 // resume 轮次：续跑到完成
                 FakeLlmClient.ScriptedResponse.Ok(content = "resumed and finished")
             )
         )
         val tools = FakeToolExecutor().apply {
-            register("read_file", FakeToolExecutor.ScriptedTool.Delay(delayMs = 400))
+            register("Read", FakeToolExecutor.ScriptedTool.Delay(delayMs = 400))
         }
         val engine = newEngine(llm, tools)
         val rt = newRuntime(engine, CoroutineScope(SupervisorJob() + Dispatchers.IO))
@@ -239,12 +239,12 @@ class TaskRuntimeTest {
     fun `cancel lands CANCELLED terminal and is NOT auto-resumed on discovery`() = runBlocking<Unit> {
         val llm = FakeLlmClient(
             listOf(
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "read_file", "{}"))),
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "Read", "{}"))),
                 FakeLlmClient.ScriptedResponse.Ok(content = "done")
             )
         )
         val tools = FakeToolExecutor().apply {
-            register("read_file", FakeToolExecutor.ScriptedTool.Delay(delayMs = 400))
+            register("Read", FakeToolExecutor.ScriptedTool.Delay(delayMs = 400))
         }
         val engine = newEngine(llm, tools)
         val rt = newRuntime(engine, CoroutineScope(SupervisorJob() + Dispatchers.IO))
@@ -350,14 +350,14 @@ class TaskRuntimeTest {
         // 不调 abort/pause，直接 shutdown scope（丢弃收尾），store 留下 RUNNING 现场。
         val llm1 = FakeLlmClient(
             listOf(
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "read_file", "{}"))),
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c2", "write_file", "{}"))) // 死于此后
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "Read", "{}"))),
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c2", "Write", "{}"))) // 死于此后
             )
         )
         val tools1 = FakeToolExecutor().apply {
-            registerSuccess("read_file", "ok")
-            // write_file 慢速执行：进程死于其执行中（journal c2 RUNNING + history 悬空）
-            register("write_file", FakeToolExecutor.ScriptedTool.Delay(delayMs = 60_000))
+            registerSuccess("Read", "ok")
+            // Write 慢速执行：进程死于其执行中（journal c2 RUNNING + history 悬空）
+            register("Write", FakeToolExecutor.ScriptedTool.Delay(delayMs = 60_000))
         }
         val engine1 = newEngine(llm1, tools1)
         val scope1 = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -394,7 +394,7 @@ class TaskRuntimeTest {
         assertNotNull(flow)
         collectUntilTerminal(flow!!)
         val done = waitTerminal(TaskStatus.COMPLETED)
-        // 幂等核心验收：c1 成功操作绝不被重放（tools2 未注册 read_file，重放即报错失败）
+        // 幂等核心验收：c1 成功操作绝不被重放（tools2 未注册 Read，重放即报错失败）
         assertEquals(1, done.operations.count { it.status == OperationStatus.SUCCEEDED })
         assertEquals(TaskStatus.COMPLETED, store.load(done.taskId)!!.status)
     }
@@ -403,10 +403,10 @@ class TaskRuntimeTest {
     fun `crash mid-tool leaves RUNNING op which becomes UNKNOWN recovery input`() = runBlocking<Unit> {
         // 死在工具执行中：journal 有 c1 RUNNING（未收到 ToolCallComplete）
         val llm1 = FakeLlmClient(
-            listOf(FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "read_file", "{}"))))
+            listOf(FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "Read", "{}"))))
         )
         val tools1 = FakeToolExecutor().apply {
-            register("read_file", FakeToolExecutor.ScriptedTool.Delay(delayMs = 60_000))
+            register("Read", FakeToolExecutor.ScriptedTool.Delay(delayMs = 60_000))
         }
         val engine1 = newEngine(llm1, tools1)
         val scope1 = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -431,7 +431,7 @@ class TaskRuntimeTest {
             isUserInteraction = { false }
         )
         assertEquals(1, plan.unknownOperations.size)
-        // read_file 是 READ_ONLY → RETRY 决策
+        // Read 是 READ_ONLY → RETRY 决策
         assertEquals(1, plan.retryOperations.size)
         assertFalse(plan.highRisk)
     }
@@ -442,14 +442,14 @@ class TaskRuntimeTest {
     fun `concurrent resumes - only one succeeds`() = runBlocking<Unit> {
         val llm = FakeLlmClient(
             listOf(
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "read_file", "{}"))),
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c2", "read_file", "{}"))),
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "Read", "{}"))),
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c2", "Read", "{}"))),
                 FakeLlmClient.ScriptedResponse.Ok(content = "done"),
                 FakeLlmClient.ScriptedResponse.Ok(content = "resumed")
             )
         )
         val tools = FakeToolExecutor().apply {
-            register("read_file", FakeToolExecutor.ScriptedTool.Delay(delayMs = 600))
+            register("Read", FakeToolExecutor.ScriptedTool.Delay(delayMs = 600))
         }
         val engine = newEngine(llm, tools)
         val rt = newRuntime(engine, CoroutineScope(SupervisorJob() + Dispatchers.IO))
@@ -473,10 +473,10 @@ class TaskRuntimeTest {
     @Test
     fun `concurrent execute attempts - second is rejected`() = runBlocking<Unit> {
         val llm = FakeLlmClient(
-            listOf(FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "read_file", "{}"))))
+            listOf(FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "Read", "{}"))))
         )
         val tools = FakeToolExecutor().apply {
-            register("read_file", FakeToolExecutor.ScriptedTool.Delay(delayMs = 800))
+            register("Read", FakeToolExecutor.ScriptedTool.Delay(delayMs = 800))
         }
         val engine = newEngine(llm, tools)
         val rt = newRuntime(engine, CoroutineScope(SupervisorJob() + Dispatchers.IO))
@@ -576,14 +576,14 @@ class TaskRuntimeTest {
     fun `paused task survives restart discovery without auto-resume`() = runBlocking<Unit> {
         val llm = FakeLlmClient(
             listOf(
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "read_file", "{}"))),
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c2", "read_file", "{}"))),
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "Read", "{}"))),
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c2", "Read", "{}"))),
                 FakeLlmClient.ScriptedResponse.Ok(content = "done"),
                 FakeLlmClient.ScriptedResponse.Ok(content = "resumed-finish")
             )
         )
         val tools = FakeToolExecutor().apply {
-            register("read_file", FakeToolExecutor.ScriptedTool.Delay(delayMs = 400))
+            register("Read", FakeToolExecutor.ScriptedTool.Delay(delayMs = 400))
         }
         val engine = newEngine(llm, tools)
         val scope1 = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -618,7 +618,7 @@ class TaskRuntimeTest {
                     com.apex.agent.core.llm.LlmMessage.User("start"),
                     com.apex.agent.core.llm.LlmMessage.Assistant(
                         "calling",
-                        listOf(ToolCall("c1", "read_file", "{}"), ToolCall("c2", "write_file", "{}"))
+                        listOf(ToolCall("c1", "Read", "{}"), ToolCall("c2", "Write", "{}"))
                     ),
                     com.apex.agent.core.llm.LlmMessage.ToolResult("c1", "ok")
                 )

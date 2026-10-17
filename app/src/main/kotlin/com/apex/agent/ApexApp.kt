@@ -65,7 +65,7 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
 
     /** T82：apexctl 桥（guest 脚本 ↔ Android 能力，经持久化 home bind 的文件队列）。 */
     @Inject
-    lateinit var guestBridgeService: com.apex.agent.platform.terminal.bridge.GuestBridgeService
+    lateinit var guestBridgeService: com.apex.agent.platform.TerminalBridge.GuestBridgeService
 
     // ★ #173 逆向 MCP Host：触发 @Singleton 创建 —— enabled 时 App 启动即自启
     //（见 McpHostManager.init；未启用则零网络副作用）。
@@ -433,7 +433,7 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
     /**
      * #212：Shizuku binder 生命周期 / 授权结果变化时的统一反应。
      * 1. PrivilegeDetector 的 30s 级别缓存立即失效 —— 终端宿主通道 spawner
-     *    （PrivilegedCommandSpawner）、persistence、shell_execute 工具的
+     *    （PrivilegedCommandSpawner）、persistence、ShellExecute 工具的
      *    通道选择不再按旧状态跑满 TTL；
      * 2. DefaultPrivilegeManager.refreshStatus() 全量重探并回灌 StateFlow ——
      *    executeShell / executeUiAction / 权限页 / 环境遥测即时感知。

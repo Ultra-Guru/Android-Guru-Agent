@@ -7,7 +7,7 @@ import kotlinx.serialization.Serializable
  *
  * 一个 Code Workspace 对应一个项目目录。物理位置与 ATR 终端的 Linux workspace
  * 同源（`<filesDir>/linux/workspaces/<id>`，guest 挂载为 /workspace）——
- * code_* 文件工具、terminal.exec 构建、Agent 模式文件工具三方看同一份文件。
+ * code_* 文件工具、TerminalExec 构建、Agent 模式文件工具三方看同一份文件。
  */
 @Serializable
 data class CodeWorkspace(

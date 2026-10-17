@@ -14,6 +14,7 @@ import com.apex.agent.MainActivity
 import com.apex.agent.R
 import com.apex.browser.engine.BrowserEngine
 import com.apex.browser.chrome.BrowserOverlay
+import com.apex.browser.chrome.LiveViewOverlay
 import com.apex.agent.browser.CyberNeonBallManager
 import com.apex.agent.loop.LoopScheduler
 import com.apex.agent.notify.ForegroundTracker
@@ -31,6 +32,13 @@ class ApexCoreService : LifecycleService() {
     // 注入即触发浮窗单例实例化，使其注册为 BrowserEngine 的状态订阅者（展开/收起由状态驱动）
     @Inject
     lateinit var browserOverlay: BrowserOverlay
+
+    // v1.4.0：透明实时页面悬浮窗（AGENT_DRIVING 自动弹出，GHOST 无头宿主保
+    // WebView 测量）；注入即订阅引擎状态机 + 活动标签广播。
+    // 建单例在 BrowserOverlay 之后（引擎回调注册序：交还竞态时全屏 chrome
+    // 先摘 WebView、实时卡随后换挂；顺序异常时卡内 1.2s 轮询自愈补挂）。
+    @Inject
+    lateinit var liveViewOverlay: LiveViewOverlay
 
     // 赛博霓虹球（状态驱动按需出现：见 CyberNeonBallManager —— 只在浏览器被
     // navigate/newTab 等真实使用后出现，不再随服务启动常驻；长按球可结束会话收起）
@@ -89,6 +97,8 @@ class ApexCoreService : LifecycleService() {
         createNotificationChannel()
         // 引用以触发 Hilt 提供（browserOverlay 通过 init 注册回调）
         browserOverlay.hashCode()
+        // 实时页面悬浮窗同理（状态机 + ActiveTabListener 订阅在 init 完成）
+        liveViewOverlay.hashCode()
         // 霓虹球不再无条件 show：其生命周期由 BrowserEngine 状态驱动 ——
         // Agent 真正 navigate（网页搜索/自动化浏览）时经 onStateChanged 出现，
         // 会话结束（HIDDEN）时自动收起。此处仅需保证单例已创建并订阅引擎。
@@ -113,7 +123,7 @@ class ApexCoreService : LifecycleService() {
         }
         // v4 — 自动连接已启用的 MCP 服务器：连接成功 → McpManager 会话监听 →
         // McpToolRegistrar 把远程工具注册为一等函数（"配置即生效"，与插件同一
-        // 哲学）。连接失败不阻断启动（模型仍可用 mcp_connect 重试）。
+        // 哲学）。连接失败不阻断启动（模型仍可用 McpConnect 重试）。
         mcpToolRegistrar.hashCode() // 触发 Hilt 创建（构造即挂监听）
         scope.launch(Dispatchers.IO) {
             mcpManager.getEnabledConfigs().forEach { cfg ->

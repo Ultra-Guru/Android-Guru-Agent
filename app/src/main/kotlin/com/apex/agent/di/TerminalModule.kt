@@ -33,9 +33,9 @@ import com.apex.agent.platform.terminal.ubuntu.UbuntuBootstrapManager
 import com.apex.agent.platform.terminal.ubuntu.UbuntuSourcesList
 import com.apex.agent.platform.terminal.ubuntu.BasePackageProfile
 import com.apex.agent.platform.terminal.ubuntu.BootstrapStateStore
-import com.apex.agent.platform.terminal.bridge.GuestBridgeService
+import com.apex.agent.platform.TerminalBridge.GuestBridgeService
 import com.apex.agent.platform.terminal.environment.ProxyConfig
-import com.apex.agent.platform.terminal.fs.GuestFilesystem
+import com.apex.agent.platform.TerminalFs.GuestFilesystem
 import com.apex.agent.platform.terminal.proot.SharedStorageBridge
 import com.apex.agent.platform.terminal.proot.SystemBindProfile
 import com.apex.agent.platform.terminal.workspace.AbsolutePath
@@ -669,7 +669,7 @@ object TerminalModule {
 
     /**
      * P83: ProjectEnvironmentCoordinator —— Ubuntu 就绪 → 项目分析 → 能力探测 →
-     * 缺失工具链批量 apt install → 复测。Agent 入口：terminal.workspace.environment。
+     * 缺失工具链批量 apt install → 复测。Agent 入口：TerminalWorkspaceEnvironment。
      */
     @Provides
     @Singleton

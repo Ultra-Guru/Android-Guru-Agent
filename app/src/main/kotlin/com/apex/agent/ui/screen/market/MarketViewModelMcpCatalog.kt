@@ -53,7 +53,26 @@ internal fun MarketViewModel.startupListenerFor(name: String): McpStartupListene
  * connect/add/update 三条路径共用。
  */
 internal suspend fun MarketViewModel.finishStartupWithTools(name: String) {
-    val tools = mcpManager.listServerTools(name)
+    // P1 修复：tools/list 失败不再伪装成"发现 0 个工具"（旧实现把失败折叠成
+    // 空清单，弹窗显示成功但工具表其实是空的、也不会自动回来）。
+    val discovered = mcpManager.listServerTools(name)
+    if (discovered.isFailure) {
+        val detail = "工具发现失败：" + (discovered.exceptionOrNull()?.message ?: "未知错误")
+        _uiState.update { s ->
+            s.copy(
+                mcpStartup = s.mcpStartup
+                    ?.takeIf { it.serverName == name }
+                    ?.let {
+                        it.copy(
+                            events = it.events + McpStartupEvent(name, McpStartupStage.FAILED, detail),
+                            running = false
+                        )
+                    }
+            )
+        }
+        return
+    }
+    val tools = discovered.getOrDefault(emptyList())
     val toolNames = tools.map { it.name }
     // tracker 侧：同清单不重记（重连场景不刷重复行）。
     startupTracker.recordToolsIfChanged(name, toolNames)

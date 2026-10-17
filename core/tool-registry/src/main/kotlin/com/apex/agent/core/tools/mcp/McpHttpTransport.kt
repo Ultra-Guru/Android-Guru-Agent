@@ -5,6 +5,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -111,11 +113,14 @@ class McpHttpTransport(
             // 异常，不再折叠成 null（上层会置 initialized=true 装出
             // 「握手成功、零工具」的假成功）。注：OkHttp 对空体返回非 null
             // body（读出空串），body 缺失与空流经 orEmpty 归一后再判 isBlank。
+            // 融合 #345/#348（PR370）× SSE 按 id 选帧（main P1）：有界读取
+            // （16MB 上限防不可信远端整体读入）+ 空体即抛 + 分帧解析按
+            // JSON-RPC id 选中属于本次请求的帧。
             val responseBody = response.body?.byteStream()?.use { stream ->
                 val bytes = BoundedReads.readAtMost(stream, MAX_RESPONSE_BODY_BYTES)
                     ?: throw McpException(
                         "HTTP ${response.code} 响应体超过 " +
-                            "${MAX_RESPONSE_BODY_BYTES / 1024 / 1024}MB 上限（不可信远端，拒绝整体读入）"
+                            "${'$'}{MAX_RESPONSE_BODY_BYTES / 1024 / 1024}MB 上限（不可信远端，拒绝整体读入）"
                     )
                 String(bytes, charsetOf(response))
             }.orEmpty()
@@ -125,31 +130,55 @@ class McpHttpTransport(
                         "（网关误路由或服务器异常）"
                 )
             }
-            parseBody(responseBody, response.code)
+            parseBody(responseBody, response.code, id)
         }
     }
 
     /**
      * 解析响应体。兼容两种形态：
      * - 裸 JSON-RPC 对象（多数 Streamable HTTP 实现）；
-     * - SSE 分帧（`event: message` / `data: {...}`）—— 取出最后一个 `data:` 载荷。
+     * - SSE 分帧：规范服务器会把每个事件按 `event:` / `id:` / `data:` 字段
+     *   分帧（首帧常是 `event: endpoint`，中间可能夹通知，心跳是 `: ping`）。
      *
-     * #348：任一形态解析不出 JSON-RPC 帧都抛 [McpException]（旧实现返回
-     * null，上层折叠成「工具已运行但无输出」的假成功）。
+     *   P1 修复（main）：旧实现只认"整个 body 以 data: 开头"，于是规范的 SSE
+     *   端点必然落到"疑似网关/鉴权拦截页"分支；而且只取**最后一条** data，
+     *   响应后面跟一条通知就会取错帧。现在按行分帧、逐条解析，并按 JSON-RPC
+     *   id 选中属于本次请求的那一条。
+     *
+     *   #348（PR370）：任一形态解析不出 JSON-RPC 帧都抛 [McpException]
+     *   （旧实现返回 null，上层折叠成「工具已运行但无输出」的假成功）——
+     *   P1 的"回退最后一条"与 #348 的 fail-loud 融合：id 可匹配 → 命中帧；
+     *   无可匹配帧但有可解析对象 → 回退；一条都没有 → 抛。
      */
-    private fun parseBody(raw: String, code: Int): JsonObject {
+    private fun parseBody(raw: String, code: Int, id: Int? = null): JsonObject {
         val candidate = raw.trim()
-        if (candidate.startsWith("data:")) {
-            val last = candidate.lineSequence()
-                .filter { it.startsWith("data:") }
-                .map { it.removePrefix("data:").trim() }
-                .lastOrNull { it.isNotBlank() && it != "[DONE]" }
-                ?: throw McpException(
-                    "HTTP $code SSE 响应中不含 data 帧（疑似网关拦截页或服务器异常输出）"
-                )
-            return parseJson(last, code)
+        val lines = candidate.lineSequence().map { it.trimEnd('\r') }.toList()
+        val looksLikeSse = lines.any { it.startsWith("data:") } ||
+            candidate.startsWith("event:") || candidate.startsWith(":")
+        if (!looksLikeSse) return parseJson(candidate, code)
+
+        val payloads = lines.asSequence()
+            .filter { it.startsWith("data:") }
+            .map { it.removePrefix("data:").trim() }
+            .filter { it.isNotBlank() && it != "[DONE]" }
+            .toList()
+        if (payloads.isEmpty()) {
+            throw McpException(
+                "HTTP $code SSE 响应中不含 data 帧（疑似网关拦截页或服务器异常输出）"
+            )
         }
-        return parseJson(candidate, code)
+
+        var fallback: JsonObject? = null
+        for (payload in payloads) {
+            val parsed = runCatching { parseJson(payload, code) }.getOrNull() ?: continue
+            if (id == null) return parsed
+            val parsedId = parsed["id"]?.jsonPrimitive?.intOrNull
+            if (parsedId == id) return parsed
+            fallback = parsed
+        }
+        return fallback ?: throw McpException(
+            "HTTP $code SSE 响应中不含 id=$id 的 JSON-RPC 帧（多路复用串扰或服务器异常输出）"
+        )
     }
 
     private fun parseJson(text: String, code: Int): JsonObject {

@@ -116,7 +116,8 @@ fun MarketViewModel.importMcpConfig(text: String) {
         val failed = mutableListOf<String>()
         for (config in parsed.configs) {
             val exists = mcpManager.getConfigs().any { it.name == config.name }
-            val unique = if (exists) config.copy(name = "${config.name}-${System.currentTimeMillis()}") else config
+            // v5：MCP 名不带 `-`，重名去重后缀改为直接拼时间戳。
+        val unique = if (exists) config.copy(name = config.name + System.currentTimeMillis()) else config
             mcpManager.addServer(unique).fold(
                 onSuccess = { added += unique.name },
                 onFailure = { failed += nameReason(unique.name, it.message ?: "") }
@@ -166,6 +167,10 @@ fun MarketViewModel.toggleMcp(name: String, enabled: Boolean) {
 fun MarketViewModel.connectMcp(name: String) {
     viewModelScope.launch {
         _uiState.update { it.copy(mcpConnecting = name, mcpStartup = McpStartupUi(serverName = name)) }
+        // P0 修复（安装后点启动必然失败）：市场安装写 enabled=false，而
+        // McpManager.connect 以「已启用」为前置门（否则会在握手后才丢弃连接）。
+        // 启动按钮语义 = 启用 + 连接，两步在这里原子完成，用户一次点击即可起来。
+        mcpManager.setEnabled(name, true)
         // #197/#205 真实启动事件流：共享监听器（tracker 留底 + 弹窗实时渲染），
         // 每个真实阶段（env/spawn/initialize/initialized/stderr）逐条可见；
         // 连接成功后再做一次真实 tools/list 发现（这也是 McpToolRegistrar

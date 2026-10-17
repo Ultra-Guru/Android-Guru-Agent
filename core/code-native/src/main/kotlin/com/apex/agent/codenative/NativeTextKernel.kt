@@ -1,6 +1,6 @@
 package com.apex.agent.codenative
 
-import com.apex.agent.core.code.standard.StandardTextKernel
+import com.apex.agent.core.code.StandardTextKernel
 
 /**
  * # Native Text Kernel — 标准引擎文本加速核的 JNI 实现
@@ -18,7 +18,7 @@ import com.apex.agent.core.code.standard.StandardTextKernel
  * ## 使用方
  *
  * App DI（CodeModule）把它作为 [StandardTextKernel] 注入
- * `StandardModeEngine`——引擎侧只看 SPI，不感知 native。
+ * `StandardKitAdapter`（标准线循环库接线）——引擎侧只看 SPI，不感知 native。
  */
 class NativeTextKernel : StandardTextKernel {
 

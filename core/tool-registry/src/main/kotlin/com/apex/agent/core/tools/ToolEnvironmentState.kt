@@ -161,11 +161,11 @@ class ToolEnvironmentState {
 /**
  * Opt-in contract for tools that depend on live environment capability.
  *
- * Tools that degrade gracefully WITHOUT a capability (e.g. `ui_tap`
+ * Tools that degrade gracefully WITHOUT a capability (e.g. `UiTap`
  * falls back from accessibility gestures to `input tap`) must NOT
  * declare it — the gate would deny a call that would have succeeded via
- * the fallback. Declare only hard preconditions: `input_text` truly
- * cannot work without a focused field, `terminal.run` cannot work
+ * the fallback. Declare only hard preconditions: `InputText` truly
+ * cannot work without a focused field, `TerminalRun` cannot work
  * without a terminal session.
  */
 interface EnvironmentAwareTool {
@@ -212,25 +212,25 @@ class ToolEnvironmentGate(
     /** Model-facing fix instruction per known flag. */
     private fun fixHint(flag: String): String = when (flag) {
         ToolEnvironmentState.Flags.KEYBOARD_ACTIVE ->
-            "Tap a text field first (ui_tap on the input area) so the keyboard shows, " +
+            "Tap a text field first (UiTap on the input area) so the keyboard shows, " +
                 "then retry the typing call."
 
         ToolEnvironmentState.Flags.ACCESSIBILITY_READY ->
             "Tell the user the accessibility service must be enabled for semantic UI " +
-                "actions, or fall back to coordinate tools (ui_tap/ui_swipe via input)."
+                "actions, or fall back to coordinate tools (UiTap/UiSwipe via input)."
 
         ToolEnvironmentState.Flags.NETWORK_AVAILABLE ->
             "Check connectivity with device_info, wait for network, or switch to " +
                 "offline tools (files, data, terminal)."
 
         ToolEnvironmentState.Flags.UBUNTU_READY ->
-            "Run terminal.ubuntu.ensure first to extract the bundled Ubuntu environment (offline; minutes — full ~1GB environment)."
+            "Run TerminalUbuntuEnsure first to extract the bundled Ubuntu environment (offline; minutes — full ~1GB environment)."
 
         ToolEnvironmentState.Flags.TERMINAL_SESSION_OPEN ->
-            "Create a terminal session with terminal.create first."
+            "Create a terminal session with TerminalCreate first."
 
         ToolEnvironmentState.Flags.BROWSER_ATTACHED ->
-            "Open/attach the browser page (browser_navigate) before DOM actions."
+            "Open/attach the browser page (BrowserNavigate) before DOM actions."
 
         ToolEnvironmentState.Flags.ROOT_AVAILABLE ->
             "Ask the user to grant root, or use the sandbox/PRoot route instead."

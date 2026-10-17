@@ -15,7 +15,7 @@ import com.apex.agent.core.tools.skill.SkillRegistry
  * 两条注入通道按优先级合成：
  * 1. **渐进披露**（[skillActivation] 非空，主路径）：双层结构 ——
  *    scope 过滤后的技能目录（一行摘要）+ 仅激活技能的全文注入；
- *    激活集外技能只经目录暴露，由模型调 skill_activate 按需装备。
+ *    激活集外技能只经目录暴露，由模型调 SkillActivate 按需装备。
  * 2. **legacy 全量**（[skillActivation] 为空，单测/子代理）：按
  *    [AgentConfig.skillScope] 作用域全量注入。
  *
@@ -44,7 +44,7 @@ internal val ApexAgentEngine.skillCatalogDigests: List<SkillDigest>
         val digests = registry.getSkillDigests(skillScopeOrNull)
         // #206 目录注入上限：技能库扩到 300+ 后全量目录会把系统提示词撑出
         // 数千 token。超限时按分类域轮转均衡抽样（每个域都保持可见，
-        // 模型可经 skill_list() 查全量）—— 而不是按字典序硬截断（后者会把
+        // 模型可经 SkillList() 查全量）—— 而不是按字典序硬截断（后者会把
         // 排在后面的整个域整体抹掉）。
         return if (digests.size <= MAX_CATALOG_DIGESTS) digests
         else balancedDigestSample(digests, MAX_CATALOG_DIGESTS)

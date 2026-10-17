@@ -8,14 +8,14 @@
 碎片化的 UTILITY 工具按「一族一工具多操作」合并（`op` 参数区分操作）。
 旧工具类**保留注册**（历史会话兼容），但 id 移入
 `ToolTierPolicy.LEGACY_ALIAS_IDS` —— 永不进入 LLM 请求，也从
-`tool_search` 结果中隐藏。
+`ToolSearch` 结果中隐藏。
 
 | 新工具 | 合并自 | 覆盖操作 | 层级 |
 |---|---|---|---|
-| `time` | `datetime` + `get_time` + `cron_next` + `duration_convert` | now / format / parse / convert_tz / duration / cron_next | CORE |
-| `random` | `uuid_generate` + `random_generate` | uuid_v4 / uuid_v7 / int / float / string / pick | CATALOG |
-| `regex` | `regex_extract` + `regex_replace` | test / extract / replace / match_all / split | CATALOG |
-| `json` | `json_path` + `json_transform` | query / transform(七操作) / validate / format | CATALOG |
+| `time` | `datetime` + `GetTimeLegacy` + `CronNextLegacy` + `DurationConvertLegacy` | now / format / parse / convert_tz / duration / CronNextLegacy | CORE |
+| `random` | `UuidGenerateLegacy` + `RandomGenerateLegacy` | uuid_v4 / uuid_v7 / int / float / string / pick | CATALOG |
+| `regex` | `RegexExtractLegacy` + `RegexReplaceLegacy` | test / extract / replace / match_all / split | CATALOG |
+| `json` | `JsonPathLegacy` + `JsonTransformLegacy` | query / transform(七操作) / validate / format | CATALOG |
 
 **合并原则**：
 - 操作全集覆盖旧工具全部入参语义（先读旧实现再端口，行为对齐）；
@@ -30,23 +30,23 @@
 
 | 工具 | 沙箱根 | 消费方 |
 |---|---|---|
-| `read_file` / `write_file` / `edit_file` | Agent 默认工作区 | Agent 模式 |
-| `code_read` / `code_write` / `code_edit` | Code 工作区（`CodeWorkspaceRoots` 动态解析，可多根） | Coding 模式 |
+| `Read` / `Write` / `Edit` | Agent 默认工作区 | Agent 模式 |
+| `CodeRead` / `CodeWrite` / `CodeEdit` | Code 工作区（`CodeWorkspaceRoots` 动态解析，可多根） | Coding 模式 |
 | `mcp__fs__*` | 当前激活编码工作区（MCP 语义，路径三级防线） | MCP 客户端生态 / 外部 MCP 消费方 |
-| `terminal.fs` | PRoot Ubuntu guest rootfs | 终端会话编排 |
+| `TerminalFs` | PRoot Ubuntu guest rootfs | 终端会话编排 |
 
 ### 2.2 Shell 执行 ×3
 
 | 工具 | 语义 | 适用 |
 |---|---|---|
-| `terminal.exec` | 一次性结构化执行（stdout/stderr/exit_code 分离） | **默认入口**（CORE） |
-| `shell_execute` | 流式一次性执行（Root > Shizuku > app-shell 通道） | 需要提权通道时 |
-| `terminal.run` | PTY 会话内非阻塞执行（jobId + observe/wait） | 多步骤 / 长命令 / 交互命令 |
+| `TerminalExec` | 一次性结构化执行（stdout/stderr/exit_code 分离） | **默认入口**（CORE） |
+| `ShellExecute` | 流式一次性执行（Root > Shizuku > app-shell 通道） | 需要提权通道时 |
+| `TerminalRun` | PTY 会话内非阻塞执行（jobId + observe/wait） | 多步骤 / 长命令 / 交互命令 |
 
 ### 2.3 Web 搜索 ×2
 
-- `web_search` / `web_fetch`：原生工具（CORE）。
-- `mcp__search__web_search` / `web_fetch`：内置 search MCP 的进程内转发
+- `WebSearch` / `WebFetch`：原生工具（CORE）。
+- `mcp__search__web_search` / `WebFetch`：内置 search MCP 的进程内转发
   （同一 WebSearchTool 实例）——为 MCP 生态兼容保留（Coding 模式 MCP 客户端
   及外部客户端可发现），Agent 提示词不主动引导走此通道。
 
@@ -63,9 +63,9 @@
 
 | 工具 | 功能 | 层级 |
 |---|---|---|
-| `context_recap` | 结构化摘要：用户目标 / 已执行动作统计 / 错误摘要 / 最近结论 | CORE |
-| `context_search` | 全文检索会话消息与工具输出（命中片段 + 定位） | CATALOG |
-| `session_stats` | 消息分布 / token 估算 / 工具调用直方图 / 错误率 | CATALOG |
+| `ContextRecap` | 结构化摘要：用户目标 / 已执行动作统计 / 错误摘要 / 最近结论 | CORE |
+| `ContextSearch` | 全文检索会话消息与工具输出（命中片段 + 定位） | CATALOG |
+| `SessionStats` | 消息分布 / token 估算 / 工具调用直方图 / 错误率 | CATALOG |
 
 分类：新 `ToolCategory.CONTEXT`（上下文回顾，排序 62，紧随 MEMORY 60）。
 
@@ -74,19 +74,19 @@
 
 ## 4. 高级设备工具（新增，#172）
 
-`tts_speak`（朗读）/ `torch`（手电筒）/ `vibrate`（振动）/ `share_content`
-（系统分享）/ `deep_link`（深链拉起）/ `network_info`（网络诊断）/
-`battery_status`（电池）/ `image_info`（图片信息）/ `image_convert`
+`TtsSpeak`（朗读）/ `torch`（手电筒）/ `vibrate`（振动）/ `ShareContent`
+（系统分享）/ `DeepLink`（深链拉起）/ `NetworkInfo`（网络诊断）/
+`BatteryStatus`（电池）/ `ImageInfo`（图片信息）/ `ImageConvert`
 （缩放/旋转/转格式）——全部 CATALOG 层（渐进披露），不增加常驻 schema 体积。
 
 ## 5. CORE 集变更摘要
 
-- 移除：`get_time`（并入 `time`）
-- 新增：`time`、`context_recap`
+- 移除：`GetTimeLegacy`（并入 `time`）
+- 新增：`time`、`ContextRecap`
 - 不变：其余 45+ 常驻工具
 
 ## 6. 合并后规模
 
 - UTILITY 类工具数：20 → 12（四族 10 个旧 id 退出请求层）
-- 常驻 schema 体积：净减少（`time` 单 schema < `datetime`+`get_time` 双 schema）
+- 常驻 schema 体积：净减少（`time` 单 schema < `datetime`+`GetTimeLegacy` 双 schema）
 - 工具总数（注册表）：140 → 153（新增合并 4 + 上下文 3 + 高级 9，旧 10 个转 legacy）

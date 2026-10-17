@@ -191,7 +191,7 @@ class HubSource(
          * 技能条目 → manifest 下载 URL（raw.githubusercontent.com 直链）。
          *
          * 能力自省闭环：[com.apex.agent.core.tools.catalog.MarketSearchTool]
-         * 用它生成 skill_install({"source":"url", ...}) 的安装指令——
+         * 用它生成 SkillInstall({"source":"url", ...}) 的安装指令——
          * 模型拿到的是可直接执行的完整 URL，而不是需要自行拼接的相对路径。
          */
         fun skillManifestUrl(entry: HubSkillEntry): String =

@@ -18,13 +18,13 @@ import com.apex.agent.core.tools.ToolRisk
  * [ToolPermissionManager]（core，纯 JVM 状态机）+ 用户确认对话框的组合，
  * 注入 [DefaultToolExecutor] 后即生效：
  *
- * - HIGH 风险工具首次调用 → 经 [UserQuestionGateway]（复用 ask_user_choice
+ * - HIGH 风险工具首次调用 → 经 [UserQuestionGateway]（复用 AskUserChoice
  *   的既有对话框）向用户弹窗：仅允许一次 / 本会话允许 / 拒绝；
  * - **基础工具不拦截（2026-10 用户反馈）**：旧实现 MEDIUM 级文件改写类
- *   （write_file / edit_file 族）也纳入确认链——实际使用中每个编辑动作
+ *   （Write / Edit 族）也纳入确认链——实际使用中每个编辑动作
  *   都要确认，打断感远大于安全感。现在本门只对 HIGH 兜底：写入 / 编辑
  *   类属于可恢复操作，交由上游 PermissionModeGate 的模式语义把关
- *   （DEFAULT 下按删除类口径判定，删除类才询问）；shell_execute 的高危
+ *   （DEFAULT 下按删除类口径判定，删除类才询问）；ShellExecute 的高危
  *   命令仍由 CommandPermissionGate 在命令级拦截。本层兜底的是**其他宿主
  *   与直连风险门的执行器**（测试 / headless / 未来的批量管线）。
  * - "仅允许一次" → 本次放行但不记录（下次再问）；
@@ -34,7 +34,7 @@ import com.apex.agent.core.tools.ToolRisk
  * - 确认超时（#215）→ 超时未决：状态机不动（下次调用重新询问，
  *   本会话不被静默封禁），本次调用明确失败并附「确认超时」语义 ——
  *   绝不把超时静默记成会话级拒绝；
- * - `selfGated` 工具（shell_execute 已预置）跳过本门——它们自带更细粒度
+ * - `selfGated` 工具（ShellExecute 已预置）跳过本门——它们自带更细粒度
  *   的命令级确认，双重弹窗只会骚扰用户。
  * - **#336 凭据脱敏**：落审计（tool-audit.jsonl + Logcat）与确认弹窗的
  *   参数摘要先经 [SensitiveArgRedactor.redact] 做字段级掩码（api_key /
@@ -71,7 +71,7 @@ class RiskAwareToolGate(
         // 口径重新分配（只问真正不可逆的动作）。保留两类弹窗：
         // ① HIGH（删除/卸载/force-stop 族）；② **第三方动态来源**的 MEDIUM
         //（mcp_ / plugin 前缀——能力未经本仓库审计，首次调用仍应过目一次，
-        // 会话记忆保证同一工具只问一次）。shell_execute 的高危命令仍由
+        // 会话记忆保证同一工具只问一次）。ShellExecute 的高危命令仍由
         // CommandPermissionGate 在命令级拦截。
         val requiresPrompt = when {
             metadata.risk == ToolRisk.HIGH -> true
@@ -229,7 +229,7 @@ class RiskAwareToolGate(
         /**
          * 第三方动态来源工具 id 前缀（MEDIUM 中仍需首次确认的子集）：
          * MCP 服务器与插件运行期注册，能力不经过本仓库审计——与
-         * 内置 MEDIUM（write_file / ui_* 等已审计族）区分对待。
+         * 内置 MEDIUM（Write / ui_* 等已审计族）区分对待。
          */
         val THIRD_PARTY_PREFIXES = listOf("mcp_", "plugin")
 
