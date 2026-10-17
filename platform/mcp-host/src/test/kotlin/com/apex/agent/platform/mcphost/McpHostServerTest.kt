@@ -37,8 +37,8 @@ class McpHostServerTest {
 
     /** 简单加法工具（UTILITY 分类，默认白名单内）。 */
     private class AddTool : AgentTool {
-        override val id = "calculate"
-        override val name = "calculate"
+        override val id = "Calculate"
+        override val name = "Calculate"
         override val description = "Add two integers (a + b)"
         override val parametersSchema = """
             {"type":"object","properties":{"a":{"type":"integer"},"b":{"type":"integer"}},"required":["a","b"]}
@@ -59,8 +59,8 @@ class McpHostServerTest {
 
     /** 金库工具（SECURITY 分类）—— 绝不允许经 MCP Host 暴露。 */
     private class VaultTool : AgentTool {
-        override val id = "vault_save"
-        override val name = "vault_save"
+        override val id = "VaultSave"
+        override val name = "VaultSave"
         override val description = "vault save (must never be exposed)"
         override val parametersSchema = """{"type":"object"}"""
         override suspend fun execute(arguments: String): String = "SECRET-LEAKED"
@@ -216,10 +216,10 @@ class McpHostServerTest {
         val result = Json.parseToJsonElement(resp.body).jsonObject["result"]!!.jsonObject
         val tools = result["tools"]!!.jsonArray
         val names = tools.map { it.jsonObject["name"]!!.jsonPrimitive.content }
-        assertTrue(names.contains("calculate"))
-        assertTrue(!names.contains("vault_save"))
+        assertTrue(names.contains("Calculate"))
+        assertTrue(!names.contains("VaultSave"))
         // inputSchema 为对象且从 parametersSchema 解析
-        val calc = tools.first { it.jsonObject["name"]!!.jsonPrimitive.content == "calculate" }.jsonObject
+        val calc = tools.first { it.jsonObject["name"]!!.jsonPrimitive.content == "Calculate" }.jsonObject
         assertTrue(calc["inputSchema"]!!.jsonObject.containsKey("properties"))
     }
 
@@ -229,7 +229,7 @@ class McpHostServerTest {
         val resp = http(
             "POST", "/mcp",
             body = """{"jsonrpc":"2.0","id":3,"method":"tools/call",
-                      "params":{"name":"calculate","arguments":{"a":19,"b":23}}}""",
+                      "params":{"name":"Calculate","arguments":{"a":19,"b":23}}}""",
             session = sessionId
         )
         assertEquals(200, resp.status)
@@ -255,7 +255,7 @@ class McpHostServerTest {
 
     @Test
     fun `tools call vault tool rejected even if forced into whitelist`() {
-        // 即使客户端绕过列表直接调 vault_save —— Bridge 硬拦截
+        // 即使客户端绕过列表直接调 VaultSave —— Bridge 硬拦截
         store.save(
             McpHostConfig(
                 enabled = true, port = port, token = TOKEN,
@@ -267,7 +267,7 @@ class McpHostServerTest {
         val resp = http(
             "POST", "/mcp",
             body = """{"jsonrpc":"2.0","id":5,"method":"tools/call",
-                      "params":{"name":"vault_save","arguments":{"label":"x"}}}""",
+                      "params":{"name":"VaultSave","arguments":{"label":"x"}}}""",
             session = sessionId
         )
         assertEquals(200, resp.status)

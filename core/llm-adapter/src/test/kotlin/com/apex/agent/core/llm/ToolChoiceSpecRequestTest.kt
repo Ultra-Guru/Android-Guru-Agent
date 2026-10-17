@@ -42,7 +42,7 @@ class ToolChoiceSpecRequestTest {
 
     private val oneTool = listOf(
         ToolDefinition(
-            name = "read_file",
+            name = "Read",
             description = "Read a file",
             parameters = """{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}"""
         )
@@ -84,9 +84,9 @@ class ToolChoiceSpecRequestTest {
 
     @Test
     fun `specific function override serializes as function object`() {
-        val body = body(ToolChoiceSpec.Function("read_file"))
+        val body = body(ToolChoiceSpec.Function("Read"))
         assertEquals("function", body["tool_choice"]?.jsonObject?.get("type")?.jsonPrimitive?.content)
-        assertEquals("read_file", body.toolChoiceFunctionName())
+        assertEquals("Read", body.toolChoiceFunctionName())
     }
 
     @Test

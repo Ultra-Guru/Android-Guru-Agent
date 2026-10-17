@@ -191,7 +191,8 @@ fun ApexDrawerContent(
                         // v1.4.4 #7：诊断中心（日志/崩溃/设备信息，与日志页相邻）
                         DrawerDestination.Diagnostics,
                         DrawerDestination.Settings,
-                        // 游乐场（玻璃实验室正上方）：《字符风暴》pretext 物理拼词街机
+                        // 游乐场（玻璃实验室正上方）：插件化街机 —— 十款 pretext
+                        // HTML 游戏插件 + 可导入外部 HTML + 原生《字符风暴》孪生
                         DrawerDestination.Playground,
                         DrawerDestination.GlassLab
                     )

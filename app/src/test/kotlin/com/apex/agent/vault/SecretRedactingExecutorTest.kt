@@ -32,7 +32,7 @@ class SecretRedactingExecutorTest {
         redactor.register(listOf("leaked-secret-999"))
         val executor = SecretRedactingExecutor(FakeExecutor("got leaked-secret-999 here"), redactor)
 
-        val out = executor.execute("http_request", "{}")
+        val out = executor.execute("HttpRequest", "{}")
         assertEquals("got ${SecretRedactor.MASK} here", out)
         assertFalse(out.contains("leaked-secret-999"))
     }
@@ -45,7 +45,7 @@ class SecretRedactingExecutorTest {
             FakeExecutor("chunk leaked-secret-999 end"), redactor
         )
 
-        val events = executor.executeStream("web_fetch", "{}").toList()
+        val events = executor.executeStream("WebFetch", "{}").toList()
 
         assertEquals(4, events.size)
         events.forEach { ev ->
@@ -73,13 +73,13 @@ class SecretRedactingExecutorTest {
             FakeExecutor("echo secret-live-111222"), repo.secretRedactor
         )
         // 入库前：不脱敏（尚未登记）。
-        assertEquals("echo secret-live-111222", executor.execute("shell_execute", "{}"))
+        assertEquals("echo secret-live-111222", executor.execute("ShellExecute", "{}"))
 
         val e = repo.save(VaultRepository.newEntry("live", "", "secret-live-111222", VaultOrigin.HUMAN))
-        assertEquals("echo ${SecretRedactor.MASK}", executor.execute("shell_execute", "{}"))
+        assertEquals("echo ${SecretRedactor.MASK}", executor.execute("ShellExecute", "{}"))
 
         repo.delete(e.id)
-        assertEquals("echo secret-live-111222", executor.execute("shell_execute", "{}"))
+        assertEquals("echo secret-live-111222", executor.execute("ShellExecute", "{}"))
     }
 
     @Test

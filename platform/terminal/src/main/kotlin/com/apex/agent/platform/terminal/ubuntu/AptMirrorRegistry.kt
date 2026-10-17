@@ -5,7 +5,7 @@ import com.apex.agent.platform.terminal.linux.CpuArchitecture
 /**
  * T82 — apt 镜像注册表（Termux `termux-change-repo` 的 21 镜像能力在本项目的
  * 对应物；基线 §5.3）。默认官方源（HTTP-first bootstrap 语义不变），镜像切换
- * 经 `terminal.linux.packages` 的 `mirror` action —— 显式动作，绝不隐式改源。
+ * 经 `TerminalLinuxPackages` 的 `mirror` action —— 显式动作，绝不隐式改源。
  *
  * arm64/armhf 走 ubuntu-ports 镜像目录；amd64/i386 走 ubuntu 目录。全部镜像
  * 均为知名公共镜像（TUNA/USTC/Aliyun —— 中国大陆网络环境下的实际可用性

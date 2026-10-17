@@ -65,7 +65,7 @@
     <string name="mode_guide_agent_cases">Everyday tasks, research, automation, device control — anything non-coding</string>
     <string name="mode_guide_agent_flow">ReAct loop with general tools (web search, memory, system…); coding tools excluded</string>
     <string name="mode_guide_agent_tools">General CORE set; code_*/git/github removed — programming is redirected to Coding mode</string>
-    <string name="mode_guide_agent_human">ask_user on ambiguity; no forced function calling UI (that lives in Coding)</string>
+    <string name="mode_guide_agent_human">AskUser on ambiguity; no forced function calling UI (that lives in Coding)</string>
     <string name="mode_guide_agent_prompt">Mode: AGENT section — all-round non-coding agent, advises Coding for code</string>
     <string name="mode_guide_loop_cases">Periodic checks: poll a status page, watch a folder, repeated cleanups, one-shot reminders</string>
     <string name="mode_guide_loop_flow">LoopScheduler fires the prompt on schedule (interval / cron / once); each run is one full agent turn</string>

@@ -11,7 +11,7 @@ import com.apex.agent.core.tools.builtin.BaseTool
 import com.apex.agent.core.tools.toolSchema
 
 /**
- * # code_task — 子代理任务委派工具（Issue #147，业界标准风格 task 工具）
+ * # CodeTask — 子代理任务委派工具（Issue #147，业界标准风格 task 工具）
  *
  * 主代理把探索 / 调研 / 评审类工作委派给**隔离上下文**的子代理：
  * - 子代理由 [SubAgentRunner] 驱动，在全新引擎实例里跑完整循环，结论作为
@@ -25,14 +25,14 @@ import com.apex.agent.core.tools.toolSchema
  * - 输出格式：统计行（迭代 / 工具调用 / 耗时）+ 空行 + 结论文本，让主代理
  *   一眼看到成本与结论。
  *
- * 与 Code 模式六工具（code_read 等）同属 coding 能力面，但注册与入
+ * 与 Code 模式六工具（CodeRead 等）同属 coding 能力面，但注册与入
  * ToolTierPolicy CORE 集的接线由主控统一处理（本文件只交付工具本体）。
  */
 class CodeTaskTool(
     private val runner: SubAgentRunner
 ) : BaseTool(
-    id = "code_task",
-    name = "code_task",
+    id = "CodeTask",
+    name = "CodeTask",
     description = """
         把探索 / 调研 / 评审类任务委派给一个隔离上下文的子代理执行：子代理独立运行
         （有自己的工具集与迭代预算），跑完把结论作为本工具结果返回，不占用

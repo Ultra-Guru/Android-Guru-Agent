@@ -81,16 +81,16 @@ class ThinkingModeControllerTest {
     fun `standard level never injects post tool check`() {
         val c = ThinkingModeController()
         c.onIterationStart(config(ThinkingLevel.STANDARD), 1)
-        assertNull(c.postToolCheckPrompt("terminal.exec", failed = true, highRisk = true))
+        assertNull(c.postToolCheckPrompt("TerminalExec", failed = true, highRisk = true))
     }
 
     @Test
     fun `deep level injects check on failure with tool id`() {
         val c = ThinkingModeController()
         c.onIterationStart(config(ThinkingLevel.DEEP), 1)
-        val prompt = c.postToolCheckPrompt("terminal.exec", failed = true)
+        val prompt = c.postToolCheckPrompt("TerminalExec", failed = true)
         assertNotNull(prompt)
-        assertTrue("应包含工具 id：$prompt", prompt!!.contains("terminal.exec"))
+        assertTrue("应包含工具 id：$prompt", prompt!!.contains("TerminalExec"))
         assertTrue(prompt.contains("FAILED"))
     }
 
@@ -107,7 +107,7 @@ class ThinkingModeControllerTest {
     fun `deep level silent on successful low risk tool`() {
         val c = ThinkingModeController()
         c.onIterationStart(config(ThinkingLevel.DEEP), 1)
-        assertNull(c.postToolCheckPrompt("read_file", failed = false, highRisk = false))
+        assertNull(c.postToolCheckPrompt("Read", failed = false, highRisk = false))
     }
 
     @Test
@@ -116,7 +116,7 @@ class ThinkingModeControllerTest {
         c.onIterationStart(config(ThinkingLevel.AUTO), 1, userText = "继续")
         assertEquals(ThinkingLevel.LIGHT, c.lastDecision!!.level)
         // 16 次成功工具调用 → 深水区信号
-        repeat(16) { c.postToolCheckPrompt("read_file", failed = false) }
+        repeat(16) { c.postToolCheckPrompt("Read", failed = false) }
         c.onIterationStart(config(ThinkingLevel.AUTO), 2, userText = "继续")
         assertEquals(ThinkingLevel.STANDARD, c.lastDecision!!.level)
         assertTrue(c.lastDecision!!.reason.contains("长任务深水区"))
@@ -128,7 +128,7 @@ class ThinkingModeControllerTest {
         c.onIterationStart(config(ThinkingLevel.AUTO), 1, userText = "继续")
         assertEquals(ThinkingLevel.LIGHT, c.lastDecision!!.level)
         // 最近 3 次工具全部失败 → 错误恢复升一档
-        repeat(3) { c.postToolCheckPrompt("terminal.exec", failed = true) }
+        repeat(3) { c.postToolCheckPrompt("TerminalExec", failed = true) }
         c.onIterationStart(config(ThinkingLevel.AUTO), 2, userText = "继续")
         assertEquals(ThinkingLevel.STANDARD, c.lastDecision!!.level)
         assertTrue(c.lastDecision!!.reason.contains("错误恢复"))
@@ -138,7 +138,7 @@ class ThinkingModeControllerTest {
     fun `iteration one resets counters for a new build loop`() {
         val c = ThinkingModeController()
         c.onIterationStart(config(ThinkingLevel.AUTO), 1, userText = "继续")
-        repeat(20) { c.postToolCheckPrompt("read_file", failed = true) }
+        repeat(20) { c.postToolCheckPrompt("Read", failed = true) }
         // 新 Build 循环（Plan 多步执行每步从 1 开始）：计数清零
         c.onIterationStart(config(ThinkingLevel.AUTO), 1, userText = "继续")
         assertEquals(ThinkingLevel.LIGHT, c.lastDecision!!.level)

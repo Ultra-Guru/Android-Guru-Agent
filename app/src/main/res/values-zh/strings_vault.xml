@@ -3,7 +3,7 @@
 <resources>
     <!-- ═══ 安全说明 / 空态 ═══ -->
     <string name="vault_security_note_title">金库工作原理</string>
-    <string name="vault_security_note_body">密钥加密存储。Agent 只能看到标签与备注，永远看不到内容；使用时经 vault_paste 直接投递到剪贴板、终端会话或 HTTP 请求，全程不回显明文。</string>
+    <string name="vault_security_note_body">密钥加密存储。Agent 只能看到标签与备注，永远看不到内容；使用时经 VaultPaste 直接投递到剪贴板、终端会话或 HTTP 请求，全程不回显明文。</string>
     <string name="vault_empty">还没有密钥。点击「新增密钥」储放 GitHub Token 或 AI API 密钥。</string>
 
     <!-- ═══ 条目卡 ═══ -->
@@ -16,7 +16,7 @@
     <string name="vault_show">显示内容</string>
     <string name="vault_hide">隐藏内容</string>
     <string name="vault_edit">编辑</string>
-    <string name="vault_delete">删除</string>
+    <string name="VaultDelete">删除</string>
     <string name="vault_delete_confirm_title">删除该密钥？</string>
     <string name="vault_delete_confirm_body">条目「%1$s」将被永久删除，不可恢复。</string>
 

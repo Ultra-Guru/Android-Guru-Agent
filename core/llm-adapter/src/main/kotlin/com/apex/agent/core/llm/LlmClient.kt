@@ -107,6 +107,15 @@ data class LlmStreamChunk(
     val toolCalls: List<ToolCall> = emptyList(),
     val isFinish: Boolean = false,
     /**
+     * provider 原始收尾原因（`stop` / `tool_calls` / `length` /
+     * `content_filter` …；绝大多数中间帧为 null）。
+     *
+     * 标准任务循环引擎据此识别**输出截断**（finishReason = length）并触发
+     * 续跑语义，而不是把半截回答当结论收尾——深潜线等既有消费方不受
+     * 影响（默认 null = 未透传，行为与旧版完全一致）。
+     */
+    val finishReason: String? = null,
+    /**
      * 原生推理/思考内容（流式增量）。
      *
      * OpenAI o-series 返回 `delta.reasoning_content`；DeepSeek-R1 返回

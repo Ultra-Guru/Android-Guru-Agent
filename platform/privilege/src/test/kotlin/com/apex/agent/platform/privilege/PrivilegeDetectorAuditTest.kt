@@ -15,7 +15,7 @@ import org.junit.Test
 /**
  * T92（#255 权限链审计）—— PrivilegeDetector 逐命令审计日志契约锁。
  *
- * 审计结论「权限链真实被 Agent 利用」要可验证，前提是每一条 shell_execute
+ * 审计结论「权限链真实被 Agent 利用」要可验证，前提是每一条 ShellExecute
  * 命令都留下结构化的通道痕迹。这里锁定两层契约：
  *
  * 1. **端到端契约**：executeShell 真实执行一条命令（Linux 宿主 sh/su），

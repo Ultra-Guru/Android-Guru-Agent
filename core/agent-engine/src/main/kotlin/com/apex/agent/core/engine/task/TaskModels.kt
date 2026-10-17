@@ -25,7 +25,7 @@ enum class TaskStatus {
     /** 正在执行（ReAct 循环 / 步骤执行中）。 */
     RUNNING,
 
-    /** 等待用户输入/计划确认/规格确认（ask_user / PlanAwaitingConfirmation）。 */
+    /** 等待用户输入/计划确认/规格确认（AskUser / PlanAwaitingConfirmation）。 */
     WAITING_USER,
 
     /** 用户主动暂停：落盘保留，可通过 resume 从断点继续（与 CANCELLED 的核心区别）。 */

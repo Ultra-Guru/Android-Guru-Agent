@@ -14,8 +14,8 @@ import org.junit.Test
  * Agent 自主设置工具的纯 JVM 测试。
  *
  * 测试范围：
- * - agent_setting_get：读取快照（无参数 → 返回 JSON）
- * - agent_setting_set：白名单字段校验、空 patch 拒绝、枚举值校验、
+ * - AgentSettingGet：读取快照（无参数 → 返回 JSON）
+ * - AgentSettingSet：白名单字段校验、空 patch 拒绝、枚举值校验、
  *   apply 失败回滚、apply 成功返回 OK
  *
  * 不测的（需 Android）：
@@ -24,7 +24,7 @@ import org.junit.Test
  */
 class AgentSetupToolsTest {
 
-    // ── agent_setting_get ────────────────────────────────────────────────
+    // ── AgentSettingGet ────────────────────────────────────────────────
 
     @Test
     fun `setting_get returns current snapshot as JSON`() = runTest {
@@ -44,7 +44,7 @@ class AgentSetupToolsTest {
         assertTrue("should contain think_level", result.contains("thinkLevel"))
     }
 
-    // ── agent_setting_set — happy paths ──────────────────────────────────
+    // ── AgentSettingSet — happy paths ──────────────────────────────────
 
     @Test
     fun `setting_set applies a single int field`() = runTest {
@@ -78,7 +78,7 @@ class AgentSetupToolsTest {
         assertTrue("should mention count: $result", result.contains("2 field"))
     }
 
-    // ── agent_setting_set — validation failures ─────────────────────────
+    // ── AgentSettingSet — validation failures ─────────────────────────
 
     @Test
     fun `setting_set rejects an empty patch`() = runTest {

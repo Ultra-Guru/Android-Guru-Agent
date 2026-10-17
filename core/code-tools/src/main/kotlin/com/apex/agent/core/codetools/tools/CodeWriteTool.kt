@@ -15,23 +15,23 @@ import com.apex.agent.core.tools.toolSchema
 import java.io.File
 
 /**
- * # code_write — 全量写文件（编码会话专用）
+ * # CodeWrite — 全量写文件（编码会话专用）
  *
- * 与 code_edit 的分工（业界标准 CLI 编码智能体同款契约）：
- * - 新文件 / 整文件重写 / 改动超过一半 → code_write；
- * - 局部修改 → code_edit（省 token 且更安全）。
+ * 与 CodeEdit 的分工（业界标准 CLI 编码智能体同款契约）：
+ * - 新文件 / 整文件重写 / 改动超过一半 → CodeWrite；
+ * - 局部修改 → CodeEdit（省 token 且更安全）。
  *
  * 行为：全量覆盖；存在文件必须显式确认（overwrite=true）——防止模型在没读过
  * 文件的情况下盲目覆盖。写入后回显统一 diff 摘要（存在时），并附带即时诊断
  * 回注（注入 [diagnostics] 时，发现以「⚠️ 诊断」块追加在成功输出尾部）。
  *
- * 工程细节（与 code_edit 共享 [FileWriteGuard] 契约）：
+ * 工程细节（与 CodeEdit 共享 [FileWriteGuard] 契约）：
  * - **原子写**：tmp + fsync + rename，进程死亡不留半写文件；
- * - **跨工具按路径互斥**：与 code_edit 共享同一把 per-path 锁，读 before →
+ * - **跨工具按路径互斥**：与 CodeEdit 共享同一把 per-path 锁，读 before →
  *   覆盖是完整临界区，并发写同一路径互斥；
  * - **BOM/CRLF 保留**：覆盖既有文件时按原风格还原（[TextFileStyle]），
  *   全量写不悄悄改变文件形态；
- * - **读取上限**：before 全文读入有 [MAX_FILE_BYTES] 上限（与 code_edit 同
+ * - **读取上限**：before 全文读入有 [MAX_FILE_BYTES] 上限（与 CodeEdit 同
  *   口径）—— 超限文件跳过 diff（降级为统计行提示），不做无上限 readText
  *   （OOM 向量）；写入本身不受影响。
  */
@@ -39,20 +39,20 @@ class CodeWriteTool(
     private val roots: CodeWorkspaceRoots,
     private val diagnostics: CodeDiagnostics? = null
 ) : BaseTool(
-    id = "code_write",
+    id = "CodeWrite",
     name = "Code Write",
     description = """
         Write a full file (create or overwrite) in the coding workspace.
 
         ALWAYS prefer editing an existing file over creating a new one — use
-        code_edit for targeted changes; it is cheaper and safer. Use this tool
+        CodeEdit for targeted changes; it is cheaper and safer. Use this tool
         mainly for new files or full rewrites.
 
         NEVER proactively create documentation files (*.md, README) unless
         the user explicitly asks.
 
         Overwriting an existing file requires overwrite=true (read it with
-        code_read first to avoid destroying work).
+        CodeRead first to avoid destroying work).
     """.trimIndent(),
     declaredSchema = toolSchema {
         string("path", required = true, description = "File path relative to the workspace root")
@@ -107,15 +107,15 @@ class CodeWriteTool(
         if (!overwrite) {
             return ToolResult.fail(
                 ToolErrorCode.INVALID_ARGUMENT,
-                "file exists: $path — set overwrite=true after reading it (code_read), " +
-                    "or use code_edit for targeted changes"
+                "file exists: $path — set overwrite=true after reading it (CodeRead), " +
+                    "or use CodeEdit for targeted changes"
             )
         }
         if (!file.canWrite()) {
             return ToolResult.fail(ToolErrorCode.PERMISSION_DENIED, "cannot write: $path")
         }
 
-        // before 全文读入有大小上限（对齐 code_edit 的 MAX_FILE_BYTES）——
+        // before 全文读入有大小上限（对齐 CodeEdit 的 MAX_FILE_BYTES）——
         // 超限文件不读（OOM 防护），风格仍从头部有限字节探测。
         val previousBytes = file.length()
         val raw = if (previousBytes <= MAX_FILE_BYTES) file.readText(Charsets.UTF_8) else null

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FusionBundle（复合技能包）中文文案（英文默认在 values/strings_fusionbundle.xml）。 -->
+<resources>
+
+    <!-- ═══ 输入栏入口按钮 ═══ -->
+    <string name="fusion_cd_bundle">聚变包：技能 + MCP 服务器 + 工具一键聚合</string>
+    <string name="fusion_cd_bundle_active">聚变包使用中 —— 点按管理或停用</string>
+
+    <!-- ═══ 选择器弹层 ═══ -->
+    <string name="fusion_picker_title">聚变包 FusionBundle</string>
+    <string name="fusion_picker_subtitle">把技能、MCP 服务器、工具与 agent 工作流聚合为一个包 —— 选用后整个体系的 agent 直接就绪。</string>
+    <string name="fusion_picker_empty">尚未安装任何聚变包。</string>
+    <string name="fusion_picker_footnote">激活会安装包内技能、连接包内 MCP 服务器并注入其工作流。内置包随应用预装、不可卸载。</string>
+    <string name="fusion_badge_bundled">内置</string>
+    <string name="fusion_row_components">%1$d 技能 · %2$d MCP · %3$d 旗舰工具 · %4$d 可选引擎</string>
+
+    <!-- ═══ 操作与结果 ═══ -->
+    <string name="fusion_action_activate">使用此包</string>
+    <string name="fusion_action_deactivate">停用</string>
+    <string name="fusion_result_activated">聚变包「%1$s」已激活 —— 体系 agent 就绪。</string>
+    <string name="fusion_result_deactivated">「%1$s」已停用；技能与服务器保留在体系内。</string>
+    <string name="fusion_result_failed">激活失败</string>
+    <string name="fusion_result_skipped">另有 %1$d 个组件被跳过。</string>
+
+    <!-- ═══ 激活态横幅 ═══ -->
+    <string name="fusion_banner_active">%1$s 体系 agent 运行中</string>
+</resources>

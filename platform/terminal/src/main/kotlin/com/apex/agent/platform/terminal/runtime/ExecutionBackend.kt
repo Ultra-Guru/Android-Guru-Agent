@@ -26,7 +26,7 @@ interface ExecutionBackend {
     val runtimeType: BackendRuntimeType
 
     /**
-     * 后端可用性探测（Agent 能力发现的依据，P73 接入 terminal.backends 工具）。
+     * 后端可用性探测（Agent 能力发现的依据，P73 接入 TerminalBackends 工具）。
      * 必须廉价、无副作用 —— 每次调用都应反映当前真实状态。
      */
     suspend fun availability(): BackendAvailability

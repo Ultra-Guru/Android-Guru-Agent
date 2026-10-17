@@ -14,16 +14,16 @@ class CodeStreamModelsTest {
 
     @Test
     fun `tool names map to families`() {
-        assertEquals(ToolKind.READ_FILE, ToolKind.fromToolName("code_read"))
-        assertEquals(ToolKind.WRITE_FILE, ToolKind.fromToolName("code_write"))
-        assertEquals(ToolKind.EDIT_FILE, ToolKind.fromToolName("code_edit"))
-        assertEquals(ToolKind.GREP_SEARCH, ToolKind.fromToolName("code_grep"))
-        assertEquals(ToolKind.BASH, ToolKind.fromToolName("terminal.exec"))
-        assertEquals(ToolKind.BASH, ToolKind.fromToolName("shell_execute"))
-        assertEquals(ToolKind.GIT, ToolKind.fromToolName("code_git_diff"))
+        assertEquals(ToolKind.READ_FILE, ToolKind.fromToolName("CodeRead"))
+        assertEquals(ToolKind.WRITE_FILE, ToolKind.fromToolName("CodeWrite"))
+        assertEquals(ToolKind.EDIT_FILE, ToolKind.fromToolName("CodeEdit"))
+        assertEquals(ToolKind.GREP_SEARCH, ToolKind.fromToolName("CodeGrep"))
+        assertEquals(ToolKind.BASH, ToolKind.fromToolName("TerminalExec"))
+        assertEquals(ToolKind.BASH, ToolKind.fromToolName("ShellExecute"))
+        assertEquals(ToolKind.GIT, ToolKind.fromToolName("CodeGitDiff"))
         assertEquals(ToolKind.LINT, ToolKind.fromToolName("lint"))
         assertEquals(ToolKind.TEST, ToolKind.fromToolName("test"))
-        assertEquals(ToolKind.PLAN, ToolKind.fromToolName("code_todo"))
+        assertEquals(ToolKind.PLAN, ToolKind.fromToolName("CodeTodo"))
         assertEquals(ToolKind.MCP_CUSTOM, ToolKind.fromToolName("mcp_web_search"))
         assertEquals("未知名保守归 MCP_CUSTOM", ToolKind.MCP_CUSTOM, ToolKind.fromToolName("whatever_tool"))
     }

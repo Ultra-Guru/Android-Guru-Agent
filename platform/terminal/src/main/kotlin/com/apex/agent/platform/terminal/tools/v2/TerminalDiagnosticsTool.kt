@@ -9,7 +9,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 
 /**
- * Agent tool: terminal.diagnostics —— T87（「终端到底能不能被 Agent 调用」的自证工具）。
+ * Agent tool: TerminalDiagnostics —— T87（「终端到底能不能被 Agent 调用」的自证工具）。
  *
  * 一个工具同时回答三个问题：
  *  1. **会话面**：每个会话的真实状态（backend/shell/state/pid/退出码/前台 job）；
@@ -32,7 +32,7 @@ class TerminalDiagnosticsTool(
     /** 可选的 exec 探针（app DI 注入 ExecEngine 路径；null = 该能力如实缺席）。 */
     private val execProbe: (suspend (command: String) -> String?)? = null
 ) : TerminalTool {
-    override val id: String = "terminal.diagnostics"
+    override val id: String = "TerminalDiagnostics"
     override val name: String = id
     override val description: String = """
         One-shot terminal stack diagnostics: live sessions (state/exit/backend), backend
@@ -77,7 +77,7 @@ class TerminalDiagnosticsTool(
                     s.foregroundJob?.let { put("foregroundJob", JsonPrimitive(it.command)) }
                     if (s.session.state.name in DEAD_STATES) {
                         put("verdict", JsonPrimitive("DEAD"))
-                        nextActions.add("session ${s.session.id} is ${s.session.state.name} — close it (terminal.close) or restart")
+                        nextActions.add("session ${s.session.id} is ${s.session.state.name} — close it (TerminalClose) or restart")
                     }
                 })
             }
@@ -93,7 +93,7 @@ class TerminalDiagnosticsTool(
                 })
                 when {
                     b.state == "NEEDS_ROOTFS" -> nextActions.add(
-                        "backend '${b.id}' needs rootfs — call terminal.ubuntu.install first (offline, minutes)"
+                        "backend '${b.id}' needs rootfs — call TerminalUbuntuInstall first (offline, minutes)"
                     )
                     b.state == "FAILED" -> nextActions.add(
                         "backend '${b.id}' failed: ${b.detail ?: "unknown"}"
@@ -116,7 +116,7 @@ class TerminalDiagnosticsTool(
                 } else {
                     put("chainOk", JsonPrimitive(false))
                     put("output", JsonPrimitive("(exec probe not wired on this host)"))
-                    nextActions.add("exec probe unavailable — verify terminal.exec separately")
+                    nextActions.add("exec probe unavailable — verify TerminalExec separately")
                 }
             }
         } else null

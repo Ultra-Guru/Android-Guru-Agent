@@ -17,7 +17,7 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 class AskUserTool : AgentTool {
 
-    override val id: String = "ask_user"
+    override val id: String = "AskUser"
 
     override val name: String = "Ask User"
 

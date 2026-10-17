@@ -74,7 +74,7 @@ class TerminalLinuxPackagesToolTest {
     private val tool = TerminalLinuxPackagesTool(FakePm())
 
     @Test fun `tool id is terminal linux packages`() {
-        assertEquals("terminal.linux.packages", tool.id)
+        assertEquals("TerminalLinuxPackages", tool.id)
     }
 
     @Test fun `status action returns available`() = runBlocking {

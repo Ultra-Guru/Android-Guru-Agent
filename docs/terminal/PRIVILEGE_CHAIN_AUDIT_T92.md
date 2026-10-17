@@ -11,11 +11,11 @@
 
 | 路径 | 链路 | 消费方 |
 | --- | --- | --- |
-| `shell_execute` | Root(`su -c`) > Shizuku(IShizukuService.newProcess AIDL, uid=2000) > app-shell(`sh -c`) | `PrivilegeDetector.executeShell`（ToolModule 接线）+ **18 个设备工具**（app_list / app_launch / device_info / ui_tap / screenshot / logcat…） |
-| `terminal.exec` | PRoot Ubuntu（rootfs 就绪且非 Android 专有命令）> Root > Shizuku > local-sh | `ProotCommandSpawner` → fallback `PrivilegedCommandSpawner` → `ExecEngine` |
-| PTY 会话 | `terminal.create backend=linux-ubuntu` → proot argv（T88 env trampoline） | NativePty forkpty + execv |
+| `ShellExecute` | Root(`su -c`) > Shizuku(IShizukuService.newProcess AIDL, uid=2000) > app-shell(`sh -c`) | `PrivilegeDetector.executeShell`（ToolModule 接线）+ **18 个设备工具**（AppList / AppLaunch / device_info / UiTap / screenshot / logcat…） |
+| `TerminalExec` | PRoot Ubuntu（rootfs 就绪且非 Android 专有命令）> Root > Shizuku > local-sh | `ProotCommandSpawner` → fallback `PrivilegedCommandSpawner` → `ExecEngine` |
+| PTY 会话 | `TerminalCreate backend=linux-ubuntu` → proot argv（T88 env trampoline） | NativePty forkpty + execv |
 
-端到端自证入口：`terminal.diagnostics {smokeTest:true}`（真实执行
+端到端自证入口：`TerminalDiagnostics {smokeTest:true}`（真实执行
 `printf 'TERMINAL-EXEC-OK'`，回 `smoke.chainOk`）。
 
 审计同时发现 **5 个可观测性/完整性缺口**，本 PR 逐条修复（§1–§5）。
@@ -57,9 +57,9 @@ privilegeManager.shizukuAvailable  → Flags.SHIZUKU_AVAILABLE
 自带降级链），接线后仅提升 prompt 可见性，不产生 ToolEnvironmentGate 拒绝
 —— 与 fail-open 哲学一致。
 
-## 3. 缺口③ —— shell_execute 成功时通道对模型不可见
+## 3. 缺口③ —— ShellExecute 成功时通道对模型不可见
 
-**问题**：`terminal.exec` 的结构化输出恒含 `channel` 字段，但 `shell_execute`
+**问题**：`TerminalExec` 的结构化输出恒含 `channel` 字段，但 `ShellExecute`
 只在失败时才带 `via=…` —— 成功执行走了哪条通道，模型与用户都看不到。
 
 **修复**（ToolModule）：`shellExec` 重构为三层单源结构 ——
@@ -93,14 +93,14 @@ CI：ci.yml 新增 `:platform:privilege:testDebugUnitTest` 步骤（该模块此
 
 ## 6. 审计日志怎么用（面向 #255 的验收路径）
 
-1. 让 Agent 执行任意 shell 命令（`shell_execute` 或 `terminal.exec`）；
+1. 让 Agent 执行任意 shell 命令（`ShellExecute` 或 `TerminalExec`）；
 2. 打开日志查看器，按 tag `privilege-chain` 筛选：
-   - shell_execute：`via=root|shizuku|shell exit=… Nms cmd=…`
-   - terminal.exec：`route=proot-ubuntu` 或 `route=host-fallback reason=…` +
+   - ShellExecute：`via=root|shizuku|shell exit=… Nms cmd=…`
+   - TerminalExec：`route=proot-ubuntu` 或 `route=host-fallback reason=…` +
      紧随的 `channel=root-su|shizuku|local-sh`；
 3. 授予/撤销 Root、Shizuku 后重复 —— 通道选择即时变化（#12 binder 回灌
    已有），日志与 `environment:` 摘要同步反映；
-4. E2E 自证：`terminal.diagnostics {smokeTest:true}` 返回 `smoke.chainOk=true`。
+4. E2E 自证：`TerminalDiagnostics {smokeTest:true}` 返回 `smoke.chainOk=true`。
 
 ## 7. 决策记录
 
@@ -111,6 +111,6 @@ CI：ci.yml 新增 `:platform:privilege:testDebugUnitTest` 步骤（该模块此
 - **命令进日志的隐私权衡**：命令文本本就进入 CommandPermissionGate 的
   用户弹窗与 ToolTrace 记录，日志中枢是同信任级的设备本地存储；截断 120
   字符兼顾可读性与体积。
-- **`[executed via: x]` 只给 shell_execute**：设备工具的输出被行级解析
+- **`[executed via: x]` 只给 ShellExecute**：设备工具的输出被行级解析
   （AppListTool 计数、DeviceInfo 拼接），尾部标记会污染 —— 拆两条消费
   通道而非全局追加。

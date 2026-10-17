@@ -14,6 +14,9 @@ name: Release (Cross-Repo)
 #
 #   构建 APK（universal + arm64，复用 apk.yml 的成熟路径）
 #       ├─ 生成 version.json（版本 / 下载地址 / SHA-256 / 补丁清单）
+#       ├─ 聚合 .changelog/unreleased → changelog.json（更新日志通道：
+#       │   Release 资产 + 发布仓库 main + APK assets 内置三落点，
+#       │   App 升级后首启弹窗展示 —— 片段在合并 PR 前写好，构建期只读）
 #       ├─ 与上一版本生成 xdelta3 增量补丁（App「关于 → 检查更新」可选增量更新）
 #       ├─ 累积维护 patches.json 补丁全量索引（App 跨版本链式增量的数据源）
 #       └─ 双落点发布（产物在两个仓库都可直接下载）：
@@ -271,6 +274,22 @@ jobs:
           ref: ${{ steps.bkitpin.outputs.sha }}
           path: apex-browser-kit
 
+      - name: Read apex-standard-kit pin
+        id: akitpin
+        # 锁定文件 gradle/standard-kit.lock 由 sync-standard-kit 工作流自动维护：
+        # standard-kit main 有新绿提交 → 锁文件 bump → 本仓库 push → 全流水线
+        # 以新锁定版本构建。缺锁回退 main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/standard-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-standard-kit (standard-loop composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-standard-kit
+          ref: ${{ steps.akitpin.outputs.sha }}
+          path: apex-standard-kit
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -351,6 +370,30 @@ jobs:
           done
           echo "❌ Dependency resolution failed after $attempts attempts"
           exit 1
+
+      # ═══ 更新日志通道 v1：聚合 .changelog/unreleased → changelog.json ═══
+      # 片段由发布器 App / PR 流程在合并前写好；此处只读取、只汇总，
+      # 绝不在构建期人工补（changelog-gate.yml 在 PR 阶段拦「改码不写日志」）。
+      # 产物三落点：dist/changelog.json（Release 资产 + 提交发布仓库 main =
+      # 客户端 raw 读取点）+ app/src/main/assets/changelog.json（APK 内置
+      # 离线兜底；.gitignore 排除 —— 源码树保持干净，构建期生成）。
+      # 片段为空不硬失败（兜底文案），发布列车绝不断。
+      - name: "Generate changelog.json (aggregate .changelog/unreleased)"
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          VCODE: ${{ needs.resolve.outputs.vcode }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          python3 scripts/changelog.py build \
+            --version "$VERSION" \
+            --code "$VCODE" \
+            --tag "$TAG" \
+            --out dist/changelog.json
+          mkdir -p app/src/main/assets
+          cp dist/changelog.json app/src/main/assets/changelog.json
+          echo "✅ changelog.json 已生成并内置 APK assets（notes $(jq -r '.latest.notes | length' dist/changelog.json) 条 / history $(jq -r '.history | length' dist/changelog.json) 条）"
 
       # 版本注入：resolve 阶段可能自动追加了构建序号（v1.4.2.1）或提升了
       # versionCode —— 经 Gradle 属性注入最终值，不回写仓库文件（源码保持干净）。
@@ -477,7 +520,11 @@ jobs:
             OFFENDING=$(echo "$FILES" | grep -vE '^app/src/main/assets/(skills|mcp_catalog)/[^/]+\.json$' || true)
             if [ -n "$OFFENDING" ]; then
               echo "🚫 本版含非热载路径变更 —— 必须重装 APK，不出热更包。白名单外文件（前 20）："
-              echo "$OFFENDING" | head -20 | sed 's/^/    - /'
+              # pipefail 陷阱：违规清单 > 20 行时 head 提前退出，echo 写入遭
+              # SIGPIPE（write error: Broken pipe）→ 管道非零 → set -e 在
+              # exit 0 前杀掉脚本 → 守卫消息变成了 job 失败。|| true 兑现
+              # 「告警不阻断」的本意（大重构版本重装 APK，属预期路径）。
+              echo "$OFFENDING" | head -20 | sed 's/^/    - /' || true
               exit 0
             fi
             echo "✅ data-only 判定通过（$(echo "$FILES" | wc -l) 个文件全部在热载白名单）"
@@ -593,8 +640,10 @@ jobs:
             echo "⚠️ 未找到历史版本 release —— 跳过补丁生成（首版正常）"
             exit 0
           fi
-          # 首个基底 = 上一版（primary：进 version.json 的单补丁档，兼容老客户端）
-          PRIMARY_BASE=$(echo "$BASES" | head -1)
+          # 首个基底 = 上一版（primary：进 version.json 的单补丁档，兼容老客户端）。
+          # herestring 喂 head（无 writer 进程）—— 同样规避 pipefail 下的
+          # SIGPIPE 陷阱（echo|head 在 BASES 多行时可能写失败）。
+          PRIMARY_BASE=$(head -1 <<<"$BASES")
           echo "🔗 基底窗口（来源 ${BASE_SRC}，共 $(echo "$BASES" | wc -l) 个）："
           echo "$BASES" | sed 's/^/    - /'
           # meta/ 存内部工作文件（不进 Release 资产）；dist/ 只放对外产物
@@ -763,6 +812,22 @@ jobs:
               if rows:
                   patch_lines = "\n".join(rows)
 
+          # ── 更新日志段（changelog 通道 v1）：与 dist/changelog.json 同源，
+          #    构建前聚合步骤生成 —— 发布页正文与 App 弹窗展示同一份内容。
+          changelog_lines = ""
+          try:
+              with open("dist/changelog.json", encoding="utf-8") as f:
+                  cl = json.load(f)
+              cl_notes = (cl.get("latest") or {}).get("notes") or []
+              if cl_notes:
+                  changelog_lines = "\n".join(
+                      ["### 📝 更新日志（App 升级后首次启动弹窗展示）", ""]
+                      + [f"- {n}" for n in cl_notes]
+                      + [""]
+                  )
+          except (FileNotFoundError, json.JSONDecodeError):
+              pass
+
           def release_body(header_note):
               # 热更段：data-only 版本展示免安装通道（否则说明本版需重装）
               if "hot" in manifest and manifest["hot"]:
@@ -789,6 +854,7 @@ jobs:
                   f"| `universal` | 旧设备 / 模拟器（全 3 ABI） | {mb(universal):.0f} MB |",
                   "",
                   hot_lines,
+                  changelog_lines,
                   "### 🔧 增量补丁（App 内「关于 → 检查更新」可直选）",
                   patch_lines,
                   "",
@@ -953,10 +1019,11 @@ jobs:
           # 防回环关键：GITHUB_TOKEN 产生的事件（tag/release 创建）不会触发新的
           # workflow run —— 若此处改用 PAT，创建的 tag 会以 push 事件再次点燃
           # 本流水线的 tags 触发器，形成死循环。
-          # v1.4.5 职责收紧：主仓库只镜像 APK + SHA 清单 + version.json ——
-          # 增量补丁（*.vcdiff）与补丁索引（patches.json）只放发布仓库，
-          # App 下载补丁固定走发布仓库直链（version.json/patches.json 的 URL
-          # 均指向 RELEASE_REPO）。dist/ 的补丁文件绝不进入主仓库。
+          # v1.4.5 职责收紧：主仓库只镜像 APK + SHA 清单 + version.json +
+          # changelog.json —— 增量补丁（*.vcdiff）与补丁索引（patches.json）
+          # 只放发布仓库，App 下载补丁固定走发布仓库直链（version.json/
+          # patches.json 的 URL 均指向 RELEASE_REPO）。dist/ 的补丁文件绝不
+          # 进入主仓库。
           tag_name: ${{ needs.resolve.outputs.tag }}
           name: "Release ${{ needs.resolve.outputs.tag }}"
           body_path: release_body_dev.md
@@ -968,6 +1035,7 @@ jobs:
           files: |
             dist/*.apk
             dist/version.json
+            dist/changelog.json
 
       - name: Commit version.json to release repo main branch
         if: needs.resolve.outputs.publishing == 'true'
@@ -1027,6 +1095,11 @@ jobs:
             git clone --depth 1 \
               "https://x-access-token:${RELEASE_TOKEN}@github.com/${RELEASE_REPO}.git" relrepo
             cp dist/version.json relrepo/version.json
+            # 更新日志清单（changelog 通道 v1）：raw CDN = App 启动静默读取点，
+            # 与 version.json 同宿主同提交（幂等重跑时内容一致 → git diff 静默跳过）
+            if [ -f dist/changelog.json ]; then
+              cp dist/changelog.json relrepo/changelog.json
+            fi
             if [ -f dist/patches.json ]; then
               python3 /tmp/merge_patches_index.py
             fi
@@ -1034,7 +1107,7 @@ jobs:
               cd relrepo
               git config user.name "github-actions[bot]"
               git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-              git add version.json patches.json
+              git add version.json patches.json changelog.json
               if git diff --cached --quiet; then
                 echo "ℹ️ 清单无变更（幂等重跑）—— 无需提交"
               else
@@ -1054,6 +1127,7 @@ jobs:
           }
           echo "✅ https://raw.githubusercontent.com/${RELEASE_REPO}/main/version.json 已更新"
           echo "✅ https://raw.githubusercontent.com/${RELEASE_REPO}/main/patches.json 已更新"
+          echo "✅ https://raw.githubusercontent.com/${RELEASE_REPO}/main/changelog.json 已更新（App 更新日志弹窗读取点）"
 
       - name: Summary
         if: always()

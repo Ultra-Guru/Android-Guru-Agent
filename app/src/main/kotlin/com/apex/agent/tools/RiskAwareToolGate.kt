@@ -24,7 +24,7 @@ import com.apex.agent.core.tools.ToolRisk
  *   实测打断感远大于安全感），与 PermissionDecider 的默认放行口径共同
  *   构成「常规使用零打扰」的手感。删除类/敏感动作的兜底询问仍由上游
  *   PermissionModeGate 的模式语义承担；本门仅剩显式 sensitiveAction
- *   工具的会话内一次确认。shell_execute 的高危命令仍由
+ *   工具的会话内一次确认。ShellExecute 的高危命令仍由
  *   CommandPermissionGate 在命令级拦截。
  * - "仅允许一次" → 本次放行但不记录（下次再问）；
  * - "本会话允许" → 状态机记 ALLOWED_SESSION，之后静默放行；
@@ -33,7 +33,7 @@ import com.apex.agent.core.tools.ToolRisk
  * - 确认超时（#215）→ 超时未决：状态机不动（下次调用重新询问，
  *   本会话不被静默封禁），本次调用明确失败并附「确认超时」语义 ——
  *   绝不把超时静默记成会话级拒绝；
- * - `selfGated` 工具（shell_execute 已预置）跳过本门——它们自带更细粒度
+ * - `selfGated` 工具（ShellExecute 已预置）跳过本门——它们自带更细粒度
  *   的命令级确认，双重弹窗只会骚扰用户。
  * - **#F-⑯**：每次门决策（弹窗结果 / 会话命中）经 [audit] 输出结构化
  *   JSONL 审计（tool / decision / durationMs）——「agent 在 X 场景走了什么
@@ -62,7 +62,7 @@ class RiskAwareToolGate(
         // 旧实现两级弹窗：① HIGH（删除/卸载/force-stop 族）；② 第三方动态
         // 来源的 MEDIUM（mcp_ / plugin 前缀）—— 两级全部静默放行：删除类/
         // 敏感动作的兜底询问仍由上游 PermissionModeGate 的模式语义承担
-        // （DEFAULT 下删除类才询问），shell_execute 的高危命令仍由
+        // （DEFAULT 下删除类才询问），ShellExecute 的高危命令仍由
         // CommandPermissionGate 在命令级拦截。本门仅剩显式 sensitiveAction
         // 工具（AutoGPT 语义的会话内人审）的确认面；会话决定状态机保留，
         // 供设置界面/测试显式注入与审计举证。

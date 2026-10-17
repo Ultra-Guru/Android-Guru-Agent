@@ -1,4 +1,4 @@
-package com.apex.agent.platform.terminal.exec
+package com.apex.agent.platform.TerminalExec
 
 /**
  * One-shot structured command execution models.
@@ -8,7 +8,7 @@ package com.apex.agent.platform.terminal.exec
  *   stdout/stderr 分离采集、waitFor 拿真实退出码 —— 与交互式 PTY（tty 会合并流）分开。
  * - OperIt 的 terminal bridge 同理：Agent 侧一次性执行 = 结构化结果，不是原始字节流。
  *
- * 本包补齐 ATR 2.0 缺失的一环：`terminal.exec` —— Agent 单次调用即得结构化
+ * 本包补齐 ATR 2.0 缺失的一环：`TerminalExec` —— Agent 单次调用即得结构化
  * [CommandResult]（stdout / stderr / exit_code / duration_ms / truncated），
  * 输出限长（head+tail）、ANSI 剥离（或保留）。
  *
@@ -49,7 +49,7 @@ data class ExecRequest(
 /**
  * 结构化命令结果 —— Agent 不需要原始字节流，需要可判定的事实。
  *
- * JSON 形态（terminal.exec 工具层输出，snake_case）：
+ * JSON 形态（TerminalExec 工具层输出，snake_case）：
  * ```json
  * {
  *   "stdout": "...", "stderr": "...",

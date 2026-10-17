@@ -7,7 +7,7 @@ import com.apex.agent.core.tools.mcp.McpTransport
  * 内置工作区文件系统 MCP 服务器（fs）的注册元数据。
  *
  * [ID] 与 McpManager 配置里的服务器名、`builtinTransports` 工厂注册表的 key、
- * `mcp_call` 的 server 参数（= 斜杠指令 /mcp:fs 的 id）四处约定一致 ——
+ * `McpCall` 的 server 参数（= 斜杠指令 /mcp:fs 的 id）四处约定一致 ——
  * 模式同 [com.apex.agent.search.mcp.BuiltinSearchMcpServer]。
  *
  * 价值：把当前激活的编码工作区（[com.apex.agent.core.codetools.CodeWorkspaceRoots]
@@ -20,7 +20,7 @@ import com.apex.agent.core.tools.mcp.McpTransport
  */
 object BuiltinFsMcpServer {
 
-    /** 服务器名（= mcp_call 的 server 参数 = 斜杠指令 /mcp:fs 的 id）。 */
+    /** 服务器名（= McpCall 的 server 参数 = 斜杠指令 /mcp:fs 的 id）。 */
     const val ID = "fs"
 
     /** 预置到 mcp_servers.json 的配置（transport=BUILTIN，无 URL/命令）。 */

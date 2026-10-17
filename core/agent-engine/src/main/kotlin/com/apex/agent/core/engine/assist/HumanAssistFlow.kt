@@ -7,7 +7,7 @@ import com.apex.agent.core.engine.assist.DecisionPointDetector.DecisionPoint
 /**
  * ═══ HUMAN_ASSIST 模式执行策略（#168）═══
  *
- * 响应文本含决策点 → 自动转 ask_user_choice 闭环：
+ * 响应文本含决策点 → 自动转 AskUserChoice 闭环：
  *
  * ```
  * assistant 纯文本轮（模型写了「方案A…方案B…」但没有调工具）

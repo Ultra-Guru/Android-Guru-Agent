@@ -5,7 +5,7 @@ import java.io.File
 /**
  * #258：文件工具原子写（AGENTS「持久化一律 tmp+renameTo」纪律在工具层的落地）。
  *
- * write_file / edit_file 的最终落盘此前是直接 writeText 覆盖目标 —— 写一半
+ * Write / Edit 的最终落盘此前是直接 writeText 覆盖目标 —— 写一半
  * 崩溃/断电/进程被杀会留下**截断的用户文件**（源码/笔记被截掉且无备份可回）。
  * 本助手改为：同目录写 `.tmp_<name>` 临时文件 → renameTo 原子替换。
  *

@@ -23,7 +23,7 @@ class FileReadTool(
     private val basePath: File
 ) : AgentTool {
 
-    override val id = "read_file"
+    override val id = "Read"
     override val name = "Read File"
     override val description = """
         View file content through a scrollable viewport.
@@ -83,13 +83,13 @@ class FileReadTool(
             }
             if (!file.exists()) return "Error: File not found: $path"
             if (!file.canRead()) return "Error: Permission denied: $path"
-            if (file.isDirectory) return "Error: '$path' is a directory. Use list_files."
+            if (file.isDirectory) return "Error: '$path' is a directory. Use ListFiles."
 
             // Size cap 前置：对任何分支（含 PDF/DOCX 文档提取）都生效。
             // 旧序守卫在 documentLines 之后，文档分支全量读入可把进程 OOM（UX 审查 #232）。
             if (file.length() > MAX_FILE_BYTES) {
                 return "Error: file too large (${file.length()} bytes, max ${MAX_FILE_BYTES} bytes). " +
-                    "Use offset/limit or shell_execute with grep/sed/tail."
+                    "Use offset/limit or ShellExecute with grep/sed/tail."
             }
 
             // ── PDF / DOCX 文档：先文本提取再走视口模式 ──
@@ -140,7 +140,7 @@ class FileReadTool(
                 }
             }
 
-            if (isBinary(file)) return "Binary file (${formatSize(file.length())}). Use shell_execute for inspection."
+            if (isBinary(file)) return "Binary file (${formatSize(file.length())}). Use ShellExecute for inspection."
 
             // Size cap: a multi-GB logcat dump would otherwise OOM the agent on readLines().
             // （文档分支已在入口处前置检查，此处保留普通文本分支的兑底防御）

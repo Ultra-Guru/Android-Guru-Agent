@@ -16,7 +16,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * 执行时按步骤调用底层 Tool：
  * - "composite" — 按顺序执行 steps，每步调用一个 Tool，{{var}} 从 arguments 解析，
  *   {{prev_output}} 替换为上一步输出（截断到 2000 字符防止爆炸）
- * - "script"    — 通过 shell_execute 运行脚本
+ * - "script"    — 通过 ShellExecute 运行脚本
  *
  * ## v3 作用域打标
  *
@@ -36,7 +36,8 @@ class SkillToolAdapter(
     private val skillScope: String = "all"
 ) : AgentTool {
 
-    override val id = skillTool.id
+    // v5：技能作者贡献的工具 id 同样归一无分隔符 PascalCase
+    override val id = SkillNaming.canonicalId(skillTool.id)
     override val name = skillTool.name
     override val description = skillTool.description
     override val parametersSchema = skillTool.parameters
@@ -46,7 +47,7 @@ class SkillToolAdapter(
      * 显式覆盖接口默认的 id 推断元数据只为携带 scope——category / risk /
      * annotations 仍走同款推断，除 scope 外逐字段等值，存量行为零变化。
      */
-    override val metadata: ToolMetadata = ToolMetadata.meta(skillTool.id) {
+    override val metadata: ToolMetadata = ToolMetadata.meta(id) {
         scope(ToolMetadata.normalizeScope(skillScope))
     }
 
@@ -82,6 +83,9 @@ class SkillToolAdapter(
             val resolvedArgs = resolveTemplate(step, argsMap, lastOutput)
 
             val stepOutput = try {
+                // v5：步骤里的工具名保持原样透传 —— 归一兜底在注册表查找侧
+                // （DefaultToolRegistry：别名 / 大小写 / PascalCase 清洗三层），
+                // 这样插件注册的任意 id 写法都不会被本层改坏。
                 toolExecutor.execute(step.tool, resolvedArgs)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // Rethrow: toolExecutor.execute is a suspend call; CancellationException
@@ -162,6 +166,6 @@ class SkillToolAdapter(
             else -> script
         }
         val args = JsonObject(mapOf("command" to JsonPrimitive(cmd)))
-        return toolExecutor.execute("shell_execute", args.toString())
+        return toolExecutor.execute("ShellExecute", args.toString())
     }
 }

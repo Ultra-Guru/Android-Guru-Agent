@@ -21,7 +21,7 @@ class ListFilesTool(
     private val basePath: File
 ) : AgentTool {
 
-    override val id = "list_files"
+    override val id = "ListFiles"
     override val name = "List Files"
     override val description = """
         List directory contents with optional recursion and filtering.
@@ -154,18 +154,18 @@ class ListFilesTool(
  * 文件删除工具
  *
  * Deletes a single file or an empty directory. For non-empty directories, instructs
- * the agent to fall back to `shell_execute` with `rm -rf`.
+ * the agent to fall back to `ShellExecute` with `rm -rf`.
  */
 class DeleteFileTool(
     private val basePath: File
 ) : AgentTool {
 
-    override val id = "delete_file"
+    override val id = "DeleteFile"
     override val name = "Delete File"
     override val description = """
         Delete a file or empty directory.
         WARNING: This operation is irreversible.
-        For directories with content, use shell_execute with 'rm -rf'.
+        For directories with content, use ShellExecute with 'rm -rf'.
 
         Examples:
         - {"path": "temp.txt"}
@@ -202,7 +202,7 @@ class DeleteFileTool(
             }
 
             if (file.isDirectory && file.listFiles()?.isNotEmpty() == true) {
-                return "Error: Directory is not empty. Use shell_execute with 'rm -rf $path' for recursive delete."
+                return "Error: Directory is not empty. Use ShellExecute with 'rm -rf $path' for recursive delete."
             }
 
             val deleted = file.delete()

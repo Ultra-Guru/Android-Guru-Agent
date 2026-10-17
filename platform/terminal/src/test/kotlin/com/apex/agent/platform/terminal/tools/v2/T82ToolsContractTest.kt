@@ -1,6 +1,6 @@
 package com.apex.agent.platform.terminal.tools.v2
 
-import com.apex.agent.platform.terminal.fs.GuestFilesystem
+import com.apex.agent.platform.TerminalFs.GuestFilesystem
 import com.apex.agent.platform.terminal.pkg.InstalledPackage
 import com.apex.agent.platform.terminal.pkg.LinuxPackageManager
 import com.apex.agent.platform.terminal.pkg.PackageManagerStatus
@@ -21,7 +21,7 @@ import java.io.File
 
 /**
  * T82 — 新增工具契约测试：
- * terminal.fs（门禁错误 JSON 化）/ terminal.linux.packages installed + mirror（未接线降级）。
+ * TerminalFs（门禁错误 JSON 化）/ TerminalLinuxPackages installed + mirror（未接线降级）。
  */
 class T82ToolsContractTest {
 
@@ -106,14 +106,14 @@ class T82ToolsContractTest {
         for (a in listOf("read", "write", "append", "list", "stat", "exists", "mkdir", "remove", "move", "copy")) {
             assertTrue(tool.parametersSchema.contains("\"$a\""))
         }
-        assertEquals("terminal.fs", tool.id)
+        assertEquals("TerminalFs", tool.id)
     }
 
     @Test fun `bridge tool status lists handlers and call dispatches`() = runBlocking<Unit> {
         val dir = File.createTempFile("bridge", "").let { it.delete(); it.mkdirs(); it }
-        val bridge = com.apex.agent.platform.terminal.bridge.GuestBridgeService(
+        val bridge = com.apex.agent.platform.TerminalBridge.GuestBridgeService(
             bridgeRoot = File(dir, "bridge"),
-            handlers = listOf(object : com.apex.agent.platform.terminal.bridge.GuestBridgeHandler {
+            handlers = listOf(object : com.apex.agent.platform.TerminalBridge.GuestBridgeHandler {
                 override val action = "clipboard"
                 override val description = "test clipboard"
                 override suspend fun handle(argsJson: String): String = "clip:$argsJson"

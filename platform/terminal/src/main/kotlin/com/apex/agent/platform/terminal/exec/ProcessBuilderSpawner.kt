@@ -1,4 +1,4 @@
-package com.apex.agent.platform.terminal.exec
+package com.apex.agent.platform.TerminalExec
 
 import java.io.File
 import java.util.concurrent.TimeUnit

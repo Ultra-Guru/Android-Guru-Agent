@@ -50,7 +50,7 @@ sealed interface ToolStreamEvent {
 /**
  * 支持流式输出的工具接口（可选能力）。
  *
- * 能增量产出输出的工具（如 `shell_execute` 逐行读取进程 stdout）在实现
+ * 能增量产出输出的工具（如 `ShellExecute` 逐行读取进程 stdout）在实现
  * [AgentTool] 之外再实现本接口。[ToolExecutor] 在运行时通过 `tool is
  * StreamingAgentTool` 检测：命中则走 [executeStream]，未命中则把阻塞的
  * [AgentTool.execute] 结果透明包装成 “单个 Output + Complete” 事件序列。

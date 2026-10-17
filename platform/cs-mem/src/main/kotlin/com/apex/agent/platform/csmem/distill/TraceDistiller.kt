@@ -28,7 +28,7 @@ object TraceDistiller {
      */
     data class TraceStep(
         val stepIndex: Int,
-        val actionType: String,       // 工具名称: "ui_tap", "ui_swipe", "input_text" 等
+        val actionType: String,       // 工具名称: "UiTap", "UiSwipe", "InputText" 等
         val actionDescription: String, // 动作参数: "tap(540,1200)"
         val actionResult: String,      // 执行结果
         val beforeFingerprints: List<String>?, // 动作前的 UI 指纹列表
@@ -71,7 +71,7 @@ object TraceDistiller {
         val initialFp = anchors.firstOrNull()?.beforeFingerprints?.firstOrNull() ?: return null
         val terminalFp = anchors.lastOrNull()?.afterFingerprints?.firstOrNull() ?: return null
 
-        val skillId = "skill_${goal.hashCode()}_${System.currentTimeMillis()}"
+        val skillId = "Skill" + kotlin.math.abs(goal.hashCode()) + System.currentTimeMillis()
 
         return FSMMacro(
             skillId = skillId,
@@ -124,7 +124,7 @@ object TraceDistiller {
             }
 
             // 剔除：无效滑动（滑动后 UI 完全不变）
-            if (curr.actionType == "ui_swipe" &&
+            if (curr.actionType == "UiSwipe" &&
                 curr.beforeFingerprints != null && curr.afterFingerprints != null &&
                 curr.beforeFingerprints == curr.afterFingerprints) {
                 continue
@@ -171,9 +171,9 @@ object TraceDistiller {
             // 选择最有代表性的动作（优先点击 > 输入 > 滑动）
             val bestAction = middleSteps.maxByOrNull { step ->
                 when {
-                    step.actionType == "ui_tap" -> 3
-                    step.actionType == "input_text" -> 2
-                    step.actionType == "ui_swipe" -> 1
+                    step.actionType == "UiTap" -> 3
+                    step.actionType == "InputText" -> 2
+                    step.actionType == "UiSwipe" -> 1
                     else -> 0
                 }
             } ?: continue
@@ -181,8 +181,8 @@ object TraceDistiller {
             transitions.add(FSMTransition(
                 fromState = fromState,
                 actionType = bestAction.actionType,
-                // 修复：旧实现直接存完整原始描述（如 input_text("hello")），
-                // BypassExecutionEngine 回放 input_text 时会把整串字面量
+                // 修复：旧实现直接存完整原始描述（如 InputText("hello")），
+                // BypassExecutionEngine 回放 InputText 时会把整串字面量
                 // 输入进输入框。这里在蒸馏期就提取纯参数（括号内内容），
                 // 回放侧再做双保险解析。
                 actionParams = extractActionParams(bestAction),
@@ -196,8 +196,8 @@ object TraceDistiller {
     /**
      * 从动作描述中提取回放可用的纯参数。
      *
-     * - input_text("hello") / input_text(hello) → hello（去包裹引号）
-     * - ui_tap(540,1200) / tap(x=540,y=1200) → 保留原始形式（回放侧用
+     * - InputText("hello") / InputText(hello) → hello（去包裹引号）
+     * - UiTap(540,1200) / tap(x=540,y=1200) → 保留原始形式（回放侧用
      *   正则提取坐标数字，保留原始可读性）
      * - 其他（back/home 等）→ 原样返回
      *
@@ -205,7 +205,7 @@ object TraceDistiller {
      * 直接验证新旧两种参数形态的提取语义。
      */
     internal fun extractActionParams(step: TraceStep): String {
-        if (step.actionType != "input_text") return step.actionDescription
+        if (step.actionType != "InputText") return step.actionDescription
 
         val desc = step.actionDescription.trim()
         // 提取首个平衡括号对内的内容

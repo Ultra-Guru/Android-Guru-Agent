@@ -116,7 +116,7 @@ object FuzzyReplacer {
         }
         return Outcome.NotFound(
             "old_string not found in file (exact + 6 fuzzy strategies exhausted). " +
-                "Re-read the file with code_read and copy the exact current text, including whitespace."
+                "Re-read the file with CodeRead and copy the exact current text, including whitespace."
         )
     }
 

@@ -17,7 +17,7 @@ import kotlinx.serialization.json.put
 /**
  * `regex` — 正则五合一工具（#171 四族合并）。
  *
- * 合并自 `regex_extract` 与 `regex_replace`（#171），并补齐模型高频要的
+ * 合并自 `RegexExtractLegacy` 与 `RegexReplaceLegacy`（#171），并补齐模型高频要的
  * test / match_all / split。旧工具保留注册；旧 id 进 LEGACY_ALIAS_IDS。
  *
  * Why: 正则抽取/替换此前是两个独立工具 + shell `grep` 一条旁路（命令门
@@ -36,7 +36,7 @@ import kotlinx.serialization.json.put
  * pattern（区分"没命中"与"坏 pattern"）；replace 原文返回 + 尾注。
  */
 class RegexTool : BaseTool(
-    id = "regex",
+    id = "Regex",
     name = "Regex Toolkit",
     description = """
         Regex operations in one tool: test, extract (capture groups), replace
@@ -115,7 +115,7 @@ class RegexTool : BaseTool(
         )
     }
 
-    // ── extract（移植自 regex_extract 默认模式）────────────────────────────
+    // ── extract（移植自 RegexExtractLegacy 默认模式）────────────────────────────
 
     private fun opExtract(text: String, patternText: String, regex: Regex, groupNames: List<String?>): ToolResult {
         val match = regex.find(text)
@@ -137,7 +137,7 @@ class RegexTool : BaseTool(
         }.trimEnd()
     }
 
-    // ── replace（移植自 regex_replace）─────────────────────────────────────
+    // ── replace（移植自 RegexReplaceLegacy）─────────────────────────────────────
 
     private fun opReplace(
         args: ToolArguments,
@@ -222,7 +222,7 @@ class RegexTool : BaseTool(
         return sb.toString()
     }
 
-    // ── match_all（移植自 regex_extract all 模式）─────────────────────────
+    // ── match_all（移植自 RegexExtractLegacy all 模式）─────────────────────────
 
     private fun opMatchAll(
         args: ToolArguments,

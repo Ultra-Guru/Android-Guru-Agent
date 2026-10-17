@@ -19,7 +19,7 @@ import kotlinx.serialization.json.JsonPrimitive
  *
  * ## JSON 字段级截断（P1 修复：模型失明决策）
  *
- * terminal.exec / terminal_run 等结构化工具返回的 JSON 里，决定命令
+ * TerminalExec / terminal_run 等结构化工具返回的 JSON 里，决定命令
  * 成败的字段（exit_code / timed_out / truncated / duration_ms / channel）
  * 排在 stdout 之后 —— 旧实现的「head + 小尾巴」把中后部的这些字段全切进
  * 省略区：stdout 超过 ~1.2KB 时模型只能从输出开头猜成败，把失败当成功
@@ -88,7 +88,7 @@ class ToolOutputTruncator(
             isListOutput(output) -> truncateList(output)
 
             // 代码输出：保留头部（通常包含关键信息）
-            toolName in listOf("read_file", "project_read_file") -> truncateHead(output)
+            toolName in listOf("Read", "CodeRead") -> truncateHead(output)
 
             // 错误输出：尽量完整保留（通常不长但很重要）。修复两个 bug：
             // (1) 旧实现的 truncated 标志恒为 false（条件 output.length < maxChars*2 已保证

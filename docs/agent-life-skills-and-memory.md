@@ -62,7 +62,7 @@ tags 含 2-3 个高区分度中文短词（「菜谱」「穿搭」「简历」�
 ├── ## Skill Catalog (46 installed)     ← 全部技能的一行摘要（恒在）
 │     - travel-planner: 旅行规划师 — 行程/预算/签证全流程
 │     - cooking-master: 家常菜大师 — 备料/火候/调味公式
-│     （指引：任务命中领域 → 先调 skill_activate(skill_id)）
+│     （指引：任务命中领域 → 先调 SkillActivate(skill_id)）
 └── ## Active Skills                    ← 仅「已装备」技能的方法论全文
       （默认 0 个；FIFO 上限 8 个 ≈ 30KB 封顶）
 ```
@@ -71,7 +71,7 @@ tags 含 2-3 个高区分度中文短词（「菜谱」「穿搭」「简历」�
 
 | 路径 | 入口 | 成本 |
 | --- | --- | --- |
-| 模型路 | `skill_activate(skill_id)` 工具（工具结果即时返回方法论全文 + 写入激活集） | 1 次工具调用 |
+| 模型路 | `SkillActivate(skill_id)` 工具（工具结果即时返回方法论全文 + 写入激活集） | 1 次工具调用 |
 | 用户路 | 斜杠 `/skill:<id>`（SlashCommands.handle 路由时同步装备） | 0 |
 | **自动路（新）** | [SkillAutoActivator]：消息与技能 tags/id/name 字面命中 → 发送前预激活（≤ 2 个/条） | 0 |
 
@@ -81,14 +81,14 @@ tags 含 2-3 个高区分度中文短词（「菜谱」「穿搭」「简历」�
 ### 3.3 关键决策
 
 - **激活集进程级共享**：Agent 模式、Coding 模式（`CodeModule` 的内层引擎）、子代理
-  （`SubAgentRunner` 工厂）读同一 `SkillActivationStore` 单例——skill_activate 写入后
-  三处下一轮全部生效；对比 tool_open 的独立激活存储（请求级语义），技能装备是
+  （`SubAgentRunner` 工厂）读同一 `SkillActivationStore` 单例——SkillActivate 写入后
+  三处下一轮全部生效；对比 ToolOpen 的独立激活存储（请求级语义），技能装备是
   会话级「用户能力配置」，共享才符合直觉，且避免 46 技能全量注入撞爆子代理请求。
 - **legacy 通道保留**：`getPromptInjections()`（全量）不变；`skillActivation=null` 的
   引擎实例（单测/旧装配）行为与升级前完全一致。
 - **市场热加载不变**：安装/卸载/启停 → `SkillRegistry.changes` → `SkillHotReloader`
   增量同步工具注册（#151 原链路）；prompt 注入本就每轮重读。市场新装技能即时出现在
-  目录里，可被 skill_activate / 自动装备使用。
+  目录里，可被 SkillActivate / 自动装备使用。
 
 ## 4. 聊天自动记忆（ChatMemoryPipeline）
 
@@ -147,10 +147,10 @@ ApexAgentEngine.execute()
 
 | 新能力 | 工具 | 说明 |
 | --- | --- | --- |
-| 独立条件等待 | `browser_wait_for(mode, value, timeout_ms)` | selector 出现 / 文本包含 / URL 包含三态轮询（300ms 步进，上限 60s）——补齐 navigate 之外（点击/提交后 SPA 异步刷新）的等待手段；同步 JS 检查不经 Promise（evaluateJavascript 回调不等 Promise 完成） |
-| 页面类型推断 | `browser_page_type` | 一次 JS 采信号（密码框/输入框/正文/视频/列表/搜索框/导航/文本量）→ Kotlin 分类：auth/form/article/video/search/list/portal/generic + 每类的 focus 策略建议——gap audit「缺失 H（页面类型推断）」的框架层落点 |
+| 独立条件等待 | `BrowserWaitFor(mode, value, timeout_ms)` | selector 出现 / 文本包含 / URL 包含三态轮询（300ms 步进，上限 60s）——补齐 navigate 之外（点击/提交后 SPA 异步刷新）的等待手段；同步 JS 检查不经 Promise（evaluateJavascript 回调不等 Promise 完成） |
+| 页面类型推断 | `BrowserPageType` | 一次 JS 采信号（密码框/输入框/正文/视频/列表/搜索框/导航/文本量）→ Kotlin 分类：auth/form/article/video/search/list/portal/generic + 每类的 focus 策略建议——gap audit「缺失 H（页面类型推断）」的框架层落点 |
 
-两工具均走 TracedTool 可观测包装 + 人工接管守卫；`browser_wait_for` 的 value 入
+两工具均走 TracedTool 可观测包装 + 人工接管守卫；`BrowserWaitFor` 的 value 入
 trace 脱敏。
 
 ## 7. 验证
@@ -217,7 +217,7 @@ trace 脱敏。
 唯一缺口：新装技能只 enabled 不在激活集，方法论并未装载。修复：
 - `MarketInstallManager.installSkillFromJson`（全部安装路径收口点：URL/模板/
   文件/魔搭/GitHub/ClawHub）安装成功即 `activate`；
-- `SkillInstallTool`（模型侧 skill_install 工具）同样接入，并修正历史遗留的
+- `SkillInstallTool`（模型侧 SkillInstall 工具）同样接入，并修正历史遗留的
   「需重启生效」错误文案（热加载下无需重启）；
 - 提示语升级：「已安装并装备 Skill：xx，下一轮对话即生效」。
 

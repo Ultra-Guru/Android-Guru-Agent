@@ -10,7 +10,7 @@
 | 文件操作 | 一段 ✅ 文本 | `FileOpCard`：按扩展名图标 + 文件名/路径 + 操作徽章（新建/覆盖/追加/编辑/删除/移动）+ 大小变更（Old→New）+ 行数统计 + 逐条编辑明细 |
 | Shell 执行 | 纯文本 | `ShellOutputCard`：`$ command` 命令头（可复制）+ 输出体，失败红色化 |
 | JSON 输出 | 原始 JSON 文本 | `JsonOutputCard`：可折叠树形查看器（深度≤2 默认展开，30 项截断，值类型着色） |
-| 连接器调用 | 无分类（表现为普通工具） | `ToolKind.CONNECTOR`（紫色 + Link 图标）：`connector*` / `http_request` / `github_*` 自动识别，`/connector:xxx` 路由专用横幅 |
+| 连接器调用 | 无分类（表现为普通工具） | `ToolKind.CONNECTOR`（紫色 + Link 图标）：`connector*` / `HttpRequest` / `github_*` 自动识别，`/connector:xxx` 路由专用横幅 |
 | 插件调用 | 无分类 | `ToolKind.PLUGIN`（琥珀 + Extension 图标）：`plugin*` 前缀识别，`/plugin:xxx` 路由专用横幅 |
 | Skill 调用 | 横幅永远"正在执行"脉冲 | `PipelineBannerCard`：运行中脉冲、结束后对勾 + 总耗时（修复永不停歇的动画） |
 | Plan 步骤 | `StepStart` 事件被丢弃 | `StepMarkerCard` 步骤分隔卡（步骤 N + 描述） |

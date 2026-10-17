@@ -12,9 +12,9 @@ import java.util.regex.Pattern
  * 见 ui/component/HtmlPreviewDialog.kt）。
  *
  * 识别口径（由宽到窄）：
- * 1. **结构化字段**（code_write / code_edit）：JSON args 的 `path` 字段
+ * 1. **结构化字段**（CodeWrite / CodeEdit）：JSON args 的 `path` 字段
  *    以 .html / .htm 结尾 —— 最可靠（工具 schema 固定）；
- * 2. **命令行扫描**（terminal.run / shell_execute / exec 等）：命令串里形如
+ * 2. **命令行扫描**（TerminalRun / ShellExecute / exec 等）：命令串里形如
  *    `xxx.html` 的路径词（引号/反引号/空白分隔）—— 兜底覆盖 echo/cat 重定向写法；
  * 3. **输出扫描（#188 短补丁）**：工具成功输出中的**写确认句式**
  *    （wrote / written / saved / created / 写入 / 生成 / 保存 … xxx.html）
@@ -41,7 +41,7 @@ internal object HtmlArtifactDetector {
     )
 
     /** 结构化路径字段优先的写类工具（path 字段可信）。 */
-    private val PATH_FIELD_TOOLS = setOf("code_write", "code_edit")
+    private val PATH_FIELD_TOOLS = setOf("CodeWrite", "CodeEdit")
 
     /**
      * 从工具调用中提取 HTML 文件路径（null = 非 HTML 产物）。
@@ -52,7 +52,7 @@ internal object HtmlArtifactDetector {
     fun extractHtmlPath(toolName: String, args: String, output: String? = null): String? {
         if (args.isBlank() && output.isNullOrBlank()) return null
 
-        // 1. code_write / code_edit：解析 JSON 的 path 字段（结构化最可靠）。
+        // 1. CodeWrite / CodeEdit：解析 JSON 的 path 字段（结构化最可靠）。
         if (toolName in PATH_FIELD_TOOLS && args.isNotBlank()) {
             runCatching {
                 val path = Json.parseToJsonElement(args).jsonObject["path"]?.jsonPrimitive?.content

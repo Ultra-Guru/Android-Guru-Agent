@@ -83,7 +83,7 @@ class UnifiedPluginRegistryTest {
             "tools": [{
               "id": "briefing_run",
               "description": "生成简报",
-              "steps": [{"tool": "web_fetch", "args": {"url": "{{input.site}}"}}]
+              "steps": [{"tool": "WebFetch", "args": {"url": "{{input.site}}"}}]
             }],
             "slashCommands": [{"id": "briefing", "title": "每日简报", "prompt": "生成简报"}]
           }
@@ -103,7 +103,7 @@ class UnifiedPluginRegistryTest {
         assertNotNull("工具应已注册", tool)
         val output = tool!!.execute("""{"site":"https://example.com"}""")
         assertTrue(output.startsWith("OK:"))
-        assertTrue(output.contains("echo:web_fetch"))
+        assertTrue(output.contains("echo:WebFetch"))
         unified.refresh()
         val entry = unified.catalog.value.single()
         assertEquals(PluginKind.FUNCTIONAL, entry.kind)

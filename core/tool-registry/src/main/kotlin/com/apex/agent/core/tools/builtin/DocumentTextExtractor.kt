@@ -8,9 +8,9 @@ import java.util.zip.ZipFile
 /**
  * 文档文本提取器（PDF / DOCX）—— 纯 JVM、零第三方依赖。
  *
- * 背景：用户把 PDF 附件交给 Agent 后，旧链路 read_file 判定「Binary file」直接
+ * 背景：用户把 PDF 附件交给 Agent 后，旧链路 Read 判定「Binary file」直接
  * 拒读 —— 模型拿不到任何正文，用户以为「AI 能读 PDF」，实际上一行都读不到。
- * 本提取器让 read_file 对 PDF/DOCX 先做文本提取，再走既有的视口滚动模式。
+ * 本提取器让 Read 对 PDF/DOCX 先做文本提取，再走既有的视口滚动模式。
  *
  * ## PDF 策略（最小可行解析器）
  * PDF 正文存放在 content stream 的文本操作符里：

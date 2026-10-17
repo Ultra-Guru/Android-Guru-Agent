@@ -3,7 +3,7 @@ package com.apex.agent.platform.terminal.tools.v2
 import com.apex.agent.platform.terminal.events.TerminalEvent
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
 import com.apex.agent.platform.terminal.tools.TerminalTool
-import com.apex.agent.platform.terminal.wait.WaitCondition
+import com.apex.agent.platform.TerminalWait.WaitCondition
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -11,12 +11,12 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Agent tool: terminal.wait
+ * Agent tool: TerminalWait
  *
  * Spec ref: ATR 2.0 Final Spec §34.4
  *
  * Block until a condition is met or timeout. Event-driven (no polling). Use instead of
- * sleep+read loops. Common: wait(PROCESS_EXITED, jobId) after terminal.run.
+ * sleep+read loops. Common: wait(PROCESS_EXITED, jobId) after TerminalRun.
  * Returns the matching event (e.g. exitCode) on success, Timeout on expiry.
  *
  * JSON Schema (input):
@@ -30,11 +30,11 @@ import kotlinx.serialization.json.jsonPrimitive
 class TerminalWaitTool(
     private val runtime: TerminalRuntime
 ) : TerminalTool {
-    override val id: String = "terminal.wait"
+    override val id: String = "TerminalWait"
     override val name: String = id
     override val description: String = """
         Block until a condition is met or timeout. Event-driven (no polling). Use instead of
-        sleep+read loops. Common: wait(PROCESS_EXITED, jobId) after terminal.run. Returns the
+        sleep+read loops. Common: wait(PROCESS_EXITED, jobId) after TerminalRun. Returns the
         matching event (e.g. exitCode) on success, Timeout on expiry.
     """.trimIndent()
 
@@ -47,9 +47,9 @@ class TerminalWaitTool(
         return result.fold(
             onSuccess = { r ->
                 val (matched, resultStr, waitedMs) = when (r) {
-                    is com.apex.agent.platform.terminal.wait.WaitResult.Matched -> Triple(true, "MATCHED", 0L)
-                    is com.apex.agent.platform.terminal.wait.WaitResult.Timeout -> Triple(false, "TIMEOUT", r.waitedMs)
-                    is com.apex.agent.platform.terminal.wait.WaitResult.SessionGone -> Triple(false, "SESSION_GONE", 0L)
+                    is com.apex.agent.platform.TerminalWait.WaitResult.Matched -> Triple(true, "MATCHED", 0L)
+                    is com.apex.agent.platform.TerminalWait.WaitResult.Timeout -> Triple(false, "TIMEOUT", r.waitedMs)
+                    is com.apex.agent.platform.TerminalWait.WaitResult.SessionGone -> Triple(false, "SESSION_GONE", 0L)
                 }
                 Output(matched = matched, result = resultStr, event = r, waitedMs = waitedMs)
             },
@@ -83,8 +83,8 @@ class TerminalWaitTool(
             // 二轮审计 C-2：兑现 KDoc "Returns the matching event" 承诺——
             // run+wait+observe 主链路中 wait 必须能告知命令成败（exitCode/signal），
             // 否则 Agent 只能再 observe 轮询推断。结构化序列化关键事件字段。
-            when (val ev = (out.event as? com.apex.agent.platform.terminal.wait.WaitResult)?.let { wr ->
-                (wr as? com.apex.agent.platform.terminal.wait.WaitResult.Matched)?.event
+            when (val ev = (out.event as? com.apex.agent.platform.TerminalWait.WaitResult)?.let { wr ->
+                (wr as? com.apex.agent.platform.TerminalWait.WaitResult.Matched)?.event
             }) {
                 is TerminalEvent.ProcessExited -> {
                     put("eventType", JsonPrimitive("ProcessExited"))

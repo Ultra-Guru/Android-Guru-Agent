@@ -22,7 +22,7 @@
     <string name="code_stop">Stop</string>
     <string name="code_dismiss">Dismiss</string>
 
-    <!-- ask_user dialog -->
+    <!-- AskUser dialog -->
     <string name="code_question_title">Agent needs your input</string>
     <string name="code_question_hint">Type your answer…</string>
     <string name="code_question_default_yes">yes</string>
@@ -237,6 +237,6 @@
     <string name="code_git_changes_fmt">%1$d changed files</string>
     <string name="code_git_refresh">Refresh git status</string>
     <string name="code_git_commit_hint">Commit message</string>
-    <string name="code_git_commit">Commit all changes</string>
+    <string name="CodeGitCommit">Commit all changes</string>
     <string name="code_git_new_file">New untracked file (not in index yet)</string>
 </resources>

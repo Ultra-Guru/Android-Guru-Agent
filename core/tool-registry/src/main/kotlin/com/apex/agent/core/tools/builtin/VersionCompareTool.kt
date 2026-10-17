@@ -10,7 +10,7 @@ import com.apex.agent.core.tools.ToolSchema
 import com.apex.agent.core.tools.toolSchema
 
 /**
- * `version_compare` — semantic-version-aware comparison.
+ * `VersionCompare` — semantic-version-aware comparison.
  *
  * The agent constantly meets versions it must order correctly: an APK it
  * just downloaded vs the installed app, an Ubuntu package `apt` wants to
@@ -36,7 +36,7 @@ import com.apex.agent.core.tools.toolSchema
  * from re-comparing the same pair next turn.
  */
 class VersionCompareTool : BaseTool(
-    id = "version_compare",
+    id = "VersionCompare",
     name = "Version Compare",
     description = """
         Compare two version strings with semantic-version ordering.

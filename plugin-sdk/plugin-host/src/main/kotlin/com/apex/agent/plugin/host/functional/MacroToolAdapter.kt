@@ -27,8 +27,8 @@ import kotlinx.serialization.json.jsonPrimitive
  *
  * ```
  * {"id":"briefing/run", "steps":[
- *   {"tool":"browser_navigate", "args":{"url":"{{input.site}}"}, "output":"page"},
- *   {"tool":"browser_extract_content", "output":"body"},
+ *   {"tool":"BrowserNavigate", "args":{"url":"{{input.site}}"}, "output":"page"},
+ *   {"tool":"BrowserExtractContent", "output":"body"},
  *   {"tool":"agent_message_user", "args":{"message":"今日要闻：{{body}}"}}
  * ]}
  * ```

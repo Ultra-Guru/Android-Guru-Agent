@@ -63,7 +63,7 @@ class LongTaskStoreTest {
         toolCalls = 33,
         durationMs = 372_500L,
         filesTouched = listOf("src/Main.kt", "src/ui/Login.kt", "src/ui/Theme.kt"),
-        toolsUsed = mapOf("code_edit" to 12, "code_read" to 15, "code_check" to 6),
+        toolsUsed = mapOf("CodeEdit" to 12, "CodeRead" to 15, "CodeCheck" to 6),
         errorMessage = "编译失败：未解析的引用 LoginViewModel",
         summary = "已完成根因定位（空指针来自延迟初始化），修复提交在 src/ui/Login.kt。",
         checkpoints = listOf(
@@ -73,7 +73,7 @@ class LongTaskStoreTest {
                 timestamp = 1500L,
                 toolCallCount = 9,
                 filesTouchedCount = 1,
-                recentExchange = listOf("用户: 修复登录崩溃", "助手: 我来定位问题", "工具 code_edit ✓"),
+                recentExchange = listOf("用户: 修复登录崩溃", "助手: 我来定位问题", "工具 CodeEdit ✓"),
                 todoDigest = listOf("☐ 定位根因", "☐ 修复")
             ),
             LongTaskCheckpoint(
@@ -82,7 +82,7 @@ class LongTaskStoreTest {
                 timestamp = 1800L,
                 toolCallCount = 20,
                 filesTouchedCount = 2,
-                recentExchange = listOf("工具 code_check ✓", "助手: 边界情况已覆盖"),
+                recentExchange = listOf("工具 CodeCheck ✓", "助手: 边界情况已覆盖"),
                 todoDigest = listOf("☑ 定位根因", "☐ 修复")
             )
         ),
@@ -107,9 +107,9 @@ class LongTaskStoreTest {
         loaded!!
         assertEquals(LongTaskStatus.FAILED, loaded.status)
         assertEquals(3, loaded.filesTouched.size)
-        assertEquals(mapOf("code_edit" to 12, "code_read" to 15, "code_check" to 6), loaded.toolsUsed)
+        assertEquals(mapOf("CodeEdit" to 12, "CodeRead" to 15, "CodeCheck" to 6), loaded.toolsUsed)
         assertEquals(2, loaded.checkpoints.size)
-        assertEquals(listOf("用户: 修复登录崩溃", "助手: 我来定位问题", "工具 code_edit ✓"),
+        assertEquals(listOf("用户: 修复登录崩溃", "助手: 我来定位问题", "工具 CodeEdit ✓"),
             loaded.checkpoints[0].recentExchange)
         assertEquals(listOf("☐ 定位根因", "☐ 修复"), loaded.checkpoints[0].todoDigest)
         assertEquals(10, loaded.checkpoints[1].atIteration)

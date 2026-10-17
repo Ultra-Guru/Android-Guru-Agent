@@ -22,7 +22,7 @@ import com.apex.agent.plugin.host.functional.FunctionalSlashCommand
  *   or `null` when not connected. Surfaced in the system message so the user
  *   can see *which* account the MCP context is bound to.
  * @param mcpConnected 已连接的 MCP 服务器名快照（路由时点）。`/mcp:<id>` 对已
- *   连接的服务器注入 mcp_call 引导提示词；未携带快照的旧调用方退回
+ *   连接的服务器注入 McpCall 引导提示词；未携带快照的旧调用方退回
  *   Token 连接态判定（内置 github 服务器随启动自动连接，两者语义一致）。
  * @param functionalCommands Plugin System v2：已激活功能性插件的斜杠指令
  *   贡献快照（指令 id → 贡献）。`/plugin:<id>` 命中时路由注入插件声明的
@@ -89,7 +89,7 @@ data class SlashCommandRoute(
 object SlashCommandRouter {
 
     /**
-     * 内置 GitHub MCP 服务器 id（= McpManager 配置名 = mcp_call 的 server 参数）。
+     * 内置 GitHub MCP 服务器 id（= McpManager 配置名 = McpCall 的 server 参数）。
      * 与 github/mcp 包的 `BuiltinGithubMcpServer.ID` 保持一致；这里不 import
      * app 层类，保持 slash 包纯 JVM 可单测（同 [GITHUB_TOOL_IDS] 的镜像策略）。
      */
@@ -97,7 +97,7 @@ object SlashCommandRouter {
 
     /**
      * GitHub MCP 工具（内置 github MCP 服务器 tools/list 返回的 7 个工具，
-     * 命名对齐官方 github-mcp-server），经 mcp_call 调用。
+     * 命名对齐官方 github-mcp-server），经 McpCall 调用。
      */
     private val GITHUB_MCP_TOOLS: List<String> = listOf(
         "get_me",
@@ -115,22 +115,22 @@ object SlashCommandRouter {
      * of `app`-module dependencies and remains pure-JVM unit-testable. If
      * `ToolModule` adds/removes a GitHub tool, update this list in lockstep
      * （与上方 [GITHUB_MCP_TOOLS] 是两套共存的能力：原生工具直调，MCP 工具走
-     * mcp_call —— 提示词里两者都列出，互为备份）。
+     * McpCall —— 提示词里两者都列出，互为备份）。
      *
      * v3 S3（G7）：与 GithubTools.kt 实际注册的 9 个工具对齐——旧清单漏了
-     * github_list_branches / github_search_repos（/mcp:github 提示词少列 2 个
+     * GithubListBranches / GithubSearchRepos（/mcp:github 提示词少列 2 个
      * 可用工具，模型误以为不存在）。
      */
     private val GITHUB_TOOL_IDS: List<String> = listOf(
-        "github_get_user",
-        "github_list_repos",
-        "github_read_file",
-        "github_write_file",
-        "github_create_issue",
-        "github_list_issues",
-        "github_search_code",
-        "github_list_branches",
-        "github_search_repos"
+        "GithubGetUser",
+        "GithubListRepos",
+        "GithubReadFile",
+        "GithubWriteFile",
+        "GithubCreateIssue",
+        "GithubListIssues",
+        "GithubSearchCode",
+        "GithubListBranches",
+        "GithubSearchRepos"
     )
 
     fun route(
@@ -211,7 +211,7 @@ object SlashCommandRouter {
             // 指引改为按插件名检索其注册工具，避免把内置能力误归为插件语境。
             systemMessage = "📦 插件: ${command.id}（工具已注册进 Agent 工具表）",
             agentPrompt = command.buildAgentPrompt(
-                verb = "插件 ${command.id} 已加载，其工具已注册进 ToolRegistry —— 请直接调用该插件注册的工具完成任务（可先用 tool_search 按插件名检索其工具清单）。若工具不存在，提示用户去 市场 → 插件 页面安装/启用该插件后重试",
+                verb = "插件 ${command.id} 已加载，其工具已注册进 ToolRegistry —— 请直接调用该插件注册的工具完成任务（可先用 ToolSearch 按插件名检索其工具清单）。若工具不存在，提示用户去 市场 → 插件 页面安装/启用该插件后重试",
                 toolHint = "插件工具"
             ),
             routeKind = "plugin",
@@ -224,9 +224,9 @@ object SlashCommandRouter {
      *
      * - `/mcp:github`：绑定内置 GitHub MCP 服务器（BUILTIN 进程内 transport，
      *   随 App 启动自动连接）。已连接（或旧调用方只携带 Token 态且已连接）→
-     *   注入列出 7 个 MCP 工具 + mcp_call 用法的提示词；未连接 → 引导走
+     *   注入列出 7 个 MCP 工具 + McpCall 用法的提示词；未连接 → 引导走
      *   GithubTokenDialog 配置流程（与此前行为一致，不回归）。
-     * - 其他 `/mcp:<id>`：已连接（正在运行）的服务器 → 提示词引导用 mcp_call
+     * - 其他 `/mcp:<id>`：已连接（正在运行）的服务器 → 提示词引导用 McpCall
      *   调用其工具；未连接 → **不执行**（agentPrompt 置空，systemMessage 引导
      *   去市场启动）——Hub 生态门控的产品要求：未安装/未启动的 MCP 不可经
      *   斜杠使用，宁可拦下也不给模型发空转提示词。
@@ -257,7 +257,7 @@ object SlashCommandRouter {
             SlashCommandRoute(
                 systemMessage = "🔌 连接 MCP: ${command.id}",
                 agentPrompt = command.buildAgentPrompt(
-                    verb = "请根据此指令执行对应操作，通过 MCP 服务器 ${command.id} 的工具执行（用 mcp_call 调用，server 填 \"${command.id}\"；mcp_list 可列出该服务器的全部工具）",
+                    verb = "请根据此指令执行对应操作，通过 MCP 服务器 ${command.id} 的工具执行（用 McpCall 调用，server 填 \"${command.id}\"；McpList 可列出该服务器的全部工具）",
                     toolHint = "mcp"
                 )
             )
@@ -298,9 +298,9 @@ object SlashCommandRouter {
     /**
      * Prompt builder specialized for `/mcp:github` when GitHub is connected.
      *
-     * v2（内置 GitHub MCP 上线）：优先引导用 mcp_call 调用内置服务器 "github"
+     * v2（内置 GitHub MCP 上线）：优先引导用 McpCall 调用内置服务器 "github"
      * 的 7 个 MCP 工具（与官方 github-mcp-server 命名对齐），原生 `github_*`
-     * 工具仍然可用（两者共存，互为备份）。若 mcp_call 返回「未连接」类错误，
+     * 工具仍然可用（两者共存，互为备份）。若 McpCall 返回「未连接」类错误，
      * 模型应改用原生 github_* 工具完成同一任务。User extra text is still
      * forwarded so `/mcp:github repo=owner/name 列出 open issues` works
      * end-to-end.
@@ -308,11 +308,11 @@ object SlashCommandRouter {
     private fun SlashCommand.Mcp.buildGithubAgentPrompt(username: String): String = buildString {
         append("用户触发了快捷指令: /mcp:github\n")
         append("GitHub MCP 上下文已启用（已连接用户: ").append(username).append("）。\n")
-        append("优先通过 MCP 调用 GitHub（用 mcp_call 工具，server 填 \"github\"，arguments 为 JSON 字符串）:\n")
+        append("优先通过 MCP 调用 GitHub（用 McpCall 工具，server 填 \"github\"，arguments 为 JSON 字符串）:\n")
         GITHUB_MCP_TOOLS.forEach { append("  - ").append(it).append('\n') }
-        append("mcp_call 调用形如: {\"server\": \"github\", \"tool\": \"工具名\", \"arguments\": \"{...JSON 参数...}\"}\n")
-        append("mcp_list 可随时列出已连接 MCP 服务器与全部工具。\n")
-        append("原生 github_* 工具也仍然可用（若 mcp_call 报未连接/不可用错误，改用这些完成同一任务）:\n")
+        append("McpCall 调用形如: {\"server\": \"github\", \"tool\": \"工具名\", \"arguments\": \"{...JSON 参数...}\"}\n")
+        append("McpList 可随时列出已连接 MCP 服务器与全部工具。\n")
+        append("原生 github_* 工具也仍然可用（若 McpCall 报未连接/不可用错误，改用这些完成同一任务）:\n")
         GITHUB_TOOL_IDS.forEach { append("  - ").append(it).append('\n') }
         if (args.isNotEmpty()) {
             append("\n指令参数: ")

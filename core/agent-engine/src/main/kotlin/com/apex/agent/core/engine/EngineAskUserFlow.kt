@@ -8,10 +8,10 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 
 /**
- * ask_user 工具交互流（自 [ApexAgentEngine] 迁出，God-file 预算拆分；
+ * AskUser 工具交互流（自 [ApexAgentEngine] 迁出，God-file 预算拆分；
  * 模式与 AgentChatEventApplier 相同：同包扩展 + internal 成员直调）。
  *
- * 语义：模型调用 `ask_user` 时，引擎暂停循环 → 发 [AgentEvent.UserInputRequired]
+ * 语义：模型调用 `AskUser` 时，引擎暂停循环 → 发 [AgentEvent.UserInputRequired]
  * → 挂起等待 UI 回传（[ApexAgentEngine.awaitUserInput]）→ 以 ToolResult
  * 形式回填"User answered: …" → 发 ToolCallComplete（success=true）→ 循环继续。
  *
@@ -24,7 +24,7 @@ internal suspend fun ApexAgentEngine.handleAskUserToolCall(
     toolCall: ToolCall,
     emit: suspend (AgentEvent) -> Unit
 ): Boolean {
-    if (toolCall.name != "ask_user") return false
+    if (toolCall.name != "AskUser") return false
 
     val args = try {
         kotlinx.serialization.json.Json.parseToJsonElement(toolCall.arguments).jsonObject

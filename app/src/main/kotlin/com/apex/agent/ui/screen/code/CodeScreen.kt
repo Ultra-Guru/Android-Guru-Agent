@@ -282,7 +282,7 @@ fun CodeScreen(
                     )
                 }
 
-                // v1.0 #155：工具/权限门的结构化提问卡（与 ask_user 的纯文本对话框并存；
+                // v1.0 #155：工具/权限门的结构化提问卡（与 AskUser 的纯文本对话框并存；
                 // 工具执行已挂起，用户必须作答才能继续）
                 pendingAgentQuestion?.let { question ->
                     QuestionCard(

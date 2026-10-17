@@ -6,7 +6,7 @@
 | # | 用户反馈 | 根因 | 修复 |
 |---|---|---|---|
 | 1 | 模型不会主动调用命令 | 系统提示词被动措辞；BUILD 模式鼓励"少调工具"；无已连接服务状态 | Tool-Use Policy 段 + Connected Services 段 + BUILD 模式重写 |
-| 2 | 工具只有几个能用 | PluginManager.registerPluginTools 是 TODO（插件工具从未注册）；web_search 依赖单一 DDG 抓取常失败；GitHub 未连接时错误文案不可行动 | 插件工具真实注册 + web_search 三端点容错 + GitHub 错误引导 |
+| 2 | 工具只有几个能用 | PluginManager.registerPluginTools 是 TODO（插件工具从未注册）；WebSearch 依赖单一 DDG 抓取常失败；GitHub 未连接时错误文案不可行动 | 插件工具真实注册 + WebSearch 三端点容错 + GitHub 错误引导 |
 | 3 | 不会使用模型内置的网络搜索 | StreamingOpenAiClient 不发送任何原生搜索参数；无配置字段；不解析引用 | WebSearchMode 按 Provider 分支注入 + 引用解析 + 会话开关贯通 |
 | 4 | 网页自动化要插件化；连接器要加微信/飞书/Telegram；GitHub 连接没用 | AIDL 无宿主回调通道；连接器只是数据壳；GitHub 连接状态对模型不可见 | IApexPluginHost 宿主桥 + 网页自动化插件（v1.5.0 起退役并内置化）+ ConnectorMessenger/工具 + GitHub 状态注入 |
 
@@ -33,7 +33,7 @@ most appropriate tool or combination of tools"*。
 4. 持续工作直到任务真正完成；未用工具验证不得宣称成功
 5. 不确定的事实（版本/价格/新闻/文档/设备与网页状态）必须先用工具验证
 6. 工具失败 → 读错误、修参数或换路径；不轻易放弃、不盲目重试
-7. 优先专用工具（read_file/github_read_file/browser_*），独立读操作并行
+7. 优先专用工具（Read/GithubReadFile/browser_*），独立读操作并行
 
 BUILD 模式从 "prefer fewer steps" 改为 "keep working autonomously until the task
 is done; use tools aggressively"。
@@ -44,8 +44,8 @@ is done; use tools aggressively"。
 注入，而不是让模型猜**。
 
 - GitHub 已连接 → 注入登录名 + "github_* tools are ready, verify with
-  github_get_user"
-- 微信/飞书/Telegram 已启用 → 注入 connector_list / connector_send_message 引导
+  GithubGetUser"
+- 微信/飞书/Telegram 已启用 → 注入 ConnectorList / ConnectorSendMessage 引导
 
 app 层实现：`AndroidConnectedServicesProvider`（聚合 GithubTokenManager +
 ConnectorRegistry），经 Hilt 注入引擎。
@@ -66,10 +66,10 @@ OFF（默认）｜ AUTO（按端点自动）｜ OPENAI ｜ DASHSCOPE ｜ ZHIPU �
 |---|---|
 | OpenAI | `web_search_options: {search_context_size: "medium"}` |
 | DashScope（Qwen） | `enable_search: true` |
-| Zhipu（GLM） | tools 追加 `{"type":"web_search","web_search":{"enable":true,"search_result":true}}` |
-| DeepSeek | tools 追加 `{"type":"web_search"}` |
+| Zhipu（GLM） | tools 追加 `{"type":"WebSearch","WebSearch":{"enable":true,"search_result":true}}` |
+| DeepSeek | tools 追加 `{"type":"WebSearch"}` |
 | OpenRouter | `plugins: [{"id":"web","max_results":5}]`（等价 `:online`） |
-| Anthropic | tools 追加 `{"type":"web_search_20250305","name":"web_search"}` |
+| Anthropic | tools 追加 `{"type":"web_search_20250305","name":"WebSearch"}` |
 | 未知端点 | 不发送任何非标准参数（防 400） |
 
 关键实现细节：kotlinx `JsonArray` 不可变，server-search tool 在**构建期**并入
@@ -87,11 +87,11 @@ OpenAI `annotations[].url_citation`、智谱 `search_result[]` 等引用提取�
 1. 经 `LlmModule.provideModelRuntimeStore` 把所有 Profile 提升为 AUTO（多模型
    运行时路径——引擎实际使用的路径）
 2. 经 `DynamicLlmClient`（旧直连路径）
-3. 注入提示词（降级为 fallback：原生搜索无 Sources 时再调 web_search 工具）
+3. 注入提示词（降级为 fallback：原生搜索无 Sources 时再调 WebSearch 工具）
 
 ---
 
-## 3. web_search 工具容错（`WebSearchTool`）
+## 3. WebSearch 工具容错（`WebSearchTool`）
 
 旧版单一依赖 `html.duckduckgo.com` GET 抓取，被反爬/限流即空结果。
 
@@ -153,12 +153,12 @@ onServiceConnected → attachHost(hostBinder) → getToolsJson() → 解析
 
 ### 5.2 消息能力（`ConnectorMessenger` + `ConnectorTools`）
 
-- `connector_list` — 列出启用连接器与凭据状态（不泄露明文）
-- `connector_send_message` — 经企业微信/飞书/Telegram 发送文本（verify_only 支
+- `ConnectorList` — 列出启用连接器与凭据状态（不泄露明文）
+- `ConnectorSendMessage` — 经企业微信/飞书/Telegram 发送文本（verify_only 支
   持配置校验）
 - 成功判定逐家校验业务码：企业微信 `errcode==0`、飞书 `code==0`、Telegram
   `ok==true`（HTTP 200 不代表业务成功）
-- `connector_send_message` 显式声明 WEB/MEDIUM 风险 + 非幂等（防执行器盲重试
+- `ConnectorSendMessage` 显式声明 WEB/MEDIUM 风险 + 非幂等（防执行器盲重试
   导致重复发消息）
 
 ---
@@ -169,8 +169,8 @@ onServiceConnected → attachHost(hostBinder) → getToolsJson() → 解析
 |---|---|
 | 连接状态注入 | Connected Services 段告知"已连接 as <login>，工具就绪" |
 | 描述双语化 | 首行英文 ≤160 字符（系统提示词只取首行），业界标准风格"一句话功能+使用时机" |
-| 错误可行动 | 未连接/401/403 → 引导"设置 → 连接器 → GitHub 配置 Token，连接后先调 github_get_user 验证" |
-| 新工具 | `github_list_branches`（写非默认分支前探查）、`github_search_repos`（按关键词找仓库，`/search/repositories`） |
+| 错误可行动 | 未连接/401/403 → 引导"设置 → 连接器 → GitHub 配置 Token，连接后先调 GithubGetUser 验证" |
+| 新工具 | `GithubListBranches`（写非默认分支前探查）、`GithubSearchRepos`（按关键词找仓库，`/search/repositories`） |
 
 ---
 

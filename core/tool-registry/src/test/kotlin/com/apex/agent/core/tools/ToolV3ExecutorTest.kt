@@ -222,7 +222,7 @@ class ToolV3ExecutorTest {
     /**
      * P1 修复（熔断误开）核心回归锁：域层失败（文件不存在 / grep exit=1
      * 等正常探索结果）**不开**熔断 —— 旧实现连续探索 5 个不存在的路径就把
-     * read_file 熔断 OPEN，后续 15-120s 内全部 fast-deny。
+     * Read 熔断 OPEN，后续 15-120s 内全部 fast-deny。
      */
     @Test
     fun `domain failures never open the breaker`() = runTest {
@@ -381,10 +381,10 @@ class ToolV3ExecutorTest {
 
     @Test
     fun `unknown tool still produces the v2 suggestion error`() = runTest {
-        val executor = executor(ScriptedTool("read_file", listOf("OK")))
+        val executor = executor(ScriptedTool("Read", listOf("OK")))
         val error = executor.execute("read_fil", "{}")
         assertTrue(error.startsWith("Error: Tool 'read_fil' not found"))
-        assertTrue(error.contains("read_file"))
+        assertTrue(error.contains("Read"))
     }
 
     // ═══ 流式路径 ═════════════════════════════════════════════════════

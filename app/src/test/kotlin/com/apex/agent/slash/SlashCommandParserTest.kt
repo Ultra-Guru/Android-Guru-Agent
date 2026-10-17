@@ -103,11 +103,11 @@ class SlashCommandParserTest {
 
     @Test
     fun `kv args and positional user text are split correctly`() {
-        val parsed = SlashCommandParser.parse("/skill:web_search query=Android latest news")
+        val parsed = SlashCommandParser.parse("/skill:WebSearch query=Android latest news")
 
         assertTrue(parsed is SlashCommand.Skill)
         val skill = parsed as SlashCommand.Skill
-        assertEquals("web_search", skill.id)
+        assertEquals("WebSearch", skill.id)
         assertEquals(mapOf("query" to "Android"), skill.args)
         assertEquals("latest news", skill.userExtra)
     }

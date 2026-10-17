@@ -74,7 +74,18 @@ object JvmProcessLauncher : McpProcessLauncher {
         }
         if (workingDir != null) builder.directory(workingDir)
         builder.redirectErrorStream(false)
-        val process = builder.start()
+        // P1 修复（不可行动报错）：Android 宿主没有 node/npx，ProcessBuilder 抛的
+        // `Cannot run program "npx": error=ENOENT` 对用户与模型都无从下手。
+        // 折叠成带指引的 McpException（沙箱模式才是 Android 上的正解）。
+        val process = try {
+            builder.start()
+        } catch (e: Exception) {
+            throw McpException(
+                "无法启动本地 MCP 命令 '" + command.first() + "'：" + (e.message ?: e::class.simpleName) +
+                    "。Android 宿主通常没有 node/npx —— 请在服务器配置里开启「沙箱运行」" +
+                    "（runInSandbox=true）改用 PRoot Ubuntu 内的运行时。"
+            )
+        }
         return ProcessAdapter(process)
     }
 
@@ -145,6 +156,16 @@ class McpStdioTransport internal constructor(
     private val reader: BufferedReader =
         BufferedReader(InputStreamReader(handle.stdout, StandardCharsets.UTF_8))
 
+    /** P1：专用写线程 —— 阻塞写既不占协程 IO 线程，也能被 Future 超时兜住。 */
+    private val writeExecutor: java.util.concurrent.ExecutorService =
+        java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "mcp-stdio-writer").apply { isDaemon = true }
+        }
+
+    /** 写路径是否已判死（写入超时/失败）—— [isHealthy] 据此交给 Supervisor 收尸。 */
+    @Volatile
+    private var writeBroken = false
+
     private val pending = ConcurrentHashMap<Int, String>()
     private val pendingAt = ConcurrentHashMap<Int, Long>()
     private val monitor = Object()
@@ -202,10 +223,32 @@ class McpStdioTransport internal constructor(
 
         // 报文必须是单行：内容里的换行会撕裂 NDJSON 帧
         val line = payload.replace('\n', ' ').replace('\r', ' ')
-        synchronized(writeLock) {
-            writer.write(line)
-            writer.write('\n'.code)
-            writer.flush()
+        // P1 修复（写路径无超时）：旧实现在 IO 协程里同步 write+flush —— 对端
+        // 不读 stdin（npx 卡在下载、被 SIGSTOP）时 flush 永久阻塞、writeLock 被
+        // 长期持有，后续所有请求（含 tools/list）排队，上层取消也无效。改为
+        // 专用写线程 + 有界 Future.get，超时即判传输不健康（交给 Supervisor 收尸）。
+        val writeTask = try {
+            writeExecutor.submit {
+                synchronized(writeLock) {
+                    writer.write(line)
+                    writer.write('\n'.code)
+                    writer.flush()
+                }
+            }
+        } catch (e: Exception) {
+            throw McpException("MCP 本地进程写线程不可用：${e.message ?: e::class.simpleName}")
+        }
+        try {
+            withContext(Dispatchers.IO) {
+                writeTask.get(requestTimeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+            }
+        } catch (e: java.util.concurrent.TimeoutException) {
+            writeTask.cancel(true)
+            writeBroken = true
+            throw McpException("MCP 本地进程写入超时（${requestTimeoutMs}ms）：对端没有读取 stdin")
+        } catch (e: java.util.concurrent.ExecutionException) {
+            writeBroken = true
+            throw McpException("MCP 本地进程写入失败：${e.cause?.message ?: e.message}")
         }
 
         if (id == null) return@withContext null
@@ -222,7 +265,7 @@ class McpStdioTransport internal constructor(
         }
     }
 
-    override fun isHealthy(): Boolean = !closed && handle.isAlive()
+    override fun isHealthy(): Boolean = !closed && !writeBroken && handle.isAlive()
 
     override fun close() {
         closed = true
@@ -231,6 +274,7 @@ class McpStdioTransport internal constructor(
             pendingAt.clear()
             monitor.notifyAll()
         }
+        runCatching { writeExecutor.shutdownNow() }
         runCatching { writer.close() }
         // #206 说明：两个泵线程阻塞在不可中断的管道 readLine 上，interrupt()
         // 对它们是无效操作（已删）—— 真正的退出机制是 destroy() 关闭进程管道

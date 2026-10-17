@@ -13,7 +13,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Agent tool: terminal.ubuntu.install — T73（Ubuntu rootfs 解包引导；T83 内置交付）
+ * Agent tool: TerminalUbuntuInstall — T73（Ubuntu rootfs 解包引导；T83 内置交付）
  *
  * LinuxPRootBackend 注释指定的 P73 交付物："rootfs 下载引导属于 P73"。
  * T72 提供了生产级 provisioner（SHA-256 + 原子解压 + 健康检查），
@@ -44,7 +44,7 @@ class TerminalUbuntuInstallTool(
     /** 目标 rootfs（架构由 DI 从 Build.SUPPORTED_ABIS 推导；JVM 测试注入 X86_64/ARM64）。 */
     private val target: RootfsTarget
 ) : TerminalTool {
-    override val id: String = "terminal.ubuntu.install"
+    override val id: String = "TerminalUbuntuInstall"
     override val name: String = id
     override val description: String = """
         Provision (or wait for) the BUNDLED Ubuntu 24.04 rootfs required by the linux-ubuntu
@@ -54,7 +54,7 @@ class TerminalUbuntuInstallTool(
         already provisioned. SHA-256 verification + extraction + base configuration +
         health check. If the call times out while still extracting, it returns IN_PROGRESS —
         call again to keep waiting (progress is never lost). On success the linux-ubuntu
-        backend becomes READY (verify with terminal.backends; the environment summary
+        backend becomes READY (verify with TerminalBackends; the environment summary
         will show ubuntu=on).
     """.trimIndent()
 
@@ -86,7 +86,7 @@ class TerminalUbuntuInstallTool(
                 payload["version"] = result.rootfs.version ?: ""
                 payload["architecture"] = result.rootfs.architecture.name
                 payload["durationMs"] = result.durationMs.toString()
-                payload["message"] = "Ubuntu rootfs 就绪 — 可用 terminal.create(backend=\"linux-ubuntu\") 创建 Ubuntu 会话"
+                payload["message"] = "Ubuntu rootfs 就绪 — 可用 TerminalCreate(backend=\"linux-ubuntu\") 创建 Ubuntu 会话"
             }
             result is ProvisioningResult.AlreadyReady -> {
                 status = "ALREADY_READY"

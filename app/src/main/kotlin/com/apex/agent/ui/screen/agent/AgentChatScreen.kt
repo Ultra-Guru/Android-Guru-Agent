@@ -76,6 +76,7 @@ import com.apex.agent.ui.component.AttachButton
 import com.apex.agent.ui.component.AttachmentPreviewBar
 import com.apex.agent.ui.component.FeedbackSeverity
 import com.apex.agent.ui.component.FileOpener
+import com.apex.agent.ui.component.FusionBundleButton
 import com.apex.agent.ui.component.HtmlPreviewDialog
 import com.apex.agent.ui.component.ImageLightbox
 import com.apex.agent.ui.component.LocalFeedbackController
@@ -85,6 +86,7 @@ import com.apex.agent.ui.component.SlashMenuProvider
 import com.apex.agent.ui.component.ViroPetHost
 import com.apex.agent.ui.component.ViroPetMood
 import com.apex.agent.ui.component.rememberSlashMenuProvider
+import com.apex.agent.ui.component.rememberFusionBundleController
 import com.apex.agent.ui.glass.GlassCard
 import com.apex.agent.ui.glass.GlassFloatingButton
 import com.apex.agent.ui.glass.GlassModalScrim
@@ -167,6 +169,13 @@ fun AgentChatScreen(
     // ═══ #197 模型 API 未配置浮窗（发送时拦截并提示去配置）═══
     var showApiMissingNotice by remember { mutableStateOf(false) }
 
+    // ═══ FusionBundle：聚变包入口（输入栏按钮 + 选择弹层 + 激活态横幅）═══
+    // 控制器经 EntryPoint 取单例（模式同 rememberSlashMenuProvider —— 零
+    // VM 侵入：激活编排/引擎人设注入/持久化重激活都在控制器内部）。
+    val fusionController = rememberFusionBundleController()
+    val fusionActive by fusionController.activeBundle.collectAsStateWithLifecycle()
+    var showFusionPicker by remember { mutableStateOf(false) }
+
     // ═══ 历史对话：会话列表 + 抽屉开关（顶栏「历史」按钮唤起）═══
     val chatSessions by viewModel.chatSessions.collectAsStateWithLifecycle()
     var showHistory by remember { mutableStateOf(false) }
@@ -215,7 +224,7 @@ fun AgentChatScreen(
         }
     }
 
-    // 修复：列表总项数统一计算（原漏计 Plan 确认 / Spec 确认 / ask_user 对话框三项，
+    // 修复：列表总项数统一计算（原漏计 Plan 确认 / Spec 确认 / AskUser 对话框三项，
     // 出现时自动滚动定位到对话框上方；FAB 回底同样用此值）。
     // P3-i（6-c）：UserInputDialog 已提升到屏级（不再占列表项），去掉 pendingUserInput
     // 计数，修复 off-by-one（原自动滚动目标索引多 1，仅靠 clamp 兼底）。
@@ -675,6 +684,22 @@ fun AgentChatScreen(
                     onRemove = { index -> viewModel.removeAttachment(index) }
                 )
 
+                // ═══ FusionBundle 激活态横幅（一行式：包名 + 停用钮）═══
+                if (fusionActive != null) {
+                    FusionBundleActiveBanner(
+                        bundleName = fusionActive!!.name,
+                        onDeactivate = {
+                            fusionController.deactivate()
+                                .onFailure {
+                                    feedbackController.show(
+                                        it.message ?: "", FeedbackSeverity.WARNING
+                                    )
+                                }
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+
                 // ═══ v5：技能 chip 已内联进输入框（SkillChipInputField），独立的
                 // 胶囊行移除 —— 不再出现「胶囊行叠在输入框上方」的重叠观感。
                 // #197 「小圆环」函数调用/工具菜单已迁至 Coding 屏（Agent 屏
@@ -723,6 +748,12 @@ fun AgentChatScreen(
                                 false // 普通指令：插入后收起菜单
                             }
                         }
+                    )
+
+                    // ═══ 聚变包入口按钮（FusionBundle：技能+MCP+工具一键聚合）═══
+                    FusionBundleButton(
+                        isActive = fusionActive != null,
+                        onOpenPicker = { showFusionPicker = true }
                     )
 
                     // ═══ + 旋转附件按钮 ═══
@@ -880,7 +911,7 @@ fun AgentChatScreen(
         }
     }
 
-    // ═══ ask_user 模态对话框（Agent 请求用户输入）═══
+    // ═══ AskUser 模态对话框（Agent 请求用户输入）═══
     // 修复：原挂在 LazyColumn item 内，滚动出视口即被销毁——用户填一半的答案丢失；
     // 提升到屏幕层级与生命周期解耦，只要 pendingUserInput 存在就常驻。
     uiState.pendingUserInput?.let { request ->
@@ -927,6 +958,17 @@ fun AgentChatScreen(
             onStart = { config ->
                 viewModel.startLoop(config)
                 showLoopSetup = false
+            }
+        )
+    }
+
+    // ═══ FusionBundle 选择弹层（输入栏入口按钮唤起；激活结果走统一反馈层）═══
+    if (showFusionPicker) {
+        FusionBundlePickerSheet(
+            controller = fusionController,
+            onDismiss = { showFusionPicker = false },
+            onResult = { ok, message ->
+                feedbackController.show(message, if (ok) FeedbackSeverity.INFO else FeedbackSeverity.WARNING)
             }
         )
     }

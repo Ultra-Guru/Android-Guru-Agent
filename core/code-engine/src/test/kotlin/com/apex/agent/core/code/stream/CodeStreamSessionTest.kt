@@ -17,11 +17,11 @@ import org.junit.Test
 class CodeStreamSessionTest {
 
     private fun editStart(callId: String, path: String) = AgentEvent.ToolCallStart(
-        callId, "code_edit", """{"path":"$path","diff":"x"}"""
+        callId, "CodeEdit", """{"path":"$path","diff":"x"}"""
     )
 
     private fun bashStart(callId: String, command: String) = AgentEvent.ToolCallStart(
-        callId, "terminal.exec", """{"command":"$command"}"""
+        callId, "TerminalExec", """{"command":"$command"}"""
     )
 
     @Test
@@ -31,7 +31,7 @@ class CodeStreamSessionTest {
         s.onEvent(editStart("c1", "src/App.kt"))
         s.onEvent(
             AgentEvent.ToolCallComplete(
-                callId = "c1", toolName = "code_edit", arguments = """{"path":"src/App.kt"}""",
+                callId = "c1", toolName = "CodeEdit", arguments = """{"path":"src/App.kt"}""",
                 output = "(no textual change)", fullOutput = "--- a/src/App.kt\n+++ b/src/App.kt\n@@ -1,2 +1,2 @@\n-a\n+b\n(1 added, 1 removed)",
                 success = true, durationMs = 120
             )
@@ -60,7 +60,7 @@ class CodeStreamSessionTest {
         assertTrue(snap.terminalContent.contains("compile ok"))
         s.onEvent(
             AgentEvent.ToolCallComplete(
-                callId = "b1", toolName = "terminal.exec", arguments = "",
+                callId = "b1", toolName = "TerminalExec", arguments = "",
                 output = "build finished\nexit code 0", fullOutput = "",
                 success = true, durationMs = 9_000
             )
@@ -80,7 +80,7 @@ class CodeStreamSessionTest {
         s.onEvent(start)
         s.onEvent(start) // 重放
         val complete = AgentEvent.ToolCallComplete(
-            "c1", "code_edit", """{"path":"A.kt"}""", "done", "--- a/A.kt\n+++ b/A.kt\n@@ -1,1 +1,2 @@\n x\n+y\n(1 added, 0 removed)",
+            "c1", "CodeEdit", """{"path":"A.kt"}""", "done", "--- a/A.kt\n+++ b/A.kt\n@@ -1,1 +1,2 @@\n x\n+y\n(1 added, 0 removed)",
             true, 50
         )
         s.onEvent(complete)
@@ -184,7 +184,7 @@ class CodeStreamSessionTest {
         val s = CodeStreamSession()
         s.beginRun("改完自检")
         s.onEvent(editStart("e1", "A.kt"))
-        s.onEvent(AgentEvent.ToolCallComplete("e1", "code_edit", "{}", "ok", "", true, 30))
+        s.onEvent(AgentEvent.ToolCallComplete("e1", "CodeEdit", "{}", "ok", "", true, 30))
         s.onEvent(AgentEvent.ToolCallStart("v1", "lint", """{"path":"A.kt"}"""))
         s.onEvent(AgentEvent.ToolCallComplete("v1", "lint", "{}", "no issues", "", true, 40))
         // 收尾触发轮次收口
@@ -204,7 +204,7 @@ class CodeStreamSessionTest {
         val s = CodeStreamSession()
         s.beginRun("改完自检")
         s.onEvent(editStart("e1", "A.kt"))
-        s.onEvent(AgentEvent.ToolCallComplete("e1", "code_edit", "{}", "ok", "", true, 30))
+        s.onEvent(AgentEvent.ToolCallComplete("e1", "CodeEdit", "{}", "ok", "", true, 30))
         s.onEvent(AgentEvent.ToolCallStart("t1", "test", """{"path":"A.kt"}"""))
         s.onEvent(
             AgentEvent.ToolCallComplete(
@@ -247,9 +247,9 @@ class CodeStreamSessionTest {
         val s = CodeStreamSession()
         s.beginRun("改两个文件")
         s.onEvent(editStart("e1", "A.kt"))
-        s.onEvent(AgentEvent.ToolCallComplete("e1", "code_edit", "{}", "ok", "", true, 10))
+        s.onEvent(AgentEvent.ToolCallComplete("e1", "CodeEdit", "{}", "ok", "", true, 10))
         s.onEvent(editStart("e2", "B.kt"))
-        s.onEvent(AgentEvent.ToolCallComplete("e2", "code_edit", "{}", "ok", "", true, 10))
+        s.onEvent(AgentEvent.ToolCallComplete("e2", "CodeEdit", "{}", "ok", "", true, 10))
         s.onEvent(AgentEvent.Complete("done", 3, 2, 1_000))
         val snap = s.snapshot()
         val chips = snap.entries.filterIsInstance<StreamEntry.FileChipsEntry>().single()
@@ -292,9 +292,9 @@ class CodeStreamSessionTest {
     fun `non bash log tail is windowed`() {
         val s = CodeStreamSession()
         s.beginRun("长输出")
-        s.onEvent(AgentEvent.ToolCallStart("g1", "code_grep", """{"pattern":"foo"}"""))
+        s.onEvent(AgentEvent.ToolCallStart("g1", "CodeGrep", """{"pattern":"foo"}"""))
         repeat(50) { s.onEvent(AgentEvent.ToolOutputChunk("g1", "match-$it\n")) }
-        s.onEvent(AgentEvent.ToolCallComplete("g1", "code_grep", "{}", "done", "", true, 10))
+        s.onEvent(AgentEvent.ToolCallComplete("g1", "CodeGrep", "{}", "done", "", true, 10))
         val snap = s.snapshot()
         val capsule = snap.entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
         assertEquals(ToolKind.GREP_SEARCH, capsule.call.kind)
@@ -310,7 +310,7 @@ class CodeStreamSessionTest {
         s.beginRun("失败案例")
         s.onEvent(bashStart("b1", "false"))
         s.onEvent(
-            AgentEvent.ToolCallComplete("b1", "terminal.exec", "{}", "exit code 1", "", false, 5)
+            AgentEvent.ToolCallComplete("b1", "TerminalExec", "{}", "exit code 1", "", false, 5)
         )
         val snap = s.snapshot()
         assertEquals(1, snap.failedToolCallCount)
@@ -366,7 +366,7 @@ class CodeStreamSessionTest {
         val s = CodeStreamSession()
         s.beginRun("改完自检")
         s.onEvent(editStart("e1", "A.kt"))
-        s.onEvent(AgentEvent.ToolCallComplete("e1", "code_edit", "{}", "ok", "", true, 30))
+        s.onEvent(AgentEvent.ToolCallComplete("e1", "CodeEdit", "{}", "ok", "", true, 30))
         // 真实事件序：edit 完成 → 下一轮迭代声明 → 思考 → verify
         s.onEvent(AgentEvent.IterationStart(2))
         s.onEvent(AgentEvent.ThinkingChunk("思考怎么修"))
@@ -399,7 +399,7 @@ class CodeStreamSessionTest {
         val s = CodeStreamSession()
         s.beginRun("重放场景")
         s.onEvent(bashStart("b1", "false"))
-        val failed = AgentEvent.ToolCallComplete("b1", "terminal.exec", "{}", "exit code 1", "", false, 5)
+        val failed = AgentEvent.ToolCallComplete("b1", "TerminalExec", "{}", "exit code 1", "", false, 5)
         s.onEvent(failed)
         s.onEvent(failed) // 重放
         val snap = s.snapshot()
@@ -430,7 +430,7 @@ class CodeStreamSessionTest {
         val first = CodeStreamSession()
         first.beginRun("改文件")
         first.onEvent(editStart("e1", "A.kt"))
-        first.onEvent(AgentEvent.ToolCallComplete("e1", "code_edit", "{}", "ok", "", true, 10))
+        first.onEvent(AgentEvent.ToolCallComplete("e1", "CodeEdit", "{}", "ok", "", true, 10))
         first.onEvent(AgentEvent.Complete("done", 1, 1, 100))
         val restored = first.entriesSnapshot()
 
@@ -445,7 +445,7 @@ class CodeStreamSessionTest {
         val s = CodeStreamSession()
         s.beginRun("第一轮")
         s.onEvent(editStart("e1", "A.kt"))
-        s.onEvent(AgentEvent.ToolCallComplete("e1", "code_edit", "{}", "ok", "", true, 10))
+        s.onEvent(AgentEvent.ToolCallComplete("e1", "CodeEdit", "{}", "ok", "", true, 10))
         s.onEvent(AgentEvent.Complete("done", 1, 1, 100))
         assertEquals(listOf("A.kt"), s.snapshot().affectedFiles)
         s.beginRun("第二轮（未改文件）")

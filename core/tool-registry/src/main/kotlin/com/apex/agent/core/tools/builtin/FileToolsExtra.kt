@@ -16,7 +16,7 @@ class CopyMoveFileTool(
     private val basePath: File
 ) : AgentTool {
 
-    override val id = "copy_move_file"
+    override val id = "CopyMoveFile"
     override val name = "Copy/Move File"
     override val description = """
         Copy or move a file/directory from source to destination.

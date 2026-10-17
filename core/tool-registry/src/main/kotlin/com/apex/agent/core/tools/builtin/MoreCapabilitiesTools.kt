@@ -22,8 +22,8 @@ import kotlinx.serialization.json.longOrNull
  * 用户原始诉求："全面增强 agent 能力……然后还要有更多能力"。
  *
  * 本文件扩展了设备的实用能力（联系人 / 短信 / 日历 / 闹钟 / 文件选择 /
- * 拍照 / 系统通知），与已有的 torch / vibrate / battery_status / tts_speak /
- * share_content / deep_link / image_info / image_convert 等高级设备工具互补。
+ * 拍照 / 系统通知），与已有的 torch / vibrate / BatteryStatus / TtsSpeak /
+ * ShareContent / DeepLink / ImageInfo / ImageConvert 等高级设备工具互补。
  *
  * 设计：
  * - 工具本体只做参数解析（pure JVM，可测）；
@@ -34,13 +34,13 @@ import kotlinx.serialization.json.longOrNull
  *   会处理 HIGH/MEDIUM 的弹窗确认）。
  *
  * 工具清单（本文件 7 个工具）：
- *   1. `contact_search` —— 在通讯录中按姓名/电话/邮箱检索联系人
- *   2. `sms_send` —— 发送 SMS 短信
- *   3. `calendar_event_list` —— 读取近期日历事件
- *   4. `alarm_set` —— 设置系统闹钟（Intent 路径，无特殊权限）
- *   5. `file_pick` —— 经 SAF 让用户选文件，返回 URI
- *   6. `image_capture` —— 启动相机拍照（Intent 路径）
- *   7. `notification_post` —— 发系统通知（HIGH 风险：影响用户感官）
+ *   1. `ContactSearch` —— 在通讯录中按姓名/电话/邮箱检索联系人
+ *   2. `SmsSend` —— 发送 SMS 短信
+ *   3. `CalendarEventList` —— 读取近期日历事件
+ *   4. `AlarmSet` —— 设置系统闹钟（Intent 路径，无特殊权限）
+ *   5. `FilePick` —— 经 SAF 让用户选文件，返回 URI
+ *   6. `ImageCapture` —— 启动相机拍照（Intent 路径）
+ *   7. `NotificationPost` —— 发系统通知（HIGH 风险：影响用户感官）
  */
 
 /**
@@ -71,11 +71,11 @@ data class CalendarEventRecord(
 )
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 工具 1: contact_search
+// 工具 1: ContactSearch
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * `contact_search` — 在通讯录中检索联系人。
+ * `ContactSearch` — 在通讯录中检索联系人。
  *
  * 参数：query（必填，模糊匹配姓名/电话/邮箱）、limit（默认 20，最大 100）。
  * 返回 JSON 数组。
@@ -85,7 +85,7 @@ data class CalendarEventRecord(
 class ContactSearchTool(
     private val searcher: suspend (query: String, limit: Int) -> List<ContactRecord>
 ) : BaseTool(
-    id = "contact_search",
+    id = "ContactSearch",
     name = "Search Contacts",
     description = """
         Search the device contacts by name / phone / email (fuzzy match).
@@ -155,11 +155,11 @@ class ContactSearchTool(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 工具 2: sms_send
+// 工具 2: SmsSend
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * `sms_send` — 发送 SMS 短信。
+ * `SmsSend` — 发送 SMS 短信。
  *
  * 参数：phone（必填，目标手机号）、message（必填，短信正文）、
  *        slot_id（可选，双卡 SIM 槽位 0/1，默认自动选择）。
@@ -170,7 +170,7 @@ class ContactSearchTool(
 class SmsSendTool(
     private val sender: suspend (phone: String, message: String, slotId: Int?) -> SendResult
 ) : BaseTool(
-    id = "sms_send",
+    id = "SmsSend",
     name = "Send SMS",
     description = """
         Send an SMS message to a phone number. Risk: HIGH (sends a real SMS —
@@ -238,7 +238,7 @@ class SmsSendTool(
             return ToolResult.invalid(
                 field = "message",
                 message = "message too long (${message.length} > $MAX_MESSAGE_LEN chars)",
-                suggestion = "split into multiple sms_send calls"
+                suggestion = "split into multiple SmsSend calls"
             )
         }
         val slotId = args.optionalInt("slot_id")
@@ -267,11 +267,11 @@ class SmsSendTool(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 工具 3: calendar_event_list
+// 工具 3: CalendarEventList
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * `calendar_event_list` — 读取近期日历事件。
+ * `CalendarEventList` — 读取近期日历事件。
  *
  * 参数：days_ahead（默认 7，最大 90）、limit（默认 20，最大 100）。
  * 返回从当前时刻起 +days_ahead 天范围内的事件列表（按开始时间升序）。
@@ -281,7 +281,7 @@ class SmsSendTool(
 class CalendarEventListTool(
     private val lister: suspend (daysAhead: Int, limit: Int) -> List<CalendarEventRecord>
 ) : BaseTool(
-    id = "calendar_event_list",
+    id = "CalendarEventList",
     name = "List Calendar Events",
     description = """
         List upcoming calendar events from now to now+days_ahead days.
@@ -345,11 +345,11 @@ class CalendarEventListTool(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 工具 4: alarm_set
+// 工具 4: AlarmSet
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * `alarm_set` — 设置系统闹钟。
+ * `AlarmSet` — 设置系统闹钟。
  *
  * 走 [android.provider.AlarmClock.ACTION_SET_ALARM] Intent 路径——无任何
  * 特殊权限，启动系统闹钟 App 让用户确认。
@@ -368,7 +368,7 @@ class CalendarEventListTool(
 class AlarmSetTool(
     private val setter: suspend (AlarmParams) -> Boolean
 ) : BaseTool(
-    id = "alarm_set",
+    id = "AlarmSet",
     name = "Set Alarm",
     description = """
         Set an alarm via the system clock app (AlarmClock.ACTION_SET_ALARM).
@@ -487,14 +487,14 @@ class AlarmSetTool(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 工具 5: file_pick
+// 工具 5: FilePick
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * `file_pick` — 经 SAF (Storage Access Framework) 让用户选文件。
+ * `FilePick` — 经 SAF (Storage Access Framework) 让用户选文件。
  *
  * 走 [android.content.Intent.ACTION_OPEN_DOCUMENT] ——返回 content:// URI。
- * Agent 拿到 URI 后可用 [http_request] / 自定义 file_copy 把文件复制到工作区
+ * Agent 拿到 URI 后可用 [HttpRequest] / 自定义 file_copy 把文件复制到工作区
  * 或上传到外部服务。
  *
  * 参数：
@@ -509,12 +509,12 @@ class AlarmSetTool(
 class FilePickTool(
     private val picker: suspend (mimeType: String, allowMultiple: Boolean) -> FilePickResult
 ) : BaseTool(
-    id = "file_pick",
+    id = "FilePick",
     name = "Pick File (SAF)",
     description = """
         Open the system file picker (Storage Access Framework) and let the
         user select a file. Returns content:// URIs that can be used with
-        http_request (multipart upload) or copied to workspace via shell.
+        HttpRequest (multipart upload) or copied to workspace via shell.
 
         Parameters:
         - mime_type (optional, default 所有类型(通配)): MIME filter, e.g. "image/*" or "application/pdf"
@@ -575,11 +575,11 @@ class FilePickTool(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 工具 6: image_capture
+// 工具 6: ImageCapture
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * `image_capture` — 启动相机拍照。
+ * `ImageCapture` — 启动相机拍照。
  *
  * 走 [android.provider.MediaStore.ACTION_IMAGE_CAPTURE] Intent 路径——
  * 系统相机 App 拍照后返回缩略图或原图 URI。
@@ -594,7 +594,7 @@ class FilePickTool(
 class ImageCaptureTool(
     private val capturer: suspend (CaptureParams) -> CaptureResult
 ) : BaseTool(
-    id = "image_capture",
+    id = "ImageCapture",
     name = "Capture Photo",
     description = """
         Launch the camera app to take a photo. Returns the saved file path
@@ -692,15 +692,15 @@ class ImageCaptureTool(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 工具 7: notification_post
+// 工具 7: NotificationPost
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * `notification_post` — 发系统通知。
+ * `NotificationPost` — 发系统通知。
  *
  * 通过 [android.app.NotificationManager] 发通知。需要 POST_NOTIFICATIONS
  * 权限（Android 13+）。无声音/振动（仅状态栏 + 抽屉可见）；如需提醒，
- * 调用方应配合 [vibrate] / [tts_speak]。
+ * 调用方应配合 [vibrate] / [TtsSpeak]。
  *
  * 参数：
  * - title (required): 通知标题
@@ -714,11 +714,11 @@ class ImageCaptureTool(
 class NotificationPostTool(
     private val poster: suspend (NotificationParams) -> Boolean
 ) : BaseTool(
-    id = "notification_post",
+    id = "NotificationPost",
     name = "Post Notification",
     description = """
         Post a system notification (status bar + drawer). Uses a silent
-        channel by default — pair with vibrate / tts_speak for audible alerts.
+        channel by default — pair with vibrate / TtsSpeak for audible alerts.
 
         Parameters:
         - title (required): notification title

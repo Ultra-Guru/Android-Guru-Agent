@@ -12,7 +12,7 @@ package com.apex.agent.core.engine.assist
  *
  * 提示词层的 Tool-Use Policy 第 3 条（"NEVER end your turn with 'I will
  * now…'"）对弱模型约束力不足；本检测器是**引擎层的执行差异兜底**（与
- * [DecisionPointDetector] 之于 ask_user_choice 的关系同构）：
+ * [DecisionPointDetector] 之于 AskUserChoice 的关系同构）：
  *
  * - 检出「承诺动作」语迹 且 本任务尚未催促过 → 引擎注入一条 System 催促并
  *   `continue` 下一轮（模型获得一次"真做"的机会）；
@@ -28,7 +28,7 @@ package com.apex.agent.core.engine.assist
  *       "马上去/这就去"、"下面我将"
  *
  * 排除（视为合法收尾）：
- * - 疑问句结尾（向用户提问 = 合法停轮，对应 ask_user 语义）；
+ * - 疑问句结尾（向用户提问 = 合法停轮，对应 AskUser 语义）；
  * - 过短回复（≤ 24 字符 —— "好的""收到"级确认语没有动作语义）。
  */
 object PromiseDetector {

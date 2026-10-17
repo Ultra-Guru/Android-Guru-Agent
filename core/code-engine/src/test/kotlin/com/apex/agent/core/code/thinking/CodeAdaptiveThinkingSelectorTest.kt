@@ -81,7 +81,7 @@ class CodeAdaptiveThinkingSelectorTest {
 
     @Test
     fun `code tool verb counts as coding intent`() {
-        val d = selector.select("用 code_grep 找调用点", 0, 0)
+        val d = selector.select("用 CodeGrep 找调用点", 0, 0)
         assertTrue(d.reason.contains("编码意图+1"))
     }
 
@@ -154,7 +154,7 @@ class CodeAdaptiveThinkingSelectorTest {
         // 组合各种强信号与错误史，任何路径都不应产出 APEXCODE
         val goals = listOf(
             "v".repeat(2000) + " 先然后step plan 全套 git npm gradle rm -rf",
-            "重构整个架构 " + "@a.kt " + "code_edit code_write"
+            "重构整个架构 " + "@a.kt " + "CodeEdit CodeWrite"
         )
         goals.forEach { goal ->
             listOf(0 to 0, 30 to 2, 50 to 5, 100 to 9).forEach { (calls, errors) ->

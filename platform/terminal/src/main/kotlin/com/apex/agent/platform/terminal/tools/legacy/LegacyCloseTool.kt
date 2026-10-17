@@ -9,19 +9,19 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Legacy compat tool: terminal_close
+ * Legacy compat tool: TerminalCloseLegacy
  *
  * Spec ref: ATR 2.0 Final Spec §35
  *
  * Preserves the OLD contract: close a terminal session.
  *
- * Maps to: terminal.close(). Identical behavior; this is a thin alias.
+ * Maps to: TerminalClose(). Identical behavior; this is a thin alias.
  */
-@Deprecated("ATR 2.0 compat alias — use the new terminal.observe/write/signal/snapshot/close API instead. Scheduled for removal in a future version.")
+@Deprecated("ATR 2.0 compat alias — use the new TerminalObserve/write/signal/snapshot/close API instead. Scheduled for removal in a future version.")
 class LegacyCloseTool(
     private val runtime: TerminalRuntime
 ) : TerminalTool {
-    override val id: String = "terminal_close"
+    override val id: String = "TerminalCloseLegacy"
     override val name: String = id
     override val parametersSchema: String = """
         {
@@ -34,7 +34,7 @@ class LegacyCloseTool(
         }
     """.trimIndent()
     override val description: String = """
-        [COMPAT] Close a terminal session (reap child, close fd). Equivalent to terminal.close.
+        [COMPAT] Close a terminal session (reap child, close fd). Equivalent to TerminalClose.
         Kept for backward compat.
     """.trimIndent()
 

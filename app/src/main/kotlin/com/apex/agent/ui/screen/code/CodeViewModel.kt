@@ -85,8 +85,8 @@ import java.util.concurrent.atomic.AtomicLong
  * 实现已按 God-file 预算拆至同包扩展 [CodeEventReducer.kt]（模式同
  * AgentChatEventApplier）：
  * - ResponseChunk → 当前助手消息追加；
- * - ToolCallStart/Complete → 工具卡（code_edit/write 渲染 diff 摘要）；
- * - UserInputRequired → 挂起等待用户输入（ask_user）；
+ * - ToolCallStart/Complete → 工具卡（CodeEdit/write 渲染 diff 摘要）；
+ * - UserInputRequired → 挂起等待用户输入（AskUser）；
  * - Complete/Aborted/Error → 收尾 + todo 快照刷新。
  *
  * ## v1.0 会话恢复（#152）
@@ -103,7 +103,7 @@ import java.util.concurrent.atomic.AtomicLong
  *
  * - sendMessage 前经 AtRefParser 提取 `@file:line` 选区引用：引用块拼进
  *   引擎输入（用户消息 UI 展示保持原文），首个引用设为当前文件并打开面板；
- * - code_edit / code_write 成功后自动跟随被改文件（编辑器显示最新现场）；
+ * - CodeEdit / CodeWrite 成功后自动跟随被改文件（编辑器显示最新现场）；
  * - 面板数据直读工作区文件（EditorFileLoader，绕开工具输出的 8000 字符
  *   截断），行点击回填 `@file:line` 到输入草稿。
  *
@@ -167,7 +167,7 @@ class CodeViewModel @Inject constructor(
     internal val _uiState = MutableStateFlow(CodeUiState())
     val uiState: StateFlow<CodeUiState> = _uiState.asStateFlow()
 
-    /** 工具/权限门的主动提问（AgentQuestion 结构化选项；与 ask_user 的纯文本通道并存）。 */
+    /** 工具/权限门的主动提问（AgentQuestion 结构化选项；与 AskUser 的纯文本通道并存）。 */
     val pendingAgentQuestion: StateFlow<AgentQuestion?> = userQuestionBridge.pendingQuestion
 
     internal val idGen = AtomicLong(0)

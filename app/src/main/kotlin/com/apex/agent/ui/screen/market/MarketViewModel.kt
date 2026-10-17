@@ -56,13 +56,9 @@ enum class MarketTab(@StringRes val labelRes: Int) {
 }
 
 /**
- * 市场顶栏视图：
- * - [BROWSE] 市场 —— 发现与安装入口（模板 / GitHub / URL / 魔搭 / 添加表单）；
- * - [INSTALLED] 已安装管理 —— 管理已装/已加载内容（启停 / 卸载 / 连接）。
- *
- * 两个视图下均保留同一套 [MarketTab] 子导航（插件 / Skills / MCP / 连接器 / 集成），
- * 切换视图不重置子页签 —— 用户在「Skills · 市场」看完安装源，切到
- * 「已安装管理」还在 Skills 分类下，上下文不断裂。
+ * 市场顶栏视图：[BROWSE] 市场（发现与安装）/ [INSTALLED] 已安装管理（启停 / 卸载 / 连接）。
+ * 两视图共享同一套 [MarketTab] 子导航（插件 / Skills / MCP / 连接器 / 集成），切换视图
+ * 不重置子页签 —— 在「Skills · 市场」看完安装源切到「已安装管理」仍在同一分类。
  */
 enum class MarketScope(@StringRes val labelRes: Int) {
     BROWSE(R.string.market_scope_browse),
@@ -1073,10 +1069,7 @@ class MarketViewModel @Inject constructor(
         _uiState.update { it.copy(categoryFilter = category) }
     }
 
-    /**
-     * 本地技能搜索：对已安装 + 内置模板做 ToolSuggester 模糊匹配。
-     * 输入空时清空建议并显示全部。
-     */
+    /** 本地技能搜索：对已安装 + 内置模板做 ToolSuggester 模糊匹配；输入空时清空建议并显示全部。 */
     fun setSkillQuery(query: String) {
         val trimmed = query.trim()
         _uiState.update { it.copy(skillQuery = trimmed) }

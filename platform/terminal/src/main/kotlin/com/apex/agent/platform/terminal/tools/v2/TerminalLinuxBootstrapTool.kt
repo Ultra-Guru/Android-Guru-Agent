@@ -12,7 +12,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
- * T76: Agent tool — terminal.linux.bootstrap
+ * T76: Agent tool — TerminalLinuxBootstrap
  *
  * 把"刚安装的 Ubuntu rootfs"初始化为"Agent 可长期使用的完整工作环境"：
  * 检查 rootfs → 配置 sources.list → 网络诊断 → apt update → 安装基础包
@@ -34,14 +34,14 @@ import kotlinx.serialization.json.put
 class TerminalLinuxBootstrapTool(
     private val bootstrap: UbuntuBootstrapManager
 ) : TerminalTool {
-    override val id: String = "terminal.linux.bootstrap"
+    override val id: String = "TerminalLinuxBootstrap"
     override val name: String = id
     override val description: String = """
         Initialize the Ubuntu rootfs into a full Agent-usable Linux work environment:
         rootfs check → sources.list config → network check → apt-get update → install base
         packages (ca-certificates, curl, wget, git, python3, …) → READY. Idempotent
         (ALREADY_READY if done). Crash-recoverable (resumes incomplete stages). After READY,
-        the linux-ubuntu backend is ready for `terminal.create(backend="linux-ubuntu")` and
+        the linux-ubuntu backend is ready for `TerminalCreate(backend="linux-ubuntu")` and
         git/python3/curl are available inside the Ubuntu shell.
     """.trimIndent()
 

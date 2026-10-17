@@ -103,7 +103,7 @@ fun MemoryScreen(
                 title = { Text(stringResource(R.string.memory_title)) },
                 actions = {
                     IconButton(onClick = { showSearch = !showSearch }) {
-                        Icon(Icons.Default.Search, contentDescription = stringResource(R.string.memory_search_nodes))
+                        Icon(Icons.Default.Search, contentDescription = stringResource(R.string.MemorySearchNodes))
                     }
                 }
             )
@@ -210,7 +210,7 @@ fun MemoryScreen(
                 )
 
                 // 近期 Episode
-                SectionTitle(stringResource(R.string.memory_recent_episodes))
+                SectionTitle(stringResource(R.string.MemoryRecentEpisodes))
                 if (episodes.isEmpty()) {
                     EmptyHint(stringResource(R.string.memory_empty_episodes))
                 } else {

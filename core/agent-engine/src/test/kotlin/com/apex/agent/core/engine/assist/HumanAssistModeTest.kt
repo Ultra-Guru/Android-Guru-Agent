@@ -23,7 +23,7 @@ import org.junit.Test
 
 /**
  * #168 引擎级 HUMAN_ASSIST 测试 —— 模型写了「方案A…方案B…」对比文本但没调
- * ask_user_choice 时，引擎自动拦截转人工决策闭环。
+ * AskUserChoice 时，引擎自动拦截转人工决策闭环。
  *
  * 时序要点（同 PlanModeHumanControlTest）：引擎**先 emit
  * UserInputRequired 再挂起 awaitUserInput**，事件驱动提交必须让出一拍
@@ -31,7 +31,7 @@ import org.junit.Test
  */
 class HumanAssistModeTest {
 
-    /** 第 1 轮：模型摆出方案对比但没调 ask_user_choice（提示词没管住的现实场景）。 */
+    /** 第 1 轮：模型摆出方案对比但没调 AskUserChoice（提示词没管住的现实场景）。 */
     private val decisionText = """
         我发现有两种处理方式：
         方案A：直接删除整个目录再重建，最快但会丢自定义配置。

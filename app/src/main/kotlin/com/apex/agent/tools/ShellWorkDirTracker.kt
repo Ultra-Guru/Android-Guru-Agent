@@ -3,14 +3,14 @@ package com.apex.agent.tools
 import java.io.File
 
 /**
- * `shell_execute` 工作目录记忆（兑现 ShellExecuteTool 描述里"cd 后续命令保持同目录"的承诺）。
+ * `ShellExecute` 工作目录记忆（兑现 ShellExecuteTool 描述里"cd 后续命令保持同目录"的承诺）。
  *
  * ## 语义（诚实、可解释的静态解析）
  *
  * 每条命令执行成功后，检查其**最后一个简单段**是否为 `cd <dir>`（按 `;` `&&` `||` `|`
  * 分段取末段；shell 包装/引号拼接等无法静态可靠解析的不做）。是 → 把 `<dir>`
  * 相对当前记录目录解析为绝对路径（须真实存在且为目录）并记录；后续
- * `shell_execute` 以它为起始工作目录执行（Root 通道 `su -c "cd dir && cmd"`、
+ * `ShellExecute` 以它为起始工作目录执行（Root 通道 `su -c "cd dir && cmd"`、
  * 普通通道 ProcessBuilder.directory、Shizuku 通道 AIDL dir 参数）。
  *
  * ## 边界（同样诚实）
@@ -19,7 +19,7 @@ import java.io.File
  * - cd 失败（目录不存在）→ 目录无效不记录，且 cd 失败时 && 后的命令不会执行，
  *   结果会如实返回非零退出码
  * - 记录是 app 进程级的（单例 registry 生命周期），重启后回到默认目录
- * - 交互式 PTY 终端（terminal.run/terminal.create）不受影响 —— PTY 会话里
+ * - 交互式 PTY 终端（TerminalRun/TerminalCreate）不受影响 —— PTY 会话里
  *   shell 自己维护 cd 状态，无需本跟踪器
  *
  * 设计参考：Termux 的 cwd 由每个 session 的 chdir 语义天然持有；这里为无状态

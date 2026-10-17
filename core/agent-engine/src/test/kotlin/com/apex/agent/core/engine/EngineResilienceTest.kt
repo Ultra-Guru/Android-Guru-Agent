@@ -121,7 +121,7 @@ class EngineResilienceTest {
     @Test
     fun `transient tool failure is retried, permission failure is not`() {
         val g = guard()
-        val transient = g.onToolFailure("web_fetch", "c1", "socket timeout", attempt = 1)
+        val transient = g.onToolFailure("WebFetch", "c1", "socket timeout", attempt = 1)
         assertTrue(transient is RetryPolicy.RetryDecision.Retry)
 
         val permission = g.onToolFailure("fs_write", "c2", "permission denied", attempt = 1)
@@ -146,14 +146,14 @@ class EngineResilienceTest {
     @Test
     fun `three consecutive tool failures inject recovery prompt`() {
         val g = guard() // threshold = 3
-        assertNull(g.onToolCallOutcome("web_fetch", success = false))
-        assertNull(g.onToolCallOutcome("web_fetch", success = false))
-        val prompt = g.onToolCallOutcome("web_fetch", success = false)
+        assertNull(g.onToolCallOutcome("WebFetch", success = false))
+        assertNull(g.onToolCallOutcome("WebFetch", success = false))
+        val prompt = g.onToolCallOutcome("WebFetch", success = false)
         assertNotNull(prompt)
         assertTrue(prompt!!.contains("[ENGINE RECOVERY"))
         assertTrue(prompt.contains("different tool"))
         // 注入后连败计数清零：再一次失败不再立即触发
-        assertNull(g.onToolCallOutcome("web_fetch", success = false))
+        assertNull(g.onToolCallOutcome("WebFetch", success = false))
     }
 
     @Test

@@ -36,7 +36,7 @@ class ToolAuditLogger @Inject constructor(
 
     /** 一次审计事件（字段对齐审计文档的最小 key 集 + 若干扩展）。 */
     data class Event(
-        /** 工具 id（如 shell_execute / terminal.exec / write_file / <gate>）。 */
+        /** 工具 id（如 ShellExecute / TerminalExec / Write / <gate>）。 */
         val tool: String,
         /** 用户可见的决策结果（allow / deny / allow_session / allow_once / executed / failed / denied_by_user …）。 */
         val decision: String,

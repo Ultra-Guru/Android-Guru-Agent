@@ -32,10 +32,10 @@ data class McpHostConfig(
     /**
      * 工具黑名单：分类放行后仍强制禁用的工具 id（安全默认——
      * 剪贴板写入 / 内容分享等高敏副作用工具即使所在分类被放行也不暴露）。
-     * `share_content` 为未来共享工具预留的防御性条目。
+     * `ShareContent` 为未来共享工具预留的防御性条目。
      */
     val blockedToolIds: List<String> = listOf(
-        "vault_save", "vault_paste", "vault_delete", "vault_list", "share_content"
+        "VaultSave", "VaultPaste", "VaultDelete", "VaultList", "ShareContent"
     ),
     /** 每远程地址每分钟请求上限（令牌桶限速）。 */
     val rateLimitPerMinute: Int = 60
