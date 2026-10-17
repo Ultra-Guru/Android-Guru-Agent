@@ -1129,7 +1129,7 @@ object ToolModule {
         hookRegistry: HookRegistry,
         secretRedactor: SecretRedactor
     ): ToolExecutor {
-        // Issue #230 收尾（防双弹窗）：StandardModeEngine 自带业界标准式权限门
+        // Issue #230 收尾（防双弹窗）：标准线引擎（standard-loop 库）自带业界标准式权限门
         //（规则 → 会话记忆 → 模式兜底 → ASK 弹窗，见 executeOneToolCall）。
         // #230 起 executeStream 也会咨询执行器门控 —— 标准线若共用主执行器
         //（PermissionAwareToolGate 组合门），同一动作会被问两次。这里给

@@ -713,7 +713,8 @@ class StreamingOpenAiClient(
                 images = images,
                 videos = videos,
                 usage = usage,
-                isFinish = finishReason == "stop" || finishReason == "tool_calls"
+                isFinish = finishReason == "stop" || finishReason == "tool_calls",
+                finishReason = finishReason
             )
         } catch (e: Exception) {
             // ═══ 可观测性修复：不再无声丢弃 ═══

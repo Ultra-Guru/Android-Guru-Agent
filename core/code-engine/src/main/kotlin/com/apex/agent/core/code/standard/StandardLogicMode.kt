@@ -14,16 +14,17 @@ package com.apex.agent.core.code.standard
  *   模式兜底 + 规则 + 会话记忆）、隔离上下文子代理委派、上下文压缩、
  *   工具面（read/write/edit/bash/glob/grep/todo/task）映射到既有注册表
  *   （code_* / ShellExecute / git / web / skill / mcp__*）。
- *   由 [StandardModeEngine] 独立实现，不重写、不影响深潜引擎。
+ *   由独立库模块实现（com.apex.standardkit:standard-loop，经
+ *   [StandardKitAdapter] 接线），不重写、不影响深潜引擎。
  *
  * ## 两引擎的关系
  *
  * | 维度 | 深潜 | 标准 |
  * |---|---|---|
- * | 循环宿主 | ApexAgentEngine BUILD/PLAN | StandardModeEngine 自有回合循环 |
+ * | 循环宿主 | ApexAgentEngine BUILD/PLAN | standard-loop 库自有回合循环 |
  * | 思考深度 | 七档 + AUTO 自适应 | 画像自带预算（档位映射为回合预算倍率） |
  * | 工具调用 | v4 渐进披露 + 风险门 | 标准权限门 + 会话记忆 + 命令通配 |
- * | 子代理 | CodeTask → SubAgentRunner | task → StandardSubAgentDispatcher（同构子引擎） |
+ * | 子代理 | CodeTask → SubAgentRunner | task → 库内派发器（同构子引擎） |
  * | 会话记忆 | code_memory（共享通道） | code_memory_standard（独立通道，互不污染） |
  * | 事件协议 | AgentEvent | AgentEvent（同一协议，胶囊时间轴零改动） |
  *

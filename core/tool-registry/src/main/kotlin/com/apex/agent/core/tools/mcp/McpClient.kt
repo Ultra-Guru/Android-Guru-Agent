@@ -89,6 +89,14 @@ class McpClient(
     private var serverCapabilities: McpCapabilities? = null
 
     /**
+     * initialize 响应的 `instructions` 字段（服务器自述使用指引；
+     * null = 未上报）。引擎把它注入系统提示词（MCP 使用逻辑增强）。
+     */
+    @Volatile
+    var serverInstructions: String? = null
+        private set
+
+    /**
      * 传输句柄：把"远端 HTTP 端点"与"本地子进程"统一成一条 send/close 管道。
      *
      * 惰性构建 —— STDIO 会真的 fork 一个进程，配置阶段（仅落盘）不该触发。
@@ -233,6 +241,13 @@ class McpClient(
                 prompts = capabilities?.containsKey("prompts") ?: false
             )
             initialized = true
+
+            // MCP 规范的 initialize 响应可携带 `instructions` 字段（服务器
+            // 自述的使用指引）——旧实现丢弃。标准任务循环引擎把它注入系统
+            // 提示词（<mcp_instructions>，仅当该服务器工具在当前工具面上），
+            // 模型拿到官方指引后对 MCP 工具的调用准确率显著提升。
+            serverInstructions = result?.get("instructions")?.jsonPrimitive?.contentOrNull
+                ?.takeIf { it.isNotBlank() }
 
             // #197 真实事件：initialize 响应到达 —— serverInfo 是服务器自报的
             // 真实身份（名称/版本），capabilities 是它真实宣告的能力面。

@@ -18,7 +18,9 @@ import kotlinx.coroutines.flow.Flow
  *
  * ```
  * CodeViewModel ──► DualLogicCodeEngine ──┬──► CodeAgentEngine（深潜线）
- *              （右上角切换）                └──► StandardModeEngine（标准线）
+ *              （右上角切换）                └──► StandardKitAdapter（标准线）
+ *                                              └─► standard-loop 库内核
+ *                                                  （com.apex.standardkit:standard-loop）
  * ```
  *
  * ## 路由规则

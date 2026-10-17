@@ -1,4 +1,6 @@
-package com.apex.agent.core.code.standard
+package com.apex.agent.core.code
+
+import com.apex.standardkit.loop.KitSession
 
 /**
  * # Standard Text Kernel — 标准引擎的文本加速核（可选 SPI）
@@ -63,7 +65,8 @@ interface StandardTextKernel {
     object PureKotlin : StandardTextKernel {
 
         override fun estimateTokens(text: String): Int =
-            StandardSession.defaultTokenEstimator(text)
+            // 估算公式随标准任务循环迁入库（KitSession 同名伴生函数，公式不变）
+            KitSession.defaultTokenEstimator(text)
 
         override fun diffStat(oldText: String, newText: String): LineDiffStat {
             val oldLines = oldText.lineSequence().toList()
