@@ -54,7 +54,7 @@ enum class PermissionEffect {
 /**
  * 单条权限规则：模式 + 效应。
  *
- * @param pattern 工具 id 模式——精确 id（如 code_edit），或前缀后接单个
+ * @param pattern 工具 id 模式——精确 id（如 CodeEdit），或前缀后接单个
  *   星号字符的尾缀通配（如 code_git_ 尾星、mcp__ 尾星）；单独一个星号
  *   字符匹配一切工具。完整匹配规则见 [PermissionRuleMatcher]。
  * @param effect 命中后的处置动作。

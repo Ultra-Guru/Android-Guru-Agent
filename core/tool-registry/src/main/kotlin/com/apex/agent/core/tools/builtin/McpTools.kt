@@ -19,12 +19,12 @@ class McpCallTool(
     private val mcpManager: McpManager
 ) : AgentTool {
 
-    override val id = "mcp_call"
+    override val id = "McpCall"
     override val name = "Call MCP Tool"
     override val description = """
         Call a tool provided by a connected MCP server.
         MCP servers extend your capabilities with external tools.
-        Use mcp_list to see available servers and tools.
+        Use McpList to see available servers and tools.
 
         Examples:
         - {"server": "github", "tool": "create_issue", "arguments": "{\"title\": \"Bug fix\", \"repo\": \"user/repo\"}"}
@@ -61,7 +61,7 @@ class McpCallTool(
             },
             onFailure = { e ->
                 "Error: MCP tool '$server/$tool' failed: ${e.message ?: "unknown error"}. " +
-                    "If the server disconnected, call mcp_connect('$server') once and retry.\n" +
+                    "If the server disconnected, call McpConnect('$server') once and retry.\n" +
                     FALLBACK_GUIDANCE
             }
         )
@@ -72,7 +72,7 @@ class McpCallTool(
         private const val FALLBACK_GUIDANCE =
             "[FALLBACK] This MCP tool is currently unavailable. The task is NOT aborted - " +
                 "continue with a different approach: (a) use a built-in tool covering the " +
-                "same need, (b) use another connected MCP server (mcp_list), or (c) complete " +
+                "same need, (b) use another connected MCP server (McpList), or (c) complete " +
                 "the step manually and state the limitation. Do not repeat this identical call."
     }
 }
@@ -84,7 +84,7 @@ class McpListTool(
     private val mcpManager: McpManager
 ) : AgentTool {
 
-    override val id = "mcp_list"
+    override val id = "McpList"
     override val name = "List MCP Servers"
     override val description = """
         List connected MCP servers and their available tools.
@@ -98,7 +98,7 @@ class McpListTool(
     override suspend fun execute(arguments: String): String {
         val servers = mcpManager.getConnectedServers()
         if (servers.isEmpty()) {
-            return "No MCP servers connected. Use mcp_connect to connect one."
+            return "No MCP servers connected. Use McpConnect to connect one."
         }
 
         // v3：随清单展示服务器级工位作用域（模型可见，不做过滤——引擎
@@ -134,10 +134,10 @@ class McpConnectTool(
     private val mcpManager: McpManager
 ) : AgentTool {
 
-    override val id = "mcp_connect"
+    override val id = "McpConnect"
     override val name = "Connect MCP Server"
     override val description = """
-        Connect to an MCP tool source. Once connected, its tools become available via mcp_call.
+        Connect to an MCP tool source. Once connected, its tools become available via McpCall.
 
         MCP is NOT always a server: the most common form in the wild is a LOCAL COMMAND
         (stdio transport) that speaks JSON-RPC over stdin/stdout. Give `command` for that
@@ -171,8 +171,10 @@ class McpConnectTool(
         val url = json["url"]?.jsonPrimitive?.content.orEmpty()
         val command = json["command"]?.jsonPrimitive?.content.orEmpty()
         val rawTransport = json["transport"]?.jsonPrimitive?.content.orEmpty()
-        // Issue #163：严格 Boolean（缺失/非布尔落 false，与配置导入的宽容度一致）
-        val runInSandbox = json["run_in_sandbox"]?.jsonPrimitive?.booleanOrNull ?: false
+        // Issue #163 + v5 修复：严格 Boolean（缺失/非布尔落默认值）。
+        // 默认改为 true —— Android 宿主没有 node/npx，宿主 fork 只会得到
+        // ENOENT；显式传 false 才走宿主（桌面/自备运行时的场景）。
+        val runInSandbox = json["run_in_sandbox"]?.jsonPrimitive?.booleanOrNull ?: true
 
         val args = json["args"]?.jsonArray?.mapNotNull {
             runCatching { it.jsonPrimitive.content }.getOrNull()
@@ -192,7 +194,7 @@ class McpConnectTool(
             is McpConnectConfigOutcome.Ok -> outcome.config
         }
 
-        // P3 修复（同名覆盖）：UI 添加路径有重名预检，模型经 mcp_connect 添加
+        // P3 修复（同名覆盖）：UI 添加路径有重名预检，模型经 McpConnect 添加
         // 同名服务器却会静默覆盖用户已有配置（command/env/headers 被改写）。
         // 现在如实拒绝并引导换名 —— 用户配置不可被模型无声劫持。
         if (mcpManager.getConfigs().any { it.name == config.name }) {
@@ -223,7 +225,7 @@ class McpConnectTool(
                     appendLine("    Tools: ${if (caps.tools) "✅" else "❌"}")
                     appendLine("    Resources: ${if (caps.resources) "✅" else "❌"}")
                     appendLine()
-                    appendLine("Use mcp_list to see available tools.")
+                    appendLine("Use McpList to see available tools.")
                 }
             },
             onFailure = { e -> "❌ Connection failed: ${e.message}" }
@@ -238,7 +240,7 @@ internal sealed interface McpConnectConfigOutcome {
 }
 
 /**
- * mcp_connect 的「参数 → McpServerConfig」纯函数（Issue #163 抽出）。
+ * McpConnect 的「参数 → McpServerConfig」纯函数（Issue #163 抽出）。
  *
  * 传输判定与校验语义与抽取前完全一致（显式 transport > command → stdio >
  * url → http/sse；stdio 要求 command 非空，远端要求 url 非空），只是把

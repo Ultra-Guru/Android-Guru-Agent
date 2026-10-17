@@ -108,8 +108,8 @@ class SkillCategoryTest {
             manifestJson("b", "AGENT")         // 旧值 → null
         )
         val digests = registry.getSkillDigests().associateBy { it.id }
-        assertEquals("career", digests["a"]?.category)
-        assertEquals(null, digests["b"]?.category)
+        assertEquals("career", digests["A"]?.category)
+        assertEquals(null, digests["B"]?.category)
     }
 
     @Test

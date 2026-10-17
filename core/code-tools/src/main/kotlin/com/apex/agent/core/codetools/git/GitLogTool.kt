@@ -8,7 +8,7 @@ import com.apex.agent.core.tools.builtin.BaseTool
 import com.apex.agent.core.tools.toolSchema
 
 /**
- * # code_git_log — 提交历史（经 PRoot Ubuntu 沙箱执行）
+ * # CodeGitLog — 提交历史（经 PRoot Ubuntu 沙箱执行）
  *
  * `git log --oneline --date=short --pretty=format:%h %ad %s -n <limit> [-- path]`
  * 的直通渲染：每行「短哈希 日期 主题」，limit 默认 10（1-50 钳制），可选
@@ -19,7 +19,7 @@ import com.apex.agent.core.tools.toolSchema
 class GitLogTool(
     private val runner: GitCommandRunner
 ) : BaseTool(
-    id = "code_git_log",
+    id = "CodeGitLog",
     name = "Code Git Log",
     description = """
         Show recent commits of the active workspace, one per line:

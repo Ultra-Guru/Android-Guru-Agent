@@ -36,9 +36,9 @@ import com.apex.agent.platform.terminal.screen.VirtualTerminal
 import com.apex.agent.platform.terminal.session.SessionManagerImpl
 import com.apex.agent.platform.terminal.session.SessionState
 import com.apex.agent.platform.terminal.state.TerminalSemanticState
-import com.apex.agent.platform.terminal.wait.WaitCondition
-import com.apex.agent.platform.terminal.wait.WaitEngineImpl
-import com.apex.agent.platform.terminal.wait.WaitResult
+import com.apex.agent.platform.TerminalWait.WaitCondition
+import com.apex.agent.platform.TerminalWait.WaitEngineImpl
+import com.apex.agent.platform.TerminalWait.WaitResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -228,7 +228,7 @@ class TerminalRuntimeImpl(
             return Result.failure(
                 IllegalArgumentException(
                     "TerminalError:InvalidInput — workspaceId 仅支持 LINUX 后端" +
-                        "（当前 backend='${backend.id}'）。workspace 管理见 terminal.workspaces。"
+                        "（当前 backend='${backend.id}'）。workspace 管理见 TerminalWorkspaces。"
                 )
             )
         }
@@ -237,7 +237,7 @@ class TerminalRuntimeImpl(
             is BackendAvailability.NeedsRootfs -> return Result.failure(
                 RuntimeException(
                     "TerminalError:RootfsNotReady — backend '${backend.id}' 需要 Ubuntu rootfs" +
-                        "（state=${av.state}）。先用 terminal.ubuntu.install 离线解包内置 rootfs，再重试 create。"
+                        "（state=${av.state}）。先用 TerminalUbuntuInstall 离线解包内置 rootfs，再重试 create。"
                 )
             )
             is BackendAvailability.Failed -> return Result.failure(
@@ -311,7 +311,7 @@ class TerminalRuntimeImpl(
                 is BackendAvailability.NeedsRootfs -> TerminalRuntime.BackendStatus(
                     id = b.id, runtimeType = b.runtimeType.name,
                     available = false, state = "NEEDS_ROOTFS:${av.state}",
-                    detail = "Ubuntu rootfs 未就绪 —— 调用 terminal.ubuntu.install 解包内置档案后重试（离线，完整环境约 2~5 分钟）"
+                    detail = "Ubuntu rootfs 未就绪 —— 调用 TerminalUbuntuInstall 解包内置档案后重试（离线，完整环境约 2~5 分钟）"
                 )
                 is BackendAvailability.Failed -> TerminalRuntime.BackendStatus(
                     id = b.id, runtimeType = b.runtimeType.name,

@@ -61,7 +61,7 @@ import kotlinx.serialization.json.jsonPrimitive
  *   final text turn ([AgentConfig.reflectionRounds] rounds), emitting
  *   [AgentEvent.ReflectionReview] between passes.
  * - [AgentMode.HUMAN_ASSIST]: Build loop with a system prompt that mandates
- *   ask_user_choice whenever multiple options exist (human-in-the-loop).
+ *   AskUserChoice whenever multiple options exist (human-in-the-loop).
  * - [AgentMode.CUSTOM]: Build loop with a user-supplied custom instruction
  *   appended to the system prompt.
  *
@@ -111,7 +111,7 @@ class ApexAgentEngine(
      */
     modelRuntime: ModelRuntime? = null,
     /**
-     * Tool System v4 — 会话工具激活存储（tool_open 激活的工具进入下一轮请求）。
+     * Tool System v4 — 会话工具激活存储（ToolOpen 激活的工具进入下一轮请求）。
      *
      * 为空时引擎自建实例（单引擎场景等价）；DI 注入与 McpToolRegistrar /
      * 编排器共享同一实例。任务开始时 [execute] 会 reset（激活不跨会话泄漏）。
@@ -130,7 +130,7 @@ class ApexAgentEngine(
     /**
      * 技能会话激活存储（技能渐进披露）。非空时：系统提示词携带
      * 「Skill Catalog」目录段，且 skillPrompts 只注入已激活技能的方法论
-     * 全文（SkillRegistry.getActivePromptInjections）；模型经 skill_activate
+     * 全文（SkillRegistry.getActivePromptInjections）；模型经 SkillActivate
      * 工具装载。为空时回退 legacy 行为（全部启用技能全量注入），
      * 既有单测与子代理零改动兼容。
      */
@@ -963,7 +963,7 @@ class ApexAgentEngine(
                     )
 
                     for (toolCall in toolCalls) {
-                        // ask_user 工具：暂停执行，等待用户输入（流程拆至 EngineAskUserFlow.kt）
+                        // AskUser 工具：暂停执行，等待用户输入（流程拆至 EngineAskUserFlow.kt）
                         if (handleAskUserToolCall(toolCall, emit)) continue
                         executeToolCallStreaming(toolCall, emit)
                     }
@@ -974,7 +974,7 @@ class ApexAgentEngine(
 
                 contentBuilder.isNotEmpty() -> {
                     // ═══ #168 HUMAN_ASSIST 模式：决策点后置检测 ═══
-                    // 模型常不调 ask_user_choice 直接写对比文本 —— 检出 → 挂起等选择
+                    // 模型常不调 AskUserChoice 直接写对比文本 —— 检出 → 挂起等选择
                     // → 回填 continue；无/超时 → null 照常收尾（不丢回复）。
                     // 规则见 assist/DecisionPointDetector.kt；流程见 assist/HumanAssistFlow.kt。
                     if (config.mode == AgentMode.HUMAN_ASSIST) {
@@ -1102,7 +1102,7 @@ class ApexAgentEngine(
      * P0 修复（会话级报废根因）：发送前修补悬空 tool_call 历史。
      *
      * 引擎在 `addMessage(Assistant(toolCalls))` 后、ToolResult 补齐前被中断
-     * （cancel/进程被杀/ask_user 等待中退出）→ 历史末尾留下无配对 tool_calls
+     * （cancel/进程被杀/AskUser 等待中退出）→ 历史末尾留下无配对 tool_calls
      * → OpenAI 兼容端点对后续每次请求都 400，会话级报废。现每次构建请求前
      * 幂等修补（[DanglingToolCallRepair]）：无悬空零开销，有则改写内存历史
      * 并持久化。diag-20261011：修复器升级为全面归一化（分离应答回迁/孤儿

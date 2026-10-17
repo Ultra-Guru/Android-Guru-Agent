@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
  * 不认识复合命令，多选后逐 chip 路由、合并 agentPrompt 单轮执行。
  */
 internal fun AgentChatViewModel.handleSlashCommand(command: String) {
-    // mcpConnected 快照：路由器据此对已连接的 /mcp:<id> 注入「用 mcp_call 调
+    // mcpConnected 快照：路由器据此对已连接的 /mcp:<id> 注入「用 McpCall 调
     // server=<id>」引导提示词（旧实现恒空集，模型面对 MCP 指令只能瞎猜）。
     val result = SlashCommands.handle(
         command,

@@ -17,7 +17,7 @@ import org.junit.Test
  * routes via `tool is StreamingAgentTool`. If [SafeAgentTool] only implemented
  * [AgentTool], the wrapper would hide a delegate's streaming capability and the
  * executor would fall back to the blocking path — silently killing streaming
- * for every tool, including `shell_execute`.
+ * for every tool, including `ShellExecute`.
  *
  * These tests prove:
  * - `SafeAgentTool(StreamingAgentTool)` is itself a [StreamingAgentTool].

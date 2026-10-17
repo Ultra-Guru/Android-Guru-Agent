@@ -20,7 +20,7 @@ import kotlin.math.floor
 /**
  * `random` — 随机/UUID 六合一工具（#171 四族合并）。
  *
- * 合并自 `uuid_generate`（v4/v7）与 `random_generate`（int/float/string/pick）
+ * 合并自 `UuidGenerateLegacy`（v4/v7）与 `RandomGenerateLegacy`（int/float/string/pick）
  * （#171）。旧工具保留注册；旧 id 进 LEGACY_ALIAS_IDS 不再下发。
  *
  * Why: 模型不能"掷骰子"——让它编随机数/UUID，得到的都是有模式的伪随机
@@ -41,7 +41,7 @@ import kotlin.math.floor
  * `java.util.Random(seed)` 以保证可复现（测试 fixture / 可重放演示）。
  */
 class RandomTool : BaseTool(
-    id = "random",
+    id = "Random",
     name = "Random Toolkit",
     description = """
         Random values from real entropy + UUID generation, one schema.
@@ -108,7 +108,7 @@ class RandomTool : BaseTool(
         }
     }
 
-    // ── UUID（移植自 uuid_generate：v4 SecureRandom / v7 时间前缀）────────
+    // ── UUID（移植自 UuidGenerateLegacy：v4 SecureRandom / v7 时间前缀）────────
 
     private fun generateUuids(args: ToolArguments, version: String, count: Int): ToolResult {
         val uppercase = args.booleanWithDefault("uppercase", false)
@@ -151,7 +151,7 @@ class RandomTool : BaseTool(
         return UUID(msb, lsb)
     }
 
-    // ── 数值 / 字符串 / 抽取（移植自 random_generate）──────────────────
+    // ── 数值 / 字符串 / 抽取（移植自 RandomGenerateLegacy）──────────────────
 
     private fun rng(args: ToolArguments): Random {
         val seed = args.optionalInt("seed")

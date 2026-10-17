@@ -18,7 +18,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * `tool_batch_run` — execute a sequential tool batch with first-error-stop.
+ * `ToolBatchRun` — execute a sequential tool batch with first-error-stop.
  *
  * Exposes the v3 [ToolBatchRunner] to the model. When the plan is known
  * up front ("read the file, hash it, write the report"), a batch finishes
@@ -39,7 +39,7 @@ import kotlinx.serialization.json.jsonPrimitive
 class ToolBatchRunTool(
     private val executor: ToolExecutor
 ) : BaseTool(
-    id = "tool_batch_run",
+    id = "ToolBatchRun",
     name = "Run Tool Batch",
     description = """
         Execute up to 16 tool calls as one sequential batch: strictly in
@@ -53,9 +53,9 @@ class ToolBatchRunTool(
 
         Example:
         {"steps": [
-          {"tool": "read_file", "arguments": "{\"path\": \"a.txt\"}"},
-          {"tool": "file_hash", "arguments": "{\"content\": \"{0}\", \"algorithm\": \"sha256\"}"},
-          {"tool": "write_file", "arguments": "{\"path\": \"out.txt\", \"content\": \"hash={1}\"}"}
+          {"tool": "Read", "arguments": "{\"path\": \"a.txt\"}"},
+          {"tool": "FileHash", "arguments": "{\"content\": \"{0}\", \"algorithm\": \"sha256\"}"},
+          {"tool": "Write", "arguments": "{\"path\": \"out.txt\", \"content\": \"hash={1}\"}"}
         ]}
         Step 1 pipes step 0's output via {0}; step 2 pipes step 1's via {1}.
     """.trimIndent(),
@@ -137,10 +137,10 @@ class ToolBatchRunTool(
 }
 
 /**
- * `shortcut_define` — register a composite action (Mobile-Agent-E
+ * `ShortcutDefine` — register a composite action (Mobile-Agent-E
  * self-evolution entry point).
  *
- * The model observes its own successful sequences (see `shortcut_list`
+ * The model observes its own successful sequences (see `ShortcutList`
  * suggestions) and promotes them: a definition names the shortcut, pins
  * its precondition, declares parameters, and maps them into per-step
  * argument templates. After a successful define, the host re-registers
@@ -156,7 +156,7 @@ class ShortcutDefineTool(
     private val toolRegistry: com.apex.agent.core.tools.ToolRegistry,
     private val executor: ToolExecutor
 ) : BaseTool(
-    id = "shortcut_define",
+    id = "ShortcutDefine",
     name = "Define Shortcut",
     description = """
         Register a composite tool (a named sequence of existing tools) to
@@ -168,7 +168,7 @@ class ShortcutDefineTool(
         {"id": "shortcut.save_search", "name": "Save search",
          "description": "…", "precondition": "network up",
          "params": [{"name": "query", "type": "string", "required": true}],
-         "steps": [{"tool": "web_search",
+         "steps": [{"tool": "WebSearch",
                     "arguments": "{\"query\": \"{query}\"}"}]}
 
         Rules: id must match shortcut.<a-z0-9_>; 1-8 steps, each tool must
@@ -242,25 +242,25 @@ class ShortcutDefineTool(
 }
 
 /**
- * `shortcut_list` — inventory + mining suggestions.
+ * `ShortcutList` — inventory + mining suggestions.
  *
  * Two views in one call:
  * - `installed`: the shortcut registry's current definitions (id, steps,
  *   params) so the model knows what it can already collapse to;
  * - `suggestions`: bigram mining over the recent tool trace (ShortcutSuggester)
  *   — sequences the model itself executed ≥ N times, with a ready-to-edit
- *   definition skeleton for `shortcut_define`.
+ *   definition skeleton for `ShortcutDefine`.
  */
 class ShortcutListTool(
     private val shortcutRegistry: com.apex.agent.core.tools.ShortcutRegistry,
     private val traceRecorder: com.apex.agent.core.tools.ToolTraceRecorder?
 ) : BaseTool(
-    id = "shortcut_list",
+    id = "ShortcutList",
     name = "List Shortcuts",
     description = """
         List installed composite shortcuts (id, steps, params) and mining
         suggestions: tool sequences you executed 3+ times recently, each
-        with a definition skeleton ready for shortcut_define.
+        with a definition skeleton ready for ShortcutDefine.
 
         Examples:
         - {} - both views
@@ -331,14 +331,14 @@ class ShortcutListTool(
                 append(" → ").append(suggestion.secondToolId)
                 append(" (").append(suggestion.count).appendLine(" times)")
             }
-            appendLine("skeleton for the top suggestion (edit then shortcut_define):")
+            appendLine("skeleton for the top suggestion (edit then ShortcutDefine):")
             append(suggestions.first().toDefinitionSkeleton())
         }.trim()
     }
 }
 
 /**
- * `shortcut_run` — execute a stored shortcut by id (fallback path).
+ * `ShortcutRun` — execute a stored shortcut by id (fallback path).
  *
  * When the host did not hot-register the compiled tool (or the model
  * prefers explicit indirection), this tool runs a definition straight
@@ -350,7 +350,7 @@ class ShortcutRunTool(
     private val executor: ToolExecutor,
     private val toolRegistry: com.apex.agent.core.tools.ToolRegistry
 ) : BaseTool(
-    id = "shortcut_run",
+    id = "ShortcutRun",
     name = "Run Shortcut",
     description = """
         Run a previously defined composite shortcut by id with its declared
@@ -387,7 +387,7 @@ class ShortcutRunTool(
         val definition = shortcutRegistry.find(shortcutId)
             ?: return ToolResult.fail(
                 ToolErrorCode.NOT_FOUND,
-                "shortcut '$shortcutId' is not defined; use shortcut_list to see what exists"
+                "shortcut '$shortcutId' is not defined; use ShortcutList to see what exists"
             )
 
         // Execute through a compiled tool so substitution + risk handling

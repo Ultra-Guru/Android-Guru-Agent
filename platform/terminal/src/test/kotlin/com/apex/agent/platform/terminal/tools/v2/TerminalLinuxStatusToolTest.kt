@@ -20,21 +20,21 @@ class TerminalLinuxStatusToolTest {
     @Test fun `tool id is terminal linux status`() {
         // 用 null-safe 方式构造 —— health 参数在 invoke 时才用到，测试只查元数据
         // （构造一个 throwaway health 不现实；改为验证 TerminalLinuxStatusTool 的常量契约）
-        assertEquals("terminal.linux.status", "terminal.linux.status")
+        assertEquals("TerminalLinuxStatus", "TerminalLinuxStatus")
     }
 
     @Test fun `tool id constant matches spec`() {
         // T76 §20 规定的 4 个 terminal.linux.* 工具 id
         val expectedIds = setOf(
-            "terminal.linux.status",
-            "terminal.linux.bootstrap",
-            "terminal.linux.network",
-            "terminal.linux.packages"
+            "TerminalLinuxStatus",
+            "TerminalLinuxBootstrap",
+            "TerminalLinuxNetwork",
+            "TerminalLinuxPackages"
         )
-        assertTrue(expectedIds.contains("terminal.linux.status"))
-        assertTrue(expectedIds.contains("terminal.linux.bootstrap"))
-        assertTrue(expectedIds.contains("terminal.linux.network"))
-        assertTrue(expectedIds.contains("terminal.linux.packages"))
+        assertTrue(expectedIds.contains("TerminalLinuxStatus"))
+        assertTrue(expectedIds.contains("TerminalLinuxBootstrap"))
+        assertTrue(expectedIds.contains("TerminalLinuxNetwork"))
+        assertTrue(expectedIds.contains("TerminalLinuxPackages"))
         assertEquals(4, expectedIds.size)
     }
 

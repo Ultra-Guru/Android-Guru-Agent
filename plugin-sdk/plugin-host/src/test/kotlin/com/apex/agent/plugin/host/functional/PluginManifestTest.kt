@@ -38,8 +38,8 @@ class PluginManifestTest {
               "description": "生成今日简报",
               "parametersSchema": "{\"type\":\"object\",\"properties\":{\"site\":{\"type\":\"string\"}}}",
               "steps": [
-                {"tool": "browser_navigate", "args": {"url": "{{input.site}}"}, "output": "page"},
-                {"tool": "browser_extract_content", "output": "body"}
+                {"tool": "BrowserNavigate", "args": {"url": "{{input.site}}"}, "output": "page"},
+                {"tool": "BrowserExtractContent", "output": "body"}
               ]
             }],
             "slashCommands": [{
@@ -69,7 +69,7 @@ class PluginManifestTest {
         assertEquals(listOf("productivity", "report"), manifest.tags)
         assertEquals("briefing/run", manifest.contributions.tools.single().id)
         assertEquals(2, manifest.contributions.tools.single().steps.size)
-        assertEquals("browser_navigate", manifest.contributions.tools.single().steps[0].tool)
+        assertEquals("BrowserNavigate", manifest.contributions.tools.single().steps[0].tool)
         assertEquals("{{input.site}}", manifest.contributions.tools.single().steps[0].args!!["url"]!!.jsonPrimitive.content)
         assertEquals("page", manifest.contributions.tools.single().steps[0].output)
         assertEquals("briefing", manifest.contributions.slashCommands.single().id)

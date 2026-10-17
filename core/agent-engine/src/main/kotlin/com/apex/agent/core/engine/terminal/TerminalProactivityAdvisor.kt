@@ -3,20 +3,20 @@ package com.apex.agent.core.engine.terminal
 /**
  * #170 终端主动性顾问 —— 会话编排与 Ubuntu 预备的轮次级建议注入。
  *
- * 用户反馈：Agent 不会主动用终端 —— 倾向一次性 shell（shell_execute /
- * terminal.exec），不建 PTY 会话、不预备 Ubuntu 环境。静态策略文本
+ * 用户反馈：Agent 不会主动用终端 —— 倾向一次性 shell（ShellExecute /
+ * TerminalExec），不建 PTY 会话、不预备 Ubuntu 环境。静态策略文本
  * （EnginePrompts 的 Terminal-Use Policy）解决"知道该怎么做"；本顾问解决
  * "在正确的时机被提醒"：
  *
  *  - **SESSION_FLOW**：连续 ≥3 次一次性 shell 完成（滑窗计数；会话流工具
- *    terminal.create/run/write/observe/wait 任一出现即清零）→ 注入 system
+ *    TerminalCreate/run/write/observe/wait 任一出现即清零）→ 注入 system
  *    消息提示模型切换会话流。每命中一次阈值提醒一次（3、6、9…），
  *    streak 停滞不重复唠叨；
  *  - **ENSURE_UBUNTU**：用户 prompt 或近期一次性命令参数含工具链关键词
  *    （apt-get / apt install / git clone / npm / yarn / pip / cargo / make /
  *    gcc / python3 / node / cmake）且本会话未出现过任何 Ubuntu 探测
- *    （terminal.ubuntu.ensure/install/status、terminal.backends）→ 建议先
- *    terminal.ubuntu.ensure。**每会话最多 1 次**；
+ *    （TerminalUbuntuEnsure/install/status、TerminalBackends）→ 建议先
+ *    TerminalUbuntuEnsure。**每会话最多 1 次**；
  *  - **FAILURE_RECOVERY**：一次性命令连续失败 ≥2 次 → 建议检查输出 / 换会话 /
  *    问用户，不再盲目重试。失败连击同时会作为附注拼进 SESSION_FLOW 建议。
  *
@@ -105,8 +105,8 @@ class TerminalProactivityAdvisor {
             return Advice(
                 systemNote = "Terminal guidance: this task involves a toolchain " +
                     "(apt / git / npm / pip / cargo / make / gcc / python3 / node / cmake). " +
-                    "Before running any toolchain command, check terminal.backends; if the " +
-                    "Ubuntu backend is not ready, call terminal.ubuntu.ensure FIRST and " +
+                    "Before running any toolchain command, check TerminalBackends; if the " +
+                    "Ubuntu backend is not ready, call TerminalUbuntuEnsure FIRST and " +
                     "report its progress to the user.",
                 kind = Kind.ENSURE_UBUNTU
             )
@@ -124,10 +124,10 @@ class TerminalProactivityAdvisor {
             lastSessionFlowAdviceStreak = oneShotStreak
             return Advice(
                 systemNote = "Terminal guidance: you have now run $oneShotStreak consecutive " +
-                    "one-shot shell commands (shell_execute / terminal.exec). STOP issuing " +
+                    "one-shot shell commands (ShellExecute / TerminalExec). STOP issuing " +
                     "further one-shot commands for this task — switch to a session flow: " +
-                    "terminal.create → terminal.run (run long commands in the background) → " +
-                    "terminal.observe / terminal.wait. Sessions preserve cwd, environment " +
+                    "TerminalCreate → TerminalRun (run long commands in the background) → " +
+                    "TerminalObserve / TerminalWait. Sessions preserve cwd, environment " +
                     "and state across commands.$failureNote",
                 kind = Kind.SESSION_FLOW
             )
@@ -138,8 +138,8 @@ class TerminalProactivityAdvisor {
             return Advice(
                 systemNote = "Terminal guidance: the last $consecutiveOneShotFailures one-shot " +
                     "shell commands failed. Do NOT re-run the identical command again — " +
-                    "inspect the output above, open a terminal session (terminal.create + " +
-                    "terminal.run), or ask the user how to proceed.",
+                    "inspect the output above, open a terminal session (TerminalCreate + " +
+                    "TerminalRun), or ask the user how to proceed.",
                 kind = Kind.FAILURE_RECOVERY
             )
         }
@@ -158,18 +158,18 @@ class TerminalProactivityAdvisor {
 
     companion object {
         /** 一次性（无会话）shell 工具：streak 计数与失败追踪的对象。 */
-        val ONE_SHOT_TOOLS = setOf("shell_execute", "terminal.exec")
+        val ONE_SHOT_TOOLS = setOf("ShellExecute", "TerminalExec")
 
         /** 会话流工具：任一出现即证明模型已切换会话编排，streak 清零。 */
         val SESSION_FLOW_TOOLS = setOf(
-            "terminal.create", "terminal.run", "terminal.write",
-            "terminal.observe", "terminal.wait"
+            "TerminalCreate", "TerminalRun", "TerminalWrite",
+            "TerminalObserve", "TerminalWait"
         )
 
         /** Ubuntu 探测工具：出现即视为"模型已知环境状态"，不再给预备建议。 */
         val UBUNTU_PROBE_TOOLS = setOf(
-            "terminal.ubuntu.ensure", "terminal.ubuntu.install",
-            "terminal.ubuntu.status", "terminal.backends"
+            "TerminalUbuntuEnsure", "TerminalUbuntuInstall",
+            "TerminalUbuntuStatus", "TerminalBackends"
         )
 
         /**

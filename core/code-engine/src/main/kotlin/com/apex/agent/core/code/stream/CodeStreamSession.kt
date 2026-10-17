@@ -542,7 +542,7 @@ class CodeStreamSession {
         ToolKind.MCP_CUSTOM -> toolName.take(16)
     }
 
-    /** 命令退出码：尾部若干行内逐行匹配（terminal.exec 的 `exit N` 尾缀；
+    /** 命令退出码：尾部若干行内逐行匹配（TerminalExec 的 `exit N` 尾缀；
      *  尾部优先避免正文日志里 “exit code 0 desired” 之类文本被误命中）。 */
     private fun exitCodeOf(output: String, kind: ToolKind): Int? {
         if (kind != ToolKind.BASH && kind != ToolKind.GIT) return null

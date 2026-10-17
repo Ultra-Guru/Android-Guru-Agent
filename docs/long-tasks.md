@@ -52,7 +52,7 @@ CodeViewModel.sendMessage（组装好的提示词直接进引擎）
 |------|----------|
 | IterationStart | 迭代计数 +1（计数而非取序号：Plan 多步每步重新编号） |
 | ToolCallStart | 工具计数 +1、toolsUsed[名] +1 |
-| ToolCallComplete | 对话行「工具 名 ✓/✗」；**成功且 code_edit/code_write 时提取 path 入 filesTouched** |
+| ToolCallComplete | 对话行「工具 名 ✓/✗」；**成功且 CodeEdit/CodeWrite 时提取 path 入 filesTouched** |
 | ResponseChunk | 追加进 200 字符尾环缓冲 |
 | ResponseComplete | 尾巴定格，对话行「助手: …」，环复位 |
 

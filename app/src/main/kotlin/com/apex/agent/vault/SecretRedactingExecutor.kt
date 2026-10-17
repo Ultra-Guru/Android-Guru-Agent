@@ -12,16 +12,16 @@ import kotlinx.coroutines.flow.map
  * 全部文本事件（[ToolStreamEvent.Output] / [Complete] / [Error]）
  * 一律经 [SecretRedactor.redact] 擦洗后才交给模型。
  *
- * 动机：金库密钥只应经 vault_paste 的三条通道「直投」出去；
+ * 动机：金库密钥只应经 VaultPaste 的三条通道「直投」出去；
  * 但任何工具都可能意外回显它（如 http 工具回显请求头、shell 输出
  * echo 出环境变量、子代理转述终端内容）。本装饰器保证——只要密钥
  * 已在 SecretRedactor 登记（= 当前在库），它出现在任何工具输出里的
  * 每一处都会被替换为 `«vault:***»`，**无论它来自哪个工具**。
  *
- * 注意：参数（arguments）**不**脱敏 —— vault_save 的 content 参数必须
+ * 注意：参数（arguments）**不**脱敏 —— VaultSave 的 content 参数必须
  * 原样进库；而模型无法读回密钥，也就无法把它写进其他工具的参数。
  *
- * 脱敏幂等：重复包装 / 批量工具嵌套（tool_batch_run 内外两层执行器）
+ * 脱敏幂等：重复包装 / 批量工具嵌套（ToolBatchRun 内外两层执行器）
  * 时二次脱敏不改变结果。
  */
 class SecretRedactingExecutor(

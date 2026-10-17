@@ -11,7 +11,7 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 
 /**
- * code_read / code_edit / code_write / code_glob / code_grep 的行为契约测试。
+ * CodeRead / CodeEdit / CodeWrite / CodeGlob / CodeGrep 的行为契约测试。
  */
 class CodeToolsTest {
 
@@ -20,7 +20,7 @@ class CodeToolsTest {
 
     private fun roots(root: File): CodeWorkspaceRoots = CodeWorkspaceRoots { root }
 
-    // ── code_read ────────────────────────────────────────────────────
+    // ── CodeRead ────────────────────────────────────────────────────
 
     @Test
     fun `read file renders line numbers and continuation hint`() = runTest {
@@ -57,7 +57,7 @@ class CodeToolsTest {
         assertTrue(out, out.contains("Afile"))
     }
 
-    // ── code_edit ────────────────────────────────────────────────────
+    // ── CodeEdit ────────────────────────────────────────────────────
 
     @Test
     fun `edit replaces with fuzzy fallback on indent drift`() = runTest {
@@ -98,7 +98,7 @@ class CodeToolsTest {
         assertTrue(out, out.contains("matches 2 locations"))
     }
 
-    // ── code_write ───────────────────────────────────────────────────
+    // ── CodeWrite ───────────────────────────────────────────────────
 
     @Test
     fun `write refuses overwrite without flag then succeeds`() = runTest {
@@ -114,7 +114,7 @@ class CodeToolsTest {
         assertEquals("new", File(root, "f.txt").readText())
     }
 
-    // ── code_glob / code_grep ────────────────────────────────────────
+    // ── CodeGlob / CodeGrep ────────────────────────────────────────
 
     @Test
     fun `glob finds by extension recursively`() = runTest {
@@ -143,7 +143,7 @@ class CodeToolsTest {
         assertFalse(out, out.contains("two.txt"))
     }
 
-    // ── code_todo ────────────────────────────────────────────────────
+    // ── CodeTodo ────────────────────────────────────────────────────
 
     @Test
     fun `todo replaces full list and renders progress`() = runTest {

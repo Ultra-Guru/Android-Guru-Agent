@@ -9,7 +9,7 @@ import java.time.ZoneId
  * S2 — app 侧 cron 薄适配器（epoch 毫秒 ↔ 墙钟 LocalDateTime 换算层）。
  *
  * 解析与下次运行搜索**不在此复制**：全部委托 core:tool-registry 的
- * [VixieCron]（cron_next 工具同源实现，S2 起抽为公开对象）。本对象只做
+ * [VixieCron]（CronNextLegacy 工具同源实现，S2 起抽为公开对象）。本对象只做
  * 三件事：系统时区换算、epoch ms 语义、防御式折叠（任何失败 → null，
  * 不上抛——AGENTS.md 纪律 4）。
  */

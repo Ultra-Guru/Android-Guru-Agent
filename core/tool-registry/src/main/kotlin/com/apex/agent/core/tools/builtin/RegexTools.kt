@@ -12,7 +12,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * `regex_extract` — pull structured matches out of text with a regular
+ * `RegexExtractLegacy` — pull structured matches out of text with a regular
  * expression.
  *
  * Why: before this, the model either shell-piped to `grep` (a round trip
@@ -29,7 +29,7 @@ import kotlinx.serialization.json.put
  *   knows the text and pattern didn't intersect (vs. a bad pattern).
  */
 class RegexExtractTool : BaseTool(
-    id = "regex_extract",
+    id = "RegexExtractLegacy",
     name = "Regex Extract",
     description = """
         Extract matches from text using a regular expression.
@@ -128,7 +128,7 @@ class RegexExtractTool : BaseTool(
 }
 
 /**
- * `regex_replace` — regex substitution with named/numbered group references.
+ * `RegexReplaceLegacy` — regex substitution with named/numbered group references.
  *
  * Mirrors [RegexExtractTool]'s rationale: pure text surgery without a shell
  * round trip. Supports `$1`/`$name` group references (Kotlin/Java
@@ -139,7 +139,7 @@ class RegexExtractTool : BaseTool(
  * from "pattern missed" without a second call.
  */
 class RegexReplaceTool : BaseTool(
-    id = "regex_replace",
+    id = "RegexReplaceLegacy",
     name = "Regex Replace",
     description = """
         Replace regex matches in text with a replacement string.

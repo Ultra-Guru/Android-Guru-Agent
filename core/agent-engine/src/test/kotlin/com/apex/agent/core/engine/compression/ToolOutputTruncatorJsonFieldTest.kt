@@ -8,14 +8,14 @@ import org.junit.Test
 /**
  * P1 修复（模型失明决策）回归锁：结构化 JSON 工具输出的字段级截断。
  *
- * 旧实现把整串 JSON 按 head+tail 截断 —— terminal.exec 的 stdout 在前、
+ * 旧实现把整串 JSON 按 head+tail 截断 —— TerminalExec 的 stdout 在前、
  * exit_code / timed_out 等成败标量在后，stdout 超过 head 预算时成败字段
  * 全部落进省略区：模型只能从输出开头猜成败，把失败当成功（或反之），
  * 后续步骤建立在错误假设上 —— 「Agent 任务出错率高」的机制性根因之一。
  */
 class ToolOutputTruncatorJsonFieldTest {
 
-    /** terminal.exec 形态：stdout 长输出 + 尾部成败标量。 */
+    /** TerminalExec 形态：stdout 长输出 + 尾部成败标量。 */
     private fun terminalExecJson(stdoutChars: Int): String {
         val stdout = "x".repeat(stdoutChars)
         return """{"stdout":"$stdout","stderr":"","exit_code":127,"channel":"proot-ubuntu",""" +
@@ -25,7 +25,7 @@ class ToolOutputTruncatorJsonFieldTest {
     @Test
     fun `exit_code and verdict scalars survive truncation of huge stdout`() {
         val truncator = ToolOutputTruncator(maxChars = 2000)
-        val result = truncator.smartTruncate(terminalExecJson(stdoutChars = 12_000), "terminal.exec")
+        val result = truncator.smartTruncate(terminalExecJson(stdoutChars = 12_000), "TerminalExec")
 
         assertTrue(result.truncated)
         assertTrue("产物应在膨胀容忍内: ${result.text.length}", result.text.length < 4_000)
@@ -42,7 +42,7 @@ class ToolOutputTruncatorJsonFieldTest {
     fun `short json output passes through unchanged`() {
         val truncator = ToolOutputTruncator(maxChars = 2000)
         val short = """{"stdout":"hello","exit_code":0}"""
-        val result = truncator.smartTruncate(short, "terminal.exec")
+        val result = truncator.smartTruncate(short, "TerminalExec")
         assertFalse(result.truncated)
         assertEquals(short, result.text)
     }
@@ -52,7 +52,7 @@ class ToolOutputTruncatorJsonFieldTest {
         val truncator = ToolOutputTruncator(maxChars = 2000)
         // 半截 JSON（伪装成 JSON 的普通文本）—— 防御式：不能抛，回退整串策略
         val broken = "{ this is not real json " + "y".repeat(5_000)
-        val result = truncator.smartTruncate(broken, "terminal.exec")
+        val result = truncator.smartTruncate(broken, "TerminalExec")
         assertTrue(result.truncated)
         assertTrue(result.text.length < 4_000)
         assertTrue(result.text.startsWith("{ this is not real json"))

@@ -1,29 +1,30 @@
 package com.apex.agent.core.tools.catalog
 
 /**
- * # Tool System v4 — Provider-safe tool name mapping
+ * # Tool System v5 — Provider-safe tool name mapping（无分隔符 PascalCase）
  *
- * **The direct-send killer bug**: ~25 terminal tools carry dotted registry ids
- * (`terminal.exec`, `terminal.linux.bootstrap`, …). OpenAI's function-name
- * grammar is `^[a-zA-Z0-9_-]{1,64}$` — a dot makes the *entire request*
- * invalid on strict OpenAI-compatible endpoints. With no function whitelist
- * selected the app sent all ~110 tools (dots included) → 400 on every plain
- * message; manually picking a few functions in the "调用函数" menu filtered
- * the dotted tools out and "fixed" it. Hence the user's report: "直接发送对话
- * 会直接报错，还需要选择调用函数".
+ * 背景：v4 之前注册表里混着 dotted id（`terminal.exec`）与 snake_case id
+ * （`read_file`）。OpenAI 的函数名文法是 `^[a-zA-Z0-9_-]{1,64}$`，点号会让
+ * **整个请求** 400（用户原话："直接发送对话会直接报错，还需要选择调用函数"）
+ * —— 所以 v4 引入本对象把注册表 id 洗成 provider 合法名。
  *
- * This object is the single mapping point:
- * - registry id → **provider name** (dots and any other illegal chars become
- *   `_`; length clamped to 64);
- * - collisions are resolved deterministically (longer original id wins, then
- *   lexicographic order, then a numeric suffix);
- * - the engine maps provider names back to registry ids before execution, so
- *   tool calls resolve no matter what the model echoes back.
+ * v5 起注册表 id 自身就是无分隔符 PascalCase（`TerminalExec` / `Read` /
+ * `McpGithubCreateIssue`），本对象退化为**第三方 id 的兜底层**：插件宏、
+ * MCP 远端工具、技能自定义工具仍可能带 `-` / `_` / `.` / 空格 / 中文。
+ *
+ * - 非法字符按段切开后逐段首字母大写连写（`my-tool` → `MyTool`）——
+ *   结果里既没有 `-` 也没有 `_`，同时保留可读的单词边界；
+ * - 长度钳到 64（provider 上限）；
+ * - 冲突确定性消解（非 legacy 优先、长 id 优先、字典序、纯数字后缀，
+ *   后缀同样不含分隔符）；
+ * - 反查把 provider 名映射回注册表 id；未命中时回落 [ToolIdAliases]，
+ *   这样模型回显改名前的旧工具名（read_file / terminal.exec）依然可执行。
  */
 object ToolNameSanitizer {
 
-    private val ILLEGAL = Regex("[^a-zA-Z0-9_-]")
+    private val NON_ALNUM = Regex("[^A-Za-z0-9]")
     private const val MAX_NAME_LENGTH = 64
+    private const val FALLBACK_NAME = "Tool"
 
     /**
      * Build the full bidirectional mapping for a set of registry ids.
@@ -31,16 +32,10 @@ object ToolNameSanitizer {
      * @param registryIds every id that could enter a request this session.
      * @return mapping of registry id → provider-safe name. Keys that map to
      *         the same sanitized name are disambiguated deterministically;
-     *         [LEGACY][ToolTierPolicy.LEGACY_ALIAS_IDS] ids lose their slot
-     *         to the modern dotted tool (e.g. `terminal.exec` keeps
-     *         `terminal_exec`, the legacy alias gets `terminal_exec_2`) —
-     *         except that the request assembly drops legacy aliases entirely,
-     *         so in practice the suffix never ships.
+     *         [ToolTierPolicy.LEGACY_ALIAS_IDS] ids lose their slot to the
+     *         modern tool.
      */
     fun buildMapping(registryIds: Collection<String>): Map<String, String> {
-        // Sort: non-legacy first, then longer id first (the modern dotted id
-        // "terminal.exec" is longer than nothing — the legacy flat alias IS
-        // shorter than the dotted one), then lexicographic.
         val ordered = registryIds.sortedWith(
             compareByDescending<String> { ToolTierPolicy.isLegacyAlias(it).not() }
                 .thenByDescending { it.length }
@@ -50,16 +45,13 @@ object ToolNameSanitizer {
         val taken = mutableSetOf<String>()
         for (id in ordered) {
             var name = sanitize(id)
-            if (name.isEmpty()) name = "tool"
-            if (name.length > MAX_NAME_LENGTH) name = name.take(MAX_NAME_LENGTH)
             if (name in taken) {
                 // Deterministic disambiguation: append 2, 3, … while keeping
-                // within the 64-char ceiling.
+                // within the 64-char ceiling and free of separators.
                 var suffix = 2
                 var candidate: String
                 do {
-                    val room = MAX_NAME_LENGTH - ( "_$suffix".length)
-                    candidate = name.take(room) + "_$suffix"
+                    candidate = name.take(MAX_NAME_LENGTH - suffix.toString().length) + suffix
                     suffix++
                 } while (candidate in taken)
                 name = candidate
@@ -70,16 +62,25 @@ object ToolNameSanitizer {
         return result
     }
 
-    /** Sanitize a single id into a provider-legal name (no de-duplication).
-     *  Clamped to the 64-char provider ceiling. */
-    fun sanitize(id: String): String =
-        ILLEGAL.replace(id, "_").trim('_', '-').take(MAX_NAME_LENGTH).ifEmpty { "tool" }
+    /** Sanitize a single id into a separator-free PascalCase name (no
+     *  de-duplication). Clamped to the 64-char provider ceiling. */
+    fun sanitize(id: String): String {
+        val parts = id.split(NON_ALNUM).filter { it.isNotEmpty() }
+        if (parts.isEmpty()) return FALLBACK_NAME
+        val builder = StringBuilder(id.length)
+        parts.forEach { part -> builder.append(part.replaceFirstChar { it.uppercaseChar() }) }
+        return builder.toString().take(MAX_NAME_LENGTH).ifEmpty { FALLBACK_NAME }
+    }
 
     /**
      * Reverse lookup helper: find the registry id whose provider name is
-     * [providerName]. Falls back to the raw value (a model may echo an id
-     * verbatim when the tool was never renamed).
+     * [providerName]. Falls back to [ToolIdAliases] (a model may echo a
+     * pre-rename id), then to the raw value.
      */
-    fun resolveRegistryId(providerName: String, mapping: Map<String, String>): String =
-        mapping.entries.firstOrNull { it.value == providerName }?.key ?: providerName
+    fun resolveRegistryId(providerName: String, mapping: Map<String, String>): String {
+        mapping.entries.firstOrNull { it.value == providerName }?.let { return it.key }
+        mapping.entries.firstOrNull { it.value.equals(providerName, ignoreCase = true) }
+            ?.let { return it.key }
+        return ToolIdAliases.canonical(providerName)
+    }
 }

@@ -3,9 +3,9 @@ package com.apex.agent.tools
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.github.GithubTerminalEnvInjector
-import com.apex.agent.platform.terminal.exec.CommandSpawner
-import com.apex.agent.platform.terminal.exec.SpawnRequest
-import com.apex.agent.platform.terminal.exec.SpawnedCommand
+import com.apex.agent.platform.TerminalExec.CommandSpawner
+import com.apex.agent.platform.TerminalExec.SpawnRequest
+import com.apex.agent.platform.TerminalExec.SpawnedCommand
 import com.apex.agent.platform.terminal.linux.CpuArchitecture
 import com.apex.agent.platform.terminal.linux.LinuxDistribution
 import com.apex.agent.platform.terminal.linux.RootfsDescriptor
@@ -28,14 +28,14 @@ import java.nio.file.Files
 private const val TAG = "ProotExec"
 
 /**
- * # ProotCommandSpawner —— `terminal.exec` 的 Ubuntu 沙箱通道（P0 架构断层修复）
+ * # ProotCommandSpawner —— `TerminalExec` 的 Ubuntu 沙箱通道（P0 架构断层修复）
  *
  * ## 问题（用户反馈"Ubuntu 根本用不了、Shell 也用不了"的根因）
- * 旧链路里 `terminal.exec` 的 [PrivilegedCommandSpawner] 只有三条 **Android 宿主**
+ * 旧链路里 `TerminalExec` 的 [PrivilegedCommandSpawner] 只有三条 **Android 宿主**
  * 通道（su / Shizuku / /system/bin/sh），永不进入 PRoot Ubuntu。Agent 在
  * Ubuntu 会话里按系统提示词直觉执行 `python3 / gcc / apt / git / npm` 时全部
  * `not found`；唯一能进 Ubuntu 的 PTY 会话四步舞（create→run→wait→observe）
- * 对一次性命令又重又慢 —— 模型一旦走 terminal.exec 就必然失败。
+ * 对一次性命令又重又慢 —— 模型一旦走 TerminalExec 就必然失败。
  *
  * ## 本通道的路由策略（诚实、可预期）
  * 1. **rootfs 未就绪** → 原样回落 [fallback]（su > Shizuku > local-sh），行为与
@@ -102,7 +102,7 @@ class ProotCommandSpawner(
     private val capabilities: () -> PRootArgvCapabilities = { PRootArgvCapabilities.TERMUX_BUNDLED },
     /**
      * v3 S3（G2）：GitHub PAT 供应器（null = 不注入，既有测试夹具零变化）。
-     * 命令首词为 git/gh 且已连接时注入凭据（agent 经 terminal.exec 跑
+     * 命令首词为 git/gh 且已连接时注入凭据（agent 经 TerminalExec 跑
      * git clone / gh repo list 等真实可用）。
      */
     private val gitHubTokenProvider: (() -> String?)? = null
@@ -144,7 +144,7 @@ class ProotCommandSpawner(
         return target.spawn(request)
     }
 
-    /** T92（#255）审计日志：terminal.exec 路由决策（Ubuntu 沙箱 vs 宿主降级 + 原因）。 */
+    /** T92（#255）审计日志：TerminalExec 路由决策（Ubuntu 沙箱 vs 宿主降级 + 原因）。 */
     private fun auditRoute(channel: String, command: String, reason: String?) {
         runCatching {
             val why = reason?.let { " reason=$it" } ?: ""
@@ -429,7 +429,7 @@ class ProotCommandSpawner(
     }
 
     companion object {
-        /** Ubuntu 通道标识（terminal.exec 结果的 channel 字段）。 */
+        /** Ubuntu 通道标识（TerminalExec 结果的 channel 字段）。 */
         const val UBUSU_CHANNEL_ID = "proot-ubuntu"
 
         /** T92（#255）审计日志来源与命令截断上限（与 PrivilegeDetector 同一纪律）。 */

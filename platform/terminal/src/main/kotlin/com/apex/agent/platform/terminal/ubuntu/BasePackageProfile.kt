@@ -12,7 +12,7 @@ package com.apex.agent.platform.terminal.ubuntu
  * 只装这一套。绝不"为了看起来完整"默认装几十/上百个包。
  *
  * bootstrap 的 BASE_PACKAGES 阶段安装本 profile 中 [essential] 的包；
- * [recommended] 由 Agent 按需通过 terminal.linux.packages 安装（不自动装）。
+ * [recommended] 由 Agent 按需通过 TerminalLinuxPackages 安装（不自动装）。
  */
 data class BasePackageProfile(
     /** 必装包（bootstrap 自动安装）。 */

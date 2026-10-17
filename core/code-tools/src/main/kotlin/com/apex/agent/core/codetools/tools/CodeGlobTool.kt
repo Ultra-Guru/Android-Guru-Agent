@@ -11,10 +11,10 @@ import com.apex.agent.core.tools.toolSchema
 import java.io.File
 
 /**
- * # code_glob — 文件名模式查找（编码会话专用）
+ * # CodeGlob — 文件名模式查找（编码会话专用）
  *
  * 递归后缀匹配（“** + .kt” 形态）、目录前缀 + 后缀、顶层通配三类形态的纯 JVM
- * 匹配，输出相对路径列表（字母序，上限 100 + 截断提示）。与 code_grep 一样排除噪音目录。
+ * 匹配，输出相对路径列表（字母序，上限 100 + 截断提示）。与 CodeGrep 一样排除噪音目录。
  *
  * 参数描述显式防呆："不要传字符串 'undefined'/'null'，直接省略 path"
  * （业界标准 CLI 编码智能体在描述里处理的同款模型坏习惯）。
@@ -22,7 +22,7 @@ import java.io.File
 class CodeGlobTool(
     private val roots: CodeWorkspaceRoots
 ) : BaseTool(
-    id = "code_glob",
+    id = "CodeGlob",
     name = "Code Glob",
     description = """
         Find files by name pattern in the coding workspace.

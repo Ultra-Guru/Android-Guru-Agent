@@ -40,7 +40,7 @@ class VaultRepositoryTest {
         val snaps = repo.snapshots()
         assertEquals(1, snaps.size)
         val snap = snaps.first()
-        // 安全红线：快照（vault_list 的数据源）绝不能含明文。
+        // 安全红线：快照（VaultList 的数据源）绝不能含明文。
         val snapJson = VaultJson.encodeToString(VaultSnapshot.serializer(), snap)
         assertFalse(snapJson.contains(secret))
         assertFalse(snap.toString().contains(secret))

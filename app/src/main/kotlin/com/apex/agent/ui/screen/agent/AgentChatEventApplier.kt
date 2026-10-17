@@ -19,7 +19,7 @@ import kotlinx.coroutines.withContext
  *
  * P0 修复（主界面卡死）背景：本函数运行在 viewModelScope（Main.immediate）收集链上，
  * 两处重活必须下沉：
- *  - [AgentEvent.ToolCallComplete]：对可能数百 KB 的终端/read_file 输出跑 ANSI 正则；
+ *  - [AgentEvent.ToolCallComplete]：对可能数百 KB 的终端/Read 输出跑 ANSI 正则；
  *  - [AgentEvent.Complete]：historyCount() 触发对话史全量 JSON 解析 +
  *    currentTokenCount() 全历史逐字符估算 —— 历史一长每次收尾都在主线程忙
  *    数百毫秒到秒级，触摸与 IME 请求排队无法处理（体感“卡死/点输入框没反应”）。

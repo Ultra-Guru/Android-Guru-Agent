@@ -644,10 +644,10 @@ class StandardModeEngine(
             if (dispatcher == null) {
                 return "task 工具不可用（子代理不能再派发子代理）" to false
             }
-            // v3：custom 自定义类型为深潜线（code_task）专属——标准线画像
+            // v3：custom 自定义类型为深潜线（CodeTask）专属——标准线画像
             // 封闭，明确报错引导而不是静默回落 explore（主代理会误判角色在跑）。
             if (extractJsonString(arguments, "subagent_type") == "custom") {
-                return ("custom 子代理类型当前思考逻辑线暂不支持，请切深潜线（code_task）" +
+                return ("custom 子代理类型当前思考逻辑线暂不支持，请切深潜线（CodeTask）" +
                     "或使用内置类型（explore/research/general/reviewer）") to false
             }
             val request = parseSubAgentRequest(arguments)
@@ -952,7 +952,7 @@ class StandardModeEngine(
             )
         )
         val discipline = StandardPrompts.toolDiscipline(
-            hasShell = planToolIds.any { it.startsWith("shell_") || it.startsWith("terminal") }
+            hasShell = planToolIds.any { it.startsWith("ShellExecute") || it.startsWith("Terminal") }
         )
         if (discipline.isNotBlank()) {
             appendLine()

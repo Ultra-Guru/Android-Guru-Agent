@@ -383,7 +383,7 @@ flowchart TB
 
 | 形态 | 模型 | 产生 | 消费 |
 |------|------|------|------|
-| **陈述性记忆** | `SemanticNode` 语义图 + `Episode` 情景 + `GraphEdge`（SPATIAL/CAUSAL/SEMANTIC 三类边） | 每次动作后 `CsMemSessionManager.afterAction()` 捕获差分 | `memory_search_nodes` / `memory_recent_episodes` 召回工具；记忆屏可视化 |
+| **陈述性记忆** | `SemanticNode` 语义图 + `Episode` 情景 + `GraphEdge`（SPATIAL/CAUSAL/SEMANTIC 三类边） | 每次动作后 `CsMemSessionManager.afterAction()` 捕获差分 | `MemorySearchNodes` / `MemoryRecentEpisodes` 召回工具；记忆屏可视化 |
 | **程序性记忆** | `FSMMacro` 有限状态机宏技能 | 任务成功后 `TraceDistiller.distill()`：锚点提取 → 动作压缩 → FSM 编译 | `BypassExecutionEngine.tryBypass()`：指纹命中即**绕过 LLM 直接回放**（微秒级 / 0 token） |
 
 ### 生命周期管理（四个仿生机制）
@@ -435,7 +435,7 @@ flowchart TB
    全事件流输出，适合绝大多数对话式任务；
 2. **编排路径 `DefaultTaskOrchestrator`** —— 复杂长任务：任务状态机、
    批量工具执行引擎、失败分类 + 恢复规划器、重试策略、循环检测（LoopDetector）、
-   用户交互门（ask_user 挂起等待人工决策）、生命周期事件（SharedFlow）。
+   用户交互门（AskUser 挂起等待人工决策）、生命周期事件（SharedFlow）。
 
 ### 编排器任务状态机（真实转移）
 
@@ -452,7 +452,7 @@ stateDiagram-v2
     Acting --> Observing : ToolCallFinished
     Observing --> Planning : 下一轮迭代
     Observing --> Responding : 无更多工具调用
-    Acting --> AwaitingUserInput : ask_user / 权限门
+    Acting --> AwaitingUserInput : AskUser / 权限门
     AwaitingUserInput --> Acting : 用户答复
     Responding --> Completed : ResponseComplete
     Planning --> Failed : 异常 / 重试耗尽
@@ -529,22 +529,22 @@ v3 执行硬化 + v4 目录 / 技能注入 / MCP 一等工具 / 插件 / 多模�
 ```text
 ┌─ Code 屏（app/ui/screen/code）──────────────────────────────────┐
 │ 工作区条（切换/新建/删除 + 环境探测摘要）                          │
-│ Todo 面板（code_todo 实时快照 → checklist 渲染）                  │
+│ Todo 面板（CodeTodo 实时快照 → checklist 渲染）                  │
 │ 消息流（用户 / 助手 Markdown / 工具卡 diff 着色 +/-）              │
-│ 输入栏（发送 / 停止 / ask_user 应答）                             │
+│ 输入栏（发送 / 停止 / AskUser 应答）                             │
 └──────────────────────────────────────────────────────────────────┘
         │ @Named("code") 独立引擎实例（CodeAgentEngine）
         ▼
 ┌─ core/code-engine ──────────┐   ┌─ core/code-tools（6 工具）────┐
-│ CodePrompts（编码行为注入）   │   │ code_read   行号契约+目录+纠错  │
-│ CodeConversationMemory      │   │ code_edit   7级模糊替换链+护栏   │
-│ （per-workspace 会话记忆）    │   │ code_write  全量写+diff 回显    │
-│ JIT 上下文（环境/统计注入）    │   │ code_grep   ripgrep 语义搜索    │
-└─────────────────────────────┘   │ code_glob   递归模式匹配        │
-        │ 共享单例                 │ code_todo   任务清单状态机      │
+│ CodePrompts（编码行为注入）   │   │ CodeRead   行号契约+目录+纠错  │
+│ CodeConversationMemory      │   │ CodeEdit   7级模糊替换链+护栏   │
+│ （per-workspace 会话记忆）    │   │ CodeWrite  全量写+diff 回显    │
+│ JIT 上下文（环境/统计注入）    │   │ CodeGrep   ripgrep 语义搜索    │
+└─────────────────────────────┘   │ CodeGlob   递归模式匹配        │
+        │ 共享单例                 │ CodeTodo   任务清单状态机      │
         ▼                         └────────────────────────────────┘
 ┌─ platform/code-workspace ───┐   ┌─ MCP（BUILTIN 进程内服务器）────┐
-│ 工作区生命周期 + 环境探测      │   │ search：web_search/web_fetch    │
+│ 工作区生命周期 + 环境探测      │   │ search：WebSearch/WebFetch    │
 │ 默认工作区=Agent 沙箱同源目录  │   │ （Agent/Code 两模式互用）       │
 │ host↔guest(/workspace) 同一文件│  └────────────────────────────────┘
 └─────────────────────────────┘
@@ -555,7 +555,7 @@ v3 执行硬化 + v4 目录 / 技能注入 / MCP 一等工具 / 插件 / 多模�
 - **不重写 Agent Loop** —— `CodeAgentEngine` 是 `ApexAgentEngine` 的薄包装，
   编码行为经 `additionalSystemContext` 通道注入（BUILD 循环 + 业界标准风格
   编码行为段落），Agent 模式零影响；
-- **code_edit 的成功率就是编码循环的效率** —— 精确匹配失败后依次尝试
+- **CodeEdit 的成功率就是编码循环的效率** —— 精确匹配失败后依次尝试
   行 trim / 块锚点+Levenshtein / 空白归一 / 缩进平移 / 边界 trim / replaceAll
   七级回退；失衡护栏（模糊命中 span 远大于 old_string 时拒绝）防止"吞代码"；
 - **工作区即沙箱** —— code_* 工具的根经 `CodeWorkspaceRoots` 动态解析，
@@ -595,7 +595,7 @@ v3 执行硬化 + v4 目录 / 技能注入 / MCP 一等工具 / 插件 / 多模�
 flowchart TD
     IN["新工具输出 / 新一轮迭代"] --> W{"水位检查<br/>TokenEstimator > 128k × 80% ?"}
     W -- 否 --> KEEP["保持原样"]
-    W -- 是 --> C1["Layer 1 · ToolOutputTruncator（零成本 · 永远在跑）<br/>JSON → 保头 + 尾 200 字符（闭合结构）<br/>列表多于 20 短行 → 保首 15 + 尾 10 行<br/>read_file 类 → 只保头<br/>默认 → 头 1200 + 尾 600 字符 + 省略标注"]
+    W -- 是 --> C1["Layer 1 · ToolOutputTruncator（零成本 · 永远在跑）<br/>JSON → 保头 + 尾 200 字符（闭合结构）<br/>列表多于 20 短行 → 保首 15 + 尾 10 行<br/>Read 类 → 只保头<br/>默认 → 头 1200 + 尾 600 字符 + 省略标注"]
     C1 --> W2{"仍超阈值？"}
     W2 -- 否 --> DONE1["✅ 完成"]
     W2 -- 是 --> C2["Layer 2 · SlidingWindowCompressor（零成本）<br/>保系统提示 + 最近 N 轮<br/>中段折叠为单条规则摘要"]
@@ -630,7 +630,7 @@ flowchart TD
 | 环境自适应 | `AdaptiveProvisionLoop` + `DiagnosticRules` | 执行观察 → 诊断规则 → 自动修复（ResolverCache） |
 | 会话持久化 | `SessionMetadataStore` + `RuntimeRecoveryService` | 重启恢复会话元数据 |
 
-16 个 `terminal.*` 工具暴露给 LLM：`terminal.create / run / write / observe /
+16 个 `terminal.*` 工具暴露给 LLM：`TerminalCreate / run / write / observe /
 snapshot / wait / resize / signal / close / workspaces / backends /
 linux_bootstrap / linux_status / linux_packages / linux_network / ubuntu_install`。
 
@@ -671,41 +671,41 @@ linux_bootstrap / linux_status / linux_packages / linux_network / ubuntu_install
 
 | 类别 | 工具 |
 |------|------|
-| 🖥️ Shell | `shell_execute`（三级权限链 + 流式输出） |
-| 📁 文件 | `read_file` `write_file` `edit_file` `list_files` `glob_files` `search_files` `copy_move_file` `delete_file` |
-| 🌐 网络 | `web_fetch` `web_search` `http_request` `download_file`（流式进度） |
+| 🖥️ Shell | `ShellExecute`（三级权限链 + 流式输出） |
+| 📁 文件 | `Read` `Write` `Edit` `ListFiles` `GlobFiles` `SearchFiles` `CopyMoveFile` `DeleteFile` |
+| 🌐 网络 | `WebFetch` `WebSearch` `HttpRequest` `DownloadFile`（流式进度） |
 | 🧠 文件记忆 | `memorize` `recall` `forget` |
-| 📱 应用 | `app_list` `app_launch` `app_install` `app_uninstall` `app_force_stop` `app_info` |
-| ⚙️ 系统 | `get_device_info` `get_set_settings` `control_media` `clipboard` `get_time` `logcat` |
-| 🖱️ UI 自动化 | `ui_tap` `ui_swipe` `ui_dump` `screenshot` `input_text` |
-| 🧮 实用 | `calculate` `text_transform` `get_location` `notification_read` |
-| 🧩 技能 | `skill_search` `skill_install` `skill_create` `skill_list` `skill_uninstall` |
-| 🛰️ MCP | `mcp_connect` `mcp_list` `mcp_call` |
-| 🧭 目录与自省（5） | `tool_search` `tool_open` `tool_list`（v4 渐进披露）· `capability_report`（权限阶梯/环境/技能/MCP 一键自省）· `market_search`（官方技能+MCP 市场检索，返回可执行安装指令）——详见 [docs/capability-introspection.md](docs/capability-introspection.md) |
-| 🧱 结构化 v2（15） | `regex_extract` `regex_replace` `text_diff` `json_path` `xml_extract` `csv_query` `base_convert` `unit_convert` `duration_convert` `string_distance` `random_generate` `uuid_generate` `file_hash` `datetime` `cron_next`（全部纯 JVM / 离线 / 确定性） |
-| ⚡ 执行硬化 v3（7） | `wait`（≤300s 可取消等待）· `json_transform`（jq 风格七操作管线）· `version_compare`（SemVer 排序）· `tool_batch_run`（批量首错即停 + 步间引用）· `shortcut_define` / `shortcut_list` / `shortcut_run`（组合动作：定义→热注册、清单+挖掘建议、执行）——详见 [docs/tool-system-v3.md](docs/tool-system-v3.md) |
+| 📱 应用 | `AppList` `AppLaunch` `AppInstall` `AppUninstall` `AppForceStop` `AppInfo` |
+| ⚙️ 系统 | `GetDeviceInfo` `GetSetSettings` `ControlMedia` `clipboard` `GetTimeLegacy` `logcat` |
+| 🖱️ UI 自动化 | `UiTap` `UiSwipe` `UiDump` `screenshot` `InputText` |
+| 🧮 实用 | `calculate` `TextTransform` `GetLocation` `NotificationRead` |
+| 🧩 技能 | `SkillSearch` `SkillInstall` `SkillCreate` `SkillList` `SkillUninstall` |
+| 🛰️ MCP | `McpConnect` `McpList` `McpCall` |
+| 🧭 目录与自省（5） | `ToolSearch` `ToolOpen` `ToolList`（v4 渐进披露）· `CapabilityReport`（权限阶梯/环境/技能/MCP 一键自省）· `MarketSearch`（官方技能+MCP 市场检索，返回可执行安装指令）——详见 [docs/capability-introspection.md](docs/capability-introspection.md) |
+| 🧱 结构化 v2（15） | `RegexExtractLegacy` `RegexReplaceLegacy` `TextDiff` `JsonPathLegacy` `XmlExtract` `CsvQuery` `BaseConvert` `UnitConvert` `DurationConvertLegacy` `StringDistance` `RandomGenerateLegacy` `UuidGenerateLegacy` `FileHash` `datetime` `CronNextLegacy`（全部纯 JVM / 离线 / 确定性） |
+| ⚡ 执行硬化 v3（7） | `wait`（≤300s 可取消等待）· `JsonTransformLegacy`（jq 风格七操作管线）· `VersionCompare`（SemVer 排序）· `ToolBatchRun`（批量首错即停 + 步间引用）· `ShortcutDefine` / `ShortcutList` / `ShortcutRun`（组合动作：定义→热注册、清单+挖掘建议、执行）——详见 [docs/tool-system-v3.md](docs/tool-system-v3.md) |
 
 **platform:browser-agent —— 24 个 `browser_*`（v1.5.0 起内置大功能，非插件）**
 
 | 类别 | 工具 |
 |------|------|
-| 🌐 浏览器（24） | 基础 15：`browser_navigate/click/input/scroll/select/screenshot/snapshot/toggle/show/download_list/file_upload/date_input/context_summary/network_log/debug_dump` · 高级 9：`browser_press_key/hover/drag/extract_content/execute_js/get_cookies/locate/wait_for/page_type` |
+| 🌐 浏览器（24） | 基础 15：`BrowserNavigate/click/input/scroll/select/screenshot/snapshot/toggle/show/download_list/file_upload/date_input/context_summary/network_log/debug_dump` · 高级 9：`BrowserPressKey/hover/drag/extract_content/execute_js/get_cookies/locate/wait_for/page_type` |
 
 **app 模块 —— 7 个**
 
 | 类别 | 工具 |
 |------|------|
-| 🐙 GitHub（7） | `github_get_user/list_repos/read_file/write_file/create_issue/list_issues/search_code`（配置 PAT 后注册） |
+| 🐙 GitHub（7） | `GithubGetUser/list_repos/Read/Write/create_issue/list_issues/search_code`（配置 PAT 后注册） |
 
-**platform:terminal —— 18 个** `terminal.*`（见[终端运行时](#terminal-runtime)；T82 新增 `terminal.ubuntu.ensure` / `terminal.ubuntu.status` 一键生命周期编排）
+**platform:terminal —— 18 个** `terminal.*`（见[终端运行时](#terminal-runtime)；T82 新增 `TerminalUbuntuEnsure` / `TerminalUbuntuStatus` 一键生命周期编排）
 
 **platform:cs-mem —— 3 个记忆召回**
 
 | 工具 | 用途 |
 |------|------|
-| `memory_search_nodes` | 按文本/角色搜索语义节点（支持迁移别名解析） |
-| `memory_recent_episodes` | 近期情景回顾 |
-| `memory_recall_macro` | 宏技能召回 |
+| `MemorySearchNodes` | 按文本/角色搜索语义节点（支持迁移别名解析） |
+| `MemoryRecentEpisodes` | 近期情景回顾 |
+| `MemoryRecallMacro` | 宏技能召回 |
 
 </details>
 
@@ -750,12 +750,12 @@ linux_bootstrap / linux_status / linux_packages / linux_network / ubuntu_install
 |------|------|------|
 | Composite | `steps[]` 链式编排既有工具，`{{var}}`/`{{prev_output}}` 模板替换 | 网页爬虫 = fetch → 解析 → 存档 |
 | Prompt | 启用时注入系统提示片段 | "回答带引用来源" |
-| Script | 内嵌 Python/Shell 脚本，`shell_execute` 执行 | 数据清洗脚本 |
+| Script | 内嵌 Python/Shell 脚本，`ShellExecute` 执行 | 数据清洗脚本 |
 | Connector | 连接外部服务（URL/SSH） | Google Drive 桥（孵化中） |
 
 技能可以从市场（Market 屏）发现安装，也可以让智能体**自己安装**：
-`skill_search` → `skill_install`（URL / 内置模板 / 内容）→ `auto_setup` 执行
-→ `skill_list` 确认，全程 LLM 自主闭环。市场货架含**工具 / 技能 / MCP /
+`SkillSearch` → `SkillInstall`（URL / 内置模板 / 内容）→ `auto_setup` 执行
+→ `SkillList` 确认，全程 LLM 自主闭环。市场货架含**工具 / 技能 / MCP /
 插件 / 连接器**五类。
 
 ### 官方 Hub 仓库生态（技能 / MCP 分发）
@@ -790,7 +790,7 @@ GitHub Token）。
 /<type>:<id> [key=value ...] [自由文本]
 
 /skill:code_interpreter
-/skill:web_search query=Android 18 news
+/skill:WebSearch query=Android 18 news
 /mcp:github repo=owner/name        ← 未连接时自动引导 GitHub 连接流程
 /connector:google_drive
 /plugin:pdf_reader
@@ -939,7 +939,7 @@ chmod +x gradlew
 
 - **Shizuku**（[shizuku.rikka.app](https://shizuku.rikka.app/)）：无 root 获得
   ADB 级权限（pm install / settings / input / dumpsys）；
-- **无障碍服务**：UI 自动化（ui_tap / ui_dump）与 cs-mem 屏幕感知；
+- **无障碍服务**：UI 自动化（UiTap / UiDump）与 cs-mem 屏幕感知；
 - **终端**：Ubuntu 24.04 完整 CLI 环境随 APK 内置（gcc/python3/git/vim/man，
   rootfs 档案 ~300MB+，首次使用离线解包约 2~5 分钟；此后只有 apt 装新包才联网）。
 
@@ -947,7 +947,7 @@ chmod +x gradlew
 
 ```text
 ① 对话：  "帮我看看设备还剩多少存储，清理一下下载目录的大文件"
-② 感知：  "打开设置，看看当前 Wi-Fi 名"          ← ui_tap/ui_dump 工具链
+② 感知：  "打开设置，看看当前 Wi-Fi 名"          ← UiTap/UiDump 工具链
 ③ 终端：  终端屏引导装 Ubuntu，然后 "在终端里装 figlet 并打印 HELLO"
 ④ 记忆：  多做几次 ③，之后说"再打印一次 HELLO"  ← FSM 宏旁路，0 token 秒回
 ```
@@ -1085,7 +1085,7 @@ Android-Guru-Agent/
 | [docs/memory-and-workflow-research.md](docs/memory-and-workflow-research.md) | **记忆与工作流调研报告**：对标 MemGPT/Mem0/A-MEM/Zep/Voyager/Claude Code/OpenHands/SWE-agent |
 | [docs/terminal-api.md](docs/terminal-api.md) | 终端 API 契约 |
 | [docs/terminal/TERMINAL_EXPERIENCE_OVERHAUL_T87.md](docs/terminal/TERMINAL_EXPERIENCE_OVERHAUL_T87.md) | **T87 终端体验大修**：7 项用户实测反馈的根因对照与修复（输入失败/exec 失败捕获、滚动空白、黑字、21 套配色、apt 引导） |
-| [docs/terminal/AGENT_TERMINAL_CALLCHAIN.md](docs/terminal/AGENT_TERMINAL_CALLCHAIN.md) | **Agent↔终端调用链**：全部 terminal.* 工具表 + exec 链路图 + terminal.diagnostics 自证 |
+| [docs/terminal/AGENT_TERMINAL_CALLCHAIN.md](docs/terminal/AGENT_TERMINAL_CALLCHAIN.md) | **Agent↔终端调用链**：全部 terminal.* 工具表 + exec 链路图 + TerminalDiagnostics 自证 |
 | [docs/terminal/TERMINAL_CONFIGURATION.md](docs/terminal/TERMINAL_CONFIGURATION.md) | **终端配置系统**：配色/扩展键宏语法/持久化键/新增方案指南 |
 | [docs/ubuntu-rootfs-t72.md](docs/ubuntu-rootfs-t72.md) | T72 Ubuntu rootfs 供给设计 |
 | [docs/cs-mem-gaps-spec.md](docs/cs-mem-gaps-spec.md) | cs-mem 缺口补全规格（含缺口 #9 拓扑迁移） |
@@ -1105,7 +1105,7 @@ Android-Guru-Agent/
 | [docs/capsule-stream.md](docs/capsule-stream.md) | **胶囊流式输出系统**：Coding 工作流时间轴 / 双通道架构 / 幂等与检查点 / 验收矩阵 |
 | [docs/dual-logic-engines.md](docs/dual-logic-engines.md) | **双思考逻辑引擎**：Coding 屏右上角「深潜/标准」切换 / DualLogicCodeEngine 门面路由 / 标准任务循环（五画像·权限三态门·task 子代理·上下文压缩·C++ 文本核）/ `/logic` 斜杠命令 / 现场隔离 |
 | [docs/agent-life-skills-and-memory.md](docs/agent-life-skills-and-memory.md) | **全能 Agent**：46 内置技能矩阵 × 渐进披露（目录+会话装备+自动装备）/ 聊天自动记忆管线（双速捕获+主动召回）/ 首轮问候极简 / 网页自动化 wait_for+页面类型推断 |
-| [docs/capability-introspection.md](docs/capability-introspection.md) | **能力自省与自主扩展**：权限阶梯知识库（prompt/工具/编排三线同源）/ capability_report 一键自省 / market_search 市场检索（返回可执行安装指令）/ Capability Expansion Playbook 六条扩展梯度 |
+| [docs/capability-introspection.md](docs/capability-introspection.md) | **能力自省与自主扩展**：权限阶梯知识库（prompt/工具/编排三线同源）/ CapabilityReport 一键自省 / MarketSearch 市场检索（返回可执行安装指令）/ Capability Expansion Playbook 六条扩展梯度 |
 
 <p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
 

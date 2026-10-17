@@ -67,7 +67,7 @@ internal object EnginePrompts {
         connectedServices: String? = null,
         /**
          * Tool System v4 — 目录总览（全部非 legacy 工具）。
-         * 非空时渲染 "## Tool Catalog" 段：类别计数 + tool_search/tool_open
+         * 非空时渲染 "## Tool Catalog" 段：类别计数 + ToolSearch/ToolOpen
          * 用法。空则省略（兼容旧调用方/测试）。
          */
         catalogTools: List<AgentTool> = emptyList(),
@@ -108,7 +108,7 @@ internal object EnginePrompts {
         memoryContext: String? = null,
         /**
          * 技能目录（渐进披露）。非空时渲染 "## Skill Catalog" 段：全部已
-         * 安装技能的一行摘要 + skill_activate 装载指引。此时 [skillPrompts]
+         * 安装技能的一行摘要 + SkillActivate 装载指引。此时 [skillPrompts]
          * 应只携带已激活技能的注入（见 SkillRegistry.getActivePromptInjections）
          * ——目录+激活双层结构，请求体积有界。空 = 省略目录段（兼容旧调用：
          * skillPrompts 全量注入的 legacy 行为）。
@@ -171,13 +171,13 @@ internal object EnginePrompts {
             appendLine("4. Keep going until the task is truly complete: verify results with tools before reporting success.")
             appendLine("   Do not claim success you have not verified with a tool.")
             appendLine("5. Facts you are unsure of (versions, prices, news, docs, current device/web state) MUST be")
-            appendLine("   verified with a tool (web_search / web_fetch / shell) before you state them. Do not guess.")
+            appendLine("   verified with a tool (WebSearch / WebFetch / shell) before you state them. Do not guess.")
             appendLine("6. If a tool call fails, read the error carefully: fix the arguments or switch approach.")
             appendLine("   Do not give up after one failure; do not blindly retry the identical call.")
-            appendLine("7. Prefer specific tools (read_file, github_read_file, browser_*) over raw shell when both work;")
+            appendLine("7. Prefer specific tools (Read, GithubReadFile, browser_*) over raw shell when both work;")
             appendLine("   use shell when no dedicated tool fits. Prefer parallel tool calls for independent reads.")
-            appendLine("8. Not every capability is pre-loaded: when no listed tool fits, call tool_search to find")
-            appendLine("   the right tool in the catalog, then tool_open to load it — it becomes callable immediately.")
+            appendLine("8. Not every capability is pre-loaded: when no listed tool fits, call ToolSearch to find")
+            appendLine("   the right tool in the catalog, then ToolOpen to load it — it becomes callable immediately.")
             appendLine("   If nothing installed fits either, climb the Capability Expansion Playbook (below):")
             appendLine("   skills / MCP servers / Linux toolchains can be searched, installed and connected on demand.")
             appendLine()
@@ -186,21 +186,21 @@ internal object EnginePrompts {
             // 与 TerminalProactivityAdvisor（轮次级动态提醒）互补：这里告诉模型
             // “什么场景该用什么终端形态”，顾问在模型违背时按滑窗计数提醒。
             appendLine("## Terminal-Use Policy (MANDATORY)")
-            appendLine("- One-shot commands → terminal.exec (structured stdout/stderr/exit_code).")
+            appendLine("- One-shot commands → TerminalExec (structured stdout/stderr/exit_code).")
             appendLine("- You have started N consecutive one-shot shell commands → STOP. Switch to a session")
-            appendLine("  flow: terminal.create → terminal.run (background if long) → terminal.observe/terminal.wait.")
+            appendLine("  flow: TerminalCreate → TerminalRun (background if long) → TerminalObserve/TerminalWait.")
             appendLine("  Sessions preserve cwd/env/state across commands.")
             appendLine("- Interactive programs (gh auth login, python REPL, vim, apt prompts) REQUIRE a session:")
-            appendLine("  terminal.create + terminal.write.")
+            appendLine("  TerminalCreate + TerminalWrite.")
             appendLine("- Toolchain tasks (apt install / git clone / npm / pip / cargo / make / gcc): check")
-            appendLine("  terminal.backends, if Ubuntu not ready call terminal.ubuntu.ensure FIRST — report progress")
+            appendLine("  TerminalBackends, if Ubuntu not ready call TerminalUbuntuEnsure FIRST — report progress")
             appendLine("  to the user.")
             appendLine("- Never re-run a failed one-shot command more than twice — inspect output, open a session,")
             appendLine("  or ask the user.")
             appendLine()
 
             // ═══ 权限阶梯（让 Agent 知道自己有什么、缺什么、怎么升级）═══
-            // 正文与 capability_report 工具输出同源（PrivilegeLadder 单一真值源）：
+            // 正文与 CapabilityReport 工具输出同源（PrivilegeLadder 单一真值源）：
             // 模型在 prompt 里看到的 CAN/CANNOT 与自省报告永远一致，不教假事实。
             append(PrivilegeLadder.promptSection(privilegeLevel))
             appendLine()
@@ -215,24 +215,24 @@ internal object EnginePrompts {
                 appendLine("## Capability Expansion Playbook (MANDATORY before saying I can't)")
                 appendLine("You are an extensible agent: what is not installed yet can usually be acquired.")
                 appendLine("When no loaded tool fits the task, do NOT give up — climb this ladder in order:")
-                appendLine("1. INSTALLED TOOLS — tool_search(query) finds any registered tool; tool_open(tool_name)")
-                appendLine("   loads it (callable next turn). tool_list() for a category overview.")
-                appendLine("2. LIVE SELF-CHECK — capability_report() any time you are unsure what you can do:")
+                appendLine("1. INSTALLED TOOLS — ToolSearch(query) finds any registered tool; ToolOpen(tool_name)")
+                appendLine("   loads it (callable next turn). ToolList() for a category overview.")
+                appendLine("2. LIVE SELF-CHECK — CapabilityReport() any time you are unsure what you can do:")
                 appendLine("   privilege level, environment, tool/skill/MCP inventory at a glance.")
-                appendLine("3. SKILLS (domain methodologies & tool bundles) — market_search(query) browses the")
-                appendLine("   official skill hub; skill_search(query) also finds community skills;")
-                appendLine("   skill_install(url) installs; skill_activate(skill_id) loads the methodology.")
-                appendLine("4. MCP SERVERS (external tool systems) — market_search(kind=\"mcp\") lists hub servers;")
-                appendLine("   mcp_connect wires any server (remote URL or local npx command); mcp_list shows")
+                appendLine("3. SKILLS (domain methodologies & tool bundles) — MarketSearch(query) browses the")
+                appendLine("   official skill hub; SkillSearch(query) also finds community skills;")
+                appendLine("   SkillInstall(url) installs; SkillActivate(skill_id) loads the methodology.")
+                appendLine("4. MCP SERVERS (external tool systems) — MarketSearch(kind=\"mcp\") lists hub servers;")
+                appendLine("   McpConnect wires any server (remote URL or local npx command); McpList shows")
                 appendLine("   what is already connected.")
                 appendLine("5. LINUX TOOLCHAIN — the PRoot Ubuntu terminal is a full Linux userland:")
-                appendLine("   terminal.backends → if Ubuntu is missing, terminal.ubuntu.ensure first → then")
+                appendLine("   TerminalBackends → if Ubuntu is missing, TerminalUbuntuEnsure first → then")
                 appendLine("   apt install / pip install / npm install / git clone anything.")
                 appendLine("6. PRIVILEGE WALL — when a route needs more privilege than your level allows (see")
                 appendLine("   Device Privilege Level above), tell the user exactly what to enable (Shizuku /")
                 appendLine("   Root) and what it unlocks, then wait for their action.")
-                appendLine("Rules: after installing or activating anything, VERIFY it took effect (skill_list /")
-                appendLine("mcp_list / re-run) before reporting success. Tell the user what you are acquiring")
+                appendLine("Rules: after installing or activating anything, VERIFY it took effect (SkillList /")
+                appendLine("McpList / re-run) before reporting success. Tell the user what you are acquiring")
                 appendLine("and why. Never claim a task is impossible before routes 1-5 have been tried.")
                 appendLine()
             }
@@ -252,7 +252,7 @@ internal object EnginePrompts {
             // ═══ 已连接服务（根因修复：GitHub 已连接模型却不知道）═══
             // 与 Live Environment 同一设计模式：prompt 里的状态与执行侧
             // 同源。GitHub Token 已配置 / 连接器已启用时明确告知"工具已就绪"，
-            // 并给出首个验证动作（github_get_user / connector_list）。
+            // 并给出首个验证动作（GithubGetUser / ConnectorList）。
             if (!connectedServices.isNullOrBlank()) {
                 appendLine("## Connected Services")
                 appendLine(connectedServices)
@@ -304,7 +304,7 @@ internal object EnginePrompts {
                     appendLine("## Mode: HUMAN_ASSIST (human-in-the-loop)")
                     appendLine("You are in human-assisted mode. Whenever the task involves MULTIPLE viable options —")
                     appendLine("different approaches, multiple targets/apps/files, ambiguous intent, risky or irreversible")
-                    appendLine("actions, or user preference — you MUST call ask_user_choice BEFORE proceeding and wait")
+                    appendLine("actions, or user preference — you MUST call AskUserChoice BEFORE proceeding and wait")
                     appendLine("for the user's selection. NEVER guess when the choice materially changes the result.")
                     appendLine("Keep questions short and provide 2-6 clear options. If the user skips, pick the safest")
                     appendLine("reasonable default or stop and explain.")
@@ -487,9 +487,9 @@ internal object EnginePrompts {
                     appendLine("## Tool Catalog ($notLoaded more available)")
                     appendLine("Beyond the tools above, ${notLoaded} more capabilities are installed")
                     appendLine("but not pre-loaded (keeps this request fast and small). Discover them:")
-                    appendLine("- tool_search(query) — find tools by keywords (e.g. 'github issue', 'browser')")
-                    appendLine("- tool_open(tool_name) — load a tool; it becomes callable on your next turn")
-                    appendLine("- tool_list() — category overview with counts")
+                    appendLine("- ToolSearch(query) — find tools by keywords (e.g. 'github issue', 'browser')")
+                    appendLine("- ToolOpen(tool_name) — load a tool; it becomes callable on your next turn")
+                    appendLine("- ToolList() — category overview with counts")
                     val byCat = catalogTools.groupBy { it.metadata.category }
                         .toSortedMap(compareBy { it.order })
                     appendLine("Categories: " + byCat.entries.joinToString(" / ") { (cat, list) ->
@@ -502,18 +502,18 @@ internal object EnginePrompts {
             // ═══ 技能目录（渐进披露）：一行摘要 + 装载指引 ═══
             // 目录与激活分层：目录让模型知道「有哪些领域方法论」，激活集的
             // 全文注入由 skillPrompts 携带（见 Active Skills 段）。模型用
-            // skill_activate 装载，宿主也可经斜杠指令/自动装备预激活。
+            // SkillActivate 装载，宿主也可经斜杠指令/自动装备预激活。
             if (skillCatalog.isNotEmpty()) {
                 appendLine()
                 appendLine("## Skill Catalog (${skillCatalog.size} installed)")
                 appendLine("Domain expert methodologies are installed but NOT loaded by default (keeps requests small).")
-                appendLine("When the task matches a domain below, call skill_activate(skill_id) FIRST — the full")
+                appendLine("When the task matches a domain below, call SkillActivate(skill_id) FIRST — the full")
                 appendLine("methodology loads instantly and stays for the session. Activated skills appear under")
                 appendLine("'Active Skills'.")
                 skillCatalog.forEach { digest ->
                     appendLine("- ${digest.id}: ${digest.name} — ${digest.summary}")
                 }
-                appendLine("Also call skill_list() for the full inventory with versions/status.")
+                appendLine("Also call SkillList() for the full inventory with versions/status.")
             }
 
             // Skill prompt 注入（渐进披露：仅激活技能的全文；空目录 = legacy 全量）
@@ -559,12 +559,12 @@ internal object EnginePrompts {
             }
             appendLine()
             appendLine("## File Operation Strategy")
-            appendLine("1. DISCOVER: Use glob_files or list_files to find relevant files")
-            appendLine("2. UNDERSTAND: Use read_file (first 80 lines) to see structure")
-            appendLine("3. LOCATE: Use search_files to find specific code/config")
-            appendLine("4. READ: Use read_file with 'around' to see target area")
-            appendLine("5. EDIT: Use edit_file with search-replace (never blind overwrite)")
-            appendLine("6. VERIFY: Use read_file again to confirm changes are correct")
+            appendLine("1. DISCOVER: Use GlobFiles or ListFiles to find relevant files")
+            appendLine("2. UNDERSTAND: Use Read (first 80 lines) to see structure")
+            appendLine("3. LOCATE: Use SearchFiles to find specific code/config")
+            appendLine("4. READ: Use Read with 'around' to see target area")
+            appendLine("5. EDIT: Use Edit with search-replace (never blind overwrite)")
+            appendLine("6. VERIFY: Use Read again to confirm changes are correct")
             appendLine()
             appendLine("## Output Management")
             appendLine("- All tools limit output. Check truncation notices.")
@@ -579,8 +579,8 @@ internal object EnginePrompts {
             appendLine("- Keep prose concise; let tool output speak for itself. Actions speak louder than plans.")
             appendLine("- When the user asks a capability question ('can you do X?'), verify by attempting it with tools")
             appendLine("  (or checking state) rather than answering from memory.")
-            appendLine("- Use ask_user_choice when the task is ambiguous, multiple targets/actions exist, an action is risky or irreversible, or user preference is required. Do NOT guess when the answer materially changes the result.")
-            appendLine("- When calling ask_user_choice: keep the question short, provide 2-6 clear options, set allow_custom=true unless only fixed choices are valid. If the user skips or rejects, pick the safest reasonable default or stop.")
+            appendLine("- Use AskUserChoice when the task is ambiguous, multiple targets/actions exist, an action is risky or irreversible, or user preference is required. Do NOT guess when the answer materially changes the result.")
+            appendLine("- When calling AskUserChoice: keep the question short, provide 2-6 clear options, set allow_custom=true unless only fixed choices are valid. If the user skips or rejects, pick the safest reasonable default or stop.")
         }
     }
 

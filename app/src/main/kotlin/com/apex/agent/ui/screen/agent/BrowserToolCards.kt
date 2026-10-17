@@ -35,10 +35,10 @@ import com.apex.agent.R
 // 同包 internal 可见性，AgentChatToolCards 直接调用，无需 import。
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** browser_screenshot 工具 id（输出载荷判定的单一事实源）。 */
-internal const val BROWSER_SCREENSHOT_TOOL_ID = "browser_screenshot"
+/** BrowserScreenshot 工具 id（输出载荷判定的单一事实源）。 */
+internal const val BROWSER_SCREENSHOT_TOOL_ID = "BrowserScreenshot"
 
-/** PNG data URI 前缀 —— browser_screenshot 的标准输出形态（见工具实现）。 */
+/** PNG data URI 前缀 —— BrowserScreenshot 的标准输出形态（见工具实现）。 */
 private const val PNG_DATA_URI_PREFIX = "data:image/png;base64,"
 
 /** 合法 base64 体形状（NO_WRAP 编码：字符集受限 + 尾部至多两个 '='）。 */
@@ -46,7 +46,7 @@ private val BASE64_SHAPE = Regex("[A-Za-z0-9+/]+={0,2}")
 
 /**
  * 判定输出是否为可渲染的截图载荷：
- * - 标准 data URI 前缀（browser_screenshot 的固定输出形态）；或
+ * - 标准 data URI 前缀（BrowserScreenshot 的固定输出形态）；或
  * - 纯 base64 形态兜底（长度 ≥256 且为合法 base64 形状）——防截断/改写。
  *
  * 仅做结构性判断（不解码）；解码成败由 [decodeBrowserScreenshot] 决定，
@@ -74,7 +74,7 @@ internal fun decodeBrowserScreenshot(output: String): Bitmap? = runCatching {
 }.getOrNull()
 
 /**
- * browser_screenshot 的输出渲染：base64 文本墙 → 圆角缩略图。
+ * BrowserScreenshot 的输出渲染：base64 文本墙 → 圆角缩略图。
  *
  * - 缩略：fillMaxWidth + heightIn(max 260dp) + ContentScale.Fit（适配视口比）；
  * - 点击放大：Dialog 内全宽展示，再点图关闭；

@@ -13,7 +13,7 @@ import kotlinx.coroutines.CancellationException
  * # Tool System v4 — MCP tools as first-class functions
  *
  * Before v4 the model could only reach MCP servers through the
- * `mcp_call(server, tool, args)` proxy — it had to *know* remote tool names
+ * `McpCall(server, tool, args)` proxy — it had to *know* remote tool names
  * with no schemas, which is exactly why "MCP 没什么用". v4 registers every
  * discovered remote tool as a real [AgentTool]:
  *
@@ -131,7 +131,7 @@ class McpAgentTool(
          */
         fun renderTransportFailure(serverName: String, toolName: String, detail: String): String =
             "Error: MCP tool '$serverName/$toolName' failed: $detail. " +
-                "If the server disconnected, call mcp_connect('$serverName') once and retry.\n" +
+                "If the server disconnected, call McpConnect('$serverName') once and retry.\n" +
                 FALLBACK_GUIDANCE
 
         /**
@@ -143,33 +143,39 @@ class McpAgentTool(
         private const val FALLBACK_GUIDANCE =
             "[FALLBACK] This MCP tool is currently unavailable. The task is NOT aborted - " +
                 "continue with a different approach: (a) use a built-in tool covering the " +
-                "same need, (b) use another connected MCP server (mcp_list), or (c) complete " +
+                "same need, (b) use another connected MCP server (McpList), or (c) complete " +
                 "the step manually and state the limitation. Do not repeat this identical call."
     }
 }
 
 /**
- * Registry-id scheme for MCP tools: `mcp__{server}__{tool}`.
+ * Registry-id scheme for MCP tools: `Mcp{Server}{Tool}`（无分隔符 PascalCase）。
  *
- * Both server and tool names are normalized to `[a-z0-9_]` (lowercase;
- * other characters fold to `_`, runs collapse). The rikkahub-agent lesson:
- * namespacing by a *normalized* server slug avoids collisions between
- * "My Server" and "my-server", and keeps ids valid function names after
- * [ToolNameSanitizer] (which is a no-op for these ids).
+ * 服务器名与工具名都归一为"逐段首字母大写连写"（`my-server` → `MyServer`，
+ * `create_issue` → `CreateIssue`）——v5 命名改造要求工具名里不出现 `-` 与
+ * `_`，而 `Mcp` 前缀天然把一等 MCP 工具与内置工具分族（ToolKind 徽章、
+ * 作用域打标、`Mcp` 类别推断都靠它）。
+ *
+ * 归一化仍保留 rikkahub 的教训：命名空间基于**归一后**的服务器 slug，"My
+ * Server" 与 "my-server" 收敛到同一个前缀，不会各注册一套同名工具。
+ *
+ * 极端情况下 (server="ab", tool="c") 与 (server="a", tool="bc") 会撞名 ——
+ * 这与 v4 的 `mcp__ab__c` / `mcp__a__bc` 一样属于"服务器自己起名撞车"，
+ * 由 [ToolRegistrar][McpToolRegistrar] 的 REPLACE 语义与
+ * [ToolNameSanitizer] 的确定性去重兜底。
  */
 object McpToolNaming {
 
-    private val INVALID = Regex("[^a-z0-9_]")
-    private val UNDERSCORE_RUN = Regex("_+")
+    private val NON_ALNUM = Regex("[^A-Za-z0-9]")
 
     /** Provider/registry id for a server+tool pair. */
     fun toolId(serverName: String, toolName: String): String =
-        "mcp__${slug(serverName)}__${slug(toolName)}"
+        "Mcp" + slug(serverName) + slug(toolName)
 
-    /** Normalize an arbitrary server/tool name into a slug. */
-    fun slug(raw: String): String {
-        val lowered = raw.trim().lowercase().replace('-', '_').replace(' ', '_')
-        val cleaned = INVALID.replace(lowered, "_")
-        return UNDERSCORE_RUN.replace(cleaned, "_").trim('_').ifEmpty { "srv" }
-    }
+    /** Normalize an arbitrary server/tool name into a PascalCase segment. */
+    fun slug(raw: String): String =
+        raw.split(NON_ALNUM)
+            .filter { it.isNotEmpty() }
+            .joinToString("") { it.replaceFirstChar { ch -> ch.uppercaseChar() } }
+            .ifEmpty { "Srv" }
 }

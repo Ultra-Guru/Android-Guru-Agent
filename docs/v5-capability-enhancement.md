@@ -15,9 +15,9 @@ Three concrete gaps:
 
 1. **Agent cannot configure itself.** All runtime settings (mode, thinking level, retry policy, context window, theme, language, model profiles, role bindings, custom mode presets) are user-only via the Settings UI. The agent has no tool to read or modify them — every onboarding follow-up "let me lower max_iterations" requires the user to leave the chat and dig into Settings.
 
-2. **App install requires Shizuku/root.** The existing `app_install` tool wraps `pm install -r <path>`, which needs a privileged shell (`uid=2000` or root). On stock devices this always fails. There is no combined "download APK from URL + install" one-shot either — the user (and the LLM) must chain `download_file` → `app_install` via `tool_batch_run`, and even then the install step breaks on unprivileged devices.
+2. **App install requires Shizuku/root.** The existing `AppInstall` tool wraps `pm install -r <path>`, which needs a privileged shell (`uid=2000` or root). On stock devices this always fails. There is no combined "download APK from URL + install" one-shot either — the user (and the LLM) must chain `DownloadFile` → `AppInstall` via `ToolBatchRun`, and even then the install step breaks on unprivileged devices.
 
-3. **Capability surface is incomplete.** The agent can't read contacts, send SMS, list calendar events, set alarms, pick files via SAF, capture photos, or post system notifications — all common "smartphone agent" primitives. Some `#172` device tools (`torch`, `vibrate`, `battery_status`, `network_info`, `tts_speak`, `share_content`, `deep_link`) landed but the obvious gaps remained.
+3. **Capability surface is incomplete.** The agent can't read contacts, send SMS, list calendar events, set alarms, pick files via SAF, capture photos, or post system notifications — all common "smartphone agent" primitives. Some `#172` device tools (`torch`, `vibrate`, `BatteryStatus`, `NetworkInfo`, `TtsSpeak`, `ShareContent`, `DeepLink`) landed but the obvious gaps remained.
 
 ## 2. Design
 
@@ -35,28 +35,28 @@ Three concrete gaps:
 
 | Tool | Risk | Description |
 |---|---|---|
-| `agent_setting_get` | LOW (readOnly) | Read full `AgentSettingsSnapshot` JSON |
-| `agent_setting_set` | MEDIUM (idempotentWrite) | Incremental patch (only non-null fields) |
-| `agent_profile_list` | LOW (readOnly) | List model profile summaries (no API keys) |
-| `agent_profile_set_default` | MEDIUM (idempotentWrite) | Switch default profile (next LLM call uses it) |
-| `agent_provider_set_key` | HIGH (sensitiveAction) | Write API key to encrypted store |
-| `agent_role_list` | LOW (readOnly) | Read role bindings (primary/vision/reasoning/fast/summary) |
-| `agent_role_activate` | MEDIUM (idempotentWrite) | Bind profile to a role |
-| `agent_mode_preset_list` | LOW (readOnly) | List built-in + user presets |
-| `agent_mode_preset_select` | MEDIUM (idempotentWrite) | Select active CUSTOM mode preset |
+| `AgentSettingGet` | LOW (readOnly) | Read full `AgentSettingsSnapshot` JSON |
+| `AgentSettingSet` | MEDIUM (idempotentWrite) | Incremental patch (only non-null fields) |
+| `AgentProfileList` | LOW (readOnly) | List model profile summaries (no API keys) |
+| `AgentProfileSetDefault` | MEDIUM (idempotentWrite) | Switch default profile (next LLM call uses it) |
+| `AgentProviderSetKey` | HIGH (sensitiveAction) | Write API key to encrypted store |
+| `AgentRoleList` | LOW (readOnly) | Read role bindings (primary/vision/reasoning/fast/summary) |
+| `AgentRoleActivate` | MEDIUM (idempotentWrite) | Bind profile to a role |
+| `AgentModePresetList` | LOW (readOnly) | List built-in + user presets |
+| `AgentModePresetSelect` | MEDIUM (idempotentWrite) | Select active CUSTOM mode preset |
 
-`agent_setting_get` is added to `CORE_TOOL_IDS` so the LLM sees its own config on every turn (no `tool_search` round-trip needed).
+`AgentSettingGet` is added to `CORE_TOOL_IDS` so the LLM sees its own config on every turn (no `ToolSearch` round-trip needed).
 
 **Group B — Download + Install APK (2 tools, `ToolCategory.APP`)**
 
 | Tool | Risk | Description |
 |---|---|---|
-| `app_install_apk` | HIGH (destructive) | Install local APK via Android `PackageInstaller` session API (no Shizuku/root) |
-| `app_download_install` | HIGH (openWorld+destructive) | One-shot: URL → download → optional hash verify → install |
+| `AppInstallApk` | HIGH (destructive) | Install local APK via Android `PackageInstaller` session API (no Shizuku/root) |
+| `AppDownloadInstall` | HIGH (openWorld+destructive) | One-shot: URL → download → optional hash verify → install |
 
 Both use Android `PackageInstaller.Session` API — only the `REQUEST_INSTALL_PACKAGES` normal permission (already declared). The system install confirmation dialog always shows; the user must tap "Install". No silent install risk.
 
-`app_download_install` validates:
+`AppDownloadInstall` validates:
 - URL must be `http(s)`
 - Filename must be a single-segment `.apk` (no path traversal)
 - MIME type: refuses `text/*` responses (likely HTML error pages)
@@ -67,13 +67,13 @@ Both use Android `PackageInstaller.Session` API — only the `REQUEST_INSTALL_PA
 
 | Tool | Category | Risk | Permission | Description |
 |---|---|---|---|---|
-| `contact_search` | SYSTEM | LOW (sensitiveRead) | `READ_CONTACTS` | Fuzzy search by name/phone/email |
-| `sms_send` | SYSTEM | HIGH (sensitiveAction, openWorld) | `SEND_SMS` | Send SMS (multi-segment for long) |
-| `calendar_event_list` | SYSTEM | LOW (sensitiveRead) | `READ_CALENDAR` | List events from now to `+days_ahead` |
-| `alarm_set` | SYSTEM | MEDIUM (mutating) | `com.android.alarm.permission.SET_ALARM` | Launch AlarmClock intent |
-| `file_pick` | FILE | MEDIUM (mutating) | (none, SAF) | Open SAF picker (fire-and-forget) |
-| `image_capture` | SENSOR | MEDIUM (sensitiveAction) | `CAMERA` | Launch camera intent |
-| `notification_post` | SYSTEM | MEDIUM (idempotentWrite) | `POST_NOTIFICATIONS` | Post silent notification |
+| `ContactSearch` | SYSTEM | LOW (sensitiveRead) | `READ_CONTACTS` | Fuzzy search by name/phone/email |
+| `SmsSend` | SYSTEM | HIGH (sensitiveAction, openWorld) | `SEND_SMS` | Send SMS (multi-segment for long) |
+| `CalendarEventList` | SYSTEM | LOW (sensitiveRead) | `READ_CALENDAR` | List events from now to `+days_ahead` |
+| `AlarmSet` | SYSTEM | MEDIUM (mutating) | `com.android.alarm.permission.SET_ALARM` | Launch AlarmClock intent |
+| `FilePick` | FILE | MEDIUM (mutating) | (none, SAF) | Open SAF picker (fire-and-forget) |
+| `ImageCapture` | SENSOR | MEDIUM (sensitiveAction) | `CAMERA` | Launch camera intent |
+| `NotificationPost` | SYSTEM | MEDIUM (idempotentWrite) | `POST_NOTIFICATIONS` | Post silent notification |
 
 ### 2.3 File map
 
@@ -82,7 +82,7 @@ Both use Android `PackageInstaller.Session` API — only the `REQUEST_INSTALL_PA
 - `src/main/kotlin/.../tools/builtin/AgentSetupTools.kt` — 9 self-setup tools + `AgentSettingsSnapshot` / `AgentSettingsPatch` / `AgentSettingsHost`
 - `src/main/kotlin/.../tools/builtin/AppDownloadInstallTool.kt` — 2 download/install tools + `ApkInstaller` interface + `ApkInstallResult`
 - `src/main/kotlin/.../tools/builtin/MoreCapabilitiesTools.kt` — 7 capability tools + data classes
-- `src/main/kotlin/.../tools/catalog/ToolTierPolicy.kt` — `agent_setting_get` added to `CORE_TOOL_IDS`
+- `src/main/kotlin/.../tools/catalog/ToolTierPolicy.kt` — `AgentSettingGet` added to `CORE_TOOL_IDS`
 - `src/main/kotlin/.../tools/ToolMetadata.kt` — `inferCategory` / `inferRisk` extended for new id prefixes
 - `src/main/kotlin/.../tools/ToolAnnotations.kt` — `infer` extended for new id prefixes
 - `src/test/kotlin/.../tools/builtin/AgentSetupToolsTest.kt` — 19 tests
@@ -104,7 +104,7 @@ Both use Android `PackageInstaller.Session` API — only the `REQUEST_INSTALL_PA
 |---|---|
 | LLM raises its own privilege (e.g. sets `permissionMode=BYPASS`) | `AgentSettingsPatch` only exposes safe fields; security-sensitive fields are NOT in the patch |
 | LLM installs malicious APKs | HIGH risk → session-level user confirmation; system install dialog always shown (no silent install) |
-| LLM leaks stored API keys | `agent_provider_set_key` is write-only — never returns key content; result only says "stored, length N". `SecretRedactingExecutor` additionally redacts outputs |
+| LLM leaks stored API keys | `AgentProviderSetKey` is write-only — never returns key content; result only says "stored, length N". `SecretRedactingExecutor` additionally redacts outputs |
 | LLM sends SMS spam | HIGH risk → session-level user confirmation; phone number regex `^\+?\d{7,15}$` blocks malformed inputs |
 | LLM abuses file picker / camera | MEDIUM risk → user confirmation; both fire-and-forget via Intent (user must explicitly pick file / take photo) |
 | LLM posts noisy notifications | MEDIUM risk → silent channel by default; user can cancel via notification id/tag |
@@ -112,9 +112,9 @@ Both use Android `PackageInstaller.Session` API — only the `REQUEST_INSTALL_PA
 ### 2.5 Backwards compatibility
 
 - All existing tools continue to work unchanged.
-- New tools land in CATALOG (discoverable via `tool_search` / `tool_open`) — except `agent_setting_get` which is CORE (always exposed).
-- `app_install` (Shizuku/root path) remains registered — agents on rooted devices can still use it for silent installs.
-- `download_file` remains the canonical file-download tool; `app_download_install` is specifically for APK install workflow.
+- New tools land in CATALOG (discoverable via `ToolSearch` / `ToolOpen`) — except `AgentSettingGet` which is CORE (always exposed).
+- `AppInstall` (Shizuku/root path) remains registered — agents on rooted devices can still use it for silent installs.
+- `DownloadFile` remains the canonical file-download tool; `AppDownloadInstall` is specifically for APK install workflow.
 - No existing test cases break — new tools are additive.
 
 ## 3. Verification
@@ -137,15 +137,15 @@ Run with:
 
 1. Build & install the APK on a stock (non-rooted) device.
 2. In chat, ask: *"What are your current settings?"*
-   → Expect agent to call `agent_setting_get` and report mode, max_iterations, etc.
+   → Expect agent to call `AgentSettingGet` and report mode, max_iterations, etc.
 3. Ask: *"Lower your max_iterations to 5."*
-   → Expect `agent_setting_set` call; risk gate prompts user once; on accept, settings persist (visible in Settings UI).
+   → Expect `AgentSettingSet` call; risk gate prompts user once; on accept, settings persist (visible in Settings UI).
 4. Ask: *"Install the F-Droid app from https://f-droid.org/FDroid.apk"*
-   → Expect `app_download_install` to download, then system install dialog appears.
+   → Expect `AppDownloadInstall` to download, then system install dialog appears.
 5. Ask: *"Set an alarm for 7am tomorrow."*
-   → Expect `alarm_set` to launch the system clock app with prefilled fields.
+   → Expect `AlarmSet` to launch the system clock app with prefilled fields.
 6. Ask: *"Search contacts for John."*
-   → Expect `contact_search` to require READ_CONTACTS permission (Android permission flow triggers on first call).
+   → Expect `ContactSearch` to require READ_CONTACTS permission (Android permission flow triggers on first call).
 
 ### 3.3 Build verification
 
@@ -166,17 +166,17 @@ Run with:
 - `audio_record` — needs MediaRecorder + RECORD_AUDIO permission
 - `app_grant_permission` / `app_revoke_permission` — needs root or `pm grant` via Shizuku
 - `agent_role_create` / `agent_role_delete` — full role CRUD (currently only activate is exposed)
-- `notification_cancel` — companion to `notification_post`
-- `file_pick` and `image_capture` currently use fire-and-forget Intent pattern; full Activity Result API integration would let the agent receive the picked URI / captured photo path as a tool result.
+- `notification_cancel` — companion to `NotificationPost`
+- `FilePick` and `ImageCapture` currently use fire-and-forget Intent pattern; full Activity Result API integration would let the agent receive the picked URI / captured photo path as a tool result.
 
 ## 5. Decision log
 
 | Decision | Rationale |
 |---|---|
 | Use `PackageInstaller` session API instead of `pm install` | No Shizuku/root needed; works on stock devices; system install dialog always shown (no silent install risk) |
-| `agent_setting_get` in CORE, others in CATALOG | LLM should always know its own config; write tools add ~5KB schema each, keep them off-CORE |
+| `AgentSettingGet` in CORE, others in CATALOG | LLM should always know its own config; write tools add ~5KB schema each, keep them off-CORE |
 | Whitelist patch fields, exclude `permissionMode`/`permissionRules`/`mcpScopeIsolation` | LLM should not raise its own privilege — security boundary stays user-controlled |
-| `sms_send` HIGH risk + sensitiveAction + openWorldHint | Real cost (SMS fees) + third-party communication + retry-not-safe |
-| Fire-and-forget for `file_pick` / `image_capture` | Activity Result API integration requires Activity registration; deferred to Wave 2 |
+| `SmsSend` HIGH risk + sensitiveAction + openWorldHint | Real cost (SMS fees) + third-party communication + retry-not-safe |
+| Fire-and-forget for `FilePick` / `ImageCapture` | Activity Result API integration requires Activity registration; deferred to Wave 2 |
 | Don't expose `READ_SMS` / `RECEIVE_SMS` | Privacy: reading SMS is much more sensitive than sending; agent has no need to read SMS for the user's stated use cases |
-| `notification_post` defaults to silent channel | Avoids "agent spammed notifications" complaints; user can pair with `vibrate` / `tts_speak` for audible alerts |
+| `NotificationPost` defaults to silent channel | Avoids "agent spammed notifications" complaints; user can pair with `vibrate` / `TtsSpeak` for audible alerts |

@@ -79,14 +79,14 @@ class EngineLadderRetryTest {
         val g = EngineResilienceGuard(EngineResiliencePolicy.DEFAULT)
         g.resetForTask()
         for (attempt in 1..7) {
-            val decision = g.onToolFailure("web_fetch", "c$attempt", "socket timeout", attempt)
+            val decision = g.onToolFailure("WebFetch", "c$attempt", "socket timeout", attempt)
             assertTrue(
                 "attempt $attempt should retry under DEFAULT ladder",
                 decision is RetryPolicy.RetryDecision.Retry
             )
         }
         // 阶梯穷尽：自动停止
-        val stop = g.onToolFailure("web_fetch", "c8", "socket timeout", 8)
+        val stop = g.onToolFailure("WebFetch", "c8", "socket timeout", 8)
         assertTrue(stop is RetryPolicy.RetryDecision.Stop)
     }
 }

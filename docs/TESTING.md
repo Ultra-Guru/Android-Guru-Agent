@@ -160,7 +160,7 @@ CI 无模拟器 → 只编译保证不烂（`compileDebugAndroidTestKotlin`）�
 | 测试类 | 覆盖 | 锁定的缺陷 |
 |--------|------|-----------|
 | **UiTreePrunerStableEdgeIdTest** | 稳定边 ID：确定性 / 格式 / 内容敏感 / 方向敏感 / 字段边界防碰撞 / **跨帧同树同 ID** / 兄弟顺序无关性 / **增量树只加边不扰动旧边** | 旧边 ID 是帧内自增计数器 → 差分语义错乱 + 跨 Episode 误删（v3 迁移前置条件） |
-| **TraceDistillerParamExtractionTest** | `extractActionParams` 三种历史形态；端到端 `distill`：纯参数写入转移表 / 最小步数拒绝 / 失败与思考步骤过滤 | 蒸馏把完整描述（`input_text("hello")`）存进转移表，回放输入整串字面量 |
+| **TraceDistillerParamExtractionTest** | `extractActionParams` 三种历史形态；端到端 `distill`：纯参数写入转移表 / 最小步数拒绝 / 失败与思考步骤过滤 | 蒸馏把完整描述（`InputText("hello")`）存进转移表，回放输入整串字面量 |
 | **BypassExecutionEngineTest** | `extractInputText` 双保险；**跨版本迁移回退闭环**（别名桥反查 + 正向校验）；精确匹配直通；无宏 NotMatched；**回放状态偏离防护**（广告弹窗劫持 → 立即失败交还 LLM） | migration_map 只写不读（App 升级后宏集体失效）+ 迁移复验用旧指纹恒被误杀 |
 
 **技术要点**：cs-mem 是 Android library，但被测路径全部纯 JVM。模块
@@ -224,7 +224,7 @@ glibc-2.39 guest）；安装失败时测试自我跳过高级别场景并诚实�
 - [ ] 回归测试：先确认**修复前会失败**（红→绿），并在 KDoc 注明锁定的缺陷；
 - [ ] 括号平衡：字符串字面量中的 ASCII 括号也要配对（CI 的朴素 grep 检查
   连字符串一起数——范本：`extractInputText malformed parens` 用例用
-  括号倒置形态 `input_text)("unclosed` 同时满足语义与门禁）；
+  括号倒置形态 `InputText)("unclosed` 同时满足语义与门禁）；
 - [ ] 新模块测试：`build.gradle.kts` 加 `testImplementation(libs.junit)`
   （+ 需要时 `libs.coroutines.test`）；Android library 模块评估
   `returnDefaultValues`；

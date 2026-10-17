@@ -25,13 +25,13 @@ class ToolTraceRecorderTest {
     @Test
     fun `spans record outcome duration and attempt with monotonic call ids`() {
         val recorder = ToolTraceRecorder(capacity = 10)
-        val handle = recorder.begin("web_fetch", """{"url":"http://x"}""")
+        val handle = recorder.begin("WebFetch", """{"url":"http://x"}""")
         recorder.complete(handle)
 
         val spans = recorder.spans()
         assertEquals(1, spans.size)
         val span = spans.first()
-        assertEquals("web_fetch", span.toolId)
+        assertEquals("WebFetch", span.toolId)
         assertEquals(ToolTraceRecorder.Outcome.SUCCESS, span.outcome)
         assertEquals(1, span.attempt)
         assertTrue(span.durationMs >= 0)
@@ -48,11 +48,11 @@ class ToolTraceRecorderTest {
     fun `failure and denial outcomes carry error slugs`() {
         val recorder = ToolTraceRecorder(capacity = 10)
         recorder.completeFailure(
-            recorder.begin("shell_execute", "ls"),
+            recorder.begin("ShellExecute", "ls"),
             "permission_denied"
         )
         recorder.completeDenied(
-            recorder.begin("app_uninstall", "{}"),
+            recorder.begin("AppUninstall", "{}"),
             "breaker"
         )
         val spans = recorder.spans()
@@ -79,7 +79,7 @@ class ToolTraceRecorderTest {
     @Test
     fun `args are digested not stored raw - secrets stay out of traces`() {
         val recorder = ToolTraceRecorder()
-        val handle = recorder.begin("http_request", """{"token":"SECRET_VALUE_12345"}""")
+        val handle = recorder.begin("HttpRequest", """{"token":"SECRET_VALUE_12345"}""")
         recorder.complete(handle)
         val span = recorder.spans().first()
         // 摘要只保留长度/可打印字符统计 —— 原文绝不入 trace。
@@ -106,11 +106,11 @@ class ToolTraceRecorderTest {
     @Test
     fun `toJson exports the newest spans as structured objects`() {
         val recorder = ToolTraceRecorder()
-        recorder.complete(recorder.begin("web_search", """{"q":"kotlin"}"""))
+        recorder.complete(recorder.begin("WebSearch", """{"q":"kotlin"}"""))
         val json = recorder.toJson()
         assertEquals(1, json.size)
         val first = json.first().toString()
-        assertTrue(first.contains("web_search"))
+        assertTrue(first.contains("WebSearch"))
         assertTrue(first.contains("success"))
         assertTrue(first.contains("callId"))
     }
@@ -147,9 +147,9 @@ class ToolBatchRunnerTest {
         val executor = ScriptedExecutor(listOf("alpha", "beta", "gamma"))
         val result = ToolBatchRunner(executor).run(
             steps(
-                "read_file" to "{}",
-                "search_files" to "{}",
-                "write_file" to "{}"
+                "Read" to "{}",
+                "SearchFiles" to "{}",
+                "Write" to "{}"
             )
         )
         assertTrue(result.isComplete)
@@ -163,9 +163,9 @@ class ToolBatchRunnerTest {
         val executor = ScriptedExecutor(listOf("alpha", "Error: not found: no such file"))
         val result = ToolBatchRunner(executor).run(
             steps(
-                "read_file" to "{}",
-                "search_files" to "{}",
-                "write_file" to "{}"
+                "Read" to "{}",
+                "SearchFiles" to "{}",
+                "Write" to "{}"
             )
         )
         assertFalse(result.isComplete)
@@ -204,8 +204,8 @@ class ToolBatchRunnerTest {
         val runner = ToolBatchRunner(executor)
         runner.run(
             steps(
-                "read_file" to "{}",            // returns "OK" (default tail)
-                "write_file" to "{0}"
+                "Read" to "{}",            // returns "OK" (default tail)
+                "Write" to "{0}"
             )
         )
         // 第二步的 arguments = 第一步的输出原文。
@@ -218,8 +218,8 @@ class ToolBatchRunnerTest {
         val runner = ToolBatchRunner(executor)
         runner.run(
             steps(
-                "read_file" to "{}",
-                "write_file" to """{"content": "{0} and more"}"""
+                "Read" to "{}",
+                "Write" to """{"content": "{0} and more"}"""
             )
         )
         assertEquals(

@@ -424,7 +424,7 @@ private fun codingViewText(level: CodeThinkingLevel): String = when (level) {
 
     CodeThinkingLevel.DEEP ->
         "多文件特性 / 有连锁反应的改动：先建「改动集清单」再动手，每处改动关联验证方式，" +
-            "探索类工作委派 code_task 子代理。工具失败后自动追加自检，" +
+            "探索类工作委派 CodeTask 子代理。工具失败后自动追加自检，" +
             "成本开始显著（迭代×1.2），但能防住「改了 A 忘了 B」。"
 
     CodeThinkingLevel.MAXIMUM ->

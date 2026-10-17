@@ -18,10 +18,10 @@ v2 定义了工具是什么，v3 让工具在循环里不死，v4 让**工具默
 
 | # | 根因 | 证据 |
 |---|------|------|
-| 1 | **非法函数名直接 400**：~25 个 terminal 工具 id 带点（`terminal.exec`、`terminal.linux.bootstrap`…），OpenAI 函数名文法 `^[a-zA-Z0-9_-]{1,64}$` 不允许点。不圈选 = 全量 110 个 schema（带点名字）一起发 → 严格端点整单拒绝；手动圈选（无点号工具）恰好避开 → “必须选函数才能发” |
+| 1 | **非法函数名直接 400**：~25 个 terminal 工具 id 带点（`TerminalExec`、`TerminalLinuxBootstrap`…），OpenAI 函数名文法 `^[a-zA-Z0-9_-]{1,64}$` 不允许点。不圈选 = 全量 110 个 schema（带点名字）一起发 → 严格端点整单拒绝；手动圈选（无点号工具）恰好避开 → “必须选函数才能发” |
 | 2 | **请求体爆炸**：110 工具 × (schema 387B + 描述 260B) ≈ 70–100KB + 系统提示词 110 行清单 → 小上下文/严格网关直接拒 |
 | 3 | **没有渐进披露**：全量或白名单二选一——白名单语义（enabledToolIds）就是“不选=发全部”这个雷的载体 |
-| 4 | **MCP 是三个代理工具**：模型只能 `mcp_call(server, tool, args)` 盲调（无 schema、无名字发现）——“GitHub 连接/MCP 没什么用” |
+| 4 | **MCP 是三个代理工具**：模型只能 `McpCall(server, tool, args)` 盲调（无 schema、无名字发现）——“GitHub 连接/MCP 没什么用” |
 | 5 | **无请求级 tool_choice**：圈选函数无法表达“必须调用” |
 
 ## 2. 架构总览
@@ -33,7 +33,7 @@ v2 定义了工具是什么，v3 让工具在循环里不死，v4 让**工具默
                                              │ 每轮迭代
    AgentConfig.forcedToolIds ──┐             ▼
    (「调用函数」圈选=强制)      │   ToolRequestBudget.planForced / planDefault
-   exposeAllTools(电源用户) ────┤   · CORE 集（~45）∪ 会话激活(tool_open) ∪ 全量?
+   exposeAllTools(电源用户) ────┤   · CORE 集（~45）∪ 会话激活(ToolOpen) ∪ 全量?
                                 │   · ToolNameSanitizer（点号→下划线 + 冲突消解 + 64 字符）
                                 │   · ToolSchemaSanitizer（修复/过滤 required/限长）
                                 │   · 预算钳制（≤64 个 / ≤48KB），名称稳定排序
@@ -52,11 +52,11 @@ v2 定义了工具是什么，v3 让工具在循环里不死，v4 让**工具默
 ## 3. 组件明细（core/tool-registry `catalog/` 包）
 
 ### 3.1 ToolTierPolicy
-- **CORE_TOOL_IDS（~45）**：交互(ask_user*) + 文件(8) + Web(4) + terminal.exec/create/run/observe/wait/snapshot/backends + 记忆(3) + 应用/设备(8) + MCP(3) + skill/connector(3) + 目录元工具(3)。每请求全 schema 常驻 —— **agent 默认就是能干活的**。
-- **LEGACY_ALIAS_IDS**：6 个弃用别名永不入请求（`terminal_exec` 等老名字让位给现代 `terminal.exec` 的清洗后名）。
+- **CORE_TOOL_IDS（~45）**：交互(AskUser*) + 文件(8) + Web(4) + TerminalExec/create/run/observe/wait/snapshot/backends + 记忆(3) + 应用/设备(8) + MCP(3) + skill/connector(3) + 目录元工具(3)。每请求全 schema 常驻 —— **agent 默认就是能干活的**。
+- **LEGACY_ALIAS_IDS**：6 个弃用别名永不入请求（`TerminalExecLegacy` 等老名字让位给现代 `TerminalExec` 的清洗后名）。
 
 ### 3.2 ToolNameSanitizer（400 根因的直接修复）
-- 注册表 id → provider 合法名：`terminal.linux.bootstrap` → `terminal_linux_bootstrap`；
+- 注册表 id → provider 合法名：`TerminalLinuxBootstrap` → `terminal_linux_bootstrap`；
 - 冲突消解确定性（非 legacy 优先 → 长 id 优先 → 字典序 → `_2` 后缀）；
 - **双向映射随计划下发**：引擎执行时把模型回显名映射回注册表 id（`executeToolCallStreaming` / 编排器 `ToolCall` 重映射）；无映射时原样直查（模型直呼 registry id 也通）。
 
@@ -74,7 +74,7 @@ v2 定义了工具是什么，v3 让工具在循环里不死，v4 让**工具默
 
 ### 3.5 ToolActivationStore + 目录元工具（渐进披露闭环）
 - 会话级激活（FIFO 上限 24；引擎 `execute()` 入口 reset，不跨任务泄漏）；
-- `tool_search(query)` 关键词检索全目录；`tool_open(tool_name)` 返回完整描述+参数 schema（作为**工具结果**注入——operit use_package 模式的原生函数调用版），下一轮请求自动带上；`tool_list()` 类别总览；
+- `ToolSearch(query)` 关键词检索全目录；`ToolOpen(tool_name)` 返回完整描述+参数 schema（作为**工具结果**注入——operit use_package 模式的原生函数调用版），下一轮请求自动带上；`ToolList()` 类别总览；
 - 接受 registry id **或**清洗名（模型两种叫法都能打开）。
 
 ### 3.6 MCP 一等化
@@ -83,8 +83,8 @@ v2 定义了工具是什么，v3 让工具在循环里不死，v4 让**工具默
   schema 经清洗器修复；结果 16KB 钳制；MEDIUM 风险 + 非幂等（v3 策略不盲重试）；
 - `McpToolRegistrar`：挂 `McpManager.SessionListener`（v4 新增）——connect → 发现 → 注册（REPLACE，重连刷新）/ disconnect → 精确注销（服务端工具列表变化不留幽灵）；
 - **McpManager**：新增 `listServerTools(name)` + 会话事件监听（connect/disconnect/remove/disable/断开全部 全路径触发）；
-- 启动自动连接：ApexCoreService 对 `getEnabledConfigs()` 逐台 connect（“配置即生效”，与插件同一哲学；失败不阻断，模型可 `mcp_connect` 重试）；
-- 旧三个代理工具（mcp_list/mcp_connect/mcp_call）保留为兜底路径。
+- 启动自动连接：ApexCoreService 对 `getEnabledConfigs()` 逐台 connect（“配置即生效”，与插件同一哲学；失败不阻断，模型可 `McpConnect` 重试）；
+- 旧三个代理工具（McpList/McpConnect/McpCall）保留为兜底路径。
 
 ### 3.7 强制函数调用（「调用函数」菜单的 v4 语义）
 - `ToolChoiceSpec`（llm-adapter）：Auto / Required / **Function(name)** / None —— 每请求级，新增 5 参重载贯通 `LlmClient → ModelRuntime → DefaultModelRuntime → StreamingOpenAiClient`（带默认实现，全部既有实现与测试零改动；SingleClientModelRuntime 覆写透传，legacy 路径不丢 tool_choice）；
@@ -99,7 +99,7 @@ v2 定义了工具是什么，v3 让工具在循环里不死，v4 让**工具默
 - ErrorClassifier 升级：400 响应体摘要（200 字符）进异常消息（诊断+关键词判定双受益）。
 
 ### 3.9 提示词（EnginePrompts）
-- Tool-Use Policy 第 8 条：目录用法（tool_search → tool_open）；
+- Tool-Use Policy 第 8 条：目录用法（ToolSearch → ToolOpen）；
 - "## Available Tools" 列 **provider 名**（模型看到什么名字就调什么名字，与 schema 零歧义）；
 - "## Tool Catalog (N more available)"：未预载能力计数 + 类别概览 + 三条发现路径；
 - "## Forced Function Calls"：圈选集 + 必须调用声明；
@@ -107,7 +107,7 @@ v2 定义了工具是什么，v3 让工具在循环里不死，v4 让**工具默
 
 ## 4. 接线（app 模块）
 - ToolModule：`provideToolActivationStore` + `provideMcpToolRegistrar`（IO Supervisor 作用域）+ 目录三工具注册（第 12 节）；
-- AgentModule：engine 与 orchestrator 注入**同一** ToolActivationStore（tool_open 激活对两条执行路径同时生效）；任务快照 `forcedToolIds/exposeAllTools`；
+- AgentModule：engine 与 orchestrator 注入**同一** ToolActivationStore（ToolOpen 激活对两条执行路径同时生效）；任务快照 `forcedToolIds/exposeAllTools`；
 - ChatToolkitStore：`forcedToolIds()`/`exposeAllToolsEnabled()` 取代 `effectiveToolWhitelist()`；会话上下文新增“强制函数调用”段；
 - ToolkitRingButton：「函数调用」→「**强制函数调用**」（含语义提示行）+ 全量工具开关；i18n 双语（values/values-zh）；
 - AgentChatViewModel：patchConfig 携带 v4 参数。
@@ -118,7 +118,7 @@ v2 定义了工具是什么，v3 让工具在循环里不死，v4 让**工具默
 |------|------|
 | ToolSystemV4CatalogTest (27) | 名字清洗（点号/钳制/冲突/回环）、schema 修复（非法 JSON/幽灵 required/坏关键字/超长）、激活（幂等/FIFO/reset）、计划（CORE-only/激活并入/全量/强制/coreOnly 降级/名称稳定排序/数量钳制）、目录元工具（search/open 含清洗名/open 未知引导/list）、MCP 命名（防撞/provider 合法） |
 | ToolChoiceSpecRequestTest (11) | required/none/auto/Function 序列化、Profile 回退、无函数工具时不发 tool_choice、Gemini 关键字剥离、非 Gemini 保留 enum、描述钳制、非法 schema 骨架 |
-| EngineToolSystemV4Test (6) | 默认请求=CORE+清洗名+目录段、系统提示词 provider 名+目录、强制单选=Function/多选=Required、**tool_open → 下一轮请求带上被激活工具（端到端）**、400→coreOnly→无工具三级降级自愈、鉴权错误不降级 |
+| EngineToolSystemV4Test (6) | 默认请求=CORE+清洗名+目录段、系统提示词 provider 名+目录、强制单选=Function/多选=Required、**ToolOpen → 下一轮请求带上被激活工具（端到端）**、400→coreOnly→无工具三级降级自愈、鉴权错误不降级 |
 
 验证方式：Kotlin 2.0.21 官方编译器 + catalog 同版本依赖（coroutines 1.9.0 / serialization 1.7.3 / okhttp 4.12.0），三个核心模块 main+test 全量编译 exit 0，JUnit 全量 560 绿。
 

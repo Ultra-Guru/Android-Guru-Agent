@@ -10,7 +10,7 @@ import org.junit.Test
 /**
  * T92（#255 权限链审计）—— CommandPermissionGate 高危命令确认门的混淆防御锁。
  *
- * shell_execute / terminal.exec 的每条命令都先过本门（ToolModule shellExecResult /
+ * ShellExecute / TerminalExec 的每条命令都先过本门（ToolModule shellExecResult /
  * TerminalExecTool approvalGate）。审计结论「权限链真实被 Agent 利用」的前提是
  * 门禁不可被前缀/引号/空白混淆绕过 —— 这里把 [CommandPermissionGate] 已实现的
  * 四类防御（赋值前缀剥离 / 引号剥离 / 空白归一化 / 子串级嵌入链捕获）逐条

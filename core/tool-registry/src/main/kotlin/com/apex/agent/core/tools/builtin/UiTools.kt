@@ -51,11 +51,11 @@ class UiTapTool(
     private val uiProvider: UiInteractionProvider? = null
 ) : AgentTool {
 
-    override val id = "ui_tap"
+    override val id = "UiTap"
     override val name = "Tap Screen"
     override val description = """
         Tap at specific screen coordinates.
-        Use ui_dump first to find element positions, or screenshot to see the screen.
+        Use UiDump first to find element positions, or screenshot to see the screen.
         Coordinates are in pixels from top-left corner.
         When accessibility service is active, uses semantic gesture dispatch
         for more reliable interaction.
@@ -116,7 +116,7 @@ class UiSwipeTool(
     private val screenMetrics: (() -> Pair<Int, Int>)? = null
 ) : AgentTool {
 
-    override val id = "ui_swipe"
+    override val id = "UiSwipe"
     override val name = "Swipe Screen"
     override val description = """
         Swipe from one point to another on the screen.
@@ -214,7 +214,7 @@ class UiNotificationsTool(
     private val uiProvider: UiInteractionProvider? = null
 ) : AgentTool {
 
-    override val id = "ui_notifications"
+    override val id = "UiNotifications"
     override val name = "Open/Close Notification Shade"
     override val description = """
         Expand or collapse the notification shade (system notification panel).
@@ -268,7 +268,7 @@ class UiDumpTool(
     private val uiProvider: UiInteractionProvider? = null
 ) : AgentTool {
 
-    override val id = "ui_dump"
+    override val id = "UiDump"
     override val name = "Dump UI Hierarchy"
     override val description = """
         Dump the current screen's UI hierarchy (view tree).
@@ -311,7 +311,7 @@ class UiDumpTool(
         }
 
         // 回退到 uiautomator dump
-        var result = shellExecutor("uiautomator dump /data/local/tmp/ui_dump.xml 2>/dev/null && cat /data/local/tmp/ui_dump.xml")
+        var result = shellExecutor("uiautomator dump /data/local/tmp/UiDump.xml 2>/dev/null && cat /data/local/tmp/UiDump.xml")
 
         if (result.contains("Error") || result.isBlank()) {
             return "UI dump failed. This may require accessibility service or specific permissions."
@@ -357,7 +357,7 @@ class ScreenshotTool(
         val error: String?
     )
 
-    override val id = "screenshot"
+    override val id = "Screenshot"
     override val name = "Take Screenshot"
     override val description = """
         Capture the current screen as a PNG image.
@@ -418,7 +418,7 @@ class ScreenshotTool(
  * 文本输入工具
  *
  * Type text into the currently focused input field.
- * Make sure the target input field is focused (tap it first with ui_tap).
+ * Make sure the target input field is focused (tap it first with UiTap).
  *
  * v3：声明硬前置条件 [EnvironmentAwareTool.requiredEnv] —— 键盘未激活时
  * `input text` 必然失败，门控在执行前就挡下并给出修复指引（Mobile-Agent
@@ -431,11 +431,11 @@ class InputTextTool(
     override val requiredEnv: List<String> =
         listOf(ToolEnvironmentState.Flags.KEYBOARD_ACTIVE)
 
-    override val id = "input_text"
+    override val id = "InputText"
     override val name = "Input Text"
     override val description = """
         Type text into the currently focused input field.
-        Make sure the target input field is focused (tap it first with ui_tap).
+        Make sure the target input field is focused (tap it first with UiTap).
 
         For special keys, use key codes:
         - Enter: keyevent 66

@@ -4,7 +4,7 @@ import com.apex.agent.platform.terminal.io.InputOwner
 import com.apex.agent.platform.terminal.io.UnixSignal
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
 import com.apex.agent.platform.terminal.tools.TerminalTool
-import com.apex.agent.platform.terminal.wait.WaitCondition
+import com.apex.agent.platform.TerminalWait.WaitCondition
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -12,9 +12,9 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Legacy compat tool: terminal_exec
+ * Legacy compat tool: TerminalExecLegacy
  *
- * Spec ref: ATR 2.0 Final Spec §35 (compatibility layer) / §46 (terminal_exec id collision fix)
+ * Spec ref: ATR 2.0 Final Spec §35 (compatibility layer) / §46 (TerminalExecLegacy id collision fix)
  *
  * Preserves the OLD synchronous contract: execute(command) → output + exitCode (blocks until done).
  *
@@ -23,19 +23,19 @@ import kotlinx.serialization.json.jsonPrimitive
  *   - NEW: uses runtime.run() + runtime.wait(PROCESS_EXITED, timeoutMs) + runtime.observe(RAW).
  *         Completion is waitpid-confirmed, NOT settle-time-inferred.
  *
- * id collision fix (Spec §46): this tool is the SINGLE source of `terminal_exec`.
+ * id collision fix (Spec §46): this tool is the SINGLE source of `TerminalExecLegacy`.
  * The old `StreamingTerminalExecTool` (duplicate id) is removed in Phase 4; streaming
- * capability is now `terminal.run` + `terminal.observe` (Agent calls run, then observes
+ * capability is now `TerminalRun` + `TerminalObserve` (Agent calls run, then observes
  * incrementally — no separate streaming tool needed).
  */
 @Deprecated(
-    "ATR 2.0 compat alias — use terminal.run + terminal.wait + terminal.observe instead. Scheduled for removal in a future version.",
+    "ATR 2.0 compat alias — use TerminalRun + TerminalWait + TerminalObserve instead. Scheduled for removal in a future version.",
     ReplaceWith("TerminalRunTool(runtime)", "com.apex.agent.platform.terminal.tools.v2.TerminalRunTool")
 )
 class LegacyExecTool(
     private val runtime: TerminalRuntime
 ) : TerminalTool {
-    override val id: String = "terminal_exec"
+    override val id: String = "TerminalExecLegacy"
     override val name: String = id
     override val parametersSchema: String = """
         {
@@ -51,8 +51,8 @@ class LegacyExecTool(
     """.trimIndent()
     override val description: String = """
         [COMPAT, DEPRECATED] Execute a command synchronously and return output + exitCode. Blocks
-        until process exits (waitpid-confirmed, NOT settle-time). For new code prefer terminal.run +
-        terminal.wait + terminal.observe (non-blocking, incremental). Kept for backward compat.
+        until process exits (waitpid-confirmed, NOT settle-time). For new code prefer TerminalRun +
+        TerminalWait + TerminalObserve (non-blocking, incremental). Kept for backward compat.
     """.trimIndent()
 
     suspend fun execute(input: Input): Output {
@@ -70,16 +70,16 @@ class LegacyExecTool(
         )
         val wait = waitResult.getOrElse { throw it }
         val exitCode = when (wait) {
-            is com.apex.agent.platform.terminal.wait.WaitResult.Matched -> {
+            is com.apex.agent.platform.TerminalWait.WaitResult.Matched -> {
                 val ev = wait.event
                 if (ev is com.apex.agent.platform.terminal.events.TerminalEvent.ProcessExited) ev.exitCode ?: -1
                 else 0
             }
-            is com.apex.agent.platform.terminal.wait.WaitResult.Timeout -> {
+            is com.apex.agent.platform.TerminalWait.WaitResult.Timeout -> {
                 runtime.signal(input.sessionId, UnixSignal.SIGKILL, InputOwner.AGENT, run.jobId)
                 return Output(output = "", exitCode = -1, truncated = false, durationMs = wait.waitedMs, timedOut = true)
             }
-            is com.apex.agent.platform.terminal.wait.WaitResult.SessionGone -> {
+            is com.apex.agent.platform.TerminalWait.WaitResult.SessionGone -> {
                 return Output(output = "", exitCode = -1, truncated = false, durationMs = (System.nanoTime() - t0) / 1_000_000, timedOut = false)
             }
         }

@@ -5,15 +5,15 @@ import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.platform.privilege.PrivilegeDetector
 import com.apex.agent.platform.privilege.shizuku.ShizukuCommandExecutor
 import com.apex.agent.platform.privilege.shizuku.ShizukuProcessChannel
-import com.apex.agent.platform.terminal.exec.CommandSpawner
-import com.apex.agent.platform.terminal.exec.ProcessBuilderSpawner
-import com.apex.agent.platform.terminal.exec.SpawnRequest
-import com.apex.agent.platform.terminal.exec.SpawnedCommand
+import com.apex.agent.platform.TerminalExec.CommandSpawner
+import com.apex.agent.platform.TerminalExec.ProcessBuilderSpawner
+import com.apex.agent.platform.TerminalExec.SpawnRequest
+import com.apex.agent.platform.TerminalExec.SpawnedCommand
 import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
- * `terminal.exec` 的真实执行通道选择器（app 层接线）。
+ * `TerminalExec` 的真实执行通道选择器（app 层接线）。
  *
  * 通道优先级与 [PrivilegeDetector.executeShell] 一致：Root(`su -c`) >
  * Shizuku(ADB 级 uid=2000，IRemoteProcess) > 本地 app-shell(ProcessBuilder)。
@@ -32,7 +32,7 @@ class PrivilegedCommandSpawner : CommandSpawner {
 
     private val localSh = ProcessBuilderSpawner(channel = "local-sh", shell = "/system/bin/sh")
 
-    /** T92（#255）审计日志：terminal.exec 宿主通道选择 —— 一眼可查「这条命令走了 root-su / shizuku / local-sh」。 */
+    /** T92（#255）审计日志：TerminalExec 宿主通道选择 —— 一眼可查「这条命令走了 root-su / shizuku / local-sh」。 */
     private fun auditChannel(channel: String, command: String) {
         runCatching {
             AppLogger.instance.info(
@@ -54,7 +54,7 @@ class PrivilegedCommandSpawner : CommandSpawner {
     /**
      * 最近一次 [spawn] 实际选中的通道。
      *
-     * 旧实现让 [channel] / [supportsEnv] 各自调一次探测 —— 一次 `terminal.exec`
+     * 旧实现让 [channel] / [supportsEnv] 各自调一次探测 —— 一次 `TerminalExec`
      * 至少要探测 3 次（引擎读 channel、读 supportsEnv、spawn 再选一次），而探测包含
      * su 文件扫描 + `Shizuku.pingBinder()` 的 **binder IPC**：既浪费，又可能在两次探测
      * 之间授权状态变化，导致「上报的通道 ≠ 实际执行的通道」这种不诚实结果。

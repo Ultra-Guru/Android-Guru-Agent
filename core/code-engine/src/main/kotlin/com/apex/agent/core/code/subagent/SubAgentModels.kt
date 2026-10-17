@@ -11,7 +11,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class SubAgentSettings(
-    /** 总开关：关闭后 code_task 返回引导文案（主代理改为亲自执行探索）。 */
+    /** 总开关：关闭后 CodeTask 返回引导文案（主代理改为亲自执行探索）。 */
     val enabled: Boolean = true,
     /** 并发上限：同时在跑的子代理数（1..8）。 */
     val maxConcurrent: Int = DEFAULT_MAX_CONCURRENT,
@@ -74,10 +74,10 @@ data class SubAgentSettings(
 /**
  * 用户自定义子代理类型：角色提示词 + 工具白名单 + 预算覆盖。
  *
- * @param key 调用标识（code_task 的 custom_name 参数按它解析；小写字母
+ * @param key 调用标识（CodeTask 的 custom_name 参数按它解析；小写字母
  *   数字连字符，内置 key 保留：explore/research/general/reviewer）
  * @param displayName 中文展示名
- * @param description 一句话职责（code_task 描述与选择引导）
+ * @param description 一句话职责（CodeTask 描述与选择引导）
  * @param systemPrompt 角色系统提示词（拼在公共纪律之前）
  * @param toolIds 工具白名单（空集 = 默认 CORE 计划）
  * @param maxTurns 覆盖迭代上限（0 = 用全局默认）

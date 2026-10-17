@@ -21,7 +21,7 @@ import javax.inject.Singleton
  * - **REMOTE**：`remotes[]` 有端点 → 直接写 HTTP/SSE 配置（无沙箱依赖），
  *   headers 原样保留模板值（占位符需用户在「编辑」里补真值）；
  * - **NPM**：`packages[]` 有 npm+stdio 包 → ① rootfs 门禁（未装则引导
- *   terminal.ubuntu.install）② 沙箱 `npm install -g`（5 分钟超时，
+ *   TerminalUbuntuInstall）② 沙箱 `npm install -g`（5 分钟超时，
  *   npm 下载耗时真实存在）③ 写 `npx -y {identifier}@{version}` 沙箱 STDIO 配置
  *   ④ 写入失败 → 回滚 `npm uninstall -g`；
  * - **UNSUPPORTED**：pypi / mcpb / oci / nuget / 非 stdio npm 包 →

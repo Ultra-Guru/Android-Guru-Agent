@@ -13,12 +13,12 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 
 /**
- * [FileWriteGuard] / [TextFileStyle] 与两个写工具（code_edit / code_write）
+ * [FileWriteGuard] / [TextFileStyle] 与两个写工具（CodeEdit / CodeWrite）
  * 的持久化契约测试：
  * - 原子写不留 tmp 残留；per-path 锁可重入（嵌套不自锁）；
  * - BOM/CRLF 探测、归一（normalize）与还原（apply）互为逆变换；
- * - code_write 覆盖保留原 BOM/CRLF；超 4MB 文件 diff 降级为统计行提示；
- * - code_edit 编辑 CRLF 文件按原行尾还原。
+ * - CodeWrite 覆盖保留原 BOM/CRLF；超 4MB 文件 diff 降级为统计行提示；
+ * - CodeEdit 编辑 CRLF 文件按原行尾还原。
  */
 class FileWriteGuardTest {
 
@@ -100,10 +100,10 @@ class FileWriteGuardTest {
         assertTrue(style.hasCrlf)
     }
 
-    // ── code_write：BOM/CRLF 保留 + 大文件 diff 降级 ────────────────
+    // ── CodeWrite：BOM/CRLF 保留 + 大文件 diff 降级 ────────────────
 
     @Test
-    fun `code_write overwrite preserves bom and crlf`() = runTest {
+    fun `CodeWrite overwrite preserves bom and crlf`() = runTest {
         val root = tmp.newFolder("ws1")
         val f = File(root, "win.txt")
         f.writeText("\uFEFFline1\r\nline2\r\n")
@@ -117,7 +117,7 @@ class FileWriteGuardTest {
     }
 
     @Test
-    fun `code_write skips diff for oversized file instead of oom`() = runTest {
+    fun `CodeWrite skips diff for oversized file instead of oom`() = runTest {
         val root = tmp.newFolder("ws2")
         val f = File(root, "big.txt")
         f.writeText("x".repeat(5 * 1024 * 1024)) // > 4MB MAX_FILE_BYTES
@@ -131,10 +131,10 @@ class FileWriteGuardTest {
         assertEquals("small now", f.readText())
     }
 
-    // ── code_edit：CRLF 还原 ────────────────────────────────────────
+    // ── CodeEdit：CRLF 还原 ────────────────────────────────────────
 
     @Test
-    fun `code_edit preserves crlf line endings`() = runTest {
+    fun `CodeEdit preserves crlf line endings`() = runTest {
         val root = tmp.newFolder("ws3")
         val f = File(root, "crlf.txt")
         f.writeText("alpha\r\nbeta\r\n")
@@ -148,7 +148,7 @@ class FileWriteGuardTest {
     }
 
     @Test
-    fun `code_edit preserves bom on replace`() = runTest {
+    fun `CodeEdit preserves bom on replace`() = runTest {
         val root = tmp.newFolder("ws4")
         val f = File(root, "bom.txt")
         f.writeText("\uFEFFhello")

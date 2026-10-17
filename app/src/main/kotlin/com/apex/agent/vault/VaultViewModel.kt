@@ -58,7 +58,7 @@ class VaultViewModel @Inject constructor(
                     _event.value = VaultEvent.ERROR
                     return@launch
                 }
-                // 人工经 UI 编辑 → 最后写入者是 HUMAN（与 vault_save 覆写时
+                // 人工经 UI 编辑 → 最后写入者是 HUMAN（与 VaultSave 覆写时
                 // 置 AGENT 对称，origin 恒指“当前密文的写入者”）。
                 existing.copy(
                     label = trimmedLabel,

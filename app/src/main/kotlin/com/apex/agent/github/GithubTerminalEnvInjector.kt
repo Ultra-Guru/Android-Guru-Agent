@@ -18,7 +18,7 @@ package com.apex.agent.github
  * ## 触发条件
  * [isGitOrGhCommand]：命令首词（basename）是 `git` 或 `gh`。复合命令
  * （`cd /ws && git pull`）首词是 cd → 不注入——已知边界，agent 的常规
- * 路径（git_* 工具 / terminal.exec 直跑）均以 git/gh 开头；交互式 PTY
+ * 路径（git_* 工具 / TerminalExec 直跑）均以 git/gh 开头；交互式 PTY
  * 会话**刻意不注入**（长驻 shell 的 env 对其中所有命令可见，暴露面大
  * 于单次命令；见 worklog 的落点结论）。
  *

@@ -12,7 +12,7 @@ class SettingsTool(
     private val shellExecutor: suspend (String) -> String
 ) : AgentTool {
 
-    override val id = "get_set_settings"
+    override val id = "GetSetSettings"
     override val name = "Get/Set System Settings"
     override val description = """
         Read or modify Android system settings.
@@ -79,7 +79,7 @@ class MediaControlTool(
     private val shellExecutor: suspend (String) -> String
 ) : AgentTool {
 
-    override val id = "control_media"
+    override val id = "ControlMedia"
     override val name = "Control Media"
     override val description = """
         Control device volume, brightness, and media playback.
@@ -147,7 +147,7 @@ class ClipboardTool(
     private val shellExecutor: suspend (String) -> String
 ) : AgentTool {
 
-    override val id = "clipboard"
+    override val id = "Clipboard"
     override val name = "Clipboard"
     override val description = """
         Read or write the device clipboard.
@@ -196,7 +196,7 @@ class ClipboardTool(
  */
 class GetTimeTool : AgentTool {
 
-    override val id = "get_time"
+    override val id = "GetTimeLegacy"
     override val name = "Get Current Time"
     override val description = "Get current date, time, timezone, and timestamp."
 
@@ -233,7 +233,7 @@ class LogcatTool(
     private val shellExecutor: suspend (String) -> String
 ) : AgentTool {
 
-    override val id = "logcat"
+    override val id = "Logcat"
     override val name = "System Log"
     override val description = """
         Read Android system logs (logcat).

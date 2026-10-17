@@ -1,4 +1,4 @@
-package com.apex.agent.platform.terminal.bridge
+package com.apex.agent.platform.TerminalBridge
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -32,7 +32,7 @@ import java.io.File
  *
  * ## Handler（app 层注册，Android 能力宿主）
  * 生产 DI 注册：clipboard（get/set，ClipboardManager）、device-info、battery。
- * guest 侧 `apexctl <action> [argsJson]` 与 agent 侧 `terminal.bridge call`
+ * guest 侧 `apexctl <action> [argsJson]` 与 agent 侧 `TerminalBridge call`
  * 走**同一组 handler**（行为对称可测试）。
  *
  * ## 诚实降级
@@ -44,7 +44,7 @@ interface GuestBridgeHandler {
     /** 动作名（apexctl 第一个参数）。 */
     val action: String
 
-    /** 一行描述（terminal.bridge status 输出用）。 */
+    /** 一行描述（TerminalBridge status 输出用）。 */
     val description: String
 
     /**

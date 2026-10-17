@@ -34,16 +34,16 @@ class SlashCommandRouterTest {
     @Test
     fun `Skill route has skill emoji and forwards args + user extra to prompt`() {
         val cmd = SlashCommand.Skill(
-            id = "web_search",
+            id = "WebSearch",
             args = mapOf("query" to "Android"),
             userExtra = "latest news"
         )
         val route = SlashCommandRouter.route(cmd)
 
-        assertEquals("🧩 激活 Skill: web_search", route.systemMessage)
+        assertEquals("🧩 激活 Skill: WebSearch", route.systemMessage)
         assertFalse(route.requestGithubConnect)
         // Prompt must surface the command, args, and user extra.
-        assertTrue(route.agentPrompt.contains("/skill:web_search"))
+        assertTrue(route.agentPrompt.contains("/skill:WebSearch"))
         assertTrue(route.agentPrompt.contains("query=Android"))
         assertTrue(route.agentPrompt.contains("用户附加要求: latest news"))
     }
@@ -201,9 +201,9 @@ class SlashCommandRouterTest {
         assertTrue(route.systemMessage.contains("octocat"))
         // Agent prompt must enumerate the github_* tools so the LLM prefers them.
         listOf(
-            "github_get_user", "github_list_repos", "github_read_file",
-            "github_write_file", "github_create_issue", "github_list_issues",
-            "github_search_code"
+            "GithubGetUser", "GithubListRepos", "GithubReadFile",
+            "GithubWriteFile", "GithubCreateIssue", "GithubListIssues",
+            "GithubSearchCode"
         ).forEach { toolId ->
             assertTrue("prompt should mention $toolId", route.agentPrompt.contains(toolId))
         }

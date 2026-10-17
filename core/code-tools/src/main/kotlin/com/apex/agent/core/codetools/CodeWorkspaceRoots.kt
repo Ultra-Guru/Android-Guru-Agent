@@ -5,7 +5,7 @@ import java.io.File
 /**
  * # Code Tools — 工作区根解析契约
  *
- * Code 模式的文件工具（code_read / code_edit / …）与 Agent 模式的旧文件工具
+ * Code 模式的文件工具（CodeRead / CodeEdit / …）与 Agent 模式的旧文件工具
  * 最大的差异：**根目录是会话态**。用户在 Code 屏切换/新建 workspace 时，
  * 全部 code_* 工具的解析根随之切换 —— 而工具实例注册在全局 [com.apex.agent.core.tools.ToolRegistry]
  * 里（两模式共享，规则/门控/目录全部互用），不能在构造时固化根路径。

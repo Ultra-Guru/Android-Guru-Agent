@@ -13,7 +13,7 @@ class GetLocationTool(
     private val shellExecutor: suspend (String) -> String
 ) : AgentTool {
 
-    override val id = "get_location"
+    override val id = "GetLocation"
     override val name = "Get Location"
     override val description = """
         Get device location info (if available).
@@ -49,7 +49,7 @@ class NotificationReadTool(
     private val shellExecutor: suspend (String) -> String
 ) : AgentTool {
 
-    override val id = "notification_read"
+    override val id = "NotificationRead"
     override val name = "Read Notifications"
     override val description = """
         Read current active notifications on the device.

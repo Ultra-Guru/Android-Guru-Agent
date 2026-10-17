@@ -11,9 +11,9 @@ import java.util.concurrent.ConcurrentHashMap
  * **编辑一个文件之前必须先读过它**——否则模型对文件真实内容的认知
  * 是幻觉，old/new 精确替换必然失准。本引擎在工具调用链路上强制：
  *
- * - [check]：code_edit / code_write（覆盖已存在文件）执行前校验——
+ * - [check]：CodeEdit / CodeWrite（覆盖已存在文件）执行前校验——
  *   目标未读过 → 拒绝并引导先读（新文件创建免检，新建合法）；
- * - [record]：code_read / code_edit / code_write 成功后登记读状态
+ * - [record]：CodeRead / CodeEdit / CodeWrite 成功后登记读状态
  *   （写过的文件内容已知，等价于读过）。
  *
  * ## 路径归一
@@ -36,25 +36,25 @@ internal class StandardReadGuard(
     /**
      * 执行前校验：未读先编 → 拒绝文案；放行返回 null。
      *
-     * @param registryName 注册表工具 id（code_edit / code_write）
+     * @param registryName 注册表工具 id（CodeEdit / CodeWrite）
      * @param arguments 原始参数 JSON（path 提取口径与权限引擎一致）
      */
     fun check(registryName: String, arguments: String): String? {
         if (registryName !in GUARDED_TOOLS) return null
         val rawPath = extractPath(arguments) ?: return null
         if (trackedPathKey(rawPath) in readFiles) return null
-        if (registryName == "code_write") {
+        if (registryName == "CodeWrite") {
             // 新建免检：能解析到宿主文件且存在 → 必须先读；不存在 → 放行
             val hostFile = resolveHostFile(rawPath)
             if (hostFile == null || !hostFile.isFile) return null
         }
         return "File has not been read in this session yet: $rawPath. Read it first " +
             "with the read tool, then retry with fresh content. If you intend to " +
-            "create a NEW file, use code_write instead."
+            "create a NEW file, use CodeWrite instead."
     }
 
     /**
-     * 成功后登记读状态（code_read / code_edit / code_write）。
+     * 成功后登记读状态（CodeRead / CodeEdit / CodeWrite）。
      */
     fun record(registryName: String, arguments: String) {
         if (registryName !in RECORDING_TOOLS) return
@@ -87,9 +87,9 @@ internal class StandardReadGuard(
         private const val GUEST_PATH = "/workspace"
 
         /** 受守卫约束的工具集（编辑 / 覆盖写）。 */
-        private val GUARDED_TOOLS = setOf("code_edit", "code_write")
+        private val GUARDED_TOOLS = setOf("CodeEdit", "CodeWrite")
 
         /** 成功后登记读状态的工具集（读过 / 写过 = 内容已知）。 */
-        private val RECORDING_TOOLS = setOf("code_read", "code_edit", "code_write")
+        private val RECORDING_TOOLS = setOf("CodeRead", "CodeEdit", "CodeWrite")
     }
 }

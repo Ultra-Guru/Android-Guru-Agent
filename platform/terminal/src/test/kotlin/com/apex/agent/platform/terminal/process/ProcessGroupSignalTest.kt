@@ -7,8 +7,8 @@ import com.apex.agent.platform.terminal.policy.TerminalPolicyImpl
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
 import com.apex.agent.platform.terminal.runtime.TerminalRuntimeImpl
 import com.apex.agent.platform.terminal.screen.RealVirtualTerminal
-import com.apex.agent.platform.terminal.wait.WaitCondition
-import com.apex.agent.platform.terminal.wait.WaitResult
+import com.apex.agent.platform.TerminalWait.WaitCondition
+import com.apex.agent.platform.TerminalWait.WaitResult
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
@@ -16,7 +16,7 @@ import org.junit.Test
 /**
  * Process-Group signal delivery tests (PR #51 §1 — review item #2).
  *
- * Proves the RUNTIME CONTRACT: `terminal.cancel()` / `terminal.signal()` terminate the WHOLE
+ * Proves the RUNTIME CONTRACT: `terminal.cancel()` / `TerminalSignal()` terminate the WHOLE
  * process group — shell + child + grandchild — not just the shell PID.
  *
  * [FakeNativePty] models the process-group semantics that the REAL native layer implements via

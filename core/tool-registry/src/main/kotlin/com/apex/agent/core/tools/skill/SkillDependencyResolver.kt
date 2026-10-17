@@ -52,7 +52,9 @@ object SkillDependencyResolver {
      * @return 缺失的依赖 id 列表（空表示可安装）
      */
     fun validateDependencies(manifest: SkillManifest, available: Set<String>): List<String> {
-        return manifest.dependencies.filter { it !in available }
+        // v5：技能 id 已归一为 PascalCase，历史 manifest 里的 kebab 依赖名也要归一后比较。
+        val canonicalAvailable = available.mapTo(mutableSetOf()) { SkillNaming.canonicalId(it) }
+        return manifest.dependencies.filter { SkillNaming.canonicalId(it) !in canonicalAvailable }
     }
 
     /**

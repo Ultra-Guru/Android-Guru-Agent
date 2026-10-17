@@ -3,7 +3,7 @@
 - **类型**：CodeBuddy 客户端（IDE）工具能力增强
 - **提出方**：Agent 使用者反馈
 - **优先级**：P2（体验增强，非阻塞）
-- **关联**：与 `read_file` 的 `offset/limit/行号` 能力配套，补齐"写"一侧的可观测性
+- **关联**：与 `Read` 的 `offset/limit/行号` 能力配套，补齐"写"一侧的可观测性
 
 ---
 
@@ -24,8 +24,8 @@
 这导致：
 
 1. **用户不可见**：在流式输出或工具调用面板里，用户看不到"到底改了多少"，只能事后去 diff 视图核对。
-2. **Agent 需额外回读**：Agent 为了向用户报告变更规模，必须再发一次 `read_file` 回读改动区来人工计算 diff，浪费一轮工具调用 + context 占用。
-3. **与 read 能力不对等**：`read_file` 已支持 `offset/limit` + 行号定位，读侧可观测性完整；写侧缺失，体验割裂。
+2. **Agent 需额外回读**：Agent 为了向用户报告变更规模，必须再发一次 `Read` 回读改动区来人工计算 diff，浪费一轮工具调用 + context 占用。
+3. **与 read 能力不对等**：`Read` 已支持 `offset/limit` + 行号定位，读侧可观测性完整；写侧缺失，体验割裂。
 
 ---
 
@@ -90,7 +90,7 @@
 
 - [ ] `replace_in_file` 成功返回包含 `diffStat`（added/deleted/net）与 `changedRange`
 - [ ] `write_to_file` 成功返回包含 `diffStat` 与新旧行数对比
-- [ ] 行数计算以 `\n` 换行计，与 `read_file` 行号体系一致（1-based）
+- [ ] 行数计算以 `\n` 换行计，与 `Read` 行号体系一致（1-based）
 - [ ] `replace_all=true` 时 `matchCount` 反映真实命中数，且 `diffStat` 为累计值
 - [ ] 失败场景（old_str 不唯一 / 文件不存在）返回结构不变，仅 `status=failed` + 原因，不影响既有错误流
 
@@ -107,8 +107,8 @@
 ## 5. 收益
 
 1. 用户实时看到"改了多少行"，降低认知负担。
-2. Agent 不再为报告变更规模而额外 `read_file` 回读，省一轮工具调用 + context。
-3. 与 `read_file` 的行号/分段能力形成对称的读写可观测性。
+2. Agent 不再为报告变更规模而额外 `Read` 回读，省一轮工具调用 + context。
+3. 与 `Read` 的行号/分段能力形成对称的读写可观测性。
 
 ---
 

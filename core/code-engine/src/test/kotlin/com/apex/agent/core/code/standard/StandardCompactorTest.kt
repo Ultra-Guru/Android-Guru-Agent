@@ -53,7 +53,7 @@ class StandardCompactorTest {
     private fun messagesOf(count: Int): List<LlmMessage> = buildList {
         add(LlmMessage.User("任务开始"))
         repeat(count) { i ->
-            add(LlmMessage.Assistant("步骤 $i", listOf(com.apex.agent.core.llm.ToolCall("c$i", "code_read", "{}"))))
+            add(LlmMessage.Assistant("步骤 $i", listOf(com.apex.agent.core.llm.ToolCall("c$i", "CodeRead", "{}"))))
             add(LlmMessage.ToolResult("c$i", "结果 $i " + "x".repeat(200)))
         }
     }
@@ -137,7 +137,7 @@ class StandardCompactorTest {
         val compactor = StandardCompactor(SingleClientModelRuntime(ScriptedClient()))
         val messages = listOf(
             LlmMessage.User("q"),
-            LlmMessage.Assistant("a", listOf(com.apex.agent.core.llm.ToolCall("c1", "code_read", "{}"))),
+            LlmMessage.Assistant("a", listOf(com.apex.agent.core.llm.ToolCall("c1", "CodeRead", "{}"))),
             LlmMessage.ToolResult("c1", "r1"),
             LlmMessage.Assistant("done")
         )

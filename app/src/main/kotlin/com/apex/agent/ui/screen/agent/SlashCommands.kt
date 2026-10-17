@@ -18,7 +18,7 @@ import com.apex.agent.slash.SlashRouteContext
  * - 把路由结果（systemMessage + agentPrompt）整理成 [Result] 交给调用方。
  *
  * v2：补齐 mcpConnected 快照 —— 旧实现只装 GitHub 态，`/mcp:<id>` 路由时
- * `command.id in context.mcpConnected` 恒 false，永远拿不到「用 mcp_call 调
+ * `command.id in context.mcpConnected` 恒 false，永远拿不到「用 McpCall 调
  * server=<id> 的工具」引导提示词，模型面对 MCP 指令只能瞎猜（用户体感
  * 「能用的 MCP 没几个」）。现在调用方传入 McpManager.getConnectedServers() 快照。
  *
@@ -77,7 +77,7 @@ internal object SlashCommands {
      *
      * @param command 以 `/` 开头的原始指令文本。
      * @param githubTokenManager 用于快照当前 GitHub 连接状态。
-     * @param mcpConnected 已连接 MCP 服务器名快照（路由器据此注入 mcp_call 引导）。
+     * @param mcpConnected 已连接 MCP 服务器名快照（路由器据此注入 McpCall 引导）。
      * @param skillActivation 技能激活存储：/skill:<id> 路由时同步装备该技能
      *   （渐进披露用户路——本轮系统提示词即携带方法论全文，而非仅一段引导词）；
      *   null = 未接入（不装备，行为与旧版一致）。
@@ -104,7 +104,7 @@ internal object SlashCommands {
 
         // /skill:<id> 显式装备：路由来源为 Skill 时写入激活存储（下一轮
         // buildSystemPrompt 即注入方法论全文）。失败静默——装备失败不阻断
-        // 指令执行，模型仍可经 skill_activate 工具自行装载。
+        // 指令执行，模型仍可经 SkillActivate 工具自行装载。
         if (skillActivation != null && route.routeKind == "skill" && !route.sourceName.isNullOrBlank()) {
             runCatching { skillActivation.activate(route.sourceName!!) }
         }

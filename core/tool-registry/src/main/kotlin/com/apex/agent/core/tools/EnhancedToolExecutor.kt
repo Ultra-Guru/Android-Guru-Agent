@@ -220,7 +220,7 @@ class EnhancedToolExecutor(
             traceRecorder?.completeFailure(span, errorSlugOf(result))
             // P1 修复（熔断误开）：域层失败（文件不存在 / grep exit=1 / 会话不存在
             // 等正常探索结果）不再计入熔断器 —— 旧实现任何 "Error:" 前缀都
-            // recordFailure，Agent 连续探索 5 个不存在的路径就把 read_file
+            // recordFailure，Agent 连续探索 5 个不存在的路径就把 Read
             // 熔断 OPEN，后续 15-120s 内全拒绝。熔断只统计基础设施失败
             // （超时 / IO / 崩溃），域失败交给 RetryClassifier 与模型自行换路。
             if (isInfraFailure(result)) {
@@ -270,7 +270,7 @@ class EnhancedToolExecutor(
         // 生产引擎全部走 executeStream（Agent 聊天主循环 / 任务编排 ToolCallRunner
         // / MCP 流式消费），旧实现只有非流式 execute() 过 pipeline.preCheck——
         // 门控链（PermissionAwareToolGate：权限模式 + RiskAwareToolGate 的
-        // write_file/edit_file MEDIUM 确认、HIGH 确认）在流式路径**从未被咨询**，
+        // Write/Edit MEDIUM 确认、HIGH 确认）在流式路径**从未被咨询**，
         // Agent 静默覆写用户文件。此修复把流式路径对齐 [ToolExecutor] 契约
         // （ToolRegistry KDoc：两入口共享 查找→门控→校验）与 v2
         // DefaultToolExecutor.executeStream 的既有行为（preCheck 短路发 Error）。
@@ -600,7 +600,7 @@ class EnhancedToolExecutor(
  *     .gate(riskAwareToolGate)
  *     .usageTracker(tracker)
  *     .policyResolver(DefaultToolRunPolicyResolver(mapOf(
- *         "shell_execute" to ToolRunPolicy(timeoutMs = 120_000)
+ *         "ShellExecute" to ToolRunPolicy(timeoutMs = 120_000)
  *     )))
  *     .breaker(ToolCircuitBreaker())
  *     .tracer(ToolTraceRecorder(capacity = 300))

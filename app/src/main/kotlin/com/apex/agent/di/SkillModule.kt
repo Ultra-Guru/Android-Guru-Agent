@@ -192,7 +192,7 @@ object SkillModule {
     }
 
     /**
-     * 技能会话激活存储（渐进披露）：与引擎 / skill_activate 工具 /
+     * 技能会话激活存储（渐进披露）：与引擎 / SkillActivate 工具 /
      * 斜杠指令 / 自动装备器四处共享同一 @Singleton 实例。FIFO 上限 8
      * （每个技能方法论 2-4KB，激活集封顶 ≈ 30KB，请求体积有界）。
      */

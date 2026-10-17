@@ -127,7 +127,7 @@ class StandardModeEngineResilienceTest {
         llm: ScriptedLlm,
         executor: FakeExecutor,
         delays: MutableList<Long>,
-        tools: List<String> = listOf("code_read", "code_edit", "code_write")
+        tools: List<String> = listOf("CodeRead", "CodeEdit", "CodeWrite")
     ): StandardModeEngine {
         val registry = DefaultToolRegistry().apply { tools.forEach { register(FakeTool(it)) } }
         return StandardModeEngine(
@@ -299,9 +299,13 @@ class StandardModeEngineResilienceTest {
     @Test
     fun `dotted and unicode names are sanitized in request and routed back`() = runTest {
         val llm = ScriptedLlm()
-        // 模型按 tools 数组里的 provider 名调用（"mcp" = 中文 MCP 工具的清洗名）
+        // 模型按 tools 数组里的 provider 名调用
         llm.enqueue(
-            LlmStreamChunk(toolCalls = listOf(ToolCall(id = "c1", name = "mcp", arguments = "{}")))
+            LlmStreamChunk(
+                toolCalls = listOf(
+                    ToolCall(id = "c1", name = "McpWeatherServiceQuery", arguments = "{}")
+                )
+            )
         )
         llm.enqueue(LlmStreamChunk(content = "查到了天气", isFinish = true))
 
@@ -309,7 +313,9 @@ class StandardModeEngineResilienceTest {
         val executor = FakeExecutor()
         val engine = engine(
             llm, executor, delays,
-            tools = listOf("terminal.exec", "mcp__天气服务__查天气", "code_read")
+            // v5：一等 MCP 工具 id 已是 PascalCase（Mcp{Server}{Tool}）；
+            // 第三方脏名（点号 + 中文）仍在场，清洗与反查路由必须同时成立。
+            tools = listOf("TerminalExec", "McpWeatherServiceQuery", "CodeRead", "plugin.天气工具")
         )
         val events = engine.execute("q").toList()
 
@@ -319,14 +325,16 @@ class StandardModeEngineResilienceTest {
         requestToolNames.forEach {
             assertTrue("request tool name not provider-safe: '$it'", providerLegal.matches(it))
         }
-        assertTrue(requestToolNames.contains("terminal_exec"))
-        assertTrue(requestToolNames.contains("mcp"))
+        assertTrue(requestToolNames.contains("TerminalExec"))
+        assertTrue(requestToolNames.contains("McpWeatherServiceQuery"))
+        // 脏名清洗：plugin.天气工具 → Plugin（中文段被剥掉，仅剩前缀）
+        assertTrue(requestToolNames.contains("Plugin"))
         assertFalseRawNames(requestToolNames)
 
-        // 执行路由：回显名 "mcp" → 注册表 id（事件与执行同口径，胶囊分族一致）
+        // 执行路由：回显 provider 名 → 注册表 id（事件与执行同口径，胶囊分族一致）
         val start = events.filterIsInstance<AgentEvent.ToolCallStart>().single()
-        assertEquals("mcp__天气服务__查天气", start.toolName)
-        assertEquals(1, executor.executed.count { it.first == "mcp__天气服务__查天气" })
+        assertEquals("McpWeatherServiceQuery", start.toolName)
+        assertEquals(1, executor.executed.count { it.first == "McpWeatherServiceQuery" })
         val complete = events.filterIsInstance<AgentEvent.ToolCallComplete>().single()
         assertTrue(complete.success)
         assertTrue(events.none { it is AgentEvent.Error })

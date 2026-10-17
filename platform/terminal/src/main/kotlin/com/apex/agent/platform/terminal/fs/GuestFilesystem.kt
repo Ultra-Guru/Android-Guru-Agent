@@ -1,4 +1,4 @@
-package com.apex.agent.platform.terminal.fs
+package com.apex.agent.platform.TerminalFs
 
 import com.apex.agent.platform.terminal.environment.LinuxEnvironmentManager
 import com.apex.agent.platform.terminal.proot.LinuxExecutionContextFactory
@@ -13,7 +13,7 @@ import java.util.Base64
 /**
  * T82 — Guest Filesystem API（Termux 基线 §4.8/§11）。
  *
- * 背景：guest 文件操作此前只有一条路 —— `terminal.run "cat > f"` / `echo … | tee`。
+ * 背景：guest 文件操作此前只有一条路 —— `TerminalRun "cat > f"` / `echo … | tee`。
  * 对于 Agent 这是脆的（引号地狱、here-doc 竞态、无错误语义）。本类提供结构化、
  * 二进制安全、带路径门禁的 guest fs 操作，全部经 [ProotExecutor]（PRoot +
  * `/bin/sh -c`，非交互 bounded 执行），与 apt/交互会话共享同一 rootfs/workspace/
@@ -264,7 +264,7 @@ class GuestFilesystem(
 
     private fun writeDeniedMessage(path: String): String =
         "path '$path' outside writable roots $allowedWriteRoots (agent file writes are sandboxed; " +
-            "shell via terminal.run remains unrestricted-by-policy)"
+            "shell via TerminalRun remains unrestricted-by-policy)"
 
     internal fun normalize(path: String): String {
         val p = path.trim()

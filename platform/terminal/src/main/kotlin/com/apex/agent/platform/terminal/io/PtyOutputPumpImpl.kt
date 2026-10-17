@@ -12,7 +12,7 @@ import com.apex.agent.platform.terminal.screen.RealVirtualTerminal
 import com.apex.agent.platform.terminal.screen.VirtualTerminal
 import com.apex.agent.platform.terminal.state.InputWaitingDetector
 import com.apex.agent.platform.terminal.state.SemanticStateReducer
-import com.apex.agent.platform.terminal.wait.TerminalWaitEngine
+import com.apex.agent.platform.TerminalWait.TerminalWaitEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job

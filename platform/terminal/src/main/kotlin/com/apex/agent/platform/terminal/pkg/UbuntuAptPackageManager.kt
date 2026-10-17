@@ -33,7 +33,7 @@ import java.util.UUID
  *
  * 把 [LinuxPackageManager] 契约接到真实 Ubuntu rootfs 上的 apt-get/apt-cache/dpkg。
  * **所有 apt 执行经 [ProotExecutor]（PRoot + ProcessBuilder），绝不直接 Runtime.exec**
- * （T76 §3）—— 与交互式 terminal.create(backendId="linux-ubuntu") 共享同一 rootfs /
+ * （T76 §3）—— 与交互式 TerminalCreate(backendId="linux-ubuntu") 共享同一 rootfs /
  * workspace / persistent home / package state，不存在两个互不知道状态的 Ubuntu 环境。
  *
  * 架构边界（T76 §3 / §47）：
@@ -363,7 +363,7 @@ class UbuntuAptPackageManager(
     /**
      * T82（Termux 基线 §5.2）：真实已安装包列表。
      *
-     * 旧 `terminal.linux.packages installed` action 是诚实记录的 stub（只回
+     * 旧 `TerminalLinuxPackages installed` action 是诚实记录的 stub（只回
      * brokenPackages + 让 Agent 自己 shell `dpkg -l`）。本实现经
      * `dpkg-query -W -f=${binary:Package}\t${db:Status-Abbrev}\t${Version}` 解析
      * （只读、无锁、有界），status 以 `ii` 开头 = 正确安装。

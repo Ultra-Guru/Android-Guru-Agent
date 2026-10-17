@@ -188,13 +188,13 @@ class ExecutorHookTest {
 
     @Test
     fun `before hook modification replaces the payload the tool receives`() = runTest {
-        val tool = ScriptedTool("read_file", listOf("content"))
+        val tool = ScriptedTool("Read", listOf("content"))
         val executor = executor(
             tool,
             before = modifiedDispatch("""{"path": "rewritten.txt", "limit": 10}""")
         )
 
-        val result = executor.execute("read_file", """{"path": "original.txt"}""")
+        val result = executor.execute("Read", """{"path": "original.txt"}""")
         assertEquals("content", result)
         assertEquals(listOf("""{"path": "rewritten.txt", "limit": 10}"""), tool.argumentsSeen)
     }

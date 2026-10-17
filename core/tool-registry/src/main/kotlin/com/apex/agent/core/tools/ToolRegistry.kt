@@ -1,5 +1,8 @@
 package com.apex.agent.core.tools
 
+import com.apex.agent.core.tools.catalog.ToolIdAliases
+import com.apex.agent.core.tools.catalog.ToolNameSanitizer
+
 import com.apex.agent.core.llm.ToolDefinition
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -43,7 +46,7 @@ interface ToolRegistry {
     /**
      * 带重复 id 策略的注册。默认 [DuplicateToolIdPolicy.REPLACE] 与 v1
      * `register(tool)` 语义一致（后写覆盖）；[DuplicateToolIdPolicy.REJECT]
-     * 用于启动期诊断——防止两个模块各自注册 `download_file` 时静默互踩。
+     * 用于启动期诊断——防止两个模块各自注册 `DownloadFile` 时静默互踩。
      *
      * @return 被覆盖的旧工具（REPLACE 且已存在同 id 时）；REJECT 策略下
      *   发生冲突时返回 null 且注册表不变。
@@ -96,7 +99,7 @@ enum class DuplicateToolIdPolicy {
  * - [execute]：一次性返回完整输出（向后兼容，现有调用点不变）。
  * - [executeStream]：返回 [ToolStreamEvent] 流，允许工具逐段输出。engine 优先
  *   使用 [executeStream]，这样实现了 [StreamingAgentTool] 的工具（如
- *   shell_execute）能逐行把输出推到 UI，而非流式工具则被透明包装成
+ *   ShellExecute）能逐行把输出推到 UI，而非流式工具则被透明包装成
  *   “单个 Output + Complete” 的事件序列。
  *
  * ## Tool System v2 执行管线
@@ -193,13 +196,23 @@ class DefaultToolRegistry : ToolRegistry {
 
     override fun unregister(toolId: String) {
         synchronized(this) {
-            if (tools.remove(toolId) != null) {
+            if (tools.remove(ToolIdAliases.canonical(toolId)) != null) {
                 version++
             }
         }
     }
 
-    override fun getTool(toolId: String): AgentTool? = synchronized(this) { tools[toolId] }
+    /**
+     * 查找工具。[toolId] 可以是注册表 id、provider 洗过的名字，或**改名前的
+     * 旧 id**——旧 id 经 [ToolIdAliases] 归一、大小写漂移经 ignoreCase 兜底，
+     * 保证老会话/老技能/老收藏里的工具名依旧可执行（见 ToolIdAliases KDoc）。
+     */
+    override fun getTool(toolId: String): AgentTool? = synchronized(this) {
+        tools[toolId]
+            ?: tools[ToolIdAliases.canonical(toolId)]
+            ?: tools.entries.firstOrNull { it.key.equals(toolId, ignoreCase = true) }?.value
+            ?: tools[ToolNameSanitizer.sanitize(toolId)]
+    }
 
     override fun getAllTools(): List<AgentTool> = synchronized(this) { tools.values.toList() }
 

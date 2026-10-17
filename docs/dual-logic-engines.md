@@ -120,9 +120,9 @@ DENY 规则短路 ──► PLAN 硬门（planGate）──► 会话记忆（�
 
 ### 3.4 工具面编排（`StandardToolSurface.kt`）
 
-别名归一表保证胶囊分族与深潜线一致：`read→code_read`、
-`bash/shell→shell_execute`、`edit→code_edit`、`write→code_write`、
-`grep→code_grep`…；最终工具面 = 画像白名单 ∩ 注册表 ∪ 合成工具。
+别名归一表保证胶囊分族与深潜线一致：`read→CodeRead`、
+`bash/shell→ShellExecute`、`edit→CodeEdit`、`write→CodeWrite`、
+`grep→CodeGrep`…；最终工具面 = 画像白名单 ∩ 注册表 ∪ 合成工具。
 `task` 工具（子代理唯一入口）参数含 `subagent_type` / 任务描述 /
 超时，产物折叠为一条工具结果回填主循环。
 

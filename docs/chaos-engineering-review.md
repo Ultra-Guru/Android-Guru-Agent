@@ -60,7 +60,7 @@ adb shell am start-foreground-service -n com.apex.agent/.service.ApexCoreService
 
 # 2. 驱动 Agent 进入 WAITING_HUMAN（人工接管）：
 #    触发 browser 工具进入 handoff，或直接用 am 广播模拟引擎状态切换。
-#    最简路径：任一需要人工确认的任务（如 browser_show）→ 球切 NEED_HUMAN。
+#    最简路径：任一需要人工确认的任务（如 BrowserShow）→ 球切 NEED_HUMAN。
 #    NEED_HUMAN → applyState → triggerVibration() → 无 VIBRATE 权限。
 
 # 3. 观察崩溃
