@@ -432,10 +432,11 @@ jobs:
             --version "$VERSION" \
             --code "$VCODE" \
             --tag "$TAG" \
-            --out dist/changelog.json
+            --out dist/changelog.json \
+            --consumed-out dist/consumed-fragments.txt
           mkdir -p app/src/main/assets
           cp dist/changelog.json app/src/main/assets/changelog.json
-          echo "✅ changelog.json 已生成并内置 APK assets（notes $(jq -r '.latest.notes | length' dist/changelog.json) 条 / history $(jq -r '.history | length' dist/changelog.json) 条）"
+          echo "✅ changelog.json 已生成并内置 APK assets（一级 $(jq -r '.latest.notes | length' dist/changelog.json) 条 + 二级 $(jq -r '.latest.pr | length' dist/changelog.json) 组 / history $(jq -r '.history | length' dist/changelog.json) 条 / 本版消费片段 $(wc -l < dist/consumed-fragments.txt | tr -d ' ') 个）"
 
       # 版本注入：resolve 阶段可能自动追加了构建序号（v1.4.2.1）或提升了
       # versionCode —— 经 Gradle 属性注入最终值，不回写仓库文件（源码保持干净）。
@@ -1170,6 +1171,73 @@ jobs:
           echo "✅ https://raw.githubusercontent.com/${RELEASE_REPO}/main/version.json 已更新"
           echo "✅ https://raw.githubusercontent.com/${RELEASE_REPO}/main/patches.json 已更新"
           echo "✅ https://raw.githubusercontent.com/${RELEASE_REPO}/main/changelog.json 已更新（App 更新日志弹窗读取点）"
+
+      # ═══ 更新日志通道 v2：片段消费闭环 ═════════════════════════════
+      # 本版已收录片段（dist/consumed-fragments.txt，changelog.py 生成）归档
+      # 到 .changelog/released/<tag>/ 并从 unreleased 移除 —— 不消费则下版会
+      # 重复聚合（v1 缺陷）。target 面向未来的片段不在清单（跨版本滞留）。
+      # 提交带 [skip ci]；且 GITHUB_TOKEN 产生的 push 事件本就不触发工作流
+      # （GitHub 反递归保护）—— 双保险防自触发。
+      - name: "Consume changelog fragments (archive → .changelog/released/)"
+        if: needs.resolve.outputs.publishing == 'true'
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+          DEV_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ ! -s dist/consumed-fragments.txt ]; then
+            echo "ℹ️ 本版无已收录片段（或全为面向未来的缓发布片段）—— 无需消费"
+            exit 0
+          fi
+          count=$(wc -l < dist/consumed-fragments.txt | tr -d ' ')
+          echo "📦 消费 $count 个片段 → .changelog/released/${TAG}/"
+          archived=0
+          pushed=0
+          for ATTEMPT in 1 2 3; do
+            rm -rf devrepo
+            git clone --depth 1 \
+              "https://x-access-token:${DEV_TOKEN}@github.com/${{ github.repository }}.git" devrepo
+            mkdir -p "devrepo/.changelog/released/${TAG}"
+            while IFS= read -r fname; do
+              [ -n "$fname" ] || continue
+              src=".changelog/unreleased/$fname"
+              dst="devrepo/.changelog/released/${TAG}/$fname"
+              if [ -f "$src" ]; then
+                cp "$src" "$dst"
+                archived=$((archived + 1))
+              else
+                echo "⚠️ 工作区缺 $fname（构建期被并行推进）—— 归档跳过"
+              fi
+              if [ -f "devrepo/.changelog/unreleased/$fname" ]; then
+                git -C devrepo rm -q ".changelog/unreleased/$fname"
+              else
+                echo "ℹ️ 远端无 $fname（已被消费/删除）—— 无需移除"
+              fi
+            done < dist/consumed-fragments.txt
+            git -C devrepo add ".changelog/released/${TAG}"
+            if git -C devrepo diff --cached --quiet; then
+              echo "ℹ️ 片段无变更（幂等重跑 —— 已消费）"
+              pushed=1
+              break
+            fi
+            if (
+              cd devrepo
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git commit -m "chore(changelog): 消费本版片段 → .changelog/released/${TAG} [skip ci]"
+              git push origin main
+            ); then
+              pushed=1
+              break
+            fi
+            echo "⚠️ 消费提交第 ${ATTEMPT} 次尝试失败 —— 重拉远端重试（PR 并行推进竞态）"
+            sleep $((ATTEMPT * 5))
+          done
+          [ "$pushed" = "1" ] || {
+            echo "::error::片段消费三次提交失败 —— 发布产物已就位；请手动归档 .changelog/unreleased → .changelog/released/${TAG}"
+            exit 1
+          }
+          echo "✅ 已归档 $archived / $count 个片段（unreleased 清空对应项；target 缓发布片段保留）"
 
       - name: Summary
         if: always()
