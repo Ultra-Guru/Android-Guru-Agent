@@ -99,7 +99,9 @@ import com.apex.agent.ui.screen.code.stream.CodeStreamTimeline
 import com.apex.agent.ui.screen.code.stream.CodeTerminalPanel
 import com.apex.agent.ui.screen.code.stream.CodeToolDetailSheet
 import com.apex.agent.ui.glass.GlassCard
+import com.apex.agent.ui.glass.GlassModalScrim
 import com.apex.agent.ui.glass.GlassStyle
+import com.apex.agent.ui.glass.glassModalBlur
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 
@@ -248,8 +250,19 @@ fun CodeScreen(
                 isStreaming = state.isRunning,
                 bottomInset = lowerStackInsetDp,
                 backdrop = streamBackdrop,
-                onToolClick = { call -> selectedToolCallId = call.id }
+                onToolClick = { call -> selectedToolCallId = call.id },
+                // ═══ 玻璃幕帘（2026-10 用户反馈）：提问卡挂起时时间轴整体模糊 ═══
+                // 液态玻璃的 backdrop 采样存在盲区（动画图层/采样时序差），盲区
+                // 文字会以锐利形态透过霜面与卡内内容叠字 —— 被覆盖内容自身先
+                // blur（修饰序在 layerBackdrop 外层，采样源不失真），屏幕透出的
+                // 只能是模糊像素。
+                modifier = Modifier.glassModalBlur(pendingAgentQuestion != null)
             )
+
+            // ═══ 模态幕帘：scrim 兜底（API < 31 无 blur）+ 点击拦截（门控必须先作答）═══
+            if (pendingAgentQuestion != null) {
+                GlassModalScrim(modifier = Modifier.matchParentSize())
+            }
 
             // ═══ 底部悬浮栈：悬浮于时间轴之上（backdrop 采样前提）═══
             Column(
