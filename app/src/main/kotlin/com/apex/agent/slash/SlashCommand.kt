@@ -10,7 +10,7 @@ package com.apex.agent.slash
  *
  * Examples:
  *     /skill:code_interpreter
- *     /skill:web_search query=Android Agent latest news
+ *     /skill:WebSearch query=Android Agent latest news
  *     /mcp:github repo=owner/name
  *     /connector:google_drive action=open
  *     /plugin:pdf_reader file=/sdcard/a.pdf

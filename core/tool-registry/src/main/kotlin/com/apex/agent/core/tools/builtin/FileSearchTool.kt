@@ -23,7 +23,7 @@ class FileSearchTool(
     private val basePath: File
 ) : AgentTool {
 
-    override val id = "search_files"
+    override val id = "SearchFiles"
     override val name = "Search in Files"
     override val description = """
         Search for a pattern across files in a directory.
@@ -35,7 +35,7 @@ class FileSearchTool(
         - Use file_type to narrow search (code, docs, config, all)
         - Use context_lines=2 to see surrounding code
         - Use specific patterns to reduce noise
-        - For single file, use read_file + around parameter instead
+        - For single file, use Read + around parameter instead
 
         Examples:
         - {"pattern": "import os", "path": ".", "file_type": "code"}
@@ -174,7 +174,7 @@ class FileSearchTool(
                 if (page < totalPages) {
                     appendLine("📌 More results available. Use page=${page + 1} to see next.")
                 }
-                appendLine("💡 To see full context, use: read_file(path, around=<line_number>)")
+                appendLine("💡 To see full context, use: Read(path, around=<line_number>)")
             }
         } catch (e: Exception) {
             "Search error: ${e.message}"

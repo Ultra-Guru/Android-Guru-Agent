@@ -35,7 +35,7 @@
 | 1.10 | OSC 52 clipboard | ✅ | ❌ ignored | 🏗️ T82: parse + drain API (host can honor into Android clipboard) |
 | 1.11 | DCS (sixel/tmux passthrough) | ✅ | ❌ DCS ignored | 📋 DEFERRED (no sixel consumers on our stack) |
 | 1.12 | Bell event | ✅ (sound/vibrate hook) | ❌ BEL ignored → ✅ 已实现：`TerminalCore.handleC0(0x07)` 置位 + `drainBell()` 序号（只增，连续多声不丢），`TerminalRenderSnapshot.bellSeq` 透出，UI 振动 30ms（设置项 `vibrateOnBell`，默认开） | 已交付 |
-| 1.13 | Resize + SIGWINCH | ✅ | ✅ native `TIOCSWINSZ` → kernel SIGWINCH; `terminal.resize` tool | — |
+| 1.13 | Resize + SIGWINCH | ✅ | ✅ native `TIOCSWINSZ` → kernel SIGWINCH; `TerminalResize` tool | — |
 | 1.14 | Bracketed paste (mode 2004) | ✅ both directions | 🟡 parsed only; **input never sends 200~ wrappers** | 🏗️ T82: PASTE write kind |
 | 1.15 | Application cursor keys (DECCKM) input | ✅ arrows switch CSI/SS3 | ❌ input always CSI — arrows break in DECCKM apps | 🏗️ T82: DECCKM-aware key translation |
 | 1.16 | Key input coverage F1–F12 | ✅ (+ volume-key/extra-keys row) | ❌ F1–F12 unmapped → send nothing + warn | 🏗️ T82: full F-key map |
@@ -107,14 +107,14 @@ Termux bootstrap ships a curated minimal set; ours ships a larger Ubuntu Base + 
 | 6.1 | coreutils/findutils/grep/sed/awk/less/file | ✅ | ✅ essential list | — |
 | 6.2 | tar/gzip/bzip2/xz/zip/unzip | ✅ | ✅ essential list | — |
 | 6.3 | procps/psmisc (ps, top, kill, pstree) | ✅ | ✅ pkg installed — **but broken at runtime without /proc bind** | fixed by 4.2 |
-| 6.4 | jq/tree/dnsutils/iproute2/ping | ✅ | 🟡 recommended-only (not auto-installed) | intentional (bandwidth); agent can `terminal.linux.packages install` |
+| 6.4 | jq/tree/dnsutils/iproute2/ping | ✅ | 🟡 recommended-only (not auto-installed) | intentional (bandwidth); agent can `TerminalLinuxPackages install` |
 
 ## 7. Development Toolchain
 
 | # | Capability | Termux | Ours (pre-T82) | Decision |
 |---|---|---|---|---|
 | 7.1 | Toolchain probe (detect+version) | ✅ (which/--version, human) | ✅ `LinuxCapabilityProbe` 15 caps real probe + TTL cache (T81 §29) | — |
-| 7.2 | One-shot "ensure toolchain" | ✅ pkg install python etc. | ❌ probe says INSTALLABLE but no ensure action; profile registry is 💀 dead | 🏗️ T82: `terminal.linux.capabilities ensure` action (probe→install→verify, incl. python3-venv/python3-dev, nodejs+npm, default-jdk, rust, golang) |
+| 7.2 | One-shot "ensure toolchain" | ✅ pkg install python etc. | ❌ probe says INSTALLABLE but no ensure action; profile registry is 💀 dead | 🏗️ T82: `TerminalLinuxCapabilities ensure` action (probe→install→verify, incl. python3-venv/python3-dev, nodejs+npm, default-jdk, rust, golang) |
 | 7.3 | C/C++: clang/gcc/g++/make/cmake | ✅ | ✅ via apt (gcc is in Ubuntu repos; probe maps) | — |
 | 7.4 | Python: python3 + pip + venv | ✅ + termux patches | ✅ python3+pip essential; ❓ venv needs python3-venv pkg + ensure-venv action | 🏗️ T82: ensure installs python3-venv, python3-dev |
 | 7.5 | Node/JS: node+npm | ✅ | ✅ apt nodejs/npm (probe maps) | — |
@@ -136,7 +136,7 @@ Termux bootstrap ships a curated minimal set; ours ships a larger Ubuntu Base + 
 | 9.1 | curl/wget/openssl | ✅ | ✅ essential (curl/wget) + ca-certs | — |
 | 9.2 | DNS resolution in guest | ✅ (Android netd via bionic) | 🟡 resolv.conf written at configure; **DI never injects Android DNS** → 8.8.8.8/1.1.1.1 fallback fails on DNS-blocked nets (CN) | 🏗️ T82: app DI injects LinkProperties DNS into RootfsConfigurator |
 | 9.3 | Proxy (http_proxy/https_proxy) | ✅ (env) | ❌ not settable anywhere | 🏗️ T82: LinuxEnvironmentManager proxy config + app DI from Android system proxy |
-| 9.4 | Network diagnosis | ✅ (human curl/ping) | ✅ `terminal.linux.network` 4-dim probe (DNS/HTTP/HTTPS/APT) — exceeds baseline | — |
+| 9.4 | Network diagnosis | ✅ (human curl/ping) | ✅ `TerminalLinuxNetwork` 4-dim probe (DNS/HTTP/HTTPS/APT) — exceeds baseline | — |
 | 9.5 | ssh client | ✅ openssh | 🟡 recommended-only pkg | agent can install; documented |
 | 9.6 | ssh server / port forwarding | ✅ sshd builtin | ❌ | 📋 DEFERRED — running sshd inside PRoot needs device verification + security review (expose surface); design recorded |
 | 9.7 | CA bootstrap chicken-and-egg | n/a (https) | 🟡 HTTP sources + CA copy-or-warn | 🏗️ T82 (partial): keep HTTP-first bootstrap; mirror action allows https-capable mirrors after CA present |
@@ -166,12 +166,12 @@ Termux bootstrap ships a curated minimal set; ours ships a larger Ubuntu Base + 
 |---|---|---|---|---|
 | 12.1 | Structured observation API (semantic/screen/raw/event, cursors) | ❌ (human UI only) | ✅ 4-mode observe + bounded buffers + push flows | — |
 | 12.2 | Wait engine (condition-driven) | ❌ | ✅ 9 conditions, event-driven | — |
-| 12.3 | Machine-readable tool contract | ❌ | ✅ 20+ terminal.* tools with JSON schema | 🏗️ T82: + `terminal.fs`, + ensure/mirror/installed actions |
+| 12.3 | Machine-readable tool contract | ❌ | ✅ 20+ terminal.* tools with JSON schema | 🏗️ T82: + `TerminalFs`, + ensure/mirror/installed actions |
 | 12.4 | Event log / audit | ❌ | ✅ bounded 500-event log + bus | — |
 | 12.5 | Crash recovery honesty (no fake RUNNING) | ❌ n/a | ✅ T81 §16 | — |
 | 12.6 | Health/diagnosis orchestration | ❌ | ✅ 6+1-dim health + single-round repair + lifecycle coordinator (T82 r1) | — |
 | 12.7 | Public SDK API (P60 frozen contract) | n/a | 💀 `api/TerminalApi.kt` has **zero implementations** — documented as if shipped | 🏗️ T82: `TerminalSdk` adapter implements Terminal/TerminalSession/JobHandle over TerminalRuntime |
-| 12.8 | One-shot **structured** exec for the Agent (Termux:API Run Command / OperIt bridge 形态: pipe 通道 stdout/stderr 分离 + 真实退出码) | 🟡 (Run Command intent 返回 exit code,输出合并交文件) | 🏗️ **exec 包 + `terminal.exec` 工具**: `{stdout, stderr, exit_code, duration_ms, truncated}` snake_case 契约; 双层防线(采集 head64K+tail64K 环形 + 限长 head/tail 行预算); ANSI 剥离(或 keep)+进度条 `\r` 折叠; 超时强杀如实(timed_out/killed); spawn 失败=126 不伪装; 通道 root-su/shizuku/local-sh 诚实上报; 与 shell_execute 共享门禁+cd 记忆 | 本 PR |
+| 12.8 | One-shot **structured** exec for the Agent (Termux:API Run Command / OperIt bridge 形态: pipe 通道 stdout/stderr 分离 + 真实退出码) | 🟡 (Run Command intent 返回 exit code,输出合并交文件) | 🏗️ **exec 包 + `TerminalExec` 工具**: `{stdout, stderr, exit_code, duration_ms, truncated}` snake_case 契约; 双层防线(采集 head64K+tail64K 环形 + 限长 head/tail 行预算); ANSI 剥离(或 keep)+进度条 `\r` 折叠; 超时强杀如实(timed_out/killed); spawn 失败=126 不伪装; 通道 root-su/shizuku/local-sh 诚实上报; 与 ShellExecute 共享门禁+cd 记忆 | 本 PR |
 | 12.9 | 输出海量时不淹没 Agent | ❌ (人类看屏幕) | 🏗️ 12.8 的双层防线 + `*_bytes_total`/`*_truncated` 统计（Agent 据此收窄命令重取） | 本 PR |
 
 ## 13. SDK / Library Boundary (the "Termux is a library" dimension)

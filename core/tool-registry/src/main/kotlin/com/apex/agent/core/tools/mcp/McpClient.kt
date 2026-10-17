@@ -89,6 +89,14 @@ class McpClient(
     private var serverCapabilities: McpCapabilities? = null
 
     /**
+     * initialize 响应的 `instructions` 字段（服务器自述使用指引；
+     * null = 未上报）。引擎把它注入系统提示词（MCP 使用逻辑增强）。
+     */
+    @Volatile
+    var serverInstructions: String? = null
+        private set
+
+    /**
      * 传输句柄：把"远端 HTTP 端点"与"本地子进程"统一成一条 send/close 管道。
      *
      * 惰性构建 —— STDIO 会真的 fork 一个进程，配置阶段（仅落盘）不该触发。
@@ -216,8 +224,15 @@ class McpClient(
                 )
             )
 
+            // P1 修复（空响应假成功）：HTTP 200 + 空 body（或 SSE 无 data 帧）
+            // 会被传输层折叠成 null，旧实现照旧置 initialized=true 并返回成功
+            // —— 用户看到"已连接、0 工具"，模型把失败的调用当成功。空响应在
+            // 带 id 的请求上永远是协议错误。
             val response = sendRequest(request)
-            val result = response?.get("result")?.jsonObject
+                ?: return@withContext Result.failure(
+                    McpException("服务器返回空响应（HTTP 200 无 body / SSE 无 data 帧）：initialize")
+                )
+            val result = response["result"]?.jsonObject
             val capabilities = result?.get("capabilities")?.jsonObject
 
             serverCapabilities = McpCapabilities(
@@ -226,6 +241,13 @@ class McpClient(
                 prompts = capabilities?.containsKey("prompts") ?: false
             )
             initialized = true
+
+            // MCP 规范的 initialize 响应可携带 `instructions` 字段（服务器
+            // 自述的使用指引）——旧实现丢弃。标准任务循环引擎把它注入系统
+            // 提示词（<mcp_instructions>，仅当该服务器工具在当前工具面上），
+            // 模型拿到官方指引后对 MCP 工具的调用准确率显著提升。
+            serverInstructions = result?.get("instructions")?.jsonPrimitive?.contentOrNull
+                ?.takeIf { it.isNotBlank() }
 
             // #197 真实事件：initialize 响应到达 —— serverInfo 是服务器自报的
             // 真实身份（名称/版本），capabilities 是它真实宣告的能力面。
@@ -313,7 +335,10 @@ class McpClient(
                 )
 
                 val response = sendRequest(request)
-                val result = response?.get("result")?.jsonObject
+                    ?: return@withContext Result.failure(
+                        McpException("服务器返回空响应（HTTP 200 无 body / SSE 无 data 帧）：tools/list")
+                    )
+                val result = response["result"]?.jsonObject
                 val tools = result?.get("tools")?.jsonArray ?: JsonArray(emptyList())
 
                 tools.forEach { toolJson ->
@@ -360,7 +385,10 @@ class McpClient(
             )
 
             val response = sendRequest(request)
-            val result = response?.get("result")?.jsonObject
+                ?: return@withContext Result.failure(
+                    McpException("服务器返回空响应（HTTP 200 无 body / SSE 无 data 帧）：tools/call")
+                )
+            val result = response["result"]?.jsonObject
 
             val content = result?.get("content")?.jsonArray?.mapNotNull { item ->
                 val obj = item.jsonObject

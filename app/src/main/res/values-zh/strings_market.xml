@@ -397,7 +397,7 @@
     <string name="market_mcp_github_account">GitHub 账号（github 工具组必需）</string>
     <string name="market_mcp_github_connect">连接 Token</string>
     <string name="market_mcp_builtin_desc_github">GitHub REST 的 MCP 协议化：get_me / list_repositories / get_file_contents / create_or_update_file / create_issue / list_issues / search_code —— 连接 Personal Access Token 后可用。</string>
-    <string name="market_mcp_builtin_desc_search">网络搜索与抓取（web_search / web_fetch / search_hint）。</string>
+    <string name="market_mcp_builtin_desc_search">网络搜索与抓取（WebSearch / WebFetch / search_hint）。</string>
     <string name="market_mcp_builtin_desc_fs">当前编码工作区作用域的标准 MCP 文件接口（列表 / 读 / 写 / 信息）。</string>
     <string name="market_mcp_builtin_desc_memory">知识图谱记忆（实体 / 关系 / 观察），与聊天自动记忆同图同源。</string>
     <string name="market_mcp_builtin_desc_thinking">顺序思考链（server-sequential-thinking 语义），分步推理。</string>

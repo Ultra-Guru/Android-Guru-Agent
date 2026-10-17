@@ -94,7 +94,7 @@ sealed interface AgentEvent {
      *
      * 由实现了 [com.apex.agent.core.tools.StreamingAgentTool] 的工具在长任务中
      * 发射，UI 据此显示进度条。[percent] 为 0..1，[message] 为可选说明。
-     * shell_execute 等无明确完成度的工具不发射本事件。
+     * ShellExecute 等无明确完成度的工具不发射本事件。
      */
     data class ToolProgress(
         val callId: String,
@@ -166,7 +166,7 @@ sealed interface AgentEvent {
     ) : AgentEvent
 
     /**
-     * #214 用户输入等待超时：ask_user / HUMAN_ASSIST 决策点在超时窗口内
+     * #214 用户输入等待超时：AskUser / HUMAN_ASSIST 决策点在超时窗口内
      * 未获回答，引擎已按「超时未决」继续执行。UI 收到后关闭挂起的输入
      * 对话框并给出提示行；迟到的提交由 VM 侧 [ApexAgentEngine.submitUserInputIfAwaiting]
      * 回执驱动显式失败提示，不再静默丢弃。

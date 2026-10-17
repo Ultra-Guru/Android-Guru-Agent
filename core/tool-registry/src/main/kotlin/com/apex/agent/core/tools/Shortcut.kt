@@ -21,7 +21,7 @@ import kotlinx.serialization.json.put
  * one named action with its own arguments, a declared precondition, and
  * per-step argument mapping. High-frequency sequences get promoted into
  * shortcuts during a run (self-evolution); ours are defined explicitly
- * by the model (`shortcut_define`) or imported from JSON.
+ * by the model (`ShortcutDefine`) or imported from JSON.
  *
  * A shortcut is compiled into a first-class [AgentTool] (see
  * [ShortcutRegistry.compile]) with a real schema rendered from its
@@ -129,8 +129,8 @@ data class ShortcutDefinition(
          *     {"name": "path", "type": "string", "required": true}
          *   ],
          *   "steps": [
-         *     {"tool": "web_search", "arguments": "{\"query\": \"{query}\"}"},
-         *     {"tool": "write_file", "arguments": "{\"path\": \"{path}\", \"content\": \"{0}\"}"}
+         *     {"tool": "WebSearch", "arguments": "{\"query\": \"{query}\"}"},
+         *     {"tool": "Write", "arguments": "{\"path\": \"{path}\", \"content\": \"{0}\"}"}
          *   ]
          * }
          * ```
@@ -142,7 +142,7 @@ data class ShortcutDefinition(
          * @param knownToolIds tool ids allowed in steps (the registry's
          *   live id set — prevents shortcuts that reference dead tools).
          * @throws IllegalArgumentException on any invariant violation; the
-         *   message is model-facing (shown verbatim by shortcut_define).
+         *   message is model-facing (shown verbatim by ShortcutDefine).
          */
         fun parse(json: String, knownToolIds: Set<String>): ShortcutDefinition {
             val root = try {
@@ -334,7 +334,7 @@ class ShortcutRegistry {
      *
      * Risk inheritance: the metadata is the union of the definition's own
      * hints with the *worst* risk among the referenced tools — a shortcut
-     * containing `app_uninstall` is HIGH-risk even if the definition
+     * containing `AppUninstall` is HIGH-risk even if the definition
      * claims otherwise. Tool risks are resolved from [registry] at compile
      * time; a tool unregistered later fails per-step at run time with a
      * normal not-found error.
@@ -535,7 +535,7 @@ class ShortcutSuggester(
     ) {
         /**
          * A definition skeleton the model can refine and feed to
-         * `shortcut_define`: both steps with passthrough string params.
+         * `ShortcutDefine`: both steps with passthrough string params.
          */
         fun toDefinitionSkeleton(): String {
             val id = "shortcut." + sanitizeIdComponent(firstToolId) + "_then_" +

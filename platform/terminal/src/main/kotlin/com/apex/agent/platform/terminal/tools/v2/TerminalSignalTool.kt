@@ -12,7 +12,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.jsonArray
 
 /**
- * Agent tool: terminal.signal
+ * Agent tool: TerminalSignal
  *
  * Spec ref: ATR 2.0 Final Spec §34.6
  *
@@ -35,7 +35,7 @@ import kotlinx.serialization.json.jsonArray
 class TerminalSignalTool(
     private val runtime: TerminalRuntime
 ) : TerminalTool {
-    override val id: String = "terminal.signal"
+    override val id: String = "TerminalSignal"
     override val name: String = id
     override val description: String = """
         Send a Unix signal. scope=SESSION (default): the whole process group (shell included —

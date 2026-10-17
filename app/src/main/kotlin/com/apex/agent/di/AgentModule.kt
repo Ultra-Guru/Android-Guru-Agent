@@ -195,7 +195,7 @@ object AgentModule {
         // PreCompact/SessionEnd；null 注入零开销，此处生产性传非空）
         hookRunner: HookRunner,
         // 技能渐进披露：会话技能激活存储（目录 + 激活双层注入；与
-        // skill_activate 工具/斜杠指令/自动装备器共享同一单例）
+        // SkillActivate 工具/斜杠指令/自动装备器共享同一单例）
         skillActivation: SkillActivationStore
     ): AgentEngine {
         return ApexAgentEngine(

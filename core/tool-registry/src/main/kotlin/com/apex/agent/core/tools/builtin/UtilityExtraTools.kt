@@ -14,7 +14,7 @@ import java.security.SecureRandom
 import java.util.UUID
 
 /**
- * `uuid_generate` — generate UUIDs (v4 random / v7 time-ordered).
+ * `UuidGenerateLegacy` — generate UUIDs (v4 random / v7 time-ordered).
  *
  * Why: the model CANNOT invent UUIDs (they look plausible and collide).
  * Whenever a workflow needs identifiers — session keys, request ids,
@@ -26,7 +26,7 @@ import java.util.UUID
  * nonces, not just for uniqueness.
  */
 class UuidGenerateTool : BaseTool(
-    id = "uuid_generate",
+    id = "UuidGenerateLegacy",
     name = "UUID Generator",
     description = """
         Generate UUIDs: version 4 (random, SecureRandom) or version 7 (time-ordered).
@@ -108,7 +108,7 @@ class UuidGenerateTool : BaseTool(
 }
 
 /**
- * `file_hash` — streaming hash of a file inside the workspace sandbox.
+ * `FileHash` — streaming hash of a file inside the workspace sandbox.
  *
  * Why: integrity verification ("did this file actually change?", "is the
  * download complete?") without shelling out to `md5sum` — which needs the
@@ -128,7 +128,7 @@ class FileHashTool(
     /** Workspace root the sandbox enforces (app injects filesDir/workspace). */
     private val rootDir: File
 ) : BaseTool(
-    id = "file_hash",
+    id = "FileHash",
     name = "File Hash",
     description = """
         Compute MD5/SHA-1/SHA-256/SHA-512 hashes of a workspace file (streaming, one pass for all).

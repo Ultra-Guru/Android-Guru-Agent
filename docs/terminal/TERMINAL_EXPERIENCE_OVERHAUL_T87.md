@@ -12,7 +12,7 @@
 | 4 | 「Shell 模式也要用白色字体，不然黑色啥也看不清」 | `TerminalGrid.baseStyle` 不带 color —— 无 ANSI 着色的普通文本落不到任何 SpanStyle，`BasicText` 兜底色是**纯黑**，在深色终端底上黑字黑底 | baseStyle 显式携带 scheme 前景色（白）；T87 配色系统上线后前景由 scheme 决定 |
 | 5 | 「终端文字颜色要看情况彩色，像 Termux 项目一样」 | 旧渲染只透传 ANSI 16 色的标准板色值，无主题系统 | **31 套 Termux 风格配色方案**（Termux/Dracula/Nord/Gruvbox/Solarized/Monokai/Tokyo Night/Catppuccin/Ubuntu/Matrix…）+ 渲染层 ANSI 重映射（`TerminalAnsiRemapper`）+ bold-as-bright + 选择器 UI（即时换肤，零引擎改动） |
 | 6 | 「Ubuntu 还是会显示 apt 未引导」 | 引导失败后的降级 READY（bootstrapNote）此前只显示原因不给出口；真机 proot 启动失败被 #1 的盲区掩盖 | 死会话/ExecFailed 诚实上报（#1）+ guest bashrc 的 `apt-fix` 一键引导修复（DNS→dpkg→apt update）+ `command_not_found_handle`（找不到命令 → `apt install <pkg>` 提示） |
-| 7 | 「我这个项目的终端真的能被 agent 调用吗」 | 无自证入口 | `terminal.diagnostics` 工具（新注册）：会话/后端面 + **smokeTest=true 真实执行探针**（`printf` 回显自证 exec 链路端到端可用）+ nextActions 结构化建议 |
+| 7 | 「我这个项目的终端真的能被 agent 调用吗」 | 无自证入口 | `TerminalDiagnostics` 工具（新注册）：会话/后端面 + **smokeTest=true 真实执行探针**（`printf` 回显自证 exec 链路端到端可用）+ nextActions 结构化建议 |
 
 ## 1. 架构：渲染层配色重映射（零引擎改动）
 
@@ -68,14 +68,14 @@ pipe2(O_CLOEXEC) → forkpty →
 - `apt-fix`：DNS 展示 → `dpkg --configure -a` → `apt-get update` 一键三连；
 - ls/grep/less/man 彩色（能力探测后 alias，旧 coreutils 不炸）。
 
-## 6. 新工具：terminal.diagnostics（Agent 自证）
+## 6. 新工具：TerminalDiagnostics（Agent 自证）
 
 ```
 input:  { smokeTest?: boolean }
 output: { ok, sessionCount, sessions: [{id, shell, state, pid, backend, verdict?}],
           backends: [...], smoke?: {command, chainOk, output}, nextActions: [...] }
 ```
-- exec 探针与 `terminal.exec` 共用同一 `ExecEngine(ProotCommandSpawner)` 构造 —— 探到的就是 Agent 实际会走的链路；
+- exec 探针与 `TerminalExec` 共用同一 `ExecEngine(ProotCommandSpawner)` 构造 —— 探到的就是 Agent 实际会走的链路；
 - `nextActions` 给出可立即执行的建议（close 死会话 / ubuntu.install / …）。
 
 ## 7. 其它交付
@@ -84,7 +84,7 @@ output: { ok, sessionCount, sessions: [{id, shell, state, pid, backend, verdict?
 - **扩展键行**：`ExtraKeysConfig`（宏语法 `label=cmd:…` / `text:` / `key:` / `ctrl:` / `paste`，行/键预算约束，解析容错）+ `ExtraKeysBar` + 设置抽屉增删编辑器 —— Termux extra-keys 等价物。
 - **光标漂移修复**：CJK 宽字符后 `CursorOverlay` 用 VT 列号索引渲染列表（trail cell 已剔除）→ 每个宽字符错位 1 列；改为以「已消费 VT 列数」终止。
 - **行数预算治理**：`TerminalScreen` 1143→1098（抽屉拆出）、`TerminalRenderer` 1035→972（KeyToolbar 拆出）；新增文件全部 < 1200 行。
-- **测试**：scheme 重映射/注册表（21 项）、ExtraKeysConfig（11 项）、mksh/bash profile（15 项）、terminal.diagnostics（5 项）。
+- **测试**：scheme 重映射/注册表（21 项）、ExtraKeysConfig（11 项）、mksh/bash profile（15 项）、TerminalDiagnostics（5 项）。
 
 ## 8. 验证
 
@@ -98,7 +98,7 @@ output: { ok, sessionCount, sessions: [{id, shell, state, pid, backend, verdict?
 
 - 引擎标准 16 色板若变更（`TerminalColor.BASIC_16` / C++ 同板），**必须**同步 `TerminalAnsiRemapper.ENGINE_BASIC_16`；
 - 新 scheme 进 `TerminalColorSchemeDefs.ALL` 即自动进入选择器（id 唯一性有测试锁定）；
-- `terminal.diagnostics` 已加入 `TERMINAL_TOOL_RUN_POLICIES`（660s / maxRetries=0）——
+- `TerminalDiagnostics` 已加入 `TERMINAL_TOOL_RUN_POLICIES`（660s / maxRetries=0）——
   新终端工具同样要在该表登记（`TerminalToolPolicyTest` 的 mustCover 会抓漏配）。
 
 ## 10. 复修轮：「apt 未引导」注记永不消失（第 6 条反馈的深层根因）

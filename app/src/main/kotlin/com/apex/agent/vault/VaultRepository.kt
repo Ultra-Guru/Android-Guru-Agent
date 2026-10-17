@@ -45,7 +45,7 @@ class VaultRepository(
 
     // ───────────────────────── 读 ─────────────────────────
 
-    /** 脱敏列表（vault_list / UI 统计专用，绝不含 secret）。 */
+    /** 脱敏列表（VaultList / UI 统计专用，绝不含 secret）。 */
     fun snapshots(): List<VaultSnapshot> =
         synchronized(lock) { _entries.value.map(VaultSnapshot::of) }
 
@@ -56,7 +56,7 @@ class VaultRepository(
         synchronized(lock) { _entries.value.firstOrNull { it.label == label } }
 
     /**
-     * 仅内部使用（vault_paste 直投 / UI 显示）：按标签取回明文。
+     * 仅内部使用（VaultPaste 直投 / UI 显示）：按标签取回明文。
      * 返回值不得进入任何工具输出或日志。
      */
     fun resolveSecret(label: String): String? = getByLabel(label)?.secret
@@ -99,7 +99,7 @@ class VaultRepository(
         true
     }
 
-    /** 按标签删除（vault_delete 工具入口）。@return 是否真的删除了条目。 */
+    /** 按标签删除（VaultDelete 工具入口）。@return 是否真的删除了条目。 */
     fun deleteByLabel(label: String): Boolean = synchronized(lock) {
         val target = _entries.value.firstOrNull { it.label == label } ?: return false
         commit(_entries.value.filter { it.label != label })
@@ -107,7 +107,7 @@ class VaultRepository(
     }
 
     /**
-     * 记录一次成功使用（vault_paste 投递成功后调用）：
+     * 记录一次成功使用（VaultPaste 投递成功后调用）：
      * usageCount+1、lastUsedAt=now，立即持久化。
      * suspend 仅为调用侧调度自由（仓库内部不挂起，任意调度器安全）。
      */

@@ -631,8 +631,8 @@ data class AgentSettings(
 
     // ═══ v3 子代理全面完善（预算/自定义类型可配置）═══
     // 此前全部硬编码（3 并发/300s/15 轮/8K），零可配置。接线：ToolModule
-    // 构造 SubAgentRunner 时注入快照 provider；标准线 StandardSubAgentDispatcher
-    // 同款消费。自定义类型由 code_task 的 custom 类型 + custom_name 按名解析。
+    // 构造 SubAgentRunner 时注入快照 provider；标准线库内派发器
+    // 同款消费。自定义类型由 CodeTask 的 custom 类型 + custom_name 按名解析。
     val subagent: SubAgentSettings = SubAgentSettings(),
 
     // ═══ v3 GOAL 目标模式 ═══

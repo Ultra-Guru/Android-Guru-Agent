@@ -80,7 +80,7 @@ import javax.inject.Singleton
  * 3. **metadata 钳制（[pluginToolMetadata]）**：即便通过了签名与版本门，
  *    插件工具的风险等级取 max(id 推断, MEDIUM, 宿主现有同 id 工具)，
  *    readOnlyHint 强制 false——REPLACE 覆盖内置工具时继承宿主分类与更严
- *    风险，防止"覆盖 read_file 后降级成 LOW/只读"的绕过路径。
+ *    风险，防止"覆盖 Read 后降级成 LOW/只读"的绕过路径。
  */
 @Singleton
 class PluginManager @Inject constructor(
@@ -275,7 +275,7 @@ class PluginManager @Inject constructor(
             val descriptors = parseTools(toolsJson)
             val registered = descriptors.map { d ->
                 // 覆盖瞬间捕获宿主同 id 工具的 metadata —— 降级/重连时的信任锚点
-                // （风险取更严者、分类继承），防止插件把 read_file 之类降成 LOW。
+                // （风险取更严者、分类继承），防止插件把 Read 之类降成 LOW。
                 val hostMetadata = toolRegistry.getTool(d.id)?.metadata
                 val entry = d.copy(hostMetadata = hostMetadata)
                 toolRegistry.register(PluginAgentTool(pkg, plugin, entry))
@@ -404,7 +404,7 @@ private const val EMPTY_TOOL_SCHEMA = """{"type":"object","properties":{}}"""
  * 插件工具的信任边界 metadata（[PluginAgentTool] / [HostFallbackTool] 共用）：
  * - **风险钳制**：max(id 推断, MEDIUM, 宿主现有) —— 插件自报的良性 id
  *   （`helper_query` 之类 → LOW）不再把风险压到确认链之外；REPLACE 覆盖
- *   宿主工具时取宿主与插件推断中更严者（覆盖 read_file 不能把 HIGH/中风险
+ *   宿主工具时取宿主与插件推断中更严者（覆盖 Read 不能把 HIGH/中风险
  *   降成 LOW）。
  * - **readOnlyHint 强制 false**：插件是跨进程第三方代码，PermissionDecider 的
  *   PLAN/DEFAULT 只读静默放行通道对其关闭，一律走确认链。

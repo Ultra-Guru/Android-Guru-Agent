@@ -1,9 +1,9 @@
 package com.apex.agent.platform.terminal.tools.v2
 
-import com.apex.agent.platform.terminal.exec.AnsiMode
-import com.apex.agent.platform.terminal.exec.CommandResult
-import com.apex.agent.platform.terminal.exec.ExecEngine
-import com.apex.agent.platform.terminal.exec.ExecRequest
+import com.apex.agent.platform.TerminalExec.AnsiMode
+import com.apex.agent.platform.TerminalExec.CommandResult
+import com.apex.agent.platform.TerminalExec.ExecEngine
+import com.apex.agent.platform.TerminalExec.ExecRequest
 import com.apex.agent.platform.terminal.tools.TerminalTool
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -12,14 +12,14 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Agent tool: terminal.exec —— 一次性**结构化**命令执行（本 PR 的核心交付）。
+ * Agent tool: TerminalExec —— 一次性**结构化**命令执行（本 PR 的核心交付）。
  *
  * 与既有工具的关系：
- *  - `terminal_exec`（legacy，已 @Deprecated）：合并单 `output`、durationMs 恒 0 ——
+ *  - `TerminalExecLegacy`（legacy，已 @Deprecated）：合并单 `output`、durationMs 恒 0 ——
  *    本工具以结构化 stdout/stderr/exit_code/duration_ms/truncated 取代之；
- *  - `terminal.run` + `terminal.wait` + `terminal.observe`：交互/长任务三步编排 ——
+ *  - `TerminalRun` + `TerminalWait` + `TerminalObserve`：交互/长任务三步编排 ——
  *    一次性命令用本工具**单次调用**完成，省两次往返与 token；
- *  - `shell_execute`：纯文本输出、无流分离 —— 本工具给出机器可判定结构。
+ *  - `ShellExecute`：纯文本输出、无流分离 —— 本工具给出机器可判定结构。
  *
  * 执行形态（Termux Run Command / OperIt bridge 语义）：pipe 通道 spawn
  * （stdout/stderr 分离）→ 并发有界采集 → 真实 waitpid → ANSI 净化 → head+tail
@@ -48,7 +48,7 @@ import kotlinx.serialization.json.jsonPrimitive
  *  - 超时强杀 → `timed_out:true` + `exit_code:-1`（已采集的部分输出如实返回）。
  *
  * app 层接线（ToolModule）：注入 [approvalGate]（CommandPermissionGate）、
- * [defaultCwd]/[onCommandSucceeded]（ShellWorkDirTracker 的 cd 记忆，与 shell_execute
+ * [defaultCwd]/[onCommandSucceeded]（ShellWorkDirTracker 的 cd 记忆，与 ShellExecute
  * 同一状态）—— 本类自身保持纯 JVM 可测。
  */
 class TerminalExecTool(
@@ -61,7 +61,7 @@ class TerminalExecTool(
     private val onCommandSucceeded: (suspend (command: String, result: CommandResult) -> Unit)? = null
 ) : TerminalTool {
 
-    override val id: String = "terminal.exec"
+    override val id: String = "TerminalExec"
     override val name: String = id
 
     override val description: String = """
@@ -74,7 +74,7 @@ class TerminalExecTool(
         (stdout_bytes_total/stderr_bytes_total tell the real size; truncated=true means
         use head/tail/grep to narrow). timeout_ms kills the process honestly
         (timed_out=true). cwd defaults to the remembered working directory (cd persists
-        across calls, same as shell_execute).
+        across calls, same as ShellExecute).
         Channel routing (see "channel" in the result): when the Ubuntu sandbox is
         installed and ready, non-Android commands (python3, gcc, apt, git, npm, pip,
         make, node, bash scripts, ...) run inside the PRoot Ubuntu sandbox
@@ -82,8 +82,8 @@ class TerminalExecTool(
         active workspace) — toolchain commands work out of the box. Android-specific
         commands (am, pm, dumpsys, settings, input, ...) and any command while Ubuntu
         is not installed fall back to the Android host shell (root-su / shizuku /
-        local-sh). Prefer this over terminal_exec for non-interactive commands; use
-        terminal.run+observe for interactive/long jobs.
+        local-sh). Prefer this over TerminalExecLegacy for non-interactive commands; use
+        TerminalRun+observe for interactive/long jobs.
     """.trimIndent()
 
     override val parametersSchema: String = """

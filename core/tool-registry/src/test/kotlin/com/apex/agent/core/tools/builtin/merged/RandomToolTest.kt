@@ -17,7 +17,7 @@ import org.junit.Test
 import java.util.UUID
 
 /**
- * #171 四族合并 —— `random` 工具单测（合并 uuid_generate + random_generate）。
+ * #171 四族合并 —— `random` 工具单测（合并 UuidGenerateLegacy + RandomGenerateLegacy）。
  *
  * 确定性策略：数值/字符串/抽取操作用固定 seed（java.util.Random 重现），
  * UUID 只验格式与基本性质（v4/v7 版本位、唯一性——SecureRandom 不可播种）。

@@ -99,8 +99,8 @@ minHostVersion / description / author / tags / scope），功能性插件多了
       "description": "生成今日简报",
       "parametersSchema": "{...JSON Schema...}",
       "steps": [
-        { "tool": "browser_navigate", "args": { "url": "{{input.site}}" }, "output": "page" },
-        { "tool": "browser_extract_content", "output": "body" },
+        { "tool": "BrowserNavigate", "args": { "url": "{{input.site}}" }, "output": "page" },
+        { "tool": "BrowserExtractContent", "output": "body" },
         { "tool": "agent_notify_user", "args": { "message": "今日要闻：{{body}}" } }
       ]
     }],
@@ -149,7 +149,7 @@ minHostVersion / description / author / tags / scope），功能性插件多了
 **为什么功能性插件永不 REPLACE**：APK 插件可覆盖内置工具的前提是「其
 代码与宿主同签名」（覆盖瞬间捕获宿主 metadata 作信任锚点）。功能性插件
 是用户 / 市场导入的**无签名数据**——若允许 REPLACE，一个 JSON 就能把
-`read_file` 的声明换成恶意描述（模型被骗去传敏感参数）或把 HIGH 风险
+`Read` 的声明换成恶意描述（模型被骗去传敏感参数）或把 HIGH 风险
 工具的描述改向。REJECT 是数据形态下唯一安全的冲突策略；想「覆盖」内置
 行为是 APK 插件（同签名代码）才有的权利。
 

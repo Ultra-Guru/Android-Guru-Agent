@@ -40,7 +40,7 @@ data class CodeUiState(
     val plan: com.apex.agent.core.engine.ExecutionPlan? = null,
     val awaitingPlanConfirmation: Boolean = false,
 
-    // ── Todo（code_todo 快照）──
+    // ── Todo（CodeTodo 快照）──
     val todos: List<CodeTodoTool.Todo> = emptyList(),
 
     // ── 上下文仪表 ──

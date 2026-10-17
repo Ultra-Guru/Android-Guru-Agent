@@ -11,7 +11,7 @@ package com.apex.agent.core.code.longtask
  *
  * 四个信号全部来自 [LongTaskTracker] 的事件聚合（迭代数 = IterationStart
  * 计数、工具调用数 = ToolCallStart 计数、时长 = beginRun→endRun、触碰
- * 文件数 = code_edit / code_write 成功调用去重）：
+ * 文件数 = CodeEdit / CodeWrite 成功调用去重）：
  *
  * | 信号 | MEDIUM | LONG | EPIC |
  * |------|--------|------|------|
@@ -50,7 +50,7 @@ object LongTaskDetector {
      *   计数才单调可比）。
      * @param toolCalls 累计工具调用数（ToolCallStart 事件计数，含失败）。
      * @param durationMs 运行时长（beginRun → endRun 墙钟差，毫秒）。
-     * @param filesTouched 触碰文件数（code_edit / code_write 成功调用提取
+     * @param filesTouched 触碰文件数（CodeEdit / CodeWrite 成功调用提取
      *   path 去重后的数量）。
      */
     data class Signals(

@@ -45,7 +45,7 @@ data class ChatRule(
  *
  * v4 语义变更（根因修复）：旧版「函数调用」是**白名单**（不选=发全部~110个
  * 工具 schema，直接把请求撑爆→「直接发送就报错」；选了=只有这几个能用）。
- * 新版不选 = 默认 CORE 工具集 + 目录（全部能力可 tool_search/tool_open 按需
+ * 新版不选 = 默认 CORE 工具集 + 目录（全部能力可 ToolSearch/ToolOpen 按需
  * 加载）；选中 = **强制调用**（tool_choice=required/具体函数，被选中的函数
  * 必须被模型调用）。存续同一 SharedPreferences key，旧数据无缝升级。
  */
@@ -167,8 +167,8 @@ class ChatToolkitStore @Inject constructor(
             appendLine("### 网络搜索（强制）")
             appendLine("用户已开启网络搜索（当前 Provider 支持时已同时启用模型内置联网搜索）。")
             appendLine("若本轮响应已附带模型内置搜索的引用来源（**Sources:** 列表），直接基于其结果作答并保留来源标注；")
-            appendLine("否则，涉及实时信息、新闻、天气、价格、文档、不确定的事实时，必须先调用 web_search 工具")
-            appendLine("获取最新结果（必要时 web_fetch 读取全文）再作答，禁止仅凭训练知识猜测。")
+            appendLine("否则，涉及实时信息、新闻、天气、价格、文档、不确定的事实时，必须先调用 WebSearch 工具")
+            appendLine("获取最新结果（必要时 WebFetch 读取全文）再作答，禁止仅凭训练知识猜测。")
             appendLine("引用搜索结果中的关键信息时，注明来源标题与链接。")
             appendLine()
         }

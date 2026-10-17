@@ -103,7 +103,7 @@ MemoryGraphDatabase (Room, v3)        存储：nodes/edges/episodes/fsm_macros/m
 | # | 调研结论 | 本仓库缺陷（修复前） | 本 PR 修复 |
 |---|---------|--------------------|-----------|
 | M1 | A-MEM/Zep：边的身份必须跨快照稳定，差分才有语义 | 边 ID 是**帧内自增计数器**（`e_0,e_1…` 每帧重置）：帧 N 的 `e_3` 与帧 N+1 的 `e_3` 可连接完全不同节点 → 差分"新增边"随边数波动误报；`deleteByLabels` 全局按标签删除会跨 Episode 误删 | `UiTreePruner.stableEdgeId`：边 ID = SHA-256(源指纹\|目标指纹\|关系) 前 16 位，同一条拓扑边任意两帧同 ID；Room v2→v3 迁移清理历史重复行并建 `(episode_id, edge_label)` 唯一索引；`deleteByLabelsInEpisode` 增加 episode 作用域 |
-| M2 | Voyager：技能回放必须可验证、参数必须纯净 | 蒸馏 `input_text` 时存**完整原始描述**（`input_text("hello")`），回放把整串字面量输入进输入框 | 蒸馏期 `TraceDistiller.extractActionParams` 提取纯参数；回放期 `BypassExecutionEngine.extractInputText` 双保险兼容三种历史形态（新纯参数 / 旧完整描述 / 无引号） |
+| M2 | Voyager：技能回放必须可验证、参数必须纯净 | 蒸馏 `InputText` 时存**完整原始描述**（`InputText("hello")`），回放把整串字面量输入进输入框 | 蒸馏期 `TraceDistiller.extractActionParams` 提取纯参数；回放期 `BypassExecutionEngine.extractInputText` 双保险兼容三种历史形态（新纯参数 / 旧完整描述 / 无引号） |
 | M3 | Zep/A-MEM：版本演化后旧事实应能解析到新事实 | `migration_map` 只写不读（DreamRenderer 写入别名桥，召回侧从不消费）→ App 升级后旧宏集体失效（有炉无米）；且迁移回退的复验用宏的**旧初始指纹**做匹配率检查——旧指纹必然不在当前屏幕，任何阈值下迁移宏都被误杀 | `MemoryGraphStore.findMacrosViaMigration`（当前指纹 → 旧别名 → 旧宏）+ 旁路引擎改用**正向别名桥精确校验**（`resolveMigration(旧指纹) == 探测指纹`），闭环缺口 #9 §4 |
 | M4 | Letta/Voyager：高价值记忆应免于遗忘 | 无晶化落库通道（`shouldCrystallize` 判定存在但无 `crystallizeMacro`） | `EdgeDao.crystallize` / `FSMMacroDao.crystallize`：置 `is_crystallized=1` 并保底能量，衰减/剪枝/删除三处跳过 |
 

@@ -22,7 +22,7 @@
     <string name="code_stop">停止</string>
     <string name="code_dismiss">关闭</string>
 
-    <!-- ask_user 对话框 -->
+    <!-- AskUser 对话框 -->
     <string name="code_question_title">智能体需要你的输入</string>
     <string name="code_question_hint">输入你的回答…</string>
     <string name="code_question_default_yes">是</string>
@@ -236,7 +236,7 @@
     <string name="code_git_changes_fmt">%1$d 个变更文件</string>
     <string name="code_git_refresh">刷新 git 状态</string>
     <string name="code_git_commit_hint">提交说明</string>
-    <string name="code_git_commit">提交全部变更</string>
+    <string name="CodeGitCommit">提交全部变更</string>
     <string name="code_git_new_file">新的未跟踪文件（尚未加入索引）</string>
     <string name="code_stream_terminal_running">运行中</string>
 </resources>

@@ -28,7 +28,7 @@ import org.junit.Test
  *
  * 1. 默认模式：请求只携带 CORE 工具（provider 安全名）+ 目录段进系统提示词；
  * 2. 强制模式（「调用函数」圈选）：请求只携带选中工具 + tool_choice=required/Function；
- * 3. tool_open 渐进披露：模型打开目录工具 → 下一轮请求自动带上它；
+ * 3. ToolOpen 渐进披露：模型打开目录工具 → 下一轮请求自动带上它；
  * 4. 降级自愈：Provider 400 拒绝带 tools 的请求 → 纯 CORE 重试 → 无工具重试 →
  *    任务照常完成（直接发送对话永远有响应，不再一击报错）。
  */
@@ -142,12 +142,12 @@ class EngineToolSystemV4Test {
     fun `default request carries core tools only with provider-safe names`() = runBlocking {
         val registry = FakeRegistry(
             listOf(
-                FakeTool("read_file"),
-                FakeTool("terminal.exec"),
-                FakeTool("github_create_issue"),
-                FakeTool("tool_search"),
-                FakeTool("tool_open"),
-                FakeTool("tool_list")
+                FakeTool("Read"),
+                FakeTool("TerminalExec"),
+                FakeTool("GithubCreateIssue"),
+                FakeTool("ToolSearch"),
+                FakeTool("ToolOpen"),
+                FakeTool("ToolList")
             )
         )
         val client = RecordingLlmClient(listOf(RecordingLlmClient.Script.Respond("done")))
@@ -155,10 +155,10 @@ class EngineToolSystemV4Test {
 
         assertEquals(1, client.calls.size)
         val names = client.calls[0].tools.map { it.name }.toSet()
-        assertTrue("read_file" in names)
-        assertTrue("terminal_exec" in names)   // dotted id sanitized
-        assertTrue("tool_search" in names)     // catalog meta tools ship
-        assertFalse("github_create_issue" in names) // catalog-only: NOT shipped
+        assertTrue("Read" in names)
+        assertTrue("TerminalExec" in names)   // PascalCase id, provider-legal as-is
+        assertTrue("ToolSearch" in names)     // catalog meta tools ship
+        assertFalse("GithubCreateIssue" in names) // catalog-only: NOT shipped
         assertNull(client.calls[0].toolChoice) // default mode: no forcing
     }
 
@@ -166,11 +166,11 @@ class EngineToolSystemV4Test {
     fun `system prompt lists provider names and advertises the catalog`() = runBlocking {
         val registry = FakeRegistry(
             listOf(
-                FakeTool("read_file"),
-                FakeTool("github_create_issue"),
-                FakeTool("tool_search"),
-                FakeTool("tool_open"),
-                FakeTool("tool_list")
+                FakeTool("Read"),
+                FakeTool("GithubCreateIssue"),
+                FakeTool("ToolSearch"),
+                FakeTool("ToolOpen"),
+                FakeTool("ToolList")
             )
         )
         val client = RecordingLlmClient(listOf(RecordingLlmClient.Script.Respond("done")))
@@ -178,14 +178,14 @@ class EngineToolSystemV4Test {
 
         val systemPrompt = client.calls[0]
             .messages.filterIsInstance<LlmMessage.System>().first().content
-        assertTrue(systemPrompt.contains("tool_search"))
+        assertTrue(systemPrompt.contains("ToolSearch"))
         assertTrue(systemPrompt.contains("Tool Catalog"))
-        // prompt must NOT advertise the raw dotted id when names differ
-        val registry2 = FakeRegistry(listOf(FakeTool("terminal.exec"), FakeTool("tool_search")))
+        // prompt 列的必须是注册表 id（v5 起 provider 名与注册表 id 一致）
+        val registry2 = FakeRegistry(listOf(FakeTool("TerminalExec"), FakeTool("ToolSearch")))
         val client2 = RecordingLlmClient(listOf(RecordingLlmClient.Script.Respond("done")))
         runEngine(registry2, client2, baseConfig)
         val prompt2 = client2.calls[0].messages.filterIsInstance<LlmMessage.System>().first().content
-        assertTrue(prompt2.contains("- terminal_exec:"))
+        assertTrue(prompt2.contains("- TerminalExec:"))
     }
 
     // ── 2. forced mode («调用函数» selection) ─────────────────────
@@ -194,34 +194,34 @@ class EngineToolSystemV4Test {
     fun `forced selection ships only forced tools with required tool_choice`() = runBlocking {
         val registry = FakeRegistry(
             listOf(
-                FakeTool("read_file"),
-                FakeTool("web_search"),
-                FakeTool("github_create_issue"),
-                FakeTool("tool_search")
+                FakeTool("Read"),
+                FakeTool("WebSearch"),
+                FakeTool("GithubCreateIssue"),
+                FakeTool("ToolSearch")
             )
         )
         val client = RecordingLlmClient(listOf(RecordingLlmClient.Script.Respond("done")))
-        runEngine(registry, client, baseConfig.copy(forcedToolIds = setOf("web_search")))
+        runEngine(registry, client, baseConfig.copy(forcedToolIds = setOf("WebSearch")))
 
         val call = client.calls[0]
-        assertEquals(listOf("web_search"), call.tools.map { it.name })
+        assertEquals(listOf("WebSearch"), call.tools.map { it.name })
         // single selection → specific function forcing
         assertTrue(call.toolChoice is ToolChoiceSpec.Function)
-        assertEquals("web_search", (call.toolChoice as ToolChoiceSpec.Function).name)
+        assertEquals("WebSearch", (call.toolChoice as ToolChoiceSpec.Function).name)
     }
 
     @Test
     fun `multi forced selection uses required`() = runBlocking {
         val registry = FakeRegistry(
-            listOf(FakeTool("read_file"), FakeTool("web_search"), FakeTool("tool_search"))
+            listOf(FakeTool("Read"), FakeTool("WebSearch"), FakeTool("ToolSearch"))
         )
         val client = RecordingLlmClient(listOf(RecordingLlmClient.Script.Respond("done")))
-        runEngine(registry, client, baseConfig.copy(forcedToolIds = setOf("read_file", "web_search")))
+        runEngine(registry, client, baseConfig.copy(forcedToolIds = setOf("Read", "WebSearch")))
         assertEquals(ToolChoiceSpec.Required, client.calls[0].toolChoice)
-        assertEquals(setOf("read_file", "web_search"), client.calls[0].tools.map { it.name }.toSet())
+        assertEquals(setOf("Read", "WebSearch"), client.calls[0].tools.map { it.name }.toSet())
     }
 
-    // ── 3. progressive disclosure: tool_open → next request ───────
+    // ── 3. progressive disclosure: ToolOpen → next request ───────
 
     /** Registry view resolved lazily so ToolOpenTool sees late registrations. */
     private class LateRegistry(private val delegate: () -> ToolRegistry) : ToolRegistry {
@@ -233,32 +233,32 @@ class EngineToolSystemV4Test {
     }
 
     @Test
-    fun `tool_open activates a catalog tool for the next request`() = runBlocking {
+    fun `ToolOpen activates a catalog tool for the next request`() = runBlocking {
         val activation = ToolActivationStore()
         val base = FakeRegistry(mutableListOf<AgentTool>())
         val late = LateRegistry { base }
-        base.register(FakeTool("read_file"))
-        base.register(FakeTool("github_create_issue"))
-        base.register(FakeTool("tool_search"))
+        base.register(FakeTool("Read"))
+        base.register(FakeTool("GithubCreateIssue"))
+        base.register(FakeTool("ToolSearch"))
         base.register(ToolOpenTool(late, activation))
 
         val client = RecordingLlmClient(
             listOf(
                 RecordingLlmClient.Script.CallTool(
-                    "tool_open",
-                    """{"tool_name":"github_create_issue"}"""
+                    "ToolOpen",
+                    """{"tool_name":"GithubCreateIssue"}"""
                 ),
                 RecordingLlmClient.Script.Respond("done")
             )
         )
         val events = runEngine(base, client, baseConfig, activation)
 
-        // first request: github_create_issue NOT shipped
-        assertFalse("github_create_issue" in client.calls[0].tools.map { it.name })
-        // the tool_open execution succeeded
+        // first request: GithubCreateIssue NOT shipped
+        assertFalse("GithubCreateIssue" in client.calls[0].tools.map { it.name })
+        // the ToolOpen execution succeeded
         assertTrue(events.any { it is AgentEvent.ToolCallComplete && it.success })
         // second request: activated tool now ships
-        assertTrue("github_create_issue" in client.calls[1].tools.map { it.name })
+        assertTrue("GithubCreateIssue" in client.calls[1].tools.map { it.name })
     }
 
     // ── 4. tools-request degradation self-heal ────────────────────
@@ -267,16 +267,16 @@ class EngineToolSystemV4Test {
     fun `tools-related 400 degrades to core-only then no-tools and still completes`() = runBlocking {
         val registry = FakeRegistry(
             listOf(
-                FakeTool("read_file"),
-                FakeTool("tool_search"),
-                FakeTool("tool_open"),
-                FakeTool("tool_list")
+                FakeTool("Read"),
+                FakeTool("ToolSearch"),
+                FakeTool("ToolOpen"),
+                FakeTool("ToolList")
             )
         )
         val client = RecordingLlmClient(
             listOf(
                 RecordingLlmClient.Script.Fail(
-                    LlmException.Http(400, """{"error":{"message":"Invalid function name 'terminal.exec'"}}""")
+                    LlmException.Http(400, """{"error":{"message":"Invalid function name 'TerminalExec'"}}""")
                 ),
                 // after degradation level 1 (core-only), some providers still 400
                 RecordingLlmClient.Script.Fail(
@@ -306,7 +306,7 @@ class EngineToolSystemV4Test {
 
     @Test
     fun `non-tools errors still propagate`() = runBlocking {
-        val registry = FakeRegistry(listOf(FakeTool("read_file"), FakeTool("tool_search")))
+        val registry = FakeRegistry(listOf(FakeTool("Read"), FakeTool("ToolSearch")))
         val client = RecordingLlmClient(
             listOf(RecordingLlmClient.Script.Fail(LlmException.Http(401, "bad key")))
         )

@@ -15,7 +15,7 @@ import java.io.File
 /**
  * T76: Linux Environment Health —— 统一健康门面（6 维度）。
  *
- * 把分散的健康检查聚合为单一 [LinuxHealthReport]，让 Agent 一次 `terminal.linux.status`
+ * 把分散的健康检查聚合为单一 [LinuxHealthReport]，让 Agent 一次 `TerminalLinuxStatus`
  * 就拿到全貌（T76 §19 / §20），而非自己拼凑 rootfs/proot/network/apt/home/workspace。
  *
  * 6 维度：
@@ -29,7 +29,7 @@ import java.io.File
  * 输出：每维 READY/DEGRADED/FAILED + code/message/repairable；overall 聚合。
  *
  * 性能：health check 全是轻量操作（文件存在性 + 短探针），不跑 apt update。
- * 完整网络 diagnose 由 `terminal.linux.network` 工具按需触发（避免每次 status 都
+ * 完整网络 diagnose 由 `TerminalLinuxNetwork` 工具按需触发（避免每次 status 都
  * 跑 apt update）。
  */
 class LinuxEnvironmentHealth(

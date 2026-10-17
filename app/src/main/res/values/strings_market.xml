@@ -397,7 +397,7 @@
     <string name="market_mcp_github_account">GitHub account (required by github tools)</string>
     <string name="market_mcp_github_connect">Connect token</string>
     <string name="market_mcp_builtin_desc_github">GitHub REST via MCP: get_me, list_repositories, get_file_contents, create_or_update_file, create_issue, list_issues, search_code — connect a Personal Access Token to use them.</string>
-    <string name="market_mcp_builtin_desc_search">Web search &amp; fetch (web_search / web_fetch / search_hint) over the shared HTTP stack.</string>
+    <string name="market_mcp_builtin_desc_search">Web search &amp; fetch (WebSearch / WebFetch / search_hint) over the shared HTTP stack.</string>
     <string name="market_mcp_builtin_desc_fs">Standard MCP file interface scoped to the active coding workspace (list / read / write / info).</string>
     <string name="market_mcp_builtin_desc_memory">Knowledge-graph memory (entities / relations / observations), persisted and shared with chat auto-memory.</string>
     <string name="market_mcp_builtin_desc_thinking">Sequential thinking chains (server-sequential-thinking semantics) for stepwise reasoning.</string>

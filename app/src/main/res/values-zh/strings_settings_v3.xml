@@ -21,7 +21,7 @@
     <string name="settings_v3_subagent_temperature">采样温度</string>
     <string name="settings_v3_subagent_temperature_desc">低温让探索/调研稳定收敛</string>
     <string name="settings_v3_subagent_custom_title">自定义子代理类型</string>
-    <string name="settings_v3_subagent_custom_hint">由 code_task 的 custom_name 参数按名解析</string>
+    <string name="settings_v3_subagent_custom_hint">由 CodeTask 的 custom_name 参数按名解析</string>
     <string name="settings_v3_subagent_custom_empty">暂无自定义子代理——可添加如 data-analyst、doc-writer 等角色</string>
     <string name="settings_v3_subagent_custom_add">新增子代理</string>
     <string name="settings_v3_subagent_custom_new_title">新增自定义子代理</string>

@@ -11,7 +11,7 @@ import java.math.BigDecimal
 import java.math.MathContext
 
 /**
- * `unit_convert` — 长度 / 质量 / 数据 / 温度 / 速度 的单位换算。
+ * `UnitConvert` — 长度 / 质量 / 数据 / 温度 / 速度 的单位换算。
  *
  * Why: 单位换算是 LLM 的经典翻车点（KiB 与 KB 差 24%、nmi 与 mi 长得像、
  * 温度还有仿射偏移）。一切换到 shell 的 `units` 命令又要过命令门禁。本工具
@@ -25,7 +25,7 @@ import java.math.MathContext
  *   无 factor）；数值最多 6 位有效数字，去掉尾随零。
  */
 class UnitConvertTool : BaseTool(
-    id = "unit_convert",
+    id = "UnitConvert",
     name = "Unit Convert",
     description = """
         Convert between units of length, mass, data, temperature and speed.

@@ -11,19 +11,19 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Legacy compat tool: terminal_signal
+ * Legacy compat tool: TerminalSignalLegacy
  *
  * Spec ref: ATR 2.0 Final Spec §35
  *
  * Preserves the OLD contract: send a Unix signal to a session's foreground process.
  *
- * Maps to: terminal.signal(). Identical behavior; this is a thin alias.
+ * Maps to: TerminalSignal(). Identical behavior; this is a thin alias.
  */
-@Deprecated("ATR 2.0 compat alias — use the new terminal.observe/write/signal/snapshot/close API instead. Scheduled for removal in a future version.")
+@Deprecated("ATR 2.0 compat alias — use the new TerminalObserve/write/signal/snapshot/close API instead. Scheduled for removal in a future version.")
 class LegacySignalTool(
     private val runtime: TerminalRuntime
 ) : TerminalTool {
-    override val id: String = "terminal_signal"
+    override val id: String = "TerminalSignalLegacy"
     override val name: String = id
     override val parametersSchema: String = """
         {
@@ -37,7 +37,7 @@ class LegacySignalTool(
     """.trimIndent()
     override val description: String = """
         [COMPAT] Send a Unix signal (SIGINT/SIGTERM/SIGKILL) to the session's foreground process.
-        Equivalent to terminal.signal. Kept for backward compat.
+        Equivalent to TerminalSignal. Kept for backward compat.
     """.trimIndent()
 
     suspend fun execute(input: Input): Output {

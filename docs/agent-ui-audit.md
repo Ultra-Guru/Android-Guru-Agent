@@ -34,8 +34,8 @@ sealed interface AgentUiMessage {
 }
 ```
 引擎侧实际能区分来源：
-- MCP 工具：`mcp_call`（带 server 参数）
-- Web 搜索：`WebSearchTool`（`id="web_search"`）
+- MCP 工具：`McpCall`（带 server 参数）
+- Web 搜索：`WebSearchTool`（`id="WebSearch"`）
 - Web 抓取：`WebFetchTool`
 - Skill：通过 Slash 路由进 agent 循环，但**没有独立的"skill 调用"事件/UI**
 
@@ -59,7 +59,7 @@ is AgentEvent.Error -> {
 - agent 实际调用 skill 内部工具时仍按普通 `ToolCall` 渲染，用户**看不出"正在执行某个 skill"**。
 
 ### 缺口 4：MCP 连接的失败/超时无独立 UI
-- MCP 连接失败、`mcp_call` 执行异常都只走通用 `AgentEvent.Error` → 灰色 `System`。
+- MCP 连接失败、`McpCall` 执行异常都只走通用 `AgentEvent.Error` → 灰色 `System`。
 - 没有"MCP 服务器离线/超时"这类来源感知的提示。
 
 ### 缺口 5：Web 搜索结果无结构化呈现
@@ -79,7 +79,7 @@ is AgentEvent.Error -> {
 1. 给 `AgentUiMessage.ToolCall` 与 `AgentToolCallUi` 增加 `val kind: ToolKind`
    （`LOCAL` / `MCP` / `WEB_SEARCH` / `WEB_FETCH` / `SKILL`）。
 2. 在 `ToolCallStart`/`ToolCallComplete` 处理中根据 `toolName` 前缀推断 kind
-   （`mcp_call`→MCP，`web_search`→WEB_SEARCH，`web_fetch`→WEB_FETCH）。
+   （`McpCall`→MCP，`WebSearch`→WEB_SEARCH，`WebFetch`→WEB_FETCH）。
 3. `ToolCallCard` 顶部加一个 **来源标签 + 图标**：
    - 本地工具：🔧 ｜ MCP：🔌 + server 名 ｜ 搜索：🔍 ｜ 抓取：🌐 ｜ skill：✨
 4. Skill 调用：在 Slash 路由信息里携带 skill 名，渲染时显示 "✨ 执行 Skill: xxx" 标题而非普通系统行。

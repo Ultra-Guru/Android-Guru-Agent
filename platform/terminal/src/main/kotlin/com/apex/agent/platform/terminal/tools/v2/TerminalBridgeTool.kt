@@ -1,6 +1,6 @@
 package com.apex.agent.platform.terminal.tools.v2
 
-import com.apex.agent.platform.terminal.bridge.GuestBridgeService
+import com.apex.agent.platform.TerminalBridge.GuestBridgeService
 import com.apex.agent.platform.terminal.tools.TerminalTool
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -10,7 +10,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Agent tool: terminal.bridge — T82 apexctl bridge 状态/直连调用（基线 §11.1）。
+ * Agent tool: TerminalBridge — T82 apexctl bridge 状态/直连调用（基线 §11.1）。
  *
  * guest 内脚本用 `apexctl <action> [argsJson]`（文件队列 → host handler）；
  * Agent 用本工具 `call` 直连**同一组 handler**（无文件往返、零延迟）。`status`
@@ -26,8 +26,8 @@ import kotlinx.serialization.json.jsonPrimitive
 class TerminalBridgeTool(
     private val bridge: GuestBridgeService
 ) : TerminalTool {
-    override val id: String = "terminal.bridge"
-    override val name: String = "terminal.bridge"
+    override val id: String = "TerminalBridge"
+    override val name: String = "TerminalBridge"
     override val description: String = """
         Android capability bridge (apexctl). Guest scripts call `apexctl <action> [argsJson]`
         (e.g. apexctl clipboard get) — the same handlers are callable here via action=call

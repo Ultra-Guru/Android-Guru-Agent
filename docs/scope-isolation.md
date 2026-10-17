@@ -62,13 +62,13 @@ EngineToolPlanner.filterOutOffScopeTools（读 metadata.scope，
 - **零变化默认**：未声明 scope 的旧 manifest 与旧配置一律 all，
   111 个存量内置工具不打标（默认 all），存量行为零变化。
 
-## 3. 可见面：mcp_list 与 capability_report
+## 3. 可见面：McpList 与 CapabilityReport
 
 过滤在计划层强制，但模型需要**看见**归属才能正确解释工具清单：
 
-- `mcp_list`：每台已连接服务器追加 `scope:` 行（如
+- `McpList`：每台已连接服务器追加 `scope:` 行（如
   `scope: coding (Agent 屏不可见)`；all 不带尾注）。只展示、不过滤；
-- `capability_report`：MCP 段后追加事实行
+- `CapabilityReport`：MCP 段后追加事实行
   `Workspace isolation: scope enforcement at engine plan level (per
   workspace: agent/coding/all).`——该工具不感知设置开关，只陈述机制。
 
@@ -83,7 +83,7 @@ EngineToolPlanner.filterOutOffScopeTools（读 metadata.scope，
 
 ## 5. 已知边界
 
-1. **github_* 原生工具**：`github_create_issue` 等 app 层 REST 工具不走
+1. **github_* 原生工具**：`GithubCreateIssue` 等 app 层 REST 工具不走
    ToolMetadata.scope，仍由 AGENT 模式的 `AGENT_EXCLUDED_TOOL_PREFIXES`
    前缀黑名单剔除（两套机制并行，原生工具的 scope 化留给后续任务）；
 2. **SkillActivationStore 仍跨工位共享**：激活集不分工位（Agent 屏激活
@@ -93,9 +93,9 @@ EngineToolPlanner.filterOutOffScopeTools（读 metadata.scope，
    > enabledCoding，生效作用域 = manifest 声明 ∩ 双工位启用），市场分级
    > 开关与两屏斜杠菜单完全隔离；激活簿记共享仍维持（影响面小），
    > 详见 docs/market-scope-isolation-v2.md；
-3. **计划级强制 ≠ 执行墙**：`tool_open` 渐进披露理论上能让模型翻到
+3. **计划级强制 ≠ 执行墙**：`ToolOpen` 渐进披露理论上能让模型翻到
    目录里其它工位工具的描述，执行层不做 scope 二次校验（回显名兜底路由
    依赖注册表直查）——防呆不防赖，主路径的隔离目标已达成；
 4. **第三方 manifest 无 scope**：手写/URL 导入的 manifest 未声明 scope
    时按 all 双工位可见（向后兼容语义）；官方 hub 清单自带 scope，
-   mcp_connect 工具自建的服务器配置同理缺省 all。
+   McpConnect 工具自建的服务器配置同理缺省 all。

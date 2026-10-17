@@ -7,8 +7,8 @@ import com.apex.agent.platform.terminal.policy.TerminalPolicyImpl
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
 import com.apex.agent.platform.terminal.runtime.TerminalRuntimeImpl
 import com.apex.agent.platform.terminal.screen.RealVirtualTerminal
-import com.apex.agent.platform.terminal.wait.WaitCondition
-import com.apex.agent.platform.terminal.wait.WaitResult
+import com.apex.agent.platform.TerminalWait.WaitCondition
+import com.apex.agent.platform.TerminalWait.WaitResult
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.*

@@ -526,7 +526,7 @@ class AgentChatViewModel @Inject constructor(
      * 将一条 Agent 回复整理进记忆（接 CS-Mem 显式整理入口）。
      *
      * 委托 [CsMemSessionManager.organizeText] 把文本按行切片为语义节点写入长期记忆，
-     * 使其可被 memory_search_nodes 按关键词召回。整理主题取文本前 40 字符。
+     * 使其可被 MemorySearchNodes 按关键词召回。整理主题取文本前 40 字符。
      */
     fun organizeToMemory(text: String) {
         val goal = text.take(40).trim().ifBlank { str(R.string.chat_memory_goal_default) }
@@ -893,7 +893,7 @@ class AgentChatViewModel @Inject constructor(
         // 防止请求体过大 / token 超限。
         // Bug 修复：旧实现 take(3) 超出的图片与解码失败的图片被**静默丢弃**
         //（既不进 Vision 也不进 FileRef，用户发 5 张图第 4/5 张无声消失）。
-        // 现在一律降级为 FileRef —— Agent 仍可用 read_file 读取它们。
+        // 现在一律降级为 FileRef —— Agent 仍可用 Read 读取它们。
         val imageContents = mutableListOf<ImageContent>()
         val fileRefs = mutableListOf<FileRef>()
 
@@ -1145,7 +1145,7 @@ class AgentChatViewModel @Inject constructor(
 
         /**
          * 单轮注入 Vision 的图片上限（请求体体积 / token 防护）。
-         * 超出的图片降级为 FileRef（Agent 可用 read_file 读取），不再静默丢弃。
+         * 超出的图片降级为 FileRef（Agent 可用 Read 读取），不再静默丢弃。
          */
         private const val MAX_VISION_IMAGES = 3
 

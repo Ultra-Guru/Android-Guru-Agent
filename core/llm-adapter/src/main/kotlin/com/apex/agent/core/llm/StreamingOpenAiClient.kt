@@ -244,26 +244,26 @@ class StreamingOpenAiClient(
         val searchMode = config.webSearch.resolveFor(config.baseUrl, config.providerId)
         val searchToolEntries: List<JsonObject> = when (searchMode) {
             WebSearchMode.ZHIPU -> listOf(
-                // 智谱 GLM：web_search 作为 server-side tool 挂进 tools 数组；
+                // 智谱 GLM：WebSearch 作为 server-side tool 挂进 tools 数组；
                 // search_result=true 让响应携带 message.search_result[] 引用列表。
                 buildJsonObject {
-                    put("type", "web_search")
-                    putJsonObject("web_search") {
+                    put("type", "WebSearch")
+                    putJsonObject("WebSearch") {
                         put("enable", true)
                         put("search_result", true)
                     }
                 }
             )
             WebSearchMode.DEEPSEEK -> listOf(
-                // DeepSeek Responses 兼容端点：接受 {"type":"web_search"}
+                // DeepSeek Responses 兼容端点：接受 {"type":"WebSearch"}
                 // （与 GLM 同为 server-side tool 形态，但无嵌套配置）。
-                buildJsonObject { put("type", "web_search") }
+                buildJsonObject { put("type", "WebSearch") }
             )
             WebSearchMode.ANTHROPIC -> listOf(
                 // Anthropic 原生 server tool（经 OpenAI 兼容代理透传时保持同形）。
                 buildJsonObject {
                     put("type", "web_search_20250305")
-                    put("name", "web_search")
+                    put("name", "WebSearch")
                     put("max_uses", 3)
                 }
             )
@@ -713,7 +713,8 @@ class StreamingOpenAiClient(
                 images = images,
                 videos = videos,
                 usage = usage,
-                isFinish = finishReason == "stop" || finishReason == "tool_calls"
+                isFinish = finishReason == "stop" || finishReason == "tool_calls",
+                finishReason = finishReason
             )
         } catch (e: Exception) {
             // ═══ 可观测性修复：不再无声丢弃 ═══

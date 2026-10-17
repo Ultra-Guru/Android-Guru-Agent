@@ -123,7 +123,7 @@ class ApexCoreService : LifecycleService() {
         }
         // v4 — 自动连接已启用的 MCP 服务器：连接成功 → McpManager 会话监听 →
         // McpToolRegistrar 把远程工具注册为一等函数（"配置即生效"，与插件同一
-        // 哲学）。连接失败不阻断启动（模型仍可用 mcp_connect 重试）。
+        // 哲学）。连接失败不阻断启动（模型仍可用 McpConnect 重试）。
         mcpToolRegistrar.hashCode() // 触发 Hilt 创建（构造即挂监听）
         scope.launch(Dispatchers.IO) {
             mcpManager.getEnabledConfigs().forEach { cfg ->

@@ -14,11 +14,11 @@
 | #2 动作后验证 | 缺失 | **已完整实现** | `clickElement` / `inputText` 内 `verifyPostAction()`：比对点击前后 URL / 元素数 / 标题，返回 `postAction` 摘要 |
 | #3 JS 弹窗处理 | 缺失 | **已实现** | `setupChromeClient()` 中 `onJsAlert/onJsConfirm/onJsPrompt` 自动 confirm，并 `notifyAgent("…对话框")`（注意：confirm 默认 confirm，未暴露为 Agent 决策点） |
 | #4 渲染进程崩溃恢复 | 缺失 | **已实现** | `onRenderProcessGone()` 调 `recreateWebView()`，状态机 `RECOVERING`；`recreateWebView()` 重建 + 恢复 URL + 重注入 |
-| #5 动作空间补全 | 缺失 | **已完整实现（含 file_upload）** | `browser_select`/`browser_toggle`/`browser_input` 已实现；`onShowFileChooser` 拦截 + `respondFileChooser` + `browser_file_upload` 工具已实现；`browser_date_input` 未单独实现（date picker 走 WAITING_HUMAN） |
+| #5 动作空间补全 | 缺失 | **已完整实现（含 file_upload）** | `BrowserSelect`/`BrowserToggle`/`BrowserInput` 已实现；`onShowFileChooser` 拦截 + `respondFileChooser` + `BrowserFileUpload` 工具已实现；`BrowserDateInput` 未单独实现（date picker 走 WAITING_HUMAN） |
 | #6 Cookie 持久化 | 缺失 | **已实现** | `CookieManager` + `flush()`，在 `completeHandoff()` / `navigate()` / `destroy()` 调用；`domStorageEnabled=true` |
 | #7 错误恢复/重试 | 缺失 | **已实现** | `RetryPolicy.kt` 指数退避 + 熔断；在 `withRetry` 包裹 `clickElement/inputText/snapshot/navigate`；`HandoffLockedException` 不重试 |
-| #9 可观测性/日志 | 缺失 | **已实现** | `BrowserTracer.kt` 记录 `(traceId, ts, tool, params, result, duration, webViewState, screenshotRef)`，回写 `ToolResult.traceId`，支持 `browser_debug_dump` |
-| #10 无限滚动 | 缺失 | **已实现** | `browser_scroll` 带 `waitForNewContent`/`maxWaitMs`，前后对比 `scrollHeight` 与元素数，返回 `newElementsDetected` |
+| #9 可观测性/日志 | 缺失 | **已实现** | `BrowserTracer.kt` 记录 `(traceId, ts, tool, params, result, duration, webViewState, screenshotRef)`，回写 `ToolResult.traceId`，支持 `BrowserDebugDump` |
+| #10 无限滚动 | 缺失 | **已实现** | `BrowserScroll` 带 `waitForNewContent`/`maxWaitMs`，前后对比 `scrollHeight` 与元素数，返回 `newElementsDetected` |
 | #4 状态机/`WAITING_HUMAN`遮罩 | 缺失 | **已实现** | `BrowserOverlay.kt`：状态徽章 + 仅 `WAITING_HUMAN` 显示「我已完成操作」按钮 + 折叠/收起；与引擎共享同一 WebView |
 | P0 语义哈希 Ref + 物理触摸 | 缺 | **已实现** | `BrowserScript.SNAPSHOT_JS` 输出 `data-apex-hash="r_<hash>"`；`DomParser` 读 `data-apex-hash` 为 `ref`；`clickElement` 走 `dispatchTouchEvent` + 随机 30~80ms 按压 |
 
@@ -45,7 +45,7 @@
 - **建议**：默认拒绝 geo，敏感权限 `enterHandoffMode()` 交人工授权。
 
 ### 缺失 C：文件上传/下载（对应审计 #5 残 + #14）—— 中等
-- `browser_file_upload` 未实现；`onShowFileChooser` 未拦截。
+- `BrowserFileUpload` 未实现；`onShowFileChooser` 未拦截。
 - 无 `DownloadListener` / `DownloadManager` 集成。
 - **建议**：拦截 file chooser，Agent 指定路径则注入 URI，否则进 WAITING_HUMAN；下载用 `DownloadManager` 并通知 Agent。
 
@@ -64,22 +64,22 @@
 
 ### 缺失 G：网络请求拦截 / 监控（对应审计 #18）—— 增强
 - 无 `shouldInterceptRequest` 广告拦截、无 fetch/XHR JS 监控。
-- **✅ 2026-08-13 已落地（监控部分）**：`BrowserScript.NETWORK_MONITOR_JS` 拦截 fetch/XMLHttpRequest 并写入 `window.__apexNetLog`；`BrowserEngine.networkLog()` 读取；`BrowserAgentTools` 新增 `browser_network_log` 工具。注：广告拦截（`shouldInterceptRequest` 返回空响应）未做（避免误伤正常资源 + 线程安全问题），仅做监控，符合"求稳"纪律。
+- **✅ 2026-08-13 已落地（监控部分）**：`BrowserScript.NETWORK_MONITOR_JS` 拦截 fetch/XMLHttpRequest 并写入 `window.__apexNetLog`；`BrowserEngine.networkLog()` 读取；`BrowserAgentTools` 新增 `BrowserNetworkLog` 工具。注：广告拦截（`shouldInterceptRequest` 返回空响应）未做（避免误伤正常资源 + 线程安全问题），仅做监控，符合"求稳"纪律。
 
 ### 缺失 H：任务规划辅助 / 可编程剪枝（对应审计 #19/#20）—— 增强
 - `snapshot` 无页面类型推断、无预置剪枝策略（FORM_FIELDS / CONTENT_SUMMARY 等）。
-- **✅ 2026-08-13 已落地（剪枝策略部分）**：`DomParser.SnapshotStrategy` 枚举（INTERACTIVE_ONLY/FORM_FIELDS/CONTENT_SUMMARY）+ `DomParser.parse` 参数化过滤；`BrowserScript.snapshotJs(strategy)` 工厂按策略收窄 JS 选择器；`browser_snapshot` 新增 `focus` 参数（all/form/content）。页面类型推断未做（属 Agent 框架层职责，不在浏览器工具层）。
+- **✅ 2026-08-13 已落地（剪枝策略部分）**：`DomParser.SnapshotStrategy` 枚举（INTERACTIVE_ONLY/FORM_FIELDS/CONTENT_SUMMARY）+ `DomParser.parse` 参数化过滤；`BrowserScript.snapshotJs(strategy)` 工厂按策略收窄 JS 选择器；`BrowserSnapshot` 新增 `focus` 参数（all/form/content）。页面类型推断未做（属 Agent 框架层职责，不在浏览器工具层）。
 
 ### 文件下载（#14 残项）—— 中等（2026-08-13 收尾）
 - 原 `onShowFileChooser` 已拦截上传，但**网页触发的下载（`<a download>` / 二进制响应）无处理**，`DownloadListener` 未设置会导致下载静默失败。
-- **✅ 2026-08-13 已落地**：`BrowserEngine.createWebView` 通过系统 `DownloadManager` 设置 `setDownloadListener`，下载落 `Environment.DIRECTORY_DOWNLOADS`，记录 `DownloadRecord` 到 `lastDownload`；`BrowserAgentTools` 新增 `browser_download_list` 工具读取最近下载。无需新增权限（DownloadManager 公共下载目录在 API 29+ 免写权限）。注：仅做"发起+记录"，下载完成后的内容读取依赖系统 Download 目录（Agent 框架可后续接 URI 读取）。
+- **✅ 2026-08-13 已落地**：`BrowserEngine.createWebView` 通过系统 `DownloadManager` 设置 `setDownloadListener`，下载落 `Environment.DIRECTORY_DOWNLOADS`，记录 `DownloadRecord` 到 `lastDownload`；`BrowserAgentTools` 新增 `BrowserDownloadList` 工具读取最近下载。无需新增权限（DownloadManager 公共下载目录在 API 29+ 免写权限）。注：仅做"发起+记录"，下载完成后的内容读取依赖系统 Download 目录（Agent 框架可后续接 URI 读取）。
 
 ---
 
 ## 三、对审计报告本身的 4 点严谨修正
 
 1. **审计时间错位**：审计基于 2026-08-12 的方案文档，但代码在 `BrowserEngine.kt` 顶部已标注"2026 裁决最终形态（综合 Qwen 评审 P0 缺口）"，说明 P0 补丁已在审计之后落地。审计应基于 `git log` 当前 HEAD 而非方案文档。
-2. **#5 动作空间**：审计将 `browser_select`/`browser_toggle` 列为完全缺失，实际已实现；仅 date/file 未做。不应整体判"致命"。
+2. **#5 动作空间**：审计将 `BrowserSelect`/`BrowserToggle` 列为完全缺失，实际已实现；仅 date/file 未做。不应整体判"致命"。
 3. **#11 安全加固与 #13 反爬应合并为一项 P2 且提升优先级**：Agent 加载任意 URL 是真实攻击面，安全加固（不是隐身，隐身属 P2 增强）应作为"本周"级必做。隐身（绕过 Cloudflare）才是真正的 P2 竞争力项，勿与安全加固混谈。
 4. **超纲层（第四层）判定正确**：端侧 VLM、预测预渲染、语义嵌入、跨设备迁移当前严禁入代码，与项目"求稳"纪律一致，认同。
 
@@ -89,7 +89,7 @@
 
 | 优先级 | 项 | 现状 | 动作 |
 | --- | --- | --- | --- |
-| **本周（原 P0 残）** | Cookie flush 时机微调 / file_upload / date_input | 部分 | 补 `browser_file_upload` + date 走 WAITING_HUMAN |
+| **本周（原 P0 残）** | Cookie flush 时机微调 / file_upload / date_input | 部分 | 补 `BrowserFileUpload` + date 走 WAITING_HUMAN |
 | **本周（新增安全）** | WebView 安全加固（缺失 A 安全部分） | 缺失 | 设 `allowFileAccess=false`、UA 去 `wv`、URL 黑名单、SSL 处理 |
 | **下周 P2** | 权限处理 / 内存维护 / 多 tab | 缺失 | 实现 B / D / E |
 | **两周 P2** | 反爬隐身 / 下载 / A11y 降级 / 网络监控 / 剪枝策略 | 缺失 | 实现 A(隐身)/C(下载)/F/G/H |

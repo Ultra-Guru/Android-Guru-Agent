@@ -9,9 +9,9 @@ import com.apex.agent.platform.terminal.io.UnixSignal
 import com.apex.agent.platform.terminal.policy.PrivilegeLevel
 import com.apex.agent.platform.terminal.screen.TerminalScreenState
 import com.apex.agent.platform.terminal.state.TerminalSemanticState
-import com.apex.agent.platform.terminal.wait.WaitCondition
+import com.apex.agent.platform.TerminalWait.WaitCondition
 import kotlinx.coroutines.flow.Flow
-import com.apex.agent.platform.terminal.wait.WaitResult
+import com.apex.agent.platform.TerminalWait.WaitResult
 
 /**
  * The top-level Agent-Native Terminal Runtime facade.
@@ -20,15 +20,15 @@ import com.apex.agent.platform.terminal.wait.WaitResult
  *
  * This is the ONLY surface the Agent (and UI) should depend on. It exposes 9 operations:
  *
- *   terminal.create      — create a long-lived Session
- *   terminal.run         — start a Job (non-blocking, returns immediately)
- *   terminal.observe     — observe state/output (SEMANTIC / EVENT / SCREEN / RAW)
- *   terminal.wait        — block until a condition is met (EventBus-driven, no polling)
- *   terminal.write       — write input (raw / line / key)
- *   terminal.signal      — send a Unix signal
- *   terminal.resize      — resize the PTY (SIGWINCH)
- *   terminal.snapshot    — global snapshot for context recovery
- *   terminal.close       — close a Session (reap child, close fd)
+ *   TerminalCreate      — create a long-lived Session
+ *   TerminalRun         — start a Job (non-blocking, returns immediately)
+ *   TerminalObserve     — observe state/output (SEMANTIC / EVENT / SCREEN / RAW)
+ *   TerminalWait        — block until a condition is met (EventBus-driven, no polling)
+ *   TerminalWrite       — write input (raw / line / key)
+ *   TerminalSignal      — send a Unix signal
+ *   TerminalResize      — resize the PTY (SIGWINCH)
+ *   TerminalSnapshot    — global snapshot for context recovery
+ *   TerminalClose       — close a Session (reap child, close fd)
  *
  * Agent tools see ONLY these. They do NOT see nativeRead / nativeWrite / TerminalManager /
  * RingBuffer / PtyOutputPump (Spec §33).
@@ -79,7 +79,7 @@ interface TerminalRuntime {
     // ───────── backends（T73：Agent 后端能力发现）─────────
     // Spec §33（Agent 只依赖 TerminalRuntime 门面）：列出所有已注册执行后端及
     // 其真实可用性。Agent 据此决定 create(backendId=…) 的目标，或在
-    // NEEDS_ROOTFS 时先调 terminal.ubuntu.install 引导安装。
+    // NEEDS_ROOTFS 时先调 TerminalUbuntuInstall 引导安装。
     suspend fun backends(): List<BackendStatus>
 
     /** 单个后端的可用性快照（T73）。 */

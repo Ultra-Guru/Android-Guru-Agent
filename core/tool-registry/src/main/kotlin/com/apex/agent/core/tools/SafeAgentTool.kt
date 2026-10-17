@@ -47,8 +47,8 @@ import java.io.IOException
  * ## 环境前置门透传（P2 修复）
  *
  * [ToolEnvironmentGate] 通过 `tool as? EnvironmentAwareTool` 检测；本类
- * 旧实现未实现该接口 → 包装后门禁恒放行（fail-open），`input_text` 等
- * 工具的「先 ui_tap 聚焦输入框」引导提示全部失效，工具真跑失败后模型
+ * 旧实现未实现该接口 → 包装后门禁恒放行（fail-open），`InputText` 等
+ * 工具的「先 UiTap 聚焦输入框」引导提示全部失效，工具真跑失败后模型
  * 在更深的错误里打转。现在透传 delegate 的 [EnvironmentAwareTool.requiredEnv]。
  */
 class SafeAgentTool(

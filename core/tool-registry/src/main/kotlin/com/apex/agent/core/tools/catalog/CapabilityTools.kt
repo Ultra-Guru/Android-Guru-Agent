@@ -18,18 +18,18 @@ import com.apex.agent.core.tools.builtin.BaseTool
  * # Capability Introspection — 自省元工具
  *
  * 根因（「agent 不懂自己能干什么」）：
- * - `tool_list` 只覆盖工具注册表，看不到权限/环境/技能/MCP 全貌；
+ * - `ToolList` 只覆盖工具注册表，看不到权限/环境/技能/MCP 全貌；
  * - 市场源（HubSource 等 7 源）只服务 UI 市场，agent 侧完全不可见——
  *   「不知道自己有什么工具可以安装什么」；
  * - 没有「先自省、再扩展」的第一反动作。
  *
  * 两个新元工具补齐闭环：
- * - [CapabilityReportTool]（`capability_report`）——一键自省：权限阶梯
+ * - [CapabilityReportTool]（`CapabilityReport`）——一键自省：权限阶梯
  *   （CAN/CANNOT/升级路径，与系统提示词同源 [PrivilegeLadder]）、实时
  *   环境快照（与执行侧环境门同源 [ToolEnvironmentState]）、工具/技能/
  *   MCP 库存 + 扩展梯度；
- * - [MarketSearchTool]（`market_search`）——检索官方市场（技能 hub +
- *   MCP hub 双目录），返回条目与安装指令（skill_install / mcp_connect）。
+ * - [MarketSearchTool]（`MarketSearch`）——检索官方市场（技能 hub +
+ *   MCP hub 双目录），返回条目与安装指令（SkillInstall / McpConnect）。
  *
  * 依赖注入契约：计数/等级经构造 lambda 注入（纯 JVM 可测，无 Android
  * 依赖）；未知计数传默认 -1，输出时整行省略（fail-open，不教模型假事实）。
@@ -53,7 +53,7 @@ class CapabilityReportTool(
      */
     private val githubStateProvider: (() -> String?)? = null
 ) : BaseTool(
-    id = "capability_report",
+    id = "CapabilityReport",
     name = "Capability Report",
     description = """
         One-call self-check of everything you can do right now: privilege
@@ -98,19 +98,19 @@ class CapabilityReportTool(
                 appendLine("Environment: ${environmentState.summary()}")
                 appendLine(
                     "Tools: ${allTools.size} registered — $coreCount loaded by default, " +
-                        "$catalogCount more via tool_search(query) → tool_open(tool_name)."
+                        "$catalogCount more via ToolSearch(query) → ToolOpen(tool_name)."
                 )
                 if (skills >= 0) {
                     appendLine(
-                        "Skills: $skills installed — skill_list() to browse; " +
-                            "market_search()/skill_search() to find and skill_install to add more."
+                        "Skills: $skills installed — SkillList() to browse; " +
+                            "MarketSearch()/SkillSearch() to find and SkillInstall to add more."
                     )
                 }
                 if (mcpConfigured >= 0) {
                     val connectedPart = if (mcpConnected >= 0) ", $mcpConnected connected" else ""
                     appendLine(
-                        "MCP servers: $mcpConfigured configured$connectedPart — mcp_list() to " +
-                            "browse; market_search(kind=\"mcp\")/mcp_connect() to add more."
+                        "MCP servers: $mcpConfigured configured$connectedPart — McpList() to " +
+                            "browse; MarketSearch(kind=\"mcp\")/McpConnect() to add more."
                     )
                 }
                 // v3 S3：GitHub 连接行（宿主未注入 provider 时整行省略——
@@ -138,10 +138,10 @@ class CapabilityReportTool(
                 )
                 appendLine()
                 appendLine("Expansion ladder (when a capability is missing):")
-                appendLine("1. tool_search(query) → tool_open(tool_name) — any registered tool")
-                appendLine("2. market_search(query) → skill_install → skill_activate — skills from the official hub")
-                appendLine("3. market_search(kind=\"mcp\") → mcp_connect — external MCP servers")
-                appendLine("4. terminal.backends → terminal.ubuntu.ensure → apt/pip/npm — full Linux toolchain")
+                appendLine("1. ToolSearch(query) → ToolOpen(tool_name) — any registered tool")
+                appendLine("2. MarketSearch(query) → SkillInstall → SkillActivate — skills from the official hub")
+                appendLine("3. MarketSearch(kind=\"mcp\") → McpConnect — external MCP servers")
+                appendLine("4. TerminalBackends → TerminalUbuntuEnsure → apt/pip/npm — full Linux toolchain")
                 appendLine("5. Privilege wall → ask the user to raise the level (see upgrade hint above)")
                 appendLine("Never claim a task is impossible before trying these routes.")
             }.trim()
@@ -159,14 +159,14 @@ class MarketSearchTool(
     private val fetchSkills: suspend () -> Result<List<HubSource.HubSkillEntry>>,
     private val fetchMcpServers: suspend () -> Result<List<HubSource.HubMcpEntry>>
 ) : BaseTool(
-    id = "market_search",
+    id = "MarketSearch",
     name = "Market Search",
     description = """
         Search the official marketplace for capabilities you don't have yet.
         kind="skill" — Apex Skill Hub (domain methodologies & tool bundles);
-        install hits with skill_install({"source":"url", ...}).
+        install hits with SkillInstall({"source":"url", ...}).
         kind="mcp" — MCP Hub (external tool servers); wire hits with
-        mcp_connect (remote url, or npx command in the Ubuntu sandbox).
+        McpConnect (remote url, or npx command in the Ubuntu sandbox).
         kind="all" (default) searches both. Use this whenever installed
         tools/skills cannot do the job — the missing capability may be one
         install away.
@@ -251,13 +251,13 @@ class MarketSearchTool(
                 ToolResult.fail(
                     ToolErrorCode.EXECUTION_FAILED,
                     "Marketplace unreachable (network error) — check connectivity, retry " +
-                        "later, or find skills/MCP servers with web_search and install via " +
-                        "skill_install(url) / mcp_connect."
+                        "later, or find skills/MCP servers with WebSearch and install via " +
+                        "SkillInstall(url) / McpConnect."
                 )
             } else {
                 ToolResult.ok(
                     "No marketplace entries matched '$query'. Try broader keywords, or " +
-                        "create your own with skill_create / terminal toolchains."
+                        "create your own with SkillCreate / terminal toolchains."
                 )
             }
         }
@@ -279,11 +279,11 @@ class MarketSearchTool(
             ).joinToString(", ").ifEmpty { "v${entry.version}" }
             sb.appendLine("- ${entry.name} ($meta): ${entry.description.ifBlank { "(no description)" }}")
             sb.appendLine(
-                "  Install: skill_install({\"source\":\"url\",\"url\":\"" +
+                "  Install: SkillInstall({\"source\":\"url\",\"url\":\"" +
                     "${HubSource.skillManifestUrl(entry)}\"})"
             )
         }
-        sb.appendLine("After install, skill_activate(skill_id) loads the methodology.")
+        sb.appendLine("After install, SkillActivate(skill_id) loads the methodology.")
         sb.appendLine()
     }
 
@@ -298,22 +298,22 @@ class MarketSearchTool(
                     val argsPart = entry.args.joinToString("", prefix = " ") { "\"$it\"" }
                     val sandbox = if (entry.runInSandbox) ", \"run_in_sandbox\": true" else ""
                     sb.appendLine(
-                        "  Wire: mcp_connect({\"name\":\"${entry.name}\"," +
+                        "  Wire: McpConnect({\"name\":\"${entry.name}\"," +
                             "\"command\":\"$cmd\",\"args\":[$argsPart]$sandbox})"
                     )
                 }
                 else -> {
                     sb.appendLine(
-                        "  Wire: mcp_connect({\"name\":\"${entry.name}\",\"url\":\"${entry.url}\"})"
+                        "  Wire: McpConnect({\"name\":\"${entry.name}\",\"url\":\"${entry.url}\"})"
                     )
                 }
             }
         }
-        sb.appendLine("After connecting, mcp_list() shows the tools the server provides.")
+        sb.appendLine("After connecting, McpList() shows the tools the server provides.")
         sb.appendLine()
     }
 
-    // ── 打分（与 tool_search 同款朴素评分：多词 OR 命中，全等 > 前缀 > 包含）──
+    // ── 打分（与 ToolSearch 同款朴素评分：多词 OR 命中，全等 > 前缀 > 包含）──
 
     private fun <T> List<T>.scored(
         terms: List<String>

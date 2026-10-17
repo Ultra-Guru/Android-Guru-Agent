@@ -9,9 +9,9 @@
 
 | Issue | 审查时的认知 | 核验后的代码真态 | 本批次补齐 |
 |---|---|---|---|
-| #230 P1 security | MEDIUM 风险永不弹确认 | `RiskAwareToolGate` 的 FILE_MUTATING_TOOLS 修复**已合入**（fdacdb9）——但**生产引擎全部走 `executeStream`，该路径从不咨询 gate**：Agent 聊天/任务编排里 MEDIUM（write_file/edit_file）甚至 HIGH 全部静默执行 | **流式路径补 gate/schema 前置**（executeStream 共享 pipeline.preCheck）+ code_write/code_edit 入集 + 标准线防双弹窗 |
+| #230 P1 security | MEDIUM 风险永不弹确认 | `RiskAwareToolGate` 的 FILE_MUTATING_TOOLS 修复**已合入**（fdacdb9）——但**生产引擎全部走 `executeStream`，该路径从不咨询 gate**：Agent 聊天/任务编排里 MEDIUM（Write/Edit）甚至 HIGH 全部静默执行 | **流式路径补 gate/schema 前置**（executeStream 共享 pipeline.preCheck）+ CodeWrite/CodeEdit 入集 + 标准线防双弹窗 |
 | #232 P1 OOM | PDF/DOCX 绕过 16MB | 16MB 前置**已合入**（f23fee7）——但 `extractDocx` 对 `word/document.xml` 的 `readBytes()` 读的是**解压后全文**：KB 级 zip 炸弹可解压出 GB 级 XML，字符上限在解压之后才生效，进程照样 OOM | **解压字节预算防线**（32MB 流式预算，64KB 分块搬运）+ PDF 读入钳制 |
-| #240 P2 bug | open_notifications 误映射 keyevent 26 | root 映射修复**已合入**（fdacdb9，`cmd statusbar expand-notifications`）——但 `UiAction.OpenNotifications` **零生产调用方**：修正后是死代码，LLM 依旧无入口 | **ui_notifications 工具**（open/close LLM 面）+ `UiAction.CloseNotifications`（a11y BACK 收合 / `cmd statusbar collapse`） |
+| #240 P2 bug | open_notifications 误映射 keyevent 26 | root 映射修复**已合入**（fdacdb9，`cmd statusbar expand-notifications`）——但 `UiAction.OpenNotifications` **零生产调用方**：修正后是死代码，LLM 依旧无入口 | **UiNotifications 工具**（open/close LLM 面）+ `UiAction.CloseNotifications`（a11y BACK 收合 / `cmd statusbar collapse`） |
 | #239 P2 | 无障碍开启截图永远失败 | a11y API30+ 实现 + root 回退**已合入**（fdacdb9 + cd4fc60）——但 `screenshot` 工具**从不走 PrivilegeManager**：恒走裸 shell（普通沙箱 screencap 必 EACCES）——无障碍开启无 root 的设备依旧必败 | **ScreenshotTool 接特权链**（a11y → root → shell 兜底，双失败并列上报） |
 | #233 P2 | 字号 8..32 vs 8..24 | **已全量修复**（T89：VM/设置表/view 库/宿主注入四层统一 8..24，TerminalViewSettingsTest 锁定） | 仅补 **app↔view 跨层契约测试**（常量一致 + 越界钳回收） |
 | #236 P2 | Keep Alive 关后服务照跑 | ApexCoreService 停止接线**已合入**（fdacdb9 CoreServiceGate）——但传播是**一次性 UI 调用**：备份恢复/导入等非 toggle 路径翻转 keepAlive，服务照跑 | **agentSettings 流驱动同步**（ApexApp 收集器：keepAlive 翻转 → CoreServiceGate） |
@@ -24,7 +24,7 @@
 主循环 `EngineToolExecution:80` / 任务编排 `ToolCallRunner:204`）只做
 限流/熔断/钩子，**没有 `pipeline.preCheck`** —— 门控链
 （`PermissionAwareToolGate` = 权限模式门 + `RiskAwareToolGate` 的
-write_file/edit_file MEDIUM 确认、HIGH 确认）从未被咨询。类 KDoc 自己
+Write/Edit MEDIUM 确认、HIGH 确认）从未被咨询。类 KDoc 自己
 写着「流式路径 v3 本就无 gate/schema 前置」——与 `ToolExecutor` 契约
 （两入口共享 查找→门控→校验）直接矛盾。
 
@@ -34,8 +34,8 @@ write_file/edit_file MEDIUM 确认、HIGH 确认）从未被咨询。类 KDoc �
   单一 `ToolStreamEvent.Error` —— 模型侧行为与非流式逐字节一致；
 - 拒绝计入 trace/usage（`recordSideChannelDenial`，reason =
   message slug）；
-- `RiskAwareToolGate.FILE_MUTATING_TOOLS` 补 `code_write`/`code_edit`
-  （StandardToolSurface 把 write_file/edit_file 映射过去 —— 同一底层
+- `RiskAwareToolGate.FILE_MUTATING_TOOLS` 补 `CodeWrite`/`CodeEdit`
+  （StandardToolSurface 把 Write/Edit 映射过去 —— 同一底层
   行为必须同一确认语义）。
 
 **防双弹窗（收尾）**：`StandardModeEngine` 自带业界标准式权限门（规则 →
@@ -70,7 +70,7 @@ write_file/edit_file MEDIUM 确认、HIGH 确认）从未被咨询。类 KDoc �
 root 误映射（`input keyevent 26` = 电源键熄屏）已在 fdacdb9 修正为
 `cmd statusbar expand-notifications` —— 但修正后**零调用方**。本批次：
 
-- `UiNotificationsTool`（id `ui_notifications`，open/close）：a11y 就绪 →
+- `UiNotificationsTool`（id `UiNotifications`，open/close）：a11y 就绪 →
   `GestureAction.OpenNotifications/CloseNotifications`（语义通道）；
   否则 shell `cmd statusbar expand-notifications` / `cmd statusbar collapse`
   （**绝不用 keyevent 26** —— 工具注释里写明原始事故）；
@@ -125,11 +125,11 @@ T89 已统一 8..24（VM 常量 / 设置表 / view 库默认 / 宿主注入四�
 
 ## 真机回归清单
 
-1. **#230**：Agent 聊天模式让 AI `write_file` → 弹确认（本会话允许/仅一次/
+1. **#230**：Agent 聊天模式让 AI `Write` → 弹确认（本会话允许/仅一次/
    拒绝）—— 此前静默写入；拒绝后模型收到 `Error: permission denied`；
    coding 标准线写文件 → **只弹一次**（引擎层 ASK，不再双弹窗）；
-   `delete_file`（HIGH）在聊天模式同样弹确认；
-2. **#232**：构造超大 .docx（>16MB）→ `read_file` 拒绝并提示 shell 替代；
+   `DeleteFile`（HIGH）在聊天模式同样弹确认；
+2. **#232**：构造超大 .docx（>16MB）→ `Read` 拒绝并提示 shell 替代；
    恶意 zip 炸弹 docx → 「解压后超过 32MB 预算」如实报错，进程不 OOM；
 3. **#239**：无障碍开启、无 root 的设备 → `screenshot` 工具成功（a11y
    通道）；全关时 → 错误信息同时含特权链根因与 shell 输出；

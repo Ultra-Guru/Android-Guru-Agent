@@ -28,7 +28,7 @@ class WorkflowStoreTest {
     private fun store(clock: () -> Long = { 1_700_000_000_000L }): WorkflowStore =
         WorkflowStore(tmp.newFolder("workflows"), clock)
 
-    private val steps = """[{"tool":"browser_navigate","args":{"url":"https://example.com"}}]"""
+    private val steps = """[{"tool":"BrowserNavigate","args":{"url":"https://example.com"}}]"""
 
     // ═══════════════ save → list 往返（假成功回归锁）═══════════════
 
@@ -180,7 +180,7 @@ class WorkflowStoreTest {
         val loaded = r as WorkflowStore.LoadResult.Loaded
         assertEquals("ok", loaded.name)
         assertEquals(1, loaded.steps.size)
-        assertEquals("browser_navigate", loaded.steps.first().let {
+        assertEquals("BrowserNavigate", loaded.steps.first().let {
             (it as? kotlinx.serialization.json.JsonObject)?.get("tool")?.let { p ->
                 (p as? kotlinx.serialization.json.JsonPrimitive)?.content
             }
