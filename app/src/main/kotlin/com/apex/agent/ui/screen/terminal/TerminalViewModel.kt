@@ -963,7 +963,7 @@ class TerminalViewModel @Inject constructor(
     fun installAndroidOnly(onProgress: (Int, Int) -> Unit = { _, _ -> }) = depCenter.installAndroidOnly(onProgress)
 
     override fun onCleared() {
-        // Runtime owns session lifecycle; explicit close via terminal.close() by Agent/UI.
+        // Runtime owns session lifecycle; explicit close via TerminalClose() by Agent/UI.
         // 这里不主动 close，因为 Runtime 是单例，session 可能被其他消费者复用。
     }
 

@@ -15,7 +15,7 @@ import com.apex.agent.core.tools.ToolRisk
  * 两个工具都走 lambda 注入模式（工具只做参数解析，JVM 可测；Android
  * Intent 侧见文件底部的 [AndroidIntents] 生产接线）。
  */
-// ═══════════════════════════ share_content ═══════════════════════════
+// ═══════════════════════════ ShareContent ═══════════════════════════
 
 /**
  * 分享文本到其他应用（Android 分享面板）。参数：text（必填）、title
@@ -26,7 +26,7 @@ class ShareContentTool(
     /** (text, title?) → 结果文本。 */
     private val share: (String, String?) -> String
 ) : AgentTool {
-    override val id = "share_content"
+    override val id = "ShareContent"
     override val name = "Share Content"
     override val description = """
         Share text via the Android share sheet (user picks the target app).
@@ -55,7 +55,7 @@ class ShareContentTool(
     }
 }
 
-// ═══════════════════════════ deep_link ═══════════════════════════
+// ═══════════════════════════ DeepLink ═══════════════════════════
 
 /**
  * 打开 URI（深链）。http(s) 链接自然落到浏览器，其他 scheme（app://、
@@ -66,7 +66,7 @@ class DeepLinkTool(
     /** uri → 结果文本。 */
     private val open: (String) -> String
 ) : AgentTool {
-    override val id = "deep_link"
+    override val id = "DeepLink"
     override val name = "Deep Link / Open URI"
     override val description = """
         Open a URI on the device: http(s) links go to the browser, other

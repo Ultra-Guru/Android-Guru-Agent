@@ -69,43 +69,43 @@ class PruneStaleBundledTest {
         // 升级前设备状态：5 台内置（含 2 台已迁走的）+ 1 台社区安装的同名域技能
         registry.installBundled(
             listOf(
-                manifestJson("code-review", bundled = true),     // 幸存（coding 核心）
-                manifestJson("debugging", bundled = true),       // 幸存（coding 核心）
-                manifestJson("cooking-master", bundled = true),  // 已迁往 hub → 待清理
-                manifestJson("travel-planner", bundled = true),  // 已迁往 hub → 待清理
-                manifestJson("knowledge-qa", bundled = true)     // 幸存（agent 核心）
+                manifestJson("CodeReview", bundled = true),     // 幸存（coding 核心）
+                manifestJson("Debugging", bundled = true),       // 幸存（coding 核心）
+                manifestJson("CookingMaster", bundled = true),  // 已迁往 hub → 待清理
+                manifestJson("TravelPlanner", bundled = true),  // 已迁往 hub → 待清理
+                manifestJson("KnowledgeQa", bundled = true)     // 幸存（agent 核心）
             )
         )
-        registry.install(manifestJson("hub-installed-extra", bundled = false)) // 社区/仓库安装
+        registry.install(manifestJson("HubInstalledExtra", bundled = false)) // 社区/仓库安装
 
         // 其中一台离场者被用户禁用过（.disabled sidecar 有残留 id）
-        registry.setEnabled("cooking-master", false)
+        registry.setEnabled("CookingMaster", false)
 
         val pruned = registry.pruneStaleBundled(
-            setOf("code-review", "debugging", "knowledge-qa")   // 当前 assets 白名单
+            setOf("CodeReview", "Debugging", "KnowledgeQa")   // 当前 assets 白名单
         )
 
         assertEquals(2, pruned)
         assertEquals(
-            setOf("code-review", "debugging", "knowledge-qa", "hub-installed-extra"),
+            setOf("CodeReview", "Debugging", "KnowledgeQa", "HubInstalledExtra"),
             installedIds()
         )
         // 离场者四清：manifest 文件也被删除
-        assertFalse(File(skillsDir, "cooking-master.json").exists())
-        assertFalse(File(skillsDir, "travel-planner.json").exists())
+        assertFalse(File(skillsDir, "CookingMaster.json").exists())
+        assertFalse(File(skillsDir, "TravelPlanner.json").exists())
         // 幸存者文件保留
-        assertTrue(File(skillsDir, "code-review.json").exists())
+        assertTrue(File(skillsDir, "CodeReview.json").exists())
         // 社区技能文件保留
-        assertTrue(File(skillsDir, "hub-installed-extra.json").exists())
+        assertTrue(File(skillsDir, "HubInstalledExtra.json").exists())
     }
 
     @Test
     fun `prune cleans resource directory and disabled sidecar residue`() {
-        registry.installBundled(listOf(manifestJson("old-life-skill", bundled = true)))
-        registry.setEnabled("old-life-skill", false)
+        registry.installBundled(listOf(manifestJson("OldLifeSkill", bundled = true)))
+        registry.setEnabled("OldLifeSkill", false)
 
         // 模拟 ZIP 安装产生的资源目录
-        val resDir = File(skillsDir, "old-life-skill").apply {
+        val resDir = File(skillsDir, "OldLifeSkill").apply {
             mkdirs()
             File(this, "references.md").writeText("# refs")
         }
@@ -117,7 +117,7 @@ class PruneStaleBundledTest {
         // .disabled sidecar 里不再有残留 id（文件为空或仅剩其它 id）
         val sidecar = File(skillsDir, ".disabled")
         if (sidecar.exists()) {
-            assertTrue(sidecar.readLines().none { it.trim() == "old-life-skill" })
+            assertTrue(sidecar.readLines().none { it.trim() == "OldLifeSkill" })
         }
         assertTrue(installedIds().isEmpty())
     }
@@ -128,13 +128,13 @@ class PruneStaleBundledTest {
 
     @Test
     fun `prune with empty whitelist on fresh install does not touch community skills`() {
-        registry.install(manifestJson("community-skill", bundled = false))
-        registry.install(manifestJson("hub-skill", bundled = false))
+        registry.install(manifestJson("CommunitySkill", bundled = false))
+        registry.install(manifestJson("HubSkill", bundled = false))
 
         val pruned = registry.pruneStaleBundled(emptySet())
 
         assertEquals(0, pruned)
-        assertEquals(setOf("community-skill", "hub-skill"), installedIds())
+        assertEquals(setOf("CommunitySkill", "HubSkill"), installedIds())
     }
 
     @Test
@@ -152,15 +152,15 @@ class PruneStaleBundledTest {
 
     @Test
     fun `reinstalled hub skill after prune is uninstallable as normal skill`() {
-        registry.installBundled(listOf(manifestJson("cooking-master", bundled = true)))
+        registry.installBundled(listOf(manifestJson("CookingMaster", bundled = true)))
         registry.pruneStaleBundled(emptySet())
 
         // 从官方仓库重新安装（bundled=false）
-        registry.install(manifestJson("cooking-master", bundled = false))
+        registry.install(manifestJson("CookingMaster", bundled = false))
 
         // 普通技能：可禁用、可卸载（不再受 bundled 防线约束）
-        registry.setEnabled("cooking-master", false)
-        assertTrue(registry.uninstall("cooking-master"))
+        registry.setEnabled("CookingMaster", false)
+        assertTrue(registry.uninstall("CookingMaster"))
         assertTrue(installedIds().isEmpty())
         assertFalse(File(skillsDir, "cooking-master.json").exists())
     }

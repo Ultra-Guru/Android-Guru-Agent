@@ -116,23 +116,29 @@ private fun isZhLanguage(): Boolean =
 /** 目录分类 → 本地化标签。 */
 @Composable
 private fun catalogCategoryLabel(category: String): String {
+    // v5：官方 MCP 仓库（apex-mcp-hub v2.4）分类键改 PascalCase；旧 kebab 键
+    // 仍接受（老缓存目录 / 第三方目录文件），两条键映射到同一标签。
     val res = when (category) {
-        "official" -> R.string.market_mcp_catalog_cat_official
-        "web-search" -> R.string.market_mcp_catalog_cat_search
-        "browser" -> R.string.market_mcp_catalog_cat_browser
-        "database" -> R.string.market_mcp_catalog_cat_database
-        "git" -> R.string.market_mcp_catalog_cat_git
-        "cloud" -> R.string.market_mcp_catalog_cat_cloud
-        "observability" -> R.string.market_mcp_catalog_cat_observability
-        "docs" -> R.string.market_mcp_catalog_cat_docs
-        "productivity" -> R.string.market_mcp_catalog_cat_productivity
-        "desktop" -> R.string.market_mcp_catalog_cat_desktop
-        "finance" -> R.string.market_mcp_catalog_cat_finance
-        "design" -> R.string.market_mcp_catalog_cat_design
-        "communication" -> R.string.market_mcp_catalog_cat_communication
-        "location" -> R.string.market_mcp_catalog_cat_location
-        "data" -> R.string.market_mcp_catalog_cat_data
-        "remote" -> R.string.market_mcp_catalog_cat_remote
+        "Official", "official" -> R.string.market_mcp_catalog_cat_official
+        "WebSearch", "web-search" -> R.string.market_mcp_catalog_cat_search
+        "Browser", "browser" -> R.string.market_mcp_catalog_cat_browser
+        "Database", "database" -> R.string.market_mcp_catalog_cat_database
+        "Git", "git" -> R.string.market_mcp_catalog_cat_git
+        "Cloud", "cloud" -> R.string.market_mcp_catalog_cat_cloud
+        "Observability", "observability" -> R.string.market_mcp_catalog_cat_observability
+        "Docs", "docs" -> R.string.market_mcp_catalog_cat_docs
+        "Productivity", "productivity" -> R.string.market_mcp_catalog_cat_productivity
+        "Desktop", "desktop" -> R.string.market_mcp_catalog_cat_desktop
+        "Finance", "finance" -> R.string.market_mcp_catalog_cat_finance
+        "Design", "design" -> R.string.market_mcp_catalog_cat_design
+        "Communication", "communication" -> R.string.market_mcp_catalog_cat_communication
+        "Location", "location" -> R.string.market_mcp_catalog_cat_location
+        "Data", "data" -> R.string.market_mcp_catalog_cat_data
+        "ReverseEngineering", "reverse-engineering" -> R.string.market_mcp_catalog_cat_remote
+        "Security", "security" -> R.string.market_mcp_catalog_cat_remote
+        "AiMl", "ai-ml" -> R.string.market_mcp_catalog_cat_remote
+        "Devtools", "devtools" -> R.string.market_mcp_catalog_cat_remote
+        "Remote", "remote" -> R.string.market_mcp_catalog_cat_remote
         else -> return category
     }
     return stringResource(res)

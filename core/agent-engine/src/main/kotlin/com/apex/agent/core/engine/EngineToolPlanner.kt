@@ -46,13 +46,13 @@ internal object EngineToolPlanner {
 
     /**
      * #197 AGENT 模式的编码类工具前缀黑名单——全能智能体是**非编程**工位：
-     * code_* / code_git_*（编码工作区）、github_*（GitHub 连接）与
-     * `mcp__github__*`（GitHub MCP）均属于 Coding 屏管辖，Agent 屏不可见，
+     * Code* / CodeGit*（编码工作区）、Github*（GitHub 连接）与
+     * McpGithub*（GitHub MCP）均属于 Coding 屏管辖，Agent 屏不可见，
      * 从根上避免“问什么都会答编程相关的”（编程引导由提示词层完成）。
      * v3 起 LOOP（Agent 工位）同样走这条隔离。
      */
     private val AGENT_EXCLUDED_TOOL_PREFIXES = listOf(
-        "code_", "github_", "mcp__github__"
+        "Code", "Github", "McpGithub"
     )
 
     /** #197 [AGENT_EXCLUDED_TOOL_PREFIXES] 判定（纯函数，便于单测）。 */
@@ -293,7 +293,7 @@ internal object EngineToolPlanner {
 
 /**
  * 多模态用户输入 → 文本上下文（图片/文件以路径清单形式告知 Agent，
- * Agent 可用 read_file 等工具读取）。纯函数，无引擎状态。
+ * Agent 可用 Read 等工具读取）。纯函数，无引擎状态。
  */
 internal fun buildUserText(input: UserInput): String {
     if (input.images.isEmpty() && input.files.isEmpty()) return input.text
@@ -304,11 +304,11 @@ internal fun buildUserText(input: UserInput): String {
         if (input.files.isNotEmpty()) {
             appendLine("[用户附加文件]")
             input.files.forEach { f ->
-                // 文档类附件标注「已支持文本提取」——引导模型放心用 read_file 读正文，
+                // 文档类附件标注「已支持文本提取」——引导模型放心用 Read 读正文，
                 // 而不是看到 .pdf 就当作二进制放弃（旧链路确实读不了，现在能读）。
                 val docHint = when {
-                    f.mimeType.contains("pdf", ignoreCase = true) || f.name.endsWith(".pdf", true) -> "，read_file 可提取文本"
-                    f.mimeType.contains("wordprocessingml", ignoreCase = true) || f.name.endsWith(".docx", true) -> "，read_file 可提取文本"
+                    f.mimeType.contains("pdf", ignoreCase = true) || f.name.endsWith(".pdf", true) -> "，Read 可提取文本"
+                    f.mimeType.contains("wordprocessingml", ignoreCase = true) || f.name.endsWith(".docx", true) -> "，Read 可提取文本"
                     else -> ""
                 }
                 appendLine("- ${f.name} (${f.mimeType}, ${f.sizeBytes} bytes$docHint) path=${f.localPath}")

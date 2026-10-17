@@ -20,10 +20,10 @@ import org.junit.Test
  */
 class MoreCapabilitiesToolsTest {
 
-    // ── contact_search ──────────────────────────────────────────────────
+    // ── ContactSearch ──────────────────────────────────────────────────
 
     @Test
-    fun `contact_search rejects too short query`() = runTest {
+    fun `ContactSearch rejects too short query`() = runTest {
         val tool = ContactSearchTool { _, _ -> emptyList() }
         val result = tool.execute("""{"query": "a"}""")
         assertTrue("should fail: $result", result.startsWith("Error"))
@@ -31,14 +31,14 @@ class MoreCapabilitiesToolsTest {
     }
 
     @Test
-    fun `contact_search returns empty message when no match`() = runTest {
+    fun `ContactSearch returns empty message when no match`() = runTest {
         val tool = ContactSearchTool { _, _ -> emptyList() }
         val result = tool.execute("""{"query": "张三"}""")
         assertTrue("should mention no contacts: $result", result.contains("No contacts"))
     }
 
     @Test
-    fun `contact_search returns JSON when matches found`() = runTest {
+    fun `ContactSearch returns JSON when matches found`() = runTest {
         val tool = ContactSearchTool { q, _ ->
             listOf(
                 com.apex.agent.core.tools.builtin.ContactRecord(
@@ -55,17 +55,17 @@ class MoreCapabilitiesToolsTest {
     }
 
     @Test
-    fun `contact_search clamps limit to 100`() = runTest {
+    fun `ContactSearch clamps limit to 100`() = runTest {
         var capturedLimit: Int = -1
         val tool = ContactSearchTool { _, lim -> capturedLimit = lim; emptyList() }
         tool.execute("""{"query": "test", "limit": 500}""")
         assertEquals(100, capturedLimit)
     }
 
-    // ── sms_send ────────────────────────────────────────────────────────
+    // ── SmsSend ────────────────────────────────────────────────────────
 
     @Test
-    fun `sms_send rejects invalid phone number`() = runTest {
+    fun `SmsSend rejects invalid phone number`() = runTest {
         val tool = SmsSendTool { _, _, _ -> SmsSendTool.SendResult(true, "ok") }
         val result = tool.execute("""{"phone": "abc123", "message": "hello"}""")
         assertTrue("should fail: $result", result.startsWith("Error"))
@@ -73,7 +73,7 @@ class MoreCapabilitiesToolsTest {
     }
 
     @Test
-    fun `sms_send rejects blank message`() = runTest {
+    fun `SmsSend rejects blank message`() = runTest {
         val tool = SmsSendTool { _, _, _ -> SmsSendTool.SendResult(true, "ok") }
         val result = tool.execute("""{"phone": "+8613800138000", "message": ""}""")
         assertTrue("should fail: $result", result.startsWith("Error"))
@@ -81,7 +81,7 @@ class MoreCapabilitiesToolsTest {
     }
 
     @Test
-    fun `sms_send rejects too long message`() = runTest {
+    fun `SmsSend rejects too long message`() = runTest {
         val tool = SmsSendTool { _, _, _ -> SmsSendTool.SendResult(true, "ok") }
         val longMsg = "x".repeat(1001)
         val result = tool.execute("""{"phone": "+8613800138000", "message": "$longMsg"}""")
@@ -90,7 +90,7 @@ class MoreCapabilitiesToolsTest {
     }
 
     @Test
-    fun `sms_send rejects invalid slot_id`() = runTest {
+    fun `SmsSend rejects invalid slot_id`() = runTest {
         val tool = SmsSendTool { _, _, _ -> SmsSendTool.SendResult(true, "ok") }
         val result = tool.execute(
             """{"phone": "+8613800138000", "message": "hi", "slot_id": 5}"""
@@ -100,7 +100,7 @@ class MoreCapabilitiesToolsTest {
     }
 
     @Test
-    fun `sms_send succeeds with valid params`() = runTest {
+    fun `SmsSend succeeds with valid params`() = runTest {
         var capturedPhone: String? = null
         var capturedMsg: String? = null
         var capturedSlot: Int? = null
@@ -118,7 +118,7 @@ class MoreCapabilitiesToolsTest {
     }
 
     @Test
-    fun `sms_send reports send failure`() = runTest {
+    fun `SmsSend reports send failure`() = runTest {
         val tool = SmsSendTool { _, _, _ -> SmsSendTool.SendResult(false, "no SIM card") }
         val result = tool.execute(
             """{"phone": "+8613800138000", "message": "hello"}"""
@@ -127,7 +127,7 @@ class MoreCapabilitiesToolsTest {
         assertTrue("should mention no SIM: $result", result.contains("no SIM card"))
     }
 
-    // ── calendar_event_list ────────────────────────────────────────────
+    // ── CalendarEventList ────────────────────────────────────────────
 
     @Test
     fun `calendar_list returns empty message when no events`() = runTest {
@@ -160,10 +160,10 @@ class MoreCapabilitiesToolsTest {
         assertEquals(90, capturedDays)
     }
 
-    // ── alarm_set ──────────────────────────────────────────────────────
+    // ── AlarmSet ──────────────────────────────────────────────────────
 
     @Test
-    fun `alarm_set rejects hour out of range`() = runTest {
+    fun `AlarmSet rejects hour out of range`() = runTest {
         val tool = AlarmSetTool { _ -> true }
         val result = tool.execute("""{"hour": 25, "minutes": 30}""")
         assertTrue("should fail: $result", result.startsWith("Error"))
@@ -171,7 +171,7 @@ class MoreCapabilitiesToolsTest {
     }
 
     @Test
-    fun `alarm_set rejects minutes out of range`() = runTest {
+    fun `AlarmSet rejects minutes out of range`() = runTest {
         val tool = AlarmSetTool { _ -> true }
         val result = tool.execute("""{"hour": 7, "minutes": 60}""")
         assertTrue("should fail: $result", result.startsWith("Error"))
@@ -179,7 +179,7 @@ class MoreCapabilitiesToolsTest {
     }
 
     @Test
-    fun `alarm_set succeeds with valid time`() = runTest {
+    fun `AlarmSet succeeds with valid time`() = runTest {
         val tool = AlarmSetTool { _ -> true }
         val result = tool.execute("""{"hour": 7, "minutes": 30, "message": "Wake up"}""")
         assertTrue("should succeed: $result", result.startsWith("OK"))
@@ -188,7 +188,7 @@ class MoreCapabilitiesToolsTest {
     }
 
     @Test
-    fun `alarm_set rejects bad days_of_week`() = runTest {
+    fun `AlarmSet rejects bad days_of_week`() = runTest {
         val tool = AlarmSetTool { _ -> true }
         val result = tool.execute(
             """{"hour": 9, "minutes": 0, "days_of_week": [0, 8]}"""
@@ -198,7 +198,7 @@ class MoreCapabilitiesToolsTest {
     }
 
     @Test
-    fun `alarm_set accepts valid days_of_week array`() = runTest {
+    fun `AlarmSet accepts valid days_of_week array`() = runTest {
         val tool = AlarmSetTool { _ -> true }
         val result = tool.execute(
             """{"hour": 9, "minutes": 0, "days_of_week": [2, 3, 4, 5, 6]}"""
@@ -208,16 +208,16 @@ class MoreCapabilitiesToolsTest {
     }
 
     @Test
-    fun `alarm_set reports setter failure`() = runTest {
+    fun `AlarmSet reports setter failure`() = runTest {
         val tool = AlarmSetTool { _ -> false }
         val result = tool.execute("""{"hour": 7, "minutes": 30}""")
         assertTrue("should fail: $result", result.startsWith("Error"))
     }
 
-    // ── file_pick ──────────────────────────────────────────────────────
+    // ── FilePick ──────────────────────────────────────────────────────
 
     @Test
-    fun `file_pick rejects invalid mime_type`() = runTest {
+    fun `FilePick rejects invalid mime_type`() = runTest {
         val tool = FilePickTool { _, _ -> FilePickTool.FilePickResult(uris = emptyList()) }
         val result = tool.execute("""{"mime_type": "not_a_mime"}""")
         assertTrue("should fail: $result", result.startsWith("Error"))
@@ -225,16 +225,16 @@ class MoreCapabilitiesToolsTest {
     }
 
     @Test
-    fun `file_pick returns empty result when user cancels`() = runTest {
+    fun `FilePick returns empty result when user cancels`() = runTest {
         val tool = FilePickTool { _, _ -> FilePickTool.FilePickResult(uris = emptyList()) }
         val result = tool.execute("""{}""")
         assertTrue("should mention cancelled: $result", result.contains("cancelled") || result.contains("no file"))
     }
 
-    // ── image_capture ──────────────────────────────────────────────────
+    // ── ImageCapture ──────────────────────────────────────────────────
 
     @Test
-    fun `image_capture rejects save_path with dot-dot`() = runTest {
+    fun `ImageCapture rejects save_path with dot-dot`() = runTest {
         val tool = ImageCaptureTool { _ ->
             ImageCaptureTool.CaptureResult(success = true, savedPath = "/tmp/x.jpg")
         }
@@ -244,7 +244,7 @@ class MoreCapabilitiesToolsTest {
     }
 
     @Test
-    fun `image_capture rejects relative save_path`() = runTest {
+    fun `ImageCapture rejects relative save_path`() = runTest {
         val tool = ImageCaptureTool { _ ->
             ImageCaptureTool.CaptureResult(success = true, savedPath = "x.jpg")
         }
@@ -253,7 +253,7 @@ class MoreCapabilitiesToolsTest {
     }
 
     @Test
-    fun `image_capture clamps quality to 100`() = runTest {
+    fun `ImageCapture clamps quality to 100`() = runTest {
         var capturedQuality: Int = -1
         val tool = ImageCaptureTool { p ->
             capturedQuality = p.quality
@@ -264,7 +264,7 @@ class MoreCapabilitiesToolsTest {
     }
 
     @Test
-    fun `image_capture reports capture failure`() = runTest {
+    fun `ImageCapture reports capture failure`() = runTest {
         val tool = ImageCaptureTool { _ ->
             ImageCaptureTool.CaptureResult(success = false, errorMessage = "no camera app")
         }
@@ -273,24 +273,24 @@ class MoreCapabilitiesToolsTest {
         assertTrue("should mention camera: $result", result.contains("no camera app"))
     }
 
-    // ── notification_post ──────────────────────────────────────────────
+    // ── NotificationPost ──────────────────────────────────────────────
 
     @Test
-    fun `notification_post rejects empty title`() = runTest {
+    fun `NotificationPost rejects empty title`() = runTest {
         val tool = NotificationPostTool { _ -> true }
         val result = tool.execute("""{"title": "", "text": "body"}""")
         assertTrue("should fail: $result", result.startsWith("Error"))
     }
 
     @Test
-    fun `notification_post rejects empty text`() = runTest {
+    fun `NotificationPost rejects empty text`() = runTest {
         val tool = NotificationPostTool { _ -> true }
         val result = tool.execute("""{"title": "hi", "text": ""}""")
         assertTrue("should fail: $result", result.startsWith("Error"))
     }
 
     @Test
-    fun `notification_post rejects too long title`() = runTest {
+    fun `NotificationPost rejects too long title`() = runTest {
         val tool = NotificationPostTool { _ -> true }
         val longTitle = "x".repeat(101)
         val result = tool.execute("""{"title": "$longTitle", "text": "body"}""")
@@ -298,7 +298,7 @@ class MoreCapabilitiesToolsTest {
     }
 
     @Test
-    fun `notification_post succeeds with valid params`() = runTest {
+    fun `NotificationPost succeeds with valid params`() = runTest {
         val tool = NotificationPostTool { _ -> true }
         val result = tool.execute(
             """{"title": "Task Done", "text": "Build finished", "channel_id": "agent_reminder"}"""
@@ -308,7 +308,7 @@ class MoreCapabilitiesToolsTest {
     }
 
     @Test
-    fun `notification_post reports poster failure`() = runTest {
+    fun `NotificationPost reports poster failure`() = runTest {
         val tool = NotificationPostTool { _ -> false }
         val result = tool.execute("""{"title": "hi", "text": "body"}""")
         assertTrue("should fail: $result", result.startsWith("Error"))

@@ -147,18 +147,18 @@ class TerminalDepCenter(
             // T92：300s + SIGTERM 温和终止 —— 旧行为 120s 后直接 SIGKILL：
             // openjdk/SDK 类 apt 在慢网普遍 >120s，被硬杀留下半安装状态，日志
             // 还误报「等待超时」（实际是被自己杀的）。与 Provisioner 300s 对齐。
-            val waitResult = runtime.wait(sid, com.apex.agent.platform.terminal.wait.WaitCondition.ProcessExited(jobId = run.jobId), 300_000)
+            val waitResult = runtime.wait(sid, com.apex.agent.platform.TerminalWait.WaitCondition.ProcessExited(jobId = run.jobId), 300_000)
             val wait = waitResult.getOrElse { return@withContext lang.getString(R.string.term_notice_wait_failed, it.message ?: "") }
             val exitCode = when (wait) {
-                is com.apex.agent.platform.terminal.wait.WaitResult.Matched -> {
+                is com.apex.agent.platform.TerminalWait.WaitResult.Matched -> {
                     val ev = wait.event
                     if (ev is com.apex.agent.platform.terminal.events.TerminalEvent.ProcessExited) ev.exitCode ?: -1 else 0
                 }
-                is com.apex.agent.platform.terminal.wait.WaitResult.Timeout -> {
+                is com.apex.agent.platform.TerminalWait.WaitResult.Timeout -> {
                     runtime.signal(sid, com.apex.agent.platform.terminal.io.UnixSignal.SIGTERM, InputOwner.SYSTEM, run.jobId)
                     return@withContext lang.getString(R.string.term_notice_wait_timeout)
                 }
-                is com.apex.agent.platform.terminal.wait.WaitResult.SessionGone -> return@withContext lang.getString(R.string.term_notice_session_gone)
+                is com.apex.agent.platform.TerminalWait.WaitResult.SessionGone -> return@withContext lang.getString(R.string.term_notice_session_gone)
             }
             val obs = runtime.observe(sid, TerminalRuntime.ObserveMode.RAW, run.startCursor, 65536)
                 .getOrNull()?.raw ?: ""

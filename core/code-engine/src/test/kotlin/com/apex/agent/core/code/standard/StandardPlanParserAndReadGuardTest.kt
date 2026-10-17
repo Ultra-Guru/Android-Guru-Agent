@@ -113,12 +113,12 @@ class StandardPlanParserAndReadGuardTest {
         val guard = newGuard(root)
         val path = "{\"path\":\"Main.kt\"}"
 
-        val block = guard.check("code_edit", path)
+        val block = guard.check("CodeEdit", path)
         assertNotNull("edit before read must be blocked", block)
         assertTrue(block!!.contains("has not been read"))
 
-        guard.record("code_read", path)
-        assertNull("read unlocks the edit", guard.check("code_edit", path))
+        guard.record("CodeRead", path)
+        assertNull("read unlocks the edit", guard.check("CodeEdit", path))
     }
 
     @Test
@@ -129,11 +129,11 @@ class StandardPlanParserAndReadGuardTest {
 
         assertNotNull(
             "overwrite write to existing file needs prior read",
-            guard.check("code_write", "{\"path\":\"Config.kt\"}")
+            guard.check("CodeWrite", "{\"path\":\"Config.kt\"}")
         )
         assertNull(
             "brand-new file creation is exempt",
-            guard.check("code_write", "{\"path\":\"Fresh.kt\"}")
+            guard.check("CodeWrite", "{\"path\":\"Fresh.kt\"}")
         )
         assertTrue(existing.isFile)
     }
@@ -144,8 +144,8 @@ class StandardPlanParserAndReadGuardTest {
         File(root, "A.kt").apply { writeText("a") }
         val guard = newGuard(root)
 
-        guard.record("code_write", "{\"path\":\"A.kt\"}")
-        assertNull("a successful write implies content known", guard.check("code_edit", "{\"path\":\"A.kt\"}"))
+        guard.record("CodeWrite", "{\"path\":\"A.kt\"}")
+        assertNull("a successful write implies content known", guard.check("CodeEdit", "{\"path\":\"A.kt\"}"))
     }
 
     @Test
@@ -159,16 +159,16 @@ class StandardPlanParserAndReadGuardTest {
         val guard = newGuard(root)
 
         // 相对形态读过
-        guard.record("code_read", "{\"path\":\"src/Util.kt\"}")
+        guard.record("CodeRead", "{\"path\":\"src/Util.kt\"}")
         // guest 前缀形态编辑 → 命中同一追踪键
         assertNull(
             "guest-prefixed path maps to the same file",
-            guard.check("code_edit", "{\"path\":\"/workspace/src/Util.kt\"}")
+            guard.check("CodeEdit", "{\"path\":\"/workspace/src/Util.kt\"}")
         )
         // 绝对形态同理
         assertNull(
             "absolute path maps to the same file",
-            guard.check("code_edit", "{\"path\":\"${nested.absolutePath}\"}")
+            guard.check("CodeEdit", "{\"path\":\"${nested.absolutePath}\"}")
         )
     }
 
@@ -176,8 +176,8 @@ class StandardPlanParserAndReadGuardTest {
     fun `guard only guards edit and write tools`() {
         val root = tmp.newFolder("ws5")
         val guard = newGuard(root)
-        assertNull("grep is not subject to the read guard", guard.check("code_grep", "{\"path\":\"x\"}"))
-        assertNull("unknown tool passes through", guard.check("shell_execute", "\"command\":\"ls\""))
+        assertNull("grep is not subject to the read guard", guard.check("CodeGrep", "{\"path\":\"x\"}"))
+        assertNull("unknown tool passes through", guard.check("ShellExecute", "\"command\":\"ls\""))
     }
 
     @Test
@@ -185,19 +185,19 @@ class StandardPlanParserAndReadGuardTest {
         val root = tmp.newFolder("ws6")
         File(root, "B.kt").apply { writeText("b") }
         val guard = newGuard(root)
-        guard.record("code_read", "{\"path\":\"B.kt\"}")
-        assertNull(guard.check("code_edit", "{\"path\":\"B.kt\"}"))
+        guard.record("CodeRead", "{\"path\":\"B.kt\"}")
+        assertNull(guard.check("CodeEdit", "{\"path\":\"B.kt\"}"))
 
         guard.reset()
-        assertNotNull("after reset the file must be re-read", guard.check("code_edit", "{\"path\":\"B.kt\"}"))
+        assertNotNull("after reset the file must be re-read", guard.check("CodeEdit", "{\"path\":\"B.kt\"}"))
     }
 
     @Test
     fun `without workspace root write of unresolvable path is exempt, edit is still guided`() {
         val guard = StandardReadGuard(workspaceRootProvider = { null })
         // 无工作区 + 文件不存在：write 走新建免检（hostFile == null → 放行）
-        assertNull(guard.check("code_write", "{\"path\":\"/nowhere/Fresh.kt\"}"))
-        // edit 对不可解析路径仍给出「先读/改用 code_write」引导（模型自纠）
-        assertNotNull(guard.check("code_edit", "{\"path\":\"/nowhere/Ghost.kt\"}"))
+        assertNull(guard.check("CodeWrite", "{\"path\":\"/nowhere/Fresh.kt\"}"))
+        // edit 对不可解析路径仍给出「先读/改用 CodeWrite」引导（模型自纠）
+        assertNotNull(guard.check("CodeEdit", "{\"path\":\"/nowhere/Ghost.kt\"}"))
     }
 }

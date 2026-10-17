@@ -36,11 +36,11 @@ import kotlinx.serialization.json.putJsonObject
  * 内置 GitHub MCP 服务器的注册元数据。
  *
  * [BuiltinGithubMcpServer.ID] 同时是三处约定的 key：McpManager 配置里的服务器名、
- * `builtinTransports` 工厂注册表的 key、以及 `mcp_call` 的 `server` 参数值
+ * `builtinTransports` 工厂注册表的 key、以及 `McpCall` 的 `server` 参数值
  * （= 斜杠指令 /mcp:github 的 id）—— 三者必须一致。
  */
 object BuiltinGithubMcpServer {
-    /** 服务器名（= mcp_call 的 server 参数 = 斜杠指令 /mcp:github 的 id）。 */
+    /** 服务器名（= McpCall 的 server 参数 = 斜杠指令 /mcp:github 的 id）。 */
     const val ID = "github"
 
     /** 预置到 mcp_servers.json 的配置（transport=BUILTIN，无 URL/命令）。 */
@@ -62,7 +62,7 @@ object BuiltinGithubMcpServer {
  *
  * 把 App 已有的 [GithubApiService]（GitHub REST 直连）包装成一个**真** MCP 服务器：
  * 实现 [McpTransportHandle]（与 McpHttpTransport 同一契约），对 JSON-RPC
- * 2024-11-05 报文做进程内派发 —— 上层 McpClient/McpManager/mcp_call 元工具
+ * 2024-11-05 报文做进程内派发 —— 上层 McpClient/McpManager/McpCall 元工具
  * 完全不感知对面既不是进程也不是网络。
  *
  * 消息形态：
@@ -72,7 +72,7 @@ object BuiltinGithubMcpServer {
  *   create_issue / list_issues / search_code），各带 JSON Schema inputSchema；
  * - `tools/call` → 按名派发 [GithubApiService]，返回 MCP 标准结果
  *   `{"content":[{"type":"text","text":"..."}]}`；GitHub API 错误 / 未配置 token
- *   → `isError=true` + 友好文本（McpClient 会把 isError 透传给 mcp_call）；
+ *   → `isError=true` + 友好文本（McpClient 会把 isError 透传给 McpCall）；
  * - 通知（id=null，如 notifications/initialized）→ 忽略返回 null；
  * - 其他 method → JSON-RPC error -32601 method-not-found。
  *
@@ -168,7 +168,7 @@ class BuiltinGithubMcpTransport(
         }
     }
 
-    /** MCP 标准 text 结果（isError 会被 McpClient → mcp_call 透传为工具错误）。 */
+    /** MCP 标准 text 结果（isError 会被 McpClient → McpCall 透传为工具错误）。 */
     private fun textResult(text: String, isError: Boolean = false): JsonObject = buildJsonObject {
         putJsonArray("content") {
             add(buildJsonObject {
@@ -228,7 +228,7 @@ class BuiltinGithubMcpTransport(
         val branch = args["branch"]?.jsonPrimitive?.contentOrNull
         val explicitSha = args["sha"]?.jsonPrimitive?.contentOrNull
 
-        // 与原生 github_write_file 相同的探针：无显式 sha 时先查现存文件
+        // 与原生 GithubWriteFile 相同的探针：无显式 sha 时先查现存文件
         // （404 → 新建；其他错误向上抛、由 callTool 折叠为工具错误），
         // 避免盲 PUT 被 GitHub 422 拒绝（"sha missing"）。
         var existingSha = explicitSha

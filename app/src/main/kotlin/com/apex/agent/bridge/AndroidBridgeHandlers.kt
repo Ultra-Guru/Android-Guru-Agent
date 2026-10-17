@@ -5,7 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.BatteryManager
 import android.os.Build
-import com.apex.agent.platform.terminal.bridge.GuestBridgeHandler
+import com.apex.agent.platform.TerminalBridge.GuestBridgeHandler
 
 /**
  * T82 — apexctl 桥的 Android 侧 handler 集（Termux:API 等价物的宿主实现）。
@@ -18,7 +18,7 @@ import com.apex.agent.platform.terminal.bridge.GuestBridgeHandler
  * apexctl battery
  * ```
  *
- * Agent 侧同一 handler 集经 `terminal.bridge call` 直连（无文件往返）。
+ * Agent 侧同一 handler 集经 `TerminalBridge call` 直连（无文件往返）。
  *
  * 诚实语义：ClipboardManager / BatteryManager 拿不到（极端 ROM 限制）→
  * 抛异常 → 响应 ok:false + error（绝不编造数据）。

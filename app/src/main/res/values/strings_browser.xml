@@ -45,5 +45,14 @@
     <string name="browser_screen_hand_back">Hand back to Agent</string>
     <!-- 底部说明卡 -->
     <string name="browser_screen_builtin_title">Browser automation is built in</string>
-    <string name="browser_screen_builtin_desc">24 browser_* tools ship inside the app (built-in since v1.5.0, no plugin needed). Direct the Agent in chat to open pages, click, type or take screenshots. A floating ball appears once the browser is used — tap it for the full overlay browser.</string>
+    <string name="browser_screen_builtin_desc">24 browser_* tools ship inside the app (built-in since v1.5.0, no plugin needed). Direct the Agent in chat to open pages, click, type or take screenshots. A transparent live-view window pops up automatically while the Agent browses; tap the floating ball to show or hide it, long-press to end the session.</string>
+
+    <!-- 实时页面卡（v1.4.1：LiveViewOverlay 入口） -->
+    <string name="browser_screen_live_title">Live page</string>
+    <string name="browser_screen_live_view">View live page</string>
+    <string name="browser_screen_live_open">Open browser</string>
+    <string name="browser_screen_live_desc_idle">When the Agent uses the browser, a transparent floating window pops up automatically showing the live page. You can also open the browser yourself.</string>
+    <string name="browser_screen_live_desc_driving">The Agent is browsing — the live floating window is up. Tap the floating ball anytime to show or hide it.</string>
+    <string name="browser_screen_live_desc_handoff">Human takeover in progress — the full-screen browser window is open for you.</string>
+    <string name="browser_screen_live_desc_recovering">The renderer is being rebuilt — the live view will resume automatically.</string>
 </resources>

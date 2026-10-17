@@ -4,13 +4,13 @@ package com.apex.agent.core.engine.assist
  * ═══ 人工辅助模式的决策点检测器（#168）═══
  *
  * HUMAN_ASSIST 模式此前只有提示词差异（system prompt 要求模型主动调用
- * ask_user_choice），但模型经常**先写出「方案 A … 方案 B …」的对比文本再
+ * AskUserChoice），但模型经常**先写出「方案 A … 方案 B …」的对比文本再
  * 顺口带一个问句**，而不是真的调用工具——纯文本轮次一结束引擎就
  * ResponseComplete 收尾，人工介入落空。
  *
  * 本检测器在引擎的纯文本响应分支上做**后置兜底**：从 assistant 文本中
  * 识别「多方案待决」结构，检出即由 [HumanAssistFlow] 自动转
- * ask_user_choice 闭环（UserInputRequired → 等待 → 用户选择回填）。
+ * AskUserChoice 闭环（UserInputRequired → 等待 → 用户选择回填）。
  *
  * ## 识别规则（中英双语）
  *

@@ -4,6 +4,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -94,27 +96,45 @@ class McpHttpTransport(
             // 不解析响应体（空体不是错误）。
             if (id == null) return@use null
             val responseBody = response.body?.string() ?: return@use null
-            parseBody(responseBody, response.code)
+            parseBody(responseBody, response.code, id)
         }
     }
 
     /**
      * 解析响应体。兼容两种形态：
      * - 裸 JSON-RPC 对象（多数 Streamable HTTP 实现）；
-     * - SSE 分帧（`event: message` / `data: {...}`）—— 取出最后一个 `data:` 载荷。
+     * - SSE 分帧：规范服务器会把每个事件按 `event:` / `id:` / `data:` 字段
+     *   分帧（首帧常是 `event: endpoint`，中间可能夹通知，心跳是 `: ping`）。
+     *
+     * P1 修复：旧实现只认"整个 body 以 data: 开头"，于是规范的 SSE 端点必然
+     * 落到"疑似网关/鉴权拦截页"分支；而且只取**最后一条** data，响应后面跟一条
+     * 通知就会取错帧。现在按行分帧、逐条解析，并按 JSON-RPC id 选中属于本次
+     * 请求的那一条（没有 id 可匹配时回退最后一条可解析对象）。
      */
-    private fun parseBody(raw: String, code: Int): JsonObject? {
+    private fun parseBody(raw: String, code: Int, id: Int? = null): JsonObject? {
         val candidate = raw.trim()
         if (candidate.isEmpty()) return null
-        if (candidate.startsWith("data:")) {
-            val last = candidate.lineSequence()
-                .filter { it.startsWith("data:") }
-                .map { it.removePrefix("data:").trim() }
-                .lastOrNull { it.isNotBlank() && it != "[DONE]" }
-                ?: return null
-            return parseJson(last, code)
+        val lines = candidate.lineSequence().map { it.trimEnd('\r') }.toList()
+        val looksLikeSse = lines.any { it.startsWith("data:") } ||
+            candidate.startsWith("event:") || candidate.startsWith(":")
+        if (!looksLikeSse) return parseJson(candidate, code)
+
+        val payloads = lines.asSequence()
+            .filter { it.startsWith("data:") }
+            .map { it.removePrefix("data:").trim() }
+            .filter { it.isNotBlank() && it != "[DONE]" }
+            .toList()
+        if (payloads.isEmpty()) return null
+
+        var fallback: JsonObject? = null
+        for (payload in payloads) {
+            val parsed = runCatching { parseJson(payload, code) }.getOrNull() ?: continue
+            if (id == null) return parsed
+            val parsedId = parsed["id"]?.jsonPrimitive?.intOrNull
+            if (parsedId == id) return parsed
+            fallback = parsed
         }
-        return parseJson(candidate, code)
+        return fallback
     }
 
     private fun parseJson(text: String, code: Int): JsonObject? {

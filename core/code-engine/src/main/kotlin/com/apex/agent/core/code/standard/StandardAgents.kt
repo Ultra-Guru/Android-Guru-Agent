@@ -18,9 +18,9 @@ package com.apex.agent.core.code.standard
  *
  * [StandardToolSurface] 按前缀集过滤注册表：
  * - `""`（空串）= 通配一切（构建者/通用）；
- * - `code_read` = 精确 id；
- * - `code_git_` = 前缀（命中 code_git_status / code_git_diff / …）；
- * - `mcp__` = 前缀（MCP 一等工具动态注册，全部放行给构建者/通用/调研）。
+ * - `CodeRead` = 精确 id；
+ * - `CodeGit` = 前缀（命中 CodeGitStatus / CodeGitDiff / …）；
+ * - `Mcp` = 前缀（MCP 一等工具动态注册 Mcp{Server}{Tool}，放行给构建者/通用/调研）。
  */
 object StandardAgentCatalog {
 
@@ -30,7 +30,7 @@ object StandardAgentCatalog {
         description = "构建者：直接完成任务——读、改、跑、验一体，" +
             "以最小改动闭环交付，从不留 TODO 占位。",
         toolAllowlist = setOf(
-            "", // 通配：code_* / shell_execute / git / web / skill / mcp__* 全量
+            "", // 通配：code_* / ShellExecute / git / web / skill / mcp__* 全量
         ),
         defaultMaxTurns = 32,
         subagentMaxTurns = 12
@@ -42,9 +42,9 @@ object StandardAgentCatalog {
         description = "规划师：只读探索工作区，产出可执行的分步计划（Todo 清单 + " +
             "每步的验证口径），交用户确认——规划阶段零副作用。",
         toolAllowlist = setOf(
-            "code_read", "code_grep", "code_glob", "code_check",
-            "code_git_status", "code_git_diff", "code_git_log",
-            "code_todo"
+            "CodeRead", "CodeGrep", "CodeGlob", "CodeCheck",
+            "CodeGitStatus", "CodeGitDiff", "CodeGitLog",
+            "CodeTodo"
         ),
         writeToolsAllowed = false,
         defaultMaxTurns = 16,
@@ -71,8 +71,8 @@ object StandardAgentCatalog {
         description = "探索员：只读探索代码，返回带 path:line 引用的结构化结论，" +
             "不改动任何文件。",
         toolAllowlist = setOf(
-            "code_read", "code_grep", "code_glob", "code_check",
-            "code_git_status", "code_git_diff", "code_git_log"
+            "CodeRead", "CodeGrep", "CodeGlob", "CodeCheck",
+            "CodeGitStatus", "CodeGitDiff", "CodeGitLog"
         ),
         writeToolsAllowed = false,
         defaultMaxTurns = 16,
@@ -85,9 +85,9 @@ object StandardAgentCatalog {
         description = "调研员：联网检索（web 搜索 / 抓取 / HTTP）+ 本地只读，" +
             "返回带来源 URL 的结论。",
         toolAllowlist = setOf(
-            "web_search", "web_fetch", "http_request", "http",
-            "code_read", "code_grep", "code_glob",
-            "mcp__"
+            "WebSearch", "WebFetch", "HttpRequest", "Http",
+            "CodeRead", "CodeGrep", "CodeGlob",
+            "Mcp"
         ),
         writeToolsAllowed = false,
         defaultMaxTurns = 16,
@@ -102,8 +102,8 @@ object StandardAgentCatalog {
         description = "评审员：只读评审代码（先看 git 变更再深入读相关文件），" +
             "按严重性分级输出发现（阻断/警告/建议），给出是否可合入的结论。",
         toolAllowlist = setOf(
-            "code_read", "code_grep", "code_glob", "code_check",
-            "code_git_status", "code_git_diff", "code_git_log"
+            "CodeRead", "CodeGrep", "CodeGlob", "CodeCheck",
+            "CodeGitStatus", "CodeGitDiff", "CodeGitLog"
         ),
         writeToolsAllowed = false,
         defaultMaxTurns = 16,

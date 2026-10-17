@@ -45,22 +45,22 @@ class ToolV3InfraTest {
     @Test
     fun `infer maps known tool families to expected annotations`() {
         // 读族 → readOnly
-        val readFile = ToolAnnotations.infer("read_file", ToolRisk.LOW)
+        val readFile = ToolAnnotations.infer("Read", ToolRisk.LOW)
         assertTrue(readFile.readOnlyHint)
         assertTrue(readFile.retrySafe)
 
         // 开放世界读 → openWorld
-        val webFetch = ToolAnnotations.infer("web_fetch", ToolRisk.LOW)
+        val webFetch = ToolAnnotations.infer("WebFetch", ToolRisk.LOW)
         assertTrue(webFetch.openWorldHint)
         assertTrue(webFetch.readOnlyHint)
 
         // 破坏性一次性 → destructive
-        val uninstall = ToolAnnotations.infer("app_uninstall", ToolRisk.HIGH)
+        val uninstall = ToolAnnotations.infer("AppUninstall", ToolRisk.HIGH)
         assertTrue(uninstall.destructiveHint)
         assertFalse(uninstall.retrySafe)
 
         // 幂等覆盖写 → idempotentWrite
-        val writeFile = ToolAnnotations.infer("write_file", ToolRisk.MEDIUM)
+        val writeFile = ToolAnnotations.infer("Write", ToolRisk.MEDIUM)
         assertTrue(writeFile.idempotentHint)
         assertTrue(writeFile.retrySafe)
 
@@ -73,8 +73,8 @@ class ToolV3InfraTest {
 
     @Test
     fun `metadata carries annotations and builder overrides them`() {
-        val inferred = ToolMetadata.infer("clipboard")
-        assertEquals(ToolAnnotations.infer("clipboard", inferred.risk), inferred.annotations)
+        val inferred = ToolMetadata.infer("Clipboard")
+        assertEquals(ToolAnnotations.infer("Clipboard", inferred.risk), inferred.annotations)
 
         val declared = ToolMetadata.meta("my_tool") {
             risk(ToolRisk.MEDIUM)
@@ -120,22 +120,22 @@ class ToolV3InfraTest {
     fun `resolver prefers overrides then annotations then risk fallback`() {
         val resolver = DefaultToolRunPolicyResolver(
             overrides = mapOf(
-                "shell_execute" to ToolRunPolicy(timeoutMs = 120_000)
+                "ShellExecute" to ToolRunPolicy(timeoutMs = 120_000)
             )
         )
 
         // 1. 显式覆盖最高优先。
-        assertEquals(120_000L, resolver.resolve(FakeTool("shell_execute")).timeoutMs)
+        assertEquals(120_000L, resolver.resolve(FakeTool("ShellExecute")).timeoutMs)
 
-        // 2. ask_user 族：无超时无重试（用户可能几分钟才回答）。
-        val ask = resolver.resolve(FakeTool("ask_user"))
+        // 2. AskUser 族：无超时无重试（用户可能几分钟才回答）。
+        val ask = resolver.resolve(FakeTool("AskUser"))
         assertEquals(0L, ask.timeoutMs)
         assertEquals(0, ask.maxRetries)
 
         // 3. 开放世界工具 → agentLadder 阶梯策略（用户规格：2s/5s/10s/…
         //    160s，下一级达 3 分钟封顶自动停止；长超时不变）。
         val web = resolver.resolve(
-            FakeTool("web_fetch", ToolAnnotations.openWorldRead())
+            FakeTool("WebFetch", ToolAnnotations.openWorldRead())
         )
         assertEquals(ToolRunPolicy.agentLadder(), web)
         assertEquals(ToolRetrySchedules.AGENT_LADDER_MS.size, web.maxRetries)
@@ -145,13 +145,13 @@ class ToolV3InfraTest {
 
         // 4. retrySafe 工具 → quickRead。
         val read = resolver.resolve(
-            FakeTool("read_file", ToolAnnotations.readOnly())
+            FakeTool("Read", ToolAnnotations.readOnly())
         )
         assertEquals(ToolRunPolicy.quickRead(), read)
 
         // 5. 普通 mutating 工具 → 无盲重试。
         val mutating = resolver.resolve(
-            FakeTool("edit_file", ToolAnnotations.mutating())
+            FakeTool("Edit", ToolAnnotations.mutating())
         )
         assertEquals(0, mutating.maxRetries)
     }
@@ -180,8 +180,8 @@ class ToolV3InfraTest {
     fun `retry classifier marks transient failures retryable`() {
         val retryable = listOf(
             "Error: timeout: tool call exceeded 30000ms budget",
-            "Error: execution failed: I/O error in 'web_fetch'",
-            "Error: execution failed: IllegalStateException in 'ui_dump'",
+            "Error: execution failed: I/O error in 'WebFetch'",
+            "Error: execution failed: IllegalStateException in 'UiDump'",
             "Error: some unrecognized failure shape"
         )
         retryable.forEach { text ->
@@ -403,7 +403,7 @@ class ToolV3InfraTest {
     fun `environment gate denies only declared preconditions that are explicitly false`() = runTest {
         val state = ToolEnvironmentState()
         val gate = ToolEnvironmentGate(state)
-        val typing = FakeEnvTool("input_text", listOf(ToolEnvironmentState.Flags.KEYBOARD_ACTIVE))
+        val typing = FakeEnvTool("InputText", listOf(ToolEnvironmentState.Flags.KEYBOARD_ACTIVE))
 
         // 未知态（fail-open）：放行。
         assertEquals(GateDecision.Allow, gate.check(typing, "{}"))
@@ -414,7 +414,7 @@ class ToolV3InfraTest {
         assertTrue(denied is GateDecision.Deny)
         if (denied is GateDecision.Deny) {
             assertTrue(denied.reason.contains("keyboard_active"))
-            assertTrue(denied.reason.contains("ui_tap"))
+            assertTrue(denied.reason.contains("UiTap"))
             assertTrue(denied.reason.contains("Do not retry"))
         }
 
@@ -423,7 +423,7 @@ class ToolV3InfraTest {
         assertEquals(GateDecision.Allow, gate.check(typing, "{}"))
 
         // 未声明前置的工具永不拒绝。
-        assertEquals(GateDecision.Allow, gate.check(FakeEnvTool("read_file", emptyList()), "{}"))
+        assertEquals(GateDecision.Allow, gate.check(FakeEnvTool("Read", emptyList()), "{}"))
     }
 
     @Test
@@ -432,10 +432,10 @@ class ToolV3InfraTest {
         val gate = ToolEnvironmentGate(state)
 
         val cases = mapOf(
-            ToolEnvironmentState.Flags.KEYBOARD_ACTIVE to "ui_tap",
-            ToolEnvironmentState.Flags.UBUNTU_READY to "terminal.ubuntu.ensure",
-            ToolEnvironmentState.Flags.TERMINAL_SESSION_OPEN to "terminal.create",
-            ToolEnvironmentState.Flags.BROWSER_ATTACHED to "browser_navigate",
+            ToolEnvironmentState.Flags.KEYBOARD_ACTIVE to "UiTap",
+            ToolEnvironmentState.Flags.UBUNTU_READY to "TerminalUbuntuEnsure",
+            ToolEnvironmentState.Flags.TERMINAL_SESSION_OPEN to "TerminalCreate",
+            ToolEnvironmentState.Flags.BROWSER_ATTACHED to "BrowserNavigate",
             ToolEnvironmentState.Flags.NETWORK_AVAILABLE to "device_info"
         )
         cases.forEach { (flag, expectedHint) ->

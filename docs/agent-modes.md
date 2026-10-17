@@ -9,7 +9,7 @@ Agent 顶部模式栏提供 6 种执行模式（横向滚动切换）。模式�
 | Plan | `Plan` | 先产出执行计划（JSON 步骤）→ 用户确认 → 逐步执行 → 总结 | 复杂任务、多步骤操作 |
 | Spec | `Spec` | 先产出需求规格（目标/需求/约束/验收标准/交付物）→ 用户确认 → 按交付物逐项执行 | 需求不明确、需要先对齐"做什么、做成什么样"的任务 |
 | Reflect | `Reflect` | 反思模式：生成 → 评审 → 修正 循环（默认 1 轮，`reflectionRounds` 可调） | 代码生成、内容创作等对质量要求高的场景 |
-| Assist | `Assist` | 人工协助：遇到多种选择/方案/目标/偏好时强制调用 `ask_user_choice` 弹出选项菜单，不擅自猜测 | 高风险操作、多目标歧义、需要人工决策 |
+| Assist | `Assist` | 人工协助：遇到多种选择/方案/目标/偏好时强制调用 `AskUserChoice` 弹出选项菜单，不擅自猜测 | 高风险操作、多目标歧义、需要人工决策 |
 | Custom | `Custom` | 自定义：附加用户自定义指令（持久化），拼入 system prompt 的 `## Custom Instructions` | 固定输出格式/语言/行为约束 |
 
 ## 模式内部机制
@@ -34,7 +34,7 @@ Agent 顶部模式栏提供 6 种执行模式（横向滚动切换）。模式�
 
 ### HUMAN_ASSIST 模式
 - 系统提示词声明：存在多个可行方案/目标/偏好或高风险动作时，**必须**先调用
-  `ask_user_choice` 等待用户选择，禁止猜测
+  `AskUserChoice` 等待用户选择，禁止猜测
 - 复用现有 `AgentQuestion` / `QuestionCard` 选项菜单 UI
 
 ### CUSTOM 模式
@@ -44,7 +44,7 @@ Agent 顶部模式栏提供 6 种执行模式（横向滚动切换）。模式�
 
 ## 人工选项菜单（多选支持）
 
-`ask_user_choice` 工具新增 `multi_select` 参数：
+`AskUserChoice` 工具新增 `multi_select` 参数：
 
 ```json
 {

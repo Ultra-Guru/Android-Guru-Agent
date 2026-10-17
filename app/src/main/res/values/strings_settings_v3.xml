@@ -21,7 +21,7 @@
     <string name="settings_v3_subagent_temperature">Sampling temperature</string>
     <string name="settings_v3_subagent_temperature_desc">Low temperature keeps exploration stable and converging</string>
     <string name="settings_v3_subagent_custom_title">Custom subagent types</string>
-    <string name="settings_v3_subagent_custom_hint">Resolved by name via the custom_name argument of code_task</string>
+    <string name="settings_v3_subagent_custom_hint">Resolved by name via the custom_name argument of CodeTask</string>
     <string name="settings_v3_subagent_custom_empty">No custom subagents yet — add roles like data-analyst or doc-writer</string>
     <string name="settings_v3_subagent_custom_add">Add subagent</string>
     <string name="settings_v3_subagent_custom_new_title">New custom subagent</string>

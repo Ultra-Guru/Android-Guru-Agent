@@ -136,7 +136,7 @@ object McpModule {
             // STDIO 服务器在 Ubuntu rootfs 内启动（npx -y @modelcontextprotocol/
             // server-x 这类真实 MCP 服务器；沙箱内 apt install nodejs npm 后可用）。
             // rootfs 就绪门禁走 RootfsInstallLayout 的 current 标记文件；
-            // 未安装时 launch 抛引导性错误（提示先 terminal.ubuntu.install）。
+            // 未安装时 launch 抛引导性错误（提示先 TerminalUbuntuInstall）。
             sandboxProcessLauncher = ProotMcpProcessLauncher(
                 hostEnv = hostEnvironment.hostEnv(),
                 libprootPath = hostEnvironment.prootBinary.absolutePath,

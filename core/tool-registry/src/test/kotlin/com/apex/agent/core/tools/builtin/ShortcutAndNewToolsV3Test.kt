@@ -27,9 +27,9 @@ import org.junit.Test
  * 取最坏）、执行链路（经真实 ToolExecutor 的顺序步骤 + 首错即停）、
  * 挖掘建议（成功相邻 bigram）。
  *
- * 新工具：wait（边界/成功）、json_transform（七操作管线）、
- * version_compare（SemVer 阶梯）、tool_batch_run / shortcut_define /
- * shortcut_list / shortcut_run（模型入口行为）。
+ * 新工具：wait（边界/成功）、JsonTransformLegacy（七操作管线）、
+ * VersionCompare（SemVer 阶梯）、ToolBatchRun / ShortcutDefine /
+ * ShortcutList / ShortcutRun（模型入口行为）。
  */
 class ShortcutSystemTest {
 
@@ -68,7 +68,7 @@ class ShortcutSystemTest {
         override suspend fun execute(arguments: String): String = "OK[$id]"
     }
 
-    private val knownIds = setOf("web_search", "write_file", "read_file", "app_uninstall")
+    private val knownIds = setOf("WebSearch", "Write", "Read", "AppUninstall")
 
     private val validDefinition = """
         {
@@ -81,8 +81,8 @@ class ShortcutSystemTest {
             {"name": "path", "type": "string", "required": true}
           ],
           "steps": [
-            {"tool": "web_search", "arguments": "{\"query\": \"{query}\"}"},
-            {"tool": "write_file", "arguments": "{\"path\": \"{path}\", \"content\": \"{0}\"}"}
+            {"tool": "WebSearch", "arguments": "{\"query\": \"{query}\"}"},
+            {"tool": "Write", "arguments": "{\"path\": \"{path}\", \"content\": \"{0}\"}"}
           ]
         }
     """.trimIndent()
@@ -97,7 +97,7 @@ class ShortcutSystemTest {
         assertEquals("network available", definition.precondition)
         assertEquals(2, definition.params.size)
         assertEquals(2, definition.steps.size)
-        assertEquals("web_search", definition.steps[0].toolId)
+        assertEquals("WebSearch", definition.steps[0].toolId)
         assertTrue(definition.params[0].required)
     }
 
@@ -123,7 +123,7 @@ class ShortcutSystemTest {
     @Test
     fun `unknown tool references and dead params are rejected`() {
         // 步骤引用未注册工具。
-        val unknownTool = validDefinition.replace("\"web_search\"", "\"not_a_tool\"")
+        val unknownTool = validDefinition.replace("\"WebSearch\"", "\"not_a_tool\"")
         try {
             ShortcutDefinition.parse(unknownTool, knownIds)
             org.junit.Assert.fail("expected rejection for unknown tool")
@@ -160,7 +160,7 @@ class ShortcutSystemTest {
     @Test
     fun `step count is capped at eight`() {
         val nineSteps = (1..9).joinToString(",") {
-            """{"tool": "read_file", "arguments": "{\"i\": \"$it\"}"}"""
+            """{"tool": "Read", "arguments": "{\"i\": \"$it\"}"}"""
         }
         val definition = """
             {
@@ -207,8 +207,8 @@ class ShortcutSystemTest {
     fun `compiled shortcut inherits the worst risk among its steps`() {
         val registry = ShortcutRegistry()
         val toolRegistry = registryWith(
-            StubTool("web_search"),
-            StubTool("app_uninstall", ToolRisk.HIGH)
+            StubTool("WebSearch"),
+            StubTool("AppUninstall", ToolRisk.HIGH)
         )
         val definition = ShortcutDefinition.parse(
             """
@@ -219,8 +219,8 @@ class ShortcutSystemTest {
               "precondition": "",
               "params": [],
               "steps": [
-                {"tool": "web_search", "arguments": "{}"},
-                {"tool": "app_uninstall", "arguments": "{}"}
+                {"tool": "WebSearch", "arguments": "{}"},
+                {"tool": "AppUninstall", "arguments": "{}"}
               ]
             }
             """.trimIndent(),
@@ -231,7 +231,7 @@ class ShortcutSystemTest {
         assertEquals(ToolRisk.HIGH, compiled.metadata.risk)
         assertEquals(ToolCategory.SKILL, compiled.metadata.category)
         assertTrue(compiled.description.contains("Precondition"))
-        assertTrue(compiled.description.contains("app_uninstall"))
+        assertTrue(compiled.description.contains("AppUninstall"))
     }
 
     // ═══ 执行链路 ═══════════════════════════════════════════════════
@@ -240,7 +240,7 @@ class ShortcutSystemTest {
     fun `compiled shortcut substitutes params JSON-safely and pipes step outputs`() = runTest {
         val executor = RecordingExecutor()
         val registry = ShortcutRegistry()
-        val toolRegistry = registryWith(StubTool("web_search"), StubTool("write_file"))
+        val toolRegistry = registryWith(StubTool("WebSearch"), StubTool("Write"))
         val definition = ShortcutDefinition.parse(validDefinition, knownIds)
         val compiled = registry.compile(definition, executor, toolRegistry)
 
@@ -256,7 +256,7 @@ class ShortcutSystemTest {
         )
         // {path} 替换 + {0} 引用第 0 步输出。
         assertEquals(
-            """{"path": "notes.md", "content": "OK[web_search]"}""",
+            """{"path": "notes.md", "content": "OK[WebSearch]"}""",
             executor.calls[1].second
         )
     }
@@ -265,7 +265,7 @@ class ShortcutSystemTest {
     fun `numeric and boolean params substitute raw`() = runTest {
         val executor = RecordingExecutor()
         val registry = ShortcutRegistry()
-        val toolRegistry = registryWith(StubTool("read_file"))
+        val toolRegistry = registryWith(StubTool("Read"))
         val definition = ShortcutDefinition.parse(
             """
             {
@@ -278,7 +278,7 @@ class ShortcutSystemTest {
                 {"name": "verbose", "type": "boolean", "required": false}
               ],
               "steps": [
-                {"tool": "read_file", "arguments": "{\"limit\": {limit}, \"verbose\": {verbose}}"}
+                {"tool": "Read", "arguments": "{\"limit\": {limit}, \"verbose\": {verbose}}"}
               ]
             }
             """.trimIndent(),
@@ -293,7 +293,7 @@ class ShortcutSystemTest {
     fun `missing required param yields a field-precise error`() = runTest {
         val executor = RecordingExecutor()
         val registry = ShortcutRegistry()
-        val toolRegistry = registryWith(StubTool("web_search"), StubTool("write_file"))
+        val toolRegistry = registryWith(StubTool("WebSearch"), StubTool("Write"))
         val compiled = registry.compile(
             ShortcutDefinition.parse(validDefinition, knownIds), executor, toolRegistry
         )
@@ -307,14 +307,14 @@ class ShortcutSystemTest {
     fun `failing step halts the shortcut like a batch`() = runTest {
         val failing = object : ToolExecutor {
             override suspend fun execute(toolId: String, arguments: String): String =
-                if (toolId == "write_file") "Error: not found: no such tool" else "OK[$toolId]"
+                if (toolId == "Write") "Error: not found: no such tool" else "OK[$toolId]"
 
             override fun executeStream(toolId: String, arguments: String) = flow {
                 emit(com.apex.agent.core.tools.ToolStreamEvent.Output(execute(toolId, arguments)))
             }
         }
         val registry = ShortcutRegistry()
-        val toolRegistry = registryWith(StubTool("web_search"), StubTool("write_file"))
+        val toolRegistry = registryWith(StubTool("WebSearch"), StubTool("Write"))
         val compiled = registry.compile(
             ShortcutDefinition.parse(validDefinition, knownIds), failing, toolRegistry
         )
@@ -331,15 +331,15 @@ class ShortcutSystemTest {
         // 时间序：read↔write 三轮完整循环（有序对 (read→write) 恰 3 次，
         // (write→read) 2 次）+ 失败打断 + 一次孤立调用。
         val sequence = listOf(
-            "read_file" to true,
-            "write_file" to true,
-            "read_file" to true,
-            "write_file" to true,
-            "read_file" to true,
-            "write_file" to true,
-            "shell_execute" to false, // 失败：邻接被打断
-            "write_file" to true,
-            "web_search" to true // 只出现一次
+            "Read" to true,
+            "Write" to true,
+            "Read" to true,
+            "Write" to true,
+            "Read" to true,
+            "Write" to true,
+            "ShellExecute" to false, // 失败：邻接被打断
+            "Write" to true,
+            "WebSearch" to true // 只出现一次
         )
         // 时间正序灌入：先发生的先 begin/complete（deque 头 = 最新）。
         sequence.forEach { (tool, ok) ->
@@ -350,17 +350,17 @@ class ShortcutSystemTest {
         val suggestions = ShortcutSuggester(minCount = 3).suggest(recorder)
         // read→write 3 次成为建议；失败打断的 shell→write 不够格。
         assertEquals(1, suggestions.size)
-        assertEquals("read_file", suggestions[0].firstToolId)
-        assertEquals("write_file", suggestions[0].secondToolId)
+        assertEquals("Read", suggestions[0].firstToolId)
+        assertEquals("Write", suggestions[0].secondToolId)
         assertEquals(3, suggestions[0].count)
 
         // 骨架可被 parse 接受（补注册表后）。
         val skeleton = suggestions[0].toDefinitionSkeleton()
         val parsed = ShortcutDefinition.parse(
             skeleton,
-            setOf("read_file", "write_file")
+            setOf("Read", "Write")
         )
-        assertEquals("shortcut.read_file_then_write_file", parsed.id)
+        assertEquals("shortcut.read_then_write", parsed.id)
         assertEquals(2, parsed.steps.size)
     }
 }
@@ -400,7 +400,7 @@ class NewToolsV3Test {
         assertTrue(metadata.annotations.retrySafe)
     }
 
-    // ═══ json_transform ═══════════════════════════════════════════════
+    // ═══ JsonTransformLegacy ═══════════════════════════════════════════════
 
     private val document = """
         {"title": "Release 1.2", "url": "https://example.com", "secret": "abc",
@@ -531,7 +531,7 @@ class NewToolsV3Test {
         )
     }
 
-    // ═══ version_compare ═════════════════════════════════════════════
+    // ═══ VersionCompare ═════════════════════════════════════════════
 
     private fun compare(a: String, b: String): String = kotlinx.coroutines.runBlocking {
         val result = VersionCompareTool().executeStructured("""{"a": "$a", "b": "$b"}""")
@@ -568,10 +568,10 @@ class NewToolsV3Test {
         assertTrue(output.contains("pre="))
     }
 
-    // ═══ tool_batch_run（模型入口）════════════════════════════════════
+    // ═══ ToolBatchRun（模型入口）════════════════════════════════════
 
     @Test
-    fun `tool_batch_run executes steps and reports the batch shape`() = runTest {
+    fun `ToolBatchRun executes steps and reports the batch shape`() = runTest {
         val inner = object : ToolExecutor {
             override suspend fun execute(toolId: String, arguments: String): String =
                 "OK[$toolId:$arguments]"
@@ -584,20 +584,20 @@ class NewToolsV3Test {
         val result = tool.executeStructured(
             """
             {"steps": [
-              {"tool": "read_file", "arguments": "{\"path\": \"a.txt\"}"},
-              {"tool": "write_file", "arguments": "{\"path\": \"b.txt\", \"content\": \"{0}\"}"}
+              {"tool": "Read", "arguments": "{\"path\": \"a.txt\"}"},
+              {"tool": "Write", "arguments": "{\"path\": \"b.txt\", \"content\": \"{0}\"}"}
             ]}
             """.trimIndent()
         )
         assertTrue(result.isSuccess)
         val output = result.output!!
         assertTrue(output.contains("batch result (2 steps, complete)"))
-        assertTrue(output.contains("[0] read_file → ok"))
-        assertTrue(output.contains("OK[read_file:{\"path\": \"a.txt\"}]"))
+        assertTrue(output.contains("[0] Read → ok"))
+        assertTrue(output.contains("OK[Read:{\"path\": \"a.txt\"}]"))
     }
 
     @Test
-    fun `tool_batch_run rejects empty and oversized step arrays`() = runTest {
+    fun `ToolBatchRun rejects empty and oversized step arrays`() = runTest {
         val tool = ToolBatchRunTool(RecordingExecutor())
         val empty = tool.executeStructured("""{"steps": []}""")
         assertFalse(empty.isSuccess)
@@ -614,10 +614,10 @@ class NewToolsV3Test {
     // ═══ shortcut_*（模型入口）════════════════════════════════════════
 
     @Test
-    fun `shortcut_define validates registers and hot-registers the compiled tool`() = runTest {
+    fun `ShortcutDefine validates registers and hot-registers the compiled tool`() = runTest {
         val shortcutRegistry = ShortcutRegistry()
         val executor = RecordingExecutor()
-        val toolRegistry = registryWith(StubTool("web_search"), StubTool("write_file"))
+        val toolRegistry = registryWith(StubTool("WebSearch"), StubTool("Write"))
 
         val define = ShortcutDefineTool(shortcutRegistry, toolRegistry, executor)
         val definitionJson = """
@@ -630,7 +630,7 @@ class NewToolsV3Test {
                 {"name": "query", "type": "string", "required": true}
               ],
               "steps": [
-                {"tool": "web_search", "arguments": "{\"query\": \"{query}\"}"}
+                {"tool": "WebSearch", "arguments": "{\"query\": \"{query}\"}"}
               ]
             }
         """.trimIndent()
@@ -658,9 +658,9 @@ class NewToolsV3Test {
     }
 
     @Test
-    fun `shortcut_define rejects definitions referencing unknown tools`() = runTest {
+    fun `ShortcutDefine rejects definitions referencing unknown tools`() = runTest {
         val shortcutRegistry = ShortcutRegistry()
-        val toolRegistry = registryWith(StubTool("read_file"))
+        val toolRegistry = registryWith(StubTool("Read"))
         val define = ShortcutDefineTool(shortcutRegistry, toolRegistry, RecordingExecutor())
         val bad = define.executeStructured(
             """{"definition": {"id": "shortcut.probe", "name": "X", "steps": [{"tool": "ghost", "arguments": "{}"}]}}"""
@@ -671,20 +671,20 @@ class NewToolsV3Test {
     }
 
     @Test
-    fun `shortcut_list renders installed and suggestions views`() = runTest {
+    fun `ShortcutList renders installed and suggestions views`() = runTest {
         val shortcutRegistry = ShortcutRegistry()
         val recorder = ToolTraceRecorder()
         // 灌入 3 次 read→write 成功对，制造一条挖掘建议。
         repeat(3) {
-            val a = recorder.begin("read_file", "{}")
+            val a = recorder.begin("Read", "{}")
             recorder.complete(a)
-            val b = recorder.begin("write_file", "{}")
+            val b = recorder.begin("Write", "{}")
             recorder.complete(b)
         }
         val list = ShortcutListTool(shortcutRegistry, recorder)
         val suggestionsOnly = list.executeStructured("""{"view": "suggestions"}""")
         assertTrue(suggestionsOnly.isSuccess)
-        assertTrue(suggestionsOnly.output!!.contains("read_file"))
+        assertTrue(suggestionsOnly.output!!.contains("Read"))
         assertTrue(suggestionsOnly.output!!.contains("skeleton"))
 
         val installedOnly = list.executeStructured("""{"view": "installed"}""")
@@ -698,10 +698,10 @@ class NewToolsV3Test {
     }
 
     @Test
-    fun `shortcut_run executes stored definitions and reports unknown ids`() = runTest {
+    fun `ShortcutRun executes stored definitions and reports unknown ids`() = runTest {
         val shortcutRegistry = ShortcutRegistry()
         val executor = RecordingExecutor()
-        val toolRegistry = registryWith(StubTool("web_search"))
+        val toolRegistry = registryWith(StubTool("WebSearch"))
         shortcutRegistry.upsert(
             ShortcutDefinition.parse(
                 """
@@ -712,11 +712,11 @@ class NewToolsV3Test {
                   "precondition": "",
                   "params": [{"name": "query", "type": "string", "required": true}],
                   "steps": [
-                    {"tool": "web_search", "arguments": "{\"query\": \"{query}\"}"}
+                    {"tool": "WebSearch", "arguments": "{\"query\": \"{query}\"}"}
                   ]
                 }
                 """.trimIndent(),
-                setOf("web_search")
+                setOf("WebSearch")
             )
         )
         val run = ShortcutRunTool(shortcutRegistry, executor, toolRegistry)

@@ -181,7 +181,7 @@ class ShellMarkerProtocolTest {
         val eventBus = com.apex.agent.platform.terminal.events.TerminalEventBusImpl(
             eventLog, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob())
         )
-        val waitEngine = com.apex.agent.platform.terminal.wait.WaitEngineImpl(
+        val waitEngine = com.apex.agent.platform.TerminalWait.WaitEngineImpl(
             eventBus, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob())
         )
         val input = com.apex.agent.platform.terminal.io.InputManagerImpl(

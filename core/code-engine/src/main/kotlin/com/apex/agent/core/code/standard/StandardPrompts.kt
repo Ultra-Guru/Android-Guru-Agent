@@ -27,7 +27,7 @@ object StandardPrompts {
      * 工作法则（所有画像共享，拼在身份段之后）。
      *
      * 设计取舍：条目化 + 每条带"为什么"，比口号式清单更能稳定模型行为；
-     * 关键动词与既有 code_* 工具语义对齐（read → code_read 等，
+     * 关键动词与既有 code_* 工具语义对齐（read → CodeRead 等，
      * 详见 [StandardToolSurface] 的别名映射表）。
      */
     fun taskMethodology(): String = """
@@ -48,7 +48,7 @@ object StandardPrompts {
    (mark in_progress when started, completed only after verification).
    The todo list is your contract with the user — do not silently
    abandon steps.
-5. **Delegate exploration, execute changes.** Use `task` to spawn a
+5. **Delegate exploration, execute changes.** Use `Task` to spawn a
    sub-agent for read-only exploration ("where is X used?", "how does
    module Y wire Z?") or web research. Sub-agents run in an isolated
    context and return a conclusion — they keep your context small.
@@ -198,7 +198,7 @@ dedicated tools:
 Chain dependent commands with `&&`; independent commands can run as
 separate parallel tool calls. Do not separate commands with newlines.
 For open-ended exploration that may take many rounds of searching,
-delegate to a sub-agent via `task` instead of searching yourself.
+delegate to a sub-agent via `Task` instead of searching yourself.
 """.trim()
 
     // ═══════════════════════ 画像身份段 ═══════════════════════
@@ -283,7 +283,7 @@ investigation with read/search tools, then return a conclusion.
 
 Hard boundaries:
 - READ-ONLY. No edits, no shell state changes, no writes. If you catch
-  yourself wanting code_write/code_edit, stop — that is not your job.
+  yourself wanting CodeWrite/CodeEdit, stop — that is not your job.
 - Budget: you have a small turn budget. Prefer targeted grep over
   broad reads; read only the regions that matter.
 - Your FINAL message is the only thing the parent agent will see.

@@ -18,7 +18,7 @@ package com.apex.agent.core.tools.catalog
  * - **CORE** — a curated, always-exposed set (~45 ids below). These go into
  *   every request with full schemas: the agent is *capable by default*.
  * - **CATALOG** — everything else. Not in the request; discoverable through
- *   the `tool_search` / `tool_open` / `tool_list` meta-tools. `tool_open`
+ *   the `ToolSearch` / `ToolOpen` / `ToolList` meta-tools. `ToolOpen`
  *   activates a tool for the rest of the session (see [ToolActivationStore]),
  *   and the engine includes activated tools on the next iteration.
  * - **LEGACY ALIASES** — deprecated duplicate ids kept for compatibility.
@@ -28,14 +28,14 @@ object ToolTierPolicy {
 
     /** The deprecated alias ids (old flat names kept only for compat). */
     val LEGACY_ALIAS_IDS: Set<String> = setOf(
-        "terminal_exec", "terminal_send", "terminal_read",
-        "terminal_list", "terminal_signal", "terminal_close",
+        "TerminalExecLegacy", "TerminalSendLegacy", "TerminalReadLegacy",
+        "TerminalListLegacy", "TerminalSignalLegacy", "TerminalCloseLegacy",
         // #171 四族合并：旧工具 id 降为 legacy alias（类保留注册，向后兼容
         // 既有会话/技能；不再随请求下发，模型一律用合并后的新入口）。
-        "get_time", "datetime", "cron_next", "duration_convert",
-        "uuid_generate", "random_generate",
-        "regex_extract", "regex_replace",
-        "json_path", "json_transform"
+        "GetTimeLegacy", "DatetimeLegacy", "CronNextLegacy", "DurationConvertLegacy",
+        "UuidGenerateLegacy", "RandomGenerateLegacy",
+        "RegexExtractLegacy", "RegexReplaceLegacy",
+        "JsonPathLegacy", "JsonTransformLegacy"
     )
 
     /**
@@ -50,68 +50,68 @@ object ToolTierPolicy {
      */
     val CORE_TOOL_IDS: Set<String> = setOf(
         // ── interaction ──
-        "ask_user", "ask_user_choice",
+        "AskUser", "AskUserChoice",
 
         // ── files ──
-        "read_file", "write_file", "edit_file", "list_files",
-        "glob_files", "search_files", "copy_move_file", "delete_file",
+        "Read", "Write", "Edit", "ListFiles",
+        "GlobFiles", "SearchFiles", "CopyMoveFile", "DeleteFile",
 
         // ── coding (Code 模式；Agent 模式同样可见 —— 工具规则互用) ──
-        // v0.2：code_task（#147 子代理委派）与 code_check（#148 即时诊断）入 CORE。
-        "code_read", "code_edit", "code_write", "code_grep", "code_glob", "code_todo",
-        "code_task", "code_check",
+        // v0.2：CodeTask（#147 子代理委派）与 CodeCheck（#148 即时诊断）入 CORE。
+        "CodeRead", "CodeEdit", "CodeWrite", "CodeGrep", "CodeGlob", "CodeTodo",
+        "CodeTask", "CodeCheck",
 
         // ── git (v1.0 #153；经 PRoot Ubuntu 沙箱执行，两模式互用) ──
-        "code_git_status", "code_git_diff", "code_git_log", "code_git_commit", "code_git_branch",
+        "CodeGitStatus", "CodeGitDiff", "CodeGitLog", "CodeGitCommit", "CodeGitBranch",
 
         // ── web ──
-        "web_search", "web_fetch", "http_request", "download_file",
+        "WebSearch", "WebFetch", "HttpRequest", "DownloadFile",
 
         // ── browser (内置浏览器自动化 v1.5.0) ──
         // 一级大功能 ≠ 一级工具地位：24 个 browser_* 只有「Agent 零前置知识也
         // 高频用到」的 5 个入口进 CORE（打开页面 → 看页面 → 点/填 → 读内容，
         // 恰好覆盖一次网页任务的主干路径，schema 增量 ~2KB）；其余 19 个
         // （select/scroll/截图/JS 逃生舱/Cookie 等长尾动作与可观测性工具）
-        // 留在 CATALOG 走 tool_search 渐进披露 —— 与 operit 渐进激活同款哲学。
-        "browser_navigate", "browser_snapshot", "browser_click",
-        "browser_input", "browser_extract_content",
+        // 留在 CATALOG 走 ToolSearch 渐进披露 —— 与 operit 渐进激活同款哲学。
+        "BrowserNavigate", "BrowserSnapshot", "BrowserClick",
+        "BrowserInput", "BrowserExtractContent",
 
         // ── terminal (agent-native PTY; dotted ids are provider-sanitised) ──
-        // terminal.exec = one-shot structured execution（无需先建会话，
+        // TerminalExec = one-shot structured execution（无需先建会话，
         // “agent 默认能跑命令”的最短路径）。
-        "terminal.exec", "terminal.create", "terminal.run", "terminal.observe",
-        "terminal.wait", "terminal.snapshot", "terminal.backends",
+        "TerminalExec", "TerminalCreate", "TerminalRun", "TerminalObserve",
+        "TerminalWait", "TerminalSnapshot", "TerminalBackends",
 
         // ── memory (CS-Mem) ──
-        "memory_recent_episodes", "memory_search_nodes", "memory_recall_macro",
+        "MemoryRecentEpisodes", "MemorySearchNodes", "MemoryRecallMacro",
 
         // ── apps & device ──
-        "app_list", "app_info", "app_launch",
-        // #171：get_time → time（四族合并后唯一时间入口）；
-        // #172：context_recap 入 CORE —— 长会话自救的关键工具（迷路时一次
-        // 调用重建全景，无需 tool_search 两跳）。
-        "get_device_info", "time", "context_recap", "clipboard", "screenshot", "calculate",
+        "AppList", "AppInfo", "AppLaunch",
+        // #171：GetTimeLegacy → time（四族合并后唯一时间入口）；
+        // #172：ContextRecap 入 CORE —— 长会话自救的关键工具（迷路时一次
+        // 调用重建全景，无需 ToolSearch 两跳）。
+        "GetDeviceInfo", "Time", "ContextRecap", "Clipboard", "Screenshot", "Calculate",
 
         // ── MCP (first-class tools register as mcp__server__tool) ──
-        "mcp_list", "mcp_connect", "mcp_call",
+        "McpList", "McpConnect", "McpCall",
 
         // ── skills & connectors ──
-        "skill_list", "skill_search", "connector_list",
+        "SkillList", "SkillSearch", "ConnectorList",
 
         // ── catalog meta-tools (v4) ──
-        "tool_search", "tool_open", "tool_list",
+        "ToolSearch", "ToolOpen", "ToolList",
 
         // ── capability introspection（能力自省：模型的第一反动作）──
-        // capability_report：权限/环境/工具/技能/MCP 一键自省（遇 permission
+        // CapabilityReport：权限/环境/工具/技能/MCP 一键自省（遇 permission
         // denied 或「我能做 X 吗」类问题时先自省再行动，不猜不弃）；
-        // market_search：官方技能+MCP 市场检索（「没装的能力一步之遥」）。
-        "capability_report", "market_search",
+        // MarketSearch：官方技能+MCP 市场检索（「没装的能力一步之遥」）。
+        "CapabilityReport", "MarketSearch",
 
         // ── v5：agent 自主设置（让 agent 自查/自调自身配置）──
-        // agent_setting_get 入 CORE：模型应在每次会话开始就知道当前运行配置
-        // （避免"我不知道我能调多少迭代上限"的盲调）；agent_setting_set 与
+        // AgentSettingGet 入 CORE：模型应在每次会话开始就知道当前运行配置
+        // （避免"我不知道我能调多少迭代上限"的盲调）；AgentSettingSet 与
         // profile/role/preset 操作为 CATALOG（不必要时不全量入请求体）。
-        "agent_setting_get",
+        "AgentSettingGet",
     )
 
     /** @return true when [toolId] belongs to the always-exposed CORE set. */

@@ -11,7 +11,7 @@ import com.apex.agent.platform.terminal.policy.TerminalPolicyImpl
 import com.apex.agent.platform.terminal.runtime.TerminalRuntimeImpl
 import com.apex.agent.platform.terminal.screen.RealVirtualTerminal
 import com.apex.agent.platform.terminal.state.SemanticStateReducer
-import com.apex.agent.platform.terminal.wait.WaitEngineImpl
+import com.apex.agent.platform.TerminalWait.WaitEngineImpl
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob

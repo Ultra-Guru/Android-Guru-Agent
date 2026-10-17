@@ -23,7 +23,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * T87：terminal.diagnostics 工具契约 —— 会话/后端面 + exec 探针自证。
+ * T87：TerminalDiagnostics 工具契约 —— 会话/后端面 + exec 探针自证。
  */
 class TerminalDiagnosticsToolTest {
 
@@ -40,7 +40,7 @@ class TerminalDiagnosticsToolTest {
         override suspend fun create(shell: String, cwd: String, rows: Int, cols: Int, env: Map<String, String>, privilege: PrivilegeLevel, backendId: String, workspaceId: String?): Result<TerminalRuntime.CreateResult> = throw UnsupportedOperationException()
         override suspend fun run(sessionId: Long, command: String, owner: InputOwner, background: Boolean, timeoutMs: Long): Result<TerminalRuntime.RunResult> = throw UnsupportedOperationException()
         override suspend fun observe(sessionId: Long, mode: TerminalRuntime.ObserveMode, afterCursor: Long, maxBytes: Int, maxEvents: Int, scrollbackLines: Int): Result<TerminalRuntime.ObserveResult> = throw UnsupportedOperationException()
-        override suspend fun wait(sessionId: Long, condition: com.apex.agent.platform.terminal.wait.WaitCondition, timeoutMs: Long): Result<com.apex.agent.platform.terminal.wait.WaitResult> = throw UnsupportedOperationException()
+        override suspend fun wait(sessionId: Long, condition: com.apex.agent.platform.TerminalWait.WaitCondition, timeoutMs: Long): Result<com.apex.agent.platform.TerminalWait.WaitResult> = throw UnsupportedOperationException()
         override suspend fun write(sessionId: Long, owner: InputOwner, kind: TerminalRuntime.WriteKind, text: String?, key: TerminalKey?, bytes: ByteArray?): Result<TerminalRuntime.WriteResult> = throw UnsupportedOperationException()
         override suspend fun signal(sessionId: Long, signal: UnixSignal, owner: InputOwner, jobId: Long?): Result<TerminalRuntime.SignalResult> = throw UnsupportedOperationException()
         override suspend fun signalForeground(sessionId: Long, signal: UnixSignal, owner: InputOwner, jobId: Long?): Result<TerminalRuntime.SignalResult> = throw UnsupportedOperationException()
@@ -117,7 +117,7 @@ class TerminalDiagnosticsToolTest {
         val json = Json.parseToJsonElement(tool.invoke("{}")).jsonObject
 
         val next = json["nextActions"]!!.jsonArray.joinToString { it.jsonPrimitive.content }
-        assertTrue(next.contains("terminal.ubuntu.install"))
+        assertTrue(next.contains("TerminalUbuntuInstall"))
     }
 
     @Test

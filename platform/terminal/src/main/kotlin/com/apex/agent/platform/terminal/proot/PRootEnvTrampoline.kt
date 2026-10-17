@@ -98,7 +98,7 @@ object PRootEnvTrampoline {
  * 本对象把「合法 argv」固化为可执行检查，供三处消费：
  *  1. golden 单测（[PRootCommandBuilderImpl] 全路径快照）
  *  2. proot 5.1 兼容回归（[LEGACY_INCOMPATIBLE_FLAGS] 永不为空命中）
- *  3. 诊断工具运行时自检（terminal.diagnostics 的 argv 审计）
+ *  3. 诊断工具运行时自检（TerminalDiagnostics 的 argv 审计）
  *
  * T91（D5）：argv 的合法形状由能力集决定（双探针实测 —— 见 [PRootArgvCapabilities]）：
  *  - Termux 方言：`…options -- /usr/bin/env -i K=V… cmd args…`；

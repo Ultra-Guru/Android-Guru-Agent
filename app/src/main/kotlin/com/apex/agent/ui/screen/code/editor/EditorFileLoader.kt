@@ -23,7 +23,7 @@ data class EditorFile(
 /**
  * # 编辑器文件加载器（纯 Kotlin，零 Android / Compose 依赖）
  *
- * 面向 Code 屏编辑器面板的文件读取契约，与 code_read 工具同源的防线与上限：
+ * 面向 Code 屏编辑器面板的文件读取契约，与 CodeRead 工具同源的防线与上限：
  *
  * - 路径安全三级防线直接复用 [FilePathSafety.safeResolve]（core/tool-registry
  *   公共助手，app 模块已依赖）：`..` 段拒绝 + 绝对路径须落在根内 +
@@ -33,7 +33,7 @@ data class EditorFile(
  *   与 CodeReadTool.isBinary 同款阈值）→ [EditorFile.binary] = true；
  * - 按换行符切行（兼容 CRLF，行尾回车符被剥离）；流式逐行读取，只保留前
  *   maxLines 行内容，但完整数出真实总行数 —— 大文件不整载内存；
- * - 单行超 2000 字符截断并追加省略号（与 code_read 的单行上限一致）。
+ * - 单行超 2000 字符截断并追加省略号（与 CodeRead 的单行上限一致）。
  *
  * 异常契约（调用方 = CodeViewModel，catch 后写入 UI 错误态展示）：
  * - [root] 为 null → **不抛**，返回 [EditorFile] 空壳（path=入参、
@@ -45,7 +45,7 @@ data class EditorFile(
  */
 object EditorFileLoader {
 
-    /** 默认最大保留行数（与 code_read 的 MAX_LIMIT 同值）。 */
+    /** 默认最大保留行数（与 CodeRead 的 MAX_LIMIT 同值）。 */
     const val DEFAULT_MAX_LINES = 2000
 
     /** 单行最大字符数，超出截断加省略号。 */
@@ -72,7 +72,7 @@ object EditorFileLoader {
             return EditorFile(path, emptyList(), 0, truncated = false, binary = false)
         }
 
-        // 三级防线：复用 code_read 同款安全解析（.. 段 / 绝对路径逃逸 / canonical 前缀）
+        // 三级防线：复用 CodeRead 同款安全解析（.. 段 / 绝对路径逃逸 / canonical 前缀）
         val file = try {
             FilePathSafety.safeResolve(root, path)
         } catch (e: SecurityException) {
@@ -85,7 +85,7 @@ object EditorFileLoader {
             throw IllegalArgumentException("文件过大（${file.length()} 字节，上限 5MB），不支持预览")
         }
 
-        // 二进制嗅探：前 8KB 内 NUL 命中即判定；辅以不可打印占比（同 code_read）
+        // 二进制嗅探：前 8KB 内 NUL 命中即判定；辅以不可打印占比（同 CodeRead）
         if (isBinary(file)) {
             return EditorFile(path, emptyList(), 0, truncated = false, binary = true)
         }

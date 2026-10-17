@@ -15,8 +15,8 @@ package com.apex.agent.core.engine
  * 把"服务连接状态"作为**每轮注入的环境真值**告诉模型——与
  * ToolEnvironmentState 的 fail-open 哲学一致：知道的一定说，不知道的
  * 不猜。App 层实现（AndroidConnectedServicesProvider）聚合：
- * - GitHub：是否连接 + 登录名（引导用 github_get_user 验证）
- * - 连接器：启用的微信/飞书/Telegram 等（引导用 connector_list / connector_send_message）
+ * - GitHub：是否连接 + 登录名（引导用 GithubGetUser 验证）
+ * - 连接器：启用的微信/飞书/Telegram 等（引导用 ConnectorList / ConnectorSendMessage）
  *
  * 引擎侧仅消费 [connectedServicesSummary] 的字符串，保持 core 模块
  * 零 Android 依赖（实现类在 app 模块，经 Hilt 注入）。
@@ -30,9 +30,9 @@ interface ConnectedServicesProvider {
      *
      * ```
      * GitHub: CONNECTED as octocat — github_* tools are ready.
-     *   Verify anytime with github_get_user; list repos with github_list_repos.
+     *   Verify anytime with GithubGetUser; list repos with GithubListRepos.
      * Messaging connectors: feishu (configured), telegram (configured).
-     *   Use connector_list then connector_send_message to send messages.
+     *   Use ConnectorList then ConnectorSendMessage to send messages.
      * ```
      */
     fun connectedServicesSummary(): String?
@@ -46,7 +46,7 @@ interface ConnectedServicesProvider {
      * them directly"，但 github_* 不在 ToolTierPolicy.CORE_TOOL_IDS、也不在
      * 会话激活集 → 请求的 tools 数组里**根本没有这些函数**。OpenAI 兼容
      * provider 对未声明的函数调用一律拒绝（"tool not found" / 参数校验失败），
-     * 弱模型也不会主动走 tool_search → tool_open 两跳 —— 表现即用户反馈的
+     * 弱模型也不会主动走 ToolSearch → ToolOpen 两跳 —— 表现即用户反馈的
      * "GitHub 密钥连接没有一点作用，agent 根本不会直接使用"。
      *
      * 引擎把这些 id 并入本轮工具计划（与 CORE 同待遇进请求），让

@@ -19,7 +19,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * `csv_query` — 在内存中对原始 CSV 文本做 查询/过滤/投影/排序。
+ * `CsvQuery` — 在内存中对原始 CSV 文本做 查询/过滤/投影/排序。
  *
  * Why: agent 工作流里 CSV 无处不在（导出的报告、HTTP 响应、日志、粘贴的表格）。
  * v1 路径要么把数据丢给 shell 里的 `awk`/`python`（每问一次就过一次命令门禁，
@@ -37,7 +37,7 @@ import kotlin.math.min
  * - 列名拼错 → INVALID_ARGUMENT 并列出全部合法列名，让模型一次修正成功。
  */
 class CsvQueryTool : BaseTool(
-    id = "csv_query",
+    id = "CsvQuery",
     name = "CSV Query",
     description = """
         Filter / project / sort raw CSV text in-memory (no shell, no awk).
@@ -381,7 +381,7 @@ class CsvQueryTool : BaseTool(
 }
 
 /**
- * `base_convert` — 任意精度进制转换（2..36）。
+ * `BaseConvert` — 任意精度进制转换（2..36）。
  *
  * Why: 十六进制↔十进制↔二进制是模型最容易算错的算术之一（长数字必然错），
  * 而且真实任务常常超出 Long 范围（session id、哈希前缀、IPv6 段）。用
@@ -397,7 +397,7 @@ class CsvQueryTool : BaseTool(
  * - 非法数字 → INVALID_ARGUMENT，点名的非法字符 + 使用的进制。
  */
 class BaseConvertTool : BaseTool(
-    id = "base_convert",
+    id = "BaseConvert",
     name = "Base Convert",
     description = """
         Convert numbers between bases 2..36 with arbitrary precision (BigInteger).
@@ -516,7 +516,7 @@ class BaseConvertTool : BaseTool(
 }
 
 /**
- * `string_distance` — 三个标准字符串距离算法（纯 Kotlin 实现）。
+ * `StringDistance` — 三个标准字符串距离算法（纯 Kotlin 实现）。
  *
  * Why: 模糊匹配是 agent 的高频需求——去重（"这两个名字是不是同一个人？"）、
  * 拼写纠错（用户输入 vs 词表）、日志对齐。让模型"目测"相似度毫无确定性；把
@@ -533,7 +533,7 @@ class BaseConvertTool : BaseTool(
  * similarity 就是 JW 分数本身，distance 显示 1 − JW（保留小数）。
  */
 class StringDistanceTool : BaseTool(
-    id = "string_distance",
+    id = "StringDistance",
     name = "String Distance",
     description = """
         Edit distance / similarity between two strings (pure computation).
@@ -706,7 +706,7 @@ class StringDistanceTool : BaseTool(
 }
 
 /**
- * `random_generate` — 确定性/密码学随机的采样器。
+ * `RandomGenerateLegacy` — 确定性/密码学随机的采样器。
  *
  * Why: 模型不能"掷骰子"——让它编随机数、随机字符串、测试 token，得到的都是
  * 有模式的伪随机（且它会编得很自信）。真随机必须来自运行时：
@@ -720,7 +720,7 @@ class StringDistanceTool : BaseTool(
  * 每个值一行。float 生成于（含 min、不含 max）的半开区间、固定 6 位小数；int 是闭区间。
  */
 class RandomGenerateTool : BaseTool(
-    id = "random_generate",
+    id = "RandomGenerateLegacy",
     name = "Random Generate",
     description = """
         Random values from real entropy (SecureRandom by default; seeded Random for reproducibility).

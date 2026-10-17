@@ -52,7 +52,7 @@ class EnvironmentRepairService(
         //  rootfs 维度（CORRUPTED/INVALID/REMOVED）→ provisioner.repair()
         //  apt 维度（dpkg interrupted/locked）→ aptManager.repair()（dpkg --configure -a）
         //  bootstrap 维度（FAILED/INCOMPLETE）→ SKIPPED（bootstrap 是显式长流程，
-        //    Agent 应调 terminal.linux.bootstrap —— 自动 repair 不触发大下载）
+        //    Agent 应调 TerminalLinuxBootstrap —— 自动 repair 不触发大下载）
         for (dim in dimensions) {
             if (!dim.repairable) continue
             when (dim.name) {

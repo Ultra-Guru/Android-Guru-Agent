@@ -52,7 +52,7 @@ data class PermissionSnapshot(
  * 线程安全：会话记忆用并发 Map；decide 纯函数；本门可被任意线程 /
  * 任意协程并发调用（引擎会并行派发工具调用）。
  *
- * @param gateway 用户询问通道（复用 ask_user_choice 的既有对话框）。
+ * @param gateway 用户询问通道（复用 AskUserChoice 的既有对话框）。
  * @param settingsProvider 每次检查现取权限快照（设置热生效的关键）。
  * @param clock 会话授权时间戳来源（默认系统时钟；测试可注入固定值）。
  * @param strings 弹窗文案源（#208：默认中文兜底，生产由 DI 注入资源版

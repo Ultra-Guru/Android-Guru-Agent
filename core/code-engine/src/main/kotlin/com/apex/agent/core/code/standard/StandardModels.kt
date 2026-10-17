@@ -131,8 +131,8 @@ data class StandardPermissionRule(
  * 单次工具调用的权限决策（含归因——可解释性与测试断言用）。
  *
  * @param effect 最终效应
- * @param reason 归因说明（"规则 code_edit* → ALLOW" / "DEFAULT 模式兜底 → ASK"
- *   / "会话记忆 code_write 本次会话总允许"…）
+ * @param reason 归因说明（"规则 CodeEdit* → ALLOW" / "DEFAULT 模式兜底 → ASK"
+ *   / "会话记忆 CodeWrite 本次会话总允许"…）
  */
 data class StandardPermissionDecision(
     val effect: StandardPermissionEffect,

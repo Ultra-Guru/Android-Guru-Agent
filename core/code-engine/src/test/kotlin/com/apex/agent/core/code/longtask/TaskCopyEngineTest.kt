@@ -45,7 +45,7 @@ class TaskCopyEngineTest {
             LongTaskCheckpoint(
                 id = "cp-1", atIteration = 5, timestamp = 3000L,
                 toolCallCount = 8, filesTouchedCount = 1,
-                recentExchange = listOf("用户: 把 Volley 迁移到 OkHttp", "工具 code_edit ✓"),
+                recentExchange = listOf("用户: 把 Volley 迁移到 OkHttp", "工具 CodeEdit ✓"),
                 todoDigest = listOf("☐ 迁移 Client")
             )
         )
@@ -65,7 +65,7 @@ class TaskCopyEngineTest {
         toolCalls = 35,
         durationMs = 480_000L,
         filesTouched = listOf("net/Api.kt", "net/Client.kt", "net/Repo.kt"),
-        toolsUsed = mapOf("code_edit" to 20, "code_check" to 15),
+        toolsUsed = mapOf("CodeEdit" to 20, "CodeCheck" to 15),
         errorMessage = "两个测试未通过",
         summary = "迁移完成 80%，余下两个集成测试未过。",
         checkpoints = checkpoints,

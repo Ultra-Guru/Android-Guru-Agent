@@ -41,5 +41,14 @@
     <string name="browser_screen_hand_back">交还 Agent</string>
     <!-- 底部说明卡 -->
     <string name="browser_screen_builtin_title">浏览器自动化已内置</string>
-    <string name="browser_screen_builtin_desc">24 个 browser_* 工具随 App 内置（v1.5.0 起非插件）——在 Agent 对话中直接指挥它打开网页、点击、输入、截图。浏览器被使用后会出现悬浮球，点击可展开完整浮窗浏览器。</string>
+    <string name="browser_screen_builtin_desc">24 个 browser_* 工具随 App 内置（v1.5.0 起非插件）——在 Agent 对话中直接指挥它打开网页、点击、输入、截图。Agent 使用浏览器时会自动弹出透明实时页面悬浮窗；点悬浮球可查看或收起，长按结束会话。</string>
+
+    <!-- 实时页面卡（v1.4.1：LiveViewOverlay 入口） -->
+    <string name="browser_screen_live_title">实时页面</string>
+    <string name="browser_screen_live_view">查看实时页面</string>
+    <string name="browser_screen_live_open">打开浏览器</string>
+    <string name="browser_screen_live_desc_idle">Agent 使用浏览器时会自动弹出透明悬浮窗，实时显示它正在开的页面；你也可以现在就打开浏览器自己操作。</string>
+    <string name="browser_screen_live_desc_driving">Agent 正在自动浏览——实时悬浮窗已弹出，点悬浮球可随时查看或收起。</string>
+    <string name="browser_screen_live_desc_handoff">人工接管中——全屏浏览器浮窗已展开，可直接操作。</string>
+    <string name="browser_screen_live_desc_recovering">渲染进程重建中——实时画面稍后自动恢复。</string>
 </resources>

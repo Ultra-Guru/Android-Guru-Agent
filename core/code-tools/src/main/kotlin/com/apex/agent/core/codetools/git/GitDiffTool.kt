@@ -8,7 +8,7 @@ import com.apex.agent.core.tools.builtin.BaseTool
 import com.apex.agent.core.tools.toolSchema
 
 /**
- * # code_git_diff — 差异视图（经 PRoot Ubuntu 沙箱执行）
+ * # CodeGitDiff — 差异视图（经 PRoot Ubuntu 沙箱执行）
  *
  * 输出统一 diff（unified diff）原文——UI 侧 Code 屏已有 DiffOutput 渲染器
  * （+ 行绿色 / - 行红色，逐行等宽着色），本工具只负责产出纯文本 diff：
@@ -24,7 +24,7 @@ import com.apex.agent.core.tools.toolSchema
 class GitDiffTool(
     private val runner: GitCommandRunner
 ) : BaseTool(
-    id = "code_git_diff",
+    id = "CodeGitDiff",
     name = "Code Git Diff",
     description = """
         Show pending changes as a unified diff of the active workspace.

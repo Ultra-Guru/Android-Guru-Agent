@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * - 每技能 manifest 的 promptInjection 只有在其 id 进入激活集后才注入
  *   系统提示词（见 [SkillRegistry.getActivePromptInjections]）；
  * - 激活来源三路：
- *   1. 模型调用 `skill_activate(skill_id)` 工具（[SkillActivateTool]，
+ *   1. 模型调用 `SkillActivate(skill_id)` 工具（[SkillActivateTool]，
  *      工具结果即时返回全文，后续轮次持续注入）；
  *   2. 用户斜杠指令 `/skill:<id>`（app 层接线时同步激活）；
  *   3. [SkillAutoActivator] 按用户消息与技能 tags 的字面命中自动装备；

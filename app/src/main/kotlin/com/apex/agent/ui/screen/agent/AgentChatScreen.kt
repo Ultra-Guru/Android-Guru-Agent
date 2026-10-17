@@ -222,7 +222,7 @@ fun AgentChatScreen(
         }
     }
 
-    // 修复：列表总项数统一计算（原漏计 Plan 确认 / Spec 确认 / ask_user 对话框三项，
+    // 修复：列表总项数统一计算（原漏计 Plan 确认 / Spec 确认 / AskUser 对话框三项，
     // 出现时自动滚动定位到对话框上方；FAB 回底同样用此值）。
     // P3-i（6-c）：UserInputDialog 已提升到屏级（不再占列表项），去掉 pendingUserInput
     // 计数，修复 off-by-one（原自动滚动目标索引多 1，仅靠 clamp 兼底）。
@@ -881,7 +881,7 @@ fun AgentChatScreen(
         }
     }
 
-    // ═══ ask_user 模态对话框（Agent 请求用户输入）═══
+    // ═══ AskUser 模态对话框（Agent 请求用户输入）═══
     // 修复：原挂在 LazyColumn item 内，滚动出视口即被销毁——用户填一半的答案丢失；
     // 提升到屏幕层级与生命周期解耦，只要 pendingUserInput 存在就常驻。
     uiState.pendingUserInput?.let { request ->

@@ -2,6 +2,8 @@ package com.apex.agent.platform.browser.di
 
 import android.content.Context
 import com.apex.browser.chrome.BrowserOverlay
+import com.apex.browser.chrome.LiveViewOverlay
+import com.apex.browser.chrome.LiveViewOverlayFactory
 import com.apex.browser.chrome.bridge.ApexChromeWiring
 import com.apex.browser.chrome.bridge.ApexChromeWiringFactory
 import com.apex.browser.chrome.BrowserOverlayFactory
@@ -27,6 +29,8 @@ import javax.inject.Singleton
  * - [BrowserEngine]：无头自动化引擎（ToolModule 的 BrowserAgentTools 消费）
  * - [ApexChromeWiring]：引擎 ↔ chrome 接线器（浮窗链式 client / 弹窗路由）
  * - [BrowserOverlay]：完整浏览器浮窗（WAITING_HUMAN 时自动展开）
+ * - [LiveViewOverlay]（v1.4.0）：透明实时页面悬浮窗——AGENT_DRIVING 自动弹出，
+ *   点悬浮球/浏览器功能页「查看实时页面」切换；GHOST 无头宿主保 WebView 测量
  *
  * 视觉挂钩（BrowserVisualHook）：霓虹球等宿主视觉装饰仍走
  * CyberNeonBallManager 自己订阅 BrowserUiCallback 的旧链路（行为零变化）；
@@ -59,4 +63,12 @@ object BrowserKitModule {
         engine: BrowserEngine,
         wiring: ApexChromeWiring,
     ): BrowserOverlay = BrowserOverlayFactory.get(ctx, engine, wiring)
+
+    /** v1.4.0：实时页面悬浮窗（透明卡片，AGENT_DRIVING 自动弹出）。 */
+    @Provides
+    @Singleton
+    fun provideLiveViewOverlay(
+        @ApplicationContext ctx: Context,
+        engine: BrowserEngine,
+    ): LiveViewOverlay = LiveViewOverlayFactory.get(ctx, engine)
 }

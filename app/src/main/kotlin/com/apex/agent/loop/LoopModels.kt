@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
  * LOOP 模式的三种子形态（[LoopKind]）：
  * - INTERVAL：固定间隔重复（每 N 毫秒一轮，下限 [LoopModels.MIN_INTERVAL_MS]）；
  * - CRON：标准 5 字段 Vixie cron（分 时 日 月 周），解析复用 core 侧
- *   [com.apex.agent.core.tools.builtin.VixieCron]（cron_next 工具同源，绝不复制逻辑）；
+ *   [com.apex.agent.core.tools.builtin.VixieCron]（CronNextLegacy 工具同源，绝不复制逻辑）；
  * - ONCE：一次性提醒（triggerAt 到点触发一轮后自动停用）。
  *
  * 设计决策（KDoc 留档，见 LoopScheduler）：

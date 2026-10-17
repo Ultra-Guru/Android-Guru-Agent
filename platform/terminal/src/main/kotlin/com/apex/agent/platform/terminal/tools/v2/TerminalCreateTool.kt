@@ -11,7 +11,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Agent tool: terminal.create
+ * Agent tool: TerminalCreate
  *
  * Spec ref: ATR 2.0 Final Spec §34.1 + T73 backend routing
  *
@@ -28,22 +28,22 @@ import kotlinx.serialization.json.jsonPrimitive
  *     backendId: string, runtimeType: string, rootfsId?: string, guestCwd?: string,
  *     workspaceId?: string }
  * Errors: PtyUnavailable, InvalidInput, PermissionDenied, BackendNotFound,
- *         RootfsNotReady（先调 terminal.ubuntu.install）, BackendFailed,
+ *         RootfsNotReady（先调 TerminalUbuntuInstall）, BackendFailed,
  *         WorkspaceError:InvalidId（workspaceId 非法）
  */
 class TerminalCreateTool(
     private val runtime: TerminalRuntime
 ) : TerminalTool {
-    override val id: String = "terminal.create"
+    override val id: String = "TerminalCreate"
     override val name: String = id
     override val description: String = """
         Create a long-lived terminal Session (PTY + shell). A Session is a workspace, not a single
         command. Returns sessionId for subsequent run/observe/wait/write calls.
         backend="local" runs the Android shell; backend="linux-ubuntu" runs Ubuntu 24.04 via PRoot
-        (requires the rootfs to be installed — check terminal.backends, install via terminal.ubuntu.install).
+        (requires the rootfs to be installed — check TerminalBackends, install via TerminalUbuntuInstall).
         For linux-ubuntu, workspaceId selects an isolated file area bound to guest /workspace
         (persists across sessions; unknown valid ids are auto-created; default: "default" —
-        manage via terminal.workspaces).
+        manage via TerminalWorkspaces).
     """.trimIndent()
 
     override val parametersSchema: String = """

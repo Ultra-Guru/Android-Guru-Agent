@@ -12,7 +12,7 @@ import com.apex.agent.core.tools.builtin.BaseTool
 import com.apex.agent.core.tools.toolSchema
 
 /**
- * `context_recap` — 会话回顾摘要（#172 上下文回顾三件套之一，CORE 层）。
+ * `ContextRecap` — 会话回顾摘要（#172 上下文回顾三件套之一，CORE 层）。
  *
  * 长会话自救的关键工具：历史被压缩器裁剪、或模型在几十轮工具调用后
  * "迷路"（忘了用户最初要什么、做过什么、错在哪）时，一次调用重建结构化
@@ -32,7 +32,7 @@ import com.apex.agent.core.tools.toolSchema
 class ContextRecapTool(
     private val context: SessionContextProvider
 ) : BaseTool(
-    id = "context_recap",
+    id = "ContextRecap",
     name = "Session Context Recap",
     description = """
         Structured recap of the current conversation — recover the big picture

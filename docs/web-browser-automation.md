@@ -10,7 +10,7 @@
 | 能力 | Operit 实现 |
 | --- | --- |
 | 内置浏览器 | 基于 `android.webkit.WebView`，自维护 `TabManager`（多标签）、`HistoryManager`、`BookmarkManager`、`DownloadManager`、`UserScriptManager` |
-| 浏览器 Agent | `BrowserAgent` + `BrowserTools`：把当前页面 DOM 树（`DomParser`）精简成带 `data-bid` 索引的交互元素列表，Agent 通过 `click_element` / `input_text` / `scroll` / `navigate` / `go_back` 直接操作 DOM 级节点 |
+| 浏览器 Agent | `BrowserAgent` + `BrowserTools`：把当前页面 DOM 树（`DomParser`）精简成带 `data-bid` 索引的交互元素列表，Agent 通过 `click_element` / `InputText` / `scroll` / `navigate` / `go_back` 直接操作 DOM 级节点 |
 | 视觉补充 | 截图 + OCR / 视觉模型理解渲染结果 |
 | 扩展 | 用户脚本注入（`UserScriptManager`）、局域网穿透（`lan.md`）让桌面接管浏览器 |
 
@@ -40,19 +40,19 @@ core:tool-registry/browser/
 
 1. **DOM 级 + 坐标兜底双通道**：`DomElement` 保留 `rect` / `isVisible`，既能按 `bid` 精确 `el.click()`，也能在必要时用 `UiTools` 坐标兜底；Operit 仅依赖 DOM。
 2. **LLM 摘要压缩**：`DomParser.buildSummary` 按 token 预算裁剪深层非交互节点为 `[折叠 N 项]`，避免把整页灌进 prompt（Operit 的 `DomParser` 仅做扁平化）。
-3. **复用现有特权/无障碍体系**：`browser_click` 失败可自然回落到 `UiTapTool`（AccessibilityService），形成"浏览器内 DOM → 全屏坐标"的降级链。
-4. **双模态理解**：`browser_snapshot`（结构化 DOM）+ `browser_screenshot`（PNG base64）可同时进 prompt，既省 token 又保视觉保真。
+3. **复用现有特权/无障碍体系**：`BrowserClick` 失败可自然回落到 `UiTapTool`（AccessibilityService），形成"浏览器内 DOM → 全屏坐标"的降级链。
+4. **双模态理解**：`BrowserSnapshot`（结构化 DOM）+ `BrowserScreenshot`（PNG base64）可同时进 prompt，既省 token 又保视觉保真。
 
 ### 工具清单（6 个，注册进 ToolRegistry）
 
 | 工具 | 作用 |
 | --- | --- |
-| `browser_navigate` | 打开 URL（可新标签），返回加载后页面概要 |
-| `browser_snapshot` | 抓当前页 DOM 结构化快照（带稳定 `bid`） |
-| `browser_click` | 按 `bid` 精确点击（DOM 级） |
-| `browser_input` | 向 `bid` 输入框填文本 |
-| `browser_scroll` | 页面滚动 |
-| `browser_screenshot` | 整页截图 PNG base64 |
+| `BrowserNavigate` | 打开 URL（可新标签），返回加载后页面概要 |
+| `BrowserSnapshot` | 抓当前页 DOM 结构化快照（带稳定 `bid`） |
+| `BrowserClick` | 按 `bid` 精确点击（DOM 级） |
+| `BrowserInput` | 向 `bid` 输入框填文本 |
+| `BrowserScroll` | 页面滚动 |
+| `BrowserScreenshot` | 整页截图 PNG base64 |
 
 ## 4. 接入方式（零侵入）
 
@@ -63,12 +63,12 @@ core:tool-registry/browser/
 ## 5. 使用流程（Agent 视角）
 
 ```
-1. browser_navigate {"url":"https://example.com"}
-2. browser_snapshot          → 拿到带 bid 的元素列表
-3. browser_input   {"bid":3,"text":"查询词"}
-4. browser_click   {"bid":7} → 提交/进入
-5. browser_screenshot        → 视觉确认渲染/验证码
-6. browser_scroll  {"delta_y":600} → 翻看下方
+1. BrowserNavigate {"url":"https://example.com"}
+2. BrowserSnapshot          → 拿到带 bid 的元素列表
+3. BrowserInput   {"bid":3,"text":"查询词"}
+4. BrowserClick   {"bid":7} → 提交/进入
+5. BrowserScreenshot        → 视觉确认渲染/验证码
+6. BrowserScroll  {"delta_y":600} → 翻看下方
 ```
 
 ## 6. 后续可增强（路线图）

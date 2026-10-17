@@ -301,7 +301,7 @@ internal class AttachmentManager(
         // ── 安全（路径逃逸防御）：文件名消毒 ──
         // ContentProvider 的 DISPLAY_NAME 未消毒直接拼 File(dir, "${ts}_$name")：
         // 名称含 "/" 或 "../" 时可把副本写到 attachments 目录之外（应用沙箱内
-        // 任意路径，如 shared_prefs / databases —— 可被后续 read_file 读回）。
+        // 任意路径，如 shared_prefs / databases —— 可被后续 Read 读回）。
         // 与 PredictiveAttachmentPreprocessor 同口径：仅保留最后一段 + 剥控制字符。
         val safeName = fileName.substringAfterLast('/')
             .replace(Regex("[\\\\/:*?\"<>|\\x00-\\x1F]"), "_")

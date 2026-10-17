@@ -69,10 +69,10 @@ object LlmModule {
         // 自动选择原生搜索策略；未知端点解析为 OFF，永不发送非标准参数）。关闭
         // 时保持 Profile 自身设置不变。
         //
-        // 根因修复：旧版开关只注入提示词求模型调 web_search 工具（依赖 DDG
+        // 根因修复：旧版开关只注入提示词求模型调 WebSearch 工具（依赖 DDG
         // 抓取、经常空结果），模型内置联网能力（OpenAI web_search_options /
-        // DashScope enable_search / Zhipu web_search / OpenRouter :online /
-        // Anthropic web_search）从未被启用。现在开关同时驱动原生搜索。
+        // DashScope enable_search / Zhipu WebSearch / OpenRouter :online /
+        // Anthropic WebSearch）从未被启用。现在开关同时驱动原生搜索。
         fun applyToggle(profiles: List<ModelProfile>, enabled: Boolean): List<ModelProfile> =
             if (enabled) profiles.map { it.copy(webSearch = WebSearchMode.AUTO) } else profiles
 

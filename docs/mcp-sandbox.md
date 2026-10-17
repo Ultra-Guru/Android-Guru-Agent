@@ -21,7 +21,7 @@ MCP 官方生态里绝大多数 server 是**本地命令**（`command` + `args`�
 | 入口 | 用法 |
 | --- | --- |
 | 市场页添加对话框 | 「市场 · MCP · 添加工具源」选**本地命令**形态，出现「在 PRoot 沙箱中运行」开关。rootfs 就绪时默认开启；未就绪时开关禁用并提示「需先安装 Ubuntu 环境」 |
-| Agent 工具 `mcp_connect` | 参数加 `"run_in_sandbox": true`（可选，默认 false）。Android 上 STDIO 建议开启 —— 宿主没有 npx/node |
+| Agent 工具 `McpConnect` | 参数加 `"run_in_sandbox": true`（可选，v5 起默认 true；显式 false 才走宿主进程）。Android 上 STDIO 建议开启 —— 宿主没有 npx/node |
 | 批量导入配置 | 社区通用 `{"mcpServers": {...}}` JSON 的条目里写 `"runInSandbox": true`（严格 Boolean，缺失落 false） |
 
 ## 预置服务器清单
@@ -45,7 +45,7 @@ App 启动时**幂等预置**以下条目（`enabled=false`，只预置不连接
 
 ## rootfs 前置条件
 
-1. 终端页安装 Ubuntu（`terminal.ubuntu.install`），或设置里初始化；
+1. 终端页安装 Ubuntu（`TerminalUbuntuInstall`），或设置里初始化；
 2. 沙箱内需有 nodejs/npm：完整 rootfs（`scripts/build_full_rootfs.sh` 构建，
    已预装 nodejs/npm 并 **npm 全局预装上述三个 server**）开箱即用；最小
    rootfs 需手动 `apt install -y nodejs npm`。
@@ -71,7 +71,7 @@ App 启动时**幂等预置**以下条目（`enabled=false`，只预置不连接
 | 形态 | 进程内 transport（App 代码直接应答 JSON-RPC） | rootfs 内真实子进程 |
 | 依赖 | 无（随 App 分发） | Ubuntu rootfs + nodejs |
 | 生态 | 仅 App 预置的几台（github/search/fs/memory/thinking） | 任何 npm 上的 MCP server |
-| 用户可建 | 否（工厂未注册会报错） | 是（对话框/导入/mcp_connect 三入口） |
+| 用户可建 | 否（工厂未注册会报错） | 是（对话框/导入/McpConnect 三入口） |
 | 预置方式 | `ensureBuiltinServer`（启动即自动连接） | `ensureSandboxServer`（只预置，手动启用） |
 
 一句话：BUILTIN 是「App 能力的 MCP 协议化」，沙箱 STDIO 是「整个 npm

@@ -40,8 +40,8 @@ NOT_INSTALLED ──install──▶ INSTALLING ──▶ ROOTFS_READY ──boo
 - 不新建第二套 Provisioner/PackageManager/RootfsManager —— bootstrap/probe/repair
   以**函数端口**注入（生产 DI 适配既有单例；JVM 测试注入 fake）；
 - 状态派生而非复制：`rootfsState/bootstrapState` 直接取底层当前值；
-- 既有细粒度工具（terminal.ubuntu.install / terminal.linux.bootstrap /
-  terminal.linux.capabilities / terminal.linux.repair）**全部保留**，ensure 是聚合
+- 既有细粒度工具（TerminalUbuntuInstall / TerminalLinuxBootstrap /
+  TerminalLinuxCapabilities / TerminalLinuxRepair）**全部保留**，ensure 是聚合
   入口，不是替代。
 
 ## 3. 接线（5 处产品层断点修复）
@@ -49,7 +49,7 @@ NOT_INSTALLED ──install──▶ INSTALLING ──▶ ROOTFS_READY ──boo
 1. **TerminalModule**（DI）：`provideUbuntuLifecycleCoordinator` @Singleton ——
    适配 UbuntuBootstrapManager（Result 六分支归一化）/ LinuxCapabilityProbe /
    EnvironmentRepairService / bootstrap progress Flow；
-2. **ToolModule**：注册 `terminal.ubuntu.ensure`（一键拉起）+ `terminal.ubuntu.status`
+2. **ToolModule**：注册 `TerminalUbuntuEnsure`（一键拉起）+ `TerminalUbuntuStatus`
    （只读快照，零动作）——Agent 决策字段：status/phase/failedStage/retryable/
    capabilities；
 3. **EnvironmentProvisioner**：新增 `ensureUbuntuSession()` —— DepCatalog 的 apt

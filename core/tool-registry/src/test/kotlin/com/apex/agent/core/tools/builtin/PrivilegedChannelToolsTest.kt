@@ -14,7 +14,7 @@ import java.io.File
  * - #239：`screenshot` 工具接特权链（无障碍 API 30+ → root screencap）——
  *   旧行为恒走裸 shell，无障碍开启但无 root 的设备截图永远失败。锁死：
  *   特权成功直接落盘、特权失败回退 shell、双失败并列上报。
- * - #240：`ui_notifications` 工具（open/close）—— a11y 语义通道优先，
+ * - #240：`UiNotifications` 工具（open/close）—— a11y 语义通道优先，
  *   shell 回退走 `cmd statusbar`（绝不 keyevent 26 电源键）。
  */
 class PrivilegedChannelToolsTest {
@@ -78,7 +78,7 @@ class PrivilegedChannelToolsTest {
         assertTrue(result, result.startsWith("OK: Screenshot saved"))
     }
 
-    // ═══════════════════════ #240 ui_notifications ═══════════════════════
+    // ═══════════════════════ #240 UiNotifications ═══════════════════════
 
     /** 记录型手势通道（a11y 就绪）。 */
     private class RecordingUiProvider(private val available: Boolean = true) : UiInteractionProvider {
@@ -92,7 +92,7 @@ class PrivilegedChannelToolsTest {
     }
 
     @Test
-    fun `ui_notifications open routes semantic gesture when a11y available`() = runTest {
+    fun `UiNotifications open routes semantic gesture when a11y available`() = runTest {
         val provider = RecordingUiProvider()
         val tool = UiNotificationsTool(shellExecutor = { fail("a11y 就绪不得走 shell") }, uiProvider = provider)
         val result = tool.execute("{}")
@@ -101,7 +101,7 @@ class PrivilegedChannelToolsTest {
     }
 
     @Test
-    fun `ui_notifications close routes close gesture`() = runTest {
+    fun `UiNotifications close routes close gesture`() = runTest {
         val provider = RecordingUiProvider()
         val tool = UiNotificationsTool(shellExecutor = { fail("a11y 就绪不得走 shell") }, uiProvider = provider)
         val result = tool.execute("{\"action\":\"close\"}")
@@ -110,7 +110,7 @@ class PrivilegedChannelToolsTest {
     }
 
     @Test
-    fun `ui_notifications shell fallback uses cmd statusbar never keyevent 26`() = runTest {
+    fun `UiNotifications shell fallback uses cmd statusbar never keyevent 26`() = runTest {
         val commands = mutableListOf<String>()
         val tool = UiNotificationsTool(
             shellExecutor = { cmd -> commands += cmd; "" },
@@ -126,7 +126,7 @@ class PrivilegedChannelToolsTest {
     }
 
     @Test
-    fun `ui_notifications rejects invalid action argument`() = runTest {
+    fun `UiNotifications rejects invalid action argument`() = runTest {
         val tool = UiNotificationsTool(shellExecutor = { "" })
         val result = tool.execute("{\"action\":\"toggle\"}")
         assertTrue(result, result.startsWith("Error:"))

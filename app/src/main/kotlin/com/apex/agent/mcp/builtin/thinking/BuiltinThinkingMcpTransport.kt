@@ -120,7 +120,7 @@ class BuiltinThinkingMcpTransport : McpTransportHandle {
         }
     }
 
-    /** MCP 标准 text 结果（isError 会被 McpClient → mcp_call 透传为工具错误）。 */
+    /** MCP 标准 text 结果（isError 会被 McpClient → McpCall 透传为工具错误）。 */
     private fun textResult(text: String, isError: Boolean = false): JsonObject = buildJsonObject {
         putJsonArray("content") {
             add(buildJsonObject {

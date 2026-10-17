@@ -36,12 +36,16 @@ object McpServerCatalog {
 
     /** 合法分类文件名（也是 [McpCatalogEntry.category] 的取值域）。 */
     val CATEGORY_ORDER: List<String> = listOf(
-        "official", "web-search", "browser", "database", "git", "cloud",
-        "observability", "docs", "productivity", "desktop", "finance",
-        "design", "communication", "location", "data", "remote"
+        "Official", "WebSearch", "Browser", "Database", "Git", "Cloud",
+        "Observability", "Docs", "Productivity", "Desktop", "Finance",
+        "Design", "Communication", "Location", "Data", "Remote"
     )
 
-    private val ID_REGEX = Regex("^[a-z0-9][a-z0-9-]{1,48}$")
+    /**
+     * v5：条目 id 改无分隔符 PascalCase（`Fetch` / `ServerGithub`）。为兼容
+     * 仍带 kebab 的第三方目录文件，正则继续接受 `-`，但不再接受 `_`。
+     */
+    private val ID_REGEX = Regex("^[A-Za-z0-9][A-Za-z0-9-]{1,48}$")
 
     // ═══ 数据模型 ═══
 
@@ -56,7 +60,7 @@ object McpServerCatalog {
     /**
      * 一条精选服务器条目。
      *
-     * @param id 目录内唯一标识（安装默认名，全小写连字符）
+     * @param id 目录内唯一标识（安装默认名，无分隔符 PascalCase）
      * @param transport STDIO（本地命令）/ HTTP / SSE（远端）
      * @param command STDIO 可执行文件（null 仅远端条目）
      * @param url 远端端点（null 仅 STDIO 条目）
@@ -141,7 +145,7 @@ object McpServerCatalog {
         val seen = HashSet<String>()
         for (e in entries) {
             fun issue(reason: String) { issues += CatalogIssue(e.id, reason) }
-            if (!ID_REGEX.matches(e.id)) issue("id 非法：'${e.id}'（小写字母/数字/连字符，2-49 位）")
+            if (!ID_REGEX.matches(e.id)) issue("id 非法：'${e.id}'（字母/数字开头，2-49 位，禁止下划线）")
             if (!seen.add(e.id)) issue("id 重复：'${e.id}'")
             if (e.name.isBlank()) issue("name 为空")
             if (e.transport !in listOf(McpTransport.STDIO, McpTransport.HTTP, McpTransport.SSE)) {

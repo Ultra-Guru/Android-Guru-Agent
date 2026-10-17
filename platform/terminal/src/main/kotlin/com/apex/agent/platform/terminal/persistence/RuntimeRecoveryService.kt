@@ -31,9 +31,9 @@ import java.io.File
  *        The SemanticState is reconstructed from metadata; cursor = last persisted.
  *      - If the pid IS alive but we lost the fd → mark BROKEN (cannot reattach in v1).
  *        User must close + recreate.
- *      - Reconstruct the SemanticStateReducer from the record (so terminal.snapshot() returns
+ *      - Reconstruct the SemanticStateReducer from the record (so TerminalSnapshot() returns
  *        the recovered session even though the PTY is gone).
- *   3. terminal.snapshot() now returns recovered sessions for Agent context rebuilding.
+ *   3. TerminalSnapshot() now returns recovered sessions for Agent context rebuilding.
  *     （#223：第 3 步是真实现 —— 恢复视图登记进 [recoveredViews]，Runtime 的
  *      snapshot() 经 [recoveredSessionsExcluding] 合并，UI 会话列表/Agent 上下文
  *      均可见；原实现只返回 id，恢复态从未进入任何列表。）
@@ -70,7 +70,7 @@ class RuntimeRecoveryService(
 
     /**
      * Load persisted sessions and reconstruct their SemanticState view.
-     * Returns the list of recovered session ids (now visible via terminal.snapshot).
+     * Returns the list of recovered session ids (now visible via TerminalSnapshot).
      *
      * T81 (D-5)：恢复语义的真实现 ——
      *  - 持久化状态为 RUNNING/WAITING_INPUT/CREATED 的 job 在恢复视图中收敛为

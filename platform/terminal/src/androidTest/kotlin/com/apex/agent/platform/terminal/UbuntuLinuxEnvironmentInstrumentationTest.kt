@@ -18,7 +18,7 @@ import org.junit.runner.RunWith
  * 覆盖 T76 §30 的 12 项真机验证：
  *  1. backend discovery（linux-ubuntu READY）
  *  2. rootfs READY
- *  3. create Ubuntu session（terminal.create(backendId="linux-ubuntu")）
+ *  3. create Ubuntu session（TerminalCreate(backendId="linux-ubuntu")）
  *  4. cat /etc/os-release（Ubuntu 24.04）
  *  5. pwd（/workspace）
  *  6. echo $HOME（/root）
@@ -26,10 +26,10 @@ import org.junit.runner.RunWith
  *  8. python3 --version（bootstrap 后）
  *  9. workspace write/read
  *  10. persistent home（/root/.agent-test survives rootfs replacement）
- *  11. apt package install（terminal.linux.packages install）
+ *  11. apt package install（TerminalLinuxPackages install）
  *  12. session close
  *
- * 真机执行前置：terminal.ubuntu.install + terminal.linux.bootstrap 已完成（READY）。
+ * 真机执行前置：TerminalUbuntuInstall + TerminalLinuxBootstrap 已完成（READY）。
  */
 @RunWith(AndroidJUnit4::class)
 class UbuntuLinuxEnvironmentInstrumentationTest {

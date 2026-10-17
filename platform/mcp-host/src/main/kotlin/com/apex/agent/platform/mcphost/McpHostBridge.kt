@@ -48,7 +48,7 @@ class McpHostBridge(
     }
 
     /** vault_* 硬拦截判定（写死，配置不可放开）。 */
-    fun isVaultTool(toolId: String): Boolean = toolId.startsWith("vault_")
+    fun isVaultTool(toolId: String): Boolean = toolId.startsWith("Vault")
 
     /**
      * 单工具是否允许经 MCP Host 暴露（列表与调用共用同一判定，保证一致）。

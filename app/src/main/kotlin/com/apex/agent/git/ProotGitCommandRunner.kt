@@ -118,7 +118,7 @@ private const val MAX_STREAM_CHARS = 1_048_576
  *   标记解析 versions/ 子目录）；
  * - isRootfsReady：File(filesDir, "rootfs/ubuntu", "current").exists()
  *   或 LinuxPRootBackend.availability() 为 Ready；
- * - workspaceRoots：CodeModule 既有 @Singleton（与 code_read 等工具同源，
+ * - workspaceRoots：CodeModule 既有 @Singleton（与 CodeRead 等工具同源，
  *   切工作区即时生效）；
  * - persistentHomeDir：File(filesDir, "linux/home")（与终端会话共享；
  *   不存在时自动跳过 bind）。
@@ -219,7 +219,7 @@ class ProotGitCommandRunner(
                 return RootfsResolution(
                     null,
                     "Ubuntu rootfs 已损坏：版本标记指向的目录缺失（${versionDir.absolutePath}）" +
-                        "—— 请在终端页重装 Ubuntu（terminal.ubuntu.install）"
+                        "—— 请在终端页重装 Ubuntu（TerminalUbuntuInstall）"
                 )
             }
         }
@@ -426,7 +426,7 @@ class ProotGitCommandRunner(
         /** rootfs 未就绪时的用户引导文案。 */
         internal const val ROOTFS_NOT_READY_MESSAGE =
             "Ubuntu 环境未安装或未就绪——Git 工具依赖沙箱内预装的 git，" +
-                "请先在终端页安装 Ubuntu（terminal.ubuntu.install）后再试"
+                "请先在终端页安装 Ubuntu（TerminalUbuntuInstall）后再试"
 
         /** 无激活工作区时的引导文案。 */
         internal const val NO_ACTIVE_WORKSPACE_MESSAGE =

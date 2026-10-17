@@ -35,7 +35,7 @@ import kotlinx.serialization.json.putJsonObject
  * 内置网络搜索 MCP 服务器的注册元数据。
  *
  * [BuiltinSearchMcpServer.ID] 与 McpManager 配置服务器名、`builtinTransports`
- * 工厂 key、`mcp_call` 的 server 参数（= /mcp:search 斜杠指令 id）四处约定一致。
+ * 工厂 key、`McpCall` 的 server 参数（= /mcp:search 斜杠指令 id）四处约定一致。
  *
  * 价值：把 App 内成熟的搜索栈（DuckDuckGo HTML/Lite + Bing 三级回退的
  * [WebSearchTool]，智能正文提取的 [WebFetchTool]）以 **MCP 协议一等化**暴露：
@@ -63,8 +63,8 @@ object BuiltinSearchMcpServer {
  * 内置网络搜索 MCP 服务器（进程内 transport，架构同 [com.apex.agent.github.mcp.BuiltinGithubMcpTransport]）。
  *
  * 工具（命名对齐社区惯例，便于模型迁移既有习惯）：
- * - `web_search`  → [WebSearchTool]（三级供应商回退）
- * - `web_fetch`   → [WebFetchTool]（text/links/structure/raw 四模式）
+ * - `WebSearch`  → [WebSearchTool]（三级供应商回退）
+ * - `WebFetch`   → [WebFetchTool]（text/links/structure/raw 四模式）
  * - `search_hint` → 组合用法提示（面向弱模型的轻量引导，零网络）
  *
  * Android 本地运行：零子进程、零网络握手 —— 与宿主 App 同进程同生命周期；
@@ -125,8 +125,8 @@ class BuiltinSearchMcpTransport(
 
         return try {
             when (name) {
-                "web_search" -> textResult(searchTool.execute(args))
-                "web_fetch" -> textResult(fetchTool.execute(args))
+                "WebSearch" -> textResult(searchTool.execute(args))
+                "WebFetch" -> textResult(fetchTool.execute(args))
                 "search_hint" -> textResult(SEARCH_HINT)
                 else -> textResult(
                     "未知工具: $name（可用: ${TOOL_NAMES.joinToString(", ")}）",
@@ -154,13 +154,13 @@ class BuiltinSearchMcpTransport(
         const val PROTOCOL_VERSION = "2024-11-05"
         const val METHOD_NOT_FOUND = -32601
 
-        val TOOL_NAMES = listOf("web_search", "web_fetch", "search_hint")
+        val TOOL_NAMES = listOf("WebSearch", "WebFetch", "search_hint")
 
         val SEARCH_HINT = """
             组合用法建议：
-            1. web_search 找到相关结果的 URL 清单；
-            2. web_fetch 抓取具体 URL 的正文（mode=text 智能提取 / raw 原始响应）；
-            3. 找不到时换关键词重试，或直接 web_fetch 已知站点首页再找链接（mode=links）。
+            1. WebSearch 找到相关结果的 URL 清单；
+            2. WebFetch 抓取具体 URL 的正文（mode=text 智能提取 / raw 原始响应）；
+            3. 找不到时换关键词重试，或直接 WebFetch 已知站点首页再找链接（mode=links）。
             搜索结果含标题/URL/摘要 —— 引用来源时给 URL。
         """.trimIndent()
 
@@ -180,15 +180,15 @@ class BuiltinSearchMcpTransport(
             }
 
             add(buildJsonObject {
-                put("name", "web_search")
-                put("description", "联网搜索：返回标题/URL/摘要列表（DuckDuckGo/Bing 自动回退）。找到结果后用 web_fetch 读正文")
+                put("name", "WebSearch")
+                put("description", "联网搜索：返回标题/URL/摘要列表（DuckDuckGo/Bing 自动回退）。找到结果后用 WebFetch 读正文")
                 put("inputSchema", schema(buildJsonObject {
                     put("query", prop("string", "搜索关键词"))
                     put("max_results", prop("integer", "返回数量上限（默认 5，最大 10）"))
                 }, listOf("query")))
             })
             add(buildJsonObject {
-                put("name", "web_fetch")
+                put("name", "WebFetch")
                 put("description", "抓取网页内容：mode=text 智能正文提取（默认）/ links 提取链接 / structure 结构概览 / raw 原始响应")
                 put("inputSchema", schema(buildJsonObject {
                     put("url", prop("string", "完整 URL"))
@@ -198,7 +198,7 @@ class BuiltinSearchMcpTransport(
             })
             add(buildJsonObject {
                 put("name", "search_hint")
-                put("description", "搜索组合策略提示（本地，零网络）——如何用 web_search + web_fetch 高效完成资料检索")
+                put("description", "搜索组合策略提示（本地，零网络）——如何用 WebSearch + WebFetch 高效完成资料检索")
                 put("inputSchema", schema(JsonObject(emptyMap()), emptyList()))
             })
         }

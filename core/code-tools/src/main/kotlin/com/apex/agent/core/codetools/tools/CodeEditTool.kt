@@ -16,7 +16,7 @@ import com.apex.agent.core.tools.toolSchema
 import java.io.File
 
 /**
- * # code_edit — 精确替换式编辑（业界标准 CLI 编码智能体 edit 契约）
+ * # CodeEdit — 精确替换式编辑（业界标准 CLI 编码智能体 edit 契约）
  *
  * 语义：`old_string` 在文件中**唯一匹配**（或多处匹配 + `replace_all`），替换为
  * `new_string`。这是端侧编码 agent 最重要的工具 —— 它的成功率直接决定编码循环
@@ -30,7 +30,7 @@ import java.io.File
  * - `old_string` 为空且文件不存在 → 允许创建新文件（write 语义兜底）。
  *
  * 工程细节：CRLF/LF 检测与还原、BOM 保留（[TextFileStyle]）、原子写与按文件
- * 路径互斥锁（[FileWriteGuard] —— 与 code_write 共享同一把 per-path 锁，
+ * 路径互斥锁（[FileWriteGuard] —— 与 CodeWrite 共享同一把 per-path 锁，
  * 防跨工具并发写竞态）、统一 diff 摘要回显（模型自我验证改对了没有）、
  * 编辑成功后的即时诊断回注
  * （注入 [diagnostics] 时，对编辑后的完整内容追加「⚠️ 诊断」块）。
@@ -39,7 +39,7 @@ class CodeEditTool(
     private val roots: CodeWorkspaceRoots,
     private val diagnostics: CodeDiagnostics? = null
 ) : BaseTool(
-    id = "code_edit",
+    id = "CodeEdit",
     name = "Code Edit",
     description = """
         Edit a file by replacing old_string with new_string (exact-match with smart fallbacks).
@@ -54,10 +54,10 @@ class CodeEditTool(
           replace_all=true to replace every occurrence).
         - A fuzzy-matching fallback may rescue near-misses (whitespace/indent
           drift), but do not rely on it.
-        - old_string must match the raw file content (code_read shows "N: " line
+        - old_string must match the raw file content (CodeRead shows "N: " line
           prefixes — strip them before writing old_string).
         - Leave old_string empty AND point to a non-existing file to create it.
-        - After editing, verify with code_read or run the project build/tests.
+        - After editing, verify with CodeRead or run the project build/tests.
 
         Output includes a unified diff of the change — self-check that the edit
         landed where you intended before moving on.
@@ -118,12 +118,12 @@ class CodeEditTool(
         newString: String,
         replaceAll: Boolean
     ): ToolResult {
-        // 空 old_string = 创建新文件（文件必须不存在 —— 已存在请用正常替换或 code_write）
+        // 空 old_string = 创建新文件（文件必须不存在 —— 已存在请用正常替换或 CodeWrite）
         if (oldString.isEmpty()) {
             if (file.exists()) {
                 return ToolResult.fail(
                     ToolErrorCode.INVALID_ARGUMENT,
-                    "file already exists: $path — provide a non-empty old_string to edit it (or use code_write to overwrite)"
+                    "file already exists: $path — provide a non-empty old_string to edit it (or use CodeWrite to overwrite)"
                 )
             }
             FileWriteGuard.writeFileAtomically(file, newString)

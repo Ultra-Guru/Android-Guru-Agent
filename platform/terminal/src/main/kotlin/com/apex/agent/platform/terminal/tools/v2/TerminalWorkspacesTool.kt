@@ -11,16 +11,16 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Agent tool: terminal.workspaces — T75（Workspace 管理）
+ * Agent tool: TerminalWorkspaces — T75（Workspace 管理）
  *
  * linux-ubuntu 会话的隔离文件区管理。每个 workspace bind 到 guest /workspace，
- * 内容跨会话持久；终端会话通过 terminal.create(workspaceId=…) 绑定。
+ * 内容跨会话持久；终端会话通过 TerminalCreate(workspaceId=…) 绑定。
  *
  * 动作：
  *   - list    列出全部 workspace（含活跃会话数；廉价，无目录遍历）
  *   - create  显式创建（幂等）；id 缺省时由 name 生成 slug
  *   - inspect 单个详情（含 sizeBytes，需目录遍历 —— 按需调用）
- *   - delete  删除（有活跃会话 → WorkspaceError:Busy，先 terminal.close）
+ *   - delete  删除（有活跃会话 → WorkspaceError:Busy，先 TerminalClose）
  *
  * 用户 home（guest /root）不属于本工具管辖 —— 它是全局持久区（跨 rootfs
  * 版本存活），无生命周期。
@@ -38,12 +38,12 @@ import kotlinx.serialization.json.jsonPrimitive
 class TerminalWorkspacesTool(
     private val workspaces: LinuxWorkspaceManager
 ) : TerminalTool {
-    override val id: String = "terminal.workspaces"
+    override val id: String = "TerminalWorkspaces"
     override val name: String = id
     override val description: String = """
         Manage isolated workspaces for linux-ubuntu terminal sessions. A workspace is a
         persistent file area bound to guest /workspace; sessions attach via
-        terminal.create(backend="linux-ubuntu", workspaceId=...). Files in different
+        TerminalCreate(backend="linux-ubuntu", workspaceId=...). Files in different
         workspaces are invisible to each other. Actions: list (all workspaces with active
         session counts), create (idempotent; id or name required, name is slugified),
         inspect (single workspace incl. size in bytes), delete (refuses while sessions are

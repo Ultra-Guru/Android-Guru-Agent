@@ -108,9 +108,9 @@ TerminalRuntime.create(backendId=…) → ExecutionBackendRegistry
 
 T73 wiring: `TerminalRuntime.create()` routes through the registry (default
 `backendId="local"` — byte-identical to the pre-P71 spawn, locked by
-ExecutionBackendGoldenTest). Agent discovers backends via `terminal.backends()`
+ExecutionBackendGoldenTest). Agent discovers backends via `TerminalBackends()`
 (availability: READY / NEEDS_ROOTFS / FAILED) and provisions the Ubuntu rootfs
-via `terminal.ubuntu.install` (idempotent, resumable). Backend session metadata
+via `TerminalUbuntuInstall` (idempotent, resumable). Backend session metadata
 (`backendId`/`rootfsId`/`workspaceId`/`guestCwd`/workspace binds) is persisted
 with the session (SessionRecord schema v3) so crash recovery distinguishes local
 vs Ubuntu sessions.
@@ -126,8 +126,8 @@ Linux sessions get two host-backed persistent mounts on top of the rootfs:
 <filesDir>/linux/home/              --bind-->  guest /root        (persistent user home)
 ```
 
-- **Workspaces** (`terminal.workspaces` tool: list / create / inspect / delete):
-  each `terminal.create(backend="linux-ubuntu", workspaceId=…)` session binds its
+- **Workspaces** (`TerminalWorkspaces` tool: list / create / inspect / delete):
+  each `TerminalCreate(backend="linux-ubuntu", workspaceId=…)` session binds its
   own isolated area at guest `/workspace`. Unknown valid ids
   (`^[a-z0-9][a-z0-9_-]{0,63}$`) are auto-created (workspace-per-task with zero
   friction). `delete` refuses while sessions are attached (close first). The
@@ -142,7 +142,7 @@ Linux sessions get two host-backed persistent mounts on top of the rootfs:
 
 ## P83 Additions (Terminal Finalization)
 
-- **Project-aware environment** (`terminal.workspace.environment` tool):
+- **Project-aware environment** (`TerminalWorkspaceEnvironment` tool):
   - `analyze` (read-only): scans a workspace's marker files
     (requirements.txt / package.json / build.gradle.kts / Cargo.toml / go.mod /
     CMakeLists.txt / Makefile / *.c|cc|cpp …) → detected language profiles →
@@ -160,9 +160,9 @@ Linux sessions get two host-backed persistent mounts on top of the rootfs:
   resize (SIGWINCH), multi-session tabs with backend badges, Ubuntu lifecycle
   banner (install / progress / retry), status chips (session state / foreground
   job / waiting-input prompt detection).
-- **Unified workspace**: the Agent file tools (`read_file` / `write_file` /
-  `list_files` / `edit_file` / `search_files` / `glob_files` / `copy_move` /
-  `delete_file` / `file_hash`) now sandbox to the **default Linux workspace**
+- **Unified workspace**: the Agent file tools (`Read` / `Write` /
+  `ListFiles` / `Edit` / `SearchFiles` / `GlobFiles` / `copy_move` /
+  `DeleteFile` / `FileHash`) now sandbox to the **default Linux workspace**
   (`<filesDir>/linux/workspaces/default`, guest `/workspace`) — the same file
   area the Ubuntu terminal sessions see. The legacy flat
   `<filesDir>/workspace` sandbox is migrated once (content moved into the

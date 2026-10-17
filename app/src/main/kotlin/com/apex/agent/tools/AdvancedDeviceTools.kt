@@ -65,7 +65,7 @@ class TorchTool(
     /** true=开 / false=关；返回结果描述或 Error 文本。 */
     private val torch: (Boolean) -> String
 ) : AgentTool {
-    override val id = "torch"
+    override val id = "Torch"
     override val name = "Torch (Flashlight)"
     override val description = """
         Turn the device flashlight (camera flash unit) on or off.
@@ -137,7 +137,7 @@ class VibrateTool(
     /** (durationMs, pattern?) → 结果文本。pattern 非空时忽略 durationMs。 */
     private val vibrate: (Long, LongArray?) -> String
 ) : AgentTool {
-    override val id = "vibrate"
+    override val id = "Vibrate"
     override val name = "Vibrate"
     override val description = """
         Vibrate the device. Input: {"duration_ms": 300} or
@@ -225,7 +225,7 @@ class AndroidVibrator(private val context: Context) {
     }
 }
 
-// ═══════════════════════════ battery_status ═══════════════════════════
+// ═══════════════════════════ BatteryStatus ═══════════════════════════
 
 /**
  * 电池状态（#172）。读 ACTION_BATTERY_CHANGED 粘性广播：
@@ -235,7 +235,7 @@ class AndroidVibrator(private val context: Context) {
 class BatteryStatusTool(
     private val read: () -> String
 ) : AgentTool {
-    override val id = "battery_status"
+    override val id = "BatteryStatus"
     override val name = "Battery Status"
     override val description = """
         Read battery status: percent, charging state, plug type, health,
@@ -302,7 +302,7 @@ object AndroidBatteryReader {
     }
 }
 
-// ═══════════════════════════ network_info ═══════════════════════════
+// ═══════════════════════════ NetworkInfo ═══════════════════════════
 
 /**
  * 网络状态（#172）。活动网络类型（wifi/cell/none/ethernet）+ 接口名/DNS
@@ -312,7 +312,7 @@ object AndroidBatteryReader {
 class NetworkInfoTool(
     private val read: () -> String
 ) : AgentTool {
-    override val id = "network_info"
+    override val id = "NetworkInfo"
     override val name = "Network Info"
     override val description = """
         Active network info: type (wifi/cell/ethernet/none), interface name,
@@ -371,7 +371,7 @@ object AndroidNetworkInfoReader {
     }
 }
 
-// ═══════════════════════════ tts_speak ═══════════════════════════
+// ═══════════════════════════ TtsSpeak ═══════════════════════════
 
 /**
  * 文字转语音朗读（#172）。参数：text（必填）、language（可选 BCP-47 如
@@ -382,7 +382,7 @@ class TtsSpeakTool(
     /** (text, language?, pitch?, rate?) → 结果文本。 */
     private val speak: (String, String?, Float, Float) -> String
 ) : AgentTool {
-    override val id = "tts_speak"
+    override val id = "TtsSpeak"
     override val name = "Text To Speech"
     override val description = """
         Speak text aloud via the Android TTS engine (flushes previous speech).

@@ -389,13 +389,13 @@
 
     <!-- ═══ Memory (MemoryScreen) ═══ -->
     <string name="memory_title">Memory</string>
-    <string name="memory_search_nodes">Search nodes</string>
+    <string name="MemorySearchNodes">Search nodes</string>
     <string name="memory_got_it">Got it</string>
     <string name="memory_nodes">Nodes</string>
     <string name="memory_macros">Macro skills</string>
     <string name="memory_search_label">Search nodes (text / keywords)</string>
     <string name="memory_no_match">No memory nodes match \"%1$s\"</string>
-    <string name="memory_recent_episodes">Recent episodes</string>
+    <string name="MemoryRecentEpisodes">Recent episodes</string>
     <string name="memory_empty_episodes">No memory episodes yet\nEpisodes will be deposited here after the Agent runs tasks</string>
     <string name="memory_frequent_macros">Top macro skills</string>
     <string name="memory_empty_macros">No distilled macro skills yet\nAfter tasks succeed, the Agent deposits reusable FSM macros</string>

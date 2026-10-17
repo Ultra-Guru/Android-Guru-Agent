@@ -8,7 +8,7 @@ import org.junit.Test
  *
  * 覆盖（PR：能力自省与自主扩展）：
  * 1. 系统提示词新增 "## Capability Expansion Playbook" 段：六条扩展梯度
- *    （工具目录 / capability_report 自省 / 技能市场 / MCP / Linux 工具链 /
+ *    （工具目录 / CapabilityReport 自省 / 技能市场 / MCP / Linux 工具链 /
  *    提权请求）+ 「验证后再报成功」与「没爬完梯度不许说不可能」护栏；
  * 2. 权限段换源 PrivilegeLadder（阶梯全貌 + 升级路径 + 不盲试护栏），
  *    heading 保留原始串（既有测试兼容）；
@@ -34,12 +34,12 @@ class CapabilityPromptTest {
         // 六条梯度逐一在场
         assertTrue(p.contains("1. INSTALLED TOOLS"))
         assertTrue(p.contains("2. LIVE SELF-CHECK"))
-        assertTrue(p.contains("capability_report()"))
+        assertTrue(p.contains("CapabilityReport()"))
         assertTrue(p.contains("3. SKILLS"))
-        assertTrue(p.contains("market_search(query)"))
+        assertTrue(p.contains("MarketSearch(query)"))
         assertTrue(p.contains("4. MCP SERVERS"))
         assertTrue(p.contains("5. LINUX TOOLCHAIN"))
-        assertTrue(p.contains("terminal.ubuntu.ensure"))
+        assertTrue(p.contains("TerminalUbuntuEnsure"))
         assertTrue(p.contains("6. PRIVILEGE WALL"))
     }
 

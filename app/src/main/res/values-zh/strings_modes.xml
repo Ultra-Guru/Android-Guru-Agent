@@ -65,7 +65,7 @@
     <string name="mode_guide_agent_cases">日常事务、调研、自动化、设备控制——一切非编程任务</string>
     <string name="mode_guide_agent_flow">ReAct 循环 + 通用工具（联网搜索/记忆/系统…）；编码工具已剔除</string>
     <string name="mode_guide_agent_tools">通用 CORE 工具集；code_*/git/github 已移除——编程请求引导去 Coding 模式</string>
-    <string name="mode_guide_agent_human">歧义时 ask_user；无强制函数调用 UI（那是 Coding 屏的）</string>
+    <string name="mode_guide_agent_human">歧义时 AskUser；无强制函数调用 UI（那是 Coding 屏的）</string>
     <string name="mode_guide_agent_prompt">Mode: AGENT 段——全能非编程智能体，代码请求引导去 Coding</string>
     <string name="mode_guide_loop_cases">周期检查：轮询状态页、盯文件夹、定期清理、一次性提醒</string>
     <string name="mode_guide_loop_flow">LoopScheduler 按计划（间隔/Cron/单次）触发提示词，每次触发即一轮完整执行</string>
