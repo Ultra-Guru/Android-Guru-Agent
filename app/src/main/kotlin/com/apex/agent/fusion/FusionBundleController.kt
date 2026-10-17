@@ -43,7 +43,8 @@ import javax.inject.Singleton
 class FusionBundleController @Inject constructor(
     @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: Context,
     private val registry: FusionBundleRegistry,
-    private val activator: FusionBundleActivator
+    /** 三端口编排中枢（FusionActivate 工具与 UI 共用；由 FusionModule 装配）。 */
+    val activator: FusionBundleActivator
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val prefs: SharedPreferences =
