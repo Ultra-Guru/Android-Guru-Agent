@@ -160,9 +160,16 @@ class CodeViewModel @Inject constructor(
     // v3 GOAL 目标模式：全局目标协调器（与深潜线引擎共享单例；每轮验收钩子
     // 在引擎侧，UI 侧驱动设定弹层/状态卡——扩展接线见 CodeGoalController.kt）
     internal val goalCoordinator: GoalModeCoordinator,
-    // ═══ v6 Git 工作区（右上角面板直读）：Proot 沙箱 git 执行器 ═══
+    // ═══ v6 Git 工作区（右上角面板直读）：PRoot 沙箱 git 执行器 ═══
     private val gitRunner: com.apex.agent.core.codetools.git.GitCommandRunner
 ) : ViewModel() {
+
+    // ═══ v1.6 工作区浏览器（全屏页，apex-workspace-kit）═══
+    // 适配层薄包装（git 通道 / 工作区根 / 日志 / 引擎事件映射）住
+    // WorkspaceKitHolder.kt；控制器随 VM 生命周期，导航往返保持状态。
+    internal val workspaceKit by lazy {
+        WorkspaceKitHolder(gitRunner, workspaceRoots, viewModelScope)
+    }
 
     internal val _uiState = MutableStateFlow(CodeUiState())
     val uiState: StateFlow<CodeUiState> = _uiState.asStateFlow()
@@ -624,6 +631,9 @@ class CodeViewModel @Inject constructor(
                         streamSession.onEvent(event)
                     }
                     reduce(event)
+                    // v1.6 工作区浏览器实时跟随：文件类工具事件 → 库控制器
+                    //（callId 幂等去重在库内；浏览器未打开时仅进 feed，零开销）
+                    workspaceKit.onAgentEvent(event)
                 }
             } catch (e: CancellationException) {
                 aborted = true

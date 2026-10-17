@@ -220,6 +220,12 @@ dependencies {
     // BrowserOverlay / ApexChromeWiring 类型（ApexCoreService / CyberNeonBallManager /
     // BrowserScreen）；BrowserAgentTools 与库 DI 接线（BrowserKitModule）在该模块内。
     implementation(project(":platform:browser-agent"))
+    // apex-workspace-kit（拆库 E1 迁移期）：Coding 模式工作区浏览器
+    //（文件树/多格式预览/Git/变更和产物/实时跟随）。composite build 时
+    // 兄弟目录 includeBuild 自动替换为本地构建；适配层（GitCommandRunner /
+    // WorkspaceRootProvider / AppLogger 薄包装）住 ui/screen/code/WorkspaceKitHolder.kt。
+    implementation(libs.workspace.core)
+    implementation(libs.workspace.explorer)
 
     // Compose
     implementation(platform(libs.compose.bom))

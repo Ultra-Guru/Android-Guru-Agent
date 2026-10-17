@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material3.DrawerValue
@@ -66,6 +67,7 @@ import com.apex.agent.BuildConfig
 import com.apex.agent.R
 import com.apex.agent.changelog.ChangelogStartupHost
 import com.apex.agent.ui.component.ContextMeterBar
+import com.apex.agent.ui.screen.code.WorkspaceBrowserHost
 import com.apex.agent.ui.component.FeedbackHost
 import com.apex.agent.ui.component.OfflineBanner
 import com.apex.agent.ui.component.UpdateBanner
@@ -137,6 +139,9 @@ sealed class DrawerDestination(
     data object Usage : DrawerDestination("usage", R.string.drawer_usage, Icons.Default.DataUsage)
     // v1.4.4 #7：诊断中心 —— 应用/设备信息 + 崩溃记录 + 日志文件 + 一键诊断包
     data object Diagnostics : DrawerDestination("diagnostics", R.string.drawer_diagnostics, Icons.Default.BugReport)
+    // v1.6 Coding 工作区浏览器（apex-workspace-kit）：Coding 屏右上角文件图标
+    // 压栈进入；不进抽屉列表 —— 编码场景专属页（文件夹/Git/变更和产物 + 实时跟随）。
+    data object WorkspaceBrowser : DrawerDestination("workspace-browser", R.string.drawer_workspace_browser, Icons.Outlined.FolderOpen)
     // 关于页 —— 固定在抽屉最下方的独立入口（v1.4.3：从设置页「关于」区升级为一级页面；
     // 图标用 Outlined 与 Log 页的 Filled.Info 区分）
     data object About : DrawerDestination("about", R.string.drawer_about, Icons.Outlined.Info)
@@ -256,7 +261,10 @@ fun ApexRoot() {
             },
             topBar = {
                 // 终端屏自带二级顶栏（含终端抽屉入口）——若此处再渲染根顶栏，会出现双顶栏双汉堡
-                if (currentDestination != DrawerDestination.Terminal) {
+                // 工作区浏览器页自带头部（胶囊标签栏 + 叉号），与终端页同款排除
+                if (currentDestination != DrawerDestination.Terminal &&
+                    currentDestination != DrawerDestination.WorkspaceBrowser
+                ) {
                     TopAppBar(
                     title = {
                         Row(
@@ -328,7 +336,9 @@ fun ApexRoot() {
                 // T89：终端页隐藏 —— Agent token 用量与终端会话无关，却吃掉
                 // 终端竖屏 20dp 高度（终端页本就被键区挤压，条带堆叠是「页面
                 // 一坨」的直接成因之一）。其余页面不受影响。
-                if (currentDestination != DrawerDestination.Terminal) {
+                if (currentDestination != DrawerDestination.Terminal &&
+                    currentDestination != DrawerDestination.WorkspaceBrowser
+                ) {
                     ContextMeterBar(
                         usedTokens = agentState.contextUsedTokens,
                         maxTokens = agentState.contextMaxTokens,
@@ -354,7 +364,14 @@ fun ApexRoot() {
                                 viewModel = hiltViewModel(),
                                 // 「小大脑」菜单 → 配置模型：跳设置页（压栈语义，
                                 // 改完返回 Coding 上下文 —— 与 Agent 屏同款）
-                                onOpenSettings = { navStack.push(DrawerDestination.Settings) }
+                                onOpenSettings = { navStack.push(DrawerDestination.Settings) },
+                                // v1.6 工作区浏览器：右上角文件图标压栈进入
+                                onOpenWorkspaceBrowser = { navStack.push(DrawerDestination.WorkspaceBrowser) }
+                            )
+                            DrawerDestination.WorkspaceBrowser -> WorkspaceBrowserHost(
+                                viewModel = hiltViewModel(),
+                                // 页内叉号 = 统一返回链（弹栈回 Coding，栈空兜底 Agent）
+                                onClose = navigateBack
                             )
                             DrawerDestination.Templates -> TemplateStudioScreen()
                             DrawerDestination.Terminal -> TerminalScreen(
