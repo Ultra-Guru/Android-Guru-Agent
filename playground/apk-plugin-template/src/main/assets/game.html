@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>模板游戏 · TEMPLATE</title>
+<style>
+  /* 占位模板游戏：替换本文件为你的自包含游戏 HTML（内联 vendored pretext）。 */
+  :root{--bg:#0a0f0c;--ink:#d7e4d9;--dim:#7d8f83;--green:#8fd6a0;--amber:#e0a54f}
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--bg);color:var(--ink);font:14px/1.5 system-ui,sans-serif;
+       display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+  .card{max-width:340px;border:1px solid rgba(255,255,255,.09);border-radius:14px;
+        padding:22px;background:rgba(255,255,255,.045)}
+  h1{font-size:20px;color:var(--green);margin-bottom:8px}
+  p{color:var(--dim);margin-bottom:6px}
+  code{color:var(--amber);font-family:ui-monospace,monospace}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>WebView 壳模板</h1>
+    <p>你看到的是 APK 插件模板的占位游戏页。</p>
+    <p>把本文件替换为你的自包含游戏 HTML（建议从游乐场内置插件拷一份
+    <code>index.html</code> 起步 —— 它已内联 vendored pretext，零网络请求）。</p>
+    <p>替换后重新构建、同宿主 keystore 签名即完成「HTML → APK 插件」转化。</p>
+  </div>
+</body>
+</html>
