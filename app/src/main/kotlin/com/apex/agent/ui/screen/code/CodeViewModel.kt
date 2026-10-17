@@ -668,7 +668,16 @@ class CodeViewModel @Inject constructor(
 
     fun abort() {
         runJob?.cancel()
+        // ═══ 本地防御式收尾（对齐 Agent 屏 AgentChatViewModel.abort 语义）═══
+        // 引擎 catch(CancellationException) 里的 emit(AgentEvent.Aborted) 在
+        // 已取消协程上再次抛出取消异常——收尾事件永远到不了收集器；时间轴
+        // 不本地收口会冻结在流式态（结论气泡挂「▍」光标、RUNNING 胶囊无限
+        // 计时——用户实测截图：中止后 skill_search 卡转 37s+）。先 cancel 再
+        // 收尾：同线程串行，cancel 后不会再有新事件进入会话，无快照竞态。
+        streamSession.abortLocally()
         viewModelScope.launch { codeEngine.abort() }
+        // 停 ticker 前冲最终快照：收口后的时间轴（PARTIAL 胶囊/停止卡）
+        // 立即可见，而不是等下一次根本不会来的 tick。
         stopRenderTicker()
         _uiState.update { it.copy(isRunning = false) }
     }
