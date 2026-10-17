@@ -14,6 +14,7 @@ import com.apex.agent.core.tools.fusion.FusionSkillInstaller
 import com.apex.agent.core.tools.fusion.rea.ReaCommandRunner
 import com.apex.agent.core.tools.fusion.rea.ReaPageFetcher
 import com.apex.agent.core.tools.fusion.rea.ReaWorkspace
+import com.apex.agent.core.tools.fusion.shrimp.ShrimpTaskStore
 import com.apex.agent.core.tools.mcp.McpManager
 import com.apex.agent.core.tools.mcp.McpServerConfig
 import com.apex.agent.core.tools.mcp.McpTransport
@@ -79,6 +80,16 @@ object FusionModule {
     @Singleton
     fun provideReaWorkspace(@ApplicationContext context: Context): ReaWorkspace =
         ReaWorkspace(root = File(context.filesDir, "fusion"))
+
+    /**
+     * Shrimp 任务存储（第七台内置 MCP 服务器的持久层）：
+     * `filesDir/fusion/shrimp/tasks.json`（原子写）+ 备份链。单例共享
+     * —— 工厂每连接新建 transport，任务数据跨连接持久。
+     */
+    @Provides
+    @Singleton
+    fun provideShrimpTaskStore(@ApplicationContext context: Context): ShrimpTaskStore =
+        ShrimpTaskStore(dir = File(context.filesDir, "fusion/shrimp"))
 
     /**
      * REA 命令执行端口 —— 复用 TerminalExec 的同一条执行链

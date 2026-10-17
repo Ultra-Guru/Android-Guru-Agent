@@ -12,7 +12,7 @@ KOTLINC="${KOTLINC:-$HOME/.local/kotlinc/bin/kotlinc}"
 KOTLIN_HOME="${KOTLIN_HOME:-$HOME/.local/kotlinc}"
 LIBS="${LIBS:-$HOME/kotlin-libs}"
 PLUGIN="$HOME/.local/kotlinc/lib/kotlinx-serialization-compiler-plugin.jar"
-CP="$LIBS/kotlinx-coroutines-core-jvm-1.9.0.jar:$LIBS/kotlinx-serialization-json-jvm-1.7.3.jar:$LIBS/kotlinx-serialization-core-jvm-1.7.3.jar:$LIBS/annotations-24.1.0.jar:$LIBS/junit-4.13.2.jar:$LIBS/hamcrest-core-1.3.jar:$LIBS/kotlinx-coroutines-test-jvm-1.9.0.jar:$LIBS/okhttp-4.12.0.jar:$LIBS/okhttp-sse-4.12.0.jar:$LIBS/okio-jvm-3.6.0.jar"
+CP="$LIBS/kotlinx-coroutines-core-jvm-1.9.0.jar:$LIBS/kotlinx-serialization-json-jvm-1.7.3.jar:$LIBS/kotlinx-serialization-core-jvm-1.7.3.jar:$LIBS/annotations-24.1.0.jar:$LIBS/junit-4.13.2.jar:$LIBS/hamcrest-core-1.3.jar:$LIBS/kotlinx-coroutines-test-jvm-1.9.0.jar:$LIBS/okhttp-4.12.0.jar:$LIBS/mockwebserver-4.12.0.jar:$LIBS/okhttp-sse-4.12.0.jar:$LIBS/okio-jvm-3.6.0.jar"
 OUT=$(mktemp -d)
 
 echo "── compiling core (logging → llm → tools → engine) main + test ──"
