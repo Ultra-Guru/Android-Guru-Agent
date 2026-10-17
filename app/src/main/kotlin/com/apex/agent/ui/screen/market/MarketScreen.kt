@@ -167,7 +167,10 @@ fun MarketScreen(viewModel: MarketViewModel = hiltViewModel()) {
             bundled = skillRow?.bundled == true,
             detailState = state.detailState,
             loading = state.detailLoading,
-            onDismiss = viewModel::closeSkillDetail
+            onDismiss = viewModel::closeSkillDetail,
+            // 就绪门禁表单段：manifest 声明 userConfig 时渲染（配置齐了才进斜杠菜单）
+            configForm = state.detailConfigForm,
+            onSaveConfig = { values -> viewModel.saveSkillConfig(detailSkillId, values) }
         )
     }
 

@@ -238,6 +238,7 @@
     <string name="code_git_commit_hint">提交说明</string>
     <string name="CodeGitCommit">提交全部变更</string>
     <string name="code_git_new_file">新的未跟踪文件（尚未加入索引）</string>
+    <string name="code_stream_terminal_running">运行中</string>
 
     <!-- ═══ #312 i18n 批次 2：VM / 归约层 / 编辑器用户可见文案 ═══ -->
     <!-- 工作区操作 -->
@@ -283,5 +284,4 @@
     <string name="code_thinking_view_maximum">危险区重构：动核心数据结构 / 公共工具函数 / 状态机转移——不变量一破就是连环 bug。识别不变量 + 连锁影响核对 + 终检三问清单全开，迭代×1.5。改错了回滚成本高于思考成本的地方，才值得开这档。</string>
     <string name="code_thinking_view_ultracode">跨模块深改：一次改动波及 3 个以上模块 / 需要摸清整条调用链再动手。依赖地图→候选改法→风险排序→最小修改→即时验证→回归扫描的编码闭环，迭代×2.0、输出预算 12000——token 花费约为 STANDARD 的数倍，但换来「改完即验证、不留回归债」。</string>
     <string name="code_thinking_view_apexcode">架构级大改：换框架 / 迁移数据层 / 重定义模块边界这类「改错就翻车」的工程。影响半径测绘 + 多方案对比矩阵 + 对抗性自审 + 全量验证矩阵 + 证据链汇报，迭代×3.0、budget 65536、更晚压缩保留完整证据链——全梯度成本天花板。只对真正的大活开：日常任务开它纯属烧 token。</string>
-    <string name="code_thinking_view_auto">不确定就选它：引擎按任务复杂度（长度 / 多步指示 / 代码含量 / 风险词 / 错误史）逐轮动态选档——简单问题秒切 NONE，深水区自动升到 ULTRACODE。永远不会自动选 APEXCODE（成本防线），想用巅峰档必须手动指定。</string>
-</resources>
+    <string name="code_thinking_view_auto">不确定就选它：引擎按任务复杂度（长度 / 多步指示 / 代码含量 / 风险词 / 错误史）逐轮动态选档——简单问题秒切 NONE，深水区自动升到 ULTRACODE。永远不会自动选 APEXCODE（成本防线），想用巅峰档必须手动指定。</string></resources>

@@ -27,10 +27,16 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -57,6 +63,13 @@ import com.apex.agent.ui.component.reliabilityTierOf
  *
  * 数据来自 [SkillDetailUiState]（由 [SkillAnalytics.projectSkillAnalytics] 投影）。
  */
+/** 配置表单数据（详情对话框表单段渲染用，[MarketViewModel.skillConfigForm] 投影）。 */
+data class SkillConfigFormData(
+    val fields: List<com.apex.agent.core.tools.skill.UserConfigField>,
+    val values: Map<String, String>,
+    val configured: Boolean
+)
+
 @Composable
 internal fun MarketSkillDetailDialog(
     skillId: String,
@@ -65,7 +78,11 @@ internal fun MarketSkillDetailDialog(
     loading: Boolean,
     onDismiss: () -> Unit,
     /** Issue #166：内置技能（assets 释放）——标题行展示「内置」徽标。 */
-    bundled: Boolean = false
+    bundled: Boolean = false,
+    /** 就绪门禁：配置表单段（manifest 声明 userConfig 时渲染；null = 不渲染）。 */
+    configForm: SkillConfigFormData? = null,
+    /** 保存配置值（写入 SkillRegistry .config.json，菜单/徽标即时联动）。 */
+    onSaveConfig: ((Map<String, String>) -> Unit)? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -119,10 +136,94 @@ internal fun MarketSkillDetailDialog(
                     }
                 }
             } else {
-                DetailContent(detailState)
+                Column {
+                    DetailContent(detailState)
+                    // 就绪门禁表单段：技能声明了 userConfig 时提供配置入口
+                    //（配置齐了才进斜杠菜单 —— 「没有配置好的不要显示」闭环）
+                    if (configForm != null && configForm.fields.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        SkillConfigSection(skillId, configForm, onSaveConfig)
+                    }
+                }
             }
         }
     )
+}
+
+/**
+ * 技能配置表单段：按 manifest userConfig 声明渲染动态字段
+ * （boolean → 开关；enum → 选项提示的文本框；其余 → 文本框）+ 保存按钮。
+ */
+@Composable
+private fun SkillConfigSection(
+    skillId: String,
+    form: SkillConfigFormData,
+    onSaveConfig: ((Map<String, String>) -> Unit)?
+) {
+    var drafts by remember(skillId) { mutableStateOf(form.values) }
+
+    Column {
+        SectionTitle(
+            stringResource(R.string.market_skill_config_section),
+            Icons.Default.Bolt
+        )
+        if (!form.configured) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.market_skill_config_required_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        form.fields.forEach { field ->
+            val value = drafts[field.key].orEmpty()
+            val label = field.description.ifBlank { field.key }
+            if (field.type == "boolean") {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = value.isNotBlank() && value != "false",
+                        onCheckedChange = { checked ->
+                            drafts = drafts + (field.key to if (checked) "true" else "")
+                        }
+                    )
+                }
+            } else {
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { drafts = drafts + (field.key to it) },
+                    label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                    supportingText = {
+                        if (field.options.isNotEmpty()) {
+                            Text(
+                                stringResource(R.string.market_skill_config_options, field.options.joinToString(" / ")),
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    },
+                    singleLine = true,
+                    isError = field.required && value.isBlank() && field.default.isNullOrBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+        }
+        if (onSaveConfig != null) {
+            TextButton(
+                onClick = { onSaveConfig(drafts.filterValues { it.isNotBlank() }) }
+            ) {
+                Text(stringResource(R.string.market_skill_config_save))
+            }
+        }
+    }
 }
 
 @Composable

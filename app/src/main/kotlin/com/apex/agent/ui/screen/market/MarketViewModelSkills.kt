@@ -18,9 +18,27 @@ import kotlinx.coroutines.launch
 //    importMcpConfig 管道）。
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * 分级独立启停（per-scope）：开关只写当前 [MarketTier] 对应的工位 ——
+ * Coding 市场里关掉不影响 Agent 市场（修「两分级同步」问题；另一侧
+ * 的开关状态由 [MarketSkillRow.enabledAgent]/[enabledCoding] 各自展示）。
+ * （tierScope() 为 VM internal 成员，见 MarketViewModel.kt）
+ */
 fun MarketViewModel.toggleSkill(skillId: String, enabled: Boolean) {
     viewModelScope.launch(Dispatchers.IO) {
-        skillRegistry.setEnabled(skillId, enabled)
+        skillRegistry.setEnabledForScope(skillId, tierScope(), enabled)
+        refresh()
+    }
+}
+
+/**
+ * 保存技能配置值（详情对话框表单）：写入后 SkillRegistry 发 changes ——
+ * 斜杠菜单自动重建（配置齐了条目即刻出现），市场行「需配置」徽标即时消隐。
+ */
+fun MarketViewModel.saveSkillConfig(skillId: String, values: Map<String, String>) {
+    viewModelScope.launch(Dispatchers.IO) {
+        skillRegistry.setConfigValues(skillId, values)
+        message(languageManager.getString(R.string.market_skill_config_saved))
         refresh()
     }
 }
@@ -57,10 +75,10 @@ fun MarketViewModel.installSkillTemplate(templateId: String) {
     }
 }
 
-/** 导入自定义 Skill JSON（粘贴内容）。 */
+/** 导入自定义 Skill JSON（粘贴内容）。安装默认启用工位 = 当前市场分级。 */
 fun MarketViewModel.importSkillJson(content: String) {
     viewModelScope.launch {
-        installManager.installSkillFromJson(content).fold(
+        installManager.installSkillFromJson(content, defaultScope = tierScope()).fold(
             onSuccess = { message(it) },
             onFailure = {
                 message(languageManager.getString(R.string.market_import_failed).format(it.message ?: ""))
@@ -70,10 +88,10 @@ fun MarketViewModel.importSkillJson(content: String) {
     }
 }
 
-/** 从 URL 导入 Skill manifest。 */
+/** 从 URL 导入 Skill manifest。安装默认启用工位 = 当前市场分级。 */
 fun MarketViewModel.importSkillFromUrl(url: String) {
     viewModelScope.launch {
-        installManager.installSkillFromUrl(url).fold(
+        installManager.installSkillFromUrl(url, defaultScope = tierScope()).fold(
             onSuccess = { message(it) },
             onFailure = {
                 message(languageManager.getString(R.string.market_import_failed).format(it.message ?: ""))

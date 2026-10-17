@@ -55,6 +55,17 @@ class CodeStreamSession {
     /** 活跃 BASH 胶囊（终端面板跟随；run 结束或下个 BASH 到来时切换）。 */
     private var activeTerminalCallId: String? = null
 
+    // ── 终端面板流水式折叠信号（用户需求：「终端命令运行时展开跟随输出，
+    //    完成后自动折叠成胶囊」；与思考/工具胶囊同款生命周期）──
+    /** 活跃 BASH 正在执行（面板保持展开）；Complete/Error/Aborted 收束。 */
+    private var terminalBusy = false
+
+    /** 头行展示的命令摘要（活跃/最近 BASH 的首行命令）。 */
+    private var terminalCommandSummary = ""
+
+    /** 最近一次终端命令退出码（完成态头行展示；null = 未知）。 */
+    private var terminalExitCode: Int? = null
+
     private val affectedFiles = LinkedHashSet<String>()
     private var lastError: CodeStreamSnapshot.ErrorInfo? = null
     private var toolCallCount = 0
@@ -81,6 +92,10 @@ class CodeStreamSession {
         affectedFiles.clear()
         append(StreamEntry.UserEntry(nextId(), userText))
         activeTerminalCallId = null
+        // 新 run 归零终端面板三信号（上一轮命令的尾窗不再展示）
+        terminalBusy = false
+        terminalCommandSummary = ""
+        terminalExitCode = null
     }
 
     /** VM 注入系统说明行（AUTO 预检决策 / 深水区升级等）。 */
@@ -194,6 +209,8 @@ class CodeStreamSession {
             is AgentEvent.Error -> {
                 lastError = CodeStreamSnapshot.ErrorInfo(event.message, event.recoverable)
                 val related = activeTerminalCallId
+                // 引擎级错误收束终端「运行中」信号（否则面板永远脉冲）
+                terminalBusy = false
                 append(
                     StreamEntry.ErrorEntry(
                         id = nextId(),
@@ -221,6 +238,8 @@ class CodeStreamSession {
                 streamingThinking = null
                 streamingAssistant?.let { closeStreamingEntry(it) }
                 streamingAssistant = null
+                // 中止时终端命令不会再来 Complete —— 运行中信号就地收束
+                terminalBusy = false
                 append(StreamEntry.StopEntry(nextId(), "已中止"))
             }
 
@@ -316,6 +335,9 @@ class CodeStreamSession {
         streamingAssistant = null
         activeTerminalCallId = null
         lastError = null
+        terminalBusy = false
+        terminalCommandSummary = ""
+        terminalExitCode = null
         toolCallCount = restored.count { it is StreamEntry.ToolCapsuleEntry }
         failedToolCallCount = restored.count {
             (it as? StreamEntry.ToolCapsuleEntry)?.call?.status == ToolCallStatus.FAILED
@@ -362,6 +384,10 @@ class CodeStreamSession {
         if (kind == ToolKind.BASH) {
             terminalBuffers[event.callId] = TerminalPulseBuffer()
             activeTerminalCallId = event.callId
+            // 新命令开跑：面板展开跟随（busy=true），头行换成新命令摘要
+            terminalBusy = true
+            terminalCommandSummary = target
+            terminalExitCode = null
         }
         trackVerifyCycleStart(kind, event.callId)
         append(StreamEntry.ToolCapsuleEntry(toolEntryId(event.callId), call))
@@ -412,7 +438,11 @@ class CodeStreamSession {
             existing.target.takeIf { it.isNotBlank() && it != UNKNOWN_TARGET }?.let { affectedFiles.add(it) }
         }
         if (activeTerminalCallId == event.callId) {
-            // 面板保留最后一次 BASH 的内容（可翻看），直到下一个 BASH 开始
+            // 面板保留最后一次 BASH 的内容（可翻看），直到下一个 BASH 开始；
+            // 流水式折叠：命令收束 → busy=false（UI 自动折叠成头行胶囊），
+            // 头行保留命令摘要 + 退出码供回看
+            terminalBusy = false
+            terminalExitCode = exitCode
         }
         trackVerifyCycleEnd(existing.kind, event.callId, event.success)
     }
@@ -539,7 +569,10 @@ class CodeStreamSession {
             lastError = lastError,
             activeTerminalCallId = activeTerminalCallId,
             terminalContent = activeBuf?.content() ?: "",
-            affectedFiles = affectedFiles.toList()
+            affectedFiles = affectedFiles.toList(),
+            terminalBusy = terminalBusy,
+            terminalCommandSummary = terminalCommandSummary,
+            terminalExitCode = terminalExitCode
         )
     }
 

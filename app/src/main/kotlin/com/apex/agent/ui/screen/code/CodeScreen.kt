@@ -182,8 +182,22 @@ fun CodeScreen(
     // 状态/耗时/Diff 永不更新；存 id 每次重组从活快照重查）。
     // rememberSaveable：旋转/重建后详情弹层不丢（String? 可入 Bundle）。
     var selectedToolCallId by rememberSaveable { mutableStateOf<String?>(null) }
-    // 终端面板折叠态（默认展开——BASH 是 Coding 工作流主舞台）
+    // 终端面板折叠态 + 用户手动态（流水式折叠，用户需求：「终端命令等流水
+    // 似输出：运行时保持展开跟随输出，完成后自动折叠成胶囊」）。
+    // 语义与 ThinkingCard 的 userToggled 守卫同款：
+    // - 新命令开跑（terminalBusy=true）→ 强制展开并重置手动态（新输出值得被看到）；
+    // - 命令收束（terminalBusy=false）→ 未手动干预过则自动折叠（头行保留
+    //   命令摘要 + exit 码供回看）；手动展开/收起过则尊重用户选择。
     var terminalCollapsed by rememberSaveable { mutableStateOf(false) }
+    var terminalUserToggled by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(state.stream.terminalBusy) {
+        if (state.stream.terminalBusy) {
+            terminalCollapsed = false
+            terminalUserToggled = false
+        } else if (!terminalUserToggled) {
+            terminalCollapsed = true
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
     Column(
@@ -275,9 +289,14 @@ fun CodeScreen(
                 if (state.stream.activeTerminalCallId != null || state.stream.terminalContent.isNotBlank()) {
                     CodeTerminalPanel(
                         content = state.stream.terminalContent,
-                        activeCommand = state.stream.activeTerminalCallId,
+                        activeCommand = state.stream.terminalCommandSummary.ifBlank { null },
+                        busy = state.stream.terminalBusy,
+                        exitCode = state.stream.terminalExitCode,
                         collapsed = terminalCollapsed,
-                        onToggleCollapse = { terminalCollapsed = !terminalCollapsed },
+                        onToggleCollapse = {
+                            terminalUserToggled = true
+                            terminalCollapsed = !terminalCollapsed
+                        },
                         backdrop = streamBackdrop
                     )
                 }

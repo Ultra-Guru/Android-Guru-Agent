@@ -431,4 +431,15 @@
     <string name="market_registry_operit_loading">正在加载 Operit 社区插件…</string>
     <string name="market_registry_operit_detect_install">探测安装</string>
     <string name="market_registry_open_repo">浏览器打开仓库</string>
+    <string name="market_skill_source_github_featured">GitHub 精选</string>
+    <string name="market_github_featured_header">GitHub 精选 —— 顶级开源仓库 coding 技能</string>
+    <string name="market_github_featured_hint">来自 anthropics/skills、obra/superpowers 等真实开源仓库的精选 coding 技能，一键安装 SKILL.md 转为 prompt 型技能（仅 Coding 市场）。</string>
+    <string name="market_github_featured_license_hint">技能内容在安装时从上述开源仓库实时拉取，遵循各仓库许可证。</string>
+    <string name="market_installed_skills_tier_hint">技能开关按市场分级独立生效（当前：%1$s）—— 另一分级保持自己的状态</string>
+    <string name="market_skill_needs_config">需配置</string>
+    <string name="market_skill_config_section">技能配置</string>
+    <string name="market_skill_config_required_hint">必填配置项尚未填齐 —— 配置好之前该技能不会出现在斜杠菜单</string>
+    <string name="market_skill_config_save">保存配置</string>
+    <string name="market_skill_config_saved">配置已保存</string>
+    <string name="market_skill_config_options">可选值：%1$s</string>
 </resources>
