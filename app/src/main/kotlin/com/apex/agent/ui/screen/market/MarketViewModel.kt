@@ -1140,10 +1140,7 @@ class MarketViewModel @Inject constructor(
         _uiState.update { it.copy(categoryFilter = category) }
     }
 
-    /**
-     * 本地技能搜索：对已安装 + 内置模板做 ToolSuggester 模糊匹配。
-     * 输入空时清空建议并显示全部。
-     */
+    /** 本地技能搜索：对已安装 + 内置模板做 ToolSuggester 模糊匹配；输入空时清空建议并显示全部。 */
     fun setSkillQuery(query: String) {
         val trimmed = query.trim()
         _uiState.update { it.copy(skillQuery = trimmed) }
