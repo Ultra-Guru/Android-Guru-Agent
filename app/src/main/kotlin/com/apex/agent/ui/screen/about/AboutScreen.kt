@@ -77,7 +77,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -94,6 +93,7 @@ import com.apex.agent.R
 import com.apex.agent.changelog.ChangelogHistoryDialog
 import com.apex.agent.ui.glass.GlassStyle
 import com.apex.agent.ui.glass.GlassSurface
+import com.apex.agent.ui.glass.borderBeam
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.delay
@@ -428,9 +428,10 @@ private fun AboutHero(modifier: Modifier = Modifier, animated: Boolean = true) {
             label = "specular_sweep"
         )
     } else {
-        // 静态降级帧：极光取中位相位、光带停在卡外（不可见）
+        // 静态降级帧：极光取中位相位、光眼熄灭（负相位只留常驻基环）、
+        // 光带停在卡外（不可见）
         drift = remember { mutableStateOf(0.5f) }
-        borderAngle = remember { mutableStateOf(0f) }
+        borderAngle = remember { mutableStateOf(-1f) }
         breath = remember { mutableStateOf(0.5f) }
         sheen = remember { mutableStateOf(-0.4f) }
     }
@@ -529,9 +530,13 @@ private fun AboutHero(modifier: Modifier = Modifier, animated: Boolean = true) {
             }
         }
 
-        // ③ 顶阶动态覆盖层：旋转流光边框 + 对角镜面扫掠（极简风格下整体省略）
-        //    #262：drawWithCache —— Outline / 锥形描边 Brush / 光带 Brush
-        //    均只在尺寸变化时构建一次；动画相位（borderAngle / sheen）在
+        // ③ 顶阶动态覆盖层：光眼沿轮廓流动的边界光轨 + 对角镜面扫掠
+        //    （极简风格下整体省略）
+        //    v1.4.9：旧实现 rotate(borderAngle) 整体旋转描边几何 —— 宽卡上
+        //    退化为「方框打转」且拐角接缝错位；改用 borderBeam（ui.glass 共享
+        //    组件）：PathMeasure 沿轮廓恒速取点，光眼贴边流动，几何零旋转。
+        //    镜面扫掠沿袭 #262：drawWithCache —— Outline / 光带 Brush 只在
+        //    尺寸变化时构建一次；动画相位（borderAngle / sheen）在
         //    onDrawWithContent 里读取，属 draw 阶段读 State —— 只触发重绘，
         //    不重建缓存、不触发重组（旧实现每帧三连分配）。
         //    光带的移动改为 translate 平移固定 Brush（几何只依赖 bandX 的
@@ -540,24 +545,17 @@ private fun AboutHero(modifier: Modifier = Modifier, animated: Boolean = true) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    // 光眼沿 Hero 轮廓匀速流动（9s 一圈，与呼吸/极光同层 ambient 层级）
+                    .borderBeam(
+                        shape = heroShape,
+                        phase = { borderAngle.value / 360f },
+                        tint = scheme.primary
+                    )
                     .drawWithCache {
                     val outline = heroShape.createOutline(
                         size = size,
                         layoutDirection = layoutDirection,
                         density = this
-                    )
-                    // CacheDrawScope 只实现 Density（无 DrawScope.center），
-                    // 锥形渐变中心由 size 显式推导
-                    val gradientCenter = Offset(size.width / 2f, size.height / 2f)
-                    val borderBrush = Brush.sweepGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            scheme.primary.copy(alpha = 0.85f),
-                            Color.Transparent,
-                            scheme.tertiary.copy(alpha = 0.55f),
-                            Color.Transparent
-                        ),
-                        center = gradientCenter
                     )
                     // 规范位（bandX=0）的光带渐变；动画只平移不重建
                     val sheenBrush = Brush.linearGradient(
@@ -569,16 +567,8 @@ private fun AboutHero(modifier: Modifier = Modifier, animated: Boolean = true) {
                         start = Offset(-size.width * 0.24f, 0f),
                         end = Offset(size.width * 0.24f, size.height)
                     )
-                    val borderStroke = Stroke(width = 1.8.dp.toPx())
                     onDrawWithContent {
                         drawContent()
-                        rotate(degrees = borderAngle.value, pivot = center) {
-                            drawOutline(
-                                outline = outline,
-                                brush = borderBrush,
-                                style = borderStroke
-                            )
-                        }
                         translate(left = sheen.value * size.width) {
                             drawOutline(outline = outline, brush = sheenBrush)
                         }

@@ -221,3 +221,55 @@ proguard keep；自带 baseline profile；四 ABI 原生库 ≈0.37~0.42MB/个�
   （scrim 0.55→0.44 更透、blur 14→16dp 更柔，白天列表内容经半透明霜面
   透出）；
 - 其余 GlassCard 调用点（工具卡/输入栏/抽屉/对话框）零改动。
+
+## 11. v1.4.9 边界光轨 Border Beam（光眼沿轮廓流动）
+
+### 问题与正解
+
+旧「流光边框」（关于页 Hero / 玻璃实验室顶阶动态）用 `DrawScope.rotate`
+整体旋转描边几何 —— 圆角矩形不是旋转对称图形，一转轮廓就离开原边界：
+宽卡上视觉退化为「一个方框在打转」，拐角接缝错位、描边越界；锥形渐变
+的角速度还让长边快短边慢，与「沿边缘流动」的直觉相悖。
+
+正解是**几何恒定，光走路径**：
+
+| 层 | 语义 | 实现 |
+|----|------|------|
+| 常驻基环 | 轮廓锚定的静态细描边 | `drawOutline(outline, SolidColor(tint), alpha)` |
+| 流动光眼 | 一枚亮光头（光团 + 白热内核）带 5 枚渐弱拖尾，恒定**弧长速度**绕边 | `PathMeasure.getPosition` 沿轮廓路径取点 + translate 绘制 |
+
+共享组件：`ui/glass/BorderBeam.kt` 的 `Modifier.borderBeam(shape, phase, tint, ...)`。
+
+### 相位与包络
+
+- `phase: () -> Float` 返回 0..1 循环进度（draw 作用域读取其中 State ——
+  只触发重绘不重组）；**负值 = 光眼熄灭**（静态降级帧只留基环）；
+- 单圈播放场景（进入/点击触发）用 `fadeEnvelope = true`：首 12% 淡入、
+  末 15% 淡出 —— 播完自然归零，不留静止亮斑；
+- `reverse = true` 相向而行（双生光轨：两枚光眼每圈交错两次）。
+
+### 性能纪律
+
+- Outline / Path（`Outline.toPath()` 三态转换）/ PathMeasure / 笔刷全部
+  `drawWithCache` 缓存，尺寸或主题色变化才重建；
+- 每帧仅 `getPosition`（Offset 为 inline value class，零堆分配）+
+  translate + drawCircle —— 零分配；
+- 调用点：关于页 Hero（9s 一圈常驻）、玻璃实验室顶阶动态（2.4s 单圈
+  事件触发）、特效工坊（6.5s / 7s 双生常驻）。
+
+## 12. v1.4.9 特效工坊（玻璃实验室扩展区）
+
+玻璃实验室新增「特效工坊 · Effects Workshop」区（`GlassLabEffects.kt`，
+夜间/白天双实验室共用，紧随顶阶动态）：
+
+| 特效 | 驱动 | 说明 |
+|------|------|------|
+| 轮廓光轨 | 常驻 6.5s | 光眼沿边恒速流动的常驻形态 |
+| 双生光轨 | 常驻 7s | 双 borderBeam 叠加：phase 与 1-phase 相向而行 |
+| 镜池涟漪 | 事件触发 | 按压点三环交错扩散（1.1s，FastOutSlowIn），空闲零动画成本 |
+| 星尘悬浮 | 常驻 8s | 14 粒固定种子微尘上升（速度限 1x/2x 整数档保证回绕无缝）+ GlassSurface 真实 backdrop 采样 |
+| 色相流转 | 常驻 12s | 宝石边光沿品牌色闭环（primary→tertiary→secondary，50% 插值接驳）轮转，不走全谱彩虹 |
+
+动效纪律：全区常驻循环共用一支 `rememberInfiniteTransition`（单帧时钟
+派生 4 路 State）；本页是全应用允许无限循环动画的验证屏（豁免见
+GlassLabScreen 文档头），业务界面禁用循环动画的规则不变。
