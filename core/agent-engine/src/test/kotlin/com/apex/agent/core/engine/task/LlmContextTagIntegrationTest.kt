@@ -154,10 +154,9 @@ class LlmContextTagIntegrationTest {
         val job = launch(Dispatchers.Unconfined) {
             rt.execute(UserInput.text("计划任务")).collect { event ->
                 if (event is AgentEvent.PlanAwaitingConfirmation) {
-                    // 事件驱动提交：轮询等 deferred 注册后再 complete（同模块可见 internal 字段）。
-                    // 旧实现盲等 100ms——CI 高负载下镜像收集协程被饿 >100ms 时，
-                    // submitPlanConfirmation 在 deferred 创建前到达 → complete 落空 →
-                    // 引擎挂 5 分钟确认超时 → awaitCondition 10s 先炸（PR#330 实测）。
+                    // #340 注册先行后此轮询理论上不再必要（事件发出时 deferred
+                    // 已注册），保留为防御：CI 高负载下的兜底等待（同模块可见
+                    // internal 字段，可空 var 直接判空）。
                     kotlinx.coroutines.withContext(Dispatchers.Default) {
                         val deadline = System.currentTimeMillis() + 10_000
                         while (engine.planConfirmationDeferred == null &&

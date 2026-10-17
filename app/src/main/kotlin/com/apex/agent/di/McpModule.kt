@@ -8,6 +8,8 @@ import com.apex.agent.core.tools.fusion.rea.ReaBuiltinMcpTransport
 import com.apex.agent.core.tools.fusion.rea.ReaCommandRunner
 import com.apex.agent.core.tools.fusion.rea.ReaPageFetcher
 import com.apex.agent.core.tools.fusion.rea.ReaWorkspace
+import com.apex.agent.core.tools.fusion.shrimp.ShrimpBuiltinMcpTransport
+import com.apex.agent.core.tools.fusion.shrimp.ShrimpTaskStore
 import com.apex.agent.core.tools.mcp.McpManager
 import com.apex.agent.core.tools.mcp.McpSupervisor
 import com.apex.agent.github.GithubApiService
@@ -99,7 +101,10 @@ object McpModule {
         //（PRoot 终端链）与页面抓取（OkHttp）—— 工作目录作证据导出根。
         reaCommandRunner: ReaCommandRunner,
         reaPageFetcher: ReaPageFetcher,
-        reaWorkspace: ReaWorkspace
+        reaWorkspace: ReaWorkspace,
+        // FusionBundle 第三波：Shrimp 任务存储（16 工具进程内任务规划
+        // MCP —— 单例共享，任务数据跨连接持久）。
+        shrimpTaskStore: ShrimpTaskStore
     ): McpManager {
         val configDir = File(context.filesDir, "mcp_config")
         val manager = McpManager(
@@ -130,6 +135,13 @@ object McpModule {
                 // 编排（ensureBuiltinServer + connect，用户未激活不自动连）。
                 com.apex.agent.core.tools.fusion.rea.ReaBuiltinMcpServer.ID to {
                     ReaBuiltinMcpTransport(reaCommandRunner, reaPageFetcher, reaWorkspace)
+                },
+                // 第七台：Shrimp Task Manager（FusionBundle 第三波）——
+                // 16 工具结构化任务规划（依赖 DAG/反思洞察/项目规则/
+                // 思维链），任务数据原子写持久 + 清档自动备份。
+                // 同 REA 口径：仅注册工厂，配置预置与连接由激活器编排。
+                com.apex.agent.core.tools.fusion.shrimp.ShrimpBuiltinMcpServer.ID to {
+                    ShrimpBuiltinMcpTransport(shrimpTaskStore)
                 }
             ),
             // v0.2 #149：PRoot 沙箱 STDIO launcher —— runInSandbox=true 的

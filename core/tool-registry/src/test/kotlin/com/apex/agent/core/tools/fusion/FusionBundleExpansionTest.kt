@@ -11,12 +11,12 @@ import org.junit.rules.TemporaryFolder
 /**
  * # FusionBundle 扩充预置测试 —— Superpowers / SuperClaude / BMAD
  *
- * 三大顶级开源体系的内置预置逐包契约验证：
+ * 前四波契约验证（第三波三体系见 FusionBundleWaveThreeTest）：
  * - manifest 五防线（schema/id 形态/skillId 一致性/服务器名非空）全过；
  * - 技能 id 全部 v5 PascalCase（无 `_`/`-`）；
  * - toolActivationHints 全部可解析形态（一等 id 无分隔符、Mcp 组合规则）；
  * - 聚合语义：激活三端口 + MCP 服务器 autoConnect + 人设注入含路由；
- * - 注册表装载四包（installBundled 幂等 + bundled 保护）。
+ * - 注册表装载（installBundled 幂等 + bundled 保护）。
  */
 class FusionBundleExpansionTest {
 
@@ -26,12 +26,12 @@ class FusionBundleExpansionTest {
     // ═══ 逐包 manifest 契约 ═══════════════════════════════════════════
 
     @Test
-    fun `四包预置全部解析成功且 id 唯一`() {
+    fun `前四波预置全部解析成功且 id 唯一`() {
         val all = FusionBundlePresets.all()
-        assertEquals(4, all.size)
+        assertEquals(7, all.size)
         assertEquals(
             listOf("rea", "superpowers", "superclaude", "bmad"),
-            all.map { it.first.id }
+            all.map { it.first.id }.take(4)
         )
     }
 
@@ -106,7 +106,7 @@ class FusionBundleExpansionTest {
     }
 
     @Test
-    fun `三包 toolActivationHints 全部 v5 可解析形态`() {
+    fun `前四波 toolActivationHints 全部 v5 可解析形态`() {
         val forbidden = Regex("[_\\-]")
         for ((m, _) in FusionBundlePresets.all().drop(1)) {
             m.toolActivationHints.forEach { hint ->
@@ -230,18 +230,18 @@ class FusionBundleExpansionTest {
     // ═══ 注册表装载语义 ═══════════════════════════════════════════════
 
     @Test
-    fun `installBundled 四包释放且 bundled 保护`() {
+    fun `七包 installBundled 释放且 bundled 保护`() {
         val registry = FusionBundleRegistry(tmp.newFolder("bundled"))
         for ((m, _) in FusionBundlePresets.all()) {
             assertTrue("释放 '${m.id}'", registry.installBundled(m, "{}").isSuccess)
         }
-        assertEquals(4, registry.list().size)
-        assertEquals(4, registry.list().count { it.bundled })
+        assertEquals(7, registry.list().size)
+        assertEquals(7, registry.list().count { it.bundled })
         // 幂等：二次释放不重复
         for ((m, _) in FusionBundlePresets.all()) {
             registry.installBundled(m, "{}")
         }
-        assertEquals(4, registry.list().size)
+        assertEquals(7, registry.list().size)
     }
 
     // ═══ 测试 fake（与 FusionBundleCoreTest 同构）══════════════════════

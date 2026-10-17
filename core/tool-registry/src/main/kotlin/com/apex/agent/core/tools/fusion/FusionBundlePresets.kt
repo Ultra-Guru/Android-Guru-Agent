@@ -3,11 +3,17 @@ package com.apex.agent.core.tools.fusion
 /**
  * # FusionBundle 内置预置目录
  *
- * 首发 REA（逆向工程复合包）+ 三大顶级开源体系扩充：
+ * 首发 REA（逆向工程复合包）+ 三大顶级开源体系扩充 + 第三波三体系：
  * - REA · Reverse Engineer Anything（v6.5.0）：207 工具逆向工程复合包；
  * - Superpowers（v7.0.0，obra）：软件开发方法论八技能；
  * - SuperClaude（v4.3.0）：结构化开发平台五模式 + 四台内置 MCP 聚合；
- * - BMAD（v6.12.0）：敏捷 AI 驱动交付环五阶段。
+ * - BMAD（v6.12.0）：敏捷 AI 驱动交付环五阶段；
+ * - Anthropic Skills（官方技能体系）：文档生产力四件 + 技能工程三件
+ *   + 前端设计（文档技能为原创等能力重述）；
+ * - Claude Flow（v3.56.10，SPARC）：结构化开发五阶段 + 群智编排 +
+ *   持久记忆；
+ * - Shrimp Task Manager（v1.0.21）：16 工具智能任务规划（进程内
+ *   MCP 实现第七台）。
  *
  * 安装：app 层 FusionModule 首启 installBundled（幂等 + 版本守卫）。
  */
@@ -94,12 +100,15 @@ object FusionBundlePresets {
 }
 """.trim()
 
-    /** 全部内置预置（REA + Superpowers + SuperClaude + BMAD）。 */
+    /** 全部内置预置（REA + Superpowers + SuperClaude + BMAD + 第三波三体系）。 */
     fun all(): List<Pair<FusionBundleManifest, String>> = listOf(
         preset("rea", REA_BUNDLE_JSON),
         preset("superpowers", FusionSuperpowersPreset.SUPERPOWERS_BUNDLE_JSON),
         preset("superclaude", FusionSuperClaudePreset.SUPERCLAUDE_BUNDLE_JSON),
-        preset("bmad", FusionBmadPreset.BMAD_BUNDLE_JSON)
+        preset("bmad", FusionBmadPreset.BMAD_BUNDLE_JSON),
+        preset("anthropicskills", FusionAnthropicSkillsPreset.ANTHROPIC_SKILLS_BUNDLE_JSON),
+        preset("claudeflow", FusionClaudeFlowPreset.CLAUDEFLOW_BUNDLE_JSON),
+        preset("shrimp", FusionShrimpPreset.SHRIMP_BUNDLE_JSON)
     )
 
     /** 解析 + 编码期自检（内置 manifest 非法属编码期错误，fail-fast）。 */

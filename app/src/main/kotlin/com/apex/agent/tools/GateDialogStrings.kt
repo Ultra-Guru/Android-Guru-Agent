@@ -31,7 +31,7 @@ interface GateDialogStrings {
     /** 授权弹窗首行：当前权限模式 + 确认要求。 */
     fun permModeLine(mode: PermissionMode): String
 
-    /** 授权弹窗次行：参数摘要。 */
+    /** 授权弹窗次行：参数摘要（#336：先脱敏再截断，凭证值折叠、非凭证字段明文）。 */
     fun argsLine(arguments: String): String
 
     // ── RiskAwareToolGate ───────────────────────────────────────────
@@ -68,7 +68,7 @@ interface GateDialogStrings {
         }
 
         override fun argsLine(arguments: String) =
-            "参数摘要：${arguments.take(300).replace('\n', ' ')}"
+            "参数摘要：${SensitiveArgRedactor.redact(arguments).take(300).replace('\n', ' ')}"
 
         override fun riskTitle(toolId: String) = "危险工具需要确认：$toolId"
         override fun fileWriteTitle(toolId: String) = "文件写入确认：$toolId"
@@ -104,7 +104,7 @@ interface GateDialogStrings {
         override fun argsLine(arguments: String): String =
             language.getString(
                 R.string.gate_args_fmt,
-                arguments.take(300).replace('\n', ' ')
+                SensitiveArgRedactor.redact(arguments).take(300).replace('\n', ' ')
             )
 
         override fun riskTitle(toolId: String): String =

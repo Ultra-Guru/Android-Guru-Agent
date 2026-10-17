@@ -41,14 +41,28 @@
     <string name="browser_screen_hand_back">交还 Agent</string>
     <!-- 底部说明卡 -->
     <string name="browser_screen_builtin_title">浏览器自动化已内置</string>
-    <string name="browser_screen_builtin_desc">24 个 browser_* 工具随 App 内置（v1.5.0 起非插件）——在 Agent 对话中直接指挥它打开网页、点击、输入、截图。Agent 使用浏览器时会自动弹出透明实时页面悬浮窗；点悬浮球可查看或收起，长按结束会话。</string>
+    <string name="browser_screen_builtin_desc">24 个 browser_* 工具随 App 内置（v1.5.0 起非插件）——在 Agent 对话中直接指挥它打开网页、点击、输入、截图。「浏览器」页签是随时可用的完整浏览器；授予悬浮窗权限后，Agent 浏览时其他应用上方会有透明实时浮窗跟看（点悬浮球切换，长按结束会话）。</string>
 
     <!-- 实时页面卡（v1.4.1：LiveViewOverlay 入口） -->
     <string name="browser_screen_live_title">实时页面</string>
     <string name="browser_screen_live_view">查看实时页面</string>
     <string name="browser_screen_live_open">打开浏览器</string>
-    <string name="browser_screen_live_desc_idle">Agent 使用浏览器时会自动弹出透明悬浮窗，实时显示它正在开的页面；你也可以现在就打开浏览器自己操作。</string>
-    <string name="browser_screen_live_desc_driving">Agent 正在自动浏览——实时悬浮窗已弹出，点悬浮球可随时查看或收起。</string>
-    <string name="browser_screen_live_desc_handoff">人工接管中——全屏浏览器浮窗已展开，可直接操作。</string>
+    <string name="browser_screen_live_desc_idle">可在此直接打开完整浏览器；Agent 浏览时也会在其他应用上方自动弹出透明实时浮窗。</string>
+    <string name="browser_screen_live_desc_driving">Agent 正在浏览——点「查看实时页面」切到浏览器页签全屏围观，或用悬浮球浮窗在其他应用里跟看。</string>
+    <string name="browser_screen_live_desc_handoff">人工接管中——浏览器页签就是完整浏览器，直接操作；交还前 Agent 工具保持锁定。</string>
     <string name="browser_screen_live_desc_recovering">渲染进程重建中——实时画面稍后自动恢复。</string>
+    <!-- ═══ App 内嵌浏览器（v1.5.1：浏览器页签，零悬浮窗权限）═══ -->
+    <!-- 双页签切换 -->
+    <string name="browser_screen_tab_browser">浏览器</string>
+    <string name="browser_screen_tab_dashboard">仪表盘</string>
+    <!-- 浏览器页签空态引导卡 -->
+    <string name="browser_screen_inapp_hero_title">内置浏览器</string>
+    <string name="browser_screen_inapp_hero_desc">在此直接打开完整浏览器——地址栏、标签页、页内查找、下载管理，无需任何特殊权限。Agent 驱动的是同一组页面：可以实时看它浏览，也可以随时接管。</string>
+    <string name="browser_screen_inapp_open">打开浏览器</string>
+    <!-- 人工接管横幅（注入 chrome 头部） -->
+    <string name="browser_screen_inapp_handoff">人工接管中——Agent 工具已锁定</string>
+    <!-- 悬浮窗权限引导卡（实时浮窗/悬浮球需要；浏览器页签本身不需要） -->
+    <string name="browser_screen_overlay_title">悬浮窗权限</string>
+    <string name="browser_screen_overlay_desc">上方浏览器页签无需任何权限即可使用；悬浮球、实时页面浮窗与全屏接管浮窗属于系统悬浮窗，需要「显示在其他应用上层」权限才能在你使用其他应用时出现。</string>
+    <string name="browser_screen_overlay_grant">去授权</string>
 </resources>

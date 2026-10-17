@@ -116,3 +116,24 @@ AgentEvent 流（引擎零改动）
    快照保证无指数污染；
 9. **未完成恢复**：中断时 running 的 BASH → PARTIAL + pendingToolCalls；
 10. **空输入**：空 diff / 空输出 / 空命令 → 骨架与占位文案，无异常。
+
+## 七、终端面板流水式折叠（v2 增补）
+
+用户需求统一口径：「思考时保持展开、思考完折叠；工具调用运行时详细展示、
+调用完折叠；终端命令等流水似输出同款处理」。思考卡与工具胶囊此前已按此
+语义落地；本节补齐最后一块 —— 终端面板。
+
+- **信号**（CodeStreamSession 维护，随快照下发）：
+  - `terminalBusy`：活跃 BASH Start 置 true；Complete / Error / Aborted /
+    beginRun / replaceAll 收束为 false；
+  - `terminalCommandSummary`：头行展示的首行命令（新命令接管时刷新）；
+  - `terminalExitCode`：命令收束时的退出码（exitCodeOf 尾部解析），
+    供折叠胶囊头行回看。
+- **UI 时机**（CodeScreen）：`LaunchedEffect(terminalBusy)` —— 新命令开跑
+  强制展开并重置手动态；命令收束且用户未手动干预则自动折叠（userToggled
+  守卫，与 ThinkingCard 同款语义）；手动展开/收起永远尊重。
+- **面板**（CodeTerminalPanel）：头行 = 状态点（运行中呼吸脉冲 / exit 0
+  绿 / 非零红）+ 命令摘要 + 运行中标签或 exit 码；正文展开/收起改
+  AnimatedVisibility（expand/shrinkVertically），滚动状态提升不受折叠影响。
+- **边界**（测试锁定，CodeStreamSessionTest）：命令收束 busy=false 且
+  退出码保留；第二条命令接管三信号；Abort/Error 中途收束；beginRun 归零。

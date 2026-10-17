@@ -48,10 +48,15 @@ jobs:
       - name: Read apex-browser-kit pin
         id: bkitpin
         # 锁定文件 gradle/browser-kit.lock 由 sync-browser-kit 工作流自动维护。
-        # 缺锁回退 main（防御旧分支/分叉构建）。
+        # #352：缺锁回退 main 保留（防御旧分支/分叉构建 —— 本流水线是手动
+        # 验证构建，只验证不发货），但从静默回退升级为 warning 级可见；
+        # 正式发布流水线 release.yml 同场景直接 fail-closed，不回退。
         run: |
           set -euo pipefail
           PIN=$(head -n 1 gradle/browser-kit.lock 2>/dev/null || true)
+          if [ -z "$PIN" ]; then
+            echo "::warning::gradle/browser-kit.lock 缺失 —— 防御性回退 browser-kit main HEAD（仅限验证构建；发布流水线 release.yml 缺锁即硬失败）"
+          fi
           echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
       - name: Checkout apex-browser-kit (browser-kit composite build, pinned)
         uses: actions/checkout@v4
@@ -59,6 +64,39 @@ jobs:
           repository: Ultra-Guru/apex-browser-kit
           ref: ${{ steps.bkitpin.outputs.sha }}
           path: apex-browser-kit
+      - name: Read apex-workspace-kit pin
+        id: wkitpin
+        # 工作区浏览器库（com.apex.workspace:{core,explorer}）锁定文件
+        # gradle/workspace-kit.lock —— 缺锁回退 main（防御旧分支/分叉构建）。
+        # 本地开发：兄弟目录 ../apex-workspace-kit 存在时 settings 自动
+        # includeBuild；CI 嵌套路径同样命中兜底分支。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/workspace-kit.lock 2>/dev/null || true)
+          echo "sha=main" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-workspace-kit (workspace-kit composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-workspace-kit
+          ref: ${{ steps.wkitpin.outputs.sha }}
+          path: apex-workspace-kit
+
+      - name: Verify apex-browser-kit checkout SHA
+        # #352：轻量审计（纯日志、不阻塞）—— 实际检出 SHA 写入 job summary
+        # 并与锁值对照，防 ref 解析异常（如锁文件误填分支名/短 SHA 时肉眼
+        # 可辨）。不一致只发 ::warning 不阻塞：硬门禁是锁检出与构建本身。
+        run: |
+          ACTUAL=$(git -C apex-browser-kit rev-parse HEAD 2>/dev/null || true)
+          PIN=$(head -n 1 gradle/browser-kit.lock 2>/dev/null || true)
+          echo "browser-kit 实际检出: ${ACTUAL:-未知} / 锁定值: ${PIN:-缺锁（回退 main）}"
+          {
+            echo "### 🧬 apex-browser-kit 检出（#352）"
+            echo "- 实际检出 SHA: \`${ACTUAL:-未知}\`"
+            echo "- 锁定值: \`${PIN:-缺锁（回退 main）}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$ACTUAL" ] && [ -n "$PIN" ] && [ "$ACTUAL" != "$PIN" ]; then
+            echo "::warning::browser-kit 实际检出 $ACTUAL 与锁 $PIN 不一致（ref 解析异常？）"
+          fi
 
       - name: Read apex-standard-kit pin
         id: akitpin

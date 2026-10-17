@@ -3,6 +3,7 @@ package com.apex.agent.ui.screen.market
 import androidx.lifecycle.viewModelScope
 import com.apex.agent.BuildConfig
 import com.apex.agent.R
+import com.apex.agent.core.tools.marketplace.MarketNames
 import com.apex.agent.core.tools.mcp.McpConfigValidator
 import com.apex.agent.core.tools.mcp.McpServerCatalog
 import com.apex.agent.core.tools.mcp.McpStartupEvent
@@ -190,12 +191,18 @@ fun MarketViewModel.selectCatalogCategory(category: String?) {
     _uiState.update { it.copy(mcpCatalogCategory = category) }
 }
 /**
- * 目录条目是否已安装：精确名匹配 + 安装时生成的序号后缀形态
+ * 目录条目是否已安装（#346：归一化比较键 + 安装时生成的序号后缀形态
  * （id-2 / id-3…）；不再用宽泛前缀（`github-backup` 不再误判成 `github`）。
+ * 归一化后同名服务器从其他源安装（如「GitHub」vs 目录 id `github`）
+ * 同样点亮已安装徽标。
  */
 fun MarketViewModel.isCatalogEntryInstalled(entry: McpServerCatalog.McpCatalogEntry): Boolean {
-    val suffixPattern = Regex("^${Regex.escape(entry.id)}-\\d+$")
-    return mcpManager.getConfigs().any { it.name == entry.id || suffixPattern.matches(it.name) }
+    val normalizedId = MarketNames.normalize(entry.id)
+    val suffixPattern = Regex("^${Regex.escape(normalizedId)}-\\d+$")
+    return mcpManager.getConfigs().any {
+        val n = MarketNames.normalize(it.name)
+        n == normalizedId || suffixPattern.matches(n)
+    }
 }
 
 /** 打开目录条目的环境变量弹窗（无必填变量时 UI 直接走安装）。 */

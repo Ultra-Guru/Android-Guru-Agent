@@ -431,4 +431,15 @@
     <string name="market_registry_operit_loading">Loading Operit community plugins…</string>
     <string name="market_registry_operit_detect_install">Detect &amp; install</string>
     <string name="market_registry_open_repo">Open repository in browser</string>
+    <string name="market_skill_source_github_featured">GitHub Featured</string>
+    <string name="market_github_featured_header">GitHub Featured — top open-source coding skills</string>
+    <string name="market_github_featured_hint">Curated coding skills from anthropics/skills and obra/superpowers. One tap installs the SKILL.md as a prompt-type skill (Coding market only).</string>
+    <string name="market_github_featured_license_hint">Skill content is fetched from the open-source repositories above at install time and follows each repo\'s license.</string>
+    <string name="market_installed_skills_tier_hint">Skill switches take effect per market tier (current: %1$s) — the other tier keeps its own state</string>
+    <string name="market_skill_needs_config">Setup needed</string>
+    <string name="market_skill_config_section">Skill configuration</string>
+    <string name="market_skill_config_required_hint">Required fields are not filled in yet — the skill stays out of the slash menu until configured</string>
+    <string name="market_skill_config_save">Save configuration</string>
+    <string name="market_skill_config_saved">Configuration saved</string>
+    <string name="market_skill_config_options">Options: %1$s</string>
 </resources>

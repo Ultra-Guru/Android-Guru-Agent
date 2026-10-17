@@ -6,7 +6,7 @@
 > 工具」三位一体形态）的标准化引入通道。
 > 前置：[hub-ecosystem.md](hub-ecosystem.md)（技能 / MCP 仓库生态）
 > · [skill-system.md](skill-system.md)（apex-skill-v1）
-> · `core/tool-registry/.../mcp/`（内置 MCP 服务器六件套 —— REA 为第六台）
+> · `core/tool-registry/.../mcp/`（内置 MCP 服务器七件套 —— REA 第六台 / Shrimp 第七台）
 
 ---
 
@@ -69,11 +69,13 @@ Engine Anything，morluto/rea，MIT，npm rea-agents，Trendshift 榜）为
 | `core/tool-registry/.../fusion/FusionBundleRegistry.kt` | 存储/装卸/changes 流/bundled 保护 |
 | `core/tool-registry/.../fusion/FusionBundleActivator.kt` | 三端口编排 + 激活提示组装 + 聚合容错 |
 | `core/tool-registry/.../fusion/FusionBundleTools.kt` | FusionList / FusionInfo / FusionActivate 工具族 |
-| `core/tool-registry/.../fusion/FusionBundlePresets.kt` | 内置预置目录（REA + 三大扩充包，见 §4/§7） |
+| `core/tool-registry/.../fusion/FusionBundlePresets.kt` | 内置预置目录（七大体系，见 §4/§7） |
 | `core/tool-registry/.../fusion/rea/` | REA 引擎全套（见 §4） |
+| `core/tool-registry/.../fusion/FusionAnthropicSkillsPreset.kt` / `FusionClaudeFlowPreset.kt` / `FusionShrimpPreset.kt` | 第三波三体系预置（文档生产力 / SPARC 群智 / 任务规划） |
+| `core/tool-registry/.../fusion/shrimp/` | Shrimp 引擎全套（16 工具 + JSON 持久化 + 第七台内置 MCP transport） |
 | `app/.../fusion/FusionBundleController.kt` | 控制面 + 三端口适配 + 持久化重激活 |
 | `app/.../fusion/ReaRuntimePorts.kt` | 命令执行/页面抓取端口实现（复用终端链/OkHttp） |
-| `app/di/FusionModule.kt` / `McpModule.kt` / `ToolModuleFusionRegistration.kt` | DI 接线（第六台内置 MCP + fusion 工具注册） |
+| `app/di/FusionModule.kt` / `McpModule.kt` / `ToolModuleFusionRegistration.kt` | DI 接线（第六/七台内置 MCP + fusion 工具注册 + Shrimp 任务存储单例） |
 | `app/ui/component/FusionBundleButton.kt` / `ui/screen/agent/FusionBundlePickerSheet.kt` | 输入栏入口 + 选择弹层 + 激活态横幅 |
 
 ## 3. Manifest 规范（fusion-bundle-v1）
@@ -181,9 +183,9 @@ MCP 生态的注册表模式完全同轨。
 | 引擎命令执行 | 走 shell_execute 同一条 ExecEngine + ProotCommandSpawner 链（权限链 + 超时 + 采集上限）；引用参数单引号转义 |
 | scope 隔离 | 包级 scope 透传 McpServerConfig.scope / SkillManifest.scope —— 引擎计划层自动过滤 |
 
-## 7. 内置复合开源项目目录（四大体系）
+## 7. 内置复合开源项目目录（七大体系）
 
-FusionBundle 是**通用装载单位**，不绑定 REA。首发即内置四包（全部
+FusionBundle 是**通用装载单位**，不绑定 REA。首发即内置七包（全部
 `bundled=true` 首启幂等释放，`scope=all` 全工位可用）：
 
 | 包 | 上游 | 形态 | 聚合内容 |
@@ -192,11 +194,19 @@ FusionBundle 是**通用装载单位**，不绑定 REA。首发即内置四包�
 | `superpowers` | obra/superpowers v7.0.0（MIT） | 纯方法论技能集 | 8 技能（brainstorming/writing-plans/executing-plans/TDD/systematic-debugging/verification/code-review/finishing）+ using-superpowers 引导人设；上游无 MCP，如实保持零服务器 |
 | `superclaude` | SuperClaude-Org v4.3.0（MIT） | 命令 + 代理 + 模式 + 增强 MCP | 5 模式技能（Brainstorming/DeepResearch/TokenEfficiency/Orchestration/BusinessPanel）+ 人设；上游 8 台增强 MCP 的设备端等价映射 —— Tavily→`search`、Sequential-Thinking→`thinking`、Serena→`memory`、代码智能→`github`（四台内置 MCP 聚合；Playwright/DevTools→一等 browser_* 工具族） |
 | `bmad` | bmad-code-org v6.12.0（MIT） | 敏捷交付环代理体系 | 5 环阶段技能（Clarify/Plan/Shard/Build/Verify）+ 编排者人设；增益层聚合 thinking + search 两台内置 MCP（超出上游） |
+| `anthropicskills` | anthropics/skills（官方技能体系） | 文档生产力 + 技能工程 | 8 技能：文档四件（Word/Excel/PPT/PDF，经 PRoot Ubuntu Python 工具链真实产出）+ skill-creator/mcp-builder/webapp-testing/frontend-design；上游无 MCP 如实保持零服务器。**许可如实**：上游文档技能 source-available（© Anthropic 保留所有权利）—— 本移植为**原创等能力重述**（零上游文本/脚本复制）；工程类技能对齐上游 Apache-2.0 方法论 |
+| `claudeflow` | ruvnet/ruflo（claude-flow）v3.56.10（MIT） | SPARC 方法论 + 群智编排 + 持久记忆 | 7 技能：五阶段（Specify/Architect/TDD/Review/Complete）+ SparcSwarm（Task 子代理并行派发）+ SparcMemory（知识图谱沉淀）；上游增强 MCP 的内置等价映射 —— sequential-thinking→`thinking`、自学习记忆→`memory` |
+| `shrimp` | cjo4m06/mcp-shrimp-task-manager v1.0.21（MIT） | 结构化任务管理 MCP | **16 工具全目录进程内实现**（第七台内置 MCP：规划/执行/验证/反思/研究/思维链，上游 docs/tools.md 逐名对齐）；任务数据 JSON 原子写持久 + 清档自动备份；超出上游的零依赖形态（无需 Node/npx/网络） |
 
-三个扩充包的能力对齐原则与 REA 相同：**主干技能全量移植**（方法论
+扩充包的能力对齐原则与 REA 相同：**主干技能全量移植**（方法论
 正文进技能 promptInjection，v5 PascalCase id）、**人设路由浓缩**上游
 引导指令、**MCP 聚合映射**优先复用内置服务器（零子进程零网络握手）。
-methodology 类项目无 BYO 引擎面，runtime.engines 仅 git 可选项。
+methodology 类项目无 BYO 引擎面，runtime.engines 仅 git/python 可选项；
+anthropicskills 的文档工具链为 BYO Python 库（PRoot Ubuntu pip 安装，
+缺失时技能内如实指引装库）。
+Shrimp 是 REA 之后的第二个「进程内深实现」包：工具面逐名对齐上游，
+执行层为纯 Kotlin（依赖 DAG 门禁 / 反思洞察账本 / 项目规则常驻 /
+思维链环形缓冲），任务数据跨连接持久。
 
 后续引入其他复合开源项目同口径：
 1. 目标项目拆解为 skills[] + mcpServers[] + agent 人设（MCP server 可用
@@ -216,11 +226,13 @@ Coding 工位入口 · 包级依赖（bundle 间引用）。
 | 文件 | 覆盖 |
 | --- | --- |
 | `fusion/FusionBundleCoreTest.kt` | manifest 校验五防线 / registry 装卸幂等与 bundled 保护 / 激活器三端口聚合语义 / 容错 / 去激活恢复 / scope 拒绝 |
-| `fusion/FusionBundleExpansionTest.kt` | 四包预置契约（id 唯一 / 技能 id v5 PascalCase / MCP 聚合清单 / 上游版本溯源）/ 三包激活聚合（技能·MCP·人设）/ 多包切换语义（聚合不融合：实体只增不减）/ bundled 保护 |
+| `fusion/FusionBundleExpansionTest.kt` | 前四波预置契约（id 唯一 / 技能 id v5 PascalCase / MCP 聚合清单 / 上游版本溯源）/ 三包激活聚合（技能·MCP·人设）/ 多包切换语义（聚合不融合：实体只增不减）/ 七包 bundled 保护 |
+| `fusion/FusionBundleWaveThreeTest.kt` | 第三波三包契约（AnthropicSkills 8 技能零 MCP + BYO Python 引擎面 / ClaudeFlow 七技能 + thinking·memory 聚合 / Shrimp 2 技能 + 16 工具 MCP）/ 三包激活聚合 / 七包共存切换（实体只增不减）/ bundled 幂等 |
+| `fusion/shrimp/ShrimpTaskEngineTest.kt` | 16 工具全目录：规划链（plan 归档 + update 五防线：空表/缺描述/悬空引用/自引用/环）/ 依赖纪律（前置门禁 + 洞察随身）/ 执行链（complete 证据与下一个建议 / verify 先完成门 / reflect 入账）/ 记忆链（list·query·detail / split 依赖转接 / delete 引用清理）/ 清档备份与规则保留 / 研究与思维链（环形上限 20 不落盘）/ 跨引擎实例持久 / JSON-RPC 传输三方法 + 16 工具 tools_list |
 | `fusion/rea/ReaAnalyzersTest.kt` | ASAR 目录与单文件 / import 三族语法 / 应用图渲染 / ELF64 布局与 vaddr 映射 / search_bytes / AXML package 提取 / dex 类清单 / Flutter 识别 / plist/sqlite/demangle/EVM |
 | `fusion/rea/ReaEngineTransportTest.kt` | 目录 207 条与分层统计恒定 / tools_list 渲染 / tools_call 真跑分析 / 降级信封 / 未知工具错误 / 会话证据账本 / unknowns 闭环 / JSON-RPC 协议（initialize/list/call/通知/未知方法） |
 
-本地验证：`scripts/run_core_tests_jvm.sh` → 全绿（tool-registry 镜像 818/818，fusion 族 60：核心 26 + 扩充 10 + REA 24）；
+本地验证：`scripts/run_core_tests_jvm.sh` → 全绿（core 镜像 1379/1379；fusion 族 93：核心 16 + 扩充 12 + 第三波 10 + REA 34 + Shrimp 21）；
 `scripts/check_file_size.sh` / `check_code_quality.sh` /
 `check_comment_integrity.py` / `kotlin_balance.py` / `check_string_mirror.py`
 全绿。CI（app-compile + 9 步模块测试）验证 Android 侧装配。

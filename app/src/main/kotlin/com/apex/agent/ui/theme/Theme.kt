@@ -27,6 +27,13 @@ import androidx.compose.ui.platform.LocalContext
  *
  * 风格经 [LocalUiStyle] 下发；玻璃体系的扁平化短路收敛在
  * GlassSurface 单点（业务组件零感知）。
+ *
+ * ## 强调色单一事实源（#278）
+ *
+ * 组装 colorScheme 的同时，把同源的强调色族（深 / 浅双变体）经
+ * [LocalAccentColors] 下发 —— MaterialTheme / 终端 ConsoleTheme 等
+ * 各套颜色体系从同一来源取强调色：设置改一次，全 App 生效
+ * （重组驱动，无需重启）。终端 ANSI 内容色 / 语义状态色不在其列。
  */
 @Composable
 fun ApexTheme(
@@ -36,6 +43,21 @@ fun ApexTheme(
     uiStyle: UiStyle = UiStyle.MINIMAL,
     content: @Composable () -> Unit
 ) {
+    // 与 colorScheme 同源合成（预设 / 动态取色 / 极简灰阶三路对齐），
+    // 恒深表面（终端控制台）取 dark 变体、随主题表面取 light 变体。
+    val accents = when {
+        // 极简黑白：纯灰阶基底，忽略 Dynamic Color / 预设配色
+        uiStyle == UiStyle.MINIMAL -> accentColors(AccentPalette.MONO)
+        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            val context = LocalContext.current
+            AccentColors(
+                dark = dynamicDarkColorScheme(context).toAccentTone(),
+                light = dynamicLightColorScheme(context).toAccentTone()
+            )
+        }
+        // 预设配色：中性基底 + 方案强调色（MINT 与旧版单配色逐字段等价）
+        else -> accentColors(accentPalette)
+    }
     val colorScheme = when {
         // 极简黑白：纯灰阶基底，忽略 Dynamic Color / 预设配色
         uiStyle == UiStyle.MINIMAL -> minimalColorScheme(darkTheme)
@@ -54,7 +76,8 @@ fun ApexTheme(
 
     CompositionLocalProvider(
         LocalUiStyle provides uiStyle,
-        LocalExtendedColors provides extendedColors
+        LocalExtendedColors provides extendedColors,
+        LocalAccentColors provides accents
     ) {
         MaterialTheme(
             colorScheme = colorScheme,

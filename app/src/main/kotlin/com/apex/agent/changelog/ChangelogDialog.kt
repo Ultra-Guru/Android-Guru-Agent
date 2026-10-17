@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -145,8 +146,9 @@ fun ChangelogStartupHost(autoUpdateCheck: Boolean) {
 }
 
 /**
- * 单版内容弹窗（包内私用 —— 模式枚举为 file-private，不外露）。notes 为要点
- * 列表（列表项剥壳文本）；缺失时降级 markdown 原文纯文本。滚动区封顶
+ * 单版内容弹窗（包内私用 —— 模式枚举为 file-private，不外露）。两级渲染：
+ * 一级 notes（管理软件发送的要点）置顶；下滑为二级 pr 分组（PR 合并内容，
+ * 新增功能 / 修复）。两级全空才降级 markdown 原文纯文本。滚动区封顶
  * 380dp —— 长日志不撑爆对话框。
  */
 @Composable
@@ -197,6 +199,7 @@ private fun ChangelogEntryDialog(
                     )
                 }
                 Spacer(Modifier.size(8.dp))
+                // ── 一级日志：管理软件（发布器 App）发送的要点 —— 置顶展示 ──
                 if (entry.notes.isNotEmpty()) {
                     entry.notes.forEach { note ->
                         Row(modifier = Modifier.padding(vertical = 3.dp)) {
@@ -213,8 +216,57 @@ private fun ChangelogEntryDialog(
                             )
                         }
                     }
-                } else {
-                    // 无结构化要点：markdown 原文降级纯文本（不引渲染器）
+                }
+                // ── 二级日志：PR 合并内容（新增功能 / 修复）—— 下滑展示 ──
+                // 与一级不冲突：独立分节标题 + 分组渲染；两级全空才降级 markdown。
+                if (entry.pr.isNotEmpty()) {
+                    if (entry.notes.isNotEmpty()) {
+                        Spacer(Modifier.size(12.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+                        Spacer(Modifier.size(12.dp))
+                    }
+                    Text(
+                        stringResource(R.string.changelog_pr_section),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.size(6.dp))
+                    entry.pr.forEachIndexed { index, group ->
+                        if (group.title.isNotBlank()) {
+                            Text(
+                                group.title,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(top = if (index == 0) 0.dp else 10.dp)
+                            )
+                        }
+                        group.notes.forEach { note ->
+                            Row(
+                                modifier = Modifier.padding(
+                                    start = 8.dp,
+                                    top = 3.dp,
+                                    bottom = 3.dp
+                                )
+                            ) {
+                                Text(
+                                    "·",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    note,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+                if (entry.notes.isEmpty() && entry.pr.isEmpty()) {
+                    // 两级全空：markdown 原文降级纯文本（不引渲染器）
                     Text(
                         entry.markdown.orEmpty()
                             .ifBlank { stringResource(R.string.changelog_history_empty) },

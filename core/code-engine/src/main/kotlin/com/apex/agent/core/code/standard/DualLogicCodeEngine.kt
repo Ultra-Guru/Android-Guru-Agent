@@ -143,7 +143,7 @@ class DualLogicCodeEngine(
         confirmed: Boolean,
         enabledSteps: List<Int>?,
         order: List<Int>?
-    ) = active.submitPlanConfirmation(confirmed, enabledSteps, order)
+    ): Boolean = active.submitPlanConfirmation(confirmed, enabledSteps, order)
 
     override fun updateThinkingLevel(level: CodeThinkingLevel) =
         active.updateThinkingLevel(level)

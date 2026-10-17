@@ -89,6 +89,10 @@ EngineToolPlanner.filterOutOffScopeTools（读 metadata.scope，
 2. **SkillActivationStore 仍跨工位共享**：激活集不分工位（Agent 屏激活
    的技能，Coding 屏的目录里也标记已激活）；prompt 注入已按 skillScope
    过滤，共享的只是激活簿记，不泄漏方法论正文；
+   > v2 演进（2026-10）：技能侧已补 **per-scope 启停**（enabledAgent /
+   > enabledCoding，生效作用域 = manifest 声明 ∩ 双工位启用），市场分级
+   > 开关与两屏斜杠菜单完全隔离；激活簿记共享仍维持（影响面小），
+   > 详见 docs/market-scope-isolation-v2.md；
 3. **计划级强制 ≠ 执行墙**：`ToolOpen` 渐进披露理论上能让模型翻到
    目录里其它工位工具的描述，执行层不做 scope 二次校验（回显名兜底路由
    依赖注册表直查）——防呆不防赖，主路径的隔离目标已达成；
