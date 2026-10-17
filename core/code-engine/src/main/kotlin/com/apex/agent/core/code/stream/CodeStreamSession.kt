@@ -73,9 +73,9 @@ class CodeStreamSession {
     fun beginRun(userText: String) {
         // 收口上一轮残留的流式条目：中止路径没有 Complete 事件，引用
         // 悬挂会导致下一轮首个 Chunk 把新文本拼进旧气泡（跨轮串台）
-        streamingThinking?.let { replaceEntry(it.id, it.copy(isStreaming = false)) }
+        streamingThinking?.let { closeStreamingEntry(it) }
         streamingThinking = null
-        streamingAssistant?.let { replaceEntry(it.id, it.copy(isStreaming = false)) }
+        streamingAssistant?.let { closeStreamingEntry(it) }
         streamingAssistant = null
         // 文档语义：「本轮运行」触碰的文件 —— 每 run 归零重新累计
         affectedFiles.clear()
@@ -100,8 +100,15 @@ class CodeStreamSession {
             is AgentEvent.ThinkingStart -> Unit // 思考条目由首个 Chunk 创建
 
             is AgentEvent.ThinkingChunk -> {
+                // 空思考分片不建卡（2026-10 用户反馈）：部分网关对不思考的
+                // 模型也每帧发 reasoning_content:"" —— 旧实现建出一张永远
+                // 「思考中」的空思考卡（reasoningBuilder 恒空 → 引擎不发
+                // ThinkingComplete → 永不收尾）。首块空白直接忽略；已有条目
+                // 时空白拼接无害但也无意义，一并跳过。
+                if (event.text.isEmpty()) return
                 val cur = streamingThinking
                 if (cur == null) {
+                    if (event.text.isBlank()) return
                     streamingThinking = StreamEntry.ThinkingEntry(nextId(), event.text, true)
                     append(streamingThinking!!)
                 } else {
@@ -116,6 +123,9 @@ class CodeStreamSession {
                     if (event.fullThought.isNotBlank()) {
                         append(StreamEntry.ThinkingEntry(nextId(), event.fullThought, false))
                     }
+                } else if (event.fullThought.isBlank() && cur.text.isBlank()) {
+                    // 全程空白思考（模型未思考/网关空串）：移除占位卡而非留白
+                    removeEntry(cur.id)
                 } else {
                     replaceEntry(cur.id, cur.copy(text = event.fullThought.ifBlank { cur.text }, isStreaming = false))
                 }
@@ -143,8 +153,12 @@ class CodeStreamSession {
             is AgentEvent.ToolCallComplete -> onToolComplete(event)
 
             is AgentEvent.ResponseChunk -> {
+                // 空回复分片不建条目（与空思考卡同源：部分 provider 发
+                // content:"" 的 tool_calls 前导帧）——空气泡流式占位无意义
+                if (event.text.isEmpty()) return
                 val cur = streamingAssistant
                 if (cur == null) {
+                    if (event.text.isBlank()) return
                     streamingAssistant = StreamEntry.AssistantEntry(nextId(), event.text, true)
                     append(streamingAssistant!!)
                 } else {
@@ -159,6 +173,9 @@ class CodeStreamSession {
                     if (event.fullText.isNotBlank()) {
                         append(StreamEntry.AssistantEntry(nextId(), event.fullText, false))
                     }
+                } else if (event.fullText.isBlank() && cur.text.isBlank()) {
+                    // 全程空白回复（纯工具调用轮）：移除空气泡而非留白
+                    removeEntry(cur.id)
                 } else {
                     replaceEntry(cur.id, cur.copy(text = event.fullText.ifBlank { cur.text }, isStreaming = false))
                 }
@@ -200,9 +217,9 @@ class CodeStreamSession {
                 closeOpenCycle()
                 // 中止同样收口流式条目（与 beginRun 双保险：Aborted 后可能
                 // 没有下一轮 beginRun，气泡不能永远挂「生成中」）
-                streamingThinking?.let { replaceEntry(it.id, it.copy(isStreaming = false)) }
+                streamingThinking?.let { closeStreamingEntry(it) }
                 streamingThinking = null
-                streamingAssistant?.let { replaceEntry(it.id, it.copy(isStreaming = false)) }
+                streamingAssistant?.let { closeStreamingEntry(it) }
                 streamingAssistant = null
                 append(StreamEntry.StopEntry(nextId(), "已中止"))
             }
@@ -467,6 +484,27 @@ class CodeStreamSession {
         val idx = entries.indexOfFirst { it.id == id }
         if (idx >= 0) entries[idx] = entry
         dirty = true
+    }
+
+    private fun removeEntry(id: String) {
+        entries.removeAll { it.id == id }
+        dirty = true
+    }
+
+    /**
+     * 收口流式条目（beginRun/Aborted 路径）：全程空白（模型未思考/
+     * 网关空串帧）直接移除占位卡，非空白才定格为终态。
+     */
+    private fun closeStreamingEntry(entry: StreamEntry) {
+        when (entry) {
+            is StreamEntry.ThinkingEntry ->
+                if (entry.text.isBlank()) removeEntry(entry.id)
+                else replaceEntry(entry.id, entry.copy(isStreaming = false))
+            is StreamEntry.AssistantEntry ->
+                if (entry.text.isBlank()) removeEntry(entry.id)
+                else replaceEntry(entry.id, entry.copy(isStreaming = false))
+            else -> Unit
+        }
     }
 
     private fun updateCall(call: StreamToolCall) {

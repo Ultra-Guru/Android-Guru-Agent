@@ -19,7 +19,9 @@ package com.apex.agent.permission
  *  3. 规则按序首匹配 → ALLOW 映射 [PermissionDecision.AllowExplicit]、
  *     ASK 映射 [PermissionDecision.Ask]、DENY 映射 [PermissionDecision.Deny]；
  *  4. ACCEPT_EDITS 模式默认 → 只读 AllowExplicit；编辑写类
- *     （见 [EDIT_LIKE_PREFIXES]）AllowExplicit；其余 Ask；
+ *     （见 [EDIT_LIKE_PREFIXES]）AllowExplicit；技能/MCP 常规能力
+ *     （见 [ROUTINE_CAPABILITY_PREFIXES]，2026-10 用户反馈：skill 与
+ *     mcp 全部不再确认）AllowExplicit；其余 Ask；
  *  5. DEFAULT 模式默认 → 基础工具自动放行
  *     [PermissionDecision.AllowDefault]：只读、普通编辑写、以及
  *     「破坏但可幂等重放」的工具（整文件覆写类，见下）都不再打扰；
@@ -116,6 +118,22 @@ object PermissionDecider {
         EDIT_LIKE_PREFIXES.any { toolId.startsWith(it) }
 
     /**
+     * 技能 / MCP 常规能力工具的 id 前缀（2026-10 用户反馈：skill 与 mcp
+     * 全部不再确认使用）。
+     *
+     * 使用技能与 MCP 能力是 Agent 的常规动作（技能执行 / MCP 调用），
+     * ACCEPT_EDITS 下与编辑写类同口径自动放行（DEFAULT 下 mutating 非
+     * 删除类本就默认放行 + RiskAwareToolGate 确认面收敛后静默）。
+     * 规则仍可越级收紧（ASK/DENY 首匹配优先于模式默认）；PLAN 模式的
+     * 只读承诺不豁免（非只读照旧拒绝）。
+     */
+    val ROUTINE_CAPABILITY_PREFIXES: List<String> = listOf("skill_", "mcp_")
+
+    /** 判断工具 id 是否属于技能/MCP 常规能力族（前缀匹配任一）。 */
+    fun isRoutineCapability(toolId: String): Boolean =
+        ROUTINE_CAPABILITY_PREFIXES.any { toolId.startsWith(it) }
+
+    /**
      * 删除类判定（DEFAULT 模式询问口径的单一事实源）：破坏且非幂等
      * ——delete / uninstall / force-stop / signal 族的一次性不可逆动作。
      * 幂等的覆写写（Write 等破坏但可重放恢复）不算删除类。
@@ -168,6 +186,8 @@ object PermissionDecider {
                 ctx.readOnlyHint -> PermissionDecision.AllowExplicit
                 // 编辑写类（CodeEdit / Write / git 提交…）：自动放行
                 isEditLike(ctx.toolId) -> PermissionDecision.AllowExplicit
+                // 技能/MCP 常规能力（skill_* / mcp_*）：使用即常规动作，不再确认
+                isRoutineCapability(ctx.toolId) -> PermissionDecision.AllowExplicit
                 // 其余写操作（shell、网络写…）：仍要问
                 else -> PermissionDecision.Ask
             }

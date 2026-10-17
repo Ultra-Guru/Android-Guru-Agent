@@ -18,15 +18,14 @@ import com.apex.agent.core.tools.ToolRisk
  * [ToolPermissionManager]（core，纯 JVM 状态机）+ 用户确认对话框的组合，
  * 注入 [DefaultToolExecutor] 后即生效：
  *
- * - HIGH 风险工具首次调用 → 经 [UserQuestionGateway]（复用 AskUserChoice
- *   的既有对话框）向用户弹窗：仅允许一次 / 本会话允许 / 拒绝；
- * - **基础工具不拦截（2026-10 用户反馈）**：旧实现 MEDIUM 级文件改写类
- *   （Write / Edit 族）也纳入确认链——实际使用中每个编辑动作
- *   都要确认，打断感远大于安全感。现在本门只对 HIGH 兜底：写入 / 编辑
- *   类属于可恢复操作，交由上游 PermissionModeGate 的模式语义把关
- *   （DEFAULT 下按删除类口径判定，删除类才询问）；ShellExecute 的高危
- *   命令仍由 CommandPermissionGate 在命令级拦截。本层兜底的是**其他宿主
- *   与直连风险门的执行器**（测试 / headless / 未来的批量管线）。
+ * - **确认面收敛（2026-10 用户反馈：skill / mcp / 工具全部不再确认）**：
+ *   本门不再对常规工具弹确认 —— 第三方动态来源（mcp_ / plugin 前缀）的
+ *   首次确认与 HIGH/MEDIUM 风险弹窗全部移除（mcp_list 都要确认一次，
+ *   实测打断感远大于安全感），与 PermissionDecider 的默认放行口径共同
+ *   构成「常规使用零打扰」的手感。删除类/敏感动作的兜底询问仍由上游
+ *   PermissionModeGate 的模式语义承担；本门仅剩显式 sensitiveAction
+ *   工具的会话内一次确认。ShellExecute 的高危命令仍由
+ *   CommandPermissionGate 在命令级拦截。
  * - "仅允许一次" → 本次放行但不记录（下次再问）；
  * - "本会话允许" → 状态机记 ALLOWED_SESSION，之后静默放行；
  * - 拒绝（用户显式点击，或弹窗被主动取消）→ 状态机记 DENIED_SESSION，
@@ -66,19 +65,15 @@ class RiskAwareToolGate(
         if (tool.id in manager.selfGatedToolIds) return GateDecision.Allow
 
         val metadata = tool.metadata
-        // 兜底口径收敛（2026-10 用户反馈）：写入 / 编辑类（MEDIUM）是可恢复
-        // 操作，静默放行——逐次确认的打断成本已由 PermissionModeGate 的删除类
-        // 口径重新分配（只问真正不可逆的动作）。保留两类弹窗：
-        // ① HIGH（删除/卸载/force-stop 族）；② **第三方动态来源**的 MEDIUM
-        //（mcp_ / plugin 前缀——能力未经本仓库审计，首次调用仍应过目一次，
-        // 会话记忆保证同一工具只问一次）。ShellExecute 的高危命令仍由
-        // CommandPermissionGate 在命令级拦截。
-        val requiresPrompt = when {
-            metadata.risk == ToolRisk.HIGH -> true
-            metadata.risk == ToolRisk.MEDIUM && isThirdPartyDynamic(tool.id) -> true
-            else -> false
-        }
-        if (!requiresPrompt) return GateDecision.Allow
+        // 确认面收敛（2026-10 用户反馈）：skill / mcp / 工具全部不再确认。
+        // 旧实现两级弹窗：① HIGH（删除/卸载/force-stop 族）；② 第三方动态
+        // 来源的 MEDIUM（mcp_ / plugin 前缀）—— 两级全部静默放行：删除类/
+        // 敏感动作的兜底询问仍由上游 PermissionModeGate 的模式语义承担
+        // （DEFAULT 下删除类才询问），ShellExecute 的高危命令仍由
+        // CommandPermissionGate 在命令级拦截。本门仅剩显式 sensitiveAction
+        // 工具（AutoGPT 语义的会话内人审）的确认面；会话决定状态机保留，
+        // 供设置界面/测试显式注入与审计举证。
+        if (!requiresPrompt(metadata)) return GateDecision.Allow
 
         return when (manager.decisionFor(tool.id)) {
             SessionToolDecision.ALLOWED_SESSION -> {
@@ -173,9 +168,8 @@ class RiskAwareToolGate(
             ToolRisk.LOW -> "无危险"
         }
         return AgentQuestion(
-            // 标题按来源区分：HIGH = 危险；第三方动态 MEDIUM = 未审计能力首次过目
-            title = if (metadata.risk == ToolRisk.HIGH) "危险工具需要确认：${metadata.id}"
-            else "第三方工具需要确认：${metadata.id}",
+            // 敏感动作确认（确认面收敛后本门唯一弹窗面）：标题按语义命名
+            title = "敏感操作需要确认：${metadata.id}",
             description = "$riskHint（${categoryLabel(metadata.category)}）\n" +
                 // #336：弹窗参数摘要先脱敏再截断——api_key 等凭证值折叠，
                 // sms_send 的 message / phone 保持明文（用户须看到将发什么）。
@@ -211,6 +205,14 @@ class RiskAwareToolGate(
     /** 会话级强制放行（设置界面 / 测试用）。 */
     fun allowForSession(toolId: String) = manager.allowForSession(toolId)
 
+    /**
+     * 仍需弹窗的工具（确认面收敛后的残留面）：仅显式声明敏感动作的工具
+     * （sensitiveAction —— AutoGPT 语义的会话内人审，如浏览器凭据读取）。
+     * HIGH/MEDIUM 风险本身不再触发弹窗 —— 常规使用零打扰。
+     */
+    private fun requiresPrompt(metadata: ToolMetadata): Boolean =
+        metadata.annotations.sensitiveAction
+
     /** 会话级强制拒绝（设置界面 / 测试用）。 */
     fun denyForSession(toolId: String) = manager.denyForSession(toolId)
 
@@ -227,21 +229,12 @@ class RiskAwareToolGate(
         const val ASK_TIMEOUT_MS = 5 * 60 * 1000L
 
         /**
-         * 第三方动态来源工具 id 前缀（MEDIUM 中仍需首次确认的子集）：
-         * MCP 服务器与插件运行期注册，能力不经过本仓库审计——与
-         * 内置 MEDIUM（Write / ui_* 等已审计族）区分对待。
-         */
-        val THIRD_PARTY_PREFIXES = listOf("mcp_", "plugin")
-
-        /** 判断工具 id 是否属于第三方动态注册族（mcp__server__tool / plugin*）。 */
-        fun isThirdPartyDynamic(toolId: String): Boolean =
-            THIRD_PARTY_PREFIXES.any { toolId.startsWith(it) }
-
-        /**
          * #342：永不提供会话级放行的工具 id——弹窗不出「本会话允许」选项，
          * 既有 ALLOWED_SESSION 记录也不生效，强制逐次确认。当前仅 sms_send：
          * HIGH 风险工具中唯一有直接金钱后果的（每条真实计费），叠加宿主侧
          * SmsRateLimiter（每分钟 5 条 + 相同内容 10 分钟去重）构成双保险。
+         * （合并注：THIRD_PARTY_PREFIXES / isThirdPartyDynamic 随确认面收敛
+         * 移除——第三方首次确认已不弹，判定器无消费方。）
          */
         val NO_SESSION_ALLOW_TOOLS = setOf("sms_send")
     }
