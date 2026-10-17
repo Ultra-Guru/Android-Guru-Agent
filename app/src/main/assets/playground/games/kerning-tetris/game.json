@@ -1,0 +1,11 @@
+{
+  "id": "kerning-tetris",
+  "name": "排版俄罗斯",
+  "nameEn": "Kerning Tetris",
+  "tagline": "下落的是实测宽度的词语块，行内累计实测宽度达 92% 即消行；可开等宽近似对照手感之假",
+  "version": 1,
+  "engine": "pretext@0.0.9",
+  "apis": ["prepareWithSegments", "measureNaturalWidth"],
+  "controls": "左右移动 / 加速下落（底部按钮或键盘，可拖动井内字块）",
+  "scoreKey": "aga.pg.kerning-tetris.hi"
+}

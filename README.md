@@ -880,7 +880,7 @@ GitHub Token）。
 | **记忆** | cs-mem 可视化：Episode 统计 / 宏技能数 / 近期情景 / 删除 |
 | **权限** | Root / Shizuku（三态卡片）/ 无障碍 / 悬浮窗 / 通知 / 存储 |
 | **运行日志** | 结构化运行日志浏览 |
-| **游乐场** | 《字符风暴 GLYPH STORM》：pretext 实测字符宽度驱动的物理拼词街机（引力井 / 捕获环 / 拍虫 / 连击，详见 [docs/playground-glyph-storm.md](docs/playground-glyph-storm.md)） |
+| **游乐场** | 插件化街机：十款 pretext HTML 游戏插件（游戏即单文件 HTML，可导入可转 APK 插件，详见 [docs/playground-plugin-arcade.md](docs/playground-plugin-arcade.md)）+ 原生《字符风暴 GLYPH STORM》（[docs/playground-glyph-storm.md](docs/playground-glyph-storm.md)） |
 | **玻璃实验室** | Liquid Glass 内部验收页：可拖动玻璃片 / 档位阶梯 / 工具卡状态 / 诚实验收清单 |
 | **设置** | LLM 预设（OpenAI/DeepSeek/OpenRouter/Ollama/自定义）+ Base URL/Key/模型 + 温度 + 连接测试 + 通用设置 |
 

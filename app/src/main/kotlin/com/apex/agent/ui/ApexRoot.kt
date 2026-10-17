@@ -128,8 +128,8 @@ sealed class DrawerDestination(
     data object Vault : DrawerDestination("vault", R.string.drawer_vault, Icons.Default.Lock)
     data object Log : DrawerDestination("log", R.string.drawer_log, Icons.Filled.Info)
     data object Settings : DrawerDestination("settings", R.string.drawer_settings, Icons.Default.Settings)
-    // 游乐场（玻璃实验室正上方）：《字符风暴 GLYPH STORM》—— pretext 实测字符宽度
-    // 驱动的物理拼词街机（chenglou/pretext 测量理念，与官网游乐场一体两面）。
+    // 游乐场（玻璃实验室正上方）：插件化街机 —— 十款 pretext HTML 游戏插件
+    // （assets 内置 + filesDir 可导入）+ 原生《字符风暴 GLYPH STORM》孪生。
     data object Playground : DrawerDestination("playground", R.string.drawer_playground, Icons.Default.SportsEsports)
     // 玻璃实验室 —— 内部 Liquid Glass 验收页（Spec §20：背景变化/网格/高对比文字/移动元素）
     data object GlassLab : DrawerDestination("glasslab", R.string.drawer_glasslab, Icons.Default.BlurOn)

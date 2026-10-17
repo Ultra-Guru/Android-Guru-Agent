@@ -1,0 +1,11 @@
+{
+  "id": "line-fill",
+  "name": "行宽拼图",
+  "nameEn": "Line Fill",
+  "tagline": "实测词宽的词语瓦片拼满一行，空隙 ≤6px 才算完美",
+  "version": 1,
+  "engine": "pretext@0.0.9",
+  "apis": ["prepareWithSegments"],
+  "controls": "点选词语瓦片",
+  "scoreKey": "aga.pg.line-fill.hi"
+}
