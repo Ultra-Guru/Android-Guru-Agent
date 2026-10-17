@@ -409,7 +409,7 @@ object ToolModule {
         .usageTracker(toolUsageTracker)
         .policyResolver(
             DefaultToolRunPolicyResolver(
-                TERMINAL_TOOL_RUN_POLICIES,
+                TERMINAL_TOOL_RUN_POLICIES + MARKET_TOOL_RUN_POLICIES,
                 OPEN_WORLD_PREFIX_TOOL_RUN_POLICIES
             )
         )
@@ -1142,7 +1142,7 @@ object ToolModule {
                 .usageTracker(toolUsageTracker)
                 .policyResolver(
                     DefaultToolRunPolicyResolver(
-                        TERMINAL_TOOL_RUN_POLICIES,
+                        TERMINAL_TOOL_RUN_POLICIES + MARKET_TOOL_RUN_POLICIES,
                         OPEN_WORLD_PREFIX_TOOL_RUN_POLICIES
                     )
                 )

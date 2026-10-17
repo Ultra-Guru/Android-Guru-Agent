@@ -11,6 +11,7 @@ import com.apex.agent.core.tools.ToolExecutionGate
 import com.apex.agent.core.tools.ToolMetadata
 import com.apex.agent.core.tools.ToolPermissionManager
 import com.apex.agent.core.tools.ToolRisk
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * # Tool System v2 — App 端风险门
@@ -55,6 +56,14 @@ class RiskAwareToolGate(
         confirm = { _, _ -> false } // never used — check() drives the FSM directly
     )
 
+    /**
+     * 各工具最近一次「确认超时」时刻（#215 边界补齐）：超时仍不写
+     * DENIED_SESSION（不是会话拒绝），但短冷却内同工具不再弹窗 ——
+     * 防止模型立刻重发再挂一个 300s 等待窗（用户实测：mcp_list 超时后
+     * 模型 1s 内重发，连挂 4 次、纯等 20 分钟才被环路检测捕获）。
+     */
+    private val lastConfirmTimeoutAt = ConcurrentHashMap<String, Long>()
+
     override suspend fun check(tool: AgentTool, arguments: String): GateDecision {
         if (tool.id in manager.selfGatedToolIds) return GateDecision.Allow
 
@@ -85,7 +94,27 @@ class RiskAwareToolGate(
                         "choose a different approach and tell the user why"
                 )
             }
-            SessionToolDecision.UNDECIDED -> promptUser(tool, metadata, arguments)
+            SessionToolDecision.UNDECIDED -> {
+                // ═══ 确认超时短冷却（快速失败，不再挂第二个 300s 弹窗）═══
+                // 冷却期内同工具直接拒绝并给「先问用户/换路」指引；过期后
+                // 恢复询问 —— 保持 #215「超时未决 ≠ 会话拒绝」语义，不是封禁。
+                val lastTimeoutAt = lastConfirmTimeoutAt[tool.id]
+                if (lastTimeoutAt != null &&
+                    System.currentTimeMillis() - lastTimeoutAt < CONFIRM_TIMEOUT_COOLDOWN_MS
+                ) {
+                    audit?.log(ToolAuditLogger.Event(
+                        tool = tool.id, decision = "deny", detail = "confirm timeout cooldown"
+                    ))
+                    GateDecision.Deny(
+                        "confirmation for '${tool.id}' timed out recently — the user likely " +
+                            "missed the dialog; do NOT call this tool again right now. " +
+                            "Explicitly ask the user for a decision, or pick a different " +
+                            "approach; the permission prompt can be re-offered later"
+                    )
+                } else {
+                    promptUser(tool, metadata, arguments)
+                }
+            }
         }
     }
 
@@ -104,6 +133,8 @@ class RiskAwareToolGate(
             // 合并注：超时同样进审计（durationMs 记等待全程），决策值 confirm_timeout
             // 与 allow_session / denied_by_user 同为自由字符串，语义互不重叠。
             answer.timedOut -> {
+                // 记入短冷却：模型若无视指引立刻重发，快速失败而非再挂 300s 窗
+                lastConfirmTimeoutAt[tool.id] = System.currentTimeMillis()
                 audit?.log(ToolAuditLogger.Event(
                     tool = tool.id, decision = "confirm_timeout", durationMs = durationMs,
                     command = arguments.take(200), detail = "ask timed out, not denied"
@@ -111,8 +142,11 @@ class RiskAwareToolGate(
                 GateDecision.Deny(
                     "confirmation for '${tool.id}' timed out " +
                         "(${ASK_TIMEOUT_MS / 1000}s, ${categoryLabel(metadata.category)}/${riskLabel(metadata.risk)}); " +
-                        "treat it as unanswered, not denied — the tool will be re-offered on the next call, " +
-                        "so ask the user again or pick a safer alternative"
+                        "treat it as unanswered, not denied — but do NOT immediately re-call " +
+                        "this tool: the user likely missed the dialog and a retry would hang " +
+                        "for another ${ASK_TIMEOUT_MS / 1000}s. Ask the user for an explicit " +
+                        "decision first, or pick a safer alternative; the prompt can be " +
+                        "re-offered later in this session"
                 )
             }
             answer.selectedOptionId == "allow_session" -> {
@@ -184,14 +218,20 @@ class RiskAwareToolGate(
         )
     }
 
-    /** 会话级强制放行（设置界面 / 测试用）。 */
-    fun allowForSession(toolId: String) = manager.allowForSession(toolId)
+    /** 会话级强制放行（设置界面 / 测试用）：同时清除确认超时冷却。 */
+    fun allowForSession(toolId: String) {
+        manager.allowForSession(toolId)
+        lastConfirmTimeoutAt.remove(toolId)
+    }
 
     /** 会话级强制拒绝（设置界面 / 测试用）。 */
     fun denyForSession(toolId: String) = manager.denyForSession(toolId)
 
-    /** 新会话：清除全部会话决定。 */
-    fun resetSession() = manager.reset()
+    /** 新会话：清除全部会话决定（含确认超时冷却）。 */
+    fun resetSession() {
+        manager.reset()
+        lastConfirmTimeoutAt.clear()
+    }
 
     /** 当前会话决定快照（调试 / 设置界面展示）。 */
     fun sessionSnapshot(): Map<String, SessionToolDecision> = manager.snapshot()
@@ -201,6 +241,12 @@ class RiskAwareToolGate(
 
     private companion object {
         const val ASK_TIMEOUT_MS = 5 * 60 * 1000L
+
+        /**
+         * 确认超时后的同工具快速失败冷却窗：过期后弹窗恢复可问
+         * （用户可能已回到屏幕前）。不记 DENIED_SESSION，语义是「稍后再问」。
+         */
+        const val CONFIRM_TIMEOUT_COOLDOWN_MS = 2 * 60 * 1000L
 
         /**
          * 第三方动态来源工具 id 前缀（MEDIUM 中仍需首次确认的子集）：
