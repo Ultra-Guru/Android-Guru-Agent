@@ -27,34 +27,34 @@ import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.core.tools.ToolExecutor
 import com.apex.agent.core.tools.ToolRegistry
 import com.apex.agent.core.tools.ToolStreamEvent
-import com.apex.agentkit.loop.AgentLoopEngine
-import com.apex.agentkit.loop.KitAttachment
-import com.apex.agentkit.loop.KitChatResponse
-import com.apex.agentkit.loop.KitEngineConfig
-import com.apex.agentkit.loop.KitEnvironmentInfo
-import com.apex.agentkit.loop.KitEvent
-import com.apex.agentkit.loop.KitImageContent
-import com.apex.agentkit.loop.KitLlmErrorClassifier
-import com.apex.agentkit.loop.KitLlmErrorKind
-import com.apex.agentkit.loop.KitMcpInstructionSource
-import com.apex.agentkit.loop.KitMessage
-import com.apex.agentkit.loop.KitModelClient
-import com.apex.agentkit.loop.KitModelInfo
-import com.apex.agentkit.loop.KitModelInfoSource
-import com.apex.agentkit.loop.KitPermissionSource
-import com.apex.agentkit.loop.KitPlan
-import com.apex.agentkit.loop.KitRequestOptions
-import com.apex.agentkit.loop.KitRiskLevel
-import com.apex.agentkit.loop.KitStreamChunk
-import com.apex.agentkit.loop.KitSubAgentBudget
-import com.apex.agentkit.loop.KitThinkingLevel
-import com.apex.agentkit.loop.KitToolChoice
-import com.apex.agentkit.loop.KitToolDefinition
-import com.apex.agentkit.loop.KitToolSource
-import com.apex.agentkit.loop.KitToolStreamEvent
-import com.apex.agentkit.loop.KitUserInput
-import com.apex.agentkit.loop.KitWorkspaceContextSource
-import com.apex.agentkit.loop.KitWorkspaceInfo
+import com.apex.standardkit.loop.AgentLoopEngine
+import com.apex.standardkit.loop.KitAttachment
+import com.apex.standardkit.loop.KitChatResponse
+import com.apex.standardkit.loop.KitEngineConfig
+import com.apex.standardkit.loop.KitEnvironmentInfo
+import com.apex.standardkit.loop.KitEvent
+import com.apex.standardkit.loop.KitImageContent
+import com.apex.standardkit.loop.KitLlmErrorClassifier
+import com.apex.standardkit.loop.KitLlmErrorKind
+import com.apex.standardkit.loop.KitMcpInstructionSource
+import com.apex.standardkit.loop.KitMessage
+import com.apex.standardkit.loop.KitModelClient
+import com.apex.standardkit.loop.KitModelInfo
+import com.apex.standardkit.loop.KitModelInfoSource
+import com.apex.standardkit.loop.KitPermissionSource
+import com.apex.standardkit.loop.KitPlan
+import com.apex.standardkit.loop.KitRequestOptions
+import com.apex.standardkit.loop.KitRiskLevel
+import com.apex.standardkit.loop.KitStreamChunk
+import com.apex.standardkit.loop.KitSubAgentBudget
+import com.apex.standardkit.loop.KitThinkingLevel
+import com.apex.standardkit.loop.KitToolChoice
+import com.apex.standardkit.loop.KitToolDefinition
+import com.apex.standardkit.loop.KitToolSource
+import com.apex.standardkit.loop.KitToolStreamEvent
+import com.apex.standardkit.loop.KitUserInput
+import com.apex.standardkit.loop.KitWorkspaceContextSource
+import com.apex.standardkit.loop.KitWorkspaceInfo
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.delay
@@ -65,7 +65,7 @@ import kotlinx.coroutines.flow.map
  * # Standard Kit Adapter — 标准思考逻辑线的库接线适配器
  *
  * 标准任务循环已提取为独立库模块
- * （`com.apex.agentkit:agent-loop`，仓库 Ultra-Guru/apex-agent-kit）——
+ * （`com.apex.standardkit:standard-loop`，仓库 Ultra-Guru/apex-standard-kit）——
  * 本类是宿主侧的**薄适配层**：
  *
  * ```
@@ -154,7 +154,7 @@ class StandardKitAdapter(
         logger = AppLoggerAdapter,
         memory = memory?.let { MemoryAdapter(it) },
         textKernel = textKernel?.let { kernel ->
-            com.apex.agentkit.loop.KitTextKernel { text -> kernel.estimateTokens(text) }
+            com.apex.standardkit.loop.KitTextKernel { text -> kernel.estimateTokens(text) }
         },
         permissionSource = permissionSource,
         // SAM 构造器接 lambda 字面量（fun interface）——模型信息源端口接入
@@ -165,7 +165,7 @@ class StandardKitAdapter(
         workspaceContextSource = HostPromptSections(),
         mcpInstructionSource = mcpInstructionSource,
         subAgentBudgetSource = subAgentSettingsProvider?.let { provider ->
-            com.apex.agentkit.loop.KitSubAgentBudgetSource { provider().toKitBudget() }
+            com.apex.standardkit.loop.KitSubAgentBudgetSource { provider().toKitBudget() }
         },
         errorClassifier = RuntimeErrorClassifier,
         retrySleeper = retrySleeper
@@ -205,7 +205,7 @@ class StandardKitAdapter(
                     toolCalls = chunk.toolCalls.map { it.toKitToolCall() },
                     reasoningContent = chunk.reasoningContent,
                     usage = chunk.usage?.let {
-                        com.apex.agentkit.loop.KitUsage(
+                        com.apex.standardkit.loop.KitUsage(
                             it.promptTokens, it.completionTokens, it.totalTokens
                         )
                     },
@@ -229,7 +229,7 @@ class StandardKitAdapter(
                 KitChatResponse(
                     content = response.content,
                     usage = response.usage?.let {
-                        com.apex.agentkit.loop.KitUsage(
+                        com.apex.standardkit.loop.KitUsage(
                             it.promptTokens, it.completionTokens, it.totalTokens
                         )
                     }
@@ -244,7 +244,7 @@ class StandardKitAdapter(
     }
 
     /** 工具执行端口：ToolExecutor 流事件 → KitToolStreamEvent。 */
-    private inner class ExecutorToolRunner : com.apex.agentkit.loop.KitToolRunner {
+    private inner class ExecutorToolRunner : com.apex.standardkit.loop.KitToolRunner {
         override fun executeStream(name: String, arguments: String): Flow<KitToolStreamEvent> =
             toolExecutor.executeStream(name, arguments).map { event ->
                 when (event) {
@@ -257,7 +257,7 @@ class StandardKitAdapter(
     }
 
     /** 日志端口：AppLogger ↔ KitLogger。 */
-    private object AppLoggerAdapter : com.apex.agentkit.loop.KitLogger {
+    private object AppLoggerAdapter : com.apex.standardkit.loop.KitLogger {
         override fun info(tag: String, message: String) {
             AppLogger.instance.info(LogCategory.ENGINE, tag, message)
         }
@@ -309,7 +309,7 @@ class StandardKitAdapter(
 
     /** 会话记忆端口：CodeConversationMemory ↔ KitMemory（消息双向映射）。 */
     private class MemoryAdapter(private val memory: CodeConversationMemory) :
-        com.apex.agentkit.loop.KitMemory {
+        com.apex.standardkit.loop.KitMemory {
         override fun append(message: KitMessage) {
             memory.append(message.toLlmMessage())
         }
@@ -519,14 +519,14 @@ private fun com.apex.agent.core.llm.ImageContent.toKitImage() =
     KitImageContent(base64Data = base64Data, mimeType = mimeType, url = url)
 
 private fun com.apex.agent.core.llm.ToolCall.toKitToolCall() =
-    com.apex.agentkit.loop.KitToolCall(
+    com.apex.standardkit.loop.KitToolCall(
         id = id,
         name = name,
         arguments = arguments,
         index = index
     )
 
-private fun com.apex.agentkit.loop.KitToolCall.toHostToolCall() =
+private fun com.apex.standardkit.loop.KitToolCall.toHostToolCall() =
     com.apex.agent.core.llm.ToolCall(
         id = id,
         name = name,
@@ -633,8 +633,8 @@ private fun KitEvent.toAgentEvent(): AgentEvent = when (this) {
     KitEvent.Aborted -> AgentEvent.Aborted
 }
 
-private fun com.apex.agentkit.loop.KitInputType.toHost(): InputType = when (this) {
-    com.apex.agentkit.loop.KitInputType.CONFIRMATION -> InputType.CONFIRMATION
-    com.apex.agentkit.loop.KitInputType.TEXT -> InputType.TEXT
-    com.apex.agentkit.loop.KitInputType.CHOICE -> InputType.CHOICE
+private fun com.apex.standardkit.loop.KitInputType.toHost(): InputType = when (this) {
+    com.apex.standardkit.loop.KitInputType.CONFIRMATION -> InputType.CONFIRMATION
+    com.apex.standardkit.loop.KitInputType.TEXT -> InputType.TEXT
+    com.apex.standardkit.loop.KitInputType.CHOICE -> InputType.CHOICE
 }

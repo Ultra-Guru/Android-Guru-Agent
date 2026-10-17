@@ -1,17 +1,17 @@
-name: Sync apex-agent-kit
+name: Sync apex-standard-kit
 
 # ═════════════════════════════════════════════════════════════════════════════
-# agent-kit → 主仓库 全自动同步链路（v1.0，镜像 sync-browser-kit）
+# standard-kit → 主仓库 全自动同步链路（v1.0，镜像 sync-browser-kit）
 #
-#   apex-agent-kit main 出现新绿提交
-#       ├─ 事件路（主通道，即时）：agent-kit 的 notify-host.yml 等自家 CI
-#       │   全绿后 repository_dispatch 本仓库（event: agent-kit-updated）
+#   apex-standard-kit main 出现新绿提交
+#       ├─ 事件路（主通道，即时）：standard-kit 的 notify-host.yml 等自家 CI
+#       │   全绿后 repository_dispatch 本仓库（event: standard-kit-updated）
 #       └─ 定时路（兜底，防丢事件）：本 workflow 每 30 分钟轮询一次
 #   → 本 workflow 校验上游 CI 全绿（红则拒绝同步并报错）
-#   → gradle/agent-kit.lock bump 到新 SHA 并直接提交 push main
-#   → push main 自动点燃 release 流水线 → 新 APK（含新 agent-loop 内核）发布
+#   → gradle/standard-kit.lock bump 到新 SHA 并直接提交 push main
+#   → push main 自动点燃 release 流水线 → 新 APK（含新 standard-loop 内核）发布
 #
-#   主仓库的 ci / apk / release 三条流水线均按 lock 锁定版本检出 agent-kit
+#   主仓库的 ci / apk / release 三条流水线均按 lock 锁定版本检出 standard-kit
 #   （composite build pinned checkout）—— 主仓库状态即构建输入，可复现。
 #
 # 设计要点：
@@ -26,11 +26,11 @@ on:
   schedule:
     - cron: '13,43 * * * *'
   repository_dispatch:
-    types: [agent-kit-updated]
+    types: [standard-kit-updated]
   workflow_dispatch: {}
 
 concurrency:
-  group: sync-agent-kit
+  group: sync-standard-kit
   cancel-in-progress: false
 
 permissions:
@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   sync:
-    name: Bump agent-kit pin (green-only)
+    name: Bump standard-kit pin (green-only)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -50,8 +50,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          SHA=$(gh api repos/Ultra-Guru/apex-agent-kit/commits/main --jq '.sha')
-          CUR=$(head -n 1 gradle/agent-kit.lock 2>/dev/null || true)
+          SHA=$(gh api repos/Ultra-Guru/apex-standard-kit/commits/main --jq '.sha')
+          CUR=$(head -n 1 gradle/standard-kit.lock 2>/dev/null || true)
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "current=$CUR" >> "$GITHUB_OUTPUT"
           if [ -n "$CUR" ] && [ "$SHA" = "$CUR" ]; then
@@ -63,7 +63,7 @@ jobs:
           fi
 
       - name: Verify upstream CI green on new head
-        # 只在有待同步新提交时校验：门禁口径同 agent-kit ci —— 只统计
+        # 只在有待同步新提交时校验：门禁口径同 standard-kit ci —— 只统计
         # 构建健康类 check-run（CI + Guard Rails），显式排除 Dependabot*（长跑
         # 依赖升级作业）、Gradle dependency graph（数据洞察，continue-on-error）、
         # 以及 notify-host 自身（repository_dispatch host sync，自引用死锁）。
@@ -75,8 +75,8 @@ jobs:
           UP_SHA: ${{ steps.up.outputs.sha }}
         run: |
           set -euo pipefail
-          GATING_FILTER='.name != "Gradle dependency graph" and (.name | startswith("Dependabot") | not)'
-          SUMMARY=$(gh api "repos/Ultra-Guru/apex-agent-kit/commits/$UP_SHA/check-runs" \
+          GATING_FILTER='.name != "Gradle dependency graph" and (.name | startswith("Dependabot") | not) and (.name | startswith("Notify host") | not) and (.name | startswith("notify-host") | not)'
+          SUMMARY=$(gh api "repos/Ultra-Guru/apex-standard-kit/commits/$UP_SHA/check-runs" \
             --jq "([.check_runs[]? | select($GATING_FILTER)]) as \$gating |
                    {total: (\$gating | length),
                     pending: (\$gating | map(select(.status != \"completed\")) | length),
@@ -91,7 +91,7 @@ jobs:
             exit 0
           fi
           if [ "$FAILED" != "0" ]; then
-            echo "::error::上游 agent-kit CI 有 $FAILED 项失败 —— 拒绝同步（先修复 https://github.com/Ultra-Guru/apex-agent-kit/actions）"
+            echo "::error::上游 standard-kit CI 有 $FAILED 项失败 —— 拒绝同步（先修复 https://github.com/Ultra-Guru/apex-standard-kit/actions）"
             exit 1
           fi
           echo "green=true" >> "$GITHUB_ENV"
@@ -99,7 +99,7 @@ jobs:
 
       - name: Bump lock and push to main
         # 锁定 bump 直接 push main：release.yml 的 push 触发器自动构建发布
-        # （新 agent-loop 内核随 APK 交付）—— 全程无人工介入。
+        # （新 standard-loop 内核随 APK 交付）—— 全程无人工介入。
         # ⚠️ 必须用 PAT 推送（secrets.SYNC_PUSH_TOKEN）：GITHUB_TOKEN 产生的
         # push 事件不会触发新的 workflow run（GitHub 防递归设计）—— 用默认
         # 凭据推的 bump 会静默「落地但不发布」。PAT push 的 commit 事件正常
@@ -115,17 +115,17 @@ jobs:
             echo "::error::缺少 secrets.SYNC_PUSH_TOKEN（对本仓库有 repo 权限的 PAT）—— bump 无法触发发布流水线，请在仓库 Settings → Secrets 配置"
             exit 1
           fi
-          echo "$UP_SHA" > gradle/agent-kit.lock
+          echo "$UP_SHA" > gradle/standard-kit.lock
           # 提交者身份避开 github-actions[bot]（bot 身份的提交与 GITHUB_TOKEN
           # 推送同属事件抑制面 —— 即便 PAT 认证也可能被 GitHub 视为机器事件）
           git config user.name "apex-sync-bot"
           git config user.email "sync-bot@apex-agent.local"
-          git add gradle/agent-kit.lock
-          git commit -m "chore(sync): bump apex-agent-kit @ ${UP_SHA:0:10}
+          git add gradle/standard-kit.lock
+          git commit -m "chore(sync): bump apex-standard-kit @ ${UP_SHA:0:10}
 
-          Automated by sync-agent-kit workflow (trigger: $EVENT).
-          链路：agent-kit main 新绿提交 → 锁定 bump → push main →
-          全流水线以新锁定版本构建（新 agent-loop 内核随 APK 交付）。"
+          Automated by sync-standard-kit workflow (trigger: $EVENT).
+          链路：standard-kit main 新绿提交 → 锁定 bump → push main →
+          全流水线以新锁定版本构建（新 standard-loop 内核随 APK 交付）。"
           # 关键：清掉 actions/checkout 持久化的 GITHUB_TOKEN extraheader ——
           # 否则它会覆盖 URL 内嵌的 PAT 凭据，推送仍以 Actions App 身份认证
           # （事件被防递归抑制，bump 落地但不触发任何 workflow）。命令级
@@ -137,7 +137,7 @@ jobs:
       - name: Summary
         run: |
           {
-            echo "### 🔄 apex-agent-kit 同步"
+            echo "### 🔄 apex-standard-kit 同步"
             echo ""
             echo "- 上游 main：\`${{ steps.up.outputs.sha }}\`"
             echo "- 本仓锁定：\`${{ steps.up.outputs.current }}\`"

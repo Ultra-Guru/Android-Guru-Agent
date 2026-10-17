@@ -11,13 +11,13 @@ import com.apex.agent.core.code.standard.DualLogicCodeEngine
 import com.apex.agent.core.code.standard.StandardKitAdapter
 import com.apex.agent.core.tools.catalog.McpToolNaming
 import com.apex.agent.core.tools.mcp.McpManager
-import com.apex.agentkit.loop.KitMcpInstructionSource
-import com.apex.agentkit.loop.KitMcpServerInstructions
-import com.apex.agentkit.loop.KitModelInfo
-import com.apex.agentkit.loop.KitPermissionEffect
-import com.apex.agentkit.loop.KitPermissionMode
-import com.apex.agentkit.loop.KitPermissionRule
-import com.apex.agentkit.loop.KitPermissionSource
+import com.apex.standardkit.loop.KitMcpInstructionSource
+import com.apex.standardkit.loop.KitMcpServerInstructions
+import com.apex.standardkit.loop.KitModelInfo
+import com.apex.standardkit.loop.KitPermissionEffect
+import com.apex.standardkit.loop.KitPermissionMode
+import com.apex.standardkit.loop.KitPermissionRule
+import com.apex.standardkit.loop.KitPermissionSource
 import com.apex.agent.core.llm.ModelRole
 import com.apex.agent.core.llm.runtime.ModelRoleRouter
 import com.apex.agent.permission.PermissionEffect
@@ -197,13 +197,13 @@ object CodeModule {
      *
      * ```
      * DualLogicCodeEngine ──┬── CodeAgentEngine（深潜线：七档思考，v1.2 既有行为）
-     *                       └── StandardKitAdapter → agent-loop 库（标准线：标准任务循环）
+     *                       └── StandardKitAdapter → standard-loop 库（标准线：标准任务循环）
      * ```
      *
      * 深潜线配置取向（与 Agent 默认差异）：BUILD 循环 + 更高迭代上限
      * （编码任务链路长）+ 更大工具输出配额（code_read 输出被 2000 字符
      * 默认值截断会毁掉编码循环）。标准线由 [StandardKitAdapter] 接线
-     * apex-agent-kit 库内核（画像回合预算 + 权限门 + 会话压缩 + 子代理
+     * apex-standard-kit 库内核（画像回合预算 + 权限门 + 会话压缩 + 子代理
      * 派发 + 并行工具执行 + 续跑语义 + MCP 指引——循环语义全部在库中）。
      *
      * CodeViewModel 只面向 [CodeEngineFacade] / AgentEngine 编程，

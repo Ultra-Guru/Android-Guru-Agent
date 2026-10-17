@@ -21,11 +21,11 @@ dependencies {
     implementation(libs.coroutines.core)
     implementation(libs.serialization.json)
 
-    // 标准任务循环库模块（com.apex.agentkit:agent-loop —— Ultra-Guru/apex-agent-kit）：
+    // 标准任务循环库模块（com.apex.standardkit:standard-loop —— Ultra-Guru/apex-standard-kit）：
     // composite build（settings.gradle.kts 条件 includeBuild 兄弟/嵌套目录）按坐标
     // 自动替换为本地构建；库仓缺席时走远端 Maven 坐标（后续发布启用）。
     // 端口-适配器接线见 standard/StandardKitAdapter.kt。
-    api("com.apex.agentkit:agent-loop:1.0.0")
+    api("com.apex.standardkit:standard-loop:1.1.0")
 
     // Unit testing (pure-JVM src/test)
     testImplementation(libs.junit)

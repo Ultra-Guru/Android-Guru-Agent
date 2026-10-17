@@ -1,6 +1,6 @@
 package com.apex.agent.core.code
 
-import com.apex.agentkit.loop.KitSession
+import com.apex.standardkit.loop.KitSession
 
 /**
  * # Standard Text Kernel — 标准引擎的文本加速核（可选 SPI）
