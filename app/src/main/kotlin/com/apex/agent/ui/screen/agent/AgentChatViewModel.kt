@@ -969,7 +969,15 @@ class AgentChatViewModel @Inject constructor(
      */
     fun confirmPlan(confirmed: Boolean, enabledSteps: List<Int>? = null, order: List<Int>? = null) {
         _uiState.update { it.copy(awaitingPlanConfirmation = false) }
-        (agentEngine as? ApexAgentEngine)?.submitPlanConfirmation(confirmed, enabledSteps, order)
+        // #340：回执 = false 表示无挂起等待（迟到/被 abort）——显式提示，
+        // 不再静默丢弃（#214 用户输入通道同款收口）。
+        val delivered = (agentEngine as? ApexAgentEngine)
+            ?.submitPlanConfirmation(confirmed, enabledSteps, order) ?: false
+        if (!delivered) {
+            _uiState.update { s ->
+                s.copy(messages = s.messages + AgentUiMessage.System(str(R.string.chat_plan_confirm_late)))
+            }
+        }
     }
 
     /** 用户回答了 Agent 的提问，恢复引擎执行（#214 迟到投递回执在 AgentChatQuestionHandler 扩展内收口）。 */

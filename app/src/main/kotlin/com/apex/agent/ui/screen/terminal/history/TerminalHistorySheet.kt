@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apex.agent.R
+import com.apex.agent.ui.screen.terminal.ConsoleTheme
 
 /**
  * T87：命令历史抽屉（Termux `history` 的触屏等价物）。
@@ -67,7 +68,7 @@ fun TerminalHistorySheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Icon(Icons.Default.History, contentDescription = null, tint = Color(0xFF4EE9B0))
+                Icon(Icons.Default.History, contentDescription = null, tint = ConsoleTheme.accent)
                 Text(
                     stringResource(R.string.term_history_title),
                     fontWeight = FontWeight.SemiBold,

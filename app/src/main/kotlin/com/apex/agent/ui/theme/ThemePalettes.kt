@@ -3,7 +3,6 @@ package com.apex.agent.ui.theme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 
 /**
@@ -23,8 +22,9 @@ import androidx.compose.ui.graphics.Color
  *     开启时覆盖本系统 —— 预设配色仅在关闭动态取色时生效。
  *
  * 实现说明：enum 构造器无法持有 Compose [Color]（非编译期常量），
- * 故配色数据以 [AccentSet] 私有数据类 + when 映射提供，
- * 最终经 [accentColorScheme] 在既有基底 ColorScheme 上 copy 出完整方案。
+ * 故配色数据以 [AccentTone] 数据类（AccentColors.kt，#278 单一事实源
+ * 单变体）+ when 映射提供，最终经 [accentColorScheme] 在既有基底
+ * ColorScheme 上 copy 出完整方案。
  */
 
 /**
@@ -67,26 +67,6 @@ enum class AccentPalette(val key: String, val label: String) {
  * 不在液态玻璃的选择器里重复出现（避免两处入口同一语义）。
  */
 val UiStylePickerExcluded: List<AccentPalette> = AccentPalette.entries.filter { it != AccentPalette.MONO }
-
-/**
- * 一套配色方案的强调色组（primary / secondary / tertiary 全量 12 色）。
- * 不含中性色 —— 中性基底由 [DarkNeutralBase] / [LightNeutralBase] 提供。
- */
-@Immutable
-private data class AccentSet(
-    val primary: Color,
-    val onPrimary: Color,
-    val primaryContainer: Color,
-    val onPrimaryContainer: Color,
-    val secondary: Color,
-    val onSecondary: Color,
-    val secondaryContainer: Color,
-    val onSecondaryContainer: Color,
-    val tertiary: Color,
-    val onTertiary: Color,
-    val tertiaryContainer: Color,
-    val onTertiaryContainer: Color
-)
 
 // ═══════════════════ 中性基底（全部方案共享）═══════════════════
 // 即原 ApexTheme 的 Dark/Light ColorScheme —— 原值迁移，MINT 方案
@@ -136,7 +116,7 @@ private val LightNeutralBase: ColorScheme = lightColorScheme(
 
 // ═══════════════════ MINT · 霓虹薄荷（默认，原品牌色）═══════════════════
 
-private val MintDark = AccentSet(
+private val MintDark = AccentTone(
     primary = Color(0xFF4EE9B0),          // neon mint
     onPrimary = Color(0xFF00251A),
     primaryContainer = Color(0xFF0C3A2C),
@@ -151,7 +131,7 @@ private val MintDark = AccentSet(
     onTertiaryContainer = Color(0xFFFFB3CE)
 )
 
-private val MintLight = AccentSet(
+private val MintLight = AccentTone(
     primary = Color(0xFF0E7A57),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFB4F3DC),
@@ -168,7 +148,7 @@ private val MintLight = AccentSet(
 
 // ═══════════════════ AMBER · 琥珀暖阳 ═══════════════════
 
-private val AmberDark = AccentSet(
+private val AmberDark = AccentTone(
     primary = Color(0xFFFFC24D),
     onPrimary = Color(0xFF3A2A00),
     primaryContainer = Color(0xFF524000),
@@ -183,7 +163,7 @@ private val AmberDark = AccentSet(
     onTertiaryContainer = Color(0xFFFFD9DE)
 )
 
-private val AmberLight = AccentSet(
+private val AmberLight = AccentTone(
     primary = Color(0xFF8A5800),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFFFDF9E),
@@ -200,7 +180,7 @@ private val AmberLight = AccentSet(
 
 // ═══════════════════ CORAL · 珊瑚暖橘 ═══════════════════
 
-private val CoralDark = AccentSet(
+private val CoralDark = AccentTone(
     primary = Color(0xFFFF8F79),
     onPrimary = Color(0xFF4A1405),
     primaryContainer = Color(0xFF5C1F10),
@@ -215,7 +195,7 @@ private val CoralDark = AccentSet(
     onTertiaryContainer = Color(0xFFA5F2E4)
 )
 
-private val CoralLight = AccentSet(
+private val CoralLight = AccentTone(
     primary = Color(0xFFB3402A),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFFFDAD2),
@@ -232,7 +212,7 @@ private val CoralLight = AccentSet(
 
 // ═══════════════════ VIOLET · 暗夜紫罗兰 ═══════════════════
 
-private val VioletDark = AccentSet(
+private val VioletDark = AccentTone(
     primary = Color(0xFFC9B4FF),
     onPrimary = Color(0xFF2E1A66),
     primaryContainer = Color(0xFF46308C),
@@ -247,7 +227,7 @@ private val VioletDark = AccentSet(
     onTertiaryContainer = Color(0xFFFFD9E7)
 )
 
-private val VioletLight = AccentSet(
+private val VioletLight = AccentTone(
     primary = Color(0xFF6B4FA0),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFE9DDFF),
@@ -264,7 +244,7 @@ private val VioletLight = AccentSet(
 
 // ═══════════════════ OCEAN · 海洋青 ═══════════════════
 
-private val OceanDark = AccentSet(
+private val OceanDark = AccentTone(
     primary = Color(0xFF5AD8E8),
     onPrimary = Color(0xFF00323B),
     primaryContainer = Color(0xFF004956),
@@ -279,7 +259,7 @@ private val OceanDark = AccentSet(
     onTertiaryContainer = Color(0xFFB2FFD1)
 )
 
-private val OceanLight = AccentSet(
+private val OceanLight = AccentTone(
     primary = Color(0xFF0E6E7D),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFC0ECF6),
@@ -296,7 +276,7 @@ private val OceanLight = AccentSet(
 
 // ═══════════════════ ROSE · 玫瑰粉 ═══════════════════
 
-private val RoseDark = AccentSet(
+private val RoseDark = AccentTone(
     primary = Color(0xFFFF8FB1),
     onPrimary = Color(0xFF4C0727),
     primaryContainer = Color(0xFF5C2238),
@@ -311,7 +291,7 @@ private val RoseDark = AccentSet(
     onTertiaryContainer = Color(0xFFA5F2E2)
 )
 
-private val RoseLight = AccentSet(
+private val RoseLight = AccentTone(
     primary = Color(0xFFA83762),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFFFD9E2),
@@ -328,7 +308,7 @@ private val RoseLight = AccentSet(
 
 // ═══════════════════ FOREST · 森林绿 ═══════════════════
 
-private val ForestDark = AccentSet(
+private val ForestDark = AccentTone(
     primary = Color(0xFF9BD98F),
     onPrimary = Color(0xFF1C3A14),
     primaryContainer = Color(0xFF325226),
@@ -343,7 +323,7 @@ private val ForestDark = AccentSet(
     onTertiaryContainer = Color(0xFFFFDBD0)
 )
 
-private val ForestLight = AccentSet(
+private val ForestLight = AccentTone(
     primary = Color(0xFF44682F),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFC4EFA6),
@@ -361,7 +341,7 @@ private val ForestLight = AccentSet(
 // ═══════════════════ CYAN · 冰碧青 ═══════════════════
 // 青色（非蓝）：霓虹提亮 #22D3EE 系；tertiary 取薄荷梯次（青→绿和谐渐变）。
 
-private val CyanDark = AccentSet(
+private val CyanDark = AccentTone(
     primary = Color(0xFF22D3EE),          // neon cyan
     onPrimary = Color(0xFF00363D),
     primaryContainer = Color(0xFF004957),
@@ -376,7 +356,7 @@ private val CyanDark = AccentSet(
     onTertiaryContainer = Color(0xFF9CF3D2)
 )
 
-private val CyanLight = AccentSet(
+private val CyanLight = AccentTone(
     primary = Color(0xFF155E75),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFC2ECFA),
@@ -394,7 +374,7 @@ private val CyanLight = AccentSet(
 // ═══════════════════ SUNSET · 日落 ═══════════════════
 // 橙→绯渐变感：primary #FB923C 橙，secondary 玫瑰绯，tertiary 晚霞紫。
 
-private val SunsetDark = AccentSet(
+private val SunsetDark = AccentTone(
     primary = Color(0xFFFB923C),          // sunset orange
     onPrimary = Color(0xFF4A2100),
     primaryContainer = Color(0xFF5C2E00),
@@ -409,7 +389,7 @@ private val SunsetDark = AccentSet(
     onTertiaryContainer = Color(0xFFEBDCFF)
 )
 
-private val SunsetLight = AccentSet(
+private val SunsetLight = AccentTone(
     primary = Color(0xFF9A3412),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFFFDBCC),
@@ -428,7 +408,7 @@ private val SunsetLight = AccentSet(
 // primary #FBBF24 系：深色态鎏金发光，浅色态偏黄而非琥珀棕（与 AMBER 区分）；
 // secondary 取与金色成对比的湖青。
 
-private val GoldDark = AccentSet(
+private val GoldDark = AccentTone(
     primary = Color(0xFFFBBF24),          // molten gold
     onPrimary = Color(0xFF3F2E00),
     primaryContainer = Color(0xFF5B4300),
@@ -443,7 +423,7 @@ private val GoldDark = AccentSet(
     onTertiaryContainer = Color(0xFFFFD9E2)
 )
 
-private val GoldLight = AccentSet(
+private val GoldLight = AccentTone(
     primary = Color(0xFFA16207),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFFFE08C),
@@ -461,7 +441,7 @@ private val GoldLight = AccentSet(
 // ═══════════════════ CRIMSON · 绯红 ═══════════════════
 // primary #EF4444 系：深色态霓虹绯红；secondary 暖金，tertiary 冰青（火/冰对比）。
 
-private val CrimsonDark = AccentSet(
+private val CrimsonDark = AccentTone(
     primary = Color(0xFFFF7A70),          // neon crimson
     onPrimary = Color(0xFF490005),
     primaryContainer = Color(0xFF6B1610),
@@ -476,7 +456,7 @@ private val CrimsonDark = AccentSet(
     onTertiaryContainer = Color(0xFFB8EEF7)
 )
 
-private val CrimsonLight = AccentSet(
+private val CrimsonLight = AccentTone(
     primary = Color(0xFFB3261E),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFFFDAD5),
@@ -495,7 +475,7 @@ private val CrimsonLight = AccentSet(
 // 淡紫罗兰（非蓝非深紫）：深色态 #B39DDB 系柔光淡紫，区别于 VIOLET 的冷紫霓虹；
 // secondary 暖金、tertiary 薄荷 —— 花田清晨感。
 
-private val LavenderDark = AccentSet(
+private val LavenderDark = AccentTone(
     primary = Color(0xFFB39DDB),          // soft lavender
     onPrimary = Color(0xFF2B2054),
     primaryContainer = Color(0xFF4A3B8F),
@@ -510,7 +490,7 @@ private val LavenderDark = AccentSet(
     onTertiaryContainer = Color(0xFFB2FFD1)
 )
 
-private val LavenderLight = AccentSet(
+private val LavenderLight = AccentTone(
     primary = Color(0xFF5E60A8),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFE4E1FF),
@@ -529,7 +509,7 @@ private val LavenderLight = AccentSet(
 // 霓虹品红 #FF5FD7：比 ROSE 更偏紫、更电光；secondary 湖青、tertiary 暖金
 // （品红 × 青 = 经典霓虹对撞）。
 
-private val MagentaDark = AccentSet(
+private val MagentaDark = AccentTone(
     primary = Color(0xFFFF5FD7),          // neon magenta
     onPrimary = Color(0xFF4A0744),
     primaryContainer = Color(0xFF6A1F5E),
@@ -544,7 +524,7 @@ private val MagentaDark = AccentSet(
     onTertiaryContainer = Color(0xFFFFE9C4)
 )
 
-private val MagentaLight = AccentSet(
+private val MagentaLight = AccentTone(
     primary = Color(0xFFA1036E),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFFFD6EC),
@@ -563,7 +543,7 @@ private val MagentaLight = AccentSet(
 // 青柠荧光 #A3E635：终端荧光信号感；secondary 暮紫、tertiary 霓虹粉
 // （青柠 × 品红 = 赛博对撞，区别于 FOREST 的柔和绿）。
 
-private val LimeDark = AccentSet(
+private val LimeDark = AccentTone(
     primary = Color(0xFFA3E635),          // electric lime
     onPrimary = Color(0xFF1F3200),
     primaryContainer = Color(0xFF2F4D00),
@@ -578,7 +558,7 @@ private val LimeDark = AccentSet(
     onTertiaryContainer = Color(0xFFFFB3CE)
 )
 
-private val LimeLight = AccentSet(
+private val LimeLight = AccentTone(
     primary = Color(0xFF5A7A0B),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFDCF587),
@@ -597,7 +577,7 @@ private val LimeLight = AccentSet(
 // 樱花粉 #F9A8C9：比 ROSE 更柔更淡的春樱粉；secondary 嫩叶绿、tertiary 暮色淡紫
 // —— 花见时的樱吹雪配色。
 
-private val SakuraDark = AccentSet(
+private val SakuraDark = AccentTone(
     primary = Color(0xFFF9A8C9),          // sakura pink
     onPrimary = Color(0xFF4A1B35),
     primaryContainer = Color(0xFF62304C),
@@ -612,7 +592,7 @@ private val SakuraDark = AccentSet(
     onTertiaryContainer = Color(0xFFEBDCFF)
 )
 
-private val SakuraLight = AccentSet(
+private val SakuraLight = AccentTone(
     primary = Color(0xFFB0557E),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFFFD9E7),
@@ -631,7 +611,7 @@ private val SakuraLight = AccentSet(
 // 抹茶黄绿 #C7D86B：比 FOREST 偏黄、比 LIME 柔和的茶道绿；secondary 樱粉、
 // tertiary 暖金 —— 和果子配色（抹茶 × 樱 × 金箔）。
 
-private val MatchaDark = AccentSet(
+private val MatchaDark = AccentTone(
     primary = Color(0xFFC7D86B),          // matcha
     onPrimary = Color(0xFF334000),
     primaryContainer = Color(0xFF4C5400),
@@ -646,7 +626,7 @@ private val MatchaDark = AccentSet(
     onTertiaryContainer = Color(0xFFFFE9C4)
 )
 
-private val MatchaLight = AccentSet(
+private val MatchaLight = AccentTone(
     primary = Color(0xFF6B7C23),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFEAF0BC),
@@ -665,7 +645,7 @@ private val MatchaLight = AccentSet(
 // 蜜桃暖粉橘 #FFB59E：比 CORAL 更浅更粉的绒毛桃色；secondary 湖青、tertiary 玫瑰
 // （蜜桃 × 青 = 果肉与果叶的清爽对比）。
 
-private val PeachDark = AccentSet(
+private val PeachDark = AccentTone(
     primary = Color(0xFFFFB59E),          // juicy peach
     onPrimary = Color(0xFF4B2114),
     primaryContainer = Color(0xFF5F3527),
@@ -680,7 +660,7 @@ private val PeachDark = AccentSet(
     onTertiaryContainer = Color(0xFFFFD9E2)
 )
 
-private val PeachLight = AccentSet(
+private val PeachLight = AccentTone(
     primary = Color(0xFFA65D45),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFFFDAD0),
@@ -699,7 +679,7 @@ private val PeachLight = AccentSet(
 // 梅子紫粉 #E1B3E8：比 VIOLET/LAVENDER 更偏粉的梅子色；secondary 暖金、
 // tertiary 湖青（梅子 × 金 × 青 = 雅致东方感）。
 
-private val PlumDark = AccentSet(
+private val PlumDark = AccentTone(
     primary = Color(0xFFE1B3E8),          // plum blossom
     onPrimary = Color(0xFF471F49),
     primaryContainer = Color(0xFF5F3A63),
@@ -714,7 +694,7 @@ private val PlumDark = AccentSet(
     onTertiaryContainer = Color(0xFFA5F2E4)
 )
 
-private val PlumLight = AccentSet(
+private val PlumLight = AccentTone(
     primary = Color(0xFF7D4F84),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFF5DCF4),
@@ -734,7 +714,7 @@ private val PlumLight = AccentSet(
 // （近黑底上的反白），浅色态主色是「墨黑」（白底上的正字色）。银灰与
 // 石墨作为 secondary / tertiary 维持层次，不引入任何色彩倾向。
 
-private val MonoDark = AccentSet(
+private val MonoDark = AccentTone(
     primary = Color(0xFFF2F2F2),          // paper white
     onPrimary = Color(0xFF171717),
     primaryContainer = Color(0xFF2E2E2E),
@@ -749,7 +729,7 @@ private val MonoDark = AccentSet(
     onTertiaryContainer = Color(0xFFB3B3B3)
 )
 
-private val MonoLight = AccentSet(
+private val MonoLight = AccentTone(
     primary = Color(0xFF1F1F1F),          // ink black
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFE4E4E4),
@@ -765,7 +745,7 @@ private val MonoLight = AccentSet(
 )
 
 /** 配色方案 → 当前深浅态的强调色组。 */
-private fun accentSetFor(palette: AccentPalette, dark: Boolean): AccentSet = when (palette) {
+private fun accentSetFor(palette: AccentPalette, dark: Boolean): AccentTone = when (palette) {
     AccentPalette.MONO -> if (dark) MonoDark else MonoLight
     AccentPalette.MINT -> if (dark) MintDark else MintLight
     AccentPalette.AMBER -> if (dark) AmberDark else AmberLight
@@ -815,6 +795,18 @@ fun accentColorScheme(palette: AccentPalette, dark: Boolean): ColorScheme {
  */
 fun accentSwatchColor(palette: AccentPalette, dark: Boolean): Color =
     accentSetFor(palette, dark).primary
+
+/**
+ * #278 单一事实源出口：某配色方案的强调色族（深 / 浅双变体）。
+ *
+ * ApexTheme 组装 MaterialTheme 的同时经 [LocalAccentColors] 下发本值 ——
+ * 终端控制台等恒深表面取 [AccentColors.dark]、随主题表面取 light，
+ * 与 colorScheme 同出自 [accentSetFor]，两路永不漂移。
+ */
+fun accentColors(palette: AccentPalette): AccentColors = AccentColors(
+    dark = accentSetFor(palette, dark = true),
+    light = accentSetFor(palette, dark = false)
+)
 
 // ═══════════════════ 极简黑白中性基底 ═══════════════════
 // 与 DarkNeutralBase / LightNeutralBase 的区别：去掉蓝灰倾向，色温严格

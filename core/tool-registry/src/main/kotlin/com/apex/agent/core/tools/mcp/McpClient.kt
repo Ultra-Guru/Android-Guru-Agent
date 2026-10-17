@@ -229,11 +229,14 @@ class McpClient(
             // —— 用户看到"已连接、0 工具"，模型把失败的调用当成功。空响应在
             // 带 id 的请求上永远是协议错误。
             val response = sendRequest(request)
-                ?: return@withContext Result.failure(
-                    McpException("服务器返回空响应（HTTP 200 无 body / SSE 无 data 帧）：initialize")
-                )
+            // #348：initialize 响应缺 result 字段 = 远端未完成正规 JSON-RPC
+            // 握手（error 对象已在 sendRequest 掐掉，此处只剩畸形响应），
+            // 不再折叠成 capabilities 全 false 的「握手成功、零工具」假成功。
             val result = response["result"]?.jsonObject
-            val capabilities = result?.get("capabilities")?.jsonObject
+                ?: throw McpException(
+                    "initialize 响应缺少 result 字段：远端未完成正规 JSON-RPC 握手"
+                )
+            val capabilities = result["capabilities"]?.jsonObject
 
             serverCapabilities = McpCapabilities(
                 tools = capabilities?.containsKey("tools") ?: false,
@@ -251,7 +254,7 @@ class McpClient(
 
             // #197 真实事件：initialize 响应到达 —— serverInfo 是服务器自报的
             // 真实身份（名称/版本），capabilities 是它真实宣告的能力面。
-            val serverInfo = result?.get("serverInfo")?.jsonObject
+            val serverInfo = result["serverInfo"]?.jsonObject
             val serverName = serverInfo?.get("name")?.jsonPrimitive?.contentOrNull
             val serverVersion = serverInfo?.get("version")?.jsonPrimitive?.contentOrNull
             startupListener?.onStartupEvent(
@@ -335,9 +338,6 @@ class McpClient(
                 )
 
                 val response = sendRequest(request)
-                    ?: return@withContext Result.failure(
-                        McpException("服务器返回空响应（HTTP 200 无 body / SSE 无 data 帧）：tools/list")
-                    )
                 val result = response["result"]?.jsonObject
                 val tools = result?.get("tools")?.jsonArray ?: JsonArray(emptyList())
 
@@ -385,9 +385,6 @@ class McpClient(
             )
 
             val response = sendRequest(request)
-                ?: return@withContext Result.failure(
-                    McpException("服务器返回空响应（HTTP 200 无 body / SSE 无 data 帧）：tools/call")
-                )
             val result = response["result"]?.jsonObject
 
             val content = result?.get("content")?.jsonArray?.mapNotNull { item ->
@@ -429,9 +426,17 @@ class McpClient(
 
     // ═══ 内部方法 ═══
 
-    private suspend fun sendRequest(request: McpRequest): JsonObject? {
+    private suspend fun sendRequest(request: McpRequest): JsonObject {
         val body = json.encodeToString(request)
-        val response = transportHandle().send(request.id, body) ?: return null
+        // #348：请求路径（id != null）传输返回 null = 通道级失败（空体 200、
+        // 连接被掐、传输异常收敛），不再折叠成「工具已运行但无输出」/
+        // 「握手成功、零工具」的假成功 —— 三个调用方（initialize/listTools/
+        // callTool）全部走这里，一处掐断全链路。
+        val response = transportHandle().send(request.id, body)
+            ?: throw McpException(
+                "MCP 传输返回空响应：服务器 '${config.name}'（${config.transport}）" +
+                    "未回传 JSON-RPC 帧 —— 通道关闭或远端异常"
+            )
 
         // Verify the JSON-RPC response id matches the request id. Without this check,
         // a stale / out-of-order / multiplexed response is silently applied to the

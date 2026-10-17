@@ -419,7 +419,7 @@ class StandardKitAdapter(
         confirmed: Boolean,
         enabledSteps: List<Int>?,
         order: List<Int>?
-    ) = loopEngine.submitPlanConfirmation(confirmed, enabledSteps, order)
+    ): Boolean = loopEngine.submitPlanConfirmationIfAwaiting(confirmed, enabledSteps, order)
 
     override fun updateSessionExtras(extras: String?) =
         loopEngine.updateSessionExtras(extras)

@@ -158,6 +158,10 @@ class ContactsReader(private val context: Context) {
 /**
  * SMS 发送器。
  *
+ * #342 限流：实际发送前过 [SmsRateLimiter] 双闸门——每分钟最多 5 条 +
+ * 相同内容（同收件人+同正文）10 分钟内不重复；被拒时返回失败结果，
+ * 错误文案含限额事实，模型能据此调整任务而不是盲目重试。
+ *
  * 注意：dual-SIM slot 路由当前**不实现**——
  * - 通过反射调用 `TelephonyManager.getSubscriptionId(slot)` 违反项目代码规范
  *   （GATE 1 禁止反射方法分发，应改用类型化接口）；
@@ -167,7 +171,11 @@ class ContactsReader(private val context: Context) {
  *
  * 如用户传入 `slot_id`，本实现记录警告但**不使用**——通过默认 SIM 发送。
  */
-class SmsSender(private val context: Context) {
+class SmsSender(
+    private val context: Context,
+    // #342：默认 5 条/分钟 + 相同内容 10 分钟去重；测试可注入假钟实例。
+    private val rateLimiter: SmsRateLimiter = SmsRateLimiter()
+) {
     suspend fun send(phone: String, message: String, slotId: Int?): SmsSendTool.SendResult =
         withContext(Dispatchers.IO) {
             if (!hasPermission(Manifest.permission.SEND_SMS)) {
@@ -181,6 +189,19 @@ class SmsSender(private val context: Context) {
                     LogCategory.PLUGIN, "SmsSender",
                     "slot_id=$slotId ignored — dual-SIM routing requires READ_PHONE_STATE; " +
                         "using default subscription set in system settings"
+                )
+            }
+            // #342：实际发送前过限流器（滑动窗口 + 重复内容去重）——
+            // 会话级放行 / 失控循环下也无法无限连发付费短信。
+            val verdict = rateLimiter.tryAcquire(phone, message)
+            if (verdict is SmsRateLimiter.Result.Denied) {
+                AppLogger.instance.warn(
+                    LogCategory.PLUGIN, "SmsSender",
+                    "sms blocked by rate limiter: phone=$phone, reason=${verdict.reason}"
+                )
+                return@withContext SmsSendTool.SendResult(
+                    success = false,
+                    message = "短信发送被限流：${verdict.reason}。请稍后再试或调整任务。"
                 )
             }
             try {

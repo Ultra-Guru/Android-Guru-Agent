@@ -187,6 +187,14 @@ class TaskRuntime(
         tagsSetter(task.taskId, null) // N-12：诊断四元 ID 贯通开始
         persist(task, CheckpointBoundary.TASK_CREATED)
 
+        // #351③（调和 #373 / PR #370 两套实现）：tap 保持 UNLIMITED，积压治理
+        // 统一交给下方 collect 内的 TAP_HIGH_WATERMARK 自维护原子计数守护 ——
+        // 边界事件（Error/Complete/Aborted/UserInputRequired/确认类）在水位线
+        // 之上仍可入队（isDroppableUnderPressure=false 保证不丢）；有界
+        // DROP_OLDEST 方案会在通道满时把最早入队的边界事件一并挤掉，故弃用。
+        // 无人收集时流式 chunk 在水位线处丢弃（UI 重建状态来自
+        // activeTask/runtimeEvents 而非重放），checkpoint 不受影响
+        // （onEngineEvent 先于 tap.send 落盘）。
         val tap = Channel<AgentEvent>(capacity = Channel.UNLIMITED)
         eventTap = tap
         // #351③：积压计数（生产侧 +1 / 消费侧 -1）。镜像 collector 是唯一
@@ -356,7 +364,15 @@ class TaskRuntime(
             }
 
             is AgentEvent.UserInputRequired -> {
-                transitionAndPersist(task, TaskStatus.WAITING_USER, CheckpointBoundary.WAITING_USER)
+                if (task.status == TaskStatus.WAITING_USER) {
+                    // #335：同一任务第二次 ask_user（WAITING_USER→WAITING_USER
+                    // 自环非法）幂等处理 —— 保持原态仅补落盘，不再抛
+                    // IllegalTaskTransition（该异常会从 collect lambda 直接逃逸，
+                    // 镜像 catch 把任务误标 FAILED、引擎流被拆断）。
+                    persist(task, CheckpointBoundary.WAITING_USER)
+                } else {
+                    transitionAndPersist(task, TaskStatus.WAITING_USER, CheckpointBoundary.WAITING_USER)
+                }
             }
 
             is AgentEvent.Error -> {
@@ -418,10 +434,22 @@ class TaskRuntime(
                     // 失败已在 Error 事件中终态化；此处理论上不应到达——幂等保护
                     AppLogger.instance.warn(LogCategory.ENGINE, TAG, "finalize on already-FAILED task")
                 }
-                else -> transitionAndPersist(task, TaskStatus.COMPLETED, CheckpointBoundary.COMPLETED)
+                else -> {
+                    // #335 防御（PR #370）：终态化前若停在 WAITING_USER/PLANNING
+                    // 等中间态（事件序列未回迁的边角，如 Complete 被异常路径吞
+                    // 掉），先经 RUNNING 再 COMPLETED，不再抛 IllegalTaskTransition
+                    // 砖化互斥位。
+                    val base = if (TaskStatusMachine.isLegal(task.status, TaskStatus.COMPLETED)) task
+                    else TaskStatusMachine.transition(task, TaskStatus.RUNNING, clock())
+                    transitionAndPersist(base, TaskStatus.COMPLETED, CheckpointBoundary.COMPLETED)
+                }
             }
             emitRuntime(TaskRuntimeEvent.Finished(taskId, _activeTask.value?.status ?: TaskStatus.COMPLETED))
         } finally {
+            // #335：清理四连无条件执行 —— 任何状态迁移异常
+            //（IllegalTaskTransition 等）都不得跳过清理，否则 claiming 永久
+            // 为 true、TaskRuntime 被砖化（任务停在最后一个 checkpoint，后续
+            // execute/resume/retry 全部被互斥拒绝直到进程重启）。
             tagsSetter(null, null) // 诊断 ID 清理
             eventTap = null
             streamDone = null
@@ -487,6 +515,9 @@ class TaskRuntime(
                         "${CANCEL_AWAIT_TIMEOUT_MS / 1000}s; " +
                         "CANCELLED checkpoint will be persisted late"
                 )
+                // 超时按标志位返回：cancel 请求已受理（返回 false 会被调用方
+                // 误读为「无可取消任务」）；终态由镜像 finally 迟到补齐。
+                return cancelRequested
             }
         } else {
             // 无执行流（PAUSED/WAITING/FAILED 态直接取消）：
