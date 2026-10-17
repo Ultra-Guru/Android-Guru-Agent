@@ -490,7 +490,10 @@ class MarketInstallManager @Inject constructor(
      * 根路径技能探测（不改任何状态）：manifest 候选 → SKILL.md frontmatter。
      * 命中返回 [RootSkillProbe]；未命中返回 null（调用方继续 MCP / 技能集合分支）。
      */
-    private fun probeRootSkill(owner: String, repo: String, branches: List<String>): RootSkillProbe? {
+    // suspend：内部经 #339 镜像回退拉取（RawGitHubMirrors.fetchWithFallback 为
+    // 挂起实现）；两个调用方（installSkillFromGitHubRepo / installSmartFromGithub）
+    // 均已在 withContext(Dispatchers.IO) 内。
+    private suspend fun probeRootSkill(owner: String, repo: String, branches: List<String>): RootSkillProbe? {
         val manifestPaths = listOf(
             "manifest.json", "skill.json", "apex-skill.json", "apex_skill.json",
             "$repo.json", "skills/$repo.json", ".apex/skill.json", "skill/manifest.json"

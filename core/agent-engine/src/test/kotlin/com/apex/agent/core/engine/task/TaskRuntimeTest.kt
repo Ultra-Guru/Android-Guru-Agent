@@ -276,7 +276,7 @@ class TaskRuntimeTest {
         val llm = FakeLlmClient(
             listOf(
                 FakeLlmClient.ScriptedResponse.Ok(
-                    toolCalls = listOf(ToolCall("c1", "ask_user", """{"question":"继续吗?","type":"text"}"""))
+                    toolCalls = listOf(ToolCall("c1", "AskUser", """{"question":"继续吗?","type":"text"}"""))
                 ),
                 FakeLlmClient.ScriptedResponse.Ok(content = "all done"),
                 // 第二次 execute（claim 释放验证）的收尾轮
@@ -315,10 +315,10 @@ class TaskRuntimeTest {
         val llm = FakeLlmClient(
             listOf(
                 FakeLlmClient.ScriptedResponse.Ok(
-                    toolCalls = listOf(ToolCall("c1", "ask_user", """{"question":"第一个问题?","type":"text"}"""))
+                    toolCalls = listOf(ToolCall("c1", "AskUser", """{"question":"第一个问题?","type":"text"}"""))
                 ),
                 FakeLlmClient.ScriptedResponse.Ok(
-                    toolCalls = listOf(ToolCall("c2", "ask_user", """{"question":"第二个问题?","type":"text"}"""))
+                    toolCalls = listOf(ToolCall("c2", "AskUser", """{"question":"第二个问题?","type":"text"}"""))
                 ),
                 FakeLlmClient.ScriptedResponse.Ok(content = "done after two asks")
             )
