@@ -43,7 +43,7 @@ class FunctionalPluginStoreTest {
             "tools": [{
               "id": "briefing/run",
               "description": "生成今日简报",
-              "steps": [{"tool": "browser_navigate", "args": {"url": "{{input.site}}"}}]
+              "steps": [{"tool": "BrowserNavigate", "args": {"url": "{{input.site}}"}}]
             }],
             "slashCommands": [{"id": "briefing", "prompt": "生成简报"}]
           }

@@ -10,8 +10,8 @@
 | 用户抱怨 | 旧实现断点 |
 |---|---|
 | 「不懂得自己拥有什么权限」 | 系统提示词只有当前等级的 CAN/CANNOT 两行；无阶梯全貌（每级解锁什么）、无升级路径；遇 `permission denied` 只能盲目重试或放弃 |
-| 「不懂得能干什么」 | `tool_list` 只覆盖工具注册表；权限/环境/技能/MCP 全貌没有统一自省入口 |
-| 「不知道有什么工具可以安装什么」 | 市场源（HubSource 等 7 源）只服务 UI 市场页，agent 侧完全不可见；`skill_search` 只搜 GitHub 关键词，`mcp_connect` 要求自备 url/command |
+| 「不懂得能干什么」 | `ToolList` 只覆盖工具注册表；权限/环境/技能/MCP 全貌没有统一自省入口 |
+| 「不知道有什么工具可以安装什么」 | 市场源（HubSource 等 7 源）只服务 UI 市场页，agent 侧完全不可见；`SkillSearch` 只搜 GitHub 关键词，`McpConnect` 要求自备 url/command |
 | 「不会自己找方法」 | 提示词只列已装能力；没有「装不到就找、找不到就装」的决策梯度；失败换路提示只在引擎层事后注入 |
 
 ## 2. 方案总览（四个组件，两条注入线）
@@ -26,22 +26,22 @@
                               │           │
               ┌───────────────┘           └───────────────┐
               ▼                                           ▼
-   EnginePrompts（引擎线）                        capability_report（工具线）
+   EnginePrompts（引擎线）                        CapabilityReport（工具线）
    ## Device Privilege Level（阶梯+升级+护栏）      Privilege: ... CAN/CANNOT/Upgrade
    ## Capability Expansion Playbook（六条梯度）     + Environment + Tools/Skills/MCP
    OrchestratorPrompts（BUILD 编排线）             + Expansion ladder
    PrivilegeLadder.briefLine + 扩展通道提示
                               │
                               ▼
-                    MarketSearchTool（market_search）
+                    MarketSearchTool（MarketSearch）
                     官方技能 hub + MCP hub 双目录检索
                     → 返回可执行安装指令
 ```
 
 **同源原则**（仓库既有约定：prompt 里的与 gate 里的永远是同一份状态）：
-- 权限知识 → `PrivilegeLadder`（prompt 段与 `capability_report` 输出共用）；
+- 权限知识 → `PrivilegeLadder`（prompt 段与 `CapabilityReport` 输出共用）；
 - 环境快照 → `ToolEnvironmentState`（prompt 的 Live Environment 段与执行侧
-  `ToolEnvironmentGate`、`capability_report` 的 Environment 行共用）；
+  `ToolEnvironmentGate`、`CapabilityReport` 的 Environment 行共用）；
 - 工具库存 → `ToolRegistry` + `ToolTierPolicy`（请求 tools 数组与报告的
   CORE/CATALOG 二分共用）。
 
@@ -67,21 +67,21 @@
 | SHIZUKU | pm / am / settings / dumpsys / input / /sdcard | /system、他应用私有数据、mount、iptables（需 ROOT） | Root（KernelSU/Magisk） |
 | NORMAL_SHELL | /sdcard 基础文件、应用沙箱、PRoot Ubuntu | pm / am / settings / input（需 SHIZUKU）；/system 等（需 ROOT） | Shizuku（免 Root，`shizuku.rikka.app`，ADB/无线调试启动） |
 
-### 3.2 capability_report（`CapabilityTools.kt`）
+### 3.2 CapabilityReport（`CapabilityTools.kt`）
 
 一键自省工具（CORE 集常驻，无参数）。输出四段：
 
 1. **Privilege** —— 与 `PrivilegeLadder` 同源的 CAN/CANNOT/升级路径；
 2. **Environment / Tools / Skills / MCP** —— 实时库存（计数经构造 lambda
    注入：`-1` = 未知 → 整行省略，fail-open 不教假事实）；工具行含
-   CORE/CATALOG 二分与 `tool_search → tool_open` 指引；
+   CORE/CATALOG 二分与 `ToolSearch → ToolOpen` 指引；
 3. **Expansion ladder** —— 五条扩展梯度（同提示词攻略的紧凑版）；
 4. 护栏句「Never claim a task is impossible before trying these routes」。
 
 触发场景（工具描述已写入）：不确定能不能做 / 用户问「你能做 X 吗」 /
 permission denied 之后 —— 先自省，再行动，不猜不弃。
 
-### 3.3 market_search（`CapabilityTools.kt`）
+### 3.3 MarketSearch（`CapabilityTools.kt`）
 
 官方市场检索（CORE 集常驻）。参数：`query`（必填）、`kind`
 （`skill|mcp|all`，默认 all）、`limit`（1..10，默认 5）。
@@ -89,15 +89,15 @@ permission denied 之后 —— 先自省，再行动，不猜不弃。
 - 数据源：`HubSource.listSkills()` / `listMcpServers()`（官方
   `apex-skill-hub` / `apex-mcp-hub` 双仓库 index.json）——**此前这两个目录
   只服务 UI 市场页，agent 完全不可见**；
-- 打分：与 `tool_search` 同款朴素评分（全等 > 前缀 > 包含，多词 OR）；
+- 打分：与 `ToolSearch` 同款朴素评分（全等 > 前缀 > 包含，多词 OR）；
 - 返回**可直接执行的安装指令**（Anthropic 工具写作指南：高信号、可操作）：
-  - 技能：`skill_install({"source":"url","url":"<raw.githubusercontent.com 直链>"})`
+  - 技能：`SkillInstall({"source":"url","url":"<raw.githubusercontent.com 直链>"})`
     ——直链由新增的 `HubSource.skillManifestUrl(entry)` 生成；
-  - MCP（STDIO）：`mcp_connect({"name":...,"command":...,"args":[...],
+  - MCP（STDIO）：`McpConnect({"name":...,"command":...,"args":[...],
     "run_in_sandbox":true})`（hub 条目自带完整配置）；
-  - MCP（HTTP/SSE）：`mcp_connect({"name":...,"url":...})`；
-- 错误契约：无命中 → 建议放宽关键词或 `skill_create` 自建；市场不可达 →
-  `web_search` 兜底提示（可操作错误，非裸 traceback）。
+  - MCP（HTTP/SSE）：`McpConnect({"name":...,"url":...})`；
+- 错误契约：无命中 → 建议放宽关键词或 `SkillCreate` 自建；市场不可达 →
+  `WebSearch` 兜底提示（可操作错误，非裸 traceback）。
 
 测试不联网（仓库纪律）：目录拉取经构造 lambda 注入固定数据
 （`fetchSkills` / `fetchMcpServers`），DI 侧绑 `HubSource` 实例。
@@ -108,15 +108,15 @@ permission denied 之后 —— 先自省，再行动，不猜不弃。
 零工具纯对话下攻略只会与「建议切换 AGENT 模式」自相矛盾）：
 
 ```
-1. INSTALLED TOOLS — tool_search → tool_open（已注册工具）
-2. LIVE SELF-CHECK — capability_report（权限/环境/库存全貌）
-3. SKILLS — market_search / skill_search → skill_install → skill_activate
-4. MCP SERVERS — market_search(kind="mcp") → mcp_connect → mcp_list
-5. LINUX TOOLCHAIN — terminal.ubuntu.ensure → apt / pip / npm / git
+1. INSTALLED TOOLS — ToolSearch → ToolOpen（已注册工具）
+2. LIVE SELF-CHECK — CapabilityReport（权限/环境/库存全貌）
+3. SKILLS — MarketSearch / SkillSearch → SkillInstall → SkillActivate
+4. MCP SERVERS — MarketSearch(kind="mcp") → McpConnect → McpList
+5. LINUX TOOLCHAIN — TerminalUbuntuEnsure → apt / pip / npm / git
 6. PRIVILEGE WALL — 告诉用户开什么（Shizuku / Root）、解锁什么，然后等待
 ```
 
-护栏：装完必须**验证生效**（skill_list / mcp_list / 重跑）再报成功；
+护栏：装完必须**验证生效**（SkillList / McpList / 重跑）再报成功；
 告知用户正在获取什么与为什么；**没爬完 1-5 不许说不可能**。
 
 Tool-Use Policy 第 8 条同步扩展：目录检索无果 → 爬扩展攻略。
@@ -126,12 +126,12 @@ Tool-Use Policy 第 8 条同步扩展：目录检索无果 → 爬扩展攻略�
 旧版只有一行裸 `Privilege level: $level`（比引擎线更失明）。现在：
 
 - `PrivilegeLadder.briefLine(level)` + 升级指引（与引擎线同源）；
-- 一段紧凑扩展通道提示（tool_search / skill_install / mcp_connect /
-  terminal / capability_report + 「先找方法再谈不可能」）。
+- 一段紧凑扩展通道提示（ToolSearch / SkillInstall / McpConnect /
+  terminal / CapabilityReport + 「先找方法再谈不可能」）。
 
 ## 4. 注入与接线
 
-- **CORE 集**：`capability_report` / `market_search` 入 `ToolTierPolicy
+- **CORE 集**：`CapabilityReport` / `MarketSearch` 入 `ToolTierPolicy
   .CORE_TOOL_IDS`（AGENT 模式的编码工具黑名单前缀 `code_` / `github_` /
   `mcp__github__` 均不命中，两工位可见）；
 - **DI**（`ToolModule.provideToolRegistry`）：计数 lambda 绑定现成单例
@@ -147,9 +147,9 @@ Tool-Use Policy 第 8 条同步扩展：目录检索无果 → 爬扩展攻略�
 | 场景 | 旧行为 | 新行为 |
 |---|---|---|
 | 「帮我卸载这个应用」（无 Shizuku） | 盲试 `pm uninstall` → 失败 → 「我做不了」 | prompt 已知 NORMAL_SHELL 无 pm → 直接告知开 Shizuku 的步骤与解锁范围 |
-| 「你能下载 YouTube 视频吗」 | 「我无法…」 | 爬梯度：tool_search 无果 → market_search 命中技能 → skill_install(url) → 验证 skill_list → 执行 |
-| 「分析这个 CSV」（缺 pandas） | 「没有这个能力」 | market_search / skill 无果 → terminal.ubuntu.ensure → pip install pandas → 跑 |
-| 「连一个 PDF 工具」 | 要求用户自己找 MCP | market_search(kind="mcp") → 命中 → mcp_connect(完整配置) → mcp_list 验证 |
+| 「你能下载 YouTube 视频吗」 | 「我无法…」 | 爬梯度：ToolSearch 无果 → MarketSearch 命中技能 → SkillInstall(url) → 验证 SkillList → 执行 |
+| 「分析这个 CSV」（缺 pandas） | 「没有这个能力」 | MarketSearch / skill 无果 → TerminalUbuntuEnsure → pip install pandas → 跑 |
+| 「连一个 PDF 工具」 | 要求用户自己找 MCP | MarketSearch(kind="mcp") → 命中 → McpConnect(完整配置) → McpList 验证 |
 | BUILD 编排线长任务 | 全程不知道自己有什么 | 权限简介 + 扩展通道常驻编排器 prompt |
 
 ## 6. 测试

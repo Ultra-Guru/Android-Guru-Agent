@@ -120,7 +120,7 @@ class UbuntuBootstrapManager(
         if (rootfsHostDirProvider() == null) {
             return BootstrapResult.Failed(
                 LinuxEnvironmentError.rootfsNotReady(
-                    "rootfs host dir unavailable — call terminal.ubuntu.install first"
+                    "rootfs host dir unavailable — call TerminalUbuntuInstall first"
                 ),
                 BootstrapState.CHECKING.name,
                 BootstrapState.NOT_STARTED
@@ -191,7 +191,7 @@ class UbuntuBootstrapManager(
             stageStart(BootstrapState.CHECKING, "checking rootfs ready")
             val rootfs = provisioner.current()
             if (rootfs == null || rootfs.location == null) {
-                return stageFail(BootstrapState.CHECKING, "rootfs not ready — call terminal.ubuntu.install first")
+                return stageFail(BootstrapState.CHECKING, "rootfs not ready — call TerminalUbuntuInstall first")
             }
             stageDone(BootstrapState.CHECKING)
         }
@@ -204,9 +204,9 @@ class UbuntuBootstrapManager(
             // invalidate/remove → `!!` 抛 NPE → 泛型 catch 吞成
             // "bootstrap crashed: null"（错误信息无语义）。
             val rootfs = provisioner.current()
-                ?: return stageFail(BootstrapState.CONFIGURING, "rootfs disappeared between stages — re-install (terminal.ubuntu.install)")
+                ?: return stageFail(BootstrapState.CONFIGURING, "rootfs disappeared between stages — re-install (TerminalUbuntuInstall)")
             val rootfsLocation = rootfs.location
-                ?: return stageFail(BootstrapState.CONFIGURING, "rootfs has no location — re-install (terminal.ubuntu.install)")
+                ?: return stageFail(BootstrapState.CONFIGURING, "rootfs has no location — re-install (TerminalUbuntuInstall)")
             val rootfsDir = File(rootfsLocation.value)
             val arch = rootfs.architecture
             val sourcesResult = sourcesList.ensure(rootfsDir, arch)

@@ -30,7 +30,7 @@ package com.apex.agent.permission
  *
  *     「删除类」判定口径 = destructiveHint && !idempotentHint：
  *     一次性不可逆动作（删完即没了，重放只会再删一次空气）；
- *     而 write_file 等覆写写虽然 destructiveHint=true，但幂等
+ *     而 Write 等覆写写虽然 destructiveHint=true，但幂等
  *     （重放收敛），可由再次写入恢复，不算删除类。
  */
 /**
@@ -45,7 +45,7 @@ package com.apex.agent.permission
  *   （如读取通知）——敏感但未必破坏性，同样值得一次询问。
  * @param idempotentHint 工具注解：同一调用重复执行环境状态不变。
  *   与 [destructiveHint] 组合出「删除类」判定（破坏且非幂等 = 真不可逆）
- *   ——整文件覆写类工具（write_file 等）虽破坏但幂等，不算删除类。
+ *   ——整文件覆写类工具（Write 等）虽破坏但幂等，不算删除类。
  */
 data class PermissionContext(
     val toolId: String,
@@ -93,20 +93,20 @@ object PermissionDecider {
      * 也是设置 UI 提示文案与单测断言的单一事实源）。
      *
      * 覆盖 Coding 模式的 code_ 写工具族与 Agent 模式的传统文件写工具族：
-     * code_edit / code_write / code_git_commit / code_git_branch /
-     * write_file / edit_file / delete_file / copy_move_file。
-     * 注意 code_git_status / code_git_diff / code_git_log 等只读 git 工具
+     * CodeEdit / CodeWrite / CodeGitCommit / CodeGitBranch /
+     * Write / Edit / DeleteFile / CopyMoveFile。
+     * 注意 CodeGitStatus / CodeGitDiff / CodeGitLog 等只读 git 工具
      * 不在列——它们靠 readOnlyHint 在判定顺序的第一层就被放行。
      */
     val EDIT_LIKE_PREFIXES: List<String> = listOf(
-        "code_edit",
-        "code_write",
-        "code_git_commit",
-        "code_git_branch",
-        "write_file",
-        "edit_file",
-        "delete_file",
-        "copy_move_file"
+        "CodeEdit",
+        "CodeWrite",
+        "CodeGitCommit",
+        "CodeGitBranch",
+        "Write",
+        "Edit",
+        "DeleteFile",
+        "CopyMoveFile"
     )
 
     /**
@@ -118,7 +118,7 @@ object PermissionDecider {
     /**
      * 删除类判定（DEFAULT 模式询问口径的单一事实源）：破坏且非幂等
      * ——delete / uninstall / force-stop / signal 族的一次性不可逆动作。
-     * 幂等的覆写写（write_file 等破坏但可重放恢复）不算删除类。
+     * 幂等的覆写写（Write 等破坏但可重放恢复）不算删除类。
      */
     private fun isDeleteLike(ctx: PermissionContext): Boolean =
         ctx.destructiveHint && !ctx.idempotentHint
@@ -166,7 +166,7 @@ object PermissionDecider {
             PermissionMode.ACCEPT_EDITS -> when {
                 // 只读工具：模式显式承诺放行
                 ctx.readOnlyHint -> PermissionDecision.AllowExplicit
-                // 编辑写类（code_edit / write_file / git 提交…）：自动放行
+                // 编辑写类（CodeEdit / Write / git 提交…）：自动放行
                 isEditLike(ctx.toolId) -> PermissionDecision.AllowExplicit
                 // 其余写操作（shell、网络写…）：仍要问
                 else -> PermissionDecision.Ask

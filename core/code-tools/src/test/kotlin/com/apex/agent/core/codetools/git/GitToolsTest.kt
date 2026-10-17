@@ -50,7 +50,7 @@ class GitToolsTest {
         "fatal: not a git repository (or any of the parent directories): .git"
     )
 
-    // ── code_git_status ─────────────────────────────────────────────
+    // ── CodeGitStatus ─────────────────────────────────────────────
 
     @Test
     fun `status argv runs porcelain v1 with branch and all untracked`() = runTest {
@@ -114,7 +114,7 @@ class GitToolsTest {
         val result = GitStatusTool(fake).executeSafe("{}")
         assertFalse(result.render(), result.isSuccess)
         assertTrue(result.render(), result.render().contains("还不是 git 仓库"))
-        assertTrue(result.render(), result.render().contains("code_git_commit"))
+        assertTrue(result.render(), result.render().contains("CodeGitCommit"))
     }
 
     @Test
@@ -132,7 +132,7 @@ class GitToolsTest {
         assertTrue("length=${out.length}", out.length <= 6100)
     }
 
-    // ── code_git_diff ───────────────────────────────────────────────
+    // ── CodeGitDiff ───────────────────────────────────────────────
 
     @Test
     fun `diff unstaged maps to diff HEAD with pathspec`() = runTest {
@@ -200,7 +200,7 @@ class GitToolsTest {
         assertTrue(fake.calls.isEmpty())
     }
 
-    // ── code_git_log ────────────────────────────────────────────────
+    // ── CodeGitLog ────────────────────────────────────────────────
 
     @Test
     fun `log argv maps limit with 1-50 clamp`() = runTest {
@@ -261,7 +261,7 @@ class GitToolsTest {
         assertTrue(tool.executeSafe("{}").render().contains("暂无提交"))
     }
 
-    // ── code_git_commit ─────────────────────────────────────────────
+    // ── CodeGitCommit ─────────────────────────────────────────────
 
     @Test
     fun `commit auto inits repo then adds and commits with -c identity`() = runTest {
@@ -367,7 +367,7 @@ class GitToolsTest {
         assertTrue(noInit.render(), noInit.render().contains("还不是 git 仓库"))
     }
 
-    // ── code_git_branch ─────────────────────────────────────────────
+    // ── CodeGitBranch ─────────────────────────────────────────────
 
     @Test
     fun `branch list marks current and translates track state`() = runTest {
@@ -452,7 +452,7 @@ class GitToolsTest {
     fun `GitTools all registers the five git tools in order`() {
         val ids = GitTools.all(FakeGitRunner()).map { it.id }
         assertEquals(
-            listOf("code_git_status", "code_git_diff", "code_git_log", "code_git_commit", "code_git_branch"),
+            listOf("CodeGitStatus", "CodeGitDiff", "CodeGitLog", "CodeGitCommit", "CodeGitBranch"),
             ids
         )
     }
@@ -460,10 +460,10 @@ class GitToolsTest {
     @Test
     fun `metadata tiers mark reads read-only and writes mutating`() {
         val tools = GitTools.all(FakeGitRunner()).associateBy { it.id }
-        for (id in listOf("code_git_status", "code_git_diff", "code_git_log")) {
+        for (id in listOf("CodeGitStatus", "CodeGitDiff", "CodeGitLog")) {
             assertTrue("$id 应为 readOnly", tools.getValue(id).metadata.annotations.readOnlyHint)
         }
-        for (id in listOf("code_git_commit", "code_git_branch")) {
+        for (id in listOf("CodeGitCommit", "CodeGitBranch")) {
             assertFalse("$id 应为写类", tools.getValue(id).metadata.annotations.readOnlyHint)
         }
     }

@@ -21,8 +21,8 @@ import java.nio.file.Files
  * AppDownloadInstallTool / AppInstallApkTool 的纯 JVM 测试。
  *
  * 用 MockWebServer 假装一个 APK 下载源，验证：
- * - app_install_apk：参数校验（路径必须绝对 / 文件必须存在 / 扩展名）
- * - app_download_install：URL → 下载 → 哈希校验 → 安装调用链
+ * - AppInstallApk：参数校验（路径必须绝对 / 文件必须存在 / 扩展名）
+ * - AppDownloadInstall：URL → 下载 → 哈希校验 → 安装调用链
  *
  * 验证不涉及的（需 Android）：实际 PackageInstaller 调用由 [FakeApkInstaller]
  * 替代，仅记录 install 被调用 + 参数。
@@ -47,7 +47,7 @@ class AppDownloadInstallToolTest {
         tempDir.deleteRecursively()
     }
 
-    // ── app_install_apk ─────────────────────────────────────────────────
+    // ── AppInstallApk ─────────────────────────────────────────────────
 
     @Test
     fun `install_apk rejects relative path`() = runTest {
@@ -121,7 +121,7 @@ class AppDownloadInstallToolTest {
         assertTrue("should mention storage full: $result", result.contains("storage full"))
     }
 
-    // ── app_download_install ───────────────────────────────────────────
+    // ── AppDownloadInstall ───────────────────────────────────────────
 
     @Test
     fun `download_install rejects non-http url`() = runTest {

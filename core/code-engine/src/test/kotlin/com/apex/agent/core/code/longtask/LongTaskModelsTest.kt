@@ -47,9 +47,9 @@ class LongTaskModelsTest {
         durationMs = 456_789L,
         filesTouched = listOf("a.kt", "b.kt", "c/d.kt"),
         toolsUsed = linkedMapOf(
-            "code_edit" to 30,
-            "code_read" to 25,
-            "shell_execute" to 11
+            "CodeEdit" to 30,
+            "CodeRead" to 25,
+            "ShellExecute" to 11
         ),
         errorMessage = "错误原因：两处断言失败",
         summary = "收尾摘要：完成 90%。",
@@ -60,7 +60,7 @@ class LongTaskModelsTest {
                 timestamp = 150L,
                 toolCallCount = 9,
                 filesTouchedCount = 1,
-                recentExchange = listOf("用户: 开始", "工具 code_edit ✓"),
+                recentExchange = listOf("用户: 开始", "工具 CodeEdit ✓"),
                 todoDigest = listOf("☐ 第一步")
             ),
             LongTaskCheckpoint(
@@ -205,9 +205,9 @@ class LongTaskModelsTest {
         assertEquals(2, decoded.checkpoints.size)
         assertEquals(record.checkpoints[0], decoded.checkpoints[0])
         assertEquals(record.checkpoints[1], decoded.checkpoints[1])
-        assertEquals(listOf("用户: 开始", "工具 code_edit ✓"), decoded.checkpoints[0].recentExchange)
+        assertEquals(listOf("用户: 开始", "工具 CodeEdit ✓"), decoded.checkpoints[0].recentExchange)
         assertEquals(listOf("☑ 第一步", "☐ 第二步"), decoded.checkpoints[1].todoDigest)
-        assertEquals(mapOf("code_edit" to 30, "code_read" to 25, "shell_execute" to 11), decoded.toolsUsed)
+        assertEquals(mapOf("CodeEdit" to 30, "CodeRead" to 25, "ShellExecute" to 11), decoded.toolsUsed)
         assertEquals("task-parent-root", decoded.parentTaskId)
         assertEquals(7, decoded.copyCount)
         assertEquals(456_789L, decoded.durationMs)
@@ -222,7 +222,7 @@ class LongTaskModelsTest {
             timestamp = 3456L,
             toolCallCount = 24,
             filesTouchedCount = 6,
-            recentExchange = listOf("用户: 单测", "助手: 好的", "工具 code_write ✓"),
+            recentExchange = listOf("用户: 单测", "助手: 好的", "工具 CodeWrite ✓"),
             todoDigest = listOf("☐ 独立编码", "☑ 独立解码")
         )
         val encoded = Json.encodeToString(LongTaskCheckpoint.serializer(), cp)

@@ -188,7 +188,7 @@ class ConnectorRegistry(
                 endpoint = "",
                 builtin = true
             ),
-            // 消息推送连接器：ConnectorMessenger 可直接发送文本（connector_send_message）
+            // 消息推送连接器：ConnectorMessenger 可直接发送文本（ConnectorSendMessage）
             ConnectorDef(
                 id = "wechat",
                 name = "微信（企业微信群机器人）",

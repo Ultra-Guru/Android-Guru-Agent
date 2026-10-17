@@ -82,7 +82,7 @@
 - **D-4 事件系统收敛**：TerminalEventLogImpl 加 per-session 容量上限（默认 500，BackpressureConfig 接线）；SessionManagerImpl.close 调用 eventLog.drop(sessionId) + eventBus.drop(sessionId) → 修复 collector 泄漏；bus subscribe 改为"先建 live channel 再查历史"消除启动窗口丢失。
 - **D-5 持久化真原子**：SessionMetadataStore.save 改 tmp 写 + fsync + rename（与 T76 FileTaskStore 同模式）；RuntimeRecoveryService.recover 完整实现（合成 SessionClosed 事件 + 恢复记录注册进 store 查询面 + LinuxError 词汇），恢复的 session 一律 EXITED/BROKEN（不伪造 RUNNING）；isPidAlive 改 `/proc/<pid>` 存在性检查（Android 可用，无 fork）。
 - **D-6 LinuxExecutionContext**：新增统一构造点（rootfs+workspace+home+env+arch+proot+cwd），LinuxPRootBackend / UbuntuAptPackageManager / LinuxNetworkProbe / Bootstrap 全部复用；env 基线单一来源（消除 PWD/OLDPWD/LC_ALL 漂移与 DEBIAN_FRONTEND 死检查——实装校验）。
-- **D-7 Capability 真接线**：基于 ProotExecutor 的轻量真实探测（`which X` / `X --version`，有超时+缓存），产出 EnvironmentSnapshot → `terminal.linux.capabilities` 工具（status: AVAILABLE/MISSING/BROKEN/INSTALLABLE/UNKNOWN + 版本）；INSTALLABLE 判定 = 包名在 BasePackageProfile/sources 可得。
+- **D-7 Capability 真接线**：基于 ProotExecutor 的轻量真实探测（`which X` / `X --version`，有超时+缓存），产出 EnvironmentSnapshot → `TerminalLinuxCapabilities` 工具（status: AVAILABLE/MISSING/BROKEN/INSTALLABLE/UNKNOWN + 版本）；INSTALLABLE 判定 = 包名在 BasePackageProfile/sources 可得。
 
 ## 7. Shutdown 设计（§15）
 

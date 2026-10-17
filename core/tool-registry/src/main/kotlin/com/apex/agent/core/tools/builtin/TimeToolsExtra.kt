@@ -222,7 +222,7 @@ object VixieCron {
 }
 
 /**
- * `cron_next` — 标准 5 字段 cron 的解析 / 下次运行 / 人类可读解释。
+ * `CronNextLegacy` — 标准 5 字段 cron 的解析 / 下次运行 / 人类可读解释。
  *
  * Why: "这个定时任务下次什么时候跑？" 是 agent 处理运维/日历任务的常见问题，
  * 而 LLM 对 cron 语义的"心算"极不可靠（尤其 day-of-month 与 day-of-week 的
@@ -246,7 +246,7 @@ object VixieCron {
  * （1-3 句人类可读描述）、`validate`（"valid" 或带字段的结构化错误）。
  */
 class CronTool : BaseTool(
-    id = "cron_next",
+    id = "CronNextLegacy",
     name = "Cron Schedule",
     description = """
         Standard 5-field cron: parse, next runs, human explanation, validation.
@@ -483,7 +483,7 @@ class CronTool : BaseTool(
 }
 
 /**
- * `duration_convert` — 时长字符串的 解析 / 格式化 / 比较。
+ * `DurationConvertLegacy` — 时长字符串的 解析 / 格式化 / 比较。
  *
  * Why: 日志、UI 文案、配置里的时长写法五花八门："1h30m"、"1.5h"、"2d"、
  * "500ms"、"PT1H30M"、纯秒数 "5400"。模型每次"心算"换算都可能错一位小数。
@@ -497,7 +497,7 @@ class CronTool : BaseTool(
  *   带负号）+ `ratio`（value / value2，value2 为 0 时为 undefined）。
  */
 class DurationConvertTool : BaseTool(
-    id = "duration_convert",
+    id = "DurationConvertLegacy",
     name = "Duration Convert",
     description = """
         Parse, format and compare durations (human strings, bare seconds, ISO-8601).

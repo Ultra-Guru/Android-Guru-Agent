@@ -31,7 +31,7 @@ class ShellExecuteTool(
     private val executor: suspend (command: String, timeoutSec: Int) -> String
 ) : StreamingAgentTool {
 
-    override val id = "shell_execute"
+    override val id = "ShellExecute"
     override val name = "Run Command"
     override val description = """
         Execute a shell command on the device.
@@ -77,7 +77,7 @@ class ShellExecuteTool(
             // P1 修复（timeout 死参数）：schema 承诺可调超时却从不读取 ——
             // 模型按自己的参数预期等待，实际 30s 必杀。现在真实透传，
             // 钳位到 [MIN_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS]（与
-            // terminal.exec 的 1s..600ms 口径对齐为秒级 5..600）。
+            // TerminalExec 的 1s..600ms 口径对齐为秒级 5..600）。
             val timeoutSec = (json["timeout"]?.jsonPrimitive?.intOrNull ?: DEFAULT_TIMEOUT_SECONDS)
                 .coerceIn(MIN_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS)
 
@@ -162,7 +162,7 @@ class ShellExecuteTool(
         /** 超时下限（秒）：过短的超时连 spawn 都完不成，只产出噪声错误。 */
         const val MIN_TIMEOUT_SECONDS = 5
 
-        /** 超时上限（秒）：与 terminal.exec 的 600s 上限对齐。 */
+        /** 超时上限（秒）：与 TerminalExec 的 600s 上限对齐。 */
         const val MAX_TIMEOUT_SECONDS = 600
     }
 }

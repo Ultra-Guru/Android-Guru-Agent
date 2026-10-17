@@ -11,13 +11,13 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
- * T82: Agent 工具 — terminal.ubuntu.ensure / terminal.ubuntu.status
+ * T82: Agent 工具 — TerminalUbuntuEnsure / TerminalUbuntuStatus
  *
  * 产品级一键入口（UbuntuLifecycleCoordinator 的 Agent 侧门面）。
  *
  * ## 为什么需要它（T82 Phase 0 审计）
  * 此前 Agent 要把 Ubuntu 拉到可用需要**三次**调用并自行解读三套状态机：
- *   terminal.ubuntu.install → terminal.linux.bootstrap → terminal.linux.capabilities
+ *   TerminalUbuntuInstall → TerminalLinuxBootstrap → TerminalLinuxCapabilities
  * install 返回 IN_PROGRESS 后要轮询、bootstrap 失败要区分 rootfs 缺失 vs 网络失败、
  * capability 探测又是独立调用 —— Agent 的多轮决策都在重复编排逻辑。
  *
@@ -33,14 +33,14 @@ import kotlinx.serialization.json.put
  *   "probeDegraded"?: bool, "durationMs"?: int, "message": "..." }
  * ```
  *
- * 既有工具（terminal.ubuntu.install / terminal.linux.bootstrap /
- * terminal.linux.capabilities / terminal.linux.repair）全部保留 —— 细粒度控制入口
+ * 既有工具（TerminalUbuntuInstall / TerminalLinuxBootstrap /
+ * TerminalLinuxCapabilities / TerminalLinuxRepair）全部保留 —— 细粒度控制入口
  * 不删；ensure 是产品级聚合入口（用户明确要求"不删除已有能力重做"）。
  */
 class TerminalUbuntuEnsureTool(
     private val lifecycle: UbuntuLifecycleCoordinator
 ) : TerminalTool {
-    override val id: String = "terminal.ubuntu.ensure"
+    override val id: String = "TerminalUbuntuEnsure"
     override val name: String = id
     override val description: String = """
         One-shot product entry: bring the BUNDLED Ubuntu Linux environment to READY —
@@ -54,7 +54,7 @@ class TerminalUbuntuEnsureTool(
         until retried with force=true when network returns. Replaces the 3-step dance
         (install → bootstrap → capabilities) with a single call. IN_PROGRESS on timeout:
         call again to keep waiting — progress is never lost. After READY, create sessions
-        with terminal.create(backend="linux-ubuntu").
+        with TerminalCreate(backend="linux-ubuntu").
     """.trimIndent()
 
     override val parametersSchema: String = """
@@ -85,7 +85,7 @@ class TerminalUbuntuEnsureTool(
                         put("bootstrapError", result.bootstrapError)
                     }
                     put("capabilities", result.capabilities.toJsonArray())
-                    put("message", "Ubuntu 环境就绪（rootfs + bootstrap${if (result.probeDegraded) "；capability 快照降级" else ""}${if (result.bootstrapDegraded) "；apt 引导未完成（离线降级，可用）" else ""}）— 可用 terminal.create(backend=\"linux-ubuntu\") 创建会话")
+                    put("message", "Ubuntu 环境就绪（rootfs + bootstrap${if (result.probeDegraded) "；capability 快照降级" else ""}${if (result.bootstrapDegraded) "；apt 引导未完成（离线降级，可用）" else ""}）— 可用 TerminalCreate(backend=\"linux-ubuntu\") 创建会话")
                 }
                 is UbuntuLifecycleCoordinator.EnsureResult.AlreadyReady -> {
                     put("capabilities", result.capabilities.toJsonArray())
@@ -101,7 +101,7 @@ class TerminalUbuntuEnsureTool(
                     put(
                         "message",
                         "失败于 ${result.stage.name} 阶段" + (
-                            if (result.retryable) "（可恢复 — 重试本工具或 terminal.linux.repair）" else "（需人工介入）"
+                            if (result.retryable) "（可恢复 — 重试本工具或 TerminalLinuxRepair）" else "（需人工介入）"
                             )
                     )
                 }
@@ -131,16 +131,16 @@ class TerminalUbuntuEnsureTool(
 }
 
 /**
- * T82: Agent 工具 — terminal.ubuntu.status
+ * T82: Agent 工具 — TerminalUbuntuStatus
  *
  * 只读快照（不触发任何安装/网络动作）：产品级 phase + 底层 rootfs/bootstrap
  * 状态 + 最近失败信息 + capability 快照。适合 Agent 在做决策前快速探测环境
- * （替代解读 terminal.backends 的 NEEDS_ROOTFS 再二次查询的链路）。
+ * （替代解读 TerminalBackends 的 NEEDS_ROOTFS 再二次查询的链路）。
  */
 class TerminalUbuntuStatusTool(
     private val lifecycle: UbuntuLifecycleCoordinator
 ) : TerminalTool {
-    override val id: String = "terminal.ubuntu.status"
+    override val id: String = "TerminalUbuntuStatus"
     override val name: String = id
     override val description: String = """
         Read-only snapshot of the Ubuntu environment lifecycle: product-level phase
@@ -168,8 +168,8 @@ class TerminalUbuntuStatusTool(
             if (state.capabilities != null) put("capabilities", state.capabilities.toJsonArray())
             put(
                 "message",
-                if (state.ready) "Ubuntu READY — terminal.create(backend=\"linux-ubuntu\") 可用"
-                else "Ubuntu 未就绪（phase=${state.phase.name}）— 调 terminal.ubuntu.ensure 拉起"
+                if (state.ready) "Ubuntu READY — TerminalCreate(backend=\"linux-ubuntu\") 可用"
+                else "Ubuntu 未就绪（phase=${state.phase.name}）— 调 TerminalUbuntuEnsure 拉起"
             )
         }.toString()
     }

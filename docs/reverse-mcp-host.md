@@ -76,7 +76,7 @@ AndroidMCP 类项目（维护差、无权限门控）不满足安全要求，故
 3. **白名单 + 权限门**：
    - 分类白名单（默认 `UTILITY/FILE/WEB/SYSTEM/SENSOR/MEMORY/CONTEXT` 只读
      友好集；SHELL/TERMINAL/APP/UI/GITHUB/SECURITY 默认关）；
-   - 工具黑名单（`vault_*`、`share_content` 等）；
+   - 工具黑名单（`vault_*`、`ShareContent` 等）；
    - **vault_* 硬拦截写死在 Bridge**（安全红线：金库密钥绝不经外部 AI
      通道出入，配置放开也拦截）；
    - legacy 别名（ToolTierPolicy）不暴露；

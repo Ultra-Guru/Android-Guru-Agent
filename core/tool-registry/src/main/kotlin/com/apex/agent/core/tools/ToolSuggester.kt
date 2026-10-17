@@ -10,7 +10,7 @@ package com.apex.agent.core.tools
  * id with the few closest ids:
  *
  * ```
- * Error: Tool 'regex_extact' not found. Did you mean: regex_extract?
+ * Error: Tool 'regex_extact' not found. Did you mean: RegexExtractLegacy?
  * ```
  *
  * [ToolSuggester] implements the matching: bounded Levenshtein distance
@@ -40,14 +40,14 @@ object ToolSuggester {
         maxSuggestions: Int = DEFAULT_MAX_SUGGESTIONS
     ): List<String> {
         if (input.isBlank() || candidates.isEmpty()) return emptyList()
-        val needle = input.trim().lowercase()
+        val needle = normalize(input)
 
         data class Scored(val id: String, val score: Double)
 
         val scored = candidates
             .filter { it.isNotBlank() }
             .map { candidate ->
-                val hay = candidate.lowercase()
+                val hay = normalize(candidate)
                 val score = when {
                     hay == needle -> 0.0
                     hay.startsWith(needle) -> 1.0
@@ -75,6 +75,16 @@ object ToolSuggester {
         if (matches.isEmpty()) return null
         return "Did you mean: ${matches.joinToString(", ")}?"
     }
+
+    /**
+     * 名字归一：小写 + 去掉一切非字母数字字符。
+     *
+     * v5 命名改造后注册表 id 是 PascalCase（`WebSearch`），模型仍可能回显
+     * 改名前的写法（`web_search`）或带分隔符的漂移——归一后两者可比较，
+     * 建议结果仍是**现役 id**（`Did you mean: WebSearch?`）。
+     */
+    private fun normalize(raw: String): String =
+        raw.trim().lowercase().filter { it.isLetterOrDigit() }
 
     /**
      * Levenshtein distance with an early exit: returns null as soon as the

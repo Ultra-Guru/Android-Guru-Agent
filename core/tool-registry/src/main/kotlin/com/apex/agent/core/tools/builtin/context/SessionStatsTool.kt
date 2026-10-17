@@ -11,7 +11,7 @@ import com.apex.agent.core.tools.builtin.BaseTool
 import com.apex.agent.core.tools.toolSchema
 
 /**
- * `session_stats` — 会话统计画像（#172 上下文回顾三件套之三）。
+ * `SessionStats` — 会话统计画像（#172 上下文回顾三件套之三）。
  *
  * 回答"这个会话长成什么样了"：消息数分布 / 总字符与估算 token / 工具
  * 调用直方图（top 10）/ 错误率 / 会话时长。无参数，一次调用全量输出。
@@ -28,7 +28,7 @@ import com.apex.agent.core.tools.toolSchema
 class SessionStatsTool(
     private val context: SessionContextProvider
 ) : BaseTool(
-    id = "session_stats",
+    id = "SessionStats",
     name = "Session Stats",
     description = """
         Statistics profile of the current conversation. No arguments.

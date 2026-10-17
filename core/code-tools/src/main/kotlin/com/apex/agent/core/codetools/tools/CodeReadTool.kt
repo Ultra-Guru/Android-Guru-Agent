@@ -11,11 +11,11 @@ import com.apex.agent.core.tools.toolSchema
 import java.io.File
 
 /**
- * # code_read — 编码级文件读取（业界标准 CLI 编码智能体 read 契约）
+ * # CodeRead — 编码级文件读取（业界标准 CLI 编码智能体 read 契约）
  *
- * 与 Agent 模式的 read_file（视口滚动）互补，本工具面向**编码会话**的读取契约：
+ * 与 Agent 模式的 Read（视口滚动）互补，本工具面向**编码会话**的读取契约：
  *
- * - 输出以 `N: 内容` 行号前缀渲染（cat -n 风格）——code_edit 的 old_string
+ * - 输出以 `N: 内容` 行号前缀渲染（cat -n 风格）——CodeEdit 的 old_string
  *   **必须去掉行号前缀**后引用原文，这一契约写进描述防止模型把行号当内容；
  * - 文件/目录二合一：目标是目录时返回按字母序的条目清单（目录带 `/` 尾），
  *   同样支持 offset/limit 分页 —— "先 ls 再 cd 式"的探索在单工具内闭环；
@@ -30,13 +30,13 @@ import java.io.File
 class CodeReadTool(
     private val roots: CodeWorkspaceRoots
 ) : BaseTool(
-    id = "code_read",
+    id = "CodeRead",
     name = "Code Read",
     description = """
         Read a file or list a directory in the active coding workspace.
 
         File output format: every line is prefixed with "N: " (line number, 1-based).
-        When using code_edit, strip the "N: " prefix first — old_string must match the
+        When using CodeEdit, strip the "N: " prefix first — old_string must match the
         raw file content exactly.
 
         - File: returns up to `limit` lines from `offset` (1-based). Default limit 800.
@@ -108,14 +108,14 @@ class CodeReadTool(
         if (isBinary(file)) {
             return ToolResult.fail(
                 ToolErrorCode.INVALID_ARGUMENT,
-                "binary file (${formatSize(file.length())}) — use terminal.exec to inspect it"
+                "binary file (${formatSize(file.length())}) — use TerminalExec to inspect it"
             )
         }
         if (file.length() > MAX_FILE_BYTES) {
             return ToolResult.fail(
                 ToolErrorCode.INVALID_ARGUMENT,
                 "file too large (${formatSize(file.length())}, max ${formatSize(MAX_FILE_BYTES)}). " +
-                    "Read it in slices with code_read + shell tools (grep/sed), or increase offset."
+                    "Read it in slices with CodeRead + shell tools (grep/sed), or increase offset."
             )
         }
 

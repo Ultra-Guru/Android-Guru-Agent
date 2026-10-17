@@ -42,7 +42,7 @@ class LinuxEnvironmentManager(
 ) {
 
     /**
-     * 交互式 shell 的 guest env（terminal.create(backendId="linux-ubuntu") 用）。
+     * 交互式 shell 的 guest env（TerminalCreate(backendId="linux-ubuntu") 用）。
      *
      * 与 [LinuxPRootBackend.buildGuestEnv] 的基线完全一致 —— 后者是历史内联实现，
      * 本类是新代码的权威来源；二者值必须保持同步（测试断言二者等价）。

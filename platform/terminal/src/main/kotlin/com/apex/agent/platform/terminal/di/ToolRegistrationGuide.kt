@@ -23,7 +23,7 @@ import com.apex.agent.platform.terminal.tools.legacy.LegacySignalTool
 /**
  * Tool registration guide for `app/.../di/ToolModule.kt`.
  *
- * Spec ref: ATR 2.0 Final Spec §44.4 (ToolModule REWRITE) / §46 (terminal_exec id collision fix)
+ * Spec ref: ATR 2.0 Final Spec §44.4 (ToolModule REWRITE) / §46 (TerminalExecLegacy id collision fix)
  *
  * This is a GUIDE — the real repo's ToolModule.kt is an Hilt module that registers AgentTools
  * into the ToolRegistry. Below is the target registration block (pseudocode using the repo's
@@ -45,35 +45,35 @@ import com.apex.agent.platform.terminal.tools.legacy.LegacySignalTool
  *   registry.register(TerminalCloseTool(runtime))
  *
  *   // ── 6 legacy compat aliases (deprecated, kept for 1 version) ──
- *   registry.register(LegacyExecTool(runtime))      // id="terminal_exec"     → run+wait+observe
- *   registry.register(LegacyReadTool(runtime))      // id="terminal_read"      → observe(RAW)
- *   registry.register(LegacySendTool(runtime))      // id="terminal_send"      → write
- *   registry.register(LegacySignalTool(runtime))    // id="terminal_signal"    → signal
- *   registry.register(LegacyListTool(runtime))      // id="terminal_list"      → snapshot(SESSIONS)
- *   registry.register(LegacyCloseTool(runtime))     // id="terminal_close"     → close
+ *   registry.register(LegacyExecTool(runtime))      // id="TerminalExecLegacy"     → run+wait+observe
+ *   registry.register(LegacyReadTool(runtime))      // id="TerminalReadLegacy"      → observe(RAW)
+ *   registry.register(LegacySendTool(runtime))      // id="TerminalSendLegacy"      → write
+ *   registry.register(LegacySignalTool(runtime))    // id="TerminalSignalLegacy"    → signal
+ *   registry.register(LegacyListTool(runtime))      // id="TerminalListLegacy"      → snapshot(SESSIONS)
+ *   registry.register(LegacyCloseTool(runtime))     // id="TerminalCloseLegacy"     → close
  *
- *   // ── DELETED: StreamingTerminalExecTool (id collision with terminal_exec) ──
+ *   // ── DELETED: StreamingTerminalExecTool (id collision with TerminalExecLegacy) ──
  *   // The old line 139 `registry.register(SafeAgentTool(StreamingTerminalExecTool(terminalManager)))`
- *   // is REMOVED. Streaming is now: terminal.run (returns jobId) + terminal.observe(afterCursor=...)
+ *   // is REMOVED. Streaming is now: TerminalRun (returns jobId) + TerminalObserve(afterCursor=...)
  *   // called repeatedly by the Agent. No separate streaming tool needed.
  *
  * ════════════════════════════════════════════════════════════════════════
- * terminal_exec ID COLLISION FIX (Spec §46)
+ * TerminalExecLegacy ID COLLISION FIX (Spec §46)
  * ════════════════════════════════════════════════════════════════════════
  *
- * BEFORE (bug): two classes declared `id = "terminal_exec"`:
+ * BEFORE (bug): two classes declared `id = "TerminalExecLegacy"`:
  *   - TerminalExecTool        (platform/terminal/.../tools/)         registered at L204
  *   - StreamingTerminalExecTool (app/.../tools/)                     registered at L139
  *   Whichever registered last won; behavior was non-deterministic across refactors.
  *
- * AFTER (fixed): exactly ONE class owns `id = "terminal_exec"`:
+ * AFTER (fixed): exactly ONE class owns `id = "TerminalExecLegacy"`:
  *   - LegacyExecTool          (platform/terminal/.../tools/legacy/)  the compat alias
  *   - StreamingTerminalExecTool.kt is DELETED in Phase 4.
  *   - TerminalExecTool.kt (old non-streaming) is REPLACED by LegacyExecTool.
  *
  * The streaming use-case is served by the NEW non-blocking API:
- *   val job = terminal.run(sessionId, command)          // returns immediately
- *   terminal.observe(sessionId, RAW, afterCursor=job.startCursor)  // call repeatedly
+ *   val job = TerminalRun(sessionId, command)          // returns immediately
+ *   TerminalObserve(sessionId, RAW, afterCursor=job.startCursor)  // call repeatedly
  *
  * ════════════════════════════════════════════════════════════════════════
  * MIGRATION TIMELINE (Spec §45)
@@ -98,11 +98,11 @@ object ToolRegistrationGuide {
     )
 
     /**
-     * 一次性结构化执行工具（terminal.exec —— ExecRequest/ExecEngine/CommandResult）。
+     * 一次性结构化执行工具（TerminalExec —— ExecRequest/ExecEngine/CommandResult）。
      * 构造需要 ExecEngine（CommandSpawner 通道由 app 层提供：root-su/shizuku/local-sh），
      * 因此不进 newTools(rt)，由 ToolModule 直接注册（同时注入门禁与 cd 记忆钩子）。
      */
-    fun execTool(engine: com.apex.agent.platform.terminal.exec.ExecEngine) =
+    fun execTool(engine: com.apex.agent.platform.TerminalExec.ExecEngine) =
         com.apex.agent.platform.terminal.tools.v2.TerminalExecTool(engine)
 
     /**
@@ -139,25 +139,25 @@ object ToolRegistrationGuide {
 
     /** Tool id → spec section, for documentation / introspection. */
     val TOOL_SPEC_MAP: Map<String, String> = mapOf(
-        "terminal.create" to "§34.1 + T73 backend routing",
-        "terminal.run" to "§34.2",
-        "terminal.observe" to "§34.3",
-        "terminal.wait" to "§34.4",
-        "terminal.write" to "§34.5",
-        "terminal.signal" to "§34.6",
-        "terminal.resize" to "§34.7",
-        "terminal.snapshot" to "§34.8",
-        "terminal.close" to "§34.9",
-        "terminal.backends" to "T73（后端能力发现：availability 三态）",
-        "terminal.exec" to "exec 包（一次性结构化执行：stdout/stderr/exit_code/duration_ms/truncated + 限长 + ANSI）",
-        "terminal.ubuntu.install" to "T73（Ubuntu rootfs 安装引导）",
-        "terminal.workspaces" to "T75（workspace 管理：隔离文件区生命周期）",
-        "terminal.workspace.environment" to "P83（项目感知开发环境：analyze/ensure 工具链闭环）",
-        "terminal_exec" to "§35 (compat → run+wait+observe)",
-        "terminal_read" to "§35 (compat → observe RAW)",
-        "terminal_send" to "§35 (compat → write)",
-        "terminal_signal" to "§35 (compat → signal)",
-        "terminal_list" to "§35 (compat → snapshot SESSIONS)",
-        "terminal_close" to "§35 (compat → close)"
+        "TerminalCreate" to "§34.1 + T73 backend routing",
+        "TerminalRun" to "§34.2",
+        "TerminalObserve" to "§34.3",
+        "TerminalWait" to "§34.4",
+        "TerminalWrite" to "§34.5",
+        "TerminalSignal" to "§34.6",
+        "TerminalResize" to "§34.7",
+        "TerminalSnapshot" to "§34.8",
+        "TerminalClose" to "§34.9",
+        "TerminalBackends" to "T73（后端能力发现：availability 三态）",
+        "TerminalExec" to "exec 包（一次性结构化执行：stdout/stderr/exit_code/duration_ms/truncated + 限长 + ANSI）",
+        "TerminalUbuntuInstall" to "T73（Ubuntu rootfs 安装引导）",
+        "TerminalWorkspaces" to "T75（workspace 管理：隔离文件区生命周期）",
+        "TerminalWorkspaceEnvironment" to "P83（项目感知开发环境：analyze/ensure 工具链闭环）",
+        "TerminalExecLegacy" to "§35 (compat → run+wait+observe)",
+        "TerminalReadLegacy" to "§35 (compat → observe RAW)",
+        "TerminalSendLegacy" to "§35 (compat → write)",
+        "TerminalSignalLegacy" to "§35 (compat → signal)",
+        "TerminalListLegacy" to "§35 (compat → snapshot SESSIONS)",
+        "TerminalCloseLegacy" to "§35 (compat → close)"
     )
 }

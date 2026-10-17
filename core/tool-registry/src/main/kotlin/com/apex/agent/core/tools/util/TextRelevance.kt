@@ -5,7 +5,7 @@ package com.apex.agent.core.tools.util
  *
  * 轻量级相关性打分：为「上下文检索增强」提供统一的排序依据 ——
  * 压缩时的相关性保留（agent-engine · SlidingWindowCompressor）、
- * 会话检索工具的模糊回退（tool-registry · context_search）共用。
+ * 会话检索工具的模糊回退（tool-registry · ContextSearch）共用。
  *
  * 设计约束（刻意不引入 embedding / 向量库）：
  * - 纯 JVM、零依赖、纯函数 —— 可单测，Android 端零成本；

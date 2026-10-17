@@ -14,7 +14,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * # code_todo — 编码任务清单（业界标准 todowrite 契约）
+ * # CodeTodo — 编码任务清单（业界标准 todowrite 契约）
  *
  * 复杂编码任务（多文件重构/功能实现）的进度外化：模型把计划拆成条目，
  * 每完成一项就更新状态。价值：
@@ -29,7 +29,7 @@ import java.util.concurrent.atomic.AtomicReference
  * 开始时调用；[snapshot] 供 UI 轮询/订阅渲染。
  */
 class CodeTodoTool : BaseTool(
-    id = "code_todo",
+    id = "CodeTodo",
     name = "Code Todo",
     description = """
         Create and maintain a structured task list for the current coding session.
@@ -89,7 +89,7 @@ class CodeTodoTool : BaseTool(
         risk(com.apex.agent.core.tools.ToolRisk.LOW)
         tag("code")
         tag("todo")
-        // 注解修正：code_todo 维护会话态（整体覆盖清单），不是只读 ——
+        // 注解修正：CodeTodo 维护会话态（整体覆盖清单），不是只读 ——
         // readOnly 谎报会让重试/批放行策略按"无副作用"处理。
         annotations(com.apex.agent.core.tools.ToolAnnotations.mutating())
     }

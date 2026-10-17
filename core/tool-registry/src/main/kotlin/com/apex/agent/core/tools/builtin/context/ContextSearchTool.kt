@@ -13,7 +13,7 @@ import com.apex.agent.core.tools.toolSchema
 import com.apex.agent.core.tools.util.TextRelevance
 
 /**
- * `context_search` — 会话内容检索（#172 上下文回顾三件套之二）。
+ * `ContextSearch` — 会话内容检索（#172 上下文回顾三件套之二）。
  *
  * 回顾摘要回答"大概做了什么"，本工具回答"那句话/那个输出到底在哪"：
  * 大小写不敏感子串搜索全部会话记录，返回命中片段（前后各 80 字符上下文）
@@ -36,7 +36,7 @@ import com.apex.agent.core.tools.util.TextRelevance
 class ContextSearchTool(
     private val context: SessionContextProvider
 ) : BaseTool(
-    id = "context_search",
+    id = "ContextSearch",
     name = "Session Context Search",
     description = """
         Case-insensitive substring search over the current conversation records.

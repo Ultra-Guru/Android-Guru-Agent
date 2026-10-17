@@ -27,8 +27,8 @@ import org.junit.Test
  * BypassExecutionEngine 回归测试（纯 JVM，Fake 替身）。
  *
  * 覆盖三组行为：
- * 1. extractInputText —— input_text 参数三种历史形态的双保险解析
- *    （新蒸馏纯参数 / 旧库完整描述 input_text("hello") / 无引号形态）；
+ * 1. extractInputText —— InputText 参数三种历史形态的双保险解析
+ *    （新蒸馏纯参数 / 旧库完整描述 InputText("hello") / 无引号形态）；
  * 2. 跨版本宏回退 —— App 升级后当前指纹已变，经 migration_map 别名桥
  *    反查旧宏仍可命中并回放（闭环 cs-mem-gaps-spec 缺口 #9 §4）；
  *    同时锁定"不得用旧指纹做 matchRate 复验"的回归缺陷（旧指纹必然
@@ -52,19 +52,19 @@ class BypassExecutionEngineTest {
     fun `extractInputText unwraps legacy full description form`() {
         val engine = newEngine()
         assertEquals(
-            "旧库完整形态 input_text(\"hello\") 应解出纯文本",
+            "旧库完整形态 InputText(\"hello\") 应解出纯文本",
             "hello",
-            engine.extractInputText("input_text(\"hello\")")
+            engine.extractInputText("InputText(\"hello\")")
         )
         assertEquals(
-            "旧库无引号形态 input_text(hello) 应解出纯文本",
+            "旧库无引号形态 InputText(hello) 应解出纯文本",
             "hello",
-            engine.extractInputText("input_text(hello)")
+            engine.extractInputText("InputText(hello)")
         )
         assertEquals(
             "带空格参数应保留原文",
             "order #42",
-            engine.extractInputText("input_text(\"order #42\")")
+            engine.extractInputText("InputText(\"order #42\")")
         )
     }
 
@@ -75,8 +75,8 @@ class BypassExecutionEngineTest {
         // 提取分支判定为畸形 → 保守返回原文（不崩溃、不吞参数）。
         assertEquals(
             "括号倒置/不平衡时保守返回原文",
-            "input_text)(\"unclosed",
-            engine.extractInputText("input_text)(\"unclosed")
+            "InputText)(\"unclosed",
+            engine.extractInputText("InputText)(\"unclosed")
         )
     }
 
@@ -104,9 +104,9 @@ class BypassExecutionEngineTest {
             transitions = listOf(
                 FSMTransition(
                     fromState = fpOld,
-                    actionType = "input_text",
+                    actionType = "InputText",
                     // 旧库存的完整描述形态——回放侧必须解出纯文本
-                    actionParams = "input_text(\"hello\")",
+                    actionParams = "InputText(\"hello\")",
                     toState = terminalFp
                 )
             ),
@@ -153,7 +153,7 @@ class BypassExecutionEngineTest {
             initialFingerprint = initialFp,
             terminalFingerprint = terminalFp,
             transitions = listOf(
-                FSMTransition(initialFp, "input_text", "hi", terminalFp)
+                FSMTransition(initialFp, "InputText", "hi", terminalFp)
             ),
             appPackage = "com.example.app",
             successCount = 3
@@ -215,7 +215,7 @@ class BypassExecutionEngineTest {
             initialFingerprint = initialFp,
             terminalFingerprint = expectedFp,
             transitions = listOf(
-                FSMTransition(initialFp, "input_text", "hello", expectedFp)
+                FSMTransition(initialFp, "InputText", "hello", expectedFp)
             ),
             appPackage = "com.example.app",
             successCount = 2

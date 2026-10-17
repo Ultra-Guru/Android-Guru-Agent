@@ -5,7 +5,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeout
 
 /**
- * Plan/Spec 确认与 ask_user 共用的等待上限（自引擎 private companion 迁出，
+ * Plan/Spec 确认与 AskUser 共用的等待上限（自引擎 private companion 迁出，
  * 单一来源：引擎、[awaitPlanConfirmationDecision] 与 Spec/user-input 等待
  * 全部引用本常量）。
  */

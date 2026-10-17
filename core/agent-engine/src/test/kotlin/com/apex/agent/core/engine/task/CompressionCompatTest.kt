@@ -56,7 +56,7 @@ class CompressionCompatTest {
         ExecutionPlan(
             goal = "压缩兼容任务",
             steps = (0 until steps).map {
-                PlanStep(index = it, description = "步骤$it", toolName = "read_file", estimatedArgs = null)
+                PlanStep(index = it, description = "步骤$it", toolName = "Read", estimatedArgs = null)
             },
             estimatedToolCalls = steps,
             riskLevel = RiskLevel.LOW,
@@ -71,11 +71,11 @@ class CompressionCompatTest {
             planEvent(steps = 3),
             // 步骤 0 完成 + 步骤 1 执行中
             AgentEvent.StepStart(0, "步骤0"),
-            AgentEvent.ToolCallStart("t0", "read_file", "{}"),
-            AgentEvent.ToolCallComplete("t0", "read_file", "{}", "out0", "out0", true, 10),
+            AgentEvent.ToolCallStart("t0", "Read", "{}"),
+            AgentEvent.ToolCallComplete("t0", "Read", "{}", "out0", "out0", true, 10),
             AgentEvent.StepStart(1, "步骤1"),
-            AgentEvent.ToolCallStart("t1", "read_file", "{}"),
-            AgentEvent.ToolCallComplete("t1", "read_file", "{}", "out1", "out1", true, 10),
+            AgentEvent.ToolCallStart("t1", "Read", "{}"),
+            AgentEvent.ToolCallComplete("t1", "Read", "{}", "out1", "out1", true, 10),
             // ═══ 压缩发生在步骤 1 完成后、步骤 2 开始前 ═══
             AgentEvent.ContextCompressed(
                 beforeTokens = 100_000, afterTokens = 20_000, strategy = "SLIDING_WINDOW",
@@ -83,8 +83,8 @@ class CompressionCompatTest {
             ),
             // 压缩后继续：步骤 2
             AgentEvent.StepStart(2, "步骤2"),
-            AgentEvent.ToolCallStart("t2", "read_file", "{}"),
-            AgentEvent.ToolCallComplete("t2", "read_file", "{}", "out2", "out2", true, 10),
+            AgentEvent.ToolCallStart("t2", "Read", "{}"),
+            AgentEvent.ToolCallComplete("t2", "Read", "{}", "out2", "out2", true, 10),
             AgentEvent.Complete("done", totalIterations = 3, totalToolCalls = 3, totalDurationMs = 100)
         )
         val engine = ScriptedAgentEngine(events)
@@ -158,8 +158,8 @@ class CompressionCompatTest {
         val events = listOf(
             planEvent(steps = 2),
             AgentEvent.StepStart(0, "步骤0"),
-            AgentEvent.ToolCallStart("t0", "read_file", "{}"),
-            AgentEvent.ToolCallComplete("t0", "read_file", "{}", "out0", "out0", true, 10),
+            AgentEvent.ToolCallStart("t0", "Read", "{}"),
+            AgentEvent.ToolCallComplete("t0", "Read", "{}", "out0", "out0", true, 10),
             AgentEvent.ContextCompressed(100_000, 20_000, "SLIDING_WINDOW", "压缩完成", 40, 0)
             // 模拟死亡：事件流到此为止（引擎不发 Complete）
         )

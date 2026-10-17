@@ -10,7 +10,7 @@ enum class ToolCategory(
     /** Stable sort key — lower sorts earlier. */
     val order: Int
 ) {
-    /** Local shell command execution (`shell_execute`). */
+    /** Local shell command execution (`ShellExecute`). */
     SHELL("Shell 执行", 10),
 
     /** Sandboxed file tree operations (read/write/edit/glob/search). */
@@ -28,7 +28,7 @@ enum class ToolCategory(
     /** Long-term memory recall (CS-Mem). */
     MEMORY("记忆", 60),
 
-    /** In-session context review tools (`context_*` / `session_stats`) — #172. */
+    /** In-session context review tools (`context_*` / `SessionStats`) — #172. */
     CONTEXT("上下文回顾", 62),
 
     /** Installed app management (list/launch/install/uninstall). */
@@ -46,7 +46,7 @@ enum class ToolCategory(
     /** Device sensors and environment (location/notifications). */
     SENSOR("传感器", 100),
 
-    /** Agent-initiated user interaction (ask_user / ask_user_choice). */
+    /** Agent-initiated user interaction (AskUser / AskUserChoice). */
     AGENT("用户交互", 110),
 
     /** Skill marketplace & installed skill tools (`skill_*` + composites). */
@@ -154,7 +154,7 @@ enum class ToolRisk(val label: String) {
      * Destructive, irreversible, or system-wide effects. The gate asks the
      * user once per session per tool unless the tool is marked `selfGated`
      * (it already runs its own, finer-grained confirmation flow — e.g.
-     * `shell_execute` routes through [CommandPermissionGate]).
+     * `ShellExecute` routes through [CommandPermissionGate]).
      */
     HIGH("危险");
 }
@@ -191,7 +191,7 @@ data class ToolMetadata(
 
     /**
      * Compact one-line summary used in logs and the usage report:
-     * `json_path [UTILITY/低] tags: json,query`
+     * `JsonPathLegacy [UTILITY/低] tags: json,query`
      */
     fun summary(): String = buildString {
         append(id)
@@ -270,69 +270,64 @@ data class ToolMetadata(
         /** Category inference from the id's prefix family. */
         @JvmStatic
         fun inferCategory(id: String): ToolCategory = when {
-            id == "shell_execute" -> ToolCategory.SHELL
+            id == "ShellExecute" -> ToolCategory.SHELL
 
-            id.startsWith("terminal.") || id.startsWith("exec_in_terminal") ||
-                id == "send_to_terminal" || id == "read_terminal" ||
-                id == "list_terminals" -> ToolCategory.TERMINAL
+            id.startsWith("Terminal") || id == "ExecInTerminal" ||
+                id == "SendToTerminal" || id == "ReadTerminal" ||
+                id == "ListTerminals" -> ToolCategory.TERMINAL
 
-            id.startsWith("file_") || id.startsWith("read_file") ||
-                id.startsWith("write_file") || id.startsWith("edit_file") ||
-                id.startsWith("list_files") || id.startsWith("delete_file") ||
-                id.startsWith("copy_file") || id.startsWith("move_file") ||
-                id.startsWith("glob_") || id.startsWith("search_files") -> ToolCategory.FILE
+            id.startsWith("Read") || id.startsWith("Write") ||
+                id.startsWith("Edit") || id.startsWith("ListFiles") ||
+                id.startsWith("GlobFiles") || id.startsWith("SearchFiles") ||
+                id.startsWith("CopyMoveFile") || id.startsWith("DeleteFile") ||
+                id.startsWith("File") -> ToolCategory.FILE
 
-            id.startsWith("web_") || id == "http_request" ||
-                id == "download_file" -> ToolCategory.WEB
+            id.startsWith("Web") || id == "HttpRequest" ||
+                id == "DownloadFile" -> ToolCategory.WEB
 
-            id.startsWith("browser_") || id.startsWith("page_") ||
-                id.startsWith("dom_") -> ToolCategory.BROWSER
+            id.startsWith("Browser") || id.startsWith("Page") ||
+                id.startsWith("Dom") -> ToolCategory.BROWSER
 
-            id.startsWith("memory_") || id.startsWith("recall") ||
-                id.startsWith("memorize") || id.startsWith("forget") ||
-                id.startsWith("episode") -> ToolCategory.MEMORY
+            id.startsWith("Memory") || id.startsWith("Recall") ||
+                id.startsWith("Memorize") || id.startsWith("Forget") ||
+                id.startsWith("Episode") -> ToolCategory.MEMORY
 
             // #172：会话内上下文回顾（区别于跨会话的 MEMORY）。
-            id.startsWith("context_") || id.startsWith("session_stats") -> ToolCategory.CONTEXT
+            id.startsWith("Context") || id.startsWith("SessionStats") -> ToolCategory.CONTEXT
 
-            id.startsWith("app_") || id == "deep_link" -> ToolCategory.APP
+            id.startsWith("App") || id == "DeepLink" -> ToolCategory.APP
 
             // #172：高级设备工具（tts/手电筒/振动/电池/网络/分享）归系统控制。
-            id.startsWith("tts_") || id.startsWith("torch") ||
-                id.startsWith("vibrate") || id.startsWith("battery_") ||
-                id.startsWith("network_") || id.startsWith("share_") ||
-                id.startsWith("device_") || id.startsWith("settings_") ||
-                id.startsWith("media_") || id.startsWith("clipboard_") ||
-                id.startsWith("get_time") || id.startsWith("logcat") ||
-                id.startsWith("screenshot") -> ToolCategory.SYSTEM
+            id.startsWith("Tts") || id.startsWith("Torch") ||
+                id.startsWith("Vibrate") || id.startsWith("Battery") ||
+                id.startsWith("Network") || id.startsWith("Share") ||
+                id.startsWith("Clipboard") || id.startsWith("GetTimeLegacy") ||
+                id.startsWith("Logcat") || id.startsWith("Screenshot") -> ToolCategory.SYSTEM
 
             // v5：联系人 / 短信 / 日历 / 闹钟 / 通知 —— 设备级系统交互。
-            id.startsWith("contact_") || id.startsWith("sms_") ||
-                id.startsWith("calendar_") || id.startsWith("alarm_") ||
-                id.startsWith("notification_post") -> ToolCategory.SYSTEM
+            id.startsWith("Contact") || id.startsWith("Sms") ||
+                id.startsWith("Calendar") || id.startsWith("Alarm") ||
+                id.startsWith("Notification") -> ToolCategory.SYSTEM
 
             // v5：agent 自主设置 —— 配置自管。
-            id.startsWith("agent_") -> ToolCategory.AGENT
+            id.startsWith("Agent") -> ToolCategory.AGENT
 
             // #167 金库工具族：密钥存取与盲投递。
-            id.startsWith("vault_") -> ToolCategory.SECURITY
+            id.startsWith("Vault") -> ToolCategory.SECURITY
 
-            id.startsWith("ui_") || id.startsWith("input_text") ||
-                id.startsWith("tap_") || id.startsWith("swipe_") ||
-                id.startsWith("dump_") -> ToolCategory.UI
+            id.startsWith("Ui") || id.startsWith("InputText") -> ToolCategory.UI
 
-            id.startsWith("get_location") || id.startsWith("notification") ||
-                id.startsWith("sensor_") -> ToolCategory.SENSOR
+            id.startsWith("GetLocation") || id.startsWith("Sensor") -> ToolCategory.SENSOR
 
-            id.startsWith("ask_user") -> ToolCategory.AGENT
+            id.startsWith("AskUser") -> ToolCategory.AGENT
 
-            id.startsWith("skill_") || id.contains("skill") -> ToolCategory.SKILL
+            id.startsWith("Skill") || id.contains("Skill") -> ToolCategory.SKILL
 
-            id.startsWith("mcp_") -> ToolCategory.MCP
+            id.startsWith("Mcp") -> ToolCategory.MCP
 
-            id.startsWith("github_") -> ToolCategory.GITHUB
+            id.startsWith("Github") -> ToolCategory.GITHUB
 
-            id.startsWith("plugin") -> ToolCategory.PLUGIN
+            id.startsWith("Plugin") -> ToolCategory.PLUGIN
 
             else -> ToolCategory.UTILITY
         }
@@ -345,49 +340,45 @@ data class ToolMetadata(
         fun inferRisk(id: String, category: ToolCategory): ToolRisk = when {
             // Destructive or irreversible operations → HIGH.
             // #167：金库删除 = 不可逆销毁密钥。
-            id.startsWith("vault_delete") ||
-                id == "shell_execute" ||
-                id.startsWith("app_uninstall") || id.startsWith("app_install") ||
-                id.startsWith("app_force") ||
-                id.startsWith("settings_put") || id.startsWith("settings_") && id.endsWith("_put") ||
-                id.startsWith("delete_file") || id.startsWith("file_delete") ||
-                id.startsWith("uninstall") ||
-                id.startsWith("move_") -> ToolRisk.HIGH
+            id.startsWith("VaultDelete") ||
+                id == "ShellExecute" ||
+                id.startsWith("AppUninstall") || id.startsWith("AppInstall") ||
+                id.startsWith("AppForceStop") ||
+                id.startsWith("DeleteFile") ||
+                id.startsWith("CopyMoveFile") -> ToolRisk.HIGH
 
             // v5：HIGH 风险——
-            //   app_install_apk / app_download_install：安装外部 APK（系统状态变化 + 来源不可控）
-            //   agent_provider_set_key：写入 API Key（凭据）
-            //   sms_send：发送短信（费用 + 第三方通信）
-            id.startsWith("app_install_apk") || id.startsWith("app_download_install") ||
-                id == "agent_provider_set_key" || id == "sms_send" -> ToolRisk.HIGH
+            //   AppInstallApk / AppDownloadInstall：安装外部 APK（系统状态变化 + 来源不可控）
+            //   AgentProviderSetKey：写入 API Key（凭据）
+            //   SmsSend：发送短信（费用 + 第三方通信）
+            id.startsWith("AppInstallApk") || id.startsWith("AppDownloadInstall") ||
+                id == "AgentProviderSetKey" || id == "SmsSend" -> ToolRisk.HIGH
 
             // v1.5 浏览器敏感三件套 —— HIGH：
-            //   browser_execute_js：页面内执行任意 JS（等效任意代码，能力不可枚举）
-            //   browser_get_cookies：读取会话凭据（可冒充用户身份）
-            //   browser_file_upload：把本地文件外发到网页（数据出境）
-            // 三个动作的后果都不可由工具侧收窄，须用户会话级确认
-            // （RiskAwareToolGate 弹窗 + sensitiveAction 双通道，见 ToolAnnotations）。
-            id == "browser_execute_js" || id == "browser_get_cookies" ||
-                id == "browser_file_upload" -> ToolRisk.HIGH
+            //   BrowserExecuteJs：页面内执行任意 JS（等效任意代码，能力不可枚举）
+            //   BrowserGetCookies：读取会话凭据（可冒充用户身份）
+            //   BrowserFileUpload：把本地文件外发到网页（数据出境）
+            id == "BrowserExecuteJs" || id == "BrowserGetCookies" ||
+                id == "BrowserFileUpload" -> ToolRisk.HIGH
 
             // Mutating but recoverable / sandbox-scoped operations → MEDIUM.
             // #167：金库写入（覆写式）与盲投递（剪贴板/终端/HTTP 副作用）。
-            id.startsWith("vault_save") || id.startsWith("vault_paste") ||
-                id.startsWith("write_file") || id.startsWith("edit_file") ||
-                id.startsWith("file_write") || id.startsWith("file_edit") ||
-                id.startsWith("terminal.") || id == "download_file" ||
-                id.startsWith("clipboard_") || id.startsWith("ui_") ||
-                id.startsWith("input_") || id.startsWith("media_") ||
-                id.startsWith("mcp_") || id.startsWith("skill_") ||
-                id.startsWith("github_") && (id.contains("write") || id.contains("create")) ||
-                id.startsWith("plugin") -> ToolRisk.MEDIUM
+            id.startsWith("VaultSave") || id.startsWith("VaultPaste") ||
+                id.startsWith("Write") || id.startsWith("Edit") ||
+                id.startsWith("CodeWrite") || id.startsWith("CodeEdit") ||
+                id.startsWith("Terminal") || id == "DownloadFile" ||
+                id.startsWith("Clipboard") || id.startsWith("Ui") ||
+                id.startsWith("InputText") ||
+                id.startsWith("Mcp") || id.startsWith("Skill") ||
+                id.startsWith("Github") && (id.contains("Write") || id.contains("Create")) ||
+                id.startsWith("Plugin") -> ToolRisk.MEDIUM
 
             // v5：MEDIUM 风险——agent 设置写入、profile/role/preset 修改、
             // 闹钟、文件选择、拍照、通知发布均涉及用户感官或运行时行为变化。
-            id.startsWith("agent_setting_set") || id.startsWith("agent_profile_set") ||
-                id.startsWith("agent_role_activate") || id.startsWith("agent_mode_preset_select") ||
-                id == "alarm_set" || id == "file_pick" || id == "image_capture" ||
-                id == "notification_post" -> ToolRisk.MEDIUM
+            id.startsWith("AgentSettingSet") || id.startsWith("AgentProfileSet") ||
+                id.startsWith("AgentRoleActivate") || id.startsWith("AgentModePresetSelect") ||
+                id == "AlarmSet" || id == "FilePick" || id == "ImageCapture" ||
+                id == "NotificationPost" -> ToolRisk.MEDIUM
 
             else -> when (category) {
                 ToolCategory.SHELL -> ToolRisk.HIGH
@@ -398,7 +389,7 @@ data class ToolMetadata(
             }
         }
 
-        /** Fluent metadata construction: `meta("json_path") { tag("json") }`. */
+        /** Fluent metadata construction: `meta("JsonPathLegacy") { tag("json") }`. */
         @JvmStatic
         fun meta(id: String, block: Builder.() -> Unit = {}): ToolMetadata =
             Builder(id).apply(block).build()

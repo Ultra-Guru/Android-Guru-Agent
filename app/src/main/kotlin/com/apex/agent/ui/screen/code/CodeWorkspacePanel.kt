@@ -237,7 +237,7 @@ internal fun CodeWorkspacePanel(
                             },
                             enabled = commitDraft.isNotBlank() && !state.committing
                         ) {
-                            Text(stringResource(R.string.code_git_commit))
+                            Text(stringResource(R.string.CodeGitCommit))
                         }
                         if (state.committing) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)

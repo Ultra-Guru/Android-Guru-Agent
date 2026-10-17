@@ -15,7 +15,7 @@
         "id": "pulse",
         "title": "仓库脉搏",
         "description": "检查仓库最近提交与开放 issue",
-        "prompt": "使用 github_list_repos / github_list_issues 等内置 GitHub 工具，检查我最近活跃仓库的提交与 open issue 状态，输出一份 5 行以内的脉搏摘要（仓库 · 最近提交 · issue 数）。"
+        "prompt": "使用 GithubListRepos / GithubListIssues 等内置 GitHub 工具，检查我最近活跃仓库的提交与 open issue 状态，输出一份 5 行以内的脉搏摘要（仓库 · 最近提交 · issue 数）。"
       }
     ]
   }

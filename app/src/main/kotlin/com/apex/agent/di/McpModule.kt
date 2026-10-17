@@ -4,6 +4,10 @@ import android.content.Context
 import com.apex.agent.core.codetools.CodeWorkspaceRoots
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
+import com.apex.agent.core.tools.fusion.rea.ReaBuiltinMcpTransport
+import com.apex.agent.core.tools.fusion.rea.ReaCommandRunner
+import com.apex.agent.core.tools.fusion.rea.ReaPageFetcher
+import com.apex.agent.core.tools.fusion.rea.ReaWorkspace
 import com.apex.agent.core.tools.mcp.McpManager
 import com.apex.agent.core.tools.mcp.McpSupervisor
 import com.apex.agent.github.GithubApiService
@@ -90,7 +94,12 @@ object McpModule {
         // T92（D5 完成度）：argv 能力源（launcher 手工内联 argv 的能力门输入）
         capabilitySource: PRootCapabilitySource,
         // 共享知识图谱单例（memory MCP 与聊天自动记忆同图同源，见 provideKnowledgeGraphStore）
-        knowledgeGraphStore: com.apex.agent.mcp.builtin.memory.KnowledgeGraphStore
+        knowledgeGraphStore: com.apex.agent.mcp.builtin.memory.KnowledgeGraphStore,
+        // FusionBundle 首发内置包 REA（207 工具面）的运行时端口：命令执行
+        //（PRoot 终端链）与页面抓取（OkHttp）—— 工作目录作证据导出根。
+        reaCommandRunner: ReaCommandRunner,
+        reaPageFetcher: ReaPageFetcher,
+        reaWorkspace: ReaWorkspace
     ): McpManager {
         val configDir = File(context.filesDir, "mcp_config")
         val manager = McpManager(
@@ -113,13 +122,21 @@ object McpModule {
                 BuiltinMemoryMcpServer.ID to {
                     BuiltinMemoryMcpTransport(knowledgeGraphStore)
                 },
-                BuiltinThinkingMcpServer.ID to { BuiltinThinkingMcpTransport() }
+                BuiltinThinkingMcpServer.ID to { BuiltinThinkingMcpTransport() },
+                // 第六台：REA（FusionBundle 首发）—— 207 工具面全目录，
+                // ON_DEVICE 深实现 + 设备 shell + 沙箱引擎桥 + web 抓取 +
+                // 供应商门控五层调度（详见 docs/fusion-bundle.md）。
+                // 注意：仅注册工厂 —— 配置预置与连接由 FusionBundle 激活器
+                // 编排（ensureBuiltinServer + connect，用户未激活不自动连）。
+                com.apex.agent.core.tools.fusion.rea.ReaBuiltinMcpServer.ID to {
+                    ReaBuiltinMcpTransport(reaCommandRunner, reaPageFetcher, reaWorkspace)
+                }
             ),
             // v0.2 #149：PRoot 沙箱 STDIO launcher —— runInSandbox=true 的
             // STDIO 服务器在 Ubuntu rootfs 内启动（npx -y @modelcontextprotocol/
             // server-x 这类真实 MCP 服务器；沙箱内 apt install nodejs npm 后可用）。
             // rootfs 就绪门禁走 RootfsInstallLayout 的 current 标记文件；
-            // 未安装时 launch 抛引导性错误（提示先 terminal.ubuntu.install）。
+            // 未安装时 launch 抛引导性错误（提示先 TerminalUbuntuInstall）。
             sandboxProcessLauncher = ProotMcpProcessLauncher(
                 hostEnv = hostEnvironment.hostEnv(),
                 libprootPath = hostEnvironment.prootBinary.absolutePath,

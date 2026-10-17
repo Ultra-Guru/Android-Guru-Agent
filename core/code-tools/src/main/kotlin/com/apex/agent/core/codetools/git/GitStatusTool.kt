@@ -7,7 +7,7 @@ import com.apex.agent.core.tools.builtin.BaseTool
 import com.apex.agent.core.tools.toolSchema
 
 /**
- * # code_git_status — 工作区状态一览（经 PRoot Ubuntu 沙箱执行）
+ * # CodeGitStatus — 工作区状态一览（经 PRoot Ubuntu 沙箱执行）
  *
  * `git status --porcelain=v1 -b --untracked-files=all` 的友好化渲染：
  *
@@ -22,7 +22,7 @@ import com.apex.agent.core.tools.toolSchema
 class GitStatusTool(
     private val runner: GitCommandRunner
 ) : BaseTool(
-    id = "code_git_status",
+    id = "CodeGitStatus",
     name = "Code Git Status",
     description = """
         Show the git status of the active coding workspace: current branch,
@@ -105,7 +105,7 @@ class GitStatusTool(
 
         // 分离头指针：## HEAD (no branch)
         if (body.startsWith("HEAD (no branch)")) {
-            return "分支:（分离 HEAD——不在任何分支上，可用 code_git_branch 切回分支）"
+            return "分支:（分离 HEAD——不在任何分支上，可用 CodeGitBranch 切回分支）"
         }
 
         // unborn 分支：## No commits yet on main[...origin/main]

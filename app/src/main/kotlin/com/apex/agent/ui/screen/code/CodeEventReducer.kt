@@ -16,7 +16,7 @@ import kotlinx.serialization.json.jsonPrimitive
  *
  * 归约口径（原语义不变）：
  * - ResponseChunk → 当前助手消息增量 append（编码回复长度可控，不做 16ms 节流）；
- * - ToolCallStart/Complete → 工具卡（code_edit/write 成功后编辑器跟随最新现场）；
+ * - ToolCallStart/Complete → 工具卡（CodeEdit/write 成功后编辑器跟随最新现场）；
  * - UserInputRequired/UserInputExpired → 挂起/关闭结构化提问输入框；
  * - Plan 确认 / 压缩 / Complete → 系统消息 + todo/仪表刷新；
  * - Error → 错误条（#209：recoverable 透传为「重试」入口）。
@@ -98,10 +98,10 @@ internal fun CodeViewModel.reduce(event: AgentEvent) {
                 state.copy(messages = messages, todos = codeTodoTool.snapshot())
             }
             // v1.2 长任务追踪：todo 变化即刷新追踪器快照（工具完成后是
-            // code_todo 改写的主要时点）
+            // CodeTodo 改写的主要时点）
             longTaskTracker.noteTodos(renderTodosForTracker(codeTodoTool.snapshot()))
             // #154：编辑/写成功的文件自动成为「当前文件」（编辑器跟随最新现场）
-            if (event.success && (event.toolName == "code_edit" || event.toolName == "code_write")) {
+            if (event.success && (event.toolName == "CodeEdit" || event.toolName == "CodeWrite")) {
                 extractToolPath(event.arguments)?.let { openEditorFile(it) }
             }
             scheduleSessionPersist()
@@ -193,7 +193,7 @@ private fun renderTodosForTracker(todos: List<CodeTodoTool.Todo>): List<String> 
     "$mark ${todo.content}"
 }
 
-/** 从工具调用参数 JSON 里提取 path 字段（code_edit/code_write 的文件跟随）。 */
+/** 从工具调用参数 JSON 里提取 path 字段（CodeEdit/CodeWrite 的文件跟随）。 */
 private fun extractToolPath(arguments: String): String? = runCatching {
     Json.parseToJsonElement(arguments).jsonObject["path"]?.jsonPrimitive?.content
 }.getOrNull()?.takeIf { it.isNotBlank() }

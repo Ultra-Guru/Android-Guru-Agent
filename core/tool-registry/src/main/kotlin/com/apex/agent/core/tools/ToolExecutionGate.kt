@@ -3,7 +3,7 @@ package com.apex.agent.core.tools
 /**
  * # Tool System v2 — Execution Gate
  *
- * v1 gating is ad-hoc: `shell_execute` routes through the engine's command
+ * v1 gating is ad-hoc: `ShellExecute` routes through the engine's command
  * gate, and nothing else gates anything. v2 gives the executor a uniform
  * choke point — [ToolExecutionGate] — consulted *before* a tool runs.
  *
@@ -15,7 +15,7 @@ package com.apex.agent.core.tools
  *   injected `confirm` callback (the app routes it to the existing
  *   ask-user-choice UI; tests inject a scripted one).
  * - Tools marked `selfGated` skip the manager entirely: they already run a
- *   finer-grained confirmation of their own — `shell_execute` asks per
+ *   finer-grained confirmation of their own — `ShellExecute` asks per
  *   *command*, so an extra per-*tool* prompt would be a double dialog.
  *
  * State transitions per tool id:
@@ -90,14 +90,14 @@ class ToolPermissionManager(
     /**
      * Tool ids that run their own confirmation flow and must not be
      * re-prompted here (double-dialog avoidance). Pre-seeded with
-     * `shell_execute`; mutable so the app can register more (e.g. terminal
+     * `ShellExecute`; mutable so the app can register more (e.g. terminal
      * tools whose runtime already confirms).
      */
     val selfGatedToolIds: MutableSet<String> =
         java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     init {
-        selfGatedToolIds += "shell_execute"
+        selfGatedToolIds += "ShellExecute"
     }
 
     override suspend fun check(tool: AgentTool, arguments: String): GateDecision {

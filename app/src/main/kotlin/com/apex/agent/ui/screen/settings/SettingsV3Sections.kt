@@ -432,7 +432,7 @@ internal fun ChatDisplaySection(agent: AgentSettings, onAgent: (AgentSettings) -
  * 子代理分区：SubAgentSettings 的全部预算旋钮 + 自定义类型编辑器。
  *
  * 预算写入统一经 [SubAgentSettings.sanitized] 钳制（防御式：任何形状输入
- * 收敛合法区间）；自定义类型由 code_task 的 custom 类型 + custom_name
+ * 收敛合法区间）；自定义类型由 CodeTask 的 custom 类型 + custom_name
  * 按名解析（内置四类型之外）。key 不可与保留字或既有自定义 key 冲突。
  */
 @Composable

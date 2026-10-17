@@ -131,7 +131,7 @@ class SessionLifecycleE2ETest {
         val s = rt.create().getOrThrow()
         kotlinx.coroutines.delay(100)
         val job = rt.run(s.sessionId, "echo test", com.apex.agent.platform.terminal.io.InputOwner.AGENT).getOrThrow()
-        rt.wait(s.sessionId, com.apex.agent.platform.terminal.wait.WaitCondition.ProcessExited(job.jobId), 5000)
+        rt.wait(s.sessionId, com.apex.agent.platform.TerminalWait.WaitCondition.ProcessExited(job.jobId), 5000)
         // Session should still be alive after job exits
         val snap = rt.snapshot(TerminalRuntime.SnapshotMode.SESSIONS).getOrThrow()
         assertTrue("session should survive job exit", snap.sessions.any { it.session.id == s.sessionId })

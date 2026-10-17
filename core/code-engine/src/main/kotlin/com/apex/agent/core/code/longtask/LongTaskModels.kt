@@ -187,7 +187,7 @@ enum class LongTaskMagnitude {
  * @property filesTouchedCount 拍摄时触碰文件数（只存数量不存清单——
  *   清单在记录级 [LongTaskRecord.filesTouched]，检查点存增量无意义）。
  * @property recentExchange 最近对话摘要行，≤[RECENT_EXCHANGE_MAX]（6）条，
- *   每条形如「用户: …」「助手: …」「工具 code_edit ✓」——给人看的回看
+ *   每条形如「用户: …」「助手: …」「工具 CodeEdit ✓」——给人看的回看
  *   素材，不是给模型的上下文（后者走 relaunch prompt 的完整摘要）。
  * @property todoDigest 拍摄时的 todo 行快照（Tracker 最后一次
  *   noteTodos 的内容），呈现「当时以为还要做什么」。
@@ -244,7 +244,7 @@ data class LongTaskCheckpoint(
  * @property toolCalls 累计工具调用数（ToolCallStart 事件计数）。
  * @property durationMs 运行时长（endRun − beginRun，毫秒）。
  * @property filesTouched 触碰过的文件路径（去重、字典序、≤[FILES_MAX]
- *   （200）条）。来源：code_edit / code_write 成功调用的 path 参数。
+ *   （200）条）。来源：CodeEdit / CodeWrite 成功调用的 path 参数。
  *   只记成功调用——失败的编辑不保证落盘，计入会污染「改动集」语义
  *   （diff 对比与重跑上下文都依赖这个语义）。
  * @property toolsUsed 工具名 → 调用次数的分布（含失败调用：了解

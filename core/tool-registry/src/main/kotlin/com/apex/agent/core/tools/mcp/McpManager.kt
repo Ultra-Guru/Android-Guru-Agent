@@ -61,7 +61,7 @@ import java.io.File
  *
  * ## 沙箱预置（Issue #163）
  * - `runInSandbox=true` 打通了三入口启用路径：市场页添加对话框的沙箱开关、
- *   `mcp_connect` 工具的 `run_in_sandbox` 参数、配置导入的 `runInSandbox`
+ *   `McpConnect` 工具的 `run_in_sandbox` 参数、配置导入的 `runInSandbox`
  *   字段 —— 该字段不再处于「存在但无任何启用路径」的空转状态。
  * - App 预置的沙箱 STDIO 条目（官方 reference servers，见
  *   [SANDBOX_PRESET_SERVERS]）用 [ensureSandboxServer] 幂等写入：同名用户
@@ -227,6 +227,19 @@ class McpManager(
         val config = synchronized(lock) { configs[name] }
             ?: return Result.failure(Exception("Server '$name' not configured"))
 
+        // P0 修复（"本地 MCP 起不来"第一因）：旧实现只在**握手成功之后**校验
+        // enabled —— 市场安装一律写 enabled=false，于是用户点「启动」时进度
+        // 弹窗真实闪过 ENV_CHECK/spawn/initialize，随后刚 fork 的进程被关掉，
+        // 报 "was disconnected or disabled during connect"。现在在 ENV_CHECK
+        // 之前就快速失败，不浪费一次进程启动，并给可行动指引。
+        if (!config.enabled) {
+            return Result.failure(
+                Exception(
+                    "服务器 '$name' 已安装但未启用：请先在市场「已安装」页打开启用开关，再点启动"
+                )
+            )
+        }
+
         // v3 S3（G8 令牌桥）：headers/env 值含 ${GITHUB_TOKEN} 占位符时，从
         // 宿主注入的 provider 取 PAT 填充到本次连接的内存副本（占位符原样
         // 落盘，真 token 永不进 mcp_servers.json）。GitHub 未连接 → 诚实
@@ -349,10 +362,14 @@ class McpManager(
      * 列出单台服务器的工具（v4：[McpToolRegistrar] 逐台注册 first-class 工具用）。
      * 服务器未连接时返回空列表——调用方据此跳过注册。
      */
-    suspend fun listServerTools(serverName: String): List<McpToolDef> {
-        val client = synchronized(lock) { clients[serverName] } ?: return emptyList()
-        return runCatching { client.listTools().getOrDefault(emptyList()) }
-            .getOrDefault(emptyList())
+    suspend fun listServerTools(serverName: String): Result<List<McpToolDef>> {
+        // P1 修复（工具整体消失）：旧实现把"未连接/发现失败"一律折叠成
+        // emptyList，[McpToolRegistrar] 把空清单当"服务器不再提供工具"，
+        // 于是一次 tools/list 超时就把该服务器已注册的一等工具全部注销。
+        // 现在失败与"空清单"是两件事，调用方据此决定是否保留既有注册。
+        val client = synchronized(lock) { clients[serverName] }
+            ?: return Result.failure(Exception("Server '$serverName' not connected"))
+        return client.listTools()
     }
 
     /**

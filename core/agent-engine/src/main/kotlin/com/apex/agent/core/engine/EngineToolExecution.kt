@@ -74,8 +74,8 @@ internal suspend fun ApexAgentEngine.executeToolCallStreaming(
     toolCall: ToolCall,
     emit: suspend (AgentEvent) -> Unit
 ) {
-    // v4：模型回显的是 provider 安全名（terminal_exec）；执行器/截断策略
-    // 需要注册表 id（terminal.exec）——经当前计划的反向映射解析。
+    // v4：模型回显的是 provider 安全名（TerminalExecLegacy）；执行器/截断策略
+    // 需要注册表 id（TerminalExec）——经当前计划的反向映射解析。
     // 无映射时（旧会话回放/模型直呼 registry id）原样直查，两条路都通。
     val registryToolId = EngineToolPlanner.registryIdOf(currentToolPlan, toolCall.name)
 

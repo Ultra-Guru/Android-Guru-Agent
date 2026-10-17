@@ -31,15 +31,15 @@ enum class ControlMode { NORMAL, TAKEOVER, WAITING_INPUT, INTERRUPTED }
  *
  * Spec ref: ATR 2.0 Final Spec §11.1 / §11.2 (InputControl state machine, transitions I1-I9)
  *
- *   I1 (FREE, NORMAL)        --Agent terminal.run-->             (AGENT, NORMAL)
+ *   I1 (FREE, NORMAL)        --Agent TerminalRun-->             (AGENT, NORMAL)
  *   I2 (AGENT, NORMAL)       --user starts typing (UI input)-->  (USER, TAKEOVER)
  *   I3 (USER, TAKEOVER)      --user releases (UI "release")-->   (AGENT, NORMAL)
- *   I4 (USER, TAKEOVER)      --Agent requests terminal.run-->    (USER, TAKEOVER) [REJECTED, OwnerBusy]
+ *   I4 (USER, TAKEOVER)      --Agent requests TerminalRun-->    (USER, TAKEOVER) [REJECTED, OwnerBusy]
  *   I5 (*, *)                --InputWaiting HIGH_CONFIDENCE-->   (owner, WAITING_INPUT)
  *   I6 (owner, WAITING_INPUT)--write(input)-->                   (owner, NORMAL)
  *   I7 (*, *)                --SIGINT from USER-->               (USER, INTERRUPTED)
  *   I8 (USER, INTERRUPTED)   --shell back to idle-->             (USER, NORMAL)
- *   I9 (AGENT, *)            --Agent terminal.close-->           (FREE, NORMAL)
+ *   I9 (AGENT, *)            --Agent TerminalClose-->           (FREE, NORMAL)
  */
 data class InputControlState(
     val owner: InputOwner,

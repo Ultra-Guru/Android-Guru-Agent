@@ -24,7 +24,7 @@ package com.apex.agent.core.code.thinking
  * | 文本长度 | > 500 字 +2；> 1500 字 +3（替换不叠加） | 长需求含隐式多步 |
  * | 多步指示词 | 先/然后/接着/步骤/first/then/step/plan | +2 |
  * | 代码/命令含量 | ``` 代码块 / `$ ` 提示符 / git·npm·gradle 等命令词 | +2 |
- * | **编码意图**（专有） | 强编码信号：@file 引用 / code_edit·code_write·code_read 语义词 / “实现/重构/修复+函数|类|接口” | **+1** |
+ * | **编码意图**（专有） | 强编码信号：@file 引用 / CodeEdit·CodeWrite·CodeRead 语义词 / “实现/重构/修复+函数|类|接口” | **+1** |
  * | 风险词 | 删除/uninstall/rm -rf/格式化 等 | +3，**硬保底 DEEP** |
  * | 错误史 | lastRunErrors > 0（上一轮 run 的失败史） | +2 且显式升一档 |
  *
@@ -216,7 +216,7 @@ class CodeAdaptiveThinkingSelector {
 
         /** code 工具语义词（goal 里直说要用什么工具的强信号）。 */
         val CODE_TOOL_VERBS = listOf(
-            "code_edit", "code_write", "code_read", "code_grep", "code_task", "code_todo"
+            "CodeEdit", "CodeWrite", "CodeRead", "CodeGrep", "CodeTask", "CodeTodo"
         )
 
         /** @file:line 引用形态。 */

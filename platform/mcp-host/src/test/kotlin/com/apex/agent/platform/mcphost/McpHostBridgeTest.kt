@@ -52,58 +52,58 @@ class McpHostBridgeTest {
     @Test
     fun `category whitelist filters tool list`() {
         val registry = registryOf(
-            FakeTool("calculate"),                       // → UTILITY
-            FakeTool("read_file"),                       // → FILE
-            FakeTool("shell_execute")                    // → SHELL
+            FakeTool("Calculate"),                       // → UTILITY
+            FakeTool("Read"),                       // → FILE
+            FakeTool("ShellExecute")                    // → SHELL
         )
         val bridge = McpHostBridge(
             registry, DefaultToolExecutor(registry),
             configOf(categories = listOf("UTILITY")).let { c -> { c } }
         )
         val names = bridge.toolDefinitions().map { it.name }
-        assertEquals(listOf("calculate"), names)
+        assertEquals(listOf("Calculate"), names)
     }
 
     @Test
     fun `multiple allowed categories union`() {
-        val registry = registryOf(FakeTool("calculate"), FakeTool("read_file"))
+        val registry = registryOf(FakeTool("Calculate"), FakeTool("Read"))
         val bridge = McpHostBridge(registry, DefaultToolExecutor(registry)) {
             configOf(categories = listOf("UTILITY", "FILE"))
         }
-        assertEquals(setOf("calculate", "read_file"), bridge.toolDefinitions().map { it.name }.toSet())
+        assertEquals(setOf("Calculate", "Read"), bridge.toolDefinitions().map { it.name }.toSet())
     }
 
     @Test
     fun `blocked tool ids excluded even when category allowed`() {
-        val registry = registryOf(FakeTool("calculate"), FakeTool("share_content"))
-        // share_content 推断为 UTILITY（无前缀规则命中），分类放行但被黑名单拦截
+        val registry = registryOf(FakeTool("Calculate"), FakeTool("ShareContent"))
+        // ShareContent 推断为 UTILITY（无前缀规则命中），分类放行但被黑名单拦截
         val bridge = McpHostBridge(registry, DefaultToolExecutor(registry)) {
-            configOf(categories = listOf("UTILITY"), blocked = listOf("share_content"))
+            configOf(categories = listOf("UTILITY"), blocked = listOf("ShareContent"))
         }
-        assertEquals(listOf("calculate"), bridge.toolDefinitions().map { it.name })
+        assertEquals(listOf("Calculate"), bridge.toolDefinitions().map { it.name })
     }
 
     @Test
     fun `legacy alias tools excluded`() {
-        val registry = registryOf(FakeTool("terminal_exec"), FakeTool("calculate"))
+        val registry = registryOf(FakeTool("TerminalExecLegacy"), FakeTool("Calculate"))
         val bridge = McpHostBridge(registry, DefaultToolExecutor(registry)) {
             configOf(categories = listOf("UTILITY", "TERMINAL"))
         }
-        // TERMINAL 分类即使放行，legacy 别名 terminal_exec 仍不暴露
-        assertEquals(listOf("calculate"), bridge.toolDefinitions().map { it.name })
+        // TERMINAL 分类即使放行，legacy 别名 TerminalExecLegacy 仍不暴露
+        assertEquals(listOf("Calculate"), bridge.toolDefinitions().map { it.name })
     }
 
     @Test
     fun `vault tools never exposed even when security allowed and unblocked`() {
-        val registry = registryOf(FakeTool("vault_save"), FakeTool("calculate"))
+        val registry = registryOf(FakeTool("VaultSave"), FakeTool("Calculate"))
         val bridge = McpHostBridge(registry, DefaultToolExecutor(registry)) {
             // 用户把 SECURITY 加入白名单且把 vault_* 移出黑名单 —— 仍拦截（写死红线）
             configOf(categories = listOf("UTILITY", "SECURITY"), blocked = emptyList())
         }
-        assertEquals(listOf("calculate"), bridge.toolDefinitions().map { it.name })
-        assertTrue(bridge.isVaultTool("vault_save"))
-        assertTrue(bridge.isVaultTool("vault_paste"))
-        assertFalse(bridge.isVaultTool("calculate"))
+        assertEquals(listOf("Calculate"), bridge.toolDefinitions().map { it.name })
+        assertTrue(bridge.isVaultTool("VaultSave"))
+        assertTrue(bridge.isVaultTool("VaultPaste"))
+        assertFalse(bridge.isVaultTool("Calculate"))
     }
 
     @Test
@@ -126,12 +126,12 @@ class McpHostBridgeTest {
     @Test
     fun `callTool forwards to executor and returns Ok`() = runTest {
         val registry = registryOf(
-            FakeTool("calculate") { args -> "sum=" + args.length }
+            FakeTool("Calculate") { args -> "sum=" + args.length }
         )
         val bridge = McpHostBridge(registry, DefaultToolExecutor(registry)) {
             configOf(categories = listOf("UTILITY"))
         }
-        val result = bridge.callTool("calculate", """{"a":1}""")
+        val result = bridge.callTool("Calculate", """{"a":1}""")
         assertTrue(result is McpHostBridge.HostToolResult.Ok)
         assertEquals("sum=7", (result as McpHostBridge.HostToolResult.Ok).text)
     }
@@ -139,19 +139,19 @@ class McpHostBridgeTest {
     @Test
     fun `tool returning Error text yields Err (isError semantics)`() = runTest {
         val registry = registryOf(
-            FakeTool("calculate") { "Error: division by zero" }
+            FakeTool("Calculate") { "Error: division by zero" }
         )
         val bridge = McpHostBridge(registry, DefaultToolExecutor(registry)) {
             configOf(categories = listOf("UTILITY"))
         }
-        val result = bridge.callTool("calculate", "{}")
+        val result = bridge.callTool("Calculate", "{}")
         assertTrue(result is McpHostBridge.HostToolResult.Err)
         assertEquals("Error: division by zero", (result as McpHostBridge.HostToolResult.Err).text)
     }
 
     @Test
     fun `unknown tool yields UnknownTool`() = runTest {
-        val registry = registryOf(FakeTool("calculate"))
+        val registry = registryOf(FakeTool("Calculate"))
         val bridge = McpHostBridge(registry, DefaultToolExecutor(registry)) {
             configOf(categories = listOf("UTILITY"))
         }
@@ -163,22 +163,22 @@ class McpHostBridgeTest {
 
     @Test
     fun `whitelisted-out tool cannot be called directly (list 与调用一致)`() = runTest {
-        val registry = registryOf(FakeTool("shell_execute"))
+        val registry = registryOf(FakeTool("ShellExecute"))
         val bridge = McpHostBridge(registry, DefaultToolExecutor(registry)) {
             configOf(categories = listOf("UTILITY")) // SHELL 不在白名单
         }
-        val result = bridge.callTool("shell_execute", """{"command":"ls"}""")
+        val result = bridge.callTool("ShellExecute", """{"command":"ls"}""")
         assertTrue(result is McpHostBridge.HostToolResult.UnknownTool)
         assertTrue((result as McpHostBridge.HostToolResult.UnknownTool).reason.contains("not in the allowed list"))
     }
 
     @Test
     fun `vault tool call hard-blocked`() = runTest {
-        val registry = registryOf(FakeTool("vault_save") { "should never run" })
+        val registry = registryOf(FakeTool("VaultSave") { "should never run" })
         val bridge = McpHostBridge(registry, DefaultToolExecutor(registry)) {
             configOf(categories = listOf("UTILITY", "SECURITY"), blocked = emptyList())
         }
-        val result = bridge.callTool("vault_save", """{"label":"x"}""")
+        val result = bridge.callTool("VaultSave", """{"label":"x"}""")
         assertTrue(result is McpHostBridge.HostToolResult.UnknownTool)
         assertTrue((result as McpHostBridge.HostToolResult.UnknownTool)
             .reason.contains("never exposed via MCP Host"))
@@ -186,7 +186,7 @@ class McpHostBridgeTest {
 
     @Test
     fun `permission gate denial yields interactive-authorization message`() = runTest {
-        val registry = registryOf(FakeTool("calculate"))
+        val registry = registryOf(FakeTool("Calculate"))
         val denyAll: ToolExecutionGate = object : ToolExecutionGate {
             override suspend fun check(tool: AgentTool, arguments: String): GateDecision =
                 GateDecision.Deny("user denied")
@@ -195,7 +195,7 @@ class McpHostBridgeTest {
         val bridge = McpHostBridge(registry, executor) {
             configOf(categories = listOf("UTILITY"))
         }
-        val result = bridge.callTool("calculate", "{}")
+        val result = bridge.callTool("Calculate", "{}")
         assertTrue(result is McpHostBridge.HostToolResult.Err)
         val text = (result as McpHostBridge.HostToolResult.Err).text
         // 面向外部客户端的明确指引（替代裸 permission denied）
@@ -206,12 +206,12 @@ class McpHostBridgeTest {
     @Test
     fun `executor exception yields Err not throw`() = runTest {
         val registry = registryOf(
-            FakeTool("calculate") { throw IllegalStateException("boom") }
+            FakeTool("Calculate") { throw IllegalStateException("boom") }
         )
         val bridge = McpHostBridge(registry, DefaultToolExecutor(registry)) {
             configOf(categories = listOf("UTILITY"))
         }
-        val result = bridge.callTool("calculate", "{}")
+        val result = bridge.callTool("Calculate", "{}")
         // DefaultToolExecutor 已把异常转为 Error 文本
         assertTrue(result is McpHostBridge.HostToolResult.Err)
     }
@@ -219,18 +219,18 @@ class McpHostBridgeTest {
     @Test
     fun `exposureBlockReason mirrors list filtering`() {
         val registry = registryOf(
-            FakeTool("vault_save"),
-            FakeTool("terminal_exec"),
-            FakeTool("calculate"),
-            FakeTool("share_content")
+            FakeTool("VaultSave"),
+            FakeTool("TerminalExecLegacy"),
+            FakeTool("Calculate"),
+            FakeTool("ShareContent")
         )
         val bridge = McpHostBridge(registry, DefaultToolExecutor(registry)) {
-            configOf(categories = listOf("UTILITY"), blocked = listOf("share_content"))
+            configOf(categories = listOf("UTILITY"), blocked = listOf("ShareContent"))
         }
-        assertNull(bridge.exposureBlockReason("calculate")) // 放行 → null
-        assertNotNull(bridge.exposureBlockReason("vault_save"))
-        assertNotNull(bridge.exposureBlockReason("terminal_exec"))
-        assertNotNull(bridge.exposureBlockReason("share_content"))
+        assertNull(bridge.exposureBlockReason("Calculate")) // 放行 → null
+        assertNotNull(bridge.exposureBlockReason("VaultSave"))
+        assertNotNull(bridge.exposureBlockReason("TerminalExecLegacy"))
+        assertNotNull(bridge.exposureBlockReason("ShareContent"))
         assertNotNull(bridge.exposureBlockReason("ghost_tool"))
     }
 }

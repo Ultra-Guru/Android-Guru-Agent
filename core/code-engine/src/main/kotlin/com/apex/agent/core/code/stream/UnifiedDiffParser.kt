@@ -6,9 +6,9 @@ package com.apex.agent.core.code.stream
  * ## 为什么要双格式
  *
  * Coding 工作流里 diff 有两个来源，格式不同：
- * 1. **git 标准 hunk**（`code_git_diff` / `git diff` 输出）：
+ * 1. **git 标准 hunk**（`CodeGitDiff` / `git diff` 输出）：
  *    `--- a/path` / `+++ b/path` / `@@ -x,y +a,b @@` + 行前缀 ` `/`+`/`-`；
- * 2. **CodeEditTool.UnifiedDiff.mini**（code_edit 回执的自造格式）：
+ * 2. **CodeEditTool.UnifiedDiff.mini**（CodeEdit 回执的自造格式）：
  *    同样的文件头与行前缀，但折叠标记是 `@@ ... (N unchanged lines) ...`、
  *    截断标记是 `@@ (diff truncated after N lines)`、结尾统计行
  *    `(N added, M removed)`。

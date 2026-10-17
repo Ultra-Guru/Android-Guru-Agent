@@ -20,7 +20,7 @@ import org.junit.rules.TemporaryFolder
  *    宿主 STDIO 与 HTTP 保持 60s；
  * 3. [McpManager.ensureSandboxServer] 预置语义 —— 首次写入 / 二次幂等保留
  *    用户 enabled 偏好 / 不劫持用户自建的同名宿主条目；
- * 4. [buildMcpConnectConfig]（mcp_connect 的参数→配置纯函数）——
+ * 4. [buildMcpConnectConfig]（McpConnect 的参数→配置纯函数）——
  *    `run_in_sandbox` 透传与默认值。
  *
  * 风格与 SandboxMcpConfigTest 一致：JUnit4 + 纯 JVM 真实实例，无 mock 框架。
@@ -251,7 +251,7 @@ class SandboxMcpPresetTest {
     }
 
     // ═════════════════════════════════════════════════════════════════
-    //  mcp_connect 的参数 → 配置纯函数
+    //  McpConnect 的参数 → 配置纯函数
     // ═════════════════════════════════════════════════════════════════
 
     @Test

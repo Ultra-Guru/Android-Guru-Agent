@@ -5,7 +5,7 @@ package com.apex.agent.core.tools.skill
  *
  * ## 定位（三路激活中的「自动」路）
  *
- * 1. 模型路：`skill_activate(skill_id)`（LLM 读了技能目录后自主决定）；
+ * 1. 模型路：`SkillActivate(skill_id)`（LLM 读了技能目录后自主决定）；
  * 2. 用户路：斜杠指令 `/skill:<id>`（显式装备）；
  * 3. **自动路（本类）**：发送前扫描用户消息，命中已安装且启用技能的
  *    tags / id / name 关键词时直接激活——LLM 一次调用都不用花，

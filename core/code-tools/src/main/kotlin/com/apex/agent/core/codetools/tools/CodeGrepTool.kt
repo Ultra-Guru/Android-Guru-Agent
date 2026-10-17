@@ -11,7 +11,7 @@ import com.apex.agent.core.tools.toolSchema
 import java.io.File
 
 /**
- * # code_grep — 工作区正则搜索（ripgrep 语义的纯 JVM 实现）
+ * # CodeGrep — 工作区正则搜索（ripgrep 语义的纯 JVM 实现）
  *
  * 业界标准 CLI 编码智能体的 grep 由 `rg --json` 驱动；Android 端不假设 guest 里有 rg，这里用
  * 纯 JVM 实现**同款输出契约**：按文件分组、`  Line N: 内容` 行、命中上限 100、
@@ -26,7 +26,7 @@ import java.io.File
 class CodeGrepTool(
     private val roots: CodeWorkspaceRoots
 ) : BaseTool(
-    id = "code_grep",
+    id = "CodeGrep",
     name = "Code Grep",
     description = """
         Search file contents with a regex across the coding workspace (ripgrep-style).

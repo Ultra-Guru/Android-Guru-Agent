@@ -344,7 +344,7 @@ internal class JobHandleAdapter(
     override suspend fun await(): Result<JobResult> {
         val r = runtime.wait(
             sid,
-            com.apex.agent.platform.terminal.wait.WaitCondition.ProcessExited(jid),
+            com.apex.agent.platform.TerminalWait.WaitCondition.ProcessExited(jid),
             timeoutMs = request.timeoutMs ?: 300_000L
         )
         return r.map { wr ->

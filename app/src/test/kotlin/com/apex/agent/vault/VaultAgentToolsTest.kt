@@ -53,14 +53,14 @@ class VaultAgentToolsTest {
         terminalWriteOk = true
     }
 
-    // ═══════════════ vault_list ═══════════════
+    // ═══════════════ VaultList ═══════════════
 
     @Test
-    fun `vault_list 输出脱敏快照不含 secret`() = runTest {
+    fun `VaultList 输出脱敏快照不含 secret`() = runTest {
         repository.save(
             VaultRepository.newEntry("github-token", "CI 发布凭据", "ghp_plaintext_never_show_me", VaultOrigin.HUMAN)
         )
-        val out = tool("vault_list").execute("{}")
+        val out = tool("VaultList").execute("{}")
 
         assertTrue(out.contains("github-token"))
         assertTrue(out.contains("CI 发布凭据"))
@@ -71,16 +71,16 @@ class VaultAgentToolsTest {
     }
 
     @Test
-    fun `vault_list 空库引导文案`() = runTest {
-        val out = tool("vault_list").execute("{}")
+    fun `VaultList 空库引导文案`() = runTest {
+        val out = tool("VaultList").execute("{}")
         assertTrue(out.contains("Vault is empty"))
     }
 
-    // ═══════════════ vault_save ═══════════════
+    // ═══════════════ VaultSave ═══════════════
 
     @Test
-    fun `vault_save 成功返回仅含 label 与 id 绝不含 content`() = runTest {
-        val out = tool("vault_save")
+    fun `VaultSave 成功返回仅含 label 与 id 绝不含 content`() = runTest {
+        val out = tool("VaultSave")
             .execute("""{"label":"openai-key","note":"备用模型密钥","content":"sk-plaintext-secret-42"}""")
 
         assertTrue(out.contains("\"saved\":true"))
@@ -88,21 +88,21 @@ class VaultAgentToolsTest {
         assertFalse(out.contains("sk-plaintext-secret-42"))
         // write-only：存得进，但工具链读不回（快照亦无明文）。
         assertEquals("sk-plaintext-secret-42", repository.resolveSecret("openai-key"))
-        assertFalse(tool("vault_list").execute("{}").contains("sk-plaintext-secret-42"))
+        assertFalse(tool("VaultList").execute("{}").contains("sk-plaintext-secret-42"))
     }
 
     @Test
-    fun `vault_save label 冲突默认覆写`() = runTest {
-        tool("vault_save").execute("""{"label":"k","content":"first-secret-value"}""")
-        tool("vault_save").execute("""{"label":"k","content":"second-secret-value"}""")
+    fun `VaultSave label 冲突默认覆写`() = runTest {
+        tool("VaultSave").execute("""{"label":"k","content":"first-secret-value"}""")
+        tool("VaultSave").execute("""{"label":"k","content":"second-secret-value"}""")
         assertEquals(1, repository.entryCount())
         assertEquals("second-secret-value", repository.resolveSecret("k"))
     }
 
     @Test
-    fun `vault_save overwrite=false 时冲突报错且不改动原条目`() = runTest {
-        tool("vault_save").execute("""{"label":"k","content":"first-secret-value"}""")
-        val out = tool("vault_save")
+    fun `VaultSave overwrite=false 时冲突报错且不改动原条目`() = runTest {
+        tool("VaultSave").execute("""{"label":"k","content":"first-secret-value"}""")
+        val out = tool("VaultSave")
             .execute("""{"label":"k","content":"second-secret-value","overwrite":false}""")
 
         assertTrue(out.startsWith("Error:"))
@@ -111,20 +111,20 @@ class VaultAgentToolsTest {
     }
 
     @Test
-    fun `vault_save 缺参报错`() = runTest {
-        assertTrue(tool("vault_save").execute("""{"label":"k"}""").startsWith("Error:"))
-        assertTrue(tool("vault_save").execute("""{"content":"x"}""").startsWith("Error:"))
-        assertTrue(tool("vault_save").execute("not-json").startsWith("Error:"))
+    fun `VaultSave 缺参报错`() = runTest {
+        assertTrue(tool("VaultSave").execute("""{"label":"k"}""").startsWith("Error:"))
+        assertTrue(tool("VaultSave").execute("""{"content":"x"}""").startsWith("Error:"))
+        assertTrue(tool("VaultSave").execute("not-json").startsWith("Error:"))
     }
 
-    // ═══════════════ vault_paste ═══════════════
+    // ═══════════════ VaultPaste ═══════════════
 
     @Test
-    fun `vault_paste clipboard 通道投递并计数且不回显`() = runTest {
+    fun `VaultPaste clipboard 通道投递并计数且不回显`() = runTest {
         val e = repository.save(
             VaultRepository.newEntry("github-token", "", "ghp_clip_secret_000111", VaultOrigin.HUMAN)
         )
-        val out = tool("vault_paste")
+        val out = tool("VaultPaste")
             .execute("""{"label":"github-token","to":"clipboard"}""")
 
         assertTrue(out.contains("\"pasted\":true"))
@@ -136,10 +136,10 @@ class VaultAgentToolsTest {
     }
 
     @Test
-    fun `vault_paste terminal 通道 RAW 写入并回字节数`() = runTest {
+    fun `VaultPaste terminal 通道 RAW 写入并回字节数`() = runTest {
         repository.save(VaultRepository.newEntry("t", "", "ghp_term_secret_222333", VaultOrigin.HUMAN))
 
-        val out = tool("vault_paste")
+        val out = tool("VaultPaste")
             .execute("""{"label":"t","to":"terminal","session_id":7}""")
 
         assertTrue(out.contains("\"target\":\"terminal\""))
@@ -152,40 +152,40 @@ class VaultAgentToolsTest {
     }
 
     @Test
-    fun `vault_paste terminal newline=false 不补换行`() = runTest {
+    fun `VaultPaste terminal newline=false 不补换行`() = runTest {
         repository.save(VaultRepository.newEntry("t", "", "ghp_term_secret_222333", VaultOrigin.HUMAN))
-        tool("vault_paste")
+        tool("VaultPaste")
             .execute("""{"label":"t","to":"terminal","session_id":3,"newline":false}""")
         assertEquals(listOf(3L to "ghp_term_secret_222333"), pastedToTerminal)
     }
 
     @Test
-    fun `vault_paste terminal 失败返回可自修复错误`() = runTest {
+    fun `VaultPaste terminal 失败返回可自修复错误`() = runTest {
         repository.save(VaultRepository.newEntry("t", "", "ghp_term_secret_222333", VaultOrigin.HUMAN))
         terminalWriteOk = false
-        val out = tool("vault_paste")
+        val out = tool("VaultPaste")
             .execute("""{"label":"t","to":"terminal","session_id":9}""")
         assertTrue(out.startsWith("Error:"))
         assertTrue(out.contains("session 9"))
     }
 
     @Test
-    fun `vault_paste 缺 session_id 与未知通道报错`() = runTest {
+    fun `VaultPaste 缺 session_id 与未知通道报错`() = runTest {
         repository.save(VaultRepository.newEntry("t", "", "ghp_term_secret_222333", VaultOrigin.HUMAN))
         assertTrue(
-            tool("vault_paste").execute("""{"label":"t","to":"terminal"}""").contains("session_id")
+            tool("VaultPaste").execute("""{"label":"t","to":"terminal"}""").contains("session_id")
         )
         assertTrue(
-            tool("vault_paste").execute("""{"label":"t","to":"carrier-pigeon"}""").startsWith("Error:")
+            tool("VaultPaste").execute("""{"label":"t","to":"carrier-pigeon"}""").startsWith("Error:")
         )
         // 未知 label 明确报错。
         assertTrue(
-            tool("vault_paste").execute("""{"label":"nope","to":"clipboard"}""").contains("no vault entry")
+            tool("VaultPaste").execute("""{"label":"nope","to":"clipboard"}""").contains("no vault entry")
         )
     }
 
     @Test
-    fun `vault_paste http 通道响应体脱敏后返回`() = runTest {
+    fun `VaultPaste http 通道响应体脱敏后返回`() = runTest {
         // 本地 echo 服务：把 Authorization 头原样回进响应体（模拟服务端回显凭据）。
         val server = FakeHttpEndpoint { headers ->
             val auth = headerLine(headers, "Authorization") ?: ""
@@ -197,7 +197,7 @@ class VaultAgentToolsTest {
             repository.save(VaultRepository.newEntry("h", "", secret, VaultOrigin.HUMAN))
             val url = "http://127.0.0.1:${server.port}/echo"
 
-            val out = tool("vault_paste")
+            val out = tool("VaultPaste")
                 .execute("""{"label":"h","to":"http","url":"$url","scheme":"bearer"}""")
 
             assertTrue(out.contains("\"status\":200"))
@@ -213,14 +213,14 @@ class VaultAgentToolsTest {
     }
 
     @Test
-    fun `vault_paste http raw scheme 直传与非法 url 报错`() = runTest {
+    fun `VaultPaste http raw scheme 直传与非法 url 报错`() = runTest {
         val server = FakeHttpEndpoint(status = 204, bodyFor = { "" })
         server.start()
         try {
             val secret = "ghp_raw_scheme_secret_666"
             repository.save(VaultRepository.newEntry("r", "", secret, VaultOrigin.HUMAN))
             val url = "http://127.0.0.1:${server.port}/raw"
-            val out = tool("vault_paste").execute(
+            val out = tool("VaultPaste").execute(
                 """{"label":"r","to":"http","url":"$url","header":"X-Api-Key","scheme":"raw"}"""
             )
             assertTrue(out.contains("\"status\":204"))
@@ -232,7 +232,7 @@ class VaultAgentToolsTest {
         }
 
         // 非 http(s) url 拒绝。
-        val bad = tool("vault_paste").execute("""{"label":"r","to":"http","url":"ftp://x/y"}""")
+        val bad = tool("VaultPaste").execute("""{"label":"r","to":"http","url":"ftp://x/y"}""")
         assertTrue(bad.startsWith("Error:"))
     }
 
@@ -316,12 +316,12 @@ class VaultAgentToolsTest {
         return regex.find(headers)?.groupValues?.get(1)
     }
 
-    // ═══════════════ vault_delete（#207：代码级 typed confirm 门）═══════════════
+    // ═══════════════ VaultDelete（#207：代码级 typed confirm 门）═══════════════
 
     @Test
-    fun `vault_delete 缺 confirm 拒绝且条目不被删除`() = runTest {
+    fun `VaultDelete 缺 confirm 拒绝且条目不被删除`() = runTest {
         repository.save(VaultRepository.newEntry("d", "", "ghp_delete_secret_777888", VaultOrigin.HUMAN))
-        val out = tool("vault_delete").execute("""{"label":"d"}""")
+        val out = tool("VaultDelete").execute("""{"label":"d"}""")
 
         assertTrue(out.startsWith("Error:"))
         assertTrue(out.contains("confirmation"))
@@ -332,22 +332,22 @@ class VaultAgentToolsTest {
     }
 
     @Test
-    fun `vault_delete confirm 不匹配拒绝（含无脑 true）且条目不被删除`() = runTest {
+    fun `VaultDelete confirm 不匹配拒绝（含无脑 true）且条目不被删除`() = runTest {
         repository.save(VaultRepository.newEntry("d", "", "ghp_delete_secret_777888", VaultOrigin.HUMAN))
         // 模型无脑传 true —— 必须被拒。
-        val boolOut = tool("vault_delete").execute("""{"label":"d","confirm":true}""")
+        val boolOut = tool("VaultDelete").execute("""{"label":"d","confirm":true}""")
         assertTrue(boolOut.startsWith("Error:"))
         // 错另一个标签名 —— 同样拒绝。
-        val mismatchOut = tool("vault_delete").execute("""{"label":"d","confirm":"other-label"}""")
+        val mismatchOut = tool("VaultDelete").execute("""{"label":"d","confirm":"other-label"}""")
         assertTrue(mismatchOut.startsWith("Error:"))
         assertTrue(mismatchOut.contains("mismatch"))
         assertEquals(1, repository.entryCount())
     }
 
     @Test
-    fun `vault_delete 按标签删除且旧密钥退出脱敏登记表`() = runTest {
+    fun `VaultDelete 按标签删除且旧密钥退出脱敏登记表`() = runTest {
         repository.save(VaultRepository.newEntry("d", "", "ghp_delete_secret_777888", VaultOrigin.HUMAN))
-        val out = tool("vault_delete").execute("""{"label":"d","confirm":"d"}""")
+        val out = tool("VaultDelete").execute("""{"label":"d","confirm":"d"}""")
 
         assertTrue(out.contains("Deleted") && out.contains("'d'"))
         assertEquals(0, repository.entryCount())
@@ -355,16 +355,16 @@ class VaultAgentToolsTest {
     }
 
     @Test
-    fun `vault_delete schema 要求 confirm 必填`() {
-        val schema = tool("vault_delete").parametersSchema
+    fun `VaultDelete schema 要求 confirm 必填`() {
+        val schema = tool("VaultDelete").parametersSchema
         assertTrue(schema.contains("\"confirm\""))
         assertTrue(schema.contains("\"required\":[\"label\",\"confirm\"]"))
     }
 
     @Test
-    fun `vault_delete 未知标签且 confirm 齐备时报 unknown`() = runTest {
+    fun `VaultDelete 未知标签且 confirm 齐备时报 unknown`() = runTest {
         assertTrue(
-            tool("vault_delete").execute("""{"label":"ghost","confirm":"ghost"}""").contains("no vault entry")
+            tool("VaultDelete").execute("""{"label":"ghost","confirm":"ghost"}""").contains("no vault entry")
         )
     }
 
@@ -373,17 +373,17 @@ class VaultAgentToolsTest {
     @Test
     fun `工具 id 唯一且元数据风险分级正确`() {
         val tools = buildTools()
-        assertEquals(listOf("vault_list", "vault_save", "vault_paste", "vault_delete"), tools.map { it.id })
+        assertEquals(listOf("VaultList", "VaultSave", "VaultPaste", "VaultDelete"), tools.map { it.id })
         assertEquals(4, tools.map { it.id }.toSet().size)
 
         val byId = tools.associateBy { it.id }
-        assertEquals(ToolRisk.LOW, byId.getValue("vault_list").metadata.risk)
-        assertEquals(ToolRisk.MEDIUM, byId.getValue("vault_save").metadata.risk)
-        assertEquals(ToolRisk.MEDIUM, byId.getValue("vault_paste").metadata.risk)
-        assertEquals(ToolRisk.HIGH, byId.getValue("vault_delete").metadata.risk)
+        assertEquals(ToolRisk.LOW, byId.getValue("VaultList").metadata.risk)
+        assertEquals(ToolRisk.MEDIUM, byId.getValue("VaultSave").metadata.risk)
+        assertEquals(ToolRisk.MEDIUM, byId.getValue("VaultPaste").metadata.risk)
+        assertEquals(ToolRisk.HIGH, byId.getValue("VaultDelete").metadata.risk)
         tools.forEach {
             assertEquals(ToolCategory.SECURITY, it.metadata.category)
-            assertTrue("readOnly 标注应只给 vault_list", (it.id == "vault_list") == it.metadata.annotations.readOnlyHint)
+            assertTrue("readOnly 标注应只给 VaultList", (it.id == "VaultList") == it.metadata.annotations.readOnlyHint)
         }
     }
 }

@@ -80,11 +80,17 @@ class McpToolRegistrar(
 
     /**
      * Connect/discovery/register a server right now (startup auto-connect,
-     * or after `mcp_connect`). Safe to call repeatedly — REPLACE semantics.
+     * or after `McpConnect`). Safe to call repeatedly — REPLACE semantics.
      */
     suspend fun registerServer(serverName: String) {
         lockFor(serverName).withLock {
-            val tools = manager.listServerTools(serverName)
+            // P1 修复：发现失败 → 保留已注册集合（REPLACE 清算只在成功时做）。
+            // 旧实现把失败当空清单，把该服务器的工具整体注销且不会自动回来。
+            val discovered = manager.listServerTools(serverName)
+            if (discovered.isFailure) {
+                return
+            }
+            val tools = discovered.getOrDefault(emptyList())
             // 竞态防御：discovery 期间（最长 180s）服务器可能已被断开/移除 ——
             // 注销路径（onServerDisconnected）已清理完毕，此处写回即幽灵工具
             //（执行必报 not connected）。校验连接表，不在 → 在途注册作废。

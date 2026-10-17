@@ -22,7 +22,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 /**
- * T73 — terminal.ubuntu.install 工具：Ubuntu rootfs 安装引导的 Agent 入口。
+ * T73 — TerminalUbuntuInstall 工具：Ubuntu rootfs 安装引导的 Agent 入口。
  * 输出契约：{ status, state, rootfsId?, version?, architecture?, durationMs?, error?, message }
  */
 class TerminalUbuntuInstallToolTest {

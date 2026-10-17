@@ -17,7 +17,7 @@ import com.apex.agent.tools.ToolAuditLogger
 
 /** §10 前排：9 个 Agent-Native PTY 工具 + T73 后端发现（纯 [terminalRuntime] 依赖）。
  * T-audit（#289）：signal/run/close/create/write/resize/snapshot 七个通道包
- * [auditedTerminalTool] 审计（与 shell_execute 同一 #F-⑯ 标准，审计逻辑随拆分迁入）；
+ * [auditedTerminalTool] 审计（与 ShellExecute 同一 #F-⑯ 标准，审计逻辑随拆分迁入）；
  * observe/wait 纯只读探针不记（审计噪声换取可举证性已足）。 */
 internal fun registerTerminalPtyTools(
     registry: DefaultToolRegistry,
