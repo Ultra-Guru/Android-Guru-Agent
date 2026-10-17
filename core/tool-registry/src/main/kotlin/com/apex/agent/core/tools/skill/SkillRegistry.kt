@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import java.io.File
 
 /**
@@ -127,7 +129,14 @@ data class UserConfigField(
     val type: String,  // "string", "integer", "boolean", "enum"
     val default: String? = null,
     val options: List<String> = emptyList(),
-    val description: String = ""
+    val description: String = "",
+    /**
+     * 必填开关（默认 true）：必填且无默认值、用户未填值的技能视为「未配置好」——
+     * [SkillConfigRules.isConfigured] 判定，未配置好的技能不进斜杠菜单（用户需求：
+     * 「没有配置好的不要在输入框 / 按钮里显示」）。显式声明 required=false 的
+     * 字段不阻爆配置就绪。
+     */
+    val required: Boolean = true
 )
 
 /** 技能目录摘要（渐进披露）：提示词里的一行式清单条目。 */
@@ -193,8 +202,16 @@ class SkillRegistry(
     private val installedSkills = LinkedHashMap<String, InstalledSkill>()
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
-    // 禁用状态持久化：sidecar 文件（每行一个 skill id），不污染 manifest schema
+    // 禁用状态持久化：sidecar 文件（每行一个 skill id），不污染 manifest schema。
+    // per-scope 启停（双工位隔离）：.disabled = 双工位同禁（旧格式，升级用户零迁移）；
+    // .disabled-agent / .disabled-coding = 单工位禁用 —— 两个市场分级里各自独立开关。
     private val disabledIds = mutableSetOf<String>()
+    private val disabledAgentIds = mutableSetOf<String>()
+    private val disabledCodingIds = mutableSetOf<String>()
+
+    // 用户配置值持久化（.config.json：{skillId: {key: value}}）：
+    // manifest 升级会覆写 <id>.json，配置值必须住 sidecar 才能跨升级存活。
+    private val configValues = LinkedHashMap<String, MutableMap<String, String>>()
 
     private val lock = Any()
 
@@ -205,29 +222,88 @@ class SkillRegistry(
     init {
         runCatching { skillsDir.mkdirs() }
         loadDisabledIds()
+        loadConfigValues()
         loadInstalledSkills()
     }
 
     private val disabledFile: File get() = File(skillsDir, ".disabled")
+    private val disabledAgentFile: File get() = File(skillsDir, ".disabled-agent")
+    private val disabledCodingFile: File get() = File(skillsDir, ".disabled-coding")
+    private val configFile: File get() = File(skillsDir, ".config.json")
 
     private fun loadDisabledIds() {
         if (disabledFile.exists()) {
             disabledFile.readLines().forEach { if (it.isNotBlank()) disabledIds.add(it.trim()) }
+        }
+        // per-scope sidecar（文件缺失 = 空集，首次升级自然兼容）
+        if (disabledAgentFile.exists()) {
+            disabledAgentFile.readLines().forEach { if (it.isNotBlank()) disabledAgentIds.add(it.trim()) }
+        }
+        if (disabledCodingFile.exists()) {
+            disabledCodingFile.readLines().forEach { if (it.isNotBlank()) disabledCodingIds.add(it.trim()) }
         }
     }
 
     private fun persistDisabledIds() {
         try {
             disabledFile.writeText(disabledIds.joinToString("\n"))
+            disabledAgentFile.writeText(disabledAgentIds.joinToString("\n"))
+            disabledCodingFile.writeText(disabledCodingIds.joinToString("\n"))
         } catch (_: Exception) { /* 写失败不阻断内存态，下次 setEnabled 再试 */ }
+    }
+
+    /** 加载用户配置值（防御式：文件损坏只丢配置值，不阻爆注册表启动）。 */
+    private fun loadConfigValues() {
+        if (!configFile.exists()) return
+        runCatching {
+            val root = json.parseToJsonElement(configFile.readText()).jsonObject
+            for ((skillId, value) in root) {
+                val fields = value as? kotlinx.serialization.json.JsonObject ?: continue
+                val map = mutableMapOf<String, String>()
+                for ((k, v) in fields) {
+                    (v as? kotlinx.serialization.json.JsonPrimitive)?.let { map[k] = it.content }
+                }
+                configValues[skillId] = map
+            }
+        }.onFailure {
+            logger.log(SkillHotReloadLogLevel.WARN, "技能配置值加载失败（已忽略，按未配置处理）：${it.message}")
+        }
+    }
+
+    /** 原子写配置值（tmp + renameTo；rename 失败直写目标兑底）。 */
+    private fun persistConfigValues() {
+        try {
+            val root = kotlinx.serialization.json.buildJsonObject {
+                for ((skillId, values) in configValues) {
+                    put(skillId, kotlinx.serialization.json.buildJsonObject {
+                        for ((k, v) in values) put(k, JsonPrimitive(v))
+                    })
+                }
+            }
+            val text = json.encodeToString(
+                kotlinx.serialization.json.JsonObject.serializer(), root
+            )
+            val tmp = File(skillsDir, ".config.json.tmp")
+            tmp.writeText(text)
+            if (!tmp.renameTo(configFile)) {
+                configFile.writeText(text)
+            }
+        } catch (_: Exception) { /* 写失败不阻断内存态，下次写配置再试 */ }
     }
 
     data class InstalledSkill(
         val manifest: SkillManifest,
-        val enabled: Boolean = true,
+        /** Agent 工位（Agent 屏 / Agent 市场）是否启用。 */
+        val enabledAgent: Boolean = true,
+        /** Coding 工位（Coding 屏 / Coding 市场）是否启用。 */
+        val enabledCoding: Boolean = true,
         val installedAt: Long = System.currentTimeMillis(),
+        /** 用户已填的配置值快照（真相源是 .config.json sidecar；只读视图）。 */
         val config: MutableMap<String, String> = mutableMapOf()
-    )
+    ) {
+        /** 双工位至少一开（旧调用方语义：全局启用与否）。 */
+        val enabled: Boolean get() = enabledAgent || enabledCoding
+    }
 
     /**
      * 校验 skill id 可用作安全文件名（防路径穿越）。
@@ -275,7 +351,10 @@ class SkillRegistry(
                 val skillFile = File(skillsDir, "${manifest.id}.json")
                 skillFile.writeText(manifestJson)
 
-                installedSkills[manifest.id] = InstalledSkill(manifest)
+                installedSkills[manifest.id] = InstalledSkill(
+                    manifest = manifest,
+                    config = configValues[manifest.id]?.toMutableMap() ?: mutableMapOf()
+                )
 
                 executeAutoSetup(manifest)
 
@@ -327,7 +406,10 @@ class SkillRegistry(
                 val skillFile = File(skillsDir, "${manifest.id}.json")
                 skillFile.writeText(manifestFile.readText())
 
-                installedSkills[manifest.id] = InstalledSkill(manifest)
+                installedSkills[manifest.id] = InstalledSkill(
+                    manifest = manifest,
+                    config = configValues[manifest.id]?.toMutableMap() ?: mutableMapOf()
+                )
                 executeAutoSetup(manifest)
 
                 Result.success(manifest)
@@ -380,13 +462,16 @@ class SkillRegistry(
                         "内置技能释放：${manifest.id} v${manifest.version}"
                     )
                 } else if (compareVersions(manifest.version, existing.manifest.version) > 0) {
-                    val wasEnabled = existing.enabled
+                    // 升级保留用户 per-scope 启停态（install 会重置为双开）
+                    val wasAgent = existing.enabledAgent
+                    val wasCoding = existing.enabledCoding
                     install(payload).getOrThrow()
-                    if (!wasEnabled) setEnabled(manifest.id, false)
+                    if (!wasAgent) setEnabledForScope(manifest.id, SCOPE_AGENT, false)
+                    if (!wasCoding) setEnabledForScope(manifest.id, SCOPE_CODING, false)
                     logger.log(
                         SkillHotReloadLogLevel.INFO,
                         "内置技能升级：${manifest.id} ${existing.manifest.version} → ${manifest.version}" +
-                            "（保持用户禁用态=${!wasEnabled}）"
+                            "（保持用户禁用态：agent=${!wasAgent}, coding=${!wasCoding}）"
                     )
                 } else {
                     logger.log(
@@ -432,7 +517,11 @@ class SkillRegistry(
             synchronized(lock) {
                 installedSkills.remove(id)
                 disabledIds.remove(id)
+                disabledAgentIds.remove(id)
+                disabledCodingIds.remove(id)
+                configValues.remove(id)
                 persistDisabledIds()
+                persistConfigValues()
                 runCatching { File(skillsDir, "$id.json").delete() }
                 runCatching { File(skillsDir, id).deleteRecursively() }
             }
@@ -479,7 +568,11 @@ class SkillRegistry(
             val existed = installedSkills.remove(skillId) != null
             if (existed) {
                 disabledIds.remove(skillId)
+                disabledAgentIds.remove(skillId)
+                disabledCodingIds.remove(skillId)
+                configValues.remove(skillId)
                 persistDisabledIds()
+                persistConfigValues()
                 runCatching { File(skillsDir, "$skillId.json").delete() }
                 // 清理 ZIP 安装产生的资源目录，避免孤儿文件累积
                 runCatching { File(skillsDir, skillId).deleteRecursively() }
@@ -507,18 +600,25 @@ class SkillRegistry(
     }
 
     /**
-     * v3 获取启用技能提供的工具（携带所属技能 manifest 的工位作用域）。
+     * v3 获取启用技能提供的工具（携带所属技能的工位作用域）。
      *
      * [SkillHotReloader] 注册复合工具时用它把 scope 打进 ToolMetadata，
-     * 与市场分级、prompt 注入过滤（[getActivePromptInjections]）同源；
-     * scope 经 [ToolMetadata.normalizeScope] 规范化，脏值折叠 all。
+     * 与市场分级、prompt 注入过滤（[getActivePromptInjections]）同源。
+     *
+     * per-scope 启停：生效作用域 = manifest 声明 ∩ 双工位启用集合 ——
+     * manifest 声明 all 但只在 coding 启用的技能，其工具以 scope="coding"
+     * 注册（Agent 引擎不可见）；双工位都开才保留 "all"。
      */
     fun getActiveToolsWithScope(): List<SkillToolWithScope> {
         return synchronized(lock) {
             installedSkills.values
-                .filter { it.enabled }
                 .flatMap { skill ->
-                    val scope = ToolMetadata.normalizeScope(skill.manifest.scope)
+                    val scopes = effectiveScopes(skill)
+                    val scope = when {
+                        scopes.size == 2 -> "all"
+                        scopes.isEmpty() -> return@flatMap emptyList()
+                        else -> scopes.first()
+                    }
                     skill.manifest.tools.map { SkillToolWithScope(it, scope) }
                 }
         }
@@ -538,15 +638,15 @@ class SkillRegistry(
     /**
      * #197 按工位作用域获取 Prompt 注入。
      *
-     * @param scope "agent" | "coding" —— 只返回 `scope` 相同或 "all" 的技能
+     * @param scope "agent" | "coding" —— 只返回生效作用域含该工位的技能
      *        文本。null = 不过滤（全量，等价 [getPromptInjections]，兼容旧调用）。
+     *        生效作用域 = manifest 声明 ∩ per-scope 启用集合。
      */
     fun getPromptInjections(scope: String?): List<String> {
         if (scope.isNullOrBlank()) return getPromptInjections()
         return synchronized(lock) {
             installedSkills.values
-                .filter { it.enabled }
-                .filter { it.manifest.scope == "all" || it.manifest.scope == scope }
+                .filter { scope in effectiveScopes(it) }
                 .mapNotNull { it.manifest.promptInjection }
         }
     }
@@ -566,8 +666,7 @@ class SkillRegistry(
         return synchronized(lock) {
             activeIds.asSequence()
                 .mapNotNull { installedSkills[it] }
-                .filter { it.enabled }
-                .filter { scope.isNullOrBlank() || it.manifest.scope == "all" || it.manifest.scope == scope }
+                .filter { scope.isNullOrBlank() || scope in effectiveScopes(it) }
                 .mapNotNull { it.manifest.promptInjection }
                 .toList()
         }
@@ -584,8 +683,7 @@ class SkillRegistry(
     fun getSkillDigests(scope: String? = null): List<SkillDigest> {
         return synchronized(lock) {
             installedSkills.values
-                .filter { it.enabled }
-                .filter { scope.isNullOrBlank() || it.manifest.scope == "all" || it.manifest.scope == scope }
+                .filter { scope.isNullOrBlank() || scope in effectiveScopes(it) }
                 .map { skill ->
                     SkillDigest(
                         id = skill.manifest.id,
@@ -607,19 +705,148 @@ class SkillRegistry(
     }
 
     /**
-     * 启用/禁用 Skill
+     * 启用/禁用 Skill（双工位同开/同关 —— 旧调用方语义）。
+     *
+     * 市场分级的独立开关请用 [setEnabledForScope]；本方法保留给无工位
+     * 上下文的调用方（安装工具 / 内置释放升级 / 旧测试）。
      */
     fun setEnabled(skillId: String, enabled: Boolean) {
         val changed = synchronized(lock) {
-            val before = installedSkills[skillId]?.enabled
+            val before = installedSkills[skillId]?.let { it.enabledAgent to it.enabledCoding }
             installedSkills[skillId]?.let {
-                installedSkills[skillId] = it.copy(enabled = enabled)
+                installedSkills[skillId] = it.copy(enabledAgent = enabled, enabledCoding = enabled)
             }
-            if (enabled) disabledIds.remove(skillId) else disabledIds.add(skillId)
+            if (enabled) {
+                disabledIds.remove(skillId)
+                disabledAgentIds.remove(skillId)
+                disabledCodingIds.remove(skillId)
+            } else {
+                disabledIds.add(skillId)
+                disabledAgentIds.remove(skillId)
+                disabledCodingIds.remove(skillId)
+            }
             persistDisabledIds()
-            before != enabled
+            before != null && (before.first != enabled || before.second != enabled)
         }
         if (changed) notifyChanged()
+    }
+
+    /**
+     * 双工位独立启停（市场分级开关）。
+     *
+     * - [scope] 仅接受 [SCOPE_AGENT] / [SCOPE_CODING]（其他值折回双工位同开闭）；
+     * - 关闭本工位不动另一工位；从「双禁」里单开一个工位时，另一工位
+     *   的禁用态落进对应单工位 sidecar（.disabled 不再承载混合态）。
+     */
+    fun setEnabledForScope(skillId: String, scope: String, enabled: Boolean) {
+        val normalized = normalizeScopeOrAll(scope)
+        if (normalized != SCOPE_AGENT && normalized != SCOPE_CODING) {
+            setEnabled(skillId, enabled)
+            return
+        }
+        val changed = synchronized(lock) {
+            val before = installedSkills[skillId]?.let {
+                if (normalized == SCOPE_AGENT) it.enabledAgent else it.enabledCoding
+            }
+            installedSkills[skillId]?.let {
+                installedSkills[skillId] = if (normalized == SCOPE_AGENT) {
+                    it.copy(enabledAgent = enabled)
+                } else {
+                    it.copy(enabledCoding = enabled)
+                }
+            }
+            if (enabled) {
+                // 从双禁单开一个工位：另一工位保持禁用（落在单工位 sidecar）
+                if (disabledIds.remove(skillId)) {
+                    if (normalized == SCOPE_AGENT) disabledCodingIds.add(skillId)
+                    else disabledAgentIds.add(skillId)
+                }
+                if (normalized == SCOPE_AGENT) disabledAgentIds.remove(skillId)
+                else disabledCodingIds.remove(skillId)
+            } else {
+                disabledIds.remove(skillId)
+                if (normalized == SCOPE_AGENT) disabledAgentIds.add(skillId)
+                else disabledCodingIds.add(skillId)
+            }
+            persistDisabledIds()
+            before != null && before != enabled
+        }
+        if (changed) notifyChanged()
+    }
+
+    /** 某工位是否启用该技能（未安装 = false；scope 非法折回任意工位开）。 */
+    fun isEnabledForScope(skillId: String, scope: String): Boolean {
+        val normalized = normalizeScopeOrAll(scope)
+        return synchronized(lock) {
+            val skill = installedSkills[skillId] ?: return@synchronized false
+            when (normalized) {
+                SCOPE_CODING -> skill.enabledCoding
+                SCOPE_AGENT -> skill.enabledAgent
+                else -> skill.enabled
+            }
+        }
+    }
+
+    /**
+     * 技能生效工位集合的公开只读视图（斜杠菜单 / 市场行用）：
+     * manifest 声明 ∩ 双工位启用集合；未安装 = 空集。
+     */
+    fun effectiveScopesOf(skillId: String): Set<String> =
+        synchronized(lock) { installedSkills[skillId]?.let { effectiveScopes(it) } ?: emptySet() }
+
+    /**
+     * 技能生效工位集合：manifest 声明 ∩ 双工位启用集合。
+     * （"all" manifest 只在 coding 开 → {coding}；coding manifest 在 agent 侧关着 → 空集）
+     */
+    private fun effectiveScopes(skill: InstalledSkill): Set<String> {
+        val declared = when (ToolMetadata.normalizeScope(skill.manifest.scope)) {
+            SCOPE_AGENT -> setOf(SCOPE_AGENT)
+            SCOPE_CODING -> setOf(SCOPE_CODING)
+            else -> setOf(SCOPE_AGENT, SCOPE_CODING)
+        }
+        val enabled = buildSet {
+            if (skill.enabledAgent) add(SCOPE_AGENT)
+            if (skill.enabledCoding) add(SCOPE_CODING)
+        }
+        return declared intersect enabled
+    }
+
+    /** scope 规范化（复用 [ToolMetadata.normalizeScope]，脏值折 all）。 */
+    private fun normalizeScopeOrAll(scope: String): String =
+        ToolMetadata.normalizeScope(scope)
+
+    // ═══ 用户配置值（就绪门禁：没有配置好的不进斜杠菜单）═══
+
+    /** 读取某技能的用户配置值（未配置 = 空表）。 */
+    fun getConfigValues(skillId: String): Map<String, String> =
+        synchronized(lock) { configValues[skillId]?.toMap() ?: emptyMap() }
+
+    /**
+     * 整表写入某技能的配置值（市场详情表单保存；覆盖写，空白值剔除）。
+     * 写入后发 [changes] —— 斜杠菜单据此重建（配置齐了条目即刻出现）。
+     */
+    fun setConfigValues(skillId: String, values: Map<String, String>) {
+        val changed = synchronized(lock) {
+            if (installedSkills[skillId] == null) return@synchronized false
+            val cleaned = values.filterValues { it.isNotBlank() }
+            val before = configValues[skillId]
+            if (cleaned.isEmpty()) configValues.remove(skillId) else configValues[skillId] = cleaned.toMutableMap()
+            installedSkills[skillId]?.let {
+                installedSkills[skillId] = it.copy(config = configValues[skillId]?.toMutableMap() ?: mutableMapOf())
+            }
+            persistConfigValues()
+            before != configValues[skillId]
+        }
+        if (changed) notifyChanged()
+    }
+
+    /**
+     * 技能是否「配置好」（[SkillConfigRules.isConfigured]：全部必填字段已有值或默认值）。
+     * 未安装 / 无配置声明 = true（就绪）。斜杠菜单与自动装备据此门禁。
+     */
+    fun isConfigured(skillId: String): Boolean = synchronized(lock) {
+        val skill = installedSkills[skillId] ?: return@synchronized true
+        SkillConfigRules.isConfigured(skill.manifest, configValues[skillId] ?: emptyMap())
     }
 
     /**
@@ -643,8 +870,13 @@ class SkillRegistry(
                 val manifest = json.decodeFromString<SkillManifest>(file.readText())
                 if (validateSkillId(manifest.id)) {
                     synchronized(lock) {
-                        installedSkills[manifest.id] =
-                            InstalledSkill(manifest, enabled = manifest.id !in disabledIds)
+                        installedSkills[manifest.id] = InstalledSkill(
+                            manifest = manifest,
+                            // 双禁 sidecar 优先；单工位 sidecar 独立叠加（旧安装无后两者）
+                            enabledAgent = manifest.id !in disabledIds && manifest.id !in disabledAgentIds,
+                            enabledCoding = manifest.id !in disabledIds && manifest.id !in disabledCodingIds,
+                            config = configValues[manifest.id]?.toMutableMap() ?: mutableMapOf()
+                        )
                     }
                 }
             } catch (_: Exception) { /* skip malformed */ }
@@ -735,10 +967,13 @@ class SkillRegistry(
                 }
                 // 升级判定：磁盘版本严格更高才动（同版本/降级跳过，见 KDoc 自激环说明）
                 compareVersions(entry.manifest.version, existing.manifest.version) > 0 -> {
-                    val wasEnabled = existing.enabled
+                    // 升级保留用户 per-scope 启停态（install 会重置为双开）
+                    val wasAgent = existing.enabledAgent
+                    val wasCoding = existing.enabledCoding
                     install(entry.text).fold(
                         onSuccess = {
-                            if (!wasEnabled) setEnabled(id, false)
+                            if (!wasAgent) setEnabledForScope(id, SCOPE_AGENT, false)
+                            if (!wasCoding) setEnabledForScope(id, SCOPE_CODING, false)
                             updated += id
                         },
                         onFailure = { skipped += id }
@@ -772,5 +1007,13 @@ class SkillRegistry(
 
     private fun notifyChanged() {
         _changes.tryEmit(Unit)
+    }
+
+    companion object {
+        /** Agent 工位 scope 值（Agent 屏 / Agent 市场）。 */
+        const val SCOPE_AGENT = "agent"
+
+        /** Coding 工位 scope 值（Coding 屏 / Coding 市场）。 */
+        const val SCOPE_CODING = "coding"
     }
 }
