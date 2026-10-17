@@ -26,6 +26,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Read apex-agent-kit pin
+        id: akitpin
+        # 标准任务循环库（com.apex.agentkit:agent-loop）——core:code-engine
+        # 的镜像编译需要库源码上 classpath（与 Gradle composite build 等价的
+        # kotlinc 裸编译路径）。缺锁回退 main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/agent-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-agent-kit (agent-loop compile deps, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-agent-kit
+          ref: ${{ steps.akitpin.outputs.sha }}
+          path: apex-agent-kit
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -126,10 +142,20 @@ jobs:
             $(find core/code-tools/src/main/kotlin -name "*.kt") \
             -jvm-target 17
 
+      - name: Compile apex-agent-kit agent-loop (标准任务循环库)
+        run: |
+          # 库源码镜像编译（等价 composite build 的 kotlinc 路径）：纯 Kotlin JVM，
+          # 依赖仅 coroutines —— /tmp/apex-libs 已备齐。产物供 core:code-engine
+          # 的 StandardKitAdapter / StandardTextKernel 消费。
+          CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')"
+          kotlinc -cp "$CLASSPATH" -d /tmp/build/agent-loop \
+            $(find apex-agent-kit/agent-loop/src/main/kotlin -name "*.kt") \
+            -jvm-target 17
+
       - name: Compile core:code-engine (Coding 模式引擎)
         run: |
           SER_PLUGIN=$HOME/kotlinc/lib/kotlinx-serialization-compiler-plugin.jar
-          CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')/tmp/build/agent-engine:/tmp/build/tool-registry:/tmp/build/llm-adapter:/tmp/build/logging"
+          CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')/tmp/build/agent-loop:/tmp/build/agent-engine:/tmp/build/tool-registry:/tmp/build/llm-adapter:/tmp/build/logging"
           kotlinc -Xplugin=$SER_PLUGIN -cp "$CLASSPATH" -d /tmp/build/code-engine \
             $(find core/code-engine/src/main/kotlin -name "*.kt") \
             -jvm-target 17
