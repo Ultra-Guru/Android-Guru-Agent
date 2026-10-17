@@ -68,14 +68,16 @@ import com.kyant.backdrop.Backdrop
  * - [busy] = false（命令收束）：自动折叠成头行胶囊，[exitCode] 就地展示
  *   （exit 0 绿点 / 非零红点 + 等宽 exit N 文本），点箭头可展开回看尾窗；
  * - 正文展开/收起走 AnimatedVisibility（expand/shrinkVertically，先例见
- *   UpdateBanner / SlashCommandButton），不再硬切。
+ *   OfflineBanner / SlashCommandButton），不再硬切。
  *
  * ## v6 玻璃接入 + 尾窗瘦身
  *
- * - [backdrop]：悬浮栈与时间轴 layerBackdrop 源互为兄弟 —— 传入即经
- *   TerminalGlassSurface 获得 kyant0 真实 backdrop 采样（恒定深色玻璃
- *   材质，白天模式也是深色磨砂而非实心黑板）；null = 深色霜面兜底。
- * - 尾窗高度 260 → 168dp：悬浮栈总高「流水 UI 太大」反馈的主诉项。
+ * - [backdrop]：内联于时间轴后，本面板处在本侧 layerBackdrop 采样源内部
+ *   —— 自采样会递归污染，调用方传 null 走固定深色霜面兜底（终端语义
+ *   恒定深色，白天模式也是深色面板，视觉不回退）；若未来他处复用且
+ *   与采样源互为兄弟节点，传入 backdrop 即恢复 kyant0 真实采样。
+ * - 尾窗高度 260 → 168dp（约 8 行正文，流式预览够用；全量输出走胶囊
+ *   详情弹层）。
  */
 @Composable
 internal fun CodeTerminalPanel(

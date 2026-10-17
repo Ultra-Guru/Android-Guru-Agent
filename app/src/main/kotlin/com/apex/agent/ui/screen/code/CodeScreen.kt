@@ -97,7 +97,6 @@ import com.apex.agent.ui.screen.agent.toolkit.OutputFormat
 import com.apex.agent.ui.screen.code.editor.CodeEditorPanel
 import com.apex.agent.ui.screen.code.longtask.CodeLongTaskSheet
 import com.apex.agent.ui.screen.code.stream.CodeStreamTimeline
-import com.apex.agent.ui.screen.code.stream.CodeTerminalPanel
 import com.apex.agent.ui.screen.code.stream.CodeToolDetailSheet
 import com.apex.agent.ui.glass.GlassCard
 import com.apex.agent.ui.glass.GlassModalScrim
@@ -186,7 +185,8 @@ fun CodeScreen(
     // rememberSaveable：旋转/重建后详情弹层不丢（String? 可入 Bundle）。
     var selectedToolCallId by rememberSaveable { mutableStateOf<String?>(null) }
     // 终端面板折叠态 + 用户手动态（流水式折叠，用户需求：「终端命令等流水
-    // 似输出：运行时保持展开跟随输出，完成后自动折叠成胶囊」）。
+    // 似输出：运行时保持展开跟随输出，完成后自动折叠成胶囊」；2026-10 起
+    // 面板内联在时间轴尾部随流水推进，不再悬浮输入框上方）。
     // 语义与 ThinkingCard 的 userToggled 守卫同款：
     // - 新命令开跑（terminalBusy=true）→ 强制展开并重置手动态（新输出值得被看到）；
     // - 命令收束（terminalBusy=false）→ 未手动干预过则自动折叠（头行保留
@@ -270,6 +270,14 @@ fun CodeScreen(
                 bottomInset = lowerStackInsetDp,
                 backdrop = streamBackdrop,
                 onToolClick = { call -> selectedToolCallId = call.id },
+                // ═══ 流水式终端（2026-10 用户反馈）：终端面板内联时间轴 ═══
+                // 活跃 BASH 的尾窗跟在流式输出末尾随流水推进，不再作为悬浮
+                // 栈成员叠在输入框上方；折叠/展开时机仍由 terminalBusy 驱动。
+                terminalCollapsed = terminalCollapsed,
+                onToggleTerminalCollapse = {
+                    terminalUserToggled = true
+                    terminalCollapsed = !terminalCollapsed
+                },
                 // ═══ 玻璃幕帘（2026-10 用户反馈）：提问卡挂起时时间轴整体模糊 ═══
                 // 液态玻璃的 backdrop 采样存在盲区（动画图层/采样时序差），盲区
                 // 文字会以锐利形态透过霜面与卡内内容叠字 —— 被覆盖内容自身先
@@ -284,28 +292,14 @@ fun CodeScreen(
             }
 
             // ═══ 底部悬浮栈：悬浮于时间轴之上（backdrop 采样前提）═══
+            // 终端面板已内联时间轴尾部（2026-10 用户反馈：跟随流水输出，
+            // 不悬浮输入框上方）—— 悬浮栈只剩提问卡/错误条/选择器/输入栏。
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .onSizeChanged { lowerStackInsetPx = it.height }
             ) {
-                // 终端面板（活跃 BASH 的脉冲尾窗；独立锚定与时间轴互不抢占）
-                if (state.stream.activeTerminalCallId != null || state.stream.terminalContent.isNotBlank()) {
-                    CodeTerminalPanel(
-                        content = state.stream.terminalContent,
-                        activeCommand = state.stream.terminalCommandSummary.ifBlank { null },
-                        busy = state.stream.terminalBusy,
-                        exitCode = state.stream.terminalExitCode,
-                        collapsed = terminalCollapsed,
-                        onToggleCollapse = {
-                            terminalUserToggled = true
-                            terminalCollapsed = !terminalCollapsed
-                        },
-                        backdrop = streamBackdrop
-                    )
-                }
-
                 // v1.0 #155：工具/权限门的结构化提问卡（与 AskUser 的纯文本对话框并存；
                 // 工具执行已挂起，用户必须作答才能继续）
                 pendingAgentQuestion?.let { question ->

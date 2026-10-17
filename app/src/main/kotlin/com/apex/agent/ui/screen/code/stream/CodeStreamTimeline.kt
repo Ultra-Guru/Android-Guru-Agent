@@ -50,6 +50,13 @@ import kotlinx.coroutines.launch
  * [StreamEntryGroup.GROUP_THRESHOLD] 个的一段 → 折叠为「+N 更多」
  * 分组行（展开态本地 remember 自持）；其余逐条渲染。
  *
+ * ## 流水式终端（内联）
+ *
+ * 活跃 BASH 的 [CodeTerminalPanel] 恒为时间轴末项（尾哨兵之前）：
+ * 跟在流式输出末尾随流水推进，命令收束自动折叠成头行胶囊留在流内
+ * —— 不再作为底部悬浮栈成员叠在输入框上方（2026-10 用户反馈）。
+ * 终端尾窗内容长度计入锚定节流档位，脉冲整块 flush 时同样跟底。
+ *
  * ## 双锚定之一（时间轴侧）
  *
  * [rememberStreamAnchor]：流式即时跟随 + 阅读模式保护 + 收尾动画；
@@ -59,7 +66,7 @@ import kotlinx.coroutines.launch
  *
  * - [backdrop]：时间轴 = 玻璃采样源（悬浮输入栏 GlassCard 的 backdrop
  *   来源；null = 不接线，独立预览场景用）；
- * - [bottomInset]：底部悬浮栈（终端尾窗/输入栏等）高度 —— 列表
+ * - [bottomInset]：底部悬浮栈（提问卡/错误条/输入栏等）高度 —— 列表
  *   contentPadding 与 FAB 底部偏移同步补偿，最后一条不被遮挡。
  */
 @Composable
@@ -69,6 +76,9 @@ internal fun CodeStreamTimeline(
     onToolClick: (StreamToolCall) -> Unit,
     bottomInset: Dp = 0.dp,
     backdrop: LayerBackdrop? = null,
+    // 流水式终端折叠态（CodeScreen 按 terminalBusy 驱动 + userToggled 守卫）
+    terminalCollapsed: Boolean = false,
+    onToggleTerminalCollapse: () -> Unit = {},
     // 玻璃幕帘（GlassModalVeil）：提问卡挂起时由调用方传入 blur 修饰 ——
     // 根 Box 接收，LazyColumn 的 layerBackdrop 采样源保持原样不失真。
     modifier: Modifier = Modifier
@@ -76,10 +86,14 @@ internal fun CodeStreamTimeline(
     val listState = rememberLazyListState()
     val grouped = remember(snapshot.entries) { groupConsecutive(snapshot.entries) }
     val contentLength = remember(snapshot.entries) { snapshot.entries.sumOf { entryContentLength(it) } }
+    // 锚定节流档位计入终端尾窗：终端脉冲（4KB/8行/120ms 整块 flush）
+    // 只改 terminalContent 不改 entries —— 不计入则内联终端跟随输出时
+    // 时间轴不追底，新脉冲内容滞留视口外。
+    val anchorTick = anchorFollowTick(contentLength + snapshot.terminalContent.length)
     val anchor = rememberStreamAnchor(
         listState = listState,
         itemCountKey = snapshot.entries.size,
-        contentTickKey = anchorFollowTick(contentLength),
+        contentTickKey = anchorTick,
         isStreaming = isStreaming
     )
     val scope = rememberCoroutineScope()
@@ -113,6 +127,23 @@ internal fun CodeStreamTimeline(
                             )
                         }
                     }
+                }
+            }
+            // ═══ 流水式终端（内联末项）：活跃 BASH 或有尾窗内容时渲染 ═══
+            // 跟在流式输出末尾随流水推进；收束后折叠成头行胶囊留在流内。
+            // backdrop 传 null：本列表自身就是 layerBackdrop 采样源，自采样
+            // 会递归污染 —— TerminalGlassSurface 走固定深色霜面兜底（终端
+            // 语义恒深，视觉不回退）。
+            if (snapshot.activeTerminalCallId != null || snapshot.terminalContent.isNotBlank()) {
+                item(key = "stream-inline-terminal") {
+                    CodeTerminalPanel(
+                        content = snapshot.terminalContent,
+                        activeCommand = snapshot.terminalCommandSummary.ifBlank { null },
+                        busy = snapshot.terminalBusy,
+                        exitCode = snapshot.terminalExitCode,
+                        collapsed = terminalCollapsed,
+                        onToggleCollapse = onToggleTerminalCollapse
+                    )
                 }
             }
             // 尾哨兵：snapToLast 锚到末条顶部而非尾部——长气泡流式时新内容

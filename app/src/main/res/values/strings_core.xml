@@ -630,10 +630,6 @@
     <string name="about_update_patch_direct">Single-hop direct</string>
     <string name="about_update_patch_chain_n">%1$d-segment chain</string>
     <string name="about_update_patch_background_note">Runs in background · resumable · you can leave this page</string>
-    <string name="update_banner_title">New version v%1$s</string>
-    <string name="update_banner_body">Delta patch update available — not mandatory</string>
-    <string name="update_banner_view">View</string>
-    <string name="update_banner_dismiss_desc">Ignore this version</string>
     <string name="about_update_patch_downloading">Downloading patches %1$d/%2$d… %3$d%%</string>
     <string name="about_update_patch_applying">Building new APK… patch %1$d/%2$d · %3$d%%</string>
     <string name="about_update_patch_done_title">Delta update ready</string>
