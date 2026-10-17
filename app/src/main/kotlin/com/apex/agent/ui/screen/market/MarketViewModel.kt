@@ -253,6 +253,12 @@ class MarketViewModel @Inject constructor(
     /** 安装确认的挂起等待桥（awaitInstallConfirmation ↔ confirm/dismiss）。 */
     private var pendingInstallDecision: kotlinx.coroutines.CompletableDeferred<Boolean>? = null
 
+    /**
+     * 本实例注册进 MarketInstallManager 的确认门禁（#347）：onCleared 时按
+     * 身份注销（只拆自己，不误伤其他存活注册者）。
+     */
+    private var myInstallConfirmGate: (suspend (com.apex.agent.marketplace.MarketInstallManager.ManifestPreview) -> Boolean)? = null
+
     init {
         refresh()
         loadMcpCatalog()
@@ -275,9 +281,15 @@ class MarketViewModel @Inject constructor(
             .launchIn(viewModelScope)
         // P1 修复：接入安装确认门禁（市场内容不可信 → 干运行预览 → 用户目检
         // → 才落盘+激活）。唤醒已建成但零接线的 ManifestDryRunDialog 三件套。
-        installManager.installConfirmGate = { preview ->
-            withContext(Dispatchers.Main) { awaitInstallConfirmation(preview) }
-        }
+        // #347 P2 修复：经身份注册表注册（不再覆盖全局变量）—— onCleared
+        // 只按身份注销自己的门禁；市场页返回栈复入 A/B 两份 VM 时，B 销毁
+        // 只拆 B 的注册，A（及所有单例控制器）的门禁继续生效。
+        val gate: suspend (com.apex.agent.marketplace.MarketInstallManager.ManifestPreview) -> Boolean =
+            { preview ->
+                withContext(Dispatchers.Main) { awaitInstallConfirmation(preview) }
+            }
+        myInstallConfirmGate = gate
+        installManager.registerInstallConfirmGate(gate)
     }
 
     /** 挂起等待用户对安装预览的确认（主线程弹窗， CompletableDeferred 桥接）。 */
@@ -327,11 +339,17 @@ class MarketViewModel @Inject constructor(
      * viewModelScope 取消而终结，但单例控制器（Hub 等）自持 scope 的
      * 安装协程不会 —— 不清理 gate 会让它们的 busy 标志永不复位（安装
      * 按钮永久禁用，MarketHubController.installSkill 守卫直接 return）。
+     *
+     * #347：清理改为按身份注销 —— 只拆本实例注册的那一份；市场页返回栈
+     * 复入（A 未销毁又建 B）时，B 销毁后 A 的门禁自动回位，不再被静默
+     * 解除（旧实现无条件置 null 让所有后续安装绕过目检门禁）。
      */
     override fun onCleared() {
         pendingInstallDecision?.let { runCatching { it.complete(false) } }
         pendingInstallDecision = null
-        installManager.installConfirmGate = null
+        // #347：按身份注销（只拆自己那一份；当前生效门禁回退到仍存活注册者，
+        // 不再出现旧实现「B 销毁 → 全局 gate 置 null → 存活的 A 绕过门禁」的静默解除
+        installManager.unregisterInstallConfirmGate(myInstallConfirmGate)
         super.onCleared()
     }
 
