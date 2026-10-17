@@ -238,9 +238,12 @@ private fun GlassLabContent(mode: GlassLabMode) {
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         LabHeader(mode)
-        // v1.4.3：顶阶动态（流光边框/呼吸光晕；镜面扫掠已随 kyant0 迁移退役）
+        // v1.4.3：顶阶动态（边界光轨/呼吸光晕；镜面扫掠已随 kyant0 迁移退役）
         // —— 页头之后首个区块
         DynamicsSection()
+        // v1.4.9：特效工坊 —— 边界光系扩展陈列（常驻循环集中于此，
+        // 本页为动效验证屏的豁免规则见文件头）
+        EffectsWorkshopSection()
         BackdropZone(state = backdropState, mode = mode)
         SamplesSection(mode = mode)
         // kyant0：Ambient 材质对照样本（agent 回复气泡同款，白天/夜间自动跟随主题）
