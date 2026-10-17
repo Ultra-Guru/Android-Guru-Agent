@@ -117,11 +117,10 @@ class MarketViewModel @Inject constructor(
     private var pendingInstallDecision: kotlinx.coroutines.CompletableDeferred<Boolean>? = null
 
     /**
-     * #347：本实例注入全局确认门禁的 gate 引用（身份判定用）。
-     * MarketViewModel 按导航条目创建，市场页在返回栈中复入时 A/B 两个
-     * 实例会先后覆盖 [MarketInstallManager.installConfirmGate] —— 赋值与
-     * 清除都必须按实例身份判断（onCleared 里用 === 比对），否则 B 的
-     * 销毁会把存活 A 的 gate 一并置空，后续安装绕过不可信内容门禁。
+     * #347：本实例注册进 MarketInstallManager 确认门禁的 gate（身份注册表
+     * 模式）：init 时经 registerInstallConfirmGate 注册，onCleared 时按身份
+     * 注销（只拆自己，不误伤其他存活注册者）。市场页返回栈复入 A/B 两
+     * 实例时，B 销毁后 A 的门禁自动回位（注册表回退），不再被静默解除。
      */
     private val myInstallConfirmGate: suspend (
         com.apex.agent.marketplace.MarketInstallManager.ManifestPreview
@@ -151,9 +150,10 @@ class MarketViewModel @Inject constructor(
             .launchIn(viewModelScope)
         // P1 修复：接入安装确认门禁（市场内容不可信 → 干运行预览 → 用户目检
         // → 才落盘+激活）。唤醒已建成但零接线的 ManifestDryRunDialog 三件套。
-        // #347：gate 赋值保存实例引用（myInstallConfirmGate），onCleared 按
-        // 身份清除 —— 双 VM 复入时不互踩。
-        installManager.installConfirmGate = myInstallConfirmGate
+        // #347 P2 修复：经身份注册表注册（不再覆盖全局变量）—— onCleared
+        // 只按身份注销自己的门禁；市场页返回栈复入 A/B 两份 VM 时，B 销毁
+        // 只拆 B 的注册，A（及所有单例控制器）的门禁继续生效。
+        installManager.registerInstallConfirmGate(myInstallConfirmGate)
     }
 
     /** 挂起等待用户对安装预览的确认（主线程弹窗， CompletableDeferred 桥接）。 */
@@ -199,23 +199,23 @@ class MarketViewModel @Inject constructor(
     }
 
     /**
-     * P1/P2 修复（VM 销毁时的门禁收尾）+ #347（双 VM 复入互踩）：
-     * 挂起在 gate 上的安装协程按「取消」结算（pendingInstallDecision）；
-     * gate 本体只在自己仍持有它时清除（=== 身份判定）。若后建 VM 已覆盖
-     * gate，本实例销毁不动它；若 gate 已被清除，安装管道 fail-closed
+     * P1/P2 修复（VM 销毁时的门禁收尾）：挂起在 gate 上的安装协程随
+     * viewModelScope 取消而终结，但单例控制器（Hub 等）自持 scope 的
+     * 安装协程不会 —— 不清理 gate 会让它们的 busy 标志永不复位（安装
+     * 按钮永久禁用，MarketHubController.installSkill 守卫直接 return）。
+     *
+     * #347：清理改为按身份注销 —— 只拆本实例注册的那一份；市场页返回栈
+     * 复入（A 未销毁又建 B）时，B 销毁后 A 的门禁自动回位，不再被静默
+     * 解除。若注册表清空（无任何存活注册者），安装管道 fail-closed
      * （gate 为 null = 拒绝安装，见 MarketInstallManager），busy 标志经
      * 失败分支照常复位，不会出现「安装按钮永久禁用」。
      */
     override fun onCleared() {
         pendingInstallDecision?.let { runCatching { it.complete(false) } }
         pendingInstallDecision = null
-        // #347：只清除自己拥有的 gate —— 后建的 VM 已覆盖 gate 时，本实例的
-        // 销毁不得把人家的门禁一并拆掉（否则存活 VM 与单例控制器的后续安装
-        // 全部绕过确认门禁）。安装管道自身 fail-closed：gate 为 null 时拒绝
-        // 而非放行（见 MarketInstallManager.installSkillFromJson）。
-        if (installManager.installConfirmGate === myInstallConfirmGate) {
-            installManager.installConfirmGate = null
-        }
+        // #347：按身份注销（只拆自己那一份；当前生效门禁回退到仍存活注册者，
+        // 不再出现旧实现「B 销毁 → 全局 gate 置 null → 存活的 A 绕过门禁」的静默解除
+        installManager.unregisterInstallConfirmGate(myInstallConfirmGate)
         super.onCleared()
     }
 
