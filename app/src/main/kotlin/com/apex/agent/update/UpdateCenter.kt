@@ -37,10 +37,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  *   时逐段跳过 —— 中断后从断点继续，不重拉已下载的分段（见
  *   [PatchUpdateEngine.start]）。
  * - **全局检测**：App 启动即静默检查一次（[checkForUpdate]，6 小时节流），
- *   发现新版本经 [bannerVisible] 驱动 ApexRoot 顶部浮窗 —— 非强制、可关、
- *   可「忽略此版本」。
+ *   结果经 [checkState] 供关于页渲染；新版本提醒统一走更新日志弹窗
+ *   （com.apex.agent.changelog）+ 关于页更新面板（顶部常驻浮窗横幅已移除）。
  * - **状态共享**：[checkState] / [patchIndex] / [patchState] 三个 StateFlow
- *   即全部真相源；关于页、浮窗、未来的通知栏入口都读同一份。
+ *   即全部真相源；关于页与未来的通知栏入口都读同一份。
  *
  * v1.4.7 热更新体系接入（docs/hot-update-pipeline.md）：
  * - **有效版本口径**：[checkForUpdate] 内部以 max(包 versionCode, 已应用热更
@@ -62,7 +62,6 @@ object UpdateCenter {
     /** 更新偏好（与 [MirrorPrefs] 同一 SharedPreferences 文件）。 */
     private const val PREFS = "apex_update_prefs"
     private const val KEY_LAST_CHECK = "last_check_epoch_ms"
-    private const val KEY_DISMISSED_TAG = "banner_dismissed_tag"
 
     /** 进程级单次初始化守卫。 */
     private val initialized = AtomicBoolean(false)
@@ -138,10 +137,6 @@ object UpdateCenter {
     private val _hotState = MutableStateFlow<HotUpdateEngine.State?>(null)
     val hotState: StateFlow<HotUpdateEngine.State?> = _hotState.asStateFlow()
 
-    /** 浮窗可见性 —— App 启动检查发现新版且未被「忽略此版本」时置真。 */
-    private val _bannerVisible = MutableStateFlow(false)
-    val bannerVisible: StateFlow<Boolean> = _bannerVisible.asStateFlow()
-
     // ═══ 生命周期 ═══════════════════════════════════════════════════════
 
     /** 幂等初始化（ApexApp.onCreate 调用）。重复调用无副作用。 */
@@ -182,8 +177,6 @@ object UpdateCenter {
             AppLogger.instance.debug(
                 LogCategory.SYSTEM, "UpdateCenter", "检查节流命中（$fromTrigger）—— 6h 内已查过"
             )
-            // 节流命中但已有结果：浮窗判定照跑（进程重建后 bannerVisible 归零的场景）
-            refreshBannerVisibility()
             return
         }
         if (_checkState.value is CheckState.Checking) return
@@ -208,7 +201,6 @@ object UpdateCenter {
                 }
                 _checkState.value = CheckState.Done(result)
                 markChecked(context)
-                refreshBannerVisibility()
                 AppLogger.instance.info(
                     LogCategory.SYSTEM, "UpdateCenter",
                     "更新检查完成（$fromTrigger）：${result.javaClass.simpleName}"
@@ -242,8 +234,6 @@ object UpdateCenter {
      */
     fun startPatchFlow(chain: PatchIndex.Chain, manifest: UpdateManifest, mirror: DownloadMirror) {
         if (patchEngine.isRunning) return
-        // 流水线启动即接管浮窗注意力（正在更新时无需再提醒）
-        _bannerVisible.value = false
         patchEngine.start(scope, chain, manifest, mirror) { state ->
             _patchState.value = state
         }
@@ -269,14 +259,13 @@ object UpdateCenter {
 
     /**
      * 启动热更流水线（关于页按钮触发；此后可离开页面，下载与落位继续）。
-     * 已在跑则忽略；生效后自动重检（UI 翻转 UpToDate / 浮窗收敛）。
+     * 已在跑则忽略；生效后自动重检（UI 翻转 UpToDate）。
      */
     fun startHotFlow(hot: HotAsset, manifest: UpdateManifest, mirror: DownloadMirror) {
         if (hotEngine.isRunning) return
-        _bannerVisible.value = false
         hotEngine.start(scope, hot, manifest, mirror) { state ->
             _hotState.value = state
-            // 生效即重检：有效版本追平清单 → UpToDate，浮窗自动收敛
+            // 生效即重检：有效版本追平清单 → UpToDate
             if (state is HotUpdateEngine.State.Applied) {
                 checkForUpdate(
                     BuildConfig.VERSION_CODE, force = true, fromTrigger = "hot-applied"
@@ -344,51 +333,4 @@ object UpdateCenter {
         if (patchEngine.isRunning) return
         _patchState.value = PatchUpdateEngine.State.Ready(apk, sizeBytes)
     }
-
-    /** 当前检查命中的清单（浮窗/关于页共用；未检查或非 Available 时 null）。 */
-    fun availableManifest(): UpdateManifest? =
-        (_checkState.value as? CheckState.Done)
-            ?.result?.let { it as? UpdateCheckResult.Available }?.latest
-
-    // ═══ 浮窗（非强制更新提醒）═════════════════════════════════════════
-
-    /** 检查结果变化后重算浮窗可见性（Available + 未忽略本版 + 无就绪/进行态）。 */
-    private fun refreshBannerVisibility() {
-        val manifest = availableManifest() ?: run {
-            _bannerVisible.value = false
-            return
-        }
-        val tag = manifest.tag.orEmpty()
-        val dismissed = dismissedTag()
-        val patchIdle = _patchState.value.let {
-            it == null || it is PatchUpdateEngine.State.Failed
-        }
-        // 热更流水线进行中同样接管浮窗注意力（正在更新时无需再提醒）
-        val hotIdle = _hotState.value.let {
-            it == null || it is HotUpdateEngine.State.Failed
-        }
-        _bannerVisible.value = tag.isNotEmpty() && tag != dismissed && patchIdle && hotIdle
-    }
-
-    /** 「忽略此版本」—— 持久化 dismissed tag；该版本不再弹浮窗（下个新版重新弹）。 */
-    fun dismissBannerForCurrentVersion() {
-        val tag = availableManifest()?.tag.orEmpty()
-        if (tag.isNotEmpty()) {
-            appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit().putString(KEY_DISMISSED_TAG, tag).apply()
-            AppLogger.instance.debug(
-                LogCategory.SYSTEM, "UpdateCenter", "用户忽略新版本浮窗：$tag"
-            )
-        }
-        _bannerVisible.value = false
-    }
-
-    /** 浮窗点击「查看」：本次会话隐藏（不持久化忽略 —— About 页仍完整展示）。 */
-    fun consumeBannerForNavigation() {
-        _bannerVisible.value = false
-    }
-
-    private fun dismissedTag(): String =
-        appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_DISMISSED_TAG, "").orEmpty()
 }

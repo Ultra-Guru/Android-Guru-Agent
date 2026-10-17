@@ -70,7 +70,6 @@ import com.apex.agent.ui.component.ContextMeterBar
 import com.apex.agent.ui.screen.code.WorkspaceBrowserHost
 import com.apex.agent.ui.component.FeedbackHost
 import com.apex.agent.ui.component.OfflineBanner
-import com.apex.agent.ui.component.UpdateBanner
 import com.apex.agent.ui.glass.GlassIconButton
 import com.apex.agent.ui.screen.about.AboutScreen
 import com.apex.agent.ui.screen.browser.BrowserScreen
@@ -174,9 +173,6 @@ fun ApexRoot() {
 
     // ═══ v1.4.4 #6：全局网络状态 —— 离线横幅（所有页面顶部）═══
     val isOnline by agentVm.networkMonitor.isOnline.collectAsStateWithLifecycle()
-
-    // ═══ v1.4.5：新版本浮窗（非强制）—— App 启动静默检查发现新版时顶部提醒 ═══
-    val updateBanner by UpdateCenter.bannerVisible.collectAsStateWithLifecycle()
 
     // ═══ v1.4.5：启动即检查更新（UpdateCenter 内部 6h 节流；进程重建不重复拉）═══
     // v1.4.9 闪退防御：整体 runCatching —— requireContext 在中枢未就绪时
@@ -317,17 +313,12 @@ fun ApexRoot() {
                 // ═══ v1.4.4 #6：离线横幅（断网即现，恢复即隐；不影响任何页面布局）═══
                 OfflineBanner(isOnline = isOnline)
 
-                // ═══ v1.4.5：新版本浮窗（非强制 —— 检测到新版且未忽略时顶部提醒）═══
-                UpdateBanner(
-                    visible = updateBanner,
-                    // #224：压栈语义 —— 「查看」进关于页后按返回回原页
-                    onOpenAbout = { navStack.push(DrawerDestination.About) }
-                )
-
                 // ═══ 更新日志弹窗（changelog 通道 v1）═══
                 // 升级/热更后首启弹「本次更新内容」（每版一次，「知道了」落已读）；
                 // 远端领先且自动检查开启时弹「发现新版本」（日志 + 前往下载）。
                 // 离线/异常静默降级，绝不阻塞启动；详见 com.apex.agent.changelog 包。
+                // （顶部常驻「发现新版本」浮窗横幅已移除 —— 2026-10 用户反馈
+                // 暗色主题下呈一条黑杠；新版本提醒统一走更新日志弹窗 + 关于页）。
                 ChangelogStartupHost(
                     autoUpdateCheck = agentVm.uiSettings.value.autoUpdateCheck
                 )

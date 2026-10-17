@@ -630,10 +630,6 @@
     <string name="about_update_patch_direct">单跳直达</string>
     <string name="about_update_patch_chain_n">%1$d 段链式</string>
     <string name="about_update_patch_background_note">后台进行中 · 支持断点续传 · 可离开此页</string>
-    <string name="update_banner_title">发现新版本 v%1$s</string>
-    <string name="update_banner_body">增量补丁更新可用 · 不强制</string>
-    <string name="update_banner_view">查看</string>
-    <string name="update_banner_dismiss_desc">忽略此版本</string>
     <string name="about_update_patch_downloading">正在下载补丁 %1$d/%2$d… %3$d%%</string>
     <string name="about_update_patch_applying">正在合成新版本 APK… 补丁 %1$d/%2$d · %3$d%%</string>
     <string name="about_update_patch_done_title">增量更新完成</string>
