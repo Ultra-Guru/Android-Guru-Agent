@@ -79,47 +79,41 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * # Code ViewModel — Coding 模式屏的状态与事件归约
  *
- * 与 AgentChatViewModel 的关系：**平行实现而非复用**（两模式的交互面差异大 ——
- * Code 屏以工作区为中心、工具卡以 diff/验证为核心），但引擎侧契约完全一致：
+ * 与 AgentChatViewModel 的关系：**平行实现而非复用**（两模式交互面差异大
+ * —— Code 屏以工作区为中心、工具卡以 diff/验证为核心），但引擎侧契约一致：
  * AgentEvent 流 → UI 状态归约 → ConfirmationSink/submitUserInput 回传。
  *
- * 精简的事件归约（16ms 级流式节流不做 —— 编码回复长度可控，直接增量 append），
- * 实现已按 God-file 预算拆至同包扩展 [CodeEventReducer.kt]（模式同
- * AgentChatEventApplier）：
- * - ResponseChunk → 当前助手消息追加；
- * - ToolCallStart/Complete → 工具卡（CodeEdit/write 渲染 diff 摘要）；
- * - UserInputRequired → 挂起等待用户输入（AskUser）；
- * - Complete/Aborted/Error → 收尾 + todo 快照刷新。
+ * 精简的事件归约（16ms 级流式节流不做 —— 编码回复长度可控，直接增量
+ * append），实现已按 God-file 预算拆至同包扩展 [CodeEventReducer.kt]
+ * （模式同 AgentChatEventApplier）：ResponseChunk → 助手消息追加；
+ * ToolCallStart/Complete → 工具卡（CodeEdit/write 渲染 diff 摘要）；
+ * UserInputRequired → 挂起等输入（AskUser）；Complete/Aborted/Error →
+ * 收尾 + todo 快照刷新。
  *
  * ## v1.0 会话恢复（#152）
  *
- * 引擎侧上下文由 CodeConversationMemory 按 workspaceId 持久化（API 级完整
- * 历史，setActiveWorkspace 时自动恢复）；本层补齐 **UI 快照**——消息列表 /
- * todos / 当前文件存 `code_sessions/ws_<id>.json`，进程被杀后回到现场：
- * - bindWorkspace 时「冲刷旧快照 → 恢复新快照」串行（Mutex 防快速切换交错）；
- * - 消息变更后 800ms 防抖落盘（对齐 Agent 模式 ChatHistoryManager 惯例）；
- * - onCleared 时经独立 IO scope 最后冲刷一次（viewModelScope 在 onCleared
- *   前已被取消，防抖窗口内的尾巴变更不能丢）。
+ * 引擎侧上下文由 CodeConversationMemory 按 workspaceId 持久化（API 级
+ * 完整历史，setActiveWorkspace 时自动恢复）；本层补齐 **UI 快照**——
+ * 消息列表 / todos / 当前文件存 `code_sessions/ws_<id>.json`：bindWorkspace
+ * 「冲刷旧快照 → 恢复新快照」串行（Mutex 防快速切换交错）；消息变更后
+ * 800ms 防抖落盘（对齐 Agent 屏惯例）；onCleared 经独立 IO scope 最后
+ * 冲刷（viewModelScope 届时已取消，防抖尾巴不能丢）。
  *
  * ## v1.0 编辑器面板与 @ 引用（#154）
  *
- * - sendMessage 前经 AtRefParser 提取 `@file:line` 选区引用：引用块拼进
- *   引擎输入（用户消息 UI 展示保持原文），首个引用设为当前文件并打开面板；
- * - CodeEdit / CodeWrite 成功后自动跟随被改文件（编辑器显示最新现场）；
- * - 面板数据直读工作区文件（EditorFileLoader，绕开工具输出的 8000 字符
- *   截断），行点击回填 `@file:line` 到输入草稿。
+ * sendMessage 前经 AtRefParser 提取 `@file:line` 选区引用：引用块拼进
+ * 引擎输入（用户消息 UI 展示保持原文），首个引用设为当前文件并打开面板；
+ * CodeEdit / CodeWrite 成功后自动跟随被改文件；面板数据直读工作区文件
+ * （EditorFileLoader，绕开工具输出 8000 字符截断），行点击回填 `@file:line`。
  *
  * ## 文件拆分（God-file 预算纪律）
  *
  * VM 行数守 1200 门禁（quality-gate check_file_size）：**只减不增**。
  * 已拆出的本包内 internal 扩展文件（模式同 Agent 屏 AgentChat* 拆分，
- * 调用点无感知，依赖成员开放 internal）：
- * - `CodeLongTaskCenterOps.kt` — v1.2 长任务中心用户操作流（面板开关/
- *   刷新、复制/重跑/续跑/删除/父对比/模板启动；run 生命周期钩子仍在
- *   本文件的 runEngine 内）。
- * - `CodeGoalController.kt` — v3 GOAL 目标模式控制（协调器状态同步/设定
- *   弹层/开始/停止/重启/首条拦截/深潜线保障；模式附属动作经 setMode 尾部
- *   的 onEnterGoalMode 单点接入）。
+ * 调用点无感知，依赖成员开放 internal）：`CodeLongTaskCenterOps.kt`（v1.2
+ * 长任务中心用户操作流；run 生命周期钩子仍在 runEngine 内）；
+ * `CodeGoalController.kt`（v3 GOAL 目标模式控制全链；模式附属动作经
+ * setMode 尾部 onEnterGoalMode 单点接入）。
  */
 @HiltViewModel
 class CodeViewModel @Inject constructor(
@@ -129,15 +123,13 @@ class CodeViewModel @Inject constructor(
     private val codeSessionStore: CodeSessionStore,
     private val workspaceRoots: CodeWorkspaceRoots,
     private val userQuestionBridge: UserQuestionBridge,
-    // Issue #164：全局规则（设置页 RulesSettingsSection 编辑）——每次发送前
-    // 同步到引擎，refreshContext 时经 RulesProvider 注入 additionalSystemContext
-    //（goal 控制器扩展 CodeGoalController.kt 同包消费：轮次默认值/深潜线持久化）
+    // Issue #164：全局规则（设置页编辑）——发送前同步到引擎，refreshContext 时
+    // 经 RulesProvider 注入（goal 扩展 CodeGoalController.kt 同包消费）
     internal val settingsRepository: com.apex.agent.ui.screen.settings.SettingsRepository,
-    // v1.2 长任务中心：追踪器（事件流聚合）+ 复制引擎 + 存储（列表面板直读）
-    // + 档位效能统计（长任务记录 → 工作区×档位聚合，档位效能页签数据源）
-    // 可见性：longTaskTracker 开放供 CodeEventReducer.kt（main 侧拆分）消费；
-    // taskCopyEngine / longTaskStore / thinkingEvolutionTracker 开放供
-    // CodeLongTaskCenterOps.kt（PR 侧拆分）消费——两个拆分文件并存所需。
+    // v1.2 长任务中心：追踪器（事件流聚合）+ 复制引擎 + 存储（面板直读）+ 档位
+    // 效能统计。可见性：longTaskTracker 供 CodeEventReducer.kt（main 侧拆分）；
+    // taskCopyEngine / longTaskStore / thinkingEvolutionTracker 供
+    // CodeLongTaskCenterOps.kt（PR 侧拆分）——两拆分文件并存所需。
     internal val longTaskTracker: LongTaskTracker,
     internal val taskCopyEngine: TaskCopyEngine,
     internal val longTaskStore: LongTaskStore,
@@ -167,8 +159,8 @@ class CodeViewModel @Inject constructor(
 ) : ViewModel() {
 
     // ═══ v1.6 工作区浏览器（全屏页，apex-workspace-kit）═══
-    // 适配层薄包装（git 通道 / 工作区根 / 日志 / 引擎事件映射）住
-    // WorkspaceKitHolder.kt；控制器随 VM 生命周期，导航往返保持状态。
+    // 适配层薄包装（git 通道/工作区根/日志/引擎事件映射）住 WorkspaceKitHolder.kt；
+    // 控制器随 VM 生命周期，导航往返保持状态。
     internal val workspaceKit by lazy {
         WorkspaceKitHolder(gitRunner, workspaceRoots, viewModelScope)
     }
@@ -186,9 +178,8 @@ class CodeViewModel @Inject constructor(
     private var sessionLoadJob: Job? = null
 
     // ═══ 胶囊时间轴（渲染通道数据源）═══
-    // 渲染半边：事件归约进 session，25ms ticker 拉快照进 uiState.stream；
-    // 副作用半边（长任务追踪/深水区观察器/落盘）仍走既有 reduce——双通道
-    // 彻底分流，引擎与既有功能零改动。
+    // 渲染半边：事件归约进 session，25ms ticker 拉快照进 uiState.stream；副作用
+    // 半边（长任务追踪/深水区观察器/落盘）仍走既有 reduce——双通道彻底分流。
 
     /** 胶囊时间轴会话（VM 自持，跨 run 累积；恢复/清空见 bind/clear）。 */
     private val streamSession = CodeStreamSession()
@@ -260,12 +251,11 @@ class CodeViewModel @Inject constructor(
         if (active != null) {
             bindWorkspace(active)
         }
-        // v1.2 七档思考系统：恢复持久化档位（codeThinkingLevel 与聊天页
-        // thinkingLevelOverride 互不干扰，两模式各自记忆）
+        // v1.2 七档思考系统：恢复持久化档位（与聊天页 thinkingLevelOverride
+        // 互不干扰，两模式各自记忆）
         restoreThinkingLevel()
-        // v1.5 双思考逻辑：恢复持久化档位（空/未知 → 深潜，历史行为零变化）。
-        // 先于 setMode：GOAL 恢复会强制深潜线，若在其后恢复会反切回持久化
-        // 逻辑线、破坏「GOAL 恒走深潜」不变量。
+        // v1.5 双思考逻辑：恢复持久化档位（空/未知 → 深潜）。先于 setMode：
+        // GOAL 恢复强制深潜线，在后恢复会反切持久化线、破坏「GOAL 恒走深潜」。
         restoreLogicMode()
         // #197：Coding 屏模式同步（引擎侧恒为 BUILD/PLAN；未知值回退 BUILD）
         val startupMode = settingsRepository.agentSettings.value.let { s ->
