@@ -337,7 +337,8 @@ class McpClient(
                     }
                 )
 
-                val response = sendRequest(request)                val result = response["result"]?.jsonObject
+                val response = sendRequest(request)
+                val result = response["result"]?.jsonObject
                 val tools = result?.get("tools")?.jsonArray ?: JsonArray(emptyList())
 
                 tools.forEach { toolJson ->
@@ -383,7 +384,8 @@ class McpClient(
                 }
             )
 
-            val response = sendRequest(request)            val result = response["result"]?.jsonObject
+            val response = sendRequest(request)
+            val result = response["result"]?.jsonObject
 
             val content = result?.get("content")?.jsonArray?.mapNotNull { item ->
                 val obj = item.jsonObject
