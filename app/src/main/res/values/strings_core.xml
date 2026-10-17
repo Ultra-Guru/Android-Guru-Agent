@@ -608,6 +608,7 @@
     <string name="changelog_dialog_got_it">Got it</string>
     <string name="changelog_dialog_download">Open download page</string>
     <string name="changelog_dialog_browse_close">Close</string>
+    <string name="changelog_pr_section">Merged pull requests (new features / fixes)</string>
     <string name="changelog_dialog_open_release">Open release page</string>
     <string name="changelog_history_empty">No changelog yet (first release on the changelog channel)</string>
     <string name="changelog_history_failed">Failed to load changelog — offline and no embedded copy</string>

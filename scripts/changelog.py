@@ -1,28 +1,41 @@
 #!/usr/bin/env python3
-"""Android-Guru-Agent 更新日志工具链（changelog 通道 v1）—— validate / build。
+"""Android-Guru-Agent 更新日志工具链（changelog 通道 v2）—— validate / build。
 
 用法（CI 与本地共用，零第三方依赖）：
 
   validate
       校验 `.changelog/unreleased/` 片段：文件名合法（防路径穿越/空格）、
-      非空、单片段 ≤ 32KB。changelog-gate.yml 的 PR 门禁调用；违规退出码 1。
+      非空（元数据标记行不计内容）、单片段 ≤ 32KB。changelog-gate.yml 的
+      PR 门禁调用；违规退出码 1。
 
-  build --version 1.4.9.20 --code 96 [--tag v1.4.9.20] [--date 2026-10-17]
+  build --version 1.4.9.27 --code 103 [--tag v1.4.9.27] [--date 2026-10-17]
         [--out dist/changelog.json] [--history-file <json>]
-      聚合 `.changelog/unreleased/*.md` → changelog.json（apex-changelog-v1）：
-        - notes：片段中的 Markdown 列表项（- / * / • / 1.）剥壳提取，无列表
-          项时回退首行摘要 —— App 弹窗以 notes 渲染要点；
-        - markdown：片段原文拼接（发布页正文 / 高级查看的完整底稿）；
+        [--consumed-out dist/consumed-fragments.txt]
+      聚合 `.changelog/unreleased/*.md` → changelog.json（apex-changelog-v2）：
+
+      片段元数据（文件头 `<!-- key: value -->` 连续标记行，聚合时剥离）：
+        - `source: publisher` —— 由管理端发布器 App（apex-Administrator）发送
+          的片段 → 一级日志（弹窗置顶展示）；
+        - `target: 1.4.9.27` —— 本片段面向的目标版本；构建版本 < target 时
+          本片段缓发布（不收录、不消费，留在 unreleased 等待未来版本）；
+          缺省 = 下一版即收录。无 source 标记的片段 = PR 片段 → 二级日志
+          （弹窗一级要点下方滑动区，按「新增功能 / 修复」分组展示）。
+
+      changelog.json 结构（v2，对 v1 客户端前向兼容 —— 未知字段忽略）：
+        - notes：一级日志要点（仅 publisher 片段的列表项剥壳）—— 弹窗置顶；
+        - pr：二级日志分组 [{title, notes}]（PR 片段，每组 = 一条 PR 摘要）；
+        - markdown：全量底稿（publisher 在前，`---` 分隔，PR 在后）；
         - history：拉取发布仓库现有 changelog.json 合并（同 versionCode 去重），
           最新在前封顶 50 条；`--history-file` 供本地/离线复现。
-      片段为空不硬失败 —— 生成兜底文案（发布列车绝不断），但 PR 门禁
-      （changelog-gate.yml）会在合并前拦住「改码不写日志」的 PR。
 
-数据流向（release.yml）：
-  本脚本 build → dist/changelog.json
-    ├─ Release 资产上传（files: dist/* 自动带走）
-    ├─ 提交发布仓库 main（raw CDN = 客户端固定读取点，与 version.json 同宿主）
-    └─ 拷贝 app/src/main/assets/changelog.json（APK 内置离线兜底，.gitignore 排除）
+      消费闭环（配合 release.yml）：
+        `--consumed-out` 写出本次已收录片段文件名清单（每行一个）——
+        release.yml 发布成功后据此归档到 `.changelog/released/<tag>/` 并
+        从 unreleased 移除（带 [skip ci] 回推 main）；target 面向未来的
+        片段不进清单（跨版本滞留，绝不误消费）。
+
+      片段全空不硬失败 —— 生成兜底文案（发布列车绝不断），但 PR 门禁
+      （changelog-gate.yml）会在合并前拦住「改码不写日志」的 PR。
 """
 
 import argparse
@@ -38,14 +51,20 @@ UNRELEASED_DIR = REPO_ROOT / ".changelog" / "unreleased"
 RELEASE_REPO = "Ultra-Guru/Android-Guru-Agent-Release"
 CHANGELOG_RAW_URL = f"https://raw.githubusercontent.com/{RELEASE_REPO}/main/changelog.json"
 
-SCHEMA = "apex-changelog-v1"
+SCHEMA = "apex-changelog-v2"
 MAX_FRAGMENT_BYTES = 32 * 1024
-MAX_NOTES = 20
+MAX_NOTES = 20          # 一级日志（publisher）要点上限
+MAX_PR_GROUPS = 12      # 二级日志（PR）分组上限
+MAX_GROUP_NOTES = 10    # 单组要点上限
 MAX_HISTORY = 50
 FALLBACK_NOTE = "例行版本更新与稳定性改进。"
 VERSION_RE = re.compile(r"^\d+(\.\d+)+$")
 NAME_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._-]*\.md$")
 BULLET_RE = re.compile(r"^\s*(?:[-*•·]|\d+[.、)])\s+(.+?)\s*$")
+HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$")
+# 文件头元数据标记：<!-- source: publisher --> / <!-- target: 1.4.9.27 -->
+MARKER_RE = re.compile(r"^<!--\s*(source|target)\s*:\s*([^>]*?)\s*-->\s*$", re.IGNORECASE)
+TS_PREFIX_RE = re.compile(r"^\d{8}-\d{6}-")
 
 
 def load_fragments():
@@ -56,6 +75,45 @@ def load_fragments():
         p for p in UNRELEASED_DIR.iterdir()
         if p.is_file() and p.suffix == ".md" and not p.name.startswith(".")
     )
+
+
+def strip_head_markers(text):
+    """剥离文件头连续标记行 → (meta, body)。标记仅认头部（正文中的
+    HTML 注释不受影响）；同键重复以首见为准。"""
+    lines = text.splitlines()
+    meta = {"source": None, "target": None}
+    i = 0
+    while i < len(lines):
+        m = MARKER_RE.match(lines[i])
+        if not m:
+            break
+        key, value = m.group(1).lower(), m.group(2).strip()
+        if key in meta and meta[key] is None and value:
+            meta[key] = value
+        i += 1
+    return meta, "\n".join(lines[i:])
+
+
+def version_tuple(v):
+    v = str(v).strip().lstrip("vV")
+    parts = []
+    for seg in v.split("."):
+        try:
+            parts.append(int(seg))
+        except ValueError:
+            return None
+    return tuple(parts) if parts else None
+
+
+def version_le(a, b):
+    """a <= b（数值逐段）；任一无法解析 → 宽松收录（宁可重复展示，绝不丢日志）。"""
+    ta, tb = version_tuple(a), version_tuple(b)
+    if ta is None or tb is None:
+        return True
+    n = max(len(ta), len(tb))
+    ta += (0,) * (n - len(ta))
+    tb += (0,) * (n - len(tb))
+    return ta <= tb
 
 
 def cmd_validate(_args):
@@ -72,8 +130,11 @@ def cmd_validate(_args):
         if len(data) > MAX_FRAGMENT_BYTES:
             problems.append(f"{p.name}: 超过 {MAX_FRAGMENT_BYTES // 1024}KB 上限")
             continue
-        if not data.decode("utf-8", errors="replace").strip():
-            problems.append(f"{p.name}: 内容为空")
+        _meta, body = strip_head_markers(
+            data.decode("utf-8", errors="replace")
+        )
+        if not body.strip():
+            problems.append(f"{p.name}: 内容为空（元数据标记行不计内容）")
     if problems:
         for line in problems:
             print(f"::error::changelog validate — {line}", file=sys.stderr)
@@ -82,28 +143,45 @@ def cmd_validate(_args):
     return 0
 
 
-def extract_notes(fragments):
-    """弹窗要点：列表项剥壳提取；整段无列表项时回退首行摘要（截 60 字）。"""
-    notes = []
-    for p in fragments:
-        text = p.read_text(encoding="utf-8")
-        frag_notes = [
-            m.group(1) for m in map(BULLET_RE.match, text.splitlines()) if m
-        ]
-        if not frag_notes:
-            first = next(
-                (ln.strip() for ln in text.splitlines() if ln.strip()), ""
-            )
-            first = re.sub(r"^#+\s*", "", first)
-            if first:
-                frag_notes = [first[:60] + ("…" if len(first) > 60 else "")]
-        notes.extend(frag_notes)
+def extract_bullets(body):
+    """单片段要点：列表项剥壳；整段无列表项时回退首行摘要（截 60 字）。"""
+    notes = [
+        m.group(1) for m in map(BULLET_RE.match, body.splitlines()) if m
+    ]
+    if not notes:
+        first = next(
+            (ln.strip() for ln in body.splitlines() if ln.strip()), ""
+        )
+        first = re.sub(r"^#+\s*", "", first)
+        if first:
+            notes = [first[:60] + ("…" if len(first) > 60 else "")]
+    return notes
+
+
+def dedup_keep_order(items):
     seen, uniq = set(), []
-    for n in notes:  # 去重保序
+    for n in items:
         if n not in seen:
             seen.add(n)
             uniq.append(n)
-    return uniq[:MAX_NOTES]
+    return uniq
+
+
+def group_title(body, path):
+    """PR 组标题：首个 Markdown 标题 > 首个非列表正文行 > 文件名 slug。"""
+    for ln in body.splitlines():
+        m = HEADING_RE.match(ln.strip())
+        if m:
+            return m.group(1)
+    first = next(
+        (ln.strip() for ln in body.splitlines()
+         if ln.strip() and not BULLET_RE.match(ln) and not MARKER_RE.match(ln)),
+        "",
+    )
+    if first:
+        return first[:60] + ("…" if len(first) > 60 else "")
+    slug = TS_PREFIX_RE.sub("", path.name).removesuffix(".md")
+    return slug.replace("-", " ").replace("_", " ").strip() or path.stem
 
 
 def fetch_remote_history():
@@ -136,15 +214,52 @@ def cmd_build(args):
         datetime.timezone.utc
     ).strftime("%Y-%m-%d")
 
-    fragments = load_fragments()
-    notes = extract_notes(fragments)
-    if not notes:
+    # ── 收录判定：target 感知 ─────────────────────────────────────────
+    # 面向未来版本的片段（target > 构建版本）缓发布：不收录、不消费。
+    included, deferred = [], []
+    for p in load_fragments():
+        raw = p.read_text(encoding="utf-8")
+        meta, body = strip_head_markers(raw)
+        target = meta.get("target")
+        if target and not version_le(target, version):
+            deferred.append((p, target))
+            print(
+                f"⏭️  {p.name}: target v{target} > 本版 v{version} —— 缓发布"
+                "（留在 unreleased 等待未来版本）"
+            )
+            continue
+        included.append((p, meta, body))
+
+    publisher = [x for x in included
+                 if (x[1].get("source") or "").lower() == "publisher"]
+    pr_frags = [x for x in included if x not in publisher]
+
+    # ── 一级日志：publisher 片段要点（弹窗置顶）──────────────────────
+    notes = dedup_keep_order(
+        [n for _p, _m, b in publisher for n in extract_bullets(b)]
+    )[:MAX_NOTES]
+
+    # ── 二级日志：PR 片段分组（下滑区「新增功能 / 修复」介绍）────────
+    pr_groups = []
+    for p, _m, body in pr_frags[:MAX_PR_GROUPS]:
+        g_notes = dedup_keep_order(extract_bullets(body))[:MAX_GROUP_NOTES]
+        if g_notes:
+            pr_groups.append({"title": group_title(body, p), "notes": g_notes})
+    if len(pr_frags) > MAX_PR_GROUPS:
+        pr_groups.append({
+            "title": f"另有 {len(pr_frags) - MAX_PR_GROUPS} 项合并内容",
+            "notes": [f"详见发布页完整清单（共 {len(pr_frags)} 条 PR 片段）"],
+        })
+
+    # ── 兜底：两级全空才使用兜底文案（发布列车绝不断）──────────────
+    if not notes and not pr_groups:
         notes = [FALLBACK_NOTE]
+
+    tier1_md = [b.strip() for _p, _m, b in publisher if b.strip()]
+    tier2_md = [b.strip() for _p, _m, b in pr_frags if b.strip()]
     markdown = (
-        "\n\n---\n\n".join(
-            p.read_text(encoding="utf-8").strip() for p in fragments
-        )
-        if fragments
+        "\n\n---\n\n".join(tier1_md + tier2_md)
+        if (tier1_md or tier2_md)
         else FALLBACK_NOTE
     )
 
@@ -155,6 +270,7 @@ def cmd_build(args):
         "date": date,
         "title": f"v{version} 更新内容",
         "notes": notes,
+        "pr": pr_groups,
         "markdown": markdown,
         "releaseUrl": f"https://github.com/{RELEASE_REPO}/releases/tag/{tag}",
     }
@@ -182,13 +298,26 @@ def cmd_build(args):
         json.dump(manifest, f, indent=2, ensure_ascii=False)
         f.write("\n")
 
+    # ── 消费清单：本版已收录片段（publisher + pr 全部）───────────────
+    # release.yml 发布成功后据此归档；target 缓发布片段不在其列。
+    if args.consumed_out:
+        consumed = pathlib.Path(args.consumed_out)
+        consumed.parent.mkdir(parents=True, exist_ok=True)
+        with open(consumed, "w", encoding="utf-8") as f:
+            for p, _m, _b in included:
+                f.write(p.name + "\n")
+            f.flush()
+
     print(
-        f"📦 changelog.json — v{version}({code})：{len(fragments)} 片段 / "
-        f"{len(notes)} notes / history {len(history)} 条（remote 存量 "
-        f"{len(old_history)}）"
+        f"📦 changelog.json — v{version}({code})：{len(included)} 片段收录 / "
+        f"{len(deferred)} 缓发布 | 一级 {len(notes)} 条（publisher "
+        f"{len(publisher)}）+ 二级 {len(pr_groups)} 组（pr {len(pr_frags)}）/ "
+        f"history {len(history)} 条（remote 存量 {len(old_history)}）"
     )
-    for n in notes[:10]:
-        print(f"    - {n}")
+    for n in notes[:8]:
+        print(f"    • {n}")
+    for g in pr_groups[:4]:
+        print(f"    ▸ [{g['title']}] {len(g['notes'])} 条")
     return 0
 
 
@@ -208,6 +337,11 @@ def main():
         "--history-file",
         default=None,
         help="本地 history 源（测试/离线复现；缺省拉发布仓库 raw）",
+    )
+    b.add_argument(
+        "--consumed-out",
+        default=None,
+        help="本版已收录片段文件名清单输出（release.yml 归档依据）",
     )
     args = ap.parse_args()
     sys.exit(cmd_validate(args) if args.cmd == "validate" else cmd_build(args))
