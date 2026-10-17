@@ -82,6 +82,9 @@ class MarketHubController @Inject constructor(
     /**
      * 安装一个 Hub 技能：下载 manifest → 统一安装管道。
      * 行级 busy（installingSkillId）防并发下载。
+     *
+     * per-scope 默认启用工位 = 条目声明的 scope（agent/coding；all = 双开）——
+     * 与市场分级过滤同源（HubSkillEntry.visibleToScope）。
      */
     fun installSkill(entry: HubSource.HubSkillEntry) {
         if (_uiState.value.installingSkillId != null) return
@@ -90,7 +93,8 @@ class MarketHubController @Inject constructor(
             try {
                 hubSource.downloadSkillManifest(entry).fold(
                     onSuccess = { manifestJson ->
-                        installManager.installSkillFromJson(manifestJson)
+                        val defaultScope = entry.scope.takeIf { it == "agent" || it == "coding" }
+                        installManager.installSkillFromJson(manifestJson, defaultScope = defaultScope)
                     },
                     onFailure = { Result.failure(it) }
                 ).fold(

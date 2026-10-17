@@ -82,7 +82,16 @@ class MarketInstallManager @Inject constructor(
     /** 用户在确认对话框点了取消（调用方可据此静默或给出友好文案，区别于真失败）。 */
     class InstallCancelledByUser : Exception("已取消安装，未写入任何内容")
 
-    suspend fun installSkillFromJson(content: String, trusted: Boolean = false): Result<String> =
+    suspend fun installSkillFromJson(
+        content: String,
+        trusted: Boolean = false,
+        /**
+         * 安装默认启用工位（"agent" / "coding"；null = 双工位同开，旧行为）。
+         * 市场分级隔离：从 Coding 市场装的技能默认只在 Coding 工位启用（另一侧
+         * 去对应市场自行开启）；升级重装则保留用户既有 per-scope 启停态。
+         */
+        defaultScope: String? = null
+    ): Result<String> =
         withContext(Dispatchers.IO) {
             val gate = installConfirmGate
             if (!trusted && gate != null) {
@@ -94,10 +103,35 @@ class MarketInstallManager @Inject constructor(
                     return@withContext Result.failure(InstallCancelledByUser())
                 }
             }
+            // per-scope 默认启用工位判定：安装前取既有条目（install 会重置为双开）
+            val parsed = runCatching {
+                json.decodeFromString<com.apex.agent.core.tools.skill.SkillManifest>(content)
+            }.getOrNull()
+            val existing = parsed?.let { skillRegistry.get(it.id) }
+            val scoped = defaultScope == SkillRegistry.SCOPE_AGENT || defaultScope == SkillRegistry.SCOPE_CODING
             skillRegistry.install(content).map { manifest ->
                 // 安装即装备：用户从市场装技能的意图就是要用；不激活的话
                 // 渐进披露目录里只是多一行摘要，方法论仍是「未装载」。
                 skillActivation.activate(manifest.id)
+                if (scoped) {
+                    if (existing != null) {
+                        // 升级重装：保留用户既有 per-scope 启停态
+                        if (!existing.enabledAgent) {
+                            skillRegistry.setEnabledForScope(manifest.id, SkillRegistry.SCOPE_AGENT, false)
+                        }
+                        if (!existing.enabledCoding) {
+                            skillRegistry.setEnabledForScope(manifest.id, SkillRegistry.SCOPE_CODING, false)
+                        }
+                    } else {
+                        // 新装：默认只在安装来源分级启用（双工位隔离）
+                        val other = if (defaultScope == SkillRegistry.SCOPE_AGENT) {
+                            SkillRegistry.SCOPE_CODING
+                        } else {
+                            SkillRegistry.SCOPE_AGENT
+                        }
+                        skillRegistry.setEnabledForScope(manifest.id, other, false)
+                    }
+                }
                 "已安装并装备 Skill：${manifest.name}（${manifest.id}），下一轮对话即生效"
             }
         }
@@ -161,7 +195,7 @@ class MarketInstallManager @Inject constructor(
     }
 
     // ═══ Skill：URL 安装（IO 线程 + 2MB 上限）═══
-    suspend fun installSkillFromUrl(url: String): Result<String> =
+    suspend fun installSkillFromUrl(url: String, defaultScope: String? = null): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
                 val request = Request.Builder()
@@ -177,7 +211,7 @@ class MarketInstallManager @Inject constructor(
                     String(bytes, Charsets.UTF_8)
                 }
             }.fold(
-                onSuccess = { content -> installSkillFromJson(content) },
+                onSuccess = { content -> installSkillFromJson(content, defaultScope = defaultScope) },
                 onFailure = { Result.failure(Exception("下载失败：${it.message}")) }
             )
         }
@@ -257,7 +291,10 @@ class MarketInstallManager @Inject constructor(
         }
 
     // ═══ Skill：魔搭 SKILL.md → apex-skill-v1（prompt 型）═══
-    suspend fun installModelScopeSkill(skill: ModelScopeSource.ModelScopeSkill): Result<String> =
+    suspend fun installModelScopeSkill(
+        skill: ModelScopeSource.ModelScopeSkill,
+        defaultScope: String? = null
+    ): Result<String> =
         withContext(Dispatchers.IO) {
             val markdown = modelScopeSource.fetchSkillMarkdown(skill).getOrElse {
                 return@withContext Result.failure(Exception("SKILL.md 下载失败：${it.message}"))
@@ -300,7 +337,7 @@ class MarketInstallManager @Inject constructor(
 
                 // P2（对齐 ClawHub 模式）：登记失败/中途取消时回收资源目录 ——
                 // 旧实现无回滚，ms-<id>/ 成永久孤儿（未登记 → uninstall 也清不到它）。
-                installSkillFromJson(manifest).also { result ->
+                installSkillFromJson(manifest, defaultScope = defaultScope).also { result ->
                     if (result.isFailure) runCatching { skillHome.deleteRecursively() }
                 }.map { msg ->
                     if (resourceFailed) "$msg（部分资源文件下载失败）" else msg
@@ -329,7 +366,10 @@ class MarketInstallManager @Inject constructor(
      *    （SkillRegistry.uninstall 会连该目录一并清理）；
      * 5. 构建 prompt 型 manifest（promptInjection = SKILL.md 全文）并安装。
      */
-    suspend fun installClawHubSkill(entry: ClawHubSource.ClawHubSkillEntry): Result<String> =
+    suspend fun installClawHubSkill(
+        entry: ClawHubSource.ClawHubSkillEntry,
+        defaultScope: String? = null
+    ): Result<String> =
         withContext(Dispatchers.IO) {
             val installId = ClawHubSource.installIdFor(entry.slug)
 
@@ -405,7 +445,7 @@ class MarketInstallManager @Inject constructor(
                 )
 
                 // 6. 安装；失败时回收资源目录，避免孤儿文件
-                installSkillFromJson(manifest).also { result ->
+                installSkillFromJson(manifest, defaultScope = defaultScope).also { result ->
                     if (result.isFailure) runCatching { skillHome.deleteRecursively() }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -573,6 +613,11 @@ class MarketInstallManager @Inject constructor(
         val skillMarkdownUrl: String? = null,
         /** SKILL：仓库归属（author 字段与 id 去重用）。 */
         val skillOwner: String? = null,
+        /**
+         * SKILL：安装时 manifest scope 盖章（null = all 双工位）。
+         * GitHub 精选 coding 技能传 "coding" —— 只进 Coding 市场 / Coding 屏。
+         */
+        val scope: String? = null,
         /** MCP：安装决策树输入。 */
         val server: RegistryServer? = null
     ) {
@@ -713,8 +758,11 @@ class MarketInstallManager @Inject constructor(
         return candidates.distinctBy { it.skillId }
     }
 
-    /** 安装单个 GitHub 候选（用户在候选列表点选，或单候选直装）。 */
-    suspend fun installGithubCandidate(candidate: GithubRepoCandidate): Result<String> =
+    /** 安装单个 GitHub 候选（用户在候选列表点选，或单候选直装；GitHub 精选专栏同管线）。 */
+    suspend fun installGithubCandidate(
+        candidate: GithubRepoCandidate,
+        defaultScope: String? = null
+    ): Result<String> =
         withContext(Dispatchers.IO) {
             when (candidate.kind) {
                 GithubRepoCandidate.Kind.MCP -> {
@@ -722,12 +770,15 @@ class MarketInstallManager @Inject constructor(
                         ?: return@withContext Result.failure(Exception("候选缺少 MCP server 元数据"))
                     registryMcpInstaller.install(server)
                 }
-                GithubRepoCandidate.Kind.SKILL -> installGithubSkillCandidate(candidate)
+                GithubRepoCandidate.Kind.SKILL -> installGithubSkillCandidate(candidate, defaultScope)
             }
         }
 
     /** 技能候选安装：拉 SKILL.md → frontmatter 严格校验 → prompt 型安装。 */
-    private suspend fun installGithubSkillCandidate(candidate: GithubRepoCandidate): Result<String> {
+    private suspend fun installGithubSkillCandidate(
+        candidate: GithubRepoCandidate,
+        defaultScope: String? = null
+    ): Result<String> {
         val markdown = candidate.skillMarkdownUrl?.let { tryDownload(it) }
             ?: return Result.failure(Exception("技能文档下载失败（${candidate.name}）"))
         val (fmName, fmDescription, fmLicense) = parseSkillFrontmatter(markdown)
@@ -754,8 +805,10 @@ class MarketInstallManager @Inject constructor(
                 author = "github:$owner",
                 markdown = markdown,
                 homepage = repoHomepage ?: candidate.skillMarkdownUrl,
-                license = fmLicense
-            )
+                license = fmLicense,
+                scope = candidate.scope
+            ),
+            defaultScope = defaultScope
         )
     }
 
@@ -893,7 +946,9 @@ class MarketInstallManager @Inject constructor(
         homepage: String? = null,
         license: String? = null,
         trustLevel: String? = null,
-        tags: List<String> = emptyList()
+        tags: List<String> = emptyList(),
+        /** 工位作用域盖章（null = all 双工位；GitHub 精选 coding 技能传 "coding"）。 */
+        scope: String? = null
     ): String = buildString {
         append("{\n")
         append("\"schema\":\"apex-skill-v1\",\n")
@@ -910,6 +965,7 @@ class MarketInstallManager @Inject constructor(
             append(tags.joinToString(",") { "\"${escapeJson(it)}\"" })
             append("],\n")
         }
+        if (scope != null) append("\"scope\":\"${escapeJson(scope)}\",\n")
         append("\"promptInjection\":\"${escapeJson(markdown)}\",\n")
         append("\"tools\":[],\n")
         append("\"configuration\":{\"autoSetup\":[]}\n")
