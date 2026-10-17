@@ -435,24 +435,32 @@ class ApexAgentEngine(
      * Called from the UI (e.g. `ChatViewModel.confirmPlan`) to resume the suspended
      * plan-mode execution. No-op if no plan is currently awaiting confirmation.
      * Exposed to the orchestrator via the [ConfirmationSink] interface.
+     *
+     * #340：Boolean 回执 —— true = 已送达挂起等待；false = 无挂起等待或已被
+     * abort/超时收场，调用方（VM）据此给出「未送达」提示（#214 同型）。
+     * complete 与读取同收 [confirmationLock]，与注册/abort 互斥（窗口②同源）。
      */
-    override fun submitPlanConfirmation(confirmed: Boolean) {
-        planConfirmationDeferred?.complete(PlanDecision.legacy(confirmed))
-    }
+    override fun submitPlanConfirmation(confirmed: Boolean): Boolean =
+        synchronized(confirmationLock) {
+            planConfirmationDeferred?.complete(PlanDecision.legacy(confirmed)) ?: false
+        }
 
     /** #169：带步骤勾选/重排的确认重载（UI 人控透传，语义见 [PlanDecision]）。 */
-    fun submitPlanConfirmation(confirmed: Boolean, enabledSteps: List<Int>?, order: List<Int>?) {
-        planConfirmationDeferred?.complete(PlanDecision(confirmed, enabledSteps, order))
-    }
+    fun submitPlanConfirmation(confirmed: Boolean, enabledSteps: List<Int>?, order: List<Int>?): Boolean =
+        synchronized(confirmationLock) {
+            planConfirmationDeferred?.complete(PlanDecision(confirmed, enabledSteps, order)) ?: false
+        }
 
     /**
      * Called from the UI (e.g. `ChatViewModel.submitSpecConfirmation`) to resume the
      * suspended spec-mode execution. No-op if no spec is currently awaiting confirmation.
      * Exposed to the orchestrator via the [ConfirmationSink] interface.
+     * #340：同 plan 通道的 Boolean 回执（语义见 [submitPlanConfirmation]）。
      */
-    override fun submitSpecConfirmation(confirmed: Boolean) {
-        specConfirmationDeferred?.complete(confirmed)
-    }
+    override fun submitSpecConfirmation(confirmed: Boolean): Boolean =
+        synchronized(confirmationLock) {
+            specConfirmationDeferred?.complete(confirmed) ?: false
+        }
 
     /**
      * 兼容旧接口：纯文本输入委托给多模态入口。

@@ -19,6 +19,10 @@ import org.json.JSONObject
  *    key 至少包含文档要求的 `tool / command / tier / decision / durationMs`；
  *  - 双写：本地文件（256KB 滚动，保留后半段）+ Logcat（I 级，tag `ToolAudit`）；
  *  - 文件位置：`<filesDir>/logs/tool-audit.jsonl`（与 hooks.log 同目录族）；
+ *  - #336 纵深防御：`command` 字段写入前统一过 [SensitiveArgRedactor.redact]
+ *    做字段级脱敏——api_key / token 等凭证值折叠为前后 4 字符，覆盖本类
+ *    的全部调用方（风险门、shell 通道执行器等，含 curl 头里的
+ *    Authorization: Bearer 形态）；
  *  - 线程安全：单 write 方法 + synchronized（审计写入本就不在热路径 ——
  *    每工具调用一次，远低于 hooks.log 的每次 POST_TOOL_USE 频率）；
  *  - 写失败静默（磁盘满/IO 异常不允许炸工具执行链路），仅 Logcat 告警。
@@ -57,7 +61,7 @@ class ToolAuditLogger @Inject constructor(
             put("tool", event.tool)
             put("decision", event.decision)
             event.tier?.let { put("tier", it) }
-            event.command?.let { put("command", it.take(COMMAND_TRUNCATE)) }
+            event.command?.let { put("command", SensitiveArgRedactor.redact(it).take(COMMAND_TRUNCATE)) }
             event.durationMs?.let { put("durationMs", it) }
             event.success?.let { put("success", it) }
             event.exitCode?.let { put("exitCode", it) }

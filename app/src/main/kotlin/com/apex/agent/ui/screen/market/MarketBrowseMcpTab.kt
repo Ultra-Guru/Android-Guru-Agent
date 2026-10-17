@@ -26,6 +26,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
+import com.apex.agent.core.tools.marketplace.MarketNames
 
 /**
  * ═══ 市场 · 发现视图 · MCP 子页签 ═══
@@ -182,7 +183,8 @@ internal fun BrowseMcpTab(state: MarketUiState, viewModel: MarketViewModel) {
         items(registryState.servers, key = { it.key }) { entry ->
             RegistryServerCard(
                 entry = entry,
-                installed = state.mcps.any { it.name == entry.configName },
+                // #346：已安装徽标用归一化比较键（大小写/分隔符变体折叠）
+                installed = state.mcps.any { MarketNames.isSameServer(it.name, entry.configName) },
                 installing = registryState.installingKey == entry.key,
                 installBusy = registryState.installingKey != null,
                 onInstall = { viewModel.registry.installServer(entry) }
@@ -243,7 +245,8 @@ internal fun BrowseMcpTab(state: MarketUiState, viewModel: MarketViewModel) {
         items(mcpSoState.servers, key = { it.key }) { entry ->
             McpSoCard(
                 entry = entry,
-                installed = state.mcps.any { it.name == entry.name },
+                // #346：同上，归一化比较键（两侧都 normalize）
+                installed = state.mcps.any { MarketNames.isSameServer(it.name, entry.name) },
                 installing = mcpSoState.installingSlug == entry.slug,
                 installBusy = mcpSoState.installingSlug != null,
                 onInstall = { viewModel.mcpSo.installServer(entry) }
@@ -304,7 +307,8 @@ internal fun BrowseMcpTab(state: MarketUiState, viewModel: MarketViewModel) {
         items(operitState.plugins, key = { it.key }) { entry ->
             OperitPluginCard(
                 entry = entry,
-                installed = state.mcps.any { it.name == entry.configName },
+                // #346：同上，归一化比较键（两侧都 normalize）
+                installed = state.mcps.any { MarketNames.isSameServer(it.name, entry.configName) },
                 installing = operitState.installingKey == entry.key,
                 installBusy = operitState.installingKey != null,
                 onInstall = { viewModel.operit.installPlugin(entry) }

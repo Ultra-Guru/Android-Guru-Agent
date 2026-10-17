@@ -177,17 +177,34 @@ fun MarketViewModel.connectMcp(name: String) {
         // 的注册路径）。
         val listener = startupListenerFor(name)
         try {
-            mcpManager.connect(name, listener).fold(
-                onSuccess = {
-                    // 真实工具发现：与 McpToolRegistrar 同一数据源（listServerTools）。
-                    // #206：收尾逻辑抽取为 finishStartupWithTools（tracker 去重重记）。
-                    finishStartupWithTools(name)
-                    message(languageManager.getString(R.string.market_mcp_connected).format(name))
-                },
-                onFailure = {
-                    message(languageManager.getString(R.string.market_connect_failed).format(it.message ?: ""))
-                }
-            )
+            // #338 修复：市场安装的配置恒 enabled=false（安装 ≠ 启动），
+            // 但「启动」按钮 = 用户显式连接意图 —— 入口先把开关拨到启用
+            // 再 connect。否则完整握手（沙箱 npx 可能数分钟）后被自己的
+            // stillCurrent 注册门禁拒绝，表象是「连接许久然后失败」。
+            val config = mcpManager.getConfigs().firstOrNull { it.name == name }
+            val enableFailure = if (config != null && !config.enabled) {
+                mcpManager.setEnabled(name, true).exceptionOrNull()
+            } else {
+                null
+            }
+            if (enableFailure != null) {
+                message(
+                    languageManager.getString(R.string.market_action_failed)
+                        .format("启用服务器失败：${enableFailure.message ?: ""}")
+                )
+            } else {
+                mcpManager.connect(name, listener).fold(
+                    onSuccess = {
+                        // 真实工具发现：与 McpToolRegistrar 同一数据源（listServerTools）。
+                        // #206：收尾逻辑抽取为 finishStartupWithTools（tracker 去重重记）。
+                        finishStartupWithTools(name)
+                        message(languageManager.getString(R.string.market_mcp_connected).format(name))
+                    },
+                    onFailure = {
+                        message(languageManager.getString(R.string.market_connect_failed).format(it.message ?: ""))
+                    }
+                )
+            }
         } finally {
             _uiState.update { it.copy(mcpConnecting = null) }
         }

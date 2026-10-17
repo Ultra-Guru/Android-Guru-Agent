@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apex.agent.R
+import com.apex.agent.ui.screen.terminal.ConsoleTheme
 
 /**
  * T87：终端配色方案选择器（底部弹层）。
@@ -64,7 +65,7 @@ fun TerminalSchemePickerSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Icon(Icons.Default.Palette, contentDescription = null, tint = Color(0xFF4EE9B0))
+                Icon(Icons.Default.Palette, contentDescription = null, tint = ConsoleTheme.accent)
                 Text(
                     stringResource(R.string.term_scheme_picker_title),
                     fontWeight = FontWeight.SemiBold,
@@ -109,7 +110,7 @@ private fun SchemeCard(
     Surface(
         shape = RoundedCornerShape(12.dp),
         border = if (selected) {
-            androidx.compose.foundation.BorderStroke(2.dp, Color(0xFF4EE9B0))
+            androidx.compose.foundation.BorderStroke(2.dp, ConsoleTheme.accent)
         } else {
             androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2A3530))
         },
@@ -156,7 +157,7 @@ private fun SchemeCard(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .size(20.dp)
-                            .background(Color(0xFF4EE9B0), CircleShape),
+                            .background(ConsoleTheme.accent, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(

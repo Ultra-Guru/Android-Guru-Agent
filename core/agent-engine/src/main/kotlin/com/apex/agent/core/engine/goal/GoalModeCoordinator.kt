@@ -34,6 +34,16 @@ class GoalModeCoordinator(
     /** 引擎钩子回调互斥：验收挂起期间不允许 start/stop 并发改状态。 */
     private val mutex = Mutex()
 
+    /**
+     * #351②：start/stop 与 onAgentTurn 写回的互斥 —— 旧实现 stopGoal 无锁直写
+     * vs onAgentTurn 持锁但写回用**验证前快照**：用户在 fast 模型验收期间
+     * stopGoal（→STOPPED）后，onAgentTurn 完成时整体覆写 state，目标被
+     * 复活为 ACTIVE，用户的停止被静默撤销。改为所有状态写入经同一 JVM
+     * 锁 + 写回前「代际比对」（仅当仍是快照那一代才覆写）。不能复用
+     * [mutex]：start/stop 是非挂起函数，不能挂起等锁。
+     */
+    private val stateLock = Any()
+
     private val _state = MutableStateFlow<GoalRuntimeState?>(null)
     val state: StateFlow<GoalRuntimeState?> = _state.asStateFlow()
 
@@ -43,7 +53,7 @@ class GoalModeCoordinator(
     fun activeSpec(): GoalSpec? = _state.value?.takeIf { it.status == GoalStatus.ACTIVE }?.spec
 
     /** 设定新目标（覆盖旧目标——同一时刻一个目标，符合「单任务使命」语义）。 */
-    fun startGoal(spec: GoalSpec) {
+    fun startGoal(spec: GoalSpec) = synchronized(stateLock) {
         _state.value = GoalRuntimeState(
             spec = spec,
             status = GoalStatus.ACTIVE,
@@ -59,7 +69,7 @@ class GoalModeCoordinator(
      * 停止目标（用户手动 / 新目标覆盖前 / 会话清空）。
      * @param achieved 显式达成标记（默认按未达成 STOPPED 收尾）。
      */
-    fun stopGoal(achieved: Boolean = false) {
+    fun stopGoal(achieved: Boolean = false) = synchronized(stateLock) {
         val cur = _state.value ?: return
         if (cur.status != GoalStatus.ACTIVE) return
         _state.value = cur.copy(
@@ -75,12 +85,13 @@ class GoalModeCoordinator(
      * [GoalDecision] 执行（Continue → System 注入 + continue；Stop → 收尾）。
      */
     suspend fun onAgentTurn(workReport: String): GoalDecision? = mutex.withLock {
-        val snapshot = _state.value ?: return@withLock null
+        // #351②：快照读取同锁 —— 与 start/stop 的写入互斥。
+        val snapshot = synchronized(stateLock) { _state.value } ?: return@withLock null
         if (snapshot.status != GoalStatus.ACTIVE) return@withLock null
         val spec = snapshot.spec
         val roundsLeft = spec.maxRounds - snapshot.roundsDone
         if (roundsLeft <= 0) {
-            _state.value = snapshot.copy(status = GoalStatus.STOPPED)
+            commitGeneration(snapshot, snapshot.copy(status = GoalStatus.STOPPED))
             return@withLock GoalDecision.Stop(
                 userNotice = "\n[goal] 已达最大验收轮次（${spec.maxRounds}），目标停止——可点「继续」重启目标续跑。",
                 achieved = false,
@@ -105,34 +116,54 @@ class GoalModeCoordinator(
         val roundsDone = snapshot.roundsDone + 1
         val notice = GoalPrompts.userNotice(roundsDone, spec.maxRounds, result)
         if (result.achieved) {
-            _state.value = snapshot.copy(
-                status = GoalStatus.ACHIEVED,
-                roundsDone = roundsDone,
-                lastCheck = result,
-                lastCheckAt = clock(),
+            commitGeneration(
+                snapshot,
+                snapshot.copy(
+                    status = GoalStatus.ACHIEVED,
+                    roundsDone = roundsDone,
+                    lastCheck = result,
+                    lastCheckAt = clock(),
+                )
             )
             GoalDecision.Stop(userNotice = notice + "\n[goal] 目标达成 🎉", achieved = true)
         } else if (roundsDone >= spec.maxRounds) {
-            _state.value = snapshot.copy(
-                status = GoalStatus.STOPPED,
-                roundsDone = roundsDone,
-                lastCheck = result,
-                lastCheckAt = clock(),
+            commitGeneration(
+                snapshot,
+                snapshot.copy(
+                    status = GoalStatus.STOPPED,
+                    roundsDone = roundsDone,
+                    lastCheck = result,
+                    lastCheckAt = clock(),
+                )
             )
             GoalDecision.Stop(
                 userNotice = notice + "\n[goal] 轮次耗尽，目标停止——可调整条件后重启。",
                 achieved = false,
             )
         } else {
-            _state.value = snapshot.copy(
-                roundsDone = roundsDone,
-                lastCheck = result,
-                lastCheckAt = clock(),
+            commitGeneration(
+                snapshot,
+                snapshot.copy(
+                    roundsDone = roundsDone,
+                    lastCheck = result,
+                    lastCheckAt = clock(),
+                )
             )
             GoalDecision.Continue(
                 continuationNote = GoalPrompts.continuationNote(result, spec.maxRounds - roundsDone),
                 userNotice = notice,
             )
+        }
+    }
+
+    /**
+     * #351② 代际比对写回：仅当当前 state 仍等于快照（验收期间无人
+     * start/stop）才覆写 —— 用户在验收挂起期间 stopGoal（→STOPPED）后，
+     * 验证前快照不再复活目标；新 startGoal 的全新状态同样不被旧轮覆写。
+     */
+    private fun commitGeneration(snapshot: GoalRuntimeState, mutated: GoalRuntimeState) {
+        synchronized(stateLock) {
+            if (_state.value == snapshot) _state.value = mutated
         }
     }
 
