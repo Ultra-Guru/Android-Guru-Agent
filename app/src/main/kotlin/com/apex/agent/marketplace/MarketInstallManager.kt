@@ -820,7 +820,12 @@ class MarketInstallManager @Inject constructor(
             .build()
         httpClient.newCall(request).execute().use { resp ->
             if (!resp.isSuccessful) return@use null
-            json.parseToJsonElement(resp.body?.string() ?: return@use null)
+            // #345：有界读取——同管道其余路径已统一 readBytesLimited，此处不再
+            // 漏网（被劫持链路返回超大响应直接按失败回退，不 OOM）。
+            val stream = resp.body?.byteStream() ?: return@use null
+            val bytes = stream.use { it.readBytesLimited(MAX_DOWNLOAD_BYTES) }
+                ?: return@use null
+            json.parseToJsonElement(String(bytes, Charsets.UTF_8))
                 .jsonObject["default_branch"]?.jsonPrimitive?.contentOrNull
         }
     }.getOrNull()
@@ -931,7 +936,17 @@ class MarketInstallManager @Inject constructor(
                     if (!resp.isSuccessful) {
                         return@withContext Result.failure(Exception("GitHub 搜索失败: HTTP ${resp.code}"))
                     }
-                    val root = json.parseToJsonElement(resp.body?.string() ?: "").jsonObject
+                    // #345：有界读取——GitHub API 响应同样 2MB 封顶（被劫持
+                    // 链路返回超大响应时报尺寸错误而不是 OOM）。
+                    val stream = resp.body?.byteStream()
+                        ?: return@withContext Result.failure(
+                            Exception("GitHub 搜索失败: HTTP ${resp.code}（空响应体）")
+                        )
+                    val bytes = stream.use { it.readBytesLimited(MAX_DOWNLOAD_BYTES) }
+                        ?: return@withContext Result.failure(
+                            Exception("GitHub 搜索失败: 响应体超过 ${MAX_DOWNLOAD_BYTES / 1024 / 1024}MB 上限")
+                        )
+                    val root = json.parseToJsonElement(String(bytes, Charsets.UTF_8)).jsonObject
                     val hits = root["items"]?.jsonArray?.mapNotNull { item ->
                         val obj = item.jsonObject
                         GitHubRepoHit(

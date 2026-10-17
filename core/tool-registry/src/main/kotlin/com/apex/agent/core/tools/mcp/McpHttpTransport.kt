@@ -19,7 +19,12 @@ import okhttp3.RequestBody.Companion.toRequestBody
  * - 非 2xx → 抛 [McpException]（旧实现把它折叠成 null，
  *   上层再折叠成"已连接、零工具"）；
  * - HTTP 200 但响应体不是 JSON（网关/鉴权拦截页同理处理）；
- * - 鉴权头缺失会让服务端直接 401 —— 因此 key/headers 一定带上。
+ * - HTTP 200 空响应体（#348：网关/健康检查误路由返回空体时，表象正是
+ *   本类声称已消灭的"握手成功、零工具"——带 id 的请求路径空体永远
+ *   是协议错误，直接抛 McpException，不再折叠成 null）；
+ * - 鉴权头缺失会让服务端直接 401 —— 因此 key/headers 一定带上；
+ * - 响应体一律有界读取（#345：16MB 上限，超限抛错——被劫持链路回
+ *   超大响应不再无上限 string() 整体读入 OOM）。
  *
  * ## Streamable HTTP 会话头（P1 修复）
  *
@@ -88,14 +93,25 @@ class McpHttpTransport(
                 sessionId = it
             }
             if (!response.isSuccessful) {
-                val errBody = runCatching { response.body?.string() }.getOrNull()
+                // #345：错误体同样有界读取——被劫持的 DNS/代理或异常网关
+                // 回超大错误页时不再无上限整体读入（OOM 防御与市场源对齐）。
+                // 读取超限抛的 McpException 被 runCatching 折叠，状态码仍是主文案。
+                val errBody = runCatching { readBodyLimited(response) }.getOrNull()
                 val snippet = errBody?.take(200)?.trim().orEmpty().ifEmpty { response.message }
                 throw McpException("HTTP ${response.code}: $snippet")
             }
             // P3 修复：通知（id == null）按规范收 202/204 —— 2xx 即送达，
             // 不解析响应体（空体不是错误）。
             if (id == null) return@use null
-            val responseBody = response.body?.string() ?: return@use null
+            // #348：请求路径（带 id）的空响应体是协议错误，不再折叠成 null
+            //（旧实现恰好漏过本类 KDoc 承诺要掐掉的"握手成功、零工具"假成功：
+            // McpClient 对 null 响应只能靠逐调用点自查，这里直接掐断源头）。
+            // 超限（#345）与空体都在这里以 McpException 上抛，上层折叠为
+            // Result.failure 并附重连/换路指引。
+            val responseBody = readBodyLimited(response)
+            if (responseBody.isBlank()) {
+                throw McpException("HTTP ${response.code} 空响应体（期望 JSON-RPC 响应）")
+            }
             parseBody(responseBody, response.code, id)
         }
     }
@@ -152,6 +168,36 @@ class McpHttpTransport(
         }
     }
 
+    /**
+     * 有界读取响应体（#345）：流式读至多 [MAX_BODY_BYTES] 字节，超限抛
+     * [McpException]（被劫持的 DNS/代理或异常网关返回超大响应不再无上限
+     * `string()` 整体读入）。body 缺失返回空串。
+     *
+     * 上限比市场源的 2MB JSON 口径宽：HTTP 传输长期持有远端服务器响应，
+     * resources/read 可返回大块内容，因此放宽到 16MB 但必须有界。
+     */
+    private fun readBodyLimited(response: okhttp3.Response): String {
+        val body = response.body ?: return ""
+        val bytes = body.byteStream().use { stream ->
+            val out = java.io.ByteArrayOutputStream()
+            val buf = ByteArray(16 * 1024)
+            var total = 0
+            while (total < MAX_BODY_BYTES) {
+                val n = stream.read(buf, 0, minOf(buf.size, MAX_BODY_BYTES - total))
+                if (n < 0) break
+                out.write(buf, 0, n)
+                total += n
+            }
+            if (total >= MAX_BODY_BYTES && stream.read() >= 0) {
+                throw McpException(
+                    "HTTP 响应体超过 ${MAX_BODY_BYTES / 1024 / 1024}MB 上限（疑似异常网关/被劫持链路）"
+                )
+            }
+            out.toByteArray()
+        }
+        return String(bytes, Charsets.UTF_8)
+    }
+
     companion object {
         /** Streamable HTTP 会话头（客户端回带服务端分配的会话 id）。 */
         const val SESSION_ID_HEADER = "Mcp-Session-Id"
@@ -161,5 +207,11 @@ class McpHttpTransport(
 
         /** 客户端宣告/协商的协议版本（与 initialize 参数一致）。 */
         const val PROTOCOL_VERSION = "2024-11-05"
+
+        /**
+         * 响应体字节上限（#345）：MCP 请求/响应可能携带大块 content
+         * （resources/read），放宽到 16MB 但必须有界。
+         */
+        private const val MAX_BODY_BYTES = 16 * 1024 * 1024
     }
 }
