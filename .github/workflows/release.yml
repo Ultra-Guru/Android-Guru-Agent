@@ -520,7 +520,11 @@ jobs:
             OFFENDING=$(echo "$FILES" | grep -vE '^app/src/main/assets/(skills|mcp_catalog)/[^/]+\.json$' || true)
             if [ -n "$OFFENDING" ]; then
               echo "🚫 本版含非热载路径变更 —— 必须重装 APK，不出热更包。白名单外文件（前 20）："
-              echo "$OFFENDING" | head -20 | sed 's/^/    - /'
+              # pipefail 陷阱：违规清单 > 20 行时 head 提前退出，echo 写入遭
+              # SIGPIPE（write error: Broken pipe）→ 管道非零 → set -e 在
+              # exit 0 前杀掉脚本 → 守卫消息变成了 job 失败。|| true 兑现
+              # 「告警不阻断」的本意（大重构版本重装 APK，属预期路径）。
+              echo "$OFFENDING" | head -20 | sed 's/^/    - /' || true
               exit 0
             fi
             echo "✅ data-only 判定通过（$(echo "$FILES" | wc -l) 个文件全部在热载白名单）"
@@ -636,8 +640,10 @@ jobs:
             echo "⚠️ 未找到历史版本 release —— 跳过补丁生成（首版正常）"
             exit 0
           fi
-          # 首个基底 = 上一版（primary：进 version.json 的单补丁档，兼容老客户端）
-          PRIMARY_BASE=$(echo "$BASES" | head -1)
+          # 首个基底 = 上一版（primary：进 version.json 的单补丁档，兼容老客户端）。
+          # herestring 喂 head（无 writer 进程）—— 同样规避 pipefail 下的
+          # SIGPIPE 陷阱（echo|head 在 BASES 多行时可能写失败）。
+          PRIMARY_BASE=$(head -1 <<<"$BASES")
           echo "🔗 基底窗口（来源 ${BASE_SRC}，共 $(echo "$BASES" | wc -l) 个）："
           echo "$BASES" | sed 's/^/    - /'
           # meta/ 存内部工作文件（不进 Release 资产）；dist/ 只放对外产物
