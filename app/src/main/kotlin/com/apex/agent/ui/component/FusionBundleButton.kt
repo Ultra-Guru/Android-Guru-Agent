@@ -73,10 +73,13 @@ interface FusionBundleEntryPoint {
 @Composable
 fun rememberFusionBundleController(): FusionBundleController {
     val context = androidx.compose.ui.platform.LocalContext.current
-    return androidx.compose.runtime.remember(context) {
+    val controller = androidx.compose.runtime.remember(context) {
         dagger.hilt.android.EntryPointAccessors.fromApplication(
             context.applicationContext,
             FusionBundleEntryPoint::class.java
         ).fusionBundleController()
     }
+    // 暖启（幂等）：恢复上次激活的包 —— 组件装配完成后才解析引擎（DI 破环配套）
+    controller.ensureWarmedUp()
+    return controller
 }
