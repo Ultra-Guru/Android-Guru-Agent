@@ -145,11 +145,12 @@ fun ChangelogStartupHost(autoUpdateCheck: Boolean) {
 }
 
 /**
- * 单版内容弹窗。notes 为要点列表（列表项剥壳文本）；缺失时降级 markdown
- * 原文纯文本。滚动区封顶 380dp —— 长日志不撑爆对话框。
+ * 单版内容弹窗（包内私用 —— 模式枚举为 file-private，不外露）。notes 为要点
+ * 列表（列表项剥壳文本）；缺失时降级 markdown 原文纯文本。滚动区封顶
+ * 380dp —— 长日志不撑爆对话框。
  */
 @Composable
-fun ChangelogEntryDialog(
+private fun ChangelogEntryDialog(
     entry: ChangelogEntry,
     mode: ChangelogDialogMode,
     onDismiss: () -> Unit,
