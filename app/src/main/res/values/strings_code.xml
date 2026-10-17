@@ -229,6 +229,9 @@
 
     <!-- ═══ v6 Git 工作区面板（右上角入口：变更文件 + git 功能）═══ -->
     <string name="code_git_cd">Open Git workspace</string>
+    <!-- v1.6 Workspace explorer (apex-workspace-kit) -->
+    <string name="code_workspace_browser_cd">Open workspace browser</string>
+    <string name="drawer_workspace_browser">Workspace</string>
     <string name="code_git_panel_title">Git Workspace</string>
     <string name="code_git_branch_fmt">Branch: %1$s</string>
     <string name="code_git_not_repo">This workspace is not a git repository yet</string>
