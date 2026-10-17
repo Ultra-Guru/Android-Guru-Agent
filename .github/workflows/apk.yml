@@ -64,6 +64,22 @@ jobs:
           repository: Ultra-Guru/apex-browser-kit
           ref: ${{ steps.bkitpin.outputs.sha }}
           path: apex-browser-kit
+      - name: Read apex-workspace-kit pin
+        id: wkitpin
+        # 工作区浏览器库（com.apex.workspace:{core,explorer}）锁定文件
+        # gradle/workspace-kit.lock —— 缺锁回退 main（防御旧分支/分叉构建）。
+        # 本地开发：兄弟目录 ../apex-workspace-kit 存在时 settings 自动
+        # includeBuild；CI 嵌套路径同样命中兜底分支。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/workspace-kit.lock 2>/dev/null || true)
+          echo "sha=main" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-workspace-kit (workspace-kit composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-workspace-kit
+          ref: ${{ steps.wkitpin.outputs.sha }}
+          path: apex-workspace-kit
 
       - name: Verify apex-browser-kit checkout SHA
         # #352：轻量审计（纯日志、不阻塞）—— 实际检出 SHA 写入 job summary

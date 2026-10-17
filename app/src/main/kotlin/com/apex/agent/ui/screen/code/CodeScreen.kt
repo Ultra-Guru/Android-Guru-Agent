@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -120,7 +121,9 @@ fun CodeScreen(
     slashMenuProvider: SlashMenuProvider = rememberSlashMenuProvider(),
     // 「小大脑」菜单 → 配置模型：跳转设置页模型配置区（与 Agent 屏同款
     // 压栈语义，改完返回 Coding 上下文）
-    onOpenSettings: () -> Unit = {}
+    onOpenSettings: () -> Unit = {},
+    // v1.6 工作区浏览器全屏页（右上角文件图标 → 压栈；页面内叉号弹栈返回）
+    onOpenWorkspaceBrowser: () -> Unit = {}
 ) {
     // #184：长任务导出需要 applicationContext（落盘 + 分享；VM 非 AndroidViewModel）
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -218,7 +221,9 @@ fun CodeScreen(
             logicMode = state.logicMode,
             onSwitchLogic = viewModel::setLogicMode,
             // v6 右上角 Git 工作区（变更文件 + git 功能）
-            onOpenGit = { showGitPanel = true }
+            onOpenGit = { showGitPanel = true },
+            // v1.6 工作区浏览器（文件树/预览/Git/变更产物全屏页）
+            onOpenWorkspaceBrowser = onOpenWorkspaceBrowser
         )
 
         if (state.todos.isNotEmpty()) {
@@ -553,7 +558,8 @@ private fun WorkspaceBar(
     onOpenLongTasks: () -> Unit,
     logicMode: StandardLogicMode = StandardLogicMode.DEEP_DIVE,
     onSwitchLogic: (StandardLogicMode) -> Boolean = { false },
-    onOpenGit: () -> Unit = {}
+    onOpenGit: () -> Unit = {},
+    onOpenWorkspaceBrowser: () -> Unit = {}
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     // v1.5 切换被拒提示（运行中拒绝；2s 自清，行内告警形态）
@@ -673,6 +679,17 @@ private fun WorkspaceBar(
             )
 
             Spacer(Modifier.width(4.dp))
+
+            // ═══ v1.6 工作区浏览器（右上角：文件树/预览/变更产物全屏页）═══
+            // FolderOpen 图标即「浏览工作区」；页面内右上角叉号返回 Coding
+            IconButton(onClick = onOpenWorkspaceBrowser, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                Icon(
+                    Icons.Outlined.FolderOpen,
+                    contentDescription = stringResource(R.string.code_workspace_browser_cd),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
 
             // ═══ v6 Git 工作区（右上角：变更文件 + git 功能）═══
             // 48dp 触区（主操作红线；CallSplit 即分支意象）
