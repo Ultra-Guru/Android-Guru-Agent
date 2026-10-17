@@ -2,6 +2,8 @@ package com.apex.agent.platform.browser.di
 
 import android.content.Context
 import com.apex.browser.chrome.BrowserOverlay
+import com.apex.browser.chrome.InAppChromeHost
+import com.apex.browser.chrome.InAppChromeHostFactory
 import com.apex.browser.chrome.LiveViewOverlay
 import com.apex.browser.chrome.LiveViewOverlayFactory
 import com.apex.browser.chrome.bridge.ApexChromeWiring
@@ -31,6 +33,9 @@ import javax.inject.Singleton
  * - [BrowserOverlay]：完整浏览器浮窗（WAITING_HUMAN 时自动展开）
  * - [LiveViewOverlay]（v1.4.0）：透明实时页面悬浮窗——AGENT_DRIVING 自动弹出，
  *   点悬浮球/浏览器功能页「查看实时页面」切换；GHOST 无头宿主保 WebView 测量
+ * - [InAppChromeHost]（v1.5.1）：App 内嵌浏览器宿主——BrowserScreen 浏览器页签
+ *   把完整浏览器嵌进 App 自己的窗口（零悬浮窗权限）；与两个浮窗经
+ *   InAppHostingArbiter 互斥（in-app 承载期间浮窗让位）
  *
  * 视觉挂钩（BrowserVisualHook）：霓虹球等宿主视觉装饰仍走
  * CyberNeonBallManager 自己订阅 BrowserUiCallback 的旧链路（行为零变化）；
@@ -71,4 +76,12 @@ object BrowserKitModule {
         @ApplicationContext ctx: Context,
         engine: BrowserEngine,
     ): LiveViewOverlay = LiveViewOverlayFactory.get(ctx, engine)
+
+    /** v1.5.1：App 内嵌浏览器宿主（BrowserScreen 浏览器页签的承载控制器）。 */
+    @Provides
+    @Singleton
+    fun provideInAppChromeHost(
+        engine: BrowserEngine,
+        wiring: ApexChromeWiring,
+    ): InAppChromeHost = InAppChromeHostFactory.get(engine, wiring)
 }
