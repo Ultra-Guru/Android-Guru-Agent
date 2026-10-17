@@ -1,14 +1,13 @@
 package com.apex.agent.core.tools.fusion
 
 /**
- * # FusionBundle 内置预置 —— 首发「REA · Reverse Engineer Anything」
+ * # FusionBundle 内置预置目录
  *
- * 上游（morluto/rea，MIT，npm rea-agents v6.5.0）的「MCP 服务器 + 工作流
- * 技能 + 工具」三位一体，经 FusionBundle 装载进 AGA：
- * - MCP 服务器 `rea`：207 个工具全目录（[com.apex.agent.core.tools.fusion.rea.ReaToolCatalog]）；
- * - 工作流技能 `ReaWorkflow`（apex-skill-v1，v5 PascalCase）：目标路由 + 证据纪律
- *   （由上游 SKILL.md 的 routing/evidence 章节重构筑）；
- * - agent 人设：激活即注入的逆向工程智能体工作流。
+ * 首发 REA（逆向工程复合包）+ 三大顶级开源体系扩充：
+ * - REA · Reverse Engineer Anything（v6.5.0）：207 工具逆向工程复合包；
+ * - Superpowers（v7.0.0，obra）：软件开发方法论八技能；
+ * - SuperClaude（v4.3.0）：结构化开发平台五模式 + 四台内置 MCP 聚合；
+ * - BMAD（v6.12.0）：敏捷 AI 驱动交付环五阶段。
  *
  * 安装：app 层 FusionModule 首启 installBundled（幂等 + 版本守卫）。
  */
@@ -95,10 +94,18 @@ object FusionBundlePresets {
 }
 """.trim()
 
-    /** 全部内置预置（当前首发一台：REA）。 */
-    fun all(): List<Pair<FusionBundleManifest, String>> {
-        val parsed = FusionBundleManifest.parse(REA_BUNDLE_JSON)
-            ?: error("内置 REA FusionBundle manifest 非法（编码期错误，需修正）")
-        return listOf(parsed to REA_BUNDLE_JSON)
+    /** 全部内置预置（REA + Superpowers + SuperClaude + BMAD）。 */
+    fun all(): List<Pair<FusionBundleManifest, String>> = listOf(
+        preset("rea", REA_BUNDLE_JSON),
+        preset("superpowers", FusionSuperpowersPreset.SUPERPOWERS_BUNDLE_JSON),
+        preset("superclaude", FusionSuperClaudePreset.SUPERCLAUDE_BUNDLE_JSON),
+        preset("bmad", FusionBmadPreset.BMAD_BUNDLE_JSON)
+    )
+
+    /** 解析 + 编码期自检（内置 manifest 非法属编码期错误，fail-fast）。 */
+    private fun preset(id: String, json: String): Pair<FusionBundleManifest, String> {
+        val parsed = FusionBundleManifest.parse(json)
+            ?: error("内置 FusionBundle '$id' manifest 非法（编码期错误，需修正）")
+        return parsed to json
     }
 }

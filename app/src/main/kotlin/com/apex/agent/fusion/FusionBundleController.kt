@@ -116,6 +116,21 @@ class FusionBundleController @Inject constructor(
         return r
     }
 
+    /**
+     * 模型侧（FusionActivate 工具）激活回灌：与按钮路径同一激活面 ——
+     * UI 横幅随模型侧激活点亮、重启后重激活持久化同步。
+     */
+    fun onModelActivation(activation: FusionActivation) {
+        _activeBundle.value = registry.get(activation.bundleId)
+        prefs.edit().putString(KEY_ACTIVE_BUNDLE, activation.bundleId).apply()
+    }
+
+    /** 模型侧去激活回灌（[onModelActivation] 的对偶）。 */
+    fun onModelDeactivation() {
+        prefs.edit().remove(KEY_ACTIVE_BUNDLE).apply()
+        _activeBundle.value = null
+    }
+
     companion object {
         private const val TAG = "FusionBundle"
         private const val KEY_ACTIVE_BUNDLE = "active_bundle_id"

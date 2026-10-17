@@ -6,7 +6,7 @@
 > 工具」三位一体形态）的标准化引入通道。
 > 前置：[hub-ecosystem.md](hub-ecosystem.md)（技能 / MCP 仓库生态）
 > · [skill-system.md](skill-system.md)（apex-skill-v1）
-> · `core/tool-registry/.../mcp/`（内置 MCP 服务器五件套）
+> · `core/tool-registry/.../mcp/`（内置 MCP 服务器六件套 —— REA 为第六台）
 
 ---
 
@@ -69,7 +69,7 @@ Engine Anything，morluto/rea，MIT，npm rea-agents，Trendshift 榜）为
 | `core/tool-registry/.../fusion/FusionBundleRegistry.kt` | 存储/装卸/changes 流/bundled 保护 |
 | `core/tool-registry/.../fusion/FusionBundleActivator.kt` | 三端口编排 + 激活提示组装 + 聚合容错 |
 | `core/tool-registry/.../fusion/FusionBundleTools.kt` | FusionList / FusionInfo / FusionActivate 工具族 |
-| `core/tool-registry/.../fusion/FusionBundlePresets.kt` | 内置预置（首发 REA） |
+| `core/tool-registry/.../fusion/FusionBundlePresets.kt` | 内置预置目录（REA + 三大扩充包，见 §4/§7） |
 | `core/tool-registry/.../fusion/rea/` | REA 引擎全套（见 §4） |
 | `app/.../fusion/FusionBundleController.kt` | 控制面 + 三端口适配 + 持久化重激活 |
 | `app/.../fusion/ReaRuntimePorts.kt` | 命令执行/页面抓取端口实现（复用终端链/OkHttp） |
@@ -181,9 +181,24 @@ MCP 生态的注册表模式完全同轨。
 | 引擎命令执行 | 走 shell_execute 同一条 ExecEngine + ProotCommandSpawner 链（权限链 + 超时 + 采集上限）；引用参数单引号转义 |
 | scope 隔离 | 包级 scope 透传 McpServerConfig.scope / SkillManifest.scope —— 引擎计划层自动过滤 |
 
-## 7. 后续引入其他复合开源项目
+## 7. 内置复合开源项目目录（四大体系）
 
-FusionBundle 是**通用装载单位**，不绑定 REA：
+FusionBundle 是**通用装载单位**，不绑定 REA。首发即内置四包（全部
+`bundled=true` 首启幂等释放，`scope=all` 全工位可用）：
+
+| 包 | 上游 | 形态 | 聚合内容 |
+| --- | --- | --- | --- |
+| `rea` | morluto/rea v6.5.0（MIT） | MCP 服务器 + 工作流技能 + 工具 | 207 工具内置 MCP + 目标路由技能 + 证据纪律人设（§4） |
+| `superpowers` | obra/superpowers v7.0.0（MIT） | 纯方法论技能集 | 8 技能（brainstorming/writing-plans/executing-plans/TDD/systematic-debugging/verification/code-review/finishing）+ using-superpowers 引导人设；上游无 MCP，如实保持零服务器 |
+| `superclaude` | SuperClaude-Org v4.3.0（MIT） | 命令 + 代理 + 模式 + 增强 MCP | 5 模式技能（Brainstorming/DeepResearch/TokenEfficiency/Orchestration/BusinessPanel）+ 人设；上游 8 台增强 MCP 的设备端等价映射 —— Tavily→`search`、Sequential-Thinking→`thinking`、Serena→`memory`、代码智能→`github`（四台内置 MCP 聚合；Playwright/DevTools→一等 browser_* 工具族） |
+| `bmad` | bmad-code-org v6.12.0（MIT） | 敏捷交付环代理体系 | 5 环阶段技能（Clarify/Plan/Shard/Build/Verify）+ 编排者人设；增益层聚合 thinking + search 两台内置 MCP（超出上游） |
+
+三个扩充包的能力对齐原则与 REA 相同：**主干技能全量移植**（方法论
+正文进技能 promptInjection，v5 PascalCase id）、**人设路由浓缩**上游
+引导指令、**MCP 聚合映射**优先复用内置服务器（零子进程零网络握手）。
+methodology 类项目无 BYO 引擎面，runtime.engines 仅 git 可选项。
+
+后续引入其他复合开源项目同口径：
 1. 目标项目拆解为 skills[] + mcpServers[] + agent 人设（MCP server 可用
    STDIO + runInSandbox 直接引用 npm 包 —— 沙箱内 npx 启动，同
    apex-mcp-hub 的远端目录模式）；
@@ -201,10 +216,11 @@ Coding 工位入口 · 包级依赖（bundle 间引用）。
 | 文件 | 覆盖 |
 | --- | --- |
 | `fusion/FusionBundleCoreTest.kt` | manifest 校验五防线 / registry 装卸幂等与 bundled 保护 / 激活器三端口聚合语义 / 容错 / 去激活恢复 / scope 拒绝 |
+| `fusion/FusionBundleExpansionTest.kt` | 四包预置契约（id 唯一 / 技能 id v5 PascalCase / MCP 聚合清单 / 上游版本溯源）/ 三包激活聚合（技能·MCP·人设）/ 多包切换语义（聚合不融合：实体只增不减）/ bundled 保护 |
 | `fusion/rea/ReaAnalyzersTest.kt` | ASAR 目录与单文件 / import 三族语法 / 应用图渲染 / ELF64 布局与 vaddr 映射 / search_bytes / AXML package 提取 / dex 类清单 / Flutter 识别 / plist/sqlite/demangle/EVM |
 | `fusion/rea/ReaEngineTransportTest.kt` | 目录 207 条与分层统计恒定 / tools_list 渲染 / tools_call 真跑分析 / 降级信封 / 未知工具错误 / 会话证据账本 / unknowns 闭环 / JSON-RPC 协议（initialize/list/call/通知/未知方法） |
 
-本地验证：`scripts/run_core_tests_jvm.sh` → **1053 tests OK**（含新增 50）；
+本地验证：`scripts/run_core_tests_jvm.sh` → 全绿（tool-registry 镜像 818/818，fusion 族 60：核心 26 + 扩充 10 + REA 24）；
 `scripts/check_file_size.sh` / `check_code_quality.sh` /
 `check_comment_integrity.py` / `kotlin_balance.py` / `check_string_mirror.py`
 全绿。CI（app-compile + 9 步模块测试）验证 Android 侧装配。

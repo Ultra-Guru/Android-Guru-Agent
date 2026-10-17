@@ -115,7 +115,9 @@ class FusionInfoTool(
 
 class FusionActivateTool(
     private val registry: FusionBundleRegistry,
-    private val activator: FusionBundleActivator
+    private val activator: FusionBundleActivator,
+    /** 模型侧激活回灌（null = 无观察者；生产接线见 ToolModuleFusionRegistration）。 */
+    private val activationSink: FusionActivationSink? = null
 ) : BaseTool(
     id = "FusionActivate",
     name = "FusionBundle Activate",
@@ -145,13 +147,17 @@ class FusionActivateTool(
         if (args.booleanWithDefault("deactivate", false)) {
             val r = activator.deactivate()
             return r.fold(
-                onSuccess = { ToolResult.ok("FusionBundle '$id' 已去激活（人设恢复；技能/MCP 留在各自体系）") },
+                onSuccess = {
+                    activationSink?.onDeactivated(id)
+                    ToolResult.ok("FusionBundle '$id' 已去激活（人设恢复；技能/MCP 留在各自体系）")
+                },
                 onFailure = { ToolResult.fail(ToolErrorCode.EXECUTION_FAILED, it.message ?: "去激活失败") }
             )
         }
         val r = activator.activate(id)
         return r.fold(
             onSuccess = { act ->
+                activationSink?.onActivated(act)
                 val sb = StringBuilder()
                 sb.appendLine("FusionBundle「${act.bundleName}」已激活 —— 体系 agent 就绪。")
                 sb.appendLine("技能就位：${act.installedSkills.joinToString(", ").ifBlank { "（无）" }}")

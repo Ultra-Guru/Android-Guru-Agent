@@ -89,7 +89,8 @@ class FusionBundleCoreTest {
     @Test
     fun `预置清单 all 与解析一致`() {
         val all = FusionBundlePresets.all()
-        assertEquals(1, all.size)
+        // 首发 REA + 扩充三大顶级体系（Superpowers / SuperClaude / BMAD）
+        assertEquals(4, all.size)
         assertEquals("rea", all[0].first.id)
         assertEquals(FusionBundlePresets.REA_BUNDLE_JSON, all[0].second)
     }

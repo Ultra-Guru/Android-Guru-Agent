@@ -172,6 +172,21 @@ data class FusionActivation(
     val skipped: List<String>
 )
 
+/**
+ * 模型侧激活结果的观察口（core 层接口，app 层控制面实现）。
+ *
+ * 语义：`FusionActivate` 工具激活/去激活成功后回灌 —— UI 横幅、持久化
+ * 偏好与「输入栏按钮路径」保持同一激活面（两条入口，一个状态源）。
+ * 默认空实现：单测与无 UI 场景零负担。
+ */
+interface FusionActivationSink {
+    /** 模型侧激活成功（UI 同步 activeBundle + 持久化）。 */
+    fun onActivated(activation: FusionActivation) {}
+
+    /** 模型侧去激活成功（UI 清除 + 持久化移除）。 */
+    fun onDeactivated(bundleId: String) {}
+}
+
 // ── 三个编排端口（app 层 DI 适配真实子系统；单测手写 fake）──────────────
 
 /** 技能安装端口：适配 SkillRegistry.install / isInstalled。 */

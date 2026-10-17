@@ -216,7 +216,7 @@ Root → Shizuku → 沙箱 Shell 自动降级<br/>无 Root 也能执行特权�
 | 🛰️ | **BYO-LLM** | OpenAI 兼容协议 + DeepSeek / OpenRouter / Ollama / 自定义端点预设；多模型运行时按角色路由（含图片自动走 VISION）；原生支持 `reasoning_content` 思维链（R1 / Qwen3-thinking / o 系列） |
 | ⚡ | **三级权限链** | Root → Shizuku → 普通沙箱 shell 自动降级选择，无 Root 设备也能执行特权命令 |
 | 🧩 | **插件 SDK v2（双类型）+ 技能市场** | 功能性插件（plugin.json 声明式贡献点：工具宏/斜杠指令，零代码执行面）+ APK 插件（AIDL 跨进程）统一管理；技能市场（工具/技能/MCP/插件/连接器五个货架）+ 40+ 可安装技能模板；plugin-workflow 为参考 APK 插件、functional-samples 为功能性插件样本 |
-| ⚛️ | **FusionBundle 复合技能包（聚变包）** | 「技能 + MCP 服务器 + 工具 + agent 工作流」一键聚合激活的装载单位（fusion-bundle-v1 manifest，输入栏直选即用）；首发内置 **REA · Reverse Engineer Anything**：207 工具面逐名对齐上游 v6.5.0，静态分析核心（ASAR/ELF/PE/Mach-O/APK/AXML/dex）纯设备直跑、adb 族原生设备执行（无需 PC）、BYO 引擎桥（objdump/rizin/jadx…）与证据纪律信封 —— 详见 [docs/fusion-bundle.md](docs/fusion-bundle.md) |
+| ⚛️ | **FusionBundle 复合技能包（聚变包）** | 「技能 + MCP 服务器 + 工具 + agent 工作流」一键聚合激活的装载单位（fusion-bundle-v1 manifest，输入栏直选即用）；内置四大顶级开源体系 —— **REA · Reverse Engineer Anything**（207 工具面逐名对齐上游 v6.5.0，静态分析核心纯设备直跑、adb 族原生设备执行、BYO 引擎桥与证据纪律信封）、**Superpowers**（obra v7.0.0 软件开发方法论八技能）、**SuperClaude**（v4.3.0 五行为模式 + 上游 8 台增强 MCP 的内置等价聚合）、**BMAD**（v6.12 敏捷交付环五阶段）—— 详见 [docs/fusion-bundle.md](docs/fusion-bundle.md) |
 | 🌐 | **内置浏览器大功能（v1.5.0 起非插件）** | 24 个 `browser_*` 工具（DOM 级操控 + 高级键鼠/抽取/JS 逃生舱）+ 悬浮球 + 浮窗浏览器，Agent 对话中直接指挥 |
 | 💭 | **七档思考系统（Coding 页专属）** | NONE→ULTRACODE→APEXCODE 七深度档 + AUTO 预检自适应（发送前选档 + 深水区升级）；档位驱动提示词 / 模型参数 / 迭代倍率 / 压缩阈值 / 输出预算**全执行画像**，档位效能用历史数据说话（Agent 聊天页为独立六档体系） |
 | 🕓 | **长任务中心（v1.2）** | 超阈值运行自动留档；检查点时间线回看（轮次 / 相对时间 / todo 完成度）+ 续跑不从头、复制带上下文重跑、同目标运行对比、8 模板一键启动 |
