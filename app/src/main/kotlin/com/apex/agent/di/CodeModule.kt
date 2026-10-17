@@ -244,7 +244,10 @@ object CodeModule {
         settingsRepository: com.apex.agent.ui.screen.settings.SettingsRepository,
         // v3 GOAL 模式：目标验收协调器（与 Agent 屏共享单例；深潜线引擎挂
         // 每轮验收钩子，见 ApexAgentEngine.goalCoordinator）
-        goalCoordinator: com.apex.agent.core.engine.goal.GoalModeCoordinator
+        goalCoordinator: com.apex.agent.core.engine.goal.GoalModeCoordinator,
+        // #395 abort 语义收口：弹窗提问（AskUserChoice/权限门）随 abort 即时收场，
+        // 引擎流不再吃满 5 分钟超时（取消卡死根因）
+        userQuestionBridge: com.apex.agent.core.engine.UserQuestionBridge
     ): AgentEngine {
         val codeConfig = AgentConfig(
             mode = AgentMode.BUILD,
@@ -279,7 +282,10 @@ object CodeModule {
                 // 技能激活共享（见参数 KDoc）：目录 + 已装备方法论注入。
                 skillActivation = skillActivation,
                 // v3 GOAL 模式：每轮收尾快速模型验收（无目标时零行为差异）
-                goalCoordinator = goalCoordinator
+                goalCoordinator = goalCoordinator,
+                // #395 abort 语义收口（与 Agent 屏同源）：取消任务时同步
+                // 收口桥接层挂起的提问/权限弹窗
+                userQuestionGateway = userQuestionBridge
             ),
             codeMemory = codeMemory,
             contextProvider = codeContextProvider,

@@ -145,7 +145,10 @@ class ApexAgentEngine(
      * v3 GOAL 模式协调器：每轮纯文本收尾前调 [GoalModeCoordinator.onAgentTurn]
      * 快速验收——未达标注入差距续跑，达标/轮次耗尽照常收尾。null = 无目标。
      */
-    private val goalCoordinator: GoalModeCoordinator? = null
+    private val goalCoordinator: GoalModeCoordinator? = null,
+    // #395 abort 语义收口：桥接层挂起提问的收口口（AskUserChoice/权限门 gateway.ask；abort 路径
+    // 经 abortConfirmationChannels 统一收口 —— 弹窗取消卡死根因）；internal 供同包扩展直调；null 兼容旧测试。
+    internal val userQuestionGateway: UserQuestionGateway? = null
 ) : AgentEngine, ConfirmationSink {
 
     /** #165 插桩句柄（null 安全派生；开号时快照当前模式名）。 */
@@ -1166,9 +1169,7 @@ class ApexAgentEngine(
 
     override suspend fun abort() {
         isRunning = false
-        // #340：三对“complete-then-null”收进 confirmationLock（见
-        // ConfirmationChannels.kt）——与注册方互斥，消除“新注册被 null
-        // 覆盖”的窗口；锁内无挂起点。
+        // #340：三对 complete-then-null 原子收进 confirmationLock（含 #395 桥接层收口，详见 ConfirmationChannels.kt）。
         abortConfirmationChannels()
     }
 

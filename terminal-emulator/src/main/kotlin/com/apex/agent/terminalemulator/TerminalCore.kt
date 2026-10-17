@@ -328,8 +328,11 @@ class TerminalCore(
             '@' -> CsiOps.insertChars(currentBuffer, cursor, seq.paramOrDefault(0, 1),
                 margins.effectiveLeft(), margins.effectiveRight(cols))  // ICH
             'X' -> {  // ECH（v0.3：终点被右边距裁剪）
+                // diag-20261017 崩溃热修（P0）：参数先钳到行宽再算终点 —— 防
+                // cursor.column + n - 1 整型溢出为极负（与 native 派发层同款防线；
+                // ScreenBuffer.eraseRow 内已加第二道钳位）。
                 currentBuffer.eraseRow(cursor.row, cursor.column,
-                    (cursor.column + seq.paramOrDefault(0, 1) - 1).coerceAtMost(margins.effectiveRight(cols)), currentStyle)
+                    (cursor.column + seq.paramOrDefault(0, 1).coerceAtMost(cols) - 1).coerceAtMost(margins.effectiveRight(cols)), currentStyle)
                 mutations += ScreenMutation.rows(cursor.row, cursor.row)
             }
             'm' -> currentStyle = SgrApplier.apply(currentStyle, seq)  // SGR（含冒号子参数 + SGR 58）
