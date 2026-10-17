@@ -1,5 +1,6 @@
 package com.apex.agent.ui.screen.market
 
+import com.apex.agent.core.tools.marketplace.MarketNames
 import com.apex.agent.core.tools.marketplace.OperitPluginSource
 import com.apex.agent.core.tools.mcp.McpManager
 import kotlinx.coroutines.CancellationException
@@ -95,7 +96,8 @@ class MarketOperitController @Inject constructor(
      * 安装一个 Operit 社区插件（仅 MCP 形态可装）：
      * 仓库 mcp_config.json / mcp.json / package.json 的 mcpServers →
      * 统一解析 → 注册表（enabled=false）。行级 busy 防并发；非 MCP
-     * 形态得到明确报错；同名已配置给出与 Registry 安装同口径的提示。
+     * 形态得到明确报错；#346：同名判定用归一化比较键（跨源/大小写/
+     * 分隔符变体都算已装），重复安装复用现有配置并给出提示。
      */
     fun installPlugin(plugin: OperitPluginSource.OperitPlugin) {
         if (_uiState.value.installingKey != null) return
@@ -103,13 +105,12 @@ class MarketOperitController @Inject constructor(
             _uiState.update { it.copy(installingKey = plugin.key) }
             var installed = false
             try {
-                val exists = mcpManager.getConfigs().any { it.name == plugin.configName }
-                if (exists) {
+                val existing = mcpManager.getConfigs().firstOrNull {
+                    MarketNames.isSameServer(it.name, plugin.configName)
+                }
+                if (existing != null) {
                     _uiState.update {
-                        it.copy(
-                            error = "同名服务器「${plugin.configName}」已配置——" +
-                                "如需重装请先在「已安装管理」中删除"
-                        )
+                        it.copy(error = MarketNames.duplicateMessage(existing.name, plugin.configName))
                     }
                 } else {
                     operitSource.fetchMcpConfig(plugin).fold(

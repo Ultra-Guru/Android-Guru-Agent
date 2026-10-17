@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
 import com.apex.agent.core.tools.marketplace.ClawHubSource
+import com.apex.agent.marketplace.GithubFeaturedCatalog
 
 /**
  * ═══ 市场 · 发现视图 · Skills 子页签 ═══
@@ -82,6 +83,10 @@ internal fun BrowseSkillsTab(state: MarketUiState, viewModel: MarketViewModel) {
         } else if (state.skillSource == SkillRepoSource.HUB) {
             // 官方技能仓库（apex-skill-hub）：内置瘦身后迁出的技能目录，一键直装
             HubSkillSection(state, viewModel)
+        } else if (state.skillSource == SkillRepoSource.GITHUB) {
+            // GitHub 精选：anthropics/skills、obra/superpowers 等顶级开源仓库的
+            // coding 技能专栏（一键直装 SKILL.md → prompt 型技能）
+            GithubFeaturedSection(state, viewModel)
         } else {
             Row(
                 modifier = Modifier
@@ -435,6 +440,81 @@ private fun ClawHubSkillCard(
                 }
             }
         }
+    }
+}
+
+// ═══ 市场 · Skills：GitHub 精选（顶级开源仓库 coding 技能专栏）═══
+
+/**
+ * GitHub 精选区块：anthropics/skills、obra/superpowers 等真实开源仓库的
+ * coding 技能清单 + 一键安装（复用 GitHub 候选安装管线）。
+ *
+ * 条目元数据见 [GithubFeaturedCatalog]（收录纪律：仓库/SKILL.md 逐一核实）；
+ * 安装 id 与「智能安装整仓再挑选」同口径，两条安装路互不冲突。
+ */
+@Composable
+private fun GithubFeaturedSection(state: MarketUiState, viewModel: MarketViewModel) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        item { MarketHeader(stringResource(R.string.market_github_featured_header)) }
+        item {
+            Text(
+                text = stringResource(R.string.market_github_featured_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        items(GithubFeaturedCatalog.SKILLS, key = { it.key }) { entry ->
+            GithubFeaturedCard(entry, state, viewModel)
+        }
+        item {
+            Text(
+                text = stringResource(R.string.market_github_featured_license_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/** 精选技能行：名称 + 仓库/star 副标题 + 描述 + 安装按钮（已装显示徽标）。 */
+@Composable
+private fun GithubFeaturedCard(
+    entry: GithubFeaturedCatalog.FeaturedSkill,
+    state: MarketUiState,
+    viewModel: MarketViewModel
+) {
+    val installed = state.skills.any { it.id == entry.installId }
+    val installing = state.githubFeaturedInstallingId == entry.installId
+    Column {
+        MarketCard(
+            title = entry.name,
+            subtitle = "${entry.owner}/${entry.repo} · ★${entry.starsLabel}",
+            description = entry.description,
+            descriptionMaxLines = 2,
+            trailing = {
+                if (installed) {
+                    MarketStatusChip(text = stringResource(R.string.market_status_installed), positive = true)
+                } else {
+                    TextButton(
+                        onClick = { viewModel.installGithubFeatured(entry) },
+                        // 行级 busy：安装期间禁用其它行的安装按钮防并发下载
+                        enabled = state.githubFeaturedInstallingId == null
+                    ) {
+                        Text(
+                            if (installing) {
+                                stringResource(R.string.market_installing)
+                            } else {
+                                stringResource(R.string.market_action_install)
+                            }
+                        )
+                    }
+                }
+            }
+        )
     }
 }
 

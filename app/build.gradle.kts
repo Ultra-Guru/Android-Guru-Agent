@@ -207,7 +207,7 @@ dependencies {
     // Coding 模式（与 Agent 模式同级别）：编码工具集 / 编码引擎 / 工作区管理
     implementation(project(":core:code-tools"))
     implementation(project(":core:code-engine"))
-    // 标准任务循环文本加速核（JNI；DI 把 NativeTextKernel 注入 StandardModeEngine）
+    // 标准任务循环文本加速核（JNI；DI 把 NativeTextKernel 注入 StandardKitAdapter → standard-loop 库）
     implementation(project(":core:code-native"))
     implementation(project(":platform:code-workspace"))
     // 逆向 MCP Host（#173）：手机作为 MCP Server（streamable HTTP，纯 JVM）

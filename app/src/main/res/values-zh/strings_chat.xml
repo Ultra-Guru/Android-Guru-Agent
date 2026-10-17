@@ -298,6 +298,8 @@
     <string name="chat_user_input_expired">⏱ 等待 5 分钟未获回答，提问已关闭，Agent 继续执行。需要时可重新提问。</string>
     <string name="chat_user_input_late">⚠️ 该提问已等待超时，你的回答未能送达引擎。如仍想补充，请直接发送新消息。</string>
     <string name="chat_question_expired">⏱ 确认等待超时（5 分钟），已按未决处理：本次未执行，下次调用将再次询问。</string>
+    <string name="chat_plan_confirm_late">⚠️ 计划确认未送达：当前无等待中的计划确认（或已超时收场）。如仍需确认，请重新发送消息。</string>
+    <string name="chat_spec_confirm_late">⚠️ 规格确认未送达：当前无等待中的规格确认（或已超时收场）。如仍需确认，请重新发送消息。</string>
 
     <!-- ═══ SlashMenuProvider（斜杠菜单分组）═══ -->
     <string name="chat_slash_no_skills">暂无已启用 Skill</string>

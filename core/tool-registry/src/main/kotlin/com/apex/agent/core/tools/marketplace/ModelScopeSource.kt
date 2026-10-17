@@ -41,6 +41,10 @@ import java.io.IOException
  *   null 而让条目从目录里静默消失（frontmatter 永远在文件头部）；
  * - frontmatter 抓取改 Semaphore(4) 受控并发：几十个技能目录从串行数十秒
  *   降到秒级；单条失败保留条目（name 回退 id），不再整条丢弃。
+ *
+ * #339（镜像 fallback）：SKILL.md/资源此前全部直连
+ * raw.githubusercontent.com（国内大面积不可达，魔搭资源反而从 GitHub 拉）——
+ * 现统一经 [RawGitHubMirrors.fetchWithFallback]（jsdelivr 三级 CDN → 直连）。
  */
 class ModelScopeSource(
     private val httpClient: OkHttpClient,
@@ -50,6 +54,13 @@ class ModelScopeSource(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val baseUrl = "https://api.github.com/repos/modelscope/modelscope-skills"
+
+    /**
+     * 仓库内文件的 raw 直链基址（#339：fetchRaw 统一改走镜像 fallback：
+     * jsdelivr 三级 CDN 优先，raw 直连兜底）。
+     */
+    private val rawBaseUrl =
+        "https://raw.githubusercontent.com/modelscope/modelscope-skills/main"
 
     data class ModelScopeSkill(
         val id: String,            // 插件 id（如 ms-hub）
@@ -102,7 +113,9 @@ class ModelScopeSource(
     suspend fun fetchSkillMarkdown(skill: ModelScopeSkill): Result<String> =
         withContext(Dispatchers.IO) {
             fetchRaw(skill.path)?.let { Result.success(it) }
-                ?: Result.failure(Exception("下载失败: ${skill.path}"))
+                ?: Result.failure(
+                    Exception("下载失败: ${skill.path}（国内网络可能需要镜像加速）")
+                )
         }
 
     /** 下载插件目录内的资源文件（references/scripts 等），返回 content。 */
@@ -169,7 +182,7 @@ class ModelScopeSource(
      * 解析 SKILL.md frontmatter 的 name/description（只读前 64KB；超长文件
      * 截断头部继续解析 —— frontmatter 永远在文件开头，截断不影响取值）。
      */
-    private fun fetchFrontmatter(path: String): Pair<String?, String?>? {
+    private suspend fun fetchFrontmatter(path: String): Pair<String?, String?>? {
         val raw = fetchRaw(
             path,
             limitBytes = FRONTMATTER_LIMIT_BYTES,
@@ -196,54 +209,31 @@ class ModelScopeSource(
     }
 
     /**
-     * 抓取仓库内单文件内容。
+     * 抓取仓库内单文件内容（#339：改走镜像 fallback —— jsdelivr 三级 CDN
+     * 优先，直连兜底；token 只附给 raw.githubusercontent.com 直连候选，
+     * 不发给 CDN）。
      *
      * [truncate] = true（frontmatter 探测路径）：读到 [limitBytes] 即停，超限
      * 返回**截断后的头部**（P2-5：>64KB 的 SKILL.md 不能因超限从目录消失，
      * frontmatter 解析只需要文件头部）；
-     * [truncate] = false（安装全文路径）：超限返回 null → 调用方明确报
-     * 「下载失败」，不静默装出被截断的技能正文。
+     * [truncate] = false（安装全文路径）：超限/全部源失败返回 null → 调用方
+     * 明确报「下载失败」，不静默装出被截断的技能正文。
      */
-    private fun fetchRaw(
+    private suspend fun fetchRaw(
         path: String,
         limitBytes: Int = MAX_BODY_BYTES,
         truncate: Boolean = false
-    ): String? {
-        val request = Request.Builder()
-            .url("https://raw.githubusercontent.com/modelscope/modelscope-skills/main/$path")
-            .header("User-Agent", "ApexAgent/1.0")
-            .apply { gitHubTokenProvider()?.let { header("Authorization", "Bearer $it") } }
-            .build()
-        return try {
-            httpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return null
-                response.body?.byteStream()?.let { stream ->
-                    // 多读 1 字节用于判断是否超限；截断模式下读满即断流，
-                    // 不会把整个大文件拉下来
-                    val bytes = stream.readBytes(limitBytes + 1)
-                    when {
-                        bytes.size <= limitBytes -> String(bytes, Charsets.UTF_8)
-                        truncate -> String(bytes, 0, limitBytes, Charsets.UTF_8)
-                        else -> null
-                    }
-                }
-            }
-        } catch (e: IOException) {
-            null
-        }
-    }
-
-    private fun java.io.InputStream.readBytes(max: Int): ByteArray {
-        val out = java.io.ByteArrayOutputStream()
-        val buf = ByteArray(8 * 1024)
-        var total = 0
-        while (total < max) {
-            val n = read(buf, 0, minOf(buf.size, max - total))
-            if (n < 0) break
-            out.write(buf, 0, n)
-            total += n
-        }
-        return out.toByteArray()
+    ): String? = try {
+        val bytes = RawGitHubMirrors.fetchWithFallback(
+            client = httpClient,
+            rawUrl = "$rawBaseUrl/$path",
+            maxBytes = limitBytes,
+            truncateAtLimit = truncate,
+            bearerForRawOnly = gitHubTokenProvider()
+        )
+        String(bytes, Charsets.UTF_8)
+    } catch (e: IOException) {
+        null
     }
 
     companion object {

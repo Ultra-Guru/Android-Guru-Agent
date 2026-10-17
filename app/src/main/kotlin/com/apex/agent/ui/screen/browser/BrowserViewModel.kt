@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
-import com.apex.browser.chrome.LiveViewOverlay
+import com.apex.browser.chrome.BrowserEngineGateway
+import com.apex.browser.chrome.InAppChromeHost
+import com.apex.browser.chrome.bridge.ApexChromeWiring
 import com.apex.browser.engine.BrowserEngine
 import com.apex.browser.engine.BrowserTracer
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -26,6 +28,13 @@ import javax.inject.Inject
 
 /**
  * 浏览器大功能页 ViewModel —— 会话状态 / 标签 / 最近动作的只读镜像 + 人工操作入口。
+ *
+ * v1.5.1 起本页双形态：**浏览器页签**（App 内嵌完整浏览器，[InAppChromeHost]
+ * 承载引擎 WebView，[gateway] 驱动 BrowserChrome 全套外观——地址栏/标签/查找/
+ * 下载/弹窗；零悬浮窗权限）+ **仪表盘页签**（观测/干预面板，本类状态镜像的
+ * 消费方）。实时页面浮窗（[LiveViewOverlay]，Agent 驾驶时自动弹出的透明卡片）
+ * 与悬浮球的入口不变，本类不再直接驱动它——「查看实时页面」一律切到浏览器
+ * 页签（in-app 承载仲裁会让浮窗让位，页面直接在 App 内看）。
  *
  * 状态源：[BrowserEngine.addUiCallback]（引擎内部线程回调，与
  * CyberNeonBallManager 的订阅同款线程模型）——经 viewModelScope（Main.immediate）
@@ -49,8 +58,9 @@ import javax.inject.Inject
 class BrowserViewModel @Inject constructor(
     private val engine: BrowserEngine,
     private val tracer: BrowserTracer,
-    // v1.4.1：「查看实时页面」入口（透明悬浮窗强制唤起；HIDDEN 时另走人工接管）
-    private val liveView: LiveViewOverlay,
+    // v1.5.1：App 内嵌浏览器（浏览器页签）——chrome 数据源与承载控制器
+    private val chromeWiring: ApexChromeWiring,
+    val inAppHost: InAppChromeHost,
 ) : ViewModel() {
 
     data class BrowserUiState(
@@ -78,6 +88,9 @@ class BrowserViewModel @Inject constructor(
     /** 一次性动作失败事件（UI 收集 → snackbar；展示后调 [consumeActionError] 清空）。 */
     private val _actionError = MutableStateFlow<BrowserActionError?>(null)
     val actionError: StateFlow<BrowserActionError?> = _actionError.asStateFlow()
+
+    /** 浏览器页签：BrowserChrome 的命令/数据边界（地址栏/标签/查找/弹窗全走它）。 */
+    val gateway: BrowserEngineGateway get() = chromeWiring.gateway
 
     /** 消费当前失败事件（防止旋转/重组重复弹同一条反馈）。 */
     fun consumeActionError() {
@@ -131,25 +144,22 @@ class BrowserViewModel @Inject constructor(
         publish(engine.currentState, tab?.url, tab?.title)
     }
 
+    /**
+     * 打开浏览器（v1.5.1，浏览器页签空态与仪表盘「打开浏览器」共用）：
+     * HIDDEN → 复用首个标签（无则新建空白页）+ 进入人工接管（WAITING_HUMAN，
+     * Agent 工具锁定、地址栏交给用户）；非 HIDDEN 幂等空操作（页面已在，
+     * 浏览器页签直接展示当前实况）。
+     */
+    fun openBrowser() = launchAction("openBrowser") {
+        if (engine.currentState == BrowserEngine.BrowserSessionState.HIDDEN) {
+            if (engine.tabsSnapshot().isEmpty()) engine.newTab()
+            engine.enterHandoffMode()
+        }
+    }
+
     /** 新建浏览器会话（空白页起步；页面加载后状态回调自然驱动 UI）。 */
     fun newSession() = launchAction("newTab") {
         engine.newTab()
-    }
-
-    /**
-     * 查看实时页面（v1.4.1）：
-     * - 会话激活（驾驶/接管/恢复）→ 强制唤起实时页面悬浮窗（复位用户收起标记，
-     *   透明卡片显示 Agent 正在开的真实页面）；
-     * - HIDDEN（从未开会话）→ 新建空白会话并进入人工接管 —— 全屏浏览器浮窗
-     *   直接给用户用（「从抽屉栏打开浏览器」的完整体验，与悬浮球点击同源）。
-     */
-    fun viewLivePage() = launchAction("viewLivePage") {
-        if (engine.currentState == BrowserEngine.BrowserSessionState.HIDDEN) {
-            engine.newTab()
-            engine.enterHandoffMode()
-        } else {
-            liveView.show()
-        }
     }
 
     /** 结束会话：状态回落 HIDDEN，浮窗/悬浮球随之收起。 */

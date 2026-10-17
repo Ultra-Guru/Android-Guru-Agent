@@ -42,7 +42,9 @@ import com.apex.agent.ui.screen.agent.CODING_SCREEN_MODES
 import com.apex.agent.ui.screen.agent.PendingPipelineCommand
 import com.apex.agent.ui.screen.agent.llmConfiguredFlow
 import com.apex.agent.ui.screen.code.editor.AtRefParser
+import com.apex.agent.ui.screen.code.editor.EditorFileException
 import com.apex.agent.ui.screen.code.editor.EditorFileLoader
+import com.apex.agent.ui.screen.code.editor.EditorLoadError
 import com.apex.agent.ui.screen.code.session.CodeSessionSnapshot
 import com.apex.agent.ui.screen.code.session.CodeSessionStore
 import com.apex.agent.ui.screen.code.session.toStreamEntries
@@ -334,7 +336,10 @@ class CodeViewModel @Inject constructor(
     /** #197 PLAN 模式计划确认/驳回（人控门；勾选/重排同 Agent 屏口径）。 */
     fun confirmPlan(confirmed: Boolean, enabledSteps: List<Int>? = null, order: List<Int>? = null) {
         _uiState.update { it.copy(awaitingPlanConfirmation = false) }
-        codeEngineImpl?.submitPlanConfirmation(confirmed, enabledSteps, order)
+        // #340：回执 false/null = 无挂起等待（迟到/被 abort）——显式提示「未送达」。
+        if (codeEngineImpl?.submitPlanConfirmation(confirmed, enabledSteps, order) != true) {
+            appendSystemMessage(languageManager.getString(R.string.chat_plan_confirm_late))
+        }
     }
 
     // ═══ #197 斜杠指令管线（Coding 工位：coding 域技能/MCP）；v5 多选 chip ═══
@@ -722,6 +727,35 @@ class CodeViewModel @Inject constructor(
         _uiState.update { it.copy(error = message, errorRetriable = retriable) }
     }
 
+    /**
+     * 异常 → 错误条可读文案（#209；#312 资源化）：
+     * 1. 高频类型直接映射资源（见 [ERROR_FRIENDLY_RES]）；
+     * 2. 其余取 message 首个有意义行（过滤空行/null 字样/堆栈帧/类名前缀）；
+     * 3. 全部无效时回退「执行失败（异常类型）」—— 堆栈与 null 字样绝不直出。
+     */
+    internal fun sanitizeErrorText(e: Throwable): String {
+        ERROR_FRIENDLY_RES[e::class.simpleName]?.let { return languageManager.getString(it) }
+        val detail = e.message
+            ?.lineSequence()
+            ?.map { it.trim() }
+            ?.firstOrNull { line ->
+                line.isNotEmpty() &&
+                    !line.equals("null", ignoreCase = true) &&
+                    !line.startsWith("Caused by:") &&
+                    !STACK_FRAME_LINE.containsMatchIn(line)
+            }
+            ?.let { EXCEPTION_NAME_PREFIX.replace(it, "").trim() }
+            .orEmpty()
+        return if (detail.isEmpty()) {
+            languageManager.getString(
+                R.string.code_err_execute_failed_fmt,
+                e::class.simpleName ?: languageManager.getString(R.string.code_err_unknown_exception)
+            )
+        } else {
+            detail
+        }
+    }
+
     fun clearConversation() {
         if (_uiState.value.isRunning) return
         codeEngineImpl?.clearConversation()
@@ -806,7 +840,8 @@ class CodeViewModel @Inject constructor(
         effectiveRunLevel = decision.level
         codeEngineImpl?.updateThinkingLevel(decision.level)
         _uiState.update { it.copy(adaptiveDecision = decision.reason) }
-        appendSystemMessage("🧠 自适应预检：$decision.reason")
+        // #312：前缀文案资源化（decision.reason 为 core 侧生成，另行跟踪）
+        appendSystemMessage(languageManager.getString(R.string.code_adaptive_precheck_fmt, decision.reason))
     }
 
     /**
@@ -882,6 +917,11 @@ class CodeViewModel @Inject constructor(
                 }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: EditorFileException) {
+                // #312：数据层稳定错误码 → 本地化文案（编辑器面板错误行）。
+                if (_uiState.value.editorFilePath == trimmed) {
+                    _uiState.update { it.copy(editorLoading = false, editorError = editorErrorText(e)) }
+                }
             } catch (e: Exception) {
                 if (_uiState.value.editorFilePath == trimmed) {
                     // #209 收尾：编辑器加载失败同样走 sanitize —— 裸 message
@@ -902,6 +942,18 @@ class CodeViewModel @Inject constructor(
         _uiState.update { it.copy(editorError = null) }
     }
 
+    /**
+     * #312：EditorFileLoader 稳定错误码 → 本地化文案（纯数据层不依赖
+     * Android 资源，UI 侧按码取词；上下文变量：路径 / 字节数）。
+     */
+    private fun editorErrorText(e: EditorFileException): String = when (e.code) {
+        EditorLoadError.EMPTY_PATH -> languageManager.getString(R.string.code_editor_err_empty_path)
+        EditorLoadError.PATH_ESCAPE -> languageManager.getString(R.string.code_editor_err_escape_fmt, e.path.orEmpty())
+        EditorLoadError.NOT_FOUND -> languageManager.getString(R.string.code_editor_err_not_found_fmt, e.path.orEmpty())
+        EditorLoadError.IS_DIRECTORY -> languageManager.getString(R.string.code_editor_err_directory_fmt, e.path.orEmpty())
+        EditorLoadError.TOO_LARGE -> languageManager.getString(R.string.code_editor_err_too_large_fmt, e.byteCount)
+    }
+
     // ═══ 工作区管理 ═══
 
     fun refreshWorkspaces() {
@@ -916,7 +968,7 @@ class CodeViewModel @Inject constructor(
     fun createWorkspace(name: String) {
         val created = workspaceManager.create(name)
         if (created == null) {
-            showError("无法创建工作区（名称为空或已存在）")
+            showError(languageManager.getString(R.string.code_ws_create_failed))
             return
         }
         bindWorkspace(created)
@@ -929,11 +981,11 @@ class CodeViewModel @Inject constructor(
 
     fun deleteWorkspace(workspaceId: String) {
         if (_uiState.value.isRunning) {
-            showError("任务运行中，不能删除工作区")
+            showError(languageManager.getString(R.string.code_ws_delete_blocked_running))
             return
         }
         if (workspaceId == "default") {
-            showError("默认工作区不可删除")
+            showError(languageManager.getString(R.string.code_ws_delete_default))
             return
         }
         workspaceManager.delete(workspaceId)
@@ -1024,13 +1076,13 @@ class CodeViewModel @Inject constructor(
                     stream = CodeStreamSnapshot()
                 )
             }
-            val env = ws.detectedEnvironment ?: "空工作区"
+            val env = ws.detectedEnvironment ?: languageManager.getString(R.string.code_ws_empty_env)
             _uiState.update { state ->
                 state.copy(
                     messages = state.messages + CodeChatMessage(
                         id = idGen.incrementAndGet(),
                         role = CodeChatMessage.Role.SYSTEM,
-                        text = "已切换到工作区「${ws.name}」（$env）。描述你的编码任务开始吧。"
+                        text = languageManager.getString(R.string.code_ws_switched_fmt, ws.name, env)
                     )
                 )
             }
@@ -1120,19 +1172,23 @@ class CodeViewModel @Inject constructor(
         /** 渲染攒批窗口：25ms = 上限 40Hz（规格书：脉冲式输出）。 */
         const val RENDER_TICK_MS = 25L
 
-        // ═══ #209 错误文案净化（错误条不直出裸异常文本）═══
+        // ═══ #209 错误文案净化（错误条不直出裸异常文本；#312 文案资源化）═══
 
-        /** 高频异常类型 → 中文可读文案（模型运行时类与 llm-adapter 的 LlmErrorText 口径对齐）。 */
-        private val ERROR_FRIENDLY_TEXT: Map<String, String> = mapOf(
-            "SocketTimeoutException" to "网络请求超时，请检查网络后重试",
-            "ConnectException" to "网络连接失败，请检查网络或服务地址",
-            "UnknownHostException" to "无法解析服务地址，请检查网络或 API 配置",
-            "SocketException" to "网络连接异常断开，请检查网络后重试",
-            "SSLException" to "安全连接（SSL/TLS）失败，请检查证书或代理设置",
-            "EOFException" to "连接被服务端提前关闭，请稍后重试",
-            "IOException" to "数据读写异常，请检查网络或存储后重试",
-            "SerializationException" to "响应数据解析失败，请重试或更换模型",
-            "JsonEncodingException" to "响应数据解析失败（非 JSON 内容），请重试"
+        /**
+         * 高频异常类型 → 可读文案资源（模型运行时类与 llm-adapter 的
+         * LlmErrorText 口径对齐；取词在实例层 sanitizeErrorText 经
+         * languageManager 按当前语言解析）。
+         */
+        private val ERROR_FRIENDLY_RES: Map<String, Int> = mapOf(
+            "SocketTimeoutException" to R.string.code_err_socket_timeout,
+            "ConnectException" to R.string.code_err_connect,
+            "UnknownHostException" to R.string.code_err_unknown_host,
+            "SocketException" to R.string.code_err_socket,
+            "SSLException" to R.string.code_err_ssl,
+            "EOFException" to R.string.code_err_eof,
+            "IOException" to R.string.code_err_io,
+            "SerializationException" to R.string.code_err_serialization,
+            "JsonEncodingException" to R.string.code_err_json_encoding
         )
 
         /** 堆栈帧样式行（at com.example.Foo.bar(Foo.kt:12)）——过滤目标。 */
@@ -1140,31 +1196,5 @@ class CodeViewModel @Inject constructor(
 
         /** 「a.b.ClassName: 前缀」样式 —— 剥离类名前缀只留可读描述。 */
         private val EXCEPTION_NAME_PREFIX = Regex("^[\\w.$]+(?:Exception|Error)\\s*:\\s*")
-
-        /**
-         * 异常 → 错误条可读文案（#209）：
-         * 1. 高频类型直接映射中文（见 [ERROR_FRIENDLY_TEXT]）；
-         * 2. 其余取 message 首个有意义行（过滤空行/null 字样/堆栈帧/类名前缀）；
-         * 3. 全部无效时回退「执行失败（异常类型）」—— 堆栈与 null 字样绝不直出。
-         */
-        fun sanitizeErrorText(e: Throwable): String {
-            ERROR_FRIENDLY_TEXT[e::class.simpleName]?.let { return it }
-            val detail = e.message
-                ?.lineSequence()
-                ?.map { it.trim() }
-                ?.firstOrNull { line ->
-                    line.isNotEmpty() &&
-                        !line.equals("null", ignoreCase = true) &&
-                        !line.startsWith("Caused by:") &&
-                        !STACK_FRAME_LINE.containsMatchIn(line)
-                }
-                ?.let { EXCEPTION_NAME_PREFIX.replace(it, "").trim() }
-                .orEmpty()
-            return if (detail.isEmpty()) {
-                "执行失败（${e::class.simpleName ?: "未知异常"}）"
-            } else {
-                detail
-            }
-        }
     }
 }
