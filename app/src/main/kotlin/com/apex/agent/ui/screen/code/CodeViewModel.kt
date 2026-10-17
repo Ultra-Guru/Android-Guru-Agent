@@ -126,10 +126,8 @@ class CodeViewModel @Inject constructor(
     // Issue #164：全局规则（设置页编辑）——发送前同步到引擎，refreshContext 时
     // 经 RulesProvider 注入（goal 扩展 CodeGoalController.kt 同包消费）
     internal val settingsRepository: com.apex.agent.ui.screen.settings.SettingsRepository,
-    // v1.2 长任务中心：追踪器（事件流聚合）+ 复制引擎 + 存储（面板直读）+ 档位
-    // 效能统计。可见性：longTaskTracker 供 CodeEventReducer.kt（main 侧拆分）；
-    // taskCopyEngine / longTaskStore / thinkingEvolutionTracker 供
-    // CodeLongTaskCenterOps.kt（PR 侧拆分）——两拆分文件并存所需。
+    // v1.2 长任务中心：追踪器/复制引擎/存储/档位统计。longTaskTracker 供
+    // CodeEventReducer.kt；taskCopyEngine/longTaskStore/thinkingEvolutionTracker 供 CodeLongTaskCenterOps.kt。
     internal val longTaskTracker: LongTaskTracker,
     internal val taskCopyEngine: TaskCopyEngine,
     internal val longTaskStore: LongTaskStore,
@@ -382,9 +380,8 @@ class CodeViewModel @Inject constructor(
             return
         }
         // ═══ v1.5 /logic:<mode> — 本地路由命令：切换双思考逻辑 ═══
-        // 与其他四类命令不同，这是纯 ViewModel 状态操作（持久化 + 门面路由
-        // + 会话现场保留），必须在此截获、不进通用路由（Agent 屏才会走到
-        // 路由的引导分支）。运行中拒绝切换与选择器入口同口径（防丢现场）。
+        // 纯 ViewModel 状态操作（持久化 + 门面路由 + 会话现场保留），必须在此
+        // 截获、不进通用路由。运行中拒绝切换与选择器入口同口径（防丢现场）。
         if (parsed is SlashCommand.Logic) {
             handleLogicCommand(parsed)
             return
@@ -590,10 +587,9 @@ class CodeViewModel @Inject constructor(
         // uiState.adaptiveDecision（选择器旁回显）。非 AUTO 档直接用用户显式档。
         resolveRuntimeThinkingLevel(goal)
 
-        // v1.2 长任务追踪：本次运行的开始（旧 run 若未收尾会被自动 ABORTED
-        // 收尾判定——见 LongTaskTracker.beginRun 防御语义）。记录的档位
-        // 用用户选择（AUTO 记 AUTO——诚实口径：统计的是"选 AUTO 这个
-        // 决策"的表现，实际生效档在 adaptiveDecision 可追溯）。
+        // v1.2 长任务追踪：本次运行的开始（旧 run 未收尾会被自动 ABORTED
+        // 收尾，见 LongTaskTracker.beginRun 防御）。档位记用户选择（AUTO 记
+        // AUTO——诚实口径，实际生效档在 adaptiveDecision 可追溯）。
         longTaskTracker.beginRun(
             goal = goal,
             workspaceId = boundWorkspaceId ?: "",
@@ -673,16 +669,11 @@ class CodeViewModel @Inject constructor(
 
     fun abort() {
         runJob?.cancel()
-        // ═══ 本地防御式收尾（对齐 Agent 屏 AgentChatViewModel.abort 语义）═══
-        // 引擎 catch(CancellationException) 里的 emit(AgentEvent.Aborted) 在
-        // 已取消协程上再次抛出取消异常——收尾事件永远到不了收集器；时间轴
-        // 不本地收口会冻结在流式态（结论气泡挂「▍」光标、RUNNING 胶囊无限
-        // 计时——用户实测截图：中止后 skill_search 卡转 37s+）。先 cancel 再
-        // 收尾：同线程串行，cancel 后不会再有新事件进入会话，无快照竞态。
+        // 本地防御式收尾（对齐 Agent 屏 abort）：已取消协程上 emit(Aborted) 再抛取消异常、
+        // 事件到不了收集器，不收口则时间轴冻结（气泡挂光标、胶囊无限计时）。
         streamSession.abortLocally()
         viewModelScope.launch { codeEngine.abort() }
-        // 停 ticker 前冲最终快照：收口后的时间轴（PARTIAL 胶囊/停止卡）
-        // 立即可见，而不是等下一次根本不会来的 tick。
+        // 收口后的时间轴立即冲最终快照，不等不会来的 tick。
         stopRenderTicker()
         _uiState.update { it.copy(isRunning = false) }
     }

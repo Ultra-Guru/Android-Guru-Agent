@@ -576,6 +576,8 @@ class CodeStreamSessionTest {
         s2.onEvent(AgentEvent.ThinkingChunk("想三。"))
         val thinking = s2.snapshot().entries.filterIsInstance<StreamEntry.ThinkingEntry>().single()
         assertEquals("想一，想二，想三。", thinking.text)
+    }
+
     // ═══ 终端面板流水式折叠信号（terminalBusy / 命令摘要 / 退出码）═══
     // 用户需求：「终端命令等流水似输出：运行时保持展开跟随输出，
     // 完成后自动折叠成胶囊」—— UI 侧由 CodeScreen 按 terminalBusy 驱动

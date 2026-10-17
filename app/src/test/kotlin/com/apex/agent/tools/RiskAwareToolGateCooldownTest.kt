@@ -6,6 +6,7 @@ import com.apex.agent.core.engine.UserQuestionGateway
 import com.apex.agent.core.tools.AgentTool
 import com.apex.agent.core.tools.GateDecision
 import com.apex.agent.core.tools.SessionToolDecision
+import com.apex.agent.core.tools.ToolAnnotations
 import com.apex.agent.core.tools.ToolCategory
 import com.apex.agent.core.tools.ToolMetadata
 import com.apex.agent.core.tools.ToolRisk
@@ -28,15 +29,20 @@ import org.junit.Test
  */
 class RiskAwareToolGateCooldownTest {
 
-    /** MEDIUM 第三方动态族（mcp_ 前缀）——真实触发确认链的工具形态。 */
+    /**
+     * 敏感动作用具（sensitiveAction = true）——确认面收敛后真实触发确认链的
+     * 工具形态（main #390 起 HIGH/MEDIUM 风险本身不再弹窗，仅显式声明
+     * sensitiveAction 的工具进入 promptUser 分支）。
+     */
     private class FakeMcpTool(override val id: String) : AgentTool {
         override val name: String = id
-        override val description: String = "测试用第三方工具"
+        override val description: String = "测试用敏感动作工具"
         override val parametersSchema: String = "{}"
         override val metadata: ToolMetadata = ToolMetadata(
             id = id,
             category = ToolCategory.MCP,
-            risk = ToolRisk.MEDIUM
+            risk = ToolRisk.MEDIUM,
+            annotations = ToolAnnotations(sensitiveAction = true)
         )
 
         override suspend fun execute(arguments: String): String = "ok"
