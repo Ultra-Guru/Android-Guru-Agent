@@ -109,6 +109,76 @@ class CodeStreamSessionTest {
         assertTrue(!assistant.isStreaming)
     }
 
+    // ═══ 空思考卡防护（2026-10 用户反馈：不思考的模型也被网关喂空串）═══
+
+    @Test
+    fun `empty reasoning chunks never create thinking card`() {
+        val s = CodeStreamSession()
+        s.beginRun("你好")
+        // 网关对不思考的模型每帧发空串 reasoning_content
+        repeat(5) { s.onEvent(AgentEvent.ThinkingChunk("")) }
+        // 引擎侧 reasoningBuilder 恒空 → 不发 ThinkingComplete（模拟真实时序）
+        s.onEvent(AgentEvent.ResponseChunk("你好！需要帮助吗？"))
+        s.onEvent(AgentEvent.ResponseComplete("你好！需要帮助吗？"))
+        val snap = s.snapshot()
+        assertEquals(
+            "空串帧不建思考卡", 0,
+            snap.entries.count { it is StreamEntry.ThinkingEntry }
+        )
+        assertEquals(1, snap.entries.count { it is StreamEntry.AssistantEntry })
+    }
+
+    @Test
+    fun `whitespace-only first chunk does not create card but real chunk does`() {
+        val s = CodeStreamSession()
+        s.beginRun("你好")
+        s.onEvent(AgentEvent.ThinkingChunk("  "))
+        assertEquals(0, s.snapshot().entries.count { it is StreamEntry.ThinkingEntry })
+        s.onEvent(AgentEvent.ThinkingChunk("认真想"))
+        val snap = s.snapshot()
+        val thinking = snap.entries.filterIsInstance<StreamEntry.ThinkingEntry>().single()
+        assertEquals("空白前导被丢弃，正文完整", "认真想", thinking.text)
+    }
+
+    @Test
+    fun `thinking complete with blank text removes placeholder card`() {
+        val s = CodeStreamSession()
+        s.beginRun("你好")
+        s.onEvent(AgentEvent.ThinkingChunk(""))
+        // 某些 provider 先发空串帧、收尾时 fullThought 也是空白
+        s.onEvent(AgentEvent.ThinkingComplete("  "))
+        assertEquals(
+            "空白收尾不残留思考卡", 0,
+            s.snapshot().entries.count { it is StreamEntry.ThinkingEntry }
+        )
+    }
+
+    @Test
+    fun `beginRun after empty thinking leaves no stale placeholder`() {
+        val s = CodeStreamSession()
+        s.beginRun("第一轮")
+        s.onEvent(AgentEvent.ThinkingChunk(""))
+        s.beginRun("第二轮") // 中止路径无 Complete，beginRun 收口
+        assertEquals(
+            "跨轮收口移除空白占位", 0,
+            s.snapshot().entries.count { it is StreamEntry.ThinkingEntry }
+        )
+    }
+
+    @Test
+    fun `blank response chunks never create empty assistant bubble`() {
+        val s = CodeStreamSession()
+        s.beginRun("你好")
+        // provider 发 content:"" 的 tool_calls 前导帧
+        s.onEvent(AgentEvent.ResponseChunk(""))
+        assertEquals(0, s.snapshot().entries.count { it is StreamEntry.AssistantEntry })
+        s.onEvent(AgentEvent.ResponseComplete(""))
+        assertEquals(
+            "空白收尾不残留空气泡", 0,
+            s.snapshot().entries.count { it is StreamEntry.AssistantEntry }
+        )
+    }
+
     @Test
     fun `verify cycle collapses edit then lint into round card`() {
         val s = CodeStreamSession()

@@ -72,10 +72,7 @@ class StandardModeEngine(
     private val memory: CodeConversationMemory? = null,
     private val contextProvider: CodeContextProvider? = null,
     private val rulesProvider: RulesProvider? = null,
-    /**
-     * 文本加速核（可选；null = 纯 Kotlin 估算）。native JNI 实现由
-     * App 层注入（core/code-native），失败自动回退——引擎不感知。
-     */
+    /** 文本加速核（可选；null = 纯 Kotlin 估算）。native 实现由 App 层注入，失败自动回退。 */
     private val textKernel: StandardTextKernel? = null,
     /** 子代理并发上限。 */
     private val subAgentMaxConcurrent: Int = 3,
@@ -386,7 +383,8 @@ class StandardModeEngine(
                             contentBuilder.append(it)
                             emit(AgentEvent.ResponseChunk(it))
                         }
-                        chunk.reasoningContent?.let {
+                        // 空串思考帧过滤（同 ApexAgentEngine：防永不收尾的空思考卡）
+                        chunk.reasoningContent?.takeIf { it.isNotEmpty() }?.let {
                             reasoningBuilder.append(it)
                             emit(AgentEvent.ThinkingChunk(it))
                         }

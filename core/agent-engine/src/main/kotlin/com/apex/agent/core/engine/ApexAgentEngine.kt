@@ -864,7 +864,11 @@ class ApexAgentEngine(
                 }
                 // 原生思考内容（DeepSeek-R1 / Qwen3-thinking / OpenAI o-series 等）：
                 // 透传为 ThinkingChunk，让 UI 显示思维链。
-                chunk.reasoningContent?.let {
+                // 空串帧过滤（2026-10 用户反馈）：部分网关对不思考的模型也
+                // 每帧发 reasoning_content:"" —— 旧实现把空串喂给 UI 建出
+                // 永不收尾的空思考卡（reasoningBuilder 恒空 → 不发
+                // ThinkingComplete）。空串不进管道。
+                chunk.reasoningContent?.takeIf { it.isNotEmpty() }?.let {
                     reasoningBuilder.append(it)
                     emit(AgentEvent.ThinkingChunk(it))
                 }
