@@ -441,6 +441,7 @@ object ToolModule {
         memorySearchNodesTool: MemorySearchNodesTool,
         memoryRecallMacroTool: MemoryRecallMacroTool,
         browserAgentTools: BrowserAgentTools,
+        fusionController: com.apex.agent.fusion.FusionBundleController,
         // T76: Linux environment productionization 依赖
         linuxEnvironmentHealth: LinuxEnvironmentHealth,
         ubuntuBootstrapManager: UbuntuBootstrapManager,
@@ -451,8 +452,7 @@ object ToolModule {
         ubuntuLifecycle: com.apex.agent.platform.terminal.ubuntu.lifecycle.UbuntuLifecycleCoordinator,
         // P83 (T4): 项目感知环境闭环（TerminalWorkspaceEnvironment 工具）
         projectEnvironment: com.apex.agent.platform.terminal.environment.ProjectEnvironmentCoordinator,
-        // T82：guest fs API + apexctl 桥 + 镜像/ensure 接线
-        // 注：rootfsTarget 已在上方 P83 参数区声明（同一类型），此处不重复。
+        // T82：guest fs API + apexctl 桥 + 镜像/ensure 接线（rootfsTarget 见上方 P83 区）
         guestFilesystem: com.apex.agent.platform.TerminalFs.GuestFilesystem,
         guestBridgeService: com.apex.agent.platform.TerminalBridge.GuestBridgeService,
         ubuntuSourcesList: com.apex.agent.platform.terminal.ubuntu.UbuntuSourcesList,
@@ -964,16 +964,17 @@ object ToolModule {
             )
         )
 
-        // ═══ 13. Skill 工具接线（此前缺口：skill_* 管理工具与已启用技能的
-        // composite/script 工具从未注册进 ToolRegistry，安装后形同虚设）═══
+        // ═══ 13. Skill 工具接线（管理工具 + composite/script 装载注册）═══
         registry.register(SafeAgentTool(SkillSearchTool(httpClient)))
         registry.register(SafeAgentTool(SkillInstallTool(skillRegistry, httpClient, skillActivation)))
         registry.register(SafeAgentTool(SkillCreateTool(skillRegistry)))
         registry.register(SafeAgentTool(SkillListTool(skillRegistry)))
         registry.register(SafeAgentTool(SkillUninstallTool(skillRegistry)))
-        // 技能渐进披露：模型侧装载入口。目录在系统提示词，方法论全文经本工具
-        // 装载（工具结果即时返回全文 + 写入激活集持续注入后续轮次）。
+        // 技能渐进披露：模型侧装载入口（全文返回 + 写入激活集持续注入）。
         registry.register(SafeAgentTool(SkillActivateTool(skillRegistry, skillActivation)))
+
+        // ═══ 13b. FusionBundle 工具族（FusionList/FusionInfo/FusionActivate —— 注册体在卫星文件）═══
+        registerFusionBundleTools(registry, fusionController)
 
         // ═══ 14. Tool System v3/v5 新工具（纯 JVM）—— 注册体拆至同文件（同上 SRP 预算）═══
         registerToolSystemV3V5Tools(registry, conversationMemory)

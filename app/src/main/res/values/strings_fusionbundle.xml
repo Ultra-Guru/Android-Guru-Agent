@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FusionBundle (compound capability pack) strings (English default).
+     Chinese in values-zh/strings_fusionbundle.xml.
+     Language switching: LanguageManager + MainActivity attachBaseContext/recreate. -->
+<resources>
+
+    <!-- ═══ Input-bar entry button ═══ -->
+    <string name="fusion_cd_bundle">FusionBundle packs: skills + MCP servers + tools in one switch</string>
+    <string name="fusion_cd_bundle_active">FusionBundle active — tap to manage or switch off</string>
+
+    <!-- ═══ Picker sheet ═══ -->
+    <string name="fusion_picker_title">FusionBundle Packs</string>
+    <string name="fusion_picker_subtitle">Aggregate packs of skills, MCP servers, tools and an agent workflow — pick one and its whole system agent goes live.</string>
+    <string name="fusion_picker_empty">No packs installed yet.</string>
+    <string name="fusion_picker_footnote">Activation installs the pack\'s skills, connects its MCP servers and injects its workflow. Bundled packs are preinstalled and cannot be uninstalled.</string>
+    <string name="fusion_badge_bundled">Built-in</string>
+    <string name="fusion_row_components">%1$d skills · %2$d MCP · %3$d flagship tools · %4$d optional engines</string>
+
+    <!-- ═══ Actions & results ═══ -->
+    <string name="fusion_action_activate">Use this pack</string>
+    <string name="fusion_action_deactivate">Stop using</string>
+    <string name="fusion_result_activated">FusionBundle %1$s is live — its system agent is ready.</string>
+    <string name="fusion_result_deactivated">%1$s deactivated; skills and servers stay installed.</string>
+    <string name="fusion_result_failed">Activation failed</string>
+    <string name="fusion_result_skipped"> %1$d component(s) skipped.</string>
+
+    <!-- ═══ Active banner ═══ -->
+    <string name="fusion_banner_active">%1$s system agent is live</string>
+</resources>
