@@ -40,6 +40,7 @@ import com.apex.agentkit.loop.KitMcpInstructionSource
 import com.apex.agentkit.loop.KitMessage
 import com.apex.agentkit.loop.KitModelClient
 import com.apex.agentkit.loop.KitModelInfo
+import com.apex.agentkit.loop.KitModelInfoSource
 import com.apex.agentkit.loop.KitPermissionSource
 import com.apex.agentkit.loop.KitPlan
 import com.apex.agentkit.loop.KitRequestOptions
@@ -156,7 +157,10 @@ class StandardKitAdapter(
             com.apex.agentkit.loop.KitTextKernel { text -> kernel.estimateTokens(text) }
         },
         permissionSource = permissionSource,
-        modelInfoSource = modelInfoProvider?.let { KitModelInfoSource(it) },
+        // SAM 构造器接 lambda 字面量（fun interface）——模型信息源端口接入
+        modelInfoSource = modelInfoProvider?.let { provider ->
+            KitModelInfoSource { provider() }
+        },
         environmentInfoSource = { environmentInfo() },
         workspaceContextSource = HostPromptSections(),
         mcpInstructionSource = mcpInstructionSource,
@@ -456,178 +460,181 @@ class StandardKitAdapter(
     /** 库引擎直通（诊断/扩展用——正常路径全部经本适配器门面）。 */
     fun loopEngineHandle(): AgentLoopEngine = loopEngine
 
-    // ═══════════════════════ 类型映射（协议 ↔ 宿主）═══════════════════════
-
-    private fun UserInput.toKitUserInput(): KitUserInput = KitUserInput(
-        text = text,
-        images = images.map {
-            KitImageContent(
-                base64Data = it.base64Data,
-                mimeType = it.mimeType,
-                url = it.url
-            )
-        },
-        files = files.map { KitAttachment(it.name, it.mimeType, it.sizeBytes) }
-    )
-
-    private fun KitMessage.toLlmMessage(): LlmMessage = when (this) {
-        is KitMessage.System -> LlmMessage.System(content)
-        is KitMessage.User -> LlmMessage.User(content, images.map { it.toImageContent() })
-        is KitMessage.Assistant -> LlmMessage.Assistant(
-            content,
-            toolCalls.map { it.toHostToolCall() }
-        )
-        is KitMessage.ToolResult -> LlmMessage.ToolResult(toolCallId, content)
-    }
-
-    private fun LlmMessage.toKitMessage(): KitMessage = when (this) {
-        is LlmMessage.System -> KitMessage.System(content)
-        is LlmMessage.User -> KitMessage.User(content, images.map { it.toKitImage() })
-        is LlmMessage.Assistant -> KitMessage.Assistant(
-            content,
-            toolCalls.map { it.toKitToolCall() }
-        )
-        is LlmMessage.ToolResult -> KitMessage.ToolResult(toolCallId, content)
-    }
-
-    private fun KitImageContent.toImageContent() =
-        com.apex.agent.core.llm.ImageContent(
-            base64Data = base64Data,
-            mimeType = mimeType,
-            url = url
-        )
-
-    private fun com.apex.agent.core.llm.ImageContent.toKitImage() =
-        KitImageContent(base64Data = base64Data, mimeType = mimeType, url = url)
-
-    private fun com.apex.agent.core.llm.ToolCall.toKitToolCall() =
-        com.apex.agentkit.loop.KitToolCall(
-            id = id,
-            name = name,
-            arguments = arguments,
-            index = index
-        )
-
-    private fun com.apex.agentkit.loop.KitToolCall.toHostToolCall() =
-        com.apex.agent.core.llm.ToolCall(
-            id = id,
-            name = name,
-            arguments = arguments,
-            index = index
-        )
-
-    private fun com.apex.agent.core.llm.ToolDefinition.toKitToolDefinition() =
-        KitToolDefinition(name = name, description = description, parameters = parameters)
-
-    private fun KitToolDefinition.toToolDefinition() =
-        com.apex.agent.core.llm.ToolDefinition(
-            name = name,
-            description = description,
-            parameters = parameters
-        )
-
-    private fun SubAgentSettings.toKitBudget() = KitSubAgentBudget(
-        enabled = enabled,
-        maxConcurrent = maxConcurrent,
-        timeoutMs = timeoutMs,
-        outputLimit = outputLimit,
-        toolOutputLimit = toolOutputLimit
-    )
-
-    private fun CodeThinkingLevel.toKit(): KitThinkingLevel =
-        runCatching { KitThinkingLevel.valueOf(name) }.getOrDefault(KitThinkingLevel.STANDARD)
-
-    private fun KitThinkingLevel.toHost(): CodeThinkingLevel =
-        runCatching { CodeThinkingLevel.valueOf(name) }.getOrDefault(CodeThinkingLevel.STANDARD)
-
-    private fun KitPlan.toExecutionPlan() = ExecutionPlan(
-        goal = goal,
-        steps = steps.map {
-            PlanStep(
-                index = it.index,
-                description = it.description,
-                toolName = it.toolName,
-                estimatedArgs = it.estimatedArgs,
-                dependsOn = it.dependsOn
-            )
-        },
-        estimatedToolCalls = estimatedToolCalls,
-        riskLevel = when (riskLevel) {
-            KitRiskLevel.LOW -> RiskLevel.LOW
-            KitRiskLevel.MEDIUM -> RiskLevel.MEDIUM
-            KitRiskLevel.HIGH -> RiskLevel.HIGH
-            KitRiskLevel.CRITICAL -> RiskLevel.CRITICAL
-        },
-        reasoning = reasoning
-    )
-
-    /** 库事件 → 宿主 AgentEvent（1:1——胶囊时间轴零改动消费）。 */
-    private fun KitEvent.toAgentEvent(): AgentEvent = when (this) {
-        is KitEvent.IterationStart -> AgentEvent.IterationStart(iteration)
-        is KitEvent.ThinkingChunk -> AgentEvent.ThinkingChunk(text)
-        is KitEvent.ResponseChunk -> AgentEvent.ResponseChunk(text)
-        is KitEvent.ResponseComplete -> AgentEvent.ResponseComplete(fullText)
-        is KitEvent.UsageUpdated -> AgentEvent.UsageUpdated(
-            promptTokens, completionTokens, totalTokens
-        )
-        is KitEvent.ToolCallStart -> AgentEvent.ToolCallStart(callId, toolName, arguments)
-        is KitEvent.ToolOutputChunk -> AgentEvent.ToolOutputChunk(callId, chunk)
-        is KitEvent.ToolProgress -> AgentEvent.ToolProgress(callId, percent, message)
-        is KitEvent.ToolCallComplete -> AgentEvent.ToolCallComplete(
-            callId = callId,
-            toolName = toolName,
-            arguments = arguments,
-            output = output,
-            fullOutput = fullOutput,
-            success = success,
-            durationMs = durationMs
-        )
-        is KitEvent.UserInputRequired -> AgentEvent.UserInputRequired(prompt, type.toHost())
-        KitEvent.UserInputExpired -> AgentEvent.UserInputExpired
-        is KitEvent.ContextCompressed -> AgentEvent.ContextCompressed(
-            beforeTokens = beforeTokens,
-            afterTokens = afterTokens,
-            strategy = strategy,
-            summary = summary,
-            messagesRemoved = messagesRemoved,
-            messagesTruncated = messagesTruncated
-        )
-        is KitEvent.PlanGenerated -> AgentEvent.PlanGenerated(plan.toExecutionPlan())
-        is KitEvent.PlanAwaitingConfirmation ->
-            AgentEvent.PlanAwaitingConfirmation(plan.toExecutionPlan())
-        is KitEvent.PlanConfirmed -> AgentEvent.PlanConfirmed(plan.toExecutionPlan())
-        is KitEvent.SteeringAccepted -> AgentEvent.ResponseChunk(
-            // 转向受理回执：以增量文本呈现（UI 侧无需新增事件类型即可见）
-            "[steering] 已入队补充指令：$text\n"
-        )
-        is KitEvent.LlmRetryScheduled -> AgentEvent.LlmRetryScheduled(
-            attempt = attempt,
-            delayMs = delayMs,
-            reason = reason
-        )
-        is KitEvent.Error -> AgentEvent.Error(message, recoverable)
-        is KitEvent.Complete -> AgentEvent.Complete(
-            summary = summary,
-            totalIterations = totalIterations,
-            totalToolCalls = totalToolCalls,
-            totalDurationMs = totalDurationMs
-        )
-        KitEvent.Aborted -> AgentEvent.Aborted
-    }
-
-    private fun com.apex.agentkit.loop.KitInputType.toHost(): InputType = when (this) {
-        com.apex.agentkit.loop.KitInputType.CONFIRMATION -> InputType.CONFIRMATION
-        com.apex.agentkit.loop.KitInputType.TEXT -> InputType.TEXT
-        com.apex.agentkit.loop.KitInputType.CHOICE -> InputType.CHOICE
-    }
-
     companion object {
-        private const val TAG = "StandardKitAdapter"
-
         /** PRoot Ubuntu 会话中工作区统一挂载点（与 CodeAgentEngine 一致）。 */
         private const val GUEST_PATH = "/workspace"
 
         /** env 块的平台行（与 PRoot Ubuntu 沙箱宿主一致）。 */
         private const val PLATFORM_TEXT = "Android with a PRoot Ubuntu sandbox"
     }
+}
+
+// ═══════════════════════ 类型映射（协议 ↔ 宿主）═══════════════════════
+//
+// 纯函数映射（零外部状态捕获）——文件级私有扩展：
+// 1. 嵌套适配类（含非 inner 的 MemoryAdapter）均可直接调用，
+//    无需外部实例接收者；
+// 2. 协议 ↔ 宿主的双向转换语义一目了然，新增嵌套端口实现时零改动。
+
+private fun UserInput.toKitUserInput(): KitUserInput = KitUserInput(
+    text = text,
+    images = images.map {
+        KitImageContent(
+            base64Data = it.base64Data,
+            mimeType = it.mimeType,
+            url = it.url
+        )
+    },
+    files = files.map { KitAttachment(it.name, it.mimeType, it.sizeBytes) }
+)
+
+private fun KitMessage.toLlmMessage(): LlmMessage = when (this) {
+    is KitMessage.System -> LlmMessage.System(content)
+    is KitMessage.User -> LlmMessage.User(content, images.map { it.toImageContent() })
+    is KitMessage.Assistant -> LlmMessage.Assistant(
+        content,
+        toolCalls.map { it.toHostToolCall() }
+    )
+    is KitMessage.ToolResult -> LlmMessage.ToolResult(toolCallId, content)
+}
+
+private fun LlmMessage.toKitMessage(): KitMessage = when (this) {
+    is LlmMessage.System -> KitMessage.System(content)
+    is LlmMessage.User -> KitMessage.User(content, images.map { it.toKitImage() })
+    is LlmMessage.Assistant -> KitMessage.Assistant(
+        content,
+        toolCalls.map { it.toKitToolCall() }
+    )
+    is LlmMessage.ToolResult -> KitMessage.ToolResult(toolCallId, content)
+}
+
+private fun KitImageContent.toImageContent() =
+    com.apex.agent.core.llm.ImageContent(
+        base64Data = base64Data,
+        mimeType = mimeType,
+        url = url
+    )
+
+private fun com.apex.agent.core.llm.ImageContent.toKitImage() =
+    KitImageContent(base64Data = base64Data, mimeType = mimeType, url = url)
+
+private fun com.apex.agent.core.llm.ToolCall.toKitToolCall() =
+    com.apex.agentkit.loop.KitToolCall(
+        id = id,
+        name = name,
+        arguments = arguments,
+        index = index
+    )
+
+private fun com.apex.agentkit.loop.KitToolCall.toHostToolCall() =
+    com.apex.agent.core.llm.ToolCall(
+        id = id,
+        name = name,
+        arguments = arguments,
+        index = index
+    )
+
+private fun com.apex.agent.core.llm.ToolDefinition.toKitToolDefinition() =
+    KitToolDefinition(name = name, description = description, parameters = parameters)
+
+private fun KitToolDefinition.toToolDefinition() =
+    com.apex.agent.core.llm.ToolDefinition(
+        name = name,
+        description = description,
+        parameters = parameters
+    )
+
+private fun SubAgentSettings.toKitBudget() = KitSubAgentBudget(
+    enabled = enabled,
+    maxConcurrent = maxConcurrent,
+    timeoutMs = timeoutMs,
+    outputLimit = outputLimit,
+    toolOutputLimit = toolOutputLimit
+)
+
+private fun CodeThinkingLevel.toKit(): KitThinkingLevel =
+    runCatching { KitThinkingLevel.valueOf(name) }.getOrDefault(KitThinkingLevel.STANDARD)
+
+private fun KitThinkingLevel.toHost(): CodeThinkingLevel =
+    runCatching { CodeThinkingLevel.valueOf(name) }.getOrDefault(CodeThinkingLevel.STANDARD)
+
+private fun KitPlan.toExecutionPlan() = ExecutionPlan(
+    goal = goal,
+    steps = steps.map {
+        PlanStep(
+            index = it.index,
+            description = it.description,
+            toolName = it.toolName,
+            estimatedArgs = it.estimatedArgs,
+            dependsOn = it.dependsOn
+        )
+    },
+    estimatedToolCalls = estimatedToolCalls,
+    riskLevel = when (riskLevel) {
+        KitRiskLevel.LOW -> RiskLevel.LOW
+        KitRiskLevel.MEDIUM -> RiskLevel.MEDIUM
+        KitRiskLevel.HIGH -> RiskLevel.HIGH
+        KitRiskLevel.CRITICAL -> RiskLevel.CRITICAL
+    },
+    reasoning = reasoning
+)
+
+/** 库事件 → 宿主 AgentEvent（1:1——胶囊时间轴零改动消费）。 */
+private fun KitEvent.toAgentEvent(): AgentEvent = when (this) {
+    is KitEvent.IterationStart -> AgentEvent.IterationStart(iteration)
+    is KitEvent.ThinkingChunk -> AgentEvent.ThinkingChunk(text)
+    is KitEvent.ResponseChunk -> AgentEvent.ResponseChunk(text)
+    is KitEvent.ResponseComplete -> AgentEvent.ResponseComplete(fullText)
+    is KitEvent.UsageUpdated -> AgentEvent.UsageUpdated(
+        promptTokens, completionTokens, totalTokens
+    )
+    is KitEvent.ToolCallStart -> AgentEvent.ToolCallStart(callId, toolName, arguments)
+    is KitEvent.ToolOutputChunk -> AgentEvent.ToolOutputChunk(callId, chunk)
+    is KitEvent.ToolProgress -> AgentEvent.ToolProgress(callId, percent, message)
+    is KitEvent.ToolCallComplete -> AgentEvent.ToolCallComplete(
+        callId = callId,
+        toolName = toolName,
+        arguments = arguments,
+        output = output,
+        fullOutput = fullOutput,
+        success = success,
+        durationMs = durationMs
+    )
+    is KitEvent.UserInputRequired -> AgentEvent.UserInputRequired(prompt, type.toHost())
+    KitEvent.UserInputExpired -> AgentEvent.UserInputExpired
+    is KitEvent.ContextCompressed -> AgentEvent.ContextCompressed(
+        beforeTokens = beforeTokens,
+        afterTokens = afterTokens,
+        strategy = strategy,
+        summary = summary,
+        messagesRemoved = messagesRemoved,
+        messagesTruncated = messagesTruncated
+    )
+    is KitEvent.PlanGenerated -> AgentEvent.PlanGenerated(plan.toExecutionPlan())
+    is KitEvent.PlanAwaitingConfirmation ->
+        AgentEvent.PlanAwaitingConfirmation(plan.toExecutionPlan())
+    is KitEvent.PlanConfirmed -> AgentEvent.PlanConfirmed(plan.toExecutionPlan())
+    is KitEvent.SteeringAccepted -> AgentEvent.ResponseChunk(
+        // 转向受理回执：以增量文本呈现（UI 侧无需新增事件类型即可见）
+        "[steering] 已入队补充指令：$text\n"
+    )
+    is KitEvent.LlmRetryScheduled -> AgentEvent.LlmRetryScheduled(
+        attempt = attempt,
+        delayMs = delayMs,
+        reason = reason
+    )
+    is KitEvent.Error -> AgentEvent.Error(message, recoverable)
+    is KitEvent.Complete -> AgentEvent.Complete(
+        summary = summary,
+        totalIterations = totalIterations,
+        totalToolCalls = totalToolCalls,
+        totalDurationMs = totalDurationMs
+    )
+    KitEvent.Aborted -> AgentEvent.Aborted
+}
+
+private fun com.apex.agentkit.loop.KitInputType.toHost(): InputType = when (this) {
+    com.apex.agentkit.loop.KitInputType.CONFIRMATION -> InputType.CONFIRMATION
+    com.apex.agentkit.loop.KitInputType.TEXT -> InputType.TEXT
+    com.apex.agentkit.loop.KitInputType.CHOICE -> InputType.CHOICE
 }
