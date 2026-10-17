@@ -601,6 +601,16 @@
     <string name="about_highlights_hint">连点本页底部的机器人图标五次试试</string>
     <string name="about_section_build">版本与构建</string>
     <string name="about_section_update">软件更新</string>
+    <string name="about_section_changelog">更新日志</string>
+    <string name="changelog_view_history">查看历史版本更新内容</string>
+    <string name="changelog_dialog_whats_new">本次更新内容</string>
+    <string name="changelog_dialog_new_version">发现新版本</string>
+    <string name="changelog_dialog_got_it">知道了</string>
+    <string name="changelog_dialog_download">前往下载</string>
+    <string name="changelog_dialog_browse_close">关闭</string>
+    <string name="changelog_dialog_open_release">打开发布页</string>
+    <string name="changelog_history_empty">暂无更新日志（更新日志通道首个版本）</string>
+    <string name="changelog_history_failed">更新日志加载失败 —— 离线且无内置副本</string>
     <string name="about_section_features">功能一览</string>
     <string name="about_section_stack">技术栈</string>
     <string name="about_section_links">相关链接</string>

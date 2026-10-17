@@ -45,6 +45,7 @@ import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.BlurOn
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Lock
@@ -90,6 +91,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import com.apex.agent.BuildConfig
 import com.apex.agent.R
+import com.apex.agent.changelog.ChangelogHistoryDialog
 import com.apex.agent.ui.glass.GlassStyle
 import com.apex.agent.ui.glass.GlassSurface
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -177,6 +179,40 @@ fun AboutScreen() {
 
         // ── 软件更新（增量补丁 + 高速节点镜像）──
         AboutSectionContainer(index = 8) { UpdatePanel() }
+
+        // ── 更新日志（changelog 通道 v1：远端清单优先，离线回退 APK 内置副本）──
+        var showChangelog by remember { mutableStateOf(false) }
+        AboutSectionContainer(index = 8) {
+            AboutSectionCard(
+                title = stringResource(R.string.about_section_changelog),
+                icon = Icons.Outlined.History
+            ) {
+                // 整行可点：历史列表 → 单版详情两级对话框
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showChangelog = true },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        stringResource(R.string.changelog_view_history),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.outline
+                    )
+                }
+            }
+        }
+        if (showChangelog) {
+            ChangelogHistoryDialog(
+                onDismiss = { showChangelog = false },
+                onOpenUrl = open
+            )
+        }
 
         // ── 版本与构建 ──
         AboutSectionContainer(index = 8) {

@@ -601,6 +601,16 @@
     <string name="about_highlights_hint">Tap the robot at the bottom of this page five times</string>
     <string name="about_section_build">Version &amp; build</string>
     <string name="about_section_update">Software updates</string>
+    <string name="about_section_changelog">Changelog</string>
+    <string name="changelog_view_history">View update history</string>
+    <string name="changelog_dialog_whats_new">What\'s new</string>
+    <string name="changelog_dialog_new_version">New version available</string>
+    <string name="changelog_dialog_got_it">Got it</string>
+    <string name="changelog_dialog_download">Open download page</string>
+    <string name="changelog_dialog_browse_close">Close</string>
+    <string name="changelog_dialog_open_release">Open release page</string>
+    <string name="changelog_history_empty">No changelog yet (first release on the changelog channel)</string>
+    <string name="changelog_history_failed">Failed to load changelog — offline and no embedded copy</string>
     <string name="about_section_features">Feature tour</string>
     <string name="about_section_stack">Tech stack</string>
     <string name="about_section_links">Links</string>
