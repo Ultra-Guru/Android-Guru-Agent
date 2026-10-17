@@ -122,6 +122,41 @@ class PermissionDeciderTest {
     }
 
     @Test
+    fun `技能与MCP常规能力工具在ACCEPT_EDITS下不再询问`() {
+        // 2026-10 用户反馈：skill 与 mcp 全部不再确认使用 —— 使用技能/MCP
+        // 是 Agent 的常规动作，ACCEPT_EDITS 下与编辑写类同口径自动放行。
+        val skillRun = PermissionDecider.decide(
+            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("skill_execute")
+        )
+        val skillActivate = PermissionDecider.decide(
+            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("skill_activate")
+        )
+        val mcpCall = PermissionDecider.decide(
+            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("mcp__github__create_issue")
+        )
+        assertTrue(skillRun is PermissionDecision.AllowExplicit)
+        assertTrue(skillActivate is PermissionDecision.AllowExplicit)
+        assertTrue(mcpCall is PermissionDecision.AllowExplicit)
+        // 规则仍可越级收紧：显式 ASK 规则首匹配优先于豁免
+        val ruleTightened = PermissionDecider.decide(
+            PermissionMode.ACCEPT_EDITS,
+            listOf(PermissionRule("skill_execute", PermissionEffect.ASK)),
+            writeCtx("skill_execute")
+        )
+        assertTrue(ruleTightened is PermissionDecision.Ask)
+        // PLAN 模式只读承诺不豁免：非只读技能调用照旧拒绝
+        val planDenied = PermissionDecider.decide(
+            PermissionMode.PLAN, emptyList(), writeCtx("skill_execute")
+        )
+        assertTrue(planDenied is PermissionDecision.Deny)
+        // DEFAULT 模式本就默认放行（mutating 非删除类）——口径不变
+        val defaultAllowed = PermissionDecider.decide(
+            PermissionMode.DEFAULT, emptyList(), writeCtx("mcp__srv__tool")
+        )
+        assertTrue(defaultAllowed is PermissionDecision.AllowDefault)
+    }
+
+    @Test
     fun `PLAN 模式只读工具默认放行`() {
         val decision = PermissionDecider.decide(
             PermissionMode.PLAN, emptyList(), readCtx("CodeRead")

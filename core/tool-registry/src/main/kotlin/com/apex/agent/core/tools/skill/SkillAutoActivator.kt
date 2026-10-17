@@ -34,10 +34,13 @@ class SkillAutoActivator(
     /**
      * 扫描用户消息并自动装备命中技能。
      *
+     * @param scope 发送方工位（"agent" / "coding"；null = 不限）。per-scope
+     *   启停后自动装备同样按工位隔离：只在 Coding 市场开启的技能不会被
+     *   Agent 屏消息误装备。就绪门禁：必填配置未填齐的技能不参与自动装备。
      * @return 本次新激活的技能 manifest 列表（FIFO 淘汰挤出者不计入；
      *   空列表 = 无命中或全部已激活）。调用方可用于日志 / UI 提示。
      */
-    fun autoEquip(userText: String): List<SkillManifest> {
+    fun autoEquip(userText: String, scope: String? = null): List<SkillManifest> {
         val text = userText.trim()
         if (text.length < MIN_TEXT_LENGTH) return emptyList()
 
@@ -47,6 +50,10 @@ class SkillAutoActivator(
         val candidates = mutableListOf<Candidate>()
         for (installed in skillRegistry.getInstalled()) {
             if (!installed.enabled) continue
+            // 工位隔离：技能生效集合不含发送方工位则不参与（见类 KDoc）
+            if (scope != null && scope !in skillRegistry.effectiveScopesOf(installed.manifest.id)) continue
+            // 就绪门禁：未配置好的技能不自动装备
+            if (!skillRegistry.isConfigured(installed.manifest.id)) continue
             val manifest = installed.manifest
             if (activationStore.isActive(manifest.id)) continue
             val bestKeyword = keywordsOf(manifest)

@@ -1,5 +1,6 @@
 package com.apex.agent.core.tools.mcp
 
+import com.apex.agent.core.tools.network.BoundedReads
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -19,12 +20,15 @@ import okhttp3.RequestBody.Companion.toRequestBody
  * - 非 2xx → 抛 [McpException]（旧实现把它折叠成 null，
  *   上层再折叠成"已连接、零工具"）；
  * - HTTP 200 但响应体不是 JSON（网关/鉴权拦截页同理处理）；
- * - HTTP 200 空响应体（#348：网关/健康检查误路由返回空体时，表象正是
- *   本类声称已消灭的"握手成功、零工具"——带 id 的请求路径空体永远
- *   是协议错误，直接抛 McpException，不再折叠成 null）；
- * - 鉴权头缺失会让服务端直接 401 —— 因此 key/headers 一定带上；
- * - 响应体一律有界读取（#345：16MB 上限，超限抛错——被劫持链路回
- *   超大响应不再无上限 string() 整体读入 OOM）。
+ * - HTTP 200 但响应体为空或纯空白（Issue #348：网关误路由/健康检查
+ *   探测返回空体，旧实现 `?: return@use null` 折叠成假成功）；
+ * - 鉴权头缺失会让服务端直接 401 —— 因此 key/headers 一定带上。
+ *
+ * ## 响应体有界读取（Issue #345）
+ *
+ * 错误体限 64KB 截断读取、正常响应体限 16MB —— HTTP 传输长期持有
+ * 远端服务器响应（resources/read 可返回大块内容），被劫持的 DNS/代理
+ * 返回超大响应时无上限读入会直接 OOM。
  *
  * ## Streamable HTTP 会话头（P1 修复）
  *
@@ -93,24 +97,38 @@ class McpHttpTransport(
                 sessionId = it
             }
             if (!response.isSuccessful) {
-                // #345：错误体同样有界读取——被劫持的 DNS/代理或异常网关
-                // 回超大错误页时不再无上限整体读入（OOM 防御与市场源对齐）。
-                // 读取超限抛的 McpException 被 runCatching 折叠，状态码仍是主文案。
-                val errBody = runCatching { readBodyLimited(response) }.getOrNull()
-                val snippet = errBody?.take(200)?.trim().orEmpty().ifEmpty { response.message }
+                // #345：错误体限 64KB 截断读取（旧 `body?.string()` 无上限，
+                // 异常网关返回超大错误页即 OOM）；反正摘要只取前 200 字符。
+                val errBody = runCatching {
+                    response.body?.byteStream()?.use { BoundedReads.readHead(it, MAX_ERROR_BODY_BYTES) }
+                }.getOrNull()
+                val snippet = errBody?.toString(charsetOf(response))
+                    ?.take(200)?.trim().orEmpty().ifEmpty { response.message }
                 throw McpException("HTTP ${response.code}: $snippet")
             }
             // P3 修复：通知（id == null）按规范收 202/204 —— 2xx 即送达，
             // 不解析响应体（空体不是错误）。
             if (id == null) return@use null
-            // #348：请求路径（带 id）的空响应体是协议错误，不再折叠成 null
-            //（旧实现恰好漏过本类 KDoc 承诺要掐掉的"握手成功、零工具"假成功：
-            // McpClient 对 null 响应只能靠逐调用点自查，这里直接掐断源头）。
-            // 超限（#345）与空体都在这里以 McpException 上抛，上层折叠为
-            // Result.failure 并附重连/换路指引。
-            val responseBody = readBodyLimited(response)
+            // #348：请求路径（id != null）空体/纯空白 = 网关误路由或服务器
+            // 异常，不再折叠成 null（上层会置 initialized=true 装出
+            // 「握手成功、零工具」的假成功）。注：OkHttp 对空体返回非 null
+            // body（读出空串），body 缺失与空流经 orEmpty 归一后再判 isBlank。
+            // 融合 #345/#348（PR370）× SSE 按 id 选帧（main P1）：有界读取
+            // （16MB 上限防不可信远端整体读入）+ 空体即抛 + 分帧解析按
+            // JSON-RPC id 选中属于本次请求的帧。
+            val responseBody = response.body?.byteStream()?.use { stream ->
+                val bytes = BoundedReads.readAtMost(stream, MAX_RESPONSE_BODY_BYTES)
+                    ?: throw McpException(
+                        "HTTP ${response.code} 响应体超过 " +
+                            "${'$'}{MAX_RESPONSE_BODY_BYTES / 1024 / 1024}MB 上限（不可信远端，拒绝整体读入）"
+                    )
+                String(bytes, charsetOf(response))
+            }.orEmpty()
             if (responseBody.isBlank()) {
-                throw McpException("HTTP ${response.code} 空响应体（期望 JSON-RPC 响应）")
+                throw McpException(
+                    "HTTP ${response.code} 空响应体：远端未返回合法 JSON-RPC 帧" +
+                        "（网关误路由或服务器异常）"
+                )
             }
             parseBody(responseBody, response.code, id)
         }
@@ -122,14 +140,18 @@ class McpHttpTransport(
      * - SSE 分帧：规范服务器会把每个事件按 `event:` / `id:` / `data:` 字段
      *   分帧（首帧常是 `event: endpoint`，中间可能夹通知，心跳是 `: ping`）。
      *
-     * P1 修复：旧实现只认"整个 body 以 data: 开头"，于是规范的 SSE 端点必然
-     * 落到"疑似网关/鉴权拦截页"分支；而且只取**最后一条** data，响应后面跟一条
-     * 通知就会取错帧。现在按行分帧、逐条解析，并按 JSON-RPC id 选中属于本次
-     * 请求的那一条（没有 id 可匹配时回退最后一条可解析对象）。
+     *   P1 修复（main）：旧实现只认"整个 body 以 data: 开头"，于是规范的 SSE
+     *   端点必然落到"疑似网关/鉴权拦截页"分支；而且只取**最后一条** data，
+     *   响应后面跟一条通知就会取错帧。现在按行分帧、逐条解析，并按 JSON-RPC
+     *   id 选中属于本次请求的那一条。
+     *
+     *   #348（PR370）：任一形态解析不出 JSON-RPC 帧都抛 [McpException]
+     *   （旧实现返回 null，上层折叠成「工具已运行但无输出」的假成功）——
+     *   P1 的"回退最后一条"与 #348 的 fail-loud 融合：id 可匹配 → 命中帧；
+     *   无可匹配帧但有可解析对象 → 回退；一条都没有 → 抛。
      */
-    private fun parseBody(raw: String, code: Int, id: Int? = null): JsonObject? {
+    private fun parseBody(raw: String, code: Int, id: Int? = null): JsonObject {
         val candidate = raw.trim()
-        if (candidate.isEmpty()) return null
         val lines = candidate.lineSequence().map { it.trimEnd('\r') }.toList()
         val looksLikeSse = lines.any { it.startsWith("data:") } ||
             candidate.startsWith("event:") || candidate.startsWith(":")
@@ -140,7 +162,11 @@ class McpHttpTransport(
             .map { it.removePrefix("data:").trim() }
             .filter { it.isNotBlank() && it != "[DONE]" }
             .toList()
-        if (payloads.isEmpty()) return null
+        if (payloads.isEmpty()) {
+            throw McpException(
+                "HTTP $code SSE 响应中不含 data 帧（疑似网关拦截页或服务器异常输出）"
+            )
+        }
 
         var fallback: JsonObject? = null
         for (payload in payloads) {
@@ -150,13 +176,14 @@ class McpHttpTransport(
             if (parsedId == id) return parsed
             fallback = parsed
         }
-        return fallback
+        return fallback ?: throw McpException(
+            "HTTP $code SSE 响应中不含 id=$id 的 JSON-RPC 帧（多路复用串扰或服务器异常输出）"
+        )
     }
 
-    private fun parseJson(text: String, code: Int): JsonObject? {
+    private fun parseJson(text: String, code: Int): JsonObject {
         return try {
-            val element = json.parseToJsonElement(text)
-            element as? JsonObject
+            json.parseToJsonElement(text) as? JsonObject
                 ?: throw McpException("HTTP $code 返回的不是 JSON 对象：${text.take(120)}")
         } catch (e: McpException) {
             throw e
@@ -168,35 +195,9 @@ class McpHttpTransport(
         }
     }
 
-    /**
-     * 有界读取响应体（#345）：流式读至多 [MAX_BODY_BYTES] 字节，超限抛
-     * [McpException]（被劫持的 DNS/代理或异常网关返回超大响应不再无上限
-     * `string()` 整体读入）。body 缺失返回空串。
-     *
-     * 上限比市场源的 2MB JSON 口径宽：HTTP 传输长期持有远端服务器响应，
-     * resources/read 可返回大块内容，因此放宽到 16MB 但必须有界。
-     */
-    private fun readBodyLimited(response: okhttp3.Response): String {
-        val body = response.body ?: return ""
-        val bytes = body.byteStream().use { stream ->
-            val out = java.io.ByteArrayOutputStream()
-            val buf = ByteArray(16 * 1024)
-            var total = 0
-            while (total < MAX_BODY_BYTES) {
-                val n = stream.read(buf, 0, minOf(buf.size, MAX_BODY_BYTES - total))
-                if (n < 0) break
-                out.write(buf, 0, n)
-                total += n
-            }
-            if (total >= MAX_BODY_BYTES && stream.read() >= 0) {
-                throw McpException(
-                    "HTTP 响应体超过 ${MAX_BODY_BYTES / 1024 / 1024}MB 上限（疑似异常网关/被劫持链路）"
-                )
-            }
-            out.toByteArray()
-        }
-        return String(bytes, Charsets.UTF_8)
-    }
+    /** 响应体字符集（Content-Type 声明优先，缺省 UTF-8 —— JSON-RPC 规范恒 UTF-8）。 */
+    private fun charsetOf(response: okhttp3.Response) =
+        response.body?.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8
 
     companion object {
         /** Streamable HTTP 会话头（客户端回带服务端分配的会话 id）。 */
@@ -208,10 +209,10 @@ class McpHttpTransport(
         /** 客户端宣告/协商的协议版本（与 initialize 参数一致）。 */
         const val PROTOCOL_VERSION = "2024-11-05"
 
-        /**
-         * 响应体字节上限（#345）：MCP 请求/响应可能携带大块 content
-         * （resources/read），放宽到 16MB 但必须有界。
-         */
-        private const val MAX_BODY_BYTES = 16 * 1024 * 1024
+        /** 错误体读取上限（截断语义：摘要只取前 200 字符，Issue #345）。 */
+        const val MAX_ERROR_BODY_BYTES = 64 * 1024
+
+        /** 正常响应体上限（16MB：resources/read 可返回大块内容，Issue #345）。 */
+        const val MAX_RESPONSE_BODY_BYTES = 16 * 1024 * 1024
     }
 }

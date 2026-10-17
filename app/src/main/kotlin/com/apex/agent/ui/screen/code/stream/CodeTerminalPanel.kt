@@ -1,5 +1,15 @@
 package com.apex.agent.ui.screen.code.stream
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -13,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -24,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -49,6 +61,15 @@ import com.kyant.backdrop.Backdrop
  * - ANSI 转义清洗（CSI + OSC 标题序列 + 回车进度条，渲染层兜底）；
  * - 可折叠：头行 = 活跃命令 + 展开箭头；折叠态只留头行（时间轴优先）。
  *
+ * ## 流水式折叠（与思考/工具胶囊同款生命周期）
+ *
+ * - [busy] = true（命令运行中）：头行脉冲点 + 「运行中」标签，面板保持
+ *   展开（展开/折叠时机由 CodeScreen 按 terminalBusy 驱动，userToggled 语义）；
+ * - [busy] = false（命令收束）：自动折叠成头行胶囊，[exitCode] 就地展示
+ *   （exit 0 绿点 / 非零红点 + 等宽 exit N 文本），点箭头可展开回看尾窗；
+ * - 正文展开/收起走 AnimatedVisibility（expand/shrinkVertically，先例见
+ *   UpdateBanner / SlashCommandButton），不再硬切。
+ *
  * ## v6 玻璃接入 + 尾窗瘦身
  *
  * - [backdrop]：悬浮栈与时间轴 layerBackdrop 源互为兄弟 —— 传入即经
@@ -60,6 +81,8 @@ import com.kyant.backdrop.Backdrop
 internal fun CodeTerminalPanel(
     content: String,
     activeCommand: String?,
+    busy: Boolean,
+    exitCode: Int?,
     collapsed: Boolean,
     onToggleCollapse: () -> Unit,
     modifier: Modifier = Modifier,
@@ -76,7 +99,7 @@ internal fun CodeTerminalPanel(
             .padding(horizontal = 12.dp, vertical = 4.dp)
     ) {
         Column {
-            // ── 头行：终端图标 + 活跃命令 + 折叠开关 ──
+            // ── 头行：终端图标 + 状态点 + 命令 + 运行中/exit + 折叠开关 ──
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -91,6 +114,31 @@ internal fun CodeTerminalPanel(
                     modifier = Modifier.size(14.dp)
                 )
                 Spacer(Modifier.width(8.dp))
+                // 状态点：运行中呼吸脉冲（与 ToolCallCapsule 状态点同款
+                // infiniteTransition 模式）；完成态 exit 0 绿 / 非零红 / 未知灰
+                val dotColor = when {
+                    busy -> TerminalAccent
+                    exitCode == null -> Color(0xFF6B7280)
+                    exitCode == 0 -> Color(0xFF34D399)
+                    else -> Color(0xFFF87171)
+                }
+                val pulse by rememberInfiniteTransition(label = "terminalPulse").animateFloat(
+                    initialValue = 0.35f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(420),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "terminalDot"
+                )
+                val dotAlpha = if (busy) pulse else 0.85f
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(dotColor.copy(alpha = dotAlpha))
+                )
+                Spacer(Modifier.width(8.dp))
                 Text(
                     text = activeCommand ?: stringResource(R.string.code_stream_terminal_idle),
                     style = MaterialTheme.typography.labelSmall,
@@ -99,6 +147,24 @@ internal fun CodeTerminalPanel(
                     maxLines = 1,
                     modifier = Modifier.weight(1f)
                 )
+                // 运行中标签 / 完成态 exit 码（折叠胶囊的回看摘要）
+                if (busy) {
+                    Text(
+                        text = stringResource(R.string.code_stream_terminal_running),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = TerminalAccent
+                    )
+                    Spacer(Modifier.width(8.dp))
+                } else if (exitCode != null) {
+                    Text(
+                        text = "exit $exitCode",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = if (exitCode == 0) Color(0xFF34D399) else Color(0xFFF87171)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
                 // v6 尾窗瘦身：折叠开关从 48dp IconButton 收为 36dp 紧凑
                 // 可点区（终端折叠是二级操作，不占主操作触区预算）。
                 Box(
@@ -117,7 +183,12 @@ internal fun CodeTerminalPanel(
                 }
             }
 
-            if (!collapsed) {
+            // 流水式折叠动画：展开/收起平滑过渡（滚动状态已提升，不受影响）
+            AnimatedVisibility(
+                visible = !collapsed,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
                 TerminalBody(
                     content = content,
                     vertical = vertical,
@@ -127,6 +198,9 @@ internal fun CodeTerminalPanel(
         }
     }
 }
+
+/** 终端面板强调色（图标与运行态标签）。 */
+private val TerminalAccent = Color(0xFF7C3AED)
 
 /** 终端正文：横向滚动 + 纵向尾行跟随 + ANSI 清洗（滚动状态由父级持有）。 */
 @Composable

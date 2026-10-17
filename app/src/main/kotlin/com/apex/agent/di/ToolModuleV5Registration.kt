@@ -38,6 +38,7 @@ import com.apex.agent.tools.selectModePresetAsync
 import com.apex.agent.tools.setDefaultProfileAsync
 import com.apex.agent.tools.setProviderApiKeyAsync
 import com.apex.agent.ui.screen.settings.SettingsRepository
+import com.apex.agent.vault.SecretRedactor
 import okhttp3.OkHttpClient
 import java.io.File
 
@@ -52,8 +53,10 @@ import java.io.File
  *
  * 三段：
  * - **§14e**：Agent 自主设置（9 工具）——AgentSettingGet/set、agent_profile_*、
- *   AgentProviderSetKey、agent_role_*、agent_mode_preset_*
- * - **§14f**：下载 + 安装 APK（2 工具）——AppInstallApk / AppDownloadInstall
+ *   AgentProviderSetKey、agent_role_*、agent_mode_preset_*；AgentProviderSetKey
+ *   写入成功后同步登记进 [SecretRedactor]（#336：工具输出层兜底擦洗从此
+ *   覆盖 provider key，此前仅 VaultRepository 登记、任何一层都擦不到）；
+ * - **§14f**：下载 + 安装 APK（2 工具）——AppInstallApk / AppDownloadInstall；
  * - **§14g**：更多能力（7 工具）——ContactSearch / SmsSend / CalendarEventList /
  *   AlarmSet / FilePick / ImageCapture / NotificationPost
  *
@@ -64,7 +67,8 @@ internal fun registerV5EnhancementTools(
     context: Context,
     httpClient: OkHttpClient,
     downloadDir: File,
-    settingsRepository: SettingsRepository
+    settingsRepository: SettingsRepository,
+    secretRedactor: SecretRedactor
 ) {
     // ═══ §14e. v5 — Agent 自主设置（9 个工具，让 agent 自己读写应用配置）═══
     // 用户原始诉求："能让 agent 自行帮你完成设置，开启自己软件任何设置"。
@@ -84,7 +88,17 @@ internal fun registerV5EnhancementTools(
         listProvider = { settingsRepository.listProfileSummaries() }
     )))
     registry.register(SafeAgentTool(AgentProviderSetKeyTool(
-        setKey = { providerId, apiKey -> settingsRepository.setProviderApiKeyAsync(providerId, apiKey) }
+        setKey = { providerId, apiKey ->
+            val ok = settingsRepository.setProviderApiKeyAsync(providerId, apiKey)
+            if (ok) {
+                // #336：key 写入成功后登记进全局脱敏器（register 只接受
+                // 长度 ≥6 的非空串，与金库同规则）——SecretRedactingExecutor
+                // 的输出兜底擦洗从此覆盖 provider key（旧 key 覆写后仍保留
+                // 登记：它仍是可能残留在旧日志里的秘密）。
+                secretRedactor.register(listOf(apiKey))
+            }
+            ok
+        }
     )))
     registry.register(SafeAgentTool(AgentRoleListTool {
         settingsRepository.listRoleSnapshot()

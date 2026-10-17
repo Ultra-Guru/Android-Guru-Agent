@@ -68,7 +68,10 @@ internal fun CodeStreamTimeline(
     isStreaming: Boolean,
     onToolClick: (StreamToolCall) -> Unit,
     bottomInset: Dp = 0.dp,
-    backdrop: LayerBackdrop? = null
+    backdrop: LayerBackdrop? = null,
+    // 玻璃幕帘（GlassModalVeil）：提问卡挂起时由调用方传入 blur 修饰 ——
+    // 根 Box 接收，LazyColumn 的 layerBackdrop 采样源保持原样不失真。
+    modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
     val grouped = remember(snapshot.entries) { groupConsecutive(snapshot.entries) }
@@ -85,7 +88,7 @@ internal fun CodeStreamTimeline(
     // derivedStateOf，普通属性读取不被追踪 → FAB 永远不出现（P0）
     val showFab by remember { derivedStateOf { !anchor.isAtBottom } }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
             modifier = Modifier

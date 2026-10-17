@@ -48,6 +48,8 @@ class PlanModeHumanControlTest {
         timeoutMs: Long = 10_000
     ) {
         val deadline = System.currentTimeMillis() + timeoutMs
+        // #340 注册先行后此轮询理论上不再必要（事件发出时 deferred 已注册），
+        // 保留为 CI 高负载兜底；字段为 @Volatile 可空 var，直接判空。
         while (engine.planConfirmationDeferred == null &&
             System.currentTimeMillis() < deadline
         ) {

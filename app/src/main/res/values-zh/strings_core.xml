@@ -608,6 +608,7 @@
     <string name="changelog_dialog_got_it">知道了</string>
     <string name="changelog_dialog_download">前往下载</string>
     <string name="changelog_dialog_browse_close">关闭</string>
+    <string name="changelog_pr_section">PR 合并内容（新增功能 / 修复）</string>
     <string name="changelog_dialog_open_release">打开发布页</string>
     <string name="changelog_history_empty">暂无更新日志（更新日志通道首个版本）</string>
     <string name="changelog_history_failed">更新日志加载失败 —— 离线且无内置副本</string>

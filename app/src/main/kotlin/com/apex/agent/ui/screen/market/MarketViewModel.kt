@@ -1,6 +1,5 @@
 package com.apex.agent.ui.screen.market
 
-import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.apex.agent.core.tools.ToolCircuitBreaker
@@ -15,13 +14,12 @@ import com.apex.agent.core.tools.mcp.McpConfigValidator
 import com.apex.agent.core.tools.mcp.McpManager
 import com.apex.agent.core.tools.mcp.McpServerCatalog
 import com.apex.agent.core.tools.mcp.McpServerConfig
-import com.apex.agent.core.tools.mcp.McpStartupEvent
-import com.apex.agent.core.tools.mcp.McpStartupListener
 import com.apex.agent.core.tools.mcp.McpStartupStage
 import com.apex.agent.core.tools.mcp.McpStartupTracker
 import com.apex.agent.core.tools.mcp.McpTransport
 import com.apex.agent.core.tools.skill.SkillMenuProvider
 import com.apex.agent.core.tools.skill.SkillRegistry
+import com.apex.agent.marketplace.GithubFeaturedCatalog
 import com.apex.agent.marketplace.MarketInstallManager
 import com.apex.agent.platform.csmem.store.MemoryGraphStore
 import com.apex.agent.plugin.host.PluginManager
@@ -46,141 +44,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
-/** 市场五个页签（两个顶栏视图共享同一套子导航）—— label 为资源 id，composable 侧 stringResource 取词。 */
-enum class MarketTab(@StringRes val labelRes: Int) {
-    PLUGINS(R.string.market_tab_plugins),
-    SKILLS(R.string.market_tab_skills),
-    MCP(R.string.market_tab_mcp),
-    CONNECTORS(R.string.market_tab_connectors),
-    INTEGRATIONS(R.string.market_tab_integrations)
-}
-
-/**
- * 市场顶栏视图：[BROWSE] 市场（发现与安装）/ [INSTALLED] 已安装管理（启停 / 卸载 / 连接）。
- * 两视图共享同一套 [MarketTab] 子导航（插件 / Skills / MCP / 连接器 / 集成），切换视图
- * 不重置子页签 —— 在「Skills · 市场」看完安装源切到「已安装管理」仍在同一分类。
- */
-enum class MarketScope(@StringRes val labelRes: Int) {
-    BROWSE(R.string.market_scope_browse),
-    INSTALLED(R.string.market_scope_installed)
-}
-
-/**
- * #197 市场分级：双工位市场（与技能/MCP 的 scope 字段同源）。
- * - [AGENT] Agent 市场 —— 服务于 Agent 屏（聊天技能 / 联网搜索 / 记忆 / 思维链…）；
- * - [CODING] Coding 市场 —— 服务于 Coding 屏（开发技能 / GitHub / 文件系统 / 沙箱…）。
- */
-enum class MarketTier(@StringRes val labelRes: Int) {
-    AGENT(R.string.market_tier_agent),
-    CODING(R.string.market_tier_coding)
-}
-
-/**
- * 市场 · Skills 页签的仓库源切换：
- * - [LOCAL] —— 本地技能（已安装 + 内置模板 + 四个本地安装入口）；
- * - [HUB] —— 官方技能仓库（apex-skill-hub：内置瘦身后迁出的 62 个生活/通用
- *   技能，目录浏览 + 一键直装）；
- * - [CLAWHUB] —— ClawHub 技能仓库（clawhub.ai：浏览热门 / 搜索 / 真实下载安装）。
- */
-enum class SkillRepoSource(@StringRes val labelRes: Int) {
-    LOCAL(R.string.market_skill_source_local),
-    HUB(R.string.market_skill_source_hub),
-    CLAWHUB(R.string.market_skill_source_clawhub)
-}
-
-data class MarketUiState(
-    val scope: MarketScope = MarketScope.BROWSE,
-    val selectedTab: MarketTab = MarketTab.PLUGINS,
-    // #197 市场分级（Agent 市场 / Coding 市场）
-    val tier: MarketTier = MarketTier.AGENT,
-    // Skills
-    val skills: List<MarketSkillRow> = emptyList(),
-    val skillTemplates: List<MarketSkillRow> = emptyList(),
-    // MCP
-    val mcps: List<MarketMcpRow> = emptyList(),
-    // 连接器
-    val connectors: List<ConnectorDef> = emptyList(),
-    // 插件（BROWSE 视图：APK 发现态）
-    val plugins: List<MarketPluginRow> = emptyList(),
-    // 插件（INSTALLED 视图：统一目录 —— 功能性 + APK 双形态合并）
-    val installedPlugins: List<UnifiedPluginEntry> = emptyList(),
-    // 集成：魔搭
-    val modelScopeSkills: List<ModelScopeSource.ModelScopeSkill> = emptyList(),
-    val modelScopeLoading: Boolean = false,
-    val modelScopeQuery: String = "",
-    val modelScopeError: String? = null,
-    val installedModelScopeIds: Set<String> = emptySet(),
-    // 集成：GitHub
-    val githubQuery: String = "",
-    val githubHits: List<MarketInstallManager.GitHubRepoHit> = emptyList(),
-    val githubSearching: Boolean = false,
-    val githubError: String? = null,
-    // GitHub 智能安装：多候选选择弹窗（技能集合 / MCP monorepo 仓库发现
-    // 多个可装项时非空；单候选不弹直接装）。关闭 = null。
-    val githubCandidates: List<MarketInstallManager.GithubRepoCandidate> = emptyList(),
-    val githubCandidatesRepo: String? = null,
-    // Skills：ClawHub 技能仓库（源切换 + 列表/搜索/安装状态）
-    val skillSource: SkillRepoSource = SkillRepoSource.LOCAL,
-    val clawHubSkills: List<ClawHubSource.ClawHubSkillEntry> = emptyList(),
-    /** 首次/刷新加载中（trending 或翻页）。 */
-    val clawHubLoading: Boolean = false,
-    val clawHubError: String? = null,
-    val clawHubQuery: String = "",
-    /** 关键词搜索请求中（与列表加载区分，避免双重 loading）。 */
-    val clawHubQueryLoading: Boolean = false,
-    /** 正在安装的技能 slug（行级 busy；null = 空闲，非 null 时禁用其它安装按钮防并发）。 */
-    val clawHubInstallingSlug: String? = null,
-    /** P1（市场审计）：待确认安装的干运行预览 —— 非空时 MarketScreen 弹
-     * ManifestDryRunDialog（manifest 摘要/依赖/权限/promptInjection 警示），
-     * 用户确认后才真正落盘。此前三件套预览组件全为死码，所有源一点即装。 */
-    val installPreview: com.apex.agent.marketplace.MarketInstallManager.ManifestPreview? = null,
-    /** 是否还有下一页（「加载更多」按钮可见性）。 */
-    val clawHubHasMore: Boolean = false,
-    /** 当前列表是否为搜索结果（控制「返回热门」提示）。 */
-    val clawHubSearchActive: Boolean = false,
-    // ── v2 认知市场增强 ──
-    /** 当前选中分类过滤（null = 全部）。镜像 ToolCategory 枚举名。 */
-    val categoryFilter: String? = null,
-    /** 本地搜索查询（已安装技能 + 内置模板的模糊匹配，ToolSuggester 驱动）。 */
-    val skillQuery: String = "",
-    /** 模糊搜索建议（"你是不是要找…"）。 */
-    val skillSuggestions: List<String> = emptyList(),
-    /** 当前打开的技能详情对话框对应的 skillId。null = 关闭。 */
-    val detailSkillId: String? = null,
-    /** 详情对话框加载的分析数据。null = 未加载/加载中。 */
-    val detailState: SkillDetailUiState? = null,
-    /** 详情加载中。 */
-    val detailLoading: Boolean = false,
-    // 全局
-    val busy: Boolean = false,
-    /** 正在连接的 MCP 服务器名（null = 无）：连接中禁用对应行按钮，防双击并发重连 */
-    val mcpConnecting: String? = null,
-    /** #197 真实启动进度（连接中服务器的实时阶段事件；null = 关闭弹窗）。 */
-    val mcpStartup: McpStartupUi? = null,
-    // ── #205 MCP 精选目录（assets/mcp_catalog 离线随包）──
-    /** 目录全量条目（未分级过滤）。 */
-    val mcpCatalog: List<McpServerCatalog.McpCatalogEntry> = emptyList(),
-    /** 目录加载完成（空目录且 false = 加载中/失败）。 */
-    val mcpCatalogLoaded: Boolean = false,
-    /** 目录加载失败原因（本地资产损坏时非空）。 */
-    val mcpCatalogError: String? = null,
-    /** 目录分类过滤（null = 全部）。 */
-    val mcpCatalogCategory: String? = null,
-    /** 待配置环境变量的目录条目（null = 环境变量弹窗关闭）。 */
-    val catalogEnvEntry: McpServerCatalog.McpCatalogEntry? = null,
-    val lastMessage: String? = null
-)
-
-/**
- * #197 MCP 真实启动进度弹窗状态：事件列表由 [McpStartupListener] 的真实回调
- * 逐条追加（无模拟延时，阶段间的等待就是真实的进程启动/网络握手耗时）。
- */
-data class McpStartupUi(
-    val serverName: String,
-    val events: List<com.apex.agent.core.tools.mcp.McpStartupEvent> = emptyList(),
-    val running: Boolean = true
-)
-
 /**
  * 市场页 ViewModel（v2 全面重构）
  *
@@ -197,14 +60,14 @@ data class McpStartupUi(
 @HiltViewModel
 class MarketViewModel @Inject constructor(
     @ApplicationContext internal val appContext: Context,
-    private val skillRegistry: SkillRegistry,
+    internal val skillRegistry: SkillRegistry,
     private val skillMenuProvider: SkillMenuProvider,
     internal val mcpManager: McpManager,
     private val connectorRegistry: ConnectorRegistry,
     private val pluginManager: PluginManager,
     // Plugin System v2：统一插件门面（双形态目录 / 功能插件启停装卸）
     private val unifiedPluginRegistry: UnifiedPluginRegistry,
-    private val installManager: MarketInstallManager,
+    internal val installManager: MarketInstallManager,
     private val modelScopeSource: ModelScopeSource,
     private val clawHubSource: ClawHubSource,
     // 官方 Hub 仓库（技能 + MCP 双目录）——独立状态域，God-file 预算拆分
@@ -254,10 +117,16 @@ class MarketViewModel @Inject constructor(
     private var pendingInstallDecision: kotlinx.coroutines.CompletableDeferred<Boolean>? = null
 
     /**
-     * 本实例注册进 MarketInstallManager 的确认门禁（#347）：onCleared 时按
-     * 身份注销（只拆自己，不误伤其他存活注册者）。
+     * #347：本实例注册进 MarketInstallManager 确认门禁的 gate（身份注册表
+     * 模式）：init 时经 registerInstallConfirmGate 注册，onCleared 时按身份
+     * 注销（只拆自己，不误伤其他存活注册者）。市场页返回栈复入 A/B 两
+     * 实例时，B 销毁后 A 的门禁自动回位（注册表回退），不再被静默解除。
      */
-    private var myInstallConfirmGate: (suspend (com.apex.agent.marketplace.MarketInstallManager.ManifestPreview) -> Boolean)? = null
+    private val myInstallConfirmGate: suspend (
+        com.apex.agent.marketplace.MarketInstallManager.ManifestPreview
+    ) -> Boolean = { preview ->
+        withContext(Dispatchers.Main) { awaitInstallConfirmation(preview) }
+    }
 
     init {
         refresh()
@@ -284,12 +153,7 @@ class MarketViewModel @Inject constructor(
         // #347 P2 修复：经身份注册表注册（不再覆盖全局变量）—— onCleared
         // 只按身份注销自己的门禁；市场页返回栈复入 A/B 两份 VM 时，B 销毁
         // 只拆 B 的注册，A（及所有单例控制器）的门禁继续生效。
-        val gate: suspend (com.apex.agent.marketplace.MarketInstallManager.ManifestPreview) -> Boolean =
-            { preview ->
-                withContext(Dispatchers.Main) { awaitInstallConfirmation(preview) }
-            }
-        myInstallConfirmGate = gate
-        installManager.registerInstallConfirmGate(gate)
+        installManager.registerInstallConfirmGate(myInstallConfirmGate)
     }
 
     /** 挂起等待用户对安装预览的确认（主线程弹窗， CompletableDeferred 桥接）。 */
@@ -342,7 +206,9 @@ class MarketViewModel @Inject constructor(
      *
      * #347：清理改为按身份注销 —— 只拆本实例注册的那一份；市场页返回栈
      * 复入（A 未销毁又建 B）时，B 销毁后 A 的门禁自动回位，不再被静默
-     * 解除（旧实现无条件置 null 让所有后续安装绕过目检门禁）。
+     * 解除。若注册表清空（无任何存活注册者），安装管道 fail-closed
+     * （gate 为 null = 拒绝安装，见 MarketInstallManager），busy 标志经
+     * 失败分支照常复位，不会出现「安装按钮永久禁用」。
      */
     override fun onCleared() {
         pendingInstallDecision?.let { runCatching { it.complete(false) } }
@@ -404,6 +270,7 @@ class MarketViewModel @Inject constructor(
                 skillSuggestions = state.skillSuggestions,
                 detailSkillId = state.detailSkillId,
                 detailState = state.detailState,
+                detailConfigForm = state.detailConfigForm,
                 detailLoading = state.detailLoading,
                 busy = state.busy,
                 lastMessage = state.lastMessage,
@@ -432,7 +299,11 @@ class MarketViewModel @Inject constructor(
                     name = it.manifest.name,
                     description = it.manifest.description,
                     installed = true,
-                    enabled = it.enabled,
+                    // per-scope 启停（双工位隔离）：分级开关各自独立读写
+                    enabledAgent = it.enabledAgent,
+                    enabledCoding = it.enabledCoding,
+                    // 就绪门禁：必填配置未填齐 → 「需配置」徽标 + 菜单隐藏
+                    needsConfig = !skillRegistry.isConfigured(it.manifest.id),
                     energy = h?.energy ?: 1.0f,
                     isCrystallized = h?.isCrystallized ?: false,
                     lastUsedAt = h?.lastUsedAt ?: 0,
@@ -451,7 +322,8 @@ class MarketViewModel @Inject constructor(
                 val tpl = SkillMenuProvider.BUILTIN_TEMPLATES.firstOrNull { it.id == t.id }
                 MarketSkillRow(
                     id = t.id, name = t.label, description = t.description,
-                    installed = false, enabled = false, source = "builtin", builtin = true,
+                    installed = false, enabledAgent = false, enabledCoding = false,
+                    source = "builtin", builtin = true,
                     category = tpl?.category,
                     tags = tpl?.tags.orEmpty()
                 )
@@ -512,114 +384,15 @@ class MarketViewModel @Inject constructor(
 
     internal fun message(msg: String) = _uiState.update { it.copy(lastMessage = msg) }
 
-    // ═══ Skills ═══
-
-    fun toggleSkill(skillId: String, enabled: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) {
-            skillRegistry.setEnabled(skillId, enabled)
-            refresh()
-        }
-    }
-
-    fun uninstallSkill(skillId: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            // Issue #166：内置技能不可卸载（SkillRegistry.uninstall 对 bundled 恒 false），
-            // 提前拦下并给出正确提示——否则会落进「未找到技能」的误导文案。
-            if (_uiState.value.skills.any { it.id == skillId && it.bundled }) {
-                message(languageManager.getString(R.string.market_skill_bundled_uninstall_blocked_hint))
-                return@launch
-            }
-            val ok = skillRegistry.uninstall(skillId)
-            message(
-                if (ok) {
-                    languageManager.getString(R.string.market_skill_uninstalled).format(skillId)
-                } else {
-                    languageManager.getString(R.string.market_skill_not_found).format(skillId)
-                }
-            )
-            refresh()
-        }
-    }
-
-    fun installSkillTemplate(templateId: String) {
-        viewModelScope.launch {
-            installManager.installSkillTemplate(templateId).fold(
-                onSuccess = { message(it) },
-                onFailure = {
-                    message(languageManager.getString(R.string.market_install_failed).format(it.message ?: ""))
-                }
-            )
-            refresh()
-        }
-    }
-
-    /** 导入自定义 Skill JSON（粘贴内容）。 */
-    fun importSkillJson(content: String) {
-        viewModelScope.launch {
-            installManager.installSkillFromJson(content).fold(
-                onSuccess = { message(it) },
-                onFailure = {
-                    message(languageManager.getString(R.string.market_import_failed).format(it.message ?: ""))
-                }
-            )
-            refresh()
-        }
-    }
-
-    /** 从 URL 导入 Skill manifest。 */
-    fun importSkillFromUrl(url: String) {
-        viewModelScope.launch {
-            installManager.installSkillFromUrl(url).fold(
-                onSuccess = { message(it) },
-                onFailure = {
-                    message(languageManager.getString(R.string.market_import_failed).format(it.message ?: ""))
-                }
-            )
-            refresh()
-        }
-    }
-
-    /**
-     * 从本地文件导入 Skill（.zip / .json 自动识别）。
-     *
-     * 用户反馈"Skills 不能自己导入"：本地 skill 包此前没有任何入口。
-     * zip 走 SafeZipExtractor（路径穿越 / zip bomb 防御），json 直接装 manifest。
-     */
-    fun importSkillFromFile(uri: android.net.Uri) {
-        viewModelScope.launch {
-            installManager.installSkillFromFile(uri).fold(
-                onSuccess = { message(it) },
-                onFailure = {
-                    message(it.message ?: languageManager.getString(R.string.market_local_import_failed))
-                }
-            )
-            refresh()
-        }
-    }
-
-    /**
-     * 从本地文件导入 MCP 配置（`{"mcpServers": {...}}` 形态的 .json）。
-     * 复用 [importMcpConfig] 的解析与逐条报错管道。
-     */
-    fun importMcpConfigFromFile(uri: android.net.Uri) {
-        viewModelScope.launch {
-            installManager.readTextFile(uri).fold(
-                onSuccess = { text -> importMcpConfig(text) },
-                onFailure = {
-                    message(
-                        languageManager.getString(R.string.market_read_file_failed)
-                            .format(it.message ?: "")
-                    )
-                }
-            )
-        }
-    }
+    /** 当前市场分级的 scope 值（安装默认启用工位 / 分级开关写入口径；PR378 per-scope）。 */
+    internal fun tierScope(): String = _uiState.value.tier.name.lowercase()
 
     // ═══ MCP ═══
 
-    // MCP 工位服务器操作 / 精选目录 / 启动时间线已按 God-file 预算拆至
-    // MarketViewModelMcpOps.kt 与 MarketViewModelMcpCatalog.kt（internal 扩展，
-    // 模式同 CodeLongTaskCenterOps.kt —— 调用点与方法引用语义不变）。
+    // MCP 工位服务器操作 / 精选目录 / 启动时间线 / Skills 安装卸载导入已按
+    // God-file 预算拆至 MarketViewModelMcpOps.kt、MarketViewModelMcpCatalog.kt
+    // 与 MarketViewModelSkills.kt（internal 扩展，模式同 CodeLongTaskCenterOps.kt
+    // —— 调用点与方法引用语义不变）。
 
     // ═══ MCP · 配置编辑（已安装管理「编辑」入口）═══
 
@@ -798,7 +571,7 @@ class MarketViewModel @Inject constructor(
     fun installModelScopeSkill(skill: ModelScopeSource.ModelScopeSkill) {
         viewModelScope.launch {
             _uiState.update { it.copy(busy = true) }
-            installManager.installModelScopeSkill(skill).fold(
+            installManager.installModelScopeSkill(skill, defaultScope = tierScope()).fold(
                 onSuccess = { message(it) },
                 onFailure = {
                     message(
@@ -916,6 +689,39 @@ class MarketViewModel @Inject constructor(
     /** 关闭 GitHub 候选选择弹窗（不安装任何内容）。 */
     fun dismissGithubCandidates() =
         _uiState.update { it.copy(githubCandidates = emptyList(), githubCandidatesRepo = null) }
+
+    // ═══ Skills 页签：GitHub 精选（顶级开源仓库 coding 技能专栏）═══
+
+    /**
+     * 安装一条 GitHub 精选技能（anthropics/skills、obra/superpowers 等已核实
+     * 仓库的 SKILL.md → prompt 型技能，复用既有 GitHub 候选安装管线）。
+     *
+     * 安装默认启用工位 = 当前市场分级（精选条目 manifest scope 固定 coding ——
+     * 只出现在 Coding 市场与 Coding 屏 / 菜单，与 Agent 分级完全隔离）。
+     */
+    fun installGithubFeatured(entry: GithubFeaturedCatalog.FeaturedSkill) {
+        if (_uiState.value.githubFeaturedInstallingId != null) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(githubFeaturedInstallingId = entry.installId) }
+            try {
+                installManager.installGithubCandidate(
+                    GithubFeaturedCatalog.toCandidate(entry),
+                    defaultScope = tierScope()
+                ).fold(
+                    onSuccess = { message(it) },
+                    onFailure = {
+                        message(
+                            languageManager.getString(R.string.market_install_failed)
+                                .format(it.message ?: "")
+                        )
+                    }
+                )
+            } finally {
+                _uiState.update { it.copy(githubFeaturedInstallingId = null) }
+                refresh()
+            }
+        }
+    }
 
     // ═══ Skills 页签：ClawHub 技能仓库 ═══
 
@@ -1038,12 +844,12 @@ class MarketViewModel @Inject constructor(
         if (clawHubSearchMode) searchClawHub() else loadClawHubTrending()
     }
 
-    /** 从 ClawHub 安装（下载 ZIP → 转 prompt 型技能 → SkillRegistry）。 */
+    /** 从 ClawHub 安装（下载 ZIP → 转 prompt 型技能 → SkillRegistry）。安装默认启用工位 = 当前市场分级。 */
     fun installClawHub(entry: ClawHubSource.ClawHubSkillEntry) {
         viewModelScope.launch {
             _uiState.update { it.copy(clawHubInstallingSlug = entry.slug) }
             try {
-                installManager.installClawHubSkill(entry).fold(
+                installManager.installClawHubSkill(entry, defaultScope = tierScope()).fold(
                     onSuccess = { message(it) },
                     onFailure = {
                         message(
@@ -1062,24 +868,42 @@ class MarketViewModel @Inject constructor(
 
     // ═══ 认知市场：详情 + 分类过滤 + 模糊搜索 ═══
 
+    /** 详情对话框的配置表单数据（manifest 声明 + 当前已填值 + 就绪态）。 */
+    private suspend fun loadConfigForm(skillId: String): SkillConfigFormData? =
+        withContext(Dispatchers.IO) {
+            val skill = skillRegistry.get(skillId) ?: return@withContext null
+            if (skill.manifest.configuration.userConfig.isEmpty()) return@withContext null
+            SkillConfigFormData(
+                fields = skill.manifest.configuration.userConfig,
+                values = skillRegistry.getConfigValues(skillId),
+                configured = skillRegistry.isConfigured(skillId)
+            )
+        }
+
     /**
      * 打开技能详情对话框：异步从 cs-mem + ToolUsageTracker + CircuitBreaker + TraceRecorder
-     * 投影出 [SkillDetailUiState]（能源/结晶/调用统计/熔断/轨迹）。
+     * 投影出 [SkillDetailUiState]（能源/结晶/调用统计/熔断/轨迹），并同步加载
+     * 配置表单数据（就绪门禁：声明了 userConfig 的技能提供配置入口）。
      */
     fun loadSkillDetail(skillId: String) {
         viewModelScope.launch {
-            _uiState.update { it.copy(detailSkillId = skillId, detailLoading = true, detailState = null) }
+            _uiState.update {
+                it.copy(detailSkillId = skillId, detailLoading = true, detailState = null, detailConfigForm = null)
+            }
             val manifest = withContext(Dispatchers.IO) {
                 skillRegistry.getInstalled().firstOrNull { it.manifest.id == skillId }?.manifest
             }
             val detail = skillAnalytics.projectSkillAnalytics(skillId, manifest)
-            _uiState.update { it.copy(detailState = detail, detailLoading = false) }
+            val configForm = loadConfigForm(skillId)
+            _uiState.update { it.copy(detailState = detail, detailConfigForm = configForm, detailLoading = false) }
         }
     }
 
     /** 关闭技能详情对话框。 */
     fun closeSkillDetail() {
-        _uiState.update { it.copy(detailSkillId = null, detailState = null, detailLoading = false) }
+        _uiState.update {
+            it.copy(detailSkillId = null, detailState = null, detailConfigForm = null, detailLoading = false)
+        }
     }
 
     /** 设置分类过滤（null = 全部分类）。 */

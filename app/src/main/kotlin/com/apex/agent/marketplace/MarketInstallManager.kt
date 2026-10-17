@@ -6,6 +6,7 @@ import com.apex.agent.core.tools.connector.ConnectorRegistry
 import com.apex.agent.core.tools.marketplace.ClawHubSource
 import com.apex.agent.core.tools.marketplace.GithubMcpSource
 import com.apex.agent.core.tools.marketplace.ModelScopeSource
+import com.apex.agent.core.tools.marketplace.RawGitHubMirrors
 import com.apex.agent.core.tools.marketplace.RegistryServer
 import com.apex.agent.core.tools.mcp.McpManager
 import com.apex.agent.core.tools.mcp.McpServerConfig
@@ -24,6 +25,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.io.IOException
 import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -74,8 +76,7 @@ class MarketInstallManager @Inject constructor(
     //
     // P1（市场审计）：安装确认门禁 —— 市场加载的 Skill JSON 是不可信第三方内容
     // （promptInjection 直接进下一轮系统提示词），落盘+自动激活前给用户一次目检。
-    // 宿主（MarketViewModel）经 registerInstallConfirmGate 注册 UI 确认实现；
-    // 无注册者 = 无门禁（单测/直连，旧行为）。
+    // 宿主（MarketViewModel）经 registerInstallConfirmGate 注册 UI 确认实现。
     //
     // #347 P2 修复（双 ViewModel 互踩）：旧实现是单个 @Volatile 变量——市场页
     // 返回栈复入（A 未销毁又建 B）时 B 的 init 无条件覆盖 gate、B 的
@@ -84,9 +85,14 @@ class MarketInstallManager @Inject constructor(
     // [InstallConfirmGateRegistry]（独立成类，JVM 可直测）：后注册者生效
     // （弹窗归最上层 VM），注销只移除自己（当前生效门禁注销后自动回退到
     // 仍存活的次新注册者）。
+    //
+    // #347 fail-closed（与 main 修复融合）：注册表为空（无任何存活注册者）时
+    // [installConfirmGate] 为 null，安装路径**拒绝**而不是放行 —— 宁可明确
+    // 报错引导重新发起，也不允许不可信内容绕过目检直接落盘（null 永不等于
+    // 放行）。注册表注销回退解决互踩，fail-closed 兜底零注册者。
     private val confirmGateRegistry = InstallConfirmGateRegistry()
 
-    /** 当前生效的确认门禁（最后注册者）；无注册者时 null = 无门禁。 */
+    /** 当前生效的确认门禁（最后注册者）；无注册者时 null → 安装路径 fail-closed 拒绝。 */
     val installConfirmGate: (suspend (ManifestPreview) -> Boolean)?
         get() = confirmGateRegistry.current
 
@@ -110,10 +116,25 @@ class MarketInstallManager @Inject constructor(
     /** 用户在确认对话框点了取消（调用方可据此静默或给出友好文案，区别于真失败）。 */
     class InstallCancelledByUser : Exception("已取消安装，未写入任何内容")
 
-    suspend fun installSkillFromJson(content: String, trusted: Boolean = false): Result<String> =
+    suspend fun installSkillFromJson(
+        content: String,
+        trusted: Boolean = false,
+        /**
+         * 安装默认启用工位（"agent" / "coding"；null = 双工位同开，旧行为）。
+         * 市场分级隔离：从 Coding 市场装的技能默认只在 Coding 工位启用（另一侧
+         * 去对应市场自行开启）；升级重装则保留用户既有 per-scope 启停态。
+         */
+        defaultScope: String? = null
+    ): Result<String> =
         withContext(Dispatchers.IO) {
             val gate = installConfirmGate
-            if (!trusted && gate != null) {
+            if (!trusted) {
+                if (gate == null) {
+                    // #347 fail-closed：确认通道缺失 = 拒绝，绝不静默跳过门禁
+                    return@withContext Result.failure(
+                        Exception("确认通道未初始化：请从市场页面重新发起安装")
+                    )
+                }
                 val preview = dryRunInstall(content).getOrNull()
                     ?: return@withContext Result.failure(
                         Exception("manifest 解析失败，已拒绝安装（无法预览的内容不盲装）")
@@ -122,10 +143,35 @@ class MarketInstallManager @Inject constructor(
                     return@withContext Result.failure(InstallCancelledByUser())
                 }
             }
+            // per-scope 默认启用工位判定：安装前取既有条目（install 会重置为双开）
+            val parsed = runCatching {
+                json.decodeFromString<com.apex.agent.core.tools.skill.SkillManifest>(content)
+            }.getOrNull()
+            val existing = parsed?.let { skillRegistry.get(it.id) }
+            val scoped = defaultScope == SkillRegistry.SCOPE_AGENT || defaultScope == SkillRegistry.SCOPE_CODING
             skillRegistry.install(content).map { manifest ->
                 // 安装即装备：用户从市场装技能的意图就是要用；不激活的话
                 // 渐进披露目录里只是多一行摘要，方法论仍是「未装载」。
                 skillActivation.activate(manifest.id)
+                if (scoped) {
+                    if (existing != null) {
+                        // 升级重装：保留用户既有 per-scope 启停态
+                        if (!existing.enabledAgent) {
+                            skillRegistry.setEnabledForScope(manifest.id, SkillRegistry.SCOPE_AGENT, false)
+                        }
+                        if (!existing.enabledCoding) {
+                            skillRegistry.setEnabledForScope(manifest.id, SkillRegistry.SCOPE_CODING, false)
+                        }
+                    } else {
+                        // 新装：默认只在安装来源分级启用（双工位隔离）
+                        val other = if (defaultScope == SkillRegistry.SCOPE_AGENT) {
+                            SkillRegistry.SCOPE_CODING
+                        } else {
+                            SkillRegistry.SCOPE_AGENT
+                        }
+                        skillRegistry.setEnabledForScope(manifest.id, other, false)
+                    }
+                }
                 "已安装并装备 Skill：${manifest.name}（${manifest.id}），下一轮对话即生效"
             }
         }
@@ -189,7 +235,7 @@ class MarketInstallManager @Inject constructor(
     }
 
     // ═══ Skill：URL 安装（IO 线程 + 2MB 上限）═══
-    suspend fun installSkillFromUrl(url: String): Result<String> =
+    suspend fun installSkillFromUrl(url: String, defaultScope: String? = null): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
                 val request = Request.Builder()
@@ -205,7 +251,7 @@ class MarketInstallManager @Inject constructor(
                     String(bytes, Charsets.UTF_8)
                 }
             }.fold(
-                onSuccess = { content -> installSkillFromJson(content) },
+                onSuccess = { content -> installSkillFromJson(content, defaultScope = defaultScope) },
                 onFailure = { Result.failure(Exception("下载失败：${it.message}")) }
             )
         }
@@ -285,7 +331,10 @@ class MarketInstallManager @Inject constructor(
         }
 
     // ═══ Skill：魔搭 SKILL.md → apex-skill-v1（prompt 型）═══
-    suspend fun installModelScopeSkill(skill: ModelScopeSource.ModelScopeSkill): Result<String> =
+    suspend fun installModelScopeSkill(
+        skill: ModelScopeSource.ModelScopeSkill,
+        defaultScope: String? = null
+    ): Result<String> =
         withContext(Dispatchers.IO) {
             val markdown = modelScopeSource.fetchSkillMarkdown(skill).getOrElse {
                 return@withContext Result.failure(Exception("SKILL.md 下载失败：${it.message}"))
@@ -328,7 +377,7 @@ class MarketInstallManager @Inject constructor(
 
                 // P2（对齐 ClawHub 模式）：登记失败/中途取消时回收资源目录 ——
                 // 旧实现无回滚，ms-<id>/ 成永久孤儿（未登记 → uninstall 也清不到它）。
-                installSkillFromJson(manifest).also { result ->
+                installSkillFromJson(manifest, defaultScope = defaultScope).also { result ->
                     if (result.isFailure) runCatching { skillHome.deleteRecursively() }
                 }.map { msg ->
                     if (resourceFailed) "$msg（部分资源文件下载失败）" else msg
@@ -357,7 +406,10 @@ class MarketInstallManager @Inject constructor(
      *    （SkillRegistry.uninstall 会连该目录一并清理）；
      * 5. 构建 prompt 型 manifest（promptInjection = SKILL.md 全文）并安装。
      */
-    suspend fun installClawHubSkill(entry: ClawHubSource.ClawHubSkillEntry): Result<String> =
+    suspend fun installClawHubSkill(
+        entry: ClawHubSource.ClawHubSkillEntry,
+        defaultScope: String? = null
+    ): Result<String> =
         withContext(Dispatchers.IO) {
             val installId = ClawHubSource.installIdFor(entry.slug)
 
@@ -433,7 +485,7 @@ class MarketInstallManager @Inject constructor(
                 )
 
                 // 6. 安装；失败时回收资源目录，避免孤儿文件
-                installSkillFromJson(manifest).also { result ->
+                installSkillFromJson(manifest, defaultScope = defaultScope).also { result ->
                     if (result.isFailure) runCatching { skillHome.deleteRecursively() }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -507,7 +559,10 @@ class MarketInstallManager @Inject constructor(
      * 根路径技能探测（不改任何状态）：manifest 候选 → SKILL.md frontmatter。
      * 命中返回 [RootSkillProbe]；未命中返回 null（调用方继续 MCP / 技能集合分支）。
      */
-    private fun probeRootSkill(owner: String, repo: String, branches: List<String>): RootSkillProbe? {
+    // suspend：内部经 #339 镜像回退拉取（RawGitHubMirrors.fetchWithFallback 为
+    // 挂起实现）；两个调用方（installSkillFromGitHubRepo / installSmartFromGithub）
+    // 均已在 withContext(Dispatchers.IO) 内。
+    private suspend fun probeRootSkill(owner: String, repo: String, branches: List<String>): RootSkillProbe? {
         val manifestPaths = listOf(
             "manifest.json", "skill.json", "apex-skill.json", "apex_skill.json",
             "$repo.json", "skills/$repo.json", ".apex/skill.json", "skill/manifest.json"
@@ -601,6 +656,11 @@ class MarketInstallManager @Inject constructor(
         val skillMarkdownUrl: String? = null,
         /** SKILL：仓库归属（author 字段与 id 去重用）。 */
         val skillOwner: String? = null,
+        /**
+         * SKILL：安装时 manifest scope 盖章（null = all 双工位）。
+         * GitHub 精选 coding 技能传 "coding" —— 只进 Coding 市场 / Coding 屏。
+         */
+        val scope: String? = null,
         /** MCP：安装决策树输入。 */
         val server: RegistryServer? = null
     ) {
@@ -741,8 +801,11 @@ class MarketInstallManager @Inject constructor(
         return candidates.distinctBy { it.skillId }
     }
 
-    /** 安装单个 GitHub 候选（用户在候选列表点选，或单候选直装）。 */
-    suspend fun installGithubCandidate(candidate: GithubRepoCandidate): Result<String> =
+    /** 安装单个 GitHub 候选（用户在候选列表点选，或单候选直装；GitHub 精选专栏同管线）。 */
+    suspend fun installGithubCandidate(
+        candidate: GithubRepoCandidate,
+        defaultScope: String? = null
+    ): Result<String> =
         withContext(Dispatchers.IO) {
             when (candidate.kind) {
                 GithubRepoCandidate.Kind.MCP -> {
@@ -750,12 +813,15 @@ class MarketInstallManager @Inject constructor(
                         ?: return@withContext Result.failure(Exception("候选缺少 MCP server 元数据"))
                     registryMcpInstaller.install(server)
                 }
-                GithubRepoCandidate.Kind.SKILL -> installGithubSkillCandidate(candidate)
+                GithubRepoCandidate.Kind.SKILL -> installGithubSkillCandidate(candidate, defaultScope)
             }
         }
 
     /** 技能候选安装：拉 SKILL.md → frontmatter 严格校验 → prompt 型安装。 */
-    private suspend fun installGithubSkillCandidate(candidate: GithubRepoCandidate): Result<String> {
+    private suspend fun installGithubSkillCandidate(
+        candidate: GithubRepoCandidate,
+        defaultScope: String? = null
+    ): Result<String> {
         val markdown = candidate.skillMarkdownUrl?.let { tryDownload(it) }
             ?: return Result.failure(Exception("技能文档下载失败（${candidate.name}）"))
         val (fmName, fmDescription, fmLicense) = parseSkillFrontmatter(markdown)
@@ -782,8 +848,10 @@ class MarketInstallManager @Inject constructor(
                 author = "github:$owner",
                 markdown = markdown,
                 homepage = repoHomepage ?: candidate.skillMarkdownUrl,
-                license = fmLicense
-            )
+                license = fmLicense,
+                scope = candidate.scope
+            ),
+            defaultScope = defaultScope
         )
     }
 
@@ -848,12 +916,11 @@ class MarketInstallManager @Inject constructor(
             .build()
         httpClient.newCall(request).execute().use { resp ->
             if (!resp.isSuccessful) return@use null
-            // #345：有界读取——同管道其余路径已统一 readBytesLimited，此处不再
-            // 漏网（被劫持链路返回超大响应直接按失败回退，不 OOM）。
-            val stream = resp.body?.byteStream() ?: return@use null
-            val bytes = stream.use { it.readBytesLimited(MAX_DOWNLOAD_BYTES) }
+            // #345：流式限读（与同文件其他下载点同口径）—— 旧 `body?.string()`
+            // 先整体读入内存，异常网关返回超大响应即 OOM。
+            val bodyBytes = resp.body?.byteStream()?.use { it.readBytesLimited(MAX_DOWNLOAD_BYTES) }
                 ?: return@use null
-            json.parseToJsonElement(String(bytes, Charsets.UTF_8))
+            json.parseToJsonElement(String(bodyBytes, Charsets.UTF_8))
                 .jsonObject["default_branch"]?.jsonPrimitive?.contentOrNull
         }
     }.getOrNull()
@@ -926,7 +993,9 @@ class MarketInstallManager @Inject constructor(
         homepage: String? = null,
         license: String? = null,
         trustLevel: String? = null,
-        tags: List<String> = emptyList()
+        tags: List<String> = emptyList(),
+        /** 工位作用域盖章（null = all 双工位；GitHub 精选 coding 技能传 "coding"）。 */
+        scope: String? = null
     ): String = buildString {
         append("{\n")
         append("\"schema\":\"apex-skill-v1\",\n")
@@ -943,6 +1012,7 @@ class MarketInstallManager @Inject constructor(
             append(tags.joinToString(",") { "\"${escapeJson(it)}\"" })
             append("],\n")
         }
+        if (scope != null) append("\"scope\":\"${escapeJson(scope)}\",\n")
         append("\"promptInjection\":\"${escapeJson(markdown)}\",\n")
         append("\"tools\":[],\n")
         append("\"configuration\":{\"autoSetup\":[]}\n")
@@ -964,17 +1034,19 @@ class MarketInstallManager @Inject constructor(
                     if (!resp.isSuccessful) {
                         return@withContext Result.failure(Exception("GitHub 搜索失败: HTTP ${resp.code}"))
                     }
-                    // #345：有界读取——GitHub API 响应同样 2MB 封顶（被劫持
-                    // 链路返回超大响应时报尺寸错误而不是 OOM）。
-                    val stream = resp.body?.byteStream()
+                    // #345：流式限读（2MB，与同文件其他下载点同口径）——
+                    // 旧 `body?.string()` 无上限整体读入；空体与超限分别报错。
+                    val bodyBytes = resp.body?.byteStream()
                         ?: return@withContext Result.failure(
                             Exception("GitHub 搜索失败: HTTP ${resp.code}（空响应体）")
                         )
-                    val bytes = stream.use { it.readBytesLimited(MAX_DOWNLOAD_BYTES) }
-                        ?: return@withContext Result.failure(
+                    val bounded = bodyBytes.use { it.readBytesLimited(MAX_DOWNLOAD_BYTES) }
+                    if (bounded == null) {
+                        return@withContext Result.failure(
                             Exception("GitHub 搜索失败: 响应体超过 ${MAX_DOWNLOAD_BYTES / 1024 / 1024}MB 上限")
                         )
-                    val root = json.parseToJsonElement(String(bytes, Charsets.UTF_8)).jsonObject
+                    }
+                    val root = json.parseToJsonElement(String(bounded, Charsets.UTF_8)).jsonObject
                     val hits = root["items"]?.jsonArray?.mapNotNull { item ->
                         val obj = item.jsonObject
                         GitHubRepoHit(
@@ -1010,15 +1082,19 @@ class MarketInstallManager @Inject constructor(
         return dir
     }
 
-    private fun tryDownload(url: String): String? = runCatching {
-        val request = Request.Builder().url(url).header("User-Agent", "ApexAgent/1.0").build()
-        httpClient.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) return@use null
-            val bytes = resp.body?.byteStream()?.use { it.readBytesLimited(MAX_DOWNLOAD_BYTES) }
-                ?: return@use null
-            if (bytes == null) null else String(bytes, Charsets.UTF_8)
-        }
-    }.getOrNull()
+    // #339：raw.githubusercontent.com 直连在国内大面积不可达 —— 统一走
+    // 镜像 fallback（jsdelivr 三级 CDN → 直连；非 raw URL 原样直取）。
+    // 失败（全部源不可达）返回 null，由调用方继续尝试下一候选路径。
+    private suspend fun tryDownload(url: String): String? = try {
+        val bytes = RawGitHubMirrors.fetchWithFallback(
+            client = httpClient,
+            rawUrl = url,
+            maxBytes = MAX_DOWNLOAD_BYTES
+        )
+        String(bytes, Charsets.UTF_8)
+    } catch (e: IOException) {
+        null
+    }
 
     /** 读取至多 [max] 字节；超限返回 null。 */
     private fun java.io.InputStream.readBytesLimited(max: Int): ByteArray? {

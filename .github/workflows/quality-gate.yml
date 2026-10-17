@@ -66,6 +66,12 @@ jobs:
       - name: Comment integrity gate (premature `*/` / dangling nested `/*`)
         run: python3 scripts/check_comment_integrity.py
 
+      # issue #276 测试纪律棘轮：runBlocking / Thread.sleep 存量基线 696 / 33，
+      # 只降不升 —— 新测试一律 runTest + 假钟注入；清理存量后跑
+      # `scripts/check_test_discipline.py --update-baseline` 重钉（只降不升）。
+      - name: Test-discipline ratchet (runBlocking / Thread.sleep baseline)
+        run: python3 scripts/check_test_discipline.py
+
       - name: Kotlin source inventory
         run: |
           MAIN=$(find . -name "*.kt" -path "*/src/main/*" -not -path "./.git/*" -not -path "*/build/*" | wc -l)

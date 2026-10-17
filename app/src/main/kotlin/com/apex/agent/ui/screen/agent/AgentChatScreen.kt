@@ -89,7 +89,9 @@ import com.apex.agent.ui.component.rememberSlashMenuProvider
 import com.apex.agent.ui.component.rememberFusionBundleController
 import com.apex.agent.ui.glass.GlassCard
 import com.apex.agent.ui.glass.GlassFloatingButton
+import com.apex.agent.ui.glass.GlassModalScrim
 import com.apex.agent.ui.glass.GlassStyle
+import com.apex.agent.ui.glass.glassModalBlur
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import androidx.compose.ui.text.font.FontWeight
@@ -413,6 +415,9 @@ fun AgentChatScreen(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
+                // 玻璃幕帘：提问卡挂起时消息流整体模糊（在 layerBackdrop 之前 =
+                // 外层，采样源录制内容保持原样）。
+                .glassModalBlur(pendingQuestion != null)
                 // 消息列表 = 采样源：layerBackdrop 把列表内容录进 GraphicsLayer，
                 // 悬浮输入栏 / FAB 经 drawBackdrop 采样 + blur + lens 折射。
                 .layerBackdrop(listBackdrop)
@@ -429,6 +434,17 @@ fun AgentChatScreen(
             }
 
             itemsIndexed(uiState.messages, key = { _, m -> m.id }) { _, message ->
+                // ═══ 任务卡去重（2026-10 用户反馈）═══
+                // 任务执行期间，顶部 TaskStatusCard 已用任务标题（= 用户输入
+                // 首行截 80 字符，TaskRuntime 建卡口径）展示本轮指令，列表里
+                // 同文的用户气泡不再重复渲染——「上面显示执行中、下面再来一条
+                // 一样的你好」视觉冗余。任务收束（终态）后状态卡消失，气泡
+                // 自然回归，历史完整。
+                val dedupedByTaskCard = showTaskCard && taskState != null &&
+                    message is AgentUiMessage.User &&
+                    taskState!!.title == message.text.lineSequence()
+                        .firstOrNull()?.take(80)
+                if (dedupedByTaskCard) return@itemsIndexed
                 AgentMessageItem(
                     message = message,
                     vm = viewModel,
@@ -501,21 +517,19 @@ fun AgentChatScreen(
                 }
             }
 
-            // Agent 主动提问
-            pendingQuestion?.let { question ->
-                item(key = "agent-question") {
-                    QuestionCard(
-                        question = question,
-                        onAnswer = { optionId, customText ->
-                            viewModel.answerQuestion(optionId, customText)
-                        },
-                        onCancel = {
-                            viewModel.cancelQuestion()
-                        }
-                    )
-                }
-            }
+            // Agent 主动提问：已迁至底部玻璃悬浮栈（与 Coding 屏同款 overlay
+            // 模式）——留在列表内会随幕帘一起被 blur，且采样源与弹层同层
+            // 互相包含。
         }
+
+            // ═══ 模态幕帘：提问卡挂起时对消息流模糊 + scrim（玻璃幕帘）═══
+            // 液态玻璃的 backdrop 采样存在盲区，盲区文字会以锐利形态透过霜面
+            // 与提问卡内容叠字（用户实测截图）—— 被覆盖内容自身先 blur
+            //（修饰序在 layerBackdrop 外层，采样源不失真），透出的只能是模糊
+            // 像素；API < 31 由 GlassModalScrim 重蒙层诚实降级。
+            if (pendingQuestion != null) {
+                GlassModalScrim(modifier = Modifier.matchParentSize())
+            }
 
             // ═══ 玻璃悬浮层：FAB + 加载条 + 输入栏 —— 悬浮于消息源之上 ═══
             // 覆盖式布局使输入栏与消息重叠 —— 这是 backdrop 采样的前提；
@@ -559,6 +573,22 @@ fun AgentChatScreen(
                     LinearProgressIndicator(
                         modifier = Modifier.fillMaxWidth(),
                         color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                // ═══ Agent 主动提问（门控/ask_user_choice 结构化卡）—— 玻璃悬浮栈形态 ═══
+                // 与 Coding 屏同款：真实采样消息流 backdrop 的 GlassCard；
+                // 幕帘已把消息流模糊，弹层内容清晰可读。
+                pendingQuestion?.let { question ->
+                    QuestionCard(
+                        question = question,
+                        onAnswer = { optionId, customText ->
+                            viewModel.answerQuestion(optionId, customText)
+                        },
+                        onCancel = {
+                            viewModel.cancelQuestion()
+                        },
+                        backdrop = listBackdrop
                     )
                 }
 

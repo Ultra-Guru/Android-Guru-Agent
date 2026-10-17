@@ -1,6 +1,7 @@
 package com.apex.agent.ui.screen.market
 
 import com.apex.agent.core.tools.marketplace.HubSource
+import com.apex.agent.core.tools.marketplace.MarketNames
 import com.apex.agent.core.tools.mcp.McpManager
 import com.apex.agent.core.tools.mcp.McpServerConfig
 import com.apex.agent.core.tools.mcp.McpTransport
@@ -82,6 +83,9 @@ class MarketHubController @Inject constructor(
     /**
      * 安装一个 Hub 技能：下载 manifest → 统一安装管道。
      * 行级 busy（installingSkillId）防并发下载。
+     *
+     * per-scope 默认启用工位 = 条目声明的 scope（agent/coding；all = 双开）——
+     * 与市场分级过滤同源（HubSkillEntry.visibleToScope）。
      */
     fun installSkill(entry: HubSource.HubSkillEntry) {
         if (_uiState.value.installingSkillId != null) return
@@ -90,7 +94,8 @@ class MarketHubController @Inject constructor(
             try {
                 hubSource.downloadSkillManifest(entry).fold(
                     onSuccess = { manifestJson ->
-                        installManager.installSkillFromJson(manifestJson)
+                        val defaultScope = entry.scope.takeIf { it == "agent" || it == "coding" }
+                        installManager.installSkillFromJson(manifestJson, defaultScope = defaultScope)
                     },
                     onFailure = { Result.failure(it) }
                 ).fold(
@@ -125,7 +130,9 @@ class MarketHubController @Inject constructor(
      *
      * - **安装 ≠ 启动**：一律 `enabled=false` 落盘，启动（真实连接：进程
      *   fork + JSON-RPC initialize + tools/list）由用户在市场显式触发；
-     * - 已有同名配置 → 不覆盖（用户可能已自定义）；
+     * - #346：已有同名配置的判定用归一化比较键 —— 同一服务器从其他源
+     *   （mcp.so/Registry/Operit）安装、或仅大小写/分隔符差异时不再重复
+     *   建配置，改为复用现有配置并给出友好提示；
      * - 沙箱条目的 rootfs 就绪门禁在启动时由 ProotMcpProcessLauncher 把守
      *   （引导性报错），安装阶段不拦截。
      */
@@ -134,8 +141,14 @@ class MarketHubController @Inject constructor(
         scope.launch {
             _uiState.update { it.copy(installingMcpName = entry.name) }
             try {
-                val exists = mcpManager.getConfigs().any { it.name == entry.name }
-                if (!exists) {
+                val existing = mcpManager.getConfigs().firstOrNull {
+                    MarketNames.isSameServer(it.name, entry.name)
+                }
+                if (existing != null) {
+                    _uiState.update {
+                        it.copy(mcpsError = MarketNames.duplicateMessage(existing.name, entry.name))
+                    }
+                } else {
                     mcpManager.addServer(toServerConfig(entry)).fold(
                         onSuccess = { _refreshMarket.tryEmit(Unit) },
                         onFailure = { e -> _uiState.update { it.copy(mcpsError = e.message) } }

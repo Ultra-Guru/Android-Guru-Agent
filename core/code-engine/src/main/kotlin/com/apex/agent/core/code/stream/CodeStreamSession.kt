@@ -55,6 +55,17 @@ class CodeStreamSession {
     /** 活跃 BASH 胶囊（终端面板跟随；run 结束或下个 BASH 到来时切换）。 */
     private var activeTerminalCallId: String? = null
 
+    // ── 终端面板流水式折叠信号（用户需求：「终端命令运行时展开跟随输出，
+    //    完成后自动折叠成胶囊」；与思考/工具胶囊同款生命周期）──
+    /** 活跃 BASH 正在执行（面板保持展开）；Complete/Error/Aborted 收束。 */
+    private var terminalBusy = false
+
+    /** 头行展示的命令摘要（活跃/最近 BASH 的首行命令）。 */
+    private var terminalCommandSummary = ""
+
+    /** 最近一次终端命令退出码（完成态头行展示；null = 未知）。 */
+    private var terminalExitCode: Int? = null
+
     private val affectedFiles = LinkedHashSet<String>()
     private var lastError: CodeStreamSnapshot.ErrorInfo? = null
     private var toolCallCount = 0
@@ -73,14 +84,18 @@ class CodeStreamSession {
     fun beginRun(userText: String) {
         // 收口上一轮残留的流式条目：中止路径没有 Complete 事件，引用
         // 悬挂会导致下一轮首个 Chunk 把新文本拼进旧气泡（跨轮串台）
-        streamingThinking?.let { replaceEntry(it.id, it.copy(isStreaming = false)) }
+        streamingThinking?.let { closeStreamingEntry(it) }
         streamingThinking = null
-        streamingAssistant?.let { replaceEntry(it.id, it.copy(isStreaming = false)) }
+        streamingAssistant?.let { closeStreamingEntry(it) }
         streamingAssistant = null
         // 文档语义：「本轮运行」触碰的文件 —— 每 run 归零重新累计
         affectedFiles.clear()
         append(StreamEntry.UserEntry(nextId(), userText))
         activeTerminalCallId = null
+        // 新 run 归零终端面板三信号（上一轮命令的尾窗不再展示）
+        terminalBusy = false
+        terminalCommandSummary = ""
+        terminalExitCode = null
     }
 
     /** VM 注入系统说明行（AUTO 预检决策 / 深水区升级等）。 */
@@ -100,8 +115,15 @@ class CodeStreamSession {
             is AgentEvent.ThinkingStart -> Unit // 思考条目由首个 Chunk 创建
 
             is AgentEvent.ThinkingChunk -> {
+                // 空思考分片不建卡（2026-10 用户反馈）：部分网关对不思考的
+                // 模型也每帧发 reasoning_content:"" —— 旧实现建出一张永远
+                // 「思考中」的空思考卡（reasoningBuilder 恒空 → 引擎不发
+                // ThinkingComplete → 永不收尾）。首块空白直接忽略；已有条目
+                // 时空白拼接无害但也无意义，一并跳过。
+                if (event.text.isEmpty()) return
                 val cur = streamingThinking
                 if (cur == null) {
+                    if (event.text.isBlank()) return
                     streamingThinking = StreamEntry.ThinkingEntry(nextId(), event.text, true)
                     append(streamingThinking!!)
                 } else {
@@ -116,6 +138,9 @@ class CodeStreamSession {
                     if (event.fullThought.isNotBlank()) {
                         append(StreamEntry.ThinkingEntry(nextId(), event.fullThought, false))
                     }
+                } else if (event.fullThought.isBlank() && cur.text.isBlank()) {
+                    // 全程空白思考（模型未思考/网关空串）：移除占位卡而非留白
+                    removeEntry(cur.id)
                 } else {
                     replaceEntry(cur.id, cur.copy(text = event.fullThought.ifBlank { cur.text }, isStreaming = false))
                 }
@@ -143,8 +168,12 @@ class CodeStreamSession {
             is AgentEvent.ToolCallComplete -> onToolComplete(event)
 
             is AgentEvent.ResponseChunk -> {
+                // 空回复分片不建条目（与空思考卡同源：部分 provider 发
+                // content:"" 的 tool_calls 前导帧）——空气泡流式占位无意义
+                if (event.text.isEmpty()) return
                 val cur = streamingAssistant
                 if (cur == null) {
+                    if (event.text.isBlank()) return
                     streamingAssistant = StreamEntry.AssistantEntry(nextId(), event.text, true)
                     append(streamingAssistant!!)
                 } else {
@@ -159,6 +188,9 @@ class CodeStreamSession {
                     if (event.fullText.isNotBlank()) {
                         append(StreamEntry.AssistantEntry(nextId(), event.fullText, false))
                     }
+                } else if (event.fullText.isBlank() && cur.text.isBlank()) {
+                    // 全程空白回复（纯工具调用轮）：移除空气泡而非留白
+                    removeEntry(cur.id)
                 } else {
                     replaceEntry(cur.id, cur.copy(text = event.fullText.ifBlank { cur.text }, isStreaming = false))
                 }
@@ -177,6 +209,8 @@ class CodeStreamSession {
             is AgentEvent.Error -> {
                 lastError = CodeStreamSnapshot.ErrorInfo(event.message, event.recoverable)
                 val related = activeTerminalCallId
+                // 引擎级错误收束终端「运行中」信号（否则面板永远脉冲）
+                terminalBusy = false
                 append(
                     StreamEntry.ErrorEntry(
                         id = nextId(),
@@ -200,10 +234,12 @@ class CodeStreamSession {
                 closeOpenCycle()
                 // 中止同样收口流式条目（与 beginRun 双保险：Aborted 后可能
                 // 没有下一轮 beginRun，气泡不能永远挂「生成中」）
-                streamingThinking?.let { replaceEntry(it.id, it.copy(isStreaming = false)) }
+                streamingThinking?.let { closeStreamingEntry(it) }
                 streamingThinking = null
-                streamingAssistant?.let { replaceEntry(it.id, it.copy(isStreaming = false)) }
+                streamingAssistant?.let { closeStreamingEntry(it) }
                 streamingAssistant = null
+                // 中止时终端命令不会再来 Complete —— 运行中信号就地收束
+                terminalBusy = false
                 append(StreamEntry.StopEntry(nextId(), "已中止"))
             }
 
@@ -299,6 +335,9 @@ class CodeStreamSession {
         streamingAssistant = null
         activeTerminalCallId = null
         lastError = null
+        terminalBusy = false
+        terminalCommandSummary = ""
+        terminalExitCode = null
         toolCallCount = restored.count { it is StreamEntry.ToolCapsuleEntry }
         failedToolCallCount = restored.count {
             (it as? StreamEntry.ToolCapsuleEntry)?.call?.status == ToolCallStatus.FAILED
@@ -345,6 +384,10 @@ class CodeStreamSession {
         if (kind == ToolKind.BASH) {
             terminalBuffers[event.callId] = TerminalPulseBuffer()
             activeTerminalCallId = event.callId
+            // 新命令开跑：面板展开跟随（busy=true），头行换成新命令摘要
+            terminalBusy = true
+            terminalCommandSummary = target
+            terminalExitCode = null
         }
         trackVerifyCycleStart(kind, event.callId)
         append(StreamEntry.ToolCapsuleEntry(toolEntryId(event.callId), call))
@@ -395,7 +438,11 @@ class CodeStreamSession {
             existing.target.takeIf { it.isNotBlank() && it != UNKNOWN_TARGET }?.let { affectedFiles.add(it) }
         }
         if (activeTerminalCallId == event.callId) {
-            // 面板保留最后一次 BASH 的内容（可翻看），直到下一个 BASH 开始
+            // 面板保留最后一次 BASH 的内容（可翻看），直到下一个 BASH 开始；
+            // 流水式折叠：命令收束 → busy=false（UI 自动折叠成头行胶囊），
+            // 头行保留命令摘要 + 退出码供回看
+            terminalBusy = false
+            terminalExitCode = exitCode
         }
         trackVerifyCycleEnd(existing.kind, event.callId, event.success)
     }
@@ -469,6 +516,27 @@ class CodeStreamSession {
         dirty = true
     }
 
+    private fun removeEntry(id: String) {
+        entries.removeAll { it.id == id }
+        dirty = true
+    }
+
+    /**
+     * 收口流式条目（beginRun/Aborted 路径）：全程空白（模型未思考/
+     * 网关空串帧）直接移除占位卡，非空白才定格为终态。
+     */
+    private fun closeStreamingEntry(entry: StreamEntry) {
+        when (entry) {
+            is StreamEntry.ThinkingEntry ->
+                if (entry.text.isBlank()) removeEntry(entry.id)
+                else replaceEntry(entry.id, entry.copy(isStreaming = false))
+            is StreamEntry.AssistantEntry ->
+                if (entry.text.isBlank()) removeEntry(entry.id)
+                else replaceEntry(entry.id, entry.copy(isStreaming = false))
+            else -> Unit
+        }
+    }
+
     private fun updateCall(call: StreamToolCall) {
         toolCalls[call.id] = call
         val idx = entries.indexOfFirst { it.id == toolEntryId(call.id) }
@@ -501,7 +569,10 @@ class CodeStreamSession {
             lastError = lastError,
             activeTerminalCallId = activeTerminalCallId,
             terminalContent = activeBuf?.content() ?: "",
-            affectedFiles = affectedFiles.toList()
+            affectedFiles = affectedFiles.toList(),
+            terminalBusy = terminalBusy,
+            terminalCommandSummary = terminalCommandSummary,
+            terminalExitCode = terminalExitCode
         )
     }
 
