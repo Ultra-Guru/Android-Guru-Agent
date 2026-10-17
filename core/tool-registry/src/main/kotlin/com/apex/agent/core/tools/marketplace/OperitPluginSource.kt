@@ -14,6 +14,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.net.URLEncoder
 
 /**
@@ -164,21 +165,23 @@ class OperitPluginSource(
     private fun rawUrl(owner: String, repo: String, branch: String, path: String): String =
         "https://raw.githubusercontent.com/$owner/$repo/$branch/$path"
 
-    /** raw 文本下载（2MB 上限；失败/非 2xx 返回 null）。 */
-    private fun fetchRawText(url: String): String? = runCatching {
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", USER_AGENT)
-            .header("Accept", "application/json, text/plain")
-            .build()
-        httpClient.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) return@use null
-            val bytes = resp.body?.byteStream()?.use { stream ->
-                stream.readBytesLimited(MAX_JSON_BYTES)
-            } ?: return@use null
-            String(bytes, Charsets.UTF_8)
-        }
-    }.getOrNull()
+    /**
+     * raw 文本下载（2MB 上限；失败/非 2xx 返回 null）。
+     *
+     * #339：改走镜像 fallback（jsdelivr 三级 CDN → raw 直连；HEAD 符号引用
+     * 不生成镜像候选，见 [RawGitHubMirrors.candidates]）。取消不吞：
+     * 仅折叠 IOException（聚合异常含各源失败摘要）。
+     */
+    private suspend fun fetchRawText(url: String): String? = try {
+        val bytes = RawGitHubMirrors.fetchWithFallback(
+            client = httpClient,
+            rawUrl = url,
+            maxBytes = MAX_JSON_BYTES
+        )
+        String(bytes, Charsets.UTF_8)
+    } catch (e: IOException) {
+        null
+    }
 
     /** JSON/文本 GET（2MB 上限；失败/非 2xx 返回 null；Request 构造异常同样吞）。 */
     private fun fetchBodyText(request: Request): String? = runCatching {
@@ -207,7 +210,7 @@ class OperitPluginSource(
     }
 
     private fun unavailableMessage(): String =
-        "无法连接 GitHub（网络不可用、被限流或超时）"
+        "无法连接 GitHub（网络不可用、被限流或超时）——国内网络可能需要镜像加速"
 
     companion object {
         private const val USER_AGENT = "ApexAgent/1.0 (Operit market browser)"

@@ -164,14 +164,13 @@ class CodeAgentEngine(
     /**
      * #197 计划确认/驳回（PLAN 模式人控门）：透传给 delegate。
      * confirmed=true 时可携带步骤勾选与重排（原 index 口径）。
+     * #340：Boolean 回执透传（false = 未送达挂起等待）。
      */
     override fun submitPlanConfirmation(
         confirmed: Boolean,
         enabledSteps: List<Int>?,
         order: List<Int>?
-    ) {
-        delegate.submitPlanConfirmation(confirmed, enabledSteps, order)
-    }
+    ): Boolean = delegate.submitPlanConfirmation(confirmed, enabledSteps, order)
 
     /**
      * #197 「小圆环」会话上下文附加段（coding 工位独占）：

@@ -197,14 +197,14 @@ data class McpStartupUi(
 @HiltViewModel
 class MarketViewModel @Inject constructor(
     @ApplicationContext internal val appContext: Context,
-    private val skillRegistry: SkillRegistry,
+    internal val skillRegistry: SkillRegistry,
     private val skillMenuProvider: SkillMenuProvider,
     internal val mcpManager: McpManager,
     private val connectorRegistry: ConnectorRegistry,
     private val pluginManager: PluginManager,
     // Plugin System v2：统一插件门面（双形态目录 / 功能插件启停装卸）
     private val unifiedPluginRegistry: UnifiedPluginRegistry,
-    private val installManager: MarketInstallManager,
+    internal val installManager: MarketInstallManager,
     private val modelScopeSource: ModelScopeSource,
     private val clawHubSource: ClawHubSource,
     // 官方 Hub 仓库（技能 + MCP 双目录）——独立状态域，God-file 预算拆分
@@ -253,6 +253,19 @@ class MarketViewModel @Inject constructor(
     /** 安装确认的挂起等待桥（awaitInstallConfirmation ↔ confirm/dismiss）。 */
     private var pendingInstallDecision: kotlinx.coroutines.CompletableDeferred<Boolean>? = null
 
+    /**
+     * #347：本实例注入全局确认门禁的 gate 引用（身份判定用）。
+     * MarketViewModel 按导航条目创建，市场页在返回栈中复入时 A/B 两个
+     * 实例会先后覆盖 [MarketInstallManager.installConfirmGate] —— 赋值与
+     * 清除都必须按实例身份判断（onCleared 里用 === 比对），否则 B 的
+     * 销毁会把存活 A 的 gate 一并置空，后续安装绕过不可信内容门禁。
+     */
+    private val myInstallConfirmGate: suspend (
+        com.apex.agent.marketplace.MarketInstallManager.ManifestPreview
+    ) -> Boolean = { preview ->
+        withContext(Dispatchers.Main) { awaitInstallConfirmation(preview) }
+    }
+
     init {
         refresh()
         loadMcpCatalog()
@@ -275,9 +288,9 @@ class MarketViewModel @Inject constructor(
             .launchIn(viewModelScope)
         // P1 修复：接入安装确认门禁（市场内容不可信 → 干运行预览 → 用户目检
         // → 才落盘+激活）。唤醒已建成但零接线的 ManifestDryRunDialog 三件套。
-        installManager.installConfirmGate = { preview ->
-            withContext(Dispatchers.Main) { awaitInstallConfirmation(preview) }
-        }
+        // #347：gate 赋值保存实例引用（myInstallConfirmGate），onCleared 按
+        // 身份清除 —— 双 VM 复入时不互踩。
+        installManager.installConfirmGate = myInstallConfirmGate
     }
 
     /** 挂起等待用户对安装预览的确认（主线程弹窗， CompletableDeferred 桥接）。 */
@@ -323,15 +336,23 @@ class MarketViewModel @Inject constructor(
     }
 
     /**
-     * P1/P2 修复（VM 销毁时的门禁收尾）：挂起在 gate 上的安装协程随
-     * viewModelScope 取消而终结，但单例控制器（Hub 等）自持 scope 的
-     * 安装协程不会 —— 不清理 gate 会让它们的 busy 标志永不复位（安装
-     * 按钮永久禁用，MarketHubController.installSkill 守卫直接 return）。
+     * P1/P2 修复（VM 销毁时的门禁收尾）+ #347（双 VM 复入互踩）：
+     * 挂起在 gate 上的安装协程按「取消」结算（pendingInstallDecision）；
+     * gate 本体只在自己仍持有它时清除（=== 身份判定）。若后建 VM 已覆盖
+     * gate，本实例销毁不动它；若 gate 已被清除，安装管道 fail-closed
+     * （gate 为 null = 拒绝安装，见 MarketInstallManager），busy 标志经
+     * 失败分支照常复位，不会出现「安装按钮永久禁用」。
      */
     override fun onCleared() {
         pendingInstallDecision?.let { runCatching { it.complete(false) } }
         pendingInstallDecision = null
-        installManager.installConfirmGate = null
+        // #347：只清除自己拥有的 gate —— 后建的 VM 已覆盖 gate 时，本实例的
+        // 销毁不得把人家的门禁一并拆掉（否则存活 VM 与单例控制器的后续安装
+        // 全部绕过确认门禁）。安装管道自身 fail-closed：gate 为 null 时拒绝
+        // 而非放行（见 MarketInstallManager.installSkillFromJson）。
+        if (installManager.installConfirmGate === myInstallConfirmGate) {
+            installManager.installConfirmGate = null
+        }
         super.onCleared()
     }
 
@@ -494,114 +515,12 @@ class MarketViewModel @Inject constructor(
 
     internal fun message(msg: String) = _uiState.update { it.copy(lastMessage = msg) }
 
-    // ═══ Skills ═══
-
-    fun toggleSkill(skillId: String, enabled: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) {
-            skillRegistry.setEnabled(skillId, enabled)
-            refresh()
-        }
-    }
-
-    fun uninstallSkill(skillId: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            // Issue #166：内置技能不可卸载（SkillRegistry.uninstall 对 bundled 恒 false），
-            // 提前拦下并给出正确提示——否则会落进「未找到技能」的误导文案。
-            if (_uiState.value.skills.any { it.id == skillId && it.bundled }) {
-                message(languageManager.getString(R.string.market_skill_bundled_uninstall_blocked_hint))
-                return@launch
-            }
-            val ok = skillRegistry.uninstall(skillId)
-            message(
-                if (ok) {
-                    languageManager.getString(R.string.market_skill_uninstalled).format(skillId)
-                } else {
-                    languageManager.getString(R.string.market_skill_not_found).format(skillId)
-                }
-            )
-            refresh()
-        }
-    }
-
-    fun installSkillTemplate(templateId: String) {
-        viewModelScope.launch {
-            installManager.installSkillTemplate(templateId).fold(
-                onSuccess = { message(it) },
-                onFailure = {
-                    message(languageManager.getString(R.string.market_install_failed).format(it.message ?: ""))
-                }
-            )
-            refresh()
-        }
-    }
-
-    /** 导入自定义 Skill JSON（粘贴内容）。 */
-    fun importSkillJson(content: String) {
-        viewModelScope.launch {
-            installManager.installSkillFromJson(content).fold(
-                onSuccess = { message(it) },
-                onFailure = {
-                    message(languageManager.getString(R.string.market_import_failed).format(it.message ?: ""))
-                }
-            )
-            refresh()
-        }
-    }
-
-    /** 从 URL 导入 Skill manifest。 */
-    fun importSkillFromUrl(url: String) {
-        viewModelScope.launch {
-            installManager.installSkillFromUrl(url).fold(
-                onSuccess = { message(it) },
-                onFailure = {
-                    message(languageManager.getString(R.string.market_import_failed).format(it.message ?: ""))
-                }
-            )
-            refresh()
-        }
-    }
-
-    /**
-     * 从本地文件导入 Skill（.zip / .json 自动识别）。
-     *
-     * 用户反馈"Skills 不能自己导入"：本地 skill 包此前没有任何入口。
-     * zip 走 SafeZipExtractor（路径穿越 / zip bomb 防御），json 直接装 manifest。
-     */
-    fun importSkillFromFile(uri: android.net.Uri) {
-        viewModelScope.launch {
-            installManager.installSkillFromFile(uri).fold(
-                onSuccess = { message(it) },
-                onFailure = {
-                    message(it.message ?: languageManager.getString(R.string.market_local_import_failed))
-                }
-            )
-            refresh()
-        }
-    }
-
-    /**
-     * 从本地文件导入 MCP 配置（`{"mcpServers": {...}}` 形态的 .json）。
-     * 复用 [importMcpConfig] 的解析与逐条报错管道。
-     */
-    fun importMcpConfigFromFile(uri: android.net.Uri) {
-        viewModelScope.launch {
-            installManager.readTextFile(uri).fold(
-                onSuccess = { text -> importMcpConfig(text) },
-                onFailure = {
-                    message(
-                        languageManager.getString(R.string.market_read_file_failed)
-                            .format(it.message ?: "")
-                    )
-                }
-            )
-        }
-    }
-
     // ═══ MCP ═══
 
-    // MCP 工位服务器操作 / 精选目录 / 启动时间线已按 God-file 预算拆至
-    // MarketViewModelMcpOps.kt 与 MarketViewModelMcpCatalog.kt（internal 扩展，
-    // 模式同 CodeLongTaskCenterOps.kt —— 调用点与方法引用语义不变）。
+    // MCP 工位服务器操作 / 精选目录 / 启动时间线 / Skills 安装卸载导入已按
+    // God-file 预算拆至 MarketViewModelMcpOps.kt、MarketViewModelMcpCatalog.kt
+    // 与 MarketViewModelSkills.kt（internal 扩展，模式同 CodeLongTaskCenterOps.kt
+    // —— 调用点与方法引用语义不变）。
 
     // ═══ MCP · 配置编辑（已安装管理「编辑」入口）═══
 

@@ -35,6 +35,13 @@ import com.apex.agent.core.tools.ToolRisk
  *   绝不把超时静默记成会话级拒绝；
  * - `selfGated` 工具（ShellExecute 已预置）跳过本门——它们自带更细粒度
  *   的命令级确认，双重弹窗只会骚扰用户。
+ * - **#336 凭据脱敏**：落审计（tool-audit.jsonl + Logcat）与确认弹窗的
+ *   参数摘要先经 [SensitiveArgRedactor.redact] 做字段级掩码（api_key /
+ *   token 等凭证值折叠为 `sk-a…3456` 形），sms_send 的 message、phone
+ *   等非凭证字段保持明文（用户必须能看到将发送什么短信）。
+ * - **#342 付费工具强制逐次确认**：sms_send 不提供「本会话允许」选项，
+ *   既有会话级放行记录同样不生效（详见 [NO_SESSION_ALLOW_TOOLS]），
+ *   叠加宿主侧 SmsRateLimiter 硬限额双保险。
  * - **#F-⑯**：每次门决策（弹窗结果 / 会话命中）经 [audit] 输出结构化
  *   JSONL 审计（tool / decision / durationMs）——「agent 在 X 场景走了什么
  *   通道、用户批没批」自此可对外举证。
@@ -70,8 +77,15 @@ class RiskAwareToolGate(
 
         return when (manager.decisionFor(tool.id)) {
             SessionToolDecision.ALLOWED_SESSION -> {
-                audit?.log(ToolAuditLogger.Event(tool = tool.id, decision = "allow", detail = "session"))
-                GateDecision.Allow
+                // #342：永不提供会话级放行的工具（sms_send）即使存在历史或
+                // 设置界面写入的 ALLOWED_SESSION 记录，也重新逐次确认——
+                // 付费副作用不允许静默连发。
+                if (tool.id in NO_SESSION_ALLOW_TOOLS) {
+                    promptUser(tool, metadata, arguments)
+                } else {
+                    audit?.log(ToolAuditLogger.Event(tool = tool.id, decision = "allow", detail = "session"))
+                    GateDecision.Allow
+                }
             }
             SessionToolDecision.DENIED_SESSION -> {
                 audit?.log(ToolAuditLogger.Event(tool = tool.id, decision = "deny", detail = "session"))
@@ -101,7 +115,9 @@ class RiskAwareToolGate(
             answer.timedOut -> {
                 audit?.log(ToolAuditLogger.Event(
                     tool = tool.id, decision = "confirm_timeout", durationMs = durationMs,
-                    command = arguments.take(200), detail = "ask timed out, not denied"
+                    // #336：审计 command 先过字段级脱敏再截断，防 api_key 明文落盘
+                    command = SensitiveArgRedactor.redact(arguments).take(200),
+                    detail = "ask timed out, not denied"
                 ))
                 GateDecision.Deny(
                     "confirmation for '${tool.id}' timed out " +
@@ -114,7 +130,8 @@ class RiskAwareToolGate(
                 manager.allowForSession(tool.id)
                 audit?.log(ToolAuditLogger.Event(
                     tool = tool.id, decision = "allow_session", durationMs = durationMs,
-                    command = arguments.take(200), detail = "user approved for session"
+                    command = SensitiveArgRedactor.redact(arguments).take(200),
+                    detail = "user approved for session"
                 ))
                 GateDecision.Allow
             }
@@ -122,7 +139,8 @@ class RiskAwareToolGate(
                 // 不记录 —— 下次调用重新询问（真正的"一次"）。
                 audit?.log(ToolAuditLogger.Event(
                     tool = tool.id, decision = "allow_once", durationMs = durationMs,
-                    command = arguments.take(200), detail = "user approved once"
+                    command = SensitiveArgRedactor.redact(arguments).take(200),
+                    detail = "user approved once"
                 ))
                 GateDecision.Allow
             }
@@ -130,7 +148,7 @@ class RiskAwareToolGate(
                 manager.denyForSession(tool.id)
                 audit?.log(ToolAuditLogger.Event(
                     tool = tool.id, decision = "denied_by_user", durationMs = durationMs,
-                    command = arguments.take(200),
+                    command = SensitiveArgRedactor.redact(arguments).take(200),
                     detail = if (answer.skipped) "question timeout/skip" else "user denied"
                 ))
                 GateDecision.Deny(
@@ -153,25 +171,31 @@ class RiskAwareToolGate(
             // 敏感动作确认（确认面收敛后本门唯一弹窗面）：标题按语义命名
             title = "敏感操作需要确认：${metadata.id}",
             description = "$riskHint（${categoryLabel(metadata.category)}）\n" +
-                "参数摘要：${arguments.take(200).replace('\n', ' ')}",
-            options = listOf(
-                AgentQuestionOption(
-                    id = "allow_session",
-                    label = strings.allowSessionLabel(),
-                    description = strings.allowSessionDesc()
-                ),
-                AgentQuestionOption(
+                // #336：弹窗参数摘要先脱敏再截断——api_key 等凭证值折叠，
+                // sms_send 的 message / phone 保持明文（用户须看到将发什么）。
+                "参数摘要：${SensitiveArgRedactor.redact(arguments).take(200).replace('\n', ' ')}",
+            options = buildList {
+                // #342：付费副作用工具（sms_send）不提供会话级放行——每条
+                // 短信都必须逐次确认，防「一次授权 + 无限连发」。
+                if (metadata.id !in NO_SESSION_ALLOW_TOOLS) {
+                    add(AgentQuestionOption(
+                        id = "allow_session",
+                        label = strings.allowSessionLabel(),
+                        description = strings.allowSessionDesc()
+                    ))
+                }
+                add(AgentQuestionOption(
                     id = "allow_once",
                     label = strings.allowOnceLabel(),
                     description = strings.allowOnceDesc()
-                ),
-                AgentQuestionOption(
+                ))
+                add(AgentQuestionOption(
                     id = "deny",
                     label = strings.denyLabel(),
                     description = strings.denyDesc(),
                     recommended = true
-                )
-            ),
+                ))
+            },
             allowCustom = false,
             allowSkip = false,
             timeoutMs = ASK_TIMEOUT_MS
@@ -203,5 +227,15 @@ class RiskAwareToolGate(
 
     private companion object {
         const val ASK_TIMEOUT_MS = 5 * 60 * 1000L
+
+        /**
+         * #342：永不提供会话级放行的工具 id——弹窗不出「本会话允许」选项，
+         * 既有 ALLOWED_SESSION 记录也不生效，强制逐次确认。当前仅 sms_send：
+         * HIGH 风险工具中唯一有直接金钱后果的（每条真实计费），叠加宿主侧
+         * SmsRateLimiter（每分钟 5 条 + 相同内容 10 分钟去重）构成双保险。
+         * （合并注：THIRD_PARTY_PREFIXES / isThirdPartyDynamic 随确认面收敛
+         * 移除——第三方首次确认已不弹，判定器无消费方。）
+         */
+        val NO_SESSION_ALLOW_TOOLS = setOf("sms_send")
     }
 }

@@ -1,5 +1,6 @@
 package com.apex.agent.ui.screen.market
 
+import com.apex.agent.core.tools.marketplace.MarketNames
 import com.apex.agent.core.tools.marketplace.McpSoSource
 import com.apex.agent.core.tools.mcp.McpManager
 import kotlinx.coroutines.CoroutineScope
@@ -122,7 +123,8 @@ class MarketMcpSoController @Inject constructor(
      * 安装一台 mcp.so 服务器：详情页配置 → 注册表（enabled=false）。
      *
      * - 行级 busy（installingSlug）防并发；
-     * - 已有同名配置 → 跳过写入（与官方 Hub 同口径，不覆盖用户自定义）；
+     * - #346：已有同名配置的判定用归一化比较键（跨源/大小写/分隔符变体
+     *   都算已装），重复安装不再新建配置，改为复用现有配置并给出提示；
      * - 无标准配置块（README 未暴露 mcpServers JSON）→ 错误文案引导去详情页。
      */
     fun installServer(entry: McpSoSource.McpSoEntry) {
@@ -130,8 +132,14 @@ class MarketMcpSoController @Inject constructor(
         scope.launch {
             _uiState.update { it.copy(installingSlug = entry.slug) }
             try {
-                val exists = mcpManager.getConfigs().any { it.name == entry.name }
-                if (!exists) {
+                val existing = mcpManager.getConfigs().firstOrNull {
+                    MarketNames.isSameServer(it.name, entry.name)
+                }
+                if (existing != null) {
+                    _uiState.update {
+                        it.copy(error = MarketNames.duplicateMessage(existing.name, entry.name))
+                    }
+                } else {
                     mcpSoSource.fetchServerConfig(entry).fold(
                         onSuccess = { config ->
                             mcpManager.addServer(config).fold(
