@@ -8,11 +8,9 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -28,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
 import com.apex.agent.update.UpdateCenter
@@ -44,8 +43,18 @@ import com.apex.agent.update.UpdateCenter
  *  - **可深挖**：「查看」= 本次会话隐藏 + 跳转关于页（完整更新面板：
  *    增量补丁链 / 全量包 / 镜像选择全在那里）。
  *
- * 视觉：primaryContainer 圆角条 + 系统更新图标 + 版本号 + NEW 徽标语义
- * （与关于页的更新横幅同一视觉锚点）。收展动画与 OfflineBanner 一致。
+ * 视觉：primaryContainer 圆角条 + 系统更新图标 + 版本号。收展动画与
+ * OfflineBanner 一致。
+ *
+ * ## NEW 徽标移除（2026-10 用户反馈「黑杠」）
+ *
+ * 原「新版本」徽标是 primary 实底胶囊 —— 极简黑白风格下 primary = 墨黑，
+ * 且标题无 maxLines/weight 约束：大字号（fontScale ≥ 1.3）时长标题吃满
+ * 行宽，徽标 Text 残余宽度趋零 → CJK 逐字换行且被裁剪 → 渲染成一条
+ * 无文字的高瘦黑杠（宽=剩余宽度，高=3 行行高），横幅整体被撑高。徽标
+ * 与标题语义完全重复（「发现新版本 v1.4.9.25」），直接移除；标题/副标题
+ * 加单行省略号约束，任何字号下不再外溢。关于页 StatusBadge 保留
+ * （面板空间充裕，无饥饿路径）。
  *
  * 接线（ApexRoot）：
  * ```
@@ -63,7 +72,6 @@ fun UpdateBanner(
     val manifest = UpdateCenter.availableManifest()
     val versionName = manifest?.versionName.orEmpty()
     val dismissDesc = stringResource(R.string.update_banner_dismiss_desc)
-    val newBadge = stringResource(R.string.about_update_new_badge)
 
     AnimatedVisibility(
         visible = visible && versionName.isNotEmpty(),
@@ -93,29 +101,21 @@ fun UpdateBanner(
                     modifier = Modifier.size(20.dp)
                 )
                 Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = stringResource(R.string.update_banner_title, versionName),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Surface(
-                            shape = RoundedCornerShape(5.dp),
-                            color = MaterialTheme.colorScheme.primary
-                        ) {
-                            Text(
-                                text = newBadge,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                            )
-                        }
-                    }
+                    Text(
+                        text = stringResource(R.string.update_banner_title, versionName),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        // 大字号/长版本号下不再外溢：单行 + 省略号（列宽恒由
+                        // weight(1f) 界定，标题让位于尾部按钮而非挤压兄弟）
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                     Text(
                         text = stringResource(R.string.update_banner_body),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 TextButton(

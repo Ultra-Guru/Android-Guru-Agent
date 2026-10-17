@@ -97,7 +97,7 @@ import com.apex.agent.ui.screen.agent.toolkit.OutputFormat
 import com.apex.agent.ui.screen.code.editor.CodeEditorPanel
 import com.apex.agent.ui.screen.code.longtask.CodeLongTaskSheet
 import com.apex.agent.ui.screen.code.stream.CodeStreamTimeline
-import com.apex.agent.ui.screen.code.stream.CodeTerminalPanel
+import com.apex.agent.ui.screen.code.stream.TerminalPanelState
 import com.apex.agent.ui.screen.code.stream.CodeToolDetailSheet
 import com.apex.agent.ui.glass.GlassCard
 import com.apex.agent.ui.glass.GlassModalScrim
@@ -255,14 +255,29 @@ fun CodeScreen(
         }
 
         // ═══ v5 玻璃悬浮层重构（Agent 屏同款 overlay 模式；kyant0/backdrop 引擎）═══
-        // 时间轴 = 玻璃采样源（layerBackdrop）；底部栈（终端尾窗/提问卡/错误条/
+        // 时间轴 = 玻璃采样源（layerBackdrop）；底部栈（提问卡/错误条/
         // 模式行/输入栏）悬浮于时间轴之上 —— 输入栏 GlassCard(Floating) 从
         // 时间轴获得真实 backdrop 采样 + blur + lens 折射（此前 Coding 屏零玻璃：
         // 死色输入条 + 流式结论裸铺在背景上）。lowerStackInsetPx 动态测量悬浮栈高度，
         // 时间轴 contentPadding 补偿，最后一条不被遮挡。
+        // 终端尾窗已内联进时间轴末尾（2026-10 用户反馈「跟随流水式输出执行，
+        // 不要悬浮在输入框上」）—— 不再占据悬浮栈、不遮挡卡片，随输出贴尾。
         val streamBackdrop = rememberLayerBackdrop()
         var lowerStackInsetPx by remember { mutableIntStateOf(0) }
         val lowerStackInsetDp = with(LocalDensity.current) { lowerStackInsetPx.toDp() }
+        // 内联终端胶囊状态：活跃 BASH 或有历史输出即渲染（时间轴末条）
+        val terminalState =
+            if (state.stream.activeTerminalCallId != null || state.stream.terminalContent.isNotBlank()) {
+                TerminalPanelState(
+                    content = state.stream.terminalContent,
+                    activeCommand = state.stream.terminalCommandSummary.ifBlank { null },
+                    busy = state.stream.terminalBusy,
+                    exitCode = state.stream.terminalExitCode,
+                    collapsed = terminalCollapsed
+                )
+            } else {
+                null
+            }
         Box(modifier = Modifier.weight(1f)) {
             CodeStreamTimeline(
                 snapshot = state.stream,
@@ -270,6 +285,11 @@ fun CodeScreen(
                 bottomInset = lowerStackInsetDp,
                 backdrop = streamBackdrop,
                 onToolClick = { call -> selectedToolCallId = call.id },
+                terminal = terminalState,
+                onToggleTerminalCollapse = {
+                    terminalUserToggled = true
+                    terminalCollapsed = !terminalCollapsed
+                },
                 // ═══ 玻璃幕帘（2026-10 用户反馈）：提问卡挂起时时间轴整体模糊 ═══
                 // 液态玻璃的 backdrop 采样存在盲区（动画图层/采样时序差），盲区
                 // 文字会以锐利形态透过霜面与卡内内容叠字 —— 被覆盖内容自身先
@@ -284,28 +304,14 @@ fun CodeScreen(
             }
 
             // ═══ 底部悬浮栈：悬浮于时间轴之上（backdrop 采样前提）═══
+            // （终端尾窗已内联进时间轴 —— 此栈只剩提问卡/错误条/目标卡/
+            // 选择器行/输入栏，高度回落，时间轴可见区变大）
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .onSizeChanged { lowerStackInsetPx = it.height }
             ) {
-                // 终端面板（活跃 BASH 的脉冲尾窗；独立锚定与时间轴互不抢占）
-                if (state.stream.activeTerminalCallId != null || state.stream.terminalContent.isNotBlank()) {
-                    CodeTerminalPanel(
-                        content = state.stream.terminalContent,
-                        activeCommand = state.stream.terminalCommandSummary.ifBlank { null },
-                        busy = state.stream.terminalBusy,
-                        exitCode = state.stream.terminalExitCode,
-                        collapsed = terminalCollapsed,
-                        onToggleCollapse = {
-                            terminalUserToggled = true
-                            terminalCollapsed = !terminalCollapsed
-                        },
-                        backdrop = streamBackdrop
-                    )
-                }
-
                 // v1.0 #155：工具/权限门的结构化提问卡（与 AskUser 的纯文本对话框并存；
                 // 工具执行已挂起，用户必须作答才能继续）
                 pendingAgentQuestion?.let { question ->
