@@ -7,6 +7,12 @@
 
 namespace apex::vt {
 
+namespace {
+// 与 vt_session.cpp 会话编解码器的 kCpsPerMarkMax 保持一致（编解码契约 R12
+// 本就规定每 mark ≤ 16；此处渲染层同值封顶，保证 save/load 前后语义一致）。
+constexpr size_t kRenderCpsPerMarkMax = 16;
+}  // namespace
+
 // ─── RowExtras ────────────────────────────────────────────────────────────
 
 const std::vector<uint32_t>* RowExtras::find(uint16_t col) const {
@@ -20,6 +26,12 @@ const std::vector<uint32_t>* RowExtras::find(uint16_t col) const {
 void RowExtras::add(uint16_t col, uint32_t cp) {
   for (CombiningMark& m : marks) {
     if (m.col == col) {
+      // diag-20261017 崩溃热修：单 cell 组合字符数封顶（与会话编解码器的
+      // kCpsPerMarkMax=16 契约一致 —— 编解码 R12 本就只保留 16 个）。
+      // 无封顶时 Zalgo/二进制 0xCC 0x80 流可让单个 cell 的 marks 向量随
+      // 输入无界增长（native 内存暴涨 + printAsciiRun 每次 put 都全量线性
+      // 扫描 → 泵线程卡死式变慢 → LMK 杀进程）。
+      if (m.cps.size() >= kRenderCpsPerMarkMax) return;
       m.cps.push_back(cp);
       return;
     }
@@ -36,6 +48,9 @@ void RowExtras::removeCol(uint16_t col) {
 }
 
 void RowExtras::removeRange(int fromCol, int toCol) {
+  // diag-20261017 崩溃热修：空区间（toCol < fromCol）直接跳过 —— 上游
+  // eraseRow 钳位后可能传入 first-1 类哨兵终点。
+  if (fromCol > toCol) return;
   marks.erase(std::remove_if(marks.begin(), marks.end(), [&](const CombiningMark& m) {
                 return m.col >= fromCol && m.col <= toCol;
               }),
@@ -189,9 +204,14 @@ const std::vector<uint32_t>* Screen::combiningAt(int r, int c) const {
 
 void Screen::insertChars(int row, int fromCol, int count) {
   if (row < 0 || row >= rows_) return;
-  count = count < 1 ? 1 : count;
   if (fromCol < 0) fromCol = 0;
   if (fromCol >= cols_) return;
+  // diag-20261017 崩溃热修（P0）：count 饱和钳位到 [1, cols_-fromCol]。
+  // 旧实现只有下限钳位 —— CSI 大参数（如 ESC[2147483647@，解析层
+  // parseToken 恰好放行 INT32_MAX）使 fromCol+count 有符号溢出为负：
+  // srcStart<cols_ 判真 → memmove 负回绕 size（~2GB）→ SIGSEGV
+  // （ASAN 宿主复现实证）。xterm 语义本就是“插入数不超过行尾”。
+  count = std::min(std::max(count, 1), cols_ - fromCol);
   int srcStart = fromCol + count;
   if (srcStart < cols_) {
     std::memmove(&cells_[idx(row, srcStart)], &cells_[idx(row, fromCol)],
@@ -208,9 +228,11 @@ void Screen::insertChars(int row, int fromCol, int count) {
 
 void Screen::deleteChars(int row, int fromCol, int count) {
   if (row < 0 || row >= rows_) return;
-  count = count < 1 ? 1 : count;
   if (fromCol < 0) fromCol = 0;
   if (fromCol >= cols_) return;
+  // diag-20261017 崩溃热修（P0）：与 insertChars 同源 —— 大参数下
+  // fromCol+count 溢出为负使 memmove 守卫判真 + size 负回绕 → SIGSEGV。
+  count = std::min(std::max(count, 1), cols_ - fromCol);
   if (fromCol + count < cols_) {
     std::memmove(&cells_[idx(row, fromCol)], &cells_[idx(row, fromCol + count)],
                  size_t(cols_ - fromCol - count) * sizeof(Cell));
@@ -227,13 +249,19 @@ void Screen::deleteChars(int row, int fromCol, int count) {
 void Screen::eraseRow(int row, int fromCol, int toCol, uint16_t styleId) {
   if (row < 0 || row >= rows_) return;
   int first = std::max(fromCol, 0);
-  int last = std::min(toCol, cols_ - 1);
+  if (first >= cols_) return;
+  // diag-20261017 崩溃热修（P0）：ECH（ESC[2147483647X）在派发层计算
+  // cursor.col+n-1 时 toCol 有符号溢出为极负 → last 负值 → 下方
+  // cells_[idx(row, last)] / [last+1] 越界读/写（ASAN 实证）。
+  // 钳位到 [-1, cols_-1]；空区间（last < first）不触发配对腰斩探测。
+  int last = std::min(std::max(toCol, first - 1), cols_ - 1);
   // P2 (Kotlin parity): pair-aware erase — if the range boundary splits a wide
   // pair, erase the out-of-range half too (xterm semantics: erasing either half
   // erases the whole pair; a surviving half becomes an orphan and misaligns).
   bool leadSplitBefore = first > 0 && (cells_[idx(row, first)].flags & kCellWideTrail) &&
                          (cells_[idx(row, first - 1)].flags & kCellWideLead);
-  bool trailSplitAfter = last < cols_ - 1 && (cells_[idx(row, last)].flags & kCellWideLead) &&
+  bool trailSplitAfter = last >= first && last >= 0 && last < cols_ - 1 &&
+                         (cells_[idx(row, last)].flags & kCellWideLead) &&
                          (cells_[idx(row, last + 1)].flags & kCellWideTrail);
   for (int c = first; c <= last; ++c) {
     Cell& dst = cells_[idx(row, c)];

@@ -196,7 +196,10 @@ object AgentModule {
         hookRunner: HookRunner,
         // 技能渐进披露：会话技能激活存储（目录 + 激活双层注入；与
         // SkillActivate 工具/斜杠指令/自动装备器共享同一单例）
-        skillActivation: SkillActivationStore
+        skillActivation: SkillActivationStore,
+        // #395 abort 语义收口：弹窗提问（AskUserChoice/权限门）随 abort
+        // 即时收场，引擎流不再吃满 5 分钟超时（取消卡死根因）
+        userQuestionBridge: UserQuestionBridge
     ): AgentEngine {
         return ApexAgentEngine(
             llmClient = llmClient,
@@ -213,7 +216,9 @@ object AgentModule {
             modelRuntime = modelRuntime,
             toolActivation = toolActivation,
             hookRunner = hookRunner,
-            skillActivation = skillActivation
+            skillActivation = skillActivation,
+            // #395：abort 时同步收口桥接层挂起的提问/权限弹窗
+            userQuestionGateway = userQuestionBridge
         )
     }
 

@@ -78,9 +78,13 @@ internal object CsiOps {
      * P2：起点宽字符配对感知（整对一起移，防拆对孤儿）。
      */
     fun insertChars(buffer: ScreenBuffer, cursor: CursorState, n: Int, left: Int, right: Int) {
-        val count = n.coerceAtLeast(1)
         val r = cursor.row
         val start = wideAwareStart(buffer, r, cursor.column).coerceAtLeast(left)
+        // diag-20261017 崩溃热修（P0）：大参数饱和钳位到剩余行宽。旧实现只有
+        // 下限钳位 —— CSI 大参数（ESC[2147483647@）使 start+count 整型溢出为负，
+        // 下方 downTo 循环在 engineLock 内空转 ~2^31 次（ANR/卡死，泵线程与
+        // 快照渲染全部阻塞）。xterm 语义本就是「插入数不超过行尾」。
+        val count = n.coerceAtLeast(1).coerceAtMost((right - start + 1).coerceAtLeast(1))
         for (c in right downTo (start + count)) {
             buffer.setCell(r, c, buffer.get(r, c - count))
         }
@@ -115,6 +119,10 @@ internal object CsiOps {
             }
         }
         if (start < left) start = left
+        // diag-20261017 崩溃热修（P0）：effective 饱和到剩余行宽（宽字符配对
+        // count+1 与大参数 n 在此可能溢出为负 → 下方 src = c + effective 越界
+        // 方向翻转，语义错乱；饱和后 get/set 越界保护不再被触发）。
+        effective = effective.coerceAtLeast(1).coerceAtMost(right - start + 1)
         for (c in start..right) {
             val src = c + effective
             buffer.setCell(r, c, if (src <= right) buffer.get(r, src) else TerminalCell.BLANK)

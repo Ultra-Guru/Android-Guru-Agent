@@ -122,6 +122,12 @@ object VtFeedTrail {
         runCatching {
             f.parentFile?.mkdirs()
             f.writeText(renderRing())
+            // #395 收尾修复：writeText 会整文件覆写 —— 若 CLEAN 标记落盘后
+            // 又有新引擎创建并 feed（上一份 CLEAN 随覆写丢失），旧进程死亡时
+            // 会被误判为「未干净收尾 = native 崩溃」产出假 .crash 留档。
+            // 现约定：无存活引擎（liveEngines==0）时每次落盘都重申 CLEAN 尾标，
+            // 使文件在任意时刻都忠实反映「当时是否干净」。
+            if (liveEngines.get() <= 0) f.appendText(CLEAN_MARK + "\n")
             dirty.set(false)
         }.onFailure { Log.w(TAG, "trail flush failed: ${it.message}") }
     }

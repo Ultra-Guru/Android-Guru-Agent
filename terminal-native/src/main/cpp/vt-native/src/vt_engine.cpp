@@ -724,7 +724,10 @@ struct Engine::Impl {
       case 'P': deleteChars(seq.paramOrDefault(0, 1)); break;  // DCH
       case '@': insertChars(seq.paramOrDefault(0, 1)); break;  // ICH
       case 'X': {                                                // ECH
-        int n = seq.paramOrDefault(0, 1);
+        // diag-20261017 崩溃热修（P0）：n 钳到行宽 —— 防 cursor.col + n - 1
+        // 整型溢出为极负（eraseRow 内 cells_[idx(row, last)] 越界读/写的根因，
+        // Screen 层已同步加第二道防线）。
+        int n = std::min(seq.paramOrDefault(0, 1), cur->cols());
         cur->eraseRow(cursor.row, cursor.col, cursor.col + n - 1, curStyle);
         mutationRows(cursor.row);
         break;
@@ -909,7 +912,9 @@ struct Engine::Impl {
 
   // ICH (§5): insert [n] blank cells at the cursor, rest shifts right.
   void insertChars(int n) {
-    int count = n < 1 ? 1 : n;
+    // diag-20261017 崩溃热修（P0）：大参数饱和钳位到行宽 —— 防
+    // fromCol+count 在 Screen 层之前的调用链上溢出（Screen 层已同步加第二道防线）。
+    int count = std::min(std::max(n, 1), cols);
     cur->insertChars(cursor.row, wideAwareStart(cursor.row, cursor.col), count);
     cur->repairRow(cursor.row);
     mutationRows(cursor.row);
@@ -921,7 +926,9 @@ struct Engine::Impl {
   // to the lead on a trail; count+1 absorbs the trail on a lead). Deleting only
   // one half leaves an orphan and misaligns the row.
   void deleteChars(int n) {
-    int count = n < 1 ? 1 : n;
+    // diag-20261017 崩溃热修（P0）：同 insertChars —— 大参数先饱和到行宽，
+    // 保证下方 count+1 与 Screen 层的指针算术都不可能溢出。
+    int count = std::min(std::max(n, 1), cols);
     int start = cursor.col;
     int effective = count;
     if (cursor.col > 0 && (cur->cell(cursor.row, cursor.col).flags & kCellWideTrail) &&
