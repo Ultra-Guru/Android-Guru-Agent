@@ -46,6 +46,8 @@ import com.apex.agent.ui.screen.code.editor.EditorFileException
 import com.apex.agent.ui.screen.code.editor.EditorFileLoader
 import com.apex.agent.ui.screen.code.editor.EditorLoadError
 import com.apex.agent.ui.screen.code.session.CodeSessionSnapshot
+import com.apex.agent.ui.screen.code.history.CodeHistoryStore
+import com.apex.agent.ui.screen.code.history.clearConversationWithArchive
 import com.apex.agent.ui.screen.code.session.CodeSessionStore
 import com.apex.agent.ui.screen.code.session.toStreamEntries
 import com.apex.agent.ui.screen.code.session.toCodeTodos
@@ -120,7 +122,9 @@ class CodeViewModel @Inject constructor(
     @Named("code") private val codeEngine: AgentEngine,
     private val workspaceManager: CodeWorkspaceManager,
     internal val codeTodoTool: CodeTodoTool,
-    private val codeSessionStore: CodeSessionStore,
+    internal val codeSessionStore: CodeSessionStore,
+    // v1.4.10 Coding 历史对话：归档仓库（新会话先归档，历史面板可恢复/删除）。
+    internal val codeHistoryStore: CodeHistoryStore,
     private val workspaceRoots: CodeWorkspaceRoots,
     private val userQuestionBridge: UserQuestionBridge,
     // Issue #164：全局规则（设置页编辑）——发送前同步到引擎，refreshContext 时
@@ -180,7 +184,7 @@ class CodeViewModel @Inject constructor(
     // 半边（长任务追踪/深水区观察器/落盘）仍走既有 reduce——双通道彻底分流。
 
     /** 胶囊时间轴会话（VM 自持，跨 run 累积；恢复/清空见 bind/clear）。 */
-    private val streamSession = CodeStreamSession()
+    internal val streamSession = CodeStreamSession()
 
     /** 渲染 ticker：运行期每 25ms 拉一次快照（≤40Hz 攒批）。 */
     private var renderJob: Job? = null
@@ -213,8 +217,8 @@ class CodeViewModel @Inject constructor(
     /** 最近一次引擎运行的展示目标（长任务追踪文案；与 runEngine 口径一致）。 */
     private var lastRunDisplayGoal: String? = null
 
-    /** 工作区恢复/冲刷串行锁（快速连续切换时防交错）。 */
-    private val sessionMutex = Mutex()
+    /** 工作区恢复/冲刷串行锁（快速连续切换时防交错；历史恢复复用同一把锁）。 */
+    internal val sessionMutex = Mutex()
 
     /**
      * 会话落盘的独立 scope：viewModelScope 在 onCleared 之前就被取消，
@@ -222,7 +226,7 @@ class CodeViewModel @Inject constructor(
      */
     private val persistScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val codeEngineImpl: CodeEngineFacade?
+    internal val codeEngineImpl: CodeEngineFacade?
         get() = codeEngine as? CodeEngineFacade
 
     /** 双思考逻辑路由门面（右上角切换入口；注入恒为 DualLogicCodeEngine）。 */
@@ -757,22 +761,9 @@ class CodeViewModel @Inject constructor(
     }
 
     fun clearConversation() {
-        if (_uiState.value.isRunning) return
-        codeEngineImpl?.clearConversation()
-        codeTodoTool.clear()
-        boundWorkspaceId?.let { wsId ->
-            viewModelScope.launch {
-                withContext(Dispatchers.IO) { runCatching { codeSessionStore.clear(wsId) } }
-            }
-        }
-        streamSession.clear()
-        _uiState.update {
-            it.copy(
-                messages = emptyList(), todos = emptyList(), contextUsedTokens = 0,
-                inputDraft = "", editorFilePath = null, editorFile = null, editorError = null,
-                stream = CodeStreamSnapshot()
-            )
-        }
+        // v1.4.10：新会话 = 先归档再清空（旧实现物理删除，历史不可找回）。
+        // 实现住 CodeHistoryController.kt（God-file 预算：VM 只减不增）。
+        clearConversationWithArchive()
     }
 
     // ═══ 思考档位（coding 专属七档）═══
@@ -989,16 +980,19 @@ class CodeViewModel @Inject constructor(
             return
         }
         workspaceManager.delete(workspaceId)
-        // 会话快照随工作区一并清理（引擎记忆目录由 manager 负责清理或不影响正确性）
+        // 会话快照 + 历史归档随工作区一并清理（引擎记忆目录由 manager 负责）
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { runCatching { codeSessionStore.clear(workspaceId) } }
+            withContext(Dispatchers.IO) {
+                runCatching { codeSessionStore.clear(workspaceId) }
+                runCatching { codeHistoryStore.clearWorkspace(workspaceId) }
+            }
         }
         refreshWorkspaces()
         val active = workspaceManager.activeWorkspace()
         if (active != null) bindWorkspace(active) else clearConversation()
     }
 
-    private fun bindWorkspace(ws: CodeWorkspace) {
+    internal fun bindWorkspace(ws: CodeWorkspace) {
         // 切走前捕获旧会话快照（同工作区重复 bind 不冲刷）
         val previousId = boundWorkspaceId
         val previousSnapshot = if (previousId != null && previousId != ws.workspaceId) {
@@ -1090,7 +1084,7 @@ class CodeViewModel @Inject constructor(
     }
 
     /** 从当前 UI 态构造会话快照（消息 + todos + 当前文件 + 时间轴检查点）。 */
-    private fun buildSessionSnapshot(workspaceId: String): CodeSessionSnapshot {
+    internal fun buildSessionSnapshot(workspaceId: String): CodeSessionSnapshot {
         val state = _uiState.value
         return CodeSessionSnapshot(
             workspaceId = workspaceId,

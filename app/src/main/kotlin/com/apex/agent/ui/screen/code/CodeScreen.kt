@@ -95,6 +95,8 @@ import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.core.llm.EndpointResolver
 import com.apex.agent.ui.screen.agent.toolkit.OutputFormat
 import com.apex.agent.ui.screen.code.editor.CodeEditorPanel
+import com.apex.agent.ui.screen.code.history.CodeHistoryIconButton
+import com.apex.agent.ui.screen.code.history.CodeHistorySheet
 import com.apex.agent.ui.screen.code.longtask.CodeLongTaskSheet
 import com.apex.agent.ui.screen.code.stream.CodeStreamTimeline
 import com.apex.agent.ui.screen.code.stream.TerminalPanelState
@@ -180,6 +182,8 @@ fun CodeScreen(
     var showThinkingGuide by rememberSaveable { mutableStateOf(false) }
     // v6 Git 工作区面板（右上角入口；面板打开即拉取 status 现场）
     var showGitPanel by rememberSaveable { mutableStateOf(false) }
+    // v1.4.10 Coding 历史对话面板（右上角对话历史入口；新会话自动归档）
+    var showCodeHistory by rememberSaveable { mutableStateOf(false) }
     // 胶囊详情弹层选中项（存 id 不存对象：StreamToolCall 是不可变快照，
     // 每 25ms 批次按 index 替换新实例——存对象会冻结在点击瞬间，
     // 状态/耗时/Diff 永不更新；存 id 每次重组从活快照重查）。
@@ -217,6 +221,7 @@ fun CodeScreen(
             onDelete = viewModel::deleteWorkspace,
             onClearChat = viewModel::clearConversation,
             onOpenLongTasks = viewModel::openLongTaskCenter,
+            onOpenHistory = { showCodeHistory = true },
             // v1.5 右上角思考逻辑切换（深潜 = 自研 / 标准 = 标准任务循环）
             logicMode = state.logicMode,
             onSwitchLogic = viewModel::setLogicMode,
@@ -549,6 +554,11 @@ fun CodeScreen(
         onStartTemplate = viewModel::startFromTemplate,
         onExport = { id -> viewModel.exportLongTask(context, id) }
     )
+
+    // v1.4.10 历史对话（ModalBottomSheet）：新会话自动归档的会话列表（恢复/删除）
+    if (showCodeHistory) {
+        CodeHistorySheet(viewModel = viewModel, onDismiss = { showCodeHistory = false })
+    }
 }
 
 // ═══ 工作区条 ═══
@@ -562,6 +572,7 @@ private fun WorkspaceBar(
     onDelete: (String) -> Unit,
     onClearChat: () -> Unit,
     onOpenLongTasks: () -> Unit,
+    onOpenHistory: () -> Unit = {},
     logicMode: StandardLogicMode = StandardLogicMode.DEEP_DIVE,
     onSwitchLogic: (StandardLogicMode) -> Boolean = { false },
     onOpenGit: () -> Unit = {},
@@ -718,6 +729,10 @@ private fun WorkspaceBar(
                     modifier = Modifier.size(18.dp)
                 )
             }
+
+            // v1.4.10 历史对话入口（新会话自动归档；与长任务中心相邻语义区分：
+            // History=任务记录，Chat=对话历史）
+            CodeHistoryIconButton(onClick = onOpenHistory)
 
             // 新会话：图标按钮（对齐 Agent 屏 History 邻钮；UI-012：48dp 触区红线，原 28dp）
             IconButton(onClick = onClearChat, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {

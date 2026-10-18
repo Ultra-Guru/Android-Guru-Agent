@@ -108,6 +108,18 @@
     <string name="code_thinking_guide_footer_linkage">A tier drives more than the prompt: iteration cap, compression threshold and tool-output budget all scale with it (see the ladder above).</string>
     <string name="code_thinking_guide_footer_apex">APEXCODE is manual-only: the adaptive selector never picks it, and its token cost sits at the top of the whole ladder.</string>
 
+    <!-- ═══ v1.4.10 Coding 历史对话（新会话自动归档，可恢复）═══ -->
+    <string name="code_history_open">Chat history</string>
+    <string name="code_history_title">Conversation History</string>
+    <string name="code_history_empty">No archived conversations yet — starting a new chat archives the current one automatically</string>
+    <string name="code_history_no_user_msg">(no user message)</string>
+    <string name="code_history_archived_fmt">Current conversation archived (%1$d messages) — restore anytime from chat history</string>
+    <string name="code_history_restore_failed">Restore failed: archived conversation is missing or corrupted</string>
+    <string name="code_history_delete">Delete</string>
+    <string name="code_history_delete_confirm">Delete this conversation?</string>
+    <string name="code_history_delete_msg_fmt">"This can't be undone: %1$s"</string>
+    <string name="code_history_cancel">Cancel</string>
+
     <!-- ═══ v1.2 long-task center ═══ -->
     <string name="code_longtask_open">Long-task center</string>
     <string name="code_longtask_sheet_title">Long Tasks</string>
