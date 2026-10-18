@@ -63,17 +63,19 @@ class CodeWorkspaceManager(
     init {
         workspacesBaseDir.mkdirs()
         indexDir.mkdirs()
+        ensureSystemWorkspace()
         // 恢复激活：索引里的 activeId 对应目录存在则生效
         val restored = _state.value
         val active = restored.workspaces.firstOrNull { it.workspaceId == restored.activeId }
         if (active != null && File(active.hostRootPath).isDirectory) {
             activeRootRef.set(File(active.hostRootPath))
         } else if (restored.workspaces.isEmpty()) {
-            // 首启：确保 default 工作区存在（与 Agent 文件工具 / Ubuntu 会话同源）
-            runCatching { ensureDefault() }
+            // 首启默认 = 整个系统（2026-10 用户需求：工作区不圈定目录，
+            // 默认即全系统；需要真实文件夹时走「选择文件夹」导入）
+            activate(SYSTEM_ID)
         } else {
-            val first = restored.workspaces.first()
-            activate(first.workspaceId)
+            val first = restored.workspaces.firstOrNull()
+            if (first != null) activate(first.workspaceId) else activate(SYSTEM_ID)
         }
     }
 
@@ -119,29 +121,42 @@ class CodeWorkspaceManager(
         return withEnv
     }
 
-    /** 删除工作区（目录 + 索引条目）。激活中的工作区被删则回落到第一个。 */
+    /**
+     * 删除工作区（索引条目 + 自建目录）。激活中的工作区被删则回落（system
+     * 优先兜底）。导入型工作区（用户真实文件夹）只解绑索引 —— 绝不删除
+     * 用户目录；system 工作区（根 = /）恒不可删。
+     */
     fun delete(workspaceId: String): Boolean {
+        if (workspaceId == SYSTEM_ID) return false
         val current = _state.value
         val target = current.workspaces.firstOrNull { it.workspaceId == workspaceId } ?: return false
+
+        // 只删本管理器自建的目录（workspacesBaseDir 之下）；导入的用户
+        // 真实文件夹仅解绑 —— deleteRecursively 走到用户目录是不可接受的事故。
         val dir = File(target.hostRootPath)
-        if (dir.exists()) dir.deleteRecursively()
+        val baseCanonical = workspacesBaseDir.canonicalPath
+        val dirCanonical = runCatching { dir.canonicalPath }.getOrDefault(dir.path)
+        if (dir.exists() && dirCanonical.startsWith(baseCanonical + File.separator)) {
+            dir.deleteRecursively()
+        }
 
         val remaining = current.workspaces.filter { it.workspaceId != workspaceId }
         val wasActive = current.activeId == workspaceId
         updateIndex { it.copy(workspaces = remaining, activeId = if (wasActive) null else it.activeId) }
         if (wasActive) {
             activeRootRef.set(null)
-            if (remaining.isNotEmpty()) activate(remaining.first().workspaceId)
+            val fallback = remaining.firstOrNull()
+            if (fallback != null) activate(fallback.workspaceId) else activate(SYSTEM_ID)
         }
         return true
     }
 
-    /** 激活工作区（更新 lastUsedAt + 持久化 activeId）。 */
+    /** 激活工作区（更新 lastUsedAt + 持久化 activeId；system 根 = / 恒存在）。 */
     fun activate(workspaceId: String): CodeWorkspace? {
         val current = _state.value
         val target = current.workspaces.firstOrNull { it.workspaceId == workspaceId } ?: return null
         val dir = File(target.hostRootPath)
-        if (!dir.isDirectory) return null
+        if (workspaceId != SYSTEM_ID && !dir.isDirectory) return null
 
         val touched = target.copy(lastUsedAt = System.currentTimeMillis())
         updateIndex { idx ->
@@ -152,6 +167,45 @@ class CodeWorkspaceManager(
         }
         activeRootRef.set(dir)
         return touched
+    }
+
+    /**
+     * 导入真实文件夹为工作区（2026-10 用户需求：「选择工作区需要实际去
+     * 选择工作文件夹」）。目录必须已存在（SAF 选择器解码出的宿主路径）；
+     * 同路径已导入 → 幂等复用（仅激活）；不复制文件、不落新目录、删除
+     * 仅解绑索引（见 [delete]）。
+     *
+     * @param hostPath 宿主侧真实目录路径（如 /storage/emulated/0/MyProject）
+     * @param displayName 展示名（null = 取目录名）
+     * @return 导入（或复用激活）的工作区；路径不存在/名称非法 → null
+     */
+    fun importFrom(hostPath: String, displayName: String? = null): CodeWorkspace? {
+        val dir = File(hostPath)
+        if (!dir.isDirectory) return null
+        val canonical = runCatching { dir.canonicalPath }.getOrDefault(hostPath)
+
+        // 同一物理目录已注册 → 直接激活（幂等复用，不重复建条目）
+        _state.value.workspaces.firstOrNull { it.hostRootPath == canonical }?.let {
+            return activate(it.workspaceId)
+        }
+
+        val name = displayName?.trim()?.takeIf { it.isNotEmpty() } ?: dir.name
+        if (name.isEmpty() || name.length > 64) return null
+        val id = "imported-" + slugify(name) + "-" + String.format("%x", System.currentTimeMillis() and 0xFFFFFF)
+        val detected = detectEnvironment(dir)
+        val ws = CodeWorkspace(
+            workspaceId = id,
+            name = name,
+            hostRootPath = canonical,
+            createdAt = System.currentTimeMillis(),
+            detectedEnvironment = detected.summary,
+            detectedLanguages = detected.languages,
+            buildSystem = detected.buildSystem
+        )
+        updateIndex { it.copy(workspaces = it.workspaces + ws) }
+        activate(id)
+        AppLogger.instance.info(LogCategory.SYSTEM, TAG, "Code workspace imported: $canonical")
+        return ws
     }
 
     /** 全部工作区（列表 UI 用）。 */
@@ -177,6 +231,24 @@ class CodeWorkspaceManager(
     }
 
     // ── 内部 ─────────────────────────────────────────────────────────
+
+    /**
+     * 常驻「整个系统」工作区（id = system，根 = /）—— 2026-10 用户需求：
+     * 不选文件夹时默认即整个系统。仅注册索引条目；删除被 [delete] 硬拒
+     * （根目录绝不可删），激活被 [activate] 特判（/ 恒存在）。
+     */
+    private fun ensureSystemWorkspace() {
+        val exists = _state.value.workspaces.any { it.workspaceId == SYSTEM_ID }
+        if (exists) return
+        val ws = CodeWorkspace(
+            workspaceId = SYSTEM_ID,
+            name = SYSTEM_NAME,
+            hostRootPath = "/",
+            createdAt = System.currentTimeMillis(),
+            detectedEnvironment = null
+        )
+        updateIndex { it.copy(workspaces = listOf(ws) + it.workspaces) }
+    }
 
     /** 首启兜底：default 工作区（与 Agent 文件沙箱同源目录）。 */
     private fun ensureDefault(): CodeWorkspace {
@@ -300,9 +372,15 @@ class CodeWorkspaceManager(
         return "$files 个代码文件 · 约 ${lines / 1000}k 行"
     }
 
-    private companion object {
-        const val TAG = "CodeWorkspaceManager"
+    companion object {
+        private const val TAG = "CodeWorkspaceManager"
         const val DEFAULT_ID = "default"
+
+        /** 整个系统工作区 id（根 = /；默认工作区，UI 与删除守卫消费）。 */
+        const val SYSTEM_ID = "system"
+
+        /** system 工作区存储名（UI 侧另有本地化显示名覆盖）。 */
+        const val SYSTEM_NAME = "Whole System"
         val IGNORED = setOf(".git", ".gradle", "build", "node_modules", ".idea", "__pycache__")
         val CODE_EXTS = setOf("kt", "java", "py", "js", "ts", "tsx", "jsx", "rs", "go", "c", "cpp", "h", "xml", "md")
     }

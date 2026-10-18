@@ -230,12 +230,7 @@ class CodeViewModel @Inject constructor(
         get() = codeEngine as? DualLogicCodeEngine
 
     // ═══ v6 控制器接线（lazy：viewModelScope 构造后才可用；God-file 预算：
-    //     Git 工作区与专家模板的逻辑各自独立成文件，VM 只做暴露）═══
-
-    /** Git 工作区面板（右上角入口；CodeWorkspacePanel 直取）。 */
-    internal val gitPanelController: CodeGitPanelController by lazy {
-        CodeGitPanelController(gitRunner, viewModelScope)
-    }
+    //     专家模板逻辑独立成文件，VM 只做暴露）═══
 
     /** Coding 专家模板（模式行胶囊；设置流 → 引擎人设通道）。 */
     internal val roleController: CodeRoleController by lazy {
@@ -972,6 +967,21 @@ class CodeViewModel @Inject constructor(
             return
         }
         bindWorkspace(created)
+    }
+
+    /**
+     * 导入真实文件夹为工作区（2026-10 用户需求：工作区选择 = 实际选一个
+     * 工作文件夹）。SAF 选择器解码出的宿主路径直入 [CodeWorkspaceManager.importFrom]
+     * —— 不复制文件、不落新目录、同目录幂等复用；失败（路径不可达/非法）
+     * 弹错误条。
+     */
+    fun importWorkspaceFromFolder(hostPath: String) {
+        val imported = workspaceManager.importFrom(hostPath)
+        if (imported == null) {
+            showError(languageManager.getString(R.string.code_ws_import_failed))
+            return
+        }
+        bindWorkspace(imported)
     }
 
     fun switchWorkspace(workspaceId: String) {

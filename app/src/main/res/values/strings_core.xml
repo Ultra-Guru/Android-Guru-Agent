@@ -593,10 +593,10 @@
 
     <!-- ═══ About screen (drawer bottom entry, v1.4.3+) ═══ -->
     <string name="about_section_highlights">Highlights in this build</string>
-    <string name="about_highlight_1">Smart update pipeline: jump straight to the latest version from up to 10 versions behind with one small patch</string>
-    <string name="about_highlight_2">Long-task export: share any run as a JSON archive or a readable Markdown report</string>
-    <string name="about_highlight_3">Chat memory you control: auto-capture can be turned off in Settings, and every memory is viewable and deletable</string>
-    <string name="about_highlight_4">Usage dashboard now estimates cost per model from public list prices</string>
+    <string name="about_highlight_1">Browser agent: full in-app browser with page understanding and multi-tab automation</string>
+    <string name="about_highlight_2">Coding desk: real-folder workspaces, built-in Git, and terminal output inline in the stream</string>
+    <string name="about_highlight_3">Ubuntu terminal rewritten: VT engine, CSI compatibility and stable CJK IME input</string>
+    <string name="about_highlight_4">Dual thinking system: native model effort + seven self-hosted tiers with deep-water auto-escalation</string>
     <string name="about_easter_egg_toast">🎉 You found the fireworks!</string>
     <string name="about_highlights_hint">Tap the robot at the bottom of this page five times</string>
     <string name="about_section_build">Version &amp; build</string>
@@ -678,17 +678,19 @@
     <string name="about_update_local_install">Install</string>
     <string name="about_update_local_delete">Delete</string>
     <string name="about_feature_agent_title">Agent chat</string>
-    <string name="about_feature_agent_desc">All-in-one AI assistant with multi-level thinking, tool calling and skills</string>
+    <string name="about_feature_agent_desc">All-in-one AI assistant with multi-level thinking, tool calling, skills and chat memory</string>
     <string name="about_feature_coding_title">Coding mode</string>
-    <string name="about_feature_coding_desc">Dedicated coding workflow with its own engine instance and workspace</string>
+    <string name="about_feature_coding_desc">Dedicated coding engine + real-folder workspaces (file tree / Git changes / terminal)</string>
     <string name="about_feature_terminal_title">Ubuntu terminal</string>
-    <string name="about_feature_terminal_desc">Full Ubuntu 24.04 CLI environment bundled with the APK — works offline</string>
+    <string name="about_feature_terminal_desc">Full Ubuntu 24.04 CLI with a PRoot sandbox bundled in the APK — works offline</string>
     <string name="about_feature_market_title">Skill market</string>
     <string name="about_feature_market_desc">Install skills, MCP servers and plugins on demand</string>
     <string name="about_feature_vault_title">Encrypted vault</string>
     <string name="about_feature_vault_desc">Encrypted clipboard vault for tokens and API keys</string>
     <string name="about_feature_glass_title">Liquid Glass</string>
     <string name="about_feature_glass_desc">Haze-based glass material system with a live Glass Lab showcase</string>
+    <string name="about_feature_browser_title">Browser agent</string>
+    <string name="about_feature_browser_desc">Full in-app browser: page understanding, multi-tab management and automation</string>
     <string name="about_link_source">Source code</string>
     <string name="about_link_release">Release channel</string>
     <string name="about_link_issues">Report an issue</string>
