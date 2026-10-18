@@ -80,27 +80,29 @@ class LoomNativeBridge {
     /** 喂入一帧原生流增量，返回规范化织物帧（可能多条/零条）。 */
     fun feed(chunk: LlmStreamChunk): List<LoomWireFrame> {
         val frames = mutableListOf<LoomWireFrame>()
+        val reasoning = chunk.reasoningContent
+        val content = chunk.content
         // reasoning ↔ content 切换：先闭思考块
-        if (!chunk.reasoningContent.isNullOrEmpty()) {
+        if (!reasoning.isNullOrEmpty()) {
             if (!reasoningOpen) {
                 frames.add(LoomWireFrame.Text(OPEN_DELIB))
                 reasoningOpen = true
             }
-            frames.add(LoomWireFrame.Text(chunk.reasoningContent))
+            frames.add(LoomWireFrame.Text(reasoning))
         }
-        val hasContent = !chunk.content.isNullOrEmpty()
+        val hasContent = !content.isNullOrEmpty()
         if (hasContent || chunk.toolCalls.isNotEmpty()) {
             if (reasoningOpen) {
                 frames.add(LoomWireFrame.Text(CLOSE_DELIB))
                 reasoningOpen = false
             }
         }
-        if (hasContent) {
+        if (!content.isNullOrEmpty()) {
             // 内容帧在工具帧之后到达 → 已装配的调用先行刷出（保交错序）
             if (sawToolFrames) {
                 flushAssembled(frames)
             }
-            frames.add(LoomWireFrame.Text(chunk.content))
+            frames.add(LoomWireFrame.Text(content))
         }
         for (call in chunk.toolCalls) {
             acceptCallDelta(call)
