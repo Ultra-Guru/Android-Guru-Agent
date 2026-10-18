@@ -48,7 +48,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
 import com.apex.agent.ui.glass.TerminalGlassSurface
-import com.kyant.backdrop.Backdrop
 
 /**
  * # Code Terminal Panel — 终端面板（规格书：终端日志 + 独立锚定）
@@ -68,16 +67,15 @@ import com.kyant.backdrop.Backdrop
  * - [busy] = false（命令收束）：自动折叠成头行胶囊，[exitCode] 就地展示
  *   （exit 0 绿点 / 非零红点 + 等宽 exit N 文本），点箭头可展开回看尾窗；
  * - 正文展开/收起走 AnimatedVisibility（expand/shrinkVertically，先例见
- *   OfflineBanner / SlashCommandButton），不再硬切。
+ *   UpdateBanner / SlashCommandButton），不再硬切。
  *
- * ## v6 玻璃接入 + 尾窗瘦身
+ * ## v7 内联化（2026-10 用户反馈：「跟随流水式输出执行，不要悬浮在输入框上」）
  *
- * - [backdrop]：内联于时间轴后，本面板处在本侧 layerBackdrop 采样源内部
- *   —— 自采样会递归污染，调用方传 null 走固定深色霜面兜底（终端语义
- *   恒定深色，白天模式也是深色面板，视觉不回退）；若未来他处复用且
- *   与采样源互为兄弟节点，传入 backdrop 即恢复 kyant0 真实采样。
- * - 尾窗高度 260 → 168dp（约 8 行正文，流式预览够用；全量输出走胶囊
- *   详情弹层）。
+ * 本组件从底部悬浮栈（输入栏上方、遮挡时间轴卡片）迁入
+ * [CodeStreamTimeline] 末尾成为**内联条目**：运行时随输出增长被锚定逻辑
+ * 贴尾跟随，完成后折叠成胶囊留在流内。玻璃档位随之固定 Frosted：
+ * 时间轴自身是采样源，内联条目不自采样（与 GlassCard Frosted 同规，
+ * 极简风格则短路为扁平深色面板 —— TerminalGlassSurface 不变式）。
  */
 @Composable
 internal fun CodeTerminalPanel(
@@ -87,15 +85,15 @@ internal fun CodeTerminalPanel(
     exitCode: Int?,
     collapsed: Boolean,
     onToggleCollapse: () -> Unit,
-    modifier: Modifier = Modifier,
-    backdrop: Backdrop? = null
+    modifier: Modifier = Modifier
 ) {
     // 滚动状态提升到折叠开关之外：折叠（正文离开组合）不丢滚动位置
     val vertical = rememberScrollState()
     val horizontal = rememberScrollState()
 
     TerminalGlassSurface(
-        backdrop = backdrop,
+        // Frosted 档：内联条目不接 backdrop（时间轴是采样源，不自采样）
+        backdrop = null,
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp)

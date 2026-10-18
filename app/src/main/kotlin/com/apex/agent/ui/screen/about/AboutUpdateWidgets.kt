@@ -167,21 +167,11 @@ internal fun PatchChainPath(chain: PatchIndex.Chain) {
     }
 }
 
-/** 主色实底小徽章（NEW）。 */
-@Composable
-internal fun StatusBadge(text: String) {
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = MaterialTheme.colorScheme.primary
-    ) {
-        Text(
-            text,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-        )
-    }
-}
+/**
+ * 主色实底小徽章（NEW）—— v1.4.9.34 起退役：极简黑白主题下 primary=墨黑，
+ * 实底徽章渲染成无文字高瘦黑条（用户反馈「竖杠」），且与版本号语义重复。
+ * 更新可用态改用描边图标（见 [AboutUpdatePanel] 状态头 Download 图标）。
+ */
 
 /** 当前下载源展示行：镜像名 + 延迟徽章（AUTO 显示已解析的最快节点）。 */
 @Composable

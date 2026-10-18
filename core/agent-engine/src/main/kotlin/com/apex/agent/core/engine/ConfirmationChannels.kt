@@ -98,5 +98,14 @@ internal fun ApexAgentEngine.abortConfirmationChannels() {
         specConfirmationDeferred = null
         userInputDeferred?.complete("")
         userInputDeferred = null
+        // ═══ #395 — 桥接层提问收口（弹窗取消卡死根因）═══
+        // AskUserChoice / 权限门（CommandPermissionGate/RiskAwareToolGate）在
+        // 工具 execute() 内部经 UserQuestionBridge.ask 挂起在「桥自己的
+        // deferred」上 —— 上方三对收口覆盖不到。不补口则 abort 后引擎流
+        // 吃满 5 分钟超时不收尾，TaskRuntime pause/cancel 连续打印
+        // "stream finalize did not complete within 10s"（真机日志 5 连实证）。
+        // 收口后 ask() 立即拿到 skipped 答案返回，工具批次结束后
+        // while(isRunning) 边界自然收尾。
+        userQuestionGateway?.abortActiveQuestion()
     }
 }

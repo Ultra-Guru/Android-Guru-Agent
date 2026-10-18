@@ -621,7 +621,6 @@
     <string name="about_update_auto_toggle_desc">开启：启动时静默检查新版本并提示更新。关闭：后台零检查、零下载补丁包 —— 用「检查更新」按钮手动控制更新节奏</string>
     <string name="about_update_auto_off_hint">自动更新已关闭 —— 可在下方手动检查新版本</string>
     <string name="about_update_retry">重试</string>
-    <string name="about_update_new_badge">新版本</string>
     <string name="about_update_progress_mb">下载中 %1$d%% · 已下载 %2$s</string>
     <string name="about_update_patch_recommended">增量更新 · 推荐</string>
     <string name="about_update_patch_auto_note">补丁在应用内自动合成，完成后弹出「立即安装」确认框，点击即装；跨多版本自动链式应用，全程无需命令行</string>
@@ -630,6 +629,10 @@
     <string name="about_update_patch_direct">单跳直达</string>
     <string name="about_update_patch_chain_n">%1$d 段链式</string>
     <string name="about_update_patch_background_note">后台进行中 · 支持断点续传 · 可离开此页</string>
+    <string name="update_banner_title">发现新版本 v%1$s</string>
+    <string name="update_banner_body">增量补丁更新可用 · 不强制</string>
+    <string name="update_banner_view">查看</string>
+    <string name="update_banner_dismiss_desc">忽略此版本</string>
     <string name="about_update_patch_downloading">正在下载补丁 %1$d/%2$d… %3$d%%</string>
     <string name="about_update_patch_applying">正在合成新版本 APK… 补丁 %1$d/%2$d · %3$d%%</string>
     <string name="about_update_patch_done_title">增量更新完成</string>

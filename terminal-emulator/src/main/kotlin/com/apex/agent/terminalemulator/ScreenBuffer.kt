@@ -93,21 +93,26 @@ class ScreenBuffer(
      */
     fun eraseRow(row: Int, fromCol: Int = 0, toCol: Int = cols - 1, style: TerminalStyle = TerminalStyle.DEFAULT) {
         if (row !in 0 until rows) return
-        val last = toCol.coerceAtMost(cols - 1)
+        val first = fromCol.coerceAtLeast(0)
+        if (first >= cols) return
+        // diag-20261017 崩溃热修（P0）：ECH 大参数（cursor.column + n - 1）在
+        // TerminalCore 溢出为极负 → 旧实现 last 负值 → cells[row][last] 越界
+        // 读（IOOBE）。钳位到 [-1, cols-1]；空区间（last < first）不触发腰斩探测。
+        val last = toCol.coerceIn(-1, cols - 1)
         // 先探测边界是否腰斩宽字符对（清除后标志位就没了，必须先读后写）
-        val leadSplitBefore = fromCol > 0 &&
-            cells[row][fromCol].isWideTrail && cells[row][fromCol - 1].isWideLead
-        val trailSplitAfter = last < cols - 1 &&
+        val leadSplitBefore = first > 0 && first < cols &&
+            cells[row][first].isWideTrail && cells[row][first - 1].isWideLead
+        val trailSplitAfter = last >= first && last >= 0 && last < cols - 1 &&
             cells[row][last].isWideLead && cells[row][last + 1].isWideTrail
-        for (c in fromCol..last) {
+        for (c in first..last) {
             cells[row][c] = TerminalCell.BLANK.copy(style = style)
         }
-        if (leadSplitBefore) cells[row][fromCol - 1] = TerminalCell.BLANK.copy(style = style)
+        if (leadSplitBefore) cells[row][first - 1] = TerminalCell.BLANK.copy(style = style)
         if (trailSplitAfter) cells[row][last + 1] = TerminalCell.BLANK.copy(style = style)
         // T92（reflow 断链）：全宽擦除 = 该行内容不复存在 —— 软换行接续标志必须
         // 同步断链（与 eraseRows 对齐）。旧实现残留 wrapped=true：ncurses「擦行
         // 重绘更短内容」+ 之后 resize → 已清空的行与下一逻辑行错误拼接。
-        if (fromCol <= 0 && last >= cols - 1) wrapFlags[row] = false
+        if (first <= 0 && last >= cols - 1) wrapFlags[row] = false
     }
 
     /** Erase entire rows range. */

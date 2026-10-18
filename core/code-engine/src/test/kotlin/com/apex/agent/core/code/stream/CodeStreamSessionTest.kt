@@ -454,6 +454,130 @@ class CodeStreamSessionTest {
         assertTrue("新一轮开始后归零", s.snapshot().affectedFiles.isEmpty())
     }
 
+    // ═══ 中止冻结与结论截断修复回归（用户实测 app-20261017 截图/日志）═══
+
+    @Test
+    fun `response complete keeps accumulated text when engine fullText is last iteration only`() {
+        // 回归：引擎 contentBuilder 每轮迭代局部重建，ResponseComplete 只带
+        // 末轮文本 —— 旧实现用 fullText 整体覆写，跨轮累积的结论被截成
+        // 末轮残句（用户实测「思考完成后回答只剩两个字」）。
+        val s = CodeStreamSession()
+        s.beginRun("多轮工具任务")
+        s.onEvent(AgentEvent.ResponseChunk("我先分析一下，"))
+        s.onEvent(AgentEvent.ToolCallStart("t1", "CodeGrep", """{"pattern":"x"}"""))
+        s.onEvent(AgentEvent.ToolCallComplete("t1", "CodeGrep", "{}", "done", "", true, 10))
+        s.onEvent(AgentEvent.ResponseChunk("结论如下："))
+        s.onEvent(AgentEvent.ResponseComplete("好的"))
+        val snap = s.snapshot()
+        val assistant = snap.entries.filterIsInstance<StreamEntry.AssistantEntry>().single()
+        assertEquals("UI 累积优先，fullText 仅空时兜底", "我先分析一下，结论如下：", assistant.text)
+        assertTrue(!assistant.isStreaming)
+    }
+
+    @Test
+    fun `response complete falls back to engine fullText when ui text blank`() {
+        // 兜底方向：反思修正轮等文本可能从未流经 UI（无任何 Chunk），
+        // 完成事件的全量文本不得丢弃（非流式路径同款语义）。
+        val s = CodeStreamSession()
+        s.beginRun("非流式收尾")
+        s.onEvent(AgentEvent.ResponseComplete("完整结论"))
+        val snap = s.snapshot()
+        assertEquals("完整结论", snap.entries.filterIsInstance<StreamEntry.AssistantEntry>().single().text)
+    }
+
+    @Test
+    fun `abort event finalizes running capsules as interrupted`() {
+        // 回归：中止只收口流式气泡不收胶囊 → RUNNING 胶囊无限计时转圈
+        //（用户实测截图：中止后 skill_search 卡转 37s+ 仍显示进行中）。
+        val s = CodeStreamSession()
+        s.beginRun("跑到一半停")
+        s.onEvent(AgentEvent.ResponseChunk("部分结论"))
+        s.onEvent(bashStart("b1", "sleep 300"))
+        s.onEvent(AgentEvent.ToolOutputChunk("b1", "zzz\n"))
+        s.onEvent(AgentEvent.Aborted)
+        val snap = s.snapshot()
+        val capsule = snap.entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertEquals("在飞胶囊按中断折叠（与检查点恢复同语义）", ToolCallStatus.PARTIAL, capsule.call.status)
+        assertTrue("计时收口（endAt 落定，displayDuration 不再无限累加）", capsule.call.endAt > 0)
+        assertEquals("已中止", capsule.call.summary)
+        val bubble = snap.entries.filterIsInstance<StreamEntry.AssistantEntry>().single()
+        assertTrue("已累积文本保留", !bubble.isStreaming)
+        assertEquals("部分结论", bubble.text)
+        assertTrue(snap.entries.any { it is StreamEntry.StopEntry })
+    }
+
+    @Test
+    fun `abortLocally finalizes stream without engine events`() {
+        // VM abort：收集协程先死、引擎 Aborted 事件在已取消协程上 emit
+        // 直接抛取消异常、永远到不了 —— 本地收尾是唯一兜底路径。
+        val s = CodeStreamSession()
+        s.beginRun("本地收尾")
+        s.onEvent(AgentEvent.ThinkingChunk("想了一半"))
+        s.onEvent(AgentEvent.ResponseChunk("写了一半"))
+        s.onEvent(editStart("e1", "A.kt"))
+        s.abortLocally()
+        val snap = s.snapshot()
+        val capsule = snap.entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertEquals(ToolCallStatus.PARTIAL, capsule.call.status)
+        val thinking = snap.entries.filterIsInstance<StreamEntry.ThinkingEntry>().single()
+        assertTrue(!thinking.isStreaming)
+        val bubble = snap.entries.filterIsInstance<StreamEntry.AssistantEntry>().single()
+        assertTrue(!bubble.isStreaming)
+        assertEquals("写了一半", bubble.text)
+        assertTrue(snap.entries.any { it is StreamEntry.StopEntry })
+    }
+
+    @Test
+    fun `abortLocally is a no-op after clean completion`() {
+        // 正常完成（Complete 已收尾）后误调 abort：不落多余的「已中止」卡
+        val s = CodeStreamSession()
+        s.beginRun("干净收尾")
+        s.onEvent(AgentEvent.ResponseChunk("结论"))
+        s.onEvent(AgentEvent.ResponseComplete("结论"))
+        s.onEvent(AgentEvent.Complete("done", 1, 0, 100))
+        s.abortLocally()
+        val snap = s.snapshot()
+        assertTrue(snap.entries.none { it is StreamEntry.StopEntry })
+    }
+
+    @Test
+    fun `beginRun finalizes stale running capsules from previous run`() {
+        // 防御：收尾事件全部丢失（中止事件未达且本地收尾遗漏）的路径，
+        // 下一轮 beginRun 不得让旧 RUNNING 胶囊带进新 run 无限计时。
+        val s = CodeStreamSession()
+        s.beginRun("上一轮")
+        s.onEvent(bashStart("b1", "hang"))
+        s.beginRun("下一轮")
+        val snap = s.snapshot()
+        val capsule = snap.entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertEquals(ToolCallStatus.PARTIAL, capsule.call.status)
+        assertTrue("静默收口：不加停止卡", snap.entries.none { it is StreamEntry.StopEntry })
+    }
+
+    @Test
+    fun `streaming chunks merge incrementally beyond two chunks`() {
+        // 回归：streamingAssistant 引用不回写 → 第三个 Chunk 起条目被
+        // 「首块+最新块」覆盖、中间块丢失（旧代码靠 Complete 的 fullText
+        // 整体覆写掩盖，Completion 改累积优先后该缺陷失去遮盖）。
+        val s = CodeStreamSession()
+        s.beginRun("三段流式")
+        s.onEvent(AgentEvent.ResponseChunk("第一段，"))
+        s.onEvent(AgentEvent.ResponseChunk("第二段，"))
+        s.onEvent(AgentEvent.ResponseChunk("第三段。"))
+        val snap = s.snapshot()
+        val bubble = snap.entries.filterIsInstance<StreamEntry.AssistantEntry>().single()
+        assertEquals("流式中的条目即完整累积（不等 Complete 兜底）", "第一段，第二段，第三段。", bubble.text)
+        assertTrue(bubble.isStreaming)
+        // 思考链同款：三段思考流式不丢中间块
+        val s2 = CodeStreamSession()
+        s2.beginRun("三段思考")
+        s2.onEvent(AgentEvent.ThinkingChunk("想一，"))
+        s2.onEvent(AgentEvent.ThinkingChunk("想二，"))
+        s2.onEvent(AgentEvent.ThinkingChunk("想三。"))
+        val thinking = s2.snapshot().entries.filterIsInstance<StreamEntry.ThinkingEntry>().single()
+        assertEquals("想一，想二，想三。", thinking.text)
+    }
+
     // ═══ 终端面板流水式折叠信号（terminalBusy / 命令摘要 / 退出码）═══
     // 用户需求：「终端命令等流水似输出：运行时保持展开跟随输出，
     // 完成后自动折叠成胶囊」—— UI 侧由 CodeScreen 按 terminalBusy 驱动

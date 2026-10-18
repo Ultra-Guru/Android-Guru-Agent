@@ -76,13 +76,42 @@ class MarketInstallManager @Inject constructor(
     //
     // P1（市场审计）：安装确认门禁 —— 市场加载的 Skill JSON 是不可信第三方内容
     // （promptInjection 直接进下一轮系统提示词），落盘+自动激活前给用户一次目检。
-    // 宿主（MarketViewModel）注入 UI 确认实现。
-    // #347（fail-closed）：gate 为 null 时**拒绝**安装而不是放行 —— 双 VM 互踩/
-    // 页面销毁后单例控制器发起的安装，宁可明确报错引导重新发起，也不允许
-    // 不可信内容绕过目检直接落盘（null 永不等于放行）。
-    // @Volatile：主线程注入与 IO 线程安装读的可见性。
-    @Volatile
-    var installConfirmGate: (suspend (ManifestPreview) -> Boolean)? = null
+    // 宿主（MarketViewModel）经 registerInstallConfirmGate 注册 UI 确认实现。
+    //
+    // #347 P2 修复（双 ViewModel 互踩）：旧实现是单个 @Volatile 变量——市场页
+    // 返回栈复入（A 未销毁又建 B）时 B 的 init 无条件覆盖 gate、B 的
+    // onCleared 无条件置 null，存活的 A 与所有单例控制器（自持
+    // SupervisorJob scope）的后续安装全部绕过门禁。改为身份注册表
+    // [InstallConfirmGateRegistry]（独立成类，JVM 可直测）：后注册者生效
+    // （弹窗归最上层 VM），注销只移除自己（当前生效门禁注销后自动回退到
+    // 仍存活的次新注册者）。
+    //
+    // #347 fail-closed（与 main 修复融合）：注册表为空（无任何存活注册者）时
+    // [installConfirmGate] 为 null，安装路径**拒绝**而不是放行 —— 宁可明确
+    // 报错引导重新发起，也不允许不可信内容绕过目检直接落盘（null 永不等于
+    // 放行）。注册表注销回退解决互踩，fail-closed 兜底零注册者。
+    private val confirmGateRegistry = InstallConfirmGateRegistry()
+
+    /** 当前生效的确认门禁（最后注册者）；无注册者时 null → 安装路径 fail-closed 拒绝。 */
+    val installConfirmGate: (suspend (ManifestPreview) -> Boolean)?
+        get() = confirmGateRegistry.current
+
+    /**
+     * 注册确认门禁（MarketViewModel init 调用）。按身份幂等（同实例重复
+     * 注册只入表一次）；注册即成为当前生效门禁。
+     */
+    fun registerInstallConfirmGate(gate: (suspend (ManifestPreview) -> Boolean)) {
+        confirmGateRegistry.register(gate)
+    }
+
+    /**
+     * 按身份注销确认门禁（MarketViewModel onCleared 调用，#347）—— 只拆
+     * 自己那一份：被注销者是当前生效门禁时自动回退到仍存活的次新注册者，
+     * 不影响其他存活 ViewModel 的门禁。
+     */
+    fun unregisterInstallConfirmGate(gate: (suspend (ManifestPreview) -> Boolean)?) {
+        confirmGateRegistry.unregister(gate)
+    }
 
     /** 用户在确认对话框点了取消（调用方可据此静默或给出友好文案，区别于真失败）。 */
     class InstallCancelledByUser : Exception("已取消安装，未写入任何内容")
@@ -1006,12 +1035,18 @@ class MarketInstallManager @Inject constructor(
                         return@withContext Result.failure(Exception("GitHub 搜索失败: HTTP ${resp.code}"))
                     }
                     // #345：流式限读（2MB，与同文件其他下载点同口径）——
-                    // 旧 `body?.string()` 无上限整体读入。
-                    val bodyBytes = resp.body?.byteStream()?.use { it.readBytesLimited(MAX_DOWNLOAD_BYTES) }
+                    // 旧 `body?.string()` 无上限整体读入；空体与超限分别报错。
+                    val bodyBytes = resp.body?.byteStream()
                         ?: return@withContext Result.failure(
-                            Exception("GitHub 搜索响应为空或超过大小上限（2MB）")
+                            Exception("GitHub 搜索失败: HTTP ${resp.code}（空响应体）")
                         )
-                    val root = json.parseToJsonElement(String(bodyBytes, Charsets.UTF_8)).jsonObject
+                    val bounded = bodyBytes.use { it.readBytesLimited(MAX_DOWNLOAD_BYTES) }
+                    if (bounded == null) {
+                        return@withContext Result.failure(
+                            Exception("GitHub 搜索失败: 响应体超过 ${MAX_DOWNLOAD_BYTES / 1024 / 1024}MB 上限")
+                        )
+                    }
+                    val root = json.parseToJsonElement(String(bounded, Charsets.UTF_8)).jsonObject
                     val hits = root["items"]?.jsonArray?.mapNotNull { item ->
                         val obj = item.jsonObject
                         GitHubRepoHit(

@@ -19,6 +19,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -39,6 +40,7 @@ import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.core.code.stream.ToolKind
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -50,12 +52,11 @@ import kotlinx.coroutines.launch
  * [StreamEntryGroup.GROUP_THRESHOLD] 个的一段 → 折叠为「+N 更多」
  * 分组行（展开态本地 remember 自持）；其余逐条渲染。
  *
- * ## 流水式终端（内联）
+ * ## 内联终端胶囊（2026-10 用户反馈）
  *
- * 活跃 BASH 的 [CodeTerminalPanel] 恒为时间轴末项（尾哨兵之前）：
- * 跟在流式输出末尾随流水推进，命令收束自动折叠成头行胶囊留在流内
- * —— 不再作为底部悬浮栈成员叠在输入框上方（2026-10 用户反馈）。
- * 终端尾窗内容长度计入锚定节流档位，脉冲整块 flush 时同样跟底。
+ * 终端尾窗不再悬浮于输入栏上方遮挡流水内容 —— 改为时间轴末尾的**内联
+ * 条目**（[terminal]）：命令运行时随输出增长被锚定逻辑跟随（贴尾），
+ * 完成后折叠成头行胶囊留在流内，与思考/工具胶囊同一套流水生命周期。
  *
  * ## 双锚定之一（时间轴侧）
  *
@@ -66,7 +67,7 @@ import kotlinx.coroutines.launch
  *
  * - [backdrop]：时间轴 = 玻璃采样源（悬浮输入栏 GlassCard 的 backdrop
  *   来源；null = 不接线，独立预览场景用）；
- * - [bottomInset]：底部悬浮栈（提问卡/错误条/输入栏等）高度 —— 列表
+ * - [bottomInset]：底部悬浮栈（输入栏等）高度 —— 列表
  *   contentPadding 与 FAB 底部偏移同步补偿，最后一条不被遮挡。
  */
 @Composable
@@ -76,24 +77,27 @@ internal fun CodeStreamTimeline(
     onToolClick: (StreamToolCall) -> Unit,
     bottomInset: Dp = 0.dp,
     backdrop: LayerBackdrop? = null,
-    // 流水式终端折叠态（CodeScreen 按 terminalBusy 驱动 + userToggled 守卫）
-    terminalCollapsed: Boolean = false,
-    onToggleTerminalCollapse: () -> Unit = {},
     // 玻璃幕帘（GlassModalVeil）：提问卡挂起时由调用方传入 blur 修饰 ——
     // 根 Box 接收，LazyColumn 的 layerBackdrop 采样源保持原样不失真。
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // ═══ 内联终端胶囊（跟随流水式输出；null = 无活跃/历史终端会话）═══
+    terminal: TerminalPanelState? = null,
+    onToggleTerminalCollapse: () -> Unit = {}
 ) {
     val listState = rememberLazyListState()
     val grouped = remember(snapshot.entries) { groupConsecutive(snapshot.entries) }
-    val contentLength = remember(snapshot.entries) { snapshot.entries.sumOf { entryContentLength(it) } }
-    // 锚定节流档位计入终端尾窗：终端脉冲（4KB/8行/120ms 整块 flush）
-    // 只改 terminalContent 不改 entries —— 不计入则内联终端跟随输出时
-    // 时间轴不追底，新脉冲内容滞留视口外。
-    val anchorTick = anchorFollowTick(contentLength + snapshot.terminalContent.length)
+    // 终端输出计入锚定素材：尾窗在末条目内增长也要触发贴尾跟随
+    val terminalLength = terminal?.content?.length ?: 0
+    val contentLength = remember(snapshot.entries, terminalLength) {
+        snapshot.entries.sumOf { entryContentLength(it) } + terminalLength
+    }
     val anchor = rememberStreamAnchor(
         listState = listState,
-        itemCountKey = snapshot.entries.size,
-        contentTickKey = anchorTick,
+        // 终端胶囊的结构位（无=0 / 静默=1 / 运行中=2）并入结构 key ——
+        // 尾窗出现/开跑（展开）时视同结构变化触发跟随，收束折叠不追问。
+        // ×3 展开编码保证 (entries.size, 结构位) 二元组无碰撞。
+        itemCountKey = snapshot.entries.size * 3 + terminalStructureKey(terminal),
+        contentTickKey = anchorFollowTick(contentLength),
         isStreaming = isStreaming
     )
     val scope = rememberCoroutineScope()
@@ -102,13 +106,26 @@ internal fun CodeStreamTimeline(
     // derivedStateOf，普通属性读取不被追踪 → FAB 永远不出现（P0）
     val showFab by remember { derivedStateOf { !anchor.isAtBottom } }
 
+    // ═══ 展开动画补锚（内联终端胶囊）═══
+    // busy 翻转触发的结构 snap 落在 AnimatedVisibility 高度动画早期 ——
+    // maxScroll 随动画逐步增长，单次 snap 会落在半途，展开态尾窗下半截
+    // 可能悬在视口外直到下个内容档位。延时补一次贴尾（覆盖弹簧收敛）；
+    // 阅读模式守卫照常生效（用户上翻过则不追）。
+    LaunchedEffect(terminal?.busy, terminal?.collapsed) {
+        val term = terminal
+        if (term != null && !term.collapsed) {
+            delay(EXPAND_SETTLE_MS)
+            if (anchor.shouldFollow()) anchor.snapToLast()
+        }
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier),
-            // v5：底部悬浮栈（终端尾窗/输入栏）动态补偿 —— 最后一条不被遮挡
+            // v5：底部悬浮栈（输入栏/选择器行等）动态补偿 —— 最后一条不被遮挡
             // v6 紧凑化：12 → 8dp（悬浮栈自身已瘦身）
             contentPadding = PaddingValues(bottom = 8.dp + bottomInset)
         ) {
@@ -129,19 +146,20 @@ internal fun CodeStreamTimeline(
                     }
                 }
             }
-            // ═══ 流水式终端（内联末项）：活跃 BASH 或有尾窗内容时渲染 ═══
-            // 跟在流式输出末尾随流水推进；收束后折叠成头行胶囊留在流内。
-            // backdrop 传 null：本列表自身就是 layerBackdrop 采样源，自采样
-            // 会递归污染 —— TerminalGlassSurface 走固定深色霜面兜底（终端
-            // 语义恒深，视觉不回退）。
-            if (snapshot.activeTerminalCallId != null || snapshot.terminalContent.isNotBlank()) {
-                item(key = "stream-inline-terminal") {
+            // ═══ 内联终端胶囊：时间轴末条（尾哨兵之前）═══
+            // 跟随流水式输出执行（用户反馈「不要悬浮在输入框上」）：尾窗
+            // 作为普通列表条目参与布局 —— 运行时随输出增长贴尾，完成后
+            // 折叠成胶囊留在流内；不遮任何卡片，不再吃悬浮栈高度。
+            // backdrop 不接线：时间轴自身就是玻璃采样源，内联条目不自采样
+            // （与 AssistantBubble/ThinkingCard 的 GlassCard Frosted 档同规）。
+            terminal?.let { term ->
+                item(key = KEY_TERMINAL_INLINE) {
                     CodeTerminalPanel(
-                        content = snapshot.terminalContent,
-                        activeCommand = snapshot.terminalCommandSummary.ifBlank { null },
-                        busy = snapshot.terminalBusy,
-                        exitCode = snapshot.terminalExitCode,
-                        collapsed = terminalCollapsed,
+                        content = term.content,
+                        activeCommand = term.activeCommand,
+                        busy = term.busy,
+                        exitCode = term.exitCode,
+                        collapsed = term.collapsed,
                         onToggleCollapse = onToggleTerminalCollapse
                     )
                 }
@@ -190,6 +208,35 @@ private fun GroupExpandable(
         onToggle = { expanded = !expanded },
         onClick = onToolClick
     )
+}
+
+/** 内联终端胶囊的稳定 item key。 */
+private const val KEY_TERMINAL_INLINE = "stream-terminal-inline"
+
+/** 展开弹簧收敛时长（补锚延时）： AnimatedVisibility 默认 spring ≈ 300ms。 */
+private const val EXPAND_SETTLE_MS = 350L
+
+/**
+ * 内联终端胶囊状态 —— 由 CodeScreen 从 CodeStreamSnapshot 装配，
+ * 经 [CodeStreamTimeline] 的 `terminal` 参数在时间轴末尾渲染。
+ * null = 无活跃且无历史终端输出（不渲染条目）。
+ */
+internal data class TerminalPanelState(
+    val content: String,
+    val activeCommand: String?,
+    val busy: Boolean,
+    val exitCode: Int?,
+    val collapsed: Boolean
+)
+
+/**
+ * 终端胶囊结构位（并入锚定 itemCountKey）：无 = 0 / 静默 = 1 / 运行中 = 2。
+ * 出现与开跑（展开）都算结构变化 → 触发一次贴尾跟随。
+ */
+private fun terminalStructureKey(terminal: TerminalPanelState?): Int = when {
+    terminal == null -> 0
+    terminal.busy -> 2
+    else -> 1
 }
 
 // ═══ 分段逻辑（纯函数）═══

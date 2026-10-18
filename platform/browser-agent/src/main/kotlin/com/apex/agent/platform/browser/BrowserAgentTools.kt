@@ -18,6 +18,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -745,10 +746,77 @@ class BrowserAgentTools @Inject constructor(
         }
     }
 
+    /** 标签管理（v1.6 对齐 Playwright MCP browser_tabs / BrowserUse 多标签工作流）。 */
+    val tabs = object : AgentTool {
+        override val id = "BrowserTabs"
+        override val name = "BrowserTabs"
+        override val description =
+            "管理浏览器标签页：list（列出全部标签及活动标记）/ new（新建标签，可带 url 直接加载）/ switch（按 id 切换活动标签）/" +
+            "close（按 id 关闭标签）。多页面工作流（登录页 + 操作页并行、比对多个结果页）必须用本工具管理上下文，" +
+            "切换后 DOM ref 体系随活动页变化，操作前应重新 BrowserSnapshot。"
+        override val parametersSchema = """{
+            "type":"object",
+            "properties":{
+                "action":{"type":"string","enum":["list","new","switch","close"],"description":"标签操作，默认 list"},
+                "url":{"type":"string","description":"action=new 时可选：新标签直接加载的网址"},
+                "id":{"type":"integer","description":"action=switch/close 时必填：目标标签 id（list 输出中获取）"}
+            }
+        }"""
+        override suspend fun execute(arguments: String): String {
+            guard(engine)?.let { return it }
+            val action = argStr(arguments, "action") ?: "list"
+            return withContext(kotlinx.coroutines.Dispatchers.Main) {
+                // 标签表是主线程态（LinkedHashMap + WebView 操作）—— 与 chrome UI 命令同纪律
+                when (action) {
+                    "new" -> {
+                        val url = argStr(arguments, "url")
+                        val id = engine.newTab(url)
+                        val tab = engine.activeTab()
+                        val loaded = if (url != null) "，正在加载 $url" else "（空白页，可用 BrowserNavigate 加载）"
+                        "已新建标签 id=$id$loaded。当前页面标题：${tab?.title?.takeIf { it.isNotBlank() } ?: "（加载中）"}"
+                    }
+                    "switch" -> {
+                        val id = argInt(arguments, "id", -1)
+                        if (id < 0) return@withContext "Error: 缺少 id 参数（先用 action=list 查看标签列表）"
+                        if (!engine.switchTab(id)) {
+                            return@withContext "Error: 标签 id=$id 不存在（用 action=list 查看有效 id）"
+                        }
+                        val tab = engine.activeTab()
+                        "已切换到标签 id=$id：${tab?.url ?: "(空)"}\n提示：ref 随活动页变化，操作前请重新 BrowserSnapshot。"
+                    }
+                    "close" -> {
+                        val id = argInt(arguments, "id", -1)
+                        if (id < 0) return@withContext "Error: 缺少 id 参数"
+                        if (!engine.closeTab(id)) {
+                            return@withContext "Error: 标签 id=$id 不存在（用 action=list 查看有效 id）"
+                        }
+                        val rest = engine.tabsSnapshot()
+                        val active = engine.activeTab()
+                        if (rest.isEmpty()) "已关闭标签 id=$id。已无打开的标签，下次 BrowserNavigate 自动新建。"
+                        else "已关闭标签 id=$id。剩余 ${rest.size} 个标签，当前活动：id=${active?.id ?: "-"} ${active?.url ?: ""}"
+                    }
+                    else -> {
+                        val activeId = engine.activeTab()?.id
+                        val list = engine.tabsSnapshot()
+                        if (list.isEmpty()) {
+                            "当前没有打开的标签（用 BrowserNavigate 打开第一个页面，或 action=new 新建）。"
+                        } else {
+                            list.joinToString("\n") { (id, url, title) ->
+                                val mark = if (id == activeId) " ← 活动" else ""
+                                "- id=$id  ${title.ifBlank { "(无标题)" }}  $url$mark"
+                            } + "\n提示：switch/close 用 id 定位；切换后 ref 体系变化，先重新 BrowserSnapshot。"
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fun all(): List<AgentTool> = listOf(
         navigate, snapshot, click, input, select, toggle, scroll, screenshot, show,
         fileUpload, dateInput, debugDump, contextSummary, networkLog, downloadList,
         waitFor, pageType,
-        pressKey, hover, drag, extractContent, executeJs, getCookies, locate
+        pressKey, hover, drag, extractContent, executeJs, getCookies, locate,
+        tabs
     ).map { TracedTool(it, engine, tracer) }
 }

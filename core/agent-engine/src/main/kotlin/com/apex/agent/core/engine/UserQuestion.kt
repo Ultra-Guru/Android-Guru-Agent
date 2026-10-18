@@ -63,6 +63,21 @@ data class AgentAnswer(
  */
 interface UserQuestionGateway {
     suspend fun ask(question: AgentQuestion): AgentAnswer
+
+    /**
+     * #395 — abort 语义收口：立即中止当前挂起的提问（按 skipped=true 收场）。
+     *
+     * 根因：AskUserChoice / 权限门（CommandPermissionGate/RiskAwareToolGate）
+     * 在工具 execute() 内部经 [ask] 挂起在自己的 deferred 上 —— 引擎 abort()
+     * 的 abortConfirmationChannels() 只收口引擎自有三只 deferred
+     * （userInput/plan/spec），桥接层的挂起无人唤醒 → 引擎流吃满 5 分钟
+     * 超时不收尾 → TaskRuntime pause/cancel 连续打印 "stream finalize did
+     * not complete within 10s"（真机日志实证），UI 表现为「取消卡死」。
+     *
+     * @return true = 存在挂起提问且已收口。默认 false（无挂起管理的实现，
+     *   兼容既有 fake / 二次实现零改动）。
+     */
+    fun abortActiveQuestion(): Boolean = false
 }
 
 /**
@@ -134,5 +149,22 @@ class UserQuestionBridge : UserQuestionGateway {
                 skipped = true
             )
         )
+    }
+
+    /**
+     * #395 — abort 收口：只要存在挂起的 deferred 就立即按 skipped 收场。
+     *
+     * 与 [cancelCurrentQuestion] 的差异：后者依赖 pendingQuestion 快照
+     * （竞态窗口下可能为 null 而提前返回）；本方法直接以 deferred 存在性
+     * 为准 —— 引擎 abort 路径必须保证「挂起必被唤醒」。deferred 的清理
+     * 交给 [ask] 的 finally 条件回收（不在此处置空，防覆盖新注册）。
+     */
+    override fun abortActiveQuestion(): Boolean {
+        synchronized(this) {
+            val deferred = answerDeferred ?: return false
+            val questionId = _pendingQuestion.value?.id ?: ""
+            deferred.complete(AgentAnswer(questionId = questionId, skipped = true))
+            return true
+        }
     }
 }

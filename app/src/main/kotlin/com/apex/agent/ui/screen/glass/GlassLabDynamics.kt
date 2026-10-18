@@ -36,14 +36,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.center
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -53,16 +48,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.apex.agent.ui.glass.GlassStyle
 import com.apex.agent.ui.glass.GlassSurface
+import com.apex.agent.ui.glass.borderBeam
 
 /**
  * ═══════════════════════════════════════════════════════════════
- *  顶阶动态 —— v1.4.5 动效预算重构（Pro Dynamics v2 · kyant0 迁移版）
+ * 顶阶动态 —— v1.4.9 边界光轨重构（Pro Dynamics v2 · kyant0 迁移版）
  * ═══════════════════════════════════════════════════════════════
  *
  * 对标顶级产品动态语言的两件套（全部实时绘制，逐帧可验证）：
- *  1. **流光边框**：锥形渐变描边沿轮廓流动 —— 进入卡片 / 点击触发单圈，
- *     空闲时静止；**色标轮转替代画布旋转**：outline 几何固定不转，
- *     圆角矩形拐角不再出现旋转描边撕裂（原 rotate + sweep 的经典接缝坑）；
+ *  1. **边界光轨**：光眼沿轮廓恒速流动 —— 进入卡片 / 点击触发单圈，
+ *     空闲时只留常驻基环。v1.4.9 前的 rotate + sweep 实现把描边几何
+ *     整体转起来（宽卡上退化为「方框打转」，拐角接缝错位）—— 现在
+ *     几何恒定，光走路径（PathMeasure），共享组件见 ui.glass 的 BorderBeam；
  *  2. **呼吸光晕**：唯一保留的常驻律动 —— 浅色主题用「加深 tint 光晕 +
  *     tint 细环」双线索（细环在白底上清晰可读且不发灰；单纯拉高
  *     光晕透明度只会得到灰蒙蒙的脏边）。
@@ -74,7 +71,7 @@ import com.apex.agent.ui.glass.GlassSurface
  *
  * 动效预算（Motion Budget）：
  *  - 同屏常驻循环动画 ≤ 1 —— 呼吸光晕是本区唯一的 ambient 律动；
- *  - 流光边框为事件驱动（进入 / 点击触发），空闲零动画成本；
+ *  - 边界光轨为事件驱动（进入 / 点击触发），空闲零动画成本；
  *  - 两件套同开也不再互相轰炸：常驻的只有呼吸，其余按需播放。
  *
  * 诚实声明（延续本实验室原则）：
@@ -86,42 +83,42 @@ import com.apex.agent.ui.glass.GlassSurface
 internal fun DynamicsSection() {
     SectionHeader(
         title = "顶阶动态 · Pro Dynamics",
-        hint = "两件套动态语言 —— 动效预算内运行：流光事件触发，呼吸为唯一常驻律动（镜面扫掠已随 kyant0 迁移退役）"
+        hint = "两件套动态语言 —— 动效预算内运行：光眼事件触发沿边流动，呼吸为唯一常驻律动（镜面扫掠已随 kyant0 迁移退役）"
     )
 
-    ConicBorderCard()
+    BorderBeamCard()
     BreathingOrbsRow()
 }
 
-// ── 1. 流光边框 ──────────────────────────────────────────────────────────────
+// ── 1. 边界光轨 ──────────────────────────────────────────────────────────────
 
 /**
- * 锥形渐变描边卡：进入组合 / 点击触发单圈流光（2.4s），空闲静止。
+ * 光眼描边卡：进入组合 / 点击触发单圈（2.4s），空闲只留常驻基环。
  *
- * 实现要点（v1.4.5 重构）：
- *  - **几何不旋转**：原实现 `rotate(angle) { drawOutline(sweepGradient) }` 把圆角
- *    矩形描边整体转起来 —— 非正多边形轮廓旋转后描边离开原边界，拐角处出现
- *    撕裂错位（Compose clip 边界经典接缝坑）；
- *  - **色标轮转**：改为每帧把 sweep gradient 的颜色停靠点按 angle/360 平移，
- *    outline 始终固定在圆角矩形上 —— 光斑照样绕轮廓流动，接缝消失；
- *  - **事件触发单循环**：替换永久旋转（视觉疲劳 + 干扰阅读）——
- *    进入卡片时自动播放一圈，点击再触发一圈。
+ * 实现要点（v1.4.9 重构）：
+ *  - **几何恒定，光走路径**：旧实现 rotate(angle) 把圆角矩形描边整体
+ *    转起来 —— 宽卡上视觉退化为「方框打转」，拐角接缝错位；
+ *  - **恒定弧长速度**：PathMeasure 沿轮廓取点，光眼贴边流动 —— 长边
+ *    短边节奏一致，与锥形渐变的角速度（长边快短边慢）不同；
+ *  - **事件触发单循环**：fadeEnvelope 包络首 12% 淡入、末 15% 淡出 ——
+ *    播完自然归零，不留静止亮斑；进入组合自动播一圈，点击再触发。
  */
 @Composable
-private fun ConicBorderCard() {
+private fun BorderBeamCard() {
     val scheme = MaterialTheme.colorScheme
     val cardShape = RoundedCornerShape(16.dp)
 
     // pulses ≥ 1 即播放一圈：初值 1 = 进入组合自动播一圈；点击 +1 重启
     var pulses by remember { mutableStateOf(1) }
-    val angle = remember { Animatable(0f) }
+    // 相位动画 0→1：一路就是一圈（borderBeam 内按弧长展开）
+    val phase = remember { Animatable(0f) }
 
     LaunchedEffect(pulses) {
-        angle.snapTo(0f)
-        angle.animateTo(360f, tween(durationMillis = 2400, easing = LinearEasing))
+        phase.snapTo(0f)
+        phase.animateTo(1f, tween(durationMillis = 2400, easing = LinearEasing))
     }
 
-    DynamicsFrame(label = "流光边框 · Conic Border", icon = Icons.Filled.FlashOn) {
+    DynamicsFrame(label = "边界光轨 · Border Beam", icon = Icons.Filled.FlashOn) {
         Box(
             Modifier
                 .fillMaxWidth()
@@ -130,41 +127,14 @@ private fun ConicBorderCard() {
                 .pointerInput(Unit) {
                     detectTapGestures { pulses += 1 }
                 }
-                // #323：outline 与 sweep 笔刷经 drawWithCache 只随尺寸重建；
-                // 旋转改走 DrawScope.rotate（旧实现逐帧重建 outline + 停靠点
-                // 排序 + sweepGradient 三连分配，色标回绕保护逻辑随之退役）
-                .drawWithCache {
-                    val outline = cardShape.createOutline(
-                        size = size,
-                        layoutDirection = layoutDirection,
-                        density = this
-                    )
-                    // #323：sweepGradient(vararg colorStops, center = ...) ——色标对
-                    // 走 vararg 展开，center 用命名参数（CacheDrawScope 无 center
-                    // 成员，只有 Size.center 扩展）。
-                    val brush = Brush.sweepGradient(
-                        *arrayOf(
-                            0f to Color.Transparent,
-                            0.24f to scheme.primary.copy(alpha = 0.90f),
-                            0.50f to Color.Transparent,
-                            0.74f to scheme.tertiary.copy(alpha = 0.60f),
-                            1f to Color.Transparent
-                        ),
-                        center = size.center
-                    )
-                    onDrawWithContent {
-                        drawContent()
-                        val deg = angle.value
-                        if (deg <= 0f) return@onDrawWithContent
-                        rotate(degrees = deg, pivot = center) {
-                            drawOutline(
-                                outline = outline,
-                                brush = brush,
-                                style = Stroke(width = 2.dp.toPx())
-                            )
-                        }
-                    }
-                }
+                // 光眼沿边缘恒速流动：几何零旋转，头亮尾散（共享组件
+                // BorderBeam：PathMeasure 取点 + 缓存笔刷，每帧零分配）
+                .borderBeam(
+                    shape = cardShape,
+                    phase = { phase.value },
+                    tint = scheme.primary,
+                    fadeEnvelope = true
+                )
         ) {
             GlassSurface(
                 modifier = Modifier
@@ -186,12 +156,12 @@ private fun ConicBorderCard() {
                     )
                     Column {
                         Text(
-                            "光沿轮廓流动",
+                            "光眼沿边缘流动",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            "进入 / 点击触发单圈 —— 色标轮转替代画布旋转，圆角零接缝",
+                            "进入 / 点击触发单圈 —— 几何恒定光走路径，恒定弧长速度零接缝",
                             style = MaterialTheme.typography.bodySmall,
                             color = scheme.onSurfaceVariant
                         )
@@ -342,9 +312,9 @@ private fun BreathingOrb(
 
 // ── 展示框 ──────────────────────────────────────────────────────────────────
 
-/** 动态演示的标准外框：等宽小标签 + 演示主体。 */
+/** 动态演示的标准外框：等宽小标签 + 演示主体（特效工坊同款复用）。 */
 @Composable
-private fun DynamicsFrame(
+internal fun DynamicsFrame(
     label: String,
     icon: ImageVector,
     content: @Composable () -> Unit

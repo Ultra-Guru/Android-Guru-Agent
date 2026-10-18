@@ -2,6 +2,7 @@ package com.apex.agent.core.tools.builtin
 
 import com.apex.agent.core.tools.AgentTool
 import com.apex.agent.core.tools.ToolMetadata
+import com.apex.agent.core.tools.mcp.McpCapabilities
 import com.apex.agent.core.tools.mcp.McpManager
 import com.apex.agent.core.tools.mcp.McpServerConfig
 import com.apex.agent.core.tools.mcp.McpTransport
@@ -143,10 +144,14 @@ class McpConnectTool(
         (stdio transport) that speaks JSON-RPC over stdin/stdout. Give `command` for that
         form, or `url` for a remote endpoint.
 
+        RECONNECT: to reconnect an existing (disconnected) server, pass ONLY the name -
+        e.g. {"name": "github"} - and its stored configuration will be reused.
+
         Examples:
         - {"name": "github", "url": "http://localhost:3000/mcp"}
         - {"name": "local_db", "url": "http://127.0.0.1:8080/mcp"}
         - {"name": "memory", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-memory"], "run_in_sandbox": true}
+        - {"name": "github"}  (reconnect using stored config)
     """.trimIndent()
 
     override val parametersSchema = """
@@ -175,6 +180,9 @@ class McpConnectTool(
         // 默认改为 true —— Android 宿主没有 node/npx，宿主 fork 只会得到
         // ENOENT；显式传 false 才走宿主（桌面/自备运行时的场景）。
         val runInSandbox = json["run_in_sandbox"]?.jsonPrimitive?.booleanOrNull ?: true
+        // #344：run_in_sandbox 是否由调用方显式提供（重连一致性比对时，
+        // 未提供则不参与冲突判定，避免默认值把既有配置误判成冲突）。
+        val runInSandboxExplicit = json.containsKey("run_in_sandbox")
 
         val args = json["args"]?.jsonArray?.mapNotNull {
             runCatching { it.jsonPrimitive.content }.getOrNull()
@@ -182,6 +190,25 @@ class McpConnectTool(
         val env = json["env"]?.jsonObject?.mapValues { (_, v) ->
             runCatching { v.jsonPrimitive.content }.getOrDefault("")
         }.orEmpty()
+
+        // ── #344 P2 修复（重连闭环）────────────────────────────────
+        // mcp_call 失败时提示模型 "If the server disconnected, call
+        // McpConnect('<server>') once and retry"，但旧实现对已存在同名配置
+        // 一概拒绝（"already exists"）—— 服务器掉线/Supervisor 放弃重连后，
+        // 按指引操作必然碰壁，自愈闭环断裂。
+        // 现在分三支：
+        // a) 纯重连形态（只给 name，其余连接参数全空）→ 跳过一切校验，
+        //    直接对既有存储配置 connect（这也必须在 buildMcpConnectConfig 的
+        //    url/command 必填校验之前，否则纯重连会被先拒）；
+        // b) 给了参数且与既有配置一致 → 幂等重连（不重写配置）；
+        // c) 给了参数且不一致 → 拒绝（P3 同名覆盖保护：用户配置不可被模型
+        //    无声改写），错误文案里明确指引纯重连用法。
+        val existing = mcpManager.getConfigs().firstOrNull { it.name == name }
+        val pureReconnect = url.isBlank() && command.isBlank() && rawTransport.isBlank() &&
+            args.isEmpty() && env.isEmpty()
+        if (existing != null && pureReconnect) {
+            return renderConnectResult(existing, mcpManager.connect(name), reconnected = true)
+        }
 
         // 参数 → 配置的判定/校验/构造全部在纯函数里（Issue #163 抽出，
         // 单测直测不需要 stub 整个 McpManager）。
@@ -194,43 +221,66 @@ class McpConnectTool(
             is McpConnectConfigOutcome.Ok -> outcome.config
         }
 
-        // P3 修复（同名覆盖）：UI 添加路径有重名预检，模型经 McpConnect 添加
-        // 同名服务器却会静默覆盖用户已有配置（command/env/headers 被改写）。
-        // 现在如实拒绝并引导换名 —— 用户配置不可被模型无声劫持。
-        if (mcpManager.getConfigs().any { it.name == config.name }) {
-            return "Error: invalid argument: an MCP server named '${config.name}' already " +
-                "exists. Choose a different name, or ask the user to edit/remove the " +
-                "existing entry in the market's installed tab."
+        if (existing != null) {
+            // b/c 分支：同名已存在 —— 参数一致才允许幂等重连，不一致如实拒绝。
+            val consistent = existing.transport == config.transport &&
+                existing.url == config.url &&
+                existing.command == config.command &&
+                existing.args == config.args &&
+                existing.env == config.env &&
+                (!runInSandboxExplicit || existing.runInSandbox == config.runInSandbox)
+            if (!consistent) {
+                return "Error: invalid argument: an MCP server named '${config.name}' already " +
+                    "exists with different settings; user configuration cannot be silently " +
+                    "rewritten. To reconnect it as-is, call McpConnect('${config.name}') with " +
+                    "no url/command arguments. To register a new source, choose a different " +
+                    "name or ask the user to edit/remove the existing entry in the market's " +
+                    "installed tab."
+            }
+            // b：幂等重连 —— 不重写用户配置，直接对既有配置 connect。
+            return renderConnectResult(existing, mcpManager.connect(name), reconnected = true)
         }
 
         mcpManager.addServer(config)
-        val result = mcpManager.connect(name)
-
-        return result.fold(
-            onSuccess = { caps ->
-                buildString {
-                    appendLine("✅ Connected to MCP tool source '$name'")
-                    appendLine("  Transport: ${config.transport.name}")
-                    appendLine(
-                        if (config.transport == McpTransport.STDIO) "  Command: ${config.endpointSummary()}"
-                        else "  URL: ${config.url}"
-                    )
-                    if (config.transport == McpTransport.STDIO) {
-                        appendLine(
-                            if (config.runInSandbox) "  Sandbox: PRoot Ubuntu"
-                            else "  Sandbox: host process"
-                        )
-                    }
-                    appendLine("  Capabilities:")
-                    appendLine("    Tools: ${if (caps.tools) "✅" else "❌"}")
-                    appendLine("    Resources: ${if (caps.resources) "✅" else "❌"}")
-                    appendLine()
-                    appendLine("Use McpList to see available tools.")
-                }
-            },
-            onFailure = { e -> "❌ Connection failed: ${e.message}" }
-        )
+        return renderConnectResult(config, mcpManager.connect(name), reconnected = false)
     }
+
+    /**
+     * #344：连接结果的统一渲染（新建/重连两路共用；重连路明确标注"未改写配置"，
+     * 让模型知道这是既有配置的复活而不是新安装）。
+     */
+    private fun renderConnectResult(
+        config: McpServerConfig,
+        result: Result<McpCapabilities>,
+        reconnected: Boolean
+    ): String = result.fold(
+        onSuccess = { caps ->
+            buildString {
+                if (reconnected) {
+                    appendLine("✅ Reconnected to MCP tool source '${config.name}' (existing configuration, nothing rewritten)")
+                } else {
+                    appendLine("✅ Connected to MCP tool source '${config.name}'")
+                }
+                appendLine("  Transport: ${config.transport.name}")
+                appendLine(
+                    if (config.transport == McpTransport.STDIO) "  Command: ${config.endpointSummary()}"
+                    else "  URL: ${config.url}"
+                )
+                if (config.transport == McpTransport.STDIO) {
+                    appendLine(
+                        if (config.runInSandbox) "  Sandbox: PRoot Ubuntu"
+                        else "  Sandbox: host process"
+                    )
+                }
+                appendLine("  Capabilities:")
+                appendLine("    Tools: ${if (caps.tools) "✅" else "❌"}")
+                appendLine("    Resources: ${if (caps.resources) "✅" else "❌"}")
+                appendLine()
+                appendLine("Use McpList to see available tools.")
+            }
+        },
+        onFailure = { e -> "❌ Connection failed: ${e.message}" }
+    )
 }
 
 /** [buildMcpConnectConfig] 的结果：Ok 携带配置，Invalid 携带给用户的错误原因。 */

@@ -501,6 +501,16 @@ internal suspend fun AgentChatViewModel.handleEvent(event: AgentEvent) {
             // 在途部分回复落为 isPartial（与 Error 分支/abort() 同款语义：
             // 已流出的内容不该无声消失），再清空两个流式槽。
             streamBuffers.flush()
+            // ═══ #386 在途工具卡收口（中止冻结补齐）：本路径（收集器活着、
+            // 引擎 Aborted 真正送达）下若工具正在跑，currentToolCall 不清会
+            // 永远挂 isRunning 转圈计时 —— VM.abort() 路径早有同款清理
+            //（currentToolCall/tool 缓冲全套），事件路径此前漏了这一份。═══
+            toolFlushJob?.cancel()
+            toolFlushJob = null
+            activeToolCallId = null
+            toolOutputBuffer.clear()
+            liveOutputStepId = null
+            currentToolCallSteps = null
             _uiState.update { state ->
                 val partial = state.currentResponse
                 state.copy(
@@ -513,6 +523,7 @@ internal suspend fun AgentChatViewModel.handleEvent(event: AgentEvent) {
                     currentResponse = "",
                     currentThinking = "",
                     currentThinkingStartElapsed = 0,
+                    currentToolCall = null,
                     currentStepIndex = -1
                 )
             }

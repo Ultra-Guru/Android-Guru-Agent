@@ -55,15 +55,26 @@ interface IShizukuService {
     }
 }
 STUB
-cat > "$STUBS/moe/shizuku/server/IRemoteProcess.kt" <<'STUB'
-package moe.shizuku.server
-interface IRemoteProcess {
-    fun waitFor(): Int
-    fun exitValue(): Int
-    fun destroy()
-    val outputStream: android.os.ParcelFileDescriptor
-    val inputStream: android.os.ParcelFileDescriptor
-    val errorStream: android.os.ParcelFileDescriptor
+# 形状对齐 dev.rikka.shizuku:aidl 13.1.5 编译产物。必须是 JAVA stub：
+# AIDL 生成的是 Java 接口（流通道为 getXxx() getter）——主代码的
+# remote.outputStream 合成属性访问只在 Java 声明上成立，Kotlin 接口写
+# getter 方法会炸主代码、写 val 又会炸真依赖下的测试（CI 曾红：
+# overrides nothing）。
+cat > "$STUBS/moe/shizuku/server/IRemoteProcess.java" <<'STUB'
+package moe.shizuku.server;
+
+import android.os.IInterface;
+import android.os.ParcelFileDescriptor;
+
+public interface IRemoteProcess extends IInterface {
+    ParcelFileDescriptor getOutputStream();
+    ParcelFileDescriptor getInputStream();
+    ParcelFileDescriptor getErrorStream();
+    int waitFor();
+    int exitValue();
+    void destroy();
+    boolean alive();
+    boolean waitForTimeout(long timeout, String unit);
 }
 STUB
 cat > "$STUBS/androidx/annotation/RequiresApi.kt" <<'STUB'

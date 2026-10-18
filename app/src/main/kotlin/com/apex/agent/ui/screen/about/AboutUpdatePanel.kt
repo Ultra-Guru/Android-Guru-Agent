@@ -477,8 +477,11 @@ internal fun UpdatePanel() {
                             modifier = Modifier.size(20.dp)
                         )
 
-                        is UpdateCheckResult.Available -> StatusBadge(
-                            stringResource(R.string.about_update_new_badge)
+                        is UpdateCheckResult.Available -> Icon(
+                            Icons.Outlined.Download,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
                         )
 
                         is UpdateCheckResult.Failed -> Icon(
@@ -589,7 +592,9 @@ internal fun UpdatePanel() {
                         val manifest = result.latest
                         val full = checker.preferredAsset(manifest)
 
-                        // 新版本横幅：大号版本号 + NEW 徽章
+                        // 新版本横幅：大号版本号（2026-10 用户反馈「竖杠」：原右
+                        // 侧 NEW 实底徽章在极简黑白风格下 primary=墨黑，大字号
+                        // 挤压后渲染成无文字高瘦黑条 —— 移除，版本号自身已表意）
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.60f)
@@ -616,7 +621,6 @@ internal fun UpdatePanel() {
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                 }
-                                StatusBadge(stringResource(R.string.about_update_new_badge))
                             }
                         }
 
