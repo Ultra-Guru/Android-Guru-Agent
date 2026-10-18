@@ -38,6 +38,8 @@ import com.apex.agent.core.code.stream.StreamEntry
 import com.apex.agent.core.code.stream.StreamEntryGroup
 import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.core.code.stream.ToolKind
+import com.apex.agent.ui.component.imeDismissOnTap
+import com.apex.agent.ui.component.rememberImeDismisser
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import kotlinx.coroutines.delay
@@ -101,6 +103,9 @@ internal fun CodeStreamTimeline(
         isStreaming = isStreaming
     )
     val scope = rememberCoroutineScope()
+    // 点时间轴空白/非交互区域收起输入法（与 Agent 聊天屏同款 IME 纪律，
+    // 2026-10 用户反馈三连修；见 ImeDismiss.kt）。
+    val imeDismisser = rememberImeDismisser()
     // FAB 可见性只依赖可追踪的 derived state（anchor.isAtBottom）；
     // entries 判空放到组合处——原实现把首次组合时的空 snapshot 闭包进
     // derivedStateOf，普通属性读取不被追踪 → FAB 永远不出现（P0）
@@ -124,6 +129,9 @@ internal fun CodeStreamTimeline(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
+                // 点时间轴空白收起输入法（在采样源接线之前 = 覆盖全域；
+                // 卡片/链接等可点击子项与滚动手势不会误触）。
+                .imeDismissOnTap(imeDismisser)
                 .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier),
             // v5：底部悬浮栈（输入栏/选择器行等）动态补偿 —— 最后一条不被遮挡
             // v6 紧凑化：12 → 8dp（悬浮栈自身已瘦身）
