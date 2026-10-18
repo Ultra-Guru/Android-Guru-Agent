@@ -100,9 +100,7 @@ class LoomMemoryWeaverTest {
             keepRecentTurns = 4
         ).sanitized()
         val client = ScriptedClient(
-            mutableListOf {
-                LlmResponse(content = "已折叠：任务是修登录。")
-            }
+            mutableListOf({ LlmResponse(content = "已折叠：任务是修登录。") })
         )
         val w = weaver(client, config)
         val history = history(turns = 12, charsPerTurn = 2_000) // 约 24k token，远超阈值
@@ -126,9 +124,7 @@ class LoomMemoryWeaverTest {
             keepRecentTurns = 2
         ).sanitized()
         val client = ScriptedClient(
-            mutableListOf {
-                error("digest 网络故障")
-            }
+            mutableListOf({ error("digest 网络故障") })
         )
         val w = weaver(client, config)
         val priorDigest = LlmMessage.User(
@@ -155,7 +151,7 @@ class LoomMemoryWeaverTest {
             compactAtRatio = 0.5f,
             keepRecentTurns = 2
         ).sanitized()
-        val client = ScriptedClient(mutableListOf { LlmResponse(content = "   ") })
+        val client = ScriptedClient(mutableListOf({ LlmResponse(content = "   ") }))
         val w = weaver(client, config)
         val outcome = w.maybeCompact(history(turns = 6, charsPerTurn = 2_000))
         assertNotNull(outcome)

@@ -69,6 +69,17 @@ interface LoomLocalTool {
     suspend fun execute(argumentsJson: String): String
 }
 
+/** 只读参数视图。 */
+private class Args(private val obj: JsonObject?) {
+    fun string(key: String): String? = obj?.get(key)
+        ?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+}
+
+/** 参数解析（防御：坏 JSON 折叠空表）——顶层入口（嵌套工具类可直接调）。 */
+private fun parseArgs(json: String): Args = Args(
+    runCatching { Json.parseToJsonElement(json) as? JsonObject }.getOrNull()
+)
+
 /** 子线程四工具组装（挂到 [hub] 上）。 */
 class LoomSwarmTools(private val hub: LoomSwarmHub) {
 
@@ -205,16 +216,5 @@ class LoomSwarmTools(private val hub: LoomSwarmHub) {
                 "子线程不存在：$threadId"
             }
         }
-    }
-
-    /** 参数解析（防御：坏 JSON 折叠空表）。 */
-    private fun parseArgs(json: String): Args = Args(
-        runCatching { Json.parseToJsonElement(json) as? JsonObject }.getOrNull()
-    )
-
-    /** 只读参数视图。 */
-    private class Args(private val obj: JsonObject?) {
-        fun string(key: String): String? = obj?.get(key)
-            ?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
     }
 }

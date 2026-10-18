@@ -4,7 +4,6 @@ import com.apex.agent.core.code.loom.LoomEngineConfig
 import com.apex.agent.core.code.loom.LoomThreadPhase
 import com.apex.agent.core.code.loom.LoomThreadSnapshot
 import com.apex.agent.core.code.loom.loop.LoomAbortSignal
-import com.apex.agent.core.code.loom.loop.LoomApprovalBox
 import com.apex.agent.core.code.loom.loop.LoomEnvironmentSource
 import com.apex.agent.core.code.loom.loop.LoomFailureClassifier
 import com.apex.agent.core.code.loom.loop.LoomHeuristicEstimator
@@ -13,13 +12,14 @@ import com.apex.agent.core.code.loom.loop.LoomModelClient
 import com.apex.agent.core.code.loom.loop.LoomPlanGate
 import com.apex.agent.core.code.loom.loop.LoomRoundRunner
 import com.apex.agent.core.code.loom.loop.LoomSession
-import com.apex.agent.core.code.loom.loop.LoomSteering
 import com.apex.agent.core.code.loom.loop.LoomToolRunner
 import com.apex.agent.core.code.loom.loop.LoomToolSource
 import com.apex.agent.core.code.loom.markup.LoomOutcomeFormatter
 import com.apex.agent.core.code.loom.memory.LoomMemoryWeaver
+import com.apex.agent.core.code.loom.permission.LoomApprovalBox
 import com.apex.agent.core.code.loom.permission.LoomPermissionGovernor
 import com.apex.agent.core.code.loom.permission.LoomPermissionSource
+import com.apex.agent.core.code.loom.steer.LoomSteering
 import com.apex.agent.core.code.loom.thinking.LoomThinkingPolicy
 import com.apex.agent.core.engine.AgentEvent
 import com.apex.agent.core.engine.UserInput
