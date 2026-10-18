@@ -5,7 +5,7 @@
    - 跨域（如 GitHub badges / 字体）：不接管，浏览器默认行为
    发版时 bump CACHE_VER 即可让旧缓存全部失效。 */
 "use strict";
-var CACHE_VER = "aga-site-v6-guru-api-changelog";
+var CACHE_VER = "aga-site-v7-redirect";
 var CORE = [
   "./",
   "./index.html",
