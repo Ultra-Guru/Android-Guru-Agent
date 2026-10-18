@@ -28,6 +28,7 @@ import com.apex.agent.core.logging.LogLevel
 import com.apex.agent.core.tools.ToolExecutor
 import com.apex.agent.core.tools.ToolRegistry
 import com.apex.agent.core.tools.ToolStreamEvent
+import com.apex.agent.core.tools.builtin.context.SessionContextArchive
 import com.apex.agent.core.tools.catalog.ToolActivationStore
 import com.apex.agent.core.tools.catalog.ToolRequestBudget
 import com.apex.agent.core.tools.skill.SkillActivationStore
@@ -85,6 +86,12 @@ class ApexAgentEngine(
     // internal —— EngineCompressionGate.kt 同包扩展直调（历史压缩触发）。
     internal val memory: ConversationMemory? = null,
     internal val contextCompressor: ContextCompressor? = null,
+    /**
+     * #396 上下文归档（被压缩裁剪的原始消息）：压缩装饰器写入，本引擎只在
+     * 会话生命周期边界清理（新会话 / 恢复其它会话时清空，防旧会话残影
+     * 泄漏进新会话的检索结果）。null = 未接线（默认，测试与旧接线兼容）。
+     */
+    internal val contextArchive: SessionContextArchive? = null,
     internal val skillRegistry: SkillRegistry? = null,
 
     private val privilegeInfoProvider: PrivilegeInfoProvider? = null,
@@ -359,6 +366,8 @@ class ApexAgentEngine(
         sessionHooks?.onSessionEnd()
         conversationHistory.clear()
         memory?.clear()
+        // #396：新会话 —— 归档随历史一并清空，防止旧会话残影泄漏进检索结果。
+        contextArchive?.clear()
     }
 
     /**
@@ -369,6 +378,8 @@ class ApexAgentEngine(
         conversationHistory.clear()
         conversationHistory.addAll(messages)
         memory?.save(messages)
+        // #396：恢复的会话有自己的生命周期 —— 旧归档与新会话不匹配，清空。
+        contextArchive?.clear()
     }
 
     /** 当前持久化的消息条数（UI 显示历史深度）。 */
