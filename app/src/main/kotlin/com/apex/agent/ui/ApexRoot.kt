@@ -197,6 +197,21 @@ fun ApexRoot() {
         imeDismisser.dismiss()
     }
 
+    // ═══ App Control：工具 → UI 的真实导航桥 ═══
+    // AppScreenOpen 工具（「帮我打开设置」）经 AppNavigationBridge 入队请求；
+    // 此处收集并执行真实压栈导航 —— Agent 的承诺在用户眼前兑现，而非提示词
+    // 模拟。StateFlow 持留最新未消费请求：UI 暂时不可达（后台执行）时也不丢，
+    // 恢复组合即补导航；消费即清空防重复。
+    val navBridgeVm: AppNavBridgeViewModel = hiltViewModel()
+    LaunchedEffect(Unit) {
+        navBridgeVm.bridge.requests.collect { req ->
+            if (req != null) {
+                destinationFromRoute(req.route).let { navStack.push(it) }
+                navBridgeVm.bridge.consume()
+            }
+        }
+    }
+
     // ═══ v1.4.4 #6：全局网络状态 —— 离线横幅（所有页面顶部）═══
     val isOnline by agentVm.networkMonitor.isOnline.collectAsStateWithLifecycle()
 

@@ -349,6 +349,8 @@
     <string name="model_import_done">已导入 %1$d 个模型到「%2$s」</string>
     <string name="model_import_cancel">取消</string>
     <string name="model_import_apply_error">导入失败：%1$s</string>
+    <string name="model_import_from_file">从文件导入</string>
+    <string name="model_import_file_error">读取文件失败：%1$s</string>
 
     <!-- ═══ 存储与数据管理（StorageScreen）═══ -->
     <string name="storage_title">存储</string>

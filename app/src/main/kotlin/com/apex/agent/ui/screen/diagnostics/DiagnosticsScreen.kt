@@ -2,6 +2,7 @@ package com.apex.agent.ui.screen.diagnostics
 
 import android.content.Context
 import android.content.Intent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,11 +28,15 @@ import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.FilePresent
+import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Smartphone
+import androidx.compose.material.icons.outlined.Terminal
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -69,10 +74,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.apex.agent.R
+import com.apex.agent.core.tools.mcp.McpManager
+import com.apex.agent.core.tools.mcp.McpTransport
+import com.apex.agent.core.tools.skill.SkillRegistry
 import com.apex.agent.diagnostics.DiagRow
 import com.apex.agent.diagnostics.DiagnosticsCollector
 import com.apex.agent.diagnostics.LogFileSink
 import com.apex.agent.diagnostics.formatBytes
+import com.apex.agent.tools.ToolAuditLogger
 import com.apex.agent.ui.glass.GlassButton
 import com.apex.agent.ui.glass.GlassCard
 import com.apex.agent.ui.language.LanguageManager
@@ -115,7 +124,35 @@ data class DiagnosticsUiState(
     val busy: Boolean = false,
     val reportFile: File? = null,
     /** 报告生成失败信号（spec UiState 之外的补充字段：失败也需要一次性反馈，见 worklog）。 */
-    val reportFailed: Boolean = false
+    val reportFailed: Boolean = false,
+    // ═══ 诊断增强（用户诉求：工具 / mcp / skills / 终端调用日志 / 失败详细记录）═══
+    /** MCP 服务器快照（配置 + 连接状态）。 */
+    val mcpServers: List<McpServerRow> = emptyList(),
+    /** 已安装技能快照（双工位启用位）。 */
+    val skills: List<SkillRow> = emptyList(),
+    /** 最近工具/终端调用审计（tool-audit.jsonl）。 */
+    val toolCalls: List<ToolAuditLogger.AuditEntry> = emptyList(),
+    /** 失败子集（success=false / 拒绝类决策，含命令与详情现场）。 */
+    val failures: List<ToolAuditLogger.AuditEntry> = emptyList()
+)
+
+/** MCP 服务器展示行（名称 / 传输形态 / 端点 / 启用 / 连接）。 */
+data class McpServerRow(
+    val name: String,
+    val transport: String,
+    val endpoint: String,
+    val enabled: Boolean,
+    val connected: Boolean
+)
+
+/** 技能展示行（id / 名称 / 版本 / 双工位启用位 / 工具数）。 */
+data class SkillRow(
+    val id: String,
+    val name: String,
+    val version: String,
+    val enabledAgent: Boolean,
+    val enabledCoding: Boolean,
+    val toolCount: Int
 )
 
 @HiltViewModel
@@ -123,7 +160,11 @@ class DiagnosticsViewModel @Inject constructor(
     private val collector: DiagnosticsCollector,
     private val logSink: LogFileSink,
     // i18n：#228 查看器失败态文案（非 Compose 场景，LanguageManager 按当前语言取词）
-    private val lang: LanguageManager
+    private val lang: LanguageManager,
+    // ═══ 诊断增强数据源（真实运行时状态，非静态文案）═══
+    private val mcpManager: McpManager,
+    private val skillRegistry: SkillRegistry,
+    private val auditLogger: ToolAuditLogger
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DiagnosticsUiState())
@@ -137,12 +178,44 @@ class DiagnosticsViewModel @Inject constructor(
     fun refresh() {
         viewModelScope.launch {
             val snapshot = withContext(Dispatchers.Default) {
+                // ── 诊断增强：MCP / Skills / 工具审计（全部锁内快照读，零连接副作用）──
+                val connected = mcpManager.getConnectedServers().toSet()
+                val mcpRows = mcpManager.getConfigs().map { cfg ->
+                    McpServerRow(
+                        name = cfg.name,
+                        transport = cfg.transport.name + if (cfg.runInSandbox) "+SANDBOX" else "",
+                        endpoint = when (cfg.transport) {
+                            McpTransport.HTTP, McpTransport.SSE -> cfg.url.ifBlank { "-" }
+                            McpTransport.STDIO ->
+                                (cfg.command ?: "-") + cfg.args.joinToString(" ", " ")
+                            McpTransport.BUILTIN -> "builtin"
+                        },
+                        enabled = cfg.enabled,
+                        connected = cfg.name in connected
+                    )
+                }
+                val skillRows = skillRegistry.getInstalled().map { s ->
+                    SkillRow(
+                        id = s.manifest.id,
+                        name = s.manifest.name,
+                        version = s.manifest.version,
+                        enabledAgent = s.enabledAgent,
+                        enabledCoding = s.enabledCoding,
+                        toolCount = s.manifest.tools.size
+                    )
+                }
+                val toolCallRows = auditLogger.recentEntries(TOOL_CALL_ROWS)
+                val failureRows = auditLogger.recentFailures(TOOL_CALL_ROWS)
                 DiagnosticsUiState(
                     appInfo = collector.appInfoRows(),
                     deviceInfo = collector.deviceInfoRows(),
                     crashes = collector.crashFiles(),
                     logFiles = logSink.logFiles(),
-                    logBytes = logSink.totalBytes()
+                    logBytes = logSink.totalBytes(),
+                    mcpServers = mcpRows,
+                    skills = skillRows,
+                    toolCalls = toolCallRows,
+                    failures = failureRows
                 )
             }
             // 保留 busy/report* 旗标：刷新绝不打断进行中的报告生成或吞掉未消费的结果
@@ -218,6 +291,16 @@ class DiagnosticsViewModel @Inject constructor(
     fun formatCrashTime(file: File): String = synchronized(crashTimeFormat) {
         crashTimeFormat.format(Date(collector.crashFileTime(file)))
     }
+
+    /** 审计事件时间标签（诊断增强区行首；同一格式器复用 + 同步保护）。 */
+    fun formatAuditTime(ts: Long): String = synchronized(crashTimeFormat) {
+        crashTimeFormat.format(Date(ts))
+    }
+
+    private companion object {
+        /** 工具审计展示行数（最近 N 次 + 失败 N 条；与 SystemDiagnose 工具上限同量级）。 */
+        const val TOOL_CALL_ROWS = 50
+    }
 }
 
 /** 崩溃时间标签格式化器（SimpleDateFormat 非线程安全，synchronized 复用）。 */
@@ -256,6 +339,8 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
     var showClearLogs by remember { mutableStateOf(false) }
     var showReportDialog by remember { mutableStateOf(false) }
     var showReportFailed by remember { mutableStateOf(false) }
+    // 诊断增强：失败详情弹窗选中项（点击失败行打开，看命令/详情/退出码全现场）
+    var failureDetail by remember { mutableStateOf<ToolAuditLogger.AuditEntry?>(null) }
 
     // i18n：onClick / 非组合上下文不可调 stringResource —— 上提词
     val shareChooserTitle = stringResource(R.string.diag_share_chooser)
@@ -370,6 +455,146 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
                             state.crashes.forEach { file ->
                                 val timeLabel = remember(file) { viewModel.formatCrashTime(file) }
                                 CrashFileRow(file = file, timeLabel = timeLabel, onOpen = { viewer = ViewerTarget(file, isCrash = true) })
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── MCP 服务器（诊断增强：配置/连接快照，用户诉求「便于我寻找问题」）──
+            item {
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Outlined.Hub, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Text(
+                                stringResource(R.string.diag_mcp_section),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (state.mcpServers.isNotEmpty()) {
+                                Text(
+                                    stringResource(
+                                        R.string.diag_mcp_count,
+                                        state.mcpServers.size,
+                                        state.mcpServers.count { it.connected }
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        if (state.mcpServers.isEmpty()) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(stringResource(R.string.diag_mcp_empty), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Spacer(Modifier.height(4.dp))
+                            state.mcpServers.forEach { row -> McpServerListRow(row) }
+                        }
+                    }
+                }
+            }
+
+            // ── Skills（诊断增强：安装/双工位启用快照）──
+            item {
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Outlined.Extension, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Text(
+                                stringResource(R.string.diag_skill_section),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (state.skills.isNotEmpty()) {
+                                Text(
+                                    stringResource(R.string.diag_skill_count, state.skills.size),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        if (state.skills.isEmpty()) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(stringResource(R.string.diag_skill_empty), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Spacer(Modifier.height(4.dp))
+                            state.skills.forEach { row -> SkillListRow(row) }
+                        }
+                    }
+                }
+            }
+
+            // ── 工具与终端调用日志（诊断增强：tool-audit.jsonl 最近轨迹）──
+            item {
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Outlined.Terminal, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Text(
+                                stringResource(R.string.diag_audit_section),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (state.toolCalls.isNotEmpty()) {
+                                Text(
+                                    stringResource(R.string.diag_audit_count, state.toolCalls.size),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        if (state.toolCalls.isEmpty()) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(stringResource(R.string.diag_audit_empty), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Spacer(Modifier.height(4.dp))
+                            state.toolCalls.forEach { row ->
+                                ToolAuditListRow(
+                                    entry = row,
+                                    timeLabel = viewModel.formatAuditTime(row.ts)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── 失败详细记录（诊断增强：失败子集 + 点击看命令/详情现场）──
+            item {
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Outlined.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                            Text(
+                                stringResource(R.string.diag_failure_section),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (state.failures.isNotEmpty()) {
+                                Text(
+                                    stringResource(R.string.diag_failure_count, state.failures.size),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                        if (state.failures.isEmpty()) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(stringResource(R.string.diag_failure_empty), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Spacer(Modifier.height(4.dp))
+                            state.failures.forEach { row ->
+                                ToolAuditListRow(
+                                    entry = row,
+                                    timeLabel = viewModel.formatAuditTime(row.ts),
+                                    isFailure = true,
+                                    onOpenDetail = { failureDetail = row }
+                                )
                             }
                         }
                     }
@@ -556,6 +781,63 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
                 }
             }
         }
+    }
+
+    // ══════════ 失败详情弹窗（诊断增强：命令/详情/退出码/耗时/通道全现场）══════════
+    failureDetail?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { failureDetail = null },
+            title = { Text(stringResource(R.string.diag_failure_detail_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "${viewModel.formatAuditTime(entry.ts)} · ${entry.tool}",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text(
+                        entry.decision,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    entry.command?.let { cmd ->
+                        Text(stringResource(R.string.diag_failure_field_command), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow
+                        ) {
+                            Text(
+                                cmd,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.padding(8.dp)
+                            )
+                        }
+                    }
+                    entry.detail?.let { d ->
+                        Text(stringResource(R.string.diag_failure_field_detail), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(d, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                    }
+                    val meta = buildList {
+                        entry.exitCode?.let { add(stringResource(R.string.diag_failure_field_exit) + ": $it") }
+                        entry.durationMs?.let { add(stringResource(R.string.diag_failure_field_duration) + ": ${it}ms") }
+                        entry.tier?.let { add(stringResource(R.string.diag_failure_field_tier) + ": $it") }
+                    }
+                    if (meta.isNotEmpty()) {
+                        Text(
+                            meta.joinToString("  ·  "),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { failureDetail = null }) {
+                    Text(stringResource(R.string.diag_report_close))
+                }
+            }
+        )
     }
 
     // ══════════ 确认/结果对话框 ══════════
@@ -757,6 +1039,161 @@ private fun LogFileRow(file: File, onOpen: () -> Unit, onShare: () -> Unit) {
  * appContext 跨回调边界、EXTRA_STREAM + FLAG_GRANT_READ_URI_PERMISSION、
  * chooser 加 NEW_TASK（从非 Activity 上下文启动的兜底）。
  */
+// ══════════ 诊断增强行组件（MCP / Skills / 工具审计）══════════
+
+/**
+ * MCP 服务器行：名称 + 传输形态徽标 + 连接状态点（绿 = 已连接 / 灰 = 未连接）+
+ * 端点（url 或命令行，等宽小字）+ 禁用态整行降透明度。
+ */
+@Composable
+private fun McpServerListRow(row: McpServerRow) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            // 连接状态点：主色/表面变色，与文案互补（色盲可读）
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(
+                        if (row.connected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.outlineVariant
+                    )
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f).padding(vertical = 6.dp)) {
+                Text(
+                    row.name,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (row.enabled) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                )
+                Text(
+                    buildString {
+                        append(row.transport)
+                        append("  ·  ")
+                        append(if (row.connected) stringResource(R.string.diag_mcp_connected)
+                        else stringResource(R.string.diag_mcp_disconnected))
+                        if (!row.enabled) append("  ·  ").append(stringResource(R.string.diag_mcp_disabled))
+                        append('\n').append(row.endpoint)
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 技能行：名称 + 版本 + 双工位启用徽标（Agent/Coding 各一枚，禁用工位划暗）+ 工具数。
+ */
+@Composable
+private fun SkillListRow(row: SkillRow) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Extension, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f).padding(vertical = 6.dp)) {
+                Text(
+                    "${row.name}  v${row.version}",
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    buildString {
+                        append(
+                            if (row.enabledAgent) stringResource(R.string.diag_skill_scope_agent) + " ✓"
+                            else stringResource(R.string.diag_skill_scope_agent) + " ✕"
+                        )
+                        append("  ·  ")
+                        append(
+                            if (row.enabledCoding) stringResource(R.string.diag_skill_scope_coding) + " ✓"
+                            else stringResource(R.string.diag_skill_scope_coding) + " ✕"
+                        )
+                        append("  ·  ")
+                        append(stringResource(R.string.diag_skill_tools_unit, row.toolCount))
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 工具审计行：时间 + 工具名（等宽）+ 决策徽标 + 耗时；失败行错误色强调且可点击
+ * 打开详情弹窗（[onOpenDetail]）。
+ */
+@Composable
+private fun ToolAuditListRow(
+    entry: ToolAuditLogger.AuditEntry,
+    timeLabel: String,
+    isFailure: Boolean = false,
+    onOpenDetail: () -> Unit = {}
+) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = if (isFailure) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+        else MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .let { if (isFailure) it.clickable(onClick = onOpenDetail) else it }
+    ) {
+        Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                if (isFailure) Icons.Outlined.Warning else Icons.Outlined.Terminal,
+                contentDescription = stringResource(R.string.diag_view),
+                tint = if (isFailure) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f).padding(vertical = 6.dp)) {
+                Text(
+                    buildString {
+                        append(entry.tool)
+                        entry.tier?.let { append("  [").append(it).append(']') }
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (isFailure) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    buildString {
+                        append(timeLabel)
+                        append("  ·  ").append(entry.decision)
+                        entry.durationMs?.let { append("  ·  ").append(it).append("ms") }
+                        entry.command?.let { append('\n').append(it) }
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
 private fun shareFile(context: Context, file: File, mime: String, chooserTitle: String) {
     val appContext = context.applicationContext
     runCatching {
