@@ -363,11 +363,6 @@ class LoomKitAdapter(
         is WeaveMessage.ToolResult -> LlmMessage.ToolResult(toolCallId, content)
     }
 
-    private fun WeaveMessage.User.toHostUser(): LlmMessage.User = LlmMessage.User(
-        content = content,
-        images = images.map { it.toHost() }
-    )
-
     private fun WeaveImageContent.toHost(): com.apex.agent.core.llm.ImageContent =
         com.apex.agent.core.llm.ImageContent(
             base64Data = base64Data,
@@ -507,7 +502,18 @@ class LoomKitAdapter(
 
         private fun WeaveMessage.toHost(): LlmMessage = when (this) {
             is WeaveMessage.System -> LlmMessage.System(content)
-            is WeaveMessage.User -> toHostUser()
+            is WeaveMessage.User -> LlmMessage.User(
+                content = content,
+                images = images.map {
+                    com.apex.agent.core.llm.ImageContent(
+                        base64Data = it.base64Data,
+                        mimeType = it.mimeType,
+                        detail = it.detail,
+                        url = it.url
+                    )
+                }
+            )
+
             is WeaveMessage.Assistant -> LlmMessage.Assistant(content)
             is WeaveMessage.ToolResult -> LlmMessage.ToolResult(toolCallId, content)
         }
