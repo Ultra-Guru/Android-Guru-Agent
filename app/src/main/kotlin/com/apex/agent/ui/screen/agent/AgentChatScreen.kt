@@ -82,6 +82,8 @@ import com.apex.agent.ui.component.HtmlPreviewDialog
 import com.apex.agent.ui.component.ImageLightbox
 import com.apex.agent.ui.component.LocalFeedbackController
 import com.apex.agent.ui.component.SlashAutoCompleteHost
+import com.apex.agent.ui.component.imeDismissOnTap
+import com.apex.agent.ui.component.rememberImeDismisser
 import com.apex.agent.ui.component.SlashCommandButton
 import com.apex.agent.ui.component.SlashMenuProvider
 import com.apex.agent.ui.component.ViroPetHost
@@ -124,6 +126,9 @@ fun AgentChatScreen(
     val listState = rememberLazyListState()
     val context = LocalContext.current
     val scrollScope = rememberCoroutineScope()
+    // ═══ IME 收回（2026-10 用户反馈）：点输入框上方的消息区空白 → 收起输入法 ═══
+    // 挂在下方 LazyColumn；详见 ImeDismiss.kt（子项消费的点击/滚动手势不会误触）。
+    val imeDismisser = rememberImeDismisser()
 
     // ═══ Liquid Glass（kyant0/backdrop）：消息列表 = 采样源；悬浮输入栏 / FAB = 玻璃件 ═══
     // Spec §5/§8/§10：输入栏与悬浮操作悬浮于内容之上，真实 backdrop 采样 +
@@ -416,6 +421,9 @@ fun AgentChatScreen(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
+                // 点消息区空白/非交互区域收起输入法（在 glassModalBlur 之前 =
+                // 覆盖含内边距的全域；可点击子项与滚动手势不误触）。
+                .imeDismissOnTap(imeDismisser)
                 // 玻璃幕帘：提问卡挂起时消息流整体模糊（在 layerBackdrop 之前 =
                 // 外层，采样源录制内容保持原样）。
                 .glassModalBlur(pendingQuestion != null)
