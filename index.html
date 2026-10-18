@@ -39,7 +39,7 @@
   "url": "https://ultra-guru.github.io/Android-Guru-Agent/",
   "downloadUrl": "https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases/latest",
   "codeRepository": "https://github.com/Ultra-Guru/Android-Guru-Agent",
-  "softwareVersion": "1.4.9.34",
+  "softwareVersion": "1.4.9.36",
   "programmingLanguage": "Kotlin",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
 }
@@ -1347,6 +1347,39 @@ footer {
 .fb-item-reply b { color: var(--pine); font-weight: 600; }
 .fb-empty { color: var(--ink-faint); font-size: 15px; padding: 12px 0; }
 .fb-more { margin-top: 14px; font-size: 14px; }
+
+/* ═══ Guru API：更新日志 ═══ */
+.clg-panel {
+  background: #FFFFFF;
+  border: 1px solid rgba(23, 27, 22, 0.16);
+  border-radius: var(--radius-win);
+  padding: 56px 56px 46px;
+  box-shadow: 0 14px 30px -18px rgba(23, 27, 22, 0.25);
+  margin-bottom: 96px;
+}
+@media (max-width: 640px) { .clg-panel { padding: 36px 26px 30px; } }
+.clg-panel h2 { font-family: var(--font-display); font-size: clamp(28px, 4.2vw, 40px); font-weight: 550; letter-spacing: -0.01em; margin-bottom: 10px; }
+.clg-panel .note { color: var(--ink-soft); margin-bottom: 30px; max-width: 36em; }
+.clg-empty { color: var(--ink-faint); font-size: 15px; padding: 12px 0; }
+.clg-ver { border-top: 1px solid rgba(23, 27, 22, 0.12); padding: 18px 0 6px; }
+.clg-ver-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; cursor: pointer; }
+.clg-ver-tag { font-family: var(--font-mono); font-weight: 600; font-size: 16px; color: var(--pine); }
+.clg-ver-tag.latest { background: rgba(22, 107, 69, 0.1); border: 1px solid rgba(22, 107, 69, 0.3); border-radius: 8px; padding: 1px 10px 2px; }
+.clg-ver-date { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-faint); }
+.clg-ver-link { font-size: 13px; color: var(--ink-faint); text-decoration: none; border-bottom: 1px dotted currentColor; margin-left: auto; }
+.clg-ver-link:hover { color: var(--pine); }
+.clg-ver .clg-prs { margin: 10px 0 4px 4px; }
+.clg-pr { border: 0; border-left: 3px solid rgba(22, 107, 69, 0.35); background: var(--paper); margin: 8px 0; padding: 8px 14px 8px 16px; border-radius: 0 10px 10px 0; }
+.clg-pr summary { cursor: pointer; font-size: 14.5px; font-weight: 600; color: var(--ink); list-style: none; display: flex; align-items: center; gap: 8px; }
+.clg-pr summary::-webkit-details-marker { display: none; }
+.clg-pr summary::before { content: "▸"; color: var(--pine); font-size: 12px; transition: transform .15s; }
+.clg-pr[open] summary::before { transform: rotate(90deg); }
+.clg-pr .clg-pr-notes { margin: 8px 0 2px 20px; padding: 0; list-style: none; }
+.clg-pr .clg-pr-notes li { font-size: 14px; color: var(--ink-soft); line-height: 1.85; padding-left: 14px; position: relative; }
+.clg-pr .clg-pr-notes li::before { content: "·"; position: absolute; left: 0; color: var(--pine); font-weight: 700; }
+.clg-note { font-size: 14px; color: var(--ink-soft); line-height: 1.8; margin: 8px 0 2px 4px; white-space: pre-wrap; }
+.clg-more-link { margin-top: 26px; font-size: 14px; }
+.clg-more-link a { color: var(--pine); }
 </style>
 </head>
 <body>
@@ -1842,6 +1875,21 @@ footer {
     </div>
   </section>
 
+
+
+  <!-- ═══ 更新日志（Guru API 驱动）═══ -->
+  <section class="section wrap" id="changelog" aria-labelledby="clg-title">
+    <div class="clg-panel">
+      <h2 id="clg-title">更新日志。</h2>
+      <p class="note">每一次发版都自动同步自发布仓库 —— 由 Guru API 缓存加速，点击版本可展开改动明细。</p>
+      <div id="clgList" aria-live="polite">
+        <p class="clg-empty" id="clgLoading">正在拉取更新日志…</p>
+      </div>
+      <p class="clg-more-link">
+        <a href="https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases" target="_blank" rel="noopener">在 GitHub 查看全部历史版本 →</a>
+      </p>
+    </div>
+  </section>
 
   <!-- ═══ 留言墙（Guru API 驱动，自建后端）═══ -->
   <section class="section wrap" id="wall" aria-labelledby="wall-title">
@@ -3924,6 +3972,99 @@ footer {
       submitBtn.textContent = "提交留言";
     });
   });
+
+
+  /* ── 更新日志 ── */
+  var clgList = document.getElementById("clgList");
+
+  function renderVer(v, isLatest) {
+    var ver = document.createElement("details");
+    ver.className = "clg-ver";
+    if (isLatest) ver.open = true;
+    var head = document.createElement("summary");
+    head.className = "clg-ver-head";
+    var tag = document.createElement("span");
+    tag.className = "clg-ver-tag" + (isLatest ? " latest" : "");
+    tag.textContent = v.versionName || v.tag;
+    head.appendChild(tag);
+    if (isLatest) {
+      var badge = document.createElement("span");
+      badge.className = "clg-ver-date";
+      badge.textContent = "最新";
+      head.appendChild(badge);
+    }
+    if (v.date) {
+      var d = document.createElement("span");
+      d.className = "clg-ver-date";
+      d.textContent = v.date;
+      head.appendChild(d);
+    }
+    if (v.releaseUrl) {
+      var link = document.createElement("a");
+      link.className = "clg-ver-link";
+      link.href = v.releaseUrl;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = "GitHub ↗";
+      head.appendChild(link);
+    }
+    ver.appendChild(head);
+
+    if (v.notes && v.notes.length) {
+      var note = document.createElement("p");
+      note.className = "clg-note";
+      note.textContent = v.notes.join("\n");
+      ver.appendChild(note);
+    }
+    var prs = (v.pr || []);
+    if (prs.length) {
+      var wrap = document.createElement("div");
+      wrap.className = "clg-prs";
+      prs.forEach(function (p) {
+        var pr = document.createElement("details");
+        pr.className = "clg-pr";
+        var sum = document.createElement("summary");
+        sum.textContent = p.title || "改动";
+        pr.appendChild(sum);
+        if (p.notes && p.notes.length) {
+          var ul = document.createElement("ul");
+          ul.className = "clg-pr-notes";
+          p.notes.forEach(function (t) {
+            var li = document.createElement("li");
+            li.textContent = t;
+            ul.appendChild(li);
+          });
+          pr.appendChild(ul);
+        }
+        wrap.appendChild(pr);
+      });
+      ver.appendChild(wrap);
+    }
+    return ver;
+  }
+
+  function loadClg() {
+    fetch(API + "/api/v1/changelog").then(function (r) { return r.ok ? r.json() : Promise.reject(); }).then(function (data) {
+      while (clgList.firstChild) clgList.removeChild(clgList.firstChild);
+      var versions = [];
+      if (data.latest && data.latest.versionName) versions.push(data.latest);
+      (data.history || []).slice(0, 7).forEach(function (v) {
+        if (!versions.length || v.versionName !== versions[versions.length - 1].versionName) versions.push(v);
+      });
+      if (!versions.length) {
+        var p = document.createElement("p");
+        p.className = "clg-empty";
+        p.textContent = "暂无更新日志数据。";
+        clgList.appendChild(p);
+        return;
+      }
+      versions.forEach(function (v, i) { clgList.appendChild(renderVer(v, i === 0)); });
+    }).catch(function () {
+      var el = document.getElementById("clgLoading");
+      if (el) el.textContent = "更新日志暂时不可达 —— 可直接到 GitHub Releases 查看。";
+    });
+  }
+  loadClg();
 
   loadFb();
 })();
