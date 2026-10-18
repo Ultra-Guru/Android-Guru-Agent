@@ -200,6 +200,8 @@ class CodeStreamSession {
                 // 空回复分片不建条目（与空思考卡同源：部分 provider 发
                 // content:"" 的 tool_calls 前导帧）——空气泡流式占位无意义
                 if (event.text.isEmpty()) return
+                // 正文流出 = 思考阶段已过（同 onToolStart 的防御性收口）
+                closeStreamingThinking()
                 val cur = streamingAssistant
                 if (cur == null) {
                     if (event.text.isBlank()) return
@@ -216,6 +218,9 @@ class CodeStreamSession {
             }
 
             is AgentEvent.ResponseComplete -> {
+                // 回复收尾同样收口思考（GOAL 停止提示等 notice 思考分片
+                // 紧跟 ResponseComplete、无 ThinkingComplete 的路径）
+                closeStreamingThinking()
                 val cur = streamingAssistant
                 if (cur == null) {
                     // 同上：非流式路径的整段结论直接建条目
@@ -249,6 +254,11 @@ class CodeStreamSession {
             }
 
             is AgentEvent.Error -> {
+                // 出错即收束：流式思考/结论条目定格为终态（错误后引擎不会
+                // 再续流，「思考中…」不能带出运行边界）
+                closeStreamingThinking()
+                streamingAssistant?.let { closeStreamingEntry(it) }
+                streamingAssistant = null
                 lastError = CodeStreamSnapshot.ErrorInfo(event.message, event.recoverable)
                 val related = activeTerminalCallId
                 // 引擎级错误收束终端「运行中」信号（否则面板永远脉冲）
@@ -265,6 +275,12 @@ class CodeStreamSession {
             }
 
             is AgentEvent.Complete -> {
+                // 运行收束：残留的流式思考/结论条目防御性定格（标准线库
+                // 事件集没有思考完成事件、引擎 notice 路径也只发 Chunk——
+                // 「思考中…」不能带出运行边界）
+                closeStreamingThinking()
+                streamingAssistant?.let { closeStreamingEntry(it) }
+                streamingAssistant = null
                 closeOpenCycle()
                 append(StreamEntry.StatusEntry(nextId(), "完成 · ${event.totalIterations} 轮 · ${event.totalToolCalls} 次工具 · ${event.totalDurationMs / 1000}s"))
                 if (affectedFiles.isNotEmpty()) {
@@ -404,6 +420,9 @@ class CodeStreamSession {
     private fun onToolStart(event: AgentEvent.ToolCallStart) {
         // 幂等：同一 callId 的 Start 重放直接跳过（检查点恢复/重放安全）
         if (toolCalls.containsKey(event.callId)) return
+        // 工具开跑 = 思考阶段已过：收口可能仍挂着「思考中…」的流式卡
+        //（引擎 notice 类思考分片没有 Complete 事件，见 closeStreamingThinking）
+        closeStreamingThinking()
         val kind = ToolKind.fromToolName(event.toolName)
         val args = parseArgs(event.arguments)
         val target = targetOf(kind, args, event.toolName)
@@ -608,6 +627,21 @@ class CodeStreamSession {
                 else replaceEntry(entry.id, entry.copy(isStreaming = false))
             else -> Unit
         }
+    }
+
+    /**
+     * 防御性收口流式思考条目（2026-10 用户反馈：思考完成后仍显示「思考中」）。
+     *
+     * 引擎多处路径只发 ThinkingChunk 不发 ThinkingComplete（工具降级/重试
+     * 提示等 notice 分片；标准线库事件集干脆没有思考完成事件）——旧实现
+     * 思考卡一旦建立就永远挂着「思考中…」，直到下一轮 beginRun。凡收到
+     * 「思考阶段显然已过」的信号（工具开跑 / 正文流出 / 回复收尾 /
+     * 运行收束 / 出错）就地把条目定格为终态（已累积文本保留）；之后再来的
+     * ThinkingChunk 会另起新卡（思考→工具→再思考的合法多段时序）。
+     */
+    private fun closeStreamingThinking() {
+        streamingThinking?.let { closeStreamingEntry(it) }
+        streamingThinking = null
     }
 
     private fun updateCall(call: StreamToolCall) {

@@ -323,15 +323,18 @@ class SettingsRepository @Inject constructor(
     private fun readAgentSettings(): AgentSettings {
         val raw = prefs.getString(KEY_AGENT, null)
         if (raw != null) {
-            runCatching { json.decodeFromString<AgentSettings>(raw) }.getOrNull()?.let { return migrateCustomModePresets(it) }
+            runCatching { json.decodeFromString<AgentSettings>(raw) }.getOrNull()
+                ?.let { return migratePermissionDefaultBypass(migrateCustomModePresets(it)) }
         }
         // 兼容旧版散装 Agent 设置 Key
-        return migrateCustomModePresets(
-            AgentSettings(
-                defaultMode = prefs.getString("agent_default_mode", "auto") ?: "auto",
-                thinkLevel = prefs.getString("agent_think_level", "standard") ?: "standard",
-                maxIterations = prefs.getInt("agent_max_iterations", 20),
-                keepAlive = prefs.getBoolean("agent_keep_alive", true),
+        return migratePermissionDefaultBypass(
+            migrateCustomModePresets(
+                AgentSettings(
+                    defaultMode = prefs.getString("agent_default_mode", "auto") ?: "auto",
+                    thinkLevel = prefs.getString("agent_think_level", "standard") ?: "standard",
+                    maxIterations = prefs.getInt("agent_max_iterations", 20),
+                    keepAlive = prefs.getBoolean("agent_keep_alive", true),
+                )
             )
         )
     }
@@ -414,6 +417,32 @@ class SettingsRepository @Inject constructor(
         private const val PREF_SECURE_FALLBACK = "apex_secure_settings_fallback"
         /** API Key 前缀键名（拼接 providerId） */
         private const val KEY_PROVIDER_KEY = "provider_api_key_"
+    }
+}
+
+/**
+ * 工具权限默认档迁移（2026-10 用户反馈「默认就是开启所有工具，agent
+ * 可以直接使用」）：旧默认 DEFAULT（写类/删除类工具逐个弹「请求执行」
+ * 确认）→ 新默认 BYPASS（全自动：工具/MCP/技能/shell 命令全放行，
+ * 仅 DENY 规则仍生效）。
+ *
+ * - 仅翻转恰好停在旧默认 DEFAULT 的存量用户（持久化 JSON 全字段落盘，
+ *   无法区分「显式选了 DEFAULT」与「从未动过」——统一翻一次，想收紧
+ *   的用户可在 设置 → 工具权限 切回）；
+ * - 显式选过 ACCEPT_EDITS / PLAN / BYPASS 的用户模式不动，仅落迁移标记；
+ * - [AgentSettings.permissionBypassMigrated] 置 true 后幂等短路（init 的
+ *   persistAgentSettings 立即回写，升级只发生一次）。
+ *
+ * 文件级 internal（非成员 private）：纯函数、零 Android 依赖，单测
+ * （PermissionDefaultBypassMigrationTest）直接调用（与
+ * migrateLegacyCustomInstruction 的可测性口径一致）。
+ */
+internal fun migratePermissionDefaultBypass(settings: AgentSettings): AgentSettings {
+    if (settings.permissionBypassMigrated) return settings
+    return if (settings.permissionMode == PermissionMode.DEFAULT) {
+        settings.copy(permissionMode = PermissionMode.BYPASS, permissionBypassMigrated = true)
+    } else {
+        settings.copy(permissionBypassMigrated = true)
     }
 }
 
@@ -614,12 +643,22 @@ data class AgentSettings(
     // 诚实回落全栈置顶。操作助手 withCodingRoleActivated（AgentRole.kt）。
     val codeActiveRoleId: String = AgentRole.BUILTIN_CODING_FULL_STACK_ID,
 
-    // ═══ 工具权限（v1.0 #155 业界标准式权限模式）═══
+    // ═══ 工具权限（v1.0 #155 业界标准式权限模式；默认档全开）═══
     // 两模式共享的 ToolExecutor 门控：模式（BYPASS/DEFAULT/ACCEPT_EDITS/PLAN）
     // + 按序首匹配规则三元组（ALLOW/ASK/DENY，pattern 支持尾缀星号通配，
     // 覆盖 mcp__ 动态 id）。决策器见 PermissionDecider，门见 PermissionModeGate。
-    val permissionMode: PermissionMode = PermissionMode.DEFAULT,
+    // 2026-10 用户反馈（默认全开）：agent 默认就应能直接使用全部工具 /
+    // MCP / 技能 / shell 命令，不该逐个弹「请求执行」确认 —— 默认档由
+    // DEFAULT 改为 BYPASS（全自动），存量 DEFAULT 用户经
+    // [permissionBypassMigrated] 一次性迁移；需要确认预算的用户可在
+    // 设置 → 工具权限 切回其他档位。
+    val permissionMode: PermissionMode = PermissionMode.BYPASS,
     val permissionRules: List<PermissionRule> = emptyList(),
+
+    // 默认档迁移标记（见上字段）：存量 JSON 缺省 false → 首启执行一次
+    // [migratePermissionDefaultBypass] 并置 true（与 onboardingVersion 同款
+    // 版本化迁移惯例，字段缺省值对旧 JSON 向后兼容）。
+    val permissionBypassMigrated: Boolean = false,
 
     // ═══ 行为规则（v1.1 #164 Rules 规则系统）═══
     // 全局规则：设置层持久化的自由文本，对所有工作区/两种模式生效，

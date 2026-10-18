@@ -445,6 +445,19 @@ internal suspend fun AgentChatViewModel.handleEvent(event: AgentEvent) {
         is AgentEvent.Complete -> {
             // 本轮任务收尾：展示运行总结卡（旧实现直接丢弃了 Complete 事件的信息）。
             finishActiveBanner()
+            // ═══ 残留思考气泡收口（2026-10 用户反馈：思考完成后仍显示「思考中」）═══
+            // 引擎 notice 类思考分片（工具降级/重试/GOAL 提示）只发
+            // ThinkingChunk 不发 ThinkingComplete —— currentThinking 不清空，
+            // 「推理中…」气泡会一直挂到下一条消息。收尾时把残留思考（与
+            // 同源残留回复）salvage 为独立消息（与 abort() 同款语义：已流出
+            // 的内容不该无声消失），再清空两个流式槽。
+            streamBuffers.flush()
+            val residualResponse = _uiState.value.currentResponse
+            val residualThinking = _uiState.value.currentThinking
+            val residualThinkingMs = if (thinkingStartElapsed > 0) {
+                SystemClock.elapsedRealtime() - thinkingStartElapsed
+            } else 0L
+            thinkingStartElapsed = 0
             // P0（卡死修复）：historyCount()=全量 JSON 解析、currentTokenCount()=全历史
             // 逐字符估算 —— 历史越长收尾越重（数百 ms～秒级），必须离开主线程。
             // 仪表盘字段与消息列表解耦：总结卡先落，仪表稍后追平（毫秒级延迟无感）。
@@ -457,15 +470,26 @@ internal suspend fun AgentChatViewModel.handleEvent(event: AgentEvent) {
                 )
             }
             _uiState.update {
+                val salvage = buildList<AgentUiMessage> {
+                    if (residualResponse.isNotBlank()) {
+                        add(AgentUiMessage.Agent(text = residualResponse, isPartial = true))
+                    }
+                    if (residualThinking.isNotBlank()) {
+                        add(AgentUiMessage.ThinkingMessage(residualThinking, residualThinkingMs))
+                    }
+                }
                 it.copy(
                     isLoading = false,
                     currentStepIndex = -1,
-                    messages = it.messages + AgentUiMessage.RunSummary(
+                    messages = it.messages + salvage + AgentUiMessage.RunSummary(
                         summary = event.summary,
                         totalIterations = event.totalIterations,
                         totalToolCalls = event.totalToolCalls,
                         totalDurationMs = event.totalDurationMs
                     ),
+                    currentResponse = "",
+                    currentThinking = "",
+                    currentThinkingStartElapsed = 0,
                     historyDepth = metrics.first ?: it.historyDepth,
                     contextUsedTokens = metrics.second ?: it.contextUsedTokens,
                     contextMaxTokens = metrics.third ?: it.contextMaxTokens
