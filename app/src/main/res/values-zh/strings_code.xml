@@ -108,6 +108,18 @@
     <string name="code_thinking_guide_footer_linkage">档位联动的不只是提示词：迭代上限、压缩阈值与工具输出预算都随档位缩放（数值见上方总表）。</string>
     <string name="code_thinking_guide_footer_apex">APEXCODE 仅手动可选：AUTO 选档永不触及，token 成本也是全梯度天花板。</string>
 
+    <!-- ═══ v1.4.10 Coding 历史对话（新会话自动归档，可恢复）═══ -->
+    <string name="code_history_open">对话历史</string>
+    <string name="code_history_title">对话历史</string>
+    <string name="code_history_empty">还没有归档的对话——新开会话时会自动归档当前对话</string>
+    <string name="code_history_no_user_msg">(无用户消息)</string>
+    <string name="code_history_archived_fmt">已归档当前对话（%1$d 条消息）——随时可在对话历史中恢复</string>
+    <string name="code_history_restore_failed">恢复失败：归档对话缺失或已损坏</string>
+    <string name="code_history_delete">删除</string>
+    <string name="code_history_delete_confirm">删除这条对话？</string>
+    <string name="code_history_delete_msg_fmt">删除后不可恢复：%1$s</string>
+    <string name="code_history_cancel">取消</string>
+
     <!-- ═══ v1.2 长任务中心 ═══ -->
     <string name="code_longtask_open">长任务中心</string>
     <string name="code_longtask_sheet_title">长任务</string>

@@ -33,13 +33,25 @@ import com.apex.agent.core.tools.util.TextRelevance
  * - `limit` 默认 10（recent 时取最近 N 条参与搜索，默认 30）；
  * - 零命中且无相关记录返回 NOT_FOUND 回显 query，模型可换词重试。
  */
+/** 检索候选：归档（`a#N`）与活跃（`#N`）双源统一编址的渲染单元。 */
+private data class SearchCandidate(
+    val record: ContextRecord,
+    /** 定位符（含前缀）：归档 `a#N` / 活跃 `#N`。 */
+    val locator: String
+)
+
 class ContextSearchTool(
-    private val context: SessionContextProvider
+    private val context: SessionContextProvider,
+    /** #396 归档源（被压缩裁剪的历史）：null = 未接线，行为与旧版一致。 */
+    private val archive: SessionContextArchive? = null
 ) : BaseTool(
     id = "ContextSearch",
     name = "Session Context Search",
     description = """
-        Case-insensitive substring search over the current conversation records.
+        Case-insensitive substring search over the whole conversation — live
+        context AND archived (compressed-away) records. Archived hits use
+        'a#N' locators, live hits use '#N'; fetch the full text with
+        ContextFetch using that locator.
         Input: {"query": "api key", "scope": "full", "limit": 10}
         Returns matching snippets with 80 chars of context on each side plus a
         "#index [role]" locator per hit. scope: full (default) | recent (search
@@ -82,35 +94,44 @@ class ContextSearchTool(
         val limit = args.intWithDefault("limit", DEFAULT_LIMIT).coerceIn(1, MAX_LIMIT)
         val window = args.intWithDefault("window", DEFAULT_WINDOW).coerceIn(1, MAX_WINDOW)
 
-        val all = context.records()
-        if (all.isEmpty()) {
+        val archived = archive?.archivedRecords().orEmpty()
+        // ═══ #396 双源候选：归档（a#N）在前（时间上更早）+ 活跃（#N）在后 ═══
+        // 归档为空（未接线 / 新会话已清）时退化为纯活跃源，行为与旧版一致；
+        // 两侧都跳过 system 提示词（对"找历史"没有信息量且噪声大）。
+        val candidates = buildList {
+            archived.filter { it.role != "system" }.forEach {
+                add(SearchCandidate(it, "a#${it.index}"))
+            }
+            context.records().filter { it.role != "system" }.forEach {
+                add(SearchCandidate(it, "#${it.index}"))
+            }
+        }
+        if (candidates.isEmpty()) {
             return ToolResult.fail(ToolErrorCode.NOT_FOUND, "session context is empty — nothing to search")
         }
-        // 回顾类检索跳过 system 提示词（对"找历史"没有信息量且噪声大）。
-        val candidates = (if (scope == "recent") all.takeLast(window) else all)
-            .filter { it.role != "system" }
+        val scoped = if (scope == "recent") candidates.takeLast(window) else candidates
 
         val needle = query.lowercase()
 
         // ═══ 模糊检索（相关性排序）：mode=fuzzy 直走，或精确零命中后的自动回退 ═══
         if (mode == "fuzzy") {
-            val fuzzyOnly = fuzzySearch(query, candidates, limit)
+            val fuzzyOnly = fuzzySearch(query, scoped, limit)
             if (fuzzyOnly != null) return fuzzyOnly
             return ToolResult.fail(
                 ToolErrorCode.NOT_FOUND,
-                "no record is related to '$query' (${candidates.size} records ranked, scope=$scope)"
+                "no record is related to '$query' (${scoped.size} records ranked, scope=$scope)"
             )
         }
 
         val hits = mutableListOf<String>()
-        for (record in candidates) {
+        for (candidate in scoped) {
             if (hits.size >= limit) break
-            val lowered = record.content.lowercase()
+            val lowered = candidate.record.content.lowercase()
             var from = 0
             while (hits.size < limit) {
                 val at = lowered.indexOf(needle, from)
                 if (at < 0) break
-                hits += "#${record.index} [${record.role}] ${snippet(record.content, at, needle.length)}"
+                hits += "${candidate.locator} [${candidate.record.role}] ${snippet(candidate.record.content, at, needle.length)}"
                 from = at + needle.length
             }
         }
@@ -119,12 +140,12 @@ class ContextSearchTool(
             // 上下文检索增强：精确零命中 → BM25 相关性回退（换词/转写也能找到）。
             // mode=exact 明确只要精确语义 —— 跳过回退，保持旧 NOT_FOUND 行为。
             if (mode != "exact") {
-                val fuzzy = fuzzySearch(query, candidates, limit)
+                val fuzzy = fuzzySearch(query, scoped, limit)
                 if (fuzzy != null) return fuzzy
             }
             return ToolResult.fail(
                 ToolErrorCode.NOT_FOUND,
-                "no record contains '$query' (${candidates.size} records searched, scope=$scope)"
+                "no record contains '$query' (${scoped.size} records searched, scope=$scope)"
             )
         }
         return ToolResult.ok(
@@ -141,21 +162,21 @@ class ContextSearchTool(
      */
     private fun fuzzySearch(
         query: String,
-        candidates: List<ContextRecord>,
+        candidates: List<SearchCandidate>,
         limit: Int
     ): ToolResult? {
         val ranked = TextRelevance.rank(
-            query, candidates.map { it.content }, limit = limit
+            query, candidates.map { it.record.content }, limit = limit
         )
         if (ranked.isEmpty()) return null
         return ToolResult.ok(
             buildString {
                 appendLine("No exact substring match — top ${ranked.size} most related record(s) for '$query' (fuzzy, ranked):")
                 ranked.forEach { scored ->
-                    val record = candidates[scored.index]
+                    val candidate = candidates[scored.index]
                     appendLine(
-                        "~#${record.index} [${record.role}] " +
-                            "${record.content.replace('\n', '␤').take(SNIPPET_CHARS)}"
+                        "~${candidate.locator} [${candidate.record.role}] " +
+                            "${candidate.record.content.replace('\n', '␤').take(SNIPPET_CHARS)}"
                     )
                 }
             }.trimEnd()

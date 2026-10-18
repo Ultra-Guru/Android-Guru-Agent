@@ -28,6 +28,7 @@ import com.apex.agent.core.logging.LogLevel
 import com.apex.agent.core.tools.ToolExecutor
 import com.apex.agent.core.tools.ToolRegistry
 import com.apex.agent.core.tools.ToolStreamEvent
+import com.apex.agent.core.tools.builtin.context.SessionContextArchive
 import com.apex.agent.core.tools.catalog.ToolActivationStore
 import com.apex.agent.core.tools.catalog.ToolRequestBudget
 import com.apex.agent.core.tools.skill.SkillActivationStore
@@ -85,6 +86,8 @@ class ApexAgentEngine(
     // internal —— EngineCompressionGate.kt 同包扩展直调（历史压缩触发）。
     internal val memory: ConversationMemory? = null,
     internal val contextCompressor: ContextCompressor? = null,
+    // #396 上下文归档：会话边界（新会话/恢复）清空；写入方为压缩装饰器。
+    internal val contextArchive: SessionContextArchive? = null,
     internal val skillRegistry: SkillRegistry? = null,
 
     private val privilegeInfoProvider: PrivilegeInfoProvider? = null,
@@ -351,24 +354,20 @@ class ApexAgentEngine(
         }
     }
 
-    /**
-     * 清空历史与持久化记忆（开新会话）。#165：SessionEnd 经
-     * [SessionHookCoordinator.onSessionEnd] 派发（restoreHistory 是延续不在此列）。
-     */
+    /** 清空历史与持久化记忆（开新会话）。#165：SessionEnd 经派发；归档一并清空。 */
     fun clearHistory() {
         sessionHooks?.onSessionEnd()
         conversationHistory.clear()
         memory?.clear()
+        contextArchive?.clear()
     }
 
-    /**
-     * 恢复历史会话上下文：内存历史与持久化记忆同步替换，后续对话自然接续。
-     * 仅接收 user/assistant 文本对——工具调用链配对无法从展示态历史重建。
-     */
+    /** 恢复会话：内存历史与持久化记忆同步替换；归档随会话边界重置。 */
     fun restoreHistory(messages: List<LlmMessage>) {
         conversationHistory.clear()
         conversationHistory.addAll(messages)
         memory?.save(messages)
+        contextArchive?.clear()
     }
 
     /** 当前持久化的消息条数（UI 显示历史深度）。 */

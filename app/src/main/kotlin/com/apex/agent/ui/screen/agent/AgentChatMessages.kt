@@ -601,16 +601,39 @@ internal fun StreamingResponseBubble(
                 val pendingMediaTail = remember(text) {
                     StreamingRenderSupport.incompleteMediaTailLength(text)
                 }
-                val displayText = remember(text, codeStyle) {
-                    val shown = if (pendingMediaTail > 0) text.dropLast(pendingMediaTail) else text
-                    StreamingRenderSupport.styleInline(shown, codeStyle)
-                }
+                val shown = if (pendingMediaTail > 0) text.dropLast(pendingMediaTail) else text
+                // ═══ 分段增量渲染（2026-10 流水式输出优化）═══
+                // 单 Text 全量重排是长回复后期的主要掉帧源（整流 O(n²)）：
+                // 改用 StreamingParagraphSlicer 切「定稿块 + 活动尾段」——
+                // 定稿块（配平行组，含代码围栏块整体）只排一次，后续 flush
+                // 走 Text 跳过路径；每 flush 仅活动尾段重排。视觉与单 Text
+                // 逐行等价（详见 StreamingParagraphText.kt 文件头推导）。
+                val slicer = remember { StreamingParagraphSlicer() }
+                val slices = remember(shown) { slicer.update(shown) }
+                // 定稿块样式缓存：块原文为 key（同块跨 flush 实例不变 →
+                // Text 参数 equals → 跳过；重复块共享）。主题切换（codeStyle
+                // 变化）→ 缓存重建全量重算，无陈旧样式残留。
+                val styledBlocks = remember(codeStyle) { HashMap<String, AnnotatedString>() }
                 SelectionContainer {
-                    Text(
-                        text = displayText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Column {
+                        slices.committed.forEach { block ->
+                            Text(
+                                text = styledBlocks.getOrPut(block) {
+                                    StreamingRenderSupport.styleInline(block, codeStyle)
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        // 活动尾段：每 flush 重新样式化（唯一真正变化的部分）
+                        Text(
+                            text = remember(slices.liveTail, codeStyle) {
+                                StreamingRenderSupport.styleInline(slices.liveTail, codeStyle)
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
                 if (pendingMediaTail > 0) {
                     Surface(
@@ -755,11 +778,26 @@ internal fun ThinkingBubble(
             // 秒数 + 箭头），不再占五行预览 —— 与工具胶囊同口径的降噪。
             if (expanded) {
                 Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.85f)
-                )
+                // 分段增量渲染（2026-10 流水式输出优化）：与回复流同款治理 ——
+                // 定稿行只排一次，每 33ms flush 仅活动尾段重排（深度思考模型
+                // 的长思考流同样受益）；视觉与单 Text 逐行等价。思考文本无
+                // 行内样式，纯字符串直出。
+                val slicer = remember { StreamingParagraphSlicer() }
+                val slices = remember(text) { slicer.update(text) }
+                Column {
+                    slices.committed.forEach { line ->
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.85f)
+                        )
+                    }
+                    Text(
+                        text = slices.liveTail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.85f)
+                    )
+                }
             }
         }
     }

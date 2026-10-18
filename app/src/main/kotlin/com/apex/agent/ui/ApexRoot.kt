@@ -55,6 +55,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -67,10 +68,10 @@ import com.apex.agent.BuildConfig
 import com.apex.agent.R
 import com.apex.agent.changelog.ChangelogStartupHost
 import com.apex.agent.ui.component.ContextMeterBar
-import com.apex.agent.ui.screen.code.WorkspaceBrowserHost
 import com.apex.agent.ui.component.FeedbackHost
 import com.apex.agent.ui.component.OfflineBanner
 import com.apex.agent.ui.component.UpdateBanner
+import com.apex.agent.ui.component.rememberImeDismisser
 import com.apex.agent.ui.glass.GlassIconButton
 import com.apex.agent.ui.screen.about.AboutScreen
 import com.apex.agent.ui.screen.browser.BrowserScreen
@@ -93,7 +94,9 @@ import com.apex.agent.ui.screen.usage.UsageDashboardScreen
 import com.apex.agent.ui.screen.vault.VaultScreen
 import com.apex.agent.update.UpdateCenter
 import com.apex.agent.service.StartupWatchdog
+import com.apex.agent.ui.screen.code.WorkspaceBrowserHost
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 /**
@@ -172,6 +175,28 @@ fun ApexRoot() {
     val agentVm: AgentChatViewModel = hiltViewModel()
     val agentState by agentVm.uiState.collectAsStateWithLifecycle()
 
+    // ═══ IME 收回纪律（2026-10 用户反馈三连修）═══
+    // ① 点消息区空白 → 收起：AgentChatScreen / CodeStreamTimeline 的
+    //    imeDismissOnTap（消息列表层，见各屏）；
+    // ② 打开抽屉（汉堡钮 / 边缘滑动）→ 收起：下方 snapshotFlow 监听
+    //    drawerState.targetValue 变 Open，两条打开路径全覆盖；
+    // ③ 切换页面 → 收起：目的地变化统一收起（抽屉选中 / 返回键弹栈 /
+    //    页内压栈全路径）；旧实现依赖焦点 View 移出组合的系统隐式行为，
+    //    edge-to-edge + AndroidView EditText 场景实测不收。
+    val imeDismisser = rememberImeDismisser()
+
+    // ②：抽屉目标态变 Open 即收（手势拖过阈值同样触发 targetValue 翻转）
+    LaunchedEffect(drawerState) {
+        snapshotFlow { drawerState.targetValue }
+            .distinctUntilChanged()
+            .collect { target -> if (target == DrawerValue.Open) imeDismisser.dismiss() }
+    }
+
+    // ③：目的地切换统一收起（首次组合也会触发一次 —— 无键盘时是 no-op）
+    LaunchedEffect(currentDestination) {
+        imeDismisser.dismiss()
+    }
+
     // ═══ v1.4.4 #6：全局网络状态 —— 离线横幅（所有页面顶部）═══
     val isOnline by agentVm.networkMonitor.isOnline.collectAsStateWithLifecycle()
 
@@ -226,18 +251,20 @@ fun ApexRoot() {
     // 包在最外层：任何页面的 Toast/Snackbar 反馈都走统一视觉（严重级配色 +
     // SnackbarHost 底部弹出）。子树未消费无副作用；Noop 默认保证预览可用。
     FeedbackHost {
-    // ★ 抽屉手势修复（用户反馈：终端页左滑会再次拉出抽屉）：
-    // M3 ModalNavigationDrawer 默认 gesturesEnabled=true —— 终端页的横向
-    // 手势（选区拖选 / 键区横滚 / 未来 VT 鼠标上报）会被边缘滑动抢消费，
-    // 误触即弹抽屉盖住终端。终端页禁用手势抽屉：入口收敛为顶栏返回钮
-    // （返回上一页 = 回到抽屉可达的主页），其余页面保留标准边缘滑动。
+    // ★ 抽屉手势收敛（用户反馈：右滑误触拉出抽屉太频繁，只保留左上角
+    // 三条杠入口）：M3 ModalNavigationDrawer 的边缘滑动开抽屉整体关闭
+    // （gesturesEnabled=false）。终端页的横向手势抢消费问题随之根治；
+    // 关闭通道不受影响 —— scrim 点击关闭不经过 gesturesEnabled，
+    // BackHandler 兜底返回键关抽屉，选中条目后自动收起。
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = currentDestination != DrawerDestination.Terminal,
+        gesturesEnabled = false,
         drawerContent = {
             ApexDrawerContent(
                 currentDestination = currentDestination,
                 onDestinationSelected = { dest ->
+                    // 切页前先收输入法（不等目的地重组，立即执行）
+                    imeDismisser.dismiss()
                     // #224：抽屉一级导航 = 替换语义（清空历史栈 ——
                     // 顶层切换不产生返回层级，标准 drawer/bottom-nav 惯例）
                     navStack.navigateToTopLevel(dest)
@@ -297,7 +324,11 @@ fun ApexRoot() {
                         GlassIconButton(
                             icon = Icons.Default.Menu,
                             contentDescription = stringResource(R.string.drawer_open_nav),
-                            onClick = { scope.launch { drawerState.open() } },
+                            onClick = {
+                                // 开抽屉前先收输入法（snapshotFlow 兜底边缘滑动路径）
+                                imeDismisser.dismiss()
+                                scope.launch { drawerState.open() }
+                            },
                             tint = MaterialTheme.colorScheme.primary
                         )
                     },
