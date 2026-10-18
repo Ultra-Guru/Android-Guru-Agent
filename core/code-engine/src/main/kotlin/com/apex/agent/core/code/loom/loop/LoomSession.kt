@@ -158,6 +158,9 @@ class LoomSession(
 
     fun currentWorkspaceId(): String = workspace.get().id
 
+    /** 工作区名（UI 快照用）。 */
+    fun currentWorkspaceName(): String = workspace.get().name
+
     /** 工作区根（权限门边界校验用）。 */
     fun currentWorkspaceRoot(): File? = workspace.get().root
 
