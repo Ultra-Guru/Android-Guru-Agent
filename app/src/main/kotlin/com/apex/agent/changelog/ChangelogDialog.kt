@@ -4,6 +4,13 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,18 +18,19 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -35,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -53,9 +62,10 @@ import kotlinx.coroutines.withContext
  * - [ChangelogStartupHost] —— ApexRoot 接线点。启动后台静默判定
  *   （远端清单 + 内置副本 + effectiveVersionCode 三源 → [ChangelogGate]），
  *   命中则弹窗；离线/异常/未命中一律静默 —— 绝不阻塞启动、不弹错误；
- * - [ChangelogEntryDialog] —— 内容弹窗（三模式）。强制语义：非浏览模式下
- *   点外部/返回键不关闭（对齐「更新后强制弹出」的产品要求），但「知道了」
- *   恒可达 —— 绝不锁死用户；
+ * - [ChangelogEntryDialog] —— 内容弹窗（三模式 × 两级「下一步」：
+ *   手动日志 →「下一步 · 功能变更」→ PR 合并内容，两级独立不冲突）。
+ *   强制语义：非浏览模式下点外部/返回键不关闭（对齐「更新后强制弹出」
+ *   的产品要求），但「知道了」恒可达 —— 绝不锁死用户；
  * - [ChangelogHistoryDialog] —— 关于页「更新日志」入口的两级回看
  *   （历史列表 → 单版详情），可自由关闭。
  *
@@ -146,10 +156,17 @@ fun ChangelogStartupHost(autoUpdateCheck: Boolean) {
 }
 
 /**
- * 单版内容弹窗（包内私用 —— 模式枚举为 file-private，不外露）。两级渲染：
- * 一级 notes（管理软件发送的要点）置顶；下滑为二级 pr 分组（PR 合并内容，
- * 新增功能 / 修复）。两级全空才降级 markdown 原文纯文本。滚动区封顶
- * 380dp —— 长日志不撑爆对话框。
+ * 单版内容弹窗（包内私用 —— 模式枚举为 file-private，不外露）。
+ *
+ * v2.2 两级「下一步」交互（用户明确要求的产品语义）：
+ * - 第 1 步 = 一级日志（管理软件发布器发送的手动日志要点）—— 确认看到
+ *   自己发的更新日志后，点「下一步 · 功能变更」进入；
+ * - 第 2 步 = 二级日志（PR 合并内容：新增功能 / 修复分组）；
+ * - 两级独立展示、互不覆盖：无手动日志直进第 2 步，无 PR 内容单步收尾
+ *   （不写手动日志时 PR 部分照常展示）；两级全空降级 markdown 原文。
+ *
+ * 强制语义不变：非浏览模式下点外部/返回键不关闭，但「知道了」恒可达
+ * —— 绝不锁死用户。滚动区封顶 380dp；步骤切换带方向性滑动动画。
  */
 @Composable
 private fun ChangelogEntryDialog(
@@ -160,6 +177,13 @@ private fun ChangelogEntryDialog(
 ) {
     val context = LocalContext.current
     val noBrowserHint = stringResource(R.string.settings_about_no_browser)
+    val hasManual = entry.notes.isNotEmpty()
+    val hasPr = entry.pr.isNotEmpty()
+    val twoStep = hasManual && hasPr
+    // 步骤：0 = 手动日志（一级），1 = PR 功能变更（二级）；
+    // 无手动日志直进第 2 步（不写手动日志时 PR 部分照常展示）
+    var step by remember(entry) { mutableStateOf(if (hasManual) 0 else 1) }
+
     // 浏览模式可自由关闭；两档启动模式强制（点外部/返回键不关，「知道了」恒可达）
     val dismissOnOutside = mode == ChangelogDialogMode.BROWSE
 
@@ -179,147 +203,235 @@ private fun ChangelogEntryDialog(
             )
         },
         text = {
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 380.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                if (mode == ChangelogDialogMode.NEW_VERSION) {
-                    Text(
-                        "v${entry.versionName}",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+            Column(modifier = Modifier.heightIn(max = 380.dp)) {
+                if (twoStep) {
+                    // 两级俱在才显示步骤指示 —— 单级展示不增噪音
+                    ChangelogStepIndicator(step = step)
+                    Spacer(Modifier.size(12.dp))
                 }
-                entry.date?.let {
-                    Text(
-                        it,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                }
-                Spacer(Modifier.size(8.dp))
-                // ── 一级日志：管理软件（发布器 App）发送的要点 —— 置顶展示 ──
-                if (entry.notes.isNotEmpty()) {
-                    entry.notes.forEach { note ->
-                        Row(modifier = Modifier.padding(vertical = 3.dp)) {
-                            Text(
-                                "•",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                note,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-                // ── 二级日志：PR 合并内容（新增功能 / 修复）—— 下滑展示 ──
-                // 与一级不冲突：独立分节标题 + 分组渲染；两级全空才降级 markdown。
-                if (entry.pr.isNotEmpty()) {
-                    if (entry.notes.isNotEmpty()) {
-                        Spacer(Modifier.size(12.dp))
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-                        Spacer(Modifier.size(12.dp))
-                    }
-                    Text(
-                        stringResource(R.string.changelog_pr_section),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.size(6.dp))
-                    entry.pr.forEachIndexed { index, group ->
-                        if (group.title.isNotBlank()) {
-                            Text(
-                                group.title,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(top = if (index == 0) 0.dp else 10.dp)
-                            )
-                        }
-                        group.notes.forEach { note ->
-                            Row(
-                                modifier = Modifier.padding(
-                                    start = 8.dp,
-                                    top = 3.dp,
-                                    bottom = 3.dp
-                                )
-                            ) {
+                AnimatedContent(
+                    targetState = step,
+                    transitionSpec = {
+                        val dir = if (targetState > initialState) 1 else -1
+                        (slideInHorizontally { it / 4 * dir } + fadeIn()) togetherWith
+                            (slideOutHorizontally { -it / 4 * dir } + fadeOut())
+                    },
+                    label = "changelogStep"
+                ) { currentStep ->
+                    Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState())
+                    ) {
+                        if (currentStep == 0 && hasManual) {
+                            if (mode == ChangelogDialogMode.NEW_VERSION) {
                                 Text(
-                                    "·",
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    "v${entry.versionName}",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            entry.date?.let {
+                                Text(
+                                    it,
+                                    style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.outline
                                 )
-                                Spacer(Modifier.width(8.dp))
+                            }
+                            if (mode == ChangelogDialogMode.NEW_VERSION || entry.date != null) {
+                                Spacer(Modifier.size(8.dp))
+                            }
+                            // ── 第 1 步：一级日志（发布器手动日志）要点 ──
+                            entry.notes.forEach { note ->
+                                Row(modifier = Modifier.padding(vertical = 3.dp)) {
+                                    Text(
+                                        "•",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        note,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        } else {
+                            // ── 第 2 步：二级日志（PR 合并内容分组）──
+                            if (hasPr) {
                                 Text(
-                                    note,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    stringResource(R.string.changelog_pr_section),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.size(6.dp))
+                                entry.pr.forEachIndexed { index, group ->
+                                    if (group.title.isNotBlank()) {
+                                        Text(
+                                            group.title,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.padding(
+                                                top = if (index == 0) 0.dp else 10.dp
+                                            )
+                                        )
+                                    }
+                                    group.notes.forEach { note ->
+                                        Row(
+                                            modifier = Modifier.padding(
+                                                start = 8.dp,
+                                                top = 3.dp,
+                                                bottom = 3.dp
+                                            )
+                                        ) {
+                                            Text(
+                                                "·",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.outline
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(
+                                                note,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                // 两级全空：markdown 原文降级纯文本（不引渲染器）
+                                if (mode == ChangelogDialogMode.NEW_VERSION) {
+                                    Text(
+                                        "v${entry.versionName}",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(Modifier.size(8.dp))
+                                }
+                                Text(
+                                    entry.markdown.orEmpty()
+                                        .ifBlank { stringResource(R.string.changelog_history_empty) },
+                                    style = MaterialTheme.typography.bodyMedium
                                 )
                             }
                         }
                     }
-                }
-                if (entry.notes.isEmpty() && entry.pr.isEmpty()) {
-                    // 两级全空：markdown 原文降级纯文本（不引渲染器）
-                    Text(
-                        entry.markdown.orEmpty()
-                            .ifBlank { stringResource(R.string.changelog_history_empty) },
-                        style = MaterialTheme.typography.bodyMedium
-                    )
                 }
             }
         },
         confirmButton = {
-            when (mode) {
-                ChangelogDialogMode.WHATS_NEW -> TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.changelog_dialog_got_it))
+            if (step == 0 && hasPr) {
+                // 第 1 步且还有第 2 步：下一步进入 PR 功能变更
+                Button(onClick = { step = 1 }) {
+                    Text(stringResource(R.string.changelog_step_next))
                 }
-
-                ChangelogDialogMode.NEW_VERSION -> Button(
-                    onClick = {
-                        openInBrowser(
-                            context,
-                            entry.releaseUrl ?: RELEASES_FALLBACK_URL,
-                            noBrowserHint
-                        )
-                        onDismiss()
+            } else {
+                when (mode) {
+                    ChangelogDialogMode.WHATS_NEW -> TextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.changelog_dialog_got_it))
                     }
-                ) {
-                    Text(stringResource(R.string.changelog_dialog_download))
-                }
 
-                ChangelogDialogMode.BROWSE -> TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.changelog_dialog_browse_close))
+                    ChangelogDialogMode.NEW_VERSION -> Button(
+                        onClick = {
+                            openInBrowser(
+                                context,
+                                entry.releaseUrl ?: RELEASES_FALLBACK_URL,
+                                noBrowserHint
+                            )
+                            onDismiss()
+                        }
+                    ) {
+                        Text(stringResource(R.string.changelog_dialog_download))
+                    }
+
+                    ChangelogDialogMode.BROWSE -> TextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.changelog_dialog_browse_close))
+                    }
                 }
             }
         },
         dismissButton = {
-            when (mode) {
-                ChangelogDialogMode.NEW_VERSION -> TextButton(onClick = onDismiss) {
+            when {
+                // 第 1 步：恒可达的提前出口（不强制看完第 2 步）
+                step == 0 -> TextButton(onClick = onDismiss) {
                     Text(stringResource(R.string.changelog_dialog_got_it))
                 }
 
-                ChangelogDialogMode.BROWSE ->
-                    entry.releaseUrl?.let { url ->
-                        TextButton(
-                            onClick = {
-                                onOpenUrl?.invoke(url)
-                                    ?: openInBrowser(context, url, noBrowserHint)
-                            }
-                        ) {
-                            Text(stringResource(R.string.changelog_dialog_open_release))
-                        }
+                // 第 2 步且有两级：返回第 1 步
+                twoStep -> TextButton(onClick = { step = 0 }) {
+                    Text(stringResource(R.string.changelog_step_prev))
+                }
+
+                // 单级直入第 2 步（无手动日志）：模式语义保持
+                else -> when (mode) {
+                    ChangelogDialogMode.NEW_VERSION -> TextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.changelog_dialog_got_it))
                     }
 
-                ChangelogDialogMode.WHATS_NEW -> Unit
+                    ChangelogDialogMode.BROWSE ->
+                        entry.releaseUrl?.let { url ->
+                            TextButton(
+                                onClick = {
+                                    onOpenUrl?.invoke(url)
+                                        ?: openInBrowser(context, url, noBrowserHint)
+                                }
+                            ) {
+                                Text(stringResource(R.string.changelog_dialog_open_release))
+                            }
+                        }
+
+                    ChangelogDialogMode.WHATS_NEW -> Unit
+                }
             }
         }
+    )
+}
+
+/**
+ * 两级步骤指示器：「① 更新日志 —— ② 功能变更」；当前步高亮主色，
+ * 连接线随进度点亮。仅两级俱在时展示。
+ */
+@Composable
+private fun ChangelogStepIndicator(step: Int) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        StepChip(
+            active = step == 0,
+            text = stringResource(R.string.changelog_step_manual)
+        )
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 8.dp)
+                .height(2.dp)
+                .background(
+                    if (step >= 1) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                    else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                    RoundedCornerShape(1.dp)
+                )
+        )
+        StepChip(
+            active = step == 1,
+            text = stringResource(R.string.changelog_step_pr)
+        )
+    }
+}
+
+@Composable
+private fun StepChip(active: Boolean, text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = if (active) FontWeight.SemiBold else null,
+        color = if (active) MaterialTheme.colorScheme.primary
+        else MaterialTheme.colorScheme.outline,
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            )
+            .padding(horizontal = 10.dp, vertical = 4.dp)
     )
 }
 
