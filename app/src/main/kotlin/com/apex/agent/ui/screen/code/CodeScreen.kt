@@ -364,7 +364,7 @@ fun CodeScreen(
                             workspaces = state.workspaces,
                             onSelect = viewModel::switchWorkspace,
                             onCreate = viewModel::createWorkspace,
-                            onImportFolder = viewModel::importWorkspaceFromFolder,
+                            onImportFolder = { path -> viewModel.importWorkspaceFromFolder(path) },
                             onDelete = viewModel::deleteWorkspace
                         )
                     },

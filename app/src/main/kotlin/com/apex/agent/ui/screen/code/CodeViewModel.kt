@@ -118,7 +118,7 @@ import java.util.concurrent.atomic.AtomicLong
 @HiltViewModel
 class CodeViewModel @Inject constructor(
     @Named("code") private val codeEngine: AgentEngine,
-    private val workspaceManager: CodeWorkspaceManager,
+    internal val workspaceManager: CodeWorkspaceManager,
     internal val codeTodoTool: CodeTodoTool,
     private val codeSessionStore: CodeSessionStore,
     private val workspaceRoots: CodeWorkspaceRoots,
@@ -969,20 +969,6 @@ class CodeViewModel @Inject constructor(
         bindWorkspace(created)
     }
 
-    /**
-     * 导入真实文件夹为工作区（2026-10 用户需求：工作区选择 = 实际选一个
-     * 工作文件夹）。SAF 选择器解码出的宿主路径直入 [CodeWorkspaceManager.importFrom]
-     * —— 不复制文件、不落新目录、同目录幂等复用；失败（路径不可达/非法）
-     * 弹错误条。
-     */
-    fun importWorkspaceFromFolder(hostPath: String) {
-        val imported = workspaceManager.importFrom(hostPath)
-        if (imported == null) {
-            showError(languageManager.getString(R.string.code_ws_import_failed))
-            return
-        }
-        bindWorkspace(imported)
-    }
 
     fun switchWorkspace(workspaceId: String) {
         val activated = workspaceManager.activate(workspaceId) ?: return
@@ -994,12 +980,11 @@ class CodeViewModel @Inject constructor(
             showError(languageManager.getString(R.string.code_ws_delete_blocked_running))
             return
         }
+        // system 根 = / 绝不可删（manager 侧恒拒，VM 前置拦截统一文案）
         if (workspaceId == "default" || workspaceId == CodeWorkspaceManager.SYSTEM_ID) {
             showError(languageManager.getString(R.string.code_ws_delete_default))
             return
         }
-        // system 兜底：manager 侧恒拒（根 = / 绝不可删）；VM 侧前置拦截
-        // 只为统一错误条文案 —— 双层守卫，安全冗余。
         workspaceManager.delete(workspaceId)
         // 会话快照随工作区一并清理（引擎记忆目录由 manager 负责清理或不影响正确性）
         viewModelScope.launch {
@@ -1010,7 +995,7 @@ class CodeViewModel @Inject constructor(
         if (active != null) bindWorkspace(active) else clearConversation()
     }
 
-    private fun bindWorkspace(ws: CodeWorkspace) {
+    internal fun bindWorkspace(ws: CodeWorkspace) {
         // 切走前捕获旧会话快照（同工作区重复 bind 不冲刷）
         val previousId = boundWorkspaceId
         val previousSnapshot = if (previousId != null && previousId != ws.workspaceId) {
