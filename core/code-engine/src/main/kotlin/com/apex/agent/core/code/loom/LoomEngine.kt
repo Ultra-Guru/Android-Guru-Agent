@@ -117,8 +117,8 @@ class LoomEngine(
 
     private val packager = LoomPackager(packageCatalog)
 
-    /** 环境源（声明先于 swarmHub——构造期即引用；lambda 内的 session 引用为惰性求值）。 */
-    private val environmentSource = LoomEnvironmentSource {
+    /** 环境源（声明先于 swarmHub——构造期即引用；显式类型注解打断与 session 的推断环）。 */
+    private val environmentSource: LoomEnvironmentSource = LoomEnvironmentSource {
         LoomEnvironmentInfo(
             platformText = PLATFORM_TEXT,
             workdirLabel = session.currentWorkspaceRoot()?.path,
@@ -154,7 +154,7 @@ class LoomEngine(
     /** 工具面（宿主注册表 + 本地工具；forcedTools 过滤）。 */
     private val compositeToolSource = LoomToolSource { visibleToolSurface() }
 
-    private val session = LoomSession(
+    private val session: LoomSession = LoomSession(
         config = config,
         memory = memory?.let { MemoryAdapter(it) },
         estimator = estimator,
