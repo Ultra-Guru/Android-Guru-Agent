@@ -11,7 +11,7 @@ import com.apex.agent.core.code.courier.CourierKitAdapter
 import com.apex.agent.core.code.loom.LoomKitAdapter
 import com.apex.courierkit.dispatch.CourierCommandProbe
 import com.apex.courierkit.dispatch.CourierModelInfo
-import com.apex.courierkit.dispatch.CourierPermissionSnapshot
+import com.apex.courierkit.dispatch.DispatchPermissionSnapshot
 import com.apex.courierkit.dispatch.CourierPermissionSnapshotSource
 import com.apex.courierkit.dispatch.CourierSkillCatalog
 import com.apex.courierkit.dispatch.CourierSkillDigest
@@ -483,7 +483,7 @@ object CodeModule {
         // → 终端命令模式（bash）。
         val courierPermissionSource = CourierPermissionSnapshotSource {
             val settings = settingsRepository.agentSettings.value
-            CourierPermissionSnapshot(
+            DispatchPermissionSnapshot(
                 rules = settings.permissionRules
                     .filter { !it.pattern.contains(' ') }
                     .map { it.toCourierToolRule() },
@@ -601,8 +601,6 @@ object CodeModule {
         null
     }
 
-    private companion object {
-        /** 终端执行工具 id（宿主注册表口径）。 */
-        const val SHELL_TOOL_ID = "ShellExecute"
-    }
+    /** 终端执行工具 id（宿主注册表口径）。 */
+    private const val SHELL_TOOL_ID = "ShellExecute"
 }

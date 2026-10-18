@@ -248,5 +248,6 @@ internal fun logicModeShortName(mode: StandardLogicMode): String = stringResourc
         StandardLogicMode.DEEP_DIVE -> R.string.code_logic_mode_deep_dive
         StandardLogicMode.STANDARD -> R.string.code_logic_mode_standard
         StandardLogicMode.LOOM -> R.string.code_logic_mode_loom
+        StandardLogicMode.COURIER -> R.string.code_logic_mode_courier
     }
 )
