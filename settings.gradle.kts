@@ -69,6 +69,20 @@ when {
     standardKitNested.isDirectory -> includeBuild(standardKitNested)
 }
 
+// ── 织造循环库 composite build（同款拆库模式）───────────────────────────
+// apex-loom-kit 从本仓库抽出为独立库（com.apex.loomkit:loom-weave ——
+// Coding「织造思考逻辑线」的循环内核：in-band 标记协议/梭回合机/权限
+// 三态门/子线程群/织造包/digest 压缩）。接线方式与 apex-standard-kit
+// 完全同构：兄弟目录本地开发、嵌套目录 CI consumer-check 兜底、目录
+// 不存在时走远端 Maven 坐标。库仓库：Ultra-Guru/apex-loom-kit（含独立
+// CI + 宿主 consumer-check）。
+val loomKitSibling = file("../apex-loom-kit")
+val loomKitNested = file("apex-loom-kit")
+when {
+    loomKitSibling.isDirectory -> includeBuild(loomKitSibling)
+    loomKitNested.isDirectory -> includeBuild(loomKitNested)
+}
+
 // ── 工作区浏览器库 composite build（拆库 E1 迁移期）───────────────────────
 // apex-workspace-kit（com.apex.workspace:{core,explorer}）：Coding 模式
 // 全屏工作区浏览器（文件树 / 多格式预览 / Git 面板 / 变更和产物 / 实时跟随）。

@@ -1,8 +1,8 @@
 package com.apex.agent.di
 
 import com.apex.agent.core.tools.DefaultToolRunPolicyResolver
-import com.apex.agent.core.tools.HookEvent
-import com.apex.agent.core.tools.HookRegistry
+import com.apex.agent.core.tools.hook.HookEvent
+import com.apex.agent.core.tools.hook.HookRegistry
 import com.apex.agent.core.tools.SecretRedactor
 import com.apex.agent.core.tools.SecretRedactingExecutor
 import com.apex.agent.core.tools.ToolCircuitBreaker

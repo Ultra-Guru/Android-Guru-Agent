@@ -1,3 +1,5 @@
 - Coding 第三思考逻辑线「织造 Loom」上线：经纬交织范式——思考链为经线（deliberate 块 + 原生 reasoning 双通道）、工具调用为纬线（in-band XML 协议：use 调用块 / outcome 随机短码回执 / XML 实体转义 / 预算裁剪）、记忆为布面（digest 摘要织入压缩 + 滑窗兜底）、循环为梭（流式回合机：串行批次执行 / 纯思考退回重织 / 防环收敛 / 瞬时故障阶梯重试 / 输出截断续跑）
 - 织造线完整子系统：权限三态门（OBSERVE/FABRIC/UNBOUND 模式 × READ/WRITE 效应 × 工作区边界路径校验 × 会话级批准记忆 × 问答窗口超时收口）、子线程群（loom_thread_start/send/status/observe 四工具委派 + 并发/回合/输出三预算）、织造包（技能包运行时激活 + 指引织入回执 + 持续生效）、条件表达式求值器、PLAN 模式 loom-plan 布样人控门、运行中转向队列
 - 与深潜 / 标准线并列的第三枚逻辑档位：独立记忆通道（code_memory_loom）互不污染、切换现场保留、AgentEvent 全量映射（胶囊时间轴 / 长任务追踪 / 权限问答零改动消费）、@Named("loomEngineTools") 仅环境门执行器（防双弹窗 #230 同款纪律）
+- 织造引擎拆库为独立模块：Ultra-Guru/apex-loom-kit（com.apex.loomkit:loom-weave，纯 Kotlin JVM 零 Android 依赖）——全部循环语义（标记协议/梭回合机/权限门/子线程群/织造包/digest 压缩/测试矩阵）在库仓演进；宿主仅保留 LoomKitAdapter 薄适配层（AgentEvent↔WeaveEvent 等双向映射 + 宿主域知识段渲染），与 apex-standard-kit 拆库纪律完全同构
+- 库接入链路：composite build 条件 includeBuild（兄弟/嵌套双布局）+ gradle/loom-kit.lock 钉版（ci/apk/release 三流水线 pinned checkout + static-analysis 镜像编译上 classpath）+ sync-loom-kit 工作流（notify-host 事件路 + 30 分钟 cron 兜底，只跟绿提交 bump）

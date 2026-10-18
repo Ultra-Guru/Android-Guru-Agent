@@ -20,14 +20,15 @@ package com.apex.agent.core.code.standard
  *   原生 reasoning 双通道）、工具调用为纬线（in-band XML 协议：use 调用块 /
  *   outcome 随机短码回执）、记忆为布面（digest 摘要织入压缩）、循环为梭
  *   （流式回合机 + 串行批次 + 防环收敛 + 布样人控门 + 子线程群 + 织造包 +
- *   运行中转向）。由 [com.apex.agent.core.code.loom.LoomEngine] 实现——
- *   自有循环语义，零宿主循环依赖。
+ *   运行中转向）。由独立库模块实现（com.apex.loomkit:loom-weave，经
+ *   [com.apex.agent.core.code.loom.LoomKitAdapter] 接线）——自有循环
+ *   语义，零宿主循环依赖。
  *
  * ## 三引擎的关系
  *
  * | 维度 | 深潜 | 标准 | 织造 |
  * |---|---|---|---|
- * | 循环宿主 | ApexAgentEngine BUILD/PLAN | standard-loop 库回合循环 | LoomRoundRunner 梭回合机 |
+ * | 循环宿主 | ApexAgentEngine BUILD/PLAN | standard-loop 库回合循环 | loom-weave 库梭回合机 |
  * | 工具协议 | 原生函数调用 | 原生函数调用 | in-band XML（原生调用桥接翻译） |
  * | 思考深度 | 七档 + AUTO 自适应 | 画像预算（档位 → 回合倍率） | 档位 → 回合倍率 + 努力取向 + 家族偏好 |
  * | 权限门 | 主执行器组合门 | 库内权限门 + 仅环境门执行器 | 织造权限门 + 仅环境门执行器 |

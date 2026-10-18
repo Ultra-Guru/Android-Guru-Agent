@@ -32,17 +32,18 @@ CodeViewModel（Coding 屏）
 DualLogicCodeEngine（三路路由门面，volatile 单引用切换）
    ├──► CodeAgentEngine      深潜线（七档思考）      记忆：code_memory/
    ├──► StandardKitAdapter   标准线（任务循环库）    记忆：code_memory_standard/
-   └──► LoomEngine           织造线（自有循环）      记忆：code_memory_loom/
-          ├─ LoomSession            会话织物 + 系统提示词每回合 JIT 重织
-          ├─ LoomRoundRunner        梭回合机（流式往返 + 分流守卫）
-          ├─ LoomMarkupParser       六态流式增量解析器（跨块 holdback）
-          ├─ LoomNativeBridge       原生 tool_calls → use 标记翻译器
-          ├─ LoomOutcomeFormatter   回执织入（预算三级裁剪 + Unicode 标量安全）
-          ├─ LoomPermissionGovernor 权限三态门（模态 × 效应 × 边界）
-          ├─ LoomMemoryWeaver       布面压缩（digest 主路径 + 滑窗兜底）
-          ├─ LoomSwarmHub           子线程群（agent-as-tools 委派）
-          ├─ LoomPackager           织造包（技能包运行时激活）
-          └─ LoomThinkingPolicy     档位策略（回合倍率 + 努力取向 + 家族偏好）
+   └──► LoomKitAdapter       织造线（循环库接线）    记忆：code_memory_loom/
+          └─ loom-weave 库内核（Ultra-Guru/apex-loom-kit，com.apex.loomkit:loom-weave）
+             ├─ LoomSession            会话织物 + 系统提示词每回合 JIT 重织
+             ├─ LoomRoundRunner        梭回合机（流式往返 + 分流守卫）
+             ├─ LoomMarkupParser       六态流式增量解析器（跨块 holdback）
+             ├─ LoomNativeBridge       原生 tool_calls → use 标记翻译器
+             ├─ LoomOutcomeFormatter   回执织入（预算三级裁剪 + Unicode 标量安全）
+             ├─ LoomPermissionGovernor 权限三态门（模态 × 效应 × 边界）
+             ├─ LoomMemoryWeaver       布面压缩（digest 主路径 + 滑窗兜底）
+             ├─ LoomSwarmHub           子线程群（agent-as-tools 委派）
+             ├─ LoomPackager           织造包（技能包运行时激活）
+             └─ LoomThinkingPolicy     档位策略（回合倍率 + 努力取向 + 家族偏好）
 ```
 
 ## 三、in-band XML 协议（签名特性）
@@ -151,18 +152,39 @@ DualLogicCodeEngine（三路路由门面，volatile 单引用切换）
 - 兜底 SLIDING_WINDOW：摘要请求失败时保留近期轮 + 既有摘要轮；
 - digest 源限幅（每轮 600 字符 / 摘要 4000）防摘要请求撞窗。
 
-## 九、门面契约与接线
+## 九、门面契约与接线（库模块化）
 
-- `LoomEngine : AgentEngine, CodeEngineFacade`——17 方法全直通
-  （execute ×2 / abort / submitUserInput / cancelUserInput + 16 facade）；
-- DI（`CodeModule`）：`@Named("codeLoom")` 记忆通道 + `LoomEngine` 装配 +
-  三路 `DualLogicCodeEngine`；
-- 执行器纪律（#230 同款）：织造线自带权限门 → 注入
+### 拆库布局（同 apex-standard-kit 纪律）
+
+织造循环已提取为独立库仓 **Ultra-Guru/apex-loom-kit**（坐标
+`com.apex.loomkit:loom-weave`）——全部循环语义（标记协议 / 梭回合机 /
+权限门 / 子线程群 / 织造包 / digest 压缩 / 引擎测试矩阵）在库仓演进：
+
+- **库仓**：纯 Kotlin JVM（依赖仅 coroutines + serialization-json），自有
+  协议类型（`WeaveMessage` / `WeaveEvent` 22 型 / `WeaveToolStream` 等
+  ——零宿主依赖的可执行证明）；自带 CI（build-test + consumer-check）+
+  词汇护栏（上游项目词汇零容忍扫描）+ notify-host 通知链；
+- **宿主**：`core/code-engine` 仅保留 `loom/LoomKitAdapter.kt`（端口-适配
+  器——双向映射 AgentEvent↔WeaveEvent / LlmMessage↔WeaveMessage /
+  ToolDefinition↔WeaveToolDefinition / 档位八折六折叠 + 宿主域知识段
+  渲染：工作区上下文 / 全局与项目规则）；
+- **接入**：composite build（settings.gradle.kts 条件 includeBuild 兄弟/
+  嵌套目录，按坐标自动替换为本地构建）+ `gradle/loom-kit.lock` 钉版
+  （ci / apk / release 三流水线 pinned checkout）+ `sync-loom-kit`
+  工作流自动跟绿 bump（notify-host 事件路 + 30 分钟 cron 兜底）；
+- **执行器纪律（#230 同款）**：库内权限门 → 注入
   `@Named("loomEngineTools")` **仅环境门**执行器（限流/熔断/策略/追踪/
-  钩子/脱敏保留，权限确认归引擎层独占——防双弹窗）；
-- 工具面：宿主注册表 + 引擎本地 8 工具（子线程 5 + 织造包 3）；
+  钩子/脱敏保留，权限确认归库内权限门独占——防双弹窗）。
+
+### 宿主门面
+
+- `LoomKitAdapter : AgentEngine, CodeEngineFacade`——17 方法全直通
+  （execute ×2 / abort / submitUserInput / cancelUserInput + 16 facade）；
+- DI（`CodeModule`）：`@Named("codeLoom")` 记忆通道 + `LoomKitAdapter`
+  装配 + 三路 `DualLogicCodeEngine`；
+- 工具面：宿主注册表 + 库内本地 8 工具（子线程 5 + 织造包 3）；
   forcedTools 非空 = 只暴露选中；
-- 布样确认：`submitPlanConfirmation` 经 `LoomPlanGate`（布样事件走
+- 布样确认：`submitPlanConfirmation` 经库内 `LoomPlanGate`（布样事件走
   宿主 `PlanGenerated/Awaiting/Confirmed` 三连——计划卡 UI 零改动）。
 
 ## 十、测试矩阵
@@ -181,14 +203,16 @@ DualLogicCodeEngine（三路路由门面，volatile 单引用切换）
 | LoomEngineTest（5） | 门面组装 / 工具面 / forcedTools / 路由 |
 | DualLogicCodeEngineTest + StandardLogicModeTest | 三路路由 / 档位别名 |
 
-全部纯 JVM（JUnit4 + runTest + 手写 fake——无 mock 框架），随
-`:core:code-engine:test` 跑入 CI。
+全部纯 JVM（JUnit4 + runTest + 手写 fake——无 mock 框架）。引擎套件随
+**apex-loom-kit** 库仓 CI 跑（`:loom-weave:test`）；宿主侧保留
+`DualLogicCodeEngineTest` + `StandardLogicModeTest`（三路路由 / 档位别名，
+随 `:core:code-engine:test` 跑入 CI）。
 
 ## 十一、与另两线的分工表
 
 | 维度 | 深潜 | 标准 | 织造 |
 |---|---|---|---|
-| 循环宿主 | ApexAgentEngine | standard-loop 库 | LoomRoundRunner |
+| 循环宿主 | ApexAgentEngine | standard-loop 库 | loom-weave 库 |
 | 工具协议 | 原生函数调用 | 原生函数调用 | in-band XML（桥接翻译） |
 | 权限门 | 主执行器组合门 | 库内权限门 | 织造权限门 |
 | 子代理 | CodeTask | task 委派 | loom_thread_* 子线程群 |

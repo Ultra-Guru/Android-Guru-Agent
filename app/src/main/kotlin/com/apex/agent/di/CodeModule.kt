@@ -7,16 +7,16 @@ import com.apex.agent.core.code.CodeContextProvider
 import com.apex.agent.core.code.CodeConversationMemory
 import com.apex.agent.core.code.RulesProvider
 import com.apex.agent.core.code.StandardTextKernel
-import com.apex.agent.core.code.loom.LoomActivePackage
-import com.apex.agent.core.code.loom.LoomEngine
-import com.apex.agent.core.code.loom.loop.LoomModelInfo
-import com.apex.agent.core.code.loom.packager.LoomPackageCatalog
-import com.apex.agent.core.code.loom.packager.LoomPackageInfo
-import com.apex.agent.core.code.loom.permission.LoomAccessMode
-import com.apex.agent.core.code.loom.permission.LoomPermissionRule
-import com.apex.agent.core.code.loom.permission.LoomPermissionSnapshot
-import com.apex.agent.core.code.loom.permission.LoomPermissionSource
-import com.apex.agent.core.code.loom.permission.LoomRuleEffect
+import com.apex.agent.core.code.loom.LoomKitAdapter
+import com.apex.loomkit.weave.LoomActivePackage
+import com.apex.loomkit.weave.loop.LoomModelInfo
+import com.apex.loomkit.weave.packager.LoomPackageCatalog
+import com.apex.loomkit.weave.packager.LoomPackageInfo
+import com.apex.loomkit.weave.permission.LoomAccessMode
+import com.apex.loomkit.weave.permission.LoomPermissionRule
+import com.apex.loomkit.weave.permission.LoomPermissionSnapshot
+import com.apex.loomkit.weave.permission.LoomPermissionSource
+import com.apex.loomkit.weave.permission.LoomRuleEffect
 import com.apex.agent.core.code.standard.DualLogicCodeEngine
 import com.apex.agent.core.code.standard.StandardKitAdapter
 import com.apex.agent.core.tools.catalog.McpToolNaming
@@ -386,10 +386,11 @@ object CodeModule {
                 settingsRepository.agentSettings.value.subagent.sanitized()
             }
         )
-        // 织造线（第三线）：端口适配 + 自有循环（LoomRoundRunner 梭回合机 /
-        // 权限三态门 / 子线程群 / 织造包）。设置层权限模式 → 织造模态映射：
-        // BYPASS → UNBOUND（无界）、DEFAULT/ACCEPT_EDITS → FABRIC（布面内
-        // 自由织）、PLAN → OBSERVE（只读巡视）。
+        // 织造线（第三线，独立库 com.apex.loomkit:loom-weave）：端口适配 +
+        // 库内自有循环（梭回合机 / 权限三态门 / 子线程群 / 织造包——全部在
+        // apex-loom-kit 库演进，宿主仅保留薄适配层）。设置层权限模式 →
+        // 织造模态映射：BYPASS → UNBOUND（无界）、DEFAULT/ACCEPT_EDITS →
+        // FABRIC（布面内自由织）、PLAN → OBSERVE（只读巡视）。
         val loomPermissionSource = LoomPermissionSource {
             val settings = settingsRepository.agentSettings.value
             LoomPermissionSnapshot(
@@ -428,7 +429,7 @@ object CodeModule {
                 )
             }
         }
-        val loom = LoomEngine(
+        val loom = LoomKitAdapter(
             runtime = modelRuntime,
             toolRegistry = toolRegistry,
             // #230 同款：织造线引擎级权限门 + 仅环境门执行器（防双弹窗）
