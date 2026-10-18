@@ -250,26 +250,6 @@ class CodeWorkspaceManager(
         updateIndex { it.copy(workspaces = listOf(ws) + it.workspaces) }
     }
 
-    /** 首启兜底：default 工作区（与 Agent 文件沙箱同源目录）。 */
-    private fun ensureDefault(): CodeWorkspace {
-        val dir = File(workspacesBaseDir, DEFAULT_ID)
-        dir.mkdirs()
-        val detected = detectEnvironment(dir)
-        val ws = CodeWorkspace(
-            workspaceId = DEFAULT_ID,
-            name = "Default",
-            hostRootPath = dir.canonicalPath,
-            createdAt = System.currentTimeMillis(),
-            lastUsedAt = System.currentTimeMillis(),
-            detectedEnvironment = detected.summary,
-            detectedLanguages = detected.languages,
-            buildSystem = detected.buildSystem
-        )
-        updateIndex { Index(workspaces = listOf(ws), activeId = DEFAULT_ID) }
-        activeRootRef.set(dir)
-        return ws
-    }
-
     private fun updateIndex(transform: (Index) -> Index) {
         val next = transform(_state.value.toPrivate())
         _state.value = next.toPublic()
@@ -374,7 +354,6 @@ class CodeWorkspaceManager(
 
     companion object {
         private const val TAG = "CodeWorkspaceManager"
-        const val DEFAULT_ID = "default"
 
         /** 整个系统工作区 id（根 = /；默认工作区，UI 与删除守卫消费）。 */
         const val SYSTEM_ID = "system"

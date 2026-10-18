@@ -994,10 +994,12 @@ class CodeViewModel @Inject constructor(
             showError(languageManager.getString(R.string.code_ws_delete_blocked_running))
             return
         }
-        if (workspaceId == "default") {
+        if (workspaceId == "default" || workspaceId == CodeWorkspaceManager.SYSTEM_ID) {
             showError(languageManager.getString(R.string.code_ws_delete_default))
             return
         }
+        // system 兜底：manager 侧恒拒（根 = / 绝不可删）；VM 侧前置拦截
+        // 只为统一错误条文案 —— 双层守卫，安全冗余。
         workspaceManager.delete(workspaceId)
         // 会话快照随工作区一并清理（引擎记忆目录由 manager 负责清理或不影响正确性）
         viewModelScope.launch {
