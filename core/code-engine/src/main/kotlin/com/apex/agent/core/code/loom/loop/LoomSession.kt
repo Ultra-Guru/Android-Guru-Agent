@@ -6,6 +6,7 @@ import com.apex.agent.core.code.loom.LoomEngineConfig
 import com.apex.agent.core.code.loom.LoomInvocation
 import com.apex.agent.core.code.loom.LoomPrompts
 import com.apex.agent.core.code.loom.markup.LoomMarkupGrammar
+import com.apex.agent.core.code.thinking.CodeThinkingLevel
 import com.apex.agent.core.engine.AgentMode
 import com.apex.agent.core.engine.UserInput
 import com.apex.agent.core.llm.LlmMessage
@@ -68,6 +69,9 @@ class LoomSession(
     private val extrasRef = AtomicReference<String?>(null)
     private val packagesRef = AtomicReference<List<LoomActivePackage>>(emptyList())
     private val modeRef = AtomicReference(AgentMode.BUILD)
+    private val thinkingLevelRef = AtomicReference(CodeThinkingLevel.STANDARD)
+    private val thinkingDirectiveRef = AtomicReference("")
+    private val planSettledRef = AtomicReference(false)
 
     // ═══════════════════════════ 生命周期 ═══════════════════════════
 
@@ -123,6 +127,24 @@ class LoomSession(
 
     fun updateMode(mode: AgentMode) {
         modeRef.set(mode)
+    }
+
+    /** 思考档位（UI 同步——回合机消费）。 */
+    fun updateThinkingLevel(level: CodeThinkingLevel) {
+        thinkingLevelRef.set(level)
+    }
+
+    /** 当前思考档位。 */
+    fun thinkingLevel(): CodeThinkingLevel = thinkingLevelRef.get()
+
+    /** 思考档位努力取向文案（回合机每回合刷新——含模型家族偏好）。 */
+    fun updateThinkingDirective(directive: String) {
+        thinkingDirectiveRef.set(directive)
+    }
+
+    /** 布样已确认（PLAN 模式提示词切换到「按步执行」口径）。 */
+    fun updatePlanSettled(settled: Boolean) {
+        planSettledRef.set(settled)
     }
 
     fun updateActivePackages(packages: List<LoomActivePackage>) {
@@ -247,10 +269,18 @@ class LoomSession(
             LoomPrompts.personaSection(roleDefinitionRef.get(), rolePromptRef.get())
         )
         sections.add(LoomPrompts.protocolSection(config.nativeToolCalling))
-        sections.add(LoomPrompts.deliberationSection())
+        sections.add(
+            listOf(
+                LoomPrompts.deliberationSection(),
+                thinkingDirectiveRef.get()
+            ).filter { it.isNotBlank() }.joinToString("\n")
+        )
         sections.add(LoomPrompts.toolCatalogSection(toolDefs))
         if (modeRef.get() == AgentMode.PLAN) {
-            sections.add(LoomPrompts.planProtocolSection())
+            sections.add(
+                if (planSettledRef.get()) LoomPrompts.planSettledSection()
+                else LoomPrompts.planProtocolSection()
+            )
         }
         sections.add(LoomPrompts.packagesSection(packagesRef.get()))
         sections.add(LoomPrompts.extrasSection(extrasRef.get()))
