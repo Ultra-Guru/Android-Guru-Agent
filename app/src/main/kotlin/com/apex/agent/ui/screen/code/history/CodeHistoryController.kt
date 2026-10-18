@@ -1,11 +1,12 @@
 package com.apex.agent.ui.screen.code.history
 
 import com.apex.agent.R
+import com.apex.agent.core.code.stream.CodeStreamSnapshot
 import com.apex.agent.ui.screen.code.CodeViewModel
-import com.apex.agent.ui.screen.code.CodeStreamSnapshot
 import com.apex.agent.ui.screen.code.session.CodeSessionSnapshot
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.update
