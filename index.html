@@ -39,7 +39,7 @@
   "url": "https://ultra-guru.github.io/Android-Guru-Agent/",
   "downloadUrl": "https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases/latest",
   "codeRepository": "https://github.com/Ultra-Guru/Android-Guru-Agent",
-  "softwareVersion": "1.4.4",
+  "softwareVersion": "1.4.9.34",
   "programmingLanguage": "Kotlin",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
 }
@@ -1297,6 +1297,56 @@ footer {
 .rv { opacity: 0; transform: translateY(16px); transition: opacity 0.55s ease, transform 0.55s ease; }
 .rv.rv-in { opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) { .rv { opacity: 1; transform: none; transition: none; } }
+
+/* ═══ Guru API：版本元信息 + 留言墙 ═══ */
+.install-meta { font-size: 15px; color: var(--ink-soft); margin: -12px 0 26px; line-height: 1.9; }
+.install-meta .dl-meta-sub { display: block; font-size: 13px; color: var(--ink-faint); }
+.install-meta .mono { font-family: var(--font-mono); font-size: 13px; background: var(--paper-deep); padding: 1px 7px; border-radius: 6px; }
+.install-meta .num { font-family: var(--font-mono); color: var(--pine); font-weight: 500; }
+.wall-panel {
+  background: #FFFFFF;
+  border: 1px solid rgba(23, 27, 22, 0.16);
+  border-radius: var(--radius-win);
+  padding: 56px 56px 52px;
+  box-shadow: 0 14px 30px -18px rgba(23, 27, 22, 0.25);
+}
+@media (max-width: 640px) { .wall-panel { padding: 36px 26px; } }
+.wall-panel h2 { font-family: var(--font-display); font-size: clamp(28px, 4.2vw, 40px); font-weight: 550; letter-spacing: -0.01em; margin-bottom: 10px; }
+.wall-panel .note { color: var(--ink-soft); margin-bottom: 32px; max-width: 36em; }
+.fb-form { border: 1px solid rgba(22, 107, 69, 0.28); background: var(--paper); border-radius: var(--radius-btn); padding: 22px; }
+.fb-hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+.fb-row { display: flex; gap: 14px; flex-wrap: wrap; }
+.fb-row .fb-field { flex: 1 1 180px; }
+.fb-field { display: block; margin-bottom: 14px; }
+.fb-label { display: block; font-size: 13px; color: var(--ink-faint); margin-bottom: 6px; letter-spacing: 0.02em; }
+.fb-field input, .fb-field textarea {
+  width: 100%; font: inherit; font-size: 15px; color: var(--ink);
+  background: #FFFFFF; border: 1px solid rgba(23, 27, 22, 0.22);
+  border-radius: 8px; padding: 10px 12px; outline: none;
+  transition: border-color .18s, box-shadow .18s;
+}
+.fb-field textarea { resize: vertical; min-height: 96px; }
+.fb-field input:focus, .fb-field textarea:focus { border-color: var(--pine); box-shadow: 0 0 0 3px rgba(22, 107, 69, 0.14); }
+.fb-actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.fb-stars { display: flex; gap: 2px; align-items: center; flex-wrap: wrap; }
+.fb-star { appearance: none; border: 0; background: none; font-size: 22px; line-height: 1; color: rgba(23, 27, 22, 0.22); cursor: pointer; padding: 6px 4px; transition: color .15s, transform .15s; }
+.fb-star:hover { transform: translateY(-1px) scale(1.08); }
+.fb-star[aria-pressed="true"] { color: #DFA53F; }
+.fb-status { font-size: 13px; color: var(--ink-faint); margin: 10px 0 0; min-height: 1.2em; }
+.fb-status.ok { color: var(--pine); }
+.fb-status.err { color: #B3543D; }
+.fb-list { margin-top: 34px; }
+.fb-list-title { font-family: var(--font-mono); font-size: 13px; color: var(--ink-faint); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 16px; }
+.fb-item { border-top: 1px solid rgba(23, 27, 22, 0.12); padding: 20px 0 18px; }
+.fb-item-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.fb-item-name { font-weight: 600; font-size: 15px; color: var(--ink); }
+.fb-item-stars { font-size: 13px; color: #DFA53F; letter-spacing: 2px; }
+.fb-item-date { font-family: var(--font-mono); font-size: 12px; color: var(--ink-faint); margin-left: auto; }
+.fb-item-msg { font-size: 15.5px; color: var(--ink-soft); line-height: 1.8; white-space: pre-wrap; word-break: break-word; margin: 0; }
+.fb-item-reply { margin-top: 12px; border-left: 3px solid var(--pine); background: var(--paper); padding: 10px 14px; border-radius: 0 8px 8px 0; font-size: 14px; color: var(--ink-soft); }
+.fb-item-reply b { color: var(--pine); font-weight: 600; }
+.fb-empty { color: var(--ink-faint); font-size: 15px; padding: 12px 0; }
+.fb-more { margin-top: 14px; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -1313,7 +1363,7 @@ footer {
       <a href="https://github.com/Ultra-Guru/Android-Guru-Agent/wiki" target="_blank" rel="noopener">Wiki</a>
       <a class="nav-src" href="https://github.com/Ultra-Guru/Android-Guru-Agent" target="_blank" rel="noopener">源码</a>
       <a href="https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases/latest" target="_blank" rel="noopener">发布</a>
-      <a class="nav-cta" href="https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases/latest" target="_blank" rel="noopener">下载 APK</a>
+      <a class="nav-cta" href="https://47.253.106.59.sslip.io/api/v1/download?abi=arm64&amp;src=nav" target="_blank" rel="noopener">下载 APK</a>
     </nav>
   </div>
 </header>
@@ -1336,7 +1386,7 @@ footer {
           <button class="px-open-link" type="button">点开 PRETEXT</button>。
         </p>
         <div class="cta-row">
-          <a class="btn btn-primary" href="https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases/latest" target="_blank" rel="noopener">下载 APK</a>
+          <a class="btn btn-primary" href="https://47.253.106.59.sslip.io/api/v1/download?abi=arm64&amp;src=hero" target="_blank" rel="noopener">下载 APK</a>
           <a class="btn btn-secondary" href="https://github.com/Ultra-Guru/Android-Guru-Agent" target="_blank" rel="noopener">查看源码</a>
         </div>
       </div>
@@ -1774,9 +1824,14 @@ footer {
         <img src="https://img.shields.io/github/languages/top/Ultra-Guru/Android-Guru-Agent?style=flat-square&color=7F52FF" alt="Top Language" loading="lazy">
       </div>
       <div class="install-actions">
-        <a class="btn btn-primary" href="https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases/latest" target="_blank" rel="noopener">下载 APK（发布仓库）</a>
+        <a class="btn btn-primary" href="https://47.253.106.59.sslip.io/api/v1/download?abi=arm64&amp;src=install" target="_blank" rel="noopener">下载 APK · arm64-v8a</a>
+        <a class="btn btn-secondary" href="https://47.253.106.59.sslip.io/api/v1/download?abi=universal&amp;src=install" target="_blank" rel="noopener">通用包 · universal</a>
         <a class="btn btn-secondary" href="https://github.com/Ultra-Guru/Android-Guru-Agent" target="_blank" rel="noopener">GitHub 源码</a>
       </div>
+      <p class="install-meta" id="dlMeta">
+        <span id="dlMetaInner">正在获取最新版本…</span>
+        <span class="dl-meta-sub">下载计数与版本信息由 Guru API 提供 · <a href="https://47.253.106.59.sslip.io/api/v1/download?abi=arm64&amp;src=install&amp;mirror=1" target="_blank" rel="noopener">国内镜像直连（服务器缓存加速）</a></span>
+      </p>
       <p class="install-links">
         <a href="https://github.com/Ultra-Guru/Android-Guru-Agent/wiki" target="_blank" rel="noopener">官方 Wiki（58 页）</a> ·
         <a href="https://github.com/Ultra-Guru/Android-Guru-Agent/wiki/Quick-Start" target="_blank" rel="noopener">五分钟上手</a> ·
@@ -1787,12 +1842,53 @@ footer {
     </div>
   </section>
 
+
+  <!-- ═══ 留言墙（Guru API 驱动，自建后端）═══ -->
+  <section class="section wrap" id="wall" aria-labelledby="wall-title">
+    <div class="wall-panel">
+      <h2 id="wall-title">留言墙。</h2>
+      <p class="note">留言落在项目自建的 Guru API 后端上 —— 无需 GitHub 账号，说两句就走。管理员会在后台回复。</p>
+      <form class="fb-form" id="fbForm" novalidate>
+        <input class="fb-hp" type="text" id="fbWebsite" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <div class="fb-row">
+          <label class="fb-field">
+            <span class="fb-label">昵称（可选）</span>
+            <input type="text" id="fbName" maxlength="40" placeholder="匿名" autocomplete="name">
+          </label>
+          <label class="fb-field">
+            <span class="fb-label">联系方式（可选 · 仅管理员可见）</span>
+            <input type="text" id="fbContact" maxlength="120" placeholder="email / Telegram / QQ" autocomplete="off">
+          </label>
+        </div>
+        <label class="fb-field">
+          <span class="fb-label" style="display:flex;justify-content:space-between"><span>留言内容</span><span id="fbCount">0 / 1000</span></span>
+          <textarea id="fbMessage" rows="4" maxlength="1000" placeholder="用法、bug、愿望单……想说什么就写什么（2–1000 字）"></textarea>
+        </label>
+        <div class="fb-actions">
+          <div class="fb-stars" id="fbStars" role="radiogroup" aria-label="评分（可选）">
+            <button type="button" class="fb-star" data-v="1" aria-pressed="false" aria-label="1 星">★</button>
+            <button type="button" class="fb-star" data-v="2" aria-pressed="false" aria-label="2 星">★</button>
+            <button type="button" class="fb-star" data-v="3" aria-pressed="false" aria-label="3 星">★</button>
+            <button type="button" class="fb-star" data-v="4" aria-pressed="false" aria-label="4 星">★</button>
+            <button type="button" class="fb-star" data-v="5" aria-pressed="false" aria-label="5 星">★</button>
+            <span class="fb-label" style="margin-left:8px">评分（可选）</span>
+          </div>
+          <button type="submit" class="btn btn-primary" id="fbSubmit">提交留言</button>
+        </div>
+        <p class="fb-status" id="fbStatus" role="status" aria-live="polite"></p>
+      </form>
+      <div class="fb-list" id="fbList" aria-live="polite">
+        <p class="fb-empty" id="fbLoading">正在加载留言…</p>
+      </div>
+    </div>
+  </section>
+
 </main>
 
 <footer>
   <div class="wrap foot-grid">
     <p class="foot-meta">
-      Android Guru Agent · v1.4.4 · active alpha，持续开发中<br>
+      Android Guru Agent · <span id="footVer">v1.4.9.34</span> · active alpha，持续开发中<br>
       一台手机，无需服务器，模型与数据都归你。
     </p>
     <nav class="foot-links" aria-label="页脚链接">
@@ -1976,7 +2072,7 @@ footer {
   }
 
   /* ── 内容池 ── */
-  var DL = "https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases/latest";
+  var DL = "https://47.253.106.59.sslip.io/api/v1/download?abi=arm64&src=pretext";
   var WIKI = "https://github.com/Ultra-Guru/Android-Guru-Agent/wiki";
   var REPO = "https://github.com/Ultra-Guru/Android-Guru-Agent";
   var FACTS = [
@@ -2067,7 +2163,7 @@ footer {
     print("", [
       "     .--.         guru@pocket",
       "    |o_o |        ─────────────────",
-      "    |:_/ |        OS      Android Guru Agent v1.4.4",
+      "    |:_/ |        OS      Android Guru Agent v" + (window.GURU_VER || "1.4.9.34") + "",
       "   //   \\ \\       Host    你的浏览器（就是现在这个）",
       "  (|     | )      Kernel  纯前端 · 零依赖 · 无构建",
       " /'\\_   _/`\\      Shell   pretext 1.1",
@@ -3651,6 +3747,185 @@ footer {
       navigator.serviceWorker.register("sw.js").catch(function () { /* 静默 */ });
     });
   }
+})();
+</script>
+
+<!-- ═══ Guru API：动态版本号 + 留言墙 ═══ -->
+<script>
+"use strict";
+(function () {
+  var API = "https://47.253.106.59.sslip.io";
+  var fbState = { rating: 0, offset: 0, total: -1 };
+
+  function fmtSize(bytes) {
+    if (!bytes || bytes <= 0) return "?";
+    var mb = bytes / 1048576;
+    if (mb >= 1024) return (mb / 1024).toFixed(1) + " GB";
+    return mb >= 10 ? mb.toFixed(0) + " MB" : mb.toFixed(1) + " MB";
+  }
+  function fmtNum(n) { return (n || 0).toLocaleString("zh-CN"); }
+  function timeAgo(iso) {
+    try {
+      var d = Date.now() - Date.parse(iso);
+      if (d < 0) d = 0;
+      var h = Math.floor(d / 3600000);
+      if (h < 1) return "刚刚";
+      if (h < 24) return h + " 小时前";
+      var days = Math.floor(h / 24);
+      if (days < 30) return days + " 天前";
+      return Math.floor(days / 30) + " 个月前";
+    } catch (e) { return ""; }
+  }
+
+  /* ── 动态版本信息 ── */
+  fetch(API + "/api/v1/version").then(function (r) { return r.ok ? r.json() : Promise.reject(); }).then(function (v) {
+    window.GURU_VER = v.versionName;
+    var fv = document.getElementById("footVer");
+    if (fv) fv.textContent = "v" + v.versionName;
+    try {
+      var ld = document.querySelector('script[type="application/ld+json"]');
+      if (ld) { var d = JSON.parse(ld.textContent); d.softwareVersion = v.versionName; ld.textContent = JSON.stringify(d); }
+    } catch (e) { /* JSON-LD 更新失败不影响页面 */ }
+    var meta = document.getElementById("dlMetaInner");
+    if (meta) {
+      var a = v.download && v.download.arm64, u = v.download && v.download.universal;
+      var dl = v.stats && v.stats.downloads;
+      var parts = ['最新 <span class="mono">' + v.versionName + "</span>"];
+      if (v.publishedAt) parts.push("发布于 " + timeAgo(v.publishedAt));
+      if (a && a.sizeBytes) parts.push("arm64 " + fmtSize(a.sizeBytes));
+      if (u && u.sizeBytes) parts.push("universal " + fmtSize(u.sizeBytes));
+      if (dl && dl.total > 0) parts.push('累计下载 <span class="num">' + fmtNum(dl.total) + "</span> 次");
+      meta.innerHTML = parts.join(" · ");
+    }
+  }).catch(function () {
+    var meta = document.getElementById("dlMetaInner");
+    if (meta) meta.textContent = "版本信息暂不可达 —— 点按钮直接去 GitHub 发布页下载。";
+  });
+
+  /* ── 留言墙 ── */
+  var list = document.getElementById("fbList");
+  var msgEl = document.getElementById("fbMessage");
+  var countEl = document.getElementById("fbCount");
+  var statusEl = document.getElementById("fbStatus");
+  var submitBtn = document.getElementById("fbSubmit");
+
+  function setStatus(cls, text) { statusEl.className = "fb-status " + cls; statusEl.textContent = text; }
+  function clearList() { while (list.firstChild) list.removeChild(list.firstChild); }
+
+  function renderItem(it) {
+    var item = document.createElement("div"); item.className = "fb-item";
+    var head = document.createElement("div"); head.className = "fb-item-head";
+    var name = document.createElement("span"); name.className = "fb-item-name";
+    name.textContent = it.name || "匿名";
+    head.appendChild(name);
+    if (it.rating) {
+      var st = document.createElement("span"); st.className = "fb-item-stars";
+      st.textContent = new Array(it.rating + 1).join("★");
+      head.appendChild(st);
+    }
+    var date = document.createElement("span"); date.className = "fb-item-date";
+    date.textContent = new Date(it.createdAt).toLocaleString("zh-CN", { hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    head.appendChild(date);
+    item.appendChild(head);
+    var msg = document.createElement("p"); msg.className = "fb-item-msg";
+    msg.textContent = it.message;
+    item.appendChild(msg);
+    if (it.adminReply) {
+      var reply = document.createElement("div"); reply.className = "fb-item-reply";
+      var b = document.createElement("b"); b.textContent = "官方回复：";
+      reply.appendChild(b);
+      reply.appendChild(document.createTextNode(it.adminReply));
+      item.appendChild(reply);
+    }
+    return item;
+  }
+
+  function appendMoreBtn() {
+    var old = list.querySelector(".fb-more"); if (old) old.remove();
+    if (fbState.total > fbState.offset) {
+      var a = document.createElement("button");
+      a.type = "button"; a.className = "btn btn-secondary fb-more";
+      a.textContent = "加载更早的留言（还有 " + (fbState.total - fbState.offset) + " 条）";
+      a.addEventListener("click", function () { a.remove(); loadFb(); });
+      list.appendChild(a);
+    }
+  }
+
+  function loadFb() {
+    fetch(API + "/api/v1/feedback?limit=10&offset=" + fbState.offset)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+      .then(function (d) {
+        fbState.total = d.total;
+        if (fbState.offset === 0) clearList();
+        if (!d.items.length && fbState.offset === 0) {
+          var p = document.createElement("p"); p.className = "fb-empty";
+          p.textContent = "还没有留言 —— 抢个沙发？";
+          list.appendChild(p);
+        } else {
+          d.items.forEach(function (it) { list.appendChild(renderItem(it)); });
+        }
+        fbState.offset += d.items.length;
+        appendMoreBtn();
+      })
+      .catch(function () {
+        var l = document.getElementById("fbLoading");
+        if (l) l.textContent = "留言服务暂时不可达 —— 稍后刷新重试。";
+      });
+  }
+
+  msgEl.addEventListener("input", function () { countEl.textContent = msgEl.value.length + " / 1000"; });
+
+  Array.prototype.forEach.call(document.querySelectorAll(".fb-star"), function (b) {
+    b.addEventListener("click", function () {
+      var v = parseInt(b.getAttribute("data-v"), 10);
+      fbState.rating = (fbState.rating === v) ? 0 : v;
+      Array.prototype.forEach.call(document.querySelectorAll(".fb-star"), function (s) {
+        var on = parseInt(s.getAttribute("data-v"), 10) <= fbState.rating;
+        s.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+    });
+  });
+
+  document.getElementById("fbForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var msg = msgEl.value.trim();
+    if (msg.length < 2) { setStatus("err", "留言内容至少 2 个字。"); return; }
+    var payload = { message: msg, website: "" };
+    var nameV = document.getElementById("fbName").value.trim();
+    if (nameV) payload.name = nameV;
+    var contactV = document.getElementById("fbContact").value.trim();
+    if (contactV) payload.contact = contactV;
+    if (fbState.rating) payload.rating = fbState.rating;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "提交中…";
+    setStatus("", "");
+    fetch(API + "/api/v1/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    }).then(function (r) {
+      return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+    }).then(function (res) {
+      if (res.ok && res.j.ok) {
+        document.getElementById("fbForm").reset();
+        fbState.rating = 0;
+        Array.prototype.forEach.call(document.querySelectorAll(".fb-star"), function (s) { s.setAttribute("aria-pressed", "false"); });
+        countEl.textContent = "0 / 1000";
+        setStatus("ok", "已收到！留言显示在下方列表。");
+        fbState.offset = 0;
+        loadFb();
+      } else {
+        setStatus("err", (res.j && res.j.error) || "提交失败，稍后再试。");
+      }
+    }).catch(function () {
+      setStatus("err", "网络问题 —— 检查网络后重试。");
+    }).then(function () {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "提交留言";
+    });
+  });
+
+  loadFb();
 })();
 </script>
 </body>
