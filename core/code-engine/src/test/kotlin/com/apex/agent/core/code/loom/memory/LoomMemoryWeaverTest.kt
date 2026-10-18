@@ -131,7 +131,7 @@ class LoomMemoryWeaverTest {
             }
         )
         val w = weaver(client, config)
-        val priorDigest = LoomMessage.User(
+        val priorDigest = LlmMessage.User(
             "<loom-digest rounds=\"3\">旧摘要正文</loom-digest>"
         )
         val history = listOf(priorDigest) + history(turns = 8, charsPerTurn = 2_000)
@@ -168,7 +168,7 @@ class LoomMemoryWeaverTest {
         val client = ScriptedClient(mutableListOf())
         val w = weaver(client, config)
         val head = listOf(
-            LoomMessage.User("x".repeat(5_000)),
+            LlmMessage.User("x".repeat(5_000)),
             LlmMessage.Assistant("y".repeat(5_000))
         )
         val source = w.renderForDigest(head)

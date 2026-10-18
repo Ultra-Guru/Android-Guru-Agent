@@ -50,7 +50,7 @@ class LoomSession(
 ) {
 
     /** 会话历史（不含系统轮）。 */
-    private val turns = mutableListOf<LoomMessage>()
+    private val turns = mutableListOf<LlmMessage>()
 
     /** 工作区状态快照。 */
     private data class WorkspaceState(

@@ -103,7 +103,7 @@ class LoomNativeBridgeTest {
     fun `parallel tool calls keyed by index stay separate`() {
         val b = LoomNativeBridge()
         b.feed(
-            LoomStreamChunk(
+            LlmStreamChunk(
                 toolCalls = listOf(
                     ToolCall(id = "a", name = "T1", arguments = "{\"x\":\"1\"}", index = 0),
                     ToolCall(id = "b", name = "T2", arguments = "{\"y\":\"2\"}", index = 1)
@@ -148,7 +148,7 @@ class LoomNativeBridgeTest {
     fun `nameless call delta is dropped`() {
         val b = LoomNativeBridge()
         b.feed(
-            LoomStreamChunk(
+            LlmStreamChunk(
                 toolCalls = listOf(ToolCall(id = "a", name = "", arguments = "{}", index = 0))
             )
         )
@@ -189,7 +189,7 @@ class LoomNativeBridgeTest {
     fun `reset clears assembly state`() {
         val b = LoomNativeBridge()
         b.feed(
-            LoomStreamChunk(
+            LlmStreamChunk(
                 toolCalls = listOf(ToolCall(id = "a", name = "T", arguments = "{}", index = 0))
             )
         )
