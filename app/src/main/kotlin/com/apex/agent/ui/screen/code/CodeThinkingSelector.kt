@@ -415,7 +415,7 @@ private fun DepthMeter(
         else MaterialTheme.colorScheme.onSurfaceVariant
         val dimColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f)
         repeat(tierCount) { i ->
-            val height = 5.dp + (i * 1.6.dp)
+            val height = 5.dp + 1.6.dp * i
             Box(
                 modifier = Modifier
                     .width(2.5.dp)
