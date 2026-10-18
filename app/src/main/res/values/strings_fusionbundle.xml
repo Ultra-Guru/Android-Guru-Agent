@@ -4,9 +4,15 @@
      Language switching: LanguageManager + MainActivity attachBaseContext/recreate. -->
 <resources>
 
-    <!-- ═══ Input-bar entry button ═══ -->
-    <string name="fusion_cd_bundle">FusionBundle packs: skills + MCP servers + tools in one switch</string>
-    <string name="fusion_cd_bundle_active">FusionBundle active — tap to manage or switch off</string>
+    <!-- ═══ Input-bar crown entry button ═══ -->
+    <string name="fusion_cd_bundle">FUSION crown: tap to pick a tool aggregation pack (skills + MCP + tools)</string>
+    <string name="fusion_cd_bundle_active">FUSION pack in use — tap the crown to switch or deactivate</string>
+
+    <!-- ═══ Hierarchical crown menu ═══ -->
+    <string name="fusion_menu_system_name">FUSION</string>
+    <string name="fusion_menu_system_tagline">Tool Aggregation System · skills + MCP + tools</string>
+    <string name="fusion_menu_active_badge">In use</string>
+    <string name="fusion_menu_forced_footnote">Tap a pack to pin it into the input box — the agent must use that system to finish your task.</string>
 
     <!-- ═══ Picker sheet ═══ -->
     <string name="fusion_picker_title">FusionBundle Packs</string>

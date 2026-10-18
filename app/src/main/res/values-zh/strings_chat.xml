@@ -51,8 +51,10 @@
     <string name="chat_pipeline_calling_connector">正在调用连接器</string>
     <string name="chat_pipeline_calling_plugin">正在调用插件</string>
     <string name="chat_pipeline_running_skill">正在执行 Skill</string>
+    <string name="chat_pipeline_running_fusion">FUSION 体系强制使用中</string>
     <string name="chat_pipeline_connector_done">连接器执行完成</string>
     <string name="chat_pipeline_plugin_done">插件执行完成</string>
+    <string name="chat_pipeline_fusion_done">FUSION 体系执行完成</string>
     <string name="chat_pipeline_skill_done">Skill 执行完成</string>
     <string name="chat_cd_done">已完成</string>
     <string name="chat_confirm_plan_title">确认执行此计划？</string>
@@ -124,6 +126,7 @@
     <string name="chat_toolkind_browser">浏览器</string>
     <string name="chat_toolkind_connector">连接器</string>
     <string name="chat_toolkind_plugin">插件</string>
+    <string name="chat_toolkind_fusion">FUSION</string>
     <!-- 浏览器截图渲染（BrowserToolCards.kt） -->
     <string name="chat_browser_screenshot_label">截图预览</string>
     <string name="chat_browser_screenshot_size">%1$d × %2$d px</string>

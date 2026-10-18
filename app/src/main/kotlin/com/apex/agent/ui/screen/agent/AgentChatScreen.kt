@@ -76,6 +76,7 @@ import com.apex.agent.ui.component.AttachButton
 import com.apex.agent.ui.component.AttachmentPreviewBar
 import com.apex.agent.ui.component.FeedbackSeverity
 import com.apex.agent.ui.component.FileOpener
+import com.apex.agent.ui.component.FusionBundleActiveBanner
 import com.apex.agent.ui.component.FusionBundleButton
 import com.apex.agent.ui.component.HtmlPreviewDialog
 import com.apex.agent.ui.component.ImageLightbox
@@ -169,12 +170,12 @@ fun AgentChatScreen(
     // ═══ #197 模型 API 未配置浮窗（发送时拦截并提示去配置）═══
     var showApiMissingNotice by remember { mutableStateOf(false) }
 
-    // ═══ FusionBundle：聚变包入口（输入栏按钮 + 选择弹层 + 激活态横幅）═══
+    // ═══ FusionBundle：王冠入口（FUSION 工具聚合体系 —— 技能+MCP+工具聚合）═══
     // 控制器经 EntryPoint 取单例（模式同 rememberSlashMenuProvider —— 零
     // VM 侵入：激活编排/引擎人设注入/持久化重激活都在控制器内部）。
+    // 选中包 → chip 挂输入框 + agent 强制使用（详见 FusionBundleButton.kt）。
     val fusionController = rememberFusionBundleController()
     val fusionActive by fusionController.activeBundle.collectAsStateWithLifecycle()
-    var showFusionPicker by remember { mutableStateOf(false) }
 
     // ═══ 历史对话：会话列表 + 抽屉开关（顶栏「历史」按钮唤起）═══
     val chatSessions by viewModel.chatSessions.collectAsStateWithLifecycle()
@@ -750,10 +751,13 @@ fun AgentChatScreen(
                         }
                     )
 
-                    // ═══ 聚变包入口按钮（FusionBundle：技能+MCP+工具一键聚合）═══
+                    // ═══ 王冠：FUSION 工具聚合体系入口（层级菜单：FUSION → 具体包）═══
+                    // 选中的包以 chip 形式出现在输入框中；发送后 agent 强制
+                    // 使用该体系（激活侧强制使用协议 + /fusion:<id> 指令双保险）。
                     FusionBundleButton(
+                        controller = fusionController,
                         isActive = fusionActive != null,
-                        onOpenPicker = { showFusionPicker = true }
+                        onBundleChip = { chip -> viewModel.addPendingCommand(chip) }
                     )
 
                     // ═══ + 旋转附件按钮 ═══
@@ -958,17 +962,6 @@ fun AgentChatScreen(
             onStart = { config ->
                 viewModel.startLoop(config)
                 showLoopSetup = false
-            }
-        )
-    }
-
-    // ═══ FusionBundle 选择弹层（输入栏入口按钮唤起；激活结果走统一反馈层）═══
-    if (showFusionPicker) {
-        FusionBundlePickerSheet(
-            controller = fusionController,
-            onDismiss = { showFusionPicker = false },
-            onResult = { ok, message ->
-                feedbackController.show(message, if (ok) FeedbackSeverity.INFO else FeedbackSeverity.WARNING)
             }
         )
     }
