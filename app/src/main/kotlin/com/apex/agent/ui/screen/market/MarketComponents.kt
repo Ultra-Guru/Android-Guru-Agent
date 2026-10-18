@@ -269,6 +269,61 @@ internal fun MarketStatusChip(text: String, positive: Boolean) {
     }
 }
 
+// ═══ 内置等价渲染（MCP 市场诚实化 —— 真内置不卖安装）═══
+
+/**
+ * 目录条目命中 [com.apex.agent.core.tools.marketplace.NativeMcpEquivalents]
+ * 时的行内动作包：三个目录源（Hub / Registry / mcp.so）的行卡共用同一
+ * 渲染，动作由调用方闭包绑定（连接/断开都走 MarketViewModel 的真实管线）。
+ *
+ * @param builtinId 内置服务器 ID（= 已配置列表里的配置名，如 "thinking"）
+ * @param connected 该内置服务器当前是否已连接（运行中）
+ * @param onConnect 启动内置（connectMcp 的自动启用 + 真实握手管线）
+ * @param onDisconnect 停止内置
+ */
+internal data class BuiltinEquivalentUi(
+    val builtinId: String,
+    val connected: Boolean,
+    val onConnect: () -> Unit,
+    val onDisconnect: () -> Unit
+)
+
+/**
+ * 「已内置」行内渲染：运行中 → 状态徽标 + 停止；否则 → 已内置徽标 +
+ * 「启动内置」按钮（直达内置服务器的连接管线，永不渲染安装按钮 ——
+ * 真内置不卖安装，NativeMcpEquivalents KDoc 承诺的卡片级落地）。
+ */
+@Composable
+internal fun BuiltinEquivalentTrailing(
+    builtin: BuiltinEquivalentUi,
+    connecting: Boolean = false
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        if (builtin.connected) {
+            MarketStatusChip(
+                text = stringResource(R.string.market_status_running),
+                positive = true
+            )
+            TextButton(
+                enabled = !connecting,
+                onClick = builtin.onDisconnect
+            ) { Text(stringResource(R.string.market_mcp_stop)) }
+        } else {
+            MarketStatusChip(
+                text = stringResource(R.string.market_mcp_builtin_badge, builtin.builtinId),
+                positive = true
+            )
+            TextButton(
+                enabled = !connecting,
+                onClick = builtin.onConnect
+            ) { Text(stringResource(R.string.market_mcp_launch_builtin)) }
+        }
+    }
+}
+
 // ═══ 认知市场增强组件（cs-mem 能量 + 结晶徽章 + 熔断横幅）═══
 
 /**

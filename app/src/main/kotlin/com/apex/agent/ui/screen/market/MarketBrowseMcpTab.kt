@@ -27,6 +27,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
 import com.apex.agent.core.tools.marketplace.MarketNames
+import com.apex.agent.core.tools.marketplace.NativeMcpEquivalents
+import com.apex.agent.core.tools.marketplace.RegistryServer
 
 /**
  * ═══ 市场 · 发现视图 · MCP 子页签 ═══
@@ -66,6 +68,10 @@ internal fun BrowseMcpTab(state: MarketUiState, viewModel: MarketViewModel) {
     val hubMcps = hubState.mcps.filter { it.visibleToScope(tierScope) }
 
     LaunchedEffect(Unit) { viewModel.hub.loadMcpServers() }
+    // 沙箱环境体检：页签切入即探（纯文件系统检查，毫秒级）—— rootfs /
+    // nodejs 缺失时顶部渲染引导卡（rootfs 引导去终端页；nodejs 缺失可
+    // 一键 apt 安装），而不是等用户点安装后才吃到一句报错。
+    LaunchedEffect(Unit) { viewModel.hub.probeSandboxRuntime() }
 
     // mcp.so 社区目录（首屏自动加载；分页「加载更多」）
     val mcpSoState by viewModel.mcpSo.uiState.collectAsStateWithLifecycle()
@@ -87,6 +93,10 @@ internal fun BrowseMcpTab(state: MarketUiState, viewModel: MarketViewModel) {
     ) {
         item {
             MarketHeader(stringResource(R.string.market_mcp_header))
+        }
+        // ═══ 沙箱环境体检（rootfs / nodejs 缺失引导，就绪时不渲染）═══
+        if (hubState.runtimeStatus != null) {
+            item { SandboxRuntimeCard(hubState = hubState, viewModel = viewModel) }
         }
         // ═══ 官方 MCP 仓库（安装 → 配置 → 启动的市场闭环）═══
         item {
@@ -181,13 +191,33 @@ internal fun BrowseMcpTab(state: MarketUiState, viewModel: MarketViewModel) {
             item { MarketHint(stringResource(R.string.market_registry_loading)) }
         }
         items(registryState.servers, key = { it.key }) { entry ->
+            // 真内置不卖安装：NPM 形态条目查内置等价（远端形态本机真实
+            // 可用，不拦）——命中时卡片直接渲染「已内置」+「启动内置」。
+            val builtinEquivalent =
+                if (entry.installKind == RegistryServer.InstallKind.NPM) {
+                    NativeMcpEquivalents.builtinForRegistry(
+                        name = entry.name,
+                        displayName = entry.displayName,
+                        npmIdentifier = entry.npmPackage?.identifier
+                    )
+                } else {
+                    null
+                }?.let { builtinId ->
+                    BuiltinEquivalentUi(
+                        builtinId = builtinId,
+                        connected = state.mcps.any { it.name == builtinId && it.connected },
+                        onConnect = { viewModel.connectMcp(builtinId) },
+                        onDisconnect = { viewModel.disconnectMcp(builtinId) }
+                    )
+                }
             RegistryServerCard(
                 entry = entry,
                 // #346：已安装徽标用归一化比较键（大小写/分隔符变体折叠）
                 installed = state.mcps.any { MarketNames.isSameServer(it.name, entry.configName) },
                 installing = registryState.installingKey == entry.key,
                 installBusy = registryState.installingKey != null,
-                onInstall = { viewModel.registry.installServer(entry) }
+                onInstall = { viewModel.registry.installServer(entry) },
+                builtin = builtinEquivalent
             )
         }
         item {
@@ -243,13 +273,25 @@ internal fun BrowseMcpTab(state: MarketUiState, viewModel: MarketViewModel) {
             item { MarketHint(stringResource(R.string.market_mcpso_loading)) }
         }
         items(mcpSoState.servers, key = { it.key }) { entry ->
+            // 真内置不卖安装：目录名查内置等价（详情页配置未拉取前只能
+            // 按名查 —— fetch 后安装器还会按命令行二次拦截，双保险）。
+            val builtinEquivalent = NativeMcpEquivalents.builtinForName(entry.name)
+                ?.let { builtinId ->
+                    BuiltinEquivalentUi(
+                        builtinId = builtinId,
+                        connected = state.mcps.any { it.name == builtinId && it.connected },
+                        onConnect = { viewModel.connectMcp(builtinId) },
+                        onDisconnect = { viewModel.disconnectMcp(builtinId) }
+                    )
+                }
             McpSoCard(
                 entry = entry,
                 // #346：同上，归一化比较键（两侧都 normalize）
                 installed = state.mcps.any { MarketNames.isSameServer(it.name, entry.name) },
                 installing = mcpSoState.installingSlug == entry.slug,
                 installBusy = mcpSoState.installingSlug != null,
-                onInstall = { viewModel.mcpSo.installServer(entry) }
+                onInstall = { viewModel.mcpSo.installServer(entry) },
+                builtin = builtinEquivalent
             )
         }
         item {

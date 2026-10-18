@@ -23,13 +23,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
+import com.apex.agent.core.tools.mcp.McpConfigExport
 import com.apex.agent.core.tools.marketplace.HubSource
 import com.apex.agent.core.tools.marketplace.MarketNames
+import com.apex.agent.core.tools.marketplace.NativeMcpEquivalents
 import com.apex.agent.ui.component.GithubTokenDialog
 
 /**
@@ -150,10 +154,16 @@ private fun HubSkillCard(
 
 /**
  * 官方 MCP 仓库行卡（apex-mcp-hub 目录条目）：
+ * - **内置等价**（SequentialThinking → thinking 等）：卡片直接渲染
+ *   「已内置」徽标 + 「启动内置」/「停止」—— 真内置不卖安装
+ *   （NativeMcpEquivalents 的卡片级落地，安装拦截之外的第一道诚实门）；
  * - 未安装 → 「安装」（enabled=false 落盘，安装 ≠ 启动）；
  * - 已安装未运行 → 「启动」（真实连接管线，进度弹窗见 MarketScreen）；
  * - 运行中 → 「停止」；
- * - 沙箱条目带「需 Ubuntu」标签（rootfs 未装时启动会得到引导性报错）。
+ * - 沙箱条目带「需 Ubuntu」标签（rootfs 未装时启动会得到引导性报错）；
+ * - STDIO 条目提供「桌面配置」复制 —— 本机没有运行时（沙箱未装
+ *   nodejs）时，把官方 mcpServers JSON 带去电脑端用，而不是卡在
+ *   必败的启动上（McpConfigExport 的首个 UI 接线点）。
  */
 @Composable
 internal fun HubMcpCatalogCard(
@@ -166,6 +176,21 @@ internal fun HubMcpCatalogCard(
     // 其他源安装、大小写/分隔符变体也识别为已安装）
     val installedRow = state.mcps.firstOrNull { MarketNames.isSameServer(it.name, entry.name) }
     val installing = hubState.installingMcpName == entry.name
+    // 内置等价：仅 STDIO 条目查（npx 变体在本机是严格劣解）；远端同名
+    // 条目不拦 —— 远端形态本机真实可用，与内置互不遮挡。
+    val builtinEquivalent = if (entry.transport.equals("STDIO", ignoreCase = true)) {
+        NativeMcpEquivalents.builtinFor(entry.name, entry.command, entry.args)
+    } else {
+        null
+    }?.let { builtinId ->
+        BuiltinEquivalentUi(
+            builtinId = builtinId,
+            connected = state.mcps.any { it.name == builtinId && it.connected },
+            onConnect = { viewModel.connectMcp(builtinId) },
+            onDisconnect = { viewModel.disconnectMcp(builtinId) }
+        )
+    }
+    val clipboard = LocalClipboardManager.current
     Column {
         MarketCard(
             title = entry.name,
@@ -178,6 +203,12 @@ internal fun HubMcpCatalogCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     when {
+                        // 真内置不卖安装：优先于 installedRow（旧版可能装过
+                        // npx 变体，原生等价仍是更好的承载形态）
+                        builtinEquivalent != null -> BuiltinEquivalentTrailing(
+                            builtin = builtinEquivalent,
+                            connecting = state.mcpConnecting == builtinEquivalent.builtinId
+                        )
                         installedRow == null -> TextButton(
                             onClick = { viewModel.hub.installMcp(entry) },
                             enabled = hubState.installingMcpName == null
@@ -219,13 +250,125 @@ internal fun HubMcpCatalogCard(
                 }
             }
         )
-        if (entry.requiresRootfs) {
+        Row(
+            modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            if (builtinEquivalent != null) {
+                Text(
+                    text = stringResource(
+                        R.string.market_mcp_builtin_note, builtinEquivalent.builtinId
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+            } else if (entry.requiresRootfs) {
+                Text(
+                    text = stringResource(R.string.market_hub_mcp_requires_rootfs),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            // 桌面配置：把本条目装配成官方 mcpServers JSON 复制到剪贴板
+            //（Claude Desktop / Cursor / Cline 通用）—— 本机沙箱缺运行时
+            // 时的诚实出路，与安装失败文案的指引闭环。
+            if (builtinEquivalent == null && entry.transport.equals("STDIO", ignoreCase = true)) {
+                TextButton(
+                    onClick = {
+                        val config = MarketHubController.toServerConfig(entry)
+                        McpConfigExport.exportServer(config)?.let { json ->
+                            clipboard.setText(AnnotatedString(json))
+                            viewModel.message(
+                                viewModel.languageManager.getString(
+                                    R.string.market_mcp_desktop_config_copied, entry.name
+                                )
+                            )
+                        } ?: viewModel.message(
+                            viewModel.languageManager.getString(
+                                R.string.market_mcp_desktop_config_failed, entry.name
+                            )
+                        )
+                    }
+                ) {
+                    Text(
+                        text = stringResource(R.string.market_mcp_desktop_config),
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ═══ MCP · 沙箱环境体检卡（npx 启动 100% 失败的根治闭环）═══
+
+/**
+ * 沙箱环境体检引导卡（MCP 页签顶部）：
+ * - **rootfs 未装**：说明 + 引导去「终端」页安装 Ubuntu（无一键动作）；
+ * - **运行时缺失**（nodejs 家族 / python）：说明 + **一键安装**按钮
+ *   （真实在 PRoot 内 apt 安装，分钟级 busy）；
+ * - **结果反馈**：安装成功/失败（附 stderr 尾部）就地在卡内呈现。
+ *
+ * 状态源：[MarketHubController.HubUiState.runtimeStatus /
+ * runtimeInstalling / runtimeNotice]（页签切入自动体检 +
+ * 安装门禁命中时同步点亮）。
+ */
+@Composable
+internal fun SandboxRuntimeCard(
+    hubState: MarketHubController.HubUiState,
+    viewModel: MarketViewModel
+) {
+    val status = hubState.runtimeStatus ?: return
+    androidx.compose.material3.ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Text(
-                text = stringResource(R.string.market_hub_mcp_requires_rootfs),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.tertiary,
-                modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+                text = if (status.rootfsMissing) {
+                    stringResource(R.string.market_sandbox_rootfs_missing_title)
+                } else {
+                    stringResource(
+                        R.string.market_sandbox_runtime_missing_title,
+                        status.missingCommand.orEmpty().ifBlank { "npx" }
+                    )
+                },
+                style = MaterialTheme.typography.titleSmall
             )
+            Text(
+                text = if (status.rootfsMissing) {
+                    stringResource(R.string.market_sandbox_rootfs_missing_body)
+                } else {
+                    stringResource(R.string.market_sandbox_runtime_missing_body)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+            hubState.runtimeNotice?.let { notice ->
+                Text(
+                    text = notice,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+            if (!status.rootfsMissing) {
+                TextButton(
+                    enabled = !hubState.runtimeInstalling,
+                    onClick = { viewModel.hub.installSandboxRuntime() },
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    Text(
+                        if (hubState.runtimeInstalling) {
+                            stringResource(R.string.market_sandbox_runtime_installing)
+                        } else {
+                            stringResource(R.string.market_sandbox_runtime_install_action)
+                        }
+                    )
+                }
+            }
         }
     }
 }
@@ -273,8 +416,12 @@ internal fun ConfiguredMcpCard(
                             onClick = { viewModel.disconnectMcp(server.name) }
                         ) { Text(stringResource(R.string.market_mcp_stop)) }
                     } else {
+                        // 启动按钮不再被 enabled 开关门禁：connectMcp 入口已
+                        // 原子地「先启用再连接」（#338）—— 安装落盘的
+                        // enabled=false 配置点启动即可直接走真实连接管线，
+                        // 无需先去已安装管理拨开关（旧版「装完启动是灰的」）。
                         TextButton(
-                            enabled = state.mcpConnecting != server.name && server.enabled,
+                            enabled = state.mcpConnecting != server.name,
                             onClick = { viewModel.connectMcp(server.name) }
                         ) {
                             Text(
@@ -431,8 +578,10 @@ internal fun BuiltinMcpConfigDialog(
                         positive = fresh.connected
                     )
                     Spacer(modifier = Modifier.weight(1f))
+                    // 同 ConfiguredMcpCard：connectMcp 自动启用，启动按钮
+                    // 不受 enabled 开关门禁（内置服务器被关用时也能一键拉起）。
                     TextButton(
-                        enabled = fresh.enabled && state.mcpConnecting != fresh.name,
+                        enabled = state.mcpConnecting != fresh.name,
                         onClick = { viewModel.connectMcp(fresh.name) }
                     ) { Text(stringResource(R.string.market_mcp_start)) }
                     TextButton(

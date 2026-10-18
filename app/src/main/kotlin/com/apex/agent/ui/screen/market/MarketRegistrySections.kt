@@ -144,14 +144,19 @@ internal fun RegistrySourceToggleRow(
     }
 }
 
-/** Registry 目录行卡（安装形态徽标 + 安装按钮 + npm 预装进度提示）。 */
+/** Registry 目录行卡（安装形态徽标 + 安装按钮 + npm 预装进度提示）。
+ *
+ * 内置等价（builtin != null）：渲染「已内置」徽标 + 「启动内置」/「停止」
+ * —— 真内置不卖安装（与官方 Hub 行卡同口径，NativeMcpEquivalents 落地）。
+ */
 @Composable
 internal fun RegistryServerCard(
     entry: RegistryServer,
     installed: Boolean,
     installing: Boolean,
     installBusy: Boolean,
-    onInstall: () -> Unit
+    onInstall: () -> Unit,
+    builtin: BuiltinEquivalentUi? = null
 ) {
     Column {
         MarketCard(
@@ -163,20 +168,25 @@ internal fun RegistryServerCard(
             description = entry.description,
             descriptionMaxLines = 2,
             trailing = {
-                if (installed) {
-                    MarketStatusChip(
-                        text = stringResource(R.string.market_status_installed),
-                        positive = true
-                    )
-                } else {
-                    TextButton(
-                        onClick = onInstall,
-                        enabled = !installBusy && entry.installKind != RegistryServer.InstallKind.UNSUPPORTED
-                    ) {
-                        Text(
-                            if (installing) stringResource(R.string.market_installing)
-                            else stringResource(R.string.market_action_install)
+                when {
+                    // 真内置不卖安装：优先渲染内置等价（npx 变体是严格劣解）
+                    builtin != null -> BuiltinEquivalentTrailing(builtin = builtin)
+                    installed -> {
+                        MarketStatusChip(
+                            text = stringResource(R.string.market_status_installed),
+                            positive = true
                         )
+                    }
+                    else -> {
+                        TextButton(
+                            onClick = onInstall,
+                            enabled = !installBusy && entry.installKind != RegistryServer.InstallKind.UNSUPPORTED
+                        ) {
+                            Text(
+                                if (installing) stringResource(R.string.market_installing)
+                                else stringResource(R.string.market_action_install)
+                            )
+                        }
                     }
                 }
             }

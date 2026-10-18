@@ -97,6 +97,14 @@ class McpManager(
      */
     private val sandboxReadinessProbe: (() -> Boolean)? = null,
     /**
+     * 沙箱运行时探针（MCP 市场诚实化）：rootfs 装好但没装 nodejs 是常态，
+     * 旧链路只探 rootfs 标记 → npx 秒退 → 报抽象的「进程在响应前退出」。
+     * 注入后：沙箱 STDIO 连接在 **fork 之前**探测命令可解析性，缺什么、
+     * 怎么补（apt install nodejs npm / pip install uv）一次说清，并同步
+     * 写进 ENV_CHECK 事件 detail。null = 宿主未提供（不拦截，与旧版一致）。
+     */
+    private val sandboxRuntimeProbe: McpSandboxRuntimeProbe? = null,
+    /**
      * 诊断日志出口（HookRegistry 同款模式）：core:tool-registry 无
      * core:logging 依赖（刻意保持纯 JVM），getAllTools 等聚合路径的
      * 异常/失败现场经此回调外送。宿主注入 AppLogger，测试注入捕获列表；
@@ -257,9 +265,19 @@ class McpManager(
                 )
             )
 
+        // MCP 市场诚实化：沙箱 STDIO 的运行时预检只探一次（ENV_CHECK 详情与
+        // 下方门禁共用裁决）；非沙箱/非 STDIO/未注入探针时为 null（不拦截）。
+        val sandboxRuntimeVerdict =
+            if (config.runInSandbox && config.transport == McpTransport.STDIO) {
+                sandboxRuntimeProbe?.probe(config.command.orEmpty())
+            } else {
+                null
+            }
+
         // #197 真实事件：环境检查（配置形态 + 沙箱就绪态；rootfs 检查同
         // ProotMcpProcessLauncher 的门径 —— 存在性探测，不是模拟）。
         // #205：沙箱就绪探针注入后就绪态写入 detail（未注入时不猜测）。
+        // MCP 市场诚实化：注入运行时探针时，ENV_CHECK 一并给出命令可解析性。
         startupListener?.onStartupEvent(
             McpStartupEvent(
                 serverName = name,
@@ -273,12 +291,51 @@ class McpManager(
                             sandboxReadinessProbe?.let { probe ->
                                 append(if (probe()) " · rootfs 就绪" else " · rootfs 未就绪（连接将失败，请先安装 Ubuntu 环境）")
                             }
+                            sandboxRuntimeVerdict?.let { verdict ->
+                                append(
+                                    when (verdict) {
+                                        McpSandboxRuntimeProbe.Verdict.READY ->
+                                            " · 运行时就绪（${config.command.orEmpty().ifBlank { "命令" }}）"
+                                        McpSandboxRuntimeProbe.Verdict.ROOTFS_MISSING ->
+                                            " · rootfs 未就绪"
+                                        McpSandboxRuntimeProbe.Verdict.RUNTIME_MISSING ->
+                                            " · 运行时缺失（${config.command.orEmpty()}）"
+                                    }
+                                )
+                            }
                         }
                     }
                     McpTransport.HTTP, McpTransport.SSE -> "远端 ${config.transport} · ${config.url}"
                 }
             )
         )
+
+        // 沙箱运行时门禁（MCP 市场诚实化）：fork 之前快速失败。
+        // 旧链路的完整时间线：npx 经 proot 启动 → execve 失败 → 进程秒退 →
+        // 「MCP 进程在响应前退出」—— 一次白费的进程启动 + 一句抽象报错。
+        // 现在探针给出可行动文案（缺什么、怎么补），并同步 FAILED 事件让
+        // 启动弹窗停止转圈；所有连接路径（市场启动 / 开机自连 / 监督重连 /
+        // McpConnect 工具）统一受保护。
+        if (sandboxRuntimeVerdict != null && sandboxRuntimeVerdict != McpSandboxRuntimeProbe.Verdict.READY) {
+            val guidance = when (sandboxRuntimeVerdict) {
+                McpSandboxRuntimeProbe.Verdict.ROOTFS_MISSING ->
+                    "「$name」需要在 Ubuntu 沙箱内运行，但沙箱尚未安装 ——" +
+                        "请先到「终端」页安装 Ubuntu（TerminalUbuntuInstall）"
+                else ->
+                    "沙箱内未找到「${config.command.orEmpty().ifBlank { "命令" }}」——" +
+                        "请在终端的 Ubuntu 环境里安装对应运行时（npx/node：" +
+                        "apt install -y nodejs npm；uvx：pip install uv；" +
+                        "python：apt install -y python3）后重试"
+            }
+            startupListener?.onStartupEvent(
+                McpStartupEvent(
+                    serverName = name,
+                    stage = McpStartupStage.FAILED,
+                    detail = guidance
+                )
+            )
+            return Result.failure(Exception(guidance))
+        }
 
         // 先关闭旧连接，避免旧实现「直接覆盖导致连接泄漏」的问题
         synchronized(lock) { clients.remove(name) }?.let { runCatching { it.shutdown() } }

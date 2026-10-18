@@ -113,4 +113,38 @@ class McpStdioStartupEventsTest {
             transport.close()
         }
     }
+
+    @Test
+    fun `process exit error carries stderr tail`() {
+        // MCP 市场诚实化：进程秒退的报错必须带 stderr 尾部（真因第一现场），
+        // 不再是抽象的「MCP 进程在响应前退出」。监听器回调发生在尾部缓冲
+        // 追加之后（实现顺序：先 addLast 再 onStderrLine），等监听器见到
+        // boom 再发起 send，避免泵线程未读到的竞态。
+        val stderrLines = CopyOnWriteArrayList<String>()
+        val transport = McpStdioTransport(
+            command = listOf("/bin/sh", "-c", "echo npx-not-found >&2; exit 127"),
+            requestTimeoutMs = 5_000L,
+            onStderrLine = { stderrLines += it }
+        )
+        try {
+            val heard = System.currentTimeMillis() + 5_000
+            while (stderrLines.isEmpty() && System.currentTimeMillis() < heard) {
+                Thread.sleep(20)
+            }
+            val dead = System.currentTimeMillis() + 5_000
+            while (transport.isHealthy() && System.currentTimeMillis() < dead) {
+                Thread.sleep(20)
+            }
+            val error = runCatching {
+                runBlocking { transport.send(1, """{"jsonrpc":"2.0","id":1,"method":"initialize"}""") }
+            }.exceptionOrNull()
+            assertTrue(error is McpException)
+            val message = error!!.message.orEmpty()
+            assertTrue(message.contains("MCP 进程在响应前退出"))
+            assertTrue(message.contains("stderr 尾部"))
+            assertTrue(message.contains("npx-not-found"))
+        } finally {
+            transport.close()
+        }
+    }
 }

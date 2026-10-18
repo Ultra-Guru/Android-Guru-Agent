@@ -29,14 +29,20 @@ import com.apex.agent.core.tools.marketplace.McpSoSource
  * 配置 → 统一解析（STDIO 自动路由 PRoot 沙箱）→ 注册表。
  */
 
-/** mcp.so 目录行卡。 */
+/**
+ * mcp.so 目录行卡。
+ *
+ * 内置等价（如「Sequential Thinking」→ thinking）：渲染「已内置」徽标 +
+ * 「启动内置」/「停止」—— 真内置不卖安装（与官方 Hub / Registry 同口径）。
+ */
 @Composable
 internal fun McpSoCard(
     entry: McpSoSource.McpSoEntry,
     installed: Boolean,
     installing: Boolean,
     installBusy: Boolean,
-    onInstall: () -> Unit
+    onInstall: () -> Unit,
+    builtin: BuiltinEquivalentUi? = null
 ) {
     Column {
         MarketCard(
@@ -55,20 +61,25 @@ internal fun McpSoCard(
             description = entry.description,
             descriptionMaxLines = 2,
             trailing = {
-                if (installed) {
-                    MarketStatusChip(
-                        text = stringResource(R.string.market_status_installed),
-                        positive = true
-                    )
-                } else {
-                    TextButton(
-                        onClick = onInstall,
-                        enabled = !installBusy
-                    ) {
-                        Text(
-                            if (installing) stringResource(R.string.market_installing)
-                            else stringResource(R.string.market_action_install)
+                when {
+                    // 真内置不卖安装：优先渲染内置等价
+                    builtin != null -> BuiltinEquivalentTrailing(builtin = builtin)
+                    installed -> {
+                        MarketStatusChip(
+                            text = stringResource(R.string.market_status_installed),
+                            positive = true
                         )
+                    }
+                    else -> {
+                        TextButton(
+                            onClick = onInstall,
+                            enabled = !installBusy
+                        ) {
+                            Text(
+                                if (installing) stringResource(R.string.market_installing)
+                                else stringResource(R.string.market_action_install)
+                            )
+                        }
                     }
                 }
             }

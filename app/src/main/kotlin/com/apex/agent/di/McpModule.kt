@@ -97,6 +97,9 @@ object McpModule {
         capabilitySource: PRootCapabilitySource,
         // 共享知识图谱单例（memory MCP 与聊天自动记忆同图同源，见 provideKnowledgeGraphStore）
         knowledgeGraphStore: com.apex.agent.mcp.builtin.memory.KnowledgeGraphStore,
+        // MCP 市场诚实化：沙箱运行时探针（MarketplaceModule 单例 —— 与市场
+        // 安装门禁/页签体检同一实例同一口径）
+        sandboxRuntimeProbe: com.apex.agent.marketplace.SandboxRuntimeProbe,
         // FusionBundle 首发内置包 REA（207 工具面）的运行时端口：命令执行
         //（PRoot 终端链）与页面抓取（OkHttp）—— 工作目录作证据导出根。
         reaCommandRunner: ReaCommandRunner,
@@ -161,6 +164,12 @@ object McpModule {
             // #205 沙箱就绪探针：与 launcher 门禁同源（current 标记文件）——
             // ENV_CHECK 事件里如实呈现 rootfs 状态，未装好在拉进程前就可见。
             sandboxReadinessProbe = { File(rootfsBaseDir, "current").exists() },
+            // MCP 市场诚实化：沙箱运行时探针 —— rootfs 装好但没装 nodejs 是
+            // 常态（Ubuntu rootfs 默认不带），旧链路 npx 秒退报「进程在响应前
+            // 退出」。注入后连接在 fork 之前探 npx/uvx/python 可解析性，缺什么
+            // 怎么补一次说清；纯文件存在性检查，不 spawn 进程。
+            // 单例来自 MarketplaceModule（与市场安装门禁共享同一实例）。
+            sandboxRuntimeProbe = sandboxRuntimeProbe,
             // 单台 MCP 服务器枚举失败不再静默（HookRegistry 的 errorLog 回调同款
             // 模式）：core 无 logging 依赖，经回调外送到 AppLogger 留痕。
             errorLog = { message ->

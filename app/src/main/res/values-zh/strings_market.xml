@@ -382,6 +382,19 @@
     <string name="market_hub_mcp_loading">正在加载 MCP 仓库…</string>
     <string name="market_hub_mcp_not_running">已安装 · 未运行</string>
     <string name="market_hub_mcp_requires_rootfs">在 PRoot Ubuntu 沙箱内运行 —— 未安装 Ubuntu 请先到「终端」页安装</string>
+    <!-- ═══ MCP 市场诚实化：内置等价 + 沙箱运行时体检 ═══ -->
+    <string name="market_mcp_builtin_badge">已内置 · %1$s</string>
+    <string name="market_mcp_launch_builtin">启动内置</string>
+    <string name="market_mcp_builtin_note">官方包已内置为进程内原生服务器（%1$s）—— 无需安装</string>
+    <string name="market_mcp_desktop_config">桌面配置</string>
+    <string name="market_mcp_desktop_config_copied">已复制 %1$s 的桌面配置 —— 粘贴到 Claude Desktop / Cursor 的 mcpServers 即可用</string>
+    <string name="market_mcp_desktop_config_failed">「%1$s」无法导出为桌面配置</string>
+    <string name="market_sandbox_rootfs_missing_title">Ubuntu 沙箱未安装</string>
+    <string name="market_sandbox_rootfs_missing_body">npx 包这类本地（stdio）MCP 服务器需要在 PRoot Ubuntu 沙箱内运行。请先到「终端」页安装 Ubuntu，再回来安装它们。</string>
+    <string name="market_sandbox_runtime_missing_title">沙箱缺少运行时：%1$s</string>
+    <string name="market_sandbox_runtime_missing_body">npx 型 MCP 服务器需要沙箱内的 nodejs + npm。点下方按钮一键安装（需要几分钟）；或复制卡片上的「桌面配置」到电脑端使用。</string>
+    <string name="market_sandbox_runtime_install_action">一键安装 nodejs + npm</string>
+    <string name="market_sandbox_runtime_installing">沙箱内安装中，可能需要数分钟…</string>
     <string name="market_mcp_configured_header">当前工位服务器 · 配置 / 启动（%1$d）</string>
     <string name="market_mcp_config">配置</string>
     <string name="market_mcp_start">启动</string>

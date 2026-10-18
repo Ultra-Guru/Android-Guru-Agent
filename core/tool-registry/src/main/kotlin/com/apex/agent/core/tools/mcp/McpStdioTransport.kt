@@ -177,6 +177,20 @@ class McpStdioTransport internal constructor(
      */
     private val writeLock = Object()
 
+    /**
+     * stderr 尾部环形缓冲（MCP 市场诚实化）：保留最近 [STDERR_TAIL_LINES] 行。
+     *
+     * 旧实现在进程秒退时报抽象的「MCP 进程在响应前退出」—— 真因（npx 不
+     * 存在 / node 缺失 / 模块加载失败）全在 stderr 里，只在应用日志留痕，
+     * 用户可见的报错一句都不提。现在 [send] 的失败路径把尾部拼进异常文案，
+     * 启动弹窗与 snackbar 直接看到可行动的第一现场。
+     */
+    private val stderrTail = ArrayDeque<String>()
+
+    /** stderr 尾部快照（最近 N 行合并为「 | 」分隔的单行，限 [STDERR_TAIL_CHARS] 字符）。 */
+    private fun stderrTailSnapshot(): String =
+        synchronized(stderrTail) { stderrTail.joinToString(" | ") }.take(STDERR_TAIL_CHARS)
+
     @Volatile
     private var closed = false
 
@@ -193,6 +207,10 @@ class McpStdioTransport internal constructor(
             while (!closed) {
                 val line = reader.readLine() ?: break
                 if (line.isBlank()) continue
+                synchronized(stderrTail) {
+                    stderrTail.addLast(line)
+                    if (stderrTail.size > STDERR_TAIL_LINES) stderrTail.removeFirst()
+                }
                 runCatching { onStderrLine?.invoke(line) }
             }
         } catch (_: Exception) {
@@ -219,7 +237,18 @@ class McpStdioTransport internal constructor(
 
     override suspend fun send(id: Int?, payload: String): JsonObject? = withContext(Dispatchers.IO) {
         if (closed) throw McpException("MCP 本地进程已关闭")
-        if (!handle.isAlive()) throw McpException("MCP 本地进程已退出")
+        // 进程已死（进入 send 前就退出）：与 awaitResponse 超时路径同款富错误
+        // —— 报「在响应前退出」+ stderr 尾部（真因第一现场），不再是一句
+        // 抽象的「已退出」（Supervisor 重连循环里用户看到的也应是可行动信息）。
+        if (!handle.isAlive()) throw McpException(
+            buildString {
+                append("MCP 进程在响应前退出")
+                stderrTailSnapshot().takeIf { it.isNotBlank() }?.let { tail ->
+                    append("。stderr 尾部：")
+                    append(tail)
+                }
+            }
+        )
 
         // 报文必须是单行：内容里的换行会撕裂 NDJSON 帧
         val line = payload.replace('\n', ' ').replace('\r', ' ')
@@ -254,8 +283,19 @@ class McpStdioTransport internal constructor(
         if (id == null) return@withContext null
 
         val raw = awaitResponse(id) ?: throw McpException(
-            if (handle.isAlive()) "等待 MCP 进程响应超时（${requestTimeoutMs}ms）"
-            else "MCP 进程在响应前退出"
+            buildString {
+                if (handle.isAlive()) {
+                    append("等待 MCP 进程响应超时（${requestTimeoutMs}ms）")
+                } else {
+                    // 进程秒退：真因几乎都在 stderr（npx/node 不存在、模块加载
+                    // 失败）—— 尾部拼进文案，不再让用户对着抽象报错猜。
+                    append("MCP 进程在响应前退出")
+                }
+                stderrTailSnapshot().takeIf { it.isNotBlank() }?.let { tail ->
+                    append("。stderr 尾部：")
+                    append(tail)
+                }
+            }
         )
         return@withContext try {
             json.parseToJsonElement(raw) as? JsonObject
@@ -335,4 +375,10 @@ class McpStdioTransport internal constructor(
         val obj = json.parseToJsonElement(line) as? JsonObject ?: return null
         obj["id"]?.jsonPrimitive?.intOrNull
     }.getOrNull()
+
+    private companion object {
+        /** stderr 尾部行数与字符预算（约 4KB，与 ProotMcpProcessLauncher 同口径）。 */
+        const val STDERR_TAIL_LINES = 12
+        const val STDERR_TAIL_CHARS = 4000
+    }
 }

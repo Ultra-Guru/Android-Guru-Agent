@@ -12,6 +12,7 @@ import com.apex.agent.core.tools.marketplace.PulseMcpSource
 import com.apex.agent.github.GithubTokenManager
 import com.apex.agent.marketplace.PulseMcpCredentialsStore
 import com.apex.agent.marketplace.ProotSandboxCommandRunner
+import com.apex.agent.marketplace.SandboxRuntimeProbe
 import com.apex.agent.platform.terminal.proot.PRootCapabilitySource
 import com.apex.agent.platform.terminal.proot.PRootHostEnvironment
 import dagger.Module
@@ -161,6 +162,26 @@ object MarketplaceModule {
             persistentHomeDir = File(context.filesDir, "linux/home"),
             // T92：argv 能力门（与终端会话/apt/MCP launcher 同款版本自适应）
             capabilities = capabilitySource::invoke
+        )
+    }
+
+    /**
+     * 沙箱运行时探针（MCP 市场诚实化）：rootfs 装好但没装 nodejs 是常态
+     * （Ubuntu rootfs 默认不带），旧链路 npx 秒退报「进程在响应前退出」。
+     *
+     * 单例共享：McpManager 连接门禁（fork 前探）、MarketHubController
+     * 安装门禁 + 页签体检、MarketMcpSoController 安装门禁 —— 同一探针
+     * 同一口径（rootfs 解析与 ProotSandboxCommandRunner / launcher 同款）。
+     */
+    @Provides
+    @Singleton
+    fun provideSandboxRuntimeProbe(
+        @ApplicationContext context: Context,
+        rootfsBaseDir: File
+    ): SandboxRuntimeProbe {
+        return SandboxRuntimeProbe(
+            rootfsBaseDir = rootfsBaseDir,
+            persistentHomeDir = File(context.filesDir, "linux/home")
         )
     }
 }

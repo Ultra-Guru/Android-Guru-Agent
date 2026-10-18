@@ -382,6 +382,19 @@
     <string name="market_hub_mcp_loading">Loading MCP hub…</string>
     <string name="market_hub_mcp_not_running">Installed · not running</string>
     <string name="market_hub_mcp_requires_rootfs">Runs in the PRoot Ubuntu sandbox — install Ubuntu from the Terminal page first if not yet installed</string>
+    <!-- ═══ MCP market honesty: built-in equivalents + sandbox runtime triage ═══ -->
+    <string name="market_mcp_builtin_badge">Built in · %1$s</string>
+    <string name="market_mcp_launch_builtin">Start built-in</string>
+    <string name="market_mcp_builtin_note">Official package ships as a native in-process server (%1$s) — no install needed</string>
+    <string name="market_mcp_desktop_config">Desktop config</string>
+    <string name="market_mcp_desktop_config_copied">Desktop config for %1$s copied — paste it into the mcpServers section of Claude Desktop / Cursor</string>
+    <string name="market_mcp_desktop_config_failed">Cannot export %1$s as a desktop config</string>
+    <string name="market_sandbox_rootfs_missing_title">Ubuntu sandbox not installed</string>
+    <string name="market_sandbox_rootfs_missing_body">Local (stdio) MCP servers such as npx packages run inside the PRoot Ubuntu sandbox. Install Ubuntu from the Terminal page first, then come back to install them.</string>
+    <string name="market_sandbox_runtime_missing_title">Sandbox runtime missing: %1$s</string>
+    <string name="market_sandbox_runtime_missing_body">npx-type MCP servers need nodejs + npm inside the sandbox. Install them with one tap below (takes a few minutes), or copy the desktop config to use the server on a PC.</string>
+    <string name="market_sandbox_runtime_install_action">Install nodejs + npm</string>
+    <string name="market_sandbox_runtime_installing">Installing in sandbox — this may take several minutes…</string>
     <string name="market_mcp_configured_header">Workspace servers · configure / start (%1$d)</string>
     <string name="market_mcp_config">Configure</string>
     <string name="market_mcp_start">Start</string>

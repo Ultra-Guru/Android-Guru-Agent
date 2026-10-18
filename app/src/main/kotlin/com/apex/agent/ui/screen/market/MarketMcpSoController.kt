@@ -2,7 +2,14 @@ package com.apex.agent.ui.screen.market
 
 import com.apex.agent.core.tools.marketplace.MarketNames
 import com.apex.agent.core.tools.marketplace.McpSoSource
+import com.apex.agent.core.tools.marketplace.NativeMcpEquivalents
 import com.apex.agent.core.tools.mcp.McpManager
+import com.apex.agent.core.tools.mcp.McpSandboxRuntimeProbe.Verdict
+import com.apex.agent.core.tools.mcp.McpTransport
+import com.apex.agent.marketplace.ProotSandboxCommandRunner
+import com.apex.agent.marketplace.RegistryMcpInstaller
+import com.apex.agent.marketplace.SandboxRuntimeProbe
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -13,6 +20,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -23,9 +31,9 @@ import javax.inject.Singleton
  * God-file 预算纪律）：
  * - **目录浏览**：`mcp.so/servers` 分页拉取（60 条/页，默认热门排序），
  *   「加载更多」翻页；返回不足一页即视为末页；
- * - **一键安装**：拉详情页 mcpServers 配置 → [McpSoSource.fetchServerConfig]
- *   统一解析（STDIO 条目自动路由 PRoot 沙箱）→ [McpManager.addServer]
- *   写入注册表（enabled=false —— 安装 ≠ 启动，与官方 Hub 口径一致）。
+ * - **一键安装**（真化）：拉详情页 mcpServers 配置 → [McpSoSource.fetchServerConfig]
+ *   统一解析 → 安装决策树（见 [installInternal]）—— 远端直写配置，
+ *   STDIO 走环境门禁 + npx 真实预装，不再「只落 JSON 的假安装」。
  *
  * 错误契约：目录/安装失败均折叠进 [McpSoUiState.error] 文案（Result.failure
  * 消息），绝不上抛；安装成功经 [refreshMarket] 通知宿主 VM 刷新快照
@@ -35,7 +43,11 @@ import javax.inject.Singleton
 @Singleton
 class MarketMcpSoController @Inject constructor(
     private val mcpSoSource: McpSoSource,
-    private val mcpManager: McpManager
+    private val mcpManager: McpManager,
+    /** MCP 市场诚实化：沙箱运行时探测（STDIO 安装门禁）。 */
+    private val runtimeProbe: SandboxRuntimeProbe,
+    /** MCP 市场诚实化：沙箱一次性命令执行器（npm install -g 真实预装）。 */
+    private val sandboxRunner: ProotSandboxCommandRunner
 ) {
     /** mcp.so 目录的 UI 状态。 */
     data class McpSoUiState(
@@ -120,36 +132,33 @@ class MarketMcpSoController @Inject constructor(
     }
 
     /**
-     * 安装一台 mcp.so 服务器：详情页配置 → 注册表（enabled=false）。
+     * 安装一台 mcp.so 服务器（真化安装决策树）：
      *
-     * - 行级 busy（installingSlug）防并发；
-     * - #346：已有同名配置的判定用归一化比较键（跨源/大小写/分隔符变体
-     *   都算已装），重复安装不再新建配置，改为复用现有配置并给出提示；
-     * - 无标准配置块（README 未暴露 mcpServers JSON）→ 错误文案引导去详情页。
+     * 1. **名字级内置等价拦截**（fetch 前免网络往返）：目录名命中内置
+     *    （如「Sequential Thinking」→ thinking）→ 拒绝安装，真内置不卖安装；
+     * 2. **重复检查**（#346 归一化比较键）：跨源同名/变体拦截；
+     * 3. **拉取详情页配置**：无标准 mcpServers 块 → 引导去详情页；
+     * 4. **配置级内置等价拦截**（fetch 后按命令行查，比名字更准）；
+     * 5. **远端条目**：写配置即真实可用（无本地依赖）；
+     * 6. **STDIO 环境门禁**：rootfs 未装 / 运行时缺失 → 诚实失败
+     *    （缺什么怎么补），不落必败配置；
+     * 7. **STDIO · npx 条目**：沙箱内真实 `npm install -g <包>`（预装与
+     *    启动同版本），配置写入失败回滚卸载 —— 与官方 Hub / Registry
+     *    同源（旧实现只落 JSON 的「假安装」根治）；
+     * 8. **STDIO · uvx/python 条目**：运行时就绪时写配置，文案注明
+     *    「首启下载依赖」。
+     *
+     * 行级 busy（installingSlug）防并发。
      */
     fun installServer(entry: McpSoSource.McpSoEntry) {
         if (_uiState.value.installingSlug != null) return
         scope.launch {
             _uiState.update { it.copy(installingSlug = entry.slug) }
             try {
-                val existing = mcpManager.getConfigs().firstOrNull {
-                    MarketNames.isSameServer(it.name, entry.name)
-                }
-                if (existing != null) {
-                    _uiState.update {
-                        it.copy(error = MarketNames.duplicateMessage(existing.name, entry.name))
-                    }
-                } else {
-                    mcpSoSource.fetchServerConfig(entry).fold(
-                        onSuccess = { config ->
-                            mcpManager.addServer(config).fold(
-                                onSuccess = { _refreshMarket.tryEmit(Unit) },
-                                onFailure = { e -> _uiState.update { it.copy(error = e.message) } }
-                            )
-                        },
-                        onFailure = { e -> _uiState.update { it.copy(error = e.message) } }
-                    )
-                }
+                installInternal(entry).fold(
+                    onSuccess = { _refreshMarket.tryEmit(Unit) },
+                    onFailure = { e -> _uiState.update { it.copy(error = e.message) } }
+                )
                 _refreshMarket.tryEmit(Unit)
             } finally {
                 _uiState.update { it.copy(installingSlug = null) }
@@ -157,8 +166,140 @@ class MarketMcpSoController @Inject constructor(
         }
     }
 
+    /** 安装决策树实现体（IO 线程；见 [installServer] KDoc 的八步清单）。 */
+    private suspend fun installInternal(entry: McpSoSource.McpSoEntry): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            // ① 名字级内置等价拦截（fetch 前免网络往返）
+            NativeMcpEquivalents.builtinForName(entry.name)?.let { builtinId ->
+                return@withContext Result.failure(
+                    Exception(
+                        "「${entry.name}」无需安装 —— App 已内置原生实现（$builtinId，" +
+                            "进程内零依赖），到「当前工位已配置服务器」直接启动 $builtinId 即可"
+                    )
+                )
+            }
+            // ② 重复检查（#346：归一化比较键，跨源/大小写/分隔符变体折叠）
+            val existing = mcpManager.getConfigs().firstOrNull {
+                MarketNames.isSameServer(it.name, entry.name)
+            }
+            if (existing != null) {
+                return@withContext Result.failure(
+                    Exception(MarketNames.duplicateMessage(existing.name, entry.name))
+                )
+            }
+            // ③ 详情页配置（无标准配置块 → 引导文案由 fetchServerConfig 给出）
+            val config = mcpSoSource.fetchServerConfig(entry).getOrElse { e ->
+                return@withContext Result.failure(Exception(e.message ?: "配置拉取失败"))
+            }
+            // ④ 配置级内置等价拦截（按命令行查，比目录名更准；仅 STDIO）
+            if (config.transport == McpTransport.STDIO) {
+                NativeMcpEquivalents.builtinFor(config.name, config.command, config.args)
+                    ?.let { builtinId ->
+                        return@withContext Result.failure(
+                            Exception(
+                                "「${entry.name}」无需安装 —— App 已内置原生实现（$builtinId，" +
+                                    "进程内零依赖），到「当前工位已配置服务器」直接启动 $builtinId 即可"
+                            )
+                        )
+                    }
+            }
+            // ⑤ 远端条目：无本地依赖，写配置即真实可用
+            if (config.transport != McpTransport.STDIO) {
+                return@withContext mcpManager.addServer(config).map { Unit }
+            }
+            // ⑥ STDIO 环境门禁：rootfs / 运行时缺失 → 诚实失败，不落必败配置
+            val verdict = runtimeProbe.probe(config.command.orEmpty())
+            if (verdict != Verdict.READY) {
+                val hint = runtimeProbe.installHint(config.command.orEmpty())
+                    ?: "参考该服务器的官方安装说明"
+                return@withContext Result.failure(
+                    Exception(
+                        when (verdict) {
+                            Verdict.ROOTFS_MISSING ->
+                                "「${entry.name}」需要在 Ubuntu 沙箱内运行，但沙箱尚未安装 ——" +
+                                    "请先到「终端」页安装 Ubuntu（TerminalUbuntuInstall）后再来安装"
+                            else ->
+                                "沙箱内未找到「${config.command.orEmpty()}」—— 请先在终端的" +
+                                    "Ubuntu 环境里安装运行时（$hint）后再安装"
+                        }
+                    )
+                )
+            }
+            // ⑦ npx 条目：真实 npm install -g 预装（免冷启动），写失败回滚
+            val npmPackage = preinstallPackage(config.command, config.args)
+            if (npmPackage != null) {
+                if (!RegistryMcpInstaller.isSafeNpmIdentifier(npmPackage)) {
+                    return@withContext Result.failure(
+                        Exception(
+                            "npm 包名形态非法（$npmPackage）—— 已拒绝自动安装，" +
+                                "请到详情页核实配置：" + entry.detailUrl
+                        )
+                    )
+                }
+                val install = sandboxRunner.run(
+                    command = listOf("npm", "install", "-g", npmPackage),
+                    timeoutMs = RegistryMcpInstaller.NPM_INSTALL_TIMEOUT_MS
+                )
+                if (!install.success) {
+                    return@withContext Result.failure(
+                        Exception(
+                            "沙箱内 npm install 失败（退出码 ${install.exitCode}）：" +
+                                install.stderr.takeLast(400).trim().ifEmpty { "无 stderr 输出" } +
+                                "——请确认 Ubuntu 已安装 nodejs npm（apt install -y nodejs npm）"
+                        )
+                    )
+                }
+                val added = mcpManager.addServer(config)
+                if (added.isFailure) {
+                    var rollbackConfirmed = false
+                    try {
+                        rollbackConfirmed = sandboxRunner.run(
+                            command = listOf("npm", "uninstall", "-g", npmPackage),
+                            timeoutMs = RegistryMcpInstaller.NPM_UNINSTALL_TIMEOUT_MS
+                        ).success
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        // 回滚尽力而为：失败不掩盖主错误
+                    }
+                    return@withContext Result.failure(
+                        Exception(
+                            "配置写入失败" +
+                                (if (rollbackConfirmed) "（npm 包已从沙箱卸载）" else "（回滚未确认）") +
+                                "：" + (added.exceptionOrNull()?.message ?: "未知错误")
+                        )
+                    )
+                }
+                return@withContext Result.success(Unit)
+            }
+            // ⑧ uvx/python 等条目：运行时就绪，写配置（首启下载由运行时自管）
+            mcpManager.addServer(config).map { Unit }
+        }
+
     private companion object {
         /** mcp.so 每页固定 60 条（不足即末页判定依据）。 */
         const val PAGE_SIZE = 60
+    }
+
+    companion object {
+        /**
+         * 从 STDIO 配置的命令行提取待预装的 npm 包名（npx 家族专用，
+         * 与 MarketHubController.extractNpmPackage 同语义）：
+         * 跳过命令本身与 `-`/`--` 旗标，第一个非旗标 token 即包名（保留
+         * `@version` 尾缀 —— 预装与启动同版本）。非 npx 家族返回 null。
+         */
+        internal fun preinstallPackage(command: String?, args: List<String>): String? {
+            val cmd = command?.trim()?.lowercase() ?: return null
+            if (cmd !in NPM_FAMILY) return null
+            for (token in args) {
+                val t = token.trim()
+                if (t.isEmpty() || t.startsWith("-")) continue
+                return t
+            }
+            return null
+        }
+
+        /** 「首参是 npm 包名」语义的命令家族（与 NativeMcpEquivalents 同口径）。 */
+        private val NPM_FAMILY = setOf("npx", "npm", "node", "bunx")
     }
 }

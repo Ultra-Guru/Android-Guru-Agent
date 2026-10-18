@@ -1,6 +1,7 @@
 package com.apex.agent.marketplace
 
 import com.apex.agent.core.tools.marketplace.MarketNames
+import com.apex.agent.core.tools.marketplace.NativeMcpEquivalents
 import com.apex.agent.core.tools.marketplace.RegistryServer
 import com.apex.agent.core.tools.mcp.McpManager
 import kotlinx.coroutines.CancellationException
@@ -19,12 +20,17 @@ import javax.inject.Singleton
  * 失败时回滚沙箱卸载，不留半残状态。
  *
  * ## 安装决策树（单源实现见 [RegistryServer.installKind]）
+ * - **原生等价拦截**（NPM 形态）：条目在内置进程内服务器里有等价实现
+ *   （Sequential Thinking → thinking 等）时拒绝安装 —— npx 变体在本机
+ *   是严格劣解（需沙箱 + node + 慢冷启动）；远端形态不拦（本机真实
+ *   可用，与内置互不遮挡）；
  * - **REMOTE**：`remotes[]` 有端点 → 直接写 HTTP/SSE 配置（无沙箱依赖），
  *   headers 原样保留模板值（占位符需用户在「编辑」里补真值）；
- * - **NPM**：`packages[]` 有 npm+stdio 包 → ① rootfs 门禁（未装则引导
- *   TerminalUbuntuInstall）② 沙箱 `npm install -g`（5 分钟超时，
- *   npm 下载耗时真实存在）③ 写 `npx -y {identifier}@{version}` 沙箱 STDIO 配置
- *   ④ 写入失败 → 回滚 `npm uninstall -g`；
+ * - **NPM**：`packages[]` 有 npm+stdio 包 → ① 内置等价拦截 ② rootfs
+ *   门禁（未装则引导 TerminalUbuntuInstall，Runner 自带）③ 沙箱
+ *   `npm install -g`（5 分钟超时，npm 下载耗时真实存在）④ 写 `npx -y
+ *   {identifier}@{version}` 沙箱 STDIO 配置 ⑤ 写入失败 → 回滚
+ *   `npm uninstall -g`；
  * - **UNSUPPORTED**：pypi / mcpb / oci / nuget / 非 stdio npm 包 →
  *   明确报错引导按仓库 README 手动安装，不装残配置。
  *
@@ -44,6 +50,24 @@ class RegistryMcpInstaller @Inject constructor(
      */
     suspend fun install(server: RegistryServer): Result<String> =
         withContext(Dispatchers.IO) {
+            // ① 原生等价拦截（仅 NPM 形态）：真内置不卖安装 —— 与官方 Hub /
+            // mcp.so 同口径，杜绝绕过卡片渲染的重复安装（McpConnect 工具、
+            // GitHub 仓库安装等入口都汇到本方法）。
+            if (server.installKind == RegistryServer.InstallKind.NPM) {
+                NativeMcpEquivalents.builtinForRegistry(
+                    name = server.name,
+                    displayName = server.displayName,
+                    npmIdentifier = server.npmPackage?.identifier
+                )?.let { builtinId ->
+                    return@withContext Result.failure(
+                        Exception(
+                            "「${server.displayName}」无需安装 —— App 已内置原生实现" +
+                                "（$builtinId，进程内零依赖），到「当前工位已配置服务器」" +
+                                "直接启动 $builtinId 即可"
+                        )
+                    )
+                }
+            }
             when (server.installKind) {
                 RegistryServer.InstallKind.REMOTE -> installRemote(server)
                 RegistryServer.InstallKind.NPM -> installNpmSandbox(server)
@@ -171,23 +195,6 @@ class RegistryMcpInstaller @Inject constructor(
         )
     }
 
-    /**
-     * npm 包名形态校验（供应链硬化）：限定 npm 允许的字符集且至多一个
-     * `/`（@scope/name），拒绝 URL（`://`）、git spec、前导 `-`/`.`、
-     * `..` 路径段与超长串。
-     */
-    private fun isSafeNpmIdentifier(id: String): Boolean =
-        id.length <= 214 &&
-            !id.startsWith("-") &&
-            !id.startsWith(".") &&
-            !id.contains("://") &&
-            !id.contains("..") &&
-            id.count { it == '/' } <= 1 &&
-            id.all { ch ->
-                ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' ||
-                    ch == '@' || ch == '/' || ch == '.' || ch == '_' || ch == '-'
-            }
-
     private fun unsupportedMessage(server: RegistryServer): String {
         val pkg = server.unsupportedPackage
         return if (pkg != null) {
@@ -200,11 +207,32 @@ class RegistryMcpInstaller @Inject constructor(
         }
     }
 
-    private companion object {
+    companion object {
         /** npm install 全局超时：移动网络下载依赖，给足 5 分钟。 */
-        const val NPM_INSTALL_TIMEOUT_MS = 300_000L
+        internal const val NPM_INSTALL_TIMEOUT_MS = 300_000L
 
         /** npm uninstall 超时（回滚路径，尽力而为）。 */
-        const val NPM_UNINSTALL_TIMEOUT_MS = 60_000L
+        internal const val NPM_UNINSTALL_TIMEOUT_MS = 60_000L
+
+        /**
+         * npm 包名形态校验（供应链硬化）：限定 npm 允许的字符集且至多一个
+         * `/`（@scope/name），拒绝 URL（`://`）、git spec、前导 `-`/`.`、
+         * `..` 路径段与超长串。
+         *
+         * MCP 市场诚实化：从私有实例方法提升为 companion internal —— Hub
+         * 目录的 npx 条目预装（MarketHubController）与 Registry 预装（本类）
+         * 同源校验，防止两处规则漂移。
+         */
+        fun isSafeNpmIdentifier(id: String): Boolean =
+            id.length <= 214 &&
+                !id.startsWith("-") &&
+                !id.startsWith(".") &&
+                !id.contains("://") &&
+                !id.contains("..") &&
+                id.count { it == '/' } <= 1 &&
+                id.all { ch ->
+                    ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' ||
+                        ch == '@' || ch == '/' || ch == '.' || ch == '_' || ch == '-'
+                }
     }
 }
