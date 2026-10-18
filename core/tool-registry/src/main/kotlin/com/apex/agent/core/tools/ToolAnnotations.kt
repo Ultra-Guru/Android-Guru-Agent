@@ -246,6 +246,16 @@ data class ToolAnnotations(
                 openWorldHint = true,
                 sensitiveAction = true
             )
+            // v1.7.0：清除浏览数据——唯一 destructive=true 的浏览器工具（清
+            // Cookie = 全站点登出，不可逆）；幂等（重复清除收敛同态）但敏感，
+            // 与三件套同一「需用户明示同意」通道。
+            toolId == "BrowserClearData" -> ToolAnnotations(
+                readOnlyHint = false,
+                destructiveHint = true,
+                idempotentHint = true,
+                openWorldHint = false,
+                sensitiveAction = true
+            )
 
             // ── Risk-level fallback for unknown/dynamic ids ──
             else -> when (risk) {

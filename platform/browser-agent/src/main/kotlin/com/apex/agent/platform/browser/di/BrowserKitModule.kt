@@ -9,8 +9,15 @@ import com.apex.browser.chrome.LiveViewOverlayFactory
 import com.apex.browser.chrome.bridge.ApexChromeWiring
 import com.apex.browser.chrome.bridge.ApexChromeWiringFactory
 import com.apex.browser.chrome.BrowserOverlayFactory
+import com.apex.browser.engine.BookmarkStore
+import com.apex.browser.engine.BookmarkStoreFactory
 import com.apex.browser.engine.BrowserEngine
+import com.apex.browser.engine.DownloadCenter
+import com.apex.browser.engine.DownloadCenterFactory
+import com.apex.browser.engine.EngineDisplayController
+import com.apex.browser.engine.EngineDisplayControllerFactory
 import com.apex.browser.engine.di.BrowserEngineFactory
+import com.apex.agent.platform.browser.BrowserSessionTools
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -84,4 +91,39 @@ object BrowserKitModule {
         engine: BrowserEngine,
         wiring: ApexChromeWiring,
     ): InAppChromeHost = InAppChromeHostFactory.get(engine, wiring)
+
+    /* ── v1.7.0 会话增强组件（库内单例工厂；与 ApexChromeWiring 内部取的是同一实例，
+       书星/面板/下载台账与 Agent 工具共享同一份状态——这是「工厂单例 + DI 直通」
+       双入口不分裂的关键）── */
+
+    /** v1.7.0：书签持久化仓库（chrome 书签面板 + BrowserBookmarks 工具共用）。 */
+    @Provides
+    @Singleton
+    fun provideBookmarkStore(@ApplicationContext ctx: Context): BookmarkStore =
+        BookmarkStoreFactory.get(ctx)
+
+    /** v1.7.0：下载台账中心（跨重启可查 / cancel / retry；BrowserDownloads 工具消费）。 */
+    @Provides
+    @Singleton
+    fun provideDownloadCenter(
+        @ApplicationContext ctx: Context,
+        engine: BrowserEngine,
+    ): DownloadCenter = DownloadCenterFactory.get(ctx, engine)
+
+    /** v1.7.0：显示控制器（文字缩放 / 夜间模式 / 清除浏览数据；chrome 显示设置面板共用）。 */
+    @Provides
+    @Singleton
+    fun provideEngineDisplayController(engine: BrowserEngine): EngineDisplayController =
+        EngineDisplayControllerFactory.get(engine)
+
+    /** v1.7.0：会话级浏览器工具集（9 个新工具，ToolModule 注册进 registry）。 */
+    @Provides
+    @Singleton
+    fun provideBrowserSessionTools(
+        engine: BrowserEngine,
+        tracer: com.apex.browser.engine.BrowserTracer,
+        downloads: DownloadCenter,
+        bookmarks: BookmarkStore,
+        display: EngineDisplayController,
+    ): BrowserSessionTools = BrowserSessionTools(engine, tracer, downloads, bookmarks, display)
 }

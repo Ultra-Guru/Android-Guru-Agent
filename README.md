@@ -649,15 +649,24 @@ linux_bootstrap / linux_status / linux_packages / linux_network / ubuntu_install
 
 对标 Operit 的 `BrowserAgent`：DOM 级网页操控而非截图盲点。
 
-- **24 个 `browser_*` 工具（v1.5.0 起内置大功能，非插件）**：基础 15 项
-  `navigate / click / input / scroll / select / screenshot / snapshot /
-  toggle / show / download_list / file_upload / date_input /
-  context_summary / network_log / debug_dump` + 高级动作 9 项
+- **34 个 `browser_*` 工具（v1.5.0 起内置大功能，非插件；v1.7.0 会话面扩至 34）**：
+  基础 15 项 `navigate / click / input / scroll / select / screenshot /
+  snapshot / toggle / show / download_list / file_upload / date_input /
+  context_summary / network_log / debug_dump` + 高级动作 10 项
   `press_key / hover / drag / extract_content / execute_js / get_cookies /
-  locate / wait_for / page_type`；
+  locate / wait_for / page_type / tabs` + **v1.7.0 会话工具集 9 项**
+  `back / forward / reload / history / find / downloads / bookmarks /
+  zoom / clear_data`（对标 Playwright MCP 的会话面：历史导航、浏览历史、
+  页内查找计数、下载全量台账 + 取消/重试、书签管理、文字缩放、清除浏览数据）；
 - **语义哈希稳定 ref**：元素引用基于语义哈希而非 DOM 序号，SPA 局部刷新后
   ref 依然有效；
-- `BrowserTracer`（容量 100 的操作轨迹）+ `RetryPolicy` 支撑断点续控。
+- `BrowserTracer`（容量 100 的操作轨迹）+ `RetryPolicy` 支撑断点续控；
+- **v1.7.0 人用 Chrome 增强**（apex-browser-kit v1.7.0 同步）：书签面板
+  （utm 变体归一去重 / MRU / 文件夹 / 搜索）、阅读模式全屏层（结构块 +
+  目录跳转 + 字号调节）、显示设置（文字缩放 / 夜间模式反色 / 清除浏览
+  数据确认流）、真实 favicon（DuckDuckGo Icons + LRU）、复制干净链接
+  （剔除跟踪参数）；全页截图（BrowserScreenshot `full_page`，滚动分段
+  拼接，上限 5 屏）。
 
 <p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
 

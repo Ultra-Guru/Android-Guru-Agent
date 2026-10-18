@@ -535,7 +535,7 @@
     <string name="onboarding_cap_market_desc">100+ 内置工具按需取用，技能市场持续扩展 Agent 的能力边界</string>
     <!-- v1.5：浏览器自动化能力卡（内置大功能，Onboarding 页 2） -->
     <string name="onboarding_cap_browser_title">浏览器自动化</string>
-    <string name="onboarding_cap_browser_desc">内置浏览器由 Agent 驾驶：打开网页、点击、输入、抽取内容 —— 24 个 browser_* 工具随 App 内置，无需插件</string>
+    <string name="onboarding_cap_browser_desc">内置浏览器由 Agent 驾驶：打开网页、点击、输入、抽取内容 —— 34 个 browser_* 工具随 App 内置，无需插件</string>
     <string name="onboarding_what_title">它能做什么</string>
     <!-- ═══ Onboarding v2：权限全量引导（第 3 页）+ 工作区选择（第 4 页）═══ -->
     <string name="onboarding_perms_title">权限授权</string>

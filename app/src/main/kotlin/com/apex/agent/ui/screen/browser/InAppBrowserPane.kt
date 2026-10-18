@@ -76,7 +76,7 @@ import com.apex.browser.engine.BrowserEngine
  * Activity ON_PAUSE 让位 / ON_RESUME 回位 —— 用户切去别的 App 时实时
  * 卡片可弹出跟看，回到本页继续内嵌浏览。
  *
- * 与 Agent 的关系：Agent 的 24 个 browser_* 工具驱动同一引擎/同一组
+ * 与 Agent 的关系：Agent 的 34 个 browser_* 工具驱动同一引擎/同一组
  * WebView —— Agent 驾驶时本页就是「查看实时页面」的全屏形态（零拷贝同
  * 一实例）；「接管」走 WAITING_HUMAN 显式握手（顶部横幅 + Agent 工具
  * 锁定），交还后 Agent 继续。
