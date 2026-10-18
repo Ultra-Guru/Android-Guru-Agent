@@ -185,6 +185,7 @@ Root → Shizuku → 沙箱 Shell 自动降级<br/>无 Root 也能执行特权�
 - [💬 斜杠命令](#slash-commands)
 - [🔌 插件 SDK](#plugin-sdk)
 - [🎨 ComposeFoundry（伴侣工程）](#composefoundry)
+- [📚 库模块（拆库生态）](#library-modules)
 - [💎 Liquid Glass 玻璃组件系统](#liquid-glass)
 - [📱 应用界面](#ui-screens)
 - [🚀 快速开始](#quickstart)
@@ -849,6 +850,42 @@ GitHub Token）。
 
 ---
 
+<a id="library-modules"></a>
+## 📚 库模块（拆库生态）
+
+主工程的能力内核已按领域拆出**四个独立库仓库**（均为本作者自研维护），主仓库通过
+**composite build + lock 锁定检出**消费 —— 本仓库 APK 始终携带**经过全量 CI 验证的
+已知好版本**，且随库仓库的更新**自动同步**（无需人工介入）：
+
+| 库模块 | 仓库 | 坐标 | 在主工程中的角色 |
+|---|---|---|---|
+| **apex-browser-kit** | [Ultra-Guru/apex-browser-kit](https://github.com/Ultra-Guru/apex-browser-kit) | `com.apex.browser:{core,engine,chrome}` | 浏览器智能体内核：WebView 自动化引擎 + Compose chrome UI（DI 接线层为本仓 `:platform:browser-agent`） |
+| **apex-standard-kit** | [Ultra-Guru/apex-standard-kit](https://github.com/Ultra-Guru/apex-standard-kit) | `com.apex.standardkit:standard-loop` | Coding 模式「标准思考逻辑线」循环引擎（画像/权限门/压缩/子代理/并行工具/续跑/MCP 指引，纯 Kotlin JVM） |
+| **apex-workspace-kit** | [Ultra-Guru/apex-workspace-kit](https://github.com/Ultra-Guru/apex-workspace-kit) | `com.apex.workspace:{core,explorer}` | Coding 工作区浏览器：文件树 / 多格式预览 / Git 面板 / 变更和产物 / 实时跟随 |
+| **apex-vt-native** | [Ultra-Guru/apex-vt-native](https://github.com/Ultra-Guru/apex-vt-native) | C++17 静态库（vendored 为 `:terminal-native`） | 终端热路径 VT/ANSI 引擎（零分配 8 字节 POD cell / 389 项奇偶校验测试 / NDK 三 ABI 交叉编译 CI） |
+
+### 消费与同步机制
+
+- **本地开发**：`settings.gradle.kts` 条件 `includeBuild` —— 兄弟目录
+  `../apex-*-kit` 存在时自动接入（改一处两边生效）；
+- **CI 可复现**：`gradle/{browser,standard,workspace}-kit.lock` 锁定各库 SHA，
+  ci / apk / release 三条流水线按锁 pinned checkout（`com.apex.*` 坐标无远端
+  仓库，锁定检出即唯一构建输入）；
+- **自动更新**：库仓库 main 出现新绿提交 → 其 `notify-host.yml`
+  `repository_dispatch` 本仓库 → `sync-*-kit.yml` 校验上游 CI 全绿后 bump
+  对应 lock 并 push main → release 流水线自动构建发布（新库随 APK 交付）；
+  每 30 分钟 cron 轮询兜底防丢事件。**红提交拒绝同步（fail closed）**；
+- **下游防崩**：每个库仓库的 CI 自带 `consumer-check` —— 把本仓库检出为
+  宿主编译 `:app:compileDebugKotlin`（三个 kit 全量兄弟检出），库的每次
+  PR 都先证明「宿主不炸」才允许合入；
+- **vendored vt-native**：`terminal-native/src/main/cpp/vt-native/` 整树 vendor
+  自上游仓库（契约见 `docs/VENDOR.md` —— 上游修复回传 → 整树 re-vendor），
+  上下游奇偶校验测试对账防漂移。
+
+<p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
+
+---
+
 <a id="liquid-glass"></a>
 ## 💎 Liquid Glass 玻璃组件系统
 
@@ -996,6 +1033,7 @@ chmod +x gradlew
 |--------|------|
 | **ci.yml** | ① 静态分析：kotlinc 编译 core 四模块 + 工具 ID 唯一性 + 括号平衡 + PRoot 二进制 sha256 校验；② app-compile：`:app:compileDebugKotlin` + 四模块单测（agent-engine / tool-registry / terminal / cs-mem）+ 仪器测试编译；③ build-apk：assembleDebug + PR 尺寸评论 |
 | **quality-gate.yml** | 文件大小预算（main≤1200 / test≤1600 行，反 God 文件）、反模式（反射分发 / printStackTrace）、空 catch + TODO 普查 |
+| **sync-{browser,standard,workspace}-kit.yml** | 三库模块 lock 自动同步：库仓库新绿提交（事件/cron 双通道）→ 校验上游 CI 全绿 → bump `gradle/*-kit.lock` → push main 点燃发布（[链路详见库模块章节](#library-modules)） |
 | **pr-labeler.yml** | 按改动路径自动打 area/risk 标签 |
 
 <p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
