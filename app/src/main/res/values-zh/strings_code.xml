@@ -229,8 +229,13 @@
     <string name="code_logic_loom_desc">经纬交织范式：in-band XML 工具协议 · 梭回合机 · 权限模态门 · 子线程群 · 织造包 · 运行中转向</string>
     <string name="code_logic_caps_loom">XML 协议 · 经纬回合 · 子线程群 · 摘要织入压缩</string>
     <string name="code_logic_switched_loom">🧶 思考逻辑已切换为「织造」（经纬交织范式）。原线会话现场已保留，切回即恢复。</string>
+    <string name="code_logic_mode_courier">信使</string>
+    <string name="code_logic_badge_courier">驿传调度</string>
+    <string name="code_logic_courier_desc">驿传调度范式：收发匣 steer/queue 投递 · 趟次步进机并行工具纤程 · 勘合通行证 · 卷宗压缩 · 下站子驿委派</string>
+    <string name="code_logic_caps_courier">收发匣 · 趟次步进 · 勘合门 · 卷宗压缩</string>
+    <string name="code_logic_switched_courier">📮 思考逻辑已切换为「信使」（驿传调度范式）。原线会话现场已保留，切回即恢复。</string>
     <string name="code_logic_switched_deep_dive">🤿 思考逻辑已切换为「深潜」（自研七档思考）。标准会话现场已保留，切回即恢复。</string>
-    <string name="code_logic_unknown_mode">⚠️ /logic:%1$s 不是可识别的逻辑模式——可用 /logic:standard、/logic:loom 或 /logic:deep_dive（别名：std、weave、deep）</string>
+    <string name="code_logic_unknown_mode">⚠️ /logic:%1$s 不是可识别的逻辑模式——可用 /logic:standard、/logic:loom、/logic:courier 或 /logic:deep_dive（别名：std、weave、express、deep）</string>
     <!-- ═══ v6 Git 工作区面板（右上角入口：变更文件 + git 功能）═══ -->
     <string name="code_git_cd">打开 Git 工作区</string>
     <!-- v1.6 工作区浏览器（apex-workspace-kit）-->

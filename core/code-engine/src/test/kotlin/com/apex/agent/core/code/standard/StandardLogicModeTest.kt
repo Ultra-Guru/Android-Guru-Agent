@@ -31,6 +31,8 @@ class StandardLogicModeTest {
         assertEquals(StandardLogicMode.STANDARD, StandardLogicMode.fromName("std"))
         assertEquals(StandardLogicMode.LOOM, StandardLogicMode.fromName("loom"))
         assertEquals(StandardLogicMode.LOOM, StandardLogicMode.fromName("weave"))
+        assertEquals(StandardLogicMode.COURIER, StandardLogicMode.fromName("courier"))
+        assertEquals(StandardLogicMode.COURIER, StandardLogicMode.fromName("express"))
     }
 
     @Test
@@ -49,6 +51,17 @@ class StandardLogicModeTest {
         assertFalse(StandardLogicMode.STANDARD.isLoom)
         assertTrue(StandardLogicMode.LOOM.isLoom)
         assertFalse(StandardLogicMode.LOOM.isStandard)
+    }
+
+    @Test
+    fun `isCourier flag matches kind`() {
+        assertTrue(StandardLogicMode.COURIER.isCourier)
+        assertFalse(StandardLogicMode.DEEP_DIVE.isCourier)
+        assertFalse(StandardLogicMode.STANDARD.isCourier)
+        assertFalse(StandardLogicMode.LOOM.isCourier)
+        // 其他标志位互斥
+        assertFalse(StandardLogicMode.COURIER.isStandard)
+        assertFalse(StandardLogicMode.COURIER.isLoom)
     }
 
     @Test

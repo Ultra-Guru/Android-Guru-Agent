@@ -1,0 +1,119 @@
+name: Sync Courier Kit
+
+# ═════════════════════════════════════════════════════════════════════════════
+# apex-courier-kit 自动同步（同构 sync-loom-kit / sync-standard-kit）：
+#
+#   courier-kit main 出现新的**全绿**提交 → 本工作流把
+#   gradle/courier-kit.lock bump 到该提交并推送 main——宿主全流水线
+#   （ci / apk / release）随之以新锁定版本构建。
+#
+#   触发源：
+#   • schedule（每 30 分钟轮询兜底）；
+#   • repository_dispatch（courier-kit-updated——库仓 main 全绿后的即时
+#     通道，见 apex-courier-kit/.github/workflows/notify-host.yml）。
+#
+#   纪律：
+#   • 只跟**绿**提交（check-runs 全 success；pending/failed 一律不动）；
+#   • bump 提交带 [skip ci]（防同步链自触发循环）；
+#   • 推送用 SYNC_PUSH_TOKEN（PAT——GITHUB_TOKEN 推送不触发下游工作流）。
+# ═════════════════════════════════════════════════════════════════════════════
+
+on:
+  schedule:
+    - cron: '23,53 * * * *'
+  repository_dispatch:
+    types: [courier-kit-updated]
+  workflow_dispatch: {}
+
+concurrency:
+  group: sync-courier-kit
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Bump courier-kit lock (green commits only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout host repository
+        uses: actions/checkout@v4
+        with:
+          # bump 推送需要 PAT（GITHUB_TOKEN 推送不触发下游工作流）
+          token: ${{ secrets.SYNC_PUSH_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: main
+          fetch-depth: 0
+
+      - name: Resolve upstream main SHA
+        id: upstream
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_PUSH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          UPSTREAM_SHA=$(gh api repos/Ultra-Guru/apex-courier-kit/commits/main --jq '.sha')
+          echo "sha=${UPSTREAM_SHA}" >> "$GITHUB_OUTPUT"
+          echo "upstream main @ ${UPSTREAM_SHA:0:10}"
+
+      - name: Compare with current lock
+        id: lock
+        run: |
+          set -euo pipefail
+          CURRENT=$(head -n 1 gradle/courier-kit.lock 2>/dev/null || true)
+          UPSTREAM="${{ steps.upstream.outputs.sha }}"
+          if [ "${CURRENT}" = "${UPSTREAM}" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "lock already @ ${UPSTREAM:0:10} — nothing to do"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "lock ${CURRENT:0:10} -> ${UPSTREAM:0:10}"
+          fi
+
+      - name: Verify upstream is green
+        id: green
+        if: steps.lock.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_PUSH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SHA="${{ steps.upstream.outputs.sha }}"
+          # check-runs 汇总：全 success 才放行（pending → 跳过本轮等下一趟；
+          # failed → 本工作流显式红——锁定文件绝不跟进红提交）
+          CHECKS=$(gh api "repos/Ultra-Guru/apex-courier-kit/commits/${SHA}/check-runs?per_page=100")
+          echo "${CHECKS}" | jq -e '
+            [.check_runs[]
+              | select(.name != "Gradle dependency graph" and (.name | startswith("Dependabot") | not) and .name != "Notify host")]
+            | {total: length,
+               ok: ([.[] | select(.conclusion == "success")] | length)}
+            | if .total == 0 then {skip: true} elif .ok == .total then {green: true} else {red: true} end
+          ' > /tmp/checks.json
+          if jq -e '.skip // false' /tmp/checks.json >/dev/null; then
+            echo "checks 未上报（外部触发链）——跳过本轮，等下一趟轮询确认"
+            echo "green=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if jq -e '.red // false' /tmp/checks.json >/dev/null; then
+            echo "❌ upstream 存在红 check —— 不 bump（锁定文件只跟绿提交）"
+            exit 1
+          fi
+          echo "✅ upstream 全绿"
+          echo "green=true" >> "$GITHUB_OUTPUT"
+
+      - name: Bump lock and push
+        if: steps.lock.outputs.changed == 'true' && steps.green.outputs.green == 'true'
+        run: |
+          set -euo pipefail
+          SHA="${{ steps.upstream.outputs.sha }}"
+          echo "${SHA}" > gradle/courier-kit.lock
+          git config user.name "apex-sync-bot"
+          git config user.email "sync-bot@users.noreply.github.com"
+          git add gradle/courier-kit.lock
+          git commit -m "chore(sync): bump apex-courier-kit @ ${SHA:0:10} [skip ci]" \
+            -m "自动同步：apex-courier-kit main 全绿提交 → courier-dispatch 锁定版本推进（sync-courier-kit 工作流）。"
+          # PAT 推送（剥离 checkout 持久化的 extraheader，防凭据串扰）
+          git -c "http.https://github.com/.extraheader=" push \
+            "https://x-access-token:${SYNC_PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:main
+        env:
+          SYNC_PUSH_TOKEN: ${{ secrets.SYNC_PUSH_TOKEN }}

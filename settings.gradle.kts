@@ -83,6 +83,20 @@ when {
     loomKitNested.isDirectory -> includeBuild(loomKitNested)
 }
 
+// ── 信使调度库 composite build（同款拆库模式）───────────────────────────
+// apex-courier-kit 从本仓库抽出为独立库（com.apex.courierkit:courier-dispatch
+// —— Coding「信使思考逻辑线」的循环内核：收发匣 steer/queue 投递/趟次步进
+// 机/勘合门/档房卷宗压缩/示廊公告/下站前哨）。接线方式与 apex-loom-kit
+// 完全同构：兄弟目录本地开发、嵌套目录 CI consumer-check 兜底、目录
+// 不存在时走远端 Maven 坐标。库仓库：Ultra-Guru/apex-courier-kit（含独立
+// CI + 宿主 consumer-check）。
+val courierKitSibling = file("../apex-courier-kit")
+val courierKitNested = file("apex-courier-kit")
+when {
+    courierKitSibling.isDirectory -> includeBuild(courierKitSibling)
+    courierKitNested.isDirectory -> includeBuild(courierKitNested)
+}
+
 // ── 工作区浏览器库 composite build（拆库 E1 迁移期）───────────────────────
 // apex-workspace-kit（com.apex.workspace:{core,explorer}）：Coding 模式
 // 全屏工作区浏览器（文件树 / 多格式预览 / Git 面板 / 变更和产物 / 实时跟随）。

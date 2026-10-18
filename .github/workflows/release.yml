@@ -347,6 +347,22 @@ jobs:
           ref: ${{ steps.lkitpin.outputs.sha }}
           path: apex-loom-kit
 
+      - name: Read apex-courier-kit pin
+        id: ckitpin
+        # 锁定文件 gradle/courier-kit.lock 由 sync-courier-kit 工作流自动维护：
+        # courier-kit main 有新绿提交 → 锁文件 bump → 本仓库 push → 全流水线
+        # 以新锁定版本构建。缺锁回退 main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/courier-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-courier-kit (courier-dispatch composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-courier-kit
+          ref: ${{ steps.ckitpin.outputs.sha }}
+          path: apex-courier-kit
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:

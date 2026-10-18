@@ -17,7 +17,7 @@ import org.junit.Test
 
 /**
  * DualLogicCodeEngine 路由门面测试：
- * execute 走激活引擎 / 三线同步 API / 切换语义 / 织造线装配与路由。
+ * execute 走激活引擎 / 四线同步 API / 切换语义 / 织造·信使线装配与路由。
  */
 class DualLogicCodeEngineTest {
 
@@ -113,6 +113,32 @@ class DualLogicCodeEngineTest {
     }
 
     @Test
+    fun `workspace clear and mode sync all four engines with courier line`() {
+        val deep = RecordingFacade("deep")
+        val std = RecordingFacade("std")
+        val loom = RecordingFacade("loom")
+        val courier = RecordingFacade("courier")
+        val dual = DualLogicCodeEngine(
+            deepDive = deep, standard = std, loom = loom, courier = courier
+        )
+
+        dual.setActiveWorkspace("ws9", "名", File("/tmp"))
+        assertTrue(courier.calls.contains("workspace:ws9"))
+
+        dual.clearConversation()
+        assertTrue(courier.calls.contains("clear"))
+
+        dual.updateGlobalRules("r")
+        dual.updateSessionExtras(null)
+        dual.updateForcedTools(emptySet(), false)
+        dual.updateMode(AgentMode.PLAN)
+        assertTrue(courier.calls.contains("mode:PLAN"))
+
+        dual.updateRolePersona("expert", null)
+        assertTrue(courier.calls.contains("persona"))
+    }
+
+    @Test
     fun `interactive calls route to active engine only`() {
         val deep = RecordingFacade("deep")
         val std = RecordingFacade("std")
@@ -176,6 +202,45 @@ class DualLogicCodeEngineTest {
         assertTrue(dual.isLoomEngineAvailable())
         assertTrue(dual.switchLogic(StandardLogicMode.LOOM))
         assertEquals(StandardLogicMode.LOOM, dual.activeLogic())
+    }
+
+    @Test
+    fun `courier line is optional and switch reports absence`() {
+        val deep = RecordingFacade("deep")
+        val std = RecordingFacade("std")
+        val dual = DualLogicCodeEngine(deepDive = deep, standard = std, courier = null)
+        assertFalse(dual.isCourierEngineAvailable())
+        assertFalse(dual.switchLogic(StandardLogicMode.COURIER)) // 未装配：拒绝切换
+        assertEquals(StandardLogicMode.DEEP_DIVE, dual.activeLogic()) // 激活线不变
+    }
+
+    @Test
+    fun `courier line routes execute and interactive calls`() = kotlinx.coroutines.test.runTest {
+        val deep = RecordingFacade("deep")
+        val std = RecordingFacade("std")
+        val loom = RecordingFacade("loom")
+        val courier = RecordingFacade("courier")
+        val dual = DualLogicCodeEngine(
+            deepDive = deep, standard = std, loom = loom, courier = courier
+        )
+        assertTrue(dual.isCourierEngineAvailable())
+
+        // 切信使：事件来自信使线
+        assertTrue(dual.switchLogic(StandardLogicMode.COURIER))
+        assertEquals(StandardLogicMode.COURIER, dual.activeLogic())
+        val events = dual.execute("q").toList()
+        assertTrue(events.any { it is AgentEvent.ResponseComplete && it.fullText == "[courier]" })
+
+        // 交互调用只走激活的信使线
+        dual.submitUserInput("yes")
+        assertTrue(courier.calls.contains("input:yes"))
+        assertFalse(deep.calls.contains("input:yes"))
+        assertFalse(loom.calls.contains("input:yes"))
+
+        // 仪表读数走激活线
+        dual.prepareForTask()
+        assertTrue(courier.calls.contains("prepare"))
+        assertFalse(std.calls.contains("prepare"))
     }
 
     @Test

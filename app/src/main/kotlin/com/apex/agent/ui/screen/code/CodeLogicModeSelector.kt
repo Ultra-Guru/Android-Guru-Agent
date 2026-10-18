@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -72,11 +73,13 @@ internal fun CodeLogicModeSelector(
             color = when (current) {
                 StandardLogicMode.STANDARD -> MaterialTheme.colorScheme.tertiaryContainer
                 StandardLogicMode.LOOM -> MaterialTheme.colorScheme.primaryContainer
+                StandardLogicMode.COURIER -> MaterialTheme.colorScheme.surfaceVariant
                 StandardLogicMode.DEEP_DIVE -> MaterialTheme.colorScheme.secondaryContainer
             },
             contentColor = when (current) {
                 StandardLogicMode.STANDARD -> MaterialTheme.colorScheme.onTertiaryContainer
                 StandardLogicMode.LOOM -> MaterialTheme.colorScheme.onPrimaryContainer
+                StandardLogicMode.COURIER -> MaterialTheme.colorScheme.onSurfaceVariant
                 StandardLogicMode.DEEP_DIVE -> MaterialTheme.colorScheme.onSecondaryContainer
             },
             modifier = Modifier.heightIn(min = 28.dp)
@@ -90,6 +93,7 @@ internal fun CodeLogicModeSelector(
                     imageVector = when (current) {
                         StandardLogicMode.STANDARD -> Icons.Default.Route
                         StandardLogicMode.LOOM -> Icons.Default.Layers
+                        StandardLogicMode.COURIER -> Icons.Default.Send
                         StandardLogicMode.DEEP_DIVE -> Icons.Default.Psychology
                     },
                     contentDescription = null,
@@ -138,6 +142,8 @@ internal fun CodeLogicModeSelector(
                                             MaterialTheme.colorScheme.tertiary
                                         selected && mode == StandardLogicMode.LOOM ->
                                             MaterialTheme.colorScheme.primary
+                                        selected && mode == StandardLogicMode.COURIER ->
+                                            MaterialTheme.colorScheme.tertiary
                                         selected -> MaterialTheme.colorScheme.primary
                                         else -> MaterialTheme.colorScheme.onSurface
                                     }
@@ -150,6 +156,8 @@ internal fun CodeLogicModeSelector(
                                                 R.string.code_logic_badge_standard
                                             StandardLogicMode.LOOM ->
                                                 R.string.code_logic_badge_loom
+                                            StandardLogicMode.COURIER ->
+                                                R.string.code_logic_badge_courier
                                             StandardLogicMode.DEEP_DIVE ->
                                                 R.string.code_logic_badge_deep_dive
                                         }
@@ -165,6 +173,8 @@ internal fun CodeLogicModeSelector(
                                             R.string.code_logic_standard_desc
                                         StandardLogicMode.LOOM ->
                                             R.string.code_logic_loom_desc
+                                        StandardLogicMode.COURIER ->
+                                            R.string.code_logic_courier_desc
                                         StandardLogicMode.DEEP_DIVE ->
                                             R.string.code_logic_deep_dive_desc
                                     }
@@ -192,6 +202,8 @@ internal fun CodeLogicModeSelector(
                                         MaterialTheme.colorScheme.tertiary
                                     StandardLogicMode.LOOM ->
                                         MaterialTheme.colorScheme.primary
+                                    StandardLogicMode.COURIER ->
+                                        MaterialTheme.colorScheme.tertiary
                                     StandardLogicMode.DEEP_DIVE ->
                                         MaterialTheme.colorScheme.primary
                                 },
@@ -217,6 +229,7 @@ internal fun CodeLogicModeSelector(
                     when (current) {
                         StandardLogicMode.STANDARD -> R.string.code_logic_caps_standard
                         StandardLogicMode.LOOM -> R.string.code_logic_caps_loom
+                        StandardLogicMode.COURIER -> R.string.code_logic_caps_courier
                         StandardLogicMode.DEEP_DIVE -> R.string.code_logic_caps_deep_dive
                     }
                 ),

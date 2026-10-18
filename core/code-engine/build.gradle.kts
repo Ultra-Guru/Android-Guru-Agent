@@ -33,6 +33,7 @@ dependencies {
     // 坐标自动替换（gradle/loom-kit.lock 锁定版本）；端口-适配器接线见
     // loom/LoomKitAdapter.kt。
     api("com.apex.loomkit:loom-weave:1.0.0")
+    api("com.apex.courierkit:courier-dispatch:1.0.0")
 
     // Unit testing (pure-JVM src/test)
     testImplementation(libs.junit)

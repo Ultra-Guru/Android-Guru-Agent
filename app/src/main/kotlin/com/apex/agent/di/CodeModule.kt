@@ -7,7 +7,17 @@ import com.apex.agent.core.code.CodeContextProvider
 import com.apex.agent.core.code.CodeConversationMemory
 import com.apex.agent.core.code.RulesProvider
 import com.apex.agent.core.code.StandardTextKernel
+import com.apex.agent.core.code.courier.CourierKitAdapter
 import com.apex.agent.core.code.loom.LoomKitAdapter
+import com.apex.courierkit.dispatch.CourierCommandProbe
+import com.apex.courierkit.dispatch.CourierModelInfo
+import com.apex.courierkit.dispatch.CourierPermissionSnapshot
+import com.apex.courierkit.dispatch.CourierPermissionSnapshotSource
+import com.apex.courierkit.dispatch.CourierSkillCatalog
+import com.apex.courierkit.dispatch.CourierSkillDigest
+import com.apex.courierkit.dispatch.CourierSkillPayload
+import com.apex.courierkit.dispatch.DispatchPermissionRule
+import com.apex.courierkit.dispatch.DispatchRuleEffect
 import com.apex.loomkit.weave.LoomActivePackage
 import com.apex.loomkit.weave.loop.LoomModelInfo
 import com.apex.loomkit.weave.packager.LoomPackageCatalog
@@ -208,6 +218,19 @@ object CodeModule {
     }
 
     /**
+     * 信使线 per-workspace 对话记忆（第四思考逻辑线）：独立通道
+     * code_memory_courier——与另三线互不污染，切回时现场完整恢复。
+     */
+    @Provides
+    @Singleton
+    @Named("codeCourier")
+    fun provideCourierCodeConversationMemory(
+        @ApplicationContext context: Context
+    ): CodeConversationMemory {
+        return CodeConversationMemory(File(context.filesDir, "code_memory_courier"))
+    }
+
+    /**
      * 文本加速核（C++17 JNI，token 估算 / 行级 diff / 模糊定位）：
      * .so 缺失时 NativeTextKernel 内部自动回退纯 Kotlin 实现——这里恒可注入。
      */
@@ -263,6 +286,9 @@ object CodeModule {
         // 织造线（第三线）：独立记忆通道 + 仅环境门执行器（同 #230 纪律）
         @Named("codeLoom") loomMemory: CodeConversationMemory,
         @javax.inject.Named("loomEngineTools") loomToolExecutor: ToolExecutor,
+        // 信使线（第四线）：独立记忆通道 + 仅环境门执行器（同 #230 纪律）
+        @Named("codeCourier") courierMemory: CodeConversationMemory,
+        @javax.inject.Named("courierEngineTools") courierToolExecutor: ToolExecutor,
         // MCP 服务器指引源（initialize 握手的 instructions 字段——标准线
         // 注入系统提示词，模型拿到服务器官方用法指引）
         mcpManager: McpManager,
@@ -450,7 +476,83 @@ object CodeModule {
             },
             packageCatalog = loomPackageCatalog
         )
-        return DualLogicCodeEngine(deepDive = deepDive, standard = standard, loom = loom)
+        // 信使线（第四线，独立库 com.apex.courierkit:courier-dispatch）：端口适配
+        // + 库内自有循环（收发匣 / 趟次步进机 / 勘合门 / 档房 / 示廊 / 下站前哨
+        // ——全部在 apex-courier-kit 库演进，宿主仅保留薄适配层）。设置层权限
+        // 规则 → 勘合则例映射：无空格模式 → 工具 id 伪动作（tool）；含空格模式
+        // → 终端命令模式（bash）。
+        val courierPermissionSource = CourierPermissionSnapshotSource {
+            val settings = settingsRepository.agentSettings.value
+            CourierPermissionSnapshot(
+                rules = settings.permissionRules
+                    .filter { !it.pattern.contains(' ') }
+                    .map { it.toCourierToolRule() },
+                commandRules = settings.permissionRules
+                    .filter { it.pattern.contains(' ') }
+                    .map { it.toCourierToolRule() }
+            )
+        }
+        // 技能目录（示廊清单 + 委派装载）：共享技能仓库的 coding 域技能
+        val courierSkillCatalog = object : CourierSkillCatalog {
+            override fun list(): List<CourierSkillDigest> =
+                skillRegistry.getSkillDigests("coding").map {
+                    CourierSkillDigest(id = it.id, title = it.name)
+                }
+
+            override fun load(id: String): CourierSkillPayload? {
+                val skill = skillRegistry.get(id) ?: return null
+                val scopes = skillRegistry.effectiveScopesOf(id)
+                if ("coding" !in scopes) return null
+                val manifest = skill.manifest
+                return CourierSkillPayload(
+                    id = manifest.id,
+                    title = manifest.name,
+                    instructions = manifest.promptInjection?.takeIf { it.isNotBlank() }
+                        ?: manifest.description
+                )
+            }
+        }
+        // 终端命令探针：从终端类工具参数提取命令串（勘合复合命令逐段核验）
+        val courierCommandProbe = CourierCommandProbe { toolId, arguments ->
+            if (toolId == SHELL_TOOL_ID || toolId.contains("terminal", ignoreCase = true)) {
+                extractJsonStringField(arguments, "command")
+            } else {
+                null
+            }
+        }
+        val courier = CourierKitAdapter(
+            runtime = modelRuntime,
+            toolRegistry = toolRegistry,
+            // #230 同款：信使线勘合门 + 仅环境门执行器（防双弹窗）
+            toolExecutor = courierToolExecutor,
+            memory = courierMemory,
+            contextProvider = codeContextProvider,
+            rulesProvider = RulesProvider(),
+            textKernel = standardTextKernel,
+            permissionSource = courierPermissionSource,
+            modelInfoProvider = {
+                try {
+                    (modelRuntime.resolve(ModelRole.PRIMARY) as? ModelRoleRouter.ResolutionResult.Success)
+                        ?.primary?.profile
+                        ?.let {
+                            CourierModelInfo(
+                                modelId = it.name,
+                                contextWindow = it.contextWindow
+                            )
+                        }
+                } catch (t: Throwable) {
+                    null
+                }
+            },
+            skillCatalog = courierSkillCatalog,
+            commandProbe = courierCommandProbe
+        )
+        return DualLogicCodeEngine(
+            deepDive = deepDive,
+            standard = standard,
+            loom = loom,
+            courier = courier
+        )
     }
 
     /** 设置层规则 → 织造线规则（效应枚举一一对应）。 */
@@ -474,4 +576,33 @@ object CodeModule {
                 PermissionEffect.DENY -> KitPermissionEffect.DENY
             }
         )
+
+    /** 设置层规则 → 信使线工具 id 伪动作则例（无空格=工具 id / 含空格=命令模式→bash）。 */
+    private fun PermissionRule.toCourierToolRule(): DispatchPermissionRule =
+        DispatchPermissionRule(
+            action = if (pattern.contains(' ')) "bash" else "tool",
+            resource = pattern,
+            effect = when (effect) {
+                PermissionEffect.ALLOW -> DispatchRuleEffect.ALLOW
+                PermissionEffect.ASK -> DispatchRuleEffect.ASK
+                PermissionEffect.DENY -> DispatchRuleEffect.DENY
+            }
+        )
+
+    /** 工具参数 JSON 提取字符串字段（终端命令探针用；坏 JSON 折叠 null）。 */
+    private fun extractJsonStringField(json: String, field: String): String? = try {
+        val obj = kotlinx.serialization.json.Json.parseToJsonElement(json)
+        (obj as? kotlinx.serialization.json.JsonObject)
+            ?.get(field)?.let { el ->
+                (el as? kotlinx.serialization.json.JsonPrimitive)
+                    ?.takeIf { it.isString }?.content
+            }
+    } catch (t: Throwable) {
+        null
+    }
+
+    private companion object {
+        /** 终端执行工具 id（宿主注册表口径）。 */
+        const val SHELL_TOOL_ID = "ShellExecute"
+    }
 }

@@ -229,8 +229,13 @@
     <string name="code_logic_loom_desc">Warp-weft paradigm: in-band XML tool protocol, shuttle round machine, permission modes, thread swarm, weaving packages, mid-run steering</string>
     <string name="code_logic_caps_loom">XML protocol · warp/weft rounds · thread swarm · digest compaction</string>
     <string name="code_logic_switched_loom">🧶 Thinking logic switched to Loom (warp-weft paradigm). Your previous session is kept and will resume when you switch back.</string>
+    <string name="code_logic_mode_courier">Courier</string>
+    <string name="code_logic_badge_courier">relay dispatch</string>
+    <string name="code_logic_courier_desc">Relay-station paradigm: inbox steer/queue delivery, trip step machine with parallel tool tracks, permit-pattern signal gate, dossier compaction, child-station subagents</string>
+    <string name="code_logic_caps_courier">inbox relay · trip steps · permit gate · dossier compaction</string>
+    <string name="code_logic_switched_courier">📮 Thinking logic switched to Courier (relay-station paradigm). Your previous session is kept and will resume when you switch back.</string>
     <string name="code_logic_switched_deep_dive">🤿 Thinking logic switched to Deep Dive (self-designed seven tiers). Your Standard session is kept and will resume when you switch back.</string>
-    <string name="code_logic_unknown_mode">⚠️ /logic:%1$s is not a known mode — use /logic:standard, /logic:loom or /logic:deep_dive (aliases: std, weave, deep)</string>
+    <string name="code_logic_unknown_mode">⚠️ /logic:%1$s is not a known mode — use /logic:standard, /logic:loom, /logic:courier or /logic:deep_dive (aliases: std, weave, express, deep)</string>
 
     <!-- ═══ v6 Git 工作区面板（右上角入口：变更文件 + git 功能）═══ -->
     <string name="code_git_cd">Open Git workspace</string>

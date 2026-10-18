@@ -288,6 +288,7 @@ class CodeViewModel @Inject constructor(
                 when (mode) {
                     StandardLogicMode.STANDARD -> R.string.code_logic_switched_standard
                     StandardLogicMode.LOOM -> R.string.code_logic_switched_loom
+                    StandardLogicMode.COURIER -> R.string.code_logic_switched_courier
                     StandardLogicMode.DEEP_DIVE -> R.string.code_logic_switched_deep_dive
                 }
             )
