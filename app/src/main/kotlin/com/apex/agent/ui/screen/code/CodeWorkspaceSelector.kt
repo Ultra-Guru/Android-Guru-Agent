@@ -43,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -81,7 +82,7 @@ internal fun CodeWorkspaceSelectorChip(
 
     // SAF 文件夹选择（真实工作目录）：解码成宿主路径后走 importFrom；
     // 解码失败（非 externalstorage provider）→ 空路径信号 → VM 错误条
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     val folderPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { uri: Uri? ->
