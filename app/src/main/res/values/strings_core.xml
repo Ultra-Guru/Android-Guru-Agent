@@ -692,6 +692,22 @@
     <string name="about_link_source">Source code</string>
     <string name="about_link_release">Release channel</string>
     <string name="about_link_issues">Report an issue</string>
+    <!-- ═══ 官网链接 + 问题反馈（Guru API 邮件直达通道）═══ -->
+    <string name="about_link_website">Official Website</string>
+    <string name="about_feedback_title">Feedback</string>
+    <string name="about_feedback_entry">Goes straight to the developer\'s inbox</string>
+    <string name="about_feedback_hint">Your message will be delivered straight to the developer\'s inbox. Leaving a contact is optional and helps us follow up</string>
+    <string name="about_feedback_message_label">Message</string>
+    <string name="about_feedback_counter">%1$d / %2$d</string>
+    <string name="about_feedback_contact_label">Contact (optional)</string>
+    <string name="about_feedback_contact_hint">Email / QQ / Telegram — so we can reach you back</string>
+    <string name="about_feedback_submit">Submit</string>
+    <string name="about_feedback_sending">Sending…</string>
+    <string name="about_feedback_success">Feedback delivered to the developer\'s inbox — thank you!</string>
+    <string name="about_feedback_failed">Send failed: %1$s</string>
+    <string name="about_feedback_network_error">Network error — please check your connection and retry</string>
+    <string name="about_feedback_cancel">Cancel</string>
+    <string name="about_feedback_done">Done</string>
     <string name="about_footer">Apex Agent · open source</string>
     <!-- ═══ v1.4.4: usage dashboard / diagnostics center (drawer destinations) ═══ -->
     <string name="drawer_usage">Usage</string>

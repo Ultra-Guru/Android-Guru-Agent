@@ -47,8 +47,10 @@ import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Mail
 import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.material.icons.outlined.Terminal
@@ -112,8 +114,9 @@ import kotlin.math.sin
  *  3. 版本与构建（BuildConfig 真实值，行间发丝分隔线）；
  *  4. 功能一览（六大能力，图标 + 一句话，三色强调轮转）；
  *  5. 技术栈（真实运行时依赖清单 → FlowRow 等宽徽章墙）；
- *  6. 相关链接（源码 / 发布通道 / 问题反馈）；
- *  7. Star 引导（渐变 CTA + 星标脉冲）+ 致谢页脚。
+ *  6. 相关链接（官网 / 源码 / 发布通道 / GitHub Issues）；
+ *  7. 问题反馈（Guru API 邮件直达通道，见 [AboutFeedbackDialog]）；
+ *  8. Star 引导（渐变 CTA + 星标脉冲）+ 致谢页脚。
  *
  * 各区块入场为一次性交错动画（[AboutSectionContainer]）；Hero 的常驻
  * 动画全部走「State 在 draw 作用域读取」模式 —— 零重组，仅重绘对应图层。
@@ -130,6 +133,9 @@ private const val REPO_URL = "https://github.com/Ultra-Guru/Android-Guru-Agent"
 
 /** 发布仓库（双仓库发布架构的产物存放处）。 */
 private const val RELEASE_URL = "https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases"
+
+/** 官方后端（Guru API）同域官网 —— 相关链接区的第一位。 */
+private const val WEBSITE_URL = GURU_API_BASE_URL
 
 /** Star 引导行图标色：琥珀色，与 M3 主色拉开距离，白/深底上都醒目。 */
 private val StarAmber = Color(0xFFF59E0B)
@@ -296,6 +302,12 @@ fun AboutScreen() {
                 icon = Icons.Outlined.OpenInNew
             ) {
                 LinkRow(
+                    Icons.Outlined.Language,
+                    stringResource(R.string.about_link_website),
+                    WEBSITE_URL,
+                    open
+                )
+                LinkRow(
                     Icons.Outlined.Code,
                     stringResource(R.string.about_link_source),
                     REPO_URL,
@@ -314,6 +326,37 @@ fun AboutScreen() {
                     open
                 )
             }
+        }
+
+        // ── 问题反馈（Guru API 上线：填写表单直达开发者邮箱）──
+        var showFeedback by remember { mutableStateOf(false) }
+        AboutSectionContainer(index = 8) {
+            AboutSectionCard(
+                title = stringResource(R.string.about_feedback_title),
+                icon = Icons.Outlined.Mail
+            ) {
+                // 整行可点：弹反馈对话框（表单与上报三态都在 [AboutFeedbackDialog]）
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showFeedback = true },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        stringResource(R.string.about_feedback_entry),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.outline
+                    )
+                }
+            }
+        }
+        if (showFeedback) {
+            AboutFeedbackDialog(onDismiss = { showFeedback = false })
         }
 
         // ── Star 引导 ──
