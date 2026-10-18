@@ -3,7 +3,7 @@
 ## Upstream
 
 - Repository: https://github.com/Ultra-Guru/apex-vt-native
-- Vendored commit: `19e8fb592875e0f3b4a165bdc107db7095e50a4d` (v0.2 foundation — upstream PR #1, CI green: host tests + 3×NDK)
+- Vendored commit: `cc9d10edf8fd5b62840a3840859918a017bffe5c` (v0.2.1 — upstream PR #1 v0.2 foundation + PR #2 P0 CSI 大参数溢出钳位 + PR #3 P2 宽字符对奇偶校验，CI green: host tests + fuzz + 3×NDK)
 - License: MIT (upstream LICENSE applies to the vendored sources)
 
 ## What is vendored
