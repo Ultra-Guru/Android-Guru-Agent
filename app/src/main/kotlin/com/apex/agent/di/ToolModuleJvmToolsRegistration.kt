@@ -8,9 +8,11 @@ import com.apex.agent.platform.terminal.tools.*
 import com.apex.agent.core.tools.builtin.JsonTransformTool
 import com.apex.agent.core.tools.builtin.VersionCompareTool
 import com.apex.agent.core.tools.builtin.WaitTool
+import com.apex.agent.core.tools.builtin.context.ContextFetchTool
 import com.apex.agent.core.tools.builtin.context.ContextRecapTool
 import com.apex.agent.core.tools.builtin.context.ContextSearchTool
 import com.apex.agent.core.tools.builtin.context.ConversationMemoryContextProvider
+import com.apex.agent.core.tools.builtin.context.SessionContextArchive
 import com.apex.agent.core.tools.builtin.context.SessionContextProvider
 import com.apex.agent.core.tools.builtin.context.SessionStatsTool
 import com.apex.agent.core.tools.builtin.merged.JsonTool
@@ -61,7 +63,8 @@ internal fun registerUtilityTools(
 /** §14/14b/14c：Tool System v3 新工具 + v5 合并四族 + 上下文回顾三件套。 */
 internal fun registerToolSystemV3V5Tools(
     registry: DefaultToolRegistry,
-    conversationMemory: ConversationMemory
+    conversationMemory: ConversationMemory,
+    contextArchive: SessionContextArchive
 ) {
     // ═══ 14. Tool System v3 新工具（纯 JVM，零新依赖）═══
     // wait：Anthropic computer-use 语义的有界可取消等待（UI 稳定窗口）；
@@ -84,14 +87,17 @@ internal fun registerToolSystemV3V5Tools(
     registry.register(SafeAgentTool(RegexTool()))
     registry.register(SafeAgentTool(JsonTool()))
 
-    // ═══ 14c. Tool System v5 —— #172 上下文回顾三件套（context 包）═══
+    // ═══ 14c. Tool System v5 —— #172 上下文回顾三件套 + #396 取原文 ═══
     // 会话内自救：ContextRecap（结构化全景，CORE）/ ContextSearch
-    // （子串定位）/ SessionStats（画像）。数据源接线到 SharedPrefs
+    // （子串+模糊定位，CORE）/ SessionStats（画像）/#396 ContextFetch
+    // （按定位符取单条记录全文，CORE）。数据源接线：活跃源 = SharedPrefs
     // ConversationMemory 单例（LlmMessage→ContextRecord，System 保留、
-    // content 截断 2000、assistant 工具调用补 [tool_call] 标记行）。
+    // content 截断 2000、assistant 工具调用补 [tool_call] 标记行）；
+    // 归档源 = 压缩装饰器写入的 FileContextArchive（全文不截断）。
     val sessionContext: SessionContextProvider =
         ConversationMemoryContextProvider { conversationMemory.load() }
-    registry.register(SafeAgentTool(ContextRecapTool(sessionContext)))
-    registry.register(SafeAgentTool(ContextSearchTool(sessionContext)))
+    registry.register(SafeAgentTool(ContextRecapTool(sessionContext, contextArchive)))
+    registry.register(SafeAgentTool(ContextSearchTool(sessionContext, contextArchive)))
     registry.register(SafeAgentTool(SessionStatsTool(sessionContext)))
+    registry.register(SafeAgentTool(ContextFetchTool({ conversationMemory.load() }, contextArchive)))
 }

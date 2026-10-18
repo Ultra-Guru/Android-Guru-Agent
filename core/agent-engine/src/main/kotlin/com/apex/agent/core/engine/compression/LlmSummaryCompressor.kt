@@ -169,10 +169,12 @@ class LlmSummaryCompressor(
     }
 
     private fun formatMessagesForSummary(messages: List<LlmMessage>): String {
+        // #396 摘要质量：用户原文放宽到 1000 字符（任务/约束常在长 prompt 里，
+        // 500 会腰斩；被裁剪原文另有归档可检索，摘要只需保主干语义）。
         return messages.joinToString("\n") { msg ->
             when (msg) {
                 is LlmMessage.System -> "[System]: ${msg.content.take(200)}"
-                is LlmMessage.User -> "[User]: ${msg.content.take(500)}"
+                is LlmMessage.User -> "[User]: ${msg.content.take(1000)}"
                 is LlmMessage.Assistant -> {
                     val toolInfo = if (msg.toolCalls.isNotEmpty()) {
                         " [Called: ${msg.toolCalls.joinToString { it.name }}]"

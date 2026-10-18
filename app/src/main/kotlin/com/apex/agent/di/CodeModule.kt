@@ -45,6 +45,7 @@ import com.apex.agent.core.tools.ToolRegistry
 import com.apex.agent.core.tools.catalog.ToolActivationStore
 import com.apex.agent.core.tools.skill.SkillRegistry
 import com.apex.agent.platform.code.ws.CodeWorkspaceManager
+import com.apex.agent.ui.screen.code.history.CodeHistoryStore
 import com.apex.agent.ui.screen.code.session.CodeSessionStore
 import dagger.Module
 import dagger.Provides
@@ -97,6 +98,21 @@ object CodeModule {
     @Singleton
     fun provideCodeSessionStore(@ApplicationContext context: Context): CodeSessionStore {
         return CodeSessionStore(File(context.filesDir, "code_sessions"))
+    }
+
+    /**
+     * Coding 历史对话归档仓库（v1.4.10）：新会话先归档（UI 快照 + 双线引擎记忆
+     * 原文件），历史面板可恢复/删除。目录约定：code_history 与引擎记忆目录
+     * code_memory / code_memory_standard 同层隔离。
+     */
+    @Provides
+    @Singleton
+    fun provideCodeHistoryStore(@ApplicationContext context: Context): CodeHistoryStore {
+        return CodeHistoryStore(
+            baseDir = File(context.filesDir, "code_history"),
+            deepMemoryDir = File(context.filesDir, "code_memory"),
+            standardMemoryDir = File(context.filesDir, "code_memory_standard")
+        )
     }
 
     /**

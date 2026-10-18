@@ -493,6 +493,7 @@ object ToolModule {
         vaultRepository: VaultRepository,
         // #172 上下文回顾三件套的数据源：当前会话持久化消息（SharedPrefs 单例）。
         conversationMemory: com.apex.agent.core.engine.ConversationMemory,
+        contextArchive: FileContextArchive,
         // 技能渐进披露：SkillActivate 工具 + 子代理引擎工厂共享的激活存储。
         skillActivation: com.apex.agent.core.tools.skill.SkillActivationStore,
         // 能力自省：官方市场源（MarketplaceModule 单例）—— MarketSearch
@@ -976,8 +977,8 @@ object ToolModule {
         // ═══ 13b. FusionBundle 工具族（FusionList/FusionInfo/FusionActivate —— 注册体在卫星文件）═══
         registerFusionBundleTools(registry, fusionController)
 
-        // ═══ 14. Tool System v3/v5 新工具（纯 JVM）—— 注册体拆至同文件（同上 SRP 预算）═══
-        registerToolSystemV3V5Tools(registry, conversationMemory)
+        // ═══ 14. Tool System v3/v5 新工具（纯 JVM）—— 注册体拆至同文件（同上 SRP 预算）
+        registerToolSystemV3V5Tools(registry, conversationMemory, contextArchive)
 
         // ═══ 14d. Tool System v5 —— #172 高级设备工具包（lambda 注入）═══
         // torch/vibrate/BatteryStatus/NetworkInfo/TtsSpeak（SYSTEM）+

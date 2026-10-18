@@ -90,7 +90,11 @@ object ToolTierPolicy {
         // #171：GetTimeLegacy → time（四族合并后唯一时间入口）；
         // #172：ContextRecap 入 CORE —— 长会话自救的关键工具（迷路时一次
         // 调用重建全景，无需 ToolSearch 两跳）。
-        "GetDeviceInfo", "Time", "ContextRecap", "Clipboard", "Screenshot", "Calculate",
+        // #396：ContextSearch / ContextFetch 入 CORE —— 上下文自主检索闭环
+        // （被压缩裁剪的历史也检索得到、取得到原文）；三元组常驻，模型
+        // 需要时一步直达，不需要时只付 schema 成本不付内容成本。
+        "GetDeviceInfo", "Time", "ContextRecap", "ContextSearch", "ContextFetch",
+        "Clipboard", "Screenshot", "Calculate",
 
         // ── MCP (first-class tools register as mcp__server__tool) ──
         "McpList", "McpConnect", "McpCall",
