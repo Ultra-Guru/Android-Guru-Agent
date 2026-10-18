@@ -29,6 +29,8 @@ class StandardLogicModeTest {
         assertEquals(StandardLogicMode.DEEP_DIVE, StandardLogicMode.fromName("apex"))
         assertEquals(StandardLogicMode.DEEP_DIVE, StandardLogicMode.fromName("custom"))
         assertEquals(StandardLogicMode.STANDARD, StandardLogicMode.fromName("std"))
+        assertEquals(StandardLogicMode.LOOM, StandardLogicMode.fromName("loom"))
+        assertEquals(StandardLogicMode.LOOM, StandardLogicMode.fromName("weave"))
     }
 
     @Test
@@ -41,9 +43,12 @@ class StandardLogicModeTest {
     }
 
     @Test
-    fun `isStandard flag matches kind`() {
+    fun `isStandard and isLoom flags match kind`() {
         assertFalse(StandardLogicMode.DEEP_DIVE.isStandard)
         assertTrue(StandardLogicMode.STANDARD.isStandard)
+        assertFalse(StandardLogicMode.STANDARD.isLoom)
+        assertTrue(StandardLogicMode.LOOM.isLoom)
+        assertFalse(StandardLogicMode.LOOM.isStandard)
     }
 
     @Test

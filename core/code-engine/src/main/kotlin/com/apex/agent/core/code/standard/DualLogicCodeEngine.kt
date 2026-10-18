@@ -12,15 +12,14 @@ import java.io.File
 import kotlinx.coroutines.flow.Flow
 
 /**
- * # Dual Logic Code Engine — Coding 屏双思考逻辑路由门面
+ * # Dual Logic Code Engine — Coding 屏三思考逻辑路由门面
  *
- * Coding 屏的 [AgentEngine] 注入点从单引擎升级为**双引擎路由**：
+ * Coding 屏的 [AgentEngine] 注入点从双引擎升级为**三引擎路由**：
  *
  * ```
  * CodeViewModel ──► DualLogicCodeEngine ──┬──► CodeAgentEngine（深潜线）
- *              （右上角切换）                └──► StandardKitAdapter（标准线）
- *                                              └─► standard-loop 库内核
- *                                                  （com.apex.standardkit:standard-loop）
+ *              （右上角切换）              ├──► StandardKitAdapter（标准线）
+ *                                          └──► LoomEngine（织造线）
  * ```
  *
  * ## 路由规则
@@ -28,43 +27,49 @@ import kotlinx.coroutines.flow.Flow
  * | 调用 | 路由目标 |
  * |---|---|
  * | execute / abort / submitUserInput / cancelUserInput | 当前激活引擎 |
- * | setActiveWorkspace / clearConversation | **两条线同步**（各自独立记忆通道） |
- * | updateGlobalRules / updateSessionExtras / updateForcedTools / updateMode | 两条线同步（廉价缓存写入） |
+ * | setActiveWorkspace / clearConversation | **三条线同步**（各自独立记忆通道） |
+ * | updateGlobalRules / updateSessionExtras / updateForcedTools / updateMode | 三条线同步（廉价缓存写入） |
  * | prepareForTask / updateThinkingLevel / thinkingLevel / 仪表读数 | 当前激活引擎 |
- * | submitPlanConfirmation | 当前激活引擎（两条线各自的人控门互不串扰） |
+ * | submitPlanConfirmation | 当前激活引擎（三条线各自的人控门互不串扰） |
  *
  * ## 现场隔离
  *
- * 两条线各有独立会话记忆（深潜 code_memory / 标准 code_memory_standard）
- * ——切到另一条线时旧线现场保留，切回来继续。用户「新会话」清空两条线
- * （意图 = 全新开始，残留半截现场反而困惑）。
+ * 三条线各有独立会话记忆（深潜 code_memory / 标准 code_memory_standard /
+ * 织造 code_memory_loom）——切到另一条线时旧线现场保留，切回来继续。
+ * 用户「新会话」清空三条线（意图 = 全新开始，残留半截现场反而困惑）。
  *
- * 线程契约：[switchLogic] 仅赋一个 volatile 引用 + 同步双线轻量缓存；
- * 运行中切换被拒绝（isStandardEngineRunning 查询由 VM 在发送前判断）。
+ * 线程契约：[switchLogic] 仅赋一个 volatile 引用 + 同步三线轻量缓存；
+ * 运行中切换被拒绝（isAnyEngineRunning 查询由 VM 在发送前判断）。
  */
 class DualLogicCodeEngine(
     /** 深潜线（自研思考逻辑）。 */
     private val deepDive: CodeEngineFacade,
     /** 标准线（标准任务循环）。 */
-    private val standard: CodeEngineFacade
+    private val standard: CodeEngineFacade,
+    /** 织造线（经纬交织范式）。 */
+    private val loom: CodeEngineFacade? = null
 ) : AgentEngine, CodeEngineFacade {
 
     @Volatile
     private var active: CodeEngineFacade = deepDive
 
     /** 当前思考逻辑（持久化由 VM 侧负责，本类只持有运行态）。 */
-    fun activeLogic(): StandardLogicMode =
-        if (active === standard) StandardLogicMode.STANDARD else StandardLogicMode.DEEP_DIVE
+    fun activeLogic(): StandardLogicMode = when (active) {
+        standard -> StandardLogicMode.STANDARD
+        loom -> StandardLogicMode.LOOM
+        else -> StandardLogicMode.DEEP_DIVE
+    }
 
     /**
      * 切换思考逻辑。
      *
-     * @return true = 切换成功；false = 标准线正在运行（拒绝切换，UI 提示稍后）
+     * @return true = 切换成功；false = 目标线未装配（DI 缺线——不切换）
      */
     fun switchLogic(mode: StandardLogicMode): Boolean {
         val target = when (mode) {
             StandardLogicMode.DEEP_DIVE -> deepDive
             StandardLogicMode.STANDARD -> standard
+            StandardLogicMode.LOOM -> loom ?: return false
         }
         if (active === target) return true
         active = target
@@ -78,7 +83,10 @@ class DualLogicCodeEngine(
     /** 标准线是否正在运行（VM 发送前检查，防运行中切换丢现场）。 */
     fun isStandardEngineRunning(): Boolean = standard === active
 
-    // ═══════════════════════ AgentEngine（当前激活引擎）═══════════════════════
+    /** 织造线是否装配（UI 可据此隐藏未接线档位）。 */
+    fun isLoomEngineAvailable(): Boolean = loom != null
+
+    // ═══════════════════════════ AgentEngine（当前激活引擎）═════════════════════════
 
     override fun execute(input: String): Flow<AgentEvent> = active.execute(input)
 
@@ -90,7 +98,7 @@ class DualLogicCodeEngine(
 
     override fun cancelUserInput() = active.cancelUserInput()
 
-    // ═══════════════════════ 双线同步 API ═══════════════════════
+    // ═══════════════════════════ 三线同步 API ═══════════════════════════
 
     override fun setActiveWorkspace(
         workspaceId: String,
@@ -100,40 +108,47 @@ class DualLogicCodeEngine(
     ) {
         deepDive.setActiveWorkspace(workspaceId, name, root, activeFile)
         standard.setActiveWorkspace(workspaceId, name, root, activeFile)
+        loom?.setActiveWorkspace(workspaceId, name, root, activeFile)
     }
 
     override fun clearConversation() {
         deepDive.clearConversation()
         standard.clearConversation()
+        loom?.clearConversation()
     }
 
     override fun updateGlobalRules(rules: String) {
         deepDive.updateGlobalRules(rules)
         standard.updateGlobalRules(rules)
+        loom?.updateGlobalRules(rules)
     }
 
     override fun updateSessionExtras(extras: String?) {
         deepDive.updateSessionExtras(extras)
         standard.updateSessionExtras(extras)
+        loom?.updateSessionExtras(extras)
     }
 
-    /** v6 专家模板人设（双线同步——切线后人设不丢）。 */
+    /** v6 专家模板人设（三线同步——切线后人设不丢）。 */
     override fun updateRolePersona(roleDefinition: String, rolePrompt: String?) {
         deepDive.updateRolePersona(roleDefinition, rolePrompt)
         standard.updateRolePersona(roleDefinition, rolePrompt)
+        loom?.updateRolePersona(roleDefinition, rolePrompt)
     }
 
     override fun updateForcedTools(forcedToolIds: Set<String>, exposeAll: Boolean) {
         deepDive.updateForcedTools(forcedToolIds, exposeAll)
         standard.updateForcedTools(forcedToolIds, exposeAll)
+        loom?.updateForcedTools(forcedToolIds, exposeAll)
     }
 
     override fun updateMode(mode: AgentMode) {
         deepDive.updateMode(mode)
         standard.updateMode(mode)
+        loom?.updateMode(mode)
     }
 
-    // ═══════════════════════ 当前激活引擎直通 ═══════════════════════
+    // ═══════════════════════════ 当前激活引擎直通 ═══════════════════════════
 
     override fun setActiveFile(activeFile: String?) = active.setActiveFile(activeFile)
 

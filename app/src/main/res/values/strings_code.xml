@@ -224,8 +224,13 @@
     <string name="code_logic_caps_standard">Roles · allow/ask/deny · task sub-agents · compaction</string>
     <string name="code_logic_switch_blocked">A run is active — switch after it finishes</string>
     <string name="code_logic_switched_standard">🧭 Thinking logic switched to Standard (agent loop). Your Deep Dive session is kept and will resume when you switch back.</string>
+    <string name="code_logic_mode_loom">Loom</string>
+    <string name="code_logic_badge_loom">in-band weave</string>
+    <string name="code_logic_loom_desc">Warp-weft paradigm: in-band XML tool protocol, shuttle round machine, permission modes, thread swarm, weaving packages, mid-run steering</string>
+    <string name="code_logic_caps_loom">XML protocol · warp/weft rounds · thread swarm · digest compaction</string>
+    <string name="code_logic_switched_loom">🧶 Thinking logic switched to Loom (warp-weft paradigm). Your previous session is kept and will resume when you switch back.</string>
     <string name="code_logic_switched_deep_dive">🤿 Thinking logic switched to Deep Dive (self-designed seven tiers). Your Standard session is kept and will resume when you switch back.</string>
-    <string name="code_logic_unknown_mode">⚠️ /logic:%1$s is not a known mode — use /logic:standard or /logic:deep_dive (aliases: std, deep)</string>
+    <string name="code_logic_unknown_mode">⚠️ /logic:%1$s is not a known mode — use /logic:standard, /logic:loom or /logic:deep_dive (aliases: std, weave, deep)</string>
 
     <!-- ═══ v6 Git 工作区面板（右上角入口：变更文件 + git 功能）═══ -->
     <string name="code_git_cd">Open Git workspace</string>

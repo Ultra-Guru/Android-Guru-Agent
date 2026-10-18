@@ -265,15 +265,12 @@ class CodeViewModel @Inject constructor(
         setupGoalController()
     }
 
-    // ═══ v1.5 思考逻辑（深潜 = 自研七档 / 标准 = 标准任务循环）═══
+    // ═══ v1.5 思考逻辑三线（深潜 = 自研七档 / 标准 = 任务循环 / 织造 = 经纬交织）═══
 
     /**
-     * 切换思考逻辑（Coding 屏右上角选择器入口）：
-     * - 持久化（AgentSettings.codeThinkingLogic）；
-     * - 双引擎门面即时路由（下一轮 execute 走新引擎）；
-     * - 系统消息告知（两线会话现场各自独立保留——切换不清空现场，
-     *   切回来继续）；
-     * - 运行中拒绝切换（防丢现场），由 UI 弹提示。
+     * 切换思考逻辑（Coding 屏右上角选择器入口）：持久化 + 三引擎门面
+     * 即时路由 + 系统消息（各线现场独立保留，切回即恢复）+ 运行中拒绝
+     * （防丢现场，由 UI 弹提示）。
      *
      * @return true = 切换成功；false = 正在运行（UI 提示稍后再切）
      */
@@ -287,11 +284,13 @@ class CodeViewModel @Inject constructor(
         }
         _uiState.update { it.copy(logicMode = mode) }
         appendSystemMessage(
-            if (mode == StandardLogicMode.STANDARD) {
-                languageManager.getString(R.string.code_logic_switched_standard)
-            } else {
-                languageManager.getString(R.string.code_logic_switched_deep_dive)
-            }
+            languageManager.getString(
+                when (mode) {
+                    StandardLogicMode.STANDARD -> R.string.code_logic_switched_standard
+                    StandardLogicMode.LOOM -> R.string.code_logic_switched_loom
+                    StandardLogicMode.DEEP_DIVE -> R.string.code_logic_switched_deep_dive
+                }
+            )
         )
         // 引擎侧同步当前模式/档位（新激活线接收与 UI 一致的 Build/Plan 与档位）
         codeEngineImpl?.updateMode(_uiState.value.mode)
@@ -820,9 +819,9 @@ class CodeViewModel @Inject constructor(
      * 引擎从不感知 AUTO——coding 自治语义。
      */
     private fun resolveRuntimeThinkingLevel(goal: String) {
-        // v1.5 标准线无 AUTO 预检机制（思考档位仅映射回合预算倍率）——
-        // 预检与决策回显只在深潜线进行，避免标准线出现无关的自适应消息。
-        if (_uiState.value.logicMode == StandardLogicMode.STANDARD) {
+        // v1.5+ 非深潜线无 AUTO 预检机制（标准线档位仅映射回合预算倍率；
+        // 织造线档位映射回合倍率+努力取向）——预检与决策回显只在深潜线进行。
+        if (_uiState.value.logicMode != StandardLogicMode.DEEP_DIVE) {
             effectiveRunLevel = _uiState.value.thinkingLevel
             return
         }
@@ -857,8 +856,8 @@ class CodeViewModel @Inject constructor(
         runToolCalls++
         recentToolOutcomes.addLast(event.success)
         while (recentToolOutcomes.size > RECENT_OUTCOME_WINDOW) recentToolOutcomes.removeFirst()
-        // v1.5 标准线无深水区升级观察器（回合预算由画像×档位倍率自洽）
-        if (_uiState.value.logicMode == StandardLogicMode.STANDARD) return
+        // v1.5+ 深水区升级是深潜线专属（标准/织造线回合预算由档位倍率自洽）
+        if (_uiState.value.logicMode != StandardLogicMode.DEEP_DIVE) return
         if (_uiState.value.thinkingLevel != CodeThinkingLevel.AUTO) return
         val decision = adaptiveSelector.escalateOnDeepWater(
             runToolCalls = runToolCalls,

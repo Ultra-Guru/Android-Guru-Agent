@@ -7,6 +7,16 @@ import com.apex.agent.core.code.CodeContextProvider
 import com.apex.agent.core.code.CodeConversationMemory
 import com.apex.agent.core.code.RulesProvider
 import com.apex.agent.core.code.StandardTextKernel
+import com.apex.agent.core.code.loom.LoomActivePackage
+import com.apex.agent.core.code.loom.LoomEngine
+import com.apex.agent.core.code.loom.loop.LoomModelInfo
+import com.apex.agent.core.code.loom.packager.LoomPackageCatalog
+import com.apex.agent.core.code.loom.packager.LoomPackageInfo
+import com.apex.agent.core.code.loom.permission.LoomAccessMode
+import com.apex.agent.core.code.loom.permission.LoomPermissionRule
+import com.apex.agent.core.code.loom.permission.LoomPermissionSnapshot
+import com.apex.agent.core.code.loom.permission.LoomPermissionSource
+import com.apex.agent.core.code.loom.permission.LoomRuleEffect
 import com.apex.agent.core.code.standard.DualLogicCodeEngine
 import com.apex.agent.core.code.standard.StandardKitAdapter
 import com.apex.agent.core.tools.catalog.McpToolNaming
@@ -185,6 +195,19 @@ object CodeModule {
     }
 
     /**
+     * 织造线 per-workspace 对话记忆（第三思考逻辑线）：独立通道
+     * code_memory_loom——与深潜/标准互不污染，切回时现场完整恢复。
+     */
+    @Provides
+    @Singleton
+    @Named("codeLoom")
+    fun provideLoomCodeConversationMemory(
+        @ApplicationContext context: Context
+    ): CodeConversationMemory {
+        return CodeConversationMemory(File(context.filesDir, "code_memory_loom"))
+    }
+
+    /**
      * 文本加速核（C++17 JNI，token 估算 / 行级 diff / 模糊定位）：
      * .so 缺失时 NativeTextKernel 内部自动回退纯 Kotlin 实现——这里恒可注入。
      */
@@ -236,10 +259,13 @@ object CodeModule {
         standardTextKernel: StandardTextKernel,
         // #230 收尾：标准线专用执行器（仅环境门 —— 标准线引擎自带
         // 业界标准式权限门，共用主执行器的组合门会双弹窗）
+        @javax.inject.Named("standardEngineTools") standardToolExecutor: ToolExecutor,
+        // 织造线（第三线）：独立记忆通道 + 仅环境门执行器（同 #230 纪律）
+        @Named("codeLoom") loomMemory: CodeConversationMemory,
+        @javax.inject.Named("loomEngineTools") loomToolExecutor: ToolExecutor,
         // MCP 服务器指引源（initialize 握手的 instructions 字段——标准线
         // 注入系统提示词，模型拿到服务器官方用法指引）
         mcpManager: McpManager,
-        @javax.inject.Named("standardEngineTools") standardToolExecutor: ToolExecutor,
         // 权限设置源（设置层 → 标准线权限门的实时快照通道）
         settingsRepository: com.apex.agent.ui.screen.settings.SettingsRepository,
         // v3 GOAL 模式：目标验收协调器（与 Agent 屏共享单例；深潜线引擎挂
@@ -360,8 +386,82 @@ object CodeModule {
                 settingsRepository.agentSettings.value.subagent.sanitized()
             }
         )
-        return DualLogicCodeEngine(deepDive = deepDive, standard = standard)
+        // 织造线（第三线）：端口适配 + 自有循环（LoomRoundRunner 梭回合机 /
+        // 权限三态门 / 子线程群 / 织造包）。设置层权限模式 → 织造模态映射：
+        // BYPASS → UNBOUND（无界）、DEFAULT/ACCEPT_EDITS → FABRIC（布面内
+        // 自由织）、PLAN → OBSERVE（只读巡视）。
+        val loomPermissionSource = LoomPermissionSource {
+            val settings = settingsRepository.agentSettings.value
+            LoomPermissionSnapshot(
+                mode = when (settings.permissionMode) {
+                    PermissionMode.BYPASS -> LoomAccessMode.UNBOUND
+                    PermissionMode.DEFAULT, PermissionMode.ACCEPT_EDITS -> LoomAccessMode.FABRIC
+                    PermissionMode.PLAN -> LoomAccessMode.OBSERVE
+                },
+                rules = settings.permissionRules
+                    .filter { !it.pattern.contains(' ') }
+                    .map { it.toLoom() },
+                commandRules = settings.permissionRules
+                    .filter { it.pattern.contains(' ') }
+                    .map { it.toLoom() }
+            )
+        }
+        // 织造包目录：共享技能仓库的 coding 域技能（get → 全文指引；
+        // digest → 目录一行摘要）
+        val loomPackageCatalog = object : LoomPackageCatalog {
+            override fun list(): List<LoomPackageInfo> =
+                skillRegistry.getSkillDigests("coding").map {
+                    LoomPackageInfo(id = it.id, title = it.name, summary = it.summary)
+                }
+
+            override fun load(id: String): LoomActivePackage? {
+                val skill = skillRegistry.get(id) ?: return null
+                val scopes = skillRegistry.effectiveScopesOf(id)
+                if ("coding" !in scopes) return null
+                val manifest = skill.manifest
+                return LoomActivePackage(
+                    id = manifest.id,
+                    title = manifest.name,
+                    // 提示词型技能注入正文；其余技能以描述兑底（目录语义仍成立）
+                    instructions = manifest.promptInjection?.takeIf { it.isNotBlank() }
+                        ?: manifest.description
+                )
+            }
+        }
+        val loom = LoomEngine(
+            runtime = modelRuntime,
+            toolRegistry = toolRegistry,
+            // #230 同款：织造线引擎级权限门 + 仅环境门执行器（防双弹窗）
+            toolExecutor = loomToolExecutor,
+            memory = loomMemory,
+            contextProvider = codeContextProvider,
+            rulesProvider = RulesProvider(),
+            textKernel = standardTextKernel,
+            permissionSource = loomPermissionSource,
+            modelInfoProvider = {
+                try {
+                    (modelRuntime.resolve(ModelRole.PRIMARY) as? ModelRoleRouter.ResolutionResult.Success)
+                        ?.primary?.profile
+                        ?.let { LoomModelInfo(modelId = it.name, contextWindow = it.contextWindow) }
+                } catch (t: Throwable) {
+                    null // 解析失败 → 静态 128K 兑底
+                }
+            },
+            packageCatalog = loomPackageCatalog
+        )
+        return DualLogicCodeEngine(deepDive = deepDive, standard = standard, loom = loom)
     }
+
+    /** 设置层规则 → 织造线规则（效应枚举一一对应）。 */
+    private fun PermissionRule.toLoom(): LoomPermissionRule =
+        LoomPermissionRule(
+            pattern = pattern,
+            effect = when (effect) {
+                PermissionEffect.ALLOW -> LoomRuleEffect.ALLOW
+                PermissionEffect.ASK -> LoomRuleEffect.ASK
+                PermissionEffect.DENY -> LoomRuleEffect.DENY
+            }
+        )
 
     /** 设置层规则 → 标准线规则（效应枚举一一对应）。 */
     private fun PermissionRule.toStandard(): KitPermissionRule =

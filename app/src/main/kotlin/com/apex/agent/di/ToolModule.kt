@@ -1166,6 +1166,51 @@ object ToolModule {
 
     @Provides
     @Singleton
+    @javax.inject.Named("loomEngineTools")
+    fun provideLoomEngineToolExecutor(
+        registry: ToolRegistry,
+        toolUsageTracker: ToolUsageTracker,
+        environmentState: ToolEnvironmentState,
+        traceRecorder: ToolTraceRecorder,
+        circuitBreaker: ToolCircuitBreaker,
+        hookRegistry: HookRegistry,
+        secretRedactor: SecretRedactor
+    ): ToolExecutor {
+        // 织造线（LoomEngine）同款 #230 纪律：引擎自带权限三态门
+        //（OBSERVE/FABRIC/UNBOUND × READ/WRITE × 工作区边界 + 会话批准记忆，
+        // 见 LoomPermissionGovernor）——执行器同样只装**仅环境门**，防双弹窗。
+        // 限流/熔断/策略/追踪/钩子/脱敏与标准线执行器同配置。
+        return SecretRedactingExecutor(
+            delegate = ToolExecutorBuilder(registry)
+                .gate(ToolEnvironmentGate(environmentState))
+                .usageTracker(toolUsageTracker)
+                .policyResolver(
+                    DefaultToolRunPolicyResolver(
+                        TERMINAL_TOOL_RUN_POLICIES + MARKET_TOOL_RUN_POLICIES,
+                        OPEN_WORLD_PREFIX_TOOL_RUN_POLICIES
+                    )
+                )
+                .rateLimiter(ToolRateLimiter())
+                .breaker(circuitBreaker)
+                .tracer(traceRecorder)
+                .apply {
+                    beforeToolHooks { toolId, args ->
+                        hookRegistry.dispatch(HookEvent.PreToolUse(toolId, args))
+                            .takeUnless { it.isNoOp }
+                    }
+                    afterToolHooks { toolId, args, result, isError, durationMs ->
+                        hookRegistry.dispatch(
+                            HookEvent.PostToolUse(toolId, args, result, isError, durationMs)
+                        )
+                    }
+                }
+                .build(),
+            redactor = secretRedactor
+        )
+    }
+
+    @Provides
+    @Singleton
     fun provideToolExecutor(
         registry: ToolRegistry,
         riskAwareToolGate: RiskAwareToolGate,
