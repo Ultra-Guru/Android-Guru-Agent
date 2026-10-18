@@ -621,7 +621,6 @@
     <string name="about_update_auto_toggle_desc">On: silently check for new versions at startup and prompt. Off: zero background checks or downloads — control updates yourself with the Check now button</string>
     <string name="about_update_auto_off_hint">Auto-update is off — check manually below</string>
     <string name="about_update_retry">Retry</string>
-    <string name="about_update_new_badge">NEW</string>
     <string name="about_update_progress_mb">Downloading… %1$d%% · %2$s downloaded</string>
     <string name="about_update_patch_recommended">Delta update · recommended</string>
     <string name="about_update_patch_auto_note">Patches are applied in-app; a ready-to-install popup appears when done — tap Install to finish. Cross-version chains supported, no command line</string>
