@@ -64,6 +64,8 @@ data class LoomEngineConfig(
     val threadConcurrencyMax: Int = 2,
     /** 子线程单飞最大梭回合数。 */
     val threadRoundCap: Int = 12,
+    /** 子线程单飞壁钟超时（毫秒）。 */
+    val threadTimeoutMs: Long = 240_000,
     /** 子线程回执裁剪预算（字符）。 */
     val threadOutputCapChars: Int = 8_000,
     /** 纯思考回应（无文本无工具）的催促反馈上限——超过即强制收尾。 */
@@ -102,6 +104,7 @@ data class LoomEngineConfig(
         steeringQueueMax = steeringQueueMax.coerceAtLeast(1),
         threadConcurrencyMax = threadConcurrencyMax.coerceIn(1, 8),
         threadRoundCap = threadRoundCap.coerceAtLeast(2),
+        threadTimeoutMs = threadTimeoutMs.coerceAtLeast(10_000),
         threadOutputCapChars = threadOutputCapChars.coerceAtLeast(500),
         nudgeMaxCount = nudgeMaxCount.coerceIn(0, 4)
     )
@@ -118,6 +121,7 @@ data class LoomEngineConfig(
             outcomeHardCapChars = 24_000,
             maxContextTokens = 64_000,
             keepRecentTurns = 6,
+            threadTimeoutMs = 180_000,
             contextTag = "loom_thread_loop",
             digestContextTag = "loom_thread_digest",
             threadContextTag = "loom_thread_loop"

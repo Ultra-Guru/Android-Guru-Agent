@@ -40,8 +40,19 @@ import java.io.File
  */
 class LoomPermissionGovernor(
     private val permissionSource: LoomPermissionSource,
-    private val riskBook: LoomToolRiskBook = LoomToolRiskBook.defaultBook()
+    private val riskBook: LoomToolRiskBook = LoomToolRiskBook.defaultBook(),
+    /** Ask 策略：主线程 ASK（问答弹窗）；子线程 AUTO_DENY（无交互窗口）。 */
+    private val askPolicy: AskPolicy = AskPolicy.ASK
 ) {
+
+    /** Ask 决策的处置策略。 */
+    enum class AskPolicy {
+        /** 正常问答（主线程——弹窗经问答信箱）。 */
+        ASK,
+
+        /** 自动拒绝（子线程——无交互窗口，需交互的操作回主线程执行）。 */
+        AUTO_DENY
+    }
 
     /** 会话批准记忆（工具 id / 命令前缀）。 */
     private val approvedTools = mutableSetOf<String>()
@@ -84,14 +95,20 @@ class LoomPermissionGovernor(
         val sensitive = riskBook.isSensitive(invocation.name)
         val withinWorkspace =
             workspaceRoot == null || isWithinWorkspace(profile, workspaceRoot)
+        val ask: (String) -> LoomPermissionDecision = { reason ->
+            if (askPolicy == AskPolicy.AUTO_DENY) {
+                LoomPermissionDecision.Deny("子线程无交互窗口，需确认的操作被自动拒绝：$reason（请回主线程执行）")
+            } else {
+                LoomPermissionDecision.Ask(reason)
+            }
+        }
         return when {
-            sensitive -> LoomPermissionDecision.Ask("敏感操作：" + invocation.name)
+            sensitive -> ask("敏感操作：" + invocation.name)
             snapshot.mode == LoomAccessMode.UNBOUND -> LoomPermissionDecision.Allow
             effect == LoomToolEffect.READ -> LoomPermissionDecision.Allow
-            snapshot.mode == LoomAccessMode.OBSERVE ->
-                LoomPermissionDecision.Ask("当前为只读巡视模态，写操作需确认")
+            snapshot.mode == LoomAccessMode.OBSERVE -> ask("当前为只读巡视模态，写操作需确认")
             withinWorkspace -> LoomPermissionDecision.Allow // FABRIC · 工作区内写
-            else -> LoomPermissionDecision.Ask("写入越出工作区边界")
+            else -> ask("写入越出工作区边界")
         }
     }
 
