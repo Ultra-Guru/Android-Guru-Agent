@@ -183,14 +183,15 @@ class DualLogicCodeEngineTest {
         val deep = RecordingFacade("deep")
         val std = RecordingFacade("std")
         val loom = RecordingFacade("loom")
-        val dual: AgentEngine = DualLogicCodeEngine(deepDive = deep, standard = std, loom = loom)
+        val dualEngine = DualLogicCodeEngine(deepDive = deep, standard = std, loom = loom)
+        val dual: AgentEngine = dualEngine
         assertTrue(dual is CodeEngineFacade)
         assertEquals(10, (dual as CodeEngineFacade).currentTokenCount())
         assertEquals(100, dual.maxContextTokens())
         assertEquals(1, dual.historyCount())
-        // 仪表读数走激活线（深潜）：三线各自报告但门面只取激活线
+        // 仪表读数走激活线（三假面同读数——路由口径验证）
         assertEquals(10, dual.currentTokenCount())
-        dual.switchLogic(StandardLogicMode.LOOM)
-        assertEquals(10, dual.currentTokenCount()) // 三假面同读数——路由口径验证
+        dualEngine.switchLogic(StandardLogicMode.LOOM)
+        assertEquals(10, dual.currentTokenCount())
     }
 }

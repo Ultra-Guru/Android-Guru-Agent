@@ -120,6 +120,9 @@ class LoomRoundRunnerTest {
         workspaceRoot: File? = File("/tmp/loom-ws"),
         config: LoomEngineConfig = LoomEngineConfig(shuttleRoundsMax = 8)
     ): Fixture {
+        val client = ScriptedClient()
+        val tools = FakeToolRunner()
+        val memory = RecordingMemory()
         val session = LoomSession(
             config = config,
             memory = null,
@@ -140,8 +143,8 @@ class LoomRoundRunnerTest {
             config = config,
             session = session,
             modelClient = client,
-            toolSource = object : LoomToolSource {
-                override fun definitions(): List<ToolDefinition> = listOf(
+            toolSource = LoomToolSource {
+                listOf(
                     ToolDefinition("CodeRead", "读文件", "{\"type\":\"object\"}"),
                     ToolDefinition("CodeWrite", "写文件", "{\"type\":\"object\"}")
                 )
@@ -219,7 +222,8 @@ class LoomRoundRunnerTest {
         assertTrue(settled.success)
         // 回执轮织入历史（含 outcome 块）
         val history = f.session.historySnapshot()
-        val outcomeTurn = history.first { it is LlmMessage.User && it.content.contains("<outcome_") }
+        val outcomeTurn = history.filterIsInstance<LlmMessage.User>()
+            .first { it.content.contains("<outcome_") }
         assertTrue(outcomeTurn.content.contains("name=\"CodeRead\""))
         assertTrue(outcomeTurn.content.contains("status=\"ok\""))
     }
@@ -291,7 +295,8 @@ class LoomRoundRunnerTest {
         job.join()
         assertEquals(0, f.tools.executed.size) // 未执行
         val history = f.session.historySnapshot()
-        val outcomeTurn = history.first { it is LlmMessage.User && it.content.contains("<outcome_") }
+        val outcomeTurn = history.filterIsInstance<LlmMessage.User>()
+            .first { it.content.contains("<outcome_") }
         assertTrue(outcomeTurn.content.contains("用户拒绝"))
     }
 

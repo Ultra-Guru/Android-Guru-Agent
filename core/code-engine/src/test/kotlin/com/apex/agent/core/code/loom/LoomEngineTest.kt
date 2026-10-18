@@ -67,7 +67,7 @@ class LoomEngineTest {
 
         override fun resolve(
             role: ModelRole,
-            capabilities: com.apex.agent.core.llm.ModelCapabilities?
+            requiredCapabilities: com.apex.agent.core.llm.ModelCapabilities
         ): ModelRoleRouter.ResolutionResult =
             throw UnsupportedOperationException("测试 fake 不路由角色")
     }
@@ -84,10 +84,6 @@ class LoomEngineTest {
 
         override val toolCount: Int = 2
         override val registryVersion: Long = 1
-        override fun register(
-            tool: AgentTool,
-            policy: ToolRegistry.DuplicateToolIdPolicy
-        ): AgentTool? = null
     }
 
     private class FakeExecutor : ToolExecutor {

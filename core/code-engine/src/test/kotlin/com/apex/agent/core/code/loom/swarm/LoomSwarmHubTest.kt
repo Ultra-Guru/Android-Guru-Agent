@@ -76,7 +76,7 @@ class LoomSwarmHubTest {
         config = config,
         modelClient = client,
         parentToolSource = object : com.apex.agent.core.code.loom.loop.LoomToolSource {
-            override fun definitions() = listOf(
+            override fun definitions(): List<ToolDefinition> = listOf(
                 ToolDefinition("CodeRead", "读", "{}"),
                 ToolDefinition("loom_thread_start", "子线程", "{}")
             )
@@ -211,7 +211,7 @@ class LoomSwarmHubTest {
             config = LoomEngineConfig(),
             modelClient = client,
             parentToolSource = object : com.apex.agent.core.code.loom.loop.LoomToolSource {
-                override fun definitions() = emptyList()
+                override fun definitions(): List<ToolDefinition> = emptyList()
             },
             toolRunner = NoopRunner(),
             permissionSource = { com.apex.agent.core.code.loom.permission.LoomPermissionSnapshot() },
@@ -253,7 +253,7 @@ class LoomSwarmHubTest {
             config = LoomEngineConfig(),
             modelClient = client,
             parentToolSource = object : com.apex.agent.core.code.loom.loop.LoomToolSource {
-                override fun definitions() = listOf(
+                override fun definitions(): List<ToolDefinition> = listOf(
                     ToolDefinition("CodeRead", "读", "{}"),
                     ToolDefinition("loom_thread_start", "子线程", "{}")
                 )
