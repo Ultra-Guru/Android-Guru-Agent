@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -184,7 +186,7 @@ internal fun ModelConfigImportDialog(
                     Row {
                         TextButton(onClick = { filePicker.launch(arrayOf("*/*")) }) {
                             Icon(
-                                androidx.compose.material.icons.Icons.Outlined.FolderOpen,
+                                Icons.Outlined.FolderOpen,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp)
                             )
