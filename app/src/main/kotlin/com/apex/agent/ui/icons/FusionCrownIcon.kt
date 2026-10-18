@@ -59,31 +59,31 @@ val CrownGold = Color(0xFFD97706)
 private fun crownBodyPath(): Path = Path().apply {
     moveTo(11.562f, 3.266f)
     // 中央冠尖宝顶（SVG 弧 r=0.5 → 等价二次曲线，apex=(12, 3.007)）
-    quadTo(12.0f, 2.748f, 12.438f, 3.266f)
+    quadraticBezierTo(12.0f, 2.748f, 12.438f, 3.266f)
     // 右内谷下探
     lineTo(15.39f, 8.87f)
     // 右内谷弧（SVG 弧 r=1 → 谷底 apex=(16.079, 9.375)）
-    quadTo(16.01f, 9.733f, 16.906f, 9.164f)
+    quadraticBezierTo(16.01f, 9.733f, 16.906f, 9.164f)
     // 上行至右冠尖
     lineTo(21.183f, 5.5f)
     // 右冠尖（SVG 弧 r=0.5 → apex=(21.772, 4.968)）
-    quadTo(21.964f, 4.674f, 21.981f, 6.019f)
+    quadraticBezierTo(21.964f, 4.674f, 21.981f, 6.019f)
     // 右冠壁下探至冠带右圆角
     lineTo(19.147f, 16.265f)
     // 冠带右圆角（SVG 弧 r=1 → apex=(18.792, 16.792)）
-    quadTo(18.915f, 16.952f, 18.191f, 17.0f)
+    quadraticBezierTo(18.915f, 16.952f, 18.191f, 17.0f)
     // 冠带底边
     lineTo(5.81f, 17.0f)
     // 冠带左圆角（apex=(5.209, 16.792)）
-    quadTo(5.086f, 16.952f, 4.853f, 16.265f)
+    quadraticBezierTo(5.086f, 16.952f, 4.853f, 16.265f)
     // 左冠壁上探至左冠尖
     lineTo(2.02f, 6.02f)
     // 左冠尖（SVG 弧 r=0.5 → apex=(2.229, 5.469)）
-    quadTo(2.037f, 5.176f, 2.818f, 5.501f)
+    quadraticBezierTo(2.037f, 5.176f, 2.818f, 5.501f)
     // 左内谷下探
     lineTo(7.094f, 9.165f)
     // 左内谷弧（apex=(7.921, 9.376)）
-    quadTo(7.99f, 9.734f, 8.61f, 8.871f)
+    quadraticBezierTo(7.99f, 9.734f, 8.61f, 8.871f)
     close()
 }
 
