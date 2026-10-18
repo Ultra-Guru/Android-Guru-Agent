@@ -86,11 +86,7 @@ class ApexAgentEngine(
     // internal —— EngineCompressionGate.kt 同包扩展直调（历史压缩触发）。
     internal val memory: ConversationMemory? = null,
     internal val contextCompressor: ContextCompressor? = null,
-    /**
-     * #396 上下文归档（被压缩裁剪的原始消息）：压缩装饰器写入，本引擎只在
-     * 会话生命周期边界清理（新会话 / 恢复其它会话时清空，防旧会话残影
-     * 泄漏进新会话的检索结果）。null = 未接线（默认，测试与旧接线兼容）。
-     */
+    // #396 上下文归档：会话边界（新会话/恢复）清空；写入方为压缩装饰器。
     internal val contextArchive: SessionContextArchive? = null,
     internal val skillRegistry: SkillRegistry? = null,
 
@@ -358,27 +354,19 @@ class ApexAgentEngine(
         }
     }
 
-    /**
-     * 清空历史与持久化记忆（开新会话）。#165：SessionEnd 经
-     * [SessionHookCoordinator.onSessionEnd] 派发（restoreHistory 是延续不在此列）。
-     */
+    /** 清空历史与持久化记忆（开新会话）。#165：SessionEnd 经派发；归档一并清空。 */
     fun clearHistory() {
         sessionHooks?.onSessionEnd()
         conversationHistory.clear()
         memory?.clear()
-        // #396：新会话 —— 归档随历史一并清空，防止旧会话残影泄漏进检索结果。
         contextArchive?.clear()
     }
 
-    /**
-     * 恢复历史会话上下文：内存历史与持久化记忆同步替换，后续对话自然接续。
-     * 仅接收 user/assistant 文本对——工具调用链配对无法从展示态历史重建。
-     */
+    /** 恢复会话：内存历史与持久化记忆同步替换；归档随会话边界重置。 */
     fun restoreHistory(messages: List<LlmMessage>) {
         conversationHistory.clear()
         conversationHistory.addAll(messages)
         memory?.save(messages)
-        // #396：恢复的会话有自己的生命周期 —— 旧归档与新会话不匹配，清空。
         contextArchive?.clear()
     }
 
