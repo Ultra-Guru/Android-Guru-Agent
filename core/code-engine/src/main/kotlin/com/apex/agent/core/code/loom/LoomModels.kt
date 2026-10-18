@@ -50,18 +50,30 @@ sealed interface LoomSegment {
  * 一次工具调用（模型 → 引擎的纬线）。
  *
  * [args] 保序——协议允许多个同名 arg（后者覆盖前者，顺序即声明顺序）；
- * [rawSpan] 保留原始标记文本（回写历史时原样织回，防语义漂移）。
+ * [rawJson] 是原生函数调用路径的**原始参数 JSON**（在场时执行优先用它，
+ * 避免嵌套结构在 arg 明文化往返中失真）；[rawSpan] 保留原始标记文本
+ * （回写历史时原样织回，防语义漂移）。
  */
 data class LoomInvocation(
     /** 工具 id（注册表面内的名字）。 */
     val name: String,
     /** 有序参数表（XML arg 子元素按出现顺序）。 */
     val args: List<LoomArg>,
+    /** 原生函数调用路径的原始参数 JSON（手写 use 块时为 null）。 */
+    val rawJson: String? = null,
     /** 原始标记文本（含 use 开闭标签；缺省时由 formatter 重建）。 */
     val rawSpan: String = ""
 ) {
-    /** 按名取参（首个命中；重复声明时首个生效——与提示词口径一致）。 */
+    /** 按名取参（首个命中；重复声明时首个生效）。 */
     fun arg(name: String): String? = args.firstOrNull { it.name == name }?.value
+
+    /**
+     * 参数 JSON（交给注册表执行用——工具面吃 JSON 字符串）。
+     *
+     * 原生路径优先回传 [rawJson]（嵌套结构零失真）；手写路径由
+     * [argumentsJson] 重建（重复名取后者，声明序即键序）。
+     */
+    fun argumentsOrJson(): String = rawJson ?: argumentsJson()
 
     /** 参数 JSON 重建（交给注册表执行用——工具面吃 JSON 字符串）。 */
     fun argumentsJson(): String {
