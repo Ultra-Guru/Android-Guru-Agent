@@ -78,7 +78,7 @@ class LoomPackager(private val catalog: LoomPackageCatalog) {
         DropTool(this)
     )
 
-    private class BaseTool(
+    private abstract class BaseTool(
         override val id: String,
         override val description: String,
         override val parametersSchema: String
@@ -104,7 +104,7 @@ class LoomPackager(private val catalog: LoomPackageCatalog) {
         parametersSchema = "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"]}"
     ) {
         override suspend fun execute(argumentsJson: String): String {
-            val id = parseId(argumentsJson) ?: return "参数缺失：id"
+            val id = parsePackageId(argumentsJson) ?: return "参数缺失：id"
             return packager.activate(id)
         }
     }
@@ -115,14 +115,16 @@ class LoomPackager(private val catalog: LoomPackageCatalog) {
         parametersSchema = "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"]}"
     ) {
         override suspend fun execute(argumentsJson: String): String {
-            val id = parseId(argumentsJson) ?: return "参数缺失：id"
+            val id = parsePackageId(argumentsJson) ?: return "参数缺失：id"
             return packager.deactivate(id)
         }
     }
 
-    private fun parseId(json: String): String? = runCatching {
-        (Json.parseToJsonElement(json) as? JsonObject)
-            ?.get("id")
-            ?.let { it.jsonPrimitive.content }
-    }.getOrNull()?.takeIf { it.isNotBlank() }
 }
+
+/** 参数解析（防御：坏 JSON 折叠 null）——顶层入口（嵌套工具类可直接调）。 */
+private fun parsePackageId(json: String): String? = runCatching {
+    (Json.parseToJsonElement(json) as? JsonObject)
+        ?.get("id")
+        ?.let { it.jsonPrimitive.content }
+}.getOrNull()?.takeIf { it.isNotBlank() }

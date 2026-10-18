@@ -143,8 +143,13 @@ class LoomEngine(
     private val localTools: List<LoomLocalTool> =
         LoomSwarmTools(swarmHub).all() + packager.tools()
 
-    private val localToolById: Map<String, LoomLocalTool> =
-        localTools.associateBy { it.id }
+    /**
+     * 本地工具路由表——lazy 打断类型推断环（LocalRoutingRunner 的方法体
+     * 引用本表，而 swarmHub 装配在先；惰性求值后各声明类型自洽）。
+     */
+    private val localToolById: Map<String, LoomLocalTool> by lazy {
+        localTools.associateBy { tool: LoomLocalTool -> tool.id }
+    }
 
     /** 工具面（宿主注册表 + 本地工具；forcedTools 过滤）。 */
     private val compositeToolSource = LoomToolSource { visibleToolSurface() }
@@ -397,7 +402,7 @@ class LoomEngine(
             is ModelRuntimeException.ProviderConfigurationError,
             is ModelRuntimeException.ModelAuthenticationFailed ->
                 if (isContextOverflowText(t.message)) LoomFailureKind.CONTEXT_OVERFLOW
-                else LoomFailureKind.REQUEST_REJECTION
+                else LoomFailureKind.REQUEST_REJECTED
             else -> if (isContextOverflowText(t.message)) {
                 LoomFailureKind.CONTEXT_OVERFLOW
             } else {

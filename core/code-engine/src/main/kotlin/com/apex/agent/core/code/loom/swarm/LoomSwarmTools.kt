@@ -92,7 +92,7 @@ class LoomSwarmTools(private val hub: LoomSwarmHub) {
         ThreadStopTool(hub)
     )
 
-    private open class BaseTool(
+    private abstract class BaseTool(
         override val id: String,
         override val description: String,
         override val parametersSchema: String

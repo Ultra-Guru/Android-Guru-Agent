@@ -47,7 +47,7 @@ interface LoomModelClient {
 }
 
 /** 工具目录源（引擎组装工具面时拉取快照）。 */
-interface LoomToolSource {
+fun interface LoomToolSource {
     fun definitions(): List<ToolDefinition>
 }
 
