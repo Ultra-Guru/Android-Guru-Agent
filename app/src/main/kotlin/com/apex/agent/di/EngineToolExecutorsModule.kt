@@ -3,8 +3,6 @@ package com.apex.agent.di
 import com.apex.agent.core.tools.DefaultToolRunPolicyResolver
 import com.apex.agent.core.tools.hook.HookEvent
 import com.apex.agent.core.tools.hook.HookRegistry
-import com.apex.agent.core.tools.SecretRedactor
-import com.apex.agent.core.tools.SecretRedactingExecutor
 import com.apex.agent.core.tools.ToolCircuitBreaker
 import com.apex.agent.core.tools.ToolEnvironmentGate
 import com.apex.agent.core.tools.ToolEnvironmentState
@@ -14,6 +12,8 @@ import com.apex.agent.core.tools.ToolRateLimiter
 import com.apex.agent.core.tools.ToolRegistry
 import com.apex.agent.core.tools.ToolTraceRecorder
 import com.apex.agent.core.tools.ToolUsageTracker
+import com.apex.agent.vault.SecretRedactor
+import com.apex.agent.vault.SecretRedactingExecutor
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
