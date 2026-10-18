@@ -265,7 +265,7 @@ class CourierKitAdapter(
 
     private fun DispatchEvent.toHost(): AgentEvent = when (this) {
         is DispatchEvent.IterationStart -> AgentEvent.IterationStart(iteration)
-        is DispatchEvent.ThinkingStart -> AgentEvent.ThinkingStart(iteration, thinkingLevel.foldToHost())
+        is DispatchEvent.ThinkingStart -> AgentEvent.ThinkingStart(iteration, level.foldToHost())
         is DispatchEvent.ThinkingChunk -> AgentEvent.ThinkingChunk(text)
         is DispatchEvent.ThinkingComplete -> AgentEvent.ThinkingComplete(fullThought)
         is DispatchEvent.ResponseChunk -> AgentEvent.ResponseChunk(text)
@@ -533,7 +533,7 @@ class CourierKitAdapter(
 
         private fun DispatchMessage.toHost(): LlmMessage = when (this) {
             is DispatchMessage.System -> LlmMessage.System(content)
-            is DispatchMessage.User -> DispatchMessage.User(
+            is DispatchMessage.User -> LlmMessage.User(
                 content = content,
                 images = images.map {
                     com.apex.agent.core.llm.ImageContent(
