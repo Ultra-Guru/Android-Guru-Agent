@@ -75,6 +75,27 @@ sealed interface SlashCommand {
     }
 
     /**
+     * `/fusion:<id>` —— FUSION 工具聚合体系包指令（王冠菜单选中后
+     * 以 chip 形态挂在输入框，发送时拼回此命令形态）。
+     *
+     * 语义与四类基础指令的本质差异：**强制使用**——用户已显式选用某
+     * 体系包（激活时已装技能/连 MCP/注入工作流人设），路由产出的
+     * agentPrompt 携带【强制使用要求】：agent 必须优先且强制使用该
+     * 体系的技能、MCP 工具与旗舰工具完成任务，不得静默绕过。
+     *
+     * id = FusionBundle id（如 `rea` / `superpowers`）；手动键入
+     * `/fusion:rea` 与王冠菜单选择同效（兼容性：键盘用户零障碍）。
+     */
+    data class Fusion(
+        override val id: String,
+        override val args: Map<String, String> = emptyMap(),
+        override val userExtra: String = ""
+    ) : SlashCommand {
+        override val type: String = TYPE
+        companion object { const val TYPE = "fusion" }
+    }
+
+    /**
      * `/logic:<mode>` — Coding 屏思考逻辑切换（v1.5 双引擎）。
      *
      * 与其他四类命令的本质差异：**本地路由，不生成 agentPrompt**——
@@ -113,7 +134,7 @@ sealed interface SlashCommand {
     companion object {
         /** All supported command type prefixes, in slash-menu order. */
         val SUPPORTED_TYPES: List<String> = listOf(
-            Skill.TYPE, Mcp.TYPE, Connector.TYPE, Plugin.TYPE, Logic.TYPE
+            Skill.TYPE, Mcp.TYPE, Connector.TYPE, Plugin.TYPE, Logic.TYPE, Fusion.TYPE
         )
 
         /**
@@ -169,6 +190,7 @@ object SlashCommandParser {
             SlashCommand.Connector.TYPE -> SlashCommand.Connector(id, kvArgs, userExtra)
             SlashCommand.Plugin.TYPE    -> SlashCommand.Plugin(id, kvArgs, userExtra)
             SlashCommand.Logic.TYPE     -> SlashCommand.Logic(id, kvArgs, userExtra)
+            SlashCommand.Fusion.TYPE    -> SlashCommand.Fusion(id, kvArgs, userExtra)
             else                        -> SlashCommand.Unknown(raw)
         }
     }

@@ -72,7 +72,7 @@ data class UserInputRequest(
  * globe 图标 + 专属徽章让聊天流里的 browser_* 调用一眼可辨 ——
  * WEB_FETCH 是「抓一个 URL 的文本」，BROWSER 是「在页面里开车」。
  */
-enum class ToolKind { LOCAL, MCP, WEB_SEARCH, WEB_FETCH, BROWSER, SKILL, GITHUB, CONNECTOR, PLUGIN }
+enum class ToolKind { LOCAL, MCP, WEB_SEARCH, WEB_FETCH, BROWSER, SKILL, GITHUB, CONNECTOR, PLUGIN, FUSION }
 
 /**
  * 待发送的流水线指令（迷你胶囊）。
@@ -85,7 +85,9 @@ enum class ToolKind { LOCAL, MCP, WEB_SEARCH, WEB_FETCH, BROWSER, SKILL, GITHUB,
  *   （解析/路由/横幅/工具来源标记全部复用，零新链路）；
  * - 再选一条直接替换当前胶囊（单条语义：一次发送触发一条流水线）。
  *
- * @param type 指令类型（"skill" / "mcp" / "connector" / "plugin"）。
+ * @param type 指令类型（"skill" / "mcp" / "connector" / "plugin" / "fusion"）。
+ * fusion：王冠菜单选中的 FUSION 体系包（chip 形态出现在输入框中，
+ * 发送时拼回 `/fusion:<id>` 走强制使用路由 —— SlashCommandRouter）。
  * @param id 指令 id（斜杠命令冒号后的部分）。
  * @param label 展示名（菜单项 label，优先于裸 id 呈现）。
  */
@@ -111,7 +113,7 @@ data class PendingPipelineCommand(
             val type = token.substring(1, colon).lowercase()
             val id = token.substring(colon + 1).trim()
             if (id.isEmpty()) return null
-            if (type !in setOf("skill", "mcp", "connector", "plugin")) return null
+            if (type !in setOf("skill", "mcp", "connector", "plugin", "fusion")) return null
             return PendingPipelineCommand(type = type, id = id, label = label.ifBlank { id })
         }
     }

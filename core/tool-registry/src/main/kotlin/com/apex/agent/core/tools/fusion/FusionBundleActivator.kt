@@ -70,23 +70,34 @@ class FusionBundleActivator(
                 }
         }
 
-        // ── 2. MCP 服务器：autoConnect 的逐台连接 ────────────────────────
+        // ── 2. MCP 服务器：autoConnect 的逐台连接（失败重试一次 —— 兼容性：
+        // 瞬态网络抖动 / 子进程启动慢不再直接弃包，重试仍败才进 skipped）──────
         for (ref in manifest.mcpServers) {
             if (!ref.autoConnect) {
                 skipped.add("mcp:${ref.serverId}(声明为手动启动)")
                 continue
             }
             val serverConfig = ref.toMcpServerConfig()
-            mcpConnector.ensureConnected(serverConfig)
+            val first = mcpConnector.ensureConnected(serverConfig)
+            val attempt = if (first.isSuccess) first else {
+                // 首试失败 → 短暂冷却后重试一次（服务器启动 / 网络抖动容错）
+                kotlinx.coroutines.delay(MCP_RETRY_DELAY_MS)
+                mcpConnector.ensureConnected(serverConfig)
+            }
+            attempt
                 .onSuccess { connectedServers.add(ref.serverId) }
                 .onFailure {
                     skipped.add("mcp:${ref.serverId}(${it.message ?: "连接失败"})")
                 }
         }
 
-        // ── 3. agent 人设：注入 system prompt（patchConfig 读改写）──────
+        // ── 3. agent 人设：注入 system prompt（patchConfig 读改写；兼容性：
+        // 注入异常折叠进 skipped 不弃激活 —— 技能/MCP 已就绪部分照常可用）──────
         val activationPrompt = buildActivationPrompt(manifest)
-        promptInjector.apply(activationPrompt)
+        val promptApplied = runCatching { promptInjector.apply(activationPrompt) }
+        promptApplied.onFailure {
+            skipped.add("prompt:工作流注入失败(${it.message ?: it::class.simpleName})")
+        }
 
         activeBundle = manifest
 
@@ -104,7 +115,8 @@ class FusionBundleActivator(
         )
     }
 
-    /** 去激活：恢复引擎提示词（技能/MCP 留在各自体系里 —— 用户可在市场单独关停）。 */
+    /**
+     * 去激活：恢复引擎提示词（技能/MCP 留在各自体系里 —— 用户可在市场单独关停）。 */
     fun deactivate(): Result<Unit> {
         if (activeBundle == null) return Result.success(Unit)
         return try {
@@ -116,16 +128,32 @@ class FusionBundleActivator(
         }
     }
 
+    companion object {
+        /** MCP 连接重试间隔（毫秒）—— 首试失败后的短暂冷却，容掉服务器启动/网络抖动。 */
+        internal const val MCP_RETRY_DELAY_MS = 400L
+    }
+
     /**
-     * 组装激活提示词：人设 + 路由 + 旗舰工具 + 证据纪律。
-     * 结构化分段（## FusionBundle Agent / ## 目标路由 / ## 旗舰工具 /
-     * ## 证据纪律）—— 与 EnginePrompts 的段落风格对齐。
+     * 组装激活提示词：人设 + 强制使用协议 + 路由 + 旗舰工具 + 证据纪律。
+     * 结构化分段（## FusionBundle Agent / ## 强制使用协议 / ## 目标路由 /
+     * ## 旗舰工具 / ## 证据纪律）—— 与 EnginePrompts 的段落风格对齐。
+     *
+     * 「强制使用协议」是用户钦定的行为契约：经输入栏王冠入口显式选用的
+     * 体系，agent 必须优先且强制使用其资源完成任务，不得静默绕过
+     * （与发送侧 /fusion:<id> 路由的【强制使用要求】双保险）。
      */
     internal fun buildActivationPrompt(manifest: FusionBundleManifest): String {
         val segments = mutableListOf<String>()
         segments.add(
             "## FusionBundle Agent：${manifest.name}" +
                 (if (manifest.agent.persona.isNotBlank()) "（${manifest.agent.persona}）" else "")
+        )
+        segments.add(
+            "### 强制使用协议\n" +
+                "用户已显式选用本体系（FUSION 工具聚合 —— 技能 + MCP + 工具的聚合体）。" +
+                "执行用户任务时必须优先且强制使用本包聚合的资源：包内技能的方法论、" +
+                "其 MCP 服务器的工具与旗舰工具；不得静默绕过本体系改用其他工具完成" +
+                "同一任务。仅当某资源确实不可用时，如实说明原因并给出降级证据后才能换路径。"
         )
         if (manifest.agent.activationPrompt.isNotBlank()) {
             segments.add(manifest.agent.activationPrompt.trim())

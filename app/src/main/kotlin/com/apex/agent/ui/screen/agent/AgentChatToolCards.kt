@@ -73,6 +73,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.annotation.StringRes
 import com.apex.agent.R
+import com.apex.agent.ui.icons.CrownGold
+import com.apex.agent.ui.icons.FusionCrown
 import com.apex.agent.ui.glass.GlassToolCard
 import com.apex.agent.ui.theme.LocalExtendedColors
 import com.apex.agent.ui.glass.GlassToolStatus
@@ -132,6 +134,11 @@ internal fun toolKindStyle(kind: ToolKind): ToolKindStyle = when (kind) {
     ToolKind.PLUGIN -> ToolKindStyle(
         R.string.chat_toolkind_plugin, Icons.Default.Extension,
         Color(0xFFF59E0B)
+    )
+    // FUSION 体系（王冠徽章 + 王金）：/fusion:<id> 流水线内工具调用的来源标识。
+    ToolKind.FUSION -> ToolKindStyle(
+        R.string.chat_toolkind_fusion, FusionCrown,
+        CrownGold
     )
 }
 

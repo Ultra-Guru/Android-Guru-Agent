@@ -2,9 +2,15 @@
 <!-- FusionBundle（复合技能包）中文文案（英文默认在 values/strings_fusionbundle.xml）。 -->
 <resources>
 
-    <!-- ═══ 输入栏入口按钮 ═══ -->
-    <string name="fusion_cd_bundle">聚变包：技能 + MCP 服务器 + 工具一键聚合</string>
-    <string name="fusion_cd_bundle_active">聚变包使用中 —— 点按管理或停用</string>
+    <!-- ═══ 输入栏王冠入口按钮 ═══ -->
+    <string name="fusion_cd_bundle">FUSION 王冠：点选工具聚合体系包（技能 + MCP + 工具）</string>
+    <string name="fusion_cd_bundle_active">FUSION 体系包使用中 —— 点王冠切换或停用</string>
+
+    <!-- ═══ 王冠层级菜单 ═══ -->
+    <string name="fusion_menu_system_name">FUSION</string>
+    <string name="fusion_menu_system_tagline">工具聚合系统 · 技能 + MCP + 工具</string>
+    <string name="fusion_menu_active_badge">使用中</string>
+    <string name="fusion_menu_forced_footnote">点选体系包会固定进输入框，agent 将强制使用该体系完成任务。</string>
 
     <!-- ═══ 选择器弹层 ═══ -->
     <string name="fusion_picker_title">聚变包 FusionBundle</string>

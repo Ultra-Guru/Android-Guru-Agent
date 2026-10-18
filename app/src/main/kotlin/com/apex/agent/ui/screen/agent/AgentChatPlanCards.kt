@@ -59,6 +59,8 @@ import com.apex.agent.ui.theme.LocalExtendedColors
 import com.apex.agent.core.engine.RiskLevel
 import com.apex.agent.R
 import com.apex.agent.ui.glass.GlassCard
+import com.apex.agent.ui.icons.CrownGold
+import com.apex.agent.ui.icons.FusionCrown
 
 /**
  * 流水线路由横幅：`/skill:xxx` `/connector:xxx` `/plugin:xxx` 触发时的专用卡片。
@@ -82,6 +84,12 @@ internal fun PipelineBannerCard(banner: AgentUiMessage.PipelineBanner) {
             Icons.Default.Extension,
             Color(0xFFF59E0B)
         )
+        // FUSION 体系（王冠 + 王金）：/fusion:<id> 强制使用流水线的专属横幅。
+        ToolKind.FUSION -> Triple(
+            R.string.chat_pipeline_running_fusion,
+            FusionCrown,
+            CrownGold
+        )
         else -> Triple(
             R.string.chat_pipeline_running_skill,
             Icons.Default.AutoAwesome,
@@ -92,6 +100,7 @@ internal fun PipelineBannerCard(banner: AgentUiMessage.PipelineBanner) {
     val title = when {
         finished && banner.kind == ToolKind.CONNECTOR -> stringResource(R.string.chat_pipeline_connector_done)
         finished && banner.kind == ToolKind.PLUGIN -> stringResource(R.string.chat_pipeline_plugin_done)
+        finished && banner.kind == ToolKind.FUSION -> stringResource(R.string.chat_pipeline_fusion_done)
         finished -> stringResource(R.string.chat_pipeline_skill_done)
         else -> stringResource(runningLabelRes)
     }

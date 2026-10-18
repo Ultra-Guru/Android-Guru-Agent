@@ -51,8 +51,10 @@
     <string name="chat_pipeline_calling_connector">Calling connector</string>
     <string name="chat_pipeline_calling_plugin">Calling plugin</string>
     <string name="chat_pipeline_running_skill">Running skill</string>
+    <string name="chat_pipeline_running_fusion">FUSION system in use</string>
     <string name="chat_pipeline_connector_done">Connector finished</string>
     <string name="chat_pipeline_plugin_done">Plugin finished</string>
+    <string name="chat_pipeline_fusion_done">FUSION system finished</string>
     <string name="chat_pipeline_skill_done">Skill finished</string>
     <string name="chat_cd_done">Completed</string>
     <string name="chat_confirm_plan_title">Run this plan?</string>
@@ -124,6 +126,7 @@
     <string name="chat_toolkind_browser">Browser</string>
     <string name="chat_toolkind_connector">Connector</string>
     <string name="chat_toolkind_plugin">Plugin</string>
+    <string name="chat_toolkind_fusion">FUSION</string>
     <!-- 浏览器截图渲染（BrowserToolCards.kt） -->
     <string name="chat_browser_screenshot_label">Screenshot preview</string>
     <string name="chat_browser_screenshot_size">%1$d × %2$d px</string>

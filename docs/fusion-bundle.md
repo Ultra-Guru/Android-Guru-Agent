@@ -1,6 +1,6 @@
 # FusionBundle：复合技能包体系（聚变包）
 
-> 状态：已落地（v1，2026-10）
+> 状态：已落地（v2 王冠入口，2026-10）
 > 主题：把「技能 + MCP 服务器 + 工具 + agent 工作流」聚合为一个可一键
 > 激活的装载单位 —— 复合体开源项目（REA 等「MCP 服务器 + 工作流技能 +
 > 工具」三位一体形态）的标准化引入通道。
@@ -16,8 +16,9 @@
 的实体聚到一起 —— 技能装进 SkillRegistry、MCP 服务器连进 McpManager、
 agent 工作流注入引擎 system prompt —— 三大体系的注册表、热更新管道、
 作用域隔离全部**原样复用**。FusionBundle 层只做编排（安装、连接、注入、
-恢复），**不新建任何平行注册体系**。用户在聊天输入栏按「聚变包」按钮选
-用后，该体系的 agent 直接就绪（工具全为一等公民 + 工作流已注入）。
+恢复），**不新建任何平行注册体系**。用户在聊天输入栏点**王冠图标**（FUSION
+层级菜单）选用后，选中包以 chip 形式出现在输入框中，agent 将**强制使用
+该体系**完成任务（详见 §2b 王冠入口）。
 
 ## 1. 背景：为什么单技能装不下顶级开源项目
 
@@ -40,7 +41,7 @@ Engine Anything，morluto/rea，MIT，npm rea-agents，Trendshift 榜）为
 ## 2. 架构总览
 
 ```
-      输入栏 FusionBundleButton ──► FusionBundlePickerSheet（选用/停用）
+      输入栏 👑 王冠按钮 ──► FUSION 层级菜单（第一项 FUSION → 第二级各包）
       FusionList / FusionInfo / FusionActivate（模型侧自主闭环，v5 PascalCase）
                         │ （两者共用同一控制面）
               ┌─────────▼──────────┐
@@ -61,6 +62,65 @@ Engine Anything，morluto/rea，MIT，npm rea-agents，Trendshift 榜）为
                 FusionBundleManifest（schema fusion-bundle-v1）
 ```
 
+### 2b. 王冠入口 · 层级菜单 · 强制使用（v2）
+
+用户钦定的黄金路径：**王冠图标 → 层级菜单 → 选包 → 输入框 chip →
+agent 强制使用**。
+
+```
+输入框工具栏：  [/] [👑] [+] [🧠] ...
+                     │ 点击
+                     ▼
+        ┌────────────────────────────┐
+        │ 👑 FUSION          7  ▾    │ ← 第一级第一项：体系缩写名
+        │   工具聚合系统 · 技能+MCP+工具  │
+        │    ├─ REA · Reverse Engineer Anything v6.5.0 [内置] ✓使用中 [停用]
+        │    ├─ Superpowers  v7.0.0 [内置]
+        │    ├─ SuperClaude / BMAD / Anthropic Skills …
+        │    └─ （描述 + 技能·MCP·工具·引擎计数）
+        │    点选体系包会固定进输入框，agent 将强制使用该体系完成任务。
+        └────────────────────────────┘
+                     │ 点选 REA
+                     ▼
+输入框：  [👑 REA · Reverse Engineer Anything] 分析这个 app.asar
+                     │ 发送（chip 拼回 /fusion:rea + 附加文本）
+                     ▼
+        激活侧：系统提示注入「### 强制使用协议」（常驻）
+        发送侧：agentPrompt 携带【FUSION 体系强制使用】三条款（逐次）
+        ===== 双保险：agent 必须优先且强制使用该体系资源完成任务 =====
+```
+
+- **王冠图标**：形制临摹开源图标库 Lucide 的 `crown`（ISC License，
+  https://lucide.dev/icons/crown），逐锚点移植为 Compose 矢量
+  （`ui/icons/FusionCrownIcon.kt`）；输入栏按钮用 Canvas 精修版
+  （王金渐变描边 + 三颗冠尖宝石 + 激活态微光呼吸），徽章/横幅用
+  ImageVector 版。
+- **体系缩写名**：菜单第一级第一项 = **FUSION**（大写缩写名，
+  FusionBundle 工具聚合系统的门面）；点开透出第二级具体体系包。
+- **强制使用双保险**：①激活时系统提示注入「强制使用协议」段
+  （`FusionBundleActivator.buildActivationPrompt`）；②发送时
+  `/fusion:<id>` 路由产出【FUSION 体系强制使用】提示词
+  （`SlashCommandRouter.routeFusion`）——「必须优先且强制使用 /
+  不得静默绕过 / 不可用须给降级证据」三条款。
+- **输入框 chip**：选中包以 `PendingPipelineCommand(type="fusion")`
+  挂进输入框（👑 前缀标签）；发送时拼回 `/fusion:<id>` 走既有斜杠
+  管线（单 chip 重构 / 多 chip 管线均兼容）；手键 `/fusion:rea` 同效。
+- **流水线视觉**：`ToolKind.FUSION` 王冠徽章 + 王金色
+  （`AgentChatToolCards` / `PipelineBannerCard`）。
+- **交互细节**：锚定 Popup + 上方不足 320dp 自动向下翻转 +
+  focusable=false 不抢键盘焦点 + BackHandler 兜底（与斜杠菜单同款）。
+
+### 2c. 兼容性强化（v2）
+
+- **MCP 连接重试**：首连失败冷却 400ms 重试一次（服务器启动 /
+  网络抖动容错），仍败才进 skipped；
+- **人设注入容错**：patchConfig 异常折叠进 `skipped`（prompt:… 前缀）
+  不弃激活 —— 技能/MCP 已就绪部分照常可用；
+- **手键兼容**：`/fusion:<id>` 全语法（args / 附加文本）经解析器
+  一等支持（`SlashCommand.Fusion`）；
+- **多 chip 兼容**：fusion chip 与 skill/mcp/connector/plugin chip
+  混排多选，逐 chip 路由合并单轮执行。
+
 模块落点（全部纯 JVM，CI 镜像编译链与 JVM 单测全覆盖）：
 
 | 文件 | 职责 |
@@ -76,7 +136,9 @@ Engine Anything，morluto/rea，MIT，npm rea-agents，Trendshift 榜）为
 | `app/.../fusion/FusionBundleController.kt` | 控制面 + 三端口适配 + 持久化重激活 |
 | `app/.../fusion/ReaRuntimePorts.kt` | 命令执行/页面抓取端口实现（复用终端链/OkHttp） |
 | `app/di/FusionModule.kt` / `McpModule.kt` / `ToolModuleFusionRegistration.kt` | DI 接线（第六/七台内置 MCP + fusion 工具注册 + Shrimp 任务存储单例） |
-| `app/ui/component/FusionBundleButton.kt` / `ui/screen/agent/FusionBundlePickerSheet.kt` | 输入栏入口 + 选择弹层 + 激活态横幅 |
+| `app/ui/icons/FusionCrownIcon.kt` | 王冠矢量（Lucide crown 移植）+ Canvas 精修版（渐变/宝石/呼吸） |
+| `app/ui/component/FusionBundleButton.kt` | 王冠入口按钮 + FUSION 层级菜单 + 激活态横幅 |
+| `app/slash/SlashCommand.kt` / `SlashCommandRouter.kt` | `/fusion:<id>` 解析与强制使用路由（发送侧保险） |
 
 ## 3. Manifest 规范（fusion-bundle-v1）
 
@@ -225,7 +287,8 @@ Coding 工位入口 · 包级依赖（bundle 间引用）。
 
 | 文件 | 覆盖 |
 | --- | --- |
-| `fusion/FusionBundleCoreTest.kt` | manifest 校验五防线 / registry 装卸幂等与 bundled 保护 / 激活器三端口聚合语义 / 容错 / 去激活恢复 / scope 拒绝 |
+| `fusion/FusionBundleCoreTest.kt` | manifest 校验五防线 / registry 装卸幂等与 bundled 保护 / 激活器三端口聚合语义 / 强制使用协议段 / 容错（含 MCP 重试 + 注入容错）/ 去激活恢复 / scope 拒绝 |
+| `slash/SlashCommandParserTest.kt` / `SlashCommandRouterTest.kt` | `/fusion:<id>` 解析（args/附加文本）与强制使用路由（三条款 / routeKind / chip 拼回形态） |
 | `fusion/FusionBundleExpansionTest.kt` | 前四波预置契约（id 唯一 / 技能 id v5 PascalCase / MCP 聚合清单 / 上游版本溯源）/ 三包激活聚合（技能·MCP·人设）/ 多包切换语义（聚合不融合：实体只增不减）/ 七包 bundled 保护 |
 | `fusion/FusionBundleWaveThreeTest.kt` | 第三波三包契约（AnthropicSkills 8 技能零 MCP + BYO Python 引擎面 / ClaudeFlow 七技能 + thinking·memory 聚合 / Shrimp 2 技能 + 16 工具 MCP）/ 三包激活聚合 / 七包共存切换（实体只增不减）/ bundled 幂等 |
 | `fusion/shrimp/ShrimpTaskEngineTest.kt` | 16 工具全目录：规划链（plan 归档 + update 五防线：空表/缺描述/悬空引用/自引用/环）/ 依赖纪律（前置门禁 + 洞察随身）/ 执行链（complete 证据与下一个建议 / verify 先完成门 / reflect 入账）/ 记忆链（list·query·detail / split 依赖转接 / delete 引用清理）/ 清档备份与规则保留 / 研究与思维链（环形上限 20 不落盘）/ 跨引擎实例持久 / JSON-RPC 传输三方法 + 16 工具 tools_list |

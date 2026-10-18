@@ -136,6 +136,7 @@ internal object SlashCommands {
     private fun kindOf(routeKind: String?): ToolKind = when (routeKind) {
         "connector" -> ToolKind.CONNECTOR
         "plugin" -> ToolKind.PLUGIN
+        "fusion" -> ToolKind.FUSION
         else -> ToolKind.SKILL
     }
 }

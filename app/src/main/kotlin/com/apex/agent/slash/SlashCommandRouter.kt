@@ -85,6 +85,10 @@ data class SlashCommandRoute(
  * connected, the agent prompt explicitly enumerates the `github_*` tool IDs
  * so the LLM prefers them; when not connected, routing short-circuits to a
  * connect-request signal instead of emitting a hollow prompt.
+ *
+ * `/fusion:<id>`（FUSION 工具聚合体系）是第五类特型路由：产出携带
+ * 【强制使用要求】的 agentPrompt（[routeFusion]）—— 与四类基础指令的
+ * 「引导使用」不同，它是用户显式选择后的「强制使用」契约。
  */
 object SlashCommandRouter {
 
@@ -169,6 +173,7 @@ object SlashCommandRouter {
             sourceName = command.id
         )
         is SlashCommand.Plugin -> routePlugin(command, context)
+        is SlashCommand.Fusion -> routeFusion(command)
         is SlashCommand.Unknown -> SlashCommandRoute(
             systemMessage = "⚡ 指令: ${command.raw.trim()}",
             // Forward the raw input verbatim — the user typed it on purpose
@@ -217,6 +222,57 @@ object SlashCommandRouter {
             routeKind = "plugin",
             sourceName = command.id
         )
+    }
+
+    /**
+     * Fusion routing（FUSION 工具聚合体系 —— 强制使用契约）。
+     *
+     * 用户经输入栏王冠菜单（或手键 `/fusion:<id>`）显式选用某体系包：
+     * 激活时已装技能 + 连 MCP + 注入体系 agent 工作流（系统侧强制使用
+     * 协议同步注入，见 FusionBundleActivator.buildActivationPrompt）。
+     * 本路由产出**发送侧第二重强制**：agentPrompt 携带【强制使用要求】
+     * —— 必须优先且强制使用该体系的资源完成任务，不得静默绕过；
+     * 确实不可用时如实说明原因并给出降级证据（与证据纪律同口径）。
+     *
+     * 兼容口径：包未安装/未激活也不拦下（系统提示词侧可能已就绪），
+     * 如实告知模型按体系方法论执行；体系资源缺失时给降级路径。
+     */
+    private fun routeFusion(command: SlashCommand.Fusion): SlashCommandRoute {
+        return SlashCommandRoute(
+            systemMessage = "👑 FUSION 体系: ${command.id}（强制使用）",
+            agentPrompt = command.buildForcedFusionPrompt(),
+            routeKind = "fusion",
+            sourceName = command.id
+        )
+    }
+
+    /**
+     * 【强制使用要求】提示词组装（[routeFusion] 专用）。
+     *
+     * 形态：
+     *
+     *     用户触发了快捷指令: /fusion:<id>
+     *     【FUSION 体系强制使用】用户已显式选用体系包 "<id>" ...
+     *     - 必须优先且强制使用该体系的技能 / MCP 工具 / 旗舰工具 ...
+     *     - 不得静默绕过 ...
+     *     指令参数: ...                    ← 仅当 args 非空
+     *     用户附加要求: <userExtra>        ← 仅当 userExtra 非空
+     */
+    private fun SlashCommand.Fusion.buildForcedFusionPrompt(): String = buildString {
+        append("用户触发了快捷指令: /fusion:").append(id).append('\n')
+        append("【FUSION 体系强制使用】用户已显式选用工具聚合体系包 \"").append(id)
+        append("\"（技能 + MCP 服务器 + 工具的聚合体，激活时已装备其工作流）。\n")
+        append("执行本次任务时你必须遵守：\n")
+        append("- 必须优先且强制使用该体系的资源完成任务：包内技能的方法论、其 MCP 服务器的工具（McpList 可列全量、McpCall 调用）、旗舰工具（可先 ToolSearch 检索）；\n")
+        append("- 不得静默绕过该体系改用其他工具完成同一任务；\n")
+        append("- 若某资源确实不可用，如实说明原因并给出降级证据后才能换路径（与证据纪律同口径）。\n")
+        if (args.isNotEmpty()) {
+            append("\n指令参数: ")
+            append(args.entries.joinToString(", ") { "${it.key}=${it.value}" })
+        }
+        if (userExtra.isNotBlank()) {
+            append("\n\n用户附加要求: ").append(userExtra)
+        }
     }
 
     /**

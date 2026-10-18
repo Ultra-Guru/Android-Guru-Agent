@@ -232,6 +232,7 @@ class FusionBundleCoreTest {
         assertEquals(listOf("rea"), mcp.connected)
         assertNotNull(prompt.applied)
         assertTrue("注入人设须含 REA 工作流", prompt.applied!!.contains("REA 逆向工程体系"))
+        assertTrue("注入人设须含强制使用协议（王冠入口钦定契约）", prompt.applied!!.contains("强制使用协议"))
         assertTrue("注入人设须含旗舰工具清单", prompt.applied!!.contains("McpReaOpenBinary"))
         assertTrue("注入人设须含证据纪律段", prompt.applied!!.contains("证据纪律"))
         assertEquals("rea", act.bundleId)
@@ -305,5 +306,65 @@ class FusionBundleCoreTest {
         val r = activator.activate("rea", scope = "coding")
         assertTrue(r.isFailure)
         assertTrue(r.exceptionOrNull()!!.message!!.contains("作用域"))
+    }
+
+    // ═══ 兼容性强化：重试 / 注入容错（王冠入口配套）══════════════
+
+    /** 手写 fake：首试失败、重试成功的 MCP 端口（模拟服务器启动抖动）。 */
+    private class FlakyMcpConnector : FusionMcpConnector {
+        var attempts = 0
+            private set
+        val connected = mutableListOf<String>()
+        override suspend fun ensureConnected(config: com.apex.agent.core.tools.mcp.McpServerConfig): Result<Unit> {
+            attempts++
+            return if (attempts == 1) {
+                Result.failure(Exception("首试抖动"))
+            } else {
+                connected.add(config.name)
+                Result.success(Unit)
+            }
+        }
+    }
+
+    /** 手写 fake：恒抛异常的注入端口（模拟引擎 patchConfig 失败）。 */
+    private class ThrowingPromptInjector : FusionPromptInjector {
+        override fun apply(segment: String) {
+            throw IllegalStateException("patchConfig 不可用")
+        }
+
+        override fun restore() {}
+    }
+
+    @Test
+    fun `MCP 首连失败重试一次成功不弃包`() = runTest {
+        val registry = FusionBundleRegistry(tmp.newFolder("a6"))
+        registry.install(FusionBundlePresets.REA_BUNDLE_JSON)
+        val mcp = FlakyMcpConnector()
+        val activator = FusionBundleActivator(
+            registry, FakeSkillInstaller(), mcp, FakePromptInjector()
+        )
+
+        val act = activator.activate("rea").getOrThrow()
+        assertEquals("首试 + 重试共两态", 2, mcp.attempts)
+        assertEquals("重试成功计入已连清单", listOf("rea"), act.connectedServers)
+        assertTrue("重试成功不应进 skipped", act.skipped.none { it.startsWith("mcp:") })
+    }
+
+    @Test
+    fun `人设注入失败进 skipped 且激活仍成功（聚合容错面）`() = runTest {
+        val registry = FusionBundleRegistry(tmp.newFolder("a7"))
+        registry.install(FusionBundlePresets.REA_BUNDLE_JSON)
+        val activator = FusionBundleActivator(
+            registry, FakeSkillInstaller(), FakeMcpConnector(), ThrowingPromptInjector()
+        )
+
+        val r = activator.activate("rea")
+        assertTrue("注入失败不弃激活（技能/MCP 已就绪部分照常可用）", r.isSuccess)
+        val act = r.getOrThrow()
+        assertTrue(
+            "注入失败须进 skipped 且可观测",
+            act.skipped.any { it.startsWith("prompt:") && it.contains("patchConfig") }
+        )
+        assertEquals("MCP 照常连上", listOf("rea"), act.connectedServers)
     }
 }
