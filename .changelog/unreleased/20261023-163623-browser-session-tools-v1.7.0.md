@@ -1,0 +1,3 @@
+- 内置浏览器工具集扩至 34 个：新增 9 个会话级工具——BrowserBack/Forward/Reload（历史导航）、BrowserHistory（浏览历史查询）、BrowserFind（页内查找计数）、BrowserDownloads（下载全量台账 + 取消/重试）、BrowserBookmarks（书签管理）、BrowserZoom（文字缩放）、BrowserClearData（清除浏览数据，需确认的敏感操作）；浏览器截图支持 full_page 整页拼接模式
+- 上述能力与浏览器页签共用同一引擎与书签/下载/显示设置存储：Agent 做的改动在界面上即时可见，手动操作对 Agent 同样生效；插件宿主桥同步暴露全部 34 个 browser_* 工具
+- 工具恢复口径修正：BrowserDownloads 归类为非幂等（含取消/重试动作，恢复计划不得自动重放）

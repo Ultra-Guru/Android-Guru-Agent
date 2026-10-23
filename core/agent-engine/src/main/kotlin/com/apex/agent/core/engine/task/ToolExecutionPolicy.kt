@@ -175,7 +175,9 @@ class ToolExecutionPolicy {
             put("BrowserReload", ToolIdempotencyClass.NON_IDEMPOTENT)
             put("BrowserHistory", ToolIdempotencyClass.READ_ONLY)
             put("BrowserFind", ToolIdempotencyClass.READ_ONLY)
-            put("BrowserDownloads", ToolIdempotencyClass.READ_ONLY)
+            // BrowserDownloads 含 cancel/retry/forget 变更面（重放会二次取消 /
+            // 重复入队新下载 id）——非只读，恢复计划不得自动重放。
+            put("BrowserDownloads", ToolIdempotencyClass.NON_IDEMPOTENT)
             put("BrowserBookmarks", ToolIdempotencyClass.NON_IDEMPOTENT)
             put("BrowserZoom", ToolIdempotencyClass.IDEMPOTENT_WRITE) // 同值重设等价
             put("BrowserClearData", ToolIdempotencyClass.IDEMPOTENT_WRITE) // 重复清除收敛同态
