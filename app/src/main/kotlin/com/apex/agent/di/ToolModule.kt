@@ -1116,8 +1116,8 @@ object ToolModule {
         // 会被 PluginManager 拦截（v1.5.0 内置化，防 15 工具旧清单覆盖内置 24 工具）。
     }
 
-    // ── 引擎级执行器（standardEngineTools / loomEngineTools）已按职责缝
-    // 拆至 EngineToolExecutorsModule.kt（单文件行预算纪律 + 引擎线装配聚合）。
+    // ── 引擎级执行器（standardEngineTools / loomEngineTools / courierEngineTools）
+    // 已按职责缝拆至 EngineToolExecutorsModule.kt（单文件行预算纪律 + 引擎线装配聚合）。
 
     @Provides
     @Singleton

@@ -41,7 +41,7 @@ import kotlinx.coroutines.flow.Flow
  * 半截现场反而困惑）。
  *
  * 线程契约：[switchLogic] 仅赋一个 volatile 引用 + 同步四线轻量缓存；
- * 运行中切换被拒绝（isAnyEngineRunning 查询由 VM 在发送前判断）。
+ * 运行中切换由 VM 侧 uiState.isRunning 拦截（发送前判断）。
  */
 class DualLogicCodeEngine(
     /** 深潜线（自研思考逻辑）。 */

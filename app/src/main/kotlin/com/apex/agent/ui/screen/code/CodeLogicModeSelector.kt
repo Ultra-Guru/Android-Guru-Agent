@@ -40,20 +40,22 @@ import com.apex.agent.core.code.standard.StandardLogicMode
 /**
  * # Code Logic Mode Selector — Coding 屏右上角「思考逻辑」切换器
  *
- * Coding 模式的完成任务逻辑三引擎切换：
+ * Coding 模式的完成任务逻辑四引擎切换：
  *
  * - **深潜**（[StandardLogicMode.DEEP_DIVE]）：项目自研思考逻辑——七档
  *   思考阶梯 + AUTO 预检选档 + 深水区升级（默认）；
  * - **标准**（[StandardLogicMode.STANDARD]）：业界标准 Agent 任务循环
  *   ——Agent 画像、权限三态门、隔离上下文子代理、会话压缩、task 委派；
  * - **织造**（[StandardLogicMode.LOOM]）：经纬交织范式——in-band XML
- *   工具协议 + 梭回合机 + 权限模态门 + 子线程群 + 织造包 + 运行中转向。
+ *   工具协议 + 梭回合机 + 权限模态门 + 子线程群 + 织造包 + 运行中转向；
+ * - **信使**（[StandardLogicMode.COURIER]）：驿传调度范式——收发匣投递 +
+ *   趟次步进机 + 勘合通行证 + 档房压缩 + 下站子驿委派。
  *
  * ## UI 规格（对齐 CodeThinkingSelector v2 的设计语言）
  *
- * - 触发胶囊：28dp 无边框，13dp 图标 + 本地化短名；三线配色区分
- *   （深潜 secondary / 标准 tertiary / 织造 primary 容器）；
- * - 下拉（宽 300dp）：三逻辑项（选中 Check + 主色加粗 + 一行画像说明）
+ * - 触发胶囊：28dp 无边框，13dp 图标 + 本地化短名；四线配色区分
+ *   （深潜 secondary / 标准 tertiary / 织造 primary / 信使 surfaceVariant 容器）；
+ * - 下拉（宽 300dp）：四逻辑项（选中 Check + 主色加粗 + 一行画像说明）
  *   + 分隔线 + 当前引擎能力徽标行；
  * - 运行中切换被 VM 拒绝（返回 false）→ 选中项正下方行内告警（2 秒自清）。
  */
@@ -143,7 +145,7 @@ internal fun CodeLogicModeSelector(
                                         selected && mode == StandardLogicMode.LOOM ->
                                             MaterialTheme.colorScheme.primary
                                         selected && mode == StandardLogicMode.COURIER ->
-                                            MaterialTheme.colorScheme.tertiary
+                                            MaterialTheme.colorScheme.secondary
                                         selected -> MaterialTheme.colorScheme.primary
                                         else -> MaterialTheme.colorScheme.onSurface
                                     }
@@ -203,7 +205,7 @@ internal fun CodeLogicModeSelector(
                                     StandardLogicMode.LOOM ->
                                         MaterialTheme.colorScheme.primary
                                     StandardLogicMode.COURIER ->
-                                        MaterialTheme.colorScheme.tertiary
+                                        MaterialTheme.colorScheme.secondary
                                     StandardLogicMode.DEEP_DIVE ->
                                         MaterialTheme.colorScheme.primary
                                 },

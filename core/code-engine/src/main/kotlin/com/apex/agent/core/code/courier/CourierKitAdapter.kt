@@ -146,12 +146,18 @@ class CourierKitAdapter(
         workspaceContextSource = HostPromptSections(),
         skillCatalog = skillCatalog,
         commandProbe = commandProbe,
-        permissionSnapshotSource = permissionSource
+        permissionSnapshotSource = permissionSource,
+        engineConfig = engineConfig
     )
 
     /** 全局规则缓存（updateGlobalRules 写入——提示词段读）。 */
     @Volatile
     private var globalRulesCache: String = ""
+
+    /** 当前打开文件缓存：库侧 setActiveFile 为空实现（示廊经 source 即时读取），
+     * 工作区段的 "user is viewing" 行由适配器自行维护（与标准线同构）。 */
+    @Volatile
+    private var activeFile: String? = null
 
     // ═══════════════════════════ AgentEngine ═══════════════════════════
 
@@ -184,10 +190,12 @@ class CourierKitAdapter(
         root: File,
         activeFile: String?
     ) {
+        this.activeFile = activeFile
         engine.setActiveWorkspace(workspaceId, name, root, activeFile)
     }
 
     override fun setActiveFile(activeFile: String?) {
+        this.activeFile = activeFile
         engine.setActiveFile(activeFile)
     }
 
@@ -364,6 +372,10 @@ class CourierKitAdapter(
     private fun CodeThinkingLevel.toDispatch(): DispatchThinkingLevel =
         runCatching { DispatchThinkingLevel.valueOf(name) }
             .getOrDefault(DispatchThinkingLevel.STANDARD)
+            .let { if (it == DispatchThinkingLevel.AUTO) DispatchThinkingLevel.DEEP else it }
+    // ↑ AUTO 折叠 DEEP：库侧档位不参与提示词/预算（存储+回显专责），而事件
+    //   foldToHost 已把 AUTO 折 DEEP——输入侧同折保证「用户选 AUTO → 存储
+    //   DEEP → 回显 DEEP」全程一致（否则思考卡显示档与生效档错位）。
 
     private fun DispatchThinkingLevel.toHost(): CodeThinkingLevel =
         runCatching { CodeThinkingLevel.valueOf(name) }
@@ -501,6 +513,10 @@ class CourierKitAdapter(
     /**
      * 记忆端口：CodeConversationMemory（独立通道 code_memory_courier）。
      * ⚠️ 非内部类（不引用外层接收者——见织造线 CI R1 教训），自带双向映射。
+     *
+     * Assistant 消息**双向保留 toolCalls**——库侧 CourierSession 会写入含
+     * 工具调用的完整消息，若此处削平，会话恢复/切工作区重灌后历史 ToolResult
+     * 将失去前置 assistant.tool_calls（OpenAI 兼容 provider 直接 400）。
      */
     private class MemoryAdapter(private val memory: CodeConversationMemory) : CourierMemory {
         override fun load(): List<DispatchMessage> = memory.load().map { it.toDispatch() }
@@ -527,7 +543,12 @@ class CourierKitAdapter(
                 }
             )
 
-            is LlmMessage.Assistant -> DispatchMessage.Assistant(content)
+            is LlmMessage.Assistant -> DispatchMessage.Assistant(
+                content = content,
+                toolCalls = toolCalls.map {
+                    DispatchToolCall(id = it.id, name = it.name, arguments = it.arguments)
+                }
+            )
             is LlmMessage.ToolResult -> DispatchMessage.ToolResult(toolCallId, content)
         }
 
@@ -545,7 +566,12 @@ class CourierKitAdapter(
                 }
             )
 
-            is DispatchMessage.Assistant -> LlmMessage.Assistant(content)
+            is DispatchMessage.Assistant -> LlmMessage.Assistant(
+                content = content,
+                toolCalls = toolCalls.map {
+                    com.apex.agent.core.llm.ToolCall(it.id, it.name, it.arguments)
+                }
+            )
             is DispatchMessage.ToolResult -> LlmMessage.ToolResult(toolCallId, content)
         }
     }
@@ -609,12 +635,12 @@ class CourierKitAdapter(
             val ws = engine.currentWorkspace() ?: return null
             val root = ws.root ?: return null
             return CodePrompts.workspaceContext(
-                workspaceName = ws.id,
+                workspaceName = ws.name,
                 rootLabel = root.path,
                 guestPath = GUEST_PATH,
-                environmentSummary = contextProvider?.provide(root, null),
+                environmentSummary = contextProvider?.provide(root, activeFile),
                 projectStats = null,
-                activeFile = null
+                activeFile = activeFile
             )
         }
 
@@ -625,7 +651,7 @@ class CourierKitAdapter(
             val rp = rulesProvider ?: return null
             val ws = engine.currentWorkspace() ?: return null
             val root = ws.root ?: return null
-            val rules = rp.loadProjectRules(root, null) ?: return null
+            val rules = rp.loadProjectRules(root, activeFile) ?: return null
             return rp.formatProjectRules(rules)?.takeIf { it.isNotBlank() }
         }
     }

@@ -14,6 +14,9 @@
   提交）；宿主仅保留薄适配层 `CourierKitAdapter`（端口适配 + 21 型事件
   1:1 映射），与 standard-kit / loom-kit 同构。
 - 四线任意切换：右上角档位选择器与 `/logic:courier`（别名 express）；
-  独立会话记忆通道 `code_memory_courier`（切回现场不丢）。
+  独立会话记忆通道 `code_memory_courier`（切回现场不丢，历史工具调用
+  完整保留——会话恢复后 provider 不再因缺 assistant.tool_calls 报 400）。
 - 权限执行器纪律（#230 同款）：信使线库内勘合门独占权限确认，宿主
-  `@Named("courierEngineTools")` 仅环境门——不双弹窗。
+  `@Named("courierEngineTools")` 仅环境门——不双弹窗。设置层权限模式
+  （全自动 / 默认 / 接受编辑 / 只读规划）映射为信使线基线则例——PLAN
+  只读档下编辑与终端工具整枝拒付，用户自定义规则仍可覆盖基线。

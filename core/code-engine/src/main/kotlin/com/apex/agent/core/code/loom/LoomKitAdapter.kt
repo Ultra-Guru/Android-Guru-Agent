@@ -139,6 +139,10 @@ class LoomKitAdapter(
     @Volatile
     private var globalRulesCache: String = ""
 
+    /** 当前打开文件缓存（提示词工作区段的 "user is viewing" 行）。 */
+    @Volatile
+    private var activeFile: String? = null
+
     // ═══════════════════════════ AgentEngine ═══════════════════════════
 
     override fun execute(input: String): Flow<AgentEvent> =
@@ -170,10 +174,12 @@ class LoomKitAdapter(
         root: File,
         activeFile: String?
     ) {
+        this.activeFile = activeFile
         engine.setActiveWorkspace(workspaceId, name, root, activeFile)
     }
 
     override fun setActiveFile(activeFile: String?) {
+        this.activeFile = activeFile
         engine.setActiveFile(activeFile)
     }
 
@@ -345,6 +351,9 @@ class LoomKitAdapter(
     private fun CodeThinkingLevel.toWeave(): WeaveThinkingLevel =
         runCatching { WeaveThinkingLevel.valueOf(name) }
             .getOrDefault(WeaveThinkingLevel.STANDARD)
+            // AUTO 折叠 DEEP：与事件方向（AUTO → DEEP）同口径——用户选 AUTO
+            // 时存储与回显一致，思考卡显示档不与生效档错位。
+            .let { if (it == WeaveThinkingLevel.AUTO) WeaveThinkingLevel.DEEP else it }
 
     private fun WeaveThinkingLevel.toHost(): CodeThinkingLevel =
         runCatching { CodeThinkingLevel.valueOf(name) }
@@ -496,7 +505,12 @@ class LoomKitAdapter(
                 }
             )
 
-            is LlmMessage.Assistant -> WeaveMessage.Assistant(content)
+            is LlmMessage.Assistant -> WeaveMessage.Assistant(
+                content = content,
+                toolCalls = toolCalls.map {
+                    WeaveToolCall(id = it.id, name = it.name, arguments = it.arguments)
+                }
+            )
             is LlmMessage.ToolResult -> WeaveMessage.ToolResult(toolCallId, content)
         }
 
@@ -514,7 +528,12 @@ class LoomKitAdapter(
                 }
             )
 
-            is WeaveMessage.Assistant -> LlmMessage.Assistant(content)
+            is WeaveMessage.Assistant -> LlmMessage.Assistant(
+                content = content,
+                toolCalls = toolCalls.map {
+                    com.apex.agent.core.llm.ToolCall(it.id, it.name, it.arguments)
+                }
+            )
             is WeaveMessage.ToolResult -> LlmMessage.ToolResult(toolCallId, content)
         }
     }
@@ -572,12 +591,12 @@ class LoomKitAdapter(
         override fun workspaceSection(): String? {
             val ws = engine.currentWorkspace() ?: return null
             return CodePrompts.workspaceContext(
-                workspaceName = ws.id,
+                workspaceName = ws.name,
                 rootLabel = ws.root.path,
                 guestPath = GUEST_PATH,
-                environmentSummary = contextProvider?.provide(ws.root, null),
+                environmentSummary = contextProvider?.provide(ws.root, activeFile),
                 projectStats = null,
-                activeFile = null
+                activeFile = activeFile
             )
         }
 
@@ -587,7 +606,7 @@ class LoomKitAdapter(
         override fun projectRulesSection(): String? {
             val rp = rulesProvider ?: return null
             val ws = engine.currentWorkspace() ?: return null
-            val rules = rp.loadProjectRules(ws.root, null) ?: return null
+            val rules = rp.loadProjectRules(ws.root, activeFile) ?: return null
             return rp.formatProjectRules(rules)?.takeIf { it.isNotBlank() }
         }
     }

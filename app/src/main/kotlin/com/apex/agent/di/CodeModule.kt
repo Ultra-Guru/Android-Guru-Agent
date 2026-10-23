@@ -480,13 +480,16 @@ object CodeModule {
         // + 库内自有循环（收发匣 / 趟次步进机 / 勘合门 / 档房 / 示廊 / 下站前哨
         // ——全部在 apex-courier-kit 库演进，宿主仅保留薄适配层）。设置层权限
         // 规则 → 勘合则例映射：无空格模式 → 工具 id 伪动作（tool）；含空格模式
-        // → 终端命令模式（bash）。
+        // → 终端命令模式（bash）。权限模式 → 基线则例注入快照头部（后例覆盖
+        // 语义下用户规则仍可收窄/放宽；未注入时库侧 BUILD 角色缺省全放行，
+        // PLAN 只读等模式语义会被整体旁路）。
         val courierPermissionSource = CourierPermissionSnapshotSource {
             val settings = settingsRepository.agentSettings.value
             DispatchPermissionSnapshot(
-                rules = settings.permissionRules
-                    .filter { !it.pattern.contains(' ') }
-                    .map { it.toCourierToolRule() },
+                rules = courierModeBaseline(settings.permissionMode) +
+                    settings.permissionRules
+                        .filter { !it.pattern.contains(' ') }
+                        .map { it.toCourierToolRule() },
                 commandRules = settings.permissionRules
                     .filter { it.pattern.contains(' ') }
                     .map { it.toCourierToolRule() }
@@ -537,7 +540,8 @@ object CodeModule {
                         ?.let {
                             CourierModelInfo(
                                 modelId = it.name,
-                                contextWindow = it.contextWindow
+                                contextWindow = it.contextWindow,
+                                outputLimit = it.maxOutputTokens
                             )
                         }
                 } catch (t: Throwable) {
@@ -588,6 +592,36 @@ object CodeModule {
                 PermissionEffect.DENY -> DispatchRuleEffect.DENY
             }
         )
+
+    /**
+     * 设置层权限模式 → 信使线基线则例（注入快照头部，后例覆盖语义下
+     * 用户规则仍可收窄/放宽）。映射口径与标准线/织造线对齐：
+     * - BYPASS → 全放行（含 .env 读取——与 Agent 线 BYPASS 语义一致）；
+     * - DEFAULT → 编辑 / 终端 / 网络勘验（读免确认）；
+     * - ACCEPT_EDITS → 编辑放行、终端仍勘验；
+     * - PLAN → 编辑 / 写入 / 终端拒付（只读巡视，`edit * deny` 压轴触发
+     *   工具面整枝剪除）。
+     */
+    private fun courierModeBaseline(mode: PermissionMode): List<DispatchPermissionRule> =
+        when (mode) {
+            PermissionMode.BYPASS -> listOf(
+                DispatchPermissionRule("*", "*", DispatchRuleEffect.ALLOW)
+            )
+            PermissionMode.DEFAULT -> listOf(
+                DispatchPermissionRule("edit", "*", DispatchRuleEffect.ASK),
+                DispatchPermissionRule("bash", "*", DispatchRuleEffect.ASK),
+                DispatchPermissionRule("net", "*", DispatchRuleEffect.ASK)
+            )
+            PermissionMode.ACCEPT_EDITS -> listOf(
+                DispatchPermissionRule("edit", "*", DispatchRuleEffect.ALLOW),
+                DispatchPermissionRule("bash", "*", DispatchRuleEffect.ASK)
+            )
+            PermissionMode.PLAN -> listOf(
+                DispatchPermissionRule("edit", "*", DispatchRuleEffect.DENY),
+                DispatchPermissionRule("write", "*", DispatchRuleEffect.DENY),
+                DispatchPermissionRule("bash", "*", DispatchRuleEffect.DENY)
+            )
+        }
 
     /** 工具参数 JSON 提取字符串字段（终端命令探针用；坏 JSON 折叠 null）。 */
     private fun extractJsonStringField(json: String, field: String): String? = try {
