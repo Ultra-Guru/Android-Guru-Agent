@@ -1,6 +1,5 @@
 package com.apex.agent.ui.screen.code
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -15,31 +14,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Checklist
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,20 +33,19 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -69,16 +53,13 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import com.apex.agent.core.codetools.tools.CodeTodoTool
-import com.apex.agent.platform.code.ws.CodeWorkspace
 import com.apex.agent.ui.component.GithubIconButton
 import com.apex.agent.ui.component.GithubTokenDialog
-import com.apex.agent.ui.component.MarkdownText
 import com.apex.agent.ui.component.SlashAutoCompleteHost
 import com.apex.agent.ui.component.SlashCommandButton
 import com.apex.agent.ui.component.SkillChipInputField
 import com.apex.agent.ui.component.SlashMenuProvider
 import com.apex.agent.ui.component.rememberSlashMenuProvider
-import androidx.compose.material.icons.filled.CallSplit
 import com.apex.agent.ui.screen.agent.CODING_SCREEN_MODES
 import com.apex.agent.ui.screen.agent.AgentModeSelector
 import com.apex.agent.ui.screen.agent.AgentRoleSelector
@@ -95,6 +76,8 @@ import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.core.llm.EndpointResolver
 import com.apex.agent.ui.screen.agent.toolkit.OutputFormat
 import com.apex.agent.ui.screen.code.editor.CodeEditorPanel
+import com.apex.agent.ui.screen.code.history.CodeHistoryIconButton
+import com.apex.agent.ui.screen.code.history.CodeHistorySheet
 import com.apex.agent.ui.screen.code.longtask.CodeLongTaskSheet
 import com.apex.agent.ui.screen.code.stream.CodeStreamTimeline
 import com.apex.agent.ui.screen.code.stream.TerminalPanelState
@@ -176,10 +159,11 @@ fun CodeScreen(
     // ═══ #197 模型 API 未配置浮窗（发送拦截）═══
     var showApiMissingNotice by rememberSaveable { mutableStateOf(false) }
 
-    var showNewWorkspace by rememberSaveable { mutableStateOf(false) }
     var showThinkingGuide by rememberSaveable { mutableStateOf(false) }
-    // v6 Git 工作区面板（右上角入口；面板打开即拉取 status 现场）
-    var showGitPanel by rememberSaveable { mutableStateOf(false) }
+    // v1.4.10 Coding 历史对话面板（右上角对话历史入口；新会话自动归档）
+    // 注：Git 面板状态已随本 PR「Git 入口去重」退役（工作区浏览器内置
+    // Git 页签即全部 Git 能力），main 侧新增的历史面板状态保留。
+    var showCodeHistory by rememberSaveable { mutableStateOf(false) }
     // 胶囊详情弹层选中项（存 id 不存对象：StreamToolCall 是不可变快照，
     // 每 25ms 批次按 index 替换新实例——存对象会冻结在点击瞬间，
     // 状态/耗时/Diff 永不更新；存 id 每次重组从活快照重查）。
@@ -210,19 +194,14 @@ fun CodeScreen(
         // 第三轮审计对 Agent 屏的同款修复，见 ApexRoot.kt 注释）。
     ) {
         WorkspaceBar(
-            active = state.activeWorkspace,
-            workspaces = state.workspaces,
-            onSelect = viewModel::switchWorkspace,
-            onCreate = { showNewWorkspace = true },
-            onDelete = viewModel::deleteWorkspace,
             onClearChat = viewModel::clearConversation,
             onOpenLongTasks = viewModel::openLongTaskCenter,
+            onOpenHistory = { showCodeHistory = true },
             // v1.5 右上角思考逻辑切换（深潜 = 自研 / 标准 = 标准任务循环）
             logicMode = state.logicMode,
             onSwitchLogic = viewModel::setLogicMode,
-            // v6 右上角 Git 工作区（变更文件 + git 功能）
-            onOpenGit = { showGitPanel = true },
-            // v1.6 工作区浏览器（文件树/预览/Git/变更产物全屏页）
+            // v1.6 工作区浏览器（文件树/预览/Git/变更产物全屏页；页面内
+            // 自带 Git 能力 —— 原 CallSplit 独立 Git 入口与其重复，已移除）
             onOpenWorkspaceBrowser = onOpenWorkspaceBrowser
         )
 
@@ -386,6 +365,16 @@ fun CodeScreen(
                     isRunning = state.isRunning,
                     llmConfigured = llmConfigured,
                     onSendBlocked = { showApiMissingNotice = true },
+                    workspaceMenu = {
+                        CodeWorkspaceSelectorChip(
+                            active = state.activeWorkspace,
+                            workspaces = state.workspaces,
+                            onSelect = viewModel::switchWorkspace,
+                            onCreate = viewModel::createWorkspace,
+                            onImportFolder = { path -> viewModel.importWorkspaceFromFolder(path) },
+                            onDelete = viewModel::deleteWorkspace
+                        )
+                    },
                     onSend = { text ->
                         // v3 GOAL：GOAL 模式且尚无活动目标 → 首条消息转目标
                         // 设定弹层（草稿预填），不直接发送；返回 false（非 GOAL/
@@ -456,16 +445,6 @@ fun CodeScreen(
         )
     }
 
-    if (showNewWorkspace) {
-        NewWorkspaceDialog(
-            onConfirm = { name ->
-                viewModel.createWorkspace(name)
-                showNewWorkspace = false
-            },
-            onDismiss = { showNewWorkspace = false }
-        )
-    }
-
     // coding 七档思考指南（ModalBottomSheet）：阶梯总表 + 逐档卡片，可直切档
     if (showThinkingGuide) {
         CodeThinkingGuideSheet(
@@ -487,14 +466,6 @@ fun CodeScreen(
             onStart = { statement, criteria, maxRounds ->
                 viewModel.startGoalModeGoal(statement, criteria, maxRounds, state.goalSetupDraft)
             }
-        )
-    }
-
-    // ═══ v6 Git 工作区面板（右上角入口；打开即拉 status 现场）═══
-    if (showGitPanel) {
-        CodeWorkspacePanel(
-            controller = viewModel.gitPanelController,
-            onDismiss = { showGitPanel = false }
         )
     }
 
@@ -549,25 +520,24 @@ fun CodeScreen(
         onStartTemplate = viewModel::startFromTemplate,
         onExport = { id -> viewModel.exportLongTask(context, id) }
     )
+
+    // v1.4.10 历史对话（ModalBottomSheet）：新会话自动归档的会话列表（恢复/删除）
+    if (showCodeHistory) {
+        CodeHistorySheet(viewModel = viewModel, onDismiss = { showCodeHistory = false })
+    }
 }
 
 // ═══ 工作区条 ═══
 
 @Composable
 private fun WorkspaceBar(
-    active: CodeWorkspace?,
-    workspaces: List<CodeWorkspace>,
-    onSelect: (String) -> Unit,
-    onCreate: () -> Unit,
-    onDelete: (String) -> Unit,
     onClearChat: () -> Unit,
     onOpenLongTasks: () -> Unit,
+    onOpenHistory: () -> Unit = {},
     logicMode: StandardLogicMode = StandardLogicMode.DEEP_DIVE,
     onSwitchLogic: (StandardLogicMode) -> Boolean = { false },
-    onOpenGit: () -> Unit = {},
     onOpenWorkspaceBrowser: () -> Unit = {}
 ) {
-    var menuOpen by remember { mutableStateOf(false) }
     // v1.5 切换被拒提示（运行中拒绝；2s 自清，行内告警形态）
     var logicSwitchBlocked by remember { mutableStateOf(false) }
     LaunchedEffect(logicSwitchBlocked) {
@@ -585,94 +555,6 @@ private fun WorkspaceBar(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
-            Icon(
-                Icons.Default.Code,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(Modifier.width(8.dp))
-            // v5 防挤压（与 Agent 屏顶栏同修复）：工作区名 + 下拉占满前段后，
-            // 窄屏上尾部三件（逻辑选择器/长任务/新会话）被剩余空间压到近乎 0 宽。
-            // 前段收进 weight(1f) 横向滚动行，尾部按钮固定永远可见。
-            Box(modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState())) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clickable { menuOpen = true }
-                        .padding(vertical = 4.dp)
-                ) {
-                    Column(modifier = Modifier.widthIn(max = 180.dp)) {
-                        Text(
-                            text = active?.name ?: stringResource(R.string.code_no_workspace),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        active?.detectedEnvironment?.let {
-                            Text(
-                                text = it,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                    Icon(
-                        Icons.Filled.ArrowDropDown,
-                        contentDescription = stringResource(R.string.code_switch_workspace),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    workspaces.forEach { ws ->
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(ws.name, style = MaterialTheme.typography.bodyMedium)
-                                    ws.detectedEnvironment?.let {
-                                        Text(
-                                            it,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            },
-                            leadingIcon = if (ws.workspaceId == active?.workspaceId) {
-                                { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                            } else null,
-                            trailingIcon = if (ws.workspaceId != "default" && ws.workspaceId != active?.workspaceId) {
-                                {
-                                    IconButton(onClick = { onDelete(ws.workspaceId) }) {
-                                        Icon(
-                                            Icons.Default.Delete,
-                                            contentDescription = stringResource(R.string.code_delete_workspace),
-                                            modifier = Modifier.size(16.dp),
-                                            tint = MaterialTheme.colorScheme.error
-                                        )
-                                    }
-                                }
-                            } else null,
-                            onClick = {
-                                menuOpen = false
-                                onSelect(ws.workspaceId)
-                            }
-                        )
-                    }
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.code_new_workspace)) },
-                        leadingIcon = { Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                        onClick = {
-                            menuOpen = false
-                            onCreate()
-                        }
-                    )
-                }
-            }
-
             // v1.5 思考逻辑切换（右上角：深潜 = 自研七档 / 标准 = 标准任务循环）
             CodeLogicModeSelector(
                 current = logicMode,
@@ -697,17 +579,6 @@ private fun WorkspaceBar(
                 )
             }
 
-            // ═══ v6 Git 工作区（右上角：变更文件 + git 功能）═══
-            // 48dp 触区（主操作红线；CallSplit 即分支意象）
-            IconButton(onClick = onOpenGit, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
-                Icon(
-                    Icons.Default.CallSplit,
-                    contentDescription = stringResource(R.string.code_git_cd),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-
             // v1.2 长任务中心入口（记录/模板两页签的 ModalBottomSheet）
             // UI-012：48dp 触区红线（原 28dp）
             IconButton(onClick = onOpenLongTasks, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
@@ -718,6 +589,10 @@ private fun WorkspaceBar(
                     modifier = Modifier.size(18.dp)
                 )
             }
+
+            // v1.4.10 历史对话入口（新会话自动归档；与长任务中心相邻语义区分：
+            // History=任务记录，Chat=对话历史）
+            CodeHistoryIconButton(onClick = onOpenHistory)
 
             // 新会话：图标按钮（对齐 Agent 屏 History 邻钮；UI-012：48dp 触区红线，原 28dp）
             IconButton(onClick = onClearChat, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
@@ -828,6 +703,9 @@ private fun CodeInputBar(
     onSendBlocked: () -> Unit,
     onSend: (String) -> Unit,
     onAbort: () -> Unit,
+    // 工作区选择（2026-10 用户需求：迁入输入栏工具行首位；顶栏左上角
+    // 选择器已移除）—— 数据/回调由 CodeScreen 组合层闭合
+    workspaceMenu: @Composable () -> Unit = {},
     slashMenuProvider: SlashMenuProvider,
     onAddPendingCommand: (PendingPipelineCommand) -> Unit,
     pendingCommands: List<PendingPipelineCommand>,
@@ -869,7 +747,9 @@ private fun CodeInputBar(
                 onDisableAllRules = { toolkitState.rules.filter { it.enabled }.forEach { r -> toolkit.setRuleEnabled(r.id, false) } }
             )
 
-            // ═══ 工具栏行：斜杠 + GitHub + 小圆环（横向滚动）═══
+            // ═══ 工具栏行：工作区 + 斜杠 + GitHub + 小圆环（横向滚动）═══
+            // 工作区选择器占首位（2026-10 用户需求：输入栏内未被占用的位置；
+            // 真实文件夹选择 + 默认整个系统，见 CodeWorkspaceSelector.kt）
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -877,6 +757,8 @@ private fun CodeInputBar(
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
             ) {
+                workspaceMenu()
+
                 // ═══ / 斜杠指令按钮（coding 域：开发技能 + coding 工位 MCP）═══
                 // v5 多选：流水线条目选中保持展开（继续多选）+ ✓ 勾选态；
                 // 再点一次已选条目 = 摘除。返回 false（普通指令）才收起。
@@ -1153,33 +1035,3 @@ private fun PendingQuestionDialog(
     )
 }
 
-@Composable
-private fun NewWorkspaceDialog(
-    onConfirm: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    // rememberSaveable：旋转/重建后已输入的工作区名不丢（String 可入 Bundle）。
-    var name by rememberSaveable { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.code_new_workspace_title)) },
-        text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                placeholder = { Text(stringResource(R.string.code_workspace_name_hint)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { if (name.isNotBlank()) onConfirm(name.trim()) },
-                enabled = name.isNotBlank()
-            ) { Text(stringResource(R.string.code_create)) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.code_cancel)) }
-        }
-    )
-}

@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.apex.agent.attachment.AttachmentCleanupManager
 import com.apex.agent.core.engine.ConversationMemory
 import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.di.FileContextArchive
 import com.apex.agent.platform.terminal.ubuntu.lifecycle.UbuntuLifecycleCoordinator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -33,6 +34,8 @@ class StorageViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val attachmentCleanup: AttachmentCleanupManager,
     private val conversationMemory: ConversationMemory,
+    // #396：会话归档随「清空会话历史」一并清空（防孤儿归档被检索工具读到）。
+    private val contextArchive: FileContextArchive,
     private val ubuntuLifecycle: UbuntuLifecycleCoordinator
 ) : ViewModel() {
 
@@ -107,7 +110,7 @@ class StorageViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(busy = true) }
             withContext(Dispatchers.Default) {
-                runCatching { conversationMemory.clear() }
+                runCatching { conversationMemory.clear(); contextArchive.clear() }
                     .onFailure { Log.w("Storage", "clear conversation failed: ${it.message}") }
             }
             _uiState.update {

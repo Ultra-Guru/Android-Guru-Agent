@@ -349,6 +349,8 @@
     <string name="model_import_done">Imported %1$d model(s) to \"%2$s\"</string>
     <string name="model_import_cancel">Cancel</string>
     <string name="model_import_apply_error">Import failed: %1$s</string>
+    <string name="model_import_from_file">Import from file</string>
+    <string name="model_import_file_error">Failed to read file: %1$s</string>
 
     <!-- ═══ Storage and data management (StorageScreen) ═══ -->
     <string name="storage_title">Storage</string>
@@ -593,10 +595,10 @@
 
     <!-- ═══ About screen (drawer bottom entry, v1.4.3+) ═══ -->
     <string name="about_section_highlights">Highlights in this build</string>
-    <string name="about_highlight_1">Smart update pipeline: jump straight to the latest version from up to 10 versions behind with one small patch</string>
-    <string name="about_highlight_2">Long-task export: share any run as a JSON archive or a readable Markdown report</string>
-    <string name="about_highlight_3">Chat memory you control: auto-capture can be turned off in Settings, and every memory is viewable and deletable</string>
-    <string name="about_highlight_4">Usage dashboard now estimates cost per model from public list prices</string>
+    <string name="about_highlight_1">Browser agent: full in-app browser with page understanding and multi-tab automation</string>
+    <string name="about_highlight_2">Coding desk: real-folder workspaces, built-in Git, and terminal output inline in the stream</string>
+    <string name="about_highlight_3">Ubuntu terminal rewritten: VT engine, CSI compatibility and stable CJK IME input</string>
+    <string name="about_highlight_4">Dual thinking system: native model effort + seven self-hosted tiers with deep-water auto-escalation</string>
     <string name="about_easter_egg_toast">🎉 You found the fireworks!</string>
     <string name="about_highlights_hint">Tap the robot at the bottom of this page five times</string>
     <string name="about_section_build">Version &amp; build</string>
@@ -609,6 +611,10 @@
     <string name="changelog_dialog_download">Open download page</string>
     <string name="changelog_dialog_browse_close">Close</string>
     <string name="changelog_pr_section">Merged pull requests (new features / fixes)</string>
+    <string name="changelog_step_manual">Release notes</string>
+    <string name="changelog_step_pr">Feature changes</string>
+    <string name="changelog_step_next">Next: feature changes</string>
+    <string name="changelog_step_prev">Back</string>
     <string name="changelog_dialog_open_release">Open release page</string>
     <string name="changelog_history_empty">No changelog yet (first release on the changelog channel)</string>
     <string name="changelog_history_failed">Failed to load changelog — offline and no embedded copy</string>
@@ -678,20 +684,38 @@
     <string name="about_update_local_install">Install</string>
     <string name="about_update_local_delete">Delete</string>
     <string name="about_feature_agent_title">Agent chat</string>
-    <string name="about_feature_agent_desc">All-in-one AI assistant with multi-level thinking, tool calling and skills</string>
+    <string name="about_feature_agent_desc">All-in-one AI assistant with multi-level thinking, tool calling, skills and chat memory</string>
     <string name="about_feature_coding_title">Coding mode</string>
-    <string name="about_feature_coding_desc">Dedicated coding workflow with its own engine instance and workspace</string>
+    <string name="about_feature_coding_desc">Dedicated coding engine + real-folder workspaces (file tree / Git changes / terminal)</string>
     <string name="about_feature_terminal_title">Ubuntu terminal</string>
-    <string name="about_feature_terminal_desc">Full Ubuntu 24.04 CLI environment bundled with the APK — works offline</string>
+    <string name="about_feature_terminal_desc">Full Ubuntu 24.04 CLI with a PRoot sandbox bundled in the APK — works offline</string>
     <string name="about_feature_market_title">Skill market</string>
     <string name="about_feature_market_desc">Install skills, MCP servers and plugins on demand</string>
     <string name="about_feature_vault_title">Encrypted vault</string>
     <string name="about_feature_vault_desc">Encrypted clipboard vault for tokens and API keys</string>
     <string name="about_feature_glass_title">Liquid Glass</string>
     <string name="about_feature_glass_desc">Haze-based glass material system with a live Glass Lab showcase</string>
+    <string name="about_feature_browser_title">Browser agent</string>
+    <string name="about_feature_browser_desc">Full in-app browser: page understanding, multi-tab management and automation</string>
     <string name="about_link_source">Source code</string>
     <string name="about_link_release">Release channel</string>
     <string name="about_link_issues">Report an issue</string>
+    <!-- ═══ 官网链接 + 问题反馈（Guru API 邮件直达通道）═══ -->
+    <string name="about_link_website">Official Website</string>
+    <string name="about_feedback_title">Feedback</string>
+    <string name="about_feedback_entry">Goes straight to the developer\'s inbox</string>
+    <string name="about_feedback_hint">Your message will be delivered straight to the developer\'s inbox. Leaving a contact is optional and helps us follow up</string>
+    <string name="about_feedback_message_label">Message</string>
+    <string name="about_feedback_counter">%1$d / %2$d</string>
+    <string name="about_feedback_contact_label">Contact (optional)</string>
+    <string name="about_feedback_contact_hint">Email / QQ / Telegram — so we can reach you back</string>
+    <string name="about_feedback_submit">Submit</string>
+    <string name="about_feedback_sending">Sending…</string>
+    <string name="about_feedback_success">Feedback delivered to the developer\'s inbox — thank you!</string>
+    <string name="about_feedback_failed">Send failed: %1$s</string>
+    <string name="about_feedback_network_error">Network error — please check your connection and retry</string>
+    <string name="about_feedback_cancel">Cancel</string>
+    <string name="about_feedback_done">Done</string>
     <string name="about_footer">Apex Agent · open source</string>
     <!-- ═══ v1.4.4: usage dashboard / diagnostics center (drawer destinations) ═══ -->
     <string name="drawer_usage">Usage</string>

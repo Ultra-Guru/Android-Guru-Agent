@@ -65,6 +65,7 @@ import com.apex.agent.core.tools.ToolRegistry
 import com.apex.agent.core.tools.catalog.ToolActivationStore
 import com.apex.agent.core.tools.skill.SkillRegistry
 import com.apex.agent.platform.code.ws.CodeWorkspaceManager
+import com.apex.agent.ui.screen.code.history.CodeHistoryStore
 import com.apex.agent.ui.screen.code.session.CodeSessionStore
 import dagger.Module
 import dagger.Provides
@@ -117,6 +118,21 @@ object CodeModule {
     @Singleton
     fun provideCodeSessionStore(@ApplicationContext context: Context): CodeSessionStore {
         return CodeSessionStore(File(context.filesDir, "code_sessions"))
+    }
+
+    /**
+     * Coding 历史对话归档仓库（v1.4.10）：新会话先归档（UI 快照 + 双线引擎记忆
+     * 原文件），历史面板可恢复/删除。目录约定：code_history 与引擎记忆目录
+     * code_memory / code_memory_standard 同层隔离。
+     */
+    @Provides
+    @Singleton
+    fun provideCodeHistoryStore(@ApplicationContext context: Context): CodeHistoryStore {
+        return CodeHistoryStore(
+            baseDir = File(context.filesDir, "code_history"),
+            deepMemoryDir = File(context.filesDir, "code_memory"),
+            standardMemoryDir = File(context.filesDir, "code_memory_standard")
+        )
     }
 
     /**
@@ -176,6 +192,9 @@ object CodeModule {
     fun provideCodeContextProvider(manager: CodeWorkspaceManager): CodeContextProvider {
         return object : CodeContextProvider {
             override fun provide(workspaceRoot: File, activeFile: String?): String? {
+                // system 工作区（根 = /，2026-10 默认整个系统）：全系统根不做
+                // 环境嗅探/项目统计 —— 深度遍历宿主根既慢又无项目语义。
+                if (workspaceRoot.absolutePath == "/") return null
                 val env = manager.detectEnvironment(workspaceRoot)
                 val stats = manager.projectStats(workspaceRoot)
                 return listOfNotNull(env.summary, stats).joinToString(" · ").ifBlank { null }

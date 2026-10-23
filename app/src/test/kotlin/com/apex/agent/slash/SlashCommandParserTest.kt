@@ -53,6 +53,32 @@ class SlashCommandParserTest {
         assertEquals("pdf_reader", (parsed as SlashCommand.Plugin).id)
     }
 
+    // ═════════════════════════════════════════════════════
+    // /fusion —— FUSION 工具聚合体系包（王冠菜单选中后拼回的命令形态）
+    // ═════════════════════════════════════════════════════
+
+    @Test
+    fun `bare fusion command parses to Fusion with empty args`() {
+        val parsed = SlashCommandParser.parse("/fusion:rea")
+
+        assertTrue(parsed is SlashCommand.Fusion)
+        val fusion = parsed as SlashCommand.Fusion
+        assertEquals("rea", fusion.id)
+        assertEquals(emptyMap<String, String>(), fusion.args)
+        assertEquals("", fusion.userExtra)
+    }
+
+    @Test
+    fun `fusion command carries args and user extra`() {
+        val parsed = SlashCommandParser.parse("/fusion:rea target=app.asar 逆向这个应用")
+
+        assertTrue(parsed is SlashCommand.Fusion)
+        val fusion = parsed as SlashCommand.Fusion
+        assertEquals("rea", fusion.id)
+        assertEquals(mapOf("target" to "app.asar"), fusion.args)
+        assertEquals("逆向这个应用", fusion.userExtra)
+    }
+
     // ═══════════════════════════════════════════════════════
     // /logic — v1.5 双思考逻辑切换（本地路由命令）
     // ═════════════════════════════════════════════════════
@@ -251,7 +277,7 @@ class SlashCommandParserTest {
         // Order matters for slash-menu rendering; assert it explicitly so a
         // future reorder is a conscious decision rather than an accident.
         assertEquals(
-            listOf("skill", "mcp", "connector", "plugin", "logic"),
+            listOf("skill", "mcp", "connector", "plugin", "logic", "fusion"),
             SlashCommand.SUPPORTED_TYPES
         )
     }

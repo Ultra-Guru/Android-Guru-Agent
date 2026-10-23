@@ -46,11 +46,11 @@
     <string name="code_perm_section_title">Tool permissions</string>
     <string name="code_perm_section_subtitle">standard permission mode and rules</string>
     <string name="code_perm_mode_label">Permission mode</string>
-    <string name="code_perm_mode_bypass">Full Auto</string>
-    <string name="code_perm_mode_default">Default (Recommended)</string>
+    <string name="code_perm_mode_bypass">Full Auto (Default)</string>
+    <string name="code_perm_mode_default">Standard (asks high-risk)</string>
     <string name="code_perm_mode_accept_edits">Accept Edits</string>
     <string name="code_perm_mode_plan">Plan</string>
-    <string name="code_perm_mode_bypass_desc">No confirmation at all: every tool runs silently (trusted scenarios only)</string>
+    <string name="code_perm_mode_bypass_desc">Every tool (shell, MCP, skills included) runs with no confirmation — the default mode; only DENY rules still apply</string>
     <string name="code_perm_mode_default_desc">Basic tools run automatically; only delete-like high-risk actions ask first</string>
     <string name="code_perm_mode_accept_edits_desc">File edits and git commits are allowed; everything else asks first</string>
     <string name="code_perm_mode_plan_desc">Read-only planning: any tool that mutates the environment is denied</string>
@@ -107,6 +107,18 @@
     <string name="code_thinking_guide_coding_view">Coding view</string>
     <string name="code_thinking_guide_footer_linkage">A tier drives more than the prompt: iteration cap, compression threshold and tool-output budget all scale with it (see the ladder above).</string>
     <string name="code_thinking_guide_footer_apex">APEXCODE is manual-only: the adaptive selector never picks it, and its token cost sits at the top of the whole ladder.</string>
+
+    <!-- ═══ v1.4.10 Coding 历史对话（新会话自动归档，可恢复）═══ -->
+    <string name="code_history_open">Chat history</string>
+    <string name="code_history_title">Conversation History</string>
+    <string name="code_history_empty">No archived conversations yet — starting a new chat archives the current one automatically</string>
+    <string name="code_history_no_user_msg">(no user message)</string>
+    <string name="code_history_archived_fmt">Current conversation archived (%1$d messages) — restore anytime from chat history</string>
+    <string name="code_history_restore_failed">Restore failed: archived conversation is missing or corrupted</string>
+    <string name="code_history_delete">Delete</string>
+    <string name="code_history_delete_confirm">Delete this conversation?</string>
+    <string name="code_history_delete_msg_fmt">"This can't be undone: %1$s"</string>
+    <string name="code_history_cancel">Cancel</string>
 
     <!-- ═══ v1.2 long-task center ═══ -->
     <string name="code_longtask_open">Long-task center</string>
@@ -223,47 +235,40 @@
     <string name="code_logic_caps_deep_dive">Tier ladder · AUTO pre-check · knob compensation</string>
     <string name="code_logic_caps_standard">Roles · allow/ask/deny · task sub-agents · compaction</string>
     <string name="code_logic_switch_blocked">A run is active — switch after it finishes</string>
-    <string name="code_logic_switched_standard">🧭 Thinking logic switched to Standard (agent loop). Your Deep Dive session is kept and will resume when you switch back.</string>
+    <string name="code_logic_switched_standard">Thinking logic switched to Standard (agent loop). Your Deep Dive session is kept and will resume when you switch back.</string>
     <string name="code_logic_mode_loom">Loom</string>
     <string name="code_logic_badge_loom">in-band weave</string>
     <string name="code_logic_loom_desc">Warp-weft paradigm: in-band XML tool protocol, shuttle round machine, permission modes, thread swarm, weaving packages, mid-run steering</string>
     <string name="code_logic_caps_loom">XML protocol · warp/weft rounds · thread swarm · digest compaction</string>
-    <string name="code_logic_switched_loom">🧶 Thinking logic switched to Loom (warp-weft paradigm). Your previous session is kept and will resume when you switch back.</string>
+    <string name="code_logic_switched_loom">Thinking logic switched to Loom (warp-weft paradigm). Your previous session is kept and will resume when you switch back.</string>
     <string name="code_logic_mode_courier">Courier</string>
     <string name="code_logic_badge_courier">relay dispatch</string>
     <string name="code_logic_courier_desc">Relay-station paradigm: inbox steer/queue delivery, trip step machine with parallel tool tracks, permit-pattern signal gate, dossier compaction, child-station subagents</string>
     <string name="code_logic_caps_courier">inbox relay · trip steps · permit gate · dossier compaction</string>
-    <string name="code_logic_switched_courier">📮 Thinking logic switched to Courier (relay-station paradigm). Your previous session is kept and will resume when you switch back.</string>
-    <string name="code_logic_switched_deep_dive">🤿 Thinking logic switched to Deep Dive (self-designed seven tiers). Your Standard session is kept and will resume when you switch back.</string>
-    <string name="code_logic_unknown_mode">⚠️ /logic:%1$s is not a known mode — use /logic:standard, /logic:loom, /logic:courier or /logic:deep_dive (aliases: std, weave, express, deep)</string>
+    <string name="code_logic_switched_courier">Thinking logic switched to Courier (relay-station paradigm). Your previous session is kept and will resume when you switch back.</string>
+    <string name="code_logic_switched_deep_dive">Thinking logic switched to Deep Dive (self-designed seven tiers). Your Standard session is kept and will resume when you switch back.</string>
+    <string name="code_logic_unknown_mode">/logic:%1$s is not a known mode — use /logic:standard, /logic:loom, /logic:courier or /logic:deep_dive (aliases: std, weave, express, deep)</string>
 
-    <!-- ═══ v6 Git 工作区面板（右上角入口：变更文件 + git 功能）═══ -->
-    <string name="code_git_cd">Open Git workspace</string>
-    <!-- v1.6 Workspace explorer (apex-workspace-kit) -->
+    <!-- v1.6 Workspace explorer (apex-workspace-kit); v6 standalone Git panel
+         removed 2026-10 (duplicate of the explorer's built-in Git tab) -->
+    <!-- Workspace selection (input-bar selector, 2026-10): real folder + whole system -->
+    <string name="code_workspace_pick_folder">Select Folder…</string>
+    <string name="code_workspace_whole_system">Whole System</string>
     <string name="code_workspace_browser_cd">Open workspace browser</string>
     <string name="drawer_workspace_browser">Workspace</string>
-    <string name="code_git_panel_title">Git Workspace</string>
-    <string name="code_git_branch_fmt">Branch: %1$s</string>
-    <string name="code_git_not_repo">This workspace is not a git repository yet</string>
-    <string name="code_git_init">Initialize repository</string>
-    <string name="code_git_clean">Working tree clean — no pending changes</string>
-    <string name="code_git_changes_fmt">%1$d changed files</string>
-    <string name="code_git_refresh">Refresh git status</string>
-    <string name="code_git_commit_hint">Commit message</string>
-    <string name="CodeGitCommit">Commit all changes</string>
-    <string name="code_git_new_file">New untracked file (not in index yet)</string>
     <string name="code_stream_terminal_running">Running</string>
 
     <!-- ═══ #312 i18n batch 2: VM / reducer / editor user-visible copy ═══ -->
     <!-- Workspace operations -->
     <string name="code_ws_create_failed">Cannot create the workspace (name is empty or already exists)</string>
+    <string name="code_ws_import_failed">Could not import the selected folder — its location cannot be resolved to a real device path (cloud/download providers are not supported). Pick a folder from local storage.</string>
     <string name="code_ws_delete_blocked_running">A run is active — delete the workspace after it finishes</string>
     <string name="code_ws_delete_default">The default workspace cannot be deleted</string>
     <string name="code_ws_empty_env">empty workspace</string>
     <string name="code_ws_switched_fmt">Switched to workspace \"%1$s\" (%2$s). Describe your coding task to get started.</string>
 
     <!-- AUTO pre-check notice -->
-    <string name="code_adaptive_precheck_fmt">🧠 Adaptive pre-check: %1$s</string>
+    <string name="code_adaptive_precheck_fmt">Adaptive pre-check: %1$s</string>
 
     <!-- Chat-bubble system notices (emitted by CodeEventReducer) -->
     <string name="code_plan_confirmed_fmt">Plan confirmed — executing (%1$d steps)</string>

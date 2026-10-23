@@ -11,6 +11,7 @@
   build --version 1.4.9.27 --code 103 [--tag v1.4.9.27] [--date 2026-10-17]
         [--out dist/changelog.json] [--history-file <json>]
         [--consumed-out dist/consumed-fragments.txt]
+        [--archived dist/archived-fragments.txt]
       聚合 `.changelog/unreleased/*.md` → changelog.json（apex-changelog-v2）：
 
       片段元数据（文件头 `<!-- key: value -->` 连续标记行，聚合时剥离）：
@@ -33,6 +34,14 @@
         release.yml 发布成功后据此归档到 `.changelog/released/<tag>/` 并
         从 unreleased 移除（带 [skip ci] 回推 main）；target 面向未来的
         片段不进清单（跨版本滞留，绝不误消费）。
+
+      跨 run 去重（配合 release.yml，v2.2）：
+        `--archived` 指向「最新 main 的 .changelog/released/ 已归档片段
+        文件名清单」（release.yml 构建期 fetch 最新 main 生成）。本 run 的
+        触发 commit 快照可能早于前序 run 的消费回推 —— 快照里的片段实际
+        已被前序版本发布过；命中归档索引即跳过，防止同片段进两个版本
+        （历史缺陷：v35/v36、v39/v40 双双重复收录同一 PR 片段，导致
+        「手动日志发行时 PR 日志丢失」的错位体验）。
 
       片段全空不硬失败 —— 生成兜底文案（发布列车绝不断），但 PR 门禁
       （changelog-gate.yml）会在合并前拦住「改码不写日志」的 PR。
@@ -200,6 +209,34 @@ def fetch_remote_history():
     return []
 
 
+def load_archived_index(path):
+    """`--archived` 清单（每行一个已归档片段文件名）→ set。
+    文件缺失 / 为空 = 无历史归档（通道首用 / fetch 失败），空集宽松降级。"""
+    if not path:
+        return set()
+    f = pathlib.Path(path)
+    if not f.is_file():
+        return set()
+    return {
+        ln.strip() for ln in f.read_text(encoding="utf-8").splitlines()
+        if ln.strip()
+    }
+
+
+def load_archived_index(path):
+    """`--archived` 清单（每行一个已归档片段文件名）→ set。
+    文件缺失 / 为空 = 无历史归档（通道首用 / fetch 失败），空集宽松降级。"""
+    if not path:
+        return set()
+    f = pathlib.Path(path)
+    if not f.is_file():
+        return set()
+    return {
+        ln.strip() for ln in f.read_text(encoding="utf-8").splitlines()
+        if ln.strip()
+    }
+
+
 def cmd_build(args):
     if not VERSION_RE.match(args.version):
         print(
@@ -214,10 +251,23 @@ def cmd_build(args):
         datetime.timezone.utc
     ).strftime("%Y-%m-%d")
 
-    # ── 收录判定：target 感知 ─────────────────────────────────────────
-    # 面向未来版本的片段（target > 构建版本）缓发布：不收录、不消费。
-    included, deferred = [], []
+    # ── 跨 run 去重：最新 main 的已归档片段 ─────────────────────
+    # 触发 commit 快照可能含已被前序 run 消费的片段（消费回推晚于本 run
+    # 的 checkout）—— 命中归档索引即跳过，防同片段进两个版本。
+    archived = load_archived_index(args.archived)
+
+    # ── 收录判定：target 感知 + 归档去重 ─────────────────────
+    # 面向未来版本的片段（target > 构建版本）缓发布：不收录、不消费；
+    # 已被前序 run 发布的片段（归档索引命中）跳过，防跨 run 重复收录。
+    included, deferred, deduped = [], [], []
     for p in load_fragments():
+        if p.name in archived:
+            deduped.append(p)
+            print(
+                f"⏭️  {p.name}: 已被前序版本发布（归档索引命中）—— 跳过，"
+                "防跨 run 重复收录"
+            )
+            continue
         raw = p.read_text(encoding="utf-8")
         meta, body = strip_head_markers(raw)
         target = meta.get("target")
@@ -310,7 +360,7 @@ def cmd_build(args):
 
     print(
         f"📦 changelog.json — v{version}({code})：{len(included)} 片段收录 / "
-        f"{len(deferred)} 缓发布 | 一级 {len(notes)} 条（publisher "
+        f"{len(deferred)} 缓发布 / {len(deduped)} 归档去重 | 一级 {len(notes)} 条（publisher "
         f"{len(publisher)}）+ 二级 {len(pr_groups)} 组（pr {len(pr_frags)}）/ "
         f"history {len(history)} 条（remote 存量 {len(old_history)}）"
     )
@@ -342,6 +392,12 @@ def main():
         "--consumed-out",
         default=None,
         help="本版已收录片段文件名清单输出（release.yml 归档依据）",
+    )
+    b.add_argument(
+        "--archived",
+        default=None,
+        help="最新 main 已归档片段文件名清单（跨 run 去重：命中即跳过，"
+        "防同片段进两个版本）",
     )
     args = ap.parse_args()
     sys.exit(cmd_validate(args) if args.cmd == "validate" else cmd_build(args))

@@ -30,7 +30,9 @@ import com.apex.agent.core.tools.toolSchema
  * 30），`scope=full` 看全会话。
  */
 class ContextRecapTool(
-    private val context: SessionContextProvider
+    private val context: SessionContextProvider,
+    /** #396 归档源（被压缩裁剪的历史）：null = 未接线。 */
+    private val archive: SessionContextArchive? = null
 ) : BaseTool(
     id = "ContextRecap",
     name = "Session Context Recap",
@@ -96,6 +98,11 @@ class ContextRecapTool(
             appendLine("## Overview")
             appendLine("- messages: ${records.size} (user ${roleCounts["user"] ?: 0}, assistant ${roleCounts["assistant"] ?: 0}, tool $toolMessages, system ${roleCounts["system"] ?: 0})")
             appendLine("- est. tokens: ~${totalChars / 4} (${totalChars} chars / 4)")
+            // #396 归档提示：让模型知道被压缩裁剪的历史仍可检索（不需要时不占 token）
+            val archivedCount = archive?.size() ?: 0
+            if (archivedCount > 0) {
+                appendLine("- archived (compressed-away, retrievable): $archivedCount records — ContextSearch finds keywords, ContextFetch reads them by 'a#N' locator")
+            }
 
             // ── 用户目标清单 ──
             val goals = records.filter { it.role == "user" }

@@ -73,6 +73,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.annotation.StringRes
 import com.apex.agent.R
+import com.apex.agent.ui.icons.CrownGold
+import com.apex.agent.ui.icons.FusionCrown
 import com.apex.agent.ui.glass.GlassToolCard
 import com.apex.agent.ui.theme.LocalExtendedColors
 import com.apex.agent.ui.glass.GlassToolStatus
@@ -132,6 +134,11 @@ internal fun toolKindStyle(kind: ToolKind): ToolKindStyle = when (kind) {
     ToolKind.PLUGIN -> ToolKindStyle(
         R.string.chat_toolkind_plugin, Icons.Default.Extension,
         Color(0xFFF59E0B)
+    )
+    // FUSION 体系（王冠徽章 + 王金）：/fusion:<id> 流水线内工具调用的来源标识。
+    ToolKind.FUSION -> ToolKindStyle(
+        R.string.chat_toolkind_fusion, FusionCrown,
+        CrownGold
     )
 }
 
@@ -217,11 +224,11 @@ private fun githubSummary(name: String, args: String): String? {
 }
 
 /**
- * ═══ 工具调用卡 v2：小胶囊折叠态（用户反馈「工具调用缩小成小胶囊，点击才放大」）═══
+ * ═══ 工具调用卡 v2.1：胶囊只显示名字（用户反馈「眼花缭乱，不展开时只显示名字」）═══
  *
- * 折叠态：单行小胶囊（高 ~26dp）—— 来源图标 + 工具名 + 状态圆点 + 智能摘要 +
- * 时长；不渲染参数/输出/时间线，流水里的几十次调用不再刷屏。
- * 展开态：完整 GlassToolCard（参数 + 执行时间线 + 智能输出 + 重试），
+ * 折叠态：迷你胶囊（高 ~24dp）—— 源图标 + 工具名 +（仅运行中/失败时的）状态点。
+ * 摘要/时长/徽章/箭头全部移入展开态：折叠即名字，一眼扫过几十次调用不再刷屏。
+ * 展开态：完整 GlassToolCard（参数 + 进度时间线 + 智能输出 + 重试），
  * 内容与 v1 完全一致，只是按需渲染。
  * 顺序性：卡片仍由 AgentChatEventApplier 按完成顺序追加到消息流，本卡不重排。
  */
@@ -242,18 +249,28 @@ internal fun ToolCallCard(
     val summary = remember(toolCall.id) {
         smartToolSummary(toolCall.toolName, toolCall.args, toolCall.kind, toolCall.server)
     }
+    val outputText = toolCall.fullOutput ?: toolCall.output
+    // ═══ 展开态去重（v2.1 降噪）═══ 参数块在卡内完整展示（START 步与其重复）；
+    // 输出区展示完整输出（OUTPUT 流式步 / COMPLETE 尾窗摘要与其重复）→
+    // 时间线只保留 PROGRESS 步（进度叙述是唯一不重复的信息源）；
+    // 输出为空时保留收尾步兜底（此时它是唯一的输出来源）。
+    val timelineSteps = remember(toolCall.id, toolCall.steps) {
+        if (outputText.isNullOrBlank()) {
+            toolCall.steps.filter { it.phase != StepPhase.START }
+        } else {
+            toolCall.steps.filter { it.phase == StepPhase.PROGRESS }
+        }
+    }
 
     if (!expanded) {
-        // ═══ 折叠态：小胶囊（默认状态）═══
+        // ═══ 折叠态：名字胶囊（默认状态）═══
         ToolCallCapsule(
             toolName = toolCall.toolName,
             kindStyle = kindStyle,
             accent = accent,
-            summary = summary,
-            durationMs = toolCall.durationMs,
             isError = isError,
             isRunning = false,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier,
             onClick = { expanded = true }
         )
         return
@@ -411,8 +428,8 @@ internal fun ToolCallCard(
                 }
             }
 
-            // ═══ 执行过程时间线（展开可见，全量保留步骤与原始输出）═══
-            if (toolCall.steps.isNotEmpty()) {
+            // ═══ 进度时间线（展开可见；v2.1 去重后只含 PROGRESS 步）═══
+            if (timelineSteps.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = stringResource(R.string.chat_execution_steps),
@@ -421,13 +438,11 @@ internal fun ToolCallCard(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 ToolStepTimeline(
-                    steps = toolCall.steps,
+                    steps = timelineSteps,
                     accent = accent,
                     maxHeight = 360.dp
                 )
             }
-
-            val outputText = toolCall.fullOutput ?: toolCall.output
 
             if (outputText != null) {
                 Spacer(modifier = Modifier.height(6.dp))
@@ -481,22 +496,21 @@ internal fun ToolCallCard(
 }
 
 /**
- * ═══ 工具调用小胶囊（折叠态专用，ToolCallCard / RunningToolCallCard 共用）═══
+ * ═══ 工具调用迷你胶囊（折叠态专用，ToolCallCard / RunningToolCallCard 共用）═══
  *
- * 用户需求：「调用工具和一些调用什么的都缩小，最好缩小成非常小的那种，
- * 点击才会放大，缩小成小胶囊」。设计：全宽但高度仅 ~26dp 的细胶囊 ——
- * 来源图标(12dp) + 工具名(等宽字号) + 状态圆点(6dp) + 智能摘要(灰色单行) +
- * 时长 + 展开箭头(12dp)。点击整个胶囊展开完整卡片。
+ * v2.1（用户需求：「不展开时只显示名字，不要显示多余信息」）：折叠态
+ * 只渲染 源图标 + 工具名 + 状态点。智能摘要 / 时长 / 展开箭头全部退场
+ * —— 几十次连续调用的流水里每行只剩名字，点开才见详情。胶囊自适应
+ * 内容宽度（不再占满整行），长工具名单行省略。
  *
- * 状态圆点：运行中 = 主色脉冲；完成 = 绿色实心；失败 = 红色实心。
+ * 状态点：仅在有状态语义时渲染 —— 运行中 = 主色脉冲；失败 = 红色实心；
+ * 成功 = 不渲染（成功是常态，渲染即噪声）。
  */
 @Composable
 internal fun ToolCallCapsule(
     toolName: String,
     kindStyle: ToolKindStyle,
     accent: Color,
-    summary: String?,
-    durationMs: Long,
     isError: Boolean,
     isRunning: Boolean,
     modifier: Modifier = Modifier,
@@ -525,7 +539,8 @@ internal fun ToolCallCapsule(
         contentColor = MaterialTheme.colorScheme.onSurface,
         border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
         modifier = modifier
-            .heightIn(min = 26.dp)
+            .heightIn(min = 24.dp)
+            .widthIn(max = 220.dp)
             .clickable { onClick() }
     ) {
         Row(
@@ -544,48 +559,23 @@ internal fun ToolCallCapsule(
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = if (isError) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 132.dp)
+                modifier = Modifier.weight(1f, fill = false)
             )
-            // 状态圆点（运行中脉冲）
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .background(
-                        color = dotColor.copy(alpha = if (isRunning) pulseAlpha else 1f),
-                        shape = CircleShape
-                    )
-            )
-            // 智能摘要（灰色单行，占满剩余宽度；无摘要留白）
-            if (!summary.isNullOrBlank()) {
-                Text(
-                    text = summary,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-            } else {
-                Spacer(modifier = Modifier.weight(1f))
-            }
-            // 时长
-            if (durationMs > 0) {
-                Text(
-                    text = formatDuration(durationMs),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            // 状态点：运行中脉冲 / 失败红点；成功不渲染（常态即噪声）
+            if (isRunning || isError) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .background(
+                            color = dotColor.copy(alpha = if (isRunning) pulseAlpha else 1f),
+                            shape = CircleShape
+                        )
                 )
             }
-            Icon(
-                imageVector = Icons.Default.KeyboardArrowDown,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                modifier = Modifier.size(12.dp)
-            )
         }
     }
 }
@@ -882,11 +872,9 @@ fun RunningToolCallCard(toolCall: AgentToolCallUi) {
             toolName = toolCall.toolName,
             kindStyle = kindStyle,
             accent = accent,
-            summary = summary,
-            durationMs = elapsedSec * 1000,
             isError = false,
             isRunning = true,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier,
             onClick = { expanded = true }
         )
         return
@@ -968,6 +956,31 @@ fun RunningToolCallCard(toolCall: AgentToolCallUi) {
                 )
             }
 
+            // ═══ v2.1 参数块（与完成卡同款）：调用参数即时可见；时间线不再
+            // 重复 START 步（旧实现里全量参数 JSON 在时间线里再刷一遍）═══
+            if (toolCall.args.isNotBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.chat_params),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = toolCall.args,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier
+                            .padding(8.dp)
+                            .horizontalScroll(rememberScrollState())
+                    )
+                }
+            }
+
             // ═══ 进度条 + 进度说明（由 ToolProgress 事件驱动）═══
             if (toolCall.progress != null) {
                 Spacer(modifier = Modifier.height(8.dp))
@@ -991,12 +1004,16 @@ fun RunningToolCallCard(toolCall: AgentToolCallUi) {
 
             // ═══ 工具执行过程时间线（流式，自动滚到底部；240→160dp：
             // 单步压缩后同屏可见更多步骤，展开态运行卡不再占满小屏视口）═══
-            if (toolCall.steps.isNotEmpty()) {
+            // v2.1 去重：START 步（参数全文）已由上方参数块承载，过滤退场。
+            val timelineSteps = remember(toolCall.id, toolCall.steps) {
+                toolCall.steps.filter { it.phase != StepPhase.START }
+            }
+            if (timelineSteps.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 Spacer(modifier = Modifier.height(8.dp))
                 ToolStepTimeline(
-                    steps = toolCall.steps,
+                    steps = timelineSteps,
                     accent = accent,
                     autoScroll = true,
                     maxHeight = 160.dp

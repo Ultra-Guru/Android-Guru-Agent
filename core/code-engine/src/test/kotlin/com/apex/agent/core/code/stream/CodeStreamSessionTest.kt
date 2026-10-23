@@ -180,6 +180,85 @@ class CodeStreamSessionTest {
         )
     }
 
+    // ═══ 思考卡防御性收口（2026-10 用户反馈：思考完成后仍显示「思考中」）═══
+    // 引擎 notice 类思考分片（工具降级/重试/GOAL 提示）与标准线库事件集都
+    // 只发 ThinkingChunk 不发 ThinkingComplete —— 旧实现思考卡一旦建立就
+    // 永远挂着「思考中…」，直到下一轮 beginRun。
+
+    @Test
+    fun `thinking card finalizes when tool starts without complete`() {
+        val s = CodeStreamSession()
+        s.beginRun("装 adb 工具")
+        s.onEvent(AgentEvent.ThinkingChunk("[engine] 降级提示"))
+        s.onEvent(bashStart("b1", "apt install adb"))
+        val thinking = s.snapshot().entries.filterIsInstance<StreamEntry.ThinkingEntry>().single()
+        assertEquals("已累积文本保留", "[engine] 降级提示", thinking.text)
+        assertTrue("工具开跑即收口，不再显示思考中", !thinking.isStreaming)
+    }
+
+    @Test
+    fun `thinking card finalizes on response complete without complete event`() {
+        // GOAL 停止路径：ThinkingChunk(userNotice) 紧跟 ResponseComplete
+        val s = CodeStreamSession()
+        s.beginRun("目标收尾")
+        s.onEvent(AgentEvent.ThinkingChunk("目标已达成"))
+        s.onEvent(AgentEvent.ResponseComplete("最终结论"))
+        val thinking = s.snapshot().entries.filterIsInstance<StreamEntry.ThinkingEntry>().single()
+        assertTrue("回复收尾即收口", !thinking.isStreaming)
+    }
+
+    @Test
+    fun `residual streaming entries finalize on complete event`() {
+        // 标准线库事件集没有思考完成事件：整轮只有 Chunk，收尾靠 Complete
+        val s = CodeStreamSession()
+        s.beginRun("标准线任务")
+        s.onEvent(AgentEvent.ThinkingChunk("推理中"))
+        s.onEvent(AgentEvent.ResponseChunk("结论前半"))
+        s.onEvent(AgentEvent.Complete("done", 1, 0, 100))
+        val snap = s.snapshot()
+        assertTrue(
+            "Complete 收口思考卡",
+            snap.entries.filterIsInstance<StreamEntry.ThinkingEntry>().single().let { !it.isStreaming }
+        )
+        assertTrue(
+            "Complete 收口结论气泡",
+            snap.entries.filterIsInstance<StreamEntry.AssistantEntry>().single().let { !it.isStreaming }
+        )
+    }
+
+    @Test
+    fun `residual streaming entries finalize on error event`() {
+        val s = CodeStreamSession()
+        s.beginRun("会出错的任务")
+        s.onEvent(AgentEvent.ThinkingChunk("想想"))
+        s.onEvent(AgentEvent.ResponseChunk("半截"))
+        s.onEvent(AgentEvent.Error("boom", recoverable = true))
+        val snap = s.snapshot()
+        assertTrue(
+            "Error 收口思考卡",
+            snap.entries.filterIsInstance<StreamEntry.ThinkingEntry>().single().let { !it.isStreaming }
+        )
+        assertTrue(
+            "Error 收口结论气泡",
+            snap.entries.filterIsInstance<StreamEntry.AssistantEntry>().single().let { !it.isStreaming }
+        )
+    }
+
+    @Test
+    fun `thinking chunk after finalized entry starts a new card`() {
+        // 思考 → 工具 → 再思考的合法多段时序：收口后再来 Chunk 另起新卡
+        val s = CodeStreamSession()
+        s.beginRun("多段思考")
+        s.onEvent(AgentEvent.ThinkingChunk("第一段"))
+        s.onEvent(editStart("c1", "A.kt"))
+        s.onEvent(AgentEvent.ToolCallComplete("c1", "CodeEdit", "{}", "ok", "", true, 10))
+        s.onEvent(AgentEvent.ThinkingChunk("第二段"))
+        val cards = s.snapshot().entries.filterIsInstance<StreamEntry.ThinkingEntry>()
+        assertEquals("两段思考两张卡", 2, cards.size)
+        assertTrue("旧卡已收口", !cards[0].isStreaming)
+        assertTrue("新卡保持流式（等后续事件收口）", cards[1].isStreaming)
+    }
+
     @Test
     fun `verify cycle collapses edit then lint into round card`() {
         val s = CodeStreamSession()

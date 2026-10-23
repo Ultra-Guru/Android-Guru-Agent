@@ -348,7 +348,7 @@ jobs:
         run: |
           set -euo pipefail
           PIN=$(head -n 1 gradle/workspace-kit.lock 2>/dev/null || true)
-          echo "sha=main" >> "$GITHUB_OUTPUT"
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
       - name: Checkout apex-workspace-kit (workspace-kit composite build, pinned)
         uses: actions/checkout@v4
         with:
@@ -708,7 +708,7 @@ jobs:
         run: |
           set -euo pipefail
           PIN=$(head -n 1 gradle/workspace-kit.lock 2>/dev/null || true)
-          echo "sha=main" >> "$GITHUB_OUTPUT"
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
       - name: Checkout apex-workspace-kit (workspace-kit composite build, pinned)
         uses: actions/checkout@v4
         with:

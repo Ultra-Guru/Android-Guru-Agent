@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -41,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -121,11 +122,17 @@ internal fun ThinkingControlMenu(
 
         DropdownMenu(
             expanded = expanded,
-            onDismissRequest = { expanded = false }
+            onDismissRequest = { expanded = false },
+            // 圆角容器（与 Coding 屏思考选择器 v3 同步）
+            shape = RoundedCornerShape(24.dp),
+            tonalElevation = 3.dp
         ) {
+            // 系统感知宽度（2026-10 用户反馈「悬浮框超出屏幕」）：固定 300dp
+            // 在窄屏（≤320dp）上溢出 —— 上限改 屏宽-24dp，窄屏自动收缩。
+            val maxMenuWidth = LocalConfiguration.current.screenWidthDp.dp - 24.dp
             Column(
                 modifier = Modifier
-                    .width(300.dp)
+                    .widthIn(min = 260.dp, max = maxMenuWidth)
                     .padding(horizontal = 4.dp)
             ) {
                 // ── 第一级：模型思考强度（API 原生参数）──

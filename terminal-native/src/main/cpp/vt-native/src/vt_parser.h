@@ -327,7 +327,7 @@ class Parser {
     // an overlong sequence pushed us into kStringIgnore, every later byte
     // (including printable output and LF) was silently swallowed — the terminal
     // appeared frozen until a literal '\' happened to arrive.
-    if (cp == 0x07 || cp == '\\') state_ = State::kGround;
+    if (cp == 0x07 || cp == '\\') state_ = State::kGround;  // ST/BEL end the (discarded) string
   }
 
   // ─── emitters ──────────────────────────────────────────────────────────

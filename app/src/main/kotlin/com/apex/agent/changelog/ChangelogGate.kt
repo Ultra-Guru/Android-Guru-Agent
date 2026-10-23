@@ -12,11 +12,21 @@ package com.apex.agent.changelog
  *    （即将过时的）日志不抢屏；且 seen 与 seenAvailable 两把钥匙分离，
  *    升级后的「本次更新内容」不会被此弹窗吞掉；
  * 2. **[Decision.WhatsNew]**：本地有效版本 > 已读 且基线已初始化（=
- *    升级/热更后的首启）—— 弹「本次更新内容」。内容源优先远端同版
- *    （热更用户的 APK 内置副本落后于数据层），回退内置同版，都缺则
- *    不弹（绝不展示版本错位的日志）；
+ *    升级/热更后的首启）—— 弹「本次更新内容」。内容源优先远端
+ *    （热更用户的 APK 内置副本落后于数据层），回退内置，都缺则不弹
+ *    （绝不展示版本错位的日志）；
  * 3. **[Decision.None]**：其余（已读且无新版 / 离线且无内置 / 全新安装
  *    基线 / 远端清单 schema 缺 latest）。
+ *
+ * v2.2 跨版本聚合（「手动日志发行时 PR 日志丢失」根治）：
+ * 两档决策都改经 [ChangelogAggregator] 合并版本区间内的全部 entry ——
+ * * WhatsNew：聚合 (已读, 本地有效]，跨多版本升级时中间版本的手动日志
+ *   与 PR 功能变更一条不丢；远端清单元数据落后（latest 已领先本地）时
+ *   区间内条目仍可用（旧逻辑要求 latest 恰好等于本地版本，远端一旦
+ *   领先就只能靠内置副本）；
+ * * NewVersionAvailable：聚合 (本地有效, 远端最新]，预告即将获得的全部
+ *   更新而非仅最后一个版本。
+ * 单版本区间退化为原样返回 —— 与旧体验完全兼容。
  */
 object ChangelogGate {
 
@@ -52,12 +62,26 @@ object ChangelogGate {
             remoteLatest.versionCode > effectiveVersionCode &&
             remoteLatest.versionCode > seenAvailableVersionCode
         ) {
-            return Decision.NewVersionAvailable(remoteLatest)
+            // 聚合 (本地有效, 远端最新]：预告跨多版本升级可获得的全部更新
+            val entry = ChangelogAggregator.aggregate(
+                manifest = remote,
+                fromExclusive = effectiveVersionCode,
+                toInclusive = remoteLatest.versionCode
+            ) ?: remoteLatest
+            return Decision.NewVersionAvailable(entry)
         }
         if (baselineInitialized && effectiveVersionCode > seenVersionCode) {
-            val entry = remoteLatest?.takeIf { it.versionCode == effectiveVersionCode }
-                ?: embedded?.latest?.takeIf { it.versionCode == effectiveVersionCode }
-                ?: return Decision.None
+            // 聚合 (已读, 本地有效]：跨多版本升级时中间版本日志一条不丢。
+            // 远端优先（区间的元数据齐全且新），回退内置 APK 副本，都缺则不弹
+            val entry = ChangelogAggregator.aggregate(
+                manifest = remote,
+                fromExclusive = seenVersionCode,
+                toInclusive = effectiveVersionCode
+            ) ?: ChangelogAggregator.aggregate(
+                manifest = embedded,
+                fromExclusive = seenVersionCode,
+                toInclusive = effectiveVersionCode
+            ) ?: return Decision.None
             return Decision.WhatsNew(entry)
         }
         return Decision.None

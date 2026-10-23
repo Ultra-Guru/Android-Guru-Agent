@@ -314,6 +314,49 @@ class SlashCommandRouterTest {
     }
 
     // ═══════════════════════════════════════════════════════════
+    // /fusion —— FUSION 工具聚合体系（强制使用契约）
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `Fusion route emits crown system message and forced-usage prompt`() {
+        // 王冠菜单选中包后拼回 /fusion:<id>：路由产出「强制使用」契约 ——
+        // 系统消息带 👑 徽标，agentPrompt 携带【强制使用要求】三条款。
+        val cmd = SlashCommand.Fusion(id = "rea")
+        val route = SlashCommandRouter.route(cmd)
+
+        assertEquals("👑 FUSION 体系: rea（强制使用）", route.systemMessage)
+        assertFalse(route.requestGithubConnect)
+        assertTrue(route.agentPrompt.contains("/fusion:rea"))
+        assertTrue(route.agentPrompt.contains("【FUSION 体系强制使用】"))
+        assertTrue(route.agentPrompt.contains("必须优先且强制使用"))
+        assertTrue(route.agentPrompt.contains("不得静默绕过"))
+    }
+
+    @Test
+    fun `Fusion route carries fusion routeKind for pipeline badge`() {
+        // routeKind = "fusion"：流水线横幅与工具调用来源徽章据此渲染
+        // 王冠 + 王金样式（ToolKind.FUSION）。
+        val cmd = SlashCommand.Fusion(id = "superpowers")
+        val route = SlashCommandRouter.route(cmd)
+
+        assertEquals("fusion", route.routeKind)
+        assertEquals("superpowers", route.sourceName)
+    }
+
+    @Test
+    fun `Fusion route forwards args and user extra inside forced prompt`() {
+        val cmd = SlashCommand.Fusion(
+            id = "rea",
+            args = mapOf("target" to "app.asar"),
+            userExtra = "给出依赖清单"
+        )
+        val route = SlashCommandRouter.route(cmd)
+
+        assertTrue(route.agentPrompt.contains("target=app.asar"))
+        assertTrue(route.agentPrompt.contains("用户附加要求: 给出依赖清单"))
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // Default context backward-compat
     // ═══════════════════════════════════════════════════════════
 

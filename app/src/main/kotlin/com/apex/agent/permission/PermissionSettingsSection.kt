@@ -64,9 +64,9 @@ import com.apex.agent.ui.screen.settings.SectionCard
  *     onRulesChange = { rs -> onAgent(agent.copy(permissionRules = rs)) }
  * )
  *
- * 其中 permissionMode / permissionRules 为 AgentSettings 新增字段
- * （默认 DEFAULT + 空规则），stringResource 键（code_perm_ 前缀）
- * 见文件底部 KDoc 的键清单。
+ * 其中 permissionMode / permissionRules 为 AgentSettings 字段
+ * （默认 BYPASS 全自动 + 空规则，见 SettingsRepository 默认档说明），
+ * stringResource 键（code_perm_ 前缀）见文件底部 KDoc 的键清单。
  *
  * ── stringResource 键清单（主控加入 strings xml；en / zh 文案）──
  *

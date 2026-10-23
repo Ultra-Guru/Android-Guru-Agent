@@ -290,7 +290,7 @@ jobs:
         run: |
           set -euo pipefail
           PIN=$(head -n 1 gradle/workspace-kit.lock 2>/dev/null || true)
-          echo "sha=main" >> "$GITHUB_OUTPUT"
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
       - name: Checkout apex-workspace-kit (workspace-kit composite build, pinned)
         uses: actions/checkout@v4
         with:
@@ -451,6 +451,25 @@ jobs:
       # 客户端 raw 读取点）+ app/src/main/assets/changelog.json（APK 内置
       # 离线兜底；.gitignore 排除 —— 源码树保持干净，构建期生成）。
       # 片段为空不硬失败（兜底文案），发布列车绝不断。
+      #
+      # 跨 run 去重（v2.2）：本 job 的触发 commit 快照可能早于前序 run 的
+      # 「消费回推」—— 快照里的片段实际已被前序版本发布过。构建期 fetch
+      # 最新 main 的 .changelog/released/ 归档索引交给 changelog.py 排除，
+      # 防同片段进两个版本（历史缺陷：v35/v36、v39/v40 重复收录同一 PR 片段）。
+      # fetch 失败 → 空索引宽松降级（不阻断发布列车）。
+      - name: "Index archived fragments (dedup vs queued runs)"
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          : > dist/archived-fragments.txt
+          if git fetch --no-tags --quiet origin main 2>/dev/null; then
+            git ls-tree -r --name-only FETCH_HEAD -- .changelog/released/ 2>/dev/null \
+              | awk -F/ 'NF>0 {print $NF}' | sort -u >> dist/archived-fragments.txt || true
+            echo "📇 归档索引：$(wc -l < dist/archived-fragments.txt | tr -d ' ') 个已发布片段（最新 main）"
+          else
+            echo "⚠️ fetch 最新 main 失败 —— 归档去重降级为空索引（不阻断发布）"
+          fi
+
       - name: "Generate changelog.json (aggregate .changelog/unreleased)"
         env:
           VERSION: ${{ needs.resolve.outputs.version }}
@@ -464,6 +483,7 @@ jobs:
             --code "$VCODE" \
             --tag "$TAG" \
             --out dist/changelog.json \
+            --archived dist/archived-fragments.txt \
             --consumed-out dist/consumed-fragments.txt
           mkdir -p app/src/main/assets
           cp dist/changelog.json app/src/main/assets/changelog.json
