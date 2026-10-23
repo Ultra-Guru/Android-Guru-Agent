@@ -82,15 +82,15 @@
     <string name="code_rules_section_note">优先级：项目规则（AGENTS.md）＞ 全局规则 ＞ 一般偏好；均低于安全与权限约束</string>
 
     <!-- ═══ v1.2 七档思考系统（coding 模式专属文案；ULTRACODE/APEXCODE 与聊天页共享键） ═══ -->
-    <string name="code_thinking_selector_title">思考深度（7 档 + 自适应）</string>
-    <string name="code_thinking_none_desc">直接动手：跳过推理，快进快出（迭代×0.8）</string>
-    <string name="code_thinking_light_desc">一读一改：扫一眼目标处就改，省 token 的轻量推理</string>
-    <string name="code_thinking_standard_desc">标准编码循环：读→改→验→回读，diff 最小化</string>
-    <string name="code_thinking_deep_desc">改动集思维：先建改动清单再动手，每处改动关联验证方式</string>
-    <string name="code_thinking_maximum_desc">不变量守护：识别不变量与连锁影响，改后全链路核对</string>
-    <string name="code_thinking_ultracode_desc">编码深推理闭环：依赖地图→候选改法→风险排序→最小修改→即时验证；迭代×2.0</string>
-    <string name="code_thinking_apexcode_desc">架构级穷举推理 + 对抗性自审 + 全量验证矩阵；迭代×3.0，仅手动可选</string>
-    <string name="code_thinking_auto_desc">自适应：发送前预检选档，深水区连环失败自动升级（永不自动选 APEXCODE）</string>
+    <string name="code_thinking_selector_title">Thinking Depth (7 tiers + Auto)</string>
+    <string name="code_thinking_none_desc">Direct action, no reasoning: fast in and out (iterations ×0.8).</string>
+    <string name="code_thinking_light_desc">Glance-edit: read the spot, patch, glance the result — token-light.</string>
+    <string name="code_thinking_standard_desc">Standard coding loop: read → edit → verify → re-read, minimal diff.</string>
+    <string name="code_thinking_deep_desc">Changeset mindset: list every change before acting, tie each to its verification.</string>
+    <string name="code_thinking_maximum_desc">Invariant guarding: identify invariants &amp; ripple effects, re-check the whole chain after edits.</string>
+    <string name="code_thinking_ultracode_desc">Deep-reasoning loop: dependency map → candidate edits → risk-ranking → minimal change → immediate verification; iterations ×2.0.</string>
+    <string name="code_thinking_apexcode_desc">Architecture-level exhaustive reasoning + adversarial self-review + full verification matrix; iterations ×3.0, manual-only.</string>
+    <string name="code_thinking_auto_desc">Adaptive: pre-check picks the tier before each send, and deep-water failures escalate mid-run (never auto-picks APEXCODE).</string>
 
     <!-- v1.2 思考档位指南（CodeThinkingGuideSheet） -->
     <string name="code_thinking_guide_title">思考档位指南</string>
@@ -176,8 +176,8 @@
     <string name="code_longtask_cp_round_fmt">第 %1$d 轮</string>
     <string name="code_longtask_cp_counts_fmt">%1$d 工具 · %2$d 文件</string>
     <string name="code_longtask_cp_todos_fmt">☑%1$d ☐%2$d</string>
-    <string name="code_thinking_guide_open">查看档位指南</string>
-    <string name="code_thinking_no_native_effort">ℹ 当前模型未开启 reasoning 能力位：原生 reasoning_effort 参数不会随请求发送（档位的引擎侧效果——迭代倍率/压缩阈值/提示词——照常生效）。可在 设置 → 模型 → Reasoning 打开后生效</string>
+    <string name="code_thinking_guide_open">View tier guide</string>
+    <string name="code_thinking_no_native_effort">ℹ Current model has no reasoning capability flag: the native reasoning_effort parameter is not sent (engine-side effects — iterations, compression, prompts — still apply). Enable Reasoning in Settings → Model to turn it on</string>
     <!-- ═══ 胶囊流式输出（Coding 工作流时间轴）═══ -->
     <string name="code_stream_group_more_fmt">已收起 %1$d 颗工具胶囊</string>
     <string name="code_stream_group_expand">展开</string>
@@ -214,15 +214,15 @@
     <string name="code_stream_detail_terminal_title">终端输出</string>
     <string name="code_stream_detail_output_title">工具输出</string>
     <!-- ═══ 思考档位选择器 v2：短档名 + 胶囊标签 ═══ -->
-    <string name="code_thinking_chip">思考 · %1$s</string>
-    <string name="code_thinking_short_none">无</string>
-    <string name="code_thinking_short_light">极简</string>
-    <string name="code_thinking_short_standard">标准</string>
-    <string name="code_thinking_short_deep">深度</string>
-    <string name="code_thinking_short_maximum">极致</string>
-    <string name="code_thinking_short_ultracode">超频</string>
-    <string name="code_thinking_short_apexcode">顶点</string>
-    <string name="code_thinking_short_auto">自适应</string>
+    <string name="code_thinking_chip">Thinking · %1$s</string>
+    <string name="code_thinking_short_none">Off</string>
+    <string name="code_thinking_short_light">Light</string>
+    <string name="code_thinking_short_standard">Standard</string>
+    <string name="code_thinking_short_deep">Deep</string>
+    <string name="code_thinking_short_maximum">Max</string>
+    <string name="code_thinking_short_ultracode">Ultra</string>
+    <string name="code_thinking_short_apexcode">Apex</string>
+    <string name="code_thinking_short_auto">Adaptive</string>
     <!-- ═══ v1.5 思考逻辑双引擎（右上角切换：深潜 = 自研 / 标准 = 标准任务循环）═══ -->
     <string name="code_logic_chip">逻辑 · %1$s</string>
     <string name="code_logic_selector_title">完成任务逻辑</string>
@@ -238,26 +238,19 @@
     <string name="code_logic_switched_standard">🧭 思考逻辑已切换为「标准」（Agent 任务循环）。深潜会话现场已保留，切回即恢复。</string>
     <string name="code_logic_switched_deep_dive">🤿 思考逻辑已切换为「深潜」（自研七档思考）。标准会话现场已保留，切回即恢复。</string>
     <string name="code_logic_unknown_mode">⚠️ /logic:%1$s 不是可识别的逻辑模式——可用 /logic:standard 或 /logic:deep_dive（别名：std、deep）</string>
-    <!-- ═══ v6 Git 工作区面板（右上角入口：变更文件 + git 功能）═══ -->
-    <string name="code_git_cd">打开 Git 工作区</string>
-    <!-- v1.6 工作区浏览器（apex-workspace-kit）-->
+    <!-- v1.6 工作区浏览器（apex-workspace-kit）；v6 独立 Git 面板已于
+         2026-10 移除（与浏览器内置 Git 页重复）-->
+    <!-- 工作区选择（输入栏内选择器，2026-10）：真实文件夹 + 整个系统 -->
+    <string name="code_workspace_pick_folder">选择文件夹…</string>
+    <string name="code_workspace_whole_system">整个系统</string>
     <string name="code_workspace_browser_cd">打开工作区浏览器</string>
     <string name="drawer_workspace_browser">工作区</string>
-    <string name="code_git_panel_title">Git 工作区</string>
-    <string name="code_git_branch_fmt">分支：%1$s</string>
-    <string name="code_git_not_repo">当前工作区还不是 Git 仓库</string>
-    <string name="code_git_init">初始化仓库</string>
-    <string name="code_git_clean">工作区干净——暂无变更</string>
-    <string name="code_git_changes_fmt">%1$d 个变更文件</string>
-    <string name="code_git_refresh">刷新 git 状态</string>
-    <string name="code_git_commit_hint">提交说明</string>
-    <string name="CodeGitCommit">提交全部变更</string>
-    <string name="code_git_new_file">新的未跟踪文件（尚未加入索引）</string>
     <string name="code_stream_terminal_running">运行中</string>
 
     <!-- ═══ #312 i18n 批次 2：VM / 归约层 / 编辑器用户可见文案 ═══ -->
     <!-- 工作区操作 -->
     <string name="code_ws_create_failed">无法创建工作区（名称为空或已存在）</string>
+    <string name="code_ws_import_failed">无法导入所选文件夹——其位置无法解析为真实设备路径（云盘/下载集合类目录暂不支持）。请选择本地存储中的文件夹。</string>
     <string name="code_ws_delete_blocked_running">任务运行中，不能删除工作区</string>
     <string name="code_ws_delete_default">默认工作区不可删除</string>
     <string name="code_ws_empty_env">空工作区</string>

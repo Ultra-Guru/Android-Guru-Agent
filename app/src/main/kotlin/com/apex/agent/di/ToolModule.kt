@@ -501,7 +501,9 @@ object ToolModule {
         hubSource: HubSource,
         // v3 子代理预算接线（设置 → 子代理）：SubAgentRunner 每次运行读快照。
         // 全自动模式（BYPASS）短路命令级确认门的设置源（实时读取，改设置即生效）。
-        settingsRepository: SettingsRepository
+        settingsRepository: SettingsRepository,
+        // §14h App Control：工具 → UI 的真实导航桥（打开设置/诊断等页面）。
+        navigationBridge: com.apex.agent.tools.AppNavigationBridge
     ): ToolRegistry {
         val registry = DefaultToolRegistry()
 
@@ -730,56 +732,16 @@ object ToolModule {
         registry.register(SafeAgentTool(memorySearchNodesTool))
         registry.register(SafeAgentTool(memoryRecallMacroTool))
 
-        // ═══ 5. 应用管理 (6) ═══
-        registry.register(SafeAgentTool(AppListTool(shellExec)))
-        registry.register(SafeAgentTool(AppLaunchTool(shellExec)))
-        registry.register(SafeAgentTool(AppInstallTool(shellExec)))
-        registry.register(SafeAgentTool(AppUninstallTool(shellExec)))
-        registry.register(SafeAgentTool(AppForceStopTool(shellExec)))
-        registry.register(SafeAgentTool(AppInfoTool(shellExec)))
-
-        // ═══ 6. 系统控制 (6) ═══
-        registry.register(SafeAgentTool(DeviceInfoTool(shellExec)))
-        registry.register(SafeAgentTool(SettingsTool(shellExec)))
-        registry.register(SafeAgentTool(MediaControlTool(shellExec)))
-        registry.register(SafeAgentTool(ClipboardTool(shellExec)))
-        registry.register(SafeAgentTool(GetTimeTool()))
-        registry.register(SafeAgentTool(LogcatTool(shellExec)))
-
-        // ═══ 7. UI 操作 (5, 优先 AccessibilityService 语义交互) ═══
-        registry.register(SafeAgentTool(UiTapTool(shellExec, privilegeUiProvider)))
-        // 3-A 协调项：shell 回落分支的 swipe 方向坐标注入真实分辨率
-        //（与 PrivilegeUiProvider.getScreenMetrics 同源 —— ApplicationContext
-        // displayMetrics；未注入时工具内部保持 1080x2400 假设）。
-        registry.register(SafeAgentTool(UiSwipeTool(
-            shellExec, privilegeUiProvider,
-            screenMetrics = {
-                val dm = context.resources.displayMetrics
-                dm.widthPixels to dm.heightPixels
-            }
-        )))
-        registry.register(SafeAgentTool(UiDumpTool(shellExec, privilegeUiProvider)))
-        // #240 收尾：通知栏 open/close 的 LLM 面（a11y GLOBAL_ACTION / cmd statusbar）
-        registry.register(SafeAgentTool(UiNotificationsTool(shellExec, privilegeUiProvider)))
-        // Issue #239：screenshot 工具接特权链（无障碍 API 30+ → root
-        // screencap+base64 回退）—— 旧行为恒走裸 shell，无障碍开启但无 root
-        // 的设备截图永远失败。适配 ScreenshotResult → 工具中立形状。
-        registry.register(SafeAgentTool(ScreenshotTool(
-            shellExec,
-            privilegedScreenshot = {
-                val r = privilegeManager.takeScreenshot()
-                if (r.success && r.imageBytes != null) {
-                    ScreenshotTool.PrivilegedScreenshot(r.imageBytes, null)
-                } else {
-                    ScreenshotTool.PrivilegedScreenshot(null, r.error ?: "privileged screenshot failed")
-                }
-            }
-        )))
-        registry.register(SafeAgentTool(InputTextTool(shellExec)))
-
-        // ═══ 8. 传感器 (2) ═══
-        registry.register(SafeAgentTool(GetLocationTool(shellExec)))
-        registry.register(SafeAgentTool(NotificationReadTool(shellExec)))
+        // ═══ 5–8. 设备类工具（应用管理/系统控制/UI/传感器，19 个）═══
+        // 注册体拆至 [ToolModuleDeviceRegistration.kt]（SRP 预算：本文件贴近
+        // 1200 行上限，设备工具族共享 shellExec 通道边界天然清晰）。
+        registerDeviceTools(
+            registry = registry,
+            shellExec = shellExec,
+            privilegeUiProvider = privilegeUiProvider,
+            privilegeManager = privilegeManager,
+            context = context
+        )
 
         // ═══ 9. 实用工具 (2 v1 + 15 v2) —— 注册体拆至 ToolModuleJvmToolsRegistration.kt
         //    （SRP 预算：#290 合并后本文件 1221 行超 1200，纯 JVM 工具族边界天然清晰）═══
@@ -1007,6 +969,18 @@ object ToolModule {
             registry = registry, context = context, httpClient = httpClient,
             downloadDir = downloadDir, settingsRepository = settingsRepository,
             secretRedactor = vaultRepository.secretRedactor
+        )
+
+        // ═══ 14h. App Control —— Agent 真实能力（打开页面/改模型配置/导入配置/诊断）═══
+        // 用户诉求：「能帮我打开设置不能用提示词注入，要给 agent 工具，是真实
+        // 有能力会分析问题」。注册体拆至 [ToolModuleAppControlRegistration.kt]。
+        registerAppControlTools(
+            registry = registry,
+            settingsRepository = settingsRepository,
+            mcpManager = mcpManager,
+            skillRegistry = skillRegistry,
+            toolAuditLogger = toolAuditLogger,
+            navigationBridge = navigationBridge
         )
 
         // ═══ 主执行器（v3：环境门+风险门 → 校验 → 限流 → 熔断 → 超时/重试 → 追踪）═══

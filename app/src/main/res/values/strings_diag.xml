@@ -82,4 +82,29 @@
     <string name="diag_report_failed_title">Report generation failed</string>
     <string name="diag_report_failed_text">Could not build the zip archive. Please try again</string>
     <string name="diag_report_close">Close</string>
+    <!-- ═══ MCP / Skills / tool audit / failure sections (diagnostics enhancement) ═══ -->
+    <string name="diag_mcp_section">MCP servers</string>
+    <string name="diag_mcp_count">%1$d configured · %2$d connected</string>
+    <string name="diag_mcp_empty">No MCP servers configured</string>
+    <string name="diag_mcp_connected">Connected</string>
+    <string name="diag_mcp_disconnected">Disconnected</string>
+    <string name="diag_mcp_disabled">Disabled</string>
+    <string name="diag_skill_section">Skills</string>
+    <string name="diag_skill_count">%1$d installed</string>
+    <string name="diag_skill_empty">No skills installed</string>
+    <string name="diag_skill_scope_agent">Agent</string>
+    <string name="diag_skill_scope_coding">Coding</string>
+    <string name="diag_skill_tools_unit">%1$d tools</string>
+    <string name="diag_audit_section">Tool and terminal calls</string>
+    <string name="diag_audit_count">%1$d recent calls</string>
+    <string name="diag_audit_empty">No tool calls recorded yet</string>
+    <string name="diag_failure_section">Failure details</string>
+    <string name="diag_failure_count">%1$d failed</string>
+    <string name="diag_failure_empty">No failures recorded — everything looks healthy</string>
+    <string name="diag_failure_detail_title">Failure detail</string>
+    <string name="diag_failure_field_command">Command</string>
+    <string name="diag_failure_field_detail">Detail</string>
+    <string name="diag_failure_field_exit">Exit code</string>
+    <string name="diag_failure_field_duration">Duration</string>
+    <string name="diag_failure_field_tier">Channel</string>
 </resources>

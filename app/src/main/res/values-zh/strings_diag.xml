@@ -82,4 +82,29 @@
     <string name="diag_report_failed_title">报告生成失败</string>
     <string name="diag_report_failed_text">无法生成 zip 报告，请重试</string>
     <string name="diag_report_close">关闭</string>
+    <!-- ═══ MCP / Skills / 工具审计 / 失败详情区（诊断增强）═══ -->
+    <string name="diag_mcp_section">MCP 服务器</string>
+    <string name="diag_mcp_count">已配置 %1$d · 已连接 %2$d</string>
+    <string name="diag_mcp_empty">暂无 MCP 服务器配置</string>
+    <string name="diag_mcp_connected">已连接</string>
+    <string name="diag_mcp_disconnected">未连接</string>
+    <string name="diag_mcp_disabled">已禁用</string>
+    <string name="diag_skill_section">技能</string>
+    <string name="diag_skill_count">已安装 %1$d</string>
+    <string name="diag_skill_empty">暂无已安装技能</string>
+    <string name="diag_skill_scope_agent">Agent</string>
+    <string name="diag_skill_scope_coding">Coding</string>
+    <string name="diag_skill_tools_unit">%1$d 个工具</string>
+    <string name="diag_audit_section">工具与终端调用</string>
+    <string name="diag_audit_count">最近 %1$d 次调用</string>
+    <string name="diag_audit_empty">暂无工具调用记录</string>
+    <string name="diag_failure_section">失败详细记录</string>
+    <string name="diag_failure_count">%1$d 条失败</string>
+    <string name="diag_failure_empty">暂无失败记录，一切正常</string>
+    <string name="diag_failure_detail_title">失败详情</string>
+    <string name="diag_failure_field_command">命令</string>
+    <string name="diag_failure_field_detail">详情</string>
+    <string name="diag_failure_field_exit">退出码</string>
+    <string name="diag_failure_field_duration">耗时</string>
+    <string name="diag_failure_field_tier">执行通道</string>
 </resources>
