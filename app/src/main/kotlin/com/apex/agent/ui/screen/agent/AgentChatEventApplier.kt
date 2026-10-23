@@ -18,14 +18,15 @@ import kotlinx.coroutines.withContext
  * VM 已开放为 internal 的流式缓冲/步骤流/横幅状态，与 VM 的输入/生命周期职责解耦。
  *
  * P0 修复（主界面卡死）背景：本函数运行在 viewModelScope（Main.immediate）收集链上，
- * 两处重活必须下沉：
- *  - [AgentEvent.ToolCallComplete]：对可能数百 KB 的终端/Read 输出跑 ANSI 正则；
- *  - [AgentEvent.Complete]：historyCount() 触发对话史全量 JSON 解析 +
- *    currentTokenCount() 全历史逐字符估算 —— 历史一长每次收尾都在主线程忙
- *    数百毫秒到秒级，触摸与 IME 请求排队无法处理（体感“卡死/点输入框没反应”）。
+ * 重活必须离开主线程：
+ *  - [AgentEvent.ToolCallComplete]：对可能数百 KB 的终端/Read 输出跑 ANSI 正则 ——
+ *    withContext(Dispatchers.Default) 下沉，事件顺序仍由 collect 串行保证；
+ *  - [AgentEvent.Complete]：historyCount()（全量 JSON 解析）+ currentTokenCount()
+ *    （全历史逐字符估算）—— 收尾关键更新（isLoading 复位 + salvage + 总结卡）
+ *    先在主线程原子落定，重指标与完成通知经 [completeTurnMetricsAsync] 脱离
+ *    收集协程后台补（收集器被取消也不丢收尾）。
  *
- * 因此保持 suspend：仅这两处重计算 withContext(Dispatchers.Default)，事件顺序仍由
- * collect 串行保证；轻量事件（chunk 追加等）保持在主线程零切换。
+ * 轻量事件（chunk 追加等）保持在主线程零切换。
  */
 internal suspend fun AgentChatViewModel.handleEvent(event: AgentEvent) {
     when (event) {
@@ -458,17 +459,13 @@ internal suspend fun AgentChatViewModel.handleEvent(event: AgentEvent) {
                 SystemClock.elapsedRealtime() - thinkingStartElapsed
             } else 0L
             thinkingStartElapsed = 0
-            // P0（卡死修复）：historyCount()=全量 JSON 解析、currentTokenCount()=全历史
-            // 逐字符估算 —— 历史越长收尾越重（数百 ms～秒级），必须离开主线程。
-            // 仪表盘字段与消息列表解耦：总结卡先落，仪表稍后追平（毫秒级延迟无感）。
-            val metrics = withContext(Dispatchers.Default) {
-                val engine = agentEngine as? ApexAgentEngine
-                Triple(
-                    engine?.historyCount(),
-                    engine?.currentTokenCount(),
-                    engine?.maxContextTokens()
-                )
-            }
+            // ═══ 回合修复：关键收尾先落，重活后台补 ═══
+            // 旧实现先 withContext(Dispatchers.Default) 算指标（全量历史 JSON
+            // 解析 + token 逐字符估算，历史长时数百 ms～秒级）再做复位更新 ——
+            // 恰在挂起点被取消（用户此刻点停止/发新消息）时，isLoading=false
+            // 与 salvage 整段跳过，发送按钮卡「停止」。现在复位 + salvage +
+            // 总结卡在挂起前原子落定；指标与通知经 completeTurnMetricsAsync
+            // 脱离收集协程后台补（收集器被取消也不丢收尾，仪表迟一拍无感）。
             _uiState.update {
                 val salvage = buildList<AgentUiMessage> {
                     if (residualResponse.isNotBlank()) {
@@ -489,32 +486,12 @@ internal suspend fun AgentChatViewModel.handleEvent(event: AgentEvent) {
                     ),
                     currentResponse = "",
                     currentThinking = "",
-                    currentThinkingStartElapsed = 0,
-                    historyDepth = metrics.first ?: it.historyDepth,
-                    contextUsedTokens = metrics.second ?: it.contextUsedTokens,
-                    contextMaxTokens = metrics.third ?: it.contextMaxTokens
+                    currentThinkingStartElapsed = 0
                 )
             }
-            // ═══ v1.4.4 #4：任务完成通知（App 在后台时才提醒；前台静音）═══
-            // 判定顺序：设置开关 → 用户是否在场 → 通知权限；三者全过才发射。
-            // 通知是增益路径，任何一环不满足都静默跳过（绝不阻塞 Complete 收尾）。
-            // #237：设置开 + 后台 + 权限被拒的组合不再静默 —— 置位引导条，
-            // 用户回前台时看到「通知未送达 → 去开启」的回收入口。
-            runCatching {
-                val settingsSnapshot = settingsRepository.agentSettings.value
-                if (settingsSnapshot.taskCompletionNotify && !foregroundTracker.isForeground) {
-                    if (notifications.canPost(context)) {
-                        val triggerText = _uiState.value.messages
-                            .lastOrNull { it is AgentUiMessage.User }
-                            ?.let { (it as AgentUiMessage.User).text?.trim()?.take(40) }
-                        val title = triggerText?.takeIf { it.isNotBlank() }
-                            ?: str(com.apex.agent.R.string.notif_task_done_fallback_title)
-                        notifications.notifyTaskDone(context, title, event.summary)
-                    } else {
-                        _uiState.update { it.copy(notifPermissionHint = true) }
-                    }
-                }
-            }
+            // P0（卡死修复）后半段：重指标 + 完成通知下沉 Default 且脱离收集
+            // 协程（见 AgentEngineFlowSafety.completeTurnMetricsAsync）。
+            completeTurnMetricsAsync(event.summary)
         }
         is AgentEvent.Aborted -> {
             finishActiveBanner()
@@ -548,7 +525,13 @@ internal suspend fun AgentChatViewModel.handleEvent(event: AgentEvent) {
                     currentThinking = "",
                     currentThinkingStartElapsed = 0,
                     currentToolCall = null,
-                    currentStepIndex = -1
+                    currentStepIndex = -1,
+                    // 回合修复：引擎已中止 —— 确认门/输入对话框全部收口（与
+                    // VM.abort() 清理面同款），否则旧对话框悬空、迟交只能得到
+                    //「未送达」提示。
+                    pendingUserInput = null,
+                    awaitingPlanConfirmation = false,
+                    awaitingSpecConfirmation = false
                 )
             }
         }

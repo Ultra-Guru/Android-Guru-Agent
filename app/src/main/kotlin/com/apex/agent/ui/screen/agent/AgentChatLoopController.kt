@@ -167,7 +167,9 @@ private fun AgentChatViewModel.onLoopDue(config: LoopConfig) {
 private fun AgentChatViewModel.submitLoopTurn(text: String) {
     currentJob?.cancel()
     finishActiveBanner()
-    currentJob = viewModelScope.launch {
+    // 回合修复：注入瞬间即置执行态（同 sendMessage），循环轮次不再有无反馈空窗
+    beginEngineTurn()
+    currentJob = launchEngineTurn {
         // P0 同款：先等在途任务取消完成再执行（TaskRuntime 互斥锁串行化）
         taskController.cancel()
         executeNormalMessage(text, emptyList())

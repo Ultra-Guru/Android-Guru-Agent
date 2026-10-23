@@ -327,6 +327,7 @@
     <string name="chat_msg_delete_from">Delete this message and below</string>
     <string name="chat_msg_delete_busy">Reply is being generated — try deleting later</string>
     <string name="chat_msg_regenerate_busy">Reply is being generated — try regenerating later</string>
+    <string name="chat_send_busy">Task is running — tap Stop before sending</string>
     <string name="chat_msg_no_user_message">No user message before this reply to resend</string>
     <string name="chat_msg_attachment_only_retry">Attachment-only messages cannot be regenerated yet</string>
     <!-- ═══ P2 i18n: attach button menu (AttachButton) ═══ -->

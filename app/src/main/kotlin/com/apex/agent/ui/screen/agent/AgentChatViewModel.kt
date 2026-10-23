@@ -345,7 +345,10 @@ class AgentChatViewModel @Inject constructor(
     fun resumeTask() {
         taskController.resume()?.let { flow ->
             currentJob?.cancel() // 混沌审查修复：与 sendMessage 对齐，覆盖前取消旧收集器，防双消费者交错写 _uiState
-            currentJob = viewModelScope.launch { collectEngineFlowSafely(flow) }
+            // 回合修复：恢复期间同样置执行态 —— 否则输入栏显示「发送」与任务卡
+            // 「执行中」矛盾，用户也无法从输入栏中止恢复中的任务。
+            beginEngineTurn()
+            currentJob = launchEngineTurn { collectEngineFlowSafely(flow) }
         }
     }
 
@@ -358,7 +361,8 @@ class AgentChatViewModel @Inject constructor(
     fun retryTask() {
         taskController.retry()?.let { flow ->
             currentJob?.cancel() // 混沌审查修复：与 sendMessage 对齐，覆盖前取消旧收集器，防双消费者交错写 _uiState
-            currentJob = viewModelScope.launch { collectEngineFlowSafely(flow) }
+            beginEngineTurn() // 同 resumeTask：重试期间输入栏同步为执行态
+            currentJob = launchEngineTurn { collectEngineFlowSafely(flow) }
         }
     }
 
@@ -367,7 +371,8 @@ class AgentChatViewModel @Inject constructor(
         taskController.resumeFromCrash(taskId)?.let { flow ->
             _recoveryCandidates.update { list -> list.filterNot { it.taskId == taskId } }
             currentJob?.cancel() // 混沌审查修复：与 sendMessage 对齐，覆盖前取消旧收集器，防双消费者交错写 _uiState
-            currentJob = viewModelScope.launch { collectEngineFlowSafely(flow) }
+            beginEngineTurn() // 同 resumeTask：恢复期间输入栏同步为执行态
+            currentJob = launchEngineTurn { collectEngineFlowSafely(flow) }
         }
     }
 
@@ -752,7 +757,13 @@ class AgentChatViewModel @Inject constructor(
             return
         }
 
-        currentJob = viewModelScope.launch {
+        // ═══ 回合修复：即刻执行态反馈 ═══
+        // 旧实现 isLoading=true 要等到 runEngine（僵尸任务收尾之后，最长 10s
+        // 空窗）才置位 —— 发送键短暂残留「发送」、无加载条，消息像被吞。
+        // 现在发送瞬间即变停止键 + 加载条；空窗期收尾由 launchEngineTurn
+        // 的 finally 兜底（取消时必复位，不卡执行态）。
+        beginEngineTurn()
+        currentJob = launchEngineTurn {
             // P0 修复（互斥锁冲突丢消息）：旧实现只 cancel UI 收集器（currentJob），
             // TaskRuntime 镜像收集器与执行锁不随 UI 生命周期走 —— 在途任务继续持锁。
             // 下一轮 executeNormalMessage → taskController.execute 撞互斥锁 →
@@ -779,7 +790,11 @@ class AgentChatViewModel @Inject constructor(
         finishActiveBanner()
         // P2：不清草稿 —— retry 的文本来自历史消息而非输入框；用户正在打的新草稿
         // 不该被无声清掉（regenerateResponse 已特意保留草稿，此路径漏修对齐）。
-        currentJob = viewModelScope.launch {
+        beginEngineTurn() // 同 sendMessage：即刻执行态（发送键→停止键）
+        currentJob = launchEngineTurn {
+            // 同 sendMessage 的互斥锁串行化：残留任务持锁时直接重试会撞
+            // "rejects concurrent execution" —— 先等取消完成再入引擎。
+            taskController.cancel()
             runEngine(trimmed, attachments)
         }
     }
@@ -856,8 +871,9 @@ class AgentChatViewModel @Inject constructor(
      * [AgentUiMessage.Error] 并复位 isLoading；[CancellationException] 重抛。
      */
     private suspend fun runEngine(text: String, persistedAttachments: List<MessageAttachment>) {
-        // 新一轮流式开始：清空上一轮可能残留的流式缓冲（防跨轮串字）；retry 路径同样受益。
-        streamBuffers.reset()
+        // 新一轮流式开始：先刷出上一轮可能残留的流式缓冲（reset 会把 33ms 窗口内
+        // 未刷的尾文本无声丢弃 —— flush 后尾料并入下方 inFlightResponse salvage）。
+        streamBuffers.flush()
         // P1（旧工具卡悬挂）：runEngine/retry 覆盖新一轮时必须清掉上一轮的工具运行态
         //（对比 abort() 的完整清理面）—— 否则被取消轮次的工具卡永久「运行中」脉冲
         // + 计时器常跑；toolOutputBuffer/flush Job/activeToolCallId 同属该清理面。
@@ -937,11 +953,12 @@ class AgentChatViewModel @Inject constructor(
         // AGENT 模式的默认工具计划由 EngineToolPlanner 按模式自动处理）。
 
         try {
-            taskController.execute(userInput).collect { event ->
-                handleEvent(event)
-            }
+            // 互斥求值安全化（同斜杠管线）：execute() 的并发拒绝 ISE 发生在
+            // collect 之前 —— 单独接住转可读错误气泡，不冒泡到 viewModelScope。
+            val flow = taskController.execute(userInput)
+            collectEngineFlowSafely(flow)
         } catch (e: CancellationException) {
-            throw e // 协程取消必须重抛（用户发送新消息会 cancel 旧 job）
+            throw e // 协程取消必须重抛（收尾由 launchEngineTurn 的 finally 兜底）
         } catch (e: Exception) {
             _uiState.update { s ->
                 s.copy(
@@ -951,8 +968,7 @@ class AgentChatViewModel @Inject constructor(
                             e.message ?: e::class.simpleName ?: ""
                         ),
                         canRetry = true
-                    ),
-                    isLoading = false
+                    )
                 )
             }
         }
@@ -999,11 +1015,14 @@ class AgentChatViewModel @Inject constructor(
      * 中止当前任务。
      *
      * 引擎的 [AgentEvent.Aborted] 在已取消的收集协程内发射，永远不会送达 UI，
-     * 因此这里在 ViewModel 侧补偿收尾：
-     * - 取消前先 flush 流式缓冲并快照当前回复/思考文本；
-     * - 取消后把非空的部分回复落为 isPartial 的 Agent 消息（部分思考落为 ThinkingMessage），
+     * 因此这里在 ViewModel 侧补偿收尾（salvage / 复位已收敛到
+     * [salvageStreamingOutput] / [finalizeEngineTurn]，见 AgentEngineFlowSafety.kt）：
+     * - 取消前先停收集器，再做最终 flush/快照（顺序保证见下）；
+     * - 把非空的部分回复落为 isPartial 的 Agent 消息（部分思考落为 ThinkingMessage），
      *   并追加 "⏹ 已中止" 系统行；
-     * - 无条件复位 isLoading，清空 currentResponse/currentThinking 与进行中的工具卡片。
+     * - 无条件复位 isLoading 与确认门/输入对话框等全部挂起态（旧实现遗漏
+     *   pendingUserInput / 计划与 Spec 确认卡 / 步骤索引 —— 中止后对话框悬空，
+     *   迟交只能得到「未送达」提示）。
      */
     fun abort() {
         // ═══ 快照竞态修复：先停收集器，再做最终 flush/快照 ═══
@@ -1013,49 +1032,26 @@ class AgentChatViewModel @Inject constructor(
         // streamBuffers（33ms flush Job 独立运行）追加 currentResponse，而
         // 快照已读走旧值 → 落盘的 isPartial 比用户屏幕最后一帧少一截。
         // 先 cancel 收集器 → 缓冲不再有新数据 → flush 后读到的才是真正终态。
+        // （被取消回合的 finally 收尾与本函数的 salvage 均为幂等 —— 无论
+        // 两者谁先执行，都不会产生重复的 isPartial 消息。）
         currentJob?.cancel()
-        // T76：取消走任务运行时（引擎 abort + CANCELLED 落盘，重启不复活）
+        // T76：取消走任务运行时（引擎 abort + CANCELLED 落盘，重启不复活）。
+        // 引擎 abort 链会收口确认通道与桥接层提问（#395）。
         viewModelScope.launch { taskController.cancel() }
 
-        // 取消已生效：刷出未落盘的流式缓冲，拿到完整文本快照。
-        streamBuffers.flush()
-        val partialResponse = _uiState.value.currentResponse
-        val partialThinking = _uiState.value.currentThinking
+        // 刷出缓冲 + 残留部分产物 salvage（部分思考附带实测秒数）+ 清流式/工具运行态。
+        salvageStreamingOutput()
 
-        // 取消后：部分产物落盘 + 状态复位（部分思考附带实测秒数）。
-        finishActiveBanner()
-        val partialThinkingDurationMs = if (thinkingStartElapsed > 0) {
-            android.os.SystemClock.elapsedRealtime() - thinkingStartElapsed
-        } else 0L
-        thinkingStartElapsed = 0
         _uiState.update { state ->
-            val extra = buildList<AgentUiMessage> {
-                if (partialResponse.isNotBlank()) {
-                    add(AgentUiMessage.Agent(text = partialResponse, isPartial = true))
-                }
-                if (partialThinking.isNotBlank()) {
-                    add(AgentUiMessage.ThinkingMessage(partialThinking, partialThinkingDurationMs))
-                }
-                add(AgentUiMessage.System(str(R.string.chat_aborted)))
-            }
             state.copy(
-                messages = state.messages + extra,
+                messages = state.messages + AgentUiMessage.System(str(R.string.chat_aborted)),
                 isLoading = false,
-                currentResponse = "",
-                currentThinking = "",
-                currentThinkingStartElapsed = 0,
-                currentToolCall = null
+                pendingUserInput = null,
+                awaitingPlanConfirmation = false,
+                awaitingSpecConfirmation = false,
+                currentStepIndex = -1
             )
         }
-        streamBuffers.reset()
-        toolFlushJob?.cancel()
-        toolFlushJob = null
-        toolOutputBuffer.clear()
-        activeToolCallId = null
-        liveOutputStepId = null
-        currentToolCallSteps = null
-        routeContextKind = null
-        routeContextName = null
     }
 
     // newChat() 已迁至 AgentChatHistoryController.kt（历史归档冲刷 + 会话态清空一体；行数预算拆分）

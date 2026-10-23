@@ -5,6 +5,7 @@ import com.apex.agent.R
 import com.apex.agent.core.engine.ApexAgentEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
@@ -128,41 +129,65 @@ internal fun AgentChatViewModel.flushChatHistoryNow() {
 /**
  * 恢复历史会话：消息回填消息流，user/agent 文本对回填引擎上下文，
  * 后续对话自然接续该会话的历史。
+ *
+ * 回合修复（僵尸任务 + 引擎历史并发修改）：
+ *  - 旧实现只取消 UI 收集器（currentJob），TaskRuntime 镜像收集器与引擎
+ *    继续在后台烧 token / 执行工具；restoreHistory 直接 clear+addAll 替换
+ *    引擎正在迭代的 conversationHistory（无锁 ArrayList）→ 跨会话上下文
+ *    污染 + ConcurrentModificationException 风险；下一轮 sendMessage 还要
+ *    等僵尸收尾最长 10s。现在并行（读盘 × 任务取消）后串行恢复；
+ *  - 切换前 salvage 在途流式产物并随归档落盘（旧实现直接丢弃）；
+ *  - 恢复期间用户发了新消息（currentJob 已被新一轮替换）→ 放弃恢复，
+ *    新意图优先（新消息不会被旧会话的上下文覆盖）。
  */
 internal fun AgentChatViewModel.restoreChatSession(sessionId: String) {
     // 混沌审查修复：与 sendMessage 对齐，覆盖前取消旧收集器，防双消费者交错写 _uiState
     currentJob?.cancel()
     currentJob = viewModelScope.launch {
-        val (messages, createdAt) = withContext(Dispatchers.IO) {
-            chatHistory.loadMessages(sessionId) to chatHistory.sessionCreatedAt(sessionId)
+        try {
+            // 并行：僵尸任务收尾（最长 10s）× 历史读盘（IO）—— 总耗时取 max。
+            val zombieCancel = async { taskController.cancel() }
+            val (messages, createdAt) = withContext(Dispatchers.IO) {
+                chatHistory.loadMessages(sessionId) to chatHistory.sessionCreatedAt(sessionId)
+            }
+            zombieCancel.await() // 串行化：引擎历史变更必须等在途任务真正停下来
+
+            // 切换期间用户已发新消息（currentJob 已被新一轮替换）→ 放弃恢复（新意图优先）
+            if (currentJob !== coroutineContext[Job]) return@launch
+
+            // 在途部分产物 salvage 进消息流 → 随归档落盘（不再无声丢失）
+            salvageStreamingOutput()
+            flushChatHistoryNow()
+
+            if (messages.isEmpty()) return@launch
+
+            // 引擎上下文恢复（内存 history + 持久化 memory 同步替换）
+            val llmMessages = messages.mapNotNull { it.toLlmMessage() }
+            (agentEngine as? ApexAgentEngine)?.restoreHistory(llmMessages)
+
+            resetStreamingState()
+
+            _uiState.update {
+                it.copy(
+                    messages = messages.mapNotNull { m -> m.toUiMessage() },
+                    currentThinking = "",
+                    currentResponse = "",
+                    currentToolCall = null,
+                    plan = null,
+                    awaitingPlanConfirmation = false,
+                    spec = null,
+                    awaitingSpecConfirmation = false,
+                    pendingUserInput = null,
+                    isLoading = false,
+                    historyDepth = llmMessages.size
+                )
+            }
+            currentHistorySessionId = sessionId
+            currentHistorySessionCreatedAt = createdAt ?: System.currentTimeMillis()
+        } finally {
+            // 恢复协程自身被取消/完成时兜底复位执行态（守卫式，不踩新回合）。
+            finalizeEngineTurn(coroutineContext[Job])
         }
-        if (messages.isEmpty()) return@launch
-
-        // 引擎上下文恢复（内存 history + 持久化 memory 同步替换）
-        val llmMessages = messages.mapNotNull { it.toLlmMessage() }
-        (agentEngine as? ApexAgentEngine)?.restoreHistory(llmMessages)
-
-        // 当前会话若有未归档内容，先落盘再切换（防丢）
-        flushChatHistoryNow()
-        resetStreamingState()
-
-        _uiState.update {
-            it.copy(
-                messages = messages.mapNotNull { m -> m.toUiMessage() },
-                currentThinking = "",
-                currentResponse = "",
-                currentToolCall = null,
-                plan = null,
-                awaitingPlanConfirmation = false,
-                spec = null,
-                awaitingSpecConfirmation = false,
-                pendingUserInput = null,
-                isLoading = false,
-                historyDepth = llmMessages.size
-            )
-        }
-        currentHistorySessionId = sessionId
-        currentHistorySessionCreatedAt = createdAt ?: System.currentTimeMillis()
     }
 }
 
@@ -170,29 +195,51 @@ internal fun AgentChatViewModel.restoreChatSession(sessionId: String) {
  * 新开会话：当前会话先归档进历史（含取消未触发的防抖归档任务），
  * 再清空引擎历史 / 持久化记忆 / UI 消息流与全部流式运行态。
  * （自 AgentChatViewModel.kt 迁入 —— 行数预算拆分；调用点 viewModel.newChat() 无感知。）
+ *
+ * 回合修复：① 在途流式产物 salvage 后随归档落盘（不再无声丢失）；
+ * ② 僵尸任务收尾串行化 —— 旧实现不取消 TaskRuntime 在途任务，
+ * clearHistory 与引擎循环并发修改同一 ArrayList（跨会话污染 +
+ * ConcurrentModificationException 风险）；③ 切换期间用户发新消息
+ * （currentJob 已被替换）→ 放弃清空（新意图优先）。
  */
 internal fun AgentChatViewModel.newChat() {
+    // 切换令牌：此刻的在途回合（下方取消）—— 清空历史前比对 currentJob，
+    // 令牌被替换即说明用户在僵尸收尾期间发了新消息（新意图优先）。
+    val switchToken = currentJob
     currentJob?.cancel()
+    // 在途部分产物 salvage 进消息流 → 随归档落盘（不再无声丢失）
+    salvageStreamingOutput()
     // 当前会话先归档进历史（含取消未触发的防抖归档），再复位会话 id
     flushChatHistoryNow()
     // 清空所有流式/工具运行态，防止残留缓冲串入新会话。
     resetStreamingState()
     viewModelScope.launch {
-        (agentEngine as? ApexAgentEngine)?.clearHistory()
-        _uiState.update {
-            it.copy(
-                messages = emptyList(),
-                currentThinking = "",
-                currentResponse = "",
-                currentToolCall = null,
-                plan = null,
-                awaitingPlanConfirmation = false,
-                spec = null,
-                awaitingSpecConfirmation = false,
-                pendingUserInput = null,
-                isLoading = false,
-                historyDepth = 0
-            )
+        try {
+            // 僵尸任务收尾：镜像收集器/执行锁不随 UI 收集器取消而停 ——
+            // 引擎历史变更（clearHistory）必须等在途任务真正停下来。
+            taskController.cancel()
+            // 切换期间用户已发新消息（currentJob 已被令牌外的回合替换，
+            // 含「已快速跑完」的回合）→ 放弃清空（新意图优先）。
+            if (currentJob !== switchToken && currentJob != null) return@launch
+            (agentEngine as? ApexAgentEngine)?.clearHistory()
+            _uiState.update {
+                it.copy(
+                    messages = emptyList(),
+                    currentThinking = "",
+                    currentResponse = "",
+                    currentToolCall = null,
+                    plan = null,
+                    awaitingPlanConfirmation = false,
+                    spec = null,
+                    awaitingSpecConfirmation = false,
+                    pendingUserInput = null,
+                    isLoading = false,
+                    historyDepth = 0
+                )
+            }
+        } finally {
+            // 兜底复位执行态（守卫式：新会话清理协程被新一轮覆盖时不踩新回合）。
+            finalizeEngineTurn(null)
         }
     }
 }
