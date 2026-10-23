@@ -2,6 +2,8 @@
 
 package com.apex.agent.ui.screen.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,9 +11,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -24,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -40,11 +46,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 模型配置导入弹窗（用户需求：模型配置支持直接粘贴 Python / JSON 等语言导入）。
+ * 模型配置导入弹窗（用户需求：模型配置支持直接粘贴 Python / JSON 等语言导入，
+ * 以及从 .json 等配置文件导入）。
  *
- * 交互流：粘贴文本 → 防抖 300ms 实时解析（格式识别 + 摘要预览 / 错误即时反馈）
- * → 「导入」落盘 → 完成态展示导入结果（服务商 + 模型数），关闭后由调用方
- * 自动选中新导入的首个档案。
+ * 交互流：粘贴文本或「从文件导入」（SAF 选择 → 读入文本域）→ 防抖 300ms
+ * 实时解析（格式识别 + 摘要预览 / 错误即时反馈）→ 「导入」落盘 → 完成态
+ * 展示导入结果（服务商 + 模型数），关闭后由调用方自动选中新导入的首个档案。
  *
  * UI 与解析分层：本弹窗只负责采集与反馈，[ModelConfigImporter]（纯 JVM 可单测）
  * 负责识别，[SettingsViewModel.importModelConfig] 负责落盘 —— 弹窗里的实时
@@ -74,6 +81,34 @@ internal fun ModelConfigImportDialog(
     var done by remember { mutableStateOf<Pair<Int, String>?>(null) }
 
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    // 文件读取错误一次性反馈（非空即展示；换文件/改文本自动清除）
+    var fileError by remember { mutableStateOf<String?>(null) }
+
+    // SAF 文件导入（用户需求：json 配置文件直接选用，不必先开文件应用复制）。
+    // 选完即读全文回填文本域 —— 后续防抖解析 / 预览 / 导入与粘贴路径完全同源。
+    // mime 放宽到 */*：json/yaml/toml/py 各家文件管理器的 MIME 标注不一，
+    // 识别靠内容（ModelConfigText.detect）而非扩展名，选错文件会有即时错误反馈。
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        input.readBytes().toString(Charsets.UTF_8)
+                    } ?: throw IllegalStateException("stream closed")
+                }
+            }.fold(
+                onSuccess = { content ->
+                    fileError = null
+                    if (content.isNotBlank()) text = content
+                },
+                onFailure = { e -> fileError = e.message ?: e.javaClass.simpleName }
+            )
+        }
+    }
 
     // 防抖 300ms 实时解析：停顿后才解析，避免逐键全量 parse 大文本。
     // 完成态 / 清空文本时不解析（重置预览即可）。
@@ -136,13 +171,36 @@ internal fun ModelConfigImportDialog(
 
                     OutlinedTextField(
                         value = text,
-                        onValueChange = { text = it },
+                        onValueChange = {
+                            text = it
+                            fileError = null
+                        },
                         placeholder = { Text(stringResource(R.string.model_import_paste_hint)) },
                         minLines = 6,
                         maxLines = 12,
                         textStyle = TextStyle(fontFamily = FontFamily.Monospace),
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    // ── 从文件导入（SAF；读入后走同一解析/预览/导入链）──
+                    Row {
+                        TextButton(onClick = { filePicker.launch(arrayOf("*/*")) }) {
+                            Icon(
+                                Icons.Outlined.FolderOpen,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(stringResource(R.string.model_import_from_file))
+                        }
+                    }
+                    fileError?.let {
+                        Text(
+                            stringResource(R.string.model_import_file_error, it),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
 
                     // ── 实时预览：识别格式 + 摘要（服务商 · 端点 · 模型数）──
                     val pv = preview

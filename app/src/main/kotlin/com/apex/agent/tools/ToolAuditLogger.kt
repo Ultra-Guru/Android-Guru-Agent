@@ -95,11 +95,77 @@ class ToolAuditLogger @Inject constructor(
         logFile.writeText(kept.joinToString("\n", postfix = "\n"))
     }
 
+    // ═══ 读取侧（#诊断增强：诊断页 / SystemDiagnose 工具共用）═══
+    // 与写入侧同一把锁 + 同一份文件 —— 读到的一定是已落盘的完整行。
+
+    /**
+     * 一条已落盘审计记录的反序列化视图（键集与 [Event] 写入侧一致；
+     * 兼容缺字段 —— 旧版本行/异常行按可读默认值呈现，绝不炸读取方）。
+     */
+    data class AuditEntry(
+        val ts: Long = 0L,
+        val tool: String = "",
+        val decision: String = "",
+        val tier: String? = null,
+        val command: String? = null,
+        val durationMs: Long? = null,
+        val success: Boolean? = null,
+        val exitCode: Int? = null,
+        val detail: String? = null
+    ) {
+        /** 失败判定：显式 success=false，或决策/拒绝类失败关键字。 */
+        val isFailure: Boolean
+            get() = success == false ||
+                decision in FAILURE_DECISIONS ||
+                decision.startsWith("deny")
+    }
+
+    /** 最近的审计记录（倒序：最新在前；limit 上限防大文件全量读）。 */
+    fun recentEntries(limit: Int = 50): List<AuditEntry> = synchronized(lock) {
+        if (!logFile.exists()) return emptyList()
+        runCatching { logFile.readLines() }
+            .getOrNull()
+            ?.asReversed()
+            ?.mapNotNull(::parseLine)
+            ?.take(limit.coerceAtMost(MAX_READ_LINES))
+            ?: emptyList()
+    }
+
+    /** 最近失败记录（先全量过滤再截断 —— 成功记录多时也不断档）。 */
+    fun recentFailures(limit: Int = 50): List<AuditEntry> =
+        recentEntries(MAX_READ_LINES).filter { it.isFailure }
+            .take(limit.coerceAtMost(MAX_READ_LINES))
+
+    /** 审计文件路径（诊断页文件区展示 / 分享用）。 */
+    fun auditLogFile(): File = logFile
+
+    private fun parseLine(line: String): AuditEntry? {
+        if (line.isBlank()) return null
+        return runCatching {
+            val o = JSONObject(line)
+            AuditEntry(
+                ts = o.optLong("ts", 0L),
+                tool = o.optString("tool", ""),
+                decision = o.optString("decision", ""),
+                tier = o.optString("tier").takeIf { it.isNotBlank() },
+                command = o.optString("command").takeIf { it.isNotBlank() },
+                durationMs = if (o.has("durationMs")) o.optLong("durationMs") else null,
+                success = if (o.has("success")) o.optBoolean("success") else null,
+                exitCode = if (o.has("exitCode")) o.optInt("exitCode") else null,
+                detail = o.optString("detail").takeIf { it.isNotBlank() }
+            )
+        }.getOrNull()
+    }
+
     private companion object {
         const val TAG = "ToolAudit"
         const val MAX_BYTES = 256L * 1024
         const val KEEP_BYTES = 128L * 1024
         const val COMMAND_TRUNCATE = 512
         const val DETAIL_TRUNCATE = 200
+        /** 读取上限（防异常大文件拖死诊断页；文件本体已被 rotate 压在 128KB 内）。 */
+        const val MAX_READ_LINES = 2000
+        /** 决策字段中的失败关键字（isFailure 判定，与写入侧 decision 词表对齐）。 */
+        val FAILURE_DECISIONS = setOf("failed", "deny", "denied_by_user", "error", "timeout")
     }
 }

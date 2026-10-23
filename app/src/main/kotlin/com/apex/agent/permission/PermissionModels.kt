@@ -19,7 +19,9 @@ import kotlinx.serialization.Serializable
  *
  * ── 权限模式（业界标准语义）──
  *
- * - [PermissionMode.BYPASS]：全放行——不做任何询问与拦截（危险，仅供信任场景；
+ * - [PermissionMode.BYPASS]：全放行——不做任何询问与拦截（默认档位：
+ *   2026-10 用户反馈「默认就是开启所有工具，agent 可以直接使用」——
+ *   工具 / MCP / 技能 / shell 命令开箱即用，仅 DENY 规则仍生效；
  *   即设置页的「全自动」模式）；
  * - [PermissionMode.DEFAULT]：规则 + 按需询问——基础工具（只读 / 普通编辑写 /
  *   幂等覆写）默认放行（仍交后续风险门把关），仅删除类（破坏且非幂等）与

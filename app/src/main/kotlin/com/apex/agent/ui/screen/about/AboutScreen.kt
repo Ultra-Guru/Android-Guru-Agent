@@ -54,6 +54,7 @@ import androidx.compose.material.icons.outlined.Mail
 import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.material.icons.outlined.Terminal
+import androidx.compose.material.icons.outlined.TravelExplore
 import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
@@ -270,22 +271,28 @@ fun AboutScreen() {
                     accent = featureAccents[2]
                 )
                 FeatureRow(
+                    Icons.Outlined.TravelExplore,
+                    stringResource(R.string.about_feature_browser_title),
+                    stringResource(R.string.about_feature_browser_desc),
+                    accent = featureAccents[0]
+                )
+                FeatureRow(
                     Icons.Outlined.Storefront,
                     stringResource(R.string.about_feature_market_title),
                     stringResource(R.string.about_feature_market_desc),
-                    accent = featureAccents[0]
+                    accent = featureAccents[1]
                 )
                 FeatureRow(
                     Icons.Outlined.Lock,
                     stringResource(R.string.about_feature_vault_title),
                     stringResource(R.string.about_feature_vault_desc),
-                    accent = featureAccents[1]
+                    accent = featureAccents[2]
                 )
                 FeatureRow(
                     Icons.Outlined.BlurOn,
                     stringResource(R.string.about_feature_glass_title),
                     stringResource(R.string.about_feature_glass_desc),
-                    accent = featureAccents[2]
+                    accent = featureAccents[0]
                 )
             }
         }

@@ -172,6 +172,9 @@ object CodeModule {
     fun provideCodeContextProvider(manager: CodeWorkspaceManager): CodeContextProvider {
         return object : CodeContextProvider {
             override fun provide(workspaceRoot: File, activeFile: String?): String? {
+                // system 工作区（根 = /，2026-10 默认整个系统）：全系统根不做
+                // 环境嗅探/项目统计 —— 深度遍历宿主根既慢又无项目语义。
+                if (workspaceRoot.absolutePath == "/") return null
                 val env = manager.detectEnvironment(workspaceRoot)
                 val stats = manager.projectStats(workspaceRoot)
                 return listOfNotNull(env.summary, stats).joinToString(" · ").ifBlank { null }

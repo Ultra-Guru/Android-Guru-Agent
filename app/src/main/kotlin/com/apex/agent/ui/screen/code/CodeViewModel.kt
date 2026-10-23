@@ -120,7 +120,7 @@ import java.util.concurrent.atomic.AtomicLong
 @HiltViewModel
 class CodeViewModel @Inject constructor(
     @Named("code") private val codeEngine: AgentEngine,
-    private val workspaceManager: CodeWorkspaceManager,
+    internal val workspaceManager: CodeWorkspaceManager,
     internal val codeTodoTool: CodeTodoTool,
     internal val codeSessionStore: CodeSessionStore,
     // v1.4.10 Coding 历史对话：归档仓库（新会话先归档，历史面板可恢复/删除）。
@@ -234,12 +234,7 @@ class CodeViewModel @Inject constructor(
         get() = codeEngine as? DualLogicCodeEngine
 
     // ═══ v6 控制器接线（lazy：viewModelScope 构造后才可用；God-file 预算：
-    //     Git 工作区与专家模板的逻辑各自独立成文件，VM 只做暴露）═══
-
-    /** Git 工作区面板（右上角入口；CodeWorkspacePanel 直取）。 */
-    internal val gitPanelController: CodeGitPanelController by lazy {
-        CodeGitPanelController(gitRunner, viewModelScope)
-    }
+    //     专家模板逻辑独立成文件，VM 只做暴露）═══
 
     /** Coding 专家模板（模式行胶囊；设置流 → 引擎人设通道）。 */
     internal val roleController: CodeRoleController by lazy {
@@ -965,6 +960,7 @@ class CodeViewModel @Inject constructor(
         bindWorkspace(created)
     }
 
+
     fun switchWorkspace(workspaceId: String) {
         val activated = workspaceManager.activate(workspaceId) ?: return
         bindWorkspace(activated)
@@ -975,7 +971,8 @@ class CodeViewModel @Inject constructor(
             showError(languageManager.getString(R.string.code_ws_delete_blocked_running))
             return
         }
-        if (workspaceId == "default") {
+        // system 根 = / 绝不可删（manager 侧恒拒，VM 前置拦截统一文案）
+        if (workspaceId == "default" || workspaceId == CodeWorkspaceManager.SYSTEM_ID) {
             showError(languageManager.getString(R.string.code_ws_delete_default))
             return
         }
