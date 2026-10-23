@@ -444,9 +444,9 @@ internal fun codeThinkingShortName(level: CodeThinkingLevel): String = stringRes
     }
 )
 
-/** 档位 → 预算徽标（thinking_budget 短格式：0 / 256 / … / 64k；AUTO 显示预检符号）。 */
+/** 档位 → 预算徽标（thinking_budget 短格式：0 / 256 / … / 64k；AUTO 无固定预算显示 auto）。 */
 private fun codeThinkingBudgetLabel(level: CodeThinkingLevel): String {
-    val budget = level.toThinkingBudget() ?: return "⚡"
+    val budget = level.toThinkingBudget() ?: return "auto"
     return if (budget >= 1024) "${budget / 1024}k" else "$budget"
 }
 

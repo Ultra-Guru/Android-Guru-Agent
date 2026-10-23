@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -98,8 +98,10 @@ internal fun LlmSetupGuideCard(onOpenSettings: () -> Unit) {
                     modifier = Modifier.size(44.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
+                        // 「接入模型 / 配置 API Key」引导卡：钥匙图标语义对位
+                        // （星光魔法图标是 AI 生成 UI 的典型视觉疲劳源）
                         Icon(
-                            imageVector = Icons.Default.AutoAwesome,
+                            imageVector = Icons.Default.Key,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(24.dp)

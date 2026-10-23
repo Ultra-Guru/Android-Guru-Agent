@@ -50,7 +50,7 @@
     <string name="code_perm_mode_default">Standard (asks high-risk)</string>
     <string name="code_perm_mode_accept_edits">Accept Edits</string>
     <string name="code_perm_mode_plan">Plan</string>
-    <string name="code_perm_mode_bypass_desc">Every tool (shell, MCP, skills included) runs with no confirmation — the default mode; only DENY rules still apply</string>
+    <string name="code_perm_mode_bypass_desc">Every tool (shell, MCP, skills included) runs directly — the default mode; DENY and ASK rules still apply, and sensitive actions (paid tools) still confirm each time</string>
     <string name="code_perm_mode_default_desc">Basic tools run automatically; only delete-like high-risk actions ask first</string>
     <string name="code_perm_mode_accept_edits_desc">File edits and git commits are allowed; everything else asks first</string>
     <string name="code_perm_mode_plan_desc">Read-only planning: any tool that mutates the environment is denied</string>

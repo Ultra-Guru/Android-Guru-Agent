@@ -102,7 +102,7 @@
     <string name="market_modelscope_filter">Filter skills</string>
     <string name="market_modelscope_error_title">ModelScope failed to load</string>
     <string name="market_modelscope_loading">Fetching the repository skill catalog (GitHub API)\u2026</string>
-    <string name="market_github_title">GitHub repository search (repos containing an apex-skill-v1 manifest can be installed in one tap)</string>
+    <string name="market_github_title">GitHub repository search (repos containing an apex-skill-v1 manifest install directly)</string>
     <string name="market_github_query_label">Repo name / keyword</string>
     <string name="market_github_error_title">GitHub search failed</string>
 
@@ -163,7 +163,7 @@
     <string name="market_delete_connector_builtin_suffix"> (built-in sample, restored after restart)</string>
 
     <!-- ═══ Installed · Integrations ═══ -->
-    <string name="market_installed_integrations_empty">No skills installed from remote repositories (ModelScope / GitHub / ClawHub) yet \u2014 browse and install in one tap from \u201CMarket\u201D</string>
+    <string name="market_installed_integrations_empty">No skills installed from remote repositories (ModelScope / GitHub / ClawHub) yet \u2014 browse and install from \u201CMarket\u201D</string>
     <string name="market_installed_integrations_go">Browse Market</string>
     <string name="market_installed_integrations_empty_short">No skills from remote sources</string>
     <string name="market_installed_integrations_header">The ms- prefix = installed from ModelScope; gh- = converted from a GitHub repository; ch- = installed from the ClawHub repository. GitHub skills with custom manifests are managed on the Skills tab.</string>
@@ -317,7 +317,7 @@
     <!-- ═══ #205 MCP curated catalog + preflight + timeline ═══ -->
     <string name="market_mcp_catalog_header">Curated MCP Directory</string>
     <string name="market_mcp_catalog_count">%1$d servers</string>
-    <string name="market_mcp_catalog_desc">Verified real servers bundled offline: exact package names, endpoints and env keys. One tap installs and connects.</string>
+    <string name="market_mcp_catalog_desc">Verified real servers bundled offline: exact package names, endpoints and env keys. Install, then connect.</string>
     <string name="market_mcp_catalog_cat_all">All</string>
     <string name="market_mcp_catalog_cat_official">Official</string>
     <string name="market_mcp_catalog_cat_search">Web Search</string>
@@ -433,7 +433,7 @@
     <string name="market_registry_open_repo">Open repository in browser</string>
     <string name="market_skill_source_github_featured">GitHub Featured</string>
     <string name="market_github_featured_header">GitHub Featured — top open-source coding skills</string>
-    <string name="market_github_featured_hint">Curated coding skills from anthropics/skills and obra/superpowers. One tap installs the SKILL.md as a prompt-type skill (Coding market only).</string>
+    <string name="market_github_featured_hint">Curated coding skills from anthropics/skills and obra/superpowers. Install the SKILL.md as a prompt-type skill (Coding market only).</string>
     <string name="market_github_featured_license_hint">Skill content is fetched from the open-source repositories above at install time and follows each repo\'s license.</string>
     <string name="market_installed_skills_tier_hint">Skill switches take effect per market tier (current: %1$s) — the other tier keeps its own state</string>
     <string name="market_skill_needs_config">Setup needed</string>

@@ -275,13 +275,14 @@ class RiskAwareToolGate(
         const val CONFIRM_TIMEOUT_COOLDOWN_MS = 2 * 60 * 1000L
 
         /**
-         * #342：永不提供会话级放行的工具 id——弹窗不出「本会话允许」选项，
-         * 既有 ALLOWED_SESSION 记录也不生效，强制逐次确认。当前仅 sms_send：
-         * HIGH 风险工具中唯一有直接金钱后果的（每条真实计费），叠加宿主侧
-         * SmsRateLimiter（每分钟 5 条 + 相同内容 10 分钟去重）构成双保险。
+         * #342：永不提供会话级放行的工具 id——单一事实源已提升至
+         * [NO_SESSION_ALLOW_TOOLS]（permission 包）供权限门与风险门共用；
+         * 本引用保留向后兼容（内部消费点未改）。修正注：工具 id 已
+         * PascalCase 化（SmsSend），旧 snake_case 条目从不命中——#342
+         * 逐次确认实际已失效一整段，两态并存防回归。
          * （合并注：THIRD_PARTY_PREFIXES / isThirdPartyDynamic 随确认面收敛
          * 移除——第三方首次确认已不弹，判定器无消费方。）
          */
-        val NO_SESSION_ALLOW_TOOLS = setOf("sms_send")
+        val NO_SESSION_ALLOW_TOOLS = com.apex.agent.permission.NO_SESSION_ALLOW_TOOLS
     }
 }

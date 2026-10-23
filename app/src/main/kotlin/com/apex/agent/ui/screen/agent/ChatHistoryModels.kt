@@ -62,7 +62,12 @@ data class ChatHistoryMessage(
      * 仅 role == "user"：附件本地路径集合。历史回看不重建附件，仅用于
      * 删除会话时同步清理附件文件（旧数据无此字段 → 默认空，兼容解码）。
      */
-    val attachmentPaths: List<String> = emptyList()
+    val attachmentPaths: List<String> = emptyList(),
+    /**
+     * 仅 role == "tool"：执行成败（恢复时重建红/绿状态徽章）。
+     * 旧数据无此字段 → 默认 true（与旧实现显示口径一致，零迁移）。
+     */
+    val success: Boolean = true
 )
 
 /** AgentUiMessage → 历史消息（null = 不入库：Thinking 等展示噪音）。 */
@@ -81,7 +86,9 @@ internal fun AgentUiMessage.toHistoryMessage(): ChatHistoryMessage? = when (this
         // 输出截断入库：历史回看只需概要（完整输出不入库，避免单会话膨胀）
         text = (output ?: "").take(400),
         toolName = toolName,
-        timestamp = timestamp
+        timestamp = timestamp,
+        // 成败入库（恢复时红卡不得伪装成绿卡；null=未知按成功口径存）
+        success = success ?: true
     )
     is AgentUiMessage.PipelineBanner -> ChatHistoryMessage(
         "system",
@@ -94,11 +101,11 @@ internal fun AgentUiMessage.toHistoryMessage(): ChatHistoryMessage? = when (this
     )
     is AgentUiMessage.PlanMessage -> ChatHistoryMessage(
         "system",
-        "📋 执行计划（${plan.steps.size} 步）：\n" + plan.steps.joinToString("\n") { "· ${it.description}" },
+        "执行计划（${plan.steps.size} 步）：\n" + plan.steps.joinToString("\n") { "· ${it.description}" },
     )
     is AgentUiMessage.SpecMessage -> ChatHistoryMessage(
         "system",
-        "📄 需求规格：${spec.goal}",
+        "需求规格：${spec.goal}",
     )
     is AgentUiMessage.ReflectionReviewMessage -> ChatHistoryMessage("system", text)
     is AgentUiMessage.StepMarker -> ChatHistoryMessage(
@@ -106,7 +113,7 @@ internal fun AgentUiMessage.toHistoryMessage(): ChatHistoryMessage? = when (this
     )
     is AgentUiMessage.RunSummary -> ChatHistoryMessage(
         "system",
-        "✅ 本轮完成：$summary（${totalIterations} 轮 / ${totalToolCalls} 次工具 / ${totalDurationMs / 1000}s）",
+        "本轮完成：$summary（${totalIterations} 轮 / ${totalToolCalls} 次工具 / ${totalDurationMs / 1000}s）",
         timestamp = timestamp
     )
     is AgentUiMessage.ThinkingMessage -> null // 思考过程不入库（体积大、回看价值低）
@@ -122,7 +129,7 @@ internal fun ChatHistoryMessage.toUiMessage(): AgentUiMessage? = when (role) {
         toolName = toolName ?: "工具",
         args = "",
         output = text,
-        success = true,
+        success = success,
         durationMs = 0,
         timestamp = timestamp
     )

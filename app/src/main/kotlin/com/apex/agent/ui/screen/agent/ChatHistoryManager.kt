@@ -110,9 +110,15 @@ class ChatHistoryManager @Inject constructor(
             val existing = loadSessions()
             val sorted = (existing.filter { it.id != summary.id } + summary)
                 .sortedByDescending { it.updatedAt }
-            // 会话数量封顶：最近 MAX_SESSIONS 个 —— 历史无限增长会拖慢索引反序列化
-            val merged = sorted.take(MAX_SESSIONS)
-            val evicted = sorted.drop(MAX_SESSIONS)
+            // ═══ 会话数量封顶：最近 MAX_SESSIONS 个 —— 历史无限增长会拖慢索引反序列化
+            // 置顶会话不参与挤出（v1.4.4 #5 语义延伸）：用户钉住的会话若被
+            // 滚动归档静默挤出（归档区至今无 UI 入口），用户视角等于丢失；
+            // 挤出只淘汰未置顶的最旧会话。═══
+            val pinnedSessions = sorted.filter { it.pinned }
+            val evictable = sorted.filterNot { it.pinned }
+            val keepCount = (MAX_SESSIONS - pinnedSessions.size).coerceAtLeast(0)
+            val merged = pinnedSessions + evictable.take(keepCount)
+            val evicted = evictable.drop(keepCount)
             val editor = prefs.edit()
                 .putString(KEY_INDEX, json.encodeToString(indexSerializer, merged))
                 .putString(keyMessages(summary.id), json.encodeToString(messagesSerializer, messages))

@@ -50,7 +50,7 @@
     <string name="code_perm_mode_default">标准（高危询问）</string>
     <string name="code_perm_mode_accept_edits">接受编辑</string>
     <string name="code_perm_mode_plan">规划模式</string>
-    <string name="code_perm_mode_bypass_desc">所有工具（含 shell 命令、MCP、技能）直接执行，全程不询问 —— 默认档位；仅拒绝规则仍生效</string>
+    <string name="code_perm_mode_bypass_desc">所有工具（含 shell 命令、MCP、技能）直接执行 —— 默认档位；拒绝与询问规则仍生效，付费等敏感动作仍逐次确认</string>
     <string name="code_perm_mode_default_desc">基础工具自动放行，仅删除等高危操作需要确认</string>
     <string name="code_perm_mode_accept_edits_desc">文件编辑与 git 提交自动放行，其余先询问</string>
     <string name="code_perm_mode_plan_desc">只读规划：任何会修改环境的工具都会被拒绝</string>

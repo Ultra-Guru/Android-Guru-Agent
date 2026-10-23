@@ -952,24 +952,52 @@ class AgentChatViewModel @Inject constructor(
         // 注入 toolkit 会话上下文/强制工具参数（Chat/Agent 模式由提示词层驱动；
         // AGENT 模式的默认工具计划由 EngineToolPlanner 按模式自动处理）。
 
-        try {
-            // 互斥求值安全化（同斜杠管线）：execute() 的并发拒绝 ISE 发生在
-            // collect 之前 —— 单独接住转可读错误气泡，不冒泡到 viewModelScope。
-            val flow = taskController.execute(userInput)
-            collectEngineFlowSafely(flow)
-        } catch (e: CancellationException) {
-            throw e // 协程取消必须重抛（收尾由 launchEngineTurn 的 finally 兜底）
-        } catch (e: Exception) {
-            _uiState.update { s ->
-                s.copy(
-                    messages = s.messages + AgentUiMessage.Error(
-                        message = strFmt(
-                            R.string.chat_execution_failed,
-                            e.message ?: e::class.simpleName ?: ""
+        // ═══ 互斥位竞态兑底（P1：cancel 超时后新消息被拒丢弃）═══
+        // check(tryClaim()) 在旧任务互斥位未释放时抛 IllegalStateException——旧
+        // 实现直接落错误气泡（消息已上屏却被丢弃）。TaskRuntime.cancel() 超时
+        // 路径已强杀镜像并等待释放，这里兜最后一段竞态窗口：有界重试送进引擎。
+        var mutexAttempt = 0
+        while (true) {
+            try {
+                // 互斥求值安全化（同斜杠管线）：execute() 的并发拒绝 ISE 发生在
+                // collect 之前 —— 单独接住转可读错误气泡，不冒泡到 viewModelScope。
+                val flow = taskController.execute(userInput)
+                collectEngineFlowSafely(flow)
+                break
+            } catch (e: CancellationException) {
+                throw e // 协程取消必须重抛（收尾由 launchEngineTurn 的 finally 兜底）
+            } catch (e: IllegalStateException) {
+                mutexAttempt++
+                if (mutexAttempt > EXECUTE_MUTEX_RETRY_LIMIT) {
+                    _uiState.update { s ->
+                        s.copy(
+                            messages = s.messages + AgentUiMessage.Error(
+                                message = strFmt(
+                                    R.string.chat_execution_failed,
+                                    e.message ?: e::class.simpleName ?: ""
+                                ),
+                                canRetry = true
+                            ),
+                            isLoading = false
+                        )
+                    }
+                    break
+                }
+                delay(EXECUTE_MUTEX_RETRY_DELAY_MS)
+            } catch (e: Exception) {
+                _uiState.update { s ->
+                    s.copy(
+                        messages = s.messages + AgentUiMessage.Error(
+                            message = strFmt(
+                                R.string.chat_execution_failed,
+                                e.message ?: e::class.simpleName ?: ""
+                            ),
+                            canRetry = true
                         ),
-                        canRetry = true
+                        isLoading = false
                     )
-                )
+                }
+                break
             }
         }
     }
@@ -1155,5 +1183,13 @@ class AgentChatViewModel @Inject constructor(
 
         /** 工具输出 UI 刷新节流间隔（≈1 帧 = 16ms；internal —— AgentChatEventApplier 共用）。 */
         internal const val FLUSH_INTERVAL_MS = 16L
+
+        /**
+         * 互斥位竞态兑底：cancel 超时后立即重发时，TaskRuntime 互斥位可能
+         * 尚未释放（check(tryClaim()) 抛 IllegalStateException）。有界重试把
+         * 消息真正送进引擎，而不是丢弃并弹英文技术错误。
+         */
+        private const val EXECUTE_MUTEX_RETRY_LIMIT = 8
+        private const val EXECUTE_MUTEX_RETRY_DELAY_MS = 250L
     }
 }

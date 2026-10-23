@@ -52,8 +52,13 @@ internal suspend fun AgentChatViewModel.handleEvent(event: AgentEvent) {
                 // currentThinking），不再信任引擎侧 fullThought —— 引擎
                 // reasoningBuilder 与 UI streamBuffers 是两条独立累积链路，
                 // 双方漂移时完成瞬间思考内容会跳变；“看到什么落什么”。
-                // 快照为空且引擎侧有文本时回退 fullThought（防御非流式路径）。═══
-                val finalThought = state.currentThinking.ifBlank { event.fullThought }
+                // 快照为空且引擎侧有文本时回退 fullThought（防御非流式路径）。
+                // ═══ 中段丢字防御（高水位丢弃补偿）：UI 快照比引擎全文短时
+                // 说明 tap 积压 ≥1024 时 ResponseChunk 被丢过 —— 此时快照
+                // 有空洞，回退引擎全文（丢过程不丢结果的两套设计在此对齐）。
+                val finalThought = state.currentThinking
+                    .takeIf { it.length >= event.fullThought.length && it.isNotBlank() }
+                    ?: event.fullThought
                 state.copy(
                     messages = state.messages + AgentUiMessage.ThinkingMessage(finalThought, durationMs),
                     currentThinking = "",
@@ -166,6 +171,24 @@ internal suspend fun AgentChatViewModel.handleEvent(event: AgentEvent) {
         is AgentEvent.ToolCallStart -> {
             // 流式回复/思考暂停：先刷出缓冲，保证已有文本先于工具卡落盘。
             streamBuffers.flush()
+            // ═══ 思考收口对齐 Coding 屏（CodeStreamSession.onToolStart 同款）═══
+            // 工具开跑 = 思考阶段已过：残留的 notice 类思考分片（无
+            // ThinkingComplete 的工具降级/重试提示）此刻落为终态消息，
+            // 秒表停跳 —— 否则「推理中…」气泡在工具执行期间继续脉冲，
+            // Complete salvage 的时长还会把工具耗时算进思考秒数。
+            _uiState.value.currentThinking.takeIf { it.isNotBlank() }?.let { partialThought ->
+                val thoughtMs = if (thinkingStartElapsed > 0) {
+                    SystemClock.elapsedRealtime() - thinkingStartElapsed
+                } else 0L
+                thinkingStartElapsed = 0
+                _uiState.update { state ->
+                    state.copy(
+                        messages = state.messages + AgentUiMessage.ThinkingMessage(partialThought, thoughtMs),
+                        currentThinking = "",
+                        currentThinkingStartElapsed = 0
+                    )
+                }
+            }
             // ═══ 多轮 BUILD 文本丢失/时序错位修复 ═══
             // 本轮已流出的叙述文本（“我需要查看文件…”）在工具开跑前先落为
             // 独立 Agent 消息并清空 currentResponse —— 旧实现只 flush 不落盘，
@@ -370,8 +393,13 @@ internal suspend fun AgentChatViewModel.handleEvent(event: AgentEvent) {
                 //（引用块拼接/媒体注入/多轮循环都可能漂移），完成瞬间气泡
                 // 内容会跳变（看到 100 字落盘 95/105 字）。“看到什么落什么”。
                 // 快照为空且引擎侧有文本时回退 fullText：反思修正轮空产出时
-                // 引擎返回未变更草稿——该文本可能从未流经 UI，避免落盘空消息。═══
-                val finalText = state.currentResponse.ifBlank { event.fullText }
+                // 引擎返回未变更草稿——该文本可能从未流经 UI，避免落盘空消息。
+                // ═══ 中段丢字防御（高水位丢弃补偿）：UI 快照比引擎全文短时
+                // 说明 tap 积压 ≥1024 时 ResponseChunk 被丢过 —— 此时快照
+                // 有空洞，回退引擎全文（丢过程不丢结果的两套设计在此对齐）。
+                val finalText = state.currentResponse
+                    .takeIf { it.length >= event.fullText.length && it.isNotBlank() }
+                    ?: event.fullText
                 state.copy(
                     messages = state.messages + AgentUiMessage.Agent(finalText),
                     currentResponse = "",
@@ -421,11 +449,20 @@ internal suspend fun AgentChatViewModel.handleEvent(event: AgentEvent) {
             // 思考计时同步收尾（避免残留 live 计时器）。
             streamBuffers.flush()
             finishActiveBanner()
+            // ═══ 残留思考 salvage（与 Complete 分支同款）：出错瞬间屏幕上
+            // 正在显示的思考内容不该无声消失——落为终态消息后再清槽。═══
+            val thinkingElapsedMs = if (thinkingStartElapsed > 0) {
+                SystemClock.elapsedRealtime() - thinkingStartElapsed
+            } else 0L
             thinkingStartElapsed = 0
             _uiState.update { state ->
                 val partial = state.currentResponse
+                val residualThinking = state.currentThinking
                 state.copy(
                     messages = state.messages +
+                        (if (residualThinking.isNotBlank())
+                            listOf(AgentUiMessage.ThinkingMessage(residualThinking, thinkingElapsedMs))
+                        else emptyList()) +
                         (if (partial.isNotBlank())
                             listOf(AgentUiMessage.Agent(text = partial, isPartial = true))
                         else emptyList()) +
@@ -467,12 +504,15 @@ internal suspend fun AgentChatViewModel.handleEvent(event: AgentEvent) {
             // 总结卡在挂起前原子落定；指标与通知经 completeTurnMetricsAsync
             // 脱离收集协程后台补（收集器被取消也不丢收尾，仪表迟一拍无感）。
             _uiState.update {
+                // ═══ salvage 时序对齐真实发生顺序：思考在前、回复在后（旧序
+                // 回复在前会让 GOAL notice 场景出现「答案在上、思考卡在下」
+                // 的倒序观感，与 abort()/Error 分支统一）。═══
                 val salvage = buildList<AgentUiMessage> {
-                    if (residualResponse.isNotBlank()) {
-                        add(AgentUiMessage.Agent(text = residualResponse, isPartial = true))
-                    }
                     if (residualThinking.isNotBlank()) {
                         add(AgentUiMessage.ThinkingMessage(residualThinking, residualThinkingMs))
+                    }
+                    if (residualResponse.isNotBlank()) {
+                        add(AgentUiMessage.Agent(text = residualResponse, isPartial = true))
                     }
                 }
                 it.copy(
@@ -495,6 +535,11 @@ internal suspend fun AgentChatViewModel.handleEvent(event: AgentEvent) {
         }
         is AgentEvent.Aborted -> {
             finishActiveBanner()
+            // ═══ 残留思考 salvage（与 Error/Complete 分支同款）：中止瞬间屏幕
+            // 上正在显示的思考内容落为终态消息后再清槽，时长买截止。═══
+            val thinkingElapsedMs = if (thinkingStartElapsed > 0) {
+                SystemClock.elapsedRealtime() - thinkingStartElapsed
+            } else 0L
             thinkingStartElapsed = 0
             // ═══ 残留清理修复：cancelTask()（任务状态卡取消，不取消 UI 收集器）
             // 路径下引擎的 Aborted 会真正送达这里 —— 旧分支只复位 isLoading，
@@ -514,8 +559,12 @@ internal suspend fun AgentChatViewModel.handleEvent(event: AgentEvent) {
             currentToolCallSteps = null
             _uiState.update { state ->
                 val partial = state.currentResponse
+                val residualThinking = state.currentThinking
                 state.copy(
                     messages = state.messages +
+                        (if (residualThinking.isNotBlank())
+                            listOf(AgentUiMessage.ThinkingMessage(residualThinking, thinkingElapsedMs))
+                        else emptyList()) +
                         (if (partial.isNotBlank())
                             listOf(AgentUiMessage.Agent(text = partial, isPartial = true))
                         else emptyList()) +

@@ -49,7 +49,7 @@
     <!-- ═══ Crash records section ═══ -->
     <string name="diag_crash_section">Crash records</string>
     <string name="diag_crash_count">%1$d records</string>
-    <string name="diag_crash_empty">No crash records ✅</string>
+    <string name="diag_crash_empty">No crash records</string>
     <string name="diag_crash_delete">Delete</string>
     <string name="diag_crash_clear">Clear all</string>
     <string name="diag_crash_delete_confirm_title">Delete crash record?</string>

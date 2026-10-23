@@ -313,7 +313,8 @@ internal fun GoalStatusCard(
                 text = if (check == null) {
                     stringResource(R.string.goal_last_check_none)
                 } else {
-                    (if (check.achieved) "✅ " else "❌ ") + check.reason
+                    // ✓/✗ 为文本符号（非 emoji）+ 语义色已有 outline 基调
+                    (if (check.achieved) "✓ " else "✗ ") + check.reason
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outline,

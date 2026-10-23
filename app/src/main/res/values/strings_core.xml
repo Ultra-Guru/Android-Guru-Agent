@@ -21,7 +21,7 @@
     <string name="drawer_glasslab">Glass Lab</string>
     <string name="drawer_about">About</string>
     <string name="drawer_open_nav">Open navigation</string>
-    <string name="drawer_tagline">All-in-one AI assistant</string>
+    <string name="drawer_tagline">Agent workspace on Android</string>
     <string name="drawer_mem_count">%1$d items</string>
     <string name="drawer_github_not_connected">GitHub not connected</string>
 
@@ -309,7 +309,7 @@
     <string name="model_select_provider">Select model provider</string>
     <string name="model_base_url_blank_hint">Fully custom: e.g. https://api.xxx.com/v1 (we append /chat/completions), or a full path ending in /chat/completions (used as-is)</string>
     <string name="model_request_url_hint">Requests go to %1$s</string>
-    <string name="model_url_deviated">⚠ The current Base URL deviates from the official %1$s preset (official: %2$s). The fetched model list is returned by that endpoint — every model id in it (including test / incomplete names) comes from there, not from the official list.</string>
+    <string name="model_url_deviated">The current Base URL deviates from the official %1$s preset (official: %2$s). The fetched model list is returned by that endpoint — every model id in it (including test / incomplete names) comes from there, not from the official list.</string>
     <string name="model_restore_official">Restore official endpoint %1$s</string>
     <string name="model_hide_key">Hide</string>
     <string name="model_show_key">Show</string>
@@ -329,7 +329,7 @@
     <string name="model_delete_profile_title">Delete model profile</string>
     <string name="model_delete_confirm_text">Delete \"%1$s\" (%2$s)?\n\nThis cannot be undone; the default profile cannot be deleted.</string>
     <string name="model_available_title">Models available from %1$s · %2$s (%3$d)</string>
-    <string name="model_deviated_banner">⚠ Endpoint deviates from the official preset — this list comes from that relay/custom endpoint, not the official model table</string>
+    <string name="model_deviated_banner">Endpoint deviates from the official preset — this list comes from that relay/custom endpoint, not the official model table</string>
     <string name="model_filter">Filter models</string>
     <string name="model_empty_models">The endpoint returned no models. Check that the Base URL is correct and the API Key has permission, or just enter a model ID manually below.</string>
     <string name="model_manual_id_label">Or enter a model ID manually</string>
@@ -527,8 +527,8 @@
     <string name="onboarding_next">Next</string>
     <string name="onboarding_start">Get started</string>
     <string name="onboarding_mascot">Apex Agent mascot</string>
-    <string name="onboarding_tagline">The AI terminal agent in your pocket</string>
-    <string name="onboarding_welcome_desc">Chat-driven · real terminal · 100+ tools\nLet the Agent actually get work done on your phone</string>
+    <string name="onboarding_tagline">A terminal-grade agent in your pocket</string>
+    <string name="onboarding_welcome_desc">Chat-driven · real terminal · 100+ tools\nThe agent gets work done right on your phone</string>
     <string name="onboarding_cap_agent_title">Conversational agent</string>
     <string name="onboarding_cap_agent_desc">Multi-model access, plan confirmation, tool orchestration — executes complex tasks step by step and reports back</string>
     <string name="onboarding_cap_terminal_title">Ubuntu terminal</string>
@@ -583,8 +583,8 @@
 
     <!-- ═══ Foreground service notification (ApexCoreService) ═══ -->
     <string name="core_notif_channel_name">Apex Agent service</string>
-    <string name="core_notif_channel_desc">AI assistant background runtime notification</string>
-    <string name="core_notif_running">AI assistant running</string>
+    <string name="core_notif_channel_desc">Agent background runtime notification</string>
+    <string name="core_notif_running">Agent running</string>
     <!-- ═══ P2 i18n: GitHub connect menu (GithubIconButton) + common ═══ -->
     <string name="github_menu_connected">Connected: %1$s</string>
     <string name="github_menu_disconnect">Tap to disconnect</string>
@@ -599,7 +599,7 @@
     <string name="about_highlight_2">Coding desk: real-folder workspaces, built-in Git, and terminal output inline in the stream</string>
     <string name="about_highlight_3">Ubuntu terminal rewritten: VT engine, CSI compatibility and stable CJK IME input</string>
     <string name="about_highlight_4">Dual thinking system: native model effort + seven self-hosted tiers with deep-water auto-escalation</string>
-    <string name="about_easter_egg_toast">🎉 You found the fireworks!</string>
+    <string name="about_easter_egg_toast">You found the fireworks!</string>
     <string name="about_highlights_hint">Tap the robot at the bottom of this page five times</string>
     <string name="about_section_build">Version &amp; build</string>
     <string name="about_section_update">Software updates</string>
@@ -684,7 +684,7 @@
     <string name="about_update_local_install">Install</string>
     <string name="about_update_local_delete">Delete</string>
     <string name="about_feature_agent_title">Agent chat</string>
-    <string name="about_feature_agent_desc">All-in-one AI assistant with multi-level thinking, tool calling, skills and chat memory</string>
+    <string name="about_feature_agent_desc">Multi-level thinking, tool orchestration, skills and chat memory</string>
     <string name="about_feature_coding_title">Coding mode</string>
     <string name="about_feature_coding_desc">Dedicated coding engine + real-folder workspaces (file tree / Git changes / terminal)</string>
     <string name="about_feature_terminal_title">Ubuntu terminal</string>
@@ -727,6 +727,28 @@
     <!-- #218 记忆摄取开关：标题/描述/隐私告知 -->
     <string name="settings_memory_capture_title">Chat memory auto-capture</string>
     <string name="settings_memory_capture_desc">Automatically distill stable facts about you from conversations and recall them in later chats. Turn off to stop any new capture — existing memories can be viewed or deleted on the Memory page</string>
+    <!-- ═══ Settings English residual resourcing (Agent behavior + tools/network high-frequency) ═══ -->
+    <string name="settings_tab_agent">Agent</string>
+    <string name="settings_dialog_ok">OK</string>
+    <string name="settings_enable_tools">Enable tools</string>
+    <string name="settings_streaming">Streaming</string>
+    <string name="settings_keep_alive_conn">Keep connection alive</string>
+    <string name="settings_keep_alive_service">Keep service alive</string>
+    <string name="settings_retry_count">Retry count</string>
+    <string name="settings_max_iterations">Max iterations</string>
+    <string name="settings_reflection_rounds">Reflection rounds</string>
+    <string name="settings_retry_loop_section">Retry &amp; loop detection</string>
+    <string name="settings_auto_retry">Auto retry</string>
+    <string name="settings_max_retry_per_action">Max retry per action</string>
+    <string name="settings_loop_detection">Loop detection</string>
+    <string name="settings_loop_detection_window">Detection window (steps)</string>
+    <string name="settings_same_action_threshold">Same-action threshold</string>
+    <string name="settings_auto_recovery">Auto recovery</string>
+    <string name="settings_reflection_label">Reflection</string>
+    <string name="settings_planning">Planning</string>
+    <string name="settings_replanning">Replanning</string>
+    <string name="settings_parallel_tool_execution">Parallel tool execution</string>
+    <string name="settings_background_execution">Background execution</string>
     <string name="memory_capture_privacy_notice">Conversations are processed on-device to build your profile (facts / recent state / milestones). You can turn auto-capture off in Settings → Agent, and delete any memory here at any time.</string>
     <!-- #237 通知权限回收引导 -->
     <string name="notif_permission_hint_title">Background notifications not delivered</string>

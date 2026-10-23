@@ -361,7 +361,7 @@ private fun LongTaskRecordCard(
             ) {
                 MagnitudeBadge(record)
                 Text(
-                    text = "💭 ${record.thinkingLevel}",
+                    text = record.thinkingLevel,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -929,7 +929,7 @@ private fun ThinkingStatsTab(stats: CodeThinkingEvolutionTracker.WorkspaceThinki
                 Column(modifier = Modifier.padding(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "💭 ${stat.level}",
+                            text = stat.level,
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.weight(1f)

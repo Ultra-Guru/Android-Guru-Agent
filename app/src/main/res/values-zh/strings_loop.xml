@@ -57,7 +57,7 @@
     <string name="loop_skip_busy">上一轮仍在进行，本轮跳过</string>
 
     <!-- ═══ 通知（apex_general 渠道）═══ -->
-    <string name="loop_notif_once_title">⏰ 提醒</string>
+    <string name="loop_notif_once_title">提醒</string>
     <string name="loop_notif_bg_title">Loop 触发（后台）</string>
     <string name="loop_notif_bg_text">会话未打开，本轮已跳过</string>
 </resources>

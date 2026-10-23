@@ -25,6 +25,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -110,6 +112,15 @@ class TaskRuntime(
     /** 当前流收尾信号（pause/cancel 等待它完成）。 */
     @Volatile
     private var streamDone: CompletableDeferred<Unit>? = null
+
+    /**
+     * 镜像收集器 Job（P1 真取消修复）：LLM HTTP 流的取消钩子挂在收集
+     * 协程上（invokeOnCompletion{response.close()}），而镜像跑在自持
+     * scope、UI 侧 cancel 永远够不着它 —— cancel() 超时意味着引擎流
+     * 挂在不可自然收尾的悬点上，此时 cancel 这个 Job 才是真取消。
+     */
+    @Volatile
+    private var mirrorJob: Job? = null
 
     @Volatile
     private var pauseRequested = false
@@ -206,7 +217,7 @@ class TaskRuntime(
         streamDone = done
         _activeTask.value = task
 
-        scope.launch {
+        mirrorJob = scope.launch {
             var droppedUnderPressure = 0L
             try {
                 engine.execute(input).collect { event ->
@@ -453,6 +464,7 @@ class TaskRuntime(
             tagsSetter(null, null) // 诊断 ID 清理
             eventTap = null
             streamDone = null
+            mirrorJob = null
             claiming.set(false)
         }
     }
@@ -513,8 +525,24 @@ class TaskRuntime(
                     LogCategory.ENGINE, TAG,
                     "cancel(): stream finalize did not complete within " +
                         "${CANCEL_AWAIT_TIMEOUT_MS / 1000}s; " +
-                        "CANCELLED checkpoint will be persisted late"
+                        "forcing mirror collector cancellation"
                 )
+                // ═══ P1 真取消兜底（停止/发新消息停不下在途执行）═══
+                // 超时意味着镜像收集器仍挂着：LLM HTTP 流的取消钩子挂在
+                // 收集协程上而它无人取消（engine.abort() 只是标志位，仅在
+                // 迭代边界生效）—— 在途工具照跑、token 继续烧，紧随其后
+                // 的 execute 撞互斥位直接丢消息。cancel 镜像 Job：OkHttp
+                // response 关闭 / 引擎流终止 / finally 释放互斥位 +
+                // CANCELLED 落盘（cancelRequested 已置位，终态裁决不受影响）。
+                mirrorJob?.cancel()
+                // 互斥位释放有界等待（镜像 finally 异步执行，通常毫秒级）：
+                // 给紧随其后的 execute（sendMessage 串行化路径）让路，
+                // 防 check(tryClaim()) 拒绝丢消息。超时则照常返回——
+                // 调用方重试时报错可见，不再静默。
+                val deadline = clock() + CLAIM_RELEASE_WAIT_MS
+                while (claiming.get() && clock() < deadline) {
+                    delay(CLAIM_RELEASE_POLL_MS)
+                }
                 // 超时按标志位返回：cancel 请求已受理（返回 false 会被调用方
                 // 误读为「无可取消任务」）；终态由镜像 finally 迟到补齐。
                 return cancelRequested
@@ -804,6 +832,15 @@ class TaskRuntime(
          * 不可中断工具）。超时后放弃等待返回，CANCELLED 落盘由镜像 finally 迟到补齐。
          */
         internal const val CANCEL_AWAIT_TIMEOUT_MS = 10_000L
+
+        /**
+         * P1 真取消：超时强杀镜像后，互斥位释放的有界等待上限（镜像 finally
+         * 毫秒级完成；此值只是兜底，防极端情况下 cancel 调用方被拖久）。
+         */
+        internal const val CLAIM_RELEASE_WAIT_MS = 2_000L
+
+        /** 互斥位等待的轮询间隔。 */
+        private const val CLAIM_RELEASE_POLL_MS = 50L
 
         /**
          * #351③：UI 转发 tap 的高水位线。正常收集时积压不过几十；只在

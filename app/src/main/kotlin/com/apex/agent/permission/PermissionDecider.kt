@@ -11,8 +11,10 @@ package com.apex.agent.permission
  *
  * 决策表（按序短路，命中即返回）：
  *
- *  1. BYPASS 模式 → 一律 [PermissionDecision.AllowExplicit]
- *     （全放行是模式的显式承诺，规则无需再看）；
+ *  1. BYPASS 模式 → 全自动放行，但保留两条窄口径安全线（[decideBypass]）：
+ *     DENY / ASK 规则仍参与（用户手写的规则是显式意志，不能被模式
+ *     静默吞掉）；sensitiveAction（付费/逐次同意类）保持 Ask——
+ *     ALLOW 规则命中视为用户已表态，放行；
  *  2. PLAN 模式 → 只读 [PermissionDecision.AllowDefault]，
  *     非只读 [PermissionDecision.Deny]（中文原因）——规则不可越级，
  *     保住规划阶段零副作用的硬承诺；
@@ -126,8 +128,12 @@ object PermissionDecider {
      * 删除类本就默认放行 + RiskAwareToolGate 确认面收敛后静默）。
      * 规则仍可越级收紧（ASK/DENY 首匹配优先于模式默认）；PLAN 模式的
      * 只读承诺不豁免（非只读照旧拒绝）。
+     *
+     * ⚠️ 前缀双态并存：技能/MCP 工具 id 已 PascalCase 化（SkillSearch /
+     * SkillInstall…），MCP 一等工具保持 mcp__ 前缀——snake_case 旧前缀
+     * 一并保留（动态注册的旧式 id / 外部宿主兼容），命中任一即视为常规能力。
      */
-    val ROUTINE_CAPABILITY_PREFIXES: List<String> = listOf("skill_", "mcp_")
+    val ROUTINE_CAPABILITY_PREFIXES: List<String> = listOf("skill_", "Skill", "mcp_", "mcp__")
 
     /** 判断工具 id 是否属于技能/MCP 常规能力族（前缀匹配任一）。 */
     fun isRoutineCapability(toolId: String): Boolean =
@@ -152,8 +158,8 @@ object PermissionDecider {
         rules: List<PermissionRule>,
         ctx: PermissionContext
     ): PermissionDecision = when (mode) {
-        // 全放行：模式的显式承诺，规则不再参与
-        PermissionMode.BYPASS -> PermissionDecision.AllowExplicit
+        // 全自动：模式默认不打扰，但用户规则（DENY/ASK）与敏感动作保留
+        PermissionMode.BYPASS -> decideBypass(rules, ctx)
 
         // 只读规划：非只读直接拒绝，规则不可越级
         PermissionMode.PLAN -> if (ctx.readOnlyHint) {
@@ -164,6 +170,36 @@ object PermissionDecider {
 
         // 其余模式：先看规则（首匹配优先，可越级），再看模式默认
         else -> decideWithRules(mode, rules, ctx)
+    }
+
+    /**
+     * BYPASS（全自动）分支：全放行是模式的显式承诺，但保留两条窄口径
+     * 安全线（2026-10 修正：默认档全员 BYPASS 后，旧实现连这两条也一并
+     * 吞掉，与模式文案「拒绝规则仍生效」的承诺相悖）：
+     *
+     * 1. 规则首匹配仍参与——DENY 照拒、ASK 照问。用户在全自动档手写的
+     *    规则是唯一安全网（拒 SmsSend / 拒 mcp__*），静默失效等于欺骗；
+     * 2. sensitiveAction 工具（付费 / 逐次明示同意类，如 SmsSend）保持
+     *    Ask——全自动的承诺不含「替用户花钱」；显式 ALLOW 规则命中时
+     *    视为用户已为该工具表态，放行（用户意志优先于保守缺省）。
+     */
+    private fun decideBypass(rules: List<PermissionRule>, ctx: PermissionContext): PermissionDecision {
+        val matched = rules.firstOrNull { PermissionRuleMatcher.matches(it.pattern, ctx.toolId) }
+        if (matched != null) {
+            return when (matched.effect) {
+                PermissionEffect.DENY ->
+                    PermissionDecision.Deny(ruleDenyReason(matched, ctx.toolId))
+                PermissionEffect.ASK -> PermissionDecision.Ask
+                PermissionEffect.ALLOW -> PermissionDecision.AllowExplicit
+            }
+        }
+        // 无规则命中：敏感动作（付费 / 逐次明示同意类）保持询问，
+        // 其余全自动放行（模式的显式承诺）
+        return if (ctx.sensitiveAction) {
+            PermissionDecision.Ask
+        } else {
+            PermissionDecision.AllowExplicit
+        }
     }
 
     /** 规则优先分支（BYPASS / PLAN 已在外层短路，不会进入本函数）。 */

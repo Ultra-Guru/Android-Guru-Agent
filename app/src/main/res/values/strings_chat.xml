@@ -11,8 +11,8 @@
     <string name="chat_hint_plan">Describe the task; the agent plans first…</string>
     <string name="chat_hint_goal">Describe the goal and verifiable done-criteria…</string>
     <string name="chat_hint_loop">Configure the loop: prompt, interval/cron/once…</string>
-    <string name="chat_hint_chat">Say hi — pure conversation, persona and chat skills…</string>
-    <string name="chat_hint_agent">Ask anything or delegate a task — all-round agent…</string>
+    <string name="chat_hint_chat">Chat mode — type a message to start…</string>
+    <string name="chat_hint_agent">Type a task or question — the agent executes and reports…</string>
     <string name="chat_hint_spec">Describe requirements; the agent drafts a spec first…</string>
     <string name="chat_hint_reflection">Describe the task: generate → review → refine…</string>
     <string name="chat_hint_human_assist">Describe the task; option menus pop up on choices…</string>
@@ -62,12 +62,13 @@
     <string name="chat_execute">Run</string>
     <!-- #169 Plan-mode hardening (plan_* prefix) -->
     <string name="plan_locked">Locked</string>
+    <string name="chat_plan_title">Execution plan</string>
     <string name="plan_step_enable">Enable this step</string>
     <string name="plan_move_up">Move step up</string>
     <string name="plan_move_down">Move step down</string>
     <string name="plan_adjust_hint">Adjust before running: uncheck to skip a step, arrows to reorder</string>
     <string name="plan_planning_readonly">Planning · read-only</string>
-    <string name="chat_spec_title">📐 Requirements spec</string>
+    <string name="chat_spec_title">Requirements spec</string>
     <string name="chat_risk_level">Risk %1$s</string>
     <string name="chat_risk_low">No danger</string>
     <string name="chat_risk_medium">Balanced</string>
@@ -140,7 +141,7 @@
     <string name="chat_params">Parameters</string>
     <string name="chat_execution_steps">Execution steps</string>
     <string name="chat_retry">Retry</string>
-    <string name="chat_search_query">🔍 Search: %1$s</string>
+    <string name="chat_search_query">Search: %1$s</string>
     <string name="chat_cd_open_link">Open link</string>
 
     <!-- ═══ AgentChatDialogs ═══ -->
@@ -152,7 +153,7 @@
     <string name="chat_effort_max">Max</string>
     <!-- v1.2 seven-level thinking: new depth-tier descriptions (= condensed ThinkingProfile.uiDescriptionEn, incl. execution strategy differences) -->
     <!-- #168 six-level thinking: tier profile descriptions (= ThinkingProfile.uiDescriptionEn, incl. execution strategy differences) -->
-    <string name="chat_question_title">🧩 The agent needs your choice</string>
+    <string name="chat_question_title">The agent needs your choice</string>
     <string name="chat_multi_select">Multi-select</string>
     <string name="chat_recommended">Recommended</string>
     <string name="chat_custom">Custom</string>
@@ -260,8 +261,8 @@
     <string name="chat_date_pattern_full">MMM d, yyyy</string>
 
     <!-- ═══ AgentChatOnboarding ═══ -->
-    <string name="chat_setup_title">Set up your AI brain</string>
-    <string name="chat_setup_subtitle">Connect a model in 3 minutes and the agent can start thinking</string>
+    <string name="chat_setup_title">Connect a model</string>
+    <string name="chat_setup_subtitle">Three minutes to connect — then chat and run tasks</string>
     <string name="chat_setup_body">No usable model endpoint yet. Add a provider and an API key to start chatting, running tools and long tasks.</string>
     <!-- #197 model API not configured banner (shown when a send is intercepted) -->
     <string name="chat_api_missing_title">Model API not configured</string>
@@ -284,25 +285,26 @@
     <string name="chat_organized_to_memory">Saved to memory: %1$s</string>
     <string name="chat_organize_failed">Failed to save to memory: %1$s</string>
     <string name="chat_unknown_error">Unknown error</string>
-    <string name="chat_compress_unavailable">⚠️ Compression unavailable (no compression engine enabled)</string>
-    <string name="chat_vm_context_compressed_manual">📦 Context compressed: %1$d→%2$d tokens (strategy=%3$s, %4$d msgs removed)</string>
-    <string name="chat_vm_context_compressed">📦 Context compressed: %1$d→%2$d tokens (%3$s, %4$d msgs removed%5$s)</string>
+    <string name="chat_compress_unavailable">Compression unavailable: no compression engine enabled</string>
+    <string name="chat_vm_context_compressed_manual">Context compressed: %1$d→%2$d tokens (strategy=%3$s, %4$d msgs removed)</string>
+    <string name="chat_vm_context_compressed">Context compressed: %1$d→%2$d tokens (%3$s, %4$d msgs removed%5$s)</string>
     <string name="chat_vm_truncated_suffix">, truncated %1$d</string>
-    <string name="chat_slash_attachments_removed">⚠️ Slash commands don’t carry attachments; removed %1$d</string>
+    <string name="chat_slash_attachments_removed">Slash commands don’t carry attachments; removed %1$d</string>
     <string name="chat_attachment_failed">Attachment processing failed: %1$s</string>
     <string name="chat_execution_failed">Execution failed: %1$s</string>
     <string name="chat_tool_step_start">Calling %1$s, args:\n%2$s</string>
     <string name="chat_progress_percent">Progress %1$d%%</string>
     <string name="chat_tool_step_done">Done (%1$dms): %2$s</string>
     <string name="chat_tool_step_failed">Failed (%1$dms): %2$s</string>
-    <string name="chat_aborted">⏹ Aborted</string>
+    <string name="chat_aborted">Aborted</string>
+    <string name="chat_restore_empty">Session data unavailable (local record missing or corrupt); nothing was restored</string>
 
     <!-- ═══ #214/#215 user-input timeout honesty (engine continues as undecided) ═══ -->
-    <string name="chat_user_input_expired">⏱ No answer within 5 minutes — the question was closed and the agent continued. Ask again anytime.</string>
-    <string name="chat_user_input_late">⚠️ This question already timed out; your answer arrived too late and was not delivered. Please send it as a new message.</string>
-    <string name="chat_question_expired">⏱ Confirmation timed out (5 min) with no answer — treated as undecided: nothing was executed and you will be asked again next time.</string>
-    <string name="chat_plan_confirm_late">⚠️ The plan confirmation was not delivered (no pending confirmation or it already timed out). You can resend it as a new message.</string>
-    <string name="chat_spec_confirm_late">⚠️ The spec confirmation was not delivered (no pending confirmation or it already timed out). You can resend it as a new message.</string>
+    <string name="chat_user_input_expired">No answer within 5 minutes — the question was closed and the agent continued. Ask again anytime.</string>
+    <string name="chat_user_input_late">This question already timed out; your answer arrived too late and was not delivered. Please send it as a new message.</string>
+    <string name="chat_question_expired">Confirmation timed out (5 min) with no answer — treated as undecided: nothing was executed and you will be asked again next time.</string>
+    <string name="chat_plan_confirm_late">The plan confirmation was not delivered (no pending confirmation or it already timed out). You can resend it as a new message.</string>
+    <string name="chat_spec_confirm_late">The spec confirmation was not delivered (no pending confirmation or it already timed out). You can resend it as a new message.</string>
 
     <!-- ═══ SlashMenuProvider (slash menu groups) ═══ -->
     <string name="chat_slash_no_skills">No active skills</string>
@@ -338,9 +340,9 @@
 
     <!-- ═══ Two-level thinking control (model native intensity + forced deep thinking) ═══ -->
     <string name="chat_cd_thinking_menu">Thinking controls</string>
-    <string name="chat_thinking_chip_default">💭 Thinking</string>
-    <string name="chat_thinking_chip_effort">💭 %1$s</string>
-    <string name="chat_thinking_chip_forced">🌀 Forced deep thinking</string>
+    <string name="chat_thinking_chip_default">Thinking</string>
+    <string name="chat_thinking_chip_effort">%1$s</string>
+    <string name="chat_thinking_chip_forced">Forced deep thinking</string>
     <string name="chat_thinking_effort_title">Model reasoning effort (API-native)</string>
     <string name="chat_thinking_effort_desc">Sent as native API params (reasoning_effort / thinking budget). Only models with a thinking mode respond to it; harmless for others.</string>
     <string name="chat_thinking_force_title">Force deep thinking</string>

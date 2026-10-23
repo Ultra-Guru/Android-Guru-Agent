@@ -198,7 +198,7 @@ internal fun PlanCard(plan: ExecutionPlan, currentStepIndex: Int = -1) {
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("📋 Execution Plan", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.chat_plan_title), style = MaterialTheme.typography.titleSmall)
                 Spacer(modifier = Modifier.weight(1f))
                 // #169 锁定徽标：PlanMessage 仅在用户确认后入列 —— 计划已锁定，
                 // 执行期间不可修改（引擎侧 locked 局部 val，UI 只读展示）。

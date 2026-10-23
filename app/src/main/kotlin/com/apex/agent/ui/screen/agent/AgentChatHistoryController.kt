@@ -159,7 +159,12 @@ internal fun AgentChatViewModel.restoreChatSession(sessionId: String) {
             salvageStreamingOutput()
             flushChatHistoryNow()
 
-            if (messages.isEmpty()) return@launch
+            if (messages.isEmpty()) {
+                // ═══ 静默失败修复：消息读不到（msg_ 键损坏/孤儿键清理）时给出
+                // 可见反馈 —— 抽屉已关、若无提示用户视角=点了没反应。═══
+                _uiFeedback.tryEmit(str(R.string.chat_restore_empty))
+                return@launch
+            }
 
             // 引擎上下文恢复（内存 history + 持久化 memory 同步替换）
             val llmMessages = messages.mapNotNull { it.toLlmMessage() }
@@ -250,6 +255,13 @@ internal fun AgentChatViewModel.newChat() {
  * P2 修复：① 先取消在途防抖归档 + ChatHistoryManager 墓碑拦截，防删除后
  * 迟到快照把会话复活；② 删除前先收集该会话持久化的附件路径，删除索引后
  * 同步清理附件文件（旧实现只删 SharedPreferences，附件永久残留）。
+ *
+ * ═══ 幽灵会话修复：删除「正在聊的」会话 = 对齐 newChat() 语义 ═══
+ * 旧实现只脱离索引（sessionId 置 null）不清 UI 消息流 —— 消息还挂在屏幕
+ * 上，下一条消息触发 auto-persist 时 collector 捕获到 null 的 sessionId，
+ * 把「已删对话全套消息 + 新消息」以新 UUID 存成全新会话（墓碑只拦旧 id，
+ * 拦不住新 UUID）。现在删除当前会话时同步清空消息流与引擎历史 —— 删除
+ * 即彻底，屏幕回到新会话状态。
  */
 internal fun AgentChatViewModel.deleteChatSession(sessionId: String) {
     historyPersistJob?.cancel()
@@ -257,6 +269,27 @@ internal fun AgentChatViewModel.deleteChatSession(sessionId: String) {
     if (currentHistorySessionId == sessionId) {
         currentHistorySessionId = null
         currentHistorySessionCreatedAt = null
+        // 对齐 newChat()：取消在途收集 + 清流式运行态 + 清引擎历史与消息流
+        currentJob?.cancel()
+        resetStreamingState()
+        viewModelScope.launch {
+            (agentEngine as? ApexAgentEngine)?.clearHistory()
+            _uiState.update {
+                it.copy(
+                    messages = emptyList(),
+                    currentThinking = "",
+                    currentResponse = "",
+                    currentToolCall = null,
+                    plan = null,
+                    awaitingPlanConfirmation = false,
+                    spec = null,
+                    awaitingSpecConfirmation = false,
+                    pendingUserInput = null,
+                    isLoading = false,
+                    historyDepth = 0
+                )
+            }
+        }
     }
     viewModelScope.launch(Dispatchers.IO) {
         // 先读后删：deleteSession 后 msg_ 键即消失，附件路径取不到了
