@@ -176,16 +176,26 @@ object PrivilegeDetector {
             } else {
                 command
             }
-            return executeWithTimeout(arrayOf("su", "-c", suCommand), timeoutMs, "root", effectiveWorkDir)
+            return executeWithTimeout(
+                arrayOf("su", "-c", suCommand),
+                timeoutMs,
+                "root",
+                effectiveWorkDir?.absolutePath,
+            )
         }
 
         // 优先级2: Shizuku —— 真实 ADB 级（IShizukuService.newProcess AIDL）
         if (detectShizuku()) {
-            return executeViaShizuku(command, timeoutMs, effectiveWorkDir)
+            return executeViaShizuku(command, timeoutMs, effectiveWorkDir?.absolutePath)
         }
 
         // 优先级3: 普通Shell（能力最弱）
-        return executeWithTimeout(arrayOf("sh", "-c", command), timeoutMs, "shell", effectiveWorkDir)
+        return executeWithTimeout(
+            arrayOf("sh", "-c", command),
+            timeoutMs,
+            "shell",
+            effectiveWorkDir?.absolutePath,
+        )
     }
 
     /**
