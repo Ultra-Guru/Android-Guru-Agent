@@ -253,6 +253,12 @@
     <string name="code_stream_streaming_preview_title">Live preview</string>
     <string name="code_stream_streaming_omitted">…earlier lines omitted</string>
     <string name="code_stream_streaming_lines_fmt">%1$d lines</string>
+    <!-- ═══ Run stats card (structured end-of-run summary) ═══ -->
+    <string name="code_stream_run_stats_title">Run complete</string>
+    <string name="code_stream_run_iterations_fmt">%1$d rounds</string>
+    <string name="code_stream_run_tools_fmt">%1$d tool calls</string>
+    <string name="code_stream_run_files_fmt">%1$d files</string>
+    <string name="code_stream_run_failed_fmt">%1$d failed</string>
     <!-- ═══ Thinking tier selector v2: short tier names + capsule labels ═══ -->
     <string name="code_thinking_chip">Thinking · %1$s</string>
     <string name="code_thinking_short_none">Off</string>

@@ -231,6 +231,28 @@ sealed interface StreamEntry {
         val summary: GitOpSummary,
         val callId: String? = null
     ) : StreamEntry
+
+    /**
+     * 运行统计收尾卡（Complete 事件的结构化可视化——取代纯文本状态行）。
+     *
+     * 把「完成 · N 轮 · N 次工具 · Ns」一行字升级为可渲染的统计卡：
+     * 迭代轮数 / 工具调用数 / 触碰文件数 / 失败数 / 总耗时，UI 端
+     * 按 stat chips 布局（失败 >0 红色强调）。
+     *
+     * @param iterations 本轮迭代轮数（引擎 totalIterations）。
+     * @param toolCalls 本轮工具调用数（引擎 totalToolCalls）。
+     * @param failedCalls 本轮失败的工具调用数（会话按 run 归零统计）。
+     * @param filesTouched 本轮触碰的文件数（affectedFiles 每 run 清零）。
+     * @param durationMs 本轮总耗时（引擎 totalDurationMs）。
+     */
+    data class RunStatsEntry(
+        override val id: String,
+        val iterations: Int,
+        val toolCalls: Int,
+        val failedCalls: Int = 0,
+        val filesTouched: Int = 0,
+        val durationMs: Long = 0
+    ) : StreamEntry
 }
 
 /**

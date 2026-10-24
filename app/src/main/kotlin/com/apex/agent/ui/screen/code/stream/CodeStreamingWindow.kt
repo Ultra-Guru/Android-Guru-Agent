@@ -1,5 +1,10 @@
 package com.apex.agent.ui.screen.code.stream
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,11 +15,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
 import com.apex.agent.core.code.stream.StreamArgsPreview
@@ -82,6 +91,15 @@ internal fun StreamingCodeWindow(
                 )
             }
             // ── 代码体（尾窗）：写 = 绿色流入；编辑 = 红删 + 绿增 ──
+            // 光标块呼吸脉冲（0.15↔1，750ms 往返）：写入进行中的“活”感，
+            // 替代旧静态「▍」——终态收束后窗口整体收回，动画随组件销毁停。
+            val transition = rememberInfiniteTransition(label = "stream-cursor")
+            val cursorAlpha by transition.animateFloat(
+                initialValue = 0.15f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(tween(750), RepeatMode.Reverse),
+                label = "stream-cursor-alpha"
+            )
             val cursor = if (generating) STREAM_CURSOR else ""
             val writeContent = preview.writeContent
             if (writeContent != null) {
@@ -89,6 +107,7 @@ internal fun StreamingCodeWindow(
                 StreamCodeBlock(
                     text = tailLines(writeContent, maxLines) + cursor,
                     color = STREAM_ADD,
+                    cursorAlpha = if (cursor.isNotEmpty()) cursorAlpha else null,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                 )
             } else {
@@ -106,6 +125,7 @@ internal fun StreamingCodeWindow(
                     StreamCodeBlock(
                         text = (tailLines(new, maxLines) + cursor).prependPlus(),
                         color = STREAM_ADD,
+                        cursorAlpha = if (cursor.isNotEmpty()) cursorAlpha else null,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                     )
                 }
@@ -128,11 +148,41 @@ private fun StreamOmittedHint(truncated: Boolean) {
     )
 }
 
-/** 等宽代码块（单 Text 节点承载整段，行数由 [tailLines] 钉在尾窗）。 */
+/**
+ * 等宽代码块（单 Text 节点承载整段，行数由 [tailLines] 钉在尾窗）。
+ * [cursorAlpha] 非空时，尾缀光标块以呼吸透明度单独着色（流式进行中的
+ * “活”感；尾窗 ≤14 行，每帧重建 span 的开销可忽略）。
+ */
 @Composable
-private fun StreamCodeBlock(text: String, color: Color, modifier: Modifier = Modifier) {
+private fun StreamCodeBlock(
+    text: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    cursorAlpha: Float? = null
+) {
+    if (cursorAlpha == null) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = FontFamily.Monospace,
+            color = color,
+            modifier = modifier.fillMaxWidth()
+        )
+        return
+    }
+    val annotated = buildAnnotatedString {
+        val cursorAt = text.lastIndexOf(STREAM_CURSOR)
+        if (cursorAt >= 0) {
+            append(text.substring(0, cursorAt))
+            withStyle(SpanStyle(color = color.copy(alpha = cursorAlpha))) {
+                append(STREAM_CURSOR)
+            }
+        } else {
+            append(text)
+        }
+    }
     Text(
-        text = text,
+        text = annotated,
         style = MaterialTheme.typography.labelSmall,
         fontFamily = FontFamily.Monospace,
         color = color,

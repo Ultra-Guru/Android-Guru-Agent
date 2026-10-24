@@ -329,6 +329,7 @@ private fun entryContentLength(entry: StreamEntry): Int = when (entry) {
     is StreamEntry.StopEntry -> entry.reason.length
     is StreamEntry.FileChipsEntry -> entry.files.size * 20
     is StreamEntry.GitOpEntry -> 120
+    is StreamEntry.RunStatsEntry -> 160
 }
 
 private fun anchorFollowTick(contentLength: Int): Int = contentLength / 200

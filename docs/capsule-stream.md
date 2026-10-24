@@ -205,3 +205,62 @@ AgentEvent 流（引擎零改动）
 - `CodeStreamArgsDeltaTest`（8 例）：等待态建立与升级（计数不重复）/
   Complete 清空预览 / 迟到分片忽略 / 中止收口 / MCP 族不建卡 /
   名字晚到缓冲回放 / BASH 终端三信号 / 路径后到目标刷新。
+
+## 九、全面可视化增强（v4 增补）
+
+在 v3（参数流式 + 同族聚合）之上补齐五处可视化：运行收尾的结构化
+统计卡、聚合胶囊的历史状态条、单颗胶囊的实时进度条、流式光标的呼吸
+动画、验证轮次卡的增删行徽标——数字不再只靠文本行承载。
+
+### 9.1 运行统计收尾卡（RunStatsEntry）
+
+- **模型**（CodeStreamModels）：`StreamEntry.RunStatsEntry(id, iterations,
+  toolCalls, failedCalls, filesTouched, durationMs)` —— Complete 事件的
+  结构化载体，取代旧纯文本「完成 · N 轮 · N 次工具 · Ns」状态行；
+- **归约**（CodeStreamSession）：`runStartFailedCount` 在 beginRun 记下
+  会话累计失败基线，Complete 时差值即**本轮失败数**（failedToolCallCount
+  跨 run 累积、filesTouched 每 run 清零——统计卡三项口径全部按 run 对齐）；
+- **出卡门槛**：纯问答轮（零工具零文件）不出重卡，保留旧轻量状态行
+  （hadWork = totalToolCalls > 0 || files 非空）——重可视化只给干活轮；
+- **检查点**（CodeStreamCheckpoint）：type="runstats" 扁平存取，五数值
+  默认 0 + ignoreUnknownKeys 双向兼容旧档；
+- **UI**（CodeStreamCards.RunStatsCard）：玻璃卡头行（完成/失败图标 +
+  总耗时）+ FlowRow 统计 chips（轮数/工具/文件/失败），失败 >0 全卡
+  错误色；`entryContentLength` 补 160 档。
+
+### 9.2 聚合胶囊历史状态条（GroupHistoryStrip）
+
+- 折叠态聚合胶囊主行下方一枚色块 tick 代表一次调用：终态用成对语义色
+  （绿成/红败/琥珀中断），WAITING/RUNNING 用族色做呼吸脉冲（无限过渡
+  无条件组合，无活跃时不读动画值——槽表稳定）；
+- tick 上限 12（GROUP_STRIP_MAX_TICKS），超出「+还有 N 个」文本收尾
+  （复用 code_stream_files_more_fmt）；
+- 纯装饰无点击语义（组级 TalkBack 播报已含 ×N 计数，不重复）。
+
+### 9.3 实时进度迷你条（CapsuleProgressBar）
+
+- 单颗胶囊 RUNNING 且有进度时，主行下 2dp 细条随进度填充（族色）；
+- 编辑类优先 hunksApplied/hunksTotal；其余回退 ToolProgress percent，
+  两套量纲（0..1 小数 / 0..100 整数）按 ≤1 与 ≤100 分段折算（liveProgressFraction）。
+
+### 9.4 流式光标呼吸动画（CodeStreamingWindow）
+
+- 尾部光标块从静态 `▍` 升级为透明度 0.15↔1 往返脉冲（750ms，
+  RepeatMode.Reverse）；StreamCodeBlock 以 AnnotatedString 单 span 着色
+  （cursorAlpha 参数，null = 旧行为），写/编辑两个分支都接线；
+- 终态收束窗口整体收回，动画随组件销毁停。
+
+### 9.5 验证轮次卡增删徽标（VerifyCycleCard）
+
+- 轮次头行新增 `+N −M` 行级改动量徽标：轮内编辑胶囊 diffText 现场经
+  UnifiedDiffParser 求和（remember(entry) 缓存），绿色与全局增删口径一致；
+- 恢复回放的轮次 calls 为空 → 不显徽标（轮次红绿态保留）。
+
+### 9.6 测试锁定（CodeStreamSessionTest）
+
+- `complete appends summary and file chips`：统计卡五字段逐一断言
+  （轮数/调用数/失败/文件/耗时）；
+- `run stats failed count is per run not cumulative`：第一轮失败 1 → 卡 1；
+  第二轮干净 → 卡 0（跨 run 不串台）；
+- `run stats entry round trips through checkpoint`：扁平化存取零丢失；
+- 旧「完成状态行」断言（2 处）同步迁移到 RunStatsEntry。

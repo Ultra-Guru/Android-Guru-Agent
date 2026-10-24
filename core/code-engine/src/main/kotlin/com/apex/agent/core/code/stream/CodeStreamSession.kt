@@ -74,6 +74,9 @@ class CodeStreamSession {
     private var toolCallCount = 0
     private var failedToolCallCount = 0
 
+    /** 本 run 起点时的累计失败数（Complete 时差值 = 本轮失败数）。 */
+    private var runStartFailedCount = 0
+
     // ═══ 验证闭环追踪 ═══
     private var cycleRound = 0
     private var openCycleEdits = mutableListOf<String>()
@@ -98,6 +101,8 @@ class CodeStreamSession {
         argsStreams.clear()
         // 文档语义：「本轮运行」触碰的文件 —— 每 run 归零重新累计
         affectedFiles.clear()
+        // 统计收尾卡的本轮失败数基线（failedToolCallCount 跨 run 累积）
+        runStartFailedCount = failedToolCallCount
         append(StreamEntry.UserEntry(nextId(), userText))
         activeTerminalCallId = null
         // 新 run 归零终端面板三信号（上一轮命令的尾窗不再展示）
@@ -293,7 +298,24 @@ class CodeStreamSession {
                 streamingAssistant?.let { closeStreamingEntry(it) }
                 streamingAssistant = null
                 closeOpenCycle()
-                append(StreamEntry.StatusEntry(nextId(), "完成 · ${event.totalIterations} 轮 · ${event.totalToolCalls} 次工具 · ${event.totalDurationMs / 1000}s"))
+                // 结构化统计收尾卡（取代旧纯文本「完成 · N 轮 · N 次工具 · Ns」
+                // 行）：轮数/调用数/失败数/文件数/耗时由 UI 渲染成 stat chips。
+                // 纯问答轮（零工具零文件）不出重卡——保留旧轻量状态行。
+                val hadWork = event.totalToolCalls > 0 || affectedFiles.isNotEmpty()
+                if (hadWork) {
+                    append(
+                        StreamEntry.RunStatsEntry(
+                            id = nextId(),
+                            iterations = event.totalIterations,
+                            toolCalls = event.totalToolCalls,
+                            failedCalls = (failedToolCallCount - runStartFailedCount).coerceAtLeast(0),
+                            filesTouched = affectedFiles.size,
+                            durationMs = event.totalDurationMs
+                        )
+                    )
+                } else {
+                    append(StreamEntry.StatusEntry(nextId(), "完成 · ${event.totalIterations} 轮 · ${event.totalDurationMs / 1000}s"))
+                }
                 if (affectedFiles.isNotEmpty()) {
                     append(StreamEntry.FileChipsEntry(nextId(), affectedFiles.toList()))
                 }

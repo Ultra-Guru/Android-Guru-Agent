@@ -253,6 +253,12 @@
     <string name="code_stream_streaming_preview_title">实时预览</string>
     <string name="code_stream_streaming_omitted">…上文已省略</string>
     <string name="code_stream_streaming_lines_fmt">%1$d 行</string>
+    <!-- ═══ 运行统计收尾卡（Complete 事件的结构化汇总）═══ -->
+    <string name="code_stream_run_stats_title">本轮完成</string>
+    <string name="code_stream_run_iterations_fmt">%1$d 轮</string>
+    <string name="code_stream_run_tools_fmt">%1$d 次工具</string>
+    <string name="code_stream_run_files_fmt">%1$d 个文件</string>
+    <string name="code_stream_run_failed_fmt">%1$d 次失败</string>
     <!-- ═══ 思考档位选择器 v2：短档名 + 胶囊标签 ═══ -->
     <string name="code_thinking_chip">Thinking · %1$s</string>
     <string name="code_thinking_short_none">Off</string>

@@ -71,7 +71,14 @@ object CodeStreamCheckpoint {
         // Git 操作可视化卡（type="gitop"）：结构化摘要 + 关联胶囊 callId。
         // 默认 null + ignoreUnknownKeys 双向兼容旧档。
         val gitOp: GitOpSummary? = null,
-        val gitOpCallId: String? = null
+        val gitOpCallId: String? = null,
+        // 运行统计收尾卡（type="runstats"）：Complete 事件的结构化数值。
+        // 默认 0 + ignoreUnknownKeys 双向兼容旧档。
+        val runIterations: Int = 0,
+        val runToolCalls: Int = 0,
+        val runFailedCalls: Int = 0,
+        val runFilesTouched: Int = 0,
+        val runDurationMs: Long = 0
     )
 
     @Serializable
@@ -154,6 +161,14 @@ object CodeStreamCheckpoint {
                 "gitop" -> storable.gitOp?.let {
                     StreamEntry.GitOpEntry(storable.id, it, storable.gitOpCallId)
                 }
+                "runstats" -> StreamEntry.RunStatsEntry(
+                    id = storable.id,
+                    iterations = storable.runIterations,
+                    toolCalls = storable.runToolCalls,
+                    failedCalls = storable.runFailedCalls,
+                    filesTouched = storable.runFilesTouched,
+                    durationMs = storable.runDurationMs
+                )
                 else -> null
             }
         }
@@ -241,6 +256,14 @@ object CodeStreamCheckpoint {
             "gitop", id,
             gitOp = summary,
             gitOpCallId = callId
+        )
+        is StreamEntry.RunStatsEntry -> StorableStreamEntry(
+            "runstats", id,
+            runIterations = iterations,
+            runToolCalls = toolCalls,
+            runFailedCalls = failedCalls,
+            runFilesTouched = filesTouched,
+            runDurationMs = durationMs
         )
     }
 
