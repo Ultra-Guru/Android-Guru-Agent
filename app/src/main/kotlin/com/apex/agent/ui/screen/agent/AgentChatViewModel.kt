@@ -19,7 +19,6 @@ import com.apex.agent.core.tools.ToolRegistry
 import com.apex.agent.core.tools.skill.SkillActivationStore
 import com.apex.agent.core.tools.skill.SkillAutoActivator
 import com.apex.agent.core.tools.skill.SkillRegistry
-import com.apex.agent.platform.csmem.session.CsMemSessionManager
 import com.apex.agent.github.GithubTokenManager
 import com.apex.agent.loop.LoopScheduler
 import com.apex.agent.net.NetworkMonitor
@@ -54,7 +53,7 @@ import javax.inject.Inject
 class AgentChatViewModel @Inject constructor(
     internal val agentEngine: AgentEngine,
     private val memory: ConversationMemory,
-    private val csMemSessionManager: CsMemSessionManager,
+    private val memKit: com.apex.memkit.core.MemKit,
     val githubTokenManager: GithubTokenManager,
     private val savedStateHandle: SavedStateHandle,
     private val preprocessor: PredictiveAttachmentPreprocessor,
@@ -528,15 +527,15 @@ class AgentChatViewModel @Inject constructor(
     }
 
     /**
-     * 将一条 Agent 回复整理进记忆（接 CS-Mem 显式整理入口）。
+     * 将一条 Agent 回复整理进记忆（记忆库显式整理入口）。
      *
-     * 委托 [CsMemSessionManager.organizeText] 把文本按行切片为语义节点写入长期记忆，
+     * 委托 [MemKit.ingestManualNotes] 把文本按行切片为语义节点写入长期记忆，
      * 使其可被 MemorySearchNodes 按关键词召回。整理主题取文本前 40 字符。
      */
     fun organizeToMemory(text: String) {
         val goal = text.take(40).trim().ifBlank { str(R.string.chat_memory_goal_default) }
         viewModelScope.launch {
-            runCatching { csMemSessionManager.organizeText(goal, text) }
+            runCatching { memKit.ingestManualNotes(goal, text) }
                 .onSuccess { _uiFeedback.tryEmit(strFmt(R.string.chat_organized_to_memory, goal)) }
                 .onFailure { e ->
                     android.util.Log.e("AgentChatViewModel", "organizeToMemory failed", e)
