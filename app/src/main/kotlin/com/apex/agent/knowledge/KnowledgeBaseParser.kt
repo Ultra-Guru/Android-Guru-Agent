@@ -56,9 +56,14 @@ object KnowledgeBaseParser {
         fun flushSection() {
             val t = currentTitle ?: return
             val body = currentBody.toString().trim('\n').trimEnd()
-            when (normalizeTitle(t)) {
-                MUST_READ_TITLE -> mustRead = body
-                INDEX_TITLE -> index.addAll(parseIndexTable(body))
+            val norm = normalizeTitle(t)
+            when {
+                norm == MUST_READ_TITLE || norm.startsWith(MUST_READ_TITLE) ->
+                    // 多段必看内容按序拼接（分块书写合法）
+                    mustRead = if (mustRead.isBlank()) body else mustRead + "\n\n" + body
+                norm == INDEX_TITLE || norm.startsWith(INDEX_TITLE) ->
+                    // 「快速索引 · 续（xx 节）」并入同一索引（全库单索引口径）
+                    index.addAll(parseIndexTable(body))
                 else -> sections.add(KbSection(number = sectionNumber, title = t.trim(), body = body))
             }
             currentTitle = null
