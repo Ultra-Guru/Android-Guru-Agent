@@ -60,6 +60,9 @@ internal fun registerGithubTools(
     // 根因修复补齐：searchCode 只能搜代码，找仓库需 /search/repositories。
     registry.register(SafeAgentTool(GithubListBranchesTool(githubApiService)))
     registry.register(SafeAgentTool(GithubSearchReposTool(githubApiService)))
+    // 建 PR（POST /pulls）：git 命令通路（CodeGitRun push 分支）之后的最后一环，
+    // 「clone → 改 → commit → push → PR」全链路不走浏览器。
+    registry.register(SafeAgentTool(GithubCreatePullRequestTool(githubApiService)))
 }
 
 private fun auditedTerminalTool(

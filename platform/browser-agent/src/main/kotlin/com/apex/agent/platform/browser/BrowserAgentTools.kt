@@ -103,7 +103,9 @@ class BrowserAgentTools @Inject constructor(
         override val id = "BrowserNavigate"
         override val name = "BrowserNavigate"
         override val description =
-            "在内置浏览器中打开 URL 并加载页面（支持 JS 渲染）。可指定 wait_for 等待某个 CSS 选择器出现，避免拿到骨架页。"
+            "在内置浏览器中打开 URL 并加载页面（支持 JS 渲染），供后续点击/输入等**真实自动化操作**使用。可指定 wait_for 等待某个 CSS 选择器出现，避免拿到骨架页。" +
+                "定位纪律：本工具族只用于需要真实操作网页的任务（登录、填表、下单、过验证码）；" +
+                "查资料用 WebSearch/WebFetch；读代码/仓库用 GithubSearchCode/GithubReadFile；GitHub 仓库改动用 CodeGitRun（git 命令）+ GithubCreatePullRequest——不要用浏览器点网页来完成这些。"
         override val parametersSchema = """{
             "type":"object",
             "properties":{

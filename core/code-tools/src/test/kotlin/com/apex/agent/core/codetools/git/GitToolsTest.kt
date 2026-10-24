@@ -449,10 +449,10 @@ class GitToolsTest {
     // ── 聚合入口 ────────────────────────────────────────────────────
 
     @Test
-    fun `GitTools all registers the five git tools in order`() {
+    fun `GitTools all registers the six git tools in order`() {
         val ids = GitTools.all(FakeGitRunner()).map { it.id }
         assertEquals(
-            listOf("CodeGitStatus", "CodeGitDiff", "CodeGitLog", "CodeGitCommit", "CodeGitBranch"),
+            listOf("CodeGitStatus", "CodeGitDiff", "CodeGitLog", "CodeGitCommit", "CodeGitBranch", "CodeGitRun"),
             ids
         )
     }
@@ -463,7 +463,7 @@ class GitToolsTest {
         for (id in listOf("CodeGitStatus", "CodeGitDiff", "CodeGitLog")) {
             assertTrue("$id 应为 readOnly", tools.getValue(id).metadata.annotations.readOnlyHint)
         }
-        for (id in listOf("CodeGitCommit", "CodeGitBranch")) {
+        for (id in listOf("CodeGitCommit", "CodeGitBranch", "CodeGitRun")) {
             assertFalse("$id 应为写类", tools.getValue(id).metadata.annotations.readOnlyHint)
         }
     }
@@ -479,5 +479,78 @@ class GitToolsTest {
         assertFalse(GitCommandResult(128, "", "some other fatal").indicatesNotRepo())
         assertFalse(GitCommandResult(1, "", "not a git repository").indicatesNotRepo())
         assertFalse(GitCommandResult(-1, "", "Ubuntu 环境未安装").indicatesNotRepo())
+    }
+}
+
+// ═══ CodeGitRun（任意 git 子命令通道，v1.9）════════════════════════════
+
+class GitRunToolTest {
+
+    private class FakeRunner : GitCommandRunner {
+        val calls = mutableListOf<List<String>>()
+        var result: GitCommandResult = GitCommandResult(0, "", "")
+        override suspend fun run(args: List<String>, timeoutMs: Long): GitCommandResult {
+            calls += args
+            return result
+        }
+    }
+
+    private fun toolJson(command: String, timeout: Int? = null): String =
+        if (timeout != null) """{"command":"$command","timeout_sec":$timeout}"""
+        else """{"command":"$command"}"""
+
+    @Test
+    fun `引号感知切分保持引号段完整`() = kotlinx.coroutines.test.runTest {
+        assertEquals(
+            listOf("push", "origin", "feat/x"),
+            splitGitArgs("push origin feat/x"),
+        )
+        assertEquals(
+            listOf("commit", "-m", "fix: 提交 修复"),
+            splitGitArgs("""commit -m "fix: 提交 修复""""),
+        )
+        assertEquals(
+            listOf("tag", "-a", "v1.0", "-m", "release 'stable' now"),
+            splitGitArgs("tag -a v1.0 -m \"release 'stable' now\""),
+        )
+        // 引号内空段保留为空参数；多余空白归一
+        assertEquals(listOf("a", "", "b"), splitGitArgs("a \"\" b"))
+    }
+
+    @Test
+    fun `成功透传 stdout 并回报子命令`() = kotlinx.coroutines.test.runTest {
+        val runner = FakeRunner().apply { result = GitCommandResult(0, "main\n", "") }
+        val r = GitRunTool(runner).executeSafe(toolJson("branch --show-current"))
+        assertTrue(r.isSuccess)
+        assertTrue(r.render().contains("git branch 完成"))
+        assertTrue(r.render().contains("main"))
+        assertEquals(listOf("branch", "--show-current"), runner.calls.single())
+    }
+
+    @Test
+    fun `git 前缀被拒绝并给出正确写法`() = kotlinx.coroutines.test.runTest {
+        val runner = FakeRunner()
+        val r = GitRunTool(runner).executeSafe(toolJson("git push origin main"))
+        assertFalse(r.isSuccess)
+        assertTrue(runner.calls.isEmpty())
+    }
+
+    @Test
+    fun `交互式子命令前置拒绝不触达 runner`() = kotlinx.coroutines.test.runTest {
+        val runner = FakeRunner()
+        val r = GitRunTool(runner).executeSafe(toolJson("add -p"))
+        assertFalse(r.isSuccess)
+        assertTrue(runner.calls.isEmpty())
+    }
+
+    @Test
+    fun `非零退出带回 stderr 原文`() = kotlinx.coroutines.test.runTest {
+        val runner = FakeRunner().apply {
+            result = GitCommandResult(128, "", "fatal: not a git repository (or any of the parent directories): .git")
+        }
+        val r = GitRunTool(runner).executeSafe(toolJson("status"))
+        assertFalse(r.isSuccess)
+        // not-repo 翻译成引导文本（与五件套同语义）
+        assertTrue(r.render().contains("初始化") || r.render().contains("仓库"))
     }
 }

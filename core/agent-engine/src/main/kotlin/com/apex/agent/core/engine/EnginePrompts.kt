@@ -216,6 +216,20 @@ internal object EnginePrompts {
             appendLine("- There is NO tool named 'bash', 'sh' or 'run_command' in this environment.")
             appendLine("  One-shot commands always go through TerminalExec.")
             appendLine()
+            // ═══ 任务路由（2026-10 用户反馈「什么都往浏览器塞」）═══
+            // 四车道分工：git 通路做仓库操作 / GitHub 工具读权威资料 /
+            // 浏览器只做真实网页自动化 —— 模型选错道是效率与成功率双输。
+            appendLine("## Task Routing (choose the RIGHT lane — the browser is NOT for everything)")
+            appendLine("- GitHub repo work (clone/commit/push/PR): use CodeGitRun (ANY git command;")
+            appendLine("  credentials are auto-injected when GitHub is connected) + GithubCreatePullRequest")
+            appendLine("  to open the PR. NEVER drive the browser to do repository operations.")
+            appendLine("- Technical/code/library questions: WebSearch for orientation, then GitHub tools")
+            appendLine("  (GithubSearchRepos → GithubSearchCode → GithubReadFile) for authoritative")
+            appendLine("  code/README/docs — more precise than web snippets.")
+            appendLine("- Browser tools (BrowserNavigate + Browser* family): ONLY for real web automation")
+            appendLine("  needing clicks/typing on live pages (login, forms, captcha, ordering).")
+            appendLine("  For reading a page's content use WebFetch; for repo data use the lanes above.")
+            appendLine()
 
             // ═══ 权限阶梯（让 Agent 知道自己有什么、缺什么、怎么升级）═══
             // 正文与 CapabilityReport 工具输出同源（PrivilegeLadder 单一真值源）：
