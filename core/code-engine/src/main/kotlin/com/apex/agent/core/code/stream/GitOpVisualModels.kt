@@ -28,6 +28,12 @@ import kotlinx.serialization.Serializable
  * @param branchAction / branchName 分支动作与对象（branch）。
  * @param commitCount 历史条数（log）。
  * @param note 附加说明行（降级提示等，可空）。
+ * @param failed 本次操作失败（诚实可视化：失败也出卡，不再只在成功时
+ *   静默跳过——环境未就绪 / 非仓库 / 命令失败一眼可见，附引导文案）。
+ * @param failureKind 失败归因（failed=true 时必有）：ENV_NOT_READY =
+ *   Ubuntu 沙箱未装（git 工具链的真实前置）；NO_WORKSPACE = 无激活
+ *   工作区；NOT_REPO = 工作区还不是 git 仓库（可引导初始化）；
+ *   COMMAND_FAILED = git 命令自身失败（stderr 进 note）。
  */
 @Serializable
 data class GitOpSummary(
@@ -50,9 +56,14 @@ data class GitOpSummary(
     val branchAction: String? = null,
     val branchName: String? = null,
     val commitCount: Int? = null,
-    val note: String? = null
+    val note: String? = null,
+    val failed: Boolean = false,
+    val failureKind: FailureKind? = null
 ) {
     /** 可视化卡的操作类型。 */
     enum class GitOpType { STATUS, COMMIT, DIFF, BRANCH, LOG }
+
+    /** 失败归因（诚实可视化的引导分支）。 */
+    enum class FailureKind { ENV_NOT_READY, NO_WORKSPACE, NOT_REPO, COMMAND_FAILED }
 }
 

@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.rounded.CallSplit
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Commit
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -32,11 +33,12 @@ import com.apex.agent.core.code.stream.GitOpSummary
 import com.apex.agent.core.code.stream.StreamEntry
 
 /**
- * # Git Op Visual Card — 流水式输出的 Git 操作可视化卡（v1）
+ * # Git Op Visual Card — 流水式输出的 Git 操作可视化卡（v2：含失败态）
  *
- * 「生活中的 Git 不能是假的」：agent 调用 code_git_* 工具成功后，在胶囊
- * 时间轴上紧跟一张结构化卡——分支徽章 / ahead-behind / 暂存三分组计数 /
- * 提交哈希 / diff 增删行——而不是只有一行摘要文本。
+ * 「生活中的 Git 不能是假的」：agent 调用 code_git_* 工具后，在胶囊时间轴
+ * 上紧跟一张结构化卡——成功时展示分支徽章 / ahead-behind / 暂存三分组计数
+ * / 提交哈希 / diff 增删行；**失败时同样出卡**（诚实可视化：环境未就绪 /
+ * 非仓库 / 命令失败一眼可见 + 引导文案，不再静默跳过装作无事发生）。
  *
  * 布局（按 [GitOpSummary.GitOpType] 分派）：
  * - STATUS：分支行（图钉图标 + 分支名 + ↑↓ 徽标）+ 三分组计数 chip 行
@@ -44,7 +46,9 @@ import com.apex.agent.core.code.stream.StreamEntry
  * - COMMIT：哈希等宽 chip + 主题 + 剩余未提交计数；
  * - DIFF：N 个文件 + +增/−删 着色统计；
  * - BRANCH：动作结果行；
- * - LOG：最近 N 条提交 + 最新主题。
+ * - LOG：最近 N 条提交 + 最新主题；
+ * - 失败（[GitOpSummary.failed]）：Warning 图标 + 按失败归因的标题
+ *   （环境未就绪 / 无工作区 / 非仓库 / 命令失败）+ 引导 note，error 色。
  *
  * 全部只读展示（无点击行为）；配色走 MaterialTheme 动态色，语义色
  * （增绿删红）沿用时间轴 Diff 视图口径。
@@ -63,23 +67,61 @@ internal fun GitOpVisualCard(entry: StreamEntry.GitOpEntry) {
             verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
         ) {
-            when (s.op) {
-                GitOpSummary.GitOpType.STATUS -> StatusBody(s)
-                GitOpSummary.GitOpType.COMMIT -> CommitBody(s)
-                GitOpSummary.GitOpType.DIFF -> DiffBody(s)
-                GitOpSummary.GitOpType.BRANCH -> BranchBody(s)
-                GitOpSummary.GitOpType.LOG -> LogBody(s)
+            if (s.failed) {
+                FailedBody(s)
+            } else {
+                when (s.op) {
+                    GitOpSummary.GitOpType.STATUS -> StatusBody(s)
+                    GitOpSummary.GitOpType.COMMIT -> CommitBody(s)
+                    GitOpSummary.GitOpType.DIFF -> DiffBody(s)
+                    GitOpSummary.GitOpType.BRANCH -> BranchBody(s)
+                    GitOpSummary.GitOpType.LOG -> LogBody(s)
+                }
             }
             s.note?.let { note ->
                 Text(
                     text = note,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (s.failed) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
         }
+    }
+}
+
+// ═══ 失败态：Warning 图标 + 归因标题 + 引导 ═══
+
+@Composable
+private fun FailedBody(s: GitOpSummary) {
+    val headlineRes = when (s.failureKind) {
+        GitOpSummary.FailureKind.ENV_NOT_READY -> R.string.code_git_visual_failed_env
+        GitOpSummary.FailureKind.NO_WORKSPACE -> R.string.code_git_visual_failed_no_workspace
+        GitOpSummary.FailureKind.NOT_REPO -> R.string.code_git_visual_failed_not_repo
+        else -> R.string.code_git_visual_failed_command
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.ErrorOutline,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.error,
+            modifier = Modifier.size(15.dp)
+        )
+        Text(
+            text = stringResource(headlineRes),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.weight(1f, fill = false)
+        )
     }
 }
 

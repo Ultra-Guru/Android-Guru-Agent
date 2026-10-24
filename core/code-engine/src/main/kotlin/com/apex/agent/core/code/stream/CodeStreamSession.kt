@@ -501,12 +501,17 @@ class CodeStreamSession {
             terminalExitCode = exitCode
         }
         trackVerifyCycleEnd(existing.kind, event.callId, event.success)
-        // ═══ Git 操作可视化（git 工具成功 → 结构化卡紧跟胶囊入轴）═══
+        // ═══ Git 操作可视化（git 工具成功/失败 → 结构化卡紧跟胶囊入轴）═══
         // 解析全部防御式：吞不下的输出返回 null，静默跳过（通用胶囊仍在）。
-        if (existing.kind == ToolKind.GIT && event.success) {
-            GitOpParser.parse(event.toolName, event.output)?.let { summary ->
-                append(StreamEntry.GitOpEntry(nextId(), summary, event.callId))
+        // 失败也出卡（诚实可视化：环境未就绪 / 非仓库 / 命令失败一眼可见，
+        // 引导文案进 note）——不再只在成功时展示，「git 不能是假的」。
+        if (existing.kind == ToolKind.GIT) {
+            val summary = if (event.success) {
+                GitOpParser.parse(event.toolName, event.output)
+            } else {
+                GitOpParser.parseFailure(event.toolName, event.output)
             }
+            summary?.let { append(StreamEntry.GitOpEntry(nextId(), it, event.callId)) }
         }
     }
 
@@ -715,7 +720,8 @@ class CodeStreamSession {
     }
 
     /**
-     * git 工具的胶囊 target（v5 真实参数契约）：
+     * git 工具的胶囊 target（v5 真实参数契约；工具名经 [GitOpParser.normalize]
+     * 归一——模型回显历史别名 code_git_* / 裸短名同样命中）：
      * - CodeGitCommit → message 首行（提交主题）；
      * - CodeGitDiff / CodeGitLog → path（缺省给语义占位）；
      * - CodeGitBranch → name ?: action；
@@ -729,12 +735,12 @@ class CodeStreamSession {
         val str = { key: String ->
             args[key]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNullSafe() }
         }
-        return when (toolName) {
-            "CodeGitCommit" -> str("message")?.lineSequence()?.firstOrNull { it.isNotBlank() }?.take(40)
-            "CodeGitDiff" -> str("path")?.take(40) ?: "全部变更"
-            "CodeGitLog" -> str("path")?.take(40) ?: "提交历史"
-            "CodeGitBranch" -> str("name")?.take(40) ?: str("action") ?: "分支"
-            "CodeGitStatus" -> "工作区"
+        return when (GitOpParser.normalize(toolName)) {
+            "codegitcommit" -> str("message")?.lineSequence()?.firstOrNull { it.isNotBlank() }?.take(40)
+            "codegitdiff" -> str("path")?.take(40) ?: "全部变更"
+            "codegitlog" -> str("path")?.take(40) ?: "提交历史"
+            "codegitbranch" -> str("name")?.take(40) ?: str("action") ?: "分支"
+            "codegitstatus" -> "工作区"
             else -> null
         }
     }

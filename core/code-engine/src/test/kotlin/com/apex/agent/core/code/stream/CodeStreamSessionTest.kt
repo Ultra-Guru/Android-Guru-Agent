@@ -796,22 +796,64 @@ class CodeStreamSessionTest {
     }
 
     @Test
-    fun `git tool failure appends no visual entry`() {
+    fun `git tool failure appends honest failure visual entry`() {
         val s = CodeStreamSession()
         s.beginRun("坏仓库")
         s.onEvent(AgentEvent.ToolCallStart("g3", "CodeGitStatus", "{}"))
         s.onEvent(
             AgentEvent.ToolCallComplete(
                 callId = "g3", toolName = "CodeGitStatus", arguments = "{}",
-                output = "git status 失败（退出码 -1）：Ubuntu 环境未安装",
+                output = "Error: execution failed: Ubuntu 环境未安装或未就绪——Git 工具依赖沙箱内预装的 git，请先在终端页安装 Ubuntu（TerminalUbuntuInstall）后再试",
+                fullOutput = "", success = false, durationMs = 30
+            )
+        )
+        val visual = s.snapshot().entries.filterIsInstance<StreamEntry.GitOpEntry>().single()
+        assertTrue("失败也出卡（诚实可视化）", visual.summary.failed)
+        assertEquals(GitOpSummary.FailureKind.ENV_NOT_READY, visual.summary.failureKind)
+        assertEquals("g3", visual.callId)
+    }
+
+    @Test
+    fun `git tool failure with blank output appends no visual entry`() {
+        val s = CodeStreamSession()
+        s.beginRun("空输出")
+        s.onEvent(AgentEvent.ToolCallStart("g3b", "CodeGitStatus", "{}"))
+        s.onEvent(
+            AgentEvent.ToolCallComplete(
+                callId = "g3b", toolName = "CodeGitStatus", arguments = "{}",
+                output = "",
                 fullOutput = "", success = false, durationMs = 30
             )
         )
         assertEquals(
-            "失败不产生可视化卡（错误由胶囊摘要承载）",
+            "空失败输出不产生可视化卡（防御：无可展示信息）",
             0,
             s.snapshot().entries.count { it is StreamEntry.GitOpEntry }
         )
+    }
+
+    @Test
+    fun `git legacy alias tool name still produces capsule target and visual`() {
+        val s = CodeStreamSession()
+        s.beginRun("旧名回显")
+        s.onEvent(
+            AgentEvent.ToolCallStart(
+                "g5", "code_git_commit", """{"message":"修复登录页崩溃"}"""
+            )
+        )
+        s.onEvent(
+            AgentEvent.ToolCallComplete(
+                callId = "g5", toolName = "code_git_commit",
+                arguments = """{"message":"修复登录页崩溃"}""",
+                output = "已提交 a1b2c3d: 修复登录页崩溃\n剩余未提交变更：无",
+                fullOutput = "", success = true, durationMs = 500
+            )
+        )
+        val snap = s.snapshot()
+        val capsule = snap.entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertEquals("别名归一后 target = message 首行", "修复登录页崩溃", capsule.call.target)
+        val visual = snap.entries.filterIsInstance<StreamEntry.GitOpEntry>().single()
+        assertEquals("a1b2c3d", visual.summary.commitHash)
     }
 
     @Test

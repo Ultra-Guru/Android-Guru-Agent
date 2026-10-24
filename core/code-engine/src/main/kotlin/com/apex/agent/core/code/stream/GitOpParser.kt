@@ -5,9 +5,16 @@ package com.apex.agent.core.code.stream
  *
  * 把五个 code_git_* 工具（CodeGitStatus / CodeGitDiff / CodeGitLog /
  * CodeGitCommit / CodeGitBranch）的成功输出翻译成 [GitOpSummary]，供时间轴
- * 的 Git 可视化卡渲染。解析纪律：**全部防御式**——输出被截断（6000 字符
- * 上限）、掺入异常文案、格式漂移都要吞得下，解析不出就返回 null（调用方
- * 静默跳过可视化卡，通用胶囊不受影响），绝不抛异常。
+ * 的 Git 可视化卡渲染；失败输出经 [parseFailure] 翻译成诚实失败卡（环境
+ * 未就绪 / 非仓库 / 命令失败——「git 不能是假的」：失败也要被看见）。
+ * 解析纪律：**全部防御式**——输出被截断（6000 字符上限）、掺入异常文案、
+ * 格式漂移都要吞得下，解析不出就返回 null（调用方静默跳过可视化卡，
+ * 通用胶囊不受影响），绝不抛异常。
+ *
+ * 工具名归一化：模型可能回显 v5 现役 id（CodeGitStatus）、历史 snake_case
+ * 别名（code_git_status——ToolIdAliases 兼容层存在的原因）或裸短名
+ * （git_status）。与 ToolKind.fromToolName 同款口径：小写 + 去非字母数字
+ * 后匹配，三种形态归一到同一张卡。
  *
  * 各工具输出契约（见 core:code-tools git 包）：
  * - Status：首行「分支: X（跟踪…，领先 N / 落后 M）」+ 分组标题
@@ -18,17 +25,88 @@ package com.apex.agent.core.code.stream
  * - Branch：「分支列表（N）：」+ 逐行「* 当前（跟踪）」/「  其他」，或
  *   「已创建分支 X（基于 Y）」「已切换到分支 X」「已删除分支 X」；
  * - Log：逐行「<hash7> <yyyy-MM-dd> <subject>」或「暂无提交」。
+ *
+ * 失败输出契约（ToolResult.fail 渲染为「Error: <slug>: <message>」）：
+ * - 环境未就绪：「Ubuntu 环境未安装或未就绪——…」（ProotGitCommandRunner
+ *   的 ROOTFS_NOT_READY_MESSAGE，最常见——git 工具链住在 PRoot Ubuntu 里，
+ *   没装环境时所有 git 工具都走这条）；
+ * - 无工作区：「无激活工作区——…」；
+ * - 非仓库：「当前工作区还不是 git 仓库。…」（notRepoGuidance）；
+ * - 命令失败：「git xxx 失败（退出码 N）：<stderr 末行>」。
  */
 internal object GitOpParser {
 
-    /** 工具名（v5 PascalCase 现役 id）→ 可视化卡数据；不可解析返回 null。 */
-    fun parse(toolName: String, output: String): GitOpSummary? = when (toolName) {
-        "CodeGitStatus" -> parseStatus(output)
-        "CodeGitDiff" -> parseDiff(output)
-        "CodeGitLog" -> parseLog(output)
-        "CodeGitCommit" -> parseCommit(output)
-        "CodeGitBranch" -> parseBranch(output)
+    /** 工具名（v5 id / 历史别名 / 裸短名均可）→ 可视化卡数据；不可解析返回 null。 */
+    fun parse(toolName: String, output: String): GitOpSummary? = when (normalize(toolName)) {
+        "codegitstatus" -> parseStatus(output)
+        "codegitdiff" -> parseDiff(output)
+        "codegitlog" -> parseLog(output)
+        "codegitcommit" -> parseCommit(output)
+        "codegitbranch" -> parseBranch(output)
         else -> null
+    }
+
+    /**
+     * 失败输出的诚实可视化（isError=true 的 ToolCallComplete）。
+     *
+     * 与 [parse] 同款工具名归一化；输出形如
+     * `Error: execution failed: <message>`——先剥离 Error 前缀链，再按
+     * 特征串归因（环境未就绪 / 无工作区 / 非仓库 / 命令失败）。任何形状
+     * 吞得下：归因不出也给 COMMAND_FAILED 卡（headline 取消息首行），
+     * 绝不返回「假成功」。
+     */
+    fun parseFailure(toolName: String, output: String): GitOpSummary? {
+        val op = when (normalize(toolName)) {
+            "codegitstatus" -> GitOpSummary.GitOpType.STATUS
+            "codegitdiff" -> GitOpSummary.GitOpType.DIFF
+            "codegitlog" -> GitOpSummary.GitOpType.LOG
+            "codegitcommit" -> GitOpSummary.GitOpType.COMMIT
+            "codegitbranch" -> GitOpSummary.GitOpType.BRANCH
+            else -> return null
+        }
+        val message = stripErrorPrefix(output).trim()
+        if (message.isEmpty()) return null
+
+        val kind = when {
+            message.contains("Ubuntu 环境未安装") ||
+                message.contains("rootfs 已损坏") ->
+                GitOpSummary.FailureKind.ENV_NOT_READY
+            message.contains("无激活工作区") ->
+                GitOpSummary.FailureKind.NO_WORKSPACE
+            message.contains("还不是 git 仓库") ||
+                message.contains("not a git repository", ignoreCase = true) ->
+                GitOpSummary.FailureKind.NOT_REPO
+            else -> GitOpSummary.FailureKind.COMMAND_FAILED
+        }
+        val note = message.lineSequence().firstOrNull { it.isNotBlank() }?.take(NOTE_MAX)
+        return GitOpSummary(
+            op = op,
+            headline = "", // UI 按 failureKind 给标题，headline 不重复填
+            note = note,
+            failed = true,
+            failureKind = kind
+        )
+    }
+
+    /** 工具名归一：小写 + 去非字母数字（ToolKind.fromToolName 同款口径）。 */
+    internal fun normalize(toolName: String): String =
+        toolName.trim().lowercase().filter { it.isLetterOrDigit() }
+
+    /** 剥离「Error: <slug>: 」前缀链（ToolResult.render 的固定形状，防御多级）。 */
+    private fun stripErrorPrefix(output: String): String {
+        var text = output.trim()
+        while (true) {
+            val next = text.removePrefix("Error: ")
+            if (next == text) break
+            text = next
+            // 剥掉首个 slug 段（execution failed / invalid argument 等：
+            // 小写字母/空格组成，止于冒号）
+            val slugEnd = text.indexOf(':')
+            if (slugEnd > 0 && text.take(slugEnd).all { it.isLowerCase() || it == ' ' }) {
+                text = text.substring(slugEnd + 1).trimStart()
+            }
+        }
+        return text
     }
 
     // ── Status ───────────────────────────────────────────────────────
@@ -262,4 +340,7 @@ internal object GitOpParser {
     }
 
     private const val HEADLINE_MAX = 40
+
+    /** 失败卡 note 截断（stderr 末行可能很长）。 */
+    private const val NOTE_MAX = 80
 }

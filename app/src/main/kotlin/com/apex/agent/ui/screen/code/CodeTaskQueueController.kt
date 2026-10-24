@@ -3,6 +3,7 @@ package com.apex.agent.ui.screen.code
 import com.apex.agent.R
 import com.apex.agent.core.code.longtask.LongTaskStatus
 import com.apex.agent.ui.screen.agent.PendingPipelineCommand
+import kotlinx.coroutines.flow.update
 
 /**
  * # Code Task Queue Controller — 任务排队发送（CodeViewModel 扩展）

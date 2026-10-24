@@ -230,6 +230,10 @@
     <string name="code_git_visual_remaining_zero">剩余变更已清空</string>
     <string name="code_git_visual_additions_fmt">+%1$d</string>
     <string name="code_git_visual_deletions_fmt">−%1$d</string>
+    <string name="code_git_visual_failed_env">Ubuntu 环境未就绪——请先在终端页安装 Ubuntu</string>
+    <string name="code_git_visual_failed_no_workspace">无激活工作区——请先在 Code 屏创建或选择工作区</string>
+    <string name="code_git_visual_failed_not_repo">还不是 git 仓库——首次提交会自动初始化</string>
+    <string name="code_git_visual_failed_command">Git 命令失败</string>
     <string name="code_git_visual_commits_fmt">最近 %1$d 条提交</string>
     <!-- ═══ 任务排队（输入框任务队列）═══ -->
     <string name="code_queue_waiting_title">等待发送</string>

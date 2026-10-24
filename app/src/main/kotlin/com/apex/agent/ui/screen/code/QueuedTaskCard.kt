@@ -27,9 +27,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
-import com.apex.agent.ui.glass.Backdrop
 import com.apex.agent.ui.glass.GlassCard
 import com.apex.agent.ui.glass.GlassStyle
+import com.kyant.backdrop.Backdrop
 
 /**
  * # Queued Task Card — 输入框上方的任务排队卡

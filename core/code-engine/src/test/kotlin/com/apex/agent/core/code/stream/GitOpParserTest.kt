@@ -220,4 +220,96 @@ class GitOpParserTest {
         assertEquals("main", s!!.branch)
         assertEquals(2, s.staged)
     }
+
+    // ═══ 工具名归一化（v5 id / 历史别名 / 裸短名）═══
+
+    @Test
+    fun `legacy snake_case alias parses same as v5 id`() {
+        val out = "分支: main（跟踪 origin/main）\n工作区干净"
+        val s = GitOpParser.parse("code_git_status", out)
+        assertNotNull(s)
+        assertEquals(GitOpSummary.GitOpType.STATUS, s!!.op)
+        assertEquals("main", s.branch)
+    }
+
+    @Test
+    fun `mixed case and whitespace in tool name normalize`() {
+        val s = GitOpParser.parse("  CodeGitCommit ", "已提交 a1b2c3d: 修复\n剩余未提交变更：无")
+        assertNotNull(s)
+        assertEquals("a1b2c3d", s!!.commitHash)
+    }
+
+    @Test
+    fun `normalize helper matches ToolKind fromToolName convention`() {
+        assertEquals("codegitstatus", GitOpParser.normalize("CodeGitStatus"))
+        assertEquals("codegitstatus", GitOpParser.normalize("code_git_status"))
+        assertEquals("codegitstatus", GitOpParser.normalize(" Code-Git-Status "))
+    }
+
+    // ═══ 失败解析（诚实可视化）═══
+
+    @Test
+    fun `failure env not ready parses with guidance`() {
+        val out = "Error: execution failed: Ubuntu 环境未安装或未就绪——Git 工具依赖沙箱内预装的 git，" +
+            "请先在终端页安装 Ubuntu（TerminalUbuntuInstall）后再试"
+        val s = GitOpParser.parseFailure("CodeGitStatus", out)
+        assertNotNull(s)
+        assertTrue(s!!.failed)
+        assertEquals(GitOpSummary.FailureKind.ENV_NOT_READY, s.failureKind)
+        assertEquals(GitOpSummary.GitOpType.STATUS, s.op)
+        assertNotNull(s.note)
+    }
+
+    @Test
+    fun `failure no workspace parses`() {
+        val out = "Error: execution failed: 无激活工作区——请先在 Code 屏创建或选择一个工作区，再使用 Git 工具"
+        val s = GitOpParser.parseFailure("code_git_log", out)
+        assertNotNull(s)
+        assertEquals(GitOpSummary.FailureKind.NO_WORKSPACE, s!!.failureKind)
+        assertEquals(GitOpSummary.GitOpType.LOG, s.op)
+    }
+
+    @Test
+    fun `failure not repo parses with init guidance`() {
+        val out = "Error: execution failed: 当前工作区还不是 git 仓库。可先调用 CodeGitCommit 创建首次提交" +
+            "（会自动 git init 初始化仓库），或让用户在终端的 Ubuntu 环境里手动执行 git init"
+        val s = GitOpParser.parseFailure("CodeGitDiff", out)
+        assertNotNull(s)
+        assertEquals(GitOpSummary.FailureKind.NOT_REPO, s!!.failureKind)
+    }
+
+    @Test
+    fun `failure command failed parses stderr detail`() {
+        val out = "Error: execution failed: git commit 失败（退出码 128）：fatal: 无法读取当前分支"
+        val s = GitOpParser.parseFailure("CodeGitCommit", out)
+        assertNotNull(s)
+        assertEquals(GitOpSummary.FailureKind.COMMAND_FAILED, s!!.failureKind)
+        assertEquals(GitOpSummary.GitOpType.COMMIT, s.op)
+        assertNotNull(s.note)
+    }
+
+    @Test
+    fun `failure invalid argument still gets honest card`() {
+        // 参数校验失败（slug=invalid argument）也走 COMMAND_FAILED 卡
+        val out = "Error: invalid argument: message 不能为空白 (argument 'message')"
+        val s = GitOpParser.parseFailure("CodeGitCommit", out)
+        assertNotNull(s)
+        assertEquals(GitOpSummary.FailureKind.COMMAND_FAILED, s!!.failureKind)
+    }
+
+    @Test
+    fun `failure unknown tool or blank output returns null`() {
+        assertNull(GitOpParser.parseFailure("CodeRead", "Error: execution failed: x"))
+        assertNull(GitOpParser.parseFailure("CodeGitStatus", ""))
+        assertNull(GitOpParser.parseFailure("CodeGitStatus", "   "))
+    }
+
+    @Test
+    fun `failure prefix stripping keeps message body`() {
+        // 多级前缀防御：剥到底后正文完整
+        val out = "Error: execution failed: git branch 失败（退出码 1）：error: 分支不存在"
+        val s = GitOpParser.parseFailure("CodeGitBranch", out)
+        assertNotNull(s)
+        assertTrue(s!!.note!!.contains("git branch 失败"))
+    }
 }

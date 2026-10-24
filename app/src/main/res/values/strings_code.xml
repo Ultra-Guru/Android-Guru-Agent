@@ -230,6 +230,10 @@
     <string name="code_git_visual_remaining_zero">No uncommitted changes left</string>
     <string name="code_git_visual_additions_fmt">+%1$d</string>
     <string name="code_git_visual_deletions_fmt">−%1$d</string>
+    <string name="code_git_visual_failed_env">Ubuntu environment not ready — install Ubuntu in Terminal first</string>
+    <string name="code_git_visual_failed_no_workspace">No active workspace — create or select one in Code first</string>
+    <string name="code_git_visual_failed_not_repo">Not a git repository yet — first commit will init it</string>
+    <string name="code_git_visual_failed_command">Git command failed</string>
     <string name="code_git_visual_commits_fmt">%1$d recent commit(s)</string>
     <!-- ═══ Queued task (input-box task queue) ═══ -->
     <string name="code_queue_waiting_title">Waiting to send</string>
