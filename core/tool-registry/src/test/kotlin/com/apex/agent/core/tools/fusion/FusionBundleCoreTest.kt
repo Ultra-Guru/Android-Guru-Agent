@@ -598,7 +598,7 @@ class FusionBundleCoreTest {
         val registry = FusionBundleRegistry(tmp.newFolder("h3"))
         registry.install(pickBundleJson())
         val hub = FakeHubInstaller().apply { skillError = "仓库不可达" }
-        val skills = FakeSkillInstaller(onDisk = setOf("hub-skill-a"))
+        val skills = FakeSkillInstaller(preInstalled = setOf("hub-skill-a"))
         val activator = FusionBundleActivator(
             registry, skills, SplitMcpConnector(), FakePromptInjector(),
             FusionPluginInstaller.UNAVAILABLE, hub
