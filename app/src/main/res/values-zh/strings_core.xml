@@ -6,6 +6,8 @@
     <!-- ═══ 抽屉与导航目的地（ApexRoot / ApexDrawerContent）═══ -->
     <string name="drawer_agent">Agent</string>
     <string name="drawer_terminal">终端</string>
+<!-- M³ 现代终端（Material 3 Terminal UI）：轻量 REPL 命令台 -->
+    <string name="drawer_terminal_m3">终端 · M³</string>
 <!-- #197 模板工坊 -->
     <string name="drawer_templates">模板工坊</string>
     <string name="drawer_market">市场</string>

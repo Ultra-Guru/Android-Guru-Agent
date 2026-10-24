@@ -199,6 +199,10 @@ dependencies {
     // terminal-view 对 :terminal-emulator 同为 implementation（不传递），app 的
     // 显式 terminal-emulator 依赖在上方已具备 —— 两边模型单一事实源。
     implementation(project(":terminal-view"))
+    // M³ 现代终端页（feature/terminal-m3）：Material 3 Terminal UI —— 单源输入
+    // REPL（OutlinedTextField + 终端卡片共用同一 VM 状态）、GitHub Dark 恒暗
+    // 配色、命令 token 级代码高亮、闪烁光标、模拟执行（500ms）。
+    implementation(project(":feature:terminal-m3"))
     // #F-⑰：native VT 引擎黑匣子（VtFeedTrail）—— TerminalModule 在 runtime
     // 构造点 install。platform:terminal 对 :terminal-native 是 implementation
     // （不传递），app 需显式声明（与上方 terminal-emulator 同款先例）。
