@@ -175,7 +175,8 @@ object ClaudePluginImporter {
         }.getOrNull()
             ?: runCatching {
                 obj["description"]?.jsonArray?.joinToString(" ") { it.jsonPrimitive.content }
-            }.getOrDefault("")
+            }.getOrNull()
+            ?: ""
         return ClaudePluginMeta(
             name = name, version = version, description = description,
             author = author, license = license
