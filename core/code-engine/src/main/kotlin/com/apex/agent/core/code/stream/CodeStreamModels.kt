@@ -210,6 +210,18 @@ sealed interface StreamEntry {
 
     /** 受影响文件 chips（一轮运行收尾的文件清单）。 */
     data class FileChipsEntry(override val id: String, val files: List<String>) : StreamEntry
+
+    /**
+     * Git 操作可视化卡（git 工具成功后紧跟胶囊入轴；模型见 GitOpVisualModels.kt）。
+     *
+     * @param summary 结构化摘要（分支/增删行/提交哈希等，按 op 分派布局）。
+     * @param callId 关联工具胶囊的 callId（详情弹层对位；可空 = 恢复回放）。
+     */
+    data class GitOpEntry(
+        override val id: String,
+        val summary: GitOpSummary,
+        val callId: String? = null
+    ) : StreamEntry
 }
 
 /**

@@ -71,7 +71,9 @@ internal fun CodeViewModel.clearConversationWithArchive() {
         it.copy(
             messages = emptyList(), todos = emptyList(), contextUsedTokens = 0,
             inputDraft = "", editorFilePath = null, editorFile = null, editorError = null,
-            stream = CodeStreamSnapshot()
+            stream = CodeStreamSnapshot(),
+            // 新会话同步清掉排队任务（旧会话的排队意图不带入新会话）
+            queuedTask = null
         )
     }
 }

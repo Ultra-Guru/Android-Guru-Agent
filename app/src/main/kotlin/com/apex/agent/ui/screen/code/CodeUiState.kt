@@ -92,8 +92,35 @@ data class CodeUiState(
     //（预填目标陈述，并作为目标的首条提示重放）。
     val goalState: GoalRuntimeState? = null,
     val showGoalSetup: Boolean = false,
-    val goalSetupDraft: String = ""
+    val goalSetupDraft: String = "",
+
+    // ── 任务排队（输入框上方的排队卡）──
+    // 运行中发送 → 入队 WAITING_AUTO（完成自动发送）；上一任务失败/中止
+    // → 转_NEEDS_CONFIRM（用户点「开始排队」才继续）。详见 CodeTaskQueue.kt。
+    val queuedTask: QueuedTask? = null
 )
+
+/**
+ * 排队任务：运行中发出的第二条任务（输入框上方排队卡的数据面）。
+ *
+ * @param text 用户输入文本（斜杠命令原样保留，发送时走正常路由）。
+ * @param commands 入队时挂在输入框上的技能 chip 快照（发送时恢复）。
+ * @param state 排队态：WAITING_AUTO = 等待自动发送；NEEDS_CONFIRM =
+ *   上一任务失败/中止后的等待确认（用户点「开始排队」才继续）。
+ */
+data class QueuedTask(
+    val text: String,
+    val commands: List<com.apex.agent.ui.screen.agent.PendingPipelineCommand> = emptyList(),
+    val state: QueuedTaskState = QueuedTaskState.WAITING_AUTO
+)
+
+/** 排队任务状态机（两态：自动等待 → 失败确认）。 */
+enum class QueuedTaskState {
+    /** 等待发送：当前任务运行中，完成后自动发送。 */
+    WAITING_AUTO,
+    /** 等待排队：上一任务失败/中止，需用户点击「开始排队」确认。 */
+    NEEDS_CONFIRM
+}
 
 /**
  * 聊天条目（用户 / 助手 / 工具卡片 / 系统提示）。

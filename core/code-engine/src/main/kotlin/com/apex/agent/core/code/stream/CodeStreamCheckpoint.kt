@@ -67,7 +67,11 @@ object CodeStreamCheckpoint {
         val cycleEditIds: List<String> = emptyList(),
         val cycleVerifyIds: List<String> = emptyList(),
         val cyclePassed: Boolean? = null,
-        val files: List<String> = emptyList()
+        val files: List<String> = emptyList(),
+        // Git 操作可视化卡（type="gitop"）：结构化摘要 + 关联胶囊 callId。
+        // 默认 null + ignoreUnknownKeys 双向兼容旧档。
+        val gitOp: GitOpSummary? = null,
+        val gitOpCallId: String? = null
     )
 
     @Serializable
@@ -147,6 +151,9 @@ object CodeStreamCheckpoint {
                 "error" -> StreamEntry.ErrorEntry(storable.id, storable.text.orEmpty(), true)
                 "stop" -> StreamEntry.StopEntry(storable.id, storable.text.orEmpty())
                 "files" -> StreamEntry.FileChipsEntry(storable.id, storable.files)
+                "gitop" -> storable.gitOp?.let {
+                    StreamEntry.GitOpEntry(storable.id, it, storable.gitOpCallId)
+                }
                 else -> null
             }
         }
@@ -230,6 +237,11 @@ object CodeStreamCheckpoint {
         is StreamEntry.ErrorEntry -> StorableStreamEntry("error", id, message)
         is StreamEntry.StopEntry -> StorableStreamEntry("stop", id, reason)
         is StreamEntry.FileChipsEntry -> StorableStreamEntry("files", id, files = files)
+        is StreamEntry.GitOpEntry -> StorableStreamEntry(
+            "gitop", id,
+            gitOp = summary,
+            gitOpCallId = callId
+        )
     }
 
     private fun StorableToolCall.toView(restoredStatus: ToolCallStatus): StreamToolCall = StreamToolCall(
