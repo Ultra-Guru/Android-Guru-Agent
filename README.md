@@ -68,7 +68,7 @@ FSM 旁路回放 → 梦境巩固）、Root/Shizuku/无障碍三级权限链、�
 <img src="https://img.shields.io/badge/API-OpenAI_compatible-412991?logo=openai&logoColor=white" alt="OpenAI-compatible"/>
 <img src="https://img.shields.io/badge/🛰️_LLM-none_required_locally-559E39" alt="BYO LLM"/>
 <img src="https://img.shields.io/badge/status-active·alpha-2ea44f?logo=git&logoColor=white" alt="Status"/>
-<img src="https://img.shields.io/badge/🪶_license-TBD-lightgrey" alt="License TBD"/>
+<a href="#license"><img src="https://img.shields.io/badge/🪶_license-UGRL_v1.0·受限使用-red" alt="License: UGRL v1.0 restricted"/></a>
 
 **快速跳转**
 
@@ -1266,8 +1266,43 @@ debug APK 工件（每次构建保留 14 天），零环境开箱体验。
    [docs/memory-and-workflow-research.md](docs/memory-and-workflow-research.md)
    的对应结论。
 
-> [!CAUTION]
-> ⚖️ 许可证尚未确定（TBD）。商业化使用前请先联系作者开 issue 对齐。
+---
+
+<a id="license"></a>
+## ⚖️ 许可证：UGRL v1.0（受限使用，非传统开源）
+
+本仓库采用自有的 **Ultra-Guru 受限使用许可协议（UGRL）v1.0**，全文见
+[LICENSE](LICENSE)。它不是 OSI 认证的开源协议，也无意宽松——
+**这是作者能给出的最严格许可**。
+
+### 为什么把许可收得这么紧？
+
+1. **这是一件危险工具。** Android Guru Agent 具备网络流量拦截（MITM）、
+   CA 证书注入、SSL Pinning 绕过、APK 重打包、动态插桩、root 提权
+   与检测隐藏，以及可自主执行 shell 命令的 AI Agent。同一份能力，
+   在授权者手里是调试与安全研究利器，落到滥用者手里就是攻击工具。
+2. **法律合规无法外包。** 在绝大多数司法辖区，未经授权对他人设备、
+   应用或网络实施上述操作属于违法行为。作者无法审查每一位下载者的
+   用途，也无力替任何人的滥用行为兜底，只能在许可层面把口子收紧。
+3. **alpha 阶段的安全边界仍在建设。** 功能跑得快，防护跑得慢；
+   在沙箱、审计与高危操作门控全部就位之前，不希望它被大规模分发
+   后失控。
+
+### 一句话版本
+
+> **可以：** 下载查看源码；在你自己拥有或已获书面授权的设备/应用上，
+> 为个人学习与安全研究目的编译、运行、测试。
+>
+> **不可以：** 再分发（含修改版与二次打包的构建产物）、任何商业用途、
+> 对未授权目标实施任何干预、违法使用、移除版权与许可声明。
+>
+> **其余一切权利全部保留**；商用 / 白名单授权请开 issue 联系作者。
+
+> [!IMPORTANT]
+> 安装、编译或运行本软件，即视为已完整阅读并接受 [LICENSE](LICENSE)
+> 的全部条款，包括 "按现状" 免责声明：**一切风险与合规义务由使用者
+> 独自承担。** 向本仓库提交 PR 即表示同意你的贡献按 UGRL v1.0 同样
+> 条款授权给本项目。
 
 ---
 
