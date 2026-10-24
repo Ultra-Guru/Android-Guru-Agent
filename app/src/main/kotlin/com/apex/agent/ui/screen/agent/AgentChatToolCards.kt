@@ -468,6 +468,21 @@ internal fun ToolCallCard(
                             isError = isError
                         )
                     }
+                } else if (toolCall.toolName == BROWSER_SNAPSHOT_TOOL_ID &&
+                    isBrowserSnapshotPayload(outputText)
+                ) {
+                    // 浏览器快照：元素树文本墙 → 紧凑快照卡（计数 chip + 限高
+                    // 等宽滚动；v1.8.0，非快照形态回退原文渲染）。
+                    BrowserSnapshotOutput(output = outputText) {
+                        SmartToolOutput(
+                            toolName = toolCall.toolName,
+                            args = toolCall.args,
+                            output = outputText,
+                            fullOutput = toolCall.fullOutput,
+                            expanded = true,
+                            isError = isError
+                        )
+                    }
                 } else {
                     // 智能输出渲染：按工具类型自动选择 代码高亮 / 文件卡 / JSON树 / Shell / 文本 卡片。
                     SmartToolOutput(
