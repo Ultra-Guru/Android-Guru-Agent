@@ -86,6 +86,7 @@
     <string name="settings_providers_roles_hint">Manage providers (base URLs / keys / rotation) and model role mapping (primary · vision · reasoning · fast · summary).</string>
     <string name="settings_manage_providers">Manage Providers</string>
     <string name="settings_manage_roles">Manage Model Roles</string>
+    <string name="settings_tab_close">Close %1$s</string>
 
 
     <!-- Generation -->
