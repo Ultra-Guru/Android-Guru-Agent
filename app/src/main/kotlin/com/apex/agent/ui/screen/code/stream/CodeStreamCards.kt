@@ -49,9 +49,10 @@ import com.apex.agent.ui.glass.GlassStyle
  * # Code Stream Cards — 时间轴卡片族
  *
  * 胶囊之外的时间轴成员：思考链（独立可折叠）/ 验证轮次卡（可折叠轮次
- * 胶囊）/ 结构化错误卡 / 停止卡 / 受影响文件 chips / 流式结论气泡 /
- * 用户气泡 / 状态与系统行。正文气泡只放结论（Markdown 渲染，容忍不完整
- * 片段），思考链与工具细节全部走独立卡片——规格书【0】的「非聊天」立场。
+ * 胶囊）/ 结构化错误卡 / 停止卡 / Git 操作可视化卡 / 受影响文件 chips /
+ * 流式结论气泡 / 用户气泡 / 状态与系统行。正文气泡只放结论（Markdown
+ * 渲染，容忍不完整片段），思考链与工具细节全部走独立卡片——规格书【0】
+ * 的「非聊天」立场。
  */
 @Composable
 internal fun StreamCard(entry: StreamEntry, onToolClick: (StreamToolCall) -> Unit) {
@@ -66,6 +67,7 @@ internal fun StreamCard(entry: StreamEntry, onToolClick: (StreamToolCall) -> Uni
         is StreamEntry.ErrorEntry -> ErrorCard(entry)
         is StreamEntry.StopEntry -> StopCard(entry.reason)
         is StreamEntry.FileChipsEntry -> FileChipsCard(entry.files)
+        is StreamEntry.GitOpEntry -> GitOpVisualCard(entry)
     }
 }
 

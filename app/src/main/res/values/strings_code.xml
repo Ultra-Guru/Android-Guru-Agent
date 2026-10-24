@@ -213,6 +213,33 @@
     <string name="code_stream_detail_grep_empty">No hits captured</string>
     <string name="code_stream_detail_terminal_title">Terminal output</string>
     <string name="code_stream_detail_output_title">Tool output</string>
+    <!-- ═══ Git operation visual card (streaming git visualization) ═══ -->
+    <string name="code_git_visual_status">Branch status</string>
+    <string name="code_git_visual_commit">Committed</string>
+    <string name="code_git_visual_diff">Diff stats</string>
+    <string name="code_git_visual_branch">Branch op</string>
+    <string name="code_git_visual_log">Commit history</string>
+    <string name="code_git_visual_clean">Working tree clean</string>
+    <string name="code_git_visual_ahead_fmt">ahead %1$d</string>
+    <string name="code_git_visual_behind_fmt">behind %1$d</string>
+    <string name="code_git_visual_staged_fmt">staged %1$d</string>
+    <string name="code_git_visual_unstaged_fmt">unstaged %1$d</string>
+    <string name="code_git_visual_untracked_fmt">untracked %1$d</string>
+    <string name="code_git_visual_conflicts_fmt">%1$d conflict(s) to resolve</string>
+    <string name="code_git_visual_remaining_fmt">%1$d file(s) still uncommitted</string>
+    <string name="code_git_visual_remaining_zero">No uncommitted changes left</string>
+    <string name="code_git_visual_additions_fmt">+%1$d</string>
+    <string name="code_git_visual_deletions_fmt">−%1$d</string>
+    <string name="code_git_visual_commits_fmt">%1$d recent commit(s)</string>
+    <!-- ═══ Queued task (input-box task queue) ═══ -->
+    <string name="code_queue_waiting_title">Waiting to send</string>
+    <string name="code_queue_waiting_hint">Will be sent automatically when the current task finishes</string>
+    <string name="code_queue_needs_confirm_title">Waiting to queue</string>
+    <string name="code_queue_needs_confirm_hint">The previous task did not finish cleanly — confirm to start this one</string>
+    <string name="code_queue_start">Start queue</string>
+    <string name="code_queue_cancel">Cancel</string>
+    <string name="code_queue_auto_sent">Previous task finished — queued task sent</string>
+    <string name="code_queue_replaced">A task is already queued — replaced with the latest input</string>
     <!-- ═══ Thinking tier selector v2: short tier names + capsule labels ═══ -->
     <string name="code_thinking_chip">Thinking · %1$s</string>
     <string name="code_thinking_short_none">Off</string>

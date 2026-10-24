@@ -213,6 +213,33 @@
     <string name="code_stream_detail_grep_empty">未捕获到命中结果</string>
     <string name="code_stream_detail_terminal_title">终端输出</string>
     <string name="code_stream_detail_output_title">工具输出</string>
+    <!-- ═══ Git 操作可视化卡（流水式 Git 可视化）═══ -->
+    <string name="code_git_visual_status">分支状态</string>
+    <string name="code_git_visual_commit">已提交</string>
+    <string name="code_git_visual_diff">差异统计</string>
+    <string name="code_git_visual_branch">分支操作</string>
+    <string name="code_git_visual_log">提交历史</string>
+    <string name="code_git_visual_clean">工作区干净</string>
+    <string name="code_git_visual_ahead_fmt">领先 %1$d</string>
+    <string name="code_git_visual_behind_fmt">落后 %1$d</string>
+    <string name="code_git_visual_staged_fmt">已暂存 %1$d</string>
+    <string name="code_git_visual_unstaged_fmt">未暂存 %1$d</string>
+    <string name="code_git_visual_untracked_fmt">未跟踪 %1$d</string>
+    <string name="code_git_visual_conflicts_fmt">%1$d 个冲突待解决</string>
+    <string name="code_git_visual_remaining_fmt">剩余未提交 %1$d 个文件</string>
+    <string name="code_git_visual_remaining_zero">剩余变更已清空</string>
+    <string name="code_git_visual_additions_fmt">+%1$d</string>
+    <string name="code_git_visual_deletions_fmt">−%1$d</string>
+    <string name="code_git_visual_commits_fmt">最近 %1$d 条提交</string>
+    <!-- ═══ 任务排队（输入框任务队列）═══ -->
+    <string name="code_queue_waiting_title">等待发送</string>
+    <string name="code_queue_waiting_hint">当前任务完成后将自动发送</string>
+    <string name="code_queue_needs_confirm_title">等待排队</string>
+    <string name="code_queue_needs_confirm_hint">上一个任务未能顺利完成，确认后才开始排队执行</string>
+    <string name="code_queue_start">开始排队</string>
+    <string name="code_queue_cancel">取消</string>
+    <string name="code_queue_auto_sent">上一任务已完成——排队任务已自动发送</string>
+    <string name="code_queue_replaced">已有排队任务——已替换为最新输入</string>
     <!-- ═══ 思考档位选择器 v2：短档名 + 胶囊标签 ═══ -->
     <string name="code_thinking_chip">Thinking · %1$s</string>
     <string name="code_thinking_short_none">Off</string>
