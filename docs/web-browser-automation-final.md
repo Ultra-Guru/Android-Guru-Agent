@@ -307,3 +307,65 @@ Agent 对话中直接可用（浏览器被使用后悬浮球 / 浮窗照常出�
   按钮），宿主升级坐标即可获得完整 i18n；两仓各自发版、互不阻塞；
 - 拆库边界进一步清晰：库管引擎与 chrome UI，工具协议（AgentTool 契约）
   与 DI 接线归宿主 `:platform:browser-agent` ——「协议在宿主、引擎在库」。
+
+---
+
+## §14 v1.7.0 会话面扩容（34 工具 + 人用 Chrome 增强，2026-10-18）
+
+> 判决背景：v1.6 的 BrowserTabs 已把工具面带到 25，但「引擎侧已具备、
+> Agent 工具面缺位」的能力仍有九项（goBack/goForward/reload 首次暴露、
+> recentHistory 首次暴露、findInPage 首次暴露、下载只有 lastDownload
+> 瞬时值、书签为零、显示控制为零、全页截图为零）。本次按
+> 「对标 Playwright MCP 会话面 + 桌面浏览器 UX 基线」一次性补齐——
+> 全部走 apex-browser-kit v1.7.0 新组件（库侧），宿主只加协议与接线。
+
+### 14.1 会话工具集（:platform:browser-agent 新增 BrowserSessionTools，9 工具）
+
+| 工具 | 引擎面 | 语义 |
+| --- | --- | --- |
+| `BrowserBack` / `BrowserForward` | `goBack()/goForward()`（既有） | 历史栈导航，历史边界返回提示（Playwright browser_go_back/forward 对齐） |
+| `BrowserReload` | `reload(timeout)`（既有） | 带 onPageFinished 等待的就绪重载，超时兜底 |
+| `BrowserHistory` | `recentHistory(limit)`（既有） | 浏览历史查询（此前只喂地址栏联想，Agent 不可见） |
+| `BrowserFind` | `findInPage(query)`（既有） | 页内查找计数 + 首个匹配高亮（chrome 人用查找的 Agent 对位面） |
+| `BrowserDownloads` | `DownloadCenter`（库 v1.7.0 新） | 全量下载台账（跨重启持久）+ cancel / retry（转发 Cookie）/ forget / open；list 带状态/进度/字节 |
+| `BrowserBookmarks` | `BookmarkStore`（库 v1.7.0 新） | list（MRU）/ add（utm 变体归一去重）/ remove / search；与 chrome 书签面板共用存储 |
+| `BrowserZoom` | `EngineDisplayController`（库 v1.7.0 新） | 文字缩放 50..200 跨页保持（截图可读性 / 无障碍） |
+| `BrowserClearData` | 同上 | cookies / caches / histories / all；**HIGH 风险 + destructive 注解**（清 Cookie = 全站点登出） |
+
+守卫 / trace / SafeAgentTool 包装与 BrowserAgentTools 完全同款
+（SYSTEM_LOCKED 结构化锁定语义不变）；注册点 ToolModule §3.5b；
+PluginHostBridge 一并暴露（插件侧 34 工具全量可见）。
+
+### 14.2 既有工具增强
+
+- `BrowserScreenshot` 增 `full_page`（默认 false 保持视口语义）：滚动
+  分段 + Canvas 拼接（上限 5 屏、OOM 防线返回 null、截后恢复滚动位），
+  引擎扩展 `fullPageScreenshot`（库 v1.7.0，零 BrowserEngine.kt 行数增量）。
+
+### 14.3 工具系统口径同步（既有缺口的顺手清偿）
+
+- `ToolIdAliases`：补 `browser_tabs` 漏项（v1.4.9.33 加工具时未同步）+
+  9 个新别名 → 34 别名全量；
+- `ToolExecutionPolicy`：v1.1.0 的 8 个高级工具 + BrowserTabs 此前落
+  UNKNOWN（重试语义退化为引擎兜底），本次连同 9 新工具全量补齐 34 口径；
+- `ToolMetadata`/`ToolAnnotations`：BrowserClearData 升 HIGH（第四件
+  敏感件，唯一 destructive=true）；文案 24→34（strings_browser /
+  strings_core 四处 + UI KDoc）。
+
+### 14.4 人用 Chrome 增强（库 v1.7.0，宿主零接线获得）
+
+书签面板（搜索/文件夹/MRU/收藏当前页）、阅读模式全屏层（结构块 + 目录
+锚点跳转 + 字号 0.8..1.6）、显示设置面板（缩放档位 + 夜间模式反色 +
+清除数据确认流）、真实 favicon（DuckDuckGo Icons，host 级取图 +
+LRU32 + 失败回退首字母）、「复制干净链接」（UrlCleaner 剔除 40+ 精确
+跟踪参数 + 16 前缀族，剔除数入轻提示）。全部经 Gateway additive 成员
+接线（未接线自动隐藏，FakeGateway 零改动）。
+
+### 14.5 已知取舍（诚实清单）
+
+- 全页截图 sticky 顶栏每段重复（Canvas 快照固有形态，非 CDP 通道）；
+- 夜间模式为算法反色（iframe/个别 fixed 层可能半亮半暗）；
+- 清除浏览数据不含地址栏联想历史（引擎 ArrayDeque 无清空 API，后续补）；
+- 下载 pause/resume 非公开 SDK API（DownloadManager @hide）——控制面为
+  cancel/retry/forget/open，系统自动暂停照常可见（PAUSED 状态映射保留）；
+- DownloadCenter 台账只记本库发起的下载（不吞系统全量列表——职责边界）。

@@ -8,6 +8,7 @@ import com.apex.browser.core.BrowserScript
 import com.apex.browser.core.DomParser
 import com.apex.browser.engine.BrowserEngine
 import com.apex.browser.engine.BrowserTracer
+import com.apex.browser.engine.fullPageScreenshot
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
@@ -340,16 +341,26 @@ class BrowserAgentTools @Inject constructor(
         }
     }
 
-    /** 整页/视口截图（PNG base64） */
+    /** 整页/视口截图（PNG base64；v1.7.0 增 full_page 全页拼接模式） */
     val screenshot = object : StreamingAgentTool {
         override val id = "BrowserScreenshot"
         override val name = "BrowserScreenshot"
         override val description =
-            "对当前浏览器页面视口截图，返回 PNG 的 base64。供视觉模型理解渲染效果或验证码等图形内容。"
-        override val parametersSchema = """{"type":"object","properties":{}}"""
+            "对当前浏览器页面截图，返回 PNG 的 base64。默认视口截图（验证码 / 局部控件足够）；" +
+                "full_page=true 时滚动分段拼接整页（v1.7.0，上限 5 屏，sticky 顶栏会在每段重复——" +
+                "Canvas 快照式全页截图的固有形态）。供视觉模型理解渲染效果或整页版式审查。"
+        override val parametersSchema = """{
+            "type":"object",
+            "properties":{
+                "full_page":{"type":"boolean","description":"true 时截整页（滚动分段拼接，上限 5 屏），默认 false 视口截图"}
+            }
+        }"""
         override suspend fun execute(arguments: String): String {
             guard(engine)?.let { return it }
-            val bytes = engine.screenshot() ?: return "Error: 无法截图（无激活页面）"
+            val fullPage = argBool(arguments, "full_page")
+            val bytes = if (fullPage) engine.fullPageScreenshot()
+                else engine.screenshot()
+                ?: return "Error: 无法截图（无激活页面）"
             val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
             return "data:image/png;base64,$b64"
         }
@@ -357,8 +368,12 @@ class BrowserAgentTools @Inject constructor(
         override fun executeStream(arguments: String): Flow<ToolStreamEvent> = callbackFlow {
             val guardMsg = guard(engine)
             if (guardMsg != null) { send(ToolStreamEvent.Error(guardMsg)); close(); return@callbackFlow }
-            val bytes = engine.screenshot { p, phase -> trySend(ToolStreamEvent.Progress(percent = p.toFloat(), message = phase)) }
-                ?: run { send(ToolStreamEvent.Error("Error: 无法截图（无激活页面）")); close(); return@callbackFlow }
+            val fullPage = argBool(arguments, "full_page")
+            val bytes = if (fullPage) {
+                engine.fullPageScreenshot { p, phase -> trySend(ToolStreamEvent.Progress(percent = p.toFloat(), message = phase)) }
+            } else {
+                engine.screenshot { p, phase -> trySend(ToolStreamEvent.Progress(percent = p.toFloat(), message = phase)) }
+            } ?: run { send(ToolStreamEvent.Error("Error: 无法截图（无激活页面）")); close(); return@callbackFlow }
             val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
             val result = "data:image/png;base64,$b64"
             send(ToolStreamEvent.Output(result))

@@ -41,7 +41,7 @@
     <string name="browser_screen_hand_back">交还 Agent</string>
     <!-- 底部说明卡 -->
     <string name="browser_screen_builtin_title">浏览器自动化已内置</string>
-    <string name="browser_screen_builtin_desc">24 个 browser_* 工具随 App 内置（v1.5.0 起非插件）——在 Agent 对话中直接指挥它打开网页、点击、输入、截图。「浏览器」页签是随时可用的完整浏览器；授予悬浮窗权限后，Agent 浏览时其他应用上方会有透明实时浮窗跟看（点悬浮球切换，长按结束会话）。</string>
+    <string name="browser_screen_builtin_desc">34 个 browser_* 工具随 App 内置（v1.5.0 起非插件）——在 Agent 对话中直接指挥它打开网页、点击、输入、截图。「浏览器」页签是随时可用的完整浏览器；授予悬浮窗权限后，Agent 浏览时其他应用上方会有透明实时浮窗跟看（点悬浮球切换，长按结束会话）。</string>
 
     <!-- 实时页面卡（v1.4.1：LiveViewOverlay 入口） -->
     <string name="browser_screen_live_title">实时页面</string>

@@ -358,8 +358,10 @@ data class ToolMetadata(
             //   BrowserExecuteJs：页面内执行任意 JS（等效任意代码，能力不可枚举）
             //   BrowserGetCookies：读取会话凭据（可冒充用户身份）
             //   BrowserFileUpload：把本地文件外发到网页（数据出境）
+            // v1.7.0 第四件 —— BrowserClearData：不可逆全局效应（清 Cookie =
+            //   全部站点退出登录），与安装 APK 同级的「系统状态变化」
             id == "BrowserExecuteJs" || id == "BrowserGetCookies" ||
-                id == "BrowserFileUpload" -> ToolRisk.HIGH
+                id == "BrowserFileUpload" || id == "BrowserClearData" -> ToolRisk.HIGH
 
             // Mutating but recoverable / sandbox-scoped operations → MEDIUM.
             // #167：金库写入（覆写式）与盲投递（剪贴板/终端/HTTP 副作用）。

@@ -140,6 +140,7 @@ import com.apex.agent.core.tools.hook.HookRegistry
 import com.apex.agent.core.tools.skill.SkillHotReloadLogLevel
 import com.apex.agent.core.tools.skill.SkillHotReloader
 import com.apex.agent.platform.browser.BrowserAgentTools
+import com.apex.agent.platform.browser.BrowserSessionTools
 import com.apex.browser.engine.BrowserEngine
 import com.apex.browser.engine.BrowserTracer
 // #167 加密剪切板金库：仓库/脱敏器/工具集/执行器装饰器
@@ -441,6 +442,7 @@ object ToolModule {
         memorySearchNodesTool: MemorySearchNodesTool,
         memoryRecallMacroTool: MemoryRecallMacroTool,
         browserAgentTools: BrowserAgentTools,
+        browserSessionTools: BrowserSessionTools,
         fusionController: com.apex.agent.fusion.FusionBundleController,
         // T76: Linux environment productionization 依赖
         linuxEnvironmentHealth: LinuxEnvironmentHealth,
@@ -716,10 +718,8 @@ object ToolModule {
         registry.register(SafeAgentTool(HttpRequestTool(httpClient)))
         registry.register(SafeAgentTool(DownloadFileTool(httpClient, downloadDir)))
 
-        // ═══ 3.5 内置浏览器自动化 (10) ═══
-        // 对标 Operit 的 BrowserAgent：DOM 级网页操控，带语义哈希稳定 ref（抗 SPA 刷新），
-        // 物理触摸注入点击、显式握手人工接管、动作后验证。工具内已含 WAITING_HUMAN 守卫。
-        browserAgentTools.all().forEach { registry.register(SafeAgentTool(it)) }
+        // ═══ 3.5 内置浏览器自动化 (34) ═══
+        registerBrowserTools(registry, browserAgentTools, browserSessionTools)
 
         // ═══ 4. 记忆 (CS-Mem 已独立为 platform:cs-mem 模块) ═══
         // 旧 FileMemoryStore/MemorizeTool/RecallTool/ForgetTool 已移除。

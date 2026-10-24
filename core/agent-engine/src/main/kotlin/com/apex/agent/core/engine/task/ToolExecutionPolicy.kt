@@ -156,6 +156,32 @@ class ToolExecutionPolicy {
             put("BrowserToggle", ToolIdempotencyClass.NON_IDEMPOTENT)
             put("BrowserFileUpload", ToolIdempotencyClass.NON_IDEMPOTENT)
 
+            // ═══ Browser 自动化（v1.1.0 高级动作 + v1.6 Tabs + v1.7.0 会话工具集）═══
+            // 旧表只覆盖到 v1.0 的 16 个工具——v1.1.0 的 8 个高级动作（PressKey/
+            // Hover/Drag/ExtractContent/ExecuteJs/GetCookies/Locate/WaitFor）与
+            // BrowserTabs 一直落在 UNKNOWN；v1.7.0 一并补齐 34 工具全量口径。
+            put("BrowserPressKey", ToolIdempotencyClass.NON_IDEMPOTENT)
+            put("BrowserHover", ToolIdempotencyClass.NON_IDEMPOTENT)
+            put("BrowserDrag", ToolIdempotencyClass.NON_IDEMPOTENT)
+            put("BrowserExtractContent", ToolIdempotencyClass.READ_ONLY)
+            put("BrowserExecuteJs", ToolIdempotencyClass.NON_IDEMPOTENT)
+            put("BrowserGetCookies", ToolIdempotencyClass.READ_ONLY)
+            put("BrowserLocate", ToolIdempotencyClass.READ_ONLY)
+            put("BrowserWaitFor", ToolIdempotencyClass.READ_ONLY)
+            put("BrowserTabs", ToolIdempotencyClass.NON_IDEMPOTENT)
+            // v1.7.0 会话工具集
+            put("BrowserBack", ToolIdempotencyClass.NON_IDEMPOTENT)
+            put("BrowserForward", ToolIdempotencyClass.NON_IDEMPOTENT)
+            put("BrowserReload", ToolIdempotencyClass.NON_IDEMPOTENT)
+            put("BrowserHistory", ToolIdempotencyClass.READ_ONLY)
+            put("BrowserFind", ToolIdempotencyClass.READ_ONLY)
+            // BrowserDownloads 含 cancel/retry/forget 变更面（重放会二次取消 /
+            // 重复入队新下载 id）——非只读，恢复计划不得自动重放。
+            put("BrowserDownloads", ToolIdempotencyClass.NON_IDEMPOTENT)
+            put("BrowserBookmarks", ToolIdempotencyClass.NON_IDEMPOTENT)
+            put("BrowserZoom", ToolIdempotencyClass.IDEMPOTENT_WRITE) // 同值重设等价
+            put("BrowserClearData", ToolIdempotencyClass.IDEMPOTENT_WRITE) // 重复清除收敛同态
+
             // ═══ GitHub（读/写分明）═══
             put("GithubGetUser", ToolIdempotencyClass.READ_ONLY)
             put("GithubListRepos", ToolIdempotencyClass.READ_ONLY)

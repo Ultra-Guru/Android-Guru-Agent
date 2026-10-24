@@ -72,7 +72,7 @@ private enum class BrowserScreenMode { BROWSER, DASHBOARD }
  *
  * **浏览器页签**（默认）：App 内嵌完整浏览器（[InAppBrowserPane] ——
  * BrowserChrome 全套外观 + 引擎 WebView，零悬浮窗权限即可用）。Agent 的
- * 24 个 browser_* 工具驱动同一引擎：Agent 驾驶时本页即「查看实时页面」
+ * 34 个 browser_* 工具驱动同一引擎：Agent 驾驶时本页即「查看实时页面」
  * 的全屏形态；「接管」经 WAITING_HUMAN 显式握手（横幅 + 工具锁定）。
  *
  * **仪表盘页签**：人侧观测/干预面板 —— 会话状态卡（显式握手状态机的人话

@@ -48,7 +48,7 @@
     <string name="browser_screen_hand_back">Hand back to Agent</string>
     <!-- 底部说明卡 -->
     <string name="browser_screen_builtin_title">Browser automation is built in</string>
-    <string name="browser_screen_builtin_desc">24 browser_* tools ship inside the app (built-in since v1.5.0, no plugin needed). Direct the Agent in chat to open pages, click, type or take screenshots. The Browser tab is a full browser that always works; with the floating-window permission, a transparent live overlay follows the Agent while you use other apps (tap the ball to toggle, long-press to end the session).</string>
+    <string name="browser_screen_builtin_desc">34 browser_* tools ship inside the app (built-in since v1.5.0, no plugin needed). Direct the Agent in chat to open pages, click, type or take screenshots. The Browser tab is a full browser that always works; with the floating-window permission, a transparent live overlay follows the Agent while you use other apps (tap the ball to toggle, long-press to end the session).</string>
 
     <!-- 实时页面卡（v1.4.1 引入；v1.5.1 语义升级：一键切浏览器页签） -->
     <string name="browser_screen_live_title">Live page</string>

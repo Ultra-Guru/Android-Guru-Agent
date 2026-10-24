@@ -1,6 +1,7 @@
 package com.apex.agent.plugin.host
 
 import com.apex.agent.platform.browser.BrowserAgentTools
+import com.apex.agent.platform.browser.BrowserSessionTools
 import com.apex.agent.plugin.api.IApexPluginHost
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -26,14 +27,19 @@ import javax.inject.Singleton
  */
 @Singleton
 class PluginHostBridge @Inject constructor(
-    private val browserAgentTools: BrowserAgentTools
+    private val browserAgentTools: BrowserAgentTools,
+    // v1.7.0：会话级工具集（历史导航 / 下载中心 / 书签 / 显示控制）一并暴露给插件
+    private val browserSessionTools: BrowserSessionTools,
 ) : IApexPluginHost.Stub() {
 
     /**
      * 宿主持有的工具（id → 工具）。BrowserAgentTools.all() 每次调用都会重新
      * 包装 TracedTool，故惰性求值一次固化快照（工具集静态，进程内不变）。
+     * v1.7.0 起并入 BrowserSessionTools（34 个 browser_* 工具全量对插件可见）。
      */
-    private val hostedTools by lazy { browserAgentTools.all().associateBy { it.id } }
+    private val hostedTools by lazy {
+        (browserAgentTools.all() + browserSessionTools.all()).associateBy { it.id }
+    }
 
     override fun executeHostTool(toolId: String?, argumentsJson: String?): String {
         val tool = toolId?.let { hostedTools[it] }
