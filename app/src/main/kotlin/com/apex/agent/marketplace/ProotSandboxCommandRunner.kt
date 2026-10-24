@@ -5,6 +5,7 @@ import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.platform.terminal.environment.LinuxEnvironmentManager
 import com.apex.agent.platform.terminal.proot.PRootArgvCapabilities
 import com.apex.agent.platform.terminal.proot.PRootEnvTrampoline
+import com.apex.agent.platform.terminal.proot.PRootLibtallocStaging
 import com.apex.agent.platform.terminal.proot.SharedStorageBridge
 import com.apex.agent.platform.terminal.proot.SystemBindProfile
 import com.apex.agent.platform.terminal.workspace.GuestUserHome
@@ -14,7 +15,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.InputStream
-import java.nio.file.Files
 import kotlin.coroutines.coroutineContext
 import kotlin.concurrent.thread
 
@@ -161,13 +161,15 @@ class ProotSandboxCommandRunner(
             val tmp = File(dir)
             if (!tmp.isDirectory) runCatching { tmp.mkdirs() }
         }
-        // libtalloc.so.2 SONAME 链接兜底（与 MCP launcher / git runner 同款）
-        val ldPath = hostEnv["LD_LIBRARY_PATH"] ?: return null
-        for (dir in ldPath.split(':').filter { it.isNotBlank() }) {
-            val talloc = File(dir, "libtalloc.so")
-            val soname = File(dir, "libtalloc.so.2")
-            if (talloc.isFile && !soname.exists()) {
-                runCatching { Files.createSymbolicLink(soname.toPath(), talloc.toPath()) }
+        // libtalloc.so.2 SONAME 入口（共享助手：LD_LIBRARY_PATH 各目录幂等
+        // 重建——含 staging 目录；悬空链接删除重建；失败不再静默吞掉，
+        // 逐目录 WARN 留痕，下次诊断日志直接可见真实异常）。
+        PRootLibtallocStaging.ensure(hostEnv, libprootPath).forEach { r ->
+            if (r.outcome == PRootLibtallocStaging.Outcome.FAILED) {
+                AppLogger.instance.warn(
+                    LogCategory.TOOL, TAG,
+                    "libtalloc.so.2 staging 失败 ${r.dir}：${r.error}"
+                )
             }
         }
         return null

@@ -56,13 +56,15 @@ class PRootHostEnvironment(
         if (!stagingDir.exists() && !stagingDir.mkdirs()) {
             error("PRootHostEnvironment: 无法创建 staging 目录 ${stagingDir.absolutePath}")
         }
-        // libtalloc.so.2 SONAME 入口 —— 每次重建（覆盖旧链接/旧文件，容忍升级）。
-        val sonameLink = File(stagingDir, "libtalloc.so.2")
-        if (sonameLink.exists()) sonameLink.delete()
-        java.nio.file.Files.createSymbolicLink(
-            sonameLink.toPath(),
-            tallocLibrary.toPath()
-        )
+        // libtalloc.so.2 SONAME 入口（经共享助手幂等重建：悬空链接删除重建，
+        // 覆盖 app 升级后 staging 指向旧 nativeLibraryDir 的失效链接；
+        // 逐目录落地，staging 失败即 prepare 失败——staging 是 linker
+        // 搜索首项，也是唯一可写性有保证的目录）。
+        val results = PRootLibtallocStaging.ensure(hostEnv(), prootBinary.absolutePath)
+        val stagingOutcome = results.firstOrNull { it.dir == stagingDir.absolutePath }?.outcome
+        if (stagingOutcome == PRootLibtallocStaging.Outcome.FAILED) {
+            error("PRootHostEnvironment: staging libtalloc.so.2 链接失败（${stagingDir.absolutePath}）")
+        }
         if (!prootTmpDir.exists() && !prootTmpDir.mkdirs()) {
             error("PRootHostEnvironment: 无法创建 proot tmp 目录 ${prootTmpDir.absolutePath}")
         }

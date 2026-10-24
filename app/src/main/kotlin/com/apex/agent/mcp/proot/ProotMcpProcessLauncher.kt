@@ -8,13 +8,13 @@ import com.apex.agent.core.tools.mcp.McpProcessLauncher
 import com.apex.agent.platform.terminal.environment.LinuxEnvironmentManager
 import com.apex.agent.platform.terminal.proot.PRootArgvCapabilities
 import com.apex.agent.platform.terminal.proot.PRootEnvTrampoline
+import com.apex.agent.platform.terminal.proot.PRootLibtallocStaging
 import com.apex.agent.platform.terminal.proot.SharedStorageBridge
 import com.apex.agent.platform.terminal.proot.SystemBindProfile
 import com.apex.agent.platform.terminal.workspace.GuestUserHome
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
-import java.nio.file.Files
 import kotlin.concurrent.thread
 
 /** stderr 环形缓冲容量（字符数）。 */
@@ -202,15 +202,15 @@ class ProotMcpProcessLauncher(
             val tmp = File(dir)
             if (!tmp.isDirectory) runCatching { tmp.mkdirs() }
         }
-        // libtalloc.so.2 SONAME 入口：Android 打包要求 jniLibs 以 lib 前缀加 .so
-        // 结尾命名，而 proot 的 DT_NEEDED 是 libtalloc.so.2 —— 需要同名字的链接
-        // 指向真实文件（Termux/UserLAnd 先例）。逐个 LD_LIBRARY_PATH 目录兜底重建。
-        val ldPath = hostEnv["LD_LIBRARY_PATH"] ?: return
-        for (dir in ldPath.split(':').filter { it.isNotBlank() }) {
-            val talloc = File(dir, "libtalloc.so")
-            val soname = File(dir, "libtalloc.so.2")
-            if (talloc.isFile && !soname.exists()) {
-                runCatching { Files.createSymbolicLink(soname.toPath(), talloc.toPath()) }
+        // libtalloc.so.2 SONAME 入口（共享助手：LD_LIBRARY_PATH 各目录幂等
+        // 重建——含 staging 目录；悬空链接删除重建；失败不再静默吞掉，
+        // 逐目录 WARN 留痕，下次诊断日志直接可见真实异常）。
+        PRootLibtallocStaging.ensure(hostEnv, libprootPath).forEach { r ->
+            if (r.outcome == PRootLibtallocStaging.Outcome.FAILED) {
+                AppLogger.instance.warn(
+                    LogCategory.TOOL, TAG,
+                    "libtalloc.so.2 staging 失败 ${r.dir}：${r.error}"
+                )
             }
         }
     }
