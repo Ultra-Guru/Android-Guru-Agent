@@ -113,6 +113,12 @@ class BrowserViewModel @Inject constructor(
 
     init {
         engine.addUiCallback(callback)
+        // v1.8.0 实时动作流（事件驱动，替代纯轮询的动作卡数据源）：tracer 每条
+        // record 即时推来时立刻刷新镜像——动作卡从「最慢 1.5s 一拍」变「落记录即滚」。
+        // 驾驶态轮询（下方）保留，继续兜底 tabs 快照等非 trace 数据的刷新。
+        viewModelScope.launch {
+            tracer.events.collect { publishSnapshot() }
+        }
         // 实时动作流驱动：state 变化（回调/刷新发布）→ 按需启停轮询。
         viewModelScope.launch {
             uiState.map { it.state }.distinctUntilChanged().collect { state ->
@@ -214,7 +220,10 @@ class BrowserViewModel @Inject constructor(
         }
     }
 
-    /** 发布一次完整镜像（状态回调 / 手动刷新共用；Main 线程上读标签与 trace 尾部）。 */
+    /**
+     * 发布一次完整镜像（状态回调 / 手动刷新共用；Main 线程上读标签与 trace 尾部）。
+     * [publishSnapshot] 为「保持当前状态、仅刷新数据面」的变体（v1.8.0 事件驱动路径）。
+     */
     private fun publish(
         state: BrowserEngine.BrowserSessionState,
         url: String?,
@@ -231,10 +240,22 @@ class BrowserViewModel @Inject constructor(
         }
     }
 
+    private fun publishSnapshot() {
+        _uiState.update {
+            it.copy(
+                tabs = engine.tabsSnapshot(),
+                actions = tracer.recent(10),
+            )
+        }
+    }
+
     private companion object {
         const val TAG = "BrowserScreen"
 
-        /** AGENT_DRIVING 实时轮询周期：1.5s —— 动作卡滚动跟手且不打爆 trace 读。 */
-        const val DRIVING_POLL_INTERVAL_MS = 1_500L
+        /**
+         * AGENT_DRIVING 实时轮询周期：2.5s（v1.8.0 起 action 卡走 tracer 事件流
+         * 即时驱动，轮询只兜底标签快照等非 trace 数据，放缓以省 trace 读开销）。
+         */
+        const val DRIVING_POLL_INTERVAL_MS = 2_500L
     }
 }

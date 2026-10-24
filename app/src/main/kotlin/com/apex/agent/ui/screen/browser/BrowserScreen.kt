@@ -358,8 +358,10 @@ private fun TabsCard(
 }
 
 /** 最近自动化动作卡：tracer.recent(10) —— 工具 / 结果摘要 / 耗时 / 状态。
- *  AGENT_DRIVING 期间由 ViewModel 1.5s 轮询驱动，动作实时滚动；非驾驶态
- *  静止（状态回调仍会顺带刷新）。 */
+ *  AGENT_DRIVING 期间由 tracer 事件流即时驱动（v1.8.0，落记录即滚），
+ *  轮询只兜底非 trace 数据；非驾驶态静止（状态回调仍会顺带刷新）。
+ *  v1.8.0 视觉增强：每条动作带成败色点（error 非空 = 红 / 成功 = 主色），
+ *  耗时超 2s 标琥珀——驾驶舱一眼看出哪步卡了。 */
 @Composable
 private fun ActionsCard(actions: List<BrowserTracer.Entry>) {
     GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -369,14 +371,23 @@ private fun ActionsCard(actions: List<BrowserTracer.Entry>) {
                 EmptyHint(stringResource(R.string.browser_screen_actions_empty))
             } else {
                 actions.forEach { entry ->
+                    val failed = entry.error != null
+                    val slow = entry.durationMs > SLOW_ACTION_MS
                     Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            // 成败色点：失败=错误红 / 成功=主色（与状态卡色点同语言）
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                            )
                             Text(
                                 entry.tool,
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 fontFamily = FontFamily.Monospace,
-                                color = MaterialTheme.colorScheme.primary,
+                                color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.weight(1f),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -384,7 +395,7 @@ private fun ActionsCard(actions: List<BrowserTracer.Entry>) {
                             Text(
                                 "${entry.state} · " + stringResource(R.string.browser_screen_duration_ms, entry.durationMs),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (slow) statusWarning() else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         Text(
@@ -400,6 +411,9 @@ private fun ActionsCard(actions: List<BrowserTracer.Entry>) {
         }
     }
 }
+
+/** 动作耗时告警阈值（ms）：超过则以警示色显示耗时。 */
+private const val SLOW_ACTION_MS = 2_000L
 
 /**
  * 人工操作卡：按会话状态切换按钮形态——

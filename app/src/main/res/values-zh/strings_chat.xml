@@ -133,6 +133,11 @@
     <string name="chat_browser_screenshot_size">%1$d × %2$d px</string>
     <string name="chat_cd_enlarge_screenshot">放大截图</string>
     <string name="chat_cd_close_screenshot">关闭截图</string>
+    <!-- 浏览器快照渲染（BrowserToolCards.kt，v1.8.0） -->
+    <string name="chat_browser_snapshot_label">页面快照</string>
+    <string name="chat_browser_snapshot_expand">展开元素列表</string>
+    <string name="chat_browser_snapshot_collapse">收起元素列表</string>
+    <string name="chat_browser_snapshot_truncated">已截断</string>
     <string name="chat_status_done">完成</string>
     <string name="chat_status_failed">失败</string>
     <string name="chat_status_running">运行</string>

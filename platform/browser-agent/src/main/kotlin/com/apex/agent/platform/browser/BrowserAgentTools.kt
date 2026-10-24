@@ -4,11 +4,15 @@ import android.content.Context
 import com.apex.agent.core.tools.AgentTool
 import com.apex.agent.core.tools.StreamingAgentTool
 import com.apex.agent.core.tools.ToolStreamEvent
+import com.apex.browser.core.BatchAction
+import com.apex.browser.core.BatchActionValidator
 import com.apex.browser.core.BrowserScript
 import com.apex.browser.core.DomParser
 import com.apex.browser.engine.BrowserEngine
 import com.apex.browser.engine.BrowserTracer
+import com.apex.browser.engine.batchExecute
 import com.apex.browser.engine.fullPageScreenshot
+import com.apex.browser.engine.scrollToBoundary
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
@@ -156,11 +160,13 @@ class BrowserAgentTools @Inject constructor(
         override val name = "BrowserSnapshot"
         override val description =
             "获取当前页面的结构化快照：可交互元素列表（带稳定 ref，如 r_3k9f）与页面概要。Agent 应先调用本工具了解页面，再用 ref 操作元素。" +
-            "可用 focus 指定剪枝策略：form（仅表单元素）/ content（仅文本链接标题）/ 不填或 all（全部交互元素）。"
+            "可用 focus 指定剪枝策略：form（仅表单元素）/ content（仅文本链接标题）/ 不填或 all（全部交互元素）。" +
+            "token_budget 控制摘要字符预算（默认 1600；复杂表单/需要更多元素时可调大到 3000）。"
         override val parametersSchema = """{
             "type":"object",
             "properties":{
-                "focus":{"type":"string","description":"剪枝策略: all(默认,全交互元素) | form(仅表单输入) | content(仅文本/链接/标题)"}
+                "focus":{"type":"string","description":"剪枝策略: all(默认,全交互元素) | form(仅表单输入) | content(仅文本/链接/标题)"},
+                "token_budget":{"type":"integer","description":"摘要字符预算，默认 1600（400..4000）；元素被折叠过多时调大"}
             }
         }"""
         override suspend fun execute(arguments: String): String {
@@ -171,7 +177,8 @@ class BrowserAgentTools @Inject constructor(
                 "content" -> DomParser.SnapshotStrategy.CONTENT_SUMMARY
                 else -> DomParser.SnapshotStrategy.INTERACTIVE_ONLY
             }
-            val snap = engine.snapshot(strategy = strategy)
+            val budget = argInt(arguments, "token_budget", 1600).coerceIn(400, 4000)
+            val snap = engine.snapshot(tokenBudget = budget, strategy = strategy)
             val dialogNote = engine.lastDialog?.let { "\n💬 页面弹出对话: $it" } ?: ""
             return if (snap.interactiveCount == 0) "(当前页面无可交互元素或尚未加载)$dialogNote"
             else snap.domSummary + dialogNote
@@ -305,20 +312,29 @@ class BrowserAgentTools @Inject constructor(
         }
     }
 
-    /** 滚动页面（支持无限滚动检测） */
+    /** 滚动页面（支持无限滚动检测 + 边界直达） */
     val scroll = object : StreamingAgentTool {
         override val id = "BrowserScroll"
         override val name = "BrowserScroll"
-        override val description = "在页面内滚动，delta_y 为正向下、为负向上。wait_for_new=true 时检测无限滚动新内容加载。"
+        override val description =
+            "在页面内滚动。delta_y 为正向下、为负向上；wait_for_new=true 时检测无限滚动新内容加载。" +
+                "to 参数一步到边界：bottom（滚到底部，触发无限滚动加载/看页脚）或 top（回顶部）——超长页面优先用 to，delta_y 有单次上限。"
         override val parametersSchema = """{
             "type":"object",
             "properties":{
-                "delta_y":{"type":"integer","description":"滚动像素，正向下负向上，默认 400"},
+                "delta_y":{"type":"integer","description":"滚动像素，正向下负向上，默认 400（to 存在时忽略）"},
+                "to":{"type":"string","enum":["top","bottom"],"description":"一步滚到边界：bottom 到底/top 回顶（优先于 delta_y）"},
                 "wait_for_new":{"type":"boolean","description":"是否在滚动后等待新内容加载并报告新增元素数"}
             }
         }"""
         override suspend fun execute(arguments: String): String {
             guard(engine)?.let { return it }
+            val to = argStr(arguments, "to")?.lowercase()
+            if (to == "top" || to == "bottom") {
+                val ok = engine.scrollToBoundary(to == "bottom")
+                return if (ok) "已滚动到页面${if (to == "bottom") "底部" else "顶部"}（无限滚动页可再用 BrowserWaitFor(network_idle) 或 wait_for_new 确认新内容）"
+                else "Error: 无法滚动（无激活标签页）"
+            }
             val dy = argInt(arguments, "delta_y", 400)
             val waitNew = argBool(arguments, "wait_for_new")
             val r = engine.scroll(dy, waitNew)
@@ -329,6 +345,13 @@ class BrowserAgentTools @Inject constructor(
         override fun executeStream(arguments: String): Flow<ToolStreamEvent> = callbackFlow {
             val guardMsg = guard(engine)
             if (guardMsg != null) { send(ToolStreamEvent.Error(guardMsg)); close(); return@callbackFlow }
+            val to = argStr(arguments, "to")?.lowercase()
+            if (to == "top" || to == "bottom") {
+                val ok = engine.scrollToBoundary(to == "bottom")
+                val msg = if (ok) "已滚动到页面${if (to == "bottom") "底部" else "顶部"}" else "Error: 无法滚动（无激活标签页）"
+                send(ToolStreamEvent.Output(msg)); send(ToolStreamEvent.Complete(msg)); close(); awaitClose {}
+                return@callbackFlow
+            }
             val dy = argInt(arguments, "delta_y", 400)
             val waitNew = argBool(arguments, "wait_for_new")
             val r = engine.scroll(dy, waitNew) { p, phase -> trySend(ToolStreamEvent.Progress(percent = p.toFloat(), message = phase)) }
@@ -527,8 +550,11 @@ class BrowserAgentTools @Inject constructor(
             "BrowserSelect" -> redact("value")
             "BrowserFileUpload" -> redact("path")
             "BrowserWaitFor" -> redact("value")
+            // 批量动作里的 text/value 字段同样可能含敏感输入（数组元素内嵌字段，
+            // 同一正则按字段名匹配即可覆盖）
+            "BrowserBatchActions" -> redact("text").replace(Regex("\"value\"\\s*:\\s*\"[^\"]*\""), "\"value\":\"***\"")
             else -> args
-        }.take(200)
+        }.take(400)
         }
 
         /** 可观测性结果脱敏（v1.1.0）：BrowserGetCookies 的返回值含会话凭据，
@@ -544,15 +570,21 @@ class BrowserAgentTools @Inject constructor(
         override val id = "BrowserWaitFor"
         override val name = "BrowserWaitFor"
         override val description =
-            "等待页面异步变化成立后再继续：selector（CSS 选择器出现）/ text（页面可见文本包含子串）/ url（当前 URL 包含子串）。" +
+            "等待页面异步变化成立后再继续：selector（CSS 选择器出现）/ text（页面文本包含子串）/ url（URL 包含子串，SPA 路由即时）/" +
+                "element_gone（选择器从 DOM 消失，弹窗/加载态收起）/ text_gone（文本消失，如「加载中…」）/ " +
+                "network_idle（在途 fetch/xhr 归零，连续 2 次判定）/ selector_count（命中数满足谓词，如 'li.item >= 10' 或 '.result 5'）。" +
                 "点击/提交后内容异步到达时用它替代盲 sleep，返回是否命中与耗时。"
-        override val parametersSchema = """{"type":"object","properties":{"mode":{"type":"string","enum":["selector","text","url"],"description":"等待条件类型"},"value":{"type":"string","description":"选择器 / 文本子串 / URL 子串"},"timeout_ms":{"type":"integer","description":"超时毫秒数，默认 10000，上限 60000"}},"required":["mode","value"]}"""
+        override val parametersSchema = """{"type":"object","properties":{"mode":{"type":"string","enum":["selector","text","url","element_gone","text_gone","network_idle","selector_count"],"description":"等待条件类型"},"value":{"type":"string","description":"selector/text/url 的子串；element_gone/text_gone 的消失目标；network_idle 留空；selector_count 为 '<选择器> <算子><N>' 如 'li.item >= 10'"},"timeout_ms":{"type":"integer","description":"超时毫秒数，默认 10000，上限 60000"}},"required":["mode"]}"""
         override suspend fun execute(arguments: String): String {
             guard(engine)?.let { return it }
             val mode = argStr(arguments, "mode")?.lowercase()
-                ?: return "Error: 缺少 mode 参数（selector|text|url）"
-            val value = argStr(arguments, "value")
-                ?: return "Error: 缺少 value 参数"
+                ?: return "Error: 缺少 mode 参数（selector|text|url|element_gone|text_gone|network_idle|selector_count）"
+            // network_idle 无条件值；其余模式必须带 value
+            val value = when {
+                argStr(arguments, "value") != null -> argStr(arguments, "value")!!
+                mode == "network_idle" -> ""
+                else -> return "Error: 缺少 value 参数"
+            }
             val timeout = argInt(arguments, "timeout_ms", 10_000).toLong()
             val outcome = engine.waitForCondition(mode, value, timeout)
             return if (outcome.matched) {
@@ -827,11 +859,108 @@ class BrowserAgentTools @Inject constructor(
         }
     }
 
+    /**
+     * 批量动作执行（v1.8.0）：一次调用串行执行 ≤8 个动作，把 N 次「模型往返 →
+     * 工具执行」压缩为 1 次。表单填写（输入 → 选择 → 勾选 → 提交）主战场。
+     */
+    val batchActions = object : AgentTool {
+        override val id = "BrowserBatchActions"
+        override val name = "BrowserBatchActions"
+        override val description =
+            "按序串行执行多个浏览器动作（上限 8 个），一次调用完成整个动作序列——适用于**动作已确定**的场景：" +
+                "表单填写（输标题→选分类→勾选项→点提交）、搜索（输入→回车→等结果）等，比逐个调用 click/input 快数倍。" +
+                "每个动作带独立的动作后验证；**任一动作失败即停止后续**（失败摘要会标明断在第几步）。" +
+                "动作类型：click / input / select / press_key / scroll / wait（条件等待，同 BrowserWaitFor 七模式）。" +
+                "注意：序列依赖页面当前状态，先 BrowserSnapshot 拿 ref 再编排；不确定结果的探索性操作不要入批。"
+        override val parametersSchema = """{
+            "type":"object",
+            "properties":{
+                "actions":{
+                    "type":"array",
+                    "maxItems":8,
+                    "description":"动作序列，按序执行",
+                    "items":{
+                        "type":"object",
+                        "properties":{
+                            "type":{"type":"string","enum":["click","input","select","press_key","scroll","wait"],"description":"动作类型"},
+                            "ref":{"type":"string","description":"click/input/select 的元素稳定引用"},
+                            "text":{"type":"string","description":"input 的文本（append=true 追加，press_enter=true 输入后回车）"},
+                            "append":{"type":"boolean","description":"input 追加模式，默认整段替换"},
+                            "press_enter":{"type":"boolean","description":"input 后回车提交"},
+                            "value":{"type":"string","description":"select 的选项 value（by_text=true 按可见文本）"},
+                            "by_text":{"type":"boolean","description":"select 按可见文本匹配"},
+                            "key":{"type":"string","description":"press_key 的键名，如 enter / escape"},
+                            "delta_y":{"type":"integer","description":"scroll 的像素，正向下负向上"},
+                            "mode":{"type":"string","description":"wait 的条件类型（同 BrowserWaitFor 七模式）"},
+                            "wait_value":{"type":"string","description":"wait 的条件值"},
+                            "timeout_ms":{"type":"integer","description":"wait 的超时毫秒，默认 5000"}
+                        },
+                        "required":["type"]
+                    }
+                }
+            },
+            "required":["actions"]
+        }"""
+        override suspend fun execute(arguments: String): String {
+            guard(engine)?.let { return it }
+            val actions = parseBatchActions(arguments)
+                ?: return "Error: actions 参数不合法（需为动作对象数组，每项至少含 type；可用类型 click/input/select/press_key/scroll/wait）"
+            BatchActionValidator.check(actions)?.let { return it }
+            val outcomes = engine.batchExecute(actions)
+            val sb = StringBuilder("批量执行 ${outcomes.size}/${actions.size} 个动作：\n")
+            outcomes.forEach { sb.appendLine(it.summaryLine()) }
+            if (outcomes.size < actions.size) {
+                sb.appendLine("⏹ 第 ${outcomes.size + 1} 个动作失败，后续 ${actions.size - outcomes.size} 个动作未执行（修正后可重新提交剩余序列）。")
+            } else {
+                sb.appendLine("全部完成。建议 BrowserSnapshot 获取最新页面状态。")
+            }
+            return sb.toString().trim()
+        }
+    }
+
+    /** 解析 BrowserBatchActions 的 actions JSON 数组 → [BatchAction] 列表（非法形态返回 null）。 */
+    private fun parseBatchActions(arguments: String): List<BatchAction>? = runCatching {
+        val arr = json.decodeFromString<JsonObject>(arguments)["actions"]
+            ?: return null
+        val items = arr as? kotlinx.serialization.json.JsonArray ?: return null
+        // 任一元素形态非法即整体判非法（静默丢项会造成「提交 5 个只执行 4 个」的
+        // 序列错位，模型无从发现）——让模型拿到明确的参数错误重新提交。
+        items.map { el ->
+            val o = el as? JsonObject ?: return null
+            fun s(k: String) = (o[k] as? kotlinx.serialization.json.JsonPrimitive)?.content
+            fun b(k: String) = s(k)?.toBooleanStrictOrNull() ?: false
+            fun i(k: String, d: Int) = s(k)?.toIntOrNull() ?: d
+            val type = when (s("type")?.lowercase()) {
+                "click" -> BatchAction.Type.CLICK
+                "input" -> BatchAction.Type.INPUT
+                "select" -> BatchAction.Type.SELECT
+                "press_key" -> BatchAction.Type.PRESS_KEY
+                "scroll" -> BatchAction.Type.SCROLL
+                "wait" -> BatchAction.Type.WAIT
+                else -> return null
+            }
+            BatchAction(
+                type = type,
+                ref = s("ref") ?: "",
+                text = s("text") ?: "",
+                append = b("append"),
+                pressEnter = b("press_enter"),
+                value = s("value") ?: "",
+                byText = b("by_text"),
+                key = s("key") ?: "",
+                waitMode = s("mode")?.lowercase() ?: "",
+                waitValue = s("wait_value") ?: "",
+                waitTimeoutMs = (s("timeout_ms")?.toLongOrNull() ?: 5_000L).coerceIn(500, 60_000),
+                deltaY = i("delta_y", 0),
+            )
+        }
+    }.getOrNull()
+
     fun all(): List<AgentTool> = listOf(
         navigate, snapshot, click, input, select, toggle, scroll, screenshot, show,
         fileUpload, dateInput, debugDump, contextSummary, networkLog, downloadList,
         waitFor, pageType,
         pressKey, hover, drag, extractContent, executeJs, getCookies, locate,
-        tabs
+        tabs, batchActions
     ).map { TracedTool(it, engine, tracer) }
 }

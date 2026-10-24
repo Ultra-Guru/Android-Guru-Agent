@@ -133,6 +133,11 @@
     <string name="chat_browser_screenshot_size">%1$d × %2$d px</string>
     <string name="chat_cd_enlarge_screenshot">Enlarge screenshot</string>
     <string name="chat_cd_close_screenshot">Close screenshot</string>
+    <!-- Browser snapshot rendering (BrowserToolCards.kt, v1.8.0) -->
+    <string name="chat_browser_snapshot_label">Page snapshot</string>
+    <string name="chat_browser_snapshot_expand">Show element list</string>
+    <string name="chat_browser_snapshot_collapse">Hide element list</string>
+    <string name="chat_browser_snapshot_truncated">Truncated</string>
     <string name="chat_status_done">Done</string>
     <string name="chat_status_failed">Failed</string>
     <string name="chat_status_running">Running</string>
