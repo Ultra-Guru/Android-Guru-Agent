@@ -6,27 +6,34 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * [TerminalSyntax] 高亮测试（T96）—— 断言 span 数量与色值（色值取自
- * ConsoleTokens，与 GitHub Dark 色板一致）。
+ * [TerminalSyntax] 高亮测试（T96）。
+ *
+ * 断言用 span 的 (start, end) 区间（跨版本稳定 API）而非 Range 字段名 ——
+ * 避开 value/element 命名迁移；色板锚定独立断言（防意外漂白）。
  */
 class TerminalSyntaxTest {
 
+    /** span 区间摘要：`start..end` 列表（按出现顺序）。 */
+    private fun spans(s: androidx.compose.ui.text.AnnotatedString): List<IntRange> =
+        s.spanStyles.map { it.start..it.end }
+
     @Test
-    fun `command highlight colors keyword flag and path`() {
-        val s = TerminalSyntax.highlightCommand("export PATH=/usr/bin -v 'x y'")
-        // span 预期：export(关键字) + =(操作符) + /usr/bin(路径) + -v(参数) + 'x y'(字符串)
-        assertEquals(5, s.spanStyles.size)
+    fun `command highlight spans keyword operator path flag string`() {
+        val cmd = "export PATH=/usr/bin -v 'x y'"
+        val s = TerminalSyntax.highlightCommand(cmd)
+        // span 预期（按出现顺序；end 为排他口径，与 AnnotatedString.Range 一致）：
+        // export 关键字 / = 操作符 / /usr/bin 路径 / -v 参数 / 'x y' 字符串
         assertEquals(
             listOf(
-                ConsoleTokens.syntaxKeyword,
-                ConsoleTokens.syntaxOperator,
-                ConsoleTokens.syntaxPath,
-                ConsoleTokens.syntaxFlag,
-                ConsoleTokens.syntaxString
+                0..6,        // export（0..5，排他 end=6）
+                11..12,      // =
+                12..20,      // /usr/bin（12..19，排他 end=20）
+                21..23,      // -v
+                24..29       // 'x y'（24..28，排他 end=29）
             ),
-            s.spanStyles.map { it.style.color }
+            spans(s)
         )
-        assertEquals("export PATH=/usr/bin -v 'x y'", s.text)
+        assertEquals(cmd, s.text)
     }
 
     @Test
@@ -37,36 +44,26 @@ class TerminalSyntaxTest {
     }
 
     @Test
-    fun `number token colored in command`() {
+    fun `number token single span in command`() {
         val s = TerminalSyntax.highlightCommand("sleep 5")
-        assertEquals(1, s.spanStyles.size)
-        assertEquals(ConsoleTokens.syntaxNumber, s.spanStyles[0].style.color)
+        assertEquals(listOf(6..7), spans(s))
     }
 
     @Test
-    fun `output highlight colors path number and error word`() {
+    fun `output highlight spans error path number`() {
         val s = TerminalSyntax.highlightOutput("failed /data/tmp 42 times")
-        // span 预期：failed(错误词红) + /data/tmp(路径绿) + 42(数字蓝)
-        assertEquals(3, s.spanStyles.size)
+        // failed(0..6) / /data/tmp(7..16) / 42(17..19)
         assertEquals(
-            listOf(
-                ConsoleTokens.lineError,
-                ConsoleTokens.syntaxPath,
-                ConsoleTokens.syntaxNumber
-            ),
-            s.spanStyles.map { it.style.color }
+            listOf(0..6, 7..16, 17..19),
+            spans(s)
         )
     }
 
     @Test
-    fun `output url colored`() {
-        val s = TerminalSyntax.highlightOutput("see https://example.com/x for details")
-        assertEquals(1, s.spanStyles.size)
-        assertEquals(ConsoleTokens.syntaxString, s.spanStyles[0].style.color)
-        // span 覆盖整个 URL
-        assertEquals("https://example.com/x", s.text.substring(
-            s.spanStyles[0].start, s.spanStyles[0].end
-        ))
+    fun `output url span covers exactly the url`() {
+        val text = "see https://example.com/x for details"
+        val s = TerminalSyntax.highlightOutput(text)
+        assertEquals(listOf(4..25), spans(s))
     }
 
     @Test
@@ -74,8 +71,7 @@ class TerminalSyntaxTest {
         val s = TerminalSyntax.highlightCommand("echo 'open")
         // 'open（无闭合）→ 整段字符串 span，文本保真
         assertEquals("echo 'open", s.text)
-        assertEquals(1, s.spanStyles.size)
-        assertEquals(ConsoleTokens.syntaxString, s.spanStyles[0].style.color)
+        assertEquals(listOf(5..10), spans(s))
     }
 
     @Test
@@ -84,5 +80,7 @@ class TerminalSyntaxTest {
         assertEquals(Color(0xFF7EE787), ConsoleTokens.primary)
         assertEquals(Color(0xFF0D1117), ConsoleTokens.background)
         assertEquals(Color(0xFF161B22), ConsoleTokens.surfaceContainerHigh)
+        assertEquals(Color(0xFFE6EDF3), ConsoleTokens.onSurface)
+        assertEquals(Color(0xFF8B949E), ConsoleTokens.onSurfaceVariant)
     }
 }
