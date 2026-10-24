@@ -21,7 +21,7 @@
     <string name="drawer_glasslab">玻璃实验室</string>
     <string name="drawer_about">关于</string>
     <string name="drawer_open_nav">打开导航</string>
-    <string name="drawer_tagline">全能 AI 助手</string>
+    <string name="drawer_tagline">Android 上的 Agent 工作台</string>
     <string name="drawer_mem_count">%1$d 条</string>
     <string name="drawer_github_not_connected">GitHub 未连接</string>
 
@@ -309,7 +309,7 @@
     <string name="model_select_provider">选择模型服务商</string>
     <string name="model_base_url_blank_hint">完全自定义：填 https://api.xxx.com/v1（自动补 /chat/completions），或以 /chat/completions 结尾的完整路径（原样直发）</string>
     <string name="model_request_url_hint">请求发往 %1$s</string>
-    <string name="model_url_deviated">⚠ 当前 Base URL 偏离「%1$s」官方预设（官方：%2$s）。拉到的模型清单由该端点返回，出现的 model id（含 test / 命名不完整项）均来自它，非官方列表。</string>
+    <string name="model_url_deviated">当前 Base URL 偏离「%1$s」官方预设（官方：%2$s）。拉到的模型清单由该端点返回，出现的 model id（含 test / 命名不完整项）均来自它，非官方列表。</string>
     <string name="model_restore_official">恢复官方端点 %1$s</string>
     <string name="model_hide_key">隐藏</string>
     <string name="model_show_key">显示</string>
@@ -329,7 +329,7 @@
     <string name="model_delete_profile_title">删除模型档案</string>
     <string name="model_delete_confirm_text">确定删除「%1$s」（%2$s）？\n\n该操作不可恢复；默认档案不可删除。</string>
     <string name="model_available_title">%1$s · %2$s 的可用模型（%3$d）</string>
-    <string name="model_deviated_banner">⚠ 端点偏离官方预设 —— 清单由该中转/自定义端点返回，非官方模型表</string>
+    <string name="model_deviated_banner">端点偏离官方预设 —— 清单由该中转/自定义端点返回，非官方模型表</string>
     <string name="model_filter">筛选模型</string>
     <string name="model_empty_models">端点未返回任何模型。请确认 Base URL 正确、API Key 有权限，或直接在下方手动填写模型 ID。</string>
     <string name="model_manual_id_label">或手动填写模型 ID</string>
@@ -431,7 +431,7 @@
     <string name="memory_chat_delete_text">确定删除 \"%1$s\" 吗？删除后 Agent 将不再记得这条内容。</string>
     <string name="memory_chat_clear_title">清空聊天记忆</string>
     <string name="memory_chat_clear_text">将删除全部 %1$d 条聊天记忆（画像 / 近况 / 里程碑），删除后无法恢复。</string>
-    <string name="memory_chat_clear">一键清空</string>
+    <string name="memory_chat_clear">清空</string>
     <string name="memory_chat_msg_deleted">已删除该条记忆</string>
     <string name="memory_chat_msg_missing">该条记忆已不存在</string>
     <string name="memory_chat_msg_cleared">已清空 %1$d 条聊天记忆</string>
@@ -527,8 +527,8 @@
     <string name="onboarding_next">下一步</string>
     <string name="onboarding_start">开始使用</string>
     <string name="onboarding_mascot">Apex Agent 品牌吉祥物</string>
-    <string name="onboarding_tagline">口袋里的 AI 终端智能体</string>
-    <string name="onboarding_welcome_desc">对话驱动 · 真实终端 · 百项工具\n让 Agent 在你的手机上真正干活</string>
+    <string name="onboarding_tagline">口袋里的终端级 Agent</string>
+    <string name="onboarding_welcome_desc">对话驱动 · 真实终端 · 上百项工具\nAgent 直接在手机上完成任务</string>
     <string name="onboarding_cap_agent_title">对话智能体</string>
     <string name="onboarding_cap_agent_desc">多模型接入、计划确认、工具编排 —— 复杂任务一步步执行并汇报</string>
     <string name="onboarding_cap_terminal_title">Ubuntu 终端</string>
@@ -577,14 +577,14 @@
     <string name="onboarding_perm_notif_desc">Android 13+ 需要显式授权 —— 前台服务的常驻通知、任务完成与需要确认的提醒都依赖它；不授权则通知静默不可见</string>
     <string name="onboarding_perm_granted">✓ 已授权</string>
     <string name="onboarding_final_title">最后一步</string>
-    <string name="onboarding_ready_desc">进入后先在「设置 → 模型配置」填入你的\nAPI 密钥（OpenAI / Anthropic / 兼容端点），\nAgent 才能开始思考</string>
+    <string name="onboarding_ready_desc">进入后先在「设置 → 模型配置」填入你的\nAPI 密钥（OpenAI / Anthropic / 兼容端点），\nAgent 才能开始执行任务</string>
     <string name="onboarding_quickstart_title">上手路线</string>
     <string name="onboarding_quickstart_steps">1 · 抽屉菜单打开「设置」配置模型\n2 · 回到 Agent 对话页发第一条消息\n3 · 试试「终端」页离线解包内置 Ubuntu\n4 · 让 Agent 帮你装包、跑脚本、改文件</string>
 
     <!-- ═══ Foreground service notification (ApexCoreService) ═══ -->
     <string name="core_notif_channel_name">Apex Agent 服务</string>
-    <string name="core_notif_channel_desc">AI助手后台运行通知</string>
-    <string name="core_notif_running">AI助手运行中</string>
+    <string name="core_notif_channel_desc">Agent 后台运行通知</string>
+    <string name="core_notif_running">Agent 运行中</string>
     <!-- ═══ P2 i18n: GitHub 连接菜单（GithubIconButton）+ 通用 ═══ -->
     <string name="github_menu_connected">已连接：%1$s</string>
     <string name="github_menu_disconnect">点击断开</string>
@@ -599,7 +599,7 @@
     <string name="about_highlight_2">Coding 工位：真实文件夹工作区 + 内置 Git + 终端输出内联流水</string>
     <string name="about_highlight_3">Ubuntu 终端重写：VT 引擎、CSI 兼容与中文输入法稳定输入</string>
     <string name="about_highlight_4">双思考体系：模型原生强度 + 七档自研档位，深水区自动升级</string>
-    <string name="about_easter_egg_toast">🎉 你找到了烟花彩蛋！</string>
+    <string name="about_easter_egg_toast">你找到了烟花彩蛋</string>
     <string name="about_highlights_hint">连点本页底部的机器人图标五次试试</string>
     <string name="about_section_build">版本与构建</string>
     <string name="about_section_update">软件更新</string>
@@ -684,7 +684,7 @@
     <string name="about_update_local_install">安装</string>
     <string name="about_update_local_delete">删除</string>
     <string name="about_feature_agent_title">Agent 对话</string>
-    <string name="about_feature_agent_desc">全能 AI 助手：多档思考、工具调用、技能生态与聊天记忆</string>
+    <string name="about_feature_agent_desc">多档思考、工具编排、技能生态与聊天记忆</string>
     <string name="about_feature_coding_title">Coding 模式</string>
     <string name="about_feature_coding_desc">独立编码引擎 + 真实文件夹工作区（文件树 / Git 变更 / 终端）</string>
     <string name="about_feature_terminal_title">Ubuntu 终端</string>
@@ -727,6 +727,28 @@
     <!-- #218 记忆摄取开关：标题/描述/隐私告知 -->
     <string name="settings_memory_capture_title">聊天记忆自动摄取</string>
     <string name="settings_memory_capture_desc">自动从对话中沉淀关于你的稳定事实，并在后续对话中召回参考。关闭后不再新增任何记忆 —— 已有记忆可在记忆页查看或删除</string>
+    <!-- ═══ Settings 英文残留资源化（Agent 行为区 + 工具/网络区高频项）═══ -->
+    <string name="settings_tab_agent">Agent</string>
+    <string name="settings_dialog_ok">确定</string>
+    <string name="settings_enable_tools">启用工具</string>
+    <string name="settings_streaming">流式输出</string>
+    <string name="settings_keep_alive_conn">连接保活</string>
+    <string name="settings_keep_alive_service">后台常驻</string>
+    <string name="settings_retry_count">重试次数</string>
+    <string name="settings_max_iterations">最大迭代轮数</string>
+    <string name="settings_reflection_rounds">评审轮数</string>
+    <string name="settings_retry_loop_section">重试与循环检测</string>
+    <string name="settings_auto_retry">自动重试</string>
+    <string name="settings_max_retry_per_action">单动作最大重试</string>
+    <string name="settings_loop_detection">循环检测</string>
+    <string name="settings_loop_detection_window">检测窗口（步）</string>
+    <string name="settings_same_action_threshold">同动作阈值</string>
+    <string name="settings_auto_recovery">自动恢复</string>
+    <string name="settings_reflection_label">自我评审</string>
+    <string name="settings_planning">规划</string>
+    <string name="settings_replanning">重规划</string>
+    <string name="settings_parallel_tool_execution">并行工具执行</string>
+    <string name="settings_background_execution">后台执行</string>
     <string name="memory_capture_privacy_notice">对话内容在本机处理以构建你的画像（事实 / 近况 / 里程碑）。可在设置 → Agent 中关闭自动摄取，也可随时在此删除任何一条记忆。</string>
     <!-- #237 通知权限回收引导 -->
     <string name="notif_permission_hint_title">后台通知未送达</string>

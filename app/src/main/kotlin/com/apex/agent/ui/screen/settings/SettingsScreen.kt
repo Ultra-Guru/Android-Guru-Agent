@@ -126,7 +126,7 @@ fun SettingsScreen(
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("Agent") },
+                    text = { Text(stringResource(R.string.settings_tab_agent)) },
                     icon = { Icon(Icons.Outlined.Psychology, null) }
                 )
                 Tab(
@@ -167,7 +167,7 @@ fun SettingsScreen(
     testResult?.let { r ->
         AlertDialog(
             onDismissRequest = { testResult = null },
-            confirmButton = { TextButton(onClick = { testResult = null }) { Text("OK") } },
+            confirmButton = { TextButton(onClick = { testResult = null }) { Text(stringResource(R.string.settings_dialog_ok)) } },
             title = { Text(if (r.success) stringResource(R.string.settings_conn_success) else stringResource(R.string.settings_conn_failed)) },
             text = { Text(r.message) }
         )
@@ -650,7 +650,7 @@ private fun ContextSection(p: ModelProfile, onUpdate: (ModelProfile) -> Unit) {
 @Composable
 private fun ToolsSection(p: ModelProfile, onUpdate: (ModelProfile) -> Unit) {
     SectionCard(stringResource(R.string.settings_section_tools), Icons.Outlined.Build) {
-        SwitchRow("Enable Tools", p.enableTools,
+        SwitchRow(stringResource(R.string.settings_enable_tools), p.enableTools,
             description = stringResource(R.string.settings_enable_tools_desc)) {
             onUpdate(p.copy(enableTools = it))
         }
@@ -691,7 +691,7 @@ private fun NetworkSection(p: ModelProfile, onUpdate: (ModelProfile) -> Unit) {
         IntFieldRow("Request Timeout (ms)", p.requestTimeoutMs.toInt(),
             description = stringResource(R.string.settings_request_timeout_desc),
             min = 5_000, max = 600_000) { onUpdate(p.copy(requestTimeoutMs = it.toLong())) }
-        IntFieldRow("Retry Count", p.retryCount,
+        IntFieldRow(stringResource(R.string.settings_retry_count), p.retryCount,
             description = stringResource(R.string.settings_retry_count_desc), min = 0, max = 10) {
             onUpdate(p.copy(retryCount = it))
         }
@@ -706,11 +706,11 @@ private fun NetworkSection(p: ModelProfile, onUpdate: (ModelProfile) -> Unit) {
             if (set.contains(it)) set.remove(it) else set.add(it)
             onUpdate(p.copy(retryOnCodes = set))
         }
-        SwitchRow("Streaming", p.streaming,
+        SwitchRow(stringResource(R.string.settings_streaming), p.streaming,
             description = stringResource(R.string.settings_streaming_desc)) {
             onUpdate(p.copy(streaming = it))
         }
-        SwitchRow("Keep Alive", p.keepAlive,
+        SwitchRow(stringResource(R.string.settings_keep_alive_conn), p.keepAlive,
             description = stringResource(R.string.settings_keep_alive_desc)) {
             onUpdate(p.copy(keepAlive = it))
         }
@@ -820,12 +820,12 @@ private fun AgentSection(agent: AgentSettings, onUpdate: (AgentSettings) -> Unit
             description = stringResource(R.string.settings_think_desc)) {
             onUpdate(agent.copy(thinkLevel = it))
         }
-        IntFieldRow("Max Iterations", agent.maxIterations,
+        IntFieldRow(stringResource(R.string.settings_max_iterations), agent.maxIterations,
             description = stringResource(R.string.settings_max_iterations_desc), min = 1, max = 200) {
             onUpdate(agent.copy(maxIterations = it))
         }
         // #236：Keep Alive 真接线（关=立即停服务）。
-        SwitchRow("Keep Alive", agent.keepAlive) { on -> com.apex.agent.service.CoreServiceGate.apply(ctx, on); onUpdate(agent.copy(keepAlive = on)) }
+        SwitchRow(stringResource(R.string.settings_keep_alive_service), agent.keepAlive) { on -> com.apex.agent.service.CoreServiceGate.apply(ctx, on); onUpdate(agent.copy(keepAlive = on)) }
         // v1.4.4 #4：任务完成通知（EventApplier Complete 钩子；前台静音）。
         SwitchRow(stringResource(R.string.settings_task_notify_title), agent.taskCompletionNotify,
             description = stringResource(R.string.settings_task_notify_desc)) {
@@ -836,36 +836,36 @@ private fun AgentSection(agent: AgentSettings, onUpdate: (AgentSettings) -> Unit
             description = stringResource(R.string.settings_memory_capture_desc)) {
             onUpdate(agent.copy(chatMemoryCapture = it))
         }
-        SliderRow("Reflection Rounds", agent.reflectionRounds.toFloat(), 1f..3f, 2,
+        SliderRow(stringResource(R.string.settings_reflection_rounds), agent.reflectionRounds.toFloat(), 1f..3f, 2,
             description = stringResource(R.string.settings_reflection_rounds_desc),
             onValueChange = { onUpdate(agent.copy(reflectionRounds = it.toInt())) },
             fmt = { it.toInt().toString() })
 
         HorizontalDivider()
-        Text("Retry / Loop Detection", style = MaterialTheme.typography.labelMedium)
-        SwitchRow("Auto Retry", agent.autoRetry) { onUpdate(agent.copy(autoRetry = it)) }
-        IntFieldRow("Max Retry / Action", agent.maxRetryPerAction, min = 0, max = 10) {
+        Text(stringResource(R.string.settings_retry_loop_section), style = MaterialTheme.typography.labelMedium)
+        SwitchRow(stringResource(R.string.settings_auto_retry), agent.autoRetry) { onUpdate(agent.copy(autoRetry = it)) }
+        IntFieldRow(stringResource(R.string.settings_max_retry_per_action), agent.maxRetryPerAction, min = 0, max = 10) {
             onUpdate(agent.copy(maxRetryPerAction = it))
         }
-        SwitchRow("Loop Detection", agent.loopDetection) { onUpdate(agent.copy(loopDetection = it)) }
-        IntFieldRow("Detection Window (steps)", agent.loopDetectionWindow, min = 2, max = 50) {
+        SwitchRow(stringResource(R.string.settings_loop_detection), agent.loopDetection) { onUpdate(agent.copy(loopDetection = it)) }
+        IntFieldRow(stringResource(R.string.settings_loop_detection_window), agent.loopDetectionWindow, min = 2, max = 50) {
             onUpdate(agent.copy(loopDetectionWindow = it))
         }
-        IntFieldRow("Same Action Threshold", agent.sameActionThreshold, min = 2, max = 20) {
+        IntFieldRow(stringResource(R.string.settings_same_action_threshold), agent.sameActionThreshold, min = 2, max = 20) {
             onUpdate(agent.copy(sameActionThreshold = it))
         }
-        SwitchRow("Auto Recovery", agent.autoRecovery) { onUpdate(agent.copy(autoRecovery = it)) }
+        SwitchRow(stringResource(R.string.settings_auto_recovery), agent.autoRecovery) { onUpdate(agent.copy(autoRecovery = it)) }
 
         HorizontalDivider()
         Text(stringResource(R.string.settings_advanced_behavior), style = MaterialTheme.typography.labelMedium)
-        SwitchRow("Reflection", agent.reflection,
+        SwitchRow(stringResource(R.string.settings_reflection_label), agent.reflection,
             description = stringResource(R.string.settings_reflection_desc)) { onUpdate(agent.copy(reflection = it)) }
-        SwitchRow("Planning", agent.planning) { onUpdate(agent.copy(planning = it)) }
-        SwitchRow("Replanning", agent.replanning) { onUpdate(agent.copy(replanning = it)) }
-        SwitchRow("Parallel Tool Execution", agent.parallelToolExecution) {
+        SwitchRow(stringResource(R.string.settings_planning), agent.planning) { onUpdate(agent.copy(planning = it)) }
+        SwitchRow(stringResource(R.string.settings_replanning), agent.replanning) { onUpdate(agent.copy(replanning = it)) }
+        SwitchRow(stringResource(R.string.settings_parallel_tool_execution), agent.parallelToolExecution) {
             onUpdate(agent.copy(parallelToolExecution = it))
         }
-        SwitchRow("Background Execution", agent.backgroundExecution) {
+        SwitchRow(stringResource(R.string.settings_background_execution), agent.backgroundExecution) {
             onUpdate(agent.copy(backgroundExecution = it))
         }
     }

@@ -42,7 +42,7 @@
     <string name="term_deps_title">环境依赖（Ubuntu 内）</string>
     <string name="term_use_mirror">使用镜像源</string>
     <string name="term_mirror_desc">国内镜像加速（清华源）</string>
-    <string name="term_install_all">一键安装全部</string>
+    <string name="term_install_all">全部安装</string>
     <string name="term_android_deps">Android 依赖</string>
     <string name="term_install_individually">可独立安装：</string>
     <string name="term_remove_ubuntu_title">删除 Ubuntu 环境？</string>
@@ -88,7 +88,7 @@
     <string name="term_env_failed_title">环境准备失败</string>
     <string name="term_open_env_center_diag">打开环境中心诊断</string>
     <string name="term_no_terminal_session">当前没有终端会话</string>
-    <string name="term_env_ready_hint">Ubuntu 环境已就绪 · bash / gcc / python3 / git 开箱即用</string>
+    <string name="term_env_ready_hint">Ubuntu 环境已就绪 · bash / gcc / python3 / git 可直接使用</string>
     <string name="term_session_ubuntu_desc">完整 Linux 环境 · bash / gcc / python3 / git（推荐）</string>
     <string name="term_session_android_desc">系统 toybox 环境 · 适合快查设备（无完整工具链）</string>
 
@@ -111,23 +111,23 @@
     <string name="term_notice_create_failed">会话创建失败：%1$s</string>
     <string name="term_notice_no_session_input">没有活跃会话，输入未送达（请新建会话）</string>
     <string name="term_notice_fallback_session">Ubuntu 环境暂不可用（%1$s）— 已切换 Android Shell，可直接输入命令；Ubuntu 可在环境中心重试</string>
-    <string name="term_notice_blocked">⛔ 命令已被黑白名单拦截：%1$s（未执行；Ctrl+C 或 Ctrl+U 清除当前行）</string>
+    <string name="term_notice_blocked">命令已被黑白名单拦截：%1$s（未执行；Ctrl+C 或 Ctrl+U 清除当前行）</string>
     <string name="term_notice_input_failed">输入失败：%1$s</string>
-    <string name="term_notice_paste_blocked">⛔ 粘贴内容首行命中黑白名单：%1$s（已拦截）</string>
+    <string name="term_notice_paste_blocked">粘贴内容首行命中黑白名单：%1$s（已拦截）</string>
     <string name="term_notice_unpack_failed">Ubuntu 解包失败：%1$s</string>
     <string name="term_notice_repair_ok">修复完成：环境已恢复健康</string>
     <string name="term_notice_repair_unresolved">修复未收敛：%1$s</string>
     <string name="term_notice_install_all_start">▶ 开始安装全部环境依赖（镜像=%1$s）…\n</string>
-    <string name="term_notice_install_all_done">\n✅ 全部依赖安装命令已执行完毕。请查看上方输出确认结果。\n</string>
+    <string name="term_notice_install_all_done">\n全部依赖安装命令已执行完毕。请查看上方输出确认结果。\n</string>
     <string name="term_notice_install_android_start">▶ 开始安装 Android 开发依赖（镜像=%1$s）…\n</string>
-    <string name="term_notice_install_android_done">\n✅ Android 开发依赖安装命令已执行完毕。\n</string>
-    <string name="term_notice_no_pty">❌ 无法创建终端会话（设备不支持 PTY）\n</string>
-    <string name="term_notice_run_failed">❌ run 失败: %1$s\n</string>
-    <string name="term_notice_wait_failed">❌ wait 失败: %1$s\n</string>
-    <string name="term_notice_wait_timeout">⚠️ 超时（120s），可能仍在后台进行。\n</string>
-    <string name="term_notice_session_gone">❌ 会话已关闭\n</string>
+    <string name="term_notice_install_android_done">\nAndroid 开发依赖安装命令已执行完毕。\n</string>
+    <string name="term_notice_no_pty">无法创建终端会话（设备不支持 PTY）\n</string>
+    <string name="term_notice_run_failed">run 失败：%1$s\n</string>
+    <string name="term_notice_wait_failed">wait 失败：%1$s\n</string>
+    <string name="term_notice_wait_timeout">超时（120s），可能仍在后台进行。\n</string>
+    <string name="term_notice_session_gone">会话已关闭\n</string>
     <string name="term_notice_truncated">…(已截断)\n</string>
-    <string name="term_notice_fallback_android">⚠️ Ubuntu 会话不可用 — 降级 Android shell（apt 命令可能失败）\n</string>
+    <string name="term_notice_fallback_android">Ubuntu 会话不可用 — 降级 Android shell（apt 命令可能失败）\n</string>
     <!-- ═══ T87: 终端体验大修 ═══ -->
     <!-- 会话退出（诚实反馈，替代裸「输入失败」）-->
     <string name="term_notice_session_dead">会话已退出（进程结束）。点「重启会话」或新建会话。</string>

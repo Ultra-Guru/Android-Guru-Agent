@@ -48,13 +48,49 @@ class PermissionDeciderTest {
     }
 
     @Test
-    fun `BYPASS 模式下 DENY 规则不生效（全放行是模式硬承诺）`() {
+    fun `BYPASS 模式下 DENY 规则生效（用户安全网不被全自动吞掉）`() {
         val decision = PermissionDecider.decide(
             PermissionMode.BYPASS,
             listOf(PermissionRule("*", PermissionEffect.DENY)),
             writeCtx()
         )
+        assertTrue(decision is PermissionDecision.Deny)
+    }
+
+    @Test
+    fun `BYPASS 模式下 ASK 规则生效（用户要求确认的工具照问）`() {
+        val decision = PermissionDecider.decide(
+            PermissionMode.BYPASS,
+            listOf(PermissionRule("BrowserExecuteJs", PermissionEffect.ASK)),
+            writeCtx("BrowserExecuteJs")
+        )
+        assertTrue(decision is PermissionDecision.Ask)
+    }
+
+    @Test
+    fun `BYPASS 模式下 ALLOW 规则命中敏感工具直接放行（用户已表态）`() {
+        val decision = PermissionDecider.decide(
+            PermissionMode.BYPASS,
+            listOf(PermissionRule("SmsSend", PermissionEffect.ALLOW)),
+            PermissionContext(
+                "SmsSend", readOnlyHint = false,
+                destructiveHint = false, sensitiveAction = true
+            )
+        )
         assertTrue(decision is PermissionDecision.AllowExplicit)
+    }
+
+    @Test
+    fun `BYPASS 模式下敏感动作保持 Ask（付费工具逐次确认）`() {
+        val decision = PermissionDecider.decide(
+            PermissionMode.BYPASS,
+            emptyList(),
+            PermissionContext(
+                "SmsSend", readOnlyHint = false,
+                destructiveHint = false, sensitiveAction = true
+            )
+        )
+        assertTrue(decision is PermissionDecision.Ask)
     }
 
     @Test
@@ -134,9 +170,18 @@ class PermissionDeciderTest {
         val mcpCall = PermissionDecider.decide(
             PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("mcp__github__create_issue")
         )
+        // PascalCase 化后的技能工具 id（SkillSearch / SkillInstall…）同口径豁免
+        val skillInstall = PermissionDecider.decide(
+            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("SkillInstall")
+        )
+        val skillSearch = PermissionDecider.decide(
+            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("SkillSearch")
+        )
         assertTrue(skillRun is PermissionDecision.AllowExplicit)
         assertTrue(skillActivate is PermissionDecision.AllowExplicit)
         assertTrue(mcpCall is PermissionDecision.AllowExplicit)
+        assertTrue(skillInstall is PermissionDecision.AllowExplicit)
+        assertTrue(skillSearch is PermissionDecision.AllowExplicit)
         // 规则仍可越级收紧：显式 ASK 规则首匹配优先于豁免
         val ruleTightened = PermissionDecider.decide(
             PermissionMode.ACCEPT_EDITS,

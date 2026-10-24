@@ -49,7 +49,7 @@
     <!-- ═══ 崩溃记录区 ═══ -->
     <string name="diag_crash_section">崩溃记录</string>
     <string name="diag_crash_count">%1$d 条记录</string>
-    <string name="diag_crash_empty">暂无崩溃记录 ✅</string>
+    <string name="diag_crash_empty">暂无崩溃记录</string>
     <string name="diag_crash_delete">删除</string>
     <string name="diag_crash_clear">清空</string>
     <string name="diag_crash_delete_confirm_title">删除崩溃记录？</string>

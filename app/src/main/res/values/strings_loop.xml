@@ -58,7 +58,7 @@
     <string name="loop_skip_busy">Previous round still running — this round skipped</string>
 
     <!-- ═══ 通知（apex_general 渠道）═══ -->
-    <string name="loop_notif_once_title">⏰ Reminder</string>
+    <string name="loop_notif_once_title">Reminder</string>
     <string name="loop_notif_bg_title">Loop triggered (background)</string>
     <string name="loop_notif_bg_text">Session not open — this round was skipped</string>
 </resources>

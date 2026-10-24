@@ -135,8 +135,10 @@ class PermissionModeGate(
     ): DetailedDecision {
         // 会话记忆命中：本会话内用户已授权过本工具——静默放行，且视为
         // 显式放行（用户意志已表达，跳过后续风险门，避免权限门刚问完、
-        // 风险门再问一次的双弹窗骚扰）
-        if (sessionAllowed.containsKey(tool.id)) {
+        // 风险门再问一次的双弹窗骚扰）。
+        // #342 例外：付费类工具（SmsSend）不消费会话记忆——逐次确认，
+        // 与 RiskAwareToolGate 同口径（否则权限门记住一次后连发短信）。
+        if (sessionAllowed.containsKey(tool.id) && tool.id !in NO_SESSION_ALLOW_TOOLS) {
             return DetailedDecision.ExplicitAllow
         }
 
@@ -197,24 +199,28 @@ class PermissionModeGate(
     ): AgentQuestion = AgentQuestion(
         title = strings.permTitle(tool.id),
         description = strings.permModeLine(mode) + "\n" + strings.argsLine(arguments),
-        options = listOf(
-            AgentQuestionOption(
-                id = OPTION_ALLOW_SESSION,
-                label = strings.allowSessionLabel(),
-                description = strings.allowSessionDesc()
-            ),
-            AgentQuestionOption(
+        options = buildList {
+            // #342：付费类工具（SmsSend）不出「本会话允许」——逐次确认
+            // （与 RiskAwareToolGate 弹窗同口径，单一事实源共用）
+            if (tool.id !in NO_SESSION_ALLOW_TOOLS) {
+                add(AgentQuestionOption(
+                    id = OPTION_ALLOW_SESSION,
+                    label = strings.allowSessionLabel(),
+                    description = strings.allowSessionDesc()
+                ))
+            }
+            add(AgentQuestionOption(
                 id = OPTION_ALLOW_ONCE,
                 label = strings.allowOnceLabel(),
                 description = strings.allowOnceDesc()
-            ),
-            AgentQuestionOption(
+            ))
+            add(AgentQuestionOption(
                 id = OPTION_DENY,
                 label = strings.denyLabel(),
                 description = strings.denyDesc(),
                 recommended = true
-            )
-        ),
+            ))
+        },
         allowCustom = false,
         allowSkip = false,
         timeoutMs = ASK_TIMEOUT_MS

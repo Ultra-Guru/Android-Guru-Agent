@@ -19,9 +19,10 @@ import kotlinx.serialization.Serializable
  *
  * ── 权限模式（业界标准语义）──
  *
- * - [PermissionMode.BYPASS]：全放行——不做任何询问与拦截（默认档位：
+ * - [PermissionMode.BYPASS]：全放行——模式默认不做任何询问（默认档位：
  *   2026-10 用户反馈「默认就是开启所有工具，agent 可以直接使用」——
- *   工具 / MCP / 技能 / shell 命令开箱即用，仅 DENY 规则仍生效；
+ *   工具 / MCP / 技能 / shell 命令开箱即用；用户手写的拒绝与询问规则
+ *   仍生效，付费类敏感动作仍逐次确认；
  *   即设置页的「全自动」模式）；
  * - [PermissionMode.DEFAULT]：规则 + 按需询问——基础工具（只读 / 普通编辑写 /
  *   幂等覆写）默认放行（仍交后续风险门把关），仅删除类（破坏且非幂等）与
@@ -66,6 +67,16 @@ data class PermissionRule(
     val pattern: String,
     val effect: PermissionEffect
 )
+
+/**
+ * #342：永不提供会话级放行的工具 id（权限门与风险门共用的单一事实源）。
+ *
+ * 这些工具的授权弹窗不出「本会话允许」选项、既有会话记忆也不生效——
+ * 强制逐次确认。当前仅 SmsSend：HIGH 风险工具中唯一有直接金钱后果的
+ * （每条真实计费）。⚠️ 工具 id 已 PascalCase 化，snake_case 旧名并存
+ * 防回归（历史会话记忆 / 旧配置里可能仍存旧名）。
+ */
+val NO_SESSION_ALLOW_TOOLS: Set<String> = setOf("SmsSend", "sms_send")
 
 /**
  * 规则模式匹配器（纯函数，无状态）。

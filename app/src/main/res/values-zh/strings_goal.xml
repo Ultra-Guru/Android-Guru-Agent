@@ -27,7 +27,7 @@
     <string name="goal_cd_goal_status">目标状态卡</string>
 
     <!-- ═══ 会话内系统提示（CodeGoalController）═══ -->
-    <string name="goal_started_notice">🎯 目标已设定：%1$s</string>
-    <string name="goal_stopped_notice">⛔ 目标已停止</string>
-    <string name="goal_restart_notice">🔁 目标已重启，继续推进</string>
+    <string name="goal_started_notice">目标已设定：%1$s</string>
+    <string name="goal_stopped_notice">目标已停止</string>
+    <string name="goal_restart_notice">目标已重启，继续推进</string>
 </resources>

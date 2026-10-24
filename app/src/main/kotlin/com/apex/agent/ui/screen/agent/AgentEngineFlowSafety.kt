@@ -137,11 +137,13 @@ internal fun AgentChatViewModel.salvageStreamingOutput() {
 
     _uiState.update { state ->
         val salvage = buildList<AgentUiMessage> {
-            if (partialResponse.isNotBlank()) {
-                add(AgentUiMessage.Agent(text = partialResponse, isPartial = true))
-            }
+            // 时序对齐真实发生顺序：思考在前、回复在后（与 EventApplier 的
+            // Complete/Error/Aborted 终态分支及 collectEngineFlowSafely 兜底统一口径）
             if (partialThinking.isNotBlank()) {
                 add(AgentUiMessage.ThinkingMessage(partialThinking, partialThinkingMs))
+            }
+            if (partialResponse.isNotBlank()) {
+                add(AgentUiMessage.Agent(text = partialResponse, isPartial = true))
             }
         }
         state.copy(
@@ -185,10 +187,31 @@ internal suspend fun AgentChatViewModel.collectEngineFlowSafely(flow: Flow<Agent
         // 气泡会挂到下一条消息。isLoading 复位交给 launchEngineTurn 的
         // finally（此处不重复置位，避免与 finally 竞态）。
         streamBuffers.flush()
+        // ═══ 清槽四件套补齐（旧注释称「同款收尾」实缺四项）═══
+        // thinkingStartElapsed 不清 → 下一轮无 ThinkingStart 的 notice 思考
+        // 在 salvage 时会算入上一轮失败至今的空闲时间；横幅不清 → 继续脉冲；
+        // 步骤索引/在途工具槽不清 → 错误消息下方挂着转圈的工具卡。
+        val partialThinking = _uiState.value.currentThinking
+        val thinkingElapsedMs = if (thinkingStartElapsed > 0) {
+            android.os.SystemClock.elapsedRealtime() - thinkingStartElapsed
+        } else 0L
+        thinkingStartElapsed = 0
+        finishActiveBanner()
+        toolFlushJob?.cancel()
+        toolFlushJob = null
+        activeToolCallId = null
+        toolOutputBuffer.clear()
+        liveOutputStepId = null
+        currentToolCallSteps = null
         val partial = _uiState.value.currentResponse
         _uiState.update { s ->
             s.copy(
                 messages = s.messages +
+                    (if (partialThinking.isNotBlank()) {
+                        listOf(AgentUiMessage.ThinkingMessage(partialThinking, thinkingElapsedMs))
+                    } else {
+                        emptyList()
+                    }) +
                     (if (partial.isNotBlank()) {
                         listOf(AgentUiMessage.Agent(text = partial, isPartial = true))
                     } else {
@@ -205,7 +228,9 @@ internal suspend fun AgentChatViewModel.collectEngineFlowSafely(flow: Flow<Agent
                     ),
                 currentResponse = "",
                 currentThinking = "",
-                currentThinkingStartElapsed = 0
+                currentThinkingStartElapsed = 0,
+                currentToolCall = null,
+                currentStepIndex = -1
             )
         }
     }

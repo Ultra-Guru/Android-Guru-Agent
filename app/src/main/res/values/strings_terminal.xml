@@ -88,7 +88,7 @@
     <string name="term_env_failed_title">Environment preparation failed</string>
     <string name="term_open_env_center_diag">Open environment center to diagnose</string>
     <string name="term_no_terminal_session">No terminal session yet</string>
-    <string name="term_env_ready_hint">Ubuntu environment ready · bash / gcc / python3 / git out of the box</string>
+    <string name="term_env_ready_hint">Ubuntu environment ready · bash / gcc / python3 / git ready to use</string>
     <string name="term_session_ubuntu_desc">Full Linux environment · bash / gcc / python3 / git (recommended)</string>
     <string name="term_session_android_desc">System toybox environment · quick device checks (no full toolchain)</string>
 
@@ -111,23 +111,23 @@
     <string name="term_notice_create_failed">Session creation failed: %1$s</string>
     <string name="term_notice_no_session_input">No active session — input not delivered (create a session first)</string>
     <string name="term_notice_fallback_session">Ubuntu temporarily unavailable (%1$s) — switched to Android Shell; you can type right away, retry Ubuntu from the environment center</string>
-    <string name="term_notice_blocked">⛔ Command blocked by blacklist/whitelist: %1$s (not executed; Ctrl+C or Ctrl+U clears the line)</string>
+    <string name="term_notice_blocked">Command blocked by blacklist/whitelist: %1$s (not executed; Ctrl+C or Ctrl+U clears the line)</string>
     <string name="term_notice_input_failed">Input failed: %1$s</string>
-    <string name="term_notice_paste_blocked">⛔ Paste blocked: first line hit the blacklist/whitelist: %1$s</string>
+    <string name="term_notice_paste_blocked">Paste blocked: first line hit the blacklist/whitelist: %1$s</string>
     <string name="term_notice_unpack_failed">Ubuntu unpack failed: %1$s</string>
     <string name="term_notice_repair_ok">Repair finished: environment healthy again</string>
     <string name="term_notice_repair_unresolved">Repair not settled: %1$s</string>
     <string name="term_notice_install_all_start">▶ Installing all environment dependencies (mirror=%1$s)…\n</string>
-    <string name="term_notice_install_all_done">\n✅ All dependency install commands finished. Check the output above to confirm.\n</string>
+    <string name="term_notice_install_all_done">\nAll dependency install commands finished. Check the output above to confirm.\n</string>
     <string name="term_notice_install_android_start">▶ Installing Android dev dependencies (mirror=%1$s)…\n</string>
-    <string name="term_notice_install_android_done">\n✅ Android dev dependency install commands finished.\n</string>
-    <string name="term_notice_no_pty">❌ Cannot create terminal session (device lacks PTY support)\n</string>
-    <string name="term_notice_run_failed">❌ run failed: %1$s\n</string>
-    <string name="term_notice_wait_failed">❌ wait failed: %1$s\n</string>
-    <string name="term_notice_wait_timeout">⚠️ Timed out (120s) — may still be running in background.\n</string>
-    <string name="term_notice_session_gone">❌ Session closed\n</string>
+    <string name="term_notice_install_android_done">\nAndroid dev dependency install commands finished.\n</string>
+    <string name="term_notice_no_pty">Cannot create terminal session (device lacks PTY support)\n</string>
+    <string name="term_notice_run_failed">run failed: %1$s\n</string>
+    <string name="term_notice_wait_failed">wait failed: %1$s\n</string>
+    <string name="term_notice_wait_timeout">Timed out (120s) — may still be running in background.\n</string>
+    <string name="term_notice_session_gone">Session closed\n</string>
     <string name="term_notice_truncated">…(truncated)\n</string>
-    <string name="term_notice_fallback_android">⚠️ Ubuntu session unavailable — falling back to Android shell (apt commands may fail)\n</string>
+    <string name="term_notice_fallback_android">Ubuntu session unavailable — falling back to Android shell (apt commands may fail)\n</string>
     <!-- ═══ T87: Terminal Experience Overhaul ═══ -->
     <!-- Session death (honest feedback instead of bare "input failed") -->
     <string name="term_notice_session_dead">Session has exited (process ended). Tap "Restart session" or create a new one.</string>

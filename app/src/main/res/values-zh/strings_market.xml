@@ -102,7 +102,7 @@
     <string name="market_modelscope_filter">过滤技能</string>
     <string name="market_modelscope_error_title">魔搭加载失败</string>
     <string name="market_modelscope_loading">正在拉取仓库技能目录（GitHub API）…</string>
-    <string name="market_github_title">GitHub 仓库搜索（含 apex-skill-v1 manifest 的仓库可一键安装）</string>
+    <string name="market_github_title">GitHub 仓库搜索（含 apex-skill-v1 manifest 的仓库可直接安装）</string>
     <string name="market_github_query_label">仓库名 / 关键词</string>
     <string name="market_github_error_title">GitHub 搜索失败</string>
 
@@ -163,7 +163,7 @@
     <string name="market_delete_connector_builtin_suffix">（内置示例，重启后恢复）</string>
 
     <!-- ═══ 已安装管理 · 集成 ═══ -->
-    <string name="market_installed_integrations_empty">尚未从远程仓库（魔搭 / GitHub / ClawHub）安装技能 —— 到「市场」浏览与一键安装</string>
+    <string name="market_installed_integrations_empty">尚未从远程仓库（魔搭 / GitHub / ClawHub）安装技能 —— 到「市场」浏览并安装</string>
     <string name="market_installed_integrations_go">去市场逛逛</string>
     <string name="market_installed_integrations_empty_short">暂无远程来源技能</string>
     <string name="market_installed_integrations_header">ms- 前缀 = 魔搭 ModelScope 安装；gh- 前缀 = GitHub 仓库转换安装；ch- 前缀 = ClawHub 仓库安装。自定义 manifest 的 GitHub 技能在「Skills」页管理。</string>
@@ -215,7 +215,7 @@
     <string name="market_skill_json_title">导入 Skill JSON</string>
     <string name="market_skill_json_label">粘贴 apex-skill-v1 manifest JSON</string>
     <string name="market_url_download_install">下载并安装</string>
-    <string name="market_github_install_title">从 GitHub 智能安装</string>
+    <string name="market_github_install_title">从 GitHub 安装</string>
     <string name="market_github_input_label">owner/repo 或 仓库链接</string>
     <string name="market_github_input_hint">例如 owner/repo 或 https://github.com/owner/repo</string>
     <string name="market_github_install_body">按内容类型智能路由：技能（根 manifest 或带 frontmatter 的 SKILL.md）、MCP server（根 server.json / .mcp.json，或 src 子包 mcpName 形态，如 modelcontextprotocol/servers）、技能集合（子目录 SKILL.md，如 anthropics/skills）；普通仓库（仅 README）会明确报错，不会假安装。</string>
@@ -228,7 +228,7 @@
     <string name="market_github_pick_install_all">全部安装</string>
 
     <!-- ═══ 对话框 · 依赖图 ═══ -->
-    <string name="market_depgraph_missing">⚠ 缺失依赖 %1$d 个：</string>
+    <string name="market_depgraph_missing">缺失依赖 %1$d 个：</string>
 
     <!-- ═══ 对话框 · manifest 干运行预览 ═══ -->
     <string name="market_dryrun_confirm">确认安装</string>
@@ -261,7 +261,7 @@
     <string name="market_reliability_unused">未使用</string>
     <string name="market_stat_total">总调用</string>
     <string name="market_detail_last_executed">最近执行：%1$s</string>
-    <string name="market_detail_crystallized">✦ 已结晶 —— 命中初始状态时可跳过 LLM 直接回放（毫秒级响应）</string>
+    <string name="market_detail_crystallized">已结晶：命中初始状态时可跳过 LLM 直接回放（毫秒级响应）</string>
     <string name="market_crystallized">已结晶</string>
     <string name="market_low_energy">低能量</string>
     <string name="market_breaker_open">熔断器开启（%1$d 个工具）</string>
@@ -317,7 +317,7 @@
     <!-- ═══ #205 MCP 精选目录 + 预检 + 时间线 ═══ -->
     <string name="market_mcp_catalog_header">MCP 精选目录</string>
     <string name="market_mcp_catalog_count">%1$d 台服务器</string>
-    <string name="market_mcp_catalog_desc">离线随包的真实服务器清单：包名/端点/环境变量均已核对。一键安装并连接。</string>
+    <string name="market_mcp_catalog_desc">离线随包的真实服务器清单：包名/端点/环境变量均已核对，安装后即可连接。</string>
     <string name="market_mcp_catalog_cat_all">全部</string>
     <string name="market_mcp_catalog_cat_official">官方实现</string>
     <string name="market_mcp_catalog_cat_search">网络搜索</string>
@@ -433,7 +433,7 @@
     <string name="market_registry_open_repo">浏览器打开仓库</string>
     <string name="market_skill_source_github_featured">GitHub 精选</string>
     <string name="market_github_featured_header">GitHub 精选 —— 顶级开源仓库 coding 技能</string>
-    <string name="market_github_featured_hint">来自 anthropics/skills、obra/superpowers 等真实开源仓库的精选 coding 技能，一键安装 SKILL.md 转为 prompt 型技能（仅 Coding 市场）。</string>
+    <string name="market_github_featured_hint">来自 anthropics/skills、obra/superpowers 等真实开源仓库的精选 coding 技能，可将 SKILL.md 安装为 prompt 型技能（仅 Coding 市场）。</string>
     <string name="market_github_featured_license_hint">技能内容在安装时从上述开源仓库实时拉取，遵循各仓库许可证。</string>
     <string name="market_installed_skills_tier_hint">技能开关按市场分级独立生效（当前：%1$s）—— 另一分级保持自己的状态</string>
     <string name="market_skill_needs_config">需配置</string>

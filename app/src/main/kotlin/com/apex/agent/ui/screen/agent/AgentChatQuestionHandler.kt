@@ -39,7 +39,7 @@ internal fun AgentChatViewModel.answerQuestion(selectedIds: List<String>, custom
     _uiState.update { state ->
         state.copy(
             messages = state.messages + AgentUiMessage.System(
-                "✅ 已回答：$displayAnswer"
+                "已回答：$displayAnswer"
             )
         )
     }
@@ -54,7 +54,7 @@ internal fun AgentChatViewModel.cancelQuestion() {
     _uiState.update { state ->
         state.copy(
             messages = state.messages + AgentUiMessage.System(
-                "⏹ 已跳过 Agent 提问"
+                "已跳过 Agent 提问"
             )
         )
     }
