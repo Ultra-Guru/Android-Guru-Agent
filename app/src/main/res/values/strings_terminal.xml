@@ -115,7 +115,7 @@
     <string name="term_blacklist_title">Command blacklist</string>
     <string name="term_blacklist_desc">Blocked heads never run; matched exactly (rm does not block rmdir)</string>
     <string name="term_whitelist">Whitelist</string>
-    <string name="term_cmd_hint">command head, e.g. rm</string>
+    <string name="term_policy_hint">command head, e.g. rm</string>
     <string name="term_add">Add</string>
     <string name="term_remove">Remove</string>
     <string name="term_policy_empty">Empty — everything is allowed</string>

@@ -88,7 +88,7 @@ internal fun TerminalSettingsSheet(
                                 color = ConsoleTokens.onSurfaceVariant
                             )
                             PolicyListEditor(
-                                placeholder = stringResource(R.string.term_cmd_hint),
+                                placeholder = stringResource(R.string.term_policy_hint),
                                 addLabel = stringResource(R.string.term_add),
                                 entries = blacklist,
                                 onAdd = { viewModel.addBlacklist(it) },
@@ -101,7 +101,7 @@ internal fun TerminalSettingsSheet(
                     SectionCard(title = stringResource(R.string.term_whitelist)) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             PolicyListEditor(
-                                placeholder = stringResource(R.string.term_cmd_hint),
+                                placeholder = stringResource(R.string.term_policy_hint),
                                 addLabel = stringResource(R.string.term_add),
                                 entries = whitelist,
                                 onAdd = { viewModel.addWhitelist(it) },

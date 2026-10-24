@@ -115,7 +115,7 @@
     <string name="term_blacklist_title">命令黑名单</string>
     <string name="term_blacklist_desc">命中命令头的命令不再执行；精确匹配（rm 不会拦 rmdir）</string>
     <string name="term_whitelist">白名单</string>
-    <string name="term_cmd_hint">命令头，如 rm</string>
+    <string name="term_policy_hint">命令头，如 rm</string>
     <string name="term_add">添加</string>
     <string name="term_remove">移除</string>
     <string name="term_policy_empty">空 —— 一切放行</string>
