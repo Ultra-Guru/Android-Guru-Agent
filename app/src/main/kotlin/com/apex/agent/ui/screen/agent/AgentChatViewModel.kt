@@ -59,7 +59,7 @@ class AgentChatViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,
     private val preprocessor: PredictiveAttachmentPreprocessor,
     internal val userQuestionBridge: UserQuestionBridge,
-    // v1.8.0 知识库：applyRoleToEngine 按当前角色注入专属知识库检索指引
+    // v1.8.0 知识库：按当前角色注入专属知识库检索指引（见 applyRoleToEngine）
     private val knowledgeBaseService: com.apex.agent.knowledge.KnowledgeBaseService,
     // v1.4.4 #4：internal —— EventApplier 读 taskCompletionNotify 设置
     internal val settingsRepository: SettingsRepository,
@@ -295,10 +295,8 @@ class AgentChatViewModel @Inject constructor(
 
     /** 角色数据模型 → 引擎 AgentConfig 人设字段（内置 = 全空 = 历史行为）。 */
     private suspend fun applyRoleToEngine(role: com.apex.agent.ui.screen.settings.AgentRole) {
-        // v1.8.0：角色绑定了专属知识库时，把「怎么用知识库」写进 Role definition
-        // —— Agent Role 段随提示词携带检索指引（must_read → index/search → read）。
-        val kbHint = knowledgeBaseService.forRole(role.id)
-            ?.let { knowledgeBaseService.roleDefinitionHint(it) } ?: ""
+        // v1.8.0：绑定知识库的角色，把「must_read → index/search → read」指引写进 Role definition
+        val kbHint = knowledgeBaseService.forRole(role.id)?.let { knowledgeBaseService.roleDefinitionHint(it) } ?: ""
         (agentEngine as? ApexAgentEngine)?.patchConfig { cfg ->
             cfg.copy(
                 agentName = if (role.isBuiltIn) "" else role.name,
