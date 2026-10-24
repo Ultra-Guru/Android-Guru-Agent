@@ -16,8 +16,8 @@
 的实体聚到一起 —— 技能装进 SkillRegistry、MCP 服务器连进 McpManager、
 agent 工作流注入引擎 system prompt —— 三大体系的注册表、热更新管道、
 作用域隔离全部**原样复用**。FusionBundle 层只做编排（安装、连接、注入、
-恢复），**不新建任何平行注册体系**。用户在聊天输入栏点**王冠图标**（FUSION
-层级菜单）选用后，选中包以 chip 形式出现在输入框中，agent 将**强制使用
+恢复），**不新建任何平行注册体系**。用户在 **Coding 屏输入栏**点**王冠图标**
+（FUSION 层级菜单）选用后，选中包以 chip 形式出现在输入框中，agent 将**强制使用
 该体系**完成任务（详见 §2b 王冠入口）。
 
 ## 1. 背景：为什么单技能装不下顶级开源项目
@@ -66,6 +66,11 @@ Engine Anything，morluto/rea，MIT，npm rea-agents，Trendshift 榜）为
 
 用户钦定的黄金路径：**王冠图标 → 层级菜单 → 选包 → 输入框 chip →
 agent 强制使用**。
+
+**钦定位（#397 后续修正）**：王冠入口属于 **Coding 模式**输入栏
+（与工作区 / 斜杠 / GitHub / 小圆环 / 小大脑同列，Agent 屏保留纯聊天
+体验 —— #197 工具入口迁 Coding 先例同口径）；同轮修复：王冠按钮此前
+漏挂 `clickable`，点击无任何反应。
 
 ```
 输入框工具栏：  [/] [👑] [+] [🧠] ...
@@ -137,7 +142,8 @@ agent 强制使用**。
 | `app/.../fusion/ReaRuntimePorts.kt` | 命令执行/页面抓取端口实现（复用终端链/OkHttp） |
 | `app/di/FusionModule.kt` / `McpModule.kt` / `ToolModuleFusionRegistration.kt` | DI 接线（第六/七台内置 MCP + fusion 工具注册 + Shrimp 任务存储单例） |
 | `app/ui/icons/FusionCrownIcon.kt` | 王冠矢量（Lucide crown 移植）+ Canvas 精修版（渐变/宝石/呼吸） |
-| `app/ui/component/FusionBundleButton.kt` | 王冠入口按钮 + FUSION 层级菜单 + 激活态横幅 |
+| `app/ui/component/FusionBundleButton.kt` | 王冠入口按钮（48dp 触区 + clickable）+ FUSION 层级菜单 + 激活态横幅 |
+| `app/ui/component/FusionCodingEntry.kt` | Coding 工位王冠接线（一行式：FusionCodingButton + FusionCodingBanner，controller 单例内置获取） |
 | `app/slash/SlashCommand.kt` / `SlashCommandRouter.kt` | `/fusion:<id>` 解析与强制使用路由（发送侧保险） |
 
 ## 3. Manifest 规范（fusion-bundle-v1）

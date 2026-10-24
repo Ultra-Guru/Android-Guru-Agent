@@ -97,9 +97,13 @@ class FusionBundleController @Inject constructor(
         _bundles.value = registry.digests()
     }
 
-    /** 激活（UI 按钮 / FusionActivate 工具共用）。 */
-    suspend fun activate(bundleId: String): Result<FusionActivation> {
-        val r = activator.activate(bundleId)
+    /** 激活（UI 按钮 / FusionActivate 工具共用；scope 透传工位 —— all 包
+     *  双工位可激活，域包错位在 activator 层拒绝）。 */
+    suspend fun activate(
+        bundleId: String,
+        scope: String = "agent"
+    ): Result<FusionActivation> {
+        val r = activator.activate(bundleId, scope)
         r.onSuccess {
             _activeBundle.value = registry.get(bundleId)
             prefs.edit().putString(KEY_ACTIVE_BUNDLE, bundleId).apply()

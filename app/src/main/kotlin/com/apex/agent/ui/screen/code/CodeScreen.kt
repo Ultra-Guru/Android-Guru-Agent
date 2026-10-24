@@ -59,6 +59,8 @@ import com.apex.agent.ui.component.SlashAutoCompleteHost
 import com.apex.agent.ui.component.SlashCommandButton
 import com.apex.agent.ui.component.SkillChipInputField
 import com.apex.agent.ui.component.SlashMenuProvider
+import com.apex.agent.ui.component.FusionCodingBanner
+import com.apex.agent.ui.component.FusionCodingButton
 import com.apex.agent.ui.component.rememberSlashMenuProvider
 import com.apex.agent.ui.screen.agent.CODING_SCREEN_MODES
 import com.apex.agent.ui.screen.agent.AgentModeSelector
@@ -747,7 +749,10 @@ private fun CodeInputBar(
                 onDisableAllRules = { toolkitState.rules.filter { it.enabled }.forEach { r -> toolkit.setRuleEnabled(r.id, false) } }
             )
 
-            // ═══ 工具栏行：工作区 + 斜杠 + GitHub + 小圆环（横向滚动）═══
+            // ═══ FUSION 王冠激活态横幅（Coding 工位钦定位，未激活不占位）═══
+            FusionCodingBanner()
+
+            // ═══ 工具栏行：工作区 + 斜杠 + 王冠 + GitHub + 小圆环（横向滚动）═══
             // 工作区选择器占首位（2026-10 用户需求：输入栏内未被占用的位置；
             // 真实文件夹选择 + 默认整个系统，见 CodeWorkspaceSelector.kt）
             Row(
@@ -788,6 +793,10 @@ private fun CodeInputBar(
                         }
                     }
                 )
+
+                // ═══ 王冠：FUSION 工具聚合体系入口（Coding 工位钦定位，
+                // 选包激活 + chip 回灌输入框 + /fusion 强制使用）═══
+                FusionCodingButton(onBundleChip = onAddPendingCommand)
 
                 // ═══ GitHub 连接按钮（#197 从 Agent 屏迁入）═══
                 GithubIconButton(tokenManager = githubTokenManager)
