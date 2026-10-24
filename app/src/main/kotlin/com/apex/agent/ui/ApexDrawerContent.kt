@@ -116,7 +116,7 @@ fun ApexDrawerContent(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Surface(
-                                modifier = Modifier.size(48.dp),
+                                modifier = Modifier.size(40.dp),
                                 shape = CircleShape,
                                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
                                 tonalElevation = 0.dp
@@ -125,26 +125,21 @@ fun ApexDrawerContent(
                                     Icon(
                                         Icons.Default.SmartToy,
                                         contentDescription = null,
-                                        modifier = Modifier.size(28.dp),
+                                        modifier = Modifier.size(24.dp),
                                         tint = MaterialTheme.colorScheme.primary
                                     )
                                 }
                             }
                             Column {
-                                Text(
-                                    "APEX//AGENT",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
                                 Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        stringResource(R.string.drawer_tagline),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        "APEX//AGENT",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
                                     )
                                     Surface(
                                         shape = RoundedCornerShape(6.dp),
@@ -158,6 +153,11 @@ fun ApexDrawerContent(
                                         )
                                     }
                                 }
+                                Text(
+                                    stringResource(R.string.drawer_tagline),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }
