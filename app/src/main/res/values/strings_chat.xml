@@ -353,6 +353,12 @@
     <string name="html_preview_refresh">Reload preview</string>
     <string name="html_preview_close">Close preview</string>
     <string name="html_preview_load_failed">Failed to load file</string>
+    <string name="html_preview_inspector">Toggle layout inspector</string>
+    <string name="html_preview_legend_title">Layout inspector legend</string>
+    <string name="html_preview_legend_flex">Flex</string>
+    <string name="html_preview_legend_grid">Grid</string>
+    <string name="html_preview_legend_positioned">Positioned</string>
+    <string name="html_preview_legend_block">Block</string>
 
     <!-- ═══ v1.4.4 #5: session actions completion — search/pin/rename/export-import/share intake ═══ -->
     <string name="chat_session_search_hint">Search title &amp; message content</string>

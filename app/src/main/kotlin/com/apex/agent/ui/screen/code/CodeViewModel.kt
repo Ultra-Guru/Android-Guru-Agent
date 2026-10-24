@@ -122,6 +122,8 @@ class CodeViewModel @Inject constructor(
     internal val codeHistoryStore: CodeHistoryStore,
     private val workspaceRoots: CodeWorkspaceRoots,
     private val userQuestionBridge: UserQuestionBridge,
+    // v1.8.0 知识库：roleController 按当前专家角色注入专属知识库检索指引
+    internal val knowledgeBaseService: com.apex.agent.knowledge.KnowledgeBaseService,
     // Issue #164：全局规则（设置页编辑）——发送前同步到引擎，refreshContext 时
     // 经 RulesProvider 注入（goal 扩展 CodeGoalController.kt 同包消费）
     internal val settingsRepository: com.apex.agent.ui.screen.settings.SettingsRepository,
@@ -236,7 +238,7 @@ class CodeViewModel @Inject constructor(
 
     /** Coding 专家模板（模式行胶囊；设置流 → 引擎人设通道）。 */
     internal val roleController: CodeRoleController by lazy {
-        CodeRoleController(settingsRepository, { codeEngineImpl }, viewModelScope)
+        CodeRoleController(settingsRepository, { codeEngineImpl }, knowledgeBaseService, viewModelScope)
     }
 
     init {
