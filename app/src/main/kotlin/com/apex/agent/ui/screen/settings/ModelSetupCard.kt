@@ -825,6 +825,9 @@ private fun CapabilityEditor(caps: ModelCapabilities, onChange: (ModelCapabiliti
         item { FilterChip(selected = caps.vision, onClick = { onChange(caps.copy(vision = !caps.vision)) }, label = { Text("Vision") }) }
         item { FilterChip(selected = caps.toolCalling, onClick = { onChange(caps.copy(toolCalling = !caps.toolCalling)) }, label = { Text("Tools") }) }
         item { FilterChip(selected = caps.structuredOutput, onClick = { onChange(caps.copy(structuredOutput = !caps.structuredOutput)) }, label = { Text("JSON") }) }
+        // JSON 原生模式（response_format=json_object）：与 Structured Output
+        // （JSON_SCHEMA 自定义 schema）互独立 —— 11 能力位补齐最后一个缺 UI 的。
+        item { FilterChip(selected = caps.jsonMode, onClick = { onChange(caps.copy(jsonMode = !caps.jsonMode)) }, label = { Text("JsonMode") }) }
         item { FilterChip(selected = caps.reasoning, onClick = { onChange(caps.copy(reasoning = !caps.reasoning)) }, label = { Text("Reason") }) }
         item { FilterChip(selected = caps.longContext, onClick = { onChange(caps.copy(longContext = !caps.longContext)) }, label = { Text("LongCtx") }) }
         item { FilterChip(selected = caps.streaming, onClick = { onChange(caps.copy(streaming = !caps.streaming)) }, label = { Text("Stream") }) }

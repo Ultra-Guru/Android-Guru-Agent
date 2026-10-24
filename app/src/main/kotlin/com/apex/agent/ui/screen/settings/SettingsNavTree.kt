@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Hub
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Cloud
@@ -83,6 +84,7 @@ val SettingsNavTree: List<SettingsCategory> = listOf(
             SettingsLeaf("agent/presets", R.string.settings_nav_agent_presets, Icons.Outlined.TrackChanges),
             SettingsLeaf("agent/subagent", R.string.settings_nav_agent_subagent, Icons.Outlined.SmartToy),
             SettingsLeaf("agent/goal-loop", R.string.settings_nav_agent_goal_loop, Icons.Outlined.TrackChanges),
+            SettingsLeaf("agent/workspace", R.string.settings_nav_agent_workspace, Icons.Outlined.Folder),
             SettingsLeaf("agent/coding", R.string.settings_nav_agent_coding, Icons.Outlined.Build),
             SettingsLeaf("agent/github", R.string.settings_nav_agent_github, Icons.Outlined.Hub),
             SettingsLeaf("agent/compression", R.string.settings_nav_agent_compression, Icons.Outlined.Storage),
