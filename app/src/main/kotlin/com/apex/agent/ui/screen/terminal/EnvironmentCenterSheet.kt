@@ -23,7 +23,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -146,7 +145,7 @@ private fun UbuntuCard(
                             stringResource(
                                 R.string.term_progress_bytes,
                                 formatBytes(it.bytesTransferred),
-                                formatBytes(it.bytesTotal)
+                                formatBytes(it.bytesTotal ?: 0L)
                             ),
                             style = MaterialTheme.typography.bodySmall,
                             color = ConsoleTokens.onSurfaceVariant,

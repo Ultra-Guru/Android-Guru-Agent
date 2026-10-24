@@ -100,10 +100,11 @@ fun TerminalScreen(
         LaunchedEffect(settings.keepScreenOn) {
             view.keepScreenOn = settings.keepScreenOn
         }
-        // 通知自动消隐（INFO 5s / 其余 8s）
+        // 通知自动消隐（INFO 5s / 其余 8s）—— 委托属性不可智能转换，取局部快照
         LaunchedEffect(notice) {
-            if (notice != null) {
-                delay(if (notice.kind == TerminalViewModel.TerminalNotice.Kind.INFO) 5_000 else 8_000)
+            val n = notice
+            if (n != null) {
+                delay(if (n.kind == TerminalViewModel.TerminalNotice.Kind.INFO) 5_000 else 8_000)
                 viewModel.consumeNotice()
             }
         }
@@ -374,24 +375,24 @@ private fun ConsoleRow(line: ConsoleLine, mono: TextStyle) {
             Text("$ ", style = mono, color = ConsoleTokens.lineCmdPrompt)
             Text(
                 TerminalSyntax.highlightCommand(line.text),
-                style = mono.merge(androidx.compose.ui.text.style.TextStyle(color = ConsoleTokens.lineCmd))
+                style = mono.merge(TextStyle(color = ConsoleTokens.lineCmd))
             )
         }
         ConsoleLine.LineKind.OUT -> Text(
             TerminalSyntax.highlightOutput(line.text),
-            style = mono.merge(androidx.compose.ui.text.style.TextStyle(color = ConsoleTokens.lineOut))
+            style = mono.merge(TextStyle(color = ConsoleTokens.lineOut))
         )
         ConsoleLine.LineKind.EXIT_OK -> Text(
-            line.text, style = mono.merge(androidx.compose.ui.text.style.TextStyle(color = ConsoleTokens.lineExitOk))
+            line.text, style = mono.merge(TextStyle(color = ConsoleTokens.lineExitOk))
         )
         ConsoleLine.LineKind.EXIT_BAD -> Text(
-            line.text, style = mono.merge(androidx.compose.ui.text.style.TextStyle(color = ConsoleTokens.lineExitBad))
+            line.text, style = mono.merge(TextStyle(color = ConsoleTokens.lineExitBad))
         )
         ConsoleLine.LineKind.INFO -> Text(
-            line.text, style = mono.merge(androidx.compose.ui.text.style.TextStyle(color = ConsoleTokens.lineInfo))
+            line.text, style = mono.merge(TextStyle(color = ConsoleTokens.lineInfo))
         )
         ConsoleLine.LineKind.ERROR -> Text(
-            line.text, style = mono.merge(androidx.compose.ui.text.style.TextStyle(color = ConsoleTokens.lineError))
+            line.text, style = mono.merge(TextStyle(color = ConsoleTokens.lineError))
         )
     }
 }

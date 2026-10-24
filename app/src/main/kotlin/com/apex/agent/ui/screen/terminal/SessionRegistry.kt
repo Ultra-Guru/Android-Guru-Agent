@@ -22,7 +22,7 @@ data class SessionTab(
     val isAlive: Boolean,
     val title: String?
 ) {
-    val isUbuntu: Boolean get() = backendId == BACKEND_UBUNTU
+    val isUbuntu: Boolean get() = backendId == SessionRegistry.BACKEND_UBUNTU
 }
 
 class SessionRegistry(private val runtime: TerminalRuntime) {

@@ -18,6 +18,8 @@ import com.apex.agent.ui.language.LanguageManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -129,7 +131,7 @@ class TerminalViewModel @Inject constructor(
         get() = ubuntuLifecycle.progressFlow()
 
     /** 控制台设置。 */
-    val settings: StateFlow<TerminalSettings> = settingsStore.settings
+    internal val settings: StateFlow<TerminalSettings> = settingsStore.settings
 
     /** 命令历史（最新在前）。 */
     val history: StateFlow<List<String>> = commandHistory.entries
@@ -340,7 +342,7 @@ class TerminalViewModel @Inject constructor(
             } else {
                 // 兜底轮询（与旧版同口径：2s）
                 while (true) {
-                    kotlinx.coroutines.delay(2_000)
+                    delay(2_000)
                     refreshSessionsInternal()
                 }
             }
@@ -520,7 +522,7 @@ class TerminalViewModel @Inject constructor(
 
     // ═══════════════ 设置 / 名单 / 历史 委托 ═══════════════
 
-    fun updateSettings(block: TerminalSettings.() -> TerminalSettings) = settingsStore.update(block)
+    internal fun updateSettings(block: TerminalSettings.() -> TerminalSettings) = settingsStore.update(block)
 
     val blacklist: StateFlow<Set<String>> get() = policyStore.blacklist
     val whitelist: StateFlow<Set<String>> get() = policyStore.whitelist
