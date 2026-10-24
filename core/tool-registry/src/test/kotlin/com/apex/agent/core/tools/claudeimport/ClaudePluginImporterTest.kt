@@ -170,6 +170,7 @@ class ClaudePluginImporterTest {
     fun `SKILL 文档缺 name 回退目录名`() {
         val root = tmp.newFolder("pkg5")
         val pkg = File(root, "fallback").apply { mkdirs() }
+        File(pkg, ".claude-plugin").apply { mkdirs() }
         File(pkg, ".claude-plugin/plugin.json").writeText("""{"name": "fallback"}""")
         File(pkg, "skills/some-dir").apply { mkdirs() }
         File(pkg, "skills/some-dir/SKILL.md").writeText(
