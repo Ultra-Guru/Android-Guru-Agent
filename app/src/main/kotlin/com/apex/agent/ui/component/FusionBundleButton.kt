@@ -11,6 +11,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -123,7 +124,10 @@ fun FusionBundleButton(
                 color = if (isActive) CrownGold.copy(alpha = 0.15f)
                 else MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
                 shape = CircleShape
-            ),
+            )
+            // 修复：原实现漏挂 clickable —— 点击王冠无任何反应（showMenu
+            // 永远 false，层级菜单弹不出）；与 SlashCommandButton 同款收尾。
+            .clickable { showMenu = true },
         contentAlignment = Alignment.Center
     ) {
         // 精致王冠（激活态宝石微光呼吸）
@@ -254,7 +258,9 @@ private fun FusionCrownMenuPopup(
                                         isActive = active?.id == digest.id,
                                         onSelect = {
                                             menuScope.launch {
-                                                controller.activate(digest.id).fold(
+                                                // 工位 scope 透传（all 包双工位可激活；
+                                                // 域包错位激活在 activator 层拒绝）
+                                                controller.activate(digest.id, scope = scope).fold(
                                                     onSuccess = { act ->
                                                         // ★ chip 进输入框（agent 将强制使用该体系）
                                                         onBundleChip(

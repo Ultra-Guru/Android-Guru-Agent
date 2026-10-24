@@ -39,7 +39,7 @@ class FusionBundleCoreTest {
         assertEquals("6.5.0", manifest.version)
         assertEquals("fusion-bundle-v1", manifest.schema)
         assertTrue(manifest.bundled)
-        assertEquals("agent", manifest.scope)
+        assertEquals("all", manifest.scope)
         assertEquals(1, manifest.skills.size)
         assertEquals("ReaWorkflow", manifest.skills[0].skillId)
         assertEquals("ReaWorkflow", manifest.skills[0].manifest.id)
@@ -302,10 +302,18 @@ class FusionBundleCoreTest {
         )
         assertTrue(activator.activate("nope").isFailure)
 
-        // coding 工位激活 agent 域包 → 拒绝
-        val r = activator.activate("rea", scope = "coding")
+        // coding 工位激活 agent 域包 → 拒绝（scope="agent" 的域包 fixture）
+        registry.install(
+            """{"schema":"fusion-bundle-v1","id":"agentonly","name":"x","version":"1",
+               "description":"d","scope":"agent"}"""
+        )
+        val r = activator.activate("agentonly", scope = "coding")
         assertTrue(r.isFailure)
         assertTrue(r.exceptionOrNull()!!.message!!.contains("作用域"))
+
+        // #397 后续修正（王冠 Coding 工位钦定位）：内置包 scope="all" →
+        // coding 工位激活通行（agent 工位默认参数同理，双工位可用）
+        assertTrue(activator.activate("rea", scope = "coding").isSuccess)
     }
 
     // ═══ 兼容性强化：重试 / 注入容错（王冠入口配套）══════════════

@@ -177,7 +177,16 @@ private class McpConnectorPort(
     }
 }
 
-/** 引擎人设注入端口 → ApexAgentEngine.patchConfig 读改写（additionalSystemContext）。 */
+/**
+ * 引擎人设注入端口 → ApexAgentEngine.patchConfig 读改写（additionalSystemContext）。
+ *
+ * 注入面说明（#397 后续修正）：本端口作用于 **Agent 引擎单例**（默认绑定）；
+ * Coding 引擎（@Named("code") DualLogicCodeEngine）的会话附加通道
+ * `updateSessionExtras` 已被「小圆环」工具箱占用、`updateRolePersona` 被
+ * v6 专家模板占用 —— 无空闲人设通道，不强占。Coding 工位的「强制使用」
+ * 由发送侧保障：/fusion chip 每轮经 SlashCommandRouter.routeFusion 注入
+ * 三条款强制提示词（agent + coding 双屏共用同一管线，逐轮生效）。
+ */
 private class EnginePromptPort(
     private val engineLazy: dagger.Lazy<AgentEngine>
 ) : FusionPromptInjector {

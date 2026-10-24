@@ -43,8 +43,9 @@ data class FusionBundleManifest(
     val trustLevel: String = "community",
     /** 内置预装标记：true 的包不可卸载（与 SkillManifest.bundled 同语义）。 */
     val bundled: Boolean = false,
-    /** 工位作用域（"agent" | "coding" | "all"，默认 agent —— 复合包首发于聊天工位）。 */
-    val scope: String = "agent",
+    /** 工位作用域（"agent" | "coding" | "all"，默认 all —— 工具聚合体系双工位
+     *     通用，王冠主入口在 Coding 屏（#397 后续修正），Agent 屏保留纯聊天）。 */
+    val scope: String = "all",
     /** agent 工作流人设：激活后注入 system prompt 的 Session Context 段。 */
     val agent: FusionBundleAgent = FusionBundleAgent(),
     /** 聚合的技能（完整 apex-skill-v1 manifest 内联 —— 装进 SkillRegistry 复用其全部管道）。 */

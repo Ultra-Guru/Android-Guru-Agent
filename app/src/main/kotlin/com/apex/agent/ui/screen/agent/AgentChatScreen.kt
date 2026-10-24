@@ -76,8 +76,6 @@ import com.apex.agent.ui.component.AttachButton
 import com.apex.agent.ui.component.AttachmentPreviewBar
 import com.apex.agent.ui.component.FeedbackSeverity
 import com.apex.agent.ui.component.FileOpener
-import com.apex.agent.ui.component.FusionBundleActiveBanner
-import com.apex.agent.ui.component.FusionBundleButton
 import com.apex.agent.ui.component.HtmlPreviewDialog
 import com.apex.agent.ui.component.ImageLightbox
 import com.apex.agent.ui.component.LocalFeedbackController
@@ -89,7 +87,6 @@ import com.apex.agent.ui.component.SlashMenuProvider
 import com.apex.agent.ui.component.ViroPetHost
 import com.apex.agent.ui.component.ViroPetMood
 import com.apex.agent.ui.component.rememberSlashMenuProvider
-import com.apex.agent.ui.component.rememberFusionBundleController
 import com.apex.agent.ui.glass.GlassCard
 import com.apex.agent.ui.glass.GlassFloatingButton
 import com.apex.agent.ui.glass.GlassModalScrim
@@ -175,12 +172,9 @@ fun AgentChatScreen(
     // ═══ #197 模型 API 未配置浮窗（发送时拦截并提示去配置）═══
     var showApiMissingNotice by remember { mutableStateOf(false) }
 
-    // ═══ FusionBundle：王冠入口（FUSION 工具聚合体系 —— 技能+MCP+工具聚合）═══
-    // 控制器经 EntryPoint 取单例（模式同 rememberSlashMenuProvider —— 零
-    // VM 侵入：激活编排/引擎人设注入/持久化重激活都在控制器内部）。
-    // 选中包 → chip 挂输入框 + agent 强制使用（详见 FusionBundleButton.kt）。
-    val fusionController = rememberFusionBundleController()
-    val fusionActive by fusionController.activeBundle.collectAsStateWithLifecycle()
+    // ═══ FusionBundle 王冠入口已迁至 Coding 屏（用户钦定位：FUSION 工具
+    // 聚合体系属于 Coding 工位，Agent 屏保留纯聊天体验 —— #197 迁移先例
+    // 同口径；激活态横幅/暖启由 FusionCodingEntry 承载）═══
 
     // ═══ 历史对话：会话列表 + 抽屉开关（顶栏「历史」按钮唤起）═══
     val chatSessions by viewModel.chatSessions.collectAsStateWithLifecycle()
@@ -693,26 +687,11 @@ fun AgentChatScreen(
                     onRemove = { index -> viewModel.removeAttachment(index) }
                 )
 
-                // ═══ FusionBundle 激活态横幅（一行式：包名 + 停用钮）═══
-                if (fusionActive != null) {
-                    FusionBundleActiveBanner(
-                        bundleName = fusionActive!!.name,
-                        onDeactivate = {
-                            fusionController.deactivate()
-                                .onFailure {
-                                    feedbackController.show(
-                                        it.message ?: "", FeedbackSeverity.WARNING
-                                    )
-                                }
-                        }
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
-
                 // ═══ v5：技能 chip 已内联进输入框（SkillChipInputField），独立的
                 // 胶囊行移除 —— 不再出现「胶囊行叠在输入框上方」的重叠观感。
                 // #197 「小圆环」函数调用/工具菜单已迁至 Coding 屏（Agent 屏
                 // 保留纯聊天体验：斜杠技能/MCP 选择 + 附件 + 模型小大脑）。
+                // FUSION 王冠入口亦同口径迁至 Coding 屏（FusionCodingEntry）。
 
                 // ═══ 工具栏行：功能按钮 + 原生思考档位同一行（统一横向滚动）═══
                 Row(
@@ -757,15 +736,6 @@ fun AgentChatScreen(
                                 false // 普通指令：插入后收起菜单
                             }
                         }
-                    )
-
-                    // ═══ 王冠：FUSION 工具聚合体系入口（层级菜单：FUSION → 具体包）═══
-                    // 选中的包以 chip 形式出现在输入框中；发送后 agent 强制
-                    // 使用该体系（激活侧强制使用协议 + /fusion:<id> 指令双保险）。
-                    FusionBundleButton(
-                        controller = fusionController,
-                        isActive = fusionActive != null,
-                        onBundleChip = { chip -> viewModel.addPendingCommand(chip) }
                     )
 
                     // ═══ + 旋转附件按钮 ═══
