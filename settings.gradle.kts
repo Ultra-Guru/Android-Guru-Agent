@@ -174,12 +174,6 @@ include(":terminal-native")
 // 依赖 :terminal-emulator 的纯数据模型（RenderCell/TerminalRenderSnapshot），不依赖 Compose
 include(":terminal-view")
 
-// M³ 现代终端（Material 3 Terminal UI）：自包含 Compose 库模块 —— 单源输入
-// REPL 终端页（GitHub Dark 恒暗配色 / 代码高亮 / 模拟执行 500ms），零 Hilt
-// 零跨模块依赖；app 经 DrawerDestination.TerminalM3 接入，与 PRoot Ubuntu
-// 终端（:platform:terminal 全家桶）并存 —— 重型沙箱终端与轻量命令台两种
-// 工作流各取所需。
-include(":feature:terminal-m3")
 
 // 插件SDK
 include(":plugin-sdk:plugin-api")

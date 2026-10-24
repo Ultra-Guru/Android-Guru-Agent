@@ -6,8 +6,6 @@
     <!-- ═══ Drawer and navigation destinations (ApexRoot / ApexDrawerContent) ═══ -->
     <string name="drawer_agent">Agent</string>
     <string name="drawer_terminal">Terminal</string>
-<!-- M³ 现代终端（Material 3 Terminal UI）：轻量 REPL 命令台 -->
-    <string name="drawer_terminal_m3">Terminal · M³</string>
 <!-- #197 Template Studio -->
     <string name="drawer_templates">Template Studio</string>
     <string name="drawer_market">Market</string>

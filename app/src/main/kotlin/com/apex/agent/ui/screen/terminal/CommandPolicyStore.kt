@@ -1,66 +1,80 @@
 package com.apex.agent.ui.screen.terminal
 
-import android.content.SharedPreferences
+import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * 命令黑白名单仓储（P0-1 拆分）—— 用户名单的 prefs 读写 + 提交时刻的门禁
- * 检查，从 `TerminalViewModel` 收口。
+ * 命令黑白名单仓储（T96 自旧版转移；存储抽象化使语义可单测）。
  *
- * 门禁语义（与 TerminalModule 动态策略同源的 prefs 数据，但仅消费用户名单；
- * 交互路径的内置默认危险命令拦截由用户自行把条目加入黑名单完成 —— 自己敲
- * 的命令接 Termux 哲学：不过滤）。拦截判定的输入侧镜像由 [LineMirror] 维护。
+ * 门禁语义（与 TerminalModule DI 的 TerminalPolicyImpl 同源 prefs —— 两侧
+ * 消费同一份数据，交互路径 fast-fail（本类），运行时写入侧兜底）：
+ *  - 黑名单命中命令头 → 拒绝；
+ *  - 白名单非空 → 仅白名单放行；
+ *  - 两者皆空 → 放行（Termux 哲学：自己敲的命令不过滤）。
  *
- * 匹配 = 命令头 token 精确等值（与 CommandPolicy 的 token 语义一致，消除旧
- * startsWith 前缀误拦：“rm” 不再误拦 “rmdir...” 的头 token）。
+ * 匹配 = 命令头 token 精确等值（消除旧 startsWith 前缀误拦：「rm」不再
+ * 误拦「rmdir」的头 token）。
  */
-internal class CommandPolicyStore(private val prefs: SharedPreferences) {
+internal class CommandPolicyStore(private val store: Store) {
 
-    private val _blacklist = MutableStateFlow(loadSet("cmd_blacklist"))
+    /** 存储抽象（读写两个 StringSet）。 */
+    interface Store {
+        fun load(key: String): Set<String>?
+        fun save(key: String, entries: Set<String>)
+    }
+
+    /** 生产入口（apex_terminal SharedPreferences，键名与历史版本逐字一致）。 */
+    constructor(context: Context) : this(PrefsStore(context))
+
+    private class PrefsStore(context: Context) : Store {
+        private val prefs = context.getSharedPreferences("apex_terminal", Context.MODE_PRIVATE)
+        override fun load(key: String): Set<String>? = prefs.getStringSet(key, null)
+        override fun save(key: String, entries: Set<String>) {
+            prefs.edit().putStringSet(key, entries).apply()
+        }
+    }
+
+    private val _blacklist = MutableStateFlow(store.load(KEY_BLACKLIST) ?: emptySet())
     val blacklist: StateFlow<Set<String>> = _blacklist.asStateFlow()
 
-    private val _whitelist = MutableStateFlow(loadSet("cmd_whitelist"))
+    private val _whitelist = MutableStateFlow(store.load(KEY_WHITELIST) ?: emptySet())
     val whitelist: StateFlow<Set<String>> = _whitelist.asStateFlow()
 
-    fun addBlacklist(cmd: String) = editSet("cmd_blacklist", _blacklist) { add(normalize(cmd)) }
+    fun addBlacklist(cmd: String) = edit(KEY_BLACKLIST, _blacklist) { add(normalize(cmd)) }
 
-    fun removeBlacklist(cmd: String) = editSet("cmd_blacklist", _blacklist) { remove(normalize(cmd)) }
+    fun removeBlacklist(cmd: String) = edit(KEY_BLACKLIST, _blacklist) { remove(normalize(cmd)) }
 
-    fun addWhitelist(cmd: String) = editSet("cmd_whitelist", _whitelist) { add(normalize(cmd)) }
+    fun addWhitelist(cmd: String) = edit(KEY_WHITELIST, _whitelist) { add(normalize(cmd)) }
 
-    fun removeWhitelist(cmd: String) = editSet("cmd_whitelist", _whitelist) { remove(normalize(cmd)) }
+    fun removeWhitelist(cmd: String) = edit(KEY_WHITELIST, _whitelist) { remove(normalize(cmd)) }
 
-    /**
-     * 交互输入的命令头检查。
-     *  - 黑名单命中 → 拒绝；
-     *  - 白名单非空 → 仅白名单放行；
-     *  - 两者皆空 → 放行（Termux 哲学）。
-     */
+    /** 交互输入的命令头检查（提交管线第一步）。 */
     fun isCommandAllowed(command: String): Boolean {
         val head = command.trim().substringBefore(' ').lowercase()
         if (head.isEmpty()) return true
         if (_blacklist.value.any { head == it }) return false
         val wl = _whitelist.value
-        if (wl.isNotEmpty()) {
-            return head in wl
-        }
+        if (wl.isNotEmpty()) return head in wl
         return true
     }
 
     private fun normalize(cmd: String) = cmd.trim().lowercase().substringBefore(' ')
 
-    private fun loadSet(key: String): Set<String> =
-        prefs.getStringSet(key, emptySet()) ?: emptySet()
-
-    private fun editSet(
+    private fun edit(
         key: String,
         flow: MutableStateFlow<Set<String>>,
         mutate: MutableSet<String>.() -> Unit
     ) {
         val next = flow.value.toMutableSet().apply(mutate)
-        prefs.edit().putStringSet(key, next).apply()
+        store.save(key, next)
         flow.value = next
+    }
+
+    companion object {
+        /** 与 DI TerminalPolicyImpl 共键（app/di/TerminalModule 动态策略读取同一数据）。 */
+        internal const val KEY_BLACKLIST = "cmd_blacklist"
+        internal const val KEY_WHITELIST = "cmd_whitelist"
     }
 }

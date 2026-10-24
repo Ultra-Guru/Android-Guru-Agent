@@ -90,7 +90,6 @@ import com.apex.agent.ui.screen.memory.MemoryScreen
 import com.apex.agent.ui.screen.storage.StorageScreen
 import com.apex.agent.ui.screen.tasks.TaskHistoryScreen
 import com.apex.agent.ui.screen.terminal.TerminalScreen
-import com.apex.agent.feature.terminalm3.M3TerminalScreen
 import com.apex.agent.ui.screen.templates.TemplateStudioScreen
 import com.apex.agent.ui.screen.usage.UsageDashboardScreen
 import com.apex.agent.ui.screen.vault.VaultScreen
@@ -118,12 +117,9 @@ sealed class DrawerDestination(
     data object Code : DrawerDestination("code", R.string.drawer_code, Icons.Default.Code)
     // #197 模板工坊：Agent/Coding 双层模板 + Agent 角色详细设置的独立页面入口。
     data object Templates : DrawerDestination("templates", R.string.drawer_templates, Icons.AutoMirrored.Filled.ListAlt)
+    // T96 终端大重构：M³ 入口与旧交互终端入口已合并为本 Terminal —— 唯一终端
+    //（M3 控制台视觉 × 真实 PTY 执行 × 多会话/环境/历史全量功能）。
     data object Terminal : DrawerDestination("terminal", R.string.drawer_terminal, Icons.Default.Terminal)
-    // M³ 现代终端（Material 3 Terminal UI）：终端页的轻量 REPL 皮肤 —— 单源输入
-    // 同步（输入框与终端卡片同一 VM 状态）/ GitHub Dark 恒暗配色 / 命令 token
-    // 级代码高亮 / 闪烁光标。与重型 PRoot Ubuntu 终端（Terminal）并存：
-    // 沙箱终端与轻量命令台两种工作流各取所需。Outlined 图标与沙箱终端区分。
-    data object TerminalM3 : DrawerDestination("terminal-m3", R.string.drawer_terminal_m3, Icons.Outlined.Terminal)
     // Skill 屏已移除 —— 技能的安装/启停统一由「市场 · Skills」页承担，
     // 抽屉里再放一个只读列表是重复入口（两者数据源同一份 SkillRegistry）。
     data object Market : DrawerDestination("market", R.string.drawer_market, Icons.Default.Storefront)
@@ -390,7 +386,6 @@ fun ApexRoot() {
                 // 终端竖屏 20dp 高度（终端页本就被键区挤压，条带堆叠是「页面
                 // 一坨」的直接成因之一）。其余页面不受影响。
                 if (currentDestination != DrawerDestination.Terminal &&
-                    currentDestination != DrawerDestination.TerminalM3 &&
                     currentDestination != DrawerDestination.WorkspaceBrowser
                 ) {
                     ContextMeterBar(
@@ -431,11 +426,6 @@ fun ApexRoot() {
                             DrawerDestination.Terminal -> TerminalScreen(
                                 // 终端页不再有汉堡/边缘滑动拉抽屉 —— 返回钮走统一
                                 // 返回链（弹历史栈；栈空兑底回 Agent 主页，抽屉在那里可达）
-                                onBack = navigateBack
-                            )
-                            DrawerDestination.TerminalM3 -> M3TerminalScreen(
-                                // 与沙箱终端同款返回链语义；页内自带恒暗 M³ 主题
-                                //（M3TerminalTheme），不随全局亮暗切换洗白终端配色
                                 onBack = navigateBack
                             )
                             DrawerDestination.Market -> MarketScreen()
