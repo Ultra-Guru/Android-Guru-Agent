@@ -258,7 +258,12 @@ fun GlassNavigationItem(
     ) {
         Row(
             modifier = Modifier
-                .glassClickable(interaction, enabled && !selected, onClick)
+                // ★ 选中项保持可点击（用户反馈：在 Agent 模式页打开抽屉后
+                // 再点「Agent 模式」抽屉收不回 —— 旧实现 enabled && !selected
+                // 把已选中项的点击禁用，onDestinationSelected 不触发、抽屉
+                // 悬停不关）。选中项点击走同一路径：navigateToTopLevel 同页
+                // 无副作用 + drawerState.close() 收起 —— 标准 drawer 惯例。
+                .glassClickable(interaction, enabled, onClick)
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)

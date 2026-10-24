@@ -283,7 +283,13 @@ class PromptTemplateRegistry(
 
     // ═══ 持久化 ═══
 
-    /** 首次访问同步扫描加载（双检 + 监视器锁；损坏备份后空库启动）。 */
+    /**
+     * 首次访问同步扫描加载（双检 + 监视器锁；损坏备份后空库启动）。
+     *
+     * 内置模板播种不在本层做（reseedBuiltIns 保持显式契约，测试锁定其语义）：
+     * 生产端由宿主 DI 模块（app TemplateModule）在构造后异步调用
+     * reseedBuiltIns() 完成首载播种 —— 修复全新安装模板工坊恒为空清单的问题。
+     */
     private fun ensureLoaded() {
         if (loaded) return
         synchronized(loadLock) {

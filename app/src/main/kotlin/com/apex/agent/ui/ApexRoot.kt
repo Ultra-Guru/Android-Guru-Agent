@@ -4,15 +4,20 @@ import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddComment
@@ -54,6 +59,7 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.snapshotFlow
@@ -61,6 +67,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.annotation.StringRes
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -68,7 +75,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.BuildConfig
 import com.apex.agent.R
 import com.apex.agent.changelog.ChangelogStartupHost
-import com.apex.agent.ui.component.ContextMeterBar
 import com.apex.agent.ui.component.FeedbackHost
 import com.apex.agent.ui.component.OfflineBanner
 import com.apex.agent.ui.component.UpdateBanner
@@ -90,6 +96,7 @@ import com.apex.agent.ui.screen.memory.MemoryScreen
 import com.apex.agent.ui.screen.storage.StorageScreen
 import com.apex.agent.ui.screen.tasks.TaskHistoryScreen
 import com.apex.agent.ui.screen.terminal.TerminalScreen
+import com.apex.agent.feature.terminalm3.M3TerminalScreen
 import com.apex.agent.ui.screen.templates.TemplateStudioScreen
 import com.apex.agent.ui.screen.usage.UsageDashboardScreen
 import com.apex.agent.ui.screen.vault.VaultScreen
@@ -117,9 +124,12 @@ sealed class DrawerDestination(
     data object Code : DrawerDestination("code", R.string.drawer_code, Icons.Default.Code)
     // #197 模板工坊：Agent/Coding 双层模板 + Agent 角色详细设置的独立页面入口。
     data object Templates : DrawerDestination("templates", R.string.drawer_templates, Icons.AutoMirrored.Filled.ListAlt)
-    // T96 终端大重构：M³ 入口与旧交互终端入口已合并为本 Terminal —— 唯一终端
-    //（M3 控制台视觉 × 真实 PTY 执行 × 多会话/环境/历史全量功能）。
     data object Terminal : DrawerDestination("terminal", R.string.drawer_terminal, Icons.Default.Terminal)
+    // M³ 现代终端（Material 3 Terminal UI）：终端页的轻量 REPL 皮肤 —— 单源输入
+    // 同步（输入框与终端卡片同一 VM 状态）/ GitHub Dark 恒暗配色 / 命令 token
+    // 级代码高亮 / 闪烁光标。与重型 PRoot Ubuntu 终端（Terminal）并存：
+    // 沙箱终端与轻量命令台两种工作流各取所需。Outlined 图标与沙箱终端区分。
+    data object TerminalM3 : DrawerDestination("terminal-m3", R.string.drawer_terminal_m3, Icons.Outlined.Terminal)
     // Skill 屏已移除 —— 技能的安装/启停统一由「市场 · Skills」页承担，
     // 抽屉里再放一个只读列表是重复入口（两者数据源同一份 SkillRegistry）。
     data object Market : DrawerDestination("market", R.string.drawer_market, Icons.Default.Storefront)
@@ -174,9 +184,10 @@ fun ApexRoot() {
     // 切页时旧屏不再随 when 分支整体离开组合而丢失滚动位置/展开态。
     val destinationStateHolder = rememberSaveableStateHolder()
 
-    // 上下文仪表盘数据源（单例作用域 VM，全局共享）
+    // 上下文仪表盘数据源（单例作用域 VM，全局共享）—— v1.4.11 移除顶部上下文
+    // 仪表盘长条（用户反馈：顶部堆叠过高，删除后页面上抬）：VM 仍为全局
+    // 单例，网络状态 / uiSettings / GitHub token 箉继续从这里取。
     val agentVm: AgentChatViewModel = hiltViewModel()
-    val agentState by agentVm.uiState.collectAsStateWithLifecycle()
 
     // ═══ IME 收回纪律（2026-10 用户反馈三连修）═══
     // ① 点消息区空白 → 收起：AgentChatScreen / CodeStreamTimeline 的
@@ -271,9 +282,17 @@ fun ApexRoot() {
     FeedbackHost {
     // ★ 抽屉手势收敛（用户反馈：右滑误触拉出抽屉太频繁，只保留左上角
     // 三条杠入口）：M3 ModalNavigationDrawer 的边缘滑动开抽屉整体关闭
-    // （gesturesEnabled=false）。终端页的横向手势抢消费问题随之根治；
-    // 关闭通道不受影响 —— scrim 点击关闭不经过 gesturesEnabled，
-    // BackHandler 兜底返回键关抽屉，选中条目后自动收起。
+    // （gesturesEnabled=false）。终端页的横向手势抢消费问题随之根治。
+    //
+    // ★★ scrim 点击收回自建（M3 1.4.0 回归）：ModalNavigationDrawer 的 scrim
+    // 点击关闭回调内部被 `gesturesEnabled && confirmStateChange(...)` 门控 ——
+    // 本 app 为防误触必须 gesturesEnabled=false，scrim 点击因此失效（旧注释
+    // 「scrim 点击关闭不经过 gesturesEnabled」基于早期 M3 行为，1.4.0 已不成立）。
+    // 自建点击捕获层：抽屉打开时常驻覆盖「抽屉页之外的空白区」，点击即关；
+    // 层级在 M3 scrim 之上（后组合先命中），消费 tap 后 M3 自身的空转 scrim
+    // 手势自然取消 —— 互不干扰。返回键关抽屉（BackHandler）与选中条目收起
+    // 通道不变。
+    Box(modifier = Modifier.fillMaxSize()) {
     ModalNavigationDrawer(
         drawerState = drawerState,
         gesturesEnabled = false,
@@ -381,20 +400,10 @@ fun ApexRoot() {
                     autoUpdateCheck = agentVm.uiSettings.value.autoUpdateCheck
                 )
 
-                // ═══ 顶部上下文仪表盘长条（全局）═══
-                // T89：终端页隐藏 —— Agent token 用量与终端会话无关，却吃掉
-                // 终端竖屏 20dp 高度（终端页本就被键区挤压，条带堆叠是「页面
-                // 一坨」的直接成因之一）。其余页面不受影响。
-                if (currentDestination != DrawerDestination.Terminal &&
-                    currentDestination != DrawerDestination.WorkspaceBrowser
-                ) {
-                    ContextMeterBar(
-                        usedTokens = agentState.contextUsedTokens,
-                        maxTokens = agentState.contextMaxTokens,
-                        sessionTotalTokens = agentState.sessionTotalTokens,
-                        onCompress = { agentVm.compressNow() }
-                    )
-                }
+                // ═══ 顶部上下文仪表盘长条（全局）—— v1.4.11 整体移除 ═══
+                // 用户反馈：顶部堆叠（TopAppBar + 本条 + 模式栏）把内容区压得
+                // 过低；本条为辅助诊断入口非高频操作，删除后页面上抬一档。
+                // token 用量数据仍可在「用量仪表盘」（Usage）页查看。
 
                 Box(modifier = Modifier.fillMaxSize()) {
                     // #224（症状②）：SaveableStateProvider 以 route 为 key 隔离并
@@ -428,6 +437,11 @@ fun ApexRoot() {
                                 // 返回链（弹历史栈；栈空兑底回 Agent 主页，抽屉在那里可达）
                                 onBack = navigateBack
                             )
+                            DrawerDestination.TerminalM3 -> M3TerminalScreen(
+                                // 与沙箱终端同款返回链语义；页内自带恒暗 M³ 主题
+                                //（M3TerminalTheme），不随全局亮暗切换洗白终端配色
+                                onBack = navigateBack
+                            )
                             DrawerDestination.Market -> MarketScreen()
                             DrawerDestination.Browser -> BrowserScreen()
                             DrawerDestination.Memory -> MemoryScreen()
@@ -454,5 +468,50 @@ fun ApexRoot() {
             }
         }
     }
+
+    // ═══ scrim 点击收回捕获层（仅抽屉打开期间组合；M3 1.4.0 门控回归的自建兜底）═══
+    // targetValue 立即翻转（open() 调用即 Open）—— 打开动画进行中点击也能关；
+    // 关闭动画开始即移除，不拦截 M3 自身的收起过渡。点击同时收起输入法
+    //（与选中条目收起同款纪律）。
+    if (drawerState.targetValue == DrawerValue.Open) {
+        DrawerScrimTapCatcher(
+            onDismiss = {
+                imeDismisser.dismiss()
+                scope.launch { drawerState.close() }
+            }
+        )
+    }
+    }
+    }
+}
+
+/**
+ * ★★ scrim 点击收回捕获层：覆盖「抽屉页之外的空白区」，点击即关。
+ *
+ * 定位：宽 = 屏宽 - 抽屉页宽（288dp），对齐 End —— M3 抽屉页恒在 Start
+ * 侧，LTR/RTL 下语义一致。无视觉（透明 + 无涟漪）：变暗视觉由 M3 scrim
+ * 在下层照常渲染，本层只接管点击。层级在 M3 scrim 之上（后组合先命中），
+ * 消费 tap 后 M3 自身的空转 scrim 手势自然取消，互不干扰。
+ */
+@Composable
+private fun DrawerScrimTapCatcher(
+    onDismiss: () -> Unit,
+    sheetWidth: Dp = 288.dp
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val catcherWidth = (maxWidth - sheetWidth).coerceAtLeast(0.dp)
+        if (catcherWidth > 0.dp) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .width(catcherWidth)
+                    .fillMaxHeight()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onDismiss
+                    )
+            )
+        }
     }
 }
