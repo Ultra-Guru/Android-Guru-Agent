@@ -57,9 +57,9 @@ easyfloat = "2.0.4"
 lucide-icons = "2.2.1"
 # 物理弹力手势（SpringAnimation 按压挤压形变 / 吸附）
 dynamicanimation = "1.0.0"
-# apex-browser-kit（拆库 E1 迁移期；兄弟目录 includeBuild 时坐标被本地构建替换）
+# apex-kit-browser（拆库 E1 迁移期；兄弟目录 includeBuild 时坐标被本地构建替换）
 browser-kit = "1.1.0"
-# apex-workspace-kit（拆库 E1 迁移期；兄弟目录 includeBuild 时坐标被本地构建替换）：
+# apex-kit-workspace（拆库 E1 迁移期；兄弟目录 includeBuild 时坐标被本地构建替换）：
 # Coding 模式工作区浏览器（文件树/多格式预览/Git/变更和产物/实时跟随）
 workspace-kit = "0.1.0"
 # material-icons 显式 pin 1.7.8：官方已停止演进（BOM 2026.02.00 仍映射 1.7.8，
@@ -142,11 +142,11 @@ lucide-icons = { group = "com.composables", name = "icons-lucide-android", versi
 # 物理弹力手势（androidx.dynamicanimation）
 dynamicanimation = { group = "androidx.dynamicanimation", name = "dynamicanimation", version.ref = "dynamicanimation" }
 
-# apex-browser-kit 三层（core：DomParser 剪枝 / engine：BrowserEngine 自动化 / chrome：Overlay 浮窗）
+# apex-kit-browser 三层（core：DomParser 剪枝 / engine：BrowserEngine 自动化 / chrome：Overlay 浮窗）
 browser-core = { group = "com.apex.browser", name = "browser-core", version.ref = "browser-kit" }
 browser-engine = { group = "com.apex.browser", name = "browser-engine", version.ref = "browser-kit" }
 browser-chrome = { group = "com.apex.browser", name = "browser-chrome", version.ref = "browser-kit" }
-# apex-workspace-kit 两层（core：git 引擎/文件树/预览装配/watcher —— 纯 JVM；
+# apex-kit-workspace 两层（core：git 引擎/文件树/预览装配/watcher —— 纯 JVM；
 # explorer：Compose 三标签页 UI）
 workspace-core = { group = "com.apex.workspace", name = "workspace-core", version.ref = "workspace-kit" }
 workspace-explorer = { group = "com.apex.workspace", name = "workspace-explorer", version.ref = "workspace-kit" }

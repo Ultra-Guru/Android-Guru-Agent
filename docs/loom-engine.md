@@ -33,7 +33,7 @@ DualLogicCodeEngine（三路路由门面，volatile 单引用切换）
    ├──► CodeAgentEngine      深潜线（七档思考）      记忆：code_memory/
    ├──► StandardKitAdapter   标准线（任务循环库）    记忆：code_memory_standard/
    └──► LoomKitAdapter       织造线（循环库接线）    记忆：code_memory_loom/
-          └─ loom-weave 库内核（Ultra-Guru/apex-loom-kit，com.apex.loomkit:loom-weave）
+          └─ loom-weave 库内核（Ultra-Guru/apex-kit-loom，com.apex.loomkit:loom-weave）
              ├─ LoomSession            会话织物 + 系统提示词每回合 JIT 重织
              ├─ LoomRoundRunner        梭回合机（流式往返 + 分流守卫）
              ├─ LoomMarkupParser       六态流式增量解析器（跨块 holdback）
@@ -154,9 +154,9 @@ DualLogicCodeEngine（三路路由门面，volatile 单引用切换）
 
 ## 九、门面契约与接线（库模块化）
 
-### 拆库布局（同 apex-standard-kit 纪律）
+### 拆库布局（同 apex-kit-standard 纪律）
 
-织造循环已提取为独立库仓 **Ultra-Guru/apex-loom-kit**（坐标
+织造循环已提取为独立库仓 **Ultra-Guru/apex-kit-loom**（坐标
 `com.apex.loomkit:loom-weave`）——全部循环语义（标记协议 / 梭回合机 /
 权限门 / 子线程群 / 织造包 / digest 压缩 / 引擎测试矩阵）在库仓演进：
 
@@ -204,7 +204,7 @@ DualLogicCodeEngine（三路路由门面，volatile 单引用切换）
 | DualLogicCodeEngineTest + StandardLogicModeTest | 三路路由 / 档位别名 |
 
 全部纯 JVM（JUnit4 + runTest + 手写 fake——无 mock 框架）。引擎套件随
-**apex-loom-kit** 库仓 CI 跑（`:loom-weave:test`）；宿主侧保留
+**apex-kit-loom** 库仓 CI 跑（`:loom-weave:test`）；宿主侧保留
 `DualLogicCodeEngineTest` + `StandardLogicModeTest`（三路路由 / 档位别名，
 随 `:core:code-engine:test` 跑入 CI）。
 

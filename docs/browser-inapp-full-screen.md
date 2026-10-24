@@ -1,6 +1,6 @@
 # 内嵌浏览器（App 内全功能浏览器 / 三承载面互斥）
 
-> 版本：v1.5.1（2026-10）；关联库 PR：apex-browser-kit#18（v1.5.0，
+> 版本：v1.5.1（2026-10）；关联库 PR：apex-kit-browser#18（v1.5.0，
 > `InAppChromeHost` + `InAppHostingArbiter`）；消费提交：本仓库
 > `feat/browser-inapp-full-browser`。
 
@@ -26,7 +26,7 @@ Column 恒刷不透明底色，把组合树外的 WebView 整个盖住——即�
 
 ## 方案：App 内嵌完整浏览器（零权限基线）+ 承载互斥
 
-### 库侧（apex-browser-kit v1.5.0）
+### 库侧（apex-kit-browser v1.5.0）
 
 - **`InAppChromeHost`**：把引擎活动 WebView 连同完整 `BrowserChrome` 嵌进
   宿主 App 自己窗口的控制器。四动作生命周期（全主线程）：

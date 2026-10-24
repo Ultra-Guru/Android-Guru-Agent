@@ -35,7 +35,7 @@ dependencies {
     // AgentTool / StreamingAgentTool 契约（browser_* 工具的宿主侧协议）
     api(project(":core:tool-registry"))
 
-    // apex-browser-kit 三层以 api 传递给 app：app 仍直接消费
+    // apex-kit-browser 三层以 api 传递给 app：app 仍直接消费
     // BrowserEngine / BrowserTracer / BrowserOverlay 等类型（ApexCoreService /
     // CyberNeonBallManager / BrowserScreen），不重复声明坐标。
     api(libs.browser.core)

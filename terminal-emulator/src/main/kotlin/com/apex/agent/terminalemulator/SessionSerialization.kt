@@ -5,7 +5,7 @@ package com.apex.agent.terminalemulator
  *
  * 进程死亡恢复：TerminalCore.saveSession() 把**主屏 + scrollback（有界）+
  * 光标/样式/模式/制表位/边距/动态色/字符集**压成紧凑二进制；恢复端
- * `TerminalCore.restoreSession(bytes)` 重建等价引擎。native 引擎（apex-vt-native
+ * `TerminalCore.restoreSession(bytes)` 重建等价引擎。native 引擎（apex-native-vt
  * v0.2）已有同一能力 —— 本文件补齐纯 Kotlin 回退引擎（libvt_native.so 加载
  * 失败的设备同样能恢复会话）。
  *

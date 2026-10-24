@@ -5,7 +5,7 @@ package com.apex.agent.terminalemulator
  *
  * 服务 [TerminalEngine.encodeKey]（v0.2 契约）：native .so 加载失败回退纯
  * Kotlin 引擎时，按键编码能力不降级。语义与 native 引擎
- * （apex-vt-native v0.2 `VtKey::encode`）逐序列对齐。
+ * （apex-native-vt v0.2 `VtKey::encode`）逐序列对齐。
  *
  * xterm 修饰键协议（CSI 参数化）：
  * ```

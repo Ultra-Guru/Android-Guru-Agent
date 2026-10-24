@@ -75,7 +75,7 @@ import kotlinx.coroutines.flow.map
  * # Courier Kit Adapter — 信使思考逻辑线的库接线适配器
  *
  * 信使循环已落地为独立库模块（`com.apex.courierkit:courier-dispatch`，
- * 仓库 Ultra-Guru/apex-courier-kit）——本类是宿主侧的**薄适配层**（与
+ * 仓库 Ultra-Guru/apex-kit-courier）——本类是宿主侧的**薄适配层**（与
  * [com.apex.agent.core.code.standard.StandardKitAdapter] /
  * [com.apex.agent.core.code.loom.LoomKitAdapter] 同构）：
  *

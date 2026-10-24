@@ -61,7 +61,7 @@ import com.apex.browser.engine.BrowserEngine
 // ═══════════════════════════════════════════════════════════════════════════
 
 /*
- * 浏览器页签：把 apex-browser-kit 的完整浏览器嵌进 App 自己的窗口 ——
+ * 浏览器页签：把 apex-kit-browser 的完整浏览器嵌进 App 自己的窗口 ——
  * [BrowserChrome]（地址栏即进度条 / 标签条与总览 / 页内查找 / 下载面板 /
  * JS 弹窗 / 网页权限浮层）+ 引擎活动 WebView（[InAppChromeHost] 承载）。
  *

@@ -1,12 +1,12 @@
-# Coding 模式工作区浏览器（apex-workspace-kit 拆库）
+# Coding 模式工作区浏览器（apex-kit-workspace 拆库）
 
 > 用户规格收口（v1.6）：「coding 模式右上角增加一个文件的图标……选择工作
 > 文件夹这个目录里的所有文件目录，点击具体文件也可以预览支持的格式要多，
 > 增加一个实时功能按钮，能实时跟随 agent 的文件操作……这个功能是一个全新
 > 的页面，需要点击叉号返回 coding……页面上方有长方形圆角切换栏：文件夹 /
 > Git / 变更和产物（明细标注文件类型 + 变更行数）」。
-> 库模块按用户决策拆独立仓库维护：[Ultra-Guru/apex-workspace-kit](https://github.com/Ultra-Guru/apex-workspace-kit)
->（composite build 消费，同 apex-browser-kit 拆库模式）。
+> 库模块按用户决策拆独立仓库维护：[Ultra-Guru/apex-kit-workspace](https://github.com/Ultra-Guru/apex-kit-workspace)
+>（composite build 消费，同 apex-kit-browser 拆库模式）。
 
 ## 1. 入口与导航
 
@@ -47,10 +47,10 @@ JSON（美化/原始切换）、CSV、图片（coil + 双指缩放 1-5x）、SVG
   （当前可见则 300ms 去抖刷新，否则切回时刷新）、事件流悬浮窗（最近 6 条，
   agent 来源小圆点标记）。
 
-## 3. 拆库架构（E1 迁移期，同 apex-browser-kit 模式）
+## 3. 拆库架构（E1 迁移期，同 apex-kit-browser 模式）
 
 ```
-Ultra-Guru/apex-workspace-kit（新仓库，MIT）
+Ultra-Guru/apex-kit-workspace（新仓库，MIT）
 ├── workspace-core      纯 Kotlin JVM，零 Android 依赖
 │   ├── contract/       GitCommandRunner / WorkspaceRootProvider / KitLogger /
 │   │                   CommitIdentity / WorkspacePaths（三级防线路径安全）
@@ -93,7 +93,7 @@ consumer-check（宿主 composite 编译防崩 —— 本 PR 合入前自动跳�
   `:workspace-explorer:testDebugUnitTest` 15 项；`publishToMavenLocal` 冒烟
   （jar/aar/pom 产物形状）；
 - 宿主（本 PR）：`:app:compileDebugKotlin` 全绿（composite 替换生效 —— 构建日志
-  含 :apex-workspace-kit:* 任务）；结构四门禁（文件预算 1147/1180/400 ≤1200、
+  含 :apex-kit-workspace:* 任务）；结构四门禁（文件预算 1147/1180/400 ≤1200、
   括号平衡、注释完整性、workflow YAML）全过；
 - 行为对齐：git 命令口径与 CodeGitPanelController / GitCommitTool 逐项一致
   （porcelain=v1 -b、rename 取新路径、`-c` 身份注入、--no-verify、无 HEAD 降级），

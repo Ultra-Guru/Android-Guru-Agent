@@ -160,7 +160,7 @@ class CodeViewModel @Inject constructor(
     private val gitRunner: com.apex.agent.core.codetools.git.GitCommandRunner
 ) : ViewModel() {
 
-    // ═══ v1.6 工作区浏览器（全屏页，apex-workspace-kit）═══
+    // ═══ v1.6 工作区浏览器（全屏页，apex-kit-workspace）═══
     // 适配层薄包装（git 通道/工作区根/日志/引擎事件映射）住 WorkspaceKitHolder.kt；
     // 控制器随 VM 生命周期，导航往返保持状态。
     internal val workspaceKit by lazy {

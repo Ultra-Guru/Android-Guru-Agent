@@ -1,8 +1,8 @@
-# VENDOR.md — apex-vt-native vendoring contract
+# VENDOR.md — apex-native-vt vendoring contract
 
 ## Upstream
 
-- Repository: https://github.com/Ultra-Guru/apex-vt-native
+- Repository: https://github.com/Ultra-Guru/apex-native-vt
 - Vendored commit: `cc9d10edf8fd5b62840a3840859918a017bffe5c` (v0.2.1 — upstream PR #1 v0.2 foundation + PR #2 P0 CSI 大参数溢出钳位 + PR #3 P2 宽字符对奇偶校验，CI green: host tests + fuzz + 3×NDK)
 - License: MIT (upstream LICENSE applies to the vendored sources)
 
@@ -52,3 +52,9 @@ modify the vendored tree — the byte-identical rule is preserved by constructio
   no binary provenance questions, no stale .so risk.
 - Debuggability: sources are right here, with full symbol info in debug
   builds.
+
+## v0.2.2 同步（上游 apex-native-vt）
+
+- 上游仓库已按 apex-(类型)-(名字) 规范更名（vt 引擎库，native 类）；
+- OSC 4/10/11/12 宿主主题色 API（setThemeColors 引擎+JNI+Kotlin 全链）；
+- appendRgbSpec 8→16 位复制修复（0xFF→0xFFFF，xterm rgb: 规范）。
