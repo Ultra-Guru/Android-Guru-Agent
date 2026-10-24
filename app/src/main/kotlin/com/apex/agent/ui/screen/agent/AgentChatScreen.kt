@@ -807,6 +807,8 @@ fun AgentChatScreen(
                     // State 读取订阅的是最近的 composable 作用域（本 Row content），
                     // 按键只重组本行，不再牵动整个 Screen。
                     val inputText = inputTextState.value
+                    // IME 发送键在任务执行中的反馈文案（onSend 非组合上下文，预解析）
+                    val sendBusyNotice = stringResource(R.string.chat_send_busy)
                     // ═══ v5 技能 chip 输入框（EditText + ReplacementSpan）═══
                     // 选中的 Skill/MCP/连接器/插件以行内 chip 追加到文字后面，
                     // 多选去重、退格/点击删除；发送时纯文本与 chip 集合分离上报。
@@ -835,8 +837,14 @@ fun AgentChatScreen(
                                 // P2-9（6-c）：附件-only 消息同样可发（仅计可用附件；二轮审计 A-1 口径对齐）
                                 // chip-only（输入框空文本）同样可发：VM 走斜杠管线
                                 val hasUsableAttachment = attachments.any { it.status != UploadStatus.ERROR }
-                                if ((inputText.isNotBlank() || hasUsableAttachment || pendingCommands.isNotEmpty()) && !uiState.isLoading) {
-                                    viewModel.sendMessage(inputText.trim())
+                                if (inputText.isNotBlank() || hasUsableAttachment || pendingCommands.isNotEmpty()) {
+                                    // 回合修复：执行中不再静默吞掉 IME 发送键 —— 给出明确
+                                    // 反馈（旧实现无任何提示，用户感觉「输入框坏了」）。
+                                    if (uiState.isLoading) {
+                                        viewModel._uiFeedback.tryEmit(sendBusyNotice)
+                                    } else {
+                                        viewModel.sendMessage(inputText.trim())
+                                    }
                                 }
                             },
                             placeholder = when (uiState.mode) {

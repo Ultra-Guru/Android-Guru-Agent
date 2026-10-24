@@ -327,6 +327,7 @@
     <string name="chat_msg_delete_from">删除此消息及之后</string>
     <string name="chat_msg_delete_busy">正在生成回复，稍后再删除</string>
     <string name="chat_msg_regenerate_busy">正在生成回复，稍后再重生成</string>
+    <string name="chat_send_busy">任务执行中——请先点停止再发送</string>
     <string name="chat_msg_no_user_message">此回复前没有可重发的用户消息</string>
     <string name="chat_msg_attachment_only_retry">仅附件消息暂不支持重生成</string>
     <!-- ═══ P2 i18n: 附件按钮菜单（AttachButton）═══ -->

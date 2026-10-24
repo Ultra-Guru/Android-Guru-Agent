@@ -29,14 +29,20 @@ internal fun AgentChatViewModel.handleSlashCommand(command: String) {
             .associateBy { it.commandId }
     )
 
-    // 指令会取消上一个流式任务：先清空流式缓冲，防残留文本串入新一轮。
-    streamBuffers.reset()
+    // 指令会取消上一个流式任务：先刷出缓冲，把在途部分回复 salvage 为
+    // isPartial（与 sendMessage/runEngine 同款语义 —— reset 会把尾文本无声丢弃）。
+    streamBuffers.flush()
+    val inFlight = _uiState.value.currentResponse
 
     // 始终追加反馈消息，让用户看到指令被识别 + 当前状态：
     // Skill/连接器/插件指令使用专用横幅（PipelineBanner），其余指令用 System 行。
     _uiState.update { s ->
         s.copy(
-            messages = s.messages + result.banner,
+            messages = s.messages +
+                (if (inFlight.isNotBlank())
+                    listOf(AgentUiMessage.Agent(text = inFlight, isPartial = true))
+                else emptyList()) +
+                result.banner,
             isLoading = result.isLoading,
             currentThinking = "",
             currentResponse = ""
@@ -64,7 +70,7 @@ internal fun AgentChatViewModel.handleSlashCommand(command: String) {
     routeContextName = execute.contextName
     activeBannerId = execute.banner.id
 
-    currentJob = viewModelScope.launch {
+    currentJob = launchEngineTurn {
         // P0 修复（闪退）：taskController.execute 的互斥拒绝
         // （IllegalStateException：上一轮执行仍在途）发生在作为参数求值时 ——
         // 位于 collectEngineFlowSafely 的 try/catch **之前**，异常冒泡到
@@ -85,7 +91,7 @@ internal fun AgentChatViewModel.handleSlashCommand(command: String) {
                     isLoading = false
                 )
             }
-            return@launch
+            return@launchEngineTurn
         }
         collectEngineFlowSafely(flow)
     }.apply {
@@ -148,12 +154,18 @@ internal fun AgentChatViewModel.handleMultiChipPipeline(
         }
     }
 
-    // 指令会取消上一个流式任务：先清空流式缓冲，防残留文本串入新一轮。
-    streamBuffers.reset()
+    // 指令会取消上一个流式任务：先刷出缓冲，把在途部分回复 salvage 为
+    // isPartial（与单 chip 管线 / sendMessage 同款语义，不再无声丢弃）。
+    streamBuffers.flush()
+    val inFlight = _uiState.value.currentResponse
 
     _uiState.update { s ->
         s.copy(
-            messages = s.messages + banners,
+            messages = s.messages +
+                (if (inFlight.isNotBlank())
+                    listOf(AgentUiMessage.Agent(text = inFlight, isPartial = true))
+                else emptyList()) +
+                banners,
             isLoading = prompts.isNotEmpty(),
             currentThinking = "",
             currentResponse = ""
@@ -183,7 +195,7 @@ internal fun AgentChatViewModel.handleMultiChipPipeline(
     routeContextName = contextName
     activeBannerId = (banners.lastOrNull() as? AgentUiMessage.PipelineBanner)?.id
 
-    currentJob = viewModelScope.launch {
+    currentJob = launchEngineTurn {
         val flow = try {
             taskController.cancel() // 先串行化释放（同 sendMessage）
             taskController.execute(com.apex.agent.core.engine.UserInput.text(combinedPrompt))
@@ -199,7 +211,7 @@ internal fun AgentChatViewModel.handleMultiChipPipeline(
                     isLoading = false
                 )
             }
-            return@launch
+            return@launchEngineTurn
         }
         collectEngineFlowSafely(flow)
     }.apply {
