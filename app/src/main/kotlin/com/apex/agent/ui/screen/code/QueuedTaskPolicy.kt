@@ -6,11 +6,14 @@ package com.apex.agent.ui.screen.code
  * 从 CodeViewModel 抽出的决策核心（God-file 预算 + 可单测双收益）：
  * 上一轮 run 收尾时，排队任务该走哪条路——
  *
- * - **AUTO_DISPATCH**：上一任务干净完成（无错误、未中止）→ 自动发送
- *   排队任务（用户已获预览确认，无破坏性风险——只是继续用户明示的意图）；
- * - **NEEDS_CONFIRM**：上一任务失败或被中止 → **不自动接力**。失败现场
- *   需要用户先看错误条（可能一键重试原任务）；中止更可能是用户改了主意。
- *   排队卡转「等待排队」态，亮出「开始排队」按钮，点击才继续；
+ * - **AUTO_DISPATCH**：排队任务处于等待发送态（WAITING_AUTO）且上一轮
+ *   干净完成（无错误、未中止）→ 自动发送（用户已获预览确认，无破坏性
+ *   风险——只是继续用户明示的意图）；
+ * - **NEEDS_CONFIRM**：排队任务已处于等待排队态（NEEDS_CONFIRM——此前的
+ *   失败已把它转过来）**或**上一轮失败/被中止 → 不自动接力。已待确认的
+ *   卡即使用户后来手动跑了别的任务且干净完成，也不自动接力——确认门
+ *   一旦落下就只有用户点「开始排队」能开（用户需求原话：「需要用户点击
+ *   开始排队」）；
  * - **NONE**：没有排队任务（常态）。
  *
  * VM 侧接线见 runEngine 收尾与 startQueuedTask（人控入口）。
@@ -29,7 +32,12 @@ internal object QueuedTaskPolicy {
      */
     fun resolveAfterRun(completedCleanly: Boolean, queued: QueuedTask?): Outcome {
         if (queued == null) return Outcome.NONE
-        return if (completedCleanly) Outcome.AUTO_DISPATCH else Outcome.NEEDS_CONFIRM
+        return when {
+            // 已在待确认态：确认门不开，后续任何干净完成也不自动接力
+            queued.state == QueuedTaskState.NEEDS_CONFIRM -> Outcome.NEEDS_CONFIRM
+            completedCleanly -> Outcome.AUTO_DISPATCH
+            else -> Outcome.NEEDS_CONFIRM
+        }
     }
 
     /**

@@ -73,6 +73,23 @@ class QueuedTaskPolicyTest {
     }
 
     @Test
+    fun `needs confirm card never auto dispatches even after later clean run`() {
+        // 场景：任务1失败 → 排队卡转待确认；用户未点确认而是手动发了别的
+        // 任务且干净完成——旧待确认卡仍不自动接力（确认门只有用户能开）
+        val waitingConfirm = task.copy(state = QueuedTaskState.NEEDS_CONFIRM)
+        assertEquals(
+            "待确认卡跨后续干净完成仍保持待确认",
+            QueuedTaskPolicy.Outcome.NEEDS_CONFIRM,
+            QueuedTaskPolicy.resolveAfterRun(completedCleanly = true, queued = waitingConfirm)
+        )
+        assertEquals(
+            "待确认卡跨后续失败仍保持待确认",
+            QueuedTaskPolicy.Outcome.NEEDS_CONFIRM,
+            QueuedTaskPolicy.resolveAfterRun(completedCleanly = false, queued = waitingConfirm)
+        )
+    }
+
+    @Test
     fun `queued task default state is waiting auto`() {
         assertEquals(QueuedTaskState.WAITING_AUTO, task.state)
     }
