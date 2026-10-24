@@ -475,7 +475,14 @@ class NotificationPoster(private val context: Context) {
             enableVibration(false)
             setShowBadge(false)
         }
-        try { nm.createNotificationChannel(ch) } catch (_: Throwable) {}
+        // 防御式 IO 留痕（#260）：O+ 且已查重，理论必成；个别 ROM 私有实现
+        // 对并发/重复建渠道仍抛 —— warn 留痕，防「静默丢通知」无从排查
+        try { nm.createNotificationChannel(ch) } catch (t: Throwable) {
+            AppLogger.instance.warn(
+                LogCategory.PLUGIN, "NotificationPoster",
+                "createNotificationChannel '$channelId' failed: ${t.message}"
+            )
+        }
     }
 
     companion object {

@@ -3,6 +3,7 @@ package com.apex.agent.ui.screen.code.history
 import com.apex.agent.R
 import com.apex.agent.core.code.stream.CodeStreamSnapshot
 import com.apex.agent.ui.screen.code.CodeViewModel
+import com.apex.agent.ui.screen.code.buildSessionSnapshot
 import com.apex.agent.ui.screen.code.session.CodeSessionSnapshot
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
