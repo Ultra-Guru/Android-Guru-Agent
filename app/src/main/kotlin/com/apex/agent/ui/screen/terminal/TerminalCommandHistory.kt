@@ -73,7 +73,9 @@ class TerminalCommandHistory(
     private fun load(): List<String> =
         store.load()?.filter { it.isNotBlank() }?.sortedByDescending {
             it.substringBefore('|').toIntOrNull() ?: 0
-        }?.map { decodeEntry(it) } ?: emptyList()
+        }?.map { decodeEntry(it) }
+            // 载入侧防御：含换行的条目诚实丢弃（编码侧本就不产出；手写存储/旧数据兜底）
+            ?.filterNot { it.contains('\n') } ?: emptyList()
 
     private fun encode(entries: List<String>): Set<String> =
         entries.mapIndexedNotNull { i, e ->

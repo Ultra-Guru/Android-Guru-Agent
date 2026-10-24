@@ -47,10 +47,11 @@ internal class RawStreamSanitizer(
     /** CSI 及其余两字符转义剥离：ESC [ … final / ESC dispatch。 */
     private val csiRegex = Regex("\u001b\\[[0-9;?<>=!\"'#()*+ ./-]*[@-~]|\u001b[@-Z\\-_]")
 
-    /** 提示符尾判定（finish 残留行）—— InputWaitingDetector HIGH_CONFIDENCE 同源。 */
+    /** 提示符尾判定（finish 残留行）—— InputWaitingDetector HIGH_CONFIDENCE 同源。
+     * 真实 PS1 形如 `user@host:cwd $ `（$ 前有空格）：$ 前必须容忍 \s*。 */
     private val promptTails = listOf(
-        Regex("^[\\w.-]+@[\\w.-]+:[^\\s]*[#$]\\s*$"),
-        Regex("^\\(.*\\)\\s*[\\w.-]*@?[\\w.-]*:?[^\\s]*[#$]\\s*$"),
+        Regex("^[\\w.-]+@[\\w.-]+:[^\\s]*\\s*[#$]\\s*$"),
+        Regex("^\\(.*\\)\\s*[\\w.-]*@?[\\w.-]*:?[^\\s]*\\s*[#$]\\s*$"),
         Regex("^\\d+\\s*[#$]\\s*$"),
         Regex("^\\s*[%#$]\\s*$")
     )

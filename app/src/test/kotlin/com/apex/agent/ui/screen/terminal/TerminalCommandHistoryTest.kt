@@ -90,8 +90,9 @@ class TerminalCommandHistoryTest {
     fun `search matches prefix and excludes`() {
         val h = TerminalCommandHistory(MemStore(), maxEntries = 500)
         h.record("git status"); h.record("git log"); h.record("ls")
+        // entries 最新在前：git log 比 git status 新
         assertEquals(
-            listOf("git status", "git log"),
+            listOf("git log", "git status"),
             h.search("git")
         )
         assertEquals(

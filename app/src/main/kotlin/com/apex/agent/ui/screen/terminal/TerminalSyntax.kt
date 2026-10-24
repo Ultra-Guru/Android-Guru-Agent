@@ -174,8 +174,9 @@ internal object TerminalSyntax {
                     plainStart = j
                 }
                 c.isLetter() -> {
+                    // 词括号必须包住整个或链 —— 旧写法 `(j<n&&A)||B||C` 在 j==n 时越界
                     var j = i
-                    while (j < n && text[j].isLetterOrDigit() || text[j] == '-' || text[j] == '_') j++
+                    while (j < n && (text[j].isLetterOrDigit() || text[j] == '-' || text[j] == '_')) j++
                     val token = text.substring(i, j).lowercase()
                     flushPlain(i)
                     if (token in ERROR_WORDS) {
