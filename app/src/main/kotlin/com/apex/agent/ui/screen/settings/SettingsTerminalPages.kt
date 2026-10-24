@@ -23,7 +23,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -104,18 +103,19 @@ internal fun TerminalCommandPolicyPage(viewModel: SettingsTerminalViewModel = hi
                 color = MaterialTheme.colorScheme.outline
             )
             CommandSetEditor(
-                title = stringResource(R.string.term_blacklist),
                 items = blacklist.toList().sorted(),
                 onAdd = { viewModel.policyStore.addBlacklist(it) },
-                onRemove = { viewModel.policyStore.removeBlacklist(it) },
-                danger = true
+                onRemove = { viewModel.policyStore.removeBlacklist(it) }
             )
+        }
+        SectionCard(
+            title = stringResource(R.string.term_whitelist),
+            icon = Icons.Default.Block
+        ) {
             CommandSetEditor(
-                title = stringResource(R.string.term_whitelist),
                 items = whitelist.toList().sorted(),
                 onAdd = { viewModel.policyStore.addWhitelist(it) },
-                onRemove = { viewModel.policyStore.removeWhitelist(it) },
-                danger = false
+                onRemove = { viewModel.policyStore.removeWhitelist(it) }
             )
         }
     }
@@ -145,23 +145,15 @@ private fun StringAdderRow(hint: String, addLabel: String, onAdd: (String) -> Un
     }
 }
 
-/** 名单编辑器（标题 + 添加行 + 条目列表；黑名单红标题 / 白名单主色标题）。 */
+/** 名单编辑器（添加行 + 条目列表；卡片标题由外层 SectionCard 提供）。 */
 @Composable
 private fun CommandSetEditor(
-    title: String,
     items: List<String>,
     onAdd: (String) -> Unit,
-    onRemove: (String) -> Unit,
-    danger: Boolean
+    onRemove: (String) -> Unit
 ) {
-    Text(
-        title,
-        style = MaterialTheme.typography.labelMedium,
-        fontWeight = FontWeight.Medium,
-        color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-    )
     StringAdderRow(
-        hint = stringResource(R.string.term_cmd_hint),
+        hint = stringResource(R.string.term_policy_hint),
         addLabel = stringResource(R.string.term_add),
         onAdd = onAdd
     )
