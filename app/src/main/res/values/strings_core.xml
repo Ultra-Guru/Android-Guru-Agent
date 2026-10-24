@@ -109,6 +109,23 @@
     <string name="settings_update_mirror_ghfast">ghfast.top</string>
     <string name="settings_update_mirror_ghproxy_net">ghproxy.net</string>
     <string name="settings_update_mirror_ghproxy_com">gh-proxy.com</string>
+    <string name="settings_nav_agent_workspace">Workspace</string>
+    <string name="settings_workspace_section">Workspace scope</string>
+    <string name="settings_workspace_scope">Scope</string>
+    <string name="settings_workspace_scope_desc">Same choice as onboarding — picked once and locked before; now reviewable anytime.</string>
+    <string name="settings_workspace_scope_all">All public storage</string>
+    <string name="settings_workspace_scope_folder">Specific folder (SAF)</string>
+    <string name="settings_workspace_current_folder">Current folder: %1$s</string>
+    <string name="settings_workspace_no_folder">No folder picked yet — tap below to choose one.</string>
+    <string name="settings_workspace_pick_folder">Pick folder</string>
+    <string name="settings_workspace_reset_all">Reset to all public storage</string>
+    <string name="settings_web_search_mode">Native web search</string>
+    <string name="settings_web_search_mode_desc">Per-profile mode sent with each request. Chat ring\'s global toggle overrides this to Auto while on.</string>
+    <string name="settings_web_search_off">Off</string>
+    <string name="settings_web_search_auto">Auto (by endpoint)</string>
+    <string name="settings_json_schema_label">JSON Schema</string>
+    <string name="settings_json_schema_hint">{ "type": "object", "properties": { … } }</string>
+    <string name="settings_json_schema_desc">Only used when Structured Output = JSON_SCHEMA. Edit and save applies to the next request.</string>
 
 
     <!-- Generation -->

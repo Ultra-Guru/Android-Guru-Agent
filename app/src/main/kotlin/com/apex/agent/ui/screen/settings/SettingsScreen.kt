@@ -362,6 +362,7 @@ private fun SettingsPageRouter(
             GoalSettingsSection(agent, onAgent)
             LoopSettingsSection(agent, onAgent)
         }
+        "agent/workspace" -> SettingsLeafColumn { WorkspaceSection(agent, onAgent) }
         "agent/coding" -> SettingsLeafColumn { CodingSettingsSection(agent, onAgent) }
         "agent/github" -> SettingsLeafColumn { GithubSettingsSection(viewModel) }
         "agent/compression" -> SettingsLeafColumn { CompressionSection(agent, onAgent) }

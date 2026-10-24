@@ -322,7 +322,7 @@ private fun WorkspaceOptionCard(
  * 取路径最后一段做显示名；无路径段的退回卷名。DocumentsContract 是
  * framework API（API 21+，minSdk 26 直接可用），不必引入 documentfile 依赖。
  */
-private fun treeUriDisplayName(uri: Uri): String {
+internal fun treeUriDisplayName(uri: Uri): String {
     return runCatching {
         val docId = DocumentsContract.getTreeDocumentId(uri)
         val lastSegment = docId.substringAfterLast('/')

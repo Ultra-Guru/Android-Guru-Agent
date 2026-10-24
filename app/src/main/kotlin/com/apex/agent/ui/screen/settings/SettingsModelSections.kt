@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
+import com.apex.agent.core.llm.WebSearchMode
 import com.apex.agent.core.llm.AuthType
 import com.apex.agent.core.llm.KeyRotationMode
 import com.apex.agent.core.llm.ModelProfile
@@ -246,6 +247,16 @@ internal fun NetworkSection(p: ModelProfile, onUpdate: (ModelProfile) -> Unit) {
             description = stringResource(R.string.settings_keep_alive_desc)) {
             onUpdate(p.copy(keepAlive = it))
         }
+        // 原生联网搜索档位（按 Profile 粒度）：此前无任何直接 UI —— 仅聊天页
+        // 小圆环的全局开关会把所有 Profile 整体抬到 AUTO，按端点的细粒度
+        // 档位（OpenAI / DashScope / 智谱 / OpenRouter / Anthropic / DeepSeek）
+        // 只能靠 JSON 导入配置。LlmConfig.fromProfile 透传到请求侧。
+        DropdownRow(
+            label = stringResource(R.string.settings_web_search_mode),
+            options = WebSearchMode.entries.map { it to webSearchModeLabel(it) },
+            selected = p.webSearch,
+            description = stringResource(R.string.settings_web_search_mode_desc)
+        ) { mode -> onUpdate(p.copy(webSearch = mode)) }
     }
 }
 
@@ -309,10 +320,52 @@ internal fun AdvancedSection(p: ModelProfile, onUpdate: (ModelProfile) -> Unit) 
             description = stringResource(R.string.settings_strict_schema_desc)) {
             onUpdate(p.copy(structuredOutputStrict = it))
         }
+        // JSON Schema 编辑器：仅 JSON_SCHEMA 档位有意义（此前全仓无写入 UI，
+        // 消费端 StreamingOpenAiClient 只能吃到导入的旧值）。
+        if (p.structuredOutputMode == StructuredOutputMode.JSON_SCHEMA) {
+            JsonSchemaEditor(
+                value = p.jsonSchema.orEmpty(),
+                onValueChange = { schema -> onUpdate(p.copy(jsonSchema = schema)) }
+            )
+        }
         KeyValueEditor("Custom Headers", p.customHeaders) {
             onUpdate(p.copy(customHeaders = it))
         }
     }
+}
+
+/** JSON Schema 多行编辑器（结构化输出档位 = JSON_SCHEMA 时出现）。 */
+@Composable
+private fun JsonSchemaEditor(value: String, onValueChange: (String) -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            stringResource(R.string.settings_json_schema_label),
+            style = MaterialTheme.typography.labelMedium
+        )
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 120.dp),
+            placeholder = { Text(stringResource(R.string.settings_json_schema_hint)) },
+            textStyle = MaterialTheme.typography.bodySmall
+        )
+        DescriptionText(stringResource(R.string.settings_json_schema_desc))
+    }
+}
+
+/** 联网搜索档位 → 本地化短标签（vendor 名不翻译，档位语义翻译）。 */
+@Composable
+private fun webSearchModeLabel(mode: WebSearchMode): String = when (mode) {
+    WebSearchMode.OFF -> stringResource(R.string.settings_web_search_off)
+    WebSearchMode.AUTO -> stringResource(R.string.settings_web_search_auto)
+    WebSearchMode.OPENAI -> "OpenAI web_search_options"
+    WebSearchMode.DASHSCOPE -> "DashScope enable_search"
+    WebSearchMode.ZHIPU -> "Zhipu WebSearch"
+    WebSearchMode.OPENROUTER -> "OpenRouter :online"
+    WebSearchMode.ANTHROPIC -> "Anthropic WebSearch"
+    WebSearchMode.DEEPSEEK -> "DeepSeek WebSearch"
 }
 
 // ───────────────────────────── 对话框（providers-roles 叶子页 + setup 卡入口）─────────────────────────────

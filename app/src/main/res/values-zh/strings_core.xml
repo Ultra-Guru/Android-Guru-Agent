@@ -109,6 +109,23 @@
     <string name="settings_update_mirror_ghfast">ghfast.top</string>
     <string name="settings_update_mirror_ghproxy_net">ghproxy.net</string>
     <string name="settings_update_mirror_ghproxy_com">gh-proxy.com</string>
+    <string name="settings_nav_agent_workspace">工作区</string>
+    <string name="settings_workspace_section">工作区范围</string>
+    <string name="settings_workspace_scope">范围</string>
+    <string name="settings_workspace_scope_desc">与引导页同一选择 —— 此前只在引导时定一次，现在随时可复查改选。</string>
+    <string name="settings_workspace_scope_all">全部公共存储</string>
+    <string name="settings_workspace_scope_folder">指定文件夹（SAF）</string>
+    <string name="settings_workspace_current_folder">当前文件夹：%1$s</string>
+    <string name="settings_workspace_no_folder">尚未选择文件夹 —— 点击下方按钮选择。</string>
+    <string name="settings_workspace_pick_folder">选择文件夹</string>
+    <string name="settings_workspace_reset_all">恢复为全部公共存储</string>
+    <string name="settings_web_search_mode">原生联网搜索</string>
+    <string name="settings_web_search_mode_desc">按档案粒度随请求发送。聊天页小圆环全局开关开启时会整体抬高到自动档。</string>
+    <string name="settings_web_search_off">关闭</string>
+    <string name="settings_web_search_auto">自动（按端点）</string>
+    <string name="settings_json_schema_label">JSON Schema</string>
+    <string name="settings_json_schema_hint">{ "type": "object", "properties": { … } }</string>
+    <string name="settings_json_schema_desc">仅结构化输出 = JSON_SCHEMA 档位时生效，保存后作用于下一次请求。</string>
 
 
     <!-- Generation -->
