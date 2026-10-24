@@ -114,6 +114,30 @@ fun FusionBundleComposerDialog(
             }
         )
     }
+    // ── 安装型聚合：官方仓库引用成员（skillPicks / mcpPicks）────────────
+    // 勾选集合与已安装成员分开存（id 空间不同源）；保存时写进 picks 段。
+    var hubSkillPicks by remember(editing) {
+        mutableStateOf(editing?.skillPicks?.toSet() ?: emptySet())
+    }
+    var hubMcpPicks by remember(editing) {
+        mutableStateOf(editing?.mcpPicks?.toSet() ?: emptySet())
+    }
+    var hubCatalog by remember { mutableStateOf<HubCatalogState>(HubCatalogState.Loading) }
+
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        val skills = entryPoint.hubSource().listSkills()
+        val mcps = entryPoint.hubSource().listMcpServers()
+        hubCatalog = if (skills.isSuccess && mcps.isSuccess) {
+            HubCatalogState.Ready(
+                skills = skills.getOrDefault(emptyList()).sortedBy { it.name.lowercase() },
+                mcps = mcps.getOrDefault(emptyList()).sortedBy { it.name.lowercase() }
+            )
+        } else {
+            HubCatalogState.Error(
+                skills.exceptionOrNull()?.message ?: mcps.exceptionOrNull()?.message ?: ""
+            )
+        }
+    }
 
     // 异步回调里不可调 stringResource —— 模板在组合期预解析（仓库惯例）
     val savedPattern = stringResource(R.string.fusion_composer_saved)
@@ -124,7 +148,7 @@ fun FusionBundleComposerDialog(
     val idPattern = stringResource(R.string.fusion_composer_id_label)
 
     fun save() {
-        if (selected.isEmpty()) {
+        if (selected.isEmpty() && hubSkillPicks.isEmpty() && hubMcpPicks.isEmpty()) {
             feedback.show(emptySelectionText, FeedbackSeverity.WARNING)
             return
         }
@@ -158,6 +182,8 @@ fun FusionBundleComposerDialog(
                     skills = pickedSkills,
                     mcpServers = pickedMcps,
                     plugins = pickedPlugins,
+                    skillPicks = hubSkillPicks.toList(),
+                    mcpPicks = hubMcpPicks.toList(),
                     version = version
                 )
                 registry.install(FusionBundleComposer.toJson(manifest))
@@ -283,6 +309,47 @@ fun FusionBundleComposerDialog(
                     }
                 )
 
+                // ── 安装型聚合段：官方仓库引用成员（安装时按需下载）──
+                when (val catalog = hubCatalog) {
+                    is HubCatalogState.Ready -> {
+                        ComposerSection(
+                            title = stringResource(R.string.fusion_composer_section_hub_skills),
+                            entries = catalog.skills.map { it.id to it.name },
+                            selected = hubSkillPicks,
+                            onToggle = { id ->
+                                hubSkillPicks =
+                                    if (id in hubSkillPicks) hubSkillPicks - id
+                                    else hubSkillPicks + id
+                            }
+                        )
+                        ComposerSection(
+                            title = stringResource(R.string.fusion_composer_section_hub_mcp),
+                            entries = catalog.mcps.map { it.name to it.name },
+                            selected = hubMcpPicks,
+                            onToggle = { id ->
+                                hubMcpPicks =
+                                    if (id in hubMcpPicks) hubMcpPicks - id
+                                    else hubMcpPicks + id
+                            }
+                        )
+                    }
+                    is HubCatalogState.Error -> Text(
+                        text = String.format(
+                            stringResource(R.string.fusion_composer_hub_error),
+                            catalog.message
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 10.dp)
+                    )
+                    HubCatalogState.Loading -> Text(
+                        text = stringResource(R.string.fusion_composer_hub_loading),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 10.dp)
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // ── 底部操作行 ──
@@ -294,7 +361,7 @@ fun FusionBundleComposerDialog(
                     Text(
                         text = String.format(
                             stringResource(R.string.fusion_composer_selected_count),
-                            selected.size
+                            selected.size + hubSkillPicks.size + hubMcpPicks.size
                         ),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -396,6 +463,18 @@ private data class MemberSources(
     val plugins: List<com.apex.agent.plugin.host.functional.UnifiedPluginEntry>
 )
 
+/** 官方仓库目录的加载态（安装型聚合引用成员的候选源）。 */
+private sealed interface HubCatalogState {
+    data object Loading : HubCatalogState
+
+    data class Ready(
+        val skills: List<com.apex.agent.core.tools.marketplace.HubSource.HubSkillEntry>,
+        val mcps: List<com.apex.agent.core.tools.marketplace.HubSource.HubMcpEntry>
+    ) : HubCatalogState
+
+    data class Error(val message: String) : HubCatalogState
+}
+
 /** EntryPoint：组合器的成员数据源（全部 @Singleton，无 DI 环风险）。 */
 @dagger.hilt.EntryPoint
 @dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
@@ -405,4 +484,6 @@ interface FusionComposerEntryPoint {
     fun mcpManager(): McpManager
 
     fun pluginRegistry(): UnifiedPluginRegistry
+
+    fun hubSource(): com.apex.agent.core.tools.marketplace.HubSource
 }

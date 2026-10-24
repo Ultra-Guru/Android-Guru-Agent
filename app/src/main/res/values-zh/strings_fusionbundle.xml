@@ -59,6 +59,15 @@
     <string name="plugin_ui_missing">UI 入口文件缺失 —— 请重装插件</string>
     <string name="plugin_ui_signature_rejected">签名校验未通过，无法打开插件页面</string>
 
+    <!-- ═══ 安装型聚合（只装成员不激活）═══ -->
+    <string name="fusion_action_install_members">安装成员</string>
+    <string name="fusion_result_installed">「%1$s」成员已就绪 —— %2$d 技能 · %3$d MCP · %4$d 插件。</string>
+    <string name="fusion_install_failed">安装失败</string>
+    <string name="fusion_composer_section_hub_skills">官方仓库技能</string>
+    <string name="fusion_composer_section_hub_mcp">官方仓库 MCP</string>
+    <string name="fusion_composer_hub_loading">仓库目录加载中…</string>
+    <string name="fusion_composer_hub_error">仓库不可达：%1$s</string>
+
     <!-- ═══ 操作与结果 ═══ -->
     <string name="fusion_action_activate">使用此包</string>
     <string name="fusion_action_deactivate">停用</string>

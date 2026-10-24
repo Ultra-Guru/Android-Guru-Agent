@@ -140,8 +140,8 @@ class FusionBundleRegistry(
             bundled = m.bundled,
             trustLevel = m.trustLevel,
             category = m.category,
-            skillCount = m.skills.size,
-            mcpServerCount = m.mcpServers.size,
+            skillCount = m.skills.size + m.skillPicks.size,
+            mcpServerCount = m.mcpServers.size + m.mcpPicks.size,
             pluginCount = m.plugins.size,
             toolHintCount = m.toolActivationHints.size,
             engineCount = m.runtime.engines.size

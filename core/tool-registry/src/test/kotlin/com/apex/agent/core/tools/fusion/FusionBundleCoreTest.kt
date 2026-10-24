@@ -172,10 +172,11 @@ class FusionBundleCoreTest {
 
     /** 手写 fake：技能安装端口（记录调用 + 可注入失败）。 */
     private class FakeSkillInstaller(
-        private val failIds: Set<String> = emptySet()
+        private val failIds: Set<String> = emptySet(),
+        preInstalled: Set<String> = emptySet()
     ) : FusionSkillInstaller {
         val installed = mutableListOf<String>()
-        val onDisk = mutableSetOf<String>()
+        val onDisk = mutableSetOf<String>().apply { addAll(preInstalled) }
         override fun isInstalled(skillId: String): Boolean = skillId in onDisk
 
         override suspend fun ensureInstalled(manifestJson: String): Result<Unit> {
@@ -500,5 +501,139 @@ class FusionBundleCoreTest {
         registry.install(customBundleJson())
         assertTrue("自建包 bundled=false 可卸载", registry.uninstall("custom-my-toolbox"))
         assertNull(registry.get("custom-my-toolbox"))
+    }
+
+    // ═══ 安装型聚合：skillPicks/mcpPicks 引用段 + installMembers ══════
+
+    /** 手写 fake：官方仓库安装端口。 */
+    private class FakeHubInstaller : com.apex.agent.core.tools.fusion.FusionHubInstaller {
+        val installedSkills = mutableListOf<String>()
+        val installedMcps = mutableListOf<String>()
+        var skillError: String? = null
+
+        override suspend fun installSkill(skillId: String): Result<Unit> {
+            skillError?.let { return Result.failure(Exception(it)) }
+            installedSkills.add(skillId)
+            return Result.success(Unit)
+        }
+
+        override suspend fun installMcp(serverId: String): Result<Unit> {
+            installedMcps.add(serverId)
+            return Result.success(Unit)
+        }
+    }
+
+    /** 手写 fake：可区分「连接」与「仅配置」的 MCP 端口。 */
+    private class SplitMcpConnector : FusionMcpConnector {
+        val configured = mutableListOf<String>()
+        val connected = mutableListOf<String>()
+
+        override suspend fun ensureConnected(config: com.apex.agent.core.tools.mcp.McpServerConfig): Result<Unit> {
+            connected.add(config.name)
+            return Result.success(Unit)
+        }
+
+        override suspend fun ensureConfigured(config: com.apex.agent.core.tools.mcp.McpServerConfig): Result<Unit> {
+            configured.add(config.name)
+            return Result.success(Unit)
+        }
+    }
+
+    private fun pickBundleJson(): String {
+        val manifest = FusionBundleComposer.build(
+            bundleId = "custom-picks",
+            name = "安装型聚合",
+            persona = "",
+            skills = emptyList(),
+            mcpServers = emptyList(),
+            plugins = emptyList(),
+            skillPicks = listOf("hub-skill-a", "hub-skill-b"),
+            mcpPicks = listOf("hub-mcp-x")
+        )
+        return FusionBundleComposer.toJson(manifest)
+    }
+
+    @Test
+    fun `installMembers 装 picks 引用成员但不连接不注入`() = runTest {
+        val registry = FusionBundleRegistry(tmp.newFolder("h1"))
+        registry.install(pickBundleJson())
+        val hub = FakeHubInstaller()
+        val mcp = SplitMcpConnector()
+        val prompt = FakePromptInjector()
+        val activator = FusionBundleActivator(
+            registry, FakeSkillInstaller(), mcp, prompt,
+            FusionPluginInstaller.UNAVAILABLE, hub
+        )
+
+        val r = activator.installMembers("custom-picks")
+        assertTrue("安装必须成功: ${r.exceptionOrNull()?.message}", r.isSuccess)
+        val report = r.getOrThrow()
+        assertEquals(listOf("hub-skill-a", "hub-skill-b"), report.installedSkills)
+        assertEquals(listOf("hub-mcp-x"), report.configuredServers)
+        assertTrue("只装不激活 —— 不连接", report.connectedServers.isEmpty())
+        assertTrue("只装不激活 —— 不注入人设", prompt.applied == null)
+        assertEquals("只装不激活 —— 不改激活态", null, activator.activeBundle)
+    }
+
+    @Test
+    fun `activate 自动补装 picks 引用成员（安装时调用语义）`() = runTest {
+        val registry = FusionBundleRegistry(tmp.newFolder("h2"))
+        registry.install(pickBundleJson())
+        val hub = FakeHubInstaller()
+        val mcp = SplitMcpConnector()
+        val prompt = FakePromptInjector()
+        val activator = FusionBundleActivator(
+            registry, FakeSkillInstaller(), mcp, prompt,
+            FusionPluginInstaller.UNAVAILABLE, hub
+        )
+
+        val act = activator.activate("custom-picks").getOrThrow()
+        assertEquals("激活路径补装技能引用", listOf("hub-skill-a", "hub-skill-b"), act.installedSkills)
+        assertEquals(listOf("hub-mcp-x"), hub.installedMcps)
+        assertNotNull("激活仍注入人设", prompt.applied)
+    }
+
+    @Test
+    fun `picks 已装的成员幂等跳过且 hub 报错进 skipped`() = runTest {
+        val registry = FusionBundleRegistry(tmp.newFolder("h3"))
+        registry.install(pickBundleJson())
+        val hub = FakeHubInstaller().apply { skillError = "仓库不可达" }
+        val skills = FakeSkillInstaller(onDisk = setOf("hub-skill-a"))
+        val activator = FusionBundleActivator(
+            registry, skills, SplitMcpConnector(), FakePromptInjector(),
+            FusionPluginInstaller.UNAVAILABLE, hub
+        )
+
+        val report = activator.installMembers("custom-picks").getOrThrow()
+        assertEquals("已装成员走幂等分支（不重复调 hub）", listOf("hub-skill-a"), report.installedSkills)
+        assertTrue(
+            "hub 失败如实进 skipped",
+            report.skipped.any { it.startsWith("skill:hub-skill-b") && it.contains("仓库不可达") }
+        )
+    }
+
+    @Test
+    fun `digest 计数并入 picks 引用成员`() {
+        val registry = FusionBundleRegistry(tmp.newFolder("h4"))
+        registry.install(pickBundleJson())
+        val digest = registry.digests().first { it.id == "custom-picks" }
+        assertEquals("skillCount = 内联 + picks", 2, digest.skillCount)
+        assertEquals("mcpServerCount = 内联 + picks", 1, digest.mcpServerCount)
+    }
+
+    @Test
+    fun `未接线 hub 端口引用成员诚实降级`() = runTest {
+        val registry = FusionBundleRegistry(tmp.newFolder("h5"))
+        registry.install(pickBundleJson())
+        val activator = FusionBundleActivator(
+            registry, FakeSkillInstaller(), SplitMcpConnector(), FakePromptInjector(),
+            FusionPluginInstaller.UNAVAILABLE, com.apex.agent.core.tools.fusion.FusionHubInstaller.UNAVAILABLE
+        )
+
+        val report = activator.installMembers("custom-picks").getOrThrow()
+        assertTrue(
+            "未接线端口的 picks 须如实进 skipped",
+            report.skipped.count { it.contains("仓库端口未接线") } == 3
+        )
     }
 }

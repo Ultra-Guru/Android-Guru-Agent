@@ -322,6 +322,28 @@ manifest 以不透明 JsonObject 载体内联 —— core 模块不依赖 plugin
 产物即一个自洽聚合包，与内置七大包完全同权。命名映射全部安装期强校验
 （fail closed：结构不合法整体拒绝，不装半截包）。
 
+### 8.4 安装型聚合（skillPicks/mcpPicks 引用段 + installMembers）
+
+**「专门安装 skills / MCP / 插件的聚合，在用户要安装的时候调用」**：
+manifest 新增 `skillPicks[]` / `mcpPicks[]` 引用段 —— 成员不内联正文，
+只记官方仓库 id（apex-skill-hub / apex-mcp-hub）。与内联形态的区别是
+「引用 vs 快照」：几十字节的引用清单就能表达「装这 5 个技能 + 2 台 MCP」，
+成员升级随仓库演进（内联则锁定版本）。
+
+两个用户动作，一条安装编排（`installMembersInternal`，五端口共用）：
+
+| 动作 | 入口 | 语义 |
+| --- | --- | --- |
+| **安装成员** | 王冠菜单包行「安装成员」（未激活包） | `FusionBundleActivator.installMembers`：内联技能装进 SkillRegistry、picks 经 hub 端口按需下载、插件落盘激活、MCP 配置写盘（`ensureConfigured`，**不连接**）；不注入人设、不改激活态 |
+| **激活** | 点选包（既有路径） | 自动先补装缺失成员（幂等，含 picks 下载），再连接 MCP + 注入人设 —— 装与激活合一 |
+
+第五端口 `FusionHubInstaller`（app 层 `FusionModule.HubInstallerPort`）：
+复用 HubSource 既有客户端 —— 技能 = `listSkills` 匹配 id →
+`downloadSkillManifest` → `SkillRegistry.install`；MCP = `listMcpServers`
+匹配目录名 → `addServer`（enabled=true 不连接，启动留给激活路径或用户
+市场手动启动）。组合器新增「官方仓库技能 / MCP」两段（懒加载目录勾选，
+写进 picks）——自建聚合从此可以先建套装再装设备。
+
 ## 9. 测试
 
 纯 JVM（JUnit4 + runTest + TemporaryFolder，手写 fake，无 mock 框架）：

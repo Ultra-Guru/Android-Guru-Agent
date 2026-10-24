@@ -32,6 +32,8 @@ object FusionBundleComposer {
      * @param skills 勾选的技能完整 manifest（内联进 skills[]）
      * @param mcpServers 勾选的 MCP 服务器配置（转 FusionMcpServerRef 内联）
      * @param plugins 勾选的功能插件（id + plugin.json 原文解析出的 JsonObject）
+     * @param skillPicks 官方仓库技能引用（安装型聚合：安装时按需下载）
+     * @param mcpPicks 官方仓库 MCP 引用（安装型聚合：安装时按需写配置）
      * @param version 版本号（新建 "1"；编辑用 [nextVersion] 递增）
      */
     fun build(
@@ -41,12 +43,14 @@ object FusionBundleComposer {
         skills: List<SkillManifest>,
         mcpServers: List<McpServerConfig>,
         plugins: List<Pair<String, JsonObject>>,
+        skillPicks: List<String> = emptyList(),
+        mcpPicks: List<String> = emptyList(),
         version: String = "1"
     ): FusionBundleManifest = FusionBundleManifest(
         id = bundleId,
         name = name.trim().ifEmpty { bundleId },
         version = version,
-        description = describe(skills.size, mcpServers.size, plugins.size),
+        description = describe(skills.size + skillPicks.size, mcpServers.size + mcpPicks.size, plugins.size),
         trustLevel = "community",
         bundled = false,
         scope = "all",
@@ -57,7 +61,9 @@ object FusionBundleComposer {
         ),
         skills = skills.map { FusionSkillRef(skillId = it.id, manifest = it) },
         mcpServers = mcpServers.map { it.toFusionRef() },
-        plugins = plugins.map { (id, raw) -> FusionPluginRef(pluginId = id, manifest = raw) }
+        plugins = plugins.map { (id, raw) -> FusionPluginRef(pluginId = id, manifest = raw) },
+        skillPicks = skillPicks,
+        mcpPicks = mcpPicks
     )
 
     /** manifest → 安装用 JSON 字符串（注册表入参形态）。 */

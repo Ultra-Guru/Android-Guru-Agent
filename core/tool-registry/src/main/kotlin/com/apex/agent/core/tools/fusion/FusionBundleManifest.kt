@@ -61,6 +61,19 @@ data class FusionBundleManifest(
      */
     val plugins: List<FusionPluginRef> = emptyList(),
     /**
+     * **安装型聚合**的技能引用（apex-skill-hub 仓库 id，不内联正文）：
+     * 安装/激活时经 [FusionHubInstaller] 按需从官方仓库下载装齐 ——
+     * 「用户要安装的时候调用」的轻量聚合形态：一个几十字节的引用清单
+     * 就能表达「装这 5 个技能」，成员升级随仓库演进（内联形态则锁定版本）。
+     */
+    val skillPicks: List<String> = emptyList(),
+    /**
+     * **安装型聚合**的 MCP 服务器引用（apex-mcp-hub 目录名）：安装/激活时
+     * 经 [FusionHubInstaller] 从仓库目录解析配置写入注册表 —— 与
+     * mcpServers 内联形态的区别同样是「引用 vs 快照」。
+     */
+    val mcpPicks: List<String> = emptyList(),
+    /**
      * 工具激活提示（McpReaOpenBinary 这类一等工具 id，v5 组合规则
      * Mcp{Server}{Tool}）：服务器连上后
      * 工具自动进入引擎计划池（渐进披露），此处声明帮助模型优先关注旗舰工具。
@@ -107,6 +120,8 @@ data class FusionBundleManifest(
             if (manifest.skills.any { it.skillId != it.manifest.id }) return null
             if (manifest.mcpServers.any { it.serverId.isBlank() }) return null
             if (manifest.plugins.any { it.pluginId != it.inlinePluginId }) return null
+            if (manifest.skillPicks.any { it.isBlank() }) return null
+            if (manifest.mcpPicks.any { it.isBlank() }) return null
             return manifest
         }
     }
@@ -234,6 +249,7 @@ data class FusionBundleDigest(
     val bundled: Boolean,
     val trustLevel: String,
     val category: String,
+    /** 内联技能数 + 仓库引用（skillPicks）数 —— UI 展示口径的成员总数。 */
     val skillCount: Int,
     val mcpServerCount: Int,
     val pluginCount: Int,

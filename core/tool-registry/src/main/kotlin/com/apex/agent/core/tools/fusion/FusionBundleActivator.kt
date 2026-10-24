@@ -29,7 +29,8 @@ class FusionBundleActivator(
     private val skillInstaller: FusionSkillInstaller,
     private val mcpConnector: FusionMcpConnector,
     private val promptInjector: FusionPromptInjector,
-    private val pluginInstaller: FusionPluginInstaller = FusionPluginInstaller.UNAVAILABLE
+    private val pluginInstaller: FusionPluginInstaller = FusionPluginInstaller.UNAVAILABLE,
+    private val hubInstaller: FusionHubInstaller = FusionHubInstaller.UNAVAILABLE
 ) {
 
     /** 当前激活的包（null = 无）。@Volatile：UI 线程读、IO 协程写。 */
@@ -53,64 +54,13 @@ class FusionBundleActivator(
             )
         }
 
-        val installedSkills = mutableListOf<String>()
-        val connectedServers = mutableListOf<String>()
-        val installedPlugins = mutableListOf<String>()
         val skipped = mutableListOf<String>()
 
-        // ── 1. 技能：先查再装（幂等），装完入列 ──────────────────────────
-        for (ref in manifest.skills) {
-            if (skillInstaller.isInstalled(ref.skillId)) {
-                installedSkills.add(ref.skillId)
-                continue
-            }
-            val manifestJson = FusionBundleManifest.json.encodeToString(
-                SkillManifest.serializer(), ref.manifest
-            )
-            skillInstaller.ensureInstalled(manifestJson)
-                .onSuccess { installedSkills.add(ref.skillId) }
-                .onFailure {
-                    skipped.add("skill:${ref.skillId}(${it.message ?: "安装失败"})")
-                }
-        }
+        // ── 阶段一：安装编排（内联技能 + 仓库 picks + 插件 + MCP 配置写盘）
+        // —— 「用户要安装的时候调用」：激活前自动把缺的成员装齐（幂等）。
+        val installed = installMembersInternal(manifest, skipped, connectMcp = true)
 
-        // ── 2. MCP 服务器：autoConnect 的逐台连接（失败重试一次 —— 兼容性：
-        // 瞬态网络抖动 / 子进程启动慢不再直接弃包，重试仍败才进 skipped）──────
-        for (ref in manifest.mcpServers) {
-            if (!ref.autoConnect) {
-                skipped.add("mcp:${ref.serverId}(声明为手动启动)")
-                continue
-            }
-            val serverConfig = ref.toMcpServerConfig()
-            val first = mcpConnector.ensureConnected(serverConfig)
-            val attempt = if (first.isSuccess) first else {
-                // 首试失败 → 短暂冷却后重试一次（服务器启动 / 网络抖动容错）
-                kotlinx.coroutines.delay(MCP_RETRY_DELAY_MS)
-                mcpConnector.ensureConnected(serverConfig)
-            }
-            attempt
-                .onSuccess { connectedServers.add(ref.serverId) }
-                .onFailure {
-                    skipped.add("mcp:${ref.serverId}(${it.message ?: "连接失败"})")
-                }
-        }
-
-        // ── 3. 功能性插件：先查再装（幂等）——安装校验全部落在端口侧
-        // （FunctionalPluginStore 的 fail closed 链：id 规范/命名空间/版本门/
-        // 贡献点形状），失败如实进 skipped 不弃整个包。
-        for (ref in manifest.plugins) {
-            if (pluginInstaller.isInstalled(ref.pluginId)) {
-                installedPlugins.add(ref.pluginId)
-                continue
-            }
-            pluginInstaller.ensureInstalled(ref.manifestJson())
-                .onSuccess { installedPlugins.add(ref.pluginId) }
-                .onFailure {
-                    skipped.add("plugin:${ref.pluginId}(${it.message ?: "安装失败"})")
-                }
-        }
-
-        // ── 4. agent 人设：注入 system prompt（patchConfig 读改写；兼容性：
+        // ── 阶段二：agent 人设：注入 system prompt（patchConfig 读改写；兼容性：
         // 注入异常折叠进 skipped 不弃激活 —— 技能/MCP 已就绪部分照常可用）──────
         val activationPrompt = buildActivationPrompt(manifest)
         val promptApplied = runCatching { promptInjector.apply(activationPrompt) }
@@ -126,12 +76,160 @@ class FusionBundleActivator(
                 bundleName = manifest.name,
                 persona = manifest.agent.persona,
                 activationPrompt = activationPrompt,
-                installedSkills = installedSkills,
-                connectedServers = connectedServers,
-                installedPlugins = installedPlugins,
+                installedSkills = installed.skills,
+                connectedServers = installed.connected,
+                installedPlugins = installed.plugins,
                 toolHints = manifest.toolActivationHints,
                 skipped = skipped
             )
+        )
+    }
+
+    /**
+     * **安装成员（不激活）**：把包内全部成员装到位 —— 内联技能装进
+     * SkillRegistry、仓库 picks 从 hub 下载安装、功能性插件落盘激活、
+     * 内联/引用 MCP 配置写入注册表。**不连接服务器、不注入人设、不改
+     * activeBundle** —— 激活（[activate]）才做后三件事。
+     *
+     * 这是「专门安装 skills / MCP / 插件的聚合」的用户入口：装完即可
+     * 在各自体系（技能开关 / MCP 市场 / 插件目录）看到成员，激活与否
+     * 交由用户后续决定。
+     *
+     * @return 安装报告（成功清单 + skipped 失败明细，与激活报告同词表）
+     */
+    suspend fun installMembers(bundleId: String, scope: String = "agent"): Result<FusionInstallReport> {
+        val manifest = registry.get(bundleId)
+            ?: return Result.failure(Exception("FusionBundle '$bundleId' 未安装（可用 FusionList 查看已装包）"))
+        if (manifest.scope != "all" && manifest.scope != scope) {
+            return Result.failure(
+                Exception("包 '$bundleId' 作用域为 ${manifest.scope}，当前工位 $scope 不适用")
+            )
+        }
+        val skipped = mutableListOf<String>()
+        val installed = installMembersInternal(manifest, skipped, connectMcp = false)
+        return Result.success(
+            FusionInstallReport(
+                bundleId = manifest.id,
+                bundleName = manifest.name,
+                installedSkills = installed.skills,
+                configuredServers = installed.configured,
+                connectedServers = installed.connected,
+                installedPlugins = installed.plugins,
+                skipped = skipped
+            )
+        )
+    }
+
+    /** 安装编排的内部载体（activate 与 installMembers 共用）。 */
+    private data class MemberInstallResult(
+        val skills: List<String>,
+        val configured: List<String>,
+        val connected: List<String>,
+        val plugins: List<String>
+    )
+
+    private suspend fun installMembersInternal(
+        manifest: FusionBundleManifest,
+        skipped: MutableList<String>,
+        connectMcp: Boolean
+    ): MemberInstallResult {
+        val installedSkills = mutableListOf<String>()
+        val configuredServers = mutableListOf<String>()
+        val connectedServers = mutableListOf<String>()
+        val installedPlugins = mutableListOf<String>()
+
+        // ── 1. 内联技能：先查再装（幂等），装完入列 ──────────────────────
+        for (ref in manifest.skills) {
+            if (skillInstaller.isInstalled(ref.skillId)) {
+                installedSkills.add(ref.skillId)
+                continue
+            }
+            val manifestJson = FusionBundleManifest.json.encodeToString(
+                SkillManifest.serializer(), ref.manifest
+            )
+            skillInstaller.ensureInstalled(manifestJson)
+                .onSuccess { installedSkills.add(ref.skillId) }
+                .onFailure {
+                    skipped.add("skill:${ref.skillId}(${it.message ?: "安装失败"})")
+                }
+        }
+
+        // ── 2. 仓库引用技能（skillPicks）：经 hub 端口按需下载安装 ─────────
+        for (skillId in manifest.skillPicks) {
+            if (skillInstaller.isInstalled(skillId)) {
+                installedSkills.add(skillId)
+                continue
+            }
+            hubInstaller.installSkill(skillId)
+                .onSuccess { installedSkills.add(skillId) }
+                .onFailure {
+                    skipped.add("skill:$skillId(${it.message ?: "仓库安装失败"})")
+                }
+        }
+
+        // ── 3. 内联 MCP：配置写盘（幂等）+ connectMcp 且 autoConnect 时逐台连接
+        // （失败重试一次 —— 瞬态网络抖动 / 子进程启动慢不再直接弃包）────────
+        for (ref in manifest.mcpServers) {
+            val config = ref.toMcpServerConfig()
+            if (ref.autoConnect && connectMcp) {
+                val first = mcpConnector.ensureConnected(config)
+                val attempt = if (first.isSuccess) first else {
+                    kotlinx.coroutines.delay(MCP_RETRY_DELAY_MS)
+                    mcpConnector.ensureConnected(config)
+                }
+                attempt
+                    .onSuccess {
+                        connectedServers.add(ref.serverId)
+                        configuredServers.add(ref.serverId)
+                    }
+                    .onFailure {
+                        skipped.add("mcp:${ref.serverId}(${it.message ?: "连接失败"})")
+                    }
+            } else {
+                mcpConnector.ensureConfigured(config)
+                    .onSuccess {
+                        configuredServers.add(ref.serverId)
+                        if (!ref.autoConnect) {
+                            skipped.add("mcp:${ref.serverId}(声明为手动启动)")
+                        }
+                    }
+                    .onFailure {
+                        skipped.add("mcp:${ref.serverId}(${it.message ?: "配置写入失败"})")
+                    }
+            }
+        }
+
+        // ── 4. 仓库引用 MCP（mcpPicks）：经 hub 端口解析目录配置写入
+        // （不在此连接 —— 引用形态是「装配置」，启动留给 activate 连接
+        // 阶段语义或用户市场手动启动）────────────────────────────────────
+        for (serverId in manifest.mcpPicks) {
+            hubInstaller.installMcp(serverId)
+                .onSuccess { configuredServers.add(serverId) }
+                .onFailure {
+                    skipped.add("mcp:$serverId(${it.message ?: "仓库安装失败"})")
+                }
+        }
+
+        // ── 5. 功能性插件：先查再装（幂等）——安装校验全部落在端口侧
+        // （FunctionalPluginStore 的 fail closed 链：id 规范/命名空间/版本门/
+        // 贡献点形状），失败如实进 skipped 不弃整个包。
+        for (ref in manifest.plugins) {
+            if (pluginInstaller.isInstalled(ref.pluginId)) {
+                installedPlugins.add(ref.pluginId)
+                continue
+            }
+            pluginInstaller.ensureInstalled(ref.manifestJson())
+                .onSuccess { installedPlugins.add(ref.pluginId) }
+                .onFailure {
+                    skipped.add("plugin:${ref.pluginId}(${it.message ?: "安装失败"})")
+                }
+        }
+
+        return MemberInstallResult(
+            skills = installedSkills,
+            configured = configuredServers,
+            connected = connectedServers,
+            plugins = installedPlugins
         )
     }
 
@@ -207,6 +305,22 @@ class FusionBundleActivator(
     }
 }
 
+/**
+ * 安装成员报告（[FusionBundleActivator.installMembers] 返回）：
+ * 与 [FusionActivation] 同词表但不含人设/激活态 —— 「只装不激活」的可观测面。
+ */
+data class FusionInstallReport(
+    val bundleId: String,
+    val bundleName: String,
+    val installedSkills: List<String>,
+    /** 配置写盘的 MCP（内联 autoConnect=false 与仓库 mcpPicks）—— 未连接。 */
+    val configuredServers: List<String>,
+    /** 激活路径已连接的 MCP（installMembers 恒空 —— 连接留给激活）。 */
+    val connectedServers: List<String>,
+    val installedPlugins: List<String>,
+    val skipped: List<String>
+)
+
 /** 激活报告（UI 展示 + 引擎注入 + agent 工具返回共用）。 */
 data class FusionActivation(
     val bundleId: String,
@@ -252,6 +366,13 @@ interface FusionSkillInstaller {
 interface FusionMcpConnector {
     /** 确保服务器配置存在并已连接（BUILTIN 预置幂等 / 远程配置原样落盘）。 */
     suspend fun ensureConnected(config: McpServerConfig): Result<Unit>
+
+    /**
+     * 仅确保配置就绪（写盘/预置），**不连接** —— installMembers（只装不激活）
+     * 路径用。默认委托 [ensureConnected]（既有 fake 零改动兼容；真实端口
+     * 覆写为纯配置语义）。
+     */
+    suspend fun ensureConfigured(config: McpServerConfig): Result<Unit> = ensureConnected(config)
 }
 
 /** 引擎提示注入端口：适配 ApexAgentEngine.patchConfig 读改写。 */
@@ -284,6 +405,35 @@ interface FusionPluginInstaller {
             override fun isInstalled(pluginId: String): Boolean = false
             override suspend fun ensureInstalled(manifestJson: String): Result<Unit> =
                 Result.failure(Exception("插件端口未接线（宿主未装配 UnifiedPluginRegistry）"))
+        }
+    }
+}
+
+/**
+ * 官方仓库安装端口（第五端口，**安装型聚合**的执行面）：把
+ * `skillPicks`/`mcpPicks` 的引用 id 解析为真实安装 —— 技能从
+ * apex-skill-hub 下载 manifest 装进 SkillRegistry，MCP 从 apex-mcp-hub
+ * 目录解析配置写入注册表。
+ *
+ * 网络与仓库协议全部落在端口实现侧（app 层复用 HubSource 既有客户端）；
+ * 激活器只编排（与四端口同一职责口径）。[UNAVAILABLE] 缺省实现：引用
+ * 成员如实进 skipped（引用形态的包在未接线宿主上仍可激活内联成员）。
+ */
+interface FusionHubInstaller {
+    /** 从官方技能仓库按 id 安装（下载 manifest → SkillRegistry.install）。 */
+    suspend fun installSkill(skillId: String): Result<Unit>
+
+    /** 从官方 MCP 仓库按目录名安装（解析条目 → addServer 配置写盘，不连接）。 */
+    suspend fun installMcp(serverId: String): Result<Unit>
+
+    companion object {
+        /** 未接线端口：引用成员恒安装失败（诚实降级，不静默吞掉）。 */
+        val UNAVAILABLE: FusionHubInstaller = object : FusionHubInstaller {
+            override suspend fun installSkill(skillId: String): Result<Unit> =
+                Result.failure(Exception("仓库端口未接线（无法安装技能 '$skillId'）"))
+
+            override suspend fun installMcp(serverId: String): Result<Unit> =
+                Result.failure(Exception("仓库端口未接线（无法安装 MCP '$serverId'）"))
         }
     }
 }

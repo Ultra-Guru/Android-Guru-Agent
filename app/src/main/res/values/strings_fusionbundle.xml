@@ -61,6 +61,15 @@
     <string name="plugin_ui_missing">UI entry file missing — reinstall the plugin</string>
     <string name="plugin_ui_signature_rejected">Signature check failed — plugin UI cannot be opened</string>
 
+    <!-- ═══ Install-type packs (install members without activating) ═══ -->
+    <string name="fusion_action_install_members">Install members</string>
+    <string name="fusion_result_installed">Pack “%1$s” members ready — %2$d skills · %3$d MCP · %4$d plugins.</string>
+    <string name="fusion_install_failed">Install failed</string>
+    <string name="fusion_composer_section_hub_skills">Skills from official repo</string>
+    <string name="fusion_composer_section_hub_mcp">MCP servers from official repo</string>
+    <string name="fusion_composer_hub_loading">Loading repo catalog…</string>
+    <string name="fusion_composer_hub_error">Repo unreachable: %1$s</string>
+
     <!-- ═══ Actions & results ═══ -->
     <string name="fusion_action_activate">Use this pack</string>
     <string name="fusion_action_deactivate">Stop using</string>

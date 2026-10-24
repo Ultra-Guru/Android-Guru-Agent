@@ -265,6 +265,8 @@ private fun FusionCrownMenuPopup(
     val skippedPattern = stringResource(R.string.fusion_result_skipped)
     val failedText = stringResource(R.string.fusion_result_failed)
     val deactivatedPattern = stringResource(R.string.fusion_result_deactivated)
+    val installedPattern = stringResource(R.string.fusion_result_installed)
+    val installFailedText = stringResource(R.string.fusion_install_failed)
 
     // ── 空间翻转判定：锚点上方能否容下 320dp（不足则向下生长）──
     val view = LocalView.current
@@ -386,6 +388,34 @@ private fun FusionCrownMenuPopup(
                                         onEdit = {
                                             // 自建包专属：打开组合器编辑成员（内置包不透出）
                                             onOpenComposer(controller.registryForTools.get(digest.id))
+                                        },
+                                        onInstallMembers = {
+                                            // 安装型聚合入口：把成员装到位（仓库引用按需
+                                            // 下载），不激活不注入 —— 激活仍走点选整行。
+                                            menuScope.launch {
+                                                controller.installMembers(digest.id).fold(
+                                                    onSuccess = { report ->
+                                                        val note = if (report.skipped.isEmpty()) ""
+                                                        else String.format(skippedPattern, report.skipped.size)
+                                                        feedback.show(
+                                                            String.format(
+                                                                installedPattern, report.bundleName,
+                                                                report.installedSkills.size,
+                                                                report.configuredServers.size +
+                                                                    report.connectedServers.size,
+                                                                report.installedPlugins.size
+                                                            ) + note,
+                                                            FeedbackSeverity.INFO
+                                                        )
+                                                    },
+                                                    onFailure = {
+                                                        feedback.show(
+                                                            it.message ?: installFailedText,
+                                                            FeedbackSeverity.WARNING
+                                                        )
+                                                    }
+                                                )
+                                            }
                                         }
                                     )
                                 }
@@ -542,7 +572,8 @@ private fun FusionBundleMenuRow(
     isActive: Boolean,
     onSelect: () -> Unit,
     onDeactivate: () -> Unit,
-    onEdit: () -> Unit
+    onEdit: () -> Unit,
+    onInstallMembers: () -> Unit
 ) {
     Surface(
         onClick = onSelect,
@@ -651,6 +682,14 @@ private fun FusionBundleMenuRow(
                         modifier = Modifier
                             .size(20.dp)
                             .clickable(onClick = onEdit)
+                    )
+                }
+                if (!isActive) {
+                    Text(
+                        text = stringResource(R.string.fusion_action_install_members),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable(onClick = onInstallMembers)
                     )
                 }
             }
