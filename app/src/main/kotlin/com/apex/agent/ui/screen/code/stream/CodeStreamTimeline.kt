@@ -48,11 +48,12 @@ import kotlinx.coroutines.launch
 /**
  * # Code Stream Timeline — 胶囊时间轴主列表
  *
- * ## 渲染单元（防刷屏分组）
+ * ## 渲染单元（同族聚合防刷屏）
  *
- * 快照 entries 先经 [groupConsecutive] 分段：**同族连续**胶囊超过
- * [StreamEntryGroup.GROUP_THRESHOLD] 个的一段 → 折叠为「+N 更多」
- * 分组行（展开态本地 remember 自持）；其余逐条渲染。
+ * 快照 entries 先经 [groupConsecutive] 分段：**同族连续**胶囊 ≥2 个的
+ * 一段 → 折叠为「聚合胶囊」（折叠态只显最新 + ×N，展开态平铺全部、
+ * 头行可收起；活跃胶囊流式期间自动展开，[GroupExpandable] 生命周期）；
+ * 其余逐条渲染。
  *
  * ## 内联终端胶囊（2026-10 用户反馈）
  *
@@ -203,17 +204,35 @@ internal fun CodeStreamTimeline(
     }
 }
 
-/** 分组行 + 展开态（remember 自持）。 */
+/** 分组行 + 展开态（remember 自持）+ 流水式生命周期。 */
 @Composable
 private fun GroupExpandable(
     calls: List<StreamToolCall>,
     onToolClick: (StreamToolCall) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
+    // 手动干预守护：用户点过展开/收起后，本轮流式周期内不再自动翻转
+    //（与终端面板/思考卡同款语义——自动展开永远给新内容让位给用户意愿）
+    var manual by remember { mutableStateOf(false) }
+    // 活跃胶囊（参数生成中/执行中）出现 → 自动展开（写入过程可见：折叠态
+    // 只显最新摘要，会遮住实时代码窗）；全部收束且未手动干预 → 自动收回
+    // 成聚合胶囊。新流式周期开始时重置手动态（下一轮自动展开照常生效）。
+    val hasLive = calls.any { it.isLive }
+    LaunchedEffect(hasLive) {
+        if (hasLive) {
+            manual = false
+            expanded = true
+        } else if (!manual) {
+            expanded = false
+        }
+    }
     CodeCapsuleGroupRow(
         calls = calls,
         expanded = expanded,
-        onToggle = { expanded = !expanded },
+        onToggle = {
+            expanded = !expanded
+            manual = true
+        },
         onClick = onToolClick
     )
 }
@@ -298,7 +317,11 @@ private fun entryContentLength(entry: StreamEntry): Int = when (entry) {
     is StreamEntry.UserEntry -> entry.text.length
     is StreamEntry.AssistantEntry -> entry.text.length
     is StreamEntry.ThinkingEntry -> entry.text.length
-    is StreamEntry.ToolCapsuleEntry -> entry.call.logTail.length + 40
+    // 实时代码窗随分片增长：预览长度计入锚定素材，代码流入时贴尾跟随
+    is StreamEntry.ToolCapsuleEntry -> entry.call.logTail.length +
+        (entry.call.streamingPreview?.let {
+            (it.writeContent?.length ?: 0) + (it.editOld?.length ?: 0) + (it.editNew?.length ?: 0)
+        } ?: 0) + 40
     is StreamEntry.VerifyCycleEntry -> entry.calls.size * 40
     is StreamEntry.StatusEntry -> entry.text.length
     is StreamEntry.SystemEntry -> entry.text.length

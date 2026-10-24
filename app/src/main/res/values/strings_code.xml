@@ -179,7 +179,6 @@
     <string name="code_thinking_guide_open">View tier guide</string>
     <string name="code_thinking_no_native_effort">ℹ Current model has no reasoning capability flag: the native reasoning_effort parameter is not sent (engine-side effects — iterations, compression, prompts — still apply). Enable Reasoning in Settings → Model to turn it on</string>
     <!-- ═══ Capsule streaming output (coding workflow timeline) ═══ -->
-    <string name="code_stream_group_more_fmt">%1$d tool capsules collapsed</string>
     <string name="code_stream_group_expand">Expand</string>
     <string name="code_stream_diff_unnamed">(file)</string>
     <string name="code_stream_diff_stat_fmt">+%1$d −%2$d</string>
@@ -244,6 +243,16 @@
     <string name="code_queue_cancel">Cancel</string>
     <string name="code_queue_auto_sent">Previous task finished — queued task sent</string>
     <string name="code_queue_replaced">A task is already queued — replaced with the latest input</string>
+    <!-- ═══ 参数流式期：实时代码窗 + 同族聚合胶囊（折叠态显最新 + ×N）═══ -->
+    <string name="code_stream_group_count_fmt">%1$d calls in group</string>
+    <string name="code_stream_group_collapse">Collapse</string>
+    <string name="code_stream_streaming_writing">Writing…</string>
+    <string name="code_stream_streaming_editing">Editing…</string>
+    <string name="code_stream_streaming_title_live">Applying…</string>
+    <string name="code_stream_streaming_generating">Generating parameters…</string>
+    <string name="code_stream_streaming_preview_title">Live preview</string>
+    <string name="code_stream_streaming_omitted">…earlier lines omitted</string>
+    <string name="code_stream_streaming_lines_fmt">%1$d lines</string>
     <!-- ═══ Thinking tier selector v2: short tier names + capsule labels ═══ -->
     <string name="code_thinking_chip">Thinking · %1$s</string>
     <string name="code_thinking_short_none">Off</string>

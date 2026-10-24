@@ -1,6 +1,9 @@
 package com.apex.agent.ui.screen.code.stream
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +25,7 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Terminal
@@ -32,6 +36,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -193,6 +200,28 @@ internal fun CodeCapsule(
                 )
             }
 
+            // ═══ 参数流式期实时代码窗（用户需求：写/编辑时实时看到代码写入）═══
+            // WAITING（参数生成中）/RUNNING（执行中）展开展示绿增红删代码流，
+            // 终态自动收回（AnimatedVisibility 收束）；点击胶囊可回看详情。
+            // lastPreview 缓存：终态时会话已把 preview 清空，收束动画的最后一帧
+            // 仍需旧内容可渲染（写入 state 属收敛性缓存，不会无限重组）。
+            var lastPreview by remember(call.id) { mutableStateOf(call.streamingPreview) }
+            call.streamingPreview?.let { lastPreview = it }
+            AnimatedVisibility(
+                visible = call.isLive && lastPreview?.hasCode == true,
+                enter = expandVertically(),
+                exit = shrinkVertically(),
+                modifier = Modifier.padding(start = 34.dp, end = 10.dp, bottom = 8.dp)
+            ) {
+                lastPreview?.let { preview ->
+                    StreamingCodeWindow(
+                        preview = preview,
+                        kind = call.kind,
+                        status = call.status
+                    )
+                }
+            }
+
             // ── 运行中内嵌实时输出尾窗（与 Agent 聊天屏 RunningToolCallCard 同口径）──
             // RUNNING 态在胶囊行下方流式展示 logTail（6 行限高防长输出撑爆时间轴），
             // 完成后自动收起 —— 胶囊回到单行摘要形态（使用中详细、完成即折叠）。
@@ -222,9 +251,12 @@ internal fun CodeCapsule(
 }
 
 /**
- * 胶囊分组行（防刷屏）：同族连续胶囊超 [StreamEntryGroup.GROUP_THRESHOLD]
- * 个收进「+N 更多」。折叠态一行摘要；展开态逐颗渲染（展开态由父组件
- * remember 自持，分组翻转不丢滚动位置）。
+ * 胶囊聚合行（同族聚合）：同族连续胶囊 ≥2 收成一颗——
+ *
+ * - **折叠态**：一颗胶囊形态，始终展示**最新调用**（名称/命令/状态/
+ *   耗时与单颗胶囊同款），右侧 ×N 计数徽标 + 展开提示；点击展开；
+ * - **展开态**：头行（族图标 + ×N + 「收起」）+ 平铺全部历史胶囊，
+ *   每颗可点击进详情（[onClick]），头行点击再收起——展开/收起不丢状态。
  */
 @Composable
 internal fun CodeCapsuleGroupRow(
@@ -234,42 +266,161 @@ internal fun CodeCapsuleGroupRow(
     onClick: (StreamToolCall) -> Unit
 ) {
     val style = capsuleStyle(calls.firstOrNull()?.kind ?: ToolKind.MCP_CUSTOM)
+    // ═══ 无障碍/文案（组合上下文求值，分支内直接使用）═══
+    val groupCountDesc = stringResource(R.string.code_stream_group_count_fmt, calls.size)
+    val collapseDesc = stringResource(R.string.code_stream_group_collapse)
+    val expandDesc = stringResource(R.string.code_stream_group_expand)
     if (!expanded && calls.size > StreamEntryGroup.GROUP_THRESHOLD) {
+        // ── 折叠聚合胶囊：仅一颗、内容 = 最新调用 ──
+        val latest = calls.last()
+        val statusColor by animateColorAsState(
+            targetValue = statusColor(latest.status),
+            label = "group-status"
+        )
+        val statusDesc = stringResource(
+            when (latest.status) {
+                ToolCallStatus.WAITING -> R.string.code_stream_status_waiting
+                ToolCallStatus.RUNNING -> R.string.code_stream_status_running
+                ToolCallStatus.SUCCESS -> R.string.code_stream_status_success
+                ToolCallStatus.FAILED -> R.string.code_stream_status_failed
+                ToolCallStatus.APPLIED -> R.string.code_stream_status_applied
+                ToolCallStatus.PARTIAL -> R.string.code_stream_status_partial
+            }
+        )
         Surface(
             shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLowest,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 44.dp)
                 .padding(horizontal = 12.dp, vertical = 1.dp)
-                .clickable { onToggle() }
+                .clickable(role = Role.Button) { onToggle() }
+                .semantics {
+                    contentDescription = latest.displayName + " " + latest.target +
+                        ", " + groupCountDesc + ", " + expandDesc
+                }
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 5.dp)
             ) {
-                Icon(
-                    imageVector = style.icon,
-                    contentDescription = null,
-                    tint = style.color.copy(alpha = 0.7f),
-                    modifier = Modifier.size(14.dp)
-                )
+                Surface(
+                    shape = RoundedCornerShape(7.dp),
+                    color = style.color.copy(alpha = 0.14f)
+                ) {
+                    Icon(
+                        imageVector = style.icon,
+                        contentDescription = null,
+                        tint = style.color,
+                        modifier = Modifier
+                            .padding(3.dp)
+                            .size(14.dp)
+                    )
+                }
+                Spacer(Modifier.width(6.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = latest.displayName,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = latest.target,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                    }
+                    // 副标题与单颗胶囊同口径：终态摘要 / 运行文案 / 目标
+                    Text(
+                        text = latest.summary
+                            ?: latest.progressMessage
+                            ?: latest.argsSummary.ifBlank { latest.target },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                // ×N 聚合计数徽标（同族调用总数——用户一眼可见折叠了几颗）
                 Text(
-                    text = stringResource(R.string.code_stream_group_more_fmt, calls.size),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = stringResource(R.string.code_stream_group_expand),
+                    text = "×${calls.size}",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+                Spacer(Modifier.width(6.dp))
+                val shownDuration = latest.displayDuration(System.currentTimeMillis())
+                if (shownDuration > 0) {
+                    Text(
+                        text = formatCapsuleDuration(shownDuration),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                Icon(
+                    imageVector = statusIcon(latest.status),
+                    contentDescription = statusDesc,
+                    tint = statusColor,
+                    modifier = Modifier.size(14.dp)
                 )
             }
         }
     } else {
+        // ── 展开态：收起头行 + 全部历史胶囊平铺 ──
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLowest,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 36.dp)
+                    .padding(horizontal = 12.dp, vertical = 1.dp)
+                    .clickable(role = Role.Button) { onToggle() }
+                    .semantics { contentDescription = groupCountDesc + ", " + collapseDesc }
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Icon(
+                        imageVector = style.icon,
+                        contentDescription = null,
+                        tint = style.color.copy(alpha = 0.7f),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = "×${calls.size}",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = collapseDesc,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowUp,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
             calls.forEach { call ->
                 CodeCapsule(call = call, onClick = onClick)
             }
