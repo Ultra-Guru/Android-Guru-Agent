@@ -48,6 +48,45 @@
     <string name="settings_test">Test</string>
     <string name="settings_conn_success">Connection successful</string>
     <string name="settings_conn_failed">Connection failed</string>
+    <!-- ═══ Settings v2: two-level drawer navigation (SettingsNavTree / SettingsDrawer) ═══ -->
+    <string name="settings_drawer_title">Settings</string>
+    <string name="settings_drawer_subtitle">Browse categories, open a page</string>
+    <string name="settings_open_drawer">Open settings menu</string>
+    <string name="settings_landing_title">Pick a settings page</string>
+    <string name="settings_landing_body">Open the drawer to browse categories — pick a page and it opens here</string>
+    <string name="settings_no_profile_hint">No model profile yet — create one in Model · Setup first</string>
+    <string name="settings_nav_cat_model">Model</string>
+    <string name="settings_nav_cat_agent">Agent</string>
+    <string name="settings_nav_cat_interface">Interface</string>
+    <string name="settings_nav_cat_data">Data &amp; Backup</string>
+    <string name="settings_nav_model_setup">Setup</string>
+    <string name="settings_nav_model_generation">Parameters</string>
+    <string name="settings_nav_model_reasoning">Reasoning</string>
+    <string name="settings_nav_model_context">Context</string>
+    <string name="settings_nav_model_tools">Tools</string>
+    <string name="settings_nav_model_network">Network</string>
+    <string name="settings_nav_model_prompt">Prompt</string>
+    <string name="settings_nav_model_advanced">Advanced</string>
+    <string name="settings_nav_model_providers">Providers &amp; Roles</string>
+    <string name="settings_nav_agent_execution">Execution</string>
+    <string name="settings_nav_agent_roles">Roles &amp; Persona</string>
+    <string name="settings_nav_agent_permissions">Permissions</string>
+    <string name="settings_nav_agent_rules">Rules</string>
+    <string name="settings_nav_agent_hooks">Hooks</string>
+    <string name="settings_nav_agent_presets">Mode Presets</string>
+    <string name="settings_nav_agent_subagent">Sub-Agents</string>
+    <string name="settings_nav_agent_goal_loop">Goal &amp; Loop</string>
+    <string name="settings_nav_agent_coding">Coding</string>
+    <string name="settings_nav_agent_github">GitHub</string>
+    <string name="settings_nav_agent_compression">Compression</string>
+    <string name="settings_nav_agent_vision">Vision</string>
+    <string name="settings_nav_interface_appearance">Appearance</string>
+    <string name="settings_nav_interface_chat">Chat Display</string>
+    <string name="settings_nav_data_backup">Backup &amp; Restore</string>
+    <string name="settings_providers_roles_hint">Manage providers (base URLs / keys / rotation) and model role mapping (primary · vision · reasoning · fast · summary).</string>
+    <string name="settings_manage_providers">Manage Providers</string>
+    <string name="settings_manage_roles">Manage Model Roles</string>
+
 
     <!-- Generation -->
     <string name="settings_section_generation">Generation</string>

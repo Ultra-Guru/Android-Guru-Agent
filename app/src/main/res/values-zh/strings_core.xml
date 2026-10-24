@@ -48,6 +48,45 @@
     <string name="settings_test">测试</string>
     <string name="settings_conn_success">连接成功</string>
     <string name="settings_conn_failed">连接失败</string>
+    <!-- ═══ 设置 v2：两级抽屉导航（SettingsNavTree / SettingsDrawer）═══ -->
+    <string name="settings_drawer_title">设置</string>
+    <string name="settings_drawer_subtitle">按分类浏览，点开具体配置页</string>
+    <string name="settings_open_drawer">打开设置菜单</string>
+    <string name="settings_landing_title">选择一个设置页面</string>
+    <string name="settings_landing_body">打开抽屉按分类浏览 —— 选择具体页面后在此打开</string>
+    <string name="settings_no_profile_hint">暂无模型档案 —— 请先到「模型配置 · 配置」新建</string>
+    <string name="settings_nav_cat_model">模型配置</string>
+    <string name="settings_nav_cat_agent">Agent 配置</string>
+    <string name="settings_nav_cat_interface">界面外观</string>
+    <string name="settings_nav_cat_data">数据与备份</string>
+    <string name="settings_nav_model_setup">配置</string>
+    <string name="settings_nav_model_generation">参数</string>
+    <string name="settings_nav_model_reasoning">推理</string>
+    <string name="settings_nav_model_context">上下文</string>
+    <string name="settings_nav_model_tools">工具</string>
+    <string name="settings_nav_model_network">网络</string>
+    <string name="settings_nav_model_prompt">提示词</string>
+    <string name="settings_nav_model_advanced">高级</string>
+    <string name="settings_nav_model_providers">服务商与角色</string>
+    <string name="settings_nav_agent_execution">执行</string>
+    <string name="settings_nav_agent_roles">角色人设</string>
+    <string name="settings_nav_agent_permissions">权限</string>
+    <string name="settings_nav_agent_rules">规则</string>
+    <string name="settings_nav_agent_hooks">钩子</string>
+    <string name="settings_nav_agent_presets">模式预设</string>
+    <string name="settings_nav_agent_subagent">子代理</string>
+    <string name="settings_nav_agent_goal_loop">目标与循环</string>
+    <string name="settings_nav_agent_coding">编程工位</string>
+    <string name="settings_nav_agent_github">GitHub</string>
+    <string name="settings_nav_agent_compression">上下文压缩</string>
+    <string name="settings_nav_agent_vision">视觉</string>
+    <string name="settings_nav_interface_appearance">外观</string>
+    <string name="settings_nav_interface_chat">聊天显示</string>
+    <string name="settings_nav_data_backup">备份与恢复</string>
+    <string name="settings_providers_roles_hint">管理服务商（地址 / 密钥 / 轮换）与模型角色映射（主力 · 视觉 · 推理 · 快速 · 摘要）。</string>
+    <string name="settings_manage_providers">管理服务商</string>
+    <string name="settings_manage_roles">管理模型角色</string>
+
 
     <!-- Generation -->
     <string name="settings_section_generation">Generation · 采样参数</string>

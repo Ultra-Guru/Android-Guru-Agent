@@ -13,11 +13,11 @@ import com.apex.agent.R
 import kotlinx.coroutines.launch
 
 /**
- * # Issue #164 / #165 —— AgentTab 的规则与钩子扩展区（挂载块抽出）
+ * # Issue #164 / #165 —— Agent 分类的规则与钩子叶子页（挂载块抽出）。
  *
- * [SettingsScreen] 已贴近文件预算红线（check_file_size 1200 行门禁），
- * v1.1 的两个新设置区（全局规则 + AGENTS.md 状态、钩子启停）的挂载逻辑
- * 内聚到本文件，AgentTab 只留一行调用。
+ * v2 抽屉化重构：原 AgentRulesAndHooksSections（规则+钩子一体挂载）拆为
+ * 两个独立块，分别服务 `agent/rules` 与 `agent/hooks` 两个二级页面；
+ * IO 纪律不变（见下）。
  *
  * ## IO 纪律
  * 规则文件命中（`projectRulesFileName`）与模板创建（`createProjectRulesTemplate`）
@@ -26,7 +26,7 @@ import kotlinx.coroutines.launch
  * 重查（不用 Snackbar：本页无挂载的 Host，showSnackbar 会永久挂起）。
  */
 @Composable
-internal fun AgentRulesAndHooksSections(
+internal fun AgentRulesSectionBlock(
     agent: AgentSettings,
     onAgent: (AgentSettings) -> Unit,
     viewModel: SettingsViewModel
@@ -54,8 +54,11 @@ internal fun AgentRulesAndHooksSections(
             }
         }
     )
+}
 
-    // ═══ 钩子（#165）：声明式钩子启停（工具前后 / 会话生命周期）═══
+/** 钩子（#165）：声明式钩子启停（工具前后 / 会话生命周期）。 */
+@Composable
+internal fun AgentHooksSectionBlock(viewModel: SettingsViewModel) {
     val hooks by viewModel.hooks.collectAsStateWithLifecycle()
     HooksSettingsSection(
         hooks = hooks,
