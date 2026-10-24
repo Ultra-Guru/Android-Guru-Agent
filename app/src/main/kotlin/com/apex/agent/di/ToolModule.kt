@@ -440,6 +440,7 @@ object ToolModule {
         // Issue #165：钩子注册表（主执行器插槽 + SubagentStop 派发）
         hookRegistry: HookRegistry,
         memoryRecentEpisodesTool: MemoryRecentEpisodesTool,
+        knowledgeBaseService: com.apex.agent.knowledge.KnowledgeBaseService,
         memorySearchNodesTool: MemorySearchNodesTool,
         memoryRecallMacroTool: MemoryRecallMacroTool,
         browserAgentTools: BrowserAgentTools,
@@ -738,6 +739,12 @@ object ToolModule {
         registry.register(SafeAgentTool(memoryRecentEpisodesTool))
         registry.register(SafeAgentTool(memorySearchNodesTool))
         registry.register(SafeAgentTool(memoryRecallMacroTool))
+
+        // ═══ 4a. 知识库（v1.8.0 · 角色专属知识库检索）═══
+        // 每个 Agent 角色模板一套专属知识库（assets/knowledge/*.md）；
+        // 五动作：list / must_read / index / search / read —— “必看内容”
+        // + “一键找到想看的”两个用户要求的落点。
+        registry.register(SafeAgentTool(com.apex.agent.tools.KnowledgeBaseTool(knowledgeBaseService)))
 
         // ═══ 5–8. 设备类工具（应用管理/系统控制/UI/传感器，19 个）═══
         // 注册体拆至 [ToolModuleDeviceRegistration.kt]（SRP 预算：本文件贴近
