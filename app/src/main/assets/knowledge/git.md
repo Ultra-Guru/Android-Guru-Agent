@@ -36,13 +36,13 @@
 | stash 临时区 | 9. stash |
 | 标签 | 10. 标签 |
 | 远程协作 | 11. 远程 |
-| 拉取策略 | 12. fetch/pull |
+| fetch/pull 深水与部分克隆 | 12. fetch 深水 |
 | 子模块 | 13. submodule |
 | worktree | 14. worktree |
 | cherry-pick | 15. cherry-pick |
 | bisect 二分 | 16. bisect |
 | reflog 救援 | 17. reflog 救援 |
-| 大文件/LFS | 18. 大文件 |
+| 大文件/LFS 战略 | 18. 大文件战略 |
 | 忽略规则 | 19. gitignore |
 | 配置体系 | 20. 配置 |
 
@@ -184,13 +184,13 @@ git tag -d v1.4.9 && git push origin :refs/tags/v1.4.9   # 删远程
 | 想找什么 | 去哪一节 |
 | --- | --- |
 | 远程操作 | 11. 远程 |
-| fetch vs pull | 12. 拉取策略 |
+| fetch 深水（refspec/部分克隆） | 12. fetch 深水 |
 | 子模块 | 13. submodule |
 | 多工作树 | 14. worktree |
 | 摘提交 | 15. cherry-pick |
 | 二分找 bug | 16. bisect |
 | 误操作救援 | 17. reflog 救援 |
-| 大文件 | 18. LFS |
+| 大文件/LFS 战略 | 18. 大文件战略 |
 | 忽略规则 | 19. gitignore |
 | 配置 | 20. 配置 |
 | 钩子 | 21. hooks |
@@ -210,17 +210,37 @@ git tag -d v1.4.9 && git push origin :refs/tags/v1.4.9   # 删远程
 
 - 一次 push 多目标：`git remote set-url --add --push origin url2`。
 
-## 12. 拉取策略
+## 12. fetch 深水
 
 ```bash
-git fetch origin            # 只更新远程跟踪引用，不动工作区（安全首选）
-git pull --ff-only          # 只允许快进（有分叉即停，逼你显式决定）
-git pull --rebase           # 拉取并把本地提交重放其上（线性史）
-git pull（默认）            # = fetch + merge（产生合并节点）
+git fetch origin main:refs/remotes/origin/main    # 显式 refspec：指定落点
+git config remote.origin.fetch "+refs/heads/main:refs/remotes/origin/main"  # 单分支跟踪
+git config remote.origin.fetch "^refs/heads/scratch/*"   # 负 refspec：排除噪声分支
+git fetch --negotiation-tip=<sha>                 # 老仓库握手加速：从已知共同祖谈起
 ```
 
-- 团队约定优先：本仓库 PR 流程 = 本地整理 + PR 合并，主干不做日常 pull 冲突。
-- 永远先 fetch 看 `git log HEAD..origin/main --oneline` 再决定怎么合。
+- **refspec 语法 `+src:dst`**：`+` 允许非快进；空源是删远程引用的
+  老写法（push origin :branch）；负 refspec `^` 做排除。长期
+  单主干贡献者把 fetch 收敛到一条引用，fetch 从全库扫秒变单秒。
+- **浅克隆 vs 部分克隆**：--depth 只给历史切片，边界操作多坑
+  （merge/blame 受限）；**blobless**（--filter=blob:none）拉
+  全部提交+树、按需取文件内容 —— 日常开发最佳平衡；**treeless**
+  （--filter=tree:0）连树都按需 —— CI 冷启最快（Azure DevOps
+  实测平均 -88% 拉取耗时），命令行审计/历史检索几乎零损失。
+- **promisor remote 语义**：部分克隆的"承诺方"持有你缺的对象。
+  `git rev-list --missing=allow-promisor --exclude-promisor-objects`
+  在缺对象时仍能安全算边界。局限：submodule 与部分克隆组合有
+  已知怪癖；离线时缺 blob 的操作直接失败 —— 离线工作前先把
+  要用的目录读一遍（按需填充）或改普通克隆。
+- **后台预取（2025 团队标配）**：`git maintenance start
+  --strategy=incremental` 注册 hourly prefetch（拉到
+  refs/remotes/origin/* 不动工作区）+ hourly commit-graph +
+  daily loose-objects/pack-refs，gc 关闭（34 节维护/129 节内幕）。
+  比每人"想起来才 fetch"平滑一个数量级，且 fetch 谈判总在
+  预取基础上做，增量越来越小。
+- **团队口径不变**：先 `git log HEAD..origin/main --oneline`
+  再决定合并方向；pull 默认行为 Git 2.27+ 会警告，显式定
+  `pull.rebase` 或 `pull.ff only`，把分叉处置留给 PR。
 
 ## 13. submodule
 
@@ -293,12 +313,31 @@ git reset --hard HEAD@{3}        # 直接回去（慎：当前未提交改动会
 | amend 覆盖原提交 | reflog 找 amend 前 HEAD |
 | stash pop 冲突后 stash 没了 | git fsck --lost-found 找悬空 blob |
 
-## 18. LFS
+## 18. 大文件战略
 
-- 判据：单文件 >50MB 或仓库总量膨胀失控 —— 早期就上 LFS
-  （历史重写成本随时间暴涨）。
-- `.gitattributes`：`*.psd filter=lfs diff=lfs merge=lfs -text`。
-- 协作方必须装 git-lfs（CI 同）；未装者检出的是指针文本。
+- **判据升级**：单文件 >50MB 或 .git 年增幅失控 —— 早期就动手；
+  LFS 中途迁移 = 全员重克隆，成本随历史长度指数上涨。
+- **LFS 机制**：仓库里只存指针文本（sha256+size），真身在 LFS
+  存储；`.gitattributes` 声明 `*.psd filter=lfs diff=lfs merge=lfs
+  -text` —— diff=lfs 让 diff 不再对二进制做无意义比较。
+- **未装客户端的二次污染最难查**：未装 git-lfs 者检出的是指针
+  文本，且 commit 时会把真身塞进普通对象库。CI 加
+  `git lfs install && git lfs pull` 前置；仓库加 lfs 检查钩子。
+- **LFS 服务器经济学**：GitHub LFS 带宽配额昂贵；自建可选
+  Artifactory/S3 后端。配额爆掉 = 全员拉不动 —— 迁移窗口在
+  配额 70% 时就启动。
+- **中途上 LFS 的正确姿势**：`git lfs migrate import
+  --include="*.psd" --everything`（重写全史并转存量，不是只管
+  未来文件）。执行前：全员通知 + 停机窗 + tag 快照 +
+  事后重克隆。
+- **何时不用 LFS**：一次性资产（安装包/视频母带）走对象存储+
+  URL；构建产物永远不进 git（CI artifact 管道）；数据集用
+  DVC/git-annex 这类内容寻址层。
+- **已经胖了怎么办**：`git rev-list --objects --all |
+  git cat-file --batch-check='%(objecttype) %(objectname)
+  %(objectsize) %(rest)' | sort -k3 -n | tail` 列大户，然后
+  `git filter-repo --strip-blobs-bigger-than 10M`（取代
+  filter-branch；65 节剧本·瘦身全流程）。
 
 ## 19. gitignore
 
@@ -509,7 +548,7 @@ git push --mirror new-repo.git
 | 免责与边界 | 43. 操作分级 |
 | GUI 工具 | 44. GUI |
 | GitHub 特化 | 45. GitHub 特化 |
-| 本仓库纪律 | 46. 仓库纪律 |
+| 本仓库纪律 | 46. 仓库纪律（本仓库） |
 
 ## 35. 冲突场景库
 
@@ -624,114 +663,119 @@ git rm -r --cached . && git add .                      # 重新按 ignore 摄入
 
 | 想找什么 | 去哪一节 |
 | --- | --- |
-| 命令全表·检视 | 47. 全表·检视 |
-| 命令全表·分支 | 48. 全表·分支 |
-| 命令全表·远程 | 49. 全表·远程 |
-| 命令全表·历史 | 50. 全表·历史 |
-| 命令全表·撤销 | 51. 全表·撤销 |
+| 取证级检视技巧 | 47. 取证级检视 |
+| 分支拓扑进阶 | 48. 分支拓扑进阶 |
+| 远程手术与 refspec | 49. 远程手术 |
+| 历史取证技巧 | 50. 历史取证 |
+| 撤销深水区 | 51. 撤销深水区 |
 | 剧本·合并主干 | 52. 剧本·合主干 |
 | 剧本·解决大冲突 | 53. 剧本·大冲突 |
 | 剧本·找回丢历史 | 54. 剧本·找历史 |
 | 剧本·整理烂历史 | 55. 剧本·整理史 |
 | 剧本·跨仓同步 | 56. 剧本·跨仓 |
 
-## 47. 全表·检视
+## 47. 取证级检视
 
-| 命令 | 说明 |
-| --- | --- |
-| git status -sb | 紧凑状态+跟踪分支 |
-| git diff | 工作区 vs 暂存 |
-| git diff --staged | 暂存 vs HEAD |
-| git diff HEAD | 工作区 vs HEAD |
-| git diff --cached --stat | 暂存统计 |
-| git show | 最近提交详情 |
-| git show HEAD~3:file | 历史版本文件内容 |
-| git log --oneline --graph --all --decorate | 全景图 |
-| git log -p -3 | 最近3个带补丁 |
-| git log --author="me" --since="1 week" | 过滤组合 |
-| git log --grep="fix" | 按消息搜 |
-| git log -S "funcName" | 内容出现/消失处 |
-| git log --follow -- path | 单文件史（含改名） |
-| git blame -L 10,20 path | 段落归属 |
-| git blame --reverse path | 这行最后谁改没了 |
-| git shortlog -sn | 按人统计 |
-| git describe --tags | 最近标签相对描述 |
-| git merge-base a b | 分叉点 |
-| git ls-files | 索引清单 |
-| git cat-file -p sha | 看任意对象 |
-| git reflog | HEAD 移动史 |
-| git fsck --lost-found | 悬空对象 |
+| 意图 | 命令 | 为什么是进阶 |
+| --- | --- | --- |
+| 谁改了这行（含搬家） | git blame -w -C -C path | -w 忽略空白，-C 跨文件复制追踪 |
+| 行区间历史回放 | git log -L 42,60:file -p | 比 blame 单帧强，看演变过程 |
+| 文件整条史（含合并侧） | git log --full-history -- path | 默认历史简化会藏合并侧 |
+| 等价提交比对 | git range-diff base..old base..new | 改稿 PR 的评审神器（78 节） |
+| 冲突处来龙去脉 | git log --merge -p -- path | 只看合并冲突涉及文件的史 |
+| 真实分叉点 | git merge-base --all a b | 八爪鱼合并有多个基点 |
+| 对象在哪个包 | git rev-list --objects --all \| grep <sha> | 大对象普查前置（18 节） |
+| 不改史的接枝 | git replace --graft <sha> <parent> | 调试用假父（不推共享） |
 
-## 48. 全表·分支
+- 删除文件却"找不到"：默认 log 做历史简化 —— --full-history
+  + --diff-filter=D 定位删除点；--follow 单文件改名追踪。
+- blame 的诚实边界：merge 进来的行记为合并提交；加 -m 才看
+  实际父分支归属。
 
-| 命令 | 说明 |
-| --- | --- |
-| git branch | 本地列表 |
-| git branch -v | 带尾提交 |
-| git branch -a | 含远程 |
-| git branch -vv | 带跟踪关系 |
-| git branch -d name | 删（已合并才成） |
-| git branch -D name | 强删 |
-| git branch -m new | 改名 |
-| git branch -u origin/new | 设上游 |
-| git switch name | 切换 |
-| git switch -c name | 建并切 |
-| git switch - | 回上一个 |
-| git checkout --detach sha | 游离到提交 |
-| git branch --contains sha | 谁包含此提交 |
-| git branch --merged main | 已并入清单 |
-| git cherry main feat | feat 独有提交标记 |
+## 48. 分支拓扑进阶
 
-## 49. 全表·远程
+- **@{upstream} 与 @{push} 不同**：@{u} 是你 pull 的对象，
+  @{push} 是你将 push 到的远程分支 —— fork 三角流里两者
+  常不同：`git log @{push}..HEAD` 列"还没推出去的"。
+- **fork-point 找真基点**：`git merge-base --fork-point
+  origin/main feat` 用远程 reflog 找"远程被 rebase 掉之前的
+  基点" —— rebase 下游分支比普通 merge-base 稳。
+- **等价补丁降噪**：`git cherry -v main feat` 标 -（上游已有
+  等价）/ +（独有）；`git log --cherry-pick --right-only
+  main...feat` 直接滤掉 patch-id 相同的对 —— 大分支对账
+  的降噪器。
+- **栈式分支（stacked PR）**：feat-a → feat-b → feat-c 依赖链；
+  上层 rebase 后下层换基：`git rebase --onto feat-b feat-a
+  feat-c`。评审平台配 stack 工具链。
+- **分支寿命纪律**：feature ≤ 2 周；长寿分支的 rebase 冲突面
+  复利增长 —— 拆小，而不是"烝到合"。
+- **命名空间即结构**：feat/ fix/ release/ 前缀让 tab 补全与
+  CI 路由有据可依（23 节策略/41 节团队约定）。
 
-| 命令 | 说明 |
-| --- | --- |
-| git remote -v | 列出 |
-| git remote add n url | 添加 |
-| git remote set-url n url | 改址 |
-| git remote rename a b | 改名 |
-| git remote remove n | 删除 |
-| git fetch [remote] | 取引用不动工作区 |
-| git fetch --prune | 顺手清失效远程引用 |
-| git fetch --tags | 带标签 |
-| git push | 推当前（有上游时） |
-| git push origin local:remote | 显式映射 |
-| git push -u origin name | 首推+设上游 |
-| git push --tags | 推全部标签 |
-| git push origin --delete name | 删远程分支 |
-| git push --force-with-lease | 带校验强推（仅己分支） |
-| git pull = fetch+merge | 见 12 节策略 |
-| git pull --rebase | 拉取重放 |
+## 49. 远程手术
 
-## 50. 全表·历史
+- **改默认语义**：`remote.<name>.fetch` 的 refspec 决定 fetch
+  落点（12 节）；`remote.<name>.mirror=true` 让 push 变镜像
+  （推全部引用并允许删远程分支）—— 备份仓库专用，日常协作
+  禁用。
+- **URL 重写层**：`url.<base>.insteadOf` / `pushInsteadOf`
+  全局换协议（https→ssh 按人切换，不动仓库配置）；企业内
+  fork 网络的上游/个人远程分离靠它。
+- **push 原子性与精确校验**：`git push --atomic origin a b c`
+  要么全成要么全不成（多分支联动发布）；
+  `--force-with-lease=<branch>:<expected-oid>` 比裸 lease
+  更抗竞态。
+- **负 refspec 做权限预边界**：`git config remote.origin.push
+  "^refs/heads/experimental"` 从 push 全集排除 —— 客户端先
+  挡一道，服务端还有 pre-receive 双保险。
+- **标签三种推法**：单推 `origin tagname`；批量 --tags（勿对
+  共享仓乱用）；`--follow-tags` 只推可达的附注标签 ——
+  `push.followTags=true` 默认开最克制。
+- **凭证与协议**：SSH 多身份用 Host 别名 + IdentitiesOnly；
+  HTTPS 用 per-URL credential.helper（`credential.<url>.*`）
+  分仓分密（33 节）。
 
-| 命令 | 说明 |
-| --- | --- |
-| git log --pretty=format:"%h %an %s" | 自定义输出 |
-| git log --name-status | 每次提交改了哪些文件 |
-| git log --diff-filter=M | 只修改类 |
-| git log --stat --summary | 带统计 |
-| git rev-list --count HEAD | 提交总数 |
-| git rev-list --max-parents=0 HEAD | 根提交 |
-| git log main..feat ^main | feat 独有（同义） |
-| git log --cherry-pick --right-only a...b | 忽略等价补丁 |
+## 50. 历史取证
 
-## 51. 全表·撤销
+- **默认 log 会"撒谎"**：历史简化会隐藏未改目标文件的合并侧。
+  --full-history 还原全貌；--simplify-merges 保信息同时砍无关
+  合并 —— 三个档位按需切换。
+- **--first-parent 看主干**：把合并当单点、不进分支内部 ——
+  trunk-based 仓库"人类可读史"默认档；release 审计必用。
+- **patch-id 去重**：`git log --cherry-pick --left-right
+  A...B` 标出 <（只在 A）>（只在 B）并忽略等价对 ——
+  rebase/cherry-pick 后"谁被重放过"一目了然。
+- **符号生死追踪**：-S 找增删等值点，-G 找一切触碰（正则）；
+  --pickaxe-regex 让 -S 也吃正则；找"第一次引入"用
+  `git log --reverse -S… | head -1`。
+- **bisect 非二进制姿势**：`git bisect start BAD GOOD -- path`
+  直接限定路径；`git bisect run` 自动化（16 节全流程）；
+  污染树用 `git bisect visualize` 人工干预。
+- **考古统计**：`git shortlog -sne --since=1.year` 人员活跃度；
+  `git log --numstat --format=` 喂脚本做热点文件普查（CI 瘦身
+  /仓库治理输入，34 节维护）。
 
-| 场景 | 命令 |
-| --- | --- |
-| 未 add 丢工作区改动 | git restore path |
-| 未 add 全丢 | git restore . |
-| 已 add 退暂存 | git restore --staged path |
-| 已 add 且想丢改动 | git restore --staged path && git restore path |
-| 未推撤提交（留改动） | git reset --soft HEAD~1 |
-| 未推撤提交（回到未 add） | git reset --mixed HEAD~1 |
-| 未推彻底消失 | git reset --hard HEAD~1（reflog 可救） |
-| 已推反转 | git revert HEAD |
-| 反转一段 | git revert OLD^..NEW |
-| 反转合并提交 | git revert -m 1 <merge-sha> |
-| amend 未推 | git commit --amend |
-| amend 已推 | 禁；revert 抵消后重提 |
+## 51. 撤销深水区
+
+- **revert -m 1 的连带债务**：revert 合并提交后，被撤销侧的
+  内容**无法被再正常合并**（patch-id 已记录"处理过"）——
+  后续要恢复得 revert 那次 revert。合并要慎，revert 合并更慎，
+  团队要有"撤销合并"的记录惯例。
+- **restore 三态口径**：`git restore`（工作区）、`--staged`
+  （只退暂存）、`--source=<ref>`（从任意历史检回单文件）——
+  取代 checkout -- 的一切歧义。
+- **reset 的第四档 --keep**：保工作区但拒绝会丢改动的移动 ——
+  "移到相近历史"的安全档；`git reset -p <path>` 交互式退
+  暂存分块。
+- **改写前保险**：backup 分支（17 节）之外，ORIG_HEAD、
+  rebase-merge 目录、stash list 都是事故现场证据，先别
+  `clear` 再分析。
+- **push 级撤销**：`git push origin +<sha>:<branch>` 可把远程
+  指到任意提交（含回退）—— 共享分支唯一合法路径仍是 revert；
+  平台侧保护分支配置见 45 节 GitHub 特化。
+- **捡回未提交改动**：`git fsck --lost-found` 找悬空 blob
+  （add 过没 commit 的内容都在）；stash pop 冲突失败时
+  stash 并未丢（17 节事故表）。
 
 ## 52. 剧本·合主干
 
@@ -974,13 +1018,22 @@ git push origin --delete master          # 等下游引用迁完再删
 
 ## 70. 性能
 
-| 症状 | 命令 |
-| --- | --- |
-| 慢在扫描 | git status 慢：git update-index --untracked-cache |
-| gc 慢 | 夜间 git gc；--aggressive 偶尔 |
-| log 慢 | --oneline 少带 -p；用 --first-parent 看主干 |
-| clone 慢 | --depth 1（浅）；--filter=blob:none（部分克隆） |
-| fetch 慢 | --no-tags；--single-branch |
+性能预算表（症状 → 首选，机制层见 129 节）：
+
+| 症状 | 首选 | 次选 |
+| --- | --- | --- |
+| status 慢 | untracked-cache + fsmonitor | sparse-checkout |
+| clone 慢 | --filter=blob:none（日常） | --filter=tree:0（CI） |
+| log/blame 慢 | commit-graph（maintenance 接管） | --first-parent 限视角 |
+| fetch 慢 | hourly prefetch（后台预取） | --negotiation-tip |
+| 索引写放大 | sparse index（--cone 模式） | 按路径过滤 CI 触发 |
+| gc 卡顿 | maintenance 增量策略（gc 关闭） | 夜间手动 repack |
+
+- 诊断三连：`git count-objects -vH`（对象体量）、
+  `git rev-list --count HEAD`（历史深度）、`du -sh .git`
+  （磁盘面）—— 判断慢在网络、对象库还是索引。
+- 浅克隆（--depth）已从"首选优化"降级为"边界手段"：日常开发
+  用部分克隆替代（12 节对比），浅史留给一次性构建环境。
 
 ## 71. 剧本·续修
 
@@ -1050,7 +1103,7 @@ git tag -a v1.5.1 -m "hotfix" && git push origin v1.5.1
 | 想找什么 | 去哪一节 |
 | --- | --- |
 | 实战案例集 | 77. 案例集 |
-| 命令补充表 | 78. 命令补充 |
+| rerere/range-diff/bundle | 78. rerere 与范围对比 |
 | 场景决策树 | 79. 决策树 |
 | hooks 速查 | 80. hooks 表 |
 | plumbing 表 | 81. plumbing |
@@ -1113,22 +1166,32 @@ git checkout --ours path     # 拿我方版
 浅克隆 + 单分支：`git clone --depth 1 --single-branch url`；
 后续要深史：`git fetch --unshallow`。
 
-## 78. 命令补充
+## 78. rerere 与范围对比
 
-| 命令 | 用途 |
-| --- | --- |
-| git merge --squash feat | 工作区带过来不自动提交（手工单提交） |
-| git commit -v | 编辑器里带 diff（写消息有据可依） |
-| git add -i | 交互模式（比 -p 多功能面） |
-| git clean -fd | 删未跟踪（-n 先干跑） |
-| git archive HEAD --format=tar | 导出快照（不带 .git） |
-| git bundle create f.bundle main | 离线传输（无网环境） |
-| git clone f.bundle repo | 从 bundle 克隆 |
-| git diff --word-diff | 词级差异（长句文本友好） |
-| git log -p --color-words | 词级历史 |
-| git rerere | 记住冲突解法（rerere.enabled） |
-| git range-diff a..b c..d | 比较两个提交序列差异 |
-| git worktree add --detach dir sha | 临时检出某历史 |
+rerere（reuse recorded resolution）：让 Git 记住你解过的冲突：
+
+```bash
+git config rerere.enabled true        # 一次性开启
+git rerere status                     # 正在记录中的冲突文件
+git rerere diff                       # 当前解法与已记录解法的差异
+git rerere forget <path>              # 记错了就删记录重来
+```
+
+- **工作模式**：第一次解冲突时 rerere 把"冲突→你的解法"存进
+  .git/rr-cache；同样的冲突再现（rebase 重放/再合并）时自动
+  套用并留冲突标记让你确认 —— rerere.autoUpdate=true 可免
+  确认（信任度高的团队才开）。
+- **最佳搭档是长期 rebase 流**：每天 rebase 主干的工作分支，
+  同一冲突解第二次起零成本；栈式 PR 链换基时收益翻倍（48 节）。
+- **rr-cache 是本地的**：不随 clone 走，git gc 也不清它；
+  换机器要手动搬或接受重建。
+- **range-diff：给改稿版的评审**：`git range-diff base..v1
+  base..v2` 逐提交对比两个系列（相似度标记：完全一致/仅消息/
+  内容变化），评审者看增量而非重读全系列 —— 配
+  format-patch --cover-letter 的补丁流。
+- **离线协作三选一**：给"仓库"用 bundle（引用+对象打包单文件，
+  无网互传）；给"提交系列"用 format-patch/am 邮件流；
+  给"导出快照"用 archive（不带 .git）。
 
 ## 79. 决策树
 
@@ -1889,30 +1952,31 @@ tag 附注（10），锁仓按 sha（115）。
 - 实录：6
 - 版本：v1
 
-## 129. 附录·命令补遗（40 条）
+## 129. 附录·维护与加速内幕
 
-| # | 场景 | 命令 |
-| --- | --- | --- |
-| 1 | 看暂存逐块 | git diff --cached -p |
-| 2 | 检视某提交的父 | git show sha^ |
-| 3 | 两个 tag 间 | git diff v1.4.8 v1.4.9 --stat |
-| 4 | 标签含提交清单 | git log v1.4.8..v1.4.9 --oneline |
-| 5 | 行数变更统计 | git diff --numstat |
-| 6 | 忽略空白比较 | git diff -w |
-| 7 | 只看新增文件 | git diff --diff-filter=A --name-only |
-| 8 | 检索分支名 | git branch -a \| grep feat |
-| 9 | 远程分支清单 | git branch -r |
-| 10 | 上次 merge 是谁 | git log -1 --merges |
-| 11 | 提交所在 tag | git describe --contains sha |
-| 12 | 未推送提交 | git log origin/main..HEAD --oneline |
-| 13 | 提交是否已推 | git branch -r --contains sha |
-| 14 | 修改上次作者时间 | commit --amend --date=now --reset-author |
-| 15 | 保留空目录 | touch dir/.keep && git add |
-| 16 | 看对象类型 | git cat-file -t sha |
-| 17 | 看打包统计 | git verify-pack -v .git/objects/pack/*.idx \| head |
-| 18 | 手动 gc | git gc --prune=now |
-| 19 | 重建索引 | git rebase --root（重放全史） |
-| 20 | 环境变量一次 | GIT_EDITOR=vim git rebase -i … |
+大仓库"慢"是复合症，按层对症下药（补 34/70 节的机制层）：
+
+| 层 | 技术 | 开启 | 生效面 |
+| --- | --- | --- | --- |
+| 索引 | untracked cache + fsmonitor | git config core.untrackedCache true; core.fsmonitor true | status 从全树扫到增量扫 |
+| 索引 | sparse index | git sparse-checkout set --cone + git config index.sparse true | index 体积只算关心的目录 |
+| 图 | commit-graph（split） | git commit-graph write --reachable --split | log/blame/merge-base 走图不走对象链 |
+| 包 | multi-pack-index | git multi-pack-index write + expire | 多包查找免全局扫描 |
+| 网络 | prefetch | git maintenance start（hourly） | fetch 谈判总在预取基础上 |
+| 对象 | 增量 repack | git maintenance（weekly） | 松散对象与碎包归拢 |
+
+- **`git maintenance start` 的注册面**：Linux 走 systemd timer、
+  macOS 走 launchd、Windows 走计划任务。incremental 策略把
+  **gc 关掉**，换成 hourly（commit-graph、prefetch）、
+  daily（loose-objects、pack-refs）、weekly（incremental-repack、
+  gc）——"每天跑一次 gc"是过时知识。
+- **fsmonitor**：daemon 记录文件系统变更，status 只查变更集；
+  百万文件级仓库观感提升最大。
+- **commit-graph 验证与重建**：`git commit-graph verify`；
+  alternates 共享对象库时 split 模式只追加不重写。
+- **坑位**：sparse index 与老版 IDE/某些索引扫描工具不兼容 ——
+  出问题 `index.sparse=false` 立即回退，再 `git reset --mixed`
+  重建索引。
 
 ## 130. 附录·终页
 

@@ -3,20 +3,19 @@
 
 ## 必看内容
 
-- **语义优先**：先选对 HTML 元素（button/a/nav/main），再谈样式。
-  语义即无障碍即 SEO 即测试锚点 —— 用 div+onclick 模拟按钮是
-  万恶之源（键盘不可达/读屏不可读/焦点管理全丢）。
-- **移动优先 + 375px 基线**：一切布局在 375px 宽（主流手机）先成立，
-  再向上增强。viewport meta 必备；固定像素宽度（>375px）是横向滚动
-  之源 —— 用 max-width + 百分比/fr 代替。
-- **布局两大件吃透**：Flexbox（一维）与 Grid（二维）。
-  决策：一行/一列排 → Flex；行列同时要摆 → Grid。
-  内联间距用 gap（告别 margin 负值 hack）。
-- **级联与特异性**：样式冲突时按（内联 > id > class > 元素）与
-  后写的赢 —— 排查顺序：选择器特异性 → 源顺序 → 继承。
-  !important 是"我放弃了"的告白，只在覆盖第三方时偶用。
-- **状态驱动**：类名/attr 表达状态（.is-open / [disabled]），
-  样式只读状态不改逻辑；JS 改类名，CSS 管呈现。
+- **语义是合规底线**：先选对元素（button/a/nav/main），div+onclick
+  模拟按钮在键盘/读屏/焦点上全塌（7 节深水）。语义错误的修复成本
+  随交互复杂度指数上涨。
+- **渲染管线定价**：每个样式决策先问触发哪一级——layout > paint >
+  composite。动画只碰 transform/opacity；改动范围用 contain 与
+  content-visibility 圈住，别让一个 class 改动重算整页（1/28 节）。
+- **INP 纪律（FID 已死，2024-03 起换榜）**：交互 p75 <200ms；
+  输入回调 >50ms 必须让出（scheduler.yield() 切片）；先量
+  LoAF 再动手优化（43 节指标口径）。
+- **容器优先响应式**：组件适配交给 @container + cqi 单位（27 节），
+  页面断点只管壳层 —— 组件可移植性的分水岭。
+- **状态驱动 + 失效预算**：类名/attr 表达状态，JS 改类名、CSS 管呈现；
+  批量 DOM 写入后统一读几何，禁 layout thrashing（98 节）。
 - **产物必过双查**：静态 HtmlAnalyzeLayout（骨架/响应式/a11y）+
   需要真实渲染时 BrowserAnalyzeLayout（动态几何）—— 溢出/重叠
   这类问题只有动态查得出。
@@ -25,165 +24,283 @@
 
 | 想找什么 | 去哪一节 |
 | --- | --- |
-| HTML 元素总表 | 1. 元素总表 |
-| 全局属性 | 2. 全局属性 |
-| 文档骨架 | 3. 文档骨架 |
-| 语义地标 | 4. 地标 |
-| 表单元素 | 5. 表单元素 |
-| 媒体元素 | 6. 媒体 |
-| 链接与按钮 | 7. 链接按钮 |
-| 列表与表格 | 8. 列表表格 |
-| 内联语义 | 9. 内联语义 |
-| 废弃元素黑名单 | 10. 废弃黑名单 |
-| 选择器体系 | 11. 选择器 |
-| 伪类速查 | 12. 伪类 |
-| 伪元素速查 | 13. 伪元素 |
-| 层叠与特异性 | 14. 特异性 |
-| 继承与初始值 | 15. 继承 |
-| 盒模型 | 16. 盒模型 |
-| 外边距合并 | 17. margin 合并 |
-| Flex 布局 | 18. Flex |
-| Grid 布局 | 19. Grid |
-| 定位体系 | 20. 定位 |
+| 解析器与样式失效内幕 | 1. 解析与失效内幕 |
+| 元素语义深水陷阱 | 2. 语义深水陷阱 |
+| 脚本调度与预加载扫描器 | 3. 加载调度内幕 |
+| 地标/标题大纲进阶 | 4. 地标与大纲进阶 |
+| 表单 API 深水 | 5. 表单深水 |
+| 图片与媒体管线 | 6. 媒体与图片管线 |
+| 链接/按钮深水 | 7. 链接与按钮深水 |
+| 表格列表可达性深水 | 8. 表格与列表深水 |
+| 内联语义与排版细节 | 9. 内联语义深水 |
+| 隐藏/可见性语义矩阵 | 10. 可见性与隐藏 |
+| 选择器匹配引擎内幕 | 11. 选择器引擎内幕 |
+| 动态伪类与交互成本 | 12. 动态伪类 |
+| 伪元素与无障碍 | 13. 伪元素深水 |
+| 特异性工程 | 14. 特异性工程 |
+| 继承关键字决策表 | 15. 继承深水 |
+| 盒树与逻辑属性 | 16. 盒模型深水 |
+| margin 折叠与 BFC | 17. margin 合并 |
+| Flex 深水陷阱 | 18. Flex 深水 |
+| Grid/subgrid/masonry | 19. Grid 深水 |
+| 包含块与锚定定位 | 20. 定位深水 |
 
-## 1. 元素总表
+## 1. 解析与失效内幕
 
-（按用途分组；★=高频）
+**解析器不是"读源码建树"这么简单**——元素表人人会背，这节给内幕：
 
-| 组 | 元素 |
-| --- | --- |
-| 文档 | html★ body head title★ meta★ link style script★ |
-| 分区 | header★ nav★ main★ section★ article★ aside★ footer★ h1-h6★ |
-| 文本 | p★ br hr pre blockquote★ ol/ul/li★ dl/dt/dd |
-| 内联 | a★ strong★ em★ code★ span★ mark small sub/sup abbr time★ |
-| 表格 | table★ thead tbody tr★ th★ td★ caption colgroup |
-| 表单 | form★ input★ textarea★ select★ option★ button★ label★ fieldset |
-| 媒体 | img★ picture★ video★ audio★ source track iframe★ canvas★ |
-| 嵌入 | object embed svg★ |
-| 分组 | div★ figure★ figcaption details★ summary dialog★ |
-| 脚本 | script★ noscript template★ |
+- **两套扫描并行**：主解析器逐 token 建树；预加载扫描器
+  （preload scanner）在源码流里前瞻抓 img/script/css 提前下载。
+  推论：JS 动态插入的资源（document.write、运行时拼接 src）
+  预加载器看不见 —— LCP 图片交给 HTML 声明，别交给运行时注入。
+- **解析器会"改写"你的源码**：`<p><div>` 自动闭合 p；表格里
+  杂散文本被 foster parenting 移出表格；嵌套交互元素
+  （a 里套 button）被强制拆树 —— 检视 DOM 树而不是源码
+  （devtools Elements 才是真身，静态分析器同理由）。
+- **CSS 阻塞脚本执行**：`<script src>` 前有未就绪的样式表时，
+  脚本等 CSSOM 才跑（防未样式闪烁的同步约束）。
+  css → js → DOM 解析互相咬合，这是"JS 放头部也慢"的真因。
+- **样式失效按集合算**：引擎给每个 class/attr 预计算失效集
+  （invalidation sets）。`.active` 改动只重算相关子树；但选择器
+  越"泛"（`.a .b .c` 长链、广域 `:has()`），失效集越大，
+  改一次 class 重算半页。
+- **过度泛化选择器是慢性毒**：Edge 109+/Chrome 的 Performance
+  面板有 Selector Stats，列出每次 Recalculate Style 里
+  最贵的选择器（匹配次数 × 耗时）。重构方向：用 `contain`
+  /`content-visibility` 把失效范围圈进组件（28 节）。
+- **DOM 写读交替 = layout thrashing**：`el.style.width=…;
+  el.offsetWidth;` 每轮强制同步布局。纪律：批量写、集中读，
+  或快照缓存几何值。读写分离是 98 节排查的第一刀。
 
-## 2. 全局属性
+## 2. 语义深水陷阱
 
-| 属性 | 用途 |
-| --- | --- |
-| id | 唯一标识（锚点/label 关联） |
-| class | 样式钩子★ |
-| style | 内联（诊断用，生产少用） |
-| title | 悬浮提示（无障碍弱，别当唯一说明） |
-| hidden | 隐藏 |
-| lang | 语言（html 上必设） |
-| dir | 文字方向（rtl） |
-| tabindex | 焦点顺序（0=顺自然序；-1=可编程聚焦） |
-| data-* | 数据挂载（JS 桥） |
-| aria-* | 无障碍语义 |
-| draggable | 拖拽 |
+LLM 都知道 strong/em 是什么；难的是这些"看起来对但机器读错"的坑：
 
-## 3. 文档骨架
+- **label 双重关联**：`<label>` 同时 `for` 又包裹 input —— 语义
+  重复不叠加；两个 label 争一个 input 会翻车。一控件一标签。
+- **标题层级即大纲**：h1-h6 是唯一的大纲机制（HTML5 的 document
+  outline 算法从未实现、已从规范删除）。跳级（h2→h4）读屏照报
+  深度，但页面大纲断了 —— 修大纲改层级，别加 role。
+- **address 不是通讯地址**：语义是"联系人/作者信息"；页脚塞
+  公司地址是经典误用（SEO/读屏都不认账）。
+- **figure/figcaption 位置约束**：figcaption 必须是 figure 的
+  **首个或末个**子元素，夹中间会被移出图注语义。
+- **ol 的法律语义**：编号属于内容本身（start/reversed 支持
+  "第 3 条起"类条款）。ol 播报密度高（"第 x 项共 y 项"），
+  顺序无关的长列表用 ul 减噪。
+- **a 无 href ≠ 链接**：无 href 的 a 只是样式钩子（不可聚焦/
+  无链接语义）；禁用态保留 Tab 序用 `<a aria-disabled="true">`。
+- **hidden 与组件库 CSS 打架**：UA 的 `[hidden]{display:none}`
+  特异性低，`.panel{display:flex}` 能顶回去 —— 规范级防御写法
+  `[hidden]:not([hidden=until-found]){display:none!important}`。
+- **alt 决策树**：信息图 alt 传达信息本身；纯装饰 alt=""
+  （别给 title）；文字截图把文字写进 alt。判定题：去掉图后
+  语境损失什么，alt 就补什么。
+- **交互元素嵌套被拆树**：button 套 a、label 套 button 都会被
+  解析器拆成兄弟（1 节）—— DOM 已变，样式再对也白搭。
+
+## 3. 加载调度内幕
+
+defer/async 的表谁都会背；调度内幕与 2024-2026 的正确姿势：
 
 ```html
-<!DOCTYPE html>
-<html lang="zh">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>页面名 - 站点名</title>
-  <meta name="description" content="…">
-  <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-  <!-- landmarks (4 节) -->
-  <script src="app.js" defer></script>
-</body>
-</html>
+<script type="module" src="app.js"></script>    <!-- module 默认 defer -->
+<link rel="modulepreload" href="/chunks/x.mjs">   <!-- ESM 子图提前握手 -->
+<img src="hero.avif" fetchpriority="high">        <!-- LCP 主资源提权 -->
+<script type="speculationrules">…</script>         <!-- 预取/预渲染声明 -->
 ```
 
-- title 必有；charset 必须 head 前部；defer 让脚本不阻塞解析。
+- **modulepreload ≠ preload**：前者提前**解析并实例化**模块图
+  （含依赖），preload 只下载字节。碎片化 ESM 包不配
+  modulepreload = 自造瀑布。
+- **fetchpriority 三档**（high/auto/low）：与 loading=lazy 组合
+  语义——LCP 图 `fetchpriority=high`；首屏以下 `lazy+low`。
+  声明式永远比引擎猜快。
+- **speculation rules（Chromium 生态可用）**：内联 JSON 声明
+  prefetch/prerender 与触发条件（eagerness: conservative/moderate/
+  /eager，或 document rules 的 href_matches/where）。对"登录后
+  首跳"这类高置信路径 prerender ≈ 0ms 导航；其他引擎当渐进增强。
+- **CSS 双阶段阻塞**：样式表既阻塞渲染也阻塞脚本执行（1 节）。
+  关键 CSS 内联 + 其余异步（media="print" onload 切换）是老但稳
+  的招；预加载扫描器看得见 head 里的样式表，看不见 JS 注入的。
+- **103 Early Hints**：服务端先回 103（Link: rel=preload 头）再
+  慢慢算正文 —— 浏览器在等首字节时就开始拉资源，SSR 慢页面
+  白捡几百毫秒。
+- **纪律**：head 串行样式表 = 渲染串行；HTTP/2+ 连接数限制消失
+  但单流队头阻塞依旧要求首屏资源少而精（44 节加载策略对账）。
 
-## 4. 地标
+## 4. 地标与大纲进阶
 
-| 元素 | 语义 | 每页数量 |
-| --- | --- | --- |
-| header | 页头/区块头 | 多个可 |
-| nav | 导航 | 多个可 |
-| main | 主内容 | **仅一个** |
-| aside | 侧栏/补充 | 多 |
-| footer | 页脚/区块脚 | 多 |
-| section | 主题分组（带标题） | 多 |
-| article | 独立可分发内容 | 多 |
-| hgroup | 标题组 | 少用 |
-- 读屏用户靠地标跳转 —— 全 div 页面等于没有导航。
+地标表人人会查；实战里的裁剪与坑：
 
-## 5. 表单元素
+- **main 全页唯一**；nav/aside/footer 可多个但**必须可区分**：
+  每个 nav 配 aria-label（"主导航"/"面包屑"），读屏地标列表里
+  同名地标等于没标。
+- **别用 ARIA 复述原生语义**：`<main role="main">` 冗余，
+  `<nav role="navigation">` 同理。ARIA 第一律：原生可用就
+  不补 role —— 补错比不补更糟（role 是覆盖不是叠加）。
+- **视觉重排 ≠ 阅读重排**：flex/grid 的 order、direction 只改
+  渲染序，读屏与键盘仍按 DOM 序。"右上角重要"就挪 DOM。
+- **display:none 从无障碍树摘除**；`content-visibility:hidden`
+  保留渲染状态（恢复免重排）—— 频繁开关的大段内容切换它
+  比 display 快一个量级（10 节矩阵）。
+- **skip link 先于一切**：`<a href="#main">跳到主内容</a>`
+  放 body 首元素，聚焦才显形。地标跳转是第二层保险，不能替代。
+- **阅读模式/正文抽取器（Readability 系）认的是**：article
+  包裹 + 层级完整的 h* + 段落密度。整页 div 的"设计稿神还原"
+  在阅读模式里直接裸奔。
+- **header/footer 是区块作用域的**：嵌在 section/article 里
+  就是该区块的头脚，不产生页面级地标 —— 想全局唯一就别嵌套。
 
-| 元素 | 要点 |
-| --- | --- |
-| input[type=text/email/number/password…] | 配 label（for/id）★ |
-| input[type=checkbox/radio] | name 分组；fieldset+legend 归组 |
-| select/option | 长列表考虑自定义组件（注意 a11y 补齐） |
-| textarea | resize 控制位 |
-| button[type=submit/button/reset] | 表单内必须显式 type（默认 submit 陷阱） |
-| label | 永远配（点击区翻倍） |
-| datalist | 原生自动补全 |
-| output | 计算结果显示 |
-| progress/meter | 进度/度量 |
+## 5. 表单深水
 
-## 6. 媒体
+表单元素表跳过；这节是 API 行为差与移动端实战：
 
-| 元素 | 要点 |
-| --- | --- |
-| img | alt 必答（装饰图 alt=""）；宽高属性防 CLS |
-| picture | 多源（srcset+sizes 响应式） |
-| video/audio | controls；字幕 track |
-| iframe | title 必给（读屏）；sandbox 最小面 |
-| canvas | 无障碍要 aria-label 补充说明 |
+- **submit() 跳过校验**：`form.submit()` 直接发请求（不触发
+  constraint validation、不冒泡 submit 事件）；
+  `form.requestSubmit()` 才是"用户点按钮"等价物（走校验+
+  事件+submitter）。自动保存草稿别误用 submit()。
+- **submitter 语义**：按钮的 name/value 只有**被点的那颗**进
+  FormData —— 保存/发布多按钮靠它分流；回车提交没有按钮值，
+  服务端别依赖它。
+- **校验三件套**：checkValidity()（不显错）/reportValidity()
+  （弹原生 UI）/setCustomValidity()（自定义规则，空串清除）。
+  `:user-invalid` 只在交互过后才红，比 :invalid 少折磨人。
+- **form 属性跨 DOM 关联**：input 在表单外用 `form="id"` 挂接
+  （弹层里的控件也能进表单）；`formdata` 事件在提交前注入/
+  改写字段（token、计算值）。
+- **Enter 的隐式提交**：单行输入表单里 Enter 触发首个 submit
+  按钮；没有 submit 按钮的表单部分浏览器直接提交。防误提：
+  给非提交按钮显式 type="button"。
+- **移动键盘三开关**：type 决定校验与语义，inputmode 决定键盘
+  （numeric/decimal/search），autocomplete 决定自动填充 token
+  （email/one-time-code/shipping postal-code…）。一次性验证码
+  `autocomplete="one-time-code"` 在 iOS 直接弹建议填充。
+- **checkbox 未勾不上报**：FormData 里没有未勾项 —— 服务端
+  "缺字段=否"要写成显式约定（或配 hidden 哨兵）。
+- **自定义控件进原生表单**：formAssociated: true +
+  ElementInternals（setFormValue/setValidity）让 Web Component
+  拥有原生校验与 FormData 上报 —— 别再用 hidden input 同步。
 
-## 7. 链接与按钮
+## 6. 媒体与图片管线
 
-| 语义 | 用 |
-| --- | --- |
-| 跳转（href） | a |
-| 动作（无跳转） | button |
-- 混用后果：a 不可禁用语义（disabled 无效）、button 无 href 历史。
-- target="_blank" 配 rel="noopener"（安全+性能）。
+- **srcset 是"给预算"不是"下命令"**：浏览器按 DPR×显示尺寸算
+  候选分；sizes 写错（与真实布局不符）会系统性选错档。
+  sizes 必须与 CSS 实际宽度对账（BrowserAnalyzeLayout 量）。
+- **宽高属性是 CLS 保证金**：width/height（或 aspect-ratio）
+  在图片加载前占位；响应式图配 width/height 属性 +
+  height:auto 纵横比公式照样成立。
+- **LCP 图铁律**：首屏大图必须由 HTML 声明（预加载扫描器看得见）
+  + fetchpriority="high" + 绝不 lazy；CSS background 装首屏
+  主视觉 = 主动放弃预加载扫描器。
+- **decode="async"**：大图解码移出主线程，插入 DOM 不卡帧；
+  loading="lazy" 只做视口外懒加载（阈值不可调，别拿它驱动
+  无限滚动 —— 142 节 IO 观察）。
+- **格式梯子（2025 口径）**：AVIF 压缩比最高但编码慢（CDN 动态
+  转码慎用）；`<picture><source type="image/avif"><source
+  type="image/webp"><img>` 逐级回落。JPEG-XL 生态位已收缩
+  （Chrome 移除支持），生产线 = AVIF+WebP+JPEG。
+- **picture 管艺术方向，srcset 管密度**：同构图不同分辨率 →
+  srcset/sizes；构图本身变（裁切/竖版）→ picture media。
+- **video 纪律**：preload="none" + poster；autoplay 必须 muted+
+  playsinline；iOS 上 load() 要用户手势。canvas 大图离屏化：
+  OffscreenCanvas 把光栅移进 Worker。
+- **iframe 三连**：loading="lazy"、title 必填（读屏报"框架"）、
+  sandbox 最小面 —— 第三方内容加 credentialless（无凭证拉取，
+  隔离 cookie）。
 
-## 8. 列表表格
+## 7. 链接与按钮深水
 
-| 场景 | 元素 |
-| --- | --- |
-| 无序/有序 | ul/ol + li（导航也该是列表） |
-| 键值描述 | dl/dt/dd |
-| 数据表 | table + thead/tbody + th（scope 属性） |
-| 布局用表 | **禁止**（CSS 的事） |
-- th scope="col/row" 给读屏建立表头映射。
+- **target="_blank" 现代语义**：现代浏览器已隐含 noopener
+  （新页拿不到 window.opener），但**不隐含 noreferrer** ——
+  外链要藏 referrer 显式写全 rel="noopener noreferrer"。
+- **download 只对同源诚实**：跨源资源的 download 属性会被忽略
+  （按导航处理）—— 真下载必须服务端配 Content-Disposition。
+- **button 默认 type=submit 是表单内事故源**：表单里每个非提交
+  按钮都显式 type="button"；提交分流用按钮上的
+  formaction/formmethod/formnovalidate 改写。
+- **disabled vs aria-disabled**：disabled 把控件移出 Tab 序、
+  不触发事件、tooltip 不可达；aria-disabled 保留焦点与 hover
+  解释（"为什么禁用"能被读到）。教育型禁用态选后者 +
+  click 时说明原因。
+- **焦点修复看归属**：自定义元素 shadow root 里点按钮默认焦点
+  落 host —— delegatesFocus: true 让真按钮收焦点，否则
+  :focus-visible 样式全打空（38 节）。
+- **popover 与 invoker（2025）**：popovertarget 让按钮零 JS
+  开关弹层（light dismiss 自动配）；command/commandfor
+  （Invoker Commands API）把按钮语义化成命令声明 —— 能声明
+  就不写 addEventListener。
+- **href 必须是可分享 URL**：onclick 导航 = 右键复制链接/
+  中键新开全废。SPA 路由也用 `<a href>` 真地址 + 拦截点击，
+  别 span onclick。
 
-## 9. 内联语义
+## 8. 表格与列表深水
 
-| 元素 | 何时 |
-| --- | --- |
-| strong | 重要（语义） |
-| b | 仅视觉加粗（无语义时） |
-| em | 强调（语气） |
-| i | 仅视觉斜体 |
-| code/kbd/samp | 代码/键入/输出 |
-| mark | 检索高亮 |
-| abbr[title] | 缩写首次出现 |
-| time[datetime] | 机器可读时间 |
-| del/ins | 修订标记 |
-| q/cite | 短引/出处 |
+- **th 要 scope 才有映射**：单行表头 scope="col"，行头
+  scope="row"；双级表头才用 headers 属性逐格指向（维护苦，
+  能拆就拆）。
+- **display 改写即语义蒸发**：`table{display:block}`（移动端
+  "响应式表格"常用）会把表格语义从无障碍树摘除 —— 必须补
+  role="table/row/cell" 全套，或改真列表/卡片区。
+- **列表同理**：Safari 上 `ul{list-style:none}` 曾移除列表语义
+  （Chrome 保留）—— 深度定制的导航加 role="list" 保险。
+- **排序表头**：aria-sort="ascending/descending" 只放在**当前
+  排序键**的 th 上；点击目标是包住文字的真 button。
+- **宽表性能开关**：table-layout:fixed 跳过自动列宽测量
+  （单元格内容不再参与布局求解）—— 千行级表格布局从几百 ms
+  降到几十 ms 的关键。代价：溢出截断自己管。
+- **sticky 表头结构约束**：外层 overflow 容器滚动 + th 上
+  position:sticky；祖先链不能再有 overflow:hidden（59 节
+  同坑）。sticky 表头 + table-layout:fixed 是宽表双保险。
+- **数据表 vs 展示表**：面向机器的表（导出/剪贴）保完整语义；
+  图表类可 role="presentation" + aria-describedby 旁路
+  文字总结。
 
-## 10. 废弃黑名单
+## 9. 内联语义深水
 
-| 禁 | 替代 |
-| --- | --- |
-| center/font/big | CSS |
-| align 属性 | CSS |
-| br 撑间距 | margin |
-| table 布局 | Flex/Grid |
-| iframe 滚动边框 | CSS overflow |
-| onclick 的 div | button |
-| &nbsp; 缩进 | margin/padding |
-| basefont/acronym | CSS/abbr |
+- **b/i 与 strong/em 不同物**：strong/em 进"朗读强调"（读屏
+  变调），b/i 只是视觉遗留。文案关键词用 strong；纯排版加粗
+  用 b + 注释说明意图。
+- **abbr 只在首次出现挂 title**，且 title 悬浮不可达触屏 ——
+  重要缩写第一次出现直接展开写全（"CSS（层叠样式表）"）。
+- **time 的 datetime 必须机器可解析**：`<time>3 天前</time>`
+  不合法；写 `<time datetime="2025-06-01">3 天前</time>`。
+  时区：datetime 带偏移或 Z，别信"读者时区"。
+- **用户生成内容包 bdi**：用户名混 RTL 字符会把整段标点反转
+  —— 排行榜/评论区给不可信文本 `<bdi>`（或
+  unicode-bidi:isolate）。
+- **mark 在引用里是"原文没有的审校强调"**；搜索高亮是合法
+  用法；装饰高亮用 span+背景色。
+- **del/ins 带审计属性**：cite（改因链接）+ datetime ——
+  法务/版本对照页的机器可读审计线。
+- **装饰分隔符读出来很吵**：`<span aria-hidden="true">|</span>`
+  让读屏跳过；反过来纯 CSS 生成的分隔符进不了复制粘贴 ——
+  关键数据别放 ::before content。
+- **断词先看 lang**：hyphens:auto 生效前提是 lang 正确
+  （html lang 是 i18n 总开关）；CJK 微调用 word-break/
+  line-break，中文别上 justify（末行标点悬挂各引擎不一致）。
+
+## 10. 可见性与隐藏
+
+六种"看不见"语义完全不同，选错就是事故：
+
+| 手段 | 布局占位 | 焦点/交互 | 无障碍树 | 典型用途 |
+| --- | --- | --- | --- | --- |
+| display:none | 否 | 否 | 出树 | 彻底移除 |
+| visibility:hidden | 是 | 否 | 出树 | 占位隐藏（可过渡） |
+| opacity:0 | 是 | **是（还能点！）** | 在树 | 入场前态；禁点击补 pointer-events |
+| content-visibility:hidden | 保留盒子 | 否 | 出树 | 大段内容开关（保渲染状态，恢复免重排） |
+| hidden=until-found | 否（查找命中即展开） | 否 | 出树 | 可被页内查找展开的折叠内容 |
+| inert | 是 | **整子树锁死** | 出树 | 模态背景冻结（键盘+读屏+指针全锁） |
+
+- **模态正确姿势**：dialog.showModal() 自动给背景 inert ——
+  手写半透明背景而背景仍可 Tab，是焦点越狱头号来源（38 节）。
+- **content-visibility:auto**：视口外跳过渲染（保盒子与状态），
+  配 contain-intrinsic-size 给预估高度防滚动条跳变（28 节）。
+- **.sr-only 剪裁法**（视觉隐藏但读屏可达）：1px clip-path
+  裁剪而非 display:none —— 图标按钮补文字全靠它。
+- **选型口诀**：关语义用 inert；省渲染用 content-visibility；
+  彻底删用 display:none —— 三者不可互换。
 
 ## 快速索引 · 续（21-34 节）
 
@@ -206,11 +323,20 @@
 
 ## 21. 层叠
 
-- z-index 只在定位元素/flex/grid 子项上生效；
-  同 z 后 DOM 序赢。
-- 创建层叠上下文的常见操作：position+z、opacity<1、transform、
-  filter、isolation、will-change。
-- 排查"盖不住"：看两元素是否各有上下文（比较上下文的 z）。
+- z-index 只对"创建层叠上下文的元素"生效：定位+z、flex/grid
+  子项、opacity<1、transform/filter/perspective、isolation、
+  will-change、contain:paint、position:fixed/sticky（隐式）。
+- **同上下文内的绘制顺序**：背景边框 → 负 z 子上下文 → 块级流 →
+  浮动 → 行内 → z:auto/0 → 正 z 子上下文。"文字穿到背景上"
+  类 bug 对照这张序表秒解。
+- 排查"盖不住"三步：①两元素是否各自成上下文（比的是**上下文
+  的 z**，不是元素 z）②父上下文的 z 先于一切子元素决胜
+  ③DOM 顺序只在同 z 同层比较。DevTools 3D 视图直看上下文塔。
+- z-index 值域 ±2147483647，越界回绕为负 —— 巨型 z 是时代眼泪，
+  isolation 隔离 + @layer 重构才是解（14 节）。
+- **containment/isolation 是便宜的隔离器**：组件根上加
+  isolation:isolate，内部 z 永不外泄 —— 第三方组件共存
+  （弹层/地图/播放器）的秩序底线。
 
 ## 22. display
 
@@ -226,16 +352,25 @@
 
 ## 23. 单位
 
-| 单位 | 相对什么 |
-| --- | --- |
-| px | 绝对（缩放下不随用户字号） |
-| em | 当前字号 |
-| rem | 根字号（用户偏好友好）★ |
-| % | 父级对应尺寸 |
-| vw/vh | 视口 |
-| dvh/svh | 动态/小视口高（移动地址栏场景）★ |
-| ch | "0" 字宽 |
-| fr | grid 份 |
+- **vh 的移动端原罪**：地址栏伸缩让 100vh 抖动。
+  dvh=动态视口（跟手但每次地址栏变化都重排）、svh=最小视口
+  （固定 UI 的稳定选择）、lvh=最大视口（基本别用）。
+  全屏容器 100dvh，吸底栏 100svh。
+- **视口单位动画化代价**：dvh 变化触发整容器重排 —— 拿它做
+  transition 等于每帧 layout。要动画的内高度用固定值 +
+  svh 定界。
+- **容器单位族（配 container-type）**：cqw/cqh/cqi/cqb ——
+  字号/间距随**组件容器**缩放，配 clamp 实现"组件级流式排版"
+  （27 节联动）；注意 @container 内的百分比基准也切到容器。
+- **em 在媒体查询里是初值字号**：`@media (min-width: 40em)`
+  的 em 基于初始 font-size（通常 16px），与 html 上改字号
+  无关 —— 想随用户字号缩放断点的人常被这坑反咬。
+- **行高无单位**：1.5 会被子元素**继承比例**再乘自身字号；
+  1.5em 继承的是算完的绝对值 —— 多层嵌套文本用无单位。
+- **px 不是物理像素**：CSS px 是参考像素，DPR/缩放下由设备
+  换算；发丝线用 0.5px（iOS）或媒体查询分档。
+- **rem 的可及性承诺**：用户字号设置通过 rem 生效 ——
+  字号/间距 rem 化，边框/阴影 px 化，"缩放不破版"组合拳。
 
 ## 24. 溢出
 
@@ -278,14 +413,29 @@
 
 ## 28. 现代选择器
 
-| 选择器 | 用途 |
-| --- | --- |
-| :is(a, b) | 列表归并 |
-| :where(a, b) | 同上但零特异性 |
-| :has(> img) | 父选择（按子定父）★ |
-| :nth-child(An+B) | 序号模式 |
-| :focus-visible | 键盘焦点才显（鼠标不显）★ |
-| :placeholder-shown | 空输入态 |
+- **:has() 的性能画像**：引擎对 :has 做失效缓存（DOM 变化
+  即失效重算）。窄化用法几乎免费：`:has(> img)`（只看子代）、
+  `:has(+ .err)`（只看邻接）。**深后代 + 多分支**的
+  `:has(.x .y)` 会把失效集膨胀成整树监视 —— 单页几十处就是
+  Recalculate Style 的大头。
+- **:is() 双刃**：①容错解析——参数里一个不认识的选择器不会
+  废整组；②特异性取**参数里最贵者**——`:is(#a, .b)` 带着
+  id 特异性；要归零用 :where()。
+- **:nth-child(An+B [of S])**：先按 S 过滤再数序号——"第 3 个
+  .card"不再依赖 .card:nth-child(3) 那种数兄弟全序的脆弱写法。
+- **属性选择器 flags**：`[attr="Val" i]`（ASCII 不分大小写，
+  class/rel 常用）、`[attr="Val" s]`（强制区分）。JS 侧校验
+  记住 ES2024 RegExp `v` 标志（unicode sets：`[\p{L}--\p{ASCII}]`
+  集合差/交）—— 但表单 pattern 属性只吃 JS 正则子集，
+  两端不同构。
+- **:user-valid/:user-invalid** 优于裸 :invalid：后者表单一
+  打开就标红（值还空着）。校验 UI 时序详见 5 节。
+- **:defined/:fullscreen/:modal**：自定义元素升级完成/全屏/
+  模态打开才生效的态钩子 —— 少一个全局类就少一次全树失效。
+- **containment 隔离失效**（与 11 节引擎内幕呼应）：
+  contain:layout/paint/style 封住子树失效边界，长列表/
+  仪表盘大页标配 `content-visibility:auto` +
+  contain-intrinsic-size（10 节）。
 
 ## 29. CSS 变量
 
@@ -408,11 +558,11 @@
 
 ## 39. 对比度
 
-| 文本 | 最低 |
+| 文本 | 最低对比度 |
 | --- | --- |
-| 正文 | 4.5:1 |
-| 大字(≥18pt) | 3:1 |
-| 图形/UI 件 | 3:1 |
+| 正文 | ≥四点五比一（4.5:1） |
+| 大字(≥18pt) | ≥3:1 |
+| 图形/UI 件 | ≥3:1 |
 - 工具：对比度计算器；暗色模式单独校验。
 
 ## 40. 文本缩放
@@ -504,7 +654,7 @@ unicode-range: …;               /* 中文字体子集化必做 */
 | color | 颜色 | 继承 |
 | font-size | rem | 23 节 |
 | font-weight | 400/700（变量字重） | 数字优于关键词 |
-| line-height | 1.5（无单位倍数）★ | 正文必设 |
+| line-height | 无单位倍数（1.5）★ | 正文必设 |
 | text-align | start/end（逻辑）★ | rtl 友好 |
 | text-decoration | underline + color/thickness | 链接下划线可美化 |
 | text-transform | uppercase | 只视觉 |
@@ -912,10 +1062,10 @@ new IntersectionObserver(cb, { rootMargin: "200px" })
 
 | 想找什么 | 去哪一节 |
 | --- | --- |
-| JS 核心·类型 | 87. 类型 |
-| 相等与真值 | 88. 相等 |
-| 数组方法 | 89. 数组方法 |
-| 解构与展开 | 90. 解构 |
+| JS 核心·类型判别深水 | 87. 类型判别深水 |
+| 相等语义三件套 | 88. 相等语义三件套 |
+| 数组方法与引擎表示 | 89. 数组方法与引擎表示 |
+| 解构与展开深水 | 90. 解构与展开深水 |
 | 异步模式 | 91. 异步 |
 | Promise 组合 | 92. Promise 组合 |
 | 错误处理 | 93. 错误 |
@@ -923,45 +1073,76 @@ new IntersectionObserver(cb, { rootMargin: "200px" })
 | 闭包 | 95. 闭包 |
 | 常见 JS 坑 | 96. JS 坑 |
 
-## 87. 类型
+## 87. 类型判别深水
 
-| typeof | 结果 |
-| --- | --- |
-| null | "object"（历史锅） |
-| function | "function" |
-| 数组 | "object"（用 Array.isArray★） |
-| undeclared vs undefined | 引用错 vs 未赋值 |
-- === 全比较；== 只在明确知道隐转规则时用（88 节）。
+- **跨 iframe/Realm 的 instanceof 必假**：两个 window 各有
+  Array 构造器，`iframe.contentWindow.Array !== 本域 Array`。
+  判数组一律 Array.isArray（跨 Realm 安全）；判 TypedArray 用
+  ArrayBuffer.isView。
+- **品牌判别用 Object.prototype.toString 或 #private**：
+  `Object.prototype.toString.call(x)` 拿内置标签（跨 Realm 稳）；
+  自定义类用 `#field in obj`（真品牌检查，子类骗不过；Proxy
+  上做 `#field in` 会 throw）。
+- typeof 的边界：document.all 是唯一 typeof 得 "undefined" 的
+  对象（历史兼容）；async function 得 "async function"；
+  判可调用最稳也是 toString 系。
+- 鸭子辨型陷阱：arguments 是类数组（Symbol.toStringTag 为
+  "arguments"）；NodeList 可迭代但不是数组 ——
+  Array.from(x) 之前别做 Array.isArray 断言。
 
-## 88. 相等
+## 88. 相等语义三件套
 
-| 表达式 | 结果 |
-| --- | --- |
-| null == undefined | true（仅此一对） |
-| NaN == NaN | false（用 Number.isNaN） |
-| [] == false | true（陷阱区） |
-- 结论：一律 ===；对象判空 Object.keys(x).length。
+规范里相等有**三种**，选错语义就是 bug：
 
-## 89. 数组方法
+| 语义 | NaN | -0 | 使用者 |
+| --- | --- | --- | --- |
+| IsStrictlyEqual（===） | 不等 | 相等 | 一切显式比较 |
+| SameValue（Object.is） | 相等 | 不等 | 属性键查重/defineProperty |
+| SameValueZero | 相等 | 相等 | Map/Set 键、includes、from |
 
-| 方法 | 返回 | 改原 |
-| --- | --- | --- |
-| map/filter | 新数组 | 否 |
-| find/findIndex | 元素/idx | 否 |
-| some/every | bool | 否 |
-| reduce | 累计值 | 否 |
-| includes | bool | 否 |
-| flat/flatMap | 拍平 | 否 |
-| sort | 排序后原组 | 是★ |
-| push/splice | — | 是 |
+- Map/Set 的键去重用 SameValueZero：`NaN === NaN` 为假但
+  `new Set([NaN]).size === 1`；反过来 -0 在 Map 里与 0 同键
+  （坐标/方向缓存会撞，Object.is 才能区分）。
+- == 的合法场景只剩 `x == null`（null/undefined 双检）；
+  其他全按 ===。对象判空 Object.keys(x).length。
+- 深比较别手挫（循环引用/键序/Symbol）——用
+  assert.deepStrictEqual 语义（node:test/vitest 内建）。
 
-## 90. 解构
+## 89. 数组方法与引擎表示
 
-```js
-const { a, b: alias, ...rest } = obj;
-const [x, , z] = arr;         // 跳位
-f({ ...defaults, ...options }); // 合并（浅）
-```
+- **元素种类（Elements Kind）单向劣化**：packed-SMI →
+  packed-double → packed → holey。`delete arr[i]` 造洞变
+  holey（慢一档）；`arr[i] = 1.5` 整组降 double。去元素用
+  splice 或赋 undefined（不造洞）。
+- **map/filter 跳洞**：holey 数组上 map 不回调空洞（长度保持、
+  洞保留）——`[,1].map(fn)` 只跑一次！要稠密先 Array.from(x)。
+- **sort 是稳定的（ES2019+）且原地**；比较器不一致（NaN/
+  返回值越界）结果实现定义。比较器纪律：`(a,b)=>a-b` 只对
+  纯数字；字符串用 localeCompare 带语言参数（i18n 排序陷阱）。
+- **不可变新贵（ES2023）**：toSorted/toReversed/toSpliced/with
+  —— React/状态机首选；但 10^6 级数组它们仍 O(n) 复制，
+  热路径留给原地 + 视图层 memo。
+- species 陷阱：子类数组 map 默认构造子类（自定义构造器抛错
+  连带 map 抛）—— 通用库用 Symbol.species 指回 Array。
+
+## 90. 解构与展开深水
+
+- **默认值只救 undefined**：null 不触发默认值
+  （`const {a=1} = {a:null}` → a=null）——接口空值语义先约定
+  再解构。
+- 求值顺序左→右，默认值可引用**前面**已解出的变量
+  （`{a, b = a * 2} = {a: 2}` → b=4）；引用后面的是 TDZ。
+- rest 必须居尾；对象 rest 只收**自身可枚举**属性（原型与
+  symbol 都不收）——继承字段悄悄丢；浅拷贝要全就
+  Object.getOwnPropertyDescriptors。
+- **展开的成本分级**：数组展开走迭代器（真数组有快路径，
+  Set/自定义迭代器慢）；对象展开逐键 getter 求值——大对象
+  高频 spread 是 V8 逃逸分析杀手，热路径手写赋值。
+  函数签名 `...args` 会真建数组（arguments 不建，但 arrow
+  没有 arguments）。
+- **解构一切可迭代**：String/Map/Generator/Set 都能 [a,b]；
+  自定义类实现 Symbol.iterator 后解构即"多返回值"。配
+  ES2024 RegExp v 标志（unicode sets）的捕获分组做精确校验。
 
 ## 91. 异步
 
@@ -1717,84 +1898,175 @@ thead th { position: sticky; top: 0; background: var(--bg); z-index: 1 }
 语义优先、移动优先、状态驱动、双查交付。
 入口：119 速配 → 148 四十问 → read 起点节 → 152 上线清单收尾。
 
-## 11. 选择器
+## 11. 选择器引擎内幕
 
-| 类 | 例 |
-| --- | --- |
-| 基础 | tag / .class / #id |
-| 组合 | A B（后代）/ A>B（子）/ A+B（紧邻）/ A~B（后随） |
-| 属性 | [type=text] / [href^="https"] |
-| 组并 | .a.b（同节点双类） |
+- **匹配从右往左**：`ul li a` 先找所有 a 再逐级向左验证祖先。
+  最右端（key selector）越准，淘汰越早 —— `.nav a` 远快于
+  `a .nav`（后者几乎不淘汰）。
+- **失效集预算**：引擎按"最右复合选择器"建失效集；class 改动
+  只重算命中集。但 `.a .b .c` 的中间桥接会扩大候选；
+  通配/标签打头的选择器让每个 DOM 变更都进失效路径。
+- **BEM 是性能工具而不止命名法**：单 class 的最右端零组合
+  开销 —— 深链选择器重构为原子类，Recalc 成本立降
+  （Edge 109+/Chrome Selector Stats 可实测验证）。
+- **containment 隔离失效**：contain:layout/paint 把子树失效
+  边界封住，与 28 节 :has 纪律配合用。
 
-## 12. 伪类
+## 12. 动态伪类
 
-| 伪类 | 用途 |
-| --- | --- |
-| :hover/:focus | 悬停/聚焦 |
-| :focus-visible | 键盘焦点才样式★ |
-| :active | 按下瞬间 |
-| :disabled/:checked | 控件态 |
-| :first-child/:last-child | 边缘项 |
-| :nth-child(2n+1) | 奇偶条纹 |
-| :not(.x) | 反选 |
-| :empty | 空节点（占位提示） |
-| :has(img) | 父选择（28 节） |
-| :root | 文档根（变量挂点） |
+- **:hover 在触屏是"粘住"语义**（tap 后保持直到点别处）——
+  悬停揭示的内容在移动端必须有 focus/active 的替代触发路径。
+- 大面积 :hover 效果（菜单磁吸、跟随光标）在低端机是掉帧源；
+  hover 态样式限 transform/opacity（合成层）。:focus 与
+  :hover 同规则声明，触屏态才不裂。
+- **:focus-visible 由 UA 启发式决定**（键盘出现才显）；
+  outline:none 之前必须有替代焦点视觉（a11y 红线，37 节）。
+- **:user-invalid 的时序语义**见 28 节；:checked 只映射原生
+  表单态，Web Component 用 :state() 挂自定义态
+  （custom state pseudo-class）。
+- :placeholder-shown 做"浮动标签"少一个类；
+  :autofill 的 UA 样式覆盖需要 -webkit-animation 技巧，
+  能用 JS 就别硬挖伪类。
 
-## 13. 伪元素
+## 13. 伪元素深水
 
-| 伪元素 | 用途 |
-| --- | --- |
-| ::before/::after | 装饰插入（content 必填）★ |
-| ::placeholder | 输入提示样式 |
-| ::selection | 选中文本样式 |
-| ::marker | 列表符 |
-| ::first-letter | 首字下沉 |
+- **CSS 生成内容在无障碍树里不安分**：content 文本大多能被读出
+  但不可被选中/搜索/翻译 —— 数据（价格/状态值）进 DOM，
+  装饰才进 ::before。
+- `content: url()` 的图片没有 alt 通道（装饰限定）；
+  `content: ""` + background 是图标挂载点，配 .sr-only 文案。
+- **::part() 是 shadow DOM 定制口**（只穿透一层，不可再嵌套
+  选中）；::backdrop 给 dialog/popover 的遮罩独立写样式，
+  比 JS 加遮罩层干净（10 节 inert 由 UA 管）。
+- **::marker 列表符可样式化**（content 换符也行），但
+  list-style:none + 自绘符号的组合在 Safari 触发列表语义丢失
+  （8 节 role="list" 补丁）。
+- ::first-letter 不跨元素边界（内联子元素会截断"首字"）；
+  首字下沉兼容成本高，确有美术需求再上。
 
-## 14. 特异性
+## 14. 特异性工程
 
-排序（高到低）：内联 > #id > .class/属性/伪类 > 元素/伪元素。
-- 同级后写赢；行内 style 无敌（别用）。
-- 覆盖第三方：:where 零特异性自降或源顺序压（108 节）。
+- 计法是三元组 (id, class/属性/伪类, 元素/伪元素)，按位从左
+  到右比较，不是"加起来"。行内 style 与 !important 是特异性
+  之上的两级开关（少用是纪律）。
+- :is() 取参数最贵者（28 节）；:where() 恒零 —— 第三方覆盖/
+  主题层的入口写法 `:where(.card){…}` 让任何业务 class 都能
+  压过它。
+- **@layer 才是特异性污染的解药**：`@layer reset, lib, app;`
+  先声明层序；**后声明的层赢过先声明的层**，而所有层都输给
+  未分层样式。层间胜负先于特异性比较，revert-layer 可逐层
+  回退（15 节关键字联动）。
+- **id 选择器是特异性炸弹**：JS 钩子改用 data-*；样式永不碰
+  #id。
+- 评审口径：新样式需要 >2 位特异性才生效时，先怀疑层序问题，
+  而不是继续叠码。
 
-## 15. 继承
+## 15. 继承深水
 
-| 继承 | 不继承 |
-| --- | --- |
-| color/font/text-align | margin/padding/border |
-| line-height | width/height |
-| visibility | background |
-- 显式控制：inherit / initial / unset / revert-layer（新）。
+关键字决策表（背下来比查表快）：
 
-## 16. 盒模型
+| 关键字 | 效果 | 典型场景 |
+| --- | --- | --- |
+| inherit | 强制取父值 | 默认不继承的属性想继承（border-color 随 color） |
+| initial | 回规范初值 | 不是"浏览器默认样式"——UA 样式 ≠ initial |
+| unset | 继承属性=inherit，非继承=initial | `*{all:unset}` 通配重置的原料 |
+| revert | 回退到 UA 样式 | 想要"原生控件样"时 |
+| revert-layer | 回退到上一级联层 | 层内局部覆盖的撤销（14 节） |
 
-```css
-* { box-sizing: border-box }   /* 全局 border-box★ */
-```
+- 注册过的 @property 决定变量继承性：`@property --x
+  {inherits:false}` 让组件变量不下渗——隔离的关键；
+  未注册变量一律继承（29 节变量域）。
+- `all` 简写重置除 direction/unicode-bidi 外全部——危险，
+  但配 unset 是万能切片器。
+- 简写里的 CSS-wide 关键字（如 background: inherit）会整组
+  连坐重置所有相关 longhand，别当"单值继承"用。
 
-- content-box：宽=内容；border-box：宽=内容+padding+border（心智简单）。
-- 宽高计算：Elements 面板盒图直读。
+## 16. 盒模型深水
+
+- box-sizing 两态：content-box 宽=内容，border-box 宽=含
+  padding/border（全站统一 border-box 是共识）。但
+  min-width/max-width 的求值语义不随 box-sizing 改变——
+  弹性布局里 min-content 仍按内容算，溢出别怪盒模型。
+- **块化/行内化**：flex/grid 子项被块化（inline 的子项表现
+  为块级）；inline 容器里的 grid/flex 会被行内化——
+  "为什么 display:inline-block 进 flex 就变了"看这条。
+- **逻辑属性**：margin-top 在 writing-mode/rtl 下语义漂移；
+  margin-block-start / margin-inline-start 才是方向无关
+  写法，i18n 站点全量替换（58 节间距 token 同步）。
+- **匿名盒**：裸文本在 flex 容器里被包进匿名盒，无法直接
+  选中 —— 包一层 span 才能加伪元素/样式。
+- aspect-ratio 参与 min/max 约束求解：max-width 先缩，
+  高按比例跟（min-height 会破坏比例，弹性媒体容器慎用）。
 
 ## 17. margin 合并
 
-- 相邻块级纵向 margin 取大者；父子边界也会传（子 margin 顶出父）。
-- 阻断：父级加 padding/border/overflow 非 visible/或用 gap★（56 节）。
-- 现代：容器布局 + gap 让 margin 合并基本退出舞台。
+- 折叠三条件（缺一不叠）：同一 BFC、块级流内、纵向毗邻
+  （兄弟相邻/父子边界/空块自上下）。正 margin 取大者；
+  负 margin 取 max(正)+min(负)。
+- 现代布局里 flex/grid/absolute 都不折叠 —— 折叠问题基本只在
+  "普通文档流"的旧区域出没；新代码用 gap 替代，为阻断 BFC
+  而加的 overflow:hidden clearfix 就此退役。
+- **父子折叠典型症状**：子 margin-top 顶出父容器。修法顺序：
+  父加 padding-top > 改用 gap > display:flow-root
+  （语义化 BFC，比 overflow:hidden 干净）。
+- 陷阱：min-height 不阻断父子折叠（"看起来有高度"但边界仍
+  毗邻）；行内块不折叠但会带来基线间隙（flex 化即解）。
 
-## 18. Flex
+## 18. Flex 深水
 
-一维布局（行或列）。容器与子项属性全表见 56 节速查；
-最小集：display:flex + gap + justify-content + align-items。
+- **min-width:auto 是收缩不动元凶**：flex 子项默认最小尺寸 =
+  min-content，长文本/长 URL 撑爆横向。写 `min-width:0` 才
+  允许收缩交给 overflow 处理（56 节速查只给了结论，机制在这）。
+- flex-basis 优先于 width（主轴），但 min/max-width 又压
+  flex-basis；`flex:1` = `1 1 0%`（归零均分），
+  `flex:auto` = `1 1 auto`（按内容起评）—— 三态选型分水。
+- **auto margin 吃掉全部剩余空间**且优先于 justify-content
+  —— "最后一个元素推到底"用 margin-left:auto，比
+  space-between + 空占位干净。
+- align-items:baseline 按首行文字对齐（input 的基线怪癖
+  多）；图标+文字混排 baseline 会"看着歪"，改 center 再手调。
+- wrap 换行后：align-content 管行组、align-items 管行内；
+  gap 同时给行距与列距（一个属性两份钱）。
+- **order 改视觉序不改 DOM 序**（4 节 a11y 警告）——键盘
+  遍历与视觉不一致即无障碍违规。
 
-## 19. Grid
+## 19. Grid 深水
 
-二维布局。全表见 57 节；标志性能力：
-template-areas 命名区（60 节配方 A）与 auto-fill 卡墙（135）。
+- **subgrid（Grid L2，全主线 2024+ 可用）**：子网格吃父网格
+  轨道——卡片内标题/正文/按钮跨卡对齐（`grid-template-rows:
+  subgrid`）。“对齐强迫症”的正解，替代 JS 等高 hack。
+- **masonry 仍非跨浏览器**（CSSWG 双语法之争未收口）：
+  grid-template-rows:masonry 仅实验旗。生产线用 columns 近似
+  （阅读序变列序）或 JS 库，别赌标准。
+- **auto-fill vs auto-fit**：轨道数相同时区别在空轨道处理
+  ——auto-fit 折叠空轨道让现有项拉伸，auto-fill 保留空位。
+  minmax(min(220px,100%),1fr) 防窄屏溢出（60 节配方）。
+- 命名区域必须矩形补齐（. 占位）；响应式时整块换 template，
+  别在媒体查询里逐 area 打补丁。
+- **dense 回填会打乱顺序**：自动放置默认 sparse 保序——
+  数据列表禁 dense（a11y/阅读序风险）。
+- 深层嵌套 grid + auto 尺寸触发多轮 intrinsic sizing，
+  布局抖动在低端机放大——显式轨道 + contain 收敛。
 
-## 20. 定位
+## 20. 定位深水
 
-五种 position 语义表见 59 节；z-index 层叠语境见 21 节。
-absolute 的锚：最近 positioned 祖先 —— 忘设锚是漂移元凶。
+- **包含块链**：absolute 找"最近 positioned 祖先"；而
+  transform/filter/perspective/will-change/contain 的祖先会
+  成为 **fixed** 的包含块 —— "fixed 弹窗跟着滚动"的真凶是
+  某个祖先加了 transform（哪怕 translate(0,0)）。
+- **sticky 失效自查**：①任何祖先 overflow 非 visible 都截断
+  sticky 区间（不只直接父级）②sticky 容器无滚动余量
+  （父级高度不够）③父级 display:contents 吞掉盒子。
+- **锚定定位（CSS Anchor Positioning，Chrome 125+）**：
+  anchor-name + position-anchor + position-area 让弹层
+  声明式贴锚点，position-try-fallbacks 自动翻转避出屏
+  —— 手写 JS 翻转逻辑（61 节）可被它替换；配 popover 时
+  记得清 UA 默认 margin（[popover]{margin:0}）。
+- inset 是 top/right/bottom/left 简写：`inset:0` 全铺包含块；
+  居中老 hack（translate(-50%,-50%)）可用 place-self 或锚定
+  改写。
+- z-index 语义见 21 节；iOS Safari 的 fixed 在缩放时随视觉
+  视口跳动，吸底栏用 svh + sticky 更稳（23 节）。
 
 ## 161. 附录·速查组合拳
 
