@@ -283,7 +283,7 @@ flowchart TB
     end
 
     VTE["🖥️ terminal-emulator<br/>自研 VT100 / ANSI 模拟器"]
-    VTN["🚀 terminal-native<br/>apex-vt-native C++17 引擎<br/>（JNI 零分配热路径）"]
+    VTN["🚀 terminal-native<br/>apex-native-vt C++17 引擎<br/>（JNI 零分配热路径）"]
     TVW["🪟 terminal-view<br/>Compose 画布渲染 · 手势 · IME"]
 
     subgraph PLUG["🧩 plugin-sdk — AIDL 跨进程"]
@@ -328,9 +328,9 @@ flowchart TB
 | `:platform:cs-mem` | Android Lib | 认知记忆系统（本仓库的差异化核心，见下节） |
 | `:platform:code-workspace` | Android Lib | 编码工作区：安全根目录与生命周期 |
 | `:platform:mcp-host` | 纯 JVM | 逆向 MCP Host：把手机工具暴露给 PC 客户端（零第三方依赖） |
-| `:platform:browser-agent` | Android Lib | 浏览器自动化大功能：browser_* 工具协议 + apex-browser-kit DI 接线 |
+| `:platform:browser-agent` | Android Lib | 浏览器自动化大功能：browser_* 工具协议 + apex-kit-browser DI 接线 |
 | `:terminal-emulator` | 纯 Kotlin | 自研 VT100/ANSI 终端模拟器（零依赖）+ `TerminalEngine` 引擎抽象 |
-| `:terminal-native` | Android Lib | apex-vt-native C++17 零分配 VT 引擎（vendored + JNI，运行时回退 Kotlin） |
+| `:terminal-native` | Android Lib | apex-native-vt C++17 零分配 VT 引擎（vendored + JNI，运行时回退 Kotlin） |
 | `:terminal-view` | Android Lib | Compose 终端视图层：画布渲染 / 手势 / 选区 / IME 连接 |
 | `:plugin-sdk:plugin-api` | Android Lib | AIDL `IApexPlugin` + PluginContract 常量 |
 | `:plugin-sdk:plugin-host` | Android Lib | 插件发现/绑定/工具桥接 |
@@ -625,7 +625,7 @@ flowchart TD
 | rootfs 供给 | `RootfsDownloader/Extractor/Configurator` + `UbuntuBootstrapManager` | 官方 Ubuntu 24.04.4 归档（sha256 锁定）、断点续装、`sources.list` 配置、基础包档案 |
 | 执行后端 | `LinuxPRootBackend` + `ProotExecutor` | PRoot 用户态沙箱（无需 root！）、预编译 so 随包分发（指纹校验防篡改）、Fake 后端供测试 |
 | PTY | C++ `forkpty`（`pty_engine.cpp` / `jni_bridge.cpp`） | 原生伪终端、argv 编组、进程组信号、会话隔离 |
-| 终端模拟 | `terminal-emulator` + `terminal-native` | 自研 VT100/ANSI：转义序列解析、滚动区、24 位色、UTF-8 解码；热路径由 C++17 引擎（`apex-vt-native`，每字符零堆分配）加速，Kotlin 实现保留为语义基准与 JVM 回退 |
+| 终端模拟 | `terminal-emulator` + `terminal-native` | 自研 VT100/ANSI：转义序列解析、滚动区、24 位色、UTF-8 解码；热路径由 C++17 引擎（`apex-native-vt`，每字符零堆分配）加速，Kotlin 实现保留为语义基准与 JVM 回退 |
 | 背压 IO | `PtyOutputPump` + `BackpressureConfig` | 有界输出泵、EOF 语义、丢帧保护 |
 | 观察引擎 | `ObservationEngine2` + `SemanticStateReducer` | 把 ANSI 噪音降维成语义状态（等待输入/运行中/完成/错误），`InputWaitingDetector` 识别提示符 |
 | 包管理 | `UbuntuAptPackageManager` + `PackageOperationLock` | 设备上 `apt install`，并发锁防交错 |
@@ -661,7 +661,7 @@ linux_bootstrap / linux_status / linux_packages / linux_network / ubuntu_install
 - **语义哈希稳定 ref**：元素引用基于语义哈希而非 DOM 序号，SPA 局部刷新后
   ref 依然有效；
 - `BrowserTracer`（容量 100 的操作轨迹）+ `RetryPolicy` 支撑断点续控；
-- **v1.7.0 人用 Chrome 增强**（apex-browser-kit v1.7.0 同步）：书签面板
+- **v1.7.0 人用 Chrome 增强**（apex-kit-browser v1.7.0 同步）：书签面板
   （utm 变体归一去重 / MRU / 文件夹 / 搜索）、阅读模式全屏层（结构块 +
   目录跳转 + 字号调节）、显示设置（文字缩放 / 夜间模式反色 / 清除浏览
   数据确认流）、真实 favicon（DuckDuckGo Icons + LRU）、复制干净链接
@@ -868,10 +868,10 @@ GitHub Token）。
 
 | 库模块 | 仓库 | 坐标 | 在主工程中的角色 |
 |---|---|---|---|
-| **apex-browser-kit** | [Ultra-Guru/apex-browser-kit](https://github.com/Ultra-Guru/apex-browser-kit) | `com.apex.browser:{core,engine,chrome}` | 浏览器智能体内核：WebView 自动化引擎 + Compose chrome UI（DI 接线层为本仓 `:platform:browser-agent`） |
-| **apex-standard-kit** | [Ultra-Guru/apex-standard-kit](https://github.com/Ultra-Guru/apex-standard-kit) | `com.apex.standardkit:standard-loop` | Coding 模式「标准思考逻辑线」循环引擎（画像/权限门/压缩/子代理/并行工具/续跑/MCP 指引，纯 Kotlin JVM） |
-| **apex-workspace-kit** | [Ultra-Guru/apex-workspace-kit](https://github.com/Ultra-Guru/apex-workspace-kit) | `com.apex.workspace:{core,explorer}` | Coding 工作区浏览器：文件树 / 多格式预览 / Git 面板 / 变更和产物 / 实时跟随 |
-| **apex-vt-native** | [Ultra-Guru/apex-vt-native](https://github.com/Ultra-Guru/apex-vt-native) | C++17 静态库（vendored 为 `:terminal-native`） | 终端热路径 VT/ANSI 引擎（零分配 8 字节 POD cell / 389 项奇偶校验测试 / NDK 三 ABI 交叉编译 CI） |
+| **apex-kit-browser** | [Ultra-Guru/apex-kit-browser](https://github.com/Ultra-Guru/apex-kit-browser) | `com.apex.browser:{core,engine,chrome}` | 浏览器智能体内核：WebView 自动化引擎 + Compose chrome UI（DI 接线层为本仓 `:platform:browser-agent`） |
+| **apex-kit-standard** | [Ultra-Guru/apex-kit-standard](https://github.com/Ultra-Guru/apex-kit-standard) | `com.apex.standardkit:standard-loop` | Coding 模式「标准思考逻辑线」循环引擎（画像/权限门/压缩/子代理/并行工具/续跑/MCP 指引，纯 Kotlin JVM） |
+| **apex-kit-workspace** | [Ultra-Guru/apex-kit-workspace](https://github.com/Ultra-Guru/apex-kit-workspace) | `com.apex.workspace:{core,explorer}` | Coding 工作区浏览器：文件树 / 多格式预览 / Git 面板 / 变更和产物 / 实时跟随 |
+| **apex-native-vt** | [Ultra-Guru/apex-native-vt](https://github.com/Ultra-Guru/apex-native-vt) | C++17 静态库（vendored 为 `:terminal-native`） | 终端热路径 VT/ANSI 引擎（零分配 8 字节 POD cell / 389 项奇偶校验测试 / NDK 三 ABI 交叉编译 CI） |
 
 ### 消费与同步机制
 
@@ -1075,7 +1075,7 @@ Android-Guru-Agent/
 │   │   └── src/main/jniLibs/     #   预编译 PRoot 二进制（sha256 锁定）
 │   └── cs-mem/                   # 认知记忆系统（本仓库差异化核心）
 ├── terminal-emulator/            # 自研 VT100/ANSI 模拟器（TerminalEngine 接口 + Kotlin 基准实现）
-├── terminal-native/              # apex-vt-native C++17 VT 引擎（vendored，见 VENDOR.md）
+├── terminal-native/              # apex-native-vt C++17 VT 引擎（vendored，见 VENDOR.md）
 │   ├── src/main/cpp/vt-native/   #   C++ 核心 + JNI 桥（上游 CI 跑 129 项奇偶校验）
 │   └── src/main/kotlin/          #   NativeVtCore 包装器 + VtEngineFactory 回退工厂
 ├── plugin-sdk/                   # AIDL 插件 SDK（api + host）

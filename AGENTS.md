@@ -13,9 +13,9 @@
   vendored —— 上游 1.0.6 二进制缺 diag-20261011 热修，
   详见 gradle/libs.versions.toml 与 vendor/backdrop/README.md）；
 - **浏览器库（拆库后）**：BrowserEngine / chrome UI / DOM 解析已抽出为
-  [apex-browser-kit](https://github.com/Ultra-Guru/apex-browser-kit)
+  [apex-kit-browser](https://github.com/Ultra-Guru/apex-kit-browser)
   （坐标 `com.apex.browser:{core,engine,chrome}`）。本地构建把库克隆成
-  **兄弟目录** `../apex-browser-kit` 即自动 composite build（settings
+  **兄弟目录** `../apex-kit-browser` 即自动 composite build（settings
   条件 includeBuild）；CI 由 workflow 检出兄弟目录。改浏览器行为去库仓库
   提 PR（其 consumer-check 会对本仓库跑编译防下游崩）。v1.5.0 起浏览器
   自动化为**内置大功能**：BrowserAgentTools（browser_* 工具协议）与 DI

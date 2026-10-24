@@ -24,7 +24,7 @@ import androidx.compose.ui.graphics.Color
  *    警示 / 危险是状态语义色，不随强调色漂移（「极简不等于色盲」纪律）；
  *  - GlassPalette：组合期直接读 MaterialTheme.colorScheme 派生（既有
  *    行为，天然跟随，无需经本 Local）；
- *  - 浏览器 ChromePalette（apex-browser-kit 外部库）：库侧尚无注入口，
+ *  - 浏览器 ChromePalette（apex-kit-browser 外部库）：库侧尚无注入口，
  *    见 #278 遗留项 —— 需要库暴露 host accent 钩子后接线。
  *
  * 双变体说明：同一方案在深浅两种基底上各有调色（深色 = 霓虹提亮、

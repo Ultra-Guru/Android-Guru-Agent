@@ -26,7 +26,7 @@ import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
 /**
- * 浏览器库（apex-browser-kit）Hilt 接线 —— 拆库后的宿主侧 DI 补位。
+ * 浏览器库（apex-kit-browser）Hilt 接线 —— 拆库后的宿主侧 DI 补位。
  * v1.5.0 随浏览器大功能内置化从 app 迁入 :platform:browser-agent。
  *
  * 库本身零 DI 依赖（F1：Hilt + Android Library 组合会强绑下游宿主），单例由

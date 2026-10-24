@@ -268,7 +268,7 @@ object CodeModule {
      * 深潜线配置取向（与 Agent 默认差异）：BUILD 循环 + 更高迭代上限
      * （编码任务链路长）+ 更大工具输出配额（CodeRead 输出被 2000 字符
      * 默认值截断会毁掉编码循环）。标准线由 [StandardKitAdapter] 接线
-     * apex-standard-kit 库内核（画像回合预算 + 权限门 + 会话压缩 + 子代理
+     * apex-kit-standard 库内核（画像回合预算 + 权限门 + 会话压缩 + 子代理
      * 派发 + 并行工具执行 + 续跑语义 + MCP 指引——循环语义全部在库中）。
      *
      * CodeViewModel 只面向 [CodeEngineFacade] / AgentEngine 编程，
@@ -433,7 +433,7 @@ object CodeModule {
         )
         // 织造线（第三线，独立库 com.apex.loomkit:loom-weave）：端口适配 +
         // 库内自有循环（梭回合机 / 权限三态门 / 子线程群 / 织造包——全部在
-        // apex-loom-kit 库演进，宿主仅保留薄适配层）。设置层权限模式 →
+        // apex-kit-loom 库演进，宿主仅保留薄适配层）。设置层权限模式 →
         // 织造模态映射：BYPASS → UNBOUND（无界）、DEFAULT/ACCEPT_EDITS →
         // FABRIC（布面内自由织）、PLAN → OBSERVE（只读巡视）。
         val loomPermissionSource = LoomPermissionSource {
@@ -497,7 +497,7 @@ object CodeModule {
         )
         // 信使线（第四线，独立库 com.apex.courierkit:courier-dispatch）：端口适配
         // + 库内自有循环（收发匣 / 趟次步进机 / 勘合门 / 档房 / 示廊 / 下站前哨
-        // ——全部在 apex-courier-kit 库演进，宿主仅保留薄适配层）。设置层权限
+        // ——全部在 apex-kit-courier 库演进，宿主仅保留薄适配层）。设置层权限
         // 规则 → 勘合则例映射：无空格模式 → 工具 id 伪动作（tool）；含空格模式
         // → 终端命令模式（bash）。权限模式 → 基线则例注入快照头部（后例覆盖
         // 语义下用户规则仍可收窄/放宽；未注入时库侧 BUILD 角色缺省全放行，

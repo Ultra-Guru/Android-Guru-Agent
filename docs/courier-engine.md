@@ -2,8 +2,8 @@
 
 > Coding 模式第四思考逻辑线 —— 收发匣投递 · 趟次步进机 · 勘合通行证 ·
 > 档房卷宗压缩 · 示廊公告 · 下站子驿委派。
-> 独立库实现：[`com.apex.courierkit:courier-dispatch`](https://github.com/Ultra-Guru/apex-courier-kit)
-> （仓库 Ultra-Guru/apex-courier-kit，纯 Kotlin JVM、零 Android 依赖），
+> 独立库实现：[`com.apex.courierkit:courier-dispatch`](https://github.com/Ultra-Guru/apex-kit-courier)
+> （仓库 Ultra-Guru/apex-kit-courier，纯 Kotlin JVM、零 Android 依赖），
 > 宿主仅保留薄适配层 `CourierKitAdapter`。
 
 ## 一、范式一页
@@ -131,7 +131,7 @@
 
 ## 三、接线分工（库 ↔ 宿主）
 
-| 层 | 库（apex-courier-kit） | 宿主（本仓库） |
+| 层 | 库（apex-kit-courier） | 宿主（本仓库） |
 |---|---|---|
 | 循环内核 | CourierTripRunner / Inbox / PermitGate / Archivist / Bulletin / Outpost | — |
 | 协议类型 | Dispatch*（消息/事件/工具面/画像/则例） | AgentEvent / LlmMessage ↔ 适配器 1:1 映射 |

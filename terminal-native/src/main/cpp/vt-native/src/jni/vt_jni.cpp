@@ -463,6 +463,28 @@ Java_com_apex_agent_vtnative_NativeVtCore_nativeActiveSearchHit(JNIEnv*, jclass,
   return e ? jint(e->activeSearchHit()) : jint(-1);
 }
 
+// Theme colors (OSC 4/10/11/12 "?" responses) — host-applied palette head.
+JNIEXPORT void JNICALL
+Java_com_apex_agent_vtnative_NativeVtCore_nativeSetThemeColors(JNIEnv*, jclass, jlong handle,
+                                                               jint fg, jint bg, jint cursor) {
+  if (Engine* e = asEngine(handle)) e->setThemeColors(uint32_t(fg), uint32_t(bg), uint32_t(cursor));
+}
+JNIEXPORT jint JNICALL
+Java_com_apex_agent_vtnative_NativeVtCore_nativeThemeFg(JNIEnv*, jclass, jlong handle) {
+  Engine* e = asEngine(handle);
+  return e ? jint(e->themeFg()) : jint(0xFFFFFF);
+}
+JNIEXPORT jint JNICALL
+Java_com_apex_agent_vtnative_NativeVtCore_nativeThemeBg(JNIEnv*, jclass, jlong handle) {
+  Engine* e = asEngine(handle);
+  return e ? jint(e->themeBg()) : jint(0);
+}
+JNIEXPORT jint JNICALL
+Java_com_apex_agent_vtnative_NativeVtCore_nativeThemeCursor(JNIEnv*, jclass, jlong handle) {
+  Engine* e = asEngine(handle);
+  return e ? jint(e->themeCursor()) : jint(0);
+}
+
 JNIEXPORT jint JNICALL
 Java_com_apex_agent_vtnative_NativeVtCore_nativeSearchHitCount(JNIEnv*, jclass, jlong handle) {
   Engine* e = asEngine(handle);

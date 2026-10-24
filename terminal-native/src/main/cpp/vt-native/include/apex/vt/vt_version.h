@@ -1,11 +1,11 @@
-// apex-vt-native — C++17 zero-allocation VT/ANSI terminal emulation core.
+// apex-native-vt — C++17 zero-allocation VT/ANSI terminal emulation core.
 //
 // Version macros — single source of truth for the library ABI/feature version.
 #pragma once
 
 #define APEX_VT_VERSION_MAJOR 0
 #define APEX_VT_VERSION_MINOR 2
-#define APEX_VT_VERSION_PATCH 1
+#define APEX_VT_VERSION_PATCH 2
 
 #define APEX_VT_STRINGIFY_(x) #x
 #define APEX_VT_STRINGIFY(x) APEX_VT_STRINGIFY_(x)

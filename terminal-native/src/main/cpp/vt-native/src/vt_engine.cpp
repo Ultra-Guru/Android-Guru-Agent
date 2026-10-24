@@ -315,6 +315,10 @@ struct Engine::Impl {
 
   // Reusable scratch (avoid per-feed allocations).
   std::string respondScratch;
+
+  // Theme colors answered to OSC 4/10/11/12 "?" queries (host-applied;
+  // defaults keep the v0.2 placeholder responses: fg white, bg+cursor black).
+  uint32_t themeFg_ = 0xFFFFFF, themeBg_ = 0x000000, themeCursor_ = 0x000000;
   std::string osc52Scratch;
 
   // ── helpers ──
@@ -1495,8 +1499,9 @@ struct Engine::Impl {
     activeLink = uint16_t(linkUris.size());
   }
 
-  // OSC 4/10/11/12 "?" queries → placeholder theme colors. Apps (nvim, tmux)
-  // probe these to pick light/dark palettes; answering keeps them responsive.
+  // OSC 4/10/11/12 "?" queries → host theme colors. Apps (nvim, tmux) probe
+  // these to pick light/dark palettes; answering from the host-applied
+  // theme keeps them in sync with the real UI palette.
   void respondOscColorQuery(int32_t code, const std::string& idx) {
     respondScratch.clear();
     respondScratch += "\x1B]";
@@ -1520,9 +1525,11 @@ struct Engine::Impl {
       }
       appendRgbSpec(&respondScratch, rgb);
     } else if (code == 10) {
-      appendRgbSpec(&respondScratch, 0xFFFFFF);  // fg — light placeholder
+      appendRgbSpec(&respondScratch, themeFg_);
+    } else if (code == 11) {
+      appendRgbSpec(&respondScratch, themeBg_);
     } else {
-      appendRgbSpec(&respondScratch, 0x000000);  // bg / cursor — dark placeholder
+      appendRgbSpec(&respondScratch, themeCursor_);
     }
     respondScratch += '\x07';
     respond(respondScratch.c_str());
@@ -1530,8 +1537,11 @@ struct Engine::Impl {
 
   static void appendRgbSpec(std::string* out, uint32_t rgb) {
     char buf[24];
-    std::snprintf(buf, sizeof(buf), "rgb:%04x/%04x/%04x", (rgb >> 16) & 0xFFFF,
-                  (rgb >> 8) & 0xFFFF, rgb & 0xFFFF);
+    // xterm rgb: 规范是 16 位/通道：8 位值复制到高 8 位（0xFF → 0xFFFF）。
+    // 旧实现 %04x 直接零填充，0xFF 写成 00ff（16 位空间仅 1/256 亮度）。
+    auto c16 = [](uint32_t v8) { return v8 * 0x101u; };
+    std::snprintf(buf, sizeof(buf), "rgb:%04x/%04x/%04x",
+                  c16((rgb >> 16) & 0xFF), c16((rgb >> 8) & 0xFF), c16(rgb & 0xFF));
     *out += buf;
   }
 
@@ -2706,6 +2716,15 @@ void Engine::setActiveSearchHit(int index) {
 }
 
 int Engine::activeSearchHit() const { return impl_->activeHit; }
+
+void Engine::setThemeColors(uint32_t fg, uint32_t bg, uint32_t cursor) {
+  impl_->themeFg_ = fg;
+  impl_->themeBg_ = bg;
+  impl_->themeCursor_ = cursor;
+}
+uint32_t Engine::themeFg() const { return impl_->themeFg_; }
+uint32_t Engine::themeBg() const { return impl_->themeBg_; }
+uint32_t Engine::themeCursor() const { return impl_->themeCursor_; }
 
 void Engine::beginSelection(int64_t globalRow, int col) {
   impl_->beginSelection(globalRow, col);

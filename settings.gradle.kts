@@ -43,68 +43,68 @@ check(JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_17)) {
 rootProject.name = "apex-agent"
 
 // ── 浏览器库 composite build（拆库 E1 迁移期）─────────────────────────────
-// apex-browser-kit 从本仓库抽出为独立库（com.apex.browser:{core,engine,chrome}）。
+// apex-kit-browser 从本仓库抽出为独立库（com.apex.browser:{core,engine,chrome}）。
 // 兄弟目录存在时自动接入 composite build：本地开发「改一处两边生效」；
 // CI 由 workflow 把库检出为兄弟目录（ci.yml / apk.yml / release.yml 的
 // sibling checkout 步骤）。目录不存在时跳过 —— 走远端 Maven 坐标（E3 稳定期
 // GitHub Packages 发布后切换）。子目录兜底位供 consumer-check 等双仓布局复用。
-val browserKitSibling = file("../apex-browser-kit")
-val browserKitNested = file("apex-browser-kit")
+val browserKitSibling = file("../apex-kit-browser")
+val browserKitNested = file("apex-kit-browser")
 when {
     browserKitSibling.isDirectory -> includeBuild(browserKitSibling)
     browserKitNested.isDirectory -> includeBuild(browserKitNested)
 }
 
 // ── 标准任务循环库 composite build（同款拆库模式）─────────────────────────
-// apex-standard-kit 从本仓库抽出为独立库（com.apex.standardkit:standard-loop ——
+// apex-kit-standard 从本仓库抽出为独立库（com.apex.standardkit:standard-loop ——
 // Coding「标准思考逻辑线」的循环内核：画像/权限门/压缩/子代理/并行工具/
 // 续跑语义/MCP 指引）。兄弟目录存在时自动接入（本地开发改一处两边生效）；
 // CI 由 workflow 按 gradle/standard-kit.lock 锁定版本检出（ci.yml / apk.yml /
 // release.yml 的 pinned checkout 步骤）；目录不存在时跳过 —— 走远端
 // Maven 坐标。子目录兜底位供库仓 consumer-check 双仓布局复用。
-val standardKitSibling = file("../apex-standard-kit")
-val standardKitNested = file("apex-standard-kit")
+val standardKitSibling = file("../apex-kit-standard")
+val standardKitNested = file("apex-kit-standard")
 when {
     standardKitSibling.isDirectory -> includeBuild(standardKitSibling)
     standardKitNested.isDirectory -> includeBuild(standardKitNested)
 }
 
 // ── 织造循环库 composite build（同款拆库模式）───────────────────────────
-// apex-loom-kit 从本仓库抽出为独立库（com.apex.loomkit:loom-weave ——
+// apex-kit-loom 从本仓库抽出为独立库（com.apex.loomkit:loom-weave ——
 // Coding「织造思考逻辑线」的循环内核：in-band 标记协议/梭回合机/权限
-// 三态门/子线程群/织造包/digest 压缩）。接线方式与 apex-standard-kit
+// 三态门/子线程群/织造包/digest 压缩）。接线方式与 apex-kit-standard
 // 完全同构：兄弟目录本地开发、嵌套目录 CI consumer-check 兜底、目录
-// 不存在时走远端 Maven 坐标。库仓库：Ultra-Guru/apex-loom-kit（含独立
+// 不存在时走远端 Maven 坐标。库仓库：Ultra-Guru/apex-kit-loom（含独立
 // CI + 宿主 consumer-check）。
-val loomKitSibling = file("../apex-loom-kit")
-val loomKitNested = file("apex-loom-kit")
+val loomKitSibling = file("../apex-kit-loom")
+val loomKitNested = file("apex-kit-loom")
 when {
     loomKitSibling.isDirectory -> includeBuild(loomKitSibling)
     loomKitNested.isDirectory -> includeBuild(loomKitNested)
 }
 
 // ── 信使调度库 composite build（同款拆库模式）───────────────────────────
-// apex-courier-kit 从本仓库抽出为独立库（com.apex.courierkit:courier-dispatch
+// apex-kit-courier 从本仓库抽出为独立库（com.apex.courierkit:courier-dispatch
 // —— Coding「信使思考逻辑线」的循环内核：收发匣 steer/queue 投递/趟次步进
-// 机/勘合门/档房卷宗压缩/示廊公告/下站前哨）。接线方式与 apex-loom-kit
+// 机/勘合门/档房卷宗压缩/示廊公告/下站前哨）。接线方式与 apex-kit-loom
 // 完全同构：兄弟目录本地开发、嵌套目录 CI consumer-check 兜底、目录
-// 不存在时走远端 Maven 坐标。库仓库：Ultra-Guru/apex-courier-kit（含独立
+// 不存在时走远端 Maven 坐标。库仓库：Ultra-Guru/apex-kit-courier（含独立
 // CI + 宿主 consumer-check）。
-val courierKitSibling = file("../apex-courier-kit")
-val courierKitNested = file("apex-courier-kit")
+val courierKitSibling = file("../apex-kit-courier")
+val courierKitNested = file("apex-kit-courier")
 when {
     courierKitSibling.isDirectory -> includeBuild(courierKitSibling)
     courierKitNested.isDirectory -> includeBuild(courierKitNested)
 }
 
 // ── 工作区浏览器库 composite build（拆库 E1 迁移期）───────────────────────
-// apex-workspace-kit（com.apex.workspace:{core,explorer}）：Coding 模式
+// apex-kit-workspace（com.apex.workspace:{core,explorer}）：Coding 模式
 // 全屏工作区浏览器（文件树 / 多格式预览 / Git 面板 / 变更和产物 / 实时跟随）。
-// 接线方式与 apex-browser-kit 完全同构：兄弟目录本地开发、嵌套目录 CI
+// 接线方式与 apex-kit-browser 完全同构：兄弟目录本地开发、嵌套目录 CI
 // consumer-check 兜底、目录不存在时走远端 Maven 坐标。
-// 库仓库：Ultra-Guru/apex-workspace-kit（含独立 CI + 宿主 consumer-check）。
-val workspaceKitSibling = file("../apex-workspace-kit")
-val workspaceKitNested = file("apex-workspace-kit")
+// 库仓库：Ultra-Guru/apex-kit-workspace（含独立 CI + 宿主 consumer-check）。
+val workspaceKitSibling = file("../apex-kit-workspace")
+val workspaceKitNested = file("apex-kit-workspace")
 when {
     workspaceKitSibling.isDirectory -> includeBuild(workspaceKitSibling)
     workspaceKitNested.isDirectory -> includeBuild(workspaceKitNested)
@@ -141,7 +141,7 @@ include(":platform:persistence")
 include(":platform:terminal")
 include(":platform:cs-mem")
 include(":platform:code-workspace")
-// 浏览器自动化大功能：browser_* 工具协议 + apex-browser-kit 库 DI 接线
+// 浏览器自动化大功能：browser_* 工具协议 + apex-kit-browser 库 DI 接线
 include(":platform:browser-agent")
 
 // 逆向 MCP Host（#173）：手机作为 MCP Server，PC 端 AI 经 streamable HTTP 控制手机
@@ -150,8 +150,8 @@ include(":platform:mcp-host")
 // Terminal Runtime 2.0 — vendored VT100/ANSI emulator (ATR Phase 2)
 include(":terminal-emulator")
 
-// Terminal native hot path — vendored apex-vt-native C++17 VT engine (JNI)
-// 上游：Ultra-Guru/apex-vt-native（129 项奇偶校验测试 + NDK CI）
+// Terminal native hot path — vendored apex-native-vt C++17 VT engine (JNI)
+// 上游：Ultra-Guru/apex-native-vt（129 项奇偶校验测试 + NDK CI）
 include(":terminal-native")
 
 // Terminal view — T88 Termux 级自定义 View 渲染层（Canvas 网格 / 滚动 / 选择 / IME）

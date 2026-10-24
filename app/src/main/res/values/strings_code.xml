@@ -249,7 +249,7 @@
     <string name="code_logic_switched_deep_dive">Thinking logic switched to Deep Dive (self-designed seven tiers). Your Standard session is kept and will resume when you switch back.</string>
     <string name="code_logic_unknown_mode">/logic:%1$s is not a known mode — use /logic:standard, /logic:loom, /logic:courier or /logic:deep_dive (aliases: std, weave, express, deep)</string>
 
-    <!-- v1.6 Workspace explorer (apex-workspace-kit); v6 standalone Git panel
+    <!-- v1.6 Workspace explorer (apex-kit-workspace); v6 standalone Git panel
          removed 2026-10 (duplicate of the explorer's built-in Git tab) -->
     <!-- Workspace selection (input-bar selector, 2026-10): real folder + whole system -->
     <string name="code_workspace_pick_folder">Select Folder…</string>

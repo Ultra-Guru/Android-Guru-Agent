@@ -142,7 +142,7 @@ sealed class DrawerDestination(
     data object Usage : DrawerDestination("usage", R.string.drawer_usage, Icons.Default.DataUsage)
     // v1.4.4 #7：诊断中心 —— 应用/设备信息 + 崩溃记录 + 日志文件 + 一键诊断包
     data object Diagnostics : DrawerDestination("diagnostics", R.string.drawer_diagnostics, Icons.Default.BugReport)
-    // v1.6 Coding 工作区浏览器（apex-workspace-kit）：Coding 屏右上角文件图标
+    // v1.6 Coding 工作区浏览器（apex-kit-workspace）：Coding 屏右上角文件图标
     // 压栈进入；不进抽屉列表 —— 编码场景专属页（文件夹/Git/变更和产物 + 实时跟随）。
     data object WorkspaceBrowser : DrawerDestination("workspace-browser", R.string.drawer_workspace_browser, Icons.Outlined.FolderOpen)
     // 关于页 —— 固定在抽屉最下方的独立入口（v1.4.3：从设置页「关于」区升级为一级页面；

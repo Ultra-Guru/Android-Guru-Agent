@@ -17,7 +17,7 @@ package com.apex.agent.terminalemulator
  * ```
  *
  * 类型复用 [TerminalEngine] 既有契约（[MouseTrackingMode]/[MouseWireEncoding]/
- * [TerminalMouseEventType]）—— 与 native 引擎（apex-vt-native v0.2）同一语义面，
+ * [TerminalMouseEventType]）—— 与 native 引擎（apex-native-vt v0.2）同一语义面，
  * 两个引擎可互换。本文件补充的是「模式状态机 + 宿主→guest 编码器」。
  *
  * 协议矩阵（xterm / DEC STD 070 / urxvt 扩展）：

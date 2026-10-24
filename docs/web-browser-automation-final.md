@@ -152,7 +152,7 @@ Operit 的网页自动化 = 内置 `WebView` + 把渲染后 DOM 精简成「带*
 | `BrowserScreenshot` | — | PNG base64（视口） | 锁定期返回 `SYSTEM_LOCKED` |
 | `BrowserShow` | `expand?`(默认 true) | 展开/收起浮窗，进入/退出人工接管 | 触发 `enterHandoffMode`/`completeHandoff` |
 
-### 6.1 v1.1.0 高级动作空间（apex-browser-kit PR #3 落地）
+### 6.1 v1.1.0 高级动作空间（apex-kit-browser PR #3 落地）
 
 | 工具 | 参数 | 返回 | 用途 |
 | --- | --- | --- | --- |
@@ -285,7 +285,7 @@ Operit 的网页自动化 = 内置 `WebView` + 把渲染后 DOM 精简成「带*
 | 项 | 位置 | 说明 |
 | --- | --- | --- |
 | 删除插件壳 | `plugins/` 下的网页自动化插件目录（整目录删除）+ settings include + apk.yml / release.yml 构建与发布段 | 15 工具声明壳退役；官方参考插件只剩 plugin-workflow |
-| 新建平台模块 | `:platform:browser-agent` | 对齐 platform:* 大功能范式：BrowserAgentTools（工具协议）+ BrowserKitModule（库 DI 接线）迁入，只改 package 声明；apex-browser-kit 三层经 `api` 传递给 app；namespace `com.apex.agent.platform.browser` |
+| 新建平台模块 | `:platform:browser-agent` | 对齐 platform:* 大功能范式：BrowserAgentTools（工具协议）+ BrowserKitModule（库 DI 接线）迁入，只改 package 声明；apex-kit-browser 三层经 `api` 传递给 app；namespace `com.apex.agent.platform.browser` |
 | app 侧接线 | `app/build.gradle.kts` / `di/ToolModule.kt` / `plugin/host/PluginHostBridge.kt` | 三条库坐标替换为模块依赖；import 更新为新包；CyberNeonBallManager / NeonRingView 视觉装饰留 app（LanguageManager 与 app 资源依赖），悬浮球/浮窗链路零变化 |
 | 旧插件拦截 | `PluginManager`（plugin-sdk/plugin-host） | metadata.id 命中退役 id 时拒绝加载：日志警告「已内置，建议卸载」+ post 解绑，不注册任何工具（防旧 15 工具清单 REPLACE 覆盖内置 24 工具，与签名门同款 fail-closed 语义） |
 | 一级 UI 入口 | `DrawerDestination.Browser` + `ui/screen/browser/BrowserScreen.kt` / `BrowserViewModel.kt` | 抽屉「浏览器」页（Market 之后 Memory 之前，Language 地球图标）：会话状态卡（状态机四态人话解释 + 当前页面）+ 标签列表（tabsSnapshot）+ 最近自动化动作（tracer.recent(10)：工具/结果摘要/耗时/状态）+ 人工操作（newTab / releaseBrowser / enterHandoffMode / completeHandoff 按 WAITING_HUMAN 切换）+ 内置说明卡 |
@@ -297,7 +297,7 @@ Agent 对话中直接可用（浏览器被使用后悬浮球 / 浮窗照常出�
 插件 APK 的用户**卸载它即可**——宿主 PluginManager 会在加载时拦截并
 日志引导卸载；旧插件不再注册任何工具，留着无害但无益。
 
-### 13.4 与 apex-browser-kit v1.2.0 的协同
+### 13.4 与 apex-kit-browser v1.2.0 的协同
 
 - 主项目消费坐标仍为 `com.apex.browser:{core,engine,chrome}`（composite
   build / 远端 Maven 双通道不变），本次模块化改造对库**零要求**——v1.1.0
@@ -317,7 +317,7 @@ Agent 对话中直接可用（浏览器被使用后悬浮球 / 浮窗照常出�
 > recentHistory 首次暴露、findInPage 首次暴露、下载只有 lastDownload
 > 瞬时值、书签为零、显示控制为零、全页截图为零）。本次按
 > 「对标 Playwright MCP 会话面 + 桌面浏览器 UX 基线」一次性补齐——
-> 全部走 apex-browser-kit v1.7.0 新组件（库侧），宿主只加协议与接线。
+> 全部走 apex-kit-browser v1.7.0 新组件（库侧），宿主只加协议与接线。
 
 ### 14.1 会话工具集（:platform:browser-agent 新增 BrowserSessionTools，9 工具）
 

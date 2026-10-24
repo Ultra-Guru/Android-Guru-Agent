@@ -1,9 +1,9 @@
 package com.apex.agent.vtnative
 
 // ═══════════════════════════════════════════════════════════════════════════
-// NativeVtCore — JNI wrapper over libvt_native.so (apex-vt-native engine).
+// NativeVtCore — JNI wrapper over libvt_native.so (apex-native-vt engine).
 //
-// Vendored from upstream apex-vt-native v0.2 (kotlin/NativeVtCore.kt) and
+// Vendored from upstream apex-native-vt v0.2 (kotlin/NativeVtCore.kt) and
 // adapted for this project: real imports (TerminalEngine contract types),
 // no @file:JvmName, no finalize — see VENDOR.md for the vendoring rules.
 //
@@ -427,6 +427,29 @@ class NativeVtCore(
         return nativeActiveSearchHit(handle)
     }
 
+    // ─── v0.2: theme colors (OSC 4/10/11/12 responses) ──────────────────
+    /** Host theme colors → OSC 4/10/11/12 "?" responses. Defaults keep the
+     *  v0.2 placeholder answers (fg white / bg+cursor black). */
+    fun setThemeColors(fg: Int, bg: Int, cursor: Int) {
+        checkHandle()
+        nativeSetThemeColors(handle, fg, bg, cursor)
+    }
+
+    fun themeFg(): Int {
+        checkHandle()
+        return nativeThemeFg(handle)
+    }
+
+    fun themeBg(): Int {
+        checkHandle()
+        return nativeThemeBg(handle)
+    }
+
+    fun themeCursor(): Int {
+        checkHandle()
+        return nativeThemeCursor(handle)
+    }
+
     // ─── v0.2: selection (touch copy/paste) ─────────────────────────────
 
     override fun beginSelection(globalRow: Long, col: Int) {
@@ -612,6 +635,10 @@ class NativeVtCore(
     private external fun nativeClearSearch(handle: Long)
     private external fun nativeSearchHits(handle: Long): LongArray?
     private external fun nativeSearchHitCount(handle: Long): Int
+    private external fun nativeSetThemeColors(handle: Long, fg: Int, bg: Int, cursor: Int)
+    private external fun nativeThemeFg(handle: Long): Int
+    private external fun nativeThemeBg(handle: Long): Int
+    private external fun nativeThemeCursor(handle: Long): Int
     private external fun nativeSetActiveSearchHit(handle: Long, index: Int)
     private external fun nativeActiveSearchHit(handle: Long): Int
     private external fun nativeBeginSelection(handle: Long, globalRow: Long, col: Int)

@@ -18,11 +18,11 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * apex-workspace-kit 宿主适配层：把主仓库的 git 执行器 / 工作区根 / 日志
+ * apex-kit-workspace 宿主适配层：把主仓库的 git 执行器 / 工作区根 / 日志
  * 三项能力以薄包装注入库控制器，并把引擎工具事件映射为库的文件事件
  * （实时跟随的数据源）。
  *
- * 拆库 E1 迁移期的接线约定（与 apex-browser-kit 的 BrowserKitModule 同构，
+ * 拆库 E1 迁移期的接线约定（与 apex-kit-browser 的 BrowserKitModule 同构，
  * 但适配均为无状态 lambda —— 无需独立 Gradle 模块）：
  * - GitCommandRunner：宿主 core:code-tools 同名接口逐字段映射（PRoot 沙箱
  *   执行器不变，恒定把激活工作区 bind 为 guest /workspace）；

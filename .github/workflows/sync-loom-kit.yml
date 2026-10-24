@@ -1,9 +1,9 @@
-name: Sync apex-loom-kit
+name: Sync apex-kit-loom
 
 # ═════════════════════════════════════════════════════════════════════════════
 # loom-kit → 主仓库 全自动同步链路（v1.0，镜像 sync-standard-kit）
 #
-#   apex-loom-kit main 出现新绿提交
+#   apex-kit-loom main 出现新绿提交
 #       ├─ 事件路（主通道，即时）：loom-kit 的 notify-host.yml 等自家 CI
 #       │   全绿后 repository_dispatch 本仓库（event: loom-kit-updated）
 #       └─ 定时路（兜底，防丢事件）：本 workflow 每 30 分钟轮询一次
@@ -50,7 +50,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          SHA=$(gh api repos/Ultra-Guru/apex-loom-kit/commits/main --jq '.sha')
+          SHA=$(gh api repos/Ultra-Guru/apex-kit-loom/commits/main --jq '.sha')
           CUR=$(head -n 1 gradle/loom-kit.lock 2>/dev/null || true)
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "current=$CUR" >> "$GITHUB_OUTPUT"
@@ -76,7 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           GATING_FILTER='.name != "Gradle dependency graph" and (.name | startswith("Dependabot") | not) and (.name | startswith("Notify host") | not) and (.name | startswith("notify-host") | not)'
-          SUMMARY=$(gh api "repos/Ultra-Guru/apex-loom-kit/commits/$UP_SHA/check-runs" \
+          SUMMARY=$(gh api "repos/Ultra-Guru/apex-kit-loom/commits/$UP_SHA/check-runs" \
             --jq "([.check_runs[]? | select($GATING_FILTER)]) as \$gating |
                    {total: (\$gating | length),
                     pending: (\$gating | map(select(.status != \"completed\")) | length),
@@ -91,7 +91,7 @@ jobs:
             exit 0
           fi
           if [ "$FAILED" != "0" ]; then
-            echo "::error::上游 loom-kit CI 有 $FAILED 项失败 —— 拒绝同步（先修复 https://github.com/Ultra-Guru/apex-loom-kit/actions）"
+            echo "::error::上游 loom-kit CI 有 $FAILED 项失败 —— 拒绝同步（先修复 https://github.com/Ultra-Guru/apex-kit-loom/actions）"
             exit 1
           fi
           echo "green=true" >> "$GITHUB_ENV"
@@ -121,7 +121,7 @@ jobs:
           git config user.name "apex-sync-bot"
           git config user.email "sync-bot@apex-agent.local"
           git add gradle/loom-kit.lock
-          git commit -m "chore(sync): bump apex-loom-kit @ ${UP_SHA:0:10}
+          git commit -m "chore(sync): bump apex-kit-loom @ ${UP_SHA:0:10}
 
           Automated by sync-loom-kit workflow (trigger: $EVENT).
           链路：loom-kit main 新绿提交 → 锁定 bump → push main →
@@ -137,7 +137,7 @@ jobs:
       - name: Summary
         run: |
           {
-            echo "### 🔄 apex-loom-kit 同步"
+            echo "### 🔄 apex-kit-loom 同步"
             echo ""
             echo "- 上游 main：\`${{ steps.up.outputs.sha }}\`"
             echo "- 本仓锁定：\`${{ steps.up.outputs.current }}\`"

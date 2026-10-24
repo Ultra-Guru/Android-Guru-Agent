@@ -65,7 +65,7 @@ import kotlinx.coroutines.flow.map
  * # Standard Kit Adapter — 标准思考逻辑线的库接线适配器
  *
  * 标准任务循环已提取为独立库模块
- * （`com.apex.standardkit:standard-loop`，仓库 Ultra-Guru/apex-standard-kit）——
+ * （`com.apex.standardkit:standard-loop`，仓库 Ultra-Guru/apex-kit-standard）——
  * 本类是宿主侧的**薄适配层**：
  *
  * ```

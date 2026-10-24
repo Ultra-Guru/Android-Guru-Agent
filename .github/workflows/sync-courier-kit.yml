@@ -1,7 +1,7 @@
 name: Sync Courier Kit
 
 # ═════════════════════════════════════════════════════════════════════════════
-# apex-courier-kit 自动同步（同构 sync-loom-kit / sync-standard-kit）：
+# apex-kit-courier 自动同步（同构 sync-loom-kit / sync-standard-kit）：
 #
 #   courier-kit main 出现新的**全绿**提交 → 本工作流把
 #   gradle/courier-kit.lock bump 到该提交并推送 main——宿主全流水线
@@ -10,7 +10,7 @@ name: Sync Courier Kit
 #   触发源：
 #   • schedule（每 30 分钟轮询兜底）；
 #   • repository_dispatch（courier-kit-updated——库仓 main 全绿后的即时
-#     通道，见 apex-courier-kit/.github/workflows/notify-host.yml）。
+#     通道，见 apex-kit-courier/.github/workflows/notify-host.yml）。
 #
 #   纪律：
 #   • 只跟**绿**提交（check-runs 无 pending/failed；pending → 跳过本轮等下趟；
@@ -57,7 +57,7 @@ jobs:
           GH_TOKEN: ${{ secrets.SYNC_PUSH_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          UPSTREAM_SHA=$(gh api repos/Ultra-Guru/apex-courier-kit/commits/main --jq '.sha')
+          UPSTREAM_SHA=$(gh api repos/Ultra-Guru/apex-kit-courier/commits/main --jq '.sha')
           echo "sha=${UPSTREAM_SHA}" >> "$GITHUB_OUTPUT"
           echo "upstream main @ ${UPSTREAM_SHA:0:10}"
 
@@ -88,7 +88,7 @@ jobs:
           # 显式排除 Dependabot*（长跑依赖升级）/ Gradle dependency graph（数据
           # 洞察）/ Notify host（自引用死锁）。
           GATING_FILTER='.name != "Gradle dependency graph" and (.name | startswith("Dependabot") | not) and (.name | startswith("Notify host") | not) and (.name | startswith("notify-host") | not)'
-          SUMMARY=$(gh api "repos/Ultra-Guru/apex-courier-kit/commits/${UP_SHA}/check-runs" \
+          SUMMARY=$(gh api "repos/Ultra-Guru/apex-kit-courier/commits/${UP_SHA}/check-runs" \
             --jq "([.check_runs[]? | select($GATING_FILTER)]) as \$gating |
                    {total: (\$gating | length),
                     pending: (\$gating | map(select(.status != \"completed\")) | length),
@@ -103,7 +103,7 @@ jobs:
             exit 0
           fi
           if [ "$FAILED" != "0" ]; then
-            echo "::error::上游 courier-kit CI 有 $FAILED 项失败 —— 拒绝同步（先修复 https://github.com/Ultra-Guru/apex-courier-kit/actions）"
+            echo "::error::上游 courier-kit CI 有 $FAILED 项失败 —— 拒绝同步（先修复 https://github.com/Ultra-Guru/apex-kit-courier/actions）"
             exit 1
           fi
           echo "green=true" >> "$GITHUB_OUTPUT"
@@ -126,7 +126,7 @@ jobs:
           git add gradle/courier-kit.lock
           # ⚠️ 提交信息不带 [skip ci]：那会抑制 ci.yml / release.yml 的 push 触发，
           # bump 落地后既不跑 CI 也不发布（直到下一次无关 push）——发布链断链。
-          git commit -m "chore(sync): bump apex-courier-kit @ ${UP_SHA:0:10}" \
+          git commit -m "chore(sync): bump apex-kit-courier @ ${UP_SHA:0:10}" \
             -m "Automated by sync-courier-kit workflow（触发：${{ github.event_name }}）。" \
             -m "链路：courier-kit main 新绿提交 → 锁定 bump → push main → 全流水线以新锁定版本构建（新 courier 内核随 APK 交付）。"
           # PAT 推送（剥离 checkout 持久化的 extraheader，防凭据串扰）

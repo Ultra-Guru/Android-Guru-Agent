@@ -32,7 +32,7 @@ import javax.inject.Inject
  *   「可等待恢复的锁定」与「永久失败」，不再靠裸前缀猜语义。
  * - 点击/输入/选择返回动作后验证摘要（URL 变化 / 新增元素数），供 Agent 做下一步决策。
  * - 新增 [select]/[toggle]/[show]/[dialog]/[file_upload] 补齐动作空间与显式握手。
- * - v1.1.0 高级动作空间接入（apex-browser-kit PR #3）：[pressKey]/[hover]/[drag]
+ * - v1.1.0 高级动作空间接入（apex-kit-browser PR #3）：[pressKey]/[hover]/[drag]
  *   键鼠补齐；[extractContent] 四模式结构化抽取；[executeJs] 原生 JS 逃生舱；
  *   [getCookies] 登录态诊断（trace 结果脱敏）；[locate] 文本模糊重锚定（与引擎
  *   内建模糊自愈同源，供 Agent 主动调用）。
