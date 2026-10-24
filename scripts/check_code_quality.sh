@@ -113,8 +113,11 @@ EMPTY_CATCH_COUNT=0
 EMPTY_CATCH_HITS=""
 if [ -n "$MAIN_KT_LIST" ]; then
     # 注释行豁免：KDoc/行注释里引述旧实现（如「旧实现 catch(_){}」）不算违规。
+    # 字符类含下划线（2026-10 堵漏）：catch (_: Throwable) {} 的弃名参数
+    # 此前绕过 [a-zA-Z. :]+ —— MoreCapabilitiesHost/ApkInstaller/UiRenderer
+    # 三处真实违规即由此漏网；弃名参数不豁免（要忽略就写明为何可安全吞）。
     EMPTY_CATCH_HITS=$(printf '%s\n' "$MAIN_KT_LIST" \
-        | xargs grep -nE 'catch \([a-zA-Z. :]+\) \{ *\}' 2>/dev/null \
+        | xargs grep -nE 'catch \([a-zA-Z. :_]+\) \{ *\}' 2>/dev/null \
         | grep -vE ':[0-9]+:[[:space:]]*(\*|//)' \
         || true)
     EMPTY_CATCH_COUNT=$(printf '%s\n' "$EMPTY_CATCH_HITS" | grep -c . || true)

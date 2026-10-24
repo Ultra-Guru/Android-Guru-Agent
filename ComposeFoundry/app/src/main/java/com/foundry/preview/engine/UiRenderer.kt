@@ -195,9 +195,12 @@ private fun ModifierConfig.toComposeModifier(base: Modifier, theme: ThemeConfig)
     }
 
     background?.let { bg ->
+        // 防御式 IO 留痕（#260）：非法色值（如 #ZZZ）跳过背景着色而非整卡渲染失败
         try {
             result = result.background(Color(android.graphics.Color.parseColor(bg)))
-        } catch (_: Exception) {}
+        } catch (t: Throwable) {
+            android.util.Log.w("UiRenderer", "parseColor failed, skip background: ${bg.take(32)} (${t.message})")
+        }
     }
 
     cornerRadius?.let { radius ->

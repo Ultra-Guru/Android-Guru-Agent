@@ -115,7 +115,13 @@ class AndroidApkInstaller(
                 session.commit(pendingIntent.intentSender)
             }
         } catch (e: Exception) {
-            try { installer.abandonSession(sessionId) } catch (_: Throwable) {}
+            // 防御式 IO 留痕（#260）：放弃会话失败不掩盖 commit 主异常路径，仅留痕
+            try { installer.abandonSession(sessionId) } catch (t: Throwable) {
+                AppLogger.instance.warn(
+                    LogCategory.PLUGIN, "ApkInstaller",
+                    "abandonSession('$sessionId') failed: ${t.message}"
+                )
+            }
             return ApkInstallResult(
                 success = false,
                 message = "session commit failed: ${e.message ?: e::class.simpleName}"
