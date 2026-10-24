@@ -6,8 +6,6 @@
     <!-- ═══ Drawer and navigation destinations (ApexRoot / ApexDrawerContent) ═══ -->
     <string name="drawer_agent">Agent</string>
     <string name="drawer_terminal">Terminal</string>
-<!-- M³ 现代终端（Material 3 Terminal UI）：轻量 REPL 命令台 -->
-    <string name="drawer_terminal_m3">Terminal · M³</string>
 <!-- #197 Template Studio -->
     <string name="drawer_templates">Template Studio</string>
     <string name="drawer_market">Market</string>
@@ -85,8 +83,6 @@
     <string name="settings_nav_interface_chat">Chat Display</string>
     <string name="settings_nav_interface_notifications">Notifications</string>
     <string name="settings_nav_terminal_appearance">Appearance &amp; Feedback</string>
-    <string name="settings_nav_terminal_scheme">Color Scheme</string>
-    <string name="settings_nav_terminal_keys">Extra Keys</string>
     <string name="settings_nav_terminal_policy">Command Policy</string>
     <string name="settings_nav_data_backup">Backup &amp; Restore</string>
     <string name="settings_nav_data_update">App Updates</string>
@@ -94,7 +90,6 @@
     <string name="settings_manage_providers">Manage Providers</string>
     <string name="settings_manage_roles">Manage Model Roles</string>
     <string name="settings_tab_close">Close %1$s</string>
-    <string name="settings_terminal_scheme_desc">Applies instantly to the terminal view — same list as the in-terminal picker</string>
     <string name="settings_notifications_section">In-app notifications</string>
     <string name="settings_notif_channel_section">System channels</string>
     <string name="settings_notif_channel_desc">Per-channel importance and Do-Not-Disturb are managed in system settings — this opens the app\'s channel list directly.</string>

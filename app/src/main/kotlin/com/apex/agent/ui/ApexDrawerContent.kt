@@ -176,9 +176,6 @@ fun ApexDrawerContent(
                         // #197 模板工坊：Agent/Coding 双层模板 + Agent 角色详细设置
                         DrawerDestination.Templates,
                         DrawerDestination.Terminal,
-                        // M³ 现代终端（Material 3 Terminal UI）：轻量 REPL 命令台，
-                        // 紧随沙箱终端 —— 两种终端工作流并列可见
-                        DrawerDestination.TerminalM3,
                         DrawerDestination.Market,
                         // 浏览器大功能（v1.5.0 内置化）：市场后的高频工作流入口
                         DrawerDestination.Browser,
