@@ -30,10 +30,15 @@ import kotlinx.coroutines.launch
  * 独立文件（God-file 预算纪律：CodeViewModel 只减不增，模式同
  * CodeLongTaskCenterOps 的 internal 扩展拆分——本类经 VM 的 lazy
  * 属性暴露，CodeScreen 直取）。
+ *
+ * v1.8.0：[knowledgeBaseService] —— 角色绑定了专属知识库时，
+ * applyToEngine 把检索指引（must_read → index/search → read）追加进
+ * Role definition，随引擎人设通道下发。
  */
 class CodeRoleController(
     private val settingsRepository: SettingsRepository,
     private val engineAccessor: () -> com.apex.agent.core.code.CodeEngineFacade?,
+    private val knowledgeBaseService: com.apex.agent.knowledge.KnowledgeBaseService,
     scope: CoroutineScope
 ) {
 
@@ -61,9 +66,13 @@ class CodeRoleController(
         settingsRepository.updateAgentSettings { withCodingRoleActivated(roleId) }
     }
 
-    private fun applyToEngine(role: AgentRole) {
+    private suspend fun applyToEngine(role: AgentRole) {
+        // v1.8.0：角色绑定了专属知识库时，把「怎么用知识库」写进 Role definition
+        //（must_read → index/search → read 检索工作流指引）。
+        val kbHint = knowledgeBaseService.forRole(role.id)
+            ?.let { knowledgeBaseService.roleDefinitionHint(it) } ?: ""
         engineAccessor()?.updateRolePersona(
-            roleDefinition = role.roleDefinition,
+            roleDefinition = role.roleDefinition + kbHint,
             rolePrompt = role.systemPrompt.ifBlank { null }
         )
     }
