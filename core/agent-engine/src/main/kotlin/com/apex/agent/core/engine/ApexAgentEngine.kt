@@ -888,7 +888,7 @@ class ApexAgentEngine(
                     val acc = toolCallsAccumulator.getOrPut(key) {
                         StreamingToolCallAccumulator(tc.id.ifBlank { key }, tc.name)
                     }
-                    acc.append(tc.name, tc.arguments)
+                    appendFragmentAndEmitDelta(acc, tc, emit)
                 }
             }
             } catch (e: CancellationException) {

@@ -738,33 +738,11 @@ class CodeViewModel @Inject constructor(
     }
 
     /**
-     * 异常 → 错误条可读文案（#209；#312 资源化）：
-     * 1. 高频类型直接映射资源（见 [ERROR_FRIENDLY_RES]）；
-     * 2. 其余取 message 首个有意义行（过滤空行/null 字样/堆栈帧/类名前缀）；
-     * 3. 全部无效时回退「执行失败（异常类型）」—— 堆栈与 null 字样绝不直出。
+     * 异常 → 错误条可读文案（#209；#312 资源化）：三段策略见
+     * [CodeErrorText]（God-file 预算：净化逻辑拆至独立文件，VM 只留代理）。
      */
-    internal fun sanitizeErrorText(e: Throwable): String {
-        ERROR_FRIENDLY_RES[e::class.simpleName]?.let { return languageManager.getString(it) }
-        val detail = e.message
-            ?.lineSequence()
-            ?.map { it.trim() }
-            ?.firstOrNull { line ->
-                line.isNotEmpty() &&
-                    !line.equals("null", ignoreCase = true) &&
-                    !line.startsWith("Caused by:") &&
-                    !STACK_FRAME_LINE.containsMatchIn(line)
-            }
-            ?.let { EXCEPTION_NAME_PREFIX.replace(it, "").trim() }
-            .orEmpty()
-        return if (detail.isEmpty()) {
-            languageManager.getString(
-                R.string.code_err_execute_failed_fmt,
-                e::class.simpleName ?: languageManager.getString(R.string.code_err_unknown_exception)
-            )
-        } else {
-            detail
-        }
-    }
+    internal fun sanitizeErrorText(e: Throwable): String =
+        CodeErrorText.sanitize(e, languageManager)
 
     fun clearConversation() {
         // v1.4.10：新会话 = 先归档再清空（旧实现物理删除，历史不可找回）。
@@ -1094,30 +1072,5 @@ class CodeViewModel @Inject constructor(
 
         /** 渲染攒批窗口：25ms = 上限 40Hz（规格书：脉冲式输出）。 */
         const val RENDER_TICK_MS = 25L
-
-        // ═══ #209 错误文案净化（错误条不直出裸异常文本；#312 文案资源化）═══
-
-        /**
-         * 高频异常类型 → 可读文案资源（模型运行时类与 llm-adapter 的
-         * LlmErrorText 口径对齐；取词在实例层 sanitizeErrorText 经
-         * languageManager 按当前语言解析）。
-         */
-        private val ERROR_FRIENDLY_RES: Map<String, Int> = mapOf(
-            "SocketTimeoutException" to R.string.code_err_socket_timeout,
-            "ConnectException" to R.string.code_err_connect,
-            "UnknownHostException" to R.string.code_err_unknown_host,
-            "SocketException" to R.string.code_err_socket,
-            "SSLException" to R.string.code_err_ssl,
-            "EOFException" to R.string.code_err_eof,
-            "IOException" to R.string.code_err_io,
-            "SerializationException" to R.string.code_err_serialization,
-            "JsonEncodingException" to R.string.code_err_json_encoding
-        )
-
-        /** 堆栈帧样式行（at com.example.Foo.bar(Foo.kt:12)）——过滤目标。 */
-        private val STACK_FRAME_LINE = Regex("^\\s*at \\S+\\(")
-
-        /** 「a.b.ClassName: 前缀」样式 —— 剥离类名前缀只留可读描述。 */
-        private val EXCEPTION_NAME_PREFIX = Regex("^[\\w.$]+(?:Exception|Error)\\s*:\\s*")
     }
 }

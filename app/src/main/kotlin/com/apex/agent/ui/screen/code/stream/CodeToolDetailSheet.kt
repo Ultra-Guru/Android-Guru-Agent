@@ -140,6 +140,35 @@ private fun statusLabel(status: ToolCallStatus): String = stringResource(
 
 @Composable
 private fun DiffDetailBody(call: StreamToolCall) {
+    // 流式期（参数生成/执行中）优先实时预览：用户点开等待态胶囊即可在
+    // 详情层看到正在写入的代码（绿增红删同款尾窗，规模上限高于内嵌窗）
+    val preview = call.streamingPreview
+    if (preview != null && preview.hasCode && call.isLive) {
+        Text(
+            text = stringResource(R.string.code_stream_streaming_preview_title),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+        )
+        val scroll = rememberScrollState()
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = Color.Transparent,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 480.dp)
+        ) {
+            StreamingCodeWindow(
+                preview = preview,
+                kind = call.kind,
+                status = call.status,
+                maxLines = STREAM_WINDOW_MAX_LINES_DETAIL,
+                modifier = Modifier.verticalScroll(scroll)
+            )
+        }
+        return
+    }
     val diffText = call.diffText
     Text(
         text = stringResource(R.string.code_stream_detail_diff_title),
@@ -149,11 +178,20 @@ private fun DiffDetailBody(call: StreamToolCall) {
         modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
     )
     if (diffText.isNullOrBlank()) {
-        Text(
-            text = stringResource(R.string.code_stream_detail_diff_missing),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        // 仍在流式期（diff 尚未产生）≠ 「未捕获」：措辞区分，避免误导
+        if (call.isLive) {
+            Text(
+                text = stringResource(R.string.code_stream_streaming_generating),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            Text(
+                text = stringResource(R.string.code_stream_detail_diff_missing),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     } else {
         CodeDiffView(diffText = diffText, modifier = Modifier.fillMaxWidth())
     }

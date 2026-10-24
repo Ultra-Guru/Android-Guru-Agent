@@ -16,9 +16,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Loop
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material3.Icon
@@ -41,9 +43,11 @@ import androidx.compose.ui.unit.dp
 import com.apex.agent.R
 import com.apex.agent.core.code.stream.StreamEntry
 import com.apex.agent.core.code.stream.StreamToolCall
+import com.apex.agent.core.code.stream.UnifiedDiffParser
 import com.apex.agent.ui.component.MarkdownText
 import com.apex.agent.ui.glass.GlassCard
 import com.apex.agent.ui.glass.GlassStyle
+import com.apex.agent.ui.theme.LocalExtendedColors
 
 /**
  * # Code Stream Cards — 时间轴卡片族
@@ -68,6 +72,7 @@ internal fun StreamCard(entry: StreamEntry, onToolClick: (StreamToolCall) -> Uni
         is StreamEntry.StopEntry -> StopCard(entry.reason)
         is StreamEntry.FileChipsEntry -> FileChipsCard(entry.files)
         is StreamEntry.GitOpEntry -> GitOpVisualCard(entry)
+        is StreamEntry.RunStatsEntry -> RunStatsCard(entry)
     }
 }
 
@@ -213,6 +218,17 @@ private fun VerifyCycleCard(entry: StreamEntry.VerifyCycleEntry, onToolClick: (S
         false -> MaterialTheme.colorScheme.error
         null -> MaterialTheme.colorScheme.outline
     }
+    // 轮内改动量可视化：编辑胶囊 diff 原文现场解析求和（绿增红删徽标）。
+    // 恢复回放的轮次 calls 为空 → null（不显徽标，轮次红绿态仍保留）。
+    val delta = remember(entry) {
+        val parsed = entry.calls
+            .filter { it.isEditFamily }
+            .mapNotNull { it.diffText }
+            .map { UnifiedDiffParser.parse(it) }
+            .filter { it.hunks.isNotEmpty() }
+        if (parsed.isEmpty()) null
+        else parsed.sumOf { it.totalAdded } to parsed.sumOf { it.totalRemoved }
+    }
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = tint.copy(alpha = 0.06f),
@@ -246,6 +262,12 @@ private fun VerifyCycleCard(entry: StreamEntry.VerifyCycleEntry, onToolClick: (S
                     style = MaterialTheme.typography.labelSmall,
                     color = tint
                 )
+                delta?.let { (added, removed) ->
+                    if (added + removed > 0) {
+                        Spacer(Modifier.width(6.dp))
+                        VerifyDeltaBadge(added = added, removed = removed)
+                    }
+                }
                 Spacer(Modifier.weight(1f))
                 Text(
                     text = stringResource(
@@ -283,6 +305,122 @@ private fun VerifyCycleCard(entry: StreamEntry.VerifyCycleEntry, onToolClick: (S
             }
         }
     }
+}
+
+// ═══ 运行统计收尾卡（Complete 事件的结构化可视化）═══
+
+/**
+ * 一轮运行收尾的统计卡：头行（完成图标 + 总耗时）+ FlowRow 象征 chips
+ * （迭代轮数 / 工具调用 / 触碰文件 / 失败数——失败 >0 红色强调）。
+ * 取代旧纯文本「完成 · N 轮 · N 次工具 · Ns」状态行——同样的数字，
+ * 可扫读的版式（图标 + 数值 + 标签三段式）。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun RunStatsCard(entry: StreamEntry.RunStatsEntry) {
+    // 失败 >0：头行用错误色转述（成功轮次一律 primary，不告警）
+    val failed = entry.failedCalls > 0
+    val accent = if (failed) MaterialTheme.colorScheme.error
+    else MaterialTheme.colorScheme.primary
+    GlassCard(
+        style = GlassStyle.Card,
+        shape = RoundedCornerShape(12.dp),
+        accent = accent,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 3.dp)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (failed) Icons.Default.BugReport else Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = stringResource(R.string.code_stream_run_stats_title),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = formatCapsuleDuration(entry.durationMs),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.padding(top = 6.dp)
+            ) {
+                StatChip(
+                    icon = Icons.Default.Loop,
+                    label = stringResource(R.string.code_stream_run_iterations_fmt, entry.iterations)
+                )
+                StatChip(
+                    icon = Icons.Default.Build,
+                    label = stringResource(R.string.code_stream_run_tools_fmt, entry.toolCalls)
+                )
+                if (entry.filesTouched > 0) {
+                    StatChip(
+                        icon = Icons.AutoMirrored.Filled.Notes,
+                        label = stringResource(R.string.code_stream_run_files_fmt, entry.filesTouched)
+                    )
+                }
+                if (failed) {
+                    StatChip(
+                        icon = Icons.Default.BugReport,
+                        label = stringResource(R.string.code_stream_run_failed_fmt, entry.failedCalls),
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 单枚统计 chip：图标 + 文案（surfaceContainer 薄底，非交互展示）。 */
+@Composable
+private fun StatChip(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, tint: androidx.compose.ui.graphics.Color? = null) {
+    val color = tint ?: MaterialTheme.colorScheme.onSurfaceVariant
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(12.dp)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = color
+            )
+        }
+    }
+}
+
+/** 轮次头行的增删行徽标（与流式代码窗 / 终态 diff 统计同款 +N −M）。 */
+@Composable
+private fun VerifyDeltaBadge(added: Int, removed: Int) {
+    Text(
+        text = stringResource(R.string.code_stream_diff_stat_fmt, added, removed),
+        style = MaterialTheme.typography.labelSmall,
+        fontFamily = FontFamily.Monospace,
+        color = LocalExtendedColors.current.success
+    )
 }
 
 // ═══ 结构化错误卡 ═══

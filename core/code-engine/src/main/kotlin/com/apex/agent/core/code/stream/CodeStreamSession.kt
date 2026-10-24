@@ -42,6 +42,9 @@ class CodeStreamSession {
     private val toolCalls = LinkedHashMap<String, StreamToolCall>()
     private val terminalBuffers = LinkedHashMap<String, TerminalPulseBuffer>()
 
+    /** 参数流式状态表（callId → 分片缓冲 + 追踪器；Start/终态即移除）。 */
+    private val argsStreams = LinkedHashMap<String, ArgsStreamState>()
+
     /** 时间轴条目 id 稳定自增（会话生命周期内唯一）。 */
     private var entrySeq = 0L
 
@@ -71,6 +74,9 @@ class CodeStreamSession {
     private var toolCallCount = 0
     private var failedToolCallCount = 0
 
+    /** 本 run 起点时的累计失败数（Complete 时差值 = 本轮失败数）。 */
+    private var runStartFailedCount = 0
+
     // ═══ 验证闭环追踪 ═══
     private var cycleRound = 0
     private var openCycleEdits = mutableListOf<String>()
@@ -91,8 +97,12 @@ class CodeStreamSession {
         // 上一轮的在飞胶囊同样静默收口（防御：中止事件未达且本地收尾
         // 遗漏的路径，RUNNING/WAITING 胶囊带进新 run 会无限计时转圈）
         finalizeInFlightCapsules(System.currentTimeMillis())
+        // 参数流式追踪器同批清理（未达 Start 的残留分片缓冲不带入新 run）
+        argsStreams.clear()
         // 文档语义：「本轮运行」触碰的文件 —— 每 run 归零重新累计
         affectedFiles.clear()
+        // 统计收尾卡的本轮失败数基线（failedToolCallCount 跨 run 累积）
+        runStartFailedCount = failedToolCallCount
         append(StreamEntry.UserEntry(nextId(), userText))
         activeTerminalCallId = null
         // 新 run 归零终端面板三信号（上一轮命令的尾窗不再展示）
@@ -175,6 +185,12 @@ class CodeStreamSession {
                 }
                 streamingThinking = null
             }
+
+            // ═══ 参数增量（LLM 流式生成 tool_calls 期间逐帧上抛）═══
+            // 先于 Start 到达：建立/刷新「正在生成参数」等待态胶囊——写/
+            // 编辑类经 [StreamingArgsTracker] 容错提取半截 JSON 的文件内容，
+            // 胶囊内嵌代码窗即可实时渲染「代码正在写入」（绿增红删）。
+            is AgentEvent.ToolCallArgsDelta -> onToolArgsDelta(event)
 
             is AgentEvent.ToolCallStart -> onToolStart(event)
 
@@ -282,7 +298,24 @@ class CodeStreamSession {
                 streamingAssistant?.let { closeStreamingEntry(it) }
                 streamingAssistant = null
                 closeOpenCycle()
-                append(StreamEntry.StatusEntry(nextId(), "完成 · ${event.totalIterations} 轮 · ${event.totalToolCalls} 次工具 · ${event.totalDurationMs / 1000}s"))
+                // 结构化统计收尾卡（取代旧纯文本「完成 · N 轮 · N 次工具 · Ns」
+                // 行）：轮数/调用数/失败数/文件数/耗时由 UI 渲染成 stat chips。
+                // 纯问答轮（零工具零文件）不出重卡——保留旧轻量状态行。
+                val hadWork = event.totalToolCalls > 0 || affectedFiles.isNotEmpty()
+                if (hadWork) {
+                    append(
+                        StreamEntry.RunStatsEntry(
+                            id = nextId(),
+                            iterations = event.totalIterations,
+                            toolCalls = event.totalToolCalls,
+                            failedCalls = (failedToolCallCount - runStartFailedCount).coerceAtLeast(0),
+                            filesTouched = affectedFiles.size,
+                            durationMs = event.totalDurationMs
+                        )
+                    )
+                } else {
+                    append(StreamEntry.StatusEntry(nextId(), "完成 · ${event.totalIterations} 轮 · ${event.totalDurationMs / 1000}s"))
+                }
                 if (affectedFiles.isNotEmpty()) {
                     append(StreamEntry.FileChipsEntry(nextId(), affectedFiles.toList()))
                 }
@@ -391,6 +424,7 @@ class CodeStreamSession {
         terminalBusy = false
         terminalCommandSummary = ""
         terminalExitCode = null
+        argsStreams.clear()
         toolCallCount = restored.count { it is StreamEntry.ToolCapsuleEntry }
         failedToolCallCount = restored.count {
             (it as? StreamEntry.ToolCapsuleEntry)?.call?.status == ToolCallStatus.FAILED
@@ -418,34 +452,114 @@ class CodeStreamSession {
     // ═══ 内部：工具生命周期 ═══
 
     private fun onToolStart(event: AgentEvent.ToolCallStart) {
-        // 幂等：同一 callId 的 Start 重放直接跳过（检查点恢复/重放安全）
-        if (toolCalls.containsKey(event.callId)) return
+        val existing = toolCalls[event.callId]
+        // 幂等：已越过等待态的 Start 重放直接跳过（检查点恢复/重放安全）。
+        // 参数流式期建立的 WAITING 胶囊走下方升级路径（全量参数补全字段）。
+        if (existing != null && existing.status != ToolCallStatus.WAITING) return
         // 工具开跑 = 思考阶段已过：收口可能仍挂着「思考中…」的流式卡
         //（引擎 notice 类思考分片没有 Complete 事件，见 closeStreamingThinking）
         closeStreamingThinking()
         val kind = ToolKind.fromToolName(event.toolName)
         val args = parseArgs(event.arguments)
-        val target = targetOf(kind, args, event.toolName)
-        val call = StreamToolCall(
-            id = event.callId,
-            kind = kind,
-            displayName = displayNameOf(kind, event.toolName),
-            target = target,
-            argsSummary = args.values.firstOrNull()?.toString()?.take(ARGS_SUMMARY_MAX) ?: "",
-            status = ToolCallStatus.RUNNING,
-            startAt = System.currentTimeMillis()
-        )
+        val resolvedTarget = targetOf(kind, args, event.toolName)
+        val call = if (existing == null) {
+            toolCallCount++
+            StreamToolCall(
+                id = event.callId,
+                kind = kind,
+                displayName = displayNameOf(kind, event.toolName),
+                target = resolvedTarget,
+                argsSummary = args.values.firstOrNull()?.toString()?.take(ARGS_SUMMARY_MAX) ?: "",
+                status = ToolCallStatus.RUNNING,
+                startAt = System.currentTimeMillis()
+            )
+        } else {
+            // 等待态升级为运行态：流式预览保留（代码窗持续到 Complete 自动
+            // 收回）；族名/目标/摘要以全量参数为准（流式期可能只提取到前缀）
+            existing.copy(
+                kind = kind,
+                displayName = displayNameOf(kind, event.toolName),
+                target = resolvedTarget.takeIf { it != UNKNOWN_TARGET } ?: existing.target,
+                argsSummary = args.values.firstOrNull()?.toString()?.take(ARGS_SUMMARY_MAX)
+                    ?: existing.argsSummary,
+                status = ToolCallStatus.RUNNING,
+                startAt = System.currentTimeMillis()
+            )
+        }
         toolCalls[event.callId] = call
-        toolCallCount++
+        // 参数追踪器退役：全量参数已入胶囊，半截提取不再需要（内存即回收）
+        argsStreams.remove(event.callId)
         if (kind == ToolKind.BASH) {
             terminalBuffers[event.callId] = TerminalPulseBuffer()
             activeTerminalCallId = event.callId
             // 新命令开跑：面板展开跟随（busy=true），头行换成新命令摘要
             terminalBusy = true
-            terminalCommandSummary = target
+            terminalCommandSummary = call.target
             terminalExitCode = null
         }
         trackVerifyCycleStart(kind, event.callId)
+        if (existing == null) {
+            append(StreamEntry.ToolCapsuleEntry(toolEntryId(event.callId), call))
+        } else {
+            updateCall(call)
+        }
+    }
+
+    // ═══ 内部：参数流式预览（ToolCallArgsDelta 归约）═══
+
+    /** 每个 callId 的参数流式状态：原始分片缓冲 + 键锚定追踪器。 */
+    private class ArgsStreamState {
+        val raw = StringBuilder()
+        var tracker: StreamingArgsTracker? = null
+        var toolName = ""
+    }
+
+    /**
+     * 参数增量归约：把 LLM 逐帧吐出的 arguments 分片喂进键锚定追踪器，
+     * 半截 JSON 里已到达的文件内容/命令实时提取为 [StreamArgsPreview]。
+     *
+     * 胶囊建立时机 = 首个可展示内容出现（目标路径/命令或代码首字节）：
+     * MCP/未知族（无追踪器）不建等待态胶囊，Start 到达时按原路径建卡；
+     * 名字晚到的 provider 由 raw 缓冲兜底（建槽时回放全量分片，不丢前缀）。
+     */
+    private fun onToolArgsDelta(event: AgentEvent.ToolCallArgsDelta) {
+        val existing = toolCalls[event.callId]
+        // Start 已到（RUNNING/终态）= 全量参数已入胶囊，迟到/重放分片无信息量
+        if (existing != null && existing.status != ToolCallStatus.WAITING) return
+        val state = argsStreams.getOrPut(event.callId) { ArgsStreamState() }
+        if (event.toolName.isNotBlank()) state.toolName = event.toolName
+        state.raw.append(event.delta)
+        if (state.tracker == null && state.toolName.isNotBlank()) {
+            // 首次建槽：回放全部已缓冲分片（raw 已含本帧，勿重复 append）
+            state.tracker = StreamingArgsTracker.forKind(ToolKind.fromToolName(state.toolName))
+                ?.also { it.append(state.raw.toString()) }
+        } else {
+            state.tracker?.append(event.delta)
+        }
+        val preview = state.tracker?.preview() ?: return
+        if (existing != null) {
+            // 等待态胶囊已建：刷新预览与目标（path/命令可能随后续分片补全）
+            updateCall(
+                existing.copy(
+                    streamingPreview = preview,
+                    target = preview.target?.takeIf { it.isNotBlank() } ?: existing.target
+                )
+            )
+            return
+        }
+        // 建立等待态胶囊：工具意图先于执行可见（计数在升级路径不再重复）
+        val kind = ToolKind.fromToolName(state.toolName)
+        val call = StreamToolCall(
+            id = event.callId,
+            kind = kind,
+            displayName = displayNameOf(kind, state.toolName),
+            target = preview.target?.takeIf { it.isNotBlank() } ?: UNKNOWN_TARGET,
+            status = ToolCallStatus.WAITING,
+            startAt = System.currentTimeMillis(),
+            streamingPreview = preview
+        )
+        toolCalls[event.callId] = call
+        toolCallCount++
         append(StreamEntry.ToolCapsuleEntry(toolEntryId(event.callId), call))
     }
 
@@ -486,7 +600,9 @@ class CodeStreamSession {
             logTail = logTail,
             diffText = diff?.takeIf { it.hunks.isNotEmpty() }?.let { event.fullOutput.ifBlank { event.output } },
             progressPercent = null,
-            summary = summaryOf(status, diff, exitCode, event.output)
+            summary = summaryOf(status, diff, exitCode, event.output),
+            // 终态即收回实时代码窗（自动折叠为单行胶囊；详情看 diff/日志）
+            streamingPreview = null
         )
         updateCall(updated)
         if (status == ToolCallStatus.FAILED) failedToolCallCount++
@@ -527,6 +643,8 @@ class CodeStreamSession {
         streamingAssistant = null
         // 中止时终端命令不会再来 Complete —— 运行中信号就地收束
         terminalBusy = false
+        // 参数流式同样收口：生成中途的追踪器/分片缓冲不再有任何消费者
+        argsStreams.clear()
         finalizeInFlightCapsules(nowMs)
         append(StreamEntry.StopEntry(nextId(), ABORTED_TEXT))
     }
@@ -545,7 +663,8 @@ class CodeStreamSession {
                     call.copy(
                         status = ToolCallStatus.PARTIAL,
                         endAt = if (call.startAt > 0) nowMs else call.endAt,
-                        summary = ABORTED_TEXT
+                        summary = ABORTED_TEXT,
+                        streamingPreview = null
                     )
                 )
             }
