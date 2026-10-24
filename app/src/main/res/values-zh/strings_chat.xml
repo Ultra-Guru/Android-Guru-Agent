@@ -353,6 +353,12 @@
     <string name="html_preview_refresh">重新加载</string>
     <string name="html_preview_close">关闭预览</string>
     <string name="html_preview_load_failed">文件读取失败</string>
+    <string name="html_preview_inspector">布局检查器开关</string>
+    <string name="html_preview_legend_title">布局检查器图例</string>
+    <string name="html_preview_legend_flex">Flex</string>
+    <string name="html_preview_legend_grid">Grid</string>
+    <string name="html_preview_legend_positioned">定位元素</string>
+    <string name="html_preview_legend_block">块级元素</string>
 
     <!-- ═══ v1.4.4 #5：会话操作补全 —— 搜索/置顶/重命名/导出导入/分享接收 ═══ -->
     <string name="chat_session_search_hint">搜索标题与消息内容</string>
