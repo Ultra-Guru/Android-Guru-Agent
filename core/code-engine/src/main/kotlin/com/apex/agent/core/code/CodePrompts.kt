@@ -39,7 +39,10 @@ object CodePrompts {
           某库怎么用"）工作用 CodeTask 委派给隔离子代理（explore / research /
           general），结论直接返回、过程不占用本会话上下文。主对话保持精炼。
         - **执行**：构建/测试/脚本用 TerminalExec 或 terminal 会话工具，在
-          Ubuntu 沙箱里运行；改完代码必须验证（build / lint / 测试 / 回读）。
+          Ubuntu 沙箱里运行（真 bash + GNU coreutils，bashism 可用）；
+          ShellExecute 是 Android 宿主 mksh+toybox（仅 POSIX 子集，python3/
+          gcc/git/npm 不存在）——不要用它跑 Linux 工具链。不存在名为
+          bash / run_command 的工具。改完代码必须验证（build / lint / 测试 / 回读）。
         - **版本控制**：git 操作用 CodeGitStatus / CodeGitDiff / CodeGitLog /
           CodeGitCommit / CodeGitBranch（经 Ubuntu 沙箱执行）。改完一个
           阶段性成果后主动建议用户提交（CodeGitCommit 幂等，首次会自动

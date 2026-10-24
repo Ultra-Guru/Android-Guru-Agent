@@ -91,6 +91,44 @@ class ToolSystemV4CatalogTest {
         assertEquals("whatever", ToolNameSanitizer.resolveRegistryId("whatever", mapping))
     }
 
+    // ── ToolIdAliases 幻觉名兜底（2026-10「执行命令出错率特别高」修复）──
+
+    @Test
+    fun `hallucinated shell tool names resolve to TerminalExec`() {
+        // 训练自 Claude Code / OpenAI 工具集的模型常调用不存在的 bash/sh ——
+        // 别名表静默路由到 TerminalExec，不再产生 Unknown tool 错误回合。
+        assertEquals("TerminalExec", ToolIdAliases.canonical("bash"))
+        assertEquals("TerminalExec", ToolIdAliases.canonical("Bash"))
+        assertEquals("TerminalExec", ToolIdAliases.canonical("sh"))
+        assertEquals("TerminalExec", ToolIdAliases.canonical("run_command"))
+        assertEquals("TerminalExec", ToolIdAliases.canonical("execute_command"))
+        assertTrue(ToolIdAliases.isHallucinatedAlias("bash"))
+        assertFalse(ToolIdAliases.isHallucinatedAlias("TerminalExec"))
+    }
+
+    @Test
+    fun `hallucinated aliases never shadow legacy ids`() {
+        // shell_execute 是 LEGACY_TO_CURRENT 里真实存在过的旧 id（→ ShellExecute）
+        // —— 幻觉表不得劫持它（两表键集无交集是硬约束）。
+        assertEquals("ShellExecute", ToolIdAliases.canonical("shell_execute"))
+        val overlap = ToolIdAliases.LEGACY_TO_CURRENT.keys intersect ToolIdAliases.HALLUCINATION_ALIASES.keys
+        assertTrue("幻觉表与旧表键冲突: $overlap", overlap.isEmpty())
+    }
+
+    @Test
+    fun `registry lookup resolves hallucinated bash to real tool`() {
+        // 端到端：getTool("bash") 在注册了 TerminalExec 的注册表里命中真工具
+        //（getTool 链：精确 → canonical → ignoreCase → sanitize）。
+        val registry = com.apex.agent.core.tools.DefaultToolRegistry()
+        registry.register(FakeTool("TerminalExec"))
+        registry.register(FakeTool("Read"))
+        assertEquals("TerminalExec", registry.getTool("bash")?.id)
+        assertEquals("Read", registry.getTool("file_read")?.id)
+        // 精确 id 优先于别名：注册表里有 bash 工具时直接命中，不被别名劫持
+        registry.register(FakeTool("bash"))
+        assertEquals("bash", registry.getTool("bash")?.id)
+    }
+
     // ── ToolSchemaSanitizer ───────────────────────────────────────
 
     @Test

@@ -339,6 +339,12 @@ internal class ToolExecutionPipeline(
         /**
          * 未找到工具的错误信息：v2 只带相近建议（[ToolSuggester]），不再
          * 倾倒全量 id 清单（40+ 个 id 只会教模型继续猜）。
+         *
+         * v1.5.x 增强（2026-10 用户反馈「执行命令出错率特别高」）：无相近
+         * 建议时旧文案只丢一句 "Do not guess tool ids"——模型无从下手只能
+         * 继续换名猜（`bash` → `Bash` → `shell` 连环 404）。现在补两条
+         * actionable 指引：常见任务族的最短路径（命令 → TerminalExec）+
+         * ToolSearch 元工具自检索 —— 模型下一步有确定动作可执行。
          */
         fun notFoundMessage(toolId: String, registry: ToolRegistry): String {
             val suggestion = ToolSuggester.suggestionLine(
@@ -353,7 +359,8 @@ internal class ToolExecutionPipeline(
                     append(". Available categories: ")
                     append(registry.toolsGroupedByCategory().keys.joinToString(", ") { it.name })
                 }
-                append(". Do not guess tool ids.")
+                append(". Do not guess tool ids. To run shell commands use TerminalExec;")
+                append(" to discover valid tool ids call ToolSearch(query) or ToolList().")
             }
         }
     }

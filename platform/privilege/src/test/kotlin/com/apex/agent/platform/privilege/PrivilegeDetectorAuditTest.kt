@@ -119,4 +119,59 @@ class PrivilegeDetectorAuditTest {
             collector.cancel()
         }
     }
+
+    // ── 2026-10 高错误率修复：stderr 保留 + cd 引号 + 跨通道 cwd 守卫 ──
+
+    @Test
+    fun `executeShell stdout 非空时 stderr 以标记追加不再丢失`() = runBlocking {
+        // 旧实现 `stdout.ifBlank { stderr }`：stdout 非空 → stderr 被静默丢弃，
+        // 模型看不到失败原因只能盲重试。现在双非空时以 [stderr] 标记拼接。
+        // 命令同时写两流；宿主 sh（测试环境无 root/shizuku）真实执行。
+        val result = PrivilegeDetector.executeShell(
+            "echo merge-out-probe; echo merge-err-probe 1>&2",
+            timeoutMs = 5000
+        )
+        assertTrue("stdout 应保留", result.output.contains("merge-out-probe"))
+        assertTrue(
+            "stderr 应以 [stderr] 标记追加（实际: ${result.output}）",
+            result.output.contains("[stderr]") && result.output.contains("merge-err-probe")
+        )
+        assertEquals(0, result.exitCode)
+    }
+
+    @Test
+    fun `executeShell stderr 独占时行为与旧版一致`() = runBlocking {
+        // 只有 stderr 非空 → 输出即 stderr（旧语义不变，git clone 进度类命令）
+        val result = PrivilegeDetector.executeShell(
+            "echo err-only-probe 1>&2",
+            timeoutMs = 5000
+        )
+        assertTrue(result.output.contains("err-only-probe"))
+        assertTrue("[stderr] 标记不应出现（无 stdout）", !result.output.contains("[stderr]"))
+    }
+
+    @Test
+    fun `跨通道 cwd 守卫 宿主不存在的目录被丢弃不污染命令`() = runBlocking {
+        // workDir 指向 Ubuntu guest 路径（如 /workspace）—— 宿主上不存在。
+        // 守卫后：不做 cd（命令在默认目录执行），echo 依旧成功；
+        // 旧实现 root 通道会拼 `cd /workspace && echo ok` → 语法报错失败。
+        val result = PrivilegeDetector.executeShell(
+            "echo cwd-guard-probe",
+            timeoutMs = 5000,
+            workDir = "/workspace"
+        )
+        assertTrue(
+            "守卫应丢弃宿主不存在的 workDir（实际: ${result.output}）",
+            result.output.contains("cwd-guard-probe")
+        )
+    }
+
+    @Test
+    fun `shellQuote 单引号安全包裹 POSIX 转义闭环`() {
+        // 纯函数：路径含空格/单引号时 cd 前缀不再语法错误
+        assertEquals("'/plain/path'", PrivilegeDetector.shellQuote("/plain/path"))
+        assertEquals("'path with space'", PrivilegeDetector.shellQuote("path with space"))
+        // 内嵌单引号 → close-quote/escaped-quote/reopen-quote 闭环（POSIX 标准转义）
+        assertEquals("'it'\\''s'", PrivilegeDetector.shellQuote("it's"))
+    }
 }
