@@ -42,7 +42,7 @@ dependencies {
     implementation(project(":core:logging"))
     implementation(project(":core:llm-adapter"))
 
-    // 记忆库（apex-memory-kit）：composite build（settings.gradle.kts 条件
+    // 记忆库（apex-kit-memory）：composite build（settings.gradle.kts 条件
     // includeBuild 兄弟/嵌套目录）按坐标自动替换为本地构建；库仓缺席时走
     // 远端 Maven 坐标（E3 稳定期发布后启用）。
     api("com.apex.memkit:memory-core:1.0.0")

@@ -25,7 +25,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
 /**
- * 记忆库（apex-memory-kit）Hilt 接线 —— 拆库后的宿主侧 DI 补位。
+ * 记忆库（apex-kit-memory）Hilt 接线 —— 拆库后的宿主侧 DI 补位。
  *
  * 库本身零 DI 依赖（纯 Kotlin JVM）；本 Module 把库门面 [MemKit] 连同
  * 三个平台端口（[PrivilegeSceneCapture] / [PrivilegeActionPerformer] /

@@ -39,7 +39,7 @@ import com.apex.memkit.core.model.ChatFact
 /**
  * 「聊天记忆」分区（#219 隐私合规，v2 账本化）—— 聊天记忆库的可见性与管理入口。
  *
- * 数据源是 apex-memory-kit 的聊天事实账本（memory_kit/chat.json），与
+ * 数据源是 apex-kit-memory 的聊天事实账本（memory_kit/chat.json），与
  * 轨迹库、memory MCP 图谱同库不同文档：ChatEngine 在对话中自动沉淀三类记忆
  * （画像 / 近况 / 里程碑，含「近期偏低落」这类敏感情绪判断），本分区提供：
  *  - 查看：三类记忆逐条呈现（类别徽章 + 内容 + 元数据行：重要度 / 来源 /

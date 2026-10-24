@@ -17,7 +17,7 @@ import org.junit.Test
 /**
  * Issue #150 迁移版 —— 内置 Memory MCP transport 单测（纯 JVM）。
  *
- * 拆库（apex-memory-kit）后图谱语义住在库 [MemKit]（库内「图谱 MCP 语义」
+ * 拆库（apex-kit-memory）后图谱语义住在库 [MemKit]（库内「图谱 MCP 语义」
  * 用例覆盖合并/去重/级联删除）；宿主侧只测 **JSON-RPC 适配层**：
  * tools/call 派发、参数解码、结果渲染、错误折叠（不再让进程内异常击穿
  * JSON-RPC 层）。存储走真实 FileStorageBackend（临时目录）。

@@ -67,7 +67,7 @@ object McpModule {
         rootfsBaseDir: File,
         // T92（D5 完成度）：argv 能力源（launcher 手工内联 argv 的能力门输入）
         capabilitySource: PRootCapabilitySource,
-        // 记忆库门面（apex-memory-kit）：memory MCP 图谱与聊天自动记忆
+        // 记忆库门面（apex-kit-memory）：memory MCP 图谱与聊天自动记忆
         // 同库同源（graph.json / chat.json 同一 StorageBackend 单写者纪律）
         memKit: com.apex.memkit.core.MemKit,
         // FusionBundle 首发内置包 REA（207 工具面）的运行时端口：命令执行
@@ -90,7 +90,7 @@ object McpModule {
             // - fs（#150）：当前编码工作区的标准 MCP 文件接口（list/read/write/
             //   info，路径三级防线防逃逸）—— 跨模式互用 + 外部 MCP 客户端语义兼容
             // - memory（#150）：知识图谱记忆（entities/relations/observations，
-            //   官方 server-memory 语义，图谱住 apex-memory-kit 库存储）
+            //   官方 server-memory 语义，图谱住 apex-kit-memory 库存储）
             // - thinking（#150）：顺序思考链（官方 server-sequential-thinking
             //   语义，per-connection 状态零持久化）
             builtinTransports = mapOf(

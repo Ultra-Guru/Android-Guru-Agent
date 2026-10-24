@@ -64,7 +64,7 @@
 | `:core:llm-adapter` | JVM | 6 | `./gradlew :core:llm-adapter:test` | 随 `:app:compileDebugKotlin` 编译（脚本化静态编译覆盖） |
 | `:platform:terminal` | JVM | 45 | `./gradlew :platform:terminal:testDebugUnitTest` | `Run platform:terminal unit tests` |
 | `:platform:terminal` | androidTest | 5 | `./gradlew :platform:terminal:connectedDebugAndroidTest`（真机） | CI 只编译：`compileDebugAndroidTestKotlin` |
-| `:platform:memory-host` | JVM | 6（**记忆拆库后宿主层**） | `./gradlew :platform:memory-host:testDebugUnitTest` | `Run platform:memory-host unit tests`（记忆域本体在 [apex-memory-kit](https://github.com/Ultra-Guru/apex-memory-kit)，63 项库内测试） |
+| `:platform:memory-host` | JVM | 6（**记忆拆库后宿主层**） | `./gradlew :platform:memory-host:testDebugUnitTest` | `Run platform:memory-host unit tests`（记忆域本体在 [apex-kit-memory](https://github.com/Ultra-Guru/apex-kit-memory)，63 项库内测试） |
 | `:platform:privilege` | JVM | 1 | `./gradlew :platform:privilege:testDebugUnitTest` | 随 app 编译覆盖 |
 | `:terminal-emulator` | JVM | 1 | `./gradlew :terminal-emulator:test` | 随静态编译覆盖 |
 | `:app` | JVM | 4 | `./gradlew :app:testDebugUnitTest` | 随 app 编译覆盖（未单独设门禁） |
@@ -155,9 +155,9 @@ CI 无模拟器 → 只编译保证不烂（`compileDebugAndroidTestKotlin`）�
 ./gradlew :platform:terminal:connectedDebugAndroidTest
 ```
 
-### 3.5 `platform:memory-host` —— 认知记忆宿主层（记忆域已拆库为 apex-memory-kit）
+### 3.5 `platform:memory-host` —— 认知记忆宿主层（记忆域已拆库为 apex-kit-memory）
 
-库本体（apex-memory-kit，63 项纯 JVM 测试）覆盖：摄取 / 会话 / 蒸馏 / 匹配 /
+库本体（apex-kit-memory，63 项纯 JVM 测试）覆盖：摄取 / 会话 / 蒸馏 / 匹配 /
 维护 / 存储原子性。宿主层测试锁定**旧存储 → 新库的一次性迁移**语义：
 
 | 测试类 | 覆盖 | 锁定的缺陷 |

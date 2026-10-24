@@ -721,9 +721,9 @@ object ToolModule {
         // ═══ 3.5 内置浏览器自动化 (34) ═══
         registerBrowserTools(registry, browserAgentTools, browserSessionTools)
 
-        // ═══ 4. 记忆 (apex-memory-kit 库经 platform:memory-host 接线) ═══
+        // ═══ 4. 记忆 (apex-kit-memory 库经 platform:memory-host 接线) ═══
         // 旧 FileMemoryStore/MemorizeTool/RecallTool/ForgetTool 已移除；
-        // 记忆域现由 apex-memory-kit（com.apex.memkit:memory-core）统一承载：
+        // 记忆域现由 apex-kit-memory（com.apex.memkit:memory-core）统一承载：
         //   - MemKit 门面：会话采集（ExecutionMemoryObserver 隐式）/ 旁路回放
         //   - 统一存储：原子 JSON 文档（episodes/nodes/macros/chat/graph）
         // 注册只读召回工具，让 LLM 能读取长期记忆（工具 id 与参数零变化）。

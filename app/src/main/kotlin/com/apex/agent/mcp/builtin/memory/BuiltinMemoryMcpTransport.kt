@@ -29,7 +29,7 @@ import kotlinx.serialization.json.putJsonObject
 /**
  * 内置知识图谱记忆 MCP 服务器（memory，进程内 transport）。
  *
- * 拆库后（apex-memory-kit）：tools/call 薄委托给库 [MemoryStore] 的图谱
+ * 拆库后（apex-kit-memory）：tools/call 薄委托给库 [MemoryStore] 的图谱
  * 操作面（实体 / 关系 / 观察全部住在库内，单写者纪律与原子文档持久化由
  * 库保证），本类只做 JSON-RPC 协议适配与结果渲染。
  *

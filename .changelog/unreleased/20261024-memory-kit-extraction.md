@@ -1,7 +1,7 @@
-# 记忆系统完全重做：拆库 apex-memory-kit + 宿主薄接线层
+# 记忆系统完全重做：拆库 apex-kit-memory + 宿主薄接线层
 
 - 认知记忆域整体拆库为独立模块 `com.apex.memkit:memory-core`（仓库
-  Ultra-Guru/apex-memory-kit，纯 Kotlin JVM 零 Android 依赖，63 项单测）：
+  Ultra-Guru/apex-kit-memory，纯 Kotlin JVM 零 Android 依赖，63 项单测）：
   统一旧 `:platform:cs-mem`（UI 轨迹 / FSM 宏 / Room 图库）与旧
   `app/mcp/builtin/memory`（聊天账本 / 知识图谱 JSON）三套存储为同一套
   JSON 原子文档（`memory_kit/{nodes,episodes,macros,chat,graph,quarantine}.json`，

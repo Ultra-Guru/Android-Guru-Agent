@@ -111,14 +111,14 @@ when {
 }
 
 // ── 认知记忆库 composite build（同款拆库模式）─────────────────────────────
-// apex-memory-kit 从本仓库抽出为独立库（com.apex.memkit:memory-core ——
+// apex-kit-memory 从本仓库抽出为独立库（com.apex.memkit:memory-core ——
 // 统一旧 cs-mem（UI 轨迹/FSM 宏）与 builtin/memory（聊天记忆/知识图谱）
 // 双轨记忆域：会话键控情景 / 差分摄取 / 入口指纹集合宏匹配 / 蒸馏纪律 /
 // 能量衰减 / 拓扑别名 / 隔离防护）。接线方式与 apex-courier-kit 完全同构：
 // 兄弟目录本地开发、嵌套目录 CI consumer-check 兜底、目录不存在时走远端
-// Maven 坐标。库仓库：Ultra-Guru/apex-memory-kit（含独立 CI）。
-val memoryKitSibling = file("../apex-memory-kit")
-val memoryKitNested = file("apex-memory-kit")
+// Maven 坐标。库仓库：Ultra-Guru/apex-kit-memory（含独立 CI）。
+val memoryKitSibling = file("../apex-kit-memory")
+val memoryKitNested = file("apex-kit-memory")
 when {
     memoryKitSibling.isDirectory -> includeBuild(memoryKitSibling)
     memoryKitNested.isDirectory -> includeBuild(memoryKitNested)
@@ -153,7 +153,7 @@ include(":core:code-native")
 include(":platform:privilege")
 include(":platform:persistence")
 include(":platform:terminal")
-// 认知记忆宿主层（apex-memory-kit 的平台端口 / DI / 旧存储迁移 / WorkManager
+// 认知记忆宿主层（apex-kit-memory 的平台端口 / DI / 旧存储迁移 / WorkManager
 // 维护调度 / 记忆召回工具 —— 取代旧 :platform:cs-mem）
 include(":platform:memory-host")
 include(":platform:code-workspace")

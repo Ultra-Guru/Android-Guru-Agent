@@ -28,7 +28,7 @@ import javax.inject.Inject
 /**
  * 记忆可视化页 ViewModel —— 提供 Episode / 宏 / 节点检索与管理。
  *
- * 拆库后（apex-memory-kit）：数据面直读库门面 [MemKit]，本 VM 只做
+ * 拆库后（apex-kit-memory）：数据面直读库门面 [MemKit]，本 VM 只做
  * 状态编排与轻量 UI 模型（旧版直连 Room store / DreamRenderer /
  * MemoryImmuneSystem / MemoryLedgerStore 四个单例的接线全部收编）。
  *

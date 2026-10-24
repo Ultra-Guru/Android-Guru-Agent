@@ -296,7 +296,7 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
     }
 
     /**
-     * 启动记忆库后台管道（apex-memory-kit）。
+     * 启动记忆库后台管道（apex-kit-memory）。
      * - MemKit：库写入管道已在 DI 构造时 start（首帧加载 + 旧存储一次性迁移）。
      * - MaintenanceScheduler：WorkManager 周期维护（衰减/剪枝/晶化/别名发现，
      *   约束 = 充电 + 电量不低 + 空闲 + WiFi，原 DreamRenderer 梦境语义）。

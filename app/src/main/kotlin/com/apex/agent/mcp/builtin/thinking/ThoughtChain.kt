@@ -18,7 +18,7 @@ package com.apex.agent.mcp.builtin.thinking
  * 会把完整链摘要带给模型），跨会话留存反而是噪声。Transport 实例关闭时
  * 调 [clear] 整体丢弃。
  *
- * 独立成类的理由同知识图谱存储（现住 apex-memory-kit 库）：
+ * 独立成类的理由同知识图谱存储（现住 apex-kit-memory 库）：
  * 协议适配与状态机分离，后者可做纯 JVM 单测（见 ThoughtChainTest）。
  */
 class ThoughtChain {

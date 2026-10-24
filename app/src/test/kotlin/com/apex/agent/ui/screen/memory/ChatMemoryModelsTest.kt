@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 聊天记忆分区纯映射逻辑单测（#219 v2 账本化 → apex-memory-kit 迁移版）。
+ * 聊天记忆分区纯映射逻辑单测（#219 v2 账本化 → apex-kit-memory 迁移版）。
  *
  * MemoryViewModel 的加载/清空路径经 [toChatMemoryEntries] 把账本全量
  * 事实按类别分组；VM 本身依赖 Hilt/Context 等安卓件，不做 JVM 直测，

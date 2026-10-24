@@ -278,7 +278,7 @@ flowchart TB
         PRIV["privilege<br/>Root / Shizuku / Shell<br/>三级权限链"]
         PERSIST["persistence<br/>前台服务 + 看门狗"]
         TERM["terminal<br/>Ubuntu rootfs · PRoot<br/>原生 PTY · 25 工具"]
-        CSMEM["cs-mem 认知记忆<br/>apex-memory-kit 库 + memory-host 接线<br/>蒸馏 · 旁路回放 · 维护周期<br/>JSON 原子文档"]
+        CSMEM["cs-mem 认知记忆<br/>apex-kit-memory 库 + memory-host 接线<br/>蒸馏 · 旁路回放 · 维护周期<br/>JSON 原子文档"]
         MCPH["mcp-host<br/>逆向 MCP Host<br/>:8765 · Bearer · 白名单"]
     end
 
@@ -325,7 +325,7 @@ flowchart TB
 | `:platform:privilege` | Android Lib | Root/Shizuku/普通三级权限链 + 无障碍服务 + 进程流工厂 |
 | `:platform:persistence` | Android Lib | 前台服务 + WorkManager 看门狗（被杀自动拉起） |
 | `:platform:terminal` | Android Lib | 终端运行时 2.0：rootfs 供给、PRoot 后端、原生 PTY、Ubuntu 生命周期编排、25 个工具 |
-| `:platform:memory-host` | Android Lib | 认知记忆宿主层：apex-memory-kit 的平台端口 / DI / 旧存储迁移 / 维护调度 / 召回工具（库本体见 [apex-memory-kit](https://github.com/Ultra-Guru/apex-memory-kit)，见下节） |
+| `:platform:memory-host` | Android Lib | 认知记忆宿主层：apex-kit-memory 的平台端口 / DI / 旧存储迁移 / 维护调度 / 召回工具（库本体见 [apex-kit-memory](https://github.com/Ultra-Guru/apex-kit-memory)，见下节） |
 | `:platform:code-workspace` | Android Lib | 编码工作区：安全根目录与生命周期 |
 | `:platform:mcp-host` | 纯 JVM | 逆向 MCP Host：把手机工具暴露给 PC 客户端（零第三方依赖） |
 | `:platform:browser-agent` | Android Lib | 浏览器自动化大功能：browser_* 工具协议 + apex-kit-browser DI 接线 |
@@ -345,9 +345,9 @@ flowchart TB
 
 ---
 <a id="cs-mem"></a>
-## 🧠 认知记忆系统（apex-memory-kit）
+## 🧠 认知记忆系统（apex-kit-memory）
 
-记忆域已拆库为独立库模块 [apex-memory-kit](https://github.com/Ultra-Guru/apex-memory-kit)
+记忆域已拆库为独立库模块 [apex-kit-memory](https://github.com/Ultra-Guru/apex-kit-memory)
 （`com.apex.memkit:memory-core`，纯 Kotlin JVM，63 项单测），主仓以 composite
 build 消费；宿主侧只剩薄接线层 `:platform:memory-host`（平台端口 / DI /
 旧存储迁移 / 维护调度 / 召回工具）。它不只是"给 LLM 塞一段历史"，

@@ -35,7 +35,7 @@ import kotlinx.serialization.json.long
 import kotlinx.serialization.json.contentOrNull
 
 /**
- * 旧记忆存储 → apex-memory-kit 的一次性搬迁器。
+ * 旧记忆存储 → apex-kit-memory 的一次性搬迁器。
  *
  * 三个旧源（存在才搬，搬完改名 `.imported` 留档防重入）：
  * 1. Room `cs_mem_graph.db`（旧 cs-mem：episodes / nodes / fsm_macros /
