@@ -22,9 +22,9 @@ import com.apex.agent.platform.PrivilegeUiProvider
 import com.apex.agent.platform.privilege.PrivilegeDetector
 import com.apex.agent.platform.privilege.PrivilegeManager
 import com.apex.agent.platform.privilege.ShellExecResult
-import com.apex.agent.platform.csmem.tools.MemoryRecentEpisodesTool
-import com.apex.agent.platform.csmem.tools.MemorySearchNodesTool
-import com.apex.agent.platform.csmem.tools.MemoryRecallMacroTool
+import com.apex.agent.platform.memory.tools.MemoryRecentEpisodesTool
+import com.apex.agent.platform.memory.tools.MemorySearchNodesTool
+import com.apex.agent.platform.memory.tools.MemoryRecallMacroTool
 import com.apex.agent.platform.terminal.tools.*
 import com.apex.agent.platform.terminal.tools.legacy.LegacyExecTool
 import com.apex.agent.platform.terminal.tools.legacy.LegacyReadTool
@@ -721,13 +721,12 @@ object ToolModule {
         // ═══ 3.5 内置浏览器自动化 (34) ═══
         registerBrowserTools(registry, browserAgentTools, browserSessionTools)
 
-        // ═══ 4. 记忆 (CS-Mem 已独立为 platform:cs-mem 模块) ═══
-        // 旧 FileMemoryStore/MemorizeTool/RecallTool/ForgetTool 已移除。
-        // 记忆功能现由 CS-Mem (Cognitive-Spatial-State Memory Engine) 提供：
-        //   - MemoryWriterActor: 无锁并发写入管道（Agent 执行时隐式采集，见 ExecutionMemoryObserver）
-        //   - MemoryGraphStore:   Room 图存储 (Episodes/Nodes/Edges/FSM)
-        //   - UiTreePruner:       UI树→语义交互图降维
-        // 注册只读召回工具，让 LLM 能读取长期记忆（补齐此前"工具已删未补"的缺口）。
+        // ═══ 4. 记忆 (apex-memory-kit 库经 platform:memory-host 接线) ═══
+        // 旧 FileMemoryStore/MemorizeTool/RecallTool/ForgetTool 已移除；
+        // 记忆域现由 apex-memory-kit（com.apex.memkit:memory-core）统一承载：
+        //   - MemKit 门面：会话采集（ExecutionMemoryObserver 隐式）/ 旁路回放
+        //   - 统一存储：原子 JSON 文档（episodes/nodes/macros/chat/graph）
+        // 注册只读召回工具，让 LLM 能读取长期记忆（工具 id 与参数零变化）。
         registry.register(SafeAgentTool(memoryRecentEpisodesTool))
         registry.register(SafeAgentTool(memorySearchNodesTool))
         registry.register(SafeAgentTool(memoryRecallMacroTool))

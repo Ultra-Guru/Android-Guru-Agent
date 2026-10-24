@@ -53,34 +53,6 @@ object McpModule {
             kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
         )
 
-    /**
-     * 知识图谱记忆存储单例：memory MCP transport 的底层存储（模型经
-     * mcp__memory__* 工具显式读写的主题实体），持久化
-     * `<filesDir>/mcp_memory/memory.json`。v2 起聊天自动记忆沉淀到独立的
-     * [provideMemoryLedgerStore] 账本，与图谱物理分离。
-     */
-    @Provides
-    @Singleton
-    fun provideKnowledgeGraphStore(@ApplicationContext context: Context): com.apex.agent.mcp.builtin.memory.KnowledgeGraphStore {
-        return com.apex.agent.mcp.builtin.memory.KnowledgeGraphStore(
-            java.io.File(context.filesDir, "mcp_memory")
-        )
-    }
-
-    /**
-     * 聊天记忆账本单例（v2）：ChatMemoryPipeline 自动沉淀链路的底层
-     * 存储（评分 / 生命周期 / 容量治理），持久化
-     * `<filesDir>/chat_memory/ledger.json`；与 memory MCP 图谱分离，
-     * 记忆页「聊天记忆」分区直读本账本。
-     */
-    @Provides
-    @Singleton
-    fun provideMemoryLedgerStore(@ApplicationContext context: Context): com.apex.agent.mcp.builtin.memory.MemoryLedgerStore {
-        return com.apex.agent.mcp.builtin.memory.MemoryLedgerStore(
-            java.io.File(context.filesDir, "chat_memory")
-        )
-    }
-
     @Provides
     @Singleton
     fun provideMcpManager(
@@ -95,8 +67,9 @@ object McpModule {
         rootfsBaseDir: File,
         // T92（D5 完成度）：argv 能力源（launcher 手工内联 argv 的能力门输入）
         capabilitySource: PRootCapabilitySource,
-        // 共享知识图谱单例（memory MCP 与聊天自动记忆同图同源，见 provideKnowledgeGraphStore）
-        knowledgeGraphStore: com.apex.agent.mcp.builtin.memory.KnowledgeGraphStore,
+        // 记忆库门面（apex-memory-kit）：memory MCP 图谱与聊天自动记忆
+        // 同库同源（graph.json / chat.json 同一 StorageBackend 单写者纪律）
+        memKit: com.apex.memkit.core.MemKit,
         // FusionBundle 首发内置包 REA（207 工具面）的运行时端口：命令执行
         //（PRoot 终端链）与页面抓取（OkHttp）—— 工作目录作证据导出根。
         reaCommandRunner: ReaCommandRunner,
@@ -117,7 +90,7 @@ object McpModule {
             // - fs（#150）：当前编码工作区的标准 MCP 文件接口（list/read/write/
             //   info，路径三级防线防逃逸）—— 跨模式互用 + 外部 MCP 客户端语义兼容
             // - memory（#150）：知识图谱记忆（entities/relations/observations，
-            //   官方 server-memory 语义，持久化 mcp_memory/memory.json）
+            //   官方 server-memory 语义，图谱住 apex-memory-kit 库存储）
             // - thinking（#150）：顺序思考链（官方 server-sequential-thinking
             //   语义，per-connection 状态零持久化）
             builtinTransports = mapOf(
@@ -125,7 +98,7 @@ object McpModule {
                 BuiltinSearchMcpServer.ID to { BuiltinSearchMcpTransport(httpClient) },
                 BuiltinFsMcpServer.ID to { BuiltinFsMcpTransport(codeWorkspaceRoots) },
                 BuiltinMemoryMcpServer.ID to {
-                    BuiltinMemoryMcpTransport(knowledgeGraphStore)
+                    BuiltinMemoryMcpTransport(memKit.store)
                 },
                 BuiltinThinkingMcpServer.ID to { BuiltinThinkingMcpTransport() },
                 // 第六台：REA（FusionBundle 首发）—— 207 工具面全目录，

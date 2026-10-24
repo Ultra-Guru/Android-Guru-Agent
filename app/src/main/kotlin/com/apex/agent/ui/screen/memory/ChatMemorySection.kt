@@ -34,15 +34,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
-import com.apex.agent.mcp.builtin.memory.MemoryLedgerStore.MemoryKind
-import com.apex.agent.mcp.builtin.memory.MemoryLedgerStore.MemoryRecord
-import com.apex.agent.mcp.builtin.memory.MemoryLedgerStore.MemorySource
+import com.apex.memkit.core.model.ChatFact
 
 /**
  * 「聊天记忆」分区（#219 隐私合规，v2 账本化）—— 聊天记忆库的可见性与管理入口。
  *
- * 数据源是 MemoryLedgerStore（chat_memory/ledger.json），与 cs-mem 轨迹库、
- * memory MCP 图谱完全独立：ChatMemoryPipeline 在对话中自动沉淀三类记忆
+ * 数据源是 apex-memory-kit 的聊天事实账本（memory_kit/chat.json），与
+ * 轨迹库、memory MCP 图谱同库不同文档：ChatEngine 在对话中自动沉淀三类记忆
  * （画像 / 近况 / 里程碑，含「近期偏低落」这类敏感情绪判断），本分区提供：
  *  - 查看：三类记忆逐条呈现（类别徽章 + 内容 + 元数据行：重要度 / 来源 /
  *    召回次数 —— v2 账本的生命体征）；
@@ -58,7 +56,7 @@ fun ColumnScope.ChatMemorySection(
     onDeleteRecord: (recordId: String) -> Unit,
     onClearAll: () -> Unit
 ) {
-    var pendingRecord by remember { mutableStateOf<MemoryRecord?>(null) }
+    var pendingRecord by remember { mutableStateOf<ChatFact?>(null) }
     var showClearConfirm by remember { mutableStateOf(false) }
     val recordCount = entries.sumOf { it.records.size }
 
@@ -160,7 +158,7 @@ fun ColumnScope.ChatMemorySection(
 @Composable
 private fun ChatMemoryEntryCard(
     entry: ChatMemoryEntry,
-    onDeleteRecord: (record: MemoryRecord) -> Unit
+    onDeleteRecord: (record: ChatFact) -> Unit
 ) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -219,13 +217,13 @@ private fun ChatMemoryEntryCard(
 
 /** 类别徽章：画像 / 近况 / 里程碑。 */
 @Composable
-private fun ChatMemoryTypeBadge(kind: MemoryKind) {
+private fun ChatMemoryTypeBadge(kind: ChatFact.Kind) {
     val (label, color) = when (kind) {
-        MemoryKind.PROFILE ->
+        ChatFact.Kind.PROFILE ->
             stringResource(R.string.memory_chat_badge_profile) to MaterialTheme.colorScheme.primary
-        MemoryKind.STATE ->
+        ChatFact.Kind.STATE ->
             stringResource(R.string.memory_chat_badge_state) to MaterialTheme.colorScheme.tertiary
-        MemoryKind.MILESTONE ->
+        ChatFact.Kind.MILESTONE ->
             stringResource(R.string.memory_chat_badge_milestone) to MaterialTheme.colorScheme.secondary
     }
     Surface(
@@ -241,10 +239,4 @@ private fun ChatMemoryTypeBadge(kind: MemoryKind) {
     }
 }
 
-/** 来源的用户可读标签（资源化，en/zh 双语）。 */
-@Composable
-private fun MemorySource.displayLabel(): String = when (this) {
-    MemorySource.HEURISTIC -> stringResource(R.string.memory_chat_source_heuristic)
-    MemorySource.DISTILL -> stringResource(R.string.memory_chat_source_distill)
-    MemorySource.MIGRATED -> stringResource(R.string.memory_chat_source_migrated)
-}
+/** 来源标签复用 [ChatMemoryModels] 的公共映射（同包顶层函数，i18n 交给后续统一资源化）。 */

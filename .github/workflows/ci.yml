@@ -420,6 +420,23 @@ jobs:
           ref: ${{ steps.ckitpin.outputs.sha }}
           path: apex-kit-courier
 
+      - name: Read apex-memory-kit pin
+        id: mkitpin
+        # 认知记忆库（com.apex.memkit:memory-core）锁定文件 gradle/memory-kit.lock
+        # 由 sync-memory-kit 工作流自动维护：memory-kit main 有新绿提交 →
+        # 锁文件 bump → 本仓库 push → 全流水线以新锁定版本构建。缺锁回退
+        # main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/memory-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-memory-kit (memory-core composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-memory-kit
+          ref: ${{ steps.mkitpin.outputs.sha }}
+          path: apex-memory-kit
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -566,7 +583,8 @@ jobs:
         #   :core:code-engine:test —— #147 子代理事件收集/超时/并发闸门（纯 JVM）
         #   :core:tool-registry:test —— 质量门：DomParser/BrowserScript 编译
         #       错误修复后必须保持绿 —— 不许删测试保绿，修代码或修测试
-        #   :platform:cs-mem:testDebugUnitTest —— v3 记忆加固（returnDefaultValues）
+        #   :platform:memory-host:testDebugUnitTest —— 记忆拆库后宿主层
+        #       （迁移映射 / 记法解析，纯 JVM returnDefaultValues）
         #   :platform:privilege:testDebugUnitTest —— T92 #255 权限链审计契约
         #   :plugins:plugin-workflow:testDebugUnitTest —— #256 防回退（诚实契约）
         run: |
@@ -581,7 +599,7 @@ jobs:
             :core:code-tools:test \
             :core:code-engine:test \
             :core:tool-registry:test \
-            :platform:cs-mem:testDebugUnitTest \
+            :platform:memory-host:testDebugUnitTest \
             :platform:privilege:testDebugUnitTest \
             :plugins:plugin-workflow:testDebugUnitTest \
             --no-daemon \
@@ -625,7 +643,7 @@ jobs:
           for t in :app:testDebugUnitTest :platform:terminal:testDebugUnitTest \
                    :terminal-emulator:testDebugUnitTest :terminal-view:testDebugUnitTest \
                    :core:agent-engine:test :core:code-tools:test :core:code-engine:test \
-                   :core:tool-registry:test :platform:cs-mem:testDebugUnitTest \
+                   :core:tool-registry:test :platform:memory-host:testDebugUnitTest \
                    :platform:privilege:testDebugUnitTest :plugins:plugin-workflow:testDebugUnitTest; do
             grep -q "^> Task $t" build.log || MISSING_TESTS="$MISSING_TESTS $t"
           done

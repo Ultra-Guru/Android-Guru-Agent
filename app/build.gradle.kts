@@ -203,7 +203,9 @@ dependencies {
     // 构造点 install。platform:terminal 对 :terminal-native 是 implementation
     // （不传递），app 需显式声明（与上方 terminal-emulator 同款先例）。
     implementation(project(":terminal-native"))
-    implementation(project(":platform:cs-mem"))
+    // 认知记忆（apex-memory-kit 宿主层）：观察者 / MCP 图谱 transport / 旧存储
+    // 迁移 / 维护调度 / 记忆页 UI 的平台端口接线
+    implementation(project(":platform:memory-host"))
     // Coding 模式（与 Agent 模式同级别）：编码工具集 / 编码引擎 / 工作区管理
     implementation(project(":core:code-tools"))
     implementation(project(":core:code-engine"))

@@ -278,7 +278,7 @@ flowchart TB
         PRIV["privilege<br/>Root / Shizuku / Shell<br/>三级权限链"]
         PERSIST["persistence<br/>前台服务 + 看门狗"]
         TERM["terminal<br/>Ubuntu rootfs · PRoot<br/>原生 PTY · 25 工具"]
-        CSMEM["cs-mem 认知记忆<br/>蒸馏 · 旁路回放 · 梦境<br/>Room 图数据库"]
+        CSMEM["cs-mem 认知记忆<br/>apex-memory-kit 库 + memory-host 接线<br/>蒸馏 · 旁路回放 · 维护周期<br/>JSON 原子文档"]
         MCPH["mcp-host<br/>逆向 MCP Host<br/>:8765 · Bearer · 白名单"]
     end
 
@@ -325,7 +325,7 @@ flowchart TB
 | `:platform:privilege` | Android Lib | Root/Shizuku/普通三级权限链 + 无障碍服务 + 进程流工厂 |
 | `:platform:persistence` | Android Lib | 前台服务 + WorkManager 看门狗（被杀自动拉起） |
 | `:platform:terminal` | Android Lib | 终端运行时 2.0：rootfs 供给、PRoot 后端、原生 PTY、Ubuntu 生命周期编排、25 个工具 |
-| `:platform:cs-mem` | Android Lib | 认知记忆系统（本仓库的差异化核心，见下节） |
+| `:platform:memory-host` | Android Lib | 认知记忆宿主层：apex-memory-kit 的平台端口 / DI / 旧存储迁移 / 维护调度 / 召回工具（库本体见 [apex-memory-kit](https://github.com/Ultra-Guru/apex-memory-kit)，见下节） |
 | `:platform:code-workspace` | Android Lib | 编码工作区：安全根目录与生命周期 |
 | `:platform:mcp-host` | 纯 JVM | 逆向 MCP Host：把手机工具暴露给 PC 客户端（零第三方依赖） |
 | `:platform:browser-agent` | Android Lib | 浏览器自动化大功能：browser_* 工具协议 + apex-kit-browser DI 接线 |
@@ -345,10 +345,14 @@ flowchart TB
 
 ---
 <a id="cs-mem"></a>
-## 🧠 认知记忆系统 cs-mem
+## 🧠 认知记忆系统（apex-memory-kit）
 
-`platform/cs-mem` 是本项目的差异化核心：它不只是"给 LLM 塞一段历史"，
-而是一套把 **屏幕感知转化为可复用程序性记忆** 的完整管线。
+记忆域已拆库为独立库模块 [apex-memory-kit](https://github.com/Ultra-Guru/apex-memory-kit)
+（`com.apex.memkit:memory-core`，纯 Kotlin JVM，63 项单测），主仓以 composite
+build 消费；宿主侧只剩薄接线层 `:platform:memory-host`（平台端口 / DI /
+旧存储迁移 / 维护调度 / 召回工具）。它不只是"给 LLM 塞一段历史"，
+而是一套把 **屏幕感知转化为可复用程序性记忆** 的完整管线，并统一了旧
+cs-mem（UI 轨迹/FSM 宏）与内置知识图谱/聊天记忆三套存储为同一套原子文档。
 
 ### 管线全景
 
@@ -356,73 +360,64 @@ flowchart TB
 flowchart TB
     subgraph INGEST["🔵 摄取侧 —— 每次动作后自动触发"]
         direction LR
-        A["👁 感知<br/>getUiTree()<br/>Root / Shizuku / Shell"]
-        B["✂️ 语义降维<br/>UiTreePruner<br/>剔除不可见与装饰节点<br/>体积 -90%+ · 指纹 SHA-256"]
-        C["Δ 差分摄取<br/>DifferentialIngestor<br/>只存状态跃迁<br/>压缩 95%+"]
-        D["✉️ 串行写入<br/>MemoryWriterActor<br/>有界邮箱 256 · 背压"]
-        A --> B --> C --> D
+        A["👁 感知<br/>SceneCapture 端口<br/>（宿主：PrivilegeManager 嵌套树）"]
+        B["✂️ 语义降维<br/>SceneReducer<br/>同一条「捕获→降维→指纹」路径<br/>采集与匹配共用（P0-2 根治）"]
+        C["Δ 差分摄取<br/>SceneDiffer<br/>只存状态跃迁"]
+        G["🛡️ IngestGuard<br/>摄取前防护：敏感词/包名分级<br/>可疑指纹隔离（TTL）"]
+        A --> B --> C --> G
     end
 
-    E[("🗄 MemoryGraphDatabase<br/>Room · schema v3<br/>nodes · edges · episodes<br/>fsm_macros · migration_map")]
-    D --> E
+    E[("🗄 MemoryStore<br/>JSON 原子文档<br/>nodes · episodes · macros<br/>chat · graph · quarantine")]
+    G --> E
 
     subgraph CONSUME["🟢 消费侧"]
         direction LR
-        R1["召回工具 ×3<br/>search_nodes<br/>recent_episodes<br/>recall_macro"]
-        R2["轨迹蒸馏<br/>TraceDistiller<br/>锚点提取 → 动作压缩<br/>→ FSM 编译"]
-        R2 --> M["FSMMacro 宏技能"]
-        M --> BY["⚡ 旁路回放<br/>BypassExecutionEngine<br/>指纹命中 → 绕过 LLM<br/>微秒级 · 0 token"]
+        R1["召回工具 ×3<br/>MemorySearchNodes<br/>MemoryRecentEpisodes<br/>MemoryRecallMacro"]
+        R2["轨迹蒸馏<br/>MacroDistiller<br/>入口指纹集合 → 类型化动作"]
+        R2 --> M["MacroSkill 宏技能"]
+        M --> BY["⚡ 旁路回放 MacroRunner<br/>入口指纹集合重合率匹配<br/>绕过 LLM · 微秒级 · 0 token"]
     end
 
     E --> R1
     E --> R2
 
-    IMM["🛡️ MemoryImmuneSystem<br/>摄取前免疫检查<br/>悬浮窗 / 敏感词 / 完整性 / 隔离"] -.检查.-> INGEST
-    DR["🌙 DreamRenderer（WorkManager）<br/>息屏+充电+WiFi 时巩固<br/>能量衰减 · 晶化 · 拓扑迁移"] -.维护.-> E
+    MT["🔧 MacroMaintenance（WorkManager）<br/>息屏+充电+WiFi 时维护<br/>能量衰减 · 剪枝 · 晶化 · 别名发现"] -.维护.-> E
+    CH["💬 ChatEngine<br/>聊天事实蒸馏 + 召回<br/>（#218 隐私门控）"] -.同库.-> E
 ```
 
-### 记忆的两种形态
+### 记忆的三种形态
 
 | 形态 | 模型 | 产生 | 消费 |
 |------|------|------|------|
-| **陈述性记忆** | `SemanticNode` 语义图 + `Episode` 情景 + `GraphEdge`（SPATIAL/CAUSAL/SEMANTIC 三类边） | 每次动作后 `CsMemSessionManager.afterAction()` 捕获差分 | `MemorySearchNodes` / `MemoryRecentEpisodes` 召回工具；记忆屏可视化 |
-| **程序性记忆** | `FSMMacro` 有限状态机宏技能 | 任务成功后 `TraceDistiller.distill()`：锚点提取 → 动作压缩 → FSM 编译 | `BypassExecutionEngine.tryBypass()`：指纹命中即**绕过 LLM 直接回放**（微秒级 / 0 token） |
+| **陈述性记忆（UI）** | `NodeDictEntry` 语义节点 + `EpisodeRecord` 情景 | 每次动作后差分摄取；`appPackage`/`appVersion` 由捕获端口单源贯穿（P0-1 根治） | `MemorySearchNodes` / `MemoryRecentEpisodes` 召回工具；记忆屏可视化 |
+| **程序性记忆** | `MacroSkill` 类型化步骤（`MacroAction` sealed：Tap/Swipe/Input/Back/Home） | 任务成功后 `MacroDistiller`：入口指纹集合 → 动作序列 | `MacroRunner.tryBypass()`：入口指纹集合重合率命中即**绕过 LLM 直接回放** |
+| **对话记忆** | `ChatFact` 事实账本 + 知识图谱（`GraphEntity`/`GraphRelation`） | 对话轮次启发式 + 后台 LLM 蒸馏（待蒸馏队列持久化）；`mcp__memory__*` 工具读写图谱 | 召回注入 system prompt（#218 门控）；`/mcp:memory` 斜杠指令 |
 
-### 生命周期管理（四个仿生机制）
+### 生命周期管理（去隐喻后的真实机制）
 
 | 机制 | 组件 | 触发 | 效果 |
 |------|------|------|------|
-| 🔥 **能量熵增** | `EntropyManager` | 每次梦境周期 | 成功检索/执行 → 能量增加；时间推移 → 指数衰减（艾宾浩斯遗忘曲线） |
-| 💎 **晶化** | `EntropyManager.shouldCrystallize` → `crystallizeMacro` | 能量≥8 且成功≥10 次且成功率≥90% | ROM 级固化：免疫衰减/剪枝/删除 |
-| 🌙 **梦境渲染** | `DreamRenderer`（WorkManager） | 息屏 + 充电 + WiFi + 电量≥50% | 低能宏随机保鲜验证、全局熵衰减、拓扑同胚迁移 |
-| 🛡️ **免疫** | `MemoryImmuneSystem` | 每次摄取前 | 悬浮窗检测 / 敏感词分级 / 结构完整性 / 包名可信分级 / 可疑指纹隔离 |
+| 🔋 **能量衰减** | `MacroMaintenance` | 维护周期（原"梦境"语义：息屏+充电+WiFi，每 2h） | 成功执行 → 能量增加；时间推移 → 指数衰减（艾宾浩斯曲线） |
+| 💎 **晶化** | `MacroMaintenance` | 能量/成功率阈值 | 高价值宏固化：免疫衰减/剪枝/删除 |
+| ✂️ **剪枝保鲜** | `MacroMaintenance` | 维护周期 | 低能宏验证回放、容量治理 |
+| 🛡️ **摄取防护** | `IngestGuard`（原"免疫"） | 每次摄取前 | 敏感词分级 / 包名可信分级 / 可疑指纹隔离（带 TTL 重新评估） |
 
-### 跨版本记忆保鲜（拓扑同胚迁移）
+### 跨版本记忆保鲜（拓扑别名桥）
 
-App 升级会改变 UI（resourceId / 布局 / 文案）→ 旧指纹失效 → 宏集体失配。
-解法是**别名桥**而不是改写历史：
-
-```mermaid
-flowchart TB
-    D["🌙 梦境周期<br/>TopologyMigrator"] --> CMP["对比旧/新版本节点集<br/>同 role + resourceId 归一化<br/>+ textHint 相似度打分 ≥ 0.7"]
-    CMP --> MAP["migration_map<br/>old_fp → new_fp<br/>（score · from_version → to_version）"]
-    MAP --> LOOKUP["召回侧：精确匹配失败时<br/>findMacrosViaMigration 反查旧别名"]
-    LOOKUP --> RES["resolveMigration 正向校验闭环<br/>resolve(旧指纹) == 探测指纹"]
-```
-
-### 存储演化（schema v3）
-
-- 边 ID 从**帧内自增计数器**改为**内容哈希**（SHA-256(源指纹\|目标指纹\|关系) 前 16 位）——
-  同一条拓扑边在任意两帧同 ID，差分语义与跨 Episode 删除才正确；
-- v2→v3 Room 迁移：清理历史重复边 + 建 `(episode_id, edge_label)` 唯一索引 + 删除增加 episode 作用域；
-
-> [!WARNING]
-> 升级必须显式提供 Room `Migration`，仅降级允许 destructive 重建 ——
-> 这是保护长期记忆不被静默清空的硬约束。
+目标 App 升级会改变 UI（resourceId / 布局 / 文案）→ 旧指纹失效 → 宏集体失配。
+解法是**别名桥**而不是改写历史：`appVersion` 取**被采集目标 App** 的版本
+（宿主经 PackageManager 解析），维护周期发现同构新旧节点对写入
+`FingerprintAlias`，匹配侧精确失配时按别名回退 —— 旧指纹不丢弃，
+新指纹可回溯。
 
 > [!TIP]
 > 深入阅读：[docs/memory-and-workflow-research.md](docs/memory-and-workflow-research.md)
 > —— 对标 MemGPT/Letta、Mem0、A-MEM、Zep/Graphiti、Voyager[^research] 的完整调研与差距分析。
+
+> [!NOTE]
+> 旧存储（Room `cs_mem_graph.db` / `mcp_memory/memory.json` /
+> `chat_memory/ledger.json`）在首次启动时由 `LegacyCsMemMigrator`
+> 一次性搬迁（幂等；动作无法类型化的旧宏整宏丢弃，不留半迁移状态）。
 
 <p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
 
@@ -710,7 +705,7 @@ linux_bootstrap / linux_status / linux_packages / linux_network / ubuntu_install
 
 **platform:terminal —— 18 个** `terminal.*`（见[终端运行时](#terminal-runtime)；T82 新增 `TerminalUbuntuEnsure` / `TerminalUbuntuStatus` 一键生命周期编排）
 
-**platform:cs-mem —— 3 个记忆召回**
+**platform:memory-host —— 3 个记忆召回**
 
 | 工具 | 用途 |
 |------|------|
@@ -1016,13 +1011,13 @@ chmod +x gradlew
 | `platform:terminal` | 45 | 全域覆盖，含**真实 Ubuntu rootfs E2E**（真 proot 进程） |
 | `core:llm-adapter` | 6 | 多模型运行时：档案校验/注册表/能力解析/错误分类/路由 |
 | `core:tool-registry` | 4 | 流式透传回归（SafeAgentTool 包装器不吞流式）+ DOM 解析 |
-| `platform:cs-mem` | 3 | 稳定边 ID / 蒸馏参数提纯 / 迁移回退闭环 / 回放偏离防护 |
+| `platform:memory-host` | 6 | 旧宏 transitions 类型化迁移 / 丢步防护 / 别名回退 / 队列保留 |
 | `app` / `privilege` / `terminal-emulator` | 6 | 斜杠文法路由 / 进程流 / VT100 核心 |
 
 ```bash
 # 全量 JVM 测试（约 3–8 分钟）
 ./gradlew :core:agent-engine:test :core:tool-registry:test \
-  :platform:terminal:testDebugUnitTest :platform:cs-mem:testDebugUnitTest \
+  :platform:terminal:testDebugUnitTest :platform:memory-host:testDebugUnitTest \
   --no-daemon -Pkotlin.incremental=false
 
 # 真机仪器测试（需连接设备）

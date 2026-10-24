@@ -26,7 +26,7 @@
 ```
 
 - **JVM 单测为主力**：`core/*` 三个模块是纯 JVM（零 Android 依赖），天然可测；
-  Android library 模块（`platform/terminal`、`platform/cs-mem`）通过
+  Android library 模块（`platform/terminal`、`platform/memory-host`）通过
   **接口替身 + `returnDefaultValues`** 把被测路径保持在 JVM。
 - **仪器测试留给只有真机才能验证的东西**：原生 PTY（forkpty/JNI 桥）、
   rootfs 供给（网络下载 + 解包）、PRoot 实进程。
@@ -64,7 +64,7 @@
 | `:core:llm-adapter` | JVM | 6 | `./gradlew :core:llm-adapter:test` | 随 `:app:compileDebugKotlin` 编译（脚本化静态编译覆盖） |
 | `:platform:terminal` | JVM | 45 | `./gradlew :platform:terminal:testDebugUnitTest` | `Run platform:terminal unit tests` |
 | `:platform:terminal` | androidTest | 5 | `./gradlew :platform:terminal:connectedDebugAndroidTest`（真机） | CI 只编译：`compileDebugAndroidTestKotlin` |
-| `:platform:cs-mem` | JVM | 3（**本 PR 新增，从 0 起步**） | `./gradlew :platform:cs-mem:testDebugUnitTest` | `Run platform:cs-mem unit tests`（本 PR 新增步骤） |
+| `:platform:memory-host` | JVM | 6（**记忆拆库后宿主层**） | `./gradlew :platform:memory-host:testDebugUnitTest` | `Run platform:memory-host unit tests`（记忆域本体在 [apex-memory-kit](https://github.com/Ultra-Guru/apex-memory-kit)，63 项库内测试） |
 | `:platform:privilege` | JVM | 1 | `./gradlew :platform:privilege:testDebugUnitTest` | 随 app 编译覆盖 |
 | `:terminal-emulator` | JVM | 1 | `./gradlew :terminal-emulator:test` | 随静态编译覆盖 |
 | `:app` | JVM | 4 | `./gradlew :app:testDebugUnitTest` | 随 app 编译覆盖（未单独设门禁） |
@@ -73,7 +73,7 @@
 > `gradle wrapper --gradle-version 8.10 && chmod +x gradlew`，同 CI）：
 > ```bash
 > ./gradlew :core:agent-engine:test :core:tool-registry:test \
->   :platform:terminal:testDebugUnitTest :platform:cs-mem:testDebugUnitTest \
+>   :platform:terminal:testDebugUnitTest :platform:memory-host:testDebugUnitTest \
 >   --no-daemon -Pkotlin.incremental=false
 > ```
 
@@ -155,23 +155,18 @@ CI 无模拟器 → 只编译保证不烂（`compileDebugAndroidTestKotlin`）�
 ./gradlew :platform:terminal:connectedDebugAndroidTest
 ```
 
-### 3.5 `platform:cs-mem` —— 认知记忆（本 PR 新增，模块测试从 0 → 3）
+### 3.5 `platform:memory-host` —— 认知记忆宿主层（记忆域已拆库为 apex-memory-kit）
+
+库本体（apex-memory-kit，63 项纯 JVM 测试）覆盖：摄取 / 会话 / 蒸馏 / 匹配 /
+维护 / 存储原子性。宿主层测试锁定**旧存储 → 新库的一次性迁移**语义：
 
 | 测试类 | 覆盖 | 锁定的缺陷 |
 |--------|------|-----------|
-| **UiTreePrunerStableEdgeIdTest** | 稳定边 ID：确定性 / 格式 / 内容敏感 / 方向敏感 / 字段边界防碰撞 / **跨帧同树同 ID** / 兄弟顺序无关性 / **增量树只加边不扰动旧边** | 旧边 ID 是帧内自增计数器 → 差分语义错乱 + 跨 Episode 误删（v3 迁移前置条件） |
-| **TraceDistillerParamExtractionTest** | `extractActionParams` 三种历史形态；端到端 `distill`：纯参数写入转移表 / 最小步数拒绝 / 失败与思考步骤过滤 | 蒸馏把完整描述（`InputText("hello")`）存进转移表，回放输入整串字面量 |
-| **BypassExecutionEngineTest** | `extractInputText` 双保险；**跨版本迁移回退闭环**（别名桥反查 + 正向校验）；精确匹配直通；无宏 NotMatched；**回放状态偏离防护**（广告弹窗劫持 → 立即失败交还 LLM） | migration_map 只写不读（App 升级后宏集体失效）+ 迁移复验用旧指纹恒被误杀 |
+| **LegacyCsMemMigratorTest** | 旧 FSM 宏 `transitions_json` → 类型化 `MacroAction` 的一对一映射（click/swipe/inputtext/back / 锚点保留）；未知动作类型 / 坏 JSON / 缺参数 → 整宏丢弃（null），不留半迁移状态 | 旧宏 `actionParams` 是裸字符串 + 回放侧正则再解析 —— 迁移期半解析会把不可回放的宏带进新库 |
 
-**技术要点**：cs-mem 是 Android library，但被测路径全部纯 JVM。模块
-`build.gradle.kts` 开启 `testOptions.unitTests.isReturnDefaultValues = true`：
-`SemanticNode` 类签名引用 `android.graphics.Rect`，但稳定边 ID / 指纹 /
-蒸馏 / 回放解析不触碰其方法——`returnDefaultValues` 让类加载与方法桩安全
-通过，无需 Robolectric（零依赖、毫秒级启动）。替身：`FakeMemoryGraphStore`
-（实现旁路引擎消费的 3 个查询，其余默认值）、`FakePrivilegeManager`
-（记录 UI 动作 + 返回固定屏幕）。指纹断言与生产同源：测试内调
-`NodeFingerprint.compute` 计算期望值（parentHash=null 与
-`UiTreePruner.prune` 的构造一致），不硬编码摘要。
+**技术要点**：memory-host 是 Android library，但被测路径全部纯 JVM；
+`returnDefaultValues = true` 使类加载安全通过，无需 Robolectric。迁移器
+`parseLegacyTransitions` 为 `internal` 纯函数，不触 Context/DB。
 
 ### 3.6 其余模块
 
@@ -206,7 +201,7 @@ CI 无模拟器 → 只编译保证不烂（`compileDebugAndroidTestKotlin`）�
 
 | 工作流 | 作用 | 与测试相关的步骤 |
 |--------|------|----------------|
-| **ci.yml** | 主流水线 | ① 静态分析（kotlinc 编译 core 四模块 + 工具 ID 唯一性 + 括号平衡 + PRoot sha256 校验）② `app-compile` job：`:app:compileDebugKotlin` → `:platform:terminal:testDebugUnitTest` → 仪器测试编译 → `:core:agent-engine:test` → `:core:tool-registry:test` → **`:platform:cs-mem:testDebugUnitTest`（本 PR 新增）** ③ `build-apk` job：assembleDebug + APK 体积报告（PR 评论） |
+| **ci.yml** | 主流水线 | ① 静态分析（kotlinc 编译 core 四模块 + 工具 ID 唯一性 + 括号平衡 + PRoot sha256 校验）② `app-compile` job：`:app:compileDebugKotlin` → `:platform:terminal:testDebugUnitTest` → 仪器测试编译 → `:core:agent-engine:test` → `:core:tool-registry:test` → **`:platform:memory-host:testDebugUnitTest`（记忆拆库后宿主层）** ③ `build-apk` job：assembleDebug + APK 体积报告（PR 评论） |
 | **quality-gate.yml** | 结构门禁 | 文件大小预算（main ≤1200 行 / test ≤1600 行）、反模式（反射分发、printStackTrace）、空 catch + TODO 普查（Job Summary） |
 | **pr-labeler.yml** | PR 自动标签 | 按改动路径打 area/risk 标签 |
 
@@ -274,13 +269,11 @@ src/test/kotlin/com/apex/agent/core/llm/runtime/
 </details>
 
 <details>
-<summary><b>platform:cs-mem（3，本 PR 新增）</b></summary>
+<summary><b>platform:memory-host（6，记忆拆库后宿主层）</b></summary>
 
 ```
-src/test/kotlin/com/apex/agent/platform/csmem/
-├── prune/UiTreePrunerStableEdgeIdTest.kt
-├── distill/TraceDistillerParamExtractionTest.kt
-└── bypass/BypassExecutionEngineTest.kt
+src/test/kotlin/com/apex/agent/platform/memory/
+└── migrate/LegacyCsMemMigratorTest.kt
 ```
 </details>
 
@@ -321,10 +314,10 @@ A：`UbuntuRootfsEndToEndIntegrationTest` 探测宿主 proot 版本：≥5.4 才
 L2/L3（真实 guest 进程），否则自我跳过并在输出中声明跳过级别——这是诚实
 降级，不是静默通过。
 
-**Q：cs-mem 测试为什么不引 Robolectric？**
-A：被测路径（哈希/蒸馏/回放解析）不触碰 Android API；`returnDefaultValues`
+**Q：memory-host 测试为什么不引 Robolectric？**
+A：被测路径（迁移映射）不触碰 Android API；`returnDefaultValues`
 已覆盖类加载需求。Robolectric 会拖慢启动且引大量传递依赖，仅当未来要测
-`Rect` 几何逻辑（兄弟邻接边）时再评估。
+Context 相关迁移分支时再评估。
 
 **Q：怎么验证我的回归测试真的在锁缺陷？**
 A：`git stash` 你的修复 → 跑测试应当红 → `git stash pop` → 绿。两步都过

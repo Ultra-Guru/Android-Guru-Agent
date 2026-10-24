@@ -2,7 +2,16 @@ package com.apex.agent.mcp.builtin.memory
 
 import com.apex.agent.core.tools.mcp.McpException
 import com.apex.agent.core.tools.mcp.McpTransportHandle
-import java.io.File
+import com.apex.memkit.core.model.GraphEntity
+import com.apex.memkit.core.model.GraphRelation
+import com.apex.memkit.core.store.MemoryStore
+import com.apex.memkit.core.store.addGraphRelations
+import com.apex.memkit.core.store.addObservations
+import com.apex.memkit.core.store.deleteGraphEntities
+import com.apex.memkit.core.store.readGraph
+import com.apex.memkit.core.store.searchGraph
+import com.apex.memkit.core.store.upsertGraphEntities
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -20,48 +29,28 @@ import kotlinx.serialization.json.putJsonObject
 /**
  * 内置知识图谱记忆 MCP 服务器（memory，进程内 transport）。
  *
- * 架构与 [com.apex.agent.search.mcp.BuiltinSearchMcpTransport] 同构（三件套），
- * tools/call 薄委托给 [KnowledgeGraphStore]（纯 Kotlin 图操作 + 持久化，
- * 独立可单测），本类只做 JSON-RPC 协议适配与结果渲染。
+ * 拆库后（apex-memory-kit）：tools/call 薄委托给库 [MemoryStore] 的图谱
+ * 操作面（实体 / 关系 / 观察全部住在库内，单写者纪律与原子文档持久化由
+ * 库保证），本类只做 JSON-RPC 协议适配与结果渲染。
  *
  * 工具与参数名完全对齐官方 @modelcontextprotocol/server-memory，便于模型
  * 迁移既有习惯：
- * - `create_entities`(entities[])     —— 幂等：同名实体合并观察（任务书决策）
+ * - `create_entities`(entities[])     —— 幂等：同名实体合并观察
  * - `create_relations`(relations[])   —— 三元组整体去重
  * - `add_observations`(entityName, contents[]) —— 追加式去重
  * - `read_graph`()                    —— 全图 JSON（超 8000 字符截断并提示）
  * - `search_nodes`(query)             —— name/entityType/observations 包含匹配
  * - `delete_entities`(entityNames[])  —— 级联删除关联关系
  *
- * 渲染决策：读类工具（read_graph/search_nodes）输出**紧凑 JSON**（与官方
- * 返回值同构、机器可再解析）；写类工具输出简短中文确认（上下文经济，
- * 模型不需要在确认文本里再看到一遍全图）。
- *
- * 持久化：storageDir 由构造方注入（DI 约定 `<filesDir>/mcp_memory`），
- * 每次变更在 [KnowledgeGraphStore] 内同步原子落盘 —— 因此 close 无需再
- * flush。构造发生在 McpClient 握手期（Dispatchers.IO 的 withContext 内），
- * 首次磁盘加载不在主线程。
- *
- * 线程契约：store 内部单锁串行化全部操作，本类无需再加锁；阻塞 IO 落在
- * McpClient 的 Dispatchers.IO 上下文（同 github 内置服务器的线程契约）。
- *
- * ## 共享 store 构造（v2 存储分层）
-
- * 主构造接收已存在的 [KnowledgeGraphStore] 实例：DI 侧提供 @Singleton
- * store（目录 `<filesDir>/mcp_memory`），本图谱承载**模型显式写入**的
- * 主题实体（mcp__memory__* 工具产物）。聊天自动记忆（ChatMemoryPipeline）
- * v2 起沉淀到独立的 [MemoryLedgerStore] 账本，与图谱物理分离；两类存储
- * 在召回侧合流。旧 File 构造保留（独立自建 store，单测与旧装配兼容）。
+ * 渲染决策：读类工具输出**紧凑 JSON**（与官方返回值同构、机器可再解析）；
+ * 写类工具输出简短中文确认（上下文经济）。
  */
 class BuiltinMemoryMcpTransport(
-    private val store: KnowledgeGraphStore
+    private val store: MemoryStore,
 ) : McpTransportHandle {
 
     /** encodeDefaults：空 observations 也要出现在输出 JSON 里（官方形态对齐）。 */
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-
-    /** 兼容旧装配：独立目录自建 store（与其它实例不共享内存态）。 */
-    constructor(storageDir: File) : this(KnowledgeGraphStore(storageDir))
 
     // ── McpTransportHandle ─────────────────────────────────────────
 
@@ -86,7 +75,7 @@ class BuiltinMemoryMcpTransport(
                     putJsonObject("capabilities") { putJsonObject("tools") {} }
                     putJsonObject("serverInfo") {
                         put("name", "memory-builtin")
-                        put("version", "1.0.0")
+                        put("version", "2.0.0")
                     }
                 })
                 "tools/list" -> put("result", buildJsonObject { put("tools", TOOLS) })
@@ -99,7 +88,7 @@ class BuiltinMemoryMcpTransport(
         }
     }
 
-    /** 进程内通道随宿主存活；变更已同步落盘，无需收尾。 */
+    /** 进程内通道随宿主存活；变更由库写入管道落盘，无需收尾。 */
     override fun isHealthy(): Boolean = true
 
     override fun close() = Unit
@@ -120,12 +109,12 @@ class BuiltinMemoryMcpTransport(
                 "delete_entities" -> textResult(callDeleteEntities(args))
                 else -> textResult(
                     "未知工具: $name（可用: ${TOOL_NAMES.joinToString(", ")}）",
-                    isError = true
+                    isError = true,
                 )
             }
         } catch (e: MemoryToolException) {
             textResult("⚠️ ${e.message}", isError = true)
-        } catch (e: kotlinx.coroutines.CancellationException) {
+        } catch (e: CancellationException) {
             throw e // 取消必须向上传播（MCP 客户端负责超时语义）
         } catch (e: Exception) {
             // 解析/磁盘/未知异常折叠成 MCP 工具错误，而不是让 JSON-RPC 层崩掉
@@ -146,7 +135,7 @@ class BuiltinMemoryMcpTransport(
 
     // ── 6 个工具实现（语义对齐官方 server-memory） ─────────────────
 
-    private fun callCreateEntities(args: JsonObject): String {
+    private suspend fun callCreateEntities(args: JsonObject): String {
         val array = args["entities"] as? JsonArray
             ?: throw MemoryToolException("需要参数 entities（实体数组）")
         if (array.isEmpty()) return "入参为空，没有需要创建的实体"
@@ -160,26 +149,19 @@ class BuiltinMemoryMcpTransport(
                 }
             } catch (e: Exception) {
                 throw MemoryToolException(
-                    "entities[$index] 格式错误: 需要 {name, entityType, observations[]}（${e.message}）"
+                    "entities[$index] 格式错误: 需要 {name, entityType, observations[]}（${e.message}）",
                 )
             }
         }
-        val outcome = store.createEntities(entities)
-        val parts = ArrayList<String>()
-        if (outcome.created.isNotEmpty()) {
-            parts.add("新建 ${outcome.created.size} 个（${outcome.created.joinToString("、")}）")
-        }
-        if (outcome.merged.isNotEmpty()) {
-            parts.add("合并 ${outcome.merged.size} 个既有实体的观察（${outcome.merged.joinToString("、")}）")
-        }
-        return if (parts.isEmpty()) {
+        val added = store.upsertGraphEntities(entities)
+        return if (added.isEmpty()) {
             "没有变化：入参实体均已存在且无新观察"
         } else {
-            "✅ ${parts.joinToString("；")}"
+            "✅ 新建 ${added.size} 个（${added.joinToString("、")}）；同名既有实体已合并观察"
         }
     }
 
-    private fun callCreateRelations(args: JsonObject): String {
+    private suspend fun callCreateRelations(args: JsonObject): String {
         val array = args["relations"] as? JsonArray
             ?: throw MemoryToolException("需要参数 relations（关系数组）")
         if (array.isEmpty()) return "入参为空，没有需要创建的关系"
@@ -189,69 +171,64 @@ class BuiltinMemoryMcpTransport(
                 json.decodeFromJsonElement(GraphRelation.serializer(), element)
             } catch (e: Exception) {
                 throw MemoryToolException(
-                    "relations[$index] 格式错误: 需要 {from, to, relationType}（${e.message}）"
+                    "relations[$index] 格式错误: 需要 {from, to, relationType}（${e.message}）",
                 )
             }
         }
-        val outcome = store.createRelations(relations)
+        val added = store.addGraphRelations(relations)
+        val duplicates = relations.size - added
         return buildString {
             append("✅ ")
-            append(if (outcome.added > 0) "新增 ${outcome.added} 条关系" else "没有新增关系")
-            if (outcome.duplicates > 0) append("；跳过 ${outcome.duplicates} 条重复关系")
+            append(if (added > 0) "新增 $added 条关系" else "没有新增关系")
+            if (duplicates > 0) append("；跳过 $duplicates 条重复关系")
         }.toString()
     }
 
-    private fun callAddObservations(args: JsonObject): String {
+    private suspend fun callAddObservations(args: JsonObject): String {
         val entityName = args.stringArg("entityName")
             ?: throw MemoryToolException("需要参数 entityName")
         val array = args["contents"] as? JsonArray
             ?: throw MemoryToolException("需要参数 contents（字符串数组）")
         val contents = array.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
-        val appended = try {
-            store.addObservations(entityName, contents)
-        } catch (e: IllegalArgumentException) {
-            throw MemoryToolException(e.message ?: "实体不存在: $entityName")
-        }
-        return if (appended > 0) {
-            "✅ 已向实体 $entityName 追加 $appended 条观察（重复项自动去重）"
+        val ok = store.addObservations(entityName, contents)
+        if (!ok) throw MemoryToolException("实体不存在: $entityName")
+        return if (contents.isNotEmpty()) {
+            "✅ 已向实体 $entityName 追加观察（重复项自动去重）"
         } else {
             "没有新增观察（内容为空或全部已存在）"
         }
     }
 
-    private fun callReadGraph(): String {
-        val graph = store.readGraph()
-        if (graph.entities.isEmpty() && graph.relations.isEmpty()) {
+    private suspend fun callReadGraph(): String {
+        val (entities, relations) = store.readGraph()
+        if (entities.isEmpty() && relations.isEmpty()) {
             return "知识图谱为空（用 create_entities 沉淀第一批实体）"
         }
-        return renderGraph(graph)
+        return renderGraph(entities, relations)
     }
 
-    private fun callSearchNodes(args: JsonObject): String {
+    private suspend fun callSearchNodes(args: JsonObject): String {
         val query = args.stringArg("query") ?: throw MemoryToolException("需要参数 query")
-        val graph = store.searchNodes(query)
-        if (graph.entities.isEmpty()) {
+        val result = store.searchGraph(query)
+        if (result.entities.isEmpty()) {
             return "未找到匹配 \"$query\" 的节点（可换关键词，或 read_graph 查看全图）"
         }
-        return "匹配 \"$query\"（${graph.entities.size} 实体 / ${graph.relations.size} 关系）:\n" +
-            renderGraph(graph)
+        return "匹配 \"$query\"（${result.entities.size} 实体 / ${result.relations.size} 关系）:\n" +
+            renderGraph(result.entities, result.relations)
     }
 
-    private fun callDeleteEntities(args: JsonObject): String {
+    private suspend fun callDeleteEntities(args: JsonObject): String {
         val array = args["entityNames"] as? JsonArray
             ?: throw MemoryToolException("需要参数 entityNames（字符串数组）")
         val names = array.mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } }
         if (names.isEmpty()) return "入参为空，没有需要删除的实体"
 
-        val outcome = store.deleteEntities(names)
-        return buildString {
-            if (outcome.deleted > 0) {
-                appendLine("✅ 已删除 ${outcome.deleted} 个实体（关联关系已级联清理）")
-            }
-            if (outcome.missing.isNotEmpty()) {
-                appendLine("未找到: ${outcome.missing.joinToString("、")}")
-            }
-        }.trimEnd()
+        val deleted = store.deleteGraphEntities(names)
+        return if (deleted) {
+            "✅ 已删除 ${names.size} 个实体（关联关系已级联清理）"
+        } else {
+            "未找到任何匹配实体"
+        }
     }
 
     // ── 渲染 ───────────────────────────────────────────────────────
@@ -260,13 +237,13 @@ class BuiltinMemoryMcpTransport(
      * 图 → 紧凑 JSON 文本（与官方返回值同构）；超过 [MAX_GRAPH_CHARS] 截断
      * 并附提示 —— 图的价值在结构而非一次读全，模型可用 search_nodes 缩小范围。
      */
-    private fun renderGraph(graph: KnowledgeGraph): String {
+    private fun renderGraph(entities: List<GraphEntity>, relations: List<GraphRelation>): String {
         val text = buildJsonObject {
             putJsonArray("entities") {
-                graph.entities.forEach { add(json.encodeToJsonElement(GraphEntity.serializer(), it)) }
+                entities.forEach { add(json.encodeToJsonElement(GraphEntity.serializer(), it)) }
             }
             putJsonArray("relations") {
-                graph.relations.forEach { add(json.encodeToJsonElement(GraphRelation.serializer(), it)) }
+                relations.forEach { add(json.encodeToJsonElement(GraphRelation.serializer(), it)) }
             }
         }.toString()
         return if (text.length <= MAX_GRAPH_CHARS) {
@@ -297,7 +274,7 @@ class BuiltinMemoryMcpTransport(
 
         val TOOL_NAMES = listOf(
             "create_entities", "create_relations", "add_observations",
-            "read_graph", "search_nodes", "delete_entities"
+            "read_graph", "search_nodes", "delete_entities",
         )
 
         /** tools/list 的 tools 数组（含 JSON Schema inputSchema）。 */
