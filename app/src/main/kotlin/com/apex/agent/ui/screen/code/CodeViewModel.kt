@@ -143,6 +143,8 @@ class CodeViewModel @Inject constructor(
     // ═══ #197 Coding 工位升级（从 Agent 屏迁入）═══
     /** 「小圆环」函数调用/工具菜单（Coding 工位独占消费）。 */
     internal val toolkitStore: ChatToolkitStore,
+    /** 「霓虹球」功能聚合（16 项真实注入；见 neon/NeonOrbFeatures.kt）。 */
+    internal val neonOrbStore: com.apex.agent.ui.screen.code.neon.NeonOrbStore,
     /** GitHub PAT 连接（Coding 屏的 gh 连接入口）。 */
     internal val githubTokenManager: GithubTokenManager,
     /** 斜杠路由需要 MCP 连接快照（/mcp:<id> 引导提示词据此生成）。 */
@@ -573,7 +575,10 @@ class CodeViewModel @Inject constructor(
         // ═══ #197 「小圆环」函数调用（Coding 工位独占）：会话上下文附加段 +
         // v4 强制工具计划。prepareForTask 的 refreshContext 会把 extras 拼进
         // additionalSystemContext（顺序：先存 extras 再刷上下文）。 ═══
-        codeEngineImpl?.updateSessionExtras(toolkitStore.buildSessionContext())
+        // 霓虹球注入段（16 项功能聚合）同通道追加 —— 小圆环在前、霓虹球在后。
+        codeEngineImpl?.updateSessionExtras(
+            neonOrbStore.mergeWith(toolkitStore.buildSessionContext())
+        )
         codeEngineImpl?.updateForcedTools(
             forcedToolIds = toolkitStore.forcedToolIds(),
             exposeAll = toolkitStore.exposeAllToolsEnabled()

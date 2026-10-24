@@ -412,6 +412,13 @@ fun CodeScreen(
                             onConfigure = onOpenSettings
                         )
                     },
+                    // 霓虹球功能聚合（16 项真实注入；状态由 NeonOrbButton 内部
+                    // 经 store 自收集 —— 这里只交挂载点，与 modelMenu 同款插槽）
+                    neonOrbMenu = {
+                        com.apex.agent.ui.screen.code.neon.NeonOrbButton(
+                            store = viewModel.neonOrbStore
+                        )
+                    },
                     toolkitState = ToolkitUiState(
                         webSearchEnabled = webSearchEnabled,
                         timeEnabled = timeEnabled,
@@ -720,6 +727,9 @@ private fun CodeInputBar(
     // 「小大脑」模型菜单插槽（Agent 屏同款 BrainMenuButton；插槽化避免
     // 参数爆炸 —— 数据与回调由 CodeScreen 组合层闭合）
     modelMenu: @Composable () -> Unit = {},
+    // 「霓虹球」功能聚合插槽（16 项能力面板；数据由 store 自闭合 ——
+    // 与 modelMenu 同款插槽化，CodeScreen 只传 store 挂载点）
+    neonOrbMenu: @Composable () -> Unit = {},
     toolkitState: ToolkitUiState
 ) {
     // ═══ v5 玻璃输入栏（Agent 屏同款）：Floating 档 + 顶部双角圆角，悬浮栈
@@ -821,6 +831,11 @@ private fun CodeInputBar(
                     onDeleteRule = { toolkit.deleteRule(it) },
                     onToggleRule = { id, enabled -> toolkit.setRuleEnabled(id, enabled) }
                 )
+
+                // ═══ 霓虹球：功能聚合入口（16 项真实注入；neon/NeonOrbButton.kt）═══
+                // 与小圆环同排但独立体系：时间注入/结构化输出/网络搜索等
+                // 三组能力聚合，面板开关 → NeonOrbStore → 每轮发送注入。
+                neonOrbMenu()
 
                 // ═══ 小大脑：模型切换 + 参数调节 + 配置跳转（用户反馈补齐）═══
                 // Coding 工位此前无模型入口 —— 共享 LlmClient 恒用默认 Profile；
