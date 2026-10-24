@@ -12,16 +12,17 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,12 +45,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
+import com.apex.agent.ui.component.ImageLightbox
 import com.apex.agent.update.UpdateCenter
+import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -69,8 +73,9 @@ import kotlinx.coroutines.withContext
  * - [ChangelogHistoryDialog] —— 关于页「更新日志」入口的两级回看
  *   （历史列表 → 单版详情），可自由关闭。
  *
- * 渲染策略：notes 结构化要点优先（零 Markdown 依赖）；notes 缺失时降级
- * markdown 原文纯文本展示 —— 不为此引入渲染器重依赖。
+ * 渲染策略：notes 结构化要点优先（零 Markdown 依赖）+ images 配图图廊
+ * （Coil 缩略图 → 复用 [ImageLightbox] 全屏：双指缩放 / 拖拽 / 双击缩放）；
+ * notes 缺失时降级 markdown 原文纯文本展示 —— 不为此引入渲染器重依赖。
  */
 
 /** 「前往下载」的兜底出口：本版 Release 页缺失时去发布页列表。 */
@@ -177,12 +182,20 @@ private fun ChangelogEntryDialog(
 ) {
     val context = LocalContext.current
     val noBrowserHint = stringResource(R.string.settings_about_no_browser)
-    val hasManual = entry.notes.isNotEmpty()
+    // 一级日志存在性：要点或配图任一即算（纯图片段 —— 发布器只发了截图没写
+    // 要点 —— 同样进第 1 步，图廊在弹窗置顶展示）
+    val hasManual = entry.notes.isNotEmpty() || entry.images.isNotEmpty()
     val hasPr = entry.pr.isNotEmpty()
     val twoStep = hasManual && hasPr
     // 步骤：0 = 手动日志（一级），1 = PR 功能变更（二级）；
     // 无手动日志直进第 2 步（不写手动日志时 PR 部分照常展示）
     var step by remember(entry) { mutableStateOf(if (hasManual) 0 else 1) }
+
+    // 配图全屏查看（复用 ImageLightbox：缩放 / 平移 / 双击缩放 / 点空白关闭）
+    var viewingImage by remember(entry) { mutableStateOf<String?>(null) }
+    viewingImage?.let { url ->
+        ImageLightbox(imageModel = url, onDismiss = { viewingImage = null })
+    }
 
     // 浏览模式可自由关闭；两档启动模式强制（点外部/返回键不关，「知道了」恒可达）
     val dismissOnOutside = mode == ChangelogDialogMode.BROWSE
@@ -254,6 +267,16 @@ private fun ChangelogEntryDialog(
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                 }
+                            }
+                            // ── 配图图廊（changelog v3：发布器附图）──
+                            if (entry.images.isNotEmpty()) {
+                                if (entry.notes.isNotEmpty()) {
+                                    Spacer(Modifier.size(10.dp))
+                                }
+                                ChangelogImagesRow(
+                                    images = entry.images,
+                                    onOpen = { viewingImage = it }
+                                )
                             }
                         } else {
                             // ── 第 2 步：二级日志（PR 合并内容分组）──
@@ -386,6 +409,40 @@ private fun ChangelogEntryDialog(
             }
         }
     )
+}
+
+/**
+ * 配图图廊（changelog v3）—— 一级日志要点下方的横向缩略图行。
+ *
+ * - Coil [AsyncImage] 直加载 raw CDN URL，占位以 surfaceVariant 底色呈现；
+ * - 点击缩略图 → [ImageLightbox] 全屏（复用聊天多模态的成熟查看器：
+ *   双指缩放 / 单指平移 / 双击 2.5x / 点空白关闭）；
+ * - 封顶 9 张（聚合端 MAX_IMAGES 同尺）—— 横向滚动即可，不做分页。
+ */
+@Composable
+private fun ChangelogImagesRow(
+    images: List<String>,
+    onOpen: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        images.forEach { url ->
+            AsyncImage(
+                model = url,
+                contentDescription = stringResource(R.string.changelog_image_desc),
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(width = 128.dp, height = 96.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable { onOpen(url) }
+            )
+        }
+    }
 }
 
 /**

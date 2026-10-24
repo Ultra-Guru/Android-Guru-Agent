@@ -57,6 +57,7 @@
     <string name="settings_nav_cat_agent">Agent</string>
     <string name="settings_nav_cat_interface">Interface</string>
     <string name="settings_nav_cat_data">Data &amp; Backup</string>
+    <string name="settings_nav_cat_terminal">Terminal</string>
     <string name="settings_nav_model_setup">Setup</string>
     <string name="settings_nav_model_generation">Parameters</string>
     <string name="settings_nav_model_reasoning">Reasoning</string>
@@ -80,11 +81,29 @@
     <string name="settings_nav_agent_vision">Vision</string>
     <string name="settings_nav_interface_appearance">Appearance</string>
     <string name="settings_nav_interface_chat">Chat Display</string>
+    <string name="settings_nav_interface_notifications">Notifications</string>
+    <string name="settings_nav_terminal_appearance">Appearance &amp; Feedback</string>
+    <string name="settings_nav_terminal_policy">Command Policy</string>
     <string name="settings_nav_data_backup">Backup &amp; Restore</string>
+    <string name="settings_nav_data_update">App Updates</string>
     <string name="settings_providers_roles_hint">Manage providers (base URLs / keys / rotation) and model role mapping (primary · vision · reasoning · fast · summary).</string>
     <string name="settings_manage_providers">Manage Providers</string>
     <string name="settings_manage_roles">Manage Model Roles</string>
     <string name="settings_tab_close">Close %1$s</string>
+    <string name="settings_notifications_section">In-app notifications</string>
+    <string name="settings_notif_channel_section">System channels</string>
+    <string name="settings_notif_channel_desc">Per-channel importance and Do-Not-Disturb are managed in system settings — this opens the app\'s channel list directly.</string>
+    <string name="settings_notif_channel_open">Open system notification settings</string>
+    <string name="settings_update_section">Updates</string>
+    <string name="settings_update_auto">Auto-check for updates</string>
+    <string name="settings_update_auto_desc">On: silent check at startup + when opening About. Off: no background checks or patch downloads — update manually from About.</string>
+    <string name="settings_update_mirror">Download mirror</string>
+    <string name="settings_update_mirror_desc">Applies to GitHub release asset downloads only. Auto = pick the fastest mirror by speed test.</string>
+    <string name="settings_update_mirror_auto">Auto (speed test)</string>
+    <string name="settings_update_mirror_direct">GitHub direct</string>
+    <string name="settings_update_mirror_ghfast">ghfast.top</string>
+    <string name="settings_update_mirror_ghproxy_net">ghproxy.net</string>
+    <string name="settings_update_mirror_ghproxy_com">gh-proxy.com</string>
 
 
     <!-- Generation -->
@@ -431,6 +450,8 @@
 
     <!-- ═══ Memory (MemoryScreen) ═══ -->
     <string name="memory_title">Memory</string>
+    <string name="memory_graph_view">Memory graph view</string>
+    <string name="memory_list_view">Memory list view</string>
     <string name="MemorySearchNodes">Search nodes</string>
     <string name="memory_got_it">Got it</string>
     <string name="memory_nodes">Nodes</string>
@@ -656,6 +677,7 @@
     <string name="changelog_step_next">Next: feature changes</string>
     <string name="changelog_step_prev">Back</string>
     <string name="changelog_dialog_open_release">Open release page</string>
+    <string name="changelog_image_desc">Changelog image</string>
     <string name="changelog_history_empty">No changelog yet (first release on the changelog channel)</string>
     <string name="changelog_history_failed">Failed to load changelog — offline and no embedded copy</string>
     <string name="about_section_features">Feature tour</string>

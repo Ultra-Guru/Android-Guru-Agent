@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * 网格时代字段（monochrome/showKeybar/vibrateBell）随交互视图一并退役，
  * 保留字号与亮屏两个控制台仍消费的项）。
  */
-internal data class TerminalSettings(
+data class TerminalSettings(
     val fontSize: Int = 13,
     val keepScreenOn: Boolean = false
 ) {
@@ -26,8 +26,11 @@ internal data class TerminalSettings(
  *
  * 字号在持久化前钳制到 [TerminalSettings.MIN_FONT_SIZE]..[TerminalSettings.MAX_FONT_SIZE]
  * （防止旧版本已落盘的越界值继续生效）。
+ *
+ * Hilt 单例（TerminalModule 提供）：设置中心「终端」分类与本控制台
+ * 共享同一内存态（构造注入 Context，prefs 由本类自建）。
  */
-internal class TerminalSettingsStore(context: Context) {
+class TerminalSettingsStore(context: Context) {
 
     private val prefs = context.getSharedPreferences("apex_terminal", Context.MODE_PRIVATE)
 

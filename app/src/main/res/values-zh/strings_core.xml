@@ -58,6 +58,7 @@
     <string name="settings_nav_cat_agent">Agent 配置</string>
     <string name="settings_nav_cat_interface">界面外观</string>
     <string name="settings_nav_cat_data">数据与备份</string>
+    <string name="settings_nav_cat_terminal">终端</string>
     <string name="settings_nav_model_setup">配置</string>
     <string name="settings_nav_model_generation">参数</string>
     <string name="settings_nav_model_reasoning">推理</string>
@@ -81,11 +82,29 @@
     <string name="settings_nav_agent_vision">视觉</string>
     <string name="settings_nav_interface_appearance">外观</string>
     <string name="settings_nav_interface_chat">聊天显示</string>
+    <string name="settings_nav_interface_notifications">通知</string>
+    <string name="settings_nav_terminal_appearance">外观与反馈</string>
+    <string name="settings_nav_terminal_policy">命令策略</string>
     <string name="settings_nav_data_backup">备份与恢复</string>
+    <string name="settings_nav_data_update">应用更新</string>
     <string name="settings_providers_roles_hint">管理服务商（地址 / 密钥 / 轮换）与模型角色映射（主力 · 视觉 · 推理 · 快速 · 摘要）。</string>
     <string name="settings_manage_providers">管理服务商</string>
     <string name="settings_manage_roles">管理模型角色</string>
     <string name="settings_tab_close">关闭 %1$s</string>
+    <string name="settings_notifications_section">应用内通知</string>
+    <string name="settings_notif_channel_section">系统通知渠道</string>
+    <string name="settings_notif_channel_desc">各渠道的重要度与免打扰由系统设置管理 —— 此按钮直达本应用渠道列表。</string>
+    <string name="settings_notif_channel_open">打开系统通知设置</string>
+    <string name="settings_update_section">更新</string>
+    <string name="settings_update_auto">自动检查更新</string>
+    <string name="settings_update_auto_desc">开：启动静默检查 + 进关于页自动检查；关：后台零检查零下载补丁包，更新节奏交给关于页手动按钮。</string>
+    <string name="settings_update_mirror">下载镜像</string>
+    <string name="settings_update_mirror_desc">仅作用于 GitHub Release 资产下载。自动档 = 测速选最快节点。</string>
+    <string name="settings_update_mirror_auto">自动（测速选优）</string>
+    <string name="settings_update_mirror_direct">GitHub 直连</string>
+    <string name="settings_update_mirror_ghfast">ghfast.top</string>
+    <string name="settings_update_mirror_ghproxy_net">ghproxy.net</string>
+    <string name="settings_update_mirror_ghproxy_com">gh-proxy.com</string>
 
 
     <!-- Generation -->
@@ -432,6 +451,8 @@
 
     <!-- ═══ 记忆（MemoryScreen）═══ -->
     <string name="memory_title">记忆</string>
+    <string name="memory_graph_view">切换记忆图谱视图</string>
+    <string name="memory_list_view">切换记忆列表视图</string>
     <string name="MemorySearchNodes">搜索节点</string>
     <string name="memory_got_it">知道了</string>
     <string name="memory_nodes">节点</string>
@@ -657,6 +678,7 @@
     <string name="changelog_step_next">下一步 · 功能变更</string>
     <string name="changelog_step_prev">上一步</string>
     <string name="changelog_dialog_open_release">打开发布页</string>
+    <string name="changelog_image_desc">更新日志配图</string>
     <string name="changelog_history_empty">暂无更新日志（更新日志通道首个版本）</string>
     <string name="changelog_history_failed">更新日志加载失败 —— 离线且无内置副本</string>
     <string name="about_section_features">功能一览</string>

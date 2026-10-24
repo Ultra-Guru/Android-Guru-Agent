@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Android-Guru-Agent 更新日志工具链（changelog 通道 v2）—— validate / build。
+"""Android-Guru-Agent 更新日志工具链（changelog 通道 v3）—— validate / build。
 
 用法（CI 与本地共用，零第三方依赖）：
 
@@ -22,8 +22,12 @@
           缺省 = 下一版即收录。无 source 标记的片段 = PR 片段 → 二级日志
           （弹窗一级要点下方滑动区，按「新增功能 / 修复」分组展示）。
 
-      changelog.json 结构（v2，对 v1 客户端前向兼容 —— 未知字段忽略）：
-        - notes：一级日志要点（仅 publisher 片段的列表项剥壳）—— 弹窗置顶；
+      changelog.json 结构（v3，对 v1/v2 客户端前向兼容 —— 未知字段忽略）：
+        - notes：一级日志要点（仅 publisher 片段的列表项剥壳，行内图片
+          引用剥除）—— 弹窗置顶；
+        - images：配图 URL 列表（publisher 片段的 ![alt](url) 顺序提取，
+          封顶 9 张）—— 弹窗要点下方图廊，发布器（apex-Administrator
+          v2.3+）发送的附图经此通道展示；
         - pr：二级日志分组 [{title, notes}]（PR 片段，每组 = 一条 PR 摘要）；
         - markdown：全量底稿（publisher 在前，`---` 分隔，PR 在后）；
         - history：拉取发布仓库现有 changelog.json 合并（同 versionCode 去重），
@@ -60,17 +64,20 @@ UNRELEASED_DIR = REPO_ROOT / ".changelog" / "unreleased"
 RELEASE_REPO = "Ultra-Guru/Android-Guru-Agent-Release"
 CHANGELOG_RAW_URL = f"https://raw.githubusercontent.com/{RELEASE_REPO}/main/changelog.json"
 
-SCHEMA = "apex-changelog-v2"
+SCHEMA = "apex-changelog-v3"
 MAX_FRAGMENT_BYTES = 32 * 1024
 MAX_NOTES = 20          # 一级日志（publisher）要点上限
 MAX_PR_GROUPS = 12      # 二级日志（PR）分组上限
 MAX_GROUP_NOTES = 10    # 单组要点上限
+MAX_IMAGES = 9          # 一级日志配图上限（发布器单条 ≤9 张，与弹窗图廊对齐）
 MAX_HISTORY = 50
 FALLBACK_NOTE = "例行版本更新与稳定性改进。"
 VERSION_RE = re.compile(r"^\d+(\.\d+)+$")
 NAME_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._-]*\.md$")
 BULLET_RE = re.compile(r"^\s*(?:[-*•·]|\d+[.、)])\s+(.+?)\s*$")
 HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$")
+# Markdown 图片引用（![alt](url)）—— 发布器附图；alt 不捕获（展示走 images 字段）
+IMG_RE = re.compile(r"!\[[^\]]*\]\((\S+?)\)")
 # 文件头元数据标记：<!-- source: publisher --> / <!-- target: 1.4.9.27 -->
 MARKER_RE = re.compile(r"^<!--\s*(source|target)\s*:\s*([^>]*?)\s*-->\s*$", re.IGNORECASE)
 TS_PREFIX_RE = re.compile(r"^\d{8}-\d{6}-")
@@ -152,14 +159,36 @@ def cmd_validate(_args):
     return 0
 
 
+def strip_images(text):
+    """剥除行内 markdown 图片引用（![alt](url)）→ 剩余纯文本（两侧空白清理）。"""
+    return IMG_RE.sub("", text).strip()
+
+
+def extract_images(body):
+    """单片段配图：markdown 图片引用顺序提取（去重保序）。"""
+    seen, urls = set(), []
+    for m in IMG_RE.finditer(body):
+        u = m.group(1)
+        if u not in seen:
+            seen.add(u)
+            urls.append(u)
+    return urls
+
+
 def extract_bullets(body):
-    """单片段要点：列表项剥壳；整段无列表项时回退首行摘要（截 60 字）。"""
-    notes = [
-        m.group(1) for m in map(BULLET_RE.match, body.splitlines()) if m
-    ]
+    """单片段要点：列表项剥壳（行内图片引用剥除，剥后为空的 bullet 丢弃 ——
+    图片走 images 通道不占要点位）；整段无列表项时回退首行摘要（截 60 字）。"""
+    notes = []
+    for m in map(BULLET_RE.match, body.splitlines()):
+        if m:
+            cleaned = strip_images(m.group(1))
+            if cleaned:
+                notes.append(cleaned)
     if not notes:
+        # 首行摘要跳过纯图行（图片走 images 通道），并剥除行内残余引用
         first = next(
-            (ln.strip() for ln in body.splitlines() if ln.strip()), ""
+            (ln.strip() for ln in body.splitlines() if strip_images(ln)),
+            "",
         )
         first = re.sub(r"^#+\s*", "", first)
         if first:
@@ -184,9 +213,12 @@ def group_title(body, path):
             return m.group(1)
     first = next(
         (ln.strip() for ln in body.splitlines()
-         if ln.strip() and not BULLET_RE.match(ln) and not MARKER_RE.match(ln)),
+         if ln.strip() and not BULLET_RE.match(ln) and not MARKER_RE.match(ln)
+         and strip_images(ln)),
         "",
     )
+    if first:
+        first = strip_images(first)
     if first:
         return first[:60] + ("…" if len(first) > 60 else "")
     slug = TS_PREFIX_RE.sub("", path.name).removesuffix(".md")
@@ -207,20 +239,6 @@ def fetch_remote_history():
     except Exception:
         pass
     return []
-
-
-def load_archived_index(path):
-    """`--archived` 清单（每行一个已归档片段文件名）→ set。
-    文件缺失 / 为空 = 无历史归档（通道首用 / fetch 失败），空集宽松降级。"""
-    if not path:
-        return set()
-    f = pathlib.Path(path)
-    if not f.is_file():
-        return set()
-    return {
-        ln.strip() for ln in f.read_text(encoding="utf-8").splitlines()
-        if ln.strip()
-    }
 
 
 def load_archived_index(path):
@@ -284,10 +302,13 @@ def cmd_build(args):
                  if (x[1].get("source") or "").lower() == "publisher"]
     pr_frags = [x for x in included if x not in publisher]
 
-    # ── 一级日志：publisher 片段要点（弹窗置顶）──────────────────────
+    # ── 一级日志：publisher 片段要点（弹窗置顶）+ 配图（图廊）────────
     notes = dedup_keep_order(
         [n for _p, _m, b in publisher for n in extract_bullets(b)]
     )[:MAX_NOTES]
+    images = dedup_keep_order(
+        [u for _p, _m, b in publisher for u in extract_images(b)]
+    )[:MAX_IMAGES]
 
     # ── 二级日志：PR 片段分组（下滑区「新增功能 / 修复」介绍）────────
     pr_groups = []
@@ -320,6 +341,7 @@ def cmd_build(args):
         "date": date,
         "title": f"v{version} 更新内容",
         "notes": notes,
+        "images": images,
         "pr": pr_groups,
         "markdown": markdown,
         "releaseUrl": f"https://github.com/{RELEASE_REPO}/releases/tag/{tag}",
@@ -361,8 +383,8 @@ def cmd_build(args):
     print(
         f"📦 changelog.json — v{version}({code})：{len(included)} 片段收录 / "
         f"{len(deferred)} 缓发布 / {len(deduped)} 归档去重 | 一级 {len(notes)} 条（publisher "
-        f"{len(publisher)}）+ 二级 {len(pr_groups)} 组（pr {len(pr_frags)}）/ "
-        f"history {len(history)} 条（remote 存量 {len(old_history)}）"
+        f"{len(publisher)}）+ 配图 {len(images)} 张 + 二级 {len(pr_groups)} 组（pr "
+        f"{len(pr_frags)}）/ history {len(history)} 条（remote 存量 {len(old_history)}）"
     )
     for n in notes[:8]:
         print(f"    • {n}")

@@ -16,8 +16,11 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * 匹配 = 命令头 token 精确等值（消除旧 startsWith 前缀误拦：「rm」不再
  * 误拦「rmdir」的头 token）。
+ *
+ * Hilt 单例（TerminalModule 提供）：设置中心「终端」分类与本控制台
+ * 共享同一内存态（生产经 Context 构造，测试可注入 [Store] 假实现）。
  */
-internal class CommandPolicyStore(private val store: Store) {
+class CommandPolicyStore(private val store: Store) {
 
     /** 存储抽象（读写两个 StringSet）。 */
     interface Store {

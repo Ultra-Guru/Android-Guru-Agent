@@ -17,7 +17,8 @@ const val CHANGELOG_URL =
  * 设计约束（对齐 update 包的 UpdateManifest 纪律）：
  * - **全字段可缺省 + ignoreUnknownKeys**：清单演进不崩老客户端，
  *   老清单（字段缺失）不崩新客户端；
- * - **notes 优先渲染**：构建期已从片段 Markdown 列表项剥壳提取，
+ * - **notes / images 优先渲染**：构建期已从片段 Markdown 列表项剥壳提取
+ *   （行内图片引用剥除 → images 字段），
  *   App 端零 Markdown 依赖（无渲染器时 notes 即结构化要点；markdown
  *   仅作 notes 缺失时的纯文本降级源）。
  */
@@ -43,6 +44,10 @@ data class ChangelogEntry(
     @SerialName("title") val title: String? = null,
     /** 一级日志要点（管理软件发送片段的列表项剥壳）—— 弹窗置顶展示。 */
     @SerialName("notes") val notes: List<String> = emptyList(),
+    /** 一级日志配图（发布器附图，changelog v3 新增）—— 要点下方图廊渲染，
+     *  点开全屏查看（复用 ImageLightbox）。旧清单（v2）无此字段 → 空列表，
+     *  渲染自动跳过；行内图片引用已从 notes 剥除，不重复展示。 */
+    @SerialName("images") val images: List<String> = emptyList(),
     /** 二级日志分组（PR 片段）：一级要点下方下滑区，每组 = 一条 PR 摘要。
      *  v2 schema 新增；旧清单（v1）无此字段 → 空列表，渲染自动跳过。 */
     @SerialName("pr") val pr: List<ChangelogPrGroup> = emptyList(),

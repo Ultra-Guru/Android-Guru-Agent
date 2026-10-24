@@ -57,7 +57,12 @@ class TerminalViewModel @Inject constructor(
     // T82: Ubuntu 产品级生命周期 —— 环境配置面板与依赖安装路由的底座。
     private val ubuntuLifecycle: UbuntuLifecycleCoordinator,
     // i18n：通知/安装日志/EXIT 行文案（非 Compose 场景，LanguageManager 取词）
-    private val lang: LanguageManager
+    private val lang: LanguageManager,
+    // 两个 store 由 TerminalModule 提供 Hilt 单例：设置中心「终端」分类与
+    // 本 VM 共享同一内存态（任意一侧改动经同一 StateFlow 即时广播）。
+    // 配色方案单例随旧交互终端退役（scheme 子包已删除），不再注入。
+    private val settingsStore: TerminalSettingsStore,
+    private val policyStore: CommandPolicyStore
 ) : ViewModel() {
 
     // ═══════════════ 协作组件 ═══════════════
@@ -66,12 +71,6 @@ class TerminalViewModel @Inject constructor(
 
     /** 多会话元数据簿（会话标签行的唯一数据源）。 */
     internal val registry = SessionRegistry(terminalRuntime)
-
-    /** 命令黑白名单（提交管线第一步；与 DI TerminalPolicyImpl 共键）。 */
-    internal val policyStore = CommandPolicyStore(context)
-
-    /** 控制台设置（字号 / 亮屏）。 */
-    internal val settingsStore = TerminalSettingsStore(context)
 
     /** 命令历史（记录 + ↑/↓ 召回）。 */
     internal val commandHistory = TerminalCommandHistory(context)
@@ -523,6 +522,8 @@ class TerminalViewModel @Inject constructor(
     // ═══════════════ 设置 / 名单 / 历史 委托 ═══════════════
 
     internal fun updateSettings(block: TerminalSettings.() -> TerminalSettings) = settingsStore.update(block)
+
+    // ═══ 黑名单 / 白名单命令（P0-1：持久化与门禁在 CommandPolicyStore）═══
 
     val blacklist: StateFlow<Set<String>> get() = policyStore.blacklist
     val whitelist: StateFlow<Set<String>> get() = policyStore.whitelist
