@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
  *    `term_vibrate_bell` / `term_keep_screen_on`：TerminalSettings；
  *  - `term_extra_keys`：单行布局序列（[ExtraKeysConfig.serialize]）。
  */
-internal class TerminalSettingsStore(private val prefs: SharedPreferences) {
+class TerminalSettingsStore(private val prefs: SharedPreferences) {
 
     private val _settings = MutableStateFlow(loadSettings())
     val settings: StateFlow<TerminalViewModel.TerminalSettings> = _settings.asStateFlow()

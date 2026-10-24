@@ -772,11 +772,8 @@ internal fun LoopSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings)
             onValueChange = { onUpdate(agent.copy(loopMaxRunsDefault = it.toInt())) },
             fmt = { it.toInt().toString() }
         )
-        SwitchRow(
-            stringResource(R.string.settings_v3_loop_notify),
-            agent.loopNotifyOnRun,
-            description = stringResource(R.string.settings_v3_loop_notify_desc)
-        ) { on -> onUpdate(agent.copy(loopNotifyOnRun = on)) }
+        // 循环运行通知已聚合至「界面外观 → 通知」叶子（interface/notifications）——
+        // 与任务完成通知同处，渠道语义集中管理；此处不再重复入口。
         SwitchRow(
             stringResource(R.string.settings_v3_loop_catch_up),
             agent.loopCatchUpMissed,

@@ -68,6 +68,39 @@ object TerminalModule {
     fun provideNativePty(): NativePty = JniNativePty()
 
     /**
+     * 终端设置共享单例（设置中心 v2 扩展）：设置页「终端」大分类与终端页
+     * 的 bottom sheet 必须看到同一份内存态 —— 三个 store 提升为 Hilt 单例
+     * 后，任意一侧改动经同一 StateFlow 即时广播到另一侧（此前各 VM 私建
+     * 实例，prefs 落盘虽共享但内存态互不可见，改动要等 VM 重建才生效）。
+     *
+     * 三个 store 同绑 "apex_terminal" prefs（与 [provideTerminalPolicy] 的
+     * 动态策略读同一文件），无新存储面。
+     */
+    @Provides
+    @Singleton
+    fun provideTerminalSettingsStore(@ApplicationContext context: Context): com.apex.agent.ui.screen.terminal.TerminalSettingsStore =
+        com.apex.agent.ui.screen.terminal.TerminalSettingsStore(
+            context.getSharedPreferences("apex_terminal", Context.MODE_PRIVATE)
+        )
+
+    @Provides
+    @Singleton
+    fun provideCommandPolicyStore(@ApplicationContext context: Context): com.apex.agent.ui.screen.terminal.CommandPolicyStore =
+        com.apex.agent.ui.screen.terminal.CommandPolicyStore(
+            context.getSharedPreferences("apex_terminal", Context.MODE_PRIVATE)
+        )
+
+    @Provides
+    @Singleton
+    fun provideTerminalColorSchemeSettings(@ApplicationContext context: Context): com.apex.agent.ui.screen.terminal.scheme.TerminalColorSchemeSettings =
+        com.apex.agent.ui.screen.terminal.scheme.TerminalColorSchemeSettings(
+            com.apex.agent.ui.screen.terminal.scheme.TerminalColorSchemeSettings.PrefsStore(
+                context, "apex_terminal"
+            )
+        )
+
+
+    /**
      * 终端策略接线（设置页黑白名单 → LINE 写入策略层）。
      *
      * TerminalViewModel 的设置页把用户黑白名单写入 "apex_terminal" prefs

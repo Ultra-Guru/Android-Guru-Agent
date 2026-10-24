@@ -71,7 +71,12 @@ class TerminalViewModel @Inject constructor(
     // T82: Ubuntu 产品级生命周期 —— 依赖安装中心的路由底座（apt 命令只能跑在 Ubuntu 会话）。
     private val ubuntuLifecycle: UbuntuLifecycleCoordinator,
     // i18n：通知/安装日志文案（非 Compose 场景，LanguageManager 按当前语言取词）
-    private val lang: LanguageManager
+    private val lang: LanguageManager,
+    // 三个 store 由 TerminalModule 提供 Hilt 单例：设置中心「终端」分类与
+    // 本 VM 共享同一内存态（任意一侧改动经同一 StateFlow 即时广播）。
+    private val settingsStore: TerminalSettingsStore,
+    private val policyStore: CommandPolicyStore,
+    private val schemeSettings: com.apex.agent.ui.screen.terminal.scheme.TerminalColorSchemeSettings
 ) : ViewModel() {
 
     // ═══════════════ P0-1：协作组件（构造顺序敏感：prefs/registry 先于各 store）═══════════════
@@ -87,11 +92,7 @@ class TerminalViewModel @Inject constructor(
     /** 交互行镜像（黑白名单提交时刻检查；失效语义见 [LineMirror]）。 */
     private val lineMirror = LineMirror()
 
-    /** 终端设置 / 扩展键持久化。 */
-    private val settingsStore = TerminalSettingsStore(prefs)
-
-    /** 命令黑白名单持久化 + 门禁判定。 */
-    private val policyStore = CommandPolicyStore(prefs)
+    // 终端设置 / 命令策略 / 配色三个 store：构造注入的 Hilt 单例（TerminalModule）。
 
     /** 环境依赖安装中心（内嵌 ATR 2.0 [EnvironmentProvisioner] —— 用新 Runtime API，非旧 TerminalManager）。 */
     internal val depCenter = TerminalDepCenter(
@@ -896,11 +897,7 @@ class TerminalViewModel @Inject constructor(
 
     // ═══ 终端配色（T87：TerminalColorSchemeSettings 持久化 + 热切换）═══
     // 零方案代码进 VM（SRP）：id/boldAsBright 透传给渲染树。
-    private val schemeSettings = com.apex.agent.ui.screen.terminal.scheme.TerminalColorSchemeSettings(
-        com.apex.agent.ui.screen.terminal.scheme.TerminalColorSchemeSettings.PrefsStore(
-            context, "apex_terminal"
-        )
-    )
+    // store 为构造注入的 Hilt 单例（与设置中心终端分类共享内存态）。
 
     /** 当前配色方案 id（渲染树解析为完整方案）。 */
     val colorSchemeId: StateFlow<String> = schemeSettings.schemeId
