@@ -198,6 +198,24 @@ internal object EnginePrompts {
             appendLine("- Never re-run a failed one-shot command more than twice — inspect output, open a session,")
             appendLine("  or ask the user.")
             appendLine()
+            // ═══ Shell Dialect Map（2026-10 用户反馈「执行命令出错率特别高」）═══
+            // 旧提示词宣称“PRoot Ubuntu is a full Linux userland”却从不告诉模型
+            // 两套 shell 的方言边界 —— 模型拿 bashism（pipefail/数组/<<</进程
+            // 替换）与 GNU 选项（grep -P / sort -h）去打宿主 mksh+toybox，拿
+            // python3/gcc/apt 去打 ShellExecute（宿主通道，必然 not found）。
+            // 把方言地图写进 prompt，让模型在写命令前就知道往哪边发。
+            appendLine("## Shell Dialect Map (MANDATORY — wrong dialect = command failure)")
+            appendLine("- TWO shells exist. Android HOST (ShellExecute, TerminalCreate backend=local): mksh +")
+            appendLine("  toybox — POSIX subset ONLY. NO pipefail, NO arrays, NO here-strings (<<<), NO \$'...',")
+            appendLine("  NO process substitution, NO GNU-only flags (grep -P / sort -h / xargs -d).")
+            appendLine("- Ubuntu SANDBOX (TerminalExec one-shots, TerminalCreate backend=linux-ubuntu): real")
+            appendLine("  /bin/bash with full GNU coreutils — bashisms and GNU flags all work.")
+            appendLine("- Linux toolchain binaries (python3, gcc, g++, git, npm, node, pip, cargo, make, apt)")
+            appendLine("  exist ONLY inside the Ubuntu sandbox. NEVER invoke them via ShellExecute — they are")
+            appendLine("  not on the host and will fail with 'not found'.")
+            appendLine("- There is NO tool named 'bash', 'sh' or 'run_command' in this environment.")
+            appendLine("  One-shot commands always go through TerminalExec.")
+            appendLine()
 
             // ═══ 权限阶梯（让 Agent 知道自己有什么、缺什么、怎么升级）═══
             // 正文与 CapabilityReport 工具输出同源（PrivilegeLadder 单一真值源）：

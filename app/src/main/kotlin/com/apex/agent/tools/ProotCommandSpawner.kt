@@ -387,7 +387,7 @@ class ProotCommandSpawner(
         addAll(plan.extraBinds)
     }
 
-    /** 组装 PRoot argv：proot -r rootfs -0 --kill-on-exit -b... -w... -E... -- /bin/sh -c cmd。 */
+    /** 组装 PRoot argv：proot -r rootfs -0 --kill-on-exit -b... -w... -E... -- /bin/bash -c cmd。 */
     internal fun buildCommand(
         route: UbuntuRoute,
         plan: GuestCwdPlan,
@@ -409,8 +409,13 @@ class ProotCommandSpawner(
                 checksum = null,
                 readOnly = false
             ),
-            // /bin/sh -c：一次性行 shell 语义（复合命令 / 管道 / && 都成立）
-            executable = "/bin/sh",
+            // /bin/bash -c：一次性命令 shell（v1.5.x 修复 —— 旧值 /bin/sh 是
+            // Ubuntu 的 dash，模型按提示词「full Linux userland」直觉写 bashism
+            //（pipefail / 数组 / 进程替换 / <<< / $'...'）时全部 not found，
+            // 是「agent 执行命令出错率特别高」的机制之一；PTY 交互会话一直
+            // 用 GUEST_SHELL=/bin/bash，一次性命令对齐同一方言，复合命令 /
+            // 管道 / && 语义不变）。
+            executable = "/bin/bash",
             arguments = listOf("-c", request.command),
             workingDirectory = plan.workingDirectory,
             environment = guestEnv,

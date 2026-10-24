@@ -152,20 +152,40 @@ object PrivilegeDetector {
         else collapsed.take(MAX_LOG_CMD_LEN) + "..."
     }
 
+    /**
+     * POSIX 单引号安全包裹：路径含空格 / 引号 / 元字符时 `cd <dir> && cmd`
+     * 不再语法错误。单引号内无法再注入任何 shell 元字符（\' 转义闭环）。
+     */
+    internal fun shellQuote(value: String): String =
+        "'" + value.replace("'", "'\\''") + "'"
+
     private fun executeShellInternal(command: String, timeoutMs: Long, workDir: String?): ShellExecResult {
-        // 优先级1: Root
+        // ═══ 跨通道 cwd 守卫（2026-10 高错误率排查，三通道同语义）═══
+        // workDir 来自 ShellWorkDirTracker 的全局记忆，可能指向 TerminalExec
+        //（Ubuntu guest）里 cd 过的路径（如 /workspace）—— 在 Android 宿主上
+        // 不存在：root 通道 `cd /workspace && cmd` 语法报错、Shizuku 的 AIDL
+        // dir 参数直接拒启、本地通道 ProcessBuilder 静默忽略。守卫后：目录
+        // 在宿主真实存在才下发，否则按各通道默认目录执行 —— 失败原因不再
+        // 被污染性 cwd 掩盖。
+        val effectiveWorkDir = workDir?.let { File(it).absoluteFile }?.takeIf { it.isDirectory }
+
+        // 优先级1: Root（cd 前缀单引号安全包裹：带空格/元字符的路径不再语法错误）
         if (detectRoot()) {
-            val suCommand = if (workDir != null) "cd $workDir && $command" else command
-            return executeWithTimeout(arrayOf("su", "-c", suCommand), timeoutMs, "root", workDir)
+            val suCommand = if (effectiveWorkDir != null) {
+                "cd ${shellQuote(effectiveWorkDir.absolutePath)} && $command"
+            } else {
+                command
+            }
+            return executeWithTimeout(arrayOf("su", "-c", suCommand), timeoutMs, "root", effectiveWorkDir)
         }
 
         // 优先级2: Shizuku —— 真实 ADB 级（IShizukuService.newProcess AIDL）
         if (detectShizuku()) {
-            return executeViaShizuku(command, timeoutMs, workDir)
+            return executeViaShizuku(command, timeoutMs, effectiveWorkDir)
         }
 
         // 优先级3: 普通Shell（能力最弱）
-        return executeWithTimeout(arrayOf("sh", "-c", command), timeoutMs, "shell", workDir)
+        return executeWithTimeout(arrayOf("sh", "-c", command), timeoutMs, "shell", effectiveWorkDir)
     }
 
     /**
@@ -235,7 +255,18 @@ object PrivilegeDetector {
                 val exitCode = proc.exitValue()
                 ShellExecResult(
                     success = exitCode == 0,
-                    output = stdout.ifBlank { stderr },
+                    // P1 修复（错误信息丢失）：旧实现 `stdout.ifBlank { stderr }` 在
+                    // stdout 非空时静默丢弃 stderr —— 而绝大多数工具把报错写 stderr、
+                    // 进度/部分输出写 stdout（git/curl/gradle 全是这个模式），模型
+                    // 只看到半截 stdout 看不到失败原因，只能盲重试推高错误率。
+                    // 现在 stdout 非空且 stderr 也非空时以 [stderr] 标记追加（模型
+                    // 可见完整诊断）；任一为空时行为与旧版一致。
+                    output = when {
+                        stdout.isNotBlank() && stderr.isNotBlank() ->
+                            stdout + "\n[stderr]\n" + stderr
+                        stdout.isNotBlank() -> stdout
+                        else -> stderr
+                    },
                     exitCode = exitCode,
                     via = via
                 )

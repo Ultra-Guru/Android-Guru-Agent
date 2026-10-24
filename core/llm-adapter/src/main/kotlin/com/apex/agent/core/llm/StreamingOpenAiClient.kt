@@ -126,6 +126,11 @@ class StreamingOpenAiClient(
 
         try {
             var line: String?
+            // 末帧兜底（v1.5.x 修复）：部分网关（智谱等）把完整正文挂在最后一帧
+            // 的 choice.message 上（增量 delta 缺失/为空）—— 记录本流是否见过
+            // 增量正文，parseStreamChunk 据此决定是否用 message.content 兜底
+            //（见过则不用，防正文重复一遍）。
+            var sawDeltaContent = false
             while (reader.readLine().also { line = it } != null) {
                 // 每行检查一次取消状态（readLine 阻塞期间靠上面的 invokeOnCompletion 兜底）
                 coroutineContext.ensureActive()
@@ -140,7 +145,10 @@ class StreamingOpenAiClient(
                     break
                 }
 
-                parseStreamChunk(data)?.let { emit(it) }
+                parseStreamChunk(data, sawDeltaContent)?.let {
+                    if (!it.content.isNullOrEmpty()) sawDeltaContent = true
+                    emit(it)
+                }
             }
         } finally {
             cancelHandle?.dispose()
@@ -629,7 +637,7 @@ class StreamingOpenAiClient(
         else -> element
     }
 
-    private fun parseStreamChunk(data: String): LlmStreamChunk? {
+    private fun parseStreamChunk(data: String, sawDeltaContent: Boolean = false): LlmStreamChunk? {
         return try {
             val json = Json.parseToJsonElement(data).jsonObject
             // ── 真实用量统计帧（stream_options.include_usage）──
@@ -665,18 +673,42 @@ class StreamingOpenAiClient(
             // 原生联网搜索引用：OpenAI/DeepSeek 的 delta.annotations（或 content-parts
             // 内嵌 annotations）、智谱的 delta.search_result；部分网关（智谱等）把
             // 引用挂在流式最后一帧的 message 上（delta 缺失）—— 用 message 兜底。
-            // 注意：只从 message 取引用、不取正文 —— 正文已由前面的增量 delta 流过，
-            // 再合并 message.content 会把整段答案重复一遍（引用是元数据、无此风险）。
+            // 注意：引用是元数据、无重复风险，无条件兜底；**正文**的 message 兜底
+            // 见下方末帧兜底块（v1.5.x —— 按 sawDeltaContent 门控，防正文重复一遍）。
             // 提取后格式化为 Markdown Sources 块追加到 content 尾部，让引擎/UI 都能
             // 看到搜索来源；无引用时 content 保持原样（非搜索模型行为不变）。
             val citations = SearchCitations.extractAndFormat(
                 delta ?: choice["message"]?.let { m -> runCatching { m.jsonObject }.getOrNull() }
             )
             val baseText = contentMedia.text
-            val content = when {
+            var content = when {
                 citations == null -> baseText
                 baseText == null || baseText.isEmpty() -> citations
                 else -> baseText + citations
+            }
+
+            // 原生思考内容（DeepSeek-R1 `reasoning_content`、部分 Anthropic 代理 `reasoning`）。
+            // 旧实现丢弃，导致思考类模型的思维链在 UI 上不可见。
+            var reasoningOut = delta?.get("reasoning_content")?.jsonPrimitive?.contentOrNull
+                ?: delta?.get("reasoning")?.jsonPrimitive?.contentOrNull
+
+            // ═══ 末帧正文兜底（v1.5.x 修复「流式只有思考、没有回答」）═══
+            // 部分网关把完整正文挂在最后一帧的 choice.message.content 上
+            //（增量 delta 缺失或为空）—— 旧实现刻意不读 message 正文，本流
+            // 全程零 content，引擎 contentBuilder 恒空 → 终局按空响应报错。
+            // 门控（防重复）：仅末帧（finishReason 非空）且本流此前从未见过
+            // 增量正文（sawDeltaContent=false）且当前帧 delta 正文为空时，才
+            // 用 message.content 补发；思考内容挂末帧 message 的网关同理兜底。
+            if (finishReason != null && !sawDeltaContent && content.isNullOrEmpty()) {
+                val message = choice["message"]?.let { m -> runCatching { m.jsonObject }.getOrNull() }
+                if (message != null) {
+                    val msgText = MultimodalOutputExtractor.parseContent(message["content"]).text
+                    if (!msgText.isNullOrEmpty()) content = msgText
+                    if (reasoningOut.isNullOrEmpty()) {
+                        reasoningOut = message["reasoning_content"]?.jsonPrimitive?.contentOrNull
+                            ?: message["reasoning"]?.jsonPrimitive?.contentOrNull
+                    }
+                }
             }
 
             // message 级 images / video_url（GLM CogView chat 式生图 / 生视频网关）
@@ -685,11 +717,6 @@ class StreamingOpenAiClient(
             val videos = contentMedia.videos +
                 listOfNotNull(MultimodalOutputExtractor.parseVideo(delta?.get("video_url"))) +
                 MultimodalOutputExtractor.parseVideosArray(delta?.get("videos"))
-
-            // 原生思考内容（DeepSeek-R1 `reasoning_content`、部分 Anthropic 代理 `reasoning`）。
-            // 旧实现丢弃，导致思考类模型的思维链在 UI 上不可见。
-            val reasoningContent = delta?.get("reasoning_content")?.jsonPrimitive?.contentOrNull
-                ?: delta?.get("reasoning")?.jsonPrimitive?.contentOrNull
 
             // 流式tool_calls
             val toolCalls = mutableListOf<ToolCall>()
@@ -709,7 +736,7 @@ class StreamingOpenAiClient(
             LlmStreamChunk(
                 content = content,
                 toolCalls = toolCalls,
-                reasoningContent = reasoningContent,
+                reasoningContent = reasoningOut,
                 images = images,
                 videos = videos,
                 usage = usage,
@@ -757,10 +784,19 @@ class StreamingOpenAiClient(
         // 提取结果为 null，content 保持原样（行为不变）。
         val citations = SearchCitations.extractAndFormat(message)
         val baseText = contentMedia.text
-        val content = when {
+        var content = when {
             citations == null -> baseText
             baseText == null || baseText.isEmpty() -> citations
             else -> baseText + citations
+        }
+        // reasoning-only 兜底（v1.5.x，与流式末帧兜底同族）：思考型模型把
+        // 最终回答整体写进 message.reasoning_content、正文为空 —— 旧实现
+        // 返回空 content，调用方按无效响应处理。正文为空且思考通道非空时
+        // 以思考文本兜底（非思考模型 content 非空，行为不变）。
+        if (content.isNullOrEmpty()) {
+            val reasoning = message?.get("reasoning_content")?.jsonPrimitive?.contentOrNull
+                ?: message?.get("reasoning")?.jsonPrimitive?.contentOrNull
+            if (!reasoning.isNullOrEmpty()) content = reasoning
         }
         val images = contentMedia.images +
             MultimodalOutputExtractor.parseImagesArray(message?.get("images"))

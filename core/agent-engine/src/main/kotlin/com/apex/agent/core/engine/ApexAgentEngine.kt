@@ -1059,26 +1059,18 @@ class ApexAgentEngine(
                 }
 
                 else -> {
-                    // ═══ 长任务韧性：空响应退避重试（弱网抖动不立即报错，
-                    // 预算用尽才按旧语义报 Error）。═══
-                    val emptyRetry = resilience.onEmptyResponse()
-                    if (emptyRetry != null) {
-                        AppLogger.instance.warn(
-                            LogCategory.LLM, "ApexAgentEngine",
-                            "LLM 空响应（重试 ${emptyRetry.attempt}/${resilience.policy.maxEmptyResponseRetries}）"
-                        )
-                        emit(
-                            AgentEvent.ThinkingChunk(
-                                "[engine] 模型返回空响应 — ${emptyRetry.delayMs / 1000.0}s 后自动重试 " +
-                                    "（${emptyRetry.attempt}/${resilience.policy.maxEmptyResponseRetries}）\n"
-                            )
-                        )
-                        delay(emptyRetry.delayMs)
-                        iteration--
-                        continue
+                    // ═══ P0 修复（reasoning-only 兜底）+ 空响应退避重试 ═══
+                    // 正文恒空但思考通道有完整回答（弱蒸馏 R1 / 网关把正文挂
+                    // 末帧 message）→ 以 reasoning 兜底为回答收尾，不再盲目
+                    // 重试。逻辑迁至 EngineReasoningFallback（God-file 预算
+                    // 拆分，同包扩展直调 —— 与 EngineAskUserFlow 同一模式）。
+                    when (finishEmptyTurn(reasoningBuilder.toString(), emit)) {
+                        EmptyTurnOutcome.FINISHED -> return iteration
+                        EmptyTurnOutcome.RETRY -> { iteration--; continue }
+                        EmptyTurnOutcome.FAILED ->
+                            // #213：空响应用户文案统一中文映射。
+                            emit(AgentEvent.Error(LlmErrorText.RESPONSE_INVALID))
                     }
-                    // #213：空响应用户文案统一中文映射。
-                    emit(AgentEvent.Error(LlmErrorText.RESPONSE_INVALID))
                     return iteration
                 }
             }

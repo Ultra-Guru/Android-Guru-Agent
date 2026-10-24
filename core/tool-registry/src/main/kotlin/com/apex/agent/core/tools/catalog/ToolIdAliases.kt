@@ -410,9 +410,63 @@ object ToolIdAliases {
         "xml_extract" to "XmlExtract",
     )
 
-    /** 归一：命中旧表返回现役 id，否则原样返回。大小写不敏感匹配由注册表兜底。 */
-    fun canonical(toolId: String): String = LEGACY_TO_CURRENT[toolId] ?: toolId
+    /**
+     * 模型幻觉名 → 现役 id 的兜底映射（训练自 Claude Code / OpenAI 等外部
+     * 工具集的模型常调用不存在的 `bash` / `run_command` 等工具名）。
+     *
+     * 与 [LEGACY_TO_CURRENT] 的区别：那些是**本仓库发布前真实存在过**的旧 id；
+     * 这些是**从未存在过**、纯粹来自外部肌肉记忆的幻觉名。不加映射时，
+     * `bash` 与 TerminalExec / ShellExecute 的 Levenshtein 距离远超
+     * [ToolSuggester] 的建议阈值（给不出任何指引），模型只能收到
+     * `Unknown tool: "bash"` 后继续猜名 → 连环失败推高任务失败率
+     * （2026-10 用户反馈「agent 执行命令出错率特别高」的直接机制之一）。
+     *
+     * 命中即静默路由到语义最接近的现役工具，不产生任何错误回合。
+     */
+    val HALLUCINATION_ALIASES: Map<String, String> = mapOf(
+        // shell 执行类幻觉（Claude Code 的 Bash / 通用 run_command 家族）
+        "bash" to "TerminalExec",
+        "Bash" to "TerminalExec",
+        "sh" to "TerminalExec",
+        "shell" to "TerminalExec",
+        "zsh" to "TerminalExec",
+        "run_command" to "TerminalExec",
+        "runCommand" to "TerminalExec",
+        "run_shell_command" to "TerminalExec",
+        "execute_command" to "TerminalExec",
+        "executeCommand" to "TerminalExec",
+        "execute_shell" to "TerminalExec",
+        "exec_command" to "TerminalExec",
+        "command" to "TerminalExec",
+        "terminal" to "TerminalExec",
+
+        // 文件类幻觉（OpenAI 的 retrieve_file / Claude Code 的 file_read 家族）
+        "file_read" to "Read",
+        "file_write" to "Write",
+        "file_edit" to "Edit",
+        "list_dir" to "ListFiles",
+        "ls" to "ListFiles",
+
+        // 搜索类幻觉（web_search 变体）
+        "search" to "WebSearch",
+        "internet_search" to "WebSearch",
+        "google_search" to "WebSearch",
+        "web_read" to "WebFetch",
+        "fetch_url" to "WebFetch",
+        "open_url" to "WebFetch",
+        "browse" to "WebFetch",
+    )
+
+    /**
+     * 归一：命中幻觉表或旧表返回现役 id，否则原样返回。大小写不敏感匹配
+     * 由注册表兜底（幻觉表已显式收录大小写双形，避免依赖兜底顺序）。
+     */
+    fun canonical(toolId: String): String =
+        HALLUCINATION_ALIASES[toolId] ?: LEGACY_TO_CURRENT[toolId] ?: toolId
 
     /** @return true 当 [toolId] 是发布前使用过的旧名字。 */
     fun isLegacy(toolId: String): Boolean = toolId in LEGACY_TO_CURRENT
+
+    /** @return true 当 [toolId] 是模型幻觉名（外部工具集的肌肉记忆）。 */
+    fun isHallucinatedAlias(toolId: String): Boolean = toolId in HALLUCINATION_ALIASES
 }

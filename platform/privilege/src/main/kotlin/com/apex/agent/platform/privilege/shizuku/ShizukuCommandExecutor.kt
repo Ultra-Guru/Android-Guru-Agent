@@ -158,7 +158,15 @@ object ShizukuCommandExecutor {
             val exitCode = proc.exitValue()
             ShizukuExecResult(
                 success = exitCode == 0,
-                output = stdout.ifBlank { stderr },
+                // stderr 保留（2026-10 高错误率修复，与 PrivilegeDetector 同口径）：
+                // 旧实现 stdout 非空时静默丢弃 stderr —— 失败原因不可见。双非空时
+                // 以 [stderr] 标记追加；任一为空时行为与旧版一致。
+                output = when {
+                    stdout.isNotBlank() && stderr.isNotBlank() ->
+                        stdout + "\n[stderr]\n" + stderr
+                    stdout.isNotBlank() -> stdout
+                    else -> stderr
+                },
                 exitCode = exitCode
             )
         } catch (e: SecurityException) {
