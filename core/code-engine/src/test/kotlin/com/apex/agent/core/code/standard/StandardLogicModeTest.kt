@@ -29,6 +29,10 @@ class StandardLogicModeTest {
         assertEquals(StandardLogicMode.DEEP_DIVE, StandardLogicMode.fromName("apex"))
         assertEquals(StandardLogicMode.DEEP_DIVE, StandardLogicMode.fromName("custom"))
         assertEquals(StandardLogicMode.STANDARD, StandardLogicMode.fromName("std"))
+        assertEquals(StandardLogicMode.LOOM, StandardLogicMode.fromName("loom"))
+        assertEquals(StandardLogicMode.LOOM, StandardLogicMode.fromName("weave"))
+        assertEquals(StandardLogicMode.COURIER, StandardLogicMode.fromName("courier"))
+        assertEquals(StandardLogicMode.COURIER, StandardLogicMode.fromName("express"))
     }
 
     @Test
@@ -41,9 +45,23 @@ class StandardLogicModeTest {
     }
 
     @Test
-    fun `isStandard flag matches kind`() {
+    fun `isStandard and isLoom flags match kind`() {
         assertFalse(StandardLogicMode.DEEP_DIVE.isStandard)
         assertTrue(StandardLogicMode.STANDARD.isStandard)
+        assertFalse(StandardLogicMode.STANDARD.isLoom)
+        assertTrue(StandardLogicMode.LOOM.isLoom)
+        assertFalse(StandardLogicMode.LOOM.isStandard)
+    }
+
+    @Test
+    fun `isCourier flag matches kind`() {
+        assertTrue(StandardLogicMode.COURIER.isCourier)
+        assertFalse(StandardLogicMode.DEEP_DIVE.isCourier)
+        assertFalse(StandardLogicMode.STANDARD.isCourier)
+        assertFalse(StandardLogicMode.LOOM.isCourier)
+        // 其他标志位互斥
+        assertFalse(StandardLogicMode.COURIER.isStandard)
+        assertFalse(StandardLogicMode.COURIER.isLoom)
     }
 
     @Test
