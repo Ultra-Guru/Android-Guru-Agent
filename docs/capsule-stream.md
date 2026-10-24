@@ -137,3 +137,71 @@ AgentEvent 流（引擎零改动）
   AnimatedVisibility（expand/shrinkVertically），滚动状态提升不受折叠影响。
 - **边界**（测试锁定，CodeStreamSessionTest）：命令收束 busy=false 且
   退出码保留；第二条命令接管三信号；Abort/Error 中途收束；beginRun 归零。
+
+
+## 八、参数流式可视化与同族聚合胶囊（v3 增补）
+
+用户需求：「调用写文件/编辑文件工具时，正在写时能实时显示不断写入的
+代码（编辑时绿色代表写入、红色代表删除），写完/编辑完成后收回最小化，
+过程自动展开、用户也可自己点击」；「同种工具直接放在一起——几十条终端
+命令只显示一颗胶囊、始终展示最新命令，展开可查看全部历史、点击进详情」。
+
+### 8.1 参数增量事件（引擎半边）
+
+- `AgentEvent.ToolCallArgsDelta(callId, toolName, delta)`：LLM 流式生成
+  tool_calls 时每个 arguments 分片一条（`EngineToolCallDelta.kt` —— 主循环
+  1:1 换行 `acc.append(...)` → `appendFragmentAndEmitDelta(...)`，累积与
+  上抛同源，`acc.build()` 产出的全量参数与旧管线零差异）；
+- 生命周期约定：同一 callId 的 Delta 流结束后必有 ToolCallStart（全量参数、
+  状态升级）；消费端按 callId 幂等合并，重放安全。
+
+### 8.2 半截 JSON 的增量键锚定提取（StreamingArgsPreview.kt）
+
+- 每个关注键一个 KeySlot：结构性锚定（`"key"` 前必须是 `{`/`,`，防值内
+  同名文本误命中）→ 增量解码（转义感知；尾部不完整 `\u` 存进度等下片，
+  不重消费）→ 未转义闭引号封口；
+- 尾窗语义：超长值截头留尾（CODE_CAP 24K / EDIT_CAP 8K），写入增量永远
+  在尾部，truncated 标记供 UI 提示「上文已省略」；
+- 兼容口径：CodeEdit 用 `old_string`/`new_string`，Agent 屏 FileEdit 用
+  `edits[].search`/`edits[].replace`；目标键 path/command/pattern/query/
+  keyword 多候选首个生效。
+
+### 8.3 等待态胶囊（Session 归约）
+
+- 首个可展示内容到达即建 WAITING 胶囊（工具意图先于执行可见）；
+  MCP/未知族无追踪器不建卡，Start 按原路径兜底；
+- Start 到达：WAITING → RUNNING 升级（族名/目标/摘要以全量参数补全，
+  预览保留到 Complete —— 执行期代码窗持续；计数不重复）；
+- Complete / 中止 / beginRun：预览清空 = 代码窗自动收回，追踪器退役
+  （内存即回收）。
+
+### 8.4 UI：实时代码窗（CodeStreamingWindow.kt）
+
+- 写文件全文绿色 + 尾部光标块 `▍`；编辑文件红删（`− ` 前缀）在前、
+  绿增（`+ ` 前缀）在后 —— 与 hunk Diff 增删同语义（深底取亮色变体）；
+- 恒深底 0xFF101418（与终端详情体同款，跨主题一致）；只展示尾窗
+  （14 行嵌入 / 400 行详情），流式增量永远在尾部；
+- 生命周期：WAITING/RUNNING 展开展示（AnimatedVisibility expand），终态
+  自动收回（shrink；lastPreview 缓存保证收束动画最后一帧有内容可渲染）；
+  点击胶囊 → DetailSheet 同款实时预览（大视口）。
+
+### 8.5 UI：同族聚合胶囊（CodeCapsuleGroupRow + GroupExpandable）
+
+- 阈值 ≥2（GROUP_THRESHOLD=1）：连续同族胶囊收成一颗聚合胶囊；
+- 折叠态 = 最新一颗的完整形态（名称/命令/状态/耗时）+ ×N 计数徽标；
+  点击展开；
+- 展开态 = 收起头行（族图标 + ×N + 「收起」）+ 全部历史胶囊平铺，每颗
+  可点击进详情，头行点击再收起；
+- 流水式生命周期：分组内出现活跃胶囊（参数生成/执行中）自动展开（否则
+  折叠态会遮住实时代码窗）、全部收束且未手动干预自动收回；手动展开/
+  收起永远优先，新流式周期重置手动态（与终端面板/思考卡同款语义）；
+- 锚定：预览长度计入 contentLength 档位素材 —— 代码流入时贴尾跟随。
+
+### 8.6 测试锁定
+
+- `StreamingArgsPreviewTest`（12 例）：分片累积 / 转义解码（含跨分片
+  `\u` 与代理对）/ 结构性锚定防误命中 / 非字符串值与重复键容错 /
+  非 JSON 放弃 / 尾窗截断 / 命令目标 / 回放等价 / 非预览族；
+- `CodeStreamArgsDeltaTest`（8 例）：等待态建立与升级（计数不重复）/
+  Complete 清空预览 / 迟到分片忽略 / 中止收口 / MCP 族不建卡 /
+  名字晚到缓冲回放 / BASH 终端三信号 / 路径后到目标刷新。
