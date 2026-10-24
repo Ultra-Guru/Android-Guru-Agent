@@ -20,7 +20,55 @@
     <string name="fusion_picker_empty">No packs installed yet.</string>
     <string name="fusion_picker_footnote">Activation installs the pack\'s skills, connects its MCP servers and injects its workflow. Bundled packs are preinstalled and cannot be uninstalled.</string>
     <string name="fusion_badge_bundled">Built-in</string>
-    <string name="fusion_row_components">%1$d skills · %2$d MCP · %3$d flagship tools · %4$d optional engines</string>
+    <string name="fusion_row_components">%1$d skills · %2$d MCP · %3$d plugins · %4$d flagship tools · %5$d optional engines</string>
+
+    <!-- ═══ Custom bundle composer ═══ -->
+    <string name="fusion_composer_entry">Compose my pack</string>
+    <string name="fusion_composer_title">Custom aggregation pack</string>
+    <string name="fusion_composer_subtitle">Freely pick members from installed skills / MCP servers / functional plugins and save them as one one-tap activatable pack — a single item is an aggregate, a mixed set is too.</string>
+    <string name="fusion_composer_name_label">Pack name</string>
+    <string name="fusion_composer_name_placeholder">e.g. My Daily Toolbox</string>
+    <string name="fusion_composer_persona_label">Agent persona (optional)</string>
+    <string name="fusion_composer_persona_placeholder">e.g. Efficiency assistant — prefer the skills and tools in this pack</string>
+    <string name="fusion_composer_section_skills">Skills</string>
+    <string name="fusion_composer_section_mcp">MCP servers</string>
+    <string name="fusion_composer_section_plugins">Functional plugins</string>
+    <string name="fusion_composer_section_empty">No members to pick from</string>
+    <string name="fusion_composer_selected_count">%1$d selected</string>
+    <string name="fusion_composer_save">Save pack</string>
+    <string name="fusion_composer_saved">Pack “%1$s” saved — pick it from the crown menu</string>
+    <string name="fusion_composer_save_failed">Save failed: %1$s</string>
+    <string name="fusion_composer_empty_selection">Select at least 1 member</string>
+    <string name="fusion_composer_edit_title">Edit pack</string>
+    <string name="fusion_composer_delete">Delete</string>
+    <string name="fusion_composer_deleted">Pack “%1$s” deleted</string>
+    <string name="fusion_composer_export">Export JSON</string>
+    <string name="fusion_composer_exported">Pack JSON copied to clipboard</string>
+    <string name="fusion_composer_custom_badge">Custom</string>
+    <string name="fusion_composer_edit_rejected">Built-in packs are read-only; only custom packs support edit/delete/export</string>
+    <string name="fusion_composer_id_label">id: %1$s</string>
+    <string name="fusion_composer_close">Close</string>
+    <string name="fusion_composer_edit_cd">Edit this custom pack</string>
+
+    <!-- ═══ Claude plugin pack import ═══ -->
+    <string name="fusion_import_claude_entry">Import Claude plugin pack (.zip)</string>
+    <string name="fusion_import_claude_cd">Import a Claude plugin pack from a zip file</string>
+    <string name="fusion_import_claude_done">Pack “%1$s” imported — %2$d skills · %3$d commands · %4$d agents</string>
+    <string name="fusion_import_claude_failed">Import failed: %1$s</string>
+
+    <!-- ═══ Functional plugin UI contributions ═══ -->
+    <string name="plugin_ui_open">Open page</string>
+    <string name="plugin_ui_missing">UI entry file missing — reinstall the plugin</string>
+    <string name="plugin_ui_signature_rejected">Signature check failed — plugin UI cannot be opened</string>
+
+    <!-- ═══ Install-type packs (install members without activating) ═══ -->
+    <string name="fusion_action_install_members">Install members</string>
+    <string name="fusion_result_installed">Pack “%1$s” members ready — %2$d skills · %3$d MCP · %4$d plugins.</string>
+    <string name="fusion_install_failed">Install failed</string>
+    <string name="fusion_composer_section_hub_skills">Skills from official repo</string>
+    <string name="fusion_composer_section_hub_mcp">MCP servers from official repo</string>
+    <string name="fusion_composer_hub_loading">Loading repo catalog…</string>
+    <string name="fusion_composer_hub_error">Repo unreachable: %1$s</string>
 
     <!-- ═══ Actions & results ═══ -->
     <string name="fusion_action_activate">Use this pack</string>

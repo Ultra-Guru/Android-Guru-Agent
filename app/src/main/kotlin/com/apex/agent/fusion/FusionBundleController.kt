@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.apex.agent.core.tools.fusion.FusionActivation
 import com.apex.agent.core.tools.fusion.FusionBundleActivator
+import com.apex.agent.core.tools.fusion.FusionInstallReport
 import com.apex.agent.core.tools.fusion.FusionBundleDigest
 import com.apex.agent.core.tools.fusion.FusionBundleManifest
 import com.apex.agent.core.tools.fusion.FusionBundleRegistry
@@ -119,6 +120,14 @@ class FusionBundleController @Inject constructor(
         _activeBundle.value = null
         return r
     }
+
+    /**
+     * 安装成员（只装不激活）：把包内技能 / MCP 配置 / 功能插件全部装到位
+     * （仓库引用成员经 hub 按需下载）——「专门安装 skills / MCP / 插件的
+     * 聚合」的用户入口。安装语义对齐激活报告词表，供 UI 反馈。
+     */
+    suspend fun installMembers(bundleId: String): Result<FusionInstallReport> =
+        activator.installMembers(bundleId)
 
     /**
      * 模型侧（FusionActivate 工具）激活回灌：与按钮路径同一激活面 ——

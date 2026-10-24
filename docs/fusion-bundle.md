@@ -1,11 +1,12 @@
 # FusionBundle：复合技能包体系（聚变包）
 
-> 状态：已落地（v2 王冠入口，2026-10）
-> 主题：把「技能 + MCP 服务器 + 工具 + agent 工作流」聚合为一个可一键
+> 状态：已落地（v3 自定义聚合 + Claude 导入，2026-10）
+> 主题：把「技能 + MCP 服务器 + 功能插件 + agent 工作流」聚合为一个可一键
 > 激活的装载单位 —— 复合体开源项目（REA 等「MCP 服务器 + 工作流技能 +
-> 工具」三位一体形态）的标准化引入通道。
+> 工具」三位一体形态）的标准化引入通道；v3 起用户可**自由组合**已安装
+> 实体成为自己的聚合包，并可**一键导入 Claude 生态插件包**。
 > 前置：[hub-ecosystem.md](hub-ecosystem.md)（技能 / MCP 仓库生态）
-> · [skill-system.md](skill-system.md)（apex-skill-v1）
+> · [plugin-system-v2.md](plugin-system-v2.md)（功能插件体系）
 > · `core/tool-registry/.../mcp/`（内置 MCP 服务器七件套 —— REA 第六台 / Shrimp 第七台）
 
 ---
@@ -287,7 +288,69 @@ Shrimp 是 REA 之后的第二个「进程内深实现」包：工具面逐名�
 路线图：市场「聚变包」货架（复用五货架 UI）· 斜杠菜单 fusion 分类 ·
 Coding 工位入口 · 包级依赖（bundle 间引用）。
 
-## 8. 测试
+## 8. v3：plugins[] 聚合段 · 自定义组合器 · Claude 插件包导入
+
+**「1 个技能是聚合，5 个技能 + 2 台 MCP + 1 个插件混搭也是聚合」**
+——v3 把聚合的构成权交给用户：
+
+### 8.1 plugins[] 聚合段（第四端口）
+
+manifest 新增 `plugins[]`：内联完整功能插件 plugin.json（`FusionPluginRef`，
+manifest 以不透明 JsonObject 载体内联 —— core 模块不依赖 plugin-sdk，
+`pluginId` 与内联 id 一致性 parse 期校验）。激活器扩第四端口
+`FusionPluginInstaller`（app 层 `FusionModule.PluginInstallerPort` →
+`UnifiedPluginRegistry.installFunctionalPlugin`，`dagger.Lazy` 破环：
+控制器→激活器→UPR→ToolRegistry→控制器的环在 Lazy 处断开）——插件安装
+的全部校验（id 规范/命名空间/版本门/贡献点形状）落在端口侧 fail closed，
+失败进 `skipped` 不弃包（与技能/MCP 同款聚合容错）。
+
+### 8.2 自定义组合器（用户自由聚合）
+
+`FusionBundleComposerDialog`（王冠菜单 →「组合我的聚合包」/ 自建包行
+「编辑」图标）：从已安装技能 / 已配 MCP / 已装功能插件三源勾选成员 +
+命名 + 可选人设 → `FusionBundleComposer`（core 纯函数：slugify id 生成 /
+版本递增 / 描述拼装）→ `registry.install`。自建包 `bundled=false`：
+可编辑（版本递增覆盖）、可删除、可导出 JSON 分享。成员清单王冠菜单
+`custom-` 前缀「自建」徽章区分。
+
+### 8.3 Claude 插件包导入（.claude-plugin → fusion-bundle-v1）
+
+王冠菜单 →「导入 Claude 插件包（.zip）」：SAF 选 zip →
+`SafeZipExtractor`（防穿越/zip bomb）→ `ClaudePluginImporter`：
+
+| Claude 段 | 映射 |
+| --- | --- |
+| `.claude-plugin/plugin.json` | 包元数据（id `claude-<slug>` / 版本 / 描述） |
+| `skills/**/SKILL.md` | apex-skill-v1：frontmatter name → `SkillNaming.canonicalId` PascalCase（kebab/snake 归一），正文 → promptInjection |
+| `commands/*.md` | 功能性插件斜杠指令（`claude.<slug>.commands`，经 plugins[] 段搭载，激活即装 —— `/plugin:<id>` 可用） |
+| `agents/*.md` | 聚合 agent 人设（首个为主人设，其余并入激活提示） |
+
+产物即一个自洽聚合包，与内置七大包完全同权。命名映射全部安装期强校验
+（fail closed：结构不合法整体拒绝，不装半截包）。
+
+### 8.4 安装型聚合（skillPicks/mcpPicks 引用段 + installMembers）
+
+**「专门安装 skills / MCP / 插件的聚合，在用户要安装的时候调用」**：
+manifest 新增 `skillPicks[]` / `mcpPicks[]` 引用段 —— 成员不内联正文，
+只记官方仓库 id（apex-skill-hub / apex-mcp-hub）。与内联形态的区别是
+「引用 vs 快照」：几十字节的引用清单就能表达「装这 5 个技能 + 2 台 MCP」，
+成员升级随仓库演进（内联则锁定版本）。
+
+两个用户动作，一条安装编排（`installMembersInternal`，五端口共用）：
+
+| 动作 | 入口 | 语义 |
+| --- | --- | --- |
+| **安装成员** | 王冠菜单包行「安装成员」（未激活包） | `FusionBundleActivator.installMembers`：内联技能装进 SkillRegistry、picks 经 hub 端口按需下载、插件落盘激活、MCP 配置写盘（`ensureConfigured`，**不连接**）；不注入人设、不改激活态 |
+| **激活** | 点选包（既有路径） | 自动先补装缺失成员（幂等，含 picks 下载），再连接 MCP + 注入人设 —— 装与激活合一 |
+
+第五端口 `FusionHubInstaller`（app 层 `FusionModule.HubInstallerPort`）：
+复用 HubSource 既有客户端 —— 技能 = `listSkills` 匹配 id →
+`downloadSkillManifest` → `SkillRegistry.install`；MCP = `listMcpServers`
+匹配目录名 → `addServer`（enabled=true 不连接，启动留给激活路径或用户
+市场手动启动）。组合器新增「官方仓库技能 / MCP」两段（懒加载目录勾选，
+写进 picks）——自建聚合从此可以先建套装再装设备。
+
+## 9. 测试
 
 纯 JVM（JUnit4 + runTest + TemporaryFolder，手写 fake，无 mock 框架）：
 

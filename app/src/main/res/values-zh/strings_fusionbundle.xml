@@ -18,7 +18,55 @@
     <string name="fusion_picker_empty">尚未安装任何聚变包。</string>
     <string name="fusion_picker_footnote">激活会安装包内技能、连接包内 MCP 服务器并注入其工作流。内置包随应用预装、不可卸载。</string>
     <string name="fusion_badge_bundled">内置</string>
-    <string name="fusion_row_components">%1$d 技能 · %2$d MCP · %3$d 旗舰工具 · %4$d 可选引擎</string>
+    <string name="fusion_row_components">%1$d 技能 · %2$d MCP · %3$d 插件 · %4$d 旗舰工具 · %5$d 可选引擎</string>
+
+    <!-- ═══ 自定义聚合（组合编辑器）═══ -->
+    <string name="fusion_composer_entry">组合我的聚合包</string>
+    <string name="fusion_composer_title">自定义聚合包</string>
+    <string name="fusion_composer_subtitle">从已安装的技能 / MCP / 功能插件中自由挑选成员，保存为一个可一键激活的聚合包 —— 1 个是聚合，多个混搭也是聚合。</string>
+    <string name="fusion_composer_name_label">聚合包名称</string>
+    <string name="fusion_composer_name_placeholder">例如：我的日常工具箱</string>
+    <string name="fusion_composer_persona_label">agent 人设（可选）</string>
+    <string name="fusion_composer_persona_placeholder">例如：效率助手 —— 优先使用本聚合包内的技能与工具</string>
+    <string name="fusion_composer_section_skills">技能</string>
+    <string name="fusion_composer_section_mcp">MCP 服务器</string>
+    <string name="fusion_composer_section_plugins">功能插件</string>
+    <string name="fusion_composer_section_empty">暂无可选成员</string>
+    <string name="fusion_composer_selected_count">已选 %1$d 项</string>
+    <string name="fusion_composer_save">保存聚合包</string>
+    <string name="fusion_composer_saved">聚合包「%1$s」已保存，可在王冠菜单选用</string>
+    <string name="fusion_composer_save_failed">保存失败：%1$s</string>
+    <string name="fusion_composer_empty_selection">请至少选择 1 个成员</string>
+    <string name="fusion_composer_edit_title">编辑聚合包</string>
+    <string name="fusion_composer_delete">删除</string>
+    <string name="fusion_composer_deleted">聚合包「%1$s」已删除</string>
+    <string name="fusion_composer_export">导出 JSON</string>
+    <string name="fusion_composer_exported">聚合包 JSON 已复制到剪贴板</string>
+    <string name="fusion_composer_custom_badge">自建</string>
+    <string name="fusion_composer_edit_rejected">内置包不可编辑，仅自建聚合包支持编辑/删除/导出</string>
+    <string name="fusion_composer_id_label">id：%1$s</string>
+    <string name="fusion_composer_close">关闭</string>
+    <string name="fusion_composer_edit_cd">编辑此自建聚合包</string>
+
+    <!-- ═══ Claude 插件包导入 ═══ -->
+    <string name="fusion_import_claude_entry">导入 Claude 插件包（.zip）</string>
+    <string name="fusion_import_claude_cd">从 zip 文件导入 Claude 插件包</string>
+    <string name="fusion_import_claude_done">「%1$s」已导入 —— %2$d 技能 · %3$d 指令 · %4$d agent</string>
+    <string name="fusion_import_claude_failed">导入失败：%1$s</string>
+
+    <!-- ═══ 功能插件 UI 页面贡献 ═══ -->
+    <string name="plugin_ui_open">打开页面</string>
+    <string name="plugin_ui_missing">UI 入口文件缺失 —— 请重装插件</string>
+    <string name="plugin_ui_signature_rejected">签名校验未通过，无法打开插件页面</string>
+
+    <!-- ═══ 安装型聚合（只装成员不激活）═══ -->
+    <string name="fusion_action_install_members">安装成员</string>
+    <string name="fusion_result_installed">「%1$s」成员已就绪 —— %2$d 技能 · %3$d MCP · %4$d 插件。</string>
+    <string name="fusion_install_failed">安装失败</string>
+    <string name="fusion_composer_section_hub_skills">官方仓库技能</string>
+    <string name="fusion_composer_section_hub_mcp">官方仓库 MCP</string>
+    <string name="fusion_composer_hub_loading">仓库目录加载中…</string>
+    <string name="fusion_composer_hub_error">仓库不可达：%1$s</string>
 
     <!-- ═══ 操作与结果 ═══ -->
     <string name="fusion_action_activate">使用此包</string>

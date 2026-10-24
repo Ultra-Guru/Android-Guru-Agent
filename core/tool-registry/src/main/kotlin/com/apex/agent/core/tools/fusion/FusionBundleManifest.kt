@@ -6,6 +6,8 @@ import com.apex.agent.core.tools.skill.ChangelogEntry
 import com.apex.agent.core.tools.skill.SkillManifest
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * # FusionBundle — 复合技能包 manifest（schema `fusion-bundle-v1`）
@@ -53,6 +55,26 @@ data class FusionBundleManifest(
     /** 聚合的 MCP 服务器（完整 McpServerConfig 内联 —— 连进 McpManager 复用其全部管道）。 */
     val mcpServers: List<FusionMcpServerRef> = emptyList(),
     /**
+     * 聚合的功能性插件（plugin.json 原文内联为 JsonObject —— 装进
+     * UnifiedPluginRegistry 复用其全部管道）。core 模块不依赖 plugin-sdk
+     * （模块边界），manifest 以不透明 JSON 载体内联，[FusionPluginRef.manifestJson]
+     * 还原原文交由 app 层端口（FunctionalPluginStore.install）消费。
+     */
+    val plugins: List<FusionPluginRef> = emptyList(),
+    /**
+     * **安装型聚合**的技能引用（apex-skill-hub 仓库 id，不内联正文）：
+     * 安装/激活时经 [FusionHubInstaller] 按需从官方仓库下载装齐 ——
+     * 「用户要安装的时候调用」的轻量聚合形态：一个几十字节的引用清单
+     * 就能表达「装这 5 个技能」，成员升级随仓库演进（内联形态则锁定版本）。
+     */
+    val skillPicks: List<String> = emptyList(),
+    /**
+     * **安装型聚合**的 MCP 服务器引用（apex-mcp-hub 目录名）：安装/激活时
+     * 经 [FusionHubInstaller] 从仓库目录解析配置写入注册表 —— 与
+     * mcpServers 内联形态的区别同样是「引用 vs 快照」。
+     */
+    val mcpPicks: List<String> = emptyList(),
+    /**
      * 工具激活提示（McpReaOpenBinary 这类一等工具 id，v5 组合规则
      * Mcp{Server}{Tool}）：服务器连上后
      * 工具自动进入引擎计划池（渐进披露），此处声明帮助模型优先关注旗舰工具。
@@ -83,7 +105,10 @@ data class FusionBundleManifest(
          * 2. id 形态合法（将来落盘 `bundlesDir` 下的 id.json，防路径穿越 —— 与
          *    SkillRegistry.install 同一防线）；
          * 3. 每个 FusionSkillRef.skillId 与内联 manifest.id 一致（防装配错位）；
-         * 4. MCP 服务器 name 非空（它是 connect 的键）。
+         * 4. MCP 服务器 name 非空（它是 connect 的键）；
+         * 5. 每个 FusionPluginRef.pluginId 与内联 plugin.json 的 id 字段一致
+         *    （防装配错位 —— 与技能引用同一防线；manifest 载体是不透明 JSON，
+         *    只能取 id 字符串比对）。
          */
         fun parse(manifestJson: String): FusionBundleManifest? {
             val manifest = try {
@@ -95,6 +120,9 @@ data class FusionBundleManifest(
             if (manifest.schema != SCHEMA) return null
             if (manifest.skills.any { it.skillId != it.manifest.id }) return null
             if (manifest.mcpServers.any { it.serverId.isBlank() }) return null
+            if (manifest.plugins.any { it.pluginId != it.inlinePluginId }) return null
+            if (manifest.skillPicks.any { it.isBlank() }) return null
+            if (manifest.mcpPicks.any { it.isBlank() }) return null
             return manifest
         }
     }
@@ -164,6 +192,32 @@ data class FusionMcpServerRef(
     )
 }
 
+/**
+ * 聚合的功能性插件引用：内联完整 plugin.json（不透明 JsonObject）。
+ *
+ * core/tool-registry 不依赖 plugin-sdk（模块边界：注册表只认技能/MCP/
+ * 聚合自有模型），故 manifest 以 [JsonObject] 原文内联 —— 激活时经
+ * [manifestJson] 还原字符串，由 app 层第四端口（FunctionalPluginStore.install）
+ * 消费其全部校验与安装管道（id 命名规范 / 宿主命名空间保留 / 版本门 /
+ * 贡献点形状在那一侧 fail closed）。
+ */
+@Serializable
+data class FusionPluginRef(
+    /** 必须与内联 plugin.json 的 id 字段一致（parse 校验）。 */
+    val pluginId: String,
+    /** 完整功能性插件 manifest 原文（不透明 JSON —— 端口侧解析）。 */
+    val manifest: JsonObject,
+    /** 该插件在本包中的角色说明（展示用）。 */
+    val role: String = ""
+) {
+    /** 内联 plugin.json 的 id 字段（缺失/非字符串 = null，parse 期比对失败）。 */
+    val inlinePluginId: String?
+        get() = runCatching { manifest["id"]?.jsonPrimitive?.content }.getOrNull()
+
+    /** 还原 manifest JSON 字符串（端口安装入参）。 */
+    fun manifestJson(): String = manifest.toString()
+}
+
 /** 运行时引擎声明：BYO 引擎模型（同 REA「BYO Hopper/Ghidra/JADX」哲学）。 */
 @Serializable
 data class FusionBundleRuntime(
@@ -196,8 +250,10 @@ data class FusionBundleDigest(
     val bundled: Boolean,
     val trustLevel: String,
     val category: String,
+    /** 内联技能数 + 仓库引用（skillPicks）数 —— UI 展示口径的成员总数。 */
     val skillCount: Int,
     val mcpServerCount: Int,
+    val pluginCount: Int,
     val toolHintCount: Int,
     val engineCount: Int
 )

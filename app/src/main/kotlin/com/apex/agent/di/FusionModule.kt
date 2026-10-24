@@ -9,6 +9,7 @@ import com.apex.agent.core.tools.fusion.FusionBundleActivator
 import com.apex.agent.core.tools.fusion.FusionBundlePresets
 import com.apex.agent.core.tools.fusion.FusionBundleRegistry
 import com.apex.agent.core.tools.fusion.FusionMcpConnector
+import com.apex.agent.core.tools.fusion.FusionPluginInstaller
 import com.apex.agent.core.tools.fusion.FusionPromptInjector
 import com.apex.agent.core.tools.fusion.FusionSkillInstaller
 import com.apex.agent.core.tools.fusion.rea.ReaCommandRunner
@@ -126,13 +127,16 @@ object FusionModule {
         ReaPageFetcherImpl(httpClient)
 
     /**
-     * 激活器装配（三端口编排中枢）。
+     * 激活器装配（四端口编排中枢）。
      *
-     * DI 破环：ToolModule 的注册表提供方需要控制器 → 控制器需要本激活器；
-     * 若引擎端口直依赖 AgentEngine，则 AgentEngine（需要 ToolRegistry）
-     * 与注册表提供方互为前置成 Dagger 环 —— 故注入 `Lazy<AgentEngine>`：
-     * apply/restore 首次调用才解析，此时组件装配早已完成（UI/模型侧
-     * 入口均晚于启动），环在图层面被 Lazy 断开。
+     * DI 破环（两处 Lazy）：
+     * 1. 引擎端口：ToolModule 的注册表提供方需要控制器 → 控制器需要本激活器；
+     *    若引擎端口直依赖 AgentEngine，则 AgentEngine（需要 ToolRegistry）
+     *    与注册表提供方互为前置成 Dagger 环 —— 注入 `Lazy<AgentEngine>`，
+     *    apply/restore 首次调用才解析。
+     * 2. 插件端口：控制器 → 激活器 → UnifiedPluginRegistry → ToolRegistry →
+     *    控制器 同理成环 —— 注入 `Lazy<UnifiedPluginRegistry>`，激活期
+     *    （组件装配完成后）才解析。
      */
     @Provides
     @Singleton
@@ -140,16 +144,20 @@ object FusionModule {
         registry: FusionBundleRegistry,
         skillRegistry: SkillRegistry,
         mcpManager: McpManager,
-        engineLazy: dagger.Lazy<AgentEngine>
+        engineLazy: dagger.Lazy<AgentEngine>,
+        pluginRegistryLazy: dagger.Lazy<com.apex.agent.plugin.host.functional.UnifiedPluginRegistry>,
+        hubSource: com.apex.agent.core.tools.marketplace.HubSource
     ): FusionBundleActivator = FusionBundleActivator(
         registry = registry,
         skillInstaller = SkillInstallerPort(skillRegistry),
         mcpConnector = McpConnectorPort(mcpManager),
-        promptInjector = EnginePromptPort(engineLazy)
+        promptInjector = EnginePromptPort(engineLazy),
+        pluginInstaller = PluginInstallerPort(pluginRegistryLazy),
+        hubInstaller = HubInstallerPort(hubSource, skillRegistry, mcpManager)
     )
 }
 
-// ── 三端口的 app 层适配（core 接口 → 真实子系统）────────────────────
+// ── 五端口的 app 层适配（core 接口 → 真实子系统）────────────────────
 
 /** 技能安装端口 → SkillRegistry.install / get。 */
 private class SkillInstallerPort(
@@ -174,6 +182,16 @@ private class McpConnectorPort(
         // STDIO/HTTP：写入配置（同 = 更新）→ 连接
         manager.addServer(config).onFailure { return Result.failure(it) }
         return manager.connect(config.name).map { Unit }
+    }
+
+    /** installMembers（只装不激活）路径：仅配置就绪，不发起连接。 */
+    override suspend fun ensureConfigured(config: McpServerConfig): Result<Unit> {
+        if (config.transport == McpTransport.BUILTIN) {
+            // 内置服务器能力在二进制里：预置即就绪（连接是惰性的，工具经
+            // transport 工厂按需起）——预置幂等即满足「配置就绪」。
+            return manager.ensureBuiltinServer(config)
+        }
+        return manager.addServer(config)
     }
 }
 
@@ -210,4 +228,80 @@ private class EnginePromptPort(
         original = null
         apex.patchConfig { it.copy(additionalSystemContext = base.orEmpty()) }
     }
+}
+
+/**
+ * 官方仓库安装端口（安装型聚合的第五端口）→ HubSource 既有客户端 +
+ * SkillRegistry.install + McpManager.addServer。
+ *
+ * 引用 id → 目录条目：先拉索引再按 id 匹配（skill 索引只放元数据、按需
+ * 下载正文；MCP 目录单文件内联、一次请求即完整）。MCP 安装语义 =
+ * 配置写盘 enabled=true **不连接**（连接留给激活路径或用户市场手动启动
+ * —— 与 FusionMcpServerRef.autoConnect 的激活语义衔接）。
+ */
+private class HubInstallerPort(
+    private val hubSource: com.apex.agent.core.tools.marketplace.HubSource,
+    private val skills: SkillRegistry,
+    private val mcpManager: McpManager
+) : com.apex.agent.core.tools.fusion.FusionHubInstaller {
+
+    override suspend fun installSkill(skillId: String): Result<Unit> {
+        val entries = hubSource.listSkills().getOrElse {
+            return Result.failure(Exception("技能仓库不可达: ${it.message}"))
+        }
+        val entry = entries.firstOrNull { it.id == skillId }
+            ?: return Result.failure(Exception("技能仓库无此技能: $skillId"))
+        return hubSource.downloadSkillManifest(entry).fold(
+            onSuccess = { manifestJson -> skills.install(manifestJson).map { Unit } },
+            onFailure = { Result.failure(it) }
+        )
+    }
+
+    override suspend fun installMcp(serverId: String): Result<Unit> {
+        val entries = hubSource.listMcpServers().getOrElse {
+            return Result.failure(Exception("MCP 仓库不可达: ${it.message}"))
+        }
+        val entry = entries.firstOrNull { it.name == serverId }
+            ?: return Result.failure(Exception("MCP 仓库无此服务器: $serverId"))
+        val config = com.apex.agent.core.tools.mcp.McpServerConfig(
+            name = entry.name,
+            url = entry.url,
+            transport = when (entry.transport.uppercase()) {
+                "STDIO" -> McpTransport.STDIO
+                "SSE" -> McpTransport.SSE
+                else -> McpTransport.HTTP
+            },
+            command = entry.command,
+            args = entry.args,
+            env = entry.env,
+            runInSandbox = entry.runInSandbox,
+            enabled = true,
+            scope = entry.scope
+        )
+        return mcpManager.addServer(config)
+    }
+}
+
+/**
+ * 功能性插件安装端口 → UnifiedPluginRegistry.installFunctionalPlugin /
+ * catalog（已装判定经目录快照，与市场 UI 同一数据源）。经 `dagger.Lazy`
+ * 装配（破环见 provideFusionBundleActivator 注记）——首条激活调用才解析。
+ */
+private class PluginInstallerPort(
+    private val pluginsLazy: dagger.Lazy<com.apex.agent.plugin.host.functional.UnifiedPluginRegistry>
+) : FusionPluginInstaller {
+    override fun isInstalled(pluginId: String): Boolean =
+        pluginsLazy.get().catalog.value.any {
+            it.kind == com.apex.agent.plugin.api.PluginKind.FUNCTIONAL && it.id == pluginId
+        }
+
+    override suspend fun ensureInstalled(manifestJson: String): Result<Unit> =
+        when (val r = pluginsLazy.get().installFunctionalPlugin(manifestJson)) {
+            is com.apex.agent.plugin.host.functional.FunctionalPluginStore.InstallResult.Installed,
+            is com.apex.agent.plugin.host.functional.FunctionalPluginStore.InstallResult.Upgraded,
+            is com.apex.agent.plugin.host.functional.FunctionalPluginStore.InstallResult.Unchanged ->
+                Result.success(Unit)
+            is com.apex.agent.plugin.host.functional.FunctionalPluginStore.InstallResult.Rejected ->
+                Result.failure(Exception(r.reason))
+        }
 }
