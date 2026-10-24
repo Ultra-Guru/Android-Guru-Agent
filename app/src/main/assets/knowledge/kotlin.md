@@ -48,38 +48,55 @@
 
 ## 1. 变量与常量
 
-| 形态 | 编译期? | 存哪 | 用途 |
-| --- | --- | --- | --- |
-| `val x = 1` | ✗ | 实例/局部 | 只读引用（默认首选） |
-| `var x = 1` | ✗ | 实例/局部 | 真的需要重赋值 |
-| `const val X = 1` | ✓（原语/String） | 内联进使用处 | 全局常量（伴生/顶层） |
-| `@JvmField val` | ✗ | 实例 | Java 侧免 getter |
-| `lateinit var` | ✗ | 实例 | 生命周期注入字段 |
-| `by lazy {}` | ✗ | 实例（首次访问求值） | 昂贵只读初始化 |
+形态语义不赘述，这里给的是交界成本与陷阱账：
 
-- `const` 只能顶层或 object/伴生；类型必须原语或 String；
-  不能 `const val list = listOf(...)`（编译期不可求值）。
-- `by lazy` 默认 synchronized；单线程场景 `LazyThreadSafetyMode.NONE`
-  省锁。
+- **`const val` 是编译期内联 —— 跨模块陷阱**：值直接拷进调用方字节码，
+  改常量只重编定义方 = 调用方还在用旧值（多模块/SDK 场景经典事故）。
+  改共享常量必须全量重编消费方；对外 SDK 里频繁变更的量用普通 `val` +
+  伴生对象（运行时读取）而非 const。
+- **`by lazy` 的三个模式与一个死锁**：SYNCHRONIZED（默认，双重检查，
+  首访问有锁开销）/ PUBLICATION（多线程可并发初始化，谁先用谁赢，
+  结果可能被丢弃 —— 初始化昂贵且要求纯函数时别用）/ NONE（无线程
+  保证，仅单线程语境）。死锁形态：构造器里访问自己伴生的 lazy，
+  而该 lazy 又回读实例状态 —— 初始化循环。
+- **初始化顺序是真实风险**：属性与 init 块按声明序执行 ——
+  前面的属性初始化器里引用后面的属性拿的是默认值（null/0），
+  类型系统不拦（跨属性依赖编译期看不出）。纪律：属性初始化器里
+  只读声明在前的属性，复杂装配进 init 末尾或工厂。
+- **`lateinit var` 的边界**：只能 var + 非空类型；赋值前访问抛
+  `UninitializedPropertyAccess`（报错时机是访问点 —— 比 nullable 的
+  运行时 NPE 离根因更近）；注入字段用 `::x.isInitialized` 防御性检查
+  是气味（生命周期保证注入顺序才是正解，例外才检查）。
+- **自定义 getter 没有支撑字段**：每次访问重新求值 ——
+  把昂贵计算写成 getter 表达式 = 每次读都付费且调试器单步时也触发；
+  昂贵派生值用 `by lazy`（读多算少）或显式缓存字段（需失效策略）。
+- `@JvmField` 只给"不需要版本演进的 val 字段"：它会把字段直接暴露给
+  Java（后续改 getter 语义就是破坏性变更）。
 
 ## 2. 空安全
 
-操作符速查：
-
-| 写法 | 语义 | 链式 |
-| --- | --- | --- |
-| `a?.b` | a 空则整体 null | ✓ |
-| `a ?: b` | 左空取右（elvis） | ✓（右可再链） |
-| `a!!` | 断言非空（NPE 风险） | ✗ |
-| `a?.let { }` | 非空才执行 | ✓ |
-| `takeIf`/`takeUnless` | 条件过滤自身 | ✓ |
-| `checkNotNull(x)` | 状态断言（抛 IllegalStateException） | ✗ |
-| `requireNotNull(x)` | 参数断言（抛 IllegalArgumentException） | ✗ |
-
-- 平台类型（Java 来的 `T!`）：边界处立即消毒 ——
-  公开 API 参数标 `T?` 并手动校验，或 `T` + `requireNotNull`。
-- 集合空与元素空分开：`List<T>?` vs `List<T?>` ——
-  `listOfNotNull(...)` 出口压平。
+- **平台类型是唯一渗透面 —— 边界治理纪律**：Java 侧来的 `T!` 三态
+  （T / T? / 两者皆可）—— 公开 API 入口显式选边：
+  参数标 `T?` + `requireNotNull`（明确契约），或注解治理源头
+  （jspecify `@NullMarked`/androidx `@NonNull` 注解让 Java 签名带类型）。
+  "在深处到处 `?.`"是治理失败的信号 —— 消毒只该发生在边界。
+- **`!!` 的审计纪律**：`!!` 合法存在的地方 = "编译器不知道但运行时
+  有不变式保证"。要求：局部使用（不出公开 API）+ 行尾注释写明不变式
+  依据。review 里裸 `!!` 无注释一律打回；`!!` 出现在链中间
+  （`a!!.b!!.c`）是没做边界治理的重罪。
+- **`lateinit` vs `T? + ?: error` vs Nullable**：
+  生命周期必注入（DI/回调必达）→ lateinit（早失败、无装箱）；
+  初始化可能失败/延迟 → 可空 + 显式状态（把"未初始化"建模成业务状态
+  而不是 NPE）；不要用 `lateinit` 表达"可能永远不来"的状态。
+- **集合双层空**：`List<T>?` vs `List<T?>` 的消毒链不同 ——
+  `listOfNotNull()` 压平元素空；外层判空后交给 `orEmpty()` 出口。
+  混淆两层会出现"判了外层爆在内层"的假阳性修复。
+- **智能转换 × 空安全**：`if (x != null) use(x)` 里 x 必须是不可变
+  引用（val 或不可变属性）才能智能转换 —— 可变属性要 `val local = x`
+  快照（3 节表）；跨模块/自定义 getter 同理。
+- 泛型边界：`T` 本身在 JVM 上可为 null（无 reified 保证）——
+  库作者用 `T & Any`（definitely non-null，2.0+）在签名层钉死；
+  业务代码给公共泛型 API 补 `requireNotNull` 或文档声明。
 
 ## 3. 智能转换
 
@@ -97,13 +114,29 @@
 
 ## 4. 字符串
 
-- 模板：`"$x"` / `"${x.y}"`；表达式里嵌双引号用 `${"..."}`。
-- 原始串 `"""..."""`：不转义（正则首选）；
-  `trimIndent()` 处理多行缩进，`trimMargin(">")` 自定义边。
-- 判空用 `isNotBlank()`（业务语义）而非 `!isEmpty()`；
-  空白串坑：`" ".isEmpty()` 是 false。
-- 数字格式化：`String.format` 或 `"%d".format(x)`；
-  千分位 `%,d`。金额用整数分存储 + 格式化输出。
+- **UTF-16 陷阱（比 API 更重要的事实）**：`s[i]`/`s.length` 按
+  UTF-16 code unit 计 —— emoji/部分 CJK 扩展是代理对，
+  `"😀".length == 2`；"截前 N 字"用 length 截会截出半个字符。
+  正确姿势：按 code point（`s.codePoints()`）或用
+  `BreakIterator.getCharacterInstance` 按用户感知字符（grapheme）切。
+  用户名首字头像、列表首字缩略，都是这条雷的高发区。
+- **大小写转换的 locale 语义**：Kotlin 的 `lowercase()`/`uppercase()`
+  （无参）是 Unicode 不变映射（不受系统 locale 影响）；
+  `lowercase(Locale.forLanguageTag("tr"))` 才是土耳其语语义
+  （dotless i）；从 Java 移植时 `toLowerCase()`（已弃用）带默认 locale ——
+  "只在部分用户机器上搜索匹配不上"的经典根因。
+- **拼接成本模型**：`+` 链在循环里 = 每轮中间 String；
+  `buildString(capacity)` / `joinToString` 预估容量免扩容；
+  字符串模板本质是 `StringBuilder` + `toString`（编译器优化），
+  但嵌套循环里的模板仍会退化 —— 热路径统一 buildString。
+- **`String.format` vs 模板 vs MessageFormat**：
+  面向用户的文案（有复数/性别/顺序）用资源 + format（资源层翻译可重排
+  参数位）；纯日志用模板；金额/千分位用 `%,d`。
+- `trimIndent/trimMargin` 不只是“多行好看”：让生成 SQL/JSON 的字符串
+  不带缩进噪声 —— 配 `"""` 原始串写正则（42 节）免双反斜杠。
+- 判空语义分级：`isEmpty`（长度0）/`isBlank`（含空白）/
+  `isNullOrBlank`/`orEmpty()`（出口转非空）—— "业务上算没填"用 blank 系列。
+  `" ".isEmpty()` 为 false 是语义特性不是 bug。
 
 ## 5. when 表达式
 
@@ -116,88 +149,198 @@ val label = when (shape) {
 }
 ```
 
-- 无参形态（条件分支）：`when { x > 0 -> ...; x < 0 -> ...; else -> ... }`
-  —— 替代 if-else 链的最佳形态。
-- 主体多行最后表达式为值；分支类型需一致（K2 严格化，见 71 节）。
-- 范围/集合条件：`in 1..10`、`in setOf(...)`、`!in`。
-- when 主体作语句时 exhaustive 检查仍适用（sealed/enum 必须 cover，
-  2.1 起 else 也算但会有警告倾向）。
+- **穷尽机制的层次**：sealed/Boolean/enum 作 subject 且作表达式时
+  强制穷尽；缺分支是编译错（2.x 起 when 语句对 sealed 的非穷尽也在
+  逐步收紧为错误）—— 这不是风格偏好，是"加子类时全部处理点炸编译"
+  的重构安全网。else 慎加：它把穷尽检查静音，新子类会被 else 吞。
+- **guard 条件（2.1 稳定）**：`when (x) { is Int if it > 0 -> ... }` ——
+  分支里不用再判 is + 比较，减少了"模式匹配后还嵌套 if"的样板；
+  有 guard 的分支序列有优先级（自上而下），别与 else 组合埋隐藏分支。
+- subject 捕获：`when (val v = compute()) { ... }` 把昂贵计算钉到局部
+  —— 等价于先 val 快照（3 节），多分支复用首选这个形态。
+- 无参形态（条件链）是 if-else 链的替代 —— 但记住它**没有穷尽检查**
+  （else 必须显式），“换成 when 就安全”是错觉，安全来自 sealed subject。
+- when 分支返回类型不一致时 K2 直接报 —— 显式函数返回类型是解法
+  （不是绕过）；分支值如果包含 Nothing（error/TODO），
+  推断会正确跳过它。
+- 性能侧：enum 的 when 编译为表开关（无逐项比较）；
+  sealed 分支数很大时才需要关心（几百分支级），常规规模无感。
 
 ## 6. 区间与循环
 
-| 形态 | 语义 |
-| --- | --- |
-| `1..10` / `1 until 10` / `10 downTo 1` | 闭/半开/降序 IntRange |
-| `1..10 step 2` | 步进 |
-| `'a'..'z'` | 字符区间 |
-| `for (i in arr.indices)` | 下标循环 |
-| `for ((i, v) in arr.withIndex())` | 下标+值 |
-
-- 循环内 break/continue；带标签 `outer@ for... break@outer`。
-- `repeat(n) { }` 简单次数；`forEach` 不支持 break（用 for）。
+- **成本直觉（不是玄学）**：`for (i in 0..n)` 编译为原生索引循环
+  （无迭代器分配、无装箱）；`forEach { }` 在 range/List 上是 inline
+  扩开 —— 与手写 for 同价；但 `Iterable.forEach` 换成序列或装饰器
+  链后每层都有开销。热路径的优先级：索引 for > iterator for >
+  链式操作 > 序列（短数据时序列反而慢，22 节阈值）。
+- **进度条（progression）细节**：`1..10 step 2` 在编译期构成
+  IntProgression（步长进循环变量）；`step 0` 运行时抛
+  IllegalArgumentException；`downTo` 是负步长语法糖；
+  `1..<10`（rangeUntil，2.0 稳定）是半开区间的意图显式化 ——
+  索引循环一律 `until`/`..<`，杜绝 off-by-one。
+- **提前退出的正确姿势**：找元素用 `firstOrNull { }`（声明式，
+  短路）；`forEach` 里不能 break —— 需要 break/continue 的复杂循环
+  老实用 for + 标签（`outer@`）；`return@forEach` 只是继续，不是 break
+  —— 这个误解写出来的 bug 静默且难查。
+- `repeat(n) { }` inline 且带下标变体（`repeat(n) { i -> }`）——
+  固定次数首选；带状态的累积用 `generateSequence`/`fold` 替代手写
+  while（15 节）。
+- 多重循环重排：内层小外层大 vs 相反 —— 数据局部性（cache 友好）
+  在二维数组/矩阵场景是实打实的常数级差异；遍历 `List<List<T>>` 时
+  按行遍历（内层连续）优于跳列。
+- 字符/长整型区间：`'a'..'z'` 合法（Char progression）；
+  `Long` 区间每步有装箱风险（索引用 Int，数量级用 Long 判断再循环）。
 
 ## 7. 运算符
 
-可重载操作符（精选）：`+ - * / %`（invoke/plus…）、`[]`（get/set）、
-`in`（contains）、`()`（invoke）、`>`（compareTo）、`+=`（plusAssign 或 plus+var）。
-
-- 纪律：重载只用于**代数语义**类型（Vector/Duration/Money）；
-  `plus` 别拿来拼接业务动作（可读性陷阱）。
-- `equals` 对应 `==`；`===` 不可重载（恒等引用比较）。
+- **设计纪律之外的三个硬约束**：
+  ① `plusAssign`（`+=`）与 `plus` 同时可用时编译器报歧义
+  （"Ambiguity: applicable candidates"）—— 同一类型只提供一套
+  （可变集合适用 plusAssign，不可变适用 plus）；
+  ② `compareTo` 契约：只需返回符号（-/0/+），但必须自反传递一致，
+  且**与 equals 一致** —— 不一致时 `sortedBy` 结果与 `contains`
+  （走 equals）判断相反，排序容器（TreeSet）里"排进去了但查不到"；
+  ③ `equals` 通过 `==` 调用且签名固定为 `Any?` 参数 —— 参数不是
+  `T` 也不是可空擦除问题，写成窄参数就是重载不是重写（编译器会警告，
+  但手写时常见）。
+- 重载面纪律：代数语义类型（Vec/Duration/Money）才配运算符；
+  `get/set`（下标）用于键访问；`in` 用于成员判定；`invoke` 让对象
+  像函数（验证器/查询 DSL），频率控制 —— 滥用的代价是"读不出语义"。
+- `===` 不可重载（恒等引用）—— identity 语义永久保留，是 equals
+  实现里的兜底快路径（`this === other` 直接返回 true）。
+- 位运算以中缀函数存在（`and/or/xor/shl/shr/ushr`，102 节）——
+  不是运算符重载：既有互操作一致性又避免了 C 式符号滥用。
+- unsigned 类型（UByteArray/UInt）有全套运算符但与 signed 互转显式 ——
+  跨界运算的装箱与溢出语义自己负责。
 
 ## 8. 相等性
 
-| 符号 | 语义 | null 处理 |
-| --- | --- | --- |
-| `==` | 结构相等（调 equals） | `null == null` true |
-| `===` | 引用同一 | 恒等比较 |
-| `eq` 手写 | 永远别（用 data class） | — |
-
-- data class 的 equals 基于全部主构造属性；
-  `hashCode` 同源 —— 放进 HashSet/HashMap 前必须 data（或手写等价）。
-- 浮点比较：不要 `==`（精度）；用容差 `abs(a-b) < 1e-9`。
+- **相等/哈希契约的三条底线**：equals 相等 → hashCode 必相等；
+  hash 相等不要求 equals（碰撞合法但要求分布均匀）；
+  equals 必须等价（自反/对称/传递）+ 与 null 永假。
+  最容易破的是对称性 —— 手写 equals 接受父类型参数与子类比较时
+  （`Parent.equals(Child)` 真、`Child.equals(Parent)` 假），
+  集合里表现为“a.contains(b) 真 b.contains(a) 假”。data class 自动
+  生成不会破对称，手写才会 —— 所以能用 data 就别手写。
+- **data class 继承陷阱**：生成的 equals 只比主构造属性 ——
+  data class 继承自带状态的父类时，父类状态**不参与比较**
+  （两个子类实例父字段不同却 equals —— 语义 bug）；
+  正解：组合替代继承，或父类状态全部下放到子构造。
+- **数值边界的相等语义**：Kotlin `==` 对 Double 走 equals 语义 ——
+  `NaN == NaN` 为 true（与 IEEE 754 的 `!=` 相反）、
+  `-0.0 == 0.0` 为 false（但 `compareTo` 视为相等）——
+  数值算法里用 `==` 判零的写法要过这道检查；
+  `BigDecimal("2.0") != BigDecimal("2.00")`（equals 含 scale）——
+  金额比较用 `compareTo(...) == 0`。
+- **数组与集合**：`==` 对 Array 是引用相等 —— 内容比较必须
+  `contentEquals/contentDeepEquals`；List/Set/Map 的 `==` 是结构相等
+  （List 保序敏感）。
+- `equals` 性能：大 data class 每次作 key 查询都重算 hashCode
+  （Kotlin 不缓存 hash，String 才内部缓存）—— 大对象做热路径 key
+  时考虑包装成不可变小 key（id 字符串）而不是整对象。
 
 ## 9. 泛型与型变
 
-| 声明 | 含义 | 例 |
-| --- | --- | --- |
-| `out T` | 协变（生产者） | `List<out T>` 只读出 T |
-| `in T` | 逆变（消费者） | `Comparable<in T>` 只吃 T |
-| `<T : Comparable<T>>` | 上界 | 排序函数 |
-| `reified T` | 内联保类型（运行时可引用） | `filterIsInstance<T>()` |
-| `star-projection` `List<*>` | 未知型参 | 只读安全访问 |
-
-- 型变口诀：生产 out 消费 in；PECS（Java 视角）同一件事。
-- @UnsafeVariance 是库作者逃生舱，业务代码别用。
+- **型变设计实战（不是背诵 PECS）**：
+  声明点型变（`out T`/`in T`）是给"库作者"的承诺 —— List<out T>
+  因为不可变才能协变；使用点型变（Java 通配符）Kotlin 几乎不需要，
+  代价是 API 声明处要想清楚。实践决策：生产者位置 out、消费者位置 in；
+  两端都读写 → 不型变 + 明确文档；函数类型天然按位置型变
+  （`(T) -> R` 在 T 上逆变）。
+- **definitely non-null（`T & Any`，2.0+）**：
+  泛型 T 未约束时可空 —— `fun <T> orDefault(t: T?): T & Any` 把
+  可空泛型压回非空；给互操作边界（Java 侧 `@NonNull T`）提供
+  表达力。这是 2.0 语言层补的可空型参缺口。
+- **擦除成本与补法**：JVM 无单态化 —— 泛型函数每次调用同一字节码，
+  类型检查靠强转插入；`inline + reified` 是"复制特化版字节码"的
+  逃生舱（代价是字节码膨胀），`filterIsInstance<T>()` 靠它免显式传
+  Class。价值面：DSL/序列化/反射桥 —— 业务热路径不需要。
+- **`@UnsafeVariance`**：`List<out T>` 里的 `contains(t: @UnsafeVariance T)`
+  —— 型变承诺与方法参数位置冲突时的库作者逃生舱；业务代码出现它
+  = 设计混乱（先改型变声明，不是加注解）。
+- star 投影 vs out 投影：`List<*>` 只读安全访问（拿 Any?）；
+  `List<out T>` 表达已知关系。语义不同别混用 —— star 是"不关心"，
+  out 是"我知道它生产"。
+- 递归边界（F-bounded）：`<T : Comparable<T>>` 表达自比较 ——
+  好处是 API 不接跨类型比较；滥用（多层递归边界）会让推断很难看。
+- 性能：泛型集合 + 装箱（59 节）是真正的成本点，
+  型变本身零运行时成本（全在签名层）。
 
 ## 10. 平台注解
 
-| 注解 | 场景 |
-| --- | --- |
-| `@JvmStatic` | object/伴生函数给 Java 静态调用 |
-| `@JvmOverloads` | 默认参数生成多重重载（View 构造常用） |
-| `@JvmField` | 暴露字段（免 getter） |
-| `@get:JvmName("x")` | 属性 getter 改名 |
-| `@JvmSuppressWildcards` | 泛型通配抑制（平台互操作） |
-| `@Throws(IOException::class)` | 声明受检异常（Java 调用方） |
+互操作注解的实质是"控制生成字节码的形状"—— 三个高级面：
+
+- **默认接口方法的生成时代变化（Kotlin 2.2.0 起）**：接口函数体
+  默认直接编译成 JVM default method（不再走 DefaultImpls 桥接类）——
+  Java 侧调 Kotlin 接口默认实现的字节码形态变了；
+  老代码若靠 DefaultImpls 反射/字节码工具（旧版本 mock/代理库）
+  会在 2.2 升级时炸 —— 升级前扫一遍对
+  `-Xjvm-default` 敏感的依赖。
+- `@JvmOverloads` 的展开边界：生成"去掉尾部默认参数"的逐级重载
+  （最多 n+1 个方法）—— 构造器用它对接 View 体系很爽，但
+  参数默认值改动 = 公开方法集合变动（二进制兼容雷）；
+  库公开面慎用，app 内随意。
+- `@JvmName` 的两个半隐藏点：getter/setter 命名规则（
+  `is` 开头的 Boolean 属性不生成 get 前缀）影响 Java 侧属性访问；
+  含特殊字符的名字（反引号属性）需要 `@JvmName` 提供合法字节码名。
+- `@JvmStatic` 的双入口：生成静态桥 + 保留伴生实例方法 ——
+  Java 侧两路都通；不加则必须 `X.Companion.f()`
+  （三方 SDK 注解扫描器偶因这个找不到方法）。
+- **nullability 注解生态**：Kotlin 编译器认三系注解
+  （org.jetbrains.* / androidx.* / jspecify）—— 对 Java 依赖的
+  空安全推断取决于它们的注解质量；无注解的依赖全平台类型（2 节）。
+- `@JvmMultifileClass`：多文件顶层函数合并成一个 Java 类名 ——
+  命名冲突时只能选一个文件名，注意生成顺序无关性。
+- `@Throws` 只影响 Java 侧 checked 异常声明 —— 不加也能抛（
+  Kotlin 无 checked），加了 Java 调用方才会被迫处理。
 
 ## 11. lambda
 
-- 单参数隐名 `it`；显式 `{ x -> ... }`（嵌套 lambda 必须显名）。
-- lambda 与匿名函数的区别：`return` 语义
-  （lambda 的 return 返回外层函数 —— 要返回 lambda 用 `return@label`；
-  匿名 fun 正常返回自身）。
-- 闭包捕获按引用 —— 可变捕获要小心并发（禁跨线程裸 var 捕获）。
-- 事件订阅/取消成对出现；lambda 里持有外部 this 时注意生命周期泄漏。
+- **编译与分配内幕**：非捕获 lambda 编译为单例（同一实例复用，零分配）；
+  每次捕获外部变量的 lambda = 每次调用新分配 Function 实例 +
+  包装捕获值 —— 热路径里“每次新建 lambda”是 GC 压力主源之一
+  （与 android 库 6 节强跳过的 === 陷阱同源：列表项内联 lambda）。
+- **捕获语义**：闭包按引用捕获（Java 也一样）—— lambda 里改外部 var
+  = 跨执行点共享可变状态，并发场景是数据竞争入口；纪律：
+  lambda 只读捕获，需要写用返回值/回调显式传递。
+  "lambda 持有外部 this（Activity）且被长寿命对象存着"
+  = Android 监听器泄漏的标准形态。
+- **return 语义的两层**：lambda 内裸 return 是非局部返回（直接返回
+  外层函数 —— 只在 inline 函数的 lambda 里合法）；带标签
+  `return@forEach` 返回 lambda 本身；匿名 fun 正常返回自身。
+  把这三态混着用是代码评审的一票否决项（可读性塌力）。
+- **SAM vs Kotlin 函数类型**：传给 Java SAM 参数可直接 lambda
+  （目标类型明确时编译成该类）；但 Kotlin 函数类型（`(T) -> Unit`）
+  在 JVM 上是 Function1 接口 —— Java 侧接不到 Kotlin "函数类型参数"
+  的简洁写法（要 Function1 实例）。跨语言公开 API 用 fun interface
+  （1.4+）而不是裸函数类型。
+- 接收者 lambda（`T.() -> Unit`）与普通 lambda 是不同类型 ——
+  DSL 层级隔离靠它（61/62 节）；但嵌套接收者会遮蔽外层 `this`
+  —— 层级深了要 @DslMarker（62 节）防误调外层。
+- `it` 纪律：单层用 it；两层以上必显名 —— "it 嵌套 it"的读错率远超
+  打字节省。
 
 ## 12. 高阶函数
 
-设计要点：
+设计要点（成本与兼容双面账）：
 
-- 函数类型参数放最后（尾 lambda 可移出括号）：
-  `fun retry(times: Int, block: () -> T)` 调用 `retry(3) { ... }`。
-- 传行为而不是传布尔旗标（`onClick: () -> Unit` 优于 `flag: Boolean`）。
-- 返回 lambda 的工厂标记返回类型（推断在重载处不稳，K2 见 71 节）。
+- **inline 决策矩阵**：lambda 参数想非局部返回 / 需要 reified /
+  真热路径（度量证明）→ inline；其余不 inline —— 公开 API inline
+  会把函数体复制进所有调用方（后续改动即二进制变更）。
+  内部实现细节的 private inline 随便用（`@PublishedApi` 配合打开
+  internal 成员给 inline 函数用，是库的标准解法）。
+- **函数类型的位置型变**：`(T) -> R` 在参数位逆变 ——
+  需要 `(Animal) -> R` 的地方可传 `(Dog) -> R`（能处理狗的必能处理动物）
+  这个天然性变让"回调集合/分发器"的 API 兼容性比 Java 好写得多。
+- **fun interface 的价值面**：给 Java 互操作提供 SAM 转换 ——
+  `fun interface Handler { fun onEvent(e: Event) }` 后 Java/Kotlin
+  双侧都能 lambda 直传；比裸函数类型多一个名字（可读 + 可文档）。
+- 尾 lambda 位置惯例：函数类型参数放最后 —— 但超过两个 lambda 参数时
+  （如 onSuccess/onError 双回调）命名函数/分接口更可读，
+  双尾 lambda 的调用点没人读得懂。
+- **行为参数 vs 配置对象**：开闭面稳定的用 lambda（扩展点）；
+  面会长的用 sealed/接口（编译期穷尽）—— "布尔旗标" 是两者之外的
+  最差解（load(true) 的 true 是什么）。
 
 ## 13. 内联
 
@@ -212,23 +355,46 @@ val label = when (shape) {
 
 ## 14. 作用域函数
 
-| 函数 | 对象引用 | 返回 | 场景 |
-| --- | --- | --- | --- |
-| `let` | it | lambda 结果 | null 链式 `?.let` |
-| `run` | this | lambda 结果 | 对象初始化块 |
-| `with` | this | lambda 结果 | 同 run（非扩展形态） |
-| `apply` | this | 对象自身 | builder 链式配置 |
-| `also` | it | 对象自身 | 插入副作用（日志/校验）不打断链 |
-
-- 判据：要返回**对象本身**用 apply/also；要返回**计算值**用 let/run；
-  语义"顺带"用 also。
+- **成本真相**：五件套全是 inline —— 无 lambda 分配；
+  但 `apply/also` 返回对象本身，链中每层都持有 receiver 上下文。
+  性能不是它们的分水岭，**可读性才是**。
+- **决策不是背表，是问三个问题**：
+  ① 要返回对象本身还是计算值？（apply/also vs let/run/with）
+  ② receiver 该用 `this` 还是 `it`？（this 语义近、遮蔽多；it 显式、
+  嵌套安全）③ 这一步是"配置"还是"顺带"？（apply 配置块；also 插桩）
+  回答完选择自现 —— 这也是评审时讲解作用域函数选择的口径。
+- **known 坑**：① `let` 链金字塔（`?.let { }?.let { }?.let { }`）——
+  超两层必拆变量/提前返回；② `apply` 里访问其他属性时 this 遮蔽 ——
+  命名冲突时必须显名；③ `with(obj) { }` 无空安全 —— 传可空就裸奔
+  （`with` 的场景几乎都可被 `run` 替代）。
+- **takeIf/takeUnless 的定位**：过滤"自身"（而非集合）——
+  `x.takeIf { ok } ?: fallback`；它返回可空 —— 别把它当"更短的 if"
+  （控制流用 if/when，不要用函数链表达复杂分支）。
+- 习惯用法优先级（评审口径）：null 链式 `?.let` > 内联 if；
+  构造后配置 `apply` > builder 手写；副作用插桩 `also`（链不打断）
+  > 复制语句。出现"为了用而用"（单层对象包 apply）直接打回。
 
 ## 15. 递归与折叠
 
-- `tailrec` 修饰尾递归（编译成循环）；深递归默认栈限 ~几千层。
-- 折叠：`fold(init) { acc, x }`（带初值）/ `reduce`（无初值，空集合抛）；
-  `runningFold` 保留中间态。
-- 生成序列：`generateSequence(seed) { next }` 惰性 —— 配 take/first 终结。
+- **tailrec 的硬条件**：递归调用必须是**最后一个操作** ——
+  递归调用后还有运算（`1 + fact(n-1)`）不是尾调用，编译器拒化；
+  递归调用在 try/catch 里同样不可化（编译器会警告）。
+  化不成循环的深递归（树遍历这类天然非尾形态）用手写栈/
+  序列迭代替代 —— JVM 栈深几千层就炸。
+- **fold vs reduce 的语义差异**：`reduce` 空集合抛（无初值无结果）——
+  类型上无法给出单位元；`fold` 显式初值 —— 空集合返回初值。
+  累加器类型可与元素不同（fold）；reduce 只能同型 ——
+  需要"求和→金额类型"这类转换时 fold 是唯一解。
+- **顺序与并行**：`fold`/`reduce` 是串行有序 —— 不可交换的运算
+  （拼接/减法）不能并行化；可交换运算上并行折叠需要 fork-join
+  分段策略（业务代码用 coroutines 分片后汇总，别手写双递归）。
+- `runningFold/runningReduce` 保留中间态 —— 画累计图/增量指标场景
+  直接用，别自己 for 循环复制。
+- `generateSequence(seed) { next }` 是惰性无限源 ——
+  必须有终结条件（take/first/find），忘终结 = 无限循环挂死；
+  序列每次消费重新求值 —— 共享"已生成"结果要先 toList 落地（22 节）。
+- 递归→迭代的重构信号：栈溢出报错 / 需要中途暂停（无法实现）/ 
+  需要进度上报 —— 三个信号出现任一就该改序列/显式栈。
 
 ## 快速索引 · 续（16-30 节）
 
@@ -266,6 +432,18 @@ data class Money(val cents: Long, val currency: String = "CNY") {
 - 主构造属性参与相等；body 里的属性不参与（坑：以为比了其实没比）。
 - 不要继承 data 类（语义混乱）；组合或 sealed。
 - copy 是浅拷贝；嵌套可变集合要显式深复制。
+- **继承与相等的隐患**（8 节展开）：父类带状态时生成的 equals
+  忽略父状态 —— “两个不同配置的对象 equals”是静默逻辑 bug；
+  同时 data 类继承 data 类直接禁（编译错），但继承普通类没人拦。
+- **copy 与可见性**：copy 的构造可见性跟随主构造 ——
+  private 构造 + public copy 是可用的工厂模式；但 copy 会绕过
+  init 里的校验逻辑（copy 直接赋字段不重新走构造）——
+  校验在 init 的类，拷贝后可能非法 —— 校验放 companion factory +
+  init 双层时注意 copy 旁路。
+- 序列化边界：data class + kotlinx-serialization 需显式 @Serializable；
+  默认值字段是“可选字段”兼容策略的一部分（40/95 节）。
+- 组件数上限：componentN 生成覆盖全部主构造属性；
+  但解构超过 3-4 个就该怀疑建模（用命名属性访问而不是位置）。
 
 ## 17. 密封类
 
@@ -285,16 +463,24 @@ sealed interface ApiResult<out T> {
 
 ## 18. 单例与伴生
 
-| 形态 | 用途 |
-| --- | --- |
-| `object X { }` | 无状态工具/全局服务 |
-| `object X : IFoo { }` | 接口单实现 |
-| `companion object` | 类级静态成员入口（可 `@JvmStatic`） |
-| `companion object Factory` | 命名伴生（可持状态） |
-| DI 单例 | 有依赖的单例一律交给 DI（测试可换） |
-
-- object 懒加载（首次访问初始化）+ 线程安全；
-  但不要在 object 里做重初始化（首次访问卡顿）。
+- **object 的初始化时机是类加载**：首次访问时执行 static 初始化器 ——
+  "首次访问"可能在主线程（首帧某处碰到它）——
+  object init 里做重活（IO/网络/大对象）= 冷启动随机卡顿源。
+  纪律：object 里只放轻初始化；重单例交给 DI（可控时机 + 可替换）。
+- **object vs object expression（高频混淆）**：
+  `object X { }` 是命名单例（类加载一次）；
+  `val x = object { }` 是对象表达式 —— **每次求值新实例**（匿名类）。
+  把后者当单例用（“为什么状态不共享”）是真实事故模式。
+- **companion 的字节码真身**：内部类 + 静态 INSTANCE 字段 ——
+  Java 侧看是 `X.Companion.f()`；`const val` 直接内联进调用方
+  （1 节跨模块陷阱）；`@JvmField/@JvmStatic` 改变形状（10 节）。
+- 伴生可实现接口（工厂模式的 Kotlin 形态）+ 可带名 + 可有扩展函数；
+  但伴生不能访问外部类实例状态（它是静态语境）。
+- **测试面**：object 不可替换 —— 依赖 object 的代码不可单测
+  （除非把 object 实现接口再注入）；DI 单例的"测试可换"是它相对
+  object 的本质优势，不只是装配便利。
+- 多进程注意：每进程一个 object 实例（静态不跨进程）——
+  "单例缓存跨进程共享"是错觉（android 库 27 节）。
 
 ## 19. 委托
 
@@ -305,9 +491,23 @@ val cached by lazy { expensive() }
 class Repo(db: Db) : IRepo by dbImpl(db)             // 接口委托转发
 ```
 
-- 标准库三件：lazy / observable / vetoable。
+- 标准库三件：lazy / observable / vetoable（observable 变更回调，
+  vetoable 可否决新值 —— 表单校验属性的经典形态）。
 - 接口委托（`IFoo by foo`）：转发样板消除器 —— 装饰器模式首选。
-- 属性委托代价：每次访问走 getValue —— 热路径避免。
+- **provideDelegate（初始化期拦截）**：属性初始化时（不是每次访问时）
+  拿到 KProperty —— 可做"属性名即 key"的偏好存储/IOC 容器注册
+  （`by preference()` 自动用属性名做存储键）；
+  比每次 getValue 里读 KProperty.name 更干净。
+- **代价模型精确版**：每次访问走 getValue + KProperty 传参 ——
+  KProperty 实例被编译器缓存（不是每次分配），开销是一次接口派发 +
+  委托内逻辑；热路径避开的是"委托里每次做重复工作"（每次读都查表），
+  不是委托机制本身。
+- 委托与序列化/反射边界：属性委托在反射下呈现为字段 + getValue 调用，
+  序列化框架（如 kotlinx-serialization）不认委托属性 —— 需要显式
+  serializer/自定义映射，别假设透明。
+- `by map`（Map 委托）：键名取自属性名，缺键直接抛 ——
+  结构化配置解析可用但缺键报错时机是访问点（延迟爆炸）；
+  解析启动时全量校验比延迟炸好（fail-fast）。
 
 ## 20. 解构
 
@@ -318,23 +518,48 @@ val (head, rest) = list           // componentN 自定义
 operator fun <T> List<T>.component2(): T = this[1]
 ```
 
-- data class 自动 component1..N；
-- 跳位用 `_`：`val (_, msg) = result`。
-- 函数多返回值：返回 data class（命名可读）优于 Pair（命名消失）。
+- **机制账**：解构 = 调 component1..N —— data class 自动生成；
+  Map.Entry 的 `(k, v)` 靠标准库扩展 component1/component2
+  （真实调用 entry.key/value，不拷贝）。
+- **热路径警告**：`for ((k, v) in map)` 在 HashMap 上仍会分配
+  Entry 对象（Map 结构自持）—— LinkedHashMap/HashMap 遍历必然带
+  Entry 分配；对分配敏感的循环用 `forEach { k, v -> }` 一样躲不开，
+  真要免分配得换结构（ScatterMap 类，113 节）。
+- **componentN 是公开 API**：给业务类型定义 componentN = 承诺位置
+  语义永不改变（字段插入顺序变更 = 调用方静默错位）——
+  "解构给谁用"要克制，不确定就用命名属性。
+- 中缀 `to` 建 Pair 也有分配成本 —— 大循环里用
+  `mapOf(k to v)` 等价写法不省；真正省的是构建期复用/原始索引。
+- 跳位 `_`：解构声明里显式声明丢弃位；lambda 里的解构参数
+  （`fold { acc, (k, v) -> }`）可读但注意它同样触发 componentN。
+- 多返回值纪律：返回 data class（命名可读）优于 Pair（命名消失）——
+  Pair 只允许出现在局部/立刻解构的临时场景。
 
 ## 21. 集合总览
 
-| 类型 | 只读 | 可变 |
-| --- | --- | --- |
-| List | `List`/`listOf` | `MutableList`/`mutableListOf` |
-| Set | `Set`/`setOf` | `MutableSet` |
-| Map | `Map`/`mapOf` | `MutableMap` |
-
-- 只读 ≠ 不可变：`List` 可能是别人可变列表的视图 ——
-  跨边界传集合出口 `toList()` 快照（防并发修改）。
-- 构建器：`buildList { add(...) }` / `buildMap`（1.6+）——
-  构建期可变、出口只读。
-- 空集合常量：`emptyList()`；避免 `listOf()` 泛型推断坑。
+- **只读 ≠ 不可变（机制层）**：`List` 接口背后可能是别人手里的
+  `ArrayList` —— 出口 `toList()` 快照防"两个所有者"（返回的是新 ArrayList 拷贝；
+  Kotlin 1.6+ `toList()` 空集合返回共享单例，非空拷贝）。
+  真不可变需要 PersistentList（69 节）或 ImmutableList 包装。
+- **增长与分配账（选型前置知识）**：
+  `ArrayList` 扩容 1.5×（复制旧数组）—— 大小可预知时
+  `ArrayList(n)`/`buildList(n)` 预设容量免反复拷；
+  `HashMap` 扩容 ×2 且逐项重哈希，负载因子 0.75 ——
+  预知 n 项给 `HashMap(n * 4 / 3 + 1)`；
+  `LinkedHashMap` 每项额外双向链表指针（内存代价换插入序）。
+- **构建器纪律**：`buildList { }` 构建期可变、出口只读（内部按需
+  预分配）—— 替代"mutableListOf 一路传"；
+  `listOf(a)`/`setOf(a)` 单元素有优化实例，`emptyList()` 恒单例。
+- **出口快照的三个时机**（不是到处拍）：
+  ① 跨线程边界（并发修改风险）；② 缓存/字段返回（调用方写入内部
+  状态）；③ 进 Compose 参数（稳定性，android 库 6 节）。
+  局部传递拍快照 = 白白拷贝。
+- 可变集合只在构建期局部使用（必看纪律）—— 违反的信号：
+  MutableList 出现在函数签名（入口要么收只读，要么明确叫 buildXxx）。
+- 集合类型断言陷阱：`listOf(1,2)` 底层是 `Arrays.asList` 定长视图 ——
+  `as? MutableList` 转型会成功，调 `add` 却抛
+  `UnsupportedOperationException` —— "能转不等于能用"；
+  需要可变副本就重建（`toMutableList()`），别转型碰运气。
 
 ## 22. 序列
 
@@ -344,21 +569,46 @@ operator fun <T> List<T>.component2(): T = this[1]
   无末端 = 不执行（副作用陷阱）。
 - 无限序列 `generateSequence` 必须配 take/find 终结。
 - 并发序列 `Sequence` 不是线程安全；用 Flow（30 节）表并发流。
+- **一次性消费不变量**：序列不能重复迭代 —— 二次 collect 空或抛
+  （`IllegalStateException: This sequence can be consumed only once`）；
+  这使它适合"管道"不适合"数据集"。要把序列当数据集就先 toList 落地。
+- **大小信息丢失**：序列无 size 预知 —— `toList()` 从空数组开始
+  反复扩容；大数据落盘预估容量用 `toCollection(ArrayList(n))`。
+- **sequence{} 构建器与 generateSequence 的差异**：
+  `sequence { yield(...) }` 是无锁协程式状态机（可 yield 任意次/循环/
+  条件分支），`generateSequence` 是纯函数链 —— 复杂生成逻辑用前者，
+  简单映射用后者。
+- 多遍 vs 单遍的真实分水岭：链短 + 数据小，中间集合比序列快
+  （每元素的序列调度开销占大头）—— 22 节阈值是起点，
+  真正的判据是基准（58 节），不是直觉。
 
 ## 23. 集合操作符
 
-| 类别 | 常用 |
-| --- | --- |
-| 变换 | map / mapIndexed / flatMap / groupBy / associate / zip |
-| 过滤 | filter / filterNot / filterIsInstance / take / drop / distinct |
-| 检索 | first / firstOrNull / find / single / last / indexOf |
-| 聚合 | sumOf / maxOf / count / fold / reduce / average |
-| 排序 | sortedBy / sortedWith / reversed / shuffled |
-| 分片 | chunked / windowed / partition |
-| 展开 | flatten / joinToString / toSet |
+操作符清单不背 —— 背下面这些**语义陷阱**（它们才是评审要点）：
 
-- `single()` 空或多个都抛 —— 用于"必然恰一个"断言；
-  外部数据用 `firstOrNull` + 处理。
+- **静默覆盖类**：`associateBy { key }` 键重复后者覆盖前者（无警告）；
+  `mapOf(a, a)` 同键同覆盖 —— 需要检测重复用
+  `groupBy`/`fold` 手写断言；`+` 合并 Map 右覆盖左。
+- **顺序保证类**：`sortedWith/sortedBy` 是稳定排序（TimSort）——
+  多键排序用 `sortedWith(compareBy({ a }, { b }))` 一趟完成，
+  连叠两个 sortedBy 是两趟且中间结果白算；
+  `groupBy` 结果保持插入序（LinkedHashMap）。
+- **边界行为类**：`single()` 空或多于一个都抛（"必然恰一个"断言）；
+  `first()` 空抛 vs `firstOrNull()` 空返 null —— 外部数据一律
+  OrNull 系列；`reduce` 空抛（15 节）；`chunked/windowed` 越界
+  参数组合有部分窗口开关（partialWindows）。
+- **分配隐藏类**：`flatMap` 每元素建中间集合再 flatten ——
+  大数据用 `buildList { }` 手写单遍；`windowed(size)` 当
+  step >= size 时内部复用同一个缓冲列表（返回的是视图！）——
+  要持有需 toList 拷贝，否则改一处全变。
+- **去重类**：`distinct()` 保序去重（内部 HashSet）；
+  自定义类型要求 equals/hashCode 成对（8 节）；
+  `distinctBy { key }` 只比 key 不要求全字段相等。
+- zip 系列：`zip` 取短（长则丢）；zip 后索引与原集合错位时
+  用 `zipWithNext`（相邻对）而不是手动 index。
+- 优先选可读性等价的内建：`partition`（一分为二）、
+  `sumOf`/maxOf/average（专用聚合）、`joinToString`（拼接+分隔符）——
+  它们都比手写 for 少一层索引/临时变量心智。
 
 ## 24. Map
 
@@ -1937,7 +2187,7 @@ fun alloc(size: KiloBytes) { }
 
 | 想找什么 | 去哪一节 |
 | --- | --- |
-| 服务层完整模板 | 131. 服务层模板 |
+| 服务层完整模板 | 131. 服务层模板（完整可抄） |
 
 ## 131. 服务层模板（完整可抄）
 
