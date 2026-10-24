@@ -660,6 +660,7 @@
     <string name="changelog_step_next">下一步 · 功能变更</string>
     <string name="changelog_step_prev">上一步</string>
     <string name="changelog_dialog_open_release">打开发布页</string>
+    <string name="changelog_image_desc">更新日志配图</string>
     <string name="changelog_history_empty">暂无更新日志（更新日志通道首个版本）</string>
     <string name="changelog_history_failed">更新日志加载失败 —— 离线且无内置副本</string>
     <string name="about_section_features">功能一览</string>

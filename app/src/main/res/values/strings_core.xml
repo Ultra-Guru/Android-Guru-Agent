@@ -660,6 +660,7 @@
     <string name="changelog_step_next">Next: feature changes</string>
     <string name="changelog_step_prev">Back</string>
     <string name="changelog_dialog_open_release">Open release page</string>
+    <string name="changelog_image_desc">Changelog image</string>
     <string name="changelog_history_empty">No changelog yet (first release on the changelog channel)</string>
     <string name="changelog_history_failed">Failed to load changelog — offline and no embedded copy</string>
     <string name="about_section_features">Feature tour</string>
