@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * 匹配 = 命令头 token 精确等值（与 CommandPolicy 的 token 语义一致，消除旧
  * startsWith 前缀误拦：“rm” 不再误拦 “rmdir...” 的头 token）。
  */
-internal class CommandPolicyStore(private val prefs: SharedPreferences) {
+class CommandPolicyStore(private val prefs: SharedPreferences) {
 
     private val _blacklist = MutableStateFlow(loadSet("cmd_blacklist"))
     val blacklist: StateFlow<Set<String>> = _blacklist.asStateFlow()

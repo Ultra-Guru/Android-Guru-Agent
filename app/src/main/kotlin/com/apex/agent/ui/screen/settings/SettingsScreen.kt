@@ -371,8 +371,17 @@ private fun SettingsPageRouter(
         // ═══ 界面外观 ═══
         "interface/appearance" -> SettingsLeafColumn { AppearanceSection(agent, onAgent) }
         "interface/chat" -> SettingsLeafColumn { ChatDisplaySection(agent, onAgent) }
+        "interface/notifications" -> SettingsLeafColumn {
+            NotificationsPage(agent, onAgent)
+        }
+        // ═══ 终端 ═══（三个 store 为 Hilt 单例，与终端页共享内存态）
+        "terminal/appearance" -> TerminalAppearancePage()
+        "terminal/scheme" -> TerminalSchemePage()
+        "terminal/keys" -> TerminalExtraKeysPage()
+        "terminal/policy" -> TerminalCommandPolicyPage()
         // ═══ 数据与备份 ═══
         "data/backup" -> SettingsLeafColumn { BackupSection() }
+        "data/update" -> SettingsLeafColumn { UpdatePage(agent, onAgent) }
         // 未知 route 兜底：回设置抽屉（不渲染空白页）
         else -> LaunchedEffect(route) { onReturnToDrawer() }
     }

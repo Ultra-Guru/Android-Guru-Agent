@@ -6,6 +6,7 @@ import androidx.compose.material.icons.automirrored.outlined.ListAlt
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.Build
@@ -18,10 +19,13 @@ import androidx.compose.material.icons.outlined.Rule
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Subject
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Update
 import androidx.compose.material.icons.outlined.ViewCompact
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.TrackChanges
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.apex.agent.R
 
@@ -86,12 +90,24 @@ val SettingsNavTree: List<SettingsCategory> = listOf(
         )
     ),
     SettingsCategory(
+        route = "terminal",
+        titleRes = R.string.settings_nav_cat_terminal,
+        icon = Icons.Filled.Terminal,
+        children = listOf(
+            SettingsLeaf("terminal/appearance", R.string.settings_nav_terminal_appearance, Icons.Outlined.Palette),
+            SettingsLeaf("terminal/scheme", R.string.settings_nav_terminal_scheme, Icons.Outlined.Settings),
+            SettingsLeaf("terminal/keys", R.string.settings_nav_terminal_keys, Icons.Outlined.ViewCompact),
+            SettingsLeaf("terminal/policy", R.string.settings_nav_terminal_policy, Icons.Outlined.Rule),
+        )
+    ),
+    SettingsCategory(
         route = "interface",
         titleRes = R.string.settings_nav_cat_interface,
         icon = Icons.Outlined.Palette,
         children = listOf(
             SettingsLeaf("interface/appearance", R.string.settings_nav_interface_appearance, Icons.Outlined.Palette),
             SettingsLeaf("interface/chat", R.string.settings_nav_interface_chat, Icons.Outlined.ViewCompact),
+            SettingsLeaf("interface/notifications", R.string.settings_nav_interface_notifications, Icons.Outlined.Notifications),
         )
     ),
     SettingsCategory(
@@ -100,6 +116,7 @@ val SettingsNavTree: List<SettingsCategory> = listOf(
         icon = Icons.Filled.Backup,
         children = listOf(
             SettingsLeaf("data/backup", R.string.settings_nav_data_backup, Icons.Filled.Backup),
+            SettingsLeaf("data/update", R.string.settings_nav_data_update, Icons.Outlined.Update),
         )
     ),
 )

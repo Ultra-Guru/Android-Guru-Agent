@@ -66,11 +66,8 @@ internal fun AgentSection(agent: AgentSettings, onUpdate: (AgentSettings) -> Uni
         }
         // #236：Keep Alive 真接线（关=立即停服务）。
         SwitchRow(stringResource(R.string.settings_keep_alive_service), agent.keepAlive) { on -> com.apex.agent.service.CoreServiceGate.apply(ctx, on); onUpdate(agent.copy(keepAlive = on)) }
-        // v1.4.4 #4：任务完成通知（EventApplier Complete 钩子；前台静音）。
-        SwitchRow(stringResource(R.string.settings_task_notify_title), agent.taskCompletionNotify,
-            description = stringResource(R.string.settings_task_notify_desc)) {
-            onUpdate(agent.copy(taskCompletionNotify = it))
-        }
+        // v1.4.4 #4 任务完成通知与循环运行通知已聚合至「界面外观 → 通知」叶子
+        // （interface/notifications，SettingsSystemPages）—— 此处不再重复入口。
         // #218：聊天记忆自动摄取（关闭 = 新对话不落盘 + 召回静默；已有记忆去记忆页管理）。
         SwitchRow(stringResource(R.string.settings_memory_capture_title), agent.chatMemoryCapture,
             description = stringResource(R.string.settings_memory_capture_desc)) {
