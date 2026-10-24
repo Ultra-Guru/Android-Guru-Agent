@@ -9,6 +9,7 @@ import com.apex.agent.core.tools.fusion.FusionBundleActivator
 import com.apex.agent.core.tools.fusion.FusionBundlePresets
 import com.apex.agent.core.tools.fusion.FusionBundleRegistry
 import com.apex.agent.core.tools.fusion.FusionMcpConnector
+import com.apex.agent.core.tools.fusion.FusionPluginInstaller
 import com.apex.agent.core.tools.fusion.FusionPromptInjector
 import com.apex.agent.core.tools.fusion.FusionSkillInstaller
 import com.apex.agent.core.tools.fusion.rea.ReaCommandRunner
@@ -126,13 +127,16 @@ object FusionModule {
         ReaPageFetcherImpl(httpClient)
 
     /**
-     * 激活器装配（三端口编排中枢）。
+     * 激活器装配（四端口编排中枢）。
      *
-     * DI 破环：ToolModule 的注册表提供方需要控制器 → 控制器需要本激活器；
-     * 若引擎端口直依赖 AgentEngine，则 AgentEngine（需要 ToolRegistry）
-     * 与注册表提供方互为前置成 Dagger 环 —— 故注入 `Lazy<AgentEngine>`：
-     * apply/restore 首次调用才解析，此时组件装配早已完成（UI/模型侧
-     * 入口均晚于启动），环在图层面被 Lazy 断开。
+     * DI 破环（两处 Lazy）：
+     * 1. 引擎端口：ToolModule 的注册表提供方需要控制器 → 控制器需要本激活器；
+     *    若引擎端口直依赖 AgentEngine，则 AgentEngine（需要 ToolRegistry）
+     *    与注册表提供方互为前置成 Dagger 环 —— 注入 `Lazy<AgentEngine>`，
+     *    apply/restore 首次调用才解析。
+     * 2. 插件端口：控制器 → 激活器 → UnifiedPluginRegistry → ToolRegistry →
+     *    控制器 同理成环 —— 注入 `Lazy<UnifiedPluginRegistry>`，激活期
+     *    （组件装配完成后）才解析。
      */
     @Provides
     @Singleton
@@ -140,16 +144,18 @@ object FusionModule {
         registry: FusionBundleRegistry,
         skillRegistry: SkillRegistry,
         mcpManager: McpManager,
-        engineLazy: dagger.Lazy<AgentEngine>
+        engineLazy: dagger.Lazy<AgentEngine>,
+        pluginRegistryLazy: dagger.Lazy<com.apex.agent.plugin.host.functional.UnifiedPluginRegistry>
     ): FusionBundleActivator = FusionBundleActivator(
         registry = registry,
         skillInstaller = SkillInstallerPort(skillRegistry),
         mcpConnector = McpConnectorPort(mcpManager),
-        promptInjector = EnginePromptPort(engineLazy)
+        promptInjector = EnginePromptPort(engineLazy),
+        pluginInstaller = PluginInstallerPort(pluginRegistryLazy)
     )
 }
 
-// ── 三端口的 app 层适配（core 接口 → 真实子系统）────────────────────
+// ── 四端口的 app 层适配（core 接口 → 真实子系统）────────────────────
 
 /** 技能安装端口 → SkillRegistry.install / get。 */
 private class SkillInstallerPort(
@@ -201,4 +207,28 @@ private class EnginePromptPort(
         original = null
         apex.patchConfig { it.copy(additionalSystemContext = base.orEmpty()) }
     }
+}
+
+/**
+ * 功能性插件安装端口 → UnifiedPluginRegistry.installFunctionalPlugin /
+ * catalog（已装判定经目录快照，与市场 UI 同一数据源）。经 `dagger.Lazy`
+ * 装配（破环见 provideFusionBundleActivator 注记）——首条激活调用才解析。
+ */
+private class PluginInstallerPort(
+    private val pluginsLazy: dagger.Lazy<com.apex.agent.plugin.host.functional.UnifiedPluginRegistry>
+) : FusionPluginInstaller {
+    override fun isInstalled(pluginId: String): Boolean =
+        pluginsLazy.get().catalog.value.any {
+            it.kind == com.apex.agent.plugin.api.PluginKind.FUNCTIONAL && it.id == pluginId
+        }
+
+    override suspend fun ensureInstalled(manifestJson: String): Result<Unit> =
+        when (val r = pluginsLazy.get().installFunctionalPlugin(manifestJson)) {
+            is com.apex.agent.plugin.host.functional.FunctionalPluginStore.InstallResult.Installed,
+            is com.apex.agent.plugin.host.functional.FunctionalPluginStore.InstallResult.Upgraded,
+            is com.apex.agent.plugin.host.functional.FunctionalPluginStore.InstallResult.Unchanged ->
+                Result.success(Unit)
+            is com.apex.agent.plugin.host.functional.FunctionalPluginStore.InstallResult.Rejected ->
+                Result.failure(Exception(r.reason))
+        }
 }

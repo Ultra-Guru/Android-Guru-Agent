@@ -11,12 +11,14 @@ import com.apex.agent.core.tools.skill.SkillManifest
  *    其依赖校验、autoSetup、SkillHotReloader 热注册全部自然生效）；
  * 2. MCP 服务器 → [FusionMcpConnector.ensureConnected]（McpManager 原样连接，
  *    其代数防竞态、McpToolRegistrar 一等工具化、看门狗全部自然生效）；
- * 3. agent 人设 → [FusionPromptInjector.apply]（引擎 system prompt 的
+ * 3. 功能性插件 → [FusionPluginInstaller.ensureInstalled]（FunctionalPluginStore
+ *    原样安装，其 id 命名规范/命名空间保留/版本门/贡献点形状全部自然生效）；
+ * 4. agent 人设 → [FusionPromptInjector.apply]（引擎 system prompt 的
  *    Session Context 段注入 —— patchConfig 读改写，零新接缝）。
  *
- * 三个端口都是小接口（app 层 DI 适配真实子系统，单测手写 fake）——
- * 激活器本身对 SkillRegistry/McpManager/ApexAgentEngine **零编译依赖**，
- * 聚合语义可独立验证。
+ * 端口都是小接口（app 层 DI 适配真实子系统，单测手写 fake）——
+ * 激活器本身对 SkillRegistry/McpManager/UnifiedPluginRegistry/ApexAgentEngine
+ * **零编译依赖**，聚合语义可独立验证。
  *
  * 容错口径（聚合不脆弱）：单个组件失败进 [FusionActivation.skipped]，
  * 整体激活仍成功（连接器已连上、技能已装上、提示已注入的部分照常可用）；
@@ -26,7 +28,8 @@ class FusionBundleActivator(
     private val registry: FusionBundleRegistry,
     private val skillInstaller: FusionSkillInstaller,
     private val mcpConnector: FusionMcpConnector,
-    private val promptInjector: FusionPromptInjector
+    private val promptInjector: FusionPromptInjector,
+    private val pluginInstaller: FusionPluginInstaller = FusionPluginInstaller.UNAVAILABLE
 ) {
 
     /** 当前激活的包（null = 无）。@Volatile：UI 线程读、IO 协程写。 */
@@ -52,6 +55,7 @@ class FusionBundleActivator(
 
         val installedSkills = mutableListOf<String>()
         val connectedServers = mutableListOf<String>()
+        val installedPlugins = mutableListOf<String>()
         val skipped = mutableListOf<String>()
 
         // ── 1. 技能：先查再装（幂等），装完入列 ──────────────────────────
@@ -91,7 +95,22 @@ class FusionBundleActivator(
                 }
         }
 
-        // ── 3. agent 人设：注入 system prompt（patchConfig 读改写；兼容性：
+        // ── 3. 功能性插件：先查再装（幂等）——安装校验全部落在端口侧
+        // （FunctionalPluginStore 的 fail closed 链：id 规范/命名空间/版本门/
+        // 贡献点形状），失败如实进 skipped 不弃整个包。
+        for (ref in manifest.plugins) {
+            if (pluginInstaller.isInstalled(ref.pluginId)) {
+                installedPlugins.add(ref.pluginId)
+                continue
+            }
+            pluginInstaller.ensureInstalled(ref.manifestJson())
+                .onSuccess { installedPlugins.add(ref.pluginId) }
+                .onFailure {
+                    skipped.add("plugin:${ref.pluginId}(${it.message ?: "安装失败"})")
+                }
+        }
+
+        // ── 4. agent 人设：注入 system prompt（patchConfig 读改写；兼容性：
         // 注入异常折叠进 skipped 不弃激活 —— 技能/MCP 已就绪部分照常可用）──────
         val activationPrompt = buildActivationPrompt(manifest)
         val promptApplied = runCatching { promptInjector.apply(activationPrompt) }
@@ -109,6 +128,7 @@ class FusionBundleActivator(
                 activationPrompt = activationPrompt,
                 installedSkills = installedSkills,
                 connectedServers = connectedServers,
+                installedPlugins = installedPlugins,
                 toolHints = manifest.toolActivationHints,
                 skipped = skipped
             )
@@ -195,8 +215,10 @@ data class FusionActivation(
     val activationPrompt: String,
     val installedSkills: List<String>,
     val connectedServers: List<String>,
+    /** 激活落位的功能性插件 id（plugins[] 聚合段）。 */
+    val installedPlugins: List<String> = emptyList(),
     val toolHints: List<String>,
-    /** 部分失败的组件（skill:xxx / mcp:xxx + 原因）—— 聚合容错的可观测面。 */
+    /** 部分失败的组件（skill:xxx / mcp:xxx / plugin:xxx + 原因）—— 聚合容错的可观测面。 */
     val skipped: List<String>
 )
 
@@ -239,4 +261,29 @@ interface FusionPromptInjector {
 
     /** 恢复注入前的原始值。 */
     fun restore()
+}
+
+/**
+ * 功能性插件安装端口：适配 UnifiedPluginRegistry.installFunctionalPlugin。
+ *
+ * manifest JSON 的校验与落盘全部在端口实现侧（FunctionalPluginStore 的
+ * fail closed 链）——激活器只编排，与技能/MCP 端口同一职责口径。
+ * [UNAVAILABLE] 是缺省实现（单测 / 插件体系未接线的场景）：一切安装
+ * 如实失败进 skipped，不静默假装成功。
+ */
+interface FusionPluginInstaller {
+    /** 插件是否已安装（幂等激活的第一道判断）。 */
+    fun isInstalled(pluginId: String): Boolean
+
+    /** 安装插件 manifest JSON（失败语义走 Result）。 */
+    suspend fun ensureInstalled(manifestJson: String): Result<Unit>
+
+    companion object {
+        /** 未接线端口：恒未安装 + 安装失败（诚实降级，不静默吞掉）。 */
+        val UNAVAILABLE: FusionPluginInstaller = object : FusionPluginInstaller {
+            override fun isInstalled(pluginId: String): Boolean = false
+            override suspend fun ensureInstalled(manifestJson: String): Result<Unit> =
+                Result.failure(Exception("插件端口未接线（宿主未装配 UnifiedPluginRegistry）"))
+        }
+    }
 }

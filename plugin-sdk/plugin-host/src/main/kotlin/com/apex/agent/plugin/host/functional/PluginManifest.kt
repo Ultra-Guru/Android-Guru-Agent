@@ -80,9 +80,10 @@ data class PluginManifest(
 
 /**
  * 贡献点集合。v2 落地 tools（宏工具）与 slashCommands（斜杠指令）两个
- * 贡献点；prompts 是**架构预留**（模型已定义、宿主暂不消费——引擎注入
- * 通道复用技能 promptInjection 的接线方式，见 docs/plugin-system-v2.md
- * 的扩展路线图）。未知贡献点字段被宽松忽略，不向前不兼容。
+ * 贡献点；ui 是 v2.1 落地的**页面贡献**（HTML 入口 + WebView 渲染）；
+ * prompts 是**架构预留**（模型已定义、宿主暂不消费——引擎注入通道复用
+ * 技能 promptInjection 的接线方式，见 docs/plugin-system-v2.md 的扩展
+ * 路线图）。未知贡献点字段被宽松忽略，不向前不兼容。
  */
 @Serializable
 data class PluginContributions(
@@ -90,9 +91,33 @@ data class PluginContributions(
     val tools: List<ToolContribution> = emptyList(),
     /** 斜杠指令贡献：进入斜杠菜单插件类目（/plugin:<id> 路由）。 */
     val slashCommands: List<SlashCommandContribution> = emptyList(),
+    /** UI 页面贡献：HTML 入口经宿主 WebView 渲染（市场插件行「打开页面」）。 */
+    val ui: List<UiContribution> = emptyList(),
     /** 提示词注入贡献（架构预留，v2 未消费）。 */
     val prompts: List<PromptContribution> = emptyList()
 )
+
+/**
+ * UI 页面贡献：插件携带一个自包含 HTML 页面（设置面板 / 仪表盘 / 面板
+ * 类 UI），宿主以 WebView 打开（file:// 入口、无 JS 桥、页面文件不得
+ * 逃逸插件目录 —— 安装期路径校验 fail closed）。
+ *
+ * 轻轨 UI 的哲学与游乐场 HTML 游戏一致：**HTML 是统一创作载体**，市场
+ * JSON 通道即可分发、零签名门槛；需要原生能力的重 UI 走 APK 插件轨。
+ */
+@Serializable
+data class UiContribution(
+    /** HTML 入口（相对插件安装目录的路径，如 "ui/index.html"；安装期禁绝对路径与 `..`）。 */
+    val entry: String = "",
+    /** 页面标题（按钮/顶栏展示；缺省回退 entry 文件名）。 */
+    val title: String = "",
+    /** 展示图标（emoji 或单字符，纯展示）。 */
+    val icon: String = ""
+) {
+    /** 展示标题（title 空白回退 entry 文件名，UI 永不出现空标题）。 */
+    val displayTitle: String
+        get() = title.trim().takeUnless { it.isNullOrEmpty() }
+            ?: entry.substringAfterLast('/')
 
 /**
  * 工具宏贡献。**宏 = 对既有宿主工具的声明式组合**：

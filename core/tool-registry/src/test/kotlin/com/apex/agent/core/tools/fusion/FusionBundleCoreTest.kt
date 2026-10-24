@@ -1,6 +1,8 @@
 package com.apex.agent.core.tools.fusion
 
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -366,5 +368,137 @@ class FusionBundleCoreTest {
             act.skipped.any { it.startsWith("prompt:") && it.contains("patchConfig") }
         )
         assertEquals("MCP 照常连上", listOf("rea"), act.connectedServers)
+    }
+
+    // ═══ plugins[] 聚合段 + 自定义组合器（用户自由聚合）══════════════
+
+    /** 手写 fake：功能性插件安装端口。 */
+    private class FakePluginInstaller(
+        private val failIds: Set<String> = emptySet()
+    ) : FusionPluginInstaller {
+        val onDisk = mutableSetOf<String>()
+        val installed = mutableListOf<String>()
+        override fun isInstalled(pluginId: String): Boolean = pluginId in onDisk
+
+        override suspend fun ensureInstalled(manifestJson: String): Result<Unit> {
+            val id = kotlinx.serialization.json.Json.parseToJsonElement(manifestJson)
+                .let { (it as kotlinx.serialization.json.JsonObject)["id"]!!
+                    .let { e -> (e as kotlinx.serialization.json.JsonPrimitive).content } }
+            if (id in failIds) return Result.failure(Exception("插件校验拒绝"))
+            onDisk.add(id)
+            installed.add(id)
+            return Result.success(Unit)
+        }
+    }
+
+    /** 一个含 plugins[] 的最小自建包 manifest（组合器产物形态）。 */
+    private fun customBundleJson(pluginId: String = "functional.daily-report"): String {
+        val manifest = FusionBundleComposer.build(
+            bundleId = "custom-my-toolbox",
+            name = "我的工具箱",
+            persona = "效率助手",
+            skills = emptyList(),
+            mcpServers = emptyList(),
+            plugins = listOf(
+                pluginId to kotlinx.serialization.json.buildJsonObject {
+                    put("id", pluginId)
+                    put("name", "日报")
+                }
+            )
+        )
+        return FusionBundleComposer.toJson(manifest)
+    }
+
+    @Test
+    fun `plugins 段四端口激活与幂等`() = runTest {
+        val registry = FusionBundleRegistry(tmp.newFolder("p1"))
+        registry.install(customBundleJson())
+        val plugins = FakePluginInstaller()
+        val activator = FusionBundleActivator(
+            registry, FakeSkillInstaller(), FakeMcpConnector(), FakePromptInjector(), plugins
+        )
+
+        val act = activator.activate("custom-my-toolbox").getOrThrow()
+        assertEquals(listOf("functional.daily-report"), act.installedPlugins)
+        assertTrue(act.skipped.isEmpty())
+
+        // 幂等重激活：已装插件不再装
+        activator.activate("custom-my-toolbox")
+        assertEquals(1, plugins.installed.size)
+    }
+
+    @Test
+    fun `插件安装失败进 skipped 且整体仍激活（聚合容错）`() = runTest {
+        val registry = FusionBundleRegistry(tmp.newFolder("p2"))
+        registry.install(customBundleJson())
+        val plugins = FakePluginInstaller(failIds = setOf("functional.daily-report"))
+        val prompt = FakePromptInjector()
+        val activator = FusionBundleActivator(
+            registry, FakeSkillInstaller(), FakeMcpConnector(), prompt, plugins
+        )
+
+        val act = activator.activate("custom-my-toolbox").getOrThrow()
+        assertTrue(
+            "插件失败须进 skipped 且可观测",
+            act.skipped.any { it.startsWith("plugin:") }
+        )
+        assertNotNull("插件失败不阻断人设注入", prompt.applied)
+    }
+
+    @Test
+    fun `未接线插件端口诚实降级不静默`() = runTest {
+        val registry = FusionBundleRegistry(tmp.newFolder("p3"))
+        registry.install(customBundleJson())
+        val activator = FusionBundleActivator(
+            registry, FakeSkillInstaller(), FakeMcpConnector(), FakePromptInjector(),
+            FusionPluginInstaller.UNAVAILABLE
+        )
+
+        val act = activator.activate("custom-my-toolbox").getOrThrow()
+        assertTrue(
+            "UNAVAILABLE 端口的插件须如实进 skipped（不静默吞掉）",
+            act.skipped.any { it.startsWith("plugin:") && it.contains("未接线") }
+        )
+    }
+
+    @Test
+    fun `pluginId 与内联 plugin json id 错位被拒绝`() {
+        val manifest = FusionBundleComposer.build(
+            bundleId = "custom-bad",
+            name = "错位包",
+            persona = "",
+            skills = emptyList(),
+            mcpServers = emptyList(),
+            plugins = listOf(
+                "functional.a" to kotlinx.serialization.json.buildJsonObject {
+                    put("id", "functional.b")
+                }
+            )
+        )
+        assertNull("pluginId ≠ 内联 id 的包 parse 拒绝", FusionBundleManifest.parse(FusionBundleComposer.toJson(manifest)))
+    }
+
+    @Test
+    fun `组合器 slugify 与版本递增`() {
+        assertEquals("custom-my-toolbox", FusionBundleComposer.slugify("My Toolbox"))
+        assertEquals("custom-api", FusionBundleComposer.slugify("  API  "))
+        // 中文/非 ASCII 全丢弃 → 时间戳回退（custom- 前缀 + 合法字符）
+        val fallback = FusionBundleComposer.slugify("我的工具箱", nowMillis = 1234567890L)
+        assertTrue(fallback.startsWith("custom-"))
+        assertTrue(
+            "回退 id 须匹配 ID_PATTERN",
+            fallback.matches(Regex("^[a-z0-9][a-z0-9_-]{0,63}$"))
+        )
+        assertEquals("2", FusionBundleComposer.nextVersion("1"))
+        assertEquals("11", FusionBundleComposer.nextVersion("10"))
+        assertEquals("1", FusionBundleComposer.nextVersion("v3.2"))
+    }
+
+    @Test
+    fun `自建包可卸载可升级（registry 语义不因 plugins 段改变）`() {
+        val registry = FusionBundleRegistry(tmp.newFolder("p4"))
+        registry.install(customBundleJson())
+        assertTrue("自建包 bundled=false 可卸载", registry.uninstall("custom-my-toolbox"))
+        assertNull(registry.get("custom-my-toolbox"))
     }
 }

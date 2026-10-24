@@ -476,6 +476,38 @@ class MarketViewModel @Inject constructor(
     // ═══ Plugin System v2：功能性插件启停 / 卸载 / 导入（统一门面路由） ═══
 
     /**
+     * 功能性插件的 UI 页面贡献（市场插件行「打开页面」按钮数据源）：
+     * 经统一门面读 manifest（BROKEN/未装返回空），只读投影。
+     */
+    fun functionalUiEntries(
+        pluginId: String
+    ): List<com.apex.agent.plugin.host.functional.UiContribution> =
+        unifiedPluginRegistry.functionalUiEntries(pluginId)
+
+    /**
+     * 功能性插件 UI 入口的绝对路径（WebView file:// 装载用）：插件目录
+     * 内相对 entry 的 canonical 拼接；逃逸插件目录（手改磁盘文件后的
+     * 运行期复核）返回 null——调用方如实反馈不可打开。
+     */
+    fun functionalUiEntryFile(pluginId: String, entry: String): java.io.File? =
+        unifiedPluginRegistry.functionalUiEntryFile(pluginId, entry)
+
+    /** APK 插件的 UI 入口声明（ui_entries meta-data；未声明返回空）。 */
+    fun apkPluginUiEntries(
+        packageName: String
+    ): List<com.apex.agent.plugin.host.PluginUiEntry> =
+        pluginManager.apkPluginUiEntries(packageName)
+
+    /**
+     * 打开 APK 插件 UI 入口（startActivity 到插件自有 Activity）。
+     * false = 签名门拒绝或跳转失败——调用方如实反馈。
+     */
+    fun openApkPluginUi(
+        packageName: String,
+        entry: com.apex.agent.plugin.host.PluginUiEntry
+    ): Boolean = pluginManager.openApkPluginUi(packageName, entry)
+
+    /**
      * 功能性插件启停：标记文件 + 工具宏注册/回收 + 目录刷新（一体化，
      * 见 UnifiedPluginRegistry.setEnabledFunctional）。磁盘标记写入与
      * 注册表操作在 IO 调度器上执行（对齐 toggleSkill 的线程纪律）。

@@ -142,6 +142,7 @@ class FusionBundleRegistry(
             category = m.category,
             skillCount = m.skills.size,
             mcpServerCount = m.mcpServers.size,
+            pluginCount = m.plugins.size,
             toolHintCount = m.toolActivationHints.size,
             engineCount = m.runtime.engines.size
         )

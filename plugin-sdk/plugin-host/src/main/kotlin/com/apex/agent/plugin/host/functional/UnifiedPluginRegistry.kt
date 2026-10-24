@@ -95,6 +95,31 @@ class UnifiedPluginRegistry(
     // ── 目录 ─────────────────────────────────────────────────────────
 
     /**
+     * 功能性插件 manifest **原文**（FusionBundle 聚合内联用）：磁盘 plugin.json
+     * 的零漂移直读，未安装返回 null。见 [FunctionalPluginStore.rawManifestOf]。
+     */
+    fun rawFunctionalManifestJson(id: String): String? = store.rawManifestOf(id)
+
+    /**
+     * 功能性插件的 UI 页面贡献（市场插件行「打开页面」数据源）：
+     * BROKEN / 未装返回空列表。
+     */
+    fun functionalUiEntries(id: String): List<UiContribution> =
+        store.manifestOf(id)?.contributions?.ui.orEmpty()
+
+    /**
+     * 功能性插件 UI 入口的绝对文件（WebView file:// 装载用）：
+     * `plugins/functional/<id>/<entry>` 的 canonical 拼接；文件不存在或
+     * canonical path 逃逸插件目录（运行期复核，防手改磁盘）返回 null。
+     */
+    fun functionalUiEntryFile(id: String, entry: String): java.io.File? = runCatching {
+        val dir = store.pluginDirOf(id).canonicalFile
+        val target = java.io.File(dir, entry.trim()).canonicalFile
+        if (!target.path.startsWith(dir.path + java.io.File.separator)) null
+        else target.takeIf { it.isFile }
+    }.getOrNull()
+
+    /**
      * 重建统一目录（功能性插件目录扫描 + APK 已加载快照合并）。幂等。
      * 扫描是磁盘 IO——调用方应在 IO 调度器上执行（见类 KDoc 线程模型）。
      */

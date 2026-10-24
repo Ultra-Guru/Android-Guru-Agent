@@ -101,6 +101,19 @@ class FunctionalPluginStore(
             }
     }
 
+    /**
+     * 单插件 manifest **原文**读取（FusionBundle 聚合内联 / 分享导出用）：
+     * 直接返回磁盘文件内容——不经解析-重编码往返，零字段漂移；未安装返回 null。
+     */
+    fun rawManifestOf(id: String): String? {
+        val manifestFile = manifestFileOf(id)
+        if (!manifestFile.isFile) return null
+        return runCatching { manifestFile.readText() }.getOrNull()
+    }
+
+    /** 插件安装目录（只读定位用 —— UI 入口的 canonical 复核在此目录内）。 */
+    fun pluginDirOf(id: String): File = dirOf(id.trim())
+
     // ── 安装 / 升级 ───────────────────────────────────────────────────
 
     /**
@@ -289,6 +302,18 @@ class FunctionalPluginStore(
         if (commandIds.distinct().size != commandIds.size) return "duplicate slash command ids inside plugin"
         if (commandIds.any { id -> !COMMAND_ID_PATTERN.matches(id) }) {
             return "slash command id 违反命名规范（小写字母数字 + 中划线）"
+        }
+        // UI 页面贡献：entry 非空 + 插件内唯一 + 路径安全（禁绝对路径与
+        // `..` 逃逸 —— WebView file:// 入口不得越出插件目录）。
+        val uiEntries = contributions.ui.map { it.entry.trim() }
+        if (uiEntries.any { it.isEmpty() }) return "ui contribution has empty entry"
+        if (uiEntries.distinct().size != uiEntries.size) return "duplicate ui entries inside plugin"
+        if (uiEntries.any { entry ->
+                entry.startsWith("/") || entry.startsWith("\\") ||
+                    entry.split('/', '\\').any { it == ".." }
+            }
+        ) {
+            return "ui entry 违反路径规范（必须是插件目录内的相对路径，禁 `..` 与绝对路径）"
         }
         return null
     }

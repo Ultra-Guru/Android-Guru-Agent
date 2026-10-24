@@ -91,6 +91,10 @@ internal fun InstalledPluginsTab(state: MarketUiState, viewModel: MarketViewMode
     var pendingApkUnload by remember { mutableStateOf<UnifiedPluginEntry?>(null) }
     var pendingFunctionalUninstall by remember { mutableStateOf<UnifiedPluginEntry?>(null) }
     var showImportDialog by remember { mutableStateOf(false) }
+    // UI 页面贡献打开态（插件 id + 贡献条目；null = 关闭）
+    var uiOpen by remember {
+        mutableStateOf<Pair<String, com.apex.agent.plugin.host.functional.UiContribution>?>(null)
+    }
     val installed = state.installedPlugins
 
     if (installed.isEmpty()) {
@@ -198,6 +202,16 @@ internal fun InstalledPluginsTab(state: MarketUiState, viewModel: MarketViewMode
                             )
                         }
                         if (plugin.kind == PluginKind.FUNCTIONAL) {
+                            // UI 页面贡献：「打开页面」（ui 贡献点存在才出现；
+                            // 入口文件缺失时如实反馈，引导重装）。
+                            val uiEntries = remember(plugin.id, plugin.state) {
+                                viewModel.functionalUiEntries(plugin.id)
+                            }
+                            if (uiEntries.isNotEmpty()) {
+                                TextButton(onClick = { uiOpen = plugin.id to uiEntries.first() }) {
+                                    Text(stringResource(R.string.plugin_ui_open))
+                                }
+                            }
                             // 功能性插件：启停开关（BROKEN 态禁用——坏数据
                             // 不允许激活，先修好或卸载）。
                             Switch(
@@ -209,6 +223,20 @@ internal fun InstalledPluginsTab(state: MarketUiState, viewModel: MarketViewMode
                                 Text(stringResource(R.string.market_action_uninstall))
                             }
                         } else {
+                            // APK 插件：UI 入口（ui_entries meta-data 声明 +
+                            // 签名门）——「打开页面」跳转插件自有 Activity。
+                            val apkUiEntries = remember(plugin.id) {
+                                viewModel.apkPluginUiEntries(plugin.id)
+                            }
+                            if (apkUiEntries.isNotEmpty()) {
+                                val rejectedText = stringResource(R.string.plugin_ui_signature_rejected)
+                                TextButton(onClick = {
+                                    val ok = viewModel.openApkPluginUi(plugin.id, apkUiEntries.first())
+                                    if (!ok) viewModel.message(rejectedText)
+                                }) {
+                                    Text(stringResource(R.string.plugin_ui_open))
+                                }
+                            }
                             // APK 插件：既有语义（卸载 = 解绑，APK 留存可重载）。
                             TextButton(onClick = { pendingApkUnload = plugin }) {
                                 Text(stringResource(R.string.market_action_uninstall))
@@ -251,6 +279,31 @@ internal fun InstalledPluginsTab(state: MarketUiState, viewModel: MarketViewMode
                 }
             }
         )
+    }
+
+    // 功能性插件 UI 页面（ui 贡献点的 WebView 渲染面）。
+    uiOpen?.let { (pluginId, contribution) ->
+        val entryFile = remember(pluginId, contribution.entry) {
+            viewModel.functionalUiEntryFile(pluginId, contribution.entry)
+        }
+        if (entryFile == null) {
+            AlertDialog(
+                onDismissRequest = { uiOpen = null },
+                title = { Text(stringResource(R.string.plugin_ui_open)) },
+                text = { Text(stringResource(R.string.plugin_ui_missing)) },
+                confirmButton = {
+                    TextButton(onClick = { uiOpen = null }) {
+                        Text(stringResource(R.string.fusion_composer_close))
+                    }
+                }
+            )
+        } else {
+            PluginUiPageDialog(
+                title = contribution.displayTitle,
+                entryFile = entryFile,
+                onDismiss = { uiOpen = null }
+            )
+        }
     }
 
     // 功能性插件卸载确认（真删除：目录 + 工具注册一并回收）。

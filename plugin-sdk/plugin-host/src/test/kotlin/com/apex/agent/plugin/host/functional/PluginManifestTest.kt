@@ -131,4 +131,52 @@ class PluginManifestTest {
 
         assertEquals("a.b", manifest?.displayName)
     }
+
+    // ═══ ui 页面贡献（v2.1）══════════════════════════════════════
+
+    @Test
+    fun `ui 贡献点解析与展示回退`() {
+        val manifest = PluginManifest.parseOrNull(
+            """{"id":"a.b","contributions":{"ui":[
+                 {"entry":"ui/index.html","title":"仪表盘","icon":"📊"},
+                 {"entry":"pages/help.html"}
+               ]}}"""
+        )
+        val ui = manifest?.contributions?.ui.orEmpty()
+        assertEquals(2, ui.size)
+        assertEquals("仪表盘", ui[0].displayTitle)
+        assertEquals("title 缺省回退 entry 文件名", "help.html", ui[1].displayTitle)
+        assertEquals("ui/index.html", ui[0].entry)
+    }
+
+    @Test
+    fun `ui entry 路径穿越与绝对路径安装期拒绝`() {
+        val dir = java.nio.file.Files.createTempDirectory("plugin-ui-test").toFile()
+        val store = FunctionalPluginStore(dir)
+        val base = """{"id":"x.y","contributions":{"ui":[{"entry":"%s"}]}}"""
+        listOf(
+            "../escape.html",
+            "/abs/path.html",
+            "a/../../escape.html",
+            "",
+            "   "
+        ).forEach { entry ->
+            val raw = base.format(entry)
+            val result = store.install(raw)
+            assertTrue(
+                "entry '$entry' 必须被安装期拒绝",
+                result is FunctionalPluginStore.InstallResult.Rejected &&
+                    result.reason.contains("ui")
+            )
+        }
+        // 合法相对路径通过安装链
+        val ok = store.install(
+            """{"id":"x.y","contributions":{"ui":[{"entry":"ui/index.html"}]}}"""
+        )
+        assertTrue(
+            "合法相对 entry 应安装成功",
+            ok is FunctionalPluginStore.InstallResult.Installed
+        )
+        store.uninstall("x.y")
+    }
 }

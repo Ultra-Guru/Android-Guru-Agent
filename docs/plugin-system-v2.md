@@ -183,6 +183,14 @@ minHostVersion / description / author / tags / scope），功能性插件多了
   插件启停 Switch（BROKEN 禁用）+ 真卸载；APK 插件保持解绑语义；头部
   「导入插件 JSON」（空态同样露出——冷启动路径不藏在非空态里）；冲突 /
   BROKEN 原因如实进卡片 detail 行；
+- **插件 UI 页面（v2.1 双轨）**：带 UI 的插件在插件行出现「打开页面」——
+  功能性插件走 `contributions.ui[]`（HTML 入口 + 宿主 `PluginUiPageDialog`
+  WebView 渲染：file:// 白名单、无 JS 桥、入口 canonical 复核不逃逸插件
+  目录、安装期 entry 路径校验 fail closed）；APK 插件走 service meta-data
+  `ui_entries`（`[{title,action}]`，`PluginManager.openApkPluginUi` **签名
+  门前置**后 startActivity 跳插件自有 Activity，插件内自由渲染
+  Compose/WebView）。轻 UI = 数据（HTML，市场 JSON 通道可分发），重 UI =
+  代码（同签名 APK）——与双形态信任边界哲学一致；
 - **斜杠菜单 · 插件类目**：功能性指令（READY 态）+ APK 发现条目并列；
   `unified.changes` 流（300ms 去抖）驱动菜单重建——启停插件后菜单即时
   对账，无需重启或手动刷新；

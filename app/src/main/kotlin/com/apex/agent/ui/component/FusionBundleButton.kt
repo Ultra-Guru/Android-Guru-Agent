@@ -11,6 +11,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,7 +29,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -61,11 +65,13 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import com.apex.agent.core.tools.fusion.FusionBundleDigest
+import com.apex.agent.core.tools.fusion.FusionBundleManifest
 import com.apex.agent.fusion.FusionBundleController
 import com.apex.agent.ui.icons.CrownGold
 import com.apex.agent.ui.icons.FusionCrown
 import com.apex.agent.ui.icons.FusionCrownCanvas
 import com.apex.agent.ui.screen.agent.PendingPipelineCommand
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
@@ -103,9 +109,70 @@ fun FusionBundleButton(
     scope: String = "agent"
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    // 自定义聚合组合器（新建入口 + 自建包编辑入口共用一个挂载位）
+    var composerEditing by remember { mutableStateOf<FusionBundleManifest?>(null) }
+    var showComposer by remember { mutableStateOf(false) }
     val openCd = stringResource(
         if (isActive) R.string.fusion_cd_bundle_active else R.string.fusion_cd_bundle
     )
+
+    // ── Claude 插件包导入（SAF 选 zip → 安全解压 → 导入器 → 聚合注册表）──
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val feedback = LocalFeedbackController.current
+    val importScope = rememberCoroutineScope()
+    val importDonePattern = stringResource(R.string.fusion_import_claude_done)
+    val importFailedPattern = stringResource(R.string.fusion_import_claude_failed)
+    val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        importScope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                val cacheDir = java.io.File(context.cacheDir, "claude-import")
+                    .apply { deleteRecursively(); mkdirs() }
+                val zipFile = java.io.File(cacheDir, "pack.zip")
+                context.contentResolver.openInputStream(uri)!!.use { input ->
+                    zipFile.outputStream().use { output -> input.copyTo(output) }
+                }
+                val extractDir = java.io.File(cacheDir, "unzipped")
+                com.apex.agent.core.tools.skill.SafeZipExtractor.extract(zipFile, extractDir)
+                com.apex.agent.core.tools.claudeimport.ClaudePluginImporter.importFromDir(extractDir)
+            }
+            result.fold(
+                onSuccess = { imported ->
+                    val installed = controller.registryForTools.install(imported.manifestJson)
+                    installed.fold(
+                        onSuccess = {
+                            feedback.show(
+                                String.format(
+                                    importDonePattern, it.name,
+                                    it.skills.size,
+                                    it.plugins.firstOrNull()
+                                        ?.let { p -> countSlashCommands(p) } ?: 0,
+                                    if (it.agent.persona.isBlank()) 0 else 1
+                                ),
+                                FeedbackSeverity.INFO
+                            )
+                        },
+                        onFailure = {
+                            feedback.show(
+                                String.format(importFailedPattern, it.message ?: ""),
+                                FeedbackSeverity.WARNING
+                            )
+                        }
+                    )
+                },
+                onFailure = {
+                    feedback.show(
+                        String.format(importFailedPattern, it.message ?: ""),
+                        FeedbackSeverity.WARNING
+                    )
+                }
+            )
+            // 导入缓存清理（保留注册表落盘的 bundle json，临时物即用即弃）
+            java.io.File(context.cacheDir, "claude-import").deleteRecursively()
+        }
+    }
 
     // 锚点纵坐标（窗口系；翻转判定用）
     var anchorTopInWindow by remember { mutableStateOf(Float.MAX_VALUE) }
@@ -135,9 +202,26 @@ fun FusionBundleButton(
                 scope = scope,
                 anchorTopInWindow = anchorTopInWindow,
                 onBundleChip = onBundleChip,
+                onOpenComposer = { editing ->
+                    composerEditing = editing
+                    showComposer = true
+                    showMenu = false
+                },
+                onImportClaude = {
+                    showMenu = false
+                    importLauncher.launch(arrayOf("application/zip", "application/octet-stream"))
+                },
                 onDismiss = { showMenu = false }
             )
         }
+    }
+
+    if (showComposer) {
+        FusionBundleComposerDialog(
+            controller = controller,
+            editing = composerEditing,
+            onDismiss = { showComposer = false }
+        )
     }
 }
 
@@ -162,6 +246,8 @@ private fun FusionCrownMenuPopup(
     scope: String,
     anchorTopInWindow: Float,
     onBundleChip: (PendingPipelineCommand) -> Unit,
+    onOpenComposer: (editing: FusionBundleManifest?) -> Unit,
+    onImportClaude: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val bundlesRaw by controller.bundles.collectAsStateWithLifecycle()
@@ -296,7 +382,62 @@ private fun FusionCrownMenuPopup(
                                                         FeedbackSeverity.INFO
                                                     )
                                                 }
+                                        },
+                                        onEdit = {
+                                            // 自建包专属：打开组合器编辑成员（内置包不透出）
+                                            onOpenComposer(controller.registryForTools.get(digest.id))
                                         }
+                                    )
+                                }
+                            }
+                            // 自定义聚合入口（组合器新建路径）
+                            Surface(
+                                onClick = { onOpenComposer(null) },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.06f)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = null,
+                                        tint = CrownGold,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.fusion_composer_entry),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        color = CrownGold
+                                    )
+                                }
+                            }
+                            // Claude 插件包导入入口（zip → 聚合包）
+                            Surface(
+                                onClick = onImportClaude,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color.Transparent
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Download,
+                                        contentDescription = stringResource(R.string.fusion_import_claude_cd),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.fusion_import_claude_entry),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
@@ -388,18 +529,20 @@ private fun FusionSystemHeaderItem(
 }
 
 /**
- * 第二级体系包行：REA / Superpowers / …
+ * 第二级体系包行：REA / Superpowers / 自建聚合包 …
  *
- * 名称 + 版本 + 内置徽章 + 使用中标记；描述与「技能·MCP·工具·引擎」
- * 计数一行式；非激活态整行可点（激活 + chip + 收起菜单），激活态追加
- * 「停用」按钮（换装其他包时先卸甲）。
+ * 名称 + 版本 + 内置/自建徽章 + 使用中标记；描述与「技能·MCP·插件·工具·
+ * 引擎」计数一行式；非激活态整行可点（激活 + chip + 收起菜单），激活态追加
+ * 「停用」按钮（换装其他包时先卸甲）；自建包（非 bundled）追加「编辑」
+ * 图标钮 → 组合器编辑成员。
  */
 @Composable
 private fun FusionBundleMenuRow(
     digest: FusionBundleDigest,
     isActive: Boolean,
     onSelect: () -> Unit,
-    onDeactivate: () -> Unit
+    onDeactivate: () -> Unit,
+    onEdit: () -> Unit
 ) {
     Surface(
         onClick = onSelect,
@@ -427,6 +570,12 @@ private fun FusionBundleMenuRow(
                         text = stringResource(R.string.fusion_badge_bundled),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary
+                    )
+                } else if (digest.id.startsWith("custom-")) {
+                    Text(
+                        text = stringResource(R.string.fusion_composer_custom_badge),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = CrownGold
                     )
                 }
                 Text(
@@ -461,7 +610,8 @@ private fun FusionBundleMenuRow(
                 Text(
                     text = stringResource(
                         R.string.fusion_row_components,
-                        digest.skillCount, digest.mcpServerCount, digest.toolHintCount, digest.engineCount
+                        digest.skillCount, digest.mcpServerCount, digest.pluginCount,
+                        digest.toolHintCount, digest.engineCount
                     ),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -491,6 +641,16 @@ private fun FusionBundleMenuRow(
                         text = digest.trustLevel,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (!digest.bundled) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = stringResource(R.string.fusion_composer_edit_cd),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clickable(onClick = onEdit)
                     )
                 }
             }
@@ -553,6 +713,14 @@ fun FusionBundleActiveBanner(
 interface FusionBundleEntryPoint {
     fun fusionBundleController(): FusionBundleController
 }
+
+/** 统计聚合内联插件（commands 载体）贡献的斜杠指令数（导入反馈文案用）。 */
+private fun countSlashCommands(
+    ref: com.apex.agent.core.tools.fusion.FusionPluginRef
+): Int = runCatching {
+    (ref.manifest["contributions"] as? kotlinx.serialization.json.JsonObject)
+        ?.get("slashCommands") as? kotlinx.serialization.json.JsonArray
+}.getOrNull()?.size ?: 0
 
 /** Compose 中获取 FusionBundle 控制器单例（随 Application 上下文记忆化）。 */
 @Composable

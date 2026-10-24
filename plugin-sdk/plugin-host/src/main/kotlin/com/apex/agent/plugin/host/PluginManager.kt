@@ -147,6 +147,63 @@ class PluginManager @Inject constructor(
         }
     }
 
+    // ── APK 插件 UI 入口（ui_entries meta-data，签名门同源）──────────
+
+    /**
+     * APK 插件声明的 UI 入口（service meta-data [PluginContract.UI_ENTRIES_META_DATA]）。
+     * 解析失败 / 未声明返回空列表——UI 入口是可选贡献，永不影响插件工具链。
+     */
+    fun apkPluginUiEntries(packageName: String): List<PluginUiEntry> = runCatching {
+        val pm = context.packageManager
+        val intent = Intent(PluginContract.ACTION_PLUGIN).setPackage(packageName)
+        val resolveInfos = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.queryIntentServices(
+                intent,
+                PackageManager.ResolveInfoFlags.of(
+                    (PackageManager.MATCH_ALL or PackageManager.GET_META_DATA).toLong()
+                )
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            pm.queryIntentServices(intent, PackageManager.GET_META_DATA)
+        }
+        val si = resolveInfos.firstOrNull()?.serviceInfo ?: return emptyList()
+        val raw = si.metaData?.getString(PluginContract.UI_ENTRIES_META_DATA) ?: return emptyList()
+        parseUiEntries(raw)
+    }.getOrDefault(emptyList())
+
+    /**
+     * 打开插件 UI 入口：startActivity 到插件自有 Activity（action 由插件
+     * 声明，插件内自由渲染 Compose/WebView）。**签名门前置**——UI 入口是
+     * 原生代码面，与工具注册同一信任边界；不可信签名返回 false 由调用方
+     * 如实反馈（绝不静默吞掉跳转失败）。
+     */
+    fun openApkPluginUi(packageName: String, entry: PluginUiEntry): Boolean {
+        if (!isSignatureTrusted(packageName)) {
+            Log.w(TAG, "open plugin UI refused — signature mismatch: $packageName")
+            return false
+        }
+        return runCatching {
+            val intent = Intent(entry.action)
+                .setPackage(packageName)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            true
+        }.onFailure { Log.w(TAG, "open plugin UI failed for $packageName: ${it.message}") }
+            .getOrDefault(false)
+    }
+
+    /** ui_entries meta-data JSON 解析：`[{"title":..,"action":..}]`，坏条目跳过。 */
+    private fun parseUiEntries(raw: String): List<PluginUiEntry> = runCatching {
+        (json.parseToJsonElement(raw) as? JsonArray)?.mapNotNull { element ->
+            val obj = element as? JsonObject ?: return@mapNotNull null
+            val title = obj["title"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val action = obj["action"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            if (title.isBlank() || action.isBlank()) return@mapNotNull null
+            PluginUiEntry(title = title, action = action)
+        } ?: emptyList()
+    }.getOrDefault(emptyList())
+
     /**
      * 加载插件
      */
@@ -488,4 +545,10 @@ data class PluginInfo(
     val packageName: String,
     val serviceName: String,
     val label: String
+)
+
+/** APK 插件 UI 入口（ui_entries meta-data 条目）：title 展示 / action 跳转。 */
+data class PluginUiEntry(
+    val title: String,
+    val action: String
 )

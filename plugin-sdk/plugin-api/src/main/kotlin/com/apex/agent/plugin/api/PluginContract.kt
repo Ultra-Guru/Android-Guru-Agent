@@ -27,6 +27,17 @@ object PluginContract {
     /** 插件发现 action（宿主 PackageManager queryIntentServices 与插件 service intent-filter 双侧约定）。 */
     const val ACTION_PLUGIN: String = "com.apex.agent.plugin.PLUGIN"
 
+    /**
+     * APK 插件 UI 入口声明（service meta-data 键，宿主 PackageManager 读取）：
+     * 值为 JSON 数组 `[{"title":"控制台","action":"com.vendor.plugin.OPEN_UI"}]`
+     * —— title 为市场插件行「打开页面」文案，action 为插件自有 Activity 的
+     * intent action（宿主 startActivity 跳转，插件内自由渲染 Compose/WebView）。
+     *
+     * 信任门：入口只在与宿主同签名（[PluginManager] 签名门同源校验）时可见
+     * ——UI 入口是插件的原生代码面，与工具注册同一信任边界。
+     */
+    const val UI_ENTRIES_META_DATA: String = "com.apex.agent.plugin.UI_ENTRIES"
+
     // ── Plugin System v2：功能性插件（FUNCTIONAL）契约常量 ──────────────
     // APK 插件的载体是 APK 自身（service intent-filter + metadata JSON）；
     // 功能性插件的载体是文件系统上的一个 manifest —— 数值锚定在这里，
