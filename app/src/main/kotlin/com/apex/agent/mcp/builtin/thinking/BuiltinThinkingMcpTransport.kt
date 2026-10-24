@@ -156,7 +156,7 @@ class BuiltinThinkingMcpTransport : McpTransportHandle {
                 append(chain.summary())
                 append("\n思考链完成，共 ${recorded.totalThoughts} 步。")
             }
-        }.toString()
+        }
     }
 
     // ── 参数提取 ───────────────────────────────────────────────────
