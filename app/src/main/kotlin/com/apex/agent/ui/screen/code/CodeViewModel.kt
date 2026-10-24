@@ -346,6 +346,11 @@ class CodeViewModel @Inject constructor(
     private val _pendingCommands = MutableStateFlow<List<PendingPipelineCommand>>(emptyList())
     val pendingCommands: StateFlow<List<PendingPipelineCommand>> = _pendingCommands.asStateFlow()
 
+    /** 排队任务的 chip 恢复通道（CodeTaskQueueController 扩展访问）。 */
+    internal fun restorePendingCommands(commands: List<PendingPipelineCommand>) {
+        _pendingCommands.value = commands.distinctBy { it.type + ":" + it.id }
+    }
+
     /** 追加一枚技能 chip（斜杠菜单/实时联想选中项；重复选择不重复挂载）。 */
     fun addPendingCommand(command: PendingPipelineCommand) {
         val key = command.type + ":" + command.id
@@ -511,7 +516,10 @@ class CodeViewModel @Inject constructor(
     fun sendMessage(text: String) {
         val trimmed = text.trim()
         val pendingCmds = _pendingCommands.value
-        if ((trimmed.isEmpty() && pendingCmds.isEmpty()) || _uiState.value.isRunning) return
+        if (trimmed.isEmpty() && pendingCmds.isEmpty()) return
+
+        // ═══ 任务排队：运行中发出的第二条任务入队（逻辑住 CodeTaskQueueController）═══
+        if (_uiState.value.isRunning && enqueueWhileRunning(trimmed, pendingCmds)) return
 
         // ═══ v5 多 chip：≥2 枚时逐个路由合并为一轮引擎执行 ═══
         if (pendingCmds.size >= 2) {
@@ -662,6 +670,8 @@ class CodeViewModel @Inject constructor(
                 }
                 if (_uiState.value.longTaskSheetVisible) refreshLongTasks()
                 scheduleSessionPersist()
+                // 任务排队收尾（干净完成 → 自动接力；失败/中止 → 等确认，见 QueuedTaskPolicy）
+                finalizeQueuedTaskAfterRun(taskStatus)
             }
         }
     }
@@ -959,7 +969,6 @@ class CodeViewModel @Inject constructor(
         }
         bindWorkspace(created)
     }
-
 
     fun switchWorkspace(workspaceId: String) {
         val activated = workspaceManager.activate(workspaceId) ?: return

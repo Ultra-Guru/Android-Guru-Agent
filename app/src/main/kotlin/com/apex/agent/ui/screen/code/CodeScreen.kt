@@ -329,6 +329,18 @@ fun CodeScreen(
                     )
                 }
 
+                // ═══ 任务排队卡（输入栏上方）：运行中发出的第二条任务 ═══
+                // 等待发送（完成后自动接力）/ 等待排队（上一任务失败，需点
+                // 「开始排队」确认）——数据与动作全在 CodeViewModel。
+                state.queuedTask?.let { queued ->
+                    QueuedTaskCard(
+                        task = queued,
+                        onStart = viewModel::startQueuedTask,
+                        onCancel = viewModel::cancelQueuedTask,
+                        backdrop = streamBackdrop
+                    )
+                }
+
                 // ═══ #197 模式 + 思考档位选择器行（Build/Plan 双档 + 七档思考）═══
                 //（GOAL 切入的弹层/深潜线保障在 VM setMode → onEnterGoalMode 单点，
                 // 此处保持纯方法引用——选择器与 init 恢复共用同一路径）
@@ -875,6 +887,26 @@ private fun CodeInputBar(
                     )
                 }
                 if (isRunning) {
+                    // ═══ 任务排队入口：运行中输入了第二条任务时并列「发送（入队）═══
+                    // + 停止」——发送走 sendMessage 的排队分支（文本 + chip 快照
+                    // 入队，输入框上方排队卡接管展示），不再需要等停止后重输。
+                    if (draft.isNotBlank() || pendingCommands.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                if (!llmConfigured) {
+                                    onSendBlocked()
+                                    return@IconButton
+                                }
+                                onSend(draft)
+                            }
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Send,
+                                contentDescription = stringResource(R.string.code_send),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                     IconButton(onClick = onAbort) {
                         Icon(
                             Icons.Default.Stop,
