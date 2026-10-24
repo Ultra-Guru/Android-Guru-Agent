@@ -15,6 +15,7 @@ import com.apex.agent.ui.screen.code.session.withFreshIds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 
 // ─────────────────────────────────────────────────────────────────────────────
