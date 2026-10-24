@@ -54,13 +54,21 @@ object PrivilegeDetector {
         if (suPaths.any { File(it).exists() }) return true
 
         return try {
-            val process = Runtime.getRuntime().exec(arrayOf("su", "--version"))
+            // 探「真实可用 root」而非「su 二进制存在」：桌面 Linux（CI runner /
+            // 开发机）人手一份 util-linux su，`su --version` 必退出 0 —— 旧口径
+            // 在 JVM 环境误报 root，executeShell 全量路由 su -c → 认证失败
+            // （PR #440 CI 红灯根因；真机未授权 Magisk 同理虚报）。改探
+            // `su -c id` 并验证 uid=0：已授权设备返回 "uid=0(root)"；桌面
+            // 无 tty 密码认证即刻失败；waitFor 3s 兜底防挂（id 输出 << 管道
+            // 缓冲，无排空死锁面）。
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
             val completed = process.waitFor(3, TimeUnit.SECONDS)
             if (!completed) {
                 process.destroyForcibly()
                 return false
             }
-            process.exitValue() == 0
+            process.exitValue() == 0 &&
+                process.inputStream.bufferedReader().use { it.readText() }.contains("uid=0")
         } catch (e: Exception) {
             false
         }
