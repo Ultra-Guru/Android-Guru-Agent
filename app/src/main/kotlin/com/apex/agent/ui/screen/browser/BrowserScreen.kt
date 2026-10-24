@@ -225,7 +225,7 @@ private fun SessionCard(state: BrowserViewModel.BrowserUiState) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             CardHeader(icon = Icons.Outlined.Public, title = stringResource(R.string.browser_screen_session_title))
 
-            // 状态行：色点 + 状态名（颜色与霓虹球状态语义一致：驾驶=主色/人工=琥珀/恢复=错误红）
+            // 状态行：色点 + 状态名（颜色与悬浮球状态语义一致：驾驶=主色/人工=琥珀/恢复=错误红）
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(
                     modifier = Modifier
@@ -497,7 +497,7 @@ private fun EmptyHint(text: String) {
     )
 }
 
-/** 状态 → 主题色（与霓虹球状态语义对齐：驾驶=主色 / 人工=琥珀 / 恢复=错误红 / 空闲=中性）。 */
+/** 状态 → 主题色（与悬浮球状态语义对齐：驾驶=主色 / 人工=琥珀 / 恢复=错误红 / 空闲=中性）。 */
 @Composable
 private fun sessionStateColor(state: BrowserEngine.BrowserSessionState): Color = when (state) {
     BrowserEngine.BrowserSessionState.HIDDEN -> MaterialTheme.colorScheme.onSurfaceVariant

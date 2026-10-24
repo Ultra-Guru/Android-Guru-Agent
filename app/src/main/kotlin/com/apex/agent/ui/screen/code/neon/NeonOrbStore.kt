@@ -10,9 +10,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * ═══ 霓虹球状态仓（Neon Orb Store）═══
+ * ═══ 功能聚合状态仓（Feature Hub Store）═══
  *
- * Coding 输入栏霓虹球 16 项功能聚合的单一可信状态源，模式对齐
+ * Coding 输入栏功能聚合 16 项能力的单一可信状态源，模式对齐
  * `ChatToolkitStore`（#197 小圆环）：StateFlow 暴露 + SharedPreferences
  * 持久化，组装逻辑全部委托纯函数 [buildNeonSessionContext]
  * （NeonOrbFeatures.kt —— 零 Android 依赖，单测在那边覆盖）。
@@ -60,7 +60,7 @@ class NeonOrbStore @Inject constructor(
 
     // ── 组装（发送时刻实时取值）════════════════════════
 
-    /** 霓虹球注入段（全关 = 空串，零负担）。 */
+    /** 功能聚合注入段（全关 = 空串，零负担）。 */
     fun buildSessionContext(): String = buildNeonSessionContext(_state.value)
 
     /**

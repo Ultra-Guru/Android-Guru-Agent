@@ -57,7 +57,7 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
  *
  * Spec §5B / §17：
  *  - Drawer 本体不整面玻璃化 —— 玻璃只落在每个 Navigation Item 上；
- *  - 每项保留品牌层级：霓虹指示条 + 圆形图标井 + 文字；
+ *  - 每项保留品牌层级：强调色指示条 + 圆形图标井 + 文字；
  *  - Normal 非常轻 / Selected 提亮 / Pressed 短暂高光；
  *  - 结构：氛围背景 = layerBackdrop 采样源 —— 导航项悬浮其上做真实
  *    backdrop 采样（GPU blur + lens 折射）。
@@ -97,7 +97,7 @@ fun ApexDrawerContent(
                         .fillMaxWidth()
                         .verticalScroll(rememberScrollState())
                 ) {
-                    // ═══ 品牌头部（霓虹光晕，随内容滚动） ═══
+                    // ═══ 品牌头部（柔和光晕，随内容滚动） ═══
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()

@@ -63,7 +63,7 @@ import com.apex.agent.R
 
 /**
  * 聊天气泡内联 Markdown 渲染器。
- * 终端原生审美：行内代码用等宽 + 霓虹底，代码块用独立深色容器 + 语言标签 + 复制。
+ * 终端原生审美：行内代码用等宽 + 强调色弱底，代码块用独立深色容器 + 语言标签 + 复制。
  *
  * 多模态输出：模型生成的图片（![alt](url)）用 Coil 渲染，点击进
  * [ImageLightbox]；视频（<video src> / 视频扩展名 URL）渲染为视频卡
@@ -187,7 +187,7 @@ fun MarkdownText(
 
 /**
  * 行内片段 → AnnotatedString。
- * 行内代码用等宽+霓虹底 span；链接带下划线 + "URL" annotation（点击命中）。
+ * 行内代码用等宽+强调色弱底 span；链接带下划线 + "URL" annotation（点击命中）。
  */
 @Composable
 private fun buildInline(segments: List<InlineSegment>): AnnotatedString {
@@ -385,7 +385,7 @@ private fun PendingMediaCard() {
 }
 
 /**
- * 独立代码块：深色容器 + 霓虹左条 + 语言标签 + 复制按钮（复制后短暂对勾）。
+ * 独立代码块：深色容器 + 强调色左条 + 语言标签 + 复制按钮（复制后短暂对勾）。
  */
 @Composable
 private fun CodeBlock(lang: String, code: String) {
@@ -449,7 +449,7 @@ private fun CodeBlock(lang: String, code: String) {
                 }
             }
 
-            // 代码主体（等宽 + 横向滚动 + 左侧霓虹装饰条）
+            // 代码主体（等宽 + 横向滚动 + 左侧强调色装饰条）
             Box(
                 modifier = Modifier
                     .fillMaxWidth()

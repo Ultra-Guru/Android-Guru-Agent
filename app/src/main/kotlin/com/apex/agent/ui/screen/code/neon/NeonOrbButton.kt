@@ -1,11 +1,6 @@
 package com.apex.agent.ui.screen.code.neon
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.EaseInOutSine
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -61,8 +56,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -71,14 +66,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 
 /**
- * ═══ 霓虹球 mini 图标 + 功能聚合面板（Coding 输入栏）═══
+ * ═══ 功能聚合 mini 图标 + 功能聚合面板（Coding 输入栏）═══
  *
- * 输入栏工具行的霓虹球入口：呼吸辉光小球（未激活 = 静谧灰蓝微光；
- * 激活 = 赛博青→洋红霓虹），点击展开 16 项功能聚合面板（三组：
- * 会话增强 / 输出口径 / 编码偏好）。全部开关经 [NeonOrbStore] 持久化，
- * 每轮发送真实注入 system prompt（见 NeonOrbFeatures.kt 组装器）。
+ * 输入栏工具行的功能聚合入口（去霓虹重做：旧呼吸辉光霓虹球已退役）：
+ * 未激活 = 静谧中性描边球；激活 = 主题强调色实心球（随设置中心改色
+ * 即时生效）。点击展开 16 项功能聚合面板（三组：会话增强 / 输出口径 /
+ * 编码偏好）。全部开关经 [NeonOrbStore] 持久化，每轮发送真实注入
+ * system prompt（见 NeonOrbFeatures.kt 组装器）。
  *
- * 视觉语言与浏览器悬浮球 NeonRingView 同源（0xFF00F0FF 赛博青基色）；
  * 触区遵循 UI-012 48dp 红线（与斜杠/GitHub/小圆环/发送全行一致）。
  */
 @Composable
@@ -93,7 +88,7 @@ fun NeonOrbButton(
     var toneExpanded by remember { mutableStateOf(false) }
 
     Box(modifier = modifier) {
-        // ── 霓虹球 mini 图标 ─────────────────────────────
+        // ── 功能聚合 mini 图标（去霓虹重做）─────
         NeonOrbIcon(
             active = state.anyActive,
             activeCount = state.activeCount,
@@ -336,18 +331,15 @@ fun NeonOrbButton(
     }
 }
 
-// ═══ 霓虹球本体（Canvas 辉光小球）═══
-
-/** 赛博青（与浏览器悬浮球 NeonRingView 基色同源）。 */
-private val NeonCyan = Color(0xFF00F0FF)
-
-/** 激活态洋红（青→洋红渐变的远端色，霓虹感来源）。 */
-private val NeonMagenta = Color(0xFFB44DFF)
+// ═══ 功能聚合入口本体（Canvas 小球 · 去霓虹重做）═══
 
 /**
- * 呼吸辉光霓虹球：外圈双层辉光（径向渐变，随 [pulse] 呼吸）+ 球体
- * （青核渐变）+ 高光点。未激活时辉光收敛为 22% 暗物质观感；激活时
- * 全亮并叠洋红流光。右上角徽标显示激活功能数。
+ * 静谧功能球：去霓虹重做 —— 弃用旧版「双层径向辉光 + 呼吸动画 +
+ * 青→洋红霓虹渐变」，改为单层扁平圆的克制语言：
+ *  - 未激活：中性色半透底 + 细描边环（安静的存在感）；
+ *  - 激活：主题强调色实心球（跟随设置中心改色）；
+ *  - 保留一颗微小高光点维持玻璃质感暗示。
+ * 右上角徽标显示激活功能数。
  */
 @Composable
 private fun NeonOrbIcon(
@@ -356,16 +348,8 @@ private fun NeonOrbIcon(
     contentDescription: String,
     onClick: () -> Unit
 ) {
-    val transition = rememberInfiniteTransition(label = "neonOrbPulse")
-    val pulse by transition.animateFloat(
-        initialValue = 0.55f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = EaseInOutSine),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "neonOrbGlow"
-    )
+    val accent = MaterialTheme.colorScheme.primary
+    val neutral = MaterialTheme.colorScheme.onSurfaceVariant
 
     Box(
         contentAlignment = Alignment.Center,
@@ -374,63 +358,25 @@ private fun NeonOrbIcon(
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             .clickable(onClick = onClick)
     ) {
-        // 辉光小球本体（视觉 ~20dp，居中于 48dp 触区）
+        // 小球本体（视觉 ~20dp，居中于 48dp 触区）
         Canvas(modifier = Modifier.size(20.dp)) {
             val radius = size.minDimension / 2f
             val center = Offset(radius, radius)
-            val glow = if (active) pulse else pulse * 0.35f + 0.1f
-
-            // 外层辉光（洋红，激活态才显形 —— 青→洋红双色霓虹）
             if (active) {
+                drawCircle(color = accent, radius = radius, center = center)
+            } else {
+                drawCircle(color = neutral.copy(alpha = 0.30f), radius = radius, center = center)
                 drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            NeonMagenta.copy(alpha = 0.30f * glow),
-                            Color.Transparent
-                        ),
-                        center = center,
-                        radius = radius * 1.85f
-                    ),
-                    radius = radius * 1.85f
+                    color = neutral.copy(alpha = 0.85f),
+                    radius = radius * 0.93f,
+                    center = center,
+                    style = Stroke(width = radius * 0.13f)
                 )
             }
-            // 主辉光（赛博青）
+            // 高光点（玻璃质感的最小暗示）
             drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        NeonCyan.copy(alpha = (if (active) 0.40f else 0.16f) * glow),
-                        Color.Transparent
-                    ),
-                    center = center,
-                    radius = radius * 1.5f
-                ),
-                radius = radius * 1.5f
-            )
-            // 球体（偏心高光渐变 —— 玻璃球质感）
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = if (active) {
-                        listOf(
-                            Color(0xFFD6FEFF),
-                            NeonCyan,
-                            Color(0xFF0A5E6E)
-                        )
-                    } else {
-                        listOf(
-                            Color(0xFF9AA7B4),
-                            Color(0xFF5B6875),
-                            Color(0xFF39434E)
-                        )
-                    },
-                    center = Offset(radius * 0.62f, radius * 0.58f),
-                    radius = radius * 1.15f
-                ),
-                radius = radius
-            )
-            // 高光点
-            drawCircle(
-                color = Color.White.copy(alpha = if (active) 0.9f else 0.45f),
-                radius = radius * 0.16f,
+                color = Color.White.copy(alpha = if (active) 0.5f else 0.28f),
+                radius = radius * 0.15f,
                 center = Offset(radius * 0.62f, radius * 0.55f)
             )
         }
@@ -443,12 +389,12 @@ private fun NeonOrbIcon(
                     .padding(start = 28.dp, top = 4.dp)
                     .size(16.dp)
                     .clip(CircleShape)
-                    .background(NeonCyan)
+                    .background(accent)
             ) {
                 Text(
                     text = if (activeCount > 9) "9+" else activeCount.toString(),
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF06272B),
+                    color = MaterialTheme.colorScheme.onPrimary,
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -487,7 +433,7 @@ private fun NeonToggleRow(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = if (checked) NeonCyan else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(18.dp)
         )
         Spacer(Modifier.width(10.dp))
@@ -520,7 +466,7 @@ private fun NeonExclusiveRow(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = if (expanded) NeonCyan else MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = if (expanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(18.dp)
         )
         Spacer(Modifier.width(10.dp))
@@ -534,7 +480,7 @@ private fun NeonExclusiveRow(
             Icon(
                 imageVector = Icons.Default.Check,
                 contentDescription = null,
-                tint = NeonCyan,
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -558,14 +504,14 @@ private fun NeonOptionRow(
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
-            color = if (selected) NeonCyan else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f)
         )
         if (selected) {
             Icon(
                 imageVector = Icons.Default.Check,
                 contentDescription = null,
-                tint = NeonCyan,
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(16.dp)
             )
         }

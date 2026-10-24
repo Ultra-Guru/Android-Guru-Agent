@@ -17,7 +17,7 @@ import androidx.compose.ui.graphics.Color
  * 色值全部取自仓内既有色（终端琥珀 FFB454 = 品牌 amber 身份、语法
  * 高亮绿 4ADE80、Mint 浅色族 15803D / B45309），非外来色；明暗成对
  * 定义，四值在各自背景下均 >= 4.5:1（AA）。danger 不新建 —— 复用
- * colorScheme.error（已成对，暗 FF6B9D / 亮 BA1A4A）。
+ * colorScheme.error（已成对，暗 E57390 / 亮 BA1A4A）。
  *
  * 注入见 Theme.kt（ApexTheme 内 CompositionLocalProvider），dynamicColor
  * 路径同样适用 —— 扩展色独立于 accent 派生，不随 Material You 漂移。
@@ -28,7 +28,7 @@ data class ExtendedColors(
     val warning: Color
 ) {
     companion object {
-        /** 深色基底（近黑带蓝）：亮字色，视觉延续既有霓虹观感。 */
+        /** 深色基底（近黑带蓝）：亮字色，视觉延续既有品牌观感（去霓虹重调后保持同族）。 */
         val Dark = ExtendedColors(
             success = Color(0xFF4ADE80), // 语法高亮既有绿，深底 10.6:1
             warning = Color(0xFFFFB454) // 终端琥珀 = 品牌 amber 身份

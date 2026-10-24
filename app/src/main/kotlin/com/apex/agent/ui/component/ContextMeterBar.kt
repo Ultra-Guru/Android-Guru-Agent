@@ -28,9 +28,9 @@ import com.apex.agent.ui.theme.LocalExtendedColors
 /**
  * 顶部上下文仪表盘长条。
  *
- * 视觉：横向长条，已用上下文以霓虹色填充（带发光光晕），未用部分为暗灰半透明。
+ * 视觉：横向长条，已用上下文以主题强调色填充（带柔和光晕），未用部分为暗灰半透明。
  * 占比 = 真实上下文使用比例（used / max）。颜色随阈值变化：
- *   - <60%  正常（霓虹青 primary）
+ *   - <60%  正常（主题强调色 primary）
  *   - 60-80% 警告（橙）
  *   - >80%  危险（粉/红）
  *
@@ -53,7 +53,7 @@ fun ContextMeterBar(
     val ratio = (usedTokens.toFloat() / safeMax.toFloat()).coerceIn(0f, 1f)
     val percent = (ratio * 100).toInt()
 
-    // 颜色阈值：正常青 / 警告琥珀 / 危险品红
+    // 颜色阈值：正常主题色 / 警告琥珀 / 危险玫瑰
     // UI-016：token 化 —— 暗态视觉与原霓虹粉/橙几乎一致（FF6B9D≈FF4D8D、
     // FFB454≈FFB020），亮态对比度从 1.72-2.94:1 修复到 AA；亮态品红与
     // 品牌 error 一致，不再另造硬编码
@@ -61,7 +61,7 @@ fun ContextMeterBar(
     val accent = when {
         percent >= 80 -> MaterialTheme.colorScheme.error // 危险品红
         percent >= 60 -> extended.warning // 警告琥珀
-        else -> MaterialTheme.colorScheme.primary // 霓虹青
+        else -> MaterialTheme.colorScheme.primary // 主题强调色
     }
 
     var menuExpanded by remember { mutableStateOf(false) }
@@ -70,7 +70,7 @@ fun ContextMeterBar(
         animationSpec = tween(durationMillis = 400),
         label = "meter_ratio"
     )
-    // 危险态（>80%）脉冲辉光，增强告警未来感。
+    // 危险态（>80%）脉冲光晕，强化告警提示。
     // P3-f（6-c）：infinite transition 移入危险态分支组合——正常/警告态下不再常驻
     // 无限动画（原先每个空闲帧都在跑），仅 >=80% 时才启动脉冲。
     val glowAlpha = if (percent >= 80) {
@@ -111,14 +111,14 @@ fun ContextMeterBar(
                             shape = RoundedCornerShape(2.dp)
                         )
                 )
-                // 已用段（霓虹辉光 + 渐变实体 + 末端亮点，按真实比例）
+                // 已用段（柔和光晕 + 渐变实体 + 末端亮点，按真实比例）
                 if (animatedRatio > 0f) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(animatedRatio)
                             .fillMaxHeight()
                     ) {
-                        // 辉光层：同色放大 + 原生 blur（零依赖霓虹弥散）
+                        // 光晕层：同色放大 + 原生 blur（零依赖柔光弥散）
                         Box(
                             modifier = Modifier
                                 .matchParentSize()

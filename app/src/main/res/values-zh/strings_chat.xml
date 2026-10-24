@@ -395,9 +395,9 @@
     <string name="viro_mood_review_plan">待确认</string>
     <string name="viro_mood_error">出错了</string>
     <string name="viro_mood_success">任务完成</string>
-    <!-- ═══ NeonOrbButton（Coding 输入栏霓虹球 · 功能聚合面板）═══ -->
-    <string name="neon_cd_orb">霓虹球功能聚合</string>
-    <string name="neon_panel_title">霓虹球 · 功能聚合</string>
+    <!-- ═══ NeonOrbButton（Coding 输入栏功能聚合 · 面板）═══ -->
+    <string name="neon_cd_orb">功能聚合面板</string>
+    <string name="neon_panel_title">功能聚合</string>
     <string name="neon_active_count">已开 %1$d 项</string>
     <string name="neon_hint">以下开关逐轮真实注入系统提示，随请求下发给模型</string>
     <string name="neon_group_session">会话增强</string>

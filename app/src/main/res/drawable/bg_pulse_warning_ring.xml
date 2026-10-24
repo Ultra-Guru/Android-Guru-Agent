@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 人工接入时的琥珀金外扩散脉冲光环（默认隐藏，由代码做缩放+淡出循环） -->
+<!-- 人工接入时的柔和琥珀外扩散脉冲光环（默认隐藏，由代码做缩放+淡出循环；
+     去霓虹重调：旧高亮琥珀 FFB800 → 低饱和柔和琥珀 E0A83C） -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="oval">
     <stroke
         android:width="3dp"
-        android:color="#FFB800" />
-    <solid android:color="#1AFFB800" />
+        android:color="#E0A83C" />
+    <solid android:color="#1AE0A83C" />
 </shape>

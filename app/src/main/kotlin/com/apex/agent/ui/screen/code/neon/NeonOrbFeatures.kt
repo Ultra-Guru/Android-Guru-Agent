@@ -6,15 +6,15 @@ import java.util.Locale
 import java.util.TimeZone
 
 /**
- * ═══ 霓虹球功能聚合（Neon Orb Feature Hub）—— 纯逻辑层 ═══
+ * ═══ 功能聚合（Feature Hub）—— 纯逻辑层 ═══
  *
- * Coding 输入栏「霓虹球 mini 图标」背后的功能目录与会话注入组装器。
+ * Coding 输入栏「功能聚合 mini 图标」背后的功能目录与会话注入组装器
+ * （视觉已去霓虹化：旧呼吸辉光霓虹球退役，见 [NeonOrbButton]）。
  * 本文件**零 Android 依赖**（纯 Kotlin + JDK），可被 `testDebugUnitTest`
- * 直接覆盖；持久化壳（SharedPreferences）见 [NeonOrbStore]，视觉壳
- * （霓虹球图标 + 聚合面板）见 [NeonOrbButton]。
+ * 直接覆盖；持久化壳（SharedPreferences）见 [NeonOrbStore]。
  *
  * 16 项能力全部**真实生效**：每轮发送前由 CodeViewModel 调
- * [buildNeonSessionContext] 组装成「### 霓虹球 · 功能聚合」段落，经
+ * [buildNeonSessionContext] 组装成「### 功能聚合」段落，经
  * `CodeAgentEngine.updateSessionExtras` 拼进 additionalSystemContext ——
  * 与小圆环（#197）同一注入通道，逐条随请求下发给模型。
  *
@@ -25,7 +25,7 @@ import java.util.TimeZone
 
 // ═══ 单选项 ═══
 
-/** 结构化输出格式（霓虹球独立于小圆环的一档，含 TOML 档）。 */
+/** 结构化输出格式（功能聚合独立于小圆环的一档，含 TOML 档）。 */
 enum class NeonOutputFormat(val label: String) {
     NONE("关闭"),
     JSON("JSON"),
@@ -51,7 +51,7 @@ enum class NeonTone(val label: String) {
 }
 
 /**
- * 霓虹球聚合状态快照（不可变；由 [NeonOrbStore] 持有并持久化）。
+ * 功能聚合状态快照（不可变；由 [NeonOrbStore] 持有并持久化）。
  * 全 false / NONE / OFF = 零注入（不往 system prompt 塞任何东西）。
  */
 data class NeonOrbState(
@@ -91,7 +91,7 @@ data class NeonOrbState(
     /** 安全命令：破坏性 shell 操作需先给替代方案。 */
     val safeCommands: Boolean = false
 ) {
-    /** 任一功能激活（驱动霓虹球点亮态 + 徽标计数）。 */
+    /** 任一功能激活（驱动功能球点亮态 + 徽标计数）。 */
     val anyActive: Boolean
         get() = timeInjection || webSearch || outputFormat != NeonOutputFormat.NONE ||
             deepReasoning || goalEcho || antiHallucination ||
@@ -122,7 +122,7 @@ data class NeonFeatureDef(
     val exclusive: Boolean
 )
 
-/** 霓虹球面板分组。 */
+/** 功能聚合面板分组。 */
 enum class NeonFeatureGroup(val id: String) {
     SESSION("session"),
     STYLE("style"),
@@ -160,7 +160,7 @@ val MANDATORY_FEATURE_IDS: Set<String> = setOf(
 // ═══ 注入组装（纯函数，发送时刻取实时值）═══
 
 /**
- * 组装霓虹球注入段（空态返回空串 —— 零负担）。
+ * 组装功能聚合注入段（空态返回空串 —— 零负担）。
  *
  * @param state 当前聚合状态
  * @param now   取「现在」（参数化便于单测注入固定时钟）
@@ -169,7 +169,7 @@ val MANDATORY_FEATURE_IDS: Set<String> = setOf(
 fun buildNeonSessionContext(state: NeonOrbState, now: Date = Date()): String = buildString {
     if (!state.anyActive) return@buildString
 
-    appendLine("### 霓虹球 · 功能聚合（用户本轮开启的能力）")
+    appendLine("### 功能聚合（用户本轮开启的能力）")
 
     if (state.timeInjection) {
         val tz = TimeZone.getDefault()

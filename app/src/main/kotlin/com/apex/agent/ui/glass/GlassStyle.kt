@@ -173,7 +173,7 @@ internal fun glassPalette(style: GlassStyle, accent: Color): GlassPalette {
     val base = if (dark) {
         GlassPalette(
             dark = dark,
-            // 深色：玻璃 = 比基底略亮的材质，主色轻微浸染呼应霓虹主题
+            // 深色：玻璃 = 比基底略亮的材质，主色轻微浸染呼应强调色主题
             glassTint = scheme.surfaceContainerHigh.copy(alpha = style.tintAlpha)
                 .compositeOverNeutral(scheme.primary.copy(alpha = 0.06f)),
             frostBase = scheme.surfaceContainerHigh.copy(alpha = style.scrimAlpha),

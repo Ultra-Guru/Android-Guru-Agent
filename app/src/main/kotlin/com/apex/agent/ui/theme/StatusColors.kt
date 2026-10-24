@@ -17,7 +17,7 @@ import androidx.compose.ui.graphics.luminance
  *    明暗注入，dynamicColor 路径同样生效）。警告色两套均达标：深色底
  *    FFB454（终端品牌 amber，约 10.6:1），浅色底 B45309（琥珀深一档，
  *    约 5.0:1）—— 替代旧 E0A63C 的 2.2:1。
- *  - error：直接取 colorScheme.error（槽位本就明暗成对：暗 FF6B9D /
+ *  - error：直接取 colorScheme.error（槽位本就明暗成对：暗 E57390 /
  *    亮 BA1A4A，沿 ExtendedColors「danger 不新建」既定纪律）。
  *  - info：colorScheme 无蓝信息槽位 —— 沿 LogViewerScreen.levelColor /
  *    codeColorScheme 先例按 background.luminance() 局部判暗（勿用
@@ -34,7 +34,7 @@ fun statusSuccess(): Color = LocalExtendedColors.current.success
 @Composable
 fun statusWarning(): Color = LocalExtendedColors.current.warning
 
-/** 失败 / 错误 —— 复用 colorScheme.error（暗 FF6B9D / 亮 BA1A4A，已成对槽位）。 */
+/** 失败 / 错误 —— 复用 colorScheme.error（暗 E57390 / 亮 BA1A4A，已成对槽位）。 */
 @Composable
 fun statusError(): Color = MaterialTheme.colorScheme.error
 

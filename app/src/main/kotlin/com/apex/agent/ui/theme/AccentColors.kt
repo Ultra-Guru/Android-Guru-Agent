@@ -27,7 +27,7 @@ import androidx.compose.ui.graphics.Color
  *  - 浏览器 ChromePalette（apex-kit-browser 外部库）：库侧尚无注入口，
  *    见 #278 遗留项 —— 需要库暴露 host accent 钩子后接线。
  *
- * 双变体说明：同一方案在深浅两种基底上各有调色（深色 = 霓虹提亮、
+ * 双变体说明：同一方案在深浅两种基底上各有调色（深色 = 低饱和提亮、
  * 浅色 = 可读深色，见 ThemePalettes 设计原则 2）。恒深表面（终端）与
  * 随主题表面需要的变体不同，故 [AccentColors] 同时携带 [dark] / [light]
  * 两组，消费端按自己的表面语义取用，禁止各查一遍深浅再猜。

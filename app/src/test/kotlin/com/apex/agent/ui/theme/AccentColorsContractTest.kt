@@ -42,13 +42,14 @@ class AccentColorsContractTest {
         }
     }
 
-    /** 兜底契约：未注入 Local 时的默认 = MINT（旧终端 chrome 硬编码观感）。 */
+    /** 兜底契约：未注入 Local 时的默认 = MINT（去霓虹重调后的品牌薄荷绿）。 */
     @Test
-    fun `MINT 深色变体保持旧终端 chrome 字面值`() {
+    fun `MINT 深色变体保持低饱和薄荷绿字面值（去霓虹重调后的品牌锚点）`() {
         val mint = accentColors(AccentPalette.MINT)
-        // 旧 ConsoleTheme.accent 硬编码 neon mint —— 默认路径零视觉变化
-        assertEquals(Color(0xFF4EE9B0), mint.dark.primary)
-        // 旧 ConsoleTheme.accentSoft 同族的深绿容器底（强调弱底语义）
+        // 去霓虹重调：旧 neon mint 0xFF4EE9B0 → 低饱和 sage mint 0xFF41A988 ——
+        // 默认路径全局去霓虹，本锁防止回退到旧霓虹值
+        assertEquals(Color(0xFF41A988), mint.dark.primary)
+        // 深绿容器底不变（强调弱底语义，本就低饱和）
         assertEquals(Color(0xFF0C3A2C), mint.dark.primaryContainer)
     }
 
@@ -76,7 +77,7 @@ class AccentColorsContractTest {
     fun `深浅变体独立调色`() {
         val mint = accentColors(AccentPalette.MINT)
         assertNotEquals(mint.dark.primary, mint.light.primary)
-        // 深色态霓虹提亮（近黑底发光）、浅色态可读深色（白底达标）
+        // 深色态低饱和提亮（近黑底清晰可读）、浅色态可读深色（白底达标）
         assertTrue("深色态主色应更亮", mint.dark.primary.luminance() > mint.light.primary.luminance())
     }
 

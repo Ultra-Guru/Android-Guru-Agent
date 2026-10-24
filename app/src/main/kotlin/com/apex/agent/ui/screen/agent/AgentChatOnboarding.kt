@@ -68,7 +68,7 @@ internal fun SettingsRepository.llmConfiguredFlow(scope: CoroutineScope): StateF
  * 未配置 API 引导卡（消息列表为空 && !llmConfigured 时渲染在聊天区顶部）。
  *
  * 视觉与全局主题一致的 emerald/mint 色调（colorScheme.primary 族，
- * 深色 neon-mint / 浅色 emerald 双主题自动适配），描边卡片语言与
+ * 深色薄荷绿 / 浅色 emerald 双主题自动适配），描边卡片语言与
  * 气泡/思考卡/错误块同族（drawBehind + Stroke）。
  */
 @Composable

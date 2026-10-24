@@ -38,17 +38,17 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * 赛博极客·霓虹环流球（按需出现的浮窗枢纽，v1.4.1 透明重做）。
+ * 透明玻璃·状态环流球（按需出现的浮窗枢纽，v1.4.1 透明重做；去霓虹重调）。
  *
- * 设计语言：透明玻璃核（bg_ball_glass，无重不透明底座）+ 动态等离子霓虹光环
- * （[NeonRingView] 代码绘制）+ 物理弹力触压感。视觉重量最小化——球与实时页面
- * 悬浮窗同时在场时互不抢戏。
+ * 设计语言：透明玻璃核（bg_ball_glass，无重不透明底座）+ 动态状态光环
+ * （[NeonRingView] 代码绘制，已柔化为低强度慢速旋转）+ 物理弹力触压感。
+ * 视觉重量最小化——球与实时页面悬浮窗同时在场时互不抢戏。
  *
  * 【按需出现，不再常驻】球的生命周期完全由 [BrowserEngine] 状态驱动：
  * - Agent 首次 navigate / newTab(url)（网页搜索、自动化浏览）→ 状态离开 HIDDEN → 球出现；
  * - HIDDEN（会话结束，见 [BrowserEngine.releaseBrowser]）→ 球收起；
  * - App 启动不再无条件 show —— 服务里不拉起，靠状态回调自然驱动。
- * - 球颜色随引擎状态切换（RUNNING 电光青 / NEED_HUMAN 琥珀金 / ERROR 赛博红）。
+ * - 球颜色随引擎状态切换（RUNNING 静谧蓝 / NEED_HUMAN 柔和琥珀 / ERROR 暖红）。
  * - 订阅 [BrowserEngine] 状态：WAITING_HUMAN 时球切 NEED_HUMAN（脉冲+抖动+震动+badge）。
  *
  * 【v1.4.1 交互重做】点击球不再直接进入人工接管（旧路径 enterHandoffMode →
@@ -197,22 +197,26 @@ class CyberNeonBallManager @Inject constructor(
         val showPulse: Boolean
         when (next) {
             CyberState.RUNNING -> {
-                color = 0xFF00F0FF.toInt(); showBadge = false; showPulse = false
+                // 去霓虹重调：旧电光青 00F0FF → 静谧蓝（低饱和，专业状态色）
+                color = 0xFF4E96C7.toInt(); showBadge = false; showPulse = false
             }
             CyberState.NEED_HUMAN -> {
-                color = 0xFFFFB800.toInt(); showBadge = true; showPulse = true
+                // 柔和琥珀（警示语义保留，降饱和降亮度）
+                color = 0xFFE0A83C.toInt(); showBadge = true; showPulse = true
             }
             CyberState.ERROR -> {
-                color = 0xFFFF2A55.toInt(); showBadge = false; showPulse = false
+                // 暖红（旧霓虹红 FF2A55 重调）
+                color = 0xFFD9605E.toInt(); showBadge = false; showPulse = false
             }
             CyberState.SUCCESS -> {
-                color = 0xFF00FF87.toInt(); showBadge = false; showPulse = false
+                // 柔和绿（旧霓虹绿 00FF87 重调 —— 绿色霓虹重点整治项）
+                color = 0xFF4CAE7E.toInt(); showBadge = false; showPulse = false
             }
         }
         imgCoreIcon.setColorFilter(color)
         badgeAlert.visibility = if (showBadge) View.VISIBLE else View.GONE
 
-        // 霓虹环始终由代码绘制（NeonRingView），不依赖 Lottie 二进制资源，零额外包体
+        // 状态环始终由代码绘制（NeonRingView，已柔化），不依赖 Lottie 二进制资源，零额外包体
         neonRing.visibility = View.VISIBLE
         neonRing.setStateColor(color)
 

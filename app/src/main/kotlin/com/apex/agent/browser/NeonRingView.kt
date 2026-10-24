@@ -12,10 +12,12 @@ import android.view.View
 import kotlin.math.min
 
 /**
- * 霓虹等离子光环（代码绘制，替代 Lottie 二进制资源）。
+ * 状态光环（代码绘制，替代 Lottie 二进制资源；去霓虹柔化重调）。
  *
- * 多层旋转渐变弧 + 呼吸透明度，营造"环流"流光观感；颜色随 [NeonRingView.setStateColor]
- * 切换（RUNNING 电光蓝 / NEED_HUMAN 琥珀金 / ERROR 赛博红 / SUCCESS 流光绿）。
+ * 多层旋转渐变弧 + 呼吸透明度，营造克制的"环流"活动观感；强度已从
+ * 旧等离子霓虹（高alpha/快转速）柔化为低调慢速旋转。颜色随
+ * [NeonRingView.setStateColor] 切换（RUNNING 静谧蓝 / NEED_HUMAN 柔和琥珀 /
+ * ERROR 暖红 / SUCCESS 柔和绿）。
  * 不用 Lottie 是为了避免引入不可控的二进制 JSON 资源，同时零额外包体。
  */
 class NeonRingView @JvmOverloads constructor(
@@ -25,12 +27,13 @@ class NeonRingView @JvmOverloads constructor(
 ) : View(context, attrs, defStyleAttr) {
 
     private val rings = listOf(
-        RingSpec(width = 4f, radiusFactor = 0.92f, speed = 1.4f, offset = 0f, alpha = 0.9f),
-        RingSpec(width = 3f, radiusFactor = 0.80f, speed = -1.0f, offset = 120f, alpha = 0.7f),
-        RingSpec(width = 2f, radiusFactor = 0.68f, speed = 0.7f, offset = 240f, alpha = 0.5f),
+        // 去霓虹柔化：alpha 0.9/0.7/0.5 → 0.55/0.38/0.26，宽度同步收细
+        RingSpec(width = 3f, radiusFactor = 0.92f, speed = 0.7f, offset = 0f, alpha = 0.55f),
+        RingSpec(width = 2f, radiusFactor = 0.80f, speed = -0.5f, offset = 120f, alpha = 0.38f),
+        RingSpec(width = 1.5f, radiusFactor = 0.68f, speed = 0.35f, offset = 240f, alpha = 0.26f),
     )
 
-    private var baseColor = 0xFF00F0FF.toInt()
+    private var baseColor = 0xFF4E96C7.toInt()
     private var sweep = 90f
     private var breath = 0f
     private var angle = 0f
@@ -79,8 +82,9 @@ class NeonRingView @JvmOverloads constructor(
 
     private fun loop() {
         if (!running) return
-        angle = (angle + 3.2f) % 360f
-        breath = (Math.sin(System.currentTimeMillis() / 420.0) * 0.18f + 0.82f).toFloat()
+        // 去霓虹柔化：转速 3.2°/帧 → 1.6°/帧（慢速克制），呼吸幅度同步收窄
+        angle = (angle + 1.6f) % 360f
+        breath = (Math.sin(System.currentTimeMillis() / 560.0) * 0.10f + 0.90f).toFloat()
         invalidate()
         mainHandler.postDelayed(animRunnable, 16)
     }

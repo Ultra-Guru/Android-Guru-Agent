@@ -100,7 +100,7 @@ import kotlin.math.sin
  *
  * ## v2：夜间 / 白天 双实验室
  * 单页拆成两个独立实验室（顶部切换）：
- *  - **夜间模式**：强制深色主题 —— 近黑基底 + 霓虹光斑，验证玻璃在
+ *  - **夜间模式**：强制深色主题 —— 近黑基底 + 柔和光斑，验证玻璃在
  *    暗环境下的"发光材质"表现（tint 霜面提亮 + 主色浸染）；
  *  - **白天模式**：强制浅色主题 —— 白霜玻璃 v3：三段天空渐变压入冷灰
  *    深色衬底、暗线+亮线的浮雕细网、明暗成对柔光带、加深 tint 光斑 ——
@@ -193,7 +193,7 @@ private fun LabModeSwitcher(mode: GlassLabMode, onSelect: (GlassLabMode) -> Unit
             }
         }
         Text(
-            text = "两个实验室各自强制对应深浅主题（不影响系统设置）—— 夜间验证霓虹发光材质，白天验证白霜精修材质。",
+            text = "两个实验室各自强制对应深浅主题（不影响系统设置）—— 夜间验证暗底发光材质，白天验证白霜精修材质。",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -276,7 +276,7 @@ private fun GlassLabContent(mode: GlassLabMode) {
 private fun LabHeader(mode: GlassLabMode) {
     val subtitle = if (mode == GlassLabMode.NIGHT) {
         "夜间实验室：近黑基底上的发光玻璃 —— tint 霜面提亮 + 主色浸染，" +
-            "霓虹光斑验证实时采样。终端与页面背景本身不是玻璃，不做冒充。"
+            "彩色光斑验证实时采样。终端与页面背景本身不是玻璃，不做冒充。"
     } else {
         "白天实验室：白基底上的乳白霜面玻璃 —— 冷灰衬底 + 浮雕细网 + 明暗成对光带，" +
             "玻璃靠透射与明暗差立质感，不靠灰边硬描。"
@@ -345,7 +345,7 @@ private fun BackdropZone(state: LayerBackdrop, mode: GlassLabMode) {
     SectionHeader(
         title = "Backdrop 真实采样",
         hint = if (mode == GlassLabMode.NIGHT) {
-            "拖动玻璃片扫过网格、文字与霓虹光斑 —— 玻璃内部画面必须实时变化"
+            "拖动玻璃片扫过网格、文字与彩色光斑 —— 玻璃内部画面必须实时变化"
         } else {
             "拖动玻璃片扫过细网、文字与粉彩光斑 —— 白霜玻璃下的画面必须实时变化"
         }
@@ -636,7 +636,7 @@ private fun StaticBackdropCanvas(modifier: Modifier, mode: GlassLabMode) {
  * 本页被明确豁免循环动画禁令，仅供采样验证。
  * 性能：每帧仅 2-3 个 drawCircle（静态内容已剥离至 [StaticBackdropCanvas]）。
  *
- * 夜间：双霓虹光斑（primary / tertiary，0.18）；
+ * 夜间：双柔和光斑（primary / tertiary，0.18）；
  * 白天：三枚加深 tint 光斑（向 onSurface 混 30%，径向软边 0.16-0.22）+ 更慢速漂移。
  */
 @Composable
@@ -703,7 +703,7 @@ private fun GlowCanvas(modifier: Modifier, mode: GlassLabMode) {
 
     Canvas(modifier = modifier) {
         if (mode == GlassLabMode.NIGHT) {
-            // 双霓虹光斑 —— 主色 / 三级色，慢速环游，叠加在静态层之上
+            // 双彩色光斑 —— 主色 / 三级色，慢速环游，叠加在静态层之上
             val angleA = phaseA * 2f * PI.toFloat()
             val angleB = phaseB * 2f * PI.toFloat() + 2.1f
             drawCircle(

@@ -14,10 +14,12 @@ import androidx.compose.ui.graphics.Color
  *  1. **中性基底共享**：background / surface / outline 等中性色阶沿用
  *     Terminal-native AI OS 的近黑带蓝基底（深色）/ 冷灰白基底（浅色），
  *     仅 primary / secondary / tertiary 三组强调色随配色方案切换 ——
- *     换配色 = 换霓虹倾向，而非整屏重涂；
- *  2. **深浅双态独立调色**：同一方案在深色态用「霓虹提亮」色（近黑底上
- *     发光），浅色态用「可读深色」（白底上对比度达标）；
- *  3. **MINT 为默认**：与既有品牌色完全一致（老用户零感知）；
+ *     换配色 = 换强调色倾向，而非整屏重涂；
+ *  2. **深浅双态独立调色**：同一方案在深色态用「低饱和提亮」色（近黑
+ *     底上清晰可读、不发荧光），浅色态用「可读深色」（白底上对比度达标）
+ *     —— 全系色板刻意回避高亮高饱和的霓虹观感，走专业克制路线；
+ *  3. **MINT 为默认**：与既有品牌色同 hue（老用户零感知），但明度/
+ *     饱和度已从旧霓虹值重调为低饱和薄荷绿（去霓虹化重调）；
  *  4. 与 Dynamic Color 的关系：Dynamic Color（Android 12+ 壁纸取色）
  *     开启时覆盖本系统 —— 预设配色仅在关闭动态取色时生效。
  *
@@ -36,7 +38,7 @@ import androidx.compose.ui.graphics.Color
  */
 enum class AccentPalette(val key: String, val label: String) {
     MONO("mono", "墨·极简黑白"),
-    MINT("mint", "霓虹薄荷"),
+    MINT("mint", "薄荷绿"),
     AMBER("amber", "琥珀暖阳"),
     CORAL("coral", "珊瑚暖橘"),
     VIOLET("violet", "暗夜紫罗兰"),
@@ -48,8 +50,8 @@ enum class AccentPalette(val key: String, val label: String) {
     GOLD("gold", "鎏金"),
     CRIMSON("crimson", "绯红"),
     LAVENDER("lavender", "薰衣草"),
-    MAGENTA("magenta", "品红霓虹"),
-    LIME("lime", "电光青柠"),
+    MAGENTA("magenta", "品红"),
+    LIME("lime", "青柠"),
     SAKURA("sakura", "樱花"),
     MATCHA("matcha", "抹茶"),
     PEACH("peach", "蜜桃"),
@@ -86,7 +88,7 @@ private val DarkNeutralBase: ColorScheme = darkColorScheme(
     surfaceContainerHighest = Color(0xFF26313D),
     outline = Color(0xFF324150),
     outlineVariant = Color(0xFF223040),
-    error = Color(0xFFFF6B9D),
+    error = Color(0xFFE57390),
     onError = Color(0xFF3D0018),
     errorContainer = Color(0xFF52122E),
     onErrorContainer = Color(0xFFFFB3CE),
@@ -114,18 +116,18 @@ private val LightNeutralBase: ColorScheme = lightColorScheme(
     scrim = Color(0xFF0A0E14)
 )
 
-// ═══════════════════ MINT · 霓虹薄荷（默认，原品牌色）═══════════════════
+// ═══════════════════ MINT · 薄荷绿（默认，品牌色 · 去霓虹低饱和重调）═══════════════════
 
 private val MintDark = AccentTone(
-    primary = Color(0xFF4EE9B0),          // neon mint
-    onPrimary = Color(0xFF00251A),
+    primary = Color(0xFF41A988),          // sage mint（低饱和薄荷绿，近黑底 6.7:1）
+    onPrimary = Color(0xFF06231A),
     primaryContainer = Color(0xFF0C3A2C),
-    onPrimaryContainer = Color(0xFF9CF3D2),
+    onPrimaryContainer = Color(0xFF9BD8C4),
     secondary = Color(0xFFFFB454),        // amber accent
     onSecondary = Color(0xFF3A2400),
     secondaryContainer = Color(0xFF432D00),
     onSecondaryContainer = Color(0xFFFFD89E),
-    tertiary = Color(0xFFFF6B9D),         // magenta (danger / highlight)
+    tertiary = Color(0xFFE57390),         // soft rose (danger / highlight)
     onTertiary = Color(0xFF3D0018),
     tertiaryContainer = Color(0xFF52122E),
     onTertiaryContainer = Color(0xFFFFB3CE)
@@ -245,7 +247,7 @@ private val VioletLight = AccentTone(
 // ═══════════════════ OCEAN · 海洋青 ═══════════════════
 
 private val OceanDark = AccentTone(
-    primary = Color(0xFF5AD8E8),
+    primary = Color(0xFF4FBFCE),
     onPrimary = Color(0xFF00323B),
     primaryContainer = Color(0xFF004956),
     onPrimaryContainer = Color(0xFFB8EEF7),
@@ -339,10 +341,10 @@ private val ForestLight = AccentTone(
 )
 
 // ═══════════════════ CYAN · 冰碧青 ═══════════════════
-// 青色（非蓝）：霓虹提亮 #22D3EE 系；tertiary 取薄荷梯次（青→绿和谐渐变）。
+// 青色（非蓝）：低饱和湖青 #4BB8C9 系；tertiary 取薄荷梯次（青→绿和谐渐变）。
 
 private val CyanDark = AccentTone(
-    primary = Color(0xFF22D3EE),          // neon cyan
+    primary = Color(0xFF4BB8C9),          // calm cyan
     onPrimary = Color(0xFF00363D),
     primaryContainer = Color(0xFF004957),
     onPrimaryContainer = Color(0xFFB4EBF8),
@@ -350,10 +352,10 @@ private val CyanDark = AccentTone(
     onSecondary = Color(0xFF4A2F00),
     secondaryContainer = Color(0xFF5A4100),
     onSecondaryContainer = Color(0xFFFFE9C4),
-    tertiary = Color(0xFF4EE9B0),        // jade mint（冰碧呼应）
-    onTertiary = Color(0xFF00251A),
+    tertiary = Color(0xFF41A988),        // sage mint（冰碧呼应）
+    onTertiary = Color(0xFF06231A),
     tertiaryContainer = Color(0xFF0C3A2C),
-    onTertiaryContainer = Color(0xFF9CF3D2)
+    onTertiaryContainer = Color(0xFF9BD8C4)
 )
 
 private val CyanLight = AccentTone(
@@ -439,10 +441,10 @@ private val GoldLight = AccentTone(
 )
 
 // ═══════════════════ CRIMSON · 绯红 ═══════════════════
-// primary #EF4444 系：深色态霓虹绯红；secondary 暖金，tertiary 冰青（火/冰对比）。
+// primary #EF4444 系：深色态柔和绯红；secondary 暖金，tertiary 冰青（火/冰对比）。
 
 private val CrimsonDark = AccentTone(
-    primary = Color(0xFFFF7A70),          // neon crimson
+    primary = Color(0xFFD07873),          // soft crimson
     onPrimary = Color(0xFF490005),
     primaryContainer = Color(0xFF6B1610),
     onPrimaryContainer = Color(0xFFFFDAD4),
@@ -472,7 +474,7 @@ private val CrimsonLight = AccentTone(
 )
 
 // ═══════════════════ LAVENDER · 薰衣草 ═══════════════════
-// 淡紫罗兰（非蓝非深紫）：深色态 #B39DDB 系柔光淡紫，区别于 VIOLET 的冷紫霓虹；
+// 淡紫罗兰（非蓝非深紫）：深色态 #B39DDB 系柔光淡紫，区别于 VIOLET 的冷紫；
 // secondary 暖金、tertiary 薄荷 —— 花田清晨感。
 
 private val LavenderDark = AccentTone(
@@ -505,12 +507,12 @@ private val LavenderLight = AccentTone(
     onTertiaryContainer = Color(0xFF002716)
 )
 
-// ═══════════════════ MAGENTA · 品红霓虹 ═══════════════════
-// 霓虹品红 #FF5FD7：比 ROSE 更偏紫、更电光；secondary 湖青、tertiary 暖金
-// （品红 × 青 = 经典霓虹对撞）。
+// ═══════════════════ MAGENTA · 品红 ═══════════════════
+// 柔和品红 #C069AE：比 ROSE 更偏紫；secondary 湖青、tertiary 暖金
+// （品红 × 青 = 经典互补对撞，低饱和处理后不再电光）。
 
 private val MagentaDark = AccentTone(
-    primary = Color(0xFFFF5FD7),          // neon magenta
+    primary = Color(0xFFC069AE),          // soft magenta
     onPrimary = Color(0xFF4A0744),
     primaryContainer = Color(0xFF6A1F5E),
     onPrimaryContainer = Color(0xFFFFD9F0),
@@ -539,12 +541,12 @@ private val MagentaLight = AccentTone(
     onTertiaryContainer = Color(0xFF261A00)
 )
 
-// ═══════════════════ LIME · 电光青柠 ═══════════════════
-// 青柠荧光 #A3E635：终端荧光信号感；secondary 暮紫、tertiary 霓虹粉
-// （青柠 × 品红 = 赛博对撞，区别于 FOREST 的柔和绿）。
+// ═══════════════════ LIME · 青柠 ═══════════════════
+// 柔和青柠 #8FAE52：低饱和橄榄青柠；secondary 暮紫、tertiary 玫瑰
+// （青柠 × 品红 = 互补对撞，区别于 FOREST 的柔和绿）。
 
 private val LimeDark = AccentTone(
-    primary = Color(0xFFA3E635),          // electric lime
+    primary = Color(0xFF8FAE52),          // soft lime
     onPrimary = Color(0xFF1F3200),
     primaryContainer = Color(0xFF2F4D00),
     onPrimaryContainer = Color(0xFFCDF68C),
@@ -552,7 +554,7 @@ private val LimeDark = AccentTone(
     onSecondary = Color(0xFF3A1D66),
     secondaryContainer = Color(0xFF52378F),
     onSecondaryContainer = Color(0xFFEBDCFF),
-    tertiary = Color(0xFFFF6B9D),         // neon pink (danger / highlight)
+    tertiary = Color(0xFFE57390),         // soft rose (danger / highlight)
     onTertiary = Color(0xFF3D0018),
     tertiaryContainer = Color(0xFF52122E),
     onTertiaryContainer = Color(0xFFFFB3CE)
@@ -826,7 +828,7 @@ private val MinimalDarkBase: ColorScheme = darkColorScheme(
     surfaceContainerHighest = Color(0xFF242424),
     outline = Color(0xFF333333),
     outlineVariant = Color(0xFF262626),
-    error = Color(0xFFFF6B9D),
+    error = Color(0xFFE57390),
     onError = Color(0xFF3D0018),
     errorContainer = Color(0xFF52122E),
     onErrorContainer = Color(0xFFFFB3CE),

@@ -216,7 +216,7 @@ fun GlassFloatingButton(
 /**
  * 玻璃导航项 —— Drawer 每一项的专用形态。
  * Normal：非常轻；Selected：材质亮度 + 深度提升；Pressed：短暂高光。
- * 保留既有霓虹左指示条与圆形图标井 —— 品牌延续而非推翻。
+ * 保留既有强调色左指示条与圆形图标井 —— 品牌延续而非推翻。
  */
 @Composable
 fun GlassNavigationItem(
@@ -263,7 +263,7 @@ fun GlassNavigationItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 霓虹指示条 —— 既有品牌元素；draw 通道动画（宽度分数），零测量失效
+            // 强调色指示条 —— 既有品牌元素；draw 通道动画（宽度分数），零测量失效
             Box(
                 modifier = Modifier
                     .width(3.dp)

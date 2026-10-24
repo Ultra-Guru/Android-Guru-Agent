@@ -1,23 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- v1.4.1 透明玻璃球底座：极轻透明材质（用户要求「悬浮球做成透明的」）。
+<!-- v1.4.1 透明玻璃球底座：极轻透明材质（用户要求「悬浮球做成透明的」；
+     去霓虹重调：旧青色霓虹描边+青色外晕 → 中性玻璃描边+柔和阴影）。
      旧 bg_obsidian_glossy（高光黑曜石，重不透明）退役：仅 30% 透明度的玻璃
-     底 + 极细霓虹描边 + 柔和外晕，视觉重量最小化，霓虹环 NeonRingView 仍是
+     底 + 极细中性描边 + 柔和暗晕，视觉重量最小化，状态环 NeonRingView 仍是
      主要氛围来源。 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- 底层：极柔外晕（透出下层界面） -->
+    <!-- 底层：极柔暗晕（透出下层界面，替代旧青色辉光） -->
     <item>
         <shape android:shape="oval">
-            <solid android:color="#1400E5FF" />
+            <solid android:color="#12000000" />
         </shape>
     </item>
 
-    <!-- 主层：透明玻璃核（40% 暗 + 细霓虹描边） -->
+    <!-- 主层：透明玻璃核（40% 暗 + 细中性描边） -->
     <item android:top="5dp" android:bottom="5dp" android:left="5dp" android:right="5dp">
         <shape android:shape="oval">
             <solid android:color="#660B0F14" />
             <stroke
                 android:width="1dp"
-                android:color="#5900E5FF" />
+                android:color="#59DDE7ED" />
         </shape>
     </item>
 

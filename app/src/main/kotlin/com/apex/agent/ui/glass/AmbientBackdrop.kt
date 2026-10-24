@@ -43,7 +43,7 @@ internal fun rememberAmbientBackdrop(palette: GlassPalette): Backdrop {
  *  - 垂直渐变：frostLift 顶部受光 → frostBase 底部沉降；
  *  - 斜向光带 ×2（主受光带 + 交叉细亮带）：经 blur/lens 扩散成
  *    柔和的受光磨砂 —— 白天 = 乳白底上的微光带（治「一片死白」），
- *    夜间 = 近黑底上的霓虹光雾（品牌延续）。
+ *    夜间 = 近黑底上的柔和光雾（品牌延续）。
  *  光带色用白高光 + 主题色微染（#269 物理语义豁免：玻璃镜面反射就是白光）。
  */
 private fun DrawScope.drawAmbientTexture(palette: GlassPalette) {

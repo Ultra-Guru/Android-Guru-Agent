@@ -395,9 +395,9 @@
     <string name="viro_mood_review_plan">Awaiting confirmation</string>
     <string name="viro_mood_error">Error</string>
     <string name="viro_mood_success">Task complete</string>
-    <!-- ═══ NeonOrbButton（Coding 输入栏霓虹球 · 功能聚合面板）═══ -->
-    <string name="neon_cd_orb">Neon orb feature hub</string>
-    <string name="neon_panel_title">Neon Orb · Feature Hub</string>
+    <!-- ═══ NeonOrbButton（Coding 输入栏功能聚合 · 面板）═══ -->
+    <string name="neon_cd_orb">Feature hub</string>
+    <string name="neon_panel_title">Feature Hub</string>
     <string name="neon_active_count">%1$d on</string>
     <string name="neon_hint">Every toggle below injects a real system-prompt directive on each send</string>
     <string name="neon_group_session">Session boost</string>

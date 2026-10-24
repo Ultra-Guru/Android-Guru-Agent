@@ -17,15 +17,17 @@ package com.apex.agent.ui.screen.terminal.scheme
  */
 object TerminalColorSchemeDefs {
 
-    // ─── Apex Mint（本项目默认 — T85 控制台视觉的终端化）───
+    // ─── Apex Mint（本项目默认 — 品牌薄荷绿的低饱和终端化，去霓虹重调）───
+    // 绿族与 App 主题 MintDark 同源重调：旧霓虹薄荷 4EE9B0 → 低饱和薄荷绿 41A988；
+    // 底色从绿调黑改为中性蓝灰近黑，去除「黑客绿磷屏」残象。
     val APEX_MINT: TerminalColorScheme = scheme(
         id = "apex-mint", name = "Apex Mint", nameZh = "Apex 薄荷",
-        background = 0xFF0E1411, foreground = 0xFFFFFFFF,
-        cursor = 0xFF7CF0C6, selection = 0x664EE9B0,
-        black = 0xFF1D2B24, red = 0xFFE96A8C, green = 0xFF4EE9B0, yellow = 0xFFFFB454,
-        blue = 0xFF6BB8FF, magenta = 0xFFD2A6FF, cyan = 0xFF66E0D3, white = 0xFFF2F7F4,
-        bBlack = 0xFF5A6E63, bRed = 0xFFFF8FA8, bGreen = 0xFF7CF0C6, bYellow = 0xFFFFD08A,
-        bBlue = 0xFF9CD1FF, bMagenta = 0xFFE5C7FF, bCyan = 0xFF8FEDE2, bWhite = 0xFFFFFFFF
+        background = 0xFF0E1216, foreground = 0xFFFFFFFF,
+        cursor = 0xFF5CC9A6, selection = 0x6641A988,
+        black = 0xFF1D2833, red = 0xFFE96A8C, green = 0xFF41A988, yellow = 0xFFFFB454,
+        blue = 0xFF6BB8FF, magenta = 0xFFD2A6FF, cyan = 0xFF5BC4B4, white = 0xFFF2F7F4,
+        bBlack = 0xFF5A6E7E, bRed = 0xFFFF8FA8, bGreen = 0xFF6BC5A9, bYellow = 0xFFFFD08A,
+        bBlue = 0xFF9CD1FF, bMagenta = 0xFFE5C7FF, bCyan = 0xFF7ED4C6, bWhite = 0xFFFFFFFF
     )
 
     // ─── Termux Default（上游标准 16 色）───

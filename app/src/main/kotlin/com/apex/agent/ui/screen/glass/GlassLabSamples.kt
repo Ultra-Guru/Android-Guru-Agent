@@ -153,7 +153,7 @@ private data class GlassSpec(
 //  小节入口 —— GlassLabContent 两个模式各挂载一份
 // ═══════════════════════════════════════════════════════════════
 
-/** 样品陈列馆主体：全部样品跟随当前强制主题（夜间霓虹 / 白天粉彩）。
+/** 样品陈列馆主体：全部样品跟随当前强制主题（夜间暗底发光 / 白天粉彩）。
  *  各采样区（配方抽屉 / 真伪对照）自建独立 LayerBackdrop —— 一源一层。 */
 @Composable
 internal fun SamplesSection(mode: GlassLabMode) {
@@ -268,7 +268,7 @@ private fun recipeSpecs(night: Boolean, scheme: ColorScheme): List<GlassSpec> {
                 bottom = if (night) MilkWhite.copy(alpha = 0.06f) else scheme.onSurface.copy(alpha = 0.10f)
             )
         ),
-        // 3. 主色浸染：primary 低比例浸染 —— 白天低饱和粉彩，夜间霓虹感
+        // 3. 主色浸染：primary 低比例浸染 —— 白天低饱和粉彩，夜间主色浸染
         GlassSpec(
             name = "主色浸染", code = "TINTED", blur = 14.dp, noise = 0.08f, sheen = 0.08f,
             tint = scheme.primary.copy(alpha = if (night) 0.24f else 0.15f),

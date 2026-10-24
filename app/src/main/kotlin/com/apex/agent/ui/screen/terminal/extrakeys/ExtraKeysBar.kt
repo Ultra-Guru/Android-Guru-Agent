@@ -104,7 +104,7 @@ private fun ExtraKeyButton(
             key.label,
             fontSize = 12.5.sp,
             fontFamily = FontFamily.Monospace,
-            // #244：与键帽成对的 onPrimaryContainer（暗态 MINT = 9CF3D2 ≈ 旧 0xFFB9E8D2）
+            // #244：与键帽成对的 onPrimaryContainer（暗态 MINT = 9BD8C4 低饱和薄荷）
             color = MaterialTheme.colorScheme.onPrimaryContainer
         )
     }

@@ -92,8 +92,8 @@ fun SlashCommandButton(
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
-    // UI-016：青粉硬编码渐变改 primary→tertiary token —— 暗态恰为薄荷→品红
-    // （保住霓虹渐变身份），亮态 0E7A57→B33A65 对浅底达 AA（原青 00E5FF 仅 1.44:1）
+    // UI-016：青粉硬编码渐变改 primary→tertiary token —— 暗态恰为薄荷→玫瑰
+    // （强调色双端身份保留，已随去霓虹重调转为低饱和），亮态 0E7A57→B33A65 对浅底达 AA（原青 00E5FF 仅 1.44:1）
     val slashGradient = Brush.linearGradient(
         colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)
     )

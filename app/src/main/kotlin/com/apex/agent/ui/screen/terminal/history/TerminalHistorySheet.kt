@@ -27,7 +27,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -80,11 +79,11 @@ fun TerminalHistorySheet(
                         Icon(
                             Icons.Default.Delete,
                             contentDescription = stringResource(R.string.term_history_clear),
-                            tint = Color(0xFFFF6B9D),
+                            tint = ConsoleTheme.danger,
                             modifier = Modifier.height(16.dp)
                         )
                         Spacer(Modifier.height(2.dp))
-                        Text(stringResource(R.string.term_history_clear), color = Color(0xFFFF6B9D), fontSize = 13.sp)
+                        Text(stringResource(R.string.term_history_clear), color = ConsoleTheme.danger, fontSize = 13.sp)
                     }
                 }
             }
@@ -92,7 +91,7 @@ fun TerminalHistorySheet(
             Text(
                 stringResource(R.string.term_history_hint),
                 fontSize = 12.sp,
-                color = Color(0xFF7E948A)
+                color = ConsoleTheme.dim
             )
             Spacer(Modifier.height(12.dp))
 
@@ -101,14 +100,14 @@ fun TerminalHistorySheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(160.dp)
-                        .background(Color(0xFF101714), RoundedCornerShape(12.dp)),
+                        .background(ConsoleTheme.chip, RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         stringResource(R.string.term_history_empty),
                         fontSize = 13.sp,
                         fontFamily = FontFamily.Monospace,
-                        color = Color(0xFF7E948A)
+                        color = ConsoleTheme.dim
                     )
                 }
             } else {
@@ -123,7 +122,7 @@ fun TerminalHistorySheet(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(Color(0xFF101714), RoundedCornerShape(8.dp))
+                                .background(ConsoleTheme.chip, RoundedCornerShape(8.dp))
                                 .clickable { onPick(cmd) }
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -132,7 +131,7 @@ fun TerminalHistorySheet(
                                 cmd,
                                 fontSize = 13.sp,
                                 fontFamily = FontFamily.Monospace,
-                                color = Color(0xFFE8F2ED),
+                                color = ConsoleTheme.text,
                                 maxLines = 1,
                                 modifier = Modifier.weight(1f)
                             )
@@ -143,7 +142,7 @@ fun TerminalHistorySheet(
                                 Icon(
                                     Icons.Default.ContentCopy,
                                     contentDescription = stringResource(R.string.term_copy),
-                                    tint = Color(0xFF7E948A),
+                                    tint = ConsoleTheme.dim,
                                     modifier = Modifier.height(18.dp)
                                 )
                             }

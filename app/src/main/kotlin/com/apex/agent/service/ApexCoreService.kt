@@ -40,7 +40,7 @@ class ApexCoreService : LifecycleService() {
     @Inject
     lateinit var liveViewOverlay: LiveViewOverlay
 
-    // 赛博霓虹球（状态驱动按需出现：见 CyberNeonBallManager —— 只在浏览器被
+    // 浏览器悬浮球（状态驱动按需出现：见 CyberNeonBallManager —— 只在浏览器被
     // navigate/newTab 等真实使用后出现，不再随服务启动常驻；长按球可结束会话收起）
     @Inject
     lateinit var cyberNeonBall: CyberNeonBallManager
@@ -99,7 +99,7 @@ class ApexCoreService : LifecycleService() {
         browserOverlay.hashCode()
         // 实时页面悬浮窗同理（状态机 + ActiveTabListener 订阅在 init 完成）
         liveViewOverlay.hashCode()
-        // 霓虹球不再无条件 show：其生命周期由 BrowserEngine 状态驱动 ——
+        // 悬浮球不再无条件 show：其生命周期由 BrowserEngine 状态驱动 ——
         // Agent 真正 navigate（网页搜索/自动化浏览）时经 onStateChanged 出现，
         // 会话结束（HIDDEN）时自动收起。此处仅需保证单例已创建并订阅引擎。
         cyberNeonBall.hashCode()

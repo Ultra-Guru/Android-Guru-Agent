@@ -9,7 +9,7 @@ import java.util.Locale
 import java.util.TimeZone
 
 /**
- * ═══ 霓虹球功能聚合 —— 纯逻辑层契约测试 ═══
+ * ═══ 功能聚合 —— 纯逻辑层契约测试 ═══
  *
  * 锁三条底线：
  * 1. 目录契约：≥15 项功能 + 三项钦定能力在场（时间注入/结构化输出/
@@ -273,7 +273,7 @@ class NeonOrbFeaturesTest {
         // 16 段指令逐段在场（buildString 每功能一行「- …」）
         val directiveLines = ctx.lines().count { it.startsWith("- ") }
         assertEquals("全开应产出 16 条指令行", 16, directiveLines)
-        assertTrue(ctx.startsWith("### 霓虹球"))
+        assertTrue(ctx.startsWith("### 功能聚合"))
     }
 
     @Test
@@ -288,7 +288,7 @@ class NeonOrbFeaturesTest {
         val ctx = buildNeonSessionContext(
             NeonOrbState(webSearch = true, concise = true)
         )
-        assertTrue(ctx.startsWith("### 霓虹球"))
+        assertTrue(ctx.startsWith("### 功能聚合"))
         assertEquals(2, ctx.lines().count { it.startsWith("- ") })
     }
 }
