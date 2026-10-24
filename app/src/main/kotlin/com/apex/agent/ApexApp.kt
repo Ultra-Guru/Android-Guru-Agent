@@ -11,8 +11,8 @@ import com.apex.agent.net.NetworkMonitor
 import com.apex.agent.notify.ApexNotifications
 import com.apex.agent.notify.ForegroundTracker
 import com.apex.agent.platform.EnvironmentStateUpdater
-import com.apex.agent.platform.csmem.actor.MemoryWriterActor
-import com.apex.agent.platform.csmem.dream.DreamRenderer
+import com.apex.agent.platform.memory.work.MaintenanceScheduler
+import com.apex.memkit.core.MemKit
 import com.apex.agent.platform.privilege.PrivilegeDetector
 import com.apex.agent.platform.privilege.PrivilegeManager
 import com.apex.agent.platform.terminal.ubuntu.lifecycle.UbuntuLifecycleCoordinator
@@ -44,12 +44,13 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
     @Inject
     lateinit var attachmentCleanupManager: AttachmentCleanupManager
 
-    // ★ 触发 Hilt 创建 CS-Mem 后台管道单例，并启动写入 Actor 与梦境渲染调度。
+    // ★ 触发 Hilt 创建记忆库单例（MemKit 构造 = 加载 + 旧存储一次性迁移 + 管道启动）。
     @Inject
-    lateinit var memoryWriterActor: MemoryWriterActor
+    lateinit var memKit: MemKit
 
+    // 记忆维护周期调度（WorkManager；梦境语义约束）。
     @Inject
-    lateinit var dreamRenderer: DreamRenderer
+    lateinit var maintenanceScheduler: MaintenanceScheduler
 
     // T82→T85: Ubuntu 产品级生命周期 —— App 启动时恢复现场（reconcile + 状态派生），
     // T85 内置交付语义：rootfs 随 APK 内置（完整 Ubuntu ~300MB+ 档），解包**纯离线**，
@@ -295,20 +296,16 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
     }
 
     /**
-     * 启动 CS-Mem 后台管道。
-     * - MemoryWriterActor：无锁并发写入，必须在应用启动早期启动以接收后续写入事件。
-     * - DreamRenderer：通过 WorkManager 调度周期性记忆保鲜（依赖 DreamWorker 真正执行）。
+     * 启动记忆库后台管道（apex-kit-memory）。
+     * - MemKit：库写入管道已在 DI 构造时 start（首帧加载 + 旧存储一次性迁移）。
+     * - MaintenanceScheduler：WorkManager 周期维护（衰减/剪枝/晶化/别名发现，
+     *   约束 = 充电 + 电量不低 + 空闲 + WiFi，原 DreamRenderer 梦境语义）。
      */
     private fun initCsMem() {
         runCatching {
-            memoryWriterActor.start()
+            maintenanceScheduler.schedule(this)
         }.onFailure {
-            Log.w("ApexAgent", "Failed to start MemoryWriterActor: ${it.message}")
-        }
-        runCatching {
-            dreamRenderer.scheduleDreamRendering()
-        }.onFailure {
-            Log.w("ApexAgent", "Failed to schedule DreamRendering: ${it.message}")
+            Log.w("ApexAgent", "Failed to schedule memory maintenance: ${it.message}")
         }
     }
 

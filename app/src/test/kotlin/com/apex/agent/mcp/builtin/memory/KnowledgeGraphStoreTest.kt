@@ -1,270 +1,137 @@
 package com.apex.agent.mcp.builtin.memory
 
-import java.io.File
+import com.apex.memkit.core.MemKit
+import com.apex.memkit.core.MemKitConfig
+import com.apex.memkit.core.store.FileStorageBackend
+import java.nio.file.Files
+import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertThrows
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 
 /**
- * Issue #150 — KnowledgeGraphStore 单测（纯 JVM，任务书 §测试指定）。
+ * Issue #150 迁移版 —— 内置 Memory MCP transport 单测（纯 JVM）。
  *
- * 覆盖：创建/读取、幂等合并、关系去重、观察追加去重 + 未知实体报错、
- * 检索（三种字段命中 + 关系双端过滤 + 大小写不敏感）、级联删除、
- * 持久化往返（跨实例）、损坏文件兜底（留档 + 空图启动 + 可恢复写入）。
+ * 拆库（apex-kit-memory）后图谱语义住在库 [MemKit]（库内「图谱 MCP 语义」
+ * 用例覆盖合并/去重/级联删除）；宿主侧只测 **JSON-RPC 适配层**：
+ * tools/call 派发、参数解码、结果渲染、错误折叠（不再让进程内异常击穿
+ * JSON-RPC 层）。存储走真实 FileStorageBackend（临时目录）。
+ *
+ * 协程纪律（issue #276）：runTest 虚拟时间 —— MemKit.create 仅同步 store.load()
+ * （写管道须显式 start() 才启动，本测试不涉及），与 apex-kit-memory 库内
+ * MemKitFacadeTest 同款 runTest 口径，无墙钟依赖。
  */
 class KnowledgeGraphStoreTest {
 
-    @get:Rule
-    val tmp = TemporaryFolder()
+    private val json = Json { ignoreUnknownKeys = true }
 
-    private fun newStore(): KnowledgeGraphStore = KnowledgeGraphStore(tmp.newFolder())
-
-    // ═══ 创建 / 读取 ═══
-
-    @Test
-    fun `create entities then read graph returns snapshot`() {
-        val store = newStore()
-        val outcome = store.createEntities(listOf(
-            GraphEntity("apex", "project", listOf("Android 端 Agent 应用")),
-            GraphEntity("mcp", "protocol")
-        ))
-
-        assertEquals(listOf("apex", "mcp"), outcome.created)
-        assertTrue(outcome.merged.isEmpty())
-
-        val graph = store.readGraph()
-        assertEquals(2, graph.entities.size)
-        assertEquals("apex", graph.entities[0].name)
-        assertEquals(listOf("Android 端 Agent 应用"), graph.entities[0].observations)
-        assertEquals(emptyList<String>(), graph.entities[1].observations)
-        assertTrue(graph.relations.isEmpty())
-        assertEquals(2, store.entityCount())
-    }
-
-    @Test
-    fun `recreating existing entity merges observations without duplicates`() {
-        val store = newStore()
-        store.createEntities(listOf(GraphEntity("apex", "project", listOf("obs-1", "obs-2"))))
-
-        // 幂等决策：同名实体不重建，observations 保序去重合并（entityType 保留旧值）
-        val outcome = store.createEntities(listOf(
-            GraphEntity("apex", "ignored-type", listOf("obs-2", "obs-3")),
-            GraphEntity("fresh", "thing", listOf("n1"))
-        ))
-
-        assertEquals(listOf("fresh"), outcome.created)
-        assertEquals(listOf("apex"), outcome.merged)
-
-        val apex = store.readGraph().entities.single { it.name == "apex" }
-        assertEquals(listOf("obs-1", "obs-2", "obs-3"), apex.observations)
-        assertEquals("project", apex.entityType)
-    }
-
-    @Test
-    fun `recreating existing entity with empty observations is a no-op`() {
-        val store = newStore()
-        store.createEntities(listOf(GraphEntity("a", "x", listOf("o1"))))
-
-        val outcome = store.createEntities(listOf(GraphEntity("a", "x")))
-
-        assertTrue(outcome.created.isEmpty())
-        assertTrue(outcome.merged.isEmpty())
-        assertEquals(listOf("o1"), store.readGraph().entities.single().observations)
-    }
-
-    // ═══ 关系 ═══
-
-    @Test
-    fun `duplicate relations are skipped`() {
-        val store = newStore()
-        store.createEntities(listOf(GraphEntity("a", "x"), GraphEntity("b", "x")))
-        val relation = GraphRelation("a", "b", "depends-on")
-
-        val first = store.createRelations(listOf(relation))
-        val second = store.createRelations(listOf(relation, relation))
-
-        assertEquals(1, first.added)
-        assertEquals(0, first.duplicates)
-        assertEquals(0, second.added)
-        assertEquals(2, second.duplicates)
-        assertEquals(1, store.relationCount())
-    }
-
-    // ═══ 观察 ═══
-
-    @Test
-    fun `add observations appends with dedupe and throws on unknown entity`() {
-        val store = newStore()
-        store.createEntities(listOf(GraphEntity("a", "x", listOf("o1"))))
-
-        assertEquals(2, store.addObservations("a", listOf("o2", "o1", "o3", "  ")))
-        assertEquals(
-            listOf("o1", "o2", "o3"),
-            store.readGraph().entities.single().observations
+    private suspend fun transport(): Pair<BuiltinMemoryMcpTransport, MemKit> {
+        val kit = MemKit.create(
+            config = MemKitConfig(),
+            storage = FileStorageBackend(Files.createTempDirectory("mcp-memory-test").toFile()),
         )
+        return BuiltinMemoryMcpTransport(kit.store) to kit
+    }
 
-        assertThrows(IllegalArgumentException::class.java) {
-            store.addObservations("ghost", listOf("x"))
+    private suspend fun call(
+        transport: BuiltinMemoryMcpTransport,
+        tool: String,
+        argsJson: String = "{}",
+    ): String {
+        val payload = """{"jsonrpc":"2.0","id":1,"method":"tools/call",
+            "params":{"name":"$tool","arguments":$argsJson}}""".trimIndent().replace("\n", "")
+        val response = transport.send(1, payload)!!
+        val result = response["result"]!!.jsonObject
+        assertFalse("工具不应报错：$result", "isError" in result)
+        return result["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+    }
+
+    @Test
+    fun `tools list advertises six memory tools`(): Unit = runTest {
+        val (transport, _) = transport()
+        val response = transport.send(1, """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""")!!
+        val tools = response["result"]!!.jsonObject["tools"]!!.jsonArray
+        assertEquals(6, tools.size)
+        assertTrue(tools.toString().contains("create_entities"))
+    }
+
+    @Test
+    fun `create then read graph returns compact json snapshot`(): Unit = runTest {
+        val (transport, _) = transport()
+        val created = call(
+            transport, "create_entities",
+            """{"entities":[{"name":"apex","entityType":"project","observations":["Android 端 Agent 应用"]}]}""",
+        )
+        assertTrue(created.contains("apex"))
+
+        val graph = call(transport, "read_graph")
+        val parsed = json.parseToJsonElement(graph).jsonObject
+        assertEquals(
+            "apex",
+            parsed["entities"]!!.jsonArray[0].jsonObject["name"]!!.jsonPrimitive.content,
+        )
+    }
+
+    @Test
+    fun `add observations on unknown entity folds into tool error text`(): Unit = runTest {
+        val (transport, _) = transport()
+        call(transport, "create_entities", """{"entities":[{"name":"小明","entityType":"person"}]}""")
+        call(transport, "add_observations", """{"entityName":"小明","contents":["程序员"]}""")
+
+        // 未知实体：MemoryToolException → isError 文本（不抛出、不崩 JSON-RPC）
+        val payload = """{"jsonrpc":"2.0","id":1,"method":"tools/call",
+            "params":{"name":"add_observations","arguments":{"entityName":"不存在","contents":["x"]}}}"""
+            .trimIndent().replace("\n", "")
+        val response = transport.send(1, payload)!!
+        val result = response["result"]!!.jsonObject
+        assertTrue("isError" in result)
+        assertTrue(result["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content.contains("不存在"))
+    }
+
+    @Test
+    fun `search nodes matches and delete cascades`(): Unit = runTest {
+        val (transport, _) = transport()
+        call(transport, "create_entities", """{"entities":[{"name":"小明","entityType":"person"}]}""")
+        call(transport, "create_relations", """{"relations":[{"from":"小明","to":"项目A","relationType":"参与"}]}""")
+        // create_relations 引用未建实体不级联建 —— 官方语义允许悬挂关系
+
+        call(transport, "create_entities", """{"entities":[{"name":"项目A","entityType":"project"}]}""")
+        val hit = call(transport, "search_nodes", """{"query":"小明"}""")
+        assertTrue(hit.contains("小明"))
+
+        call(transport, "delete_entities", """{"entityNames":["小明"]}""")
+        val after = json.parseToJsonElement(call(transport, "read_graph")).jsonObject
+        assertEquals(1, after["entities"]!!.jsonArray.size)
+        // 级联删边：小明参与项目A 的关系随实体删除
+        assertFalse(after["relations"]!!.jsonArray.toString().contains("参与"))
+    }
+
+    @Test
+    fun `unknown tool name folds into error text not exception`(): Unit = runTest {
+        val (transport, _) = transport()
+        val payload = """{"jsonrpc":"2.0","id":1,"method":"tools/call",
+            "params":{"name":"no_such_tool","arguments":{}}}""".trimIndent().replace("\n", "")
+        val response = transport.send(1, payload)!!
+        val result = response["result"]!!.jsonObject
+        assertTrue("未知工具必须是 isError 文本", "isError" in result)
+        val text = result["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content
+        assertTrue(text.contains("未知工具"))
+    }
+
+    @Test
+    fun `malformed rpc payload throws mcp exception`(): Unit = runTest {
+        val (transport, _) = transport()
+        var threw = false
+        try {
+            transport.send(1, "not-json{{{")
+        } catch (e: com.apex.agent.core.tools.mcp.McpException) {
+            threw = true
         }
-    }
-
-    // ═══ 检索 ═══
-
-    @Test
-    fun `search nodes matches name, type and observations case-insensitively`() {
-        val store = newStore()
-        store.createEntities(listOf(
-            GraphEntity("apex", "project", listOf("内置 web search 能力")),
-            GraphEntity("search-mcp", "server", listOf("duckduckgo 回退")),
-            GraphEntity("unrelated", "thing", listOf("nothing here"))
-        ))
-        store.createRelations(listOf(
-            GraphRelation("apex", "search-mcp", "uses"),
-            GraphRelation("apex", "unrelated", "ignores")
-        ))
-
-        // "search" 同时命中 apex 的观察与 search-mcp 的名字（大小写不敏感）
-        val hit = store.searchNodes("SEARCH")
-        assertEquals(setOf("apex", "search-mcp"), hit.entities.map { it.name }.toSet())
-        // 关系只保留两端都命中的边（apex→unrelated 被过滤）
-        assertEquals(listOf("uses"), hit.relations.map { it.relationType })
-
-        // entityType 命中路径
-        assertEquals(1, store.searchNodes("server").entities.size)
-
-        // 空查询按"包含匹配恒真"语义返回全图
-        assertEquals(3, store.searchNodes("").entities.size)
-    }
-
-    // ═══ 删除 ═══
-
-    @Test
-    fun `delete entities removes entity and cascades its relations`() {
-        val store = newStore()
-        store.createEntities(listOf(
-            GraphEntity("a", "x"), GraphEntity("b", "x"), GraphEntity("c", "x")
-        ))
-        store.createRelations(listOf(
-            GraphRelation("a", "b", "r1"),
-            GraphRelation("b", "c", "r2"),
-            GraphRelation("a", "c", "r3")
-        ))
-
-        val outcome = store.deleteEntities(listOf("b", "ghost"))
-
-        assertEquals(1, outcome.deleted)
-        assertEquals(listOf("ghost"), outcome.missing)
-
-        val graph = store.readGraph()
-        assertEquals(setOf("a", "c"), graph.entities.map { it.name }.toSet())
-        // r1（a-b）与 r2（b-c）随 b 级联消失，r3 保留
-        assertEquals(listOf("r3"), graph.relations.map { it.relationType })
-    }
-
-    // ═══ 观察删除（#219 记忆页逐条删除 / 一键清空）═══
-
-    @Test
-    fun `delete observations removes exactly the matched entries`() {
-        val store = newStore()
-        store.createEntities(listOf(
-            GraphEntity("用户画像", "chat_memory_profile", listOf("我叫张三", "我在学 Kotlin"))
-        ))
-
-        assertEquals(1, store.deleteObservations("用户画像", listOf("我叫张三")))
-        assertEquals(
-            listOf("我在学 Kotlin"),
-            store.readGraph().entities.single().observations
-        )
-        // 重复删除同一条：幂等返回 0，不误伤其余观察
-        assertEquals(0, store.deleteObservations("用户画像", listOf("我叫张三")))
-    }
-
-    @Test
-    fun `delete observations on unknown entity is a no-op`() {
-        val store = newStore()
-        store.createEntities(listOf(GraphEntity("a", "x", listOf("o1"))))
-
-        // 与 add 的报错语义刻意不同：删除幂等（基调 delete+recreate 替换竞态下不抛错）
-        assertEquals(0, store.deleteObservations("ghost", listOf("o1")))
-        assertEquals(listOf("o1"), store.readGraph().entities.single().observations)
-    }
-
-    @Test
-    fun `deleting all observations empties the entity but keeps the shell`() {
-        val store = newStore()
-        store.createEntities(listOf(
-            GraphEntity("用户近况", "chat_memory_state", listOf("近期情绪基调:偏低落"))
-        ))
-
-        assertEquals(1, store.deleteObservations("用户近况", listOf("近期情绪基调:偏低落")))
-
-        val entity = store.readGraph().entities.single()
-        // 壳保留 —— 管线后续 addObservations 不会因实体缺失而断写
-        assertEquals("用户近况", entity.name)
-        assertTrue(entity.observations.isEmpty())
-    }
-
-    @Test
-    fun `delete observations persists across store recreation`() {
-        val dir = tmp.newFolder()
-        val first = KnowledgeGraphStore(dir)
-        first.createEntities(listOf(
-            GraphEntity("用户画像", "chat_memory_profile", listOf("obs-1", "obs-2")),
-            GraphEntity("other", "topic", listOf("keep-me"))
-        ))
-        assertEquals(1, first.deleteObservations("用户画像", listOf("obs-1")))
-
-        val second = KnowledgeGraphStore(dir)
-        val graph = second.readGraph()
-        assertEquals(
-            listOf("obs-2"),
-            graph.entities.single { it.name == "用户画像" }.observations
-        )
-        // 无关实体不受影响
-        assertEquals(
-            listOf("keep-me"),
-            graph.entities.single { it.name == "other" }.observations
-        )
-    }
-
-    // ═══ 持久化 ═══
-
-    @Test
-    fun `state survives store recreation (persistence roundtrip)`() {
-        val dir = tmp.newFolder()
-        val first = KnowledgeGraphStore(dir)
-        first.createEntities(listOf(
-            GraphEntity("apex", "project", listOf("obs-1")),
-            GraphEntity("kotlin", "language")
-        ))
-        first.createRelations(listOf(GraphRelation("apex", "kotlin", "written-in")))
-        first.addObservations("kotlin", listOf("coroutines"))
-
-        val second = KnowledgeGraphStore(dir)
-        val graph = second.readGraph()
-        assertEquals(2, graph.entities.size)
-        assertEquals(1, graph.relations.size)
-        val kotlin = graph.entities.single { it.name == "kotlin" }
-        assertEquals(listOf("coroutines"), kotlin.observations)
-
-        // 落盘文件确实存在且为 JSON
-        assertTrue(File(dir, "memory.json").isFile)
-    }
-
-    @Test
-    fun `corrupt memory json falls back to empty graph and keeps backup`() {
-        val dir = tmp.newFolder()
-        File(dir, "memory.json").writeText("{ 损坏的 JSON 内容")
-
-        val store = KnowledgeGraphStore(dir)
-        assertEquals(0, store.entityCount())
-        assertTrue(File(dir, "memory.json.corrupt").isFile)
-
-        // 恢复路径：随后的正常写入会覆盖坏的主文件
-        store.createEntities(listOf(GraphEntity("x", "t")))
-        assertEquals(1, KnowledgeGraphStore(dir).entityCount())
+        assertTrue(threw)
     }
 }

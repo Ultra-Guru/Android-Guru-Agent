@@ -59,9 +59,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import com.apex.agent.ui.component.ReliabilityTier
 import com.apex.agent.ui.component.reliabilityTierOf
-import com.apex.agent.platform.csmem.model.SemanticNode
-import com.apex.agent.platform.csmem.store.EpisodeSummary
-import com.apex.agent.platform.csmem.store.FSMMacro
+import com.apex.memkit.core.model.EpisodeSummary
+import com.apex.memkit.core.model.MacroSkill
+import com.apex.memkit.core.store.NodeDictEntry
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -78,7 +78,7 @@ fun MemoryScreen(
     val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
     val message by viewModel.lastMessage.collectAsStateWithLifecycle()
     val quarantinedCount by viewModel.quarantinedCount.collectAsStateWithLifecycle()
-    val dreamRunning by viewModel.dreamRunning.collectAsStateWithLifecycle()
+    val dreamRunning by viewModel.maintenanceRunning.collectAsStateWithLifecycle()
     val chatMemory by viewModel.chatMemory.collectAsStateWithLifecycle()
 
     var showSearch by remember { mutableStateOf(false) }
@@ -143,7 +143,7 @@ fun MemoryScreen(
             MemoryHealthCard(
                 quarantinedCount = quarantinedCount,
                 dreamRunning = dreamRunning,
-                onDreamNow = viewModel::dreamNow,
+                onDreamNow = viewModel::maintenanceNow,
                 onClearQuarantine = viewModel::clearQuarantine
             )
 
@@ -344,14 +344,14 @@ private fun EpisodeCard(episode: EpisodeSummary, onDelete: () -> Unit) {
                 Text(
                     stringResource(
                         R.string.memory_episode_meta,
-                        episode.status,
+                        episode.status.name,
                         formatTime(episode.startedAt),
-                        episode.totalActions
+                        episode.actionCount
                     ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (episode.isDistilled) {
+                if (episode.macroIds.isNotEmpty()) {
                     Text(stringResource(R.string.memory_distilled), style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary)
                 }
@@ -365,7 +365,7 @@ private fun EpisodeCard(episode: EpisodeSummary, onDelete: () -> Unit) {
 }
 
 @Composable
-private fun NodeCard(node: SemanticNode) {
+private fun NodeCard(node: NodeDictEntry) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -373,7 +373,7 @@ private fun NodeCard(node: SemanticNode) {
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    node.textHint ?: stringResource(R.string.memory_no_text),
+                    node.text ?: stringResource(R.string.memory_no_text),
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 2, overflow = TextOverflow.Ellipsis
                 )
@@ -396,7 +396,7 @@ private fun NodeCard(node: SemanticNode) {
  * 徽标颜色沿用语义色（稳定→primary、一般→tertiary、不稳定→error）。
  */
 @Composable
-private fun MacroCard(macro: FSMMacro) {
+private fun MacroCard(macro: MacroSkill) {
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -409,23 +409,19 @@ private fun MacroCard(macro: FSMMacro) {
                     stringResource(
                         R.string.memory_macro_stats,
                         macro.appPackage ?: stringResource(R.string.memory_generic),
-                        macro.successCount,
-                        macro.failureCount
+                        macro.stats.successCount,
+                        macro.stats.failureCount
                     ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (macro.isCrystallized) {
+                if (macro.stats.crystallized) {
                     Text(stringResource(R.string.memory_crystallized), style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary)
                 }
             }
             // 可靠性定性徽标（基于成功/失败计数的档位投影）
-            val tier = reliabilityTierOf(
-                if (macro.successCount + macro.failureCount == 0) 0f
-                else macro.successCount.toFloat() / (macro.successCount + macro.failureCount),
-                macro.successCount + macro.failureCount > 0
-            )
+            val tier = reliabilityTierOf(macro.stats.successRate(), macro.stats.totalRuns() > 0)
             val tierColor = when (tier) {
                 ReliabilityTier.STABLE -> MaterialTheme.colorScheme.primary
                 ReliabilityTier.FAIR -> MaterialTheme.colorScheme.tertiary
@@ -445,7 +441,7 @@ private fun MacroCard(macro: FSMMacro) {
                 )
             }
             Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.memory_steps, macro.transitions.size), style = MaterialTheme.typography.labelMedium,
+            Text(stringResource(R.string.memory_steps, macro.steps.size), style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary)
         }
     }
@@ -455,7 +451,7 @@ private fun MacroCard(macro: FSMMacro) {
 
 /**
  * cs-mem 卖点的用户侧入口：
- *  - 「梦境整理」→ DreamRenderer.dreamNow()（能量衰减/修剪/宏优化，周期任务亦可手动触发）
+ *  - 「记忆整理」→ MemKit.runMaintenanceNow()（衰减/修剪/晶化/别名发现，周期任务亦可手动触发）
  *  - 「免疫隔离区」→ MemoryImmuneSystem 可疑 UI 指纹计数/清除（0 = 未触发隔离，正常态）
  *
  * 修复：旧实现把两行内容直接平铺在 Surface 里 —— Material3 Surface 内容包在 Box

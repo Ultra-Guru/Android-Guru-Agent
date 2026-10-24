@@ -21,7 +21,7 @@ import com.apex.agent.core.tools.skill.SkillMenuProvider
 import com.apex.agent.core.tools.skill.SkillRegistry
 import com.apex.agent.marketplace.GithubFeaturedCatalog
 import com.apex.agent.marketplace.MarketInstallManager
-import com.apex.agent.platform.csmem.store.MemoryGraphStore
+import com.apex.memkit.core.MemKit
 import com.apex.agent.plugin.host.PluginManager
 import com.apex.agent.plugin.host.functional.FunctionalPluginStore
 import com.apex.agent.plugin.host.functional.UnifiedPluginEntry
@@ -81,7 +81,7 @@ class MarketViewModel @Inject constructor(
     // 语言切换：VM 侧消息（snackbar）按当前语言取词
     internal val languageManager: LanguageManager,
     // ── v2 认知市场：注入 cs-mem + 工具分析四件套（均为 @Singleton）──
-    private val memoryGraphStore: MemoryGraphStore,
+    private val memKit: MemKit,
     private val usageTracker: ToolUsageTracker,
     private val circuitBreaker: ToolCircuitBreaker,
     private val traceRecorder: ToolTraceRecorder
@@ -89,7 +89,7 @@ class MarketViewModel @Inject constructor(
 
     /** 技能分析投影器（聚合 cs-mem + 工具统计 + 熔断 + 轨迹 → 详情 UI 状态）。 */
     private val skillAnalytics = SkillAnalytics(
-        memoryGraphStore, usageTracker, circuitBreaker, traceRecorder
+        memKit, usageTracker, circuitBreaker, traceRecorder
     )
 
     internal val _uiState = MutableStateFlow(MarketUiState())

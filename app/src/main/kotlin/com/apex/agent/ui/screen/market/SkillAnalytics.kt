@@ -5,20 +5,20 @@ import com.apex.agent.core.tools.ToolTraceRecorder
 import com.apex.agent.core.tools.ToolUsageTracker
 import com.apex.agent.core.tools.skill.SkillManifest
 import com.apex.agent.core.tools.skill.SkillRegistry
-import com.apex.agent.platform.csmem.store.FSMMacro
-import com.apex.agent.platform.csmem.store.MemoryGraphStore
+import com.apex.memkit.core.MemKit
+import com.apex.memkit.core.model.MacroSkill
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 
 /**
  * # Skill Analytics 投影器
  *
- * 把散落在四个单例（[MemoryGraphStore] / [ToolUsageTracker] /
+ * 把散落在四个单例（[MemKit] / [ToolUsageTracker] /
  * [ToolCircuitBreaker] / [ToolTraceRecorder]）中的技能健康数据，
  * 聚合成单个 [SkillDetailUiState]，供市场详情对话框一次性渲染。
  *
  * 这是「认知市场」的数据枢纽 ——
- * - cs-mem 的 [FSMMacro] 提供 energy / successCount / failureCount /
+ * - 记忆库的 [MacroSkill] 提供 energy / successCount / failureCount /
  *   isCrystallized / lastExecutedAt（技能是否被频繁使用、是否结晶为可跳过 LLM 的确定性宏）；
  * - [ToolUsageTracker] 提供每个工具的调用次数 / 成功率 / 均耗时；
  * - [ToolCircuitBreaker] 提供熔断状态（连续失败次数 / 冷却剩余）；
@@ -27,7 +27,7 @@ import kotlinx.coroutines.coroutineScope
  * 纯函数式聚合，无副作用，可在 IO 线程安全调用。
  */
 class SkillAnalytics(
-    private val memoryGraphStore: MemoryGraphStore,
+    private val memKit: MemKit,
     private val usageTracker: ToolUsageTracker,
     private val circuitBreaker: ToolCircuitBreaker,
     private val traceRecorder: ToolTraceRecorder
@@ -43,8 +43,8 @@ class SkillAnalytics(
         skillId: String,
         manifest: SkillManifest?
     ): SkillDetailUiState = coroutineScope {
-        // 1. cs-mem 宏健康数据（energy / 结晶 / 成功失败计数 / 最近执行）
-        val macro = async { memoryGraphStore.getMacroBySkillId(skillId) }
+        // 1. 记忆库宏健康数据（energy / 结晶 / 成功失败计数 / 最近执行）
+        val macro = async { memKit.macroById(skillId) }
 
         // 2. 每个 tool 的使用统计
         val toolIds = manifest?.tools?.map { it.id }.orEmpty()
@@ -87,12 +87,12 @@ class SkillAnalytics(
         SkillDetailUiState(
             skillId = skillId,
             macro = m?.let { MacroHealth(
-                energy = it.energy,
-                isCrystallized = it.isCrystallized,
-                successCount = it.successCount,
-                failureCount = it.failureCount,
-                lastExecutedAt = it.lastExecutedAt,
-                transitions = it.transitions.size
+                energy = it.stats.energy,
+                isCrystallized = it.stats.crystallized,
+                successCount = it.stats.successCount,
+                failureCount = it.stats.failureCount,
+                lastExecutedAt = it.stats.lastExecutedAt,
+                transitions = it.steps.size
             )},
             totalInvocations = totalInvocations,
             totalSuccesses = totalSuccesses,
@@ -135,15 +135,15 @@ class SkillAnalytics(
     suspend fun batchProjectSkillHealth(
         skillIds: List<String>
     ): Map<String, SkillHealthBrief> = coroutineScope {
-        val deferred = skillIds.map { id -> async { id to memoryGraphStore.getMacroBySkillId(id) } }
+        val deferred = skillIds.map { id -> async { id to memKit.macroById(id) } }
         deferred.associate { it.await() }
             .mapValues { (_, macro) ->
                 SkillHealthBrief(
-                    energy = macro?.energy ?: 1.0f,
-                    isCrystallized = macro?.isCrystallized ?: false,
-                    lastUsedAt = macro?.lastExecutedAt ?: 0,
-                    successCount = macro?.successCount ?: 0,
-                    failureCount = macro?.failureCount ?: 0
+                    energy = macro?.stats?.energy ?: 1.0f,
+                    isCrystallized = macro?.stats?.crystallized ?: false,
+                    lastUsedAt = macro?.stats?.lastExecutedAt ?: 0,
+                    successCount = macro?.stats?.successCount ?: 0,
+                    failureCount = macro?.stats?.failureCount ?: 0
                 )
             }
     }

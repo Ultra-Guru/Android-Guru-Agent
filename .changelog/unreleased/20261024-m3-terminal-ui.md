@@ -17,7 +17,14 @@
 - **main 编译断裂修复**：`platform:browser-agent` 的 KSP 因 `BookmarkStore` /
   `DownloadCenter` / `EngineDisplayController`（apex-kit-browser v1.7.0 会话
   增强组件）无法解析而全红 —— 根因是 sync 工作流把 `gradle/browser-kit.lock`
-  bump 到更名后的 kit main HEAD（f28647b1），而 v1.7.0 分支
-  （365bc0e6）从未合入 kit main。锁回退到含全部 v1.7.0 类的分支 SHA，编译
-  即恢复（坐标 com.apex.browser 三层未随更名变动，前后兼容）。配套在
-  kit 仓提 PR 把 v1.7.0 分支合入 main（根因收口，避免下次 sync 再踩）。
+  bump 到更名后的 kit main HEAD（f28647b1），而 v1.7.0 分支（365bc0e6）当时
+  未合入 kit main。kit 仓 PR #20/#29 已把 v1.7.0 会话增强列车合回 kit main
+  （94ef6e40，含 Consumer Check 绿灯），sync 工作流已把锁 bump 至该 SHA（7ee75fa7），本 PR 合并与之对齐 —— 坐标
+  com.apex.browser 三层未随更名变动，编译即恢复，且与 sync 工作流的后续
+  bump 自然衔接（同为 kit main HEAD，无再踩风险）。
+- **main 质量门禁红灯修复（记忆库拆分善后）**：a58dc7ff 拆库提交使测试纪律
+  棘轮超基线（runBlocking 698 > 696，issue #276）—— `KnowledgeGraphStoreTest`
+  8 处 runBlocking 转 runTest（MemKit.create 仅同步 store.load()、写管道须
+  显式 start() 才启动，与 apex-memory-kit 库内 MemKitFacadeTest 同款 runTest
+  口径），存量降至 690 ≤ 基线 696，绿灯。本 PR 合入即恢复 main 的 CI /
+  Quality Gate / Release 三线全绿。
