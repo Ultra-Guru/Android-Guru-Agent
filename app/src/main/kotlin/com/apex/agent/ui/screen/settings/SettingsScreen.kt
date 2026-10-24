@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,6 +37,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,8 +62,8 @@ import kotlinx.coroutines.launch
  * - 点击叶子（如模型配置 → 配置 / 参数）→ 抽屉收回 → 内容区渲染对应页面；
  * - 顶栏汉堡钮可随时重开设置抽屉切换页面（页面状态保留）。
  *
- * 第二阶段（PR2）将把「单一当前页」升级为浏览器式多标签：页面以标签
- * 形式排在最上方，点叉号关闭并回退到相邻标签 / 设置抽屉。
+ * 第二阶段（本 PR）：浏览器式多标签 —— 打开的页面以标签形式排在
+ * 最上方，点叉号关闭并回退到相邻标签 / 设置抽屉（全部关闭时）。
  */
 @Composable
 fun SettingsScreen(
@@ -76,10 +79,18 @@ fun SettingsScreen(
     val selected = profiles.firstOrNull { it.id == selectedId } ?: profiles.firstOrNull()
 
     // ═══ 导航状态（rememberSaveable：旋转/进程重建不丢）═══
-    // activePage：当前打开的叶子页面 route（null = 尚未选择，抽屉主导）
+    // openTabs：浏览器式标签列表（叶子 route，按打开顺序；Saver 转 NUL 分隔串落盘）
+    // activeTab：当前激活标签 route（空串 = 无标签，设置抽屉主导）
     // expandedCategory：抽屉展开中的一级分类（默认模型配置）
-    var activePage by rememberSaveable { mutableStateOf<String?>(null) }
+    var openTabs by rememberSaveable(stateSaver = OpenTabsSaver) {
+        mutableStateOf(emptyList<String>())
+    }
+    var activeTab by rememberSaveable { mutableStateOf("") }
     var expandedCategory by rememberSaveable { mutableStateOf<String?>(SettingsNavTree.first().route) }
+
+    // 各标签页面状态隔离（切标签往返：滚动位置/展开态保留 —— 与根层
+    // ApexRoot 的 destinationStateHolder 同款模式）
+    val pageStateHolder = rememberSaveableStateHolder()
 
     // 进入设置页即打开设置抽屉（总抽屉已由根层收回）
     val settingsDrawerState = rememberDrawerState(initialValue = DrawerValue.Open)
@@ -100,24 +111,33 @@ fun SettingsScreen(
     val onToggleCategory: (String) -> Unit = { route ->
         expandedCategory = if (expandedCategory == route) null else route
     }
-    // 点击叶子：进入配置页面 + 收回设置抽屉
+    // 点击叶子：追加浏览器式标签（已开则仅激活）+ 收回设置抽屉
     val onSelectLeaf: (String) -> Unit = { route ->
-        activePage = route
+        if (!openTabs.contains(route)) openTabs = openTabs + route
+        activeTab = route
         expandedCategory = categoryOfLeaf(route)?.route
         scope.launch { settingsDrawerState.close() }
     }
-    // 从页面回到设置抽屉（清当前页 —— 重新选分类）
-    val onReturnToDrawer: () -> Unit = {
-        activePage = null
+    // 全部标签关闭：页面消失 → 返回设置抽屉（重新选分类）
+    val onAllTabsClosed: () -> Unit = {
+        openTabs = emptyList()
+        activeTab = ""
         openSettingsDrawer()
     }
+    // 关闭单个标签：关闭激活标签 → 回退相邻标签（左优先，规则见 closeSettingsTab）
+    val onCloseTab: (String) -> Unit = { route ->
+        val (next, nextActive) = closeSettingsTab(openTabs, activeTab, route)
+        openTabs = next
+        activeTab = nextActive ?: ""
+        if (next.isEmpty()) onAllTabsClosed()
+    }
 
-    // ═══ 返回键链：抽屉开 → 关抽屉；有页面 → 回抽屉；否则 → 出设置页 ═══
+    // ═══ 返回键链：抽屉开 → 关抽屉；有标签 → 关当前标签（同点叉号）；否则 → 出设置页 ═══
     BackHandler(enabled = settingsDrawerState.isOpen) {
         scope.launch { settingsDrawerState.close() }
     }
-    BackHandler(enabled = !settingsDrawerState.isOpen && activePage != null) {
-        onReturnToDrawer()
+    BackHandler(enabled = !settingsDrawerState.isOpen && activeTab.isNotEmpty()) {
+        onCloseTab(activeTab)
     }
 
     ModalNavigationDrawer(
@@ -127,7 +147,7 @@ fun SettingsScreen(
         drawerContent = {
             SettingsDrawerSheet(
                 expandedCategory = expandedCategory,
-                activeLeafRoute = activePage,
+                activeLeafRoute = activeTab.ifEmpty { null },
                 onToggleCategory = onToggleCategory,
                 onSelectLeaf = onSelectLeaf
             )
@@ -142,9 +162,10 @@ fun SettingsScreen(
                     windowInsets = WindowInsets(0, 0, 0, 0),
                     title = {
                         Text(
-                            activePage?.let { route ->
-                                leafOf(route)?.let { leaf -> stringResource(leaf.titleRes) }
-                            } ?: stringResource(R.string.settings_title)
+                            if (activeTab.isNotEmpty()) {
+                                leafOf(activeTab)?.let { stringResource(it.titleRes) }
+                                    ?: stringResource(R.string.settings_title)
+                            } else stringResource(R.string.settings_title)
                         )
                     },
                     navigationIcon = {
@@ -184,29 +205,48 @@ fun SettingsScreen(
                 )
             }
         ) { padding ->
-            Box(
+            Column(
                 Modifier
                     .padding(padding)
                     .fillMaxSize()
             ) {
-                val page = activePage
-                if (page == null) {
-                    // 未选叶子：引导态（抽屉已打开覆盖其上，关闭后可见）
-                    SettingsLandingHint(onOpenDrawer = openSettingsDrawer)
-                } else {
-                    SettingsPageRouter(
-                        route = page,
-                        profiles = profiles,
-                        selected = selected,
-                        agent = agent,
-                        roles = roles,
-                        viewModel = viewModel,
-                        onAgent = onAgent,
-                        onSelect = { selectedId = it },
-                        onManageProviders = { showProviders = true },
-                        onManageRoles = { showRoles = true },
-                        onReturnToDrawer = onReturnToDrawer
+                if (activeTab.isNotEmpty()) {
+                    // ═══ 浏览器式标签条：页面排在最上方（顶栏下、内容区上）═══
+                    SettingsTabBar(
+                        tabs = openTabs,
+                        activeTab = activeTab,
+                        onTabClick = { route ->
+                            activeTab = route
+                            expandedCategory = categoryOfLeaf(route)?.route
+                        },
+                        onTabClose = onCloseTab
                     )
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                    )
+                }
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (activeTab.isEmpty()) {
+                        // 未选叶子：引导态（抽屉已打开覆盖其上，关闭后可见）
+                        SettingsLandingHint(onOpenDrawer = openSettingsDrawer)
+                    } else {
+                        // 以标签 route 隔离页面状态：切标签往返不丢滚动位置/展开态
+                        pageStateHolder.SaveableStateProvider(activeTab) {
+                            SettingsPageRouter(
+                                route = activeTab,
+                                profiles = profiles,
+                                selected = selected,
+                                agent = agent,
+                                roles = roles,
+                                viewModel = viewModel,
+                                onAgent = onAgent,
+                                onSelect = { selectedId = it },
+                                onManageProviders = { showProviders = true },
+                                onManageRoles = { showRoles = true },
+                                onReturnToDrawer = onAllTabsClosed
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -236,6 +276,12 @@ fun SettingsScreen(
 }
 
 // ───────────────────────────── 页面路由 ─────────────────────────────
+
+/** 标签列表持久化 Saver：List<String> ↔ NUL 分隔串（route 不含控制字符，安全）。 */
+private val OpenTabsSaver = Saver<List<String>, String>(
+    save = { it.joinToString("\u0000") },
+    restore = { s -> s.split("\u0000").filter { ch -> ch.isNotEmpty() } }
+)
 
 /**
  * 叶子 route → 页面内容分发。每个页面 = 旧三页签对应分区的原样搬移，

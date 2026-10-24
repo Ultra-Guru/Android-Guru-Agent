@@ -84,6 +84,7 @@
     <string name="settings_providers_roles_hint">管理服务商（地址 / 密钥 / 轮换）与模型角色映射（主力 · 视觉 · 推理 · 快速 · 摘要）。</string>
     <string name="settings_manage_providers">管理服务商</string>
     <string name="settings_manage_roles">管理模型角色</string>
+    <string name="settings_tab_close">关闭 %1$s</string>
 
 
     <!-- Generation -->
