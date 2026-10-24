@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.apex.agent.R
 import com.apex.agent.platform.memory.work.MaintenanceScheduler
 import com.apex.memkit.core.MemKit
+import com.apex.memkit.graph.graph.MemKitGraphSource
+import com.apex.memkit.graph.graph.MemoryGraphSource
 import com.apex.memkit.core.model.ChatFact
 import com.apex.memkit.core.model.EpisodeSummary
 import com.apex.memkit.core.model.MacroSkill
@@ -53,6 +55,13 @@ class MemoryViewModel @Inject constructor(
         val nodeCount: Int = 0,
         val macroCount: Int = 0
     )
+
+    /**
+     * 记忆图谱数据源（apex-kit-memory:memory-graph-ui 的端口）—— 直读
+     * 库门面五轨快照。VM 持有一等来源而非 Composable 内构造：图谱状态
+     * （缩放 / 选中 / 过滤）跨视图切换存活，切回列表再切回不丢探索现场。
+     */
+    val graphSource: MemoryGraphSource = MemKitGraphSource(memKit)
 
     private val _episodes = MutableStateFlow<List<EpisodeSummary>>(emptyList())
     val episodes: StateFlow<List<EpisodeSummary>> = _episodes.asStateFlow()

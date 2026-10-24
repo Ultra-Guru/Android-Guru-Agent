@@ -47,6 +47,12 @@ dependencies {
     // 远端 Maven 坐标（E3 稳定期发布后启用）。
     api("com.apex.memkit:memory-core:1.0.0")
 
+    // 记忆图谱 UI（apex-kit-memory:memory-graph-ui）：六类记忆节点 + 六类
+    // 关系边的交互式可视化（力导向布局 / 缩放平移拖拽 / 点击节点看记忆
+    // 内幕 / 过滤搜索图例）。接线方式与 memory-core 完全同构 —— composite
+    // build 坐标替换；app 记忆页经 MemoryGraphContent 嵌入消费。
+    api("com.apex.memkit:memory-graph-ui:1.0.0")
+
     // Coroutines
     implementation(libs.coroutines.android)
 

@@ -433,6 +433,8 @@
 
     <!-- ═══ Memory (MemoryScreen) ═══ -->
     <string name="memory_title">Memory</string>
+    <string name="memory_graph_view">Memory graph view</string>
+    <string name="memory_list_view">Memory list view</string>
     <string name="MemorySearchNodes">Search nodes</string>
     <string name="memory_got_it">Got it</string>
     <string name="memory_nodes">Nodes</string>

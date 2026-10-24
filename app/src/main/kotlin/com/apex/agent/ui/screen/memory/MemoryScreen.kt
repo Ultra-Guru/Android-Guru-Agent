@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.HealthAndSafety
@@ -62,6 +63,8 @@ import com.apex.agent.ui.component.reliabilityTierOf
 import com.apex.memkit.core.model.EpisodeSummary
 import com.apex.memkit.core.model.MacroSkill
 import com.apex.memkit.core.store.NodeDictEntry
+import com.apex.memkit.graph.screen.MemoryGraphContent
+import com.apex.memkit.graph.screen.rememberMemoryGraphState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -85,6 +88,11 @@ fun MemoryScreen(
     var pendingDelete by remember { mutableStateOf<EpisodeSummary?>(null) }
     var showToast by remember { mutableStateOf(false) }
 
+    // 记忆图谱视图（apex-kit-memory:memory-graph-ui）：与列表视图同页切换。
+    // 状态提升到本屏顶层 —— 图谱的缩放 / 选中 / 过滤现场跨切换存活。
+    var graphMode by remember { mutableStateOf(false) }
+    val graphState = rememberMemoryGraphState(viewModel.graphSource)
+
     LaunchedEffect(message) {
         if (message != null) showToast = true
     }
@@ -102,8 +110,19 @@ fun MemoryScreen(
                 windowInsets = WindowInsets(0, 0, 0, 0),
                 title = { Text(stringResource(R.string.memory_title)) },
                 actions = {
-                    IconButton(onClick = { showSearch = !showSearch }) {
-                        Icon(Icons.Default.Search, contentDescription = stringResource(R.string.MemorySearchNodes))
+                    // 图谱 / 列表视图切换（同页双形态：关系网 vs 管理列表）
+                    IconButton(onClick = { graphMode = !graphMode }) {
+                        Icon(
+                            Icons.Default.AccountTree,
+                            contentDescription = stringResource(
+                                if (graphMode) R.string.memory_list_view else R.string.memory_graph_view
+                            ),
+                        )
+                    }
+                    if (!graphMode) {
+                        IconButton(onClick = { showSearch = !showSearch }) {
+                            Icon(Icons.Default.Search, contentDescription = stringResource(R.string.MemorySearchNodes))
+                        }
                     }
                 }
             )
@@ -122,6 +141,17 @@ fun MemoryScreen(
             }
         }
     ) { padding ->
+        // 图谱视图：六类记忆节点 + 六类关系边的交互画布（库 MemoryGraphContent
+        // 自带统计条 / 过滤搜索 / 缩放控制 / 详情 Sheet；本页只补 Scaffold 外壳）
+        if (graphMode) {
+            MemoryGraphContent(
+                state = graphState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+            )
+            return@Scaffold
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
