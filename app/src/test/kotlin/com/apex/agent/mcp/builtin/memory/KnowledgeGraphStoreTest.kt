@@ -4,7 +4,7 @@ import com.apex.memkit.core.MemKit
 import com.apex.memkit.core.MemKitConfig
 import com.apex.memkit.core.store.FileStorageBackend
 import java.nio.file.Files
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -21,18 +21,20 @@ import org.junit.Test
  * 用例覆盖合并/去重/级联删除）；宿主侧只测 **JSON-RPC 适配层**：
  * tools/call 派发、参数解码、结果渲染、错误折叠（不再让进程内异常击穿
  * JSON-RPC 层）。存储走真实 FileStorageBackend（临时目录）。
+ *
+ * 协程纪律（issue #276）：runTest 虚拟时间 —— MemKit.create 仅同步 store.load()
+ * （写管道须显式 start() 才启动，本测试不涉及），与 apex-kit-memory 库内
+ * MemKitFacadeTest 同款 runTest 口径，无墙钟依赖。
  */
 class KnowledgeGraphStoreTest {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    private fun transport(): Pair<BuiltinMemoryMcpTransport, MemKit> {
-        val kit = runBlocking {
-            MemKit.create(
-                config = MemKitConfig(),
-                storage = FileStorageBackend(Files.createTempDirectory("mcp-memory-test").toFile()),
-            )
-        }
+    private suspend fun transport(): Pair<BuiltinMemoryMcpTransport, MemKit> {
+        val kit = MemKit.create(
+            config = MemKitConfig(),
+            storage = FileStorageBackend(Files.createTempDirectory("mcp-memory-test").toFile()),
+        )
         return BuiltinMemoryMcpTransport(kit.store) to kit
     }
 
@@ -50,7 +52,7 @@ class KnowledgeGraphStoreTest {
     }
 
     @Test
-    fun `tools list advertises six memory tools`(): Unit = runBlocking {
+    fun `tools list advertises six memory tools`(): Unit = runTest {
         val (transport, _) = transport()
         val response = transport.send(1, """{"jsonrpc":"2.0","id":1,"method":"tools/list"}""")!!
         val tools = response["result"]!!.jsonObject["tools"]!!.jsonArray
@@ -59,7 +61,7 @@ class KnowledgeGraphStoreTest {
     }
 
     @Test
-    fun `create then read graph returns compact json snapshot`(): Unit = runBlocking {
+    fun `create then read graph returns compact json snapshot`(): Unit = runTest {
         val (transport, _) = transport()
         val created = call(
             transport, "create_entities",
@@ -76,7 +78,7 @@ class KnowledgeGraphStoreTest {
     }
 
     @Test
-    fun `add observations on unknown entity folds into tool error text`(): Unit = runBlocking {
+    fun `add observations on unknown entity folds into tool error text`(): Unit = runTest {
         val (transport, _) = transport()
         call(transport, "create_entities", """{"entities":[{"name":"小明","entityType":"person"}]}""")
         call(transport, "add_observations", """{"entityName":"小明","contents":["程序员"]}""")
@@ -92,7 +94,7 @@ class KnowledgeGraphStoreTest {
     }
 
     @Test
-    fun `search nodes matches and delete cascades`(): Unit = runBlocking {
+    fun `search nodes matches and delete cascades`(): Unit = runTest {
         val (transport, _) = transport()
         call(transport, "create_entities", """{"entities":[{"name":"小明","entityType":"person"}]}""")
         call(transport, "create_relations", """{"relations":[{"from":"小明","to":"项目A","relationType":"参与"}]}""")
@@ -110,7 +112,7 @@ class KnowledgeGraphStoreTest {
     }
 
     @Test
-    fun `unknown tool name folds into error text not exception`(): Unit = runBlocking {
+    fun `unknown tool name folds into error text not exception`(): Unit = runTest {
         val (transport, _) = transport()
         val payload = """{"jsonrpc":"2.0","id":1,"method":"tools/call",
             "params":{"name":"no_such_tool","arguments":{}}}""".trimIndent().replace("\n", "")
@@ -122,7 +124,7 @@ class KnowledgeGraphStoreTest {
     }
 
     @Test
-    fun `malformed rpc payload throws mcp exception`(): Unit = runBlocking {
+    fun `malformed rpc payload throws mcp exception`(): Unit = runTest {
         val (transport, _) = transport()
         var threw = false
         try {
