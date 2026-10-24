@@ -60,9 +60,9 @@ class PRootLibtallocStagingTest {
 
         assertEquals(2, results.size)
         for (r in results) {
-            assertNotEquals(
-                "dir=${r.dir} must not FAIL", PRootLibtallocStaging.Outcome.FAILED,
-                r.outcome, "err=${r.error}",
+            assertTrue(
+                "dir=${r.dir} must not FAIL (err=${r.error})",
+                r.outcome != PRootLibtallocStaging.Outcome.FAILED,
             )
         }
         // staging 目录被创建且链接有效（旧实现这里永远拿不到链接——根因）
