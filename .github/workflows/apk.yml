@@ -145,6 +145,23 @@ jobs:
           ref: ${{ steps.ckitpin.outputs.sha }}
           path: apex-kit-courier
 
+      - name: Read apex-kit-memory pin
+        id: mkitpin
+        # 认知记忆库（com.apex.memkit:memory-core）锁定文件 gradle/memory-kit.lock
+        # 由 sync-memory-kit 工作流自动维护：memory-kit main 有新绿提交 →
+        # 锁文件 bump → 本仓库 push → 全流水线以新锁定版本构建。缺锁回退
+        # main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/memory-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-memory (memory-core composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-memory
+          ref: ${{ steps.mkitpin.outputs.sha }}
+          path: apex-kit-memory
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:

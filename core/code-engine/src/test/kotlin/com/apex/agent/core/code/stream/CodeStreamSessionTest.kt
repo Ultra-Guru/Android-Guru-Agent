@@ -334,7 +334,70 @@ class CodeStreamSessionTest {
         val snap = s.snapshot()
         val chips = snap.entries.filterIsInstance<StreamEntry.FileChipsEntry>().single()
         assertEquals(listOf("A.kt", "B.kt"), chips.files)
-        assertTrue(snap.entries.any { it is StreamEntry.StatusEntry })
+        // 结构化统计收尾卡（取代旧纯文本状态行）：Complete 的三项数值 +
+        // 会话侧的文件数/失败数全部落在条目上
+        val stats = snap.entries.filterIsInstance<StreamEntry.RunStatsEntry>().single()
+        assertEquals(3, stats.iterations)
+        assertEquals(2, stats.toolCalls)
+        assertEquals(0, stats.failedCalls)
+        assertEquals(2, stats.filesTouched)
+        assertEquals(1_000L, stats.durationMs)
+    }
+
+    @Test
+    fun `run stats failed count is per run not cumulative`() {
+        // 跨 run 不串台：第一轮失败 1 次 → 统计卡 1；第二轮干净 → 0
+        //（failedToolCallCount 是会话累计，基线差值才是本轮口径）
+        val s = CodeStreamSession()
+        s.beginRun("会失败的一轮")
+        s.onEvent(bashStart("b1", "make"))
+        s.onEvent(AgentEvent.ToolCallComplete("b1", "TerminalExec", "{}", "exit code 1", "", false, 5))
+        s.onEvent(AgentEvent.Complete("done", 1, 1, 100))
+        val first = s.snapshot().entries.filterIsInstance<StreamEntry.RunStatsEntry>().single()
+        assertEquals("第一轮失败 1 次", 1, first.failedCalls)
+
+        s.beginRun("干净的第二轮")
+        s.onEvent(bashStart("b2", "echo ok"))
+        s.onEvent(AgentEvent.ToolCallComplete("b2", "TerminalExec", "{}", "exit code 0", "", true, 5))
+        s.onEvent(AgentEvent.Complete("done", 1, 1, 50))
+        val second = s.snapshot().entries.filterIsInstance<StreamEntry.RunStatsEntry>().last()
+        assertEquals("第二轮失败数不携带上一轮累计", 0, second.failedCalls)
+        assertEquals(1, second.toolCalls)
+        assertEquals(50L, second.durationMs)
+    }
+
+    @Test
+    fun `run stats entry round trips through checkpoint`() {
+        // 检查点恢复：runstats 条目扁平化存取（数值零丢失，旧档默认 0 兼容）
+        val s = CodeStreamSession()
+        s.beginRun("可恢复的一轮")
+        s.onEvent(AgentEvent.Complete("done", 4, 7, 9_500))
+        val storable = CodeStreamCheckpoint.fromSession(s, "ws-1")
+        val entry = storable.entries.filter { it.type == "runstats" }.single()
+        assertEquals(4, entry.runIterations)
+        assertEquals(7, entry.runToolCalls)
+        assertEquals(9_500L, entry.runDurationMs)
+        val restored = CodeStreamCheckpoint.toEntries(storable)
+            .filterIsInstance<StreamEntry.RunStatsEntry>().single()
+        assertEquals(4, restored.iterations)
+        assertEquals(7, restored.toolCalls)
+        assertEquals(9_500L, restored.durationMs)
+    }
+
+    @Test
+    fun `pure qa turn keeps light status line instead of stats card`() {
+        // 纯问答轮（零工具零文件）不出重统计卡——轻量状态行收尾
+        val s = CodeStreamSession()
+        s.beginRun("就问一句话")
+        s.onEvent(AgentEvent.ResponseChunk("直接回答"))
+        s.onEvent(AgentEvent.Complete("done", 1, 0, 300))
+        val snap = s.snapshot()
+        assertEquals("零工作不出统计卡", 0, snap.entries.count { it is StreamEntry.RunStatsEntry })
+        assertEquals(
+            "旧轻量状态行保留",
+            1,
+            snap.entries.count { it is StreamEntry.StatusEntry && (it as StreamEntry.StatusEntry).text.contains("完成") }
+        )
     }
 
     @Test
@@ -467,10 +530,11 @@ class CodeStreamSessionTest {
                 it is StreamEntry.StatusEntry && (it as StreamEntry.StatusEntry).text.contains("轮迭代")
             }
         )
-        assertTrue(
-            "Complete 收尾状态行仍保留",
-            snap.entries.any { it is StreamEntry.StatusEntry && (it as StreamEntry.StatusEntry).text.contains("完成") }
-        )
+        // Complete 收尾改为结构化统计卡（旧纯文本状态行已退役）
+        val stats = snap.entries.filterIsInstance<StreamEntry.RunStatsEntry>()
+        assertEquals("收尾统计卡存在且仅一张", 1, stats.size)
+        assertEquals(2, stats[0].iterations)
+        assertEquals(2, stats[0].toolCalls)
     }
 
     @Test

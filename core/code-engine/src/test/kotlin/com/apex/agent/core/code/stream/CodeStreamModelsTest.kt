@@ -84,8 +84,10 @@ class CodeStreamModelsTest {
     // ═══ 分组建议 ═══
 
     @Test
-    fun `group threshold is three`() {
-        assertEquals(3, StreamEntryGroup.GROUP_THRESHOLD)
+    fun `group threshold is one - two same-kind calls aggregate`() {
+        // 用户需求「同种工具直接放在一起」：连续胶囊数 > 阈值（即 ≥2）成组，
+        // 几十条终端命令只占一颗聚合胶囊
+        assertEquals(1, StreamEntryGroup.GROUP_THRESHOLD)
     }
 
     @Test

@@ -76,6 +76,25 @@ sealed interface AgentEvent {
         val description: String
     ) : AgentEvent
     
+    /**
+     * 工具调用参数增量（LLM 流式生成 tool_calls 分片期间发射）。
+     *
+     * 模型在一次响应里把 arguments 按 JSON 字节流式吐出（每帧一小段），
+     * 旧管线只有流结束后 ToolCallStart 才携带全量参数 —— UI 无法呈现
+     * 「正在写文件」的过程。本事件把每个分片实时上抛（[delta] 为原始
+     * JSON 字节片段，消费端负责容错拼接与半截提取）。
+     *
+     * 生命周期约定：同一 [callId] 的 Delta 流结束后必有 ToolCallStart
+     * （全量参数、状态升级）；消费端以 callId 幂等合并，重放安全。
+     * [toolName] 为累积器当前已知的工具名（首片可能为空 —— 名字随分片
+     * 到达，消费端对空名分片应缓冲等待而非丢弃）。
+     */
+    data class ToolCallArgsDelta(
+        val callId: String,
+        val toolName: String,
+        val delta: String
+    ) : AgentEvent
+
     /** 开始调用工具 */
     data class ToolCallStart(
         val callId: String,

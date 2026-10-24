@@ -20,7 +20,8 @@ package com.apex.agent.core.code.stream
  * ## 防刷屏/防死循环（验证闭环的自延长链）
  *
  * edit→lint/test→再 edit 的闭环会让胶囊链自行延长：
- * - 同阶段（同 [ToolKind] 连续胶囊）超 3 个由 UI 收进「+N 更多」分组；
+ * - 同族（同 [ToolKind] 连续胶囊）≥ 2 个由 UI 收进「聚合胶囊」（折叠态
+ *   只显最新 + ×N，展开态平铺历史）；
  * - 验证轮次（[VerifyCycle]）聚合「一轮改动 + 随后的验证」为可折叠
  *   轮次胶囊，轮内明细默认收起。
  */
@@ -102,6 +103,9 @@ enum class ToolCallStatus { WAITING, RUNNING, SUCCESS, FAILED, APPLIED, PARTIAL 
  * @param logTail 终端日志尾窗（环形缓冲的最新片段）。
  * @param diffText diff 原文（编辑/写类，DetailSheet 里现场解析 hunk）。
  * @param summary 完成摘要（≤24 字，副标题收尾文案）。
+ * @param streamingPreview 参数生成期实时预览（ToolCallArgsDelta 归约；
+ *   写/编辑类的半截 JSON 提取——绿增红删代码窗的数据源。WAITING/RUNNING
+ *   期间持续刷新，终态时由会话清空 = 代码窗自动收回）。
  */
 data class StreamToolCall(
     val id: String,
@@ -120,7 +124,8 @@ data class StreamToolCall(
     val diffText: String? = null,
     val progressPercent: Float? = null,
     val progressMessage: String? = null,
-    val summary: String? = null
+    val summary: String? = null,
+    val streamingPreview: StreamArgsPreview? = null
 ) {
     /** 是否编辑/写类（点击行为 → 文件 Diff）。 */
     val isEditFamily: Boolean
@@ -130,6 +135,10 @@ data class StreamToolCall(
     val isTerminal: Boolean
         get() = status == ToolCallStatus.SUCCESS || status == ToolCallStatus.FAILED ||
             status == ToolCallStatus.APPLIED || status == ToolCallStatus.PARTIAL
+
+    /** 是否处于「参数流式生成 / 执行中」——实时代码窗的展示窗口。 */
+    val isLive: Boolean
+        get() = status == ToolCallStatus.WAITING || status == ToolCallStatus.RUNNING
 
     /** 展示耗时：优先引擎上报，缺省本地推算（进行中 = 至今）。 */
     fun displayDuration(now: Long): Long = when {
@@ -222,6 +231,28 @@ sealed interface StreamEntry {
         val summary: GitOpSummary,
         val callId: String? = null
     ) : StreamEntry
+
+    /**
+     * 运行统计收尾卡（Complete 事件的结构化可视化——取代纯文本状态行）。
+     *
+     * 把「完成 · N 轮 · N 次工具 · Ns」一行字升级为可渲染的统计卡：
+     * 迭代轮数 / 工具调用数 / 触碰文件数 / 失败数 / 总耗时，UI 端
+     * 按 stat chips 布局（失败 >0 红色强调）。
+     *
+     * @param iterations 本轮迭代轮数（引擎 totalIterations）。
+     * @param toolCalls 本轮工具调用数（引擎 totalToolCalls）。
+     * @param failedCalls 本轮失败的工具调用数（会话按 run 归零统计）。
+     * @param filesTouched 本轮触碰的文件数（affectedFiles 每 run 清零）。
+     * @param durationMs 本轮总耗时（引擎 totalDurationMs）。
+     */
+    data class RunStatsEntry(
+        override val id: String,
+        val iterations: Int,
+        val toolCalls: Int,
+        val failedCalls: Int = 0,
+        val filesTouched: Int = 0,
+        val durationMs: Long = 0
+    ) : StreamEntry
 }
 
 /**
@@ -258,15 +289,19 @@ data class CodeStreamSnapshot(
 }
 
 /**
- * 时间轴分组建议（防刷屏）：同族连续胶囊超 [GROUP_THRESHOLD] 个时
- * 由 UI 收进「+N 更多」——分组是纯派生视图，展开态由 UI 自持。
+ * 时间轴分组建议（防刷屏 + 同族聚合）：同族**连续**胶囊数 > [GROUP_THRESHOLD]
+ * （即 ≥2）即收进一颗「聚合胶囊」——折叠态仅展示**最新一颗**的名称/命令 +
+ * ×N 计数徽标（用户需求：「胶囊始终展示最新命令」）；展开态平铺全部历史
+ * 胶囊，每颗可点击进详情，头行可再收起。分组是纯派生视图，展开态由 UI
+ * 自持（活跃胶囊流式期间自动展开、全部终态后自动收回，手动切换永远优先）。
  */
 data class StreamEntryGroup(
     val kind: ToolKind,
     val entries: List<StreamEntry.ToolCapsuleEntry>
 ) {
     companion object {
-        /** 同阶段收进「+N 更多」的阈值。 */
-        const val GROUP_THRESHOLD = 3
+        /** 同族聚合阈值：连续胶囊数 > 此值（即 ≥2）成组——两次同族调用就
+         *  折叠为一颗，几十条终端命令只占一行。 */
+        const val GROUP_THRESHOLD = 1
     }
 }
