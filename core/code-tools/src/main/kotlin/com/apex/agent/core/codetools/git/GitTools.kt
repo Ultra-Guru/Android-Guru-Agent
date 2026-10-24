@@ -5,7 +5,7 @@ import com.apex.agent.core.tools.AgentTool
 /**
  * # GitTools — Coding 模式 git 工具集聚合入口（Issue #153）
  *
- * 五个 git 工具（status / diff / log / commit / branch），与 CodeRead 等
+ * 六个 git 工具（status / diff / log / commit / branch + 任意子命令 run），与 CodeRead 等
  * 文件工具同族：
  *
  * - 全部经注入的 [GitCommandRunner] 执行——生产实现是 app 层的
@@ -32,7 +32,10 @@ object GitTools {
         GitDiffTool(runner),
         GitLogTool(runner),
         GitCommitTool(runner),
-        GitBranchTool(runner)
+        GitBranchTool(runner),
+        // v1.9：任意 git 子命令通道（clone/pull/push/fetch/rebase/tag...）——
+        // GitHub 任务的主通路（提交→推送走 git 命令，不走浏览器自动化）
+        GitRunTool(runner)
     )
 }
 

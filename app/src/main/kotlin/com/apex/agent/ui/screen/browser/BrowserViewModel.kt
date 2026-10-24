@@ -152,14 +152,16 @@ class BrowserViewModel @Inject constructor(
 
     /**
      * 打开浏览器（v1.5.1，浏览器页签空态与仪表盘「打开浏览器」共用）：
-     * HIDDEN → 复用首个标签（无则新建空白页）+ 进入人工接管（WAITING_HUMAN，
-     * Agent 工具锁定、地址栏交给用户）；非 HIDDEN 幂等空操作（页面已在，
-     * 浏览器页签直接展示当前实况）。
+     * HIDDEN → 复用首个标签（无则新建空白页）。**正常浏览器语义**——用户
+     * 输入网址自由浏览，不改变会话状态、不锁 Agent 工具（v1.5.2 修正：旧实现
+     * 一打开就 enterHandoffMode 进 WAITING_HUMAN，用户看到的全是「人工接管/
+     * 工具已锁定」信息，而不是浏览器）。人工接管是显式动作：仪表盘「人工接管」
+     * 按钮或 Agent 的 BrowserShow 工具才进入 WAITING_HUMAN。
+     * 非 HIDDEN 幂等空操作（页面已在，浏览器页签直接展示当前实况）。
      */
     fun openBrowser() = launchAction("openBrowser") {
         if (engine.currentState == BrowserEngine.BrowserSessionState.HIDDEN) {
             if (engine.tabsSnapshot().isEmpty()) engine.newTab()
-            engine.enterHandoffMode()
         }
     }
 

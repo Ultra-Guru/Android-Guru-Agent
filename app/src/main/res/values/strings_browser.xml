@@ -64,7 +64,7 @@
     <string name="browser_screen_tab_dashboard">Dashboard</string>
     <!-- 浏览器页签空态引导卡 -->
     <string name="browser_screen_inapp_hero_title">Built-in browser</string>
-    <string name="browser_screen_inapp_hero_desc">A full browser opens right here — address bar, tabs, find-in-page, downloads. No special permission needed. The Agent drives the same pages, so you can watch it browse live or take over anytime.</string>
+    <string name="browser_screen_inapp_hero_desc">A full browser opens right here — type a URL and browse normally: address bar, tabs, find-in-page, downloads. No special permission needed. The Agent automates the same pages; watch it work live, and take over only when needed (login/captcha) via the explicit Take-over button.</string>
     <string name="browser_screen_inapp_open">Open browser</string>
     <!-- 人工接管横幅（注入 chrome 头部） -->
     <string name="browser_screen_inapp_handoff">You are in control — Agent tools are locked</string>

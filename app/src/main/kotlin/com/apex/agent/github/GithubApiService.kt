@@ -104,6 +104,27 @@ class GithubApiService @Inject constructor(
         apiCall("/repos/${encodeSegment(owner)}/${encodeSegment(repo)}/branches")
 
     /**
+     * 创建 Pull Request（POST /repos/{o}/{r}/pulls）。head 含冒号（跨仓
+     * fork PR："user:branch" 形态）时原样透传；同仓分支 PR 只传分支名。
+     */
+    suspend fun createPullRequest(
+        owner: String,
+        repo: String,
+        title: String,
+        head: String,
+        base: String,
+        body: String? = null,
+    ): GithubPullRequest {
+        val reqBody = buildJsonObject {
+            put("title", title)
+            put("head", head)
+            put("base", base)
+            if (!body.isNullOrBlank()) put("body", body)
+        }
+        return apiCall("/repos/${encodeSegment(owner)}/${encodeSegment(repo)}/pulls", "POST", reqBody.toString())
+    }
+
+    /**
      * 代码搜索。GitHub legacy /search/code 硬约束：query 必须含至少一个
      * repo:/user:/org: 限定符（纯关键词搜索返回 422 Validation Failed）。
      * 调用方（GithubSearchCodeTool）负责在缺限定符时提前拒绝并给出指引。
@@ -314,6 +335,16 @@ data class PagedResult<T>(val items: List<T>, val nextUrl: String?)
 @Serializable data class GithubIssue(val number: Int, val title: String, val body: String? = null, val state: String = "open", val html_url: String = "")
 @Serializable data class GithubBranch(val name: String, val commit: GithubBranchCommit? = null)
 @Serializable data class GithubBranchCommit(val sha: String = "")
+/** PR 创建结果（POST /pulls 返回体的消费子集）。 */
+@Serializable data class GithubPullRequest(
+    val number: Int,
+    val title: String = "",
+    val state: String = "open",
+    val html_url: String = "",
+    val head: GithubPullRef? = null,
+    val base: GithubPullRef? = null,
+)
+@Serializable data class GithubPullRef(val ref: String = "", val sha: String = "")
 @Serializable data class GithubSearchResult(val total_count: Int = 0, val items: List<GithubSearchItem> = emptyList())
 @Serializable data class GithubSearchItem(val name: String = "", val path: String = "", val html_url: String = "", val repository: GithubRepo? = null)
 @Serializable data class GithubSearchReposResult(val total_count: Int = 0, val items: List<GithubRepo> = emptyList())

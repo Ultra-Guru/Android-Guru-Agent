@@ -353,3 +353,31 @@ class GithubSearchReposTool(private val api: GithubApiService) : AgentTool {
         }
     }
 }
+
+class GithubCreatePullRequestTool(private val api: GithubApiService) : AgentTool {
+    override val id = "GithubCreatePullRequest"
+    override val name = "Create GitHub Pull Request"
+    override val description = "Create a pull request on GitHub (owner/repo, head → base). " +
+        "⚠️HIGH-RISK: real PR on the remote repo — tell the user BEFORE creating unless they already asked for it. " +
+        "head is the source branch (use \"user:branch\" for cross-repo fork PRs); base is the target branch. " +
+        "Typical flow with git tools: CodeGitRun push branch → GithubCreatePullRequest. 创建 PR。"
+    override val parametersSchema = """{"type":"object","properties":{"owner":{"type":"string"},"repo":{"type":"string"},"title":{"type":"string"},"head":{"type":"string","description":"Source branch, e.g. feat/x or user:feat/x for fork PRs"},"base":{"type":"string","description":"Target branch, e.g. main"},"body":{"type":"string","description":"PR description (optional)"}},"required":["owner","repo","title","head","base"]}"""
+    override suspend fun execute(arguments: String): String {
+        val json = parseArgs(arguments) ?: return argsParseError(arguments)
+        val owner = json.stringOf("owner") ?: return "Error: 需要 owner"
+        val repo = json.stringOf("repo") ?: return "Error: 需要 repo"
+        val title = json.stringOf("title")?.trim() ?: return "Error: 需要 title"
+        val head = json.stringOf("head")?.trim() ?: return "Error: 需要 head（源分支）"
+        val base = json.stringOf("base")?.trim() ?: return "Error: 需要 base（目标分支）"
+        val body = json.stringOf("body")
+        if (owner.isBlank() || repo.isBlank()) return "Error: owner/repo 不能为空"
+        if (title.isEmpty()) return "Error: title 不能为空"
+        if (head.isEmpty() || base.isEmpty()) return "Error: head/base 不能为空"
+        return try {
+            val pr = api.createPullRequest(owner, repo, title, head, base, body)
+            "✅ 已创建 PR #${pr.number}: $title\n${pr.head?.ref ?: head} → ${pr.base?.ref ?: base}\n${pr.html_url}"
+        } catch (e: GithubApiException) {
+            githubError(e)
+        }
+    }
+}

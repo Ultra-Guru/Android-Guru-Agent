@@ -263,6 +263,11 @@ class WebSearchTool(
         Use this to find documentation, articles, or any web content.
         After finding relevant results, use WebFetch to read the full content.
 
+        For coding/library/API/technical questions, prefer GitHub tools as the
+        authoritative source: GithubSearchRepos to find the repo, then
+        GithubSearchCode / GithubReadFile to read the actual code, README and
+        docs — more precise than web snippets for technical facts.
+
         Examples:
         - {"query": "Kotlin coroutines tutorial"}
         - {"query": "Android 15 new features", "max_results": 5}

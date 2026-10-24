@@ -57,7 +57,7 @@
     <string name="browser_screen_tab_dashboard">仪表盘</string>
     <!-- 浏览器页签空态引导卡 -->
     <string name="browser_screen_inapp_hero_title">内置浏览器</string>
-    <string name="browser_screen_inapp_hero_desc">在此直接打开完整浏览器——地址栏、标签页、页内查找、下载管理，无需任何特殊权限。Agent 驱动的是同一组页面：可以实时看它浏览，也可以随时接管。</string>
+    <string name="browser_screen_inapp_hero_desc">在此直接打开完整浏览器——输入网址即可正常上网：地址栏、标签页、页内查找、下载管理一应俱全，无需任何特殊权限。Agent 自动化驱动的是同一组页面：可以实时看它操作；需要人工介入（登录/验证码）时再点「人工接管」。</string>
     <string name="browser_screen_inapp_open">打开浏览器</string>
     <!-- 人工接管横幅（注入 chrome 头部） -->
     <string name="browser_screen_inapp_handoff">人工接管中——Agent 工具已锁定</string>
