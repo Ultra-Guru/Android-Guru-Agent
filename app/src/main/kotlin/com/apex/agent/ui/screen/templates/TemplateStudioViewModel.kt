@@ -45,7 +45,16 @@ class TemplateStudioViewModel @Inject constructor(
 
     init {
         // 注册表变更（同 VM 内的保存/删除/重播种）后刷新当前页签清单。
-        refresh()
+        // ★ 首载先播种内置模板（幂等：缺则补）再刷新 —— 修复全新安装模板
+        //   工坊两个页签恒为空清单、切换「没有反应」的数据面根因：生产端
+        //   此前从未播种（注册表 init 只建目录），内置 10 套模板从未出现。
+        //   DI 模块也异步播种（其它消费者兜底），此处先 reseed 再取清单
+        //   消除竞态 —— 首个页签打开即见内置模板。
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { templateRegistry.reseedBuiltIns() }
+                .onFailure { android.util.Log.w("TemplateStudio", "seed built-ins failed: ${it.message}") }
+            refresh()
+        }
     }
 
     fun selectTab(scope: TemplateScope) {

@@ -204,7 +204,24 @@ fun CodeScreen(
             onSwitchLogic = viewModel::setLogicMode,
             // v1.6 工作区浏览器（文件树/预览/Git/变更产物全屏页；页面内
             // 自带 Git 能力 —— 原 CallSplit 独立 Git 入口与其重复，已移除）
-            onOpenWorkspaceBrowser = onOpenWorkspaceBrowser
+            onOpenWorkspaceBrowser = onOpenWorkspaceBrowser,
+            // 小大脑（LLM 模型选择）：顶栏右端空隙位 —— 与输入栏 modelMenu 插槽
+            // 同一数据源与回调（providerNameOf 回调在非 @Composable 上下文触发，
+            // 兜底文案预解析）。
+            modelMenu = {
+                val unknownProviderLabel = stringResource(R.string.chat_unknown_provider)
+                BrainMenuButton(
+                    profiles = codeProfiles,
+                    currentProfileId = codeCurrentProfileId ?: "",
+                    providerNameOf = { providerId ->
+                        codeProviders.firstOrNull { it.id == providerId }?.displayName
+                            ?: unknownProviderLabel
+                    },
+                    onSelectProfile = { viewModel.selectCodeModel(it) },
+                    onParamsChanged = { t, p, m -> viewModel.updateCodeModelParams(t, p, m) },
+                    onConfigure = onOpenSettings
+                )
+            }
         )
 
         if (state.todos.isNotEmpty()) {
@@ -557,7 +574,10 @@ private fun WorkspaceBar(
     onOpenHistory: () -> Unit = {},
     logicMode: StandardLogicMode = StandardLogicMode.DEEP_DIVE,
     onSwitchLogic: (StandardLogicMode) -> Boolean = { false },
-    onOpenWorkspaceBrowser: () -> Unit = {}
+    onOpenWorkspaceBrowser: () -> Unit = {},
+    // 「小大脑」模型菜单插槽：顶栏右端空隙位常驻可见（用户反馈补齐 ——
+    // 输入栏工具行的模型菜单位于横向滚动末位，小屏常被滚出屏外难发现）
+    modelMenu: @Composable () -> Unit = {}
 ) {
     // v1.5 切换被拒提示（运行中拒绝；2s 自清，行内告警形态）
     var logicSwitchBlocked by remember { mutableStateOf(false) }
@@ -624,6 +644,12 @@ private fun WorkspaceBar(
                     modifier = Modifier.size(18.dp)
                 )
             }
+
+            // ═══ 小大脑（LLM 模型选择）：右端空隙位（用户反馈补齐）═══
+            // Spacer 占位把模型按钮推到行尾 —— 与输入栏工具行的 modelMenu 同一数据源
+            //（选择即 selectCodeModel 热生效）；顶栏位常驻可见，不需横向滚动寻找。
+            Spacer(Modifier.weight(1f))
+            modelMenu()
         }
     }
 }

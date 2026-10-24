@@ -209,13 +209,27 @@ fun SkillChipInputField(
                     val targetTextPx = with(density) { 16.dp.toPx() }
                     if (editText.textSize != targetTextPx) editText.textSize = 16f
 
-                    // 1b) 发送键行为：send → 回车直发（无换行插入）；newline →
-                    //     回车插入换行（MULTI_LINE flag）。变更才写，避免重置 IME。
+                    // 1b) 发送键行为（只改 IME 动作键；输入框恒为多行）。
+                    //
+                    // ★ 多行修复（用户反馈「输入框只有一行」的直接根因）：
+                    //   EditText.inputType 缺 TYPE_TEXT_FLAG_MULTI_LINE 时，
+                    //   setInputType 内部会强制单行（applySingleLine(true) →
+                    //   maxLines 被 1），长文本横向滚动不换行、字段不增高 ——
+                    //   即使 isSingleLine=false / maxLines=8 也被覆盖。恒带
+                    //   MULTI_LINE flag：文本换行 + 1→8 行自适应增高。
+                    //   Enter 语义仍由 sendKeyBehavior 分档：send →
+                    //   IME_ACTION_SEND（回车直发，Shift+Enter 换行）；
+                    //   newline → IME_ACTION_NONE（回车仅插入换行）。
                     val multiline = sendKeyBehavior == "newline"
                     val targetInputType = InputType.TYPE_CLASS_TEXT or
                         InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
-                        (if (multiline) InputType.TYPE_TEXT_FLAG_MULTI_LINE else 0)
-                    if (editText.inputType != targetInputType) editText.inputType = targetInputType
+                        InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                    if (editText.inputType != targetInputType) {
+                        editText.inputType = targetInputType
+                        // setInputType 会按 multiline 状态重置 maxLines —— 变更后回写
+                        editText.maxLines = 8
+                        editText.minLines = 1
+                    }
                     val targetIme = (editText.imeOptions and EditorInfo.IME_MASK_ACTION.inv()) or
                         (if (multiline) EditorInfo.IME_ACTION_NONE else EditorInfo.IME_ACTION_SEND)
                     if (editText.imeOptions != targetIme) editText.imeOptions = targetIme
@@ -455,11 +469,15 @@ private fun createChipEditText(context: Context, callbacks: ChipCallbacks): Edit
     val editText = EditText(context)
     editText.background = null
     editText.isSingleLine = false
-    // 多行自适应 1→8 行（用户反馈「只能看到一行」：5 行上限对长 prompt
-    // 偏紧；全屏编辑按钮仍在，超过 8 行走全屏分层编辑）
+    // ★ 多行自适应 1→8 行：inputType 恒带 MULTI_LINE flag（缺 flag 时
+    // setInputType 会强制单行并覆盖 maxLines，长文本不换行 —— 用户
+    // 反馈「只有一行输入」的根因）；maxLines/minLines 必须在 inputType
+    // 之后赋值才不被重置。全屏编辑按钮仍在，超过 8 行走全屏分层编辑。
+    editText.inputType = InputType.TYPE_CLASS_TEXT or
+        InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+        InputType.TYPE_TEXT_FLAG_MULTI_LINE
     editText.maxLines = 8
     editText.minLines = 1
-    editText.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
     editText.imeOptions = EditorInfo.IME_ACTION_SEND
     editText.setPadding(0, 0, 0, 0)
     editText.layoutParams = ViewGroup.LayoutParams(
