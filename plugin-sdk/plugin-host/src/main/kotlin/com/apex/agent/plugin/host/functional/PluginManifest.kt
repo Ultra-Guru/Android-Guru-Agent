@@ -118,6 +118,7 @@ data class UiContribution(
     val displayTitle: String
         get() = title.trim().takeUnless { it.isNullOrEmpty() }
             ?: entry.substringAfterLast('/')
+}
 
 /**
  * 工具宏贡献。**宏 = 对既有宿主工具的声明式组合**：
