@@ -862,7 +862,7 @@ GitHub Token）。
 <a id="library-modules"></a>
 ## 📚 库模块（拆库生态）
 
-主工程的能力内核已按领域拆出**四个独立库仓库**（均为本作者自研维护），主仓库通过
+主工程的能力内核已按领域拆出**六个独立库仓库**（均为本作者自研维护），主仓库通过
 **composite build + lock 锁定检出**消费 —— 本仓库 APK 始终携带**经过全量 CI 验证的
 已知好版本**，且随库仓库的更新**自动同步**（无需人工介入）：
 
@@ -870,6 +870,8 @@ GitHub Token）。
 |---|---|---|---|
 | **apex-kit-browser** | [Ultra-Guru/apex-kit-browser](https://github.com/Ultra-Guru/apex-kit-browser) | `com.apex.browser:{core,engine,chrome}` | 浏览器智能体内核：WebView 自动化引擎 + Compose chrome UI（DI 接线层为本仓 `:platform:browser-agent`） |
 | **apex-kit-standard** | [Ultra-Guru/apex-kit-standard](https://github.com/Ultra-Guru/apex-kit-standard) | `com.apex.standardkit:standard-loop` | Coding 模式「标准思考逻辑线」循环引擎（画像/权限门/压缩/子代理/并行工具/续跑/MCP 指引，纯 Kotlin JVM） |
+| **apex-kit-loom** | [Ultra-Guru/apex-kit-loom](https://github.com/Ultra-Guru/apex-kit-loom) | `com.apex.loomkit:loom-weave` | Coding 模式「织造思考逻辑线」循环引擎（in-band XML 标记协议 / 梭回合机 / 权限三态门 / 子线程群 / 织造包 / digest 压缩 / 运行中转向，纯 Kotlin JVM） |
+| **apex-kit-courier** | [Ultra-Guru/apex-kit-courier](https://github.com/Ultra-Guru/apex-kit-courier) | `com.apex.courierkit:courier-dispatch` | Coding 模式「信使思考逻辑线」循环引擎（收发匣投递 / 趟次步进机 / 勘合通行证 / 档房卷宗压缩 / 示廊增量 / 下站子驿，纯 Kotlin JVM） |
 | **apex-kit-workspace** | [Ultra-Guru/apex-kit-workspace](https://github.com/Ultra-Guru/apex-kit-workspace) | `com.apex.workspace:{core,explorer}` | Coding 工作区浏览器：文件树 / 多格式预览 / Git 面板 / 变更和产物 / 实时跟随 |
 | **apex-native-vt** | [Ultra-Guru/apex-native-vt](https://github.com/Ultra-Guru/apex-native-vt) | C++17 静态库（vendored 为 `:terminal-native`） | 终端热路径 VT/ANSI 引擎（零分配 8 字节 POD cell / 389 项奇偶校验测试 / NDK 三 ABI 交叉编译 CI） |
 
@@ -877,7 +879,7 @@ GitHub Token）。
 
 - **本地开发**：`settings.gradle.kts` 条件 `includeBuild` —— 兄弟目录
   `../apex-*-kit` 存在时自动接入（改一处两边生效）；
-- **CI 可复现**：`gradle/{browser,standard,workspace}-kit.lock` 锁定各库 SHA，
+- **CI 可复现**：`gradle/{browser,standard,workspace,loom,courier}-kit.lock` 锁定各库 SHA，
   ci / apk / release 三条流水线按锁 pinned checkout（`com.apex.*` 坐标无远端
   仓库，锁定检出即唯一构建输入）；
 - **自动更新**：库仓库 main 出现新绿提交 → 其 `notify-host.yml`
@@ -885,7 +887,7 @@ GitHub Token）。
   对应 lock 并 push main → release 流水线自动构建发布（新库随 APK 交付）；
   每 30 分钟 cron 轮询兜底防丢事件。**红提交拒绝同步（fail closed）**；
 - **下游防崩**：每个库仓库的 CI 自带 `consumer-check` —— 把本仓库检出为
-  宿主编译 `:app:compileDebugKotlin`（三个 kit 全量兄弟检出），库的每次
+  宿主编译 `:app:compileDebugKotlin`（五 kit 全量兄弟检出），库的每次
   PR 都先证明「宿主不炸」才允许合入；
 - **vendored vt-native**：`terminal-native/src/main/cpp/vt-native/` 整树 vendor
   自上游仓库（契约见 `docs/VENDOR.md` —— 上游修复回传 → 整树 re-vendor），
@@ -1152,6 +1154,8 @@ Android-Guru-Agent/
 | [docs/provider-share.md](docs/provider-share.md) | **P96 供应商分享**：四层洋葱 URI/Key 脱敏/GZIP/QR 版本估算（对标 rikka QR 分享） |
 | [docs/capsule-stream.md](docs/capsule-stream.md) | **胶囊流式输出系统**：Coding 工作流时间轴 / 双通道架构 / 幂等与检查点 / 验收矩阵 |
 | [docs/dual-logic-engines.md](docs/dual-logic-engines.md) | **双思考逻辑引擎**：Coding 屏右上角「深潜/标准」切换 / DualLogicCodeEngine 门面路由 / 标准任务循环（五画像·权限三态门·task 子代理·上下文压缩·C++ 文本核）/ `/logic` 斜杠命令 / 现场隔离 |
+| [docs/loom-engine.md](docs/loom-engine.md) | **织造引擎（第三思考逻辑线）**：经纬交织范式 / in-band XML 工具协议 / 梭回合机 / 子线程群 / 织造包 / digest 织入压缩 / 拆库 apex-kit-loom + 端口-适配器接入 |
+| [docs/courier-engine.md](docs/courier-engine.md) | **信使引擎（第四思考逻辑线）**：驿传调度范式 / 收发匣投递 / 趟次步进机并行纤程 / 勘合通配则例 / 档房卷宗压缩 / 下站子驿委派 / 拆库 apex-kit-courier + 端口-适配器接入 |
 | [docs/agent-life-skills-and-memory.md](docs/agent-life-skills-and-memory.md) | **全能 Agent**：46 内置技能矩阵 × 渐进披露（目录+会话装备+自动装备）/ 聊天自动记忆管线（双速捕获+主动召回）/ 首轮问候极简 / 网页自动化 wait_for+页面类型推断 |
 | [docs/capability-introspection.md](docs/capability-introspection.md) | **能力自省与自主扩展**：权限阶梯知识库（prompt/工具/编排三线同源）/ CapabilityReport 一键自省 / MarketSearch 市场检索（返回可执行安装指令）/ Capability Expansion Playbook 六条扩展梯度 |
 
