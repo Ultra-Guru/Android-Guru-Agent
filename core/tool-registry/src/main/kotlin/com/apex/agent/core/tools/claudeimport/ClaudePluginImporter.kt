@@ -159,18 +159,16 @@ object ClaudePluginImporter {
             kotlinx.serialization.json.Json.parseToJsonElement(file.readText()).jsonObject
         }.getOrNull() ?: throw ImportException("plugin.json 无法解析")
         fun str(key: String): String =
-            runCatching { obj[key]?.jsonPrimitive?.content }.getOrDefault("")
+            runCatching { obj[key]?.jsonPrimitive?.content }.getOrNull() ?: ""
         val name = str("name").ifBlank { file.parentFile?.parentFile?.name ?: "claude-plugin" }
         val version = str("version").ifBlank { "1.0.0" }
         // author 可能是 {name: "..."} 对象或字符串
-        val author = runCatching {
+        val author = (runCatching {
             (obj["author"] as? JsonObject)?.get("name")?.jsonPrimitive?.content
-                ?: str("author")
-        }.getOrDefault("")
-        val license = runCatching {
+        }.getOrNull() ?: str("author")).ifBlank { "" }
+        val license = (runCatching {
             (obj["license"] as? JsonObject)?.get("name")?.jsonPrimitive?.content
-                ?: str("license")
-        }.getOrDefault("").ifBlank { "SEE REPO" }
+        }.getOrNull() ?: str("license")).ifBlank { "SEE REPO" }
         // description 可能是字符串或字符串数组（两种形态都见过）——逐形态尝试
         val description = runCatching {
             obj["description"]?.jsonPrimitive?.content
@@ -263,7 +261,7 @@ object ClaudePluginImporter {
                             add(
                                 buildJsonObject {
                                     put("id", id)
-                                    put("title", doc.frontmatter["argument-hint"].takeUnless { it.isBlank() }
+                                    put("title", doc.frontmatter["argument-hint"]?.takeIf { it.isNotBlank() }
                                         ?: id)
                                     put("description", doc.frontmatter["description"].orEmpty())
                                     put("prompt", doc.body)
