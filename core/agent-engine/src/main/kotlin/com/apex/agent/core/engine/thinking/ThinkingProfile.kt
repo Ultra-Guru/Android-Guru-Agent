@@ -5,10 +5,9 @@ import com.apex.agent.core.engine.ThinkingLevel
 /**
  * 六档思考档位的完整执行画像（#168）—— 提示词 + 参数 + 执行策略三合一。
  *
- * 旧版 [ThinkingLevel] 只提供提示词（[ThinkingLevel.toPromptInstruction]）与
- * 模型参数（[ThinkingLevel.toThinkingBudget] / [ThinkingLevel.toReasoningEffortName]），
- * 引擎主循环完全不感知档位：迭代上限固定、无验证回路、压缩与工具输出预算
- * 一刀切。本数据类把每一档的**执行策略差异**显式建模：
+ * 旧版 [ThinkingLevel] 只提供提示词回退（[ThinkingLevel.toPromptInstruction]，
+ * 现已委托本表），引擎主循环完全不感知档位：迭代上限固定、无验证回路、
+ * 压缩与工具输出预算一刀切。本数据类把每一档的**执行策略差异**显式建模：
  *
  *  - [maxIterationsScale]：迭代上限倍率（引擎 `maxIterations × 此值`）。
  *    深思考档允许更多"思考→行动→观察"轮次，快档提前止损；

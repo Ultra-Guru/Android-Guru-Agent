@@ -108,76 +108,13 @@ enum class ThinkingLevel(val level: Int, val description: String) {
     /**
      * 转换为 system prompt 中的思考指令。
      *
-     * 推理框架参考自失败项目 [Apex-agent] 的 ChainOfThoughtSkill / TreeOfThoughtsSkill /
-     * ReActSkill：将其中"分解-逐步推理-综合"与"多路径探索评估"的结构化骨架提炼为
-     * 思考提示词。#168 起该文本已迁移/增强到
-     * [com.apex.agent.core.engine.thinking.ThinkingProfile]（含执行策略差异），
-     * 本方法保留作为无画像路径的兼容回退。
+     * #168 起指令正文与执行策略统一建模在
+     * [com.apex.agent.core.engine.thinking.ThinkingProfile]（单一事实源）；
+     * 本方法直接委托画像表——无画像路径的兼容回退与主路径**字面同源**，
+     * 不再维护一份会漂移的副本文本。
      */
-    fun toPromptInstruction(): String = when (this) {
-        NONE -> ""
-        AUTO -> "" // AUTO 不携带静态指令：由 ThinkingModeController 选档后注入该档指令+理由
-        LIGHT -> "Briefly think about what to do next in 1-2 sentences, then act."
-        STANDARD -> """
-            Use Chain-of-Thought before acting:
-            1. Break the task into clear sub-steps.
-            2. For the current step, reason step by step what to do and which tool to use.
-            3. Execute, then observe the result before the next step.
-        """.trimIndent()
-        DEEP -> """
-            Reason carefully using a multi-path approach before acting:
-            1. Decompose the task into sequential sub-problems.
-            2. For the key decision, generate at least 2-3 candidate approaches (branch out, do not commit early).
-            3. Evaluate each on feasibility, efficiency, risk, and side effects.
-            4. Critique: "What could go wrong? What am I missing?"
-            5. Pick the best approach, explain why, then execute the first step and observe.
-        """.trimIndent()
-        MAXIMUM -> """
-            Perform exhaustive reasoning before any action:
-            1. Fully understand the task and constraints.
-            2. Decompose into sub-problems; for each, enumerate ALL plausible solution paths (Tree-of-Thoughts style).
-            3. Score each path on feasibility, efficiency, risk, and side effects.
-            4. Consider edge cases and failure modes.
-            5. Self-critique: "What could go wrong? Am I missing something?"
-            6. Synthesize the optimal execution plan from the best path.
-            7. Only then, execute the first step, observe, and re-evaluate if the outcome diverges.
-        """.trimIndent()
-    }
-    
-    /**
-     * 对应的thinking_budget（用于支持此参数的模型如Gemini）
-     */
-    fun toThinkingBudget(): Int? = when (this) {
-        NONE -> 0
-        AUTO -> null // AUTO 不直接映射：选档后用该档画像的 budget（ThinkingProfile.forLevel）
-        LIGHT -> 256
-        STANDARD -> 1024
-        DEEP -> 4096
-        MAXIMUM -> 16384
-    }
-
-    /**
-     * T1（思考程度真实化）：映射为模型原生思考强度 [com.apex.agent.core.llm.ReasoningEffort]
-     * 的枚举名，app 层（AgentChatViewModel.setThinkingLevel）转回枚举后持久化到
-     * 默认 ModelProfile —— DynamicLlmClient 监听 profiles 即时重建，下一次请求
-     * 即真实下发 reasoning_effort / thinking.budget_tokens / enable_thinking
-     * （由 StreamingOpenAiClient 按 Provider 差异化）。
-     *
-     * 返回 null（NONE 档）= 不思考：app 层应回退 [com.apex.agent.core.llm.ReasoningEffort.NONE]
-     * （apiValue 为 null，请求体不发 reasoning 字段）。
-     *
-     * 为什么返回 String 而不是枚举：agent-engine 与 ReasoningEffort 所在的
-     * llm-adapter 已有依赖，但保持 ThinkingLevel 纯枚举层不直接硬引用，
-     * 映射关系集中在本处，便于单测与后续调档。
-     */
-    fun toReasoningEffortName(): String? = when (this) {
-        NONE -> null
-        AUTO -> "adaptive" // 哨兵值：调用方（AgentChatViewModel 等）必须特判 AUTO，不回退 ReasoningEffort.NONE
-        LIGHT -> "LOW"
-        STANDARD -> "MEDIUM"
-        DEEP -> "HIGH"
-        MAXIMUM -> "MAX"
-    }
+    fun toPromptInstruction(): String =
+        com.apex.agent.core.engine.thinking.ThinkingProfile.forLevel(this).promptInstruction
 }
 
 /**
