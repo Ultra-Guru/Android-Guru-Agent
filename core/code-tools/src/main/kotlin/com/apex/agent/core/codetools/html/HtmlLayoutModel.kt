@@ -17,6 +17,14 @@ package com.apex.agent.core.codetools.html
  */
 object HtmlLayoutModel {
 
+    // ═══ 样式视图（PR1 级联接入）═══
+
+    /**
+     * 节点样式视图：级联视图（resolvedStyle，CSS 级联解析注入）优先，
+     * 缺省回退内联 style —— 未注入时与历史行为完全一致。
+     */
+    internal fun styleOf(node: HtmlNode): Map<String, String> = node.resolvedStyle ?: node.style
+
     // ═══ display ═══
 
     enum class DisplayKind { BLOCK, INLINE, INLINE_BLOCK, FLEX, GRID, TABLE, NONE }
@@ -56,7 +64,7 @@ object HtmlLayoutModel {
     /** 判定节点 display。isHidden 已含 display:none / hidden 类。 */
     fun displayOf(node: HtmlNode): DisplayKind {
         if (node.isHidden) return DisplayKind.NONE
-        val inline = node.style["display"]?.lowercase()?.trim()
+        val inline = styleOf(node)["display"]?.lowercase()?.trim()
         if (inline != null) {
             return when (inline.substringBefore(' ').trim()) {
                 "none" -> DisplayKind.NONE
@@ -197,7 +205,7 @@ object HtmlLayoutModel {
 
     /** 从 class/style 提取宽度规格（Tailwind > Bootstrap > inline 顺序并不重要，首个命中胜出）。 */
     fun widthOf(node: HtmlNode): SizeSpec {
-        node.style["width"]?.let { return SizeSpec.parse(it) }
+        styleOf(node)["width"]?.let { return SizeSpec.parse(it) }
         for (c in node.classes) {
             when {
                 c.startsWith("w-") -> {
@@ -219,7 +227,7 @@ object HtmlLayoutModel {
     }
 
     fun heightOf(node: HtmlNode): SizeSpec {
-        node.style["height"]?.let { return SizeSpec.parse(it) }
+        styleOf(node)["height"]?.let { return SizeSpec.parse(it) }
         for (c in node.classes) {
             when {
                 c.startsWith("h-") -> {
@@ -233,7 +241,7 @@ object HtmlLayoutModel {
     }
 
     fun maxWidthOf(node: HtmlNode): SizeSpec? {
-        node.style["max-width"]?.let { return SizeSpec.parse(it) }
+        styleOf(node)["max-width"]?.let { return SizeSpec.parse(it) }
         for (c in node.classes) {
             if (c.startsWith("max-w-")) {
                 return when (c.removePrefix("max-w-")) {
@@ -260,7 +268,7 @@ object HtmlLayoutModel {
     }
 
     fun minWidthOf(node: HtmlNode): SizeSpec? {
-        node.style["min-width"]?.let { return SizeSpec.parse(it) }
+        styleOf(node)["min-width"]?.let { return SizeSpec.parse(it) }
         for (c in node.classes) {
             if (c.startsWith("min-w-")) {
                 TAILWIND_SPACING[c.removePrefix("min-w-")]?.let { return SizeSpec(c, it, null, false, "px") }
@@ -300,7 +308,7 @@ object HtmlLayoutModel {
     fun marginsOf(node: HtmlNode): BoxEdges {
         val fromCls = edgesFrom(node.classes, listOf("m", "mx", "my", "mt", "mr", "mb", "ml"))
             ?: edgesFrom(node.classes, listOf("mt", "me", "mb", "ms")) // Bootstrap 变体
-        val s = node.style
+        val s = styleOf(node)
         val fromStyle = BoxEdges(
             top = s["margin-top"]?.let { SizeSpec.parse(it).px },
             right = s["margin-right"]?.let { SizeSpec.parse(it).px },
@@ -312,7 +320,7 @@ object HtmlLayoutModel {
 
     fun paddingsOf(node: HtmlNode): BoxEdges {
         val fromCls = edgesFrom(node.classes, listOf("p", "px", "py", "pt", "pr", "pb", "pl"))
-        val s = node.style
+        val s = styleOf(node)
         val fromStyle = BoxEdges(
             top = s["padding-top"]?.let { SizeSpec.parse(it).px },
             right = s["padding-right"]?.let { SizeSpec.parse(it).px },
@@ -333,7 +341,7 @@ object HtmlLayoutModel {
     // ═══ 定位 / 弹性 / 网格属性 ═══
 
     fun positionOf(node: HtmlNode): String {
-        node.style["position"]?.let { return it.trim().lowercase() }
+        styleOf(node)["position"]?.let { return it.trim().lowercase() }
         for (c in node.classes) {
             when (c) {
                 "absolute", "position-absolute" -> return "absolute"
@@ -346,7 +354,7 @@ object HtmlLayoutModel {
     }
 
     fun zIndexOf(node: HtmlNode): Int? {
-        node.style["z-index"]?.toIntOrNull()?.let { return it }
+        styleOf(node)["z-index"]?.toIntOrNull()?.let { return it }
         for (c in node.classes) {
             if (c.startsWith("z-")) c.removePrefix("z-").toIntOrNull()?.let { return it }
         }
@@ -355,7 +363,7 @@ object HtmlLayoutModel {
 
     /** flex 容器属性（direction/wrap/justify/align/gap），非 flex 返回 null。 */
     fun flexPropsOf(node: HtmlNode): FlexProps? {
-        val s = node.style
+        val s = styleOf(node)
         val cls = node.classes
         var direction = s["flex-direction"]?.lowercase()?.trim()
             ?: when {
@@ -398,7 +406,7 @@ object HtmlLayoutModel {
 
     /** grid 容器属性（columns/rows/gap），非 grid 返回 null。 */
     fun gridPropsOf(node: HtmlNode): GridProps? {
-        val s = node.style
+        val s = styleOf(node)
         val cls = node.classes
         val cols = s["grid-template-columns"]?.trim()
             ?: cls.firstOrNull { it.startsWith("grid-cols-") }?.removePrefix("grid-cols-")

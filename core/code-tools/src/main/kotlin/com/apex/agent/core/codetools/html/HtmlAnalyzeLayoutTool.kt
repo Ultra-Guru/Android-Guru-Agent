@@ -18,6 +18,9 @@ import java.io.File
  *
  * - 页面骨架括号速览：`body > header + nav + main[flex](aside[33%]+article[67%]) + footer`；
  * - 缩进布局树（display / 关键类 / 估算宽度）；
+ * - CSS 级联视图：style 块规则（类/ID/标签选择器 + @media 按 375px
+ *   视口评估）并入 display/尺寸/定位/弹性推断 —— 样式在 head style
+ *   块里的页面同样能拿到正确布局画像；
  * - 响应式画像（viewport / 媒体查询 / 固定宽度溢出风险）；
  * - 40+ 类问题清单（语义 / 可访问性 / 定位 / 溢出 / 性能）。
  *
@@ -110,7 +113,7 @@ class HtmlAnalyzeLayoutTool(
         }
 
         val doc = LightweightHtmlParser.parse(source)
-        val report = HtmlLayoutAnalyzer.analyze(doc, pageTitleHint = file.name)
+        val report = HtmlLayoutAnalyzer.analyzeWithCascade(doc, pageTitleHint = file.name)
         val body = renderReport(report, includeTree)
         return ToolResult.ok(body)
     }
@@ -123,6 +126,9 @@ class HtmlAnalyzeLayoutTool(
             appendLine("- 页面骨架: **${report.bracketSummary.take(300)}**")
             appendLine("- 规模: ${report.stats.elementCount} 元素 / ${report.stats.textChars} 文本字符 / 最深 ${report.stats.maxDepth} 层")
             appendLine("- 布局容器: ${report.stats.flexContainers} flex · ${report.stats.gridContainers} grid · ${report.stats.tables} table")
+            if (report.meta.cssCascadeApplied) {
+                appendLine("- CSS 级联: ${report.meta.cssRules} 条规则已并入布局推断（display/尺寸/定位/弹性）")
+            }
             appendLine(
                 "- 响应式: " + (if (report.responsive.hasResponsiveViewport) "viewport OK" else "viewport 缺失") +
                     " · ${report.responsive.mediaQueries} 媒体查询 · ${report.responsive.responsiveUtilityClasses} 响应式类"

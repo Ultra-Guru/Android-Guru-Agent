@@ -48,6 +48,18 @@ object HtmlLayoutAnalyzer {
         )
     }
 
+    /** 分析前注入级联样式（外部工具层调）：解析 style 块并写入节点视图。 */
+    fun analyzeWithCascade(doc: HtmlDocument, pageTitleHint: String = "", viewportWidthPx: Int = CssStylesheetParser.ESTIMATED_VIEWPORT_PX): HtmlLayoutReport {
+        val sheet = CssStylesheetParser.stylesheetOf(doc)
+        if (!sheet.isEmpty) CssStylesheetParser.resolveCascadeStyles(doc, sheet, viewportWidthPx)
+        return analyze(doc, pageTitleHint).let { report ->
+            report.copy(meta = report.meta.copy(
+                cssRules = sheet.rules.size,
+                cssCascadeApplied = !sheet.isEmpty
+            ))
+        }
+    }
+
     // ═══ 文档元信息 ═══
 
     private fun analyzeMeta(doc: HtmlDocument, hint: String): DocumentMeta {
@@ -73,7 +85,9 @@ object HtmlLayoutAnalyzer {
             charsetMissing = charsetNode == null,
             descriptionMissing = descriptionNode == null,
             styleBlocks = doc.allByTag("style").size,
-            scriptBlocks = doc.allByTag("script").size
+            scriptBlocks = doc.allByTag("script").size,
+            cssRules = 0,
+            cssCascadeApplied = false
         )
     }
 
@@ -172,7 +186,7 @@ object HtmlLayoutAnalyzer {
                     fixedWidths.add(FixedWidth(n.tag, w.px ?: 0, doc.lineOf(n), n.classes.take(3)))
                 }
             }
-            if (n.style["min-width"] != null) {
+            if (n.style["min-width"] != null || n.resolvedStyle?.get("min-width") != null) {
                 val mw = HtmlLayoutModel.minWidthOf(n)
                 if (mw != null && mw.isFixedPx && (mw.px ?: 0) > 375) {
                     fixedWidths.add(FixedWidth(n.tag, mw.px ?: 0, doc.lineOf(n), n.classes.take(3) + listOf("min-w")))
@@ -443,7 +457,7 @@ object HtmlLayoutAnalyzer {
         if (bodyStyles > 0) out.add(LayoutIssue.info("perf", "$bodyStyles 个 <style> 位于 body 内（FOUC 风险，规范位置是 head）"))
     }
 
-    private fun nodeStyle(n: HtmlNode, key: String): String? = n.style[key]?.take(EVIDENCE_MAX)
+    private fun nodeStyle(n: HtmlNode, key: String): String? = (n.resolvedStyle ?: n.style)[key]?.take(EVIDENCE_MAX)
 
     // ═══ 布局树渲染 ═══
 
