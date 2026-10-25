@@ -404,6 +404,14 @@ class HtmlNode(
     /** style 声明表（小写属性名 → 原值；坏段跳过）。 */
     val style: Map<String, String> by lazy { parseStyleAttr(attrs["style"] ?: "") }
 
+    /**
+     * 级联样式视图（CSS 级联解析产物，PR1）：inline style 覆盖 style 块
+     * 规则后的合并视图。null = 未注入（仅内联/框架类推断，与历史行为
+     * 完全一致）；由 [CssStylesheetParser.resolveCascadeStyles] 在分析前
+     * 注入，[HtmlLayoutModel] 提取链优先读它。
+     */
+    var resolvedStyle: Map<String, String>? = null
+
     /** 元素文本（直接子文本节点拼接，无递归）。 */
     val directText: String by lazy {
         children.filter { it.tag == "#text" }.joinToString(" ") { it.text }.trim()

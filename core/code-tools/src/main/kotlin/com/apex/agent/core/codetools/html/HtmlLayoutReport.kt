@@ -94,7 +94,11 @@ data class DocumentMeta(
     val charsetMissing: Boolean,
     val descriptionMissing: Boolean,
     val styleBlocks: Int,
-    val scriptBlocks: Int
+    val scriptBlocks: Int,
+    /** style 块解析出的 CSS 规则数（0 = 无 style 块或全部损坏）。 */
+    val cssRules: Int = 0,
+    /** 级联视图是否已注入（true = 尺寸/定位/弹性提取已含 CSS 规则）。 */
+    val cssCascadeApplied: Boolean = false
 )
 
 /** 结构统计。 */
