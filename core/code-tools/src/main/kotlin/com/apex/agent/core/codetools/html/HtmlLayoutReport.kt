@@ -18,7 +18,9 @@ data class HtmlLayoutReport(
     val issues: List<LayoutIssue>,
     val treeText: String,
     val bracketSummary: String,
-    val truncated: String? = null
+    val truncated: String? = null,
+    /** 视觉画像（PR2：无样式信号时为 null，报告跳过）。 */
+    val visual: HtmlVisualProfile.VisualProfile? = null
 ) {
 
     /** 错误/警告计数（报告头显示用）。 */
@@ -78,6 +80,43 @@ data class HtmlLayoutReport(
         appendLine("```")
         stats.tagDistribution.forEach { (tag, count) -> appendLine("$tag × $count") }
         appendLine("```")
+        appendLine()
+
+        renderVisual(this)
+    }
+
+    /** 视觉画像区块（PR2）：有信号才渲染。 */
+    private fun renderVisual(sb: StringBuilder) {
+        val v = visual ?: return
+        if (!v.hasAnySignal) return
+        sb.appendLine("## 视觉画像")
+        sb.appendLine()
+        if (v.backgroundColor != null || v.textColor != null) {
+            sb.appendLine("- 基调: 背景 ${v.backgroundColor?.hex ?: "(未声明→白)"} · 文字 ${v.textColor?.hex ?: "(未声明→黑)"}" +
+                (if (v.darkThemeCandidate) " · **暗色主题画像**" else ""))
+        }
+        if (v.accentColors.isNotEmpty()) {
+            sb.appendLine("- 强调色: ${v.accentColors.joinToString(" ") { it.hex }}")
+        }
+        if (v.palette.isNotEmpty()) {
+            sb.appendLine("- 调色板: ${v.palette.joinToString(" · ") { "${it.color.hex}(${it.usage})×${it.count}" }}")
+        }
+        if (v.fontFamilies.isNotEmpty()) {
+            sb.appendLine("- 字体: ${v.fontFamilies.joinToString(" · ") { "${it.family} ×${it.count}" }}" +
+                (v.baseFontSizePx?.let { " · 基准 ${it}px" } ?: ""))
+        }
+        if (v.fontSizes.isNotEmpty()) {
+            sb.appendLine("- 字号分布: ${v.fontSizes.joinToString(" / ") { "${it.raw}(${it.px}px)×${it.count}" }}")
+        }
+        if (v.spacingScale.isNotEmpty()) {
+            sb.appendLine("- 间距刻度: ${v.spacingScale.joinToString(" / ") { "${it.raw}(${it.px}px)×${it.count}" }}" +
+                (v.spacingRhythm?.let { " · $it" } ?: ""))
+        }
+        if (v.radii.isNotEmpty()) {
+            sb.appendLine("- 圆角: ${v.radii.joinToString(" / ") { "${it.raw}(${it.px}px)×${it.count}" }}" +
+                (if (v.shadowCount > 0) " · ${v.shadowCount} 处阴影" else ""))
+        }
+        sb.appendLine()
     }
 }
 
