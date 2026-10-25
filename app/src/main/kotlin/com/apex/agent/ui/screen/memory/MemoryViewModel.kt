@@ -9,9 +9,10 @@ import com.apex.memkit.graph.graph.MemKitGraphSource
 import com.apex.memkit.graph.graph.MemoryGraphSource
 import com.apex.memkit.core.model.ChatFact
 import com.apex.memkit.core.model.EpisodeSummary
+import com.apex.memkit.core.model.ExperienceReport
+import com.apex.memkit.core.model.GraphEntity
+import com.apex.memkit.core.model.GraphRelation
 import com.apex.memkit.core.model.MacroSkill
-import com.apex.memkit.core.store.NodeDictEntry
-import com.apex.memkit.core.store.allFacts
 import com.apex.memkit.core.store.clearFacts
 import com.apex.memkit.core.store.removeFact
 import com.apex.agent.ui.language.LanguageManager
@@ -34,9 +35,19 @@ import javax.inject.Inject
  * 状态编排与轻量 UI 模型（旧版直连 Room store / DreamRenderer /
  * MemoryImmuneSystem / MemoryLedgerStore 四个单例的接线全部收编）。
  *
- * 只读为主；删除 Episode 为破坏性操作，由 UI 二次确认后调用 [deleteEpisode]。
- * 维护周期（能量衰减 / 剪枝 / 晶化 / 别名发现）与隔离区能力保留 UI 入口
- * （维护本体住库 MacroMaintenance，经 [maintenanceNow] 前台触发）。
+ * 记忆页 v2（写入面 + 知识面）：
+ *  - 六项统计（会话 / 节点 / 宏 / 事实 / 实体 / 关系）；
+ *  - 知识图谱快照（readGraph —— 列表视图的「知识图谱」分区数据源）；
+ *  - 统一搜索（场景节点 + 聊天事实 + 知识实体 三轨命中）；
+ *  - 手动写入口：[saveFactManually] / [teachExperience]（与 agent 写入
+ *    工具同落点 —— MemKit.saveFact / consolidateExperience）。
+ *  - 写入 / 删除后的图谱同步不由 VM 驱动：库侧 MemKitGraphSource 已接
+ *    store 修订号信号，MemoryGraphState 自动软刷新（保位 / 保选中），
+ *    宿主无需重复握手。
+ *
+ * 删除为破坏性操作，由 UI 二次确认后调用。维护周期（能量衰减 / 剪枝 /
+ * 晶化 / 别名发现）与隔离区能力保留 UI 入口（维护本体住库
+ * MacroMaintenance，经 [maintenanceNow] 前台触发）。
  * #219 隐私合规：「聊天记忆」分区直读库聊天事实账本，可查看 / 逐条删 /
  * 一键清空。
  */
@@ -45,7 +56,7 @@ import javax.inject.Inject
 class MemoryViewModel @Inject constructor(
     private val memKit: MemKit,
     private val maintenanceScheduler: MaintenanceScheduler,
-    // 记忆页新文案走资源（en/zh 双语）；VM 层非 Compose 场景按仓库惯例经
+    // 记忆页文案走资源（en/zh 双语）；VM 层非 Compose 场景按仓库惯例经
     // LanguageManager 取词（SettingsViewModel 同款模式）。
     private val languageManager: LanguageManager
 ) : ViewModel() {
@@ -53,7 +64,16 @@ class MemoryViewModel @Inject constructor(
     data class MemoryStats(
         val episodeCount: Int = 0,
         val nodeCount: Int = 0,
-        val macroCount: Int = 0
+        val macroCount: Int = 0,
+        val factCount: Int = 0,
+        val entityCount: Int = 0,
+        val relationCount: Int = 0
+    )
+
+    /** 知识图谱快照（MCP memory 语义的实体 + 三元组 —— 只读视图数据）。 */
+    data class KnowledgeSnapshot(
+        val entities: List<GraphEntity> = emptyList(),
+        val relations: List<GraphRelation> = emptyList()
     )
 
     /**
@@ -72,11 +92,15 @@ class MemoryViewModel @Inject constructor(
     private val _stats = MutableStateFlow(MemoryStats())
     val stats: StateFlow<MemoryStats> = _stats.asStateFlow()
 
+    private val _knowledge = MutableStateFlow(KnowledgeSnapshot())
+    val knowledge: StateFlow<KnowledgeSnapshot> = _knowledge.asStateFlow()
+
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private val _searchResults = MutableStateFlow<List<NodeDictEntry>>(emptyList())
-    val searchResults: StateFlow<List<NodeDictEntry>> = _searchResults.asStateFlow()
+    /** 统一搜索命中（事实 → 实体 → 场景节点，见 [buildUnifiedSearchResults]）。 */
+    private val _searchResults = MutableStateFlow<List<MemorySearchHit>>(emptyList())
+    val searchResults: StateFlow<List<MemorySearchHit>> = _searchResults.asStateFlow()
 
     /** 删除结果提示（如 "已删除 Episode xxx"），UI 消费后清空 */
     private val _lastMessage = MutableStateFlow<String?>(null)
@@ -89,7 +113,8 @@ class MemoryViewModel @Inject constructor(
     init {
         refresh()
         // P2-12（6-c）：搜索防抖——query 流经 debounce(250) + distinctUntilChanged
-        // 统一触发检索（UI 调用点不变）。
+        // 统一触发检索（UI 调用点不变）。v2：三轨统一命中（节点检索走 store
+        // 既有匹配；事实 / 实体在快照上本地匹配 —— 键盘连击不再打三次全量拉取）。
         viewModelScope.launch {
             _searchQuery
                 .debounce(250L)
@@ -99,7 +124,10 @@ class MemoryViewModel @Inject constructor(
                         _searchResults.value = emptyList()
                     } else {
                         _searchResults.value = runCatching {
-                            memKit.searchNodes(query, limit = 50)
+                            val nodes = memKit.searchNodes(query, limit = 30)
+                            val facts = withContext(Dispatchers.IO) { memKit.allFacts() }
+                            val graph = withContext(Dispatchers.IO) { memKit.readGraph() }
+                            buildUnifiedSearchResults(nodes, facts, graph.first, query)
                         }.getOrDefault(emptyList())
                     }
                 }
@@ -112,18 +140,25 @@ class MemoryViewModel @Inject constructor(
                 val eps = memKit.recentEpisodes(limit = 50)
                 val macs = memKit.topMacros(limit = 20)
                 val counts = memKit.counts()
+                val facts = withContext(Dispatchers.IO) { memKit.allFacts() }
+                val graph = withContext(Dispatchers.IO) { memKit.readGraph() }
                 _episodes.value = eps
                 _macros.value = macs
+                _chatMemory.value = facts.toChatMemoryEntries()
+                _knowledge.value = KnowledgeSnapshot(graph.first, graph.second)
                 _stats.value = MemoryStats(
                     episodeCount = eps.size,
                     nodeCount = counts.nodes,
-                    macroCount = counts.macros
+                    macroCount = counts.macros,
+                    factCount = facts.size,
+                    entityCount = graph.first.size,
+                    relationCount = graph.second.size
                 )
             }.onFailure { e ->
-                _lastMessage.value = "加载记忆失败：${e.message}"
+                _lastMessage.value = languageManager.getString(
+                    R.string.memory_msg_load_failed, e.message ?: ""
+                )
             }
-            // #219：聊天记忆独立加载 —— 轨迹库失败不拖累聊天画像区
-            refreshChatMemory()
         }
     }
 
@@ -141,18 +176,86 @@ class MemoryViewModel @Inject constructor(
             runCatching {
                 val deleted = memKit.deleteEpisode(episodeId)
                 if (deleted) {
-                    _lastMessage.value = "已删除 Episode $episodeId"
+                    _lastMessage.value = languageManager.getString(
+                        R.string.memory_episode_msg_deleted, episodeId
+                    )
                 } else {
-                    _lastMessage.value = "删除失败：$episodeId 不存在"
+                    _lastMessage.value = languageManager.getString(
+                        R.string.memory_episode_msg_missing, episodeId
+                    )
                 }
                 refresh()
             }.onFailure { e ->
-                _lastMessage.value = "删除失败：${e.message}"
+                _lastMessage.value = languageManager.getString(
+                    R.string.memory_msg_delete_failed, e.message ?: ""
+                )
             }
         }
     }
 
     fun clearMessage() { _lastMessage.value = null }
+
+    // ═══ 手动写入口（记忆页 v2 —— 与 agent 写入工具同落点）═══
+
+    /**
+     * 手动记一条长期事实（「添加记忆 → 记一条事实」）。
+     *
+     * 落点与 MemorySaveFact 工具完全一致：MemKit.saveFact（来源 MANUAL，
+     * 幂等 —— 同内容重复保存自动归并强化）。
+     */
+    fun saveFactManually(content: String, kind: ChatFact.Kind, importance: Float) {
+        val text = content.trim()
+        if (text.isEmpty()) return
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    memKit.saveFact(text, kind, importance.coerceIn(0f, 1f))
+                }
+            }.onSuccess { result ->
+                _lastMessage.value = if (result.added) {
+                    languageManager.getString(R.string.memory_save_fact_msg_added)
+                } else {
+                    languageManager.getString(R.string.memory_save_fact_msg_reinforced)
+                }
+                refresh()
+            }.onFailure { e ->
+                _lastMessage.value = languageManager.getString(
+                    R.string.memory_write_msg_failed, e.message ?: ""
+                )
+            }
+        }
+    }
+
+    /**
+     * 教一次经验（「添加记忆 → 教一次经验」）。
+     *
+     * 落点与 MemoryConsolidateExperience 工具一致：consolidateExperience
+     * 整包沉淀（摘要事实 + 教训 PROFILE 事实 + 实体 / 关系图谱）。用户
+     * 亲述的教训与 agent 自整理的教训同池同权 —— 后续会话一并召回。
+     */
+    fun teachExperience(goal: String, outcome: String, success: Boolean, lessons: List<String>) {
+        val g = goal.trim()
+        val o = outcome.trim()
+        if (g.isEmpty() || o.isEmpty()) return
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    memKit.consolidateExperience(
+                        ExperienceReport(goal = g, outcome = o, success = success, lessons = lessons)
+                    )
+                }
+            }.onSuccess { result ->
+                _lastMessage.value = languageManager.getString(
+                    R.string.memory_teach_msg_done, result.totalWrites
+                )
+                refresh()
+            }.onFailure { e ->
+                _lastMessage.value = languageManager.getString(
+                    R.string.memory_write_msg_failed, e.message ?: ""
+                )
+            }
+        }
+    }
 
     // ═══ 记忆健康：维护周期 + 隔离区（原「梦境整理 / 免疫隔离」入口）═══
 
@@ -184,12 +287,21 @@ class MemoryViewModel @Inject constructor(
             _maintenanceRunning.value = false
             _lastMessage.value = when {
                 report.isFailure ->
-                    "维护整理失败：${report.exceptionOrNull()?.message ?: "未知错误"}"
+                    languageManager.getString(
+                        R.string.memory_dream_msg_failed,
+                        report.exceptionOrNull()?.message ?: ""
+                    )
 
                 report.getOrThrow().errors.isNotEmpty() ->
-                    "维护整理完成（${report.getOrThrow().errors.size} 项异常）：${report.getOrThrow().errors.first().take(80)}"
+                    languageManager.getString(
+                        R.string.memory_dream_msg_errors,
+                        report.getOrThrow().errors.size,
+                        report.getOrThrow().errors.first().take(80)
+                    )
 
-                else -> "维护整理完成：${report.getOrThrow().describe()}"
+                else -> languageManager.getString(
+                    R.string.memory_dream_msg_done, report.getOrThrow().describe()
+                )
             }
             refresh()
             refreshQuarantineCount()
@@ -202,9 +314,13 @@ class MemoryViewModel @Inject constructor(
             runCatching { memKit.clearQuarantine() }
                 .onSuccess {
                     _quarantinedCount.value = 0
-                    _lastMessage.value = "隔离区已清空"
+                    _lastMessage.value = languageManager.getString(R.string.memory_quarantine_msg_cleared)
                 }
-                .onFailure { _lastMessage.value = "清除隔离区失败：${it.message}" }
+                .onFailure {
+                    _lastMessage.value = languageManager.getString(
+                        R.string.memory_quarantine_msg_failed, it.message ?: ""
+                    )
+                }
         }
     }
 
@@ -214,9 +330,9 @@ class MemoryViewModel @Inject constructor(
     private fun refreshChatMemory() {
         viewModelScope.launch {
             runCatching {
-                _chatMemory.value = withContext(Dispatchers.IO) {
-                    memKit.store.allFacts().toChatMemoryEntries()
-                }
+                val facts = withContext(Dispatchers.IO) { memKit.allFacts() }
+                _chatMemory.value = facts.toChatMemoryEntries()
+                _stats.value = _stats.value.copy(factCount = facts.size)
             }.onFailure { e ->
                 _lastMessage.value = languageManager.getString(
                     R.string.memory_chat_msg_failed, e.message ?: ""

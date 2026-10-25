@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.HealthAndSafety
@@ -62,12 +63,13 @@ import com.apex.agent.ui.component.ReliabilityTier
 import com.apex.agent.ui.component.reliabilityTierOf
 import com.apex.memkit.core.model.EpisodeSummary
 import com.apex.memkit.core.model.MacroSkill
-import com.apex.memkit.core.store.NodeDictEntry
 import com.apex.memkit.graph.screen.MemoryGraphContent
 import com.apex.memkit.graph.screen.rememberMemoryGraphState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,15 +85,25 @@ fun MemoryScreen(
     val quarantinedCount by viewModel.quarantinedCount.collectAsStateWithLifecycle()
     val dreamRunning by viewModel.maintenanceRunning.collectAsStateWithLifecycle()
     val chatMemory by viewModel.chatMemory.collectAsStateWithLifecycle()
+    val knowledge by viewModel.knowledge.collectAsStateWithLifecycle()
 
     var showSearch by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<EpisodeSummary?>(null) }
     var showToast by remember { mutableStateOf(false) }
 
+    // 写入口（记忆页 v2）：顶栏「添加」菜单 → 记事实 / 教经验两个对话框
+    var showAddMenu by remember { mutableStateOf(false) }
+    var showSaveFactDialog by remember { mutableStateOf(false) }
+    var showTeachDialog by remember { mutableStateOf(false) }
+
     // 记忆图谱视图（apex-kit-memory:memory-graph-ui）：与列表视图同页切换。
     // 状态提升到本屏顶层 —— 图谱的缩放 / 选中 / 过滤现场跨切换存活。
     var graphMode by remember { mutableStateOf(false) }
     val graphState = rememberMemoryGraphState(viewModel.graphSource)
+
+    // 列表 → 图谱漫游意图（"entity:名" / "fact:ID"）：切到图谱视图后待
+    // 装载落定再 navigateTo（首装 / 写后重装都是异步 —— 直接跳会落空）。
+    var pendingGraphJump by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(message) {
         if (message != null) showToast = true
@@ -99,7 +111,27 @@ fun MemoryScreen(
 
     // P2-12（6-c）：VM 为 Activity 级单例，其他页面产生的记忆变更不会自动同步到本页 ——
     // 每次进入本屏强制刷新快照（原仅 VM init 刷新一次；照 SkillScreen 同款模式）。
+    // 图谱画布的数据新鲜度不由宿主驱动：库侧 MemKitGraphSource 接 store
+    // 修订号信号，状态机自动软刷新（保位 / 保选中 / 探索态相机稳定）。
     LaunchedEffect(Unit) { viewModel.refresh(); viewModel.refreshQuarantineCount() }
+
+    // 延迟漫游：等首装落定 + 目标可寻址（软刷新去抖 1.5s 窗口 —— 刚写入
+    // 的节点可能晚到；不可寻址时最多等 1.44s，超时 navigateTo 自身会兑底
+    // 开启被关掉的目标类型后选中，不硬跳）。
+    LaunchedEffect(graphMode, pendingGraphJump) {
+        val target = pendingGraphJump ?: return@LaunchedEffect
+        if (!graphMode) return@LaunchedEffect
+        withTimeoutOrNull(2500L) {
+            while (graphState.loading) delay(80)
+            var settle = 0
+            while (target !in graphState.displayGraph.nodesById && settle < 18) {
+                delay(80)
+                settle++
+            }
+        }
+        graphState.navigateTo(target)
+        pendingGraphJump = null
+    }
 
     Scaffold(
         // 内层 Scaffold 置零 insets：状态栏已由根 Scaffold 顶栏承担，避免双重叠加
@@ -110,6 +142,16 @@ fun MemoryScreen(
                 windowInsets = WindowInsets(0, 0, 0, 0),
                 title = { Text(stringResource(R.string.memory_title)) },
                 actions = {
+                    // 手动沉淀入口（v2）：记事实 / 教经验 —— 与 agent 写入工具同落点
+                    IconButton(onClick = { showAddMenu = true }) {
+                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.memory_write_add))
+                    }
+                    MemoryAddMenu(
+                        expanded = showAddMenu,
+                        onDismiss = { showAddMenu = false },
+                        onSaveFact = { showSaveFactDialog = true },
+                        onTeachExperience = { showTeachDialog = true }
+                    )
                     // 图谱 / 列表视图切换（同页双形态：关系网 vs 管理列表）
                     IconButton(onClick = { graphMode = !graphMode }) {
                         Icon(
@@ -157,16 +199,19 @@ fun MemoryScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // 概览三卡
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                StatCard("Episode", "${stats.episodeCount}", Modifier.weight(1f))
-                StatCard(stringResource(R.string.memory_nodes), "${stats.nodeCount}", Modifier.weight(1f))
-                StatCard(stringResource(R.string.memory_macros), "${stats.macroCount}", Modifier.weight(1f))
+            // 概览六卡（v2：轨迹三卡 + 知识三卡 —— 事实 / 实体 / 关系）
+            Column(Modifier.padding(12.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StatCard(stringResource(R.string.memory_stats_episodes), "${stats.episodeCount}", Modifier.weight(1f))
+                    StatCard(stringResource(R.string.memory_nodes), "${stats.nodeCount}", Modifier.weight(1f))
+                    StatCard(stringResource(R.string.memory_macros), "${stats.macroCount}", Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StatCard(stringResource(R.string.memory_stats_facts), "${stats.factCount}", Modifier.weight(1f))
+                    StatCard(stringResource(R.string.memory_stats_entities), "${stats.entityCount}", Modifier.weight(1f))
+                    StatCard(stringResource(R.string.memory_stats_relations), "${stats.relationCount}", Modifier.weight(1f))
+                }
             }
 
             // 记忆健康（梦境巩固 + 免疫隔离区 —— T76 补齐入口）
@@ -218,18 +263,17 @@ fun MemoryScreen(
             }
 
             if (showSearch && query.isNotBlank()) {
-                // 搜索结果
+                // 统一搜索结果（v2：事实 → 实体 → 场景节点 三轨分组命中）
                 if (searchResults.isEmpty()) {
-                    EmptyHint(stringResource(R.string.memory_no_match, query))
+                    EmptyHint(stringResource(R.string.memory_search_no_match_all, query))
                 } else {
-                    LazyColumn(
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(searchResults, key = { it.fingerprint }) { node ->
-                            NodeCard(node)
+                    UnifiedSearchResults(
+                        results = searchResults,
+                        onJumpToGraph = { nodeId ->
+                            pendingGraphJump = nodeId
+                            graphMode = true
                         }
-                    }
+                    )
                 }
             } else {
                 // 聊天记忆（#219 隐私合规：画像 / 近况 / 里程碑可见、可删、可清空）
@@ -237,6 +281,16 @@ fun MemoryScreen(
                     entries = chatMemory,
                     onDeleteRecord = viewModel::deleteChatMemoryRecord,
                     onClearAll = viewModel::clearChatMemory
+                )
+
+                // 知识图谱（v2：实体 / 关系的文字化精读 —— 点击实体跳图谱定位）
+                KnowledgeGraphSection(
+                    entities = knowledge.entities,
+                    relations = knowledge.relations,
+                    onOpenInGraph = { name ->
+                        pendingGraphJump = "entity:$name"
+                        graphMode = true
+                    }
                 )
 
                 // 近期 Episode
@@ -296,6 +350,119 @@ fun MemoryScreen(
             dismissButton = {
                 TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.memory_cancel)) }
             }
+        )
+    }
+
+    // 写入口对话框（v2）
+    if (showSaveFactDialog) {
+        SaveFactDialog(
+            onDismiss = { showSaveFactDialog = false },
+            onSave = viewModel::saveFactManually
+        )
+    }
+    if (showTeachDialog) {
+        TeachExperienceDialog(
+            onDismiss = { showTeachDialog = false },
+            onTeach = viewModel::teachExperience
+        )
+    }
+}
+
+// ═══ 统一搜索结果（v2：三轨分组 + 类型徽章 + 图谱跳转）═══
+
+/** 命中分组渲染：事实 → 实体 → 场景节点（[MemorySearchHitType] 枚举序）。 */
+@Composable
+private fun UnifiedSearchResults(
+    results: List<MemorySearchHit>,
+    onJumpToGraph: (nodeId: String) -> Unit
+) {
+    val grouped = remember(results) { results.groupBy { it.type } }
+    LazyColumn(
+        modifier = Modifier.padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        MemorySearchHitType.entries.forEach { type ->
+            val hits = grouped[type] ?: return@forEach
+            item(key = "header_${type.name}") {
+                Text(
+                    searchGroupLabel(type),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+            items(hits, key = { it.uid }) { hit ->
+                SearchHitCard(hit = hit, onJumpToGraph = onJumpToGraph)
+            }
+        }
+    }
+}
+
+@Composable
+private fun searchGroupLabel(type: MemorySearchHitType): String = when (type) {
+    MemorySearchHitType.FACT -> stringResource(R.string.memory_search_group_facts)
+    MemorySearchHitType.ENTITY -> stringResource(R.string.memory_search_group_entities)
+    MemorySearchHitType.NODE -> stringResource(R.string.memory_search_group_nodes)
+}
+
+/** 单条命中卡：类型徽章 + 主文案 + 元数据 + 图谱跳转（不可跳的节点轨不出现按钮）。 */
+@Composable
+private fun SearchHitCard(hit: MemorySearchHit, onJumpToGraph: (nodeId: String) -> Unit) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SearchTypeBadge(hit.type)
+            Spacer(Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    hit.title.ifBlank { stringResource(R.string.memory_no_text) },
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis
+                )
+                if (hit.subtitle != null) {
+                    Text(
+                        hit.subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            if (hit.jumpId != null) {
+                Text(
+                    stringResource(R.string.memory_knowledge_open_graph),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .clickable { onJumpToGraph(hit.jumpId) }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchTypeBadge(type: MemorySearchHitType) {
+    val (label, color) = when (type) {
+        MemorySearchHitType.FACT ->
+            stringResource(R.string.memory_search_type_fact) to MaterialTheme.colorScheme.primary
+        MemorySearchHitType.ENTITY ->
+            stringResource(R.string.memory_search_type_entity) to MaterialTheme.colorScheme.secondary
+        MemorySearchHitType.NODE ->
+            stringResource(R.string.memory_search_type_node) to MaterialTheme.colorScheme.tertiary
+    }
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = color.copy(alpha = 0.14f)
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
         )
     }
 }
@@ -389,30 +556,6 @@ private fun EpisodeCard(episode: EpisodeSummary, onDelete: () -> Unit) {
             IconButton(onClick = onDelete) {
                 Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.memory_delete),
                     tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f), modifier = Modifier.size(20.dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun NodeCard(node: NodeDictEntry) {
-    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    node.text ?: stringResource(R.string.memory_no_text),
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "role=${node.role}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }
