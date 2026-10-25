@@ -72,7 +72,11 @@ data class UserInputRequest(
  * globe 图标 + 专属徽章让聊天流里的 browser_* 调用一眼可辨 ——
  * WEB_FETCH 是「抓一个 URL 的文本」，BROWSER 是「在页面里开车」。
  */
-enum class ToolKind { LOCAL, MCP, WEB_SEARCH, WEB_FETCH, BROWSER, SKILL, GITHUB, CONNECTOR, PLUGIN, FUSION }
+enum class ToolKind {
+    LOCAL, MCP, WEB_SEARCH, WEB_FETCH, BROWSER, SKILL, GITHUB, CONNECTOR, PLUGIN, FUSION,
+    /** 终端运行时（Terminal* 工具族）：ATR 2.0 会话 / 一次性结构化执行。 */
+    TERMINAL
+}
 
 /**
  * 待发送的流水线指令（迷你胶囊）。
@@ -156,6 +160,19 @@ sealed interface AgentUiMessage {
         val skill: String? = null,
         /** 逐步执行过程（带时间戳的步骤序列），用于"执行过程"时间线渲染。 */
         val steps: List<ToolStep> = emptyList(),
+        /** 真实进程退出码（v3：终端工具 waitpid 结果）；null = 非进程类/未知。
+         *  完成卡渲染 `exit N` 徽标 —— 127/126/-1 的失败一眼可辨。 */
+        val exitCode: Int? = null,
+        /** 关联终端会话标注（v3：TerminalRun/TerminalCreate 的 session 标识）。 */
+        val sessionId: String? = null,
+        /** 执行通道（v3：proot-ubuntu / root-su / shizuku / local-sh）。 */
+        val channel: String? = null,
+        /** 实际执行目录（v3：guest 语义路径）。 */
+        val cwd: String? = null,
+        /** 结构化错误类别（v3：spawn_failed / permission_denied / ...）。 */
+        val errorKind: String? = null,
+        /** 命令在前台等待用户输入（v3：INPUT_REQUIRED 挂起可见）。 */
+        val waitingInput: Boolean = false,
         val timestamp: Long = java.lang.System.currentTimeMillis(),
         override val id: String = java.util.UUID.randomUUID().toString()
     ) : AgentUiMessage

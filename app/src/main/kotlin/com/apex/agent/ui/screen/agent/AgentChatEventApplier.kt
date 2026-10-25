@@ -353,7 +353,15 @@ internal suspend fun AgentChatViewModel.handleEvent(event: AgentEvent) {
                         kind = kind,
                         server = server,
                         skill = skill,
-                        steps = finalSteps
+                        steps = finalSteps,
+                        // v3：结构化执行元数据（终端工具）—— 完成卡的 exit 徽标 /
+                        // 会话 / 通道 / 目录标注 / 挂起提示。
+                        exitCode = event.exitCode,
+                        sessionId = event.sessionId,
+                        channel = event.channel,
+                        cwd = event.cwd,
+                        errorKind = event.errorKind,
+                        waitingInput = event.waitingInput
                     )
                 )
             }
