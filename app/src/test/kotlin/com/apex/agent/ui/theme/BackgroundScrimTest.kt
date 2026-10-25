@@ -29,7 +29,9 @@ class BackgroundScrimTest {
         val darkImage = scrimAlphaFor(darkTheme = false, luminance = 0.1f, userDim = 0.4f)
         val brightImage = scrimAlphaFor(darkTheme = false, luminance = 0.9f, userDim = 0.4f)
         assertTrue("darker image → thicker scrim", darkImage > brightImage)
-        assertEquals(0.9f * 0.35f + 0.4f, brightImage, 0.001f)  // autoBase = (1-0.9)×0.35
+        // autoBase = (1-0.9)×0.35 = 0.035 → 0.435（与注释同口径：亮色主题基数随亮度递减）
+        assertEquals((1f - 0.9f) * 0.35f + 0.4f, brightImage, 0.001f)
+        assertEquals((1f - 0.1f) * 0.35f + 0.4f, darkImage, 0.001f)
     }
 
     @Test
