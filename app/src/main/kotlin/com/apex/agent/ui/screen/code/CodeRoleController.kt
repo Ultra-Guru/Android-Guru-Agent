@@ -67,10 +67,11 @@ class CodeRoleController(
     }
 
     private suspend fun applyToEngine(role: AgentRole) {
-        // v1.8.0：角色绑定了专属知识库时，把「怎么用知识库」写进 Role definition
-        //（must_read → index/search → read 检索工作流指引）。
-        val kbHint = knowledgeBaseService.forRole(role.id)
-            ?.let { knowledgeBaseService.roleDefinitionHint(it) } ?: ""
+        // v2 多卷制：角色绑定的全部知识卷（可无限扩充）都写进 Role definition
+        // —— 检索指引按卷 id 逐一给出（must_read → index/search → read）。
+        val kbHint = knowledgeBaseService.roleDefinitionHintFor(
+            knowledgeBaseService.volumesForRole(role.id)
+        )
         engineAccessor()?.updateRolePersona(
             roleDefinition = role.roleDefinition + kbHint,
             rolePrompt = role.systemPrompt.ifBlank { null }

@@ -47,16 +47,22 @@ data class AgentRole(
 
         /**
          * 内置角色：全能 Agent —— 与历史默认行为完全一致的人设显式化。
-         * agentName 为空串 → 引擎身份行回落 "Apex Agent"（零行为变化），
-         * 其余字段仅做正面的能力自述（不收窄能力）。
+         * agentName 为空串 → 引擎身份行回落 "Apex Agent"（零行为变化）。
+         *
+         * #197 工位同源：roleDefinition 只声明 Agent 工位机械可见的能力面
+         * （Code 族与 Github 族工具已被引擎工具计划的前缀黑名单剔除），
+         * 编程/git 诉求显式引导切换 Coding 工位 —— 人设文本与工具计划
+         * 一致，「全能」靠工具 + 知识库（可无限扩卷）落地，不靠提示词虚标。
          */
         val ALL_ROUNDER: AgentRole = AgentRole(
             id = BUILTIN_ALL_ROUNDER_ID,
             name = "Apex Agent",
             emoji = "⚡",
             userTitle = "",
-            roleDefinition = "All-round autonomous agent: coding, shell, web, files, " +
-                "device control, memory and task planning — pick the best tool for any job.",
+            roleDefinition = "All-round autonomous agent for everyday life, knowledge, research, " +
+                "automation, files, device control and memory — pick the best available tool for " +
+                "the job and keep working until it is done. Programming and git work live in the " +
+                "Coding workspace: hand those over gracefully instead of attempting them here.",
             systemPrompt = "",
             style = "",
             replyLanguage = "",
