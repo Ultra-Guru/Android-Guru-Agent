@@ -67,12 +67,20 @@ class TerminalWriteTool(
 
     override suspend fun invoke(arguments: String): String {
         val json = Json.parseToJsonElement(arguments).jsonObject
-        val sessionId = json["sessionId"]?.jsonPrimitive?.content?.toLongOrNull() ?: throw IllegalArgumentException("sessionId required")
-        val kind = runCatching { TerminalRuntime.WriteKind.valueOf(json["kind"]?.jsonPrimitive?.content ?: "LINE") }.getOrDefault(TerminalRuntime.WriteKind.LINE)
-        val text = json["text"]?.jsonPrimitive?.content
-        val key = json["key"]?.jsonPrimitive?.content?.let { runCatching { TerminalKey.valueOf(it) }.getOrNull() }
+        // 别名宽容（实录 #8）：schema 层已互认，工具层同步读取
+        val sessionId = json.longArg("sessionId", "session_id")
+            ?: throw IllegalArgumentException("sessionId required (accepted: sessionId, session_id)")
+        val kind = runCatching { TerminalRuntime.WriteKind.valueOf(json.stringArg("kind") ?: "LINE") }.getOrDefault(TerminalRuntime.WriteKind.LINE)
+        val text = json.stringArg("text")
+        val key = json.stringArg("key")?.let { runCatching { TerminalKey.valueOf(it) }.getOrNull() }
         val out = execute(Input(sessionId, kind, text, key))
-        return buildJsonObject { put("written", JsonPrimitive(out.written)); put("bytesWritten", JsonPrimitive(out.bytesWritten)); put("cursor", JsonPrimitive(out.cursor)); put("inputOwner", JsonPrimitive(out.inputOwner)) }.toString()
+        // heredoc 前置警告（实录 #7）：text 里含 heredoc 起始符时提示风险；
+        // 补终结符的自救写入（单行终结文本）不含 <<，不会误报。
+        val heredocHint = text?.let { AgentGuidance.heredocAdvisory(it) }
+        return buildJsonObject {
+            put("written", JsonPrimitive(out.written)); put("bytesWritten", JsonPrimitive(out.bytesWritten)); put("cursor", JsonPrimitive(out.cursor)); put("inputOwner", JsonPrimitive(out.inputOwner))
+            heredocHint?.let { put("hint", JsonPrimitive(it)) }
+        }.toString()
     }
 
     data class Input(

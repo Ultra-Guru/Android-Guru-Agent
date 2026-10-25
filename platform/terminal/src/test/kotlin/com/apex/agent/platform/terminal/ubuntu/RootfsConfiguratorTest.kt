@@ -164,6 +164,60 @@ class RootfsConfiguratorTest {
         val cfg = RootfsConfigurator(dnsServers = { emptyList() })
         assertFalse(cfg.refreshDnsIfChanged(File(root, "nonexistent-dir")))
     }
+
+    // ═══ 对话实录 #14：宿主补充组 → guest /etc/group 补齐（PRoot 组噪音根因）═══
+
+    @Test fun `supplementary gids are mapped into etc group`() {
+        val root = tmpRoot()
+        // 预置一个真实组，模拟 Ubuntu Base 既有 /etc/group
+        File(root, "etc/group").writeText("root:x:0:\ndaemon:x:1:\n")
+        val cfg = RootfsConfigurator(
+            dnsServers = { listOf("10.0.0.1") },
+            hostSupplementaryGids = { listOf(3003, 9997, 3003, 0, -5) } // 去重 + 非正数过滤
+        )
+        val report = cfg.configure(root)
+        val group = File(root, "etc/group").readText()
+        assertTrue("gid 3003 必须有条目：$group", "g3003:x:3003:" in group)
+        assertTrue("gid 9997 必须有条目：$group", "g9997:x:9997:" in group)
+        assertTrue("既有条目必须保留", "root:x:0:" in group)
+        assertTrue("action logged", report.actions.any { it.startsWith("group: added") })
+    }
+
+    @Test fun `group additions are idempotent across reconfigure`() {
+        val root = tmpRoot()
+        val cfg1 = RootfsConfigurator(
+            dnsServers = { listOf("10.0.0.1") },
+            hostSupplementaryGids = { listOf(3003, 9997) }
+        )
+        cfg1.configure(root)
+        val cfg2 = RootfsConfigurator(
+            dnsServers = { listOf("10.0.0.1") },
+            hostSupplementaryGids = { listOf(3003, 9997) }
+        )
+        val report2 = cfg2.configure(root)
+        val group = File(root, "etc/group").readText()
+        assertEquals("幂等：重复 configure 不得重复追加", 1, group.lines().count { it.startsWith("g3003:") })
+        assertTrue("应报告 already mapped", report2.actions.any { it.startsWith("group: all") })
+    }
+
+    @Test fun `buildGroupAdditions skips existing gids and filters invalid ones`() {
+        val existing = "root:x:0:\ninet:x:3003:\n"
+        // 3003 已存在（真实组名 inet）→ 跳过；3004/0/负数 → 过滤
+        val additions = RootfsConfigurator.buildGroupAdditions(existing, listOf(3003, 3004, 0, -1, 3004))
+        assertEquals(listOf("g3004:x:3004:"), additions)
+        // 空内容 → 全部缺失的都补
+        assertEquals(
+            listOf("g3003:x:3003:", "g9997:x:9997:"),
+            RootfsConfigurator.buildGroupAdditions("", listOf(3003, 9997))
+        )
+    }
+
+    @Test fun `no gids injected means no group action`() {
+        val root = tmpRoot()
+        val report = RootfsConfigurator(dnsServers = { listOf("10.0.0.1") }).configure(root)
+        assertFalse("未注入 gid 时不应有 group 动作", report.actions.any { it.startsWith("group:") })
+        assertFalse(File(root, "etc/group").exists())
+    }
 }
 
 /**

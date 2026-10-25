@@ -2,6 +2,7 @@ package com.apex.agent.core.engine.terminal
 
 import com.apex.agent.core.engine.terminal.TerminalProactivityAdvisor.Kind
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -141,5 +142,36 @@ class TerminalProactivityAdvisorTest {
         repeat(10) { advisor.onToolCallCompleted("Read", succeeded = true) }
         advisor.onToolCallCompleted("WebSearch", succeeded = false)
         assertNull(advisor.onIterationStart("随便聊聊"))
+    }
+
+    // ═══════════════════════ 对话实录 #7/#10：建议措辞与自救指引 ═══════════════════════
+
+    @Test
+    fun `session flow advice is advisory not prohibitive and carries heredoc guidance`() {
+        val advisor = TerminalProactivityAdvisor()
+        repeat(3) { advisor.onToolCallCompleted("TerminalExec", succeeded = true) }
+        val advice = advisor.onIterationStart("hello")!!
+        assertEquals(Kind.SESSION_FLOW, advice.kind)
+        // 实录 #10：旧措辞 "STOP issuing further one-shot commands" 过于绝对，
+        // 把正常的一次性探测工作流强行打断；改为建议式（may still use）。
+        assertFalse("不得再出现绝对 STOP 措辞：${advice.systemNote}", advice.systemNote.contains("STOP issuing"))
+        assertTrue("简单短探测应被允许继续：${advice.systemNote}", advice.systemNote.contains("may still use TerminalExec"))
+        // 实录 #7：heredoc 禁忌 + PS2 挂死自救必须写进建议
+        assertTrue("必须含 heredoc 禁忌", advice.systemNote.contains("heredoc"))
+        assertTrue("必须含先落文件指引", advice.systemNote.contains("file"))
+        assertTrue("必须含 CTRL_C 自救", advice.systemNote.contains("CTRL_C"))
+    }
+
+    @Test
+    fun `failure recovery advice carries ps2 ctrl-c escape`() {
+        val advisor = TerminalProactivityAdvisor()
+        advisor.onToolCallCompleted("ShellExecute", succeeded = false)
+        advisor.onToolCallCompleted("ShellExecute", succeeded = false)
+        val advice = advisor.onIterationStart("x")!!
+        assertEquals(Kind.FAILURE_RECOVERY, advice.kind)
+        assertTrue("必须提示检查输出：${advice.systemNote}", advice.systemNote.contains("inspect"))
+        assertTrue("必须提示问用户：${advice.systemNote}", advice.systemNote.contains("ask the user"))
+        // 实录 #7：挂死在 PS2 '>' 时的正确自救（KEY=CTRL_C），信号层送不到
+        assertTrue("必须含 PS2 挂死自救：${advice.systemNote}", advice.systemNote.contains("CTRL_C"))
     }
 }

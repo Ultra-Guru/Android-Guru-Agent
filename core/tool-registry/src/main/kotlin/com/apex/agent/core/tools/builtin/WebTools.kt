@@ -81,8 +81,13 @@ class WebFetchTool(
 
             val reqBuilder = Request.Builder()
                 .url(url)
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) ApexAgent/1.0")
+                // WAF 兼容默认头（对话实录 #5）：裸 OkHttp 的自指纹 UA 曾被
+                // 云 WAF 直接 405 拦截（阿里云：同一 URL 换浏览器 UA + Referer
+                // 立即 200）。默认伪装浏览器；用户 headers 仍可逐项覆盖。
+                .header("User-Agent", BROWSER_UA)
                 .header("Accept", "text/html,application/xhtml+xml,application/json,text/plain,*/*")
+                .header("Accept-Language", "en-US,en;q=0.8,zh-CN;q=0.6")
+                .header("Referer", originOf(url))
 
             json["headers"]?.jsonObject?.forEach { (k, v) ->
                 reqBuilder.header(k, v.jsonPrimitive.content)
@@ -103,14 +108,23 @@ class WebFetchTool(
                 if (statusCode !in 200..299) {
                     // P0 修复：错误必须以 "Error:" 开头——v3 管线（熔断器/统计/UI
                     // 成败判定）依赖该前缀。旧的 "❌ HTTP xxx" 会被误判为成功。
-                    return "Error: HTTP $statusCode fetching $url\n${rawBody.take(500)}"
+                    // 404/403/405 附带下一步向导（对话实录 #4：API 路径猜测无向导）。
+                    return "Error: HTTP $statusCode fetching $url\n${rawBody.take(500)}" +
+                        (httpStatusHint(statusCode, rawBody.take(2000), contentType)
+                            ?.let { "\n$it" } ?: "")
                 }
 
                 when (mode) {
                     "raw" -> formatRaw(rawBody, contentType, maxChars)
                     "structure" -> extractStructure(rawBody, url)
                     "links" -> extractLinks(rawBody, maxChars)
-                    else -> extractReadableText(rawBody, maxChars)
+                    else -> {
+                        // SPA 壳探测（对话实录 #1）：单页应用的 HTML 只有“下载 App”
+                        // 空壳，正文由客户端 XHR 拉取 —— 明确告知模型数据不在
+                        // HTML 里、该去找 API，而不是去试浏览器渲染。
+                        val text = extractReadableText(rawBody, maxChars)
+                        spaShellHint(rawBody, text)?.let { "$text\n\n$it" } ?: text
+                    }
                 }
             }
         } catch (e: CancellationException) {
@@ -211,7 +225,14 @@ class WebFetchTool(
             appendLine("🔗 Links (${links.size}):")
             links.forEach { appendLine("  $it") }
         }
-        return result.take(maxChars)
+        // 静默截断修复（对话实录 #6 同族）：links 列表被 maxChars 无声切断时
+        // 必须标注省略 —— 否则模型把“看到的前 N 条”当成全部链接。
+        return if (result.length > maxChars) {
+            result.take(maxChars) +
+                "\n\n[... truncated at $maxChars/${result.length} chars — ${links.size} links total, listing cut; raise max_chars to see the rest]"
+        } else {
+            result
+        }
     }
 
     private fun formatRaw(body: String, contentType: String, maxChars: Int): String {
@@ -533,6 +554,8 @@ class HttpRequestTool(
         Make an HTTP request (GET, POST, PUT, DELETE, PATCH).
         Use for API calls, form submissions, or any HTTP interaction.
         Returns status code, headers, and response body.
+        Browser-like default headers (User-Agent / Accept / Accept-Language) are sent
+        automatically — cloud WAFs reject bare clients; override per-request via headers.
 
         Examples:
         - {"method": "GET", "url": "https://api.github.com/users/octocat"}
@@ -580,8 +603,14 @@ class HttpRequestTool(
             val contentType = json["content_type"]?.jsonPrimitive?.content ?: "application/json"
 
             val requestBuilder = Request.Builder().url(url)
+                // WAF 兼容默认头（对话实录 #5）：旧实现不带任何默认头，裸客户端
+                // 指纹被云 WAF 直接 405。补浏览器 UA + Accept + Accept-Language；
+                // 用户 headers 后写 → 可逐项覆盖。
+                .header("User-Agent", BROWSER_UA)
+                .header("Accept", "text/html,application/json;q=0.9,*/*;q=0.8")
+                .header("Accept-Language", "en-US,en;q=0.8,zh-CN;q=0.6")
 
-            // Headers
+            // Headers（用户头最后写入 → 覆盖上方默认值）
             json["headers"]?.jsonObject?.forEach { (key, value) ->
                 requestBuilder.header(key, value.jsonPrimitive.content)
             }
@@ -625,8 +654,13 @@ class HttpRequestTool(
                     appendLine("---")
                     appendLine(responseBody.take(5000))
                     if (responseBody.length > 5000) {
-                        appendLine("[... truncated]")
+                        // 截断标记带总量（对话实录 #6）："[... truncated]" 曾被模型
+                        // 误读为“内容到此为止” —— 必须直说省略区还有更多。
+                        appendLine("[... truncated at 5000/${responseBody.length} chars — the body CONTINUES beyond this point; do not treat the visible part as the complete response]")
                     }
+                    // 404/403/405 下一步向导（对话实录 #4/#5：API 探路径与 WAF 重试头）
+                    httpStatusHint(it.code, responseBody.take(2000), it.header("Content-Type") ?: "")
+                        ?.let { hint -> appendLine(); appendLine(hint) }
                 }
             }
         } catch (e: CancellationException) {
@@ -634,6 +668,98 @@ class HttpRequestTool(
         } catch (e: Exception) {
             "Error: http request failed: ${e.message ?: e::class.simpleName}"
         }
+    }
+}
+
+// ═══ 对话实录修复：Web 工具共享的浏览器指纹与智能提示 ═══
+
+/** 桌面 Chrome 指纹（WebFetch / HttpRequest 默认 UA）。与 WebSearchTool 的
+ *  DESKTOP_UA 同值；独立命名避免 companion 作用域遮蔽。 */
+internal val BROWSER_UA =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+
+/** 提取 URL 的同源 Referer（scheme://host/）—— 部分 WAF 校验；解析失败
+ *  或 scheme/host 缺失（非标准 URL）静默回退空串，绝不因 Referer 拖垮抓取。 */
+internal fun originOf(url: String): String = runCatching {
+    val uri = java.net.URI(url)
+    val scheme = uri.scheme ?: return@runCatching ""
+    val host = uri.host ?: return@runCatching ""
+    val port = if (uri.port > 0 && uri.port != defaultPort(scheme)) ":${uri.port}" else ""
+    "$scheme://$host$port/"
+}.getOrDefault("")
+
+private fun defaultPort(scheme: String?): Int = when (scheme) {
+    "http" -> 80
+    "https" -> 443
+    else -> -1
+}
+
+/** SPA 空壳正文的最小字符阈值：低于它且命中壳特征 → 判定为 JS 应用壳。 */
+private const val SPA_MIN_VISIBLE_CHARS = 200
+
+/** HTML 侧壳特征：常见 SPA 挂载点 / 禁 JS 提示。 */
+private val SPA_SHELL_HTML_MARKERS = listOf(
+    "id=\"root\"", "id='root'", "id=\"app\"", "id='app'",
+    "id=\"__next\"", "id=\"__nuxt\"", "<noscript", "window.__INITIAL_STATE__",
+    "window.__NUXT__", "enable javascript", "Enable JavaScript"
+)
+
+/** 提取文本侧壳短语（对话实录实测样例：“Download App”/“Current System does not Support”）。 */
+private val SPA_SHELL_TEXT_PHRASES = listOf(
+    "download app", "press and hold to scan", "scan the qr code",
+    "current system does not support", "please enable javascript",
+    "请开启 javascript", "下载 app", "扫码下载", "当前系统不支持"
+)
+
+/**
+ * SPA 空壳探测（对话实录 #1/#2/#3）：可见正文极短且命中壳特征时，返回
+ * 引导模型改走 XHR/API 的提示；正常页面返回 null（零噪音）。
+ */
+internal fun spaShellHint(rawHtml: String, visibleText: String): String? {
+    if (visibleText.trim().length > SPA_MIN_VISIBLE_CHARS) return null
+    val htmlHit = SPA_SHELL_HTML_MARKERS.any { rawHtml.contains(it, ignoreCase = true) }
+    val textHit = SPA_SHELL_TEXT_PHRASES.any { visibleText.contains(it, ignoreCase = true) }
+    if (!htmlHit && !textHit) return null
+    return "[WebFetch: this looks like a JavaScript app shell — the real content is NOT in this " +
+        "HTML (it is fetched client-side via XHR/API). Instead of trying to render the page: " +
+        "locate the backing API endpoint — try /api/v1|v2|v3/... variants of the current path, " +
+        "or inspect the page's JS bundle for the data URL — then fetch it with HttpRequest " +
+        "(browser-like headers are sent by default). Only fall back to BrowserNavigate / " +
+        "BrowserExtractContent when real interaction (login / click) is required.]"
+}
+
+/**
+ * HTTP 状态码下一步向导（对话实录 #4/#5）：
+ * - 404 → 提示尝试相邻 API 版本（v1↔v2↔v3）或从 JS bundle 找真实端点；
+ * - 403/405 且响应像 WAF 拦截页 → 提示补浏览器头（UA/Referer）重试。
+ * 其余状态返回 null。
+ */
+internal fun httpStatusHint(statusCode: Int, bodyPeek: String, contentType: String): String? {
+    val bodyIsHtml = contentType.contains("html", ignoreCase = true) ||
+        bodyPeek.contains("<html", ignoreCase = true)
+    return when (statusCode) {
+        404 -> "[hint] HTTP 404: path not found. If probing an API, try sibling versions " +
+            "(v1/v2/v3) of the path, or find the real endpoint in the page's JS bundle / docs."
+        403, 405 -> {
+            val looksLikeBlockPage = bodyIsHtml && (
+                bodyPeek.contains("<title>40", ignoreCase = true) ||
+                    bodyPeek.contains("blocked", ignoreCase = true) ||
+                    bodyPeek.contains("captcha", ignoreCase = true) ||
+                    bodyPeek.contains("waf", ignoreCase = true) ||
+                    bodyPeek.contains("request method", ignoreCase = true)
+                )
+            if (looksLikeBlockPage) {
+                "[hint] HTTP $statusCode with an HTML block page: a WAF / anti-bot layer rejected " +
+                    "this client. Retry with explicit browser headers, e.g. {\"headers\":" +
+                    "{\"User-Agent\":\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) ... " +
+                    "Chrome/124 ... Safari/537.36\",\"Referer\":\"https://<host>/\"}}."
+            } else {
+                "[hint] HTTP $statusCode rejected the request — check the allowed method " +
+                    "(GET/POST) for this endpoint, or retry with browser-like headers."
+            }
+        }
+        else -> null
     }
 }
 

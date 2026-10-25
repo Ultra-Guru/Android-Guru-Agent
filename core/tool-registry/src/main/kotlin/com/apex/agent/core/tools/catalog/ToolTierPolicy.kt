@@ -116,6 +116,14 @@ object ToolTierPolicy {
         // （避免"我不知道我能调多少迭代上限"的盲调）；AgentSettingSet 与
         // profile/role/preset 操作为 CATALOG（不必要时不全量入请求体）。
         "AgentSettingGet",
+
+        // ── 模型/供应商配置（对话实录 #12：两跳盲区）──
+        // 实录：AgentSettingGet 不含 provider/model/key 字段，模型想配模型时只能
+        // ToolSearch→ToolOpen 两跳 —— 弱模型不会主动爬这两步，直接回"做不到"。
+        // 列表 + 切默认是模型配置任务的第一步，schema 各 ~0.3KB 入 CORE 成本可忽略；
+        // AgentProviderSetKey / ModelConfigImport 等写入型大 schema 仍留 CATALOG
+        // （低频、高风险，两跳合理）。
+        "AgentProfileList", "AgentProfileSetDefault",
     )
 
     /** @return true when [toolId] belongs to the always-exposed CORE set. */
