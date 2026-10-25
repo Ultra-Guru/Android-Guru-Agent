@@ -25,6 +25,9 @@ import com.apex.agent.platform.privilege.ShellExecResult
 import com.apex.agent.platform.memory.tools.MemoryRecentEpisodesTool
 import com.apex.agent.platform.memory.tools.MemorySearchNodesTool
 import com.apex.agent.platform.memory.tools.MemoryRecallMacroTool
+import com.apex.agent.platform.memory.tools.MemoryConsolidateExperienceTool
+import com.apex.agent.platform.memory.tools.MemorySaveFactTool
+import com.apex.agent.platform.memory.tools.MemoryGraphTool
 import com.apex.agent.platform.terminal.tools.*
 import com.apex.agent.platform.terminal.tools.legacy.LegacyExecTool
 import com.apex.agent.platform.terminal.tools.legacy.LegacyReadTool
@@ -444,6 +447,10 @@ object ToolModule {
         knowledgeBaseService: com.apex.agent.knowledge.KnowledgeBaseService,
         memorySearchNodesTool: MemorySearchNodesTool,
         memoryRecallMacroTool: MemoryRecallMacroTool,
+        // 任务后经验整理写入工具（MemoryConsolidateExperience / SaveFact / Graph）
+        memoryConsolidateExperienceTool: MemoryConsolidateExperienceTool,
+        memorySaveFactTool: MemorySaveFactTool,
+        memoryGraphTool: MemoryGraphTool,
         browserAgentTools: BrowserAgentTools,
         browserSessionTools: BrowserSessionTools,
         browserLayoutTools: com.apex.agent.platform.browser.BrowserLayoutTools,
@@ -736,10 +743,15 @@ object ToolModule {
         // 记忆域现由 apex-kit-memory（com.apex.memkit:memory-core）统一承载：
         //   - MemKit 门面：会话采集（ExecutionMemoryObserver 隐式）/ 旁路回放
         //   - 统一存储：原子 JSON 文档（episodes/nodes/macros/chat/graph）
-        // 注册只读召回工具，让 LLM 能读取长期记忆（工具 id 与参数零变化）。
+        // 只读召回工具（id 与参数零变化，模型侧无感迁移）：
         registry.register(SafeAgentTool(memoryRecentEpisodesTool))
         registry.register(SafeAgentTool(memorySearchNodesTool))
         registry.register(SafeAgentTool(memoryRecallMacroTool))
+        // 写入工具（「任务后整理经验」）：经验整包沉淀 / 长期事实 / 知识图谱
+        // 四动作 —— 引擎提示词 Memory: Learn & Remember 段指引任务终局调用。
+        registry.register(SafeAgentTool(memoryConsolidateExperienceTool))
+        registry.register(SafeAgentTool(memorySaveFactTool))
+        registry.register(SafeAgentTool(memoryGraphTool))
 
         // ═══ 4a. 知识库（v1.8.0 · 角色专属知识库检索）═══
         // 每个 Agent 角色模板一套专属知识库（assets/knowledge/*.md）；
