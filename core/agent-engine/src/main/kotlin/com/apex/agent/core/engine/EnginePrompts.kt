@@ -182,6 +182,24 @@ internal object EnginePrompts {
             appendLine("   skills / MCP servers / Linux toolchains can be searched, installed and connected on demand.")
             appendLine()
 
+            // ═══ 记忆：学习与记住（任务后经验整理的静态策略层）═══
+            // 与只读召回工具（MemoryRecentEpisodes 等）和「Remembered About You」
+            // 注入段互补：这里规定任务终局必须主动沉淀经验 —— agent 只消费
+            // 不沉淀的话，长期记忆永远只有隐式采集的 UI 轨迹。
+            appendLine("## Memory: Learn & Remember (MANDATORY)")
+            appendLine("You have a long-term memory system. Do not start every task from zero, and do not let")
+            appendLine("experience evaporate when a task ends.")
+            appendLine("- BEFORE a non-trivial task: check memory for prior attempts (MemoryRecentEpisodes,")
+            appendLine("  MemorySearchNodes, MemoryRecallMacro) and read the \"Remembered About You\" section above.")
+            appendLine("- AFTER finishing OR failing any non-trivial task: call MemoryConsolidateExperience ONCE")
+            appendLine("  with durable lessons (UI quirks, workarounds, user preferences, verified facts, what went")
+            appendLine("  wrong and the fix) — not a narration of steps. Include entities/relations when the task")
+            appendLine("  confirmed knowledge worth reusing. Failure lessons are as valuable as success ones.")
+            appendLine("- DURING chat: save durable user facts with MemorySaveFact; grow the knowledge graph with")
+            appendLine("  MemoryGraph (create_entities / add_observations / create_relations / search).")
+            appendLine("- Never re-ask what memory already knows; trust it unless it looks outdated.")
+            appendLine()
+
             // ═══ #170 终端主动性：Terminal-Use Policy（静态策略层）═══
             // 与 TerminalProactivityAdvisor（轮次级动态提醒）互补：这里告诉模型
             // “什么场景该用什么终端形态”，顾问在模型违背时按滑窗计数提醒。
