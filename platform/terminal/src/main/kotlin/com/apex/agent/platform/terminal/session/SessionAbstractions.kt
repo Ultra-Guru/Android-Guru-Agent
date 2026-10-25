@@ -18,40 +18,9 @@ data class TerminalSessionSnapshot(
     val primaryProcessId: Long?, val shell: String?, val workingDirectory: String?
 )
 
-/** PR #54 §26: Session-level events (NOT screen mutations). */
-sealed interface TerminalSessionEvent {
-    data class StateChanged(val sessionId: Long, val from: SessionState, val to: SessionState) : TerminalSessionEvent
-    data class PrimaryProcessExited(val sessionId: Long, val pid: Long, val exitCode: Int?) : TerminalSessionEvent
-    data class Lost(val sessionId: Long, val reason: String) : TerminalSessionEvent
-    data class JobChanged(val sessionId: Long, val jobId: Long, val newState: String) : TerminalSessionEvent
-    data class Closed(val sessionId: Long, val exitReason: SessionExitReason?) : TerminalSessionEvent
-}
-
-/** PR #54 §6: Primary Process — the shell. Exit → Session EXITED. */
-data class PrimaryProcess(
-    val sessionId: Long, val pid: Int, val startedAt: Long,
-    var exitCode: Int? = null, var finishedAt: Long? = null
-) { val isAlive: Boolean get() = exitCode == null }
-
-/** PR #54 §31: ExecutionBackend abstraction for future Android/Termux/Ubuntu. */
-interface TerminalExecutionBackend {
-    fun createPty(shell: String, cwd: String, rows: Int, cols: Int, env: Map<String, String>): BackendResult
-    data class BackendResult(val nativeSessionId: Int, val pid: Int, val success: Boolean, val error: String? = null)
-    fun read(nativeSessionId: Int, maxBytes: Int): ByteArray
-    fun write(nativeSessionId: Int, bytes: ByteArray): Boolean
-    fun sendSignal(nativeSessionId: Int, signal: Int): Boolean
-    fun resize(nativeSessionId: Int, rows: Int, cols: Int): Boolean
-    fun isAlive(nativeSessionId: Int): Boolean
-    fun getExitCode(nativeSessionId: Int): Int
-    fun close(nativeSessionId: Int)
-    val backendType: String
-}
-
-/** PR #54 §22: Lifecycle listener — auto-unregistered on close(). */
-interface TerminalSessionListener {
-    fun onStateChanged(sessionId: Long, from: SessionState, to: SessionState) {}
-    fun onPrimaryProcessExited(sessionId: Long, pid: Int, exitCode: Int?) {}
-    fun onLost(sessionId: Long, reason: String) {}
-    fun onJobChanged(sessionId: Long, jobId: Long, newState: String) {}
-    fun onClosed(sessionId: Long, exitReason: SessionExitReason?) {}
-}
+// v3（死代码清理）：本文件原有的 TerminalSessionEvent / PrimaryProcess /
+// TerminalSessionListener / TerminalExecutionBackend 四个类型零引用（事件
+// 走 events/TerminalEvent 目录、进程走 pty/NativePty + ExecutionBackend，
+// 均为各自的单一事实源）—— PR #54 时代的并行设计稿，留着只会误导后来人
+// 以为有两套可换的实现。已删除；TerminalSessionConfig / TerminalSessionSnapshot
+// 在用，保留。
