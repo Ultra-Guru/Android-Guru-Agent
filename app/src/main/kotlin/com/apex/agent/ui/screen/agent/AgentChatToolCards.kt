@@ -72,12 +72,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.annotation.StringRes
+import androidx.compose.foundation.border
 import com.apex.agent.R
 import com.apex.agent.ui.icons.CrownGold
 import com.apex.agent.ui.icons.FusionCrown
-import com.apex.agent.ui.glass.GlassToolCard
 import com.apex.agent.ui.theme.LocalExtendedColors
-import com.apex.agent.ui.glass.GlassToolStatus
 import kotlinx.coroutines.delay
 
 /**
@@ -228,7 +227,7 @@ private fun githubSummary(name: String, args: String): String? {
  *
  * 折叠态：迷你胶囊（高 ~24dp）—— 源图标 + 工具名 +（仅运行中/失败时的）状态点。
  * 摘要/时长/徽章/箭头全部移入展开态：折叠即名字，一眼扫过几十次调用不再刷屏。
- * 展开态：完整 GlassToolCard（参数 + 进度时间线 + 智能输出 + 重试），
+ * 展开态：完整工具卡（参数 + 进度时间线 + 智能输出 + 重试），
  * 内容与 v1 完全一致，只是按需渲染。
  * 顺序性：卡片仍由 AgentChatEventApplier 按完成顺序追加到消息流，本卡不重排。
  */
@@ -276,16 +275,15 @@ internal fun ToolCallCard(
         return
     }
 
-    // ═══ 展开态：完整 GlassToolCard（Liquid Glass Frosted 档）═══
-    // 卡片位于消息源 LazyColumn 内部 —— Haze 1.4 不支持源内嵌套采样，
-    // 诚实降级为 Frosted：主题薄霜 + 状态着色 + 边缘光 + 高光，不冒充 backdrop。
-    GlassToolCard(
-        status = if (isError) GlassToolStatus.FAILED else GlassToolStatus.COMPLETED,
-        expanded = expanded,
-        accent = accent,
+    // ═══ 展开态：完整工具卡（2026-10 流式去玻璃 → M3 Surface）═══
+    // 状态色收敛为 1dp 描边（类型/成败 accent），容器回归 M3 实色。
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { expanded = false }
+            .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(12.dp)),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(12.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
@@ -895,14 +893,15 @@ fun RunningToolCallCard(toolCall: AgentToolCallUi) {
         return
     }
 
-    // ═══ Liquid Glass 迁移：ElevatedCard → GlassToolCard Frosted 档 ═══
-    // 运行态：工具类型色 accent 驱动着色 + 边缘光，保留既有脉冲反馈环
-    GlassToolCard(
-        status = GlassToolStatus.RUNNING,
-        accent = accent,
+    // ═══ 运行态工具卡（2026-10 流式去玻璃 → M3 Surface）═══
+    // 类型色 accent 收敛为 1dp 描边，容器回归 M3 实色；脉冲反馈环在内容层保留
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { expanded = false }
+            .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(12.dp)),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(12.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(

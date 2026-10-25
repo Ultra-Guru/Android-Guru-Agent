@@ -33,10 +33,9 @@
     <string name="chat_task_status_cancelled">已取消</string>
 
     <!-- ═══ AgentChatMessages ═══ -->
-    <string name="chat_cd_message_actions">消息操作</string>
     <string name="chat_copied">已复制</string>
     <string name="chat_cd_copy">复制</string>
-    <string name="chat_cd_organize_memory">整理到记忆</string>
+    <string name="chat_cd_edit">编辑消息</string>
     <string name="chat_thinking_process">思考过程</string>
     <string name="chat_thinking_done_tap">思考完成 · 点击查看</string>
     <string name="chat_reasoning_in_progress">推理中…</string>
@@ -286,10 +285,6 @@
     <string name="chat_interrupted_at_step">中断于步骤 %1$d/%2$d</string>
 
     <!-- ═══ AgentChatViewModel（用户可见 toast / 系统行 / 工具步骤）═══ -->
-    <string name="chat_memory_goal_default">对话整理</string>
-    <string name="chat_organized_to_memory">已整理到记忆：%1$s</string>
-    <string name="chat_organize_failed">整理到记忆失败：%1$s</string>
-    <string name="chat_unknown_error">未知错误</string>
     <string name="chat_compress_unavailable">压缩不可用：未启用压缩引擎</string>
     <string name="chat_vm_context_compressed_manual">已压缩上下文：%1$d→%2$d tokens（策略=%3$s，移除 %4$d 条）</string>
     <string name="chat_vm_context_compressed">已压缩上下文：%1$d→%2$d tokens（%3$s，移除 %4$d 条%5$s）</string>
@@ -326,17 +321,12 @@
     <string name="chat_format_custom">自定义 Schema</string>
     <string name="chat_llm_not_configured">请先在设置中配置API（Base URL + API Key + Model）</string>
     <string name="chat_llm_not_configured_short">请先在设置中配置API</string>
-    <!-- ═══ P2 i18n: 消息操作菜单（AgentMessageActions）═══ -->
-    <string name="chat_msg_copy_full">复制全文</string>
-    <string name="chat_msg_copied_full">已复制全文</string>
-    <string name="chat_msg_regenerate">重生成此回复</string>
-    <string name="chat_msg_delete">删除此消息</string>
-    <string name="chat_msg_delete_from">删除此消息及之后</string>
-    <string name="chat_msg_delete_busy">正在生成回复，稍后再删除</string>
-    <string name="chat_msg_regenerate_busy">正在生成回复，稍后再重生成</string>
+    <!-- ═══ 消息操作（2026-10 重定口径：复制/编辑图标行，overflow 菜单退役）═══ -->
+    <string name="chat_edit_title">编辑消息</string>
+    <string name="chat_edit_send">重新发送</string>
+    <string name="chat_edit_cancel">取消</string>
+    <string name="chat_edit_busy">正在生成回复，稍后再编辑</string>
     <string name="chat_send_busy">任务执行中——请先点停止再发送</string>
-    <string name="chat_msg_no_user_message">此回复前没有可重发的用户消息</string>
-    <string name="chat_msg_attachment_only_retry">仅附件消息暂不支持重生成</string>
     <!-- ═══ P2 i18n: 附件按钮菜单（AttachButton）═══ -->
     <string name="chat_attach_file">上传文件</string>
     <string name="chat_attach_image">上传图片</string>

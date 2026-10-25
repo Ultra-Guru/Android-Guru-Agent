@@ -55,10 +55,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apex.agent.core.engine.ExecutionPlan
 import com.apex.agent.core.engine.ExecutionSpec
+import androidx.compose.foundation.border
 import com.apex.agent.ui.theme.LocalExtendedColors
 import com.apex.agent.core.engine.RiskLevel
 import com.apex.agent.R
-import com.apex.agent.ui.glass.GlassCard
 import com.apex.agent.ui.icons.CrownGold
 import com.apex.agent.ui.icons.FusionCrown
 
@@ -184,9 +184,10 @@ private enum class PlanStepVisual { PENDING, CURRENT, DONE }
 
 @Composable
 internal fun PlanCard(plan: ExecutionPlan, currentStepIndex: Int = -1) {
-    // Liquid Glass 迁移：GlassCard Frosted 档 —— 列表内卡片不冒充 backdrop
-    GlassCard(
+    // 2026-10 流式去玻璃：M3 Surface 实色
+    Surface(
         modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
         shape = RoundedCornerShape(12.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -276,10 +277,17 @@ internal fun PlanConfirmationCard(
     }
     val anyEnabled = orderIds.any { enabledIds[it] == true }
 
-    // Liquid Glass 迁移：GlassCard Frosted 档 + secondary accent 延续确认卡语义色
-    GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        accent = MaterialTheme.colorScheme.secondary
+    // 2026-10 流式去玻璃：M3 Surface + secondary 语义色 1dp 描边（确认卡）
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                1.dp,
+                MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f),
+                RoundedCornerShape(12.dp)
+            ),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(12.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -426,11 +434,17 @@ internal fun riskLevelLabel(level: RiskLevel): String = when (level) {
  */
 @Composable
 internal fun SpecCard(spec: ExecutionSpec) {
-    // Liquid Glass 迁移：GlassCard Frosted 档 + primary 倾向着色
-    GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        accent = MaterialTheme.colorScheme.primary
+    // 2026-10 流式去玻璃：M3 Surface + primary 倾向 1dp 描边
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                1.dp,
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                RoundedCornerShape(12.dp)
+            ),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(12.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -531,10 +545,17 @@ internal fun SpecConfirmationCard(
     onConfirm: () -> Unit,
     onReject: () -> Unit
 ) {
-    // Liquid Glass 迁移：GlassCard Frosted 档 + primary 倾向着色
-    GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        accent = MaterialTheme.colorScheme.primary
+    // 2026-10 流式去玻璃：M3 Surface + primary 语义色 1dp 描边（确认卡）
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                1.dp,
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                RoundedCornerShape(12.dp)
+            ),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(12.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(stringResource(R.string.chat_confirm_spec_title), style = MaterialTheme.typography.titleSmall)

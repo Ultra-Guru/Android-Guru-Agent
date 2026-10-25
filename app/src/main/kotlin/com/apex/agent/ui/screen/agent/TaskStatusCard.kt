@@ -1,5 +1,6 @@
 package com.apex.agent.ui.screen.agent
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -17,6 +19,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -29,8 +32,6 @@ import androidx.compose.ui.unit.dp
 import com.apex.agent.core.engine.task.AgentTask
 import com.apex.agent.core.engine.task.TaskStatus
 import com.apex.agent.R
-import com.apex.agent.ui.glass.GlassCard
-import com.apex.agent.ui.glass.GlassStyle
 
 /**
  * T76 — 任务状态卡（N-11）。
@@ -54,12 +55,14 @@ fun TaskStatusCard(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // ═══ Liquid Glass 迁移：Card → GlassCard Frosted 档 ═══
-    // 任务状态卡位于消息源上方直排区，无重叠 —— 诚实 Frosted 材质 + 状态 accent
-    GlassCard(
-        modifier = modifier.fillMaxWidth(),
-        style = GlassStyle.Card,
-        accent = statusColor(task.status)
+    // ═══ 2026-10 流式去玻璃：M3 Surface + 状态色 1dp 描边 ═══
+    val accent = statusColor(task.status)
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(12.dp)),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(12.dp)
     ) {
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
 

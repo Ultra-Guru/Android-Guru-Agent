@@ -33,10 +33,9 @@
     <string name="chat_task_status_cancelled">Cancelled</string>
 
     <!-- ═══ AgentChatMessages ═══ -->
-    <string name="chat_cd_message_actions">Message actions</string>
     <string name="chat_copied">Copied</string>
     <string name="chat_cd_copy">Copy</string>
-    <string name="chat_cd_organize_memory">Save to memory</string>
+    <string name="chat_cd_edit">Edit message</string>
     <string name="chat_thinking_process">Thinking process</string>
     <string name="chat_thinking_done_tap">Thinking done · tap to view</string>
     <string name="chat_reasoning_in_progress">Reasoning…</string>
@@ -286,10 +285,6 @@
     <string name="chat_interrupted_at_step">Interrupted at step %1$d/%2$d</string>
 
     <!-- ═══ AgentChatViewModel (user-visible toasts / system rows / tool steps) ═══ -->
-    <string name="chat_memory_goal_default">Memory digest</string>
-    <string name="chat_organized_to_memory">Saved to memory: %1$s</string>
-    <string name="chat_organize_failed">Failed to save to memory: %1$s</string>
-    <string name="chat_unknown_error">Unknown error</string>
     <string name="chat_compress_unavailable">Compression unavailable: no compression engine enabled</string>
     <string name="chat_vm_context_compressed_manual">Context compressed: %1$d→%2$d tokens (strategy=%3$s, %4$d msgs removed)</string>
     <string name="chat_vm_context_compressed">Context compressed: %1$d→%2$d tokens (%3$s, %4$d msgs removed%5$s)</string>
@@ -326,17 +321,12 @@
     <string name="chat_format_custom">Custom schema</string>
     <string name="chat_llm_not_configured">API is not configured yet (Base URL + API Key + Model). Open Settings to set it up.</string>
     <string name="chat_llm_not_configured_short">API is not configured yet</string>
-    <!-- ═══ P2 i18n: message actions menu (AgentMessageActions) ═══ -->
-    <string name="chat_msg_copy_full">Copy full text</string>
-    <string name="chat_msg_copied_full">Full text copied</string>
-    <string name="chat_msg_regenerate">Regenerate this reply</string>
-    <string name="chat_msg_delete">Delete this message</string>
-    <string name="chat_msg_delete_from">Delete this message and below</string>
-    <string name="chat_msg_delete_busy">Reply is being generated — try deleting later</string>
-    <string name="chat_msg_regenerate_busy">Reply is being generated — try regenerating later</string>
+    <!-- ═══ 消息操作（2026-10 重定口径：复制/编辑图标行，overflow 菜单退役）═══ -->
+    <string name="chat_edit_title">Edit message</string>
+    <string name="chat_edit_send">Resend</string>
+    <string name="chat_edit_cancel">Cancel</string>
+    <string name="chat_edit_busy">Reply is being generated — try editing later</string>
     <string name="chat_send_busy">Task is running — tap Stop before sending</string>
-    <string name="chat_msg_no_user_message">No user message before this reply to resend</string>
-    <string name="chat_msg_attachment_only_retry">Attachment-only messages cannot be regenerated yet</string>
     <!-- ═══ P2 i18n: attach button menu (AttachButton) ═══ -->
     <string name="chat_attach_file">Upload file</string>
     <string name="chat_attach_image">Upload image</string>
