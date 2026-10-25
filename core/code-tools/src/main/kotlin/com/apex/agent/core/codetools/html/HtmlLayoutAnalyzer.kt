@@ -52,12 +52,25 @@ object HtmlLayoutAnalyzer {
     fun analyzeWithCascade(doc: HtmlDocument, pageTitleHint: String = "", viewportWidthPx: Int = CssStylesheetParser.ESTIMATED_VIEWPORT_PX): HtmlLayoutReport {
         val sheet = CssStylesheetParser.stylesheetOf(doc)
         if (!sheet.isEmpty) CssStylesheetParser.resolveCascadeStyles(doc, sheet, viewportWidthPx)
-        return analyze(doc, pageTitleHint).let { report ->
-            report.copy(meta = report.meta.copy(
+        val visual = if (!sheet.isEmpty) HtmlVisualProfile.analyze(doc, sheet) else null
+        val base = analyze(doc, pageTitleHint)
+        val contrastIssues = visual?.contrastIssues?.map {
+            val level = if (it.ratio < 3.0) IssueSeverity.ERROR else IssueSeverity.WARN
+            LayoutIssue(
+                severity = level,
+                category = "可读性",
+                message = "文字对比度不足：${it.fg.hex} on ${it.bg.hex} = ${"%.2f".format(it.ratio)}:1（${if (it.isLarge) "大字需 ≥3:1" else "正文需 ≥4.5:1"}，WCAG ${HtmlVisualProfile.wcagLevel(it.ratio)}）",
+                evidence = it.where
+            )
+        } ?: emptyList()
+        return base.copy(
+            meta = base.meta.copy(
                 cssRules = sheet.rules.size,
                 cssCascadeApplied = !sheet.isEmpty
-            ))
-        }
+            ),
+            issues = (base.issues + contrastIssues).sortedWith(compareBy({ it.severity.rank }, { it.category })),
+            visual = visual
+        )
     }
 
     // ═══ 文档元信息 ═══
