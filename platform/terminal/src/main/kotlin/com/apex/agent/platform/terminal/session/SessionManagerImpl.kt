@@ -12,6 +12,7 @@ import com.apex.agent.platform.terminal.events.TerminalEventLogImpl
 import com.apex.agent.platform.terminal.events.TerminalEventBusImpl
 import com.apex.agent.platform.terminal.io.InputManagerImpl
 import com.apex.agent.platform.terminal.io.PtyOutputPumpImpl
+import com.apex.agent.platform.terminal.io.UnixSignal
 import com.apex.agent.platform.terminal.pty.NativePty
 import com.apex.agent.platform.terminal.policy.PrivilegeLevel
 import com.apex.agent.platform.terminal.policy.TerminalCapability
@@ -285,10 +286,11 @@ class SessionManagerImpl(
         // 检查（此刻恒为 CLOSED），CloseCause.BROKEN 永远不可能产出（死代码）。
         val wasBroken = stateFlows[id]?.value == SessionState.BROKEN
         val wasLost = stateFlows[id]?.value == SessionState.LOST
+        val wasExited = stateFlows[id]?.value == SessionState.EXITED
         if (force) native.nativeSendSignal(a.nativeSessionId, 9)  // SIGKILL
         // stop pump
         a.pump.stop()
-        // SIGHUP the shell
+        // SIGHUP the shell（EXITED 回收路径已死，发信号无意义但无害 —— 统一序列）
         native.nativeSendSignal(a.nativeSessionId, 1)
         // close native（内部：HUP→TERM→KILL 有界序列 + exit code 保留）
         native.nativeCloseSession(a.nativeSessionId)
@@ -296,13 +298,29 @@ class SessionManagerImpl(
         val cause = when {
             wasBroken -> CloseCause.BROKEN
             wasLost -> CloseCause.BROKEN
+            // S14：EXITED 后的显式 close（宽限期内用户/上层先关）—— 自然终因。
+            wasExited -> CloseCause.NORMAL
             else -> CloseCause.USER
         }
+        emitSessionClosed(id, cause)
+        reclaimAssembly(id, a)
+        return@withLock Result.success(Unit)
+    }
+
+    /** 发射 SessionClosed 终事件（close 与 EXITED 回收共用的发射序列）。 */
+    private suspend fun emitSessionClosed(id: Long, cause: CloseCause) {
         val ev = TerminalEvent.SessionClosed(
             id = 0, sessionId = id, timestamp = System.currentTimeMillis(), cursor = -1, cause = cause
         )
         val eid = eventLog.append(ev)
         eventBus.emit(ev.copy(id = eid))
+    }
+
+    /**
+     * 资源回收（close 与 EXITED 宽限期回收共用）—— 必须已持 [mutex] 且已完成
+     * transition(CLOSED) + SessionClosed 发射。
+     */
+    private fun reclaimAssembly(id: Long, a: SessionAssembly) {
         // cleanup
         inputManager.drop(id)
         waitEngine.drop(id)
@@ -320,7 +338,6 @@ class SessionManagerImpl(
         // T81 (D-4)：释放 bus（正在 collect 的订阅者持有 SharedFlow 引用不受影响；
         // EventLog 不 drop —— 有界（500）且持久化/恢复路径还要读 tail）。
         if (eventBus is TerminalEventBusImpl) eventBus.drop(id)
-        return@withLock Result.success(Unit)
     }
 
     // PR #54 §5: stop jobs but keep Session alive
@@ -334,8 +351,10 @@ class SessionManagerImpl(
         val a = assemblies[id] ?: return@withLock Result.failure(RuntimeException("TerminalError:SessionNotFound"))
         transition(id, SessionState.STOPPING)
         try {
-            // SIGTSTP(20) 前台作业组：作业挂起，shell 回到前台提示符。
-            native.nativeSignalForegroundGroup(a.nativeSessionId, 20)
+            // SIGTSTP 前台作业组：作业挂起，shell 回到前台提示符。
+            // v3：魔数 20 换 UnixSignal.SIGTSTP.number —— 与枚举单一事实源
+            // 同源（语义说明见 InputModel.kt 的 SIGTSTP 条目注释）。
+            native.nativeSignalForegroundGroup(a.nativeSessionId, UnixSignal.SIGTSTP.number)
         } catch (t: Throwable) {
             transition(id, SessionState.READY)
             return@withLock Result.failure(RuntimeException("TerminalError:SignalFailed — ${t.message}"))
@@ -447,6 +466,25 @@ class SessionManagerImpl(
                             transition(sessionId, SessionState.EXITED)
                         }
                     }
+                    // ═══ v3（S14）：EXITED 宽限期后资源回收 ═══
+                    // 旧实现停在 EXITED：assembly/native PTY/VT 引擎/ring buffer
+                    // 永不释放 —— 用户敲 exit 的每个会话都是一次永久泄漏（list()
+                    // 只滤 CLOSED，死标签还会一直挂在会话簿里）。状态机的 S14
+                    // （EXITED --resource reclaim--> CLOSED + SessionClosed(NORMAL)）
+                    // 设计了却从未实现。宽限期给 Agent/用户留出读最终屏幕与
+                    // 事件尾窗的窗口（TerminalObserve SCREEN / TerminalWait 的
+                    // 迟到读取）；期间被显式 close() 抢先则此处 no-op。
+                    kotlinx.coroutines.delay(EXITED_RECLAIM_GRACE_MS)
+                    mutex.withLock {
+                        val a = assemblies[sessionId]
+                        if (a != null && stateFlows[sessionId]?.value == SessionState.EXITED) {
+                            a.pump.stop()
+                            runCatching { native.nativeCloseSession(a.nativeSessionId) }
+                            transitionLocked(sessionId, SessionState.CLOSED)
+                            emitSessionClosed(sessionId, CloseCause.NORMAL)
+                            reclaimAssembly(sessionId, a)
+                        }
+                    }
                     break
                 }
                 kotlinx.coroutines.delay(EXIT_POLL_MS)
@@ -464,5 +502,12 @@ class SessionManagerImpl(
 
     companion object {
         private const val EXIT_POLL_MS = 100L
+
+        /**
+         * v3（S14）：shell 自然退出（EXITED）后的资源回收宽限期。
+         * 60s 足够 Agent/用户读最终屏幕（TerminalObserve SCREEN）与事件尾窗
+         * （TerminalWait 迟到读取）；期间显式 close() 抢先则回收 no-op。
+         */
+        private const val EXITED_RECLAIM_GRACE_MS = 60_000L
     }
 }
