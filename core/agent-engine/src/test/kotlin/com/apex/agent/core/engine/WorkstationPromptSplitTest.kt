@@ -100,7 +100,8 @@ class WorkstationPromptSplitTest {
         val p = prompt(AgentConfig(mode = AgentMode.BUILD), codingSurface)
         val identityBlock = p.lineSequence().take(3).joinToString("\n")
         assertTrue(identityBlock.contains("a CODING agent working in a real project workspace"))
-        assertTrue(identityBlock.contains("an AI AGENT running"))
+        // CODING 轨道不携带 AGENT 工位的身份措辞
+        assertFalse(identityBlock.contains("an AI AGENT running"))
         // CODING 工位确实有 git/GitHub 工具 → 身份自述可以声明
         assertTrue(identityBlock.contains("git and GitHub"))
         assertTrue(p.contains("## Mode: BUILD"))
