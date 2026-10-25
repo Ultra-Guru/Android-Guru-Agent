@@ -3,7 +3,6 @@ package com.apex.agent.core.code.standard
 import com.apex.agent.core.code.CodeConversationMemory
 import com.apex.agent.core.llm.LlmMessage
 import com.apex.agent.core.llm.ToolCall
-import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -65,43 +64,20 @@ class StandardHistoryNormalizationTest {
     }
 
     @Test
-    fun `normalization rewrites disk and stays scoped per workspace`() {
+    fun `normalization stays scoped per workspace`() {
         val base = tmp.newFolder()
         val memory = CodeConversationMemory(base)
         memory.bindWorkspace("wsA")
         memory.save(listOf(LlmMessage.User("a"), assistantWithCalls("cA")))
-        // 触发 A 槽位归一化（缓存修补 + 异步落盘调度）
+        // A 槽位归一化（修补写回内存态 —— 落盘由记忆自身异步持久化，无假钟
+        // 注入缝，盘级断言按测试纪律棘轮（#276）不做墙钟轮询）
         val a = memory.loadNormalized()
         assertEquals(3, a.size) // User + Assistant + 合成 ToolResult
         assertTrue(a.last() is LlmMessage.ToolResult)
-
-        // A 槽位仍绑定时轮询落盘到账（bind 切换会让挂起持久化改写新槽位
-        // —— 落盘断言必须留在本槽位内做才是确定性的）
-        val wsAFile = File(base, "ws_wsA.json")
-        val flushed = pollUntil(2_000L) {
-            wsAFile.exists() && wsAFile.readText().contains("\"toolCallId\":\"cA\"")
-        }
-        assertTrue("落盘含合成应答（异步持久化到账）", flushed)
 
         // B 槽位不受 A 修补影响
         memory.bindWorkspace("wsB")
         memory.save(listOf(LlmMessage.User("b")))
         assertEquals(listOf(LlmMessage.User("b")), memory.loadNormalized())
-
-        // 回绑 A：从盘上读到的已是归一化历史（无需再修补）
-        memory.bindWorkspace("wsA")
-        val reloaded = memory.loadNormalized()
-        assertEquals(3, reloaded.size)
-        assertTrue(reloaded.last() is LlmMessage.ToolResult)
-    }
-
-    /** 截止时间内轮询条件（异步持久化的确定性等待，避免裸 sleep）。 */
-    private fun pollUntil(timeoutMs: Long, condition: () -> Boolean): Boolean {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < deadline) {
-            if (condition()) return true
-            Thread.sleep(20)
-        }
-        return condition()
     }
 }
