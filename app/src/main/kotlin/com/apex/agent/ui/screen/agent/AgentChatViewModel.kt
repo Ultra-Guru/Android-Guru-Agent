@@ -294,11 +294,8 @@ class AgentChatViewModel @Inject constructor(
 
     /** 角色数据模型 → 引擎 AgentConfig 人设字段（内置 = 全空 = 历史行为）。 */
     private suspend fun applyRoleToEngine(role: com.apex.agent.ui.screen.settings.AgentRole) {
-        // v2 多卷制：角色绑定的全部知识卷（可无限扩充）都写进 Role definition
-        // —— 检索指引按卷 id 逐一给出（must_read → index/search → read）。
-        val kbHint = knowledgeBaseService.roleDefinitionHintFor(
-            knowledgeBaseService.volumesForRole(role.id)
-        )
+        // v2 多卷制：全部知识卷（可无限扩充）的检索指引（逐卷带 id）写进 Role definition
+        val kbHint = knowledgeBaseService.roleDefinitionHintFor(knowledgeBaseService.volumesForRole(role.id))
         (agentEngine as? ApexAgentEngine)?.patchConfig { cfg ->
             cfg.copy(
                 agentName = if (role.isBuiltIn) "" else role.name,
