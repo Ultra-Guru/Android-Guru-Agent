@@ -117,6 +117,8 @@ class T82LinuxEnvironmentCapabilityTest {
         val guest = env.interactiveGuestEnv()
         assertNull(guest["http_proxy"])
         assertNull(guest["no_proxy"])
-        assertEquals(11, guest.size)
+        // v3：基线 11 键 + COLORTERM=truecolor（双模式色彩能力同口径声明）= 12
+        assertEquals(12, guest.size)
+        assertEquals("truecolor", guest["COLORTERM"])
     }
 }
