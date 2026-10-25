@@ -88,7 +88,19 @@ class TerminalToolAdapterMetaTest {
 
     @Test
     fun `wrong field types degrade silently`() {
+        // exit_code 非数字 → 字段级降级（intOrNull → null）；channel 数字字面量
+        // → kotlinx 宽容读为字符串形式（真实终端工具输出里 channel 恒为字符串，
+        // 此处锁定实际行为防意外回归）。
         val m = metaOf("""{"exit_code":"not-a-number","channel":123}""")
+        assertNull(m.exitCode)
+        assertEquals("123", m.channel)
+    }
+
+    @Test
+    fun `object fields degrade whole meta silently`() {
+        // 字段为 JSON 对象 → jsonPrimitive 扩展抛异常 → runCatching 整体降级
+        // 为空 meta（永不因解析打断执行 —— 防御契约）。
+        val m = metaOf("""{"exit_code":{"nested":1},"channel":"local-sh"}""")
         assertNull(m.exitCode)
         assertNull(m.channel)
     }
