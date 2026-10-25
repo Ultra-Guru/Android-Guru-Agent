@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Preview
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -140,6 +141,12 @@ internal fun toolKindStyle(kind: ToolKind): ToolKindStyle = when (kind) {
         R.string.chat_toolkind_fusion, FusionCrown,
         CrownGold
     )
+    // v3：终端运行时（Terminal* 工具族）—— 终端图标 + 终端绿（与 PRIMARY 蓝 /
+    // MCP 紫 / 连接器紫 / 插件珀区分），双模式终端的调用一眼可辨。
+    ToolKind.TERMINAL -> ToolKindStyle(
+        R.string.chat_toolkind_terminal, Icons.Default.Terminal,
+        Color(0xFF10B981)
+    )
 }
 
 /**
@@ -194,6 +201,11 @@ internal fun smartToolSummary(toolName: String, args: String, kind: ToolKind, se
         name == "ShellExecute" ->
             Regex(""""command"\s*:\s*"([^"]+)"""").find(args)?.groupValues?.getOrNull(1)
                 ?.take(80)
+        // v3：终端工具族的命令摘要 —— TerminalExec / TerminalRun 的命令参数
+        // 与 ShellExecute 同字段，折叠卡也能看到这次在跑什么命令。
+        name == "TerminalExec" || name == "TerminalRun" ->
+            Regex(""""command"\s*:\s*"([^"]+)"""").find(args)?.groupValues?.getOrNull(1)
+                ?.take(80)
         name == "WebFetch" -> path
         name == "WebSearch" ->
             Regex(""""query"\s*:\s*"([^"]+)"""").find(args)?.groupValues?.getOrNull(1)
@@ -220,6 +232,80 @@ private fun githubSummary(name: String, args: String): String? {
         owner != null -> "@$owner"
         query != null -> query.take(80)
         else -> null
+    }
+}
+
+/**
+ * v3：终端工具执行元数据行 —— exit 徽标 + 通道 / 目录 / 会话标注 / 挂起提示。
+ *
+ * 数据来自 ToolCallComplete 的结构化元数据（TerminalToolAdapter 从终端工具
+ * JSON 输出提取）：
+ * - exit 徽标：`exit 0` 中性 / `exit 127` 红 —— 失败原因一眼可辨
+ *  （command not found / 门禁拒绝 126 / 超时强杀 -1）；
+ * - 挂起提示：waitingInput（INPUT_REQUIRED）→ 琥珀色「等待输入」;
+ * - 标注串：channel（proot-ubuntu / root-su / ...）· cwd · 会话号。
+ *
+ * 全部缺席时返回零 —— 非终端工具卡并零变化。
+ */
+@Composable
+private fun TerminalExecMetaLine(toolCall: AgentUiMessage.ToolCall) {
+    if (toolCall.exitCode == null && toolCall.channel == null &&
+        toolCall.cwd == null && toolCall.sessionId == null && !toolCall.waitingInput
+    ) return
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.horizontalScroll(rememberScrollState())
+    ) {
+        toolCall.exitCode?.let { code ->
+            val exitColor = if (code == 0) MaterialTheme.colorScheme.onSurfaceVariant
+            else MaterialTheme.colorScheme.error
+            Surface(
+                color = exitColor.copy(alpha = 0.14f),
+                shape = RoundedCornerShape(6.dp)
+            ) {
+                Text(
+                    text = "exit $code",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Medium,
+                    color = exitColor,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                )
+            }
+        }
+        if (toolCall.waitingInput) {
+            val waitColor = MaterialTheme.colorScheme.secondary
+            Surface(
+                color = waitColor.copy(alpha = 0.16f),
+                shape = RoundedCornerShape(6.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.chat_tool_waiting_input),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = waitColor,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                )
+            }
+        }
+        val annotations = listOfNotNull(
+            toolCall.channel,
+            toolCall.cwd,
+            toolCall.sessionId?.let {
+                stringResource(R.string.chat_tool_session, it)
+            }
+        )
+        if (annotations.isNotEmpty()) {
+            Text(
+                text = annotations.joinToString(" · "),
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 
@@ -354,6 +440,10 @@ internal fun ToolCallCard(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     ToolKindBadge(toolCall.kind, toolCall.server, toolCall.skill)
+
+                    // v3：结构化执行元数据行（终端工具）—— exit 徽标 + 通道 /
+                    // 目录 / 会话标注 / 挂起提示；非终端工具全空时零渲染。
+                    TerminalExecMetaLine(toolCall)
 
                     // 智能摘要：折叠时也能一眼看懂这次调用在做什么（文件路径 / 命令 / URL）
                     if (!summary.isNullOrBlank()) {

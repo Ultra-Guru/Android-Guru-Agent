@@ -38,7 +38,9 @@ class TerminalObserveTool(
         Observe terminal state. Default mode=SEMANTIC returns machine-readable state (session/job/input/cursor)
         with NO raw output — token-cheap. mode=EVENT returns incremental events since afterCursor.
         mode=SCREEN returns parsed screen (for TUI like vim/top); pass scrollbackLines>0 to also
-        receive the last N scrollback lines (T82, main screen history up to 1000 lines).
+        receive the last N scrollback lines (T82, main screen history up to 1000 lines); when the
+        shell reports its working directory (OSC 7), SCREEN also returns it as guestCwd — pass that
+        as the cwd of subsequent TerminalExec calls to stay in the same directory.
         mode=RAW returns raw bytes since afterCursor.
     """.trimIndent()
 
@@ -110,6 +112,12 @@ class TerminalObserveTool(
                         put("cursorRow", JsonPrimitive(scr.cursorRow))
                         put("cursorCol", JsonPrimitive(scr.cursorCol))
                         put("alternateScreen", JsonPrimitive(scr.alternateScreen))
+                        // v3：OSC 7 / 9;9 遥测首次消费 —— guest shell 上报的当前
+                        // 工作目录（解码后路径；null = guest 未上报）。此前解析结果
+                        // 只存在 VT 快照里零消费：模型无法得知交互会话里 cd 到了
+                        // 哪里，只能猜 cwd 或从屏显 PS1 反推。现在直接给出，模型
+                        // 可把它作为 TerminalExec 的 cwd 传入。
+                        scr.guestCwd?.let { put("guestCwd", JsonPrimitive(it)) }
                     }
                     // T82：scrollback 尾部（oldest→newest）
                     if (!out.scrollbackTail.isNullOrEmpty()) {

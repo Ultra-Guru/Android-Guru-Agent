@@ -544,7 +544,14 @@ object ToolModule {
             // 命令。实时读设置（非构造期快照），切回其他模式立即恢复拦截。
             val bypassCommandGate = settingsRepository.agentSettings.value.permissionMode ==
                 PermissionMode.BYPASS
-            if (!bypassCommandGate && !commandPermissionGate.ensureAllowed(cmd)) {
+            // v3：审批上下文 —— ShellExecute 恒走 Android 宿主（Root > Shizuku > 本地
+            // 通道运行时决定），与 TerminalExec 的 Ubuntu 沙箱形成明确视觉区分；
+            // 附带 cd 记忆目录，授权决策能看到命令将落在哪个根。
+            val shellExecContext = buildString {
+                append("Android 宿主 shell（Root > Shizuku > 本地）")
+                shellWorkDir.currentDir()?.let { append(" · 目录 ").append(it) }
+            }
+            if (!bypassCommandGate && !commandPermissionGate.ensureAllowed(cmd, shellExecContext)) {
                 // #F-⑯：工具层审计（拒绝也留痕）；结构化结果见下方 T92 注释。
                 toolAuditLogger.log(ToolAuditLogger.Event(
                     tool = "ShellExecute", decision = "denied_by_user", command = cmd,
@@ -641,24 +648,40 @@ object ToolModule {
         // P0：ExecEngine 接入 ProotCommandSpawner —— rootfs 就绪且非 Android 专有命令时路由进
         // PRoot Ubuntu（python3/gcc/apt/git/npm 不再 not found）；未就绪/Android 命令回落 su >
         // Shizuku > local-sh（与旧版一致）。cwd 映射与 bind 语义见 ProotCommandSpawner KDoc。
+        // v3：spawner 提升为局部 val —— 审批上下文需要 isAndroidOnlyCommand 与实际路由同源，
+        // 避免在 DI 层重写一份路由判定（两处口径漂移是路径错根问题的根源之一）。
+        val prootSpawner = ProotCommandSpawner(
+            hostEnvironment = hostEnvironment,
+            rootfsDir = rootfsBaseDir,
+            isRootfsReady = { File(rootfsBaseDir, "current").exists() },
+            defaultWorkspaceDir = File(context.filesDir, "linux/workspaces/default"),
+            persistentHomeDir = File(context.filesDir, "linux/home"),
+            fallback = PrivilegedCommandSpawner(),
+            // T92：argv 能力门（与终端会话/apt 同款版本自适应）
+            capabilities = capabilitySource::invoke,
+            // v3 S3（G2）：git/gh 命令凭据注入（未连接返回 null = 不注入）
+            gitHubTokenProvider = { githubTokenManager.getToken() }
+        )
         registry.register(SafeAgentTool(TerminalToolAdapter(TerminalExecTool(
-            engine = ExecEngine(ProotCommandSpawner(
-                hostEnvironment = hostEnvironment,
-                rootfsDir = rootfsBaseDir,
-                isRootfsReady = { File(rootfsBaseDir, "current").exists() },
-                defaultWorkspaceDir = File(context.filesDir, "linux/workspaces/default"),
-                persistentHomeDir = File(context.filesDir, "linux/home"),
-                fallback = PrivilegedCommandSpawner(),
-                // T92：argv 能力门（与终端会话/apt 同款版本自适应）
-                capabilities = capabilitySource::invoke,
-                // v3 S3（G2）：git/gh 命令凭据注入（未连接返回 null = 不注入）
-                gitHubTokenProvider = { githubTokenManager.getToken() }
-            )),
-            approvalGate = { cmd ->
+            engine = ExecEngine(prootSpawner),
+            approvalGate = { cmd, cwd ->
                 // 全自动模式（BYPASS）与 ShellExecute 同口径：跳过命令级确认门。
                 val bypassCommandGate = settingsRepository.agentSettings.value.permissionMode ==
                     PermissionMode.BYPASS
-                if (bypassCommandGate || commandPermissionGate.ensureAllowed(cmd)) {
+                // v3：审批上下文 —— 与实际路由同源判定（rootfs 就绪 + 非 Android 专有
+                // → Ubuntu 沙箱；否则宿主 shell），并携带实际执行目录。
+                // 口径与 ProotCommandSpawner.resolveUbuntuRoute 一致（current 标记存在
+                // + 非 Android 专有命令），避免 DI 层第二套路由判定漂移。
+                val ubuntuRoute = File(rootfsBaseDir, "current").exists() &&
+                    !prootSpawner.isAndroidOnlyCommand(cmd)
+                val execContext = buildString {
+                    append(
+                        if (ubuntuRoute) "Ubuntu 沙箱（proot-ubuntu）"
+                        else "Android 宿主 shell（Root > Shizuku > 本地）"
+                    )
+                    cwd?.let { append(" · 目录 ").append(it) }
+                }
+                if (bypassCommandGate || commandPermissionGate.ensureAllowed(cmd, execContext)) {
                     toolAuditLogger.log(ToolAuditLogger.Event(
                         tool = "TerminalExec",
                         decision = "approved",

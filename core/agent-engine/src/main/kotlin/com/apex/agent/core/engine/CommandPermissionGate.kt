@@ -73,11 +73,30 @@ class CommandPermissionGate(
         "mount",
         "umount",
         "> /dev/",
+        // v3：系统目录重定向逃逸 —— `> /etc/passwd` 这类直接改写系统文件的
+        // 重定向不在旧表内（双模式下 Ubuntu 根的 /etc 是 rootfs 内部文件，
+        // 破坏后影响所有后续会话）。>> 追加变体同納。
+        "> /etc/",
+        ">> /etc/",
+        "> /system",
+        ">> /system",
+        "> /proc",
+        "> /sys/",
+        ">> /sys/",
         "killall",
         "pkill"
     )
 
-    suspend fun ensureAllowed(command: String): Boolean {
+    /**
+     * 高危命令确认。
+     *
+     * @param command 原始命令（内部归一化后匹配）
+     * @param executionContext 执行环境描述（v3：如「Ubuntu 沙箱（proot-ubuntu）· 目录
+     *  /workspace」）—— 弹窗展示「将在哪、什么目录执行」，而不是裸命令字符串；
+     *  双模式下同一条 rm 在 Ubuntu 沙箱与 Android 宿主上后果完全不同，授权
+     *  决策必须看到这个上下文。null = 调用方无此信息，弹窗退化为旧行为。
+     */
+    suspend fun ensureAllowed(command: String, executionContext: String? = null): Boolean {
         val normalized = normalize(command)
 
         if (!isHighRisk(normalized)) {
@@ -91,7 +110,10 @@ class CommandPermissionGate(
         val question = AgentQuestion(
             // #365：定性档位（危险）而非「高风险」数字化等级措辞
             title = "危险命令需要确认",
-            description = normalized,
+            // v3：执行环境上下文拼入描述（命令在前，环境在后 —— 授权决策的
+            // 第一信息仍是命令本身）。
+            description = if (executionContext.isNullOrBlank()) normalized
+                          else "$normalized\n\n将在：$executionContext",
             options = listOf(
                 AgentQuestionOption(
                     id = "allow_once",

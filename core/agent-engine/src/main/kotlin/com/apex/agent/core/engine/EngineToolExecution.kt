@@ -5,6 +5,7 @@ import com.apex.agent.core.llm.ToolCall
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.core.engine.orchestrator.RetryPolicy
+import com.apex.agent.core.tools.ToolResultMeta
 import com.apex.agent.core.tools.ToolStreamEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -243,6 +244,12 @@ internal suspend fun ApexAgentEngine.executeToolCallStreamingCore(
     val toolStart = System.currentTimeMillis()
     val outputBuilder = StringBuilder()
 
+    // v3：结构化执行元数据（ToolStreamEvent.Complete.meta）—— 终端类工具
+    // 在 Complete 事件上携带真实退出码 / 会话标注 / 通道。非终端工具默认实例
+    // （全 null）→ 成败判定回退旧的文本前缀逻辑，行为不变。重试轮次间
+    // 重置（失败尝试的 meta 不泄漏到最终结果）。
+    var completeMeta: ToolResultMeta = ToolResultMeta()
+
     // 以流式事件信号为主判定成败：收到 ToolStreamEvent.Error 或捕获异常
     // 即视为失败。这样工具合法输出以 "Error" 开头（如 "Error: foo not found" 这类
     // 真实数据）也不会被误判为执行失败。
@@ -255,6 +262,7 @@ internal suspend fun ApexAgentEngine.executeToolCallStreamingCore(
     var retryAttempt = 0
     while (true) {
         hadStreamError = false
+        completeMeta = ToolResultMeta()
         var streamException: Throwable? = null
         var streamErrorMessage: String? = null
         try {
@@ -279,6 +287,9 @@ internal suspend fun ApexAgentEngine.executeToolCallStreamingCore(
                         )
                     }
                     is ToolStreamEvent.Complete -> {
+                        // v3：捕获结构化元数据（退出码 / 会话标注 / 通道）——
+                        // 发射 ToolCallComplete 时透传给 UI。
+                        completeMeta = event.meta
                         // 防御：仅当工具只发 Complete 没发 Output（非典型）时补发。
                         if (outputBuilder.isEmpty() && event.output.isNotEmpty()) {
                             outputBuilder.append(event.output)
@@ -346,10 +357,19 @@ internal suspend fun ApexAgentEngine.executeToolCallStreamingCore(
     val truncationResult = toolTruncator.smartTruncate(rawOutput, registryToolId)
     val result = truncationResult.text
 
-    // 成功判定：优先采用流式事件信号；仅当工具未发任何 Error 事件且
-    // 异常分支未触发时，才回退到文本前缀检测（兼容只返回 "Error: ..." 文本
-    // 而不发 Error 事件的旧工具）。
-    val actionSuccess = !hadStreamError && !result.startsWith("Error")
+    // 成败判定（v3 三级优先）：
+    // 1. 工具上报了结构化退出码（completeMeta.exitCode != null，如 TerminalExec
+    //    的 waitpid 结果）→ 以真实退出码为准 —— JSON 输出不以 "Error" 开头的
+    //    exit_code:127 / 门禁拒绝 126 / 超时强杀 -1 不再误判为成功；
+    // 2. 流式 Error 事件 / 捕获异常 → 失败；
+    // 3. 回退文本前缀检测（兼容只返回 "Error: ..." 文本而不发 Error 事件的
+    //    旧工具）。
+    // （anyActionFailed / 韧性换路提示已随 main 的 core/finalize 拆分迁至
+    //  finalizeToolCallOutcome —— outcome.success 承载本判定结果。）
+    val actionSuccess = when {
+        completeMeta.exitCode != null -> completeMeta.exitCode == 0 && !hadStreamError
+        else -> !hadStreamError && !result.startsWith("Error")
+    }
 
     emit(
         AgentEvent.ToolCallComplete(
@@ -359,7 +379,14 @@ internal suspend fun ApexAgentEngine.executeToolCallStreamingCore(
             output = result.take(thinkingController.resolveToolOutputBudget(config.maxToolOutputLength)),
             fullOutput = rawOutput.take(100_000),
             success = actionSuccess,
-            durationMs = duration
+            durationMs = duration,
+            // v3：结构化执行元数据透传（UI 的 exit 徽标 / 会话标注 / 挂起提示）。
+            exitCode = completeMeta.exitCode,
+            sessionId = completeMeta.sessionId,
+            channel = completeMeta.channel,
+            cwd = completeMeta.cwd,
+            errorKind = completeMeta.errorKind,
+            waitingInput = completeMeta.waitingInput
         )
     )
     return ToolExecutionOutcome(result, actionSuccess, registryToolId)

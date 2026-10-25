@@ -29,6 +29,8 @@ private val SERVER_FIELD_REGEX = Regex("""(?i)"server"\s*:\s*"([^"]+)"""")
  * - `connector*` / `HttpRequest` → 连接器（连接外部服务的 API 调用）；
  * - 其余含 "skill" → Skill；
  * - 均未命中但当前处于 Skill/连接器/插件路由上下文 → 归入该上下文来源；
+ * - `Terminal` 前缀 → 终端运行时（v3：此前无 TERMINAL 分支，全部回落 LOCAL
+ *   徽章 —— 会话/执行/观察工具与普通本地工具无法区分）；
  * - 其余 → 本地工具。
  */
 fun classifyTool(
@@ -51,6 +53,9 @@ fun classifyTool(
             ToolCategory.SKILL -> ToolKind.SKILL
             ToolCategory.PLUGIN -> ToolKind.PLUGIN
             ToolCategory.BROWSER -> ToolKind.BROWSER
+            // v3：终端运行时独立徽章 —— Terminal* 工具族（Exec/Run/Wait/
+            // Observe/Create/...）不再是 LOCAL，双模式终端的调用一眼可辨。
+            ToolCategory.TERMINAL -> ToolKind.TERMINAL
             ToolCategory.WEB -> when (toolName) {
                 "WebSearch" -> ToolKind.WEB_SEARCH
                 "WebFetch" -> ToolKind.WEB_FETCH
@@ -73,6 +78,9 @@ fun classifyTool(
         return ToolKind.CONNECTOR to null
     }
     if (toolName.contains("skill", ignoreCase = true)) return ToolKind.SKILL to null
+    // v3：Terminal 前缀兑底 —— 元数据未命中（注册表尚未装载 / 老会话回放）时
+    // 也能拿到终端徽章（与 Browser/Plugin 前缀兑底同款防御）。
+    if (toolName.startsWith("Terminal")) return ToolKind.TERMINAL to null
     // 路由上下文兜底：Skill/连接器/插件流水线内产生的未匹配工具归入该来源，
     // 让 `/connector:ssh` 会话里的 ShellExecute 也能带上连接器链路徽章。
     if (contextKind != null) return contextKind to null
