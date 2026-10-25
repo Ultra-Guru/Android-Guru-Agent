@@ -21,6 +21,7 @@ import kotlinx.coroutines.withContext
  * - `must_read`：**开工前必读**（必看内容节，一次调用全量返回）；
  * - `index`：快速索引（「想找什么 → 去哪一节」表）—— 一键定位；
  * - `search`：关键词检索（返回命中章节 + 上下文预览 + 得分排序）；
+ *   **省略 kb 时跨库全局检索**（每库 top 命中 + 库间汇总排序，标注来源库）；
  * - `read`：精读一节（ref 支持章节标题 / 纯编号 / 标题前缀）。
  *
  * 检索服务为懒加载（首访扫描资产），本工具统一走 IO 调度；坏资产
@@ -46,7 +47,8 @@ class KnowledgeBaseTool(
         - index (kb): quick index mapping "what you want" to "which section"
           — fastest way to locate a topic in that volume.
         - search (kb, query): keyword search returning ranked section hits with
-          context previews.
+          context previews. OMIT kb to search across ALL volumes at once —
+          each hit is labeled with its source volume.
         - read (kb, section): read one full section (section = title, plain
           number like "4", or title prefix).
 
@@ -59,8 +61,8 @@ class KnowledgeBaseTool(
             "type": "object",
             "properties": {
                 "action": {"type": "string", "enum": ["list", "must_read", "index", "search", "read"], "description": "默认 list"},
-                "kb": {"type": "string", "description": "知识库 id（list 的输出里有，如 android / kotlin / all_rounder）"},
-                "query": {"type": "string", "description": "action=search 时的关键词（可空格分多词）"},
+                "kb": {"type": "string", "description": "知识库 id（list 的输出里有，如 android / kotlin / all_rounder）。search 可省略 → 跨库全局检索；list 无需此参数"},
+                "query": {"type": "string", "description": "action=search 时的关键词（可空格分多词；省略 kb 时全库检索）"},
                 "section": {"type": "string", "description": "action=read 时的章节 ref（标题 / 纯编号 / 前缀）"}
             }
         }
@@ -73,21 +75,31 @@ class KnowledgeBaseTool(
             .getOrElse { return@withContext "Error: invalid arguments: ${it.message?.take(80)}" }
         val action = str(obj, "action") ?: "list"
         val kbId = str(obj, "kb")?.trim().takeIf { !it.isNullOrBlank() }
-            ?: return@withContext "Error: 缺少 kb 参数（先用 action=list 查看可用知识库 id）"
+
+        // kb 按动作区分必需性：list 不需要；search 省略时跨库全局检索；
+        // 其余动作（must_read / index / read）必须指定卷 id。
+        val kbMissing = "Error: 缺少 kb 参数（先用 action=list 查看可用知识库 id）"
 
         when (action) {
             "list" -> renderList()
-            "must_read" -> renderMustRead(kbId)
-            "index" -> renderIndex(kbId)
+            "must_read" -> {
+                val kb = kbId ?: return@withContext kbMissing
+                renderMustRead(kb)
+            }
+            "index" -> {
+                val kb = kbId ?: return@withContext kbMissing
+                renderIndex(kb)
+            }
             "search" -> {
                 val query = str(obj, "query")?.trim().takeIf { !it.isNullOrBlank() }
                     ?: return@withContext "Error: 缺少 query 参数"
-                renderSearch(kbId, query)
+                if (kbId == null) renderGlobalSearch(query) else renderSearch(kbId, query)
             }
             "read" -> {
                 val section = str(obj, "section")?.trim().takeIf { !it.isNullOrBlank() }
                     ?: return@withContext "Error: 缺少 section 参数（先用 index 看章节表）"
-                renderRead(kbId, section)
+                val kb = kbId ?: return@withContext kbMissing
+                renderRead(kb, section)
             }
             else -> "Error: 未知 action '$action'（可用：list / must_read / index / search / read）"
         }
@@ -146,7 +158,7 @@ class KnowledgeBaseTool(
             ?: return notFound(kbId)
         val hits = service.search(kbId, query)
         if (hits.isEmpty()) {
-            return "(「${kb.title}」中没有命中「$query」—— 换个更短的关键词，或 index 全表浏览)"
+            return "(「${kb.title}」中没有命中「$query」—— 换个更短的关键词，或 index 全表浏览，或省略 kb 跨库全局检索)"
         }
         return buildString {
             appendLine("「${kb.title}」检索「$query」—— ${hits.size} 处命中（按相关度排序）：")
@@ -157,6 +169,25 @@ class KnowledgeBaseTool(
             }
             appendLine()
             appendLine("用 read 精读命中的章节。")
+        }
+    }
+
+    /** 跨库全局检索（search 省略 kb）：每库 top 命中 + 库间汇总排序，标注来源库。 */
+    private suspend fun renderGlobalSearch(query: String): String {
+        val hits = service.searchAll(query)
+        if (hits.isEmpty()) {
+            return "(全部知识库中没有命中「$query」—— 换个更短的关键词，或先 action=list 看有哪些库)"
+        }
+        val kbCount = hits.map { it.kbId }.distinct().size
+        return buildString {
+            appendLine("跨库全局检索「$query」—— ${hits.size} 处命中（来自 $kbCount 套知识库，按相关度排序）：")
+            appendLine()
+            hits.forEach { g ->
+                appendLine("- [${g.kbId}] ${g.hit.sectionTitle}（via ${g.hit.via}）")
+                appendLine("  ${g.hit.preview}")
+            }
+            appendLine()
+            appendLine("用 read(kb=…, section=…) 精读命中章节（kb 传命中行标注的库 id）。")
         }
     }
 

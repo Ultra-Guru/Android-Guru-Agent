@@ -113,3 +113,13 @@ data class KbSearchHit(
     /** 命中来源：title / body / index / must_read。 */
     val via: String
 )
+
+/**
+ * 跨库全局搜索命中（searchAll 产物）：包一层来源标注 —— Agent 看到
+ * 「哪套库的哪一节」，直接 read(kb=…, section=…) 精读。
+ */
+data class KbGlobalHit(
+    val kbId: String,
+    val kbTitle: String,
+    val hit: KbSearchHit
+)
