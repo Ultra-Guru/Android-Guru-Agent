@@ -42,7 +42,9 @@ class TerminalSignalTool(
         teardown semantics). scope=JOB (T82): only the foreground command's process group —
         the shell survives (Ctrl-C semantics: interrupt the current command, session stays
         alive; returns foregroundDelivered=false when no foreground job is running).
-        SIGINT (Ctrl+C), SIGTERM, SIGKILL. USER-initiated SIGINT produces a UserInterrupt event.
+        SIGINT (Ctrl+C), SIGTERM, SIGKILL, SIGTSTP (Ctrl+Z: suspend the foreground job —
+        the job stops but the shell regains the prompt and the session stays interactive;
+        resume later with SIGCONT). USER-initiated SIGINT produces a UserInterrupt event.
     """.trimIndent()
 
     override val parametersSchema: String = """
