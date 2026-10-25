@@ -9,8 +9,8 @@ import kotlinx.coroutines.sync.withLock
  * 每个 Agent 角色模板一套或多套专属知识库（Markdown 资产，v2 多卷制：
  * 同一 roleId 可绑定任意多卷，加卷 = 加文件，无需改代码 —— 全能角色的
  * 知识面可无限扩充）。本服务负责：加载（懒、并发安全、坏文件降级）+
- * 角色绑定查询 + 五动作检索面（[listAll] / [forRole] / [mustReadOf] /
- * [index] / [search] / [readSection]），供
+ * 角色绑定查询 + 六动作检索面（[listAll] / [forRole] / [mmustReadOf] /
+ * [index] / [search] / [readSection] / [searchAll]），供
  * [com.apex.agent.tools.KnowledgeBaseTool]（Agent 检索入口）与角色提示词
  * 注入消费。
  *
@@ -189,6 +189,29 @@ class KnowledgeBaseService(
 
     /** 读一节（ref = 章节标题 / 纯编号 / 标题前缀）。返回 null = 没找到。 */
     suspend fun readSection(kbId: String, ref: String): KbSection? = byId(kbId)?.findSection(ref)
+
+    /**
+     * 跨库全局检索（v2：query 不限定库时的兜底入口）。
+     *
+     * 每库取 top [perKb] 命中，再按得分全局排序截 [total] —— 单库不会
+     * 刷屏；每条命中带来源库标注（id + 题名），Agent 直接
+     * read(kb=…, section=…) 精读。空查询返回空。
+     */
+    suspend fun searchAll(
+        query: String,
+        perKb: Int = 3,
+        total: Int = 20
+    ): List<KbGlobalHit> {
+        val terms = query.lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
+        if (terms.isEmpty()) return emptyList()
+        val results = mutableListOf<KbGlobalHit>()
+        for (kb in ensureLoaded()) {
+            search(kb.id, query, limit = perKb.coerceIn(1, 10)).forEach { h ->
+                results.add(KbGlobalHit(kbId = kb.id, kbTitle = kb.title, hit = h))
+            }
+        }
+        return results.sortedByDescending { it.hit.score }.take(total.coerceIn(1, 40))
+    }
 
     // ═══ 角色提示词注入 ═══
 

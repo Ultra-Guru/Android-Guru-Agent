@@ -228,4 +228,70 @@ class KnowledgeBaseServiceTest {
         assertEquals("", svc.roleDefinitionHintFor(svc.volumesForRole("builtin_coding_kotlin")))
         assertEquals("", svc.roleDefinitionHintFor(emptyList()))
     }
+
+    // ═══ searchAll：跨库全局检索（v2）═══
+
+    private val kbAlpha = """
+        <!-- kb: id=alpha | role=builtin_coding_kotlin | title=Kotlin库 | version=1 -->
+        # Kotlin库
+
+        ## 必看内容
+        - 协程取消要传播
+
+        ## 快速索引
+        | 想找什么 | 去哪一节 |
+        | --- | --- |
+        | 协程怎么取消 | 2. 协程取消 |
+
+        ## 1. 基础
+        基础内容。
+
+        ## 2. 协程取消
+        取消传播：coroutineScope 内抛 CancellationException。
+    """.trimIndent()
+
+    private val kbBeta = """
+        <!-- kb: id=beta | role=builtin_coding_android | title=Android库 | version=1 -->
+        # Android库
+
+        ## 必看内容
+        - 布局先静态后动态
+
+        ## 1. 布局验证
+        用 HtmlAnalyzeLayout 静态检查协程无关内容。
+    """.trimIndent()
+
+    @Test
+    fun `search all aggregates hits across volumes with source labels`() = runTest {
+        val svc = service(mapOf("alpha.md" to kbAlpha, "beta.md" to kbBeta))
+        val hits = svc.searchAll("协程 取消")
+        assertTrue(hits.isNotEmpty())
+        // 命中来自多套库且每条带来源标注
+        assertTrue(hits.any { it.kbId == "alpha" && it.kbTitle == "Kotlin库" })
+        // alpha 有索引指针命中（via=index），beta 有正文命中 —— 全局按分排序
+        assertTrue(hits.all { it.hit.score > 0 })
+        assertTrue(hits.zipWithNext().all { (a, b) -> a.hit.score >= b.hit.score })
+    }
+
+    @Test
+    fun `search all caps per volume to avoid single kb flooding`() = runTest {
+        val svc = service(mapOf("alpha.md" to kbAlpha, "beta.md" to kbBeta))
+        val hits = svc.searchAll("协程", perKb = 1, total = 10)
+        // perKb=1：alpha（命中最多）也只贡献 1 条
+        assertEquals(1, hits.count { it.kbId == "alpha" })
+    }
+
+    @Test
+    fun `search all empty query returns empty`() = runTest {
+        val svc = service(mapOf("alpha.md" to kbAlpha, "beta.md" to kbBeta))
+        assertTrue(svc.searchAll("   ").isEmpty())
+    }
+
+    @Test
+    fun `search all tolerates broken volumes`() = runTest {
+        val svc = service(mapOf("alpha.md" to kbAlpha, "broken.md" to "不是知识库"))
+        val hits = svc.searchAll("协程")
+        assertTrue(hits.isNotEmpty())
+        assertTrue(hits.all { it.kbId != "broken" })
+    }
 }
