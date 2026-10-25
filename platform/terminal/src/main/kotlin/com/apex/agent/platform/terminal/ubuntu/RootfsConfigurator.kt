@@ -318,6 +318,25 @@ class RootfsConfigurator(
         const val DEFAULT_HOSTNAME = "android-guru"
 
         /**
+         * 解析 /proc/self/status 的 “Groups:” 行（实录 #14 的生产采集端）。
+         *
+         * 为什么不用 android.system.Os.getgroups()：该方法在 App 编译 SDK 的
+         * android.system.Os 里不存在（CI 实测 unresolved reference）。
+         * /proc/self/status 是内核态真值，全 Android 版本可读、纯 JVM 无 API
+         * 依赖 —— PRoot 继承的正是这份补充组列表。
+         */
+        fun parseSupplementaryGids(statusContent: String): List<Int> =
+            statusContent.lineSequence()
+                .firstOrNull { it.startsWith("Groups:") }
+                ?.removePrefix("Groups:")
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.split(Regex("\\s+"))
+                ?.mapNotNull { it.toIntOrNull() }
+                ?.distinct()
+                ?: emptyList()
+
+        /**
          * 为缺失 gid 生成 /etc/group 行（实录 #14；纯函数可单测）：
          * - 幂等：已存在的 gid（第三字段）跳过；
          * - g<gid> 命名避开真实组名冲突；负数/零过滤。

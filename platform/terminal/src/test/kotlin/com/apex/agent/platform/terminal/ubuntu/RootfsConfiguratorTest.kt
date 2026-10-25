@@ -218,6 +218,45 @@ class RootfsConfiguratorTest {
         assertFalse("未注入 gid 时不应有 group 动作", report.actions.any { it.startsWith("group:") })
         assertFalse(File(root, "etc/group").exists())
     }
+
+    @Test fun `parseSupplementaryGids reads Groups line from proc status`() {
+        // 实录同款样本：PRoot 环境实测刷屏的 6 个宿主补充组 gid
+        val status = listOf(
+            "Name:\tcom.apex.agent",
+            "State:\tS (sleeping)",
+            "Tgid:\t12345",
+            "Pid:\t12345",
+            "PPid:\t1234",
+            "TracerPid:\t0",
+            "Uid:\t1079\t1079\t1079\t1079",
+            "Gid:\t1079\t1079\t1079\t1079",
+            "Groups:\t1079 3003 9997 20494 50494 99909997",
+            "FDSize:\t128",
+            "VmPeak:\t 1234567 kB"
+        ).joinToString("\n")
+        assertEquals(
+            listOf(1079, 3003, 9997, 20494, 50494, 99909997),
+            RootfsConfigurator.parseSupplementaryGids(status)
+        )
+    }
+
+    @Test fun `parseSupplementaryGids tolerates missing and malformed input`() {
+        // 无 Groups 行（极简容器环境）→ 空列表
+        assertEquals(emptyList<Int>(), RootfsConfigurator.parseSupplementaryGids("Name:\tx\n"))
+        // 空内容 / 单独一个 Groups 空值
+        assertEquals(emptyList<Int>(), RootfsConfigurator.parseSupplementaryGids(""))
+        assertEquals(emptyList<Int>(), RootfsConfigurator.parseSupplementaryGids("Groups:\t"))
+        // 混入非数字 token → 过滤，不抛错
+        assertEquals(
+            listOf(3003),
+            RootfsConfigurator.parseSupplementaryGids("Groups:\t3003 abc 9997x")
+        )
+        // 重复 gid → 去重
+        assertEquals(
+            listOf(3003, 9997),
+            RootfsConfigurator.parseSupplementaryGids("Groups:\t3003 9997 3003")
+        )
+    }
 }
 
 /**
