@@ -2,6 +2,7 @@ package com.apex.agent.knowledge
 
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -160,9 +161,71 @@ class KnowledgeBaseServiceTest {
         )
         val all = svc.listAll()
         assertEquals(2, all.size)
-        // 同角色两套：首个绑定生效
+        // 同角色多卷：主卷（forRole 兼容口径）取首卷
         val bound = svc.forRole("builtin_coding_android")
         assertNotNull(bound)
-        assertTrue(bound!!.id == "demo" || bound.id == "other")
+        assertEquals("demo", bound!!.id)
+    }
+
+    // ═══ v2 多卷制：同角色可绑多卷（加卷=加文件，知识面无限扩充）═══════
+
+    @Test
+    fun `volumes for role returns all volumes in asset order`() = runTest {
+        val vol2 = sampleMd
+            .replace("id=demo", "id=demo_tasking")
+            .replace("title=演示知识库", "title=演示知识库·卷二")
+        val svc = service(
+            mapOf(
+                "a.md" to sampleMd,       // 卷一（主卷）
+                "b.md" to vol2,           // 卷二（同角色扩充卷）
+                "broken.md" to "garbage"  // 坏文件不影响多卷加载
+            )
+        )
+        val volumes = svc.volumesForRole("builtin_coding_android")
+        assertEquals(2, volumes.size)
+        assertEquals("demo", volumes[0].id)
+        assertEquals("demo_tasking", volumes[1].id)
+        // 每卷独立 id 可检索（一键定位走卷 id）
+        assertNotNull(svc.byId("demo_tasking"))
+        assertNotNull(svc.readSection("demo_tasking", "4"))
+        // 其他角色不受影响
+        assertTrue(svc.volumesForRole("builtin_coding_kotlin").isEmpty())
+    }
+
+    @Test
+    fun `multi volume hint lists every volume id`() = runTest {
+        val vol2 = sampleMd
+            .replace("id=demo", "id=demo_tasking")
+            .replace("title=演示知识库", "title=演示知识库·卷二")
+        val svc = service(mapOf("a.md" to sampleMd, "b.md" to vol2))
+        val volumes = svc.volumesForRole("builtin_coding_android")
+        val hint = svc.roleDefinitionHintFor(volumes)
+        // 多卷指引：声明卷数 + 逐卷给出可检索 id + 检索工作流
+        assertTrue(hint.contains("2 套专属知识库卷"))
+        assertTrue(hint.contains("kb=demo"))
+        assertTrue(hint.contains("kb=demo_tasking"))
+        assertTrue(hint.contains("演示知识库·卷二"))
+        assertTrue(hint.contains("must_read"))
+        assertTrue(hint.contains("index"))
+        assertTrue(hint.contains("search"))
+        assertTrue(hint.contains("read"))
+    }
+
+    @Test
+    fun `single volume hint carries id and workflow`() = runTest {
+        val svc = service(mapOf("demo.md" to sampleMd))
+        val hint = svc.roleDefinitionHintFor(svc.volumesForRole("builtin_coding_android"))
+        // 单卷角色：指引退化为一卷形态，仍带卷 id 与工作流
+        assertTrue(hint.contains("kb=demo"))
+        assertFalse(hint.contains("2 套"))
+        assertTrue(hint.contains("must_read"))
+    }
+
+    @Test
+    fun `empty volumes produce empty hint`() = runTest {
+        val svc = service(mapOf("demo.md" to sampleMd))
+        // 悬空角色：无绑定卷 → 空指引（调用方免判空）
+        assertEquals("", svc.roleDefinitionHintFor(svc.volumesForRole("builtin_coding_kotlin")))
+        assertEquals("", svc.roleDefinitionHintFor(emptyList()))
     }
 }

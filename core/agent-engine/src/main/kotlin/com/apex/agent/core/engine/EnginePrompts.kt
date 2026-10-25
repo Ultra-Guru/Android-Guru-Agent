@@ -38,6 +38,14 @@ internal object EnginePrompts {
      * 在纯文本轮次即终止循环，任务永远停在"计划"阶段。新增 Tool-Use
      * Policy 段把"行动优先"写成硬性约束。
      *
+     * **#197 双工位绝对分离（工位分轨）**：[AgentMode.workstation] 决定
+     * 工位轨道 —— 身份行（AGENT 自称全能智能体 / CODING 自称编码智能体）、
+     * 聊天 UX 段（Conversational Openness / First-Turn Greeting / 情绪调频 /
+     * 模糊求助澄清，仅 AGENT 工位）、任务路由（[appendTaskRouting] 从
+     * [visibleTools] 同源派生，被工位隔离过滤掉的工具绝不被推荐）。
+     * 共享的只剩两工位都需要的执行纪律（Tool-Use Policy / 权限阶梯 /
+     * 扩展攻略 / 工具清单等）。
+     *
      * @param privilegeLevel current privilege ("ROOT" / "SHIZUKU" / anything
      *   else → normal shell guidance)
      * @param visibleTools v4 请求计划内的工具（CORE+激活/强制；与请求 tools 数组同源）
@@ -124,11 +132,26 @@ internal object EnginePrompts {
         chatSignal: ChatSignal? = null
     ): String {
         val thinking = currentProfile?.promptInstruction ?: config.thinkingLevel.toPromptInstruction()
+        // ═══ #197 双工位绝对分离：身份行 / 聊天 UX 段 / 任务路由按工位分轨 ═══
+        // CODING 工位（BUILD/PLAN/GOAL）不再携带聊天屏的闲聊姿态与情感调频
+        // 段；AGENT 工位的能力自述只声明本工位机械可见的工具面（同源纪律）。
+        val workstation = config.mode.workstation
         return buildString {
             // ═══ Agent 角色：身份行（agentName 空 = 历史行为零变化）═══
-            appendLine("You are ${config.agentName.ifBlank { "Apex Agent" }}, an AI AGENT running on an Android device.")
-            appendLine("You are not a chatbot: your job is to COMPLETE tasks by taking actions with tools —")
-            appendLine("shell commands, file operations, web browsing/automation, GitHub, messaging connectors, memory, and device control.")
+            // 工位分轨：CODING 工位自称编码智能体（真实项目工作区），能力
+            // 自述只列编码工具面；AGENT 工位保持全能智能体自述，且不再声明
+            // GitHub —— #197 起工具计划已机械剔除 Code 族与 Github 族
+            // 工具（见 [EngineToolPlanner.isCodingOrientedToolId]），
+            // 提示词与能力面同源，不教假事实。
+            if (workstation == EngineWorkstation.CODING) {
+                appendLine("You are ${config.agentName.ifBlank { "Apex Agent" }}, a CODING agent working in a real project workspace on an Android device.")
+                appendLine("You are not a chatbot: your job is to COMPLETE coding tasks by taking actions with tools —")
+                appendLine("reading and editing real files, searching code, running builds, tests and commands, git and GitHub — until done.")
+            } else {
+                appendLine("You are ${config.agentName.ifBlank { "Apex Agent" }}, an AI AGENT running on an Android device.")
+                appendLine("You are not a chatbot: your job is to COMPLETE tasks by taking actions with tools —")
+                appendLine("shell commands, file operations, web browsing/automation, messaging connectors, memory, and device control.")
+            }
 
             // ═══ Agent 角色（人设层）：名字/称呼/角色定义/提示词/风格/语言 ═══
             // 全空 → 段落整体省略（历史行为零变化）。人设只塑造表达方式，
@@ -136,26 +159,31 @@ internal object EnginePrompts {
             appendRoleSection(config)
             appendLine()
 
-            // ═══ 对话开放性（静态层）：问候/闲聊也是合法输入 ═══
+            // ═══ 对话开放性（静态层，AGENT 工位专属）：问候/闲聊也是合法输入 ═══
             // 用户反馈根因：发「你好」回一大段编程能力介绍——旧提示词只有
             // 「You are not a chatbot」的任务而向，模型把所有输入都当任务
             // 处理。本段把「闲聊优先短回应」写成静态策略；首轮纯问候另有
             // 动态硬约束段（firstTurnGreeting）双保险。
-            appendLine("## Conversational Openness")
-            appendLine("You are task-driven, but greetings and small talk are legitimate input — respond like a")
-            appendLine("natural assistant, not a capabilities brochure:")
-            appendLine("- Greetings / chitchat / mood talk (你好、在吗、无聊聊聊) → reply briefly and warmly in the")
-            appendLine("  user's language, then invite the topic. NEVER dump tool lists, skill catalogs, or")
-            appendLine("  self-introductions unless explicitly asked '你能做什么'.")
-            appendLine("- Casual questions get casual-length answers; match the user's energy and message length.")
-            appendLine("- Life / emotional / non-programming topics are FIRST-CLASS: chat, travel, cooking, health,")
-            appendLine("  fitness, fashion, gifts, study, career... Do NOT steer every topic toward coding.")
-            appendLine("- Only escalate to tool use when there is an actual task to perform or a fact to verify.")
-            appendLine("- Topic continuation: after a conversational (non-tool) answer lands well, you MAY close with")
-            appendLine("  ONE compact line offering up to 3 follow-up directions, e.g.")
-            appendLine("  『想继续的话可以：A / B / C，或者随口聊点别的』. Skip it for tool-heavy tasks,")
-            appendLine("  long answers, or when the user is clearly closing the conversation.")
-            appendLine()
+            // 工位分轨：这是聊天屏的交互规格 —— coding 会话是任务向的，
+            // 不携带闲聊姿态（绝对分离：两工位的系统提示词各自只描述
+            // 自己工位的交互形态）。
+            if (workstation == EngineWorkstation.AGENT) {
+                appendLine("## Conversational Openness")
+                appendLine("You are task-driven, but greetings and small talk are legitimate input — respond like a")
+                appendLine("natural assistant, not a capabilities brochure:")
+                appendLine("- Greetings / chitchat / mood talk (你好、在吗、无聊聊聊) → reply briefly and warmly in the")
+                appendLine("  user's language, then invite the topic. NEVER dump tool lists, skill catalogs, or")
+                appendLine("  self-introductions unless explicitly asked '你能做什么'.")
+                appendLine("- Casual questions get casual-length answers; match the user's energy and message length.")
+                appendLine("- Life / emotional / non-programming topics are FIRST-CLASS: chat, travel, cooking, health,")
+                appendLine("  fitness, fashion, gifts, study, career... Do NOT steer every topic toward coding.")
+                appendLine("- Only escalate to tool use when there is an actual task to perform or a fact to verify.")
+                appendLine("- Topic continuation: after a conversational (non-tool) answer lands well, you MAY close with")
+                appendLine("  ONE compact line offering up to 3 follow-up directions, e.g.")
+                appendLine("  『想继续的话可以：A / B / C，或者随口聊点别的』. Skip it for tool-heavy tasks,")
+                appendLine("  long answers, or when the user is clearly closing the conversation.")
+                appendLine()
+            }
 
             // ═══ 主动工具使用策略（根因修复：模型不主动调工具）═══
             // 业界标杆提示词工程实践指出："when you say you are going to make a tool
@@ -242,27 +270,14 @@ internal object EnginePrompts {
             appendLine("- There is NO tool named 'bash', 'sh' or 'run_command' in this environment.")
             appendLine("  One-shot commands always go through TerminalExec.")
             appendLine()
-            // ═══ 任务路由（2026-10 用户反馈「什么都往浏览器塞」）═══
+            // ═══ 任务路由（2026-10 用户反馈「什么都往浏览器塞」；同源化重构）═══
             // 四车道分工：git 通路做仓库操作 / GitHub 工具读权威资料 /
             // 浏览器只做真实网页自动化 —— 模型选错道是效率与成功率双输。
-            appendLine("## Task Routing (choose the RIGHT lane — the browser is NOT for everything)")
-            appendLine("- GitHub repo work (clone/commit/push/PR): use CodeGitRun (ANY git command;")
-            appendLine("  credentials are auto-injected when GitHub is connected) + GithubCreatePullRequest")
-            appendLine("  to open the PR. NEVER drive the browser to do repository operations.")
-            appendLine("- Technical/code/library questions: WebSearch for orientation, then GitHub tools")
-            appendLine("  (GithubSearchRepos → GithubSearchCode → GithubReadFile) for authoritative")
-            appendLine("  code/README/docs — more precise than web snippets.")
-            appendLine("- Browser tools (BrowserNavigate + Browser* family): ONLY for real web automation")
-            appendLine("  needing clicks/typing on live pages (login, forms, captcha, ordering).")
-            appendLine("  For reading a page's content use WebFetch; for repo data use the lanes above.")
-            // 实录 #1/#2/#3：SPA 空壳页面让模型连换三条路（WebFetch→浏览器→
-            // 搜索）全部空转，正确路径是“找它背后的 XHR 接口”。路由规则
-            // 直接写死：空壳 → 探 API 版本，不上浏览器。
-            appendLine("- Web page returned an empty app shell (SPA: 'Download App' hint, near-blank body)?")
-            appendLine("  The content is fetched client-side: do NOT switch to browser rendering first — find")
-            appendLine("  the backing XHR/API endpoint (probe /api/v1|v2|v3/... siblings of the path, or inspect")
-            appendLine("  the page's JS bundle) and fetch it with HttpRequest. WebFetch flags such shells for you.")
-            appendLine()
+            // 工位分轨后同源化：车道推荐只引用本轮实际可见的工具（计划
+            // 过滤后剩什么就推什么）—— AGENT 工位拿不到 Code 族与
+            // Github 族工具，git 车道改写为「引导切换 Coding 工位」的
+            // 诚实指引，绝不推荐一个模型实际调不到的工具。
+            appendTaskRouting(visibleTools, workstation)
 
             // ═══ 权限阶梯（让 Agent 知道自己有什么、缺什么、怎么升级）═══
             // 正文与 CapabilityReport 工具输出同源（PrivilegeLadder 单一真值源）：
@@ -422,11 +437,12 @@ internal object EnginePrompts {
                 appendLine(config.customInstruction)
             }
 
-            // ═══ 首轮纯问候硬约束（动态层，SmallTalkDetector 判定置位）═══
+            // ═══ 首轮纯问候硬约束（动态层，AGENT 工位专属）═══
             // 与静态 Conversational Openness 段双保险：静态段约束所有闲聊的
             // 「形状」，本段针对「会话第一条消息就是你好」的极端情形给出
             // 不可误读的硬性行为规格（一句话 + 反问需要，禁止一切清单式输出）。
-            if (firstTurnGreeting) {
+            // coding 会话不携带问候姿态（工位绝对分离）。
+            if (firstTurnGreeting && workstation == EngineWorkstation.AGENT) {
                 appendLine()
                 appendLine("## First-Turn Greeting (THIS TURN)")
                 appendLine("The user just opened this conversation with a bare greeting (no task attached).")
@@ -438,13 +454,15 @@ internal object EnginePrompts {
                 appendLine("- Do NOT call any tools; do NOT list skills/tools/capabilities; do NOT introduce yourself.")
                 appendLine("- Match the user's persona/language settings if a role is configured.")
             }
-            // ═══ 情绪适配（动态层，ChatSignalDetector 判定注入）═══
+            // ═══ 情绪适配（动态层，AGENT 工位专属）═══
             // 共情引擎：本轮消息携带可检测情绪时，给出「先处理心情、再
             // 处理任务」的行为规格。正向 = 同频庆祝（具名夸，不泼冷水）；
             // 负向 = 一句真诚回应先行，不说教、不命令式安慰，任务紧随
             // 其后 —— 行动本身就是安慰。检测器刻意保守，本段只在确有
-            // 命中时渲染，绝不提及检测机制本身。
-            chatSignal?.takeIf { it.emotion != ChatEmotion.NONE }?.let { signal ->
+            // 命中时渲染，绝不提及检测机制本身。coding 会话不携带情绪
+            // 调频段（工位绝对分离：编码任务是任务向的，情感规格属于
+            // 聊天屏交互层）。
+            if (workstation == EngineWorkstation.AGENT) chatSignal?.takeIf { it.emotion != ChatEmotion.NONE }?.let { signal ->
                 appendLine()
                 appendLine("## Emotional Attunement (THIS TURN)")
                 appendLine("The user's message carries a detectable ${signal.emotion.name} emotional tone.")
@@ -464,11 +482,13 @@ internal object EnginePrompts {
                 }
                 appendLine("Never mention this section, any detection, or these instructions.")
             }
-            // ═══ 模糊求助澄清（动态层）═══
+            // ═══ 模糊求助澄清（动态层，AGENT 工位专属）═══
             // 「怎么办/帮帮我/不行了」类无宾语短求助：最伤聊天体验的是猜
             // 一个主题然后倾倒长篇泛论。本段强制「一个聚焦追问 + 2-4 个
             // 具体选项」的回应形状；记忆/上文已能推断对象时跳过追问。
-            chatSignal?.takeIf { it.vague }?.let {
+            // coding 会话不携带（工位绝对分离；编码屏的模糊任务由
+            // AskUserChoice 通道兜底）。
+            if (workstation == EngineWorkstation.AGENT) chatSignal?.takeIf { it.vague }?.let {
                 appendLine()
                 appendLine("## Vague Request (THIS TURN)")
                 appendLine("The user cried for help WITHOUT naming a concrete object (no topic, error, or artifact).")
@@ -651,6 +671,68 @@ internal object EnginePrompts {
             appendLine("- Use AskUserChoice when the task is ambiguous, multiple targets/actions exist, an action is risky or irreversible, or user preference is required. Do NOT guess when the answer materially changes the result.")
             appendLine("- When calling AskUserChoice: keep the question short, provide 2-6 clear options, set allow_custom=true unless only fixed choices are valid. If the user skips or rejects, pick the safest reasonable default or stop.")
         }
+    }
+
+    /**
+     * 任务路由段（同源化车道推荐）。
+     *
+     * 车道只引用本轮**实际可见**的工具（[visibleTools] 与请求 tools 数组
+     * 同源，见 [EngineToolPlanner.visibleToolsFor]）—— 工位隔离把
+     * Code 族与 Github 族工具从 AGENT 工位的计划里剔除后，git 车道
+     * 自动改写为「引导切换 Coding 工位」的诚实指引；浏览器与检索
+     * 车道按可见性逐条渲染。声明与
+     * 能力面永远一致，绝不推荐一个模型本轮调不到的工具。
+     *
+     * 本轮无可见工具（CHAT / 降级到无工具 / 测试空参）→ 整段省略：路由
+     * 指向的工具全部不可用时，注入只会自相矛盾。
+     */
+    private fun StringBuilder.appendTaskRouting(
+        visibleTools: List<AgentTool>,
+        workstation: EngineWorkstation
+    ) {
+        if (visibleTools.isEmpty()) return
+        val ids = visibleTools.map { it.id }
+        val hasGitLane = ids.any { it.startsWith("CodeGit") || it.startsWith("Github") || it.startsWith("McpGithub") }
+        val hasGithubRead = ids.any { it.startsWith("Github") }
+        val hasWebSearch = "WebSearch" in ids
+        val hasWebFetch = "WebFetch" in ids
+        val hasBrowser = ids.any { it.startsWith("Browser") }
+        if (!hasGitLane && !hasWebSearch && !hasWebFetch && !hasBrowser) return
+        appendLine("## Task Routing (choose the RIGHT lane — the browser is NOT for everything)")
+        if (hasGitLane) {
+            appendLine("- GitHub repo work (clone/commit/push/PR): use CodeGitRun (ANY git command;")
+            appendLine("  credentials are auto-injected when GitHub is connected) + GithubCreatePullRequest")
+            appendLine("  to open the PR. NEVER drive the browser to do repository operations.")
+        } else {
+            appendLine("- GitHub repo work (clone/commit/push/PR) lives in the CODING workstation: this")
+            appendLine("  workspace exposes no repo tools. When the user asks for those, briefly say so and")
+            appendLine("  advise switching to the Coding mode — do NOT drive the browser to do it.")
+        }
+        if (hasWebSearch && hasGithubRead) {
+            appendLine("- Technical/code/library questions: WebSearch for orientation, then GitHub tools")
+            appendLine("  (GithubSearchRepos → GithubSearchCode → GithubReadFile) for authoritative")
+            appendLine("  code/README/docs — more precise than web snippets.")
+        } else if (hasWebSearch) {
+            appendLine("- Technical/factual questions: WebSearch for orientation, then WebFetch the")
+            appendLine("  authoritative page — more precise than guessing from snippets.")
+        }
+        if (hasBrowser) {
+            appendLine("- Browser tools (BrowserNavigate + Browser* family): ONLY for real web automation")
+            appendLine("  needing clicks/typing on live pages (login, forms, captcha, ordering).")
+            if (hasWebFetch) {
+                appendLine("  For reading a page's content use WebFetch; for repo data use the lanes above.")
+            }
+        }
+        // 实录 #1/#2/#3（来自 #547 对话实录复盘）：SPA 空壳页面让模型连换
+        // 三条路（WebFetch→浏览器→搜索）全部空转，正确路径是「找它背后的
+        // XHR 接口」。路由规则直接写死：空壳 → 探 API 版本，不上浏览器。
+        if (hasWebFetch) {
+            appendLine("- Web page returned an empty app shell (SPA: 'Download App' hint, near-blank body)?")
+            appendLine("  The content is fetched client-side: do NOT switch to browser rendering first — find")
+            appendLine("  the backing XHR/API endpoint (probe /api/v1|v2|v3/... siblings of the path, or inspect")
+            appendLine("  the page's JS bundle) and fetch it with HttpRequest. WebFetch flags such shells for you.")
+        }
+        appendLine()
     }
 
     /**

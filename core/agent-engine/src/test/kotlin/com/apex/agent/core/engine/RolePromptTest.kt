@@ -8,10 +8,11 @@ import org.junit.Test
 /**
  * Agent 角色（人设层）prompt 构建单元测试。
  *
- * 覆盖（PR：设置 → Agent 角色特性）：
- *  1. 全字段默认（内置全能角色）→ 提示词与历史行为**零变化**
- *     （身份行 "You are Apex Agent"，无 Agent Role 段）；
- *  2. 自定义 agentName → 身份行替换；
+ * 覆盖（PR：设置 → Agent 角色特性；#197 工位分轨适配）：
+ *  1. 全字段默认（内置全能角色）→ 人设段与历史行为**零变化**
+ *     （无 Agent Role 段；默认配置 = BUILD = CODING 工位身份行，
+ *     见 [WorkstationPromptSplitTest]）；
+ *  2. 自定义 agentName → 身份行替换（两工位同规则）；
  *  3. userTitle / roleDefinition / rolePrompt → Agent Role 段各字段注入；
  *  4. style / language 键 → 对应指令注入；未知键静默忽略；
  *  5. 优先级护栏：人设段落显式声明不覆盖 Tool-Use Policy / 安全规则
@@ -29,10 +30,11 @@ class RolePromptTest {
         )
 
     @Test
-    fun `default config keeps historical prompt unchanged`() {
+    fun `default config keeps historical persona behaviour unchanged`() {
         val p = prompt()
-        // 身份行默认 Apex Agent
-        assertTrue(p.startsWith("You are Apex Agent, an AI AGENT running on an Android device."))
+        // 默认配置 = BUILD = CODING 工位：身份行走编码轨道（#197 分轨），
+        // 但人设层行为零变化 —— 无人设字段即无 Agent Role 段。
+        assertTrue(p.startsWith("You are Apex Agent, a CODING agent working in a real project workspace on an Android device."))
         // 无 Agent Role 段（内置全能角色 = 历史行为零变化）
         assertFalse(p.contains("## Agent Role"))
     }
@@ -40,7 +42,8 @@ class RolePromptTest {
     @Test
     fun `custom agent name replaces identity line`() {
         val p = prompt(AgentConfig(agentName = "小钢炮"))
-        assertTrue(p.startsWith("You are 小钢炮, an AI AGENT running on an Android device."))
+        // 默认 BUILD = CODING 工位轨道（#197 分轨）
+        assertTrue(p.startsWith("You are 小钢炮, a CODING agent working in a real project workspace on an Android device."))
         assertFalse(p.contains("You are Apex Agent,"))
         // 仅名字 → 其余人设字段为空 → Agent Role 段不渲染
         assertFalse(p.contains("## Agent Role"))

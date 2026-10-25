@@ -35,15 +35,16 @@ class KnowledgeBaseTool(
     override val name: String = "Knowledge Base"
 
     override val description: String = """
-        Access your role's dedicated knowledge base (every agent role ships one:
-        Android, Kotlin, all-rounder, full-stack, frontend, git, each language
-        expert...). Five actions:
+        Access your role's dedicated knowledge base volumes (every agent role ships
+        one or more volumes: Android, Kotlin, all-rounder (multi-volume), each
+        language expert...). Five actions:
 
-        - list: show all knowledge bases and which one binds to a role.
-        - must_read (kb): the MUST-READ section — read it BEFORE starting any
-          task with that role active.
+        - list: show all knowledge base volumes grouped by role (each volume has
+          its own id; a role can bind unlimited volumes).
+        - must_read (kb): the MUST-READ section of that volume — read it BEFORE
+          starting any task with that role active.
         - index (kb): quick index mapping "what you want" to "which section"
-          — fastest way to locate a topic.
+          — fastest way to locate a topic in that volume.
         - search (kb, query): keyword search returning ranked section hits with
           context previews.
         - read (kb, section): read one full section (section = title, plain
@@ -98,12 +99,18 @@ class KnowledgeBaseTool(
     private suspend fun renderList(): String {
         val all = service.listAll()
         if (all.isEmpty()) return "(没有可用知识库 —— assets/knowledge 为空或全部损坏)"
+        // v2 多卷制：同角色可绑多卷（加卷即扩充）—— 按角色分组展示，
+        // 每卷独立 id，检索动作（must_read/index/search/read）按卷 id 用。
+        val byRole = all.groupBy { it.roleId }
         return buildString {
-            appendLine("可用知识库（${all.size} 套）：")
-            all.forEach {
-                appendLine("- id=${it.id} ·「${it.title}」· 角色=${roleName(it.roleId)} · ${it.sectionCount} 章节 · v${it.version} · 必看 ${it.mustReadChars} 字")
+            appendLine("可用知识库（${all.size} 套 · ${byRole.size} 个角色，同角色多卷按序号展开）：")
+            byRole.forEach { (roleId, volumes) ->
+                appendLine("角色 ${roleName(roleId)} 绑定 ${volumes.size} 卷：")
+                volumes.forEachIndexed { i, v ->
+                    appendLine("  卷${i + 1} - id=${v.id} ·「${v.title}」· ${v.sectionCount} 章节 · v${v.version} · 必看 ${v.mustReadChars} 字")
+                }
             }
-            appendLine("用法：must_read 先读必看 → index/search 定位 → read 精读。")
+            appendLine("用法：must_read 先读必看 → index/search 定位 → read 精读（kb 参数传卷 id）。")
         }
     }
 
