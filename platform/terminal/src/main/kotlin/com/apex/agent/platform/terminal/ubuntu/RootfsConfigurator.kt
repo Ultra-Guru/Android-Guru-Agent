@@ -45,7 +45,15 @@ class RootfsConfigurator(
      * /etc/timezone + /etc/localtime 符号链接；`tzdata`（essential）postinst
      * 读取 /etc/timezone 完成生效。null = 不写（UTC 回退，历史行为）。
      */
-    private val timezone: String? = null
+    private val timezone: String? = null,
+    /**
+     * 宿主进程补充组 gid（对话实录 #14）：PRoot -0 伪装 uid/gid=0，但补充组
+     * 继承自 Android 宿主（3003 inet / 9997 everybody / 101xx…），guest
+     * /etc/group 无这些条目 → coreutils id/groups 每次启动刷 6 行
+     * “groups: cannot find name for group ID xxx”。生产 DI 注入
+     * Os.getgroups()；测试默认空（不动作）。
+     */
+    private val hostSupplementaryGids: () -> List<Int> = { emptyList() }
 ) {
 
     /** 配置结果 —— 全部动作与 warning 进入返回值（可断言、可入日志），不靠 println。 */
@@ -112,6 +120,24 @@ class RootfsConfigurator(
             actions.add("hostname: wrote '$hostname'")
         } else {
             actions.add("hostname: kept existing '${hostnameFile.readText().trim()}'")
+        }
+
+        // ── 3b. /etc/group：宿主补充组条目补齐（实录 #14：PRoot 组噪音根因）──
+        // PRoot -0 伪装 root，但补充组继承宿主 → guest 内无对应 gid 条目，
+        // id/groups 启动即报 “cannot find name for group ID”。幂等补进
+        // g<gid>:x:<gid>: 行（命名避开真实组名；已存在的 gid 跳过）。
+        val gids = hostSupplementaryGids().distinct().filter { it > 0 }
+        if (gids.isNotEmpty()) {
+            val groupFile = File(root, "etc/group")
+            val existing = if (groupFile.isFile) groupFile.readText() else ""
+            val additions = buildGroupAdditions(existing, gids)
+            if (additions.isNotEmpty()) {
+                groupFile.parentFile?.mkdirs()
+                groupFile.appendText(additions.joinToString("") { "$it\n" })
+                actions.add("group: added ${additions.size} host supplementary gid entries (${gids.joinToString(",")})")
+            } else {
+                actions.add("group: all ${gids.size} host supplementary gids already mapped")
+            }
         }
 
         // ── 4. locale（C.UTF-8 内建于 glibc，无需生成）──
@@ -290,5 +316,37 @@ class RootfsConfigurator(
 
     companion object {
         const val DEFAULT_HOSTNAME = "android-guru"
+
+        /**
+         * 解析 /proc/self/status 的 “Groups:” 行（实录 #14 的生产采集端）。
+         *
+         * 为什么不用 android.system.Os.getgroups()：该方法在 App 编译 SDK 的
+         * android.system.Os 里不存在（CI 实测 unresolved reference）。
+         * /proc/self/status 是内核态真值，全 Android 版本可读、纯 JVM 无 API
+         * 依赖 —— PRoot 继承的正是这份补充组列表。
+         */
+        fun parseSupplementaryGids(statusContent: String): List<Int> =
+            statusContent.lineSequence()
+                .firstOrNull { it.startsWith("Groups:") }
+                ?.removePrefix("Groups:")
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.split(Regex("\\s+"))
+                ?.mapNotNull { it.toIntOrNull() }
+                ?.distinct()
+                ?: emptyList()
+
+        /**
+         * 为缺失 gid 生成 /etc/group 行（实录 #14；纯函数可单测）：
+         * - 幂等：已存在的 gid（第三字段）跳过；
+         * - g<gid> 命名避开真实组名冲突；负数/零过滤。
+         */
+        fun buildGroupAdditions(existingGroupContent: String, gids: List<Int>): List<String> {
+            val existingGids = existingGroupContent.lines()
+                .mapNotNull { it.split(":").getOrNull(2)?.trim()?.toIntOrNull() }
+                .toSet()
+            return gids.distinct().filter { it > 0 && it !in existingGids }
+                .map { "g$it:x:$it:" }
+        }
     }
 }

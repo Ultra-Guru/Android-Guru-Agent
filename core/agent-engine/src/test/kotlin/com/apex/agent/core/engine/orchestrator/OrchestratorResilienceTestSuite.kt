@@ -226,4 +226,47 @@ class LoopDetectorTests {
         assertEquals(0, detector.windowCount)
         assertEquals(null, detector.detect())
     }
+
+    // ═══ 对话实录 #11：幂等只读白名单 —— 确认式重读不误判死循环 ═══
+
+    @Test
+    fun `idempotent read tool confirmation re-reads do not fire`() {
+        val detector = LoopDetector(maxRepetitions = 3, windowSize = 10)
+        // 实录同款：AgentProfileList 连调 3 次确认 isDefault —— 旧实现在此
+        // 触发 [ORCHESTRATOR RECOVERY NOTICE]，把正常工作流判成死循环
+        repeat(3) { detector.record("AgentProfileList", "{}") }
+        assertEquals(null, detector.detect())
+        // 宽容上限内（4、5 次）仍然放行
+        detector.record("AgentProfileList", "{}")
+        detector.record("AgentProfileList", "{}")
+        assertEquals(null, detector.detect())
+    }
+
+    @Test
+    fun `idempotent read tool still fires at relaxed threshold`() {
+        val detector = LoopDetector(maxRepetitions = 3, windowSize = 10)
+        repeat(6) { detector.record("ToolList", "{}") }
+        val signal = detector.detect()
+        assertTrue("6 次相同幂等调用仍是循环，必须拦截", signal is LoopSignal.Repetition)
+        assertEquals(6, (signal as LoopSignal.Repetition).repetitions)
+    }
+
+    @Test
+    fun `non whitelisted tools keep the strict threshold`() {
+        val detector = LoopDetector(maxRepetitions = 3, windowSize = 10)
+        repeat(3) { detector.record("WebFetch", """{"url":"https://x"}""") }
+        // 白名单外工具 3 次即触发 —— 严格阈值不受白名单影响
+        assertTrue(detector.detect() is LoopSignal.Repetition)
+    }
+
+    @Test
+    fun `oscillation between read tools is never whitelisted away`() {
+        val detector = LoopDetector(maxRepetitions = 5, windowSize = 10)
+        // 幂等工具间的乒乓（read-A → read-B → read-A …）仍是病态 —— 不豁免
+        repeat(2) {
+            detector.record("AgentProfileList", "{}")
+            detector.record("ToolList", "{}")
+        }
+        assertTrue(detector.detect() is LoopSignal.Oscillation)
+    }
 }

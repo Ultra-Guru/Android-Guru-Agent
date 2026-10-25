@@ -164,13 +164,18 @@ class ToolSchema internal constructor(
      *   real booleans, not `"true"`); numeric bounds when declared;
      * - *unknown extra parameters are allowed* — models add junk keys and
      *   rejecting them causes retry loops, not better behaviour.
+     *
+     * 必填参数别名互认（对话实录 #8）：模型在 camelCase 与 snake_case 两种
+     * 风格间混用是常态（session_id ↔ sessionId）。旧实现把 snake_case 别名当
+     * “未知多余键”静默忽略，再报 camelCase 缺失 —— 同一参数白丢一轮调用。
+     * 现在必填参数的另一种命名风格在场时视为已提供（工具层同步宽容读取）。
      */
     fun validate(arguments: JsonObject): SchemaValidation {
         val violations = mutableListOf<SchemaViolation>()
         for (p in params) {
             val value = arguments[p.name]
             if (value == null) {
-                if (p.required) {
+                if (p.required && aliasKeyOf(p.name, arguments) == null) {
                     violations += SchemaViolation(p.name, "required but missing")
                 }
                 continue
@@ -178,6 +183,19 @@ class ToolSchema internal constructor(
             validateValue(p, value, violations)
         }
         return SchemaValidation.of(violations)
+    }
+
+    /**
+     * 必填参数的别名在场判定：camelCase 名的 snake_case 形式
+     *（sessionId → session_id），或 snake_case 名的 camelCase 形式
+     *（provider_id → providerId），任一在场即视为参数已提供。
+     */
+    private fun aliasKeyOf(name: String, arguments: JsonObject): String? {
+        val variants = buildList {
+            if (name.any { it.isUpperCase() }) add(camelToSnake(name))
+            if (name.contains('_')) add(snakeToCamel(name))
+        }
+        return variants.firstOrNull { arguments.containsKey(it) }
     }
 
     private fun validateValue(p: ToolParam, value: JsonElement, out: MutableList<SchemaViolation>) {
@@ -323,6 +341,17 @@ class ToolSchema internal constructor(
     }
 
     companion object {
+        /** sessionId → session_id（实录 #8 别名互认的命名变换，纯函数）。 */
+        internal fun camelToSnake(name: String): String = name.flatMap { c ->
+            if (c.isUpperCase()) listOf('_', c.lowercaseChar()) else listOf(c)
+        }.joinToString("")
+
+        /** provider_id → providerId。 */
+        internal fun snakeToCamel(name: String): String =
+            name.split('_').mapIndexed { i, part ->
+                if (i == 0 || part.isEmpty()) part else part.replaceFirstChar { it.uppercase() }
+            }.joinToString("")
+
         /**
          * Import a v1 hand-written `parametersSchema` string. Best effort:
          * reads `properties` (name/type/description/enum/required via the

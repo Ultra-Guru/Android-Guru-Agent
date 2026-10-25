@@ -197,7 +197,19 @@ object TerminalModule {
     ): RootfsConfigurator = RootfsConfigurator(
         dnsServers = { resolveAndroidDnsServers(context) },
         localeGen = listOf("zh_CN.UTF-8 UTF-8", "en_US.UTF-8 UTF-8"),
-        timezone = java.util.TimeZone.getDefault().id
+        timezone = java.util.TimeZone.getDefault().id,
+        // 对话实录 #14：宿主补充组注入 guest /etc/group —— 消除 PRoot 启动时
+        // “groups: cannot find name for group ID 3003/9997/…” 六行刷屏噪音。
+        // 采集端用 /proc/self/status 的 Groups: 行（内核态真值、全版本可读；
+        // android.system.Os 无 getgroups —— CI 实测该引用不可解析）。
+        // 读取失败（极端环境）时静默回退空列表（configure 不动作）。
+        hostSupplementaryGids = {
+            runCatching {
+                RootfsConfigurator.parseSupplementaryGids(
+                    java.io.File("/proc/self/status").readText()
+                )
+            }.getOrDefault(emptyList())
+        }
     )
 
     @Provides

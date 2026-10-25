@@ -79,13 +79,17 @@ class TerminalObserveTool(
 
     override suspend fun invoke(arguments: String): String {
         val json = Json.parseToJsonElement(arguments).jsonObject
-        val sessionId = json["sessionId"]?.jsonPrimitive?.content?.toLongOrNull() ?: throw IllegalArgumentException("sessionId required")
-        val mode = runCatching { TerminalRuntime.ObserveMode.valueOf(json["mode"]?.jsonPrimitive?.content ?: "SEMANTIC") }.getOrDefault(TerminalRuntime.ObserveMode.SEMANTIC)
-        val afterCursor = json["afterCursor"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
-        val maxBytes = json["maxBytes"]?.jsonPrimitive?.content?.toIntOrNull() ?: 12000
-        val maxEvents = json["maxEvents"]?.jsonPrimitive?.content?.toIntOrNull() ?: 200
+        // 别名宽容（实录 #8/#9）：session_id / cursor 简写均可
+        val sessionId = json.longArg("sessionId", "session_id")
+            ?: throw IllegalArgumentException("sessionId required (accepted: sessionId, session_id)")
+        val mode = runCatching { TerminalRuntime.ObserveMode.valueOf(json.stringArg("mode") ?: "SEMANTIC") }.getOrDefault(TerminalRuntime.ObserveMode.SEMANTIC)
+        // 实录 #9：模型把 "cursor" 当入参名传入时被静默忽略 → afterCursor=0
+        // 从头重读。accept cursor / after_cursor 别名。
+        val afterCursor = json.longArg("afterCursor", "after_cursor", "cursor") ?: 0L
+        val maxBytes = json.intArg("maxBytes", "max_bytes") ?: 12000
+        val maxEvents = json.intArg("maxEvents", "max_events") ?: 200
         // T82：SCREEN 模式 scrollback 尾部行数（默认 0 = 不带）
-        val scrollbackLines = json["scrollbackLines"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
+        val scrollbackLines = json.intArg("scrollbackLines", "scrollback_lines") ?: 0
         val out = execute(Input(sessionId, mode, afterCursor, maxBytes, maxEvents, scrollbackLines))
         return buildJsonObject {
             put("mode", JsonPrimitive(out.mode))
@@ -130,7 +134,12 @@ class TerminalObserveTool(
                         put("inputState", JsonPrimitive(sem.input.state.name))
                     }
                 }
-                TerminalRuntime.ObserveMode.EVENT -> put("eventCount", JsonPrimitive(out.events?.size ?: 0))
+                TerminalRuntime.ObserveMode.EVENT -> {
+                    // 实录 #9：EVENT 只返回计数，字节本体在 RingBuffer —— 曾被
+                    // 模型当作“已读到输出”。附带指引把读文本的正确模式说清。
+                    put("eventCount", JsonPrimitive(out.events?.size ?: 0))
+                    put("hint", JsonPrimitive(AgentGuidance.EVENT_MODE_HINT))
+                }
             }
         }.toString()
     }

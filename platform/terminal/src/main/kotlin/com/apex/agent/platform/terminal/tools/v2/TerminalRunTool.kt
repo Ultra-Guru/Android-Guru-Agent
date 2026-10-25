@@ -73,12 +73,19 @@ class TerminalRunTool(
 
     override suspend fun invoke(arguments: String): String {
         val json = Json.parseToJsonElement(arguments).jsonObject
-        val sessionId = json["sessionId"]?.jsonPrimitive?.content?.toLongOrNull() ?: throw IllegalArgumentException("sessionId required")
-        val command = json["command"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("command required")
-        val background = json["background"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: false
-        val timeoutMs = json["timeoutMs"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
+        // 别名宽容（实录 #8）：schema 层已对必填参数互认，工具层同步读取
+        val sessionId = json.longArg("sessionId", "session_id")
+            ?: throw IllegalArgumentException("sessionId required (accepted: sessionId, session_id)")
+        val command = json.stringArg("command") ?: throw IllegalArgumentException("command required")
+        val background = json.boolArg("background") ?: false
+        val timeoutMs = json.longArg("timeoutMs", "timeout_ms") ?: 0L
         val out = execute(Input(sessionId, command, background, timeoutMs))
-        return buildJsonObject { put("jobId", JsonPrimitive(out.jobId)); put("sessionId", JsonPrimitive(out.sessionId)); put("state", JsonPrimitive(out.state)); put("startCursor", JsonPrimitive(out.startCursor)); put("owner", JsonPrimitive(out.owner)); put("background", JsonPrimitive(out.background)) }.toString()
+        // heredoc 前置警告（实录 #7）：不阻断，但把挂死风险与自救路径写明
+        val heredocHint = AgentGuidance.heredocAdvisory(command)
+        return buildJsonObject {
+            put("jobId", JsonPrimitive(out.jobId)); put("sessionId", JsonPrimitive(out.sessionId)); put("state", JsonPrimitive(out.state)); put("startCursor", JsonPrimitive(out.startCursor)); put("owner", JsonPrimitive(out.owner)); put("background", JsonPrimitive(out.background))
+            heredocHint?.let { put("hint", JsonPrimitive(it)) }
+        }.toString()
     }
 
     data class Input(

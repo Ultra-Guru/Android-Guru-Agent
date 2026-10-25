@@ -225,31 +225,35 @@ glibc-2.39 guest）；安装失败时测试自我跳过高级别场景并诚实�
   `returnDefaultValues`；
 - [ ] 同步更新本文 §2 矩阵与 §7 清单。
 
-## 7. 测试文件总清单（79 个）
+## 7. 测试文件总清单（82 个）
 
 <details>
-<summary><b>core:agent-engine（3）</b></summary>
+<summary><b>core:agent-engine（4）</b></summary>
 
 ```
 src/test/kotlin/com/apex/agent/core/engine/
 ├── RoleRoutingGoldenTest.kt
+├── compression/ToolOutputTruncatorNoticeTest.kt   （对话实录 #6：截断告示回归锁）
 └── orchestrator/
     ├── OrchestratorTestSuite.kt            （含本 PR 新增流式语义回归组）
-    ├── OrchestratorResilienceTestSuite.kt
+    ├── OrchestratorResilienceTestSuite.kt   （含幂等只读白名单回归组）
     ├── FakeLlmClient.kt / FakeToolExecutor.kt / FakeToolRegistry.kt / FakeConversationMemory.kt（替身）
 ```
 </details>
 
 <details>
-<summary><b>core:tool-registry（4）</b></summary>
+<summary><b>core:tool-registry（6）</b></summary>
 
 ```
 src/test/kotlin/com/apex/agent/core/tools/
 ├── DefaultToolExecutorStreamingTest.kt
 ├── SafeAgentToolStreamingTest.kt
-└── builtin/browser/
-    ├── DomParserTest.kt
-    └── BrowserScriptTest.kt
+├── ToolSchemaAliasTest.kt               （对话实录 #8：必填参数别名互认回归锁）
+└── builtin/
+    ├── WebHintsTest.kt                  （对话实录 #1/#4/#5：SPA 壳探测与状态码向导）
+    └── browser/
+        ├── DomParserTest.kt
+        └── BrowserScriptTest.kt
 ```
 </details>
 
@@ -278,10 +282,13 @@ src/test/kotlin/com/apex/agent/platform/memory/
 </details>
 
 <details>
-<summary><b>platform:terminal（45 JVM + 5 仪器）</b></summary>
+<summary><b>platform:terminal（46 JVM + 5 仪器）</b></summary>
 
 ```
-src/test/kotlin/com/apex/agent/platform/terminal/   （45，按 §3.4 域分组）
+src/test/kotlin/com/apex/agent/platform/terminal/   （46，按 §3.4 域分组；
+  含 tools/v2/AgentGuidanceTest.kt —— 对话实录 #7/#8/#9：heredoc 警告/别名
+  宽容/EVENT 提示纯函数回归锁；ubuntu/RootfsConfiguratorTest.kt 增补组条目
+  回归组 —— 对话实录 #14）
 src/androidTest/kotlin/com/apex/agent/platform/terminal/   （5，真机）
 ```
 </details>

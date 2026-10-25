@@ -230,7 +230,23 @@ class AgentSettingGetTool(
     override suspend fun executeStructured(arguments: String): ToolResult {
         val snap = host.snapshot()
         val json = AgentSettingsJson.encodeToString(AgentSettingsSnapshot.serializer(), snap)
-        return ToolResult.ok(json)
+        // 实录 #12：模型想配模型/供应商时先查了本工具，发现没有 provider/
+        // model/key 字段就放弃了。附指针把“不在这里 + 在哪 + 怎么开”说清。
+        return ToolResult.ok(json + "\n\n" + MODEL_CONFIG_POINTER)
+    }
+
+    companion object {
+        /**
+         * AgentSettingGet 输出尾指针（实录 #12）：运行时配置 ≠ 模型配置。
+         * AgentProfileList / AgentProfileSetDefault 已入 CORE 可直接调；
+         * key 写入与批量导入在 CATALOG，需 ToolSearch → ToolOpen 两跳。
+         */
+        internal const val MODEL_CONFIG_POINTER =
+            "Note: this snapshot covers RUNTIME settings only — model providers, model " +
+                "profiles and API keys are NOT here. Model config lives in: AgentProfileList " +
+                "(list profiles), AgentProfileSetDefault (switch the default profile). For API " +
+                "keys and bulk import use ToolSearch(\"provider model api key\") then ToolOpen " +
+                "AgentProviderSetKey / ModelConfigImport."
     }
 }
 
@@ -689,7 +705,16 @@ class AgentProviderSetKeyTool(
         val ok = setKey(providerId, apiKey)
         return if (ok) {
             // 注意：绝不返回 key 内容
-            ToolResult.ok("OK: API key for provider '$providerId' stored (encrypted). Length: ${apiKey.length} chars. Test the connection via a small chat completion.")
+            // 实录 #13：密钥 write-only（安全设计，不可回读）—— 模型无法用工具
+            // 验证“写对了”。把唯一的写确认（长度）与真实验证路径（小样本调用）
+            // 显式写进输出，避免模型反复盲写或假装已验证。
+            ToolResult.ok(
+                "OK: API key for provider '$providerId' stored (encrypted). Length: ${apiKey.length} chars. " +
+                    "Keys are write-only by design — no tool can read them back; the stored length above " +
+                    "is your only write confirmation. To VERIFY the key actually works: (1) call " +
+                    "AgentProfileSetDefault to select a profile of this provider, (2) send a tiny test " +
+                    "message with that model — a successful completion is the only real proof."
+            )
         } else {
             ToolResult.fail(ToolErrorCode.EXECUTION_FAILED, "host rejected the key write (provider may not exist)")
         }

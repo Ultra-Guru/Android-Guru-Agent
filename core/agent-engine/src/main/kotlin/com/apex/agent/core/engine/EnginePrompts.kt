@@ -187,9 +187,9 @@ internal object EnginePrompts {
             // “什么场景该用什么终端形态”，顾问在模型违背时按滑窗计数提醒。
             appendLine("## Terminal-Use Policy (MANDATORY)")
             appendLine("- One-shot commands → TerminalExec (structured stdout/stderr/exit_code).")
-            appendLine("- You have started N consecutive one-shot shell commands → STOP. Switch to a session")
-            appendLine("  flow: TerminalCreate → TerminalRun (background if long) → TerminalObserve/TerminalWait.")
-            appendLine("  Sessions preserve cwd/env/state across commands.")
+            appendLine("- You have started N consecutive one-shot shell commands → for multi-step or long-running work,")
+            appendLine("  switch to a session flow: TerminalCreate → TerminalRun (background if long) → TerminalObserve/TerminalWait.")
+            appendLine("  Sessions preserve cwd/env/state across commands. Simple one-liner probes may still use TerminalExec.")
             appendLine("- Interactive programs (gh auth login, python REPL, vim, apt prompts) REQUIRE a session:")
             appendLine("  TerminalCreate + TerminalWrite.")
             appendLine("- Toolchain tasks (apt install / git clone / npm / pip / cargo / make / gcc): check")
@@ -197,6 +197,14 @@ internal object EnginePrompts {
             appendLine("  to the user.")
             appendLine("- Never re-run a failed one-shot command more than twice — inspect output, open a session,")
             appendLine("  or ask the user.")
+            // 实录 #7：heredoc 直灌 PTY 把会话挂死在 PS2 '>' —— Ctrl+C 经信号层
+            // 送不到前台 shell 本体，最终只能 SIGKILL 整会话。预防（先落文件）
+            // 与自救（KEY=CTRL_C）双写进策略层。
+            appendLine("- NEVER feed multi-line heredoc scripts (cmd <<'EOF' ... EOF) into TerminalRun/TerminalWrite —")
+            appendLine("  write the script to a file first (CodeWrite / Write), then execute the file. If a session")
+            appendLine("  hangs at a '>' (PS2) continuation prompt, recover with TerminalWrite")
+            appendLine("  {\"kind\":\"KEY\",\"key\":\"CTRL_C\"} — that reaches the shell through the PTY; JOB-scope")
+            appendLine("  TerminalSignal cannot interrupt the shell itself.")
             appendLine()
             // ═══ Shell Dialect Map（2026-10 用户反馈「执行命令出错率特别高」）═══
             // 旧提示词宣称“PRoot Ubuntu is a full Linux userland”却从不告诉模型
@@ -229,6 +237,13 @@ internal object EnginePrompts {
             appendLine("- Browser tools (BrowserNavigate + Browser* family): ONLY for real web automation")
             appendLine("  needing clicks/typing on live pages (login, forms, captcha, ordering).")
             appendLine("  For reading a page's content use WebFetch; for repo data use the lanes above.")
+            // 实录 #1/#2/#3：SPA 空壳页面让模型连换三条路（WebFetch→浏览器→
+            // 搜索）全部空转，正确路径是“找它背后的 XHR 接口”。路由规则
+            // 直接写死：空壳 → 探 API 版本，不上浏览器。
+            appendLine("- Web page returned an empty app shell (SPA: 'Download App' hint, near-blank body)?")
+            appendLine("  The content is fetched client-side: do NOT switch to browser rendering first — find")
+            appendLine("  the backing XHR/API endpoint (probe /api/v1|v2|v3/... siblings of the path, or inspect")
+            appendLine("  the page's JS bundle) and fetch it with HttpRequest. WebFetch flags such shells for you.")
             appendLine()
 
             // ═══ 权限阶梯（让 Agent 知道自己有什么、缺什么、怎么升级）═══
@@ -599,7 +614,11 @@ internal object EnginePrompts {
             appendLine("6. VERIFY: Use Read again to confirm changes are correct")
             appendLine()
             appendLine("## Output Management")
-            appendLine("- All tools limit output. Check truncation notices.")
+            appendLine("- All tools limit output. Truncation markers — \"[... N chars omitted ...]\",")
+            appendLine("  \"[... truncated at N/M chars]\", \"[... truncated at N chars — the body CONTINUES ...]\",")
+            appendLine("  \"[OUTPUT TRUNCATED: ...]\" — mean MORE content exists: the output is INCOMPLETE.")
+            appendLine("  NEVER treat a marker-terminated output as the full result or conclude from it —")
+            appendLine("  narrow the query (offset / page / head / grep / max_chars) or paginate to read the rest first.")
             appendLine("- For large outputs, use pagination (offset, page, scroll)")
             appendLine("- Prefer targeted queries over broad ones")
             appendLine("- Use shell pipes (| head, | grep, | tail) to pre-filter")
