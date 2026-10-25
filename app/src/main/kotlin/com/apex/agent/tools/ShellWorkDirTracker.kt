@@ -51,6 +51,19 @@ class ShellWorkDirTracker(
 
     private val segmentSplit = Regex(""";|\|\||&&|\||\r?\n""")
 
+    /**
+     * guest 语义根前缀（v3：cd 记忆与 TerminalExec 的 guest cwd 语义对齐）——
+     * Ubuntu 通道里 `cd /workspace/proj && make` 此前因宿主侧 `File("/workspace")
+     * .isDirectory == false` 被静默丢弃，「cd 不被记忆」表现为偶发错位。
+     * guest 根是宿主 bind 源的镜像，存在性由 ProotCommandSpawner.mapGuestStyleCwd
+     * 在使用侧验证（bind 源目录 = guest 物理目录）。
+     */
+    private val guestRootPrefixes = listOf("/workspace", "/sdcard", "/root")
+
+    private fun isGuestStylePath(p: String): Boolean =
+        p == "~" || p.startsWith("~/") ||
+            guestRootPrefixes.any { p == it || p.startsWith("$it/") }
+
     /** 取命令最后一个简单段的 `cd <dir>` 目标；非 cd / 不可静态解析 → null。 */
     internal fun lastCdTarget(command: String): String? {
         val last = command.trim().split(segmentSplit).lastOrNull()?.trim() ?: return null
@@ -67,7 +80,15 @@ class ShellWorkDirTracker(
 
     /** 相对当前目录解析目标；仅当解析结果真实存在且为目录时采纳。 */
     private fun resolve(target: String): String? = runCatching {
+        // guest 语义路径：原样记忆（~/ 展开）。使用侧（planGuestCwd）按 bind 源
+        // 验证存在性 —— 宿主侧无法可靠判定 guest 内部结构，但 bind 源可以。
+        if (isGuestStylePath(target)) {
+            return@runCatching if (target == "~") "/root" else target
+        }
         val base = current ?: defaultBase
+        // 当前记忆是 guest 路径时的相对目标无法在宿主侧可靠解析 —— 放弃本次
+        // 记忆（保持旧目录），不猜路径。
+        if (isGuestStylePath(base) && !target.startsWith("/")) return@runCatching null
         val f = if (target.startsWith("/")) File(target) else File(base, target)
         val canon = f.canonicalFile
         if (canon.isDirectory) canon.path else null
