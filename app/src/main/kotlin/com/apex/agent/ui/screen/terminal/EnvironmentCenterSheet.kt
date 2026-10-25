@@ -1,548 +1,378 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.apex.agent.ui.screen.terminal
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Android
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.annotation.StringRes
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import com.apex.agent.platform.terminal.ubuntu.lifecycle.UbuntuLifecycleCoordinator
 
 /**
- * 环境中心（终端页顶栏图标入口）。
+ * 环境中心 Sheet（T96 自旧版全量转移 + M3 化重写）。
  *
- * 三个层次的真实环境能力：
- *  1. **Ubuntu 24.04 LTS rootfs（APK 内置）** —— 离线解包链（本地拷贝 + SHA-256
- *     复验 → 解压 → 引导），状态驱动按钮（解包/取消/修复/删除），能力
- *     （bash/apt/python…）快览，磁盘占用展示；
- *  2. **Android 本地 Shell** —— 内置环境（mksh/toybox），零解包即用；
- *  3. **环境依赖包**（Ubuntu 内）—— JDK/Git/Gradle/SDK/NDK…，apt 命令真实路由
- *     到 Ubuntu 会话执行（镜像源可切换）。
- *
- * 全部状态来自 [TerminalViewModel]（UbuntuLifecycleCoordinator / EnvironmentProvisioner），
- * 无写死数据。
+ * 三卡结构（语义与旧版一致）：
+ *  1. Ubuntu rootfs 卡 —— 阶段徽章 / 磁盘占用 / 安装进度 / 能力清单 /
+ *     失败根因 / 降级引导；按钮按阶段切换（解包/取消/收尾引导/修复/删除，
+ *     删除带确认对话框）；
+ *  2. Android 本地 Shell 卡（内置徽章）；
+ *  3. 依赖安装卡 —— 镜像开关（TUNA，持久化 dep_use_mirror）、一键全装/
+ *     仅 Android 组、逐项安装 + 等宽安装日志。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun EnvironmentCenterSheet(
-    onDismiss: () -> Unit,
-    ubuntu: UbuntuLifecycleCoordinator.LifecycleState,
-    progress: UbuntuLifecycleCoordinator.LifecycleProgress?,
-    rootfsSize: Long?,
-    onInstallUbuntu: () -> Unit,
-    onCancelUbuntuInstall: () -> Unit,
-    onRepairUbuntu: () -> Unit,
-    onRemoveUbuntu: () -> Unit,
-    onCreateUbuntuSession: () -> Unit,
-    useMirror: Boolean,
-    onToggleMirror: (Boolean) -> Unit,
-    depItems: List<TerminalDepCenter.DepItem>,
-    install: TerminalDepCenter.InstallState,
-    onInstallDep: (TerminalDepCenter.DepItem) -> Unit,
-    onInstallAll: () -> Unit,
-    onInstallAndroid: () -> Unit
+    viewModel: TerminalViewModel,
+    onDismiss: () -> Unit
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var showRemoveConfirm by remember { mutableStateOf(false) }
+    TerminalConsoleTheme {
+        val lifecycle by viewModel.ubuntuLifecycleState.collectAsStateWithLifecycle()
+        val progress by viewModel.ubuntuProgress.collectAsStateWithLifecycle(initialValue = null)
+        val rootfsSize = viewModel.rootfsSize
+        val installState by viewModel.depCenter.install.collectAsStateWithLifecycle()
+        val useMirror by viewModel.depCenter.useMirror.collectAsStateWithLifecycle()
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLowest
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // ── 标题 ──
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SurfaceBadge(Icons.Default.Layers, MaterialTheme.colorScheme.primary)
-                Column {
-                    Text(stringResource(R.string.term_env_center_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        ModalBottomSheet(onDismissRequest = onDismiss, containerColor = ConsoleTokens.background) {
+            LazyColumn(
+                Modifier
+                    .fillMaxWidth()
+                    .height(560.dp)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    Text(
+                        stringResource(R.string.term_env_center_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = ConsoleTokens.onSurface,
+                        fontFamily = FontFamily.Monospace
+                    )
                     Text(
                         stringResource(R.string.term_env_center_desc),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = ConsoleTokens.onSurfaceVariant
+                    )
+                }
+                item {
+                    UbuntuCard(viewModel, lifecycle, progress, rootfsSize)
+                }
+                item {
+                    AndroidShellCard()
+                }
+                item {
+                    DepsCard(
+                        viewModel = viewModel,
+                        installState = installState,
+                        useMirror = useMirror,
+                        onUseMirror = { viewModel.depCenter.setUseMirror(it) }
                     )
                 }
             }
+        }
+    }
+}
 
-            // ═══ 1. Ubuntu rootfs 环境 ═══
-            UbuntuEnvironmentCard(
-                ubuntu = ubuntu,
-                progress = progress,
-                rootfsSize = rootfsSize,
-                onInstall = onInstallUbuntu,
-                onCancel = onCancelUbuntuInstall,
-                onRepair = onRepairUbuntu,
-                onRemove = { showRemoveConfirm = true },
-                onCreateSession = onCreateUbuntuSession
-            )
+// ═══════════════ Ubuntu rootfs 卡 ═══════════════
 
-            // ═══ 2. Android 本地 Shell（内置）═══
-            SettingsCard(Icons.Default.Android, "Android Shell") {
+@Composable
+private fun UbuntuCard(
+    viewModel: TerminalViewModel,
+    lifecycle: UbuntuLifecycleCoordinator.LifecycleState,
+    progress: UbuntuLifecycleCoordinator.LifecycleProgress?,
+    rootfsSize: Long?
+) {
+    val phase = lifecycle.phase
+    var confirmDelete by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(phase) {
+        if (phase == UbuntuLifecycleCoordinator.Phase.READY) viewModel.refreshRootfsSize()
+    }
+
+    SectionCard(title = stringResource(R.string.term_ubuntu_card_title)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                PhaseBadge(phase)
+                Spacer(Modifier.size(8.dp))
                 Text(
-                    stringResource(R.string.term_android_shell_desc),
+                    stringResource(R.string.term_ubuntu_card_desc),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = ConsoleTokens.onSurfaceVariant
                 )
-                Spacer(Modifier.height(8.dp))
-                StatusBadge(text = stringResource(R.string.term_builtin), color = Color(0xFF3E9C51))
             }
-
-            // ═══ 3. 环境依赖（Ubuntu 内工具链）═══
-            SettingsCard(Icons.Default.Terminal, stringResource(R.string.term_deps_title)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(stringResource(R.string.term_use_mirror), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                        Text(stringResource(R.string.term_mirror_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(
-                        checked = useMirror,
-                        onCheckedChange = onToggleMirror,
-                        colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
-                    )
-                }
-                Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ActionButton(stringResource(R.string.term_install_all), install.runningId != null, Modifier.weight(1f)) { onInstallAll() }
-                    ActionButton(stringResource(R.string.term_android_deps), install.runningId != null, Modifier.weight(1f)) { onInstallAndroid() }
-                }
-                Spacer(Modifier.height(10.dp))
-                Text(stringResource(R.string.term_install_individually), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(6.dp))
-                depItems.forEach { item ->
-                    DepRow(
-                        item = item,
-                        // 任一安装（含批量）进行中时全部禁用，避免单行覆写批量状态
-                        busy = install.runningId != null,
-                        installing = install.runningId == item.id,
-                        onInstall = { onInstallDep(item) }
-                    )
-                }
-                if (install.log.isNotEmpty()) {
-                    Spacer(Modifier.height(10.dp))
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            rootfsSize?.let {
+                Text(
+                    stringResource(R.string.term_disk_usage, formatBytes(it)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = ConsoleTokens.onSurfaceVariant,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+            when (phase) {
+                UbuntuLifecycleCoordinator.Phase.INSTALLING -> {
+                    LinearProgressIndicator(
+                        progress = { (progress?.percent ?: 0) / 100f },
                         modifier = Modifier.fillMaxWidth()
-                    ) {
+                    )
+                    progress?.let {
                         Text(
-                            install.log.takeLast(4000),
-                            modifier = Modifier.padding(10.dp),
+                            stringResource(
+                                R.string.term_progress_bytes,
+                                formatBytes(it.bytesTransferred),
+                                formatBytes(it.bytesTotal ?: 0L)
+                            ),
                             style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = ConsoleTokens.onSurfaceVariant,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            stringResource(R.string.term_unpacking),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = ConsoleTokens.amber
+                        )
+                        TextButton(onClick = { viewModel.cancelInstallUbuntu() }) {
+                            Text(stringResource(R.string.term_cancel))
+                        }
+                    }
+                }
+                UbuntuLifecycleCoordinator.Phase.READY -> {
+                    lifecycle.capabilities?.takeIf { it.isNotEmpty() }?.let { list ->
+                        Text(
+                            stringResource(R.string.term_capabilities) + ": " +
+                                list.joinToString(" · ") { c -> c.name + "(" + c.status + ")" },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = ConsoleTokens.lineInfo,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                    lifecycle.bootstrapNote?.let {
+                        Text(
+                            stringResource(R.string.term_bootstrap_note) + " " + it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = ConsoleTokens.amber
                         )
                     }
                 }
-            }
-        }
-    }
-
-    if (showRemoveConfirm) {
-        AlertDialog(
-            onDismissRequest = { showRemoveConfirm = false },
-            title = { Text(stringResource(R.string.term_remove_ubuntu_title)) },
-            text = {
-                Text(stringResource(R.string.term_remove_ubuntu_text))
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showRemoveConfirm = false
-                    onRemoveUbuntu()
-                }) { Text(stringResource(R.string.term_delete), color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRemoveConfirm = false }) { Text(stringResource(R.string.term_cancel)) }
-            }
-        )
-    }
-}
-
-// ═══ Ubuntu 环境卡 ═══
-
-@Composable
-private fun UbuntuEnvironmentCard(
-    ubuntu: UbuntuLifecycleCoordinator.LifecycleState,
-    progress: UbuntuLifecycleCoordinator.LifecycleProgress?,
-    rootfsSize: Long?,
-    onInstall: () -> Unit,
-    onCancel: () -> Unit,
-    onRepair: () -> Unit,
-    onRemove: () -> Unit,
-    onCreateSession: () -> Unit
-) {
-    val phase = ubuntu.phase
-    val busy = phase == UbuntuLifecycleCoordinator.Phase.INSTALLING ||
-        phase == UbuntuLifecycleCoordinator.Phase.BOOTSTRAPPING ||
-        phase == UbuntuLifecycleCoordinator.Phase.RECOVERING
-
-    SettingsCard(Icons.Default.Terminal, stringResource(R.string.term_ubuntu_card_title)) {
-        Text(
-            stringResource(R.string.term_ubuntu_card_desc),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(8.dp))
-
-        // 状态徽标 + 占用
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            StatusBadge(
-                text = phaseLabel(phase),
-                color = phaseColor(phase)
-            )
-            rootfsSize?.let { bytes ->
-                Text(
-                    stringResource(R.string.term_disk_usage, formatBytes(bytes)),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        // 安装/引导进度（percent 来自 install 下载链）
-        if (busy && progress != null) {
-            Spacer(Modifier.height(8.dp))
-            val percent = progress.percent.coerceIn(0, 100)
-            LinearProgressIndicator(
-                progress = { percent / 100f },
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(Modifier.height(4.dp))
-            val bytesTotal = progress.bytesTotal
-            // i18n：字节进度片段在组合内预取（buildString 非组合上下文）
-            val progressBytes = if (bytesTotal != null && bytesTotal > 0) {
-                stringResource(
-                    R.string.term_progress_bytes,
-                    formatBytes(progress.bytesTransferred),
-                    formatBytes(bytesTotal)
-                )
-            } else null
-            Text(
-                buildString {
-                    append(progress.message)
-                    progressBytes?.let { append(it) }
-                },
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2
-            )
-        }
-
-        // READY 时能力快览（跨模块属性不可 smart cast —— 先拷局部变量）
-        val caps = ubuntu.capabilities
-        if (phase == UbuntuLifecycleCoordinator.Phase.READY && !caps.isNullOrEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                caps.joinToString("  ·  ") { c ->
-                    c.name + (c.version?.let { " $it" } ?: "")
-                },
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 2
-            )
-        }
-
-        // 失败详情 + T83 降级注记（apt 引导未完成但环境可用）
-        val lastError = ubuntu.lastError
-        val bootstrapNote = ubuntu.bootstrapNote
-        if (phase == UbuntuLifecycleCoordinator.Phase.FAILED && lastError != null) {
-            Spacer(Modifier.height(6.dp))
-            Text(
-                stringResource(R.string.term_last_error, lastError.take(120)),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                maxLines = 3
-            )
-        } else if (phase == UbuntuLifecycleCoordinator.Phase.READY && bootstrapNote != null) {
-            Spacer(Modifier.height(6.dp))
-            Text(
-                stringResource(R.string.term_bootstrap_note, bootstrapNote.take(100)),
-                style = MaterialTheme.typography.bodySmall,
-                color = Color(0xFFE0A63C),
-                maxLines = 3
-            )
-            // ★ 引导降级一键重试：ensureReady 对降级 READY（note != null）不再短路
-            //（UbuntuLifecycleCoordinator 修复），点击即幂等续跑 bootstrap —— 现在
-            // 还带官方源失败后的 TUNA/USTC/Aliyun 镜像自动 fallback，大陆网络下
-            // 重试一次大概率直接修好，而不是永远挂着降级注记。
-            Spacer(Modifier.height(6.dp))
-            androidx.compose.material3.OutlinedButton(
-                onClick = onInstall,
-                modifier = Modifier.heightIn(min = 32.dp)
-            ) {
-                androidx.compose.material3.Icon(
-                    Icons.Default.Refresh,
-                    contentDescription = null,
-                    modifier = Modifier.size(14.dp),
-                    tint = Color(0xFFE0A63C)
-                )
-                Text(
-                    stringResource(R.string.term_finish_bootstrap),
-                    color = Color(0xFFE0A63C),
-                    style = MaterialTheme.typography.labelMedium
-                )
-            }
-        }
-
-        // 操作按钮（状态驱动）
-        Spacer(Modifier.height(10.dp))
-        when (phase) {
-            UbuntuLifecycleCoordinator.Phase.NOT_INSTALLED -> {
-                ActionButton(stringResource(R.string.term_unpack_built_in), loading = false) { onInstall() }
-            }
-            UbuntuLifecycleCoordinator.Phase.INSTALLING -> {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                    Text(stringResource(R.string.term_unpacking), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.weight(1f))
-                    OutlinedButton(onClick = onCancel) { Text(stringResource(R.string.term_cancel), color = MaterialTheme.colorScheme.error) }
-                }
-            }
-            UbuntuLifecycleCoordinator.Phase.BOOTSTRAPPING, UbuntuLifecycleCoordinator.Phase.RECOVERING -> {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                UbuntuLifecycleCoordinator.Phase.FAILED -> {
                     Text(
-                        if (phase == UbuntuLifecycleCoordinator.Phase.BOOTSTRAPPING) stringResource(R.string.term_bootstrapping)
-                        else stringResource(R.string.term_converging),
+                        lifecycle.lastError?.take(300) ?: "",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = ConsoleTokens.lineError,
+                        fontFamily = FontFamily.Monospace
                     )
                 }
+                else -> Unit
             }
-            UbuntuLifecycleCoordinator.Phase.ROOTFS_READY -> {
-                ActionButton(stringResource(R.string.term_finish_bootstrap), loading = false) { onInstall() }
-            }
-            UbuntuLifecycleCoordinator.Phase.READY -> {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ActionButton(stringResource(R.string.term_new_ubuntu_session), loading = false, modifier = Modifier.weight(1f)) { onCreateSession() }
-                    OutlinedButton(onClick = onRepair) { Text(stringResource(R.string.term_repair)) }
-                    OutlinedButton(onClick = onRemove) {
-                        Icon(Icons.Default.Delete, null, Modifier.size(15.dp), tint = MaterialTheme.colorScheme.error)
-                        Text(stringResource(R.string.term_delete), color = MaterialTheme.colorScheme.error)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                when (phase) {
+                    UbuntuLifecycleCoordinator.Phase.NOT_INSTALLED ->
+                        TextButton(onClick = { viewModel.installUbuntu() }) { Text(stringResource(R.string.term_unpack_built_in)) }
+                    UbuntuLifecycleCoordinator.Phase.ROOTFS_READY ->
+                        TextButton(onClick = { viewModel.installUbuntu() }) { Text(stringResource(R.string.term_finish_bootstrap)) }
+                    UbuntuLifecycleCoordinator.Phase.BOOTSTRAPPING,
+                    UbuntuLifecycleCoordinator.Phase.RECOVERING ->
+                        Text(stringResource(R.string.term_bootstrapping), color = ConsoleTokens.amber)
+                    UbuntuLifecycleCoordinator.Phase.READY -> {
+                        TextButton(onClick = { viewModel.createSession(SessionRegistry.BACKEND_UBUNTU) }) {
+                            Text(stringResource(R.string.term_new_ubuntu_session))
+                        }
+                        TextButton(onClick = { viewModel.installUbuntu() }) { Text(stringResource(R.string.term_repair)) }
+                        TextButton(onClick = { confirmDelete = true }) { Text(stringResource(R.string.term_delete)) }
                     }
-                }
-            }
-            UbuntuLifecycleCoordinator.Phase.FAILED -> {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ActionButton(stringResource(R.string.term_retry_install), loading = false, modifier = Modifier.weight(1f)) { onInstall() }
-                    OutlinedButton(onClick = onRepair) { Text(stringResource(R.string.term_repair)) }
-                    OutlinedButton(onClick = onRemove) {
-                        Icon(Icons.Default.Delete, null, Modifier.size(15.dp), tint = MaterialTheme.colorScheme.error)
-                        Text(stringResource(R.string.term_delete), color = MaterialTheme.colorScheme.error)
+                    UbuntuLifecycleCoordinator.Phase.FAILED -> {
+                        TextButton(onClick = { viewModel.installUbuntu() }) { Text(stringResource(R.string.term_retry_install)) }
+                        TextButton(onClick = { viewModel.installUbuntu() }) { Text(stringResource(R.string.term_repair)) }
+                        TextButton(onClick = { confirmDelete = true }) { Text(stringResource(R.string.term_delete)) }
                     }
+                    else -> Unit
                 }
             }
         }
     }
-}
-
-@Composable
-private fun StatusBadge(text: String, color: Color) {
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = color.copy(alpha = 0.15f)
-    ) {
-        Text(
-            text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = color
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text(stringResource(R.string.term_remove_ubuntu_title)) },
+            text = { Text(stringResource(R.string.term_remove_ubuntu_text)) },
+            confirmButton = {
+                TextButton(onClick = { confirmDelete = false; viewModel.removeUbuntu() }) {
+                    Text(stringResource(R.string.term_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.term_cancel)) }
+            }
         )
     }
 }
 
 @Composable
-private fun phaseLabel(phase: UbuntuLifecycleCoordinator.Phase): String =
-    stringResource(phaseLabelRes(phase))
-
-/** i18n：阶段标签 @StringRes 映射，组合内取词。 */
-@StringRes
-private fun phaseLabelRes(phase: UbuntuLifecycleCoordinator.Phase): Int = when (phase) {
-    UbuntuLifecycleCoordinator.Phase.NOT_INSTALLED -> R.string.term_phase_not_installed
-    UbuntuLifecycleCoordinator.Phase.INSTALLING -> R.string.term_phase_installing
-    UbuntuLifecycleCoordinator.Phase.ROOTFS_READY -> R.string.term_phase_rootfs_ready
-    UbuntuLifecycleCoordinator.Phase.BOOTSTRAPPING -> R.string.term_phase_bootstrapping
-    UbuntuLifecycleCoordinator.Phase.READY -> R.string.term_phase_ready
-    UbuntuLifecycleCoordinator.Phase.RECOVERING -> R.string.term_phase_recovering
-    UbuntuLifecycleCoordinator.Phase.FAILED -> R.string.term_phase_failed
+private fun PhaseBadge(phase: UbuntuLifecycleCoordinator.Phase) {
+    val (labelRes, color) = when (phase) {
+        UbuntuLifecycleCoordinator.Phase.NOT_INSTALLED -> R.string.term_phase_not_installed to ConsoleTokens.onSurfaceVariant
+        UbuntuLifecycleCoordinator.Phase.INSTALLING -> R.string.term_phase_installing to ConsoleTokens.amber
+        UbuntuLifecycleCoordinator.Phase.ROOTFS_READY -> R.string.term_phase_rootfs_ready to ConsoleTokens.amber
+        UbuntuLifecycleCoordinator.Phase.BOOTSTRAPPING -> R.string.term_phase_bootstrapping to ConsoleTokens.amber
+        UbuntuLifecycleCoordinator.Phase.READY -> R.string.term_phase_ready to ConsoleTokens.lineExitOk
+        UbuntuLifecycleCoordinator.Phase.RECOVERING -> R.string.term_phase_recovering to ConsoleTokens.amber
+        UbuntuLifecycleCoordinator.Phase.FAILED -> R.string.term_phase_failed to ConsoleTokens.lineError
+    }
+    Text(
+        stringResource(labelRes),
+        style = MaterialTheme.typography.labelMedium,
+        color = color,
+        fontFamily = FontFamily.Monospace
+    )
 }
 
-private fun phaseColor(phase: UbuntuLifecycleCoordinator.Phase): Color = when (phase) {
-    UbuntuLifecycleCoordinator.Phase.READY -> Color(0xFF3E9C51)
-    UbuntuLifecycleCoordinator.Phase.FAILED -> Color(0xFFB06055)
-    UbuntuLifecycleCoordinator.Phase.NOT_INSTALLED -> Color(0xFF8A93A3)
-    else -> Color(0xFFE0A63C)
-}
+// ═══════════════ Android Shell 卡 ═══════════════
 
-internal fun formatBytes(bytes: Long): String {
-    if (bytes < 0) return "—"
-    val kb = bytes / 1024.0
-    val mb = kb / 1024.0
-    val gb = mb / 1024.0
-    return when {
-        gb >= 1 -> String.format("%.1f GB", gb)
-        mb >= 1 -> String.format("%.0f MB", mb)
-        kb >= 1 -> String.format("%.0f KB", kb)
-        else -> "$bytes B"
+@Composable
+private fun AndroidShellCard() {
+    SectionCard(title = stringResource(R.string.term_android_shell_title)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(R.string.term_android_shell_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = ConsoleTokens.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                stringResource(R.string.term_builtin),
+                style = MaterialTheme.typography.labelMedium,
+                color = ConsoleTokens.amber,
+                fontFamily = FontFamily.Monospace
+            )
+        }
     }
 }
 
-// ═══ 共享小组件（TerminalScreen 抽屉同款 —— 本包内复用）═══
+// ═══════════════ 依赖安装卡 ═══════════════
 
 @Composable
-internal fun SettingsCard(icon: ImageVector, title: String, content: @Composable () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SurfaceBadge(icon, MaterialTheme.colorScheme.primary)
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+private fun DepsCard(
+    viewModel: TerminalViewModel,
+    installState: TerminalDepCenter.InstallState,
+    useMirror: Boolean,
+    onUseMirror: (Boolean) -> Unit
+) {
+    val depItems = viewModel.depCenter.depItems
+    SectionCard(title = stringResource(R.string.term_deps_title)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ToggleRow(
+                title = stringResource(R.string.term_use_mirror),
+                desc = stringResource(R.string.term_mirror_desc),
+                checked = useMirror,
+                onToggle = onUseMirror
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { viewModel.depCenter.installAll() }) {
+                    Text(stringResource(R.string.term_install_all))
+                }
+                TextButton(onClick = { viewModel.depCenter.installAndroidOnly() }) {
+                    Text(stringResource(R.string.term_android_deps))
+                }
             }
-            Spacer(Modifier.height(10.dp))
+            depItems.forEach { item ->
+                val installing = installState.runningId == item.id
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        item.name,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = ConsoleTokens.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (installing) {
+                        Text(
+                            stringResource(R.string.term_installing),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = ConsoleTokens.amber
+                        )
+                    } else {
+                        TextButton(onClick = { viewModel.depCenter.installDep(item) }) {
+                            Text(stringResource(R.string.term_install))
+                        }
+                    }
+                }
+            }
+            if (installState.log.isNotBlank()) {
+                Text(
+                    installState.log.takeLast(4000),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = ConsoleTokens.onSurfaceVariant,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        }
+    }
+}
+
+// ═══════════════ 共享小部件（Settings/History Sheet 复用）═══════════════
+
+@Composable
+internal fun SectionCard(title: String, content: @Composable () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = ConsoleTokens.surfaceContainer)
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall,
+                color = ConsoleTokens.onSurface,
+                fontFamily = FontFamily.Monospace
+            )
             content()
         }
     }
 }
 
 @Composable
-internal fun SurfaceBadge(icon: ImageVector, tint: Color) {
-    Surface(shape = CircleShape, color = tint.copy(alpha = 0.15f), modifier = Modifier.size(34.dp)) {
-        Box(contentAlignment = Alignment.Center) { Icon(icon, null, Modifier.size(18.dp), tint = tint) }
-    }
-}
-
-@Composable
-internal fun ToggleRow(label: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium)
-        Switch(checked = checked, onCheckedChange = onToggle, colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary))
-    }
-}
-
-@Composable
-internal fun DepRow(item: TerminalDepCenter.DepItem, busy: Boolean, installing: Boolean, onInstall: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest).padding(horizontal = 10.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(
-                if (item.group == TerminalDepCenter.DepGroup.ANDROID) Icons.Default.Android else Icons.Default.CheckCircle,
-                null, Modifier.size(16.dp),
-                tint = if (item.group == TerminalDepCenter.DepGroup.ANDROID) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
-            )
-            Text(item.name, style = MaterialTheme.typography.bodyMedium)
+internal fun ToggleRow(
+    title: String,
+    desc: String?,
+    checked: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium, color = ConsoleTokens.onSurface)
+            desc?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = ConsoleTokens.onSurfaceVariant)
+            }
         }
-        TextButton(enabled = !busy, onClick = onInstall) {
-            Text(if (installing) stringResource(R.string.term_installing)
-            else stringResource(R.string.term_install))
-        }
+        Switch(checked = checked, onCheckedChange = onToggle)
     }
 }
-
-@Composable
-internal fun ActionButton(label: String, loading: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = if (loading) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.primary,
-        modifier = modifier.clip(RoundedCornerShape(12.dp)).then(
-            Modifier.clickableSafe(enabled = !loading, onClick = onClick)
-        )
-    ) {
-        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-            Text(
-                if (loading) "$label…" else label,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = if (loading) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimary
-            )
-        }
-    }
-}
-
-@Composable
-private fun Modifier.clickableSafe(enabled: Boolean, onClick: () -> Unit): Modifier =
-    // diag-20261011：旧实现 `this.then(this.clickable(...))` 把接收者链应用了两遍
-    //（调用点的 clip 等全部翻倍）；直接在接收者上追加 clickable 即可。
-    this.clickable(enabled = enabled, onClick = onClick)

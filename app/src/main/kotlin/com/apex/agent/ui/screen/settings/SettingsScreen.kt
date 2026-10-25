@@ -376,8 +376,6 @@ private fun SettingsPageRouter(
         }
         // ═══ 终端 ═══（三个 store 为 Hilt 单例，与终端页共享内存态）
         "terminal/appearance" -> TerminalAppearancePage()
-        "terminal/scheme" -> TerminalSchemePage()
-        "terminal/keys" -> TerminalExtraKeysPage()
         "terminal/policy" -> TerminalCommandPolicyPage()
         // ═══ 数据与备份 ═══
         "data/backup" -> SettingsLeafColumn { BackupSection() }

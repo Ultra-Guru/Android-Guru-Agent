@@ -7,7 +7,6 @@
     <string name="drawer_agent">Agent</string>
     <string name="drawer_terminal">终端</string>
 <!-- M³ 现代终端（Material 3 Terminal UI）：轻量 REPL 命令台 -->
-    <string name="drawer_terminal_m3">终端 · M³</string>
 <!-- #197 模板工坊 -->
     <string name="drawer_templates">模板工坊</string>
     <string name="drawer_market">市场</string>
@@ -85,8 +84,6 @@
     <string name="settings_nav_interface_chat">聊天显示</string>
     <string name="settings_nav_interface_notifications">通知</string>
     <string name="settings_nav_terminal_appearance">外观与反馈</string>
-    <string name="settings_nav_terminal_scheme">配色方案</string>
-    <string name="settings_nav_terminal_keys">扩展键</string>
     <string name="settings_nav_terminal_policy">命令策略</string>
     <string name="settings_nav_data_backup">备份与恢复</string>
     <string name="settings_nav_data_update">应用更新</string>
@@ -94,7 +91,6 @@
     <string name="settings_manage_providers">管理服务商</string>
     <string name="settings_manage_roles">管理模型角色</string>
     <string name="settings_tab_close">关闭 %1$s</string>
-    <string name="settings_terminal_scheme_desc">切换后终端即时生效 —— 与终端页内选择器同一清单</string>
     <string name="settings_notifications_section">应用内通知</string>
     <string name="settings_notif_channel_section">系统通知渠道</string>
     <string name="settings_notif_channel_desc">各渠道的重要度与免打扰由系统设置管理 —— 此按钮直达本应用渠道列表。</string>

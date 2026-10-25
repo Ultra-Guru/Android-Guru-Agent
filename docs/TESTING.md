@@ -225,7 +225,7 @@ glibc-2.39 guest）；安装失败时测试自我跳过高级别场景并诚实�
   `returnDefaultValues`；
 - [ ] 同步更新本文 §2 矩阵与 §7 清单。
 
-## 7. 测试文件总清单（74 个）
+## 7. 测试文件总清单（79 个）
 
 <details>
 <summary><b>core:agent-engine（3）</b></summary>
@@ -287,14 +287,20 @@ src/androidTest/kotlin/com/apex/agent/platform/terminal/   （5，真机）
 </details>
 
 <details>
-<summary><b>app / platform:privilege / terminal-emulator（6）</b></summary>
+<summary><b>app / platform:privilege / terminal-emulator（11）</b></summary>
 
 ```
 app/src/test/kotlin/com/apex/agent/
 ├── browser/BrowserTracerTest.kt
 ├── browser/RetryPolicyTest.kt
 ├── slash/SlashCommandParserTest.kt
-└── slash/SlashCommandRouterTest.kt
+├── slash/SlashCommandRouterTest.kt
+└── ui/screen/terminal/            （T96 终端大重构：真实执行管线）
+    ├── RawStreamSanitizerTest.kt
+    ├── RealCommandExecutorTest.kt （手写 FakeRuntime）
+    ├── CommandPolicyStoreTest.kt
+    ├── TerminalCommandHistoryTest.kt
+    └── TerminalSyntaxTest.kt
 platform/privilege/src/test/.../ProcessStreamFactoryTest.kt
 terminal-emulator/src/test/.../TerminalCoreTest.kt
 ```

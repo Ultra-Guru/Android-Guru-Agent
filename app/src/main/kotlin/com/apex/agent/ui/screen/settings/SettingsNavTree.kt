@@ -93,10 +93,9 @@ val SettingsNavTree: List<SettingsCategory> = listOf(
         route = "terminal",
         titleRes = R.string.settings_nav_cat_terminal,
         icon = Icons.Filled.Terminal,
+        // T96 终端大重构后收窄：配色/扩展键两叶随旧交互终端退役
         children = listOf(
             SettingsLeaf("terminal/appearance", R.string.settings_nav_terminal_appearance, Icons.Outlined.Palette),
-            SettingsLeaf("terminal/scheme", R.string.settings_nav_terminal_scheme, Icons.Outlined.Settings),
-            SettingsLeaf("terminal/keys", R.string.settings_nav_terminal_keys, Icons.Outlined.ViewCompact),
             SettingsLeaf("terminal/policy", R.string.settings_nav_terminal_policy, Icons.Outlined.Rule),
         )
     ),

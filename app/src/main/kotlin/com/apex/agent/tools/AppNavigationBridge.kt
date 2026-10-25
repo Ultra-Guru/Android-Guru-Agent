@@ -63,7 +63,7 @@ class AppNavigationBridge @Inject constructor() {
          * 需携带工作区参数，不适合工具盲开）。
          */
         val KNOWN_ROUTES: Set<String> = setOf(
-            "settings", "diagnostics", "market", "terminal", "terminal-m3", "browser",
+            "settings", "diagnostics", "market", "terminal", "browser",
             "storage", "usage", "vault", "log", "tasks", "memory",
             "permissions", "templates", "about", "playground", "glasslab"
         )
