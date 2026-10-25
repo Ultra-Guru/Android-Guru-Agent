@@ -140,6 +140,42 @@ class CodeHistoryStoreTest {
         assertNull(store.restoreInto("alpha", "9999999999999"))
     }
 
+    // ── 只读快照（导出 Markdown 消费方）─────────────────────────────
+
+    @Test
+    fun `readSnapshot returns archived snapshot without touching live memories`() {
+        val store = newStore()
+        val base = tmp.root
+        val deepDir = File(base, "code_memory").apply { mkdirs() }
+        val stdDir = File(base, "code_memory_standard").apply { mkdirs() }
+        deepDir.resolve("ws_alpha.json").writeText("""[{"role":"user","content":"deep"}]""")
+        stdDir.resolve("ws_alpha.json").writeText("""[{"role":"user","content":"std"}]""")
+
+        val id = store.archive("alpha", snapshot("alpha"))
+        // 模拟归档后活位继续演进（被清空）
+        deepDir.resolve("ws_alpha.json").writeText("[]")
+
+        val snap = store.readSnapshot("alpha", id!!)
+        assertNotNull(snap)
+        assertEquals(3, snap!!.messages.size)
+        // 与 restoreInto 的关键差异：活位记忆原样不动（零副作用）
+        assertEquals("[]", deepDir.resolve("ws_alpha.json").readText())
+        assertEquals("""[{"role":"user","content":"std"}]""", stdDir.resolve("ws_alpha.json").readText())
+        // 幂等：重复读取结果一致
+        assertEquals(snap.messages.size, store.readSnapshot("alpha", id)!!.messages.size)
+    }
+
+    @Test
+    fun `readSnapshot returns null for missing or corrupt archive`() {
+        val store = newStore()
+        assertNull("缺失归档", store.readSnapshot("alpha", "9999999999999"))
+
+        val id = store.archive("alpha", snapshot("alpha"))
+        val ui = File(tmp.root, "code_history").resolve("ws_alpha").resolve(id!!).resolve("ui.json")
+        ui.writeText("{ not json ]")
+        assertNull("损坏归档", store.readSnapshot("alpha", id))
+    }
+
     // ── 删除 / 清理 / 坏档 ───────────────────────────────────────────
 
     @Test
