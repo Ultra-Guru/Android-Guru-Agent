@@ -231,6 +231,32 @@
     <string name="settings_think_maximum">Maximum · 极深思考</string>
     <string name="settings_think_desc">决策前推理深度（影响 system prompt，重启应用生效）</string>
     <string name="settings_max_iterations_desc">单任务最大迭代次数，防止无限循环</string>
+
+    <!-- ═══ 工具循环 v2 / 限速友好 / 自定义背景（三件套）═══ -->
+    <string name="settings_tool_loop_section">工具循环</string>
+    <string name="settings_tool_iterations_unlimited">任务轮次无上限</string>
+    <string name="settings_tool_iterations_unlimited_desc">一个任务的工具调用次数不设轮次硬顶（默认开）；失控由循环检测兑底，也可随时手动停止</string>
+    <string name="settings_tool_parallelism">单轮并行执行上限</string>
+    <string name="settings_tool_parallelism_desc">模型一轮返回多个工具时最多几个同时执行（1 = 顺序执行，历史行为）。调高可减少请求轮次；终端类工具输出可能交错</string>
+    <string name="settings_nav_model_rate_limit">限速友好</string>
+    <string name="settings_rate_limit_section">限速友好模式</string>
+    <string name="settings_rate_limit_enabled">开启限速友好模式</string>
+    <string name="settings_rate_limit_enabled_desc">只针对某些用户：所用厂商有 RPM/TPM 或每日请求次数配额（免费档 / 按次计费网关）时才需要开。开启后全部 LLM 请求节流放行、单请求携带更多上下文；关闭 = 行为零变化</string>
+    <string name="settings_rate_limit_interval">请求最小间隔</string>
+    <string name="settings_rate_limit_interval_desc">所有 LLM 请求（ReAct 轮 / 压缩摘要 / 子代理 / 验收）发出前排队——相邻两次请求起点间隔不小于该值</string>
+    <string name="settings_rate_limit_rich">每请求信息密度</string>
+    <string name="settings_rate_limit_rich_desc">工具输出预算 ×2、保留更多近轮、更晚压缩——同样的任务用更少的请求完成。重启应用后生效</string>
+    <string name="settings_rate_limit_apply_title">推荐组合</string>
+    <string name="settings_rate_limit_apply_desc">一键应用：限速模式开（间隔 ≥4s）+ 每请求信息密度 + 单轮 4 路并行工具 + 任务轮次无上限</string>
+    <string name="settings_rate_limit_apply">一键应用推荐组合</string>
+    <string name="settings_background_section">自定义背景</string>
+    <string name="settings_background_desc">导入自己的图片作为全局背景。专属优化：降采样解码（大图不爆内存）、亮度自适应纱罩（任何照片上文字都可读）、一图一解码（换图才重解码）</string>
+    <string name="settings_background_active">背景已生效——图片常驻，纱罩随深浅模式自动切换</string>
+    <string name="settings_background_pick">选择图片</string>
+    <string name="settings_background_replace">更换图片</string>
+    <string name="settings_background_clear">清除背景</string>
+    <string name="settings_background_dim">纱罩强度</string>
+    <string name="settings_background_dim_desc">在自适应基数上的手动叠加——觉得文字看不清就调高</string>
     <string name="settings_reflection_rounds_desc">Reflect 模式每轮执行一次「评审 → 修正」</string>
     <string name="settings_advanced_behavior">Advanced Agent Behavior（数据预埋）</string>
     <string name="settings_reflection_desc">启用生成后的自我评审与修正</string>

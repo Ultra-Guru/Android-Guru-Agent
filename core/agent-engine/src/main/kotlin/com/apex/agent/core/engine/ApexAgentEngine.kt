@@ -969,20 +969,10 @@ class ApexAgentEngine(
             val toolCalls = toolCallsAccumulator.values.map { it.build() }
 
             when {
-                toolCalls.isNotEmpty() -> {
-                    addMessage(
-                        LlmMessage.Assistant(contentBuilder.toString(), toolCalls)
-                    )
-
-                    for (toolCall in toolCalls) {
-                        // AskUser 工具：暂停执行，等待用户输入（流程拆至 EngineAskUserFlow.kt）
-                        if (handleAskUserToolCall(toolCall, emit)) continue
-                        executeToolCallStreaming(toolCall, emit)
-                    }
-                    // diag-20261011：整批 ToolResult 落盘后冲刷延迟 System 提示
-                    //（位置安全点：完整 tool 块之后，下一轮请求之前）。
-                    flushPendingSystemNotes()
-                }
+                toolCalls.isNotEmpty() ->
+                    // 工具循环 v2：单轮调度核心（AskUser 保序 / 并行批 / 单轮上限）
+                    // 迁至 EngineToolExecution.kt（God-file 预算拆分同款模式）。
+                    executeToolCallTurn(contentBuilder.toString(), toolCalls, emit)
 
                 contentBuilder.isNotEmpty() -> {
                     // ═══ #168 HUMAN_ASSIST 模式：决策点后置检测 ═══

@@ -135,7 +135,12 @@ class EngineResilienceGuard(
     /**
      * 单个工具调用失败（流内 Error 事件 / 执行异常）后判定是否重试。
      * 与 LLM 重试分开计数：[policy.toolRetryBudget] 是任务级工具重试总预算。
+     *
+     * @Synchronized：工具循环 v2 并行批下，该方法会被多个工作协程并发调用
+     * （各自工具的重试判定）—— [toolRetriesUsed] 是任务级共享计数器，锁内
+     * 「判定 + 自增」必须原子，否则并发重试会超预算。
      */
+    @Synchronized
     fun onToolFailure(toolName: String, callId: String, errorMessage: String, attempt: Int): RetryPolicy.RetryDecision {
         val failureClass = classifier.classify(
             ToolFailure(toolName = toolName, callId = callId, errorMessage = errorMessage)

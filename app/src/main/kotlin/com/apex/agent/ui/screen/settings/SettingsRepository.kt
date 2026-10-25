@@ -324,16 +324,22 @@ class SettingsRepository @Inject constructor(
         val raw = prefs.getString(KEY_AGENT, null)
         if (raw != null) {
             runCatching { json.decodeFromString<AgentSettings>(raw) }.getOrNull()
-                ?.let { return migratePermissionDefaultBypass(migrateCustomModePresets(it)) }
+                ?.let {
+                    return migratePermissionDefaultBypass(
+                        migrateToolLoopDefaults(migrateCustomModePresets(it))
+                    )
+                }
         }
         // 兼容旧版散装 Agent 设置 Key
         return migratePermissionDefaultBypass(
-            migrateCustomModePresets(
-                AgentSettings(
-                    defaultMode = prefs.getString("agent_default_mode", "auto") ?: "auto",
-                    thinkLevel = prefs.getString("agent_think_level", "standard") ?: "standard",
-                    maxIterations = prefs.getInt("agent_max_iterations", 20),
-                    keepAlive = prefs.getBoolean("agent_keep_alive", true),
+            migrateToolLoopDefaults(
+                migrateCustomModePresets(
+                    AgentSettings(
+                        defaultMode = prefs.getString("agent_default_mode", "auto") ?: "auto",
+                        thinkLevel = prefs.getString("agent_think_level", "standard") ?: "standard",
+                        maxIterations = prefs.getInt("agent_max_iterations", 20),
+                        keepAlive = prefs.getBoolean("agent_keep_alive", true),
+                    )
                 )
             )
         )
@@ -418,6 +424,24 @@ class SettingsRepository @Inject constructor(
         /** API Key 前缀键名（拼接 providerId） */
         private const val KEY_PROVIDER_KEY = "provider_api_key_"
     }
+}
+
+/**
+ * 工具循环默认无上限迁移（用户显式要求：一个任务的工具调用次数要无上限）。
+ *
+ * - 存量用户（持久化 JSON 里 maxIterations=20 等）一次性翻为 0（无上限哨兵，
+ *   引擎侧 [ThinkingModeController.effectiveMaxIterations] 统一消费）；
+ * - 新装机用户走字段默认 0，不触发本迁移行为差异；
+ * - [AgentSettings.toolLoopMigrated] 置 true 后幂等短路（init 的
+ *   persistAgentSettings 立即回写，升级只发生一次）；
+ * - 失控防线不变：循环检测（同动作阈值 + 恢复预算）+ 用户手动停止仍是
+ *   兑底，只是「轮次硬顶」不再默认打断长任务。
+ *
+ * 文件级 internal（与 migratePermissionDefaultBypass 同款可测口径）。
+ */
+internal fun migrateToolLoopDefaults(settings: AgentSettings): AgentSettings {
+    if (settings.toolLoopMigrated) return settings
+    return settings.copy(maxIterations = 0, toolLoopMigrated = true)
 }
 
 /**
@@ -509,7 +533,24 @@ data class AgentSettings(
      * 确认后执行）。CodeViewModel init 恢复 + setMode 双通道运行时生效。
      */
     val codeExecutionMode: String = "",
-    val maxIterations: Int = 20,
+    /**
+     * 任务最大迭代轮数：**0 = 无上限**（哨兵，工具循环设置页可切；默认 0
+     * —— 存量用户经 [migrateToolLoopDefaults] 一次性翻为 0）。失控防线 =
+     * 循环检测 + 用户手动停止，不再靠轮次硬顶打断长任务。
+     */
+    val maxIterations: Int = 0,
+    /**
+     * ═══ 工具循环 v2（引擎已真接线）═══
+     *
+     * 单轮并行执行上限：模型一次返回多个 tool_calls 时，同轮最多几个**同时
+     * 执行**（1..8，1 = 顺序执行）。请求参数侧的 parallel_tool_calls 开关
+     * 在 ModelProfile（两者正交：那个控制模型**能不能**一轮发多个调用，
+     * 这个控制引擎**怎么执行**它们）。高并发下终端类工具输出会交错，
+     * 追求确定性逐个执行请保持 1。
+     */
+    val toolCallParallelism: Int = 1,
+    /** 工具循环迁移标记（见 [migrateToolLoopDefaults]，幂等短路）。 */
+    val toolLoopMigrated: Boolean = false,
     val keepAlive: Boolean = true,
 
     // 重试 / 循环防护
@@ -524,6 +565,8 @@ data class AgentSettings(
     val reflection: Boolean = true,
     val planning: Boolean = true,
     val replanning: Boolean = false,
+
+    /** 已废弃（引擎从未接线，被 toolCallParallelism 取代）：仅存 JSON 兼容。 */
     val parallelToolExecution: Boolean = true,
     val backgroundExecution: Boolean = false,
 
@@ -601,6 +644,15 @@ data class AgentSettings(
      * 见 ui/theme/UiStyle.kt；设置中心「外观」分区切换，立即生效。
      */
     val uiStyle: String = "minimal",
+    /**
+     * 自定义背景图（SAF 持久授权的 content URI 字符串；空 = 不启用）。
+     * 专属优化（见 ui/theme/BackgroundImage.kt）：降采样解码（大图不爆内存）+
+     * 亮度自适应纱罩（按图片明暗自动加深/变浅保证文字可读）+ 按 URI 缓存
+     * （一次解码全 App 复用）。设置入口：界面外观 → 自定义背景。
+     */
+    val backgroundImageUri: String = "",
+    /** 背景纱罩强度 0.1..0.8（在自适应基数上的手动叠加；0 = 无纱罩交给自适应）。 */
+    val backgroundDim: Float = 0.4f,
     val fontScale: Float = 1.0f,              // 0.8..1.4
     val showTimestamps: Boolean = true,
 
@@ -705,4 +757,19 @@ data class AgentSettings(
     val codingReadGuard: Boolean = true,
     val codingAutoRules: Boolean = true,
     val mcpScopeIsolation: Boolean = true,
+
+    // ═══ 模型限速友好（只针对某些用户：有 RPM/TPM/日次数配额的厂商）═══
+    // 默认全关 = 历史行为零变化。开启后的三根支柱：
+    //  - rateLimitFriendly：总开关（设置 → 模型配置 → 限速友好）；
+    //  - rateLimitMinIntervalMs：请求节流 —— 所有 LLM 请求（含压缩摘要/
+    //    子代理/验收）发出前在 RateLimitGovernor 排队，相邻起点间隔不小于
+    //    该值（llm-adapter 全局单点，无旁路）；
+    //  - rateLimitRichPayload：每请求信息密度 —— 工具输出预算 ×2、保留
+    //    近轮 +3、压缩阈值上浮（更晚压缩）—— 单请求携带更多上下文，
+    //    用更少的请求完成同样的任务（AgentModule/CodeModule 拍平进引擎）。
+    // 建议组合（设置页一键应用）：并行工具执行 ≥4（一轮多工具 = 少几轮
+    // 请求）+ 任务轮次无上限 + 上述两项。
+    val rateLimitFriendly: Boolean = false,
+    val rateLimitMinIntervalMs: Int = 4000,    // 0..60000（0 = 不节流间隔）
+    val rateLimitRichPayload: Boolean = true,
 )

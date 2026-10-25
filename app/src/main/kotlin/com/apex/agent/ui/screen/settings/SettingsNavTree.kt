@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Rule
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Subject
 import androidx.compose.material.icons.outlined.Terminal
@@ -65,6 +66,7 @@ val SettingsNavTree: List<SettingsCategory> = listOf(
             SettingsLeaf("model/context", R.string.settings_nav_model_context, Icons.Outlined.Subject),
             SettingsLeaf("model/tools", R.string.settings_nav_model_tools, Icons.Outlined.Build),
             SettingsLeaf("model/network", R.string.settings_nav_model_network, Icons.Outlined.Cloud),
+            SettingsLeaf("model/rate-limit", R.string.settings_nav_model_rate_limit, Icons.Outlined.Speed),
             SettingsLeaf("model/prompt", R.string.settings_nav_model_prompt, Icons.Outlined.EditNote),
             SettingsLeaf("model/advanced", R.string.settings_nav_model_advanced, Icons.Outlined.ViewCompact),
             SettingsLeaf("model/providers-roles", R.string.settings_nav_model_providers, Icons.Outlined.Hub),
