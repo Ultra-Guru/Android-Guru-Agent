@@ -123,6 +123,7 @@ import com.apex.agent.core.codetools.diagnostics.CodeDiagnostics
 import com.apex.agent.core.codetools.git.GitCommandRunner
 import com.apex.agent.core.codetools.git.GitTools
 import com.apex.agent.core.codetools.html.HtmlAnalyzeLayoutTool
+import com.apex.agent.core.codetools.html.HtmlCompareLayoutsTool
 import com.apex.agent.core.codetools.tools.CodeTodoTool
 import com.apex.agent.core.code.subagent.CodeTaskTool
 import com.apex.agent.core.code.subagent.SubAgentRunner
@@ -710,6 +711,7 @@ object ToolModule {
         // 与 BrowserAnalyzeLayout（动态 · 真实渲染几何）互补：写完 HTML 产物后
         // 无需浏览器内核即可验证页面骨架/响应式/可访问性问题，毫秒级、可离线。
         registry.register(SafeAgentTool(HtmlAnalyzeLayoutTool(codeWorkspaceRoots)))
+        registry.register(SafeAgentTool(HtmlCompareLayoutsTool(codeWorkspaceRoots)))
 
         // ═══ 2c. Git 工具（v1.0 #153，两模式互用）═══
         // CodeGitStatus/diff/log/commit/branch —— git 二进制经 PRoot Ubuntu
