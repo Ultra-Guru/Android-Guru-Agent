@@ -148,6 +148,43 @@ class T85TerminalParityTest {
         assertEquals("\u001B[>0;276;0c", String(replies[0], Charsets.US_ASCII))
     }
 
+    // ═══ v3：XTVERSION（CSI > q）—— 此前静默丢弃，等待方只能超时放弃 ═══
+
+    @Test
+    fun `XTVERSION responds with DCS product report`() {
+        val core = TerminalCore(2, 20)
+        val replies = mutableListOf<ByteArray>()
+        core.responseSink = { replies.add(it) }
+        feed(core, "\u001B[>q")
+        assertEquals(1, replies.size)
+        // xterm 规范格式：DCS > | 文本 ST —— 与 DA2 的 xterm 人设一致
+        assertEquals("\u001BP>|xterm(377)\u001B\\", String(replies[0], Charsets.US_ASCII))
+    }
+
+    @Test
+    fun `XTVERSION with explicit param 0 also responds`() {
+        val core = TerminalCore(2, 20)
+        val replies = mutableListOf<ByteArray>()
+        core.responseSink = { replies.add(it) }
+        feed(core, "\u001B[>0q")
+        assertEquals(1, replies.size)
+        assertEquals("\u001BP>|xterm(377)\u001B\\", String(replies[0], Charsets.US_ASCII))
+    }
+
+    @Test
+    fun `XTVERSION does not disturb DECSCUSR`() {
+        val core = TerminalCore(2, 20)
+        val replies = mutableListOf<ByteArray>()
+        core.responseSink = { replies.add(it) }
+        // DECSCUSR（SP 中间字节）仍走光标形状；XTVERSION（'>' 前缀）仍走应答
+        feed(core, "\u001B[4 q", "\u001B[>q")
+        assertEquals(CursorStyle.UNDERLINE, core.renderSnapshot().cursorStyle)
+        assertEquals(1, replies.size)
+        // 无 '>' 前缀且无 SP 中间字节的 CSI 3 q：既非 DECSCUSR 也非 XTVERSION —— 静默忽略
+        feed(core, "\u001B[3 q")
+        assertEquals(1, replies.size)
+    }
+
     @Test
     fun `DSR 6 reports cursor position 1-based`() {
         val core = TerminalCore(4, 20)
