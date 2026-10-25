@@ -11,5 +11,5 @@
 - TerminalExec 的 cwd 参数统一为 guest 语义：`/workspace`（活跃工作区）、`/sdcard`（共享存储）、`/root`、`~/` 按描述正确映射进 Ubuntu 沙箱 —— 此前按宿主语义解析导致目录不存在报错，与 TerminalCreate 同名参数语义相反
 - 危险命令审批弹窗显示执行环境：「将在：Ubuntu 沙箱（proot-ubuntu）· 目录 /workspace」—— 同一条 rm 在沙箱内与宿主上后果完全不同，授权决策现在能看到这个区别
 - cd 目录记忆支持 guest 路径：Ubuntu 通道里 `cd /workspace/proj && make` 的目录切换会被记住，后续命令同目录执行（此前宿主侧验证失败被静默丢弃）
-- TerminalObserve SCREEN 模式返回 guestCwd：交互会话里 shell 上报的当前目录（OSC 7）首次暴露给 Agent —— cd 到哪里、后续 TerminalExec 传什么 cwd 不再靠猜
+- TerminalObserve SCREEN 模式返回 guestCwd：交互会话里 shell 上报的当前目录（OSC 7）首次暴露给 Agent —— cd 到哪里、后续 TerminalExec 传什么 cwd 不再靠猜（JVM 回退引擎已生效；设备端 native VT 引擎的 OSC 7 桥接为后续工作，就绪前该字段不出现）
 - 高危命令检测补漏：`> /etc/passwd` 这类重定向改写系统文件的变体纳入确认清单
