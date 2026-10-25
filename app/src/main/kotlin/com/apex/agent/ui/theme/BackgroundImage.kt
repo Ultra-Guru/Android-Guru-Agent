@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import com.apex.agent.core.logging.AppLogger
@@ -142,21 +143,28 @@ private const val TARGET_LONG_SIDE = 1440
 /**
  * 位图平均亮度估算（专属优化 2 的信号源）：稀疏采样（步长 ≈ 边长/16）
  * 求感知亮度均值（0 = 纯黑，1 = 纯白）。空位图返回中性 0.5。
+ *
+ * ImageBitmap 无单像素读取 API（Android 侧）—— 一次性 [toPixelMap]
+ * 物化像素后稀疏取点（remember 缓存下仅换图时执行一次；降采样后
+ * ≈ 8MB 量级的单次拷贝）。
  */
 internal fun estimateLuminance(bitmap: ImageBitmap): Float {
     val w = bitmap.width
     val h = bitmap.height
     if (w <= 0 || h <= 0) return 0.5f
-    val stepX = (w / 16).coerceAtLeast(1)
-    val stepY = (h / 16).coerceAtLeast(1)
-    var sum = 0f
-    var count = 0
-    for (x in 0 until w step stepX) {
-        for (y in 0 until h step stepY) {
-            val c = bitmap.getPixel(x, y) // 稀疏采样，量级 ≤ 17×17 次读取
-            sum += 0.2126f * c.red + 0.7152f * c.green + 0.0722f * c.blue
-            count++
+    return runCatching {
+        val pixels = bitmap.toPixelMap()
+        val stepX = (w / 16).coerceAtLeast(1)
+        val stepY = (h / 16).coerceAtLeast(1)
+        var sum = 0f
+        var count = 0
+        for (x in 0 until w step stepX) {
+            for (y in 0 until h step stepY) {
+                val c = pixels[x, y] // 稀疏采样，量级 ≤ 17×17 次读取
+                sum += 0.2126f * c.red + 0.7152f * c.green + 0.0722f * c.blue
+                count++
+            }
         }
-    }
-    return if (count == 0) 0.5f else sum / count
+        if (count == 0) 0.5f else sum / count
+    }.getOrDefault(0.5f) // 未知位图配置读取失败 → 中性亮度（自适应基数归零）
 }

@@ -126,13 +126,15 @@ object LlmModule {
         registry: ModelRuntimeRegistry,
         repo: SettingsRepository
     ): ModelRuntime {
-        val governor = RateLimitGovernor {
+        // Kotlin 陷阱（AGENTS.md 清单 #2）：尾随 lambda 绑定的是**末参** clock
+        // 而非 policyProvider —— 显式具名传参，防绑定错位。
+        val governor = RateLimitGovernor(policyProvider = {
             val s = repo.agentSettings.value
             RateLimitGovernor.RateLimitPolicy(
                 enabled = s.rateLimitFriendly,
                 minIntervalMs = s.rateLimitMinIntervalMs.toLong().coerceIn(0L, 60_000L)
             )
-        }
+        })
         return DefaultModelRuntime(router, registry, rateLimits = governor)
     }
 }
