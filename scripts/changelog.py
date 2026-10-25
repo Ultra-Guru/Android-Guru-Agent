@@ -12,15 +12,24 @@
         [--out dist/changelog.json] [--history-file <json>]
         [--consumed-out dist/consumed-fragments.txt]
         [--archived dist/archived-fragments.txt]
-      聚合 `.changelog/unreleased/*.md` → changelog.json（apex-changelog-v2）：
+      聚合 `.changelog/unreleased/*.md` → changelog.json（apex-changelog-v3）：
 
       片段元数据（文件头 `<!-- key: value -->` 连续标记行，聚合时剥离）：
         - `source: publisher` —— 由管理端发布器 App（apex-Administrator）发送
           的片段 → 一级日志（弹窗置顶展示）；
+        - `pr: <slug>` —— PR / 分支功能片段 → 二级日志，slug 直接作组标题
+          （无此标记时组标题回退 Markdown 标题 / 首行 / 文件名 slug）；
         - `target: 1.4.9.27` —— 本片段面向的目标版本；构建版本 < target 时
           本片段缓发布（不收录、不消费，留在 unreleased 等待未来版本）；
-          缺省 = 下一版即收录。无 source 标记的片段 = PR 片段 → 二级日志
-          （弹窗一级要点下方滑动区，按「新增功能 / 修复」分组展示）。
+          缺省 = 下一版即收录。
+
+      一级判定双通道（v3.1 —— 「发布了却不显示更新内容」根治）：
+        1. 显式标记：`source: publisher`；
+        2. git 溯源兑底：片段由 commit message 含「via 发布器」的提交新增
+           （老版发布器 App 不写标记也不丢一级置顶）；浅克隆 / 非 git
+           环境宽松降级为空集，标记通道不受影响。
+        两通道均未命中且无 `pr:` 标记的片段 = PR 片段 → 二级日志（弹窗
+        一级要点下方滑动区，按组展示）。
 
       changelog.json 结构（v3，对 v1/v2 客户端前向兼容 —— 未知字段忽略）：
         - notes：一级日志要点（仅 publisher 片段的列表项剥壳，行内图片
@@ -56,6 +65,7 @@ import datetime
 import json
 import pathlib
 import re
+import subprocess
 import sys
 import urllib.request
 
@@ -78,9 +88,15 @@ BULLET_RE = re.compile(r"^\s*(?:[-*•·]|\d+[.、)])\s+(.+?)\s*$")
 HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$")
 # Markdown 图片引用（![alt](url)）—— 发布器附图；alt 不捕获（展示走 images 字段）
 IMG_RE = re.compile(r"!\[[^\]]*\]\((\S+?)\)")
-# 文件头元数据标记：<!-- source: publisher --> / <!-- target: 1.4.9.27 -->
-MARKER_RE = re.compile(r"^<!--\s*(source|target)\s*:\s*([^>]*?)\s*-->\s*$", re.IGNORECASE)
+# 文件头元数据标记：source / target / pr 三键（pr 的值直接作二级组标题）
+MARKER_RE = re.compile(
+    r"^<!--\s*(source|target|pr)\s*:\s*([^>]*?)\s*-->\s*$", re.IGNORECASE
+)
 TS_PREFIX_RE = re.compile(r"^\d{8}-\d{6}-")
+# 发布器 App 提交的 commit message 特征（docs(changelog): …（via 发布器））
+PUBLISHER_COMMIT_RE = re.compile(r"via[\s\u00b7]*发布器", re.IGNORECASE)
+# git log --format=%H\ %s 的提交行（40 位 SHA 前缀，与文件路径行区分）
+GIT_COMMIT_LINE_RE = re.compile(r"^[0-9a-f]{40} ")
 
 
 def load_fragments():
@@ -95,9 +111,9 @@ def load_fragments():
 
 def strip_head_markers(text):
     """剥离文件头连续标记行 → (meta, body)。标记仅认头部（正文中的
-    HTML 注释不受影响）；同键重复以首见为准。"""
+    HTML 注释不受影响）；同键重复以首见为准。pr 值作二级组标题。"""
     lines = text.splitlines()
-    meta = {"source": None, "target": None}
+    meta = {"source": None, "target": None, "pr": None}
     i = 0
     while i < len(lines):
         m = MARKER_RE.match(lines[i])
@@ -205,12 +221,54 @@ def dedup_keep_order(items):
     return uniq
 
 
-def group_title(body, path):
-    """PR 组标题：首个 Markdown 标题 > 首个非列表正文行 > 文件名 slug。"""
+def publisher_committed_names():
+    """git 溯源：由发布器 App 提交（commit message 含「via 发布器」）新增
+    的片段文件名集合 —— 老版发布器不写 `source: publisher` 标记也能进一级。
+
+    浅克隆只看得到触发 commit（发布器直推时恰是它自身）→ 足够；非 git
+    环境 / 超时 / 任一异常 → 空集宽松降级（标记通道不受影响，发布列车
+    绝不因此断）。"""
+    try:
+        proc = subprocess.run(
+            [
+                "git", "log", "--diff-filter=A", "--name-only",
+                "--format=%H %s", "--", ".changelog/unreleased",
+            ],
+            cwd=REPO_ROOT, capture_output=True, text=True, timeout=15,
+        )
+        if proc.returncode != 0:
+            return set()
+    except Exception:
+        return set()
+    names = set()
+    from_publisher = False
+    for line in proc.stdout.splitlines():
+        if GIT_COMMIT_LINE_RE.match(line):
+            from_publisher = bool(PUBLISHER_COMMIT_RE.search(line))
+        elif line.startswith(".changelog/unreleased/") and from_publisher:
+            names.add(line.rsplit("/", 1)[-1])
+    return names
+
+
+def prettify_slug(slug):
+    """pr 标记 slug → 可读组标题（`normal-browser-and-git` →
+    `normal browser and git`）；去首尾空白与分隔符。"""
+    return re.sub(r"[-_]+", " ", slug.strip()).strip()
+
+
+def group_title(body, path, pr_slug=None):
+    """PR 组标题：首个 Markdown 标题 > pr 标记 slug > 首个非列表正文行
+    > 文件名 slug。pr 标记（`<!-- pr: xxx -->`）由发布器 / Agent 流程写入，
+    值即 PR 分支语义名 —— 优先于首行捕抓，免受正文格式影响。"""
     for ln in body.splitlines():
         m = HEADING_RE.match(ln.strip())
         if m:
             return m.group(1)
+    pr_slug = (pr_slug or "").strip()
+    if pr_slug:
+        pretty = prettify_slug(pr_slug)
+        if pretty:
+            return pretty[:60] + ("…" if len(pretty) > 60 else "")
     first = next(
         (ln.strip() for ln in body.splitlines()
          if ln.strip() and not BULLET_RE.match(ln) and not MARKER_RE.match(ln)
@@ -277,6 +335,10 @@ def cmd_build(args):
     # ── 收录判定：target 感知 + 归档去重 ─────────────────────
     # 面向未来版本的片段（target > 构建版本）缓发布：不收录、不消费；
     # 已被前序 run 发布的片段（归档索引命中）跳过，防跨 run 重复收录。
+
+    # ── 一级判定双通道（v3.1）：标记 + git 溯源兑底 ─────────────
+    publisher_sent = publisher_committed_names()
+
     included, deferred, deduped = [], [], []
     for p in load_fragments():
         if p.name in archived:
@@ -298,8 +360,15 @@ def cmd_build(args):
             continue
         included.append((p, meta, body))
 
-    publisher = [x for x in included
-                 if (x[1].get("source") or "").lower() == "publisher"]
+    publisher = [
+        x for x in included
+        # 显式 pr 标记 → 恒二级（标记优先于 git 溯源推断，防误升一级）
+        if not (x[1].get("pr") or "").strip()
+        and (
+            (x[1].get("source") or "").strip().lower() == "publisher"
+            or x[0].name in publisher_sent
+        )
+    ]
     pr_frags = [x for x in included if x not in publisher]
 
     # ── 一级日志：publisher 片段要点（弹窗置顶）+ 配图（图廊）────────
@@ -312,10 +381,13 @@ def cmd_build(args):
 
     # ── 二级日志：PR 片段分组（下滑区「新增功能 / 修复」介绍）────────
     pr_groups = []
-    for p, _m, body in pr_frags[:MAX_PR_GROUPS]:
+    for p, m, body in pr_frags[:MAX_PR_GROUPS]:
         g_notes = dedup_keep_order(extract_bullets(body))[:MAX_GROUP_NOTES]
         if g_notes:
-            pr_groups.append({"title": group_title(body, p), "notes": g_notes})
+            pr_groups.append({
+                "title": group_title(body, p, m.get("pr")),
+                "notes": g_notes,
+            })
     if len(pr_frags) > MAX_PR_GROUPS:
         pr_groups.append({
             "title": f"另有 {len(pr_frags) - MAX_PR_GROUPS} 项合并内容",
@@ -383,7 +455,9 @@ def cmd_build(args):
     print(
         f"📦 changelog.json — v{version}({code})：{len(included)} 片段收录 / "
         f"{len(deferred)} 缓发布 / {len(deduped)} 归档去重 | 一级 {len(notes)} 条（publisher "
-        f"{len(publisher)}）+ 配图 {len(images)} 张 + 二级 {len(pr_groups)} 组（pr "
+        f"{len(publisher)}，其中 git 溯源命中 "
+        f"{sum(1 for x in publisher if (x[1].get('source') or '').strip().lower() != 'publisher')}）"
+        f"+ 配图 {len(images)} 张 + 二级 {len(pr_groups)} 组（pr "
         f"{len(pr_frags)}）/ history {len(history)} 条（remote 存量 {len(old_history)}）"
     )
     for n in notes[:8]:

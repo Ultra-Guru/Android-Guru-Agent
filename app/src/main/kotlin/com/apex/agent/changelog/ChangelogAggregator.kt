@@ -2,7 +2,7 @@ package com.apex.agent.changelog
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- *  跨版本更新日志聚合器（changelog 通道 v2.2）
+ *  跨版本更新日志聚合器（changelog 通道 v2.3）
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * 背景（「手动日志发行时 PR 日志丢失」的另一半根因）：
@@ -15,6 +15,9 @@ package com.apex.agent.changelog
  * 聚合策略（两级语义保持不变，只做跨版本合并）：
  * - 区间 (fromExclusive, toInclusive] 内的全部 entry 参与；
  * - 一级 notes：按出现顺序并集去重（发布器手动日志要点跨版本全保留）；
+ * - 一级 images：同样跨版本并集去重（v2.3 —— 旧版只保留目标版本配图，
+ *   跨版本升级用户会丢中间版本的截图；现按版本升序全量保留，发布器
+ *   附图跨版本一条不丢）；
  * - 二级 pr：按组标题合并（同标题组的 notes 并集去重 —— 顺带消解流水线
  *   历史上同片段重复收录造成的双份展示）；
  * - 单版本命中：原样返回（title / date / markdown 降级链完整保留）；
@@ -26,6 +29,9 @@ object ChangelogAggregator {
 
     /** markdown 兜底拼接上限（跨版本合并时防超长撑爆弹窗）。 */
     private const val MAX_FALLBACK_MARKDOWN = 8000
+
+    /** 跨版本合并配图上限（与聚合端 MAX_IMAGES / 弹窗图廊同尺）。 */
+    private const val MAX_MERGED_IMAGES = 9
 
     /**
      * 聚合清单内 (fromExclusive, toInclusive] 区间的全部日志条目。
@@ -47,7 +53,7 @@ object ChangelogAggregator {
         }.filter { it.versionCode in (fromExclusive + 1)..toInclusive }
         if (candidates.isEmpty()) return null
 
-        // 单版本：原样返回（保留 title/date/markdown 全部原始语义）
+        // 单版本：原样返回（保留 title/date/images/markdown 全部原始语义）
         if (candidates.size == 1) return candidates.first()
 
         val target = candidates.maxByOrNull { it.versionCode }
@@ -55,6 +61,8 @@ object ChangelogAggregator {
 
         // ── 一级 notes：按版本升序并集去重（早版本在前 = 时间线自然序）──
         val notes = LinkedHashSet<String>()
+        // ── 一级 images：按版本升序并集去重（配图跨版本全保留，封顶 9）──
+        val images = LinkedHashSet<String>()
         // ── 二级 pr：组标题 → 合并组（同标题跨版本并集，消解历史重复收录）──
         val prGroups = LinkedHashMap<String, ChangelogPrGroup>()
         // ── markdown 兜底源（仅当两级全空时使用）──────────────────────
@@ -62,6 +70,7 @@ object ChangelogAggregator {
 
         candidates.sortedBy { it.versionCode }.forEach { e ->
             notes.addAll(e.notes)
+            images.addAll(e.images)
             e.pr.forEach { g ->
                 val key = g.title.ifBlank { "…" }
                 val existing = prGroups[key]
@@ -78,6 +87,7 @@ object ChangelogAggregator {
         }
 
         val mergedNotes = notes.toList()
+        val mergedImages = images.toList().take(MAX_MERGED_IMAGES)
         val mergedPr = prGroups.values.toList()
         val fallbackMarkdown = if (mergedNotes.isEmpty() && mergedPr.isEmpty()) {
             markdowns.joinToString("\n\n---\n\n").take(MAX_FALLBACK_MARKDOWN)
@@ -88,6 +98,7 @@ object ChangelogAggregator {
         return target.copy(
             title = target.title ?: "v${target.versionName} 更新内容",
             notes = mergedNotes,
+            images = mergedImages,
             pr = mergedPr,
             markdown = fallbackMarkdown
         )

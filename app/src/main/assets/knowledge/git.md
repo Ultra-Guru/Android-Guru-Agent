@@ -1684,7 +1684,12 @@ git filter-repo --replace-text expressions.txt    # 批量替换字符串
 
 - 本仓库通道：.changelog/unreleased/ 片段（文件名时间戳排序）。
 - 片段规范：面向用户列表项（- 新增/修复 …）；≤32KB；空文件拒。
+- 头部标记定级（v3）：`<!-- source: publisher -->` = 一级置顶（发布器手动
+  日志 / 用户公告 —— 用户让你发更新公告时必带此标记）；`<!-- pr: slug -->`
+  = 二级功能变更分组（slug 作组标题）；`<!-- target: X.Y.Z -->` = 面向未来
+  版本缓发布；无标记 = 二级。配图 `![alt](url)` 由聚合端提取进 images 字段。
 - 发布时聚合进 changelog.json（三落点：Release/发布仓/APK assets）。
+- 跨多版本升级用户：App 聚合区间内全部版本日志（要点/配图/分组并集）。
 - skip-changelog 标签仅纯内部变更。
 
 ## 115. 锁治理
