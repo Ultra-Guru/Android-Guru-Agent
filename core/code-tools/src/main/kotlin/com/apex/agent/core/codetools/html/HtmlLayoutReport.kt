@@ -20,7 +20,9 @@ data class HtmlLayoutReport(
     val bracketSummary: String,
     val truncated: String? = null,
     /** 视觉画像（PR2：无样式信号时为 null，报告跳过）。 */
-    val visual: HtmlVisualProfile.VisualProfile? = null
+    val visual: HtmlVisualProfile.VisualProfile? = null,
+    /** 重复组件清单（PR3：纯结构识别，无重复时为空）。 */
+    val components: List<HtmlComponentPatterns.ComponentPattern> = emptyList()
 ) {
 
     /** 错误/警告计数（报告头显示用）。 */
@@ -83,6 +85,19 @@ data class HtmlLayoutReport(
         appendLine()
 
         renderVisual(this)
+        renderComponents(this)
+    }
+
+    /** 重复组件区块（PR3）：有组件才渲染。 */
+    private fun renderComponents(sb: StringBuilder) {
+        if (components.isEmpty()) return
+        sb.appendLine("## 重复组件（改模板一处 = 全部实例生效）")
+        sb.appendLine()
+        components.forEach { c ->
+            sb.appendLine("- **${c.kind.label} ×${c.count}** · 形状 `${c.shape.take(90)}` · 位于 <${c.parentTag}>（首例约第 ${c.firstLine} 行）" +
+                (if (c.sampleClasses.isNotEmpty()) " · 定位类 .${c.sampleClasses.first()}" else ""))
+        }
+        sb.appendLine()
     }
 
     /** 视觉画像区块（PR2）：有信号才渲染。 */

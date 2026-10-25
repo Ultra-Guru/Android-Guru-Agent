@@ -287,13 +287,15 @@ object LightweightHtmlParser {
      */
     private fun closeTag(stack: ArrayDeque<HtmlNode>, name: String) {
         if (name.isEmpty()) return
-        var idx = -1
-        for (k in stack.indices) {
-            if (stack[k].tag == name) { idx = k; break }
-        }
-        if (idx <= 0) return
-        for (k in stack.size - 1 downTo idx) {
-            stack.removeAt(k)
+        // HTML 规范：结束标签匹配「最近打开」的同名未闭合元素（栈顶向下首个命中），
+        // 连同其内部未闭合元素一起弹出；不在栈上则忽略（孤立闭合标签）。
+        for (k in stack.size - 1 downTo 1) {
+            if (stack[k].tag == name) {
+                for (j in stack.size - 1 downTo k) {
+                    stack.removeAt(j)
+                }
+                return
+            }
         }
     }
 
