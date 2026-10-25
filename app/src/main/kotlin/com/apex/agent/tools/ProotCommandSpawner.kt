@@ -414,7 +414,7 @@ class ProotCommandSpawner(
                 if (sub.isNotEmpty() && !File(ws, sub.removePrefix("/")).isDirectory) return null
                 GuestCwdPlan(
                     expanded, emptyList(),
-                    WorkspacePath("workspace:/${sub.removePrefix('/')}").takeIf { sub.isNotEmpty() }
+                    WorkspacePath("workspace:/${sub.removePrefix("/")}").takeIf { sub.isNotEmpty() }
                         ?: WORKSPACE_CWD,
                     workspaceHostDir = ws
                 )
