@@ -320,14 +320,19 @@ object CodeModule {
         // 引擎流不再吃满 5 分钟超时（取消卡死根因）
         userQuestionBridge: com.apex.agent.core.engine.UserQuestionBridge
     ): AgentEngine {
+        // 工具循环 v2 + 限速友好：设置层快照拍平进编码引擎（与 Agent 屏
+        // AgentModule 同源字段；maxIterations 0 = 无上限哨兵）。
+        val agentSettings = settingsRepository.agentSettings.value
+        val richPayload = agentSettings.rateLimitFriendly && agentSettings.rateLimitRichPayload
         val codeConfig = AgentConfig(
             mode = AgentMode.BUILD,
             thinkingLevel = CodeThinkingLevel.STANDARD.toAgentLevel(),
             maxIterations = 40,
+            toolCallParallelism = agentSettings.toolCallParallelism,
             maxContextTokens = 128_000,
-            maxToolOutputLength = 8_000,
-            compressionThreshold = 0.8f,
-            preserveRecentTurns = 6,
+            maxToolOutputLength = if (richPayload) 16_000 else 8_000,
+            compressionThreshold = if (richPayload) 0.85f else 0.8f,
+            preserveRecentTurns = if (richPayload) 9 else 6,
             // #197 工位作用域：coding 引擎只注入 coding/all 编码技能
             // （与 Agent 屏的聊天技能提示词层完全独立）
             skillScope = "coding"

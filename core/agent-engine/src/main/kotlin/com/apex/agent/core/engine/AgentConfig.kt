@@ -127,9 +127,30 @@ data class AgentConfig(
     /** 思考深度 */
     val thinkingLevel: ThinkingLevel = ThinkingLevel.STANDARD,
     
-    /** 最大迭代次数（防止无限循环）*/
+    /**
+     * 最大迭代轮数（防失控兜底）。**≤ 0 = 无上限**（用户显式要求：一个任务
+     * 的工具调用次数不设上限——失控防线交给循环检测 + 用户手动停止，
+     * 见 [EngineResilienceGuard] 与 loopDetector）。经
+     * [ThinkingModeController.effectiveMaxIterations] 统一消费哨兵。
+     */
     val maxIterations: Int = 25,
-    
+
+    /**
+     * 单轮并行执行上限：模型一次返回多个 tool_calls 时，引擎同轮最多
+     * 并行执行几个（1 = 顺序执行，历史默认）。仅影响**执行**并发——
+     * 请求参数侧的 parallel_tool_calls 开关在 ModelProfile（两者正交）。
+     * 并行时事件按「发言权」协议顺序放行（UI 单卡时间线不撕裂），历史
+     * ToolResult 按原始顺序落盘（配对安全），见 EngineToolExecution.kt。
+     */
+    val toolCallParallelism: Int = 1,
+
+    /**
+     * 单轮工具调用数上限（超出部分延迟到下一轮执行，附系统说明）：
+     * 0 = 不限制。来源 ModelProfile.maxToolCalls（此前是设置页 dead 字段，
+     * 这里补上引擎侧真接线——防弱模型一轮喷射几十个调用把请求打爆）。
+     */
+    val maxToolCallsPerTurn: Int = 0,
+
     /** 最大context tokens（超出触发压缩）*/
     val maxContextTokens: Int = 128000,
     

@@ -183,6 +183,22 @@ class ThinkingModeControllerTest {
         assertEquals(38, c.effectiveMaxIterations(25))
     }
 
+    // ── 工具循环 v2：无上限哨兵（maxIterations ≤ 0 → Int.MAX_VALUE）──
+
+    @Test
+    fun `effectiveMaxIterations treats non-positive base as unlimited`() {
+        val c = ThinkingModeController()
+        // 无画像 / 有画像两条路径都不放大哨兵（无限 × 任何系数还是无限）。
+        assertEquals(Int.MAX_VALUE, c.effectiveMaxIterations(0))
+        assertEquals(Int.MAX_VALUE, c.effectiveMaxIterations(-3))
+        c.onIterationStart(config(ThinkingLevel.MAXIMUM), 1)
+        assertEquals(Int.MAX_VALUE, c.effectiveMaxIterations(0))
+        assertEquals(Int.MAX_VALUE, c.effectiveMaxIterations(-1))
+        // 正常路径不受影响
+        assertEquals(38, c.effectiveMaxIterations(25))
+    }
+
+
     @Test
     fun `resolveCompressionThreshold divides by aggressiveness`() {
         val c = ThinkingModeController()

@@ -41,6 +41,8 @@ class DefaultModelRuntime(
     private val registry: ModelRuntimeRegistry,
     private val diagnostics: ModelRuntimeDiagnostics = ModelRuntimeDiagnostics(),
     private val maxAttempts: Int = 4,
+    /** 限速友好节流器（默认 NOOP = 历史行为零变化；见 [RateLimitGovernor]）。 */
+    private val rateLimits: RateLimitGovernor = RateLimitGovernor.NOOP
 ) : ModelRuntime {
 
     override suspend fun chat(
@@ -77,6 +79,8 @@ class DefaultModelRuntime(
             if (attempt >= maxAttempts) break
             if (!visited.add(resolved.profile.id)) continue  // 防环：每个 profile 仅一次
             val client = registry.get(resolved.profile, resolved.provider)
+            // 限速友好：每次真实请求前排队（含降级重试的每一次尝试）。
+            rateLimits.awaitPermit()
             val start = System.currentTimeMillis()
             try {
                 val resp = client.chat(effectiveMessages, tools, temperature, maxTokens, toolChoice)
@@ -150,6 +154,8 @@ class DefaultModelRuntime(
             if (attempt >= maxAttempts) break
             if (!visited.add(resolved.profile.id)) continue
             val client = registry.get(resolved.profile, resolved.provider)
+            // 限速友好：每次真实请求前排队（含降级重试的每一次尝试）。
+            rateLimits.awaitPermit()
             val start = System.currentTimeMillis()
             var streamedAny = false
             try {

@@ -7,13 +7,18 @@ import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.core.engine.orchestrator.RetryPolicy
 import com.apex.agent.core.tools.ToolStreamEvent
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 
 /**
  * ═══ 工具调用流式执行（自 [ApexAgentEngine] 迁出，God-file 预算拆分）═══
  *
  * 模式与 [EngineAskUserFlow] / [EngineCompressionGate] 一致：同包顶层扩展 +
- * internal 成员直调，引擎主循环调用点零改动（`executeToolCallStreaming(...)`）。
+ * internal 成员直调，引擎主循环调用点零改动（`executeToolCallTurn(...)`）。
  *
  * 本版新增 **长任务韧性**（详见 [EngineResilienceGuard]）：
  * - 工具瞬时失败（网络断连/超时/限流 —— orchestrator FailureClassifier 判
@@ -28,6 +33,20 @@ import kotlinx.coroutines.delay
  * 无法归位（隔块 ToolResult 不参与配对）→ 损坏持久化、会话报废。现在统一
  * **延迟注入**（[deferSystemNote]）：先入引擎缓冲队列，整批工具结果写完后
  * 由主循环统一 [flushPendingSystemNotes]（位置永远在完整 tool 块之后）。
+ *
+ * ═══ 工具循环 v2：并行批执行（发言权协议）═══
+ *
+ * [AgentConfig.toolCallParallelism] > 1 时，同一轮 Assistant 消息的多个
+ * tool_calls 分块并行**执行**（IO 并发、互不等待），但保证两条不变量：
+ *
+ * 1. **事件时间线不撕裂**：UI 的 currentToolCall 单卡设计一次只跟踪一个
+ *    callId（迟到 chunk 会被丢弃）。工作协程只把事件塞进各自的
+ *    [Channel]（线程安全），由流属主协程按「发言权」顺序放行——每个工具
+ *    的 Start → Output → Complete 生命周期在时间线上连续，一个讲完下一个
+ *    接着讲。执行并行、呈现顺序，两全。
+ * 2. **历史与检测器串行落盘**：ToolResult / 循环检测 / 韧性统计 / 终端
+ *    建议器等有状态组件只由流属主协程按**原始 tool_calls 顺序**访问——
+ *    无锁、无竞态、配对顺序稳定（[finalizeToolCallOutcome] 收口）。
  */
 
 /**
@@ -49,11 +68,145 @@ internal fun ApexAgentEngine.flushPendingSystemNotes() {
         addMessage(LlmMessage.System(pendingSystemNotes.removeFirst()))
     }
 }
+
+/** 单个工具调用的执行产物（core 阶段输出，finalize 阶段消费）。 */
+internal class ToolExecutionOutcome(
+    /** 截断后的工具输出（写历史用）。 */
+    val result: String,
+    /** 流式信号判定成败（无 Error 事件且无异常，详见 core 注释）。 */
+    val success: Boolean,
+    /** 注册表 id（provider 安全名 → 注册表名的解析结果，检测器/元数据用）。 */
+    val registryToolId: String
+)
+
 /**
- * 流式执行单个工具调用。
+ * ═══ 单轮工具调度核心（主循环唯一入口）═══
  *
- * 取代旧的 `toolExecutor.execute(...)` 一次性调用。收集
- * [ToolExecutor.executeStream] 的事件流：
+ * 职责链：单轮上限截断 → Assistant(tool_calls) 配对锚点落盘 → AskUser
+ * 保序穿插（挂起等用户不可并行）→ 其余工具按 [AgentConfig.toolCallParallelism]
+ * 分块并行执行 → 冲刷延迟 System 提示（位置安全点）。
+ *
+ * AskUser 保序语义：模型输出 [Read, AskUser, Write] 时执行序为 Read 批 →
+ * AskUser（挂起等用户）→ Write 批 —— 与历史顺序一致（问在答后的意图不被
+ * 打乱）；AskUser 之后的工具不因它而失去并行机会。
+ */
+internal suspend fun ApexAgentEngine.executeToolCallTurn(
+    contentText: String,
+    toolCalls: List<ToolCall>,
+    emit: suspend (AgentEvent) -> Unit
+) {
+    val capped = capToolCallsPerTurn(toolCalls)
+    if (capped.isEmpty()) return
+
+    // 配对锚点：Assistant 消息携带**实际执行**的 tool_calls（截断后的子集，
+    // 与逐个 ToolResult 一一对应——绝不出现悬空 id）。
+    addMessage(LlmMessage.Assistant(contentText, capped))
+
+    val parallelism = config.toolCallParallelism.coerceIn(1, MAX_TOOL_PARALLELISM)
+    var run = mutableListOf<ToolCall>()
+    for (toolCall in capped) {
+        if (toolCall.name == "AskUser") {
+            executeToolRun(run, parallelism, emit)
+            run = mutableListOf()
+            // 挂起等待用户输入（流程拆至 EngineAskUserFlow.kt），不可并行。
+            handleAskUserToolCall(toolCall, emit)
+        } else {
+            run.add(toolCall)
+        }
+    }
+    executeToolRun(run, parallelism, emit)
+
+    // diag-20261011：整批 ToolResult 落盘后冲刷延迟 System 提示
+    //（位置安全点：完整 tool 块之后，下一轮请求之前）。
+    flushPendingSystemNotes()
+}
+
+/** 单轮调用数上限截断（[AgentConfig.maxToolCallsPerTurn] ≤ 0 = 不限制）。 */
+private fun ApexAgentEngine.capToolCallsPerTurn(toolCalls: List<ToolCall>): List<ToolCall> {
+    val cap = config.maxToolCallsPerTurn
+    if (cap <= 0 || toolCalls.size <= cap) return toolCalls
+    deferSystemNote(
+        "This turn requested ${toolCalls.size} tool calls, but the per-turn cap is $cap. " +
+            "Only the first $cap were executed this round — re-issue the remaining " +
+            "calls in your next turn (they were NOT silently dropped from your intent)."
+    )
+    AppLogger.instance.warn(
+        LogCategory.TOOL, "ApexAgentEngine",
+        "tool calls capped per turn: ${toolCalls.size} → $cap (deferred to next round)"
+    )
+    return toolCalls.take(cap)
+}
+
+/** 一个无 AskUser 的连续工具段：并行度 1 或单个调用走顺序路径，否则分块并行。 */
+private suspend fun ApexAgentEngine.executeToolRun(
+    run: List<ToolCall>,
+    parallelism: Int,
+    emit: suspend (AgentEvent) -> Unit
+) {
+    if (run.isEmpty()) return
+    if (parallelism <= 1 || run.size == 1) {
+        for (toolCall in run) executeToolCallStreaming(toolCall, emit)
+        return
+    }
+    run.chunked(parallelism).forEach { chunk -> executeToolCallChunk(chunk, emit) }
+}
+
+/** 并行工具并行度上限（引擎侧硬顶：再多只会压垮终端/文件 IO）。 */
+private const val MAX_TOOL_PARALLELISM = 8
+
+/**
+ * 并行块执行（发言权协议，见文件头）。工作协程在 [Dispatchers.IO] 上跑
+ * 工具本体，事件入各自 Channel；流属主协程按序放行完整生命周期。
+ */
+private suspend fun ApexAgentEngine.executeToolCallChunk(
+    chunk: List<ToolCall>,
+    emit: suspend (AgentEvent) -> Unit
+) = coroutineScope {
+    val queues = chunk.map { Channel<AgentEvent>(Channel.UNLIMITED) }
+    val outcomes = arrayOfNulls<ToolExecutionOutcome>(chunk.size)
+    val jobs = chunk.mapIndexed { idx, toolCall ->
+        launch(Dispatchers.IO) {
+            try {
+                outcomes[idx] =
+                    executeToolCallStreamingCore(toolCall) { event -> queues[idx].send(event) }
+            } finally {
+                // 哨兵闭合：core 正常收尾必发 Complete（先于 close 被 drain）；
+                // 若异常路径未发 Complete，closed channel 让 receive 显式失败
+                // 而非挂死。
+                queues[idx].close()
+            }
+        }
+    }
+    // 发言权放行：按原始顺序，每个工具讲完（Complete）下一个才开口。
+    for (i in chunk.indices) {
+        while (true) {
+            val event = queues[i].receive()
+            emit(event)
+            if (event is AgentEvent.ToolCallComplete) break
+        }
+    }
+    // 工作协程收尾（CancellationException 在此传播为整任务 abort）。
+    jobs.joinAll()
+    // 历史与有状态检测器：原始顺序串行落盘（无锁正确性收口）。
+    chunk.forEachIndexed { i, toolCall -> finalizeToolCallOutcome(toolCall, outcomes[i]!!) }
+}
+
+/**
+ * 顺序路径的单工具完整执行（core + finalize 的组合，语义与旧
+ * `executeToolCallStreaming` 逐行一致）。
+ */
+internal suspend fun ApexAgentEngine.executeToolCallStreaming(
+    toolCall: ToolCall,
+    emit: suspend (AgentEvent) -> Unit
+) {
+    val outcome = executeToolCallStreamingCore(toolCall, emit)
+    finalizeToolCallOutcome(toolCall, outcome)
+}
+
+/**
+ * 流式执行单个工具调用（core：事件与流，不碰历史）。
+ *
+ * 收集 [ToolExecutor.executeStream] 的事件流：
  * - [ToolStreamEvent.Output] → 追加到 [outputBuilder] 并即时发射
  *   [AgentEvent.ToolOutputChunk]，让 UI 在工具执行期间就能看到实时输出
  *   （如 shell 的逐行输出）。
@@ -64,16 +217,16 @@ internal fun ApexAgentEngine.flushPendingSystemNotes() {
  *   使失败信息也实时可见。
  *
  * 收集结束后（或捕获到异常），[outputBuilder] 即为 `rawOutput`，沿用原有的
- * P7 截断 + ToolCallComplete + 写入 LlmMessage.ToolResult 流程 —— 因此成功
- * 判定（`!result.startsWith("Error")`）与历史持久化行为与旧实现完全一致。
+ * P7 截断 + ToolCallComplete 流程 —— 因此成功判定（流式 Error 信号）与
+ * 历史持久化行为与旧实现完全一致（历史写入移至 [finalizeToolCallOutcome]）。
  *
  * [CancellationException] 重抛，使 `abort()` 能沿 `collect` → 工具 Flow →
  * 底层进程（如 `Process.destroy()`）传播。
  */
-internal suspend fun ApexAgentEngine.executeToolCallStreaming(
+internal suspend fun ApexAgentEngine.executeToolCallStreamingCore(
     toolCall: ToolCall,
     emit: suspend (AgentEvent) -> Unit
-) {
+): ToolExecutionOutcome {
     // v4：模型回显的是 provider 安全名（TerminalExecLegacy）；执行器/截断策略
     // 需要注册表 id（TerminalExec）——经当前计划的反向映射解析。
     // 无映射时（旧会话回放/模型直呼 registry id）原样直查，两条路都通。
@@ -197,17 +350,6 @@ internal suspend fun ApexAgentEngine.executeToolCallStreaming(
     // 异常分支未触发时，才回退到文本前缀检测（兼容只返回 "Error: ..." 文本
     // 而不发 Error 事件的旧工具）。
     val actionSuccess = !hadStreamError && !result.startsWith("Error")
-    if (!actionSuccess) anyActionFailed = true
-
-    // ═══ 长任务韧性：连续失败 → 延迟注入换路提示 ═══
-    // 连续 N 个工具调用失败时，向历史注入一条系统级 recovery 提示，
-    // 明确要求模型换工具/换参数/换分解方式 ——「不会用其他方式」的闭环；
-    // 预算用尽/未达阈值返回 null 零开销。
-    // diag-20261011：经 [deferSystemNote] 延迟到整批工具结果之后落盘 ——
-    // 此处直接 addMessage 会插在 ToolResult 之前，破坏配对（400 根因）。
-    resilience.onToolCallOutcome(toolCall.name, actionSuccess)?.let {
-        deferSystemNote(it)
-    }
 
     emit(
         AgentEvent.ToolCallComplete(
@@ -220,18 +362,48 @@ internal suspend fun ApexAgentEngine.executeToolCallStreaming(
             durationMs = duration
         )
     )
+    return ToolExecutionOutcome(result, actionSuccess, registryToolId)
+}
+
+/**
+ * 工具调用收尾（finalize：历史与检测器，只由流属主协程顺序调用）。
+ *
+ * 状态收口清单（全部按原始 tool_calls 顺序串行执行，并行批与顺序路径
+ * 共用同一段代码 —— 行为一致性由结构保证，不靠测试对齐）：
+ * - ToolResult 写历史（配对安全：Assistant 消息先落，ToolResult 紧随其后）；
+ * - 失败统计 + 换路提示（延迟注入，见 [deferSystemNote]）；
+ * - 深思考档自检提示（延迟注入）；
+ * - 终端主动性连击统计；
+ * - 循环检测与恢复提示（延迟注入）；
+ * - 隐式记忆采集（报告 P2）。
+ */
+internal suspend fun ApexAgentEngine.finalizeToolCallOutcome(
+    toolCall: ToolCall,
+    outcome: ToolExecutionOutcome
+) {
+    if (!outcome.success) anyActionFailed = true
+
+    // ═══ 长任务韧性：连续失败 → 延迟注入换路提示 ═══
+    // 连续 N 个工具调用失败时，向历史注入一条系统级 recovery 提示，
+    // 明确要求模型换工具/换参数/换分解方式 ——「不会用其他方式」的闭环；
+    // 预算用尽/未达阈值返回 null 零开销。
+    // diag-20261011：经 [deferSystemNote] 延迟到整批工具结果之后落盘 ——
+    // 此处直接 addMessage 会插在 ToolResult 之前，破坏配对（400 根因）。
+    resilience.onToolCallOutcome(toolCall.name, outcome.success)?.let {
+        deferSystemNote(it)
+    }
 
     // 截断后的结果存入历史（节省后续 token）
-    addMessage(LlmMessage.ToolResult(toolCall.id, result))
+    addMessage(LlmMessage.ToolResult(toolCall.id, outcome.result))
     // #168：工具计数 + DEEP/MAXIMUM 档在失败/HIGH 风险后注入自检提示（下一轮
     // LLM 可见）。diag-20261011：经 [deferSystemNote] 延迟落盘 —— 并行工具批
     // 中直接 addMessage 会插在本批后续 ToolResult 之前，破坏配对（400 根因）。
     thinkingController.postToolCheckPrompt(
-        registryToolId, actionSuccess, toolRegistry.metadataOf(registryToolId)?.isHighRisk == true
+        outcome.registryToolId, outcome.success, toolRegistry.metadataOf(outcome.registryToolId)?.isHighRisk == true
     )?.let { deferSystemNote(it) }
 
     // #170：终端主动性 —— 一次性 shell 连击/失败连击滑窗（下一迭代判定建议）。
-    terminalAdvisor.onToolCallCompleted(registryToolId, actionSuccess, toolCall.arguments)
+    terminalAdvisor.onToolCallCompleted(outcome.registryToolId, outcome.success, toolCall.arguments)
 
     // ═══ 循环检测（编排器路径同款下沉，3-C/C8）═══
     // 引擎路径此前只有失败连击统计（resilience.onToolCallOutcome），模型反复
@@ -253,12 +425,10 @@ internal suspend fun ApexAgentEngine.executeToolCallStreaming(
     }
 
     // 隐式记忆采集（报告 P2）：记录每个已执行动作及其成败。
-    // 传入 actionSuccess 供 CS-Mem 蒸馏时过滤失败动作（避免"鼠标连点失败"
+    // 传入 success 供 CS-Mem 蒸馏时过滤失败动作（避免"鼠标连点失败"
     // 也被压进 FSM 宏技能，使学到的宏技能必然无法回放）。
     memoryObserver?.onActionExecuted(
         "${toolCall.name}(${toolCall.arguments.take(120)})",
-        success = actionSuccess
+        success = outcome.success
     )
 }
-
-

@@ -329,6 +329,7 @@ private fun SettingsPageRouter(
         "model/network" -> SettingsLeafColumn {
             selected?.let { NetworkSection(it, onUpdate) } ?: EmptyProfileHint()
         }
+        "model/rate-limit" -> SettingsLeafColumn { RateLimitSection(agent, onAgent) }
         "model/prompt" -> SettingsLeafColumn {
             selected?.let { PromptSection(it, onUpdate) } ?: EmptyProfileHint()
         }
@@ -369,7 +370,10 @@ private fun SettingsPageRouter(
             VisionSection(agent, roles, profiles, viewModel)
         }
         // ═══ 界面外观 ═══
-        "interface/appearance" -> SettingsLeafColumn { AppearanceSection(agent, onAgent) }
+        "interface/appearance" -> SettingsLeafColumn {
+            AppearanceSection(agent, onAgent)
+            BackgroundSection(agent, onAgent)
+        }
         "interface/chat" -> SettingsLeafColumn { ChatDisplaySection(agent, onAgent) }
         "interface/notifications" -> SettingsLeafColumn {
             NotificationsPage(agent, onAgent)
