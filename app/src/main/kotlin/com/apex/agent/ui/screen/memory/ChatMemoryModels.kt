@@ -23,6 +23,10 @@ data class ChatMemoryEntry(
  *
  * 按契约顺序（画像 → 近况 → 里程碑）分组排列；空类别不占位 ——
  * 「还没记住什么」由分区空态文案表达，避免清空后残留三张空卡。
+ *
+ * 类别 / 来源的用户可读名称住 strings_core.xml（memory_chat_badge_* /
+ * memory_chat_source_*）—— 原硬编码中文 displayLabel 已在记忆页 v2
+ * 的 i18n 修复中移除（英文环境不再中英混杂）。
  */
 fun List<ChatFact>.toChatMemoryEntries(): List<ChatMemoryEntry> =
     ChatFact.Kind.DISPLAY_ORDER.mapNotNull { kind ->
@@ -31,18 +35,3 @@ fun List<ChatFact>.toChatMemoryEntries(): List<ChatMemoryEntry> =
             ?.sortedBy { it.createdAt }
             ?.let { ChatMemoryEntry(kind, it) }
     }
-
-/** 类别的用户可读名称（契约外类别兜底显示枚举名）。 */
-fun ChatFact.Kind.displayLabel(): String = when (this) {
-    ChatFact.Kind.PROFILE -> "用户画像"
-    ChatFact.Kind.STATE -> "用户近况"
-    ChatFact.Kind.MILESTONE -> "里程碑"
-}
-
-/** 来源的用户可读名称。 */
-fun ChatFact.Source.displayLabel(): String = when (this) {
-    ChatFact.Source.HEURISTIC -> "启发式"
-    ChatFact.Source.DISTILLED -> "蒸馏"
-    ChatFact.Source.MANUAL -> "手动"
-    ChatFact.Source.MIGRATED -> "迁移"
-}
