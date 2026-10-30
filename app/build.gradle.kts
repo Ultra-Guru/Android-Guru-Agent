@@ -206,6 +206,9 @@ dependencies {
     // 认知记忆（apex-kit-memory 宿主层）：观察者 / MCP 图谱 transport / 旧存储
     // 迁移 / 维护调度 / 记忆页 UI 的平台端口接线
     implementation(project(":platform:memory-host"))
+    // 机关（Jiguan V3.0）宿主层 —— 五域端口适配 + JiguanRuntime/JiguanOrchestrator
+    // 的 Hilt 绑定（ExecEngine 与 PrivilegeManager 经 JiguanModule 在 app 装配）。
+    implementation(project(":platform:jiguan-host"))
     // Coding 模式（与 Agent 模式同级别）：编码工具集 / 编码引擎 / 工作区管理
     implementation(project(":core:code-tools"))
     implementation(project(":core:code-engine"))
