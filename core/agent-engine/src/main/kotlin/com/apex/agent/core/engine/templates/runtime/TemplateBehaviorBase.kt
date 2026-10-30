@@ -19,8 +19,9 @@ import com.apex.agent.core.engine.templates.TemplateScope
  */
 abstract class TemplateBehaviorBase : AgentTemplateBehavior {
 
-    /** 主输入变量名（子类声明；PREPARE 以它为主输入做形态探测）。 */
-    protected abstract val primaryInputName: String
+    /** 主输入变量名（子类声明；PREPARE 以它为主输入做形态探测）。
+     *  公开只读：目录完整性测试与工坊「主输入」提示消费。 */
+    abstract val primaryInputName: String
 
     /** 可选输入变量名集合（PREPARE 一并规范化）。 */
     protected open val secondaryInputNames: List<String> = emptyList()
