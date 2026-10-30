@@ -87,13 +87,13 @@ class BackupViewModel @Inject constructor(
     fun cancelImport() = _uiState.update { it.copy(pendingImportJson = null, pendingPreview = null) }
 
     /** SAF CreateDocument 回选后执行导出。口令用毕即清零（ExportOptions 契约）。 */
-    fun exportTo(uri: Uri, includeSessions: Boolean, includeVault: Boolean, passphrase: String) {
+    fun exportTo(uri: Uri, includeVault: Boolean, passphrase: String) {
         if (_uiState.value.exporting) return
         _uiState.update { it.copy(exporting = true, message = null) }
         viewModelScope.launch(Dispatchers.IO) {
             val pass = passphrase.takeIf { it.isNotEmpty() }?.toCharArray()
             try {
-                val result = backupManager.writeBundleToUri(uri, ExportOptions(includeSessions, includeVault, pass))
+                val result = backupManager.writeBundleToUri(uri, ExportOptions(includeVault, pass))
                 _uiState.update { state ->
                     val ex = result.exceptionOrNull()
                     state.copy(
@@ -139,14 +139,14 @@ class BackupViewModel @Inject constructor(
     }
 
     /** 确认对话框「恢复」：按勾选范围执行导入并回填结果文案（含错误码映射）。 */
-    fun confirmImport(restoreSettings: Boolean, restoreSessions: Boolean, restoreVault: Boolean, passphrase: String) {
+    fun confirmImport(restoreSettings: Boolean, restoreVault: Boolean, passphrase: String) {
         val jsonText = _uiState.value.pendingImportJson ?: return
         if (_uiState.value.importing) return
         _uiState.update { it.copy(importing = true, message = null) }
         viewModelScope.launch(Dispatchers.IO) {
             val pass = passphrase.takeIf { it.isNotEmpty() }?.toCharArray()
             try {
-                val result = backupManager.import(jsonText, restoreSettings, restoreSessions, restoreVault, pass)
+                val result = backupManager.import(jsonText, restoreSettings, restoreVault, pass)
                 _uiState.update {
                     it.copy(
                         importing = false,
@@ -169,7 +169,6 @@ class BackupViewModel @Inject constructor(
             lines += languageManager.getString(R.string.backup_result_settings_ok)
             lines += languageManager.getString(R.string.backup_result_settings_restart)
         }
-        lines += languageManager.getString(R.string.backup_result_sessions_fmt, result.sessionsImported, result.sessionsSkipped)
         if (result.vaultImported) lines += languageManager.getString(R.string.backup_result_vault_ok)
         if (result.errors.isNotEmpty()) {
             lines += languageManager.getString(R.string.backup_result_errors_prefix)
@@ -192,7 +191,6 @@ class BackupViewModel @Inject constructor(
             BackupManager.ERR_VAULT_WRITE_FAILED -> languageManager.getString(R.string.backup_result_vault_write_failed)
             BackupManager.ERR_PROVIDERS_REDACT_FAILED -> languageManager.getString(R.string.backup_result_providers_redact_failed)
             BackupManager.ERR_SETTINGS_WRITE_FAILED -> languageManager.getString(R.string.backup_result_settings_write_failed_fmt, context)
-            BackupManager.ERR_SESSION_RESTORE_FAILED -> languageManager.getString(R.string.backup_result_session_failed_fmt, context)
             else -> code
         }
     }
@@ -207,13 +205,11 @@ fun BackupSection(viewModel: BackupViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     // 导出侧本地态：开关 rememberSaveable 留存；口令用 remember（绝不落盘）
-    var includeSessions by rememberSaveable { mutableStateOf(true) }
     var includeVault by rememberSaveable { mutableStateOf(false) }
     var passphrase by remember { mutableStateOf("") }
     var passphraseConfirm by remember { mutableStateOf("") }
     // 导入确认对话框本地态（对话框重建即重置，默认全开）
     var restoreSettings by remember { mutableStateOf(true) }
-    var restoreSessions by remember { mutableStateOf(true) }
     var restoreVault by remember { mutableStateOf(true) }
     var importPassphrase by remember { mutableStateOf("") }
 
@@ -228,7 +224,7 @@ fun BackupSection(viewModel: BackupViewModel = hiltViewModel()) {
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
-    ) { uri: Uri? -> uri?.let { viewModel.exportTo(it, includeSessions, includeVault, passphrase) } }
+    ) { uri: Uri? -> uri?.let { viewModel.exportTo(it, includeVault, passphrase) } }
 
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -256,12 +252,6 @@ fun BackupSection(viewModel: BackupViewModel = hiltViewModel()) {
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.backup_export_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
-            BackupSwitchRow(
-                title = stringResource(R.string.backup_include_sessions),
-                description = stringResource(R.string.backup_include_sessions_desc),
-                checked = includeSessions, onCheckedChange = { includeSessions = it },
-            )
-            Spacer(Modifier.height(6.dp))
             BackupSwitchRow(
                 title = stringResource(R.string.backup_include_vault),
                 description = stringResource(R.string.backup_include_vault_desc),
@@ -350,12 +340,11 @@ fun BackupSection(viewModel: BackupViewModel = hiltViewModel()) {
             preview = preview,
             importing = state.importing,
             restoreSettings = restoreSettings, onRestoreSettings = { restoreSettings = it },
-            restoreSessions = restoreSessions, onRestoreSessions = { restoreSessions = it },
             restoreVault = restoreVault, onRestoreVault = { restoreVault = it },
             passphrase = importPassphrase, onPassphraseChange = { importPassphrase = it },
             onConfirm = {
                 // 文件不含 Vault 时强制不传 vault 恢复（restoreVault 勾选态对空文件无意义）
-                viewModel.confirmImport(restoreSettings, restoreSessions, restoreVault && preview.vaultIncluded, importPassphrase)
+                viewModel.confirmImport(restoreSettings, restoreVault && preview.vaultIncluded, importPassphrase)
                 importPassphrase = ""
             },
             onDismiss = viewModel::cancelImport,
@@ -369,18 +358,16 @@ private fun BackupImportConfirmDialog(
     preview: ImportPreview,
     importing: Boolean,
     restoreSettings: Boolean,
-    restoreSessions: Boolean,
     restoreVault: Boolean,
     passphrase: String,
     onRestoreSettings: (Boolean) -> Unit,
-    onRestoreSessions: (Boolean) -> Unit,
     onRestoreVault: (Boolean) -> Unit,
     onPassphraseChange: (String) -> Unit,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     // 文件不含 Vault 时：口令输入不出现，vault 范围开关不显示
-    val anyScope = restoreSettings || restoreSessions || restoreVault
+    val anyScope = restoreSettings || restoreVault
     val vaultPassOk = !preview.vaultIncluded || !restoreVault || passphrase.isNotBlank()
     val createdAtText = remember(preview.createdAt) {
         SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()).format(Date(preview.createdAt))
@@ -393,18 +380,12 @@ private fun BackupImportConfirmDialog(
                 PreviewRow(stringResource(R.string.backup_preview_version_fmt, preview.formatVersion))
                 PreviewRow(stringResource(R.string.backup_preview_created_fmt, createdAtText))
                 PreviewRow(stringResource(R.string.backup_preview_from_fmt, preview.appVersionName))
-                PreviewRow(stringResource(R.string.backup_preview_sessions_fmt, preview.sessionCount))
                 PreviewRow(stringResource(if (preview.vaultIncluded) R.string.backup_preview_vault_included else R.string.backup_preview_vault_absent))
                 PreviewRow(stringResource(if (preview.settingsIncluded) R.string.backup_preview_settings_included else R.string.backup_preview_settings_absent))
                 Spacer(Modifier.height(6.dp))
                 BackupSwitchRow(
                     title = stringResource(R.string.backup_restore_settings),
                     description = null, checked = restoreSettings, onCheckedChange = onRestoreSettings,
-                )
-                BackupSwitchRow(
-                    title = stringResource(R.string.backup_restore_sessions),
-                    description = stringResource(R.string.backup_restore_hint),
-                    checked = restoreSessions, onCheckedChange = onRestoreSessions,
                 )
                 if (preview.vaultIncluded) {
                     BackupSwitchRow(
