@@ -151,11 +151,21 @@ include(":core:code-native")
 
 // Android平台层
 include(":platform:privilege")
+
+// 机关（Jiguan V3.0）引擎 —— 全能系统级操控域的纯 Kotlin 内核
+// （进程与内存 / Java-ART / Native / 网络与系统五域端口 + Omni-Hook +
+// 全场景记忆 RAG + 17 工具；零 Android 依赖，JVM 单测全覆盖）
+include(":core:jiguan-engine")
 include(":platform:persistence")
 include(":platform:terminal")
 // 认知记忆宿主层（apex-kit-memory 的平台端口 / DI / 旧存储迁移 / WorkManager
 // 维护调度 / 记忆召回工具 —— 取代旧 :platform:cs-mem）
 include(":platform:memory-host")
+
+// 机关宿主层（Jiguan 五域端口的 Android 适配：procfs/root-dd 内存通道 ·
+// Frida 桥（frida-server + PRoot frida-tools）· tcpdump 抓包 · objdump 反汇编 ·
+// Root 输入注入 + Hilt 装配厂 —— ExecEngine/PrivilegeManager 由 app 注入）
+include(":platform:jiguan-host")
 include(":platform:code-workspace")
 // 浏览器自动化大功能：browser_* 工具协议 + apex-kit-browser 库 DI 接线
 include(":platform:browser-agent")
