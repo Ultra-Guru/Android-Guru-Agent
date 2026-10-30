@@ -62,21 +62,6 @@ class CapabilityPromptTest {
         assertTrue(p.contains("## Capability Expansion Playbook"))
     }
 
-    @Test
-    fun `chat mode omits the playbook to avoid tool-routing contradiction`() {
-        // CHAT 模式零工具（EMPTY_TOOL_PLAN）：攻略指向的工具全部不可调用，
-        // 注入会与「建议切换 AGENT 模式」的引导自相矛盾 → 必须省略。
-        val p = EnginePrompts.buildSystemPrompt(
-            config = AgentConfig(mode = AgentMode.CHAT),
-            privilegeLevel = "NORMAL",
-            visibleTools = emptyList(),
-            toolsUnavailable = false
-        )
-        assertTrue(!p.contains("## Capability Expansion Playbook"))
-        // 权限阶梯段仍在（知道自己是谁与权限无关，保持历史行为）
-        assertTrue(p.contains("## Device Privilege Level: NORMAL"))
-    }
-
     // ── 权限阶梯段（换源 PrivilegeLadder）────────────────────
 
     @Test

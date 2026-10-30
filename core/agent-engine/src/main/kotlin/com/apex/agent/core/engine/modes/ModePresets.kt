@@ -3,12 +3,12 @@ package com.apex.agent.core.engine.modes
 import kotlinx.serialization.Serializable
 
 /**
- * ═══ 自定义模式预设（#168）═══
+ * ═══ 自定义模式预设（#168）（历史遗留：待 PR 5/6 随设置域消费方删除）═══
  *
- * [com.apex.agent.core.engine.AgentMode.CUSTOM] 此前只有一条单字符串指令
- * （`custom_mode_instruction`，SharedPreferences 平键），用户只能维护
- * 「一份当前指令」——想在「翻译官」「代码评审」「头脑风暴」几个人格间
- * 切换就得反复整段改写。
+ * 自定义档位（原 AgentMode.CUSTOM，已随 Agent 模式移除 PR 3/6 删除）此前
+ * 只有一条单字符串指令（`custom_mode_instruction`，SharedPreferences 平键），
+ * 用户只能维护「一份当前指令」——想在「翻译官」「代码评审」「头脑风暴」
+ * 几个人格间切换就得反复整段改写。
  *
  * 预设系统 = **多套命名指令**：
  *

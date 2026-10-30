@@ -302,9 +302,8 @@ class TaskRuntime(
             task = _activeTask.value?.takeIf { it.taskId == taskId } ?: task
         }
         when (event) {
-            is AgentEvent.PlanConfirmed,
-            is AgentEvent.SpecConfirmed -> {
-                // 计划/规格确认：进入执行阶段（PLANNING→RUNNING）+ 步骤持久化。
+            is AgentEvent.PlanConfirmed -> {
+                // 计划确认：进入执行阶段（PLANNING→RUNNING）+ 步骤持久化。
                 // 非 PLANNING 态（重放/恢复场景已 RUNNING）幂等跳过迁移。
                 val withSteps = extractSteps(event)
                     ?.let { task.copy(steps = it) } ?: task
@@ -723,12 +722,6 @@ class TaskRuntime(
                 stepId = "s${it.index}", index = it.index, description = it.description,
                 toolName = it.toolName, dependsOn = it.dependsOn
             )
-        }
-        is AgentEvent.SpecConfirmed -> event.spec.let { spec ->
-            val items = spec.deliverables.ifEmpty { spec.requirements }.ifEmpty { listOf(spec.goal) }
-            items.mapIndexed { i, text ->
-                TaskStepModel(stepId = "s$i", index = i, description = text)
-            }
         }
         else -> null
     }
