@@ -67,13 +67,26 @@ object HexDumpFormatter {
                     "\"",
             )
         }
-        // UTF-16LE 线索：偶数位可打印 + 奇数位为 0（ASCII 范围）。
-        if (buffer.size >= 8 && (0 until 8 step 2).all { k ->
-                val c = buffer[k].toInt() and 0xFF
-                buffer[k + 1].toInt() == 0 && (c in 0x20..0x7E)
+        // UTF-16LE 线索：偶数位可打印 + 奇数位为 0（ASCII 范围）；尾部 NUL 对视为填充。
+        if (buffer.size >= 8) {
+            var printablePairs = 0
+            var index = 0
+            var looksUtf16 = true
+            while (index + 1 < buffer.size && index < 8) {
+                val c = buffer[index].toInt() and 0xFF
+                val high = buffer[index + 1].toInt()
+                when {
+                    high == 0 && c in 0x20..0x7E -> printablePairs++
+                    high == 0 && c == 0 -> Unit // 尾部 NUL 填充对。
+                    else -> { looksUtf16 = false }
+                }
+                if (!looksUtf16) break
+                index += 2
             }
-        ) {
-            out.add("utf16le@0 = \"${String(buffer, 0, 8, Charsets.UTF_16LE)}\"")
+            if (looksUtf16 && printablePairs >= 1) {
+                // 尾部 NUL 是填充噪声 —— trim 后再呈现。
+                out.add("utf16le@0 = \"${String(buffer, 0, 8, Charsets.UTF_16LE).trimEnd('\u0000')}\"")
+            }
         }
         return out
     }

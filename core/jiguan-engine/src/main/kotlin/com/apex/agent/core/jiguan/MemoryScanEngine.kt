@@ -36,8 +36,8 @@ object MemoryScanEngine {
         ScanValueType.INT16 -> request.value.trim().toShort().toLeBytes()
         ScanValueType.INT32 -> request.value.trim().toInt().toLeBytes()
         ScanValueType.INT64 -> request.value.trim().toLong().toLeBytes()
-        ScanValueType.FLOAT32 -> Float.toRawBits(request.value.trim().toFloat()).toLeBytes()
-        ScanValueType.FLOAT64 -> Double.toRawBits(request.value.trim().toDouble()).toLeBytes()
+        ScanValueType.FLOAT32 -> request.value.trim().toFloat().toRawBits().toLeBytes()
+        ScanValueType.FLOAT64 -> request.value.trim().toDouble().toRawBits().toLeBytes()
         ScanValueType.UTF8 -> request.value.toByteArray(Charsets.UTF_8)
         ScanValueType.UTF16 -> request.value.toByteArray(Charsets.UTF_16LE)
         ScanValueType.BYTE_PATTERN ->
@@ -121,8 +121,9 @@ object MemoryScanEngine {
         val hits = ArrayList<Int>()
         var i = 0
         while (i + byteCount <= buffer.size) {
-            val decoded = when (byteCount) {
-                4 -> Float.fromBits(readLeInt(buffer, i))
+            // 两分支统一为 Double（Float 提升），否则 when 推断公共超类型致减法不可解。
+            val decoded: Double = when (byteCount) {
+                4 -> Float.fromBits(readLeInt(buffer, i)).toDouble()
                 8 -> Double.fromBits(readLeLong(buffer, i))
                 else -> break
             }

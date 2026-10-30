@@ -6,8 +6,6 @@ import com.apex.agent.core.tools.AgentTool
 import com.apex.agent.core.tools.ToolCategory
 import com.apex.agent.core.tools.ToolMetadata
 import com.apex.agent.core.tools.ToolRisk
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * # 元工具（Capability / Recipes / Knowledge）
@@ -19,8 +17,7 @@ import javax.inject.Singleton
  */
 // ═══════════════════════════════════════════════════════════════════
 
-@Singleton
-class JiguanCapabilityReportTool @Inject constructor(
+class JiguanCapabilityReportTool constructor(
     private val orchestrator: JiguanOrchestrator,
 ) : AgentTool {
 
@@ -65,8 +62,7 @@ class JiguanCapabilityReportTool @Inject constructor(
 
 // ═══════════════════════════════════════════════════════════════════
 
-@Singleton
-class JiguanRecipesTool @Inject constructor(
+class JiguanRecipesTool constructor(
     private val orchestrator: JiguanOrchestrator,
 ) : AgentTool {
 
@@ -111,8 +107,7 @@ class JiguanRecipesTool @Inject constructor(
 
 // ═══════════════════════════════════════════════════════════════════
 
-@Singleton
-class JiguanKnowledgeQueryTool @Inject constructor(
+class JiguanKnowledgeQueryTool constructor(
     private val runtime: JiguanRuntime,
 ) : AgentTool {
 
@@ -164,8 +159,7 @@ class JiguanKnowledgeQueryTool @Inject constructor(
 
 // ═══════════════════════════════════════════════════════════════════
 
-@Singleton
-class JiguanKnowledgeRememberTool @Inject constructor(
+class JiguanKnowledgeRememberTool constructor(
     private val runtime: JiguanRuntime,
 ) : AgentTool {
 

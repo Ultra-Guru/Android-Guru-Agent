@@ -35,13 +35,17 @@ class HexDumpFormatterTest {
     }
 
     @Test
-    fun `interpretations detects int float and utf8`() {
-        // int32 1337 → float 位模式解释 + "AB" UTF-8。
-        val buffer = 1337.toLe4() + "AB".toByteArray()
-        val views = HexDumpFormatter.interpretations(buffer)
+    fun `interpretations detects int and float`() {
+        val views = HexDumpFormatter.interpretations(1337.toLe4())
         assertTrue(views.any { it.startsWith("int32le@0 = 1337") })
         assertTrue(views.any { it.startsWith("float32le@0 = ") })
-        assertTrue(views.any { it.contains("utf8@0") && it.contains("AB") })
+    }
+
+    @Test
+    fun `interpretations detects printable utf8 prefix`() {
+        // 前 4 字节可打印（"1234"）才产出 utf8 视图。
+        val views = HexDumpFormatter.interpretations("1234".toByteArray())
+        assertTrue(views.any { it.contains("utf8@0") && it.contains("1234") })
     }
 
     @Test

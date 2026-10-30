@@ -15,7 +15,7 @@ class MemoryScanEngineTest {
     @Test
     fun `parseBytePattern handles hex spaces wildcards lowercase`() {
         assertEquals(
-            listOf<Byte?>(0xDE.toByte(), 0xAD.toByte(), null, null, 0xEF.toByte()),
+            listOf<Byte?>(0xDE.toByte(), 0xAD.toByte(), null, 0xEF.toByte()),
             MemoryScanEngine.parseBytePattern("de ad ?? ef"),
         )
         assertEquals(listOf<Byte?>(1, 2), MemoryScanEngine.parseBytePattern("01,02"))
@@ -63,9 +63,10 @@ class MemoryScanEngineTest {
     }
 
     @Test
-    fun `scanBufferPattern all-wildcard matches every position`() {
+    fun `scanBufferPattern all-wildcard matches non-overlapping`() {
+        // 与精确扫描同语义：命中后步进 pattern 长度（非重叠）。
         val hits = MemoryScanEngine.scanBufferPattern(byteArrayOf(1, 2, 3), listOf<Byte?>(null, null), 10)
-        assertEquals(listOf(0, 1, 2).take(2), hits.take(2).sorted())
+        assertEquals(listOf(0), hits)
     }
 
     // ── 模糊扫描 ──────────────────────────────────────────────────
@@ -73,7 +74,7 @@ class MemoryScanEngineTest {
     @Test
     fun `scanBufferFuzzyFloat matches within tolerance`() {
         // 1.0f 的 LE 位模式 + 1.05f + 2.0f。
-        val buffer = Float.toRawBits(1.0f).toLe4() + Float.toRawBits(1.05f).toLe4() + Float.toRawBits(2.0f).toLe4()
+        val buffer = 1.0f.toRawBits().toLe4() + 1.05f.toRawBits().toLe4() + 2.0f.toRawBits().toLe4()
         val hits = MemoryScanEngine.scanBufferFuzzyFloat(buffer, target = 1.0, byteCount = 4, fuzzyRange = 0.1, maxResults = 10)
         assertEquals(listOf(0, 4), hits)
     }
@@ -135,5 +136,5 @@ class MemoryScanEngineTest {
         ((this shr 16) and 0xFF).toByte(), ((this shr 24) and 0xFF).toByte(),
     )
 
-    private fun Float.toRawBitsLe4(): ByteArray = Float.toRawBits(this).toLe4()
+    private fun Float.toRawBitsLe4(): ByteArray = this.toRawBits().toLe4()
 }

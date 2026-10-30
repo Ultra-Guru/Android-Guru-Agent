@@ -56,6 +56,8 @@ object PcapHttpExtractor {
                 segments.add(seg)
             }
         }
+        // 尾部残留 < 16 字节 = 截断的记录头 —— 如实计入 malformed。
+        if (offset < pcap.size) malformed++
         // ── TCP 流重组 + HTTP 抽取 ─────────────────────────────
         val messages = extractHttp(segments, maxHttpMessages)
         return PcapSummary(packets, malformed, messages)

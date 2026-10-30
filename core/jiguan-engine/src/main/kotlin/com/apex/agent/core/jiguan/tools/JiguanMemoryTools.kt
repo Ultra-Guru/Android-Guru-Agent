@@ -8,8 +8,6 @@ import com.apex.agent.core.tools.AgentTool
 import com.apex.agent.core.tools.ToolCategory
 import com.apex.agent.core.tools.ToolMetadata
 import com.apex.agent.core.tools.ToolRisk
-import javax.inject.Inject
-import javax.inject.Singleton
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -24,8 +22,7 @@ import kotlinx.serialization.json.putJsonArray
  */
 // ═══════════════════════════════════════════════════════════════════
 
-@Singleton
-class JiguanProcessesTool @Inject constructor(
+class JiguanProcessesTool constructor(
     private val runtime: JiguanRuntime,
 ) : AgentTool {
 
@@ -89,8 +86,7 @@ class JiguanProcessesTool @Inject constructor(
 
 // ═══════════════════════════════════════════════════════════════════
 
-@Singleton
-class JiguanMemoryScanTool @Inject constructor(
+class JiguanMemoryScanTool constructor(
     private val runtime: JiguanRuntime,
 ) : AgentTool {
 
@@ -179,8 +175,7 @@ class JiguanMemoryScanTool @Inject constructor(
 
 // ═══════════════════════════════════════════════════════════════════
 
-@Singleton
-class JiguanMemoryHexDumpTool @Inject constructor(
+class JiguanMemoryHexDumpTool constructor(
     private val runtime: JiguanRuntime,
 ) : AgentTool {
 
@@ -238,8 +233,7 @@ class JiguanMemoryHexDumpTool @Inject constructor(
 
 // ═══════════════════════════════════════════════════════════════════
 
-@Singleton
-class JiguanMemoryWriteTool @Inject constructor(
+class JiguanMemoryWriteTool constructor(
     private val runtime: JiguanRuntime,
 ) : AgentTool {
 

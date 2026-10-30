@@ -8,8 +8,6 @@ import com.apex.agent.core.tools.AgentTool
 import com.apex.agent.core.tools.ToolCategory
 import com.apex.agent.core.tools.ToolMetadata
 import com.apex.agent.core.tools.ToolRisk
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * # Native 域工具（NDK & Assembler）
@@ -21,8 +19,7 @@ import javax.inject.Singleton
  */
 // ═══════════════════════════════════════════════════════════════════
 
-@Singleton
-class JiguanModulesTool @Inject constructor(
+class JiguanModulesTool constructor(
     private val runtime: JiguanRuntime,
 ) : AgentTool {
 
@@ -84,8 +81,7 @@ class JiguanModulesTool @Inject constructor(
 
 // ═══════════════════════════════════════════════════════════════════
 
-@Singleton
-class JiguanHookNativeFuncTool @Inject constructor(
+class JiguanHookNativeFuncTool constructor(
     private val runtime: JiguanRuntime,
 ) : AgentTool {
 
@@ -138,8 +134,7 @@ class JiguanHookNativeFuncTool @Inject constructor(
 
 // ═══════════════════════════════════════════════════════════════════
 
-@Singleton
-class JiguanDisassembleTool @Inject constructor(
+class JiguanDisassembleTool constructor(
     private val runtime: JiguanRuntime,
 ) : AgentTool {
 
@@ -196,8 +191,7 @@ class JiguanDisassembleTool @Inject constructor(
 
 // ═══════════════════════════════════════════════════════════════════
 
-@Singleton
-class JiguanHardwareBreakpointTool @Inject constructor(
+class JiguanHardwareBreakpointTool constructor(
     private val runtime: JiguanRuntime,
 ) : AgentTool {
 

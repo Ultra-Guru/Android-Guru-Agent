@@ -52,14 +52,14 @@ object PsParsing {
 
     // ── 列区间推导 ───────────────────────────────────────────────
 
-    private data class ColumnRange(val name: String, val start: Int, val endExclusive: Int)
+    private class ColumnRange(val name: String, val start: Int, val endExclusive: Int)
 
     /**
      * 表头形如 `  PID   UID    RSS NAME`——token 的字符区间即数据列区间
      * （ps 右对齐数字列 / 左对齐文本列，均落在表头 token 的区间内；
      * 末列吞到行尾 —— 左对齐文本可能超出表头宽度）。
      */
-    internal fun columnRanges(header: String): List<ColumnRange> {
+    private fun columnRanges(header: String): List<ColumnRange> {
         val ranges = ArrayList<ColumnRange>()
         var i = 0
         val n = header.length
@@ -72,7 +72,7 @@ object PsParsing {
         // 末列扩展到行尾（ARGS 常溢出表头宽度）。
         if (ranges.isNotEmpty()) {
             val last = ranges.removeAt(ranges.size - 1)
-            ranges += last.copy(endExclusive = Int.MAX_VALUE)
+            ranges += ColumnRange(last.name, last.start, Int.MAX_VALUE)
         }
         return ranges
     }

@@ -19,23 +19,24 @@ class JiguanOrchestrator(
 
     /** 五域能力报告（探测各端口通道；缺席域给指引）。 */
     suspend fun capabilityReport(): List<CapabilityReport> {
+        data class Probe(val domain: String, val channel: String, val check: suspend () -> Boolean)
         val probes = listOf(
-            Triple("process-memory", memoryPort.channelName) {
+            Probe("process-memory", memoryPort.channelName) {
                 runCatching { memoryPort.listProcesses().getOrThrow().isNotEmpty() }.isSuccess
             },
-            Triple("java-art", javaPort.channelName) { runCatching { javaPort.ping() }.getOrDefault(false) },
-            Triple("native", nativePort.channelName) { runCatching { nativePort.ping() }.getOrDefault(false) },
-            Triple("network", networkPort.channelName) { runCatching { networkPort.ping() }.getOrDefault(false) },
-            Triple("system", systemPort.channelName) { runCatching { systemPort.ping() }.getOrDefault(false) },
+            Probe("java-art", javaPort.channelName) { runCatching { javaPort.ping() }.getOrDefault(false) },
+            Probe("native", nativePort.channelName) { runCatching { nativePort.ping() }.getOrDefault(false) },
+            Probe("network", networkPort.channelName) { runCatching { networkPort.ping() }.getOrDefault(false) },
+            Probe("system", systemPort.channelName) { runCatching { systemPort.ping() }.getOrDefault(false) },
         )
-        return probes.map { (domain, channel, probe) ->
-            if (channel != "none" && probe()) {
-                CapabilityReport(domain, available = true, guidance = "", channel = channel)
+        return probes.map { probe ->
+            if (probe.channel != "none" && probe.check()) {
+                CapabilityReport(probe.domain, available = true, guidance = "", channel = probe.channel)
             } else {
                 CapabilityReport(
-                    domain = domain,
+                    domain = probe.domain,
                     available = false,
-                    guidance = guidanceFor(domain),
+                    guidance = guidanceFor(probe.domain),
                     channel = "none",
                 )
             }

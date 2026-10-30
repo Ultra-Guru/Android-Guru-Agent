@@ -8,8 +8,6 @@ import com.apex.agent.core.tools.AgentTool
 import com.apex.agent.core.tools.ToolCategory
 import com.apex.agent.core.tools.ToolMetadata
 import com.apex.agent.core.tools.ToolRisk
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * # Java / ART 域工具（Java Runtime）
@@ -23,8 +21,7 @@ import javax.inject.Singleton
  */
 // ═══════════════════════════════════════════════════════════════════
 
-@Singleton
-class JiguanJavaClassesTool @Inject constructor(
+class JiguanJavaClassesTool constructor(
     private val runtime: JiguanRuntime,
 ) : AgentTool {
 
@@ -84,8 +81,7 @@ class JiguanJavaClassesTool @Inject constructor(
 
 // ═══════════════════════════════════════════════════════════════════
 
-@Singleton
-class JiguanHookJavaMethodTool @Inject constructor(
+class JiguanHookJavaMethodTool constructor(
     private val runtime: JiguanRuntime,
 ) : AgentTool {
 
@@ -144,8 +140,7 @@ class JiguanHookJavaMethodTool @Inject constructor(
 
 // ═══════════════════════════════════════════════════════════════════
 
-@Singleton
-class JiguanCallJavaMethodTool @Inject constructor(
+class JiguanCallJavaMethodTool constructor(
     private val runtime: JiguanRuntime,
 ) : AgentTool {
 

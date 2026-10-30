@@ -194,6 +194,9 @@ class FakeMemoryPort(
 class FakeChannelPort(override val channelName: String) :
     JiguanJavaPort, JiguanNativePort, JiguanNetworkPort, JiguanSystemPort {
 
+    /** 四接口各带默认 ping —— 多继承冲突，显式合并为一。 */
+    override suspend fun ping(): Boolean = channelName != "none"
+
     override suspend fun listClasses(pid: Int, filter: String): Result<List<JavaClassEntry>> =
         Result.success(listOf(JavaClassEntry("com.fake.Encrypt")))
 

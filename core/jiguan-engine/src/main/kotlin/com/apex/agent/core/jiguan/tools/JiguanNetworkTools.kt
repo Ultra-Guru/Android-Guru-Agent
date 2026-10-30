@@ -7,8 +7,6 @@ import com.apex.agent.core.tools.AgentTool
 import com.apex.agent.core.tools.ToolCategory
 import com.apex.agent.core.tools.ToolMetadata
 import com.apex.agent.core.tools.ToolRisk
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * # 网络域工具（Network & Traffic）
@@ -19,8 +17,7 @@ import javax.inject.Singleton
  */
 // ═══════════════════════════════════════════════════════════════════
 
-@Singleton
-class JiguanPacketCaptureTool @Inject constructor(
+class JiguanPacketCaptureTool constructor(
     private val runtime: JiguanRuntime,
 ) : AgentTool {
 
@@ -134,8 +131,7 @@ class JiguanPacketCaptureTool @Inject constructor(
 
 // ═══════════════════════════════════════════════════════════════════
 
-@Singleton
-class JiguanSslBypassTool @Inject constructor(
+class JiguanSslBypassTool constructor(
     private val runtime: JiguanRuntime,
 ) : AgentTool {
 

@@ -45,12 +45,13 @@ internal object JiguanArgs {
             args?.get(key)?.jsonPrimitive?.booleanOrNull
         }.getOrNull() ?: default
 
-    /** 地址解析：十进制 / 0x 十六进制双形态。 */
+    /** 地址解析：0x 前缀强制十六进制；裸数字优先十进制（"65536" = 十进制！），回退十六进制。 */
     fun address(args: JsonObject?, key: String, default: Long = -1L): Long {
-        val raw = string(args, key)
+        val raw = string(args, key).trim()
         if (raw.isBlank()) return default
-        return raw.trim().removePrefix("0x").removePrefix("0X").toLongOrNull(16)
-            ?: raw.trim().toLongOrNull()
-            ?: default
+        if (raw.startsWith("0x") || raw.startsWith("0X")) {
+            return raw.substring(2).toLongOrNull(16) ?: default
+        }
+        return raw.toLongOrNull() ?: raw.toLongOrNull(16) ?: default
     }
 }

@@ -5,8 +5,6 @@ import com.apex.agent.core.tools.AgentTool
 import com.apex.agent.core.tools.ToolCategory
 import com.apex.agent.core.tools.ToolMetadata
 import com.apex.agent.core.tools.ToolRisk
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * # 系统自动化域工具（System & UI）
@@ -17,8 +15,7 @@ import javax.inject.Singleton
  */
 // ═══════════════════════════════════════════════════════════════════
 
-@Singleton
-class JiguanUiTouchTool @Inject constructor(
+class JiguanUiTouchTool constructor(
     private val runtime: JiguanRuntime,
 ) : AgentTool {
 
@@ -87,8 +84,7 @@ class JiguanUiTouchTool @Inject constructor(
 
 // ═══════════════════════════════════════════════════════════════════
 
-@Singleton
-class JiguanSystemInspectTool @Inject constructor(
+class JiguanSystemInspectTool constructor(
     private val runtime: JiguanRuntime,
 ) : AgentTool {
 
