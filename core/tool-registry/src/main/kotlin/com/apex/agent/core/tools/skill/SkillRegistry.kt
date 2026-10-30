@@ -651,10 +651,7 @@ class SkillRegistry(
         val home = File(skillsDir, manifest.id)
         if (!home.isDirectory || home.listFiles().isNullOrEmpty()) return injection
         return injection.trimEnd() +
-            "
-
----
-" +
+            "\n\n---\n" +
             "[APEX 技能资源] 本技能附带资源文件（scripts/、references/ 等）已落盘于" +
             " `${home.canonicalPath}` —— 脚本经终端（PRoot Ubuntu）或 ShellExecute " +
             "用绝对路径执行；参考文档用文件工具按绝对路径读取。"
