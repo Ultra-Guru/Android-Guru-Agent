@@ -1,29 +1,26 @@
 package com.apex.agent.ui.screen.settings
 
 /**
- * ═══ Agent 角色（人设）数据模型 ═══
+ * ═══ Coding 专家角色（人设层）数据模型 ═══
  *
- * 应用户需求：「设置中增加 agent 角色 —— 内置的是全能 agent，用户可自定义。
- * 自定义需要填：agent 名字、agent 对你的称呼、提示词、角色定义，以及更多
- * 自定义的选项。」
- *
- * 架构位：
+ * Agent 聊天工位的角色池（内置全能角色 + activeRoleId 激活链路）已随
+ * Agent 模式移除；本模型只保留 Coding 工位的专家模板体系：
  *  - 本类属 app 层（UI + 持久化），[com.apex.agent.core.engine.AgentConfig]
  *    只消费拍平后的字符串字段（agentName/userTitle/roleDefinition/rolePrompt/
  *    roleStyle/roleLanguage）—— 引擎不感知数据模型，模块边界防腐；
- *  - 持久化：[AgentSettings.agentRoles]（仅自定义角色）+ [AgentSettings.activeRoleId]
+ *  - 持久化：[AgentSettings.agentRoles]（仅自定义角色）+ [AgentSettings.codeActiveRoleId]
  *    （kotlinx.serialization JSON，ignoreUnknownKeys 加 schema 演进）；
- *  - 内置角色（[ALL_ROUNDER]）不落盘、运行时合成 —— 升级永远拿最新定义，
+ *  - 内置专家（[CODING_EXPERTS]）不落盘、运行时合成 —— 升级永远拿最新定义，
  *    且不可删除/编辑（UI 锁定，可「另存为」自定义副本）；
- *  - 生效路径：AgentModule 启动快照（重启生效）+ AgentChatViewModel 监听
- *    agentSettings 变化 patchConfig（运行时热切换，无需重启）。
+ *  - 生效路径：CodeViewModel 启动快照 + CodeRoleController 监听 agentSettings
+ *    变化 patchConfig（运行时热切换，无需重启）。
  *
  * @param id            稳定标识（自定义角色用 role_<timestamp> 派生）
- * @param name          agent 名字（自称/身份行 "You are <name>"）—— 必填
- * @param userTitle     agent 对用户的称呼（如「老板」）；空 = 不约束
- * @param emoji         角色图标（聊天顶栏胶囊 + 角色列表展示）
- * @param roleDefinition 角色定义（这个 agent 是谁、擅长什么、边界在哪）
- * @param systemPrompt  提示词（用户自定义提示词，原样拼入 Agent Role 段）
+ * @param name          角色名（自称/身份行 "You are <name>"）—— 必填
+ * @param userTitle     角色对用户的称呼（如「老板」）；空 = 不约束
+ * @param emoji         角色图标（角色列表展示）
+ * @param roleDefinition 角色定义（这个角色擅长什么、边界在哪）
+ * @param systemPrompt  提示词（用户自定义提示词，原样拼入引擎人设段）
  * @param style         语气风格键："" | professional | friendly | humorous | concise
  * @param replyLanguage 回复语言键："" 跟随用户输入 | zh | en
  * @param isBuiltIn     内置角色标记（不可删除/不可编辑，只能另存为）
@@ -41,36 +38,6 @@ data class AgentRole(
     val isBuiltIn: Boolean = false
 ) {
     companion object {
-
-        /** 内置全能角色 id（持久化的 activeRoleId 缺省值）。 */
-        const val BUILTIN_ALL_ROUNDER_ID = "builtin_all_rounder"
-
-        /**
-         * 内置角色：全能 Agent —— 与历史默认行为完全一致的人设显式化。
-         * agentName 为空串 → 引擎身份行回落 "Apex Agent"（零行为变化）。
-         *
-         * #197 工位同源：roleDefinition 只声明 Agent 工位机械可见的能力面
-         * （Code 族与 Github 族工具已被引擎工具计划的前缀黑名单剔除），
-         * 编程/git 诉求显式引导切换 Coding 工位 —— 人设文本与工具计划
-         * 一致，「全能」靠工具 + 知识库（可无限扩卷）落地，不靠提示词虚标。
-         */
-        val ALL_ROUNDER: AgentRole = AgentRole(
-            id = BUILTIN_ALL_ROUNDER_ID,
-            name = "Apex Agent",
-            emoji = "⚡",
-            userTitle = "",
-            roleDefinition = "All-round autonomous agent for everyday life, knowledge, research, " +
-                "automation, files, device control and memory — pick the best available tool for " +
-                "the job and keep working until it is done. Programming and git work live in the " +
-                "Coding workspace: hand those over gracefully instead of attempting them here.",
-            systemPrompt = "",
-            style = "",
-            replyLanguage = "",
-            isBuiltIn = true
-        )
-
-        // ═══ v6 Coding 专家模板（用户规格：全栈置顶 + Git 角色 + Android
-        // 专家 + 每门主流语言一个专家；内置不落盘，升级即最新且不可删）═══
 
         /** 内置 Coding 全栈角色 id（codeActiveRoleId 的缺省回落值）。 */
         const val BUILTIN_CODING_FULL_STACK_ID = "builtin_coding_full_stack"
@@ -256,24 +223,16 @@ data class AgentRole(
     }
 }
 
-// ───────────────────────── AgentSettings 角色视图（运行时合成） ─────────────────────────
-
-/** 全量角色列表：内置在前 + 自定义在后（内置不落盘，升级即最新）。 */
-fun AgentSettings.allRoles(): List<AgentRole> =
-    listOf(AgentRole.ALL_ROUNDER) + agentRoles
-
-/** 当前激活角色（activeRoleId 悬空/被删 → 诚实回落内置全能角色）。 */
-fun AgentSettings.activeRole(): AgentRole =
-    allRoles().firstOrNull { it.id == activeRoleId } ?: AgentRole.ALL_ROUNDER
+// ───────────────────────── AgentSettings Coding 角色视图（运行时合成） ─────────────────────────
 
 /**
- * Coding 模式角色列表（v6 专家模板）：内置专家（全栈置顶）在前，
- * 用户自定义角色接续可用（同一套编辑器/持久化，跨模式复用）。
+ * Coding 工位角色列表（v6 专家模板）：内置专家（全栈置顶）在前，
+ * 用户自定义角色接续可用（同一套编辑器/持久化）。
  */
 fun AgentSettings.codingRoles(): List<AgentRole> =
     AgentRole.CODING_EXPERTS + agentRoles
 
-/** Coding 模式当前激活角色（codeActiveRoleId 悬空 → 诚实回落全栈置顶）。 */
+/** Coding 工位当前激活角色（codeActiveRoleId 悬空 → 诚实回落全栈置顶）。 */
 fun AgentSettings.activeCodingRole(): AgentRole =
     codingRoles().firstOrNull { it.id == codeActiveRoleId }
         ?: AgentRole.CODING_EXPERTS.first()
@@ -306,16 +265,11 @@ fun AgentSettings.withRoleUpserted(role: AgentRole): AgentSettings {
     return copy(agentRoles = next)
 }
 
-/** 删除自定义角色；若删除的是激活角色 → 激活回落内置全能。 */
+/**
+ * 删除自定义角色；若删除的恰是 Coding 工位激活角色 → activeCodingRole()
+ * 诚实回落全栈置顶（无需显式改写 codeActiveRoleId）。
+ */
 fun AgentSettings.withRoleRemoved(roleId: String): AgentSettings {
     if (agentRoles.none { it.id == roleId }) return this
-    val next = agentRoles.filter { it.id != roleId }
-    return copy(
-        agentRoles = next,
-        activeRoleId = if (activeRoleId == roleId) AgentRole.BUILTIN_ALL_ROUNDER_ID else activeRoleId
-    )
+    return copy(agentRoles = agentRoles.filter { it.id != roleId })
 }
-
-/** 激活角色（未知 id 静默忽略 —— 防悬空引用）。 */
-fun AgentSettings.withRoleActivated(roleId: String): AgentSettings =
-    if (allRoles().any { it.id == roleId }) copy(activeRoleId = roleId) else this

@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -40,7 +41,9 @@ import javax.inject.Inject
  * 终端持久化设置此前只活在终端页 bottom sheet（TerminalSettingsSheet），
  * 入口深、无全局归纳 —— 本文件把它们接入设置中心两级抽屉：
  *  - terminal/appearance：字号 / 屏幕常亮；
- *  - terminal/policy：命令黑白名单。
+ *  - terminal/policy：命令黑白名单；
+ *  - terminal/service：Ubuntu 终端运行时宿主（ApexCoreService）保活开关
+ *    （原 Agent 设置分区的 Keep Alive 开关迁入——服务本体是终端生命周期宿主）。
  *
  * T96 终端大重构后叶子随控制台收窄：配色方案与扩展键宏已随旧交互终端
  * 退役（scheme/extrakeys 子包删除），terminal/scheme 与 terminal/keys
@@ -117,6 +120,32 @@ internal fun TerminalCommandPolicyPage(viewModel: SettingsTerminalViewModel = hi
                 onAdd = { viewModel.policyStore.addWhitelist(it) },
                 onRemove = { viewModel.policyStore.removeWhitelist(it) }
             )
+        }
+    }
+}
+
+// ═══════════════ terminal/service：Ubuntu 终端运行时宿主保活 ═══════════════
+
+/**
+ * 后台服务页：ApexCoreService（TerminalRuntime 生命周期宿主）的 Keep Alive
+ * 开关（自原 Agent 设置分区迁入，接线不变：CoreServiceGate.apply 即时启停）。
+ */
+@Composable
+internal fun TerminalServicePage(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {
+    // #236：Keep Alive 开关的运行时接线需要 Context（start/stopService）。
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    SettingsLeafColumn {
+        SectionCard(
+            title = stringResource(R.string.settings_terminal_service_section),
+            icon = Icons.Outlined.Settings
+        ) {
+            SwitchRow(
+                stringResource(R.string.settings_keep_alive_service), agent.keepAlive,
+                description = stringResource(R.string.settings_terminal_service_desc)
+            ) { on ->
+                com.apex.agent.service.CoreServiceGate.apply(ctx, on)
+                onAgent(agent.copy(keepAlive = on))
+            }
         }
     }
 }
