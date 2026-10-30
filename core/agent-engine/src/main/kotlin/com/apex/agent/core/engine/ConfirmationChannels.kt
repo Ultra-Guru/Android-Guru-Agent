@@ -9,7 +9,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 
 /**
- * ═══ #340 — 确认通道三件套（userInput/plan/spec）的治理与中止 ═══
+ * ═══ #340 — 确认通道两件套（userInput/plan）的治理与中止 ═══
  *
  * 自 [ApexAgentEngine] 迁出（God-file 预算 1200 行拆分；模式与
  * [EngineAskUserFlow] / EngineCompressionGate 相同：同包顶层扩展 +
@@ -17,8 +17,8 @@ import kotlinx.coroutines.withTimeout
  *
  * ## 治理的三个并发窗口（均为「chat 模式卡死」的直接机制）
  *
- * 1. **注册晚于 emit**：旧实现 `emit(UserInputRequired/PlanAwaiting/
- *    SpecAwaiting…)` 在调用方、deferred 注册在 await* 内部。emit 经镜像
+ * 1. **注册晚于 emit**：旧实现 `emit(UserInputRequired/PlanAwaiting…)`
+ *    在调用方、deferred 注册在 await* 内部。emit 经镜像
  *    tap（UNLIMITED）消费后立即返回，与注册之间无 happens-before——
  *    submit 在注册前到达 → `complete` 落空 → 引擎挂满 5 分钟超时。
  *    现在**注册先行**：deferred 赋值（与 abort 同锁）先于 emit
@@ -33,13 +33,13 @@ import kotlinx.coroutines.withTimeout
  * 3. **等待收尾的无条件清理**：finally 里 `deferred = null` 可能抹掉
  *    abort 之后新注册的通道——改为条件式（只清自己挂的那只）。
  *
- * plan / spec 通道的等待（`awaitPlanConfirmationDecision` /
- * `awaitSpecConfirmation`）分别在 plan/PlanExecutionSupport.kt 与
- * EngineSpecFlow.kt 就地同步治理（同锁、同注册先行模式）。
+ * plan 通道的等待（`awaitPlanConfirmationDecision`）在
+ * plan/PlanExecutionSupport.kt 就地同步治理（同锁、同注册先行模式）。
+ * （spec 通道已随 SPEC 档位删除 —— Agent 模式移除 PR 3/6。）
  */
 
 /**
- * 挂起等待 UI 回传用户输入（AskUser / HUMAN_ASSIST 决策点共用）。
+ * 挂起等待 UI 回传用户输入（AskUser 工具与权限门提问共用）。
  *
  * @param onExpired 超时回调（调用方发射 UserInputExpired 让 UI 关对话框）
  * @param beforeWait 注册完成之后、挂起等待之前的回调（#340 注册先行：
@@ -61,7 +61,7 @@ internal suspend fun ApexAgentEngine.awaitUserInput(
     }
     beforeWait?.invoke()
     return try {
-        // 与 awaitPlanConfirmation / awaitSpecConfirmation 保持一致：
+        // 与 awaitPlanConfirmationDecision 保持一致：
         // 5 分钟超时，避免 AskUser 工具因用户遗忘而把引擎永久挂起。
         withTimeout(PLAN_CONFIRMATION_TIMEOUT_MS) { deferred.await() }
     } catch (e: TimeoutCancellationException) {
@@ -83,10 +83,10 @@ internal suspend fun ApexAgentEngine.awaitUserInput(
 }
 
 /**
- * abort() 的确认通道收尾：三对「complete-then-null」在
+ * abort() 的确认通道收尾：两对「complete-then-null」在
  * [ApexAgentEngine.confirmationLock] 内原子执行（见文件头②）。
  *
- * complete 语义：plan/spec 以「用户拒绝」收场（legacy(false)/false），
+ * complete 语义：plan 以「用户拒绝」收场（legacy(false)），
  * userInput 以空答案唤醒（cancelUserInput 同语义）——等待方拿到确定值，
  * 引擎流沿 abort 路径自然收尾，不挂超时。
  */
@@ -94,8 +94,6 @@ internal fun ApexAgentEngine.abortConfirmationChannels() {
     synchronized(confirmationLock) {
         planConfirmationDeferred?.complete(PlanDecision.legacy(false))
         planConfirmationDeferred = null
-        specConfirmationDeferred?.complete(false)
-        specConfirmationDeferred = null
         userInputDeferred?.complete("")
         userInputDeferred = null
         // ═══ #395 — 桥接层提问收口（弹窗取消卡死根因）═══

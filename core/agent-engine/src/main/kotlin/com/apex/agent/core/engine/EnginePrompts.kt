@@ -38,13 +38,11 @@ internal object EnginePrompts {
      * 在纯文本轮次即终止循环，任务永远停在"计划"阶段。新增 Tool-Use
      * Policy 段把"行动优先"写成硬性约束。
      *
-     * **#197 双工位绝对分离（工位分轨）**：[AgentMode.workstation] 决定
-     * 工位轨道 —— 身份行（AGENT 自称全能智能体 / CODING 自称编码智能体）、
-     * 聊天 UX 段（Conversational Openness / First-Turn Greeting / 情绪调频 /
-     * 模糊求助澄清，仅 AGENT 工位）、任务路由（[appendTaskRouting] 从
-     * [visibleTools] 同源派生，被工位隔离过滤掉的工具绝不被推荐）。
-     * 共享的只剩两工位都需要的执行纪律（Tool-Use Policy / 权限阶梯 /
-     * 扩展攻略 / 工具清单等）。
+     * **Agent 模式移除（PR 3/6）**：聊天 UX 四段（Conversational Openness /
+     * First-Turn Greeting / 情绪调频 / 模糊求助澄清）与双工位分轨已删 ——
+     * 本软件引擎实例恒为编码工位，身份行固定为 CODING agent 自述，
+     * 任务路由（[appendTaskRouting]）从 [visibleTools] 同源派生，绝推荐
+     * 一个本轮实际调不到的工具。
      *
      * @param privilegeLevel current privilege ("ROOT" / "SHIZUKU" / anything
      *   else → normal shell guidance)
@@ -99,14 +97,6 @@ internal object EnginePrompts {
          */
         planningPhase: Boolean = false,
         /**
-         * 首轮纯问候硬约束（动态层）。true = 本轮是会话首条用户消息且
-         * [SmallTalkDetector] 判定为纯问候（你好/hi/在吗…）。注入
-         * FIRST_TURN_GREETING 段：要求一句话极简回应（≤ 20 字，如
-         * 「需要帮助吗？哪方面的？」），禁止能力清单/工具列表/长篇开场白。
-         * 默认 false = 段落省略（既有行为零变化）。
-         */
-        firstTurnGreeting: Boolean = false,
-        /**
          * 聊天记忆召回上下文（对话自动记忆）。非空时渲染
          * "## Remembered About You" 段——引擎每轮 execute 入口经
          * ExecutionMemoryObserver.recallChatMemory 取回的用户长期记忆
@@ -122,68 +112,21 @@ internal object EnginePrompts {
          * skillPrompts 全量注入的 legacy 行为）。
          */
         skillCatalog: List<SkillDigest> = emptyList(),
-        /**
-         * 本轮聊天信号（共情引擎数据面，[ChatSignalDetector.detect] 产出）。
-         * 情绪非 NONE 时渲染 "## Emotional Attunement (THIS TURN)" 段
-         * （负向：先共情后任务；正向：同频庆祝）；vague=true 时渲染
-         * "## Vague Request (THIS TURN)" 段（先一个聚焦追问再作答）。
-         * null / 全空信号 = 两段均省略（既有行为零变化）。
-         */
-        chatSignal: ChatSignal? = null
     ): String {
         val thinking = currentProfile?.promptInstruction ?: config.thinkingLevel.toPromptInstruction()
-        // ═══ #197 双工位绝对分离：身份行 / 聊天 UX 段 / 任务路由按工位分轨 ═══
-        // CODING 工位（BUILD/PLAN/GOAL）不再携带聊天屏的闲聊姿态与情感调频
-        // 段；AGENT 工位的能力自述只声明本工位机械可见的工具面（同源纪律）。
-        val workstation = config.mode.workstation
         return buildString {
-            // ═══ Agent 角色：身份行（agentName 空 = 历史行为零变化）═══
-            // 工位分轨：CODING 工位自称编码智能体（真实项目工作区），能力
-            // 自述只列编码工具面；AGENT 工位保持全能智能体自述，且不再声明
-            // GitHub —— #197 起工具计划已机械剔除 Code 族与 Github 族
-            // 工具（见 [EngineToolPlanner.isCodingOrientedToolId]），
-            // 提示词与能力面同源，不教假事实。
-            if (workstation == EngineWorkstation.CODING) {
-                appendLine("You are ${config.agentName.ifBlank { "Apex Agent" }}, a CODING agent working in a real project workspace on an Android device.")
-                appendLine("You are not a chatbot: your job is to COMPLETE coding tasks by taking actions with tools —")
-                appendLine("reading and editing real files, searching code, running builds, tests and commands, git and GitHub — until done.")
-            } else {
-                appendLine("You are ${config.agentName.ifBlank { "Apex Agent" }}, an AI AGENT running on an Android device.")
-                appendLine("You are not a chatbot: your job is to COMPLETE tasks by taking actions with tools —")
-                appendLine("shell commands, file operations, web browsing/automation, messaging connectors, memory, and device control.")
-            }
+            // ═══ Agent 模式移除（PR 3/6）：恒为编码工位身份行 ═══
+            // 能力自述只列编码工具面（真实项目工作区）；提示词与能力面同源，
+            // 不教假事实。
+            appendLine("You are ${config.agentName.ifBlank { "Apex Agent" }}, a CODING agent working in a real project workspace on an Android device.")
+            appendLine("You are not a chatbot: your job is to COMPLETE coding tasks by taking actions with tools —")
+            appendLine("reading and editing real files, searching code, running builds, tests and commands, git and GitHub — until done.")
 
             // ═══ Agent 角色（人设层）：名字/称呼/角色定义/提示词/风格/语言 ═══
             // 全空 → 段落整体省略（历史行为零变化）。人设只塑造表达方式，
             // 绝不覆盖工具策略/安全规则 —— 末行显式声明优先级。
             appendRoleSection(config)
             appendLine()
-
-            // ═══ 对话开放性（静态层，AGENT 工位专属）：问候/闲聊也是合法输入 ═══
-            // 用户反馈根因：发「你好」回一大段编程能力介绍——旧提示词只有
-            // 「You are not a chatbot」的任务而向，模型把所有输入都当任务
-            // 处理。本段把「闲聊优先短回应」写成静态策略；首轮纯问候另有
-            // 动态硬约束段（firstTurnGreeting）双保险。
-            // 工位分轨：这是聊天屏的交互规格 —— coding 会话是任务向的，
-            // 不携带闲聊姿态（绝对分离：两工位的系统提示词各自只描述
-            // 自己工位的交互形态）。
-            if (workstation == EngineWorkstation.AGENT) {
-                appendLine("## Conversational Openness")
-                appendLine("You are task-driven, but greetings and small talk are legitimate input — respond like a")
-                appendLine("natural assistant, not a capabilities brochure:")
-                appendLine("- Greetings / chitchat / mood talk (你好、在吗、无聊聊聊) → reply briefly and warmly in the")
-                appendLine("  user's language, then invite the topic. NEVER dump tool lists, skill catalogs, or")
-                appendLine("  self-introductions unless explicitly asked '你能做什么'.")
-                appendLine("- Casual questions get casual-length answers; match the user's energy and message length.")
-                appendLine("- Life / emotional / non-programming topics are FIRST-CLASS: chat, travel, cooking, health,")
-                appendLine("  fitness, fashion, gifts, study, career... Do NOT steer every topic toward coding.")
-                appendLine("- Only escalate to tool use when there is an actual task to perform or a fact to verify.")
-                appendLine("- Topic continuation: after a conversational (non-tool) answer lands well, you MAY close with")
-                appendLine("  ONE compact line offering up to 3 follow-up directions, e.g.")
-                appendLine("  『想继续的话可以：A / B / C，或者随口聊点别的』. Skip it for tool-heavy tasks,")
-                appendLine("  long answers, or when the user is clearly closing the conversation.")
-                appendLine()
-            }
 
             // ═══ 主动工具使用策略（根因修复：模型不主动调工具）═══
             // 业界标杆提示词工程实践指出："when you say you are going to make a tool
@@ -273,11 +216,9 @@ internal object EnginePrompts {
             // ═══ 任务路由（2026-10 用户反馈「什么都往浏览器塞」；同源化重构）═══
             // 四车道分工：git 通路做仓库操作 / GitHub 工具读权威资料 /
             // 浏览器只做真实网页自动化 —— 模型选错道是效率与成功率双输。
-            // 工位分轨后同源化：车道推荐只引用本轮实际可见的工具（计划
-            // 过滤后剩什么就推什么）—— AGENT 工位拿不到 Code 族与
-            // Github 族工具，git 车道改写为「引导切换 Coding 工位」的
-            // 诚实指引，绝不推荐一个模型实际调不到的工具。
-            appendTaskRouting(visibleTools, workstation)
+            // 同源化：车道推荐只引用本轮实际可见的工具（计划过滤后剩什么
+            // 就推什么），绝不推荐一个模型实际调不到的工具。
+            appendTaskRouting(visibleTools)
 
             // ═══ 权限阶梯（让 Agent 知道自己有什么、缺什么、怎么升级）═══
             // 正文与 CapabilityReport 工具输出同源（PrivilegeLadder 单一真值源）：
@@ -289,9 +230,8 @@ internal object EnginePrompts {
             // 旧提示词只列已装能力；没有现成工具时模型直接「我做不了」。
             // 本段把「找方法」固化为有序梯度：目录检索 → 自省 → 技能市场 →
             // MCP 服务器 → Linux 工具链 → 提权请求，声明不可能之前必须爬完。
-            // CHAT 模式零工具纯对话（EMPTY_TOOL_PLAN）——攻略指向的工具全部
-            // 不可调用，注入只会与「建议切换 AGENT 模式」的引导自相矛盾。
-            if (config.mode != AgentMode.CHAT) {
+            // （Agent 模式移除 PR 3/6：CHAT 零工具档位已删，攻略段恒注入。）
+            run {
                 appendLine("## Capability Expansion Playbook (MANDATORY before saying I can't)")
                 appendLine("You are an extensible agent: what is not installed yet can usually be acquired.")
                 appendLine("When no loaded tool fits the task, do NOT give up — climb this ladder in order:")
@@ -342,74 +282,14 @@ internal object EnginePrompts {
             }
 
             when (config.mode) {
-                // ═══ #197 Agent 屏双模式（非编程工位）═══
-                AgentMode.CHAT -> {
-                    appendLine("## Mode: CHAT")
-                    appendLine("You are in pure chat mode. This is a CONVERSATION, not a task runner:")
-                    appendLine("- No tools are available. Respond directly, warmly, and conversationally.")
-                    appendLine("- Lean on your persona, active role, and the injected chat skills.")
-                    appendLine("- Keep replies natural in length: match the user's energy.")
-                    appendLine("- If the user asks for something that clearly needs tools or multi-step work,")
-                    appendLine("  suggest switching to the AGENT mode for this conversation.")
-                }
-                AgentMode.AGENT -> {
-                    appendLine("## Mode: AGENT (all-round, NON-coding)")
-                    appendLine("You are the all-round agent for everyday life, knowledge, and device tasks.")
-                    appendLine("- Use your general tools autonomously (web search, memory, system, apps...)")
-                    appendLine("  and keep working until the request is fulfilled.")
-                    appendLine("- CODING is OUT OF SCOPE here: programming, code writing/debugging/review, git/GitHub")
-                    appendLine("  operations belong to the Coding workspace. When the user asks for those,")
-                    appendLine("  briefly say so and advise switching to the Coding mode — do NOT attempt them.")
-                    appendLine("- For everything else (Q&A, planning, automation, device control, research),")
-                    appendLine("  act directly with tools: a correct action beats a long explanation.")
-                }
                 AgentMode.PLAN -> {
                     appendLine("## Mode: PLAN")
                     appendLine("You are in planning mode. Analyze the task and produce a detailed execution plan.")
                     appendLine("Do NOT execute any tools yet. Only output the plan as JSON.")
                 }
-                AgentMode.SPEC -> {
-                    appendLine("## Mode: SPEC")
-                    appendLine("You are in spec mode. Analyze the task and produce a detailed requirement specification")
-                    appendLine("(goal, requirements, constraints, acceptance criteria, deliverables).")
-                    appendLine("Do NOT execute any tools yet. Only output the spec as JSON.")
-                }
-                AgentMode.REFLECTION -> {
-                    appendLine("## Mode: REFLECTION")
-                    appendLine("You are in reflection mode. Quality matters more than speed: after drafting an answer,")
-                    appendLine("the engine will ask you to review it critically, then revise it into the final output.")
-                    appendLine("When drafting, aim for completeness, correctness, and clarity.")
-                }
-                AgentMode.HUMAN_ASSIST -> {
-                    appendLine("## Mode: HUMAN_ASSIST (human-in-the-loop)")
-                    appendLine("You are in human-assisted mode. Whenever the task involves MULTIPLE viable options —")
-                    appendLine("different approaches, multiple targets/apps/files, ambiguous intent, risky or irreversible")
-                    appendLine("actions, or user preference — you MUST call AskUserChoice BEFORE proceeding and wait")
-                    appendLine("for the user's selection. NEVER guess when the choice materially changes the result.")
-                    appendLine("Keep questions short and provide 2-6 clear options. If the user skips, pick the safest")
-                    appendLine("reasonable default or stop and explain.")
-                }
-                AgentMode.CUSTOM -> {
-                    appendLine("## Mode: CUSTOM")
-                    appendLine("You are in custom mode. Follow the user's custom instructions below in addition to the")
-                    appendLine("general rules. Custom instructions take priority over generic behavior guidance.")
-                }
                 AgentMode.GOAL -> {
                     append(GoalPrompts.modeSection())
                     appendLine()
-                }
-                AgentMode.LOOP -> {
-                    appendLine("## Mode: LOOP (scheduled re-runs)")
-                    appendLine("You are running inside a scheduled loop — the engine re-sends the loop prompt at")
-                    appendLine("intervals (fixed interval, cron, or a one-shot reminder). Treat each run as")
-                    appendLine("independent and self-contained:")
-                    appendLine("- Complete the requested check/work within THIS run; do not wait for a later round.")
-                    appendLine("- Report status concisely (what changed since the last run / current state / anomalies)")
-                    appendLine("  so the user can scan a history of runs quickly.")
-                    appendLine("- Idempotency matters: repeated runs must not duplicate side effects (re-download,")
-                    appendLine("  re-create files, duplicate sends). Check current state before acting.")
-                    appendLine("- If a run cannot complete (missing input, transient error), say what is blocking and")
-                    appendLine("  continue; the next scheduled run will retry.")
                 }
                 AgentMode.BUILD -> {
                     appendLine("## Mode: BUILD")
@@ -430,73 +310,10 @@ internal object EnginePrompts {
                 appendLine("- Do NOT modify files, settings, or device state. Read-only reasoning only.")
                 appendLine("- Output ONLY the JSON structure requested — no prose around it, no markdown fences.")
             }
-            // 自定义模式：附加用户指令（拼入 system prompt）。
-            if (config.mode == AgentMode.CUSTOM && !config.customInstruction.isNullOrBlank()) {
-                appendLine()
-                appendLine("## Custom Instructions")
-                appendLine(config.customInstruction)
-            }
+            // （Agent 模式移除 PR 3/6：CUSTOM 档位的 "## Custom Instructions"
+            // 附加指令段已随档位删除；动态上下文统一走 additionalSystemContext
+            // 的 "## Session Context" 段。）
 
-            // ═══ 首轮纯问候硬约束（动态层，AGENT 工位专属）═══
-            // 与静态 Conversational Openness 段双保险：静态段约束所有闲聊的
-            // 「形状」，本段针对「会话第一条消息就是你好」的极端情形给出
-            // 不可误读的硬性行为规格（一句话 + 反问需要，禁止一切清单式输出）。
-            // coding 会话不携带问候姿态（工位绝对分离）。
-            if (firstTurnGreeting && workstation == EngineWorkstation.AGENT) {
-                appendLine()
-                appendLine("## First-Turn Greeting (THIS TURN)")
-                appendLine("The user just opened this conversation with a bare greeting (no task attached).")
-                appendLine("Reply with EXACTLY ONE short friendly sentence in the user's language — an example shape:")
-                appendLine("『需要帮助吗？想聊哪方面的？』. Then STOP.")
-                appendLine("Hard limits for this turn:")
-                appendLine("- ≤ 20 characters (Chinese) or ≤ 15 words (English); no second sentence, no lists,")
-                appendLine("  no headers, no markdown, no emoji spam.")
-                appendLine("- Do NOT call any tools; do NOT list skills/tools/capabilities; do NOT introduce yourself.")
-                appendLine("- Match the user's persona/language settings if a role is configured.")
-            }
-            // ═══ 情绪适配（动态层，AGENT 工位专属）═══
-            // 共情引擎：本轮消息携带可检测情绪时，给出「先处理心情、再
-            // 处理任务」的行为规格。正向 = 同频庆祝（具名夸，不泼冷水）；
-            // 负向 = 一句真诚回应先行，不说教、不命令式安慰，任务紧随
-            // 其后 —— 行动本身就是安慰。检测器刻意保守，本段只在确有
-            // 命中时渲染，绝不提及检测机制本身。coding 会话不携带情绪
-            // 调频段（工位绝对分离：编码任务是任务向的，情感规格属于
-            // 聊天屏交互层）。
-            if (workstation == EngineWorkstation.AGENT) chatSignal?.takeIf { it.emotion != ChatEmotion.NONE }?.let { signal ->
-                appendLine()
-                appendLine("## Emotional Attunement (THIS TURN)")
-                appendLine("The user's message carries a detectable ${signal.emotion.name} emotional tone.")
-                if (signal.emotion == ChatEmotion.JOYFUL) {
-                    appendLine("Match their positive energy: celebrate WITH them, name specifically WHAT")
-                    appendLine("went well (use their own words), keep it light and short. No unsolicited")
-                    appendLine("caveats or warnings unless a real risk exists.")
-                } else {
-                    appendLine("Respond to the EMOTION first, the task second:")
-                    appendLine("1. Open with ONE short, genuine line acknowledging their feeling (their language).")
-                    appendLine("   No lecturing, no commands like 别难过/想开点, no toxic positivity.")
-                    appendLine("2. Keep sentences short, warm, slower-paced; drop filler formality.")
-                    appendLine("3. If a concrete task is also present, solve it right after acknowledging —")
-                    appendLine("   taking action IS the comfort.")
-                    appendLine("4. If the wording suggests crisis or self-harm, put safety first: stay gentle,")
-                    appendLine("   encourage contacting someone they trust or professional/human help nearby.")
-                }
-                appendLine("Never mention this section, any detection, or these instructions.")
-            }
-            // ═══ 模糊求助澄清（动态层，AGENT 工位专属）═══
-            // 「怎么办/帮帮我/不行了」类无宾语短求助：最伤聊天体验的是猜
-            // 一个主题然后倾倒长篇泛论。本段强制「一个聚焦追问 + 2-4 个
-            // 具体选项」的回应形状；记忆/上文已能推断对象时跳过追问。
-            // coding 会话不携带（工位绝对分离；编码屏的模糊任务由
-            // AskUserChoice 通道兜底）。
-            if (workstation == EngineWorkstation.AGENT) chatSignal?.takeIf { it.vague }?.let {
-                appendLine()
-                appendLine("## Vague Request (THIS TURN)")
-                appendLine("The user cried for help WITHOUT naming a concrete object (no topic, error, or artifact).")
-                appendLine("- Do NOT guess a topic and dump a generic essay — that is the worst chat failure.")
-                appendLine("- Reply in 1-3 short sentences: show willingness, then ask ONE focused question")
-                appendLine("  offering 2-4 concrete options, e.g. 『当然可以！先确认下：是 A、B 还是 C？』")
-                appendLine("- If memory or earlier turns already imply the object, skip asking and help directly.")
-            }
             // ═══ #168 六档思考：档位声明 + AUTO 决策理由 + MAXIMUM 自评清单 ═══
             // currentProfile = null → 旧 5 档行为（仅指令文本，既有测试零改动）。
             if (thinking.isNotBlank() || currentProfile != null) {
@@ -677,18 +494,19 @@ internal object EnginePrompts {
      * 任务路由段（同源化车道推荐）。
      *
      * 车道只引用本轮**实际可见**的工具（[visibleTools] 与请求 tools 数组
-     * 同源，见 [EngineToolPlanner.visibleToolsFor]）—— 工位隔离把
-     * Code 族与 Github 族工具从 AGENT 工位的计划里剔除后，git 车道
-     * 自动改写为「引导切换 Coding 工位」的诚实指引；浏览器与检索
-     * 车道按可见性逐条渲染。声明与
-     * 能力面永远一致，绝不推荐一个模型本轮调不到的工具。
+     * 同源，见 [EngineToolPlanner.visibleToolsFor]）—— 浏览器与检索车道
+     * 按可见性逐条渲染。声明与能力面永远一致，绝不推荐一个模型本轮调不到
+     * 的工具。
      *
-     * 本轮无可见工具（CHAT / 降级到无工具 / 测试空参）→ 整段省略：路由
+     * Agent 模式移除（PR 3/6）：AGENT 工位的「引导切换 Coding 工位」改写
+     * 分支已删 —— 本软件恒为编码工位；git 工具因降级不可见时 GitHub 车道
+     * 整条省略（诚实缺省，不教假事实）。
+     *
+     * 本轮无可见工具（降级到无工具 / 测试空参）→ 整段省略：路由
      * 指向的工具全部不可用时，注入只会自相矛盾。
      */
     private fun StringBuilder.appendTaskRouting(
-        visibleTools: List<AgentTool>,
-        workstation: EngineWorkstation
+        visibleTools: List<AgentTool>
     ) {
         if (visibleTools.isEmpty()) return
         val ids = visibleTools.map { it.id }
@@ -703,10 +521,6 @@ internal object EnginePrompts {
             appendLine("- GitHub repo work (clone/commit/push/PR): use CodeGitRun (ANY git command;")
             appendLine("  credentials are auto-injected when GitHub is connected) + GithubCreatePullRequest")
             appendLine("  to open the PR. NEVER drive the browser to do repository operations.")
-        } else {
-            appendLine("- GitHub repo work (clone/commit/push/PR) lives in the CODING workstation: this")
-            appendLine("  workspace exposes no repo tools. When the user asks for those, briefly say so and")
-            appendLine("  advise switching to the Coding mode — do NOT drive the browser to do it.")
         }
         if (hasWebSearch && hasGithubRead) {
             appendLine("- Technical/code/library questions: WebSearch for orientation, then GitHub tools")
@@ -856,117 +670,6 @@ internal object EnginePrompts {
                 "Do NOT announce completion (no phrases like 'task complete', '任务已完成', " +
                 "'all done'), and no closing pleasantries. Note any issues, partial " +
                 "completions, or follow-ups the user should know about."
-        )
-    }
-
-    // ═══════════════════════════════════════════════════════
-    // SPEC mode prompt builders
-    // ═══════════════════════════════════════════════════════
-
-    fun buildSpecPrompt(input: String, tools: List<AgentTool>): String = buildString {
-        appendLine("Analyze this task and create a detailed requirement specification:")
-        appendLine()
-        appendLine("Task: $input")
-        appendLine()
-        appendLine("Available tools:")
-        tools.forEach { tool ->
-            appendLine("- ${tool.id}: ${tool.description.take(120)}")
-        }
-        appendLine()
-        appendLine("Output a JSON spec with EXACTLY this structure (no prose, no markdown fences):")
-        appendLine(
-            """
-            {
-              "goal": "<one-sentence goal>",
-              "reasoning": "<why this approach / key design decisions>",
-              "risk_level": "low|medium|high|critical",
-              "estimated_tool_calls": <int>,
-              "requirements": ["<functional requirement 1>", "..."],
-              "constraints": ["<constraint 1>", "..."],
-              "acceptance_criteria": ["<how to verify success 1>", "..."],
-              "deliverables": ["<concrete deliverable 1>", "..."]
-            }
-            """.trimIndent()
-        )
-        appendLine()
-        appendLine("Be specific: each requirement/criterion must be verifiable. Empty arrays are allowed but avoid them when possible.")
-    }
-
-    fun buildSpecStepPrompt(
-        spec: ExecutionSpec,
-        stepText: String,
-        stepIndex: Int
-    ): String = buildString {
-        appendLine("Execute deliverable ${stepIndex + 1} of the spec:")
-        appendLine("Deliverable: $stepText")
-        appendLine()
-        appendLine("Full spec context:")
-        appendLine("Goal: ${spec.goal}")
-        if (spec.requirements.isNotEmpty()) {
-            appendLine("Requirements:")
-            spec.requirements.forEach { appendLine("  - $it") }
-        }
-        if (spec.constraints.isNotEmpty()) {
-            appendLine("Constraints:")
-            spec.constraints.forEach { appendLine("  - $it") }
-        }
-        if (spec.acceptanceCriteria.isNotEmpty()) {
-            appendLine("Acceptance criteria:")
-            spec.acceptanceCriteria.forEach { appendLine("  - $it") }
-        }
-        appendLine()
-        appendLine("Deliver this item now using the appropriate tools. Verify against the acceptance criteria. Be concise.")
-    }
-
-    fun buildSpecReflectionPrompt(spec: ExecutionSpec): String = buildString {
-        appendLine("The following spec has been executed:")
-        appendLine("Goal: ${spec.goal}")
-        spec.deliverables.forEachIndexed { index, d ->
-            appendLine("  ${index + 1}. $d")
-        }
-        appendLine()
-        appendLine(
-            "State the final outcome and key deliverables directly in 2-4 sentences. " +
-                "Do NOT announce completion (no phrases like 'task complete', '任务已完成', " +
-                "'all done'), and no closing pleasantries. Report any unmet acceptance " +
-                "criteria, issues, or follow-ups the user should know about."
-        )
-    }
-
-    // ═══════════════════════════════════════════════════════
-    // Reflection mode prompt builders
-    // ═══════════════════════════════════════════════════════
-
-    fun buildReviewPrompt(draft: String): String = buildString {
-        appendLine("You are a strict reviewer. Critically evaluate the following draft answer:")
-        appendLine()
-        appendLine("--- DRAFT START ---")
-        appendLine(draft)
-        appendLine("--- DRAFT END ---")
-        appendLine()
-        appendLine(
-            "Check for: factual errors, logical gaps, incomplete steps, unclear or ambiguous " +
-                "wording, missing edge cases, and deviations from the user's request. " +
-                "Output ONLY the review: a concise list of concrete, actionable issues " +
-                "(max 6 items). Do not rewrite the answer here."
-        )
-    }
-
-    fun buildRevisePrompt(draft: String, review: String, round: Int): String = buildString {
-        appendLine("Revise the draft answer below to address the reviewer's issues.")
-        appendLine("Round $round revision.")
-        appendLine()
-        appendLine("--- DRAFT START ---")
-        appendLine(draft)
-        appendLine("--- DRAFT END ---")
-        appendLine()
-        appendLine("--- REVIEW START ---")
-        appendLine(review)
-        appendLine("--- REVIEW END ---")
-        appendLine()
-        appendLine(
-            "Output ONLY the final revised answer (complete, self-contained, no meta commentary). " +
-                "Fix every actionable issue in the review while preserving what was already good."
         )
     }
 }
