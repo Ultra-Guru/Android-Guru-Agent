@@ -147,7 +147,7 @@ object FusionModule {
         mcpManager: McpManager,
         // Agent 模式移除（PR 2/6）：裸 AgentEngine Provider 随 Agent 屏引擎退役；
         // Fusion 端口改指编码引擎（本软件唯一引擎实例）。
-        engineLazy: dagger.Lazy<@Named("code") AgentEngine>,
+        @Named("code") engineLazy: dagger.Lazy<AgentEngine>,
         pluginRegistryLazy: dagger.Lazy<com.apex.agent.plugin.host.functional.UnifiedPluginRegistry>,
         hubSource: com.apex.agent.core.tools.marketplace.HubSource
     ): FusionBundleActivator = FusionBundleActivator(

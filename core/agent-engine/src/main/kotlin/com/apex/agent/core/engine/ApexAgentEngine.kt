@@ -176,24 +176,12 @@ class ApexAgentEngine(
     internal var executionTags: Pair<String?, String?>? = null
 
     /**
-     * 本轮为「会话首条用户消息且纯问候」（SmallTalkDetector 判定）。
-     * execute() 入口置位 / finally 复位；系统提示词据此注入
-     * First-Turn Greeting 硬约束段（见 EnginePrompts）。
-     */
-    @Volatile
-    private var firstGreetingTurn = false
-
-    /**
      * 本轮召回的聊天长期记忆（已格式化文本；null = 无可召回内容）。
      * execute() 入口经 memoryObserver.recallChatMemory 填充，finally 复位；
      * 系统提示词据此注入 "## Remembered About You" 段。
      */
     @Volatile
     private var chatMemoryNote: String? = null
-
-    /** 本轮聊天信号（共情/澄清，ChatSignalDetector）。execute() 入口填充，finally 复位。 */
-    @Volatile
-    private var chatSignal: ChatSignal? = null
 
     /** T76 — 压缩后重注入的任务状态 system 消息（N-9，TaskRuntime 调用）。 */
     fun injectSystemContext(content: String) {
@@ -507,12 +495,7 @@ class ApexAgentEngine(
                 )
             }
 
-            // ═══ 首轮问候检测 + 聊天记忆召回（发送前、历史追加前）═══
-            // 首轮 = 历史尚无任何 User 消息；纯问候 → 系统提示词注入硬约束段。
-            firstGreetingTurn =
-                conversationHistory.none { it is LlmMessage.User } &&
-                    SmallTalkDetector.isGreetingOnly(input.text)
-            chatSignal = ChatSignalDetector.detect(input.text)
+            // ═══ 聊天记忆召回（发送前、历史追加前）═══
             // 聊天长期记忆召回：失败折叠为 null（记忆子系统异常绝不阻断主对话）。
             chatMemoryNote = try {
                 memoryObserver?.recallChatMemory(input.text)?.takeIf { it.isNotBlank() }
@@ -654,10 +637,8 @@ class ApexAgentEngine(
                     "memoryObserver.onConversationTurn threw: ${e.message}"
                 )
             }
-            // 复位轮次级注入态（防止下一轮携带上一轮的问候约束/记忆快照）。
-            firstGreetingTurn = false
+            // 复位轮次级注入态（防止下一轮携带上一轮的记忆快照）。
             chatMemoryNote = null
-            chatSignal = null
             // Cancel any dangling plan-confirmation deferred so it doesn't leak.
             planConfirmationDeferred?.complete(PlanDecision.legacy(false))
             planConfirmationDeferred = null
@@ -1137,10 +1118,8 @@ class ApexAgentEngine(
         connectedServices = connectedServicesProvider?.connectedServicesSummary(),
         // Issue #164：全局规则（Agent 模式通道；coding 实例不设值，见 updateGlobalRules KDoc）
         globalRules = globalRulesText,
-        // 首轮纯问候硬约束 + 聊天记忆召回（execute() 置位，finally 复位）。
-        firstTurnGreeting = firstGreetingTurn,
-        memoryContext = chatMemoryNote,
-        chatSignal = chatSignal
+        // 聊天记忆召回（execute() 置位，finally 复位）。
+        memoryContext = chatMemoryNote
     )
 
     // SPEC / Reflection 模式 prompt 包装器已迁至 EnginePromptDelegates.kt（#168 零净增腾挪，调用点零改动）。
