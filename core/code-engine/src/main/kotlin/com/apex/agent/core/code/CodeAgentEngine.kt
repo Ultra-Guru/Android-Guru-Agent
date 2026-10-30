@@ -5,6 +5,7 @@ import com.apex.agent.core.code.thinking.CodeThinkingProfile
 import com.apex.agent.core.code.thinking.CodeThinkingPrompts
 import com.apex.agent.core.engine.AgentEngine
 import com.apex.agent.core.engine.AgentEvent
+import com.apex.agent.core.llm.LlmMessage
 import com.apex.agent.core.engine.ApexAgentEngine
 import com.apex.agent.core.engine.UserInput
 import com.apex.agent.core.logging.AppLogger
