@@ -319,6 +319,8 @@
 
     <!-- AUTO 预检通知 -->
     <string name="code_adaptive_precheck_fmt">自适应预检：%1$s</string>
+    <!-- AUTO 深水区升档通知（运行中自动升级） -->
+    <string name="code_adaptive_escalate_fmt">⚠️ 深水区自动升档：%1$s</string>
 
     <!-- 聊天气泡系统消息（CodeEventReducer 发出） -->
     <string name="code_plan_confirmed_fmt">计划已确认，开始执行（%1$d 步）</string>

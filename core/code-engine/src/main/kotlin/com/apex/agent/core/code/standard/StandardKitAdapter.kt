@@ -560,10 +560,21 @@ private fun SubAgentSettings.toKitBudget() = KitSubAgentBudget(
     toolOutputLimit = toolOutputLimit
 )
 
-private fun CodeThinkingLevel.toKit(): KitThinkingLevel =
-    runCatching { KitThinkingLevel.valueOf(name) }.getOrDefault(KitThinkingLevel.STANDARD)
+/**
+ * Coding 七档 → 标准线思考档（KitThinkingLevel 八枚举等价名直映）。
+ *
+ * AUTO 元档防御性折叠 DEEP：VM 侧 resolveRuntimeThinkingLevel 四线统一
+ * 预检后引擎不应收到 AUTO，但任何泄漏路径（历史缓存 / 外部直调）都收敛
+ * 到与 [CodeThinkingLevel.toAgentLevel] 一致的 DEEP 兜底——与织造
+ * （LoomKitAdapter.toWeave）/ 信使（CourierKitAdapter.toDispatch）两适配
+ * 器同款折叠，三线防御口径一致。
+ */
+internal fun CodeThinkingLevel.toKit(): KitThinkingLevel =
+    runCatching { KitThinkingLevel.valueOf(name) }
+        .getOrDefault(KitThinkingLevel.STANDARD)
+        .let { if (it == KitThinkingLevel.AUTO) KitThinkingLevel.DEEP else it }
 
-private fun KitThinkingLevel.toHost(): CodeThinkingLevel =
+internal fun KitThinkingLevel.toHost(): CodeThinkingLevel =
     runCatching { CodeThinkingLevel.valueOf(name) }.getOrDefault(CodeThinkingLevel.STANDARD)
 
 private fun KitPlan.toExecutionPlan() = ExecutionPlan(
