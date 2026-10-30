@@ -4,14 +4,12 @@
      through LanguageManager + MainActivity attachBaseContext/recreate. -->
 <resources>
     <!-- ═══ Drawer and navigation destinations (ApexRoot / ApexDrawerContent) ═══ -->
-    <string name="drawer_agent">Agent</string>
     <string name="drawer_terminal">Terminal</string>
 <!-- #197 Template Studio -->
     <string name="drawer_templates">Template Studio</string>
     <string name="drawer_market">Market</string>
     <string name="drawer_browser">Browser</string>
     <string name="drawer_memory">Memory</string>
-    <string name="drawer_tasks">Tasks</string>
     <string name="drawer_storage">Storage</string>
     <string name="drawer_permissions">Permissions</string>
     <string name="drawer_vault">Vault</string>
@@ -22,26 +20,12 @@
     <string name="drawer_about">About</string>
     <string name="drawer_open_nav">Open navigation</string>
     <string name="drawer_tagline">Agent workspace on Android</string>
-    <string name="drawer_mem_count">%1$d items</string>
     <string name="drawer_github_not_connected">GitHub not connected</string>
 
     <!-- ═══ Top context dashboard (ContextMeterBar) ═══ -->
-    <string name="context_dashboard">Context Dashboard</string>
-    <string name="context_used_tokens">Tokens used</string>
-    <string name="context_max_tokens">Context limit</string>
-    <string name="context_usage_ratio">Usage</string>
-    <string name="context_session_total_tokens">Session total</string>
-    <string name="context_status">Status</string>
-    <string name="context_status_danger">Critical</string>
-    <string name="context_status_warning">Warning</string>
-    <string name="context_status_normal">Normal</string>
-    <string name="context_compress">Compress context</string>
-    <string name="context_compress_hint">Auto compression is triggered by the engine once usage exceeds the threshold</string>
 
     <!-- ═══ Settings center (SettingsScreen) ═══ -->
     <string name="settings_title">Settings</string>
-    <string name="settings_tab_models">Models</string>
-    <string name="settings_tab_interface">Interface</string>
     <string name="settings_testing">Testing…</string>
     <string name="settings_test">Test</string>
     <string name="settings_conn_success">Connection successful</string>
@@ -297,8 +281,6 @@
     <string name="settings_timestamps_desc">Show an HH:mm timestamp by each message bubble, applies immediately</string>
 
     <!-- Notes -->
-    <string name="settings_section_notes">Notes</string>
-    <string name="settings_notes_body">· Terminal font size, max lines, monochrome mode, etc. are configured in the \"Terminal appearance\" card on the Terminal page.\n· Some toggles are data plumbed (see each item\'s note); the engine layers hook them up later.\n· Model profile / provider / role mapping changes save instantly; Agent engine parameters take effect after an app restart.</string>
 
     <!-- Providers dialog -->
     <string name="settings_close">Close</string>
@@ -483,7 +465,6 @@
     <string name="memory_nodes">Nodes</string>
     <string name="memory_macros">Macro skills</string>
     <string name="memory_search_label">Search nodes (text / keywords)</string>
-    <string name="memory_no_match">No memory nodes match \"%1$s\"</string>
     <string name="MemoryRecentEpisodes">Recent episodes</string>
     <string name="memory_empty_episodes">No memory episodes yet\nEpisodes will be deposited here after the Agent runs tasks</string>
     <string name="memory_frequent_macros">Top macro skills</string>
@@ -580,39 +561,6 @@
     <string name="memory_search_type_fact">Fact</string>
     <string name="memory_search_type_entity">Entity</string>
     <string name="memory_search_type_node">Node</string>
-
-    <!-- ═══ Task history (TaskHistoryScreen) ═══ -->
-    <string name="tasks_title">Tasks</string>
-    <string name="tasks_refresh">Refresh</string>
-    <string name="tasks_empty_title">No task records yet</string>
-    <string name="tasks_empty_desc">Start a request in task mode (Plan / Spec) from the chat page\nand tasks will be persisted here (kept across restarts).</string>
-    <string name="tasks_overview">Task overview</string>
-    <string name="tasks_total">Total</string>
-    <string name="tasks_active">Active</string>
-    <string name="tasks_completed">Done</string>
-    <string name="tasks_failed">Failed</string>
-    <string name="tasks_cancelled">Cancelled</string>
-    <string name="tasks_daily_created">Created in the last 7 days</string>
-    <string name="tasks_card_meta">%1$s · %2$s</string>
-    <string name="tasks_card_meta_duration">%1$s · %2$s · took %3$s</string>
-    <string name="tasks_collapse">Collapse</string>
-    <string name="tasks_expand">Expand</string>
-    <string name="tasks_user_input">User input</string>
-    <string name="tasks_plan_steps">Plan steps</string>
-    <string name="tasks_result">Result</string>
-    <string name="tasks_error">Error</string>
-    <string name="tasks_id_retry">ID: %1$s · %2$d retries</string>
-    <string name="tasks_status_pending">Queued</string>
-    <string name="tasks_status_planning">Planning</string>
-    <string name="tasks_status_running">Running</string>
-    <string name="tasks_status_waiting">Awaiting</string>
-    <string name="tasks_status_paused">Paused</string>
-    <string name="tasks_status_cancelling">Cancelling</string>
-    <string name="tasks_status_recovering">Recovering</string>
-    <string name="tasks_status_retrying">Retrying</string>
-    <string name="tasks_status_completed">Done</string>
-    <string name="tasks_status_failed">Failed</string>
-    <string name="tasks_status_cancelled">Cancelled</string>
 
     <!-- ═══ Permission management (PermissionsScreen) ═══ -->
     <string name="perms_title">Permissions</string>
@@ -867,7 +815,6 @@
     <string name="settings_memory_capture_title">Chat memory auto-capture</string>
     <string name="settings_memory_capture_desc">Automatically distill stable facts about you from conversations and recall them in later chats. Turn off to stop any new capture — existing memories can be viewed or deleted on the Memory page</string>
     <!-- ═══ Settings English residual resourcing (Agent behavior + tools/network high-frequency) ═══ -->
-    <string name="settings_tab_agent">Agent</string>
     <string name="settings_dialog_ok">OK</string>
     <string name="settings_enable_tools">Enable tools</string>
     <string name="settings_streaming">Streaming</string>
@@ -886,13 +833,9 @@
     <string name="settings_reflection_label">Reflection</string>
     <string name="settings_planning">Planning</string>
     <string name="settings_replanning">Replanning</string>
-    <string name="settings_parallel_tool_execution">Parallel tool execution</string>
     <string name="settings_background_execution">Background execution</string>
     <string name="memory_capture_privacy_notice">Conversations are processed on-device to build your profile (facts / recent state / milestones). You can turn auto-capture off in Settings → Agent, and delete any memory here at any time.</string>
     <!-- #237 通知权限回收引导 -->
-    <string name="notif_permission_hint_title">Background notifications not delivered</string>
-    <string name="notif_permission_hint_body">System notification permission is off, so background task-completion alerts were silently dropped. Enable notifications to get them.</string>
-    <string name="notif_permission_hint_action">Open notification settings</string>
 
     <!-- ═══ #208: permission / risk gate dialog strings (GateDialogStrings.Res) ═══ -->
     <string name="gate_perm_title_fmt">Tool authorization: %1$s</string>
@@ -908,8 +851,6 @@
     <string name="gate_risk_hint_medium">Balanced: modifies data or state</string>
     <string name="gate_risk_line_fmt">%1$s (%2$s)</string>
     <string name="risk_label_dangerous">Dangerous</string>
-    <string name="risk_label_balanced">Balanced</string>
-    <string name="risk_label_safe">No danger</string>
     <string name="gate_opt_allow_session">Allow for this session</string>
     <string name="gate_opt_allow_session_desc">This tool will not ask again in this session</string>
     <string name="gate_opt_allow_once">Allow once</string>

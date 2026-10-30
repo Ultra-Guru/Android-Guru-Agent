@@ -29,7 +29,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
  *
  * 持久化：[Saver] 把 [history 旧→新 ..., current] 的 route 串行成
  * ArrayList&lt;String&gt;，经 rememberSaveable 跨旋转/进程重建存活（沿用原
- * DestinationSaver 的 route 往返 + 未知 route 兜底 Agent 容错，含 "skill"
+ * DestinationSaver 的 route 往返 + 未知 route 兜底 Code 容错（含 "skill" 等老路由）。
  * 老路由迁移市场页）。
  *
  * 可测性：纯状态机（[mutableStateOf] 在非组合环境可直接构造读写），单测见
@@ -98,7 +98,7 @@ internal class NavigationBackStack(
             },
             restore = { routes ->
                 if (routes.isEmpty()) {
-                    NavigationBackStack(DrawerDestination.Agent)
+                    NavigationBackStack(DrawerDestination.Code)
                 } else {
                     val destinations = routes.map { destinationFromRoute(it) }
                     NavigationBackStack(
@@ -117,27 +117,25 @@ internal class NavigationBackStack(
 @Composable
 internal fun rememberNavigationBackStack(): NavigationBackStack =
     rememberSaveable(saver = NavigationBackStack.Saver) {
-        NavigationBackStack(DrawerDestination.Agent)
+        NavigationBackStack(DrawerDestination.Code)
     }
 
 /**
  * #224：route 字符串 → [DrawerDestination]（从 ApexRoot 的私有
  * DestinationSaver 收编为共享映射）。DrawerDestination 是 sealed class
  * （非 enum，无 name/entries），只能以 route 往返；未知 route 兜底
- * Agent，"skill" 老 route 兜底市场页（Skill 屏已并入市场，老用户
+ * Code，"skill" 等老 route 走未知兜底（Agent 模式移除，老用户
  * 重建时若停留在原 Skill 页不落空）。
  */
 internal fun destinationFromRoute(route: String): DrawerDestination = when (route) {
-    DrawerDestination.Agent.route -> DrawerDestination.Agent
+    "agent" -> DrawerDestination.Code
     DrawerDestination.Code.route -> DrawerDestination.Code
     DrawerDestination.Templates.route -> DrawerDestination.Templates
     DrawerDestination.Terminal.route -> DrawerDestination.Terminal
-    // "skill" route 保留兜底：老用户重建时若停留在原 Skill 页，落到市场
-    "skill" -> DrawerDestination.Market
+    // "skill" route 兜底 Code（Agent 模式移除 PR 2/6：老路由统一未知兜底）
     DrawerDestination.Market.route -> DrawerDestination.Market
     DrawerDestination.Browser.route -> DrawerDestination.Browser
     DrawerDestination.Memory.route -> DrawerDestination.Memory
-    DrawerDestination.Tasks.route -> DrawerDestination.Tasks
     DrawerDestination.Storage.route -> DrawerDestination.Storage
     DrawerDestination.Permissions.route -> DrawerDestination.Permissions
     DrawerDestination.Vault.route -> DrawerDestination.Vault
@@ -149,5 +147,5 @@ internal fun destinationFromRoute(route: String): DrawerDestination = when (rout
     DrawerDestination.Usage.route -> DrawerDestination.Usage
     DrawerDestination.Diagnostics.route -> DrawerDestination.Diagnostics
     DrawerDestination.About.route -> DrawerDestination.About
-    else -> DrawerDestination.Agent
+    else -> DrawerDestination.Code
 }
