@@ -31,7 +31,6 @@ import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.LinkOff
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material.icons.outlined.Replay
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Visibility
@@ -59,14 +58,15 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * 设置页 v3 扩展分区（Task 2-S4）。
+ * 设置页 v3 扩展分区（Task 2-S4；Agent 模式移除后只保留 Coding 工位
+ * 与双模式共享的引擎分区）。
  *
  * 两个职责：
  *  1. 预算腾挪：自 SettingsScreen.kt 原样迁入的既有分区（上下文压缩 / 视觉 /
  *     外观 / 聊天显示）——逻辑与字符串零改动，仅可见性 private 改 internal，
  *     SettingsScreen 行数压回预算红线内；
  *  2. v3 新分区：子代理（SubAgentSettings 全预算 + 自定义类型编辑器）、
- *     GOAL 验收默认值、LOOP 循环默认值、Coding 工位工具面与防护、
+ *     GOAL 验收默认值、Coding 工位工具面与防护（含单轮并行执行上限）、
  *     GitHub 连接状态与默认仓库——全部直接消费 AgentSettings 预埋字段，
  *     经 onUpdate 单通道持久化（无摆设开关）。
  *
@@ -413,14 +413,6 @@ internal fun ChatDisplaySection(agent: AgentSettings, onAgent: (AgentSettings) -
         ) {
             onAgent(agent.copy(sendKeyBehavior = it))
         }
-        // 任务总结卡片：默认隐藏（不占空间），开启后任务完成时显示总结卡
-        SwitchRow(
-            stringResource(R.string.settings_show_run_summary),
-            agent.showRunSummary,
-            description = stringResource(R.string.settings_show_run_summary_desc)
-        ) {
-            onAgent(agent.copy(showRunSummary = it))
-        }
     }
 }
 
@@ -716,13 +708,14 @@ private fun CustomSubAgentAddDialog(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// v3 新分区二：GOAL 目标模式默认值
+// v3 新分区二：GOAL 目标模式默认值（Coding 工位 GOAL 模式）
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * GOAL 分区：快速模型验收开关（关闭后信任主模型自评，省 token）、
- * 新目标默认验收轮次上限、会话恢复提示续跑。验收调用走 LlmRequestContext
- * 的 FAST 角色——便宜小模型在 模型 Tab 的 Roles 里配置。
+ * GOAL 分区（Coding 屏 GOAL 模式默认值）：快速模型验收开关（关闭后信任
+ * 主模型自评，省 token）、新目标默认验收轮次上限。验收调用走 LlmRequestContext
+ * 的 FAST 角色——便宜小模型在 模型 Tab 的 Roles 里配置。会话恢复自动续跑
+ * 提示已随 Agent 聊天会话恢复移除。
  */
 @Composable
 internal fun GoalSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings) -> Unit) {
@@ -743,50 +736,7 @@ internal fun GoalSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings)
             onValueChange = { onUpdate(agent.copy(goalMaxRounds = it.toInt())) },
             fmt = { it.toInt().toString() }
         )
-        SwitchRow(
-            stringResource(R.string.settings_v3_goal_auto_resume),
-            agent.goalAutoResume,
-            description = stringResource(R.string.settings_v3_goal_auto_resume_desc)
-        ) { on -> onUpdate(agent.copy(goalAutoResume = on)) }
         DescriptionText(stringResource(R.string.settings_v3_goal_note))
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// v3 新分区三：LOOP 循环模式默认值
-// ═══════════════════════════════════════════════════════════════════
-
-/** LOOP 分区：新循环的间隔 / 执行次数预填 + 后台通知与补跑策略。 */
-@Composable
-internal fun LoopSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings) -> Unit) {
-    SectionCard(
-        title = stringResource(R.string.settings_v3_loop_title),
-        icon = Icons.Outlined.Replay,
-        subtitle = stringResource(R.string.settings_v3_loop_subtitle)
-    ) {
-        DropdownRow(
-            stringResource(R.string.settings_v3_loop_interval),
-            listOf(
-                60_000L to "1 min", 300_000L to "5 min", 1_800_000L to "30 min",
-                3_600_000L to "1 h", 21_600_000L to "6 h",
-            ),
-            agent.loopDefaultIntervalMs,
-            description = stringResource(R.string.settings_v3_loop_interval_desc)
-        ) { ms -> onUpdate(agent.copy(loopDefaultIntervalMs = ms)) }
-        SliderRow(
-            stringResource(R.string.settings_v3_loop_max_runs),
-            agent.loopMaxRunsDefault.toFloat(), 1f..50f, 48,
-            description = stringResource(R.string.settings_v3_loop_max_runs_desc),
-            onValueChange = { onUpdate(agent.copy(loopMaxRunsDefault = it.toInt())) },
-            fmt = { it.toInt().toString() }
-        )
-        // 循环运行通知已聚合至「界面外观 → 通知」叶子（interface/notifications）——
-        // 与任务完成通知同处，渠道语义集中管理；此处不再重复入口。
-        SwitchRow(
-            stringResource(R.string.settings_v3_loop_catch_up),
-            agent.loopCatchUpMissed,
-            description = stringResource(R.string.settings_v3_loop_catch_up_desc)
-        ) { on -> onUpdate(agent.copy(loopCatchUpMissed = on)) }
     }
 }
 
@@ -796,8 +746,8 @@ internal fun LoopSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings)
 
 /**
  * Coding 工位分区：工具面（全量 / 聚焦核心）、读守卫、自动项目规则、
- * MCP 与技能作用域隔离。四项全部被引擎侧消费（EngineToolPlanner /
- * 标准线引擎 / RulesProvider）。
+ * MCP 与技能作用域隔离、单轮并行执行上限。五项全部被引擎侧消费
+ * （EngineToolPlanner / 标准线引擎 / RulesProvider / CodeModule 引擎配置）。
  */
 @Composable
 internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings) -> Unit) {
@@ -830,6 +780,18 @@ internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSetting
             agent.mcpScopeIsolation,
             description = stringResource(R.string.settings_v3_coding_mcp_scope_desc)
         ) { on -> onUpdate(agent.copy(mcpScopeIsolation = on)) }
+        // ═══ 工具循环 v2（引擎真接线，自原 Agent 执行分区迁入）：单轮并行执行上限 ═══
+        HorizontalDivider()
+        Text(stringResource(R.string.settings_tool_loop_section), style = MaterialTheme.typography.labelMedium)
+        SliderRow(
+            label = stringResource(R.string.settings_tool_parallelism),
+            value = agent.toolCallParallelism.toFloat(),
+            range = 1f..8f,
+            steps = 6,
+            description = stringResource(R.string.settings_tool_parallelism_desc),
+            onValueChange = { onUpdate(agent.copy(toolCallParallelism = it.toInt())) },
+            fmt = { it.toInt().toString() }
+        )
     }
 }
 

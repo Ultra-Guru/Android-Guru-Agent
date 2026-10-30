@@ -36,10 +36,10 @@ import com.apex.agent.ui.icons.AgentRoleAvatarIcon
 import com.apex.agent.ui.screen.settings.AgentRole
 
 /**
- * ═══ Agent 角色选择器（聊天顶栏，与 [AgentModeSelector] 同款胶囊 + 下拉模式）═══
+ * ═══ 角色选择器（Coding 屏顶栏，与 [AgentModeSelector] 同款胶囊 + 下拉模式）═══
  *
- * 选中即持久化（agentSettings.activeRoleId）→ AgentChatViewModel 的 collector
- * patchConfig 引擎人设字段 —— 下一轮请求生效，无需重启。
+ * 选中即持久化（agentSettings.codeActiveRoleId）→ CodeRoleController 的
+ * 设置流 collector patchConfig 引擎人设字段 —— 下一轮请求生效，无需重启。
  *
  * 顶栏空间紧张：胶囊只显示 emoji + 名字（锁内置标记）；菜单项显示
  * emoji + 名字 + 称呼/风格摘要一行 + 选中勾（内置角色带锁标）。

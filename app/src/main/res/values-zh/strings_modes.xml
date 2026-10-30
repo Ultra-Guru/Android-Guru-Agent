@@ -1,44 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 模式系统 v2 字符串（#168）：自定义模式预设 + 模式指南。中文版；
-     英文默认在 values/strings_modes.xml。 -->
+<!-- 模式系统字符串（#168）：模式指南入口（Coding 屏模式选择器旁「?」图标）。
+     自定义模式预设（mode_presets_* 25 键）已随 Agent CUSTOM 模式与设置域
+     预设编辑器移除（PR 4/6 + 5/6）。中文版；英文默认在 values/strings_modes.xml。 -->
 <resources>
-
-    <!-- ═══ 自定义模式预设（设置 → Agent，ModePresetEditorSection）═══ -->
-    <string name="mode_presets_section_title">自定义模式预设</string>
-    <string name="mode_presets_section_subtitle">Custom 模式的多套命名指令——选中即注入下一轮请求</string>
-    <string name="mode_presets_select_hint">点击预设即在 Custom 模式使用。选中预设的指令会拼入系统提示词，下一轮请求生效。</string>
-    <string name="mode_presets_none_selected">不使用预设（旧单串指令）</string>
-    <string name="mode_presets_none_selected_desc">回退到旧版单条自定义指令；选择预设可复用整套行为</string>
-    <string name="mode_presets_builtin_group">内置预设</string>
-    <string name="mode_presets_custom_group">我的预设</string>
-    <string name="mode_presets_builtin_badge">内置预设，已锁定</string>
-    <string name="mode_presets_selected_badge">使用中</string>
-    <string name="mode_presets_new">新建预设</string>
-    <string name="mode_presets_edit_cd">编辑预设</string>
-    <string name="mode_presets_duplicate_cd">复制预设为自定义副本</string>
-    <string name="mode_presets_delete_cd">删除预设</string>
-    <string name="mode_presets_delete_confirm_title">删除该预设？</string>
-    <string name="mode_presets_delete_confirm_text">「%1$s」将被永久移除，Agent 不再使用它。</string>
-    <string name="mode_presets_delete_confirm_yes">删除</string>
-    <string name="mode_presets_cancel">取消</string>
-    <string name="mode_presets_save">保存</string>
-    <string name="mode_presets_editor_new_title">新建自定义预设</string>
-    <string name="mode_presets_editor_edit_title">编辑预设</string>
-    <string name="mode_presets_field_name">预设名称</string>
-    <string name="mode_presets_field_name_desc">显示在预设列表与聊天页顶部 chip</string>
-    <string name="mode_presets_field_instruction">指令</string>
-    <string name="mode_presets_field_instruction_desc">Custom 模式下拼入系统提示词。使用 MUST / NEVER 式硬约束效果最佳。</string>
-    <string name="mode_presets_migration_note">你之前的自定义指令已自动保存为预设。</string>
 
     <!-- ═══ 模式指南（ModeGuideSheet，模式选择器旁「?」图标打开）═══ -->
     <string name="mode_guide_open_cd">打开模式指南</string>
-
-
-
-
-
-
-
-    <!-- ═══ 思考档位速览（同弹层，数据来自 ThinkingProfile 静态表）═══ -->
-    <!-- ═══ #197 Agent 屏双模式指南（Chat/Agent）═══ -->
 </resources>

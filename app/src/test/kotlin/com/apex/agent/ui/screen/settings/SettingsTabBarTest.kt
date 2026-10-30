@@ -13,32 +13,32 @@ import org.junit.Test
  */
 class SettingsTabBarTest {
 
-    private val tabs = listOf("model/setup", "model/generation", "agent/execution")
+    private val tabs = listOf("model/setup", "model/generation", "workspace/coding")
 
     @Test
     fun `close inactive tab keeps active unchanged`() {
         val (next, active) = closeSettingsTab(tabs, "model/setup", "model/generation")
-        assertEquals(listOf("model/setup", "agent/execution"), next)
+        assertEquals(listOf("model/setup", "workspace/coding"), next)
         assertEquals("model/setup", active)
     }
 
     @Test
     fun `close active tab falls back to left neighbor`() {
         val (next, active) = closeSettingsTab(tabs, "model/generation", "model/generation")
-        assertEquals(listOf("model/setup", "agent/execution"), next)
+        assertEquals(listOf("model/setup", "workspace/coding"), next)
         assertEquals("model/setup", active)
     }
 
     @Test
     fun `close active first tab falls back to right neighbor`() {
         val (next, active) = closeSettingsTab(tabs, "model/setup", "model/setup")
-        assertEquals(listOf("model/generation", "agent/execution"), next)
+        assertEquals(listOf("model/generation", "workspace/coding"), next)
         assertEquals("model/generation", active)
     }
 
     @Test
     fun `close last remaining tab returns null active`() {
-        val (next, active) = closeSettingsTab(listOf("agent/roles"), "agent/roles", "agent/roles")
+        val (next, active) = closeSettingsTab(listOf("workspace/memory"), "workspace/memory", "workspace/memory")
         assertTrue(next.isEmpty())
         assertNull(active)
     }
@@ -52,7 +52,7 @@ class SettingsTabBarTest {
 
     @Test
     fun `close active last of three falls back to middle`() {
-        val (next, active) = closeSettingsTab(tabs, "agent/execution", "agent/execution")
+        val (next, active) = closeSettingsTab(tabs, "workspace/coding", "workspace/coding")
         assertEquals(listOf("model/setup", "model/generation"), next)
         assertEquals("model/generation", active)
     }
