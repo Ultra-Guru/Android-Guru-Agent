@@ -56,8 +56,9 @@ fun rememberClaudeImportLauncher(controller: FusionBundleController): androidx.a
                     // 聚合包内联，激活时走纯 MD 安装，资源缺失如实降级）。
                     var resourceFailures = 0
                     val skillRegistry = entryPoint(context).skillRegistry()
+                    val importCacheDir = File(context.cacheDir, "claude-import")
                     imported.skillZips.forEach { (skillId, bytes) ->
-                        val tmp = File(cacheDir, "skill-$skillId.zip")
+                        val tmp = File(importCacheDir, "skill-$skillId.zip")
                         runCatching {
                             tmp.writeBytes(bytes)
                             skillRegistry.installFromZip(tmp)
