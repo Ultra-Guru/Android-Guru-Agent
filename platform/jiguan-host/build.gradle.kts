@@ -39,7 +39,10 @@ kotlin {
 
 dependencies {
     // 机关引擎（纯 Kotlin：域模型/端口/扫描/脚本库/知识）。
-    implementation(project(":core:jiguan-engine"))
+    // api 而非 implementation：app 的 ToolModule / McpModule / JiguanModule
+    // 直接引用引擎类型（JiguanRuntime / Orchestrator / 工具类），宿主必须
+    // 传递暴露 —— 与 memory-host 对 memkit 的 api 接线同款。
+    api(project(":core:jiguan-engine"))
     implementation(project(":core:tool-registry"))
     implementation(project(":core:logging"))
 
