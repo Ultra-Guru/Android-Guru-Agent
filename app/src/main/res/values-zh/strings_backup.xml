@@ -10,8 +10,6 @@
 
     <!-- ═══ 导出区 ═══ -->
     <string name="backup_export_title">导出</string>
-    <string name="backup_include_sessions">包含聊天历史</string>
-    <string name="backup_include_sessions_desc">近期会话及完整消息（存储策略保留最近 100 个）</string>
     <string name="backup_include_vault">包含金库（加密）</string>
     <string name="backup_include_vault_desc">用口令加密整个金库，导入时需要再次输入同一口令</string>
     <string name="backup_passphrase_label">口令</string>
@@ -36,15 +34,12 @@
     <string name="backup_preview_version_fmt">格式版本：%1$d</string>
     <string name="backup_preview_created_fmt">创建时间：%1$s</string>
     <string name="backup_preview_from_fmt">导出自：v%1$s</string>
-    <string name="backup_preview_sessions_fmt">会话数：%1$d</string>
     <string name="backup_preview_vault_included">金库：包含（加密）</string>
     <string name="backup_preview_vault_absent">金库：未包含</string>
     <string name="backup_preview_settings_included">设置：包含</string>
     <string name="backup_preview_settings_absent">设置：未包含</string>
     <string name="backup_restore_settings">恢复设置</string>
-    <string name="backup_restore_sessions">恢复聊天会话</string>
     <string name="backup_restore_vault">恢复金库</string>
-    <string name="backup_restore_hint">本机已存在的会话将保留并跳过</string>
     <string name="backup_import_passphrase_label">金库口令</string>
     <string name="backup_import_passphrase_hint">解密金库信封所需的口令</string>
     <string name="backup_dialog_confirm">恢复</string>
@@ -55,14 +50,12 @@
     <string name="backup_export_failed_fmt">导出失败：%1$s</string>
     <string name="backup_result_settings_ok">设置已恢复</string>
     <string name="backup_result_settings_restart">重启应用后恢复的设置才会完全生效</string>
-    <string name="backup_result_sessions_fmt">会话恢复 %1$d 个（跳过已存在 %2$d 个）</string>
     <string name="backup_result_vault_ok">金库已恢复</string>
     <string name="backup_result_vault_passphrase_missing">需要金库口令</string>
     <string name="backup_result_vault_decrypt_failed">金库解密失败 —— 口令错误或数据损坏</string>
     <string name="backup_result_vault_write_failed">恢复的金库写入失败</string>
     <string name="backup_result_providers_redact_failed">Provider 列表已跳过：数据无法解析或不安全</string>
     <string name="backup_result_settings_write_failed_fmt">设置键写入失败：%1$s</string>
-    <string name="backup_result_session_failed_fmt">会话恢复失败：%1$s</string>
     <string name="backup_result_unsupported_version_fmt">备份格式 v%1$d 高于本应用支持的版本，请先升级应用。</string>
     <string name="backup_result_errors_prefix">错误：</string>
     <string name="backup_message_dismiss">关闭提示</string>

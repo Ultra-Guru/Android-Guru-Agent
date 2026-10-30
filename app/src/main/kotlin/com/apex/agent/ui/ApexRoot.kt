@@ -23,7 +23,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddComment
 import androidx.compose.material.icons.filled.BlurOn
 import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DataUsage
 import androidx.compose.material.icons.filled.FolderOpen
@@ -34,7 +33,6 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Storefront
@@ -82,8 +80,6 @@ import com.apex.agent.ui.component.rememberImeDismisser
 import com.apex.agent.ui.glass.GlassIconButton
 import com.apex.agent.ui.screen.about.AboutScreen
 import com.apex.agent.ui.screen.browser.BrowserScreen
-import com.apex.agent.ui.screen.agent.AgentChatScreen
-import com.apex.agent.ui.screen.agent.AgentChatViewModel
 import com.apex.agent.ui.screen.code.CodeScreen
 import com.apex.agent.ui.screen.diagnostics.DiagnosticsScreen
 import com.apex.agent.ui.screen.glass.GlassLabScreen
@@ -94,7 +90,6 @@ import com.apex.agent.ui.screen.playground.PlaygroundScreen
 import com.apex.agent.ui.screen.settings.SettingsScreen
 import com.apex.agent.ui.screen.memory.MemoryScreen
 import com.apex.agent.ui.screen.storage.StorageScreen
-import com.apex.agent.ui.screen.tasks.TaskHistoryScreen
 import com.apex.agent.ui.screen.terminal.TerminalScreen
 import com.apex.agent.ui.screen.templates.TemplateStudioScreen
 import com.apex.agent.ui.screen.usage.UsageDashboardScreen
@@ -117,9 +112,7 @@ sealed class DrawerDestination(
     @StringRes val labelRes: Int,
     val icon: ImageVector
 ) {
-    data object Agent : DrawerDestination("agent", R.string.drawer_agent, Icons.Default.SmartToy)
-    // Coding 模式（与 Agent 模式同级别）：独立引擎实例 + 工作区 + code_* 工具集，
-    // 与 Agent 模式共享 ToolRegistry/Skills/MCP/插件 —— 能力互用。
+    // Coding 模式：本软件的唯一核心工作面（独立引擎实例 + 工作区 + code_* 工具集）。
     data object Code : DrawerDestination("code", R.string.drawer_code, Icons.Default.Code)
     // #197 模板工坊：Agent/Coding 双层模板 + Agent 角色详细设置的独立页面入口。
     data object Templates : DrawerDestination("templates", R.string.drawer_templates, Icons.AutoMirrored.Filled.ListAlt)
@@ -133,8 +126,6 @@ sealed class DrawerDestination(
     // Language 图标即地球，与浏览器语义天然契合。
     data object Browser : DrawerDestination("browser", R.string.drawer_browser, Icons.Default.Language)
     data object Memory : DrawerDestination("memory", R.string.drawer_memory, Icons.Default.Storage)
-    // 任务历史（T76 审计 §7：TaskRuntime.loadTaskHistory 首次接线 —— 步骤回放/统计）
-    data object Tasks : DrawerDestination("tasks", R.string.drawer_tasks, Icons.Default.Checklist)
     // 存储与数据管理（附件/rootfs 占用/会话历史导出清空 —— 均为真实数据源）
     data object Storage : DrawerDestination("storage", R.string.drawer_storage, Icons.Default.FolderOpen)
     data object Permissions : DrawerDestination("permissions", R.string.drawer_permissions, Icons.Default.Security)
@@ -180,10 +171,9 @@ fun ApexRoot() {
     // 切页时旧屏不再随 when 分支整体离开组合而丢失滚动位置/展开态。
     val destinationStateHolder = rememberSaveableStateHolder()
 
-    // 上下文仪表盘数据源（单例作用域 VM，全局共享）—— v1.4.11 移除顶部上下文
-    // 仪表盘长条（用户反馈：顶部堆叠过高，删除后页面上抬）：VM 仍为全局
-    // 单例，网络状态 / uiSettings / GitHub token 箉继续从这里取。
-    val agentVm: AgentChatViewModel = hiltViewModel()
+    // 全局状态数据源（AppStatusViewModel）：网络状态 / 设置快照 /
+    // GitHub token —— Agent 聊天屏移除后由独立轻量 VM 承载。
+    val appVm: AppStatusViewModel = hiltViewModel()
 
     // ═══ IME 收回纪律（2026-10 用户反馈三连修）═══
     // ① 点消息区空白 → 收起：AgentChatScreen / CodeStreamTimeline 的
@@ -223,7 +213,7 @@ fun ApexRoot() {
     }
 
     // ═══ v1.4.4 #6：全局网络状态 —— 离线横幅（所有页面顶部）═══
-    val isOnline by agentVm.networkMonitor.isOnline.collectAsStateWithLifecycle()
+    val isOnline by appVm.networkMonitor.isOnline.collectAsStateWithLifecycle()
 
     // ═══ v1.4.5：新版本浮窗（非强制）—— App 启动静默检查发现新版时顶部提醒 ═══
     val updateBanner by UpdateCenter.bannerVisible.collectAsStateWithLifecycle()
@@ -235,7 +225,7 @@ fun ApexRoot() {
     // 用户显式控制更新节奏（后台不再有任何更新流量）。
     LaunchedEffect(Unit) {
         runCatching {
-            if (agentVm.uiSettings.value.autoUpdateCheck) {
+            if (appVm.settingsRepository.agentSettings.value.autoUpdateCheck) {
                 UpdateCenter.checkForUpdate(
                     currentVersionCode = BuildConfig.VERSION_CODE,
                     force = false,
@@ -263,9 +253,9 @@ fun ApexRoot() {
     // 注意组合顺序：BackHandler 后组合者先消费（LIFO）——抽屉关闭器放在
     // 目标回退之后组合，保证抽屉打开时优先只关抽屉，不再连带跳页。
     val navigateBack: () -> Unit = {
-        if (!navStack.pop()) navStack.navigateToTopLevel(DrawerDestination.Agent)
+        if (!navStack.pop()) navStack.navigateToTopLevel(DrawerDestination.Code)
     }
-    BackHandler(enabled = currentDestination != DrawerDestination.Agent) {
+    BackHandler(enabled = currentDestination != DrawerDestination.Code) {
         navigateBack()
     }
     BackHandler(enabled = drawerState.isOpen) {
@@ -302,8 +292,7 @@ fun ApexRoot() {
                     // 顶层切换不产生返回层级，标准 drawer/bottom-nav 惯例）
                     navStack.navigateToTopLevel(dest)
                     scope.launch { drawerState.close() }
-                },
-                tokenManager = agentVm.githubTokenManager
+                }
             )
         }
     ) {
@@ -393,7 +382,7 @@ fun ApexRoot() {
                 // 远端领先且自动检查开启时弹「发现新版本」（日志 + 前往下载）。
                 // 离线/异常静默降级，绝不阻塞启动；详见 com.apex.agent.changelog 包。
                 ChangelogStartupHost(
-                    autoUpdateCheck = agentVm.uiSettings.value.autoUpdateCheck
+                    autoUpdateCheck = appVm.settingsRepository.agentSettings.value.autoUpdateCheck
                 )
 
                 // ═══ 顶部上下文仪表盘长条（全局）—— v1.4.11 整体移除 ═══
@@ -407,13 +396,6 @@ fun ApexRoot() {
                     // 切页不再随 when 分支整体离开组合而蒸发，返回来源页原样恢复。
                     destinationStateHolder.SaveableStateProvider(currentDestination.route) {
                         when (currentDestination) {
-                            DrawerDestination.Agent -> AgentChatScreen(
-                                // "小大脑"菜单 → 配置模型：跳转设置页模型配置区
-                                // （Models 区块默认展开且在设置页顶部，天然满足自动定位）
-                                // #224：改压栈语义 —— 改完按返回回到聊天上下文，
-                                // 不再被强制拽回 Agent
-                                onOpenSettings = { navStack.push(DrawerDestination.Settings) }
-                            )
                             DrawerDestination.Code -> CodeScreen(
                                 viewModel = hiltViewModel(),
                                 // 「小大脑」菜单 → 配置模型：跳设置页（压栈语义，
@@ -436,7 +418,6 @@ fun ApexRoot() {
                             DrawerDestination.Market -> MarketScreen()
                             DrawerDestination.Browser -> BrowserScreen()
                             DrawerDestination.Memory -> MemoryScreen()
-                            DrawerDestination.Tasks -> TaskHistoryScreen()
                             DrawerDestination.Storage -> StorageScreen()
                             DrawerDestination.Permissions -> PermissionsScreen()
                             DrawerDestination.Vault -> VaultScreen()
