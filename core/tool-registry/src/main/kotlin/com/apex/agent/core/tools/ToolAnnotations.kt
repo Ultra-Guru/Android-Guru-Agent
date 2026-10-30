@@ -172,7 +172,7 @@ data class ToolAnnotations(
                 // v5：agent 自省 / 通讯录 / 日历 读类（只读，sensitiveAction 由
                 // 工具自身显式声明覆盖）。
                 toolId == "AgentSettingGet" || toolId == "AgentProfileList" ||
-                toolId == "AgentRoleList" || toolId == "AgentModePresetList" ||
+                toolId == "AgentRoleList" ||
                 toolId.startsWith("Memory") ||
                 toolId.startsWith("TerminalLinuxStatus") ||
                 toolId.startsWith("TerminalUbuntuStatus") ||
@@ -201,11 +201,11 @@ data class ToolAnnotations(
             // ── Idempotent overwrite writes ──
             toolId == "Write" || toolId == "DownloadFile" ||
                 toolId == "AppLaunch" || toolId == "AppInstall" ||
-                // v5：通知发布 / 角色激活 / 设置应用 / 预设选择 / provider key 写入
+                // v5：通知发布 / 角色激活 / 设置应用 / provider key 写入
                 // 均为覆盖式幂等写（同参数重放不产生新状态）。
                 toolId == "NotificationPost" || toolId == "AgentRoleActivate" ||
                 toolId == "AgentSettingSet" || toolId == "AgentProfileSetDefault" ||
-                toolId == "AgentModePresetSelect" || toolId == "AgentProviderSetKey" ||
+                toolId == "AgentProviderSetKey" ||
                 toolId.startsWith("TerminalWrite") ||
                 toolId.startsWith("TerminalResize") -> idempotentWrite()
 

@@ -26,7 +26,6 @@ import androidx.lifecycle.lifecycleScope
 import com.apex.agent.service.ApexCoreService
 import com.apex.agent.service.CoreServiceGate
 import com.apex.agent.service.StartupWatchdog
-import com.apex.agent.share.SharedIntake
 import com.apex.agent.ui.ApexRoot
 import com.apex.agent.ui.language.LanguageManager
 import com.apex.agent.ui.screen.onboarding.OnboardingFlow
@@ -49,10 +48,6 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var languageManager: LanguageManager
-
-    /** v1.4.4 #7：分享接收中转（ACTION_SEND → Agent 输入区）。 */
-    @Inject
-    lateinit var sharedIntake: SharedIntake
 
     /** P0-1（#223/TerminalRuntime 生命周期接线）：Activity 是运行时的前台宿主
      * ——isFinishing 且 Keep Alive 关闭时负责优雅收尾（详见 onDestroy）。 */
@@ -99,18 +94,6 @@ class MainActivity : ComponentActivity() {
             CoreServiceGate.markStarted()
             ContextCompat.startForegroundService(this, Intent(this, ApexCoreService::class.java))
         }
-
-        // ═══ v1.4.4 #7：分享接收（冷启动路径）═══
-        // 图库/浏览器分享 → 系统拉起本 Activity → intent 在此入队；
-        // AgentChatViewModel init 订阅消费（文本预填草稿 + 图片即时拷沙箱）。
-        // 必须在 setContent 之前：VM 在首次组合时创建，晚于这里即不丢事件。
-        sharedIntake.offer(intent)
-
-        // ═══ v1.4.4 #7：温暖路径（App 已在运行时被分享唤起，singleTop 复用实例）═══
-        // 用 OnNewIntentProvider（ComponentActivity 官方通道）而非覆写
-        // onNewIntent —— 后者参数可空性注解在 androidx.activity 各版本间
-        // 不一致，直接覆写有签名不匹配风险；listener 形态零歧义且无需 setIntent。
-        addOnNewIntentListener { intent -> sharedIntake.offer(intent) }
 
         // ═══ v1.4.4 #4：电池优化白名单引导（一次性）═══
         // keepAlive 默认开（前台服务常驻语义）；厂商 ROM 的电池优化会在后台杀

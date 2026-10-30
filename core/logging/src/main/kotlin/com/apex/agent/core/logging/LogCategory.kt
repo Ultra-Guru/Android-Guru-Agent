@@ -7,7 +7,7 @@ package com.apex.agent.core.logging
  * 是日志查看器进行分段、聚合统计、一键筛选的主维度。
  *
  * 覆盖应用内全部日志来源：引擎、模型适配、工具执行、UI 交互、网络请求、
- * 附件文件、系统生命周期、插件/技能。
+ * 系统生命周期、插件/技能。
  */
 enum class LogCategory(
     val displayName: String,
@@ -27,9 +27,6 @@ enum class LogCategory(
 
     /** 网络请求：GithubApi、Token 管理、外部 HTTP。 */
     NETWORK("网络", "NET"),
-
-    /** 附件与文件：选择、上传、读取。 */
-    ATTACHMENT("附件", "ATT"),
 
     /** 系统/生命周期：Application、后台服务、崩溃、全局异常。 */
     SYSTEM("系统", "SYS"),
