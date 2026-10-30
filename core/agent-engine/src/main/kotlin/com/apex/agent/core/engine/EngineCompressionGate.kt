@@ -6,7 +6,7 @@ import com.apex.agent.core.logging.LogCategory
 
 /**
  * P7 — 上下文压缩触发门（自 [ApexAgentEngine.maybeCompressContext] 迁出，
- * SRP 预算腾挪；模式与 [EnginePromptDelegates] / EngineAskUserFlow 相同：
+ * SRP 预算腾挪；模式与 EngineAskUserFlow 相同：
  * 同包顶层扩展 + internal 成员直调，引擎调用点零改动）。
  *
  * 每轮迭代开始时判定：估算 token 超过阈值 →
