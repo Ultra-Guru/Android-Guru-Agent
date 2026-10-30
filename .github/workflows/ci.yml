@@ -215,16 +215,6 @@ jobs:
             $(find core/code-engine/src/main/kotlin -name "*.kt") \
             -jvm-target 17
 
-      - name: Compile core:jiguan-engine (机关全能操控域引擎)
-        run: |
-          # 机关 V3.0：纯 Kotlin 五域引擎（进程内存/Java-ART/Native/网络/系统）
-          # —— 依赖 tool-registry（AgentTool 契约）+ logging，镜像编译同款挂载。
-          SER_PLUGIN=$HOME/kotlinc/lib/kotlinx-serialization-compiler-plugin.jar
-          CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')/tmp/build/tool-registry:/tmp/build/logging"
-          kotlinc -Xplugin=$SER_PLUGIN -cp "$CLASSPATH" -d /tmp/build/jiguan-engine \
-            $(find core/jiguan-engine/src/main/kotlin -name "*.kt") \
-            -jvm-target 17
-
       - name: Compile platform:code-workspace (编码工作区管理)
         run: |
           SER_PLUGIN=$HOME/kotlinc/lib/kotlinx-serialization-compiler-plugin.jar
@@ -256,13 +246,13 @@ jobs:
               fi
             done
           }
-          IDS=$( { extract_ids core/tool-registry/src/main/kotlin/; extract_ids core/jiguan-engine/src/main/kotlin/; extract_ids platform/terminal/src/main/kotlin/; extract_ids app/src/main/kotlin/; } | sort | uniq -d)
+          IDS=$( { extract_ids core/tool-registry/src/main/kotlin/; extract_ids platform/terminal/src/main/kotlin/; extract_ids app/src/main/kotlin/; } | sort | uniq -d)
           if [ -n "$IDS" ]; then
             echo "❌ Duplicate tool IDs found:"
             echo "$IDS"
             exit 1
           fi
-          TOTAL=$(grep -rh "override val id = " core/tool-registry/src/main/kotlin/ core/jiguan-engine/src/main/kotlin/ platform/terminal/src/main/kotlin/ app/src/main/kotlin/ | wc -l)
+          TOTAL=$(grep -rh "override val id = " core/tool-registry/src/main/kotlin/ platform/terminal/src/main/kotlin/ app/src/main/kotlin/ | wc -l)
           echo "✅ $TOTAL tool id declarations, no semantic duplicates"
 
       - name: Check duplicate classes
@@ -654,8 +644,7 @@ jobs:
                    :terminal-emulator:testDebugUnitTest :terminal-view:testDebugUnitTest \
                    :core:agent-engine:test :core:code-tools:test :core:code-engine:test \
                    :core:tool-registry:test :platform:memory-host:testDebugUnitTest \
-                   :platform:privilege:testDebugUnitTest :plugins:plugin-workflow:testDebugUnitTest \
-                   :core:jiguan-engine:test; do
+                   :platform:privilege:testDebugUnitTest :plugins:plugin-workflow:testDebugUnitTest; do
             grep -q "^> Task $t" build.log || MISSING_TESTS="$MISSING_TESTS $t"
           done
           if [ -n "$MISSING_TESTS" ]; then

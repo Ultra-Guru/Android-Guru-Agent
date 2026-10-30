@@ -68,44 +68,6 @@ val TERMINAL_TOOL_RUN_POLICIES: Map<String, ToolRunPolicy> = mapOf(
 )
 
 /**
- * ═══ 机关（Jiguan V3.0）工具的执行器策略 ═══
- *
- * 机关工具自带内部预算（Hook 观察窗 = 自管 wait_seconds × 1s + CLI 收尾
- * 余量；抓包 start/stop 各一次 root 调用）。执行器预算 = 工具自身上限
- * + 余量（与终端族同原则），不盲重试 —— 内存写入/Hook 均非幂等。
- */
-val JIGUAN_TOOL_RUN_POLICIES: Map<String, ToolRunPolicy> = mapOf(
-    // 扫描：region 迭代 + 逐块 dd 读取（rw 区总量可达数十 MB）—— 分钟级。
-    "JiguanMemoryScan" to ToolRunPolicy(timeoutMs = 300_000L, maxRetries = 0),
-    // Hex 读取：单次 dd 对齐窗口（≤4KB）+ root 通道往返 —— 60s 富余。
-    "JiguanMemoryHexDump" to ToolRunPolicy(timeoutMs = 90_000L, maxRetries = 1, baseRetryDelayMs = 500L),
-    // 内存写入：非幂等（写前快照在结果里返回，不自动重放）。
-    "JiguanMemoryWrite" to ToolRunPolicy(timeoutMs = 60_000L, maxRetries = 0),
-    // 类枚举 / Hook / 调用 / 硬件断点 / SSL 绕过：frida CLI 会话
-    //（自身管理 wait_seconds 上限 60s + 启动/收尾）。
-    "JiguanJavaClasses" to ToolRunPolicy(timeoutMs = 120_000L, maxRetries = 0),
-    "JiguanHookJavaMethod" to ToolRunPolicy(timeoutMs = 150_000L, maxRetries = 0),
-    "JiguanCallJavaMethod" to ToolRunPolicy(timeoutMs = 90_000L, maxRetries = 0),
-    "JiguanHookNativeFunc" to ToolRunPolicy(timeoutMs = 150_000L, maxRetries = 0),
-    "JiguanHardwareBreakpoint" to ToolRunPolicy(timeoutMs = 240_000L, maxRetries = 0),
-    "JiguanSslBypass" to ToolRunPolicy(timeoutMs = 90_000L, maxRetries = 0),
-    // 反汇编：内存 dump（≤2KB）+ objdump（PRoot 内一次进程冷启动）。
-    "JiguanDisassemble" to ToolRunPolicy(timeoutMs = 120_000L, maxRetries = 0),
-    // 抓包：start/stop/status 三个轻面（tcpdump 拉起 + pkill + 稳定窗轮询）。
-    "JiguanPacketCapture" to ToolRunPolicy(timeoutMs = 120_000L, maxRetries = 0),
-    // 进程 / 模块 / 系统巡检 / 能力报告 / 配方 / 知识：只读快面。
-    "JiguanProcesses" to ToolRunPolicy(timeoutMs = 60_000L, maxRetries = 1, baseRetryDelayMs = 300L),
-    "JiguanModules" to ToolRunPolicy(timeoutMs = 60_000L, maxRetries = 1, baseRetryDelayMs = 300L),
-    "JiguanSystemInspect" to ToolRunPolicy(timeoutMs = 60_000L, maxRetries = 0),
-    "JiguanCapabilityReport" to ToolRunPolicy(timeoutMs = 90_000L, maxRetries = 0),
-    "JiguanRecipes" to ToolRunPolicy(timeoutMs = 10_000L, maxRetries = 0),
-    "JiguanKnowledgeQuery" to ToolRunPolicy(timeoutMs = 30_000L, maxRetries = 0),
-    "JiguanKnowledgeRemember" to ToolRunPolicy(timeoutMs = 30_000L, maxRetries = 0),
-    // Root 输入注入：input tap/swipe 秒级。
-    "JiguanUiTouch" to ToolRunPolicy(timeoutMs = 30_000L, maxRetries = 0),
-)
-
-/**
  * ═══ 市场目录检索工具的执行器策略（P0 超时错配修复）═══
  *
  * 背景（用户实测 app-20261017 日志）：MarketSearch 拉取官方技能/目录双源
