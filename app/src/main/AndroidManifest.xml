@@ -81,18 +81,8 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- v1.4.4 #7：分享接收 —— 文本与图片直达 Agent 输入区（不自动发送）。
-                 singleTop：App 已开时分享复用实例走 onNewIntent，不重建 Activity。 -->
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="image/*" />
-            </intent-filter>
+            <!-- v1.4.4 #7 分享接收 intent-filter 已随 Agent 输入区移除（消费方
+                 SharedIntake → AgentChatViewModel 已删，载荷无人订阅）。 -->
         </activity>
 
         <!-- 核心前台服务 -->

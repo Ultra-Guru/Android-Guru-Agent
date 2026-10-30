@@ -23,10 +23,6 @@ object ToolIdAliases {
 
     /** 发布前使用过的工具 id → 现役 PascalCase id。 */
     val LEGACY_TO_CURRENT: Map<String, String> = mapOf(
-        "agent_mode_preset_list" to "AgentModePresetList",
-
-        "agent_mode_preset_select" to "AgentModePresetSelect",
-
         "agent_profile_list" to "AgentProfileList",
 
         "agent_profile_set_default" to "AgentProfileSetDefault",

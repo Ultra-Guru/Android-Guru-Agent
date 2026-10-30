@@ -16,14 +16,14 @@ import kotlinx.serialization.json.Json
  * # Agent Self-Setup Tools (v5)
  *
  * 让 Agent 自己读取/修改本应用的设置——模式 / 思考档位 / 重试策略 /
- * 上下文窗口 / 主题 / 语言 / 通知 / 自定义模式预设——一键完成 onboarding 后续
+ * 上下文窗口 / 主题 / 语言 / 通知 ——一键完成 onboarding 后续
  * 的"调优"环节，无需引导用户翻设置页。
  *
  * 安全契约：
  * - 读类工具（`AgentSettingGet` / `AgentProfileList` / `AgentRoleList`）
  *   无副作用，LOW 风险，无门控；
- * - 写类工具（`AgentSettingSet` / `agent_profile_*` / `AgentRoleActivate`
- *   / `AgentModePresetSelect`）MEDIUM 风险，走风险门确认一次（HIGH 风险的
+ * - 写类工具（`AgentSettingSet` / `agent_profile_*` / `AgentRoleActivate`）
+ *   MEDIUM 风险，走风险门确认一次（HIGH 风险的
  *   `AgentProviderSetKey` 走会话级确认）；
  * - 写入的字段集是**白名单**：只允许 [AgentSettingsPatch] 中显式声明的字段，
  *   未知字段直接忽略——防 LLM 越权改 `permissionMode`/`permissionRules`
@@ -823,103 +823,10 @@ class AgentRoleActivateTool(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 工具 8-9: AgentModePresetList / AgentModePresetSelect
+// 工具 8-9: AgentModePresetList / AgentModePresetSelect 已随 Agent CUSTOM 模式
+// 移除（PR 4/6）—— 预设是 Agent 聊天档位专属指令源，纯 Coding 软件不再有
+// CUSTOM 模式；设置域的预设编辑器与 AgentSettings 字段由 PR 5/6 收口。
 // ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * 自定义模式预设的精简视图（用于 LLM 阅读）。
- */
-@Serializable
-data class ModePresetSummary(
-    val id: String,
-    val name: String,
-    val builtin: Boolean,
-    val summary: String
-)
-
-/**
- * `AgentModePresetList` — 列出所有内置 + 用户自定义模式预设。
- */
-class AgentModePresetListTool(
-    private val listProvider: suspend () -> List<ModePresetSummary>
-) : BaseTool(
-    id = "AgentModePresetList",
-    name = "List Mode Presets",
-    description = """
-        List all custom mode presets (built-in + user-defined). Each preset is
-        a named instruction injected into the system prompt when CUSTOM mode is
-        active. Use this to discover available presets before
-        [AgentModePresetSelect]. No arguments.
-    """.trimIndent(),
-    declaredSchema = toolSchema { }
-) {
-    override fun buildMetadata(): ToolMetadata = ToolMetadata.meta(id) {
-        category(ToolCategory.AGENT)
-        risk(ToolRisk.LOW)
-        tag("agent", "preset", "mode", "custom", "self-setup")
-        annotations(ToolAnnotations.readOnly())
-    }
-
-    override suspend fun executeStructured(arguments: String): ToolResult {
-        val list = listProvider()
-        if (list.isEmpty()) {
-            return ToolResult.ok("No mode presets configured. Built-in presets should always exist; if missing, the host may be misconfigured.")
-        }
-        val json = AgentSettingsJson.encodeToString(
-            kotlinx.serialization.builtins.ListSerializer(ModePresetSummary.serializer()),
-            list
-        )
-        return ToolResult.ok(json)
-    }
-}
-
-/**
- * `AgentModePresetSelect` — 选中某个预设作为当前 CUSTOM 模式指令源。
- */
-class AgentModePresetSelectTool(
-    private val selector: suspend (String) -> Boolean
-) : BaseTool(
-    id = "AgentModePresetSelect",
-    name = "Select Mode Preset",
-    description = """
-        Select a custom mode preset as the active instruction source for
-        CUSTOM mode. Pass a preset id from [AgentModePresetList], or pass
-        empty string "" to clear the selection.
-        Examples:
-        - {"preset_id": "builtin_translator"}
-        - {"preset_id": ""}  # clear
-    """.trimIndent(),
-    declaredSchema = toolSchema {
-        string("preset_id", required = true,
-            description = "Preset id (from AgentModePresetList) or \"\" to clear")
-    }
-) {
-    override fun buildMetadata(): ToolMetadata = ToolMetadata.meta(id) {
-        category(ToolCategory.AGENT)
-        risk(ToolRisk.MEDIUM)
-        tag("agent", "preset", "mode", "custom", "self-setup")
-        annotations(ToolAnnotations.idempotentWrite())
-    }
-
-    override suspend fun executeStructured(arguments: String): ToolResult {
-        val args = when (val parsed = ToolArguments.of(arguments)) {
-            is ToolArguments.ParseOutcome.Ok -> parsed.args
-            is ToolArguments.ParseOutcome.Bad -> return parsed.result
-        }
-        val presetId = args.requireString("preset_id")
-        val ok = selector(presetId)
-        return if (ok) {
-            val msg = if (presetId.isBlank()) {
-                "OK: mode preset selection cleared. CUSTOM mode will fall back to the legacy custom instruction (or no instruction if none set)."
-            } else {
-                "OK: mode preset '$presetId' selected. Switch to CUSTOM mode (AgentSettingSet with default_mode=custom) to activate."
-            }
-            ToolResult.ok(msg)
-        } else {
-            ToolResult.fail(ToolErrorCode.EXECUTION_FAILED, "host rejected preset selection (preset may not exist)")
-        }
-    }
-}
 
 /**
  * 模块级 JSON 实例（与 AgentSettings 共用，pretty print 给 LLM 易读）。

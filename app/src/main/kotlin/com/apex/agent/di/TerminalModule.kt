@@ -349,8 +349,7 @@ object TerminalModule {
      *  T75: 注入 workspaceBinder（LinuxWorkspaceManager）—— 会话创建/关闭时
      *  维护活跃绑定计数（workspace delete 门禁）。
      *  T91（D2-D4）：创建即安装进 TerminalRuntimeRegistry —— TerminalService
-     *  （specialUse 前台服务）由此取得同一单例（与 AttachmentCleanupManager
-     *  的 @Provides 副作用先例同构；AIDL 消费路径见 TerminalServiceClient）。 */
+     *  （specialUse 前台服务）由此取得同一单例；AIDL 消费路径见 TerminalServiceClient）。 */
     @Provides
     @Singleton
     fun provideTerminalRuntime(

@@ -3,8 +3,6 @@ package com.apex.agent.di
 import android.content.Context
 import com.apex.agent.core.tools.SafeAgentTool
 import com.apex.agent.core.tools.ToolRegistry
-import com.apex.agent.core.tools.builtin.AgentModePresetListTool
-import com.apex.agent.core.tools.builtin.AgentModePresetSelectTool
 import com.apex.agent.core.tools.builtin.AgentProfileListTool
 import com.apex.agent.core.tools.builtin.AgentProfileSetDefaultTool
 import com.apex.agent.core.tools.builtin.AgentProviderSetKeyTool
@@ -31,10 +29,8 @@ import com.apex.agent.tools.FilePicker
 import com.apex.agent.tools.NotificationPoster
 import com.apex.agent.tools.SmsSender
 import com.apex.agent.tools.activateRoleAsync
-import com.apex.agent.tools.listModePresetSummaries
 import com.apex.agent.tools.listProfileSummaries
 import com.apex.agent.tools.listRoleSnapshot
-import com.apex.agent.tools.selectModePresetAsync
 import com.apex.agent.tools.setDefaultProfileAsync
 import com.apex.agent.tools.setProviderApiKeyAsync
 import com.apex.agent.ui.screen.settings.SettingsRepository
@@ -52,8 +48,9 @@ import java.io.File
  * [ToolModuleJvmToolsRegistration] / [ToolModuleRegistrySections] 同款拆分模式。
  *
  * 三段：
- * - **§14e**：Agent 自主设置（9 工具）——AgentSettingGet/set、agent_profile_*、
- *   AgentProviderSetKey、agent_role_*、agent_mode_preset_*；AgentProviderSetKey
+ * - **§14e**：Agent 自主设置（7 工具）——AgentSettingGet/set、agent_profile_*、
+ *   AgentProviderSetKey、agent_role_*（模式预设 agent_mode_preset_* 已随
+ *   Agent CUSTOM 模式移除）；AgentProviderSetKey
  *   写入成功后同步登记进 [SecretRedactor]（#336：工具输出层兜底擦洗从此
  *   覆盖 provider key，此前仅 VaultRepository 登记、任何一层都擦不到）；
  * - **§14f**：下载 + 安装 APK（2 工具）——AppInstallApk / AppDownloadInstall；
@@ -70,13 +67,14 @@ internal fun registerV5EnhancementTools(
     settingsRepository: SettingsRepository,
     secretRedactor: SecretRedactor
 ) {
-    // ═══ §14e. v5 — Agent 自主设置（9 个工具，让 agent 自己读写应用配置）═══
+    // ═══ §14e. v5 — Agent 自主设置（7 个工具，让 agent 自己读写应用配置）═══
     // 用户原始诉求："能让 agent 自行帮你完成设置，开启自己软件任何设置"。
     // 工具本体见 [AgentSetupTools.kt]——纯 JVM，参数解析 + 字段白名单校验。
     // 持久化经 [AgentSetupHost] lambda 桥接 [SettingsRepository]。
     //
     // 安全契约：仅暴露 [AgentSettingsPatch] 白名单字段，permissionMode /
     // permissionRules / mcpScopeIsolation 等安全字段永不被工具修改。
+    // 模式预设工具（agent_mode_preset_*）已随 Agent CUSTOM 模式移除。
     val agentSetupHost = AgentSetupHost(settingsRepository)
     registry.register(SafeAgentTool(AgentSettingGetTool(agentSetupHost)))
     registry.register(SafeAgentTool(AgentSettingSetTool(agentSetupHost)))
@@ -105,12 +103,6 @@ internal fun registerV5EnhancementTools(
     }))
     registry.register(SafeAgentTool(AgentRoleActivateTool(
         activator = { role, profileId -> settingsRepository.activateRoleAsync(role, profileId) }
-    )))
-    registry.register(SafeAgentTool(AgentModePresetListTool {
-        settingsRepository.listModePresetSummaries()
-    }))
-    registry.register(SafeAgentTool(AgentModePresetSelectTool(
-        selector = { id -> settingsRepository.selectModePresetAsync(id) }
     )))
 
     // ═══ §14f. v5 — 下载 + 安装 APK（2 个工具，无需 Shizuku/root）═══

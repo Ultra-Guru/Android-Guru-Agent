@@ -145,8 +145,7 @@ object McpModule {
             gitHubTokenProvider = { githubTokens.getToken() }
         )
         // ★ 预置内置 MCP 配置（幂等，用户自建同名配置不被动劫持）+ 后台
-        // 自动连接。@Provides 副作用模式与 AttachmentModule 触发
-        // schedulePeriodicCleanup() 相同；挂起逻辑在各 Bootstrap 自持的
+        // 自动连接（@Provides 副作用模式）；挂起逻辑在各 Bootstrap 自持的
         // IO scope 里执行，不阻塞注入线程。
         BuiltinGithubMcpBootstrap.ensureAndConnect(manager)
         BuiltinSearchMcpBootstrap.ensureAndConnect(manager)
