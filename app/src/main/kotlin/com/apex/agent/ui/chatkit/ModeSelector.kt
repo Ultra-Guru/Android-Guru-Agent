@@ -200,7 +200,7 @@ internal fun AgentModeSelector(
 }
 
 /** 模式图标映射 —— 图标属 UI 层关注点，不放核心枚举（core 无 Compose 依赖）。 */
-internal fun agentModeIcon(mode: AgentMode): ImageVector = when (mode) {
+fun agentModeIcon(mode: AgentMode): ImageVector = when (mode) {
     AgentMode.CHAT -> Icons.Default.Chat
     AgentMode.AGENT -> Icons.Default.SmartToy
     AgentMode.BUILD -> Icons.Default.Build
@@ -217,7 +217,7 @@ internal fun agentModeIcon(mode: AgentMode): ImageVector = when (mode) {
  * 模式描述映射 —— i18n 同款理由（文案属 UI 层关注点；core 枚举 description 保持引擎侧不动）。
  */
 @Composable
-internal fun agentModeDescription(mode: AgentMode): String = when (mode) {
+fun agentModeDescription(mode: AgentMode): String = when (mode) {
     AgentMode.CHAT -> stringResource(R.string.chat_mode_chat_desc)
     AgentMode.AGENT -> stringResource(R.string.chat_mode_agent_desc)
     AgentMode.BUILD -> stringResource(R.string.chat_mode_build_desc)
