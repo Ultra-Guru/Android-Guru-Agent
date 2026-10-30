@@ -423,12 +423,7 @@
     <!-- ═══ 存储与数据管理（StorageScreen）═══ -->
     <string name="storage_title">存储</string>
     <string name="storage_refresh">刷新</string>
-    <string name="storage_attachments">附件</string>
     <string name="storage_space_used">占用空间</string>
-    <string name="storage_files">文件数</string>
-    <string name="storage_unit_files">%1$d 个</string>
-    <string name="storage_clear_attachments">清空附件</string>
-    <string name="storage_attachments_desc">聊天附件的本地缓存；清除后历史消息中的附件预览将不可用（Agent 侧引用路径失效）。</string>
     <string name="storage_ubuntu_title">Ubuntu 环境（rootfs，内置）</string>
     <string name="storage_status">状态</string>
     <string name="storage_rootfs_not_installed">未解包</string>
@@ -447,8 +442,6 @@
     <string name="storage_records">记录数</string>
     <string name="storage_usage">占用</string>
     <string name="storage_log_desc">日志位于内存环形缓冲（App 重启即释放）；完整查看与导出在「运行日志」页。</string>
-    <string name="storage_confirm_attachments_title">清空附件？</string>
-    <string name="storage_confirm_attachments_text">将删除全部 %1$d 个附件文件（%2$s）。此操作不可撤销。</string>
     <string name="storage_confirm_rootfs_title">删除 Ubuntu 环境？</string>
     <string name="storage_confirm_rootfs_text">将删除解包后的 rootfs（%1$s）与解包缓存；内置安装包随 APK 保留，可随时重新离线解包；用户数据（/root、workspace）保留。</string>
     <string name="storage_about_1gb">约 1GB</string>

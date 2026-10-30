@@ -147,11 +147,6 @@
     <string name="chat_llm_not_configured">API is not configured yet (Base URL + API Key + Model). Open Settings to set it up.</string>
     <string name="chat_llm_not_configured_short">API is not configured yet</string>
     <!-- ═══ 消息操作（2026-10 重定口径：复制/编辑图标行，overflow 菜单退役）═══ -->
-    <!-- ═══ P2 i18n: attach button menu (AttachButton) ═══ -->
-    <string name="chat_attach_file">Upload file</string>
-    <string name="chat_attach_image">Upload image</string>
-    <string name="chat_cd_attach_close">Close</string>
-    <string name="chat_cd_attach_add">Add attachment</string>
 
     <!-- ═══ Two-level thinking control (model native intensity + forced deep thinking) ═══ -->
 
@@ -175,7 +170,6 @@
     <string name="chat_media_video_label">Video</string>
     <string name="chat_cd_copy_code">Copy code</string>
 
-    <!-- ═══ ViroPet 桌宠（#280：硬编码中文收编）═══ -->
     <!-- ═══ NeonOrbButton（Coding 输入栏功能聚合 · 面板）═══ -->
     <string name="neon_cd_orb">Feature hub</string>
     <string name="neon_panel_title">Feature Hub</string>

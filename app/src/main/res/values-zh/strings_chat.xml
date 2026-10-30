@@ -148,10 +148,6 @@
     <string name="chat_llm_not_configured_short">请先在设置中配置API</string>
     <!-- ═══ 消息操作（2026-10 重定口径：复制/编辑图标行，overflow 菜单退役）═══ -->
     <!-- ═══ P2 i18n: 附件按钮菜单（AttachButton）═══ -->
-    <string name="chat_attach_file">上传文件</string>
-    <string name="chat_attach_image">上传图片</string>
-    <string name="chat_cd_attach_close">关闭</string>
-    <string name="chat_cd_attach_add">添加附件</string>
 
     <!-- ═══ 双级思考控制（模型原生强度 + 强制深度思考）═══ -->
 
@@ -175,7 +171,6 @@
     <string name="chat_media_video_label">视频</string>
     <string name="chat_cd_copy_code">复制代码</string>
 
-    <!-- ═══ ViroPet 桌宠（#280：硬编码中文收编）═══ -->
     <!-- ═══ NeonOrbButton（Coding 输入栏功能聚合 · 面板）═══ -->
     <string name="neon_cd_orb">功能聚合面板</string>
     <string name="neon_panel_title">功能聚合</string>
