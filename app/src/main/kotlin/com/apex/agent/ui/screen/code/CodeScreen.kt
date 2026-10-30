@@ -62,21 +62,21 @@ import com.apex.agent.ui.component.SlashMenuProvider
 import com.apex.agent.ui.component.FusionCodingBanner
 import com.apex.agent.ui.component.FusionCodingButton
 import com.apex.agent.ui.component.rememberSlashMenuProvider
-import com.apex.agent.ui.screen.agent.CODING_SCREEN_MODES
-import com.apex.agent.ui.screen.agent.AgentModeSelector
-import com.apex.agent.ui.screen.agent.AgentRoleSelector
-import com.apex.agent.ui.screen.agent.BrainMenuButton
-import com.apex.agent.ui.screen.agent.PendingPipelineCommand
-import com.apex.agent.ui.screen.agent.PlanConfirmationCard
-import com.apex.agent.ui.screen.agent.QuestionCard
-import com.apex.agent.ui.screen.agent.ToolRef
-import com.apex.agent.ui.screen.agent.ToolkitChipsRow
-import com.apex.agent.ui.screen.agent.ToolkitRingButton
+import com.apex.agent.ui.chatkit.CODING_SCREEN_MODES
+import com.apex.agent.ui.chatkit.AgentModeSelector
+import com.apex.agent.ui.chatkit.AgentRoleSelector
+import com.apex.agent.ui.chatkit.BrainMenuButton
+import com.apex.agent.ui.chatkit.PendingPipelineCommand
+import com.apex.agent.ui.chatkit.PlanConfirmationCard
+import com.apex.agent.ui.chatkit.QuestionCard
+import com.apex.agent.ui.chatkit.ToolRef
+import com.apex.agent.ui.chatkit.ToolkitChipsRow
+import com.apex.agent.ui.chatkit.ToolkitRingButton
 import com.apex.agent.core.code.standard.StandardLogicMode
 import com.apex.agent.core.code.stream.StreamEntry
 import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.core.llm.EndpointResolver
-import com.apex.agent.ui.screen.agent.toolkit.OutputFormat
+import com.apex.agent.ui.chatkit.OutputFormat
 import com.apex.agent.ui.screen.code.editor.CodeEditorPanel
 import com.apex.agent.ui.screen.code.history.CodeHistoryIconButton
 import com.apex.agent.ui.screen.code.history.CodeHistorySheet
@@ -737,7 +737,7 @@ private data class ToolkitUiState(
     val availableTools: List<ToolRef>,
     val outputFormat: OutputFormat,
     val customSchema: String,
-    val rules: List<com.apex.agent.ui.screen.agent.toolkit.ChatRule>,
+    val rules: List<com.apex.agent.ui.chatkit.ChatRule>,
     val exposeAllTools: Boolean
 )
 
@@ -759,7 +759,7 @@ private fun CodeInputBar(
     onChipsChange: (List<PendingPipelineCommand>) -> Unit,
     backdrop: Backdrop,
     githubTokenManager: com.apex.agent.github.GithubTokenManager,
-    toolkit: com.apex.agent.ui.screen.agent.toolkit.ChatToolkitStore,
+    toolkit: com.apex.agent.ui.chatkit.ChatToolkitStore,
     // 回车键行为（send | newline，设置页可配；Agent 屏同款消费）
     sendKeyBehavior: String = "send",
     // 「小大脑」模型菜单插槽（Agent 屏同款 BrainMenuButton；插槽化避免

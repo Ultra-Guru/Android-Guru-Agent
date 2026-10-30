@@ -3,6 +3,7 @@ package com.apex.agent.ui.screen.agent
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.apex.agent.ui.chatkit.PendingPipelineCommand
 
 /**
  * 斜杠指令 + 多 chip 流水线执行体（God-file 预算拆分，模式同 AgentChatEventApplier.kt）。

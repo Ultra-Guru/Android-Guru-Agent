@@ -1,4 +1,4 @@
-package com.apex.agent.ui.screen.agent
+package com.apex.agent.ui.chatkit
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement

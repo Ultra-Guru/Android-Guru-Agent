@@ -30,6 +30,7 @@ import com.apex.agent.R
 import com.apex.agent.core.engine.AgentMode
 import com.apex.agent.core.engine.ThinkingLevel
 import com.apex.agent.core.engine.thinking.ThinkingProfile
+import com.apex.agent.ui.chatkit.AgentModeSelector
 
 /**
  * ═══ 模式指南底部弹层（#168，从 AgentModeSelector 的「?」图标打开）═══

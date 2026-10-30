@@ -72,7 +72,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.apex.agent.R
-import com.apex.agent.ui.screen.agent.PendingPipelineCommand
+import com.apex.agent.ui.chatkit.PendingPipelineCommand
 
 /**
  * ═══ 技能 chip 输入框（EditText + ReplacementSpan 方案）═══

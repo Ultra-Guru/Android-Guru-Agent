@@ -1,4 +1,4 @@
-package com.apex.agent.ui.screen.agent
+package com.apex.agent.ui.chatkit
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -68,8 +68,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
-import com.apex.agent.ui.screen.agent.toolkit.ChatRule
-import com.apex.agent.ui.screen.agent.toolkit.OutputFormat
 import com.apex.agent.core.tools.ToolCategory
 import com.apex.agent.core.tools.ToolDomain
 import kotlinx.coroutines.Dispatchers

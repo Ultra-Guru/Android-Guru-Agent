@@ -110,7 +110,7 @@ data class CodeUiState(
  */
 data class QueuedTask(
     val text: String,
-    val commands: List<com.apex.agent.ui.screen.agent.PendingPipelineCommand> = emptyList(),
+    val commands: List<com.apex.agent.ui.chatkit.PendingPipelineCommand> = emptyList(),
     val state: QueuedTaskState = QueuedTaskState.WAITING_AUTO
 )
 

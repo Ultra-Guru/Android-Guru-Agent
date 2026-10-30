@@ -1,4 +1,4 @@
-package com.apex.agent.ui.screen.agent.toolkit
+package com.apex.agent.ui.chatkit
 
 import android.content.Context
 import android.content.SharedPreferences

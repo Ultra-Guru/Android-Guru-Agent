@@ -96,6 +96,12 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import androidx.compose.ui.text.font.FontWeight
 import kotlinx.coroutines.launch
+import com.apex.agent.ui.chatkit.PlanConfirmationCard
+import com.apex.agent.ui.chatkit.QuestionCard
+import com.apex.agent.ui.chatkit.PendingPipelineCommand
+import com.apex.agent.ui.chatkit.BrainMenuButton
+import com.apex.agent.ui.chatkit.AgentRoleSelector
+import com.apex.agent.ui.chatkit.AgentModeSelector
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

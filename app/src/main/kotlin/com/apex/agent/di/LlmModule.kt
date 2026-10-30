@@ -10,7 +10,7 @@ import com.apex.agent.core.llm.runtime.ModelRoleRouter
 import com.apex.agent.core.llm.runtime.ModelRuntimeStore
 import com.apex.agent.core.llm.runtime.RateLimitGovernor
 import com.apex.agent.ui.language.LanguageManager
-import com.apex.agent.ui.screen.agent.toolkit.ChatToolkitStore
+import com.apex.agent.ui.chatkit.ChatToolkitStore
 import com.apex.agent.ui.screen.settings.SettingsRepository
 import dagger.Module
 import dagger.Provides
