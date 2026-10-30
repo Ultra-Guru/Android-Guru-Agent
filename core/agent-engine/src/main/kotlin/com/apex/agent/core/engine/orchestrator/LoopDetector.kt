@@ -145,7 +145,7 @@ class LoopDetector(
          * 只放宽重复阈值；振荡检测（A-B-A-B 乒乓）不豁免 —— 那仍是病态。
          */
         val IDEMPOTENT_READ_TOOLS: Set<String> = setOf(
-            "AgentProfileList", "AgentSettingGet", "AgentRoleList", "AgentModePresetList",
+            "AgentProfileList", "AgentSettingGet", "AgentRoleList",
             "ToolList", "CapabilityReport", "TerminalBackends", "TerminalSnapshot",
             "McpList", "SkillList", "ConnectorList", "GetDeviceInfo", "Time"
         )
