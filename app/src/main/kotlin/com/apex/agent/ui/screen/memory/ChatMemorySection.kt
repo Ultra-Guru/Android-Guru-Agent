@@ -168,7 +168,9 @@ private fun ChatMemoryEntryCard(
                 ChatMemoryTypeBadge(entry.kind)
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    entry.kind.displayLabel(),
+                    // i18n 修复：类别标题原为硬编码中文（displayLabel），现走资源
+                    // —— 与徽章同源同词，英文环境不再中英混杂
+                    chatMemoryKindLabel(entry.kind),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
@@ -193,7 +195,7 @@ private fun ChatMemoryEntryCard(
                             stringResource(
                                 R.string.memory_chat_meta_fmt,
                                 (record.importance * 100).toInt(),
-                                record.source.displayLabel(),
+                                chatMemorySourceLabel(record.source),
                                 record.accessCount
                             ),
                             style = MaterialTheme.typography.labelSmall,
@@ -239,4 +241,19 @@ private fun ChatMemoryTypeBadge(kind: ChatFact.Kind) {
     }
 }
 
-/** 来源标签复用 [ChatMemoryModels] 的公共映射（同包顶层函数，i18n 交给后续统一资源化）。 */
+/** 类别标题（与徽章同源同词 —— 集中在此便于语言切换一致性）。 */
+@Composable
+private fun chatMemoryKindLabel(kind: ChatFact.Kind): String = when (kind) {
+    ChatFact.Kind.PROFILE -> stringResource(R.string.memory_chat_badge_profile)
+    ChatFact.Kind.STATE -> stringResource(R.string.memory_chat_badge_state)
+    ChatFact.Kind.MILESTONE -> stringResource(R.string.memory_chat_badge_milestone)
+}
+
+/** 来源标签（v2 元数据行用 —— 启发式 / 蒸馏 / 手动 / 迁移）。 */
+@Composable
+private fun chatMemorySourceLabel(source: ChatFact.Source): String = when (source) {
+    ChatFact.Source.HEURISTIC -> stringResource(R.string.memory_chat_source_heuristic)
+    ChatFact.Source.DISTILLED -> stringResource(R.string.memory_chat_source_distill)
+    ChatFact.Source.MANUAL -> stringResource(R.string.memory_chat_source_manual)
+    ChatFact.Source.MIGRATED -> stringResource(R.string.memory_chat_source_migrated)
+}

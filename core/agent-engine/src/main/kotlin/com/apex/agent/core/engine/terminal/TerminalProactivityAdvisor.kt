@@ -123,12 +123,21 @@ class TerminalProactivityAdvisor {
         ) {
             lastSessionFlowAdviceStreak = oneShotStreak
             return Advice(
+                // 实录 #10：旧的 "STOP issuing further one-shot commands" 措辞过于
+                // 绝对 —— 模型正在用一次性命令推进正常工作（快速探测/短命令），
+                // 被强制切到会话流后反而掉进 heredoc 挂死坑。改为建议式：会话流
+                // 适用于多步/长命令；简单短探测可继续；同时把 heredoc 禁忌与
+                // PS2 挂死自救写进提醒（实录 #7 的事故路径）。
                 systemNote = "Terminal guidance: you have now run $oneShotStreak consecutive " +
-                    "one-shot shell commands (ShellExecute / TerminalExec). STOP issuing " +
-                    "further one-shot commands for this task — switch to a session flow: " +
-                    "TerminalCreate → TerminalRun (run long commands in the background) → " +
-                    "TerminalObserve / TerminalWait. Sessions preserve cwd, environment " +
-                    "and state across commands.$failureNote",
+                    "one-shot shell commands (ShellExecute / TerminalExec). For multi-step or " +
+                    "long-running work, switch to a session flow: TerminalCreate → TerminalRun " +
+                    "(run long commands in the background) → TerminalObserve / TerminalWait — " +
+                    "sessions preserve cwd, environment and state across commands. Simple " +
+                    "one-liner probes may still use TerminalExec. NEVER paste multi-line " +
+                    "heredoc scripts (cmd <<'EOF' ... EOF) into a session — write the script " +
+                    "to a file first (CodeWrite / Write), then execute the file; if a session " +
+                    "ever hangs at a '>' (PS2) continuation prompt, recover with TerminalWrite " +
+                    "{\"kind\":\"KEY\",\"key\":\"CTRL_C\"}.$failureNote",
                 kind = Kind.SESSION_FLOW
             )
         }
@@ -139,7 +148,10 @@ class TerminalProactivityAdvisor {
                 systemNote = "Terminal guidance: the last $consecutiveOneShotFailures one-shot " +
                     "shell commands failed. Do NOT re-run the identical command again — " +
                     "inspect the output above, open a terminal session (TerminalCreate + " +
-                    "TerminalRun), or ask the user how to proceed.",
+                    "TerminalRun), or ask the user how to proceed. If a session is hung at a " +
+                    "> '>' (PS2) prompt (unterminated heredoc), interrupt it with TerminalWrite " +
+                    "{\"kind\":\"KEY\",\"key\":\"CTRL_C\"} — JOB-scope TerminalSignal cannot " +
+                    "reach the shell while it is the foreground process.",
                 kind = Kind.FAILURE_RECOVERY
             )
         }

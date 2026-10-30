@@ -50,9 +50,11 @@ class TerminalResizeTool(
 
     override suspend fun invoke(arguments: String): String {
         val json = Json.parseToJsonElement(arguments).jsonObject
-        val sessionId = json["sessionId"]?.jsonPrimitive?.content?.toLongOrNull() ?: throw IllegalArgumentException("sessionId required")
-        val rows = json["rows"]?.jsonPrimitive?.content?.toIntOrNull() ?: throw IllegalArgumentException("rows required")
-        val cols = json["cols"]?.jsonPrimitive?.content?.toIntOrNull() ?: throw IllegalArgumentException("cols required")
+        // 别名宽容（实录 #8）：schema 层已互认，工具层同步读取
+        val sessionId = json.longArg("sessionId", "session_id")
+            ?: throw IllegalArgumentException("sessionId required (accepted: sessionId, session_id)")
+        val rows = json.intArg("rows") ?: throw IllegalArgumentException("rows required")
+        val cols = json.intArg("cols") ?: throw IllegalArgumentException("cols required")
         val out = execute(Input(sessionId, rows, cols))
         return buildJsonObject { put("resized", JsonPrimitive(out.resized)); put("rows", JsonPrimitive(out.rows)); put("cols", JsonPrimitive(out.cols)) }.toString()
     }

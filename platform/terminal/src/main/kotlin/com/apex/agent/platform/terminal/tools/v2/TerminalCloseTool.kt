@@ -47,8 +47,10 @@ class TerminalCloseTool(
 
     override suspend fun invoke(arguments: String): String {
         val json = Json.parseToJsonElement(arguments).jsonObject
-        val sessionId = json["sessionId"]?.jsonPrimitive?.content?.toLongOrNull() ?: throw IllegalArgumentException("sessionId required")
-        val force = json["force"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: false
+        // 别名宽容（实录 #8）：schema 层已互认，工具层同步读取
+        val sessionId = json.longArg("sessionId", "session_id")
+            ?: throw IllegalArgumentException("sessionId required (accepted: sessionId, session_id)")
+        val force = json.boolArg("force") ?: false
         val out = execute(Input(sessionId, force))
         return buildJsonObject { put("closed", JsonPrimitive(out.closed)); put("cause", JsonPrimitive(out.cause)); put("finalCursor", JsonPrimitive(out.finalCursor)) }.toString()
     }

@@ -431,6 +431,11 @@ internal fun ChatDisplaySection(agent: AgentSettings, onAgent: (AgentSettings) -
 /**
  * 子代理分区：SubAgentSettings 的全部预算旋钮 + 自定义类型编辑器。
  *
+ * **作用域（仅 Coding 模式）**：子代理委派（CodeTask / 标准线 task 派发）
+ * 是 Coding 工位的能力——Agent 聊天工位不暴露 Code* 编码工具（引擎侧
+ * 前缀隔离），此处的开关与预算只在 Coding 屏生效，分区头部以作用域
+ * 提示行显式说明（防「改了设置 Agent 聊天怎么没反应」的误解）。
+ *
  * 预算写入统一经 [SubAgentSettings.sanitized] 钳制（防御式：任何形状输入
  * 收敛合法区间）；自定义类型由 CodeTask 的 custom 类型 + custom_name
  * 按名解析（内置四类型之外）。key 不可与保留字或既有自定义 key 冲突。
@@ -449,6 +454,9 @@ internal fun SubAgentSettingsSection(agent: AgentSettings, onUpdate: (AgentSetti
         icon = Icons.Outlined.Groups,
         subtitle = stringResource(R.string.settings_v3_subagent_subtitle)
     ) {
+        // 作用域提示（仅 Coding 模式生效——见类 KDoc）
+        DescriptionText(stringResource(R.string.settings_v3_subagent_scope_hint))
+
         SwitchRow(
             stringResource(R.string.settings_v3_subagent_enabled),
             sub.enabled,

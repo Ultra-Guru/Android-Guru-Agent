@@ -19,7 +19,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * Returns sessionId for subsequent run/observe/wait/write calls.
  *
  * JSON Schema (input):
- *   { shell?: string="/system/bin/sh", cwd?: string="/sdcard", rows?: int=24, cols?: int=80,
+ *   { shell?: string="/system/bin/sh", cwd?: string="/sdcard", rows?: int=24, cols?: int=200,
  *     env?: object<string,string>, privilege?: "NORMAL"|"SHIZUKU"|"ROOT"=NORMAL,
  *     backend?: string="local", workspaceId?: string }   // T75: workspaceId 仅 linux-ubuntu
  * JSON Schema (output):
@@ -47,7 +47,7 @@ class TerminalCreateTool(
     """.trimIndent()
 
     override val parametersSchema: String = """
-{"type":"object","properties":{"shell":{"type":"string","default":"/system/bin/sh","description":"Android shell path (local backend only; linux-ubuntu always uses /bin/bash)"},"cwd":{"type":"string","default":"/sdcard","description":"Initial working directory. linux-ubuntu: guest path (/workspace default; relative paths land under /workspace)"},"rows":{"type":"integer","default":24},"cols":{"type":"integer","default":80},"env":{"type":"object","additionalProperties":{"type":"string"},"description":"Extra environment variables (local: appended to defaults; linux-ubuntu: passed into the guest)"},"backend":{"type":"string","default":"local","enum":["local","linux-ubuntu"],"description":"Execution backend: local = Android shell, linux-ubuntu = Ubuntu 24.04 via PRoot"},"workspaceId":{"type":"string","description":"linux-ubuntu only: isolated workspace id bound to guest /workspace. Pattern: lowercase alphanumeric, may contain - and _, max 64 chars. Unknown valid ids are auto-created. Ignored (error) for local backend."}},"required":[]}
+{"type":"object","properties":{"shell":{"type":"string","default":"/system/bin/sh","description":"Android shell path (local backend only; linux-ubuntu always uses /bin/bash)"},"cwd":{"type":"string","default":"/sdcard","description":"Initial working directory. linux-ubuntu: guest path (/workspace default; relative paths land under /workspace)"},"rows":{"type":"integer","default":24},"cols":{"type":"integer","default":200,"description":"Terminal width in columns. Agent sessions default to 200 — the legacy 80-col default hard-wrapped long commands, splitting identifiers across SCREEN-mode read lines (misread risk). Human-facing views re-flow independently."},"env":{"type":"object","additionalProperties":{"type":"string"},"description":"Extra environment variables (local: appended to defaults; linux-ubuntu: passed into the guest)"},"backend":{"type":"string","default":"local","enum":["local","linux-ubuntu"],"description":"Execution backend: local = Android shell, linux-ubuntu = Ubuntu 24.04 via PRoot"},"workspaceId":{"type":"string","description":"linux-ubuntu only: isolated workspace id bound to guest /workspace. Pattern: lowercase alphanumeric, may contain - and _, max 64 chars. Unknown valid ids are auto-created. Ignored (error) for local backend."}},"required":[]}
     """.trimIndent()
 
     suspend fun execute(input: Input): Output {
@@ -76,10 +76,12 @@ class TerminalCreateTool(
 
     override suspend fun invoke(arguments: String): String {
         val json = Json.parseToJsonElement(arguments).jsonObject
-        val shell = json["shell"]?.jsonPrimitive?.content ?: "/system/bin/sh"
-        val cwd = json["cwd"]?.jsonPrimitive?.content ?: "/sdcard"
-        val rows = json["rows"]?.jsonPrimitive?.content?.toIntOrNull() ?: 24
-        val cols = json["cols"]?.jsonPrimitive?.content?.toIntOrNull() ?: 80
+        val shell = json.stringArg("shell") ?: "/system/bin/sh"
+        val cwd = json.stringArg("cwd") ?: "/sdcard"
+        val rows = json.intArg("rows") ?: 24
+        // 实录 #15：80 列硬折行把长命令/标识符拆碎（isinstance → isins/tance），
+        // SCREEN 读屏极易看错。Agent 会话默认 200 列（IPC 层夹在 2..1024 内）。
+        val cols = json.intArg("cols") ?: AGENT_DEFAULT_COLS
         val backend = json["backend"]?.jsonPrimitive?.content ?: "local"
         val workspaceId = json["workspaceId"]?.jsonPrimitive?.contentOrNull
         // P3 fix（审计 6-b）：实现 schema 已声明的 privilege 参数解析 ——
@@ -108,7 +110,7 @@ class TerminalCreateTool(
         val shell: String = "/system/bin/sh",
         val cwd: String = "/sdcard",
         val rows: Int = 24,
-        val cols: Int = 80,
+        val cols: Int = AGENT_DEFAULT_COLS,
         val env: Map<String, String> = emptyMap(),
         val privilege: PrivilegeLevel = PrivilegeLevel.NORMAL,
         val backend: String = "local",
@@ -131,4 +133,13 @@ class TerminalCreateTool(
         val guestCwd: String? = null,
         val workspaceId: String? = null
     )
+
+    companion object {
+        /**
+         * Agent 会话默认列宽（实录 #15）：80 列硬折行拆碎长命令与标识符，
+         * SCREEN 读屏误读率高（isinstance 被折成 isins + tance）。
+         * 200 列在 IPC 夹紧范围（2..1024）内，长命令单行可读。
+         */
+        const val AGENT_DEFAULT_COLS = 200
+    }
 }

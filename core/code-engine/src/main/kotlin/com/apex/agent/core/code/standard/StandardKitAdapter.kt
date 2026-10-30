@@ -17,6 +17,7 @@ import com.apex.agent.core.engine.PlanStep
 import com.apex.agent.core.engine.RiskLevel
 import com.apex.agent.core.engine.UserInput
 import com.apex.agent.core.engine.InputType
+import com.apex.agent.core.engine.task.DanglingToolCallRepair
 import com.apex.agent.core.llm.LlmMessage
 import com.apex.agent.core.llm.ToolChoiceSpec
 import com.apex.agent.core.llm.runtime.LlmRequestContext
@@ -318,8 +319,15 @@ class StandardKitAdapter(
             memory.save(messages.map { it.toLlmMessage() })
         }
 
+        // ═══ 悬空 toolCall 400 自愈（P0，与深潜线 ApexAgentEngine 同款）═══
+        // 标准线的历史来源是 CodeConversationMemory 落盘文件：回合在
+        // 工具执行中被中止（stop/进程被杀/提问等待中退出）→ 末尾留下无
+        // 配对的 Assistant.toolCalls → 恢复后每个后续请求都 400
+        // （"tool_calls must be followed by tool messages"）→ 会话级报废。
+        // 深潜线在 buildMessages 逐请求修补；标准线在 KitMemory.load
+        // 这个单一入口归一化 + 回写，成本同样是无悬空零开销。
         override fun load(): List<KitMessage> =
-            memory.load().map { it.toKitMessage() }
+            memory.loadNormalized().map { it.toKitMessage() }
 
         override fun clear() = memory.clear()
         override fun count(): Int = memory.count()
@@ -552,10 +560,21 @@ private fun SubAgentSettings.toKitBudget() = KitSubAgentBudget(
     toolOutputLimit = toolOutputLimit
 )
 
-private fun CodeThinkingLevel.toKit(): KitThinkingLevel =
-    runCatching { KitThinkingLevel.valueOf(name) }.getOrDefault(KitThinkingLevel.STANDARD)
+/**
+ * Coding 七档 → 标准线思考档（KitThinkingLevel 八枚举等价名直映）。
+ *
+ * AUTO 元档防御性折叠 DEEP：VM 侧 resolveRuntimeThinkingLevel 四线统一
+ * 预检后引擎不应收到 AUTO，但任何泄漏路径（历史缓存 / 外部直调）都收敛
+ * 到与 [CodeThinkingLevel.toAgentLevel] 一致的 DEEP 兜底——与织造
+ * （LoomKitAdapter.toWeave）/ 信使（CourierKitAdapter.toDispatch）两适配
+ * 器同款折叠，三线防御口径一致。
+ */
+internal fun CodeThinkingLevel.toKit(): KitThinkingLevel =
+    runCatching { KitThinkingLevel.valueOf(name) }
+        .getOrDefault(KitThinkingLevel.STANDARD)
+        .let { if (it == KitThinkingLevel.AUTO) KitThinkingLevel.DEEP else it }
 
-private fun KitThinkingLevel.toHost(): CodeThinkingLevel =
+internal fun KitThinkingLevel.toHost(): CodeThinkingLevel =
     runCatching { CodeThinkingLevel.valueOf(name) }.getOrDefault(CodeThinkingLevel.STANDARD)
 
 private fun KitPlan.toExecutionPlan() = ExecutionPlan(
@@ -637,4 +656,27 @@ private fun com.apex.standardkit.loop.KitInputType.toHost(): InputType = when (t
     com.apex.standardkit.loop.KitInputType.CONFIRMATION -> InputType.CONFIRMATION
     com.apex.standardkit.loop.KitInputType.TEXT -> InputType.TEXT
     com.apex.standardkit.loop.KitInputType.CHOICE -> InputType.CHOICE
+}
+
+// ═══ 标准线加载归一化（悬空 toolCall 自愈，见 MemoryAdapter.load 注释）═══
+
+/**
+ * 读取 + 归一化：悬空修补（[DanglingToolCallRepair]）有动作时同步回写
+ * 落盘记忆，返回可直接发送的干净历史。无悬空零开销、幂等可重入。
+ */
+internal fun CodeConversationMemory.loadNormalized(): List<LlmMessage> {
+    val history = load()
+    val report = DanglingToolCallRepair.repair(history)
+    if (!report.hasRepairs) return history
+    save(report.repairedHistory)
+    AppLogger.instance.warn(
+        LogCategory.ENGINE, "StandardKitAdapter",
+        "standard-line history normalized on load: " +
+            "${report.repairedCallIds.size} synthesized, " +
+            "${report.movedCallIds.size} moved back, " +
+            "${report.droppedToolResultIds.size} orphan toolResults dropped, " +
+            "${report.strippedCallIds.size} duplicate declarations stripped",
+        tags = arrayOf("dangling-repair")
+    )
+    return report.repairedHistory
 }

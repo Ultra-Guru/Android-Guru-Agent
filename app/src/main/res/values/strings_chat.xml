@@ -127,6 +127,10 @@
     <string name="chat_toolkind_connector">Connector</string>
     <string name="chat_toolkind_plugin">Plugin</string>
     <string name="chat_toolkind_fusion">FUSION</string>
+    <string name="chat_toolkind_terminal">Terminal</string>
+    <!-- v3: terminal tool execution meta (exit badge / waiting input / session label) -->
+    <string name="chat_tool_waiting_input">Waiting for input</string>
+    <string name="chat_tool_session">Session %1$s</string>
     <!-- 浏览器截图渲染（BrowserToolCards.kt） -->
     <string name="chat_browser_screenshot_label">Screenshot preview</string>
     <string name="chat_browser_screenshot_size">%1$d × %2$d px</string>

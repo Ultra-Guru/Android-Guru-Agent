@@ -182,9 +182,16 @@ class ThinkingModeController(
     fun resolveToolOutputBudget(default: Int, profile: ThinkingProfile? = currentProfile): Int =
         profile?.let { maxOf(default, it.toolOutputBudget) } ?: default
 
-    /** 当前画像下的有效迭代上限（无画像 → base 原样）。 */
+    /**
+     * 当前画像下的有效迭代上限（无画像 → base 原样）。
+     *
+     * 哨兵：**base ≤ 0 = 无上限**（AgentConfig.maxIterations 的用户显式
+     * 无上限语义）→ 返回 [Int.MAX_VALUE]。画像倍率不放大哨兵（无限 ×
+     * 任何系数还是无限）。
+     */
     fun effectiveMaxIterations(base: Int): Int =
-        currentProfile?.let { resolveMaxIterations(base, it) } ?: base
+        if (base <= 0) Int.MAX_VALUE
+        else currentProfile?.let { resolveMaxIterations(base, it) } ?: base
 
     private fun countRecentErrors(): Int = recentOutcomes.count { !it }
 

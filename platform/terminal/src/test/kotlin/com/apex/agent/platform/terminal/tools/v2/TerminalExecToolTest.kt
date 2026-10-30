@@ -79,7 +79,7 @@ class TerminalExecToolTest {
         val engine = scriptedEngine()
         val tool = TerminalExecTool(
             engine = engine,
-            approvalGate = { "用户拒绝执行命令" }
+            approvalGate = { _, _ -> "用户拒绝执行命令" }
         )
         val json = tool.invoke("""{"command":"rm -rf /"}""")
         val o = Json.parseToJsonElement(json).jsonObject

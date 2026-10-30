@@ -128,6 +128,21 @@ class CodeHistoryStore(
     }
 
     /**
+     * 纯读取归档快照（导出 Markdown 等只读消费方）。
+     *
+     * 与 [restoreInto] 的关键差异：**零副作用** —— 不回写引擎记忆、不动
+     * 活位，只解析 ui.json。损坏/缺失返回 null（调用方自行提示）。
+     */
+    fun readSnapshot(workspaceId: String, sessionId: String): CodeSessionSnapshot? {
+        val ui = File(sessionDirFor(workspaceId), "$sessionId/$UI_FILE")
+        return try {
+            json.decodeFromString(CodeSessionSnapshot.serializer(), ui.readText(Charsets.UTF_8))
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
      * 恢复：把归档的引擎记忆写回两条线的记忆文件，返回 UI 快照。
      *
      * @return ui.json 解析得到的快照（调用方写回 CodeSessionStore）；

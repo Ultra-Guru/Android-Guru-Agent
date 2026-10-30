@@ -53,8 +53,9 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 class TerminalExecTool(
     private val engine: ExecEngine,
-    /** null=放行；非 null=拒绝原因（app 层本地化后传入）。 */
-    private val approvalGate: (suspend (String) -> String?)? = null,
+    /** null=放行；非 null=拒绝原因（app 层本地化后传入）。
+     *  v3：携带 cwd —— 审批弹窗展示「将在哪个目录执行」，而不是裸命令字符串。 */
+    private val approvalGate: (suspend (command: String, cwd: String?) -> String?)? = null,
     /** 无显式 cwd 时的缺省目录（cd 记忆）。 */
     private val defaultCwd: (suspend () -> String?)? = null,
     /** 命令 exit=0 后回调（cd 记忆更新等）。 */
@@ -92,8 +93,11 @@ class TerminalExecTool(
 
     suspend fun execute(input: Input): Output {
         // ── 门禁（app 层注入；拒绝 = 结构化 126，不重试原命令）──
+        // effectiveCwd 先行解析：审批弹窗需要「将在哪个目录执行」（v3：双模式下
+        // 用户必须能分辨命令跑在哪个根，裸命令字符串不足以支撑授权决策）。
+        val effectiveCwd = input.cwd ?: defaultCwd?.invoke()
         approvalGate?.let { gate ->
-            gate(input.command)?.let { reason ->
+            gate(input.command, effectiveCwd)?.let { reason ->
                 return Output(
                     stdout = "", stderr = reason, exitCode = GATE_DENIED_EXIT,
                     durationMs = 0, truncated = false, timedOut = false, killed = false,
@@ -105,8 +109,6 @@ class TerminalExecTool(
                 )
             }
         }
-
-        val effectiveCwd = input.cwd ?: defaultCwd?.invoke()
 
         val request = ExecRequest(
             command = input.command,

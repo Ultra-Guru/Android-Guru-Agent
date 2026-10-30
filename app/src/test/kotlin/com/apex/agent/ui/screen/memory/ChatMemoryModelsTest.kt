@@ -58,10 +58,7 @@ class ChatMemoryModelsTest {
         assertTrue(entries.isEmpty())
     }
 
-    @Test
-    fun `display label maps kind to contract entity name`() {
-        assertEquals("用户画像", ChatFact.Kind.PROFILE.displayLabel())
-        assertEquals("用户近况", ChatFact.Kind.STATE.displayLabel())
-        assertEquals("里程碑", ChatFact.Kind.MILESTONE.displayLabel())
-    }
+    // 注：类别 / 来源的 displayLabel 硬编码中文已在记忆页 v2 i18n 修复中
+    // 移除（改走 strings_core.xml 资源，Compose 侧 stringResource 取词），
+    // 对应断言随之退役 —— 分组 / 排序规则仍是本套件的覆盖面。
 }

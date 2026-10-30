@@ -3,7 +3,8 @@
 <resources>
     <!-- 子代理分区（设置 → Agent 页） -->
     <string name="settings_v3_subagent_title">子代理</string>
-    <string name="settings_v3_subagent_subtitle">并行委派工作者，预算可调</string>
+    <string name="settings_v3_subagent_subtitle">Coding 模式的委派工作者，预算可调</string>
+    <string name="settings_v3_subagent_scope_hint">仅 Coding 模式生效：Agent 聊天工位不暴露编码工具（CodeTask 隔离），这里的开关与预算只在编程工位起作用。</string>
     <string name="settings_v3_subagent_enabled">启用子代理</string>
     <string name="settings_v3_subagent_enabled_desc">关闭后主代理改为亲自执行探索，不再委派</string>
     <string name="settings_v3_subagent_concurrency">并发上限</string>

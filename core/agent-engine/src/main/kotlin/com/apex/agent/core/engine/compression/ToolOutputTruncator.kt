@@ -69,7 +69,7 @@ class ToolOutputTruncator(
             append(output.takeLast(safeTail))
         }
 
-        return TruncationResult(truncated, truncated = true)
+        return TruncationResult(withNotice(truncated), truncated = true)
     }
 
     /**
@@ -100,7 +100,7 @@ class ToolOutputTruncator(
                     TruncationResult(output, truncated = false)
                 } else {
                     TruncationResult(
-                        output.take(maxChars) + "\n\n[... error output truncated at $maxChars chars, total ${output.length} chars]",
+                        withNotice(output.take(maxChars) + "\n\n[... error output truncated at $maxChars chars, total ${output.length} chars]"),
                         truncated = true
                     )
                 }
@@ -136,7 +136,7 @@ class ToolOutputTruncator(
         }.getOrNull()
 
         if (rebuilt != null && rebuilt.length <= maxChars * MAX_EXPANSION_FACTOR) {
-            return TruncationResult(rebuilt, truncated = true)
+            return TruncationResult(withNotice(rebuilt), truncated = true)
         }
 
         // 回退：旧整串策略（JSON 尾部通常是闭合括号；exit_code 等若在
@@ -145,7 +145,7 @@ class ToolOutputTruncator(
         val tail = json.takeLast(minOf(200, (maxChars / 5).coerceAtLeast(1)))
 
         val truncated = "$head\n\n[... JSON truncated, ${json.length} chars total ...]\n\n$tail"
-        return TruncationResult(truncated, truncated = true)
+        return TruncationResult(withNotice(truncated), truncated = true)
     }
 
     /**
@@ -254,7 +254,7 @@ class ToolOutputTruncator(
             appendLine(lines.takeLast(keepBottom).joinToString("\n"))
         }
 
-        return TruncationResult(truncated, truncated = true)
+        return TruncationResult(withNotice(truncated), truncated = true)
     }
 
     /**
@@ -263,8 +263,24 @@ class ToolOutputTruncator(
     private fun truncateHead(text: String): TruncationResult {
         val truncated = text.take(maxChars) +
             "\n\n[... truncated at $maxChars chars, total ${text.length} chars]"
-        return TruncationResult(truncated, truncated = true)
+        return TruncationResult(withNotice(truncated), truncated = true)
     }
+
+    /**
+     * 尾部机器可读告示（对话实录 #6 —— 最大的一次误判）：
+     *
+     * “[... 3350 chars omitted ...]” 曾被模型当成“内容到此为止”，把 20,022 字符
+     * 的正文当成摘要交差。TruncationResult.truncated 标志在引擎层被丢弃
+     * （LlmMessage.ToolResult 无元数据通道），模型唯一能看到的就是文本本身
+     * —— 所以告示必须直接写进文本，并且明说三件事：
+     *   1. 省略区还有更多内容（不是结束）；
+     *   2. 当前结果不完整，不能据此下结论；
+     *   3. 怎么取回被省略的部分（收窄 / 分页 / 指定字段）。
+     *
+     * 幂等：已含告示的文本（压缩器二次截断时）不重复追加。
+     */
+    private fun withNotice(text: String): String =
+        if (text.contains(TRUNCATION_NOTICE)) text else text + "\n" + TRUNCATION_NOTICE
 
     companion object {
         /** JSON 数组截断保留的前部项数。 */
@@ -281,6 +297,15 @@ class ToolOutputTruncator(
 
         /** 字段级产物的膨胀容忍（键名开销；超限回退整串策略）。 */
         private const val MAX_EXPANSION_FACTOR = 2
+
+        /**
+         * 截断产物尾部统一告示（见 [withNotice]）。公共常量：EnginePrompts
+         * 的 Output Management 段落向模型文档化同一标记形状。
+         */
+        const val TRUNCATION_NOTICE =
+            "[OUTPUT TRUNCATED: MORE content exists in the omitted part — this result " +
+                "is INCOMPLETE. Do not conclude from it: narrow the output " +
+                "(offset / page / head / grep / max_chars) or paginate to read the rest.]"
     }
 }
 

@@ -72,51 +72,10 @@ data class UserInputRequest(
  * globe 图标 + 专属徽章让聊天流里的 browser_* 调用一眼可辨 ——
  * WEB_FETCH 是「抓一个 URL 的文本」，BROWSER 是「在页面里开车」。
  */
-enum class ToolKind { LOCAL, MCP, WEB_SEARCH, WEB_FETCH, BROWSER, SKILL, GITHUB, CONNECTOR, PLUGIN, FUSION }
-
-/**
- * 待发送的流水线指令（迷你胶囊）。
- *
- * 用户从斜杠菜单选中 Skill / MCP / 插件 / 连接器时，不再把 `/skill:xxx`
- * 裸文本塞进输入框，而是以结构化胶囊挂在输入栏上：
- * - 胶囊按类型渲染图标（Skill 用 Material `Code`（即 `</>`）/ MCP 用 Api /
- *   连接器用 Link / 插件用 Extension）与「type: 名称」标签；
- * - 发送时与输入框文本拼回 `"/type:id 附加文本"` 走既有斜杠管线
- *   （解析/路由/横幅/工具来源标记全部复用，零新链路）；
- * - 再选一条直接替换当前胶囊（单条语义：一次发送触发一条流水线）。
- *
- * @param type 指令类型（"skill" / "mcp" / "connector" / "plugin" / "fusion"）。
- * fusion：王冠菜单选中的 FUSION 体系包（chip 形态出现在输入框中，
- * 发送时拼回 `/fusion:<id>` 走强制使用路由 —— SlashCommandRouter）。
- * @param id 指令 id（斜杠命令冒号后的部分）。
- * @param label 展示名（菜单项 label，优先于裸 id 呈现）。
- */
-@Immutable
-data class PendingPipelineCommand(
-    val type: String,
-    val id: String,
-    val label: String
-) {
-    /** 拼回斜杠命令首词：`/skill:WebSearch`。 */
-    fun toCommandToken(): String = "/$type:$id"
-
-    companion object {
-        /**
-         * 从斜杠菜单命令串解析胶囊（宽容失败 → null 走旧文本插入路径）。
-         * 输入形态：`/skill:WebSearch `（菜单命令自带尾随空格）或无空格裸命令。
-         */
-        fun fromCommand(command: String, label: String): PendingPipelineCommand? {
-            val token = command.trim()
-            if (!token.startsWith("/")) return null
-            val colon = token.indexOf(':')
-            if (colon <= 1) return null
-            val type = token.substring(1, colon).lowercase()
-            val id = token.substring(colon + 1).trim()
-            if (id.isEmpty()) return null
-            if (type !in setOf("skill", "mcp", "connector", "plugin", "fusion")) return null
-            return PendingPipelineCommand(type = type, id = id, label = label.ifBlank { id })
-        }
-    }
+enum class ToolKind {
+    LOCAL, MCP, WEB_SEARCH, WEB_FETCH, BROWSER, SKILL, GITHUB, CONNECTOR, PLUGIN, FUSION,
+    /** 终端运行时（Terminal* 工具族）：ATR 2.0 会话 / 一次性结构化执行。 */
+    TERMINAL
 }
 
 @Immutable
@@ -156,6 +115,19 @@ sealed interface AgentUiMessage {
         val skill: String? = null,
         /** 逐步执行过程（带时间戳的步骤序列），用于"执行过程"时间线渲染。 */
         val steps: List<ToolStep> = emptyList(),
+        /** 真实进程退出码（v3：终端工具 waitpid 结果）；null = 非进程类/未知。
+         *  完成卡渲染 `exit N` 徽标 —— 127/126/-1 的失败一眼可辨。 */
+        val exitCode: Int? = null,
+        /** 关联终端会话标注（v3：TerminalRun/TerminalCreate 的 session 标识）。 */
+        val sessionId: String? = null,
+        /** 执行通道（v3：proot-ubuntu / root-su / shizuku / local-sh）。 */
+        val channel: String? = null,
+        /** 实际执行目录（v3：guest 语义路径）。 */
+        val cwd: String? = null,
+        /** 结构化错误类别（v3：spawn_failed / permission_denied / ...）。 */
+        val errorKind: String? = null,
+        /** 命令在前台等待用户输入（v3：INPUT_REQUIRED 挂起可见）。 */
+        val waitingInput: Boolean = false,
         val timestamp: Long = java.lang.System.currentTimeMillis(),
         override val id: String = java.util.UUID.randomUUID().toString()
     ) : AgentUiMessage

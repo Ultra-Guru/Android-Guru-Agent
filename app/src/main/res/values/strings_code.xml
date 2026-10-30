@@ -119,6 +119,10 @@
     <string name="code_history_delete_confirm">Delete this conversation?</string>
     <string name="code_history_delete_msg_fmt">"This can't be undone: %1$s"</string>
     <string name="code_history_cancel">Cancel</string>
+    <string name="code_history_export">Export as Markdown</string>
+    <string name="code_history_export_chooser">Share coding session</string>
+    <string name="code_history_export_not_found">Archive is empty or unreadable — nothing to export</string>
+    <string name="code_history_export_failed">Markdown export failed</string>
 
     <!-- ═══ v1.2 long-task center ═══ -->
     <string name="code_longtask_open">Long-task center</string>
@@ -198,6 +202,7 @@
     <string name="code_stream_error_fatal">Fatal error</string>
     <string name="code_stream_files_touched">%1$d files touched</string>
     <string name="code_stream_fab_bottom">Latest</string>
+    <string name="code_stream_empty_hint">Nothing on the timeline yet — describe a coding task below, or restore an archived conversation from chat history</string>
     <string name="code_stream_status_waiting">waiting</string>
     <string name="code_stream_status_running">running</string>
     <string name="code_stream_status_success">success</string>
@@ -315,6 +320,8 @@
 
     <!-- AUTO pre-check notice -->
     <string name="code_adaptive_precheck_fmt">Adaptive pre-check: %1$s</string>
+    <!-- AUTO deep-water escalation notice (mid-run tier bump) -->
+    <string name="code_adaptive_escalate_fmt">⚠️ Deep-water auto-escalation: %1$s</string>
 
     <!-- Chat-bubble system notices (emitted by CodeEventReducer) -->
     <string name="code_plan_confirmed_fmt">Plan confirmed — executing (%1$d steps)</string>

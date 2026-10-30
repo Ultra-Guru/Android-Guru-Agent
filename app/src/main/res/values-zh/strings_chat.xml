@@ -127,6 +127,10 @@
     <string name="chat_toolkind_connector">连接器</string>
     <string name="chat_toolkind_plugin">插件</string>
     <string name="chat_toolkind_fusion">FUSION</string>
+    <string name="chat_toolkind_terminal">终端</string>
+    <!-- v3: 终端工具执行元数据（exit 徽标 / 等待输入 / 会话标注） -->
+    <string name="chat_tool_waiting_input">等待输入</string>
+    <string name="chat_tool_session">会话 %1$s</string>
     <!-- 浏览器截图渲染（BrowserToolCards.kt） -->
     <string name="chat_browser_screenshot_label">截图预览</string>
     <string name="chat_browser_screenshot_size">%1$d × %2$d px</string>

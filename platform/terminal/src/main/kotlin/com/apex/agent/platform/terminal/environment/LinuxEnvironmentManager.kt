@@ -52,6 +52,12 @@ class LinuxEnvironmentManager(
     fun interactiveGuestEnv(requestEnv: Map<String, String> = emptyMap()): Map<String, String> {
         val env = linkedMapOf(
             "TERM" to "xterm-256color",
+            // v3（环境一致性）：COLORTERM=truecolor —— VT 已支持 24-bit 色
+            // （OSC 10/11 走 0xFFRRGGBB，NativeVtCore 同），但只有 Android 宿主
+            // 会话（GuestShellProfile.shellEnv）声明了它。Ubuntu 会话缺声明时
+            // ls/fzf/claude-cli 等按 256 色降级渲染 —— 双模式终端的色彩能力
+            // 应同口径声明。
+            "COLORTERM" to "truecolor",
             "LANG" to "C.UTF-8",
             "LC_ALL" to "C.UTF-8",
             "HOME" to GuestUserHome.GUEST_PATH,

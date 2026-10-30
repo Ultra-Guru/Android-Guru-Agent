@@ -231,6 +231,32 @@
     <string name="settings_think_maximum">Maximum · 极深思考</string>
     <string name="settings_think_desc">决策前推理深度（影响 system prompt，重启应用生效）</string>
     <string name="settings_max_iterations_desc">单任务最大迭代次数，防止无限循环</string>
+
+    <!-- ═══ 工具循环 v2 / 限速友好 / 自定义背景（三件套）═══ -->
+    <string name="settings_tool_loop_section">工具循环</string>
+    <string name="settings_tool_iterations_unlimited">任务轮次无上限</string>
+    <string name="settings_tool_iterations_unlimited_desc">一个任务的工具调用次数不设轮次硬顶（默认开）；失控由循环检测兑底，也可随时手动停止</string>
+    <string name="settings_tool_parallelism">单轮并行执行上限</string>
+    <string name="settings_tool_parallelism_desc">模型一轮返回多个工具时最多几个同时执行（1 = 顺序执行，历史行为）。调高可减少请求轮次；终端类工具输出可能交错</string>
+    <string name="settings_nav_model_rate_limit">限速友好</string>
+    <string name="settings_rate_limit_section">限速友好模式</string>
+    <string name="settings_rate_limit_enabled">开启限速友好模式</string>
+    <string name="settings_rate_limit_enabled_desc">只针对某些用户：所用厂商有 RPM/TPM 或每日请求次数配额（免费档 / 按次计费网关）时才需要开。开启后全部 LLM 请求节流放行、单请求携带更多上下文；关闭 = 行为零变化</string>
+    <string name="settings_rate_limit_interval">请求最小间隔</string>
+    <string name="settings_rate_limit_interval_desc">所有 LLM 请求（ReAct 轮 / 压缩摘要 / 子代理 / 验收）发出前排队——相邻两次请求起点间隔不小于该值</string>
+    <string name="settings_rate_limit_rich">每请求信息密度</string>
+    <string name="settings_rate_limit_rich_desc">工具输出预算 ×2、保留更多近轮、更晚压缩——同样的任务用更少的请求完成。重启应用后生效</string>
+    <string name="settings_rate_limit_apply_title">推荐组合</string>
+    <string name="settings_rate_limit_apply_desc">一键应用：限速模式开（间隔 ≥4s）+ 每请求信息密度 + 单轮 4 路并行工具 + 任务轮次无上限</string>
+    <string name="settings_rate_limit_apply">一键应用推荐组合</string>
+    <string name="settings_background_section">自定义背景</string>
+    <string name="settings_background_desc">导入自己的图片作为全局背景。专属优化：降采样解码（大图不爆内存）、亮度自适应纱罩（任何照片上文字都可读）、一图一解码（换图才重解码）</string>
+    <string name="settings_background_active">背景已生效——图片常驻，纱罩随深浅模式自动切换</string>
+    <string name="settings_background_pick">选择图片</string>
+    <string name="settings_background_replace">更换图片</string>
+    <string name="settings_background_clear">清除背景</string>
+    <string name="settings_background_dim">纱罩强度</string>
+    <string name="settings_background_dim_desc">在自适应基数上的手动叠加——觉得文字看不清就调高</string>
     <string name="settings_reflection_rounds_desc">Reflect 模式每轮执行一次「评审 → 修正」</string>
     <string name="settings_advanced_behavior">Advanced Agent Behavior（数据预埋）</string>
     <string name="settings_reflection_desc">启用生成后的自我评审与修正</string>
@@ -503,7 +529,58 @@
     <string name="memory_chat_meta_fmt">重要度 %1$d%% · %2$s · 召回 %3$d 次</string>
     <string name="memory_chat_source_heuristic">启发式</string>
     <string name="memory_chat_source_distill">蒸馏</string>
+    <string name="memory_chat_source_manual">手动</string>
     <string name="memory_chat_source_migrated">迁移</string>
+
+    <!-- ═══ 记忆页 v2：六项统计 / 知识图谱分区 / 手动写入口 / 统一搜索 ═══ -->
+    <string name="memory_stats_episodes">会话</string>
+    <string name="memory_stats_facts">事实</string>
+    <string name="memory_stats_entities">实体</string>
+    <string name="memory_stats_relations">关联</string>
+    <string name="memory_write_add">添加记忆</string>
+    <string name="memory_write_save_fact">记一条事实</string>
+    <string name="memory_write_teach">教一次经验</string>
+    <string name="memory_write_save_fact_title">记一条事实</string>
+    <string name="memory_write_content_label">内容</string>
+    <string name="memory_write_content_hint">一句自包含的话，Agent 之后会记住它</string>
+    <string name="memory_write_kind_label">类别</string>
+    <string name="memory_write_importance_fmt">重要度：%1$d%%</string>
+    <string name="memory_write_save">保存</string>
+    <string name="memory_write_msg_too_long">超过 %1$d 字符 —— 请浓缩成一句可记住的话</string>
+    <string name="memory_write_msg_failed">保存失败：%1$s</string>
+    <string name="memory_save_fact_msg_added">事实已存入长期记忆</string>
+    <string name="memory_save_fact_msg_reinforced">已有该记忆 —— 重要度已强化</string>
+    <string name="memory_teach_title">教一次经验</string>
+    <string name="memory_teach_goal_label">任务目标</string>
+    <string name="memory_teach_outcome_label">实际结果如何</string>
+    <string name="memory_teach_success">任务成功</string>
+    <string name="memory_teach_failed">任务未成</string>
+    <string name="memory_teach_lessons_label">经验教训（每行一条）</string>
+    <string name="memory_teach_lessons_hint">可复用的门道：界面怪癖、绕行方案、偏好……</string>
+    <string name="memory_teach_msg_done">经验已整理：%1$d 条写入长期记忆</string>
+    <string name="memory_msg_load_failed">加载记忆失败：%1$s</string>
+    <string name="memory_msg_delete_failed">删除失败：%1$s</string>
+    <string name="memory_episode_msg_deleted">已删除会话 %1$s</string>
+    <string name="memory_episode_msg_missing">删除失败：会话 %1$s 不存在</string>
+    <string name="memory_dream_msg_failed">整理失败：%1$s</string>
+    <string name="memory_dream_msg_errors">整理完成（%1$d 项异常）：%2$s</string>
+    <string name="memory_dream_msg_done">整理完成：%1$s</string>
+    <string name="memory_quarantine_msg_cleared">隔离区已清空</string>
+    <string name="memory_quarantine_msg_failed">清除隔离区失败：%1$s</string>
+    <string name="memory_knowledge_title">知识图谱</string>
+    <string name="memory_knowledge_count_fmt">%1$d 实体 · %2$d 关联</string>
+    <string name="memory_knowledge_empty">还没有知识实体\nAgent 在任务中确认的人物、应用与方法会沉淀到这里，并在图谱视图中连成网络</string>
+    <string name="memory_knowledge_relations">关联关系</string>
+    <string name="memory_knowledge_no_relations">暂无关联</string>
+    <string name="memory_knowledge_open_graph">在图谱中查看</string>
+    <string name="memory_knowledge_more_fmt">还有 %1$d 条…</string>
+    <string name="memory_search_no_match_all">没有匹配「%1$s」的记忆</string>
+    <string name="memory_search_group_facts">匹配的事实</string>
+    <string name="memory_search_group_entities">匹配的实体</string>
+    <string name="memory_search_group_nodes">匹配的场景节点</string>
+    <string name="memory_search_type_fact">事实</string>
+    <string name="memory_search_type_entity">实体</string>
+    <string name="memory_search_type_node">节点</string>
 
     <!-- ═══ 任务历史（TaskHistoryScreen）═══ -->
     <string name="tasks_title">任务</string>

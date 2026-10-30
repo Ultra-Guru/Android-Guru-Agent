@@ -9,7 +9,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
-import com.apex.agent.ui.screen.agent.PendingPipelineCommand
+import com.apex.agent.ui.chatkit.PendingPipelineCommand
 
 /**
  * # FUSION 王冠入口 · Coding 工位接线（一行式）

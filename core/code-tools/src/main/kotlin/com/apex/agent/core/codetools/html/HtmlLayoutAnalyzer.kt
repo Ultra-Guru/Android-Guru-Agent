@@ -44,7 +44,8 @@ object HtmlLayoutAnalyzer {
             issues = issues,
             treeText = renderTree(doc, stats),
             bracketSummary = renderBracketSummary(doc),
-            truncated = doc.truncatedReason
+            truncated = doc.truncatedReason,
+            components = HtmlComponentPatterns.analyze(doc)
         )
     }
 

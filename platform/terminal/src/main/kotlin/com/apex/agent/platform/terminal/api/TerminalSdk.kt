@@ -95,7 +95,7 @@ class TerminalSdk(
         supportsResize = true,
         supportsReattach = false,                  // PTY fds are process-local (T81 §16 honest)
         supportsPersistence = true,
-        supportsProcessTree = false,               // process2 spec unwired (documented)
+        supportsProcessTree = false,               // 进程树内省未实现（process2 规格骨架已随死代码清理移除）
         supportsReconciliation = true
     )
 

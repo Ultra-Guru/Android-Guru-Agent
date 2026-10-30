@@ -75,8 +75,11 @@ class TerminalInputControllerImpl(
                 }
             }
             TerminalControl.SUSPEND -> {
-                // Ctrl+Z = SIGTSTP
-                return inputManager.sendSignal(sessionId, RuntimeInputOwner.AGENT, UnixSignal.SIGSTOP).map {
+                // Ctrl+Z = SIGTSTP（v3 信号语义修正：此前错发 SIGSTOP）。
+                // SIGTSTP 可被作业控制拦截：前台作业挂起、shell 收回终端回
+                // 提示符（真正的 Ctrl+Z 语义）；SIGSTOP(19) 不可捕获 —— 作业
+                // 被硬冻结、shell 不回前台，表现为「会话假死只能 kill」。
+                return inputManager.sendSignal(sessionId, RuntimeInputOwner.AGENT, UnixSignal.SIGTSTP).map {
                     TerminalInputController.InputReceipt(true, 0, InputOwner.OWNED_BY_AGENT)
                 }
             }

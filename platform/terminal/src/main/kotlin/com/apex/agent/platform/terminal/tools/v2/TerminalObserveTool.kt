@@ -38,7 +38,9 @@ class TerminalObserveTool(
         Observe terminal state. Default mode=SEMANTIC returns machine-readable state (session/job/input/cursor)
         with NO raw output — token-cheap. mode=EVENT returns incremental events since afterCursor.
         mode=SCREEN returns parsed screen (for TUI like vim/top); pass scrollbackLines>0 to also
-        receive the last N scrollback lines (T82, main screen history up to 1000 lines).
+        receive the last N scrollback lines (T82, main screen history up to 1000 lines); when the
+        shell reports its working directory (OSC 7), SCREEN also returns it as guestCwd — pass that
+        as the cwd of subsequent TerminalExec calls to stay in the same directory.
         mode=RAW returns raw bytes since afterCursor.
     """.trimIndent()
 
@@ -79,13 +81,17 @@ class TerminalObserveTool(
 
     override suspend fun invoke(arguments: String): String {
         val json = Json.parseToJsonElement(arguments).jsonObject
-        val sessionId = json["sessionId"]?.jsonPrimitive?.content?.toLongOrNull() ?: throw IllegalArgumentException("sessionId required")
-        val mode = runCatching { TerminalRuntime.ObserveMode.valueOf(json["mode"]?.jsonPrimitive?.content ?: "SEMANTIC") }.getOrDefault(TerminalRuntime.ObserveMode.SEMANTIC)
-        val afterCursor = json["afterCursor"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
-        val maxBytes = json["maxBytes"]?.jsonPrimitive?.content?.toIntOrNull() ?: 12000
-        val maxEvents = json["maxEvents"]?.jsonPrimitive?.content?.toIntOrNull() ?: 200
+        // 别名宽容（实录 #8/#9）：session_id / cursor 简写均可
+        val sessionId = json.longArg("sessionId", "session_id")
+            ?: throw IllegalArgumentException("sessionId required (accepted: sessionId, session_id)")
+        val mode = runCatching { TerminalRuntime.ObserveMode.valueOf(json.stringArg("mode") ?: "SEMANTIC") }.getOrDefault(TerminalRuntime.ObserveMode.SEMANTIC)
+        // 实录 #9：模型把 "cursor" 当入参名传入时被静默忽略 → afterCursor=0
+        // 从头重读。accept cursor / after_cursor 别名。
+        val afterCursor = json.longArg("afterCursor", "after_cursor", "cursor") ?: 0L
+        val maxBytes = json.intArg("maxBytes", "max_bytes") ?: 12000
+        val maxEvents = json.intArg("maxEvents", "max_events") ?: 200
         // T82：SCREEN 模式 scrollback 尾部行数（默认 0 = 不带）
-        val scrollbackLines = json["scrollbackLines"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
+        val scrollbackLines = json.intArg("scrollbackLines", "scrollback_lines") ?: 0
         val out = execute(Input(sessionId, mode, afterCursor, maxBytes, maxEvents, scrollbackLines))
         return buildJsonObject {
             put("mode", JsonPrimitive(out.mode))
@@ -106,6 +112,12 @@ class TerminalObserveTool(
                         put("cursorRow", JsonPrimitive(scr.cursorRow))
                         put("cursorCol", JsonPrimitive(scr.cursorCol))
                         put("alternateScreen", JsonPrimitive(scr.alternateScreen))
+                        // v3：OSC 7 / 9;9 遥测首次消费 —— guest shell 上报的当前
+                        // 工作目录（解码后路径；null = guest 未上报）。此前解析结果
+                        // 只存在 VT 快照里零消费：模型无法得知交互会话里 cd 到了
+                        // 哪里，只能猜 cwd 或从屏显 PS1 反推。现在直接给出，模型
+                        // 可把它作为 TerminalExec 的 cwd 传入。
+                        scr.guestCwd?.let { put("guestCwd", JsonPrimitive(it)) }
                     }
                     // T82：scrollback 尾部（oldest→newest）
                     if (!out.scrollbackTail.isNullOrEmpty()) {
@@ -130,7 +142,12 @@ class TerminalObserveTool(
                         put("inputState", JsonPrimitive(sem.input.state.name))
                     }
                 }
-                TerminalRuntime.ObserveMode.EVENT -> put("eventCount", JsonPrimitive(out.events?.size ?: 0))
+                TerminalRuntime.ObserveMode.EVENT -> {
+                    // 实录 #9：EVENT 只返回计数，字节本体在 RingBuffer —— 曾被
+                    // 模型当作“已读到输出”。附带指引把读文本的正确模式说清。
+                    put("eventCount", JsonPrimitive(out.events?.size ?: 0))
+                    put("hint", JsonPrimitive(AgentGuidance.EVENT_MODE_HINT))
+                }
             }
         }.toString()
     }

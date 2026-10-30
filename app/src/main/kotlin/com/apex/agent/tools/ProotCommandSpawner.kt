@@ -368,6 +368,14 @@ class ProotCommandSpawner(
                 workspaceHostDir = wsDir.takeIf { it.isDirectory } ?: defaultWorkspaceDir
             )
         }
+        // ── v3：guest 语义 cwd（cwd 语义统一）──
+        // TerminalExec 的 cwd 参数与工具描述（/sdcard → 共享存储、/workspace →
+        // 活跃工作区）此前不一致：实现是纯宿主语义，模型按描述传 "/workspace"
+        // 会在宿主侧判定不存在 → FileNotFoundException → spawn_failed(126)；
+        // 与 TerminalCreate（guest 语义）同名参数语义相反。guest 根前缀在此
+        // 接管（优先级在宿主 bind 前缀之后、通用宿主目录之前 —— 宿主真实
+        // 存在的路径仍按宿主语义同路径 bind，不改变既有行为）。
+        mapGuestStyleCwd(cwd)?.let { return it }
         // 其它真实存在的 host 目录 → 同路径 bind（绝对路径语义不失效）
         val dir = File(cwd)
         if (dir.isDirectory) {
@@ -377,6 +385,55 @@ class ProotCommandSpawner(
         }
         // 不存在：与 ProcessBuilder.directory(不存在目录) 一致 —— spawn 失败
         throw java.io.FileNotFoundException("cwd does not exist: $cwd")
+    }
+
+    /**
+     * guest 风格 cwd → [GuestCwdPlan]（/workspace、/sdcard、/root、~/ 前缀）。
+     *
+     * 三个 guest 根都是宿主 bind 源的镜像，因此可以在宿主侧验证子路径存在性
+     * （bind 源目录 = guest 视角的同一物理目录）：
+     *  - `/workspace[/…]` → default 工作区（bind 恒等）；
+     *  - `/sdcard[/…]`    → 共享存储（/storage/emulated/0）；
+     *  - `/root[/…]`、`~[/…]` → 持久化 home（<filesDir>/linux/home）。
+     *
+     * @return null = 不是 guest 风格前缀，或对应 bind 源不可用（交回后续分支
+     *         按宿主语义处理/失败）。
+     */
+    internal fun mapGuestStyleCwd(cwd: String): GuestCwdPlan? {
+        val expanded = when {
+            cwd == "~" -> GUEST_ROOT_HOME
+            cwd.startsWith("~/") -> GUEST_ROOT_HOME + cwd.removePrefix("~")
+            else -> cwd
+        }
+        return when {
+            expanded == GUEST_WORKSPACE || expanded.startsWith("$GUEST_WORKSPACE/") -> {
+                val ws = defaultWorkspaceDir ?: return null
+                if (!ws.isDirectory) return null
+                // 子路径存在性按 bind 源验证（宿主目录 = guest 物理目录）。
+                val sub = expanded.removePrefix(GUEST_WORKSPACE)
+                if (sub.isNotEmpty() && !File(ws, sub.removePrefix("/")).isDirectory) return null
+                GuestCwdPlan(
+                    expanded, emptyList(),
+                    WorkspacePath("workspace:/${sub.removePrefix("/")}").takeIf { sub.isNotEmpty() }
+                        ?: WORKSPACE_CWD,
+                    workspaceHostDir = ws
+                )
+            }
+            expanded == SharedStorageBridge.GUEST_PATH || expanded.startsWith("${SharedStorageBridge.GUEST_PATH}/") -> {
+                val host = sharedStorage.hostDir() ?: return null
+                val sub = expanded.removePrefix(SharedStorageBridge.GUEST_PATH)
+                if (sub.isNotEmpty() && !File(host, sub.removePrefix("/")).isDirectory) return null
+                GuestCwdPlan(expanded, emptyList(), WorkspacePath(expanded))
+            }
+            expanded == GUEST_ROOT_HOME || expanded.startsWith("$GUEST_ROOT_HOME/") -> {
+                val home = persistentHomeDir ?: return null
+                if (!home.isDirectory) return null
+                val sub = expanded.removePrefix(GUEST_ROOT_HOME)
+                if (sub.isNotEmpty() && !File(home, sub.removePrefix("/")).isDirectory) return null
+                GuestCwdPlan(expanded, emptyList(), WorkspacePath(expanded))
+            }
+            else -> null
+        }
     }
 
     /** 完整 bind 集（不含工作区 —— 构建器经 workspacePath 参数自行附加）。 */

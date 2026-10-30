@@ -1,8 +1,8 @@
-# Agent 角色知识库体系（v1 · 19 套全覆盖）
+# Agent 角色知识库体系（v2 · 多卷制 · 19 角色全覆盖）
 
-> 版本：v1（2026-10-24）· 覆盖 19 个内置角色模板，共 46,862 行进阶知识
+> 版本：v2（2026-10-25 · v1 基础上升级多卷制）· 覆盖 19 个内置角色模板、20 卷，共 48,963 行进阶知识
 > 关联模块：`app/src/main/kotlin/com/apex/agent/knowledge/`（解析器/服务）+ `app/src/main/kotlin/com/apex/agent/tools/KnowledgeBaseTool.kt`（检索工具）+ `app/src/main/kotlin/com/apex/agent/di/KnowledgeModule.kt`（DI 接线）
-> 资产根：`app/src/main/assets/knowledge/`（每套一个 `.md`）
+> 资产根：`app/src/main/assets/knowledge/`（每卷一个 `.md`）
 
 ---
 
@@ -54,22 +54,23 @@ Agent 角色模板（全能 / Coding 18 专家）的 `roleDefinition` 只有一�
 | `list_all` | 列出全部知识库摘要（id/角色/章节数/索引数/字数） |
 | `must_read` | 读必看内容原文（角色开工仪式） |
 | `index` | 取快速索引（「一键找到想看的内容」） |
-| `search` | 关键词检索：索引主题命中 ×30 直达章节；标题 ×3 / 必看 ×2 / 正文 ×1 |
+| `search` | 关键词检索：索引主题命中 ×30 直达章节；标题 ×3 / 必看 ×2 / 正文 ×1。**省略 kb 时跨库全局检索**（每库 top 3 + 库间汇总排序，命中标注来源库） |
 | `read` | 精读一节（ref 支持「N. 标题」/ 纯编号 / 标题前缀） |
 
 服务层纪律：懒加载 + Mutex 并发安全；坏文件跳过留日志（一套损坏绝不拖垮体系）；
 读侧纯内存快照。IO 边界钉在 DI 层（assets 两个纯函数注入），服务本体纯 JVM 可测。
 
-## 三、19 套知识库总表
+## 三、20 卷知识库总表（19 角色）
 
 | 知识库 | 角色模板 | 行数 | 章节 | 索引条目 | 主题主线 |
 | :--- | :--- | ---: | ---: | ---: | :--- |
-| all_rounder | builtin_all_rounder | 2,190 | 176 | 160 | 本 App 工具面决策树 + 任务流模式 + 上下文预算 + 排查总树（环境特有知识，模型不知道的部分） |
-| full_stack | builtin_coding_full_stack | 2,182 | 200 | 194 | 竖切交付 / API 与错误体系 / 幂等与认证深水 / 缓存与迁移 / SLO 与发布纪律 |
-| git | builtin_coding_git | 2,064 | 138 | 134 | fetch 深水（blobless/treeless） / 历史取证（blame -C/log -L） / rerere/bisect / 撤销深水 / 维护加速内幕 |
-| frontend | builtin_coding_frontend | 2,273 | 174 | 158 | 解析与失效内幕 / :has() 性能画像 / 选择器引擎右到左 / 表单深水（ElementInternals） / INP/LoAF 纪律 |
-| android | builtin_coding_android | 2,357 | 109 | 108 | Compose 心智与性能 / 协程结构化并发 / 后台限制与真机纪律 / API 级别差异 / 崩溃对照 |
-| kotlin | builtin_coding_kotlin | 2,253 | 131 | 135 | K2 推断收紧 / 协程纪律与热流口径 / 集合性能成本 / DSL 三件套 / value class 单位安全 |
+| all_rounder | builtin_all_rounder | 2,190 | 176 | 187 | 本 App 工具面决策树 + 任务流模式 + 上下文预算 + 排查总树（环境特有知识，模型不知道的部分） |
+| all_rounder_tasking | builtin_all_rounder | 2,096 | 40 | 40 | 卷二：任务工程与安全治理 —— 需求工程 / 执行治理 / 验证工程 / 上下文与记忆工程 / 安全治理 / 协作交付（v2 多卷制首个扩充卷） |
+| full_stack | builtin_coding_full_stack | 2,182 | 200 | 200 | 竖切交付 / API 与错误体系 / 幂等与认证深水 / 缓存与迁移 / SLO 与发布纪律 |
+| git | builtin_coding_git | 2,064 | 138 | 148 | fetch 深水（blobless/treeless） / 历史取证（blame -C/log -L） / rerere/bisect / 撤销深水 / 维护加速内幕 |
+| frontend | builtin_coding_frontend | 2,273 | 174 | 174 | 解析与失效内幕 / :has() 性能画像 / 选择器引擎右到左 / 表单深水（ElementInternals） / INP/LoAF 纪律 |
+| android | builtin_coding_android | 2,357 | 109 | 109 | Compose 心智与性能 / 协程结构化并发 / 后台限制与真机纪律 / API 级别差异 / 崩溃对照 |
+| kotlin | builtin_coding_kotlin | 2,253 | 131 | 136 | K2 推断收紧 / 协程纪律与热流口径 / 集合性能成本 / DSL 三件套 / value class 单位安全 |
 | java | builtin_coding_java | 2,144 | 114 | 114 | Java 21-25 新特性 / 虚拟线程生产陷阱 / j.u.c 深水 / JIT/GC 成本模型 / FFM 与诊断 |
 | python | builtin_coding_python | 2,242 | 115 | 115 | free-threading 3.13→3.14 决策树 / asyncio 深水（TaskGroup/取消） / CPython 对象内幕 / uv 工程化 |
 | javascript | builtin_coding_javascript | 2,689 | 112 | 112 | 事件循环微宏任务序 / V8 隐藏类与 deopt / AbortSignal 取消传播 / ESM/CJS 互操作 / 泄漏模式 |
@@ -84,9 +85,24 @@ Agent 角色模板（全能 / Coding 18 专家）的 `roleDefinition` 只有一�
 | sql | builtin_coding_sql | 2,876 | 112 | 112 | 计划读取解剖 / B-tree 与 GIN/BRIN 内幕 / MVCC 与锁矩阵 / 连接池模式坑 / keyset 分页 |
 | shell | builtin_coding_shell | 2,888 | 112 | 112 | set -e 语义陷阱 / 信号与 trap 生命周期 / xargs -P 与 flock / awk 单遍 vs 管道 / cron/CI 环境 |
 
-合计 **46,862 行 / 19 套**，覆盖全部内置角色模板（全能 1 + Coding 专家 18）。
-每套均通过结构校验：行数 ≥2000、章节编号连续无缺、索引目标 0 缺失、
-kb 头角色绑定与 `AgentRole` 内置 id 一一对应。
+合计 **48,958 行 / 20 卷 / 19 角色**，覆盖全部内置角色模板（全能 2 卷 +
+Coding 专家 18 卷）。每套均通过结构校验：行数 ≥2000、章节编号连续无缺、
+索引目标 0 缺失、kb 头角色绑定与 `AgentRole` 内置 id 一一对应。
+
+### 3.1 v2 多卷制（同角色可无限扩卷）
+
+v2 起 `KnowledgeBaseService` 的角色绑定从单值 first-wins 升级为**多卷清单**：
+
+- `volumesForRole(roleId)` 返回该角色全部卷（资产顺序）；`forRole`
+  保留为主卷兼容口径（首卷）；同 id 重复仍首个生效（防检索歧义）；
+- **加卷 = 在 assets/knowledge/ 加一个 .md**（kb 头 `role=` 同角色、
+  `id=` 每卷独立），零代码改动 —— 角色知识面不再被单文件锁死；
+- `KnowledgeBaseTool` 的 `list` 动作按角色分组展示多卷；检索动作
+  （must_read / index / search / read）全部按卷 id 定位 —— 每卷自带
+  「快速索引」目录表，「一键找到想看的内容」的口径不变；
+- 首个扩充卷：`all_rounder_tasking`（全能 Agent 卷二，2,096 行 40 节）。
+
+多卷动机与双工位分轨同 PR，详见 `docs/workstation-split-kb-volumes.md`。
 
 ## 四、角色绑定与注入链路
 
@@ -95,13 +111,14 @@ app/src/main/assets/knowledge/<id>.md          资产（id/role/title/version �
   └─ KnowledgeModule（DI）                       assets → 两个纯函数（列名/读文）
        └─ KnowledgeBaseService                   懒加载 + 角色绑定 + 五动作检索面
             ├─ KnowledgeBaseTool                 Agent 工具（SafeAgentTool 包装注册）
-            └─ roleDefinitionHint()              角色提示词注入：
-                 ├─ CodeRoleController           Coding 工位：roleDefinition + 知识库指引
+            └─ roleDefinitionHintFor()           角色提示词注入（v2 多卷口径）：
+                 ├─ CodeRoleController           Coding 工位：roleDefinition + 全卷指引
                  └─ AgentChatViewModel           Agent 工位：同通道
 ```
 
-- 角色绑定以 kb 头 `role=` 为准；同角色多套时首个生效（其余留日志，防静默歧义）。
-- 自定义角色无内置绑定 → 不注入指引（知识库工具仍可按 id 检索任意库）。
+- 角色绑定以 kb 头 `role=` 为准；v2 多卷制：同角色多卷按资产顺序全量
+  保留（`forRole` 取主卷，`volumesForRole` 取全量）。
+- 自定义角色无内置绑定 → 不注入指引（知识库工具仍可按 id 检索任意卷）。
 
 ## 五、维护纪律
 
@@ -113,3 +130,11 @@ app/src/main/assets/knowledge/<id>.md          资产（id/role/title/version �
    落盘 assets 后服务自动发现（无需注册代码）。
 4. **校验口径**（与仓库测试一致）：`sections ≥100`、`索引目标 0 缺失`、
    `必看内容存在`、`单文件 ≤20000 行`；进阶层内容红线见 §1.2。
+5. **程序化审计**（第二轮 #539）：`python3 scripts/audit_knowledge_bases.py`
+   三查——索引指向完整性（真实解析器 findSection 语义）/ 索引-章节
+   数量一致性（含「快速索引 · 续」多表合并）/ 每节标题词检索覆盖抽查；
+   审计失败退出码 1。当前基线：20 卷索引覆盖 100%（1.00-1.07）、
+   坏指向 0、检索 0 命中 0。
+6. **跨库检索**（第二轮 #538）：`searchAll`（每库 top 3 + 全局 top 20
+   汇总排序，`KbGlobalHit` 带来源库标注）；工具层 search 省略 kb 即走
+   全局检索，list 免 kb，must_read/index/read 缺 kb 给可行动报错。

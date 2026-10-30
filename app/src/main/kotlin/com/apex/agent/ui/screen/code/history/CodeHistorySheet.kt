@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -75,13 +76,20 @@ fun CodeHistoryIconButton(onClick: () -> Unit) {
     }
 }
 
-/** 历史对话面板：列表（点按恢复）+ 删除（二次确认）+ 空态。 */
+/**
+ * 历史对话面板：列表（点按恢复）+ 导出 Markdown（系统分享）+ 删除
+ * （二次确认）+ 空态。导出按钮与 Agent 屏会话历史「导出为 Markdown」
+ * 同款能力（此前 Coding 侧缺失 —— 用户实测反馈补齐）。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CodeHistorySheet(
     viewModel: CodeViewModel,
     onDismiss: () -> Unit
 ) {
+    // 导出需要 applicationContext（FileProvider + 分享拉起；VM 非
+    // AndroidViewModel，取 Compose 侧上下文后解包防泄漏）
+    val context = androidx.compose.ui.platform.LocalContext.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var entries by remember { mutableStateOf<List<CodeHistoryEntry>?>(null) }
     var restoring by remember { mutableStateOf(false) }
@@ -159,6 +167,11 @@ fun CodeHistorySheet(
                                 viewModel.restoreCodeHistoryEntry(entry)
                                 onDismiss()
                             },
+                            onExport = {
+                                // 导出只读归档（readSnapshot 零副作用），面板保持
+                                // 打开 —— 连续导出多条不被分享面板打断后丢现场。
+                                viewModel.exportCodeHistoryEntryMarkdown(context, entry)
+                            },
                             onDelete = { confirmDelete = entry }
                         )
                     }
@@ -193,12 +206,13 @@ fun CodeHistorySheet(
     }
 }
 
-/** 单条历史：标题 + 时间/条数 + 删除钮；整行点按恢复。 */
+/** 单条历史：标题 + 时间/条数 + 导出钮 + 删除钮；整行点按恢复。 */
 @Composable
 private fun CodeHistoryRow(
     entry: CodeHistoryEntry,
     enabled: Boolean,
     onClick: () -> Unit,
+    onExport: () -> Unit,
     onDelete: () -> Unit
 ) {
     val timeFmt = remember { SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()) }
@@ -239,6 +253,18 @@ private fun CodeHistoryRow(
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            // 导出 Markdown（只读通道，恢复进行中也不禁用 —— 互不抢活位）
+            IconButton(
+                onClick = onExport,
+                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            ) {
+                Icon(
+                    Icons.Outlined.FileDownload,
+                    contentDescription = stringResource(R.string.code_history_export),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
                 )
             }
             IconButton(

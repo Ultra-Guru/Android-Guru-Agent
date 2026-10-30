@@ -42,7 +42,9 @@ class TerminalSignalTool(
         teardown semantics). scope=JOB (T82): only the foreground command's process group —
         the shell survives (Ctrl-C semantics: interrupt the current command, session stays
         alive; returns foregroundDelivered=false when no foreground job is running).
-        SIGINT (Ctrl+C), SIGTERM, SIGKILL. USER-initiated SIGINT produces a UserInterrupt event.
+        SIGINT (Ctrl+C), SIGTERM, SIGKILL, SIGTSTP (Ctrl+Z: suspend the foreground job —
+        the job stops but the shell regains the prompt and the session stays interactive;
+        resume later with SIGCONT). USER-initiated SIGINT produces a UserInterrupt event.
     """.trimIndent()
 
     override val parametersSchema: String = """
@@ -74,10 +76,12 @@ class TerminalSignalTool(
 
     override suspend fun invoke(arguments: String): String {
         val json = Json.parseToJsonElement(arguments).jsonObject
-        val sessionId = json["sessionId"]?.jsonPrimitive?.content?.toLongOrNull() ?: throw IllegalArgumentException("sessionId required")
-        val signal = runCatching { UnixSignal.valueOf(json["signal"]?.jsonPrimitive?.content ?: "SIGINT") }.getOrNull() ?: throw IllegalArgumentException("invalid signal")
-        val jobId = json["jobId"]?.jsonPrimitive?.content?.toLongOrNull()
-        val scope = runCatching { SignalScope.valueOf(json["scope"]?.jsonPrimitive?.content ?: "SESSION") }.getOrDefault(SignalScope.SESSION)
+        // 别名宽容（实录 #8）：schema 层已互认，工具层同步读取
+        val sessionId = json.longArg("sessionId", "session_id")
+            ?: throw IllegalArgumentException("sessionId required (accepted: sessionId, session_id)")
+        val signal = runCatching { UnixSignal.valueOf(json.stringArg("signal") ?: "SIGINT") }.getOrNull() ?: throw IllegalArgumentException("invalid signal")
+        val jobId = json.longArg("jobId", "job_id")
+        val scope = runCatching { SignalScope.valueOf(json.stringArg("scope") ?: "SESSION") }.getOrDefault(SignalScope.SESSION)
         val out = execute(Input(sessionId, signal, jobId, scope))
         return buildJsonObject {
             put("sent", JsonPrimitive(out.sent))
@@ -85,6 +89,12 @@ class TerminalSignalTool(
             put("targetJobId", if (out.targetJobId != null) JsonPrimitive(out.targetJobId) else JsonPrimitive("null"))
             put("scope", JsonPrimitive(out.scope))
             out.foregroundDelivered?.let { put("foregroundDelivered", JsonPrimitive(it)) }
+            // 实录 #7：JOB 范围信号在 shell 本体处于前台（heredoc PS2 等待）时
+            // 设计上不投递 —— 模型连续两次 Ctrl+C“无效”后只能 SIGKILL 整会话。
+            // 未送达时附带正确自救路径（TerminalWrite KEY=CTRL_C 走 PTY 线路规程）。
+            if (out.scope == SignalScope.JOB.name && !(out.sent && out.foregroundDelivered == true)) {
+                put("hint", JsonPrimitive(AgentGuidance.SIGNAL_UNDELIVERED_HINT))
+            }
         }.toString()
     }
 

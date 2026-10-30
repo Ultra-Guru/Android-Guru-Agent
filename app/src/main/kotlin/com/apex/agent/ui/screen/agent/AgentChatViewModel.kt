@@ -46,6 +46,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
+import com.apex.agent.ui.chatkit.llmConfiguredFlow
+import com.apex.agent.ui.chatkit.AGENT_SCREEN_MODES
+import com.apex.agent.ui.chatkit.PendingPipelineCommand
+import com.apex.agent.ui.chatkit.ToolRef
+import com.apex.agent.ui.chatkit.AgentRoleSelector
 
 // 工具来源分类 classifyTool() 已抽出到 ToolKindClassifier.kt（God-file 预算拆分）。
 
@@ -294,8 +299,8 @@ class AgentChatViewModel @Inject constructor(
 
     /** 角色数据模型 → 引擎 AgentConfig 人设字段（内置 = 全空 = 历史行为）。 */
     private suspend fun applyRoleToEngine(role: com.apex.agent.ui.screen.settings.AgentRole) {
-        // v1.8.0：绑定知识库的角色，把「must_read → index/search → read」指引写进 Role definition
-        val kbHint = knowledgeBaseService.forRole(role.id)?.let { knowledgeBaseService.roleDefinitionHint(it) } ?: ""
+        // v2 多卷制：全部知识卷（可无限扩充）的检索指引（逐卷带 id）写进 Role definition
+        val kbHint = knowledgeBaseService.roleDefinitionHintFor(knowledgeBaseService.volumesForRole(role.id))
         (agentEngine as? ApexAgentEngine)?.patchConfig { cfg ->
             cfg.copy(
                 agentName = if (role.isBuiltIn) "" else role.name,

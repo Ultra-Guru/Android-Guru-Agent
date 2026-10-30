@@ -37,9 +37,9 @@ import com.apex.agent.slash.SlashCommand
 import com.apex.agent.slash.SlashCommandParser
 import com.apex.agent.slash.SlashCommandRouter
 import com.apex.agent.slash.SlashRouteContext
-import com.apex.agent.ui.screen.agent.CODING_SCREEN_MODES
-import com.apex.agent.ui.screen.agent.PendingPipelineCommand
-import com.apex.agent.ui.screen.agent.llmConfiguredFlow
+import com.apex.agent.ui.chatkit.CODING_SCREEN_MODES
+import com.apex.agent.ui.chatkit.PendingPipelineCommand
+import com.apex.agent.ui.chatkit.llmConfiguredFlow
 import com.apex.agent.ui.screen.code.editor.AtRefParser
 import com.apex.agent.ui.screen.code.editor.EditorFileException
 import com.apex.agent.ui.screen.code.editor.EditorFileLoader
@@ -47,7 +47,7 @@ import com.apex.agent.ui.screen.code.editor.EditorLoadError
 import com.apex.agent.ui.screen.code.session.CodeSessionStore
 import com.apex.agent.ui.screen.code.history.CodeHistoryStore
 import com.apex.agent.ui.screen.code.history.clearConversationWithArchive
-import com.apex.agent.ui.screen.agent.toolkit.ChatToolkitStore
+import com.apex.agent.ui.chatkit.ChatToolkitStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import javax.inject.Named
@@ -499,17 +499,17 @@ class CodeViewModel @Inject constructor(
         settingsRepository.llmConfiguredFlow(viewModelScope)
 
     /** 函数调用二级菜单候选工具（注册表快照，含类别/风险元数据）。 */
-    fun availableTools(): List<com.apex.agent.ui.screen.agent.ToolRef> =
+    fun availableTools(): List<com.apex.agent.ui.chatkit.ToolRef> =
         toolRegistry.getAllTools()
             .map { tool ->
-                com.apex.agent.ui.screen.agent.ToolRef(
+                com.apex.agent.ui.chatkit.ToolRef(
                     id = tool.id,
                     name = tool.name,
                     category = tool.metadata.category,
                     highRisk = tool.metadata.isHighRisk
                 )
             }
-            .sortedWith(compareBy<com.apex.agent.ui.screen.agent.ToolRef> { it.category?.order ?: Int.MAX_VALUE }.thenBy { it.id })
+            .sortedWith(compareBy<com.apex.agent.ui.chatkit.ToolRef> { it.category?.order ?: Int.MAX_VALUE }.thenBy { it.id })
 
     // ═══ 消息发送 ═══
 
@@ -590,12 +590,15 @@ class CodeViewModel @Inject constructor(
             exposeAll = toolkitStore.exposeAllToolsEnabled()
         )
 
-        codeEngineImpl?.prepareForTask()
-
-        // ═══ AUTO 档自治：发送前预检选档（coding 专属，引擎零参与）═══
-        // 解析结果直接下发给引擎（引擎从不接收 AUTO）；决策进系统消息 +
-        // uiState.adaptiveDecision（选择器旁回显）。非 AUTO 档直接用用户显式档。
+        // ═══ AUTO 档自治：发送前预检选档（四线统一，引擎零参与）═══
+        // 先解析、后 prepareForTask：预检结果（具体深度档）先落引擎字段，
+        // refreshContext 再按该档注入编码特化指令——本轮 run 即生效
+        // （旧序为「先 refresh 再预检」，深潜线 AUTO 的编码指令恒滞后一轮）。
+        // 决策进系统消息 + uiState.adaptiveDecision（选择器旁回显）。
+        // 非 AUTO 档直接用用户显式档（引擎档位缓存同步刷新，幂等）。
         resolveRuntimeThinkingLevel(goal)
+
+        codeEngineImpl?.prepareForTask()
 
         // v1.2 长任务追踪：本次运行的开始（旧 run 未收尾会被自动 ABORTED
         // 收尾，见 LongTaskTracker.beginRun 防御）。档位记用户选择（AUTO 记
@@ -785,24 +788,20 @@ class CodeViewModel @Inject constructor(
     }
 
     /**
-     * AUTO 档发送前预检：解析出本轮生效深度档并下发引擎。
+     * AUTO 档发送前预检：解析出本轮生效深度档并下发引擎（**四线统一**）。
      *
      * - 预检信号：任务 goal + 上一轮 lastRun 计数/错误史；
      * - 决策进系统消息（可解释）+ uiState.adaptiveDecision（选择器旁回显）；
      * - 生效档写 [effectiveRunLevel]（深水区升级观察器的比较基准）；
-     * - 非 AUTO 档：直接用用户显式档（effectiveRunLevel 同步）。
+     * - 非 AUTO 档：直接用用户显式档（effectiveRunLevel 同步 + 引擎档位
+     *   幂等刷新——切逻辑线后新线引擎同样拿到当前档，缓存不滞留旧值）。
      *
      * 注意：引擎 patchConfig 只接受解析后的具体档（toAgentLevel 映射 +
      * 旋钮补偿在 CodeAgentEngine.updateThinkingLevel 内完成），
-     * 引擎从不感知 AUTO——coding 自治语义。
+     * 引擎从不感知 AUTO——四条逻辑线同语义；标准/织造/信使线的适配器
+     * 收到解析后的档位各自映射回合预算倍率（KitThinkingLevel 等价枚举）。
      */
     private fun resolveRuntimeThinkingLevel(goal: String) {
-        // v1.5+ 非深潜线无 AUTO 预检机制（标准线档位仅映射回合预算倍率；
-        // 织造线档位映射回合倍率+努力取向）——预检与决策回显只在深潜线进行。
-        if (_uiState.value.logicMode != StandardLogicMode.DEEP_DIVE) {
-            effectiveRunLevel = _uiState.value.thinkingLevel
-            return
-        }
         val selected = _uiState.value.thinkingLevel
         if (selected != CodeThinkingLevel.AUTO) {
             effectiveRunLevel = selected
@@ -822,20 +821,22 @@ class CodeViewModel @Inject constructor(
     }
 
     /**
-     * 运行中深水区升级观察器（AUTO 档专属）：ToolCallComplete 计数 +
-     * 3 次成败滑窗 → [CodeAdaptiveThinkingSelector.escalateOnDeepWater]。
+     * 运行中深水区升级观察器（AUTO 档专属，**四线统一**）：
+     * ToolCallComplete 计数 + 3 次成败滑窗 →
+     * [CodeAdaptiveThinkingSelector.escalateOnDeepWater]。
      *
-     * 升级落地：引擎档位热切换（下轮迭代生效）+ 系统消息说明。
+     * 升级落地：引擎档位热切换（下轮迭代生效）+ 编码指令即时重织
+     * （prepareForTask——升级档的编码特化指令从本轮后续迭代起跟进，
+     * 不再等下一次发送）+ 系统消息说明。
      * 仅 AUTO 档参与（用户显式选档被尊重，不自动加码）；APEXCODE 已是
-     * 顶档（观察器内部短路）。
+     * 顶档（观察器内部短路）；标准/织造/信使线的 updateThinkingLevel
+     * 为纯字段写（下回合读新倍率），热切换同款安全。
      */
     private fun maybeEscalateOnDeepWater(event: AgentEvent) {
         if (event !is AgentEvent.ToolCallComplete) return
         runToolCalls++
         recentToolOutcomes.addLast(event.success)
         while (recentToolOutcomes.size > RECENT_OUTCOME_WINDOW) recentToolOutcomes.removeFirst()
-        // v1.5+ 深水区升级是深潜线专属（标准/织造线回合预算由档位倍率自洽）
-        if (_uiState.value.logicMode != StandardLogicMode.DEEP_DIVE) return
         if (_uiState.value.thinkingLevel != CodeThinkingLevel.AUTO) return
         val decision = adaptiveSelector.escalateOnDeepWater(
             runToolCalls = runToolCalls,
@@ -844,7 +845,12 @@ class CodeViewModel @Inject constructor(
         ) ?: return
         effectiveRunLevel = decision.level
         codeEngineImpl?.updateThinkingLevel(decision.level)
-        appendSystemMessage("⚠️ ${decision.reason}")
+        // 升级档的编码特化指令即时重织（深潜线 refreshContext 按新档取
+        // directive；kit 线 prepareForTask 为空实现/轻刷新，同通道零风险）。
+        codeEngineImpl?.prepareForTask()
+        appendSystemMessage(
+            languageManager.getString(R.string.code_adaptive_escalate_fmt, decision.reason)
+        )
     }
 
     /** 追加一条系统消息（时间轴主通道 + 旧消息通道双写，仅 UI 展示）。 */

@@ -60,10 +60,33 @@ internal fun AgentSection(agent: AgentSettings, onUpdate: (AgentSettings) -> Uni
             description = stringResource(R.string.settings_think_desc)) {
             onUpdate(agent.copy(thinkLevel = it))
         }
-        IntFieldRow(stringResource(R.string.settings_max_iterations), agent.maxIterations,
-            description = stringResource(R.string.settings_max_iterations_desc), min = 1, max = 200) {
-            onUpdate(agent.copy(maxIterations = it))
+        // ═══ 工具循环 v2（引擎真接线）：轮次无上限 + 单轮并行执行上限 ═══
+        HorizontalDivider()
+        Text(stringResource(R.string.settings_tool_loop_section), style = MaterialTheme.typography.labelMedium)
+        val unlimited = agent.maxIterations <= 0
+        SwitchRow(
+            label = stringResource(R.string.settings_tool_iterations_unlimited),
+            checked = unlimited,
+            description = stringResource(R.string.settings_tool_iterations_unlimited_desc)
+        ) { on ->
+            // 0 = 无上限哨兵；关闭时恢复默认 20（可在下方字段改任意值）。
+            onUpdate(agent.copy(maxIterations = if (on) 0 else 20))
         }
+        if (!unlimited) {
+            IntFieldRow(stringResource(R.string.settings_max_iterations), agent.maxIterations,
+                description = stringResource(R.string.settings_max_iterations_desc), min = 1, max = 500) {
+                onUpdate(agent.copy(maxIterations = it))
+            }
+        }
+        SliderRow(
+            label = stringResource(R.string.settings_tool_parallelism),
+            value = agent.toolCallParallelism.toFloat(),
+            range = 1f..8f,
+            steps = 6,
+            description = stringResource(R.string.settings_tool_parallelism_desc),
+            onValueChange = { onUpdate(agent.copy(toolCallParallelism = it.toInt())) },
+            fmt = { it.toInt().toString() }
+        )
         // #236：Keep Alive 真接线（关=立即停服务）。
         SwitchRow(stringResource(R.string.settings_keep_alive_service), agent.keepAlive) { on -> com.apex.agent.service.CoreServiceGate.apply(ctx, on); onUpdate(agent.copy(keepAlive = on)) }
         // v1.4.4 #4 任务完成通知与循环运行通知已聚合至「界面外观 → 通知」叶子
@@ -99,9 +122,8 @@ internal fun AgentSection(agent: AgentSettings, onUpdate: (AgentSettings) -> Uni
             description = stringResource(R.string.settings_reflection_desc)) { onUpdate(agent.copy(reflection = it)) }
         SwitchRow(stringResource(R.string.settings_planning), agent.planning) { onUpdate(agent.copy(planning = it)) }
         SwitchRow(stringResource(R.string.settings_replanning), agent.replanning) { onUpdate(agent.copy(replanning = it)) }
-        SwitchRow(stringResource(R.string.settings_parallel_tool_execution), agent.parallelToolExecution) {
-            onUpdate(agent.copy(parallelToolExecution = it))
-        }
+        // 并行工具执行开关已废弃（引擎从未接线）—— 由上方「工具循环」分组的
+        // 单轮并行执行上限（1..8）取代：1 = 顺序执行（历史行为），>1 = 真并行。
         SwitchRow(stringResource(R.string.settings_background_execution), agent.backgroundExecution) {
             onUpdate(agent.copy(backgroundExecution = it))
         }

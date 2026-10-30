@@ -96,18 +96,31 @@ object AgentModule {
         // 启动快照（本方法 @Singleton 一次性）；运行时切换由 AgentChatViewModel
         // 监听 agentSettings 热更新（patchConfig），两条路径字段一一对应。
         val activeRole = agent.activeRole()
+        // ═══ 限速友好 · 每请求信息密度（引擎旋钮拍平）═══
+        // 开启后单请求携带更多上下文（工具输出预算 ×2 / 保留近轮 +3 / 压缩
+        // 更晚）——同样的任务用更少的请求完成。默认关 = 历史行为零变化。
+        val richPayload = agent.rateLimitFriendly && agent.rateLimitRichPayload
         return AgentConfig(
             mode = mode,
             thinkingLevel = effectiveThinkingLevel,
             maxIterations = agent.maxIterations,
+            // 工具循环 v2：单轮并行执行上限（1 = 顺序，历史行为）。
+            toolCallParallelism = agent.toolCallParallelism,
+            // 单轮调用数上限：默认 Profile 的 maxToolCalls（设置 → 模型配置 →
+            // 工具页同源字段；0 = 不限制）。
+            maxToolCallsPerTurn = profile.maxToolCalls,
             // 上下文压缩（对应 AgentSettings 同名字段，重启应用/新会话后生效）
             // Issue #222：生效窗口取当前默认 Profile 的真实 contextWindow ——
             // 压缩门与水位条分母跟随所选模型，不再钉在全局默认 128k；
             // agent.maxContextTokens 仅作 Profile 窗口字段非法（≤0）时的回退。
             maxContextTokens = profile.effectiveContextWindow(agent.maxContextTokens),
-            compressionThreshold = agent.compressionThreshold,
-            preserveRecentTurns = agent.preserveRecentTurns,
-            maxToolOutputLength = agent.maxToolOutputLength,
+            compressionThreshold = if (richPayload) {
+                (agent.compressionThreshold + 0.05f).coerceAtMost(0.95f)
+            } else {
+                agent.compressionThreshold
+            },
+            preserveRecentTurns = if (richPayload) agent.preserveRecentTurns + 3 else agent.preserveRecentTurns,
+            maxToolOutputLength = if (richPayload) agent.maxToolOutputLength * 2 else agent.maxToolOutputLength,
             streaming = profile.streaming,
             temperature = profile.temperature,
             reflectionRounds = if (agent.reflection) agent.reflectionRounds.coerceIn(0, 5) else 0,

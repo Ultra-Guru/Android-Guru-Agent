@@ -59,10 +59,12 @@ class TerminalWaitTool(
 
     override suspend fun invoke(arguments: String): String {
         val json = Json.parseToJsonElement(arguments).jsonObject
-        val sessionId = json["sessionId"]?.jsonPrimitive?.content?.toLongOrNull() ?: throw IllegalArgumentException("sessionId required")
+        // 别名宽容（实录 #8）：schema 层已互认，工具层同步读取
+        val sessionId = json.longArg("sessionId", "session_id")
+            ?: throw IllegalArgumentException("sessionId required (accepted: sessionId, session_id)")
         val condJson = json["condition"]?.jsonObject ?: throw IllegalArgumentException("condition required")
-        val condType = condJson["type"]?.jsonPrimitive?.content ?: throw IllegalArgumentException("condition.type required")
-        val jobId = condJson["jobId"]?.jsonPrimitive?.content?.toLongOrNull()
+        val condType = condJson.stringArg("type") ?: throw IllegalArgumentException("condition.type required")
+        val jobId = condJson.longArg("jobId", "job_id")
         val condition: WaitCondition = when (condType) {
             "PROCESS_EXITED" -> WaitCondition.ProcessExited(jobId)
             "PROCESS_STARTED" -> WaitCondition.ProcessStarted(jobId)
@@ -70,11 +72,11 @@ class TerminalWaitTool(
             "INPUT_REQUIRED" -> WaitCondition.InputRequired
             "SESSION_CLOSED" -> WaitCondition.SessionClosed
             "ERROR" -> WaitCondition.Error
-            "OUTPUT_MATCH" -> WaitCondition.OutputMatch(condJson["pattern"]?.jsonPrimitive?.content ?: "")
+            "OUTPUT_MATCH" -> WaitCondition.OutputMatch(condJson.stringArg("pattern") ?: "")
             "SCREEN_CHANGED" -> WaitCondition.ScreenChanged
             else -> throw IllegalArgumentException("unknown condition type: $condType")
         }
-        val timeoutMs = json["timeoutMs"]?.jsonPrimitive?.content?.toLongOrNull() ?: 60_000L
+        val timeoutMs = json.longArg("timeoutMs", "timeout_ms") ?: 60_000L
         val out = execute(Input(sessionId, condition, timeoutMs))
         return buildJsonObject {
             put("matched", JsonPrimitive(out.matched))

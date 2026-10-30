@@ -34,6 +34,7 @@ import com.apex.agent.ui.screen.onboarding.OnboardingScreen
 import com.apex.agent.ui.screen.settings.SettingsRepository
 import com.apex.agent.ui.theme.AccentPalette
 import com.apex.agent.ui.theme.ApexTheme
+import com.apex.agent.ui.theme.CustomBackgroundLayer
 import com.apex.agent.ui.theme.LocalShowTimestamps
 import com.apex.agent.ui.theme.UiStyle
 import dagger.hilt.android.AndroidEntryPoint
@@ -185,6 +186,16 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background
                     ) {
+                        // 自定义背景（界面外观 → 自定义背景）：垫在全部内容之下的
+                        // 专属优化图层（降采样解码 / 亮度自适应纱罩 / 一图一缓存）。
+                        // URI 失效时内部诚实降级为不渲染（回退纯色背景）。
+                        if (settings.backgroundImageUri.isNotBlank()) {
+                            CustomBackgroundLayer(
+                                uri = settings.backgroundImageUri,
+                                darkTheme = darkTheme,
+                                dim = settings.backgroundDim
+                            )
+                        }
                         // 新手引导：首次启动（或升级到新引导版本后的首启）先走
                         // 五页 Onboarding；完成标记持久化在 AgentSettings
                         // （onboardingCompleted + onboardingVersion 双字段 ——

@@ -70,7 +70,8 @@ import com.apex.agent.fusion.FusionBundleController
 import com.apex.agent.ui.icons.CrownGold
 import com.apex.agent.ui.icons.FusionCrown
 import com.apex.agent.ui.icons.FusionCrownCanvas
-import com.apex.agent.ui.screen.agent.PendingPipelineCommand
+import com.apex.agent.ui.chatkit.PendingPipelineCommand
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**

@@ -25,6 +25,9 @@ import com.apex.agent.platform.privilege.ShellExecResult
 import com.apex.agent.platform.memory.tools.MemoryRecentEpisodesTool
 import com.apex.agent.platform.memory.tools.MemorySearchNodesTool
 import com.apex.agent.platform.memory.tools.MemoryRecallMacroTool
+import com.apex.agent.platform.memory.tools.MemoryConsolidateExperienceTool
+import com.apex.agent.platform.memory.tools.MemorySaveFactTool
+import com.apex.agent.platform.memory.tools.MemoryGraphTool
 import com.apex.agent.platform.terminal.tools.*
 import com.apex.agent.platform.terminal.tools.legacy.LegacyExecTool
 import com.apex.agent.platform.terminal.tools.legacy.LegacyReadTool
@@ -123,6 +126,7 @@ import com.apex.agent.core.codetools.diagnostics.CodeDiagnostics
 import com.apex.agent.core.codetools.git.GitCommandRunner
 import com.apex.agent.core.codetools.git.GitTools
 import com.apex.agent.core.codetools.html.HtmlAnalyzeLayoutTool
+import com.apex.agent.core.codetools.html.HtmlCompareLayoutsTool
 import com.apex.agent.core.codetools.tools.CodeTodoTool
 import com.apex.agent.core.code.subagent.CodeTaskTool
 import com.apex.agent.core.code.subagent.SubAgentRunner
@@ -443,6 +447,10 @@ object ToolModule {
         knowledgeBaseService: com.apex.agent.knowledge.KnowledgeBaseService,
         memorySearchNodesTool: MemorySearchNodesTool,
         memoryRecallMacroTool: MemoryRecallMacroTool,
+        // 任务后经验整理写入工具（MemoryConsolidateExperience / SaveFact / Graph）
+        memoryConsolidateExperienceTool: MemoryConsolidateExperienceTool,
+        memorySaveFactTool: MemorySaveFactTool,
+        memoryGraphTool: MemoryGraphTool,
         browserAgentTools: BrowserAgentTools,
         browserSessionTools: BrowserSessionTools,
         browserLayoutTools: com.apex.agent.platform.browser.BrowserLayoutTools,
@@ -536,7 +544,14 @@ object ToolModule {
             // 命令。实时读设置（非构造期快照），切回其他模式立即恢复拦截。
             val bypassCommandGate = settingsRepository.agentSettings.value.permissionMode ==
                 PermissionMode.BYPASS
-            if (!bypassCommandGate && !commandPermissionGate.ensureAllowed(cmd)) {
+            // v3：审批上下文 —— ShellExecute 恒走 Android 宿主（Root > Shizuku > 本地
+            // 通道运行时决定），与 TerminalExec 的 Ubuntu 沙箱形成明确视觉区分；
+            // 附带 cd 记忆目录，授权决策能看到命令将落在哪个根。
+            val shellExecContext = buildString {
+                append("Android 宿主 shell（Root > Shizuku > 本地）")
+                shellWorkDir.currentDir()?.let { append(" · 目录 ").append(it) }
+            }
+            if (!bypassCommandGate && !commandPermissionGate.ensureAllowed(cmd, shellExecContext)) {
                 // #F-⑯：工具层审计（拒绝也留痕）；结构化结果见下方 T92 注释。
                 toolAuditLogger.log(ToolAuditLogger.Event(
                     tool = "ShellExecute", decision = "denied_by_user", command = cmd,
@@ -633,24 +648,40 @@ object ToolModule {
         // P0：ExecEngine 接入 ProotCommandSpawner —— rootfs 就绪且非 Android 专有命令时路由进
         // PRoot Ubuntu（python3/gcc/apt/git/npm 不再 not found）；未就绪/Android 命令回落 su >
         // Shizuku > local-sh（与旧版一致）。cwd 映射与 bind 语义见 ProotCommandSpawner KDoc。
+        // v3：spawner 提升为局部 val —— 审批上下文需要 isAndroidOnlyCommand 与实际路由同源，
+        // 避免在 DI 层重写一份路由判定（两处口径漂移是路径错根问题的根源之一）。
+        val prootSpawner = ProotCommandSpawner(
+            hostEnvironment = hostEnvironment,
+            rootfsDir = rootfsBaseDir,
+            isRootfsReady = { File(rootfsBaseDir, "current").exists() },
+            defaultWorkspaceDir = File(context.filesDir, "linux/workspaces/default"),
+            persistentHomeDir = File(context.filesDir, "linux/home"),
+            fallback = PrivilegedCommandSpawner(),
+            // T92：argv 能力门（与终端会话/apt 同款版本自适应）
+            capabilities = capabilitySource::invoke,
+            // v3 S3（G2）：git/gh 命令凭据注入（未连接返回 null = 不注入）
+            gitHubTokenProvider = { githubTokenManager.getToken() }
+        )
         registry.register(SafeAgentTool(TerminalToolAdapter(TerminalExecTool(
-            engine = ExecEngine(ProotCommandSpawner(
-                hostEnvironment = hostEnvironment,
-                rootfsDir = rootfsBaseDir,
-                isRootfsReady = { File(rootfsBaseDir, "current").exists() },
-                defaultWorkspaceDir = File(context.filesDir, "linux/workspaces/default"),
-                persistentHomeDir = File(context.filesDir, "linux/home"),
-                fallback = PrivilegedCommandSpawner(),
-                // T92：argv 能力门（与终端会话/apt 同款版本自适应）
-                capabilities = capabilitySource::invoke,
-                // v3 S3（G2）：git/gh 命令凭据注入（未连接返回 null = 不注入）
-                gitHubTokenProvider = { githubTokenManager.getToken() }
-            )),
-            approvalGate = { cmd ->
+            engine = ExecEngine(prootSpawner),
+            approvalGate = { cmd, cwd ->
                 // 全自动模式（BYPASS）与 ShellExecute 同口径：跳过命令级确认门。
                 val bypassCommandGate = settingsRepository.agentSettings.value.permissionMode ==
                     PermissionMode.BYPASS
-                if (bypassCommandGate || commandPermissionGate.ensureAllowed(cmd)) {
+                // v3：审批上下文 —— 与实际路由同源判定（rootfs 就绪 + 非 Android 专有
+                // → Ubuntu 沙箱；否则宿主 shell），并携带实际执行目录。
+                // 口径与 ProotCommandSpawner.resolveUbuntuRoute 一致（current 标记存在
+                // + 非 Android 专有命令），避免 DI 层第二套路由判定漂移。
+                val ubuntuRoute = File(rootfsBaseDir, "current").exists() &&
+                    !prootSpawner.isAndroidOnlyCommand(cmd)
+                val execContext = buildString {
+                    append(
+                        if (ubuntuRoute) "Ubuntu 沙箱（proot-ubuntu）"
+                        else "Android 宿主 shell（Root > Shizuku > 本地）"
+                    )
+                    cwd?.let { append(" · 目录 ").append(it) }
+                }
+                if (bypassCommandGate || commandPermissionGate.ensureAllowed(cmd, execContext)) {
                     toolAuditLogger.log(ToolAuditLogger.Event(
                         tool = "TerminalExec",
                         decision = "approved",
@@ -710,6 +741,7 @@ object ToolModule {
         // 与 BrowserAnalyzeLayout（动态 · 真实渲染几何）互补：写完 HTML 产物后
         // 无需浏览器内核即可验证页面骨架/响应式/可访问性问题，毫秒级、可离线。
         registry.register(SafeAgentTool(HtmlAnalyzeLayoutTool(codeWorkspaceRoots)))
+        registry.register(SafeAgentTool(HtmlCompareLayoutsTool(codeWorkspaceRoots)))
 
         // ═══ 2c. Git 工具（v1.0 #153，两模式互用）═══
         // CodeGitStatus/diff/log/commit/branch —— git 二进制经 PRoot Ubuntu
@@ -734,10 +766,15 @@ object ToolModule {
         // 记忆域现由 apex-kit-memory（com.apex.memkit:memory-core）统一承载：
         //   - MemKit 门面：会话采集（ExecutionMemoryObserver 隐式）/ 旁路回放
         //   - 统一存储：原子 JSON 文档（episodes/nodes/macros/chat/graph）
-        // 注册只读召回工具，让 LLM 能读取长期记忆（工具 id 与参数零变化）。
+        // 只读召回工具（id 与参数零变化，模型侧无感迁移）：
         registry.register(SafeAgentTool(memoryRecentEpisodesTool))
         registry.register(SafeAgentTool(memorySearchNodesTool))
         registry.register(SafeAgentTool(memoryRecallMacroTool))
+        // 写入工具（「任务后整理经验」）：经验整包沉淀 / 长期事实 / 知识图谱
+        // 四动作 —— 引擎提示词 Memory: Learn & Remember 段指引任务终局调用。
+        registry.register(SafeAgentTool(memoryConsolidateExperienceTool))
+        registry.register(SafeAgentTool(memorySaveFactTool))
+        registry.register(SafeAgentTool(memoryGraphTool))
 
         // ═══ 4a. 知识库（v1.8.0 · 角色专属知识库检索）═══
         // 每个 Agent 角色模板一套专属知识库（assets/knowledge/*.md）；

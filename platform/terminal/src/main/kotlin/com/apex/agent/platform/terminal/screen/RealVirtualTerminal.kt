@@ -140,7 +140,10 @@ class RealVirtualTerminal(
             cursorVisible = s.cursorVisible,
             title = s.title,
             renderedText = s.renderedText,
-            changedRows = changed
+            changedRows = changed,
+            // v3：OSC 7 遥测透传（JVM 引擎填充；native 侧未解析时为 null，
+            // 见 TerminalScreenState.guestCwd 的覆盖声明）。
+            guestCwd = s.guestCwd
         )
         pendingChangedRows = null
         pendingIsFull = false

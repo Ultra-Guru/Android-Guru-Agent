@@ -81,7 +81,13 @@ enum class TerminalKey {
  */
 enum class UnixSignal(val number: Int) {
     SIGINT(2), SIGTERM(15), SIGKILL(9), SIGHUP(1), SIGQUIT(3),
-    SIGSTOP(19), SIGCONT(18)  // PR #51 §2: process stop/continue
+    SIGSTOP(19), SIGCONT(18),  // PR #51 §2: process stop/continue
+
+    // v3（信号语义统一）：SIGTSTP(20) = Ctrl+Z 的真实信号 —— 可被捕获/延迟/
+    // 受作业控制拦截，shell 因此收回终端回提示符（挂起 ≠ 停止）。与 SIGSTOP(19)
+    // 的关键差异：SIGSTOP 不可捕获不可忽略，作业被硬冻结且 shell 不会回前台，
+    // 语义完全不同 —— SUSPEND 控制此前错发 SIGSTOP，Ctrl+Z 后会话假死。
+    SIGTSTP(20)
 }
 
 /** Kind of input written (carried in InputWritten event). */

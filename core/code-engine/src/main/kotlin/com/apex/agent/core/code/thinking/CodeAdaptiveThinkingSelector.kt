@@ -23,8 +23,12 @@ import com.apex.agent.core.engine.thinking.ThinkingSignalAnalyzer
  *
  * 自治语义：引擎从不接收 AUTO——VM 在发送前用 [select] 把 AUTO 解析成
  * 具体深度档（决策进系统消息 + UI 回显），运行中用
- * [escalateOnDeepWater] 观察器在深水区连环失败时升级。行为独立于
- * Agent 模式的 AUTO（两页面各自解释自己的"自动"）。
+ * [escalateOnDeepWater] 观察器在深水区连环失败时升级。**四线统一**：
+ * 深潜 / 标准 / 织造 / 信使四条逻辑线共用本选档器（VM 侧 resolveRuntime
+ * ThinkingLevel 单点驱动），预检与升级语义不再因切线而漂移；深潜线额外
+ * 消费档位的编码特化指令与旋钮补偿（CodeThinkingPrompts / Profile），
+ * kit 三线按档位映射各自的回合预算倍率。行为独立于 Agent 模式的 AUTO
+ * （两页面各自解释自己的"自动"）。
  *
  * ## 预检评分模型（每项加权分，全部因子写进 [CodeAdaptiveDecision.reason]）
  *

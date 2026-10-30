@@ -366,6 +366,14 @@ class TerminalCore(
                     5, 6 -> CursorStyle.BAR
                     else -> CursorStyle.BLOCK  // 0/1/2 及其他
                 }
+            } else if (seq.privateMarker == '>') {
+                // v3：XTVERSION —— `CSI > Ps q` 终端标识查询。无应答时等待方
+                // （tmux 的 detect-terminal、nvim 的 vim.tgid 探测等）只能靠
+                // 超时放弃。应答格式 xterm 规范：`DCS > | 文本 ST`。
+                // 标识与 DA2 的人设一致（xterm 系），写 patch 号 377 ——
+                // 消费方（嵌套检测/能力绕障）按子串匹配，xterm(377) 中性且
+                // 不触发 tmux/screen/kitty 的特殊分支。
+                respond("\u001BP>|xterm(377)\u001B\\")
             }
             // T85：DA1/DA2 应答 —— 程序能力探测（无应答则 vim/resize 等行为异常）。
             // 应答与 Termux 一致：DA1=`ESC[?6c`（VT102），DA2=`ESC[>0;276;0c`。

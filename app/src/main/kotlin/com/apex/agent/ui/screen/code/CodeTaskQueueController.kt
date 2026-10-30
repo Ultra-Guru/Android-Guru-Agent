@@ -2,7 +2,7 @@ package com.apex.agent.ui.screen.code
 
 import com.apex.agent.R
 import com.apex.agent.core.code.longtask.LongTaskStatus
-import com.apex.agent.ui.screen.agent.PendingPipelineCommand
+import com.apex.agent.ui.chatkit.PendingPipelineCommand
 import kotlinx.coroutines.flow.update
 
 /**

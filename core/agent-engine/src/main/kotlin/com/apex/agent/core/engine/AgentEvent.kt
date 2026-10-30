@@ -121,7 +121,19 @@ sealed interface AgentEvent {
         val message: String?
     ) : AgentEvent
 
-    /** 工具调用完成 */
+    /**
+     * 工具调用完成
+     *
+     * v3 契约补强（Agent-Shell UI 修复）：新增结构化执行元数据字段（全部
+     * 带默认值 —— 既有发射点与测试零改动，缺省 = 「无此信息」）：
+     * - [exitCode]：真实进程退出码（TerminalExec 的 waitpid 结果）。非 null 时
+     *   UI 据此渲染 `exit N` 徽标；[success] 已按它判定（127/126/-1 不再显绿）；
+     * - [sessionId] / [channel] / [cwd]：会话标注 —— 这次调用落在哪个终端会话、
+     *   哪条执行通道（proot-ubuntu / root-su / shizuku / local-sh）、哪个目录；
+     * - [errorKind]：结构化错误类别（spawn_failed / permission_denied / ...），
+     *   比 output 文本更稳定，UI 徽标与错误分类消费；
+     * - [waitingInput]：命令在前台等待用户输入（INPUT_REQUIRED）—— 挂起可见。
+     */
     data class ToolCallComplete(
         val callId: String,
         val toolName: String,
@@ -129,7 +141,19 @@ sealed interface AgentEvent {
         val output: String,
         val fullOutput: String = "",
         val success: Boolean,
-        val durationMs: Long
+        val durationMs: Long,
+        /** 真实进程退出码；null = 非进程类工具 / 未知。 */
+        val exitCode: Int? = null,
+        /** 关联终端会话标注（TerminalRun/TerminalCreate）。 */
+        val sessionId: String? = null,
+        /** 执行通道（proot-ubuntu / root-su / shizuku / local-sh）。 */
+        val channel: String? = null,
+        /** 实际执行目录（guest 语义）。 */
+        val cwd: String? = null,
+        /** 结构化错误类别（spawn_failed / permission_denied / ...）。 */
+        val errorKind: String? = null,
+        /** 命令在前台等待用户输入（INPUT_REQUIRED）。 */
+        val waitingInput: Boolean = false
     ) : AgentEvent
     
     // ═══ 回复阶段 ═══

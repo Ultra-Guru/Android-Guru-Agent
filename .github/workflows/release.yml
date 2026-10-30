@@ -1103,6 +1103,24 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      # 空资产防护（v1.4.9.77 断链根因）：kit-only 同步列车（sync-browser-kit
+      # bump 后无任何 .changelog 片段）的 consumed-fragments.txt 合法地为空，
+      # 而 GitHub Release API 拒绝 0 字节资产（「size must be >= 1」）——
+      # 整个 Publish 步骤失败，APK 发布断链。artifacts 归档已保留空文件原件
+      #（备份不受影响），此处只在发布上传前摘掉空的**可选**元数据文件。
+      # version.json / patches.json / changelog.json / *.apk / SHA256SUMS.apk
+      # 不在摘除名单：它们为空才是真故障，必须继续失败。
+      - name: "Guard: drop empty optional metadata from dist (0-byte assets rejected by GitHub)"
+        if: needs.resolve.outputs.publishing == 'true'
+        run: |
+          set -euo pipefail
+          for f in dist/consumed-fragments.txt dist/archived-fragments.txt; do
+            if [[ -f "$f" && ! -s "$f" ]]; then
+              rm "$f"
+              echo "🗑️ 摘除空元数据文件：$f（kit-only 同步列车合法形态，不影响发布）"
+            fi
+          done
+
       - name: Publish Release to release repository
         if: needs.resolve.outputs.publishing == 'true'
         uses: softprops/action-gh-release@v2

@@ -7,6 +7,7 @@ import com.apex.agent.core.engine.ThinkingLevel
 import com.apex.agent.core.engine.modes.ModePreset
 import com.apex.agent.ui.screen.settings.withPresetUpserted
 import kotlinx.coroutines.flow.update
+import com.apex.agent.ui.chatkit.ChatToolkitStore
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 模式 / 思考档位控制（AgentChatViewModel 的 internal 扩展，God-file 预算拆分）

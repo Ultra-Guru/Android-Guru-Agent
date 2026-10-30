@@ -230,6 +230,32 @@
     <string name="settings_think_maximum">Maximum · deepest thinking</string>
     <string name="settings_think_desc">Reasoning depth before decisions (affects the system prompt; takes effect after restart)</string>
     <string name="settings_max_iterations_desc">Max iterations per task, prevents infinite loops</string>
+
+    <!-- ═══ 工具循环 v2 / 限速友好 / 自定义背景（三件套）═══ -->
+    <string name="settings_tool_loop_section">Tool loop</string>
+    <string name="settings_tool_iterations_unlimited">Unlimited task iterations</string>
+    <string name="settings_tool_iterations_unlimited_desc">A task may call tools without any round cap (default on). Runaway loops are still caught by loop detection; you can also stop anytime</string>
+    <string name="settings_tool_parallelism">Parallel tool executions per turn</string>
+    <string name="settings_tool_parallelism_desc">How many tools of one model turn may run simultaneously (1 = sequential, historical behavior). Higher = fewer LLM round-trips; terminal outputs may interleave</string>
+    <string name="settings_nav_model_rate_limit">Rate-Limit Friendly</string>
+    <string name="settings_rate_limit_section">Rate-limit friendly mode</string>
+    <string name="settings_rate_limit_enabled">Enable rate-limit friendly mode</string>
+    <string name="settings_rate_limit_enabled_desc">Only for users on vendors with RPM/TPM or daily request quotas (free tiers, pay-per-request gateways). Throttles all LLM requests and packs more context per request. Off = zero behavior change</string>
+    <string name="settings_rate_limit_interval">Minimum interval between requests</string>
+    <string name="settings_rate_limit_interval_desc">Every LLM request (ReAct turns, compression summaries, sub-agents, verification) waits its turn — adjacent request starts are never closer than this</string>
+    <string name="settings_rate_limit_rich">Pack more info per request</string>
+    <string name="settings_rate_limit_rich_desc">Tool output budget ×2, keep more recent turns, compress later — the same task needs fewer requests. Takes effect after app restart</string>
+    <string name="settings_rate_limit_apply_title">Recommended combo</string>
+    <string name="settings_rate_limit_apply_desc">Applies in one tap: rate-limit mode on (≥4s interval), rich payloads, 4-way parallel tool execution, unlimited task iterations</string>
+    <string name="settings_rate_limit_apply">Apply recommended combo</string>
+    <string name="settings_background_section">Custom background</string>
+    <string name="settings_background_desc">Use your own image as the app-wide background. Dedicated optimizations: downsampled decoding (huge photos never blow memory), luminance-adaptive scrim (text stays readable on any photo), decode-once caching</string>
+    <string name="settings_background_active">Background active — image is kept, only the scrim changes with light/dark mode</string>
+    <string name="settings_background_pick">Choose image</string>
+    <string name="settings_background_replace">Replace image</string>
+    <string name="settings_background_clear">Remove</string>
+    <string name="settings_background_dim">Scrim strength</string>
+    <string name="settings_background_dim_desc">Manual scrim on top of the adaptive base — raise it if text feels hard to read</string>
     <string name="settings_reflection_rounds_desc">One review → fix pass per round in Reflect mode</string>
     <string name="settings_advanced_behavior">Advanced Agent Behavior (data plumbed)</string>
     <string name="settings_reflection_desc">Enable self-review and correction after generation</string>
@@ -502,7 +528,58 @@
     <string name="memory_chat_meta_fmt">Importance %1$d%% · %2$s · recalled %3$d times</string>
     <string name="memory_chat_source_heuristic">Heuristic</string>
     <string name="memory_chat_source_distill">Distilled</string>
+    <string name="memory_chat_source_manual">Manual</string>
     <string name="memory_chat_source_migrated">Migrated</string>
+
+    <!-- ═══ Memory page v2: six-way stats / knowledge graph section / write entries / unified search ═══ -->
+    <string name="memory_stats_episodes">Episodes</string>
+    <string name="memory_stats_facts">Facts</string>
+    <string name="memory_stats_entities">Entities</string>
+    <string name="memory_stats_relations">Relations</string>
+    <string name="memory_write_add">Add memory</string>
+    <string name="memory_write_save_fact">Save a fact</string>
+    <string name="memory_write_teach">Teach an experience</string>
+    <string name="memory_write_save_fact_title">Save a fact</string>
+    <string name="memory_write_content_label">Content</string>
+    <string name="memory_write_content_hint">One self-contained sentence the Agent should remember</string>
+    <string name="memory_write_kind_label">Category</string>
+    <string name="memory_write_importance_fmt">Importance: %1$d%%</string>
+    <string name="memory_write_save">Save</string>
+    <string name="memory_write_msg_too_long">Exceeds %1$d characters — keep it one memorable line</string>
+    <string name="memory_write_msg_failed">Save failed: %1$s</string>
+    <string name="memory_save_fact_msg_added">Fact saved to long-term memory</string>
+    <string name="memory_save_fact_msg_reinforced">Already remembered — importance reinforced</string>
+    <string name="memory_teach_title">Teach an experience</string>
+    <string name="memory_teach_goal_label">Task goal</string>
+    <string name="memory_teach_outcome_label">What actually happened</string>
+    <string name="memory_teach_success">Task succeeded</string>
+    <string name="memory_teach_failed">Task failed</string>
+    <string name="memory_teach_lessons_label">Lessons (one per line)</string>
+    <string name="memory_teach_lessons_hint">Reusable know-how: UI quirks, workarounds, preferences…</string>
+    <string name="memory_teach_msg_done">Experience consolidated: %1$d writes into long-term memory</string>
+    <string name="memory_msg_load_failed">Failed to load memories: %1$s</string>
+    <string name="memory_msg_delete_failed">Delete failed: %1$s</string>
+    <string name="memory_episode_msg_deleted">Deleted episode %1$s</string>
+    <string name="memory_episode_msg_missing">Delete failed: episode %1$s not found</string>
+    <string name="memory_dream_msg_failed">Consolidation failed: %1$s</string>
+    <string name="memory_dream_msg_errors">Consolidation finished with %1$d errors: %2$s</string>
+    <string name="memory_dream_msg_done">Consolidation finished: %1$s</string>
+    <string name="memory_quarantine_msg_cleared">Quarantine cleared</string>
+    <string name="memory_quarantine_msg_failed">Failed to clear quarantine: %1$s</string>
+    <string name="memory_knowledge_title">Knowledge graph</string>
+    <string name="memory_knowledge_count_fmt">%1$d entities · %2$d relations</string>
+    <string name="memory_knowledge_empty">No knowledge entities yet\nPeople, apps and methods the Agent confirms in tasks are deposited here and connected in the graph view</string>
+    <string name="memory_knowledge_relations">Relations</string>
+    <string name="memory_knowledge_no_relations">No relations yet</string>
+    <string name="memory_knowledge_open_graph">Open in graph</string>
+    <string name="memory_knowledge_more_fmt">%1$d more…</string>
+    <string name="memory_search_no_match_all">No memories match \"%1$s\"</string>
+    <string name="memory_search_group_facts">Matching facts</string>
+    <string name="memory_search_group_entities">Matching entities</string>
+    <string name="memory_search_group_nodes">Matching scene nodes</string>
+    <string name="memory_search_type_fact">Fact</string>
+    <string name="memory_search_type_entity">Entity</string>
+    <string name="memory_search_type_node">Node</string>
 
     <!-- ═══ Task history (TaskHistoryScreen) ═══ -->
     <string name="tasks_title">Tasks</string>

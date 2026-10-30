@@ -201,7 +201,8 @@ internal fun UserBubble(
     var showEditDialog by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End
+        // Column 水平定位用 horizontalAlignment（horizontalArrangement 是 Row 的参数）
+        horizontalAlignment = Alignment.End
     ) {
         Surface(
             // 用户/回复气泡区分：实色 primary + onPrimary（饱和 vs 淡染，
@@ -324,7 +325,7 @@ internal fun AgentBubble(
             // 主动播报（流式增量不设 liveRegion，避免每 token 一次的爆音轰炸；
             // 完成态整条播报一次即足够的上下文）。
             .semantics { liveRegion = LiveRegionMode.Polite },
-        horizontalArrangement = Arrangement.Start
+        horizontalAlignment = Alignment.Start
     ) {
         Surface(
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -467,7 +468,10 @@ internal fun StreamingResponseBubble(
         animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
         label = "cursor-alpha"
     )
-    Column(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.Start
+    ) {
         // M3 实色容器（2026-10 流式去玻璃）：与完成态 AgentBubble 同色同形 ——
         // 流式与完成瞬间切换零跳变，且不再有玻璃层的 GPU 材质成本。
         Surface(
