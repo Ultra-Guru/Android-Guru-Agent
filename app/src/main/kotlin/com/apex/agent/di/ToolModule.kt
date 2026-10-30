@@ -415,7 +415,7 @@ object ToolModule {
         .usageTracker(toolUsageTracker)
         .policyResolver(
             DefaultToolRunPolicyResolver(
-                TERMINAL_TOOL_RUN_POLICIES + MARKET_TOOL_RUN_POLICIES,
+                TERMINAL_TOOL_RUN_POLICIES + MARKET_TOOL_RUN_POLICIES + JIGUAN_TOOL_RUN_POLICIES,
                 OPEN_WORLD_PREFIX_TOOL_RUN_POLICIES
             )
         )
@@ -451,6 +451,10 @@ object ToolModule {
         memoryConsolidateExperienceTool: MemoryConsolidateExperienceTool,
         memorySaveFactTool: MemorySaveFactTool,
         memoryGraphTool: MemoryGraphTool,
+        // 机关（Jiguan V3.0）：五域操控工具族的运行时与编排器（注册体在
+        // ToolModuleJiguanRegistration.kt —— SRP 预算拆分先例）。
+        jiguanRuntime: com.apex.agent.core.jiguan.JiguanRuntime,
+        jiguanOrchestrator: com.apex.agent.core.jiguan.JiguanOrchestrator,
         browserAgentTools: BrowserAgentTools,
         browserSessionTools: BrowserSessionTools,
         browserLayoutTools: com.apex.agent.platform.browser.BrowserLayoutTools,
@@ -886,6 +890,9 @@ object ToolModule {
 
         // ═══ 11. GitHub (9，无条件注册) —— 注册体拆至 ToolModuleRegistrySections.kt（同上 SRP 预算）═══
         registerGithubTools(registry, githubApiService)
+
+        // ═══ 12. 机关（Jiguan）全能操控域 17 工具 —— 注册体拆至 ToolModuleJiguanRegistration.kt ═══
+        registerJiguanTools(registry, jiguanRuntime, jiguanOrchestrator)
 
         // ═══ 11b. 消息连接器（微信/飞书/Telegram，2 个工具）═══
         // ConnectorList：列出启用的连接器与凭据状态；ConnectorSendMessage：
