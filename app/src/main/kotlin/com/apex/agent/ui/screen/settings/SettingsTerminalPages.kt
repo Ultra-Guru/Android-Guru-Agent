@@ -10,7 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.Settings as OutlinedSettings
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -137,7 +137,7 @@ internal fun TerminalServicePage(agent: AgentSettings, onAgent: (AgentSettings) 
     SettingsLeafColumn {
         SectionCard(
             title = stringResource(R.string.settings_terminal_service_section),
-            icon = OutlinedSettings
+            icon = Icons.Outlined.Settings
         ) {
             SwitchRow(
                 stringResource(R.string.settings_keep_alive_service), agent.keepAlive,
