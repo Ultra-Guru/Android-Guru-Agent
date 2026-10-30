@@ -320,6 +320,8 @@
 
     <!-- AUTO pre-check notice -->
     <string name="code_adaptive_precheck_fmt">Adaptive pre-check: %1$s</string>
+    <!-- AUTO deep-water escalation notice (mid-run tier bump) -->
+    <string name="code_adaptive_escalate_fmt">⚠️ Deep-water auto-escalation: %1$s</string>
 
     <!-- Chat-bubble system notices (emitted by CodeEventReducer) -->
     <string name="code_plan_confirmed_fmt">Plan confirmed — executing (%1$d steps)</string>

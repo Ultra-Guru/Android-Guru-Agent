@@ -3,7 +3,8 @@
 <resources>
     <!-- Subagent section (Settings → Agent page) -->
     <string name="settings_v3_subagent_title">Subagents</string>
-    <string name="settings_v3_subagent_subtitle">Parallel delegate workers with tunable budgets</string>
+    <string name="settings_v3_subagent_subtitle">Coding-mode delegate workers with tunable budgets</string>
+    <string name="settings_v3_subagent_scope_hint">Coding mode only: the Agent chat workspace never exposes coding tools (CodeTask stays isolated), so these switches and budgets take effect only on the Coding screen.</string>
     <string name="settings_v3_subagent_enabled">Enable subagents</string>
     <string name="settings_v3_subagent_enabled_desc">When off, the main agent explores on its own instead of delegating</string>
     <string name="settings_v3_subagent_concurrency">Max concurrent</string>

@@ -40,10 +40,16 @@ package com.apex.agent.core.code.standard
  * | 循环宿主 | ApexAgentEngine BUILD/PLAN | standard-loop 库回合循环 | loom-weave 库梭回合机 | courier-dispatch 库趟次步进机 |
  * | 工具协议 | 原生函数调用 | 原生函数调用 | in-band XML（原生调用桥接翻译） | 原生函数调用（终趟关调用留定义） |
  * | 思考深度 | 七档 + AUTO 自适应 | 画像预算（档位 → 回合倍率） | 档位 → 回合倍率 + 努力取向 + 家族偏好 | 档位 → 画像基线 + 趟次预算 |
+ * | AUTO 档 | 预检解析 + 深水区升级（编码指令 + 旋钮补偿） | 同款预检/升级（VM 统一驱动，档位映射回合倍率） | 同款预检/升级（档位映射倍率 + 努力取向） | 同款预检/升级（档位映射画像基线 + 趟次预算） |
  * | 权限门 | 主执行器组合门 | 库内权限门 + 仅环境门执行器 | 织造权限门 + 仅环境门执行器 | 勘合门（通配则例 + always 记忆）+ 仅环境门执行器 |
  * | 子代理 | CodeTask → SubAgentRunner | task → 库内派发器 | loom_thread_* 子线程群 | courier_task 子驿会话（下站前哨） |
  * | 会话记忆 | code_memory | code_memory_standard | code_memory_loom | code_memory_courier |
  * | 事件协议 | AgentEvent | AgentEvent（同一协议） | AgentEvent（同一协议） | AgentEvent（同一协议） |
+ *
+ * AUTO 元档的「发送前预检 + 深水区升级」由 VM 侧四线统一驱动
+ * （CodeViewModel.resolveRuntimeThinkingLevel / maybeEscalateOnDeepWater，
+ * 选档器为 CodeAdaptiveThinkingSelector）——切线不改变 AUTO 语义，四线
+ * 仅在档位落点上各取所需（编码指令 / 回合倍率 / 努力取向 / 趟次预算）。
  *
  * ## 持久化
  *
