@@ -108,6 +108,21 @@
     <string name="code_thinking_guide_footer_linkage">A tier drives more than the prompt: iteration cap, compression threshold and tool-output budget all scale with it (see the ladder above).</string>
     <string name="code_thinking_guide_footer_apex">APEXCODE is manual-only: the adaptive selector never picks it, and its token cost sits at the top of the whole ladder.</string>
 
+    <!-- ═══ v1.4.11 session context viewer (CodeContextSheet; deep-dive full / kit lines degraded) ═══ -->
+    <string name="code_context_open">View context</string>
+    <string name="code_context_title">Session context</string>
+    <string name="code_context_stats_fmt">Context %1$d / %2$d tokens · %3$d messages</string>
+    <string name="code_context_copy_all">Copy all</string>
+    <string name="code_context_copied">Copied</string>
+    <string name="code_context_no_engine">Engine not ready</string>
+    <string name="code_context_empty">The engine of this logic line does not expose conversation content — usage stats only. Switch to Deep Dive to view the full content</string>
+    <string name="code_context_role_system">System</string>
+    <string name="code_context_role_user">You</string>
+    <string name="code_context_role_assistant">Assistant</string>
+    <string name="code_context_role_tool">Tool</string>
+    <string name="code_context_rules">Global rules</string>
+    <string name="code_context_extras">Session extras</string>
+
     <!-- ═══ v1.4.10 Coding 历史对话（新会话自动归档，可恢复）═══ -->
     <string name="code_history_open">Chat history</string>
     <string name="code_history_title">Conversation History</string>

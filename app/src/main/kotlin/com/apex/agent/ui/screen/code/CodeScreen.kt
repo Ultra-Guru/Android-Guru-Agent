@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -166,6 +167,8 @@ fun CodeScreen(
     // 注：Git 面板状态已随本 PR「Git 入口去重」退役（工作区浏览器内置
     // Git 页签即全部 Git 能力），main 侧新增的历史面板状态保留。
     var showCodeHistory by rememberSaveable { mutableStateOf(false) }
+    // 会话上下文查看（底部弹层；点开时拉取一次快照）
+    var showContextSheet by rememberSaveable { mutableStateOf(false) }
     // 胶囊详情弹层选中项（存 id 不存对象：StreamToolCall 是不可变快照，
     // 每 25ms 批次按 index 替换新实例——存对象会冻结在点击瞬间，
     // 状态/耗时/Diff 永不更新；存 id 每次重组从活快照重查）。
@@ -199,6 +202,7 @@ fun CodeScreen(
             onClearChat = viewModel::clearConversation,
             onOpenLongTasks = viewModel::openLongTaskCenter,
             onOpenHistory = { showCodeHistory = true },
+            onOpenContext = { showContextSheet = true },
             // v1.5 右上角思考逻辑切换（深潜 = 自研 / 标准 = 标准任务循环）
             logicMode = state.logicMode,
             onSwitchLogic = viewModel::setLogicMode,
@@ -563,6 +567,11 @@ fun CodeScreen(
     if (showCodeHistory) {
         CodeHistorySheet(viewModel = viewModel, onDismiss = { showCodeHistory = false })
     }
+    if (showContextSheet) {
+        // 打开时拉取一次快照（不进状态流 —— 查看是即时动作，会话推进后重开即刷新）
+        val contextSnapshot = remember(showContextSheet) { viewModel.contextSnapshot() }
+        CodeContextSheet(snapshot = contextSnapshot, onDismiss = { showContextSheet = false })
+    }
 }
 
 // ═══ 工作区条 ═══
@@ -572,6 +581,8 @@ private fun WorkspaceBar(
     onClearChat: () -> Unit,
     onOpenLongTasks: () -> Unit,
     onOpenHistory: () -> Unit = {},
+    // 会话上下文查看（当前激活逻辑线的消息序列 + 注入段 + token 统计）
+    onOpenContext: () -> Unit = {},
     logicMode: StandardLogicMode = StandardLogicMode.DEEP_DIVE,
     onSwitchLogic: (StandardLogicMode) -> Boolean = { false },
     onOpenWorkspaceBrowser: () -> Unit = {},
@@ -615,6 +626,17 @@ private fun WorkspaceBar(
                 Icon(
                     Icons.Outlined.FolderOpen,
                     contentDescription = stringResource(R.string.code_workspace_browser_cd),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            // 会话上下文查看（当前激活线的消息序列 + 注入段 + token 统计；
+            // UI-012：48dp 触区红线）
+            IconButton(onClick = onOpenContext, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                Icon(
+                    Icons.Outlined.Visibility,
+                    contentDescription = stringResource(R.string.code_context_open),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)
                 )
