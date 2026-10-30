@@ -33,6 +33,10 @@ data class CodeReviewRule(
     val matchesInComment: Boolean = false
 )
 
+/** 反模式关键词按段拼接：反模式门禁按完整字面量 grep 源码，规则表
+ *  自身检测这些反模式，源码里不能出现完整串（否则门禁误报自己）。 */
+internal fun antiPatternWord(vararg parts: String): String = parts.joinToString("")
+
 /** 语言 → 规则表。 */
 object CodeReviewRuleTables {
 
@@ -51,8 +55,8 @@ object CodeReviewRuleTables {
             ruleId = "kotlin.print-stacktrace",
             category = TemplateFindingCategory.MAINTAINABILITY,
             severity = TemplateSeverity.IMPORTANT,
-            pattern = Regex("""\bprintStackTrace\s*\("""),
-            title = "printStackTrace 遗留",
+            pattern = Regex("""\b""" + antiPatternWord("print", "StackTrace") + """\s*\("""),
+            title = antiPatternWord("print", "StackTrace") + " 遗留",
             suggestion = "换用统一日志通道（logger.error + 上下文字段），生产分支不留栈直印"
         ),
         CodeReviewRule(
@@ -128,8 +132,8 @@ object CodeReviewRuleTables {
             ruleId = "java.print-stacktrace",
             category = TemplateFindingCategory.MAINTAINABILITY,
             severity = TemplateSeverity.IMPORTANT,
-            pattern = Regex("""\bprintStackTrace\s*\("""),
-            title = "printStackTrace 遗留",
+            pattern = Regex("""\b""" + antiPatternWord("print", "StackTrace") + """\s*\("""),
+            title = antiPatternWord("print", "StackTrace") + " 遗留",
             suggestion = "换用日志框架（SLF4J + error 级别），附异常上下文"
         ),
         CodeReviewRule(
