@@ -39,12 +39,13 @@ internal object EnginePrompts {
      * Policy 段把"行动优先"写成硬性约束。
      *
      * **#197 双工位绝对分离（工位分轨）**：[AgentMode.workstation] 决定
-     * 工位轨道 —— 身份行（AGENT 自称全能智能体 / CODING 自称编码智能体）、
-     * 聊天 UX 段（Conversational Openness / First-Turn Greeting / 情绪调频 /
-     * 模糊求助澄清，仅 AGENT 工位）、任务路由（[appendTaskRouting] 从
-     * [visibleTools] 同源派生，被工位隔离过滤掉的工具绝不被推荐）。
-     * 共享的只剩两工位都需要的执行纪律（Tool-Use Policy / 权限阶梯 /
-     * 扩展攻略 / 工具清单等）。
+     * 工位轨道 —— 身份行（AGENT 自称全能智能体 / CODING 自称编码智能体）
+     * 与任务路由（[appendTaskRouting] 从 [visibleTools] 同源派生，被工位
+     * 隔离过滤掉的工具绝不被推荐）。共享的只剩两工位都需要的执行纪律
+     * （Tool-Use Policy / 权限阶梯 / 扩展攻略 / 工具清单等）。
+     * Agent 模式移除（PR 3/6）：聊天 UX 四段（Conversational Openness /
+     * First-Turn Greeting / 情绪调频 / 模糊求助澄清）已删 —— 本软件
+     * 引擎实例恒为 CODING 工位。
      *
      * @param privilegeLevel current privilege ("ROOT" / "SHIZUKU" / anything
      *   else → normal shell guidance)
@@ -99,14 +100,6 @@ internal object EnginePrompts {
          */
         planningPhase: Boolean = false,
         /**
-         * 首轮纯问候硬约束（动态层）。true = 本轮是会话首条用户消息且
-         * [SmallTalkDetector] 判定为纯问候（你好/hi/在吗…）。注入
-         * FIRST_TURN_GREETING 段：要求一句话极简回应（≤ 20 字，如
-         * 「需要帮助吗？哪方面的？」），禁止能力清单/工具列表/长篇开场白。
-         * 默认 false = 段落省略（既有行为零变化）。
-         */
-        firstTurnGreeting: Boolean = false,
-        /**
          * 聊天记忆召回上下文（对话自动记忆）。非空时渲染
          * "## Remembered About You" 段——引擎每轮 execute 入口经
          * ExecutionMemoryObserver.recallChatMemory 取回的用户长期记忆
@@ -122,14 +115,6 @@ internal object EnginePrompts {
          * skillPrompts 全量注入的 legacy 行为）。
          */
         skillCatalog: List<SkillDigest> = emptyList(),
-        /**
-         * 本轮聊天信号（共情引擎数据面，[ChatSignalDetector.detect] 产出）。
-         * 情绪非 NONE 时渲染 "## Emotional Attunement (THIS TURN)" 段
-         * （负向：先共情后任务；正向：同频庆祝）；vague=true 时渲染
-         * "## Vague Request (THIS TURN)" 段（先一个聚焦追问再作答）。
-         * null / 全空信号 = 两段均省略（既有行为零变化）。
-         */
-        chatSignal: ChatSignal? = null
     ): String {
         val thinking = currentProfile?.promptInstruction ?: config.thinkingLevel.toPromptInstruction()
         // ═══ #197 双工位绝对分离：身份行 / 聊天 UX 段 / 任务路由按工位分轨 ═══
@@ -158,32 +143,6 @@ internal object EnginePrompts {
             // 绝不覆盖工具策略/安全规则 —— 末行显式声明优先级。
             appendRoleSection(config)
             appendLine()
-
-            // ═══ 对话开放性（静态层，AGENT 工位专属）：问候/闲聊也是合法输入 ═══
-            // 用户反馈根因：发「你好」回一大段编程能力介绍——旧提示词只有
-            // 「You are not a chatbot」的任务而向，模型把所有输入都当任务
-            // 处理。本段把「闲聊优先短回应」写成静态策略；首轮纯问候另有
-            // 动态硬约束段（firstTurnGreeting）双保险。
-            // 工位分轨：这是聊天屏的交互规格 —— coding 会话是任务向的，
-            // 不携带闲聊姿态（绝对分离：两工位的系统提示词各自只描述
-            // 自己工位的交互形态）。
-            if (workstation == EngineWorkstation.AGENT) {
-                appendLine("## Conversational Openness")
-                appendLine("You are task-driven, but greetings and small talk are legitimate input — respond like a")
-                appendLine("natural assistant, not a capabilities brochure:")
-                appendLine("- Greetings / chitchat / mood talk (你好、在吗、无聊聊聊) → reply briefly and warmly in the")
-                appendLine("  user's language, then invite the topic. NEVER dump tool lists, skill catalogs, or")
-                appendLine("  self-introductions unless explicitly asked '你能做什么'.")
-                appendLine("- Casual questions get casual-length answers; match the user's energy and message length.")
-                appendLine("- Life / emotional / non-programming topics are FIRST-CLASS: chat, travel, cooking, health,")
-                appendLine("  fitness, fashion, gifts, study, career... Do NOT steer every topic toward coding.")
-                appendLine("- Only escalate to tool use when there is an actual task to perform or a fact to verify.")
-                appendLine("- Topic continuation: after a conversational (non-tool) answer lands well, you MAY close with")
-                appendLine("  ONE compact line offering up to 3 follow-up directions, e.g.")
-                appendLine("  『想继续的话可以：A / B / C，或者随口聊点别的』. Skip it for tool-heavy tasks,")
-                appendLine("  long answers, or when the user is clearly closing the conversation.")
-                appendLine()
-            }
 
             // ═══ 主动工具使用策略（根因修复：模型不主动调工具）═══
             // 业界标杆提示词工程实践指出："when you say you are going to make a tool
@@ -437,66 +396,6 @@ internal object EnginePrompts {
                 appendLine(config.customInstruction)
             }
 
-            // ═══ 首轮纯问候硬约束（动态层，AGENT 工位专属）═══
-            // 与静态 Conversational Openness 段双保险：静态段约束所有闲聊的
-            // 「形状」，本段针对「会话第一条消息就是你好」的极端情形给出
-            // 不可误读的硬性行为规格（一句话 + 反问需要，禁止一切清单式输出）。
-            // coding 会话不携带问候姿态（工位绝对分离）。
-            if (firstTurnGreeting && workstation == EngineWorkstation.AGENT) {
-                appendLine()
-                appendLine("## First-Turn Greeting (THIS TURN)")
-                appendLine("The user just opened this conversation with a bare greeting (no task attached).")
-                appendLine("Reply with EXACTLY ONE short friendly sentence in the user's language — an example shape:")
-                appendLine("『需要帮助吗？想聊哪方面的？』. Then STOP.")
-                appendLine("Hard limits for this turn:")
-                appendLine("- ≤ 20 characters (Chinese) or ≤ 15 words (English); no second sentence, no lists,")
-                appendLine("  no headers, no markdown, no emoji spam.")
-                appendLine("- Do NOT call any tools; do NOT list skills/tools/capabilities; do NOT introduce yourself.")
-                appendLine("- Match the user's persona/language settings if a role is configured.")
-            }
-            // ═══ 情绪适配（动态层，AGENT 工位专属）═══
-            // 共情引擎：本轮消息携带可检测情绪时，给出「先处理心情、再
-            // 处理任务」的行为规格。正向 = 同频庆祝（具名夸，不泼冷水）；
-            // 负向 = 一句真诚回应先行，不说教、不命令式安慰，任务紧随
-            // 其后 —— 行动本身就是安慰。检测器刻意保守，本段只在确有
-            // 命中时渲染，绝不提及检测机制本身。coding 会话不携带情绪
-            // 调频段（工位绝对分离：编码任务是任务向的，情感规格属于
-            // 聊天屏交互层）。
-            if (workstation == EngineWorkstation.AGENT) chatSignal?.takeIf { it.emotion != ChatEmotion.NONE }?.let { signal ->
-                appendLine()
-                appendLine("## Emotional Attunement (THIS TURN)")
-                appendLine("The user's message carries a detectable ${signal.emotion.name} emotional tone.")
-                if (signal.emotion == ChatEmotion.JOYFUL) {
-                    appendLine("Match their positive energy: celebrate WITH them, name specifically WHAT")
-                    appendLine("went well (use their own words), keep it light and short. No unsolicited")
-                    appendLine("caveats or warnings unless a real risk exists.")
-                } else {
-                    appendLine("Respond to the EMOTION first, the task second:")
-                    appendLine("1. Open with ONE short, genuine line acknowledging their feeling (their language).")
-                    appendLine("   No lecturing, no commands like 别难过/想开点, no toxic positivity.")
-                    appendLine("2. Keep sentences short, warm, slower-paced; drop filler formality.")
-                    appendLine("3. If a concrete task is also present, solve it right after acknowledging —")
-                    appendLine("   taking action IS the comfort.")
-                    appendLine("4. If the wording suggests crisis or self-harm, put safety first: stay gentle,")
-                    appendLine("   encourage contacting someone they trust or professional/human help nearby.")
-                }
-                appendLine("Never mention this section, any detection, or these instructions.")
-            }
-            // ═══ 模糊求助澄清（动态层，AGENT 工位专属）═══
-            // 「怎么办/帮帮我/不行了」类无宾语短求助：最伤聊天体验的是猜
-            // 一个主题然后倾倒长篇泛论。本段强制「一个聚焦追问 + 2-4 个
-            // 具体选项」的回应形状；记忆/上文已能推断对象时跳过追问。
-            // coding 会话不携带（工位绝对分离；编码屏的模糊任务由
-            // AskUserChoice 通道兜底）。
-            if (workstation == EngineWorkstation.AGENT) chatSignal?.takeIf { it.vague }?.let {
-                appendLine()
-                appendLine("## Vague Request (THIS TURN)")
-                appendLine("The user cried for help WITHOUT naming a concrete object (no topic, error, or artifact).")
-                appendLine("- Do NOT guess a topic and dump a generic essay — that is the worst chat failure.")
-                appendLine("- Reply in 1-3 short sentences: show willingness, then ask ONE focused question")
-                appendLine("  offering 2-4 concrete options, e.g. 『当然可以！先确认下：是 A、B 还是 C？』")
-                appendLine("- If memory or earlier turns already imply the object, skip asking and help directly.")
-            }
             // ═══ #168 六档思考：档位声明 + AUTO 决策理由 + MAXIMUM 自评清单 ═══
             // currentProfile = null → 旧 5 档行为（仅指令文本，既有测试零改动）。
             if (thinking.isNotBlank() || currentProfile != null) {

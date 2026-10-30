@@ -46,13 +46,7 @@ import androidx.compose.ui.unit.dp
 import com.apex.agent.core.engine.AgentMode
 import com.apex.agent.R
 
-/**
- * #197 Agent 屏可选模式（双工位拆分后；v3 新增 LOOP 循环/定时工位模式）。
- */
-val AGENT_SCREEN_MODES: List<AgentMode> =
-    listOf(AgentMode.CHAT, AgentMode.AGENT, AgentMode.LOOP)
-
-/** Coding 屏可选模式（#197：plan/build 从 Agent 屏迁入；v3 新增 GOAL 目标驱动）。 */
+/** 可选模式（#197：plan/build；v3 新增 GOAL 目标驱动）—— Agent 屏移除后本软件唯一工位。 */
 val CODING_SCREEN_MODES: List<AgentMode> =
     listOf(AgentMode.BUILD, AgentMode.PLAN, AgentMode.GOAL)
 
@@ -69,9 +63,8 @@ val CODING_SCREEN_MODES: List<AgentMode> =
  * 任何屏宽下切换入口都完整可见、单次点击直达 —— 模式切换从
  * 「隐藏横滑手势」变成「显式下拉菜单」。
  *
- * #197：`modes` 参数化——Agent 屏传 [AGENT_SCREEN_MODES]（Chat/Agent），
- * Coding 屏传 [CODING_SCREEN_MODES]（Build/Plan）——两个工位各自的
- * 极简选择器，市场分级后的模式矩阵。
+ * #197：`modes` 参数化——默认 [CODING_SCREEN_MODES]（Build/Plan/Goal，
+ * Agent 屏移除后本软件唯一工位的选择器）。
  *
  * 紧凑化（用户反馈「调节build和plan模式和思考程度上面那一部分太高」）：
  * 胶囊从 36dp 压到 28dp（padding 6→3、图标 16→13、字号 labelLarge→labelMedium），
@@ -83,7 +76,7 @@ internal fun AgentModeSelector(
     current: AgentMode,
     onSelect: (AgentMode) -> Unit,
     onOpenGuide: (() -> Unit)? = null,
-    modes: List<AgentMode> = AGENT_SCREEN_MODES
+    modes: List<AgentMode> = CODING_SCREEN_MODES
 ) {
     var expanded by remember { mutableStateOf(false) }
     // i18n：semantics 块非组合上下文，无障碍描述在组合内预取
