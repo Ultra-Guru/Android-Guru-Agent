@@ -6,21 +6,17 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -28,12 +24,11 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -62,7 +57,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.apex.agent.ui.component.MarkdownText
-import com.apex.agent.ui.glass.AgentBubbleGlass
 import com.apex.agent.ui.component.MessageAttachmentList
 import com.apex.agent.ui.theme.LocalShowTimestamps
 import kotlinx.coroutines.delay
@@ -71,6 +65,9 @@ import java.util.Locale
 import com.apex.agent.R
 
 // ═══ 消息组件 ═══
+// 2026-10 视觉口径:气泡容器全部 M3 Surface 实色(液态玻璃材质退役于消息流);
+// 气泡头部压成单行角色标;操作以图标行常驻卡片外下方(复制/编辑),不再有
+// 头部 overflow 菜单。
 
 /**
  * 单条消息渲染入口（按 AgentUiMessage 类型分发到对应气泡 / 卡片）。
@@ -79,7 +76,7 @@ import com.apex.agent.R
 internal fun AgentMessageItem(
     message: AgentUiMessage,
     vm: AgentChatViewModel,
-    // UX-1：消息操作菜单门禁（流式生成中禁用删除/重生成，复制仍可用）。
+    // 操作门禁（流式生成中禁用编辑类操作，复制仍可用）。
     actionsEnabled: Boolean = true,
     // #169：Plan 模式当前执行步骤（锁定计划卡高亮用；-1 = 非步骤执行中）。
     currentStepIndex: Int = -1,
@@ -96,18 +93,12 @@ internal fun AgentMessageItem(
         is AgentUiMessage.User -> UserBubble(
             message = message,
             actionsEnabled = actionsEnabled,
-            onDelete = { vm.deleteMessage(message.id) },
-            onDeleteFrom = { vm.deleteMessagesFrom(message.id) },
+            onEdit = { newText -> vm.editAndResend(message.id, newText) },
             onImageClick = onImageClick,
             onFileClick = onFileClick
         )
         is AgentUiMessage.Agent -> AgentBubble(
             message = message,
-            actionsEnabled = actionsEnabled,
-            onOrganize = { text -> vm.organizeToMemory(text) },
-            onRegenerate = { vm.regenerateResponse(message.id) },
-            onDelete = { vm.deleteMessage(message.id) },
-            onDeleteFrom = { vm.deleteMessagesFrom(message.id) },
             onImageClick = onMarkdownImageClick
         )
         is AgentUiMessage.ToolCall -> {
@@ -185,17 +176,21 @@ internal fun retryLastUser(vm: AgentChatViewModel): () -> Unit = {
     lastUser?.let { vm.retry(it.text, it.attachments) }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun UserBubble(
     message: AgentUiMessage.User,
-    // UX-1：消息操作菜单（门禁 + 回调；默认空实现保持既有调用兼容）。
+    // 操作门禁：流式生成中禁用编辑（复制始终可用）。
     actionsEnabled: Boolean = true,
-    onDelete: () -> Unit = {},
-    onDeleteFrom: () -> Unit = {},
+    // 编辑重发：编辑对话框确认后回传新文本（VM.editAndResend —— 以新内容重新回答）。
+    onEdit: (String) -> Unit = {},
     onImageClick: (MessageAttachment) -> Unit = {},
     onFileClick: (MessageAttachment) -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    // i18n：Toast / contentDescription 文案在组合内预取（onClick 非组合上下文）
+    val copiedToast = stringResource(R.string.chat_copied)
+    val editCd = stringResource(R.string.chat_cd_edit)
     val timeStr = remember(message.timestamp) {
         DateTimeFormatter.ofPattern("HH:mm").format(
             java.time.Instant.ofEpochMilli(message.timestamp)
@@ -203,33 +198,25 @@ internal fun UserBubble(
                 .toLocalDateTime()
         )
     }
-    // UX-1：气泡菜单状态。入口两处：头部（非文本区域）长按 + 头部 overflow 钮；
-    // 文本区长按仍归 SelectionContainer 选择，互不冲突。
-    var menuExpanded by remember { mutableStateOf(false) }
-    Row(
+    var showEditDialog by remember { mutableStateOf(false) }
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End
+        // Column 水平定位用 horizontalAlignment（horizontalArrangement 是 Row 的参数）
+        horizontalAlignment = Alignment.End
     ) {
         Surface(
-            // 用户/回复气泡区分（用户反馈「两者颜色一样」）：回复气泡是 primary
-            // 玻璃薄霜，用户侧旧值 primaryContainer 在浅色主题下同为淡薄荷系——
-            // 肉眼不可分。改实色 primary + onPrimary：实色 vs 玻璃、饱和 vs 淡染
-            // （与 Code 屏 UserBubble 同口径，双屏一致）。
+            // 用户/回复气泡区分：实色 primary + onPrimary（饱和 vs 淡染，
+            // 与 Code 屏 UserBubble 同口径，双屏一致）。
             color = MaterialTheme.colorScheme.primary,
             shape = RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp),
             modifier = Modifier.widthIn(max = 320.dp)
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                // 角色标识 + 时间戳 + overflow 菜单入口（长按本行 = 非文本区域长按）
+            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                // 紧凑头部：角色标 + 可选时间戳。原 48dp overflow 菜单行随菜单
+                // 退役（操作图标外置气泡下方），头部只留最小可读信息。
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier
-                        .combinedClickable(
-                            onClick = {},
-                            onLongClick = { menuExpanded = true }
-                        )
-                        .padding(bottom = 6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
                         text = "YOU",
@@ -238,37 +225,13 @@ internal fun UserBubble(
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onPrimary
                     )
-                    Spacer(modifier = Modifier.weight(1f))
-                    // 时间戳可由设置中心关闭（关闭时不渲染，行内其余元素对齐不变）
+                    // 时间戳可由设置中心关闭（关闭时不渲染）
                     if (LocalShowTimestamps.current) {
                         Text(
                             text = timeStr,
                             style = MaterialTheme.typography.labelSmall,
                             fontFamily = FontFamily.Monospace,
                             color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f)
-                        )
-                    }
-                    Box {
-                        IconButton(
-                            onClick = { menuExpanded = true },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = stringResource(R.string.chat_cd_message_actions),
-                                tint = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f),
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        MessageActionsMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false },
-                            copyText = message.text,
-                            showRegenerate = false,
-                            actionsEnabled = actionsEnabled,
-                            onRegenerate = {},
-                            onDelete = onDelete,
-                            onDeleteFrom = onDeleteFrom
                         )
                     }
                 }
@@ -279,7 +242,7 @@ internal fun UserBubble(
                         attachments = message.attachments,
                         onFileClick = onFileClick,
                         onImageClick = onImageClick,
-                        modifier = Modifier.padding(bottom = 6.dp)
+                        modifier = Modifier.padding(top = 6.dp)
                     )
                 }
 
@@ -295,19 +258,52 @@ internal fun UserBubble(
                 }
             }
         }
+
+        // 卡片外操作行（开源 Material 图标）：复制 + 编辑（仅用户气泡有编辑）
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(
+                onClick = {
+                    clipboard.setText(AnnotatedString(message.text))
+                    Toast.makeText(context, copiedToast, Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ContentCopy,
+                    contentDescription = stringResource(R.string.chat_cd_copy),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+            IconButton(
+                onClick = { showEditDialog = true },
+                enabled = actionsEnabled,
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Edit,
+                    contentDescription = editCd,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
+    if (showEditDialog) {
+        EditMessageDialog(
+            initialText = message.text,
+            onDismiss = { showEditDialog = false },
+            onResend = { newText ->
+                showEditDialog = false
+                onEdit(newText)
+            }
+        )
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun AgentBubble(
     message: AgentUiMessage.Agent,
-    onOrganize: (String) -> Unit,
-    // UX-1：消息操作菜单（门禁 + 回调；默认空实现保持既有调用兼容）。
-    actionsEnabled: Boolean = true,
-    onRegenerate: () -> Unit = {},
-    onDelete: () -> Unit = {},
-    onDeleteFrom: () -> Unit = {},
     // 多模态输出：markdown 生成图片点击 → Lightbox。
     onImageClick: (String) -> Unit = {}
 ) {
@@ -315,9 +311,6 @@ internal fun AgentBubble(
     val clipboard = LocalClipboardManager.current
     // i18n：Toast 文案在组合内预取（onClick 非组合上下文，不能直接 stringResource）
     val copiedToast = stringResource(R.string.chat_copied)
-    // UX-1：气泡菜单状态。入口两处：头部（非文本区域）长按 + 头部 overflow 钮；
-    // 文本区长按仍归 SelectionContainer 选择，互不冲突。
-    var menuExpanded by remember { mutableStateOf(false) }
     val timeStr = remember(message.timestamp) {
         DateTimeFormatter.ofPattern("HH:mm").format(
             java.time.Instant.ofEpochMilli(message.timestamp)
@@ -325,50 +318,26 @@ internal fun AgentBubble(
                 .toLocalDateTime()
         )
     }
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             // v1.4.4 #8 无障碍：完成回复的 liveRegion —— TalkBack 在新气泡出现时
             // 主动播报（流式增量不设 liveRegion，避免每 token 一次的爆音轰炸；
             // 完成态整条播报一次即足够的上下文）。
             .semantics { liveRegion = LiveRegionMode.Polite },
-        horizontalArrangement = Arrangement.Start
+        horizontalAlignment = Alignment.Start
     ) {
-        // v8 气泡玻璃：kyant0/backdrop 引擎 —— Ambient 档（程序化材质源经
-        // GPU blur + lens 折射；API < 31 自动降级 Frosted 霜面）。气泡在列表内、
-        // 背后只有平面底色，无真实内容可采样 —— 不冒充 Backdrop 档；
-        // Cloudy 时代的 CPU 位图模糊（流式掉帧尖峰）已随迁移移除。
-        AgentBubbleGlass(
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = RoundedCornerShape(4.dp, 18.dp, 18.dp, 18.dp),
-            accent = MaterialTheme.colorScheme.primary,
             modifier = Modifier.widthIn(max = 340.dp)
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                // 头像 + 角色标识 + 时间戳 + overflow 菜单入口（长按本行 = 非文本区域长按）
+            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                // 紧凑头部：角色标 + 可选时间戳（原 ✦ 头像井与 48dp overflow 行退役）
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier
-                        .combinedClickable(
-                            onClick = {},
-                            onLongClick = { menuExpanded = true }
-                        )
-                        .padding(bottom = 6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = CircleShape,
-                        modifier = Modifier.size(22.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "✦",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    }
                     Text(
                         text = "AGENT",
                         style = MaterialTheme.typography.labelSmall,
@@ -376,7 +345,6 @@ internal fun AgentBubble(
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.weight(1f))
                     if (LocalShowTimestamps.current) {
                         Text(
                             text = timeStr,
@@ -385,72 +353,32 @@ internal fun AgentBubble(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Box {
-                        IconButton(
-                            onClick = { menuExpanded = true },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = stringResource(R.string.chat_cd_message_actions),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        MessageActionsMenu(
-                            expanded = menuExpanded,
-                            onDismissRequest = { menuExpanded = false },
-                            copyText = message.text,
-                            showRegenerate = true,
-                            actionsEnabled = actionsEnabled,
-                            onRegenerate = onRegenerate,
-                            onDelete = onDelete,
-                            onDeleteFrom = onDeleteFrom
-                        )
-                    }
                 }
 
                 // 正文（Markdown 渲染：支持代码块 / 行内代码 / 粗体 / 列表 / 图片 / 视频 / 链接）
                 SelectionContainer {
                     MarkdownText(markdown = message.text, onImageClick = onImageClick)
                 }
+            }
+        }
 
-                // 操作行：复制 / 整理到记忆（已接入 CS-Mem 后端）
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
+        // 卡片外操作行：仅复制。「整理到记忆」人头图标随记忆系统重构退役；
+        // 中止/出错残留的部分回复（isPartial）不出操作行。
+        if (!message.isPartial) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = {
+                        clipboard.setText(AnnotatedString(message.text))
+                        Toast.makeText(context, copiedToast, Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.size(48.dp)
                 ) {
-                    IconButton(
-                        onClick = {
-                            clipboard.setText(AnnotatedString(message.text))
-                            Toast.makeText(context, copiedToast, Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = stringResource(R.string.chat_cd_copy),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            // 修复：整理入记忆不再“发起即报成功”——结果反馈由 VM 异步链路决定（原失败也提示已整理）
-                            onOrganize(message.text)
-                        },
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Psychology,
-                            contentDescription = stringResource(R.string.chat_cd_organize_memory),
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = stringResource(R.string.chat_cd_copy),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
             }
         }
@@ -532,7 +460,7 @@ internal fun StreamingResponseBubble(
 ) {
     // #262 延迟读取：cursor 透明度动画保留 State，在 graphicsLayer 块内读取 ——
     // 旧写法 `primary.copy(alpha = pulse)` 在组合期取值，700ms 循环期间整个
-    // StreamingResponseBubble（含 GlassCard 玻璃层）每帧重组，drawWithCache
+    // StreamingResponseBubble（含容器层）每帧重组，drawWithCache
     // 缓存被逐帧击穿；改为图层 alpha 后动画只失效这一个 Text 的图层。
     val pulseState = rememberInfiniteTransition(label = "stream-cursor").animateFloat(
         initialValue = 0.25f,
@@ -540,35 +468,23 @@ internal fun StreamingResponseBubble(
         animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
         label = "cursor-alpha"
     )
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-        // v8 流式玻璃：与完成态 AgentBubble 同款 AgentBubbleGlass（kyant0 Ambient
-        // 材质）—— 流式与完成瞬间切换无容器跳变（同一 shape/同一玻璃档）；
-        // GPU RenderEffect 每帧毫秒级，替代 Cloudy CPU 位图模糊。
-        AgentBubbleGlass(
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.Start
+    ) {
+        // M3 实色容器（2026-10 流式去玻璃）：与完成态 AgentBubble 同色同形 ——
+        // 流式与完成瞬间切换零跳变，且不再有玻璃层的 GPU 材质成本。
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
             shape = RoundedCornerShape(4.dp, 18.dp, 18.dp, 18.dp),
-            accent = MaterialTheme.colorScheme.primary,
             modifier = Modifier.widthIn(max = 340.dp)
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
+            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                // 紧凑头部：角色标（与完成态一致；流式未落定无时间戳）
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(bottom = 6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = CircleShape,
-                        modifier = Modifier.size(22.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "✦",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    }
                     Text(
                         text = "AGENT",
                         style = MaterialTheme.typography.labelSmall,
@@ -709,16 +625,13 @@ internal fun ThinkingBubble(
         }.value
     } else 0L
 
-    // v8 思考气泡：同款 AgentBubbleGlass（kyant0 Ambient 材质；accent=tertiary
-    // 与既有思考色系一致）；折叠/展开可点击收在内容层，涟漪经玻璃层裁剪不露角。
-    AgentBubbleGlass(
+    // M3 实色容器（2026-10 流式去玻璃）：tertiaryContainer 淡染与 REVIEW 评审卡
+    // 同族色；Surface onClick 重载自带圆角裁剪涟漪。
+    Surface(
+        onClick = { expanded = !expanded },
+        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.35f),
         shape = RoundedCornerShape(12.dp),
-        accent = MaterialTheme.colorScheme.tertiary,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable {
-                expanded = !expanded
-            }
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(

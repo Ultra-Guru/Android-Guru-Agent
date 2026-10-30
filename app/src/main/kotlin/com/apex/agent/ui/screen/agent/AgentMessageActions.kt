@@ -1,225 +1,102 @@
 package com.apex.agent.ui.screen.agent
 
-import android.widget.Toast
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.unit.dp
 import com.apex.agent.R
 import kotlinx.coroutines.flow.update
 
 // ═══════════════════════════════════════════════════════════════
-// UX-1：消息操作（长按菜单 / overflow 菜单）
+// 消息操作（2026-10 重定口径）：复制 / 编辑
 // ═══════════════════════════════════════════════════════════════
-// 独立文件原因：AgentChatViewModel.kt 已贴 1200 行 God-file 门禁
-// （scripts/check_file_size.sh），消息删除/重生成属于"列表编辑"职责，
-// 以 internal 扩展函数形式挂靠 VM（与 AgentChatQuestionHandler.kt 同款拆分模式）。
+// 原 UX-1 的气泡 overflow 菜单（复制全文/重生成/删除/从此删除）退役 —— 操作
+// 以图标行常驻气泡卡片外下方（复制全量保留；编辑仅用户气泡，见 UserBubble）。
+// 本文件现承载「编辑并重发」的 VM 扩展与编辑对话框（与 AgentChatQuestionHandler.kt
+// 同款拆分模式，避免 AgentChatViewModel.kt 触 God-file 门禁）。
 
 /**
- * 删除单条消息（UI 内存列表过滤；不触碰引擎对话历史）。
+ * 编辑一条用户消息并以新文本重发。
  *
- * - 门禁：生成中（isLoading）拒绝执行并给出反馈，避免与流式追加交错；
- * - 列表删空时同步复位流式暂态（currentToolCall / currentResponse /
- *   currentThinking），防止悬挂的"运行中工具卡"残留（与 newChat 的复位面一致，
- *   但不清引擎历史、不清 plan/spec 等会话级状态）。
+ * 语义：截断到该 User 气泡（不含，一并移除）及其后全部消息，然后复用
+ * [AgentChatViewModel.retry] 以新文本 + 原附件（localPath 已落盘，直接透传）
+ * 重发 —— 最终 UI 呈现 = [..., User(新文本), 重新生成的回复...]。
+ *
+ * - 空白新文本直接忽略（对话框发送钮同口径禁用）；
+ * - isLoading 门禁：生成中拒绝并反馈（retry 会取消在途收集器，交错态不可预期）。
  */
-fun AgentChatViewModel.deleteMessage(id: String) {
+fun AgentChatViewModel.editAndResend(id: String, newText: String) {
+    val trimmed = newText.trim()
+    if (trimmed.isEmpty()) return
     if (_uiState.value.isLoading) {
-        _uiFeedback.tryEmit(str(R.string.chat_msg_delete_busy))
+        _uiFeedback.tryEmit(str(R.string.chat_edit_busy))
         return
     }
-    _uiState.update { s ->
-        val next = s.messages.filterNot { it.id == id }
-        if (next.size == s.messages.size) return@update s // id 不存在：no-op
-        if (next.isEmpty()) {
-            s.copy(
-                messages = next,
-                currentToolCall = null,
-                currentResponse = "",
-                currentThinking = ""
-            )
-        } else {
-            s.copy(messages = next)
-        }
-    }
-}
-
-/**
- * 截断式删除：移除 [id] 这条消息及其之后的全部消息（"从此处重来"）。
- *
- * - 门禁与暂态复位策略同 [deleteMessage]；
- * - 引擎侧 conversationHistory 不同步截断（引擎未暴露历史编辑 API，
- *   见 ApexAgentEngine —— 仅 clearHistory() 全清）。UI 截断只影响展示，
- *   后续新消息仍带完整引擎上下文，属已知边界（诚实取舍，不静默伪造一致性）。
- */
-fun AgentChatViewModel.deleteMessagesFrom(id: String) {
-    if (_uiState.value.isLoading) {
-        _uiFeedback.tryEmit(str(R.string.chat_msg_delete_busy))
-        return
-    }
-    _uiState.update { s ->
-        val idx = s.messages.indexOfFirst { it.id == id }
-        if (idx < 0) return@update s
-        val next = s.messages.take(idx)
-        if (next.isEmpty()) {
-            s.copy(
-                messages = next,
-                currentToolCall = null,
-                currentResponse = "",
-                currentThinking = ""
-            )
-        } else {
-            s.copy(messages = next)
-        }
-    }
-}
-
-/**
- * 重生成此回复（仅 AI 消息菜单项）。
- *
- * 语义：截断到最后一条触发它的 User 消息（含该 User 气泡一并移除），
- * 然后复用 [AgentChatViewModel.retry] 重发同文本 + 原附件（localPath 已落盘，
- * 直接透传不重新拷贝）。最终 UI 呈现 = [..., User(原文), 新生成回复...]。
- *
- * - isLoading 门禁：生成中拒绝（retry 会取消在途收集器，交错态不可预期）；
- * - 该 AI 消息之前无 User 气泡（如斜杠流水线产物）→ 提示不可重生成；
- * - 仅附件（空文本）User 消息 → retry 的空文本门禁同样生效，提示后放弃
- *   （截断发生在校验之后，列表不被破坏）。
- */
-fun AgentChatViewModel.regenerateResponse(id: String) {
-    val state = _uiState.value
-    if (state.isLoading) {
-        _uiFeedback.tryEmit(str(R.string.chat_msg_regenerate_busy))
-        return
-    }
-    val idx = state.messages.indexOfFirst { it.id == id }
+    val idx = _uiState.value.messages.indexOfFirst { it.id == id }
     if (idx < 0) return
-    // 找到该 AI 消息之前最近的一条 User 消息（触发它的那条输入）
-    val userIdx = (idx - 1 downTo 0).firstOrNull { i -> state.messages[i] is AgentUiMessage.User }
-    if (userIdx == null) {
-        _uiFeedback.tryEmit(str(R.string.chat_msg_no_user_message))
-        return
-    }
-    val user = state.messages[userIdx] as AgentUiMessage.User
-    if (user.text.isBlank()) {
-        _uiFeedback.tryEmit(str(R.string.chat_msg_attachment_only_retry))
-        return
-    }
+    val user = _uiState.value.messages[idx] as? AgentUiMessage.User ?: return
     // 截断：移除该 User 气泡及其后全部（retry→runEngine 会重新追加 User 气泡）
-    _uiState.update { s -> s.copy(messages = s.messages.take(userIdx)) }
-    // 二轮审计 A-4：保留用户正在输入的草稿 —— retry() 内部会 updateInputText("")
-    // 清空输入框，从消息菜单重生成时不应连带清掉用户未发送的草稿。
+    _uiState.update { s -> s.copy(messages = s.messages.take(idx)) }
+    // 二轮审计 A-4 同款：保留用户正在输入的草稿 —— retry() 的文本来自历史消息，
+    // 当前实现不触碰输入框；但 sendMessage 路径会 updateInputText("") 清草稿，
+    // 若日后 retry 对齐该语义，此处捕获-回写保证编辑重发不连带清掉未发送草稿。
     val draft = inputText.value
-    retry(user.text, user.attachments)
+    retry(trimmed, user.attachments)
     if (draft.isNotEmpty()) updateInputText(draft)
 }
 
 /**
- * 消息气泡操作菜单（M3 DropdownMenu，条目 ≥44dp 触达高度，图标 + 文字）。
+ * 编辑消息对话框（M3 AlertDialog + OutlinedTextField 预填原文）。
  *
- * 入口有两处（见 UserBubble / AgentBubble）：
- * 1. 气泡头部（头像 / 角色标 / 时间戳区域，即"非文本区域"）长按 —— 文本区
- *    的长按仍归 SelectionContainer 文本选择，互不冲突；
- * 2. 头部右侧常驻 overflow 图标按钮（MoreVert）。
- *
- * [actionsEnabled]：流式生成期间禁用"重生成 / 删除"（破坏性操作与在途收集器
- * 交错不可预期）；"复制全文"始终可用。
- *
- * P2 i18n：菜单文案经 stringResource 取词（同包其余文件同模式）—— 旧实现
- * 硬编码中文，英文 locale 下用户会看到中文菜单。
+ * 确认（重新发送）时回调 trim 后的新文本；空白文本时发送钮禁用 ——
+ * 与 [editAndResend] 的空文本门禁双保险。
  */
 @Composable
-internal fun MessageActionsMenu(
-    expanded: Boolean,
-    onDismissRequest: () -> Unit,
-    copyText: String,
-    showRegenerate: Boolean,
-    actionsEnabled: Boolean,
-    onRegenerate: () -> Unit,
-    onDelete: () -> Unit,
-    onDeleteFrom: () -> Unit
+internal fun EditMessageDialog(
+    initialText: String,
+    onDismiss: () -> Unit,
+    onResend: (String) -> Unit
 ) {
-    val context = LocalContext.current
-    val clipboard = LocalClipboardManager.current
-    // 组合内预取文案再进 onClick（闭包捕获值而非 @Composable 调用点）
-    val copyFullLabel = stringResource(R.string.chat_msg_copy_full)
-    val copiedFullLabel = stringResource(R.string.chat_msg_copied_full)
-    val regenerateLabel = stringResource(R.string.chat_msg_regenerate)
-    val deleteLabel = stringResource(R.string.chat_msg_delete)
-    val deleteFromLabel = stringResource(R.string.chat_msg_delete_from)
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismissRequest) {
-        DropdownMenuItem(
-            text = { Text(copyFullLabel) },
-            leadingIcon = {
-                Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(18.dp))
-            },
-            modifier = Modifier.heightIn(min = 44.dp),
-            onClick = {
-                clipboard.setText(AnnotatedString(copyText))
-                Toast.makeText(context, copiedFullLabel, Toast.LENGTH_SHORT).show()
-                onDismissRequest()
-            }
-        )
-        if (showRegenerate) {
-            DropdownMenuItem(
-                text = { Text(regenerateLabel) },
-                leadingIcon = {
-                    Icon(Icons.Default.Refresh, null, modifier = Modifier.size(18.dp))
-                },
-                modifier = Modifier.heightIn(min = 44.dp),
-                enabled = actionsEnabled,
-                onClick = {
-                    onDismissRequest()
-                    onRegenerate()
-                }
+    var text by remember { mutableStateOf(initialText) }
+    // 组合内预取文案（onClick 非组合上下文）
+    val titleLabel = stringResource(R.string.chat_edit_title)
+    val sendLabel = stringResource(R.string.chat_edit_send)
+    val cancelLabel = stringResource(R.string.chat_edit_cancel)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = titleLabel, style = MaterialTheme.typography.titleMedium)
+        },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+                maxLines = 10
             )
+        },
+        confirmButton = {
+            TextButton(
+                enabled = text.isNotBlank(),
+                onClick = { onResend(text) }
+            ) {
+                Text(sendLabel)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(cancelLabel)
+            }
         }
-        DropdownMenuItem(
-            text = { Text(deleteLabel) },
-            leadingIcon = {
-                Icon(
-                    Icons.Default.Delete, null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(18.dp)
-                )
-            },
-            modifier = Modifier.heightIn(min = 44.dp),
-            enabled = actionsEnabled,
-            onClick = {
-                onDismissRequest()
-                onDelete()
-            }
-        )
-        DropdownMenuItem(
-            text = { Text(deleteFromLabel) },
-            leadingIcon = {
-                Icon(
-                    Icons.Default.DeleteSweep, null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(18.dp)
-                )
-            },
-            modifier = Modifier.heightIn(min = 44.dp),
-            enabled = actionsEnabled,
-            onClick = {
-                onDismissRequest()
-                onDeleteFrom()
-            }
-        )
-    }
+    )
 }

@@ -531,29 +531,6 @@ class AgentChatViewModel @Inject constructor(
     }
 
     /**
-     * 将一条 Agent 回复整理进记忆（记忆库显式整理入口）。
-     *
-     * 委托 [MemKit.ingestManualNotes] 把文本按行切片为语义节点写入长期记忆，
-     * 使其可被 MemorySearchNodes 按关键词召回。整理主题取文本前 40 字符。
-     */
-    fun organizeToMemory(text: String) {
-        val goal = text.take(40).trim().ifBlank { str(R.string.chat_memory_goal_default) }
-        viewModelScope.launch {
-            runCatching { memKit.ingestManualNotes(goal, text) }
-                .onSuccess { _uiFeedback.tryEmit(strFmt(R.string.chat_organized_to_memory, goal)) }
-                .onFailure { e ->
-                    android.util.Log.e("AgentChatViewModel", "organizeToMemory failed", e)
-                    _uiFeedback.tryEmit(
-                        strFmt(
-                            R.string.chat_organize_failed,
-                            e.message ?: str(R.string.chat_unknown_error)
-                        )
-                    )
-                }
-        }
-    }
-
-    /**
      * 主动压缩上下文（顶部仪表盘"压缩上下文"按钮触发）。
      *
      * 委托 [ApexAgentEngine.compressNow] 执行真实压缩，并把结果以系统消息呈现，
@@ -792,7 +769,7 @@ class AgentChatViewModel @Inject constructor(
         // 同 sendMessage：被取消的上一轮流水线横幅收尾，避免残留"运行中"脉冲。
         finishActiveBanner()
         // P2：不清草稿 —— retry 的文本来自历史消息而非输入框；用户正在打的新草稿
-        // 不该被无声清掉（regenerateResponse 已特意保留草稿，此路径漏修对齐）。
+        // 不该被无声清掉（editAndResend 已特意保留草稿，此路径漏修对齐）。
         beginEngineTurn() // 同 sendMessage：即刻执行态（发送键→停止键）
         currentJob = launchEngineTurn {
             // 同 sendMessage 的互斥锁串行化：残留任务持锁时直接重试会撞
