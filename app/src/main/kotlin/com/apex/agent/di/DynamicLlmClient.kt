@@ -9,7 +9,7 @@ import com.apex.agent.core.llm.LlmStreamChunk
 import com.apex.agent.core.llm.ToolDefinition
 import com.apex.agent.core.llm.WebSearchMode
 import com.apex.agent.ui.language.LanguageManager
-import com.apex.agent.ui.screen.agent.toolkit.ChatToolkitStore
+import com.apex.agent.ui.chatkit.ChatToolkitStore
 import com.apex.agent.ui.screen.settings.SettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

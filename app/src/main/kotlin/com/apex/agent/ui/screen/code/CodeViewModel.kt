@@ -37,9 +37,9 @@ import com.apex.agent.slash.SlashCommand
 import com.apex.agent.slash.SlashCommandParser
 import com.apex.agent.slash.SlashCommandRouter
 import com.apex.agent.slash.SlashRouteContext
-import com.apex.agent.ui.screen.agent.CODING_SCREEN_MODES
-import com.apex.agent.ui.screen.agent.PendingPipelineCommand
-import com.apex.agent.ui.screen.agent.llmConfiguredFlow
+import com.apex.agent.ui.chatkit.CODING_SCREEN_MODES
+import com.apex.agent.ui.chatkit.PendingPipelineCommand
+import com.apex.agent.ui.chatkit.llmConfiguredFlow
 import com.apex.agent.ui.screen.code.editor.AtRefParser
 import com.apex.agent.ui.screen.code.editor.EditorFileException
 import com.apex.agent.ui.screen.code.editor.EditorFileLoader
@@ -47,7 +47,7 @@ import com.apex.agent.ui.screen.code.editor.EditorLoadError
 import com.apex.agent.ui.screen.code.session.CodeSessionStore
 import com.apex.agent.ui.screen.code.history.CodeHistoryStore
 import com.apex.agent.ui.screen.code.history.clearConversationWithArchive
-import com.apex.agent.ui.screen.agent.toolkit.ChatToolkitStore
+import com.apex.agent.ui.chatkit.ChatToolkitStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import javax.inject.Named
@@ -499,17 +499,17 @@ class CodeViewModel @Inject constructor(
         settingsRepository.llmConfiguredFlow(viewModelScope)
 
     /** 函数调用二级菜单候选工具（注册表快照，含类别/风险元数据）。 */
-    fun availableTools(): List<com.apex.agent.ui.screen.agent.ToolRef> =
+    fun availableTools(): List<com.apex.agent.ui.chatkit.ToolRef> =
         toolRegistry.getAllTools()
             .map { tool ->
-                com.apex.agent.ui.screen.agent.ToolRef(
+                com.apex.agent.ui.chatkit.ToolRef(
                     id = tool.id,
                     name = tool.name,
                     category = tool.metadata.category,
                     highRisk = tool.metadata.isHighRisk
                 )
             }
-            .sortedWith(compareBy<com.apex.agent.ui.screen.agent.ToolRef> { it.category?.order ?: Int.MAX_VALUE }.thenBy { it.id })
+            .sortedWith(compareBy<com.apex.agent.ui.chatkit.ToolRef> { it.category?.order ?: Int.MAX_VALUE }.thenBy { it.id })
 
     // ═══ 消息发送 ═══
 

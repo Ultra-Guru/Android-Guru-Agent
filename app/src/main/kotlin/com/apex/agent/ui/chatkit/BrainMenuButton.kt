@@ -1,4 +1,4 @@
-package com.apex.agent.ui.screen.agent
+package com.apex.agent.ui.chatkit
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility

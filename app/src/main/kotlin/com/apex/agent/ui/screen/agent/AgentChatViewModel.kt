@@ -46,6 +46,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
+import com.apex.agent.ui.chatkit.llmConfiguredFlow
+import com.apex.agent.ui.chatkit.AGENT_SCREEN_MODES
+import com.apex.agent.ui.chatkit.PendingPipelineCommand
+import com.apex.agent.ui.chatkit.ToolRef
+import com.apex.agent.ui.chatkit.AgentRoleSelector
 
 // 工具来源分类 classifyTool() 已抽出到 ToolKindClassifier.kt（God-file 预算拆分）。
 
