@@ -48,8 +48,18 @@ data class TemplateImportResult(
  * **并发模型**（对齐 LongTaskStore）：@Volatile 不可变快照缓存 + 写
  * Mutex 串行读改写 + 惰性双检加载。读侧（get/list/export）纯内存。
  *
- * **内置模板**：仅由 [reseedBuiltIns] 管理（缺则补，force=true 还原）；
- * 删除拒绝；导入永远不触碰内置 id（dropped + 计数留痕）。
+ * **内置模板不可更改**（v2 升级，用户规格「内置的改为不可更改」）：
+ * 1. `save` 对已知内置 id 一律拒绝（[IllegalArgumentException]，与
+ *    非法 id/空白正文同属 fail-fast 校验族）——不再允许改写内置内容；
+ * 2. 删除依旧拒绝（返回 false）；
+ * 3. **落盘自愈**：磁盘上被外部篡改的内置条目（手改 JSON / 老版本
+ *    遗留的「允许 save 改写」产物）在加载时定义字段强制回归出厂定义
+ *    （内容/变量/名称/分类/标签），仅保留 createdAt / updatedAt /
+ *    usageCount 三项运行元数据 —— 单一事实源始终是
+ *    [BuiltinPromptTemplates] 出厂表；
+ * 4. 自愈只修内存缓存（不动锁模型）：下次真实写盘时落盘追平；
+ *    显式还原通道 [reseedBuiltIns]（force=true 重置使用计数）保留；
+ * 5. 导入永远不触碰内置 id（dropped + 计数留痕）。
  */
 class PromptTemplateRegistry(
     private val storageDir: File,
@@ -114,20 +124,26 @@ class PromptTemplateRegistry(
      * bug，fail-fast）。updatedAt 一律盖当前时钟戳；新建时 createdAt
      * 缺省（0）则补时钟戳，显式携带则保留（导入场景）。
      *
-     * isBuiltIn 规范化：只有已知内置 id 可持有删除保护（已存在内置
-     * 条目保持 true，防止借 save 摘掉保护；普通 id 强制 false）。磁盘
-     * 写失败只留痕不抛（内存已更新，下次写盘追平）。
+     * **内置不可更改**：已知内置 id 一律拒绝（哪怕内容与出厂定义完全
+     * 一致——「重复保存出厂定义」同样属于改写通道，一刀切拒绝，语义
+     * 最直白；定制走「复制为自定义副本」）。自定义 id 的 isBuiltIn
+     * 规范化为 false（防伪造保护位）。磁盘写失败只留痕不抛（内存已
+     * 更新，下次写盘追平）。
      */
     suspend fun save(template: PromptTemplate) {
         validateForSave(template)
+        if (BuiltinPromptTemplates.isKnownBuiltInId(template.id)) {
+            throw IllegalArgumentException(
+                "内置模板不可更改（id='${template.id}'）；可在模板工坊「另存为副本」后修改自定义副本"
+            )
+        }
         var changed = false
         mutex.withLock {
             ensureLoaded()
             val existing = cache[template.id]
             val now = clock()
             val toStore = template.copy(
-                isBuiltIn = existing?.isBuiltIn == true ||
-                    BuiltinPromptTemplates.isKnownBuiltInId(template.id),
+                isBuiltIn = false,
                 createdAt = when {
                     existing != null -> existing.createdAt
                     template.createdAt > 0 -> template.createdAt
@@ -304,8 +320,23 @@ class PromptTemplateRegistry(
                             logger("PromptTemplateRegistry: skip invalid template in store '${t.id}'")
                             continue
                         }
-                        // isBuiltIn 规范化：只有已知内置 id 可持有删除保护
-                        normalized[t.id] = t.copy(isBuiltIn = BuiltinPromptTemplates.isKnownBuiltInId(t.id))
+                        val builtinDef = BUILTIN_DEFINITIONS[t.id]
+                        if (builtinDef != null) {
+                            // 内置自愈：定义字段强制回归出厂定义，只保留三项运行元数据。
+                            // 只修内存（本层持 loadLock 不持写锁，不动盘）；留痕 + 下次写盘追平。
+                            val healed = builtinDef.copy(
+                                createdAt = t.createdAt,
+                                updatedAt = t.updatedAt,
+                                usageCount = t.usageCount
+                            )
+                            if (healed != t) {
+                                logger("PromptTemplateRegistry: heal tampered built-in '${t.id}' back to factory definition")
+                            }
+                            normalized[t.id] = healed
+                        } else {
+                            // isBuiltIn 规范化：只有已知内置 id 可持有删除保护
+                            normalized[t.id] = t.copy(isBuiltIn = false)
+                        }
                     }
                     cache = normalized
                 } catch (e: Exception) {
@@ -375,5 +406,9 @@ class PromptTemplateRegistry(
         const val FILE_NAME = "templates.json"
         const val TMP_FILE_NAME = "templates.json.tmp"
         const val CORRUPT_FILE_NAME = "templates.json.corrupt"
+
+        /** 出厂定义表（id → 出厂定义）：内置自愈与不可更改判定的单一事实源。 */
+        val BUILTIN_DEFINITIONS: Map<String, PromptTemplate> =
+            BuiltinPromptTemplates.ALL.associateBy { it.id }
     }
 }
