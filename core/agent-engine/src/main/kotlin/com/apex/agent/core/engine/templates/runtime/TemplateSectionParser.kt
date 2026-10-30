@@ -287,19 +287,25 @@ object TemplateSectionParser {
     /**
      * 公共修复机械（REPAIR 阶段）：按违规清单做确定性修补。
      * 返回修复后的文本 + 修复说明（行为侧可叠加自己的专项修复）。
+     *
+     * 纪律：**只删/只补，绝不重排原文** —— 剥寒暄按行精确移除（保住
+     * 标题行原样，`##` 等标记不丢），补章节壳只追加尾部。
      */
     fun repair(raw: String, report: TemplateValidationReport): Pair<String, List<String>> {
         var text = raw
         val notes = mutableListOf<String>()
 
         if (report.violations.any { it.kind == TemplateContractViolationKind.PREAMBLE }) {
-            val skeleton = parse(text)
-            val kept = skeleton.leadingLines.filterNot { isPreambleLine(it) }
-            if (kept.size != skeleton.leadingLines.size) {
-                text = (kept + skeleton.sections.map { it.toText() })
-                    .filter { it.isNotBlank() }
-                    .joinToString("\n")
-                notes.add("剥离寒暄前导 ${skeleton.leadingLines.size - kept.size} 行")
+            val lines = text.lines()
+            val firstHeaderIndex = lines.indexOfFirst { extractHeader(it) != null }
+                .let { if (it < 0) lines.size else it }
+            // 只在「首个标题之前」的区域内剥寒暄行（标题之后的正文段落
+            // 里以「以下是」开头的行可能是合法内容，不动）
+            val toRemove = (0 until firstHeaderIndex).filter { isPreambleLine(lines[it]) }
+            if (toRemove.isNotEmpty()) {
+                val kept = lines.filterIndexed { index, _ -> index !in toRemove }
+                text = kept.joinToString("\n").trimStart('\n')
+                notes.add("剥离寒暄前导 ${toRemove.size} 行")
             }
         }
 
