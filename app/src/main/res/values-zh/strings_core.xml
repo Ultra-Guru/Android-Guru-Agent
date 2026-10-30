@@ -4,7 +4,6 @@
      LanguageManager + MainActivity attachBaseContext/recreate 生效。 -->
 <resources>
     <!-- ═══ 抽屉与导航目的地（ApexRoot / ApexDrawerContent）═══ -->
-    <string name="drawer_agent">Agent</string>
     <string name="drawer_terminal">终端</string>
 <!-- M³ 现代终端（Material 3 Terminal UI）：轻量 REPL 命令台 -->
 <!-- #197 模板工坊 -->
@@ -12,7 +11,6 @@
     <string name="drawer_market">市场</string>
     <string name="drawer_browser">浏览器</string>
     <string name="drawer_memory">记忆</string>
-    <string name="drawer_tasks">任务</string>
     <string name="drawer_storage">存储</string>
     <string name="drawer_permissions">权限</string>
     <string name="drawer_vault">保险库</string>
@@ -23,26 +21,12 @@
     <string name="drawer_about">关于</string>
     <string name="drawer_open_nav">打开导航</string>
     <string name="drawer_tagline">Android 上的 Agent 工作台</string>
-    <string name="drawer_mem_count">%1$d 条</string>
     <string name="drawer_github_not_connected">GitHub 未连接</string>
 
     <!-- ═══ 顶部上下文仪表盘（ContextMeterBar）═══ -->
-    <string name="context_dashboard">上下文仪表盘</string>
-    <string name="context_used_tokens">已用 Token</string>
-    <string name="context_max_tokens">上下文上限</string>
-    <string name="context_usage_ratio">占用比例</string>
-    <string name="context_session_total_tokens">会话累计消耗</string>
-    <string name="context_status">状态</string>
-    <string name="context_status_danger">危险</string>
-    <string name="context_status_warning">警告</string>
-    <string name="context_status_normal">正常</string>
-    <string name="context_compress">压缩上下文</string>
-    <string name="context_compress_hint">自动压缩在占用超阈值时由引擎触发</string>
 
     <!-- ═══ 设置中心（SettingsScreen）═══ -->
     <string name="settings_title">设置</string>
-    <string name="settings_tab_models">模型</string>
-    <string name="settings_tab_interface">界面</string>
     <string name="settings_testing">测试中…</string>
     <string name="settings_test">测试</string>
     <string name="settings_conn_success">连接成功</string>
@@ -298,8 +282,6 @@
     <string name="settings_timestamps_desc">在消息气泡旁显示 HH:mm 时间戳，立即生效</string>
 
     <!-- Notes -->
-    <string name="settings_section_notes">说明 · Notes</string>
-    <string name="settings_notes_body">· 终端字号、最大行数、单色模式等在「终端」页的「终端外观」卡片中设置。\n· 部分开关为数据预埋（标注见各项说明），由对应引擎层后续接入。\n· 模型 Profile / Provider / 角色映射等改动即时保存，Agent 引擎参数重启应用后生效。</string>
 
     <!-- Providers dialog -->
     <string name="settings_close">关闭</string>
@@ -484,7 +466,6 @@
     <string name="memory_nodes">节点</string>
     <string name="memory_macros">宏技能</string>
     <string name="memory_search_label">搜索节点（文本 / 关键词）</string>
-    <string name="memory_no_match">没有匹配 \"%1$s\" 的记忆节点</string>
     <string name="MemoryRecentEpisodes">近期会话</string>
     <string name="memory_empty_episodes">还没有任何记忆会话\nAgent 执行任务后这里会沉淀 Episode</string>
     <string name="memory_frequent_macros">高频宏技能</string>
@@ -581,39 +562,6 @@
     <string name="memory_search_type_fact">事实</string>
     <string name="memory_search_type_entity">实体</string>
     <string name="memory_search_type_node">节点</string>
-
-    <!-- ═══ 任务历史（TaskHistoryScreen）═══ -->
-    <string name="tasks_title">任务</string>
-    <string name="tasks_refresh">刷新</string>
-    <string name="tasks_empty_title">暂无任务记录</string>
-    <string name="tasks_empty_desc">在聊天页以任务模式（Plan / Spec）发起请求后，\n任务会持久化并出现在这里（跨重启保留）。</string>
-    <string name="tasks_overview">任务总览</string>
-    <string name="tasks_total">总数</string>
-    <string name="tasks_active">进行中</string>
-    <string name="tasks_completed">完成</string>
-    <string name="tasks_failed">失败</string>
-    <string name="tasks_cancelled">取消</string>
-    <string name="tasks_daily_created">近 7 日创建</string>
-    <string name="tasks_card_meta">%1$s · %2$s</string>
-    <string name="tasks_card_meta_duration">%1$s · %2$s · 用时 %3$s</string>
-    <string name="tasks_collapse">收起</string>
-    <string name="tasks_expand">展开</string>
-    <string name="tasks_user_input">用户输入</string>
-    <string name="tasks_plan_steps">计划步骤</string>
-    <string name="tasks_result">结果</string>
-    <string name="tasks_error">错误</string>
-    <string name="tasks_id_retry">ID：%1$s · 重试 %2$d 次</string>
-    <string name="tasks_status_pending">排队</string>
-    <string name="tasks_status_planning">规划中</string>
-    <string name="tasks_status_running">执行中</string>
-    <string name="tasks_status_waiting">等确认</string>
-    <string name="tasks_status_paused">已暂停</string>
-    <string name="tasks_status_cancelling">取消中</string>
-    <string name="tasks_status_recovering">恢复中</string>
-    <string name="tasks_status_retrying">重试中</string>
-    <string name="tasks_status_completed">完成</string>
-    <string name="tasks_status_failed">失败</string>
-    <string name="tasks_status_cancelled">已取消</string>
 
     <!-- ═══ 权限管理（PermissionsScreen）═══ -->
     <string name="perms_title">权限管理</string>
@@ -868,7 +816,6 @@
     <string name="settings_memory_capture_title">聊天记忆自动摄取</string>
     <string name="settings_memory_capture_desc">自动从对话中沉淀关于你的稳定事实，并在后续对话中召回参考。关闭后不再新增任何记忆 —— 已有记忆可在记忆页查看或删除</string>
     <!-- ═══ Settings 英文残留资源化（Agent 行为区 + 工具/网络区高频项）═══ -->
-    <string name="settings_tab_agent">Agent</string>
     <string name="settings_dialog_ok">确定</string>
     <string name="settings_enable_tools">启用工具</string>
     <string name="settings_streaming">流式输出</string>
@@ -887,13 +834,9 @@
     <string name="settings_reflection_label">自我评审</string>
     <string name="settings_planning">规划</string>
     <string name="settings_replanning">重规划</string>
-    <string name="settings_parallel_tool_execution">并行工具执行</string>
     <string name="settings_background_execution">后台执行</string>
     <string name="memory_capture_privacy_notice">对话内容在本机处理以构建你的画像（事实 / 近况 / 里程碑）。可在设置 → Agent 中关闭自动摄取，也可随时在此删除任何一条记忆。</string>
     <!-- #237 通知权限回收引导 -->
-    <string name="notif_permission_hint_title">后台通知未送达</string>
-    <string name="notif_permission_hint_body">系统通知权限已关闭，后台任务完成的提醒被静默丢弃。开启通知后才能收到。</string>
-    <string name="notif_permission_hint_action">去开启通知</string>
 
     <!-- ═══ #208：权限 / 风险门弹窗文案（GateDialogStrings.Res）═══ -->
     <string name="gate_perm_title_fmt">工具执行授权：%1$s</string>
@@ -909,8 +852,6 @@
     <string name="gate_risk_hint_medium">平衡：会修改数据或状态</string>
     <string name="gate_risk_line_fmt">%1$s（%2$s）</string>
     <string name="risk_label_dangerous">危险</string>
-    <string name="risk_label_balanced">平衡</string>
-    <string name="risk_label_safe">无危险</string>
     <string name="gate_opt_allow_session">本会话允许</string>
     <string name="gate_opt_allow_session_desc">本次会话中该工具不再询问</string>
     <string name="gate_opt_allow_once">仅允许一次</string>

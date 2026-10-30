@@ -12,8 +12,6 @@
 
     <!-- ═══ Export section ═══ -->
     <string name="backup_export_title">Export</string>
-    <string name="backup_include_sessions">Include chat history</string>
-    <string name="backup_include_sessions_desc">Recent sessions with full messages (storage keeps the latest 100)</string>
     <string name="backup_include_vault">Include vault (encrypted)</string>
     <string name="backup_include_vault_desc">Encrypt the whole vault with a passphrase you will need again on import</string>
     <string name="backup_passphrase_label">Passphrase</string>
@@ -38,15 +36,12 @@
     <string name="backup_preview_version_fmt">Format version: %1$d</string>
     <string name="backup_preview_created_fmt">Created: %1$s</string>
     <string name="backup_preview_from_fmt">Exported from: v%1$s</string>
-    <string name="backup_preview_sessions_fmt">Sessions: %1$d</string>
     <string name="backup_preview_vault_included">Vault: included (encrypted)</string>
     <string name="backup_preview_vault_absent">Vault: not included</string>
     <string name="backup_preview_settings_included">Settings: included</string>
     <string name="backup_preview_settings_absent">Settings: not included</string>
     <string name="backup_restore_settings">Restore settings</string>
-    <string name="backup_restore_sessions">Restore chat sessions</string>
     <string name="backup_restore_vault">Restore vault</string>
-    <string name="backup_restore_hint">Sessions that already exist on this device are kept and skipped</string>
     <string name="backup_import_passphrase_label">Vault passphrase</string>
     <string name="backup_import_passphrase_hint">Required to decrypt the vault envelope</string>
     <string name="backup_dialog_confirm">Restore</string>
@@ -57,14 +52,12 @@
     <string name="backup_export_failed_fmt">Export failed: %1$s</string>
     <string name="backup_result_settings_ok">Settings restored</string>
     <string name="backup_result_settings_restart">Restart the app for restored settings to take full effect</string>
-    <string name="backup_result_sessions_fmt">Sessions restored: %1$d (skipped %2$d existing)</string>
     <string name="backup_result_vault_ok">Vault restored</string>
     <string name="backup_result_vault_passphrase_missing">Vault passphrase is required</string>
     <string name="backup_result_vault_decrypt_failed">Vault decryption failed — wrong passphrase or corrupted data</string>
     <string name="backup_result_vault_write_failed">Failed to write the restored vault</string>
     <string name="backup_result_providers_redact_failed">Provider list skipped: unparseable or unsafe data</string>
     <string name="backup_result_settings_write_failed_fmt">Failed to write settings key: %1$s</string>
-    <string name="backup_result_session_failed_fmt">Failed to restore session: %1$s</string>
     <string name="backup_result_unsupported_version_fmt">Backup format v%1$d is newer than this app supports. Update the app first.</string>
     <string name="backup_result_errors_prefix">Errors:</string>
     <string name="backup_message_dismiss">Dismiss message</string>
