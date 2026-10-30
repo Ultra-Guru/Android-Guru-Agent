@@ -77,7 +77,11 @@ object McpModule {
         reaWorkspace: ReaWorkspace,
         // FusionBundle 第三波：Shrimp 任务存储（16 工具进程内任务规划
         // MCP —— 单例共享，任务数据跨连接持久）。
-        shrimpTaskStore: ShrimpTaskStore
+        shrimpTaskStore: ShrimpTaskStore,
+        // 机关（Jiguan V3.0）：五域操控面 MCP 化（mcp__jiguan__* —— 17 工具
+        // 与 ToolRegistry 直连注册同源）。
+        jiguanRuntime: com.apex.agent.core.jiguan.JiguanRuntime,
+        jiguanOrchestrator: com.apex.agent.core.jiguan.JiguanOrchestrator
     ): McpManager {
         val configDir = File(context.filesDir, "mcp_config")
         val manager = McpManager(
@@ -101,6 +105,13 @@ object McpModule {
                     BuiltinMemoryMcpTransport(memKit.store)
                 },
                 BuiltinThinkingMcpServer.ID to { BuiltinThinkingMcpTransport() },
+                // 第八台：机关（Jiguan V3.0）五域操控面 —— 与直连注册的 17 工具
+                // 同源（同一 JiguanRuntime / Orchestrator）。
+                com.apex.agent.mcp.builtin.jiguan.BuiltinJiguanMcpServer.ID to {
+                    com.apex.agent.mcp.builtin.jiguan.BuiltinJiguanMcpTransport(
+                        jiguanRuntime, jiguanOrchestrator,
+                    )
+                },
                 // 第六台：REA（FusionBundle 首发）—— 207 工具面全目录，
                 // ON_DEVICE 深实现 + 设备 shell + 沙箱引擎桥 + web 抓取 +
                 // 供应商门控五层调度（详见 docs/fusion-bundle.md）。
@@ -160,6 +171,8 @@ object McpModule {
         BuiltinFsMcpBootstrap.ensureAndConnect(manager)
         BuiltinMemoryMcpBootstrap.ensureAndConnect(manager)
         BuiltinThinkingMcpBootstrap.ensureAndConnect(manager)
+        // 机关（Jiguan V3.0）：第八台内置服务器 —— 同款幂等预置 + 自动连接。
+        com.apex.agent.mcp.builtin.jiguan.BuiltinJiguanMcpBootstrap.ensureAndConnect(manager)
         // Hub 生态重构：沙箱预置（fs-sandbox / memory-sandbox / everything-sandbox）
         // 不再随启动自动写入 —— 三台 npx 沙箱服务器全部迁往官方 MCP 仓库
         // （Ultra-Guru/apex-mcp-hub，见 HubSource），用户在市场里按需
