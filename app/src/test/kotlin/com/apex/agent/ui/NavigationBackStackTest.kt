@@ -27,7 +27,7 @@ class NavigationBackStackTest {
 
     @Test
     fun `压栈返回沿历史 LIFO 回退`() {
-        val stack = NavigationBackStack(DrawerDestination.Agent)
+        val stack = NavigationBackStack(DrawerDestination.Code)
         assertFalse(stack.canPop)
 
         stack.push(DrawerDestination.Settings)
@@ -38,26 +38,26 @@ class NavigationBackStackTest {
         assertTrue(stack.pop())
         assertEquals(DrawerDestination.Settings, stack.current)
         assertTrue(stack.pop())
-        assertEquals(DrawerDestination.Agent, stack.current)
+        assertEquals(DrawerDestination.Code, stack.current)
         assertFalse(stack.canPop)
     }
 
     @Test
     fun `连续重复压栈被忽略`() {
-        val stack = NavigationBackStack(DrawerDestination.Agent)
+        val stack = NavigationBackStack(DrawerDestination.Code)
         stack.push(DrawerDestination.Settings)
         // 「去配置」连点守卫：不产生重复层级
         stack.push(DrawerDestination.Settings)
 
         assertTrue(stack.pop())
-        assertEquals(DrawerDestination.Agent, stack.current)
+        assertEquals(DrawerDestination.Code, stack.current)
         // 只有一层历史 —— 第二次 pop 应落空
         assertFalse(stack.pop())
     }
 
     @Test
     fun `一级导航替换清空历史`() {
-        val stack = NavigationBackStack(DrawerDestination.Agent)
+        val stack = NavigationBackStack(DrawerDestination.Code)
         stack.push(DrawerDestination.Settings)
 
         // 抽屉切换一级目的地 = 全新历史（顶层切换不吃返回键层级）
@@ -76,7 +76,7 @@ class NavigationBackStackTest {
 
     @Test
     fun `Saver 往返保持 current 与历史`() {
-        val stack = NavigationBackStack(DrawerDestination.Agent)
+        val stack = NavigationBackStack(DrawerDestination.Code)
         stack.push(DrawerDestination.Settings)
         stack.push(DrawerDestination.About)
 
@@ -90,28 +90,29 @@ class NavigationBackStackTest {
         assertTrue(restored.pop())
         assertEquals(DrawerDestination.Settings, restored.current)
         assertTrue(restored.pop())
-        assertEquals(DrawerDestination.Agent, restored.current)
+        assertEquals(DrawerDestination.Code, restored.current)
         assertFalse(restored.canPop)
     }
 
     @Test
-    fun `老 skill route 兜底市场页`() {
+    fun `老 skill route 兜底 Code`() {
+        // Agent 模式移除（PR 2/6）：skill 老路由走未知兜底（Code）。
         val restored = NavigationBackStack.Saver.restore(arrayListOf("skill"))!!
-        assertEquals(DrawerDestination.Market, restored.current)
+        assertEquals(DrawerDestination.Code, restored.current)
     }
 
     @Test
-    fun `未知 route 兜底 Agent`() {
+    fun `未知 route 兜底 Code`() {
         // 历史里的未知 route 同样兜底，不抛异常
         val restored = NavigationBackStack.Saver.restore(arrayListOf("agent", "gone_route"))!!
-        assertEquals(DrawerDestination.Agent, restored.current)
-        assertEquals(DrawerDestination.Agent, destinationFromRoute("whatever"))
+        assertEquals(DrawerDestination.Code, restored.current)
+        assertEquals(DrawerDestination.Code, destinationFromRoute("whatever"))
     }
 
     @Test
     fun `空 route 列表兜底初始态`() {
         val restored = NavigationBackStack.Saver.restore(arrayListOf())!!
-        assertEquals(DrawerDestination.Agent, restored.current)
+        assertEquals(DrawerDestination.Code, restored.current)
         assertFalse(restored.canPop)
     }
 }
