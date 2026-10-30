@@ -108,6 +108,21 @@
     <string name="code_thinking_guide_footer_linkage">档位联动的不只是提示词：迭代上限、压缩阈值与工具输出预算都随档位缩放（数值见上方总表）。</string>
     <string name="code_thinking_guide_footer_apex">APEXCODE 仅手动可选：AUTO 选档永不触及，token 成本也是全梯度天花板。</string>
 
+    <!-- ═══ v1.4.11 会话上下文查看（CodeContextSheet；深潜线全量 / kit 线降级）═══ -->
+    <string name="code_context_open">查看上下文</string>
+    <string name="code_context_title">会话上下文</string>
+    <string name="code_context_stats_fmt">上下文 %1$d / %2$d tokens · %3$d 条消息</string>
+    <string name="code_context_copy_all">复制全部</string>
+    <string name="code_context_copied">已复制</string>
+    <string name="code_context_no_engine">引擎未就绪</string>
+    <string name="code_context_empty">当前逻辑线的引擎未开放会话内容查看，仅显示用量统计；切回「深潜」线可查看完整内容</string>
+    <string name="code_context_role_system">系统</string>
+    <string name="code_context_role_user">你</string>
+    <string name="code_context_role_assistant">助手</string>
+    <string name="code_context_role_tool">工具</string>
+    <string name="code_context_rules">全局规则</string>
+    <string name="code_context_extras">会话附加</string>
+
     <!-- ═══ v1.4.10 Coding 历史对话（新会话自动归档，可恢复）═══ -->
     <string name="code_history_open">对话历史</string>
     <string name="code_history_title">对话历史</string>

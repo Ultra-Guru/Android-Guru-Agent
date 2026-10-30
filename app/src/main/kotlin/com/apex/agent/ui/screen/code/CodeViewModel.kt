@@ -10,6 +10,7 @@ import com.apex.agent.core.code.longtask.LongTaskStore
 import com.apex.agent.core.code.longtask.LongTaskTracker
 import com.apex.agent.core.code.longtask.TaskCopyEngine
 import com.apex.agent.core.code.standard.DualLogicCodeEngine
+import com.apex.agent.core.code.CodeContextSnapshot
 import com.apex.agent.core.code.standard.StandardLogicMode
 import com.apex.agent.core.code.stream.CodeStreamCheckpoint
 import com.apex.agent.core.code.stream.CodeStreamSession
@@ -309,6 +310,9 @@ class CodeViewModel @Inject constructor(
         codeEngineImpl?.updateMode(_uiState.value.mode)
         codeEngineImpl?.updateThinkingLevel(_uiState.value.thinkingLevel)
     }
+
+    /** 上下文查看（路由到当前激活逻辑线；深潜线全量，kit 线统计降级）。 */
+    fun contextSnapshot(): CodeContextSnapshot? = codeEngineImpl?.contextSnapshot()
 
     // ═══ #197 执行模式（Build/Plan）═══
 

@@ -264,6 +264,37 @@ class CodeAgentEngine(
     override fun currentTokenCount(): Int = delegate.currentTokenCount()
     override fun maxContextTokens(): Int = delegate.maxContextTokens()
 
+    /**
+     * 上下文查看（深潜线全量导出）：codeMemory 的会话消息序列 + 规则/
+     * 「小圆环」附加注入段 + token 统计。助手纯工具调用回合（无文本）
+     * 以「→ 工具名清单」括注呈现，避免空条目。
+     */
+    override fun contextSnapshot(): CodeContextSnapshot {
+        val entries = codeMemory.load().map { msg ->
+            when (msg) {
+                is LlmMessage.System -> CodeContextEntry(CodeContextRole.SYSTEM, msg.content)
+                is LlmMessage.User -> CodeContextEntry(CodeContextRole.USER, msg.content)
+                is LlmMessage.Assistant -> CodeContextEntry(
+                    CodeContextRole.ASSISTANT,
+                    msg.content.ifBlank {
+                        msg.toolCalls.takeIf { it.isNotEmpty() }
+                            ?.joinToString(", ") { it.name }
+                            ?.let { names -> "→ $names" }
+                            ?: ""
+                    }
+                )
+                is LlmMessage.ToolResult -> CodeContextEntry(CodeContextRole.TOOL, msg.content)
+            }
+        }
+        return CodeContextSnapshot(
+            entries = entries,
+            globalRules = globalRules.takeIf { it.isNotBlank() },
+            sessionExtras = sessionExtras?.takeIf { it.isNotBlank() },
+            tokenUsed = delegate.currentTokenCount(),
+            tokenMax = delegate.maxContextTokens()
+        )
+    }
+
     // ═══ 内部 ═══
 
     private fun refreshContext() {
