@@ -12,15 +12,17 @@ import org.junit.Test
 /**
  * #197 双工位绝对分离 — 提示词分轨契约测试。
  *
- * 锁定三条分轨纪律（防止未来重构把两工位的系统提示词又搅在一起）：
+ * 锁定分轨纪律（防止未来重构把两工位的系统提示词又搅在一起）：
  *  1. 身份行分轨：AGENT 工位自称 AI AGENT（非编程全能），CODING 工位
  *     自称编码智能体；AGENT 身份不再声明 GitHub（工具计划已机械剔除，
  *     提示词与能力面同源，不教假事实）；
- *  2. 聊天 UX 段分轨：Conversational Openness / First-Turn Greeting /
- *     Emotional Attunement / Vague Request 是聊天屏交互规格，仅
- *     AGENT 工位注入 —— coding 会话不携带闲聊姿态；
- *  3. 任务路由同源化：车道推荐只引用本轮实际可见的工具，被工位隔离
+ *  2. 任务路由同源化：车道推荐只引用本轮实际可见的工具，被工位隔离
  *     过滤掉的工具（Code 族与 Github 族）绝不出现在 AGENT 工位的推荐里。
+ *
+ * Agent 模式移除（PR 3/6）：聊天 UX 段（Conversational Openness /
+ * First-Turn Greeting / Emotional Attunement / Vague Request）与
+ * SmallTalk/ChatSignal 检测器已删 —— 对应测试同步移除；本软件
+ * 引擎实例恒为 CODING 工位，AGENT 分支仅为存量配置反序列化兼容。
  */
 class WorkstationPromptSplitTest {
 
@@ -52,16 +54,12 @@ class WorkstationPromptSplitTest {
 
     private fun prompt(
         cfg: AgentConfig,
-        tools: List<AgentTool>,
-        firstTurnGreeting: Boolean = false,
-        chatSignal: ChatSignal? = null
+        tools: List<AgentTool>
     ): String = EnginePrompts.buildSystemPrompt(
         config = cfg,
         privilegeLevel = "NORMAL",
         visibleTools = tools,
-        toolsUnavailable = false,
-        firstTurnGreeting = firstTurnGreeting,
-        chatSignal = chatSignal
+        toolsUnavailable = false
     )
 
     // ── 工位推导 ────────────────────────────────────────────────────
@@ -113,42 +111,6 @@ class WorkstationPromptSplitTest {
         val c = prompt(AgentConfig(mode = AgentMode.BUILD, agentName = "小钢炮"), codingSurface)
         assertTrue(a.startsWith("You are 小钢炮, an AI AGENT"))
         assertTrue(c.startsWith("You are 小钢炮, a CODING agent"))
-    }
-
-    // ── 聊天 UX 段分轨 ──────────────────────────────────────────────
-
-    @Test
-    fun `conversational openness is agent workstation only`() {
-        val agent = prompt(AgentConfig(mode = AgentMode.AGENT), agentSurface)
-        val coding = prompt(AgentConfig(mode = AgentMode.BUILD), codingSurface)
-        assertTrue(agent.contains("## Conversational Openness"))
-        assertFalse(coding.contains("## Conversational Openness"))
-    }
-
-    @Test
-    fun `first turn greeting is agent workstation only`() {
-        val signal = ChatSignal(emotion = ChatEmotion.NONE, emotionHits = 0, vague = false)
-        val agent = prompt(
-            AgentConfig(mode = AgentMode.AGENT), agentSurface,
-            firstTurnGreeting = true, chatSignal = signal
-        )
-        val coding = prompt(
-            AgentConfig(mode = AgentMode.BUILD), codingSurface,
-            firstTurnGreeting = true, chatSignal = signal
-        )
-        assertTrue(agent.contains("## First-Turn Greeting (THIS TURN)"))
-        assertFalse(coding.contains("## First-Turn Greeting"))
-    }
-
-    @Test
-    fun `emotional attunement and vague request are agent workstation only`() {
-        val signal = ChatSignal(emotion = ChatEmotion.JOYFUL, emotionHits = 2, vague = true)
-        val agent = prompt(AgentConfig(mode = AgentMode.AGENT), agentSurface, chatSignal = signal)
-        val coding = prompt(AgentConfig(mode = AgentMode.BUILD), codingSurface, chatSignal = signal)
-        assertTrue(agent.contains("## Emotional Attunement (THIS TURN)"))
-        assertTrue(agent.contains("## Vague Request (THIS TURN)"))
-        assertFalse(coding.contains("## Emotional Attunement"))
-        assertFalse(coding.contains("## Vague Request"))
     }
 
     // ── 任务路由同源化 ──────────────────────────────────────────────
