@@ -46,8 +46,9 @@ fun AgentChatViewModel.editAndResend(id: String, newText: String) {
     val user = _uiState.value.messages[idx] as? AgentUiMessage.User ?: return
     // 截断：移除该 User 气泡及其后全部（retry→runEngine 会重新追加 User 气泡）
     _uiState.update { s -> s.copy(messages = s.messages.take(idx)) }
-    // 二轮审计 A-4 同款：保留用户正在输入的草稿 —— retry() 内部会 updateInputText("")
-    // 清空输入框，编辑重发不应连带清掉未发送的草稿。
+    // 二轮审计 A-4 同款：保留用户正在输入的草稿 —— retry() 的文本来自历史消息，
+    // 当前实现不触碰输入框；但 sendMessage 路径会 updateInputText("") 清草稿，
+    // 若日后 retry 对齐该语义，此处捕获-回写保证编辑重发不连带清掉未发送草稿。
     val draft = inputText.value
     retry(trimmed, user.attachments)
     if (draft.isNotEmpty()) updateInputText(draft)
