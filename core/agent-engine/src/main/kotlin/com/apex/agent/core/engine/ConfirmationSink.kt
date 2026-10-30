@@ -1,18 +1,21 @@
 package com.apex.agent.core.engine
 
 /**
- * Engine capability for resuming plan/spec confirmation gates.
+ * Engine capability for resuming plan confirmation gates.
  *
  * [com.apex.agent.core.engine.orchestrator.DefaultTaskOrchestrator] wraps a
- * delegate [AgentEngine] for PLAN / SPEC / REFLECTION / HUMAN_ASSIST / CUSTOM
- * modes. When the UI confirms or rejects a generated plan/spec, the
- * orchestrator forwards the decision to its delegate — previously done via
- * `javaClass.getMethod(...)` reflection, which is fragile (renames break at
- * runtime instead of compile time) and invisible to the type system.
+ * delegate [AgentEngine] for the PLAN mode. When the UI confirms or rejects a
+ * generated plan, the orchestrator forwards the decision to its delegate —
+ * previously done via `javaClass.getMethod(...)` reflection, which is fragile
+ * (renames break at runtime instead of compile time) and invisible to the
+ * type system.
  *
  * Engines that expose confirmation gates (notably [ApexAgentEngine]) implement
  * this interface; the orchestrator now forwards through a plain
  * `delegate as? ConfirmationSink` check.
+ *
+ * （Agent 模式移除 PR 3/6：SPEC 确认通道（submitSpecConfirmation）已随
+ * SPEC 档位删除，本接口只剩 PLAN 一个确认门。）
  */
 interface ConfirmationSink {
 
@@ -24,12 +27,4 @@ interface ConfirmationSink {
      * 已被 abort/超时收场，调用方（VM）据此给出「未送达」提示（#214 同型）。
      */
     fun submitPlanConfirmation(confirmed: Boolean): Boolean
-
-    /**
-     * User confirmed or rejected the spec awaiting confirmation
-     * ([AgentEvent.SpecAwaitingConfirmation]).
-     *
-     * #340：Boolean 回执，语义同 [submitPlanConfirmation]。
-     */
-    fun submitSpecConfirmation(confirmed: Boolean): Boolean
 }

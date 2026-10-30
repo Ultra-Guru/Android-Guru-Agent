@@ -339,17 +339,10 @@ class CodeStreamSession {
             is AgentEvent.PlanAwaitingConfirmation ->
                 append(StreamEntry.StatusEntry(nextId(), "等待计划确认"))
 
-            is AgentEvent.SpecGenerated ->
-                append(StreamEntry.StatusEntry(nextId(), "规格已生成（${event.spec.requirements.size} 项需求）"))
-
-            is AgentEvent.ReflectionReview ->
-                append(StreamEntry.StatusEntry(nextId(), "评审：${event.reviewText.take(60)}"))
-
             is AgentEvent.StepStart ->
                 append(StreamEntry.StatusEntry(nextId(), event.description.take(80)))
 
-            is AgentEvent.PlanConfirmed, is AgentEvent.SpecConfirmed,
-            is AgentEvent.SpecAwaitingConfirmation -> Unit
+            is AgentEvent.PlanConfirmed -> Unit
 
             // 真实用量更新（服务端 token 统计）—— 归 VM/仪表盘通道消费，
             // 胶囊时间轴不展示用量条目（低频元数据，非工作流事件）。

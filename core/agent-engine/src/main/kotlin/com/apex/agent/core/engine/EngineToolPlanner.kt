@@ -45,21 +45,6 @@ internal object EngineToolPlanner {
     )
 
     /**
-     * #197 AGENT 模式的编码类工具前缀黑名单——全能智能体是**非编程**工位：
-     * Code* / CodeGit*（编码工作区）、Github*（GitHub 连接）与
-     * McpGithub*（GitHub MCP）均属于 Coding 屏管辖，Agent 屏不可见，
-     * 从根上避免“问什么都会答编程相关的”（编程引导由提示词层完成）。
-     * v3 起 LOOP（Agent 工位）同样走这条隔离。
-     */
-    private val AGENT_EXCLUDED_TOOL_PREFIXES = listOf(
-        "Code", "Github", "McpGithub"
-    )
-
-    /** #197 [AGENT_EXCLUDED_TOOL_PREFIXES] 判定（纯函数，便于单测）。 */
-    fun isCodingOrientedToolId(toolId: String): Boolean =
-        AGENT_EXCLUDED_TOOL_PREFIXES.any { toolId.startsWith(it) }
-
-    /**
      * v3 作用域判定：工具是否对 [skillScope]（"agent"/"coding"/"all"）可见。
      *
      * MCP / 技能复合工具注册时携带 [ToolMetadata.scope]（市场二级分离的
@@ -72,7 +57,12 @@ internal object EngineToolPlanner {
         return scope == SCOPE_ALL || scope == skillScope
     }
 
-    /** 计划级作用域隔离入口：[AgentConfig.mcpScopeIsolation] 关闭时回退 v2。 */
+    /** 计划级作用域隔离入口：[AgentConfig.mcpScopeIsolation] 关闭时回退 v2。
+     *
+     * （Agent 模式移除 PR 3/6：AGENT/LOOP 档位的前缀黑名单隔离
+     * （AGENT_EXCLUDED_TOOL_PREFIXES / isCodingOrientedToolId /
+     * filterOutCodingTools）已删 —— 本软件恒为编码工位，工具面不再按
+     * 工位剔除，仅保留市场分级的作用域隔离。） */
     private fun ToolRequestBudget.RequestToolPlan.applyScopeIsolation(
         registry: ToolRegistry,
         config: AgentConfig
@@ -100,8 +90,6 @@ internal object EngineToolPlanner {
         val forced = config.forcedToolIds
         val allowed = config.allowedToolIds
         return when {
-            // #197 聊天模式：零工具纯对话（人设 + 聊天技能在提示词层驱动）。
-            config.mode == AgentMode.CHAT -> EMPTY_TOOL_PLAN
             degradationLevel >= DEGRADATION_NO_TOOLS -> EMPTY_TOOL_PLAN
             forced.isNotEmpty() && degradationLevel == 0 ->
                 ToolRequestBudget.planForced(registry, forced)
@@ -109,17 +97,8 @@ internal object EngineToolPlanner {
             // 最终轮需要能输出纯文本结论（forced 语义会迫使每轮调用工具）。
             allowed.isNotEmpty() && degradationLevel == 0 ->
                 ToolRequestBudget.planForced(registry, allowed)
-            // #197 智能体模式（v3：LOOP 同款——Agent 工位非编程）：默认计划剔除
-            // 编码工位专属工具 + 按作用域隔离 MCP/技能复合工具。
-            config.mode == AgentMode.AGENT || config.mode == AgentMode.LOOP ->
-                ToolRequestBudget.planDefault(
-                    registry = registry,
-                    activation = activation,
-                    exposeAll = config.exposeAllTools && degradationLevel == 0,
-                    coreOnly = degradationLevel >= DEGRADATION_CORE_ONLY,
-                    serviceToolIds = if (degradationLevel == 0) serviceToolIds else emptySet()
-                ).filterOutCodingTools().applyScopeIsolation(registry, config)
-            // v3 GOAL：与 BUILD 同待遇（编码工位全量工具面 + 作用域隔离）。
+            // 默认计划（BUILD / PLAN / GOAL 同待遇：编码工位全量工具面 +
+            // 市场分级作用域隔离；AGENT/LOOP 的工具面剔除随 Agent 模式移除）。
             else -> ToolRequestBudget.planDefault(
                 registry = registry,
                 activation = activation,
@@ -131,38 +110,11 @@ internal object EngineToolPlanner {
     }
 
     /**
-     * #197 从工具计划中剔除编码工位专属工具（AGENT 模式专用）。
-     *
-     * 纯函数：基于 [RequestToolPlan] 的不可变快照重建，不触碰注册表状态；
-     * 同步维护 providerName⇆id 映射，保证模型回显名仍可路由。
-     */
-    private fun ToolRequestBudget.RequestToolPlan.filterOutCodingTools(): ToolRequestBudget.RequestToolPlan {
-        fun codingOriented(def: com.apex.agent.core.llm.ToolDefinition): Boolean {
-            val registryId = providerNameToId[def.name] ?: def.name
-            return isCodingOrientedToolId(registryId)
-        }
-        if (tools.none { codingOriented(it) }) return this
-        val kept = tools.filterNot { codingOriented(it) }
-        val keptNames = kept.map { it.name }.toSet()
-        val keptNameToId = providerNameToId.filterKeys { it in keptNames }
-        // 字节数与 ToolRequestBudget 同口径重算（name+schema+description+48）。
-        val keptBytes = kept.sumOf { it.parameters.length + it.description.length + it.name.length + 48 }
-        val keptIds = keptNameToId.values.toSet()
-        return ToolRequestBudget.RequestToolPlan(
-            tools = kept,
-            providerNameToId = keptNameToId,
-            visibleRegistryIds = visibleRegistryIds intersect keptIds,
-            totalBytes = keptBytes,
-            droppedByBudget = droppedByBudget
-        )
-    }
-
-    /**
      * v3 从工具计划中剔除其它工位作用域的工具（MCP/技能复合工具的市场分级
      * 隔离，缺口 A 根因修复：scope 字段此前只被市场 UI 消费，引擎侧不过滤）。
      *
-     * 纯函数：与 [filterOutCodingTools] 同款重建快照；未注册 id 不误杀
-     * （旧 MCP 会话残留的幽灵工具由注册表自身清理）。
+     * 纯函数：重建快照；未注册 id 不误杀（旧 MCP 会话残留的幽灵工具由
+     * 注册表自身清理）。
      */
     private fun ToolRequestBudget.RequestToolPlan.filterOutOffScopeTools(
         registry: ToolRegistry,

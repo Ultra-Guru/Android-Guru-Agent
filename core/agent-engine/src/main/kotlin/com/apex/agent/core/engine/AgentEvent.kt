@@ -41,33 +41,6 @@ sealed interface AgentEvent {
         val plan: ExecutionPlan
     ) : AgentEvent
 
-    // ═══ 规格阶段（Spec模式）═══
-
-    /** Agent 生成了需求规格 */
-    data class SpecGenerated(
-        val spec: ExecutionSpec
-    ) : AgentEvent
-
-    /** 等待用户确认规格 */
-    data class SpecAwaitingConfirmation(
-        val spec: ExecutionSpec
-    ) : AgentEvent
-
-    /** 用户确认了规格 */
-    data class SpecConfirmed(
-        val spec: ExecutionSpec
-    ) : AgentEvent
-
-    // ═══ 反思阶段（Reflection模式）═══
-
-    /**
-     * 反思模式评审意见："生成 → 评审 → 修正"循环中评审环节的产物。
-     * UI 据此展示评审卡片，随后 Agent 输出修正后的最终回复。
-     */
-    data class ReflectionReview(
-        val reviewText: String
-    ) : AgentEvent
-    
     // ═══ 执行阶段 ═══
     
     /** 开始执行某个步骤 */
@@ -209,7 +182,7 @@ sealed interface AgentEvent {
     ) : AgentEvent
 
     /**
-     * #214 用户输入等待超时：AskUser / HUMAN_ASSIST 决策点在超时窗口内
+     * #214 用户输入等待超时：AskUser 决策点在超时窗口内
      * 未获回答，引擎已按「超时未决」继续执行。UI 收到后关闭挂起的输入
      * 对话框并给出提示行；迟到的提交由 VM 侧 [ApexAgentEngine.submitUserInputIfAwaiting]
      * 回执驱动显式失败提示，不再静默丢弃。
@@ -284,20 +257,3 @@ enum class RiskLevel {
     HIGH,     // 系统级操作
     CRITICAL  // 不可逆操作
 }
-
-/**
- * 需求规格（Spec 模式的产物）。
- *
- * 比 [ExecutionPlan] 更强调"要交付什么、做成什么样才算完成"：
- * 目标 / 需求清单 / 约束 / 验收标准 / 交付物，确认后逐项执行。
- */
-data class ExecutionSpec(
-    val goal: String,
-    val requirements: List<String> = emptyList(),
-    val constraints: List<String> = emptyList(),
-    val acceptanceCriteria: List<String> = emptyList(),
-    val deliverables: List<String> = emptyList(),
-    val estimatedToolCalls: Int = 1,
-    val riskLevel: RiskLevel = RiskLevel.MEDIUM,
-    val reasoning: String = ""
-)

@@ -13,17 +13,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Replay
-import androidx.compose.material.icons.filled.SmartToy
-import androidx.compose.material.icons.filled.SupportAgent
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -194,16 +187,9 @@ internal fun AgentModeSelector(
 
 /** 模式图标映射 —— 图标属 UI 层关注点，不放核心枚举（core 无 Compose 依赖）。 */
 fun agentModeIcon(mode: AgentMode): ImageVector = when (mode) {
-    AgentMode.CHAT -> Icons.Default.Chat
-    AgentMode.AGENT -> Icons.Default.SmartToy
     AgentMode.BUILD -> Icons.Default.Build
     AgentMode.PLAN -> Icons.AutoMirrored.Filled.ListAlt
     AgentMode.GOAL -> Icons.Default.Flag
-    AgentMode.LOOP -> Icons.Default.Replay
-    AgentMode.SPEC -> Icons.Default.Description
-    AgentMode.REFLECTION -> Icons.Default.Psychology
-    AgentMode.HUMAN_ASSIST -> Icons.Default.SupportAgent
-    AgentMode.CUSTOM -> Icons.Default.Tune
 }
 
 /**
@@ -211,14 +197,7 @@ fun agentModeIcon(mode: AgentMode): ImageVector = when (mode) {
  */
 @Composable
 fun agentModeDescription(mode: AgentMode): String = when (mode) {
-    AgentMode.CHAT -> stringResource(R.string.chat_mode_chat_desc)
-    AgentMode.AGENT -> stringResource(R.string.chat_mode_agent_desc)
     AgentMode.BUILD -> stringResource(R.string.chat_mode_build_desc)
     AgentMode.PLAN -> stringResource(R.string.chat_mode_plan_desc)
     AgentMode.GOAL -> stringResource(R.string.chat_mode_goal_desc)
-    AgentMode.LOOP -> stringResource(R.string.chat_mode_loop_desc)
-    AgentMode.SPEC -> stringResource(R.string.chat_mode_spec_desc)
-    AgentMode.REFLECTION -> stringResource(R.string.chat_mode_reflect_desc)
-    AgentMode.HUMAN_ASSIST -> stringResource(R.string.chat_mode_assist_desc)
-    AgentMode.CUSTOM -> stringResource(R.string.chat_mode_custom_desc)
 }
