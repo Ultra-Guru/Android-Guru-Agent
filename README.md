@@ -12,7 +12,7 @@
 **An autonomous AI agent that lives entirely on your Android device.**
 
 一个开源的 Android 端自主智能体应用：OpenAI 兼容流式 LLM 接入、8 种执行模式（v3 新增 Goal 目标循环 / Loop 循环与 Cron）、
-111 个内置工具（v3 新增超时/重试/限流/熔断/追踪/批量/组合动作八层执行硬化；P83 环境闭环补全；MCP/技能按工位作用域隔离）、PRoot 沙箱化 Ubuntu 终端、仿生认知记忆系统（差分摄取 → 轨迹蒸馏 →
+128 个内置工具（含机关 Jiguan 五域操控 17 工具：进程内存/Java-ART/Native/网络与系统；v3 八层执行硬化；P83 环境闭环补全；MCP/技能按工位作用域隔离）、PRoot 沙箱化 Ubuntu 终端、仿生认知记忆系统（差分摄取 → 轨迹蒸馏 →
 FSM 旁路回放 → 梦境巩固）、Root/Shizuku/无障碍三级权限链、插件化 SDK ——
 全部跑在一台手机上，无需任何服务器。
 
@@ -174,7 +174,7 @@ Root → Shizuku → 沙箱 Shell 自动降级<br/>无 Root 也能执行特权�
 - [🗜️ 上下文工程（P7 三级压缩）](#context-compression)
 - [🖥️ 终端运行时（Ubuntu + PRoot）](#terminal-runtime)
 - [🌐 浏览器智能体](#browser)
-- [🔧 工具全景（111 个）](#tools)
+- [🔧 工具全景（128 个）](#tools)
 - [⚡ 权限执行链](#privilege)
 
 </td>
@@ -238,7 +238,7 @@ Root → Shizuku → 沙箱 Shell 自动降级<br/>无 Root 也能执行特权�
 | 运行位置 | 📱 全程在设备上 | 💻 PC / 服务器 | 📱 设备上 | ☁️ 云端 |
 | 需要服务器/PC | ❌ 不需要 | ✅ 需要 | ❌ 不需要 | ✅（厂商云） |
 | LLM 可换性 | ✅ 任意 OpenAI 兼容端点 / 局域网 Ollama | 固定模型或自配 | 无 LLM | ❌ 固定 |
-| 执行能力 | 102 工具：shell / 文件 / 结构化查询 / UI 自动化 / 浏览器 / 终端 | 文件 + shell + web | 规则触发，无推理 | 仅对话 |
+| 执行能力 | 128 工具：shell / 文件 / 结构化查询 / UI 自动化 / 浏览器 / 终端 / 机关五域操控 | 文件 + shell + web | 规则触发，无推理 | 仅对话 |
 | Linux 环境 | ✅ PRoot Ubuntu 24.04 沙箱 | ✅ 宿主 OS | ❌ | ❌ |
 | 跨会话记忆 | ✅ 认知记忆：陈述性（语义图）+ 程序性（FSM 宏旁路回放） | 仓库内文件（CLAUDE.md 等） | ❌ | 云端会话 |
 | 离线记忆 | ✅ Room 本地图数据库 | — | — | ❌ |
@@ -668,7 +668,7 @@ linux_bootstrap / linux_status / linux_packages / linux_network / ubuntu_install
 ---
 
 <a id="tools"></a>
-## 🔧 工具全景（111 个）
+## 🔧 工具全景（128 个）
 
 <details open>
 <summary><b>📦 点击展开 / 折叠完整工具清单（按模块分组）</b></summary>
@@ -690,6 +690,19 @@ linux_bootstrap / linux_status / linux_packages / linux_network / ubuntu_install
 | 🧭 目录与自省（5） | `ToolSearch` `ToolOpen` `ToolList`（v4 渐进披露）· `CapabilityReport`（权限阶梯/环境/技能/MCP 一键自省）· `MarketSearch`（官方技能+MCP 市场检索，返回可执行安装指令）——详见 [docs/capability-introspection.md](docs/capability-introspection.md) |
 | 🧱 结构化 v2（15） | `RegexExtractLegacy` `RegexReplaceLegacy` `TextDiff` `JsonPathLegacy` `XmlExtract` `CsvQuery` `BaseConvert` `UnitConvert` `DurationConvertLegacy` `StringDistance` `RandomGenerateLegacy` `UuidGenerateLegacy` `FileHash` `datetime` `CronNextLegacy`（全部纯 JVM / 离线 / 确定性） |
 | ⚡ 执行硬化 v3（7） | `wait`（≤300s 可取消等待）· `JsonTransformLegacy`（jq 风格七操作管线）· `VersionCompare`（SemVer 排序）· `ToolBatchRun`（批量首错即停 + 步间引用）· `ShortcutDefine` / `ShortcutList` / `ShortcutRun`（组合动作：定义→热注册、清单+挖掘建议、执行）——详见 [docs/tool-system-v3.md](docs/tool-system-v3.md) |
+
+**core:jiguan-engine —— 17 个机关（Jiguan）五域操控工具（V3.0）**
+
+| 类别 | 工具 |
+|------|------|
+| 🧠 元能力（4） | `JiguanCapabilityReport`（五域可用性 + 降级指引）· `JiguanRecipes`（登录加密分析/去广告/数值修改配方）· `JiguanKnowledgeQuery` / `JiguanKnowledgeRemember`（全场景记忆 RAG：包名→Hook 特征/内存地标/协议/配方） |
+| 📁 进程与内存（4） | `JiguanProcesses`（全进程枚举）· `JiguanMemoryScan`（精确/模糊±/AOB 全类型）· `JiguanMemoryHexDump`（三栏 Hex + int/float/utf 多类型解释）· `JiguanMemoryWrite`（原子写入 + 写前快照，确认门） |
+| ☕ Java/ART（3） | `JiguanJavaClasses`（已加载类枚举）· `JiguanHookJavaMethod`（LOG/REPLACE Hook）· `JiguanCallJavaMethod`（App 内部方法主动调用） |
+| 🔌 Native（4） | `JiguanModules`（.so 清单 + 基址）· `JiguanHookNativeFunc`（Interceptor.attach）· `JiguanDisassemble`（ARM64 objdump）· `JiguanHardwareBreakpoint`（硬件断点 + 执行上下文捕获） |
+| 🌐 网络（2） | `JiguanPacketCapture`（tcpdump 抓包 + 进程内 pcap→HTTP 提取）· `JiguanSslBypass`（四层 SSL Pinning 绕过） |
+| ⚙️ 系统（2） | `JiguanUiTouch`（Root 物理输入注入）· `JiguanSystemInspect`（SELinux 模式/上下文 + Binder 服务面巡检） |
+
+（第八台内置 MCP 服务器 `jiguan` 同源暴露 —— 手机作为 MCP Server，PC 端 AI 经 `mcp__jiguan__*` 驱动；详见 [docs/jiguan-omni-agent.md](docs/jiguan-omni-agent.md)）
 
 **platform:browser-agent —— 24 个 `browser_*`（v1.5.0 起内置大功能，非插件）**
 
