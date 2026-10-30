@@ -50,8 +50,26 @@ fun rememberClaudeImportLauncher(controller: FusionBundleController): androidx.a
             }
             result.fold(
                 onSuccess = { imported ->
+                    // ── 带资源技能先行安装（installFromZip：manifest + scripts/
+                    // references 落盘 skillsDir/<id>/）——聚合激活时 isInstalled
+                    // 幂等跳过，资源已就位；失败不弃导入（技能 manifest 仍随
+                    // 聚合包内联，激活时走纯 MD 安装，资源缺失如实降级）。
+                    var resourceFailures = 0
+                    val skillRegistry = entryPoint(context).skillRegistry()
+                    imported.skillZips.forEach { (skillId, bytes) ->
+                        val tmp = File(cacheDir, "skill-$skillId.zip")
+                        runCatching {
+                            tmp.writeBytes(bytes)
+                            skillRegistry.installFromZip(tmp)
+                                .onFailure { resourceFailures++ }
+                        }.onFailure { resourceFailures++ }
+                        tmp.delete()
+                    }
                     controller.registryForTools.install(imported.manifestJson).fold(
                         onSuccess = {
+                            val resourceNote =
+                                if (resourceFailures == 0 && imported.skillZips.isNotEmpty())
+                                    "（含 ${imported.skillZips.size} 个脚本资源技能）" else ""
                             feedback.show(
                                 String.format(
                                     donePattern, it.name,
@@ -59,7 +77,7 @@ fun rememberClaudeImportLauncher(controller: FusionBundleController): androidx.a
                                     it.plugins.firstOrNull()
                                         ?.let { p -> countSlashCommands(p) } ?: 0,
                                     if (it.agent.persona.isBlank()) 0 else 1
-                                ),
+                                ) + resourceNote,
                                 FeedbackSeverity.INFO
                             )
                         },
@@ -83,6 +101,20 @@ fun rememberClaudeImportLauncher(controller: FusionBundleController): androidx.a
         }
     }
 }
+
+/** EntryPoint：Claude 导入的资源安装通道（SkillRegistry.installFromZip）。 */
+@dagger.hilt.EntryPoint
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface ClaudeImportEntryPoint {
+    fun skillRegistry(): com.apex.agent.core.tools.skill.SkillRegistry
+}
+
+/** 组合期取 SkillRegistry 单例（随 Application 上下文记忆化）。 */
+private fun entryPoint(context: android.content.Context): ClaudeImportEntryPoint =
+    dagger.hilt.android.EntryPointAccessors.fromApplication(
+        context.applicationContext,
+        ClaudeImportEntryPoint::class.java
+    )
 
 /** 统计聚合内联插件（commands 载体）贡献的斜杠指令数（导入反馈文案用）。 */
 private fun countSlashCommands(

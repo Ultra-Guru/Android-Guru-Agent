@@ -638,13 +638,42 @@ class SkillRegistry(
     }
 
     /**
+     * 技能资源目录注记：ZIP / Claude 插件包导入的技能带 scripts/references/
+     * assets 等资源（落盘 `skillsDir/<id>/`），但 promptInjection 正文（上游
+     * 原文）引用的是**相对路径** —— 模型不知道绝对路径就没法真实执行。
+     *
+     * 注入出口统一在正文尾部追加一行资源目录注记（仅当资源目录真实存在且
+     * 非空；纯 prompt 技能零改动）。注记是[运行时事实]而非 manifest 数据
+     * —— 资源目录可被卸载清掉/升级重建，动态拼装保证不撒谎。
+     */
+    private fun withResourceNote(manifest: SkillManifest, injection: String?): String? {
+        if (injection == null) return null
+        val home = File(skillsDir, manifest.id)
+        if (!home.isDirectory || home.listFiles().isNullOrEmpty()) return injection
+        return injection.trimEnd() +
+            "
+
+---
+" +
+            "[APEX 技能资源] 本技能附带资源文件（scripts/、references/ 等）已落盘于" +
+            " `${home.canonicalPath}` —— 脚本经终端（PRoot Ubuntu）或 ShellExecute " +
+            "用绝对路径执行；参考文档用文件工具按绝对路径读取。"
+    }
+
+    /** 技能资源目录（skillsDir/<id>；不存在返回 null —— 资源探测的公共出口）。 */
+    fun skillHomeDir(skillId: String): File? {
+        val dir = File(skillsDir, SkillNaming.canonicalId(skillId))
+        return dir.takeIf { it.isDirectory }
+    }
+
+    /**
      * 获取所有 Prompt 注入（全量——旧行为，兼容未接入渐进披露的调用方）。
      */
     fun getPromptInjections(): List<String> {
         return synchronized(lock) {
             installedSkills.values
                 .filter { it.enabled }
-                .mapNotNull { it.manifest.promptInjection }
+                .mapNotNull { withResourceNote(it.manifest, it.manifest.promptInjection) }
         }
     }
 
@@ -660,7 +689,7 @@ class SkillRegistry(
         return synchronized(lock) {
             installedSkills.values
                 .filter { scope in effectiveScopes(it) }
-                .mapNotNull { it.manifest.promptInjection }
+                .mapNotNull { withResourceNote(it.manifest, it.manifest.promptInjection) }
         }
     }
 
@@ -682,7 +711,7 @@ class SkillRegistry(
                 .mapNotNull { installedSkills[SkillNaming.canonicalId(it)] }
                 .filter { it.enabled }
                 .filter { scope.isNullOrBlank() || scope in effectiveScopes(it) }
-                .mapNotNull { it.manifest.promptInjection }
+                .mapNotNull { withResourceNote(it.manifest, it.manifest.promptInjection) }
                 .toList()
         }
     }

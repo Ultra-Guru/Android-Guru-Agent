@@ -61,10 +61,10 @@ class NavigationBackStackTest {
         stack.push(DrawerDestination.Settings)
 
         // 抽屉切换一级目的地 = 全新历史（顶层切换不吃返回键层级）
-        stack.navigateToTopLevel(DrawerDestination.Market)
+        stack.navigateToTopLevel(DrawerDestination.HubCenter)
         assertFalse(stack.canPop)
         assertFalse(stack.pop())
-        assertEquals(DrawerDestination.Market, stack.current)
+        assertEquals(DrawerDestination.HubCenter, stack.current)
     }
 
     @Test
@@ -97,7 +97,7 @@ class NavigationBackStackTest {
     @Test
     fun `老 skill route 兜底市场页`() {
         val restored = NavigationBackStack.Saver.restore(arrayListOf("skill"))!!
-        assertEquals(DrawerDestination.Market, restored.current)
+        assertEquals(DrawerDestination.HubCenter, restored.current)
     }
 
     @Test

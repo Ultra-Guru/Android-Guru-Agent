@@ -328,6 +328,16 @@ manifest 以不透明 JsonObject 载体内联 —— core 模块不依赖 plugin
 产物即一个自洽聚合包，与内置七大包完全同权。命名映射全部安装期强校验
 （fail closed：结构不合法整体拒绝，不装半截包）。
 
+**资源兼容（带脚本的 skill）**：Claude 生态大量 skill 携带
+scripts/references/assets（纯 MD 装不下"真实产出 xlsx / 跑测试"这类能力）。
+导入器为每个带资源的技能目录产出 `installFromZip` 标准包
+（`<PascalId>.json` manifest + 资源全量），导入即落盘
+`skillsDir/<id>/`（脚本随技能升级覆盖、卸载随目录清理）——激活幂等跳过，
+模型经注入尾部的资源目录注记拿到绝对路径，脚本经 PRoot Ubuntu 终端 /
+ShellExecute 真实执行，references 用文件工具按路径读取。纯 MD 技能不产
+zip，走聚合 skills[] 内联激活。跨机边界如实：聚合包 JSON 分享不含资源
+zip，跨机迁移分享原始 Claude zip 重新导入。
+
 ### 8.4 安装型聚合（skillPicks/mcpPicks 引用段 + installMembers）
 
 **「专门安装 skills / MCP / 插件的聚合，在用户要安装的时候调用」**：
