@@ -28,36 +28,21 @@ class AgentSetupHost(
     override suspend fun snapshot(): AgentSettingsSnapshot = withContext(Dispatchers.IO) {
         val s = settingsRepository.agentSettings.value
         AgentSettingsSnapshot(
-            defaultMode = s.defaultMode,
-            thinkLevel = s.thinkLevel,
-            thinkingLevelOverride = s.thinkingLevelOverride,
-            forceDeepThinking = s.forceDeepThinking,
             codeThinkingLogic = s.codeThinkingLogic,
             codeThinkingLevel = s.codeThinkingLevel,
             codeExecutionMode = s.codeExecutionMode,
-            maxIterations = s.maxIterations,
             keepAlive = s.keepAlive,
-            autoRetry = s.autoRetry,
-            maxRetryPerAction = s.maxRetryPerAction,
-            loopDetection = s.loopDetection,
-            loopDetectionWindow = s.loopDetectionWindow,
-            sameActionThreshold = s.sameActionThreshold,
-            autoRecovery = s.autoRecovery,
-            parallelToolExecution = s.parallelToolExecution,
             taskCompletionNotify = s.taskCompletionNotify,
             maxContextTokens = s.maxContextTokens,
             compressionThreshold = s.compressionThreshold,
             preserveRecentTurns = s.preserveRecentTurns,
             maxToolOutputLength = s.maxToolOutputLength,
-            reflectionRounds = s.reflectionRounds,
-            selectedModePresetId = s.selectedModePresetId,
             themeMode = s.themeMode,
             accentPalette = s.accentPalette,
             fontScale = s.fontScale,
             showTimestamps = s.showTimestamps,
             language = s.language,
-            sendKeyBehavior = s.sendKeyBehavior,
-            showRunSummary = s.showRunSummary
+            sendKeyBehavior = s.sendKeyBehavior
         )
     }
 
@@ -65,36 +50,21 @@ class AgentSetupHost(
         try {
             settingsRepository.updateAgentSettings {
                 copy(
-                    defaultMode = patch.defaultMode ?: defaultMode,
-                    thinkLevel = patch.thinkLevel ?: thinkLevel,
-                    thinkingLevelOverride = patch.thinkingLevelOverride ?: thinkingLevelOverride,
-                    forceDeepThinking = patch.forceDeepThinking ?: forceDeepThinking,
                     codeThinkingLogic = patch.codeThinkingLogic ?: codeThinkingLogic,
                     codeThinkingLevel = patch.codeThinkingLevel ?: codeThinkingLevel,
                     codeExecutionMode = patch.codeExecutionMode ?: codeExecutionMode,
-                    maxIterations = patch.maxIterations ?: maxIterations,
                     keepAlive = patch.keepAlive ?: keepAlive,
-                    autoRetry = patch.autoRetry ?: autoRetry,
-                    maxRetryPerAction = patch.maxRetryPerAction ?: maxRetryPerAction,
-                    loopDetection = patch.loopDetection ?: loopDetection,
-                    loopDetectionWindow = patch.loopDetectionWindow ?: loopDetectionWindow,
-                    sameActionThreshold = patch.sameActionThreshold ?: sameActionThreshold,
-                    autoRecovery = patch.autoRecovery ?: autoRecovery,
-                    parallelToolExecution = patch.parallelToolExecution ?: parallelToolExecution,
                     taskCompletionNotify = patch.taskCompletionNotify ?: taskCompletionNotify,
                     maxContextTokens = patch.maxContextTokens ?: maxContextTokens,
                     compressionThreshold = patch.compressionThreshold ?: compressionThreshold,
                     preserveRecentTurns = patch.preserveRecentTurns ?: preserveRecentTurns,
                     maxToolOutputLength = patch.maxToolOutputLength ?: maxToolOutputLength,
-                    reflectionRounds = patch.reflectionRounds ?: reflectionRounds,
-                    selectedModePresetId = patch.selectedModePresetId ?: selectedModePresetId,
                     themeMode = patch.themeMode ?: themeMode,
                     accentPalette = patch.accentPalette ?: accentPalette,
                     fontScale = patch.fontScale ?: fontScale,
                     showTimestamps = patch.showTimestamps ?: showTimestamps,
                     language = patch.language ?: language,
-                    sendKeyBehavior = patch.sendKeyBehavior ?: sendKeyBehavior,
-                    showRunSummary = patch.showRunSummary ?: showRunSummary
+                    sendKeyBehavior = patch.sendKeyBehavior ?: sendKeyBehavior
                 )
             }
             true
@@ -195,4 +165,5 @@ suspend fun SettingsRepository.setProviderApiKeyAsync(providerId: String, apiKey
 
 // 模式预设扩展（listModePresetSummaries / selectModePresetAsync）已随
 // AgentModePresetList/Select 工具与 Agent CUSTOM 模式移除（PR 4/6）；
-// AgentSettings.selectedModePresetId 字段本身由设置域 PR 5/6 收口。
+// AgentSettings.selectedModePresetId / customModePresets 字段与快照/
+// 补丁里的 Agent 模式字段已随设置域收口（PR 5/6）删除。

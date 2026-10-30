@@ -56,26 +56,23 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import com.apex.agent.core.engine.templates.PromptTemplate
 import com.apex.agent.core.engine.templates.TemplateScope
-import com.apex.agent.ui.screen.settings.AgentRolesSection
 
 /**
- * #197 模板工坊 —— Agent / Coding 双层模板的独立管理页（左侧抽屉直达入口）。
+ * #197 模板工坊 —— 提示词模板的独立管理页（左侧抽屉直达入口）。
  *
  * ```
  * ┌──────────────────────────────────────────────┐
- * │  [Agent 模板]  [Coding 模板]   ← 工位分层（互不串扰）
+ * │  [Agent 模板]  [Coding 模板]   ← scope 分层（互不串扰）
  * ├──────────────────────────────────────────────┤
- * │  Agent 层：                                  │
- * │   · Agent 角色详细设置（人设卡 CRUD + 激活）      │
- * │   · Agent 提示词模板（翻译/总结/写作…）           │
- * │  Coding 层：                                 │
- * │   · Coding 提示词模板（代码评审/提交信息…）        │
+ * │  各层：提示词模板列表（新建/编辑/复制/删除）        │
+ * │  Coding 层顶部：专家角色区 [CodingRolesSection]   │
  * └──────────────────────────────────────────────┘
  * ```
  *
- * 模板的 scope 由 [TemplateScope] 分层；Agent 角色编辑复用设置页的
- * [AgentRolesSection]（生效链路同源：agentSettings → 引擎人设字段热更新）；
- * Coding 页签顶部为专家角色区 [CodingRolesSection]（品牌图标 + 选择即
+ * 模板的 scope 由 [TemplateScope] 分层（scope 分层是模板运行时概念，由
+ * 模板运行时会话演进）。Agent 角色详细设置分区（原复用设置页
+ * AgentRolesSection 的人设卡 CRUD）已随 Agent 模式移除（PR 5/6）；
+ * Coding 页签顶部保留专家角色区 [CodingRolesSection]（品牌图标 + 选择即
  * 激活 codeActiveRoleId，引擎人设通道热切换）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -122,14 +119,7 @@ fun TemplateStudioScreen(
             ) {
                 when (tab) {
                     TemplateScope.AGENT -> {
-                        // ═══ Agent 角色详细设置（复用设置页组件，生效链路同源）═══
-                        item(key = "agent-roles") {
-                            AgentRolesSection(
-                                agent = agentSettings,
-                                onAgent = { viewModel.updateAgentSettings { it } }
-                            )
-                        }
-
+                        // ═══ Agent 提示词模板（角色详细设置分区已随 Agent 模式移除 PR 5/6）═══
                         item(key = "agent-templates-header") {
                             TemplateListHeader(
                                 title = stringResource(R.string.templates_agent_list_title),

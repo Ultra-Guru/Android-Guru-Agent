@@ -31,10 +31,10 @@ import com.apex.agent.R
  *    预算 ×2 / 保留近轮 +3 / 压缩更晚——单请求携带更多上下文，同样的任务
  *    用更少的请求完成；
  * 3. **一键推荐组合**：并行工具执行 ×4（一轮多工具 = 少几轮请求）+
- *    任务轮次无上限 + 上述两项——把「减请求」策略一次拉满。
+ *    上述两项——把「减请求」策略一次拉满。
  *
  * 生效时机：节流参数即时生效（策略热读，下一个请求起算）；引擎旋钮
- * （信息密度 / 并行度）重启应用生效（与 maxIterations 同款 DI 快照语义）。
+ * （信息密度 / 并行度）重启应用生效（DI 快照语义）。
  */
 @Composable
 internal fun RateLimitSection(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {
@@ -84,8 +84,7 @@ internal fun RateLimitSection(agent: AgentSettings, onAgent: (AgentSettings) -> 
                                 rateLimitMinIntervalMs = agent.rateLimitMinIntervalMs
                                     .coerceAtLeast(4000),
                                 rateLimitRichPayload = true,
-                                toolCallParallelism = agent.toolCallParallelism.coerceAtLeast(4),
-                                maxIterations = 0
+                                toolCallParallelism = agent.toolCallParallelism.coerceAtLeast(4)
                             )
                         )
                     }

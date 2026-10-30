@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Update
+import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,16 +22,20 @@ import com.apex.agent.update.DownloadMirror
 import com.apex.agent.update.MirrorPrefs
 
 /**
- * 设置中心「通知」与「应用更新」叶子（扩展阶段）。
+ * 设置中心「通知」「应用更新」与「记忆摄取」叶子（扩展阶段）。
  *
- * 通知（interface/notifications）：任务完成通知（v1.4.4 #4）与循环运行通知
- * 此前分散在 Agent 配置两个不同叶子 —— 本页聚合全部通知开关，并附系统
- * 通知渠道深链（渠道级重要度/免打扰只能走系统设置，App 内只给入口）。
+ * 通知（interface/notifications）：任务完成通知（v1.4.4 #4）此前分散在
+ * Agent 配置叶子 —— 本页聚合全部通知开关，并附系统通知渠道深链
+ * （渠道级重要度/免打扰只能走系统设置，App 内只给入口）。循环运行通知
+ * 已随 LOOP/cron 模式移除。
  *
  * 更新（data/update）：自动检查开关此前只活在关于页更新面板（入口深），
  * 下载镜像更是藏在更新对话框里 —— 本页把两项搬进设置中心，与关于页
  * 同源同效（autoUpdateCheck 走 AgentSettings 单一可信源；镜像走
  * MirrorPrefs 同一持久化键）。
+ *
+ * 记忆（workspace/memory）：#218 聊天记忆自动摄取开关（Agent 聊天分区
+ * 删除后迁入本文件；记忆功能主仓库保留，开关双引擎共享）。
  */
 @Composable
 internal fun NotificationsPage(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {
@@ -45,11 +50,6 @@ internal fun NotificationsPage(agent: AgentSettings, onAgent: (AgentSettings) ->
                 stringResource(R.string.settings_task_notify_title), agent.taskCompletionNotify,
                 description = stringResource(R.string.settings_task_notify_desc)
             ) { on -> onAgent(agent.copy(taskCompletionNotify = on)) }
-            // 循环模式运行通知（从 agent/goal-loop 聚合至此）。
-            SwitchRow(
-                stringResource(R.string.settings_v3_loop_notify), agent.loopNotifyOnRun,
-                description = stringResource(R.string.settings_v3_loop_notify_desc)
-            ) { on -> onAgent(agent.copy(loopNotifyOnRun = on)) }
         }
         SectionCard(
             title = stringResource(R.string.settings_notif_channel_section),
@@ -71,6 +71,26 @@ internal fun NotificationsPage(agent: AgentSettings, onAgent: (AgentSettings) ->
                 },
                 modifier = Modifier.fillMaxWidth()
             ) { Text(stringResource(R.string.settings_notif_channel_open)) }
+        }
+    }
+}
+
+/**
+ * 记忆摄取分区（workspace/memory 叶）：#218 聊天记忆自动摄取总开关。
+ * 记忆观察者为双引擎共享单例（深潜线 + 标准线同源），关闭 = 新会话不
+ * 落盘 + 召回静默；已有记忆去记忆页管理（记忆功能主仓库保留）。
+ */
+@Composable
+internal fun MemoryCaptureSection(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {
+    SettingsLeafColumn {
+        SectionCard(
+            title = stringResource(R.string.settings_memory_section),
+            icon = Icons.Outlined.Psychology
+        ) {
+            SwitchRow(stringResource(R.string.settings_memory_capture_title), agent.chatMemoryCapture,
+                description = stringResource(R.string.settings_memory_capture_desc)) {
+                onAgent(agent.copy(chatMemoryCapture = it))
+            }
         }
     }
 }

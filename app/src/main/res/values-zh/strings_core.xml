@@ -39,7 +39,7 @@
     <string name="settings_landing_body">打开抽屉按分类浏览 —— 选择具体页面后在此打开</string>
     <string name="settings_no_profile_hint">暂无模型档案 —— 请先到「模型配置 · 配置」新建</string>
     <string name="settings_nav_cat_model">模型配置</string>
-    <string name="settings_nav_cat_agent">Agent 配置</string>
+    <string name="settings_nav_cat_workspace">工作台</string>
     <string name="settings_nav_cat_interface">界面外观</string>
     <string name="settings_nav_cat_data">数据与备份</string>
     <string name="settings_nav_cat_terminal">终端</string>
@@ -52,23 +52,22 @@
     <string name="settings_nav_model_prompt">提示词</string>
     <string name="settings_nav_model_advanced">高级</string>
     <string name="settings_nav_model_providers">服务商与角色</string>
-    <string name="settings_nav_agent_execution">执行</string>
-    <string name="settings_nav_agent_roles">角色人设</string>
-    <string name="settings_nav_agent_permissions">权限</string>
-    <string name="settings_nav_agent_rules">规则</string>
-    <string name="settings_nav_agent_hooks">钩子</string>
-    <string name="settings_nav_agent_presets">模式预设</string>
-    <string name="settings_nav_agent_subagent">子代理</string>
-    <string name="settings_nav_agent_goal_loop">目标与循环</string>
-    <string name="settings_nav_agent_coding">编程工位</string>
-    <string name="settings_nav_agent_github">GitHub</string>
-    <string name="settings_nav_agent_compression">上下文压缩</string>
-    <string name="settings_nav_agent_vision">视觉</string>
+    <string name="settings_nav_workspace_coding">编程工位</string>
+    <string name="settings_nav_workspace_subagent">子代理</string>
+    <string name="settings_nav_workspace_permissions">权限</string>
+    <string name="settings_nav_workspace_rules">规则</string>
+    <string name="settings_nav_workspace_hooks">钩子</string>
+    <string name="settings_nav_workspace_compression">上下文压缩</string>
+    <string name="settings_nav_workspace_vision">视觉</string>
+    <string name="settings_nav_workspace_goal">目标模式</string>
+    <string name="settings_nav_workspace_github">GitHub</string>
+    <string name="settings_nav_workspace_memory">记忆</string>
     <string name="settings_nav_interface_appearance">外观</string>
     <string name="settings_nav_interface_chat">聊天显示</string>
     <string name="settings_nav_interface_notifications">通知</string>
     <string name="settings_nav_terminal_appearance">外观与反馈</string>
     <string name="settings_nav_terminal_policy">命令策略</string>
+    <string name="settings_nav_terminal_service">后台服务</string>
     <string name="settings_nav_data_backup">备份与恢复</string>
     <string name="settings_nav_data_update">应用更新</string>
     <string name="settings_providers_roles_hint">管理服务商（地址 / 密钥 / 轮换）与模型角色映射（主力 · 视觉 · 推理 · 快速 · 摘要）。</string>
@@ -161,11 +160,7 @@
     <string name="settings_section_advanced">Advanced · 高级</string>
     <string name="settings_strict_schema_desc">JSON Schema 严格模式（仅部分 Provider 支持）</string>
 
-    <!-- Agent -->
-    <!-- Agent Roles (persona layer) -->
-    <string name="settings_roles_section">Agent 角色</string>
-    <string name="settings_roles_subtitle">Agent 是谁：内置全能角色 + 你的自定义人设；切换后下一轮请求即生效（无需重启）</string>
-    <string name="settings_roles_new">新建角色</string>
+    <!-- Coding 专家角色（人设层；编辑器共享键） -->
     <string name="settings_roles_builtin">内置角色（不可编辑，可另存为自定义）</string>
     <string name="settings_roles_active">当前使用</string>
     <string name="settings_roles_edit">编辑角色</string>
@@ -195,31 +190,9 @@
     <string name="settings_roles_language_en">始终英文</string>
     <string name="settings_roles_save">保存</string>
     <string name="settings_roles_cancel">取消</string>
-    <string name="settings_section_agent">Agent · 运行参数</string>
-    <string name="settings_mode_auto">Auto · 自动（旧）</string>
-    <string name="settings_mode_build">Build · 边想边做</string>
-    <string name="settings_mode_chat">Chat · 对话（旧）</string>
-    <string name="settings_mode_plan">Plan · 先规划后执行</string>
-    <string name="settings_mode_goal">Goal · 可验证目标循环</string>
-    <string name="settings_mode_loop">Loop · 循环与定时</string>
-    <string name="settings_mode_spec">Spec · 规格确认后执行</string>
-    <string name="settings_mode_reflect">Reflect · 反思改进</string>
-    <string name="settings_mode_assist">Assist · 人工决策</string>
-    <string name="settings_mode_custom">Custom · 自定义指令</string>
-    <string name="settings_mode_desc">默认执行模式，修改后重启应用生效</string>
-    <string name="settings_think_auto">Auto · 自适应选档</string>
-    <string name="settings_think_minimal">Minimal · 直接执行</string>
-    <string name="settings_think_light">Light · 简短思考</string>
-    <string name="settings_think_standard">Standard · 标准推理</string>
-    <string name="settings_think_deep">Deep · 深度思考</string>
-    <string name="settings_think_maximum">Maximum · 极深思考</string>
-    <string name="settings_think_desc">决策前推理深度（影响 system prompt，重启应用生效）</string>
-    <string name="settings_max_iterations_desc">单任务最大迭代次数，防止无限循环</string>
 
     <!-- ═══ 工具循环 v2 / 限速友好 / 自定义背景（三件套）═══ -->
     <string name="settings_tool_loop_section">工具循环</string>
-    <string name="settings_tool_iterations_unlimited">任务轮次无上限</string>
-    <string name="settings_tool_iterations_unlimited_desc">一个任务的工具调用次数不设轮次硬顶（默认开）；失控由循环检测兑底，也可随时手动停止</string>
     <string name="settings_tool_parallelism">单轮并行执行上限</string>
     <string name="settings_tool_parallelism_desc">模型一轮返回多个工具时最多几个同时执行（1 = 顺序执行，历史行为）。调高可减少请求轮次；终端类工具输出可能交错</string>
     <string name="settings_nav_model_rate_limit">限速友好</string>
@@ -241,9 +214,6 @@
     <string name="settings_background_clear">清除背景</string>
     <string name="settings_background_dim">纱罩强度</string>
     <string name="settings_background_dim_desc">在自适应基数上的手动叠加——觉得文字看不清就调高</string>
-    <string name="settings_reflection_rounds_desc">Reflect 模式每轮执行一次「评审 → 修正」</string>
-    <string name="settings_advanced_behavior">Advanced Agent Behavior（数据预埋）</string>
-    <string name="settings_reflection_desc">启用生成后的自我评审与修正</string>
 
     <!-- Compression -->
     <string name="settings_section_compression">Context Compression · 上下文压缩</string>
@@ -815,20 +785,12 @@
     <string name="settings_keep_alive_conn">连接保活</string>
     <string name="settings_keep_alive_service">后台常驻</string>
     <string name="settings_retry_count">重试次数</string>
-    <string name="settings_max_iterations">最大迭代轮数</string>
-    <string name="settings_reflection_rounds">评审轮数</string>
-    <string name="settings_retry_loop_section">重试与循环检测</string>
-    <string name="settings_auto_retry">自动重试</string>
-    <string name="settings_max_retry_per_action">单动作最大重试</string>
-    <string name="settings_loop_detection">循环检测</string>
-    <string name="settings_loop_detection_window">检测窗口（步）</string>
-    <string name="settings_same_action_threshold">同动作阈值</string>
-    <string name="settings_auto_recovery">自动恢复</string>
-    <string name="settings_reflection_label">自我评审</string>
-    <string name="settings_planning">规划</string>
-    <string name="settings_replanning">重规划</string>
-    <string name="settings_background_execution">后台执行</string>
-    <string name="memory_capture_privacy_notice">对话内容在本机处理以构建你的画像（事实 / 近况 / 里程碑）。可在设置 → Agent 中关闭自动摄取，也可随时在此删除任何一条记忆。</string>
+    <!-- ═══ terminal/service 叶：Ubuntu 终端运行时宿主保活（原 Agent 分区迁入）═══ -->
+    <string name="settings_terminal_service_section">后台服务</string>
+    <string name="settings_terminal_service_desc">保持终端运行时宿主服务后台常驻；关闭即立即停服务</string>
+    <!-- ═══ workspace/memory 叶：#218 聊天记忆自动摄取（原 Agent 分区迁入）═══ -->
+    <string name="settings_memory_section">记忆</string>
+    <string name="memory_capture_privacy_notice">对话内容在本机处理以构建你的画像（事实 / 近况 / 里程碑）。可在设置 → 工作台中关闭自动摄取，也可随时在此删除任何一条记忆。</string>
     <!-- #237 通知权限回收引导 -->
 
     <!-- ═══ #208：权限 / 风险门弹窗文案（GateDialogStrings.Res）═══ -->

@@ -248,8 +248,8 @@ class CodeViewModel @Inject constructor(
         if (active != null) {
             bindWorkspace(active)
         }
-        // v1.2 七档思考系统：恢复持久化档位（与聊天页 thinkingLevelOverride
-        // 互不干扰，两模式各自记忆）
+        // v1.2 七档思考系统：恢复持久化档位（Agent 聊天页的
+        // thinkingLevelOverride 已随 Agent 模式移除，本字段独立记忆）
         restoreThinkingLevel()
         // v1.5 双思考逻辑：恢复持久化档位（空/未知 → 深潜）。先于 setMode：
         // GOAL 恢复强制深潜线，在后恢复会反切持久化线、破坏「GOAL 恒走深潜」。
