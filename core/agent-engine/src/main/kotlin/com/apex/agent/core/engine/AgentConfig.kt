@@ -134,19 +134,9 @@ data class AgentConfig(
     /** 模型名称覆盖 */
     val modelOverride: String? = null,
 
-    /**
-     * 反思轮数（历史遗留字段，引擎已不再消费）：REFLECTION 档位随 Agent
-     * 模式移除（PR 3/6）已删，本字段仅为 AgentSetup 工具与设置页的存量
-     * 消费方保留，待 PR 4/6（AgentSetupTools）/ 5/6（设置页）随消费方删除。
-     */
-    val reflectionRounds: Int = 1,
-
-    /**
-     * 自定义附加指令（历史遗留字段，引擎已不再消费）：CUSTOM 档位随 Agent
-     * 模式移除（PR 3/6）已删，注入点同步移除；字段为 ModePreset 预设链路
-     * 的存量消费方保留，待 PR 5/6（设置域）随消费方删除。
-     */
-    val customInstruction: String? = null,
+    // 反思轮数（reflectionRounds）与自定义指令（customInstruction）两个
+    // 历史遗留字段已随 Agent 模式移除收口：REFLECTION/CUSTOM 档位在 PR 3/6
+    // 删除注入点，PR 4/6（AgentSetupTools）/ PR 5/6（设置域）删除最后消费方。
 
     /**
      * 追加到 system prompt 末尾的动态上下文（任意模式生效）。

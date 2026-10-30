@@ -41,7 +41,7 @@ import com.apex.agent.R
 import com.apex.agent.ui.screen.settings.SectionCard
 
 /**
- * ═══ 工具权限分区（设置 → Agent 页，Issue #155）═══
+ * ═══ 工具权限分区（设置 → 工作台，Issue #155）═══
  *
  * 业界标准式权限模式的设置面：
  *  - 模式区：四选一（BYPASS / DEFAULT / ACCEPT_EDITS / PLAN），
@@ -53,9 +53,9 @@ import com.apex.agent.ui.screen.settings.SectionCard
  *
  * 数据完全由参数驱动（模式 + 规则从 AgentSettings 流入，变更经回调
  * 流出）；唯一的本地状态是「添加规则」对话框的开关与草稿
- * （与 AgentRolesSection 的编辑对话框同款瞬态形态）。
+ * （与角色编辑对话框同款瞬态形态）。
  *
- * 主控挂载（SettingsScreen 的 AgentTab）：
+ * 主控挂载（SettingsScreen 的工作台分类叶子）：
  *
  * PermissionSettingsSection(
  *     mode = agent.permissionMode,
