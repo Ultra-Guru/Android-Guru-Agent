@@ -34,6 +34,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import java.io.File
+import javax.inject.Named
 import javax.inject.Singleton
 import okhttp3.OkHttpClient
 
@@ -144,7 +145,9 @@ object FusionModule {
         registry: FusionBundleRegistry,
         skillRegistry: SkillRegistry,
         mcpManager: McpManager,
-        engineLazy: dagger.Lazy<AgentEngine>,
+        // Agent 模式移除（PR 2/6）：裸 AgentEngine Provider 随 Agent 屏引擎退役；
+        // Fusion 端口改指编码引擎（本软件唯一引擎实例）。
+        engineLazy: dagger.Lazy<@Named("code") AgentEngine>,
         pluginRegistryLazy: dagger.Lazy<com.apex.agent.plugin.host.functional.UnifiedPluginRegistry>,
         hubSource: com.apex.agent.core.tools.marketplace.HubSource
     ): FusionBundleActivator = FusionBundleActivator(
@@ -198,7 +201,8 @@ private class McpConnectorPort(
 /**
  * 引擎人设注入端口 → ApexAgentEngine.patchConfig 读改写（additionalSystemContext）。
  *
- * 注入面说明（#397 后续修正）：本端口作用于 **Agent 引擎单例**（默认绑定）；
+ * 注入面说明（Agent 模式移除后）：本端口改指 **编码引擎**（@Named("code")）；
+ * CodeAgentEngine 非 Apex 实例 → apply/restore 静默降级（容错面不变）；
  * Coding 引擎（@Named("code") DualLogicCodeEngine）的会话附加通道
  * `updateSessionExtras` 已被「小圆环」工具箱占用、`updateRolePersona` 被
  * v6 专家模板占用 —— 无空闲人设通道，不强占。Coding 工位的「强制使用」

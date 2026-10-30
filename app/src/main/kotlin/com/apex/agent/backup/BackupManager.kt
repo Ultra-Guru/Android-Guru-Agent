@@ -7,15 +7,11 @@ import android.util.Base64
 import com.apex.agent.BuildConfig
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
-import com.apex.agent.ui.screen.agent.ChatHistoryManager
-import com.apex.agent.ui.screen.agent.ChatHistoryMessage
-import com.apex.agent.ui.screen.agent.ChatSessionSummary
 import com.apex.agent.vault.VaultEntryListSerializer
 import com.apex.agent.vault.VaultJson
 import com.apex.agent.vault.VaultRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -142,18 +138,6 @@ internal object BackupCrypto {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * 单个聊天会话的备份载体 —— 直接存 [ChatHistoryManager] 语义的 JSON 字符串
- * （summaryJson = [ChatSessionSummary]；messagesJson = List<[ChatHistoryMessage]>），
- * 复用其内部 Json 格式（本文件用同配置的独立 [Json] 实例编解码），
- * 不重建中间模型 —— 会话数据结构与聊天模块解耦演化时互不拖累。
- */
-@Serializable
-data class BackupSessionBundle(
-    val summaryJson: String,
-    val messagesJson: String,
-)
-
-/**
  * 整份备份文件的最外层结构（JSON 落盘格式即本类序列化结果）。
  *
  * 版本兼容语义：`formatVersion` 1 = 当前格式。**读端宽容（ignoreUnknownKeys）、
@@ -173,7 +157,6 @@ data class BackupBundle(
      * `model_providers_v2` 的 value 在导出时已脱敏（apiKeys → 空数组）。
      */
     val settingsJson: Map<String, String> = emptyMap(),
-    val sessions: List<BackupSessionBundle> = emptyList(),
     /** Vault 的 AGM1 加密信封；未包含 Vault 时为 null。 */
     val vaultEnvelope: String? = null,
     /** 导出时 Vault 内的条目数（预览展示用；解密前不可知具体内容）。 */
@@ -191,7 +174,6 @@ data class BackupBundle(
  * （`fill('\u0000')`）由调用方（ViewModel）负责。
  */
 data class ExportOptions(
-    val includeSessions: Boolean = true,
     /** 包含 Vault 时必须提供非空 [vaultPassphrase]，否则 [BackupManager.export] 抛 [IllegalArgumentException]。 */
     val includeVault: Boolean = false,
     val vaultPassphrase: CharArray? = null,
@@ -202,7 +184,6 @@ data class ImportPreview(
     val formatVersion: Int,
     val createdAt: Long,
     val appVersionName: String,
-    val sessionCount: Int,
     val vaultIncluded: Boolean,
     val settingsIncluded: Boolean,
 )
@@ -213,8 +194,6 @@ data class ImportPreview(
  */
 data class ImportResult(
     val settingsImported: Boolean,
-    val sessionsImported: Int,
-    val sessionsSkipped: Int,
     val vaultImported: Boolean,
     val errors: List<String>,
 )
@@ -258,7 +237,6 @@ data class ImportResult(
  * 所有公开方法均为**同步阻塞 IO**（SP 读写 / SAF 流 / 密钥派生），方法
  * 内部不挂起也不切线程 —— 调用方（ViewModel）负责 Dispatchers.IO。
  *
- * @param chatHistory 聊天历史仓库（loadSessions / loadMessages / saveSession）
  * @param vaultRepository 金库仓库 —— 有意不直接注入 VaultStore 接口：仓库
  *   无 `@Binds` 绑定（ToolModule 手动构造 store 注入 repository），直接注入
  *   接口会在 Hilt 图校验时报错；且绕过 repository 的内存快照写 raw store
@@ -268,7 +246,6 @@ data class ImportResult(
 @Singleton
 class BackupManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val chatHistory: ChatHistoryManager,
     private val vaultRepository: VaultRepository,
 ) {
     /** 与 SettingsRepository 同名同键的 SP 访问点（契约见类 KDoc）。 */
@@ -280,13 +257,12 @@ class BackupManager @Inject constructor(
         encodeDefaults = true
         prettyPrint = false
     }
-    private val messagesSerializer = ListSerializer(ChatHistoryMessage.serializer())
 
     // ── 导出 ───────────────────────────────────────────────────
 
     /**
      * 组装完整备份。设置项始终包含（4 键原样搬运，providers 键脱敏后放行）；
-     * 会话与 Vault 按 [options] 选择。
+     * Vault 按 [options] 选择。
      *
      * @throws IllegalArgumentException includeVault=true 且口令为空 ——
      *   调用方（ViewModel）应转译为用户可读提示；UI 层已在按钮禁用态兜底，
@@ -319,16 +295,6 @@ class BackupManager @Inject constructor(
                 redactedCount += redacted.second
             }
         }
-        val sessions = if (options.includeSessions) {
-            chatHistory.loadSessions().mapNotNull { summary ->
-                runCatching {
-                    BackupSessionBundle(
-                        summaryJson = json.encodeToString(ChatSessionSummary.serializer(), summary),
-                        messagesJson = json.encodeToString(messagesSerializer, chatHistory.loadMessages(summary.id)),
-                    )
-                }.getOrNull() // 单会话损坏不拖累整份备份
-            }
-        } else emptyList()
         var vaultEnvelope: String? = null
         var vaultEntryCount = 0
         if (options.includeVault) {
@@ -345,7 +311,6 @@ class BackupManager @Inject constructor(
             appVersionName = BuildConfig.VERSION_NAME,
             appVersionCode = BuildConfig.VERSION_CODE,
             settingsJson = settings,
-            sessions = sessions,
             vaultEnvelope = vaultEnvelope,
             vaultEntryCount = vaultEntryCount,
             redactedApiKeyCount = redactedCount,
@@ -378,7 +343,7 @@ class BackupManager @Inject constructor(
     }.getOrNull()
 
     /**
-     * 只解析元信息生成预览（formatVersion / createdAt / 来源版本 / 会话数 /
+     * 只解析元信息生成预览（formatVersion / createdAt / 来源版本 /
      * 是否含 Vault / 是否含设置）。任何解析失败返回 null —— 预览阶段绝不
      * 触碰恢复逻辑。
      */
@@ -388,7 +353,6 @@ class BackupManager @Inject constructor(
             formatVersion = bundle.formatVersion,
             createdAt = bundle.createdAt,
             appVersionName = bundle.appVersionName,
-            sessionCount = bundle.sessions.size,
             vaultIncluded = bundle.vaultEnvelope != null,
             settingsIncluded = bundle.settingsJson.isNotEmpty(),
         )
@@ -398,16 +362,12 @@ class BackupManager @Inject constructor(
 
     /**
      * 执行恢复。逐项隔离失败：**单条 runCatching 收集 errors，绝不中断整批**
-     * （一个会话损坏不该拖掉设置恢复）。
+     * （一项损坏不该拖掉设置恢复）。
      *
      *  - formatVersion > 1 直接拒绝（读到不认识的格式宁可不动本机数据）；
      *  - settings：仅写回 4 个已知键中的非空值，providers 键写前**再脱敏一次**
      *    （防御性处理，不信任文件内容）；本机已有的键值被覆盖 —— 恢复语义
      *    即「以备份为准」；
-     *  - sessions：已存在 id（loadSessions().map{id}）跳过并计入
-     *    [ImportResult.sessionsSkipped]，仅新会话 saveSession；注意
-     *    ChatHistoryManager 有「最近 100 个会话」上限，超量导入时最旧会话
-     *    会被裁掉（与其存储策略一致）；
      *  - vault：信封解密成功才入库；**合并语义（upsert）** —— 解密后逐条
      *    [VaultRepository.save]（同 id / 同 label 合入，本机独有的条目保留），
      *    内存快照 + 加密盘 + 脱敏登记表同步更新，无需重启即生效；口令错误 /
@@ -420,22 +380,19 @@ class BackupManager @Inject constructor(
     fun import(
         json: String,
         restoreSettings: Boolean,
-        restoreSessions: Boolean,
         restoreVault: Boolean,
         vaultPassphrase: CharArray?,
     ): ImportResult {
         val bundle = runCatching {
             this.json.decodeFromString(BackupBundle.serializer(), json)
         }.getOrElse {
-            return ImportResult(false, 0, 0, false, listOf(ERR_BUNDLE_UNREADABLE))
+            return ImportResult(false, false, listOf(ERR_BUNDLE_UNREADABLE))
         }
         if (bundle.formatVersion > CURRENT_FORMAT_VERSION) {
-            return ImportResult(false, 0, 0, false, listOf(ERR_VERSION_TOO_NEW))
+            return ImportResult(false, false, listOf(ERR_VERSION_TOO_NEW))
         }
         val errors = mutableListOf<String>()
         var settingsImported = false
-        var sessionsImported = 0
-        var sessionsSkipped = 0
         var vaultImported = false
 
         if (restoreSettings) {
@@ -454,31 +411,6 @@ class BackupManager @Inject constructor(
                 runCatching { prefs.edit().putString(key, safe).apply() }
                     .onSuccess { settingsImported = true }
                     .onFailure { errors += "$ERR_SETTINGS_WRITE_FAILED:$key" }
-            }
-        }
-
-        if (restoreSessions && bundle.sessions.isNotEmpty()) {
-            val existingIds = runCatching {
-                chatHistory.loadSessions().map { it.id }.toSet()
-            }.getOrDefault(emptySet())
-            bundle.sessions.forEachIndexed { index, session ->
-                val decoded = runCatching {
-                    val summary = this.json.decodeFromString(ChatSessionSummary.serializer(), session.summaryJson)
-                    val messages = this.json.decodeFromString(messagesSerializer, session.messagesJson)
-                    summary to messages
-                }.getOrNull()
-                if (decoded == null) {
-                    errors += "$ERR_SESSION_RESTORE_FAILED:#$index"
-                    return@forEachIndexed
-                }
-                val (summary, messages) = decoded
-                if (summary.id in existingIds) {
-                    sessionsSkipped++
-                    return@forEachIndexed
-                }
-                runCatching { chatHistory.saveSession(summary, messages) }
-                    .onSuccess { sessionsImported++ }
-                    .onFailure { errors += "$ERR_SESSION_RESTORE_FAILED:${summary.id}" }
             }
         }
 
@@ -503,7 +435,7 @@ class BackupManager @Inject constructor(
             }
         }
 
-        return ImportResult(settingsImported, sessionsImported, sessionsSkipped, vaultImported, errors)
+        return ImportResult(settingsImported, vaultImported, errors)
     }
 
     // ── 内部工具 ───────────────────────────────────────────────
@@ -554,6 +486,5 @@ class BackupManager @Inject constructor(
         const val ERR_VAULT_WRITE_FAILED = "vault_write_failed"
         const val ERR_PROVIDERS_REDACT_FAILED = "providers_redact_failed"
         const val ERR_SETTINGS_WRITE_FAILED = "settings_write_failed"
-        const val ERR_SESSION_RESTORE_FAILED = "session_restore_failed"
     }
 }

@@ -98,7 +98,7 @@ internal class NavigationBackStack(
             },
             restore = { routes ->
                 if (routes.isEmpty()) {
-                    NavigationBackStack(DrawerDestination.Agent)
+                    NavigationBackStack(DrawerDestination.Code)
                 } else {
                     val destinations = routes.map { destinationFromRoute(it) }
                     NavigationBackStack(
@@ -117,7 +117,7 @@ internal class NavigationBackStack(
 @Composable
 internal fun rememberNavigationBackStack(): NavigationBackStack =
     rememberSaveable(saver = NavigationBackStack.Saver) {
-        NavigationBackStack(DrawerDestination.Agent)
+        NavigationBackStack(DrawerDestination.Code)
     }
 
 /**
@@ -128,7 +128,7 @@ internal fun rememberNavigationBackStack(): NavigationBackStack =
  * 重建时若停留在原 Skill 页不落空）。
  */
 internal fun destinationFromRoute(route: String): DrawerDestination = when (route) {
-    DrawerDestination.Agent.route -> DrawerDestination.Agent
+    "agent" -> DrawerDestination.Code
     DrawerDestination.Code.route -> DrawerDestination.Code
     DrawerDestination.Templates.route -> DrawerDestination.Templates
     DrawerDestination.Terminal.route -> DrawerDestination.Terminal
@@ -137,7 +137,6 @@ internal fun destinationFromRoute(route: String): DrawerDestination = when (rout
     DrawerDestination.Market.route -> DrawerDestination.Market
     DrawerDestination.Browser.route -> DrawerDestination.Browser
     DrawerDestination.Memory.route -> DrawerDestination.Memory
-    DrawerDestination.Tasks.route -> DrawerDestination.Tasks
     DrawerDestination.Storage.route -> DrawerDestination.Storage
     DrawerDestination.Permissions.route -> DrawerDestination.Permissions
     DrawerDestination.Vault.route -> DrawerDestination.Vault
@@ -149,5 +148,5 @@ internal fun destinationFromRoute(route: String): DrawerDestination = when (rout
     DrawerDestination.Usage.route -> DrawerDestination.Usage
     DrawerDestination.Diagnostics.route -> DrawerDestination.Diagnostics
     DrawerDestination.About.route -> DrawerDestination.About
-    else -> DrawerDestination.Agent
+    else -> DrawerDestination.Code
 }

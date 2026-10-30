@@ -43,9 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.BuildConfig
 import com.apex.agent.R
 import com.apex.agent.ui.theme.LocalExtendedColors
-import com.apex.agent.github.GithubTokenManager
 import com.apex.agent.ui.glass.GlassNavigationItem
-import com.apex.agent.ui.screen.agent.AgentChatViewModel
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -66,14 +64,9 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 fun ApexDrawerContent(
     currentDestination: DrawerDestination,
     onDestinationSelected: (DrawerDestination) -> Unit,
-    tokenManager: GithubTokenManager
 ) {
-    val agentVm: AgentChatViewModel = hiltViewModel()
-    // 窄化徽标流：抽屉只需要 mode/thinkingLevel/historyDepth 三字段——
-    // 直接订阅全量 uiState 会在流式输出期间（每 token 一次 copy）把整个
-    // 抽屉重组风暴掉（抽屉关闭时也保持组合，照样重组）
-    val badges by agentVm.drawerBadges.collectAsStateWithLifecycle()
-    val githubState by tokenManager.connectionState.collectAsStateWithLifecycle()
+    val appVm: AppStatusViewModel = hiltViewModel()
+    val githubState by appVm.githubTokenManager.connectionState.collectAsStateWithLifecycle()
     val drawerBackdrop = rememberLayerBackdrop()
 
     ModalDrawerSheet(
@@ -170,8 +163,7 @@ fun ApexDrawerContent(
 
                     // ═══ 玻璃导航项 —— 每项独立玻璃材质，Normal 极轻 ═══
                     val destinations = listOf(
-                        DrawerDestination.Agent,
-                        // Coding 模式：与 Agent 平级的独立工作流页，导航紧随其后
+                        // Coding 模式：本软件的唯一核心工作流页
                         DrawerDestination.Code,
                         // #197 模板工坊：Agent/Coding 双层模板 + Agent 角色详细设置
                         DrawerDestination.Templates,
@@ -180,7 +172,6 @@ fun ApexDrawerContent(
                         // 浏览器大功能（v1.5.0 内置化）：市场后的高频工作流入口
                         DrawerDestination.Browser,
                         DrawerDestination.Memory,
-                        DrawerDestination.Tasks,
                         // v1.4.4 #6：用量仪表盘（数据洞察，与任务历史相邻）
                         DrawerDestination.Usage,
                         DrawerDestination.Storage,
@@ -229,23 +220,10 @@ fun ApexDrawerContent(
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
 
-                // ═══ 底部状态（等宽 chip） ═══
+                // ═══ 底部状态（GitHub 连接） ═══
                 Column(
                     modifier = Modifier.padding(16.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        StatusChip("MODE", badges.mode.name)
-                        StatusChip("THINK", badges.thinkingLevel.name)
-                    }
-                    if (badges.historyDepth > 0) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        StatusChip("MEM", stringResource(R.string.drawer_mem_count, badges.historyDepth))
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    // GitHub 连接状态常显（不再仅在触发 /mcp:github 时提示）
                     GithubStatusRow(
                         isConnected = githubState.isConnected,
                         username = githubState.username
