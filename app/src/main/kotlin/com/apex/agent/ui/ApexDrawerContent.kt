@@ -176,7 +176,7 @@ fun ApexDrawerContent(
                         // #197 模板工坊：Agent/Coding 双层模板 + Agent 角色详细设置
                         DrawerDestination.Templates,
                         DrawerDestination.Terminal,
-                        DrawerDestination.Market,
+                        DrawerDestination.HubCenter,
                         // 浏览器大功能（v1.5.0 内置化）：市场后的高频工作流入口
                         DrawerDestination.Browser,
                         DrawerDestination.Memory,

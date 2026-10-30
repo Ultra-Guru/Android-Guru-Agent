@@ -71,7 +71,6 @@ import com.apex.agent.ui.icons.CrownGold
 import com.apex.agent.ui.icons.FusionCrown
 import com.apex.agent.ui.icons.FusionCrownCanvas
 import com.apex.agent.ui.screen.agent.PendingPipelineCommand
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
@@ -116,63 +115,8 @@ fun FusionBundleButton(
         if (isActive) R.string.fusion_cd_bundle_active else R.string.fusion_cd_bundle
     )
 
-    // ── Claude 插件包导入（SAF 选 zip → 安全解压 → 导入器 → 聚合注册表）──
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val feedback = LocalFeedbackController.current
-    val importScope = rememberCoroutineScope()
-    val importDonePattern = stringResource(R.string.fusion_import_claude_done)
-    val importFailedPattern = stringResource(R.string.fusion_import_claude_failed)
-    val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        importScope.launch(Dispatchers.IO) {
-            val result = runCatching {
-                val cacheDir = java.io.File(context.cacheDir, "claude-import")
-                    .apply { deleteRecursively(); mkdirs() }
-                val zipFile = java.io.File(cacheDir, "pack.zip")
-                context.contentResolver.openInputStream(uri)!!.use { input ->
-                    zipFile.outputStream().use { output -> input.copyTo(output) }
-                }
-                val extractDir = java.io.File(cacheDir, "unzipped")
-                com.apex.agent.core.tools.skill.SafeZipExtractor.extract(zipFile, extractDir)
-                com.apex.agent.core.tools.claudeimport.ClaudePluginImporter.importFromDir(extractDir)
-            }
-            result.fold(
-                onSuccess = { imported ->
-                    val installed = controller.registryForTools.install(imported.manifestJson)
-                    installed.fold(
-                        onSuccess = {
-                            feedback.show(
-                                String.format(
-                                    importDonePattern, it.name,
-                                    it.skills.size,
-                                    it.plugins.firstOrNull()
-                                        ?.let { p -> countSlashCommands(p) } ?: 0,
-                                    if (it.agent.persona.isBlank()) 0 else 1
-                                ),
-                                FeedbackSeverity.INFO
-                            )
-                        },
-                        onFailure = {
-                            feedback.show(
-                                String.format(importFailedPattern, it.message ?: ""),
-                                FeedbackSeverity.WARNING
-                            )
-                        }
-                    )
-                },
-                onFailure = {
-                    feedback.show(
-                        String.format(importFailedPattern, it.message ?: ""),
-                        FeedbackSeverity.WARNING
-                    )
-                }
-            )
-            // 导入缓存清理（保留注册表落盘的 bundle json，临时物即用即弃）
-            java.io.File(context.cacheDir, "claude-import").deleteRecursively()
-        }
-    }
+    // ── Claude 插件包导入（共享 launcher —— 与工具聚合中心同一实现）──
+    val importLauncher = rememberClaudeImportLauncher(controller)
 
     // 锚点纵坐标（窗口系；翻转判定用）
     var anchorTopInWindow by remember { mutableStateOf(Float.MAX_VALUE) }
@@ -757,14 +701,6 @@ fun FusionBundleActiveBanner(
 interface FusionBundleEntryPoint {
     fun fusionBundleController(): FusionBundleController
 }
-
-/** 统计聚合内联插件（commands 载体）贡献的斜杠指令数（导入反馈文案用）。 */
-private fun countSlashCommands(
-    ref: com.apex.agent.core.tools.fusion.FusionPluginRef
-): Int = runCatching {
-    (ref.manifest["contributions"] as? kotlinx.serialization.json.JsonObject)
-        ?.get("slashCommands") as? kotlinx.serialization.json.JsonArray
-}.getOrNull()?.size ?: 0
 
 /** Compose 中获取 FusionBundle 控制器单例（随 Application 上下文记忆化）。 */
 @Composable

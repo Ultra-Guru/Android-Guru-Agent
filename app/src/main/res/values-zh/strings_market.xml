@@ -108,7 +108,7 @@
 
     <!-- ═══ 已安装管理 · 插件（Plugin System v2：功能 + APK 双形态）═══ -->
     <string name="market_installed_plugins_empty">尚未安装任何插件 —— 功能性插件可在下方导入 JSON，市场发现的插件 APK 加载后自动出现</string>
-    <string name="market_installed_plugins_go">去市场加载</string>
+    <string name="market_installed_plugins_go">去加载</string>
     <string name="market_installed_plugins_header">已加载 %1$d 个插件；卸载仅解除服务绑定，APK 仍在设备上，可随时重新加载。</string>
     <string name="market_installed_plugins_header_v2">功能性 %1$d · APK %2$d。功能性插件开关即时生效（工具实时注册/回收）；APK 卸载仅解绑，APK 仍留在设备。</string>
     <string name="market_plugins_uninstall_title">卸载插件</string>
@@ -133,7 +133,7 @@
 
     <!-- ═══ 已安装管理 · Skills ═══ -->
     <string name="market_installed_skills_empty">暂无已安装技能 —— 到「市场」从 GitHub / URL / 魔搭安装</string>
-    <string name="market_installed_skills_go">去市场安装</string>
+    <string name="market_installed_skills_go">去安装</string>
     <string name="market_installed_skills_empty_short">暂无已安装技能</string>
     <string name="market_installed_skills_header">已安装 %1$d 个技能（按最近使用排序）；点击卡片查看认知详情（能量 / 结晶 / 调用统计 / 熔断 / 轨迹）；开关控制是否注入对话，卸载将删除 manifest 与资源目录。</string>
     <string name="market_skill_last_used">最近 %1$s</string>
@@ -144,7 +144,7 @@
 
     <!-- ═══ 已安装管理 · MCP ═══ -->
     <string name="market_installed_mcp_empty">未配置 MCP 工具源 —— 到「市场」添加远端 HTTP/SSE 或本地命令 STDIO</string>
-    <string name="market_installed_go_add">去市场添加</string>
+    <string name="market_installed_go_add">去添加</string>
     <string name="market_installed_mcp_empty_short">未配置 MCP 工具源</string>
     <string name="market_installed_mcp_header">已配置 %1$d 个 MCP 工具源；连接后其工具注入对话，/ 菜单出现 /mcp:&lt;名称&gt;。</string>
     <string name="market_transport_stdio">传输：STDIO（本地命令）</string>
@@ -164,7 +164,7 @@
 
     <!-- ═══ 已安装管理 · 集成 ═══ -->
     <string name="market_installed_integrations_empty">尚未从远程仓库（魔搭 / GitHub / ClawHub）安装技能 —— 到「市场」浏览并安装</string>
-    <string name="market_installed_integrations_go">去市场逛逛</string>
+    <string name="market_installed_integrations_go">去逛逛</string>
     <string name="market_installed_integrations_empty_short">暂无远程来源技能</string>
     <string name="market_installed_integrations_header">ms- 前缀 = 魔搭 ModelScope 安装；gh- 前缀 = GitHub 仓库转换安装；ch- 前缀 = ClawHub 仓库安装。自定义 manifest 的 GitHub 技能在「Skills」页管理。</string>
     <string name="market_source_modelscope">魔搭</string>

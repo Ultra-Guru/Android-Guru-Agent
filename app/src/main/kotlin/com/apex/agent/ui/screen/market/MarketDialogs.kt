@@ -34,6 +34,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.Icon
 import com.apex.agent.R
 import com.apex.agent.core.tools.mcp.McpConfigValidator
 import com.apex.agent.core.tools.mcp.McpServerConfig
@@ -935,4 +943,133 @@ internal fun GithubCandidatesPickDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.market_action_cancel)) }
         }
     )
+}
+
+
+/**
+ * #197 MCP 真实启动进度弹窗（连接中服务器的实时阶段）。
+ *
+ * 原位于 MarketScreen.kt（已删除，被工具聚合中心取代）——随顶层屏幕
+ * 消亡迁入本对话框集，[AggregationCenterScreen] 消费 `state.mcpStartup`
+ * 渲染。每一行都是真实事件（环境检查 / 子进程 fork（pid+argv）/
+ * initialize 握手 / initialized / tools 发现），时间戳为事件到达时刻；
+ * 进行中的阶段尾部脉冲，失败行红色展开真实错误。**没有任何模拟延时** ——
+ * 阶段间的等待就是真实的 npx 冷启动/网络握手耗时。
+ */
+@Composable
+internal fun McpStartupProgressDialog(
+    startup: McpStartupUi,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(R.string.market_mcp_startup_title, startup.serverName),
+                style = MaterialTheme.typography.titleMedium
+            )
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .width(320.dp)
+            ) {
+                // #205：key 加 index —— stderr 事件与阶段事件同毫秒到达时
+                // "timestamp+stage" 也会撞键（两条 STDERR 同 ms 尤甚）导致崩溃。
+                itemsIndexed(
+                    startup.events,
+                    key = { i, e -> "$i-${e.timestampMs}-${e.stage.name}" }
+                ) { _, event ->
+                    val failed = event.stage == com.apex.agent.core.tools.mcp.McpStartupStage.FAILED
+                    val stderr = event.stage == com.apex.agent.core.tools.mcp.McpStartupStage.STDERR
+                    Row(
+                        verticalAlignment = Alignment.Top,
+                        modifier = Modifier.padding(vertical = if (stderr) 2.dp else 5.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (failed) Icons.Default.ErrorOutline
+                            else if (stderr) Icons.Default.Info
+                            else Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = if (failed) MaterialTheme.colorScheme.error
+                            else if (stderr) MaterialTheme.colorScheme.outline
+                            else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(17.dp)
+                        )
+                        Column(modifier = Modifier.padding(start = 8.dp)) {
+                            Text(
+                                text = stageLabel(event.stage),
+                                style = if (stderr) MaterialTheme.typography.labelSmall
+                                else MaterialTheme.typography.labelLarge
+                            )
+                            Text(
+                                text = event.detail,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = formatEventTime(event.timestampMs),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    }
+                }
+                if (startup.running) {
+                    item {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(vertical = 6.dp)
+                        ) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Text(
+                                text = stringResource(R.string.market_mcp_startup_running),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 8.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    if (startup.running) stringResource(R.string.market_mcp_startup_hide)
+                    else stringResource(R.string.market_mcp_startup_done)
+                )
+            }
+        }
+    )
+}
+
+/** 启动阶段的本地化标签（真实阶段名 → 用户可读文案）。 */
+@Composable
+private fun stageLabel(stage: com.apex.agent.core.tools.mcp.McpStartupStage): String =
+    stringResource(
+        when (stage) {
+            com.apex.agent.core.tools.mcp.McpStartupStage.ENV_CHECK -> R.string.market_mcp_stage_env
+            com.apex.agent.core.tools.mcp.McpStartupStage.SPAWN -> R.string.market_mcp_stage_spawn
+            com.apex.agent.core.tools.mcp.McpStartupStage.INITIALIZE_SENT -> R.string.market_mcp_stage_init_sent
+            com.apex.agent.core.tools.mcp.McpStartupStage.INITIALIZE_RESULT -> R.string.market_mcp_stage_init_result
+            com.apex.agent.core.tools.mcp.McpStartupStage.INITIALIZED -> R.string.market_mcp_stage_initialized
+            com.apex.agent.core.tools.mcp.McpStartupStage.TOOLS_DISCOVERED -> R.string.market_mcp_stage_tools
+            com.apex.agent.core.tools.mcp.McpStartupStage.STDERR -> R.string.market_mcp_stage_stderr
+            com.apex.agent.core.tools.mcp.McpStartupStage.FAILED -> R.string.market_mcp_stage_failed
+        }
+    )
+
+// v1.4.4 UX 审查：SimpleDateFormat 提升为复用实例（旧实现位于 items 循环体内，
+// 每行每次重组都 new 一个；对齐 LogViewerScreen 的既有模式）
+private val marketEventTimeFormat = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US)
+
+private fun formatEventTime(ts: Long): String {
+    synchronized(marketEventTimeFormat) {
+        return marketEventTimeFormat.format(java.util.Date(ts))
+    }
 }

@@ -8,7 +8,7 @@
     <string name="drawer_terminal">Terminal</string>
 <!-- #197 Template Studio -->
     <string name="drawer_templates">Template Studio</string>
-    <string name="drawer_market">Market</string>
+    <string name="drawer_market">Aggregation Center</string>
     <string name="drawer_browser">Browser</string>
     <string name="drawer_memory">Memory</string>
     <string name="drawer_tasks">Tasks</string>

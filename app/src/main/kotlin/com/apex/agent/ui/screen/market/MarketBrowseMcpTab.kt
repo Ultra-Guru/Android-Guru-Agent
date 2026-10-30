@@ -442,7 +442,7 @@ internal fun BrowseMcpTab(state: MarketUiState, viewModel: MarketViewModel) {
             }
         )
     }
-    // 从 GitHub 安装（智能路由入口：多候选时 MarketScreen 全局弹
+    // 从 GitHub 安装（智能路由入口：多候选时 AggregationCenterScreen 全局弹
     // GithubCandidatesPickDialog，本弹窗只收输入）
     if (showGithubInstallDialog) {
         GitHubRepoInstallDialog(

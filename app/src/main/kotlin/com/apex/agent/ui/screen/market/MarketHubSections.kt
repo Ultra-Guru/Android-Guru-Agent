@@ -151,7 +151,7 @@ private fun HubSkillCard(
 /**
  * 官方 MCP 仓库行卡（apex-mcp-hub 目录条目）：
  * - 未安装 → 「安装」（enabled=false 落盘，安装 ≠ 启动）；
- * - 已安装未运行 → 「启动」（真实连接管线，进度弹窗见 MarketScreen）；
+ * - 已安装未运行 → 「启动」（真实连接管线，进度弹窗见 AggregationCenterScreen）；
  * - 运行中 → 「停止」；
  * - 沙箱条目带「需 Ubuntu」标签（rootfs 未装时启动会得到引导性报错）。
  */
@@ -316,7 +316,7 @@ internal fun ConfiguredMcpCard(
  * - **工位作用域**（agent / coding / all —— 市场分级与斜杠菜单的过滤口径）；
  * - **启停**（enabled —— 启用 = App 启动时自动连接）；
  * - **连接**（真实启动管线：进程内握手 + tools/list 发现，进度弹窗由
- *   MarketScreen 的 McpStartupProgressDialog 全局渲染）；
+ *   AggregationCenterScreen 的 McpStartupProgressDialog 全局渲染）；
  * - **GitHub 账号**（仅内置 github：嵌 GithubTokenDialog，补 token 后
  *   get_me/list_repositories 等 7 工具立即可用）。
  *

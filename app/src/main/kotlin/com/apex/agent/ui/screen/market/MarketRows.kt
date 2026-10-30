@@ -195,7 +195,7 @@ data class MarketUiState(
     val clawHubQueryLoading: Boolean = false,
     /** 正在安装的技能 slug（行级 busy；null = 空闲，非 null 时禁用其它安装按钮防并发）。 */
     val clawHubInstallingSlug: String? = null,
-    /** P1（市场审计）：待确认安装的干运行预览 —— 非空时 MarketScreen 弹
+    /** P1（市场审计）：待确认安装的干运行预览 —— 非空时 AggregationCenterScreen 弹
      * ManifestDryRunDialog（manifest 摘要/依赖/权限/promptInjection 警示），
      * 用户确认后才真正落盘。此前三件套预览组件全为死码，所有源一点即装。 */
     val installPreview: com.apex.agent.marketplace.MarketInstallManager.ManifestPreview? = null,

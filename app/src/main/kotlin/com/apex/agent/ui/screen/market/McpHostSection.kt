@@ -458,7 +458,7 @@ private fun AuditLogList(entries: List<HostAuditEntry>) {
     ) {
         // #245 同款修复：审计环形缓冲（AUDIT_LOG_SIZE=100，头部淘汰）无 key 时
         // 隐式 index key 会让头部淘汰后的条目错位到相邻行。HostAuditEntry 无唯一
-        // id 字段，用业务字段组合键（MarketScreen 启动事件 key 同款模式；时间戳
+        // id 字段，用业务字段组合键（AggregationCenterScreen 启动事件 key 同款模式；时间戳
         // 在 stateLock 内逐条落库，同毫秒同源同方法同工具的重复实践上不可达）。
         items(
             count = entries.size,

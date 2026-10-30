@@ -70,6 +70,15 @@
     <string name="fusion_composer_hub_loading">Loading repo catalog…</string>
     <string name="fusion_composer_hub_error">Repo unreachable: %1$s</string>
 
+    <!-- ═══ Aggregation Center (replaces the old Market top-level) ═══ -->
+    <string name="hub_hero_title">Fusion Panel</string>
+    <string name="hub_hero_subtitle">Fuse skills, MCP servers, tools and plugins into one aggregation — activate the whole squad in one tap</string>
+    <string name="hub_my_aggregations">My aggregations</string>
+    <string name="hub_aggregations_empty">No aggregation packs yet — start from the Fusion Panel above.</string>
+    <string name="hub_mode_add">Add members</string>
+    <string name="hub_mode_mine">My members</string>
+    <string name="hub_edit">Edit</string>
+
     <!-- ═══ Actions & results ═══ -->
     <string name="fusion_action_activate">Use this pack</string>
     <string name="fusion_action_deactivate">Stop using</string>

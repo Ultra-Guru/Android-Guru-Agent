@@ -18,9 +18,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalFireDepartment
-import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
@@ -30,7 +28,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,41 +76,6 @@ internal fun formatRelativeTime(timestampMs: Long): String {
         delta < 86_400_000 -> stringResource(R.string.market_time_hours_ago, delta / 3_600_000)
         delta < 30L * 86_400_000 -> stringResource(R.string.market_time_days_ago, delta / 86_400_000)
         else -> stringResource(R.string.market_time_months_ago, delta / (30L * 86_400_000))
-    }
-}
-
-/** 顶栏视图切换行 —— 市场 / 已安装管理 两个一级导航。 */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable
-internal fun MarketScopeTabs(
-    scope: MarketScope,
-    installedCount: Int,
-    onSelect: (MarketScope) -> Unit
-) {
-    PrimaryTabRow(selectedTabIndex = scope.ordinal) {
-        MarketScope.entries.forEach { item ->
-            val labelText = stringResource(item.labelRes)
-            val label = if (item == MarketScope.INSTALLED && installedCount > 0) {
-                "$labelText · $installedCount"
-            } else {
-                labelText
-            }
-            Tab(
-                selected = scope == item,
-                onClick = { onSelect(item) },
-                text = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                icon = {
-                    Icon(
-                        imageVector = if (item == MarketScope.BROWSE) {
-                            Icons.Default.Storefront
-                        } else {
-                            Icons.Default.Inventory2
-                        },
-                        contentDescription = null
-                    )
-                }
-            )
-        }
     }
 }
 

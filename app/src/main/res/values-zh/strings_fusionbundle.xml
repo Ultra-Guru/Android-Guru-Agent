@@ -68,6 +68,15 @@
     <string name="fusion_composer_hub_loading">仓库目录加载中…</string>
     <string name="fusion_composer_hub_error">仓库不可达：%1$s</string>
 
+    <!-- ═══ 工具聚合中心（取代旧市场顶层）═══ -->
+    <string name="hub_hero_title">融合面板</string>
+    <string name="hub_hero_subtitle">把技能、MCP、工具、插件融合成一个聚合 —— 一键激活整支队伍</string>
+    <string name="hub_my_aggregations">我的聚合</string>
+    <string name="hub_aggregations_empty">暂无聚合包 —— 从上方融合面板开始创建。</string>
+    <string name="hub_mode_add">添加成员</string>
+    <string name="hub_mode_mine">我的成员</string>
+    <string name="hub_edit">编辑</string>
+
     <!-- ═══ 操作与结果 ═══ -->
     <string name="fusion_action_activate">使用此包</string>
     <string name="fusion_action_deactivate">停用</string>
