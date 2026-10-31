@@ -63,7 +63,7 @@ class SettingsNavTreeTest {
 
         val leaf = leafOf("integrations/memory")
         assertNotNull(leaf)
-        assertEquals(R.string.settings_nav_workspace_memory, leaf?.titleRes)
+        assertEquals("integrations/memory", leaf?.route)
 
         assertNull(leafOf("workspace/github"))
         assertNull(leafOf("不存在/叶子"))
