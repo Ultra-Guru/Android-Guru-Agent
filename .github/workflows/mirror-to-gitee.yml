@@ -1,0 +1,41 @@
+name: Mirror to Gitee
+
+on:
+  push:
+    branches: ['**']
+    tags: ['**']
+  schedule:
+    - cron: '23 19 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: mirror-gitee
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    name: Push mirror to Gitee
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Mirror push
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          DST_REPO: ultra-unknown/Android-Guru-Agent
+        run: |
+          set -euo pipefail
+          git clone --bare "https://github.com/$GITHUB_REPOSITORY.git" repo.git
+          cd repo.git
+          for i in 1 2 3; do
+            if git push --mirror "https://oauth2:$GITEE_TOKEN@gitee.com/$DST_REPO.git"; then
+              echo "Mirrored to https://gitee.com/$DST_REPO"
+              exit 0
+            fi
+            echo "attempt $i failed, retrying in 30s..."
+            sleep 30
+          done
+          echo "::error::mirror push failed after 3 attempts"
+          exit 1

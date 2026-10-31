@@ -10,6 +10,7 @@ import com.apex.agent.platform.terminal.linux.CpuArchitecture
 import com.apex.agent.platform.terminal.linux.LinuxDistribution
 import com.apex.agent.platform.terminal.linux.RootfsDescriptor
 import com.apex.agent.platform.terminal.environment.LinuxEnvironmentManager
+import com.apex.agent.platform.terminal.proot.HostRootBridge
 import com.apex.agent.platform.terminal.proot.PRootArgvCapabilities
 import com.apex.agent.platform.terminal.proot.PRootBind
 import com.apex.agent.platform.terminal.proot.PRootCommand
@@ -51,6 +52,7 @@ private const val TAG = "ProotExec"
  * | SpawnRequest.cwd | guest cwd | 说明 |
  * |---|---|---|
  * | null | /workspace | 与 PTY 会话默认一致（文件工具写入的目录） |
+ * | /（host 根） | /host | 真实系统根 bind（[HostRootBridge]；「整个系统」工作区） |
  * | /storage/emulated/0/… | /sdcard/… | 共享存储 bind（Termux 语义） |
  * | <filesDir>/linux/home/… | /root/… | 持久化 home bind（与终端会话互通） |
  * | <filesDir>/linux/workspaces/… | /workspace | 该工作区 bind 到 /workspace（与 git runner 一致） |
@@ -341,6 +343,13 @@ class ProotCommandSpawner(
             }
             return GuestCwdPlan(GUEST_ROOT_HOME, emptyList(), WorkspacePath(GUEST_ROOT_HOME))
         }
+        // host 根 `/` → guest /host（HostRootBridge bind）。若按「真实存在的
+        // host 目录 → 同路径 bind」走，会得到 bind /:/ —— guest 根被真实系统
+        // 覆盖，rootfs 的 /bin/bash 都不复存在，命令必炸。真实系统根在 guest
+        // 视角恒定挂 /host。
+        if (cwd == "/") {
+            return GuestCwdPlan(HostRootBridge.GUEST_PATH, emptyList(), WorkspacePath(HostRootBridge.GUEST_PATH))
+        }
         // 共享存储前缀 → /sdcard/**
         val sharedHost = sharedStorage.hostDir()
         if (sharedHost != null && cwd.startsWith(sharedHost.absolutePath)) {
@@ -390,11 +399,12 @@ class ProotCommandSpawner(
     /**
      * guest 风格 cwd → [GuestCwdPlan]（/workspace、/sdcard、/root、~/ 前缀）。
      *
-     * 三个 guest 根都是宿主 bind 源的镜像，因此可以在宿主侧验证子路径存在性
+     * 四个 guest 根都是宿主 bind 源的镜像，因此可以在宿主侧验证子路径存在性
      * （bind 源目录 = guest 视角的同一物理目录）：
      *  - `/workspace[/…]` → default 工作区（bind 恒等）；
      *  - `/sdcard[/…]`    → 共享存储（/storage/emulated/0）；
-     *  - `/root[/…]`、`~[/…]` → 持久化 home（<filesDir>/linux/home）。
+     *  - `/root[/…]`、`~[/…]` → 持久化 home（<filesDir>/linux/home）；
+     *  - `/host[/…]`      → 真实系统根（宿主 /，[HostRootBridge] bind）。
      *
      * @return null = 不是 guest 风格前缀，或对应 bind 源不可用（交回后续分支
      *         按宿主语义处理/失败）。
@@ -432,6 +442,13 @@ class ProotCommandSpawner(
                 if (sub.isNotEmpty() && !File(home, sub.removePrefix("/")).isDirectory) return null
                 GuestCwdPlan(expanded, emptyList(), WorkspacePath(expanded))
             }
+            // 真实系统根前缀 → /host/**（HostRootBridge bind：guest /host/sub =
+            // 宿主 /sub，子路径存在性按宿主根验证）
+            expanded == HostRootBridge.GUEST_PATH || expanded.startsWith("${HostRootBridge.GUEST_PATH}/") -> {
+                val sub = expanded.removePrefix(HostRootBridge.GUEST_PATH)
+                if (sub.isNotEmpty() && !File(sub).isDirectory) return null
+                GuestCwdPlan(expanded, emptyList(), WorkspacePath(expanded))
+            }
             else -> null
         }
     }
@@ -443,6 +460,9 @@ class ProotCommandSpawner(
         }
         addAll(SystemBindProfile.STANDARD.toBinds())
         sharedStorage.toBind()?.let { add(it) }
+        // 2026-10「整个系统」工作区：真实系统根挂 guest /host（权限门禁仍是
+        // 真实的 Android 权限/SELinux —— /host/data 不可读属预期，见 HostRootBridge）
+        add(HostRootBridge.toBind())
         addAll(plan.extraBinds)
     }
 

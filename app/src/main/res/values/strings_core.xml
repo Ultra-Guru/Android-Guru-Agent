@@ -39,6 +39,7 @@
     <string name="settings_no_profile_hint">No model profile yet — create one in Model · Setup first</string>
     <string name="settings_nav_cat_model">Model</string>
     <string name="settings_nav_cat_workspace">Workspace</string>
+    <string name="settings_nav_cat_integrations">Integrations</string>
     <string name="settings_nav_cat_interface">Interface</string>
     <string name="settings_nav_cat_data">Data &amp; Backup</string>
     <string name="settings_nav_cat_terminal">Terminal</string>

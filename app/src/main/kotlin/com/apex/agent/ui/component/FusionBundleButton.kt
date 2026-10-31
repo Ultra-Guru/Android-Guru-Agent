@@ -106,9 +106,19 @@ fun FusionBundleButton(
     isActive: Boolean,
     onBundleChip: (PendingPipelineCommand) -> Unit,
     modifier: Modifier = Modifier,
-    scope: String = "agent"
+    scope: String = "agent",
+    menuOpen: Boolean? = null,
+    onMenuDismiss: (() -> Unit)? = null,
+    triggerHidden: Boolean = false
 ) {
-    var showMenu by remember { mutableStateOf(false) }
+    // 弹层状态外提（2026-10 工具台重排）：menuOpen 非空 = 调用方托管
+    //（Code 屏展开菜单锚点模式，triggerHidden 不画王冠仅留 1dp 锚点）；
+    // null = 内部自管（既有行为零改动）。
+    var internalOpen by remember { mutableStateOf(false) }
+    val showMenu = menuOpen ?: internalOpen
+    val closeMenu: () -> Unit = {
+        if (menuOpen == null) internalOpen = false else onMenuDismiss?.invoke()
+    }
     // 自定义聚合组合器（新建入口 + 自建包编辑入口共用一个挂载位）
     var composerEditing by remember { mutableStateOf<FusionBundleManifest?>(null) }
     var showComposer by remember { mutableStateOf(false) }
@@ -123,26 +133,34 @@ fun FusionBundleButton(
     var anchorTopInWindow by remember { mutableStateOf(Float.MAX_VALUE) }
 
     Box(
-        modifier = modifier
-            // UI-012：48dp 触区红线（与输入行全列按钮统一 48 系）
-            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .onGloballyPositioned { coords ->
-                anchorTopInWindow = coords.positionInWindow().y
-            }
-            .semantics { contentDescription = openCd }
-            // 激活态换金冠底色光环；常态与同行按钮统一 primary 12% 圆底
-            .background(
-                color = if (isActive) CrownGold.copy(alpha = 0.15f)
-                else MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                shape = CircleShape
-            )
-            // 修复：原实现漏挂 clickable —— 点击王冠无任何反应（showMenu
-            // 永远 false，层级菜单弹不出）；与 SlashCommandButton 同款收尾。
-            .clickable { showMenu = true },
-        contentAlignment = Alignment.Center
+        modifier = modifier.onGloballyPositioned { coords ->
+            anchorTopInWindow = coords.positionInWindow().y
+        }
     ) {
-        // 精致王冠（激活态宝石微光呼吸）
-        FusionCrownCanvas(active = isActive, modifier = Modifier.size(24.dp))
+        if (!triggerHidden) {
+            Box(
+                modifier = Modifier
+                    // UI-012：48dp 触区红线（与输入行全列按钮统一 48 系）
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    .semantics { contentDescription = openCd }
+                    // 激活态换金冠底色光环；常态与同行按钮统一 primary 12% 圆底
+                    .background(
+                        color = if (isActive) CrownGold.copy(alpha = 0.15f)
+                        else MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                        shape = CircleShape
+                    )
+                    // 修复：原实现漏挂 clickable —— 点击王冠无任何反应（showMenu
+                    // 永远 false，层级菜单弹不出）；与 SlashCommandButton 同款收尾。
+                    .clickable { internalOpen = true },
+                contentAlignment = Alignment.Center
+            ) {
+                // 精致王冠（激活态宝石微光呼吸）
+                FusionCrownCanvas(active = isActive, modifier = Modifier.size(24.dp))
+            }
+        } else {
+            // 锚点模式：1dp 占位维持 Popup 空间翻转判定的坐标测量
+            Box(modifier = Modifier.size(1.dp))
+        }
 
         if (showMenu) {
             FusionCrownMenuPopup(
@@ -153,13 +171,13 @@ fun FusionBundleButton(
                 onOpenComposer = { editing ->
                     composerEditing = editing
                     showComposer = true
-                    showMenu = false
+                    closeMenu()
                 },
                 onImportClaude = {
-                    showMenu = false
+                    closeMenu()
                     importLauncher.launch(arrayOf("application/zip", "application/octet-stream"))
                 },
-                onDismiss = { showMenu = false }
+                onDismiss = closeMenu
             )
         }
     }

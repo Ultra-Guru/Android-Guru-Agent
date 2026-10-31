@@ -1,5 +1,6 @@
 package com.apex.agent.ui.screen.settings
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -324,26 +325,31 @@ private fun AccentPaletteRow(
                         .clickable { onSelect(palette) }
                         .padding(horizontal = 6.dp, vertical = 4.dp)
                 ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(swatch)
-                            .border(
-                                width = if (isSelected) 2.dp else 1.dp,
-                                color = if (isSelected) MaterialTheme.colorScheme.onSurface
-                                else MaterialTheme.colorScheme.outlineVariant,
-                                shape = CircleShape
-                            )
+                    // M3 Surface 圆点：shape 参数直绘抗锯齿 outline（fill/stroke）。
+                    // 绝不走 Modifier.clip —— RenderNode clipPath 硬件渲染不抗锯齿，
+                    // 圆边必出锯齿（点击选中描边加粗后尤其明显）。
+                    Surface(
+                        shape = CircleShape,
+                        color = swatch,
+                        border = BorderStroke(
+                            width = if (isSelected) 2.dp else 1.dp,
+                            color = if (isSelected) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.outlineVariant
+                        ),
+                        modifier = Modifier.size(40.dp)
                     ) {
-                        if (isSelected) {
-                            Icon(
-                                Icons.Default.Check,
-                                contentDescription = stringResource(R.string.settings_accent_selected),
-                                tint = MaterialTheme.colorScheme.surface,
-                                modifier = Modifier.size(18.dp)
-                            )
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            if (isSelected) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = stringResource(R.string.settings_accent_selected),
+                                    tint = MaterialTheme.colorScheme.surface,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
                     }
                     Spacer(Modifier.height(4.dp))

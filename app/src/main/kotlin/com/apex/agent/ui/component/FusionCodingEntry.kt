@@ -37,7 +37,11 @@ import com.apex.agent.ui.chatkit.PendingPipelineCommand
  */
 @Composable
 fun FusionCodingButton(
-    onBundleChip: (PendingPipelineCommand) -> Unit
+    onBundleChip: (PendingPipelineCommand) -> Unit,
+    modifier: Modifier = Modifier,
+    menuOpen: Boolean? = null,
+    onMenuDismiss: (() -> Unit)? = null,
+    triggerHidden: Boolean = false
 ) {
     val controller = rememberFusionBundleController()
     val active by controller.activeBundle.collectAsStateWithLifecycle()
@@ -45,7 +49,11 @@ fun FusionCodingButton(
         controller = controller,
         isActive = active != null,
         onBundleChip = onBundleChip,
-        scope = "coding"
+        modifier = modifier,
+        scope = "coding",
+        menuOpen = menuOpen,
+        onMenuDismiss = onMenuDismiss,
+        triggerHidden = triggerHidden
     )
 }
 

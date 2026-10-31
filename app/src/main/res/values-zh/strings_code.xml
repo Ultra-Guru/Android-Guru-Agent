@@ -31,6 +31,8 @@
     <string name="code_notif_recovery_body">任务在后台跑完了，但本应用没有通知权限，所以没有发出完成提醒。</string>
     <string name="code_notif_recovery_open">去开启</string>
     <string name="code_notif_recovery_dismiss">稍后</string>
+    <string name="code_question_cancel">取消</string>
+    <string name="code_question_cancel_hint">取消作答：智能体会被告知你没有给出答案。</string>
 
     <!-- 新建工作区对话框 -->
     <string name="code_new_workspace_title">新建编码工作区</string>
@@ -326,6 +328,25 @@
     <string name="code_workspace_pick_folder">选择文件夹…</string>
     <string name="code_workspace_whole_system">整个系统</string>
     <string name="code_workspace_browser_cd">打开工作区浏览器</string>
+    <!-- 网络搜索三通道 + 工具台展开菜单（2026-10 工具行四件套重排） -->
+    <string name="code_websearch_cd">网络搜索</string>
+    <string name="code_websearch_builtin">模型内置搜索</string>
+    <string name="code_websearch_builtin_desc">模型侧联网搜索工具链</string>
+    <string name="code_websearch_searxng">SearXNG 本地</string>
+    <string name="code_websearch_searxng_desc">优先本地 SearXNG 元搜索</string>
+    <string name="code_websearch_mcp">搜索 MCP</string>
+    <string name="code_websearch_mcp_desc">本地搜索 MCP 服务器三选一</string>
+    <string name="code_websearch_mcp_fs_desc">本地优先多引擎搜索·页面抓取·文档读取</string>
+    <string name="code_websearch_mcp_sl_desc">七引擎搜索·智能缓存·故障转移</string>
+    <string name="code_websearch_mcp_as_desc">中英文免费搜索路由·省 Token</string>
+    <string name="code_websearch_install_progress">沙箱安装中…</string>
+    <string name="code_websearch_install_done">搜索 MCP 已安装并启用</string>
+    <string name="code_toolbench_cd">展开工具台</string>
+    <string name="code_toolbench_slash">斜杠指令</string>
+    <string name="code_toolbench_fusion">工具聚合</string>
+    <string name="code_toolbench_github">GitHub 连接</string>
+    <string name="code_toolbench_toolkit">调用·时间·规则</string>
+    <string name="code_toolbench_neon">功能聚合</string>
     <string name="drawer_workspace_browser">工作区</string>
     <string name="code_stream_terminal_running">运行中</string>
 

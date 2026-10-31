@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
+import com.apex.agent.ui.screen.code.neon.NeonOrbButton
 import com.apex.agent.core.codetools.tools.CodeTodoTool
 import com.apex.agent.ui.component.GithubIconButton
 import com.apex.agent.ui.component.GithubTokenDialog
@@ -476,13 +477,9 @@ fun CodeScreen(
                             onConfigure = onOpenSettings
                         )
                     },
-                    // 功能聚合（16 项真实注入；状态由 NeonOrbButton 内部
-                    // 经 store 自收集 —— 这里只交挂载点，与 modelMenu 同款插槽）
-                    neonOrbMenu = {
-                        com.apex.agent.ui.screen.code.neon.NeonOrbButton(
-                            store = viewModel.neonOrbStore
-                        )
-                    },
+                    // 功能聚合（16 项真实注入）：2026-10 工具台重排后触发钮
+                    // 收进展开菜单 —— 直传 store，弹层经展开按钮锚点托管
+                    neonOrbStore = viewModel.neonOrbStore,
                     toolkitState = ToolkitUiState(
                         webSearchEnabled = webSearchEnabled,
                         timeEnabled = timeEnabled,
@@ -525,7 +522,8 @@ fun CodeScreen(
     state.pendingQuestion?.let { question ->
         PendingQuestionDialog(
             question = question,
-            onSubmit = viewModel::submitUserInput
+            onSubmit = viewModel::submitUserInput,
+            onCancel = viewModel::cancelPendingQuestion
         )
     }
 
@@ -803,7 +801,7 @@ private fun TodoPanel(todos: List<CodeTodoTool.Todo>) {
 // ═══ 输入栏（#197 升级：斜杠 + GitHub + 小圆环函数调用 + 输入框 + 发送）═══
 
 /** 小圆环状态包（避免 CodeInputBar 参数爆炸）。 */
-private data class ToolkitUiState(
+internal data class ToolkitUiState(
     val webSearchEnabled: Boolean,
     val timeEnabled: Boolean,
     val selectedFunctionIds: Set<String>,
@@ -841,9 +839,9 @@ private fun CodeInputBar(
     // 「小大脑」模型菜单插槽（Agent 屏同款 BrainMenuButton；插槽化避免
     // 参数爆炸 —— 数据与回调由 CodeScreen 组合层闭合）
     modelMenu: @Composable () -> Unit = {},
-    // 「功能聚合」插槽（16 项能力面板；数据由 store 自闭合 ——
-    // 与 modelMenu 同款插槽化，CodeScreen 只传 store 挂载点）
-    neonOrbMenu: @Composable () -> Unit = {},
+    // 「功能聚合」store（16 项能力面板）：2026-10 工具台重排后触发钮收进
+    // 展开菜单，弹层经锚点托管 —— 直传 store 替代原插槽挂载点
+    neonOrbStore: com.apex.agent.ui.screen.code.neon.NeonOrbStore? = null,
     toolkitState: ToolkitUiState
 ) {
     // ═══ v5 玻璃输入栏（Agent 屏同款）：Floating 档 + 顶部双角圆角，悬浮栈
@@ -876,85 +874,47 @@ private fun CodeInputBar(
             // ═══ FUSION 王冠激活态横幅（Coding 工位钦定位，未激活不占位）═══
             FusionCodingBanner()
 
-            // ═══ 工具栏行：工作区 + 斜杠 + 王冠 + GitHub + 小圆环（横向滚动）═══
-            // 工作区选择器占首位（2026-10 用户需求：输入栏内未被占用的位置；
-            // 真实文件夹选择 + 默认整个系统，见 CodeWorkspaceSelector.kt）
+            // ═══ 工具栏行（2026-10 工具台重排·四件套定版）：
+            // 工作区 + 模型 + 网络搜索 + 展开 ▲，不再横向滚动 ═══
+            // 工作区 chip 固定宽（长名省略号截断）；斜杠/工具聚合/GitHub/
+            // 小圆环/功能聚合五件收进展开按钮的向上层级菜单 —— 点菜单项
+            // 在展开按钮锚点弹原面板（五组件 menuOpen/triggerHidden 外提）。
+            var activePanel by remember { mutableStateOf<CodePanel?>(null) }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
+                modifier = Modifier.fillMaxWidth()
             ) {
                 workspaceMenu()
 
-                // ═══ / 斜杠指令按钮（coding 域：开发技能 + coding 工位 MCP）═══
-                // v5 多选：流水线条目选中保持展开（继续多选）+ ✓ 勾选态；
-                // 再点一次已选条目 = 摘除。返回 false（普通指令）才收起。
-                SlashCommandButton(
-                    slashMenuProvider = slashMenuProvider,
-                    scope = "coding",
-                    isSelected = { item ->
-                        PendingPipelineCommand.fromCommand(item.command, item.label)
-                            ?.let { c -> pendingCommands.any { it.type == c.type && it.id == c.id } }
-                            ?: false
-                    },
-                    onItemSelected = { item ->
-                        val capsule = PendingPipelineCommand.fromCommand(item.command, item.label)
-                        if (capsule != null) {
-                            val exists = pendingCommands.any { it.type == capsule.type && it.id == capsule.id }
-                            if (exists) {
-                                onChipsChange(pendingCommands.filterNot { it.type == capsule.type && it.id == capsule.id })
-                            } else {
-                                onAddPendingCommand(capsule)
-                            }
-                            true // 流水线条目：保持展开，继续多选
-                        } else {
-                            val merged = if (draft.isBlank()) item.command
-                            else draft.trimEnd() + " " + item.command
-                            onDraftChange(merged)
-                            false
-                        }
-                    }
-                )
-
-                // ═══ 王冠：FUSION 工具聚合体系入口（Coding 工位钦定位，
-                // 选包激活 + chip 回灌输入框 + /fusion 强制使用）═══
-                FusionCodingButton(onBundleChip = onAddPendingCommand)
-
-                // ═══ GitHub 连接按钮（#197 从 Agent 屏迁入；v1.9 下拉含 MCP 配置）═══
-                GithubIconButton(tokenManager = githubTokenManager, mcpManager = mcpManager)
-
-                // ═══ 小圆环：函数调用/搜索/时间/结构化输出/规则（#197 迁入）═══
-                ToolkitRingButton(
-                    webSearchEnabled = toolkitState.webSearchEnabled,
-                    timeEnabled = toolkitState.timeEnabled,
-                    selectedFunctionIds = toolkitState.selectedFunctionIds,
-                    availableTools = toolkitState.availableTools,
-                    outputFormat = toolkitState.outputFormat,
-                    customSchema = toolkitState.customSchema,
-                    rules = toolkitState.rules,
-                    exposeAllTools = toolkitState.exposeAllTools,
-                    onToggleWebSearch = { toolkit.setWebSearchEnabled(it) },
-                    onToggleTime = { toolkit.setTimeEnabled(it) },
-                    onToggleFunction = { toolkit.toggleFunction(it) },
-                    onToggleExposeAllTools = { toolkit.setExposeAllTools(it) },
-                    onSelectFormat = { toolkit.setOutputFormat(it) },
-                    onSetCustomSchema = { toolkit.setCustomSchema(it) },
-                    onUpsertRule = { toolkit.upsertRule(it) },
-                    onDeleteRule = { toolkit.deleteRule(it) },
-                    onToggleRule = { id, enabled -> toolkit.setRuleEnabled(id, enabled) }
-                )
-
-                // ═══ 功能聚合：能力面板入口（16 项真实注入；neon/NeonOrbButton.kt）═══
-                // 与小圆环同排但独立体系：时间注入/结构化输出/网络搜索等
-                // 三组能力聚合，面板开关 → NeonOrbStore → 每轮发送注入。
-                neonOrbMenu()
-
-                // ═══ 小大脑：模型切换 + 参数调节 + 配置跳转（用户反馈补齐）═══
-                // Coding 工位此前无模型入口 —— 共享 LlmClient 恒用默认 Profile；
-                // 现与 Agent 屏同款（AgentChatScreen 输入栏同位置）。
+                // ═══ 模型（小大脑）：第 1 位（用户钦定）═══
                 modelMenu()
+
+                // ═══ 网络搜索：第 2 位（内置/SearXNG/MCP 三通道单选）═══
+                WebSearchMenuButton(toolkit = toolkit, mcpManager = mcpManager)
+
+                // ═══ 展开 ▲：第 3 位 + 五件套弹层锚点（宿主见 ToolbenchPanelHost.kt）═══
+                Box {
+                    ToolbenchExpandButton(
+                        activePanel = activePanel,
+                        onPanelChange = { activePanel = it }
+                    )
+                    CodeToolbenchPanels(
+                        activePanel = activePanel,
+                        onPanelDismiss = { activePanel = null },
+                        slashMenuProvider = slashMenuProvider,
+                        pendingCommands = pendingCommands,
+                        onChipsChange = onChipsChange,
+                        onAddPendingCommand = onAddPendingCommand,
+                        draft = draft,
+                        onDraftChange = onDraftChange,
+                        githubTokenManager = githubTokenManager,
+                        mcpManager = mcpManager,
+                        toolkit = toolkit,
+                        toolkitState = toolkitState,
+                        neonOrbStore = neonOrbStore
+                    )
+                }
             }
             Spacer(Modifier.height(4.dp))
 
@@ -1160,36 +1120,5 @@ private fun ErrorBar(
             }
         }
     }
-}
-
-@Composable
-private fun PendingQuestionDialog(
-    question: String,
-    onSubmit: (String) -> Unit
-) {
-    // rememberSaveable：旋转/重建后已输入的回答不丢（String 可入 Bundle）。
-    var answer by rememberSaveable { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = { },
-        title = { Text(stringResource(R.string.code_question_title)) },
-        text = {
-            Column {
-                Text(question, style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = answer,
-                    onValueChange = { answer = it },
-                    placeholder = { Text(stringResource(R.string.code_question_hint)) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            val defaultYes = stringResource(R.string.code_question_default_yes)
-            TextButton(
-                onClick = { onSubmit(answer.ifBlank { defaultYes }) }
-            ) { Text(stringResource(R.string.code_question_submit)) }
-        }
-    )
 }
 

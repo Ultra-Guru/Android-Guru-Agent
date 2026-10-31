@@ -1,6 +1,7 @@
 package com.apex.agent.tools
 
 import com.apex.agent.platform.TerminalExec.SpawnRequest
+import com.apex.agent.platform.terminal.proot.HostRootBridge
 import com.apex.agent.platform.terminal.proot.PRootHostEnvironment
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -195,6 +196,35 @@ class ProotCommandSpawnerTest {
         } catch (expected: FileNotFoundException) {
             assertTrue(expected.message!!.contains("cwd does not exist"))
         }
+    }
+
+    @Test
+    fun `cwd 为 host 根 映射到 guest host 真实系统根`() {
+        val spawner = newSpawner()
+        val plan = spawner.planGuestCwd("/")
+        assertEquals(HostRootBridge.GUEST_PATH, plan.guestCwd)
+        // 走 HostRootBridge 既有 bind，不追加同路径 bind（bind /:/ 会覆盖 rootfs）
+        assertEquals(0, plan.extraBinds.size)
+        assertEquals(HostRootBridge.GUEST_PATH, plan.workingDirectory.value)
+    }
+
+    @Test
+    fun `guest 风格 host 前缀 映射到真实系统根子路径`() {
+        val spawner = newSpawner()
+        // 子路径存在性按宿主根验证 —— /tmp 在 CI（Linux）与本地（Windows 下
+        // 由 Git Bash 环境映射或存在性宽松）均应判定存在；不存在时映射诚实
+        // 返回 null（走后续分支），断言只锁「/host 精确根」行为。
+        assertEquals(HostRootBridge.GUEST_PATH, spawner.mapGuestStyleCwd("/host")?.guestCwd)
+    }
+
+    @Test
+    fun `bind 集恒含真实系统根 bind`() {
+        val spawner = newSpawner(defaultWorkspaceDir = tmp.newFolder("ws"))
+        val plan = spawner.planGuestCwd(null)
+        val binds = spawner.buildBinds(plan)
+        val hostRoot = binds.singleOrNull { it.guestPath == HostRootBridge.GUEST_PATH }
+        assertNotNull("真实系统根 bind（/ → /host）缺失", hostRoot)
+        assertEquals("/", hostRoot!!.hostPath.value)
     }
 
     // ── ③ Ubuntu 路由门禁 ────────────────────────────────────────────
