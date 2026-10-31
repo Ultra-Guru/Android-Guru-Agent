@@ -24,9 +24,7 @@ class LegacyListTool(
     override val parametersSchema: String = """
         {
           "type": "object",
-          "properties": {
-            "dummy": { "type": "integer", "description": "ignored — kept for symmetry" }
-          }
+          "properties": {}
         }
     """.trimIndent()
     override val description: String = """
@@ -34,7 +32,7 @@ class LegacyListTool(
         TerminalSnapshot(mode=FULL). Kept for backward compat.
     """.trimIndent()
 
-    suspend fun execute(input: Input = Input()): Output {
+    suspend fun execute(): Output {
         val result = runtime.snapshot(mode = TerminalRuntime.SnapshotMode.SESSIONS)
         return result.fold(
             onSuccess = { r ->
@@ -56,7 +54,7 @@ class LegacyListTool(
     }
 
     override suspend fun invoke(arguments: String): String {
-        val out = execute(Input())
+        val out = execute()
         return buildJsonObject {
             put("sessions", buildJsonArray {
                 for (s in out.sessions) {
@@ -72,8 +70,6 @@ class LegacyListTool(
             })
         }.toString()
     }
-
-    data class Input(val dummy: Int = 0)   // old TerminalListLegacy took no args; keep Input for symmetry
 
     data class Output(val sessions: List<SessionInfo>)
 
