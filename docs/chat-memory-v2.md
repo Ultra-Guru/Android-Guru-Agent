@@ -1,7 +1,7 @@
 # 聊天记忆 v2 —— 结构化账本 × 批量蒸馏 × 评分召回 × 巩固遗忘
 
 > 状态：已落地（本 PR）
-> 前置：[agent-life-skills-and-memory.md](agent-life-skills-and-memory.md) §4（v1 设计动机）
+> 前置：原 agent-life-skills-and-memory.md §4（v1 设计动机；文档已随 Agent 模式移除）
 > 代码索引：`app/src/main/kotlin/com/apex/agent/mcp/builtin/memory/`
 
 ---

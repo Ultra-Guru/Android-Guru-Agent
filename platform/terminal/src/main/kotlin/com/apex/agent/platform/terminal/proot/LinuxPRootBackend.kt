@@ -208,7 +208,7 @@ class LinuxPRootBackend(
     internal fun mapGuestCwd(cwd: String): String {
         val trimmed = cwd.trim()
         if (trimmed.isEmpty() || trimmed == "/") return "/workspace"
-        if (trimmed == com.apex.agent.platform.terminal.runtime.LocalShellBackend.LEGACY_DEFAULT_CWD) {
+        if (trimmed == "/sdcard") {  // 旧 LocalShellBackend.LEGACY_DEFAULT_CWD 的字面值（AndroidShell 移除后内联）
             return "/workspace"
         }
         return if (trimmed.startsWith("/")) trimmed else "/workspace/$trimmed"

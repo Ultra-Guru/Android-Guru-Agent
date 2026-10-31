@@ -29,7 +29,9 @@ object ToolTierPolicy {
     /** The deprecated alias ids (old flat names kept only for compat). */
     val LEGACY_ALIAS_IDS: Set<String> = setOf(
         "TerminalExecLegacy", "TerminalSendLegacy", "TerminalReadLegacy",
-        "TerminalListLegacy", "TerminalSignalLegacy", "TerminalCloseLegacy",
+        // #585：TerminalSignalLegacy / TerminalCloseLegacy 已随未注册的
+        // LegacySignalTool / LegacyCloseTool 类删除（id 无处可解析，无需别名）。
+        "TerminalListLegacy",
         // #171 四族合并：旧工具 id 降为 legacy alias（类保留注册，向后兼容
         // 既有会话/技能；不再随请求下发，模型一律用合并后的新入口）。
         "GetTimeLegacy", "DatetimeLegacy", "CronNextLegacy", "DurationConvertLegacy",

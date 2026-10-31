@@ -5,7 +5,7 @@
 > scope 二级分离贯通到引擎侧工具计划。
 > 前置：[hub-ecosystem.md](hub-ecosystem.md)（市场二级分离与 tier 来源）
 > · [tool-system-v4.md](tool-system-v4.md)（工具注册表与一等 MCP 工具）
-> 参考：docs/agent-modes.md（工位与模式归属）。
+> （原参考 agent-modes.md 已随 Agent 模式移除。）
 
 ---
 

@@ -23,4 +23,11 @@
     <string name="templates_vars_detected">Variables detected: %1$s</string>
     <string name="templates_save">Save</string>
     <string name="templates_cancel">Cancel</string>
+    <string name="templates_use">Use template</string>
+    <string name="templates_use_title">Use: %1$s</string>
+    <string name="templates_use_optional">%1$s (optional)</string>
+    <string name="templates_use_generate">Generate</string>
+    <string name="templates_use_result">Generated prompt (deterministic analysis appendix included for built-ins)</string>
+    <string name="templates_use_copied">Copied — paste into chat</string>
+    <string name="templates_builtin_locked">Built-in (locked — use or duplicate)</string>
 </resources>

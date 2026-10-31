@@ -7,14 +7,15 @@
 
 # Android Guru Agent
 
-### 🤖 原生于 Android 的自主智能体 —— 设备上的大脑、终端、与肌肉记忆
+### 🧑‍💻 原生于 Android 的 AI 编码工作台 —— 设备上的大脑、终端、与肌肉记忆
 
-**An autonomous AI agent that lives entirely on your Android device.**
+**An AI coding workstation that lives entirely on your Android device.**
 
-一个开源的 Android 端自主智能体应用：OpenAI 兼容流式 LLM 接入、8 种执行模式（v3 新增 Goal 目标循环 / Loop 循环与 Cron）、
-111 个内置工具（v3 新增超时/重试/限流/熔断/追踪/批量/组合动作八层执行硬化；P83 环境闭环补全；MCP/技能按工位作用域隔离）、PRoot 沙箱化 Ubuntu 终端、仿生认知记忆系统（差分摄取 → 轨迹蒸馏 →
+一个开源的 Android 端 AI 编码应用：OpenAI 兼容流式 LLM 接入、四条思考逻辑线
+（深潜七档 / 标准 / 织造 / 信使，运行时可切）、
+百级内置工具（超时/重试/限流/熔断/追踪/批量/组合动作八层执行硬化；P83 环境闭环补全；MCP/技能按工位作用域隔离）、模板行为运行时（十大内置模板全部代码化：六阶段管线 + 不可更改 + 每模板双层确定性引擎，切换模板 = 装配管线而非注入提示词）、PRoot 沙箱化 Ubuntu 终端、仿生认知记忆系统（差分摄取 → 轨迹蒸馏 →
 FSM 旁路回放 → 梦境巩固）、Root/Shizuku/无障碍三级权限链、插件化 SDK ——
-全部跑在一台手机上，无需任何服务器。
+全部跑在一台手机上，无需任何服务器。（Agent 聊天模式已拆分至独立仓库 Theocracy，本仓库专注 Coding。）
 
 **CI · 质量门禁 · 贡献**
 
@@ -59,7 +60,7 @@ FSM 旁路回放 → 梦境巩固）、Root/Shizuku/无障碍三级权限链、�
 **项目事实**
 
 <a href="#tools"><img src="https://img.shields.io/badge/🧰_tools-111-ff69b4" alt="111 Tools"/></a>
-<a href="#engine"><img src="https://img.shields.io/badge/🧠_agent_modes-8-00C2D1" alt="8 Modes"/></a>
+<a href="#engine"><img src="https://img.shields.io/badge/🧠_thinking_lines-4-00C2D1" alt="4 Thinking Lines"/></a>
 <a href="#architecture"><img src="https://img.shields.io/badge/📦_gradle_modules-20-8A2BE2" alt="20 Modules"/></a>
 <a href="#testing"><img src="https://img.shields.io/badge/🧪_tests-252_files_·_4k_用例-2EA44F" alt="252 Tests"/></a>
 <a href="#cs-mem"><img src="https://img.shields.io/badge/🧠_memory-cs--mem-00C2D1" alt="cs-mem"/></a>
@@ -218,8 +219,8 @@ Root → Shizuku → 沙箱 Shell 自动降级<br/>无 Root 也能执行特权�
 | ⚡ | **三级权限链** | Root → Shizuku → 普通沙箱 shell 自动降级选择，无 Root 设备也能执行特权命令 |
 | 🧩 | **插件 SDK v2（双类型）+ 技能市场** | 功能性插件（plugin.json 声明式贡献点：工具宏/斜杠指令，零代码执行面）+ APK 插件（AIDL 跨进程）统一管理；技能市场（工具/技能/MCP/插件/连接器五个货架）+ 40+ 可安装技能模板；plugin-workflow 为参考 APK 插件、functional-samples 为功能性插件样本 |
 | ⚛️ | **FusionBundle 复合技能包（聚变包）** | 「技能 + MCP 服务器 + 工具 + agent 工作流」一键聚合激活的装载单位（fusion-bundle-v1 manifest，输入栏直选即用）；内置七大顶级开源体系 —— **REA · Reverse Engineer Anything**（207 工具面逐名对齐上游 v6.5.0，静态分析核心纯设备直跑、adb 族原生设备执行、BYO 引擎桥与证据纪律信封）、**Superpowers**（obra v7.0.0 软件开发方法论八技能）、**SuperClaude**（v4.3.0 五行为模式 + 上游 8 台增强 MCP 的内置等价聚合）、**BMAD**（v6.12 敏捷交付环五阶段）、**Anthropic Skills**（官方技能体系设备端移植：Word/Excel/PPT/PDF 文档四件经 PRoot Python 工具链真实产出 + 技能/MCP/测试工程）、**Claude Flow SPARC**（结构化开发五阶段 + Task 子代理群智编排 + 持久记忆）、**Shrimp Task Manager**（16 工具结构化任务规划，进程内 MCP 第七台：依赖 DAG/反思洞察/项目规则/思维链，任务账本持久 + 自动备份）—— 详见 [docs/fusion-bundle.md](docs/fusion-bundle.md) |
-| 🌐 | **内置浏览器大功能（v1.5.0 起非插件）** | 24 个 `browser_*` 工具（DOM 级操控 + 高级键鼠/抽取/JS 逃生舱）+ 悬浮球 + 浮窗浏览器，Agent 对话中直接指挥 |
-| 💭 | **七档思考系统（Coding 页专属）** | NONE→ULTRACODE→APEXCODE 七深度档 + AUTO 预检自适应（发送前选档 + 深水区升级）；档位驱动提示词 / 模型参数 / 迭代倍率 / 压缩阈值 / 输出预算**全执行画像**，档位效能用历史数据说话（Agent 聊天页为独立六档体系） |
+| 🌐 | **内置浏览器大功能（v1.5.0 起非插件）** | 24 个 `browser_*` 工具（DOM 级操控 + 高级键鼠/抽取/JS 逃生舱）+ 悬浮球 + 浮窗浏览器，工具体系直连可编排 |
+| 💭 | **七档思考系统（Coding 页专属）** | NONE→ULTRACODE→APEXCODE 七深度档 + AUTO 预检自适应（发送前选档 + 深水区升级）；档位驱动提示词 / 模型参数 / 迭代倍率 / 压缩阈值 / 输出预算**全执行画像**，档位效能用历史数据说话 |
 | 🕓 | **长任务中心（v1.2）** | 超阈值运行自动留档；检查点时间线回看（轮次 / 相对时间 / todo 完成度）+ 续跑不从头、复制带上下文重跑、同目标运行对比、8 模板一键启动 |
 
 > [!IMPORTANT]
@@ -260,13 +261,13 @@ Root → Shizuku → 沙箱 Shell 自动降级<br/>无 Root 也能执行特权�
 flowchart TB
     subgraph APP["📱 :app — Compose UI + Hilt 装配"]
         direction LR
-        CHAT["AgentChat 主聊天<br/>流式气泡 · 思维链 · 工具卡片<br/>计划确认卡 · 附件多模态"]
+        CHAT["Code 屏（唯一工作面）<br/>胶囊流时间轴 · 四条思考逻辑线<br/>工作区 · 计划确认卡"]
         SCREENS["Terminal · Skill · Market<br/>Memory · Permissions · Log · Settings"]
     end
 
     subgraph CORE["⚙️ core:* — 纯 JVM · 零 Android 依赖"]
         direction LR
-        ENGINE["agent-engine<br/>六模式 ReAct 循环<br/>TaskOrchestrator<br/>P7 三级压缩"]
+        ENGINE["agent-engine<br/>共享引擎协议<br/>会话记忆·压缩<br/>双工位分轨"]
         TOOLS["tool-registry<br/>内置工具 · schema 即校验<br/>SkillRegistry · MCP 客户端 · Hub 源"]
         LLM["llm-adapter<br/>OpenAI 兼容 SSE<br/>多模型运行时 · 角色路由"]
         LOGC["logging<br/>结构化日志"]
@@ -315,8 +316,8 @@ flowchart TB
 
 | 模块 | 类型 | 职责 |
 |------|:---:|------|
-| `:app` | Android App | Compose UI（抽屉导航 8 屏）、Hilt 装配、浏览器/GitHub 工具、悬浮球 |
-| `:core:agent-engine` | 纯 JVM | ReAct 引擎（Plan/Build 等六模式）、任务编排器、上下文压缩、会话记忆 |
+| `:app` | Android App | Compose UI（抽屉导航）、Hilt 装配、浏览器/GitHub 工具、悬浮球 |
+| `:core:agent-engine` | 纯 JVM | 共享引擎基座（AgentEvent/AgentConfig 协议、上下文压缩、会话记忆）—— Coding 引擎依赖 |
 | `:core:tool-registry` | 纯 JVM | 内置工具（schema 即校验 + 风险门 + 使用统计）+ 工具执行器 + SkillRegistry + MCP 客户端 + Hub 源 |
 | `:core:llm-adapter` | 纯 JVM | OpenAI 兼容流式客户端 + 多模型运行时（角色路由/能力校验/错误分类） |
 | `:core:logging` | 纯 JVM | 结构化日志（LogCategory/LogLevel/LogRecord） |
@@ -484,10 +485,10 @@ stateDiagram-v2
 
 | 层 | 控制点 | 档位 | 效果 |
 |----|--------|------|------|
-| **提示词思考** | Agent 六档 `ThinkingLevel` / Coding 七档 `CodeThinkingLevel` | 两套独立阶梯：聊天页 NONE/LIGHT/STANDARD/DEEP/MAXIMUM+AUTO；Coding 页另有 ULTRACODE/APEXCODE 深水两档 | 系统提示注入推理指令强度；档位同时驱动**执行画像**（迭代倍率 / 压缩阈值 / 输出预算，Coding 深水两档经旋钮补偿反补） |
+| **提示词思考** | Coding 七档 `CodeThinkingLevel` | 独立阶梯：NONE/LIGHT/STANDARD/DEEP/MAXIMUM+AUTO，另有 ULTRACODE/APEXCODE 深水两档 | 系统提示注入推理指令强度；档位同时驱动**执行画像**（迭代倍率 / 压缩阈值 / 输出预算，深水两档经旋钮补偿反补） |
 | **原生思考** | `ReasoningEffort` | NONE / LOW / MEDIUM / HIGH / MAX | 直接写 `reasoning_effort` 请求参数（o 系列 / R1 / Qwen3-thinking），MAX 档同时抬高 `max_completion_tokens` 给思维链留空间 |
 
-**七档思考阶梯**（**Coding 页专属**；Agent 聊天页为独立六档体系，两页面互不干扰。Code 屏另有「思考档位指南」弹层摊开全部画像 + 档位效能统计）：
+**七档思考阶梯**（**Coding 页专属**；Code 屏另有「思考档位指南」弹层摊开全部画像 + 档位效能统计）：
 
 | 档位 | 定位 | budget | 迭代倍率 | 输出预算 |
 |------|------|--------|----------|----------|
@@ -516,11 +517,11 @@ UI 实时显示推理过程（正文与思维链严格分流，双引擎同语�
   `ModelCapabilityMismatch`（能力校验 + 诚实降级）；
 - `ModelProfileValidator` 校验档案，`ErrorClassifier` 分类运行时错误供重试决策。
 
-### 🧑‍💻 Coding 模式（Code 屏 —— 与 Agent 模式同级别的对等入口）
+### 🧑‍💻 Coding 模式（Code 屏 —— 本应用的顶层工作面）
 
-与六种 `AgentMode`（会话行为开关）不同，**Coding 模式是一个独立的顶层工作面**：
-抽屉里的 Code 屏拥有自己的引擎实例、按工作区隔离的会话记忆、以及业界标准
-契约的编码工具集 —— 但与 Agent 模式**共享全部能力基础设施**（工具注册表 +
+**Coding 模式是本应用唯一的顶层工作面**（Agent 聊天模式已拆分至 Theocracy 仓库）：
+Code 屏拥有独立引擎实例、按工作区隔离的会话记忆、以及业界标准
+契约的编码工具集 —— 底座是**全量能力基础设施**（工具注册表 +
 v3 执行硬化 + v4 目录 / 技能注入 / MCP 一等工具 / 插件 / 多模型路由）。
 
 ```text
@@ -551,7 +552,7 @@ v3 执行硬化 + v4 目录 / 技能注入 / MCP 一等工具 / 插件 / 多模�
 
 - **不重写 Agent Loop** —— `CodeAgentEngine` 是 `ApexAgentEngine` 的薄包装，
   编码行为经 `additionalSystemContext` 通道注入（BUILD 循环 + 业界标准风格
-  编码行为段落），Agent 模式零影响；
+  编码行为段落）；
 - **CodeEdit 的成功率就是编码循环的效率** —— 精确匹配失败后依次尝试
   行 trim / 块锚点+Levenshtein / 空白归一 / 缩进平移 / 边界 trim / replaceAll
   七级回退；失衡护栏（模糊命中 span 远大于 old_string 时拒绝）防止"吞代码"；
@@ -912,12 +913,12 @@ GitHub Token）。
 <a id="ui-screens"></a>
 ## 📱 应用界面
 
-单 Activity Compose 应用，`ModalNavigationDrawer` 抽屉导航 18 屏：
+单 Activity Compose 应用，`ModalNavigationDrawer` 抽屉导航：
 
 | 屏 | 内容 |
 |----|------|
-| **Agent** | 主聊天：流式气泡 / 思维链 / 工具卡片（实时输出 + 进度条）/ 计划确认卡 / 附件（图片多模态）/ 斜杠命令 / 原生思考档位 / 模式切换 |
-| **终端** | 真 Ubuntu 终端：VT100 渲染、SDK 下载器、rootfs 引导进度 |
+| **Coding** | 主工作面：胶囊流时间轴 / 四条思考逻辑线（深潜·标准·织造·信使）/ 工具卡 diff 着色 / 计划确认卡 / Todo 面板 / 工作区条 |
+| **终端** | 真 Ubuntu 终端（Ubuntu 单后端）：VT100 渲染、SDK 下载器、rootfs 引导进度 |
 | **Skill** | 已装技能列表 + 启停（持久化） |
 | **市场** | 工具/技能/MCP/插件/连接器五货架 |
 | **记忆** | cs-mem 可视化：Episode 统计 / 宏技能数 / 近期情景 / 删除 |
@@ -1107,7 +1108,7 @@ Android-Guru-Agent/
 - [x] 终端运行时 2.0（Ubuntu rootfs + PRoot + 原生 PTY + VT100）
 - [x] 多模型运行时（角色路由 + VISION）
 - [x] 浏览器智能体（DOM 级 + 稳定 ref）
-- [x] v1.2 七档思考系统（NONE→ULTRACODE→APEXCODE + AUTO 预检自适应，Coding 页专属 + 档位效能统计；Agent 聊天页保持六档独立体系）
+- [x] v1.2 七档思考系统（NONE→ULTRACODE→APEXCODE + AUTO 预检自适应，Coding 页专属 + 档位效能统计）
 - [x] v1.2 长任务中心（自动留档 / 检查点时间线与续跑 / 复制对比 / 8 模板）
 - [ ] 宏技能语义检索（嵌入索引，跨 App 近邻复用 —— Voyager 启发）
 - [ ] 记忆软删除与双时间线（Zep/Graphiti 启发）
@@ -1134,7 +1135,6 @@ Android-Guru-Agent/
 | [docs/terminal/TERMINAL_CONFIGURATION.md](docs/terminal/TERMINAL_CONFIGURATION.md) | **终端配置系统**：配色/扩展键宏语法/持久化键/新增方案指南 |
 | [docs/ubuntu-rootfs-t72.md](docs/ubuntu-rootfs-t72.md) | T72 Ubuntu rootfs 供给设计 |
 | [docs/cs-mem-gaps-spec.md](docs/cs-mem-gaps-spec.md) | cs-mem 缺口补全规格（含缺口 #9 拓扑迁移） |
-| [docs/agent-modes.md](docs/agent-modes.md) | 六种模式详解 |
 | [docs/proot-binary-provenance.md](docs/proot-binary-provenance.md) | PRoot 预编译二进制来源与指纹 |
 | [docs/pipeline-output-optimization.md](docs/pipeline-output-optimization.md) | 流水线输出优化记录 |
 | [docs/PERF.md](docs/PERF.md) | 性能笔记 |
@@ -1143,6 +1143,7 @@ Android-Guru-Agent/
 | [docs/key-pool.md](docs/key-pool.md) | **P90 API Key 池**：三态门控/四轮换模式/指数退避/请求层换 Key 重试环（对标 operit MultiApiKeyProvider + rikka LruKeyRoulette） |
 | [docs/prompt-variables.md](docs/prompt-variables.md) | **P91 提示词变量**：19 内置变量/转义与默认值语法/递归环安全（对标 rikka PlaceholderTransformer） |
 | [docs/prompt-template-library.md](docs/prompt-template-library.md) | **P92 提示词模板库**：10 内置模板/四级变量合并/原子持久化/导入导出（对标 operit 提示词库） |
+| [docs/template-runtime.md](docs/template-runtime.md) | **模板行为运行时**：六阶段管线/十行为 1:1 目录/内置不可更改/每模板双层确定性引擎（20 个 PR 架构全解） |
 | [docs/message-branching.md](docs/message-branching.md) | **P93 消息分支**：MessageBranchNode 候选数组模型/九操作/树存储与迁移（对标 rikka MessageNode） |
 | [docs/search-providers.md](docs/search-providers.md) | **P94 搜索供应商框架**：Tavily/Brave/Exa/SearXNG/DDG/Bing 六供应商/三阶段回退/缓存限流（对标 rikka 19 家搜索抽象） |
 | [docs/persona-cards.md](docs/persona-cards.md) | **P95 角色卡**：SillyTavern V1/V2/PNG tEXt 导入/Lorebook 触发（对标 operit 角色卡 + rikka AssistantImporter） |
@@ -1151,7 +1152,6 @@ Android-Guru-Agent/
 | [docs/dual-logic-engines.md](docs/dual-logic-engines.md) | **双思考逻辑引擎**：Coding 屏右上角「深潜/标准」切换 / DualLogicCodeEngine 门面路由 / 标准任务循环（五画像·权限三态门·task 子代理·上下文压缩·C++ 文本核）/ `/logic` 斜杠命令 / 现场隔离 |
 | [docs/loom-engine.md](docs/loom-engine.md) | **织造引擎（第三思考逻辑线）**：经纬交织范式 / in-band XML 工具协议 / 梭回合机 / 子线程群 / 织造包 / digest 织入压缩 / 拆库 apex-kit-loom + 端口-适配器接入 |
 | [docs/courier-engine.md](docs/courier-engine.md) | **信使引擎（第四思考逻辑线）**：驿传调度范式 / 收发匣投递 / 趟次步进机并行纤程 / 勘合通配则例 / 档房卷宗压缩 / 下站子驿委派 / 拆库 apex-kit-courier + 端口-适配器接入 |
-| [docs/agent-life-skills-and-memory.md](docs/agent-life-skills-and-memory.md) | **全能 Agent**：46 内置技能矩阵 × 渐进披露（目录+会话装备+自动装备）/ 聊天自动记忆管线（双速捕获+主动召回）/ 首轮问候极简 / 网页自动化 wait_for+页面类型推断 |
 | [docs/capability-introspection.md](docs/capability-introspection.md) | **能力自省与自主扩展**：权限阶梯知识库（prompt/工具/编排三线同源）/ CapabilityReport 一键自省 / MarketSearch 市场检索（返回可执行安装指令）/ Capability Expansion Playbook 六条扩展梯度 |
 
 <p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>

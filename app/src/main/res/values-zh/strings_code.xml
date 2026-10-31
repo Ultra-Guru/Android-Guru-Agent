@@ -82,15 +82,15 @@
     <string name="code_rules_section_note">优先级：项目规则（AGENTS.md）＞ 全局规则 ＞ 一般偏好；均低于安全与权限约束</string>
 
     <!-- ═══ v1.2 七档思考系统（coding 模式专属文案；ULTRACODE/APEXCODE 与聊天页共享键） ═══ -->
-    <string name="code_thinking_selector_title">Thinking Depth (7 tiers + Auto)</string>
-    <string name="code_thinking_none_desc">Direct action, no reasoning: fast in and out (iterations ×0.8).</string>
-    <string name="code_thinking_light_desc">Glance-edit: read the spot, patch, glance the result — token-light.</string>
-    <string name="code_thinking_standard_desc">Standard coding loop: read → edit → verify → re-read, minimal diff.</string>
-    <string name="code_thinking_deep_desc">Changeset mindset: list every change before acting, tie each to its verification.</string>
-    <string name="code_thinking_maximum_desc">Invariant guarding: identify invariants &amp; ripple effects, re-check the whole chain after edits.</string>
-    <string name="code_thinking_ultracode_desc">Deep-reasoning loop: dependency map → candidate edits → risk-ranking → minimal change → immediate verification; iterations ×2.0.</string>
-    <string name="code_thinking_apexcode_desc">Architecture-level exhaustive reasoning + adversarial self-review + full verification matrix; iterations ×3.0, manual-only.</string>
-    <string name="code_thinking_auto_desc">Adaptive: pre-check picks the tier before each send, and deep-water failures escalate mid-run (never auto-picks APEXCODE).</string>
+    <string name="code_thinking_selector_title">思考档位(7 档 + 自动)</string>
+    <string name="code_thinking_none_desc">不推理直接执行,进出最快(迭代 ×0.8)</string>
+    <string name="code_thinking_light_desc">看一眼就改:定位、打补丁、确认结果,省 token</string>
+    <string name="code_thinking_standard_desc">标准编码循环:读 → 改 → 验证 → 回读,最小改动</string>
+    <string name="code_thinking_deep_desc">先列改动清单再动手,每一项都对应验证方式</string>
+    <string name="code_thinking_maximum_desc">先找不变量和影响面,每次改动后整链回查</string>
+    <string name="code_thinking_ultracode_desc">编码深推理:理清依赖 → 列候选改法 → 按风险排序 → 最小修改 → 立即验证(迭代 ×2.0)</string>
+    <string name="code_thinking_apexcode_desc">架构级穷举 + 自我审查 + 全量验证(迭代 ×3.0,仅手动可选)</string>
+    <string name="code_thinking_auto_desc">自动:每次发送前按任务难度选档,卡住时自动加深,不会自动选到 Apex</string>
 
     <!-- v1.2 思考档位指南（CodeThinkingGuideSheet） -->
     <string name="code_thinking_guide_title">思考档位指南</string>
@@ -107,6 +107,21 @@
     <string name="code_thinking_guide_coding_view">编码视角</string>
     <string name="code_thinking_guide_footer_linkage">档位联动的不只是提示词：迭代上限、压缩阈值与工具输出预算都随档位缩放（数值见上方总表）。</string>
     <string name="code_thinking_guide_footer_apex">APEXCODE 仅手动可选：AUTO 选档永不触及，token 成本也是全梯度天花板。</string>
+
+    <!-- ═══ v1.4.11 会话上下文查看（CodeContextSheet；深潜线全量 / kit 线降级）═══ -->
+    <string name="code_context_open">查看上下文</string>
+    <string name="code_context_title">会话上下文</string>
+    <string name="code_context_stats_fmt">上下文 %1$d / %2$d tokens · %3$d 条消息</string>
+    <string name="code_context_copy_all">复制全部</string>
+    <string name="code_context_copied">已复制</string>
+    <string name="code_context_no_engine">引擎未就绪</string>
+    <string name="code_context_empty">当前逻辑线的引擎未开放会话内容查看，仅显示用量统计；切回「深潜」线可查看完整内容</string>
+    <string name="code_context_role_system">系统</string>
+    <string name="code_context_role_user">你</string>
+    <string name="code_context_role_assistant">助手</string>
+    <string name="code_context_role_tool">工具</string>
+    <string name="code_context_rules">全局规则</string>
+    <string name="code_context_extras">会话附加</string>
 
     <!-- ═══ v1.4.10 Coding 历史对话（新会话自动归档，可恢复）═══ -->
     <string name="code_history_open">对话历史</string>
@@ -180,8 +195,8 @@
     <string name="code_longtask_cp_round_fmt">第 %1$d 轮</string>
     <string name="code_longtask_cp_counts_fmt">%1$d 工具 · %2$d 文件</string>
     <string name="code_longtask_cp_todos_fmt">☑%1$d ☐%2$d</string>
-    <string name="code_thinking_guide_open">View tier guide</string>
-    <string name="code_thinking_no_native_effort">ℹ Current model has no reasoning capability flag: the native reasoning_effort parameter is not sent (engine-side effects — iterations, compression, prompts — still apply). Enable Reasoning in Settings → Model to turn it on</string>
+    <string name="code_thinking_guide_open">查看档位指南</string>
+    <string name="code_thinking_no_native_effort">当前模型未开启推理:原生 reasoning_effort 参数不会随请求发送;档位对迭代次数、压缩阈值和提示词仍然生效。可在「设置 → 模型」里开启</string>
     <!-- ═══ 胶囊流式输出（Coding 工作流时间轴）═══ -->
     <string name="code_stream_group_expand">展开</string>
     <string name="code_stream_diff_unnamed">（文件）</string>
@@ -265,7 +280,7 @@
     <string name="code_stream_run_files_fmt">%1$d 个文件</string>
     <string name="code_stream_run_failed_fmt">%1$d 次失败</string>
     <!-- ═══ 思考档位选择器 v2：短档名 + 胶囊标签 ═══ -->
-    <string name="code_thinking_chip">Thinking · %1$s</string>
+    <string name="code_thinking_chip">思考 · %1$s</string>
     <string name="code_thinking_short_none">Off</string>
     <string name="code_thinking_short_light">Light</string>
     <string name="code_thinking_short_standard">Standard</string>
@@ -276,29 +291,29 @@
     <string name="code_thinking_short_auto">Adaptive</string>
     <!-- ═══ v1.5 思考逻辑双引擎（右上角切换：深潜 = 自研 / 标准 = 标准任务循环）═══ -->
     <string name="code_logic_chip">逻辑 · %1$s</string>
-    <string name="code_logic_selector_title">完成任务逻辑</string>
+    <string name="code_logic_selector_title">思考逻辑</string>
     <string name="code_logic_mode_deep_dive">深潜</string>
     <string name="code_logic_mode_standard">标准</string>
     <string name="code_logic_badge_deep_dive">七档 · 自适应</string>
     <string name="code_logic_badge_standard">任务循环</string>
-    <string name="code_logic_deep_dive_desc">自研思考逻辑：七档深度阶梯 + 发送前自适应预检 + 深水区升级</string>
-    <string name="code_logic_standard_desc">业界标准 Agent 任务循环：构建者/规划师画像 · 权限门 · 子代理委派 · 上下文压缩</string>
-    <string name="code_logic_caps_deep_dive">档位阶梯 · AUTO 预检 · 旋钮补偿</string>
-    <string name="code_logic_caps_standard">角色画像 · allow/ask/deny · task 子代理 · 会话压缩</string>
-    <string name="code_logic_switch_blocked">任务运行中——请等待本轮结束再切换</string>
-    <string name="code_logic_switched_standard">思考逻辑已切换为「标准」（Agent 任务循环）。深潜会话现场已保留，切回即恢复。</string>
+    <string name="code_logic_deep_dive_desc">默认逻辑:七档思考深度,发送前自动选档,卡住时自动加深</string>
+    <string name="code_logic_standard_desc">标准 Agent 循环:角色设定、权限确认、子任务委派、上下文压缩</string>
+    <string name="code_logic_caps_deep_dive">七档深度 · 自动选档 · 迭代与压缩随档缩放</string>
+    <string name="code_logic_caps_standard">角色画像 · 权限三选 · task 子代理 · 会话压缩</string>
+    <string name="code_logic_switch_blocked">任务运行中——请等本轮结束再切换</string>
+    <string name="code_logic_switched_standard">思考逻辑已切换为「标准」。原会话已保留,切回即可继续。</string>
     <string name="code_logic_mode_loom">织造</string>
-    <string name="code_logic_badge_loom">经纬循环</string>
-    <string name="code_logic_loom_desc">经纬交织范式：in-band XML 工具协议 · 梭回合机 · 权限模态门 · 子线程群 · 织造包 · 运行中转向</string>
-    <string name="code_logic_caps_loom">XML 协议 · 经纬回合 · 子线程群 · 摘要织入压缩</string>
-    <string name="code_logic_switched_loom">思考逻辑已切换为「织造」（经纬交织范式）。原线会话现场已保留，切回即恢复。</string>
+    <string name="code_logic_badge_loom">多轮并行</string>
+    <string name="code_logic_loom_desc">多轮交织循环:对话与工具调用交替推进,支持多任务并行和中途改向</string>
+    <string name="code_logic_caps_loom">多轮工具协议 · 并行子任务 · 会话压缩</string>
+    <string name="code_logic_switched_loom">思考逻辑已切换为「织造」。原会话已保留,切回即可继续。</string>
     <string name="code_logic_mode_courier">信使</string>
-    <string name="code_logic_badge_courier">驿传调度</string>
-    <string name="code_logic_courier_desc">驿传调度范式：收发匣 steer/queue 投递 · 趟次步进机并行工具纤程 · 勘合通行证 · 卷宗压缩 · 下站子驿委派</string>
-    <string name="code_logic_caps_courier">收发匣 · 趟次步进 · 勘合门 · 卷宗压缩</string>
-    <string name="code_logic_switched_courier">思考逻辑已切换为「信使」（驿传调度范式）。原线会话现场已保留，切回即恢复。</string>
-    <string name="code_logic_switched_deep_dive">思考逻辑已切换为「深潜」（自研七档思考）。标准会话现场已保留，切回即恢复。</string>
-    <string name="code_logic_unknown_mode">/logic:%1$s 不是可识别的逻辑模式——可用 /logic:standard、/logic:loom、/logic:courier 或 /logic:deep_dive（别名：std、weave、express、deep）</string>
+    <string name="code_logic_badge_courier">调度并行</string>
+    <string name="code_logic_courier_desc">调度循环:指令排队或插队、工具并行执行、权限确认、子任务转交</string>
+    <string name="code_logic_caps_courier">指令排队 · 并行工具 · 权限确认 · 子任务转交</string>
+    <string name="code_logic_switched_courier">思考逻辑已切换为「信使」。原会话已保留,切回即可继续。</string>
+    <string name="code_logic_switched_deep_dive">思考逻辑已切换为「深潜」。原会话已保留,切回即可继续。</string>
+    <string name="code_logic_unknown_mode">/logic:%1$s 无法识别——可用 /logic:standard、/logic:loom、/logic:courier 或 /logic:deep_dive(别名:std、weave、express、deep)</string>
     <!-- v1.6 工作区浏览器（apex-kit-workspace）；v6 独立 Git 面板已于
          2026-10 移除（与浏览器内置 Git 页重复）-->
     <!-- 工作区选择（输入栏内选择器，2026-10）：真实文件夹 + 整个系统 -->

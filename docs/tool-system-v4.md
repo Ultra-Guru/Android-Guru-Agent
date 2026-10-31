@@ -1,7 +1,6 @@
 # Tool System v4 — Default-On, Progressive, Provider-Adaptive
 
 > 状态：已实施（Wave 1）· 分支 `feat/tool-system-v4-default-on`
-> 前置：[tool-system-v3.md](tool-system-v3.md)（执行硬化）· [agent-execution-overhaul.md](agent-execution-overhaul.md)
 > 业界对标：operit（AAswordman/Operit，渐进激活/use_package）· rikkahub-agent（rikkahub/rikkahub-agent，ToolCatalog 渐进披露 + tool_choice + Provider schema 清洗）
 
 ---

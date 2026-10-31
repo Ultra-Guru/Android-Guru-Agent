@@ -129,8 +129,7 @@ class TerminalIpcController(
         val safeRows = rows.coerceIn(2, 512)
         val safeCols = cols.coerceIn(2, 1024)
         val env = parseEnvAssignments(envAssignments)
-        val effectiveCwd = cwd?.takeIf { it.isNotBlank() }?.trim()
-            ?: if (backendId == LOCAL_BACKEND_ID) "/sdcard" else "/workspace"
+        val effectiveCwd = cwd?.takeIf { it.isNotBlank() }?.trim() ?: "/workspace"
         return try {
             runBlocking {
                 withTimeout(createTimeoutMs) {
@@ -356,7 +355,6 @@ class TerminalIpcController(
 
     companion object {
         const val ERR_RUNTIME_NOT_INSTALLED = "ERR:RUNTIME_NOT_INSTALLED — host app has not installed the terminal runtime yet"
-        const val LOCAL_BACKEND_ID = "local"
 
         /** 会话「可交互」状态集（listSessions 的 alive 投影）。 */
         private val ALIVE_STATES = setOf(
