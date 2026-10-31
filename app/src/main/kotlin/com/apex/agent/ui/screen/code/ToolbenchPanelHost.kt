@@ -1,6 +1,7 @@
 package com.apex.agent.ui.screen.code
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.apex.agent.core.tools.mcp.McpManager
@@ -21,9 +22,12 @@ import com.apex.agent.ui.screen.code.neon.NeonOrbStore
  *
  * triggerHidden = 锚点模式：五组件只作弹层宿主（matchParentSize 覆盖层
  * 不占行宽），弹层全部锚定展开按钮处 —— 由 [CodePanel] 驱动谁展开。
+ *
+ * BoxScope 扩展：matchParentSize 是 BoxScope 成员 —— 调用点（展开按钮的
+ * Box 内容 lambda）天然提供接收者。
  */
 @Composable
-internal fun CodeToolbenchPanels(
+internal fun BoxScope.CodeToolbenchPanels(
     activePanel: CodePanel?,
     onPanelDismiss: () -> Unit,
     slashMenuProvider: SlashMenuProvider,
