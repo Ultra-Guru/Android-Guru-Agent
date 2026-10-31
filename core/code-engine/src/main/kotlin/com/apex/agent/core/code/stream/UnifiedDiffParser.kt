@@ -176,10 +176,12 @@ object UnifiedDiffParser {
     private fun stripPrefix(path: String): String =
         path.removePrefix("a/").removePrefix("b/")
 
-    /** mini 结尾统计行 `(N added, M removed)`。 */
+    /** mini 结尾统计行 `(N added, M removed)`。病态超大数字 → 视为非统计行（null）。 */
     private fun parseSummary(line: String): Pair<Int, Int>? {
         val m = Regex("""^\((\d+) added, (\d+) removed\)$""").find(line.trim()) ?: return null
-        return m.groupValues[1].toIntOrNull() to m.groupValues[2].toIntOrNull()
+        val added = m.groupValues[1].toIntOrNull() ?: return null
+        val removed = m.groupValues[2].toIntOrNull() ?: return null
+        return added to removed
     }
 
     /** 隐式 hunk 的占位头（mini 格式无 @@ 标记时的上下文起点）。 */
