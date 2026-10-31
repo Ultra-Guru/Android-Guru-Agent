@@ -17,4 +17,4 @@
 - 已通过 IDE lint（0 错误）+ 静态复核。
 - CI 将自动编译 app 模块（Android SDK + Gradle）验证改动。
 
-详见 docs/agent-ui-audit.md。
+（原关联文档 agent-ui-audit.md 已随 Agent 模式移除。）

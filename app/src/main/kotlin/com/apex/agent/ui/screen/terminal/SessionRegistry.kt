@@ -63,7 +63,7 @@ class SessionRegistry(private val runtime: TerminalRuntime) {
             val m = meta[s.session.id]
             SessionTab(
                 id = s.session.id,
-                backendId = m?.backendId ?: BACKEND_AGENT,
+                backendId = m?.backendId ?: BACKEND_UBUNTU,
                 runtimeType = m?.runtimeType ?: inferRuntimeType(s.session.shell),
                 state = s.session.state.name,
                 isAlive = s.session.state in ALIVE_STATES,
@@ -118,16 +118,13 @@ class SessionRegistry(private val runtime: TerminalRuntime) {
     fun liveIds(): Set<Long> = _sessionTabs.value.asSequence().map { it.id }.toSet()
 
     private fun inferRuntimeType(shell: String): String =
-        if (shell.contains("bash", true) || shell.contains("proot", true)) "LINUX" else "ANDROID_LOCAL"
+        if (shell.contains("bash", true) || shell.contains("proot", true)) "LINUX" else "UNKNOWN"
 
     companion object {
         /** 执行后端常量（T96 自旧 TerminalViewModel 顶部转移；与 platform
-         *  ExecutionBackendRegistry 的注册 id 逐字一致）。 */
-        const val BACKEND_LOCAL = "local"
+         *  ExecutionBackendRegistry 的注册 id 逐字一致）。AndroidShell 后端
+         *  已移除 —— 生产注册表仅 linux-ubuntu（Ubuntu-only 收敛）。 */
         const val BACKEND_UBUNTU = "linux-ubuntu"
-
-        /** 无创建方记录的会话（Agent 创建 / 进程恢复）的展示标签。 */
-        const val BACKEND_AGENT = "agent"
 
         val ALIVE_STATES: Set<SessionState> = setOf(
             SessionState.CREATED,

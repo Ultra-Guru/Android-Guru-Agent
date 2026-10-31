@@ -3,36 +3,23 @@ package com.apex.agent.ui.screen.settings
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /**
- * Agent 角色（人设层）数据操作单元测试。
+ * Coding 专家角色（人设层）数据操作单元测试。
  *
- * 覆盖（PR：设置 → Agent 角色特性）：
- *  1. AgentSettings schema 演进：旧 JSON（无 agentRoles/activeRoleId）反序列化
- *     → 内置全能角色缺省（老用户升级零迁移）；
- *  2. 角色增改删/激活的副本语义（withRoleUpserted/withRoleRemoved/withRoleActivated）；
- *  3. 悬空 activeRoleId（角色被删）→ 诚实回落内置；
- *  4. 内置角色不可编辑/不可删除（withRoleUpserted 拒绝、ALL_ROUNDER 常量合成）；
+ * Agent 聊天工位的角色池（内置全能角色 + activeRoleId 激活链路）已随
+ * Agent 模式移除；本测试只覆盖 Coding 工位的专家模板体系：
+ *  1. AgentSettings schema 演进：旧 JSON（含已删除的 Agent 字段）反序列化
+ *     → Coding 全栈角色缺省（老用户升级零迁移）；
+ *  2. 角色增改删的副本语义（withRoleUpserted/withRoleRemoved）；
+ *  3. Coding 角色激活/悬空回落（withCodingRoleActivated/activeCodingRole）；
+ *  4. 内置角色不可编辑（withRoleUpserted 拒绝）；
  *  5. 序列化往返（持久化保真）。
  */
 class AgentRoleTest {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-
-    @Test
-    fun `legacy settings json without role fields falls back to built-in`() {
-        // 老用户落盘 JSON（v1.3.x，无角色字段）
-        val legacy = """{"defaultMode":"build","thinkLevel":"standard","maxIterations":20}"""
-        val settings = json.decodeFromString<AgentSettings>(legacy)
-        assertTrue(settings.agentRoles.isEmpty())
-        assertEquals(AgentRole.BUILTIN_ALL_ROUNDER_ID, settings.activeRoleId)
-        // 角色视图：内置在前，激活 = 内置全能
-        val active = settings.activeRole()
-        assertTrue(active.isBuiltIn)
-        assertEquals(1, settings.allRoles().size)
-    }
 
     @Test
     fun `upsert inserts then updates custom role`() {
@@ -72,58 +59,31 @@ class AgentRoleTest {
     }
 
     @Test
-    fun `built-in role cannot be upserted`() {
+    fun `built-in expert cannot be upserted`() {
         val s = AgentSettings()
         val threw = runCatching {
-            s.withRoleUpserted(AgentRole.ALL_ROUNDER.copy(name = "fake"))
+            s.withRoleUpserted(AgentRole.CODING_EXPERTS.first().copy(name = "fake"))
         }.isFailure
         assertTrue("内置角色必须拒绝编辑", threw)
     }
 
     @Test
-    fun `remove deletes custom role and falls back active to built-in`() {
+    fun `remove deletes custom role and coding activation falls back honestly`() {
         var s = AgentSettings()
             .withRoleUpserted(AgentRole(id = "r1", name = "A"))
             .withRoleUpserted(AgentRole(id = "r2", name = "B"))
-            .withRoleActivated("r1")
-        assertEquals("r1", s.activeRoleId)
+            .withCodingRoleActivated("r1")
+        assertEquals("r1", s.codeActiveRoleId)
 
         s = s.withRoleRemoved("r1")
         assertEquals(1, s.agentRoles.size)                       // 只剩 B
-        assertEquals(AgentRole.BUILTIN_ALL_ROUNDER_ID, s.activeRoleId)  // 激活回落内置
+        // 激活回落全栈置顶（activeCodingRole 诚实回落，无需改写 codeActiveRoleId）
+        assertEquals(AgentRole.BUILTIN_CODING_FULL_STACK_ID, s.activeCodingRole().id)
 
         // 删除非激活角色不影响激活
-        s = s.withRoleActivated("r2")
-        s = s.withRoleRemoved(AgentRole.BUILTIN_ALL_ROUNDER_ID)  // 内置 id 不在自定义列表
-        assertEquals("r2", s.activeRoleId)
-    }
-
-    @Test
-    fun `activate ignores unknown ids and accepts built-in`() {
-        var s = AgentSettings()
-        s = s.withRoleActivated("nonexistent")
-        assertEquals(AgentRole.BUILTIN_ALL_ROUNDER_ID, s.activeRoleId)
-        s = s.withRoleActivated(AgentRole.BUILTIN_ALL_ROUNDER_ID)
-        assertEquals(AgentRole.BUILTIN_ALL_ROUNDER_ID, s.activeRoleId)
-    }
-
-    @Test
-    fun `allRoles places built-in first and activeRole resolves dangling id`() {
-        var s = AgentSettings()
-            .withRoleUpserted(AgentRole(id = "r1", name = "A"))
-            .withRoleUpserted(AgentRole(id = "r2", name = "B"))
-            .withRoleActivated("r1")   // 先激活 r1，JSON 里才有可替换的 activeRoleId 值
-        val all = s.allRoles()
-        assertEquals(3, all.size)
-        assertTrue(all[0].isBuiltIn)   // 内置在前
-        assertEquals("A", all[1].name)
-
-        // 悬空激活 id（手改 JSON / 未来版本删除角色）→ 诚实回落
-        val raw = json.encodeToString(AgentSettings.serializer(), s)
-            .replace("\"activeRoleId\":\"r1\"", "\"activeRoleId\":\"gone\"")
-        val dangling = json.decodeFromString<AgentSettings>(raw)
-        assertEquals("gone", dangling.activeRoleId)
-        assertEquals(AgentRole.ALL_ROUNDER, dangling.activeRole())
+        s = s.withCodingRoleActivated("r2")
+        s = s.withRoleRemoved(AgentRole.BUILTIN_CODING_FULL_STACK_ID)  // 内置 id 不在自定义列表
+        assertEquals("r2", s.codeActiveRoleId)
     }
 
     // ═══ v6 Coding 专家模板（用户规格：全栈置顶 / Git / Android / 各语言专家）═══
@@ -158,7 +118,7 @@ class AgentRoleTest {
         var s = AgentSettings()
             .withRoleUpserted(AgentRole(id = "r1", name = "自定义"))
         val list = s.codingRoles()
-        // 内置专家在前（全栈置顶），自定义接续可用（跨模式复用）
+        // 内置专家在前（全栈置顶），自定义接续可用
         assertEquals(AgentRole.BUILTIN_CODING_FULL_STACK_ID, list[0].id)
         assertEquals(list.size, AgentRole.CODING_EXPERTS.size + 1)
         assertEquals("自定义", list.last().name)
@@ -193,7 +153,7 @@ class AgentRoleTest {
         // 未知 id 静默忽略
         s = s.withCodingRoleActivated("nonexistent")
         assertEquals(AgentRole.BUILTIN_CODING_FULL_STACK_ID, s.codeActiveRoleId)
-        // 自定义角色也能在 Coding 工位激活（跨模式复用）
+        // 自定义角色也能在 Coding 工位激活
         s = s.withCodingRoleActivated("r1")
         assertEquals("r1", s.codeActiveRoleId)
         assertEquals("自定义", s.activeCodingRole().name)
@@ -201,12 +161,12 @@ class AgentRoleTest {
 
     @Test
     fun `legacy settings json gets default coding role without migration`() {
-        // 老用户落盘 JSON（v6 之前，无 codeActiveRoleId）→ 反序列化即全栈缺省
+        // 老用户落盘 JSON（v6 之前 + 已删除的 Agent 字段）→ 反序列化即全栈缺省；
+        // ignoreUnknownKeys 吞掉 Agent 时代字段（defaultMode/thinkLevel/…）
         val legacy = "{\"defaultMode\":\"build\",\"thinkLevel\":\"standard\",\"maxIterations\":20}"
         val settings = json.decodeFromString<AgentSettings>(legacy)
         assertEquals(AgentRole.BUILTIN_CODING_FULL_STACK_ID, settings.codeActiveRoleId)
-        // 与 Agent 屏角色互不干扰
-        assertEquals(AgentRole.BUILTIN_ALL_ROUNDER_ID, settings.activeRoleId)
+        assertTrue(settings.agentRoles.isEmpty())
     }
 
     @Test
@@ -219,12 +179,12 @@ class AgentRoleTest {
                     style = "concise", replyLanguage = "zh"
                 )
             )
-            .withRoleActivated("r1")
+            .withCodingRoleActivated("r1")
         val restored = json.decodeFromString<AgentSettings>(
             json.encodeToString(AgentSettings.serializer(), original)
         )
         assertEquals(original, restored)
-        assertEquals("管家", restored.activeRole().name)
-        assertEquals("老板", restored.activeRole().userTitle)
+        assertEquals("管家", restored.activeCodingRole().name)
+        assertEquals("老板", restored.activeCodingRole().userTitle)
     }
 }

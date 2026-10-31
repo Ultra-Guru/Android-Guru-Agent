@@ -68,10 +68,11 @@ internal fun CodeLogicModeSelector(
     var expanded by remember { mutableStateOf(false) }
 
     Box {
-        // ── 触发胶囊（28dp 无边框，对齐 CodeThinkingSelector 规格）──
+        // ── 触发胶囊（28dp 无边框；2026-10 用户需求「圆角小一些」——
+        //    10dp 圆角矩形，区别于思考档位胶囊的全圆）──
         Surface(
             onClick = { expanded = true },
-            shape = RoundedCornerShape(50),
+            shape = RoundedCornerShape(10.dp),
             color = when (current) {
                 StandardLogicMode.STANDARD -> MaterialTheme.colorScheme.tertiaryContainer
                 StandardLogicMode.LOOM -> MaterialTheme.colorScheme.primaryContainer

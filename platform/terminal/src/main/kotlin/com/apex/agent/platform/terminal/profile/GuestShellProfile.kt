@@ -130,7 +130,7 @@ object GuestShellProfile {
 
     /**
      * 本地会话注入的 env（app 层经 terminalRuntime.create(env=…) 传入；
-     * 在 LocalShellBackend 默认 env 之上覆盖 —— T73 语义：调用方意图优先）。
+     * 在朴素 shell 默认 env 之上覆盖 —— T73 语义：调用方意图优先）。
      *
      * @param homeHostDir 可写 HOME（app filesDir 下的 shell home；mksh 历史/rc 目录）
      * @param rcHostPath .gurc 绝对路径（mksh 交互启动 source \$ENV）

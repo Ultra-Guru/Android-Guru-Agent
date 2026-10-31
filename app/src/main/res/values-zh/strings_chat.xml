@@ -103,19 +103,11 @@
 
     <!-- ═══ AgentModeSelector ═══ -->
     <string name="chat_mode_selector_cd">任务模式：%1$s，点击切换</string>
-    <!-- #168 CUSTOM 模式预设 chip（顶栏当前预设名） -->
     <string name="chat_role_selector_cd">Agent 角色：%1$s，点击切换</string>
     <string name="chat_role_builtin_cd">内置角色</string>
-    <string name="chat_mode_chat_desc">纯聊天——人设与聊天技能驱动</string>
-    <string name="chat_mode_agent_desc">全能智能体——通用工具，编程请去 Coding</string>
     <string name="chat_mode_build_desc">边想边做，实时执行</string>
     <string name="chat_mode_plan_desc">先制定完整计划，确认后再执行</string>
     <string name="chat_mode_goal_desc">目标驱动——可验证条件，不达成不罢休</string>
-    <string name="chat_mode_loop_desc">循环与定时——重复提示词/轮询/提醒</string>
-    <string name="chat_mode_spec_desc">先产出需求规格，确认后再执行</string>
-    <string name="chat_mode_reflect_desc">生成 → 评审 → 修正，提高输出质量</string>
-    <string name="chat_mode_assist_desc">遇多选时弹出选项菜单，人工决策</string>
-    <string name="chat_mode_custom_desc">附加自定义指令运行</string>
 
     <!-- ═══ ChatHistorySheet ═══ -->
 

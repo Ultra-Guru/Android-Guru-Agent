@@ -65,13 +65,13 @@ class TerminalDiagnosticsTool(
                     put("pid", JsonPrimitive(s.session.pid))
                     s.session.lastExitCode?.let { put("lastExitCode", JsonPrimitive(it)) }
                     // backend 语义推断（SessionSnapshot 不带 backend 字段 ——
-                    // shell=proot/bash → linux-ubuntu；否则 local）
+                    // shell=proot/bash → linux-ubuntu；旧 local 会话标注 legacy-local）
                     put(
                         "backend",
                         JsonPrimitive(
                             if (s.session.shell.contains("bash", true) ||
                                 s.session.shell.contains("proot", true)
-                            ) "linux-ubuntu" else "local"
+                            ) "linux-ubuntu" else "legacy-local"
                         )
                     )
                     s.foregroundJob?.let { put("foregroundJob", JsonPrimitive(it.command)) }

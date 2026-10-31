@@ -54,7 +54,7 @@ import com.apex.agent.core.llm.ReasoningEffort
  *   + [CodeThinkingProfile.uiDescriptionZh]（画像执行策略摘要）+ 「编码视角」
  *   段（本文件手写的 8 段适用谱系说明：从「改文案级小改」到「跨模块架构级
  *   大改」什么时候用这档 + 成本提示）；
- * - **当前档高亮**：primary 描边（BorderStroke，AgentRolesSection 同款），
+ * - **当前档高亮**：primary 描边（BorderStroke，与设置中心角色卡同款），
  *   点击任意卡片直接 [onSelect] 切档——指南不只是看，还能顺手换挡。
  *
  * ## 数据流与设计取舍
@@ -260,7 +260,7 @@ private fun LadderRow(
 /**
  * 单档卡片：徽标名 + 档位一句话（资源）+ 画像 uiDescriptionZh + 编码视角段。
  *
- * 当前档 primary 描边（AgentRolesSection 的 isActive 边框同款）；点击整卡
+ * 当前档 primary 描边（与设置中心角色卡的 isActive 边框同款）；点击整卡
  * onSelect 切档（指南即换挡入口，与选择器共用同一回调通道）。
  */
 @Composable

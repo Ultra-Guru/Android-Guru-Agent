@@ -38,7 +38,7 @@
     <string name="settings_landing_body">Open the drawer to browse categories — pick a page and it opens here</string>
     <string name="settings_no_profile_hint">No model profile yet — create one in Model · Setup first</string>
     <string name="settings_nav_cat_model">Model</string>
-    <string name="settings_nav_cat_agent">Agent</string>
+    <string name="settings_nav_cat_workspace">Workspace</string>
     <string name="settings_nav_cat_interface">Interface</string>
     <string name="settings_nav_cat_data">Data &amp; Backup</string>
     <string name="settings_nav_cat_terminal">Terminal</string>
@@ -51,23 +51,22 @@
     <string name="settings_nav_model_prompt">Prompt</string>
     <string name="settings_nav_model_advanced">Advanced</string>
     <string name="settings_nav_model_providers">Providers &amp; Roles</string>
-    <string name="settings_nav_agent_execution">Execution</string>
-    <string name="settings_nav_agent_roles">Roles &amp; Persona</string>
-    <string name="settings_nav_agent_permissions">Permissions</string>
-    <string name="settings_nav_agent_rules">Rules</string>
-    <string name="settings_nav_agent_hooks">Hooks</string>
-    <string name="settings_nav_agent_presets">Mode Presets</string>
-    <string name="settings_nav_agent_subagent">Sub-Agents</string>
-    <string name="settings_nav_agent_goal_loop">Goal &amp; Loop</string>
-    <string name="settings_nav_agent_coding">Coding</string>
-    <string name="settings_nav_agent_github">GitHub</string>
-    <string name="settings_nav_agent_compression">Compression</string>
-    <string name="settings_nav_agent_vision">Vision</string>
+    <string name="settings_nav_workspace_coding">Coding</string>
+    <string name="settings_nav_workspace_subagent">Sub-Agents</string>
+    <string name="settings_nav_workspace_permissions">Permissions</string>
+    <string name="settings_nav_workspace_rules">Rules</string>
+    <string name="settings_nav_workspace_hooks">Hooks</string>
+    <string name="settings_nav_workspace_compression">Compression</string>
+    <string name="settings_nav_workspace_vision">Vision</string>
+    <string name="settings_nav_workspace_goal">Goal</string>
+    <string name="settings_nav_workspace_github">GitHub</string>
+    <string name="settings_nav_workspace_memory">Memory</string>
     <string name="settings_nav_interface_appearance">Appearance</string>
     <string name="settings_nav_interface_chat">Chat Display</string>
     <string name="settings_nav_interface_notifications">Notifications</string>
     <string name="settings_nav_terminal_appearance">Appearance &amp; Feedback</string>
     <string name="settings_nav_terminal_policy">Command Policy</string>
+    <string name="settings_nav_terminal_service">Background Service</string>
     <string name="settings_nav_data_backup">Backup &amp; Restore</string>
     <string name="settings_nav_data_update">App Updates</string>
     <string name="settings_providers_roles_hint">Manage providers (base URLs / keys / rotation) and model role mapping (primary · vision · reasoning · fast · summary).</string>
@@ -160,11 +159,7 @@
     <string name="settings_section_advanced">Advanced</string>
     <string name="settings_strict_schema_desc">Strict JSON Schema mode (supported by only some providers)</string>
 
-    <!-- Agent -->
-    <!-- Agent Roles (persona layer) -->
-    <string name="settings_roles_section">Agent Roles</string>
-    <string name="settings_roles_subtitle">Who the agent is: built-in all-rounder + your custom personas; switching applies on the next request (no restart)</string>
-    <string name="settings_roles_new">New Role</string>
+    <!-- Coding expert roles (persona layer; shared editor keys) -->
     <string name="settings_roles_builtin">Built-in role (not editable, duplicate to customize)</string>
     <string name="settings_roles_active">Active</string>
     <string name="settings_roles_edit">Edit role</string>
@@ -194,31 +189,9 @@
     <string name="settings_roles_language_en">Always English</string>
     <string name="settings_roles_save">Save</string>
     <string name="settings_roles_cancel">Cancel</string>
-    <string name="settings_section_agent">Agent · Runtime</string>
-    <string name="settings_mode_auto">Auto (legacy)</string>
-    <string name="settings_mode_build">Build · think and act</string>
-    <string name="settings_mode_chat">Chat (legacy)</string>
-    <string name="settings_mode_plan">Plan · plan first, then execute</string>
-    <string name="settings_mode_goal">Goal · verifiable objective loop</string>
-    <string name="settings_mode_loop">Loop · scheduled re-runs</string>
-    <string name="settings_mode_spec">Spec · confirm the spec, then execute</string>
-    <string name="settings_mode_reflect">Reflect · review and improve</string>
-    <string name="settings_mode_assist">Assist · human decides</string>
-    <string name="settings_mode_custom">Custom · custom instructions</string>
-    <string name="settings_mode_desc">Default execution mode; takes effect after an app restart</string>
-    <string name="settings_think_auto">Auto · adaptive per turn</string>
-    <string name="settings_think_minimal">Minimal · act directly</string>
-    <string name="settings_think_light">Light · brief thinking</string>
-    <string name="settings_think_standard">Standard · normal reasoning</string>
-    <string name="settings_think_deep">Deep · deep thinking</string>
-    <string name="settings_think_maximum">Maximum · deepest thinking</string>
-    <string name="settings_think_desc">Reasoning depth before decisions (affects the system prompt; takes effect after restart)</string>
-    <string name="settings_max_iterations_desc">Max iterations per task, prevents infinite loops</string>
 
     <!-- ═══ 工具循环 v2 / 限速友好 / 自定义背景（三件套）═══ -->
     <string name="settings_tool_loop_section">Tool loop</string>
-    <string name="settings_tool_iterations_unlimited">Unlimited task iterations</string>
-    <string name="settings_tool_iterations_unlimited_desc">A task may call tools without any round cap (default on). Runaway loops are still caught by loop detection; you can also stop anytime</string>
     <string name="settings_tool_parallelism">Parallel tool executions per turn</string>
     <string name="settings_tool_parallelism_desc">How many tools of one model turn may run simultaneously (1 = sequential, historical behavior). Higher = fewer LLM round-trips; terminal outputs may interleave</string>
     <string name="settings_nav_model_rate_limit">Rate-Limit Friendly</string>
@@ -230,7 +203,7 @@
     <string name="settings_rate_limit_rich">Pack more info per request</string>
     <string name="settings_rate_limit_rich_desc">Tool output budget ×2, keep more recent turns, compress later — the same task needs fewer requests. Takes effect after app restart</string>
     <string name="settings_rate_limit_apply_title">Recommended combo</string>
-    <string name="settings_rate_limit_apply_desc">Applies in one tap: rate-limit mode on (≥4s interval), rich payloads, 4-way parallel tool execution, unlimited task iterations</string>
+    <string name="settings_rate_limit_apply_desc">Applies in one tap: rate-limit mode on (≥4s interval), rich payloads, 4-way parallel tool execution</string>
     <string name="settings_rate_limit_apply">Apply recommended combo</string>
     <string name="settings_background_section">Custom background</string>
     <string name="settings_background_desc">Use your own image as the app-wide background. Dedicated optimizations: downsampled decoding (huge photos never blow memory), luminance-adaptive scrim (text stays readable on any photo), decode-once caching</string>
@@ -240,9 +213,6 @@
     <string name="settings_background_clear">Remove</string>
     <string name="settings_background_dim">Scrim strength</string>
     <string name="settings_background_dim_desc">Manual scrim on top of the adaptive base — raise it if text feels hard to read</string>
-    <string name="settings_reflection_rounds_desc">One review → fix pass per round in Reflect mode</string>
-    <string name="settings_advanced_behavior">Advanced Agent Behavior (data plumbed)</string>
-    <string name="settings_reflection_desc">Enable self-review and correction after generation</string>
 
     <!-- Compression -->
     <string name="settings_section_compression">Context Compression</string>
@@ -466,13 +436,10 @@
     <string name="memory_delete_episode_text">Delete \"%1$s\"? Associated edges are removed together (nodes are a shared dictionary and are not hard-deleted).</string>
     <string name="memory_delete">Delete</string>
     <string name="memory_cancel">Cancel</string>
-    <string name="memory_episode_meta">%1$s · %2$s · %3$d actions</string>
-    <string name="memory_distilled">Distilled to macro</string>
     <string name="memory_no_text">(no text)</string>
     <string name="memory_generic">General</string>
     <string name="memory_macro_stats">%1$s · %2$d success / %3$d fail</string>
     <string name="memory_crystallized">Crystallized</string>
-    <string name="memory_steps">%1$d steps</string>
     <string name="memory_dream_title">Dream consolidation</string>
     <string name="memory_dream_running">Consolidating: decay / pruning / macro optimization…</string>
     <string name="memory_dream_desc">Energy decay + pruning of low-value memories (runs on a cycle; can also be triggered manually)</string>
@@ -554,6 +521,49 @@
     <string name="memory_search_type_fact">Fact</string>
     <string name="memory_search_type_entity">Entity</string>
     <string name="memory_search_type_node">Node</string>
+
+    <!-- ═══ Memory page v3 (single-column list / section nav / pull-to-refresh / filters) ═══ -->
+    <string name="memory_section_all">All</string>
+    <string name="memory_section_chat">Chat memory</string>
+    <string name="memory_section_knowledge">Knowledge graph</string>
+    <string name="memory_section_episodes">Episodes</string>
+    <string name="memory_section_macros">Macro skills</string>
+    <string name="memory_refreshed_at_fmt">Last refreshed %1$s</string>
+    <string name="memory_search_clear">Clear search</string>
+    <string name="memory_search_hint">Searches facts, entities and scene nodes at once</string>
+    <string name="memory_search_summary_fmt">%1$d matches</string>
+    <string name="memory_episode_filter_all">All</string>
+    <string name="memory_episode_filter_running">Running</string>
+    <string name="memory_episode_filter_succeeded">Succeeded</string>
+    <string name="memory_episode_filter_failed">Failed</string>
+    <string name="memory_episode_filter_abandoned">Abandoned</string>
+    <string name="memory_episode_filter_empty">No episodes with this status yet</string>
+    <string name="memory_episode_status_running">Running</string>
+    <string name="memory_episode_status_succeeded">Succeeded</string>
+    <string name="memory_episode_status_failed">Failed</string>
+    <string name="memory_episode_status_abandoned">Abandoned</string>
+    <string name="memory_episode_meta_time_actions_fmt">%1$s · %2$d actions</string>
+    <string name="memory_duration_hours_fmt">%1$d h %2$d min</string>
+    <string name="memory_duration_minutes_fmt">%1$d min %2$d s</string>
+    <string name="memory_duration_seconds_fmt">%1$d s</string>
+    <string name="memory_episode_manual">Manual</string>
+    <string name="memory_macro_distilled_fmt">Distilled %1$d macros</string>
+    <string name="memory_expand_hint">Details</string>
+    <string name="memory_collapse">Collapse</string>
+    <string name="memory_macro_goal_label">Goal</string>
+    <string name="memory_macro_steps_detail_header">Action sequence</string>
+    <string name="memory_macro_step_fmt">%1$d. %2$s</string>
+    <string name="memory_macro_step_tap">Tap</string>
+    <string name="memory_macro_step_swipe">Swipe</string>
+    <string name="memory_macro_step_input">Input text</string>
+    <string name="memory_macro_step_back">Back key</string>
+    <string name="memory_macro_step_home">Home</string>
+    <string name="memory_macro_more_steps_fmt">%1$d more steps not shown</string>
+    <string name="memory_macro_created_fmt">Created %1$s</string>
+    <string name="memory_macro_source_fmt">Distilled from episode %1$s</string>
+    <string name="memory_macro_last_used_fmt">Last replayed %1$s</string>
+    <string name="memory_knowledge_show_all_fmt">Show all %1$d entities</string>
+    <string name="memory_knowledge_show_top">Collapse to top entities</string>
 
     <!-- ═══ Permission management (PermissionsScreen) ═══ -->
     <string name="perms_title">Permissions</string>
@@ -814,20 +824,12 @@
     <string name="settings_keep_alive_conn">Keep connection alive</string>
     <string name="settings_keep_alive_service">Keep service alive</string>
     <string name="settings_retry_count">Retry count</string>
-    <string name="settings_max_iterations">Max iterations</string>
-    <string name="settings_reflection_rounds">Reflection rounds</string>
-    <string name="settings_retry_loop_section">Retry &amp; loop detection</string>
-    <string name="settings_auto_retry">Auto retry</string>
-    <string name="settings_max_retry_per_action">Max retry per action</string>
-    <string name="settings_loop_detection">Loop detection</string>
-    <string name="settings_loop_detection_window">Detection window (steps)</string>
-    <string name="settings_same_action_threshold">Same-action threshold</string>
-    <string name="settings_auto_recovery">Auto recovery</string>
-    <string name="settings_reflection_label">Reflection</string>
-    <string name="settings_planning">Planning</string>
-    <string name="settings_replanning">Replanning</string>
-    <string name="settings_background_execution">Background execution</string>
-    <string name="memory_capture_privacy_notice">Conversations are processed on-device to build your profile (facts / recent state / milestones). You can turn auto-capture off in Settings → Agent, and delete any memory here at any time.</string>
+    <!-- ═══ terminal/service 叶：Ubuntu 终端运行时宿主保活（原 Agent 分区迁入）═══ -->
+    <string name="settings_terminal_service_section">Background Service</string>
+    <string name="settings_terminal_service_desc">Keep the terminal runtime host service alive in the background; off = the service stops immediately</string>
+    <!-- ═══ workspace/memory 叶：#218 聊天记忆自动摄取（原 Agent 分区迁入）═══ -->
+    <string name="settings_memory_section">Memory</string>
+    <string name="memory_capture_privacy_notice">Conversations are processed on-device to build your profile (facts / recent state / milestones). You can turn auto-capture off in Settings → Workspace, and delete any memory here at any time.</string>
     <!-- #237 通知权限回收引导 -->
 
     <!-- ═══ #208: permission / risk gate dialog strings (GateDialogStrings.Res) ═══ -->

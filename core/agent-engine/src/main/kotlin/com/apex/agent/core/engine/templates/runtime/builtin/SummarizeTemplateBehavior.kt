@@ -28,12 +28,14 @@ import com.apex.agent.core.engine.templates.runtime.TemplateValidationReport
  *
  * 1. **ANALYZE**：长度预算解析（中文数字/区间/左右全支持）、内容画像
  *    （五类体裁）、关键事实抽取（数字/百分比/日期/区间/倍数/否定句）、
- *    抽取式草稿（句级打分 + 去冗余 + 原文序）；
+ *    抽取式草稿（句级打分 + 去冗余 + 原文序）+ 结构化大纲（PR 17：
+ *    句子切分/术语显著度/几余聚类/要点预算分配）；
  * 2. **COMPOSE**：正文 + 预算明示 + 事实清单 + 草稿句附录；
  * 3. **VALIDATE**：结论先行 + 要点 3-5 条 + 长度预算 + 事实覆盖率 +
- *    否定语义保留（[SummarizeAnalyzer.validateSummary]）；
+ *    否定语义保留（[SummarizeAnalyzer.validateSummary]）+ 要点重叠检测
+ *    （PR 17：Jaccard 相似度量化「三条要点一个意思」）；
  * 4. **RENDER**：结论/要点/关键事实三段 + 机器摘要
- *    （体裁/预算达标/事实覆盖/要点数）。
+ *    （体裁/预算达标/事实覆盖/要点数/大纲覆盖率）。
  */
 open class SummarizeTemplateBehavior : TemplateBehaviorBase() {
 
@@ -78,7 +80,7 @@ open class SummarizeTemplateBehavior : TemplateBehaviorBase() {
         ),
         deterministicPreAnalysis = true,
         promptEnrichmentMode = TemplatePromptEnrichmentMode.APPEND_FINDINGS,
-        behaviorVersion = 1
+        behaviorVersion = 2
     )
 
     // ═══ ANALYZE ═══
@@ -180,6 +182,50 @@ open class SummarizeTemplateBehavior : TemplateBehaviorBase() {
             )
         }
 
+        // 5) 结构化大纲（PR 17：切句/显著度/聚类/预算分配）
+        val outline = SummarizeStructureBuilder.buildOutline(content, budget)
+        if (outline.isUsable) {
+            findings.add(
+                TemplateFinding(
+                    ruleId = "summary.outline-ready",
+                    category = TemplateFindingCategory.STRUCTURE,
+                    severity = TemplateSeverity.INFO,
+                    title = "结构大纲就绪（${outline.bullets.size} 条要点，单条上限 ${outline.budget.perBulletChars} 字）",
+                    evidence = outline.bullets.joinToString("；") { it.draftText.take(30) },
+                    suggestion = "按大纲写要点：照草稿改写，保留每条携带的数字事实",
+                    confidence = 1.0
+                )
+            )
+            if (outline.clusters.isNotEmpty()) {
+                findings.add(
+                    TemplateFinding(
+                        ruleId = "summary.redundancy-clusters",
+                        category = TemplateFindingCategory.CONSISTENCY,
+                        severity = TemplateSeverity.MINOR,
+                        title = "原文含 ${outline.clusters.size} 组重复表述（已合并入要点）",
+                        evidence = outline.clusters.take(2).joinToString("；") {
+                            "句 ${it.memberOrdinals.joinToString("/") { member -> member.toString() }}"
+                        },
+                        suggestion = "每组只写一条要点，不要把同一件事拆成多条",
+                        confidence = 1.0
+                    )
+                )
+            }
+            if (outline.salientTerms.isNotEmpty()) {
+                findings.add(
+                    TemplateFinding(
+                        ruleId = "summary.salient-terms",
+                        category = TemplateFindingCategory.STRUCTURE,
+                        severity = TemplateSeverity.INFO,
+                        title = "显著术语 ${outline.salientTerms.size} 个（要点应尽量覆盖）",
+                        evidence = outline.salientTerms.take(6).joinToString("、") { it.term },
+                        suggestion = "结论与要点优先覆盖高权重术语",
+                        confidence = 1.0
+                    )
+                )
+            }
+        }
+
         var stats = TemplateAnalysisStats.empty()
             .with(TemplateAnalysisStats.KEY_RULE_COUNT, findings.size)
             .with(TemplateAnalysisStats.KEY_ANALYZED_LINES, content.lines().size)
@@ -187,6 +233,8 @@ open class SummarizeTemplateBehavior : TemplateBehaviorBase() {
             .with(METRIC_NEGATIONS, negations.size)
             .with(METRIC_DRAFT_SENTENCES, draft.size)
             .with(METRIC_BUDGET_MAX, budget.maxChars)
+            .with(METRIC_OUTLINE_BULLETS, outline.bullets.size)
+            .with(METRIC_OUTLINE_COVERAGE, "%.2f".format(outline.coverageEstimate))
 
         val hints = mutableListOf<String>()
         hints += "总结视角：$perspective"
@@ -197,6 +245,13 @@ open class SummarizeTemplateBehavior : TemplateBehaviorBase() {
         }
         if (negations.isNotEmpty()) {
             hints += "否定语义保护：${negations.size} 处否定表述的要点必须保留否定词"
+        }
+        if (outline.isUsable) {
+            hints += "要点预算：${outline.budget.bulletCount} 条，单条 ≤ ${outline.budget.perBulletChars} 字；结论 ≤ ${outline.budget.verdictChars} 字"
+            hints += "结论草稿（改写后用）：${outline.verdictHint.take(60)}"
+            outline.bullets.take(MAX_OUTLINE_HINTS).forEachIndexed { index, bullet ->
+                hints += "要点${index + 1}草稿（原句序 ${bullet.sourceOrdinal + 1}）：${bullet.draftText.take(70)}"
+            }
         }
 
         return TemplateAnalysis.of(
@@ -246,6 +301,21 @@ open class SummarizeTemplateBehavior : TemplateBehaviorBase() {
                 )
             )
         }
+        // 专项（PR 17）：要点重叠检测 —— Jaccard 相似度量化「几条要点一个意思」
+        val bulletLines = raw.lines()
+            .map { it.trim() }
+            .filter { BULLET_COUNT_LINE.containsMatchIn(it) }
+            .map { BULLET_COUNT_LINE.replace(it, "").trim() }
+        for (overlap in SummarizeStructureBuilder.checkBulletOverlap(bulletLines).take(3)) {
+            violations.add(
+                TemplateContractViolation(
+                    kind = TemplateContractViolationKind.LIST_TOO_LONG,
+                    section = "要点",
+                    detail = "要点 ${overlap.firstIndex + 1} 与 ${overlap.secondIndex + 1} 内容重叠（相似度 ${"%.2f".format(overlap.similarity)}）——合并为一条",
+                    evidence = bulletLines.getOrNull(overlap.firstIndex)?.take(40).orEmpty()
+                )
+            )
+        }
         return TemplateValidationReport(
             violations = violations,
             parsedSections = base.parsedSections,
@@ -266,12 +336,15 @@ open class SummarizeTemplateBehavior : TemplateBehaviorBase() {
         val issues = SummarizeAnalyzer.validateSummary(raw, content, budget)
         val budgetOk = issues.none { it.kind == SummarizeAnalyzer.SummaryIssue.Kind.VERDICT_TOO_LONG }
         val factCoverage = factCoverageOf(raw, content)
+        val outline = SummarizeStructureBuilder.buildOutline(content, budget)
         return base.copy(
             summary = mapOf(
                 META_GENRE to (SummarizeAnalyzer.profile(content).genre.label),
                 META_BUDGET_OK to budgetOk.toString(),
                 META_FACT_COVERAGE to factCoverage.toString(),
-                META_BULLET_COUNT to bulletCountOf(raw).toString()
+                META_BULLET_COUNT to bulletCountOf(raw).toString(),
+                META_OUTLINE_BULLETS to outline.bullets.size.toString(),
+                META_OUTLINE_COVERAGE to "%.0f".format(outline.coverageEstimate * 100)
             ),
             residualViolations = base.residualViolations
         )
@@ -291,14 +364,19 @@ open class SummarizeTemplateBehavior : TemplateBehaviorBase() {
     companion object {
         const val TEMPLATE_ID = "builtin_summarize"
         const val MAX_DRAFT_HINTS = 6
+        const val MAX_OUTLINE_HINTS = 5
         const val METRIC_FACTS = "keyFacts"
         const val METRIC_NEGATIONS = "negations"
         const val METRIC_DRAFT_SENTENCES = "draftSentences"
         const val METRIC_BUDGET_MAX = "budgetMaxChars"
+        const val METRIC_OUTLINE_BULLETS = "outlineBullets"
+        const val METRIC_OUTLINE_COVERAGE = "outlineCoverage"
         const val META_GENRE = "genre"
         const val META_BUDGET_OK = "budgetOk"
         const val META_FACT_COVERAGE = "factCoveragePercent"
         const val META_BULLET_COUNT = "bulletCount"
+        const val META_OUTLINE_BULLETS = "outlineBulletCount"
+        const val META_OUTLINE_COVERAGE = "outlineCoveragePercent"
 
         /** 列表行形态（渲染统计用）。 */
         val BULLET_COUNT_LINE: Regex = Regex("""^(?:[-*+]|\d{1,3}[.)])\s+""")

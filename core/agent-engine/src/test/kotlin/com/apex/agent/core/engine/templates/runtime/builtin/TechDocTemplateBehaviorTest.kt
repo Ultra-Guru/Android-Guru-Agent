@@ -197,6 +197,8 @@ class TechDocTemplateBehaviorTest {
 
     @Test
     fun `validate accepts complete doc with fenced example`() {
+        // 合规夹具：围栏带语言标注（无标注会被「示例三查」的
+        // doc.example-no-lang 门禁拦下 —— 见 TechDocStyleGuideTest）。
         val raw = """
             ## 一句话概述与适用场景
             概述。
@@ -208,7 +210,7 @@ class TechDocTemplateBehaviorTest {
             原理。
 
             ## 使用示例
-            ```
+            ```kotlin
             activate("id")
             ```
 
@@ -232,7 +234,7 @@ class TechDocTemplateBehaviorTest {
             原理。
 
             ## 使用示例
-            ```
+            ```kotlin
             activate("id")
             ```
 
@@ -285,7 +287,7 @@ class TechDocTemplateBehaviorTest {
             原理。
 
             ## 使用示例
-            ```
+            ```kotlin
             activate("id")
             ```
 

@@ -1,5 +1,6 @@
 package com.apex.agent.core.code.standard
 
+import com.apex.agent.core.code.CodeContextSnapshot
 import com.apex.agent.core.code.CodeEngineFacade
 import com.apex.agent.core.code.thinking.CodeThinkingLevel
 import com.apex.agent.core.engine.AgentEngine
@@ -191,6 +192,9 @@ class DualLogicCodeEngine(
     override fun currentTokenCount(): Int = active.currentTokenCount()
 
     override fun maxContextTokens(): Int = active.maxContextTokens()
+
+    /** 上下文查看路由到当前激活线（深潜线全量；kit 线为统计降级快照）。 */
+    override fun contextSnapshot(): CodeContextSnapshot = active.contextSnapshot()
 
     companion object {
         private const val TAG = "DualLogicCodeEngine"

@@ -37,7 +37,7 @@ class TerminalDiagnosticsToolTest {
         override suspend fun backends(): List<TerminalRuntime.BackendStatus> = statuses
         override suspend fun snapshot(mode: TerminalRuntime.SnapshotMode, sessionId: Long?, recentEvents: Int, recentOutputBytes: Int): Result<TerminalRuntime.SnapshotResult> =
             Result.success(TerminalRuntime.SnapshotResult(sessions, 0L, emptyList(), ""))
-        override suspend fun create(shell: String, cwd: String, rows: Int, cols: Int, env: Map<String, String>, privilege: PrivilegeLevel, backendId: String, workspaceId: String?): Result<TerminalRuntime.CreateResult> = throw UnsupportedOperationException()
+        override suspend fun create(cwd: String, rows: Int, cols: Int, env: Map<String, String>, privilege: PrivilegeLevel, backendId: String, workspaceId: String?): Result<TerminalRuntime.CreateResult> = throw UnsupportedOperationException()
         override suspend fun run(sessionId: Long, command: String, owner: InputOwner, background: Boolean, timeoutMs: Long): Result<TerminalRuntime.RunResult> = throw UnsupportedOperationException()
         override suspend fun observe(sessionId: Long, mode: TerminalRuntime.ObserveMode, afterCursor: Long, maxBytes: Int, maxEvents: Int, scrollbackLines: Int): Result<TerminalRuntime.ObserveResult> = throw UnsupportedOperationException()
         override suspend fun wait(sessionId: Long, condition: com.apex.agent.platform.TerminalWait.WaitCondition, timeoutMs: Long): Result<com.apex.agent.platform.TerminalWait.WaitResult> = throw UnsupportedOperationException()
@@ -73,7 +73,7 @@ class TerminalDiagnosticsToolTest {
     private fun backend(id: String, state: String): TerminalRuntime.BackendStatus =
         TerminalRuntime.BackendStatus(
             id = id,
-            runtimeType = if (id == "linux-ubuntu") "LINUX" else "ANDROID_LOCAL",
+            runtimeType = "LINUX",
             available = state == "READY",
             state = state,
             detail = if (state == "FAILED") "proot binary missing" else null
@@ -82,7 +82,7 @@ class TerminalDiagnosticsToolTest {
     @Test
     fun `healthy stack reports ok with sessions and backends`() = runBlocking {
         val runtime = FakeRuntime(
-            listOf(backend("local", "READY"), backend("linux-ubuntu", "READY")),
+            listOf(backend("linux-ubuntu", "READY")),
             listOf(semantic(1, SessionState.READY))
         )
         val tool = TerminalDiagnosticsTool(runtime, execProbe = null)
@@ -90,14 +90,14 @@ class TerminalDiagnosticsToolTest {
 
         assertEquals("true", json["ok"]!!.jsonPrimitive.content)
         assertEquals("1", json["sessionCount"]!!.jsonPrimitive.content)
-        assertEquals(2, json["backends"]!!.jsonArray.size)
+        assertEquals(1, json["backends"]!!.jsonArray.size)
         assertEquals("all clear — terminal stack healthy", json["nextActions"]!!.jsonArray[0].jsonPrimitive.content)
     }
 
     @Test
     fun `dead session gets verdict and close action`() = runBlocking {
         val runtime = FakeRuntime(
-            listOf(backend("local", "READY")),
+            listOf(backend("linux-ubuntu", "READY")),
             listOf(semantic(7, SessionState.EXITED))
         )
         val tool = TerminalDiagnosticsTool(runtime, execProbe = null)
