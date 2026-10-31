@@ -135,10 +135,10 @@ fun FusionBundleComposerDialog(
         )
     }
     var alwaysOn by remember(editing) {
-        mutableStateOf(editing?.policies?.alwaysOn?.toSet() ?: emptySet())
+        mutableStateOf<Set<String>>(editing?.policies?.alwaysOn?.toSet() ?: emptySet())
     }
     var exclusiveGroups by remember(editing) {
-        mutableStateOf(
+        mutableStateOf<List<Set<String>>>(
             editing?.policies?.mutuallyExclusive
                 ?.map { it.toSet() }?.takeIf { it.isNotEmpty() }
                 ?: listOf(emptySet())
@@ -146,7 +146,7 @@ fun FusionBundleComposerDialog(
     }
     /** 每技能触发条件（key = 技能 id，含 hub picks；编辑回填）。 */
     var triggers by remember(editing) {
-        mutableStateOf(
+        mutableStateOf<Map<String, com.apex.agent.core.tools.fusion.FusionTrigger>>(
             editing?.policies?.triggers?.associate { it.skillId to it } ?: emptyMap()
         )
     }
