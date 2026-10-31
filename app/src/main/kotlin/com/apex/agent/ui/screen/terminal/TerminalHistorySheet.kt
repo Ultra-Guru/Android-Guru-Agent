@@ -48,7 +48,9 @@ internal fun TerminalHistorySheet(
     TerminalConsoleTheme {
         val entries by viewModel.history.collectAsStateWithLifecycle()
         val context = LocalContext.current
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        // #452：CLIPBOARD_SERVICE 极端环境可能为 null —— as? 存活，
+        // 复制按钮侧空安全调用（服务缺失时仅跳过复制反馈）。
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
 
         ModalBottomSheet(onDismissRequest = onDismiss, containerColor = ConsoleTokens.background) {
             Column(
@@ -114,7 +116,7 @@ internal fun TerminalHistorySheet(
                                 )
                                 IconButton(
                                     onClick = {
-                                        clipboard.setPrimaryClip(
+                                        clipboard?.setPrimaryClip(
                                             ClipData.newPlainText("terminal", cmd)
                                         )
                                         // 复制成功反馈（通知条）

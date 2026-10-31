@@ -3,6 +3,7 @@ package com.apex.agent.platform.privilege.shizuku
 import android.content.pm.PackageManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 import java.io.BufferedReader
@@ -138,10 +139,13 @@ object ShizukuCommandExecutor {
             val stdoutDeferred = async(Dispatchers.IO) { runCatching { stdoutR.readText() }.getOrDefault("") }
             val stderrDeferred = async(Dispatchers.IO) { runCatching { stderrR.readText() }.getOrDefault("") }
 
-            // 关键：Process.waitFor() 是非可中断的 JVM 阻塞调用 —— 用
-            // waitFor(timeoutMs, MILLISECONDS)（JDK 内部用 wait/notify 循环实现，
-            // 可超时返回 false），超时后显式 destroy 让 readText 拿到 EOF。
-            val completed = proc.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
+            // 关键：Process.waitFor() 是同步阻塞调用 —— 用
+            // waitFor(timeoutMs, MILLISECONDS)（JDK 内部用 wait/notify 循环
+            // 实现，可超时返回 false），超时后显式 destroy 让 readText 拿到 EOF。
+            // #463：runInterruptible 让协程取消可传播 —— ShizukuProcessChannel
+            // 的轮询 sleep 响应 interrupt（恢复标志位后按超时返回 false），
+            // 取消/超时不再钉死 IO 线程到全程超时。
+            val completed = runInterruptible { proc.waitFor(timeoutMs, TimeUnit.MILLISECONDS) }
             if (!completed) {
                 proc.destroyForcibly()
                 stdoutDeferred.await()
@@ -176,6 +180,11 @@ object ShizukuCommandExecutor {
                 output = "Shizuku permission denied. Please grant permission in Shizuku app.",
                 exitCode = -1
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // #463：协程取消向上传播（runInterruptible 唤醒阻塞的 waitFor 后
+            // 走这里）—— 不折叠成结果文本，保持结构化取消纪律；finally
+            // 仍收尾 reader 与进程。
+            throw e
         } catch (e: Exception) {
             ShizukuExecResult(
                 success = false,

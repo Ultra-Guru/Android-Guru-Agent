@@ -7,6 +7,10 @@ import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.core.engine.orchestrator.RetryPolicy
 import com.apex.agent.core.tools.ToolResultMeta
 import com.apex.agent.core.tools.ToolStreamEvent
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -232,12 +236,17 @@ internal suspend fun ApexAgentEngine.executeToolCallStreamingCore(
     // 需要注册表 id（TerminalExec）——经当前计划的反向映射解析。
     // 无映射时（旧会话回放/模型直呼 registry id）原样直查，两条路都通。
     val registryToolId = EngineToolPlanner.registryIdOf(currentToolPlan, toolCall.name)
+    // 溯源打标（能力生态三分类）：注册表元数据 → MCP/技能/内置，随事件下发。
+    // 元数据缺失/未打标 → BUILTIN（kit 适配器与旁路注册同款缺省，不误标）。
+    val originInfo = resolveToolOrigin(registryToolId)
 
     emit(
         AgentEvent.ToolCallStart(
             callId = toolCall.id,
             toolName = toolCall.name,
-            arguments = toolCall.arguments
+            arguments = toolCall.arguments,
+            origin = originInfo.origin,
+            originLabel = originInfo.label
         )
     )
 
@@ -269,13 +278,27 @@ internal suspend fun ApexAgentEngine.executeToolCallStreamingCore(
             toolExecutor.executeStream(registryToolId, toolCall.arguments).collect { event ->
                 when (event) {
                     is ToolStreamEvent.Output -> {
-                        outputBuilder.append(event.chunk)
-                        emit(
-                            AgentEvent.ToolOutputChunk(
-                                callId = toolCall.id,
-                                chunk = event.chunk
+                        // 预览片段（preview=true）：只推 UI（终端胶囊实时流动），
+                        // 不进累积输出 —— 结构化工具（TerminalExec）的权威输出
+                        // 是 Complete 携带的最终 JSON。修复：长命令执行期间
+                        // UI 面板空白（旧 executeStream 假流式，invoke 完成前
+                        // 零事件）。
+                        if (event.preview) {
+                            emit(
+                                AgentEvent.ToolOutputChunk(
+                                    callId = toolCall.id,
+                                    chunk = event.chunk
+                                )
                             )
-                        )
+                        } else {
+                            outputBuilder.append(event.chunk)
+                            emit(
+                                AgentEvent.ToolOutputChunk(
+                                    callId = toolCall.id,
+                                    chunk = event.chunk
+                                )
+                            )
+                        }
                     }
                     is ToolStreamEvent.Progress -> {
                         emit(
@@ -352,9 +375,19 @@ internal suspend fun ApexAgentEngine.executeToolCallStreamingCore(
 
     val duration = System.currentTimeMillis() - toolStart
 
+    // ═══ P0（截断预算链路打通）：按调用解析工具输出预算 ═══
+    // 旧链路断层：模型按工具 schema 显式请求 max_output_chars=12000，
+    // TerminalExec 忠实执行返回 12K JSON；但引擎用配置预算（Agent 默认 2000 /
+    // Coding 8000~16000）在回灌前再次截断 —— 模型请求的超预算被静默作废，
+    // stdout 实际只见 ~1.9K（扣掉 JSON 键开销），“输出不完整”成常态。
+    // 现在从本次调用的参数里解析模型显式声明的预算（max_output_chars 等通用
+    // 命名约定），以 max(配置预算, 声明预算) 为本次生效预算（硬顶内）。
+    // 未声明 → null → 沿用构造预算，行为与旧版完全一致。
+    val perCallBudget = resolvePerCallToolBudget(toolCall)
+
     // P7 Layer 1: 工具输出截断（始终生效）
     val rawOutput = outputBuilder.toString()
-    val truncationResult = toolTruncator.smartTruncate(rawOutput, registryToolId)
+    val truncationResult = toolTruncator.smartTruncate(rawOutput, registryToolId, perCallBudget)
     val result = truncationResult.text
 
     // 成败判定（v3 三级优先）：
@@ -376,7 +409,11 @@ internal suspend fun ApexAgentEngine.executeToolCallStreamingCore(
             callId = toolCall.id,
             toolName = toolCall.name,
             arguments = toolCall.arguments,
-            output = result.take(thinkingController.resolveToolOutputBudget(config.maxToolOutputLength)),
+            // P0（预算打通）：UI 切片与截断同预算 —— 旧实现在 per-call 放大后
+            // 仍用思考档位预算二次切，UI 显示与回灌 LLM 的内容不一致。
+            output = result.take(
+                perCallBudget ?: thinkingController.resolveToolOutputBudget(config.maxToolOutputLength)
+            ),
             fullOutput = rawOutput.take(100_000),
             success = actionSuccess,
             durationMs = duration,
@@ -386,7 +423,11 @@ internal suspend fun ApexAgentEngine.executeToolCallStreamingCore(
             channel = completeMeta.channel,
             cwd = completeMeta.cwd,
             errorKind = completeMeta.errorKind,
-            waitingInput = completeMeta.waitingInput
+            waitingInput = completeMeta.waitingInput,
+            // 溯源同款透传（Complete 单独携带：重放/恢复场景 Start 丢失时
+            // 消费端补建胶囊仍能拿到权威分类）。
+            origin = originInfo.origin,
+            originLabel = originInfo.label
         )
     )
     return ToolExecutionOutcome(result, actionSuccess, registryToolId)
@@ -459,3 +500,58 @@ internal suspend fun ApexAgentEngine.finalizeToolCallOutcome(
         success = outcome.success
     )
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+//  P0（截断预算链路打通）：按调用解析工具输出预算
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * 解析本次工具调用的输出预算上限（null = 未声明，沿用构造预算）。
+ *
+ * 生效预算 = max(思考档位解析的配置预算, 模型声明预算)，并钳制在
+ * [HARD_TOOL_OUTPUT_CEILING] 硬顶内 —— 模型在工具参数里显式要的输出量
+ * （如 TerminalExec 的 max_output_chars=12000）不再被引擎配置预算
+ * 静默作废；同时硬顶保证任何单次工具结果都不会撑爆上下文。
+ */
+internal fun ApexAgentEngine.resolvePerCallToolBudget(toolCall: ToolCall): Int? {
+    val declared = declaredToolOutputBudget(toolCall.arguments) ?: return null
+    val base = thinkingController.resolveToolOutputBudget(config.maxToolOutputLength)
+    return maxOf(base, declared).coerceAtMost(HARD_TOOL_OUTPUT_CEILING)
+}
+
+/**
+ * 从工具调用参数 JSON 里解析模型显式声明的输出预算（字符数）。
+ *
+ * 通用命名约定（snake_case 优先，camelCase 兜底）：
+ *  - `max_output_chars` / `maxOutputChars` / `max_chars` —— stdout 预算；
+ *  - `max_error_chars` / `maxErrorChars` —— stderr 预算（计入总预算）。
+ *
+ * 加上 [JSON_ENVELOPE_OVERHEAD] 信封开销（结构化工具的键名/元数据字段/
+ * 截断告示）。防御式：参数非 JSON / 字段缺失 / 超长参数串 → null，
+ * 永不因解析抛错影响执行。
+ */
+internal fun declaredToolOutputBudget(arguments: String): Int? {
+    if (arguments.isBlank() || arguments.length > MAX_BUDGET_ARG_SCAN_CHARS) return null
+    return runCatching {
+        val json = Json.parseToJsonElement(arguments).jsonObject
+        val outputChars = intFieldOf(json, "max_output_chars", "maxOutputChars", "max_chars")
+            ?: return@runCatching null
+        val errorChars = intFieldOf(json, "max_error_chars", "maxErrorChars") ?: 0
+        (outputChars + errorChars + JSON_ENVELOPE_OVERHEAD).coerceAtLeast(1)
+    }.getOrNull()
+}
+
+/** JSON 对象里的第一个命中的整数字段（容错：非数字/缺失 → null）。 */
+private fun intFieldOf(json: JsonObject, vararg keys: String): Int? =
+    keys.firstNotNullOfOrNull { k ->
+        (json[k] as? JsonPrimitive)?.content?.toIntOrNull()?.takeIf { it > 0 }
+    }
+
+/** 按调用预算的硬顶（单次工具结果进上下文的绝对上限）。 */
+internal const val HARD_TOOL_OUTPUT_CEILING = 150_000
+
+/** 结构化工具 JSON 信封开销预算（键名 + 元数据字段 + 截断告示）。 */
+private const val JSON_ENVELOPE_OVERHEAD = 2_500
+
+/** 预算解析的参数串长度上限（超大参数串直接放弃解析，防性能倒退）。 */
+private const val MAX_BUDGET_ARG_SCAN_CHARS = 8_192

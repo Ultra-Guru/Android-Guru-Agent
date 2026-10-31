@@ -367,9 +367,13 @@ class ProotGitCommandRunner(
                 coroutineContext.ensureActive()
             }
             if (timedOut) {
-                runCatching { process.destroyForcibly() }
+                killProcessTree(process)
                 runCatching { stdoutDrain.join(DRAIN_JOIN_MS) }
                 runCatching { stderrDrain.join(DRAIN_JOIN_MS) }
+                // join 宽限用尽 = drain 线程仍活着（孙进程持有管道）—— 如实标注
+                // 输出不完整，绝不假装完整（对齐 ExecEngine 的 markIncomplete 契约）
+                if (stdoutDrain.isAlive) stdoutCapture.markIncomplete()
+                if (stderrDrain.isAlive) stderrCapture.markIncomplete()
                 return GitCommandResult(
                     exitCode = GitCommandResult.INFRA_EXIT_CODE,
                     stdout = stdoutCapture.snapshot(),
@@ -378,16 +382,32 @@ class ProotGitCommandRunner(
             }
             runCatching { stdoutDrain.join(DRAIN_JOIN_MS) }
             runCatching { stderrDrain.join(DRAIN_JOIN_MS) }
+            if (stdoutDrain.isAlive) stdoutCapture.markIncomplete()
+            if (stderrDrain.isAlive) stderrCapture.markIncomplete()
             return GitCommandResult(
                 exitCode = process.exitValue(),
                 stdout = stdoutCapture.snapshot(),
                 stderr = stderrCapture.snapshot()
             )
         } catch (e: CancellationException) {
-            // 协程取消：销毁进程后原样上抛（保持取消语义诚实）
-            runCatching { process.destroyForcibly() }
+            // 协程取消：收尾进程树（关流+强杀）后原样上抛（保持取消语义诚实）
+            killProcessTree(process)
             throw e
         }
+    }
+
+    /**
+     * 超时/取消收尾：先关三根流再强杀进程——关闭流使 drain 线程阻塞的
+     * read() 立即以 IOException/EOF 退出（interrupt 无法中断阻塞读，关流
+     * 才是有效手段）；不关流时若 git 派生了子进程（ssh/gpg/凭据助手）持有
+     * 管道写端，drain 线程会永久泄漏。与 ProotSandboxCommandRunner.
+     * killProcessTree 同款语义。
+     */
+    private fun killProcessTree(process: Process) {
+        runCatching { process.outputStream.close() }
+        runCatching { process.inputStream.close() }
+        runCatching { process.errorStream.close() }
+        runCatching { process.destroyForcibly() }
     }
 
     /** 起一个 daemon 线程持续 drain 一根流（防管道缓冲区写满死锁）。 */
@@ -441,6 +461,10 @@ class ProotGitCommandRunner(
  * 两阶段策略：未达预算时全文累积；超预算后首部固化 budget/2，切换为固定
  * 容量的尾部滚动 ring，中间丢弃并在 snapshot 里打标——开头的错误上下文与
  * 末尾的摘要行都保留，海量输出不撑爆内存与上下文。
+ *
+ * 线程安全（本版加固）：单写者（drain 线程）+ join 宽限用尽时读取方与
+ * 写入方并发访问 StringBuilder（非线程安全）会拿到撕裂字符串 ——
+ * append/snapshot 加监视器锁（对齐 ExecEngine / ProotExecutor 同款纪律）。
  */
 private class BoundedCapture(private val budgetChars: Int) {
 
@@ -455,8 +479,12 @@ private class BoundedCapture(private val budgetChars: Int) {
     var charsSeen: Long = 0
         private set
 
+    /** 采集未收尾（drain 线程 join 宽限用尽仍存活）：尾巴可能缺失。 */
+    private var incomplete = false
+
     private val halfBudget: Int get() = (budgetChars / 2).coerceAtLeast(1)
 
+    @Synchronized
     fun append(buf: CharArray, len: Int) {
         if (len <= 0) return
         charsSeen += len
@@ -467,14 +495,14 @@ private class BoundedCapture(private val budgetChars: Int) {
             } else {
                 head.append(buf, 0, remainingHead.coerceAtLeast(0))
                 truncated = true
-                appendToTail(buf, remainingHead.coerceAtLeast(0), len - remainingHead.coerceAtLeast(0))
+                appendToTailLocked(buf, remainingHead.coerceAtLeast(0), len - remainingHead.coerceAtLeast(0))
             }
         } else {
-            appendToTail(buf, 0, len)
+            appendToTailLocked(buf, 0, len)
         }
     }
 
-    private fun appendToTail(buf: CharArray, offset: Int, len: Int) {
+    private fun appendToTailLocked(buf: CharArray, offset: Int, len: Int) {
         if (len <= 0) return
         tail.append(buf, offset, len)
         if (tail.length > halfBudget) {
@@ -482,15 +510,28 @@ private class BoundedCapture(private val budgetChars: Int) {
         }
     }
 
+    /** 标记采集未收尾（drain 线程仍在写入；snapshot 尾部会加不完整告示）。 */
+    fun markIncomplete() {
+        incomplete = true
+    }
+
+    @Synchronized
     fun snapshot(): String {
-        if (!truncated) return head.toString()
+        if (!truncated && !incomplete) return head.toString()
+        if (!truncated && incomplete) {
+            return head.toString() + "\n...[incomplete: drain still running when snapshot taken]...\n"
+        }
         val dropped = charsSeen - head.length - tail.length
-        return buildString(head.length + tail.length + 64) {
+        val incompleteNotice = if (incomplete) {
+            "\n...[incomplete: drain still running when snapshot taken]...\n"
+        } else ""
+        return buildString(head.length + tail.length + 96) {
             append(head)
             append("\n...[已截断 ")
-            append(dropped)
+            append(dropped.coerceAtLeast(0))
             append(" 字符]...\n")
             append(tail)
+            append(incompleteNotice)
         }
     }
 }

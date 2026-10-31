@@ -133,4 +133,38 @@ class MemorySearchModelsTest {
         assertEquals(10, views.size)
         assertTrue(relationsOf("Missing", relations).isEmpty())
     }
+
+    // ═══ queryMatchRanges（v3 搜索高亮）═══
+
+    @Test
+    fun `empty or blank query yields no ranges`() {
+        assertTrue(queryMatchRanges("any text", "").isEmpty())
+        assertTrue(queryMatchRanges("any text", "   ").isEmpty())
+    }
+
+    @Test
+    fun `case-insensitive match returns covering ranges`() {
+        val text = "GitHub hosts repos; github mirrors them"
+        val ranges = queryMatchRanges(text, "GITHUB")
+        assertEquals(2, ranges.size)
+        assertEquals(0, ranges[0].first)
+        assertEquals(5, ranges[0].last)
+        assertEquals(20, ranges[1].first)
+        assertEquals(25, ranges[1].last)
+        // 区间切片即命中词本身（大小写保留原文）
+        assertEquals("GitHub", text.substring(ranges[0].first, ranges[0].last + 1))
+        assertEquals("github", text.substring(ranges[1].first, ranges[1].last + 1))
+    }
+
+    @Test
+    fun `overlapping matches advance greedily and misses return empty`() {
+        // 左起贪心：aaaa 对 aa 命中两次（0..1 与 2..3），不重叠计数
+        val greedy = queryMatchRanges("aaaa", "aa")
+        assertEquals(2, greedy.size)
+        assertEquals(0, greedy[0].first)
+        assertEquals(1, greedy[0].last)
+        assertEquals(2, greedy[1].first)
+        assertEquals(3, greedy[1].last)
+        assertTrue(queryMatchRanges("nothing here", "zzz").isEmpty())
+    }
 }

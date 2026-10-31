@@ -74,6 +74,13 @@ data class CodeUiState(
     // 25ms ≤40Hz 攒批推送；entries/终端尾窗/派生统计一体的不可变值。
     val stream: CodeStreamSnapshot = CodeStreamSnapshot(),
 
+    // ── 输出展示档（v1.5 双档：流式 / 整段）──
+    // STREAMING = Rikka 风格实时渲染（既有行为）；COMPLETE = 生成中静默
+    // （仅加载进度卡）、收束后一次性渲染。run 粒度快照：每轮 runEngine
+    // 开始时捕获（运行中改设置不打断当前轮，下一轮生效）。捕获与恢复
+    // 逻辑见 CodeOutputModeOps.kt，档位定义见 CodeOutputMode.kt。
+    val renderMode: CodeOutputMode = CodeOutputMode.STREAMING,
+
     // ── 编辑器面板（v1.0 #154）──
     // editorFilePath 非空即挂载面板；editorFile 为加载结果（null = 加载中/失败态）。
     val editorFilePath: String? = null,

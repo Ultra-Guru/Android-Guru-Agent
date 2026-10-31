@@ -505,6 +505,11 @@ open class CodeReviewTemplateBehavior : TemplateBehaviorBase() {
             }
             return end - headIndex
         }
+        // 单行表达式体捷径：头行无「{」、圆括号已闭合并带「=」/「->」尾巴
+        // （Kotlin 表达式体 `fun f(x) = x + 1` / 箭头赋值形态）→ 1 行函数。
+        // 不走此捷径会把后续兄弟函数行整段吞进本 span（旧缺陷：单行函数
+        // 串成的文件函数计数被低估，God-file 启发永远打不响）。
+        if (isSingleLineExpressionHead(lines[headIndex])) return 1
         // 花括号计界（含签名跨行场景的容错）
         var depth = 0
         var seen = false
@@ -523,6 +528,33 @@ open class CodeReviewTemplateBehavior : TemplateBehaviorBase() {
             end++
         }
         return lines.size - headIndex
+    }
+
+    /**
+     * 单行表达式体头行判定：无花括号 + 行内圆括号全部闭合 + 闭合括号
+     * 之后带 `=`（Kotlin 表达式体）或 `->`（箭头/lambda 赋值）尾巴。
+     * 保守启发：花括号换行风格（`fun f()\n{`）与跨行签名（`fun build(`）
+     * 都不命中，回落通用计界逻辑。
+     */
+    private fun isSingleLineExpressionHead(line: String): Boolean {
+        if ('{' !in line) {
+            var opens = 0
+            var closedIndex = -1
+            line.forEachIndexed { index, ch ->
+                when (ch) {
+                    '(' -> opens++
+                    ')' -> {
+                        opens--
+                        if (opens == 0 && closedIndex < 0) closedIndex = index
+                    }
+                }
+            }
+            if (opens == 0 && closedIndex >= 0) {
+                val tail = line.substring(closedIndex + 1)
+                return tail.contains('=') || tail.contains("->")
+            }
+        }
+        return false
     }
 
     /** 注释行判定（按语言取行注释前缀；未知语言只认 // 与 #）。 */

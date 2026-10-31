@@ -93,9 +93,9 @@ class PersistenceEngine @Inject constructor(
 
     private fun requestBatteryExemption() {
         try {
-            // as? 安全强转：服务异常时跳过豁免请求（保活降级），不抛 ClassCastException。
-            val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
-                ?: return
+            // #452：极端 ROM 上 getSystemService 可能返回 null —— as? 降级，
+            // 服务缺失时跳过豁免请求（保活路径已有 Layer4 降级兜底）。
+            val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
             if (!pm.isIgnoringBatteryOptimizations(context.packageName)) {
                 val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                     data = Uri.parse("package:${context.packageName}")

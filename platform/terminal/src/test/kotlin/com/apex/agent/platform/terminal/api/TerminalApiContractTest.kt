@@ -241,9 +241,10 @@ class TerminalApiContractTest {
         assertTrue(methods.any { it == "isActive" })
     }
 
-    @Test fun `TerminalApiEvent has 4 types`() {
+    @Test fun `TerminalApiEvent has 3 types`() {
+        // #587：SessionStateChanged（发射无消费）已删 —— 事件面收窄到
+        // JobStateChanged / OutputAvailable / ProcessExited 三个真实类型。
         val types = TerminalApiEvent::class.java.declaredClasses.map { it.simpleName }
-        assertTrue(types.any { it == "SessionStateChanged" })
         assertTrue(types.any { it == "JobStateChanged" })
         assertTrue(types.any { it == "OutputAvailable" })
         assertTrue(types.any { it == "ProcessExited" })

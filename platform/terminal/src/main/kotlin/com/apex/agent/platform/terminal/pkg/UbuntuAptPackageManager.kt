@@ -19,6 +19,7 @@ import com.apex.agent.platform.terminal.workspace.WorkspacePath
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.Flow
@@ -590,7 +591,15 @@ class UbuntuAptPackageManager(
         // ProotExecutor.executeBounded 是同步阻塞（ProcessBuilder.waitFor）——
         // 包在 withContext(Dispatchers.IO) 内以免阻塞协程调度器。但本类无 Dispatchers
         // 依赖（保持纯 JVM 可测试）；调用方（TerminalRuntime IO 协程）已处于 IO 上下文。
-        return executor.executeBounded(command, timeoutMs = timeoutMs, maxOutputBytes = maxOutputBytes)
+        //
+        // 取消感知（P0 修复）：旧实现的整段 waitFor 阻塞 —— 协程取消后仍占满
+        // 整个 apt 超时（600s）；现在把调用方协程的活跃状态注入为取消探测，
+        // 分片轮询（100ms 粒度）在取消后立即强杀返回。
+        val callerContext = currentCoroutineContext()
+        return executor.executeBounded(
+            command, timeoutMs = timeoutMs, maxOutputBytes = maxOutputBytes,
+            isCancelled = { !callerContext.isActive }
+        )
     }
 
     /**
@@ -605,7 +614,11 @@ class UbuntuAptPackageManager(
     ): com.apex.agent.platform.terminal.proot.BoundedExecution? {
         return try {
             val command = buildProotCommand(rootfs, aptArgv, environment.aptGuestEnv())
-            executor.executeBounded(command, timeoutMs = timeoutMs, maxOutputBytes = maxOutputBytes)
+            val callerContext = currentCoroutineContext()
+            executor.executeBounded(
+                command, timeoutMs = timeoutMs, maxOutputBytes = maxOutputBytes,
+                isCancelled = { !callerContext.isActive }
+            )
         } catch (e: Exception) {
             _lastReadError.value = mapExceptionToError(e, aptArgv)
             null

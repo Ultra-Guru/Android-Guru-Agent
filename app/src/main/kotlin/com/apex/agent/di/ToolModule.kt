@@ -653,7 +653,9 @@ object ToolModule {
         val prootSpawner = ProotCommandSpawner(
             hostEnvironment = hostEnvironment,
             rootfsDir = rootfsBaseDir,
-            isRootfsReady = { File(rootfsBaseDir, "current").exists() },
+            // P1（路由/审批口径一致）：诚实判定（标记可解析或裸布局）——标记损坏时
+            // 不再出现「审批说 Ubuntu、实际回落宿主」的分叉。
+            isRootfsReady = { ProotCommandSpawner.isRootfsResolvable(rootfsBaseDir) },
             defaultWorkspaceDir = File(context.filesDir, "linux/workspaces/default"),
             persistentHomeDir = File(context.filesDir, "linux/home"),
             fallback = PrivilegedCommandSpawner(),
@@ -670,9 +672,9 @@ object ToolModule {
                     PermissionMode.BYPASS
                 // v3：审批上下文 —— 与实际路由同源判定（rootfs 就绪 + 非 Android 专有
                 // → Ubuntu 沙箱；否则宿主 shell），并携带实际执行目录。
-                // 口径与 ProotCommandSpawner.resolveUbuntuRoute 一致（current 标记存在
+                // 口径与 ProotCommandSpawner.resolveUbuntuRoute 一致（诚实就绪判定
                 // + 非 Android 专有命令），避免 DI 层第二套路由判定漂移。
-                val ubuntuRoute = File(rootfsBaseDir, "current").exists() &&
+                val ubuntuRoute = ProotCommandSpawner.isRootfsResolvable(rootfsBaseDir) &&
                     !prootSpawner.isAndroidOnlyCommand(cmd)
                 val execContext = buildString {
                     append(
@@ -813,7 +815,7 @@ object ToolModule {
                         val probeEngine = ExecEngine(ProotCommandSpawner(
                             hostEnvironment = hostEnvironment,
                             rootfsDir = rootfsBaseDir,
-                            isRootfsReady = { File(rootfsBaseDir, "current").exists() },
+                            isRootfsReady = { ProotCommandSpawner.isRootfsResolvable(rootfsBaseDir) },
                             defaultWorkspaceDir = File(context.filesDir, "linux/workspaces/default"),
                             persistentHomeDir = File(context.filesDir, "linux/home"),
                             fallback = PrivilegedCommandSpawner(),
@@ -906,10 +908,10 @@ object ToolModule {
             clipboardSetter = { text ->
                 // Android 10+ 前台限制：后台写入剪贴板可能抛异常 ——
                 // 由 VaultPasteTool 捕获并转成可自修复的 Error 文本。
-                // as? + 显式异常：保持调用方 Error 语义，同时消除
-                // ClassCastException 类型混淆。
+                // #452：CLIPBOARD_SERVICE 极端环境可能为 null —— error() 同样
+                // 被 VaultPasteTool 捕获，与原 as 崩溃路径语义一致。
                 val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                    ?: throw IllegalStateException("ClipboardManager unavailable")
+                    ?: error("clipboard service unavailable")
                 cm.setPrimaryClip(ClipData.newPlainText("vault", text))
             },
             terminalWriter = { sessionId, text ->

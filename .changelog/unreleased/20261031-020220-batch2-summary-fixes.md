@@ -1,1 +1,1 @@
-- 稳定性：长任务导出分享面板补 NEW_TASK 标记；电源/剪贴板系统服务获取改为安全强转，异常环境降级不崩溃
+- 稳定性：长任务导出分享面板补 NEW_TASK 标记，非 Activity 上下文不再抛 AndroidRuntimeException

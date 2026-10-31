@@ -42,6 +42,18 @@ class UpdateDownloader(private val context: Context) {
         expectedSha256: String?
     ): Enqueued? {
         val dm = downloadManager ?: return null
+        // #464：更新清单来自远端（可被篡改）—— DownloadManager 只认 http(s)，
+        // 其他 scheme（file:/content:/javascript: 等）直接拒绝入队，防止
+        // 被诱导下载本地路径或非网络源。
+        val scheme = Uri.parse(url).scheme?.lowercase()
+        if (scheme != "http" && scheme != "https") {
+            AppLogger.instance.warn(
+                LogCategory.SYSTEM,
+                "UpdateDownloader",
+                "拒绝入队非 http(s) 下载源：${url.take(120)}"
+            )
+            return null
+        }
         val request = DownloadManager.Request(Uri.parse(url))
             .setTitle(title)
             .setDescription(fileName)

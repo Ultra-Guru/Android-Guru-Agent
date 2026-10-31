@@ -603,10 +603,20 @@ fun ChangelogHistoryDialog(
     )
 }
 
-/** ACTION_VIEW 统一出口（runCatching 兜底无浏览器环境，与 about 页同款语义）。 */
+/**
+ * ACTION_VIEW 统一出口（runCatching 兜底无浏览器环境，与 about 页同款语义）。
+ * NEW_TASK：context 可能为非 Activity（如 Application），不加 flag 会抛
+ * AndroidRuntimeException 被 runCatching 吞掉——不崩溃但外链静默打不开。
+ */
 private fun openInBrowser(context: Context, url: String, noBrowserHint: String) {
+    // #565：scheme 白名单 —— 链接源是 changelog.json 的外部内容（发布器/市场），
+    // 拒绝非 http(s) scheme 防止 intent 重定向打开非预期组件。
+    val scheme = Uri.parse(url).scheme?.lowercase()
+    if (scheme != "http" && scheme != "https") return
     runCatching {
-        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
     }.onFailure {
         Toast.makeText(context, noBrowserHint, Toast.LENGTH_SHORT).show()
     }
