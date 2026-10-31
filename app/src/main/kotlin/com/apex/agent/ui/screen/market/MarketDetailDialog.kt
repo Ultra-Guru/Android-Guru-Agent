@@ -594,7 +594,9 @@ private fun ToolStatRow(row: ToolUsageRow) {
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                String.format("%.0fms", row.meanDurationMs),
+                // #454：%.0f 在土耳其语等区域输出逗号小数点 —— 与本文件
+                // 既有 java.util.Locale.US 用法（energy 行）保持一致。
+                String.format(java.util.Locale.US, "%.0fms", row.meanDurationMs),
                 style = MaterialTheme.typography.labelSmall,
                 fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurfaceVariant

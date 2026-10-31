@@ -185,7 +185,10 @@ class SlashMenuProvider @Inject constructor(
             title = languageManager.getString(R.string.chat_slash_mcp_servers),
             icon = Icons.Default.Api,
             items = items,
+            // #454：显式 Locale —— 土耳其语等区域下数字/文本格式与本文件
+            // 其余 %s/%d 模式稳定一致。
             badge = if (items.isNotEmpty()) String.format(
+                java.util.Locale.US,
                 languageManager.getString(R.string.chat_slash_mcp_connected),
                 items.size
             ) else null,
