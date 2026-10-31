@@ -56,8 +56,7 @@ internal fun HubSkillSection(state: MarketUiState, viewModel: MarketViewModel) {
 
     LaunchedEffect(Unit) { viewModel.hub.loadSkills() }
 
-    val tierScope = state.tier.name.lowercase()
-    val visible = hubState.skills.filter { it.visibleToScope(tierScope) }
+    val visible = hubState.skills.filter { it.visibleToScope("coding") }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
@@ -356,43 +355,16 @@ internal fun BuiltinMcpConfigDialog(
                     color = MaterialTheme.colorScheme.outline
                 )
 
-                // ── 工位作用域 ──
+                // ── 工位作用域（只读）──
                 Text(
                     text = stringResource(R.string.market_mcp_scope_label),
                     style = MaterialTheme.typography.labelMedium
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = fresh.scope == "agent",
-                        onClick = { viewModel.updateMcpScope(fresh.name, "agent") },
-                        label = {
-                            Text(
-                                stringResource(R.string.market_scope_agent),
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                    )
-                    FilterChip(
-                        selected = fresh.scope == "coding",
-                        onClick = { viewModel.updateMcpScope(fresh.name, "coding") },
-                        label = {
-                            Text(
-                                stringResource(R.string.market_scope_coding),
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                    )
-                    FilterChip(
-                        selected = fresh.scope == "all",
-                        onClick = { viewModel.updateMcpScope(fresh.name, "all") },
-                        label = {
-                            Text(
-                                stringResource(R.string.market_scope_all),
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                    )
-                }
+                Text(
+                    text = fresh.scope,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
                 // ── 启停（启用 = App 启动时自动连接）──
                 Row(

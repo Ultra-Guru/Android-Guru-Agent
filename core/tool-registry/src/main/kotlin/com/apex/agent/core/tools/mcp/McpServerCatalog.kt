@@ -91,7 +91,7 @@ object McpServerCatalog {
         val category: String = ""
     ) {
         /** #197 分级可见性（与 [McpServerConfig.visibleToScope] 同语义）。 */
-        fun visibleToTier(tier: String): Boolean =
+        fun visibleToTier(tier: String): Boolean = true
             tier.isBlank() || this.tier == "all" || this.tier == tier
 
         /** 用户必填的环境变量声明。 */

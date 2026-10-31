@@ -143,35 +143,10 @@ class MarketInstallManager @Inject constructor(
                     return@withContext Result.failure(InstallCancelledByUser())
                 }
             }
-            // per-scope 默认启用工位判定：安装前取既有条目（install 会重置为双开）
-            val parsed = runCatching {
-                json.decodeFromString<com.apex.agent.core.tools.skill.SkillManifest>(content)
-            }.getOrNull()
-            val existing = parsed?.let { skillRegistry.get(it.id) }
-            val scoped = defaultScope == SkillRegistry.SCOPE_AGENT || defaultScope == SkillRegistry.SCOPE_CODING
             skillRegistry.install(content).map { manifest ->
                 // 安装即装备：用户从市场装技能的意图就是要用；不激活的话
                 // 渐进披露目录里只是多一行摘要，方法论仍是「未装载」。
                 skillActivation.activate(manifest.id)
-                if (scoped) {
-                    if (existing != null) {
-                        // 升级重装：保留用户既有 per-scope 启停态
-                        if (!existing.enabledAgent) {
-                            skillRegistry.setEnabledForScope(manifest.id, SkillRegistry.SCOPE_AGENT, false)
-                        }
-                        if (!existing.enabledCoding) {
-                            skillRegistry.setEnabledForScope(manifest.id, SkillRegistry.SCOPE_CODING, false)
-                        }
-                    } else {
-                        // 新装：默认只在安装来源分级启用（双工位隔离）
-                        val other = if (defaultScope == SkillRegistry.SCOPE_AGENT) {
-                            SkillRegistry.SCOPE_CODING
-                        } else {
-                            SkillRegistry.SCOPE_AGENT
-                        }
-                        skillRegistry.setEnabledForScope(manifest.id, other, false)
-                    }
-                }
                 "已安装并装备 Skill：${manifest.name}（${manifest.id}），下一轮对话即生效"
             }
         }

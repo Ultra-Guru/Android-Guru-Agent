@@ -300,8 +300,6 @@
     <string name="market_modelscope_install_failed">魔搭安装失败：%1$s</string>
     <string name="market_clawhub_install_failed">ClawHub 安装失败：%1$s</string>
     <!-- ═══ #197 市场分级（Agent 市场 / Coding 市场）+ MCP 真实启动 ═══ -->
-    <string name="market_tier_agent">Agent 市场</string>
-    <string name="market_tier_coding">Coding 市场</string>
     <string name="market_mcp_startup_title">正在启动 %1$s（真实进程）</string>
     <string name="market_mcp_startup_running">启动中…（真实握手进行中）</string>
     <string name="market_mcp_startup_hide">隐藏</string>
@@ -389,9 +387,6 @@
     <string name="market_status_running">运行中</string>
     <string name="market_mcp_config_title">配置 %1$s</string>
     <string name="market_mcp_scope_label">工位作用域</string>
-    <string name="market_scope_agent">Agent</string>
-    <string name="market_scope_coding">Coding</string>
-    <string name="market_scope_all">双工位</string>
     <string name="market_mcp_enable_label">启用</string>
     <string name="market_mcp_enable_hint">启用后每次启动 App 自动连接</string>
     <string name="market_mcp_github_account">GitHub 账号（github 工具组必需）</string>
@@ -435,7 +430,6 @@
     <string name="market_github_featured_header">GitHub 精选 —— 顶级开源仓库 coding 技能</string>
     <string name="market_github_featured_hint">来自 anthropics/skills、obra/superpowers 等真实开源仓库的精选 coding 技能，可将 SKILL.md 安装为 prompt 型技能（仅 Coding 市场）。</string>
     <string name="market_github_featured_license_hint">技能内容在安装时从上述开源仓库实时拉取，遵循各仓库许可证。</string>
-    <string name="market_installed_skills_tier_hint">技能开关按市场分级独立生效（当前：%1$s）—— 另一分级保持自己的状态</string>
     <string name="market_skill_needs_config">需配置</string>
     <string name="market_skill_config_section">技能配置</string>
     <string name="market_skill_config_required_hint">必填配置项尚未填齐 —— 配置好之前该技能不会出现在斜杠菜单</string>

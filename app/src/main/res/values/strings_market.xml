@@ -300,8 +300,6 @@
     <string name="market_modelscope_install_failed">ModelScope install failed: %1$s</string>
     <string name="market_clawhub_install_failed">ClawHub install failed: %1$s</string>
     <!-- ═══ #197 Market tiering (Agent market / Coding market) + MCP real startup ═══ -->
-    <string name="market_tier_agent">Agent Market</string>
-    <string name="market_tier_coding">Coding Market</string>
     <string name="market_mcp_startup_title">Starting %1$s (real process)</string>
     <string name="market_mcp_startup_running">Starting… (real handshake in progress)</string>
     <string name="market_mcp_startup_hide">Hide</string>
@@ -389,9 +387,6 @@
     <string name="market_status_running">Running</string>
     <string name="market_mcp_config_title">Configure %1$s</string>
     <string name="market_mcp_scope_label">Workspace scope</string>
-    <string name="market_scope_agent">Agent</string>
-    <string name="market_scope_coding">Coding</string>
-    <string name="market_scope_all">Both</string>
     <string name="market_mcp_enable_label">Enabled</string>
     <string name="market_mcp_enable_hint">Auto-connects every app launch when enabled</string>
     <string name="market_mcp_github_account">GitHub account (required by github tools)</string>
@@ -435,7 +430,6 @@
     <string name="market_github_featured_header">GitHub Featured — top open-source coding skills</string>
     <string name="market_github_featured_hint">Curated coding skills from anthropics/skills and obra/superpowers. Install the SKILL.md as a prompt-type skill (Coding market only).</string>
     <string name="market_github_featured_license_hint">Skill content is fetched from the open-source repositories above at install time and follows each repo\'s license.</string>
-    <string name="market_installed_skills_tier_hint">Skill switches take effect per market tier (current: %1$s) — the other tier keeps its own state</string>
     <string name="market_skill_needs_config">Setup needed</string>
     <string name="market_skill_config_section">Skill configuration</string>
     <string name="market_skill_config_required_hint">Required fields are not filled in yet — the skill stays out of the slash menu until configured</string>

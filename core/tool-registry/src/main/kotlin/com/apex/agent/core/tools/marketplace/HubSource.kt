@@ -43,7 +43,7 @@ class HubSource(
         val description: String = "",
         val category: String? = null,
         val tags: List<String> = emptyList(),
-        val scope: String = "agent",
+        val scope: String = "coding",
         val author: String = "",
         /** 相对仓库根的 manifest 路径（下载时拼 RAW 基址）。 */
         val file: String
@@ -53,7 +53,7 @@ class HubSource(
 
         /** 对某工位是否可见（scope=all 双工位都保留，与市场分级口径一致）。 */
         fun visibleToScope(scope: String): Boolean =
-            scope.isBlank() || this.scope == "all" || this.scope == scope
+            scope.isBlank() || this.scope == "all" || this.scope == "coding" || this.scope == "agent"
     }
 
     /**
@@ -115,7 +115,7 @@ class HubSource(
     ) {
         /** 对某工位是否可见。 */
         fun visibleToScope(scope: String): Boolean =
-            scope.isBlank() || this.scope == "all" || this.scope == scope
+            scope.isBlank() || this.scope == "all" || this.scope == "coding" || this.scope == "agent"
 
         /** 一行端点摘要（与 MarketMcpRow.endpointSummary 同口径）。 */
         fun endpointSummary(): String = when (transport.uppercase()) {
@@ -219,7 +219,7 @@ class HubSource(
                 description = obj.str("description").orEmpty(),
                 category = obj.str("category"),
                 tags = obj.strings("tags"),
-                scope = obj.str("scope")?.takeIf { it.isNotBlank() } ?: "agent",
+                scope = obj.str("scope")?.takeIf { it.isNotBlank() } ?: "coding",
                 author = obj.str("author").orEmpty(),
                 file = file
             )

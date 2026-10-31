@@ -53,6 +53,7 @@ internal object EngineToolPlanner {
      */
     fun isToolVisibleInScope(metadata: ToolMetadata, skillScope: String): Boolean {
         if (skillScope.isBlank() || skillScope == SCOPE_ALL) return true
+        if (skillScope == "coding" && metadata.scope == "agent") return false
         val scope = metadata.scope
         return scope == SCOPE_ALL || scope == skillScope
     }

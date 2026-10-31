@@ -20,7 +20,6 @@ import kotlinx.coroutines.withContext
 //  - addMcpServer / updateMcpServer：覆盖写 + 自动连接（真实启动事件弹窗）；
 //  - importMcpConfig：社区 JSON 批量导入（逐条报错）；
 //  - toggleMcp / connectMcp / disconnectMcp / removeMcp：启停与连接；
-//  - updateMcpScope：BUILTIN 配置对话框的作用域更新；
 //  - openMcpEditor / closeMcpEditor：编辑器状态（_editingMcp 留在 VM）；
 //  - validateMcpConfig：添加/编辑对话框共享预检。
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,7 +46,7 @@ fun MarketViewModel.addMcpServer(config: McpServerConfig) {
         try {
             // #197 市场分级：从当前分级带入作用域（Agent 市场添加的归 agent 工位，
             // Coding 市场添加的归 coding 工位；导入/编辑可改）。
-            val tierScope = _uiState.value.tier.name.lowercase()
+            val tierScope = "coding"
             val scoped = if (config.scope == "all" && config.transport != McpTransport.BUILTIN) {
                 config.copy(name = name, scope = tierScope)
             } else {
@@ -218,22 +217,6 @@ fun MarketViewModel.dismissMcpStartup() {
 }
 
 /**
- * 更新 MCP 工位作用域（BUILTIN 配置对话框的「配置」动作之一）。
- * addServer 覆盖写（不动活跃连接——作用域只影响可见性，不影响协议层）。
- */
-fun MarketViewModel.updateMcpScope(name: String, scope: String) {
-    viewModelScope.launch {
-        val config = mcpManager.getConfigs().firstOrNull { it.name == name }
-        if (config == null || config.scope == scope) return@launch
-        mcpManager.addServer(config.copy(scope = scope)).fold(
-            onSuccess = { refresh() },
-            onFailure = {
-                message(languageManager.getString(R.string.market_action_failed).format(it.message ?: ""))
-            }
-        )
-    }
-}
-
 fun MarketViewModel.disconnectMcp(name: String) {
     viewModelScope.launch {
         mcpManager.disconnect(name)

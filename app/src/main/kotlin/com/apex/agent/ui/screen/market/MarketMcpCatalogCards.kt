@@ -91,7 +91,7 @@ internal fun McpCatalogHeader(state: MarketUiState, viewModel: MarketViewModel) 
                 )
                 // 只显示当前分级下有条目的分类（避免死 chip），按目录声明的
                 // 分类顺序渲染（旧实现按文件名字母序）。
-                val tier = state.tier.name.lowercase()
+                val tier = "coding"
                 state.mcpCatalog
                     .filter { it.visibleToTier(tier) }
                     .groupBy { it.category }

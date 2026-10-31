@@ -6,6 +6,7 @@ import com.apex.agent.core.code.experience.RoleExperience
 import com.apex.agent.core.code.experience.RoleExperienceStore
 import com.apex.agent.core.engine.templates.PromptTemplate
 import com.apex.agent.core.engine.templates.PromptTemplateRegistry
+import com.apex.agent.core.engine.templates.TemplateCategory
 import com.apex.agent.core.engine.templates.TemplateScope
 import com.apex.agent.core.engine.templates.runtime.TemplateActivation
 import com.apex.agent.core.engine.templates.runtime.TemplateRuntime
@@ -41,10 +42,9 @@ data class TemplateUseState(
 )
 
 /**
- * #197 模板工坊 ViewModel —— Agent / Coding 双层模板管理 + 「使用模板」运行时接线。
+ * 模板工坊 ViewModel —— Coding 提示词模板管理 + 「使用模板」运行时接线。
  *
- * - Agent 层：Agent 角色详细设置（人设卡编辑）+ agent 域提示词模板；
- * - Coding 层：coding 域提示词模板（代码评审/提交信息等）；
+ * - Coding 层：coding 域提示词模板（代码评审/测试用例等开发任务）；
  * - **使用模板（行为运行时）**：内置模板经 [TemplateRuntime] 走六阶段管线
  *   （确定性分析 → 附录注入），自定义模板走兜底行为（纯变量替换）——
  *   模板切换从「注入一段文本」升级为「装配一条分析管线」。
@@ -58,11 +58,7 @@ class TemplateStudioViewModel @Inject constructor(
     private val roleExperienceStore: RoleExperienceStore
 ) : ViewModel() {
 
-    /** 当前页签（Agent 模板 / Coding 模板）。 */
-    private val _tab = MutableStateFlow(TemplateScope.AGENT)
-    val tab: StateFlow<TemplateScope> = _tab.asStateFlow()
-
-    /** 当前页签下的模板清单（内置在前）。 */
+    /** 模板清单（内置在前）。 */
     private val _templates = MutableStateFlow<List<PromptTemplate>>(emptyList())
     val templates: StateFlow<List<PromptTemplate>> = _templates.asStateFlow()
 
@@ -79,9 +75,9 @@ class TemplateStudioViewModel @Inject constructor(
     val message: StateFlow<String?> = _message.asStateFlow()
 
     init {
-        // 注册表变更（同 VM 内的保存/删除/重播种）后刷新当前页签清单。
+        // 注册表变更（同 VM 内的保存/删除/重播种）后刷新清单。
         // ★ 首载先播种内置模板（幂等：缺则补）再刷新 —— 修复全新安装模板
-        //   工坊两个页签恒为空清单、切换「没有反应」的数据面根因。
+        //   工坊恒为空清单、切换「没有反应」的数据面根因。
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { templateRegistry.reseedBuiltIns() }
                 .onFailure { android.util.Log.w("TemplateStudio", "seed built-ins failed: ${it.message}") }
@@ -89,33 +85,22 @@ class TemplateStudioViewModel @Inject constructor(
         }
     }
 
-    fun selectTab(scope: TemplateScope) {
-        _tab.value = scope
-        refresh()
-    }
-
     fun refresh() {
         viewModelScope.launch(Dispatchers.IO) {
-            val scope = _tab.value
             _templates.value = templateRegistry.list()
-                .filter { it.scope == scope }
                 .sortedWith(compareByDescending<PromptTemplate> { it.isBuiltIn }.thenBy { it.id })
         }
     }
 
     fun openEditor(template: PromptTemplate?) {
-        // 新建：当前页签决定作用域（Agent 页签建 agent 模板，Coding 页签建 coding 模板）。
+        // 新建：固定 CODING scope。
         _editing.value = template ?: PromptTemplate(
             id = "",
             name = "",
             description = "",
-            category = if (_tab.value == TemplateScope.CODING) {
-                com.apex.agent.core.engine.templates.TemplateCategory.CODING
-            } else {
-                com.apex.agent.core.engine.templates.TemplateCategory.CUSTOM
-            },
+            category = TemplateCategory.CODING,
             content = "",
-            scope = _tab.value
+            scope = TemplateScope.CODING
         )
     }
 

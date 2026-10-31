@@ -62,7 +62,7 @@ internal fun BrowseMcpTab(state: MarketUiState, viewModel: MarketViewModel) {
 
     // 官方 MCP 仓库（apex-mcp-hub）：目录 + 当前分级过滤
     val hubState by viewModel.hub.uiState.collectAsStateWithLifecycle()
-    val tierScope = state.tier.name.lowercase()
+    val tierScope = "coding"
     val hubMcps = hubState.mcps.filter { it.visibleToScope(tierScope) }
 
     LaunchedEffect(Unit) { viewModel.hub.loadMcpServers() }

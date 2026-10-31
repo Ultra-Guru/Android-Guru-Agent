@@ -24,15 +24,9 @@ enum class TemplateCategory {
     CUSTOM
 }
 
-/**
- * #197 工位作用域：模板分层（agent 工位 / coding 工位独立）。
- * - AGENT：Agent 屏的提示词模板（翻译/总结/写作等通用任务）；
- * - CODING：Coding 屏的提示词模板（代码评审/提交信息等开发任务）；
- * 模板工坊页的两个页签各自管理，互不串扰。
- */
+/** 模板作用域（当前恒为 Coding 工位）。 */
 @Serializable
 enum class TemplateScope {
-    AGENT,
     CODING
 }
 
@@ -88,7 +82,7 @@ data class PromptTemplate(
      * #197 工位作用域（缺省按分类推导：CODING 分类 → CODING 工位，
      * 其余 → AGENT 工位；旧 JSON 无此字段时反序列化自动归位，向后兼容）。
      */
-    val scope: TemplateScope = if (category == TemplateCategory.CODING) TemplateScope.CODING else TemplateScope.AGENT
+    val scope: TemplateScope = TemplateScope.CODING
 ) {
     /**
      * 扫描 content 实际引用的变量名（规范小写集合；转义占位符不计）。
@@ -162,164 +156,6 @@ object BuiltinPromptTemplates {
             )
         ),
         PromptTemplate(
-            id = "builtin_commit_message",
-            name = "提交信息生成",
-            description = "从变更说明生成规范的 Git 提交信息",
-            category = TemplateCategory.PRODUCTIVITY,
-            tags = listOf("Git", "提交", "规范"),
-            isBuiltIn = true,
-            content = """
-                请为下面的代码变更生成一条 Git 提交信息。
-
-                - 提交风格：{{style}}
-
-                变更内容：
-                {{changes}}
-
-                要求：
-                1. 首行为不超过 50 字符的摘要，形如「类型(范围): 概述」
-                2. 空一行后写详细说明，解释为什么这样改而不是罗列 diff
-                3. 使用中文书写，专有名词与标识符保持原文
-            """.trimIndent(),
-            variables = listOf(
-                TemplateVariable("changes", "变更说明或 diff 内容", required = true),
-                TemplateVariable("style", "提交风格", required = false, defaultValue = "conventional commits")
-            )
-        ),
-        PromptTemplate(
-            id = "builtin_translate",
-            name = "专业翻译",
-            description = "保留格式与术语的双语互译",
-            category = TemplateCategory.TRANSLATION,
-            tags = listOf("翻译", "双语"),
-            isBuiltIn = true,
-            content = """
-                请将下面的文本翻译为{{target_language}}。
-
-                - 领域：{{domain}}
-
-                要求：
-                1. 保留原文的格式、语气与专有名词
-                2. 术语遵循该领域的主流社区译法，不逐字硬译
-                3. 只输出译文，不附加任何解释
-                4. 混合语言文本需全部归一到目标语言
-
-                原文：
-                {{text}}
-            """.trimIndent(),
-            variables = listOf(
-                TemplateVariable("text", "待翻译文本", required = true),
-                TemplateVariable("target_language", "目标语言（如：英文）", required = true),
-                TemplateVariable("domain", "文本所属领域", required = false, defaultValue = "通用")
-            )
-        ),
-        PromptTemplate(
-            id = "builtin_summarize",
-            name = "内容总结",
-            description = "一句话结论 + 要点列表的结构化总结",
-            category = TemplateCategory.ANALYSIS,
-            tags = listOf("总结", "提炼"),
-            isBuiltIn = true,
-            content = """
-                请总结下面的内容。
-
-                - 总结视角：{{perspective}}
-                - 长度要求：{{length}}
-
-                要求：
-                1. 先给一句话结论，再列 3-5 条要点
-                2. 保留关键数字、名称与结论，不添加原文没有的信息
-                3. 要点按重要性排序
-
-                原文：
-                {{content}}
-            """.trimIndent(),
-            variables = listOf(
-                TemplateVariable("content", "待总结的原文", required = true),
-                TemplateVariable("perspective", "总结视角", required = false, defaultValue = "客观中立"),
-                TemplateVariable("length", "长度要求", required = false, defaultValue = "200 字以内")
-            )
-        ),
-        PromptTemplate(
-            id = "builtin_refactor_plan",
-            name = "重构方案",
-            description = "分步可验证的重构计划与风险清单",
-            category = TemplateCategory.CODING,
-            tags = listOf("重构", "架构"),
-            isBuiltIn = true,
-            content = """
-                请为下面的代码制定重构方案。
-
-                - 重构目标：{{goal}}
-                - 约束条件：{{constraints}}
-
-                现状代码：
-                {{code}}
-
-                输出要求：
-                1. 现状问题诊断（按影响排序）
-                2. 分步重构方案（每步可独立验证）
-                3. 每步的风险与回滚方式
-                4. 重构完成后的验证清单
-            """.trimIndent(),
-            variables = listOf(
-                TemplateVariable("code", "现状代码", required = true),
-                TemplateVariable("goal", "重构目标", required = true),
-                TemplateVariable("constraints", "约束条件（兼容性/性能/范围）", required = false, defaultValue = "无")
-            )
-        ),
-        PromptTemplate(
-            id = "builtin_bug_report",
-            name = "BUG 报告",
-            description = "整理为结构化缺陷报告并给出排查建议",
-            category = TemplateCategory.CODING,
-            tags = listOf("缺陷", "排查"),
-            isBuiltIn = true,
-            content = """
-                请根据以下信息整理一份结构化的 BUG 报告。
-
-                - 运行环境：{{environment}}
-                - 复现步骤：
-                {{reproduce}}
-                - 期望行为：{{expected}}
-                - 实际行为：{{actual}}
-                - 症状描述：{{symptom}}
-
-                输出要求：包含标题、严重程度评估、可能原因分析（按可能性排序）与下一步排查建议。
-            """.trimIndent(),
-            variables = listOf(
-                TemplateVariable("symptom", "症状一句话描述", required = true),
-                TemplateVariable("reproduce", "复现步骤", required = true),
-                TemplateVariable("expected", "期望行为", required = true),
-                TemplateVariable("actual", "实际行为", required = true),
-                TemplateVariable("environment", "运行环境（设备/系统/版本）", required = false, defaultValue = "未提供")
-            )
-        ),
-        PromptTemplate(
-            id = "builtin_api_design",
-            name = "API 设计",
-            description = "端点清单 + 请求响应结构 + 错误码设计",
-            category = TemplateCategory.CODING,
-            tags = listOf("API", "设计"),
-            isBuiltIn = true,
-            content = """
-                请为以下需求设计一组 API。
-
-                - API 风格：{{style}}
-                - 需求描述：{{requirement}}
-
-                输出要求：
-                1. 资源与端点清单（方法、路径、一句话简述）
-                2. 每个端点的请求与响应结构（字段、类型、必填、示例）
-                3. 错误码设计（码、含义、触发条件）
-                4. 分页、鉴权、幂等等横切关注点说明
-            """.trimIndent(),
-            variables = listOf(
-                TemplateVariable("requirement", "业务需求描述", required = true),
-                TemplateVariable("style", "API 风格", required = false, defaultValue = "RESTful")
-            )
-        ),
-        PromptTemplate(
             id = "builtin_test_cases",
             name = "测试用例",
             description = "等价类先行、单行为单测的用例生成",
@@ -345,58 +181,6 @@ object BuiltinPromptTemplates {
                 TemplateVariable("framework", "测试框架", required = false, defaultValue = "JUnit")
             )
         ),
-        PromptTemplate(
-            id = "builtin_tech_doc",
-            name = "技术文档",
-            description = "面向新成员的概念型技术文档",
-            category = TemplateCategory.WRITING,
-            tags = listOf("文档", "写作"),
-            isBuiltIn = true,
-            content = """
-                请围绕「{{topic}}」撰写一篇技术文档。
-
-                - 目标读者：{{audience}}
-
-                结构要求：
-                1. 一句话概述与适用场景
-                2. 背景与动机（解决什么问题）
-                3. 核心概念与工作原理
-                4. 使用示例（可运行的代码或命令）
-                5. 常见问题与注意事项
-
-                参考代码（如有）：
-                {{code}}
-            """.trimIndent(),
-            variables = listOf(
-                TemplateVariable("topic", "文档主题", required = true),
-                TemplateVariable("audience", "目标读者", required = false, defaultValue = "新加入团队的开发者"),
-                TemplateVariable("code", "参考代码", required = false, defaultValue = "无")
-            )
-        ),
-        PromptTemplate(
-            id = "builtin_regex_explain",
-            name = "正则解释",
-            description = "逐段拆解正则表达式并给出匹配示例",
-            category = TemplateCategory.ANALYSIS,
-            tags = listOf("正则", "解释"),
-            isBuiltIn = true,
-            content = """
-                请解释下面的正则表达式。
-
-                - 正则表达式：{{pattern}}
-                - 示例文本：{{sample}}
-
-                输出要求：
-                1. 整体作用一句话
-                2. 逐段拆解：每段语法 + 含义
-                3. 匹配与不匹配的示例各至少一个
-                4. 可能的性能陷阱（回溯灾难等）与简化建议
-            """.trimIndent(),
-            variables = listOf(
-                TemplateVariable("pattern", "待解释的正则表达式", required = true),
-                TemplateVariable("sample", "示例文本", required = false, defaultValue = "无")
-            )
-        )
     )
 
     /** 已知内置模板 id 集合（导入防御与 isBuiltIn 规范化判定）。 */

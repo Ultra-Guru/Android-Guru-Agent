@@ -19,9 +19,9 @@ import kotlinx.coroutines.launch
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * 分级独立启停（per-scope）：开关只写当前 [MarketTier] 对应的工位 ——
+ * 分级独立启停（per-scope）：开关只写当前 Coding 对应的工位 ——
  * Coding 市场里关掉不影响 Agent 市场（修「两分级同步」问题；另一侧
- * 的开关状态由 [MarketSkillRow.enabledAgent]/[enabledCoding] 各自展示）。
+ * 的开关状态由 enabled 各自展示）。
  * （tierScope() 为 VM internal 成员，见 MarketViewModel.kt）
  */
 fun MarketViewModel.toggleSkill(skillId: String, enabled: Boolean) {
