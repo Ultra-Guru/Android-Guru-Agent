@@ -145,7 +145,8 @@ fun FusionBundleButton(
                         onSuccess = {
                             feedback.show(
                                 String.format(
-                                    importDonePattern, it.name,
+                                    // #454：显式 Locale —— 防区域化数字漂移。
+                                    java.util.Locale.US, importDonePattern, it.name,
                                     it.skills.size,
                                     it.plugins.firstOrNull()
                                         ?.let { p -> countSlashCommands(p) } ?: 0,
@@ -156,7 +157,7 @@ fun FusionBundleButton(
                         },
                         onFailure = {
                             feedback.show(
-                                String.format(importFailedPattern, it.message ?: ""),
+                                String.format(java.util.Locale.US, importFailedPattern, it.message ?: ""),
                                 FeedbackSeverity.WARNING
                             )
                         }
@@ -164,7 +165,7 @@ fun FusionBundleButton(
                 },
                 onFailure = {
                     feedback.show(
-                        String.format(importFailedPattern, it.message ?: ""),
+                        String.format(java.util.Locale.US, importFailedPattern, it.message ?: ""),
                         FeedbackSeverity.WARNING
                     )
                 }
@@ -359,9 +360,9 @@ private fun FusionCrownMenuPopup(
                                                         )
                                                         val skippedNote =
                                                             if (act.skipped.isEmpty()) ""
-                                                            else String.format(skippedPattern, act.skipped.size)
+                                                            else String.format(java.util.Locale.US, skippedPattern, act.skipped.size)
                                                         feedback.show(
-                                                            String.format(activatedPattern, act.bundleName) + skippedNote,
+                                                            String.format(java.util.Locale.US, activatedPattern, act.bundleName) + skippedNote,
                                                             FeedbackSeverity.INFO
                                                         )
                                                         onDismiss()
@@ -385,7 +386,7 @@ private fun FusionCrownMenuPopup(
                                                 }
                                                 .onSuccess {
                                                     feedback.show(
-                                                        String.format(deactivatedPattern, digest.name),
+                                                        String.format(java.util.Locale.US, deactivatedPattern, digest.name),
                                                         FeedbackSeverity.INFO
                                                     )
                                                 }
@@ -401,10 +402,10 @@ private fun FusionCrownMenuPopup(
                                                 controller.installMembers(digest.id).fold(
                                                     onSuccess = { report ->
                                                         val note = if (report.skipped.isEmpty()) ""
-                                                        else String.format(skippedPattern, report.skipped.size)
+                                                        else String.format(java.util.Locale.US, skippedPattern, report.skipped.size)
                                                         feedback.show(
                                                             String.format(
-                                                                installedPattern, report.bundleName,
+                                                                java.util.Locale.US, installedPattern, report.bundleName,
                                                                 report.installedSkills.size,
                                                                 report.configuredServers.size +
                                                                     report.connectedServers.size,

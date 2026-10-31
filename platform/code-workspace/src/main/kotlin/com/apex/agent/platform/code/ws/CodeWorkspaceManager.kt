@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicReference
 
 /** 工作区索引（清单 + 激活 id）—— 状态流对外暴露的公开类型。 */
@@ -99,7 +100,8 @@ class CodeWorkspaceManager(
     fun create(name: String): CodeWorkspace? {
         val trimmed = name.trim()
         if (trimmed.isEmpty() || trimmed.length > 64) return null
-        val id = slugify(trimmed) + "-" + String.format("%x", System.currentTimeMillis() and 0xFFFFFF)
+        // #454：十六进制 id 是机器可读格式 —— Locale.ROOT 与工具层惯例一致。
+        val id = slugify(trimmed) + "-" + String.format(Locale.ROOT, "%x", System.currentTimeMillis() and 0xFFFFFF)
         val dir = File(workspacesBaseDir, id)
         if (dir.exists()) return null
         if (!dir.mkdirs()) return null
@@ -191,7 +193,7 @@ class CodeWorkspaceManager(
 
         val name = displayName?.trim()?.takeIf { it.isNotEmpty() } ?: dir.name
         if (name.isEmpty() || name.length > 64) return null
-        val id = "imported-" + slugify(name) + "-" + String.format("%x", System.currentTimeMillis() and 0xFFFFFF)
+        val id = "imported-" + slugify(name) + "-" + String.format(Locale.ROOT, "%x", System.currentTimeMillis() and 0xFFFFFF)
         val detected = detectEnvironment(dir)
         val ws = CodeWorkspace(
             workspaceId = id,
