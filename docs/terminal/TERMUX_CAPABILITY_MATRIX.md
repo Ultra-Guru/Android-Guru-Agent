@@ -114,7 +114,7 @@ Termux bootstrap ships a curated minimal set; ours ships a larger Ubuntu Base + 
 | # | Capability | Termux | Ours (pre-T82) | Decision |
 |---|---|---|---|---|
 | 7.1 | Toolchain probe (detect+version) | ✅ (which/--version, human) | ✅ `LinuxCapabilityProbe` 15 caps real probe + TTL cache (T81 §29) | — |
-| 7.2 | One-shot "ensure toolchain" | ✅ pkg install python etc. | ❌ probe says INSTALLABLE but no ensure action; profile registry is 💀 dead | 🏗️ T82: `TerminalLinuxCapabilities ensure` action (probe→install→verify, incl. python3-venv/python3-dev, nodejs+npm, default-jdk, rust, golang) |
+| 7.2 | One-shot "ensure toolchain" | ✅ pkg install python etc. | ❌ probe says INSTALLABLE but no ensure action; profile registry is 💀 dead | ✅ T82→P0-#3: `TerminalWorkspaceEnvironment ensure` + `TerminalLinuxPackages`（原 `TerminalLinuxCapabilities ensure` 通道已随工具收敛移除） |
 | 7.3 | C/C++: clang/gcc/g++/make/cmake | ✅ | ✅ via apt (gcc is in Ubuntu repos; probe maps) | — |
 | 7.4 | Python: python3 + pip + venv | ✅ + termux patches | ✅ python3+pip essential; ❓ venv needs python3-venv pkg + ensure-venv action | 🏗️ T82: ensure installs python3-venv, python3-dev |
 | 7.5 | Node/JS: node+npm | ✅ | ✅ apt nodejs/npm (probe maps) | — |

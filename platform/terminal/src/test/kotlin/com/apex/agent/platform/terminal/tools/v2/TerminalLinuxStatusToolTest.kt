@@ -24,18 +24,17 @@ class TerminalLinuxStatusToolTest {
     }
 
     @Test fun `tool id constant matches spec`() {
-        // T76 §20 规定的 4 个 terminal.linux.* 工具 id
+        // T76 §20 规定的 terminal.linux.* 工具 id（P0-#3 后 Bootstrap 已移除，
+        // bootstrap 编排由 TerminalUbuntuEnsure 聚合入口承接）
         val expectedIds = setOf(
             "TerminalLinuxStatus",
-            "TerminalLinuxBootstrap",
             "TerminalLinuxNetwork",
             "TerminalLinuxPackages"
         )
         assertTrue(expectedIds.contains("TerminalLinuxStatus"))
-        assertTrue(expectedIds.contains("TerminalLinuxBootstrap"))
         assertTrue(expectedIds.contains("TerminalLinuxNetwork"))
         assertTrue(expectedIds.contains("TerminalLinuxPackages"))
-        assertEquals(4, expectedIds.size)
+        assertEquals(3, expectedIds.size)
     }
 
     @Test fun `parameters schema for status tool accepts quick boolean`() {
@@ -44,14 +43,6 @@ class TerminalLinuxStatusToolTest {
         val schema = json.parseToJsonElement(schemaStr).jsonObject
         assertEquals("object", schema["type"]!!.jsonPrimitive.content)
         assertNotNull(schema["properties"]!!.jsonObject["quick"])
-    }
-
-    @Test fun `bootstrap tool schema accepts action enum`() {
-        val schemaStr = """{"type":"object","properties":{"action":{"type":"string","enum":["check","start","retry"],"default":"start"},"force":{"type":"boolean","default":false},"timeoutMs":{"type":"integer","default":600000}},"required":[]}"""
-        val schema = json.parseToJsonElement(schemaStr).jsonObject
-        val action = schema["properties"]!!.jsonObject["action"]!!.jsonObject
-        assertEquals("string", action["type"]!!.jsonPrimitive.content)
-        assertNotNull(action["enum"])
     }
 
     @Test fun `network tool schema accepts action enum`() {

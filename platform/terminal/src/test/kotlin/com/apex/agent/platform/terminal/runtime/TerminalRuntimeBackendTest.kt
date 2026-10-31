@@ -168,7 +168,7 @@ class TerminalRuntimeBackendTest {
         assertNotNull(err)
         val msg = err!!.message ?: ""
         assertTrue("RootfsNotReady: $msg", msg.contains("RootfsNotReady"))
-        assertTrue("guidance mentions install: $msg", msg.contains("TerminalUbuntuInstall"))
+        assertTrue("guidance mentions ensure: $msg", msg.contains("TerminalUbuntuEnsure"))
     }
 
     @Test
@@ -198,7 +198,7 @@ class TerminalRuntimeBackendTest {
         val ubuntu = list.first { it.id == "linux-ubuntu" }
         assertFalse(ubuntu.available)
         assertEquals("NEEDS_ROOTFS:not_provisioned", ubuntu.state)
-        assertTrue("guidance in detail", ubuntu.detail!!.contains("TerminalUbuntuInstall"))
+        assertTrue("guidance in detail", ubuntu.detail!!.contains("TerminalUbuntuEnsure"))
     }
 
     @Test

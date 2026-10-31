@@ -117,7 +117,7 @@ class TerminalDiagnosticsToolTest {
         val json = Json.parseToJsonElement(tool.invoke("{}")).jsonObject
 
         val next = json["nextActions"]!!.jsonArray.joinToString { it.jsonPrimitive.content }
-        assertTrue(next.contains("TerminalUbuntuInstall"))
+        assertTrue(next.contains("TerminalUbuntuEnsure"))
     }
 
     @Test

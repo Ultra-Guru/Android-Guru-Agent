@@ -110,7 +110,7 @@ T73 wiring: `TerminalRuntime.create()` routes through the registry (default
 `backendId="local"` — byte-identical to the pre-P71 spawn, locked by
 ExecutionBackendGoldenTest). Agent discovers backends via `TerminalBackends()`
 (availability: READY / NEEDS_ROOTFS / FAILED) and provisions the Ubuntu rootfs
-via `TerminalUbuntuInstall` (idempotent, resumable). Backend session metadata
+via `TerminalUbuntuEnsure` (idempotent, resumable). Backend session metadata
 (`backendId`/`rootfsId`/`workspaceId`/`guestCwd`/workspace binds) is persisted
 with the session (SessionRecord schema v3) so crash recovery distinguishes local
 vs Ubuntu sessions.

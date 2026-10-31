@@ -17,8 +17,8 @@
 | 工具 | 用途 |
 |------|------|
 | `TerminalBackends` | 后端能力发现（READY/NEEDS_ROOTFS/FAILED） |
-| `TerminalUbuntuInstall` / `TerminalUbuntuEnsure` / `TerminalUbuntuStatus` | rootfs 安装/就绪/状态 |
-| `TerminalLinuxBootstrap` / `TerminalLinuxPackages` / `TerminalLinuxNetwork` / `TerminalLinuxCapabilities` / `TerminalLinuxRepair` / `TerminalLinuxStatus` | apt 引导 / 包管理 / 网络诊断 / 能力探测 / 修复 |
+| `TerminalUbuntuEnsure` / `TerminalUbuntuStatus` | Ubuntu 就绪/状态（P0-#3 收敛：唯一拉起入口，原 TerminalUbuntuInstall 已移除） |
+| `TerminalLinuxPackages` / `TerminalLinuxNetwork` / `TerminalLinuxRepair` / `TerminalLinuxStatus` | 包管理 / 网络诊断 / 修复 / 健康快照（P0-#3：Bootstrap/Capabilities 已移除） |
 | `TerminalWorkspaces` / `TerminalWorkspaceEnvironment` / `TerminalFs` / `TerminalBridge` | 工作区 / 文件桥 |
 | **`TerminalDiagnostics`（T87 新增）** | **一发起诊断 + smokeTest 自证 exec 链路** |
 
@@ -54,7 +54,7 @@ TerminalCreate {backend: "linux-ubuntu"}
 
 返回里的 `smoke.chainOk=true` + `smoke.output` 含 `TERMINAL-EXEC-OK` = **exec 链路端到端可用**
 （探针与 TerminalExec 共用同一 ExecEngine/Spawner 构造）。会话/后端异常时 `nextActions`
-直接给出可执行动作（如 `TerminalUbuntuInstall`）。
+直接给出可执行动作（如 `TerminalUbuntuEnsure`）。
 
 ## 4. 历史遗留语义（维护者备忘）
 

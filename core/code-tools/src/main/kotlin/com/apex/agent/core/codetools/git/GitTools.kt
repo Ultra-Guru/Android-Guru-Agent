@@ -63,7 +63,7 @@ internal fun boundedToolOutput(text: String): String {
 internal fun notRepoGuidance(): String =
     "当前工作区还不是 git 仓库。可先调用 CodeGitCommit 创建首次提交（会自动 " +
         "git init 初始化仓库），或让用户在终端的 Ubuntu 环境里手动执行 git init" +
-        "（若终端尚未安装 Ubuntu，先执行 TerminalUbuntuInstall 安装环境）"
+        "（若终端尚未安装 Ubuntu，先执行 TerminalUbuntuEnsure 安装环境）"
 
 /**
  * 清洗模型传入的相对路径参数（diff/log 的 pathspec）。

@@ -32,10 +32,9 @@ val TERMINAL_TOOL_RUN_POLICIES: Map<String, ToolRunPolicy> = mapOf(
     // legacy TerminalExecLegacy 默认 timeoutMs 120s（可更高），同样被
     // 60s mutating 策略截杀。
     "TerminalExecLegacy" to ToolRunPolicy(timeoutMs = 610_000L, maxRetries = 0),
-    // Ubuntu rootfs 安装 / Linux bootstrap 是长时下载+解压操作
-    // （完整 rootfs 300MB+，真机上可达十余分钟），60s 必杀。
-    "TerminalUbuntuInstall" to ToolRunPolicy(timeoutMs = 1_200_000L, maxRetries = 0),
-    "TerminalLinuxBootstrap" to ToolRunPolicy(timeoutMs = 1_200_000L, maxRetries = 0),
+    // （P0-#3 工具面收敛：TerminalUbuntuInstall / TerminalLinuxBootstrap 已随
+    //   工具移除而删条 —— 长时 rootfs 解包/bootstrap 语义由 TerminalUbuntuEnsure
+    //   的 1_830_000ms 覆盖，30min 预算涵盖原 20min install 口径。）
     // 包安装（apt install）也可能超过 60s。
     "TerminalLinuxPackages" to ToolRunPolicy(timeoutMs = 600_000L, maxRetries = 0),
 
@@ -48,9 +47,9 @@ val TERMINAL_TOOL_RUN_POLICIES: Map<String, ToolRunPolicy> = mapOf(
     // TerminalWorkspaceEnvironment ensure：lifecycle ensureReady（≤900s
     //   内部预算）+ 批量 apt install 工具链 + 复测。
     "TerminalWorkspaceEnvironment" to ToolRunPolicy(timeoutMs = 960_000L, maxRetries = 0),
-    // TerminalLinuxCapabilities ensure：refresh probe → apt install
-    //   （600s apt 超时）→ invalidate + re-probe。
-    "TerminalLinuxCapabilities" to ToolRunPolicy(timeoutMs = 660_000L, maxRetries = 0),
+    // （P0-#3：TerminalLinuxCapabilities 已随工具移除而删条 —— 按项目工具链
+    //   供给由 TerminalWorkspaceEnvironment ensure 承接，包操作走
+    //   TerminalLinuxPackages。）
     // TerminalLinuxRepair：单轮修复可含 rootfs 重解包（分钟级 proot 操作）。
     "TerminalLinuxRepair" to ToolRunPolicy(timeoutMs = 1_260_000L, maxRetries = 0),
     // TerminalLinuxNetwork diagnose：端到端探针是一次真实 apt-get update

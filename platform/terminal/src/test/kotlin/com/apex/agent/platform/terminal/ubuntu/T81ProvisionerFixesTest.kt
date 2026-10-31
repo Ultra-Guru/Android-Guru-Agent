@@ -227,7 +227,7 @@ class T81BootstrapStageGuardTest {
     @Test fun `structured failure carries stage and reason (no NPE text)`() {
         val err = com.apex.agent.platform.terminal.errors.LinuxEnvironmentError(
             com.apex.agent.platform.terminal.errors.LinuxErrorCode.BOOTSTRAP_FAILED,
-            "rootfs disappeared between stages — re-install (TerminalUbuntuInstall)"
+            "rootfs disappeared between stages — re-run ensure (TerminalUbuntuEnsure)"
         )
         val r = UbuntuBootstrapManager.BootstrapResult.Failed(err, "CONFIGURING", BootstrapState.CONFIGURING)
         assertEquals("CONFIGURING", r.failedStage)

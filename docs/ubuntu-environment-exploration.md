@@ -89,9 +89,11 @@ ffmpeg 等重型运行时**不内置**，走 apt 在线扩展 —— 交付体�
   PACKAGE_NOT_FOUND→换请求）。
 - **镜像**：官方（arm: ports.ubuntu.com；x86_64: archive.ubuntu.com）+
   TUNA/USTC/Aliyun 一键切换（大陆网络友好）。
-- **一发式工具链供给**：`TerminalLinuxCapabilities {ensure:[...]}` ——
+- **一发式工具链供给**：`TerminalWorkspaceEnvironment {action:"ensure"}` /
+  `TerminalLinuxPackages {action:"install"}` ——
   probe → 缺什么取 aptPackage → 批量安装 → invalidate → 复测汇报前后状态。
-  覆盖 java/javac（default-jdk）、golang-go、rustc/cargo、clang、python3-venv 等。
+  覆盖 java/javac（default-jdk）、golang-go、rustc/cargo、clang、python3-venv 等
+  （原 `TerminalLinuxCapabilities {ensure}` 通道，P0-#3 收敛后由上述入口承接）。
 - **项目感知闭环**：`TerminalWorkspaceEnvironment {action:"ensure"}` ——
   扫描 workspace 标记文件（requirements.txt / package.json / build.gradle.kts /
   Cargo.toml / go.mod / CMakeLists.txt…）→ 检出语言 → 缺失工具链批量补装 →
@@ -126,16 +128,16 @@ mutating 工具推断 `mutating()` = **60s 执行预算 + 0 重试**；而环境
 | 工具 | 工具自身预算 | 执行器预算（修复前） | Agent 调用结果 |
 |---|---|---|---|
 | `TerminalUbuntuEnsure` | 30min（`DEFAULT_ENSURE_TIMEOUT_MS=1800s`） | 60s | 🔴 100% "timeout: tool call exceeded 60000ms budget"（解压需 2~5min） |
-| `TerminalWorkspaceEnvironment` ensure | 15min（900s 内部） | 60s | 🔴 同上（ensureReady + 批量 apt） |
-| `TerminalLinuxCapabilities` ensure | 600s apt + 探测 | 60s | 🔴 装任何工具链必死；probeAll 冷缓存 ~15 次 proot exec 也可能超 |
+| `TerminalWorkspaceEnvironment` ensure | 15min（900s 内部） | 60s | 🔴 同上（ensureReady + 批量 apt；P0-#3 后承接原 Capabilities ensure 的工具链供给语义） |
 | `TerminalLinuxRepair` | rootfs 重解包（分钟级） | 60s | 🔴 修复轮必死 |
 | `TerminalLinuxNetwork` diagnose | 端到端 = 真实 apt-get update（600s apt 超时） | 60s | 🔴 慢网络必死 |
 | `TerminalLinuxStatus`（全量） | 6 维 × proot exec（10~30s/维） | **30s**（annotations 推断 readOnly → quickRead，比 mutating 更短） | 🔴 全量检查必死 |
 | `TerminalWait` | schema 无上限（模型可请求 > 60s） | 60s | 🟡 默认值恰好撞线 |
 
-已覆盖的（对照，说明这是**增量遗漏**而非设计缺失）：`TerminalUbuntuInstall`
-（20min）、`TerminalLinuxBootstrap`（20min）、`TerminalLinuxPackages`
-（10min）、`TerminalExec`（610s）。
+已覆盖的（对照，说明这是**增量遗漏**而非设计缺失）：`TerminalLinuxPackages`
+（10min）、`TerminalExec`（610s）（原 TerminalUbuntuInstall（20min）/
+TerminalLinuxBootstrap（20min）/TerminalLinuxCapabilities（660s）条目随
+P0-#3 工具移除而消亡）。
 
 **修复**（`app/di/ToolModule.kt`）：策略表提取为公开常量
 `TERMINAL_TOOL_RUN_POLICIES` 并补齐 7 项（预算 = 内部预算 + 余量，均不盲重试
@@ -144,7 +146,6 @@ mutating 工具推断 `mutating()` = **60s 执行预算 + 0 重试**；而环境
 ```
 TerminalUbuntuEnsure        1_830_000ms（30min + 30s）
 TerminalWorkspaceEnvironment  960_000ms（15min + 1min）
-TerminalLinuxCapabilities     660_000ms（600s apt + 1min）
 TerminalLinuxRepair         1_260_000ms（21min）
 TerminalLinuxNetwork          660_000ms
 TerminalLinuxStatus           300_000ms
@@ -159,7 +160,7 @@ TerminalWait                   660_000ms
 ## 7. ④-JDK 链路 —— apt 可装，但 JAVA_HOME 从不导出（🟡 本 PR 修复）
 
 **探索发现**（三处证据交叉）：
-1. `TerminalLinuxCapabilities ensure ["java"]` → apt 装 `default-jdk` →
+1. `TerminalLinuxCapabilities ensure ["java"]`（P0-#3 后等价入口：`TerminalWorkspaceEnvironment ensure`）→ apt 装 `default-jdk` →
    `java/javac` 经 PATH 可用（probe 复测 AVAILABLE）—— 安装侧 ✅；
 2. `LinuxEnvironmentManager.interactiveGuestEnv` 恰好 11 键
    （TERM/LANG/LC_ALL/HOME/USER/LOGNAME/SHELL/PATH/TMPDIR/PWD/OLDPWD）——
@@ -240,7 +241,7 @@ cmdline-tools zip → 解压到 `~/android-sdk`（`TerminalFs` guest API 可用�
 ```
 1. TerminalUbuntuEnsure                     ← 一发式：安装→引导→能力快照（≤30min，可续跑）
 2. TerminalCreate {backend:"linux-ubuntu"}   ← 开交互会话（新会话自动 source 工具链块）
-3. TerminalLinuxCapabilities {ensure:["java","python3"]}   ← 按项目补装工具链
+3. TerminalWorkspaceEnvironment {action:"ensure"}              ← 按项目补装工具链（P0-#3 后唯一一发式通道）
 4. TerminalRun / TerminalWait / TerminalObserve           ← 在 Ubuntu 里构建/运行
 5. TerminalWorkspaceEnvironment {action:"ensure"}          ← 项目级一键环境
 ```

@@ -137,7 +137,7 @@ class LinuxChrootBackend(
         // 2. rootfs
         val rootfs: RootfsDescriptor = rootfsProvider.current()
             ?: return Result.failure(
-                RuntimeException("TerminalError:RootfsNotReady — 无已安装 rootfs（先用 TerminalUbuntuInstall 引导）")
+                RuntimeException("TerminalError:RootfsNotReady — 无已安装 rootfs（先用 TerminalUbuntuEnsure 引导）")
             )
         val rootfsPath = rootfs.location
             ?: return Result.failure(
