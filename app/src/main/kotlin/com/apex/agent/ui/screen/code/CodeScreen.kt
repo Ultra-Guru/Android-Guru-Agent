@@ -789,7 +789,7 @@ private fun TodoPanel(todos: List<CodeTodoTool.Todo>) {
 // ═══ 输入栏（#197 升级：斜杠 + GitHub + 小圆环函数调用 + 输入框 + 发送）═══
 
 /** 小圆环状态包（避免 CodeInputBar 参数爆炸）。 */
-private data class ToolkitUiState(
+internal data class ToolkitUiState(
     val webSearchEnabled: Boolean,
     val timeEnabled: Boolean,
     val selectedFunctionIds: Set<String>,
@@ -881,88 +881,27 @@ private fun CodeInputBar(
                 // ═══ 网络搜索：第 2 位（内置/SearXNG/MCP 三通道单选）═══
                 WebSearchMenuButton(toolkit = toolkit, mcpManager = mcpManager)
 
-                // ═══ 展开 ▲：第 3 位 + 五件套弹层锚点 ═══
+                // ═══ 展开 ▲：第 3 位 + 五件套弹层锚点（宿主见 ToolbenchPanelHost.kt）═══
                 Box {
                     ToolbenchExpandButton(
                         activePanel = activePanel,
                         onPanelChange = { activePanel = it }
                     )
-                    // triggerHidden = 锚点模式：五组件只作弹层宿主（matchParentSize
-                    // 覆盖层不占行宽），弹层全部锚定展开按钮处
-                    Box(Modifier.matchParentSize()) {
-                        SlashCommandButton(
-                            slashMenuProvider = slashMenuProvider,
-                            scope = "coding",
-                            isSelected = { item ->
-                                PendingPipelineCommand.fromCommand(item.command, item.label)
-                                    ?.let { c -> pendingCommands.any { it.type == c.type && it.id == c.id } }
-                                    ?: false
-                            },
-                            onItemSelected = { item ->
-                                val capsule = PendingPipelineCommand.fromCommand(item.command, item.label)
-                                if (capsule != null) {
-                                    val exists = pendingCommands.any { it.type == capsule.type && it.id == capsule.id }
-                                    if (exists) {
-                                        onChipsChange(pendingCommands.filterNot { it.type == capsule.type && it.id == capsule.id })
-                                    } else {
-                                        onAddPendingCommand(capsule)
-                                    }
-                                    true // 流水线条目：保持展开，继续多选
-                                } else {
-                                    val merged = if (draft.isBlank()) item.command
-                                    else draft.trimEnd() + " " + item.command
-                                    onDraftChange(merged)
-                                    false
-                                }
-                            },
-                            menuOpen = activePanel == CodePanel.SLASH,
-                            onMenuDismiss = { activePanel = null },
-                            triggerHidden = true
-                        )
-                        FusionCodingButton(
-                            onBundleChip = onAddPendingCommand,
-                            menuOpen = activePanel == CodePanel.FUSION,
-                            onMenuDismiss = { activePanel = null },
-                            triggerHidden = true
-                        )
-                        GithubIconButton(
-                            tokenManager = githubTokenManager,
-                            mcpManager = mcpManager,
-                            menuOpen = activePanel == CodePanel.GITHUB,
-                            onMenuDismiss = { activePanel = null },
-                            triggerHidden = true
-                        )
-                        ToolkitRingButton(
-                            webSearchEnabled = toolkitState.webSearchEnabled,
-                            timeEnabled = toolkitState.timeEnabled,
-                            selectedFunctionIds = toolkitState.selectedFunctionIds,
-                            availableTools = toolkitState.availableTools,
-                            outputFormat = toolkitState.outputFormat,
-                            customSchema = toolkitState.customSchema,
-                            rules = toolkitState.rules,
-                            exposeAllTools = toolkitState.exposeAllTools,
-                            onToggleWebSearch = { toolkit.setWebSearchEnabled(it) },
-                            onToggleTime = { toolkit.setTimeEnabled(it) },
-                            onToggleFunction = { toolkit.toggleFunction(it) },
-                            onToggleExposeAllTools = { toolkit.setExposeAllTools(it) },
-                            onSelectFormat = { toolkit.setOutputFormat(it) },
-                            onSetCustomSchema = { toolkit.setCustomSchema(it) },
-                            onUpsertRule = { toolkit.upsertRule(it) },
-                            onDeleteRule = { toolkit.deleteRule(it) },
-                            onToggleRule = { id, enabled -> toolkit.setRuleEnabled(id, enabled) },
-                            menuOpen = activePanel == CodePanel.TOOLKIT,
-                            onMenuDismiss = { activePanel = null },
-                            triggerHidden = true
-                        )
-                        neonOrbStore?.let { store ->
-                            NeonOrbButton(
-                                store = store,
-                                menuOpen = activePanel == CodePanel.NEON,
-                                onMenuDismiss = { activePanel = null },
-                                triggerHidden = true
-                            )
-                        }
-                    }
+                    CodeToolbenchPanels(
+                        activePanel = activePanel,
+                        onPanelDismiss = { activePanel = null },
+                        slashMenuProvider = slashMenuProvider,
+                        pendingCommands = pendingCommands,
+                        onChipsChange = onChipsChange,
+                        onAddPendingCommand = onAddPendingCommand,
+                        draft = draft,
+                        onDraftChange = onDraftChange,
+                        githubTokenManager = githubTokenManager,
+                        mcpManager = mcpManager,
+                        toolkit = toolkit,
+                        toolkitState = toolkitState,
+                        neonOrbStore = neonOrbStore
+                    )
                 }
             }
             Spacer(Modifier.height(4.dp))
