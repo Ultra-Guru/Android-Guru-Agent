@@ -36,7 +36,7 @@ class TerminalBackendsToolTest {
 
         override suspend fun backends(): List<TerminalRuntime.BackendStatus> = statuses
         // 其余门面操作在工具测试中不可达 —— 工具只调 backends()。
-        override suspend fun create(shell: String, cwd: String, rows: Int, cols: Int, env: Map<String, String>, privilege: com.apex.agent.platform.terminal.policy.PrivilegeLevel, backendId: String, workspaceId: String?): Result<TerminalRuntime.CreateResult> = throw UnsupportedOperationException()
+        override suspend fun create(cwd: String, rows: Int, cols: Int, env: Map<String, String>, privilege: com.apex.agent.platform.terminal.policy.PrivilegeLevel, backendId: String, workspaceId: String?): Result<TerminalRuntime.CreateResult> = throw UnsupportedOperationException()
         override suspend fun run(sessionId: Long, command: String, owner: com.apex.agent.platform.terminal.io.InputOwner, background: Boolean, timeoutMs: Long): Result<TerminalRuntime.RunResult> = Result.failure(UnsupportedOperationException())
         override suspend fun observe(sessionId: Long, mode: TerminalRuntime.ObserveMode, afterCursor: Long, maxBytes: Int, maxEvents: Int, scrollbackLines: Int): Result<TerminalRuntime.ObserveResult> = Result.failure(UnsupportedOperationException())
         override suspend fun wait(sessionId: Long, condition: com.apex.agent.platform.TerminalWait.WaitCondition, timeoutMs: Long): Result<com.apex.agent.platform.TerminalWait.WaitResult> = Result.failure(UnsupportedOperationException())
@@ -64,7 +64,7 @@ class TerminalBackendsToolTest {
         val tool = TerminalBackendsTool(
             FakeRuntime(
                 listOf(
-                    TerminalRuntime.BackendStatus("local", "ANDROID_LOCAL", true, "READY"),
+                    TerminalRuntime.BackendStatus("local", "LINUX", true, "READY"),
                     TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", false, "NEEDS_ROOTFS:not_provisioned", "先调用 TerminalUbuntuInstall")
                 )
             )

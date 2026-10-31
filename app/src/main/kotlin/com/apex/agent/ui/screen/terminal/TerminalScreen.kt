@@ -204,8 +204,7 @@ private fun SessionTabsRow(
         sessions.forEach { tab ->
             val selected = tab.id == activeId
             val label = tab.title?.take(24)
-                ?: if (tab.isUbuntu) stringResource(R.string.term_tab_ubuntu)
-                else stringResource(R.string.term_tab_android)
+                ?: stringResource(R.string.term_tab_ubuntu)
             val dead = !tab.isAlive
             AssistChip(
                 onClick = { viewModel.selectSession(tab.id) },
@@ -259,13 +258,6 @@ private fun SessionTabsRow(
             },
             shape = RoundedCornerShape(50)
         )
-        if (!ubuntuReady) {
-            AssistChip(
-                onClick = { viewModel.createSession(SessionRegistry.BACKEND_LOCAL) },
-                label = { Text(stringResource(R.string.term_use_android_first), style = MaterialTheme.typography.labelMedium) },
-                shape = RoundedCornerShape(50)
-            )
-        }
     }
 }
 
@@ -438,10 +430,6 @@ private fun EnvironmentInlinePanel(
                 )
                 ActionRow {
                     AssistChip(onClick = { viewModel.installUbuntu() }, label = { Text(stringResource(R.string.term_retry)) })
-                    AssistChip(
-                        onClick = { viewModel.createSession(SessionRegistry.BACKEND_LOCAL) },
-                        label = { Text(stringResource(R.string.term_use_android_first)) }
-                    )
                 }
             }
             UbuntuLifecycleCoordinator.Phase.READY -> {
@@ -459,10 +447,6 @@ private fun EnvironmentInlinePanel(
                     FilledSessionButton(stringResource(R.string.term_new_ubuntu_session)) {
                         viewModel.createSession(SessionRegistry.BACKEND_UBUNTU)
                     }
-                    AssistChip(
-                        onClick = { viewModel.createSession(SessionRegistry.BACKEND_LOCAL) },
-                        label = { Text(stringResource(R.string.term_new_android_session)) }
-                    )
                 }
             }
             else -> {
@@ -499,10 +483,6 @@ private fun EnvironmentInlinePanel(
                 )
                 ActionRow {
                     AssistChip(onClick = { viewModel.installUbuntu() }, label = { Text(stringResource(R.string.term_retry)) })
-                    AssistChip(
-                        onClick = { viewModel.createSession(SessionRegistry.BACKEND_LOCAL) },
-                        label = { Text(stringResource(R.string.term_use_android_first)) }
-                    )
                 }
             }
         }

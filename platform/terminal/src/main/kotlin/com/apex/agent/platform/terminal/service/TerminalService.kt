@@ -95,7 +95,7 @@ class TerminalService : Service() {
             cwd: String?,
             envAssignments: MutableList<String>?
         ): String = controller.createSession(
-            backendId = backendId ?: "local",
+            backendId = backendId ?: "linux-ubuntu",
             rows = rows,
             cols = cols,
             cwd = cwd,

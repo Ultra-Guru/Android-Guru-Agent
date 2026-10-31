@@ -33,7 +33,7 @@ import com.apex.agent.platform.terminal.state.TerminalSemanticState
 class TerminalSdk(
     private val runtime: TerminalRuntime,
     /** Backend used by [createSession] when the request does not specify one via env override. */
-    private val defaultBackendId: String = "local"
+    private val defaultBackendId: String = "linux-ubuntu"
 ) : Terminal {
 
     override suspend fun createSession(request: SessionRequest): Result<TerminalSession> {
@@ -43,7 +43,7 @@ class TerminalSdk(
         val backendId = request.environment.overrides[APEX_BACKEND_ENV]
             ?: defaultBackendId
         val r = runtime.create(
-            cwd = request.workingDirectory ?: if (backendId == "local") "/sdcard" else "/workspace",
+            cwd = request.workingDirectory ?: "/workspace",
             rows = request.terminalSize.rows,
             cols = request.terminalSize.columns,
             env = request.environment.overrides,
