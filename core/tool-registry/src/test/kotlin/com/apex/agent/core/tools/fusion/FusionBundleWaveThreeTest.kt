@@ -202,7 +202,7 @@ class FusionBundleWaveThreeTest {
     @Test
     fun `第三波 installBundled 释放且幂等`() {
         val registry = FusionBundleRegistry(tmp.newFolder("bundled3"))
-        val wave3 = FusionBundlePresets.all().drop(4)
+        val wave3 = FusionBundlePresets.all().drop(4).take(3) // 第三波三包（尾部 toolwright 属第四波，不计入）
         for ((m, _) in wave3) {
             assertTrue("释放 '${m.id}'", registry.installBundled(m, "{}").isSuccess)
         }
