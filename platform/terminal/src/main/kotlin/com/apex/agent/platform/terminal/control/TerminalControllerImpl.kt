@@ -34,7 +34,6 @@ class TerminalControllerImpl(
     // ─── Session Control ───
     override suspend fun createSession(config: TerminalSessionConfig): Result<Long> {
         val r = runtime.create(
-            shell = config.shell ?: "/system/bin/sh",
             cwd = config.workingDirectory ?: "/sdcard",
             rows = config.rows, cols = config.cols, env = config.environment
         )

@@ -122,10 +122,9 @@ class EnvironmentProvisioner(
     val ubuntuLifecycleState: StateFlow<UbuntuLifecycleCoordinator.LifecycleState>? =
         ubuntuLifecycle?.stateFlow
 
-    /** 依赖安装的正确 session：Ubuntu 可用走 linux-ubuntu，否则诚实降级 local。 */
-    suspend fun sessionForApt(): Long = ensureUbuntuSession()
-        ?: runtime.create().getOrNull()?.sessionId?.also { /* local fallback：apt 命令将真实失败（command not found）*/ }
-        ?: -1L
+    /** 依赖安装的正确 session：Ubuntu 可用走 linux-ubuntu，否则 -1（无降级 ——
+     *  AndroidShell 后端已移除，apt 只在 Ubuntu 会话可用）。 */
+    suspend fun sessionForApt(): Long = ensureUbuntuSession() ?: -1L
 
     /** Install a single dependency. Returns the final exit code (0 = success). */
     suspend fun installDep(sessionId: Long, item: DepItem): Int {

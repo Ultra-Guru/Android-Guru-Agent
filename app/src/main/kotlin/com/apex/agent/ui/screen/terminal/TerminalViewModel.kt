@@ -11,7 +11,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.apex.agent.R
 import com.apex.agent.environment.EnvironmentProvisioner
-import com.apex.agent.platform.terminal.profile.GuestShellProfile
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
 import com.apex.agent.platform.terminal.ubuntu.lifecycle.UbuntuLifecycleCoordinator
 import com.apex.agent.ui.language.LanguageManager
@@ -27,7 +26,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.io.File
 import javax.inject.Inject
 
 /**
@@ -195,8 +193,9 @@ class TerminalViewModel @Inject constructor(
                         autoUbuntuSessionPending = false
                         val reason = (r as? UbuntuLifecycleCoordinator.EnsureResult.Failed)
                             ?.message?.take(80)
-                        notifyFallback(R.string.term_notice_fallback_session, reason ?: "…")
-                        createMutex.withLock { createSessionInternal(SessionRegistry.BACKEND_LOCAL) }
+                        // AndroidShell 后端已移除：不再降级本地会话 —— 用户经空态
+                        // 覆盖层的「重试 / 安装 Ubuntu」引导（terminal Ubuntu-only）。
+                        notifyError(R.string.term_notice_ubuntu_unavailable, reason ?: "…")
                     }
                 }
             } else {
@@ -235,25 +234,6 @@ class TerminalViewModel @Inject constructor(
         }
     }
 
-    /** 本地 shell home（$filesDir/linux/shell —— 可写，untrusted_app 域内）。 */
-    private val localShellHome: File get() = File(context.filesDir, "linux/shell")
-
-    /**
-     * 确保 mksh rc 就绪并返回注入 env（HOME/ENV/TERM/COLORTERM）。
-     * 失败（磁盘满等）→ 空 map：会话照常创建，绝不因 profile 失败拒绝创建。
-     */
-    private suspend fun ensureLocalShellProfile(): Map<String, String> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val home = GuestShellProfile.ensureShellHome(localShellHome)
-                val rc = File(home, GuestShellProfile.RC_FILENAME)
-                if (!rc.isFile || rc.length() == 0L) {
-                    rc.writeText(GuestShellProfile.generate(android.os.Build.MODEL ?: "android"))
-                }
-                GuestShellProfile.shellEnv(home.absolutePath, rc.absolutePath)
-            }.getOrDefault(emptyMap())
-        }
-
     private suspend fun createSessionInternal(backendId: String) {
         if (backendId == SessionRegistry.BACKEND_UBUNTU) {
             val r = withContext(Dispatchers.IO) { ubuntuLifecycle.ensureReady() }
@@ -262,11 +242,8 @@ class TerminalViewModel @Inject constructor(
                 return
             }
         }
-        val localEnv = if (backendId == SessionRegistry.BACKEND_LOCAL) {
-            ensureLocalShellProfile()
-        } else emptyMap()
         val created = withContext(Dispatchers.IO) {
-            terminalRuntime.create(backendId = backendId, env = localEnv)
+            terminalRuntime.create(backendId = backendId)
         }
         val result = created.getOrElse { e ->
             notifyError(R.string.term_notice_create_failed, e.message?.take(200) ?: "")
@@ -298,12 +275,8 @@ class TerminalViewModel @Inject constructor(
     fun restartActiveSession() {
         val active = registry.activeSessionId.value ?: return
         val tab = registry.sessionTabs.value.firstOrNull { it.id == active } ?: return
-        val backend = when {
-            tab.backendId == SessionRegistry.BACKEND_UBUNTU || tab.backendId == SessionRegistry.BACKEND_LOCAL ->
-                tab.backendId
-            tab.runtimeType == "LINUX" -> SessionRegistry.BACKEND_UBUNTU
-            else -> SessionRegistry.BACKEND_LOCAL
-        }
+        // Ubuntu-only：重启一律回 linux-ubuntu（旧 local 会话一并收敛）。
+        val backend = SessionRegistry.BACKEND_UBUNTU
         viewModelScope.launch {
             withContext(Dispatchers.IO) { terminalRuntime.close(active, force = true) }
             registry.evict(active)
@@ -548,7 +521,6 @@ class TerminalViewModel @Inject constructor(
 
     private fun labelOf(backendId: String): String = when (backendId) {
         SessionRegistry.BACKEND_UBUNTU -> lang.getString(R.string.term_tab_ubuntu)
-        SessionRegistry.BACKEND_LOCAL -> lang.getString(R.string.term_tab_android)
         else -> backendId
     }
 

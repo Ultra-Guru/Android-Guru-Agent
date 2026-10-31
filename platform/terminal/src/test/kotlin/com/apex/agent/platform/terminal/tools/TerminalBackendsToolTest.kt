@@ -64,7 +64,7 @@ class TerminalBackendsToolTest {
         val tool = TerminalBackendsTool(
             FakeRuntime(
                 listOf(
-                    TerminalRuntime.BackendStatus("local", "ANDROID_LOCAL", true, "READY"),
+                    TerminalRuntime.BackendStatus("local", "LINUX", true, "READY"),
                     TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", false, "NEEDS_ROOTFS:not_provisioned", "先调用 TerminalUbuntuInstall")
                 )
             )
