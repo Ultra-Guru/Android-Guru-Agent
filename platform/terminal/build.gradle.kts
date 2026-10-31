@@ -79,6 +79,10 @@ dependencies {
     implementation(project(":terminal-emulator"))  // ATR 2.0 VT100/ANSI emulator
     // Native VT hot path（C++17 零分配引擎 + Kotlin 回退工厂）
     implementation(project(":terminal-native"))
+    // #595：统一日志中枢（纯 JVM：kotlin.jvm + coroutines，模块「纯 JVM 库」
+    // 边界不变）—— InputManagerImpl / RealVirtualTerminal 的诊断输出从
+    // System.err 收口到 AppLogger，release 构建不再落 stderr。
+    implementation(project(":core:logging"))
     implementation(libs.coroutines.android)
     implementation(libs.serialization.json)
     implementation(libs.hilt.android)
