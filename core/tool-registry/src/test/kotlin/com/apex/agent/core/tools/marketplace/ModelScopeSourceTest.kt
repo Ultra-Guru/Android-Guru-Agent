@@ -87,6 +87,26 @@ class ModelScopeSourceTest {
         assertEquals("", skills[0].description)
     }
 
+    @Test
+    fun `token provider exception becomes Result failure for markdown and resources`() = runBlocking {
+        val source = ModelScopeSource(fakeHttpClient("unused")) { error("provider unavailable") }
+        val skill = ModelScopeSource.ModelScopeSkill("demo", "Demo", "", "skills/demo/SKILL.md", emptyList())
+        assertTrue(source.fetchSkillMarkdown(skill).isFailure)
+        assertTrue(source.fetchSkillResource(skill, "skills/demo/api.md").isFailure)
+    }
+
+    @Test
+    fun `cancellation from token provider propagates unchanged`() = runBlocking {
+        val cancellation = kotlinx.coroutines.CancellationException("cancelled")
+        val source = ModelScopeSource(fakeHttpClient("unused")) { throw cancellation }
+        try {
+            source.listSkills()
+            org.junit.Assert.fail("cancellation must not become Result.failure")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            org.junit.Assert.assertSame(cancellation, e)
+        }
+    }
+
     private companion object {
         /** 目录树最小夹具：一个技能目录（SKILL.md + 一个 reference 资源）。 */
         private const val TREES_JSON = """
