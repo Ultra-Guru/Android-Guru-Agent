@@ -1,5 +1,6 @@
 package com.apex.agent.core.tools.fusion
 
+import com.apex.agent.core.tools.skill.SkillManifest
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
