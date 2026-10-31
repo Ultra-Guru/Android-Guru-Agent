@@ -6,6 +6,7 @@ import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.core.tools.mcp.McpManager
 import com.apex.agent.core.tools.skill.SkillActivationStore
+import com.apex.agent.core.tools.skill.SkillPolicyIndex
 import com.apex.agent.core.tools.skill.SkillAutoActivator
 import com.apex.agent.core.tools.skill.SkillDirectoryWatcher
 import com.apex.agent.core.tools.skill.SkillHotReloadLogLevel
@@ -198,8 +199,12 @@ object SkillModule {
      */
     @Provides
     @Singleton
-    fun provideSkillActivationStore(): SkillActivationStore {
-        return SkillActivationStore(maxActive = 8)
+    fun provideSkillPolicyIndex(): SkillPolicyIndex {
+        return SkillPolicyIndex()
+    }
+
+    fun provideSkillActivationStore(policyIndex: SkillPolicyIndex): SkillActivationStore {
+        return SkillActivationStore(maxActive = 8, policyIndex = policyIndex)
     }
 
     /**
@@ -210,9 +215,19 @@ object SkillModule {
     @Singleton
     fun provideSkillAutoActivator(
         skillRegistry: SkillRegistry,
-        activationStore: SkillActivationStore
+        activationStore: SkillActivationStore,
+        policyIndex: SkillPolicyIndex
     ): SkillAutoActivator {
-        return SkillAutoActivator(skillRegistry, activationStore, maxActivations = 2)
+        return SkillAutoActivator(
+            skillRegistry, activationStore,
+            policyIndex = policyIndex,
+            onRejected = { msg ->
+                com.apex.agent.core.logging.AppLogger.instance.info(
+                    com.apex.agent.core.logging.LogCategory.SYSTEM, "SkillPolicy", msg
+                )
+            },
+            maxActivations = 2
+        )
     }
 
     /** 连接器注册表（市场页「连接器」页签 + 斜杠菜单数据源）。 */

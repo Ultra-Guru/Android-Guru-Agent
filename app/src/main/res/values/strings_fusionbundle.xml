@@ -89,4 +89,13 @@
 
     <!-- ═══ Active banner ═══ -->
     <string name="fusion_banner_active">%1$s system agent is live</string>
+    <string name="fusion_policy_section">Policy rules (causal)</string>
+    <string name="fusion_policy_budget">Concurrent activation cap (blank = default 8)</string>
+    <string name="fusion_policy_alwayson">Always-on members (pinned, exempt from eviction)</string>
+    <string name="fusion_policy_exclusive">Mutually exclusive groups (at most one active per group)</string>
+    <string name="fusion_policy_add_group">+ Add exclusive group</string>
+    <string name="fusion_policy_remove_group">R</string>
+    <string name="fusion_policy_triggers">Trigger conditions per skill</string>
+    <string name="fusion_policy_when_placeholder">When to use (e.g. when reverse-engineering APKs)</string>
+    <string name="fusion_policy_keywords_placeholder">keywords, comma separated</string>
 </resources>

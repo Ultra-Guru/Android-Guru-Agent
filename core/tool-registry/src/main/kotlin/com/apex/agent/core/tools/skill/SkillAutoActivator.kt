@@ -27,6 +27,15 @@ package com.apex.agent.core.tools.skill
 class SkillAutoActivator(
     private val skillRegistry: SkillRegistry,
     private val activationStore: SkillActivationStore,
+    /**
+     * 聚合策略索引（可选——null = 无加权零过滤，既有测试/无聚合场景直通）。
+     * 非空时：包声明触发关键词（FusionPolicies.triggers.keywords）打分 ×2
+     * 加权（包作者的「因果」声明优先于 tags/id 兜底）；批量激活走
+     * activateAllFiltered，互斥拒绝经 [onRejected] 如实上报。
+     */
+    private val policyIndex: SkillPolicyIndex? = null,
+    /** 策略拒绝出口（注入式——core 纯 JVM 无 Android 日志；null = 静默）。 */
+    private val onRejected: ((String) -> Unit)? = null,
     /** 单条消息最多自动装备的技能数。 */
     private val maxActivations: Int = 2
 ) {
@@ -44,7 +53,9 @@ class SkillAutoActivator(
         val text = userText.trim()
         if (text.length < MIN_TEXT_LENGTH) return emptyList()
 
-        // 候选打分：关键词命中一次记 (关键词长度)——越长越有区分度
+        // 候选打分：关键词命中一次记 (关键词长度)——越长越有区分度；
+        // 包声明关键词（聚合策略 triggers.keywords）命中权重 ×2 —— 包作者的
+        // 「因果」声明比 tags 兜底更可信。
         data class Candidate(val manifest: SkillManifest, val keywordLen: Int)
 
         val candidates = mutableListOf<Candidate>()
@@ -58,8 +69,15 @@ class SkillAutoActivator(
             if (activationStore.isActive(manifest.id)) continue
             val bestKeyword = keywordsOf(manifest)
                 .filter { it.length >= MIN_KEYWORD_LENGTH && text.contains(it) }
-                .maxByOrNull { it.length } ?: continue
-            candidates.add(Candidate(manifest, bestKeyword.length))
+                .maxByOrNull { it.length }
+            val declaredHit = policyIndex?.triggerKeywordsOf(manifest.id).orEmpty()
+                .filter { it.length >= MIN_KEYWORD_LENGTH && text.contains(it) }
+                .maxByOrNull { it.length }
+            val score = listOfNotNull(
+                bestKeyword?.length,
+                declaredHit?.let { it.length * 2 }
+            ).maxOrNull() ?: continue
+            candidates.add(Candidate(manifest, score))
         }
         if (candidates.isEmpty()) return emptyList()
 
@@ -68,9 +86,12 @@ class SkillAutoActivator(
             .take(maxActivations)
             .map { it.manifest }
 
-        val activatedIds = activationStore.activateAll(picked.map { it.id })
-        if (activatedIds.isEmpty()) return emptyList()
-        val activatedSet = activatedIds.toSet()
+        val outcome = activationStore.activateAllFiltered(picked.map { it.id })
+        outcome.rejected.forEach { (id, reason) ->
+            onRejected?.invoke("autoEquip 拒绝激活 $id：$reason")
+        }
+        if (outcome.added.isEmpty()) return emptyList()
+        val activatedSet = outcome.added.toSet()
         return picked.filter { it.id in activatedSet }
     }
 

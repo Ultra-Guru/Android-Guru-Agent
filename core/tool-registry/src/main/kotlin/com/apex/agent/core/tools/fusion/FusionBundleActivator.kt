@@ -30,7 +30,8 @@ class FusionBundleActivator(
     private val mcpConnector: FusionMcpConnector,
     private val promptInjector: FusionPromptInjector,
     private val pluginInstaller: FusionPluginInstaller = FusionPluginInstaller.UNAVAILABLE,
-    private val hubInstaller: FusionHubInstaller = FusionHubInstaller.UNAVAILABLE
+    private val hubInstaller: FusionHubInstaller = FusionHubInstaller.UNAVAILABLE,
+    private val policyPort: FusionPolicyPort = FusionPolicyPort.UNAVAILABLE
 ) {
 
     /** 当前激活的包（null = 无）。@Volatile：UI 线程读、IO 协程写。 */
@@ -66,6 +67,16 @@ class FusionBundleActivator(
         val promptApplied = runCatching { promptInjector.apply(activationPrompt) }
         promptApplied.onFailure {
             skipped.add("prompt:工作流注入失败(${it.message ?: it::class.simpleName})")
+        }
+
+        // ── 阶段三：策略注册（因果规则硬轨生效）——互斥/预算过滤进激活集，
+        // alwaysOn 常驻（pin 免淘汰）；注册失败不弃激活（软轨路由总纲已注入）。
+        runCatching {
+            policyPort.registerPolicies(manifest)
+            val onIds = manifest.policies.alwaysOn.filter { it in installed.skills }
+            if (onIds.isNotEmpty()) policyPort.pinAlwaysOn(onIds)
+        }.onFailure {
+            skipped.add("policies:策略注册失败(${it.message ?: it::class.simpleName})")
         }
 
         activeBundle = manifest
@@ -239,6 +250,7 @@ class FusionBundleActivator(
         if (activeBundle == null) return Result.success(Unit)
         return try {
             promptInjector.restore()
+            policyPort.unregisterPolicies(activeBundle!!.id)
             activeBundle = null
             Result.success(Unit)
         } catch (e: Exception) {
@@ -294,6 +306,29 @@ class FusionBundleActivator(
                             "- ${it.name}：${it.purpose}${if (it.installHint.isNotBlank()) "（${it.installHint}）" else ""}"
                         }
                 )
+            }
+        }
+        // 任务路由（软轨）：triggers 的 when 场景 → skillId 对照表 + 互斥组。
+        // 结构化约束（互斥/预算）已由 SkillPolicyIndex 硬执行，这里把「因果」
+        // 语义交给模型 —— 按任务对表选技能，配合 SkillActivate 激活。
+        if (manifest.policies.triggers.any { it.scenario.isNotBlank() } ||
+            manifest.policies.mutuallyExclusive.isNotEmpty()
+        ) {
+            val routeLines = manifest.policies.triggers
+                .filter { it.scenario.isNotBlank() }
+                .map { t -> "- 任务${t.scenario} → 优先激活技能 ${t.skillId}" }
+            if (routeLines.isNotEmpty()) {
+                segments.add(
+                    "### 任务路由\n" +
+                        routeLines.joinToString("\n") +
+                        "\n（命中场景时先用 SkillActivate 激活对应技能再执行任务）"
+                )
+            }
+            val exclusiveLines = manifest.policies.mutuallyExclusive.map { group ->
+                "- ${group.joinToString(" 与 ")} 互斥：同时最多激活一个"
+            }
+            if (exclusiveLines.isNotEmpty()) {
+                segments.add("### 互斥约束\n" + exclusiveLines.joinToString("\n"))
             }
         }
         segments.add(
@@ -382,6 +417,31 @@ interface FusionPromptInjector {
 
     /** 恢复注入前的原始值。 */
     fun restore()
+}
+
+/**
+ * 聚合策略端口（第六端口，**策略路由**的硬轨执行面）：激活时注册包策略
+ * （互斥/预算/触发词进 SkillPolicyIndex）+ alwaysOn 常驻 pin；去激活注销。
+ * [UNAVAILABLE] 缺省实现：策略仅软轨（路由总纲已注入提示词），硬约束不生效。
+ */
+interface FusionPolicyPort {
+    /** 注册包策略（SkillPolicyIndex.register —— 全激活路径的互斥/预算过滤源）。 */
+    fun registerPolicies(manifest: FusionBundleManifest)
+
+    /** alwaysOn 常驻成员入激活集并 pin（免 FIFO 淘汰）。 */
+    fun pinAlwaysOn(skillIds: List<String>)
+
+    /** 去激活注销（索引移除 + pin 清除）。 */
+    fun unregisterPolicies(bundleId: String)
+
+    companion object {
+        /** 未接线端口：注册/pin 静默直通（策略仅软轨生效）。 */
+        val UNAVAILABLE: FusionPolicyPort = object : FusionPolicyPort {
+            override fun registerPolicies(manifest: FusionBundleManifest) {}
+            override fun pinAlwaysOn(skillIds: List<String>) {}
+            override fun unregisterPolicies(bundleId: String) {}
+        }
+    }
 }
 
 /**

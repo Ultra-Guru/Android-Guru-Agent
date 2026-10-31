@@ -199,6 +199,23 @@ object FusionSuperpowersPreset {
     }
   ],
   "mcpServers": [],
+  "policies": {
+    "maxActiveSkills": 4,
+    "alwaysOn": [],
+    "mutuallyExclusive": [
+      ["SuperpowersTdd", "SuperpowersFinishing"]
+    ],
+    "triggers": [
+      {"skillId": "SuperpowersBrainstorming", "when": "用户要做新功能/新组件/改行为且意图未澄清", "keywords": ["头脑风暴", "brainstorm", "新功能"]},
+      {"skillId": "SuperpowersWritingPlans", "when": "设计已确认需要拆成实施计划", "keywords": ["计划", "plan", "拆任务"]},
+      {"skillId": "SuperpowersExecutingPlans", "when": "拿到实施计划要逐任务推进", "keywords": ["执行计划", "推进"]},
+      {"skillId": "SuperpowersTdd", "when": "要写实现代码（测试先行铁律）", "keywords": ["tdd", "测试", "写代码"]},
+      {"skillId": "SuperpowersSystematicDebugging", "when": "出现 bug/异常/测试失败要找根因", "keywords": ["bug", "调试", "报错", "根因"]},
+      {"skillId": "SuperpowersVerification", "when": "即将宣布任务完成要做验证门", "keywords": ["验证", "verification", "完成前"]},
+      {"skillId": "SuperpowersCodeReview", "when": "代码写完要做评审", "keywords": ["评审", "review"]},
+      {"skillId": "SuperpowersFinishing", "when": "任务/分支要收尾合并", "keywords": ["收尾", "合并", "finishing"]}
+    ]
+  },
   "toolActivationHints": [
     "Task",
     "Read",

@@ -87,4 +87,13 @@
 
     <!-- ═══ 激活态横幅 ═══ -->
     <string name="fusion_banner_active">%1$s 体系 agent 运行中</string>
+    <string name="fusion_policy_section">策略（因果规则）</string>
+    <string name="fusion_policy_budget">同时激活上限（留空=默认 8）</string>
+    <string name="fusion_policy_alwayson">常驻成员（免淘汰）</string>
+    <string name="fusion_policy_exclusive">互斥组（组内同时最多激活一个）</string>
+    <string name="fusion_policy_add_group">+ 加互斥组</string>
+    <string name="fusion_policy_remove_group">Remove group</string>
+    <string name="fusion_policy_triggers">触发条件（每技能）</string>
+    <string name="fusion_policy_when_placeholder">什么场景用（如：逆向分析 APK 时）</string>
+    <string name="fusion_policy_keywords_placeholder">关键词,逗号分隔</string>
 </resources>

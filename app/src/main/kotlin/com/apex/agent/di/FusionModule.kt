@@ -146,18 +146,47 @@ object FusionModule {
         mcpManager: McpManager,
         engineLazy: dagger.Lazy<AgentEngine>,
         pluginRegistryLazy: dagger.Lazy<com.apex.agent.plugin.host.functional.UnifiedPluginRegistry>,
-        hubSource: com.apex.agent.core.tools.marketplace.HubSource
+        hubSource: com.apex.agent.core.tools.marketplace.HubSource,
+        policyIndex: com.apex.agent.core.tools.skill.SkillPolicyIndex,
+        activationStore: com.apex.agent.core.tools.skill.SkillActivationStore
     ): FusionBundleActivator = FusionBundleActivator(
         registry = registry,
         skillInstaller = SkillInstallerPort(skillRegistry),
         mcpConnector = McpConnectorPort(mcpManager),
         promptInjector = EnginePromptPort(engineLazy),
         pluginInstaller = PluginInstallerPort(pluginRegistryLazy),
-        hubInstaller = HubInstallerPort(hubSource, skillRegistry, mcpManager)
+        hubInstaller = HubInstallerPort(hubSource, skillRegistry, mcpManager),
+        policyPort = PolicyPort(policyIndex, activationStore)
     )
 }
 
-// ── 五端口的 app 层适配（core 接口 → 真实子系统）────────────────────
+// ── 六端口的 app 层适配（core 接口 → 真实子系统）────────────────────
+
+/**
+ * 聚合策略端口 → SkillPolicyIndex（互斥/预算/触发词规则源）+
+ * SkillActivationStore（alwaysOn pin）。零 DI 环：两者均不依赖引擎链。
+ */
+private class PolicyPort(
+    private val policyIndex: com.apex.agent.core.tools.skill.SkillPolicyIndex,
+    private val activationStore: com.apex.agent.core.tools.skill.SkillActivationStore
+) : com.apex.agent.core.tools.fusion.FusionPolicyPort {
+    override fun registerPolicies(manifest: com.apex.agent.core.tools.fusion.FusionBundleManifest) {
+        val members = manifest.skills.map { it.skillId }.toSet() +
+            manifest.skillPicks.toSet() +
+            manifest.plugins.map { it.pluginId }.toSet()
+        policyIndex.register(manifest.id, manifest.policies, members)
+    }
+
+    override fun pinAlwaysOn(skillIds: List<String>) {
+        activationStore.setPinned(skillIds)
+        activationStore.activateAllFiltered(skillIds)
+    }
+
+    override fun unregisterPolicies(bundleId: String) {
+        policyIndex.unregister(bundleId)
+        activationStore.clearPinned()
+    }
+}
 
 /** 技能安装端口 → SkillRegistry.install / get。 */
 private class SkillInstallerPort(

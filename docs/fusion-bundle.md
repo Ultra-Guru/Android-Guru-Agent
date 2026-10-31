@@ -361,7 +361,7 @@ manifest 新增 `skillPicks[]` / `mcpPicks[]` 引用段 —— 成员不内联�
 市场手动启动）。组合器新增「官方仓库技能 / MCP」两段（懒加载目录勾选，
 写进 picks）——自建聚合从此可以先建套装再装设备。
 
-## 9. 测试
+## 10. 测试
 
 纯 JVM（JUnit4 + runTest + TemporaryFolder，手写 fake，无 mock 框架）：
 
