@@ -6,6 +6,8 @@ import com.apex.agent.platform.terminal.errors.TerminalError
 import com.apex.agent.platform.terminal.pty.FakeNativePty
 import com.apex.agent.platform.terminal.policy.TerminalPolicyImpl
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
+import com.apex.agent.platform.terminal.runtime.ExecutionBackendRegistry
+import com.apex.agent.platform.terminal.runtime.LocalShellBackend
 import com.apex.agent.platform.terminal.runtime.TerminalRuntimeImpl
 import com.apex.agent.platform.terminal.screen.RealVirtualTerminal
 import com.apex.agent.platform.TerminalWait.WaitCondition
@@ -22,6 +24,7 @@ class StdinLifecycleTest {
     private fun newRuntime(): TerminalRuntimeImpl = TerminalRuntimeImpl(
         native = FakeNativePty(),
         policy = TerminalPolicyImpl(),
+        backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend()),
         virtualTerminalFactory = { r, c -> RealVirtualTerminal(r, c) }
     )
 
@@ -130,6 +133,7 @@ class CursorExpirationTest {
         val rt = TerminalRuntimeImpl(
             native = FakeNativePty(),
             policy = TerminalPolicyImpl(),
+            backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend()),
             virtualTerminalFactory = { r, c -> RealVirtualTerminal(r, c) }
         )
         val s = rt.create().getOrThrow()
@@ -154,6 +158,7 @@ class WriteAcknowledgementTest {
         val rt = TerminalRuntimeImpl(
             native = FakeNativePty(),
             policy = TerminalPolicyImpl(),
+            backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend()),
             virtualTerminalFactory = { r, c -> RealVirtualTerminal(r, c) }
         )
         val s = rt.create().getOrThrow()

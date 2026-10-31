@@ -4,6 +4,8 @@ import com.apex.agent.platform.terminal.events.TerminalEvent
 import com.apex.agent.platform.terminal.pty.FakeNativePty
 import com.apex.agent.platform.terminal.policy.TerminalPolicyImpl
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
+import com.apex.agent.platform.terminal.runtime.ExecutionBackendRegistry
+import com.apex.agent.platform.terminal.runtime.LocalShellBackend
 import com.apex.agent.platform.terminal.runtime.TerminalRuntimeImpl
 import com.apex.agent.platform.terminal.screen.RealVirtualTerminal
 import kotlinx.coroutines.CoroutineScope
@@ -49,6 +51,7 @@ class PumpEofSemanticsTest {
         return TerminalRuntimeImpl(
             native = FakeNativePty(),
             policy = TerminalPolicyImpl(),
+            backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend()),
             virtualTerminalFactory = { r, c -> RealVirtualTerminal(r, c) },
             scope = CoroutineScope(SupervisorJob() + dispatcher),
             pumpScope = CoroutineScope(SupervisorJob() + dispatcher)
