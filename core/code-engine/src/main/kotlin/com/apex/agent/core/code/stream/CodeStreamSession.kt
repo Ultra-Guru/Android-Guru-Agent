@@ -1,0 +1,1103 @@
+package com.apex.agent.core.code.stream
+
+import com.apex.agent.core.engine.AgentEvent
+import com.apex.agent.core.engine.ToolCallOrigin
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+
+/**
+ * # Code Stream Session — 胶囊时间轴事件状态机（渲染通道的数据源）
+ *
+ * ## 定位（VM 双通道架构的「渲染半边」）
+ *
+ * CodeViewModel 的 collect 循环把每个 AgentEvent 喂给本会话
+ * （[onEvent]，纯归约 + 置脏），**副作用通道**（长任务追踪 / 深水区
+ * 升级观察器 / 会话落盘）留在 VM 原有 reduce——渲染与副作用彻底分流，
+ * 引擎与既有功能零改动。
+ *
+ * ## 25ms ≤40Hz 攒批
+ *
+ * 事件到来只置脏，**不立刻重组 UI**；VM 的渲染 ticker 每拍调 [tick]：
+ * 脏了才重建一次不可变 [CodeStreamSnapshot]（时间轴 + 终端尾窗 + 派生
+ * 统计）。流式风暴下 UI 重组频率被钉死在 25ms 一档。
+ *
+ * ## 幂等（规格书【1】）
+ *
+ * callId 即幂等键：重复的 ToolCallStart/ToolOutputChunk/ToolCallComplete
+ * 对同一 callId 天然合并（首次创建、后续更新），重放安全——检查点恢复
+ * （Last-Event-ID 续传）语义建立在这一点上。
+ *
+ * ## 验证闭环聚合
+ *
+ * edit/write 落盘后紧跟的 lint/test 归入同一 [VerifyCycle]；下一轮 edit
+ * 开始时上一轮闭环收口为可折叠 [StreamEntry.VerifyCycleEntry]（轮内胶囊
+ * 从时间轴折叠进卡片，展开态由 UI 自持）——闭环自延长时时间轴不刷屏。
+ *
+ * 线程模型：与 VM collect 协程同线程串行调用；快照只读共享。
+ */
+class CodeStreamSession {
+
+    // ═══ 内部状态（全部只在 onEvent/inject 变更）═══
+
+    private val entries = mutableListOf<StreamEntry>()
+    private val toolCalls = LinkedHashMap<String, StreamToolCall>()
+    private val terminalBuffers = LinkedHashMap<String, TerminalPulseBuffer>()
+
+    /** 已收到过 preview 片段的 callId（结构化工具标识：权威收尾 = JSON 信封，
+     * 不进终端视图；无 preview 的旧工具收尾文本仍进 —— 两种路径都保输出完整）。 */
+    private val previewSeenCalls = mutableSetOf<String>()
+
+    /** 参数流式状态表（callId → 分片缓冲 + 追踪器；Start/终态即移除）。 */
+    private val argsStreams = LinkedHashMap<String, ArgsStreamState>()
+
+    /** 时间轴条目 id 稳定自增（会话生命周期内唯一）。 */
+    private var entrySeq = 0L
+
+
+    /** 当前流式思考条目（ThinkingStart..ThinkingComplete 窗口内非空）。 */
+    private var streamingThinking: StreamEntry.ThinkingEntry? = null
+
+    /** 当前流式助手条目。 */
+    private var streamingAssistant: StreamEntry.AssistantEntry? = null
+
+    /** 活跃 BASH 胶囊（终端面板跟随；run 结束或下个 BASH 到来时切换）。 */
+    private var activeTerminalCallId: String? = null
+
+    // ── 终端面板流水式折叠信号（用户需求：「终端命令运行时展开跟随输出，
+    //    完成后自动折叠成胶囊」；与思考/工具胶囊同款生命周期）──
+    /** 活跃 BASH 正在执行（面板保持展开）；Complete/Error/Aborted 收束。 */
+    private var terminalBusy = false
+
+    /** 头行展示的命令摘要（活跃/最近 BASH 的首行命令）。 */
+    private var terminalCommandSummary = ""
+
+    /** 最近一次终端命令退出码（完成态头行展示；null = 未知）。 */
+    private var terminalExitCode: Int? = null
+
+    private val affectedFiles = LinkedHashSet<String>()
+    private var lastError: CodeStreamSnapshot.ErrorInfo? = null
+    private var toolCallCount = 0
+    private var failedToolCallCount = 0
+
+    /** 本 run 起点时的累计失败数（Complete 时差值 = 本轮失败数）。 */
+    private var runStartFailedCount = 0
+
+    // ═══ 本轮工具使用聚合（溯源三分类；beginRun 归零，与 affectedFiles
+    //    同款 run 粒度会计）——加载卡实时计数 / 收尾统计卡的共同数据源。 ═══
+
+    /** callId → (溯源, 标签)。put 语义：ArgsDelta 建的 BUILTIN 占位在
+     *  Start 升级时被引擎权威打标覆盖（计数不重复，分类可修正）。 */
+    private val runToolOrigins = LinkedHashMap<String, Pair<ToolCallOrigin, String?>>()
+
+    /** 本轮失败的工具调用数（run 粒度；加载卡/收尾卡共用，beginRun 归零）。 */
+    private var runFailedCount = 0
+
+    // ═══ 验证闭环追踪 ═══
+    private var cycleRound = 0
+    private var openCycleEdits = mutableListOf<String>()
+    private var openCycleVerifies = mutableListOf<String>()
+
+    private var dirty = false
+
+    // ═══ 公开 API ═══
+
+    /** 新 run 开始：用户气泡入轴 + 运行态归零（时间轴跨 run 累积）。 */
+    fun beginRun(userText: String) {
+        // 收口上一轮残留的流式条目：中止路径没有 Complete 事件，引用
+        // 悬挂会导致下一轮首个 Chunk 把新文本拼进旧气泡（跨轮串台）
+        streamingThinking?.let { closeStreamingEntry(it) }
+        streamingThinking = null
+        streamingAssistant?.let { closeStreamingEntry(it) }
+        streamingAssistant = null
+        // 上一轮的在飞胶囊同样静默收口（防御：中止事件未达且本地收尾
+        // 遗漏的路径，RUNNING/WAITING 胶囊带进新 run 会无限计时转圈）
+        finalizeInFlightCapsules(System.currentTimeMillis())
+        // 参数流式追踪器同批清理（未达 Start 的残留分片缓冲不带入新 run）
+        argsStreams.clear()
+        // 文档语义：「本轮运行」触碰的文件 —— 每 run 归零重新累计
+        affectedFiles.clear()
+        // 本轮工具使用聚合同款归零（溯源计数 / 技能 / 服务器清单）
+        runToolOrigins.clear()
+        runFailedCount = 0
+        // 统计收尾卡的本轮失败数基线（failedToolCallCount 跨 run 累积）
+        runStartFailedCount = failedToolCallCount
+        append(StreamEntry.UserEntry(nextId(), userText))
+        activeTerminalCallId = null
+        // 新 run 归零终端面板三信号（上一轮命令的尾窗不再展示）
+        terminalBusy = false
+        terminalCommandSummary = ""
+        terminalExitCode = null
+    }
+
+    /**
+     * VM 侧本地防御式收尾（用户点「停止」时调用，对齐 Agent 屏
+     * AgentChatViewModel.abort 的防御语义）。
+     *
+     * 收集协程取消后，引擎 catch(CancellationException) 里的
+     * emit(AgentEvent.Aborted) 会在已取消协程上再次抛出取消异常——
+     * 收尾事件永远到不了本会话；不本地收口，时间轴将冻结在流式态
+     * （结论气泡永远挂「▍」光标、RUNNING 胶囊无限计时）。
+     *
+     * 幂等安全：无任何在飞条目（正常完成后误调）时 no-op，
+     * 不落多余的「已中止」卡。
+     */
+    fun abortLocally(nowMs: Long = System.currentTimeMillis()) {
+        val hadInFlight = streamingThinking != null || streamingAssistant != null ||
+            toolCalls.values.any { !it.isTerminal }
+        if (!hadInFlight) return
+        finalizeAbortedState(nowMs)
+    }
+
+    /** VM 注入系统说明行（AUTO 预检决策 / 深水区升级等）。 */
+    fun injectSystem(text: String) {
+        append(StreamEntry.SystemEntry(nextId(), text))
+    }
+
+    /** 事件归约入口（纯状态机，无 IO 无回调）。 */
+    fun onEvent(event: AgentEvent) {
+        when (event) {
+            // 迭代声明不进时间轴（用户反馈：「每次调用工具都显示迭代，这个词
+            // 没有意义」）——「第 N 轮迭代」状态行对流程理解零增益，工具胶囊
+            // / 思考 / 输出本身已经构成完整时序；轮次统计仍由 Complete 收尾行
+            // 汇总展示。
+            is AgentEvent.IterationStart -> Unit
+
+            is AgentEvent.ThinkingStart -> Unit // 思考条目由首个 Chunk 创建
+
+            is AgentEvent.ThinkingChunk -> {
+                // 空思考分片不建卡（2026-10 用户反馈）：部分网关对不思考的
+                // 模型也每帧发 reasoning_content:"" —— 旧实现建出一张永远
+                // 「思考中」的空思考卡（reasoningBuilder 恒空 → 引擎不发
+                // ThinkingComplete → 永不收尾）。首块空白直接忽略；已有条目
+                // 时空白拼接无害但也无意义，一并跳过。
+                if (event.text.isEmpty()) return
+                val cur = streamingThinking
+                if (cur == null) {
+                    if (event.text.isBlank()) return
+                    streamingThinking = StreamEntry.ThinkingEntry(nextId(), event.text, true)
+                    append(streamingThinking!!)
+                } else {
+                    // 引用同步回写：不回写则 cur 永远停在首块快照，第三个
+                    // Chunk 起条目被「首块+最新块」覆盖（中间块丢失）。
+                    val merged = cur.copy(text = cur.text + event.text, isStreaming = true)
+                    streamingThinking = merged
+                    replaceEntry(merged.id, merged)
+                }
+            }
+
+            is AgentEvent.ThinkingComplete -> {
+                val cur = streamingThinking
+                if (cur == null) {
+                    // 无先导 Chunk 的完整思考（非流式/降级 provider）不得静默丢弃
+                    if (event.fullThought.isNotBlank()) {
+                        append(StreamEntry.ThinkingEntry(nextId(), event.fullThought, false))
+                    }
+                } else if (event.fullThought.isBlank() && cur.text.isBlank()) {
+                    // 全程空白思考（模型未思考/网关空串）：移除占位卡而非留白
+                    removeEntry(cur.id)
+                } else {
+                    // 引用同步回写后 cur.text 即全量累积；ThinkingComplete
+                    // 的 fullThought 与本轮窗口同源（引擎 reasoningBuilder
+                    // 每轮局部重建、UI 引用同轮首块起累积），保持 ifBlank 兑底。
+                    replaceEntry(cur.id, cur.copy(text = event.fullThought.ifBlank { cur.text }, isStreaming = false))
+                }
+                streamingThinking = null
+            }
+
+            // ═══ 参数增量（LLM 流式生成 tool_calls 期间逐帧上抛）═══
+            // 先于 Start 到达：建立/刷新「正在生成参数」等待态胶囊——写/
+            // 编辑类经 [StreamingArgsTracker] 容错提取半截 JSON 的文件内容，
+            // 胶囊内嵌代码窗即可实时渲染「代码正在写入」（绿增红删）。
+            is AgentEvent.ToolCallArgsDelta -> onToolArgsDelta(event)
+
+            is AgentEvent.ToolCallStart -> onToolStart(event)
+
+            is AgentEvent.ToolOutputChunk -> {
+                toolCalls[event.callId]?.let { call ->
+                    if (event.preview) {
+                        // 实时预览片段（TerminalExec 执行期间的 stdout/stderr）：
+                        // 终端视图唯一入口。标记后本次调用的非 preview 收尾不再
+                        // 灌入（见下）。
+                        previewSeenCalls.add(event.callId)
+                        terminalBuffers[event.callId]?.append(event.chunk)
+                        if (call.kind == ToolKind.BASH) activeTerminalCallId = event.callId
+                    } else if (call.kind == ToolKind.BASH && event.callId in previewSeenCalls) {
+                        // 结构化工具的权威收尾分片（TerminalExec 的最终 JSON 信封，
+                        // 可达 ~20K）：不进终端视图 —— 否则把已流式呈现的干净
+                        // stdout/stderr 预览整段挤出 16K 尾窗，面板/详情弹层只剩
+                        // JSON 噶音（权威数据在 Complete.output，详情另有通道）。
+                    } else {
+                        // 旧工具（无 preview 能力）或非 BASH 工具：分片即展示文本，
+                        // 维持既有行为（脉冲缓冲 + logTail 尾窗同步）。
+                        terminalBuffers[event.callId]?.append(event.chunk)
+                        val merged = call.logTail + event.chunk
+                        updateCall(call.copy(logTail = merged.takeLast(NON_BASH_LOG_TAIL_CHARS)))
+                        if (call.kind == ToolKind.BASH) activeTerminalCallId = event.callId
+                    }
+                }
+            }
+
+            is AgentEvent.ToolProgress -> {
+                toolCalls[event.callId]?.let { call ->
+                    updateCall(call.copy(progressPercent = event.percent, progressMessage = event.message))
+                }
+            }
+
+            is AgentEvent.ToolCallComplete -> onToolComplete(event)
+
+            is AgentEvent.ResponseChunk -> {
+                // 空回复分片不建条目（与空思考卡同源：部分 provider 发
+                // content:"" 的 tool_calls 前导帧）——空气泡流式占位无意义
+                if (event.text.isEmpty()) return
+                // 正文流出 = 思考阶段已过（同 onToolStart 的防御性收口）
+                closeStreamingThinking()
+                val cur = streamingAssistant
+                if (cur == null) {
+                    if (event.text.isBlank()) return
+                    streamingAssistant = StreamEntry.AssistantEntry(nextId(), event.text, true)
+                    append(streamingAssistant!!)
+                } else {
+                    // 引用同步回写（同 ThinkingChunk）：不回写则流式条目
+                    // 从第三个 Chunk 起丢失中间块——旧代码靠 Complete 的
+                    // fullText 整体覆写掩盖，本次改为累积优先后必须修。
+                    val merged = cur.copy(text = cur.text + event.text, isStreaming = true)
+                    streamingAssistant = merged
+                    replaceEntry(merged.id, merged)
+                }
+            }
+
+            is AgentEvent.ResponseComplete -> {
+                // 回复收尾同样收口思考（GOAL 停止提示等 notice 思考分片
+                // 紧跟 ResponseComplete、无 ThinkingComplete 的路径）
+                closeStreamingThinking()
+                val cur = streamingAssistant
+                if (cur == null) {
+                    // 同上：非流式路径的整段结论直接建条目
+                    if (event.fullText.isNotBlank()) {
+                        append(StreamEntry.AssistantEntry(nextId(), event.fullText, false))
+                    }
+                } else if (event.fullText.isBlank() && cur.text.isBlank()) {
+                    // 全程空白回复（纯工具调用轮）：移除空气泡而非留白
+                    removeEntry(cur.id)
+                } else {
+                    // ═══ 一致性修复（对齐 Agent 屏 AgentChatEventApplier 同款）═══
+                    // 引擎 contentBuilder 每轮迭代局部重建（ReAct 多轮只带
+                    // 末轮文本），完成事件用 fullText 整体覆写会把跨轮累积
+                    // 的气泡截成末轮残句（用户实测：多轮工具调用后结论
+                    // 只剩末轮两三个字）。UI 已流式累积的文本才是用户看到
+                    // 的全文；fullText 仅在 UI 侧为空时兑底（反思修正轮等
+                    // 文本可能从未流经 UI，避免落空气泡）。
+                    val finalText = cur.text.ifBlank { event.fullText }
+                    replaceEntry(cur.id, cur.copy(text = finalText, isStreaming = false))
+                }
+                streamingAssistant = null
+            }
+
+            is AgentEvent.ContextCompressed -> {
+                append(
+                    StreamEntry.StatusEntry(
+                        nextId(),
+                        "上下文压缩 ${event.beforeTokens} → ${event.afterTokens}（${event.strategy}）"
+                    )
+                )
+            }
+
+            is AgentEvent.Error -> {
+                // 出错即收束：流式思考/结论条目定格为终态（错误后引擎不会
+                // 再续流，「思考中…」不能带出运行边界）
+                closeStreamingThinking()
+                streamingAssistant?.let { closeStreamingEntry(it) }
+                streamingAssistant = null
+                lastError = CodeStreamSnapshot.ErrorInfo(event.message, event.recoverable)
+                val related = activeTerminalCallId
+                // 引擎级错误收束终端「运行中」信号（否则面板永远脉冲）
+                terminalBusy = false
+                append(
+                    StreamEntry.ErrorEntry(
+                        id = nextId(),
+                        message = event.message,
+                        recoverable = event.recoverable,
+                        hint = if (event.recoverable) "可重试：检查参数或换一个改法" else null,
+                        relatedCallId = related
+                    )
+                )
+            }
+
+            is AgentEvent.Complete -> {
+                // 运行收束：残留的流式思考/结论条目防御性定格（标准线库
+                // 事件集没有思考完成事件、引擎 notice 路径也只发 Chunk——
+                // 「思考中…」不能带出运行边界）
+                closeStreamingThinking()
+                streamingAssistant?.let { closeStreamingEntry(it) }
+                streamingAssistant = null
+                closeOpenCycle()
+                // 结构化统计收尾卡（取代旧纯文本「完成 · N 轮 · N 次工具 · Ns」
+                // 行）：轮数/调用数/失败数/文件数/耗时由 UI 渲染成 stat chips。
+                // 纯问答轮（零工具零文件）不出重卡——保留旧轻量状态行。
+                val hadWork = event.totalToolCalls > 0 || affectedFiles.isNotEmpty()
+                if (hadWork) {
+                    append(
+                        StreamEntry.RunStatsEntry(
+                            id = nextId(),
+                            iterations = event.totalIterations,
+                            toolCalls = event.totalToolCalls,
+                            failedCalls = (failedToolCallCount - runStartFailedCount).coerceAtLeast(0),
+                            filesTouched = affectedFiles.size,
+                            durationMs = event.totalDurationMs,
+                            // 溯源分解（收尾卡 stat chips 数据源）：技能 / MCP
+                            // 计数与清单从本轮会计现算，旧档恢复缺省 0。
+                            skillCalls = runToolOrigins.countOf(ToolCallOrigin.SKILL),
+                            mcpCalls = runToolOrigins.countOf(ToolCallOrigin.MCP),
+                            skills = runToolOrigins.labelsOf(ToolCallOrigin.SKILL),
+                            mcpServers = runToolOrigins.labelsOf(ToolCallOrigin.MCP)
+                        )
+                    )
+                } else {
+                    append(StreamEntry.StatusEntry(nextId(), "完成 · ${event.totalIterations} 轮 · ${event.totalDurationMs / 1000}s"))
+                }
+                if (affectedFiles.isNotEmpty()) {
+                    append(StreamEntry.FileChipsEntry(nextId(), affectedFiles.toList()))
+                }
+            }
+
+            is AgentEvent.Aborted -> {
+                closeOpenCycle()
+                // 中止同样收口流式条目与在飞胶囊（与 beginRun 双保险：
+                // Aborted 后可能没有下一轮 beginRun，气泡不能永远挂
+                // 「生成中」，RUNNING 胶囊不能无限计时）
+                finalizeAbortedState()
+            }
+
+            is AgentEvent.UserInputRequired -> {
+                append(StreamEntry.StatusEntry(nextId(), "等待输入：${event.prompt.take(60)}"))
+            }
+
+            is AgentEvent.PlanGenerated ->
+                append(StreamEntry.StatusEntry(nextId(), "计划已生成（${event.plan.steps.size} 步）"))
+
+            is AgentEvent.PlanAwaitingConfirmation ->
+                append(StreamEntry.StatusEntry(nextId(), "等待计划确认"))
+
+            is AgentEvent.StepStart ->
+                append(StreamEntry.StatusEntry(nextId(), event.description.take(80)))
+
+            is AgentEvent.PlanConfirmed -> Unit
+
+            // 真实用量更新（服务端 token 统计）—— 归 VM/仪表盘通道消费，
+            // 胶囊时间轴不展示用量条目（低频元数据，非工作流事件）。
+            is AgentEvent.UsageUpdated -> Unit
+
+            // #214 用户输入等待超时：引擎已按「未决」继续 —— 时间轴留痕说明，
+            // 挂起的提问输入框由 VM 侧收到同一事件后关闭。
+            is AgentEvent.UserInputExpired -> {
+                append(StreamEntry.StatusEntry(nextId(), "输入等待超时，已按未决继续"))
+            }
+
+            // LLM 请求容错（重试/降级续跑）：过程可见性状态行，不弹错误横幅。
+            is AgentEvent.LlmRetryScheduled -> {
+                val text = if (event.delayMs > 0) {
+                    "请求失败（${event.reason}），${event.delayMs / 1000}s 后第 ${event.attempt} 次重试"
+                } else {
+                    event.reason
+                }
+                append(StreamEntry.StatusEntry(nextId(), text))
+            }
+        }
+    }
+
+    /**
+     * 渲染 ticker 每拍调用：脉冲缓冲过时间窗 + 脏则重建快照。
+     *
+     * @return 新快照（无变化 → null，VM 跳过 StateFlow 更新）
+     */
+    fun tick(nowMs: Long = System.currentTimeMillis()): CodeStreamSnapshot? {
+        var pulsed = false
+        terminalBuffers.values.forEach { buf ->
+            if (buf.tick(nowMs) != null) pulsed = true
+        }
+        if (!dirty && !pulsed) return null
+        dirty = false
+        return buildSnapshot()
+    }
+
+    /** 强制重建（恢复/测试用）。 */
+    fun snapshot(): CodeStreamSnapshot {
+        dirty = false
+        return buildSnapshot()
+    }
+
+    /** 时间轴条目数（测试与落盘裁剪依据）。 */
+    fun entryCount(): Int = entries.size
+
+    /**
+     * 整轴替换（检查点/旧档恢复用）：清空内部状态后灌入既有条目。
+     *
+     * 恢复的条目全部视为终态（isStreaming 强制 false 由调用方保证——
+     * mapper 产出即终态）；工具表与终端缓冲不重建（历史 BASH 尾窗在
+     * DetailSheet 不可回放是已声明的降级）。
+     */
+    fun replaceAll(restored: List<StreamEntry>) {
+        entries.clear()
+        entries.addAll(restored)
+        // 序号回拨到恢复轴的最大 e-N：不回拨则 nextId() 从 1 重发，与恢复
+        // 条目撞号 → LazyColumn 重复 key 直接崩溃（P0）
+        entrySeq = restored.maxOfOrNull { entrySeqOf(it.id) } ?: 0L
+        toolCalls.clear()
+        terminalBuffers.clear()
+        previewSeenCalls.clear()
+        affectedFiles.clear()
+        // committedFiles 语义恢复：从最后一个 FileChipsEntry 回填（重启后
+        // 会话快照的 committedFiles 不再清零）
+        (restored.lastOrNull { it is StreamEntry.FileChipsEntry } as? StreamEntry.FileChipsEntry)
+            ?.let { affectedFiles.addAll(it.files) }
+        streamingThinking = null
+        streamingAssistant = null
+        activeTerminalCallId = null
+        lastError = null
+        terminalBusy = false
+        terminalCommandSummary = ""
+        terminalExitCode = null
+        argsStreams.clear()
+        // 溯源会计从恢复轴重建：恢复条目全部视为「本轮」基线（idle 期两档
+        // 渲染等价，不消费；下一次 beginRun 归零后进入真实 run 粒度会计）
+        runToolOrigins.clear()
+        restored.forEach { entry ->
+            if (entry is StreamEntry.ToolCapsuleEntry) {
+                runToolOrigins[entry.call.id] = entry.call.origin to entry.call.originLabel
+            }
+        }
+        runFailedCount = restored.count {
+            (it as? StreamEntry.ToolCapsuleEntry)?.call?.status == ToolCallStatus.FAILED
+        }
+        toolCallCount = restored.count { it is StreamEntry.ToolCapsuleEntry }
+        failedToolCallCount = restored.count {
+            (it as? StreamEntry.ToolCapsuleEntry)?.call?.status == ToolCallStatus.FAILED
+        }
+        restored.forEach { entry ->
+            if (entry is StreamEntry.ToolCapsuleEntry) {
+                toolCalls[entry.call.id] = entry.call
+            }
+        }
+        dirty = true
+    }
+
+    /** 清空时间轴（新会话）。 */
+    fun clear() {
+        replaceAll(emptyList())
+    }
+
+    /** 只读条目访问（检查点序列化用）。 */
+    fun entriesSnapshot(): List<StreamEntry> = entries.toList()
+
+    /** 终端胶囊的尾窗内容（DetailSheet 查看历史 BASH 输出；含滚出裁剪标记）。 */
+    fun terminalContentOf(callId: String): String? =
+        terminalBuffers[callId]?.renderedContent()?.takeIf { it.isNotEmpty() }
+
+    // ═══ 内部：工具生命周期 ═══
+
+    private fun onToolStart(event: AgentEvent.ToolCallStart) {
+        val existing = toolCalls[event.callId]
+        // 幂等：已越过等待态的 Start 重放直接跳过（检查点恢复/重放安全）。
+        // 参数流式期建立的 WAITING 胶囊走下方升级路径（全量参数补全字段）。
+        if (existing != null && existing.status != ToolCallStatus.WAITING) return
+        // 工具开跑 = 思考阶段已过：收口可能仍挂着「思考中…」的流式卡
+        //（引擎 notice 类思考分片没有 Complete 事件，见 closeStreamingThinking）
+        closeStreamingThinking()
+        // 工具开跑 = 本段正文已收束：收口流式气泡 —— 工具后的新正文（下一轮
+        // 迭代引导语 / 最终回答）另起新条目落位时间轴末尾（工具之后），
+        // 不再原位并进工具前的旧气泡（收尾回答悬在工具记录上方的根因，
+        // 20261031 用户实测）
+        closeStreamingAssistant()
+        // 溯源优先：引擎打标（技能 / MCP）覆盖名字启发式 —— 技能工具不再
+        // 被误折进「MCP 自定义」；未打标（kit 路径 / 旧档）回退名字归一。
+        val kind = kindOf(event.toolName, event.origin)
+        val args = parseArgs(event.arguments)
+        val resolvedTarget = targetOf(kind, args, event.toolName)
+        // 本轮溯源会计：put 语义覆盖 ArgsDelta 期的 BUILTIN 占位（不重复计数）
+        runToolOrigins[event.callId] = event.origin to event.originLabel
+        val call = if (existing == null) {
+            toolCallCount++
+            StreamToolCall(
+                id = event.callId,
+                kind = kind,
+                displayName = displayNameOf(kind, event.origin, event.originLabel),
+                target = resolvedTarget,
+                argsSummary = args.values.firstOrNull()?.toString()?.take(ARGS_SUMMARY_MAX) ?: "",
+                status = ToolCallStatus.RUNNING,
+                startAt = System.currentTimeMillis(),
+                origin = event.origin,
+                originLabel = event.originLabel
+            )
+        } else {
+            // 等待态升级为运行态：流式预览保留（代码窗持续到 Complete 自动
+            // 收回）；族名/目标/摘要以全量参数为准（流式期可能只提取到前缀）
+            existing.copy(
+                kind = kind,
+                displayName = displayNameOf(kind, event.origin, event.originLabel),
+                target = resolvedTarget.takeIf { it != UNKNOWN_TARGET } ?: existing.target,
+                argsSummary = args.values.firstOrNull()?.toString()?.take(ARGS_SUMMARY_MAX)
+                    ?: existing.argsSummary,
+                status = ToolCallStatus.RUNNING,
+                startAt = System.currentTimeMillis(),
+                origin = event.origin,
+                originLabel = event.originLabel
+            )
+        }
+        toolCalls[event.callId] = call
+        // 参数追踪器退役：全量参数已入胶囊，半截提取不再需要（内存即回收）
+        argsStreams.remove(event.callId)
+        if (kind == ToolKind.BASH) {
+            terminalBuffers[event.callId] = TerminalPulseBuffer()
+            activeTerminalCallId = event.callId
+            // 新命令开跑：面板展开跟随（busy=true），头行换成新命令摘要
+            terminalBusy = true
+            terminalCommandSummary = call.target
+            terminalExitCode = null
+        }
+        trackVerifyCycleStart(kind, event.callId)
+        if (existing == null) {
+            append(StreamEntry.ToolCapsuleEntry(toolEntryId(event.callId), call))
+        } else {
+            updateCall(call)
+        }
+    }
+
+    // ═══ 内部：参数流式预览（ToolCallArgsDelta 归约）═══
+
+    /** 每个 callId 的参数流式状态：原始分片缓冲 + 键锚定追踪器。 */
+    private class ArgsStreamState {
+        val raw = StringBuilder()
+        var tracker: StreamingArgsTracker? = null
+        var toolName = ""
+    }
+
+    /**
+     * 参数增量归约：把 LLM 逐帧吐出的 arguments 分片喂进键锚定追踪器，
+     * 半截 JSON 里已到达的文件内容/命令实时提取为 [StreamArgsPreview]。
+     *
+     * 胶囊建立时机 = 首个可展示内容出现（目标路径/命令或代码首字节）：
+     * MCP/未知族（无追踪器）不建等待态胶囊，Start 到达时按原路径建卡；
+     * 名字晚到的 provider 由 raw 缓冲兜底（建槽时回放全量分片，不丢前缀）。
+     */
+    private fun onToolArgsDelta(event: AgentEvent.ToolCallArgsDelta) {
+        val existing = toolCalls[event.callId]
+        // Start 已到（RUNNING/终态）= 全量参数已入胶囊，迟到/重放分片无信息量
+        if (existing != null && existing.status != ToolCallStatus.WAITING) return
+        // 参数分片 = 工具意图先行（可先于 Start 到达）：与 onToolStart 同款
+        // 收口正文段 —— 流式参数开始即本段正文定格，工具后的正文（含最终
+        // 回答）另起新条目追加到时间轴末尾，保证时序「思考 → 工具 → 结论」
+        closeStreamingAssistant()
+        val state = argsStreams.getOrPut(event.callId) { ArgsStreamState() }
+        if (event.toolName.isNotBlank()) state.toolName = event.toolName
+        state.raw.append(event.delta)
+        if (state.tracker == null && state.toolName.isNotBlank()) {
+            // 首次建槽：回放全部已缓冲分片（raw 已含本帧，勿重复 append）
+            state.tracker = StreamingArgsTracker.forKind(ToolKind.fromToolName(state.toolName))
+                ?.also { it.append(state.raw.toString()) }
+        } else {
+            state.tracker?.append(event.delta)
+        }
+        val preview = state.tracker?.preview() ?: return
+        if (existing != null) {
+            // 等待态胶囊已建：刷新预览与目标（path/命令可能随后续分片补全）
+            updateCall(
+                existing.copy(
+                    streamingPreview = preview,
+                    target = preview.target?.takeIf { it.isNotBlank() } ?: existing.target
+                )
+            )
+            return
+        }
+        // 建立等待态胶囊：工具意图先于执行可见（计数在升级路径不再重复）
+        val kind = ToolKind.fromToolName(state.toolName)
+        val call = StreamToolCall(
+            id = event.callId,
+            kind = kind,
+            displayName = displayNameOf(kind),
+            target = preview.target?.takeIf { it.isNotBlank() } ?: UNKNOWN_TARGET,
+            status = ToolCallStatus.WAITING,
+            startAt = System.currentTimeMillis(),
+            streamingPreview = preview
+        )
+        toolCalls[event.callId] = call
+        toolCallCount++
+        // 溯源占位记账（BUILTIN）：Start 到达时被引擎权威打标覆盖（put 语义）
+        runToolOrigins[event.callId] = ToolCallOrigin.BUILTIN to null
+        append(StreamEntry.ToolCapsuleEntry(toolEntryId(event.callId), call))
+    }
+
+    private fun onToolComplete(event: AgentEvent.ToolCallComplete) {
+        val existing = toolCalls[event.callId] ?: run {
+            // 恢复/重放场景：Start 丢失时补建（幂等）——溯源随 Complete
+            // 透传（引擎双事件同源字段），补建胶囊同样拿到权威分类。
+            onToolStart(
+                AgentEvent.ToolCallStart(
+                    callId = event.callId,
+                    toolName = event.toolName,
+                    arguments = event.arguments,
+                    origin = event.origin,
+                    originLabel = event.originLabel
+                )
+            )
+            toolCalls[event.callId] ?: return
+        }
+        // 幂等闸：已终态的调用重放 Complete 直接跳过——否则
+        // failedToolCallCount 重复自增、diff/summary 被旧事件覆盖
+        if (existing.status != ToolCallStatus.RUNNING && existing.status != ToolCallStatus.WAITING) {
+            return
+        }
+        val buffer = terminalBuffers[event.callId]
+        buffer?.flush()
+        // P0（输出完整性）：终端视图优先脉冲缓冲（含滚出裁剪标记）；
+        // 缓冲空（无 preview 的旧工具/恢复会话）退回 event.output 尾窗。
+        val logTail = buffer?.renderedContent()?.takeIf { it.isNotEmpty() }
+            ?: safeTakeLast(existing.logTail + event.output, NON_BASH_LOG_TAIL_CHARS)
+        previewSeenCalls.remove(event.callId)
+
+        val diff = if (existing.isEditFamily) UnifiedDiffParser.parse(event.fullOutput.ifBlank { event.output }) else null
+        val hunksTotal = diff?.hunks?.size ?: 0
+        val status = when {
+            !event.success -> ToolCallStatus.FAILED
+            existing.isEditFamily -> if (hunksTotal > 0) ToolCallStatus.APPLIED else ToolCallStatus.SUCCESS
+            else -> ToolCallStatus.SUCCESS
+        }
+        // P0（输出完整性）：退出码优先结构化元数据（引擎从 TerminalExec 的
+        // Complete.meta 透传的 waitpid 真实值），正则文本解析仅作兑底 ——
+        // 旧正则永远匹配不上 JSON 形态的 "exit_code":0（下划线断裂模式），
+        // 导致胶囊/面板永远拿不到退出码、绿红点失明。
+        val exitCode = event.exitCode ?: exitCodeOf(event.output, existing.kind)
+
+        val updated = existing.copy(
+            status = status,
+            endAt = System.currentTimeMillis(),
+            durationMs = event.durationMs,
+            hunksApplied = if (event.success) hunksTotal else 0,
+            hunksTotal = hunksTotal,
+            exitCode = exitCode,
+            logTail = logTail,
+            diffText = diff?.takeIf { it.hunks.isNotEmpty() }?.let { event.fullOutput.ifBlank { event.output } },
+            progressPercent = null,
+            summary = summaryOf(status, diff, exitCode, event.output),
+            // 终态即收回实时代码窗（自动折叠为单行胶囊；详情看 diff/日志）
+            streamingPreview = null
+        )
+        updateCall(updated)
+        if (status == ToolCallStatus.FAILED) {
+            failedToolCallCount++
+            runFailedCount++
+        }
+        if (existing.isEditFamily) {
+            existing.target.takeIf { it.isNotBlank() && it != UNKNOWN_TARGET }?.let { affectedFiles.add(it) }
+        }
+        if (activeTerminalCallId == event.callId) {
+            // 面板保留最后一次 BASH 的内容（可翻看），直到下一个 BASH 开始；
+            // 流水式折叠：命令收束 → busy=false（UI 自动折叠成头行胶囊），
+            // 头行保留命令摘要 + 退出码供回看
+            terminalBusy = false
+            terminalExitCode = exitCode
+        }
+        trackVerifyCycleEnd(existing.kind, event.callId, event.success)
+        // ═══ Git 操作可视化（git 工具成功/失败 → 结构化卡紧跟胶囊入轴）═══
+        // 解析全部防御式：吞不下的输出返回 null，静默跳过（通用胶囊仍在）。
+        // 失败也出卡（诚实可视化：环境未就绪 / 非仓库 / 命令失败一眼可见，
+        // 引导文案进 note）——不再只在成功时展示，「git 不能是假的」。
+        if (existing.kind == ToolKind.GIT) {
+            val summary = if (event.success) {
+                GitOpParser.parse(event.toolName, event.output)
+            } else {
+                GitOpParser.parseFailure(event.toolName, event.output)
+            }
+            summary?.let { append(StreamEntry.GitOpEntry(nextId(), it, event.callId)) }
+        }
+    }
+
+    // ═══ 内部：中止收尾 ═══
+
+    /** 中止态统一收口：流式思考/结论落终态（已累积文本保留）+ 在飞胶囊
+     * 置 PARTIAL + 「已中止」停止卡。事件路径（[AgentEvent.Aborted]）与
+     * VM 本地收尾（[abortLocally]）共用。 */
+    private fun finalizeAbortedState(nowMs: Long = System.currentTimeMillis()) {
+        streamingThinking?.let { closeStreamingEntry(it) }
+        streamingThinking = null
+        streamingAssistant?.let { closeStreamingEntry(it) }
+        streamingAssistant = null
+        // 中止时终端命令不会再来 Complete —— 运行中信号就地收束
+        terminalBusy = false
+        // 参数流式同样收口：生成中途的追踪器/分片缓冲不再有任何消费者
+        argsStreams.clear()
+        finalizeInFlightCapsules(nowMs)
+        append(StreamEntry.StopEntry(nextId(), ABORTED_TEXT))
+    }
+
+    /**
+     * 在飞（RUNNING/WAITING）胶囊置 PARTIAL：没有结局的调用按中断折叠
+     * 计时 —— 与检查点恢复同语义（CodeStreamCheckpoint.toEntries：正在跑
+     * 的调用没有结局，恢复后由用户决定单工具重试或整轮重跑）。
+     */
+    private fun finalizeInFlightCapsules(nowMs: Long) {
+        terminalBuffers.values.forEach { it.flush() }
+        toolCalls.values
+            .filter { it.status == ToolCallStatus.RUNNING || it.status == ToolCallStatus.WAITING }
+            .forEach { call ->
+                updateCall(
+                    call.copy(
+                        status = ToolCallStatus.PARTIAL,
+                        endAt = if (call.startAt > 0) nowMs else call.endAt,
+                        summary = ABORTED_TEXT,
+                        streamingPreview = null
+                    )
+                )
+            }
+    }
+
+    // ═══ 内部：验证闭环 ═══
+
+    private fun trackVerifyCycleStart(kind: ToolKind, callId: String) {
+        when {
+            kind == ToolKind.EDIT_FILE || kind == ToolKind.WRITE_FILE -> {
+                if (openCycleVerifies.isNotEmpty()) closeOpenCycle()
+                openCycleEdits.add(callId)
+            }
+            kind == ToolKind.LINT || kind == ToolKind.TEST -> {
+                if (openCycleEdits.isNotEmpty()) openCycleVerifies.add(callId)
+            }
+            else -> Unit
+        }
+    }
+
+    private fun trackVerifyCycleEnd(kind: ToolKind, callId: String, success: Boolean) {
+        if ((kind == ToolKind.LINT || kind == ToolKind.TEST) && callId in openCycleVerifies) {
+            // 记录该验证是否通过（轮次卡的红绿态）；轮次在下一轮 edit 或收尾时收口
+            pendingVerifyPassed = pendingVerifyPassed && success
+        }
+    }
+
+    private var pendingVerifyPassed = true
+
+    /** 收口当前开着的验证轮次：把轮内胶囊折叠为 VerifyCycleEntry。 */
+    private fun closeOpenCycle() {
+        if (openCycleEdits.isEmpty() || openCycleVerifies.isEmpty()) {
+            openCycleEdits.clear(); openCycleVerifies.clear(); pendingVerifyPassed = true
+            return
+        }
+        cycleRound++
+        val ids = openCycleEdits + openCycleVerifies
+        val calls = ids.mapNotNull { toolCalls[it] }
+        // 从时间轴移除轮内胶囊，原位插入轮次卡（保持时序）
+        val firstIdx = entries.indexOfFirst { it.id == toolEntryId(openCycleEdits.first()) }
+        val lastIdx = entries.indexOfLast { it.id == toolEntryId(openCycleVerifies.last()) }
+        if (firstIdx >= 0 && lastIdx >= firstIdx) {
+            val cycleEntry = StreamEntry.VerifyCycleEntry(
+                id = "cycle-$cycleRound-${nextId()}",
+                cycle = VerifyCycle(cycleRound, openCycleEdits.toList(), openCycleVerifies.toList(), pendingVerifyPassed),
+                calls = calls
+            )
+            // 只折叠轮内工具胶囊；思考/迭代状态等非工具条目原位保留
+            // （整段 subList 清空会把它们一并吞掉——时间轴数据丢失）
+            val range = entries.subList(firstIdx, lastIdx + 1)
+            val nonTool = range.filterNot { it is StreamEntry.ToolCapsuleEntry }
+            range.clear()
+            entries.add(firstIdx, cycleEntry)
+            nonTool.forEachIndexed { i, entry -> entries.add(firstIdx + 1 + i, entry) }
+            dirty = true
+        }
+        openCycleEdits = mutableListOf()
+        openCycleVerifies = mutableListOf()
+        pendingVerifyPassed = true
+    }
+
+    // ═══ 内部：参数与文案 ═══
+
+    private fun append(entry: StreamEntry) {
+        entries.add(entry)
+        dirty = true
+    }
+
+    private fun replaceEntry(id: String, entry: StreamEntry) {
+        val idx = entries.indexOfFirst { it.id == id }
+        if (idx >= 0) entries[idx] = entry
+        dirty = true
+    }
+
+    private fun removeEntry(id: String) {
+        entries.removeAll { it.id == id }
+        dirty = true
+    }
+
+    /**
+     * 收口流式条目（beginRun/Aborted 路径）：全程空白（模型未思考/
+     * 网关空串帧）直接移除占位卡，非空白才定格为终态。
+     */
+    private fun closeStreamingEntry(entry: StreamEntry) {
+        when (entry) {
+            is StreamEntry.ThinkingEntry ->
+                if (entry.text.isBlank()) removeEntry(entry.id)
+                else replaceEntry(entry.id, entry.copy(isStreaming = false))
+            is StreamEntry.AssistantEntry ->
+                if (entry.text.isBlank()) removeEntry(entry.id)
+                else replaceEntry(entry.id, entry.copy(isStreaming = false))
+            else -> Unit
+        }
+    }
+
+    /**
+     * 防御性收口流式思考条目（2026-10 用户反馈：思考完成后仍显示「思考中」）。
+     *
+     * 引擎多处路径只发 ThinkingChunk 不发 ThinkingComplete（工具降级/重试
+     * 提示等 notice 分片；标准线库事件集干脆没有思考完成事件）——旧实现
+     * 思考卡一旦建立就永远挂着「思考中…」，直到下一轮 beginRun。凡收到
+     * 「思考阶段显然已过」的信号（工具开跑 / 正文流出 / 回复收尾 /
+     * 运行收束 / 出错）就地把条目定格为终态（已累积文本保留）；之后再来的
+     * ThinkingChunk 会另起新卡（思考→工具→再思考的合法多段时序）。
+     */
+    private fun closeStreamingThinking() {
+        streamingThinking?.let { closeStreamingEntry(it) }
+        streamingThinking = null
+    }
+
+    /**
+     * 收口流式正文气泡（工具信号到达路径，与 closeStreamingThinking 同款
+     * 防御语义）：ReAct 每轮迭代的正文段以工具调用为界 —— 参数分片开始
+     * 流式或工具开跑即本段正文收束定格（已累积文本保留在原位，时序上
+     * 它确实在工具之前），之后的正文（下一轮迭代引导语 / 最终回答）
+     * 另起新条目追加到时间轴末尾。
+     *
+     * 旧实现跨轮共用同一条 AssistantEntry（replaceEntry 原位合并）
+     * —— 最终回答被拼进首轮建立的早期气泡，位置恒在全部工具胶囊
+     * 上方（20261031 用户实测：收尾回答显示在工具调用记录之前）。
+     */
+    private fun closeStreamingAssistant() {
+        streamingAssistant?.let { closeStreamingEntry(it) }
+        streamingAssistant = null
+    }
+
+    private fun updateCall(call: StreamToolCall) {
+        toolCalls[call.id] = call
+        val idx = entries.indexOfFirst { it.id == toolEntryId(call.id) }
+        if (idx >= 0) entries[idx] = StreamEntry.ToolCapsuleEntry(toolEntryId(call.id), call)
+        dirty = true
+    }
+
+    private fun toolEntryId(callId: String) = "tool-$callId"
+
+    private fun nextId(): String = "e-${++entrySeq}"
+
+    /** 从条目 id 提取序号（“e-42” / “cycle-1-e-43” → 42/43；其余 → 0）。 */
+    private fun entrySeqOf(id: String): Long =
+        ENTRY_SEQ_REGEX.find(id)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+
+    /** 代理对安全截断：首字符若是低代理项则让位，防 emoji 被劈成豆腐块。 */
+    private fun safeTakeLast(s: String, n: Int): String = when {
+        s.length <= n -> s
+        n <= 0 -> ""
+        Character.isLowSurrogate(s[s.length - n]) -> s.substring(s.length - n + 1)
+        else -> s.substring(s.length - n)
+    }
+
+    private fun buildSnapshot(): CodeStreamSnapshot {
+        val activeBuf = activeTerminalCallId?.let { terminalBuffers[it] }
+        return CodeStreamSnapshot(
+            entries = entries.toList(),
+            toolCallCount = toolCallCount,
+            failedToolCallCount = failedToolCallCount,
+            toolUsage = buildToolUsage(),
+            lastError = lastError,
+            activeTerminalCallId = activeTerminalCallId,
+            terminalContent = activeBuf?.renderedContent() ?: "",
+            affectedFiles = affectedFiles.toList(),
+            terminalBusy = terminalBusy,
+            terminalCommandSummary = terminalCommandSummary,
+            terminalExitCode = terminalExitCode
+        )
+    }
+
+    /** 本轮工具使用聚合（快照派生统计；空会计零分配直达缺省值）。 */
+    private fun buildToolUsage(): ToolUsageStats {
+        if (runToolOrigins.isEmpty()) return ToolUsageStats()
+        var builtin = 0
+        var skill = 0
+        var mcp = 0
+        val skills = LinkedHashSet<String>()
+        val servers = LinkedHashSet<String>()
+        runToolOrigins.values.forEach { (origin, label) ->
+            when (origin) {
+                ToolCallOrigin.BUILTIN -> builtin++
+                ToolCallOrigin.MCP -> {
+                    mcp++
+                    label?.let { servers.add(it) }
+                }
+                ToolCallOrigin.SKILL -> {
+                    skill++
+                    label?.let { skills.add(it) }
+                }
+            }
+        }
+        return ToolUsageStats(
+            total = builtin + skill + mcp,
+            builtinCount = builtin,
+            skillCount = skill,
+            mcpCount = mcp,
+            failedCount = runFailedCount,
+            skills = skills.toList(),
+            mcpServers = servers.toList()
+        )
+    }
+
+    /** 本轮指定溯源的调用数（收尾统计卡用）。 */
+    private fun Map<String, Pair<ToolCallOrigin, String?>>.countOf(origin: ToolCallOrigin): Int =
+        values.count { it.first == origin }
+
+    /** 本轮指定溯源的去重标签清单（首现序；收尾统计卡用）。 */
+    private fun Map<String, Pair<ToolCallOrigin, String?>>.labelsOf(origin: ToolCallOrigin): List<String> =
+        values.mapNotNull { (o, label) -> label?.takeIf { o == origin } }.distinct()
+
+    // ═══ 内部：参数解析 / 展示文案 ═══
+
+    private fun parseArgs(raw: String): Map<String, kotlinx.serialization.json.JsonElement> {
+        if (raw.isBlank()) return emptyMap()
+        return runCatching {
+            Json.parseToJsonElement(raw).let { el ->
+                (el as? kotlinx.serialization.json.JsonObject)?.toMap() ?: emptyMap()
+            }
+        }.getOrDefault(emptyMap())
+    }
+
+    private fun targetOf(kind: ToolKind, args: Map<String, kotlinx.serialization.json.JsonElement>, toolName: String): String {
+        val str = { key: String -> args[key]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNullSafe() } }
+        return when (kind) {
+            ToolKind.READ_FILE, ToolKind.WRITE_FILE, ToolKind.EDIT_FILE ->
+                str("path") ?: str("file") ?: str("file_path") ?: UNKNOWN_TARGET
+            ToolKind.GREP_SEARCH -> str("pattern") ?: str("query") ?: str("keyword") ?: toolName
+            ToolKind.BASH -> str("command")?.lineSequence()?.firstOrNull()?.take(40) ?: toolName
+            ToolKind.GIT -> gitTargetOf(toolName, args) ?: toolName
+            ToolKind.LINT, ToolKind.TEST -> str("path") ?: str("target") ?: toolName
+            else -> str("name") ?: str("server") ?: toolName
+        }
+    }
+
+    /**
+     * git 工具的胶囊 target（v5 真实参数契约；工具名经 [GitOpParser.normalize]
+     * 归一——模型回显历史别名 code_git_* / 裸短名同样命中）：
+     * - CodeGitCommit → message 首行（提交主题）；
+     * - CodeGitDiff / CodeGitLog → path（缺省给语义占位）；
+     * - CodeGitBranch → name ?: action；
+     * - CodeGitStatus → 无参数，固定「工作区」。
+     * 返回 null = 未知 git 工具（调用方回退工具名）。
+     */
+    private fun gitTargetOf(
+        toolName: String,
+        args: Map<String, kotlinx.serialization.json.JsonElement>
+    ): String? {
+        val str = { key: String ->
+            args[key]?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNullSafe() }
+        }
+        return when (GitOpParser.normalize(toolName)) {
+            "codegitcommit" -> str("message")?.lineSequence()?.firstOrNull { it.isNotBlank() }?.take(40)
+            "codegitdiff" -> str("path")?.take(40) ?: "全部变更"
+            "codegitlog" -> str("path")?.take(40) ?: "提交历史"
+            "codegitbranch" -> str("name")?.take(40) ?: str("action") ?: "分支"
+            "codegitstatus" -> "工作区"
+            else -> null
+        }
+    }
+
+    /** 溯源优先的族判定：引擎打标（技能 / MCP）覆盖名字启发式，未打标
+     *  （kit 路径 / 旧档回放）回退 [ToolKind.fromToolName]（行为同旧）。 */
+    private fun kindOf(toolName: String, origin: ToolCallOrigin): ToolKind = when (origin) {
+        ToolCallOrigin.SKILL -> ToolKind.SKILL
+        ToolCallOrigin.MCP -> ToolKind.MCP_CUSTOM
+        ToolCallOrigin.BUILTIN -> ToolKind.fromToolName(toolName)
+    }
+
+    private fun displayNameOf(
+        kind: ToolKind,
+        origin: ToolCallOrigin = ToolCallOrigin.BUILTIN,
+        originLabel: String? = null
+    ): String = when (kind) {
+        ToolKind.READ_FILE -> "读取"
+        ToolKind.WRITE_FILE -> "写入"
+        ToolKind.EDIT_FILE -> "编辑"
+        ToolKind.GREP_SEARCH -> "搜索"
+        ToolKind.BASH -> "命令"
+        ToolKind.GIT -> "Git"
+        ToolKind.LINT -> "Lint"
+        ToolKind.TEST -> "测试"
+        ToolKind.PLAN -> "计划"
+        // 溯源展示：MCP · 服务器名 / 技能 · 技能 id（无标签退宽名；
+        // target 侧仍保留工具名，信息不丢失）
+        ToolKind.MCP_CUSTOM -> originLabel?.let { "MCP · $it" } ?: "MCP"
+        ToolKind.SKILL -> originLabel?.let { "技能 · $it" } ?: "技能"
+    }
+
+    /** 命令退出码：尾部若干行内逐行匹配（TerminalExec 的 `exit N` 尾缀；
+     *  尾部优先避免正文日志里 “exit code 0 desired” 之类文本被误命中）。 */
+    private fun exitCodeOf(output: String, kind: ToolKind): Int? {
+        if (kind != ToolKind.BASH && kind != ToolKind.GIT) return null
+        val tail = output.lineSequence().toList().takeLast(EXIT_CODE_TAIL_LINES)
+        for (line in tail.asReversed()) {
+            val m = EXIT_CODE_REGEX.find(line) ?: continue
+            return m.groupValues[1].toIntOrNull()
+        }
+        return null
+    }
+
+    private fun summaryOf(
+        status: ToolCallStatus,
+        diff: UnifiedDiffParser.ParsedDiff?,
+        exitCode: Int?,
+        output: String
+    ): String {
+        if (status == ToolCallStatus.FAILED) {
+            // P0（输出完整性）：结构化工具（TerminalExec）失败时优先从 JSON 信封
+            // 提取人读摘要（exit 码 + stderr 首行）—— 旧实现直接取输出首行，
+            // 拿到的是 `{"stdout":"","stderr":"...` 这类 JSON 噶音。
+            structuredFailureSummary(output, exitCode)?.let { return it }
+            val line = output.lineSequence().firstOrNull { it.isNotBlank() } ?: "失败"
+            return line.take(SUMMARY_MAX)
+        }
+        diff?.let { d ->
+            if (d.hunks.isNotEmpty()) return "+${d.totalAdded} −${d.totalRemoved} · ${d.hunks.size} hunk"
+        }
+        exitCode?.let { return "exit $it" }
+        val line = output.lineSequence().firstOrNull { it.isNotBlank() }
+        return line?.take(SUMMARY_MAX) ?: "完成"
+    }
+
+    /**
+     * 结构化工具失败摘要：JSON 信封 → 「exit N · stderr 首行」（人读）。
+     *
+     * 兑底序：stderr 首个非空行 → stdout 首个非空行（命令静默失败场景）→
+     * 纯 exit 码。非 JSON（旧工具纯文本输出 / 半截 JSON）→ null 交回旧逻辑。
+     */
+    private fun structuredFailureSummary(output: String, exitCode: Int?): String? {
+        if (!output.trimStart().startsWith("{")) return null
+        val json = runCatching { Json.parseToJsonElement(output).jsonObject }.getOrNull() ?: return null
+        fun strField(key: String): String? =
+            (json[key] as? JsonPrimitive)?.contentOrNull
+        val line = strField("stderr")?.lineSequence()?.firstOrNull { it.isNotBlank() }
+            ?: strField("stdout")?.lineSequence()?.firstOrNull { it.isNotBlank() }
+            ?: return exitCode?.let { "exit $it" }
+        val prefix = exitCode?.let { "exit $it · " } ?: ""
+        return (prefix + line).take(SUMMARY_MAX)
+    }
+
+    /** JsonPrimitive content 的 null 安全读取（非 primitive 返回 null）。 */
+    private fun kotlinx.serialization.json.JsonPrimitive.contentOrNullSafe(): String? =
+        runCatching { content }.getOrNull()
+
+    private companion object {
+        const val UNKNOWN_TARGET = "…"
+        const val ARGS_SUMMARY_MAX = 80
+        const val SUMMARY_MAX = 24
+        const val NON_BASH_LOG_TAIL_CHARS = 2000
+        const val EXIT_CODE_TAIL_LINES = 8
+
+        /** 中止文案：停止卡与中断胶囊的副标题共用。 */
+        const val ABORTED_TEXT = "已中止"
+        val EXIT_CODE_REGEX = Regex("""(?:exit(?:\s+code)?|Exit:)[:\s]+(\d+)\b""", RegexOption.IGNORE_CASE)
+        val ENTRY_SEQ_REGEX = Regex("""(?:^|-)e-(\d+)$""")
+    }
+}

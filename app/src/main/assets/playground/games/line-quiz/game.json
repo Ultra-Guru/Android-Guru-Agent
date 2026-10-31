@@ -1,0 +1,11 @@
+{
+  "id": "line-quiz",
+  "name": "行数竞猜",
+  "nameEn": "Line Count Quiz",
+  "tagline": "pretext 是唯一神谕：闪现文本，押它在给定宽度下折几行",
+  "version": 1,
+  "engine": "pretext@0.0.9",
+  "apis": ["prepare", "prepareWithSegments", "layout", "layoutWithLines", "measureNaturalWidth"],
+  "controls": "点按 1-6 行押注按钮 / 信心倍率切换",
+  "scoreKey": "aga.pg.line-quiz.hi"
+}

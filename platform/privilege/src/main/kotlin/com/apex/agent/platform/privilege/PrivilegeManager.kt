@@ -1,0 +1,99 @@
+package com.apex.agent.platform.privilege
+
+import kotlinx.coroutines.flow.StateFlow
+
+/**
+ * 权限管理器
+ * 核心：Root ⊃ (Shizuku ∪ Accessibility)
+ */
+interface PrivilegeManager {
+    /** Root是否可用 */
+    val rootAvailable: StateFlow<Boolean>
+    
+    /** Shizuku是否可用 */
+    val shizukuAvailable: StateFlow<Boolean>
+    
+    /** 无障碍是否可用 */
+    val accessibilityAvailable: StateFlow<Boolean>
+    
+    /** 执行shell命令（自动选择Root或Shizuku）*/
+    suspend fun executeShell(command: String, timeoutMs: Long = 30000): ShellResult
+    
+    /** 执行UI操作（自动选择无障碍或Root input命令）*/
+    suspend fun executeUiAction(action: UiAction): UiResult
+    
+    /** 获取当前UI树 */
+    suspend fun getUiTree(): UiTreeResult
+    
+    /** 截图 */
+    suspend fun takeScreenshot(): ScreenshotResult
+    
+    /** 刷新权限状态 */
+    suspend fun refreshStatus()
+}
+
+data class ShellResult(
+    val success: Boolean,
+    val output: String,
+    val exitCode: Int,
+    val executedVia: ExecutionVia  // ROOT / SHIZUKU / NONE
+)
+
+enum class ExecutionVia { ROOT, SHIZUKU, ACCESSIBILITY, NONE }
+
+sealed interface UiAction {
+    data class Click(val x: Int, val y: Int) : UiAction
+    data class ClickNode(val nodeId: String) : UiAction
+    data class Swipe(val x1: Int, val y1: Int, val x2: Int, val y2: Int, val durationMs: Long = 300) : UiAction
+    data class InputText(val text: String) : UiAction
+    data class PressKey(val keyCode: Int) : UiAction
+    data object Back : UiAction
+    data object Home : UiAction
+    data object Recents : UiAction
+    data object OpenNotifications : UiAction
+    /** #240 收尾：收起通知栏（a11y BACK 收合 / root `cmd statusbar collapse`）。 */
+    data object CloseNotifications : UiAction
+}
+
+data class UiResult(val success: Boolean, val message: String = "")
+
+/**
+ * UI 树捕获结果。
+ *
+ * 双视图契约（嵌套树激活后）：
+ * - [roots]：真实嵌套树根列表（父节点 children 已填充）——cs-mem 修剪/
+ *   空间拓扑边/指纹父上下文的输入契约；
+ * - [nodes]：同树的 DFS 先序扁平视图，且**剥离子节点引用**——兼容把列表
+ *   元素当独立根逐个处理的旧消费方（PrivilegeUiProvider.dumpUiTree、
+ *   CsMemSessionObserver），避免对同一子树重复递归与指纹重复。
+ * 未提供嵌套树的实现（如测试替身）只填 [nodes]，消费方按
+ * `roots.ifEmpty { nodes }` 回退为旧的扁平语义。
+ */
+data class UiTreeResult(
+    val success: Boolean,
+    val treeXml: String = "",
+    val nodes: List<UiNode> = emptyList(),
+    val roots: List<UiNode> = emptyList()
+)
+/**
+ * 截图结果。
+ *
+ * P2 fix（审计 6-b）：新增可选 [error] 字段 —— base64 通道解码失败/screencap 失败时
+ * 携带可诊断的错误说明（默认 null，既有调用点/测试的 2 参构造不受影响）。
+ */
+data class ScreenshotResult(
+    val success: Boolean,
+    val imageBytes: ByteArray? = null,
+    val error: String? = null
+)
+
+data class UiNode(
+    val className: String,
+    val text: String,
+    val contentDescription: String,
+    val resourceId: String,
+    val bounds: String,  // "[x1,y1][x2,y2]"
+    val clickable: Boolean,
+    val scrollable: Boolean,
+    val children: List<UiNode> = emptyList()
+)

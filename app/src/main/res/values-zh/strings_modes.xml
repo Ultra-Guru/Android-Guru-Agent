@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 模式系统字符串（#168）：模式指南入口（Coding 屏模式选择器旁「?」图标）。
+     自定义模式预设（mode_presets_* 25 键）已随 Agent CUSTOM 模式与设置域
+     预设编辑器移除（PR 4/6 + 5/6）。中文版；英文默认在 values/strings_modes.xml。 -->
+<resources>
+
+    <!-- ═══ 模式指南（ModeGuideSheet，模式选择器旁「?」图标打开）═══ -->
+    <string name="mode_guide_open_cd">打开模式指南</string>
+</resources>

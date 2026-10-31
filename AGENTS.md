@@ -1,0 +1,97 @@
+# AGENTS.md — Android-Guru-Agent 仓库协作规则
+
+> 本文件是仓库自身的规则文件：Coding 模式的 Rules 系统（v1.1 #164）
+> 会自动发现工作区根的 AGENTS.md 并注入会话上下文——把「在这个仓库
+> 干活必须知道的纪律」写在这里，人与 agent 共同遵守。
+> 优先级：本文件 > 用户全局规则 > 一般偏好；均低于安全与权限约束。
+
+## 构建与验证
+
+- **模块**：多模块 Gradle（app / core×6 / platform×6 / 终端双模块），
+  Kotlin 2.3.21 + AGP 8.13.2 + Gradle 8.14 + JDK 17 + Compose BOM 2026.02.00
+  （KSP2 2.3.12 / Hilt 2.58 / Room 2.8.5 配套矩阵；液态玻璃 backdrop 保持
+  vendored —— 上游 1.0.6 二进制缺 diag-20261011 热修，
+  详见 gradle/libs.versions.toml 与 vendor/backdrop/README.md）；
+- **浏览器库（拆库后）**：BrowserEngine / chrome UI / DOM 解析已抽出为
+  [apex-kit-browser](https://github.com/Ultra-Guru/apex-kit-browser)
+  （坐标 `com.apex.browser:{core,engine,chrome}`）。本地构建把库克隆成
+  **兄弟目录** `../apex-kit-browser` 即自动 composite build（settings
+  条件 includeBuild）；CI 由 workflow 检出兄弟目录。改浏览器行为去库仓库
+  提 PR（其 consumer-check 会对本仓库跑编译防下游崩）。v1.5.0 起浏览器
+  自动化为**内置大功能**：BrowserAgentTools（browser_* 工具协议）与 DI
+  接线（`BrowserKitModule`，三层坐标 + LiveViewOverlay 实时页面悬浮窗
+  与 InAppChromeHost 内嵌宿主单例经 api 传递给 app）住在
+  `:platform:browser-agent`；app 侧只留 CyberNeonBallManager /
+  NeonRingView（透明玻璃球视觉装饰，依赖 app 的 LanguageManager 与资源；
+  点击球切换实时页面悬浮窗）、BrowserScreen 一级入口（v1.5.1 双页签：
+  浏览器页签 = App 内嵌完整浏览器 InAppBrowserPane（BrowserChrome +
+  引擎 WebView，零悬浮窗权限；承载互斥见库侧 InAppHostingArbiter），
+  仪表盘页签 = 观测/干预面板 + 悬浮窗权限引导卡）与悬浮球接线；网页
+  自动化插件壳已删除（PluginManager 对旧插件 id 拦截并引导卸载）；
+- **本地验证顺序**：改 core 层先跑对应模块 `test`，改 app 层跑
+  `:app:compileDebugKotlin`；CI（pr 触发）跑静态分析 + app 编译 +
+  9 步测试 + debug APK + 结构质量四门禁；
+- **插件体系（Plugin System v2，双类型）**：功能性插件
+  （`:plugin-sdk:plugin-host` functional 包）与 APK 插件（PluginManager
+  AIDL）统一经 `UnifiedPluginRegistry` 门面；改 functional 包跑
+  `:plugin-sdk:plugin-host:testDebugUnitTest`（纯 JVM，51 项契约锁），
+  契约与设计见 docs/plugin-system-v2.md——**功能性插件是数据永不 REPLACE
+  内置工具（REJECT），APK 插件同签名才 REPLACE**，改冲突语义前先读文档；
+- **绝不**在本地跑 `assembleRelease` 之外的东西来验证 UI——Compose
+  编译过了 UI 仍可能崩，真机回归是最终验收。
+
+## 硬性 CI 门禁（违反即红）
+
+1. **文件预算**：main 单文件 ≤1200 行 / test ≤1600 行
+   （`scripts/check_file_size.sh`）。超了就按职责缝拆文件，不在 PR
+   里申请提额；
+2. **反模式**：main 源码禁 `javaClass.getMethod` 反射派发、禁
+   `printStackTrace()`（`scripts/check_code_quality.sh`）；
+3. **括号平衡**：改完跑 `python3 scripts/kotlin_balance.py <files>`。
+
+## Kotlin 陷阱清单（本仓库踩过的真雷）
+
+1. **嵌套注释**：Kotlin 块注释可嵌套——KDoc 里写 glob（如
+   `assets/skills/` 目录通配）会让 `/*` 序列开新层级吞掉后续代码。
+   铁律：注释里**永远不出现斜杠紧跟星号的序列**，目录通配写成
+   「assets/skills 目录下的 .json 文件」；
+2. **尾随 lambda 绑定末参**：多参数构造/函数的尾随 lambda 绑定的是
+   **最后一个**参数——传 scope 等「中间参数」时显式具名
+   （`CoroutineScope(scope)` 而不是 `(scope) { ... }`）；
+3. **K2 泛型 suspend 推断**：`?.let {}` 里 suspend lambda 不做期望
+   类型传播——builder setter 非空形参用 `.apply {}` 条件装配；
+4. **字符串模板先于 trimIndent 求值**：原始字符串里插值的内容会参与
+   公共缩进计算——先对字面量 trimIndent 再拼接插值体；
+5. **readNBytes 重载歧义**：用三参形式 `readNBytes(buf, 0, size)`，
+   单参/Int 重载在 K2 新推断下会按后续用法选错候选。
+
+## 测试纪律
+
+- JUnit4 + kotlinx-coroutines-test（`runTest`）+ TemporaryFolder；
+  **无 mock 框架**（版本目录不提供），手写 fake / 脚本化事件序列；
+- 假钟注入（`() -> Long` 参数）驱动时间分支，不依赖墙钟睡眠；
+- `backgroundScope` 在 coroutines-test 1.9.0 不受 `advanceUntilIdle`
+  推进——fire-and-forget 断言用独立 `CoroutineScope(StandardTestDispatcher(
+  testScheduler))`；
+- 测试文件同样 ≤1600 行；断言值先读源码核实，不臆造。
+
+## 提交与 PR 约定
+
+- 提交信息：`类型(范围): 中文摘要 —— 关键词 / 关键词`（例：
+  `feat(coding-mode): 七档思考系统 —— ULTRACODE/APEXCODE/自适应升级`）；
+- PR 描述含验证表（编译/测试/门禁结果）；大特性附 docs/ 文档
+  （本目录有 feature-doc 惯例：一个特性一篇）；
+- PR 由仓库主人合并（agent 只提交不合并）。
+
+## 架构原则
+
+- **薄包装不重写**：模式层（如 CodeAgentEngine）包装共享引擎，
+  经 `additionalSystemContext` / `patchConfig` 通道注入行为，不fork
+  主循环；
+- **复用层**：skills / MCP / 工具目录 / 思考档位等能力为全模式共享
+  单例，新模式接入走「注入」而非「复制」；
+- **防御式 IO**：外部输入（事件流/JSON/规则文件）任何形状都要吞得
+  下——异常折叠为 null/跳过 + AppLogger 留痕，不向上抛；
+- **原子写**：持久化一律 tmp + renameTo，rename 失败直写目标兜底；
+- **fire-and-forget 纪律**：VM 主线程绝不等磁盘，落盘协程捕获不可变
+  快照，SupervisorJob 隔离失败传染。

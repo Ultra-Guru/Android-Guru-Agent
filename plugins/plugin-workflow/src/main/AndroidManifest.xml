@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 不引用 @mipmap 图标：插件 APK 无 res 资源（悬空引用无法通过 AAPT 链接，
+         全项目编译在 :plugins:plugin-workflow:processDebugResources 必挂），
+         缺省走系统应用图标即可安装。 -->
+    <application
+        android:label="Apex Workflow Plugin">
+
+        <!-- 插件服务：主APK通过此Service连接插件（exported：宿主是独立 APK，必须跨
+             进程绑定）。信任模型：不声明 signature 级自定义 permission（会破坏跨
+             keystore 构建的绑定流程），安全由宿主侧签名门承担：PluginManager
+             绑定回调时比对插件与宿主签名，不一致则拒绝工具注册并解绑。 -->
+        <service
+            android:name=".WorkflowPluginService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.apex.agent.plugin.PLUGIN" />
+            </intent-filter>
+        </service>
+
+    </application>
+</manifest>

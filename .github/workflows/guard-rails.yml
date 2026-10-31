@@ -1,0 +1,99 @@
+name: Guard Rails
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 轻量守护栏：快（每个 job <30s，无编译）、窄（只查各自领域）、可解释
+# （失败输出可执行的修复指引）。与 ci.yml（编译）/ quality-gate.yml（结构
+# 门禁）互补，覆盖四类历史踩过坑的维度：
+#   • i18n String Mirror   —— values/values-zh 键集 1:1 + 占位符一致
+#     （#291 手工验 528 键的教训：漏键只能等用户切语言才炸）
+#   • Market Catalog        —— assets/mcp_catalog 契约校验（运行时
+#     validateEntries 九条规则前移到 CI，坏目录到不了 APK）
+#   • Secrets Scan          —— GitHub/AWS/Google/Slack/OpenAI/私钥指纹
+#     （公开仓库凭证裸奔是 P0 事故）
+#   • Commit Convention     —— `类型(范围): 摘要 —— 关键词` 纪律
+#     （AGENTS.md 要求；类型前缀强制，关键词尾段建议）
+#
+# ── 本 workflow 的可用性由谁守护 ──────────────────────────────────────────────
+# 2026-10-05：这里的一行注释丢了行首缩进 → YAML 截断 → GitHub **静默禁用整个
+# 文件**，四联检查一起停摆且无人察觉（详见 docs/ci/guard-rails-commit-range-incident.md）。
+# GitHub 拒绝的是「整个文件」，所以守护它的门禁**不能**住在本文件里 ——
+# 那会跟着一起消失。结构校验由 quality-gate.yml 的独立 job 承担。
+# 修改本文件后请本地跑 `python3 scripts/check_workflow_yaml.py` 自检。
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 触发去重（2026-10-06）：PR 分支的 push 与 pull_request 事件会各触发一次
+# 本 workflow（并发键 refs/heads/* 与 refs/pull/*/merge 不同，互不取消）——
+# 每次 PR 更新双倍消耗。PR 分支推送由 pull_request 事件在 merge ref 上覆盖
+# （语义更准：含与 main 的合并结果）；push 只保留 main（直推/合并落地后的
+# 终验，走脚本内 P1..P2 落地语义）。无 PR 的裸分支推送不再跑 CI —— 本仓库
+# 所有变更均走 PR 流程，无覆盖损失。
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, 'feat/**']
+
+concurrency:
+  group: guard-rails-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  i18n-mirror:
+    name: i18n String Mirror (values vs values-zh)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: String mirror check (key parity + placeholder parity)
+        run: python3 scripts/check_string_mirror.py
+
+  catalog-integrity:
+    name: Market Catalog Integrity (mcp_catalog)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: mcp_catalog contract check (schema / enum / global id uniqueness)
+        run: python3 scripts/check_mcp_catalog.py
+
+  secrets-scan:
+    name: Secrets Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # git ls-files 需完整索引
+      - name: Credential fingerprint scan (GitHub/AWS/Google/Slack/OpenAI/keys)
+        run: python3 scripts/check_secrets.py
+
+  commit-convention:
+    name: Commit Message Convention
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Keep the script and workflow on the same event checkout (PR merge ref).
+          # The checker uses base..HEAD with --no-merges, so PR commits remain checked.
+      - name: "Commit message convention check (type(scope): subject / keywords)"
+        env:
+          IS_PR: "${{ github.event_name == 'pull_request' }}"
+          PR_BASE: "${{ github.event.pull_request.base.sha }}"
+          PUSH_BEFORE: "${{ github.event.before }}"
+          PUSH_REF: "${{ github.ref_name }}"
+        # 范围解析全部下沉到 scripts/check_commit_messages.py（原写在本块 shell
+        # 里，无法单测，且漏了 main 的 merge commit 落地路径 —— 见该脚本注释）。
+        # 回归用例见 scripts/test_check_commit_messages.py。
+        run: |
+          if [ "$IS_PR" = "true" ]; then
+            python3 scripts/check_commit_messages.py --event pull_request --base "$PR_BASE"
+          else
+            python3 scripts/check_commit_messages.py --event push \
+              --ref "$PUSH_REF" --before "$PUSH_BEFORE" \
+              --target main --upstream origin/main
+          fi

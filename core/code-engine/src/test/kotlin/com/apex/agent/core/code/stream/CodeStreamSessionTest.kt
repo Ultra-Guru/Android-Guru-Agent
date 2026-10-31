@@ -1,0 +1,1067 @@
+package com.apex.agent.core.code.stream
+
+import com.apex.agent.core.engine.AgentEvent
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * [CodeStreamSession] 事件状态机测试。
+ *
+ * 覆盖：工具胶囊生命周期（含幂等重放）/ 思考与正文流式 / 终端脉冲与
+ * 尾窗 / 验证轮次聚合 / 错误·停止·完成收尾 / tick 攒批语义 /
+ * 受影响文件追踪。
+ */
+class CodeStreamSessionTest {
+
+    private fun editStart(callId: String, path: String) = AgentEvent.ToolCallStart(
+        callId, "CodeEdit", """{"path":"$path","diff":"x"}"""
+    )
+
+    private fun bashStart(callId: String, command: String) = AgentEvent.ToolCallStart(
+        callId, "TerminalExec", """{"command":"$command"}"""
+    )
+
+    @Test
+    fun `tool capsule goes through full lifecycle`() {
+        val s = CodeStreamSession()
+        s.beginRun("修一下 bug")
+        s.onEvent(editStart("c1", "src/App.kt"))
+        s.onEvent(
+            AgentEvent.ToolCallComplete(
+                callId = "c1", toolName = "CodeEdit", arguments = """{"path":"src/App.kt"}""",
+                output = "(no textual change)", fullOutput = "--- a/src/App.kt\n+++ b/src/App.kt\n@@ -1,2 +1,2 @@\n-a\n+b\n(1 added, 1 removed)",
+                success = true, durationMs = 120
+            )
+        )
+        val snap = s.snapshot()
+        val capsule = snap.entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertEquals(ToolKind.EDIT_FILE, capsule.call.kind)
+        assertEquals("src/App.kt", capsule.call.target)
+        assertEquals("编辑类成功 → APPLIED", ToolCallStatus.APPLIED, capsule.call.status)
+        assertEquals(1, capsule.call.hunksTotal)
+        assertEquals(1, capsule.call.hunksApplied)
+        assertEquals("+1 −1 · 1 hunk", capsule.call.summary)
+        assertEquals(listOf("src/App.kt"), snap.affectedFiles)
+    }
+
+    @Test
+    fun `bash capsule tracks terminal pulses and exit code`() {
+        val s = CodeStreamSession()
+        s.beginRun("跑构建")
+        s.onEvent(bashStart("b1", "./gradlew assemble"))
+        repeat(8) { s.onEvent(AgentEvent.ToolOutputChunk("b1", "compile ok\n")) }
+        // 行数条件（8 行）命中脉冲
+        val snap = s.tick(0)
+        assertNotNull("脉冲后应产出快照", snap)
+        assertEquals("b1", snap!!.activeTerminalCallId)
+        assertTrue(snap.terminalContent.contains("compile ok"))
+        s.onEvent(
+            AgentEvent.ToolCallComplete(
+                callId = "b1", toolName = "TerminalExec", arguments = "",
+                output = "build finished\nexit code 0", fullOutput = "",
+                success = true, durationMs = 9_000
+            )
+        )
+        val final = s.snapshot()
+        val capsule = final.entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertEquals(ToolCallStatus.SUCCESS, capsule.call.status)
+        assertEquals("exit 0", capsule.call.summary)
+        assertEquals(0, capsule.call.exitCode)
+    }
+
+    @Test
+    fun `idempotent replay of same call events does not duplicate`() {
+        val s = CodeStreamSession()
+        s.beginRun("task")
+        val start = editStart("c1", "A.kt")
+        s.onEvent(start)
+        s.onEvent(start) // 重放
+        val complete = AgentEvent.ToolCallComplete(
+            "c1", "CodeEdit", """{"path":"A.kt"}""", "done", "--- a/A.kt\n+++ b/A.kt\n@@ -1,1 +1,2 @@\n x\n+y\n(1 added, 0 removed)",
+            true, 50
+        )
+        s.onEvent(complete)
+        s.onEvent(complete) // 重放
+        val snap = s.snapshot()
+        assertEquals("幂等：重放不产生重复胶囊", 1, snap.toolCallCount)
+        assertEquals(1, snap.entries.count { it is StreamEntry.ToolCapsuleEntry })
+    }
+
+    @Test
+    fun `thinking and assistant stream incrementally then finalize`() {
+        val s = CodeStreamSession()
+        s.beginRun("问个问题")
+        s.onEvent(AgentEvent.ThinkingChunk("想一"))
+        s.onEvent(AgentEvent.ThinkingChunk("想二"))
+        s.onEvent(AgentEvent.ThinkingComplete("想一想想二"))
+        s.onEvent(AgentEvent.ResponseChunk("结论"))
+        s.onEvent(AgentEvent.ResponseChunk("是……"))
+        s.onEvent(AgentEvent.ResponseComplete("结论是……"))
+        val snap = s.snapshot()
+        val thinking = snap.entries.filterIsInstance<StreamEntry.ThinkingEntry>().single()
+        assertEquals("想一想想二", thinking.text)
+        assertTrue(!thinking.isStreaming)
+        val assistant = snap.entries.filterIsInstance<StreamEntry.AssistantEntry>().single()
+        assertEquals("结论是……", assistant.text)
+        assertTrue(!assistant.isStreaming)
+    }
+
+    // ═══ 空思考卡防护（2026-10 用户反馈：不思考的模型也被网关喂空串）═══
+
+    @Test
+    fun `empty reasoning chunks never create thinking card`() {
+        val s = CodeStreamSession()
+        s.beginRun("你好")
+        // 网关对不思考的模型每帧发空串 reasoning_content
+        repeat(5) { s.onEvent(AgentEvent.ThinkingChunk("")) }
+        // 引擎侧 reasoningBuilder 恒空 → 不发 ThinkingComplete（模拟真实时序）
+        s.onEvent(AgentEvent.ResponseChunk("你好！需要帮助吗？"))
+        s.onEvent(AgentEvent.ResponseComplete("你好！需要帮助吗？"))
+        val snap = s.snapshot()
+        assertEquals(
+            "空串帧不建思考卡", 0,
+            snap.entries.count { it is StreamEntry.ThinkingEntry }
+        )
+        assertEquals(1, snap.entries.count { it is StreamEntry.AssistantEntry })
+    }
+
+    @Test
+    fun `whitespace-only first chunk does not create card but real chunk does`() {
+        val s = CodeStreamSession()
+        s.beginRun("你好")
+        s.onEvent(AgentEvent.ThinkingChunk("  "))
+        assertEquals(0, s.snapshot().entries.count { it is StreamEntry.ThinkingEntry })
+        s.onEvent(AgentEvent.ThinkingChunk("认真想"))
+        val snap = s.snapshot()
+        val thinking = snap.entries.filterIsInstance<StreamEntry.ThinkingEntry>().single()
+        assertEquals("空白前导被丢弃，正文完整", "认真想", thinking.text)
+    }
+
+    @Test
+    fun `thinking complete with blank text removes placeholder card`() {
+        val s = CodeStreamSession()
+        s.beginRun("你好")
+        s.onEvent(AgentEvent.ThinkingChunk(""))
+        // 某些 provider 先发空串帧、收尾时 fullThought 也是空白
+        s.onEvent(AgentEvent.ThinkingComplete("  "))
+        assertEquals(
+            "空白收尾不残留思考卡", 0,
+            s.snapshot().entries.count { it is StreamEntry.ThinkingEntry }
+        )
+    }
+
+    @Test
+    fun `beginRun after empty thinking leaves no stale placeholder`() {
+        val s = CodeStreamSession()
+        s.beginRun("第一轮")
+        s.onEvent(AgentEvent.ThinkingChunk(""))
+        s.beginRun("第二轮") // 中止路径无 Complete，beginRun 收口
+        assertEquals(
+            "跨轮收口移除空白占位", 0,
+            s.snapshot().entries.count { it is StreamEntry.ThinkingEntry }
+        )
+    }
+
+    @Test
+    fun `blank response chunks never create empty assistant bubble`() {
+        val s = CodeStreamSession()
+        s.beginRun("你好")
+        // provider 发 content:"" 的 tool_calls 前导帧
+        s.onEvent(AgentEvent.ResponseChunk(""))
+        assertEquals(0, s.snapshot().entries.count { it is StreamEntry.AssistantEntry })
+        s.onEvent(AgentEvent.ResponseComplete(""))
+        assertEquals(
+            "空白收尾不残留空气泡", 0,
+            s.snapshot().entries.count { it is StreamEntry.AssistantEntry }
+        )
+    }
+
+    // ═══ 思考卡防御性收口（2026-10 用户反馈：思考完成后仍显示「思考中」）═══
+    // 引擎 notice 类思考分片（工具降级/重试/GOAL 提示）与标准线库事件集都
+    // 只发 ThinkingChunk 不发 ThinkingComplete —— 旧实现思考卡一旦建立就
+    // 永远挂着「思考中…」，直到下一轮 beginRun。
+
+    @Test
+    fun `thinking card finalizes when tool starts without complete`() {
+        val s = CodeStreamSession()
+        s.beginRun("装 adb 工具")
+        s.onEvent(AgentEvent.ThinkingChunk("[engine] 降级提示"))
+        s.onEvent(bashStart("b1", "apt install adb"))
+        val thinking = s.snapshot().entries.filterIsInstance<StreamEntry.ThinkingEntry>().single()
+        assertEquals("已累积文本保留", "[engine] 降级提示", thinking.text)
+        assertTrue("工具开跑即收口，不再显示思考中", !thinking.isStreaming)
+    }
+
+    @Test
+    fun `thinking card finalizes on response complete without complete event`() {
+        // GOAL 停止路径：ThinkingChunk(userNotice) 紧跟 ResponseComplete
+        val s = CodeStreamSession()
+        s.beginRun("目标收尾")
+        s.onEvent(AgentEvent.ThinkingChunk("目标已达成"))
+        s.onEvent(AgentEvent.ResponseComplete("最终结论"))
+        val thinking = s.snapshot().entries.filterIsInstance<StreamEntry.ThinkingEntry>().single()
+        assertTrue("回复收尾即收口", !thinking.isStreaming)
+    }
+
+    @Test
+    fun `residual streaming entries finalize on complete event`() {
+        // 标准线库事件集没有思考完成事件：整轮只有 Chunk，收尾靠 Complete
+        val s = CodeStreamSession()
+        s.beginRun("标准线任务")
+        s.onEvent(AgentEvent.ThinkingChunk("推理中"))
+        s.onEvent(AgentEvent.ResponseChunk("结论前半"))
+        s.onEvent(AgentEvent.Complete("done", 1, 0, 100))
+        val snap = s.snapshot()
+        assertTrue(
+            "Complete 收口思考卡",
+            snap.entries.filterIsInstance<StreamEntry.ThinkingEntry>().single().let { !it.isStreaming }
+        )
+        assertTrue(
+            "Complete 收口结论气泡",
+            snap.entries.filterIsInstance<StreamEntry.AssistantEntry>().single().let { !it.isStreaming }
+        )
+    }
+
+    @Test
+    fun `residual streaming entries finalize on error event`() {
+        val s = CodeStreamSession()
+        s.beginRun("会出错的任务")
+        s.onEvent(AgentEvent.ThinkingChunk("想想"))
+        s.onEvent(AgentEvent.ResponseChunk("半截"))
+        s.onEvent(AgentEvent.Error("boom", recoverable = true))
+        val snap = s.snapshot()
+        assertTrue(
+            "Error 收口思考卡",
+            snap.entries.filterIsInstance<StreamEntry.ThinkingEntry>().single().let { !it.isStreaming }
+        )
+        assertTrue(
+            "Error 收口结论气泡",
+            snap.entries.filterIsInstance<StreamEntry.AssistantEntry>().single().let { !it.isStreaming }
+        )
+    }
+
+    @Test
+    fun `thinking chunk after finalized entry starts a new card`() {
+        // 思考 → 工具 → 再思考的合法多段时序：收口后再来 Chunk 另起新卡
+        val s = CodeStreamSession()
+        s.beginRun("多段思考")
+        s.onEvent(AgentEvent.ThinkingChunk("第一段"))
+        s.onEvent(editStart("c1", "A.kt"))
+        s.onEvent(AgentEvent.ToolCallComplete("c1", "CodeEdit", "{}", "ok", "", true, 10))
+        s.onEvent(AgentEvent.ThinkingChunk("第二段"))
+        val cards = s.snapshot().entries.filterIsInstance<StreamEntry.ThinkingEntry>()
+        assertEquals("两段思考两张卡", 2, cards.size)
+        assertTrue("旧卡已收口", !cards[0].isStreaming)
+        assertTrue("新卡保持流式（等后续事件收口）", cards[1].isStreaming)
+    }
+
+    @Test
+    fun `verify cycle collapses edit then lint into round card`() {
+        val s = CodeStreamSession()
+        s.beginRun("改完自检")
+        s.onEvent(editStart("e1", "A.kt"))
+        s.onEvent(AgentEvent.ToolCallComplete("e1", "CodeEdit", "{}", "ok", "", true, 30))
+        s.onEvent(AgentEvent.ToolCallStart("v1", "lint", """{"path":"A.kt"}"""))
+        s.onEvent(AgentEvent.ToolCallComplete("v1", "lint", "{}", "no issues", "", true, 40))
+        // 收尾触发轮次收口
+        s.onEvent(AgentEvent.Complete("done", 2, 2, 500))
+        val snap = s.snapshot()
+        val cycle = snap.entries.filterIsInstance<StreamEntry.VerifyCycleEntry>().single()
+        assertEquals(1, cycle.cycle.round)
+        assertEquals(listOf("e1"), cycle.cycle.editCallIds)
+        assertEquals(listOf("v1"), cycle.cycle.verifyCallIds)
+        assertEquals("验证通过 → passed=true", true, cycle.cycle.passed)
+        // 轮内胶囊已折叠（时间轴不再有散装胶囊）
+        assertEquals(0, snap.entries.count { it is StreamEntry.ToolCapsuleEntry })
+    }
+
+    @Test
+    fun `failed verify marks cycle red`() {
+        val s = CodeStreamSession()
+        s.beginRun("改完自检")
+        s.onEvent(editStart("e1", "A.kt"))
+        s.onEvent(AgentEvent.ToolCallComplete("e1", "CodeEdit", "{}", "ok", "", true, 30))
+        s.onEvent(AgentEvent.ToolCallStart("t1", "test", """{"path":"A.kt"}"""))
+        s.onEvent(
+            AgentEvent.ToolCallComplete(
+                "t1", "test", "{}", "FAILED: ATest.b\nexit code 1", "", false, 60
+            )
+        )
+        s.onEvent(editStart("e2", "A.kt")) // 第二轮 edit 开新轮次 → 上一轮收口
+        val snap = s.snapshot()
+        val cycles = snap.entries.filterIsInstance<StreamEntry.VerifyCycleEntry>()
+        assertEquals(1, cycles.size)
+        assertEquals(false, cycles[0].cycle.passed)
+    }
+
+    @Test
+    fun `error event produces structured entry and lastError`() {
+        val s = CodeStreamSession()
+        s.beginRun("会出错的任务")
+        s.onEvent(bashStart("b1", "make"))
+        s.onEvent(AgentEvent.ToolOutputChunk("b1", "cc: error\n"))
+        s.onEvent(AgentEvent.Error("工具执行失败：命令返回非零", recoverable = true))
+        val snap = s.snapshot()
+        val err = snap.entries.filterIsInstance<StreamEntry.ErrorEntry>().single()
+        assertTrue(err.recoverable)
+        assertNotNull(err.hint)
+        assertEquals("b1", err.relatedCallId)
+        assertEquals("工具执行失败：命令返回非零", snap.lastError?.message)
+    }
+
+    @Test
+    fun `abort produces stop entry`() {
+        val s = CodeStreamSession()
+        s.beginRun("被中止")
+        s.onEvent(AgentEvent.Aborted)
+        val snap = s.snapshot()
+        assertEquals(1, snap.entries.count { it is StreamEntry.StopEntry })
+    }
+
+    @Test
+    fun `complete appends summary and file chips`() {
+        val s = CodeStreamSession()
+        s.beginRun("改两个文件")
+        s.onEvent(editStart("e1", "A.kt"))
+        s.onEvent(AgentEvent.ToolCallComplete("e1", "CodeEdit", "{}", "ok", "", true, 10))
+        s.onEvent(editStart("e2", "B.kt"))
+        s.onEvent(AgentEvent.ToolCallComplete("e2", "CodeEdit", "{}", "ok", "", true, 10))
+        s.onEvent(AgentEvent.Complete("done", 3, 2, 1_000))
+        val snap = s.snapshot()
+        val chips = snap.entries.filterIsInstance<StreamEntry.FileChipsEntry>().single()
+        assertEquals(listOf("A.kt", "B.kt"), chips.files)
+        // 结构化统计收尾卡（取代旧纯文本状态行）：Complete 的三项数值 +
+        // 会话侧的文件数/失败数全部落在条目上
+        val stats = snap.entries.filterIsInstance<StreamEntry.RunStatsEntry>().single()
+        assertEquals(3, stats.iterations)
+        assertEquals(2, stats.toolCalls)
+        assertEquals(0, stats.failedCalls)
+        assertEquals(2, stats.filesTouched)
+        assertEquals(1_000L, stats.durationMs)
+    }
+
+    @Test
+    fun `run stats failed count is per run not cumulative`() {
+        // 跨 run 不串台：第一轮失败 1 次 → 统计卡 1；第二轮干净 → 0
+        //（failedToolCallCount 是会话累计，基线差值才是本轮口径）
+        val s = CodeStreamSession()
+        s.beginRun("会失败的一轮")
+        s.onEvent(bashStart("b1", "make"))
+        s.onEvent(AgentEvent.ToolCallComplete("b1", "TerminalExec", "{}", "exit code 1", "", false, 5))
+        s.onEvent(AgentEvent.Complete("done", 1, 1, 100))
+        val first = s.snapshot().entries.filterIsInstance<StreamEntry.RunStatsEntry>().single()
+        assertEquals("第一轮失败 1 次", 1, first.failedCalls)
+
+        s.beginRun("干净的第二轮")
+        s.onEvent(bashStart("b2", "echo ok"))
+        s.onEvent(AgentEvent.ToolCallComplete("b2", "TerminalExec", "{}", "exit code 0", "", true, 5))
+        s.onEvent(AgentEvent.Complete("done", 1, 1, 50))
+        val second = s.snapshot().entries.filterIsInstance<StreamEntry.RunStatsEntry>().last()
+        assertEquals("第二轮失败数不携带上一轮累计", 0, second.failedCalls)
+        assertEquals(1, second.toolCalls)
+        assertEquals(50L, second.durationMs)
+    }
+
+    @Test
+    fun `run stats entry round trips through checkpoint`() {
+        // 检查点恢复：runstats 条目扁平化存取（数值零丢失，旧档默认 0 兼容）
+        val s = CodeStreamSession()
+        s.beginRun("可恢复的一轮")
+        s.onEvent(AgentEvent.Complete("done", 4, 7, 9_500))
+        val storable = CodeStreamCheckpoint.fromSession(s, "ws-1")
+        val entry = storable.entries.filter { it.type == "runstats" }.single()
+        assertEquals(4, entry.runIterations)
+        assertEquals(7, entry.runToolCalls)
+        assertEquals(9_500L, entry.runDurationMs)
+        val restored = CodeStreamCheckpoint.toEntries(storable)
+            .filterIsInstance<StreamEntry.RunStatsEntry>().single()
+        assertEquals(4, restored.iterations)
+        assertEquals(7, restored.toolCalls)
+        assertEquals(9_500L, restored.durationMs)
+    }
+
+    @Test
+    fun `pure qa turn keeps light status line instead of stats card`() {
+        // 纯问答轮（零工具零文件）不出重统计卡——轻量状态行收尾
+        val s = CodeStreamSession()
+        s.beginRun("就问一句话")
+        s.onEvent(AgentEvent.ResponseChunk("直接回答"))
+        s.onEvent(AgentEvent.Complete("done", 1, 0, 300))
+        val snap = s.snapshot()
+        assertEquals("零工作不出统计卡", 0, snap.entries.count { it is StreamEntry.RunStatsEntry })
+        assertEquals(
+            "旧轻量状态行保留",
+            1,
+            snap.entries.count { it is StreamEntry.StatusEntry && (it as StreamEntry.StatusEntry).text.contains("完成") }
+        )
+    }
+
+    @Test
+    fun `tick returns null when nothing changed`() {
+        val s = CodeStreamSession()
+        s.beginRun("安静的任务")
+        s.tick(1_000)
+        assertNull("无变更无脉冲 → null（VM 跳过更新）", s.tick(1_001))
+    }
+
+    @Test
+    fun `tick batches storm of chunks into coalesced snapshots`() {
+        val s = CodeStreamSession()
+        s.beginRun("流式风暴")
+        s.onEvent(bashStart("b1", "cat big.log"))
+        // 100 个小 chunk 事件
+        repeat(100) { s.onEvent(AgentEvent.ToolOutputChunk("b1", "data\n")) }
+        // 中间不 tick——全部攒住
+        val snap = s.tick(50_000)
+        assertNotNull(snap)
+        assertEquals("终态只有一条胶囊", 1, snap!!.toolCallCount)
+        assertTrue(snap.terminalContent.contains("data"))
+    }
+
+    @Test
+    fun `inject system entry is visible in timeline`() {
+        val s = CodeStreamSession()
+        s.injectSystem("🧠 自适应预检：长文本+2 → 评分 2 → LIGHT")
+        val snap = s.snapshot()
+        val sys = snap.entries.filterIsInstance<StreamEntry.SystemEntry>().single()
+        assertTrue(sys.text.contains("自适应预检"))
+    }
+
+    @Test
+    fun `non bash log tail is windowed`() {
+        val s = CodeStreamSession()
+        s.beginRun("长输出")
+        s.onEvent(AgentEvent.ToolCallStart("g1", "CodeGrep", """{"pattern":"foo"}"""))
+        repeat(50) { s.onEvent(AgentEvent.ToolOutputChunk("g1", "match-$it\n")) }
+        s.onEvent(AgentEvent.ToolCallComplete("g1", "CodeGrep", "{}", "done", "", true, 10))
+        val snap = s.snapshot()
+        val capsule = snap.entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertEquals(ToolKind.GREP_SEARCH, capsule.call.kind)
+        assertTrue(
+            "logTail 只保留尾窗（≤2000 字符）",
+            capsule.call.logTail.length <= 2_000 && capsule.call.logTail.contains("match-49")
+        )
+    }
+
+    @Test
+    fun `failed capsule increments failure count`() {
+        val s = CodeStreamSession()
+        s.beginRun("失败案例")
+        s.onEvent(bashStart("b1", "false"))
+        s.onEvent(
+            AgentEvent.ToolCallComplete("b1", "TerminalExec", "{}", "exit code 1", "", false, 5)
+        )
+        val snap = s.snapshot()
+        assertEquals(1, snap.failedToolCallCount)
+        val capsule = snap.entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertEquals(ToolCallStatus.FAILED, capsule.call.status)
+        assertEquals(1, capsule.call.exitCode)
+    }
+
+    // ═══ 第三轮质量审计回归（P0/P1）═══
+
+    @Test
+    fun `restore then new run produces unique entry ids`() {
+        // P0：replaceAll 不回拨序号 → nextId() 从 e-1 重发 → LazyColumn 重复 key 崩溃
+        val first = CodeStreamSession()
+        first.beginRun("老任务")
+        first.onEvent(AgentEvent.ResponseChunk("老结论"))
+        first.onEvent(AgentEvent.ResponseComplete("老结论"))
+        first.onEvent(AgentEvent.Complete("done", 1, 0, 100))
+        val restored = first.entriesSnapshot()
+
+        val second = CodeStreamSession()
+        second.replaceAll(restored)
+        second.beginRun("新任务")
+        second.onEvent(AgentEvent.ResponseChunk("新结论"))
+        val ids = second.entriesSnapshot().map { it.id }
+        assertEquals("恢复后新事件 id 不得与恢复轴撞号", ids.size, ids.toSet().size)
+    }
+
+    @Test
+    fun `abort mid stream then new run does not merge bubbles`() {
+        // P1：中止后 streamingAssistant 悬挂 → 下一轮文本拼进旧气泡
+        val s = CodeStreamSession()
+        s.beginRun("第一轮")
+        s.onEvent(AgentEvent.ResponseChunk("第一轮的流式文本"))
+        // 中止（无 ResponseComplete）
+        s.onEvent(AgentEvent.Aborted)
+        val afterAbort = s.snapshot()
+        val bubble1 = afterAbort.entries.filterIsInstance<StreamEntry.AssistantEntry>().single()
+        assertTrue("中止后旧气泡应收口（不再生成中）", !bubble1.isStreaming)
+        // 新一轮
+        s.beginRun("第二轮")
+        s.onEvent(AgentEvent.ResponseChunk("第二轮的新文本"))
+        val snap = s.snapshot()
+        val bubbles = snap.entries.filterIsInstance<StreamEntry.AssistantEntry>()
+        assertEquals("两轮各一条气泡", 2, bubbles.size)
+        assertEquals("第一轮的流式文本", bubbles[0].text)
+        assertEquals("第二轮的新文本", bubbles[1].text)
+    }
+
+    @Test
+    fun `verify cycle folding preserves in round thinking and status entries`() {
+        // P1：闭环折叠整段 subList 清空 → 轮内思考/迭代状态条目被吞
+        val s = CodeStreamSession()
+        s.beginRun("改完自检")
+        s.onEvent(editStart("e1", "A.kt"))
+        s.onEvent(AgentEvent.ToolCallComplete("e1", "CodeEdit", "{}", "ok", "", true, 30))
+        // 真实事件序：edit 完成 → 下一轮迭代声明 → 思考 → verify
+        s.onEvent(AgentEvent.IterationStart(2))
+        s.onEvent(AgentEvent.ThinkingChunk("思考怎么修"))
+        s.onEvent(AgentEvent.ToolCallStart("v1", "lint", """{"path":"A.kt"}"""))
+        s.onEvent(AgentEvent.ToolCallComplete("v1", "lint", "{}", "no issues", "", true, 40))
+        s.onEvent(AgentEvent.Complete("done", 2, 2, 500))
+        val snap = s.snapshot()
+        assertEquals("轮次卡存在", 1, snap.entries.count { it is StreamEntry.VerifyCycleEntry })
+        assertTrue(
+            "轮内思考条目必须原位保留",
+            snap.entries.any { it is StreamEntry.ThinkingEntry && (it as StreamEntry.ThinkingEntry).text == "思考怎么修" }
+        )
+        // 迭代声明不再产生状态行（用户反馈：迭代字样无意义、纯噪音）——
+        // 轮次信息只在 Complete 收尾行汇总。
+        assertTrue(
+            "迭代声明不得再产生「第 N 轮迭代」状态行",
+            snap.entries.none {
+                it is StreamEntry.StatusEntry && (it as StreamEntry.StatusEntry).text.contains("轮迭代")
+            }
+        )
+        // Complete 收尾改为结构化统计卡（旧纯文本状态行已退役）
+        val stats = snap.entries.filterIsInstance<StreamEntry.RunStatsEntry>()
+        assertEquals("收尾统计卡存在且仅一张", 1, stats.size)
+        assertEquals(2, stats[0].iterations)
+        assertEquals(2, stats[0].toolCalls)
+    }
+
+    @Test
+    fun `failed complete replay does not double count failures`() {
+        // P2：重放已终态调用的 Complete → failedToolCallCount 重复自增
+        val s = CodeStreamSession()
+        s.beginRun("重放场景")
+        s.onEvent(bashStart("b1", "false"))
+        val failed = AgentEvent.ToolCallComplete("b1", "TerminalExec", "{}", "exit code 1", "", false, 5)
+        s.onEvent(failed)
+        s.onEvent(failed) // 重放
+        val snap = s.snapshot()
+        assertEquals(1, snap.failedToolCallCount)
+    }
+
+    @Test
+    fun `complete without prior chunk creates terminal entry`() {
+        // P2：非流式路径 ThinkingComplete/ResponseComplete 全文不再静默丢弃
+        val s = CodeStreamSession()
+        s.beginRun("非流式")
+        s.onEvent(AgentEvent.ThinkingComplete("一次性完整思考"))
+        s.onEvent(AgentEvent.ResponseComplete("一次性完整结论"))
+        val snap = s.snapshot()
+        assertEquals(
+            "一次性完整思考",
+            snap.entries.filterIsInstance<StreamEntry.ThinkingEntry>().single().text
+        )
+        assertEquals(
+            "一次性完整结论",
+            snap.entries.filterIsInstance<StreamEntry.AssistantEntry>().single().text
+        )
+    }
+
+    @Test
+    fun `replaceAll restores affected files from last file chips entry`() {
+        // P2：重启后 committedFiles 不再清零
+        val first = CodeStreamSession()
+        first.beginRun("改文件")
+        first.onEvent(editStart("e1", "A.kt"))
+        first.onEvent(AgentEvent.ToolCallComplete("e1", "CodeEdit", "{}", "ok", "", true, 10))
+        first.onEvent(AgentEvent.Complete("done", 1, 1, 100))
+        val restored = first.entriesSnapshot()
+
+        val second = CodeStreamSession()
+        second.replaceAll(restored)
+        assertEquals(listOf("A.kt"), second.snapshot().affectedFiles)
+    }
+
+    @Test
+    fun `affected files reset per run`() {
+        // 文档语义：「本轮运行」触碰的文件
+        val s = CodeStreamSession()
+        s.beginRun("第一轮")
+        s.onEvent(editStart("e1", "A.kt"))
+        s.onEvent(AgentEvent.ToolCallComplete("e1", "CodeEdit", "{}", "ok", "", true, 10))
+        s.onEvent(AgentEvent.Complete("done", 1, 1, 100))
+        assertEquals(listOf("A.kt"), s.snapshot().affectedFiles)
+        s.beginRun("第二轮（未改文件）")
+        s.onEvent(AgentEvent.Complete("done", 1, 0, 50))
+        assertTrue("新一轮开始后归零", s.snapshot().affectedFiles.isEmpty())
+    }
+
+    // ═══ 中止冻结与结论截断修复回归（用户实测 app-20261017 截图/日志）═══
+
+    @Test
+    fun `response complete keeps accumulated text when engine fullText is last iteration only`() {
+        // 回归 1：引擎 contentBuilder 每轮迭代局部重建，ResponseComplete 只带
+        // 末轮文本 —— 旧实现用 fullText 整体覆写，跨轮累积的结论被截成
+        // 末轮残句（用户实测「思考完成后回答只剩两个字」）。
+        // 回归 2（20261031）：工具信号收口正文段 —— 最终回答必须另起新条目
+        // 落位全部工具胶囊之后；旧实现原位并进工具前旧气泡，收尾回答恒
+        // 显示在工具调用记录上方（时序错乱）。
+        val s = CodeStreamSession()
+        s.beginRun("多轮工具任务")
+        s.onEvent(AgentEvent.ResponseChunk("我先分析一下，"))
+        s.onEvent(AgentEvent.ToolCallStart("t1", "CodeGrep", """{"pattern":"x"}"""))
+        s.onEvent(AgentEvent.ToolCallComplete("t1", "CodeGrep", "{}", "done", "", true, 10))
+        s.onEvent(AgentEvent.ResponseChunk("结论如下："))
+        s.onEvent(AgentEvent.ResponseComplete("好的"))
+        val snap = s.snapshot()
+        val assistants = snap.entries.filterIsInstance<StreamEntry.AssistantEntry>()
+        assertEquals("工具前后各一条正文（时序分界 = 工具信号）", 2, assistants.size)
+        assertEquals("工具前正文留在原位定格", "我先分析一下，", assistants[0].text)
+        assertTrue("工具前正文收口为终态", !assistants[0].isStreaming)
+        val final = assistants[1]
+        assertEquals("UI 累积优先，fullText 仅空时兜底", "结论如下：", final.text)
+        assertTrue(!final.isStreaming)
+        // 核心诉求：最终回答位于工具胶囊之后（收尾回答在时间轴末尾）
+        val toolIndex = snap.entries.indexOfFirst { it is StreamEntry.ToolCapsuleEntry }
+        val finalIndex = snap.entries.indexOfLast { it is StreamEntry.AssistantEntry }
+        assertTrue("最终回答排在工具记录之后（toolIndex=$toolIndex finalIndex=$finalIndex）", finalIndex > toolIndex)
+    }
+
+    @Test
+    fun `tool args delta closes streaming assistant before capsule creation`() {
+        // 参数分片先于 Start 到达的流式路径：首个分片即收口正文段 ——
+        // 工具后的正文（含最终回答）另起新条目，不再并进工具前旧气泡。
+        val s = CodeStreamSession()
+        s.beginRun("参数流式任务")
+        s.onEvent(AgentEvent.ResponseChunk("先看看文件，"))
+        // 参数分片（有工具名 + 可提取预览 → 建等待态胶囊）
+        s.onEvent(AgentEvent.ToolCallArgsDelta("w1", "CodeWrite", """{"path":"A.kt","conte"""))
+        s.onEvent(AgentEvent.ToolCallArgsDelta("w1", "CodeWrite", """nt":"x"}"""))
+        s.onEvent(AgentEvent.ToolCallStart("w1", "CodeWrite", """{"path":"A.kt","content":"x"}"""))
+        s.onEvent(AgentEvent.ToolCallComplete("w1", "CodeWrite", "{}", "written", "", true, 5))
+        s.onEvent(AgentEvent.ResponseChunk("写好了。"))
+        s.onEvent(AgentEvent.ResponseComplete("写好了。"))
+        val snap = s.snapshot()
+        val assistants = snap.entries.filterIsInstance<StreamEntry.AssistantEntry>()
+        assertEquals("工具前后各一条正文", 2, assistants.size)
+        assertEquals("先看看文件，", assistants[0].text)
+        assertEquals("写好了。", assistants[1].text)
+        assertTrue(!assistants[1].isStreaming)
+        // 时序：工具前正文 → 胶囊 → 最终回答
+        val capsuleIndex = snap.entries.indexOfFirst { it is StreamEntry.ToolCapsuleEntry }
+        val finalIndex = snap.entries.indexOfLast { it is StreamEntry.AssistantEntry }
+        assertTrue(
+            "最终回答排在工具记录之后（capsuleIndex=$capsuleIndex finalIndex=$finalIndex）",
+            finalIndex > capsuleIndex
+        )
+    }
+
+    @Test
+    fun `response complete falls back to engine fullText when ui text blank`() {
+        // 兜底方向：反思修正轮等文本可能从未流经 UI（无任何 Chunk），
+        // 完成事件的全量文本不得丢弃（非流式路径同款语义）。
+        val s = CodeStreamSession()
+        s.beginRun("非流式收尾")
+        s.onEvent(AgentEvent.ResponseComplete("完整结论"))
+        val snap = s.snapshot()
+        assertEquals("完整结论", snap.entries.filterIsInstance<StreamEntry.AssistantEntry>().single().text)
+    }
+
+    @Test
+    fun `abort event finalizes running capsules as interrupted`() {
+        // 回归：中止只收口流式气泡不收胶囊 → RUNNING 胶囊无限计时转圈
+        //（用户实测截图：中止后 skill_search 卡转 37s+ 仍显示进行中）。
+        val s = CodeStreamSession()
+        s.beginRun("跑到一半停")
+        s.onEvent(AgentEvent.ResponseChunk("部分结论"))
+        s.onEvent(bashStart("b1", "sleep 300"))
+        s.onEvent(AgentEvent.ToolOutputChunk("b1", "zzz\n"))
+        s.onEvent(AgentEvent.Aborted)
+        val snap = s.snapshot()
+        val capsule = snap.entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertEquals("在飞胶囊按中断折叠（与检查点恢复同语义）", ToolCallStatus.PARTIAL, capsule.call.status)
+        assertTrue("计时收口（endAt 落定，displayDuration 不再无限累加）", capsule.call.endAt > 0)
+        assertEquals("已中止", capsule.call.summary)
+        val bubble = snap.entries.filterIsInstance<StreamEntry.AssistantEntry>().single()
+        assertTrue("已累积文本保留", !bubble.isStreaming)
+        assertEquals("部分结论", bubble.text)
+        assertTrue(snap.entries.any { it is StreamEntry.StopEntry })
+    }
+
+    @Test
+    fun `abortLocally finalizes stream without engine events`() {
+        // VM abort：收集协程先死、引擎 Aborted 事件在已取消协程上 emit
+        // 直接抛取消异常、永远到不了 —— 本地收尾是唯一兜底路径。
+        val s = CodeStreamSession()
+        s.beginRun("本地收尾")
+        s.onEvent(AgentEvent.ThinkingChunk("想了一半"))
+        s.onEvent(AgentEvent.ResponseChunk("写了一半"))
+        s.onEvent(editStart("e1", "A.kt"))
+        s.abortLocally()
+        val snap = s.snapshot()
+        val capsule = snap.entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertEquals(ToolCallStatus.PARTIAL, capsule.call.status)
+        val thinking = snap.entries.filterIsInstance<StreamEntry.ThinkingEntry>().single()
+        assertTrue(!thinking.isStreaming)
+        val bubble = snap.entries.filterIsInstance<StreamEntry.AssistantEntry>().single()
+        assertTrue(!bubble.isStreaming)
+        assertEquals("写了一半", bubble.text)
+        assertTrue(snap.entries.any { it is StreamEntry.StopEntry })
+    }
+
+    @Test
+    fun `abortLocally is a no-op after clean completion`() {
+        // 正常完成（Complete 已收尾）后误调 abort：不落多余的「已中止」卡
+        val s = CodeStreamSession()
+        s.beginRun("干净收尾")
+        s.onEvent(AgentEvent.ResponseChunk("结论"))
+        s.onEvent(AgentEvent.ResponseComplete("结论"))
+        s.onEvent(AgentEvent.Complete("done", 1, 0, 100))
+        s.abortLocally()
+        val snap = s.snapshot()
+        assertTrue(snap.entries.none { it is StreamEntry.StopEntry })
+    }
+
+    @Test
+    fun `beginRun finalizes stale running capsules from previous run`() {
+        // 防御：收尾事件全部丢失（中止事件未达且本地收尾遗漏）的路径，
+        // 下一轮 beginRun 不得让旧 RUNNING 胶囊带进新 run 无限计时。
+        val s = CodeStreamSession()
+        s.beginRun("上一轮")
+        s.onEvent(bashStart("b1", "hang"))
+        s.beginRun("下一轮")
+        val snap = s.snapshot()
+        val capsule = snap.entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertEquals(ToolCallStatus.PARTIAL, capsule.call.status)
+        assertTrue("静默收口：不加停止卡", snap.entries.none { it is StreamEntry.StopEntry })
+    }
+
+    @Test
+    fun `streaming chunks merge incrementally beyond two chunks`() {
+        // 回归：streamingAssistant 引用不回写 → 第三个 Chunk 起条目被
+        // 「首块+最新块」覆盖、中间块丢失（旧代码靠 Complete 的 fullText
+        // 整体覆写掩盖，Completion 改累积优先后该缺陷失去遮盖）。
+        val s = CodeStreamSession()
+        s.beginRun("三段流式")
+        s.onEvent(AgentEvent.ResponseChunk("第一段，"))
+        s.onEvent(AgentEvent.ResponseChunk("第二段，"))
+        s.onEvent(AgentEvent.ResponseChunk("第三段。"))
+        val snap = s.snapshot()
+        val bubble = snap.entries.filterIsInstance<StreamEntry.AssistantEntry>().single()
+        assertEquals("流式中的条目即完整累积（不等 Complete 兜底）", "第一段，第二段，第三段。", bubble.text)
+        assertTrue(bubble.isStreaming)
+        // 思考链同款：三段思考流式不丢中间块
+        val s2 = CodeStreamSession()
+        s2.beginRun("三段思考")
+        s2.onEvent(AgentEvent.ThinkingChunk("想一，"))
+        s2.onEvent(AgentEvent.ThinkingChunk("想二，"))
+        s2.onEvent(AgentEvent.ThinkingChunk("想三。"))
+        val thinking = s2.snapshot().entries.filterIsInstance<StreamEntry.ThinkingEntry>().single()
+        assertEquals("想一，想二，想三。", thinking.text)
+    }
+
+    // ═══ 终端面板流水式折叠信号（terminalBusy / 命令摘要 / 退出码）═══
+    // 用户需求：「终端命令等流水似输出：运行时保持展开跟随输出，
+    // 完成后自动折叠成胶囊」—— UI 侧由 CodeScreen 按 terminalBusy 驱动
+    // 展开/折叠（userToggled 守卫），这里锁状态机信号本身的生命周期。
+
+    @Test
+    fun `terminal busy signal follows bash command lifecycle`() {
+        val s = CodeStreamSession()
+        s.beginRun("跑构建")
+        // 开跑前：无命令、不忙
+        val idle = s.snapshot()
+        assertFalse(idle.terminalBusy)
+        assertEquals("", idle.terminalCommandSummary)
+
+        s.onEvent(bashStart("b1", "./gradlew assembleDebug --stacktrace"))
+        val running = s.snapshot()
+        assertTrue("命令运行中 → busy=true", running.terminalBusy)
+        assertEquals(
+            "头行展示首行命令摘要",
+            "./gradlew assembleDebug --stacktrace",
+            running.terminalCommandSummary
+        )
+        assertNull("运行中无退出码", running.terminalExitCode)
+
+        s.onEvent(
+            AgentEvent.ToolCallComplete(
+                callId = "b1", toolName = "terminal.exec", arguments = "",
+                output = "build ok\nexit code 0", fullOutput = "",
+                success = true, durationMs = 1_200
+            )
+        )
+        val done = s.snapshot()
+        assertFalse("命令收束 → busy=false（UI 自动折叠）", done.terminalBusy)
+        assertEquals("退出码就地保留供回看", 0, done.terminalExitCode)
+        assertEquals("命令摘要跨完成保留", "./gradlew assembleDebug --stacktrace", done.terminalCommandSummary)
+    }
+
+    @Test
+    fun `second bash command takes over terminal signals`() {
+        val s = CodeStreamSession()
+        s.beginRun("连跑两条")
+        s.onEvent(bashStart("b1", "echo first"))
+        s.onEvent(AgentEvent.ToolCallComplete("b1", "terminal.exec", "", "exit code 0", "", true, 10))
+        s.onEvent(bashStart("b2", "echo second"))
+        val running = s.snapshot()
+        assertTrue(running.terminalBusy)
+        assertEquals("echo second", running.terminalCommandSummary)
+        assertNull("新命令清掉上一条退出码", running.terminalExitCode)
+    }
+
+    @Test
+    fun `abort mid bash clears busy signal`() {
+        val s = CodeStreamSession()
+        s.beginRun("会中止的任务")
+        s.onEvent(bashStart("b1", "sleep 100"))
+        assertTrue(s.snapshot().terminalBusy)
+        s.onEvent(AgentEvent.Aborted)
+        assertFalse("中止收束 busy（面板不会永远脉冲）", s.snapshot().terminalBusy)
+    }
+
+    @Test
+    fun `engine error clears busy signal`() {
+        val s = CodeStreamSession()
+        s.beginRun("会报错的任务")
+        s.onEvent(bashStart("b1", "boom"))
+        assertTrue(s.snapshot().terminalBusy)
+        s.onEvent(AgentEvent.Error(message = "工具执行失败", recoverable = true))
+        assertFalse("引擎错误收束 busy", s.snapshot().terminalBusy)
+    }
+
+    @Test
+    fun `begin run resets terminal signals`() {
+        val s = CodeStreamSession()
+        s.beginRun("第一轮")
+        s.onEvent(bashStart("b1", "echo hi"))
+        s.onEvent(AgentEvent.ToolCallComplete("b1", "terminal.exec", "", "exit code 0", "", true, 5))
+        assertFalse(s.snapshot().terminalBusy)
+
+        s.beginRun("第二轮")
+        val snap = s.snapshot()
+        assertFalse(snap.terminalBusy)
+        assertEquals("新 run 归零命令摘要", "", snap.terminalCommandSummary)
+        assertNull("新 run 归零退出码", snap.terminalExitCode)
+        assertNull("新 run 无活跃终端", snap.activeTerminalCallId)
+    }
+
+    // ═══ Git 操作可视化（git 工具成功 → GitOpEntry 结构化卡入轴）═══
+
+    @Test
+    fun `git status success appends git op visual entry`() {
+        val s = CodeStreamSession()
+        s.beginRun("看看仓库状态")
+        s.onEvent(AgentEvent.ToolCallStart("g1", "CodeGitStatus", "{}"))
+        s.onEvent(
+            AgentEvent.ToolCallComplete(
+                callId = "g1", toolName = "CodeGitStatus", arguments = "{}",
+                output = "分支: main（跟踪 origin/main，领先 2）\n\n已暂存（将进入下次提交）（1）：\n- 修改  a.kt\n\n未跟踪（2）：\n- b.kt\n- c.kt",
+                fullOutput = "", success = true, durationMs = 800
+            )
+        )
+        val snap = s.snapshot()
+        val capsule = snap.entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertEquals(ToolKind.GIT, capsule.call.kind)
+        assertEquals("git 胶囊 target 用语义占位", "工作区", capsule.call.target)
+        val visual = snap.entries.filterIsInstance<StreamEntry.GitOpEntry>().single()
+        assertEquals(GitOpSummary.GitOpType.STATUS, visual.summary.op)
+        assertEquals("main", visual.summary.branch)
+        assertEquals(2, visual.summary.ahead)
+        assertEquals(1, visual.summary.staged)
+        assertEquals(2, visual.summary.untracked)
+        assertEquals("可视化卡关联胶囊 callId", "g1", visual.callId)
+    }
+
+    @Test
+    fun `git commit capsule target is message subject and visual carries hash`() {
+        val s = CodeStreamSession()
+        s.beginRun("提交一下")
+        s.onEvent(
+            AgentEvent.ToolCallStart(
+                "g2", "CodeGitCommit", """{"message":"修复登录页崩溃\n\n细节"}"""
+            )
+        )
+        s.onEvent(
+            AgentEvent.ToolCallComplete(
+                callId = "g2", toolName = "CodeGitCommit",
+                arguments = """{"message":"修复登录页崩溃"}""",
+                output = "已提交 a1b2c3d: 修复登录页崩溃\n剩余未提交变更：无",
+                fullOutput = "", success = true, durationMs = 1_200
+            )
+        )
+        val snap = s.snapshot()
+        val capsule = snap.entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertEquals("commit 胶囊 target = message 首行", "修复登录页崩溃", capsule.call.target)
+        val visual = snap.entries.filterIsInstance<StreamEntry.GitOpEntry>().single()
+        assertEquals("a1b2c3d", visual.summary.commitHash)
+        assertEquals(0, visual.summary.remainingChanges)
+    }
+
+    @Test
+    fun `git tool failure appends honest failure visual entry`() {
+        val s = CodeStreamSession()
+        s.beginRun("坏仓库")
+        s.onEvent(AgentEvent.ToolCallStart("g3", "CodeGitStatus", "{}"))
+        s.onEvent(
+            AgentEvent.ToolCallComplete(
+                callId = "g3", toolName = "CodeGitStatus", arguments = "{}",
+                output = "Error: execution failed: Ubuntu 环境未安装或未就绪——Git 工具依赖沙箱内预装的 git，请先在终端页安装 Ubuntu（TerminalUbuntuInstall）后再试",
+                fullOutput = "", success = false, durationMs = 30
+            )
+        )
+        val visual = s.snapshot().entries.filterIsInstance<StreamEntry.GitOpEntry>().single()
+        assertTrue("失败也出卡（诚实可视化）", visual.summary.failed)
+        assertEquals(GitOpSummary.FailureKind.ENV_NOT_READY, visual.summary.failureKind)
+        assertEquals("g3", visual.callId)
+    }
+
+    @Test
+    fun `git tool failure with blank output appends no visual entry`() {
+        val s = CodeStreamSession()
+        s.beginRun("空输出")
+        s.onEvent(AgentEvent.ToolCallStart("g3b", "CodeGitStatus", "{}"))
+        s.onEvent(
+            AgentEvent.ToolCallComplete(
+                callId = "g3b", toolName = "CodeGitStatus", arguments = "{}",
+                output = "",
+                fullOutput = "", success = false, durationMs = 30
+            )
+        )
+        assertEquals(
+            "空失败输出不产生可视化卡（防御：无可展示信息）",
+            0,
+            s.snapshot().entries.count { it is StreamEntry.GitOpEntry }
+        )
+    }
+
+    @Test
+    fun `git legacy alias tool name still produces capsule target and visual`() {
+        val s = CodeStreamSession()
+        s.beginRun("旧名回显")
+        s.onEvent(
+            AgentEvent.ToolCallStart(
+                "g5", "code_git_commit", """{"message":"修复登录页崩溃"}"""
+            )
+        )
+        s.onEvent(
+            AgentEvent.ToolCallComplete(
+                callId = "g5", toolName = "code_git_commit",
+                arguments = """{"message":"修复登录页崩溃"}""",
+                output = "已提交 a1b2c3d: 修复登录页崩溃\n剩余未提交变更：无",
+                fullOutput = "", success = true, durationMs = 500
+            )
+        )
+        val snap = s.snapshot()
+        val capsule = snap.entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertEquals("别名归一后 target = message 首行", "修复登录页崩溃", capsule.call.target)
+        val visual = snap.entries.filterIsInstance<StreamEntry.GitOpEntry>().single()
+        assertEquals("a1b2c3d", visual.summary.commitHash)
+    }
+
+    @Test
+    fun `git op entry survives checkpoint roundtrip`() {
+        val s = CodeStreamSession()
+        s.beginRun("提交并查看")
+        s.onEvent(AgentEvent.ToolCallStart("g4", "CodeGitBranch", """{"action":"list"}"""))
+        s.onEvent(
+            AgentEvent.ToolCallComplete(
+                callId = "g4", toolName = "CodeGitBranch", arguments = """{"action":"list"}""",
+                output = "分支列表（2）：\n* main\n  dev",
+                fullOutput = "", success = true, durationMs = 90
+            )
+        )
+        val checkpoint = CodeStreamCheckpoint.fromSession(s, "ws-1")
+        val restored = CodeStreamCheckpoint.toEntries(checkpoint)
+        val visual = restored.filterIsInstance<StreamEntry.GitOpEntry>().single()
+        assertEquals(GitOpSummary.GitOpType.BRANCH, visual.summary.op)
+        assertEquals("main", visual.summary.branch)
+        assertEquals("g4", visual.callId)
+    }
+
+    // ═══ 终端预览分片 × 结构化收尾（P0 输出完整性回归）═══
+
+    @Test
+    fun `preview chunks feed terminal view but authoritative json tail does not`() {
+        val s = CodeStreamSession()
+        s.beginRun("跑构建")
+        s.onEvent(bashStart("p1", "./gradlew assemble"))
+        // TerminalExec 执行期间的 stdout 实时预览分片：终端视图唯一入口
+        s.onEvent(AgentEvent.ToolOutputChunk(callId = "p1", chunk = "line1\n", preview = true))
+        s.onEvent(AgentEvent.ToolOutputChunk(callId = "p1", chunk = "line2\n", preview = true))
+        s.onEvent(AgentEvent.ToolOutputChunk(callId = "p1", chunk = "line3\n", preview = true))
+        s.tick(1_000) // 时间窗基准（本拍无脉冲）
+        val pulsed = s.tick(1_121) // 时间窗（≥120ms）命中脉冲
+        assertNotNull("预览分片经时间窗脉冲产出快照", pulsed)
+        assertTrue(pulsed!!.terminalContent.contains("line1"))
+        assertTrue(pulsed!!.terminalContent.contains("line2"))
+        assertTrue(pulsed!!.terminalContent.contains("line3"))
+        // 同 callId 的权威收尾分片（最终 JSON 信封，可达 ~20K）：不进终端
+        // 视图——否则干净预览被整段挤出 16K 尾窗，面板只剩 JSON 噪音
+        val envelope =
+            """{"stdout":"line1\nline2\nline3","stderr":"","exit_code":0,"durationMs":1200,"cwd":"/workspace/android-guru","channel":"proot-ubuntu","sessionId":"t-9"}"""
+        s.onEvent(AgentEvent.ToolOutputChunk(callId = "p1", chunk = envelope, preview = false))
+        val afterJson = s.snapshot()
+        assertFalse("权威 JSON 信封不进终端视图", afterJson.terminalContent.contains("exit_code"))
+        assertTrue("干净预览未被挤出", afterJson.terminalContent.contains("line3"))
+        // 退出码取自事件结构化字段：JSON 文本形态（"exit_code":0）旧正则
+        // 永远匹配不上，exit 0 只能来自 exitCode 新路径
+        s.onEvent(
+            AgentEvent.ToolCallComplete(
+                callId = "p1", toolName = "TerminalExec", arguments = "",
+                output = envelope, fullOutput = "",
+                success = true, durationMs = 1_200, exitCode = 0
+            )
+        )
+        val finalSnap = s.snapshot()
+        val capsule = finalSnap.entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertEquals(0, capsule.call.exitCode)
+        assertEquals("exit 0", capsule.call.summary)
+        assertEquals("结构化退出码同步面板头行信号", 0, finalSnap.terminalExitCode)
+    }
+
+    @Test
+    fun `legacy non preview chunks still feed terminal view`() {
+        val s = CodeStreamSession()
+        s.beginRun("旧工具直通")
+        s.onEvent(
+            AgentEvent.ToolCallStart(
+                callId = "l1", toolName = "ShellExecute", arguments = """{"command":"echo plain"}"""
+            )
+        )
+        // 无 preview 前导的非 preview 分片：旧工具路径维持既有行为
+        s.onEvent(AgentEvent.ToolOutputChunk(callId = "l1", chunk = "plain text output\n", preview = false))
+        s.tick(1_000)
+        val snap = s.tick(1_121)
+        assertNotNull("旧路径分片照常触发脉冲", snap)
+        assertTrue("旧工具分片仍进终端视图（新门控不影响）", snap!!.terminalContent.contains("plain text output"))
+        val capsule = s.snapshot().entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertTrue("logTail 维持旧行为（分片合并进胶囊尾窗）", capsule.call.logTail.contains("plain text output"))
+    }
+
+    @Test
+    fun `structured failure summary extracts stderr line from json envelope`() {
+        val s = CodeStreamSession()
+        s.beginRun("编译失败")
+        s.onEvent(bashStart("f1", "gcc main.c"))
+        s.onEvent(AgentEvent.ToolOutputChunk(callId = "f1", chunk = "compiling...\n", preview = true))
+        val envelope =
+            """{"stdout":"","stderr":"gcc: error: no such file\n","exit_code":1,"durationMs":850,"cwd":"/workspace/app","channel":"proot-ubuntu"}"""
+        s.onEvent(
+            AgentEvent.ToolCallComplete(
+                callId = "f1", toolName = "TerminalExec", arguments = "",
+                output = envelope, fullOutput = "",
+                success = false, durationMs = 850, exitCode = 1
+            )
+        )
+        val snap = s.snapshot()
+        val capsule = snap.entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertEquals(ToolCallStatus.FAILED, capsule.call.status)
+        assertEquals(1, capsule.call.exitCode)
+        val summary = capsule.call.summary.orEmpty()
+        assertTrue("摘要携带结构化退出码", summary.contains("exit 1"))
+        assertTrue("摘要提取 stderr 首行（人读）", summary.contains("gcc: error"))
+        assertFalse("摘要不再是 JSON 首行噪音", summary.contains("stdout"))
+    }
+}

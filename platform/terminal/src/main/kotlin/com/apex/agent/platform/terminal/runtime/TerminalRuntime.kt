@@ -1,0 +1,335 @@
+package com.apex.agent.platform.terminal.runtime
+
+import com.apex.agent.platform.terminal.errors.RuntimeResult
+import com.apex.agent.platform.terminal.errors.TerminalError
+import com.apex.agent.platform.terminal.events.TerminalEvent
+import com.apex.agent.platform.terminal.io.InputOwner
+import com.apex.agent.platform.terminal.io.TerminalKey
+import com.apex.agent.platform.terminal.io.UnixSignal
+import com.apex.agent.platform.terminal.policy.PrivilegeLevel
+import com.apex.agent.platform.terminal.screen.TerminalScreenState
+import com.apex.agent.platform.terminal.state.TerminalSemanticState
+import com.apex.agent.platform.TerminalWait.WaitCondition
+import kotlinx.coroutines.flow.Flow
+import com.apex.agent.platform.TerminalWait.WaitResult
+
+/**
+ * The top-level Agent-Native Terminal Runtime facade.
+ *
+ * Spec ref: ATR 2.0 Final Spec §6.1 / §33 / §34
+ *
+ * This is the ONLY surface the Agent (and UI) should depend on. It exposes 9 operations:
+ *
+ *   TerminalCreate      — create a long-lived Session
+ *   TerminalRun         — start a Job (non-blocking, returns immediately)
+ *   TerminalObserve     — observe state/output (SEMANTIC / EVENT / SCREEN / RAW)
+ *   TerminalWait        — block until a condition is met (EventBus-driven, no polling)
+ *   TerminalWrite       — write input (raw / line / key)
+ *   TerminalSignal      — send a Unix signal
+ *   TerminalResize      — resize the PTY (SIGWINCH)
+ *   TerminalSnapshot    — global snapshot for context recovery
+ *   TerminalClose       — close a Session (reap child, close fd)
+ *
+ * Agent tools see ONLY these. They do NOT see nativeRead / nativeWrite / TerminalManager /
+ * RingBuffer / PtyOutputPump (Spec §33).
+ *
+ * Owner is AUTO-INJECTED by Runtime based on call origin. Agent tools CANNOT forge owner=USER
+ * (Spec §14). The `owner` parameter on write/signal is set by the Runtime, not the tool caller.
+ */
+interface TerminalRuntime {
+
+    // ───────── create ─────────
+    // Spec §34.1 + T73: backendId 路由（ExecutionBackendRegistry）。
+    // "linux-ubuntu"（默认）= PRoot + Ubuntu RootFS 会话（需 rootfs 已 provision，
+    // 否则失败并携带引导信息）。Android 本地 Shell 后端已移除（Ubuntu-only）。
+    suspend fun create(
+        cwd: String = "/sdcard",
+        rows: Int = 24,
+        cols: Int = 80,
+        env: Map<String, String> = emptyMap(),
+        privilege: PrivilegeLevel = PrivilegeLevel.NORMAL,
+        backendId: String = "linux-ubuntu",
+        /**
+         * T75: workspace id（仅 LINUX 后端；null/blank → "default"）。合法格式
+         * （^[a-z0-9][a-z0-9_-]{0,63}$）的 id 懒创建。
+         */
+        workspaceId: String? = null
+    ): RuntimeResult<CreateResult>
+
+    data class CreateResult(
+        val sessionId: Long,
+        val pid: Int,
+        val shell: String,
+        val cwd: String,
+        val rows: Int,
+        val cols: Int,
+        val privilege: PrivilegeLevel,
+        val state: String,         // SessionState name
+        val cursor: Long,
+        // ── T73: 后端路由结果（Agent 可感知会话落在哪个执行环境）──
+        val backendId: String = "linux-ubuntu",
+        val runtimeType: String = "LINUX",   // BackendRuntimeType name
+        val rootfsId: String? = null,                // LINUX: 已就绪 rootfs 的 id
+        val guestCwd: String? = null,                // LINUX: guest 语义 cwd
+        // ── T75: workspace（LINUX 会话的隔离文件区）──
+        val workspaceId: String? = null              // LINUX: 会话绑定的 workspace id
+    )
+
+    // ───────── backends（T73：Agent 后端能力发现）─────────
+    // Spec §33（Agent 只依赖 TerminalRuntime 门面）：列出所有已注册执行后端及
+    // 其真实可用性。Agent 据此决定 create(backendId=…) 的目标，或在
+    // NEEDS_ROOTFS 时先调 TerminalUbuntuInstall 引导安装。
+    suspend fun backends(): List<BackendStatus>
+
+    /** 单个后端的可用性快照（T73）。 */
+    data class BackendStatus(
+        val id: String,
+        val runtimeType: String,        // BackendRuntimeType.name: LINUX
+        val available: Boolean,         // availability is Ready
+        val state: String,              // READY | NEEDS_ROOTFS[:state] | FAILED
+        val detail: String? = null      // 失败原因 / 引导提示
+    )
+
+    // ───────── run ─────────
+    // Spec §34.2 — non-blocking, returns Job handle immediately.
+    suspend fun run(
+        sessionId: Long,
+        command: String,
+        owner: InputOwner,         // injected by Runtime, NOT by tool caller
+        background: Boolean = false,
+        timeoutMs: Long = 0L
+    ): RuntimeResult<RunResult>
+
+    data class RunResult(
+        val jobId: Long,
+        val sessionId: Long,
+        val state: String,         // JobState name (RUNNING / WAITING_INPUT / FAILED)
+        val startCursor: Long,     // pass as afterCursor to observe this job's output
+        val owner: InputOwner,
+        val background: Boolean
+    )
+
+    // ───────── observe ─────────
+    // Spec §34.3 — the core perception API.
+    suspend fun observe(
+        sessionId: Long,
+        mode: ObserveMode = ObserveMode.SEMANTIC,
+        afterCursor: Long = 0,
+        maxBytes: Int = 12000,
+        maxEvents: Int = 200,
+        /**
+         * T82：SCREEN 模式下附带 scrollback 尾部行数（0 = 不带 —— 历史行为）。
+         * VT 主屏保存最近 1000 行（Termux 基线 §1.5），此前无任何 API 能读到。
+         */
+        scrollbackLines: Int = 0
+    ): RuntimeResult<ObserveResult>
+
+    enum class ObserveMode { SEMANTIC, EVENT, SCREEN, RAW }
+
+    data class ObserveResult(
+        val mode: ObserveMode,
+        val sessionId: Long,
+        val cursor: Long,                  // newest cursor; pass as next afterCursor
+        val startCursor: Long? = null,     // EVENT/RAW: start of returned range
+        val endCursor: Long? = null,       // EVENT/RAW: end (= next afterCursor)
+        val truncated: Boolean = false,
+        val overrun: Boolean = false,
+        val oldestCursor: Long? = null,
+        val semantic: TerminalSemanticState? = null,   // mode=SEMANTIC
+        val events: List<TerminalEvent>? = null,        // mode=EVENT
+        val screen: TerminalScreenState? = null,        // mode=SCREEN
+        val raw: String? = null,                        // mode=RAW (utf-8 or base64)
+        /** T82：SCREEN + scrollbackLines>0 —— VT 主屏 scrollback 尾部（oldest→newest）。 */
+        val scrollbackTail: List<String>? = null        // mode=SCREEN
+    )
+
+    // ───────── wait ─────────
+    // Spec §34.4 — EventBus-driven, no polling.
+    suspend fun wait(
+        sessionId: Long,
+        condition: WaitCondition,
+        timeoutMs: Long = 60_000L
+    ): RuntimeResult<WaitResult>
+
+    // ───────── write ─────────
+    // Spec §34.5 — owner injected by Runtime.
+    //
+    // T85：新增 [bytes] 直通通道 —— 粘贴/按键转义序列等 UTF-8 字节载荷不再经
+    // String↔charset 往返（旧 UI 路径 ISO-8859-1 双重编码导致非 ASCII 粘贴乱码）。
+    // bytes 与 text 二选一：bytes 优先。
+    suspend fun write(
+        sessionId: Long,
+        owner: InputOwner,         // injected by Runtime
+        kind: WriteKind = WriteKind.LINE,
+        text: String? = null,
+        key: TerminalKey? = null,
+        bytes: ByteArray? = null
+    ): RuntimeResult<WriteResult>
+
+    enum class WriteKind { RAW, LINE, KEY, PASTE }
+
+    data class WriteResult(
+        val written: Boolean,
+        val bytesWritten: Int,
+        val cursor: Long,
+        val inputOwner: InputOwner
+    )
+
+    // ───────── signal ─────────
+    // Spec §34.6
+    suspend fun signal(
+        sessionId: Long,
+        signal: UnixSignal,
+        owner: InputOwner,         // injected by Runtime
+        jobId: Long? = null
+    ): RuntimeResult<SignalResult>
+
+    data class SignalResult(
+        val sent: Boolean,
+        val signal: UnixSignal,
+        val targetJobId: Long?,
+        /** T82：scope=JOB 时的前台送达结果 —— NO_FOREGROUND_JOB = shell 自身在前台（空闲）。 */
+        val foregroundDelivered: Boolean? = null
+    )
+
+    /**
+     * T82：只向控制终端前台作业组发信号 —— shell 不受影响（Ctrl-C 语义：打断当前
+     * 命令，session 存活）。与 [signal]（session 级 —— kill(-PGID) 含 shell）互补。
+     *
+     * @return foregroundDelivered=false 表示无前台作业（空闲 prompt）—— 未发送任何
+     * 信号（调用方决定是否退化到 session 级）。
+     */
+    suspend fun signalForeground(
+        sessionId: Long,
+        signal: UnixSignal,
+        owner: InputOwner,
+        jobId: Long? = null
+    ): RuntimeResult<SignalResult>
+
+    // ───────── cancel (Spec PR #51 §5) ─────────
+    /** Cancel a job: graceful SIGTERM → grace period → SIGKILL. Agent doesn't manage signals manually. */
+    suspend fun cancel(
+        sessionId: Long,
+        jobId: Long
+    ): RuntimeResult<CancelResult>
+
+    data class CancelResult(
+        val cancelled: Boolean,
+        val jobId: Long,
+        val finalState: String   // TIMED_OUT / INTERRUPTED / EXITED
+    )
+
+    // ───────── resize ─────────
+    // Spec §34.7
+    suspend fun resize(
+        sessionId: Long,
+        rows: Int,
+        cols: Int
+    ): RuntimeResult<ResizeResult>
+
+    data class ResizeResult(val resized: Boolean, val rows: Int, val cols: Int)
+
+    // ───────── snapshot ─────────
+    // Spec §34.8 — global recovery entry.
+    suspend fun snapshot(
+        mode: SnapshotMode = SnapshotMode.FULL,
+        sessionId: Long? = null,
+        recentEvents: Int = 50,
+        recentOutputBytes: Int = 4096
+    ): RuntimeResult<SnapshotResult>
+
+    enum class SnapshotMode { FULL, SESSIONS }
+
+    data class SnapshotResult(
+        val sessions: List<TerminalSemanticState>,
+        val globalCursor: Long,
+        val recentEvents: List<TerminalEvent>,
+        val recentOutput: String
+    )
+
+    // ───────── stop (Spec PR #54 §5) ─────────
+    /** Stop running jobs (cancel + SIGTERM→grace→SIGKILL) but keep Session alive. ≠ close(). */
+    suspend fun stop(sessionId: Long): RuntimeResult<StopResult>
+
+    data class StopResult(val stopped: Boolean, val jobId: Long?, val finalState: String)
+
+    // ───────── close ─────────
+    // Spec §34.9
+    suspend fun close(
+        sessionId: Long,
+        force: Boolean = false
+    ): RuntimeResult<CloseResult>
+
+    data class CloseResult(
+        val closed: Boolean,
+        val cause: String,         // USER / NORMAL / BROKEN
+        val finalCursor: Long
+    )
+
+    // ───────── push-based observation Flows (Spec §41 — event-driven, NOT polling) ─────────
+    /**
+     * Push-based screen state for a session — computed only while collected and
+     * throttled to ~1 frame (33ms); each new subscription first receives a fresh
+     * snapshot. Null if session not found.
+     */
+    fun screenStateFlow(sessionId: Long): Flow<com.apex.agent.platform.terminal.screen.TerminalScreenState>?
+
+    /** Push-based semantic state for a session. Emits on every state change. Null if session not found. */
+    fun semanticStateFlow(sessionId: Long): Flow<com.apex.agent.platform.terminal.state.TerminalSemanticState>?
+
+    /**
+     * P83: push-based STYLED render state for a session (colors / cursor / scrollback),
+     * for the terminal UI grid renderer. Emits only while collected (the styled
+     * projection is computed on demand — see ObservationEngine). Null if session not found.
+     */
+    fun styledScreenFlow(sessionId: Long): Flow<com.apex.agent.terminalemulator.TerminalRenderSnapshot?>?
+
+    /**
+     * T91（D2-D4）：per-session 事件推流（TerminalEventBus 的 crash-safe 增量订阅
+     * —— afterCursor 锚点后的 OutputProduced/ProcessExited/SessionClosed/StateChanged
+     * 全量推送）。null = session 不存在。
+     *
+     * 消费方：terminal IPC 控制器（跨进程回调桥）。与 §41 家族同源 —— 事件驱动，
+     * 非轮询。additive（PR #60 冻结规则：只加不改）。
+     */
+    fun terminalEventFlow(sessionId: Long, afterCursor: Long = 0L): Flow<TerminalEvent>?
+
+    /**
+     * OSC 52 剪贴板写入请求流（vim/tmux 远程复制 → 宿主剪贴板）。引擎侧已把
+     * base64 解码为 UTF-8 文本；pump 每次 VT feed 后 drain 上抛。null =
+     * 会话不存在或实现不支持（消费方自行降级即可）。
+     */
+    fun clipboardRequestsFlow(sessionId: Long): Flow<String>? = null
+
+    /**
+     * 全局会话生命周期事件流（SessionCreated / SessionClosed / StateChanged(SESSION)）——
+     * 会话列表（UI tab）事件驱动刷新的数据源，替代固定间隔轮询。消费方收到事件后
+     * 全量拉 snapshot(SESSIONS) 对齐（事件只做触发器，不携带完整列表）。null =
+     * 实现不支持（消费方退回轮询兜底）。
+     */
+    fun sessionLifecycleEvents(): Flow<TerminalEvent>? = null
+
+    // ───────── recover ─────────
+    // Spec §39 — crash recovery. Call once on startup. Returns recovered session ids.
+    // Dead PTY sessions appear as EXITED/BROKEN (never faked alive).
+    suspend fun recover(): List<Long>
+
+    /** Read-only SemanticState for a recovered session (from persisted metadata). */
+    suspend fun recoveredSnapshot(sessionId: Long): com.apex.agent.platform.terminal.state.TerminalSemanticState?
+
+    // ───────── shutdown (T81 §15) ─────────
+    // 停止新会话/新 job → cancel 全部 job（三级序列）→ 停 pump → close 全部
+    // session（HUP→TERM→KILL 收敛 + bus/log drop）→ 停协程域 → nativeCloseAll
+    // 兕底 → 持久化 flush。幂等：重复调用直接返回上次结果。
+    suspend fun shutdown(): Result<ShutdownResult>
+
+    data class ShutdownResult(
+        val sessionsClosed: Int,
+        val jobsCancelled: Int,
+        val clean: Boolean          // 全部 session 正常关闭（无 BROKEN/LOST）
+    )
+}
+
+/** Convenience: wrap a TerminalError into a kotlin.Result failure. */
+fun <T> terminalError(err: TerminalError): Result<T> =
+    Result.failure(RuntimeException("TerminalError:${err.code}"))

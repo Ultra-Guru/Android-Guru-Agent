@@ -1,0 +1,2 @@
+- 新增内置聚合包「Toolwright · 工具创造者」：两个元能力技能——CreateSkill（把重复流程沉淀为技能：SkillCreate 一行创建、PascalCase 命名规范、正文写法与验证闭环）与 CreateMcp（MCP 工具源接入：远程/沙箱形态选型、配置模板、启动失败三查）；激活后技能在市场与斜杠菜单独立可见可单独卸载
+- 修复本地 MCP 启动失败的头号根因：沙箱内 npx 首次拉包直连 npmjs.org 国内大面积超时——现默认注入 npmmirror 镜像源（npm 官方 env 机制，已缓存包零影响，用户自配 registry 优先）

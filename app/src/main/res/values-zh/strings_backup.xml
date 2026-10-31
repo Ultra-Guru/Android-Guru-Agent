@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 备份 / 恢复区中文文案（与 values/strings_backup.xml 英文默认一一对应，Task 5-c）。 -->
+<resources>
+    <!-- ═══ 区块说明卡（含什么 / 永不包含什么）═══ -->
+    <string name="backup_section_title">备份与恢复</string>
+    <string name="backup_section_desc">把设置与聊天历史导出为一个 JSON 文件，在新设备上恢复。文件保存到你选择的位置。</string>
+    <string name="backup_security_included">包含：模型 Profile、Provider、角色映射、Agent 设置与聊天历史。</string>
+    <string name="backup_security_never">永不以明文包含：API 密钥与金库密钥。Provider 的 API 密钥在导出时被剥离，恢复后需重新录入。</string>
+    <string name="backup_vault_envelope_note">金库只能以口令加密的 AES-GCM 信封形式导出。</string>
+
+    <!-- ═══ 导出区 ═══ -->
+    <string name="backup_export_title">导出</string>
+    <string name="backup_include_vault">包含金库（加密）</string>
+    <string name="backup_include_vault_desc">用口令加密整个金库，导入时需要再次输入同一口令</string>
+    <string name="backup_passphrase_label">口令</string>
+    <string name="backup_passphrase_hint">建议使用长随机口令</string>
+    <string name="backup_passphrase_confirm_label">确认口令</string>
+    <string name="backup_passphrase_empty">包含金库时必须设置口令</string>
+    <string name="backup_passphrase_mismatch">两次输入的口令不一致</string>
+    <string name="backup_passphrase_strength_note">加密信封的强度取决于口令强度。文件一旦外泄，可被离线暴力破解。</string>
+    <string name="backup_export_button">导出备份</string>
+    <string name="backup_exporting">导出中…</string>
+
+    <!-- ═══ 导入区 ═══ -->
+    <string name="backup_import_title">导入</string>
+    <string name="backup_import_desc">选择一个备份 .json 文件，先预览内容，再选择要恢复的范围。</string>
+    <string name="backup_import_button">选择备份文件</string>
+    <string name="backup_importing">导入中…</string>
+    <string name="backup_import_read_failed">无法读取所选文件</string>
+    <string name="backup_import_invalid_file">不是有效的备份文件</string>
+
+    <!-- ═══ 导入确认对话框（只读预览 + 恢复范围）═══ -->
+    <string name="backup_preview_title">恢复备份</string>
+    <string name="backup_preview_version_fmt">格式版本：%1$d</string>
+    <string name="backup_preview_created_fmt">创建时间：%1$s</string>
+    <string name="backup_preview_from_fmt">导出自：v%1$s</string>
+    <string name="backup_preview_vault_included">金库：包含（加密）</string>
+    <string name="backup_preview_vault_absent">金库：未包含</string>
+    <string name="backup_preview_settings_included">设置：包含</string>
+    <string name="backup_preview_settings_absent">设置：未包含</string>
+    <string name="backup_restore_settings">恢复设置</string>
+    <string name="backup_restore_vault">恢复金库</string>
+    <string name="backup_import_passphrase_label">金库口令</string>
+    <string name="backup_import_passphrase_hint">解密金库信封所需的口令</string>
+    <string name="backup_dialog_confirm">恢复</string>
+    <string name="backup_dialog_cancel">取消</string>
+
+    <!-- ═══ 结果反馈（成功 / 失败 / 部分成功）═══ -->
+    <string name="backup_export_success">备份已导出</string>
+    <string name="backup_export_failed_fmt">导出失败：%1$s</string>
+    <string name="backup_result_settings_ok">设置已恢复</string>
+    <string name="backup_result_settings_restart">重启应用后恢复的设置才会完全生效</string>
+    <string name="backup_result_vault_ok">金库已恢复</string>
+    <string name="backup_result_vault_passphrase_missing">需要金库口令</string>
+    <string name="backup_result_vault_decrypt_failed">金库解密失败 —— 口令错误或数据损坏</string>
+    <string name="backup_result_vault_write_failed">恢复的金库写入失败</string>
+    <string name="backup_result_providers_redact_failed">Provider 列表已跳过：数据无法解析或不安全</string>
+    <string name="backup_result_settings_write_failed_fmt">设置键写入失败：%1$s</string>
+    <string name="backup_result_unsupported_version_fmt">备份格式 v%1$d 高于本应用支持的版本，请先升级应用。</string>
+    <string name="backup_result_errors_prefix">错误：</string>
+    <string name="backup_message_dismiss">关闭提示</string>
+</resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Apex Agent</string>
+    <!-- NOT a dead key (3-E verified): platform/privilege res/xml/accessibility_config.xml
+         references @string/accessibility_description as the accessibility service
+         description shown in system Settings — deleting it would break AAPT link.
+         English default here; Chinese translation in values-zh/strings.xml. -->
+    <string name="accessibility_description">Apex AI Agent needs accessibility permission to read screen content and perform UI actions. This is the core ability for the Agent to see and operate the device.</string>
+</resources>

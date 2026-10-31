@@ -1,0 +1,60 @@
+# VENDOR.md — apex-native-vt vendoring contract
+
+## Upstream
+
+- Repository: https://github.com/Ultra-Guru/apex-native-vt
+- Vendored commit: `cc9d10edf8fd5b62840a3840859918a017bffe5c` (v0.2.1 — upstream PR #1 v0.2 foundation + PR #2 P0 CSI 大参数溢出钳位 + PR #3 P2 宽字符对奇偶校验，CI green: host tests + fuzz + 3×NDK)
+- License: MIT (upstream LICENSE applies to the vendored sources)
+
+## What is vendored
+
+| This module | Upstream |
+|---|---|
+| `src/main/cpp/vt-native/include/` | `include/` (public headers) |
+| `src/main/cpp/vt-native/src/` | `src/` (engine implementation + JNI bridge) |
+| `src/main/cpp/vt-native/CMakeLists.txt` | `CMakeLists.txt` (library build script) |
+| `src/main/kotlin/.../NativeVtCore.kt` | `kotlin/.../NativeVtCore.kt` (adapted: real imports, no `@file:JvmName`, no finalize) |
+
+**Host-maintained additions (NOT vendored — rule-2 territory, like the Kotlin glue):**
+
+| Path | Role |
+|---|---|
+| `CMakeLists.txt` (module level) | AGP entry + `target_sources(vt_native …)` wiring below |
+| `src/main/cpp/fastpath/` | T95 render fast path: run-collapse of the engine's public `FlatSnapshot` (one flat int array per JNI hand-off) + its JNI binding, compiled into the SAME `libvt_native.so` |
+
+These consume only the upstream **public API** (`apex/vt/vt_engine.h`) and never
+modify the vendored tree — the byte-identical rule is preserved by construction.
+
+**Not** vendored: `tests/` (370 host tests: 129 v0.1 parity + 241 v0.2 foundation; fuzz + benchmark) and
+`.github/workflows/` — they run in the upstream repo's CI on every push.
+
+## Rules
+
+1. **Vendored C++ sources are byte-identical to the upstream commit.**
+   Bug fixes and features land upstream first, then a re-vendor commit
+   replaces the tree wholesale (`git rm -r` + `cp -r`) and updates the
+   commit SHA above.
+2. Kotlin-side glue (`VtEngineFactory`, `NativeVtCore` adaptations,
+   `:terminal-native` Gradle/CMake wiring) is maintained **here**.
+3. The upstream repo is the single source of truth for engine semantics;
+   behavioral parity with the Kotlin `TerminalCore` is enforced by the
+   upstream 129-case golden suite (ported from `terminal-emulator` tests).
+4. ABI: `libvt_native.so` — JNI symbols are statically bound by
+   `NativeVtCore.external fun` declarations; renaming either side breaks
+   at runtime, not compile time. Keep the JNI name map in sync:
+   `Java_com_apex_agent_vtnative_NativeVtCore_native*`.
+
+## Why vendored (not a binary artifact)
+
+- Same pattern as the existing `:terminal-emulator` (vendored Kotlin VT
+  engine) and the vendored proot/loader binaries.
+- The APK CI (`apk.yml`) compiles the C++ for every ABI on every build —
+  no binary provenance questions, no stale .so risk.
+- Debuggability: sources are right here, with full symbol info in debug
+  builds.
+
+## v0.2.2 同步（上游 apex-native-vt）
+
+- 上游仓库已按 apex-(类型)-(名字) 规范更名（vt 引擎库，native 类）；
+- OSC 4/10/11/12 宿主主题色 API（setThemeColors 引擎+JNI+Kotlin 全链）；
+- appendRgbSpec 8→16 位复制修复（0xFF→0xFFFF，xterm rgb: 规范）。

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Viro invader brand glyph for in-app use (onboarding hero, empty states).
+
+  7×7 grid viewport — render at any size with Icon(painterResource(...)),
+  tint applied by call site (brand lavender #898DF1 or theme primary).
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="7"
+    android:viewportHeight="7">
+    <path
+        android:fillColor="#898DF1"
+        android:pathData="M0,0 h7 v1 h-7 z
+            M1,1 h1 v1 h-1 z M3,1 h1 v1 h-1 z M5,1 h1 v1 h-1 z
+            M0,2 h7 v1 h-7 z
+            M0,3 h7 v1 h-7 z
+            M2,4 h1 v1 h-1 z M4,4 h1 v1 h-1 z
+            M1,5 h5 v1 h-5 z
+            M0,6 h1 v1 h-1 z M2,6 h1 v1 h-1 z M4,6 h1 v1 h-1 z M6,6 h1 v1 h-1 z" />
+</vector>

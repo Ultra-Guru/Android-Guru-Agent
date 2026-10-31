@@ -1,0 +1,921 @@
+package com.apex.agent.core.tools.builtin
+
+import com.apex.agent.core.tools.AgentTool
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.serialization.json.*
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Response
+import java.io.IOException
+import java.io.InputStream
+import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+
+/**
+ * 网页内容获取工具（智能提取 + 分段）
+ *
+ * 智能内容提取：
+ * - 自动去除导航、广告、脚本等噪音
+ * - 保留正文结构（标题层级、列表、代码块）
+ * - 对JSON API响应自动格式化
+ * - 分段输出，支持max_chars截断
+ *
+ * 多种提取模式：
+ * - "text"：纯文本正文（默认）
+ * - "links"：提取所有链接
+ * - "structure"：页面结构概览（标题、段落数、链接数）
+ * - "raw"：原始响应（适合API）
+ */
+class WebFetchTool(
+    private val httpClient: OkHttpClient = defaultClient()
+) : AgentTool {
+
+    override val id = "WebFetch"
+    override val name = "Fetch URL"
+    override val description = """
+        Fetch and extract content from a URL.
+        Intelligently strips navigation, ads, scripts. Preserves readable content.
+
+        Modes:
+        - "text": Extract readable text (default)
+        - "links": Get all links on the page
+        - "structure": Page overview (title, sections, stats)
+        - "raw": Raw response (for APIs/JSON)
+
+        For long content, use max_chars to limit output.
+        The response indicates if content was truncated.
+
+        Examples:
+        - {"url": "https://docs.python.org/3/tutorial/introduction.html"}
+        - {"url": "https://api.github.com/repos/user/repo", "mode": "raw"}
+        - {"url": "https://news.ycombinator.com", "mode": "links"}
+        - {"url": "https://example.com", "mode": "structure"}
+    """.trimIndent()
+
+    override val parametersSchema = """
+        {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "URL to fetch"},
+                "mode": {"type": "string", "enum": ["text", "links", "structure", "raw"], "description": "Extraction mode (default: text)"},
+                "max_chars": {"type": "integer", "description": "Max output chars (default 4000)"},
+                "headers": {"type": "object", "description": "Custom HTTP headers"}
+            },
+            "required": ["url"]
+        }
+    """.trimIndent()
+
+    override suspend fun execute(arguments: String): String {
+        return try {
+            val json = Json.parseToJsonElement(arguments).jsonObject
+            val url = json["url"]?.jsonPrimitive?.content ?: return "Error: 'url' required"
+            val mode = json["mode"]?.jsonPrimitive?.content ?: "text"
+            val maxChars = json["max_chars"]?.jsonPrimitive?.intOrNull ?: 4000
+
+            val reqBuilder = Request.Builder()
+                .url(url)
+                // WAF 兼容默认头（对话实录 #5）：裸 OkHttp 的自指纹 UA 曾被
+                // 云 WAF 直接 405 拦截（阿里云：同一 URL 换浏览器 UA + Referer
+                // 立即 200）。默认伪装浏览器；用户 headers 仍可逐项覆盖。
+                .header("User-Agent", BROWSER_UA)
+                .header("Accept", "text/html,application/xhtml+xml,application/json,text/plain,*/*")
+                .header("Accept-Language", "en-US,en;q=0.8,zh-CN;q=0.6")
+                .header("Referer", originOf(url))
+
+            json["headers"]?.jsonObject?.forEach { (k, v) ->
+                reqBuilder.header(k, v.jsonPrimitive.content)
+            }
+
+            val response = httpClient.newCall(reqBuilder.build()).awaitOk()
+            response.use {
+                // P1（OOM）：响应体限流读入 —— 旧实现 body?.string() 无上限整体入内存，
+                // 高速网络下 30s readTimeout 可拉数百 MB 直接 OOM 闪退（同仓库
+                // ClawHubSource / 下载路径均有 2~20MB 上限，唯独这两个工具裸奔）。
+                // 下游本就只消费 maxChars（≤10万字符）级别的尾部，8MB 上限绰绰有余。
+                val rawBody = it.body?.byteStream()?.use { s ->
+                    s.readBodyLimited(MAX_RESPONSE_BODY_BYTES)
+                } ?: ""
+                val contentType = it.header("Content-Type") ?: ""
+                val statusCode = it.code
+
+                if (statusCode !in 200..299) {
+                    // P0 修复：错误必须以 "Error:" 开头——v3 管线（熔断器/统计/UI
+                    // 成败判定）依赖该前缀。旧的 "❌ HTTP xxx" 会被误判为成功。
+                    // 404/403/405 附带下一步向导（对话实录 #4：API 路径猜测无向导）。
+                    return "Error: HTTP $statusCode fetching $url\n${rawBody.take(500)}" +
+                        (httpStatusHint(statusCode, rawBody.take(2000), contentType)
+                            ?.let { "\n$it" } ?: "")
+                }
+
+                when (mode) {
+                    "raw" -> formatRaw(rawBody, contentType, maxChars)
+                    "structure" -> extractStructure(rawBody, url)
+                    "links" -> extractLinks(rawBody, maxChars)
+                    else -> {
+                        // SPA 壳探测（对话实录 #1）：单页应用的 HTML 只有“下载 App”
+                        // 空壳，正文由客户端 XHR 拉取 —— 明确告知模型数据不在
+                        // HTML 里、该去找 API，而不是去试浏览器渲染。
+                        val text = extractReadableText(rawBody, maxChars)
+                        spaShellHint(rawBody, text)?.let { "$text\n\n$it" } ?: text
+                    }
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e // 工具取消必须向上传播，不能折叠成错误文本
+        } catch (e: Exception) {
+            "Error: fetch failed: ${e.message ?: e::class.simpleName}"
+        }
+    }
+
+    private fun extractReadableText(html: String, maxChars: Int): String {
+        // v2：正则全部提升为顶层预编译常量（旧实现每次调用现编 ~15 个正则，
+        // WebFetch 高频调用时 CPU 浪费显著）
+        val text = html
+            // 移除噪音
+            .replace(RX_SCRIPT, "")
+            .replace(RX_STYLE, "")
+            .replace(RX_NAV, "")
+            .replace(RX_HEADER, "")
+            .replace(RX_FOOTER, "")
+            .replace(RX_ASIDE, "")
+            .replace(RX_COMMENT, "")
+            // 保留结构
+            .replace(RX_H1, "\n\n# ")
+            .replace(RX_H2, "\n\n## ")
+            .replace(RX_H3, "\n\n### ")
+            .replace(RX_BREAKS, "\n")
+            .replace(RX_LI, "\n• ")
+            .replace(RX_CODE_OPEN, "`")
+            .replace(RX_CODE_CLOSE, "`")
+            // 移除剩余标签
+            .replace(RX_ANY_TAG, "")
+            // 解码实体
+            .replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+            .replace("&quot;", "\"").replace("&#39;", "'").replace("&nbsp;", " ")
+            .replace("&#x27;", "'").replace("&mdash;", "—")
+            // 清理
+            .replace(RX_BLANK_LINES, "\n\n")
+            .replace(RX_SPACES, " ")
+            .trim()
+
+        return if (text.length > maxChars) {
+            text.take(maxChars) + "\n\n[... truncated at $maxChars/${text.length} chars]"
+        } else {
+            text
+        }
+    }
+
+    private fun extractStructure(html: String, url: String): String {
+        // v2 预编译补齐：同函数旧版每次调用现编 6 个 Regex（:126-127 注释宣称
+        // 「全部提升为顶层预编译常量」却漏了本函数与 extractLinks），
+        // 现照 RX_* 先例提为文件级常量。
+        val title = RX_TITLE_BLOCK
+            .find(html)?.groupValues?.get(1)?.trim() ?: "(untitled)"
+        val h1s = RX_H1_BLOCK.findAll(html)
+            .map { it.groupValues[1].replace(RX_ANY_TAG, "") }.toList()
+        val h2s = RX_H2_BLOCK.findAll(html)
+            .map { it.groupValues[1].replace(RX_ANY_TAG, "") }.toList()
+        val links = RX_HREF_ATTR.findAll(html).count()
+        val paragraphs = RX_P_OPEN.findAll(html).count()
+        val images = RX_IMG_OPEN.findAll(html).count()
+        val textLen = extractReadableText(html, Int.MAX_VALUE).length
+
+        return buildString {
+            appendLine("🌐 Page Structure")
+            appendLine("URL: $url")
+            appendLine("Title: $title")
+            appendLine("─".repeat(40))
+            appendLine("Stats: $paragraphs paragraphs, $links links, $images images")
+            appendLine("Text length: $textLen chars")
+            appendLine()
+            if (h1s.isNotEmpty()) {
+                appendLine("H1 headings:")
+                h1s.take(5).forEach { appendLine("  # $it") }
+            }
+            if (h2s.isNotEmpty()) {
+                appendLine("H2 headings:")
+                h2s.take(10).forEach { appendLine("  ## $it") }
+            }
+            appendLine()
+            appendLine("Use mode:\"text\" to read content, mode:\"links\" to get URLs.")
+        }
+    }
+
+    private fun extractLinks(html: String, maxChars: Int): String {
+        val links = RX_A_HREF_TEXT
+            .findAll(html)
+            .map { m ->
+                val url = m.groupValues[1]
+                val text = m.groupValues[2].replace(RX_ANY_TAG, "").trim().take(60)
+                if (url.startsWith("http") || url.startsWith("/")) "$text → $url" else null
+            }
+            .filterNotNull()
+            .distinct()
+            .take(50)
+            .toList()
+
+        val result = buildString {
+            appendLine("🔗 Links (${links.size}):")
+            links.forEach { appendLine("  $it") }
+        }
+        // 静默截断修复（对话实录 #6 同族）：links 列表被 maxChars 无声切断时
+        // 必须标注省略 —— 否则模型把“看到的前 N 条”当成全部链接。
+        return if (result.length > maxChars) {
+            result.take(maxChars) +
+                "\n\n[... truncated at $maxChars/${result.length} chars — ${links.size} links total, listing cut; raise max_chars to see the rest]"
+        } else {
+            result
+        }
+    }
+
+    private fun formatRaw(body: String, contentType: String, maxChars: Int): String {
+        val formatted = if (contentType.contains("json")) {
+            try {
+                val el = Json.parseToJsonElement(body)
+                Json { prettyPrint = true }.encodeToString(JsonElement.serializer(), el)
+            } catch (e: Exception) { body }
+        } else body
+
+        return if (formatted.length > maxChars) {
+            formatted.take(maxChars) + "\n\n[... truncated at $maxChars/${formatted.length} chars]"
+        } else formatted
+    }
+
+    companion object {
+        fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .build()
+    }
+}
+
+/**
+ * 本地搜索源端口（SearXNG Local Search Spec v1.0 §10 —— 链首插点）。
+ *
+ * 实现在 app 模块（SearxngProviderImpl：OkHttp 调 127.0.0.1:8888 的 JSON API，
+ * 经 Coordinator.isReady() 门禁）；core:tool-registry 只依赖本端口，保持
+ * 纯 JVM 可测（既有零参构造的调用方 —— 单测/BuiltinSearchMcpTransport 默认
+ * —— 不传实现，行为零变化）。
+ *
+ * 契约：Ready 且解析成功才返回非空列表；否则 null（null 不打断回退链 ——
+ * 调用方继续下一 attempt，Spec §10「静默回退，用户无感」）。
+ */
+fun interface LocalSearchSource {
+    suspend fun search(query: String, limit: Int): List<LocalSearchResult>?
+}
+
+/** 本地搜索结果（[WebSearchTool] 内部 SearchResult 的模块边界投影）。 */
+data class LocalSearchResult(
+    val title: String,
+    val url: String,
+    val snippet: String,
+    /** 来源引擎（如 "google"；埋点区分本地实例命中，Spec §10）。 */
+    val engine: String? = null
+)
+
+/**
+ * 网络搜索工具（多供应商回退链）
+ *
+ * P0 修复：旧实现单一依赖 DuckDuckGo html 端点爬虫——该端点对非浏览器流量
+ * （尤其数据中心 IP）返回 403 反爬拦截，且页面改版后正则解析静默产出
+ * "No results found"。表象即"网络搜索不能用"。
+ *
+ * 现为「本地优先 + 三级远程回退」链（Spec §10：SearXNG 链首插入，回退哲学不变）：
+ * 0. 本地 SearXNG 实例（[localSource]；127.0.0.1 JSON API —— 就绪时优先，结果
+ *    聚合自用户选定引擎，无反爬/IP 限流问题；不可用自动跳过）
+ * 1. DuckDuckGo HTML（无需 Key，结果质量好）
+ * 2. DuckDuckGo Lite（同源但轻量模板，反爬策略不同）
+ * 3. Bing Web（无 Key 可用，桌面 UA）
+ *
+ * 全部失败时返回 "Error: ..." 前缀文本（v3 管线的成败判定依赖该前缀：
+ * 旧实现返回 "Search failed: HTTP 403" 不带 Error 前缀，被熔断器/统计/UI
+ * 误判为成功，导致模型反复重试烧限流额度）。
+ */
+class WebSearchTool(
+    private val httpClient: OkHttpClient = WebFetchTool.defaultClient(),
+    /** 本地搜索源（null = 未接线 —— 单测/MCP 默认构造，行为与旧版完全一致）。 */
+    private val localSource: LocalSearchSource? = null
+) : AgentTool {
+
+    override val id = "WebSearch"
+    override val name = "Web Search"
+    override val description = """
+        Search the web for information. Returns a list of search results with titles, URLs, and snippets.
+        Use this to find documentation, articles, or any web content.
+        After finding relevant results, use WebFetch to read the full content.
+
+        For coding/library/API/technical questions, prefer GitHub tools as the
+        authoritative source: GithubSearchRepos to find the repo, then
+        GithubSearchCode / GithubReadFile to read the actual code, README and
+        docs — more precise than web snippets for technical facts.
+
+        Examples:
+        - {"query": "Kotlin coroutines tutorial"}
+        - {"query": "Android 15 new features", "max_results": 5}
+        - {"query": "python fastapi example"}
+    """.trimIndent()
+
+    override val parametersSchema = """
+        {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query"
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum number of results (default 5, max 10)"
+                }
+            },
+            "required": ["query"]
+        }
+    """.trimIndent()
+
+    override suspend fun execute(arguments: String): String {
+        return try {
+            val json = Json.parseToJsonElement(arguments).jsonObject
+            val query = json["query"]?.jsonPrimitive?.content
+                ?: return "Error: 'query' parameter is required"
+            val maxResults = (json["max_results"]?.jsonPrimitive?.intOrNull ?: 5).coerceIn(1, 10)
+            searchWithFallback(query, maxResults)
+        } catch (e: CancellationException) {
+            throw e // 工具取消必须向上传播
+        } catch (e: Exception) {
+            "Error: search failed: ${e.message ?: e::class.simpleName}"
+        }
+    }
+
+    private suspend fun searchWithFallback(query: String, maxResults: Int): String {
+        val failures = mutableListOf<String>()
+
+        // 局部 suspend 帮助函数：尝试单个供应商。成功返回结果；失败或解析出
+        // 0 条结果时记入 failures 并返回 null（由 ?: 链触发下一供应商）。
+        suspend fun attempt(
+            name: String,
+            block: suspend () -> List<SearchResult>
+        ): List<SearchResult>? = try {
+            val results = block()
+            if (results.isEmpty()) {
+                failures.add("$name: parsed 0 results")
+                null
+            } else {
+                results
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            failures.add("$name: ${e.message ?: e::class.simpleName}")
+            null
+        }
+
+        // 链首：本地 SearXNG 实例（Spec §10 —— 就绪且解析成功才采纳；null/空/异常
+        // 静默降级到远程链，用户无感。来源标记 engine=searxng 供埋点区分）
+        val results = attemptLocal(query, maxResults)
+            ?: attempt("duckduckgo-html") { searchDuckDuckGoHtml(query, maxResults) }
+            ?: attempt("duckduckgo-lite") { searchDuckDuckGoLite(query, maxResults) }
+            ?: attempt("bing") { searchBing(query, maxResults) }
+            ?: return "Error: search failed for \"$query\" — all providers exhausted " +
+                "(${failures.joinToString("; ")}). Likely network blocking or anti-bot " +
+                "interception. Try WebFetch on a specific URL instead, or rephrase the query."
+
+        return formatResults(query, results)
+    }
+
+    /**
+     * 本地 SearXNG attempt：null = 未接线/不就绪/失败/空结果（降级继续，Spec §10
+     * 触发条件）。结果映射 title/url/content→snippet/engine→来源标记。
+     */
+    private suspend fun attemptLocal(query: String, maxResults: Int): List<SearchResult>? {
+        val source = localSource ?: return null
+        return try {
+            val local = source.search(query, maxResults)
+                ?: run { recordLocalFallback("not ready or fetch failed"); return null }
+            if (local.isEmpty()) {
+                recordLocalFallback("empty results")
+                null
+            } else {
+                local.map { r ->
+                    SearchResult(
+                        title = r.title,
+                        url = r.url,
+                        snippet = if (r.engine != null) "[searxng:${r.engine}] ${r.snippet}" else r.snippet
+                    )
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            recordLocalFallback(e.message ?: e::class.simpleName ?: "error")
+            null
+        }
+    }
+
+    /** 本地回退留痕（Spec §10 可观测性：不向 UI 暴露，仅调试日志）。 */
+    private fun recordLocalFallback(reason: String) {
+        runCatching {
+            com.apex.agent.core.logging.AppLogger.instance.info(
+                com.apex.agent.core.logging.LogCategory.TOOL,
+                "WebSearchTool",
+                "searxng local fallback → remote chain ($reason)"
+            )
+        }
+    }
+
+    private data class SearchResult(val title: String, val url: String, val snippet: String)
+
+    /** 统一的搜索请求体获取：非 2xx 抛 IOException（被回退链捕获后换供应商）。 */
+    private suspend fun fetchBody(url: String, userAgent: String): String {
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", userAgent)
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header("Accept-Language", "en-US,en;q=0.8,zh-CN;q=0.6")
+            .build()
+        httpClient.newCall(request).awaitOk().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("HTTP ${response.code}")
+            }
+            return response.body?.string() ?: ""
+        }
+    }
+
+    // ── 供应商 1：DuckDuckGo HTML 端点 ──
+    private suspend fun searchDuckDuckGoHtml(query: String, maxResults: Int): List<SearchResult> {
+        val encodedQuery = URLEncoder.encode(query, "UTF-8")
+        val html = fetchBody(
+            "https://html.duckduckgo.com/html/?q=$encodedQuery",
+            DESKTOP_UA
+        )
+        return parseDuckDuckGoResults(html, maxResults)
+    }
+
+    // ── 供应商 2：DuckDuckGo Lite 端点（同源但模板不同，反爬策略不同） ──
+    private suspend fun searchDuckDuckGoLite(query: String, maxResults: Int): List<SearchResult> {
+        val encodedQuery = URLEncoder.encode(query, "UTF-8")
+        val html = fetchBody(
+            "https://lite.duckduckgo.com/lite/?q=$encodedQuery",
+            MOBILE_UA
+        )
+        return parseDuckDuckGoLiteResults(html, maxResults)
+    }
+
+    // ── 供应商 3：Bing Web（无 Key 可用） ──
+    private suspend fun searchBing(query: String, maxResults: Int): List<SearchResult> {
+        val encodedQuery = URLEncoder.encode(query, "UTF-8")
+        val html = fetchBody(
+            "https://www.bing.com/search?q=$encodedQuery&count=10",
+            DESKTOP_UA
+        )
+        return parseBingResults(html, maxResults)
+    }
+
+    private fun formatResults(query: String, results: List<SearchResult>): String = buildString {
+        appendLine("Search results for: \"$query\" (${results.size} results)")
+        appendLine("---")
+        results.forEachIndexed { i, result ->
+            appendLine("${i + 1}. ${result.title}")
+            appendLine("   URL: ${result.url}")
+            appendLine("   ${result.snippet}")
+            appendLine()
+        }
+        appendLine("Use WebFetch to read full content of any result.")
+    }
+
+    // ── 解析器：DDG HTML（result__a / result__snippet） ──
+    private fun parseDuckDuckGoResults(html: String, maxResults: Int): List<SearchResult> {
+        val results = mutableListOf<SearchResult>()
+        for (match in DDG_RESULT_PATTERN.findAll(html)) {
+            if (results.size >= maxResults) break
+            var url = match.groupValues[1]
+            val title = match.groupValues[2].replace(RX_ANY_TAG, "").trim()
+            val snippet = match.groupValues[3].replace(RX_ANY_TAG, "").trim()
+            url = unwrapDdgRedirect(url)
+            if (title.isNotBlank()) results.add(SearchResult(title, url, snippet))
+        }
+        return results
+    }
+
+    // ── 解析器：DDG Lite（表格布局，<a rel=nofollow href> + result-snippet） ──
+    private fun parseDuckDuckGoLiteResults(html: String, maxResults: Int): List<SearchResult> {
+        val results = mutableListOf<SearchResult>()
+        val snippets = DDG_LITE_SNIPPET_PATTERN.findAll(html)
+            .map { it.groupValues[1].replace(RX_ANY_TAG, "").trim() }
+            .toList()
+        var index = 0
+        for (match in DDG_LITE_LINK_PATTERN.findAll(html)) {
+            if (results.size >= maxResults) break
+            var url = match.groupValues[1]
+            val title = match.groupValues[2].replace(RX_ANY_TAG, "").trim()
+            // 跳过站内导航链接，只要外链结果
+            if (!url.startsWith("http") || url.contains("duckduckgo.com")) continue
+            url = unwrapDdgRedirect(url)
+            val snippet = snippets.getOrNull(index)?.take(200) ?: ""
+            index++
+            if (title.isNotBlank()) results.add(SearchResult(title, url, snippet))
+        }
+        return results
+    }
+
+    // ── 解析器：Bing（b_algo 块内 h2>a + p） ──
+    // 实测（2025+ Bing 页面）结果链接普遍被包成 bing.com/ck/a?...&u=a1<base64>
+    // 点击跟踪重定向，链接统一过 [decodeBingRedirect] 解出真实 URL。
+    private fun parseBingResults(html: String, maxResults: Int): List<SearchResult> {
+        val results = mutableListOf<SearchResult>()
+        for (match in BING_RESULT_PATTERN.findAll(html)) {
+            if (results.size >= maxResults) break
+            val url = decodeBingRedirect(match.groupValues[1])
+            val title = match.groupValues[2].replace(RX_ANY_TAG, "").trim()
+            val snippet = BING_SNIPPET_PATTERN.find(match.groupValues[3])
+                ?.groupValues?.get(1)?.replace(RX_ANY_TAG, "")?.trim() ?: ""
+            if (title.isNotBlank() && url.startsWith("http")) {
+                results.add(SearchResult(title, url, decodeEntities(snippet).take(200)))
+            }
+        }
+        return results
+    }
+
+    /** DDG 的外链走 //duckduckgo.com/l/?uddg=<encoded> 重定向，解出真实 URL。 */
+    private fun unwrapDdgRedirect(url: String): String = if (url.contains("uddg=")) {
+        try {
+            java.net.URLDecoder.decode(url.substringAfter("uddg=").substringBefore("&"), "UTF-8")
+        } catch (e: Exception) { url }
+    } else url
+
+    /**
+     * Bing 点击跟踪重定向解码：`https://www.bing.com/ck/a?...&u=a1<base64 目标 URL>&...`。
+     * 实测 2025+ Bing 结果 href 普遍被包成 /ck/a 重定向；不带重定时本函数是 no-op。
+     * u 参数前缀 a1 后为 URL-safe base64，还原标准 base64（-→+、_→/、补 =）后解码。
+     */
+    private fun decodeBingRedirect(url: String): String {
+        if (!url.contains("bing.com/ck/")) return url
+        return try {
+            val clean = url.replace("&amp;", "&")
+            // #448：substringAfter 在分隔符缺失时返回整串 —— 无 &u= 参数的
+            // /ck/ 链接（如纯 FORM 跟踪变体）会被误当 base64 解码出垃圾，
+            // 先校验存在性，缺参即原样返回。
+            if (!clean.contains("&u=")) return url
+            val u = clean.substringAfter("&u=").substringBefore("&")
+            if (u.length > 2) {
+                val b64 = u.substring(2)
+                    .replace('-', '+')
+                    .replace('_', '/')
+                    .padEnd((u.length - 2 + 3) / 4 * 4, '=')
+                val decoded = java.util.Base64.getDecoder().decode(b64).decodeToString()
+                if (decoded.startsWith("http")) decoded else url
+            } else {
+                url
+            }
+        } catch (e: Exception) {
+            url
+        }
+    }
+
+    private fun decodeEntities(s: String): String = s
+        .replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+        .replace("&quot;", "\"").replace("&#39;", "'").replace("&nbsp;", " ")
+
+    companion object {
+        private const val DESKTOP_UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+        private const val MOBILE_UA =
+            "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
+
+        private val DDG_RESULT_PATTERN = Regex(
+            """<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>.*?<a[^>]*class="result__snippet"[^>]*>(.*?)</a>""",
+            RegexOption.DOT_MATCHES_ALL
+        )
+        private val DDG_LITE_LINK_PATTERN = Regex(
+            """<a[^>]*rel="nofollow"[^>]*href="([^"]+)"[^>]*>(.*?)</a>""",
+            RegexOption.DOT_MATCHES_ALL
+        )
+        private val DDG_LITE_SNIPPET_PATTERN = Regex(
+            """<td[^>]*class="result-snippet"[^>]*>(.*?)</td>""",
+            RegexOption.DOT_MATCHES_ALL
+        )
+        private val BING_RESULT_PATTERN = Regex(
+            """<li class="b_algo"[\s\S]*?<h2><a[^>]*href="([^"]+)"[^>]*>(.*?)</a></h2>([\s\S]*?)</li>"""
+        )
+        private val BING_SNIPPET_PATTERN = Regex(
+            """<p[^>]*>(.*?)</p>""",
+            RegexOption.DOT_MATCHES_ALL
+        )
+    }
+}
+
+/**
+ * 通用HTTP请求工具
+ *
+ * More flexible than WebFetch: supports all HTTP methods (GET/POST/PUT/DELETE/PATCH),
+ * custom bodies, and arbitrary headers. Returns status code, key headers, and body.
+ */
+class HttpRequestTool(
+    private val httpClient: OkHttpClient = WebFetchTool.defaultClient()
+) : AgentTool {
+
+    override val id = "HttpRequest"
+    override val name = "HTTP Request"
+    override val description = """
+        Make an HTTP request (GET, POST, PUT, DELETE, PATCH).
+        Use for API calls, form submissions, or any HTTP interaction.
+        Returns status code, headers, and response body.
+        Browser-like default headers (User-Agent / Accept / Accept-Language) are sent
+        automatically — cloud WAFs reject bare clients; override per-request via headers.
+
+        Examples:
+        - {"method": "GET", "url": "https://api.github.com/users/octocat"}
+        - {"method": "POST", "url": "https://httpbin.org/post", "body": "{\"key\":\"value\"}", "content_type": "application/json"}
+        - {"method": "DELETE", "url": "https://api.example.com/resource/1", "headers": {"Authorization": "Bearer token"}}
+    """.trimIndent()
+
+    override val parametersSchema = """
+        {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "Request URL"
+                },
+                "method": {
+                    "type": "string",
+                    "enum": ["GET", "POST", "PUT", "DELETE", "PATCH"],
+                    "description": "HTTP method (default: GET)"
+                },
+                "body": {
+                    "type": "string",
+                    "description": "Request body (for POST/PUT/PATCH)"
+                },
+                "content_type": {
+                    "type": "string",
+                    "description": "Content-Type header (default: application/json)"
+                },
+                "headers": {
+                    "type": "object",
+                    "description": "Additional headers as key-value pairs"
+                }
+            },
+            "required": ["url"]
+        }
+    """.trimIndent()
+
+    override suspend fun execute(arguments: String): String {
+        return try {
+            val json = Json.parseToJsonElement(arguments).jsonObject
+            val url = json["url"]?.jsonPrimitive?.content
+                ?: return "Error: 'url' parameter is required"
+            val method = json["method"]?.jsonPrimitive?.content ?: "GET"
+            val body = json["body"]?.jsonPrimitive?.content
+            val contentType = json["content_type"]?.jsonPrimitive?.content ?: "application/json"
+
+            val requestBuilder = Request.Builder().url(url)
+                // WAF 兼容默认头（对话实录 #5）：旧实现不带任何默认头，裸客户端
+                // 指纹被云 WAF 直接 405。补浏览器 UA + Accept + Accept-Language；
+                // 用户 headers 后写 → 可逐项覆盖。
+                .header("User-Agent", BROWSER_UA)
+                .header("Accept", "text/html,application/json;q=0.9,*/*;q=0.8")
+                .header("Accept-Language", "en-US,en;q=0.8,zh-CN;q=0.6")
+
+            // Headers（用户头最后写入 → 覆盖上方默认值）
+            json["headers"]?.jsonObject?.forEach { (key, value) ->
+                requestBuilder.header(key, value.jsonPrimitive.content)
+            }
+
+            // Method + Body
+            when (method.uppercase()) {
+                "GET" -> requestBuilder.get()
+                "POST" -> requestBuilder.post(
+                    (body ?: "").toRequestBody(contentType.toMediaType())
+                )
+                "PUT" -> requestBuilder.put(
+                    (body ?: "").toRequestBody(contentType.toMediaType())
+                )
+                "DELETE" -> {
+                    if (body != null) {
+                        requestBuilder.delete(body.toRequestBody(contentType.toMediaType()))
+                    } else {
+                        requestBuilder.delete()
+                    }
+                }
+                "PATCH" -> requestBuilder.patch(
+                    (body ?: "").toRequestBody(contentType.toMediaType())
+                )
+                else -> return "Error: unsupported method $method"
+            }
+
+            val response = httpClient.newCall(requestBuilder.build()).awaitOk()
+            response.use {
+                // P1（OOM）：同 WebFetch —— 限流读体防超大响应闪退（下游 take(5000)）。
+                val responseBody = it.body?.byteStream()?.use { s ->
+                    s.readBodyLimited(MAX_RESPONSE_BODY_BYTES)
+                } ?: ""
+
+                buildString {
+                    appendLine("HTTP ${it.code} ${it.message}")
+                    appendLine("URL: $url")
+                    appendLine("---")
+                    // 关键响应头
+                    it.header("Content-Type")?.let { h -> appendLine("Content-Type: $h") }
+                    it.header("Content-Length")?.let { h -> appendLine("Content-Length: $h") }
+                    appendLine("---")
+                    appendLine(responseBody.take(5000))
+                    if (responseBody.length > 5000) {
+                        // 截断标记带总量（对话实录 #6）："[... truncated]" 曾被模型
+                        // 误读为“内容到此为止” —— 必须直说省略区还有更多。
+                        appendLine("[... truncated at 5000/${responseBody.length} chars — the body CONTINUES beyond this point; do not treat the visible part as the complete response]")
+                    }
+                    // 404/403/405 下一步向导（对话实录 #4/#5：API 探路径与 WAF 重试头）
+                    httpStatusHint(it.code, responseBody.take(2000), it.header("Content-Type") ?: "")
+                        ?.let { hint -> appendLine(); appendLine(hint) }
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e // 工具取消必须向上传播
+        } catch (e: Exception) {
+            "Error: http request failed: ${e.message ?: e::class.simpleName}"
+        }
+    }
+}
+
+// ═══ 对话实录修复：Web 工具共享的浏览器指纹与智能提示 ═══
+
+/** 桌面 Chrome 指纹（WebFetch / HttpRequest 默认 UA）。与 WebSearchTool 的
+ *  DESKTOP_UA 同值；独立命名避免 companion 作用域遮蔽。 */
+internal val BROWSER_UA =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+
+/** 提取 URL 的同源 Referer（scheme://host/）—— 部分 WAF 校验；解析失败
+ *  或 scheme/host 缺失（非标准 URL）静默回退空串，绝不因 Referer 拖垮抓取。 */
+internal fun originOf(url: String): String = runCatching {
+    val uri = java.net.URI(url)
+    val scheme = uri.scheme ?: return@runCatching ""
+    val host = uri.host ?: return@runCatching ""
+    val port = if (uri.port > 0 && uri.port != defaultPort(scheme)) ":${uri.port}" else ""
+    "$scheme://$host$port/"
+}.getOrDefault("")
+
+private fun defaultPort(scheme: String?): Int = when (scheme) {
+    "http" -> 80
+    "https" -> 443
+    else -> -1
+}
+
+/** SPA 空壳正文的最小字符阈值：低于它且命中壳特征 → 判定为 JS 应用壳。 */
+private const val SPA_MIN_VISIBLE_CHARS = 200
+
+/** HTML 侧壳特征：常见 SPA 挂载点 / 禁 JS 提示。 */
+private val SPA_SHELL_HTML_MARKERS = listOf(
+    "id=\"root\"", "id='root'", "id=\"app\"", "id='app'",
+    "id=\"__next\"", "id=\"__nuxt\"", "<noscript", "window.__INITIAL_STATE__",
+    "window.__NUXT__", "enable javascript", "Enable JavaScript"
+)
+
+/** 提取文本侧壳短语（对话实录实测样例：“Download App”/“Current System does not Support”）。 */
+private val SPA_SHELL_TEXT_PHRASES = listOf(
+    "download app", "press and hold to scan", "scan the qr code",
+    "current system does not support", "please enable javascript",
+    "请开启 javascript", "下载 app", "扫码下载", "当前系统不支持"
+)
+
+/**
+ * SPA 空壳探测（对话实录 #1/#2/#3）：可见正文极短且命中壳特征时，返回
+ * 引导模型改走 XHR/API 的提示；正常页面返回 null（零噪音）。
+ */
+internal fun spaShellHint(rawHtml: String, visibleText: String): String? {
+    if (visibleText.trim().length > SPA_MIN_VISIBLE_CHARS) return null
+    val htmlHit = SPA_SHELL_HTML_MARKERS.any { rawHtml.contains(it, ignoreCase = true) }
+    val textHit = SPA_SHELL_TEXT_PHRASES.any { visibleText.contains(it, ignoreCase = true) }
+    if (!htmlHit && !textHit) return null
+    return "[WebFetch: this looks like a JavaScript app shell — the real content is NOT in this " +
+        "HTML (it is fetched client-side via XHR/API). Instead of trying to render the page: " +
+        "locate the backing API endpoint — try /api/v1|v2|v3/... variants of the current path, " +
+        "or inspect the page's JS bundle for the data URL — then fetch it with HttpRequest " +
+        "(browser-like headers are sent by default). Only fall back to BrowserNavigate / " +
+        "BrowserExtractContent when real interaction (login / click) is required.]"
+}
+
+/**
+ * HTTP 状态码下一步向导（对话实录 #4/#5）：
+ * - 404 → 提示尝试相邻 API 版本（v1↔v2↔v3）或从 JS bundle 找真实端点；
+ * - 403/405 且响应像 WAF 拦截页 → 提示补浏览器头（UA/Referer）重试。
+ * 其余状态返回 null。
+ */
+internal fun httpStatusHint(statusCode: Int, bodyPeek: String, contentType: String): String? {
+    val bodyIsHtml = contentType.contains("html", ignoreCase = true) ||
+        bodyPeek.contains("<html", ignoreCase = true)
+    return when (statusCode) {
+        404 -> "[hint] HTTP 404: path not found. If probing an API, try sibling versions " +
+            "(v1/v2/v3) of the path, or find the real endpoint in the page's JS bundle / docs."
+        403, 405 -> {
+            val looksLikeBlockPage = bodyIsHtml && (
+                bodyPeek.contains("<title>40", ignoreCase = true) ||
+                    bodyPeek.contains("blocked", ignoreCase = true) ||
+                    bodyPeek.contains("captcha", ignoreCase = true) ||
+                    bodyPeek.contains("waf", ignoreCase = true) ||
+                    bodyPeek.contains("request method", ignoreCase = true)
+                )
+            if (looksLikeBlockPage) {
+                "[hint] HTTP $statusCode with an HTML block page: a WAF / anti-bot layer rejected " +
+                    "this client. Retry with explicit browser headers, e.g. {\"headers\":" +
+                    "{\"User-Agent\":\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) ... " +
+                    "Chrome/124 ... Safari/537.36\",\"Referer\":\"https://<host>/\"}}."
+            } else {
+                "[hint] HTTP $statusCode rejected the request — check the allowed method " +
+                    "(GET/POST) for this endpoint, or retry with browser-like headers."
+            }
+        }
+        else -> null
+    }
+}
+
+// ═══ v2：WebTools HTML 清洗正则（预编译一次，替代旧实现每次调用现编 ~15 个）═══
+
+/**
+ * P2-13 修复：可取消的 OkHttp Call await 扩展（本文件三个 Web 工具共用）。
+ *
+ * 旧实现三处在 suspend 里直接 call.execute() 阻塞——工具超时/协程取消后
+ * OkHttp 调用无法中断，仍跑满 readTimeout（最长 120s）并占死调度线程。
+ * 现在 enqueue + suspendCancellableCoroutine：取消时同步 call.cancel()，
+ * 连接立即断开；结果到达时 continuation 已取消则直接回收响应体。
+ */
+private suspend fun Call.awaitOk(): Response = suspendCancellableCoroutine { cont ->
+    enqueue(object : Callback {
+        override fun onResponse(call: Call, response: Response) {
+            if (cont.isActive) {
+                cont.resume(response)
+            } else {
+                // 取消发生在响应到达之后：没人会消费这个响应，直接回收连接
+                response.close()
+            }
+        }
+
+        override fun onFailure(call: Call, e: IOException) {
+            if (cont.isActive) {
+                cont.resumeWithException(e)
+            }
+            // 已取消时的失败（通常是 call.cancel() 触发的 "Canceled"）是预期噪音，忽略
+        }
+    })
+    cont.invokeOnCancellation { runCatching { this@awaitOk.cancel() } }
+}
+
+private val RX_SCRIPT = Regex("<script[^>]*>[\\s\\S]*?</script>", RegexOption.IGNORE_CASE)
+private val RX_STYLE = Regex("<style[^>]*>[\\s\\S]*?</style>", RegexOption.IGNORE_CASE)
+private val RX_NAV = Regex("<nav[^>]*>[\\s\\S]*?</nav>", RegexOption.IGNORE_CASE)
+private val RX_HEADER = Regex("<header[^>]*>[\\s\\S]*?</header>", RegexOption.IGNORE_CASE)
+private val RX_FOOTER = Regex("<footer[^>]*>[\\s\\S]*?</footer>", RegexOption.IGNORE_CASE)
+private val RX_ASIDE = Regex("<aside[^>]*>[\\s\\S]*?</aside>", RegexOption.IGNORE_CASE)
+private val RX_COMMENT = Regex("<!--[\\s\\S]*?-->")
+private val RX_H1 = Regex("<h1[^>]*>", RegexOption.IGNORE_CASE)
+private val RX_H2 = Regex("<h2[^>]*>", RegexOption.IGNORE_CASE)
+private val RX_H3 = Regex("<h3[^>]*>", RegexOption.IGNORE_CASE)
+private val RX_BREAKS = Regex("<(br|/p|/div|/li|/tr)[^>]*>", RegexOption.IGNORE_CASE)
+private val RX_LI = Regex("<li[^>]*>", RegexOption.IGNORE_CASE)
+private val RX_CODE_OPEN = Regex("<code[^>]*>", RegexOption.IGNORE_CASE)
+private val RX_CODE_CLOSE = Regex("</code>", RegexOption.IGNORE_CASE)
+private val RX_ANY_TAG = Regex("<[^>]+>")
+private val RX_BLANK_LINES = Regex("\\n{3,}")
+private val RX_SPACES = Regex("[ \\t]+")
+
+// ═══ v2 预编译补齐：extractStructure / extractLinks 的 6+ 个正则 ═══
+// （与上方 RX_* 同款文件级常量；模式串与旧实现逐字一致，仅预编译。）
+private val RX_TITLE_BLOCK = Regex("<title[^>]*>(.*?)</title>", RegexOption.IGNORE_CASE)
+private val RX_H1_BLOCK = Regex("<h1[^>]*>(.*?)</h1>", RegexOption.IGNORE_CASE)
+private val RX_H2_BLOCK = Regex("<h2[^>]*>(.*?)</h2>", RegexOption.IGNORE_CASE)
+private val RX_HREF_ATTR = Regex("href=\"([^\"]+)\"")
+private val RX_P_OPEN = Regex("<p[^>]*>")
+private val RX_IMG_OPEN = Regex("<img[^>]*>")
+private val RX_A_HREF_TEXT = Regex("href=\"([^\"]+)\"[^>]*>(.*?)</a>", RegexOption.DOT_MATCHES_ALL)
+
+// ═══ P1（OOM）响应体限流：WebFetch / HttpRequest 共用 ═══
+// 旧实现 body?.string() 无上限整体入内存 —— 高速网络下 30s readTimeout 可拉
+// 数百 MB 直接 OOM 闪退。下游只消费 maxChars / take(5000) 级别，8MB 上限绰绰
+// 有余；超限按前 8MB 处理（与 ClawHubSource.readBytesLimited 同思路，但超限
+// 截断而非失败 —— 抓取场景下“前 8MB 的可用内容”仍优于整体报错）。
+
+/** 工具直读 HTTP 响应体的字节上限（WebFetch / HttpRequest）。 */
+internal const val MAX_RESPONSE_BODY_BYTES = 8 * 1024 * 1024
+
+/** 读至多 [max] 字节（超限截断，不失败）。 */
+internal fun InputStream.readBodyLimited(max: Int): String {
+    val out = java.io.ByteArrayOutputStream(minOf(max, 64 * 1024))
+    val buf = ByteArray(16 * 1024)
+    var total = 0
+    while (total < max) {
+        val n = read(buf, 0, minOf(buf.size, max - total))
+        if (n < 0) break
+        out.write(buf, 0, n)
+        total += n
+    }
+    return out.toString(Charsets.UTF_8.name())
+}

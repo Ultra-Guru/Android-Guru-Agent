@@ -1,0 +1,347 @@
+package com.apex.agent.core.code.stream
+
+import com.apex.agent.core.engine.ToolCallOrigin
+
+/**
+ * # Code Stream Models — Coding 工作流胶囊流式输出的数据模型
+ *
+ * ## 设计立场（规格书【0】：Coding 工作流非聊天）
+ *
+ * Coding 模式的主输出是 **Diff + 终端日志 + 结构化错误** 三件套，Markdown
+ * 正文只是结论载体——因此时间轴的原子单元不是「消息」而是**胶囊**
+ * （[StreamToolCall]）：每一次工具调用（读/写/改/搜/命令/git/lint/测试）
+ * 都是一颗带状态的胶囊，工具输出按脉冲进终端面板，diff 按 hunk 拼装，
+ * 错误结构化可跳转。
+ *
+ * ## 与引擎的关系
+ *
+ * 本包**消费** `AgentEvent`（agent-engine 既有 23 种事件，零改动），
+ * 归约出自己的视图态；引擎语义（幂等键 = callId、流式输出、验证闭环）
+ * 在 [CodeStreamSession] 状态机里落地。
+ *
+ * ## 防刷屏/防死循环（验证闭环的自延长链）
+ *
+ * edit→lint/test→再 edit 的闭环会让胶囊链自行延长：
+ * - 同族（同 [ToolKind] 连续胶囊）≥ 2 个由 UI 收进「聚合胶囊」（折叠态
+ *   只显最新 + ×N，展开态平铺历史）；
+ * - 验证轮次（[VerifyCycle]）聚合「一轮改动 + 随后的验证」为可折叠
+ *   轮次胶囊，轮内明细默认收起。
+ */
+sealed interface ToolKind {
+    /** 读文件（CodeRead 等）。 */
+    data object READ_FILE : ToolKind
+    /** 写文件（CodeWrite）。 */
+    data object WRITE_FILE : ToolKind
+    /** 增量 patch 编辑（CodeEdit）。 */
+    data object EDIT_FILE : ToolKind
+    /** 内容搜索（CodeGrep / grep_search）。 */
+    data object GREP_SEARCH : ToolKind
+    /** 终端会话命令（TerminalExec / ShellExecute）。 */
+    data object BASH : ToolKind
+    /** git 操作（git / CodeGitDiff）。 */
+    data object GIT : ToolKind
+    /** lint / 诊断。 */
+    data object LINT : ToolKind
+    /** 测试运行。 */
+    data object TEST : ToolKind
+    /** 计划 / todo 变更（CodeTodo / plan）。 */
+    data object PLAN : ToolKind
+    /** MCP 远程工具（first-class 注册，origin 溯源 / mcp.* 未知名兼容回退）。 */
+    data object MCP_CUSTOM : ToolKind
+    /** 技能工具（技能贡献的 composite / script——origin 溯源打标，区别于内置）。 */
+    data object SKILL : ToolKind
+
+    companion object {
+        /**
+         * 工具 id → 胶囊族。
+         *
+         * v5：注册表 id 是无分隔符 PascalCase，但模型仍可能回显业界短名
+         * （read / bash / grep / git / lint / test / todo…）—— 先做"小写 +
+         * 去分隔符"归一，再按现役 id 与历史写法两套键匹配。
+         */
+        fun fromToolName(toolName: String): ToolKind {
+            val key = toolName.trim().lowercase().filter { it.isLetterOrDigit() }
+            return when {
+                key == "coderead" || key == "read" || key == "readfile" -> READ_FILE
+                key == "codewrite" || key == "write" || key == "writefile" -> WRITE_FILE
+                key == "codeedit" || key == "edit" || key == "editfile" ||
+                    key == "multiedit" -> EDIT_FILE
+                key == "codegrep" || key == "grep" || key == "search" ||
+                    key == "grepsearch" -> GREP_SEARCH
+                key == "terminalexec" || key == "shellexecute" || key == "bash" ||
+                    key == "shell" || key == "execute" -> BASH
+                key.startsWith("codegit") || key == "git" -> GIT
+                key == "codelint" || key == "lint" -> LINT
+                key == "codetest" || key == "test" -> TEST
+                key == "codetodo" || key == "todo" || key == "todowrite" ||
+                    key == "plan" -> PLAN
+                else -> MCP_CUSTOM
+            }
+        }
+    }
+}
+
+/**
+ * 胶囊状态机：waiting → running → 终态。
+ *
+ * 终态四值：success（干净成功）/ failed（失败，exitCode 或错误输出）/
+ * applied（编辑类成功——diff 已落盘）/ partial（部分成功——hunk 部分
+ * 应用或成功但有告警诊断）。
+ */
+enum class ToolCallStatus { WAITING, RUNNING, SUCCESS, FAILED, APPLIED, PARTIAL }
+
+/**
+ * 工具调用胶囊的视图态（规格书【1】）：一颗胶囊从 ToolCallStart 到
+ * ToolCallComplete 的完整生命周期数据。
+ *
+ * @param id 即引擎 callId——**幂等键**（服务端去重、检查点恢复对位）。
+ * @param kind 胶囊族（着色与图标依据）。
+ * @param displayName 工具显示名（如「编辑」「搜索」）。
+ * @param target 操作对象（文件路径 / 命令首词 / 搜索词——可点击）。
+ * @param argsSummary 参数摘要（≤80 字符，副标题用）。
+ * @param status 当前状态。
+ * @param startAt / endAt 起止时刻（System.currentTimeMillis）。
+ * @param durationMs 引擎上报的耗时（结束前由本地时钟推算）。
+ * @param hunksApplied / hunksTotal diff hunk 进度（3/7 徽标）。
+ * @param exitCode 命令类工具的退出码（从输出解析，null = 未知）。
+ * @param logTail 终端日志尾窗（环形缓冲的最新片段）。
+ * @param diffText diff 原文（编辑/写类，DetailSheet 里现场解析 hunk）。
+ * @param summary 完成摘要（≤24 字，副标题收尾文案）。
+ * @param streamingPreview 参数生成期实时预览（ToolCallArgsDelta 归约；
+ *   写/编辑类的半截 JSON 提取——绿增红删代码窗的数据源。WAITING/RUNNING
+ *   期间持续刷新，终态时由会话清空 = 代码窗自动收回）。
+ * @param origin 调用溯源（引擎事件下发；缺省 BUILTIN —— kit 路径/旧档
+ *   未打标时按内置渲染，与既有行为一致）。
+ * @param originLabel 溯源标签：MCP = 服务器名 / SKILL = 技能 id；null = 无。
+ */
+data class StreamToolCall(
+    val id: String,
+    val kind: ToolKind,
+    val displayName: String,
+    val target: String,
+    val argsSummary: String = "",
+    val status: ToolCallStatus = ToolCallStatus.WAITING,
+    val startAt: Long = 0,
+    val endAt: Long = 0,
+    val durationMs: Long = 0,
+    val hunksApplied: Int = 0,
+    val hunksTotal: Int = 0,
+    val exitCode: Int? = null,
+    val logTail: String = "",
+    val diffText: String? = null,
+    val progressPercent: Float? = null,
+    val progressMessage: String? = null,
+    val summary: String? = null,
+    val streamingPreview: StreamArgsPreview? = null,
+    val origin: ToolCallOrigin = ToolCallOrigin.BUILTIN,
+    val originLabel: String? = null
+) {
+    /** 是否编辑/写类（点击行为 → 文件 Diff）。 */
+    val isEditFamily: Boolean
+        get() = kind == ToolKind.EDIT_FILE || kind == ToolKind.WRITE_FILE
+
+    /** 是否已终态。 */
+    val isTerminal: Boolean
+        get() = status == ToolCallStatus.SUCCESS || status == ToolCallStatus.FAILED ||
+            status == ToolCallStatus.APPLIED || status == ToolCallStatus.PARTIAL
+
+    /** 是否处于「参数流式生成 / 执行中」——实时代码窗的展示窗口。 */
+    val isLive: Boolean
+        get() = status == ToolCallStatus.WAITING || status == ToolCallStatus.RUNNING
+
+    /** 展示耗时：优先引擎上报，缺省本地推算（进行中 = 至今）。 */
+    fun displayDuration(now: Long): Long = when {
+        durationMs > 0 -> durationMs
+        startAt > 0 && endAt > 0 -> (endAt - startAt).coerceAtLeast(0)
+        startAt > 0 -> (now - startAt).coerceAtLeast(0)
+        else -> 0
+    }
+}
+
+/**
+ * 验证轮次（规格书【2】：验证闭环用可折叠「轮次胶囊」）。
+ *
+ * 一轮 = 一次或多次 edit/write 落盘 + 随后紧跟的 lint/test 验证。
+ * 会话在状态机里检测边界并聚合，轮内胶囊明细默认折叠。
+ */
+data class VerifyCycle(
+    val round: Int,
+    val editCallIds: List<String>,
+    val verifyCallIds: List<String>,
+    val passed: Boolean? = null
+)
+
+/**
+ * 时间轴渲染条目（sealed：时间轴 = List<StreamEntry>，按插入序渲染）。
+ *
+ * 正文气泡（[AssistantEntry]）只放结论；思考链（[ThinkingEntry]）单独；
+ * 状态/错误/停止皆是独立条目。
+ */
+sealed interface StreamEntry {
+    /** 稳定 id（时间轴 key、检查点对位）。 */
+    val id: String
+
+    /** 用户输入气泡。 */
+    data class UserEntry(override val id: String, val text: String) : StreamEntry
+
+    /** 助手结论气泡（Markdown，流式追加）。 */
+    data class AssistantEntry(
+        override val id: String,
+        val text: String,
+        val isStreaming: Boolean
+    ) : StreamEntry
+
+    /** 思考链（独立展示，流式追加；complete 后保留可折叠全文）。 */
+    data class ThinkingEntry(
+        override val id: String,
+        val text: String,
+        val isStreaming: Boolean
+    ) : StreamEntry
+
+    /** 工具胶囊（时间轴主角）。 */
+    data class ToolCapsuleEntry(override val id: String, val call: StreamToolCall) : StreamEntry
+
+    /** 验证轮次（可折叠轮次胶囊；round 从 1 计）。 */
+    data class VerifyCycleEntry(
+        override val id: String,
+        val cycle: VerifyCycle,
+        val calls: List<StreamToolCall>
+    ) : StreamEntry
+
+    /** 状态行（迭代开始/压缩/计划确认等轻量信息）。 */
+    data class StatusEntry(override val id: String, val text: String) : StreamEntry
+
+    /** 系统行（AUTO 预检决策、深水区升级等 VM 注入的说明）。 */
+    data class SystemEntry(override val id: String, val text: String) : StreamEntry
+
+    /** 结构化错误（可跳转：BASH→终端面板 / 编辑→Diff）。 */
+    data class ErrorEntry(
+        override val id: String,
+        val message: String,
+        val recoverable: Boolean,
+        val hint: String? = null,
+        val relatedCallId: String? = null
+    ) : StreamEntry
+
+    /** 停止卡（中止原因）。 */
+    data class StopEntry(override val id: String, val reason: String) : StreamEntry
+
+    /** 受影响文件 chips（一轮运行收尾的文件清单）。 */
+    data class FileChipsEntry(override val id: String, val files: List<String>) : StreamEntry
+
+    /**
+     * Git 操作可视化卡（git 工具成功后紧跟胶囊入轴；模型见 GitOpVisualModels.kt）。
+     *
+     * @param summary 结构化摘要（分支/增删行/提交哈希等，按 op 分派布局）。
+     * @param callId 关联工具胶囊的 callId（详情弹层对位；可空 = 恢复回放）。
+     */
+    data class GitOpEntry(
+        override val id: String,
+        val summary: GitOpSummary,
+        val callId: String? = null
+    ) : StreamEntry
+
+    /**
+     * 运行统计收尾卡（Complete 事件的结构化可视化——取代纯文本状态行）。
+     *
+     * 把「完成 · N 轮 · N 次工具 · Ns」一行字升级为可渲染的统计卡：
+     * 迭代轮数 / 工具调用数 / 触碰文件数 / 失败数 / 总耗时，UI 端
+     * 按 stat chips 布局（失败 >0 红色强调）。
+     *
+     * @param iterations 本轮迭代轮数（引擎 totalIterations）。
+     * @param toolCalls 本轮工具调用数（引擎 totalToolCalls）。
+     * @param failedCalls 本轮失败的工具调用数（会话按 run 归零统计）。
+     * @param filesTouched 本轮触碰的文件数（affectedFiles 每 run 清零）。
+     * @param durationMs 本轮总耗时（引擎 totalDurationMs）。
+     * @param skillCalls 本轮技能工具调用数（溯源归零统计；旧档缺省 0）。
+     * @param mcpCalls 本轮 MCP 工具调用数（溯源归零统计；旧档缺省 0）。
+     * @param skills 本轮涉及的技能 id（去重，首现序）。
+     * @param mcpServers 本轮涉及的 MCP 服务器名（去重，首现序）。
+     */
+    data class RunStatsEntry(
+        override val id: String,
+        val iterations: Int,
+        val toolCalls: Int,
+        val failedCalls: Int = 0,
+        val filesTouched: Int = 0,
+        val durationMs: Long = 0,
+        val skillCalls: Int = 0,
+        val mcpCalls: Int = 0,
+        val skills: List<String> = emptyList(),
+        val mcpServers: List<String> = emptyList()
+    ) : StreamEntry
+}
+
+/**
+ * 本轮运行的工具使用聚合（「已调用 N 个工具」的溯源分解）——完整档
+ * 加载卡实时计数与收尾统计卡的共同数据源，会话在胶囊建立点随建随计、
+ * beginRun 归零（与 affectedFiles 同款 run 粒度会计）。
+ *
+ * @param total 本轮工具调用总数（含技能 / MCP / 内置）。
+ * @param builtinCount / skillCount / mcpCount 三分类计数。
+ * @param failedCount 本轮失败的工具调用数（run 粒度；收尾卡/加载卡共用）。
+ * @param skills 本轮涉及的技能 id（去重，首现序）。
+ * @param mcpServers 本轮涉及的 MCP 服务器名（去重，首现序）。
+ */
+data class ToolUsageStats(
+    val total: Int = 0,
+    val builtinCount: Int = 0,
+    val skillCount: Int = 0,
+    val mcpCount: Int = 0,
+    val failedCount: Int = 0,
+    val skills: List<String> = emptyList(),
+    val mcpServers: List<String> = emptyList()
+)
+
+/**
+ * 渲染快照：时间轴 + 派生统计。会话在 25ms 攒批窗口内聚合变更，
+ * 快照是不可变值（UI 端按条目 id + 属性渲染，未变项零重组）。
+ */
+data class CodeStreamSnapshot(
+    val entries: List<StreamEntry> = emptyList(),
+    /** 当前运行累计工具调用数。 */
+    val toolCallCount: Int = 0,
+    /** 当前运行失败的工具调用数。 */
+    val failedToolCallCount: Int = 0,
+    /** 本轮工具使用聚合（溯源三分类 + 技能/服务器清单；run 粒度归零）。 */
+    val toolUsage: ToolUsageStats = ToolUsageStats(),
+    /** 最新错误（ErrorBar 通道；null = 无）。 */
+    val lastError: ErrorInfo? = null,
+    /** 运行中的 BASH 胶囊（终端面板跟随对象；null = 无活跃终端）。 */
+    val activeTerminalCallId: String? = null,
+    /** 终端面板内容（活跃 BASH 胶囊的脉冲缓冲尾窗；面板独立锚定渲染）。 */
+    val terminalContent: String = "",
+    /** 本轮运行触碰的文件（去重，最新在后）。 */
+    val affectedFiles: List<String> = emptyList(),
+    /**
+     * 终端面板「运行中」信号（流水式折叠开关）：true = 活跃 BASH 正在
+     * 执行（面板保持展开跟随输出）；false = 已收束（UI 自动折叠成头行
+     * 胶囊，保留 [terminalCommandSummary] 与退出码供回看）。
+     */
+    val terminalBusy: Boolean = false,
+    /** 终端面板头行展示的命令摘要（活跃/最近 BASH 的首行命令；空 = 无）。 */
+    val terminalCommandSummary: String = "",
+    /** 最近一次终端命令的退出码（null = 未知 / 无命令）；完成态头行展示。 */
+    val terminalExitCode: Int? = null
+) {
+    /** 结构化错误信息（CodeUiState.error 通道共用）。 */
+    data class ErrorInfo(val message: String, val recoverable: Boolean)
+}
+
+/**
+ * 时间轴分组建议（防刷屏 + 同族聚合）：同族**连续**胶囊数 > [GROUP_THRESHOLD]
+ * （即 ≥2）即收进一颗「聚合胶囊」——折叠态仅展示**最新一颗**的名称/命令 +
+ * ×N 计数徽标（用户需求：「胶囊始终展示最新命令」）；展开态平铺全部历史
+ * 胶囊，每颗可点击进详情，头行可再收起。分组是纯派生视图，展开态由 UI
+ * 自持（活跃胶囊流式期间自动展开、全部终态后自动收回，手动切换永远优先）。
+ */
+data class StreamEntryGroup(
+    val kind: ToolKind,
+    val entries: List<StreamEntry.ToolCapsuleEntry>
+) {
+    companion object {
+        /** 同族聚合阈值：连续胶囊数 > 此值（即 ≥2）成组——两次同族调用就
+         *  折叠为一颗，几十条终端命令只占一行。 */
+        const val GROUP_THRESHOLD = 1
+    }
+}

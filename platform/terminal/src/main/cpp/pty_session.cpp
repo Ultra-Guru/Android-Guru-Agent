@@ -1,0 +1,497 @@
+#include "pty_session.h"
+
+#include <pty.h>
+#include <unistd.h>
+#include <signal.h>
+#include <sys/ioctl.h>
+#include <sys/select.h>
+#include <sys/wait.h>
+#include <termios.h>
+#include <fcntl.h>
+#include <dirent.h>
+#include <algorithm>
+#include <cerrno>
+#include <cstring>
+#include <cstdlib>
+#include <android/log.h>
+
+#define TAG "ApexPty"
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+
+namespace apex {
+
+// P70 生命周期加固：master 写满（EAGAIN）时的退避参数。
+// 200 次 × 1ms = 最多 200ms 有界重试，替代原先的无限忙等。
+static constexpr int MAX_EAGAIN_RETRIES = 200;
+static constexpr useconds_t WRITE_BACKOFF_US = 1000;
+
+// ─── P71 (N1): 通用 argv 构造（主实现） ───
+PtySession::PtySession(int id, const std::vector<std::string>& argv,
+                       const std::string& workDir,
+                       const std::vector<std::pair<std::string, std::string>>& envVars,
+                       int rows, int cols)
+    : id_(id) {
+
+    struct winsize ws{};
+    ws.ws_row = static_cast<unsigned short>(rows);
+    ws.ws_col = static_cast<unsigned short>(cols);
+    ws.ws_xpixel = 0;
+    ws.ws_ypixel = 0;
+
+    // ── T87：exec 失败捕获管道（CLOEXEC 双关闭协议）──
+    //
+    // 真机上 proot 会话可能「forkpty 成功 + execv 立即失败」（ENOENT/ELIBBAD/
+    // EACCES/内存不足…）——旧链路对此全盲：Kotlin 拿到正常 id，会话进程已死，
+    // 之后每次 write 都 EIO，用户只看到「输入失败」，根因永远不可见。
+    //
+    // 协议（Android Runtime.exec / Termux 同款）：
+    //   pipe2(O_CLOEXEC) → fork → child：execv 成功 = 内核自动关闭写端；
+    //   失败 = 显式写 errno（int）后 _exit(127)。
+    //   parent：阻塞 read —— 返回 0（EOF，exec 成功）或 4 字节 errno（失败）。
+    //   阻塞有界：child 在 exec 前只做信号重置/fd 关闭/chdir/setenv（全微秒级）。
+    int execPipe[2] = {-1, -1};
+    if (pipe2(execPipe, O_CLOEXEC) != 0) {
+        // pipe 失败（fd 耗尽，极罕见）：降级为旧行为（无 exec 诊断），不阻断创建。
+        execPipe[0] = execPipe[1] = -1;
+    }
+
+    // forkpty: 创建PTY对并fork子进程
+    // 父进程获得master fd，子进程连接到slave
+    int masterFd = -1;
+    pid_ = forkpty(&masterFd, nullptr, nullptr, &ws);
+    masterFd_.store(masterFd, std::memory_order_release);
+
+    if (pid_ < 0) {
+        LOGE("Session %d: forkpty failed: %s", id_, strerror(errno));
+        masterFd_.store(-1, std::memory_order_release);
+        if (execPipe[0] >= 0) ::close(execPipe[0]);
+        if (execPipe[1] >= 0) ::close(execPipe[1]);
+        return;
+    }
+
+    if (pid_ == 0) {
+        // ═══ 子进程 ═══
+        // exec 报告管道写端（O_CLOEXEC：execv 成功即由内核关闭；失败时显式写 errno）。
+        // 注意：必须保住这个 fd —— 下方「关闭 0/1/2 之外所有 fd」的循环要跳过它。
+        const int childExecPipe = execPipe[1];
+        if (execPipe[0] >= 0) ::close(execPipe[0]);   // 子进程用不到读端
+
+        // Termux 修法（termux.c）：fork 自 Java/ART 进程会继承被阻塞的信号掩码
+        //（ART 会屏蔽部分信号），子进程可能因此收不到 SIGTERM/SIGINT。
+        // 全量解除阻塞，确保进程组信号（超时击杀/Ctrl+C）可达。
+        {
+            sigset_t all;
+            sigfillset(&all);
+            sigprocmask(SIG_UNBLOCK, &all, nullptr);
+        }
+
+        // 重置信号处理（ART 可能安装了 handler）
+        signal(SIGINT, SIG_DFL);
+        signal(SIGTERM, SIG_DFL);
+        signal(SIGQUIT, SIG_DFL);
+
+        // 关闭 0/1/2 之外的所有 fd（/proc/self/fd 枚举，Termux 同款）：
+        // app 打开的文件/socket、**其他会话的 PTY master fd** 都会被子进程继承 ——
+        // 泄漏其他会话的 master fd 会让对应 slave 永远读不到 EOF（会话僵而不死）。
+        // close_range 需内核 5.9+（minSdk 26 覆盖不到旧设备），故用 /proc/self/fd。
+        // T87：exec 报告管道写端必须豁免（见上方协议说明）。
+        {
+            DIR* dir = opendir("/proc/self/fd");
+            if (dir != nullptr) {
+                const int dirFd = dirfd(dir);
+                struct dirent* ent;
+                while ((ent = readdir(dir)) != nullptr) {
+                    // 目录项非数字（“.”/“..”）时 atoi 返回 0，天然安全（0 不 > 2）。
+                    const int fd = atoi(ent->d_name);
+                    if (fd > 2 && fd != dirFd && fd != childExecPipe) {
+                        ::close(fd);  // :: 前缀：避免被成员 close() 遮蔽
+                    }
+                }
+                closedir(dir);
+            }
+        }
+
+        // 切换工作目录
+        if (!workDir.empty()) {
+            if (chdir(workDir.c_str()) != 0) {
+                // 目录不存在时回退到 /data/local/tmp
+                chdir("/data/local/tmp");
+            }
+        }
+
+        // 设置环境变量：先安全默认值（与旧 shell 路径逐字节一致），
+        // 再以调用方 envVars 覆盖 —— LocalShellBackend 显式传入同一组值，
+        // 本地路径行为保持完全不变（golden 契约）。
+        setenv("TERM", "xterm-256color", 1);
+        setenv("HOME", "/data/local/tmp", 1);
+        setenv("USER", "shell", 1);
+        setenv("SHELL", argv.empty() ? "/system/bin/sh" : argv[0].c_str(), 1);
+        setenv("LANG", "en_US.UTF-8", 1);
+        setenv("LC_ALL", "en_US.UTF-8", 1);
+        setenv("PATH",
+               "/system/bin:/system/xbin:/vendor/bin:"
+               "/data/local/tmp/bin:/product/bin", 1);
+
+        // 自定义环境变量（覆盖默认值）
+        for (const auto& [key, val] : envVars) {
+            setenv(key.c_str(), val.c_str(), 1);
+        }
+
+        // 执行 argv[0]（P71: execv 泛化 —— 本地 shell 与 proot 共用同一条路）
+        if (argv.empty()) {
+            _exit(127);
+        }
+        std::vector<char*> cargv;
+        cargv.reserve(argv.size() + 1);
+        for (const auto& a : argv) cargv.push_back(const_cast<char*>(a.c_str()));
+        cargv.push_back(nullptr);
+        execv(cargv[0], cargv.data());
+
+        // execv 仅在失败时返回（ENOENT/EACCES/ENOEXEC...）—— 127 语义与 shell 一致。
+        // T87：把 errno 写入报告管道后父进程可见（旧行为只进 logcat，用户盲）。
+        LOGE("Session %d: execv(%s) failed: %s", id_, cargv[0], strerror(errno));
+        const int execErrno = errno;
+        if (childExecPipe >= 0) {
+            ssize_t ignored = ::write(childExecPipe, &execErrno, sizeof(execErrno));
+            (void)ignored;  // 尽力上报：管道异常时父进程靠 EOF+退出码兑底
+            ::close(childExecPipe);
+        }
+        _exit(127);
+    }
+
+    // ═══ 父进程 ═══
+    // T87：读取 exec 报告 —— EOF（execv 成功，CLOEXEC 自动关写端）或 errno。
+    // 有界阻塞：child 在 exec 前的全部动作（信号/fd/chdir/env）是微秒级；
+    // proot 启动慢发生在 exec **之后**，不影响此处。
+    if (execPipe[1] >= 0) ::close(execPipe[1]);   // 父进程用不到写端
+    if (execPipe[0] >= 0) {
+        int reportedErrno = 0;
+        ssize_t n = ::read(execPipe[0], &reportedErrno, sizeof(reportedErrno));
+        ::close(execPipe[0]);
+        if (n == static_cast<ssize_t>(sizeof(reportedErrno)) && reportedErrno != 0) {
+            spawnError_ = std::string("execv(") +
+                (argv.empty() ? "(empty)" : argv[0]) + ") failed: " + strerror(reportedErrno);
+            LOGE("Session %d: spawn error: %s", id_, spawnError_.c_str());
+            // exec 已失败：子进程已 _exit，master 写入只会 EIO —— 立即收尸并标记。
+            alive_ = false;
+            reapChild();
+            masterFd_.store(-1, std::memory_order_release);
+            ::close(masterFd);
+            return;   // 会话保留在 engine 里（spawnError 可查），但不可用。
+        }
+        // n==0：exec 成功（EOF）；n<0 或短读：降级不诊断（不影响会话可用性）。
+    }
+
+    alive_ = true;
+
+    // master fd 设为非阻塞
+    int flags = fcntl(masterFd, F_GETFL, 0);
+    if (flags >= 0) {
+        fcntl(masterFd, F_SETFL, flags | O_NONBLOCK);
+    }
+
+    // ★ 修复（输入失灵根因之一）：恢复行规程默认的 ECHO 与 ICRNL。
+    // 旧实现清了 ECHO/ICRNL：bash readline（自设 raw 模式）不受影响，但任何
+    // canonical 模式的读者（read 内建、cat、非行编辑 shell、脚本 read 提示）
+    // 会「敲字不回显 + 回车不提交行」—— ICRNL 关闭后 \r 永远不转成 \n，
+    // 行缓冲永不结束，用户感知就是「命令输不进去」。真实终端（Termux）的
+    // master termios 保持 forkpty 默认（ECHO|ICRNL 开）—— 交互程序自己负责
+    // 切 raw（readline/vim）并恢复。保留的调整只有两个纯增益项：
+    //   - 清 IXON/IXOFF：防 Ctrl+S 软件流控把输出“锁死”（经典坑）；
+    //   - 置 IUTF8：行编辑/退格按 UTF-8 码点边界（CJK 不再半个字符地删）。
+    struct termios tio{};
+    if (tcgetattr(masterFd, &tio) == 0) {
+        tio.c_iflag &= ~(IXON | IXOFF);  // 保留 ICRNL（回车→行提交）
+#ifdef IUTF8
+        tio.c_iflag |= IUTF8;
+#endif
+        tcsetattr(masterFd, TCSANOW, &tio);
+    }
+
+    LOGI("Session %d created: pid=%d fd=%d argv0=%s cwd=%s",
+         id_, pid_.load(), masterFd, argv.empty() ? "(empty)" : argv[0].c_str(),
+         workDir.c_str());
+}
+
+// ─── Legacy shell 构造：委托给 argv 构造 ───
+// 旧实现的 "execl(shell,shell,'-i') 失败后再 execl(shell,shell)" 回退是死代码
+//（execl 失败意味着二进制本身无法 exec，参数不改变结果），委托后行为等价。
+PtySession::PtySession(int id, const std::string& shell, const std::string& workDir,
+                       const std::vector<std::pair<std::string, std::string>>& envVars,
+                       int rows, int cols)
+    : PtySession(id,
+                 std::vector<std::string>{
+                     shell.empty() ? "/system/bin/sh" : shell, "-i"},
+                 workDir, envVars, rows, cols) {
+}
+
+PtySession::~PtySession() {
+    close();
+}
+
+bool PtySession::isAlive() {
+    if (!alive_) return false;
+    reapChild();
+    return alive_;
+}
+
+void PtySession::reapChild() {
+    if (pid_ <= 0) return;
+    int status;
+    pid_t ret = waitpid(pid_, &status, WNOHANG);
+    if (ret == pid_) {
+        alive_ = false;
+        applyExitStatus(status);
+        LOGI("Session %d: child %d exited with code %d", id_, pid_.load(), exitCode_.load());
+    }
+}
+
+// T81 (N-2)：waitpid 状态解析单一出口 —— reapChild 与 close() 共用，
+// 修复「经 close() 终止的 session exitCode 恒 -1」（原先 close 内 waitpid
+// 后直接丢弃 status）。
+void PtySession::applyExitStatus(int status) {
+    if (WIFEXITED(status)) {
+        exitCode_.store(WEXITSTATUS(status), std::memory_order_relaxed);
+    } else if (WIFSIGNALED(status)) {
+        exitCode_.store(128 + WTERMSIG(status), std::memory_order_relaxed);
+    }
+}
+
+// T81 (N-4/N-5)：有界轮询等待退出（2ms 步进）。进程未及 timeout 退出返回 false。
+bool PtySession::waitExitBounded(int timeoutMs) {
+    const int steps = timeoutMs / 2 + 1;
+    for (int i = 0; i < steps; ++i) {
+        reapChild();
+        if (!alive_.load(std::memory_order_acquire)) return true;
+        usleep(2000);
+    }
+    reapChild();
+    return !alive_.load(std::memory_order_acquire);
+}
+
+bool PtySession::write(const char* data, size_t len) {
+    std::lock_guard<std::mutex> lock(ioMutex_);
+    const int fd = masterFd_.load(std::memory_order_acquire);
+    if (fd < 0 || !alive_) return false;
+
+    size_t totalWritten = 0;
+    int eagainRetries = 0;
+    while (totalWritten < len) {
+        ssize_t n = ::write(fd, data + totalWritten, len - totalWritten);
+        if (n < 0) {
+            if (errno == EINTR) {
+                // 被信号打断 —— 直接重试（P70-1：EINTR 不等同于错误）。
+                continue;
+            }
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // master 缓冲区满。有限退避重试，防止无限忙等（P70 生命周期加固）。
+                if (++eagainRetries > MAX_EAGAIN_RETRIES) {
+                    LOGW("Session %d: write stalled after %d EAGAIN retries, giving up",
+                         id_, eagainRetries);
+                    return false;
+                }
+                usleep(WRITE_BACKOFF_US);
+                continue;
+            }
+            // 真实错误（EPIPE/EIO/EBADF...）向上传播。
+            return false;
+        }
+        totalWritten += static_cast<size_t>(n);
+    }
+    return true;
+}
+
+ReadResult PtySession::readEx(int maxBytes) {
+    std::lock_guard<std::mutex> lock(ioMutex_);
+    ReadResult result;
+    result.status = ReadStatus::NO_DATA;
+
+    const int fd = masterFd_.load(std::memory_order_acquire);
+    if (fd < 0) {
+        // fd 已关闭 —— 输出流已结束（既非 idle 也非进程状态判断）。
+        result.status = ReadStatus::EOF_;
+        return result;
+    }
+    if (maxBytes <= 0) {
+        return result;
+    }
+
+    result.data.reserve(static_cast<size_t>(std::min(maxBytes, 64 * 1024)));
+
+    char buf[4096];
+    while (static_cast<int>(result.data.size()) < maxBytes) {
+        int toRead = std::min(static_cast<int>(sizeof(buf)),
+                              maxBytes - static_cast<int>(result.data.size()));
+        ssize_t n = ::read(fd, buf, toRead);
+        if (n > 0) {
+            // 二进制安全：append(buf, n) 保留 NUL 与任意字节（P70-2）。
+            result.data.append(buf, static_cast<size_t>(n));
+            result.status = ReadStatus::DATA;
+        } else if (n == 0) {
+            // read()==0：所有 slave 已关闭且无缓冲数据 —— EOF。
+            // P70-1：EOF 只代表 PTY 输出流结束，绝不修改 alive_（进程存活由
+            // waitpid/reapChild 判定，两个概念独立）。
+            // T81 (N-2 补强)：EOF 意味着输出方全部关闭 —— 此时子进程大概率已死，
+            // 顺手 reap 一次（WNOHANG，非阻塞），让上层「EOF 后立即查 exitCode」
+            // 可得（原实现必须等下一次 isAlive 轮询）。
+            reapChild();
+            if (result.data.empty()) {
+                result.status = ReadStatus::EOF_;
+            }
+            // 本次已读到数据则保持 DATA，EOF 留给下一次调用报告（drain 语义，
+            // 保证不丢数据、不提前终止）。
+            break;
+        } else {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                // idle：暂时无数据。绝不视为 EOF/错误（P70-1 修复点）。
+                if (result.data.empty()) {
+                    result.status = ReadStatus::NO_DATA;
+                }
+                break;
+            }
+            if (errno == EINTR) {
+                // 被信号打断 —— 重试，不改变状态语义。
+                continue;
+            }
+            if (errno == EIO) {
+                // Linux PTY 语义：slave 全部关闭后 read(master) 返回 EIO，
+                // 等价于输出流 EOF（shell 及其子进程都已退出/关闭）。
+                // T81 (N-2 补强)：同 EOF 分支 —— 顺手 reap，exitCode 立即可得。
+                reapChild();
+                if (result.data.empty()) {
+                    result.status = ReadStatus::EOF_;
+                }
+                break;
+            }
+            // 真实错误（EBADF/EFAULT/...）：向上传播（P70-1）。
+            result.status = ReadStatus::ERROR_;
+            result.err = errno;
+            break;
+        }
+    }
+    return result;
+}
+
+bool PtySession::hasData() {
+    const int fd = masterFd_.load(std::memory_order_acquire);
+    if (fd < 0) return false;
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(fd, &fds);
+    struct timeval tv{0, 0};
+    return select(fd + 1, &fds, nullptr, nullptr, &tv) > 0;
+}
+
+bool PtySession::waitForData(int timeoutMs) {
+    const int fd = masterFd_.load(std::memory_order_acquire);
+    if (fd < 0) return false;
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(fd, &fds);
+    struct timeval tv;
+    tv.tv_sec = timeoutMs / 1000;
+    tv.tv_usec = (timeoutMs % 1000) * 1000;
+    int ret = select(fd + 1, &fds, nullptr, nullptr, &tv);
+    return ret > 0;
+}
+
+bool PtySession::sendSignal(int sig) {
+    if (pid_ <= 0 || !alive_) return false;
+    // 目标必须是整个进程组（shell + child + grandchild），而不是只有 shell pid。
+    return killProcessGroup(sig);
+}
+
+bool PtySession::killProcessGroup(int sig) {
+    if (pid_ <= 0) return false;
+    bool delivered = false;
+
+    // 1) 前台作业进程组（作业控制）。
+    //    交互 shell 会把前台作业（例如 `sh -c 'sleep 60 & wait'`）放进独立的 process
+    //    group（pgid != shell pid）。如果只给 shell 的组发信号，作业会存活下来，因此
+    //    还要对控制终端的前台组一并发信号。
+    const int fd = masterFd_.load(std::memory_order_acquire);
+    int fg = fd >= 0 ? tcgetpgrp(fd) : -1;
+    if (fg > 0 && fg != pid_) {
+        if (kill(-fg, sig) == 0) delivered = true;
+        // ESRCH（前台组已不存在）可忽略，shell 组信号随后处理。
+    }
+
+    // 2) 会话自身的进程组。
+    //    forkpty() 在子进程调用 setsid()，shell 是 session leader 且是 process-group
+    //    leader：PGID == PID == shell pid。kill(-pid_, sig) 可送达 shell + 同组子进程 +
+    //    孙进程（非作业控制路径）。
+    if (kill(-pid_, sig) == 0) {
+        delivered = true;
+    } else if (errno == ESRCH) {
+        // 进程组已为空（shell 已退出）→ 回退到直接 kill PID。
+        if (kill(pid_, sig) == 0) delivered = true;
+    }
+
+    return delivered;
+}
+
+bool PtySession::signalForegroundGroup(int sig) {
+    // T82：仅前台作业组（tcgetpgrp）。fg == pid_ 表示 shell 自身在前台（空闲
+    // prompt / 无前台作业）—— 此时绝不能把信号发给 shell 的组（那就是整个会话）。
+    const int fd = masterFd_.load(std::memory_order_acquire);
+    if (fd < 0 || pid_ <= 0) return false;
+    const int fg = tcgetpgrp(fd);
+    if (fg <= 0 || fg == pid_) return false;
+    return kill(-fg, sig) == 0;
+}
+
+void PtySession::resize(int rows, int cols) {
+    const int fd = masterFd_.load(std::memory_order_acquire);
+    if (fd < 0) return;
+    struct winsize ws{};
+    ws.ws_row = static_cast<unsigned short>(rows);
+    ws.ws_col = static_cast<unsigned short>(cols);
+    ioctl(fd, TIOCSWINSZ, &ws);
+}
+
+void PtySession::close() {
+    // 注意顺序：先向整个进程组发信号，最后才关闭 master fd ——
+    // killProcessGroup() 需要 master fd 做 tcgetpgrp()。
+    if (pid_ > 0 && alive_) {
+        // 先尝试优雅终止整个进程组（shell + child + grandchild）。
+        // T81 (N-5)：等待改为有界轮询（进程早退即返回，不再固定睡满 50/100ms）。
+        killProcessGroup(SIGHUP);
+        if (!waitExitBounded(50)) {
+            killProcessGroup(SIGTERM);
+            if (!waitExitBounded(100)) {
+                killProcessGroup(SIGKILL);
+                waitExitBounded(150);
+            }
+        }
+
+        // T81 (N-4)：回收 shell 子进程 —— 只用 WNOHANG 有界重试（reapChild）。
+        // 原实现 waitpid(pid_, &status, 0) 是无限期阻塞：SIGKILL 后子进程若处于
+        // uninterruptible sleep（D-state，罕见但存在，如 FUSE/nfs 持有者），
+        // JNI 调用线程会被永久挂死。200ms 后放弃回收（子进程由 init 收养）。
+        // T81 (N-2)：回收到的 exit status 经 applyExitStatus 写入 exitCode_，
+        // 经 close() 终止的会话不再丢失退出码。
+        for (int i = 0; i < 100 && alive_.load(std::memory_order_acquire); ++i) {
+            usleep(2000);
+            reapChild();
+        }
+        pid_ = -1;
+    }
+
+    // P70 并发加固：fd 关闭与 readEx/write（ioMutex_）串行化，
+    // 避免close 与 read 并发时的 fd 复用竞争。
+    {
+        std::lock_guard<std::mutex> lock(ioMutex_);
+        const int fd = masterFd_.load(std::memory_order_acquire);
+        if (fd >= 0) {
+            ::close(fd);
+            masterFd_.store(-1, std::memory_order_release);
+        }
+    }
+
+    alive_ = false;
+    LOGI("Session %d closed", id_);
+}
+
+} // namespace apex

@@ -1,0 +1,171 @@
+package com.apex.agent.di
+
+import android.content.Context
+import com.apex.agent.R
+import com.apex.agent.core.llm.*
+import com.apex.agent.core.llm.runtime.DefaultModelRuntime
+import com.apex.agent.core.llm.runtime.ModelRuntime
+import com.apex.agent.core.llm.runtime.ModelRuntimeRegistry
+import com.apex.agent.core.llm.runtime.ModelRoleRouter
+import com.apex.agent.core.llm.runtime.ModelRuntimeStore
+import com.apex.agent.core.llm.runtime.RateLimitGovernor
+import com.apex.agent.ui.language.LanguageManager
+import com.apex.agent.ui.chatkit.ChatToolkitStore
+import com.apex.agent.ui.screen.settings.SettingsRepository
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+object LlmModule {
+
+    @Provides
+    @Singleton
+    fun provideLlmConfig(repo: SettingsRepository): LlmConfig {
+        // 由默认模型 Profile + Provider 派生运行时配置（含完整 sampling / network / tools 参数）
+        return repo.defaultLlmConfig()
+    }
+
+    @Provides
+    @Singleton
+    fun provideLlmClient(
+        repo: SettingsRepository,
+        chatToolkit: ChatToolkitStore,
+        lang: LanguageManager
+    ): LlmClient {
+        // 动态委托：设置页/对话页"小大脑"菜单修改默认模型或采样参数后即时生效，
+        // 无需重启 App（内部按 profiles/providers 变化重建真实 client）。
+        // T72 之后：引擎已改用 [ModelRuntime] 路由多模型；此 [LlmClient] 单例仍
+        // 保留供需要直连的旧消费者（如 SettingsViewModel.testConnection）。
+        // 会话级"网络搜索"开关同时贯通（见 DynamicLlmClient 注释）。
+        return DynamicLlmClient(repo, chatToolkit, lang)
+    }
+
+    /**
+     * T72 §十七 — 把 [SettingsRepository] 适配为 [ModelRuntimeStore]。
+     *
+     * 用匿名 object 转发 repo 的三个 StateFlow，**不**修改 SettingsRepository
+     * 的类签名（零风险）。Router/Registry 在 core/llm-adapter（纯 JVM）通过
+     * 此接口读取配置快照，每次 resolve 都读最新值——设置变更无需重启 App，
+     * 下一次请求立即使用新配置。
+     */
+    @Provides
+    @Singleton
+    fun provideModelRuntimeStore(
+        repo: SettingsRepository,
+        chatToolkit: ChatToolkitStore
+    ): ModelRuntimeStore {
+        // 会话级"网络搜索"开关（输入框工具栏）贯通到多模型运行时：
+        // 开关打开时把所有 Profile 的 webSearch 提升为 AUTO（按 Provider 端点
+        // 自动选择原生搜索策略；未知端点解析为 OFF，永不发送非标准参数）。关闭
+        // 时保持 Profile 自身设置不变。
+        //
+        // 根因修复：旧版开关只注入提示词求模型调 WebSearch 工具（依赖 DDG
+        // 抓取、经常空结果），模型内置联网能力（OpenAI web_search_options /
+        // DashScope enable_search / Zhipu WebSearch / OpenRouter :online /
+        // Anthropic WebSearch）从未被启用。现在开关同时驱动原生搜索。
+        fun applyToggle(profiles: List<ModelProfile>, enabled: Boolean): List<ModelProfile> =
+            if (enabled) profiles.map { it.copy(webSearch = WebSearchMode.AUTO) } else profiles
+
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val effectiveProfiles = combine(repo.profiles, chatToolkit.webSearchEnabled) { list, enabled ->
+            applyToggle(list, enabled)
+        }.stateIn(
+            scope = scope,
+            started = SharingStarted.Eagerly,
+            initialValue = applyToggle(repo.profiles.value, chatToolkit.webSearchEnabled.value)
+        )
+
+        return object : ModelRuntimeStore {
+            override val profiles get() = effectiveProfiles
+            override val providers get() = repo.providers
+            override val roles get() = repo.roles
+        }
+    }
+
+    /**
+     * T72 §三 — 运行时模型注册中心（per-profile Client 缓存 + 生命周期）。
+     * @Singleton 生命周期合理：缓存本身无 task 级状态，多 task 共享。
+     */
+    @Provides
+    @Singleton
+    fun provideModelRuntimeRegistry(): ModelRuntimeRegistry = ModelRuntimeRegistry()
+
+    /**
+     * T72 §四 — 角色路由器（无状态，每次 resolve 读 store 快照）。
+     */
+    @Provides
+    @Singleton
+    fun provideModelRoleRouter(
+        store: ModelRuntimeStore,
+        registry: ModelRuntimeRegistry
+    ): ModelRoleRouter = ModelRoleRouter(store)
+
+    /**
+     * T72 §八 — 默认多模型运行时（角色路由 + 能力校验 + 降级 + 诊断）。
+     * 引擎与压缩器注入此实例，获得完整多模型能力。
+     *
+     * 限速友好（只针对某些用户）：[RateLimitGovernor] 策略热读
+     * SettingsRepository 快照 —— 设置页改参数 → 下一个请求立即生效
+     * （无需重启 / 无需重建 runtime），关闭时零开销零行为变化。
+     */
+    @Provides
+    @Singleton
+    fun provideModelRuntime(
+        router: ModelRoleRouter,
+        registry: ModelRuntimeRegistry,
+        repo: SettingsRepository
+    ): ModelRuntime {
+        // Kotlin 陷阱（AGENTS.md 清单 #2）：尾随 lambda 绑定的是**末参** clock
+        // 而非 policyProvider —— 显式具名传参，防绑定错位。
+        val governor = RateLimitGovernor(policyProvider = {
+            val s = repo.agentSettings.value
+            RateLimitGovernor.RateLimitPolicy(
+                enabled = s.rateLimitFriendly,
+                minIntervalMs = s.rateLimitMinIntervalMs.toLong().coerceIn(0L, 60_000L)
+            )
+        })
+        return DefaultModelRuntime(router, registry, rateLimits = governor)
+    }
+}
+
+/**
+ * 未配置时的占位客户端（文案按当前语言取 —— 首启未配置模型时用户看到的提示）
+ */
+class NoOpLlmClient(private val lang: LanguageManager? = null) : LlmClient {
+    override suspend fun chat(
+        messages: List<LlmMessage>,
+        tools: List<ToolDefinition>,
+        temperature: Float,
+        maxTokens: Int
+    ): LlmResponse {
+        return LlmResponse(
+            content = lang?.getString(R.string.chat_llm_not_configured)
+                ?: "API is not configured yet (Base URL + API Key + Model)",
+            toolCalls = emptyList()
+        )
+    }
+
+    override fun chatStream(
+        messages: List<LlmMessage>,
+        tools: List<ToolDefinition>,
+        temperature: Float,
+        maxTokens: Int
+    ): kotlinx.coroutines.flow.Flow<LlmStreamChunk> {
+        return kotlinx.coroutines.flow.flowOf(
+            LlmStreamChunk(content = lang?.getString(R.string.chat_llm_not_configured_short)
+                ?: "API is not configured yet"),
+            LlmStreamChunk(isFinish = true)
+        )
+    }
+}

@@ -1,0 +1,865 @@
+package com.apex.agent.platform.terminal.ubuntu.lifecycle
+
+import com.apex.agent.platform.terminal.ubuntu.ProvisioningResult
+import com.apex.agent.platform.terminal.ubuntu.RootfsProvisioner
+import com.apex.agent.platform.terminal.ubuntu.RootfsTarget
+import com.apex.agent.platform.terminal.ubuntu.userMessage
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.transform
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
+
+/**
+ * T82: Ubuntu 产品级生命周期编排器（Product-Level Ubuntu Lifecycle Orchestrator）。
+ *
+ * ## 问题（T82 Phase 0 审计结论）
+ * T72/T73/T75/T76/T81 已交付完整的 Ubuntu 安装基础设施（真实下载 + SHA-256 +
+ * 原子解压 + bootstrap + apt + capability probe + repair），但产品层是断的：
+ *   - ApexApp 启动不触发任何 Ubuntu 生命周期；
+ *   - Terminal UI 的 `ensureSession()` 永远走 local backend；
+ *   - DepCatalog 的 apt 命令被投进 Android shell（必然 command not found）；
+ *   - Agent 需要**三次**工具调用（TerminalUbuntuInstall → TerminalLinuxBootstrap
+ *     → TerminalLinuxCapabilities）才能把 Ubuntu 拉到可用，还要自己解读三套状态机。
+ *
+ * ## 本类职责（编排，不重复实现）
+ * 把两阶段初始化合成一个产品级入口：
+ *
+ * ```text
+ * NOT_INSTALLED → INSTALLING(rootfs 解包) → ROOTFS_READY → BOOTSTRAPPING(apt) → READY
+ *                                      ↘ FAILED(stage, retryable)  ↙ RECOVERING(reconcile/repair)
+ * ```
+ *
+ * T83 内置交付语义：rootfs 解包（离线）即得可用环境；bootstrap（apt 源 +
+ * apt update + 基础包，需网络）是**增强而非门槛** —— 失败降级为 READY
+ * （[LifecycleState.bootstrapNote] 携带原因，UI/Agent 可见），会话照常创建。
+ *
+ * - [ensureReady]：幂等单飞编排 install → bootstrap（可降级）→ capability 快照；
+ * - [warmUp]：App 启动恢复（reconcile + 状态派生，**绝不解包**）；
+ * - [refreshState]：从底层实时派生（不复制 rootfs/bootstrap 状态语义）；
+ * - [stateFlow]/[progressFlow]：UI/Agent 可订阅；
+ * - [repair]：透传 EnvironmentRepairService（单轮 detect→repair→verify）。
+ *
+ * ## 设计约束（继承 T81 禁令）
+ * - 状态**派生**而非复制：`LifecycleState.rootfsState/bootstrapState` 直接取底层
+ *   组件的当前值；phase 是编排层合成视图（两阶段机器的乘积），单一事实源仍在
+ *   RootfsProvisioner / UbuntuBootstrapManager。
+ * - bootstrap/probe/repair 以函数端口注入（生产 DI 适配真实单例；JVM 测试注入
+ *   fake）——不新建第二套 TerminalRuntime/Provisioner/PackageManager 抽象。
+ * - 超时=IN_PROGRESS：下载断点续传（T72 Range）+ bootstrap stageEvidence 续跑，
+ *   进度永不丢失；绝不靠吞异常伪造成功。
+ * - CancellationException 透传（不吞协程取消）。
+ */
+class UbuntuLifecycleCoordinator(
+    private val provisioner: RootfsProvisioner,
+    /** bootstrap 端口（生产：UbuntuBootstrapManager.bootstrap 的适配）。 */
+    private val bootstrapFn: suspend (force: Boolean, timeoutMs: Long) -> BootstrapStageResult,
+    /** bootstrap 当前状态名端口（生产：UbuntuBootstrapManager.state().name）。 */
+    private val bootstrapStateFn: suspend () -> String?,
+    /** bootstrap 进度流端口（生产：UbuntuBootstrapManager.progress() 的适配）。 */
+    private val bootstrapProgressFn: () -> Flow<BootstrapProgressEvent> = { emptyFlow() },
+    /** capability 探测端口（生产：LinuxCapabilityProbe.probeAll() 的适配）。 */
+    private val probeFn: suspend () -> List<CapabilityEntry> = { emptyList() },
+    /** 自动修复端口（生产：EnvironmentRepairService.autoRepair() 的适配；null=未接线）。 */
+    private val repairFn: (suspend () -> RepairOutcome)? = null,
+    /**
+     * bootstrap 状态复位端口（生产：UbuntuBootstrapManager.reset() 的适配；null=未接线）。
+     * removeRootfs() 删除 rootfs 后必须同步复位 bootstrap.json —— 否则残留的
+     * READY 状态会让下一次 ensureReady 短路 ALREADY_READY，对新装的干净 rootfs
+     * 跳过 sources/apt-update/base-packages 引导。
+     */
+    private val bootstrapResetFn: (suspend () -> Unit)? = null,
+    /**
+     * T84：内置档案注册表指纹端口（生产：BundledRootfsSource 对当前 target 的
+     * 注册表 sha256；null=未接线/非内置源）。warmUp 用它做「已装 rootfs ↔
+     * 当前注册表」新鲜度核对：APK 升级换代内置档案（骨架 → 完整 rootfs）时
+     * 自动迁移（删旧装新），防 AlreadyReady 短路把旧 rootfs 永久钉死 ——
+     * 否则升级用户永远拿不到新环境。
+     */
+    private val bundledChecksumFn: (suspend () -> String?)? = null,
+    /**
+     * P1（DNS 快照刷新）端口：宿主 DNS 变化时重写 rootfs 内 resolv.conf
+     * （生产：RootfsConfigurator.refreshDnsIfChanged(current().location)；
+     * null=未接线，行为与旧版一致）。resolv.conf 是安装时刻的 DNS 快照，
+     * 切网后 guest 内 apt/pip/curl DNS 全灭且无修复通道 —— ensureReady
+     * 短路前刷一次（文件对比，毫秒级），切网自愈。
+     */
+    private val dnsRefreshFn: (suspend () -> Boolean)? = null,
+    private val target: RootfsTarget,
+    private val defaultTimeoutMs: Long = DEFAULT_ENSURE_TIMEOUT_MS,
+    private val clock: () -> Long = { System.currentTimeMillis() },
+) {
+
+    // ─────────────────────────── 产品级状态机 ───────────────────────────
+
+    /**
+     * 编排层 phase（两阶段机器的合成视图）：
+     * - [NOT_INSTALLED]：rootfs 未解包（底层 current() == null）；
+     * - [INSTALLING]：rootfs 解包进行中（本地拷贝/校验/解压/激活）；
+     * - [ROOTFS_READY]：rootfs 就绪，bootstrap 未完成（未开始/中断）；
+     * - [BOOTSTRAPPING]：bootstrap 进行中（sources/network/apt-update/base-packages）；
+     * - [READY]：环境可用（bootstrap 成功，或 T83 降级 —— 见 [LifecycleState.bootstrapNote]）；
+     * - [RECOVERING]：crash/损坏恢复中（reconcile/repair）；
+     * - [FAILED]：最近一次 ensure 失败（[LifecycleState.failedStage] 定位）。
+     */
+    enum class Phase { NOT_INSTALLED, INSTALLING, ROOTFS_READY, BOOTSTRAPPING, READY, RECOVERING, FAILED }
+
+    /** 失败发生的产品级阶段（Agent 据此决定 retry / repair / ask）。 */
+    enum class Stage { INSTALL, BOOTSTRAP, PROBE, RECOVER, REPAIR }
+
+    data class LifecycleState(
+        val phase: Phase,
+        /** ProvisioningState.name（实时派生，编排层不做判定）。 */
+        val rootfsState: String?,
+        /** BootstrapState.name（实时派生）。 */
+        val bootstrapState: String?,
+        val failedStage: String?,
+        val lastError: String?,
+        val retryable: Boolean,
+        val lastReadyAt: Long?,
+        /** READY 时的 capability 快照（派生缓存，非 READY 时为 null）。 */
+        val capabilities: List<CapabilityEntry>?,
+        /**
+         * T83 降级注记：rootfs 已就绪但 apt 引导未完成（离线/镜像故障等）。
+         * 非null 时环境仍可用（bash/文件系统/已装工具），apt 相关操作会在使用时
+         * 真实报错 —— 诚实降级而非伪造失败。null = bootstrap 完整或非 READY。
+         */
+        val bootstrapNote: String? = null
+    ) {
+        val ready: Boolean get() = phase == Phase.READY
+    }
+
+    /** capability 单项（LinuxCapabilityProbe.CapabilityReport 的生命周期视图）。 */
+    data class CapabilityEntry(
+        val name: String,
+        val status: String,
+        val version: String? = null,
+        val aptPackage: String? = null,
+        val detail: String? = null
+    )
+
+    /** bootstrap 阶段归一化结果（UbuntuBootstrapManager.BootstrapResult 的生命周期视图）。 */
+    enum class BootstrapOutcome { READY, ALREADY_READY, IN_PROGRESS, FAILED, CANCELLED, BUSY }
+
+    data class BootstrapStageResult(
+        val outcome: BootstrapOutcome,
+        val state: String?,
+        val failedStage: String? = null,
+        val error: String? = null
+    )
+
+    /** bootstrap 进度事件（BootstrapProgress 的生命周期视图）。 */
+    data class BootstrapProgressEvent(
+        val stage: String,
+        val message: String,
+        val timestampMs: Long = 0L
+    )
+
+    /** EnvironmentRepairService.RepairReport 的生命周期视图。 */
+    data class RepairOutcome(
+        val actions: List<String>,
+        val verifiedHealthy: Boolean,
+        val detail: String? = null
+    )
+
+    // ─────────────────────────── ensureReady 结果 ───────────────────────────
+
+    sealed interface EnsureResult {
+        data class Ready(
+            val durationMs: Long,
+            val capabilities: List<CapabilityEntry>,
+            val fromPhase: Phase,
+            /** probe 阶段降级（环境 READY 但 capability 快照不可用）。 */
+            val probeDegraded: Boolean,
+            val probeError: String?,
+            /** T83：bootstrap 降级（环境 READY 但 apt 引导未完成 —— 离线等）。 */
+            val bootstrapDegraded: Boolean = false,
+            val bootstrapError: String? = null
+        ) : EnsureResult
+
+        data class AlreadyReady(val capabilities: List<CapabilityEntry>) : EnsureResult
+        data class InProgress(val phase: Phase, val message: String) : EnsureResult
+        data class Failed(
+            val stage: Stage,
+            val message: String,
+            val retryable: Boolean,
+            val phase: Phase,
+            val rootfsState: String?,
+            val bootstrapState: String?
+        ) : EnsureResult
+
+        data class Cancelled(val phase: Phase) : EnsureResult
+    }
+
+    /** 统一进度事件（install + bootstrap 两流聚合）。 */
+    data class LifecycleProgress(
+        val stage: String,
+        val message: String,
+        val percent: Int = 0,
+        val bytesTransferred: Long = 0,
+        val bytesTotal: Long? = null,
+        val timestampMs: Long
+    )
+
+    /** warmUp / crash 恢复报告。 */
+    data class ReconciliationReport(
+        val action: String,
+        val staleStaging: Boolean,
+        val orphanedTempFiles: List<String>,
+        val phaseAfter: Phase
+    )
+
+    data class CancelOutcome(
+        val cancelled: Boolean,
+        val phase: Phase,
+        val message: String
+    )
+
+    /**
+     * removeRootfs() 结果（环境中心 / 存储管理的删除入口消费）。
+     *
+     * @param removed     是否真正删除（false = 拒绝：安装进行中 / 会话占用 / 锁忙）。
+     * @param phase       删除发起前的 phase（拒绝原因定位用）。
+     * @param cleanedDirs 实际删除的目录/文件路径（provisioner 透传）。
+     * @param message     人可读结果（含拒绝原因，UI 可直接展示）。
+     */
+    data class RemoveOutcome(
+        val removed: Boolean,
+        val phase: Phase,
+        val cleanedDirs: List<String> = emptyList(),
+        val message: String
+    )
+
+    // ─────────────────────────── 状态 ───────────────────────────
+
+    private val mutex = Mutex()
+
+    private val _state = MutableStateFlow(
+        LifecycleState(
+            phase = Phase.NOT_INSTALLED,
+            rootfsState = null,
+            bootstrapState = null,
+            failedStage = null,
+            lastError = null,
+            retryable = false,
+            lastReadyAt = null,
+            capabilities = null
+        )
+    )
+
+    /** 编排层状态流（UI/Agent 订阅；每次 phase 转移即时发射）。 */
+    val stateFlow: StateFlow<LifecycleState> = _state.asStateFlow()
+
+    @Volatile
+    private var lastReadyAt: Long? = null
+
+    @Volatile
+    private var lastFailure: Pair<Stage, String>? = null
+
+    // ─────────────────────────── 核心入口 ───────────────────────────
+
+    /**
+     * 幂等把 Ubuntu 拉到 READY（install → bootstrap → capability 快照）。
+     *
+     * - 单飞：并发调用只跑一次编排（Mutex），其余等待并共享结果；
+     * - 幂等：底层已 READY → [EnsureResult.AlreadyReady]（不触碰底层）；
+     * - 超时 → [EnsureResult.InProgress]：进度不丢（解包 .part 续拷 + bootstrap
+     *   evidence 续跑），再次调用续跑；
+     * - [force]=true：绕过 READY 短路（版本迁移/修复用）。
+     *
+     * P1 修复（锁等待纳入超时）：旧实现 `withTimeoutOrNull` 在 `mutex.withLock`
+     * **内部** —— 第二个 caller 的 timeoutMs 不覆盖锁排队时间。首个 caller 解包
+     * 最长 30 分钟，期间 Agent 的 TerminalUbuntuEnsure（工具层 1,830s 策略）或
+     * UI 的任何 ensureReady 调用会挂在锁上直到外层 ToolRunPolicy 击杀（或无限
+     * 等待）。现在 timeout 包住「锁等待 + 编排步骤」全程：等待超锁预算一半即
+     * 诚实返回 InProgress（调用方可重试续跑），绝不无限阻塞。
+     */
+    suspend fun ensureReady(force: Boolean = false, timeoutMs: Long = defaultTimeoutMs): EnsureResult =
+        withTimeoutOrNull(timeoutMs) {
+            mutex.withLock {
+                // 快速路径：已 READY 且非 force —— 不触碰底层（秒回）。
+                // ★ 修复「每次都会显示 APT 引导未完成」（用户反馈）：T83 降级语义下
+                // phase=READY 但 bootstrapNote != null（引导失败降级）时，秒回会让
+                // bootstrap 永不重试、降级注记永不消失 —— 引导降级态不走短路，
+                // 继续走完整编排：bootstrap 幂等续跑（evidence 只含已完成阶段 +
+                // APT_UPDATE 镜像 fallback），网络恢复后下一次 ensureReady 即自愈
+                // 为完整 READY；引导本来就完整的设备不受影响。
+                if (!force &&
+                    _state.value.phase == Phase.READY &&
+                    _state.value.bootstrapNote == null
+                ) {
+                    // P1（DNS 快照刷新）：短路前对一次宿主 DNS —— resolv.conf 是安装时刻
+                    // 的快照，切网（Wi-Fi→蜂窝/VPN）后 guest DNS 全灭；文件对比毫秒级，
+                    // 失败静默（刷新失败不影响 AlreadyReady 语义，下次再试）。
+                    dnsRefreshFn?.let { refresh ->
+                        runCatching { refresh() }
+                    }
+                    return@withLock EnsureResult.AlreadyReady(
+                        _state.value.capabilities ?: emptyList()
+                    )
+                }
+                val startedAt = clock()
+                val fromPhase = _state.value.phase
+                runEnsureSteps(force, startedAt, fromPhase)
+            }
+        } ?: EnsureResult.InProgress(
+            phase = _state.value.phase,
+            message = "仍在 ${_state.value.phase.name} 阶段 — 再次调用继续等待，进度不会丢失"
+        )
+
+    private suspend fun runEnsureSteps(force: Boolean, startedAt: Long, fromPhase: Phase): EnsureResult {
+        // ── Stage 1: rootfs（幂等判断由 provisioner 承担 —— 编排层不复制 rootfs 状态语义）──
+        setPhase(Phase.INSTALLING)
+        // 契约防御：provisioner 契约是返回 ProvisioningResult；抛异常属契约破坏 ——
+        // 归一为结构化 Failed（信息保留，非吞错；与 BootstrapManager 的 bootstrap
+        // 异常处理模式一致）。CancellationException（含超时/调用方取消）始终透传。
+        val installResult = try {
+            provisioner.install(target, force)
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            // #235：人话前置（UI 横幅 take(200) 不再被英文内部串占满），
+            // 原始异常细节保真保留在括号内（日志/Agent 诊断可见）。
+            return markFailed(
+                Stage.INSTALL,
+                "Ubuntu 安装过程异常退出（install crashed: ${e.message ?: e::class.java.simpleName}）—— 可重试",
+                retryable = true
+            )
+        }
+        when (installResult) {
+            is ProvisioningResult.Ready, is ProvisioningResult.AlreadyReady -> Unit
+            is ProvisioningResult.Failed -> {
+                return markFailed(
+                    Stage.INSTALL,
+                    // #235 残余修复：userMessage（中文「发生了什么 + 怎么办」）前置。
+                    // 旧序 "${code}: ${message} | ${userMessage}" 把英文内部码顶在
+                    // 最前 —— UI 横幅 take(200) 先吃掉几十上百字符的技术串，
+                    // 空间不足这类高频失败的中文指引可能被截断甚至完全挤掉。
+                    // 内部码 + 原始技术串折叠为括号后缀（诊断保真，不进头部队列）。
+                    "${installResult.error.userMessage}（${installResult.error.code}: ${installResult.error.message}）",
+                    installResult.error.recoverable
+                )
+            }
+            is ProvisioningResult.Cancelled -> {
+                return EnsureResult.Cancelled(_state.value.phase)
+            }
+            is ProvisioningResult.Busy -> {
+                return EnsureResult.InProgress(
+                    phase = Phase.INSTALLING,
+                    message = "另一 rootfs 安装正在进程内进行（${installResult.message}）— 稍后重试 ensure"
+                )
+            }
+            else -> {
+                // Removed/Invalidated 等非安装语义结果 —— 诚实上报为 install 阶段异常。
+                return markFailed(Stage.INSTALL, "unexpected install result: $installResult", retryable = true)
+            }
+        }
+
+        // ── Stage 2: bootstrap（sources → network → apt update → base packages）──
+        // T83 内置交付语义：rootfs 解包已就绪（离线可得），bootstrap 是需网络的
+        // **增强而非门槛** —— 失败降级为 READY（bootstrapNote 携带原因），环境照常可用；
+        // 网络恢复后 force=true 或 restart 后的 ensureReady 会重试引导。
+        //
+        // ★ 修复「降级重试永不自愈」（用户反馈「总是显示 apt 引导未完成」根因之一）：
+        // dnsRefreshFn 此前**只**在健康 READY 短路前调用 —— 恰恰是最需要重试的
+        // 降级路径（note != null → 完整编排）不刷新：resolv.conf 还是安装时刻/上次
+        // 网络的快照，切网（Wi-Fi→蜂窝/VPN）后重试拿着旧 DNS 跑 apt update →
+        // 官方 + 全镜像解析全败 → 再次 FAILED → 降级注记永远挂着。现在每次完整
+        // 编排（含降级重试）在 bootstrap 前对一次宿主 DNS —— 文件对比毫秒级、
+        // 失败静默（刷新失败交由 apt 的真实报错兜底，不改变降级语义）。
+        dnsRefreshFn?.let { refresh ->
+            runCatching { refresh() }
+        }
+        setPhase(Phase.BOOTSTRAPPING)
+        var bootstrapDegraded = false
+        var bootstrapError: String? = null
+        val br = try {
+            bootstrapFn(force, defaultTimeoutMs)
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            // 端口异常与 FAILED 同语义降级：rootfs 健康（install 已验），
+            // 引导链路问题不阻断环境可用 —— 诚实记录原因。
+            bootstrapDegraded = true
+            bootstrapError = "bootstrap crashed: ${e.message}"
+            null
+        }
+        if (br != null) when (br.outcome) {
+            BootstrapOutcome.READY, BootstrapOutcome.ALREADY_READY -> Unit
+            BootstrapOutcome.IN_PROGRESS -> {
+                return EnsureResult.InProgress(
+                    phase = Phase.BOOTSTRAPPING,
+                    message = "bootstrap 仍在进行（state=${br.state}）— 再次调用继续等待"
+                )
+            }
+            BootstrapOutcome.FAILED -> {
+                bootstrapDegraded = true
+                bootstrapError = "${br.error ?: "bootstrap failed"}（failedStage=${br.failedStage}）"
+            }
+            BootstrapOutcome.CANCELLED, BootstrapOutcome.BUSY -> {
+                // 非终态 —— 上报进行中语义（诚实，不伪造失败）。
+                return EnsureResult.InProgress(
+                    phase = Phase.BOOTSTRAPPING,
+                    message = "bootstrap ${br.outcome.name}（state=${br.state}）— ${br.error ?: "稍后重试 ensure"}"
+                )
+            }
+        }
+
+        // ── Stage 3: capability 快照（诊断性 —— 探测失败不否定 READY）──
+        // Kotlin try/catch 的 definite assignment 规则禁止 val 双路径赋值 → var 局部。
+        var caps: List<CapabilityEntry> = emptyList()
+        var probeDegraded = false
+        var probeError: String? = null
+        try {
+            caps = probeFn()
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            // 环境已 READY；capability 快照是附加诊断（T81 §29：探测不可用 ≠ 环境不可用）。
+            probeDegraded = true
+            probeError = e.message ?: e::class.java.simpleName
+        }
+
+        lastReadyAt = clock()
+        lastFailure = null
+        setPhase(Phase.READY, capabilities = caps, bootstrapNote = bootstrapError)
+        return EnsureResult.Ready(
+            durationMs = (clock() - startedAt).coerceAtLeast(0L),
+            capabilities = caps,
+            fromPhase = fromPhase,
+            probeDegraded = probeDegraded,
+            probeError = probeError,
+            bootstrapDegraded = bootstrapDegraded,
+            bootstrapError = bootstrapError
+        )
+    }
+
+    /**
+     * T84：档案新鲜度迁移 —— 已装 rootfs 的 checksum ≠ 当前内置注册表指纹时，
+     * 说明 APK 升级换了内置档案（v1.2.0 骨架 → v1.3.0 完整 rootfs 等）。
+     * 不处理的话，版本前缀同为 24.04 的旧 rootfs 会被 AlreadyReady 短路永久
+     * 保留，升级用户永远拿不到新环境。
+     *
+     * 语义：删除旧 rootfs + 复位 bootstrap 状态（与 removeRootfs 同收尾）；
+     * 下一次 ensureReady 走全新解包（进度 UI 照常，~2~5 分钟）。用户数据
+     * （guest /root 与 workspace 在 rootfs 目录外）保留。Busy（会话占用/锁）
+     * 时跳过，下次 warmUp 重试。
+     */
+    private suspend fun maybeMigrateStaleRootfs(active: com.apex.agent.platform.terminal.linux.RootfsDescriptor?) {
+        val fn = bundledChecksumFn ?: return
+        if (active == null || active.checksum == null) return
+        val expected = try {
+            fn()
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (_: Exception) {
+            null   // 注册表查询失败 → 不迁移（保守：绝不因端口故障误删环境）
+        } ?: return
+        if (active.checksum == expected) return
+        val removed = try {
+            provisioner.remove()
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            null
+        }
+        when (removed) {
+            is ProvisioningResult.Removed -> {
+                try {
+                    bootstrapResetFn?.invoke()
+                } catch (ce: CancellationException) {
+                    throw ce
+                } catch (_: Exception) {
+                    // 复位失败不否定删除事实 —— bootstrap reconcile 会自愈。
+                }
+                lastFailure = null
+                lastReadyAt = null
+            }
+            else -> {
+                // Busy / 失败 —— 保留旧环境（仍可用），下次 warmUp 重试迁移。
+            }
+        }
+    }
+
+    /**
+     * App 启动恢复入口：reconcile rootfs 现场 + 派生当前 phase。
+     * **绝不下载/安装** —— 只做崩溃后的一致性收敛（stale staging 清理、孤儿 temp
+     * 清理、metadata 修复）。产品语义：启动时"知道 Ubuntu 在不在/健康不健康"，
+     * 但不替用户决定下载。
+     */
+    suspend fun warmUp(): ReconciliationReport {
+        setPhase(Phase.RECOVERING)
+        val rec = try {
+            provisioner.reconcile()
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            // reconcile 失败不阻断状态派生（诚实记录，refreshState 兜底）。
+            lastFailure = Stage.RECOVER to "reconcile failed: ${e.message}"
+            null
+        }
+        // T84：档案新鲜度迁移（详见 maybeMigrateStaleRootfs KDoc）—— 在
+        // refreshState 派生 NOT_INSTALLED/READY 之前完成，派生结果即迁移后真相。
+        maybeMigrateStaleRootfs(rec?.activeRootfs)
+        refreshState()
+        return ReconciliationReport(
+            action = rec?.action?.name ?: "RECONCILE_FAILED",
+            staleStaging = rec?.staleStaging ?: false,
+            orphanedTempFiles = rec?.orphanedTempFiles ?: emptyList(),
+            phaseAfter = _state.value.phase
+        )
+    }
+
+    /**
+     * 从底层实时派生 [LifecycleState]（单一事实源：RootfsProvisioner /
+     * UbuntuBootstrapManager；编排层只合成 phase，不复制判定逻辑）。
+     */
+    suspend fun refreshState(): LifecycleState {
+        val rootfs = try {
+            provisioner.current()
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            null
+        }
+        val rootfsStateName = try {
+            provisioner.state().name
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            null
+        }
+        val bootState = try {
+            bootstrapStateFn()
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            null
+        }
+        val failure = lastFailure
+        val phase = derivePhase(rootfs != null, rootfsStateName, bootState, _state.value.phase)
+        val state = LifecycleState(
+            phase = phase,
+            rootfsState = rootfsStateName,
+            bootstrapState = bootState,
+            failedStage = failure?.first?.name,
+            lastError = failure?.second,
+            retryable = failure != null,
+            lastReadyAt = lastReadyAt,
+            capabilities = if (phase == Phase.READY) _state.value.capabilities else null,
+            // T83：降级注记随 READY 保留（底层 bootstrap 仍非 READY 时）；
+            // 底层引导成功/phase 非 READY 时清除 —— 单一事实源在底层状态机。
+            bootstrapNote = if (phase == Phase.READY && bootState != "READY") {
+                _state.value.bootstrapNote
+            } else {
+                null
+            }
+        )
+        _state.value = state
+        return state
+    }
+
+    /**
+     * phase 合成规则（纯函数 —— 可矩阵测试）。
+     * 输入是底层事实（rootfs 存在性 / ProvisioningState / BootstrapState），
+     * 输出编排视图。RECOVERING 是过程态（仅 setPhase 与 refreshState 之间存在），
+     * refreshState 一律派生事实终态 —— warmUp/repair 结束后不残留 RECOVERING。
+     *
+     * ★ 降级 READY 稳定化：rootfs 在 + bootstrap FAILED + 之前是（降级）READY →
+     * 保持 READY（bootstrapNote 保留）。旧规则把这种状态派生成 ROOTFS_READY ——
+     * runEnsureSteps 刚把环境判为「降级可用」，任何一次 refreshState（warmUp/
+     * repair 后必调）就翻回「待引导」：同一事实在 UI 上两种说法来回跳，且
+     * bootstrapNote 仅在 READY 时保留（refreshState）→ 降级原因直接丢失。
+     */
+    internal fun derivePhase(
+        hasRootfs: Boolean,
+        rootfsStateName: String?,
+        bootstrapStateName: String?,
+        previous: Phase
+    ): Phase = when {
+        !hasRootfs -> Phase.NOT_INSTALLED
+        rootfsStateName in INSTALL_IN_PROGRESS_STATES -> Phase.INSTALLING
+        bootstrapStateName == "READY" -> Phase.READY
+        bootstrapStateName in BOOTSTRAP_IN_PROGRESS_STATES -> Phase.BOOTSTRAPPING
+        bootstrapStateName == "FAILED" && previous == Phase.FAILED -> Phase.FAILED
+        bootstrapStateName == "FAILED" && previous == Phase.READY -> Phase.READY
+        else -> Phase.ROOTFS_READY // rootfs 在，bootstrap NOT_STARTED/FAILED/中断
+    }
+
+    /**
+     * 取消当前进行中的 rootfs 解包（install 阶段专用真取消 —— 已拷字节保留，
+     * 下次续拷）。bootstrap 阶段的取消语义 = 取消调用协程（BootstrapManager
+     * 内部处理 CancellationException）—— 此处如实报告不支持。
+     */
+    suspend fun cancelInstall(): CancelOutcome {
+        val phase = _state.value.phase
+        return when (phase) {
+            Phase.INSTALLING -> {
+                val r = try {
+                    provisioner.cancel()
+                } catch (ce: CancellationException) {
+                    throw ce
+                } catch (e: Exception) {
+                    return CancelOutcome(false, phase, "cancel failed: ${e.message}")
+                }
+                if (r.isSuccess) {
+                    refreshState()
+                    CancelOutcome(true, Phase.INSTALLING, "install cancelled — partial bundle bytes preserved for resume")
+                } else {
+                    CancelOutcome(false, phase, "cancel rejected: ${r.exceptionOrNull()?.message}")
+                }
+            }
+            else -> CancelOutcome(
+                false,
+                phase,
+                "install not in progress (phase=$phase) — bootstrap cancellation is via coroutine cancel"
+            )
+        }
+    }
+
+    /**
+     * 删除已安装的 Ubuntu rootfs（环境中心 / 存储管理入口）。
+     *
+     * 前置防御：
+     * - INSTALLING / BOOTSTRAPPING 进行中 → 拒绝（先 cancelInstall 或取消协程）；
+     * - provisioner 侧自带 in-use / install-lock / file-lock 三重保护（Busy 透传）。
+     *
+     * 成功路径：provisioner.remove()（清 versions/staging/archives/current-marker +
+     * metadata）→ bootstrap 状态复位（防重装后 ALREADY_READY 短路）→ refreshState()
+     * （phase 回落 NOT_INSTALLED）。
+     *
+     * 注意：guest 用户 home（filesDir/linux/home）与 workspace（filesDir/linux/workspaces）
+     * 与 rootfs 分离持久化，本操作**不删除用户数据**（与 GuestUserHome 的 T75 设计一致）。
+     */
+    suspend fun removeRootfs(): RemoveOutcome {
+        val phase = _state.value.phase
+        return when (phase) {
+            Phase.INSTALLING, Phase.BOOTSTRAPPING, Phase.RECOVERING -> RemoveOutcome(
+                removed = false,
+                phase = phase,
+                message = "环境处于 $phase 进行中 — 请先取消或等待完成后再删除"
+            )
+            Phase.NOT_INSTALLED -> RemoveOutcome(
+                removed = false,
+                phase = phase,
+                message = "Ubuntu 环境未安装，无需删除"
+            )
+            else -> {
+                val r = try {
+                    provisioner.remove()
+                } catch (ce: CancellationException) {
+                    throw ce
+                } catch (e: Exception) {
+                    return RemoveOutcome(false, phase, message = "remove crashed: ${e.message}")
+                }
+                when (r) {
+                    is ProvisioningResult.Removed -> {
+                        // bootstrap 状态复位：rootfs 已删，bootstrap.json 残留会让
+                        // 下一次 ensureReady 对干净 rootfs 短路 ALREADY_READY。
+                        try {
+                            bootstrapResetFn?.invoke()
+                        } catch (ce: CancellationException) {
+                            throw ce
+                        } catch (_: Exception) {
+                            // 复位失败不否定删除事实 —— bootstrap 内部 reconcile
+                            // 会对不一致状态自愈（幂等重跑 apt 引导）。
+                        }
+                        lastFailure = null
+                        refreshState()
+                        RemoveOutcome(
+                            removed = true,
+                            phase = phase,
+                            cleanedDirs = r.cleanedDirs,
+                            message = "已删除 Ubuntu 环境（${r.cleanedDirs.size} 个目录/文件已清理；用户数据 /root 与 workspace 保留）"
+                        )
+                    }
+                    is ProvisioningResult.Busy -> RemoveOutcome(
+                        removed = false,
+                        phase = phase,
+                        message = "环境被占用或操作进行中（${r.message}）— 关闭所有 Ubuntu 会话后重试"
+                    )
+                    else -> RemoveOutcome(
+                        removed = false,
+                        phase = phase,
+                        message = "删除未完成（${r::class.simpleName}）— 稍后重试或先执行修复"
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * 当前 rootfs 安装目录的磁盘占用（bytes；null = 未安装）。
+     * 环境中心 / 存储管理的用量展示入口 —— 遍历 provisioner.current() 指向的
+     * 版本目录（不含 archives 下载缓存；不含与 rootfs 分离的用户 home/workspace）。
+     * IO 遍历可能较慢，调用方应在后台调度器执行。
+     */
+    suspend fun rootfsSizeBytes(): Long? {
+        val descriptor = try {
+            provisioner.current()
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (_: Exception) {
+            return null
+        } ?: return null
+        val location = descriptor.location?.value ?: return null
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val dir = java.io.File(location)
+            if (!dir.exists()) return@withContext null
+            var total = 0L
+            val stack = ArrayDeque<java.io.File>()
+            stack.addLast(dir)
+            while (stack.isNotEmpty()) {
+                val f = stack.removeLast()
+                if (f.isDirectory) {
+                    f.listFiles()?.forEach { stack.addLast(it) }
+                } else {
+                    total += f.length()
+                }
+            }
+            total
+        }
+    }
+
+    /**
+     * 产品级修复：透传 EnvironmentRepairService（单轮 detect → repair → verify，
+     * 不触发大下载；bootstrap 维度由该服务显式 SKIPPED —— 长流程走 ensureReady）。
+     */
+    suspend fun repair(): RepairOutcome {
+        val fn = repairFn
+            ?: return RepairOutcome(
+                actions = emptyList(),
+                verifiedHealthy = false,
+                detail = "repair port not wired (no EnvironmentRepairService in DI graph)"
+            )
+        setPhase(Phase.RECOVERING)
+        val outcome = try {
+            fn()
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            return RepairOutcome(
+                actions = emptyList(),
+                verifiedHealthy = false,
+                detail = "repair crashed: ${e.message}"
+            )
+        }
+        if (outcome.verifiedHealthy) {
+            lastFailure = null
+            lastReadyAt = clock()
+        } else {
+            lastFailure = Stage.REPAIR to (outcome.detail ?: "repair did not converge to healthy")
+        }
+        refreshState()
+        return outcome
+    }
+
+    /** 聚合进度流：install（ProvisioningProgress）+ bootstrap（BootstrapProgressEvent）。 */
+    fun progressFlow(): Flow<LifecycleProgress> = kotlinx.coroutines.flow.merge(
+        provisioner.progress().transform { p ->
+            emit(
+                LifecycleProgress(
+                    stage = "install:${p.state.name}",
+                    message = p.message,
+                    percent = p.percent,
+                    bytesTransferred = p.bytesTransferred,
+                    bytesTotal = p.bytesTotal,
+                    timestampMs = clock()
+                )
+            )
+        },
+        bootstrapProgressFn().transform { e ->
+            emit(
+                LifecycleProgress(
+                    stage = "bootstrap:${e.stage}",
+                    message = e.message,
+                    timestampMs = if (e.timestampMs > 0) e.timestampMs else clock()
+                )
+            )
+        }
+    )
+
+    // ─────────────────────────── 内部 ───────────────────────────
+
+    private fun setPhase(
+        phase: Phase,
+        capabilities: List<CapabilityEntry>? = null,
+        bootstrapNote: String? = _state.value.bootstrapNote.takeIf { phase == Phase.READY }
+    ) {
+        val cur = _state.value
+        _state.value = cur.copy(
+            phase = phase,
+            capabilities = if (phase == Phase.READY) capabilities ?: cur.capabilities else null,
+            bootstrapNote = if (phase == Phase.READY) bootstrapNote else null,
+            rootfsState = try {
+                provisioner.state().name
+            } catch (e: Exception) {
+                cur.rootfsState
+            },
+            failedStage = null,
+            lastError = null,
+            retryable = false,
+            lastReadyAt = lastReadyAt
+        )
+    }
+
+    private suspend fun markFailed(stage: Stage, message: String, retryable: Boolean): EnsureResult.Failed {
+        lastFailure = stage to message
+        val rootfsStateName = try {
+            provisioner.state().name
+        } catch (e: Exception) {
+            null
+        }
+        val bootState = try {
+            bootstrapStateFn()
+        } catch (e: Exception) {
+            null
+        }
+        _state.value = _state.value.copy(
+            phase = Phase.FAILED,
+            rootfsState = rootfsStateName,
+            bootstrapState = bootState,
+            failedStage = stage.name,
+            lastError = message,
+            retryable = retryable,
+            capabilities = null,
+            bootstrapNote = null
+        )
+        return EnsureResult.Failed(
+            stage = stage,
+            message = message,
+            retryable = retryable,
+            phase = Phase.FAILED,
+            rootfsState = rootfsStateName,
+            bootstrapState = bootState
+        )
+    }
+
+    companion object {
+        /**
+         * install + bootstrap + probe 全链默认预算。
+         * T84：从 15 分钟提到 30 分钟 —— 完整 rootfs（~300MB+ 档）本地拷贝 +
+         * SHA-256 复验 + 1GB+ 解压在慢存储设备上实测可达 5-10 分钟；预算内
+         * 未完成返回 InProgress（证据已持久化，再次调用续跑），不是失败。
+         * 超预算的根因（v1.2.0 时代 ~30MB 下载量级假设）已随内置交付消失。
+         */
+        const val DEFAULT_ENSURE_TIMEOUT_MS: Long = 1_800_000L
+
+        /** ProvisioningState 的"安装进行中"集合（合成视图用）。 */
+        private val INSTALL_IN_PROGRESS_STATES = setOf(
+            "RESOLVING", "DOWNLOADING", "VERIFYING", "EXTRACTING",
+            "VALIDATING", "CONFIGURING", "ACTIVATING"
+        )
+
+        /** BootstrapState 的"bootstrap 进行中"集合（合成视图用）。 */
+        private val BOOTSTRAP_IN_PROGRESS_STATES = setOf(
+            "CHECKING", "CONFIGURING", "NETWORK_CHECK", "APT_UPDATE", "BASE_PACKAGES"
+        )
+    }
+}

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v1.4.4 #4 通知中心 —— 渠道名/描述 + 任务完成通知文案 -->
+<resources>
+    <string name="notif_channel_task_name">任务完成</string>
+    <string name="notif_channel_task_desc">Agent 任务在后台跑完时提醒</string>
+    <string name="notif_channel_general_name">常规通知</string>
+    <string name="notif_channel_general_desc">一般性提醒与通知</string>
+    <string name="notif_task_done_generic">任务已完成</string>
+    <string name="notif_task_done_fallback_title">Agent 任务已完成</string>
+</resources>

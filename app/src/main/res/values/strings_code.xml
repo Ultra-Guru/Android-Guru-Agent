@@ -1,0 +1,403 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Coding mode (Code screen) strings (English default). Chinese lives in values-zh/strings_code.xml. -->
+<resources>
+    <!-- Drawer destinations -->
+    <string name="drawer_code">Code</string>
+
+    <!-- Workspace bar -->
+    <string name="code_no_workspace">No workspace</string>
+    <string name="code_switch_workspace">Switch workspace</string>
+    <string name="code_delete_workspace">Delete workspace</string>
+    <string name="code_new_workspace">New workspace…</string>
+    <string name="code_clear_chat">New chat</string>
+
+    <!-- Todo panel -->
+    <string name="code_todo_progress">Tasks %1$d/%2$d</string>
+
+    <!-- Message stream / input -->
+    <string name="code_input_hint">Describe a coding task…</string>
+    <string name="code_input_hint_no_api">Model API not configured — open Settings to add one…</string>
+    <string name="code_api_missing_got_it">Got it</string>
+    <string name="code_send">Send</string>
+    <string name="code_stop">Stop</string>
+    <string name="code_dismiss">Dismiss</string>
+
+    <!-- AskUser dialog -->
+    <string name="code_question_title">Agent needs your input</string>
+    <string name="code_question_hint">Type your answer…</string>
+    <string name="code_question_default_yes">yes</string>
+    <string name="code_question_submit">Answer</string>
+
+    <!-- New workspace dialog -->
+    <string name="code_new_workspace_title">New coding workspace</string>
+    <string name="code_workspace_name_hint">Workspace name (e.g. my-app)</string>
+    <string name="code_create">Create</string>
+    <string name="code_cancel">Cancel</string>
+
+    <!-- Editor panel (v1.0 #154) -->
+    <string name="code_editor_close">Close editor</string>
+    <string name="code_editor_loading">Loading…</string>
+    <string name="code_editor_binary">Binary file — preview not supported</string>
+    <string name="code_editor_empty">Empty file</string>
+    <string name="code_editor_lines_fmt">%1$d lines</string>
+    <string name="code_editor_truncated_fmt">Showing first %1$d of %2$d lines</string>
+
+    <!-- Tool permissions (v1.0 #155) -->
+    <string name="code_perm_section_title">Tool permissions</string>
+    <string name="code_perm_section_subtitle">standard permission mode and rules</string>
+    <string name="code_perm_mode_label">Permission mode</string>
+    <string name="code_perm_mode_bypass">Full Auto (Default)</string>
+    <string name="code_perm_mode_default">Standard (asks high-risk)</string>
+    <string name="code_perm_mode_accept_edits">Accept Edits</string>
+    <string name="code_perm_mode_plan">Plan</string>
+    <string name="code_perm_mode_bypass_desc">Every tool (shell, MCP, skills included) runs directly — the default mode; DENY and ASK rules still apply, and sensitive actions (paid tools) still confirm each time</string>
+    <string name="code_perm_mode_default_desc">Basic tools run automatically; only delete-like high-risk actions ask first</string>
+    <string name="code_perm_mode_accept_edits_desc">File edits and git commits are allowed; everything else asks first</string>
+    <string name="code_perm_mode_plan_desc">Read-only planning: any tool that mutates the environment is denied</string>
+    <string name="code_perm_rules_title">Tool permission rules (first match wins)</string>
+    <string name="code_perm_rules_empty">No rules yet. Rules can override the mode for matching tools — allow, ask, or deny.</string>
+    <string name="code_perm_rule_add">Add rule</string>
+    <string name="code_perm_dialog_title">Add permission rule</string>
+    <string name="code_perm_rule_pattern_label">Tool id pattern</string>
+    <string name="code_perm_rule_pattern_hint">Exact id, or prefix with a trailing star (e.g. code_git_ + star, mcp__ + star). A single star matches everything.</string>
+    <string name="code_perm_effect_label">On match</string>
+    <string name="code_perm_effect_allow">Allow</string>
+    <string name="code_perm_effect_ask">Ask</string>
+    <string name="code_perm_effect_deny">Deny</string>
+    <string name="code_perm_rule_delete">Delete rule</string>
+    <string name="code_perm_save">Save</string>
+    <string name="code_perm_cancel">Cancel</string>
+
+    <!-- Behavior rules (v1.1 #164) -->
+    <string name="code_rules_section_title">Behavioral rules</string>
+    <string name="code_rules_section_subtitle">Global rules and AGENTS.md project rules</string>
+    <string name="code_rules_global_label">Global rules</string>
+    <string name="code_rules_global_hint">Apply to every workspace and both modes. Content beyond 32768 characters is truncated on injection.</string>
+    <string name="code_rules_global_count_fmt">%1$d / %2$d chars</string>
+    <string name="code_rules_project_title">Project rules (AGENTS.md)</string>
+    <string name="code_rules_project_status_loaded_fmt">Loaded: %1$s</string>
+    <string name="code_rules_project_status_missing">Not created (place AGENTS.md / CLAUDE.md / .cursorrules at the workspace root to activate)</string>
+    <string name="code_rules_project_status_no_workspace">No workspace — create or select one on the Code screen first</string>
+    <string name="code_rules_project_create">Create template</string>
+    <string name="code_rules_section_note">Priority: project rules (AGENTS.md) &gt; global rules &gt; general preferences; all sit below safety and permission constraints</string>
+
+    <!-- ═══ v1.2 seven-level thinking system (coding-mode-specific copy; ULTRACODE/APEXCODE share keys with the chat page) ═══ -->
+    <string name="code_thinking_selector_title">Thinking depth (7 tiers + Auto)</string>
+    <string name="code_thinking_none_desc">Act directly: no reasoning, fastest round trip (iterations x0.8)</string>
+    <string name="code_thinking_light_desc">Glance-edit: find the spot, patch it, check the result — light on tokens</string>
+    <string name="code_thinking_standard_desc">Standard coding loop: read → edit → verify → re-read, minimal diff</string>
+    <string name="code_thinking_deep_desc">List every change before acting, each with its verification</string>
+    <string name="code_thinking_maximum_desc">Map invariants and ripple effects first, re-check the whole chain after each edit</string>
+    <string name="code_thinking_ultracode_desc">Coding deep-reasoning: map dependencies → candidate edits → risk order → minimal change → verify immediately (iterations x2.0)</string>
+    <string name="code_thinking_apexcode_desc">Architecture-level exhaustive reasoning with self-review and full verification (iterations x3.0, manual only)</string>
+    <string name="code_thinking_auto_desc">Adaptive: a tier is picked before each send and escalates when stuck; never picks Apex on its own</string>
+
+    <!-- v1.2 thinking tier guide (CodeThinkingGuideSheet) -->
+    <string name="code_thinking_guide_title">Thinking tier guide</string>
+    <string name="code_thinking_guide_subtitle">7 depth tiers (NONE up to APEXCODE) plus an AUTO meta tier that re-picks per turn; switching a tier changes the prompt, model params and execution policy together</string>
+    <string name="code_thinking_guide_table_title">Tier ladder</string>
+    <string name="code_thinking_guide_col_level">Tier</string>
+    <string name="code_thinking_guide_col_budget">Budget</string>
+    <string name="code_thinking_guide_col_effort">Effort</string>
+    <string name="code_thinking_guide_col_iters">Iters</string>
+    <string name="code_thinking_guide_col_output">Output</string>
+    <string name="code_thinking_guide_auto_row">adaptive</string>
+    <string name="code_thinking_guide_tap_hint">Tap any tier card to switch right here</string>
+    <string name="code_thinking_guide_current_badge">current</string>
+    <string name="code_thinking_guide_coding_view">Coding view</string>
+    <string name="code_thinking_guide_footer_linkage">A tier drives more than the prompt: iteration cap, compression threshold and tool-output budget all scale with it (see the ladder above).</string>
+    <string name="code_thinking_guide_footer_apex">APEXCODE is manual-only: the adaptive selector never picks it, and its token cost sits at the top of the whole ladder.</string>
+
+    <!-- ═══ Session context (usage ring + detail sheet; deep-dive full / kit lines degraded) ═══ -->
+    <string name="code_context_ring_cd_fmt">Context usage: %1$d%%</string>
+    <string name="code_context_title">Session context</string>
+    <string name="code_context_copy_all">Copy all</string>
+    <string name="code_context_copied">Copied</string>
+    <string name="code_context_no_engine">Engine not ready</string>
+    <string name="code_context_empty">The engine of this logic line does not expose conversation content — usage stats only. Switch to Deep Dive to view the full content</string>
+    <string name="code_context_role_system">System</string>
+    <string name="code_context_role_user">You</string>
+    <string name="code_context_role_assistant">Assistant</string>
+    <string name="code_context_role_tool">Tool</string>
+    <string name="code_context_rules">Global rules</string>
+    <string name="code_context_extras">Session extras</string>
+
+    <!-- ═══ Token usage card (ring detail: exact usage / input / output / cache hit rate) ═══ -->
+    <string name="code_context_usage_section">Token usage</string>
+    <string name="code_context_usage_context">Context window</string>
+    <string name="code_context_usage_ctx_fmt">%1$d / %2$d (%3$d%%)</string>
+    <string name="code_context_usage_in">Input tokens (session)</string>
+    <string name="code_context_usage_out">Output tokens (session)</string>
+    <string name="code_context_usage_cache">Cache hit rate</string>
+    <string name="code_context_usage_pct_fmt">%1$d%%</string>
+    <string name="code_context_usage_cache_na">n/a</string>
+    <string name="code_context_usage_messages">Messages</string>
+    <string name="code_context_usage_tokens_fmt">%1$d</string>
+
+    <!-- ═══ v1.4.10 Coding 历史对话（新会话自动归档，可恢复）═══ -->
+    <string name="code_history_open">Chat history</string>
+    <string name="code_history_title">Conversation History</string>
+    <string name="code_history_empty">No archived conversations yet — starting a new chat archives the current one automatically</string>
+    <string name="code_history_no_user_msg">(no user message)</string>
+    <string name="code_history_archived_fmt">Current conversation archived (%1$d messages) — restore anytime from chat history</string>
+    <string name="code_history_restore_failed">Restore failed: archived conversation is missing or corrupted</string>
+    <string name="code_history_delete">Delete</string>
+    <string name="code_history_delete_confirm">Delete this conversation?</string>
+    <string name="code_history_delete_msg_fmt">"This can't be undone: %1$s"</string>
+    <string name="code_history_cancel">Cancel</string>
+    <string name="code_history_export">Export as Markdown</string>
+    <string name="code_history_export_chooser">Share coding session</string>
+    <string name="code_history_export_not_found">Archive is empty or unreadable — nothing to export</string>
+    <string name="code_history_export_failed">Markdown export failed</string>
+
+    <!-- ═══ v1.2 long-task center ═══ -->
+    <string name="code_longtask_open">Long-task center</string>
+    <string name="code_longtask_sheet_title">Long Tasks</string>
+    <string name="code_longtask_empty">No long-task records yet</string>
+    <string name="code_longtask_empty_hint">Coding runs beyond a threshold (iterations / tools / duration / files) are archived automatically</string>
+    <string name="code_longtask_status_completed">Completed</string>
+    <string name="code_longtask_status_failed">Failed</string>
+    <string name="code_longtask_status_aborted">Aborted</string>
+    <string name="code_longtask_status_running">Running</string>
+    <string name="code_longtask_copies_fmt">copied x%1$d</string>
+    <string name="code_longtask_stats_fmt">%1$d iters · %2$d tools · %3$s · %4$d files</string>
+    <string name="code_longtask_goal_label">Goal</string>
+    <string name="code_longtask_files_header">Files touched (%1$d)</string>
+    <string name="code_longtask_todos_header">Todo snapshot</string>
+    <string name="code_longtask_checkpoints_fmt">Checkpoints x%1$d (every 5 iters / 60s)</string>
+    <string name="code_longtask_error_label">Error: </string>
+    <string name="code_longtask_export">Export / share</string>
+    <string name="code_longtask_export_missing">Record not found (may have been deleted)</string>
+    <string name="code_longtask_export_failed">Export or share failed — please retry</string>
+    <string name="code_longtask_copy">Copy task</string>
+    <string name="code_longtask_relaunch">Rerun</string>
+    <string name="code_longtask_compare">Diff vs last</string>
+    <string name="code_longtask_delete">Delete</string>
+    <string name="code_longtask_delete_confirm_fmt">Delete task record \"%1$s\"? This cannot be undone.</string>
+    <string name="code_longtask_confirm">Confirm</string>
+    <string name="code_longtask_cancel">Cancel</string>
+    <string name="code_longtask_copy_dialog_title">Copy-task options</string>
+    <string name="code_longtask_option_conversation">Carry last run context</string>
+    <string name="code_longtask_option_todos">Carry todo snapshot</string>
+    <string name="code_longtask_option_files">Carry files list</string>
+    <string name="code_longtask_option_relaunch">Rerun immediately after copying</string>
+    <string name="code_longtask_option_title">New title (optional)</string>
+    <string name="code_longtask_filter_all">All</string>
+    <string name="code_longtask_resume">Resume</string>
+    <string name="code_longtask_resume_latest">Resume from last checkpoint</string>
+    <string name="code_longtask_resume_at_fmt">Resume from iteration %1$d</string>
+    <string name="code_longtask_resume_fallback">No checkpoint — rerun with context</string>
+
+    <!-- v1.2 checkpoint timeline (CodeLongTaskSheet expanded section) -->
+    <string name="code_longtask_cp_round_fmt">Round %1$d</string>
+    <string name="code_longtask_cp_counts_fmt">%1$d tools · %2$d files</string>
+    <string name="code_longtask_cp_todos_fmt">☑%1$d ☐%2$d</string>
+    <string name="code_thinking_guide_open">View tier guide</string>
+    <string name="code_thinking_no_native_effort">This model has reasoning disabled: the native reasoning_effort parameter is not sent. Tiers still scale iterations, compaction and prompts. Enable it in Settings → Model</string>
+    <!-- ═══ Capsule streaming output (coding workflow timeline) ═══ -->
+    <string name="code_stream_group_expand">Expand</string>
+    <string name="code_stream_diff_unnamed">(file)</string>
+    <string name="code_stream_diff_stat_fmt">+%1$d −%2$d</string>
+    <string name="code_stream_diff_truncated">Diff truncated — open the file for the full change</string>
+    <string name="code_stream_terminal_idle">terminal</string>
+    <string name="code_stream_terminal_toggle">Toggle terminal panel</string>
+    <string name="code_stream_terminal_empty">(no output yet)</string>
+    <string name="code_stream_thinking_running">Thinking…</string>
+    <string name="code_stream_thinking_done">Thought chain · tap to expand</string>
+    <!-- Rikka-style output (v1.6 chat-style timeline) -->
+    <string name="rikka_thinking_title">Thought process</string>
+    <string name="rikka_tool_block_running">Running tools…</string>
+    <string name="code_stream_verify_round_fmt">Verify round %1$d</string>
+    <string name="code_stream_verify_passed">passed</string>
+    <string name="code_stream_verify_failed">failed</string>
+    <string name="code_stream_verify_unknown">in progress</string>
+    <string name="code_stream_verify_counts_fmt">%1$d edit · %2$d verify</string>
+    <string name="code_stream_verify_details_gone">Details not replayable after restore</string>
+    <string name="code_stream_error_recoverable">Recoverable error</string>
+    <string name="code_stream_error_fatal">Fatal error</string>
+    <string name="code_stream_files_touched">%1$d files touched</string>
+    <string name="code_stream_fab_bottom">Latest</string>
+    <string name="code_stream_empty_hint">Nothing on the timeline yet — describe a coding task below, or restore an archived conversation from chat history</string>
+    <string name="code_stream_status_waiting">waiting</string>
+    <string name="code_stream_status_running">running</string>
+    <string name="code_stream_status_success">success</string>
+    <string name="code_stream_status_failed">failed</string>
+    <string name="code_stream_status_applied">applied</string>
+    <string name="code_stream_status_partial">interrupted</string>
+    <string name="code_stream_exit_code_fmt">exit %1$d</string>
+    <string name="code_stream_files_more_fmt">+%1$d more</string>
+    <string name="code_stream_detail_diff_title">File diff</string>
+    <string name="code_stream_detail_diff_missing">No diff payload captured for this call</string>
+    <string name="code_stream_detail_grep_title">Search hits</string>
+    <string name="code_stream_detail_grep_empty">No hits captured</string>
+    <string name="code_stream_detail_terminal_title">Terminal output</string>
+    <string name="code_stream_detail_output_title">Tool output</string>
+    <!-- ═══ Git operation visual card (streaming git visualization) ═══ -->
+    <string name="code_git_visual_status">Branch status</string>
+    <string name="code_git_visual_commit">Committed</string>
+    <string name="code_git_visual_diff">Diff stats</string>
+    <string name="code_git_visual_branch">Branch op</string>
+    <string name="code_git_visual_log">Commit history</string>
+    <string name="code_git_visual_clean">Working tree clean</string>
+    <string name="code_git_visual_ahead_fmt">ahead %1$d</string>
+    <string name="code_git_visual_behind_fmt">behind %1$d</string>
+    <string name="code_git_visual_staged_fmt">staged %1$d</string>
+    <string name="code_git_visual_unstaged_fmt">unstaged %1$d</string>
+    <string name="code_git_visual_untracked_fmt">untracked %1$d</string>
+    <string name="code_git_visual_conflicts_fmt">%1$d conflict(s) to resolve</string>
+    <string name="code_git_visual_remaining_fmt">%1$d file(s) still uncommitted</string>
+    <string name="code_git_visual_remaining_zero">No uncommitted changes left</string>
+    <string name="code_git_visual_additions_fmt">+%1$d</string>
+    <string name="code_git_visual_deletions_fmt">−%1$d</string>
+    <string name="code_git_visual_failed_env">Ubuntu environment not ready — install Ubuntu in Terminal first</string>
+    <string name="code_git_visual_failed_no_workspace">No active workspace — create or select one in Code first</string>
+    <string name="code_git_visual_failed_not_repo">Not a git repository yet — first commit will init it</string>
+    <string name="code_git_visual_failed_command">Git command failed</string>
+    <string name="code_git_visual_commits_fmt">%1$d recent commit(s)</string>
+    <!-- ═══ Queued task (input-box task queue) ═══ -->
+    <string name="code_queue_waiting_title">Waiting to send</string>
+    <string name="code_queue_waiting_hint">Will be sent automatically when the current task finishes</string>
+    <string name="code_queue_needs_confirm_title">Waiting to queue</string>
+    <string name="code_queue_needs_confirm_hint">The previous task did not finish cleanly — confirm to start this one</string>
+    <string name="code_queue_start">Start queue</string>
+    <string name="code_queue_cancel">Cancel</string>
+    <string name="code_queue_auto_sent">Previous task finished — queued task sent</string>
+    <string name="code_queue_replaced">A task is already queued — replaced with the latest input</string>
+    <!-- ═══ 参数流式期：实时代码窗 + 同族聚合胶囊（折叠态显最新 + ×N）═══ -->
+    <string name="code_stream_group_count_fmt">%1$d calls in group</string>
+    <string name="code_stream_group_collapse">Collapse</string>
+    <string name="code_stream_streaming_writing">Writing…</string>
+    <string name="code_stream_streaming_editing">Editing…</string>
+    <string name="code_stream_streaming_title_live">Applying…</string>
+    <string name="code_stream_streaming_generating">Generating parameters…</string>
+    <string name="code_stream_streaming_preview_title">Live preview</string>
+    <string name="code_stream_streaming_omitted">…earlier lines omitted</string>
+    <string name="code_stream_streaming_lines_fmt">%1$d lines</string>
+    <!-- ═══ Run stats card (structured end-of-run summary) ═══ -->
+    <string name="code_stream_run_stats_title">Run complete</string>
+    <string name="code_stream_run_iterations_fmt">%1$d rounds</string>
+    <string name="code_stream_run_tools_fmt">%1$d tool calls</string>
+    <string name="code_stream_run_files_fmt">%1$d files</string>
+    <string name="code_stream_run_failed_fmt">%1$d failed</string>
+    <string name="code_stream_run_skills_fmt">%1$d skill calls</string>
+    <string name="code_stream_run_mcp_fmt">%1$d MCP calls</string>
+    <!-- ═══ Thinking tier selector v2: short tier names + capsule labels ═══ -->
+    <string name="code_thinking_chip">Thinking · %1$s</string>
+    <string name="code_thinking_short_none">Off</string>
+    <string name="code_thinking_short_light">Light</string>
+    <string name="code_thinking_short_standard">Standard</string>
+    <string name="code_thinking_short_deep">Deep</string>
+    <string name="code_thinking_short_maximum">Max</string>
+    <string name="code_thinking_short_ultracode">Ultra</string>
+    <string name="code_thinking_short_apexcode">Apex</string>
+    <string name="code_thinking_short_auto">Adaptive</string>
+    <!-- ═══ v1.5 思考逻辑双引擎（右上角切换：深潜 = 自研 / 标准 = 标准任务循环）═══ -->
+    <string name="code_logic_chip">Logic · %1$s</string>
+    <string name="code_logic_selector_title">Thinking logic</string>
+    <string name="code_logic_mode_deep_dive">Deep Dive</string>
+    <string name="code_logic_mode_standard">Standard</string>
+    <string name="code_logic_badge_deep_dive">7 tiers · adaptive</string>
+    <string name="code_logic_badge_standard">agent loop</string>
+    <string name="code_logic_deep_dive_desc">App default: seven thinking depths, auto tier pick before each run, auto escalation when stuck</string>
+    <string name="code_logic_standard_desc">Standard agent loop: role setup, permission prompts, sub-task dispatch, context compaction</string>
+    <string name="code_logic_caps_deep_dive">Seven depths · auto tier pick · iteration and compaction scale with tier</string>
+    <string name="code_logic_caps_standard">Role setup · allow/ask/deny · task sub-agents · session compaction</string>
+    <string name="code_logic_switch_blocked">A task is running — switch after this round ends</string>
+    <string name="code_logic_switched_standard">Thinking logic switched to Standard. The previous session is kept — switch back to continue.</string>
+    <string name="code_logic_mode_loom">Loom</string>
+    <string name="code_logic_badge_loom">interleaved</string>
+    <string name="code_logic_loom_desc">Interleaved loop: replies and tool calls advance in turns, with parallel tasks and mid-run steering</string>
+    <string name="code_logic_caps_loom">Multi-turn tool protocol · parallel sub-tasks · session compaction</string>
+    <string name="code_logic_switched_loom">Thinking logic switched to Loom. The previous session is kept — switch back to continue.</string>
+    <string name="code_logic_mode_courier">Courier</string>
+    <string name="code_logic_badge_courier">dispatch loop</string>
+    <string name="code_logic_courier_desc">Dispatch loop: queued or steered commands, parallel tool runs, permission prompts, sub-task hand-off</string>
+    <string name="code_logic_caps_courier">Command queue · parallel tools · permission prompts · sub-task hand-off</string>
+    <string name="code_logic_switched_courier">Thinking logic switched to Courier. The previous session is kept — switch back to continue.</string>
+    <string name="code_logic_switched_deep_dive">Thinking logic switched to Deep Dive. The previous session is kept — switch back to continue.</string>
+    <string name="code_logic_unknown_mode">/logic:%1$s is not recognized — try /logic:standard, /logic:loom, /logic:courier or /logic:deep_dive (aliases: std, weave, express, deep)</string>
+
+    <!-- v1.6 Workspace explorer (apex-kit-workspace); v6 standalone Git panel
+         removed 2026-10 (duplicate of the explorer's built-in Git tab) -->
+    <!-- Workspace selection (input-bar selector, 2026-10): real folder + whole system -->
+    <string name="code_workspace_pick_folder">Select Folder…</string>
+    <string name="code_workspace_whole_system">Whole System</string>
+    <string name="code_workspace_browser_cd">Open workspace browser</string>
+    <string name="drawer_workspace_browser">Workspace</string>
+    <string name="code_stream_terminal_running">Running</string>
+
+    <!-- ═══ #312 i18n batch 2: VM / reducer / editor user-visible copy ═══ -->
+    <!-- Workspace operations -->
+    <string name="code_ws_create_failed">Cannot create the workspace (name is empty or already exists)</string>
+    <string name="code_ws_import_failed">Could not import the selected folder — its location cannot be resolved to a real device path (cloud/download providers are not supported). Pick a folder from local storage.</string>
+    <string name="code_ws_delete_blocked_running">A run is active — delete the workspace after it finishes</string>
+    <string name="code_ws_delete_default">The default workspace cannot be deleted</string>
+    <string name="code_ws_empty_env">empty workspace</string>
+    <string name="code_ws_switched_fmt">Switched to workspace \"%1$s\" (%2$s). Describe your coding task to get started.</string>
+
+    <!-- AUTO pre-check notice -->
+    <string name="code_adaptive_precheck_fmt">Adaptive pre-check: %1$s</string>
+    <!-- AUTO deep-water escalation notice (mid-run tier bump) -->
+    <string name="code_adaptive_escalate_fmt">⚠️ Deep-water auto-escalation: %1$s</string>
+
+    <!-- Chat-bubble system notices (emitted by CodeEventReducer) -->
+    <string name="code_plan_confirmed_fmt">Plan confirmed — executing (%1$d steps)</string>
+    <string name="code_context_compressed_fmt">Context compressed (%1$d → %2$d tokens, %3$s)</string>
+    <string name="code_run_complete_fmt">Done · %1$d iterations · %2$d tools · %3$ds</string>
+
+    <!-- Editor file loading errors (stable codes thrown by EditorFileLoader) -->
+    <string name="code_editor_err_empty_path">File path is empty</string>
+    <string name="code_editor_err_escape_fmt">Path escapes the workspace — access denied: %1$s</string>
+    <string name="code_editor_err_not_found_fmt">File not found: %1$s</string>
+    <string name="code_editor_err_directory_fmt">Target is a directory — preview is not supported: %1$s</string>
+    <string name="code_editor_err_too_large_fmt">File too large (%1$d bytes, limit 5MB) — preview is not supported</string>
+
+    <!-- #209 error-bar sanitization (high-frequency exception types) -->
+    <string name="code_err_socket_timeout">Network request timed out — check the network and retry</string>
+    <string name="code_err_connect">Network connection failed — check the network or the server address</string>
+    <string name="code_err_unknown_host">Cannot resolve the server address — check the network or the API settings</string>
+    <string name="code_err_socket">The network connection dropped unexpectedly — check the network and retry</string>
+    <string name="code_err_ssl">Secure connection (SSL/TLS) failed — check certificates or proxy settings</string>
+    <string name="code_err_eof">The connection was closed early by the server — please retry later</string>
+    <string name="code_err_io">Data read or write failed — check the network or storage and retry</string>
+    <string name="code_err_serialization">Failed to parse the response — retry or switch models</string>
+    <string name="code_err_json_encoding">Failed to parse the response (non-JSON content) — please retry</string>
+    <string name="code_err_execute_failed_fmt">Run failed (%1$s)</string>
+    <string name="code_err_unknown_exception">unknown exception</string>
+
+    <!-- Coding-view tier guidance (CodeThinkingGuideSheet per-tier copy) -->
+    <string name="code_thinking_view_none">Copy tweaks, constant changes, comment-level micro-edits — the target spot is clear and no logic branches are involved. Fastest tier to run (iterations x0.8, earlier compaction), but the model does no upfront reasoning at all, so slightly complex tasks can go badly wrong; fall back to LIGHT when unsure.</string>
+    <string name="code_thinking_view_light">Single-spot small changes: one function, one config block, one style tweak — the blast radius is obvious at a glance. The glance-edit discipline (scan before editing, scan the diff after) is enough to cover the risk, and the only cost is a 256-token thinking budget — the default for everyday small fixes.</string>
+    <string name="code_thinking_view_standard">Regular feature changes: one complete but bounded mini-requirement (add a validation, cover a branch, wire a callback). The standard read → edit → verify → re-read loop plus minimal-diff discipline, at a moderate cost. Escalate to DEEP once a change spans more than two files.</string>
+    <string name="code_thinking_view_deep">Multi-file features or changes with ripple effects: build the changeset list before touching anything, tie every change to a verification, and delegate exploratory work to CodeTask sub-agents. Tool failures automatically append a self-check. Costs start to matter (iterations x1.2), but it prevents editing A and forgetting B.</string>
+    <string name="code_thinking_view_maximum">Danger-zone refactors: core data structures, shared utility functions, state-machine transitions — one broken invariant cascades into a chain of bugs. Invariant identification, ripple-effect review and the final three-question checklist are all enabled, at iterations x1.5. Worth it only where a wrong edit costs more to roll back than the thinking does.</string>
+    <string name="code_thinking_view_ultracode">Cross-module deep changes: one edit ripples into three or more modules, or you must map the whole call chain before starting. The coding loop of dependency map → candidate edits → risk ranking → minimal change → immediate verification → regression sweep, at iterations x2.0 with an output budget of 12000 — several times the token cost of STANDARD, in exchange for verified edits and no regression debt.</string>
+    <string name="code_thinking_view_apexcode">Architecture-scale changes: framework swaps, data-layer migrations, redrawing module boundaries — the kind of work where a wrong edit sinks the project. Impact-radius mapping, a multi-option comparison matrix, adversarial self-review, a full verification matrix and evidence-chain reporting, at iterations x3.0, budget 65536, with later compaction preserving the full evidence chain — the cost ceiling of the whole ladder. Reserve it for genuinely big jobs: enabling it for daily tasks just burns tokens.</string>
+    <string name="code_thinking_view_auto">Pick this when unsure: the engine re-picks the tier each turn from task complexity (length, multi-step indicators, code content, risk words, error history) — simple questions drop to NONE instantly, and deep-water situations auto-escalate to ULTRACODE. It never auto-picks APEXCODE (the cost guardrail); the top tier must always be chosen manually.</string>    <!-- Complete-mode generating card (v1.5) -->
+    <string name="code_stream_generating_title">Generating complete reply…</string>
+    <string name="code_stream_generating_tools_fmt">%1$d tool calls</string>
+    <string name="code_stream_generating_failed_fmt">%1$d failed</string>
+    <!-- ═══ Tool usage aggregate + origin attribution (v1.5.1) ═══ -->
+    <string name="code_stream_aggregate_title_fmt">%1$d tool calls</string>
+    <string name="code_stream_aggregate_builtin_fmt">Built-in %1$d</string>
+    <string name="code_stream_aggregate_skill_fmt">Skills %1$d</string>
+    <string name="code_stream_aggregate_mcp_fmt">MCP %1$d</string>
+    <string name="code_stream_aggregate_section_skills">Skills</string>
+    <string name="code_stream_aggregate_section_mcp">MCP servers</string>
+    <string name="code_stream_aggregate_section_builtin">Built-in tools</string>
+    <string name="code_stream_aggregate_details">Call details</string>
+    <string name="code_stream_aggregate_failed_short_fmt">%1$d failed</string>
+    <string name="code_stream_kind_read">Read</string>
+    <string name="code_stream_kind_write">Write</string>
+    <string name="code_stream_kind_edit">Edit</string>
+    <string name="code_stream_kind_grep">Search</string>
+    <string name="code_stream_kind_bash">Command</string>
+    <string name="code_stream_kind_git">Git</string>
+    <string name="code_stream_kind_lint">Lint</string>
+    <string name="code_stream_kind_test">Test</string>
+    <string name="code_stream_kind_plan">Plan</string>
+    <string name="code_stream_kind_mcp">MCP</string>
+    <string name="code_stream_kind_skill">Skill</string>
+    <string name="code_stream_detail_origin_skill">Skill</string>
+    <string name="code_stream_detail_origin_mcp">MCP</string>
+</resources>

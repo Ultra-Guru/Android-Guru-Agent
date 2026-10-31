@@ -1,0 +1,452 @@
+package com.apex.agent.platform.terminal.proot
+
+import com.apex.agent.platform.terminal.linux.CpuArchitecture
+import com.apex.agent.platform.terminal.linux.LinuxDistribution
+import com.apex.agent.platform.terminal.linux.RootfsDescriptor
+import com.apex.agent.platform.terminal.linux.RootfsProvider
+import com.apex.agent.platform.terminal.linux.RootfsVerification
+import com.apex.agent.platform.terminal.runtime.BackendAvailability
+import com.apex.agent.platform.terminal.runtime.SessionSpawnRequest
+import com.apex.agent.platform.terminal.workspace.AbsolutePath
+import com.apex.agent.platform.terminal.workspace.GuestUserHome
+import com.apex.agent.platform.terminal.workspace.LinuxWorkspaceManager
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.*
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.File
+
+/**
+ * P71: LinuxPRootBackend v1 单元测试 —— argv 契约（§5.2）、availability 三态、
+ * G4 host/guest env 分离、-w 修正映射。全部纯 JVM（fake binary/rootfs provider）。
+ *
+ * 真实 proot 执行见 ProotExecutorProotSmokeTest（CI host proot）与
+ * androidTest NativePtyArgvInstrumentationTest（真机 forkpty 路径）。
+ */
+class LinuxPRootBackendTest {
+
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    // ─── fakes ───
+
+    private class FakeBinaryProvider(
+        private val path: String? = "/fake/nativeDir/libproot.so",
+        private val executable: Boolean = true
+    ) : PRootBinaryProvider {
+        override suspend fun locate(): Result<AbsolutePath> =
+            if (path != null) Result.success(AbsolutePath(path))
+            else Result.failure(RuntimeException("PRootError:BINARY_NOT_FOUND"))
+
+        override suspend fun verify(binary: AbsolutePath): Result<PRootBinaryInfo> =
+            Result.success(
+                PRootBinaryInfo(
+                    path = binary,
+                    version = PRootVersion(5, 1, 107),
+                    architecture = CpuArchitecture.ARM64,
+                    executable = executable
+                )
+            )
+    }
+
+    private class FakeRootfsProvider(private val rootfsPath: String? = "/fake/rootfs") : RootfsProvider {
+        override suspend fun current(): RootfsDescriptor? =
+            rootfsPath?.let {
+                RootfsDescriptor(
+                    id = "ubuntu-24.04",
+                    distribution = LinuxDistribution.UBUNTU,
+                    version = "24.04",
+                    architecture = CpuArchitecture.ARM64,
+                    location = AbsolutePath(it),
+                    sizeBytes = null,
+                    checksum = null,
+                    readOnly = false
+                )
+            }
+
+        override suspend fun verify(rootfs: RootfsDescriptor): Result<RootfsVerification> =
+            Result.failure(RuntimeException("unused"))
+    }
+
+    private fun backend(
+        binaryProvider: PRootBinaryProvider = FakeBinaryProvider(),
+        rootfsProvider: RootfsProvider = FakeRootfsProvider(),
+        workspaceRoot: File = File(tmp.root, "workspaces"),
+        homeRoot: File = File(tmp.root, "home"),
+        // T82 后默认 STANDARD（/proc /dev /sys 系统 bind）； argv 契约测试显式传 NONE
+        // 以保持「仅 home+workspace」的确定性断言 —— 系统 bind 另有专项测试。
+        systemBinds: SystemBindProfile = SystemBindProfile.STANDARD
+    ) = LinuxPRootBackend(
+        binaryProvider = binaryProvider,
+        rootfsProvider = rootfsProvider,
+        workspaces = LinuxWorkspaceManager(workspaceRoot),
+        userHome = GuestUserHome(homeRoot),
+        commandBuilder = PRootCommandBuilderImpl(),
+        systemBinds = systemBinds,
+        hostEnv = null // JVM: 无 PRootHostEnvironment → 最小 env
+    )
+
+    // ─── argv 契约（§5.2） ───
+
+    @Test
+    fun `argv is proot -r rootfs -0 kill-on-exit binds home+workspace -w guestCwd env-trampoline -- bash -i`() = runBlocking {
+        val wsRoot = File(tmp.root, "ws")
+        val homeRoot = File(tmp.root, "home")
+        // T82 合并后修复：默认 systemBinds=STANDARD 会追加 /proc /dev /sys bind，
+        // 本契约测试只验证 T75 的 home+workspace 路由 —— 显式 NONE 隔离。
+        val b = backend(workspaceRoot = wsRoot, homeRoot = homeRoot, systemBinds = SystemBindProfile.NONE)
+        val spec = b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80, env = emptyMap())).getOrThrow()
+
+        val argv = spec.argv
+        assertEquals("/fake/nativeDir/libproot.so", argv[0])
+        assertEquals("-r", argv[1]); assertEquals("/fake/rootfs", argv[2])
+        assertEquals("-0", argv[3])
+        assertEquals("--kill-on-exit", argv[4])
+        // T75: binds —— home:/root（request.binds，先）+ workspace:/workspace（builder 追加）。
+        // NONE 隔离下仅此两项；STANDARD 的 /proc /dev /sys 三连由下方专项测试覆盖
+        //（合并考古：审计分支曾把本断言改写成含系统三连的 5 项期望，与本测试
+        // 显式 SystemBindProfile.NONE 的隔离前提自相矛盾 —— 远端 main CI 即红。
+        // 取 06ed71c 的 NONE 一致版本，期望与注入 profile 严格对齐。）
+        val bindArgs = argv.zipWithNext().filter { (a, _) -> a == "-b" }.map { it.second }
+        assertEquals(
+            listOf("${homeRoot.absolutePath}:/root", "${File(wsRoot, "default").absolutePath}:/workspace"),
+            bindArgs
+        )
+        // guest cwd（默认 /workspace）
+        val wIdx = argv.indexOf("-w")
+        assertTrue(wIdx > 0)
+        assertEquals("/workspace", argv[wIdx + 1])
+        // 命令终结符 + env trampoline + bash -i（T88：不再有 -E）
+        val sepIdx = argv.indexOf("--")
+        assertTrue(sepIdx > 0)
+        assertEquals(PRootEnvTrampoline.ENV_EXECUTABLE, argv[sepIdx + 1])
+        assertEquals(PRootEnvTrampoline.CLEAN_ENV_FLAG, argv[sepIdx + 2])
+        assertEquals(listOf("/bin/bash", "-i"), argv.takeLast(2))
+        assertTrue(
+            "argv must not carry 5.1.107-incompatible flags: $argv",
+            PRootArgvContract.legacyIncompatibleFlags(argv).isEmpty()
+        )
+    }
+
+    @Test
+    fun `guest env goes through env trampoline with request overrides last`() = runBlocking {
+        val b = backend()
+        val spec = b.prepare(
+            SessionSpawnRequest(
+                cwd = "/workspace",
+                rows = 24, cols = 80,
+                env = mapOf("CUSTOM" to "42", "HOME" to "/home/agent")
+            )
+        ).getOrThrow()
+
+        // T88：guest env 在 "--" 后的 env trampoline 段里（env -i K=V … bash -i）
+        val sepIdx = spec.argv.indexOf("--")
+        assertTrue(sepIdx > 0)
+        val guestCmd = spec.argv.subList(sepIdx + 1, spec.argv.size)
+        assertEquals(PRootEnvTrampoline.ENV_EXECUTABLE, guestCmd[0])
+        assertEquals(PRootEnvTrampoline.CLEAN_ENV_FLAG, guestCmd[1])
+        // trampoline 段尾部是 bash -i；其余元素全是 K=V 赋值
+        val assignments = guestCmd.subList(2, guestCmd.size - 2)
+        assertTrue("trampoline 段只含 K=V 赋值: $guestCmd", assignments.all { it.contains('=') })
+        // 基线六项 + 调用方两项（HOME 覆盖）
+        assertTrue("TERM in trampoline", assignments.any { it == "TERM=xterm-256color" })
+        assertTrue("LANG in trampoline", assignments.any { it == "LANG=C.UTF-8" })
+        assertTrue("SHELL in trampoline", assignments.any { it == "SHELL=/bin/bash" })
+        assertTrue("PATH in trampoline", assignments.any { it.startsWith("PATH=/usr") })
+        assertTrue("TMPDIR in trampoline", assignments.any { it == "TMPDIR=/tmp" })
+        assertTrue("request override wins", assignments.any { it == "HOME=/home/agent" })
+        assertTrue("custom request var", assignments.any { it == "CUSTOM=42" })
+        // T88 回归锁：-E 永不回潮（捆绑 proot 5.1.107 会直接拒启）
+        assertTrue(
+            "no -E ever: ${spec.argv}",
+            PRootArgvContract.legacyIncompatibleFlags(spec.argv).isEmpty()
+        )
+    }
+
+    @Test
+    fun `host env never contains guest variables (G4)`() = runBlocking {
+        val b = backend()
+        val spec = b.prepare(
+            SessionSpawnRequest(cwd = "/workspace", rows = 24, cols = 80, env = mapOf("SECRET_GUEST" to "leak-me"))
+        ).getOrThrow()
+
+        // hostEnv=null → 仅 PATH 兜底；guest 变量绝不在 host env 中
+        assertFalse("guest var must NOT leak into host env", spec.env.containsKey("SECRET_GUEST"))
+        assertFalse(spec.env.containsKey("HOME"))
+        assertFalse(spec.env.containsKey("TERM"))
+    }
+
+    @Test
+    fun `cwd is host-safe rootfs dir and marked guest`() = runBlocking {
+        val b = backend()
+        val spec = b.prepare(SessionSpawnRequest(cwd = "/workspace/project", rows = 24, cols = 80)).getOrThrow()
+
+        assertEquals("/fake/rootfs", spec.cwd) // proot 忽略 host cwd（-w 为准）
+        assertTrue(spec.cwdIsGuestPath)
+        assertEquals("/workspace/project", spec.metadata.guestCwd)
+        assertEquals("ubuntu-24.04", spec.metadata.rootfsId)
+        assertNotNull(spec.metadata.workspaceDir)
+    }
+
+    // ─── T75: workspace 路由 + 用户 home 持久化 ───
+
+    @Test
+    fun `workspaceId routes to per-workspace bind dir and metadata`() = runBlocking {
+        val wsRoot = File(tmp.root, "ws")
+        val homeRoot = File(tmp.root, "home")
+        // T82 合并后修复：同上 —— NONE 隔离使 zipWithNext 找 workspace bind 的断言稳定。
+        val b = backend(workspaceRoot = wsRoot, homeRoot = homeRoot, systemBinds = SystemBindProfile.NONE)
+        val spec = b.prepare(
+            SessionSpawnRequest(cwd = "", rows = 24, cols = 80, workspaceId = "task-42")
+        ).getOrThrow()
+
+        // bind 指向 <root>/task-42（懒创建）
+        val wsBind = spec.argv.zipWithNext().first { p -> p.first == "-b" && p.second.endsWith(":/workspace") }.second
+        assertEquals("${File(wsRoot, "task-42").absolutePath}:/workspace", wsBind)
+        assertTrue(File(wsRoot, "task-42").isDirectory)
+        // 元数据携带 workspaceId + 双 bind（NONE 隔离：home + workspace 两项；
+        // STANDARD 的 5 项全量断言见 T82 专项测试）
+        assertEquals("task-42", spec.metadata.workspaceId)
+        assertEquals(File(wsRoot, "task-42").absolutePath, spec.metadata.workspaceDir)
+        assertEquals(2, spec.metadata.binds.size)
+        assertTrue(spec.metadata.binds.any { it.endsWith(":/root") })
+        assertTrue(spec.metadata.binds.any { it.endsWith(":/workspace") })
+    }
+
+    @Test
+    fun `invalid workspaceId fails with WorkspaceError`() = runBlocking {
+        val b = backend()
+        val r = b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80, workspaceId = "Bad Id!"))
+
+        assertTrue(r.isFailure)
+        assertTrue(r.exceptionOrNull()!!.message!!.contains("WorkspaceError:InvalidId"))
+    }
+
+    @Test
+    fun `guest env has USER and LOGNAME for fake-root view`() = runBlocking {
+        val b = backend()
+        val env = b.buildGuestEnv(emptyMap())
+        assertEquals("root", env["USER"])
+        assertEquals("root", env["LOGNAME"])
+        assertEquals("/root", env["HOME"])
+    }
+
+    @Test
+    fun `user home is seeded once and bind source persists`() = runBlocking {
+        val homeRoot = File(tmp.root, "home")
+        val b = backend(homeRoot = homeRoot)
+        b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80)).getOrThrow()
+
+        // 无 skel 的 rootfs（/fake/rootfs 不存在）→ 最小 .bashrc 兑底
+        val bashrc = File(homeRoot, ".bashrc")
+        assertTrue(bashrc.exists())
+        assertTrue(bashrc.readText().contains("PS1"))
+        // 已有内容 → 不再覆盖（幂等）
+        val content = bashrc.readText()
+        b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80)).getOrThrow()
+        assertEquals(content, bashrc.readText())
+    }
+
+    // ─── -w 修正映射（P71 修复的旧 removePrefix bug） ───
+
+    @Test
+    fun `guest cwd mapping variants`() = runBlocking {
+        val b = backend()
+        assertEquals("/workspace", b.mapGuestCwd(""))
+        assertEquals("/workspace", b.mapGuestCwd("/"))
+        assertEquals("/root", b.mapGuestCwd("/root"))
+        assertEquals("/workspace/project", b.mapGuestCwd("project"))
+        assertEquals("/workspace/a/b", b.mapGuestCwd("/workspace/a/b"))
+        // T73: LOCAL 默认 cwd（/sdcard）在 guest 无意义 → /workspace
+        assertEquals("/workspace", b.mapGuestCwd("/sdcard"))
+    }
+
+    @Test
+    fun `command builder maps workspace prefix to guest workspace path`() {
+        val builder = PRootCommandBuilderImpl()
+        // 旧 bug：removePrefix("workspace:") 把 workspace:/foo 映射成 /foo（rootfs 相对路径）
+        assertEquals("/workspace/foo", builder.toGuestPath("workspace:/foo"))
+        assertEquals("/workspace", builder.toGuestPath("workspace:"))
+        assertEquals("/workspace", builder.toGuestPath("workspace:/"))
+        assertEquals("/workspace/nested/dir", builder.toGuestPath("workspace:/nested/dir"))
+        assertEquals("/root", builder.toGuestPath("/root")) // 无前缀 → guest 绝对路径直通
+    }
+
+    // ─── availability 三态 ───
+
+    @Test
+    fun `availability failed when binary missing`() = runBlocking {
+        val b = backend(binaryProvider = FakeBinaryProvider(path = null as String?))
+        val avail = b.availability()
+        assertTrue(avail is BackendAvailability.Failed)
+        assertTrue((avail as BackendAvailability.Failed).reason.contains("BINARY_NOT_FOUND"))
+    }
+
+    @Test
+    fun `availability needs rootfs when none installed`() = runBlocking {
+        val b = backend(rootfsProvider = FakeRootfsProvider(rootfsPath = null))
+        assertTrue(b.availability() is BackendAvailability.NeedsRootfs)
+    }
+
+    @Test
+    fun `availability ready when binary and rootfs present`() = runBlocking {
+        val b = backend()
+        assertTrue(b.availability() is BackendAvailability.Ready)
+    }
+
+    // ─── prepare 失败路径 ───
+
+    @Test
+    fun `prepare fails with RootfsNotReady when no rootfs`() = runBlocking {
+        val b = backend(rootfsProvider = FakeRootfsProvider(rootfsPath = null))
+        val result = b.prepare(SessionSpawnRequest(cwd = "/workspace", rows = 24, cols = 80))
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()!!.message!!.contains("RootfsNotReady"))
+    }
+
+    // ─── PRootHostEnvironment（Android 生产 host env 构造） ───
+
+    @Test
+    fun `host environment builds proot vars and talloc soname symlink`() {
+        val nativeDir = tmp.newFolder("nativeLib").apply {
+            listOf("libproot.so", "libproot-loader.so", "libproot-loader32.so", "libtalloc.so").forEach {
+                File(this, it).apply {
+                    writeBytes(byteArrayOf(0x7f, 0x45, 0x4c, 0x46))
+                    setExecutable(true, false) // nativeLibraryDir 中文件默认可执行 —— 模拟之
+                }
+            }
+        }
+        val base = tmp.newFolder("files")
+        val cache = tmp.newFolder("cache")
+        val env = PRootHostEnvironment(nativeDir.absolutePath, base, cache)
+
+        val prepared = env.prepare()
+        assertTrue("prepare must succeed: ${prepared.exceptionOrNull()}", prepared.isSuccess)
+
+        val hostEnv = env.hostEnv()
+        assertEquals(File(cache, "proot-tmp").absolutePath, hostEnv["PROOT_TMP_DIR"])
+        assertEquals(File(nativeDir, "libproot-loader.so").absolutePath, hostEnv["PROOT_LOADER"])
+        assertEquals(File(nativeDir, "libproot-loader32.so").absolutePath, hostEnv["PROOT_LOADER_32"])
+        assertTrue(hostEnv["LD_LIBRARY_PATH"]!!.contains(File(base, "linux/bin").absolutePath))
+        assertTrue(hostEnv["LD_LIBRARY_PATH"]!!.contains(nativeDir.absolutePath))
+        // SONAME symlink 指向真实文件
+        val soname = File(base, "linux/bin/libtalloc.so.2")
+        assertTrue("libtalloc.so.2 symlink must exist", soname.exists())
+        assertEquals(File(nativeDir, "libtalloc.so").absolutePath, soname.canonicalPath)
+        // 幂等
+        assertTrue(env.prepare().isSuccess)
+    }
+
+    @Test
+    fun `host environment prepare fails fast when proot binary missing`() {
+        val nativeDir = tmp.newFolder("emptyNativeLib")
+        val env = PRootHostEnvironment(nativeDir.absolutePath, tmp.newFolder(), tmp.newFolder())
+        assertTrue(env.prepare().isFailure)
+    }
+
+    // ─── NativeLibraryPRootBinaryProvider（真实 ELF 字节级校验） ───
+
+    @Test
+    fun `binary provider verifies real ELF machine bytes`() {
+        val nativeDir = tmp.newFolder("nativeLib2").apply {
+            // 真实的 Termux arm64 libproot.so 前 20 字节（ELF header）
+            File(this, "libproot.so").writeBytes(
+                byteArrayOf(0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0xB7.toByte(), 0x00)
+            )
+        }
+        val env = PRootHostEnvironment(nativeDir.absolutePath, tmp.newFolder(), tmp.newFolder())
+        val provider = NativeLibraryPRootBinaryProvider(
+            hostEnv = env,
+            supportedAbis = { listOf("arm64-v8a") },
+            versionProbe = { "proot version: 5.1.107.92" }
+        )
+
+        val located = runBlocking { provider.locate().getOrThrow() }
+        val info = runBlocking { provider.verify(located).getOrThrow() }
+        assertEquals(CpuArchitecture.ARM64, info.architecture)
+        assertEquals(PRootVersion(5, 1, 107), info.version)
+    }
+
+    @Test
+    fun `binary provider rejects architecture mismatch`() {
+        val nativeDir = tmp.newFolder("nativeLib3").apply {
+            // x86_64 ELF header (e_machine=62)
+            File(this, "libproot.so").writeBytes(
+                byteArrayOf(0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x3E, 0x00)
+            )
+        }
+        val env = PRootHostEnvironment(nativeDir.absolutePath, tmp.newFolder(), tmp.newFolder())
+        val provider = NativeLibraryPRootBinaryProvider(
+            hostEnv = env,
+            supportedAbis = { listOf("arm64-v8a") } // 设备只支持 arm64，二进制是 x86_64
+        )
+
+        val located = runBlocking { provider.locate().getOrThrow() }
+        val result = runBlocking { provider.verify(located) }
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()!!.message!!.contains("ARCHITECTURE_MISMATCH"))
+    }
+
+    @Test
+    fun `binary provider locate fails when file absent`() {
+        val env = PRootHostEnvironment(tmp.newFolder("empty").absolutePath, tmp.newFolder(), tmp.newFolder())
+        val provider = NativeLibraryPRootBinaryProvider(hostEnv = env)
+        val result = runBlocking { provider.locate() }
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()!!.message!!.contains("BINARY_NOT_FOUND"))
+    }
+
+    @Test
+    fun `binary provider skips abi check when supported list empty`() {
+        val nativeDir = tmp.newFolder("nativeLib4").apply {
+            File(this, "libproot.so").writeBytes(
+                byteArrayOf(0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0xB7.toByte(), 0x00)
+            )
+        }
+        val env = PRootHostEnvironment(nativeDir.absolutePath, tmp.newFolder(), tmp.newFolder())
+        val provider = NativeLibraryPRootBinaryProvider(hostEnv = env, supportedAbis = { emptyList() })
+        val located = runBlocking { provider.locate().getOrThrow() }
+        // JVM 测试（无设备 ABI 列表）→ 不做 ABI 门禁
+        assertTrue(runBlocking { provider.verify(located) }.isSuccess)
+    }
+
+    // ─── T82: 系统级 bind（/proc /dev /sys，proot-distro 语义）───
+
+    @Test
+    fun `T82 STANDARD system binds append proc dev sys after home bind`() = runBlocking {
+        // 本测试跑在真实 JVM/Linux 文件系统上 —— /proc /dev /sys 恒存在，
+        // filterExisting 不会丢弃任何条目（诚实过滤语义另有边界验证方式）。
+        val b = backend(systemBinds = SystemBindProfile.STANDARD)
+        val spec = b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80, env = emptyMap())).getOrThrow()
+        val bindArgs = spec.argv.zipWithNext().filter { (a, _) -> a == "-b" }.map { it.second }
+        // 顺序契约：home 先（T75），系统 bind 中间（T82），workspace 最后（builder 追加）
+        assertEquals(
+            listOf(
+                "${File(tmp.root, "home").absolutePath}:/root",
+                "/proc:/proc",
+                "/dev:/dev",
+                "/sys:/sys",
+                "${File(File(tmp.root, "workspaces"), "default").absolutePath}:/workspace"
+            ),
+            bindArgs
+        )
+    }
+
+    @Test
+    fun `T82 NONE system binds keep legacy argv bare`() = runBlocking {
+        val b = backend(systemBinds = SystemBindProfile.NONE)
+        val spec = b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80, env = emptyMap())).getOrThrow()
+        val bindArgs = spec.argv.zipWithNext().filter { (a, _) -> a == "-b" }.map { it.second }
+        assertEquals(
+            listOf(
+                "${File(tmp.root, "home").absolutePath}:/root",
+                "${File(File(tmp.root, "workspaces"), "default").absolutePath}:/workspace"
+            ),
+            bindArgs
+        )
+    }
+}

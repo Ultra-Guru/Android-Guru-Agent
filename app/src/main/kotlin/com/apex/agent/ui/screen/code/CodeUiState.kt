@@ -1,0 +1,178 @@
+package com.apex.agent.ui.screen.code
+
+import com.apex.agent.core.code.longtask.LongTaskRecord
+import com.apex.agent.core.code.standard.StandardLogicMode
+import com.apex.agent.core.code.stream.CodeStreamSnapshot
+import com.apex.agent.core.code.thinking.CodeThinkingLevel
+import com.apex.agent.core.codetools.tools.CodeTodoTool
+import com.apex.agent.core.engine.goal.GoalRuntimeState
+import com.apex.agent.platform.code.ws.CodeWorkspace
+import com.apex.agent.ui.screen.code.editor.EditorFile
+
+/**
+ * Code 屏 UI 状态（单数据源，ViewModel 独占更新）。
+ */
+data class CodeUiState(
+    // ── 工作区 ──
+    val workspaces: List<CodeWorkspace> = emptyList(),
+    val activeWorkspace: CodeWorkspace? = null,
+
+    // ── 对话 ──
+    val messages: List<CodeChatMessage> = emptyList(),
+    val isRunning: Boolean = false,
+    val currentIteration: Int = 0,
+    val error: String? = null,
+    // #209：当前 error 是否提供「重试」入口 —— 仅引擎运行失败类错误为 true；
+    // 参数校验/状态冲突类（任务运行中、工作区冲突等）保持 false，避免误导重放。
+    val errorRetriable: Boolean = false,
+    val pendingQuestion: String? = null,
+
+    // ── v1.5 思考逻辑（双引擎：深潜 = 自研七档 / 标准 = 标准任务循环）──
+    // 右上角选择器直改 + AgentSettings.codeThinkingLogic 持久化；
+    // DualLogicCodeEngine 按此路由 execute/abort/问答。
+    val logicMode: StandardLogicMode = StandardLogicMode.DEEP_DIVE,
+
+    // ── #197 执行模式（Coding 屏 Build/Plan 双档）──
+    val mode: com.apex.agent.core.engine.AgentMode = com.apex.agent.core.engine.AgentMode.BUILD,
+
+    // ── #197 PLAN 模式计划确认（人控门）──
+    val plan: com.apex.agent.core.engine.ExecutionPlan? = null,
+    val awaitingPlanConfirmation: Boolean = false,
+
+    // ── Todo（CodeTodo 快照）──
+    val todos: List<CodeTodoTool.Todo> = emptyList(),
+
+    // ── 上下文仪表（圆环数据面：白弧按 used/max 百分比填充）──
+    val contextUsedTokens: Int = 0,
+    val contextMaxTokens: Int = 0,
+
+    // ── 会话累计 token 用量（圆环点击详情：输入/输出/缓存命中）──
+    // 每轮 AgentEvent.UsageUpdated 累加；新会话/切工作区/恢复历史时归零
+    //（历史归档不存 token 统计，恢复后从零计是诚实口径）。
+    val sessionInputTokens: Int = 0,
+    val sessionOutputTokens: Int = 0,
+    /** 命中缓存的输入侧 token 累计（端点不返回时恒 0 → 详情页显示「暂无数据」）。 */
+    val sessionCachedTokens: Int = 0,
+
+    // ── 思考档位（coding 专属七档）──
+    // 选择器直改 + AgentSettings.codeThinkingLevel 持久化，引擎侧三通道
+    // （档位映射 + 旋钮补偿 + 编码特化指令）同步见
+    // CodeAgentEngine.updateThinkingLevel。
+    val thinkingLevel: CodeThinkingLevel = CodeThinkingLevel.STANDARD,
+
+    /**
+     * AUTO 档最近一次预检决策（"因子→评分→档位"）；非 AUTO 档或尚无
+     * 预检 → null。发送前由 CodeViewModel.resolveRuntimeThinkingLevel
+     * 产生，选择器旁回显（深水区升级另有系统消息通道）。
+     */
+    val adaptiveDecision: String? = null,
+
+    // ── 长任务中心（v1.2）──
+    // 长任务面板可见性 + 当前工作区的长任务记录（updatedAt 降序）；
+    // 记录由 LongTaskTracker 在运行收尾时自动入库，UI 只读。
+    val longTaskSheetVisible: Boolean = false,
+    val longTasks: List<LongTaskRecord> = emptyList(),
+    val longTaskLoading: Boolean = false,
+
+    // ── 胶囊时间轴（渲染主通道快照）──
+    // 25ms ≤40Hz 攒批推送；entries/终端尾窗/派生统计一体的不可变值。
+    val stream: CodeStreamSnapshot = CodeStreamSnapshot(),
+
+    // ── 输出展示档（v1.5 双档：流式 / 整段——揭示时机维度）──
+    // STREAMING = 实时渲染（既有行为）；COMPLETE = 生成中静默（仅加载
+    // 进度卡）、收束后一次性渲染。与 outputStyle（视觉形态维度）正交。
+    // run 粒度快照：每轮 runEngine 开始时捕获（运行中改设置不打断当前轮，
+    // 下一轮生效）。捕获与恢复逻辑见 CodeOutputModeOps.kt，档位定义见
+    // CodeOutputMode.kt。
+    val renderMode: CodeOutputMode = CodeOutputMode.STREAMING,
+
+    // ── 输出风格（v1.6 双风格：经典时间轴 / Rikka 聊天式）──
+    // TIMELINE = 胶囊时间轴（既有行为）；RIKKA = Rikka 风格聊天输出
+    // （用户右对齐气泡 + Markdown 结论 + 思考折叠卡 + 工具调用聚合块，
+    // 含技能 / MCP 标识与三分类聚合）。与 renderMode（揭示时机）正交；
+    // run 粒度快照 + idle 期设置流实时同步，见 CodeOutputStyleOps.kt。
+    val outputStyle: CodeOutputStyle = CodeOutputStyle.TIMELINE,
+
+    // ── 编辑器面板（v1.0 #154）──
+    // editorFilePath 非空即挂载面板；editorFile 为加载结果（null = 加载中/失败态）。
+    val editorFilePath: String? = null,
+    val editorFile: EditorFile? = null,
+    val editorLoading: Boolean = false,
+    val editorError: String? = null,
+
+    // ── 输入栏草稿（v1.0 #154）──
+    // 提升到 VM 层：编辑器面板行点击 / @file:line 插入需要程序化写入输入框。
+    val inputDraft: String = "",
+
+    // ── v3 GOAL 目标模式（状态卡 + 设定弹层）──
+    // goalState：协调器全局快照（目标存在即显示状态卡——无论 ACTIVE/
+    // ACHIEVED/STOPPED、切走模式也显示，用户可随时停止/重启）；
+    // showGoalSetup/goalSetupDraft：设定弹层开关 + 打开时的输入框草稿
+    //（预填目标陈述，并作为目标的首条提示重放）。
+    val goalState: GoalRuntimeState? = null,
+    val showGoalSetup: Boolean = false,
+    val goalSetupDraft: String = "",
+
+    // ── 任务排队（输入框上方的排队卡）──
+    // 运行中发送 → 入队 WAITING_AUTO（完成自动发送）；上一任务失败/中止
+    // → 转_NEEDS_CONFIRM（用户点「开始排队」才继续）。详见 CodeTaskQueue.kt。
+    val queuedTask: QueuedTask? = null
+)
+
+/**
+ * 排队任务：运行中发出的第二条任务（输入框上方排队卡的数据面）。
+ *
+ * @param text 用户输入文本（斜杠命令原样保留，发送时走正常路由）。
+ * @param commands 入队时挂在输入框上的技能 chip 快照（发送时恢复）。
+ * @param state 排队态：WAITING_AUTO = 等待自动发送；NEEDS_CONFIRM =
+ *   上一任务失败/中止后的等待确认（用户点「开始排队」才继续）。
+ */
+data class QueuedTask(
+    val text: String,
+    val commands: List<com.apex.agent.ui.chatkit.PendingPipelineCommand> = emptyList(),
+    val state: QueuedTaskState = QueuedTaskState.WAITING_AUTO
+)
+
+/** 排队任务状态机（两态：自动等待 → 失败确认）。 */
+enum class QueuedTaskState {
+    /** 等待发送：当前任务运行中，完成后自动发送。 */
+    WAITING_AUTO,
+    /** 等待排队：上一任务失败/中止，需用户点击「开始排队」确认。 */
+    NEEDS_CONFIRM
+}
+
+/**
+ * 会话 token 用量快照（上下文圆环点击后的详情弹层数据面）。
+ *
+ * 圆环本体只消费 contextUsed/Max 两个字段；详情弹层（CodeContextSheet）
+ * 追加展示会话累计输入/输出与缓存命中（命中率 = cached / input，
+ * 端点不返回缓存统计时 cached = 0 → 显示「暂无数据」而非假 0%）。
+ */
+data class CodeSessionUsage(
+    /** 当前上下文已用 token（圆环分子）。 */
+    val contextUsedTokens: Int,
+    /** 当前上下文窗口预算（圆环分母；默认模型 Profile 的 contextWindow）。 */
+    val contextMaxTokens: Int,
+    /** 本会话累计输入侧 token（服务端 usage 真实统计逐轮累加）。 */
+    val sessionInputTokens: Int,
+    /** 本会话累计输出侧 token。 */
+    val sessionOutputTokens: Int,
+    /** 本会话累计命中缓存的输入侧 token。 */
+    val sessionCachedTokens: Int
+)
+
+/**
+ * 聊天条目（用户 / 助手 / 工具卡片 / 系统提示）。
+ */
+data class CodeChatMessage(
+    val id: Long,
+    val role: Role,
+    val text: String,
+    // 工具卡片段
+    val toolName: String? = null,
+    val toolSuccess: Boolean = true,
+    val durationMs: Long = 0,
+    val isStreaming: Boolean = false
+) {
+    enum class Role { USER, ASSISTANT, TOOL, SYSTEM }
+}

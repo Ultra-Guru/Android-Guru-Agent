@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 11 及以下（fullBackupContent）的备份排除规则，与
+  data_extraction_rules.xml（Android 12+）语义一致：
+  排除 EncryptedSharedPreferences 密文文件，避免被迁移到无对应
+  KeyStore MasterKey 的设备后触发明文 fallback（v1.4.4 #5 补齐
+  vault_secure_prefs 与 apex_secure_settings 两处同源缺口）。
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="github_secure_prefs.xml" />
+    <exclude domain="sharedpref" path="github_prefs_fallback.xml" />
+    <exclude domain="sharedpref" path="vault_secure_prefs.xml" />
+    <exclude domain="sharedpref" path="vault_prefs_fallback.xml" />
+    <exclude domain="sharedpref" path="apex_secure_settings.xml" />
+    <exclude domain="sharedpref" path="apex_secure_settings_fallback.xml" />
+</full-backup-content>

@@ -1,0 +1,214 @@
+package com.apex.agent.platform.terminal.proot
+
+import com.apex.agent.platform.terminal.linux.RootfsDescriptor
+import com.apex.agent.platform.terminal.linux.RootfsProvider
+import com.apex.agent.platform.terminal.runtime.BackendAvailability
+import com.apex.agent.platform.terminal.runtime.BackendRuntimeType
+import com.apex.agent.platform.terminal.runtime.BackendSessionMetadata
+import com.apex.agent.platform.terminal.runtime.ExecutionBackend
+import com.apex.agent.platform.terminal.runtime.SessionSpawnRequest
+import com.apex.agent.platform.terminal.runtime.SpawnSpec
+import com.apex.agent.platform.terminal.workspace.AbsolutePath
+import com.apex.agent.platform.terminal.workspace.GuestUserHome
+import com.apex.agent.platform.terminal.workspace.LinuxWorkspaceManager
+import java.io.File
+
+/**
+ * P71: LinuxPRootBackend v1 —— 通过 forkpty → execv(proot … bash -i) 的 Linux 会话后端。
+ *
+ * 这是 PR #75 计划 §3（方案 C）的落地：PRoot 会话与本地会话共用同一条
+ * PTY 基础设施（P70 加固后的 nativeCreateSessionArgv），Linux 与 LOCAL 的差异
+ * 被压缩到 spawn 点的 argv/env/cwd。
+ *
+ * argv 契约（§5.2）：
+ * ```
+ * <libproot.so>
+ *   -r <rootfsDir>            # host 侧 rootfs 绝对路径
+ *   -0                        # fake root
+ *   --kill-on-exit            # proot 退出时杀光 guest 进程树
+ *   -b <workspaceDir>:/workspace
+ *   -b <userHomeDir>:/root    # T75: 持久化用户 home（跨 rootfs 版本）
+ *   -w /workspace             # guest 初始 cwd（request.cwd 映射）
+ *   -- /usr/bin/env -i        # T88: guest env trampoline（proot 5.1.107 兼容，取代 -E）
+ *     TERM=… LANG=… HOME=/root SHELL=/bin/bash PATH=… TMPDIR=/tmp
+ *     /bin/bash -i            # 长生命周期交互 bash
+ * ```
+ *
+ * PTY 语义（§5.2/§11.1）：forkpty 使 proot 成为 session+group leader
+ * （PGID==proot PID）→ 现有 kill(-PGID)/TIOCSWINSZ/tcgetpgrp 语义直接成立；
+ * bash 拿到的是真 PTY slave（经 proot 翻译）→ SIGWINCH/Ctrl-C 全为内核真实行为。
+ *
+ * P71 范围：本类 + availability + prepare（产出 SpawnSpec）。T73 已把
+ * TerminalRuntime.create(backendId=…) 接到本后端（runtime 路由 + 生产 DI）。
+ */
+class LinuxPRootBackend(
+    private val binaryProvider: PRootBinaryProvider,
+    private val rootfsProvider: RootfsProvider,
+    /** T75: workspace 管理（per-session 隔离 + 生命周期；取代单一固定目录）。 */
+    private val workspaces: LinuxWorkspaceManager,
+    /** T75: 持久化用户 home（bind → guest /root，跨 rootfs 版本存活）。 */
+    private val userHome: GuestUserHome,
+    private val commandBuilder: PRootCommandBuilder = PRootCommandBuilderImpl(),
+    /** proot 宿主环境（Android 生产必传；JVM 测试可传 null → env 仅含 PATH 兜底）。 */
+    private val hostEnv: PRootHostEnvironment? = null,
+    /**
+     * T81 (D-6)：guest env 权威来源（单一事实源）。原 buildGuestEnv 内联 8 键
+     * 基线与 LinuxEnvironmentManager 的 11 键漂移（PWD/OLDPWD/LC_ALL 缺失）——
+     * 注释声称「必须同步」但无机制保证。现在直接派生。
+     */
+    private val environment: com.apex.agent.platform.terminal.environment.LinuxEnvironmentManager =
+        com.apex.agent.platform.terminal.environment.LinuxEnvironmentManager(),
+    /**
+     * T82：系统级 bind 集（/proc /dev /sys —— proot-distro 同款语义）。
+     * 默认 [SystemBindProfile.STANDARD]：procps（essential 包）在 guest 内
+     * 真实可用、/dev/urandom 供 python(ssl)/curl 使用。host 侧不存在的路径
+     * 被诚实过滤。选 [SystemBindProfile.NONE] 恢复旧裸 -r 行为。
+     */
+    private val systemBinds: SystemBindProfile = SystemBindProfile.STANDARD,
+    /**
+     * T82：共享存储桥（host /storage/emulated/0 → guest /sdcard，
+     * termux-setup-storage 等价物）。null 或目录不可用 → 不 bind（诚实降级）。
+     */
+    private val sharedStorage: SharedStorageBridge? = null,
+    override val id: String = ID
+) : ExecutionBackend {
+
+    override val runtimeType: BackendRuntimeType = BackendRuntimeType.LINUX
+
+    // 注意：availability/prepare 不包 withContext(Dispatchers.IO) —— 内部全是瞬时操作
+    //（文件存在性/ELF 头读取/mkdirs；--version 探针在 provider 内同步执行）。
+    // 全局 IO 池在测试套件中会被历史泄漏的协程耗尽，若此处切换上下文会在 CI 全套件
+    // 下永久挂起（实测）。线程归属由 P73 接线时的调用方（TerminalRuntime，IO 协程）决定。
+    override suspend fun availability(): BackendAvailability {
+        val binary = binaryProvider.locate().getOrNull()
+            ?: return BackendAvailability.Failed("PRootError:BINARY_NOT_FOUND")
+        val verified = binaryProvider.verify(binary).getOrNull()
+            ?: return BackendAvailability.Failed("PRootError:VERIFY_FAILED")
+        if (!verified.executable) {
+            return BackendAvailability.Failed("PRootError:BINARY_NOT_EXECUTABLE")
+        }
+        val rootfs = rootfsProvider.current()
+            ?: return BackendAvailability.NeedsRootfs()
+        return if (rootfs.location == null) {
+            BackendAvailability.NeedsRootfs("no_location")
+        } else {
+            BackendAvailability.Ready
+        }
+    }
+
+    override suspend fun prepare(request: SessionSpawnRequest): Result<SpawnSpec> {
+        // 1. proot 二进制
+        val binaryPath = binaryProvider.locate().getOrElse { e ->
+            return Result.failure(e)
+        }
+        // T91（D5）：verify 结果不再只作门禁 —— 能力集（双探针实测）参与 argv
+        // 决策（目标 proot 不认的选项自动省略，根除版本静默差异）。
+        val verifiedInfo = binaryProvider.verify(binaryPath).getOrElse { e ->
+            return Result.failure(e)
+        }
+
+        // 2. rootfs
+        val rootfs: RootfsDescriptor = rootfsProvider.current()
+            ?: return Result.failure(
+                RuntimeException("TerminalError:RootfsNotReady — 无已安装 rootfs（P72 接入安装引导）")
+            )
+        val rootfsPath = rootfs.location
+            ?: return Result.failure(
+                RuntimeException("TerminalError:RootfsNotReady — rootfs 无 location")
+            )
+
+        // 3. T75: 解析 workspace（懒创建；非法 id → WorkspaceError:InvalidId 失败）
+        val workspaceId = request.workspaceId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: LinuxWorkspaceManager.DEFAULT_ID
+        val workspaceDir = workspaces.resolve(workspaceId).getOrElse { e ->
+            return Result.failure(e)
+        }
+        // T75: 持久化用户 home（首次初始化播种 skel/最小 bashrc）
+        val userHomeDir = userHome.ensureReady(File(rootfsPath.value)).getOrElse { e ->
+            return Result.failure(e)
+        }
+
+        // 4. guest cwd：request.cwd 是 guest 语义路径 ——
+        //    "/workspace..." 直通；相对路径落 /workspace/<cwd>；其他绝对路径（/root 等）直通。
+        val guestCwd = mapGuestCwd(request.cwd)
+
+        // 5. 构造 launch request（guest env 经 trampoline；T75: 用户 home → /root 持久化 bind）
+        val guestEnv = buildGuestEnv(request.env)
+        // T82：home bind + 系统级 bind（/proc /dev /sys，proot-distro 语义）+
+        // 共享存储 bind（授权可用时 → guest /sdcard）。
+        val binds = buildList {
+            add(PRootBind(AbsolutePath(userHomeDir.absolutePath), GuestUserHome.GUEST_PATH))
+            addAll(systemBinds.toBinds())
+            sharedStorage?.toBind()?.let { add(it) }
+        }
+        val launch = PRootLaunchRequest(
+            rootfs = rootfs,
+            executable = GUEST_SHELL,
+            arguments = listOf("-i"),
+            workingDirectory = com.apex.agent.platform.terminal.workspace.WorkspacePath(guestCwd),
+            environment = guestEnv,
+            binds = binds,
+            terminalMode = com.apex.agent.platform.terminal.api.TerminalMode.AUTO,
+            fakeRoot = true,
+            killOnExit = true
+        )
+
+        // 6. argv（PRootCommandBuilder：request.binds + workspace bind；T91（D5）：
+        //    按双探针实测能力集自适应 —— 捆绑 Termux 5.1.107 发 --kill-on-exit/--，
+        //    上游 5.1.0 两者皆省，Debian 5.4 只发 --kill-on-exit）
+        val workspaceHostDir = AbsolutePath(workspaceDir.absolutePath)
+        val command = commandBuilder.build(
+            launch, binaryPath, rootfsPath, workspaceHostDir, capabilities = verifiedInfo.capabilities
+        )
+        val argv = listOf(command.executable.value) + command.arguments
+
+        // 7. host env（G4：guest 变量绝不在其中）
+        val env = hostEnv?.let { he ->
+            he.prepare().getOrElse { e -> return Result.failure(e) }
+            he.hostEnv()
+        } ?: mapOf("PATH" to "/usr/bin:/bin:/system/bin")
+
+        return Result.success(
+            SpawnSpec(
+                argv = argv,
+                env = env,
+                // proot 忽略 host cwd（-w 为准）—— chdir 落到 rootfs 目录（必然存在）
+                cwd = rootfsPath.value,
+                cwdIsGuestPath = true,
+                shellDisplay = GUEST_SHELL,     // T73: argv[0] 是 libproot.so，语义 shell 是 /bin/bash
+                cwdDisplay = guestCwd,          // T73: 语义 cwd 是 guest 路径（-w 的值）
+                metadata = BackendSessionMetadata(
+                    backendId = id,
+                    rootfsId = rootfs.id,
+                    workspaceId = workspaceId,
+                    workspaceDir = workspaceHostDir.value,
+                    binds = binds.map { "${it.hostPath.value}:${it.guestPath}" } +
+                        listOf("${workspaceHostDir.value}:/workspace"),
+                    guestCwd = guestCwd
+                )
+            )
+        )
+    }
+
+    /**
+     * guest env 基线（§8.1）—— 只经 env trampoline 进入 rootfs，与宿主 env 无关。
+     * request.env 的显式键最后覆盖（调用方意图优先）。
+     *
+     * T81 (D-6)：基线直接取自 LinuxEnvironmentManager（唯一权威来源）——
+     * 消除两处内联漂移（原 8 键 vs Manager 11 键：PWD/OLDPWD/LC_ALL）。
+     */
+    internal fun buildGuestEnv(requestEnv: Map<String, String>): Map<String, String> =
+        environment.interactiveGuestEnv(requestEnv)
+
+    /**
+     * request.cwd → guest cwd（T98 起委托 [GuestCwdMapper] 单一事实源 ——
+     * chroot 后端逐字节同映射；语义见其 KDoc，行为与 T73 内联版完全一致）。
+     */
+    internal fun mapGuestCwd(cwd: String): String =
+        com.apex.agent.platform.terminal.workspace.GuestCwdMapper.map(cwd)
+
+    companion object {
+        const val ID = "linux-ubuntu"
+        const val GUEST_SHELL = "/bin/bash"
+    }
+}

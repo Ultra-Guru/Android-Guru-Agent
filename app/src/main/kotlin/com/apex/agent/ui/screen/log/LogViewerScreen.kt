@@ -1,0 +1,619 @@
+package com.apex.agent.ui.screen.log
+
+import android.content.Intent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.VerticalAlignBottom
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
+import com.apex.agent.R
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
+import com.apex.agent.core.logging.LogLevel
+import com.apex.agent.ui.theme.statusError
+import com.apex.agent.ui.theme.statusInfo
+import com.apex.agent.ui.theme.statusNeutral
+import com.apex.agent.ui.theme.statusSuccess
+import com.apex.agent.ui.theme.statusWarning
+import com.apex.agent.core.logging.LogRecord
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * 日志查看器主界面。
+ *
+ * 把 [AppLogger] 中汇聚的全部日志按"分类 × 级别 × 标签/关键词"三维组合过滤展示，
+ * 并提供聚合统计条（按分类计数、按级别计数、错误率）、会话段下拉、复制单条、
+ * 清空缓冲区与导出分享。
+ */
+@Composable
+fun LogViewerScreen() {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    // v1.4.4 UX 审查：「复制全部」拼接移出主线程 —— 日志环形缓冲可达数 MB，
+    // 旧实现 onClick 里主线程 O(n) joinToString 明显掉帧（导出按钮已修同款，此处漏改）。
+    val copyScope = rememberCoroutineScope()
+    // i18n：导出分享 chooser 标题（onClick 内不可调用 stringResource，上提取词）
+    val exportLogsTitle = stringResource(R.string.log_export_chooser)
+
+    var records by remember { mutableStateOf<List<LogRecord>>(emptyList()) }
+    var stats by remember { mutableStateOf(AppLogger.instance.stats.value) }
+
+    // 过滤/滚动瞬态 rememberSaveable（#2-c P2-7）：LogCategory/LogLevel 为 enum
+    //（Serializable，可入 Bundle），旋转/进程重建后过滤条件与自动滚动不丢；
+    // records/stats 为数据流衍生态（重建后由 recordsFlow 重放），不入存档。
+    var selectedCategory by rememberSaveable { mutableStateOf<LogCategory?>(null) }
+    var minLevel by rememberSaveable { mutableStateOf(LogLevel.VERBOSE) }
+    var keyword by rememberSaveable { mutableStateOf("") }
+    var sessionId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var autoScroll by rememberSaveable { mutableStateOf(true) }
+    val listState = rememberLazyListState()
+
+    // 实时刷新：订阅全量快照流，在 collect 时套用当前过滤条件。
+    // v2：AppLogger 已限速发布快照（250ms 合并洪峰），此处不再被每条日志触发全量 diff。
+    // 过滤仅在条件变化时重算，快照未变时不重复过滤。
+    LaunchedEffect(selectedCategory, minLevel, keyword, sessionId) {
+        AppLogger.instance.recordsFlow.collectLatest { all ->
+            stats = AppLogger.instance.stats.value
+            val kw = keyword.lowercase()
+            val session = sessionId?.let { id -> AppLogger.instance.sessions.firstOrNull { it.id == id } }
+            records = all.filter { r ->
+                r.level.atLeast(minLevel) &&
+                    (selectedCategory == null || r.category == selectedCategory) &&
+                    (session == null || (r.id >= session.startId && r.id <= session.endId)) &&
+                    (kw.isEmpty() || r.message.lowercase().contains(kw) || r.source.lowercase().contains(kw))
+            }
+        }
+    }
+
+    // v2：记住上一次数量，仅在「新增」时滚动（旧实现 records 任何变化都强制滚动，
+    // 用户手动回滚浏览历史时会被拉回底部，且过滤条件变化也会触发滚动）
+    var lastRecordCount by remember { mutableStateOf(0) }
+    LaunchedEffect(records.size, autoScroll) {
+        if (autoScroll && records.isNotEmpty() && records.size > lastRecordCount) {
+            listState.scrollToItem(records.lastIndex)
+        }
+        lastRecordCount = records.size
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // ── 聚合统计条 ──
+        StatsBar(stats, onClickError = { minLevel = LogLevel.ERROR })
+
+        // ── 过滤控制区 ──
+        FilterControls(
+            selectedCategory = selectedCategory,
+            onCategorySelected = { selectedCategory = it },
+            minLevel = minLevel,
+            onMinLevelChanged = { minLevel = it },
+            keyword = keyword,
+            onKeywordChanged = { keyword = it },
+            sessionId = sessionId,
+            onSessionSelected = { sessionId = it }
+        )
+
+        // ── 工具条：复制全部 / 清空（带确认） / 导出 ──
+        var showClearConfirm by rememberSaveable { mutableStateOf(false) } // 修复：清空整个环形缓冲区为破坏性操作，原一点即清
+        var exporting by rememberSaveable { mutableStateOf(false) } // E3：导出串后台拼装进行中（按钮置灰防连点）
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilledTonalButton(
+                // 修复性能：导出串点击时才构建（原 remember(records) 每 250ms 快照追加即全量 joinToString，主线程 O(n)）
+                onClick = {
+                    copyScope.launch {
+                        val text = withContext(Dispatchers.IO) {
+                            records.joinToString("\n") { it.toFlatString() }
+                        }
+                        clipboard.setText(AnnotatedString(text))
+                    }
+                },
+                contentPadding = ButtonDefaults.ButtonWithIconContentPadding
+            ) {
+                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.width(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(stringResource(R.string.log_copy))
+            }
+            FilledTonalButton(
+                onClick = { showClearConfirm = true },
+                contentPadding = ButtonDefaults.ButtonWithIconContentPadding
+            ) {
+                Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.width(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(stringResource(R.string.log_clear))
+            }
+            FilledTonalButton(
+                // 修复性能（#2-c P1-3）：导出串的 joinToString 同样可达数 MB，旧实现
+                // 在 onClick 主线程拼串后才进 exportAndShare（其 IO 协程只包写盘）。
+                // 照 copy 钮同款模式：copyScope + withContext(IO) 拼串；进行中
+                // 按钮置灰（防连点叠拼串任务）即导出中的 loading 反馈。
+                onClick = {
+                    exporting = true
+                    copyScope.launch {
+                        val text = withContext(Dispatchers.IO) {
+                            records.joinToString("\n") { it.toFlatString() }
+                        }
+                        exportAndShare(context, text, exportLogsTitle)
+                        exporting = false
+                    }
+                },
+                enabled = !exporting,
+                contentPadding = ButtonDefaults.ButtonWithIconContentPadding
+            ) {
+                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.width(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(stringResource(R.string.log_export))
+            }
+            Spacer(Modifier.weight(1f))
+            // 自动滚动开关
+            FilledTonalButton(
+                onClick = { autoScroll = !autoScroll },
+                contentPadding = ButtonDefaults.ButtonWithIconContentPadding
+            ) {
+                Icon(
+                    if (autoScroll) Icons.Default.VerticalAlignBottom else Icons.Default.MoreVert,
+                    contentDescription = null,
+                    modifier = Modifier.width(16.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(if (autoScroll) stringResource(R.string.log_follow) else stringResource(R.string.log_follow_stopped))
+            }
+            Text(
+                stringResource(
+                    R.string.log_count_summary,
+                    records.size,
+                    stats.totalBytes / 1024 / 1024,
+                    stats.maxBytes / 1024 / 1024
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis, // 修复：窄屏 4 按钮 + 计数文本被挤出屏
+                modifier = Modifier.align(Alignment.CenterVertically)
+            )
+        }
+
+        if (showClearConfirm) {
+            AlertDialog(
+                onDismissRequest = { showClearConfirm = false },
+                title = { Text(stringResource(R.string.log_clear_title)) },
+                text = {
+                    Text(
+                        stringResource(
+                            R.string.log_clear_text,
+                            records.size,
+                            stats.maxBytes / 1024 / 1024
+                        )
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        AppLogger.instance.clear()
+                        records = emptyList()
+                        showClearConfirm = false
+                    }) { Text(stringResource(R.string.log_clear), color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = { TextButton(onClick = { showClearConfirm = false }) { Text(stringResource(R.string.log_cancel)) } }
+            )
+        }
+
+        // ── 日志列表 ──
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // v2：补 key——FIFO 淘汰头部后无 key 会导致展开状态错位到相邻日志
+            items(records, key = { it.id }) { record ->
+                LogRow(record = record, onCopy = {
+                    clipboard.setText(AnnotatedString(record.toFlatString()))
+                })
+            }
+        }
+    }
+}
+
+/** 聚合统计条：分类计数 + 错误高亮 + 内存占用进度。 */
+@Composable
+private fun StatsBar(stats: com.apex.agent.core.logging.LogStats, onClickError: () -> Unit) {
+    Surface(
+        tonalElevation = 1.dp,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        // 精修：全屏唯一硬角容器补圆角（与屏内其余 bar/chip 的圆角语言一致）
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+    ) {
+        Column(modifier = Modifier.padding(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                StatChip(stringResource(R.string.log_total), "${stats.total}", MaterialTheme.colorScheme.primary)
+                StatChip(
+                    stringResource(R.string.log_errors),
+                    "${stats.errorCount}",
+                    if (stats.errorCount > 0) levelColor(LogLevel.ERROR) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    onClick = onClickError
+                )
+                StatChip("WARN", "${stats.byLevel[LogLevel.WARN] ?: 0}", levelColor(LogLevel.WARN))
+                StatChip("INFO", "${stats.byLevel[LogLevel.INFO] ?: 0}", levelColor(LogLevel.INFO))
+            }
+            Spacer(Modifier.height(6.dp))
+            // 分类计数横向滚动条
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                LogCategory.entries.forEach { cat ->
+                    val count = stats.byCategory[cat] ?: 0
+                    if (count > 0) {
+                        StatChip(cat.displayName, "$count", MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            // 内存占用进度条（相对于 500MB 上限）
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    stringResource(R.string.log_buffer),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                LinearProgressIndicator(
+                    progress = { stats.usageRatio.coerceIn(0f, 1f) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = if (stats.usageRatio > 0.9f) statusWarning() else MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceContainer
+                )
+                Text(
+                    "${(stats.totalBytes / 1024 / 1024)}/${(stats.maxBytes / 1024 / 1024)}MB",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/** 单条统计 chip。onClick 为空时仅作展示。 */
+@Composable
+private fun StatChip(label: String, value: String, color: Color, onClick: (() -> Unit)? = null) {
+    val modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = modifier
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(value, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = color)
+        }
+    }
+}
+
+/** 过滤控制区：分类标签栏 + 级别滑块 + 搜索框 + 会话段。 */
+@Composable
+private fun FilterControls(
+    selectedCategory: LogCategory?,
+    onCategorySelected: (LogCategory?) -> Unit,
+    minLevel: LogLevel,
+    onMinLevelChanged: (LogLevel) -> Unit,
+    keyword: String,
+    onKeywordChanged: (String) -> Unit,
+    sessionId: Long?,
+    onSessionSelected: (Long?) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+        // 分类标签栏（含 ALL）
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            CategoryTab(stringResource(R.string.log_all), selectedCategory == null) { onCategorySelected(null) }
+            LogCategory.entries.forEach { cat ->
+                CategoryTab(cat.displayName, selectedCategory == cat) { onCategorySelected(cat) }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        // 级别多选（这里用一个最小级别门槛 + 快捷按钮）
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(stringResource(R.string.log_level_min), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            LogLevel.entries.filter { it != LogLevel.SILENT }.forEach { lvl ->
+                LevelChip(lvl, minLevel.atLeast(lvl)) { onMinLevelChanged(lvl) }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        // 搜索框
+        OutlinedTextField(
+            value = keyword,
+            onValueChange = onKeywordChanged,
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text(stringResource(R.string.log_search_hint)) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            singleLine = true,
+            shape = RoundedCornerShape(10.dp)
+        )
+        Spacer(Modifier.height(8.dp))
+        // 会话段下拉
+        val sessions = AppLogger.instance.sessions
+        if (sessions.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(stringResource(R.string.log_sessions), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                SessionChip(stringResource(R.string.log_all), sessionId == null) { onSessionSelected(null) }
+                sessions.reversed().take(8).forEach { s ->
+                    val label = if (s.label.isNotEmpty()) s.label
+                    else stringResource(R.string.log_session_label, s.id)
+                    SessionChip(label, sessionId == s.id) { onSessionSelected(s.id) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CategoryTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    val container = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer
+    val content = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = container,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = content, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+    }
+}
+
+/**
+ * 日志等级色：#244 起统一经 ui/theme/StatusColors 语义函数取词（明暗成对、
+ * 与任务历史/用量页同一套调色板），本函数仅做 LogLevel → 语义档的映射。
+ * :core 的 LogLevel.colorArgb 是终端域单态色，不可引 Compose，:core 不动。
+ * 例外：FATAL 是日志特有的「比 ERROR 更重」一档，无通用语义槽 —— 保留
+ * 本页紫对（明暗判定沿 codeColorScheme 先例：background.luminance()，
+ * 勿用 isSystemInDarkTheme —— 主题可被设置强制）。
+ */
+@Composable
+private fun levelColor(level: LogLevel): Color = when (level) {
+    LogLevel.VERBOSE, LogLevel.SILENT -> statusNeutral()
+    LogLevel.DEBUG -> statusInfo()
+    LogLevel.INFO -> statusSuccess()
+    LogLevel.WARN -> statusWarning()
+    LogLevel.ERROR -> statusError()
+    LogLevel.FATAL ->
+        if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFFBA68C8)
+        else Color(0xFF6A1B9A)
+}
+
+@Composable
+private fun LevelChip(level: LogLevel, active: Boolean, onClick: () -> Unit) {
+    val container = if (active) levelColor(level) else MaterialTheme.colorScheme.surfaceContainer
+    val content = if (active) Color.White else levelColor(level)
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = container,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Text(level.shortTag, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = content, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+    }
+}
+
+@Composable
+private fun SessionChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = if (selected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = if (selected) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+    }
+}
+
+/** 单条日志行：级别色条 + 时间 + 分类 + 来源 + 消息 + 标签 + 复制，点击可展开异常堆栈。 */
+@Composable
+private fun LogRow(record: LogRecord, onCopy: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val hasTrace = record.throwable != null
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+            .clickable(enabled = hasTrace) { expanded = !expanded }
+            .padding(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height(38.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(levelColor(record.level))
+            )
+            Spacer(Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(record.level.shortTag, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = levelColor(record.level))
+                    Text(record.category.displayName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(record.source, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(formatTime(record.timestamp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(record.message, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurface)
+                if (record.tags.isNotEmpty()) {
+                    Spacer(Modifier.height(2.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        record.tags.take(6).forEach { tag ->
+                            Surface(shape = RoundedCornerShape(4.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+                                Text("#$tag", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                            }
+                        }
+                    }
+                }
+                if (hasTrace && expanded) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        record.throwable!!.stackTraceToString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+            if (hasTrace) {
+                Text(
+                    if (expanded) stringResource(R.string.log_collapse) else stringResource(R.string.log_stack),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+            }
+            // UI-012：48dp 触区红线（原 28×28；行内密排但无障碍优先）
+            IconButton(onClick = onCopy, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                Icon(Icons.Default.ContentCopy, contentDescription = stringResource(R.string.log_copy), modifier = Modifier.width(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+// v2：SimpleDateFormat 提升为复用实例（旧实现每行日志 new 一个，
+// 长列表滚动时无谓分配 + SimpleDateFormat 构造成本不低）
+private val logTimeFormat = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+
+private fun formatTime(ts: Long): String {
+    synchronized(logTimeFormat) {
+        return logTimeFormat.format(java.util.Date(ts))
+    }
+}
+
+/** 导出并分享：写入应用私有缓存目录，再发起系统分享。 */
+// P1 fix（内存泄漏）：旧实现每次点击都 new 一个永不 cancel 的 CoroutineScope，
+// 且在协程内捕获 Activity context —— 连点 N 次积累 N 个孤儿协程，每个都
+// 把 Activity + 8MB 日志字符串钉在内存里直到写盘完成。现改为：
+// 其一、文件级单例导出作用域，点击多次仅复用，新任务取消旧任务；
+// 其二、提前解包 applicationContext，协程内不再持有 Activity。
+private val exportScope = kotlinx.coroutines.CoroutineScope(
+    kotlinx.coroutines.SupervisorJob() + Dispatchers.IO
+)
+private var exportJob: kotlinx.coroutines.Job? = null
+
+private fun exportAndShare(context: android.content.Context, content: String, chooserTitle: String) {
+    // （混沌审查两轮同题：#100 单例作用域+取消旧任务 优于 #101 每次新建 SupervisorJob
+    // 作用域且从不 cancel 的方案 —— 连点仍会积累孤儿 Job；此处取 #100 实现，
+    // appContext 跨异步边界解包两方一致。）
+    val appContext = context.applicationContext
+    exportJob?.cancel()
+    exportJob = exportScope.launch {
+        try {
+            val dir = java.io.File(appContext.cacheDir, "logs")
+            dir.mkdirs()
+            val file = java.io.File(dir, "apex-logs-${System.currentTimeMillis()}.txt")
+            file.writeText(content)
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                appContext,
+                "${appContext.packageName}.fileprovider",
+                file
+            )
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            withContext(Dispatchers.Main) {
+                appContext.startActivity(
+                    Intent.createChooser(intent, chooserTitle).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+        } catch (e: Exception) {
+            AppLogger.instance.warn(
+                category = com.apex.agent.core.logging.LogCategory.SYSTEM,
+                source = "LogViewer",
+                message = "日志导出失败: ${e.message}"
+            )
+        }
+    }
+}

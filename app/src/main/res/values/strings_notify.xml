@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v1.4.4 #4 notification center — channel names/descriptions + task completion notification copy (Chinese in values-zh/strings_notify.xml) -->
+<resources>
+    <string name="notif_channel_task_name">Task completion</string>
+    <string name="notif_channel_task_desc">Alerts when an agent task finishes in the background</string>
+    <string name="notif_channel_general_name">General</string>
+    <string name="notif_channel_general_desc">General reminders and notices</string>
+    <string name="notif_task_done_generic">Task finished</string>
+    <string name="notif_task_done_fallback_title">Agent task finished</string>
+</resources>

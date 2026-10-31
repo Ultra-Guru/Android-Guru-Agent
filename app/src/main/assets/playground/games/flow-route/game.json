@@ -1,0 +1,11 @@
+{
+  "id": "flow-route",
+  "name": "文本引流",
+  "nameEn": "Flow Route",
+  "tagline": "拖动障碍盒逐行变宽重路由文章，让末行恰好落进一页版面",
+  "version": 1,
+  "engine": "pretext@0.0.9",
+  "apis": ["prepareWithSegments", "layoutNextLineRange", "materializeLineRange"],
+  "controls": "拖动障碍盒 / 定稿结算",
+  "scoreKey": "aga.pg.flow-route.hi"
+}

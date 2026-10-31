@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Ubuntu bootstrap 依赖 ConnectivityManager.getLinkProperties() 读取系统 DNS
+         注入 guest resolv.conf（TerminalModule.resolveAndroidDnsServers）。缺此权限时
+         runCatching 静默吞掉 SecurityException → DNS 注入为空 → 兜底公共解析器，
+         在大陆环境下 apt update 直接死于 DNS。 -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- P0 fix：CyberNeonBallManager.triggerVibration() 使用 Vibrator，未声明此权限时
+         NEED_HUMAN 状态触发震动会抛 SecurityException（主线程未捕获 → 进程崩溃） -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- P3-a（6-c）：VIBRATE 权限此前重复声明两次（混沌审查修复时补声明未察觉
+         已存在），合并为上面一处 -->
+
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
+    <!-- Onboarding v2 引导步骤 3「修改系统设置」：声明本身 normal 级，授权走
+         Settings.ACTION_MANAGE_WRITE_SETTINGS 跳本应用专属页 + Settings.System
+         .canWrite() 判态（特殊权限不可运行时弹窗）。 -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <!-- Onboarding v2 引导步骤 4「安装未知来源应用」：UpdateDownloader 的
+         FileProvider + ACTION_VIEW 安装流在 Android 8+ 需要本应用出现在
+         「未知来源」白名单（按应用逐一授权）；声明后引导页才能经
+         PackageManager.canRequestPackageInstalls() 判态并跳
+         ACTION_MANAGE_UNKNOWN_APP_SOURCES 引导页。 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- ═══ v5 增强工具集：agent 自主能力扩展 ═══ -->
+    <!-- ContactSearch：读取通讯录（dangerous 权限，运行时弹窗授权） -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- SmsSend：发送短信（dangerous 权限，运行时弹窗授权 + 风险门会话确认） -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <!-- CalendarEventList：读取日历（dangerous 权限，运行时弹窗授权） -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <!-- ImageCapture：拍照（dangerous 权限，运行时弹窗授权） -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- AlarmSet：经 AlarmClock.ACTION_SET_ALARM 设置闹钟（normal 权限，自动授权） -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+
+    <!-- #E-⑮：多级返回（收键盘 → 收菜单 → 退出）依赖 KeyEvent 派发路径
+         （TerminalView.onKeyPreIme）；预测性返回会绕过它直接预览“退出
+         app”。本 app 钉 targetSdk 28（侧载红线）本就不受 Android 16 默认
+         开启影响 —— 显式声明 false 是防未来 targetSdk 升级时的行为漂移
+         （届时应改为逐层 OnBackPressedCallback 适配后移除）。 -->
+    <application
+        android:name=".ApexApp"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.ApexAgent"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/legacy_backup_rules"
+        android:enableOnBackInvokedCallback="false"
+        tools:targetApi="36">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- v1.4.4 #7 分享接收 intent-filter 已随 Agent 输入区移除（消费方
+                 SharedIntake → AgentChatViewModel 已删，载荷无人订阅）。 -->
+        </activity>
+
+        <!-- 核心前台服务 -->
+        <service
+            android:name=".service.ApexCoreService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="AI assistant persistent background execution" />
+        </service>
+
+        <!-- Shizuku Provider -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <!-- Boot Receiver -->
+        <receiver
+            android:name=".receiver.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- v5 APK 安装结果接收器：AppInstallApk / AppDownloadInstall
+             工具触发 PackageInstaller.commit 后，系统会广播 install 结果到本
+             receiver；STATUS_PENDING_USER_ACTION 时本 receiver 负责启动系统
+             安装确认 UI。导出=false（仅本应用 / 系统能投递）。 -->
+        <receiver
+            android:name="com.apex.agent.tools.ApkInstallResultReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.apex.agent.action.INSTALL_RESULT" />
+            </intent-filter>
+        </receiver>
+
+        <!-- WorkManager初始化 -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            tools:node="remove" />
+
+        <!-- FileProvider：用于把 attachments/workspace 中的文件共享给外部应用预览 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+    </application>
+</manifest>

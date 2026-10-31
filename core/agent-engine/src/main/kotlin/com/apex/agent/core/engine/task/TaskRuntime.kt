@@ -1,0 +1,884 @@
+package com.apex.agent.core.engine.task
+
+import com.apex.agent.core.engine.AgentEvent
+import com.apex.agent.core.engine.AgentEngine
+import com.apex.agent.core.engine.ConversationMemory
+import com.apex.agent.core.engine.UserInput
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * T76 — TaskRuntime：Agent 长任务执行体系总装（D-2 方案 B）。
+ *
+ * **叠加层定位**（不重写引擎、不替换 AgentEngine 绑定）：
+ * - 组合 `AgentEngine`（生产为 ApexAgentEngine 单例）；
+ * - `execute()` 包装引擎事件流，在**生命周期边界**（CheckpointBoundary 表）
+ *   落盘 checkpoint —— 绝不按 token；
+ * - Pause/Resume/Cancel/Retry 提供持久语义；
+ * - 启动时发现崩溃遗留的活跃任务，配合 [RecoveryPolicy] +
+ *   [DanglingToolCallRepair] 重建上下文后继续执行；
+ * - 单活跃执行互斥（N-8）：同一时刻至多一个执行在跑，并发 resume/retry
+ *   只有一个成功。
+ *
+ * **引擎挂钩注入**（N-9/N-12，函数式——core 层零引擎依赖，装配在 app DI）：
+ * - [configProvider]：任务创建时快照当前 AgentConfig（配置快照语义 §20）；
+ * - [contextInjector]：压缩后向引擎 history 重注入受保护的任务状态消息；
+ * - [tagsSetter]：把 taskId/stepId 填入引擎 LlmRequestContext（诊断贯通）。
+ * 生产装配：`TaskRuntime(engine, store, memory, cfg = apexEngine::currentConfigSnapshot, …)`。
+ *
+ * **事件转发契约**（对 VM 透明）：
+ * 内部镜像 collector 在 runtimeScope 消费引擎流（与 UI collect 生命周期
+ * 解耦——VM cancel 它的 job 不会中断 checkpoint 记录），事件经
+ * Channel（UNLIMITED 缓冲，先落盘后转发）交给 UI 的 receiveAsFlow。
+ * 流收尾时 close() 通道使订阅端正常完成。这保证：abort/pause 的收尾
+ * 事件（Aborted/Complete）即使 VM 已停止消费，落盘逻辑也完整执行。
+ */
+class TaskRuntime(
+    private val engine: AgentEngine,
+    private val store: TaskStore,
+    private val memory: ConversationMemory? = null,
+    private val toolPolicy: ToolExecutionPolicy = ToolExecutionPolicy(),
+    /** 任务创建时的配置快照源（DI: apexEngine.currentConfig() → snapshot）。 */
+    private val configProvider: () -> TaskConfigSnapshot = { TaskConfigSnapshot() },
+    /** 压缩后任务状态重注入（DI: apexEngine::injectSystemContext）。 */
+    private val contextInjector: (String) -> Unit = {},
+    /** LlmRequestContext 的 taskId/stepId 填充（DI: apexEngine::setLlmExecutionTags）。 */
+    private val tagsSetter: (taskId: String?, stepId: String?) -> Unit = { _, _ -> },
+    private val retryLimit: Int = DEFAULT_RETRY_LIMIT,
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    private val clock: () -> Long = System::currentTimeMillis
+) {
+
+    // ═══ 对外状态 ═══
+
+    private val _activeTask = MutableStateFlow<AgentTask?>(null)
+    /** 当前活跃任务（无任务为 null）。UI 任务状态卡数据源。 */
+    val activeTask: StateFlow<AgentTask?> = _activeTask.asStateFlow()
+
+    private val _runtimeEvents = MutableSharedFlow<TaskRuntimeEvent>(
+        replay = 16, extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    /** 低频任务生命周期事件（AgentEvent 冻结，任务关联走此通道，§16）。 */
+    val runtimeEvents: SharedFlow<TaskRuntimeEvent> = _runtimeEvents.asSharedFlow()
+
+    // ═══ 内部执行状态 ═══
+
+    /**
+     * 单活跃执行互斥（N-8）：原子占位标志。
+     *
+     * 比 Mutex 更适用：resume()/retry()/execute() 的前置检查与真正占位
+     * 之间不存在竞态窗口——并发两次 resume 只有一个 CAS 成功，另一个
+     * 立即返回 null（任务书 §1"8H：并发 resume 只允许一个成功"）。
+     * 跨进程互斥由 TaskStore 文件状态承担（活跃态任务需先进入终态）。
+     */
+    private val claiming = AtomicBoolean(false)
+
+    private fun tryClaim(): Boolean = claiming.compareAndSet(false, true)
+
+    /**
+     * 当前执行的事件通道（execute 期间非 null）。
+     *
+     * 用 [Channel]（UNLIMITED）而非 SharedFlow：镜像 collector 在流收尾时
+     * close()，使订阅端的 receiveAsFlow() 自然完成——SharedFlow 是热流，
+     * 订阅者会永久挂起等待下一个事件。
+     */
+    @Volatile
+    private var eventTap: Channel<AgentEvent>? = null
+
+    /** 当前流收尾信号（pause/cancel 等待它完成）。 */
+    @Volatile
+    private var streamDone: CompletableDeferred<Unit>? = null
+
+    /**
+     * 镜像收集器 Job（P1 真取消修复）：LLM HTTP 流的取消钩子挂在收集
+     * 协程上（invokeOnCompletion{response.close()}），而镜像跑在自持
+     * scope、UI 侧 cancel 永远够不着它 —— cancel() 超时意味着引擎流
+     * 挂在不可自然收尾的悬点上，此时 cancel 这个 Job 才是真取消。
+     */
+    @Volatile
+    private var mirrorJob: Job? = null
+
+    @Volatile
+    private var pauseRequested = false
+    @Volatile
+    private var cancelRequested = false
+
+    /**
+     * 模拟进程死亡标志（测试专用，[simulateCrash] 置位）。
+     *
+     * 真实进程被 SIGKILL 时 finally 收尾逻辑**根本不会执行**——store 停留在
+     * 最后一个 checkpoint。scope.cancel() 会触发 finally，因此模拟死亡必须
+     * 显式短路 [finalizeStream]（不迁移、不落盘），保持崩溃现场原样。
+     */
+    @Volatile
+    private var crashSimulated = false
+
+    /** journal 序号（operationId 生成）。 */
+    private var operationSeq = 0
+
+    /** 当前任务"当前步骤索引"（StepStart 推导，-1 = 无步骤语境）。 */
+    @Volatile
+    private var currentStepIndex = -1
+
+    // ═══ 执行入口 ═══
+
+    /**
+     * 包装引擎 execute：创建/更新任务 → 镜像消费事件流（checkpoint 落盘）
+     * → 经 SharedFlow 重放给调用方。
+     *
+     * 返回的 Flow 与 UI collect 生命周期解耦（见类注释），订阅者晚到/重订阅
+     * 均不丢事件（replay=MAX）。任务结束（终态落盘）后 flow 不再发射。
+     *
+     * @throws IllegalStateException 已有活跃执行（互斥拒绝，N-8）
+     */
+    fun execute(input: UserInput): Flow<AgentEvent> = executeAsTask(input, resumeOf = null)
+
+    /**
+     * P2-12：[alreadyClaimed] = true 表示调用方（resume/retry/resumeFromCrash）
+     * 已在入口用 tryClaim() 原子占位，这里不再重复 check（避免双占/误拒）。
+     */
+    private fun executeAsTask(
+        input: UserInput,
+        resumeOf: AgentTask?,
+        alreadyClaimed: Boolean = false
+    ): Flow<AgentEvent> {
+        // 互斥：并发第二次 execute 直接拒绝（任务书 §18H 并发场景）
+        // P2-12 修复：execute() 入口保留 check() 语义（抛 IllegalStateException，
+        // 测试断言依赖）；resume/retry 改为入口处 tryClaim()，占位失败返回 null，
+        // 消除“先 claiming.get() 后 check(tryClaim())”两步检查之间的竞态窗口。
+        if (!alreadyClaimed) {
+            check(tryClaim()) {
+                "TaskRuntime rejects concurrent execution: an active execution is already running"
+            }
+        }
+
+        val now = clock()
+        var task = resumeOf ?: newTask(input, now)
+
+        // 状态迁移：新任务 PENDING→(PLANNING/RUNNING)；恢复/重试统一迁入 RUNNING
+        // （幂等：已是 RUNNING 的预迁移任务跳过，避免自环非法迁移）
+        task = when {
+            resumeOf == null -> TaskStatusMachine.transition(
+                task,
+                if (task.mode == "PLAN" || task.mode == "SPEC") TaskStatus.PLANNING else TaskStatus.RUNNING,
+                now
+            )
+            task.status == TaskStatus.RUNNING -> task
+            else -> TaskStatusMachine.transition(task, TaskStatus.RUNNING, now)
+        }
+
+        pauseRequested = false
+        cancelRequested = false
+        currentStepIndex = -1
+        operationSeq = task.operations.size
+        tagsSetter(task.taskId, null) // N-12：诊断四元 ID 贯通开始
+        persist(task, CheckpointBoundary.TASK_CREATED)
+
+        // #351③（调和 #373 / PR #370 两套实现）：tap 保持 UNLIMITED，积压治理
+        // 统一交给下方 collect 内的 TAP_HIGH_WATERMARK 自维护原子计数守护 ——
+        // 边界事件（Error/Complete/Aborted/UserInputRequired/确认类）在水位线
+        // 之上仍可入队（isDroppableUnderPressure=false 保证不丢）；有界
+        // DROP_OLDEST 方案会在通道满时把最早入队的边界事件一并挤掉，故弃用。
+        // 无人收集时流式 chunk 在水位线处丢弃（UI 重建状态来自
+        // activeTask/runtimeEvents 而非重放），checkpoint 不受影响
+        // （onEngineEvent 先于 tap.send 落盘）。
+        val tap = Channel<AgentEvent>(capacity = Channel.UNLIMITED)
+        eventTap = tap
+        // #351③：积压计数（生产侧 +1 / 消费侧 -1）。镜像 collector 是唯一
+        // 生产者；UI 单收集者经下方包装流 onEach 递减。Channel.size 是
+        // @ExperimentalCoroutinesApi（CI 裸 kotlinc classpath 版本敏感），
+        // 自维护原子计数零依赖。
+        val tapBacklog = AtomicInteger(0)
+        val done = CompletableDeferred<Unit>()
+        streamDone = done
+        _activeTask.value = task
+
+        mirrorJob = scope.launch {
+            var droppedUnderPressure = 0L
+            try {
+                engine.execute(input).collect { event ->
+                    onEngineEvent(task.taskId, event)   // checkpoint 边界（先落盘）
+                    // ═══ #351③ 守护：UNLIMITED tap 在 UI 不收集时无界堆积 ═══
+                    // VM 收集者被取消而任务继续（Activity 销毁、LOOP 后台轮次、
+                    // AskUser 挂起期间用户切走）时，每 token 一条事件全部积压到
+                    // 任务结束——长任务数万事件对象 MB 级内存，低内存设备放大
+                    // LMK 杀进程风险（用户看到的即「卡死后重启」）。高水位后
+                    // 丢弃可丢的流式 chunk（UI 最终文本由 Complete/ToolCallComplete
+                    // 全量携带，丢过程不丢结果）；边界事件（Error/Complete/Aborted/
+                    // UserInputRequired/确认类）永不丢。checkpoint 不受影响
+                    // （onEngineEvent 先于本转发执行）。
+                    val backlog = tapBacklog.incrementAndGet()
+                    if (backlog >= TAP_HIGH_WATERMARK && event.isDroppableUnderPressure()) {
+                        tapBacklog.decrementAndGet() // 不入队，回退计数
+                        droppedUnderPressure++
+                    } else {
+                        tap.send(event)
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 引擎流被取消（罕见：runtimeScope 关闭）→ 走 finalize 兜底
+                AppLogger.instance.warn(LogCategory.ENGINE, TAG, "engine stream cancelled: ${e.message}")
+            } catch (e: Throwable) {
+                AppLogger.instance.error(LogCategory.ENGINE, TAG, "mirror collector failed: ${e.message}", e)
+                // #213 残留收口：保险层错误文案走 LlmErrorText（中文指引 +
+                // 截断摘要）——原始全文已在上一行落日志，不进用户消息
+                runCatching {
+                    tap.send(
+                        AgentEvent.Error(
+                            com.apex.agent.core.llm.LlmErrorText.userMessage(e),
+                            recoverable = false
+                        )
+                    )
+                }
+                finalizeWith(task.taskId, TaskStatus.FAILED, e.message)
+            } finally {
+                // 异常安全：finalize 内部任何异常都不得吞掉 done/close
+                // （否则 pause/cancel 永久挂起、UI collect 永不完成）。
+                runCatching { finalizeStream(task.taskId) }.onFailure { e ->
+                    AppLogger.instance.error(
+                        LogCategory.ENGINE, TAG,
+                        "finalizeStream failed (task left at last checkpoint): ${e.message}", e
+                    )
+                }
+                if (droppedUnderPressure > 0L) {
+                    AppLogger.instance.warn(
+                        LogCategory.ENGINE, TAG,
+                        "UI tap backpressure: $droppedUnderPressure streaming events dropped " +
+                            "(collector absent/slow; final texts intact via Complete events)"
+                    )
+                }
+                tap.close() // 订阅端 receiveAsFlow 完成（UI collect 正常返回）
+                done.complete(Unit)
+            }
+        }
+
+        // 消费侧递减包装：UI 收集者每取走一条事件，积压计数 -1（守护判定的
+        // 消费信号源）。receiveAsFlow 单收集者语义不变；late/重订阅由镜像
+        // 侧 close 兜底，与旧返回值行为一致。
+        return tap.receiveAsFlow().onEach { tapBacklog.decrementAndGet() }
+    }
+
+    // ═══ 事件 → Checkpoint（核心推导表，N-4）═══
+
+    private suspend fun onEngineEvent(taskId: String, event: AgentEvent) {
+        var task = _activeTask.value?.takeIf { it.taskId == taskId } ?: return
+        // ═══ #335（P0）：WAITING_USER 回迁缺失 → TaskRuntime 砖化 ═══
+        // AskUser 触发 UserInputRequired 把任务迁入 WAITING_USER 后，引擎继续
+        // 流转（用户已回答/超时收场/abort 空答案）——后续任何事件（ToolResult、
+        // Complete、Error、下一迭代的各类事件）都意味着执行已恢复，但旧实现
+        // 没有任何 WAITING_USER→RUNNING 的回迁点，任务永远停在 WAITING_USER：
+        // 收尾 finalizeStream 走 WAITING_USER→COMPLETED 非法迁移抛
+        // IllegalTaskTransitionException，且异常跳过清理三连 → claiming 永久
+        // true（此后所有 execute/resume/retry 被互斥拒绝，直到进程重启），
+        // HUMAN_ASSIST 模式必踩。此处补上回迁：WAITING_USER 期间到达的任何
+        // 非 UserInputRequired 事件（UserInputRequired 本身是重复提问，保持）
+        // 先回迁 RUNNING（状态机出边已有），后续迁移/finalize 从 RUNNING 出发。
+        if (task.status == TaskStatus.WAITING_USER && event !is AgentEvent.UserInputRequired) {
+            transitionAndPersist(task, TaskStatus.RUNNING, CheckpointBoundary.USER_INPUT_RESUMED)
+            task = _activeTask.value?.takeIf { it.taskId == taskId } ?: task
+        }
+        when (event) {
+            is AgentEvent.PlanConfirmed -> {
+                // 计划确认：进入执行阶段（PLANNING→RUNNING）+ 步骤持久化。
+                // 非 PLANNING 态（重放/恢复场景已 RUNNING）幂等跳过迁移。
+                val withSteps = extractSteps(event)
+                    ?.let { task.copy(steps = it) } ?: task
+                val target = if (withSteps.status == TaskStatus.PLANNING) {
+                    TaskStatusMachine.transition(withSteps, TaskStatus.RUNNING, clock())
+                } else withSteps
+                persist(target, CheckpointBoundary.PLAN_CONFIRMED)
+                emitRuntimeSync(TaskRuntimeEvent.StatusChanged(target.taskId, target.status))
+            }
+
+            is AgentEvent.StepStart -> {
+                currentStepIndex = event.stepIndex
+                tagsSetter(task.taskId, task.steps.getOrNull(event.stepIndex)?.stepId)
+                // 步骤切换推导前序步骤完成（AgentEvent 体系无 StepComplete——
+                // 下一个 StepStart 到达即隐含前序完成；最后步骤由 Complete 兜底）
+                val steps = task.steps.mapIndexed { i, s ->
+                    when {
+                        i == event.stepIndex -> s.copy(
+                            status = StepStatus.RUNNING,
+                            startedAt = clock(),
+                            attempts = s.attempts + 1
+                        )
+                        s.status == StepStatus.RUNNING && i < event.stepIndex ->
+                            s.copy(status = StepStatus.DONE, finishedAt = clock())
+                        else -> s
+                    }
+                }
+                persist(task.copy(steps = steps), CheckpointBoundary.STEP_STARTED)
+            }
+
+            is AgentEvent.ToolCallStart -> {
+                operationSeq++
+                val op = ToolOperationRecord(
+                    operationId = "${taskId}-op$operationSeq",
+                    llmCallId = event.callId,
+                    toolName = event.toolName,
+                    arguments = event.arguments.take(TaskStoreLimits.MAX_ARGS_SNAPSHOT),
+                    status = OperationStatus.RUNNING,
+                    idempotency = toolPolicy.classify(event.toolName),
+                    startedAt = clock()
+                )
+                persist(task.appendOperation(op), CheckpointBoundary.TOOL_CALL_STARTED)
+            }
+
+            is AgentEvent.ToolCallComplete -> {
+                val ops = task.operations.map {
+                    if (it.llmCallId == event.callId) it.copy(
+                        status = if (event.success) OperationStatus.SUCCEEDED else OperationStatus.FAILED,
+                        finishedAt = clock(),
+                        durationMs = event.durationMs,
+                        outputDigest = event.output.take(TaskStoreLimits.MAX_OUTPUT_DIGEST)
+                    ) else it
+                }
+                persist(task.copy(operations = ops), CheckpointBoundary.TOOL_CALL_FINISHED)
+            }
+
+            is AgentEvent.ContextCompressed -> {
+                // N-9：压缩边界——记录 historyAnchor + 任务状态重注入到引擎历史
+                contextInjector(buildTaskStateMessage(task))
+                persist(
+                    task.copy(
+                        compressionCount = task.compressionCount + 1,
+                        historyAnchor = memory?.count() ?: 0
+                    ),
+                    CheckpointBoundary.CONTEXT_COMPRESSED
+                )
+                emitRuntime(TaskRuntimeEvent.CheckpointSaved(task.taskId, CheckpointBoundary.CONTEXT_COMPRESSED))
+            }
+
+            is AgentEvent.UserInputRequired -> {
+                if (task.status == TaskStatus.WAITING_USER) {
+                    // #335：同一任务第二次 ask_user（WAITING_USER→WAITING_USER
+                    // 自环非法）幂等处理 —— 保持原态仅补落盘，不再抛
+                    // IllegalTaskTransition（该异常会从 collect lambda 直接逃逸，
+                    // 镜像 catch 把任务误标 FAILED、引擎流被拆断）。
+                    persist(task, CheckpointBoundary.WAITING_USER)
+                } else {
+                    transitionAndPersist(task, TaskStatus.WAITING_USER, CheckpointBoundary.WAITING_USER)
+                }
+            }
+
+            is AgentEvent.Error -> {
+                // 可恢复错误不终态化（LLM 会在下一轮处理），不可恢复的 finalize FAILED
+                if (!event.recoverable) {
+                    transitionAndPersist(task, TaskStatus.FAILED, CheckpointBoundary.ERROR, event.message)
+                } else {
+                    persist(task, CheckpointBoundary.ERROR)
+                }
+            }
+
+            is AgentEvent.Complete -> {
+                // 引擎 finally 无条件发 Complete（含失败场景）——终态由 finalizeStream
+                // 统一裁决（pause/cancel/failure 标志优先），此处记录摘要 +
+                // 最后步骤的完成化兜底（RUNNING 步骤在成功收尾时视为 DONE）。
+                val steps = task.steps.map {
+                    if (it.status == StepStatus.RUNNING) it.copy(status = StepStatus.DONE, finishedAt = clock())
+                    else it
+                }
+                persistSummary(task.copy(steps = steps), event.summary, event.totalToolCalls)
+            }
+
+            is AgentEvent.Aborted -> {
+                // 等待 finalizeStream 裁决 PAUSED vs CANCELLING（pause/cancel 标志）
+                persist(task, CheckpointBoundary.PAUSED.takeIf { pauseRequested } ?: CheckpointBoundary.CANCELLED)
+            }
+
+            else -> Unit // 流式 chunk 等高频事件：无 checkpoint（绝不按 token 落盘）
+        }
+    }
+
+    /** 引擎流收尾：统一终态裁决（pause > cancel > 失败 > 完成）。 */
+    private suspend fun finalizeStream(taskId: String) {
+        // 模拟进程死亡：真实 SIGKILL 不执行任何 finally——保持崩溃现场原样
+        if (crashSimulated) {
+            claiming.set(false)
+            return
+        }
+        val task = _activeTask.value?.takeIf { it.taskId == taskId } ?: run {
+            claiming.set(false)
+            return
+        }
+        // ═══ #335 修复②：清理段 try/finally 兜底，迁移异常不再砖化互斥位 ═══
+        // 旧实现清理四连（tagsSetter/eventTap/streamDone/claiming）位于 when
+        // 之后——when 内任何状态迁移抛 IllegalTaskTransitionException（如旧数据
+        // WAITING_USER→COMPLETED）即跳过清理，claiming 永久 true，此后所有
+        // execute/resume/retry 被互斥拒绝直到进程重启。现在 finally 无条件执行
+        // 清理：任务可能停在最后一个 checkpoint（镜像 finally 已留痕），但运行
+        // 时资源与互斥位完整释放，砖化路径被结构性消除。
+        try {
+            when {
+                pauseRequested -> transitionAndPersist(task, TaskStatus.PAUSED, CheckpointBoundary.PAUSED)
+                cancelRequested -> {
+                    // CANCELLING → CANCELLED 链（流已收尾，无再等待的执行）
+                    val cancelling = TaskStatusMachine.transition(task, TaskStatus.CANCELLING, clock())
+                    transitionAndPersist(cancelling, TaskStatus.CANCELLED, CheckpointBoundary.CANCELLED)
+                }
+                task.status == TaskStatus.FAILED -> {
+                    // 失败已在 Error 事件中终态化；此处理论上不应到达——幂等保护
+                    AppLogger.instance.warn(LogCategory.ENGINE, TAG, "finalize on already-FAILED task")
+                }
+                else -> {
+                    // #335 防御（PR #370）：终态化前若停在 WAITING_USER/PLANNING
+                    // 等中间态（事件序列未回迁的边角，如 Complete 被异常路径吞
+                    // 掉），先经 RUNNING 再 COMPLETED，不再抛 IllegalTaskTransition
+                    // 砖化互斥位。
+                    val base = if (TaskStatusMachine.isLegal(task.status, TaskStatus.COMPLETED)) task
+                    else TaskStatusMachine.transition(task, TaskStatus.RUNNING, clock())
+                    transitionAndPersist(base, TaskStatus.COMPLETED, CheckpointBoundary.COMPLETED)
+                }
+            }
+            emitRuntime(TaskRuntimeEvent.Finished(taskId, _activeTask.value?.status ?: TaskStatus.COMPLETED))
+        } finally {
+            // #335：清理四连无条件执行 —— 任何状态迁移异常
+            //（IllegalTaskTransition 等）都不得跳过清理，否则 claiming 永久
+            // 为 true、TaskRuntime 被砖化（任务停在最后一个 checkpoint，后续
+            // execute/resume/retry 全部被互斥拒绝直到进程重启）。
+            tagsSetter(null, null) // 诊断 ID 清理
+            eventTap = null
+            streamDone = null
+            mirrorJob = null
+            claiming.set(false)
+        }
+    }
+
+    private suspend fun finalizeWith(taskId: String, status: TaskStatus, error: String?) {
+        _activeTask.value?.takeIf { it.taskId == taskId }?.let {
+            transitionAndPersist(it, status, CheckpointBoundary.ERROR, error)
+        }
+    }
+
+    // ═══ 控制操作（Pause/Resume/Cancel/Retry，N-6）═══
+
+    /** 用户请求暂停（可续）。返回 false = 当前无可暂停执行。 */
+    suspend fun pause(): Boolean {
+        val task = _activeTask.value ?: return false
+        if (task.status != TaskStatus.RUNNING && task.status != TaskStatus.WAITING_USER &&
+            task.status != TaskStatus.PLANNING
+        ) return false
+        pauseRequested = true
+        engine.abort()
+        // 等待引擎流收尾（镜像 collector 的 finally 落盘 PAUSED）
+        //
+        // P2-14 修复：旧实现无超时等待 streamDone——引擎正挂在 LLM 调用时
+        // （OkHttp readTimeout 默认最长 120s），UI 的 pause() 会挂起同样时长。
+        // 10s 后放弃等待，按当前状态返回；PAUSED 落盘由镜像 collector 的
+        // finally 迟到补齐（pauseRequested 标志已置位，终态裁决不受影响）。
+        try {
+            streamDone?.let { withTimeout(PAUSE_AWAIT_TIMEOUT_MS) { it.await() } }
+        } catch (e: TimeoutCancellationException) {
+            AppLogger.instance.warn(
+                LogCategory.ENGINE, TAG,
+                "pause(): stream finalize did not complete within ${PAUSE_AWAIT_TIMEOUT_MS / 1000}s; " +
+                    "PAUSED checkpoint will be persisted late"
+            )
+        }
+        return _activeTask.value?.status == TaskStatus.PAUSED
+    }
+
+    /** 用户请求取消（终态）。返回 false = 当前无可取消任务。 */
+    suspend fun cancel(): Boolean {
+        val task = _activeTask.value ?: return false
+        if (task.isTerminal) return false
+        cancelRequested = true
+        if (streamDone != null) {
+            engine.abort()
+            // ═══ #351④ 修复：与 pause() 对齐加 withTimeout ═══
+            // 旧实现裸 await()：引擎挂在最长 5 分钟的孤儿 deferred / LLM
+            // readTimeout / 不可中断工具上时，cancel 调用协程同步挂起同样
+            // 时长——受害链：AgentChatViewModel.abort()、sendMessage 的
+            // 串行化（taskController.cancel() 后才 executeNormalMessage）、
+            // LOOP 的 submitLoopTurn——用户看到的就是「发新消息卡死」。
+            // 超时后放弃等待返回；CANCELLED 落盘由镜像 collector 的 finally
+            // 迟到补齐（cancelRequested 已置位，终态裁决不受影响）。
+            try {
+                streamDone?.let { withTimeout(CANCEL_AWAIT_TIMEOUT_MS) { it.await() } }
+            } catch (e: TimeoutCancellationException) {
+                AppLogger.instance.warn(
+                    LogCategory.ENGINE, TAG,
+                    "cancel(): stream finalize did not complete within " +
+                        "${CANCEL_AWAIT_TIMEOUT_MS / 1000}s; " +
+                        "forcing mirror collector cancellation"
+                )
+                // ═══ P1 真取消兜底（停止/发新消息停不下在途执行）═══
+                // 超时意味着镜像收集器仍挂着：LLM HTTP 流的取消钩子挂在
+                // 收集协程上而它无人取消（engine.abort() 只是标志位，仅在
+                // 迭代边界生效）—— 在途工具照跑、token 继续烧，紧随其后
+                // 的 execute 撞互斥位直接丢消息。cancel 镜像 Job：OkHttp
+                // response 关闭 / 引擎流终止 / finally 释放互斥位 +
+                // CANCELLED 落盘（cancelRequested 已置位，终态裁决不受影响）。
+                mirrorJob?.cancel()
+                // 互斥位释放有界等待（镜像 finally 异步执行，通常毫秒级）：
+                // 给紧随其后的 execute（sendMessage 串行化路径）让路，
+                // 防 check(tryClaim()) 拒绝丢消息。超时则照常返回——
+                // 调用方重试时报错可见，不再静默。
+                val deadline = clock() + CLAIM_RELEASE_WAIT_MS
+                while (claiming.get() && clock() < deadline) {
+                    delay(CLAIM_RELEASE_POLL_MS)
+                }
+                // 超时按标志位返回：cancel 请求已受理（返回 false 会被调用方
+                // 误读为「无可取消任务」）；终态由镜像 finally 迟到补齐。
+                return cancelRequested
+            }
+        } else {
+            // 无执行流（PAUSED/WAITING/FAILED 态直接取消）：
+            // FAILED→CANCELLED 是表内直达边（放弃路径）；其余经 CANCELLING 瞬态链
+            val t = if (task.status == TaskStatus.FAILED) {
+                TaskStatusMachine.transition(task, TaskStatus.CANCELLED, clock())
+            } else {
+                TaskStatusMachine.transition(task, TaskStatus.CANCELLING, clock())
+                    .let { TaskStatusMachine.transition(it, TaskStatus.CANCELLED, clock()) }
+            }
+            persist(t, CheckpointBoundary.CANCELLED)
+            emitRuntime(TaskRuntimeEvent.Finished(t.taskId, t.status))
+        }
+        return _activeTask.value?.status == TaskStatus.CANCELLED
+    }
+
+    /** 恢复暂停任务。返回执行流；null = 任务不可恢复（状态非 PAUSED/互斥占用）。 */
+    fun resume(): Flow<AgentEvent>? {
+        val task = _activeTask.value ?: return null
+        if (task.status != TaskStatus.PAUSED) return null
+        // P2-12 修复：原子占位替代先查后占——并发 resume 的输家在这里拿到 false，
+        // 直接返回 null（文档语义），而不是让 executeAsTask 的 check() 抛
+        // IllegalStateException。
+        if (!tryClaim()) return null
+
+        // 注入恢复提示：告诉 LLM 从中断点继续（上下文同引擎连续）
+        val resumeNote = "[RESUME] 此前任务被用户暂停。当前进度：${
+            if (task.steps.isNotEmpty()) "步骤 ${task.completedSteps}/${task.steps.size} 完成" else "进行中"
+        }。从中断处继续，不要重复已完成的操作。"
+        // 二轮审计 A-2：与 retry()/resumeFromCrash() 同款占位释放护栏——
+        // executeAsTask 在 scope.launch 前同步抛出（persist IO 失败/非法迁移）时
+        // 释放互斥位再重抛，否则此后所有 execute/resume/retry 永久被拒（锁死）。
+        return try {
+            executeAsTask(UserInput.text(resumeNote), resumeOf = task, alreadyClaimed = true)
+        } catch (e: Throwable) {
+            claiming.set(false)
+            throw e
+        }
+    }
+
+    /** 重试失败任务（retryCount 上限校验）。返回执行流；null = 不允许重试。 */
+    fun retry(): Flow<AgentEvent>? {
+        val task = _activeTask.value ?: return null
+        if (task.status != TaskStatus.FAILED) return null
+        if (task.retryCount >= retryLimit) {
+            emitRuntimeSync(TaskRuntimeEvent.RetryExhausted(task.taskId, task.retryCount))
+            return null
+        }
+        // P2-12 修复：同 resume——原子占位，竞态输家返回 null 而非抛 IllegalStateException。
+        if (!tryClaim()) return null
+
+        try {
+            val retrying = TaskStatusMachine.transition(task, TaskStatus.RETRYING, clock())
+                .copy(retryCount = task.retryCount + 1)
+            persist(retrying, CheckpointBoundary.RETRY_STARTED)
+
+            val retryNote = "[RETRY] 上次执行失败：${task.error ?: "unknown"}。重试整个任务，" +
+                "已完成且成功的操作（见对话历史）不要重复执行。"
+            return executeAsTask(UserInput.text(retryNote), resumeOf = retrying, alreadyClaimed = true)
+        } catch (e: Throwable) {
+            // 占位后、launch 前抛出（如非法状态迁移）：释放占位再重抛，避免互斥锁死
+            claiming.set(false)
+            throw e
+        }
+    }
+
+    // ═══ 崩溃恢复（N-5/D-3）═══
+
+    /**
+     * 启动发现（D-3：调用方为 VM init，确定性文件扫描）。
+     *
+     * 返回可恢复任务列表；PAUSED 态任务含在列表中（用户可选择继续），
+     * 其他活跃态（RUNNING/WAITING/…）已在发现时迁移 RECOVERING。
+     * 同步 IO —— 调用方应在 IO dispatcher 调度。
+     */
+    fun discoverRecoverableTasks(): List<AgentTask> {
+        if (claiming.get()) return emptyList() // 执行中不做发现（保守）
+        val active = store.loadActiveTasks()
+        val recovered = mutableListOf<AgentTask>()
+        for (task in active) {
+            // v2 闪退防御：单任务的恢复迁移/修补/落盘失败（历史脏数据、旧版本
+            // 状态、磁盘异常）只跳过该任务并留痕 —— 不允许炸掉整个恢复扫描
+            // （扫描运行在 VM init 协程里，任何逃逸异常都会杀死进程）。
+            val migratedTask = runCatching {
+                val entry = TaskStatusMachine.crashRecoveryEntry(task.status)
+                // null = 不参与恢复（终态）；entry == status = 保持原态（PAUSED 语义）
+                if (entry == null || entry == task.status) {
+                    task // PAUSED：保持，等用户显式 resume
+                } else {
+                    val migrated = TaskStatusMachine.transition(task, entry, clock())
+                    // 恢复扫描即修补悬空历史（R-5）：镜像 memory 修补一次并回写
+                    repairDanglingInMemory()
+                    persist(migrated, CheckpointBoundary.RECOVERED)
+                    migrated
+                }
+            }.onFailure { e ->
+                AppLogger.instance.error(
+                    LogCategory.ENGINE,
+                    TAG,
+                    "恢复扫描跳过任务 ${task.taskId}（状态 ${task.status}）：${e.message}"
+                )
+            }.getOrNull() ?: continue
+            recovered.add(migratedTask)
+        }
+        _activeTask.value = recovered.maxByOrNull { it.updatedAt }
+        return recovered
+    }
+
+    /**
+     * 从崩溃任务继续执行（用户在恢复横幅上选择"继续"）。
+     *
+     * 恢复注入 = RecoveryPolicy 提示（先验证 UNKNOWN 操作）。null = 不可恢复。
+     */
+    fun resumeFromCrash(taskId: String): Flow<AgentEvent>? {
+        val task = _activeTask.value?.takeIf { it.taskId == taskId }
+            ?: store.load(taskId)?.takeIf { it.isActive }
+            ?: return null
+        // P2-12 修复（同 resume/retry）：原子占位，竞态输家返回 null
+        if (!tryClaim()) return null
+
+        try {
+            val plan = RecoveryPolicy.planForTask(
+                task,
+                classify = { toolPolicy.classify(it) },
+                isUserInteraction = { toolPolicy.isUserInteractionTool(it) }
+            )
+            val prompt = RecoveryPolicy.buildRecoveryPrompt(plan, task)
+            // 状态迁移统一由 executeAsTask 处理（PAUSED/RECOVERING→RUNNING）
+            return executeAsTask(UserInput.text(prompt), resumeOf = task, alreadyClaimed = true)
+        } catch (e: Throwable) {
+            claiming.set(false)
+            throw e
+        }
+    }
+
+    /** 恢复前修补持久化对话历史中的悬空 toolCall（R-5）。 */
+    private fun repairDanglingInMemory() {
+        val mem = memory ?: return
+        runCatching {
+            val history = mem.load()
+            val report = DanglingToolCallRepair.repair(history)
+            if (report.hasRepairs) {
+                mem.save(report.repairedHistory)
+                AppLogger.instance.warn(
+                    LogCategory.ENGINE, TAG,
+                    "repaired ${report.repairedCallIds.size} dangling toolCalls in persisted history"
+                )
+            }
+        }.onFailure {
+            AppLogger.instance.error(LogCategory.ENGINE, TAG, "dangling repair failed: ${it.message}", it)
+        }
+    }
+
+    // ═══ 任务历史查询（D-4：模型一等 + 历史列表）═══
+
+    fun loadTaskHistory(): List<AgentTask> = store.loadAllTasks()
+
+    // ═══ 辅助 ═══
+
+    private fun newTask(input: UserInput, now: Long): AgentTask {
+        val cfg = configProvider()
+        return AgentTask(
+            taskId = TaskIds.newId(now),
+            title = input.text.lineSequence().firstOrNull()?.take(TaskStoreLimits.MAX_TITLE_LENGTH) ?: "Task",
+            userInput = input.text,
+            mode = cfg.mode,
+            configSnapshot = cfg,
+            createdAt = now
+        )
+    }
+
+    private fun extractSteps(event: AgentEvent): List<TaskStepModel>? = when (event) {
+        is AgentEvent.PlanConfirmed -> event.plan.steps.map {
+            TaskStepModel(
+                stepId = "s${it.index}", index = it.index, description = it.description,
+                toolName = it.toolName, dependsOn = it.dependsOn
+            )
+        }
+        else -> null
+    }
+
+    /** 压缩后重注入的任务状态 system 消息（N-9：受保护位）。 */
+    private fun buildTaskStateMessage(task: AgentTask): String = buildString {
+        append("[TASK STATE — 此消息由系统维护，压缩时保留]")
+        appendLine()
+        append("任务：${task.title}")
+        if (task.steps.isNotEmpty()) {
+            appendLine()
+            append("进度：${task.completedSteps}/${task.steps.size} 步完成")
+            task.steps.dropLast(0).take(3).forEach {
+                appendLine("- [${it.status}] ${it.description.take(60)}")
+            }
+        }
+        append("依据此状态继续执行，勿重复已完成步骤。")
+    }
+
+    private fun persist(task: AgentTask, boundary: CheckpointBoundary) {
+        val stamped = task.copy(updatedAt = clock())
+        // TaskStore 为同步阻塞语义（D-1 契约）；调用方运行于 IO dispatcher。
+        // 失败不中断执行流（checkpoint 是尽力而为的持久层）。
+        //
+        // 先落盘再更新内存态：保证 _activeTask 对外可见的状态必已持久化，
+        // 消除 waitTerminal(内存态可见 COMPLETED) 与 store.load(持久态仍 RUNNING)
+        // 之间的竞态——内存态绝不能领先于持久态。
+        runCatching { store.save(stamped) }.onFailure { e ->
+            AppLogger.instance.error(
+                LogCategory.ENGINE, TAG,
+                "checkpoint save failed at $boundary: ${e.message}", e
+            )
+        }
+        _activeTask.value = stamped
+    }
+
+    private fun transitionAndPersist(
+        task: AgentTask,
+        to: TaskStatus,
+        boundary: CheckpointBoundary,
+        error: String? = null
+    ) {
+        val migrated = TaskStatusMachine.transition(task, to, clock())
+            .let { if (error != null) it.copy(error = error.take(TaskStoreLimits.MAX_ERROR_LENGTH)) else it }
+        persist(migrated, boundary)
+        emitRuntimeSync(TaskRuntimeEvent.StatusChanged(migrated.taskId, to))
+    }
+
+    private suspend fun persistSummary(task: AgentTask, summary: String, toolCalls: Int) {
+        persist(
+            task.copy(
+                // S-c（5a）：引擎 Complete.summary 已改空串（去聊天流"任务完成"提醒）。
+                // 空摘要落盘为 null —— TaskHistoryScreen 的"结果"段按 null 隐藏，
+                // 避免历史卡出现空标题。任务目标另有 goal 字段，不依赖此摘要。
+                completionSummary = summary.take(TaskStoreLimits.MAX_OUTPUT_DIGEST).ifBlank { null },
+                operations = task.operations // journal 保持
+            ),
+            CheckpointBoundary.COMPLETED
+        )
+    }
+
+    private suspend fun emitRuntime(event: TaskRuntimeEvent) {
+        runCatching { _runtimeEvents.emit(event) }
+    }
+
+    private fun emitRuntimeSync(event: TaskRuntimeEvent) {
+        runCatching { _runtimeEvents.tryEmit(event) }
+    }
+
+    /** 供关闭测试用（生产单例不关闭）。 */
+    fun shutdown() {
+        scope.cancel()
+    }
+
+    /**
+     * **测试专用**：模拟进程被 SIGKILL。
+     *
+     * 与 [shutdown] 的关键区别：短路 finalize（真实死亡不执行 finally），
+     * TaskStore 停留在最后一个 checkpoint（崩溃现场原样）。用于确定性
+     * 崩溃恢复测试（任务书 §23：模拟死亡 ≠ 真机 E2E，如实声明）。
+     */
+    fun simulateCrash() {
+        crashSimulated = true
+        scope.cancel()
+    }
+
+    private fun AgentTask.appendOperation(op: ToolOperationRecord): AgentTask =
+        copy(
+            operations = (operations + op).takeLast(TaskStoreLimits.MAX_JOURNAL_SIZE)
+        )
+
+    companion object {
+        private const val TAG = "TaskRuntime"
+
+        /** P2-14：pause() 等待引擎流收尾的上限（引擎可能挂在最长 readTimeout 的 LLM 调用上）。 */
+        internal const val PAUSE_AWAIT_TIMEOUT_MS = 10_000L
+
+        /**
+         * #351④：cancel() 等待引擎流收尾的上限，与 [PAUSE_AWAIT_TIMEOUT_MS] 同源
+         * （引擎可挂点同族：LLM readTimeout / 孤儿确认 deferred 最长 5 分钟 /
+         * 不可中断工具）。超时后放弃等待返回，CANCELLED 落盘由镜像 finally 迟到补齐。
+         */
+        internal const val CANCEL_AWAIT_TIMEOUT_MS = 10_000L
+
+        /**
+         * P1 真取消：超时强杀镜像后，互斥位释放的有界等待上限（镜像 finally
+         * 毫秒级完成；此值只是兜底，防极端情况下 cancel 调用方被拖久）。
+         */
+        internal const val CLAIM_RELEASE_WAIT_MS = 2_000L
+
+        /** 互斥位等待的轮询间隔。 */
+        private const val CLAIM_RELEASE_POLL_MS = 50L
+
+        /**
+         * #351③：UI 转发 tap 的高水位线。正常收集时积压不过几十；只在
+         * 收集者消失（Activity 销毁/后台 LOOP）时持续攀升——越线后丢弃
+         * 可丢的流式 chunk，把无界堆积（数万事件 MB 级 → LMK）封顶在
+         * ~千级事件（约 1-2MB）。
+         */
+        internal const val TAP_HIGH_WATERMARK = 1024
+
+        /** 用户显式重试上限（任务书 §7：不允许无限 retry）。 */
+        const val DEFAULT_RETRY_LIMIT = 3
+    }
+
+    /**
+     * #351③：高水位下可丢的事件族（仅流式过程 chunk——丢过程不丢结果：
+     * UI 最终回复文本由 Complete 携带、工具最终输出由 ToolCallComplete 携带）。
+     * 边界/确认/终态事件（Error、Complete、Aborted、UserInputRequired、
+     * Plan/Spec 确认类、Usage/压缩）永不丢。
+     */
+    private fun AgentEvent.isDroppableUnderPressure(): Boolean = when (this) {
+        is AgentEvent.ResponseChunk,
+        is AgentEvent.ThinkingChunk,
+        is AgentEvent.ToolOutputChunk,
+        is AgentEvent.ToolProgress -> true
+        else -> false
+    }
+}
+
+/**
+ * 任务生命周期低频事件（§16：AgentEvent 冻结，任务关联走此通道）。
+ * 模式对应 A68 TaskLifecycleEvent，但携带持久层语义。
+ */
+sealed interface TaskRuntimeEvent {
+    /** 持久层状态迁移。 */
+    data class StatusChanged(val taskId: String, val status: TaskStatus) : TaskRuntimeEvent
+
+    /** Checkpoint 落盘（含边界类型——观测/测试用）。 */
+    data class CheckpointSaved(val taskId: String, val boundary: CheckpointBoundary) : TaskRuntimeEvent
+
+    /** 任务到达终态。 */
+    data class Finished(val taskId: String, val status: TaskStatus) : TaskRuntimeEvent
+
+    /** 重试预算耗尽。 */
+    data class RetryExhausted(val taskId: String, val retryCount: Int) : TaskRuntimeEvent
+
+    /** 发现可恢复的崩溃任务（VM init 扫描）。 */
+    data class RecoverableDiscovered(val tasks: List<AgentTask>) : TaskRuntimeEvent
+}

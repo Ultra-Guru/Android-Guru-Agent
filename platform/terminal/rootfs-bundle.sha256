@@ -1,0 +1,15 @@
+# T84: 内置完整 Ubuntu rootfs 档案指纹清单（jniLibs 伪 .so 交付）。
+# 单一真值 ×2：本清单（bash/CI 用，格式与 proot-binaries.sha256 一致）与
+# BundledRootfsSource.kt 注册表（运行时用）—— BundledRootfsSourceTest 交叉校验防漂移。
+#
+# 数据来源（rootfs.yml CI 构建，run #10，2026-09-19 实测；builder 为
+# scripts/build_full_rootfs.sh：官方 ubuntu-base 24.04.4 骨架 + 58 包完整 CLI 环境，
+# 真实 chroot + binfmt qemu-user-static 构建）：
+#   https://github.com/Ultra-Guru/Android-Guru-Agent/releases/tag/ubuntu-rootfs-24.04.4-full
+#   （同 Release 附 rootfs-digests.txt：sha256 / size / unpacked 三字段真值表）
+# 拉取与暂存：scripts/fetch_rootfs.sh（构建期执行；这些大档案不入库）。
+# 完整环境体积：压缩 ~282-310MB/架构，解压 ~0.93-1.1GB。
+# 重跑构建（档案内容变）= 显式人工变更：本清单 + Kotlin 注册表 + 脚本 + 测试同步更新。
+3b8a82393304e38a5209ad1f2b32e6160506ecfc06dda33f3773b9e6b2e392e2  src/main/jniLibs/arm64-v8a/libubuntu-rootfs.so
+57fb03f916cae40202134594a6ad063167174714e1ad36a50f0575b015b87228  src/main/jniLibs/x86_64/libubuntu-rootfs.so
+fe4e1a0ccd8d73c376c8ed7281a0ccc60041dfba71d735b163a2e657558e250a  src/main/jniLibs/armeabi-v7a/libubuntu-rootfs.so

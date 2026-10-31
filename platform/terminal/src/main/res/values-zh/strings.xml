@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- T91: terminal 前台服务通知（中文 —— 与 values/ 同名键一一对应） -->
+    <string name="terminal_service_channel_name">终端运行时</string>
+    <string name="terminal_service_channel_desc">离开屏幕后保持终端会话与 Ubuntu 任务继续运行</string>
+    <string name="terminal_service_notif_title">终端</string>
+    <string name="terminal_service_notif_text">终端会话进行中…</string>
+</resources>

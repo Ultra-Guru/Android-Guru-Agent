@@ -1,0 +1,99 @@
+package com.apex.agent.platform.terminal.tools.v2
+
+import com.apex.agent.platform.terminal.io.InputOwner
+import com.apex.agent.platform.terminal.io.TerminalKey
+import com.apex.agent.platform.terminal.runtime.TerminalRuntime
+import com.apex.agent.platform.terminal.tools.TerminalTool
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.jsonArray
+
+/**
+ * Agent tool: TerminalWrite
+ *
+ * Spec ref: ATR 2.0 Final Spec §34.5
+ *
+ * Write input to a Session. Owner is assigned automatically by Runtime (Agent tool calls → AGENT,
+ * UI → USER); do NOT pass owner. Use kind=LINE to append newline, RAW for exact bytes, KEY for
+ * special keys (Ctrl+C etc.), PASTE for bracketed paste (T82: wraps ESC[200~/ESC[201~ when the
+ * session enabled paste mode 2004 — vim/readline treat it as one atomic paste, no auto-newline).
+ * For interactive prompts detected by InputWaiting.
+ *
+ * JSON Schema (input):
+ *   { sessionId: int, kind?: "RAW"|"LINE"|"KEY"|"PASTE"=LINE, text?: string, key?: string }
+ * JSON Schema (output):
+ *   { written: bool, bytesWritten: int, cursor: int, inputOwner: "AGENT"|"USER"|"SYSTEM" }
+ * Errors: SessionNotFound, SessionClosed, PermissionDenied, OwnerBusy, WriteFailed, InvalidInput
+ *
+ * KEY names: ENTER, TAB, BACKSPACE, ESC, CTRL_C, CTRL_D, CTRL_Z, ARROW_UP/DOWN/LEFT/RIGHT,
+ *   HOME, END, DELETE, PAGE_UP, PAGE_DOWN, INSERT, F1-F12（T82：F 键已全量映射）
+ */
+class TerminalWriteTool(
+    private val runtime: TerminalRuntime
+) : TerminalTool {
+    override val id: String = "TerminalWrite"
+    override val name: String = id
+    override val description: String = """
+        Write input to a Session. Owner is assigned automatically by Runtime (Agent tool calls →
+        AGENT, UI → USER); do NOT pass owner. Use kind=LINE to append newline, RAW for exact bytes,
+        KEY for special keys (Ctrl+C, arrows, F1-F12), PASTE for bracketed paste (atomic insert,
+        no newline). For interactive prompts detected by InputWaiting.
+    """.trimIndent()
+
+    override val parametersSchema: String = """
+{"type":"object","properties":{"sessionId":{"type":"integer"},"kind":{"type":"string","enum":["RAW","LINE","KEY","PASTE"],"default":"LINE"},"text":{"type":"string"},"key":{"type":"string"}},"required":["sessionId"]}
+""".trimIndent()
+
+    suspend fun execute(input: Input): Output {
+        val key: TerminalKey? = input.key
+        val result = runtime.write(
+            sessionId = input.sessionId,
+            owner = InputOwner.AGENT,   // auto-injected: Agent tool → AGENT
+            kind = input.kind,
+            text = input.text,
+            key = key
+        )
+        return result.fold(
+            onSuccess = { r -> Output(
+                written = r.written, bytesWritten = r.bytesWritten,
+                cursor = r.cursor, inputOwner = r.inputOwner.name
+            ) },
+            onFailure = { throw it }
+        )
+    }
+
+    override suspend fun invoke(arguments: String): String {
+        val json = Json.parseToJsonElement(arguments).jsonObject
+        // 别名宽容（实录 #8）：schema 层已互认，工具层同步读取
+        val sessionId = json.longArg("sessionId", "session_id")
+            ?: throw IllegalArgumentException("sessionId required (accepted: sessionId, session_id)")
+        val kind = runCatching { TerminalRuntime.WriteKind.valueOf(json.stringArg("kind") ?: "LINE") }.getOrDefault(TerminalRuntime.WriteKind.LINE)
+        val text = json.stringArg("text")
+        val key = json.stringArg("key")?.let { runCatching { TerminalKey.valueOf(it) }.getOrNull() }
+        val out = execute(Input(sessionId, kind, text, key))
+        // heredoc 前置警告（实录 #7）：text 里含 heredoc 起始符时提示风险；
+        // 补终结符的自救写入（单行终结文本）不含 <<，不会误报。
+        val heredocHint = text?.let { AgentGuidance.heredocAdvisory(it) }
+        return buildJsonObject {
+            put("written", JsonPrimitive(out.written)); put("bytesWritten", JsonPrimitive(out.bytesWritten)); put("cursor", JsonPrimitive(out.cursor)); put("inputOwner", JsonPrimitive(out.inputOwner))
+            heredocHint?.let { put("hint", JsonPrimitive(it)) }
+        }.toString()
+    }
+
+    data class Input(
+        val sessionId: Long,
+        val kind: TerminalRuntime.WriteKind = TerminalRuntime.WriteKind.LINE,
+        val text: String? = null,
+        val key: TerminalKey? = null
+    )
+
+    data class Output(
+        val written: Boolean,
+        val bytesWritten: Int,
+        val cursor: Long,
+        val inputOwner: String
+    )
+}

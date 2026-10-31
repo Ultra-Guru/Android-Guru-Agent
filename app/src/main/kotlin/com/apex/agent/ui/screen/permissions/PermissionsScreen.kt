@@ -1,0 +1,506 @@
+package com.apex.agent.ui.screen.permissions
+
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import android.view.accessibility.AccessibilityManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Accessibility
+import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material3.Button
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.viewModelScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.apex.agent.R
+import com.apex.agent.platform.privilege.PrivilegeDetector
+import com.apex.agent.platform.privilege.PrivilegeManager
+import com.apex.agent.platform.privilege.shizuku.ShizukuCommandExecutor
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * #210：权限页 ViewModel —— 把 PrivilegeManager.refreshStatus() 接进 UI 生命周期。
+ *
+ * 此前 refreshStatus() 全仓零调用：用户在 Shizuku/无障碍授权后，
+ * DefaultPrivilegeManager 的 StateFlow 恒为初始值 false，PrivilegeUiProvider
+ * 判定不可用，UiTap/UiSwipe 永远回退 input 命令。现在 ON_RESUME 与授权
+ * 动作返回时都会重探并回灌（事件驱动的 binder/服务监听之外的双保险）。
+ */
+@HiltViewModel
+class PermissionsViewModel @Inject constructor(
+    private val privilegeManager: PrivilegeManager
+) : ViewModel() {
+
+    /** 重探 Root/Shizuku/无障碍并回灌 StateFlow（幂等，IO 调度由实现内收敛）。 */
+    fun refresh() {
+        viewModelScope.launch {
+            runCatching { privilegeManager.refreshStatus() }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PermissionsScreen(viewModel: PermissionsViewModel = hiltViewModel()) {
+    val context = LocalContext.current
+    var hasRoot by remember { mutableStateOf(false) }
+    var hasShizuku by remember { mutableStateOf(false) }
+    // v2：Root 检测 = fork `su --version` + waitFor(3s) + 多个 File.exists 磁盘 IO，
+    // 旧实现直接在 onClick（主线程）同步执行 → 轻则掉帧重则 ANR。
+    // 现在检测统一挂到 IO 线程，回主线程只更新状态。
+    val scope = rememberCoroutineScope()
+
+    // 系统级权限的实时状态
+    var accessibilityGranted by remember { mutableStateOf(false) }
+    var overlayGranted by remember { mutableStateOf(false) }
+    var notifGranted by remember { mutableStateOf(false) }
+    var storageGranted by remember { mutableStateOf(false) }
+
+    // 混沌审查修复（CR #C2）：POST_NOTIFICATIONS 仅在清单声明、从未运行时请求 ——
+    // Android 13+ 全新安装默认拒绝，前台服务通知静默不可见，用户误以为服务已死。
+    // 授权成功后刷新状态；拒绝/永久拒绝时仍回退到系统设置页。
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        notifGranted = granted || NotificationManagerCompat.from(context).areNotificationsEnabled()
+    }
+
+    // 在后台检测权限（ON_RESUME 也会重检：从系统设置页返回后刷新"未获得→已获得"）
+    suspend fun refreshPermissionStates() = withContext(Dispatchers.IO) {
+        hasRoot = PrivilegeDetector.detectRoot()
+        hasShizuku = PrivilegeDetector.detectShizuku()
+        accessibilityGranted = context.isAccessibilityServiceEnabled()
+        overlayGranted = Settings.canDrawOverlays(context)
+        notifGranted = NotificationManagerCompat.from(context).areNotificationsEnabled()
+        storageGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            android.os.Environment.isExternalStorageManager()
+        } else {
+            context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    // 修复：原仅 LaunchedEffect(Unit) 首次组合时检测一次 ——
+    // 用户跳到系统设置授权后返回本屏，状态仍显示"未获得"直到切屏重进
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        scope.launch { refreshPermissionStates() }
+        // #210：回到前台即重探特权状态并回灌 StateFlow ——
+        // 从 Shizuku/无障碍授权页返回后，执行链选路与遥测不再用旧状态
+        viewModel.refresh()
+    }
+
+    LaunchedEffect(Unit) {
+        refreshPermissionStates()
+    }
+
+    Scaffold(
+        // 内层 Scaffold 置零 insets：状态栏已由根 Scaffold 顶栏承担，避免双重叠加
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = {
+            TopAppBar(
+                // 顶栏置零 windowInsets，避免与根 Scaffold 状态栏双重叠加
+                windowInsets = WindowInsets(0, 0, 0, 0),
+                title = { Text(stringResource(R.string.perms_title)) }
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                // 修复：6 张卡片 ~600dp+ 在短屏/横屏下溢出不可滚 —— 补垂直滚动
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Root
+            PermissionCard(
+                icon = Icons.Default.AdminPanelSettings,
+                title = "Root",
+                description = stringResource(R.string.perms_root_desc),
+                status = if (hasRoot) Status.Granted else Status.Denied,
+                actionLabel = stringResource(R.string.perms_detect),
+                onClick = {
+                    // v2：Root 检测下沉 IO 线程（fork su 最多 3s，主线程执行会 ANR）
+                    scope.launch {
+                        val root = withContext(Dispatchers.IO) { PrivilegeDetector.detectRoot() }
+                        hasRoot = root
+                        storageGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            android.os.Environment.isExternalStorageManager()
+                        } else {
+                            context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+                        }
+                        overlayGranted = Settings.canDrawOverlays(context)
+                        notifGranted = NotificationManagerCompat.from(context).areNotificationsEnabled()
+                        accessibilityGranted = context.isAccessibilityServiceEnabled()
+                    }
+                }
+            )
+
+            // Shizuku — 专用卡片，带安装/授权引导
+            ShizukuPermissionCard(
+                shizukuAvailable = hasShizuku,
+                onStatusChanged = {
+                    hasShizuku = PrivilegeDetector.detectShizuku()
+                    // #210：授权动作后立即重探 StateFlow（授权结果事件之外的双保险）
+                    viewModel.refresh()
+                }
+            )
+
+            // 无障碍
+            PermissionCard(
+                icon = Icons.Default.Accessibility,
+                title = stringResource(R.string.perms_accessibility),
+                description = stringResource(R.string.perms_accessibility_desc),
+                status = if (accessibilityGranted) Status.Granted else Status.Denied,
+                actionLabel = if (accessibilityGranted) stringResource(R.string.perms_enabled)
+                else stringResource(R.string.perms_enable),
+                onClick = { context.openAccessibilitySettings() }
+            )
+            PermissionCard(
+                icon = Icons.Default.Layers,
+                title = stringResource(R.string.perms_overlay),
+                description = stringResource(R.string.perms_overlay_desc),
+                status = if (overlayGranted) Status.Granted else Status.Denied,
+                actionLabel = if (overlayGranted) stringResource(R.string.perms_granted)
+                else stringResource(R.string.perms_authorize),
+                onClick = { context.openOverlaySettings() }
+            )
+            PermissionCard(
+                icon = Icons.Default.Notifications,
+                title = stringResource(R.string.perms_notifications),
+                description = stringResource(R.string.perms_notifications_desc),
+                status = if (notifGranted) Status.Granted else Status.Denied,
+                actionLabel = if (notifGranted) stringResource(R.string.perms_granted)
+                else stringResource(R.string.perms_authorize),
+                onClick = {
+                    // Android 13+：优先走标准运行时权限请求，而非直接跳系统设置页
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notifGranted) {
+                        notifPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        context.openNotificationSettings()
+                    }
+                }
+            )
+            PermissionCard(
+                icon = Icons.Default.Folder,
+                title = stringResource(R.string.perms_storage),
+                description = stringResource(R.string.perms_storage_desc),
+                status = if (storageGranted) Status.Granted else Status.Denied,
+                actionLabel = if (storageGranted) stringResource(R.string.perms_granted)
+                else stringResource(R.string.perms_authorize),
+                onClick = { context.openStorageSettings() }
+            )
+        }
+    }
+}
+
+/** 打开本应用的无障碍设置页。 */
+private fun Context.openAccessibilitySettings() {
+    runCatching {
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        })
+    }
+}
+
+/** 打开本应用的悬浮窗设置页。 */
+private fun Context.openOverlaySettings() {
+    runCatching {
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // ACTION_MANAGE_APP_OVERLAY_SETTINGS 在部分 compileSdk 平台下不可见，使用字面值
+            Intent("android.settings.action.MANAGE_APP_OVERLAY_SETTINGS", Uri.parse("package:$packageName"))
+        } else {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+    }
+}
+
+/** 打开本应用的通知设置页。 */
+private fun Context.openNotificationSettings() {
+    runCatching {
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            }
+        } else {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+    }
+}
+
+/** 打开本应用的存储(所有文件访问)设置页。 */
+private fun Context.openStorageSettings() {
+    runCatching {
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName"))
+        } else {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
+    }
+}
+
+/** 检测本应用的无障碍服务是否已启用。 */
+private fun Context.isAccessibilityServiceEnabled(): Boolean {
+    val am = getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager ?: return false
+    val enabled = am.getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+    return enabled.any { it.resolveInfo?.serviceInfo?.packageName == packageName }
+}
+
+/**
+ * Shizuku 专用权限卡片
+ *
+ * 三态显示 + 引导按钮：
+ * - 未运行 → "安装/启动" 按钮（打开 Shizuku app 或下载页）
+ * - 运行中但未授权 → "授权" 按钮（调用 Shizuku.requestPermission）
+ * - 已授权 → "已就绪" 标记
+ */
+@Composable
+private fun ShizukuPermissionCard(
+    shizukuAvailable: Boolean,
+    onStatusChanged: () -> Unit
+) {
+    val context = LocalContext.current
+    val shizukuRunning = remember { mutableStateOf(false) }
+    val shizukuPermission = remember { mutableStateOf(false) }
+
+    // 检测细分状态：服务运行中？已授权？
+    LaunchedEffect(shizukuAvailable) {
+        shizukuRunning.value = ShizukuCommandExecutor.isAvailable()
+        shizukuPermission.value = ShizukuCommandExecutor.hasPermission()
+    }
+
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            val shizukuAccent = when {
+                shizukuPermission.value -> MaterialTheme.colorScheme.primary
+                shizukuRunning.value -> MaterialTheme.colorScheme.secondary
+                else -> MaterialTheme.colorScheme.error
+            }
+            Surface(
+                shape = CircleShape,
+                color = shizukuAccent.copy(alpha = 0.15f),
+                modifier = Modifier.size(44.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Default.Shield, null,
+                        tint = shizukuAccent,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Shizuku", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    val shizukuStatus = when {
+                        shizukuPermission.value -> Status.Granted
+                        shizukuRunning.value -> Status.Running
+                        else -> Status.Denied
+                    }
+                    StatusPill(shizukuStatus, shizukuAccent)
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    stringResource(R.string.perms_shizuku_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Button(
+                onClick = {
+                    when {
+                        !shizukuRunning.value -> {
+                            // Shizuku 未运行 — 尝试打开 Shizuku app
+                            try {
+                                val intent = Intent().apply {
+                                    setClassName(
+                                        "moe.shizuku.privileged.api",
+                                        "moe.shizuku.manager.MainActivity"
+                                    )
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                // Shizuku app 未安装 — 打开下载页
+                                // P2 fix：无浏览器应用的设备（TV/精简 ROM） startActivity
+                                // 抛 ActivityNotFoundException，需兜底，不能二次崩溃
+                                try {
+                                    val uri = Uri.parse("https://shizuku.rikka.app/")
+                                    val intent = Intent(Intent.ACTION_VIEW, uri)
+                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    context.startActivity(intent)
+                                } catch (_: Exception) {
+                                    // 无浏览器可用：静默降级，仅刷新状态
+                                }
+                            }
+                        }
+                        !shizukuPermission.value -> {
+                            // 请求权限
+                            ShizukuCommandExecutor.requestPermission(1001)
+                        }
+                    }
+                    // 刷新状态
+                    onStatusChanged()
+                    shizukuRunning.value = ShizukuCommandExecutor.isAvailable()
+                    shizukuPermission.value = ShizukuCommandExecutor.hasPermission()
+                }
+            ) {
+                Text(
+                    when {
+                        shizukuPermission.value -> stringResource(R.string.perms_ready)
+                        shizukuRunning.value -> stringResource(R.string.perms_authorize)
+                        else -> stringResource(R.string.perms_install_launch)
+                    }
+                )
+            }
+        }
+    }
+}
+
+private enum class Status { Granted, Denied, Pending, Running }
+
+/** i18n：状态徽标文案（@Composable，经 stringResource 按当前语言取词）。 */
+@Composable
+private fun statusLabel(status: Status): String = when (status) {
+    Status.Granted -> stringResource(R.string.perms_status_granted)
+    Status.Denied -> stringResource(R.string.perms_status_denied)
+    Status.Pending -> stringResource(R.string.perms_status_pending)
+    Status.Running -> stringResource(R.string.perms_status_running)
+}
+
+@Composable
+private fun PermissionCard(
+    icon: ImageVector,
+    title: String,
+    description: String,
+    status: Status,
+    actionLabel: String,
+    onClick: () -> Unit = {}
+) {
+    val accent = when (status) {
+        Status.Granted -> MaterialTheme.colorScheme.primary
+        Status.Running -> MaterialTheme.colorScheme.secondary
+        Status.Denied -> MaterialTheme.colorScheme.error
+        Status.Pending -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp) // 统一卡片半径（Skill/Memory/Market/聊天均 12dp，原 16 为孤例）
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = accent.copy(alpha = 0.15f),
+                modifier = Modifier.size(44.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(icon, null, tint = accent, modifier = Modifier.size(24.dp))
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    StatusPill(status, accent)
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Button(onClick = onClick) {
+                Text(actionLabel)
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusPill(status: Status, accent: androidx.compose.ui.graphics.Color) {
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = accent.copy(alpha = 0.14f)
+    ) {
+        Text(
+            statusLabel(status),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Medium,
+            color = accent,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+        )
+    }
+}

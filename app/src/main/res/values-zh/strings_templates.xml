@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ═══ #197 模板工坊（Template Studio）═══ -->
+    <string name="templates_tab_agent">Agent 模板</string>
+    <string name="templates_tab_coding">Coding 模板</string>
+    <string name="templates_coding_roles_title">Coding 专家</string>
+    <string name="templates_coding_roles_subtitle">内置语言与技术专家模板，选择即生效（无需重启）</string>
+    <string name="templates_agent_list_title">Agent 提示词模板</string>
+    <string name="templates_agent_list_subtitle">翻译/总结/写作等通用任务 —— 服务 Agent 屏</string>
+    <string name="templates_coding_list_title">Coding 提示词模板</string>
+    <string name="templates_coding_list_subtitle">代码评审/提交信息等开发任务 —— 服务 Coding 屏</string>
+    <string name="templates_create">新建</string>
+    <string name="templates_builtin">内置（复制后可改）</string>
+    <string name="templates_edit">编辑</string>
+    <string name="templates_duplicate">复制</string>
+    <string name="templates_delete">删除</string>
+    <string name="templates_editor_new">新建模板</string>
+    <string name="templates_editor_edit">编辑模板</string>
+    <string name="templates_field_name">名称</string>
+    <string name="templates_field_description">说明</string>
+    <string name="templates_field_content">正文（支持 {{变量}} 占位符）</string>
+    <string name="templates_content_hint">在这里编写提示词…用 {{变量}} 做占位符</string>
+    <string name="templates_vars_detected">检测到变量：%1$s</string>
+    <string name="templates_save">保存</string>
+    <string name="templates_cancel">取消</string>
+    <string name="templates_use">使用模板</string>
+    <string name="templates_use_title">使用：%1$s</string>
+    <string name="templates_use_optional">%1$s（可选）</string>
+    <string name="templates_use_generate">生成</string>
+    <string name="templates_use_result">生成的提示词（内置模板已注入确定性分析附录）</string>
+    <string name="templates_use_copied">已复制 —— 粘贴到聊天即可使用</string>
+    <string name="templates_builtin_locked">内置模板（锁定 —— 可使用或复制）</string>
+    <!-- ═══ v1.9 角色详情（经验卡 + Git 专属技能）═══ -->
+    <string name="templates_role_activate">激活此角色</string>
+    <string name="templates_role_active">当前激活角色</string>
+    <string name="templates_role_experience_title">经验卡（跨会话积累）</string>
+    <string name="templates_role_experience_count">%1$d 张</string>
+    <string name="templates_role_experience_empty">暂无经验 —— 每次任务结束后自动沉淀（场景、工具链、结果、下次注意），同类任务开工时自动检索注入。</string>
+    <string name="templates_role_experience_clear">清空</string>
+    <string name="templates_role_experience_clear_confirm_title">清空经验卡？</string>
+    <string name="templates_role_experience_clear_confirm_body">该角色沉淀的全部经验将被删除，且不可恢复。</string>
+    <string name="templates_role_experience_notes">下次注意：%1$s</string>
+    <string name="templates_role_experience_hits">已复用 %1$d 次</string>
+    <string name="templates_role_experience_meta">%1$d 轮 · %2$d 次调用</string>
+    <string name="templates_role_delete_exp">删除此经验卡</string>
+    <string name="templates_role_skills_title">Git 专属技能</string>
+    <string name="templates_role_skills_subtitle">阶段化 runbook，默认全部开启，可按需关闭 —— 下轮请求即生效（无需重启）。</string>
+    <string name="templates_role_skill_source">上游：%1$s</string>
+</resources>

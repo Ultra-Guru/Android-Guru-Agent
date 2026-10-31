@@ -1,0 +1,383 @@
+package com.apex.agent.ui
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.apex.agent.BuildConfig
+import com.apex.agent.R
+import com.apex.agent.ui.theme.LocalExtendedColors
+import com.apex.agent.ui.glass.GlassNavigationItem
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+
+/**
+ * ═══════════════════════════════════════════════════════════════
+ *  ApexDrawerContent —— Liquid Glass 迁移版
+ * ═══════════════════════════════════════════════════════════════
+ *
+ * Spec §5B / §17：
+ *  - Drawer 本体不整面玻璃化 —— 玻璃只落在每个 Navigation Item 上；
+ *  - 每项保留品牌层级：强调色指示条 + 圆形图标井 + 文字；
+ *  - Normal 非常轻 / Selected 提亮 / Pressed 短暂高光；
+ *  - 结构：氛围背景 = layerBackdrop 采样源 —— 导航项悬浮其上做真实
+ *    backdrop 采样（GPU blur + lens 折射）。
+ */
+@Composable
+fun ApexDrawerContent(
+    currentDestination: DrawerDestination,
+    onDestinationSelected: (DrawerDestination) -> Unit,
+) {
+    val appVm: AppStatusViewModel = hiltViewModel()
+    val githubState by appVm.githubTokenManager.connectionState.collectAsStateWithLifecycle()
+    val drawerBackdrop = rememberLayerBackdrop()
+
+    ModalDrawerSheet(
+        modifier = Modifier.width(288.dp),
+        drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        // ═══ 玻璃舞台：氛围背景为源，导航列悬浮采样 ═══
+        Box(modifier = Modifier.fillMaxSize()) {
+            DrawerAuroraBackdrop(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .layerBackdrop(drawerBackdrop)
+            )
+            Column(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                // ═══ 可滚动导航区（weight(1f)：列表短时底座仍沉底）═══
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    // ═══ 品牌头部（柔和光晕，随内容滚动） ═══
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                                        Color.Transparent
+                                    )
+                                )
+                            )
+                            .padding(20.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Surface(
+                                modifier = Modifier.size(40.dp),
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                tonalElevation = 0.dp
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Default.SmartToy,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                            Column {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "APEX//AGENT",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = MaterialTheme.colorScheme.secondaryContainer
+                                    ) {
+                                        Text(
+                                            "v${BuildConfig.VERSION_NAME}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    stringResource(R.string.drawer_tagline),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // ═══ 玻璃导航项 —— 每项独立玻璃材质，Normal 极轻 ═══
+                    val destinations = listOf(
+                        // Coding 模式：本软件的唯一核心工作流页
+                        DrawerDestination.Code,
+                        // #197 模板工坊：Agent/Coding 双层模板 + Agent 角色详细设置
+                        DrawerDestination.Templates,
+                        // T97：Ubuntu 开发环境安装页（rootfs 生命周期 + 版本自选依赖）
+                        DrawerDestination.UbuntuEnv,
+                        DrawerDestination.HubCenter,
+                        // 浏览器大功能（v1.5.0 内置化）：市场后的高频工作流入口
+                        DrawerDestination.Browser,
+                        DrawerDestination.Memory,
+                        // v1.4.4 #6：用量仪表盘（数据洞察，与任务历史相邻）
+                        DrawerDestination.Usage,
+                        DrawerDestination.Storage,
+                        DrawerDestination.Permissions,
+                        // #167 加密剪切板金库：与权限页相邻（同为安全入口）
+                        DrawerDestination.Vault,
+                        DrawerDestination.Log,
+                        // v1.4.4 #7：诊断中心（日志/崩溃/设备信息，与日志页相邻）
+                        DrawerDestination.Diagnostics,
+                        DrawerDestination.Settings,
+                        // 游乐场（玻璃实验室正上方）：插件化街机 —— 十款 pretext
+                        // HTML 游戏插件 + 可导入外部 HTML + 原生《字符风暴》孪生
+                        DrawerDestination.Playground,
+                        DrawerDestination.GlassLab
+                    )
+
+                    destinations.forEach { dest ->
+                        GlassNavigationItem(
+                            icon = dest.icon,
+                            label = stringResource(dest.labelRes),
+                            selected = currentDestination == dest,
+                            onClick = { onDestinationSelected(dest) },
+                            backdrop = drawerBackdrop,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
+                // ═══ 固定底座：关于入口（最下方）+ 状态区 ═══
+                // v1.4.3：关于从设置页升级为一级页面 —— 固定在抽屉最下方，
+                // 不随导航列表滚动（版本号已在品牌头部徽章展示）。
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                GlassNavigationItem(
+                    icon = DrawerDestination.About.icon,
+                    label = stringResource(DrawerDestination.About.labelRes),
+                    selected = currentDestination == DrawerDestination.About,
+                    onClick = { onDestinationSelected(DrawerDestination.About) },
+                    backdrop = drawerBackdrop,
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+
+                // ═══ 底部状态（GitHub 连接） ═══
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    GithubStatusRow(
+                        isConnected = githubState.isConnected,
+                        username = githubState.username
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 抽屉氛围背景 —— 玻璃的真实采样源。
+ * 渐变 + 双光晕 + 细网格：终端质感的“可被玻璃折射的环境光”。
+ * 静态绘制，无逐帧动画 —— 性能零负担。
+ *
+ * 极简黑白风格下退化为纯色底（零光晕 / 零网格）—— 环境装饰是玻璃
+ * 材质语言的配套件，扁平风格下保留会成为无声噪音。
+ */
+@Composable
+private fun DrawerAuroraBackdrop(modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val minimal = com.apex.agent.ui.theme.LocalUiStyle.current ==
+        com.apex.agent.ui.theme.UiStyle.MINIMAL
+    val base = scheme.surfaceContainerLow
+    if (minimal) {
+        Canvas(modifier = modifier) { drawRect(base) }
+        return
+    }
+    val glowA = scheme.primary.copy(alpha = 0.10f)
+    val glowB = scheme.tertiary.copy(alpha = 0.07f)
+    val grid = scheme.onSurfaceVariant.copy(alpha = 0.05f)
+    val topWash = scheme.primaryContainer.copy(alpha = 0.22f)
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        drawRect(base)
+        // 顶部主色洗刷 —— 与品牌头呼应
+        drawRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(topWash, Color.Transparent),
+                startY = 0f,
+                endY = h * 0.30f
+            )
+        )
+        // 双光晕：右上主色 / 左下品红
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(glowA, Color.Transparent),
+                center = Offset(w * 0.85f, h * 0.12f),
+                radius = w * 0.9f
+            ),
+            radius = w * 0.9f,
+            center = Offset(w * 0.85f, h * 0.12f)
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(glowB, Color.Transparent),
+                center = Offset(w * 0.10f, h * 0.92f),
+                radius = w * 0.8f
+            ),
+            radius = w * 0.8f,
+            center = Offset(w * 0.10f, h * 0.92f)
+        )
+        // 细网格 —— 玻璃滑过时提供可见的“内容”纹理
+        val cell = 24.dp.toPx()
+        var x = 0f
+        while (x < w) {
+            drawLine(grid, Offset(x, 0f), Offset(x, h), strokeWidth = 1f)
+            x += cell
+        }
+        var y = 0f
+        while (y < h) {
+            drawLine(grid, Offset(0f, y), Offset(w, y), strokeWidth = 1f)
+            y += cell
+        }
+    }
+}
+
+/**
+ * 抽屉 footer 的 GitHub 连接状态行：常显。
+ * - 官方 Octocat mark 图标（旧实现只有一个彩色圆点，无品牌辨识度）
+ * - 已连接：绿色状态点 + "@用户名"
+ * - 未连接：灰色状态点 + "GitHub 未连接"
+ */
+@Composable
+private fun GithubStatusRow(
+    isConnected: Boolean,
+    username: String?
+) {
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_github_mark),
+                contentDescription = "GitHub",
+                tint = if (isConnected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(14.dp)
+            )
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(
+                        // UI-016：连接点收编 token（原硬编码 4CAF50/9E9E9E
+                        // 浅色 2.2-2.3:1）；未连接灰用 onSurfaceVariant
+                        if (isConnected) LocalExtendedColors.current.success
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+            )
+            Text(
+                text = if (isConnected) "@${username ?: "GitHub"}"
+                else stringResource(R.string.drawer_github_not_connected),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (isConnected)
+                    MaterialTheme.colorScheme.primary
+                else
+                    MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatusChip(label: String, value: String) {
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                value,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}

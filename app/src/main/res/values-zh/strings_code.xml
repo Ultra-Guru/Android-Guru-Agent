@@ -1,0 +1,402 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Coding 模式（Code 屏）字符串（中文）。 -->
+<resources>
+    <!-- 抽屉目的地 -->
+    <string name="drawer_code">代码</string>
+
+    <!-- 工作区条 -->
+    <string name="code_no_workspace">无工作区</string>
+    <string name="code_switch_workspace">切换工作区</string>
+    <string name="code_delete_workspace">删除工作区</string>
+    <string name="code_new_workspace">新建工作区…</string>
+    <string name="code_clear_chat">新会话</string>
+
+    <!-- Todo 面板 -->
+    <string name="code_todo_progress">任务 %1$d/%2$d</string>
+
+    <!-- 消息流 / 输入 -->
+    <string name="code_input_hint">描述一个编码任务…</string>
+    <string name="code_input_hint_no_api">模型 API 未配置——请到抽屉「设置」页添加…</string>
+    <string name="code_api_missing_got_it">知道了</string>
+    <string name="code_send">发送</string>
+    <string name="code_stop">停止</string>
+    <string name="code_dismiss">关闭</string>
+
+    <!-- AskUser 对话框 -->
+    <string name="code_question_title">智能体需要你的输入</string>
+    <string name="code_question_hint">输入你的回答…</string>
+    <string name="code_question_default_yes">是</string>
+    <string name="code_question_submit">回答</string>
+
+    <!-- 新建工作区对话框 -->
+    <string name="code_new_workspace_title">新建编码工作区</string>
+    <string name="code_workspace_name_hint">工作区名称（如 my-app）</string>
+    <string name="code_create">创建</string>
+    <string name="code_cancel">取消</string>
+
+    <!-- 编辑器面板（v1.0 #154） -->
+    <string name="code_editor_close">关闭编辑器</string>
+    <string name="code_editor_loading">加载中…</string>
+    <string name="code_editor_binary">二进制文件，不支持预览</string>
+    <string name="code_editor_empty">空文件</string>
+    <string name="code_editor_lines_fmt">%1$d 行</string>
+    <string name="code_editor_truncated_fmt">仅显示前 %1$d 行，共 %2$d 行</string>
+
+    <!-- 工具权限（v1.0 #155） -->
+    <string name="code_perm_section_title">工具权限</string>
+    <string name="code_perm_section_subtitle">标准权限模式与规则</string>
+    <string name="code_perm_mode_label">权限模式</string>
+    <string name="code_perm_mode_bypass">全自动（默认）</string>
+    <string name="code_perm_mode_default">标准（高危询问）</string>
+    <string name="code_perm_mode_accept_edits">接受编辑</string>
+    <string name="code_perm_mode_plan">规划模式</string>
+    <string name="code_perm_mode_bypass_desc">所有工具（含 shell 命令、MCP、技能）直接执行 —— 默认档位；拒绝与询问规则仍生效，付费等敏感动作仍逐次确认</string>
+    <string name="code_perm_mode_default_desc">基础工具自动放行，仅删除等高危操作需要确认</string>
+    <string name="code_perm_mode_accept_edits_desc">文件编辑与 git 提交自动放行，其余先询问</string>
+    <string name="code_perm_mode_plan_desc">只读规划：任何会修改环境的工具都会被拒绝</string>
+    <string name="code_perm_rules_title">工具权限规则（按序首匹配）</string>
+    <string name="code_perm_rules_empty">暂无规则；规则可对匹配的工具越级放行或收紧</string>
+    <string name="code_perm_rule_add">添加规则</string>
+    <string name="code_perm_dialog_title">添加权限规则</string>
+    <string name="code_perm_rule_pattern_label">工具 ID 模式</string>
+    <string name="code_perm_rule_pattern_hint">精确 ID，或前缀加尾星（如 code_git_ 加星、mcp__ 加星）；单独一个星号匹配全部</string>
+    <string name="code_perm_effect_label">匹配后动作</string>
+    <string name="code_perm_effect_allow">允许</string>
+    <string name="code_perm_effect_ask">询问</string>
+    <string name="code_perm_effect_deny">拒绝</string>
+    <string name="code_perm_rule_delete">删除规则</string>
+    <string name="code_perm_save">保存</string>
+    <string name="code_perm_cancel">取消</string>
+
+    <!-- 行为规则（v1.1 #164） -->
+    <string name="code_rules_section_title">行为规则</string>
+    <string name="code_rules_section_subtitle">全局规则与 AGENTS.md 项目规则</string>
+    <string name="code_rules_global_label">全局规则</string>
+    <string name="code_rules_global_hint">对所有工作区与两种模式生效；超过 32768 字符的部分注入时会被截断</string>
+    <string name="code_rules_global_count_fmt">%1$d / %2$d 字符</string>
+    <string name="code_rules_project_title">项目规则（AGENTS.md）</string>
+    <string name="code_rules_project_status_loaded_fmt">已加载：%1$s</string>
+    <string name="code_rules_project_status_missing">未创建（在工作区根放置 AGENTS.md / CLAUDE.md / .cursorrules 即生效）</string>
+    <string name="code_rules_project_status_no_workspace">无工作区——请先在 Code 屏创建或选择工作区</string>
+    <string name="code_rules_project_create">创建模板</string>
+    <string name="code_rules_section_note">优先级：项目规则（AGENTS.md）＞ 全局规则 ＞ 一般偏好；均低于安全与权限约束</string>
+
+    <!-- ═══ v1.2 七档思考系统（coding 模式专属文案；ULTRACODE/APEXCODE 与聊天页共享键） ═══ -->
+    <string name="code_thinking_selector_title">思考档位(7 档 + 自动)</string>
+    <string name="code_thinking_none_desc">不推理直接执行,进出最快(迭代 ×0.8)</string>
+    <string name="code_thinking_light_desc">看一眼就改:定位、打补丁、确认结果,省 token</string>
+    <string name="code_thinking_standard_desc">标准编码循环:读 → 改 → 验证 → 回读,最小改动</string>
+    <string name="code_thinking_deep_desc">先列改动清单再动手,每一项都对应验证方式</string>
+    <string name="code_thinking_maximum_desc">先找不变量和影响面,每次改动后整链回查</string>
+    <string name="code_thinking_ultracode_desc">编码深推理:理清依赖 → 列候选改法 → 按风险排序 → 最小修改 → 立即验证(迭代 ×2.0)</string>
+    <string name="code_thinking_apexcode_desc">架构级穷举 + 自我审查 + 全量验证(迭代 ×3.0,仅手动可选)</string>
+    <string name="code_thinking_auto_desc">自动:每次发送前按任务难度选档,卡住时自动加深,不会自动选到 Apex</string>
+
+    <!-- v1.2 思考档位指南（CodeThinkingGuideSheet） -->
+    <string name="code_thinking_guide_title">思考档位指南</string>
+    <string name="code_thinking_guide_subtitle">7 个深度档（NONE 一路到 APEXCODE）+ AUTO 元档逐轮自适应；换档同时改提示词、模型参数与执行策略</string>
+    <string name="code_thinking_guide_table_title">档位阶梯总表</string>
+    <string name="code_thinking_guide_col_level">档位</string>
+    <string name="code_thinking_guide_col_budget">budget</string>
+    <string name="code_thinking_guide_col_effort">effort</string>
+    <string name="code_thinking_guide_col_iters">迭代</string>
+    <string name="code_thinking_guide_col_output">输出</string>
+    <string name="code_thinking_guide_auto_row">跟随</string>
+    <string name="code_thinking_guide_tap_hint">点击任意档位卡片可直接切换</string>
+    <string name="code_thinking_guide_current_badge">当前</string>
+    <string name="code_thinking_guide_coding_view">编码视角</string>
+    <string name="code_thinking_guide_footer_linkage">档位联动的不只是提示词：迭代上限、压缩阈值与工具输出预算都随档位缩放（数值见上方总表）。</string>
+    <string name="code_thinking_guide_footer_apex">APEXCODE 仅手动可选：AUTO 选档永不触及，token 成本也是全梯度天花板。</string>
+
+    <!-- ═══ 会话上下文（上下文用量圆环 + 详情弹层；深潜线全量 / kit 线降级）═══ -->
+    <string name="code_context_ring_cd_fmt">上下文用量：%1$d%%</string>
+    <string name="code_context_title">会话上下文</string>
+    <string name="code_context_copy_all">复制全部</string>
+    <string name="code_context_copied">已复制</string>
+    <string name="code_context_no_engine">引擎未就绪</string>
+    <string name="code_context_empty">当前逻辑线的引擎未开放会话内容查看，仅显示用量统计；切回「深潜」线可查看完整内容</string>
+    <string name="code_context_role_system">系统</string>
+    <string name="code_context_role_user">你</string>
+    <string name="code_context_role_assistant">助手</string>
+    <string name="code_context_role_tool">工具</string>
+    <string name="code_context_rules">全局规则</string>
+    <string name="code_context_extras">会话附加</string>
+
+    <!-- ═══ Token 用量卡（圆环点击详情：具体用了多少 / 输入输出 / 缓存命中率）═══ -->
+    <string name="code_context_usage_section">Token 用量</string>
+    <string name="code_context_usage_context">上下文占用</string>
+    <string name="code_context_usage_ctx_fmt">%1$d / %2$d（%3$d%%）</string>
+    <string name="code_context_usage_in">输入 tokens（会话累计）</string>
+    <string name="code_context_usage_out">输出 tokens（会话累计）</string>
+    <string name="code_context_usage_cache">缓存命中率</string>
+    <string name="code_context_usage_pct_fmt">%1$d%%</string>
+    <string name="code_context_usage_cache_na">暂无数据</string>
+    <string name="code_context_usage_messages">消息条数</string>
+    <string name="code_context_usage_tokens_fmt">%1$d</string>
+
+    <!-- ═══ v1.4.10 Coding 历史对话（新会话自动归档，可恢复）═══ -->
+    <string name="code_history_open">对话历史</string>
+    <string name="code_history_title">对话历史</string>
+    <string name="code_history_empty">还没有归档的对话——新开会话时会自动归档当前对话</string>
+    <string name="code_history_no_user_msg">(无用户消息)</string>
+    <string name="code_history_archived_fmt">已归档当前对话（%1$d 条消息）——随时可在对话历史中恢复</string>
+    <string name="code_history_restore_failed">恢复失败：归档对话缺失或已损坏</string>
+    <string name="code_history_delete">删除</string>
+    <string name="code_history_delete_confirm">删除这条对话？</string>
+    <string name="code_history_delete_msg_fmt">删除后不可恢复：%1$s</string>
+    <string name="code_history_cancel">取消</string>
+    <string name="code_history_export">导出为 Markdown</string>
+    <string name="code_history_export_chooser">分享编码会话</string>
+    <string name="code_history_export_not_found">归档为空或已损坏——没有可导出的内容</string>
+    <string name="code_history_export_failed">导出 Markdown 失败</string>
+
+    <!-- ═══ v1.2 长任务中心 ═══ -->
+    <string name="code_longtask_open">长任务中心</string>
+    <string name="code_longtask_sheet_title">长任务</string>
+    <string name="code_longtask_empty">还没有长任务记录</string>
+    <string name="code_longtask_empty_hint">超过阈值的编码运行（迭代/工具/时长/文件）会自动留档</string>
+    <string name="code_longtask_status_completed">已完成</string>
+    <string name="code_longtask_status_failed">失败</string>
+    <string name="code_longtask_status_aborted">已中止</string>
+    <string name="code_longtask_status_running">运行中</string>
+    <string name="code_longtask_copies_fmt">已复制 x%1$d</string>
+    <string name="code_longtask_stats_fmt">%1$d 轮 · %2$d 工具 · %3$s · %4$d 文件</string>
+    <string name="code_longtask_goal_label">任务目标</string>
+    <string name="code_longtask_files_header">改动文件（%1$d）</string>
+    <string name="code_longtask_todos_header">todo 快照</string>
+    <string name="code_longtask_checkpoints_fmt">检查点 x%1$d（每 5 轮 / 60s）</string>
+    <string name="code_longtask_error_label">错误：</string>
+    <string name="code_longtask_export">导出 / 分享</string>
+    <string name="code_longtask_export_missing">记录不存在（可能已被删除）</string>
+    <string name="code_longtask_export_failed">导出或分享失败，请重试</string>
+    <string name="code_longtask_copy">复制任务</string>
+    <string name="code_longtask_relaunch">重跑</string>
+    <string name="code_longtask_compare">对比上次</string>
+    <string name="code_longtask_delete">删除</string>
+    <string name="code_longtask_delete_confirm_fmt">删除任务记录「%1$s」？此操作不可恢复。</string>
+    <string name="code_longtask_confirm">确认</string>
+    <string name="code_longtask_cancel">取消</string>
+    <string name="code_longtask_copy_dialog_title">复制任务选项</string>
+    <string name="code_longtask_option_conversation">携带上次运行上下文</string>
+    <string name="code_longtask_option_todos">携带 todo 快照</string>
+    <string name="code_longtask_option_files">携带文件清单</string>
+    <string name="code_longtask_option_relaunch">复制后立即重跑</string>
+    <string name="code_longtask_option_title">新标题（可选）</string>
+    <string name="code_longtask_filter_all">全部</string>
+    <string name="code_longtask_resume">续跑</string>
+    <string name="code_longtask_resume_latest">从最后检查点续跑</string>
+    <string name="code_longtask_resume_at_fmt">从第 %1$d 轮检查点续跑</string>
+    <string name="code_longtask_resume_fallback">无检查点——带上下文重跑</string>
+
+    <!-- v1.2 检查点时间线（CodeLongTaskSheet 展开区） -->
+    <string name="code_longtask_cp_round_fmt">第 %1$d 轮</string>
+    <string name="code_longtask_cp_counts_fmt">%1$d 工具 · %2$d 文件</string>
+    <string name="code_longtask_cp_todos_fmt">☑%1$d ☐%2$d</string>
+    <string name="code_thinking_guide_open">查看档位指南</string>
+    <string name="code_thinking_no_native_effort">当前模型未开启推理:原生 reasoning_effort 参数不会随请求发送;档位对迭代次数、压缩阈值和提示词仍然生效。可在「设置 → 模型」里开启</string>
+    <!-- ═══ 胶囊流式输出（Coding 工作流时间轴）═══ -->
+    <string name="code_stream_group_expand">展开</string>
+    <string name="code_stream_diff_unnamed">（文件）</string>
+    <string name="code_stream_diff_stat_fmt">+%1$d −%2$d</string>
+    <string name="code_stream_diff_truncated">Diff 已截断——打开文件查看完整改动</string>
+    <string name="code_stream_terminal_idle">终端</string>
+    <string name="code_stream_terminal_toggle">展开/收起终端面板</string>
+    <string name="code_stream_terminal_empty">（暂无输出）</string>
+    <string name="code_stream_thinking_running">思考中…</string>
+    <string name="code_stream_thinking_done">思考链 · 点击展开</string>
+    <!-- Rikka 风格输出（v1.6 聊天式时间轴） -->
+    <string name="rikka_thinking_title">思考过程</string>
+    <string name="rikka_tool_block_running">正在调用工具…</string>
+    <string name="code_stream_verify_round_fmt">验证轮次 %1$d</string>
+    <string name="code_stream_verify_passed">通过</string>
+    <string name="code_stream_verify_failed">未通过</string>
+    <string name="code_stream_verify_unknown">进行中</string>
+    <string name="code_stream_verify_counts_fmt">%1$d 次编辑 · %2$d 次验证</string>
+    <string name="code_stream_verify_details_gone">恢复后明细不可回放</string>
+    <string name="code_stream_error_recoverable">可恢复错误</string>
+    <string name="code_stream_error_fatal">致命错误</string>
+    <string name="code_stream_files_touched">触碰 %1$d 个文件</string>
+    <string name="code_stream_fab_bottom">回到底部</string>
+    <string name="code_stream_empty_hint">时间轴还没有内容——在下方描述一个编码任务，或从右上角对话历史恢复归档会话</string>
+    <string name="code_stream_status_waiting">等待中</string>
+    <string name="code_stream_status_running">运行中</string>
+    <string name="code_stream_status_success">成功</string>
+    <string name="code_stream_status_failed">失败</string>
+    <string name="code_stream_status_applied">已应用</string>
+    <string name="code_stream_status_partial">已中断</string>
+    <string name="code_stream_exit_code_fmt">exit %1$d</string>
+    <string name="code_stream_files_more_fmt">+还有 %1$d 个</string>
+    <string name="code_stream_detail_diff_title">文件 Diff</string>
+    <string name="code_stream_detail_diff_missing">该调用未捕获到 diff 内容</string>
+    <string name="code_stream_detail_grep_title">搜索命中</string>
+    <string name="code_stream_detail_grep_empty">未捕获到命中结果</string>
+    <string name="code_stream_detail_terminal_title">终端输出</string>
+    <string name="code_stream_detail_output_title">工具输出</string>
+    <!-- ═══ Git 操作可视化卡（流水式 Git 可视化）═══ -->
+    <string name="code_git_visual_status">分支状态</string>
+    <string name="code_git_visual_commit">已提交</string>
+    <string name="code_git_visual_diff">差异统计</string>
+    <string name="code_git_visual_branch">分支操作</string>
+    <string name="code_git_visual_log">提交历史</string>
+    <string name="code_git_visual_clean">工作区干净</string>
+    <string name="code_git_visual_ahead_fmt">领先 %1$d</string>
+    <string name="code_git_visual_behind_fmt">落后 %1$d</string>
+    <string name="code_git_visual_staged_fmt">已暂存 %1$d</string>
+    <string name="code_git_visual_unstaged_fmt">未暂存 %1$d</string>
+    <string name="code_git_visual_untracked_fmt">未跟踪 %1$d</string>
+    <string name="code_git_visual_conflicts_fmt">%1$d 个冲突待解决</string>
+    <string name="code_git_visual_remaining_fmt">剩余未提交 %1$d 个文件</string>
+    <string name="code_git_visual_remaining_zero">剩余变更已清空</string>
+    <string name="code_git_visual_additions_fmt">+%1$d</string>
+    <string name="code_git_visual_deletions_fmt">−%1$d</string>
+    <string name="code_git_visual_failed_env">Ubuntu 环境未就绪——请先在终端页安装 Ubuntu</string>
+    <string name="code_git_visual_failed_no_workspace">无激活工作区——请先在 Code 屏创建或选择工作区</string>
+    <string name="code_git_visual_failed_not_repo">还不是 git 仓库——首次提交会自动初始化</string>
+    <string name="code_git_visual_failed_command">Git 命令失败</string>
+    <string name="code_git_visual_commits_fmt">最近 %1$d 条提交</string>
+    <!-- ═══ 任务排队（输入框任务队列）═══ -->
+    <string name="code_queue_waiting_title">等待发送</string>
+    <string name="code_queue_waiting_hint">当前任务完成后将自动发送</string>
+    <string name="code_queue_needs_confirm_title">等待排队</string>
+    <string name="code_queue_needs_confirm_hint">上一个任务未能顺利完成，确认后才开始排队执行</string>
+    <string name="code_queue_start">开始排队</string>
+    <string name="code_queue_cancel">取消</string>
+    <string name="code_queue_auto_sent">上一任务已完成——排队任务已自动发送</string>
+    <string name="code_queue_replaced">已有排队任务——已替换为最新输入</string>
+    <!-- ═══ 参数流式期：实时代码窗 + 同族聚合胶囊（折叠态显最新 + ×N）═══ -->
+    <string name="code_stream_group_count_fmt">分组共 %1$d 次调用</string>
+    <string name="code_stream_group_collapse">收起</string>
+    <string name="code_stream_streaming_writing">正在写入…</string>
+    <string name="code_stream_streaming_editing">正在编辑…</string>
+    <string name="code_stream_streaming_title_live">正在执行…</string>
+    <string name="code_stream_streaming_generating">正在生成参数…</string>
+    <string name="code_stream_streaming_preview_title">实时预览</string>
+    <string name="code_stream_streaming_omitted">…上文已省略</string>
+    <string name="code_stream_streaming_lines_fmt">%1$d 行</string>
+    <!-- ═══ 运行统计收尾卡（Complete 事件的结构化汇总）═══ -->
+    <string name="code_stream_run_stats_title">本轮完成</string>
+    <string name="code_stream_run_iterations_fmt">%1$d 轮</string>
+    <string name="code_stream_run_tools_fmt">%1$d 次工具</string>
+    <string name="code_stream_run_files_fmt">%1$d 个文件</string>
+    <string name="code_stream_run_failed_fmt">%1$d 次失败</string>
+    <string name="code_stream_run_skills_fmt">%1$d 次技能</string>
+    <string name="code_stream_run_mcp_fmt">%1$d 次 MCP</string>
+    <!-- ═══ 思考档位选择器 v2：短档名 + 胶囊标签 ═══ -->
+    <string name="code_thinking_chip">思考 · %1$s</string>
+    <string name="code_thinking_short_none">Off</string>
+    <string name="code_thinking_short_light">Light</string>
+    <string name="code_thinking_short_standard">Standard</string>
+    <string name="code_thinking_short_deep">Deep</string>
+    <string name="code_thinking_short_maximum">Max</string>
+    <string name="code_thinking_short_ultracode">Ultra</string>
+    <string name="code_thinking_short_apexcode">Apex</string>
+    <string name="code_thinking_short_auto">Adaptive</string>
+    <!-- ═══ v1.5 思考逻辑双引擎（右上角切换：深潜 = 自研 / 标准 = 标准任务循环）═══ -->
+    <string name="code_logic_chip">逻辑 · %1$s</string>
+    <string name="code_logic_selector_title">思考逻辑</string>
+    <string name="code_logic_mode_deep_dive">深潜</string>
+    <string name="code_logic_mode_standard">标准</string>
+    <string name="code_logic_badge_deep_dive">七档 · 自适应</string>
+    <string name="code_logic_badge_standard">任务循环</string>
+    <string name="code_logic_deep_dive_desc">默认逻辑:七档思考深度,发送前自动选档,卡住时自动加深</string>
+    <string name="code_logic_standard_desc">标准 Agent 循环:角色设定、权限确认、子任务委派、上下文压缩</string>
+    <string name="code_logic_caps_deep_dive">七档深度 · 自动选档 · 迭代与压缩随档缩放</string>
+    <string name="code_logic_caps_standard">角色画像 · 权限三选 · task 子代理 · 会话压缩</string>
+    <string name="code_logic_switch_blocked">任务运行中——请等本轮结束再切换</string>
+    <string name="code_logic_switched_standard">思考逻辑已切换为「标准」。原会话已保留,切回即可继续。</string>
+    <string name="code_logic_mode_loom">织造</string>
+    <string name="code_logic_badge_loom">多轮并行</string>
+    <string name="code_logic_loom_desc">多轮交织循环:对话与工具调用交替推进,支持多任务并行和中途改向</string>
+    <string name="code_logic_caps_loom">多轮工具协议 · 并行子任务 · 会话压缩</string>
+    <string name="code_logic_switched_loom">思考逻辑已切换为「织造」。原会话已保留,切回即可继续。</string>
+    <string name="code_logic_mode_courier">信使</string>
+    <string name="code_logic_badge_courier">调度并行</string>
+    <string name="code_logic_courier_desc">调度循环:指令排队或插队、工具并行执行、权限确认、子任务转交</string>
+    <string name="code_logic_caps_courier">指令排队 · 并行工具 · 权限确认 · 子任务转交</string>
+    <string name="code_logic_switched_courier">思考逻辑已切换为「信使」。原会话已保留,切回即可继续。</string>
+    <string name="code_logic_switched_deep_dive">思考逻辑已切换为「深潜」。原会话已保留,切回即可继续。</string>
+    <string name="code_logic_unknown_mode">/logic:%1$s 无法识别——可用 /logic:standard、/logic:loom、/logic:courier 或 /logic:deep_dive(别名:std、weave、express、deep)</string>
+    <!-- v1.6 工作区浏览器（apex-kit-workspace）；v6 独立 Git 面板已于
+         2026-10 移除（与浏览器内置 Git 页重复）-->
+    <!-- 工作区选择（输入栏内选择器，2026-10）：真实文件夹 + 整个系统 -->
+    <string name="code_workspace_pick_folder">选择文件夹…</string>
+    <string name="code_workspace_whole_system">整个系统</string>
+    <string name="code_workspace_browser_cd">打开工作区浏览器</string>
+    <string name="drawer_workspace_browser">工作区</string>
+    <string name="code_stream_terminal_running">运行中</string>
+
+    <!-- ═══ #312 i18n 批次 2：VM / 归约层 / 编辑器用户可见文案 ═══ -->
+    <!-- 工作区操作 -->
+    <string name="code_ws_create_failed">无法创建工作区（名称为空或已存在）</string>
+    <string name="code_ws_import_failed">无法导入所选文件夹——其位置无法解析为真实设备路径（云盘/下载集合类目录暂不支持）。请选择本地存储中的文件夹。</string>
+    <string name="code_ws_delete_blocked_running">任务运行中，不能删除工作区</string>
+    <string name="code_ws_delete_default">默认工作区不可删除</string>
+    <string name="code_ws_empty_env">空工作区</string>
+    <string name="code_ws_switched_fmt">已切换到工作区「%1$s」（%2$s）。描述你的编码任务开始吧。</string>
+
+    <!-- AUTO 预检通知 -->
+    <string name="code_adaptive_precheck_fmt">自适应预检：%1$s</string>
+    <!-- AUTO 深水区升档通知（运行中自动升级） -->
+    <string name="code_adaptive_escalate_fmt">⚠️ 深水区自动升档：%1$s</string>
+
+    <!-- 聊天气泡系统消息（CodeEventReducer 发出） -->
+    <string name="code_plan_confirmed_fmt">计划已确认，开始执行（%1$d 步）</string>
+    <string name="code_context_compressed_fmt">上下文已压缩（%1$d → %2$d tokens，%3$s）</string>
+    <string name="code_run_complete_fmt">完成 · %1$d 轮 · %2$d 次工具 · %3$ds</string>
+
+    <!-- 编辑器文件加载错误（EditorFileLoader 抛稳定码） -->
+    <string name="code_editor_err_empty_path">文件路径为空</string>
+    <string name="code_editor_err_escape_fmt">路径越界，已拒绝访问：%1$s</string>
+    <string name="code_editor_err_not_found_fmt">文件不存在：%1$s</string>
+    <string name="code_editor_err_directory_fmt">目标是目录，不支持预览：%1$s</string>
+    <string name="code_editor_err_too_large_fmt">文件过大（%1$d 字节，上限 5MB），不支持预览</string>
+
+    <!-- #209 错误条净化（高频异常类型） -->
+    <string name="code_err_socket_timeout">网络请求超时，请检查网络后重试</string>
+    <string name="code_err_connect">网络连接失败，请检查网络或服务地址</string>
+    <string name="code_err_unknown_host">无法解析服务地址，请检查网络或 API 配置</string>
+    <string name="code_err_socket">网络连接异常断开，请检查网络后重试</string>
+    <string name="code_err_ssl">安全连接（SSL/TLS）失败，请检查证书或代理设置</string>
+    <string name="code_err_eof">连接被服务端提前关闭，请稍后重试</string>
+    <string name="code_err_io">数据读写异常，请检查网络或存储后重试</string>
+    <string name="code_err_serialization">响应数据解析失败，请重试或更换模型</string>
+    <string name="code_err_json_encoding">响应数据解析失败（非 JSON 内容），请重试</string>
+    <string name="code_err_execute_failed_fmt">执行失败（%1$s）</string>
+    <string name="code_err_unknown_exception">未知异常</string>
+
+    <!-- 编码视角档位指引（CodeThinkingGuideSheet 逐档文案） -->
+    <string name="code_thinking_view_none">改文案、改常量、注释级微调——目标位置明确、不涉及逻辑分支。跑得最快（迭代×0.8、更早压缩），但模型完全不做前置推理，复杂一点的任务容易瞎改；拿不准就退回 LIGHT。</string>
+    <string name="code_thinking_view_light">单点小改：改一个函数 / 一段配置 / 一处样式，改动半径一目了然。一读一改的纪律（改前扫一眼、改完扫一眼 diff）足够兜住风险，成本只有 256 token 的思考预算——日常小修的默认选择。</string>
+    <string name="code_thinking_view_standard">常规功能改动：一个完整但有边界的小需求（加个校验 / 补个分支 / 接个回调）。读→改→验→回读的标准循环 + 最小 diff 纪律，成本适中。跨文件改动超过两处时建议升 DEEP。</string>
+    <string name="code_thinking_view_deep">多文件特性 / 有连锁反应的改动：先建「改动集清单」再动手，每处改动关联验证方式，探索类工作委派 CodeTask 子代理。工具失败后自动追加自检，成本开始显著（迭代×1.2），但能防住「改了 A 忘了 B」。</string>
+    <string name="code_thinking_view_maximum">危险区重构：动核心数据结构 / 公共工具函数 / 状态机转移——不变量一破就是连环 bug。识别不变量 + 连锁影响核对 + 终检三问清单全开，迭代×1.5。改错了回滚成本高于思考成本的地方，才值得开这档。</string>
+    <string name="code_thinking_view_ultracode">跨模块深改：一次改动波及 3 个以上模块 / 需要摸清整条调用链再动手。依赖地图→候选改法→风险排序→最小修改→即时验证→回归扫描的编码闭环，迭代×2.0、输出预算 12000——token 花费约为 STANDARD 的数倍，但换来「改完即验证、不留回归债」。</string>
+    <string name="code_thinking_view_apexcode">架构级大改：换框架 / 迁移数据层 / 重定义模块边界这类「改错就翻车」的工程。影响半径测绘 + 多方案对比矩阵 + 对抗性自审 + 全量验证矩阵 + 证据链汇报，迭代×3.0、budget 65536、更晚压缩保留完整证据链——全梯度成本天花板。只对真正的大活开：日常任务开它纯属烧 token。</string>
+    <string name="code_thinking_view_auto">不确定就选它：引擎按任务复杂度（长度 / 多步指示 / 代码含量 / 风险词 / 错误史）逐轮动态选档——简单问题秒切 NONE，深水区自动升到 ULTRACODE。永远不会自动选 APEXCODE（成本防线），想用巅峰档必须手动指定。</string>    <!-- 完整档生成中加载卡（v1.5） -->
+    <string name="code_stream_generating_title">正在生成完整回复…</string>
+    <string name="code_stream_generating_tools_fmt">已调用 %1$d 个工具</string>
+    <string name="code_stream_generating_failed_fmt">%1$d 个失败</string>
+    <!-- ═══ 工具使用聚合卡 + 调用溯源（v1.5.1）═══ -->
+    <string name="code_stream_aggregate_title_fmt">已调用 %1$d 个工具</string>
+    <string name="code_stream_aggregate_builtin_fmt">内置 %1$d</string>
+    <string name="code_stream_aggregate_skill_fmt">技能 %1$d</string>
+    <string name="code_stream_aggregate_mcp_fmt">MCP %1$d</string>
+    <string name="code_stream_aggregate_section_skills">技能</string>
+    <string name="code_stream_aggregate_section_mcp">MCP 服务器</string>
+    <string name="code_stream_aggregate_section_builtin">内置工具</string>
+    <string name="code_stream_aggregate_details">调用明细</string>
+    <string name="code_stream_aggregate_failed_short_fmt">%1$d 失败</string>
+    <string name="code_stream_kind_read">读取</string>
+    <string name="code_stream_kind_write">写入</string>
+    <string name="code_stream_kind_edit">编辑</string>
+    <string name="code_stream_kind_grep">搜索</string>
+    <string name="code_stream_kind_bash">命令</string>
+    <string name="code_stream_kind_git">Git</string>
+    <string name="code_stream_kind_lint">Lint</string>
+    <string name="code_stream_kind_test">测试</string>
+    <string name="code_stream_kind_plan">计划</string>
+    <string name="code_stream_kind_mcp">MCP</string>
+    <string name="code_stream_kind_skill">技能</string>
+    <string name="code_stream_detail_origin_skill">技能</string>
+    <string name="code_stream_detail_origin_mcp">MCP</string>
+</resources>

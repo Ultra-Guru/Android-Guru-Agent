@@ -1,0 +1,1001 @@
+name: CI
+
+on:
+  # 触发去重（2026-10-06，docs/ci/guard-rails-commit-range-incident.md §6.3）：
+  # 原先 push 含 feat/fix/refactor 分支 —— PR 分支推送同时命中 push 与
+  # pull_request 两类事件（并发键 refs/heads/* 与 refs/pull/*/merge 不同、
+  # 互不取消），每次 PR 更新 CI+QG+GuardRails 全部双倍运行（近 60 次运行中
+  # 16 组重复，重型 job（app-compile ~11min / build-apk）翻倍最伤）。PR 分支
+  # 由 pull_request 事件在 merge ref 上覆盖 —— 语义更准（含与 main 的合并
+  # 结果，正是合并后要面对的树）；push 只保留 main 落地终验。无 PR 的裸
+  # 分支推送不再触发 CI：本仓库所有变更均走 PR 流程，无覆盖损失。
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, 'feat/**']
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-analysis:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read apex-kit-standard pin
+        id: akitpin
+        # 标准任务循环库（com.apex.standardkit:standard-loop）——core:code-engine
+        # 的镜像编译需要库源码上 classpath（与 Gradle composite build 等价的
+        # kotlinc 裸编译路径）。缺锁回退 main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/standard-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-standard (standard-loop compile deps, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-standard
+          ref: ${{ steps.akitpin.outputs.sha }}
+          path: apex-kit-standard
+
+      - name: Read apex-kit-loom pin
+        id: lkitpin
+        # 织造循环库（com.apex.loomkit:loom-weave）——core:code-engine 的
+        # 镜像编译需要库源码上 classpath。缺锁回退 main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/loom-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-loom (loom-weave compile deps, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-loom
+          ref: ${{ steps.lkitpin.outputs.sha }}
+          path: apex-kit-loom
+
+      - name: Read apex-kit-courier pin
+        id: ckitpin
+        # 信使调度库（com.apex.courierkit:courier-dispatch）——core:code-engine 的
+        # 镜像编译需要库源码上 classpath。缺锁回退 main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/courier-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-courier (courier-dispatch compile deps, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-courier
+          ref: ${{ steps.ckitpin.outputs.sha }}
+          path: apex-kit-courier
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Cache Kotlin compiler + Maven jars
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/kotlinc
+            /tmp/apex-libs
+          key: kotlinc-2.3.21-libs-v1
+
+      - name: Install Kotlin compiler
+        run: |
+          if [ ! -x "$HOME/kotlinc/bin/kotlinc" ]; then
+            curl -sL https://github.com/JetBrains/kotlin/releases/download/v2.3.21/kotlin-compiler-2.3.21.zip -o /tmp/kotlin.zip
+            unzip -q /tmp/kotlin.zip -d $HOME/
+          fi
+          echo "$HOME/kotlinc/bin" >> $GITHUB_PATH
+
+      - name: Download Maven dependencies
+        run: |
+          mkdir -p /tmp/apex-libs
+          # Skip downloads when the cache hit already provisioned every jar.
+          NEED_DL=0
+          for jar in kotlin-stdlib-2.3.21.jar \
+                     kotlinx-coroutines-core-jvm-1.10.2.jar \
+                     kotlinx-serialization-json-jvm-1.9.0.jar \
+                     kotlinx-serialization-core-jvm-1.9.0.jar \
+                     okhttp-4.12.0.jar \
+                     okio-jvm-3.6.0.jar; do
+            [ -f "/tmp/apex-libs/$jar" ] || NEED_DL=1
+          done
+          if [ "$NEED_DL" -eq 0 ]; then
+            echo "✅ All Maven jars restored from cache"
+            exit 0
+          fi
+          KOTLIN_VER=2.3.21
+          COROUTINES_VER=1.10.2
+          SERIALIZATION_VER=1.9.0
+          OKHTTP_VER=4.12.0
+          for dep in \
+            "org/jetbrains/kotlin/kotlin-stdlib/$KOTLIN_VER/kotlin-stdlib-$KOTLIN_VER.jar" \
+            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/$COROUTINES_VER/kotlinx-coroutines-core-jvm-$COROUTINES_VER.jar" \
+            "org/jetbrains/kotlinx/kotlinx-serialization-json-jvm/$SERIALIZATION_VER/kotlinx-serialization-json-jvm-$SERIALIZATION_VER.jar" \
+            "org/jetbrains/kotlinx/kotlinx-serialization-core-jvm/$SERIALIZATION_VER/kotlinx-serialization-core-jvm-$SERIALIZATION_VER.jar" \
+            "com/squareup/okhttp3/okhttp/$OKHTTP_VER/okhttp-$OKHTTP_VER.jar" \
+            "com/squareup/okio/okio-jvm/3.6.0/okio-jvm-3.6.0.jar"; do
+            fname=$(basename "$dep")
+            curl -sL "https://repo1.maven.org/maven2/$dep" -o "/tmp/apex-libs/$fname"
+          done
+
+      - name: Compile core:logging
+        run: |
+          # T76：kotlinx-serialization 编译器插件（kotlin-compiler 发行版自带）
+          SER_PLUGIN=$HOME/kotlinc/lib/kotlinx-serialization-compiler-plugin.jar
+          CLASSPATH=$(find /tmp/apex-libs -name "*.jar" | tr '\n' ':')
+          kotlinc -Xplugin=$SER_PLUGIN -cp "$CLASSPATH" -d /tmp/build/logging \
+            $(find core/logging/src/main/kotlin -name "*.kt") \
+            -jvm-target 17
+
+      - name: Compile core:llm-adapter
+        run: |
+          # #298：llm-adapter 新增 core:logging 依赖（StreamingOpenAiClient 的
+          # SSE 解析失败限次日志）—— Gradle 侧 build.gradle.kts 已声明
+          # implementation(project(":core:logging"))，本镜像编译同步挂载
+          # /tmp/build/logging，否则 AppLogger/LogCategory 解析失败。
+          CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')/tmp/build/logging"
+          SER_PLUGIN=$HOME/kotlinc/lib/kotlinx-serialization-compiler-plugin.jar
+          kotlinc -Xplugin=$SER_PLUGIN -cp "$CLASSPATH" -d /tmp/build/llm-adapter \
+            $(find core/llm-adapter/src/main/kotlin -name "*.kt") \
+            -jvm-target 17
+
+      - name: Compile core:tool-registry
+        run: |
+          SER_PLUGIN=$HOME/kotlinc/lib/kotlinx-serialization-compiler-plugin.jar
+          # SsrfGuard（issue #341）引用 core:logging（AppLogger/LogCategory）——
+          # 镜像编译须挂载 /tmp/build/logging，否则 unresolved reference（Gradle 侧
+          # build.gradle.kts 已声明 implementation(project(":core:logging"))，本步同步）。
+          CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')/tmp/build/llm-adapter:/tmp/build/logging"
+          kotlinc -Xplugin=$SER_PLUGIN -cp "$CLASSPATH" -d /tmp/build/tool-registry \
+            $(find core/tool-registry/src/main/kotlin -name "*.kt") \
+            -jvm-target 17
+
+      - name: Compile core:agent-engine
+        run: |
+          SER_PLUGIN=$HOME/kotlinc/lib/kotlinx-serialization-compiler-plugin.jar
+          CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')/tmp/build/llm-adapter:/tmp/build/tool-registry:/tmp/build/logging"
+          # T76：task/ 包（@Serializable + .serializer()）依赖 serialization 插件
+          kotlinc -Xplugin=$SER_PLUGIN -cp "$CLASSPATH" -d /tmp/build/agent-engine \
+            $(find core/agent-engine/src/main/kotlin -name "*.kt") \
+            -jvm-target 17
+
+      - name: Compile core:code-tools (Coding 模式工具集)
+        run: |
+          SER_PLUGIN=$HOME/kotlinc/lib/kotlinx-serialization-compiler-plugin.jar
+          CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')/tmp/build/tool-registry:/tmp/build/llm-adapter:/tmp/build/logging"
+          kotlinc -Xplugin=$SER_PLUGIN -cp "$CLASSPATH" -d /tmp/build/code-tools \
+            $(find core/code-tools/src/main/kotlin -name "*.kt") \
+            -jvm-target 17
+
+      - name: Compile apex-kit-standard standard-loop (标准任务循环库)
+        run: |
+          # 库源码镜像编译（等价 composite build 的 kotlinc 路径）：纯 Kotlin JVM，
+          # 依赖仅 coroutines —— /tmp/apex-libs 已备齐。产物供 core:code-engine
+          # 的 StandardKitAdapter / StandardTextKernel 消费。
+          CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')"
+          kotlinc -cp "$CLASSPATH" -d /tmp/build/standard-loop \
+            $(find apex-kit-standard/standard-loop/src/main/kotlin -name "*.kt") \
+            -jvm-target 17
+
+      - name: Compile apex-kit-loom loom-weave (织造循环库)
+        run: |
+          # 库源码镜像编译（等价 composite build 的 kotlinc 路径）：纯 Kotlin JVM，
+          # 依赖 coroutines + serialization —— /tmp/apex-libs 已备齐。产物供
+          # core:code-engine 的 LoomKitAdapter 消费。
+          SER_PLUGIN=$HOME/kotlinc/lib/kotlinx-serialization-compiler-plugin.jar
+          CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')"
+          kotlinc -Xplugin=$SER_PLUGIN -cp "$CLASSPATH" -d /tmp/build/loom-weave \
+            $(find apex-kit-loom/loom-weave/src/main/kotlin -name "*.kt") \
+            -jvm-target 17
+
+      - name: Compile apex-kit-courier courier-dispatch (信使调度库)
+        run: |
+          # 库源码镜像编译（等价 composite build 的 kotlinc 路径）：纯 Kotlin JVM，
+          # 依赖 coroutines + serialization —— /tmp/apex-libs 已备齐。产物供
+          # core:code-engine 的 CourierKitAdapter 消费。
+          SER_PLUGIN=$HOME/kotlinc/lib/kotlinx-serialization-compiler-plugin.jar
+          CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')"
+          kotlinc -Xplugin=$SER_PLUGIN -cp "$CLASSPATH" -d /tmp/build/courier-dispatch \
+            $(find apex-kit-courier/courier-dispatch/src/main/kotlin -name "*.kt") \
+            -jvm-target 17
+
+      - name: Compile core:code-engine (Coding 模式引擎)
+        run: |
+          SER_PLUGIN=$HOME/kotlinc/lib/kotlinx-serialization-compiler-plugin.jar
+          CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')/tmp/build/standard-loop:/tmp/build/loom-weave:/tmp/build/courier-dispatch:/tmp/build/agent-engine:/tmp/build/tool-registry:/tmp/build/llm-adapter:/tmp/build/logging"
+          kotlinc -Xplugin=$SER_PLUGIN -cp "$CLASSPATH" -d /tmp/build/code-engine \
+            $(find core/code-engine/src/main/kotlin -name "*.kt") \
+            -jvm-target 17
+
+      - name: Compile platform:code-workspace (编码工作区管理)
+        run: |
+          SER_PLUGIN=$HOME/kotlinc/lib/kotlinx-serialization-compiler-plugin.jar
+          CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')/tmp/build/code-tools:/tmp/build/logging"
+          kotlinc -Xplugin=$SER_PLUGIN -cp "$CLASSPATH" -d /tmp/build/code-workspace \
+            $(find platform/code-workspace/src/main/kotlin -name "*.kt") \
+            -jvm-target 17
+
+      - name: Check tool ID uniqueness
+        run: |
+          # Tool System v2: also covers app/src/main (app-level tool classes —
+          # github/csmem/browser/AskUser — must not collide with core ids).
+          # T86 修复：旧 grep 对整行做 uniq -d —— `override val id = PROVIDER_ID`
+          # 这类**常量引用**在不同类里字面相同（main 的 SearchProvider 系列），
+          # 被误判"重复"。语义 id 的唯一性只对**字面字符串声明**有判定意义：
+          # 常量引用的真实值在伴生对象里（PROVIDER_ID = "brave" 等），
+          # 本步骤改为对引用形式解析出常量值后再查重。
+          #
+          # 1) 字面声明：id = "literal" → 直接收集
+          # 2) 常量引用：id = CONST → 在同文件找 `const val CONST = "value"`
+          extract_ids() {
+            grep -rn "override val id = " "$1" | while IFS=: read -r file line rest; do
+              ref=$(echo "$rest" | sed -n 's/.*override val id = \([A-Z_][A-Z0-9_]*\)\s*$/\1/p' | tr -d ' ')
+              if [ -n "$ref" ]; then
+                val=$(grep -h "const val $ref = " "$file" | head -1 | sed 's/.*= *"\(.*\)".*/\1/')
+                echo "CONST_REF:${ref}=${val}"
+              else
+                echo "$rest" | sed -n 's/.*override val id = *"\(.*\)".*/LITERAL:\1/p'
+              fi
+            done
+          }
+          IDS=$( { extract_ids core/tool-registry/src/main/kotlin/; extract_ids platform/terminal/src/main/kotlin/; extract_ids app/src/main/kotlin/; } | sort | uniq -d)
+          if [ -n "$IDS" ]; then
+            echo "❌ Duplicate tool IDs found:"
+            echo "$IDS"
+            exit 1
+          fi
+          TOTAL=$(grep -rh "override val id = " core/tool-registry/src/main/kotlin/ platform/terminal/src/main/kotlin/ app/src/main/kotlin/ | wc -l)
+          echo "✅ $TOTAL tool id declarations, no semantic duplicates"
+
+      - name: Check duplicate classes
+        run: |
+          DUPLICATES=$(grep -rh "^class \|^object \|^enum class \|^data class " --include="*.kt" . | sed 's/^[a-z ]*//' | sed 's/[<(].*//' | sort | uniq -d)
+          if [ -n "$DUPLICATES" ]; then
+            echo "⚠️ Potential duplicate class names (may be in different packages):"
+            echo "$DUPLICATES"
+          else
+            echo "✅ No duplicate class names"
+          fi
+
+      - name: Check bracket balance (lexer-aware)
+        run: |
+          # 裸 grep 计数会把字符串内括号与注释枚举半括号计入统计造成假阳性。
+          # scripts/kotlin_balance.py 用 Kotlin 词法状态机剥离注释/字符串/raw 串/
+          # 字符串模板/反引号标识符后统计 ( ) { } —— 语法性真失衡仍然必报。
+          FAIL=0
+          for f in $(find . -name "*.kt" -not -path "./.git/*" -not -path "./build/*" -not -path "*/build/*"); do
+            RESULT=$(python3 scripts/kotlin_balance.py "$f" 2>&1) || { echo "$RESULT"; FAIL=1; }
+          done
+          if [ $FAIL -eq 0 ]; then
+            echo "✅ All .kt files have balanced parens () and braces {} (comments/strings stripped)"
+          else
+            exit 1
+          fi
+
+      - name: Verify prebuilt PRoot binaries (P71)
+        run: |
+          # jniLibs 中的 proot/talloc/shmem 二进制由 proot-binary-provenance.md 记录来源，
+          # proot-binaries.sha256 锁定指纹 —— 每次 CI 重验，防止损坏/被篡改/误替换。
+          if [ ! -f platform/terminal/proot-binaries.sha256 ]; then
+            echo "❌ checksum manifest missing"
+            exit 1
+          fi
+          cd platform/terminal
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum --quiet -c proot-binaries.sha256
+            echo "✅ All $(wc -l < proot-binaries.sha256) prebuilt PRoot binaries verified (sha256)"
+          else
+            echo "⚠️ sha256sum unavailable — skipping digest verification"
+          fi
+
+      - name: Compile platform:mcp-host (reverse MCP host)
+        run: |
+          # #173 逆向 MCP Host：手机作为 MCP Server（streamable HTTP 子集）。
+          # 纯 Kotlin JVM（ServerSocket + 协程 + kotlinx.serialization，零新第三方依赖），
+          # 依赖 tool-registry（其自身依赖 llm-adapter，一并提供）。
+          SER_PLUGIN=$HOME/kotlinc/lib/kotlinx-serialization-compiler-plugin.jar
+          CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')/tmp/build/tool-registry:/tmp/build/llm-adapter"
+          kotlinc -Xplugin=$SER_PLUGIN -cp "$CLASSPATH" -d /tmp/build/mcp-host \
+            $(find platform/mcp-host/src/main/kotlin -name "*.kt") \
+            -jvm-target 17
+
+  app-compile:
+    name: App Module Compile (Android SDK + Gradle)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # 浏览器库 composite build 检出（actions/checkout 禁止越出 workspace，
+      # 用嵌套路径 apex-kit-browser —— settings.gradle.kts 的嵌套兜底分支命中；
+      # 本地开发仍是兄弟目录 ../apex-kit-browser，两种布局等价）
+      # —— 拆库 E1 迁移期：app 依赖 com.apex.browser:{core,engine,chrome}，
+      #    composite build 自动替换为本地构建；远端坐标待 E3 发布后启用。
+      - name: Read apex-kit-browser pin
+        id: bkitpin
+        # 锁定文件 gradle/browser-kit.lock 由 sync-browser-kit 工作流自动维护：
+        # browser-kit main 有新绿提交 → 锁文件 bump → 本仓库 push → 全流水线
+        # 以新锁定版本构建。缺锁回退 main（防御旧分支/分叉构建）—— CI 只验证
+        # 不发货，回退可接受；但 #352 起从静默回退升级为 warning 级可见
+        #（正式发布流水线 release.yml 同场景 fail-closed，绝不回退）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/browser-kit.lock 2>/dev/null || true)
+          if [ -z "$PIN" ]; then
+            echo "::warning::gradle/browser-kit.lock 缺失 —— 防御性回退 browser-kit main HEAD（仅限 CI 验证；发布流水线 release.yml 缺锁即硬失败）"
+          fi
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-browser (browser-kit composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-browser
+          ref: ${{ steps.bkitpin.outputs.sha }}
+          path: apex-kit-browser
+      - name: Read apex-kit-workspace pin
+        id: wkitpin
+        # 工作区浏览器库（com.apex.workspace:{core,explorer}）锁定文件
+        # gradle/workspace-kit.lock —— 缺锁回退 main（防御旧分支/分叉构建）。
+        # 本地开发：兄弟目录 ../apex-kit-workspace 存在时 settings 自动
+        # includeBuild；CI 嵌套路径同样命中兜底分支。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/workspace-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-workspace (workspace-kit composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-workspace
+          ref: ${{ steps.wkitpin.outputs.sha }}
+          path: apex-kit-workspace
+
+      - name: Verify apex-kit-browser checkout SHA
+        # #352：轻量审计（纯日志、不阻塞）—— 实际检出 SHA 写入 job summary
+        # 并与锁值对照，防 ref 解析异常（如锁文件误填分支名/短 SHA 时肉眼
+        # 可辨）。不一致只发 ::warning 不阻塞：硬门禁是上面的锁检出与构建本身。
+        run: |
+          ACTUAL=$(git -C apex-kit-browser rev-parse HEAD 2>/dev/null || true)
+          PIN=$(head -n 1 gradle/browser-kit.lock 2>/dev/null || true)
+          echo "browser-kit 实际检出: ${ACTUAL:-未知} / 锁定值: ${PIN:-缺锁（回退 main）}"
+          {
+            echo "### 🧬 apex-kit-browser 检出（#352）"
+            echo "- 实际检出 SHA: \`${ACTUAL:-未知}\`"
+            echo "- 锁定值: \`${PIN:-缺锁（回退 main）}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$ACTUAL" ] && [ -n "$PIN" ] && [ "$ACTUAL" != "$PIN" ]; then
+            echo "::warning::browser-kit 实际检出 $ACTUAL 与锁 $PIN 不一致（ref 解析异常？）"
+          fi
+
+      - name: Read apex-kit-standard pin
+        id: akitpin
+        # 锁定文件 gradle/standard-kit.lock 由 sync-standard-kit 工作流自动维护：
+        # standard-kit main 有新绿提交 → 锁文件 bump → 本仓库 push → 全流水线
+        # 以新锁定版本构建。缺锁回退 main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/standard-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-standard (standard-loop composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-standard
+          ref: ${{ steps.akitpin.outputs.sha }}
+          path: apex-kit-standard
+      - name: Read apex-kit-loom pin
+        id: lkitpin
+        # 锁定文件 gradle/loom-kit.lock 由 sync-loom-kit 工作流自动维护：
+        # loom-kit main 有新绿提交 → 锁文件 bump → 本仓库 push → 全流水线
+        # 以新锁定版本构建。缺锁回退 main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/loom-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-loom (loom-weave composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-loom
+          ref: ${{ steps.lkitpin.outputs.sha }}
+          path: apex-kit-loom
+
+      - name: Read apex-kit-courier pin
+        id: ckitpin
+        # 锁定文件 gradle/courier-kit.lock 由 sync-courier-kit 工作流自动维护：
+        # courier-kit main 有新绿提交 → 锁文件 bump → 本仓库 push → 全流水线
+        # 以新锁定版本构建。缺锁回退 main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/courier-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-courier (courier-dispatch composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-courier
+          ref: ${{ steps.ckitpin.outputs.sha }}
+          path: apex-kit-courier
+
+      - name: Read apex-kit-memory pin
+        id: mkitpin
+        # 认知记忆库（com.apex.memkit:memory-core）锁定文件 gradle/memory-kit.lock
+        # 由 sync-memory-kit 工作流自动维护：memory-kit main 有新绿提交 →
+        # 锁文件 bump → 本仓库 push → 全流水线以新锁定版本构建。缺锁回退
+        # main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/memory-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-memory (memory-core composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-memory
+          ref: ${{ steps.mkitpin.outputs.sha }}
+          path: apex-kit-memory
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Configure pre-installed Android SDK
+        run: |
+          # ubuntu-latest 自带 Android SDK，只需配置路径
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          # NDK 27.0.12077973 由 :terminal-native / :core:code-native 显式 ndkVersion 钉版
+          #（AGP 8.13.2 时代防默认 NDK 漂移到 28.x）。sdkmanager 偶发半截安装
+          #（目录在、source.properties 缺失 → CXX1101 硬失败，2026-10-05 run
+          # 37327280591 实测：pull_request run 翻车而同 SHA 的 push run 通过，
+          # 纯 runner 环境差异）。三重防线（与 apk.yml / #330 对齐）：
+          #   1) 完整性校验先行：已完好则零开销跳过；
+          #   2) sdkmanager 安装后校验，坏了立即清掉重试；
+          #   3) 仍失败 → dl.google.com 官方 zip 直下兜底（免许可/免鉴权/稳定）。
+          NDK_VER="27.0.12077973"
+          NDK_DIR="$ANDROID_HOME/ndk/$NDK_VER"
+          if [ -f "$NDK_DIR/source.properties" ]; then
+            echo "✅ NDK $NDK_VER 已就绪（缓存命中）"
+          else
+            rm -rf "$NDK_DIR"
+            NDK_OK=0
+            for ATTEMPT in 1 2; do
+              if yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+                  --install "ndk;$NDK_VER" >/dev/null 2>&1 && \
+                 [ -f "$NDK_DIR/source.properties" ]; then
+                NDK_OK=1; break
+              fi
+              rm -rf "$NDK_DIR"
+              sleep 5
+            done
+            if [ "$NDK_OK" != "1" ]; then
+              echo "⚠️ sdkmanager 安装 NDK 失败 —— dl.google.com 官方 zip 直下兜底"
+              rm -rf "$NDK_DIR" /tmp/ndk-r27.zip /tmp/ndk-extract
+              curl -sfL --retry 3 -o /tmp/ndk-r27.zip \
+                "https://dl.google.com/android/repository/android-ndk-r27-linux.zip"
+              unzip -q /tmp/ndk-r27.zip -d /tmp/ndk-extract
+              mkdir -p "$ANDROID_HOME/ndk"
+              mv /tmp/ndk-extract/android-ndk-r27 "$NDK_DIR"
+            fi
+            [ -f "$NDK_DIR/source.properties" ] \
+              && echo "✅ NDK $NDK_VER 就绪" \
+              || { echo "::error::NDK $NDK_VER 安装失败（sdkmanager 与直下均不可用）"; exit 1; }
+          fi
+          # 检查 NDK 目录
+          ls "$ANDROID_HOME/ndk/" 2>/dev/null || echo "No NDK pre-installed"
+          # 写入 local.properties（不设 ndk.dir，让 AGP 自动从 SDK 查找）
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          cat local.properties
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14'
+
+      - name: Generate Gradle wrapper
+        run: gradle wrapper --gradle-version 8.14
+
+      - name: Prewarm dependencies (retry on JitPack flakiness)
+        run: |
+          attempts=5
+          for i in $(seq 1 $attempts); do
+            # --write-locks 在首次运行时生成依赖锁文件（app/gradle.lockfile），
+            # 后续运行进入 strict 模式校验，保证 EasyFloat 等版本可复现。
+            if ./gradlew :app:dependencies \
+                --configuration debugCompileClasspath \
+                --write-locks \
+                --stacktrace; then
+              echo "✅ Dependency resolution succeeded on attempt $i"
+              exit 0
+            fi
+            echo "⚠️ Dependency resolution attempt $i failed, retrying..."
+            sleep $((i * 30))
+          done
+          echo "❌ Dependency resolution failed after $attempts attempts"
+          exit 1
+
+      - name: Diagnose foundation dependency (resolution failed only)
+        # #350：原先这里无条件先跑一遍完整 :app:dependencies，紧接着 Prewarm
+        # 又解析一遍 —— 同一次解析花两遍钱（各付一次 JVM 启动 + 全项目
+        # configuration）。降级为仅在 Prewarm 失败（5 次重试全灭）时运行：
+        # 此时 Prewarm 已把原始报错打进日志，这里补一份 compose/foundation
+        # 过滤视图辅助定位 —— 诊断价值保留，正常路径零开销（happy path
+        # 全 job 仅剩 Prewarm + 下方合并调用共 2 次 gradlew）。
+        if: failure()
+        continue-on-error: true
+        run: |
+          ./gradlew :app:dependencies --configuration debugCompileClasspath 2>&1 \
+            | grep -iE "foundation|compose-bom|compose-ui|material3" | sed -n '1,50p' || true
+
+      - name: Install proot 5.4 (for T72 E2E + P71 smoke tests)
+        # T72: UbuntuRootfsEndToEndIntegrationTest downloads the REAL Ubuntu
+        # 24.04.4 amd64 archive and runs REAL proot processes against it
+        # (bash / apt / apt-get update inside the provisioned rootfs).
+        # ProotExecutorProotSmokeTest runs the P71 builder contract through
+        # the host-adapted argv.
+        #
+        # Ubuntu 24.04 archive ships proot 5.1.0 — it CANNOT run the glibc-2.39
+        # Ubuntu 24.04 guest (unsupported syscalls). Debian's 5.4.0 can (with
+        # PROOT_NO_SECCOMP=1, set by the tests). Install 5.4 from Debian, fall
+        # back to the distro version (tests then self-skip L2/L3 honestly).
+        #
+        # #350：原位于「app 单测之后、terminal 单测之前」；下方测试合并为
+        # 单次调用后，proot 安装需提前（terminal 测试在批内）。
+        run: |
+          set -x
+          if curl -sfL http://deb.debian.org/debian/pool/main/p/proot/proot_5.4.0-3_amd64.deb -o /tmp/proot54.deb; then
+            if sudo dpkg -i /tmp/proot54.deb 2>/tmp/dpkg.log; then
+              echo "proot 5.4 installed from Debian"
+            else
+              sudo apt-get install -f -y -qq || true
+              proot --version 2>/dev/null | head -1 || true
+            fi
+          fi
+          proot --version 2>/dev/null | head -1 || sudo apt-get install -y -qq proot
+          proot --version 2>&1 | head -3
+        continue-on-error: true
+
+      - name: Compile app + run all module unit tests (single invocation)
+        # #350：原先 2 次依赖解析 + 1 次编译 + 11 个模块测试步骤 = 14 次独立
+        # ./gradlew --no-daemon 调用，每次重付 JVM 启动 + 25 模块全项目
+        # configuration（无 configuration cache），纯开销 ~10 分钟量级；且
+        # 第一个失败即中止 job，后续模块结果完全不可见（失败级联遮蔽）。
+        # 现合并为单次调用：
+        #   --continue —— 单模块失败不中止其余模块（失败清单由下方 Analyze 汇总）；
+        #   --parallel —— gradle.properties 已有 org.gradle.parallel=true，
+        #                 此处显式声明只为可读性（行为一致，非新增开关）。
+        # 各任务原步骤注释要义（合并留档，防止历史教训随步骤删除而丢失）：
+        #   :app:compileDebugKotlin —— 编译门（KSP 失败容忍逻辑见 Analyze 步骤）
+        #   :app:testDebugUnitTest —— app 模块 JVM 单测首进 CI 的教训：缺
+        #       import / 嵌套 runTest / 期望矛盾三类损坏曾长期「本地绿、
+        #       远端隐形」—— 没在远端跑过的验证等于不存在
+        #   :platform:terminal:testDebugUnitTest —— FakeNativePty 契约 + 策略
+        #       + 进程组（T72 E2E / P71 冒烟依赖上方 proot 5.4 步骤）
+        #   :terminal-emulator / :terminal-view:testDebugUnitTest —— T88：VT
+        #       引擎 234+ 项 + View 层 148 项纯 JVM 测试（proot -E 事故教训）
+        #   :platform:terminal:compileDebugAndroidTestKotlin —— P70：真 JNI
+        #       PTY instrumentation 测试无模拟器，只编译保绿（设备上 connected*）
+        #   :core:agent-engine:test —— A68.1 编排器状态机/循环/超时/取消（纯 JVM）
+        #   :core:code-tools:test —— #148 进程内 LSP 诊断回注（纯 JVM，37/37）
+        #   :core:code-engine:test —— #147 子代理事件收集/超时/并发闸门（纯 JVM）
+        #   :core:tool-registry:test —— 质量门：DomParser/BrowserScript 编译
+        #       错误修复后必须保持绿 —— 不许删测试保绿，修代码或修测试
+        #   :platform:memory-host:testDebugUnitTest —— 记忆拆库后宿主层
+        #       （迁移映射 / 记法解析，纯 JVM returnDefaultValues）
+        #   :platform:privilege:testDebugUnitTest —— T92 #255 权限链审计契约
+        #   :plugins:plugin-workflow:testDebugUnitTest —— #256 防回退（诚实契约）
+        run: |
+          ./gradlew \
+            :app:compileDebugKotlin \
+            :app:testDebugUnitTest \
+            :platform:terminal:testDebugUnitTest \
+            :terminal-emulator:testDebugUnitTest \
+            :terminal-view:testDebugUnitTest \
+            :platform:terminal:compileDebugAndroidTestKotlin \
+            :core:agent-engine:test \
+            :core:code-tools:test \
+            :core:code-engine:test \
+            :core:tool-registry:test \
+            :platform:memory-host:testDebugUnitTest \
+            :platform:privilege:testDebugUnitTest \
+            :plugins:plugin-workflow:testDebugUnitTest \
+            --no-daemon \
+            -Pkotlin.incremental=false \
+            --stacktrace \
+            --continue \
+            --parallel \
+            2>&1 | tee build.log
+        continue-on-error: true
+
+      - name: Analyze build result
+        # #350：合并单次调用后的统一质量门 —— 原先编译门 + 11 个模块测试
+        # 步骤逐个串联，第一个失败即中止（后续模块结果不可见）；现在从单份
+        # build.log 汇总判定。
+        run: |
+          echo "=== Build Status ==="
+          if grep -q "BUILD SUCCESSFUL" build.log; then
+            echo "✅ BUILD SUCCESSFUL — app 编译 + 11 项模块单测 + P70 编译单次通过（#350）"
+            exit 0
+          fi
+
+          echo "❌ BUILD FAILED — analyzing errors..."
+
+          # --continue 已保证失败模块之外的模块照常执行：所有 FAILED 任务一次
+          # 汇总（修复 #350 失败级联遮蔽 —— 原先只能看到第一个失败）
+          FAILED_TASKS=$(grep -E "^> Task .* FAILED$" build.log || true)
+          if [ -n "$FAILED_TASKS" ]; then
+            echo "❌ 失败任务清单："
+            echo "$FAILED_TASKS"
+            echo ""
+            echo "失败用例明细（前 30 条）："
+            grep -vE "^> Task" build.log | grep -E "FAILED$" | head -30 || true
+            grep -E "[0-9]+ tests completed, [0-9]+ failed" build.log || true
+            exit 1
+          fi
+
+          # 请求的测试任务是否全部执行：编译/KSP 失败会让依赖它的测试任务被
+          # 跳过 —— 跳过不产生 FAILED 行，必须单独对账，否则「测试根本没
+          # 跑过」会被下面的 KSP 容忍分支误判成通过
+          MISSING_TESTS=""
+          for t in :app:testDebugUnitTest :platform:terminal:testDebugUnitTest \
+                   :terminal-emulator:testDebugUnitTest :terminal-view:testDebugUnitTest \
+                   :core:agent-engine:test :core:code-tools:test :core:code-engine:test \
+                   :core:tool-registry:test :platform:memory-host:testDebugUnitTest \
+                   :platform:privilege:testDebugUnitTest :plugins:plugin-workflow:testDebugUnitTest; do
+            grep -q "^> Task $t" build.log || MISSING_TESTS="$MISSING_TESTS $t"
+          done
+          if [ -n "$MISSING_TESTS" ]; then
+            echo "❌ 以下测试任务未执行（上游编译/KSP 失败被跳过）：$MISSING_TESTS"
+            exit 1
+          fi
+
+          # Separate KSP errors from Kotlin compilation errors
+          KSP_ERRORS=$(grep -c "\[ksp\]\|Error occurred in KSP\|daemon has terminated" build.log || true)
+          KOTLIN_ERRORS=$(grep -E "^e: " build.log | grep -v "\[ksp\]\|Error occurred in KSP\|daemon has terminated" | wc -l || true)
+
+          echo "  KSP/Hilt annotation errors: $KSP_ERRORS"
+          echo "  Kotlin compilation errors: $KOTLIN_ERRORS"
+
+          if [ "$KOTLIN_ERRORS" -gt 0 ]; then
+            echo ""
+            echo "❌ Kotlin compilation errors (must fix):"
+            grep -E "^e: " build.log | grep -v "\[ksp\]" | sed -n '1,30p'
+            exit 1
+          fi
+
+          if [ "$KSP_ERRORS" -gt 0 ]; then
+            echo ""
+            echo "⚠️ KSP/Hilt annotation processing failed, but all Kotlin code compiles."
+            echo "   This is a pre-existing Hilt DI configuration issue, not a code error."
+            echo "   KSP errors (for reference):"
+            grep "\[ksp\]" build.log | head -10
+            echo ""
+            echo "   ✅ Kotlin compilation: PASSED"
+            echo "   ⚠️ Hilt KSP: FAILED (pre-existing DI config issue)"
+            exit 0
+          fi
+
+          echo "⚠️ Unexpected failure — last 30 lines:"
+          tail -30 build.log
+          exit 1
+
+  build-apk:
+    name: Build Debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: write  # APK size report comment (no-op outside PRs)
+    steps:
+      - uses: actions/checkout@v4
+
+      # 浏览器库 composite build 检出（actions/checkout 禁止越出 workspace，
+      # 用嵌套路径 apex-kit-browser —— settings.gradle.kts 的嵌套兜底分支命中；
+      # 本地开发仍是兄弟目录 ../apex-kit-browser，两种布局等价）
+      # —— 拆库 E1 迁移期：app 依赖 com.apex.browser:{core,engine,chrome}，
+      #    composite build 自动替换为本地构建；远端坐标待 E3 发布后启用。
+      - name: Read apex-kit-browser pin
+        id: bkitpin
+        # 锁定文件 gradle/browser-kit.lock 由 sync-browser-kit 工作流自动维护：
+        # browser-kit main 有新绿提交 → 锁文件 bump → 本仓库 push → 全流水线
+        # 以新锁定版本构建。缺锁回退 main（防御旧分支/分叉构建）—— CI 只验证
+        # 不发货，回退可接受；但 #352 起从静默回退升级为 warning 级可见
+        #（正式发布流水线 release.yml 同场景 fail-closed，绝不回退）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/browser-kit.lock 2>/dev/null || true)
+          if [ -z "$PIN" ]; then
+            echo "::warning::gradle/browser-kit.lock 缺失 —— 防御性回退 browser-kit main HEAD（仅限 CI 验证；发布流水线 release.yml 缺锁即硬失败）"
+          fi
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-browser (browser-kit composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-browser
+          ref: ${{ steps.bkitpin.outputs.sha }}
+          path: apex-kit-browser
+      - name: Read apex-kit-workspace pin
+        id: wkitpin
+        # 工作区浏览器库（com.apex.workspace:{core,explorer}）锁定文件
+        # gradle/workspace-kit.lock —— 缺锁回退 main（防御旧分支/分叉构建）。
+        # 本地开发：兄弟目录 ../apex-kit-workspace 存在时 settings 自动
+        # includeBuild；CI 嵌套路径同样命中兜底分支。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/workspace-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-workspace (workspace-kit composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-workspace
+          ref: ${{ steps.wkitpin.outputs.sha }}
+          path: apex-kit-workspace
+
+      - name: Verify apex-kit-browser checkout SHA
+        # #352：轻量审计（纯日志、不阻塞）—— 实际检出 SHA 写入 job summary
+        # 并与锁值对照，防 ref 解析异常（如锁文件误填分支名/短 SHA 时肉眼
+        # 可辨）。不一致只发 ::warning 不阻塞：硬门禁是上面的锁检出与构建本身。
+        run: |
+          ACTUAL=$(git -C apex-kit-browser rev-parse HEAD 2>/dev/null || true)
+          PIN=$(head -n 1 gradle/browser-kit.lock 2>/dev/null || true)
+          echo "browser-kit 实际检出: ${ACTUAL:-未知} / 锁定值: ${PIN:-缺锁（回退 main）}"
+          {
+            echo "### 🧬 apex-kit-browser 检出（#352）"
+            echo "- 实际检出 SHA: \`${ACTUAL:-未知}\`"
+            echo "- 锁定值: \`${PIN:-缺锁（回退 main）}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$ACTUAL" ] && [ -n "$PIN" ] && [ "$ACTUAL" != "$PIN" ]; then
+            echo "::warning::browser-kit 实际检出 $ACTUAL 与锁 $PIN 不一致（ref 解析异常？）"
+          fi
+
+      - name: Read apex-kit-standard pin
+        id: akitpin
+        # 锁定文件 gradle/standard-kit.lock 由 sync-standard-kit 工作流自动维护：
+        # standard-kit main 有新绿提交 → 锁文件 bump → 本仓库 push → 全流水线
+        # 以新锁定版本构建。缺锁回退 main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/standard-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-standard (standard-loop composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-standard
+          ref: ${{ steps.akitpin.outputs.sha }}
+          path: apex-kit-standard
+      - name: Read apex-kit-loom pin
+        id: lkitpin
+        # 锁定文件 gradle/loom-kit.lock 由 sync-loom-kit 工作流自动维护：
+        # loom-kit main 有新绿提交 → 锁文件 bump → 本仓库 push → 全流水线
+        # 以新锁定版本构建。缺锁回退 main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/loom-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-loom (loom-weave composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-loom
+          ref: ${{ steps.lkitpin.outputs.sha }}
+          path: apex-kit-loom
+
+      - name: Read apex-kit-courier pin
+        id: ckitpin
+        # 锁定文件 gradle/courier-kit.lock 由 sync-courier-kit 工作流自动维护：
+        # courier-kit main 有新绿提交 → 锁文件 bump → 本仓库 push → 全流水线
+        # 以新锁定版本构建。缺锁回退 main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/courier-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-courier (courier-dispatch composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-courier
+          ref: ${{ steps.ckitpin.outputs.sha }}
+          path: apex-kit-courier
+
+      - name: Read apex-kit-memory pin
+        id: mkitpin
+        # 认知记忆库（com.apex.memkit:memory-core）锁定文件 gradle/memory-kit.lock
+        # 由 sync-memory-kit 工作流自动维护：memory-kit main 有新绿提交 →
+        # 锁文件 bump → 本仓库 push → 全流水线以新锁定版本构建。缺锁回退
+        # main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/memory-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-memory (memory-core composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-memory
+          ref: ${{ steps.mkitpin.outputs.sha }}
+          path: apex-kit-memory
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Configure pre-installed Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          # NDK 27.0.12077973 由 :terminal-native / :core:code-native 显式 ndkVersion 钉版
+          #（AGP 8.13.2 时代防默认 NDK 漂移到 28.x）。sdkmanager 偶发半截安装
+          #（目录在、source.properties 缺失 → CXX1101 硬失败，2026-10-05 run
+          # 37327280591 实测：pull_request run 翻车而同 SHA 的 push run 通过，
+          # 纯 runner 环境差异）。三重防线（与 apk.yml / #330 对齐）：
+          #   1) 完整性校验先行：已完好则零开销跳过；
+          #   2) sdkmanager 安装后校验，坏了立即清掉重试；
+          #   3) 仍失败 → dl.google.com 官方 zip 直下兜底（免许可/免鉴权/稳定）。
+          NDK_VER="27.0.12077973"
+          NDK_DIR="$ANDROID_HOME/ndk/$NDK_VER"
+          if [ -f "$NDK_DIR/source.properties" ]; then
+            echo "✅ NDK $NDK_VER 已就绪（缓存命中）"
+          else
+            rm -rf "$NDK_DIR"
+            NDK_OK=0
+            for ATTEMPT in 1 2; do
+              if yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+                  --install "ndk;$NDK_VER" >/dev/null 2>&1 && \
+                 [ -f "$NDK_DIR/source.properties" ]; then
+                NDK_OK=1; break
+              fi
+              rm -rf "$NDK_DIR"
+              sleep 5
+            done
+            if [ "$NDK_OK" != "1" ]; then
+              echo "⚠️ sdkmanager 安装 NDK 失败 —— dl.google.com 官方 zip 直下兜底"
+              rm -rf "$NDK_DIR" /tmp/ndk-r27.zip /tmp/ndk-extract
+              curl -sfL --retry 3 -o /tmp/ndk-r27.zip \
+                "https://dl.google.com/android/repository/android-ndk-r27-linux.zip"
+              unzip -q /tmp/ndk-r27.zip -d /tmp/ndk-extract
+              mkdir -p "$ANDROID_HOME/ndk"
+              mv /tmp/ndk-extract/android-ndk-r27 "$NDK_DIR"
+            fi
+            [ -f "$NDK_DIR/source.properties" ] \
+              && echo "✅ NDK $NDK_VER 就绪" \
+              || { echo "::error::NDK $NDK_VER 安装失败（sdkmanager 与直下均不可用）"; exit 1; }
+          fi
+          ls "$ANDROID_HOME/ndk/" 2>/dev/null || echo "No NDK pre-installed"
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14'
+
+      - name: Generate Gradle wrapper
+        run: gradle wrapper --gradle-version 8.14
+
+      - name: Stage bundled Ubuntu rootfs (T83 内置交付)
+        run: |
+          # T83：Ubuntu rootfs 随 APK 内置（应用内下载安装已移除）。
+          # 构建期拉取 → 双重 SHA-256 校验 → 暂存为 jniLibs 伪 .so。
+          # 失败即阻断构建 —— 绝不打包指纹不符的 rootfs。
+          # T84：PR CI 只验证 arm64 打包链（--arch）—— tag 发布（universal，
+          # 全 3 ABI）在 apk.yml 走全量路径；每 PR 省 2/3 rootfs 流量。
+          scripts/fetch_rootfs.sh --arch arm64-v8a
+
+      - name: Prewarm dependencies (retry on JitPack flakiness)
+        run: |
+          attempts=5
+          for i in $(seq 1 $attempts); do
+            if ./gradlew :app:dependencies \
+                --configuration debugCompileClasspath \
+                --write-locks \
+                --stacktrace; then
+              echo "✅ Dependency resolution succeeded on attempt $i"
+              exit 0
+            fi
+            echo "⚠️ Dependency resolution attempt $i failed, retrying..."
+            sleep $((i * 30))
+          done
+          echo "❌ Dependency resolution failed after $attempts attempts"
+          exit 1
+
+      - name: Build debug APK
+        run: |
+          ./gradlew :app:assembleDebug \
+            --no-daemon \
+            -Pkotlin.incremental=false \
+            --stacktrace
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: APK size report
+        if: always()
+        run: |
+          APK=$(ls app/build/outputs/apk/debug/*.apk 2>/dev/null | head -1)
+          if [ -n "$APK" ]; then
+            SIZE_BYTES=$(stat -c%s "$APK")
+            SIZE_MB=$(awk "BEGIN{printf \"%.2f\", $SIZE_BYTES/1048576}")
+            {
+              echo ""
+              echo "## 📱 APK size report"
+              echo ""
+              echo "- APK: \`$(basename "$APK")\`"
+              echo "- Size: **${SIZE_MB} MB** ($SIZE_BYTES bytes)"
+              echo "- Retention: 14 days (artifact \`app-debug-apk\`)"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "APK $(basename "$APK"): ${SIZE_MB} MB"
+            echo "APK_SIZE_BYTES=$SIZE_BYTES" >> "$GITHUB_ENV"
+            echo "APK_SIZE_MB=$SIZE_MB" >> "$GITHUB_ENV"
+          else
+            echo "No APK produced — build failed upstream." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Comment APK size on PR
+        if: github.event_name == 'pull_request' && env.APK_SIZE_MB != ''
+        # fork PR 的 GITHUB_TOKEN 天然只读（issues=write 被 403）——
+        # 本步骤仅是装饰性评论，失败不应挡住构建结果。
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sizeMb = process.env.APK_SIZE_MB;
+            const sizeBytes = process.env.APK_SIZE_BYTES;
+            const header = '### 📱 APK size report';
+            const body = `${header}\nDebug APK: **${sizeMb} MB** (${sizeBytes} bytes) — artifact \`app-debug-apk\`, retained 14 days.`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body.startsWith(header));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  # ── #275：ComposeFoundry 独立工程编译门禁 ──────────────────────────────
+  # 仓库内嵌的 ComposeFoundry 是独立 Gradle 工程（AGP 8.2.2 / Kotlin 1.9.22，
+  # 与主工程版本不同，不能 include 进 settings.gradle）—— 此前从未被 CI 构建，
+  # 损坏无人知晓（「门禁/统计口径悬空」）。本 job 用其自身插件版本独立编译：
+  # 行数/质量门禁（find-based）早已覆盖其源码，这里补上编译验证。
+  # 一次缓存复用 Gradle 8.2（与主工程 8.14 缓存键隔离）。
+  foundry-build:
+    name: ComposeFoundry compile gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Set up Gradle 8.2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.2'
+
+      - name: Build ComposeFoundry (compile gate)
+        run: |
+          cd ComposeFoundry
+          gradle :app:assembleDebug --no-daemon --stacktrace
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          echo "✅ ComposeFoundry 构建通过：$APK（$(du -m "$APK" | cut -f1) MB）"

@@ -1,0 +1,267 @@
+package com.apex.agent.service
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
+import androidx.lifecycle.LifecycleService
+import com.apex.agent.MainActivity
+import com.apex.agent.R
+import com.apex.browser.engine.BrowserEngine
+import com.apex.browser.chrome.BrowserOverlay
+import com.apex.browser.chrome.LiveViewOverlay
+import com.apex.agent.browser.CyberNeonBallManager
+import com.apex.agent.notify.ForegroundTracker
+import com.apex.agent.plugin.host.PluginManager
+import com.apex.agent.plugin.host.functional.UnifiedPluginRegistry
+import com.apex.agent.platform.terminal.runtime.TerminalRuntime
+import com.apex.agent.ui.language.LanguageManager
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
+import kotlinx.coroutines.*
+
+@AndroidEntryPoint
+class ApexCoreService : LifecycleService() {
+
+    // 注入即触发浮窗单例实例化，使其注册为 BrowserEngine 的状态订阅者（展开/收起由状态驱动）
+    @Inject
+    lateinit var browserOverlay: BrowserOverlay
+
+    // v1.4.0：透明实时页面悬浮窗（AGENT_DRIVING 自动弹出，GHOST 无头宿主保
+    // WebView 测量）；注入即订阅引擎状态机 + 活动标签广播。
+    // 建单例在 BrowserOverlay 之后（引擎回调注册序：交还竞态时全屏 chrome
+    // 先摘 WebView、实时卡随后换挂；顺序异常时卡内 1.2s 轮询自愈补挂）。
+    @Inject
+    lateinit var liveViewOverlay: LiveViewOverlay
+
+    // 浏览器悬浮球（状态驱动按需出现：见 CyberNeonBallManager —— 只在浏览器被
+    // navigate/newTab 等真实使用后出现，不再随服务启动常驻；长按球可结束会话收起）
+    @Inject
+    lateinit var cyberNeonBall: CyberNeonBallManager
+
+    // 内置浏览器引擎（长会话内存维护钩子 onTrimMemory）
+    @Inject
+    lateinit var browserEngine: BrowserEngine
+
+    // 插件管理器：启动时自动发现并加载已安装插件（如 plugin-workflow），
+    // 其工具随绑定回调注册进 ToolRegistry —— "安装即生效"，不再要求用户去
+    // 市场页手动加载一次。未安装插件时这里是空操作（discovery 无匹配）。
+    @Inject
+    lateinit var pluginManager: PluginManager
+
+    // Plugin System v2 — 统一插件注册表：启动时激活全部「已启用且合规」的
+    // 功能性插件（plugin.json 数据，工具宏注册进 ToolRegistry）——与上方
+    // APK 插件自动加载同一哲学（安装即生效）；扫描失败不阻断启动。
+    @Inject
+    lateinit var unifiedPluginRegistry: UnifiedPluginRegistry
+
+    // v4 — MCP 会话引导：注入 McpToolRegistrar（构造时已挂到 McpManager 的
+    // 会话监听）+ McpManager（启动自动连接 enabled 服务器，连接成功后远程工具
+    // 以 mcp__server__tool 一等函数注册进 ToolRegistry）。注入 registrar 仅
+    // 为触发 Hilt 创建单例（挂监听），不直接调用它。
+    @Inject
+    lateinit var mcpToolRegistrar: com.apex.agent.core.tools.catalog.McpToolRegistrar
+
+    @Inject
+    lateinit var mcpManager: com.apex.agent.core.tools.mcp.McpManager
+
+    // i18n：前台通知文案按当前语言取词（LanguageManager 维护 resolvedContext）
+    @Inject
+    lateinit var lang: LanguageManager
+
+    /** P0-1（#223）：终端运行时宿主接线 —— 服务销毁且 app 不在前台时优雅
+     * 收尾（详见 onDestroy 注释）。 */
+    @Inject
+    lateinit var terminalRuntime: TerminalRuntime
+
+    /** SearXNG 本地搜索生命周期编排（Spec §8：Service 承载协程入口 —— UI 只
+     * 发 action，enable/disable/reconcile 在服务协程内执行；单例注入零成本）。 */
+    @Inject
+    lateinit var searxngCoordinator: com.apex.agent.platform.terminal.searxng.SearxngLifecycleCoordinator
+
+    /** 前台判定（Activity STARTED 计数）—— 收尾分工用，见 onDestroy。 */
+    @Inject
+    lateinit var foregroundTracker: ForegroundTracker
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    override fun onCreate() {
+        super.onCreate()
+        createNotificationChannel()
+        // 引用以触发 Hilt 提供（browserOverlay 通过 init 注册回调）
+        browserOverlay.hashCode()
+        // 实时页面悬浮窗同理（状态机 + ActiveTabListener 订阅在 init 完成）
+        liveViewOverlay.hashCode()
+        // 悬浮球不再无条件 show：其生命周期由 BrowserEngine 状态驱动 ——
+        // Agent 真正 navigate（网页搜索/自动化浏览）时经 onStateChanged 出现，
+        // 会话结束（HIDDEN）时自动收起。此处仅需保证单例已创建并订阅引擎。
+        cyberNeonBall.hashCode()
+        // 自动加载已安装插件：discovery（PackageManager IPC）+ bind 走 IO 调度器，
+        // 不阻塞前台服务启动链路；绑定回调后工具注册（见 PluginManager）。
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                pluginManager.discoverPlugins().forEach(pluginManager::loadPlugin)
+            }.onFailure { android.util.Log.w("ApexCoreService", "auto-load plugins failed: ${it.message}") }
+        }
+        // Plugin System v2 — 激活已启用的功能性插件（磁盘扫描在 IO 调度器，
+        // 工具宏注册同步完成后 unified 目录即终态；BROKEN 插件跳过并留痕）。
+        scope.launch(Dispatchers.IO) {
+            runCatching { unifiedPluginRegistry.activateEnabledFunctionalPlugins() }
+                .onFailure {
+                    android.util.Log.w(
+                        "ApexCoreService",
+                        "activate functional plugins failed: ${it.message}"
+                    )
+                }
+        }
+        // v4 — 自动连接已启用的 MCP 服务器：连接成功 → McpManager 会话监听 →
+        // McpToolRegistrar 把远程工具注册为一等函数（"配置即生效"，与插件同一
+        // 哲学）。连接失败不阻断启动（模型仍可用 McpConnect 重试）。
+        mcpToolRegistrar.hashCode() // 触发 Hilt 创建（构造即挂监听）
+        scope.launch(Dispatchers.IO) {
+            mcpManager.getEnabledConfigs().forEach { cfg ->
+                runCatching { mcpManager.connect(cfg.name) }
+                    .onFailure {
+                        android.util.Log.w(
+                            "ApexCoreService",
+                            "auto-connect MCP '${cfg.name}' failed: ${it.message}"
+                        )
+                    }
+            }
+        }
+        // SearXNG 意图对账（Spec §8 INV5）：意图开而运行态死 → 拉起；意图关而
+        // 残留 → 停止。reconcile 内部幂等（opMutex + 状态机门禁）。
+        scope.launch { runCatching { searxngCoordinator.reconcile() } }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 秒闪退防御：Android 14+（targetSdk 34+）部分 OEM 对两参 startForeground
+        // 的 manifest 类型解析不一致，可能抛 MissingForegroundServiceTypeException ——
+        // API 34+ 显式声明 specialUse 类型；更低版本传 0（沿用 manifest 声明类型）。
+        val serviceType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+        } else {
+            0
+        }
+        ServiceCompat.startForeground(this, NOTIFICATION_ID, createNotification(), serviceType)
+
+        // SearXNG 本地搜索开关 action（Spec §8：UI 开关只发 action —— Service
+        // 协程内调 Coordinator；先写意图由 UI 侧完成，action 失败由 reconcile
+        // 在下次启动补偿）。
+        when (intent?.action) {
+            ACTION_START_SEARXNG -> scope.launch {
+                runCatching { searxngCoordinator.enable() }
+                    .onFailure {
+                        android.util.Log.w("ApexCoreService", "searxng enable failed: ${it.message}")
+                    }
+            }
+            ACTION_STOP_SEARXNG -> scope.launch {
+                runCatching { searxngCoordinator.disable() }
+                    .onFailure {
+                        android.util.Log.w("ApexCoreService", "searxng disable failed: ${it.message}")
+                    }
+            }
+        }
+
+        return START_STICKY
+    }
+
+    override fun onDestroy() {
+        // ═══ P0-1（#223）：TerminalRuntime 生命周期接线 ═══
+        // TerminalRuntime.shutdown() 此前在生产代码零调用（fd/Job/pump 全靠
+        // 进程死亡后的内核回收；会话元数据仅 2s autosave 兜底）。服务销毁时
+        // 优雅收尾：cancel 全部 job → close 全部 session（HUP→TERM→KILL）→
+        // nativeCloseAll 兜底 → 停 pump/协程域。
+        //
+        // 收尾分工（防双宿主打架）：
+        //  - app **在后台**（用户划走/系统停服务场景）：服务销毁 = 运行时收尾
+        //    （后台无 UI 消费者，安全）；
+        //  - app **在前台**（用户在设置里关 Keep Alive / toggle 场景）：跳过
+        //    —— MainActivity.onDestroy(isFinishing) 拥有前台收尾权，避免误杀
+        //    用户正在敲字的活跃会话。
+        // 幂等（runtime 内部 shutdownGate）+ 10s 有界等待；独立作用域执行
+        // （本 service 的 scope 即将 cancel）。
+        // SearXNG 宿主收尾（Spec §8「Service onDestroy 兜底」）：抑制自动重启、
+        // 状态归 Off —— 意图保持（F6/F7），会话本体由下方 TerminalRuntime
+        // 收尾关闭（headless 会话属 runtime 全集）。前台跳过分支同理：前台
+        // 收尾权在 MainActivity，且 coordinator 状态由下次服务启动 reconcile。
+        runCatching { searxngCoordinator.onHostShutdown() }
+        if (!foregroundTracker.isForeground) {
+            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                runCatching {
+                    withTimeout(10_000L) { terminalRuntime.shutdown() }
+                }.onSuccess { result ->
+                    result.getOrNull()?.let {
+                        android.util.Log.i(
+                            "ApexCoreService",
+                            "terminal runtime shutdown: sessionsClosed=${it.sessionsClosed}, " +
+                                "jobsCancelled=${it.jobsCancelled}, clean=${it.clean}"
+                        )
+                    }
+                }.onFailure {
+                    android.util.Log.w("ApexCoreService", "terminal runtime shutdown failed: ${it.message}")
+                }
+            }
+        }
+
+        scope.cancel()
+        super.onDestroy()
+    }
+
+    /** 系统内存压力回调：转发给浏览器引擎做缓存清理与 Cookie 落盘（P2 #15） */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        runCatching { browserEngine.onTrimMemory(level) }
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                lang.getString(R.string.core_notif_channel_name),
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = lang.getString(R.string.core_notif_channel_desc)
+            }
+            val nm = getSystemService(NotificationManager::class.java) ?: run {
+                // 对齐 ApexNotifications.ensureChannels 的 null 安全纪律：
+                // 极端 ROM/instrumentation 下 getSystemService 可返回 null，
+                // 旧实现重接 NPE 会炸掉前台服务 onCreate 链。
+                android.util.Log.w("ApexCoreService", "NotificationManager unavailable; skip channel creation")
+                return
+            }
+            runCatching { nm.createNotificationChannel(channel) }
+                .onFailure { android.util.Log.w("ApexCoreService", "createNotificationChannel failed: ${it.message}") }
+        }
+    }
+
+    private fun createNotification(): Notification {
+        val intent = Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Apex Agent")
+            .setContentText(lang.getString(R.string.core_notif_running))
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .build()
+    }
+
+    companion object {
+        private const val CHANNEL_ID = "apex_core_service"
+        private const val NOTIFICATION_ID = 1001
+
+        /** SearXNG 开关 action（设置页 UI → Service；Spec §8）。 */
+        const val ACTION_START_SEARXNG = "com.apex.agent.action.START_SEARXNG"
+        const val ACTION_STOP_SEARXNG = "com.apex.agent.action.STOP_SEARXNG"
+    }
+}

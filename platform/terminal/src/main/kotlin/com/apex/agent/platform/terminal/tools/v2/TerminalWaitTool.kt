@@ -1,0 +1,123 @@
+package com.apex.agent.platform.terminal.tools.v2
+
+import com.apex.agent.platform.terminal.events.TerminalEvent
+import com.apex.agent.platform.terminal.runtime.TerminalRuntime
+import com.apex.agent.platform.terminal.tools.TerminalTool
+import com.apex.agent.platform.TerminalWait.WaitCondition
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+
+/**
+ * Agent tool: TerminalWait
+ *
+ * Spec ref: ATR 2.0 Final Spec §34.4
+ *
+ * Block until a condition is met or timeout. Event-driven (no polling). Use instead of
+ * sleep+read loops. Common: wait(PROCESS_EXITED, jobId) after TerminalRun.
+ * Returns the matching event (e.g. exitCode) on success, Timeout on expiry.
+ *
+ * JSON Schema (input):
+ *   { sessionId: int, condition: { type: "PROCESS_EXITED"|"PROCESS_STARTED"|"USER_INTERRUPT"|
+ *     "INPUT_REQUIRED"|"SESSION_CLOSED"|"ERROR"|"OUTPUT_MATCH"|"SCREEN_CHANGED",
+ *     jobId?: int, pattern?: string }, timeoutMs?: int=60000 }
+ * JSON Schema (output):
+ *   { matched: bool, result: "MATCHED"|"TIMEOUT"|"SESSION_GONE", event: object, waitedMs: int }
+ * Errors: SessionNotFound, Timeout, InvalidInput
+ */
+class TerminalWaitTool(
+    private val runtime: TerminalRuntime
+) : TerminalTool {
+    override val id: String = "TerminalWait"
+    override val name: String = id
+    override val description: String = """
+        Block until a condition is met or timeout. Event-driven (no polling). Use instead of
+        sleep+read loops. Common: wait(PROCESS_EXITED, jobId) after TerminalRun. Returns the
+        matching event (e.g. exitCode) on success, Timeout on expiry.
+    """.trimIndent()
+
+    override val parametersSchema: String = """
+{"type":"object","properties":{"sessionId":{"type":"integer"},"condition":{"type":"object","properties":{"type":{"type":"string"},"jobId":{"type":"integer"}},"required":["type"]},"timeoutMs":{"type":"integer","default":60000}},"required":["sessionId","condition"]}
+""".trimIndent()
+
+    suspend fun execute(input: Input): Output {
+        val result = runtime.wait(input.sessionId, input.condition, input.timeoutMs)
+        return result.fold(
+            onSuccess = { r ->
+                val (matched, resultStr, waitedMs) = when (r) {
+                    is com.apex.agent.platform.TerminalWait.WaitResult.Matched -> Triple(true, "MATCHED", 0L)
+                    is com.apex.agent.platform.TerminalWait.WaitResult.Timeout -> Triple(false, "TIMEOUT", r.waitedMs)
+                    is com.apex.agent.platform.TerminalWait.WaitResult.SessionGone -> Triple(false, "SESSION_GONE", 0L)
+                }
+                Output(matched = matched, result = resultStr, event = r, waitedMs = waitedMs)
+            },
+            onFailure = { throw it }
+        )
+    }
+
+    override suspend fun invoke(arguments: String): String {
+        val json = Json.parseToJsonElement(arguments).jsonObject
+        // 别名宽容（实录 #8）：schema 层已互认，工具层同步读取
+        val sessionId = json.longArg("sessionId", "session_id")
+            ?: throw IllegalArgumentException("sessionId required (accepted: sessionId, session_id)")
+        val condJson = json["condition"]?.jsonObject ?: throw IllegalArgumentException("condition required")
+        val condType = condJson.stringArg("type") ?: throw IllegalArgumentException("condition.type required")
+        val jobId = condJson.longArg("jobId", "job_id")
+        val condition: WaitCondition = when (condType) {
+            "PROCESS_EXITED" -> WaitCondition.ProcessExited(jobId)
+            "PROCESS_STARTED" -> WaitCondition.ProcessStarted(jobId)
+            "USER_INTERRUPT" -> WaitCondition.UserInterrupt
+            "INPUT_REQUIRED" -> WaitCondition.InputRequired
+            "SESSION_CLOSED" -> WaitCondition.SessionClosed
+            "ERROR" -> WaitCondition.Error
+            "OUTPUT_MATCH" -> WaitCondition.OutputMatch(condJson.stringArg("pattern") ?: "")
+            "SCREEN_CHANGED" -> WaitCondition.ScreenChanged
+            else -> throw IllegalArgumentException("unknown condition type: $condType")
+        }
+        val timeoutMs = json.longArg("timeoutMs", "timeout_ms") ?: 60_000L
+        val out = execute(Input(sessionId, condition, timeoutMs))
+        return buildJsonObject {
+            put("matched", JsonPrimitive(out.matched))
+            put("result", JsonPrimitive(out.result))
+            out.waitedMs.let { put("waitedMs", JsonPrimitive(it)) }
+            // 二轮审计 C-2：兑现 KDoc "Returns the matching event" 承诺——
+            // run+wait+observe 主链路中 wait 必须能告知命令成败（exitCode/signal），
+            // 否则 Agent 只能再 observe 轮询推断。结构化序列化关键事件字段。
+            when (val ev = (out.event as? com.apex.agent.platform.TerminalWait.WaitResult)?.let { wr ->
+                (wr as? com.apex.agent.platform.TerminalWait.WaitResult.Matched)?.event
+            }) {
+                is TerminalEvent.ProcessExited -> {
+                    put("eventType", JsonPrimitive("ProcessExited"))
+                    ev.jobId?.let { put("jobId", JsonPrimitive(it)) }
+                    ev.exitCode?.let { put("exitCode", JsonPrimitive(it)) }
+                    ev.signal?.let { put("signal", JsonPrimitive(it.name)) }
+                    put("exitCause", JsonPrimitive(ev.cause.name))
+                }
+                is TerminalEvent.ProcessStarted -> {
+                    put("eventType", JsonPrimitive("ProcessStarted"))
+                    put("jobId", JsonPrimitive(ev.jobId))
+                }
+                is TerminalEvent.SessionClosed -> {
+                    put("eventType", JsonPrimitive("SessionClosed"))
+                    put("cause", JsonPrimitive(ev.cause.name))
+                }
+                else -> Unit
+            }
+        }.toString()
+    }
+
+    data class Input(
+        val sessionId: Long,
+        val condition: WaitCondition,
+        val timeoutMs: Long = 60_000L
+    )
+
+    data class Output(
+        val matched: Boolean,
+        val result: String,
+        val event: Any?,         // WaitResult (serialized by tool layer)
+        val waitedMs: Long
+    )
+}

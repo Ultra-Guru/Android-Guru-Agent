@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 统一反馈层 + 网络状态字符串（中文）—— 与 values/strings_feedback.xml 键位
+     一一对应：网络类型名 / 离线横幅 / 网络事件提示 / 反馈级别名 / 迁移预留文案。 -->
+<resources>
+    <!-- ═══ 网络类型名（NetworkMonitor.currentSummaryRes）═══ -->
+    <string name="net_kind_wifi">Wi-Fi</string>
+    <string name="net_kind_cellular">移动网络</string>
+    <string name="net_kind_ethernet">以太网</string>
+    <string name="net_kind_vpn">VPN</string>
+    <string name="net_kind_other">其他网络</string>
+    <string name="net_kind_offline">离线</string>
+
+    <!-- ═══ 离线横幅（OfflineBanner）═══ -->
+    <string name="net_banner_offline">网络连接不可用，部分功能将无法使用</string>
+    <string name="net_banner_icon_desc">网络已断开</string>
+
+    <!-- ═══ 网络事件提示（主控接线：NetworkMonitor.isOnline 边沿 → FeedbackController）═══ -->
+    <string name="net_status_lost">网络连接已断开</string>
+    <string name="net_status_reconnected">网络已恢复（%1$s）</string>
+
+    <!-- ═══ 反馈级别名（FeedbackSeverity.labelRes）═══ -->
+    <string name="feedback_severity_info">提示</string>
+    <string name="feedback_severity_success">成功</string>
+    <string name="feedback_severity_warning">警告</string>
+    <string name="feedback_severity_error">错误</string>
+
+    <!-- ═══ 反馈层通用文案（Toast 迁移 / 离线请求失败提示预留）═══ -->
+    <string name="feedback_hint_offline">当前处于离线状态，请检查网络后重试</string>
+    <string name="feedback_hint_request_failed">请求失败，请重试</string>
+    <string name="feedback_action_retry">重试</string>
+    <string name="feedback_dismiss">关闭</string>
+</resources>

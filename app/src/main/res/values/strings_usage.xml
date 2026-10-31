@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Usage dashboard strings (English default) — page title / time range / summary cards / daily chart /
+     model breakdown / session rankings / export and clear. Chinese lives in values-zh/strings_usage.xml. -->
+<resources>
+    <!-- ═══ Pages and headers (UsageDashboardScreen) ═══ -->
+    <string name="usage_title">Usage Dashboard</string>
+    <string name="usage_subtitle">Token usage across all sessions</string>
+    <string name="usage_refresh">Refresh usage data</string>
+    <string name="usage_loading">Loading…</string>
+
+    <!-- ═══ Time range (FilterChip row, drives the daily chart) ═══ -->
+    <string name="usage_range_label">Time range</string>
+    <string name="usage_range_7d">7 days</string>
+    <string name="usage_range_30d">30 days</string>
+    <string name="usage_range_90d">90 days</string>
+    <string name="usage_range_all">All</string>
+
+    <!-- ═══ All-empty state (no records at all) ═══ -->
+    <string name="usage_empty_title">No usage yet</string>
+    <string name="usage_empty_desc">Usage is recorded after each LLM round with the real token counts returned by the server.</string>
+    <string name="usage_empty_local_note">Records never leave this device</string>
+
+    <!-- ═══ Summary cards (2×2 big numbers) ═══ -->
+    <string name="usage_summary_title">Overview</string>
+    <string name="usage_summary_note">Covers all locally recorded history</string>
+    <string name="usage_stat_all_time">All-time tokens</string>
+    <string name="usage_stat_today">Today</string>
+    <string name="usage_stat_7d">Last 7 days</string>
+    <string name="usage_stat_30d">Last 30 days</string>
+    <string name="usage_stat_requests">Requests</string>
+    <string name="usage_stat_avg_per_request">avg %1$s / request</string>
+    <string name="usage_tokens_count">%1$s tokens</string>
+
+    <!-- ═══ Daily usage chart (Vico bar chart) ═══ -->
+    <string name="usage_chart_title">Daily usage</string>
+    <string name="usage_chart_hint">Total tokens per day</string>
+    <string name="usage_chart_empty">No usage in this range</string>
+    <string name="usage_prompt_label">Prompt</string>
+    <string name="usage_completion_label">Completion</string>
+
+    <!-- ═══ Model usage breakdown ═══ -->
+    <string name="usage_cost_estimated">Est. cost %1$s</string>
+    <string name="usage_cost_note">Estimated from public list prices (input/output rates differ per model); channel discounts and taxes not included</string>
+    <string name="usage_cost_unknown">no price listed</string>
+    <string name="usage_models_title">By model</string>
+    <string name="usage_models_hint">Share of all-time tokens per model</string>
+    <string name="usage_models_empty">No model usage recorded yet</string>
+    <string name="usage_model_share">%1$.1f%% of total</string>
+    <string name="usage_requests_count">%1$d requests</string>
+
+    <!-- ═══ Session ranking Top5 ═══ -->
+    <string name="usage_sessions_title">Top sessions</string>
+    <string name="usage_sessions_hint">Ranked by total tokens</string>
+    <string name="usage_sessions_empty">No session usage recorded yet</string>
+    <string name="usage_session_unknown">Unknown session</string>
+    <string name="usage_session_short_id">Session %1$s</string>
+    <string name="usage_rel_just_now">just now</string>
+    <string name="usage_rel_minutes_ago">%1$d min ago</string>
+    <string name="usage_rel_hours_ago">%1$d h ago</string>
+    <string name="usage_rel_days_ago">%1$d d ago</string>
+
+    <!-- ═══ Data management (export / clear) ═══ -->
+    <string name="usage_actions_title">Manage data</string>
+    <string name="usage_records_stored">%1$d records stored locally</string>
+    <string name="usage_export_csv">Export CSV</string>
+    <string name="usage_export_desc">Export the full local history as a CSV file and share it</string>
+    <string name="usage_clear_data">Clear all data</string>
+    <string name="usage_clear_desc">Delete all locally stored usage records</string>
+    <string name="usage_clear_irreversible">This action cannot be undone</string>
+
+    <!-- ═══ Clear confirmation dialog / share ═══ -->
+    <string name="usage_clear_confirm_title">Clear usage data?</string>
+    <string name="usage_clear_confirm_text">All locally stored usage records will be deleted. This action cannot be undone.</string>
+    <string name="usage_clear_confirm_ok">Clear</string>
+    <string name="usage_dialog_cancel">Cancel</string>
+    <string name="usage_share_chooser">Share usage CSV</string>
+</resources>

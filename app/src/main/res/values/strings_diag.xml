@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Diagnostics center strings (English default) — app/device info, crash records, log files, one-tap diagnostic report.
+     Chinese lives in values-zh/strings_diag.xml; language switching goes through LanguageManager +
+     MainActivity attachBaseContext/recreate. -->
+<resources>
+    <!-- ═══ Pages (DiagnosticsScreen) ═══ -->
+    <string name="diag_title">Diagnostics</string>
+    <string name="diag_subtitle">Report bundles app and device info, log files and crash records for offline troubleshooting</string>
+    <string name="diag_refresh">Refresh</string>
+    <string name="diag_cancel">Cancel</string>
+    <string name="diag_view">View</string>
+    <string name="diag_share">Share</string>
+    <string name="diag_share_chooser">Share diagnostics file</string>
+
+    <!-- ═══ Info section titles and expansion ═══ -->
+    <string name="diag_app_section">App info</string>
+    <string name="diag_device_section">Device info</string>
+    <string name="diag_expand">Expand</string>
+    <string name="diag_collapse">Collapse</string>
+
+    <!-- ═══ App info field names ═══ -->
+    <string name="diag_field_version_name">Version name</string>
+    <string name="diag_field_version_code">Version code</string>
+    <string name="diag_field_build_type">Build type</string>
+    <string name="diag_field_install_source">Install source</string>
+    <string name="diag_field_first_install">First installed</string>
+    <string name="diag_field_last_update">Last updated</string>
+    <string name="diag_field_target_sdk">Target SDK</string>
+    <string name="diag_field_min_sdk">Minimum Android</string>
+
+    <!-- ═══ Device info field names ═══ -->
+    <string name="diag_field_model">Device model</string>
+    <string name="diag_field_android">Android version</string>
+    <string name="diag_field_security_patch">Security patch</string>
+    <string name="diag_field_abi">ABI</string>
+    <string name="diag_field_screen">Screen</string>
+    <string name="diag_field_memory">Memory</string>
+    <string name="diag_field_storage">Internal storage</string>
+    <string name="diag_field_locale_tz">Language and timezone</string>
+    <string name="diag_field_cpu">CPU cores</string>
+
+    <!-- ═══ Info value templates ═══ -->
+    <string name="diag_build_debug">debug</string>
+    <string name="diag_build_release">release</string>
+    <string name="diag_unknown">Unknown</string>
+    <string name="diag_value_mem">%1$s free of %2$s (%3$d%%)</string>
+    <string name="diag_value_storage">%1$s free of %2$s (%3$d%%)</string>
+
+    <!-- ═══ Crash records section ═══ -->
+    <string name="diag_crash_section">Crash records</string>
+    <string name="diag_crash_count">%1$d records</string>
+    <string name="diag_crash_empty">No crash records</string>
+    <string name="diag_crash_delete">Delete</string>
+    <string name="diag_crash_clear">Clear all</string>
+    <string name="diag_crash_delete_confirm_title">Delete crash record?</string>
+    <string name="diag_crash_delete_confirm_text">Crash file %1$s will be deleted permanently</string>
+    <string name="diag_crash_clear_confirm_title">Clear all crash records?</string>
+    <string name="diag_crash_clear_confirm_text">%1$d crash files will be deleted permanently</string>
+
+    <!-- ═══ Log files section ═══ -->
+    <string name="diag_log_section">Log files</string>
+    <string name="diag_log_count">%1$d files · %2$s</string>
+    <string name="diag_log_empty">No log files yet</string>
+    <string name="diag_log_clear">Clear log files</string>
+    <string name="diag_log_clear_confirm_title">Clear log files?</string>
+    <string name="diag_log_clear_confirm_text">%1$d log files (%2$s) will be deleted permanently</string>
+
+    <!-- ═══ Crash/log viewer dialog (#228) ═══ -->
+    <string name="diag_viewer_failed">Failed to read file</string>
+    <string name="diag_viewer_missing">File no longer exists (it may have been cleared)</string>
+    <string name="diag_viewer_retry">Retry</string>
+    <string name="diag_viewer_close">Close</string>
+
+    <!-- ═══ Diagnostic report ═══ -->
+    <string name="diag_report_section">Diagnostics report</string>
+    <string name="diag_report_content_desc">The zip contains device.txt (app and device info), logs/ (log files) and crashes/ (crash records); share it to help troubleshoot</string>
+    <string name="diag_report_generate">Generate diagnostics report</string>
+    <string name="diag_report_generating">Generating report…</string>
+    <string name="diag_report_success_title">Report generated</string>
+    <string name="diag_report_file_info">Path: %1$s\nSize: %2$s</string>
+    <string name="diag_report_share">Share</string>
+    <string name="diag_report_failed_title">Report generation failed</string>
+    <string name="diag_report_failed_text">Could not build the zip archive. Please try again</string>
+    <string name="diag_report_close">Close</string>
+    <!-- ═══ MCP / Skills / tool audit / failure sections (diagnostics enhancement) ═══ -->
+    <string name="diag_mcp_section">MCP servers</string>
+    <string name="diag_mcp_count">%1$d configured · %2$d connected</string>
+    <string name="diag_mcp_empty">No MCP servers configured</string>
+    <string name="diag_mcp_connected">Connected</string>
+    <string name="diag_mcp_disconnected">Disconnected</string>
+    <string name="diag_mcp_disabled">Disabled</string>
+    <string name="diag_skill_section">Skills</string>
+    <string name="diag_skill_count">%1$d installed</string>
+    <string name="diag_skill_empty">No skills installed</string>
+    <string name="diag_skill_scope_agent">Agent</string>
+    <string name="diag_skill_scope_coding">Coding</string>
+    <string name="diag_skill_tools_unit">%1$d tools</string>
+    <string name="diag_audit_section">Tool and terminal calls</string>
+    <string name="diag_audit_count">%1$d recent calls</string>
+    <string name="diag_audit_empty">No tool calls recorded yet</string>
+    <string name="diag_failure_section">Failure details</string>
+    <string name="diag_failure_count">%1$d failed</string>
+    <string name="diag_failure_empty">No failures recorded — everything looks healthy</string>
+    <string name="diag_failure_detail_title">Failure detail</string>
+    <string name="diag_failure_field_command">Command</string>
+    <string name="diag_failure_field_detail">Detail</string>
+    <string name="diag_failure_field_exit">Exit code</string>
+    <string name="diag_failure_field_duration">Duration</string>
+    <string name="diag_failure_field_tier">Channel</string>
+</resources>

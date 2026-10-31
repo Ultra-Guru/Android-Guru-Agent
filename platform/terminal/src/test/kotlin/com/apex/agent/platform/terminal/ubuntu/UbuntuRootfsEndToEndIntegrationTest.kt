@@ -1,0 +1,429 @@
+package com.apex.agent.platform.terminal.ubuntu
+
+import com.apex.agent.platform.terminal.linux.CpuArchitecture
+import com.apex.agent.platform.terminal.proot.LinuxPRootBackend
+import com.apex.agent.platform.terminal.proot.PRootBinaryInfo
+import com.apex.agent.platform.terminal.proot.PRootCommand
+import com.apex.agent.platform.terminal.proot.PRootVersion
+import com.apex.agent.platform.terminal.proot.ProotExecutor
+import com.apex.agent.platform.terminal.runtime.SessionSpawnRequest
+import com.apex.agent.platform.terminal.workspace.AbsolutePath
+import com.apex.agent.platform.terminal.workspace.GuestUserHome
+import com.apex.agent.platform.terminal.workspace.LinuxWorkspaceManager
+import com.apex.agent.platform.terminal.linux.RootfsProvider
+import com.apex.agent.platform.terminal.linux.RootfsVerification
+import com.apex.agent.platform.terminal.linux.RootfsDescriptor
+import com.apex.agent.platform.terminal.linux.LinuxDistribution
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
+import org.junit.BeforeClass
+import org.junit.Test
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.nio.file.Files
+
+/**
+ * T72/T83: REAL Ubuntu RootFS End-to-End integration test.
+ *
+ * 这是 T72 的衔接验证（范围第 13 条）—— 证明的不是"两个 subsystem 各自
+ * 测试通过"，而是整条链在真实输入上闭环：
+ *
+ *   REAL Ubuntu archive（夹具下载自 cdimage，REAL SHA-256）
+ *     → 暂存为伪 nativeLibraryDir/libubuntu-rootfs.so（T83 内置交付形态）
+ *     → BundledRootfsSource → RootfsProvisionerImpl (local copy → verify → extract → configure → health)
+ *     → READY rootfs (stage evidence + health summary in metadata)
+ *     → ProvisionedRootfsProvider → LinuxPRootBackend.prepare() → SpawnSpec
+ *     → proot (REAL process) → Ubuntu userspace (/bin/bash, /usr/bin/apt)
+ *
+ * 分级自检（诚实原则）：
+ *  - Level 1（本类的全部 JVM 断言）：只需网络。无 proot 也能验证
+ *    RootFS 生产化本身。CI app-compile job 有网络 → 必跑。
+ *  - Level 2（proot 执行）：需要 host 上有 proot 且 ptrace 可用。CI 装
+ *    proot 5.4 —— 它与 Termux proot 5.1.107.92（APK 生产目标）有两处
+ *    语法差异：
+     *      (a) upstream proot 没有 `-E KEY=VALUE`（Termux 私有扩展）→ 测试把
+ *         guest env 放进 ProcessBuilder env（upstream proot 继承之，语义等价）
+     *      (b) upstream proot 5.4 不认 `--` 分隔符 → 去掉（options 后直接跟 command）
+     *      (c) glibc 2.39 (Ubuntu 24.04) 与 seccomp 加速冲突 → PROOT_NO_SECCOMP=1
+ *    这些适配只存在于本测试 —— 生产路径（Termux proot + -E + --）的契约
+ *    由 P71 的 androidTest（真机）锁定。
+ *  - Level 3（apt update）：真实网络 + DNS + sources。慢（1-3 min）但
+ *    是 "apt 真正可用" 的最终证明。
+ *
+ * 无 mock、无 fake archive、无假 READY。
+ */
+class UbuntuRootfsEndToEndIntegrationTest {
+
+    companion object {
+        // T83：运行时源已内置化（APK jniLibs 伪 .so）。E2E 保持“真实档案”价值：
+        // 下载官方 ubuntu-base 作为夹具 → 暂存为伪 nativeLibraryDir 里的
+        // libubuntu-rootfs.so → 经 BundledRootfsSource 走与生产完全同构的解包链。
+        private lateinit var source: BundledRootfsSource
+        private lateinit var layout: RootfsInstallLayout
+        private lateinit var provisioner: RootfsProvisionerImpl
+        @Volatile private var installed: Boolean = false
+        @Volatile private var installError: String? = null
+
+        /** host proot（CI/本地调试），null = 无 → Level 2/3 skip。 */
+        @Volatile private var prootBinary: File? = null
+        @Volatile private var prootNeedsAdaptation = false
+
+        @JvmStatic
+        @BeforeClass
+        fun setUpClass() {
+            // ── network preflight（夹具下载的 assume）──
+            assumeTrue("hosting release unreachable — network preflight", networkReachable())
+
+            // ── one REAL staged bundle + one REAL install for the whole class ──
+            val base = Files.createTempDirectory("t83-e2e-").toFile()
+            layout = RootfsInstallLayout.under(AbsolutePath(base.absolutePath))
+            val nativeLibDir = java.io.File(base, "nativeLib").apply { mkdirs() }
+            val fixture = downloadFixtureArchive()
+            assumeTrue("fixture download/verify failed — cannot exercise the bundled chain", fixture != null)
+            fixture!!.copyTo(java.io.File(nativeLibDir, BundledRootfsSource.BUNDLE_LIB_NAME), overwrite = true)
+            fixture.delete()
+            source = BundledRootfsSource(nativeLibraryDir = nativeLibDir.absolutePath)
+            provisioner = RootfsProvisionerImpl(
+                source = source,
+                validator = null,
+                layout = layout,
+                configurator = RootfsConfigurator(),   // real: host resolv.conf / host CA if present
+                healthCheck = RootfsHealthInspector(expectedArch = CpuArchitecture.X86_64)
+            )
+            try {
+                runBlocking {
+                    val result = provisioner.install(RootfsTarget("ubuntu", "24.04", CpuArchitecture.X86_64))
+                    installed = result is ProvisioningResult.Ready
+                    if (!installed) installError = result.toString()
+                }
+            } catch (e: Throwable) {
+                installError = e.message
+            }
+
+            // ── proot discovery + capability probe（Level 2/3 的 assume）──
+            val bin = findHostProot()
+            if (bin != null && prootWorks(bin)) {
+                prootBinary = bin
+            }
+        }
+
+        /**
+         * 夹具获取：下载真实完整 rootfs 24.04.4 amd64（T84 交付物本体，~310MB）并校验
+         * 固定 SHA-256。下载只是测试夹具的获取手段（生产链路已是内置离线解包，零网络）。
+         */
+        private fun downloadFixtureArchive(): java.io.File? = try {
+            val url = "https://github.com/Ultra-Guru/Android-Guru-Agent/releases/download/ubuntu-rootfs-24.04.4-full/apex-ubuntu-full-24.04.4-amd64.tar.gz"
+            val expectedSha = "57fb03f916cae40202134594a6ad063167174714e1ad36a50f0575b015b87228"
+            val tmp = java.io.File.createTempFile("t84-e2e-archive", ".tar.gz")
+            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 30_000
+                readTimeout = 900_000
+                instanceFollowRedirects = true
+            }
+            conn.inputStream.use { input -> tmp.outputStream().use { input.copyTo(it) } }
+            val actual = RootfsDownloader.sha256OfFile(tmp)
+            if (actual != expectedSha) {
+                tmp.delete()
+                null
+            } else {
+                tmp
+            }
+        } catch (e: Throwable) {
+            null
+        }
+
+        private fun networkReachable(): Boolean = try {
+            val conn = URL("https://github.com/Ultra-Guru/Android-Guru-Agent/releases/tag/ubuntu-rootfs-24.04.4-full")
+                .openConnection() as HttpURLConnection
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 10_000
+            conn.requestMethod = "HEAD"
+            val code = conn.responseCode
+            conn.disconnect()
+            code in 200..299
+        } catch (e: Throwable) {
+            false
+        }
+
+        private fun findHostProot(): File? {
+            // explicit override for local debugging (non-standard proot builds)
+            System.getenv("T72_PROOT_BIN")?.let { p ->
+                val f = File(p)
+                if (f.canExecute()) return f
+            }
+            return listOf("/usr/bin/proot", "/usr/local/bin/proot", "/bin/proot")
+                .map { File(it) }.firstOrNull { it.canExecute() }
+        }
+
+        /** 用刚装好的真实 Ubuntu rootfs 探测 proot 可用性（不是 -r / 冒烟）。 */
+        private fun prootWorks(bin: File): Boolean {
+            if (!installed) return false
+            val rootfs = runBlocking { provisioner.current() } ?: return false
+            val root = File(rootfs.location!!.value)
+            return try {
+                // 最小公共语法：只 -r + command（不带 --kill-on-exit/--——它们
+                // 是 Termux/5.4+ 扩展；探测的是“这个 proot 能跑这个 rootfs”，
+                // 老 upstream proot 5.1 跑不了 glibc 2.39 guest → 如实 false）
+                val pb = ProcessBuilder(
+                    listOf(bin.absolutePath, "-r", root.absolutePath, "/bin/true")
+                )
+                pb.environment().clear()
+                // upstream proot 5.4 + glibc 2.39 guest needs this; Termux proot
+                // (production target) ignores it — setting it unconditionally is safe
+                pb.environment()["PROOT_NO_SECCOMP"] = "1"
+                System.getenv("LD_LIBRARY_PATH")?.let { pb.environment()["LD_LIBRARY_PATH"] = it }
+                val proc = pb.start()
+                // 有界等待（30s）：探测命令不退出 = ptrace 受限/seccomp 冲突等环境问题。
+                // 此前 waitFor() 无限期阻塞 —— 僵尸 proot 挂住 setUpClass 后整个
+                // test task 空转到 20 分钟超时（CI 症状：其后无任何测试事件）。
+                val exited = proc.waitFor(30, java.util.concurrent.TimeUnit.SECONDS)
+                if (!exited) {
+                    runCatching { proc.destroyForcibly() }
+                    return false
+                }
+                proc.exitValue() == 0
+            } catch (e: Throwable) {
+                false
+            }
+        }
+    }
+
+    // ─── Level 1: RootFS Productionization (network only) ───
+
+    @Test
+    fun `L1 bundled local copy sha256 extract configure health produces READY`() {
+        assumeTrue("install failed: $installError", installed)
+        val result = runBlocking { provisioner.current() }
+        assertNotNull("READY rootfs exists", result)
+        val rootfs = result!!
+        assertEquals("ubuntu-24.04.4-x86_64", rootfs.id)
+        assertEquals(CpuArchitecture.X86_64, rootfs.architecture)
+        // REAL checksum from the hosted full-rootfs digests (rootfs-digests.txt, run #10)
+        assertEquals("57fb03f916cae40202134594a6ad063167174714e1ad36a50f0575b015b87228", rootfs.checksum)
+    }
+
+    @Test
+    fun `L1 metadata carries full stage evidence chain and health summary`() {
+        assumeTrue("install failed: $installError", installed)
+        val meta = runBlocking {
+            RootfsMetadataStore(File(layout.metadataFile.value)).load()
+        }
+        assertNotNull(meta)
+        for (stage in listOf("DOWNLOADED", "VERIFIED", "EXTRACTED", "CONFIGURED", "READY")) {
+            assertTrue("stage $stage evidenced: ${meta!!.stageEvidence}", meta!!.stageEvidence.containsKey(stage))
+        }
+        val health = meta!!.health
+        assertNotNull("health summary persisted", health)
+        assertTrue("health valid (0 FAIL items)", health!!.valid)
+        // T84 完整环境档：条目数远超骨架时代的 3413（58 包 + 全套 dev 头文件）
+        assertTrue("full-env entry count extracted: ${meta.entryCount}", (meta.entryCount ?: 0) > 10_000)
+    }
+
+    @Test
+    fun `L1 extracted rootfs keeps merged-usr symlinks and modes`() {
+        assumeTrue("install failed: $installError", installed)
+        val rootfs = runBlocking { provisioner.current() }!!
+        val root = File(rootfs.location!!.value)
+        // THE regression the P69 extractor had: bin as an EMPTY FILE
+        assertTrue("bin is a symlink", java.nio.file.Files.isSymbolicLink(File(root, "bin").toPath()))
+        assertEquals("usr/bin", java.nio.file.Files.readSymbolicLink(File(root, "bin").toPath()).toString())
+        assertTrue("/bin/bash reachable", File(root, "bin/bash").canExecute())
+        // 194 symlinks in the real archive — spot-check well-known ones
+        assertTrue("etc/os-release symlink", java.nio.file.Files.isSymbolicLink(File(root, "etc/os-release").toPath()))
+        // hardlinks: perl5.38.2 → perl
+        val perl = File(root, "usr/bin/perl")
+        val perl5 = File(root, "usr/bin/perl5.38.2")
+        assertTrue("hardlink pair exists", perl.exists() && perl5.exists())
+        assertTrue("same inode (real hardlink from the archive)",
+            java.nio.file.Files.isSameFile(perl.toPath(), perl5.toPath()))
+        // modes: /etc/shadow style 0600 (root:shadow 0640 in real image — check something strict)
+        val pLock = java.nio.file.Files.getPosixFilePermissions(File(root, "etc/.pwd.lock").toPath())
+        assertEquals("0600 restored", setOf(
+            java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+            java.nio.file.attribute.PosixFilePermission.OWNER_WRITE), pLock)
+    }
+
+    @Test
+    fun `L1 configurator made resolver hosts apt-dirs real`() {
+        assumeTrue("install failed: $installError", installed)
+        val rootfs = runBlocking { provisioner.current() }!!
+        val root = File(rootfs.location!!.value)
+        val resolv = File(root, "etc/resolv.conf").readText()
+        assertTrue("resolver configured: '$resolv'", resolv.contains("nameserver"))
+        assertTrue("hosts configured", File(root, "etc/hosts").readText().contains("127.0.0.1"))
+        assertTrue("hostname configured", File(root, "etc/hostname").readText().isNotBlank())
+        for (d in listOf("var/lib/apt/lists/partial", "var/lib/dpkg/info", "var/cache/apt/archives/partial")) {
+            assertTrue("/$d ensured", File(root, d).isDirectory)
+        }
+    }
+
+    @Test
+    fun `L1 health inspector passes on the REAL rootfs with arch check`() {
+        assumeTrue("install failed: $installError", installed)
+        val rootfs = runBlocking { provisioner.current() }!!
+        val report = RootfsHealthInspector(expectedArch = CpuArchitecture.X86_64)
+            .inspect(File(rootfs.location!!.value))
+        assertEquals("no FAIL items: ${report.failures}", 0, report.failures.size)
+        // CA: CI host has a bundle → copied → PASS; locally may be ABSENT → WARN.
+        // Either way the check exists and never fails the rootfs.
+        assertTrue(report.checks.any { it.name == "ca-certificates" })
+    }
+
+    // ─── Level 2: LinuxPRootBackend SpawnSpec → REAL proot → Ubuntu userspace ───
+
+    /**
+     * T91（D5）：host proot 方言实测 —— 生产 provider 的能力探针（exec
+     * `--kill-on-exit --version`，不 ptrace）直接判定；argv 由 builder 按方言
+     * 自适应，**不再需要（也不再允许）测试内手工过滤 `--`/`--kill-on-exit`**。
+     * T88 时代的 adaptForUpstreamProot 适配层由此删除 —— 它与「把 -E 偷搬进
+     * 宿主 env」是同构风险：适配层改写了生产 argv，CI 绿不等于设备绿。
+     * host proot（Debian 5.4 / Ubuntu 5.1.0 均为上游方言）探针如实返回 UPSTREAM；
+     * 若用户以 T72_PROOT_BIN 指向 Termux 补丁版，则返回 TERMUX_COMPAT，
+     * argv 同样可执行（上游形状是 Termux 方言的子集）。
+     */
+    private fun hostCapabilities(): com.apex.agent.platform.terminal.proot.PRootArgvCapabilities {
+        val bin = prootBinary ?: return com.apex.agent.platform.terminal.proot.PRootArgvCapabilities.UPSTREAM_SAFE
+        val env = com.apex.agent.platform.terminal.proot.PRootHostEnvironment(
+            nativeLibraryDir = bin.parentFile.absolutePath,
+            baseDir = File(System.getProperty("java.io.tmpdir"), "t91-dialect-base"),
+            cacheDir = File(System.getProperty("java.io.tmpdir"), "t91-dialect-cache")
+        )
+        return com.apex.agent.platform.terminal.proot.NativeLibraryPRootBinaryProvider(env)
+            .capabilitiesFor(bin)
+    }
+
+    private fun executorWith(): ProotExecutor {
+        val hostEnv = mutableMapOf<String, String>(
+            "PROOT_NO_SECCOMP" to "1",   // glibc 2.39 guest + ptrace seccomp accel conflict
+            "PATH" to "/usr/bin:/bin"
+        )
+        System.getenv("LD_LIBRARY_PATH")?.let { hostEnv["LD_LIBRARY_PATH"] = it }
+        return ProotExecutor(hostEnv = { hostEnv })
+    }
+
+    private fun realBackend(): LinuxPRootBackend {
+        val bin = prootBinary!!
+        val capabilities = hostCapabilities()
+        val binaryProvider = object : com.apex.agent.platform.terminal.proot.PRootBinaryProvider {
+            override suspend fun locate(): Result<AbsolutePath> = Result.success(AbsolutePath(bin.absolutePath))
+            override suspend fun verify(binary: AbsolutePath): Result<PRootBinaryInfo> = Result.success(
+                // T91（D5）：方言来自真实探针（非硬编码）—— 与生产
+                // NativeLibraryPRootBinaryProvider.verify 的判定路径同源。
+                PRootBinaryInfo(
+                    binary, PRootVersion(5, 4, 0), CpuArchitecture.X86_64, true,
+                    capabilities = capabilities
+                )
+            )
+        }
+        val rootfsProvider = ProvisionedRootfsProvider(provisioner)
+        val workspaces = LinuxWorkspaceManager(File(layout.baseDir.value, "workspaces"))
+        val userHome = GuestUserHome(File(layout.baseDir.value, "home"))
+        return LinuxPRootBackend(
+            binaryProvider = binaryProvider,
+            rootfsProvider = rootfsProvider,
+            workspaces = workspaces,
+            userHome = userHome
+        )
+    }
+
+    private fun runInUbuntu(guestCommand: List<String>, timeoutMs: Long = 60_000): ProotExecutor.Execution {
+        assumeTrue("proot unavailable or ptrace-restricted — Level 2 skipped", prootBinary != null)
+        val backend = realBackend()
+        val spec = runBlocking {
+            backend.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80, env = emptyMap()))
+        }.getOrThrow()
+        assertEquals("SpawnSpec argv[0] is the proot binary", prootBinary!!.absolutePath, spec.argv[0])
+
+        // T91（D5）：spec.argv 已按实测方言自适应（上游无 --/--kill-on-exit），
+        // 原样执行 —— 测试内适配层已删除（见 hostDialect KDoc）。
+        // replace the trailing "/bin/bash -i" with the test command
+        // （env trampoline 的 K=V 赋值保留在 bash 之前 —— guest 仍拿到注入的 env）
+        val bashIdx = spec.argv.indexOfLast { it == "/bin/bash" }
+        assertTrue("bash -i found in argv: ${spec.argv}", bashIdx > 0)
+        val finalArgv = spec.argv.subList(0, bashIdx) + guestCommand
+        val executor = executorWith()
+        return executor.execute(
+            PRootCommand(AbsolutePath(finalArgv[0]), finalArgv.drop(1)),
+            timeoutMs = timeoutMs
+        )
+    }
+
+    @Test
+    fun `L2 proot runs REAL Ubuntu bash and reads os-release`() {
+        val exec = runInUbuntu(listOf("/bin/bash", "-c", "head -1 /etc/os-release"))
+        assertEquals("bash exit code: ${exec.stderr}", 0, exec.exitCode)
+        assertTrue("os-release output: '${exec.stdout}'", exec.stdout.contains("Ubuntu 24.04"))
+    }
+
+    @Test
+    fun `L2 proot runs REAL apt from the provisioned rootfs`() {
+        val exec = runInUbuntu(listOf("/bin/bash", "-c", "/usr/bin/apt --version"))
+        assertEquals("apt exit code: ${exec.stderr}", 0, exec.exitCode)
+        assertTrue("apt version output: '${exec.stdout}'", exec.stdout.contains("apt"))
+    }
+
+    @Test
+    fun `L2 merged-usr symlink resolves inside guest`() {
+        val exec = runInUbuntu(listOf("/bin/bash", "-c", "test -L /bin && echo SYMLINK-OK && ls /bin/bash"))
+        assertEquals("exit: ${exec.stderr}", 0, exec.exitCode)
+        assertTrue("symlink intact in guest: '${exec.stdout}'", exec.stdout.contains("SYMLINK-OK"))
+    }
+
+    @Test
+    fun `L2 workspace bind and guest env injected`() {
+        // 依赖顺序防御：workspace 目录由 realBackend() 的 resolve 懒创建，但 JUnit
+        // 方法执行顺序不定 —— 写 marker 前先 mkdirs（CI 上该测试首个执行时暴露）。
+        // T75: default workspace 位于 workspaces/default。
+        val wsDir = File(layout.baseDir.value, "workspaces/default")
+        wsDir.mkdirs()
+        File(wsDir, "marker.txt").writeText("bind-works")
+        val exec = runInUbuntu(listOf(
+            "/bin/bash", "-c",
+            "cat /workspace/marker.txt && echo HOME=\$HOME && echo TERM=\$TERM"
+        ))
+        assertEquals("exit: ${exec.stderr}", 0, exec.exitCode)
+        assertTrue("bind mounted: '${exec.stdout}'", exec.stdout.contains("bind-works"))
+        assertTrue("guest HOME injected: '${exec.stdout}'", exec.stdout.contains("HOME=/root"))
+        assertTrue("guest TERM injected: '${exec.stdout}'", exec.stdout.contains("TERM=xterm-256color"))
+    }
+
+    @Test
+    fun `L2b user home survives full rootfs replacement`() = runBlocking {
+        // T75 用户模型的核心性质：guest /root 是 host 侧持久 bind —— rootfs 换版本
+        // （invalidate + 重装，archive 缓存复用不重新下载）后用户数据仍在。
+        assumeTrue("install failed: $installError", installed)
+        assumeTrue("proot unavailable — L2b skipped", prootBinary != null)
+
+        // 1. 在 guest /root 写持久标记
+        val write = runInUbuntu(listOf("/bin/bash", "-c", "echo survive-rootfs > /root/SURVIVE.txt"))
+        assertEquals("exit: ${write.stderr}", 0, write.exitCode)
+        // host 侧确认落在持久 home 目录（而非 rootfs 内部）
+        val hostHome = File(layout.baseDir.value, "home")
+        assertEquals("survive-rootfs", File(hostHome, "SURVIVE.txt").readText().trim())
+
+        // 2. rootfs 失效 + 重装（archive 命中缓存 → 不走网络）
+        val inv = provisioner.invalidate(reason = "T75 E2E: simulated version replacement")
+        assertTrue("invalidate: $inv", inv is ProvisioningResult.Invalidated)
+        val reinstall = provisioner.install(RootfsTarget("ubuntu", "24.04", CpuArchitecture.X86_64))
+        assertTrue("reinstall: $reinstall", reinstall is ProvisioningResult.Ready)
+
+        // 3. 新 rootfs 会话仍能看到 home 文件
+        val read = runInUbuntu(listOf("/bin/bash", "-c", "cat /root/SURVIVE.txt"))
+        assertEquals("exit: ${read.stderr}", 0, read.exitCode)
+        assertTrue("home survived rootfs replacement: '${read.stdout}'", read.stdout.contains("survive-rootfs"))
+    }
+
+    // ─── Level 3: apt actually usable against the real network ───
+
+    @Test
+    fun `L3 apt update succeeds in the provisioned rootfs`() {
+        val exec = runInUbuntu(
+            listOf("/bin/bash", "-c", "apt-get update 2>&1 | tail -5; test \${PIPESTATUS[0]} -eq 0"),
+            timeoutMs = 300_000
+        )
+        assertEquals("apt-get update exit: ${exec.stdout} ${exec.stderr}", 0, exec.exitCode)
+        assertTrue("reading package lists: '${exec.stdout}'", exec.stdout.contains("Reading package lists"))
+    }
+}

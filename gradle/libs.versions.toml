@@ -1,0 +1,180 @@
+[versions]
+# Kotlin 2.3.21（2.3.x 稳定线最新 patch）：升级动机是液态玻璃 backdrop 的 Maven 版本阶梯 ——
+# 彩色 DefaultHighlight（PR #364 从上游同步的特性）在 backdrop 1.0.3 起才进入 Maven 线，
+# 而 1.0.3+ 需 Kotlin 2.3.0+ / Compose 1.10+；1.0.6（androidx Compose 生态天花板）需
+# kotlin-stdlib 2.3.10 + Compose 1.10.3 + shapes 1.2.0。2.2.21 + backdrop 1.0.1 会回退
+# PR #364 刚合入的彩色高光，放奔 2.4.x 因 backdrop 2.x 已切换 JetBrains Compose 坐标系。
+# 配套：KSP 2.3.12（Kotlin 2.3 时代起 KSP 脱离 <kotlin>-<ksp> 版本格式独立演进）/ 
+# AGP 8.13.2（不变；Hilt 2.58 门禁 AGP ≥ 8.4）/ Gradle 8.14（不变）。
+kotlin = "2.3.21"
+agp = "8.13.2"
+# Compose BOM 2026.02.00（Compose 1.10.3 / material3 1.4.0）：与 backdrop 1.0.6 的
+# POM 声明（kotlin-stdlib 2.3.10 + Compose 1.10.3）精确配套；ui-android 1.10.3 的
+# lifecycle-runtime-compose 2.8.7 与本仓 pin 一致、minCompileSdk=35 不变。
+compose-bom = "2026.02.00"
+activity-compose = "1.9.3"
+lifecycle = "2.8.7"
+# Hilt 2.58：Dagger 2.57+ 完全适配 KSP2 与 Kotlin 2.2+（KSP 2.x 已移除 KSP1 兼容层）。
+# 注意：2.59.x 的 Gradle 插件要求 AGP ≥ 9.0.0（hilt-android-gradle-plugin 内置
+# 版本门禁，实测报错），与本仓 AGP 8.13.2 冲突 —— 2.58 是 AGP 8.x 线最高版
+#（其门禁为 AGP ≥ 8.4.0）。AGP 9 时代再评估 2.59+。
+hilt = "2.58"
+# androidx.hilt 1.3.0：hilt-compiler 修复 KSP2 兼容（1.2.0 的 KSP1 API 在 KSP2 下不可用）
+hilt-nav-compose = "1.3.0"
+coroutines = "1.10.2"
+# serialization 1.9.0：以 Kotlin 2.1.21 构建（语言版本 2.1），Kotlin 2.3.21 消费端完全兼容
+serialization = "1.9.0"
+okhttp = "4.12.0"
+# XZ for Java —— 增量更新的 VCDIFF LZMA 二级压缩解码（纯 Java，无传递依赖，公有领域）
+xz = "1.9"
+shizuku = "13.1.5"
+core-ktx = "1.15.0"
+navigation = "2.8.5"
+work = "2.10.0"
+# KSP 2.3.12（KSP2）：Kotlin 2.3 时代起 KSP 版本脱离 <kotlin>-<ksp> 格式独立演进
+#（旧式 2.2.21-2.0.5 是最后的合并版本号），2.3.x KSP 支持全部 2.3.x Kotlin。
+ksp = "2.3.12"
+coil = "2.6.0"
+security-crypto = "1.1.0-alpha06"
+junit = "4.13.2"
+# Room 2.8.x：2.7.0 起支持 KSP2（2.6.1 的 processor 基于 KSP1 API，KSP 2.x 下不可用）
+room = "2.8.5"
+# 赛博霓虹悬浮球（JitPack；仅允许该 group 走 jitpack 仓库，版本固定避免动态解析）
+easyfloat = "2.0.4"
+# Liquid Glass 底层：vendored 模块（vendor/backdrop，上游 Kyant0/AndroidLiquidGlass，
+# Apache-2.0；上游 tag 1.0.0 血统 + 本仓 diag-20261011 热修 + PR #364 彩色
+# DefaultHighlight）。工具链（Kotlin 2.3.21 / BOM 2026.02.00）已具备消费 Maven 线
+# io.github.kyant0:backdrop 的能力——1.0.6 与本仓构建矩阵精确配套（kotlin-stdlib
+# 2.3.10 + Compose 1.10.3 + shapes 1.2.0），PR #362 曾实施去 vendored 化
+#（f86fc28e / 39a93c3e），但在合并 main 的 diag-20261011 热修（b4648f22：
+# DrawBackdropNode isAttached 守卫 / ShapeProvider 值语义 equals）时显式回退
+#——上游 1.0.6 二进制不含这两项 internal 级补丁，直接换 Maven 会回退
+# detached-remeasure 崩溃修复与 draw 失效风暴修复。待上游吸收后一行切回
+# Maven 坐标。注意：2.0.x 需 Kotlin 2.4 + JetBrains Compose 1.12。
+# Lucide 图标集（composablehorizons/compose-icons, MIT）。2.2.1 以 Kotlin 2.2.21 +
+# foundation 1.9.3 构建 —— Kotlin 2.3.21 消费端向后兼容；当前仓库代码零处使用
+# IconsLucide（仅 McpSoSource 抓取的网页 CSS class 字符串撞名），无 API 迁移面。
+lucide-icons = "2.2.1"
+# 物理弹力手势（SpringAnimation 按压挤压形变 / 吸附）
+dynamicanimation = "1.0.0"
+# apex-kit-browser（拆库 E1 迁移期；兄弟目录 includeBuild 时坐标被本地构建替换）
+browser-kit = "1.1.0"
+# apex-kit-workspace（拆库 E1 迁移期；兄弟目录 includeBuild 时坐标被本地构建替换）：
+# Coding 模式工作区浏览器（文件树/多格式预览/Git/变更和产物/实时跟随）
+workspace-kit = "0.1.0"
+# material-icons 显式 pin 1.7.8：官方已停止演进（BOM 2026.02.00 仍映射 1.7.8，
+# 解析结果不变）。长期迁移 material-symbols 待后续大版本时评估。
+compose-material-icons = "1.7.8"
+# Vico —— 开源图表库（Maven Central，稳定线 1.13.1）：任务历史/记忆统计可视化。
+# 选型 1.13.1（稳定版，非 2.x beta）：依赖 Compose 1.5+（Compose 向后二进制兼容，
+# 1.10.3 消费端可用）；仅引 compose 核心（不引 m2/m3 主题模块，避免与本项目
+# Material3 主题冲突）。
+vico = "1.13.1"
+
+[libraries]
+# Compose
+compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "compose-bom" }
+compose-ui = { group = "androidx.compose.ui", name = "ui" }
+compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
+compose-animation = { group = "androidx.compose.animation", name = "animation" }
+compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+compose-material-icons = { group = "androidx.compose.material", name = "material-icons-extended", version.ref = "compose-material-icons" }
+compose-material-icons-core = { group = "androidx.compose.material", name = "material-icons-core", version.ref = "compose-material-icons" }
+
+# AndroidX
+core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "core-ktx" }
+activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activity-compose" }
+lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
+lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+lifecycle-service = { group = "androidx.lifecycle", name = "lifecycle-service", version.ref = "lifecycle" }
+navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigation" }
+
+# Hilt
+hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
+hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }
+hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hilt-nav-compose" }
+hilt-work = { group = "androidx.hilt", name = "hilt-work", version.ref = "hilt-nav-compose" }
+hilt-work-compiler = { group = "androidx.hilt", name = "hilt-compiler", version.ref = "hilt-nav-compose" }
+
+# Coroutines
+coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
+coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+
+# Serialization
+serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
+
+# Network
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+# MockWebServer — v5 测试下载/安装工具链所需（仅 testImplementation）
+mockwebserver = { group = "com.squareup.okhttp3", name = "mockwebserver", version.ref = "okhttp" }
+
+# Delta update —— VCDIFF 补丁的 LZMA(.xz) 二级压缩段解码
+xz = { group = "org.tukaani", name = "xz", version.ref = "xz" }
+
+# Shizuku
+shizuku-api = { group = "dev.rikka.shizuku", name = "api", version.ref = "shizuku" }
+shizuku-provider = { group = "dev.rikka.shizuku", name = "provider", version.ref = "shizuku" }
+
+# WorkManager
+work-runtime = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
+
+# Coil
+coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+coil-svg = { group = "io.coil-kt", name = "coil-svg", version.ref = "coil" }
+
+# Security
+security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "security-crypto" }
+
+# 赛博霓虹悬浮球（JitPack 发布，坐标 group 为 com.github.princekin-f）
+easyfloat = { group = "com.github.princekin-f", name = "EasyFloat", version.ref = "easyfloat" }
+
+# Liquid Glass 底层引擎：vendored（vendor/backdrop 模块，无 Maven 坐标）——
+# 全仓玻璃渲染统一走 kyant backdrop（blur / lens 折射 / vibrancy；原 Haze 与
+# Cloudy 已在液态玻璃统一迁移中移除）。唯一消费层：app 的 ui/glass 包
+#（GlassSurface / TerminalGlass 单点集成）。回退原因见 [versions] backdrop 注释。
+
+# Lucide 图标集（Maven Central，com.composables）—— 斜杠菜单分类图标
+lucide-icons = { group = "com.composables", name = "icons-lucide-android", version.ref = "lucide-icons" }
+
+# 物理弹力手势（androidx.dynamicanimation）
+dynamicanimation = { group = "androidx.dynamicanimation", name = "dynamicanimation", version.ref = "dynamicanimation" }
+
+# apex-kit-browser 三层（core：DomParser 剪枝 / engine：BrowserEngine 自动化 / chrome：Overlay 浮窗）
+browser-core = { group = "com.apex.browser", name = "browser-core", version.ref = "browser-kit" }
+browser-engine = { group = "com.apex.browser", name = "browser-engine", version.ref = "browser-kit" }
+browser-chrome = { group = "com.apex.browser", name = "browser-chrome", version.ref = "browser-kit" }
+# apex-kit-workspace 两层（core：git 引擎/文件树/预览装配/watcher —— 纯 JVM；
+# explorer：Compose 三标签页 UI）
+workspace-core = { group = "com.apex.workspace", name = "workspace-core", version.ref = "workspace-kit" }
+workspace-explorer = { group = "com.apex.workspace", name = "workspace-explorer", version.ref = "workspace-kit" }
+
+# Vico 开源图表库（Maven Central，稳定线 1.13.1）—— 任务历史/记忆统计可视化
+vico-compose = { group = "com.patrykandpatrick.vico", name = "compose", version.ref = "vico" }
+
+# Room
+room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+
+# Testing (unit tests in app/src/test)
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
+
+# Testing (P70: real-JNI instrumentation tests in platform/terminal/src/androidTest)
+androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version = "1.2.1" }
+androidx-test-runner = { group = "androidx.test", name = "runner", version = "1.6.2" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+# Compose 编译器插件（Kotlin 同版本号发布；#266：原 app 模块硬编码 2.0.21，
+# 收编 catalog 保证与 kotlin 版本永不脱钩）
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

@@ -1,0 +1,212 @@
+package com.apex.agent.platform.terminal.persistence
+
+import com.apex.agent.platform.terminal.events.TerminalEvent
+import com.apex.agent.platform.terminal.job.TerminalJob
+import com.apex.agent.platform.terminal.session.TerminalSession
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.io.File
+
+/**
+ * Persists Session/Job metadata + recent events to disk for crash recovery.
+ *
+ * Spec ref: ATR 2.0 Final Spec §39 (Persistence / Recovery)
+ *
+ * What's persisted:
+ *   - Session metadata (id, shell, cwd, pid, rows, cols, privilege, state, cursor, createdAt, lastExitCode)
+ *   - T73 (v2): backend metadata (backendId/rootfsId/workspaceDir/guestCwd/binds)
+ *   - Job metadata (id, sessionId, command, owner, background, startCursor, endCursor, state, exitCode, startedAt, finishedAt)
+ *   - Recent events (last N per session — default 100)
+ *
+ * What's NOT persisted (v1):
+ *   - RingBuffer output bytes (in-memory only)
+ *   - Full EventLog (only recent N)
+ *   - PTY master fd (impossible; fd is process-local)
+ *
+ * On recovery: dead PTY → state=BROKEN/EXITED; never faked alive (Spec §39).
+ *
+ * Storage: one JSON file per session at `<dir>/session-<id>.json`.
+ */
+class SessionMetadataStore(
+    private val storageDir: File,
+    private val maxRecentEvents: Int = 100
+) {
+    private val json = Json { prettyPrint = false; ignoreUnknownKeys = true }
+    private val mutex = Mutex()
+
+    init { storageDir.mkdirs() }
+
+    @Serializable
+    data class SessionRecord(
+        // T73: v2 adds backend fields; T75: v3 adds workspaceId. v1/v2 files still load (defaults)
+        val schemaVersion: Int = 3,
+        val id: Long, val shell: String, val initialCwd: String, val pid: Int,
+        val rows: Int, val cols: Int, val privilege: String, val state: String,
+        val createdAt: Long, val lastActivityAt: Long = createdAt,  // PR #54 §25: activity tracking
+        val exitReason: String? = null,  // PR #54 §11: why session ended
+        val lastExitCode: Int?, val cursor: Long,
+        val jobs: List<JobRecord>, val recentEvents: List<EventRecord>,
+        // ── T73 (schema v2): 执行后端元数据（crash 后恢复时可区分本地/Ubuntu 会话）──
+        val backendId: String? = null,       // null = v1 记录（语义上等同 "local"）
+        val rootfsId: String? = null,
+        // ── T75 (schema v3): 会话绑定的 workspace id（LINUX）──
+        val workspaceId: String? = null,
+        val workspaceDir: String? = null,
+        val guestCwd: String? = null,
+        val binds: List<String> = emptyList()
+    ) {
+        companion object { const val CURRENT_SCHEMA = 3 }
+    }
+
+    @Serializable
+    data class JobRecord(
+        val id: Long, val sessionId: Long, val command: String, val owner: String,
+        val background: Boolean, val startCursor: Long, val endCursor: Long?,
+        val state: String, val exitCode: Int?, val signal: String?,
+        val startedAt: Long, val finishedAt: Long?
+    )
+
+    @Serializable
+    data class EventRecord(
+        val id: Long, val type: String, val timestamp: Long, val cursor: Long, val summary: String
+    )
+
+    suspend fun save(session: TerminalSession, jobs: List<TerminalJob>, recentEvents: List<TerminalEvent>) = mutex.withLock {
+        val record = SessionRecord(
+            schemaVersion = SessionRecord.CURRENT_SCHEMA,
+            id = session.id, shell = session.shell, initialCwd = session.initialCwd,
+            pid = session.pid, rows = session.rows, cols = session.cols,
+            privilege = session.privilege.name, state = session.state.name,
+            createdAt = session.createdAt, lastActivityAt = System.currentTimeMillis(),
+            exitReason = null,  // set on close/reconcile by SessionManager
+            lastExitCode = session.lastExitCode, cursor = session.cursor,
+            jobs = jobs.map { it.toRecord() },
+            recentEvents = recentEvents.takeLast(maxRecentEvents).map { it.toRecord() },
+            backendId = session.backend?.backendId,
+            rootfsId = session.backend?.rootfsId,
+            workspaceId = session.backend?.workspaceId,
+            workspaceDir = session.backend?.workspaceDir,
+            guestCwd = session.backend?.guestCwd,
+            binds = session.backend?.binds ?: emptyList()
+        )
+        // T81 (D-5)：真原子写 —— tmp 写入 + fsync + rename（同目录 rename 是
+        // POSIX 原子替换）。原实现 tmp.copyTo(target) 是逐字节复制：crash 在
+        // copy 中间留下**截断的目标 JSON**（下次 load 抛异常）；且无 fsync ——
+        // rename 后数据仍在页缓存，掉电即丢。注释自称「PR#54 §18 atomic write」
+        // 但实现不符。
+        val target = File(storageDir, "session-${session.id}.json")
+        val tmp = File(storageDir, "session-${session.id}.json.tmp")
+        java.io.FileOutputStream(tmp).use { os ->
+            os.write(json.encodeToString(record).toByteArray(Charsets.UTF_8))
+            os.flush()
+            os.fd.sync()   // fsync：确保 rename 前数据落盘
+        }
+        // 同目录 rename：原子替换（Linux/Android 语义）。旧 target 被原子覆盖。
+        if (!tmp.renameTo(target)) {
+            // 极端文件系统不支持覆盖 rename —— 退化为 delete+rename（非原子但
+            // 可用；tmp 已 fsync，数据安全）。
+            target.delete()
+            tmp.renameTo(target)
+        }
+    }
+
+    suspend fun loadAll(): List<SessionRecord> = mutex.withLock {
+        // T81 (D-5)：损坏隔离而非整批失败 —— 原实现单个损坏文件抛异常炸掉
+        // loadAll（调用方 catch 后视为「无记录」→ 健康数据被静默无视）。
+        // 现在：损坏文件重命名 .corrupt 隔离（保留现场供诊断），其余正常加载。
+        storageDir.listFiles { f -> f.name.startsWith("session-") && f.name.endsWith(".json") }
+            ?.mapNotNull { f ->
+                runCatching { json.decodeFromString<SessionRecord>(f.readText()) }
+                    .onFailure {
+                        val quarantine = File(f.parentFile, f.name + ".corrupt")
+                        f.renameTo(quarantine)
+                    }
+                    .getOrNull()
+            } ?: emptyList()
+    }
+
+    suspend fun load(sessionId: Long): SessionRecord? = mutex.withLock {
+        val f = File(storageDir, "session-$sessionId.json")
+        if (f.exists()) json.decodeFromString<SessionRecord>(f.readText()) else null
+    }
+
+    suspend fun delete(sessionId: Long) = mutex.withLock {
+        File(storageDir, "session-$sessionId.json").delete()
+        File(storageDir, "session-$sessionId.json.tmp").delete()
+    }
+    suspend fun clear() = mutex.withLock { storageDir.listFiles()?.forEach { it.delete() } }
+
+    private fun TerminalJob.toRecord() = JobRecord(
+        id, sessionId, redactSecrets(command), owner.name, background, startCursor, endCursor,
+        state.name, exitCode, signal?.name, startedAt, finishedAt
+    )
+
+    // ─── T85（S-6）：命令凭据脱敏 ───
+
+    /**
+     * 密码类参数（`-pSECRET` / `-p SECRET` / `--password=…`）→ 保留参数名 + 掩码。
+     * REVIEW-R3：必须带至少一个连字符 —— 初版 `-{0,2}` 允许零连字符，
+     * `ps aux` / `pip install` / `grep pattern` 这类含 p 开头词的命令被大面积误改写。
+     */
+    private val passwordArg = Regex("(?i)(-{1,2}(?:password|passwd|pwd|pass|secret|token|apikey|api_key|access[-_]?key|p)(?:\\s*=|\\s+)?)(\\S+)")
+
+    /** 裸 key=value 形式（URL 查询串 / 表单数据）：`password=hunter2` → `password=***`。 */
+    private val passwordKv = Regex("(?i)\\b(password|passwd|pwd|secret|token|apikey|api_key|access[-_]?key)\\s*=\\s*\\S+")
+
+    /** Bearer / Basic 认证头与长十六进制/base64 状凭据。 */
+    private val authHeader = Regex("(?i)(bearer|basic)\\s+[A-Za-z0-9+/=._-]{8,}")
+
+    /**
+     * 落盘前的凭据脱敏：session-*.json 会随崩溃恢复持久化到磁盘，
+     * `mysql -pSECRET`、`curl -H "Authorization: Bearer …"` 这类命令曾**明文**
+     * 写入（InputWritten 早已脱敏为 bytes=N，job 命令漏了）。掩码保留可诊断性。
+     */
+    private fun redactSecrets(command: String): String {
+        var s = command
+        s = passwordArg.replace(s) { it.groupValues[1] + "***" }
+        s = passwordKv.replace(s) { it.groupValues[1] + "=***" }
+        s = authHeader.replace(s) { "${it.groupValues[1]} ***" }
+        return if (s.length > MAX_PERSISTED_COMMAND) s.take(MAX_PERSISTED_COMMAND) + "…" else s
+    }
+
+    private companion object {
+        /** 落盘命令长度上限（防超长 heredoc/脚本填满存储）。 */
+        const val MAX_PERSISTED_COMMAND = 512
+    }
+
+    private fun TerminalEvent.toRecord(): EventRecord {
+        val type = when (this) {
+            is TerminalEvent.SessionCreated -> "SessionCreated"
+            is TerminalEvent.ProcessStarted -> "ProcessStarted"
+            is TerminalEvent.InputWritten -> "InputWritten"
+            is TerminalEvent.OutputProduced -> "OutputProduced"
+            is TerminalEvent.ResizeChanged -> "ResizeChanged"
+            is TerminalEvent.ProcessExited -> "ProcessExited"
+            is TerminalEvent.SignalSent -> "SignalSent"
+            is TerminalEvent.UserInterrupt -> "UserInterrupt"
+            is TerminalEvent.WaitingInput -> "WaitingInput"
+            is TerminalEvent.SessionClosed -> "SessionClosed"
+            is TerminalEvent.Error -> "Error"
+            is TerminalEvent.StateChanged -> "StateChanged"
+        }
+        val summary = when (this) {
+            is TerminalEvent.SessionCreated -> "shell=$shell pid=$pid"
+            // T85（S-6）：事件摘要同样脱敏（autoSave 每 2s 落盘一次事件尾）。
+            is TerminalEvent.ProcessStarted -> "job=$jobId cmd=${redactSecrets(command)}"
+            is TerminalEvent.InputWritten -> "owner=$owner kind=$kind bytes=$byteCount"
+            is TerminalEvent.OutputProduced -> "bytes=$startCursor..$endCursor"
+            is TerminalEvent.ResizeChanged -> "${rows}x${cols}"
+            is TerminalEvent.ProcessExited -> "job=$jobId exit=$exitCode cause=$cause"
+            is TerminalEvent.SignalSent -> "$signal by $owner"
+            is TerminalEvent.UserInterrupt -> "job=$jobId"
+            is TerminalEvent.WaitingInput -> "job=$jobId conf=$confidence"
+            is TerminalEvent.SessionClosed -> "cause=$cause"
+            is TerminalEvent.Error -> "$code: $message"
+            is TerminalEvent.StateChanged -> "$kind $targetId $from→$to"
+        }
+        return EventRecord(id, type, timestamp, cursor, summary)
+    }
+}

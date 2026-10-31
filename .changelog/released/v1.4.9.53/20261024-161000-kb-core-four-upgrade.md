@@ -1,0 +1,5 @@
+- 知识库内容红线落地：全能 / 全栈 / Git / 前端 4 套知识库进阶化改造 —— 教科书节全面替换为生产级深水内容，行数 2001→2190 / 2043→2182 / 2000→2064 / 2001→2273，索引目标 0 缺失校验全绿
+- 前端：「元素总表 / 全局属性 / 文档骨架」等 API 罗列节 → 解析与失效内幕（preload scanner / invalidation sets / layout thrashing）/ 加载调度内幕（fetchpriority / speculation rules / 103 Early Hints）/ :has() 性能画像与 v-flag 正则 / 选择器引擎右到左匹配内幕；表单节升级 ElementInternals / requestSubmit 深水
+- Git：「fetch/pull 基础」→ fetch 深水（负 refspec / blobless vs treeless 部分克隆实测 -88% / promisor / maintenance hourly prefetch）；「大文件」→ LFS 经济学与 filter-repo 瘦身普查；命令全表 → 取证级检视（blame -C / log -L / range-diff）与维护加速内幕（sparse-index / fsmonitor）
+- 全栈：「认证 use-JWT 级」→ 认证深水（refresh token 轮换 + 复用检测 token family 撤销 / CSRF-SameSite 互动矩阵 / passkeys WebAuthn 2025 口径 / alg 混淆攻击）；HTTP 教科书表 → 语义深水（merge-patch vs JSON Patch / SWR / Sunset RFC 8594 / CHIPS 分区 Cookie / CORS PNA）
+- 全能：保留本 App 环境特有知识（工具面 / 任务流 / 权限语义），替换通用教科书节（正则速查 → ReDoS 防御与 v-flag / possessive 量词；git 动作基础 → 部分克隆与提交图内幕）；14 项 web 检索校准 2024-2026 最新口径

@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 聊天屏字符串（中文）—— 英文默认在 values/strings_chat.xml；
+     语言切换经 LanguageManager + MainActivity attachBaseContext/recreate 生效。 -->
+<resources>
+
+    <!-- ═══ AgentChatScreen ═══ -->
+    <string name="chat_unknown_provider">未知 Provider</string>
+
+    <!-- ═══ AgentChatMessages ═══ -->
+
+    <!-- ═══ AgentChatPlanCards ═══ -->
+    <string name="chat_confirm_plan_title">确认执行此计划？</string>
+    <string name="chat_cancel">取消</string>
+    <string name="chat_execute">执行</string>
+    <!-- #169 Plan 模式强化（plan_ 前缀） -->
+    <string name="plan_step_enable">启用此步骤</string>
+    <string name="plan_move_up">上移步骤</string>
+    <string name="plan_move_down">下移步骤</string>
+    <string name="plan_adjust_hint">执行前可调整：取消勾选跳过步骤，箭头调整顺序</string>
+    <string name="plan_planning_readonly">规划中 · 只读</string>
+
+    <!-- ═══ AgentChatOutputCards ═══ -->
+    <string name="chat_cd_copied">已复制</string>
+    <string name="chat_structured_output">结构化输出</string>
+
+    <!-- ═══ AgentChatToolCards ═══ -->
+    <!-- v3: 终端工具执行元数据（exit 徽标 / 等待输入 / 会话标注） -->
+    <!-- 浏览器截图渲染（BrowserToolCards.kt） -->
+    <!-- 浏览器快照渲染（BrowserToolCards.kt，v1.8.0） -->
+    <string name="chat_retry">重试</string>
+
+    <!-- ═══ AgentChatDialogs ═══ -->
+    <string name="chat_save">保存</string>
+    <string name="chat_effort_none">Default</string>
+    <string name="chat_effort_low">Low</string>
+    <string name="chat_effort_medium">Medium</string>
+    <string name="chat_effort_high">High</string>
+    <string name="chat_effort_max">Max</string>
+    <!-- v1.2 七级思考：新深度档描述（= ThinkingProfile.uiDescriptionZh 要点版，含执行策略差异） -->
+    <!-- #168 六档思考：档位画像描述（= ThinkingProfile.uiDescriptionZh，含执行策略差异） -->
+    <string name="chat_question_title">Agent 需要你选择</string>
+    <string name="chat_multi_select">可多选</string>
+    <string name="chat_recommended">推荐</string>
+    <string name="chat_custom">自定义</string>
+    <string name="chat_skip">跳过</string>
+    <string name="chat_continue">继续</string>
+
+    <!-- ═══ BrainMenuButton ═══ -->
+    <string name="chat_cd_brain">小大脑</string>
+    <string name="chat_current_model">当前模型</string>
+    <string name="chat_only_one_model">仅有一个模型</string>
+    <string name="chat_not_configured">未配置</string>
+    <string name="chat_cd_collapse_models">收起模型列表</string>
+    <string name="chat_cd_expand_models">展开模型列表</string>
+    <string name="chat_configure_model">配置模型</string>
+    <string name="chat_model_params">模型参数</string>
+
+    <!-- ═══ ToolkitRingButton ═══ -->
+    <string name="chat_cd_toolkit">工具菜单</string>
+    <string name="chat_web_search">网络搜索</string>
+    <string name="chat_time">时间</string>
+    <string name="chat_function_forced">强制函数调用</string>
+    <string name="chat_function_forced_n">强制调用 (%1$d)</string>
+    <!-- v5 文案纠偏（用户口径）：函数调用 ≠ 「让模型更聪明」的开关，而是模型
+         结构化请求外部操作的协议；全部工具默认开启，勾选仅表示强制调用。 -->
+    <string name="chat_function_forced_hint">全部工具默认开启，并可经目录按需检索——函数调用不是「让模型更聪明」的开关，而是模型结构化请求外部操作的一套协议。需要实时/私有数据或外部动作时有用；纯文本任务属过度设计。</string>
+    <string name="chat_function_force_section">强制调用以下函数（可选）</string>
+    <string name="chat_expose_all_tools">全量工具模式</string>
+    <string name="chat_category_other">其他</string>
+    <string name="chat_structured_output_fmt">结构化输出：%1$s</string>
+    <string name="chat_rules">规则</string>
+    <string name="chat_rules_n">规则 (%1$d)</string>
+    <string name="chat_cd_enabled">已开启</string>
+    <string name="chat_import_rule_default">导入规则</string>
+    <string name="chat_rule_manager_title">规则管理</string>
+    <string name="chat_rule_name_label">规则名称</string>
+    <string name="chat_rule_content_label">规则内容（支持 Markdown）</string>
+    <string name="chat_unnamed_rule">未命名规则</string>
+    <string name="chat_no_rules_hint">暂无规则。新建或导入 .md 文件添加。</string>
+    <string name="chat_cd_delete">删除</string>
+    <string name="chat_new_rule">新建规则</string>
+    <string name="chat_import_md">导入 MD</string>
+    <string name="chat_done">完成</string>
+    <string name="chat_schema_dialog_title">自定义输出 Schema</string>
+    <string name="chat_schema_hint">Schema 定义（如 JSON Schema）</string>
+    <string name="chat_save_enable">保存并启用</string>
+    <string name="chat_web_search_on">网络搜索已开启</string>
+    <string name="chat_time_aware_on">时间感知已开启</string>
+    <string name="chat_rules_loaded">已加载 %1$d 条规则</string>
+    <string name="chat_cd_close">关闭</string>
+
+    <!-- ═══ SlashCommandButton（弹出菜单 i18n，原硬编码中文）═══ -->
+    <string name="chat_slash_menu_title">快捷指令</string>
+    <string name="chat_slash_refresh">刷新菜单</string>
+    <string name="chat_slash_empty">暂无可用项</string>
+    <string name="chat_cd_slash_menu">打开斜杠指令菜单</string>
+    <string name="chat_slash_status_connected">已连接</string>
+    <string name="chat_slash_status_offline">离线</string>
+    <string name="chat_slash_status_not_installed">未安装</string>
+    <string name="chat_slash_status_external">示例</string>
+    <string name="chat_slash_cd_selected">已选中，再次点击移除</string>
+    <!-- 输入框内技能 chip（SkillChipInputField）-->
+
+    <!-- ═══ AgentModeSelector ═══ -->
+    <string name="chat_mode_selector_cd">任务模式：%1$s，点击切换</string>
+    <string name="chat_role_selector_cd">Agent 角色：%1$s，点击切换</string>
+    <string name="chat_role_builtin_cd">内置角色</string>
+    <string name="chat_mode_build_desc">边想边做，实时执行</string>
+    <string name="chat_mode_plan_desc">先制定完整计划，确认后再执行</string>
+    <string name="chat_mode_goal_desc">目标驱动——可验证条件，不达成不罢休</string>
+
+    <!-- ═══ ChatHistorySheet ═══ -->
+
+    <!-- ═══ AgentChatOnboarding ═══ -->
+    <!-- #197 模型 API 未配置浮窗（发送拦截时弹出） -->
+    <string name="chat_api_missing_title">模型 API 未配置</string>
+    <string name="chat_api_missing_body">你还没有配置模型 API，消息无法发送。请先到设置页添加 Provider 并填写 API Key。</string>
+
+    <!-- ═══ TaskStatusCard / TaskRecoveryBanner ═══ -->
+
+    <!-- ═══ AgentChatViewModel（用户可见 toast / 系统行 / 工具步骤）═══ -->
+
+    <!-- ═══ #214/#215 用户输入超时诚实提示（引擎按「超时未决」继续）═══ -->
+    <string name="chat_plan_confirm_late">计划确认未送达：当前无等待中的计划确认（或已超时收场）。如仍需确认，请重新发送消息。</string>
+
+    <!-- ═══ SlashMenuProvider（斜杠菜单分组）═══ -->
+    <string name="chat_slash_no_skills">暂无已启用 Skill</string>
+    <string name="chat_slash_no_fusion">尚未安装任何聚合包</string>
+    <string name="chat_slash_mcp_servers">MCP 服务器</string>
+    <string name="chat_slash_mcp_connected">已连接 %1$d</string>
+    <string name="chat_slash_plugins">插件</string>
+    <string name="chat_slash_plugins_empty">未发现已安装的插件</string>
+    <string name="chat_slash_plugins_partial">已加载插件仅验证连通 —— 工具执行桥接建设中</string>
+    <string name="chat_slash_connectors">连接器</string>
+    <string name="chat_slash_connectors_empty">无启用连接器（市场页可添加）</string>
+
+    <!-- ═══ Toolkit structured-output formats & unconfigured-LLM guard ═══ -->
+    <string name="chat_format_none">关闭</string>
+    <string name="chat_format_custom">自定义 Schema</string>
+    <string name="chat_llm_not_configured">请先在设置中配置API（Base URL + API Key + Model）</string>
+    <string name="chat_llm_not_configured_short">请先在设置中配置API</string>
+    <!-- ═══ 消息操作（2026-10 重定口径：复制/编辑图标行，overflow 菜单退役）═══ -->
+    <!-- ═══ P2 i18n: 附件按钮菜单（AttachButton）═══ -->
+
+    <!-- ═══ 双级思考控制（模型原生强度 + 强制深度思考）═══ -->
+
+    <!-- ═══ HTML 产物应用内预览 ═══ -->
+    <string name="html_preview_refresh">重新加载</string>
+    <string name="html_preview_close">关闭预览</string>
+    <string name="html_preview_load_failed">文件读取失败</string>
+    <string name="html_preview_inspector">布局检查器开关</string>
+    <string name="html_preview_legend_title">布局检查器图例</string>
+    <string name="html_preview_legend_flex">Flex</string>
+    <string name="html_preview_legend_grid">Grid</string>
+    <string name="html_preview_legend_positioned">定位元素</string>
+    <string name="html_preview_legend_block">块级元素</string>
+
+    <!-- ═══ v1.4.4 #5：会话操作补全 —— 搜索/置顶/重命名/导出导入/分享接收 ═══ -->
+    <string name="chat_slash_mcp_none_running">暂无运行中的 MCP —— 请到 市场 → MCP 安装并启动</string>
+
+    <!-- ═══ MarkdownText 媒体卡 / 代码块（#280：硬编码中文收编）═══ -->
+    <string name="chat_cd_play_video">播放视频</string>
+    <string name="chat_cd_open_video">打开视频</string>
+    <string name="chat_media_video_label">视频</string>
+    <string name="chat_cd_copy_code">复制代码</string>
+
+    <!-- ═══ NeonOrbButton（Coding 输入栏功能聚合 · 面板）═══ -->
+    <string name="neon_cd_orb">功能聚合面板</string>
+    <string name="neon_panel_title">功能聚合</string>
+    <string name="neon_active_count">已开 %1$d 项</string>
+    <string name="neon_hint">以下开关逐轮真实注入系统提示，随请求下发给模型</string>
+    <string name="neon_group_session">会话增强</string>
+    <string name="neon_group_style">输出口径</string>
+    <string name="neon_group_coding">编码偏好</string>
+    <string name="neon_feat_time_injection">时间注入</string>
+    <string name="neon_feat_web_search">网络搜索</string>
+    <string name="neon_feat_structured_output">结构化输出</string>
+    <string name="neon_feat_structured_output_fmt">结构化输出：%1$s</string>
+    <string name="neon_feat_deep_reasoning">深度推理</string>
+    <string name="neon_feat_goal_echo">目标复述</string>
+    <string name="neon_feat_anti_hallucination">诚实边界</string>
+    <string name="neon_feat_concise">简洁模式</string>
+    <string name="neon_feat_teach_mode">详细讲解</string>
+    <string name="neon_feat_numbered_steps">步骤编号</string>
+    <string name="neon_feat_no_emoji">无表情符号</string>
+    <string name="neon_feat_language_lock">语言锁定</string>
+    <string name="neon_feat_language_lock_fmt">语言：%1$s</string>
+    <string name="neon_feat_tone">语气人设</string>
+    <string name="neon_feat_tone_fmt">语气：%1$s</string>
+    <string name="neon_feat_rich_comments">代码注释</string>
+    <string name="neon_feat_diff_first">Diff 优先</string>
+    <string name="neon_feat_risk_warnings">风险预警</string>
+    <string name="neon_feat_safe_commands">安全命令</string>
+    <string name="neon_fmt_none">关闭</string>
+    <string name="neon_fmt_md_table">Markdown 表格</string>
+    <string name="neon_lang_follow">跟随输入</string>
+    <string name="neon_lang_zh">中文</string>
+    <string name="neon_lang_en">English</string>
+    <string name="neon_tone_default">默认</string>
+    <string name="neon_tone_professional">专业严谨</string>
+    <string name="neon_tone_friendly">亲切友好</string>
+    <string name="neon_tone_direct">直截了当</string>
+    <string name="neon_reset_all">全部关闭</string>
+</resources>

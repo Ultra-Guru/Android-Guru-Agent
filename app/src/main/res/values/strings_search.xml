@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ═══ SearXNG 本地搜索（SearXNG Local Search Spec v1.0 §11）═══
+         与 values-zh/strings_search.xml 键位/占位符严格镜像（guard-rails
+         String Mirror 门禁）。 -->
+    <!-- 设置中心导航 -->
+    <string name="settings_nav_search_local">Local Search (SearXNG)</string>
+
+    <!-- 开关卡（SearxngSwitchCard） -->
+    <string name="search_local_title">Local Search (SearXNG)</string>
+    <string name="search_local_switch">Enable local search engine</string>
+    <string name="search_local_switch_desc">Runs a private SearXNG metasearch instance inside the built-in Ubuntu sandbox. Agent searches prefer it when ready and silently fall back to remote engines when not.</string>
+
+    <!-- 状态机文案（Spec §5 状态 → UI 映射） -->
+    <string name="search_status_off">Off</string>
+    <string name="search_status_installing">Installing dependencies</string>
+    <string name="search_status_starting">Starting…</string>
+    <string name="search_status_restarting">Restarting (attempt %1$d)…</string>
+    <string name="search_status_restarting_short">Restarting…</string>
+    <string name="search_status_ready">Running</string>
+    <string name="search_status_stopping">Stopping…</string>
+    <string name="search_status_failed_reason">Failed: %1$s</string>
+
+    <!-- 安装阶段（SearxngInstallStage.label → 本地化） -->
+    <string name="search_stage_apt">apt packages</string>
+    <string name="search_stage_clone">fetching source (git clone)</string>
+    <string name="search_stage_venv">python environment (venv)</string>
+    <string name="search_stage_pip">installing dependencies (pip)</string>
+    <string name="search_stage_verify">verifying installation</string>
+
+    <!-- 失败重试 -->
+    <string name="search_retry">Retry</string>
+
+    <!-- 引擎多选（F9） -->
+    <string name="search_engines_title">Search engines</string>
+    <string name="search_engines_desc">Select the engines your local instance aggregates. Changes take effect immediately (the daemon restarts when running).</string>
+
+    <!-- 排查与维护（F12 + 清除入口） -->
+    <string name="search_diagnostics_title">Diagnostics &amp; maintenance</string>
+    <string name="search_fallback_note">When local search is unavailable, Agent searches automatically fall back to the DuckDuckGo → DuckDuckGo Lite → Bing remote chain — no manual switching needed.</string>
+    <string name="search_clear">Clear installed search component</string>
+    <string name="search_clear_disabled_hint">Turn the switch off before clearing the installation.</string>
+    <string name="search_clear_title">Clear installed SearXNG?</string>
+    <string name="search_clear_body">This deletes /opt/searxng inside the Ubuntu sandbox (source, venv and settings — about 300\u00A0MB). Your switch preference and engine selection are kept. The next enable reinstalls from scratch.</string>
+    <string name="search_clear_confirm">Clear</string>
+    <string name="search_clear_cancel">Cancel</string>
+</resources>

@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v1.4.1 透明悬浮球（重做）：用户要求悬浮球做成透明的。
+     视觉：透明玻璃核（bg_ball_glass）+ 代码绘制状态光环（NeonRingView，已柔化）
+     —— 无重不透明底座；点击 = 查看/收起实时页面悬浮窗（LiveViewOverlay），
+     长按 = 结束浏览器会话。球随浏览器被真实使用出现，会话结束收起。 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/ballContainer"
+    android:layout_width="52dp"
+    android:layout_height="52dp"
+    android:clipChildren="false"
+    android:clipToPadding="false">
+
+    <!-- Layer 0: 人工接入时的外扩散脉冲光环 (默认隐藏) -->
+    <View
+        android:id="@+id/pulseRing"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/bg_pulse_warning_ring"
+        android:visibility="invisible" />
+
+    <!-- Layer 1: 透明玻璃核（主底座，透明材质） -->
+    <View
+        android:id="@+id/glassCore"
+        android:layout_width="42dp"
+        android:layout_height="42dp"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_ball_glass" />
+
+    <!-- Layer 2: 动态状态光环 (代码绘制 NeonRingView，始终显示，已柔化) -->
+    <com.apex.agent.browser.NeonRingView
+        android:id="@+id/neonRing"
+        android:layout_width="52dp"
+        android:layout_height="52dp"
+        android:layout_gravity="center" />
+
+    <!-- Layer 3: 中心 web 图标 -->
+    <ImageView
+        android:id="@+id/imgCoreIcon"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:layout_gravity="center"
+        android:src="@drawable/ic_web_core"
+        android:tint="#E6FFFFFF" />
+
+    <!-- Layer 4: NEED_HUMAN 状态下的闪耀 Badge -->
+    <TextView
+        android:id="@+id/badgeAlert"
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="4dp"
+        android:layout_marginEnd="4dp"
+        android:background="@drawable/bg_cyber_badge"
+        android:gravity="center"
+        android:text="!"
+        android:textColor="#000000"
+        android:textSize="10sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+</FrameLayout>

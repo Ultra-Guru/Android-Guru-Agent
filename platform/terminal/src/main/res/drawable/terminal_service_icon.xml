@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- T91: terminal 前台服务通知图标 —— 终端提示符 glyph（> _），单色矢量，
+     通知栏自动着色。库模块自有资源，terminal_ 前缀避免与 app 资源合并冲突。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?android:attr/colorControlNormal">
+    <!-- 提示符箭头 > -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M4,5l7,7l-7,7l1.5,1.5L14,12L5.5,3.5L4,5z" />
+    <!-- 光标 _ -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M15,18h5v-2h-5V18z" />
+</vector>

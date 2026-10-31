@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- UI strings (English default) — added this round: language / send key behavior / task summary / detailed input.
+     Chinese lives in values-zh/strings_ui.xml; language switching goes through LanguageManager + MainActivity
+     attachBaseContext/recreate. -->
+<resources>
+    <!-- Language -->
+    <string name="settings_language">Language</string>
+    <string name="settings_language_desc">Interface language; restarts the screen to apply</string>
+    <string name="settings_language_system">Follow system</string>
+    <string name="settings_language_chinese">Chinese</string>
+    <string name="settings_language_english">English</string>
+
+    <!-- Send key behavior -->
+    <string name="settings_send_key">Send key behavior</string>
+    <string name="settings_send_key_desc">Action of the Enter key in the chat input field</string>
+    <string name="settings_send_key_send">Send message</string>
+    <string name="settings_send_key_newline">New line</string>
+
+
+    <!-- Detailed input (layered editing entry) -->
+    <string name="detailed_input">Detailed input</string>
+    <string name="detailed_input_hint">Compose long text here across lines; multi-line supported</string>
+
+    <!-- FileOpener（通用附件/链接外开反馈；非 Compose 场景经 context.getString 取词） -->
+    <string name="file_open_not_readable">File missing or unreadable</string>
+    <string name="file_open_chooser_title">Open with</string>
+    <string name="file_open_no_app">No app found that can open this file</string>
+    <string name="file_open_provider_reject">File path not supported by FileProvider</string>
+    <string name="file_open_no_link_app">No app found that can open this link</string>
+
+    <!-- ═══ Glass Lab 演示页（#280：硬编码中文收编）═══ -->
+    <string name="glasslab_cd_icon_button">Sample-verify icon button</string>
+    <string name="glasslab_cd_floating_button">Sample-verify floating button</string>
+    <string name="glasslab_cd_darkbar_nav">Dark bar item: %1$s</string>
+    <string name="glasslab_cd_darkbar_publish">Publish (demo)</string>
+
+    <!-- ═══ Glass Lab：Cloudy 真模糊材质样本（v7 agent 回复气泡）═══ -->
+
+
+</resources>

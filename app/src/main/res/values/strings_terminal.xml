@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ═══ 屏体（T97：Ubuntu 开发环境安装页 —— 控制台已退役）═══ -->
+    <string name="term_ubuntu_env_title">Ubuntu Environment</string>
+    <string name="term_ubuntu_env_desc">Ubuntu is fully agent-controlled. This page only installs dev environments (version selectable) — the agent runs all commands via its terminal tools.</string>
+    <string name="term_back">Back</string>
+    <string name="term_status_refresh">Refresh installed status</string>
+    <string name="term_env_removed">Ubuntu environment removed</string>
+
+    <!-- ═══ Ubuntu rootfs 卡 ═══ -->
+    <string name="term_ubuntu_card_title">Ubuntu (PRoot)</string>
+    <string name="term_ubuntu_card_desc">Real bash / gcc / python3 in a chroot-like rootfs</string>
+    <string name="term_disk_usage">Disk usage: %1$s</string>
+    <string name="term_progress_bytes">%1$s / %2$s</string>
+    <string name="term_capabilities">Capabilities</string>
+    <string name="term_bootstrap_note">Degraded ready:</string>
+    <string name="term_unpack_built_in">Unpack built-in</string>
+    <string name="term_unpacking">Unpacking…</string>
+    <string name="term_bootstrapping">Bootstrapping…</string>
+    <string name="term_finish_bootstrap">Finish bootstrap</string>
+    <string name="term_repair">Repair</string>
+    <string name="term_delete">Delete</string>
+    <string name="term_retry_install">Retry install</string>
+    <string name="term_cancel">Cancel</string>
+    <string name="term_remove_ubuntu_title">Delete Ubuntu environment?</string>
+    <string name="term_remove_ubuntu_text">The rootfs will be removed from disk. All Ubuntu sessions end. This cannot be undone.</string>
+    <string name="term_phase_not_installed">Not installed</string>
+    <string name="term_phase_installing">Installing</string>
+    <string name="term_phase_rootfs_ready">Rootfs ready</string>
+    <string name="term_phase_bootstrapping">Bootstrapping</string>
+    <string name="term_phase_ready">Ready</string>
+    <string name="term_phase_recovering">Recovering</string>
+    <string name="term_phase_failed">Failed</string>
+
+    <!-- ═══ 开发环境安装卡（版本自选）═══ -->
+    <string name="term_deps_title">Dev environments</string>
+    <string name="term_mirror_note">Mirror applies to apt/direct downloads; sdkmanager fetches from Google and cannot be re-hosted.</string>
+    <string name="term_use_mirror">Use CN mirrors</string>
+    <string name="term_mirror_desc">TUNA / Tencent / npmmirror / USTC / rsproxy; faster in CN</string>
+    <string name="term_install_all">Install all</string>
+    <string name="term_android_deps">Android only</string>
+    <string name="term_group_basic">Basic tools</string>
+    <string name="term_group_java">Java &amp; build</string>
+    <string name="term_group_android">Android development</string>
+    <string name="term_group_runtime">More runtimes</string>
+    <string name="term_installing">Installing…</string>
+    <string name="term_install">Install</string>
+    <string name="term_dep_installed">Installed</string>
+    <string name="term_dep_missing">Not installed</string>
+    <string name="term_dep_checking">Checking…</string>
+    <string name="term_dep_log">Install log</string>
+
+    <!-- ═══ 通知（DepCenter / VM）═══ -->
+    <string name="term_notice_ubuntu_unavailable">Ubuntu unavailable: %1$s</string>
+    <string name="term_notice_run_failed">Execution failed: %1$s</string>
+    <string name="term_notice_wait_failed">Wait failed: %1$s</string>
+    <string name="term_notice_wait_timeout">Wait timed out — terminated</string>
+    <string name="term_notice_session_gone">Session ended during execution</string>
+    <string name="term_notice_no_pty">No session available for install</string>
+    <string name="term_notice_truncated">…output truncated…\n</string>
+    <string name="term_notice_install_all_start">▶ install all (mirror=%1$s)\n</string>
+    <string name="term_notice_install_all_done">✓ all dependencies installed\n</string>
+    <string name="term_notice_install_android_start">▶ install android deps (mirror=%1$s)\n</string>
+    <string name="term_notice_install_android_done">✓ android dependencies installed\n</string>
+
+    <!-- ═══ 设置中心：命令黑白名单（Agent 执行门禁）═══ -->
+    <string name="term_blacklist_title">Command blacklist</string>
+    <string name="term_blacklist_desc">Blocked heads never run (gates agent-side terminal tools too); matched exactly (rm does not block rmdir)</string>
+    <string name="term_whitelist">Whitelist</string>
+    <string name="term_policy_hint">command head, e.g. rm</string>
+    <string name="term_add">Add</string>
+    <string name="term_remove">Remove</string>
+</resources>

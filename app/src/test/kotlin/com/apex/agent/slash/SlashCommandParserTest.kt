@@ -1,0 +1,284 @@
+package com.apex.agent.slash
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * Unit tests for [SlashCommandParser].
+ *
+ * These cover the grammar `/<type>:<id> [key=value ...] [positional user
+ * text ...]` plus the documented degradation paths (missing slash, missing
+ * colon, empty id, unknown type, malformed kv tokens). The parser is pure
+ * JVM so the tests run without an Android or Compose runtime.
+ */
+class SlashCommandParserTest {
+
+    // ═══════════════════════════════════════════════════════════
+    // Happy paths — one per known command type
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `bare skill command parses to Skill with empty args`() {
+        val parsed = SlashCommandParser.parse("/skill:code_interpreter")
+
+        assertTrue(parsed is SlashCommand.Skill)
+        val skill = parsed as SlashCommand.Skill
+        assertEquals("code_interpreter", skill.id)
+        assertEquals(emptyMap<String, String>(), skill.args)
+        assertEquals("", skill.userExtra)
+    }
+
+    @Test
+    fun `bare mcp command parses to Mcp`() {
+        val parsed = SlashCommandParser.parse("/mcp:github")
+
+        assertTrue(parsed is SlashCommand.Mcp)
+        assertEquals("github", (parsed as SlashCommand.Mcp).id)
+    }
+
+    @Test
+    fun `bare connector command parses to Connector`() {
+        val parsed = SlashCommandParser.parse("/connector:ssh")
+
+        assertTrue(parsed is SlashCommand.Connector)
+        assertEquals("ssh", (parsed as SlashCommand.Connector).id)
+    }
+
+    @Test
+    fun `bare plugin command parses to Plugin`() {
+        val parsed = SlashCommandParser.parse("/plugin:pdf_reader")
+
+        assertTrue(parsed is SlashCommand.Plugin)
+        assertEquals("pdf_reader", (parsed as SlashCommand.Plugin).id)
+    }
+
+    // ═════════════════════════════════════════════════════
+    // /fusion —— FUSION 工具聚合体系包（王冠菜单选中后拼回的命令形态）
+    // ═════════════════════════════════════════════════════
+
+    @Test
+    fun `bare fusion command parses to Fusion with empty args`() {
+        val parsed = SlashCommandParser.parse("/fusion:rea")
+
+        assertTrue(parsed is SlashCommand.Fusion)
+        val fusion = parsed as SlashCommand.Fusion
+        assertEquals("rea", fusion.id)
+        assertEquals(emptyMap<String, String>(), fusion.args)
+        assertEquals("", fusion.userExtra)
+    }
+
+    @Test
+    fun `fusion command carries args and user extra`() {
+        val parsed = SlashCommandParser.parse("/fusion:rea target=app.asar 逆向这个应用")
+
+        assertTrue(parsed is SlashCommand.Fusion)
+        val fusion = parsed as SlashCommand.Fusion
+        assertEquals("rea", fusion.id)
+        assertEquals(mapOf("target" to "app.asar"), fusion.args)
+        assertEquals("逆向这个应用", fusion.userExtra)
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // /logic — v1.5 双思考逻辑切换（本地路由命令）
+    // ═════════════════════════════════════════════════════
+
+    @Test
+    fun `bare logic command parses to Logic with standard id`() {
+        val parsed = SlashCommandParser.parse("/logic:standard")
+
+        assertTrue(parsed is SlashCommand.Logic)
+        val logic = parsed as SlashCommand.Logic
+        assertEquals("standard", logic.id)
+        assertEquals(emptyMap<String, String>(), logic.args)
+        assertEquals("", logic.userExtra)
+    }
+
+    @Test
+    fun `logic command accepts deep_dive id`() {
+        val parsed = SlashCommandParser.parse("/logic:deep_dive")
+
+        assertTrue(parsed is SlashCommand.Logic)
+        assertEquals("deep_dive", (parsed as SlashCommand.Logic).id)
+    }
+
+    @Test
+    fun `logic command type is case-insensitive`() {
+        // 与其他命令同口径：type 侧统一 lowercase（id 侧保留原样由 fromName 容错）。
+        val parsed = SlashCommandParser.parse("/LOGIC:STANDARD")
+
+        assertTrue(parsed is SlashCommand.Logic)
+        assertEquals("STANDARD", (parsed as SlashCommand.Logic).id)
+    }
+
+    @Test
+    fun `logic command with trailing user text keeps id clean`() {
+        // 本地路由命令不吃参数——args/userExtra 仍按通用语法解析，但切换
+        // 语义只看 id；多余文本不应破坏命令形状。
+        val parsed = SlashCommandParser.parse("/logic:standard now please")
+
+        assertTrue(parsed is SlashCommand.Logic)
+        val logic = parsed as SlashCommand.Logic
+        assertEquals("standard", logic.id)
+        assertEquals("now please", logic.userExtra)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Args + positional user text
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `kv args and positional user text are split correctly`() {
+        val parsed = SlashCommandParser.parse("/skill:WebSearch query=Android latest news")
+
+        assertTrue(parsed is SlashCommand.Skill)
+        val skill = parsed as SlashCommand.Skill
+        assertEquals("WebSearch", skill.id)
+        assertEquals(mapOf("query" to "Android"), skill.args)
+        assertEquals("latest news", skill.userExtra)
+    }
+
+    @Test
+    fun `multiple kv args are collected in insertion order`() {
+        val parsed = SlashCommandParser.parse("/mcp:github repo=owner/name state=open")
+
+        val mcp = parsed as SlashCommand.Mcp
+        assertEquals("github", mcp.id)
+        assertEquals(mapOf("repo" to "owner/name", "state" to "open"), mcp.args)
+        assertEquals("", mcp.userExtra)
+    }
+
+    @Test
+    fun `kv value may contain equals signs`() {
+        // Regex captures key=([A-Za-z_][\w.\-]*) and value=(.*) ; the value
+        // side is greedy, so "a=b=c" → key=a, value="b=c".
+        val parsed = SlashCommandParser.parse("/skill:foo filter=a=b=c")
+
+        val skill = parsed as SlashCommand.Skill
+        assertEquals(mapOf("filter" to "a=b=c"), skill.args)
+    }
+
+    @Test
+    fun `kv parsing stops once positional text begins`() {
+        // After the first positional token, subsequent key=value-shaped tokens
+        // are treated as user text (CLI-style) rather than dropped into args.
+        //（修复：原输入没有 positional token，永远走不到“停止 kv”分支 —— 补一个真 token）
+        val parsed = SlashCommandParser.parse("/skill:foo keep=this run drop=that")
+
+        val skill = parsed as SlashCommand.Skill
+        assertEquals(mapOf("keep" to "this"), skill.args)
+        assertEquals("run drop=that", skill.userExtra)
+    }
+
+    @Test
+    fun `kv key must start with letter or underscore`() {
+        // "1key=val" doesn't match the key regex → positional user text；
+        // 且按 CLI 语义 kv 随即停止 —— 后续合法 kv 也归入 user text（原断言与之矛盾）。
+        val parsed = SlashCommandParser.parse("/skill:foo 1key=val real=v")
+
+        val skill = parsed as SlashCommand.Skill
+        assertEquals(emptyMap<String, String>(), skill.args)
+        assertEquals("1key=val real=v", skill.userExtra)
+    }
+
+    @Test
+    fun `user extra text collapses whitespace runs like sh tokenization`() {
+        // 缺陷 7 修复后的 sh-like 词法：空白序列视为单分隔符（引号内除外）。
+        //（原测试期望逐字保留旧实现行为，与新词法设计矛盾）
+        val parsed = SlashCommandParser.parse("/skill:foo   multiple    spaces   here")
+
+        val skill = parsed as SlashCommand.Skill
+        assertEquals("multiple spaces here", skill.userExtra)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Whitespace tolerance
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `leading whitespace is tolerated`() {
+        val parsed = SlashCommandParser.parse("   /skill:code_interpreter")
+
+        assertTrue(parsed is SlashCommand.Skill)
+        assertEquals("code_interpreter", (parsed as SlashCommand.Skill).id)
+    }
+
+    @Test
+    fun `trailing whitespace is trimmed from id`() {
+        val parsed = SlashCommandParser.parse("/skill:code_interpreter   ")
+
+        assertTrue(parsed is SlashCommand.Skill)
+        assertEquals("code_interpreter", (parsed as SlashCommand.Skill).id)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Degradation to Unknown
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `input without leading slash is Unknown`() {
+        val parsed = SlashCommandParser.parse("skill:missing_slash")
+
+        assertTrue(parsed is SlashCommand.Unknown)
+        assertEquals("skill:missing_slash", (parsed as SlashCommand.Unknown).raw)
+    }
+
+    @Test
+    fun `input with missing colon is Unknown`() {
+        val parsed = SlashCommandParser.parse("/skill")
+
+        assertTrue(parsed is SlashCommand.Unknown)
+    }
+
+    @Test
+    fun `input with empty id is Unknown`() {
+        val parsed = SlashCommandParser.parse("/skill:")
+
+        assertTrue(parsed is SlashCommand.Unknown)
+    }
+
+    @Test
+    fun `input with empty type is Unknown`() {
+        // "/:foo" → colon at index 1 → type substring is empty.
+        val parsed = SlashCommandParser.parse("/:foo")
+
+        assertTrue(parsed is SlashCommand.Unknown)
+    }
+
+    @Test
+    fun `input with unknown type is Unknown`() {
+        val parsed = SlashCommandParser.parse("/unknown:foo")
+
+        assertTrue(parsed is SlashCommand.Unknown)
+    }
+
+    @Test
+    fun `unknown command forwards raw text verbatim`() {
+        val parsed = SlashCommandParser.parse("/help")
+
+        assertTrue(parsed is SlashCommand.Unknown)
+        assertEquals("/help", (parsed as SlashCommand.Unknown).raw)
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Helper
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    fun `looksLikeSlash detects leading slash after whitespace`() {
+        assertTrue(SlashCommand.looksLikeSlash("/skill:foo"))
+        assertTrue(SlashCommand.looksLikeSlash("   /skill:foo"))
+        assertTrue(!SlashCommand.looksLikeSlash("skill:foo"))
+        assertTrue(!SlashCommand.looksLikeSlash(""))
+    }
+
+    @Test
+    fun `supported types list is stable and ordered`() {
+        // Order matters for slash-menu rendering; assert it explicitly so a
+        // future reorder is a conscious decision rather than an accident.
+        assertEquals(
+            listOf("skill", "mcp", "connector", "plugin", "logic", "fusion"),
+            SlashCommand.SUPPORTED_TYPES
+        )
+    }
+}

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ═══ 屏体（T97：Ubuntu 开发环境安装页 —— 控制台已退役）═══ -->
+    <string name="term_ubuntu_env_title">Ubuntu 环境</string>
+    <string name="term_ubuntu_env_desc">Ubuntu 由 Agent 全权掌控。本页仅安装开发环境（版本自选）—— 命令一律由 Agent 的终端工具执行。</string>
+    <string name="term_back">返回</string>
+    <string name="term_status_refresh">刷新已装状态</string>
+    <string name="term_env_removed">Ubuntu 环境已删除</string>
+
+    <!-- ═══ Ubuntu rootfs 卡 ═══ -->
+    <string name="term_ubuntu_card_title">Ubuntu（PRoot）</string>
+    <string name="term_ubuntu_card_desc">类 chroot rootfs 中的真实 bash / gcc / python3</string>
+    <string name="term_disk_usage">磁盘占用:%1$s</string>
+    <string name="term_progress_bytes">%1$s / %2$s</string>
+    <string name="term_capabilities">能力</string>
+    <string name="term_bootstrap_note">降级就绪:</string>
+    <string name="term_unpack_built_in">解包内置</string>
+    <string name="term_unpacking">解包中…</string>
+    <string name="term_bootstrapping">引导中…</string>
+    <string name="term_finish_bootstrap">完成引导</string>
+    <string name="term_repair">修复</string>
+    <string name="term_delete">删除</string>
+    <string name="term_retry_install">重试安装</string>
+    <string name="term_cancel">取消</string>
+    <string name="term_remove_ubuntu_title">删除 Ubuntu 环境?</string>
+    <string name="term_remove_ubuntu_text">rootfs 将从磁盘移除，所有 Ubuntu 会话随之结束，且不可撤销。</string>
+    <string name="term_phase_not_installed">未安装</string>
+    <string name="term_phase_installing">安装中</string>
+    <string name="term_phase_rootfs_ready">rootfs 就绪</string>
+    <string name="term_phase_bootstrapping">引导中</string>
+    <string name="term_phase_ready">就绪</string>
+    <string name="term_phase_recovering">恢复中</string>
+    <string name="term_phase_failed">失败</string>
+
+    <!-- ═══ 开发环境安装卡（版本自选）═══ -->
+    <string name="term_deps_title">开发环境</string>
+    <string name="term_mirror_note">镜像对 apt / 直链下载生效；sdkmanager 走谷歌源无法换镜像。</string>
+    <string name="term_use_mirror">使用国内镜像</string>
+    <string name="term_mirror_desc">TUNA / 腾讯 / npmmirror / USTC / rsproxy；国内更快</string>
+    <string name="term_install_all">全部安装</string>
+    <string name="term_android_deps">仅 Android 组</string>
+    <string name="term_group_basic">基础工具</string>
+    <string name="term_group_java">Java 与构建</string>
+    <string name="term_group_android">Android 开发环境</string>
+    <string name="term_group_runtime">更多开发环境</string>
+    <string name="term_installing">安装中…</string>
+    <string name="term_install">安装</string>
+    <string name="term_dep_installed">已安装</string>
+    <string name="term_dep_missing">未安装</string>
+    <string name="term_dep_checking">检测中…</string>
+    <string name="term_dep_log">安装日志</string>
+
+    <!-- ═══ 通知（DepCenter / VM）═══ -->
+    <string name="term_notice_ubuntu_unavailable">Ubuntu 不可用：%1$s</string>
+    <string name="term_notice_run_failed">执行失败:%1$s</string>
+    <string name="term_notice_wait_failed">等待失败:%1$s</string>
+    <string name="term_notice_wait_timeout">等待超时 —— 已终止</string>
+    <string name="term_notice_session_gone">执行期间会话结束</string>
+    <string name="term_notice_no_pty">没有可用会话执行安装</string>
+    <string name="term_notice_truncated">…输出已截断…\n</string>
+    <string name="term_notice_install_all_start">▶ 全部安装（镜像=%1$s）\n</string>
+    <string name="term_notice_install_all_done">✓ 全部依赖安装完成\n</string>
+    <string name="term_notice_install_android_start">▶ 安装 Android 依赖（镜像=%1$s）\n</string>
+    <string name="term_notice_install_android_done">✓ Android 依赖安装完成\n</string>
+
+    <!-- ═══ 设置中心：命令黑白名单（Agent 执行门禁）═══ -->
+    <string name="term_blacklist_title">命令黑名单</string>
+    <string name="term_blacklist_desc">命中命令头的命令不再执行（同时门禁 Agent 侧终端工具）；精确匹配（rm 不会拦 rmdir）</string>
+    <string name="term_whitelist">白名单</string>
+    <string name="term_policy_hint">命令头，如 rm</string>
+    <string name="term_add">添加</string>
+    <string name="term_remove">移除</string>
+</resources>

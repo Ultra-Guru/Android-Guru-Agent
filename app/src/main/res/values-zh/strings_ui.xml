@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- UI 字符串（中文）—— 本轮新增：语言 / 发送键行为 / 任务总结 / 详细输入。
+     英文默认在 values/strings_ui.xml；语言切换经 LanguageManager + MainActivity
+     attachBaseContext/recreate 生效。 -->
+<resources>
+    <!-- 语言 -->
+    <string name="settings_language">语言</string>
+    <string name="settings_language_desc">界面语言，切换后立即重建生效</string>
+    <string name="settings_language_system">跟随系统</string>
+    <string name="settings_language_chinese">中文</string>
+    <string name="settings_language_english">English</string>
+
+    <!-- 发送键行为 -->
+    <string name="settings_send_key">发送键行为</string>
+    <string name="settings_send_key_desc">聊天输入框回车键的行为</string>
+    <string name="settings_send_key_send">发送消息</string>
+    <string name="settings_send_key_newline">换行</string>
+
+
+    <!-- 详细输入（分层编辑入口） -->
+    <string name="detailed_input">详细输入</string>
+    <string name="detailed_input_hint">在此分层编辑长文本，支持多行</string>
+
+    <!-- FileOpener（通用附件/链接外开反馈） -->
+    <string name="file_open_not_readable">文件不存在或不可读</string>
+    <string name="file_open_chooser_title">选择应用打开</string>
+    <string name="file_open_no_app">未找到支持打开此文件的应用</string>
+    <string name="file_open_provider_reject">文件路径不被 FileProvider 支持</string>
+    <string name="file_open_no_link_app">未找到可打开此链接的应用</string>
+
+    <!-- ═══ Glass Lab 演示页（#280：硬编码中文收编）═══ -->
+    <string name="glasslab_cd_icon_button">采样验证图标按钮</string>
+    <string name="glasslab_cd_floating_button">采样验证悬浮球</string>
+    <string name="glasslab_cd_darkbar_nav">深色栏项目：%1$s</string>
+    <string name="glasslab_cd_darkbar_publish">发布（演示）</string>
+
+    <!-- ═══ Glass Lab：Cloudy 真模糊材质样本（v7 agent 回复气泡）═══ -->
+
+
+</resources>

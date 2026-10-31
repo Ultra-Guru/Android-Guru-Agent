@@ -1,0 +1,146 @@
+package com.apex.agent.platform.terminal.state
+
+import com.apex.agent.platform.terminal.events.Confidence
+import com.apex.agent.platform.terminal.screen.RealVirtualTerminal
+
+/**
+ * Heuristic InputWaiting detector.
+ *
+ * Spec ref: ATR 2.0 Final Spec §29 (InputWaiting Detection)
+ *
+ * Signals (combined):
+ *   - Screen content ends with a known prompt pattern (Continue? [Y/n], Password:, etc.)
+ *   - Known interactive program is the foreground process (python/ssh/vim/top/adb shell)
+ *   - Alternate screen is OFF (TUI programs like vim/top do NOT count as WAITING_INPUT —
+ *     they're actively rendering, not blocked on input)
+ *
+ * v1 only emits HIGH_CONFIDENCE (strong pattern match) or UNKNOWN (cannot determine).
+ * NEVER downgrades to NONE (avoid false "not waiting"). POSSIBLE is internal-only and does
+ * NOT trigger Session→WAITING_INPUT (only HIGH_CONFIDENCE does, per Spec §9.2 S6).
+ *
+ * This is a heuristic — it can produce false positives (e.g. a build log line that happens
+ * to end with "y/n"). The Runtime always allows the Agent to override via TerminalWrite()
+ * regardless of detected state.
+ */
+/**
+ * Known interactive programs. If the foreground command matches one of these AND the
+ * screen shows a prompt-like last line, confidence is HIGH. Exposed at package level so
+ * other components (e.g. JobManager) can avoid mis-attributing shell-idle to job completion.
+ */
+internal val interactivePrograms = setOf(
+    "python", "python3", "ipython", "node", "ruby", "irb", "lua",
+    "ssh", "sftp", "telnet", "ftp",
+    "vim", "vi", "nano", "emacs",
+    "top", "htop", "btop",
+    "less", "more", "man",
+    "adb", "fastboot",
+    "mysql", "psql", "sqlite3",
+    "gdb", "lldb",
+    "scala", "clojure", "lein",
+    "bash", "sh", "zsh"   // subshell
+)
+
+class InputWaitingDetector {
+
+    private companion object {
+        // PTY 输出热路径：PtyOutputPumpImpl 对每个输出 chunk 调一次 detect()，
+        // 每次 Pattern.compile 开销不容忽视（cat 大文件时每秒数百次）→ 提为常量。
+        private val WHITESPACE = Regex("\\s+")
+    }
+
+    /**
+     * HIGH_CONFIDENCE patterns: screen last-line ends with one of these.
+     * Each pattern is a regex matched against the trimmed last visible line.
+     */
+    private val highConfidencePatterns = listOf(
+        // ── T81 (D-3)：真实 shell PS1 形态 ──
+        // 根因：原正则只认裸 "^\s*\$\s*$"/"^\s*#\s*$" —— 真实 bash 默认 PS1
+        //（user@host:~$）、venv/conda 前缀（(venv) $）、zsh（machine %）全部不命中
+        // → 前台 job 完成后 JobManager 的合成退出永不触发，job 永久 RUNNING、
+        // wait() 挂死（FakeNativePty 输出裸 "$ " 掩盖了此缺陷）。
+        // 与 intelligence/PromptDetector 的 SHELL_PROMPTS 对齐 + 扩充。
+        Regex("^[\\w.-]+@[\\w.-]+:[^\\s]*[#$]\\s*$"),          // user@host:/path$（bash 默认；root 为 #）
+        Regex("^\\(.*\\)\\s*[\\w.-]*@?[\\w.-]*:?[^\\s]*[#$]\\s*$"), // (venv) $ / (base) user@host:~$
+        Regex("^\\d+\\s*[#$]\\s*$"),                           // 带上条退出码的 PS1（`1 $`）
+        Regex("^\\s*%\\s*$"),                                 // zsh 默认 prompt
+        Regex(".*\\[Y/n]\\s*$", RegexOption.IGNORE_CASE),
+        Regex(".*\\[y/N]\\s*$", RegexOption.IGNORE_CASE),
+        Regex(".*\\[yes/no]\\s*$", RegexOption.IGNORE_CASE),
+        Regex(".*\\(yes/no\\).*\\??\\s*$", RegexOption.IGNORE_CASE),
+        Regex("^Password:\\s*$", RegexOption.IGNORE_CASE),
+        Regex("^ passphrase:\\s*$", RegexOption.IGNORE_CASE),
+        Regex(".*[Ee]nter passphrase.*:\\s*$"),
+        Regex("^Username:\\s*$", RegexOption.IGNORE_CASE),
+        Regex("^Login:\\s*$", RegexOption.IGNORE_CASE),
+        Regex(".*[Pp]ress [Ee]nter.*\\.*\\s*$"),
+        Regex(".*[Pp]ress any key.*\\.*\\s*$"),
+        Regex(".*[Cc]ontinue\\?.*\\??\\s*$"),
+        Regex(".*[Ss]elect (an? )?option.*:?\\s*$"),
+        Regex(".*[Cc]hoose \\[.*\\]:?\\s*$"),
+        Regex("^\\s*>\\s*$"),                      // REPL prompt (python/node)
+        Regex("^\\s*\\.\\.\\.\\s*$"),              // python continuation
+        Regex("^\\s*\\$\\s*$"),                    // sh prompt
+        Regex("^\\s*#\\s*$"),                      // root prompt
+        Regex("^\\s*>>>\\s*$")                     // python REPL
+    )
+
+    /**
+     * Detect input-waiting state from the current screen + foreground command.
+     *
+     * @param vt the RealVirtualTerminal (to inspect last visible line)
+     * @param foregroundCommand the foreground job's command (null if shell idle)
+     * @return Confidence level (HIGH_CONFIDENCE / POSSIBLE / UNKNOWN)
+     */
+    fun detect(vt: RealVirtualTerminal, foregroundCommand: String?): Confidence {
+        // TUI programs on alternate screen are NOT waiting for input (they're rendering).
+        if (vt.alternateScreen) return Confidence.UNKNOWN
+
+        val lastLine = vt.lastVisibleLine()
+        if (lastLine.isBlank()) return Confidence.UNKNOWN
+
+        // Strong signal: last line matches a known prompt pattern.
+        for (rx in highConfidencePatterns) {
+            if (rx.matches(lastLine)) return Confidence.HIGH_CONFIDENCE
+        }
+
+        // Weaker signal: known interactive program running + prompt-ish last line.
+        if (foregroundCommand != null) {
+            val cmd = foregroundCommand.trim().split(WHITESPACE).firstOrNull() ?: ""
+            val baseName = cmd.substringAfterLast('/')
+            if (baseName in interactivePrograms) {
+                // ends with $ > # or : — likely a REPL/prompt
+                if (lastLine.endsWith('$') || lastLine.endsWith('>') ||
+                    lastLine.endsWith(':') || lastLine.endsWith('#')) {
+                    return Confidence.HIGH_CONFIDENCE
+                }
+                return Confidence.POSSIBLE
+            }
+        }
+
+        return Confidence.UNKNOWN
+    }
+
+    /**
+     * Convenience: detect from a plain text screen (for tests / non-RealVirtualTerminal
+     * implementations using the default [com.apex.agent.platform.terminal.screen.VirtualTerminal]
+     * styledSnapshot fallback).
+     */
+    fun detectFromText(renderedText: String?, foregroundCommand: String?): Confidence {
+        if (renderedText.isNullOrBlank()) return Confidence.UNKNOWN
+        val lastLine = renderedText.lineSequence().lastOrNull { it.isNotBlank() }?.trim() ?: return Confidence.UNKNOWN
+        for (rx in highConfidencePatterns) {
+            if (rx.matches(lastLine)) return Confidence.HIGH_CONFIDENCE
+        }
+        if (foregroundCommand != null) {
+            val baseName = foregroundCommand.trim().substringAfterLast('/').split(WHITESPACE).firstOrNull() ?: ""
+            if (baseName in interactivePrograms) {
+                if (lastLine.endsWith('$') || lastLine.endsWith('>') ||
+                    lastLine.endsWith(':') || lastLine.endsWith('#')) {
+                    return Confidence.HIGH_CONFIDENCE
+                }
+                return Confidence.POSSIBLE
+            }
+        }
+        return Confidence.UNKNOWN
+    }
+}

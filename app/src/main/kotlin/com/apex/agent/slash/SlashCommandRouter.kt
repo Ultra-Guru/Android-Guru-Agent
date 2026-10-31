@@ -1,0 +1,381 @@
+package com.apex.agent.slash
+
+import com.apex.agent.plugin.host.functional.FunctionalSlashCommand
+
+/**
+ * Runtime context the [SlashCommandRouter] consults to decide how a command
+ * should be routed. Currently GitHub connection state (for the
+ * `/mcp:github` real binding), live MCP server connection state, and
+ * functional plugin slash commands (Plugin System v2) are needed,
+ * but the shape is extensible: future connectors / plugins plug in by adding
+ * fields here.
+ *
+ * The context is a small immutable value object so routing stays pure and
+ * unit-testable — the ViewModel snapshots connection state at dispatch time
+ * and passes it in, rather than the router reaching into live managers.
+ *
+ * @param githubConnected `true` when a GitHub Personal Access Token has been
+ *   saved and the [githubUsername] is known (or at least non-null per the
+ *   token manager). When `false`, `/mcp:github` cannot execute and instead
+ *   requests the UI to open the GitHub connect flow.
+ * @param githubUsername The GitHub login resolved at token-validation time,
+ *   or `null` when not connected. Surfaced in the system message so the user
+ *   can see *which* account the MCP context is bound to.
+ * @param mcpConnected 已连接的 MCP 服务器名快照（路由时点）。`/mcp:<id>` 对已
+ *   连接的服务器注入 McpCall 引导提示词；未携带快照的旧调用方退回
+ *   Token 连接态判定（内置 github 服务器随启动自动连接，两者语义一致）。
+ * @param functionalCommands Plugin System v2：已激活功能性插件的斜杠指令
+ *   贡献快照（指令 id → 贡献）。`/plugin:<id>` 命中时路由注入插件声明的
+ *   定制 prompt；未命中或调用方未携带（旧路径）退化为通用插件路由文案
+ *   ——向后兼容，不破坏既有 APK 插件指令。
+ */
+data class SlashRouteContext(
+    val githubConnected: Boolean = false,
+    val githubUsername: String? = null,
+    val mcpConnected: Set<String> = emptySet(),
+    val functionalCommands: Map<String, FunctionalSlashCommand> = emptyMap()
+) {
+    companion object {
+        /** Sentinel used when no live connection state is available. */
+        val Empty: SlashRouteContext = SlashRouteContext()
+    }
+}
+
+/**
+ * The UI/system artifacts produced by routing a parsed [SlashCommand]:
+ *
+ * - [systemMessage]: a single human-readable status line appended to the
+ *   chat as an `AgentUiMessage.System` bubble (e.g. `"🧩 激活 Skill: github"`).
+ * - [agentPrompt]: the prompt handed to `AgentEngine.execute(...)` so the
+ *   LLM can act on the command, including parsed args + user extra text.
+ *   Empty when [requestGithubConnect] is `true` (nothing to execute yet).
+ * - [requestGithubConnect]: when `true`, the command cannot proceed until the
+ *   user completes the out-of-band GitHub connection step. The ViewModel
+ *   should surface [systemMessage], emit its GitHub-connect UI signal, and
+ *   **not** call `agentEngine.execute`. Added so the `/mcp:github` command
+ *   degrades gracefully instead of firing a hollow prompt at the agent.
+ */
+data class SlashCommandRoute(
+    val systemMessage: String,
+    val agentPrompt: String,
+    val requestGithubConnect: Boolean = false,
+    /** 当路由来自 Skill 指令时携带 skill 名称，供 UI 标记后续工具调用来源。 */
+    val skillName: String? = null,
+    /**
+     * 路由来源类别："skill" / "connector" / "plugin"，null 表示普通指令。
+     * 与 [sourceName] 一起供 UI 渲染流水线横幅与后续工具调用的来源徽章。
+     */
+    val routeKind: String? = null,
+    /** 路由来源名称（指令 id）：Skill / 连接器 / 插件指令均有值。 */
+    val sourceName: String? = null
+)
+
+/**
+ * Maps a parsed [SlashCommand] into a [SlashCommandRoute], consulting the
+ * supplied [SlashRouteContext] for commands that depend on live connection
+ * state (currently `/mcp:github`).
+ *
+ * The four known command types (Skill / Mcp / Connector / Plugin) share the
+ * same prompt skeleton — only the verb and tool hint differ — so they are
+ * built by [buildAgentPrompt]. Unknown commands forward the raw text to the
+ * agent verbatim so the user's intent is never silently dropped.
+ *
+ * `/mcp:github` is special-cased because the project already ships real
+ * GitHub tools (registered in `ToolModule` when a token is present). When
+ * connected, the agent prompt explicitly enumerates the `github_*` tool IDs
+ * so the LLM prefers them; when not connected, routing short-circuits to a
+ * connect-request signal instead of emitting a hollow prompt.
+ *
+ * `/fusion:<id>`（FUSION 工具聚合体系）是第五类特型路由：产出携带
+ * 【强制使用要求】的 agentPrompt（[routeFusion]）—— 与四类基础指令的
+ * 「引导使用」不同，它是用户显式选择后的「强制使用」契约。
+ */
+object SlashCommandRouter {
+
+    /**
+     * 内置 GitHub MCP 服务器 id（= McpManager 配置名 = McpCall 的 server 参数）。
+     * 与 github/mcp 包的 `BuiltinGithubMcpServer.ID` 保持一致；这里不 import
+     * app 层类，保持 slash 包纯 JVM 可单测（同 [GITHUB_TOOL_IDS] 的镜像策略）。
+     */
+    private const val GITHUB_MCP_SERVER_ID = "github"
+
+    /**
+     * GitHub MCP 工具（内置 github MCP 服务器 tools/list 返回的 7 个工具，
+     * 命名对齐官方 github-mcp-server），经 McpCall 调用。
+     */
+    private val GITHUB_MCP_TOOLS: List<String> = listOf(
+        "get_me",
+        "list_repositories",
+        "get_file_contents",
+        "create_or_update_file",
+        "create_issue",
+        "list_issues",
+        "search_code"
+    )
+
+    /**
+     * GitHub 原生工具 IDs registered by `ToolModule` when a token is connected.
+     * Mirrored here (rather than imported) so the `slash` package stays free
+     * of `app`-module dependencies and remains pure-JVM unit-testable. If
+     * `ToolModule` adds/removes a GitHub tool, update this list in lockstep
+     * （与上方 [GITHUB_MCP_TOOLS] 是两套共存的能力：原生工具直调，MCP 工具走
+     * McpCall —— 提示词里两者都列出，互为备份）。
+     *
+     * v3 S3（G7）：与 GithubTools.kt 实际注册的 9 个工具对齐——旧清单漏了
+     * GithubListBranches / GithubSearchRepos（/mcp:github 提示词少列 2 个
+     * 可用工具，模型误以为不存在）。
+     */
+    private val GITHUB_TOOL_IDS: List<String> = listOf(
+        "GithubGetUser",
+        "GithubListRepos",
+        "GithubReadFile",
+        "GithubWriteFile",
+        "GithubCreateIssue",
+        "GithubListIssues",
+        "GithubSearchCode",
+        "GithubListBranches",
+        "GithubSearchRepos"
+    )
+
+    fun route(
+        command: SlashCommand,
+        context: SlashRouteContext = SlashRouteContext.Empty
+    ): SlashCommandRoute = when (command) {
+        is SlashCommand.Skill -> SlashCommandRoute(
+            systemMessage = "🧩 激活 Skill: ${command.id}",
+            agentPrompt = command.buildAgentPrompt(
+                verb = "请根据此指令执行对应操作，通过 skill 相关工具执行",
+                toolHint = "skill"
+            ),
+            skillName = command.id,
+            routeKind = "skill",
+            sourceName = command.id
+        )
+
+        is SlashCommand.Mcp -> routeMcp(command, context)
+
+        is SlashCommand.Logic -> SlashCommandRoute(
+            // 本地路由命令：Coding 屏在路由前已截获执行（见 CodeViewModel
+            // handleSlashCommand 的 Logic 分支），到达这里的是 Agent 屏——
+            // 双引擎是 Coding 模式专属能力，展示引导消息且不生成 agentPrompt
+            // （空 prompt = 不进引擎，与 /mcp:<id> 未连接的拦截语义一致）。
+            systemMessage = "🧭 思考逻辑切换仅 Coding 模式可用——请在 Coding 屏右上角选择器或输入 /logic:standard | /logic:deep_dive",
+            agentPrompt = ""
+        )
+
+        is SlashCommand.Connector -> SlashCommandRoute(
+            systemMessage = "🔗 使用连接器: ${command.id}",
+            agentPrompt = command.buildAgentPrompt(
+                verb = "请根据此指令执行对应操作，通过 connector 工具执行",
+                toolHint = "connector"
+            ),
+            routeKind = "connector",
+            sourceName = command.id
+        )
+        is SlashCommand.Plugin -> routePlugin(command, context)
+        is SlashCommand.Fusion -> routeFusion(command)
+        is SlashCommand.Unknown -> SlashCommandRoute(
+            systemMessage = "⚡ 指令: ${command.raw.trim()}",
+            // Forward the raw input verbatim — the user typed it on purpose
+            // and the agent is best placed to interpret free-form commands.
+            agentPrompt = command.raw
+        )
+    }
+
+    /**
+     * Plugin routing（Plugin System v2 双形态）：
+     *
+     * - **功能性插件指令**（[SlashRouteContext.functionalCommands] 命中）：
+     *   注入插件声明的定制 prompt（`/plugin:briefing` → 每日简报工作流），
+     *   系统消息携带插件名徽章；
+     * - **APK 插件 / 未命中**：既有通用路由——插件工具已注册进
+     *   ToolRegistry（PluginManager 真实注册），引导模型直接调用插件工具
+     *   （如 browser_* 网页自动化工具）；不存在时如实引导去市场页安装。
+     */
+    private fun routePlugin(command: SlashCommand.Plugin, context: SlashRouteContext): SlashCommandRoute {
+        val functional = context.functionalCommands[command.id]
+        if (functional != null) {
+            val promptBody = functional.prompt.ifBlank {
+                "插件 ${functional.pluginName} 已激活，其工具已注册进 ToolRegistry —— 请直接调用对应的插件工具完成任务。"
+            }
+            return SlashCommandRoute(
+                systemMessage = "📦 功能插件: ${functional.pluginName} · ${command.id}",
+                agentPrompt = command.buildAgentPrompt(
+                    verb = promptBody,
+                    toolHint = "插件 ${functional.pluginName} 的工具"
+                ),
+                routeKind = "plugin",
+                sourceName = command.id
+            )
+        }
+        return SlashCommandRoute(
+            // 插件工具桥已激活（IApexPluginHost 宿主桥 + PluginManager 真实注册）：
+            // 插件加载后其工具已注册进 ToolRegistry，模型可直接调用。
+            // 未加载（loadedPlugins 不含该包）时如实引导去市场页安装/启用。
+            // v1.5 话术清理：浏览器自动化已内置（非插件），示例不再指 browser_* ——
+            // 指引改为按插件名检索其注册工具，避免把内置能力误归为插件语境。
+            systemMessage = "📦 插件: ${command.id}（工具已注册进 Agent 工具表）",
+            agentPrompt = command.buildAgentPrompt(
+                verb = "插件 ${command.id} 已加载，其工具已注册进 ToolRegistry —— 请直接调用该插件注册的工具完成任务（可先用 ToolSearch 按插件名检索其工具清单）。若工具不存在，提示用户去 市场 → 插件 页面安装/启用该插件后重试",
+                toolHint = "插件工具"
+            ),
+            routeKind = "plugin",
+            sourceName = command.id
+        )
+    }
+
+    /**
+     * Fusion routing（FUSION 工具聚合体系 —— 强制使用契约）。
+     *
+     * 用户经输入栏王冠菜单（或手键 `/fusion:<id>`）显式选用某体系包：
+     * 激活时已装技能 + 连 MCP + 注入体系 agent 工作流（系统侧强制使用
+     * 协议同步注入，见 FusionBundleActivator.buildActivationPrompt）。
+     * 本路由产出**发送侧第二重强制**：agentPrompt 携带【强制使用要求】
+     * —— 必须优先且强制使用该体系的资源完成任务，不得静默绕过；
+     * 确实不可用时如实说明原因并给出降级证据（与证据纪律同口径）。
+     *
+     * 兼容口径：包未安装/未激活也不拦下（系统提示词侧可能已就绪），
+     * 如实告知模型按体系方法论执行；体系资源缺失时给降级路径。
+     */
+    private fun routeFusion(command: SlashCommand.Fusion): SlashCommandRoute {
+        return SlashCommandRoute(
+            systemMessage = "👑 FUSION 体系: ${command.id}（强制使用）",
+            agentPrompt = command.buildForcedFusionPrompt(),
+            routeKind = "fusion",
+            sourceName = command.id
+        )
+    }
+
+    /**
+     * 【强制使用要求】提示词组装（[routeFusion] 专用）。
+     *
+     * 形态：
+     *
+     *     用户触发了快捷指令: /fusion:<id>
+     *     【FUSION 体系强制使用】用户已显式选用体系包 "<id>" ...
+     *     - 必须优先且强制使用该体系的技能 / MCP 工具 / 旗舰工具 ...
+     *     - 不得静默绕过 ...
+     *     指令参数: ...                    ← 仅当 args 非空
+     *     用户附加要求: <userExtra>        ← 仅当 userExtra 非空
+     */
+    private fun SlashCommand.Fusion.buildForcedFusionPrompt(): String = buildString {
+        append("用户触发了快捷指令: /fusion:").append(id).append('\n')
+        append("【FUSION 体系强制使用】用户已显式选用工具聚合体系包 \"").append(id)
+        append("\"（技能 + MCP 服务器 + 工具的聚合体，激活时已装备其工作流）。\n")
+        append("执行本次任务时你必须遵守：\n")
+        append("- 必须优先且强制使用该体系的资源完成任务：包内技能的方法论、其 MCP 服务器的工具（McpList 可列全量、McpCall 调用）、旗舰工具（可先 ToolSearch 检索）；\n")
+        append("- 不得静默绕过该体系改用其他工具完成同一任务；\n")
+        append("- 若某资源确实不可用，如实说明原因并给出降级证据后才能换路径（与证据纪律同口径）。\n")
+        if (args.isNotEmpty()) {
+            append("\n指令参数: ")
+            append(args.entries.joinToString(", ") { "${it.key}=${it.value}" })
+        }
+        if (userExtra.isNotBlank()) {
+            append("\n\n用户附加要求: ").append(userExtra)
+        }
+    }
+
+    /**
+     * MCP routing.
+     *
+     * - `/mcp:github`：绑定内置 GitHub MCP 服务器（BUILTIN 进程内 transport，
+     *   随 App 启动自动连接）。已连接（或旧调用方只携带 Token 态且已连接）→
+     *   注入列出 7 个 MCP 工具 + McpCall 用法的提示词；未连接 → 引导走
+     *   GithubTokenDialog 配置流程（与此前行为一致，不回归）。
+     * - 其他 `/mcp:<id>`：已连接（正在运行）的服务器 → 提示词引导用 McpCall
+     *   调用其工具；未连接 → **不执行**（agentPrompt 置空，systemMessage 引导
+     *   去市场启动）——Hub 生态门控的产品要求：未安装/未启动的 MCP 不可经
+     *   斜杠使用，宁可拦下也不给模型发空转提示词。
+     */
+    private fun routeMcp(command: SlashCommand.Mcp, context: SlashRouteContext): SlashCommandRoute {
+        if (command.id == GITHUB_MCP_SERVER_ID) {
+            // 内置 github 服务器随启动自动连接；上下文未携带 MCP 快照时退回
+            // Token 连接态（两者对内置服务器语义一致，见 SlashRouteContext.kdoc）。
+            val mcpReady = command.id in context.mcpConnected || context.githubConnected
+            return if (mcpReady) {
+                val user = context.githubUsername ?: "GitHub"
+                SlashCommandRoute(
+                    systemMessage = "🔌 已启用 GitHub MCP 上下文（用户: $user）",
+                    agentPrompt = command.buildGithubAgentPrompt(user)
+                )
+            } else {
+                // Degrade gracefully: tell the user what to do and ask the
+                // UI to open the GitHub connect flow. No agent execution.
+                SlashCommandRoute(
+                    systemMessage = "⚠️ GitHub 未连接，请通过输入栏 GitHub 图标连接后再使用 /mcp:github",
+                    agentPrompt = "",
+                    requestGithubConnect = true
+                )
+            }
+        }
+        // Generic MCP (postgres / filesystem / future servers).
+        return if (command.id in context.mcpConnected) {
+            SlashCommandRoute(
+                systemMessage = "🔌 连接 MCP: ${command.id}",
+                agentPrompt = command.buildAgentPrompt(
+                    verb = "请根据此指令执行对应操作，通过 MCP 服务器 ${command.id} 的工具执行（用 McpCall 调用，server 填 \"${command.id}\"；McpList 可列出该服务器的全部工具）",
+                    toolHint = "mcp"
+                )
+            )
+        } else {
+            // 未运行 → 拦截：不向模型发空转提示词，引导用户去市场启动
+            // （调用方对空 agentPrompt 不执行 —— AgentChatViewModel/
+            // CodeViewModel 均有 isNotBlank 门）。
+            SlashCommandRoute(
+                systemMessage = "⚠️ MCP '${command.id}' 未运行 —— 请先到 市场 → MCP 安装并启动后再使用",
+                agentPrompt = ""
+            )
+        }
+    }
+
+    /**
+     * Shared prompt builder for the four known command types.
+     *
+     * Shape:
+     *
+     *     用户触发了快捷指令: /<type>:<id>
+     *     <verb>（<toolHint>: <id>）
+     *     指令参数: k1=v1, k2=v2    ← only when args present
+     *
+     *     用户附加要求: <userExtra>   ← only when userExtra present
+     */
+    private fun SlashCommand.buildAgentPrompt(verb: String, toolHint: String): String = buildString {
+        append("用户触发了快捷指令: /").append(type).append(":").append(id).append('\n')
+        append(verb).append("（").append(toolHint).append("：").append(id).append("）")
+        if (args.isNotEmpty()) {
+            append("\n指令参数: ")
+            append(args.entries.joinToString(", ") { "${it.key}=${it.value}" })
+        }
+        if (userExtra.isNotBlank()) {
+            append("\n\n用户附加要求: ").append(userExtra)
+        }
+    }
+
+    /**
+     * Prompt builder specialized for `/mcp:github` when GitHub is connected.
+     *
+     * v2（内置 GitHub MCP 上线）：优先引导用 McpCall 调用内置服务器 "github"
+     * 的 7 个 MCP 工具（与官方 github-mcp-server 命名对齐），原生 `github_*`
+     * 工具仍然可用（两者共存，互为备份）。若 McpCall 返回「未连接」类错误，
+     * 模型应改用原生 github_* 工具完成同一任务。User extra text is still
+     * forwarded so `/mcp:github repo=owner/name 列出 open issues` works
+     * end-to-end.
+     */
+    private fun SlashCommand.Mcp.buildGithubAgentPrompt(username: String): String = buildString {
+        append("用户触发了快捷指令: /mcp:github\n")
+        append("GitHub MCP 上下文已启用（已连接用户: ").append(username).append("）。\n")
+        append("优先通过 MCP 调用 GitHub（用 McpCall 工具，server 填 \"github\"，arguments 为 JSON 字符串）:\n")
+        GITHUB_MCP_TOOLS.forEach { append("  - ").append(it).append('\n') }
+        append("McpCall 调用形如: {\"server\": \"github\", \"tool\": \"工具名\", \"arguments\": \"{...JSON 参数...}\"}\n")
+        append("McpList 可随时列出已连接 MCP 服务器与全部工具。\n")
+        append("原生 github_* 工具也仍然可用（若 McpCall 报未连接/不可用错误，改用这些完成同一任务）:\n")
+        GITHUB_TOOL_IDS.forEach { append("  - ").append(it).append('\n') }
+        if (args.isNotEmpty()) {
+            append("\n指令参数: ")
+            append(args.entries.joinToString(", ") { "${it.key}=${it.value}" })
+        }
+        if (userExtra.isNotBlank()) {
+            append("\n\n用户附加要求: ").append(userExtra)
+        }
+    }
+}

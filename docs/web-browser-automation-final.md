@@ -1,0 +1,371 @@
+# 内置浏览器与 DOM 级自动化 —— 最终演进方案（综合裁决版）
+
+> 对标并超越 **Operit**（`com.ai.assistance.operit`）的网页自动化能力。
+> 调研日：2026-08-12 ｜ 评审人：Qwen（顶级架构师 / Agent 自动化专家）｜ 状态：**裁决已锁定，待工程收尾**
+>
+> 本文是《web-browser-automation.md》（设计初稿）与《web-browser-automation-proposal.md》（待评审稿）的**最终综合版**。
+> 所有开放问题已由 Qwen 裁决，关键修正（显式握手接管）已采纳。本文档即落地依据。
+
+---
+
+## 0. 一句话结论
+
+Operit 的网页自动化 = 内置 `WebView` + 把渲染后 DOM 精简成「带**稳定引用**的可交互元素列表」让 Agent 直接操作 + 浮窗常驻让人类接管登录/验证码。
+本项目方案在 Operit 基础上做四件事实现超越：**语义哈希稳定 Ref**（抗 SPA 局部刷新）、**物理触摸注入**（抗 `isTrusted` 校验）、**JS 层启发式剪枝**（省 token）、**显式握手人工接管**（状态机 + 全局工具锁，零歧义）。
+
+**开发纪律**：第 1~5 节为**当前必须落地**的工程实现；第 6 节「超纲推演」**严禁混入当前代码库**，仅作 12~18 个月技术储备。
+
+---
+
+## 1. 技术基线对齐（2026 范式）
+
+| 维度 | 2024 旧范式（弃） | 2026 新范式（本方案） |
+| --- | --- | --- |
+| 元素引用 | 顺序索引 `bid=1,2,3`（SPA 局部刷新即失效） | **语义哈希 Ref** `r_<hash>`，由元素不可变特征计算 |
+| 事件触发 | `element.click()`（合成事件，绕过事件冒泡链） | **DOM 定位 → Android `dispatchTouchEvent` 物理触摸** |
+| DOM 传输 | 每次全量快照 | **JS 层启发式剪枝 + 字符预算**（增量 Diff 为 P2 储备） |
+| 人工接管 | 简单浮窗显示 | **状态机驱动的显式握手**（共享 WebView + 全局工具锁） |
+| 截图 | 全页长图 | **仅当前视口**（全页长图为未来增强） |
+
+---
+
+## 2. 已裁决的开放问题（最终版）
+
+| # | 问题 | 裁决 | 关键推理 |
+| --- | --- | --- | --- |
+| ① | 稳定 Ref：用 `data-apex-ref`？跨 iframe？ | **废顺序索引，升级为语义哈希 `data-apex-hash`；暂不做跨 iframe** | SPA 局部刷新会让顺序 `r3` 指错元素；Ref 必须由元素不可变特征算出。跨域 iframe 受沙箱/CORS 限制，标记 P2，当前把 iframe 视为整体交互块 |
+| ② | DOM 点击 vs 坐标点击 | **DOM 定位 + 物理触摸注入（混合）** | `el.click()` 是合成事件，React/Vue 与 Cloudflare/Akamai 会校验 `isTrusted` 与完整 `touchstart→touchmove→touchend` 轨迹；底层 `dispatchTouchEvent` 永远最真实 |
+| ③ | 摘要压缩：字符预算 vs Tokenizer | **JS 层启发式剪枝 + Kotlin 层字符预算估计；不引 BPE** | 真 BPE 耗 CPU、增包体；在 JS 层过滤 `display:none`、无交互无文本、超深非交互子树，回传已是高纯度骨架 |
+| ④ | 浮窗接管：共享 WebView vs 显式握手 | **共享 WebView（物理基础）+ 显式状态机握手（逻辑必须）** | 无状态机时 Agent 会在人类输密码时抢焦点；用 `AGENT_DRIVING → WAITING_HUMAN → HANDOFF_COMPLETE` 状态机 + 全局工具锁消除歧义 |
+| ⑤ | 沙箱/CI 验证 | **接受** | WebView 渲染依赖 `android.webkit.*`，JVM 无法模拟；`DomParser` 抽纯 Kotlin 单测，引擎/UI 层靠 CI Instrumented Test |
+| ⑥ | 截图时机 | **仅视口截图** | VLM 对 1080×10000 长图注意力稀释、显存溢出；正确模式是 `snapshot→scroll→screenshot` 确认局部 |
+
+### 修正项：自动探针 → 显式完成按钮（Qwen 二次裁定，已采纳）
+
+原方案「上下文感知自动探针监控」**彻底废弃**。理由：隐式推断在复杂生产环境不稳定（误判输入中/已放弃、页面成功标志各异、易误夺控制权）。
+**改为**：人类在浮窗 UI 点「**我已完成操作**」按钮，触发显式握手交还 Agent。显式人类确认永远优于隐式机器推断。
+
+---
+
+## 3. 总体架构
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Agent (LLM)                                                   │
+│   工具: BrowserNavigate / snapshot / click / input / scroll / screenshot │
+│   人工接管: BrowserShow   (展开浮窗 → 人类登录/过验证)          │
+└───────┬───────────────────────────────────┬──────────────────┘
+        │ ToolRegistry                        │ 人类真实触控 (同一 WebView)
+┌───────▼──────────────────────┐  ┌──────────▼──────────────────────────┐
+│  app:browser/BrowserAgentTools │  │  app:browser/BrowserOverlay (浮窗 UI) │
+│  (6 个 AgentTool，前置守卫)    │  │   · AGENT_DRIVING: 半透明遮罩防误触    │
+│                              │  │   · WAITING_HUMAN: 常驻「我已完成」按钮 │
+│  BrowserEngine.assertAgent   │  │   · 展开 BrowserScreen / 收起 FloatingBall │
+│  Control() 守卫：锁定期拒绝    │  │                                       │
+└───────┬──────────────────────┘  └──────────┬──────────────────────────┘
+        │ 调用                                 │ attachActiveWebView(webView)
+┌───────▼─────────────────────────────────────▼──────────────────┐
+│  app:browser/BrowserEngine  (@Singleton WebView 宿主)            │
+│   · 多 session · 历史栈 · 视口截图                                │
+│   · 状态机: HIDDEN/AGENT_DRIVING/WAITING_HUMAN/HANDOFF_COMPLETE  │
+│   · 语义哈希 ref 注入 · 物理触摸点击 · 全局工具锁                  │
+└───────────────┬────────────────────────────────────────────────┘
+                │ evaluateJavascript (含启发式剪枝)
+┌───────────────▼────────────────────────────────────────────────┐
+│  注入 JS → 抓真实 DOM (打 data-apex-hash) → 剪枝后回传骨架 JSON   │
+└────────────────────────────────────────────────────────────────┘
+```
+
+数据流：`navigate` → `snapshot`（拿 `r_<hash>` 列表）→ `input`+`click`（物理触摸）→ `screenshot` 确认 → 遇登录/验证码 `BrowserShow` 展开浮窗 → 人类操作 → 点「我已完成」→ 引擎自动 `snapshot` 一次 → Agent 继续。
+
+---
+
+## 4. 核心创新点（超越 Operit 的 4 个落地点）
+
+### 创新一：语义哈希稳定 Ref + 降级定位链
+- **痛点**：顺序 `bid` 在 SPA AJAX 局部刷新后瞬间错位。
+- **设计**：`ref = "r_" + hash(role + text + domPath + 相对位置)`。快照时给元素打 `data-apex-hash`。点击/输入时按 `querySelector('[data-apex-hash="..."]')` 精确定位。
+- **降级链**（DOM 重绘导致 hash 失效时）：
+  1. 精确匹配 `data-apex-hash`；
+  2. 按快照保存的 `role + text` 在可视区模糊匹配；
+  3. 按快照保存的相对坐标，在父容器内做空间邻近度匹配。
+- 暂不做跨 iframe 递归（标记 P2）。
+
+### 创新二：物理级触摸事件桥接（Physical Touch Bridge）
+- **痛点**：JS `dispatchEvent` 无法触发依赖 `isTrusted=true` 的安全控件（银行密码键盘、滑块验证码）。
+- **设计**：`clickElement(ref)` 不再 `el.click()`。流程：`JS 取 BoundingRect` → `换算 WebView 屏幕坐标` → `构造 MotionEvent(DOWN/UP)，DOWN~UP 间 30~80ms 随机延迟模拟按压` → `webView.dispatchTouchEvent()`。
+- **意图验证**：无论页面 JS 事件绑定多复杂，底层 Android 触控永远是最真实输入源。
+
+### 创新三：JS 层启发式剪枝 + 字符预算
+- **痛点**：全量 DOM 撑爆 Context，噪声大。
+- **设计**：`SNAPSHOT_JS` 内直接过滤 `display:none`/`visibility:hidden`、`offsetParent===null`、不可见非交互无文本节点、超深非交互子树；结果已是高纯度交互骨架。Kotlin 层 `DomParser.buildSummary` 再按字符预算裁折叠。
+- **硬上限**：单次快照元素数 ≤ 50（Token 预算保护）。
+
+### 创新四：显式握手人工接管（Context-Aware Handoff，修订版）
+- **痛点**：人类介入后 Agent 不知何时结束。
+- **设计**：`WAITING_HUMAN` 状态锁定所有 Agent 自动化工具；人类在浮窗点「我已完成操作」显式交还；引擎 `completeHandoff()` 触发后自动 `snapshot` 一次作为隐式上下文回灌 Agent。
+- **废弃**：原自动探针监控（误判风险高、页面成功标志各异）。
+
+---
+
+## 5. 落地路线图（P0 → P2）
+
+### [P0] 重构 Ref 生成机制
+- 改 `BrowserScript.SNAPSHOT_JS`：`stableRef` 改用 `simpleHash(role + text + tag + 相对位置)`，输出 `data-apex-hash="r_<hash>"`。
+- `DomParser` 读取 `data-apex-hash` 作为 `ref`（保留 `bid` 仅作展示序号，不作为定位主键）。
+- `DomElement` 字段：`ref`（语义哈希）保持，`bid` 降级为展示序号。
+
+### [P0] 物理触摸桥接
+- `BrowserEngine.clickElement(ref)`：JS 取 `rect` → 换算坐标 → `MotionEvent` + `dispatchTouchEvent`，DOWN/UP 间随机延迟。
+- 提供同步取坐标封装（`evaluateJavascript` 经 `CountDownLatch`/`suspendCancellableCoroutine` 同步化）。
+- 坐标换算需叠加 WebView 在屏幕中的绝对偏移（浮窗场景）。
+
+### [P1] 浮窗状态机 + 显式握手 UI
+- 新增 `BrowserSessionState` 枚举：`HIDDEN` / `AGENT_DRIVING` / `WAITING_HUMAN` / `HANDOFF_COMPLETE`。
+- `BrowserEngine`：`enterHandoffMode()` / `completeHandoff()` / `assertAgentControl()`（抛 `HandoffLockedException`）。
+- `BrowserOverlay`：`WAITING_HUMAN` 态常驻「我已完成操作」按钮；`AGENT_DRIVING` 态半透明遮罩防人类误触；地址栏/前进后退在 `WAITING_HUMAN` 隐藏。
+- 所有 `BrowserAgentTools` 执行前调用 `assertAgentControl()`，锁定期返回结构化 `SYSTEM_LOCKED` JSON（`status`/`reason`/`hint`）——模型能稳定区分「可等待恢复的锁定」与「永久失败」。
+- `BrowserShow` 工具：展开浮窗并 `enterHandoffMode()`；人类点完成后 `completeHandoff()` + 自动 `snapshot`。
+
+### [P1] Token 预算与剪枝测试
+- CI 用 5 个重型页（淘宝/ X / GitHub / 知乎 / 银行登录）验证快照 ≤ 4096 tokens。
+
+### [P2] 增量 Diff 缓存（储备）
+- Android 端 `DomStateCache` 合并 `MutationObserver` 传回的 Diff（当前不做，先留接口）。
+
+### 不变项（沿用既有骨架）
+- `BrowserEngine` `@Singleton` + `@ApplicationContext` 构造注入，由 `ApexCoreService` 常驻持有。
+- 所有 WebView 操作包 `withContext(Dispatchers.Main)`。
+- `evaluateJavascript` 回传 JSON 解包：`json.parseToJsonElement(wrapped).jsonPrimitive.content`。
+
+---
+
+## 6. 工具接口（Agent 视角，最终版）
+
+| 工具 | 参数 | 返回 | 状态机约束 |
+| --- | --- | --- | --- |
+| `BrowserNavigate` | `url`, `new_tab?` | 加载后概要 | AGENT_DRIVING |
+| `BrowserSnapshot` | — | 带 `r_<hash>` 可交互元素列表 + 概要 | 锁定期返回 `SYSTEM_LOCKED` |
+| `BrowserClick` | `ref` | 物理触摸点击结果 | 锁定期返回 `SYSTEM_LOCKED` |
+| `BrowserInput` | `ref`, `text` | 填值结果 | 锁定期返回 `SYSTEM_LOCKED` |
+| `BrowserScroll` | `delta_y?` | 滚动结果 | 锁定期返回 `SYSTEM_LOCKED` |
+| `BrowserScreenshot` | — | PNG base64（视口） | 锁定期返回 `SYSTEM_LOCKED` |
+| `BrowserShow` | `expand?`(默认 true) | 展开/收起浮窗，进入/退出人工接管 | 触发 `enterHandoffMode`/`completeHandoff` |
+
+### 6.1 v1.1.0 高级动作空间（apex-kit-browser PR #3 落地）
+
+| 工具 | 参数 | 返回 | 用途 |
+| --- | --- | --- | --- |
+| `BrowserPressKey` | `key`（enter/tab/escape/方向键/单字符） | 动作后验证摘要 | 搜索回车（隐式提交）、Tab 切换、ESC 关弹窗 |
+| `BrowserHover` | `ref` | 动作后验证摘要 | 悬停式下拉菜单/导航、tooltip |
+| `BrowserDrag` | `from_ref`, `to_ref`, `steps?` | 动作后验证摘要 | 滑块验证、列表排序、看板拖放 |
+| `BrowserExtractContent` | `mode?`（article/tables/links/meta） | 结构化 JSON | 读正文/表格/链接/元信息，优先于 snapshot 读内容 |
+| `BrowserExecuteJs` | `script`, `timeout_ms?` | 结果字符串 | 原生 JS 逃生舱：长尾页面逻辑兜底 |
+| `BrowserGetCookies` | `url?` | `k1=v1; k2=v2` | 登录态诊断（trace 结果自动脱敏） |
+| `BrowserLocate` | `text`, `tag?`, `limit?` | ref/tag/text 列表 | ref 失配时按可见文本重锚定（与引擎模糊自愈同源） |
+| `BrowserNetworkLog` | `limit?`, `url_contains?`（v1.1.0 新增过滤） | fetch/xhr 日志 | 定位数据 API，按 URL 子串快速过滤 |
+
+`BrowserSnapshot` 返回示例（语义哈希 ref，稳定）：
+```
+⊕ 页面可交互元素（共 12 个，ref 稳定）：
+  [r_a1b2] 链接 首页
+  [r_9f3c] 输入框 搜索
+  [r_4d7e] 按钮 提交
+  …折叠 3 个低优先级元素（用 browser_dump 查看全部）
+```
+
+---
+
+## 7. 代码改造清单（对照现状）
+
+| 文件 | 现状 | 改造动作 |
+| --- | --- | --- |
+| `core/.../browser/BrowserScript.kt` | `stableRef` 用顺序 + 属性哈希打 `data-apex-ref` | 改语义哈希 `r_<hash>`，属性名改 `data-apex-hash`；增强 JS 层剪枝（不可见/非交互/超深过滤）；硬上限 50 |
+| `core/.../browser/DomParser.kt` | 读 `data-apex-ref` 作 `ref` | 改读 `data-apex-hash`；`bid` 仅展示序号；summary 用 `ref` |
+| `core/.../browser/DomElement.kt` | `ref` 字段已有 | 注释改为「语义哈希」；`bid` 标记展示用途 |
+| `app/.../browser/BrowserEngine.kt` | `clickElement` 用 `el.click()`；无状态机 | 改物理触摸注入；新增 `BrowserSessionState` + 状态锁 + `enterHandoffMode`/`completeHandoff`/`assertAgentControl`；`ref` 定位改用 `data-apex-hash` |
+| `app/.../browser/BrowserAgentTools.kt` | 6 工具，`bid` 参数 | 参数改 `ref`；各工具头部加 `assertAgentControl()` 守卫；新增 `BrowserShow` 的握手触发 |
+| `app/.../browser/BrowserOverlay.kt` | 已实现 | `WindowManager` 浮窗 + Compose 控制条；与引擎**共享 activeTab WebView**（`onStateChanged` 订阅状态：`WAITING_HUMAN` 自动展开并挂 WebView，其余态收起 detach）；`RECOVERING` 橙色徽章、`AGENT_DRIVING` 蓝、`WAITING_HUMAN` 绿 + 「我已完成操作」按钮；折叠/收起；无 `SYSTEM_ALERT_WINDOW` 权限时静默降级 |
+| `app/.../browser/OverlayLifecycleOwner.kt` | 已实现 | 浮窗 ComposeView 独立 `LifecycleOwner`（onCreate/start/resume/pause/stop/destroy） |
+| `app/.../browser/CyberNeonBallManager.kt` | 已实现 | **赛博极客·霓虹环流球**（常驻收缩态枢纽）。`EasyFloat` 全局浮窗；高光黑曜石 `bg_obsidian_glossy` + `NeonRingView` 代码绘制等离子环流（默认，零资源依赖）+ 可选 `LottieAnimationView`（`res/raw/anim_neon_<state>.json` 存在时优先加载并运行时改色）；`SpringAnimation` 物理挤压（按下 0.88 弹回）；点击球 toggle 显式握手（`enterHandoffMode`/`completeHandoff`）；状态色 RUNNING 蓝/NEED_HUMAN 金+脉冲+抖动+震动/badge、ERROR 红、SUCCESS 绿；订阅 `BrowserEngine` 多播状态回调 |
+| `app/.../browser/NeonRingView.kt` | 已实现 | 代码绘制霓虹等离子光环（多层旋转 SweepGradient + 呼吸透明度），替代 Lottie 二进制资源的默认兜底，零包体 |
+| `app/src/main/res/raw/anim_neon_running.json` | 已实现（真实资源） | 从 LottieFiles 公开 CDN 下载的真实免费 Lottie（105KB），Running 态默认加载并染成电光蓝；`warning/error/success` 三态 raw 待补（放入即自动生效） |
+| `app/.../di/ToolModule.kt` | 已注册 6 工具 | `BrowserShow` 加握手；注入 `BrowserOverlay`（P1） |
+
+---
+
+## 8. 超纲推演（严禁进生产代码，仅技术储备）
+
+> ⚠️ 基于 2026 端侧 NPU（>50 TOPS）趋势的 12~18 个月储备方向，**当前严禁混入代码库**。
+
+**端侧 VLM「零 DOM 注入」自动化**：
+1. 完全不注入 JS，100% 隐身，免疫 DOM 反爬检测。
+2. 端侧量化 VLM（如 Qwen-VL-Edge）直接推理 WebView 截图。
+3. 输出 `{"action":"click","target_visual_desc":"蓝色登录按钮","coordinates":[540,1200]}`。
+4. 限制：端侧模型密集小文本识别率仍不如直读 DOM，且发热。**当前坚持 DOM 为主、视觉为辅双模态**。
+
+---
+
+## 9. 验证路径
+
+- **JVM 单测**：`DomParserTest` 验证语义哈希 ref 稳定性、交互过滤、摘要压缩意图（字符预算）。
+- **CI Instrumented Test**：`BrowserEngine` 物理触摸、浮窗状态机、剪枝 token 消耗（5 重型页 ≤ 4096 tokens）。
+- 本机无 `gradlew`，仅 lint；完整编译/单测/仪表化测试依赖 GitHub Actions。
+
+---
+
+## 10. 最终裁定
+
+基础已扎实，按第 3 节 4 个创新点收尾：**先打通「语义哈希 Ref + 物理触摸注入」主线（P0），再补「显式握手浮窗 + 全局工具锁」（P1）**。期待 CI 绿灯后的浮窗接管演示。
+
+---
+
+## 11. P0 缺口审计报告落地状态（2026-08-12 执行）
+
+对标 Qwen 第二轮审计（7 大类 28 缺口），本轮已落地 **P0 全部 6 项 + 部分 P1/P2 增强**。代码改动清单：
+
+| 审计缺口 | 落地位置 | 实现要点 |
+| --- | --- | --- |
+| #1 页面加载等待 | `BrowserEngine.navigate` | `onPageFinished` 基础等待 + 可选 `wait_for` 元素轮询（10s）+ 15s 超时兜底；工具 `BrowserNavigate` 新增 `wait_for`/`timeout_ms` |
+| #2 动作后验证 | `BrowserEngine.probePage`/`PostActionState` | 点击/输入/选择后对比 URL/标题/可交互元素数；工具返回 `动作完成·URL变化/新增元素` 摘要 |
+| #3 JS 弹窗处理 | `BrowserEngine.createWebView` 的 `WebChromeClient` | `onJsAlert/Confirm/Prompt` 接管并自动 confirm，文本存入 `lastDialog` 注入下次 snapshot |
+| #4 渲染进程崩溃 | `WebViewClient.onRenderProcessGone` | 崩溃即销毁重建 WebView，置 `RECOVERING` 状态，返回 true 不 crash 宿主 |
+| #5 动作空间补全 | `selectOption`/`toggle`/`respondFileChooser` + 工具 `BrowserSelect`/`BrowserToggle`/`BrowserFileUpload` | `<select>` 按 value/文本选；checkbox/radio 走物理触摸；文件选择挂起回调 |
+| #6 Cookie 持久化 | `flushCookies()`（`CookieManager.flush`） | 接管完成、导航完成、销毁时强制刷盘；`WebSettings` 开 domStorage |
+| （主线）语义哈希 ref | `BrowserScript.SNAPSHOT_JS` 写 `data-apex-hash`；`DomParser`/`DomElement` 读之 | `ref="r_<hash>"`，`bid` 降级仅展示序号（抗 SPA 局部刷新） |
+| （主线）物理触摸注入 | `BrowserEngine.clickElement` | `data-apex-hash` 定位 → WebView 坐标 → `dispatchTouchEvent`（DOWN~UP 随机 30~80ms） |
+| （主线）显式握手 | `BrowserSessionState` + `enterHandoffMode`/`completeHandoff`/`assertAgentControl` | 工具前置守卫返回 `SYSTEM_LOCKED`；`BrowserShow` 触发握手 |
+| #10 无限滚动（P1 增强） | `BrowserEngine.scroll`/`ScrollResult` | `wait_for_new` 检测新增元素数 |
+| #11 安全加固（P1 基线） | `createWebView` | 禁 `allowFileAccess`/`allowContentAccess`/file-from-URL（防 UXSS/路径穿越） |
+
+**未在本轮实现（待 P1/P2 排期）**：#7 重试熔断、#8 上下文窗口管理、#9 可观测性、#12 权限请求、#13 反爬隐身、#14 下载、#15 内存维护、#16 多标签并发上限、#17 Accessibility Tree、#18 网络拦截、#19 任务规划、#20 可编程剪枝。
+
+**验证**：`DomParserTest` 已加「ref 来自语义哈希、不随顺序偏移」意图测试；本机无 gradlew，仅 lint 0 错误，完整编译/单测/仪表化测试依赖 CI。
+
+---
+
+## 12. P1 缺口落地状态（2026-08-12 续）
+
+在 P0 基础上，本轮补齐 **P1 三块**：错误恢复/重试熔断(#7)、可观测性(#9)、上下文窗口管理辅助(#8 轻量版)。悬浮 UI(#4 待建)按用户要求留到最后一步。
+
+| 审计缺口 | 落地位置 | 实现要点 |
+| --- | --- | --- |
+| #7 错误恢复/重试 | `RetryPolicy.kt`（`RetryPolicy`+`CircuitBreaker`+`withRetry`）；`BrowserEngine` 的 `clickElement`/`inputText`/`selectOption`/`snapshot` 包 `withRetry` | 指数退避（500ms×2^n，上限 5s，最多 3 次）；`ElementNotFoundException`/`TimeoutException`/`WebViewNotRespondingException` 可重试；`HandoffLockedException` 等语义错误**不重试**；连续 5 次失败熔断 30s |
+| #9 可观测性 | `BrowserTracer.kt` + `BrowserAgentTools.TracedTool` 包装 | 内存环形缓冲(100 条)记录 工具/参数/结果/耗时/URL/状态；`BrowserDebugDump(limit)` 导出最近 N 条 |
+| #8 上下文管理（轻量） | `BrowserTracer.contextSummary` + `BrowserContextSummary` 工具 | 最近 3 步保留详情，更早步骤压成单行；始终保留 URL 关键帧 |
+
+**新增/修改文件**：`app/.../browser/RetryPolicy.kt`（新）、`app/.../browser/BrowserTracer.kt`（新）、`BrowserEngine.kt`（接 withRetry + snapshot 8s 超时 → `WebViewNotRespondingException`）、`BrowserAgentTools.kt`（TracedTool 包装 + `BrowserDebugDump`/`BrowserContextSummary`）、`ToolModule.kt`（`BrowserTracer` 注入，`BrowserEngine` 改由 @Inject 构造提供）、`app/.../test/.../RetryPolicyTest.kt` + `BrowserTracerTest.kt`（意图测试）。
+
+**未做（P1 剩余 / P2）**：#7 的持久化 trace 落盘/OpenTelemetry（仅内存）、#8 的 Agent 框架层完整滑动窗口（本层只提供摘要工具）、#10 已在 P0 做、#11 已在 P0 做、#12 权限请求、#13 反爬隐身、#14 下载、#15 内存维护、#16 多标签并发上限、#17 Accessibility Tree、#18 网络拦截、#19 任务规划、#20 可编程剪枝。**浮窗 UI（BrowserOverlay）已完成**（P1 最后一步，按用户要求延后至此）。
+
+**验证**：`RetryPolicyTest`/`BrowserTracerTest` 验证重试熔断与上下文压缩意图；lint 0 错误；完整编译/测试依赖 CI。
+
+---
+
+## 13. v1.5.0 插件形态退役（浏览器自动化内置化）
+
+> 本章为主项目改造（Android-Guru-Agent `feat/browser-agent-builtin`）的定论记录。
+
+### 13.1 动机
+
+- **清单漂移**：插件 APK 声明 15 个 `browser_*` 工具描述符，而宿主
+  BrowserAgentTools 实际注册 24 个（v1.1.0 库升级新增 press_key / hover /
+  drag / extract_content / execute_js / get_cookies / locate / wait_for /
+  page_type 后插件壳未同步）——插件 REPLACE 覆盖内置注册时，Agent 能力
+  静默降级回 15 工具；
+- **双源维护**：同一功能两份清单（插件 BrowserToolCatalog 与宿主
+  BrowserAgentTools），每次工具增删都要跨仓同步，漂移只是时间问题；
+- **IPC 绕行无增益**：插件进程没有浏览器引擎，执行恒经 IApexPluginHost
+  回宿主 BrowserEngine——跨进程 binder 往返 + 120s runBlocking 超时包装，
+  只增加延迟与故障面（宿主桥断连时错误文案直接进模型上下文）；进程隔离
+  对浏览器自动化没有安全收益（引擎本就活在宿主进程）。
+
+### 13.2 改造内容
+
+| 项 | 位置 | 说明 |
+| --- | --- | --- |
+| 删除插件壳 | `plugins/` 下的网页自动化插件目录（整目录删除）+ settings include + apk.yml / release.yml 构建与发布段 | 15 工具声明壳退役；官方参考插件只剩 plugin-workflow |
+| 新建平台模块 | `:platform:browser-agent` | 对齐 platform:* 大功能范式：BrowserAgentTools（工具协议）+ BrowserKitModule（库 DI 接线）迁入，只改 package 声明；apex-kit-browser 三层经 `api` 传递给 app；namespace `com.apex.agent.platform.browser` |
+| app 侧接线 | `app/build.gradle.kts` / `di/ToolModule.kt` / `plugin/host/PluginHostBridge.kt` | 三条库坐标替换为模块依赖；import 更新为新包；CyberNeonBallManager / NeonRingView 视觉装饰留 app（LanguageManager 与 app 资源依赖），悬浮球/浮窗链路零变化 |
+| 旧插件拦截 | `PluginManager`（plugin-sdk/plugin-host） | metadata.id 命中退役 id 时拒绝加载：日志警告「已内置，建议卸载」+ post 解绑，不注册任何工具（防旧 15 工具清单 REPLACE 覆盖内置 24 工具，与签名门同款 fail-closed 语义） |
+| 一级 UI 入口 | `DrawerDestination.Browser` + `ui/screen/browser/BrowserScreen.kt` / `BrowserViewModel.kt` | 抽屉「浏览器」页（Market 之后 Memory 之前，Language 地球图标）：会话状态卡（状态机四态人话解释 + 当前页面）+ 标签列表（tabsSnapshot）+ 最近自动化动作（tracer.recent(10)：工具/结果摘要/耗时/状态）+ 人工操作（newTab / releaseBrowser / enterHandoffMode / completeHandoff 按 WAITING_HUMAN 切换）+ 内置说明卡 |
+
+### 13.3 旧插件用户引导
+
+**无需任何操作即可获得完整功能**：24 个 `browser_*` 工具随宿主 APK 内置，
+Agent 对话中直接可用（浏览器被使用后悬浮球 / 浮窗照常出现）。已侧载旧
+插件 APK 的用户**卸载它即可**——宿主 PluginManager 会在加载时拦截并
+日志引导卸载；旧插件不再注册任何工具，留着无害但无益。
+
+### 13.4 与 apex-kit-browser v1.2.0 的协同
+
+- 主项目消费坐标仍为 `com.apex.browser:{core,engine,chrome}`（composite
+  build / 远端 Maven 双通道不变），本次模块化改造对库**零要求**——v1.1.0
+  即可跑通全部 24 工具；
+- 库侧 v1.2.0（ChromeStrings 注入接口，additive API）将消解 chrome 逻辑层
+  硬编码中文的已知取舍（5 条 snackbar / 4 条建议副标题 / 3 条 JS 弹窗
+  按钮），宿主升级坐标即可获得完整 i18n；两仓各自发版、互不阻塞；
+- 拆库边界进一步清晰：库管引擎与 chrome UI，工具协议（AgentTool 契约）
+  与 DI 接线归宿主 `:platform:browser-agent` ——「协议在宿主、引擎在库」。
+
+---
+
+## §14 v1.7.0 会话面扩容（34 工具 + 人用 Chrome 增强，2026-10-18）
+
+> 判决背景：v1.6 的 BrowserTabs 已把工具面带到 25，但「引擎侧已具备、
+> Agent 工具面缺位」的能力仍有九项（goBack/goForward/reload 首次暴露、
+> recentHistory 首次暴露、findInPage 首次暴露、下载只有 lastDownload
+> 瞬时值、书签为零、显示控制为零、全页截图为零）。本次按
+> 「对标 Playwright MCP 会话面 + 桌面浏览器 UX 基线」一次性补齐——
+> 全部走 apex-kit-browser v1.7.0 新组件（库侧），宿主只加协议与接线。
+
+### 14.1 会话工具集（:platform:browser-agent 新增 BrowserSessionTools，9 工具）
+
+| 工具 | 引擎面 | 语义 |
+| --- | --- | --- |
+| `BrowserBack` / `BrowserForward` | `goBack()/goForward()`（既有） | 历史栈导航，历史边界返回提示（Playwright browser_go_back/forward 对齐） |
+| `BrowserReload` | `reload(timeout)`（既有） | 带 onPageFinished 等待的就绪重载，超时兜底 |
+| `BrowserHistory` | `recentHistory(limit)`（既有） | 浏览历史查询（此前只喂地址栏联想，Agent 不可见） |
+| `BrowserFind` | `findInPage(query)`（既有） | 页内查找计数 + 首个匹配高亮（chrome 人用查找的 Agent 对位面） |
+| `BrowserDownloads` | `DownloadCenter`（库 v1.7.0 新） | 全量下载台账（跨重启持久）+ cancel / retry（转发 Cookie）/ forget / open；list 带状态/进度/字节 |
+| `BrowserBookmarks` | `BookmarkStore`（库 v1.7.0 新） | list（MRU）/ add（utm 变体归一去重）/ remove / search；与 chrome 书签面板共用存储 |
+| `BrowserZoom` | `EngineDisplayController`（库 v1.7.0 新） | 文字缩放 50..200 跨页保持（截图可读性 / 无障碍） |
+| `BrowserClearData` | 同上 | cookies / caches / histories / all；**HIGH 风险 + destructive 注解**（清 Cookie = 全站点登出） |
+
+守卫 / trace / SafeAgentTool 包装与 BrowserAgentTools 完全同款
+（SYSTEM_LOCKED 结构化锁定语义不变）；注册点 ToolModule §3.5b；
+PluginHostBridge 一并暴露（插件侧 34 工具全量可见）。
+
+### 14.2 既有工具增强
+
+- `BrowserScreenshot` 增 `full_page`（默认 false 保持视口语义）：滚动
+  分段 + Canvas 拼接（上限 5 屏、OOM 防线返回 null、截后恢复滚动位），
+  引擎扩展 `fullPageScreenshot`（库 v1.7.0，零 BrowserEngine.kt 行数增量）。
+
+### 14.3 工具系统口径同步（既有缺口的顺手清偿）
+
+- `ToolIdAliases`：补 `browser_tabs` 漏项（v1.4.9.33 加工具时未同步）+
+  9 个新别名 → 34 别名全量；
+- `ToolExecutionPolicy`：v1.1.0 的 8 个高级工具 + BrowserTabs 此前落
+  UNKNOWN（重试语义退化为引擎兜底），本次连同 9 新工具全量补齐 34 口径；
+- `ToolMetadata`/`ToolAnnotations`：BrowserClearData 升 HIGH（第四件
+  敏感件，唯一 destructive=true）；文案 24→34（strings_browser /
+  strings_core 四处 + UI KDoc）。
+
+### 14.4 人用 Chrome 增强（库 v1.7.0，宿主零接线获得）
+
+书签面板（搜索/文件夹/MRU/收藏当前页）、阅读模式全屏层（结构块 + 目录
+锚点跳转 + 字号 0.8..1.6）、显示设置面板（缩放档位 + 夜间模式反色 +
+清除数据确认流）、真实 favicon（DuckDuckGo Icons，host 级取图 +
+LRU32 + 失败回退首字母）、「复制干净链接」（UrlCleaner 剔除 40+ 精确
+跟踪参数 + 16 前缀族，剔除数入轻提示）。全部经 Gateway additive 成员
+接线（未接线自动隐藏，FakeGateway 零改动）。
+
+### 14.5 已知取舍（诚实清单）
+
+- 全页截图 sticky 顶栏每段重复（Canvas 快照固有形态，非 CDP 通道）；
+- 夜间模式为算法反色（iframe/个别 fixed 层可能半亮半暗）；
+- 清除浏览数据不含地址栏联想历史（引擎 ArrayDeque 无清空 API，后续补）；
+- 下载 pause/resume 非公开 SDK API（DownloadManager @hide）——控制面为
+  cancel/retry/forget/open，系统自动暂停照常可见（PAUSED 状态映射保留）；
+- DownloadCenter 台账只记本库发起的下载（不吞系统全量列表——职责边界）。

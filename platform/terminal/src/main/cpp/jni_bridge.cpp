@@ -1,0 +1,267 @@
+#include <jni.h>
+#include <string>
+#include <vector>
+#include "pty_engine.h"
+
+using namespace apex;
+
+// 辅助：jstring → std::string
+static std::string jniGetString(JNIEnv* env, jstring str) {
+    if (!str) return "";
+    const char* chars = env->GetStringUTFChars(str, nullptr);
+    std::string result(chars);
+    env->ReleaseStringUTFChars(str, chars);
+    return result;
+}
+
+extern "C" {
+
+// ═══════════════════════════════════════════════════════════════════════════
+// P70 读取状态数值约定 —— 与 Kotlin 侧 com.apex.agent.platform.terminal.pty.PtyJniReadStatus
+// 一一对应，勿改数值。单一事实来源是 pty_engine.h 的 apex::PtyReadStatus 枚举
+// （nativeReadBytes 直接透传 PtyEngine::readEx 的 status 字段，此处仅用
+// apex::PTY_READ_SESSION_NOT_FOUND 作初始值，不再定义本地同名常量——
+// 「using namespace apex」+ 本地全局常量会造成名字查找二义性）：
+//   0 = DATA（读到数据）          1 = NO_DATA（EAGAIN —— idle，一切正常）
+//   2 = EOF（输出流结束）          3 = ERROR（真实错误，errno 有效）
+//   4 = SESSION_NOT_FOUND
+// ═══════════════════════════════════════════════════════════════════════════
+
+JNIEXPORT jint JNICALL
+Java_com_apex_agent_platform_terminal_NativePty_nativeCreateSession(
+    JNIEnv* env, jobject,
+    jstring shell, jstring workDir,
+    jobjectArray envKeys, jobjectArray envVals,
+    jint rows, jint cols) {
+
+    std::string shellStr = jniGetString(env, shell);
+    std::string workDirStr = jniGetString(env, workDir);
+
+    // 解析环境变量
+    std::vector<std::pair<std::string, std::string>> envVars;
+    if (envKeys && envVals) {
+        int count = env->GetArrayLength(envKeys);
+        for (int i = 0; i < count; i++) {
+            auto key = static_cast<jstring>(env->GetObjectArrayElement(envKeys, i));
+            auto val = static_cast<jstring>(env->GetObjectArrayElement(envVals, i));
+            envVars.emplace_back(jniGetString(env, key), jniGetString(env, val));
+        }
+    }
+
+    return PtyEngine::instance().createSession(shellStr, workDirStr, envVars, rows, cols);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// P71 (N1): 通用 argv 创建入口。
+//
+// child 执行 execv(argv[0], argv) —— 本地 shell（["/system/bin/sh","-i"]）
+// 与 proot Linux 会话（[libproot.so, "-r", rootfs, ..., "--", "/bin/bash", "-i"]）
+// 共用同一条 forkpty 路径。PTY/IO/信号/resize 全部复用现有机制。
+// env 语义与 legacy 入口一致：C++ 侧安全默认值 + envKeys/envVals 覆盖。
+// ─────────────────────────────────────────────────────────────────────────
+JNIEXPORT jint JNICALL
+Java_com_apex_agent_platform_terminal_NativePty_nativeCreateSessionArgv(
+    JNIEnv* env, jobject,
+    jobjectArray argv, jstring workDir,
+    jobjectArray envKeys, jobjectArray envVals,
+    jint rows, jint cols) {
+
+    if (argv == nullptr) return -1;
+    const jsize argvLen = env->GetArrayLength(argv);
+    if (argvLen <= 0) return -1;
+
+    std::vector<std::string> argvVec;
+    argvVec.reserve(static_cast<size_t>(argvLen));
+    for (jsize i = 0; i < argvLen; i++) {
+        auto elem = static_cast<jstring>(env->GetObjectArrayElement(argv, i));
+        if (elem == nullptr) return -1;  // argv 含 null —— 拒绝（宁可失败也不静默丢参数）
+        argvVec.emplace_back(jniGetString(env, elem));
+        env->DeleteLocalRef(elem);
+    }
+    if (argvVec[0].empty()) return -1;
+
+    std::string workDirStr = jniGetString(env, workDir);
+
+    std::vector<std::pair<std::string, std::string>> envVars;
+    if (envKeys != nullptr && envVals != nullptr) {
+        int count = env->GetArrayLength(envKeys);
+        for (int i = 0; i < count; i++) {
+            auto key = static_cast<jstring>(env->GetObjectArrayElement(envKeys, i));
+            auto val = static_cast<jstring>(env->GetObjectArrayElement(envVals, i));
+            envVars.emplace_back(jniGetString(env, key), jniGetString(env, val));
+            if (key != nullptr) env->DeleteLocalRef(key);
+            if (val != nullptr) env->DeleteLocalRef(val);
+        }
+    }
+
+    return PtyEngine::instance().createSessionArgv(argvVec, workDirStr, envVars, rows, cols);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// P70-2/P70-3: 二进制安全写通道。
+//
+// 旧 nativeWrite(String) 走 PtyEngine::writeLine —— 会额外追加 '\n'，
+// 与 Kotlin 层 TerminalInput.sendLine 的换行叠加成 "hello\n\n"（P70-3），
+// 且 jstring→C-string 转换在 NUL 处截断（P70-2）。
+// 生产路径一律走本方法：字节直传、零追加、零转换。
+// ─────────────────────────────────────────────────────────────────────────
+JNIEXPORT jboolean JNICALL
+Java_com_apex_agent_platform_terminal_NativePty_nativeWriteBytes(
+    JNIEnv* env, jobject, jint sessionId, jbyteArray data, jint offset, jint len) {
+
+    if (len < 0 || offset < 0) return JNI_FALSE;
+    if (len == 0) return JNI_TRUE;   // 0 字节写：无操作，视为成功
+    if (data == nullptr) return JNI_FALSE;
+
+    jsize arrayLen = env->GetArrayLength(data);
+    if (len > arrayLen - offset) return JNI_FALSE;  // 越界
+
+    // GetByteArrayElements 在 ART 上通常返回直接指针（零拷贝）；
+    // JNI_ABORT = 只读借用，释放时不回写。
+    jboolean isCopy = JNI_FALSE;
+    jbyte* elems = env->GetByteArrayElements(data, &isCopy);
+    if (elems == nullptr) return JNI_FALSE;
+
+    bool ok = PtyEngine::instance().write(
+        sessionId,
+        reinterpret_cast<const char*>(elems + offset),
+        static_cast<size_t>(len));
+
+    env->ReleaseByteArrayElements(data, elems, JNI_ABORT);
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// P70-1/P70-2: 二进制安全读通道（带状态）。
+//
+// 旧 nativeRead(String) 用 NewStringUTF(raw.c_str()) —— NUL 截断 + 非法
+// UTF-8 损坏，且无法区分 idle/EOF/error，迫使上层用 hasData() 二次猜测，
+// 空闲窗口被误判为流结束导致 PtyOutputPump 自杀（P70-1）。
+//
+// 本方法单次调用原子返回「字节 + 状态」：
+//   返回 jbyteArray（可能为空数组，非 null）
+//   statusOut[0] = 状态（见 PTY_READ_*）
+//   statusOut[1] = errno（仅 ERROR 时有效，否则 0）
+//   statusOut[2] = 本次返回的字节数
+// ─────────────────────────────────────────────────────────────────────────
+JNIEXPORT jbyteArray JNICALL
+Java_com_apex_agent_platform_terminal_NativePty_nativeReadBytes(
+    JNIEnv* env, jobject, jint sessionId, jint maxBytes, jintArray statusOut) {
+
+    jint status[3] = {apex::PTY_READ_SESSION_NOT_FOUND, 0, 0};
+
+    int cap = (maxBytes > 0) ? maxBytes : 4096;
+    ReadOutcome outcome = PtyEngine::instance().readEx(sessionId, cap);
+    status[0] = outcome.status;
+    status[1] = outcome.err;
+    status[2] = static_cast<jint>(outcome.data.size());
+
+    jsize len = static_cast<jsize>(outcome.data.size());
+    jbyteArray result = env->NewByteArray(len);
+    if (result == nullptr) {
+        // OOM —— pending exception 已挂起，直接返回 null
+        return nullptr;
+    }
+    if (len > 0) {
+        env->SetByteArrayRegion(result, 0, len,
+                                reinterpret_cast<const jbyte*>(outcome.data.data()));
+    }
+    if (statusOut != nullptr && env->GetArrayLength(statusOut) >= 3) {
+        env->SetIntArrayRegion(statusOut, 0, 3, status);
+    }
+    return result;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_agent_platform_terminal_NativePty_nativeHasData(
+    JNIEnv*, jobject, jint sessionId) {
+    return PtyEngine::instance().hasData(sessionId);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_agent_platform_terminal_NativePty_nativeWaitForData(
+    JNIEnv*, jobject, jint sessionId, jint timeoutMs) {
+    return PtyEngine::instance().waitForData(sessionId, timeoutMs);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_agent_platform_terminal_NativePty_nativeSendSignal(
+    JNIEnv*, jobject, jint sessionId, jint signal) {
+    return PtyEngine::instance().sendSignal(sessionId, signal);
+}
+
+// T82：只向控制终端前台进程组（tcgetpgrp）发信号 —— shell 自身组不受影响。
+// 无前台作业（fg == shell pid）/ 会话不存在 → false（调用方退化到 session 级信号）。
+JNIEXPORT jboolean JNICALL
+Java_com_apex_agent_platform_terminal_NativePty_nativeSignalForegroundGroup(
+    JNIEnv*, jobject, jint sessionId, jint signal) {
+    return PtyEngine::instance().signalForeground(sessionId, signal);
+}
+
+JNIEXPORT void JNICALL
+Java_com_apex_agent_platform_terminal_NativePty_nativeResize(
+    JNIEnv*, jobject, jint sessionId, jint rows, jint cols) {
+    PtyEngine::instance().resize(sessionId, rows, cols);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_apex_agent_platform_terminal_NativePty_nativeIsAlive(
+    JNIEnv*, jobject, jint sessionId) {
+    return PtyEngine::instance().isAlive(sessionId);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_apex_agent_platform_terminal_NativePty_nativeGetPid(
+    JNIEnv*, jobject, jint sessionId) {
+    return PtyEngine::instance().getPid(sessionId);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_apex_agent_platform_terminal_NativePty_nativeGetExitCode(
+    JNIEnv*, jobject, jint sessionId) {
+    return PtyEngine::instance().getExitCode(sessionId);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// T87：exec 失败原因查询 —— createSessionArgv 后立即调用；空串 = exec 成功。
+// 「创建成功但进程即死」的会话（如 proot ENOENT/ELIBBAD）由此获得确切根因，
+// 不再让用户对着后续每次写入的「输入失败」猜谜。
+// ─────────────────────────────────────────────────────────────────────────
+JNIEXPORT jstring JNICALL
+Java_com_apex_agent_platform_terminal_NativePty_nativeGetSpawnError(
+    JNIEnv* env, jobject, jint sessionId) {
+    std::string err = PtyEngine::instance().spawnError(sessionId);
+    return env->NewStringUTF(err.c_str());
+}
+
+JNIEXPORT void JNICALL
+Java_com_apex_agent_platform_terminal_NativePty_nativeCloseSession(
+    JNIEnv*, jobject, jint sessionId) {
+    PtyEngine::instance().closeSession(sessionId);
+}
+
+JNIEXPORT void JNICALL
+Java_com_apex_agent_platform_terminal_NativePty_nativeCloseAll(
+    JNIEnv*, jobject) {
+    PtyEngine::instance().closeAll();
+}
+
+JNIEXPORT jint JNICALL
+Java_com_apex_agent_platform_terminal_NativePty_nativeActiveCount(
+    JNIEnv*, jobject) {
+    return PtyEngine::instance().activeCount();
+}
+
+JNIEXPORT jintArray JNICALL
+Java_com_apex_agent_platform_terminal_NativePty_nativeListSessionIds(
+    JNIEnv* env, jobject) {
+    auto ids = PtyEngine::instance().listSessionIds();
+    jintArray result = env->NewIntArray(static_cast<int>(ids.size()));
+    if (!ids.empty()) {
+        env->SetIntArrayRegion(result, 0, static_cast<int>(ids.size()),
+                               reinterpret_cast<const jint*>(ids.data()));
+    }
+    return result;
+}
+
+} // extern "C"

@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Chat screen strings (English default). Chinese in values-zh/strings_chat.xml.
+     Language switching: LanguageManager + MainActivity attachBaseContext/recreate. -->
+<resources>
+
+    <!-- ═══ AgentChatScreen ═══ -->
+    <string name="chat_unknown_provider">Unknown provider</string>
+
+    <!-- ═══ AgentChatMessages ═══ -->
+
+    <!-- ═══ AgentChatPlanCards ═══ -->
+    <string name="chat_confirm_plan_title">Run this plan?</string>
+    <string name="chat_cancel">Cancel</string>
+    <string name="chat_execute">Run</string>
+    <!-- #169 Plan-mode hardening (plan_* prefix) -->
+    <string name="plan_step_enable">Enable this step</string>
+    <string name="plan_move_up">Move step up</string>
+    <string name="plan_move_down">Move step down</string>
+    <string name="plan_adjust_hint">Adjust before running: uncheck to skip a step, arrows to reorder</string>
+    <string name="plan_planning_readonly">Planning · read-only</string>
+
+    <!-- ═══ AgentChatOutputCards ═══ -->
+    <string name="chat_cd_copied">Copied</string>
+    <string name="chat_structured_output">Structured output</string>
+
+    <!-- ═══ AgentChatToolCards ═══ -->
+    <!-- v3: terminal tool execution meta (exit badge / waiting input / session label) -->
+    <!-- 浏览器截图渲染（BrowserToolCards.kt） -->
+    <!-- Browser snapshot rendering (BrowserToolCards.kt, v1.8.0) -->
+    <string name="chat_retry">Retry</string>
+
+    <!-- ═══ AgentChatDialogs ═══ -->
+    <string name="chat_save">Save</string>
+    <string name="chat_effort_none">Default</string>
+    <string name="chat_effort_low">Low</string>
+    <string name="chat_effort_medium">Medium</string>
+    <string name="chat_effort_high">High</string>
+    <string name="chat_effort_max">Max</string>
+    <!-- v1.2 seven-level thinking: new depth-tier descriptions (= condensed ThinkingProfile.uiDescriptionEn, incl. execution strategy differences) -->
+    <!-- #168 six-level thinking: tier profile descriptions (= ThinkingProfile.uiDescriptionEn, incl. execution strategy differences) -->
+    <string name="chat_question_title">The agent needs your choice</string>
+    <string name="chat_multi_select">Multi-select</string>
+    <string name="chat_recommended">Recommended</string>
+    <string name="chat_custom">Custom</string>
+    <string name="chat_skip">Skip</string>
+    <string name="chat_continue">Continue</string>
+
+    <!-- ═══ BrainMenuButton ═══ -->
+    <string name="chat_cd_brain">Model brain</string>
+    <string name="chat_current_model">Current model</string>
+    <string name="chat_only_one_model">Only one model configured</string>
+    <string name="chat_not_configured">Not configured</string>
+    <string name="chat_cd_collapse_models">Collapse model list</string>
+    <string name="chat_cd_expand_models">Expand model list</string>
+    <string name="chat_configure_model">Configure models</string>
+    <string name="chat_model_params">Model parameters</string>
+
+    <!-- ═══ ToolkitRingButton ═══ -->
+    <string name="chat_cd_toolkit">Toolkit menu</string>
+    <string name="chat_web_search">Web search</string>
+    <string name="chat_time">Time</string>
+    <string name="chat_function_forced">Force function calls</string>
+    <string name="chat_function_forced_n">Forced calls (%1$d)</string>
+    <!-- v5 文案纠偏（用户口径）：函数调用 ≠ 「让模型更聪明」的开关，而是模型
+         结构化请求外部操作的协议；全部工具默认开启，勾选仅表示强制调用。 -->
+    <string name="chat_function_forced_hint">All tools are ON by default and discoverable via the catalog. Function calling is not a "make the model smarter" switch — it is a protocol for the model to request external actions in structured form. Useful when tasks need live/private data or external actions; overkill for plain text work.</string>
+    <string name="chat_function_force_section">Force-invoke below (optional)</string>
+    <string name="chat_expose_all_tools">Send all tools</string>
+    <string name="chat_category_other">Other</string>
+    <string name="chat_structured_output_fmt">Structured output: %1$s</string>
+    <string name="chat_rules">Rules</string>
+    <string name="chat_rules_n">Rules (%1$d)</string>
+    <string name="chat_cd_enabled">Enabled</string>
+    <string name="chat_import_rule_default">Imported rule</string>
+    <string name="chat_rule_manager_title">Rules</string>
+    <string name="chat_rule_name_label">Rule name</string>
+    <string name="chat_rule_content_label">Rule content (Markdown supported)</string>
+    <string name="chat_unnamed_rule">Untitled rule</string>
+    <string name="chat_no_rules_hint">No rules yet. Create one or import a .md file.</string>
+    <string name="chat_cd_delete">Delete</string>
+    <string name="chat_new_rule">New rule</string>
+    <string name="chat_import_md">Import MD</string>
+    <string name="chat_done">Done</string>
+    <string name="chat_schema_dialog_title">Custom output schema</string>
+    <string name="chat_schema_hint">Schema definition (e.g. JSON Schema)</string>
+    <string name="chat_save_enable">Save &amp; enable</string>
+    <string name="chat_web_search_on">Web search on</string>
+    <string name="chat_time_aware_on">Time awareness on</string>
+    <string name="chat_rules_loaded">%1$d rules loaded</string>
+    <string name="chat_cd_close">Close</string>
+
+    <!-- ═══ SlashCommandButton（弹出菜单 i18n，原硬编码中文）═══ -->
+    <string name="chat_slash_menu_title">Quick commands</string>
+    <string name="chat_slash_refresh">Refresh menu</string>
+    <string name="chat_slash_empty">No items available</string>
+    <string name="chat_cd_slash_menu">Open slash command menu</string>
+    <string name="chat_slash_status_connected">Connected</string>
+    <string name="chat_slash_status_offline">Offline</string>
+    <string name="chat_slash_status_not_installed">Not installed</string>
+    <string name="chat_slash_status_external">Sample</string>
+    <string name="chat_slash_cd_selected">Selected. Tap again to remove</string>
+    <!-- 输入框内技能 chip（SkillChipInputField）-->
+
+    <!-- ═══ AgentModeSelector ═══ -->
+    <string name="chat_mode_selector_cd">Task mode: %1$s. Tap to switch</string>
+    <string name="chat_role_selector_cd">Agent role: %1$s. Tap to switch</string>
+    <string name="chat_role_builtin_cd">Built-in role</string>
+    <string name="chat_mode_build_desc">Think and act in real time</string>
+    <string name="chat_mode_plan_desc">Full plan first, confirm, then execute</string>
+    <string name="chat_mode_goal_desc">Verifiable goal — keeps working until criteria pass</string>
+
+    <!-- ═══ ChatHistorySheet ═══ -->
+
+    <!-- ═══ AgentChatOnboarding ═══ -->
+    <!-- #197 model API not configured banner (shown when a send is intercepted) -->
+    <string name="chat_api_missing_title">Model API not configured</string>
+    <string name="chat_api_missing_body">You have not configured a model API yet — messages cannot be sent. Go to Settings to add a provider and API key first.</string>
+
+    <!-- ═══ TaskStatusCard / TaskRecoveryBanner ═══ -->
+
+    <!-- ═══ AgentChatViewModel (user-visible toasts / system rows / tool steps) ═══ -->
+
+    <!-- ═══ #214/#215 user-input timeout honesty (engine continues as undecided) ═══ -->
+    <string name="chat_plan_confirm_late">The plan confirmation was not delivered (no pending confirmation or it already timed out). You can resend it as a new message.</string>
+
+    <!-- ═══ SlashMenuProvider (slash menu groups) ═══ -->
+    <string name="chat_slash_no_skills">No active skills</string>
+    <string name="chat_slash_no_fusion">No aggregation packs installed</string>
+    <string name="chat_slash_mcp_servers">MCP servers</string>
+    <string name="chat_slash_mcp_connected">%1$d connected</string>
+    <string name="chat_slash_plugins">Plugins</string>
+    <string name="chat_slash_plugins_empty">No installed plugins found</string>
+    <string name="chat_slash_plugins_partial">Loaded plugins are connectivity-verified only — tool bridge in progress</string>
+    <string name="chat_slash_connectors">Connectors</string>
+    <string name="chat_slash_connectors_empty">No enabled connectors (add in Market)</string>
+
+    <!-- ═══ Toolkit structured-output formats & unconfigured-LLM guard ═══ -->
+    <string name="chat_format_none">Off</string>
+    <string name="chat_format_custom">Custom schema</string>
+    <string name="chat_llm_not_configured">API is not configured yet (Base URL + API Key + Model). Open Settings to set it up.</string>
+    <string name="chat_llm_not_configured_short">API is not configured yet</string>
+    <!-- ═══ 消息操作（2026-10 重定口径：复制/编辑图标行，overflow 菜单退役）═══ -->
+
+    <!-- ═══ Two-level thinking control (model native intensity + forced deep thinking) ═══ -->
+
+    <!-- ═══ HTML artifact in-app preview ═══ -->
+    <string name="html_preview_refresh">Reload preview</string>
+    <string name="html_preview_close">Close preview</string>
+    <string name="html_preview_load_failed">Failed to load file</string>
+    <string name="html_preview_inspector">Toggle layout inspector</string>
+    <string name="html_preview_legend_title">Layout inspector legend</string>
+    <string name="html_preview_legend_flex">Flex</string>
+    <string name="html_preview_legend_grid">Grid</string>
+    <string name="html_preview_legend_positioned">Positioned</string>
+    <string name="html_preview_legend_block">Block</string>
+
+    <!-- ═══ v1.4.4 #5: session actions completion — search/pin/rename/export-import/share intake ═══ -->
+    <string name="chat_slash_mcp_none_running">No running MCP servers — install &amp; start them in Market → MCP</string>
+
+    <!-- ═══ MarkdownText 媒体卡 / 代码块（#280：硬编码中文收编）═══ -->
+    <string name="chat_cd_play_video">Play video</string>
+    <string name="chat_cd_open_video">Open video</string>
+    <string name="chat_media_video_label">Video</string>
+    <string name="chat_cd_copy_code">Copy code</string>
+
+    <!-- ═══ NeonOrbButton（Coding 输入栏功能聚合 · 面板）═══ -->
+    <string name="neon_cd_orb">Feature hub</string>
+    <string name="neon_panel_title">Feature Hub</string>
+    <string name="neon_active_count">%1$d on</string>
+    <string name="neon_hint">Every toggle below injects a real system-prompt directive on each send</string>
+    <string name="neon_group_session">Session boost</string>
+    <string name="neon_group_style">Output style</string>
+    <string name="neon_group_coding">Coding preferences</string>
+    <string name="neon_feat_time_injection">Time injection</string>
+    <string name="neon_feat_web_search">Web search</string>
+    <string name="neon_feat_structured_output">Structured output</string>
+    <string name="neon_feat_structured_output_fmt">Structured output: %1$s</string>
+    <string name="neon_feat_deep_reasoning">Deep reasoning</string>
+    <string name="neon_feat_goal_echo">Goal restatement</string>
+    <string name="neon_feat_anti_hallucination">Honesty bounds</string>
+    <string name="neon_feat_concise">Concise mode</string>
+    <string name="neon_feat_teach_mode">Teach mode</string>
+    <string name="neon_feat_numbered_steps">Numbered steps</string>
+    <string name="neon_feat_no_emoji">No emoji</string>
+    <string name="neon_feat_language_lock">Language lock</string>
+    <string name="neon_feat_language_lock_fmt">Language: %1$s</string>
+    <string name="neon_feat_tone">Tone persona</string>
+    <string name="neon_feat_tone_fmt">Tone: %1$s</string>
+    <string name="neon_feat_rich_comments">Code comments</string>
+    <string name="neon_feat_diff_first">Diff first</string>
+    <string name="neon_feat_risk_warnings">Risk warnings</string>
+    <string name="neon_feat_safe_commands">Safe commands</string>
+    <string name="neon_fmt_none">Off</string>
+    <string name="neon_fmt_md_table">Markdown Table</string>
+    <string name="neon_lang_follow">Follow input</string>
+    <string name="neon_lang_zh">Chinese</string>
+    <string name="neon_lang_en">English</string>
+    <string name="neon_tone_default">Default</string>
+    <string name="neon_tone_professional">Professional</string>
+    <string name="neon_tone_friendly">Friendly</string>
+    <string name="neon_tone_direct">Direct</string>
+    <string name="neon_reset_all">Turn all off</string>
+</resources>

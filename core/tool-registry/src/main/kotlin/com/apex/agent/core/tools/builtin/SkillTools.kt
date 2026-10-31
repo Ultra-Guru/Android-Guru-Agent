@@ -1,0 +1,615 @@
+package com.apex.agent.core.tools.builtin
+
+import com.apex.agent.core.tools.AgentTool
+import com.apex.agent.core.tools.skill.SkillActivationStore
+import com.apex.agent.core.tools.skill.SkillRegistry
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.net.URLEncoder
+
+/**
+ * Skill 搜索工具
+ *
+ * Agent 用此工具在网上搜索可用的 Skill。搜索 GitHub 的 apex-skill 仓库
+ * 和本地内置模板。返回结果列表，用 SkillInstall 安装。
+ */
+class SkillSearchTool(
+    private val httpClient: OkHttpClient
+) : AgentTool {
+
+    override val id = "SkillSearch"
+    override val name = "Search Skills"
+    override val description = """
+        Search for available skills online.
+        Searches the Apex Skill Registry and community repositories.
+        Returns a list of matching skills with download URLs.
+
+        Examples:
+        - {"query": "web scraping"}
+        - {"query": "data analysis python"}
+        - {"query": "github automation"}
+    """.trimIndent()
+
+    override val parametersSchema = """
+        {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query for skills"},
+                "source": {"type": "string", "enum": ["registry", "github", "all"], "description": "Search source (default: all)"}
+            },
+            "required": ["query"]
+        }
+    """.trimIndent()
+
+    override suspend fun execute(arguments: String): String {
+        // v2：网络搜索统一在 IO 线程执行（旧实现在调用方线程同步 execute）
+        return withContext(Dispatchers.IO) { executeInternal(arguments) }
+    }
+
+    private fun executeInternal(arguments: String): String {
+        val json = Json.parseToJsonElement(arguments).jsonObject
+        val query = json["query"]?.jsonPrimitive?.content ?: return "Error: 'query' required"
+        val source = json["source"]?.jsonPrimitive?.content ?: "all"
+
+        val results = mutableListOf<String>()
+
+        // 搜索 GitHub（apex-skills 仓库）
+        if (source == "all" || source == "github") {
+            try {
+                val encoded = URLEncoder.encode(query, "UTF-8")
+                val url = "https://api.github.com/search/repositories?q=apex-skill+$encoded&per_page=5"
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Accept", "application/vnd.github.v3+json")
+                    .header("User-Agent", "ApexAgent/1.0")
+                    .build()
+
+                httpClient.newCall(request).execute().use { response ->
+                    val body = response.body?.string() ?: ""
+
+                    if (response.isSuccessful && body.length <= MAX_SEARCH_RESPONSE_BYTES) {
+                        val searchResult = Json.parseToJsonElement(body).jsonObject
+                        // v2 修复：旧实现在 items 缺失时直接 return emptyResults 提前退出，
+                        // 跳过了后面「内置模板搜索」分支（GitHub 空结果时永远搜不到内置模板）
+                        val items = searchResult["items"]?.jsonArray ?: emptyList()
+
+                        items.forEach { item ->
+                            val obj = item.jsonObject
+                            val name = obj["name"]?.jsonPrimitive?.content ?: ""
+                            val desc = obj["description"]?.jsonPrimitive?.contentOrNull ?: ""
+                            val htmlUrl = obj["html_url"]?.jsonPrimitive?.content ?: ""
+                            results.add("• $name\n  $desc\n  URL: $htmlUrl")
+                        }
+                    }
+                }
+            } catch (_: Exception) { /* 网络失败时降级到内置模板 */ }
+        }
+
+        // 搜索内置模板
+        if (source == "all" || source == "registry") {
+            results.addAll(getBuiltinSkillTemplates(query))
+        }
+
+        if (results.isEmpty()) {
+            return "No skills found for '$query'. You can create one with SkillCreate, or search the web with WebSearch."
+        }
+
+        return buildString {
+            appendLine("Found ${results.size} skills for '$query':")
+            appendLine("---")
+            results.forEach { appendLine(it); appendLine() }
+            appendLine("Use SkillInstall with a URL or SkillCreate to make your own.")
+        }
+    }
+
+    private fun getBuiltinSkillTemplates(query: String): List<String> {
+        val templates = mapOf(
+            "web" to "• web_scraper (内置模板)\n  网页数据提取\n  安装: SkillInstall({\"source\":\"template\",\"template\":\"web_scraper\"})",
+            "file" to "• file_organizer (内置模板)\n  文件自动分类整理\n  安装: SkillInstall({\"source\":\"template\",\"template\":\"file_organizer\"})",
+            "code" to "• code_runner (内置模板)\n  代码执行与调试\n  安装: SkillInstall({\"source\":\"template\",\"template\":\"code_runner\"})",
+            "data" to "• data_analyzer (内置模板)\n  数据分析与可视化\n  安装: SkillInstall({\"source\":\"template\",\"template\":\"data_analyzer\"})",
+            "principle" to "• coding_principles (内置模板)\n  编码协作九原则（Karpathy）\n  安装: SkillInstall({\"source\":\"template\",\"template\":\"coding_principles\"})"
+        )
+        return templates.filter { (key, _) -> query.contains(key, ignoreCase = true) }.values.toList()
+    }
+
+    companion object {
+        /** GitHub 搜索响应体上限（防御超大响应 OOM）。 */
+        private const val MAX_SEARCH_RESPONSE_BYTES = 2 * 1024 * 1024
+    }
+}
+
+/**
+ * Skill 安装工具
+ *
+ * 三种安装来源：
+ * - "url"       — 从 URL 下载 skill JSON
+ * - "template"  — 使用内置模板（web_scraper / file_organizer / code_runner / data_analyzer / coding_principles）
+ * - "content"   — 直接传入 skill JSON 内容
+ */
+class SkillInstallTool(
+    private val skillRegistry: SkillRegistry,
+    private val httpClient: OkHttpClient,
+    /** 安装即装备（市场热加载闭环）：非空时安装成功后直接进激活集。 */
+    private val activationStore: SkillActivationStore? = null
+) : AgentTool {
+
+    override val id = "SkillInstall"
+    override val name = "Install Skill"
+    override val description = """
+        Install a skill from a URL, local file, or built-in template.
+        After installation, the skill's tools are automatically registered and configured.
+
+        Sources:
+        - URL: Download skill JSON from a web URL
+        - Template: Use a built-in template (web_scraper, file_organizer, code_runner, data_analyzer, coding_principles)
+        - Content: Directly provide the skill JSON content
+
+        Examples:
+        - {"source": "url", "url": "https://example.com/skill.json"}
+        - {"source": "template", "template": "web_scraper"}
+        - {"source": "content", "content": "{...skill json...}"}
+    """.trimIndent()
+
+    override val parametersSchema = """
+        {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "enum": ["url", "template", "content"], "description": "Installation source"},
+                "url": {"type": "string", "description": "URL to download skill from"},
+                "template": {"type": "string", "description": "Built-in template name"},
+                "content": {"type": "string", "description": "Skill JSON content directly"}
+            },
+            "required": ["source"]
+        }
+    """.trimIndent()
+
+    override suspend fun execute(arguments: String): String {
+        val json = Json.parseToJsonElement(arguments).jsonObject
+        val source = json["source"]?.jsonPrimitive?.content ?: return "Error: 'source' required"
+
+        val manifestJson = when (source) {
+            "url" -> {
+                val url = json["url"]?.jsonPrimitive?.content ?: return "Error: 'url' required"
+                downloadSkill(url)
+            }
+            "template" -> {
+                val template = json["template"]?.jsonPrimitive?.content ?: return "Error: 'template' required"
+                getTemplate(template)
+            }
+            "content" -> {
+                json["content"]?.jsonPrimitive?.content ?: return "Error: 'content' required"
+            }
+            else -> return "Error: Unknown source '$source'"
+        }
+
+        if (manifestJson.startsWith("Error")) return manifestJson
+
+        val result = skillRegistry.install(manifestJson)
+
+        return result.fold(
+            onSuccess = { manifest ->
+                // 安装即装备 + 热加载现状：SkillHotReloader 订阅 registry
+                // 变更实时同步工具表，早已无需重启（旧文案是历史遗留）。
+                activationStore?.activate(manifest.id)
+                buildString {
+                    appendLine("✅ Skill installed successfully!")
+                    appendLine("  Name: ${manifest.name}")
+                    appendLine("  ID: ${manifest.id}")
+                    appendLine("  Version: ${manifest.version}")
+                    appendLine("  Tools added: ${manifest.tools.map { it.id }.joinToString(", ").ifEmpty { "none" }}")
+                    appendLine("  Auto-config: ${manifest.configuration.autoSetup.size} actions executed")
+                    if (manifest.promptInjection != null) {
+                        appendLine("  Prompt injection: active")
+                    }
+                    if (activationStore != null) {
+                        appendLine("  Equipped: its methodology is live in your system prompt from this turn on.")
+                    }
+                    appendLine()
+                    appendLine("Hot-reload: the skill's tools register immediately — no restart needed. You may use them now.")
+                }
+            },
+            onFailure = { e -> "❌ Skill installation failed: ${e.message}" }
+        )
+    }
+
+    private suspend fun downloadSkill(url: String): String {
+        // v2：网络下载统一在 IO 线程执行，且限制响应体大小（旧实现无上限，
+        // 恶意/超大响应会 OOM；且走非 flowOn 路径时会在调用方线程阻塞至超时）
+        return withContext(Dispatchers.IO) {
+            try {
+                val request = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "ApexAgent/1.0")
+                    .build()
+
+                httpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        return@use "Error: HTTP ${response.code} downloading skill"
+                    }
+                    response.body?.byteStream()?.let { stream ->
+                        val bytes = stream.readBytes(MAX_DOWNLOAD_BYTES)
+                        if (bytes == null) {
+                            "Error: skill file too large (>${MAX_DOWNLOAD_BYTES / 1024 / 1024}MB)"
+                        } else {
+                            String(bytes, Charsets.UTF_8)
+                        }
+                    } ?: "Error: Empty response"
+                }
+            } catch (e: Exception) {
+                "Error: Download failed - ${e.message}"
+            }
+        }
+    }
+
+    /** 读取至多 [max] 字节；超限时返回 null（调用方提示过大）。 */
+    private fun java.io.InputStream.readBytes(max: Int): ByteArray? {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(16 * 1024)
+        var total = 0
+        while (total < max) {
+            val n = read(buf, 0, minOf(buf.size, max - total))
+            if (n < 0) break
+            out.write(buf, 0, n)
+            total += n
+        }
+        if (total >= max && read() >= 0) return null  // 还有剩余字节 → 超限
+        return out.toByteArray()
+    }
+
+    private fun getTemplate(name: String): String {
+        return when (name) {
+            "web_scraper" -> WEB_SCRAPER_TEMPLATE
+            "file_organizer" -> FILE_ORGANIZER_TEMPLATE
+            "code_runner" -> CODE_RUNNER_TEMPLATE
+            "data_analyzer" -> DATA_ANALYZER_TEMPLATE
+            "coding_principles" -> CODING_PRINCIPLES_TEMPLATE
+            else -> "Error: Unknown template '$name'. Available: web_scraper, file_organizer, code_runner, data_analyzer, coding_principles"
+        }
+    }
+
+    companion object {
+        /** 单次 skill 下载响应体上限（防御超大响应 OOM）。 */
+        private const val MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024
+
+        val WEB_SCRAPER_TEMPLATE = """
+{
+  "schema": "apex-skill-v1",
+  "id": "web_scraper",
+  "name": "网页数据爬取",
+  "version": "1.0.0",
+  "description": "从网页提取结构化数据",
+  "author": "apex-builtin",
+  "requirements": {"toolsRequired": ["WebFetch", "Write"]},
+  "tools": [{
+    "id": "web_scrape",
+    "name": "Scrape Web Data",
+    "description": "Fetches URL and returns its text content for further extraction.",
+    "parameters": "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\"}},\"required\":[\"url\"]}",
+    "implementation": {"type": "composite", "steps": [
+      {"tool": "WebFetch", "args": {"url": "{{url}}"}}
+    ]}
+  }],
+  "configuration": {
+    "autoSetup": [
+      {"action": "create_directory", "path": "./scrape_output"}
+    ]
+  }
+}
+""".trimIndent()
+
+        val FILE_ORGANIZER_TEMPLATE = """
+{
+  "schema": "apex-skill-v1",
+  "id": "file_organizer",
+  "name": "文件自动整理",
+  "version": "1.0.0",
+  "description": "按类型自动分类整理文件（图片/文档/视频/音乐/归档）",
+  "author": "apex-builtin",
+  "requirements": {"toolsRequired": ["ListFiles", "ShellExecute"]},
+  "tools": [{
+    "id": "organize_files",
+    "name": "Organize Files",
+    "description": "Organize files in a directory by type (images, docs, videos, etc.)",
+    "parameters": "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Directory to organize\"}},\"required\":[\"path\"]}",
+    "implementation": {"type": "composite", "steps": [
+      {"tool": "ListFiles", "args": {"path": "{{path}}"}},
+      {"tool": "ShellExecute", "args": {}}
+    ]}
+  }],
+  "configuration": {"autoSetup": []}
+}
+""".trimIndent()
+
+        val CODE_RUNNER_TEMPLATE = """
+{
+  "schema": "apex-skill-v1",
+  "id": "code_runner",
+  "name": "代码运行器",
+  "version": "1.0.0",
+  "description": "编写并运行代码，自动修复错误",
+  "author": "apex-builtin",
+  "requirements": {"toolsRequired": ["Write", "ShellExecute", "Read"]},
+  "tools": [{
+    "id": "run_code",
+    "name": "Run Code",
+    "description": "Write code to a file and execute it. Returns output or errors.",
+    "parameters": "{\"type\":\"object\",\"properties\":{\"language\":{\"type\":\"string\",\"enum\":[\"python\",\"shell\",\"node\"]},\"code\":{\"type\":\"string\",\"description\":\"Code to run\"}},\"required\":[\"language\",\"code\"]}",
+    "implementation": {"type": "composite", "steps": [
+      {"tool": "Write", "args": {"path": "./code_output/run.py", "content": "{{code}}"}},
+      {"tool": "ShellExecute", "args": {}}
+    ]}
+  }],
+  "configuration": {"autoSetup": [
+    {"action": "create_directory", "path": "./code_output"}
+  ]}
+}
+""".trimIndent()
+
+        val DATA_ANALYZER_TEMPLATE = """
+{
+  "schema": "apex-skill-v1",
+  "id": "data_analyzer",
+  "name": "数据分析",
+  "version": "1.0.0",
+  "description": "分析CSV/JSON数据，生成统计报告",
+  "author": "apex-builtin",
+  "requirements": {"toolsRequired": ["Read", "ShellExecute", "Write"]},
+  "tools": [{
+    "id": "analyze_data",
+    "name": "Analyze Data",
+    "description": "Analyze a data file (CSV/JSON) and generate statistics summary.",
+    "parameters": "{\"type\":\"object\",\"properties\":{\"file\":{\"type\":\"string\",\"description\":\"Data file path\"}},\"required\":[\"file\"]}",
+    "implementation": {"type": "composite", "steps": [
+      {"tool": "Read", "args": {"path": "{{file}}", "max_lines": 10}},
+      {"tool": "ShellExecute", "args": {}}
+    ]}
+  }],
+  "configuration": {"autoSetup": []}
+}
+""".trimIndent()
+
+        // Prompt 型内置技能：不新增工具，安装后把九条编码协作原则注入 System Prompt
+        val CODING_PRINCIPLES_TEMPLATE = """
+{
+  "schema": "apex-skill-v1",
+  "id": "coding_principles",
+  "name": "编码原则 (Karpathy)",
+  "version": "1.0.0",
+  "description": "Andrej Karpathy 式 AI 编程协作九原则：写之前先读、想清楚再动手、保持简单、外科手术式修改、先验证再交付等",
+  "author": "apex-builtin",
+  "promptInjection": "你遵循以下编码协作原则（源自 Andrej Karpathy），适用于一切读代码、写代码、改代码的任务：\n1. 写之前先读代码库：动笔前，务必阅读要修改的文件和项目中类似功能的实现方式，确保新代码与项目风格一致。\n2. 想清楚再动手：明确假设，说出权衡（例如「我假设你希望使用基于 JWT 的认证」）；存在歧义时先向用户确认。\n3. 保持简单：只编写解决问题所需的最少代码，不添加任何未被要求的功能。\n4. 外科手术式修改：只修改被要求的部分，避免附带修改或「顺便」重构。\n5. 先验证再交付：交付代码前先测试或验证，确保改动没有引入新问题。\n6. 目标驱动执行：以明确的验收标准为导向，自行寻找达标的路径，而非等待逐步指令。\n7. 不猜先调查：遇到不确定的事情，先调查清楚，而不是猜测。\n8. 谨慎加依赖：引入新依赖前要三思，尽量使用项目已有的库。\n9. 把沟通写清楚：与协作者（包括人类和其他 Agent）沟通时，要清晰、明确、结论先行。",
+  "tools": [],
+  "configuration": {"autoSetup": []}
+}
+""".trimIndent()
+    }
+}
+
+/**
+ * Skill 创建工具
+ *
+ * Agent 用此工具自己编写新 Skill。
+ */
+class SkillCreateTool(
+    private val skillRegistry: SkillRegistry
+) : AgentTool {
+
+    override val id = "SkillCreate"
+    override val name = "Create Skill"
+    override val description = """
+        Create a new skill from scratch.
+        You define the skill's id, name, description, and optional prompt injection.
+        The skill is immediately installed and available.
+
+        Use this when:
+        - No existing skill matches the need
+        - User asks you to create a custom automation
+        - You identify a repeatable pattern worth saving
+    """.trimIndent()
+
+    override val parametersSchema = """
+        {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "description": "Unique skill ID (snake_case)"},
+                "name": {"type": "string", "description": "Display name"},
+                "description": {"type": "string", "description": "What the skill does"},
+                "prompt_injection": {"type": "string", "description": "Optional system prompt to inject"}
+            },
+            "required": ["id", "name", "description"]
+        }
+    """.trimIndent()
+
+    override suspend fun execute(arguments: String): String {
+        val json = Json.parseToJsonElement(arguments).jsonObject
+        val id = json["id"]?.jsonPrimitive?.content ?: return "Error: 'id' required"
+        val name = json["name"]?.jsonPrimitive?.content ?: return "Error: 'name' required"
+        val description = json["description"]?.jsonPrimitive?.content ?: return "Error: 'description' required"
+        val promptInjection = json["prompt_injection"]?.jsonPrimitive?.contentOrNull
+
+        // 构建最小 manifest
+        val manifest = buildString {
+            append("{")
+            append("\"schema\":\"apex-skill-v1\",")
+            append("\"id\":\"${escape(id)}\",")
+            append("\"name\":\"${escape(name)}\",")
+            append("\"version\":\"1.0.0\",")
+            append("\"description\":\"${escape(description)}\",")
+            append("\"author\":\"agent-created\",")
+            if (promptInjection != null) {
+                append("\"promptInjection\":\"${escape(promptInjection)}\",")
+            }
+            append("\"tools\":[],")
+            append("\"configuration\":{\"autoSetup\":[]}")
+            append("}")
+        }
+
+        val result = skillRegistry.install(manifest)
+        return result.fold(
+            onSuccess = { "✅ Skill '$name' created and installed. It's now active." },
+            onFailure = { "❌ Failed to create skill: ${it.message}" }
+        )
+    }
+
+    /**
+     * v2 修复：补齐换行/回车/制表符转义。旧实现只转义 `\\` 和 `"`，
+     * 多行 description / prompt_injection 拼出的 JSON 非法，
+     * `SkillCreate` 对多行输入必然安装失败。
+     */
+    private fun escape(s: String): String = s
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+}
+
+/**
+ * Skill 列表工具
+ */
+class SkillListTool(
+    private val skillRegistry: SkillRegistry
+) : AgentTool {
+
+    override val id = "SkillList"
+    override val name = "List Skills"
+    override val description = "List all installed skills and their status."
+
+    override val parametersSchema = """
+        {"type": "object", "properties": {}, "required": []}
+    """.trimIndent()
+
+    override suspend fun execute(arguments: String): String {
+        val skills = skillRegistry.getInstalled()
+        if (skills.isEmpty()) {
+            return "No skills installed. Use SkillSearch to find skills or SkillCreate to make one."
+        }
+
+        return buildString {
+            appendLine("Installed skills (${skills.size}):")
+            appendLine("---")
+            skills.forEach { skill ->
+                val status = if (skill.enabled) "✅" else "⬜"
+                appendLine("$status ${skill.manifest.name} (${skill.manifest.id}) v${skill.manifest.version}")
+                appendLine("   ${skill.manifest.description}")
+                appendLine("   Tools: ${skill.manifest.tools.map { it.id }.joinToString(", ").ifEmpty { "prompt-only" }}")
+                appendLine()
+            }
+        }
+    }
+}
+
+/**
+ * Skill 卸载工具
+ */
+class SkillUninstallTool(
+    private val skillRegistry: SkillRegistry
+) : AgentTool {
+
+    override val id = "SkillUninstall"
+    override val name = "Uninstall Skill"
+    override val description = "Remove an installed skill by ID."
+
+    override val parametersSchema = """
+        {
+            "type": "object",
+            "properties": {
+                "skill_id": {"type": "string", "description": "Skill ID to uninstall"}
+            },
+            "required": ["skill_id"]
+        }
+    """.trimIndent()
+
+    override suspend fun execute(arguments: String): String {
+        val json = Json.parseToJsonElement(arguments).jsonObject
+        val skillId = json["skill_id"]?.jsonPrimitive?.content ?: return "Error: 'skill_id' required"
+
+        val success = skillRegistry.uninstall(skillId)
+        // Issue #166：bundled 技能 uninstall 恒 false——文案区分「未找到」与「内置不可卸载」，
+        // 避免代理据此误判技能不存在而反复重装。
+        return if (success) {
+            "✅ Skill '$skillId' uninstalled"
+        } else {
+            "Error: Skill '$skillId' not found, or it is a bundled skill (bundled skills cannot be uninstalled, only disabled)"
+        }
+    }
+}
+
+/**
+ * Skill 激活工具（技能渐进披露的模型侧入口，对齐 ToolOpen 的装载语义）。
+ *
+ * 系统提示词只携带「Skill Catalog」（全部技能的一行摘要）；技能的完整
+ * 方法论（promptInjection，通常 2-4KB）默认不注入。模型判定任务命中
+ * 某技能领域时调用本工具：
+ *  - 工具结果**即时返回该技能的完整方法论全文**（当轮即可遵循）；
+ *  - 同时写入 [SkillActivationStore]，后续轮次系统提示词持续注入
+ *    （见 SkillRegistry.getActivePromptInjections）；
+ *  - FIFO 上限淘汰最旧激活，请求体积有界。
+ *
+ * 与 ToolSearch/ToolOpen 的关系：工具目录装载「能力」（函数），技能
+ * 目录装载「方法论」（领域专家流程）——两者互补，模型可自由组合
+ * （例：装备 travel-planner 技能 + WebSearch 工具做行程规划）。
+ */
+class SkillActivateTool(
+    private val skillRegistry: SkillRegistry,
+    private val activationStore: SkillActivationStore
+) : AgentTool {
+
+    override val id = "SkillActivate"
+    override val name = "Activate Skill"
+    override val description = """
+        Load a skill's full domain methodology into the session.
+        The system prompt only lists one-line skill summaries; call this with a
+        skill_id from the Skill Catalog when a task matches that domain. The
+        complete methodology returns immediately and stays active for the rest
+        of the session. Prefer this BEFORE answering domain-specific questions
+        (cooking, travel, fitness, resume, negotiation, ...).
+    """.trimIndent()
+
+    override val parametersSchema = """
+        {
+            "type": "object",
+            "properties": {
+                "skill_id": {"type": "string", "description": "Skill ID from the Skill Catalog (e.g. travel-planner)"}
+            },
+            "required": ["skill_id"]
+        }
+    """.trimIndent()
+
+    override suspend fun execute(arguments: String): String = withContext(Dispatchers.Default) {
+        val json = Json.parseToJsonElement(arguments).jsonObject
+        val skillId = json["skill_id"]?.jsonPrimitive?.contentOrNull
+            ?: return@withContext "Error: 'skill_id' required"
+
+        val installed = skillRegistry.getInstalled().firstOrNull { it.manifest.id == skillId }
+            ?: return@withContext "Error: skill '$skillId' not installed. Call SkillList() to see installed skills."
+        if (!installed.enabled) {
+            return@withContext "Error: skill '$skillId' is disabled. Ask the user to enable it in the skill market."
+        }
+
+        activationStore.activate(skillId)
+        val manifest = installed.manifest
+        val methodology = manifest.promptInjection
+            ?: return@withContext buildString {
+                appendLine("✅ Skill '${manifest.name}' ($skillId) has no prompt methodology; it contributes tools:")
+                manifest.tools.forEach { appendLine("- ${it.id}: ${it.description.take(120)}") }
+                appendLine("(These tools are registered and callable now.)")
+            }
+
+        buildString {
+            appendLine("✅ Skill '${manifest.name}' ($skillId) activated — full methodology below; it stays in your system prompt for the rest of the session.")
+            appendLine("---")
+            appendLine(methodology)
+            appendLine("---")
+            appendLine("Follow this methodology for matching tasks from now on.")
+        }
+    }
+}

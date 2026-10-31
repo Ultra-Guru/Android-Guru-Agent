@@ -1,0 +1,14 @@
+<!-- pr: agent-resilience-overhaul -->
+- 网页抓取抗拦截升级：WebFetch / HttpRequest 默认携带浏览器指纹（UA / Accept / Referer 同源头），云 WAF 裸客户端 405 拦截不再发生；用户自定义 headers 仍可逐项覆盖
+- SPA 空壳页面自动识别：抓到「下载 App」类 JS 应用壳时直接给出行动指引（找 XHR/API 接口、试 v1/v2/v3 相邻版本），不再让模型在浏览器渲染的弯路上空转
+- HTTP 404 / 403 / 405 智能向导：404 提示探测相邻 API 版本，403/405 拦截页提示补浏览器头重试 —— 实测中 api/v1→v2 的盲猜环节从此有路标
+- 工具输出截断告别「假完整」：所有截断产物尾部统一追加机器可读告示（[OUTPUT TRUNCATED: ...]，明示内容不完整、省略区还有更多、如何取回）—— 修复把 2 万字符正文当摘要交差的最大误判
+- 终端参数命名宽容：sessionId / session_id 等驼峰与下划线两种风格全链路互认，必填参数不再因命名风格白丢一轮调用
+- heredoc 挂死全面防护：终端命令内联 heredoc 自动前置警告（先落文件再执行），会话挂死在 '>' 续行符时给出正确自救（TerminalWrite CTRL_C —— 信号层送不到前台 shell 本体）
+- TerminalObserve EVENT 模式附带读取指引：事件计数不是输出文本，读内容走 SCREEN / RAW —— 消除「拿到 eventCount 就当读过了」的误区
+- 一次性命令建议改为引导式：不再用绝对 STOP 措辞打断正常的短探测工作流，同时把 heredoc 禁忌与自救路径写进提醒
+- 幂等只读工具（AgentProfileList 等 13 个）重复调用阈值放宽：确认式重读不再被误判死循环，振荡乒乓仍严格拦截
+- 模型配置零门槛直达：AgentProfileList / AgentProfileSetDefault 常驻工具集，AgentSettingGet 输出附带「模型配置在哪、怎么开」指针 —— 弱模型不再困在 ToolSearch 两跳盲区
+- API Key 写入输出升级：明确 write-only 设计下的唯一写确认（长度）与真实验证路径（切默认模型发小样本消息）
+- PRoot Ubuntu 启动噪音根除：宿主补充组自动补进 guest /etc/group，「groups: cannot find name for group ID」六行刷屏从此消失
+- Agent 终端会话默认列宽 80 → 200：长命令不再硬折行拆碎标识符（isinstance 被折成 isins + tance 的读屏误读源头）

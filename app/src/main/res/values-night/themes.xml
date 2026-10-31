@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- P3-d (6-c): dark cold-start theme. The main values/themes.xml pins a Light parent, so in system dark
+         mode the cold-start phase (before the Compose theme takes over) shows a light window background →
+         white flash. This file provides the dark variant of the same-named theme (parent uses the framework
+         android:Theme.Material.NoActionBar — the framework theme has no DayNight variant, DayNight belongs
+         to appcompat), with windowBackground aligned to the Theme.kt dark palette background(#0A0E14). -->
+    <style name="Theme.ApexAgent" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#0A0E14</item>
+    </style>
+</resources>

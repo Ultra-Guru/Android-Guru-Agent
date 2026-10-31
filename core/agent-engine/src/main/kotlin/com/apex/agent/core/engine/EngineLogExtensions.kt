@@ -1,0 +1,69 @@
+package com.apex.agent.core.engine
+
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
+import com.apex.agent.core.logging.LogLevel
+import java.util.Locale
+
+/**
+ * 把引擎事件映射为结构化日志并写入日志中枢。
+ *
+ * 引擎事件是 UI 流式更新的载体，本身也是完整的运行轨迹：思考、规划、工具调用、
+ * 上下文压缩、错误都被转成对应分类 / 级别的日志，使汇聚层覆盖 Agent 运行的
+ * 全生命周期，无需在各业务点重复打点。放在 engine 模块是为了避免 logging 核心
+ * 反向依赖 engine（否则会形成循环依赖）。
+ */
+fun AppLogger.logEvent(event: AgentEvent) {
+    when (event) {
+        is AgentEvent.ThinkingStart ->
+            debug(LogCategory.ENGINE, "Engine", "思考开始 #${event.iteration} (level=${event.thinkingLevel})", "thinking")
+        is AgentEvent.ThinkingComplete ->
+            debug(LogCategory.ENGINE, "Engine", "思考完成 (${event.fullThought.length} 字)", "thinking")
+        is AgentEvent.PlanGenerated ->
+            info(LogCategory.ENGINE, "Engine", "生成计划: ${event.plan.steps.size} 步, 风险=${event.plan.riskLevel}", "plan")
+        is AgentEvent.IterationStart ->
+            info(LogCategory.ENGINE, "Engine", "迭代 #${event.iteration} 开始", "iteration")
+        is AgentEvent.StepStart ->
+            info(LogCategory.ENGINE, "Engine", "执行步骤 #${event.stepIndex}: ${event.description}", "step")
+        is AgentEvent.ToolCallStart ->
+            info(LogCategory.TOOL, event.toolName, "调用工具 args=${event.arguments.take(200)}", "tool:${event.toolName}", "call-start")
+        is AgentEvent.ToolCallComplete -> {
+            // 任务过程可见性（日志增强）：成功/失败都带真实输出摘录 ——
+            // Agent 的 shell/终端工具输出（含 exit_code）此前只记长度，
+            // 「命令执行了什么、返回了什么」在日志中枢里是黑洞。上限
+            // [OUTPUT_EXCERPT_MAX]：一条日志最多 2KB 输出（用户选定口径），
+            // 防长输出（构建日志/大文件 cat）刷穿 8MB 环形缓冲。
+            // fullOutput 优先（调用方未截断的原始形态），缺省回退 output。
+            val raw = event.fullOutput.ifBlank { event.output }
+            val excerpt = raw.take(OUTPUT_EXCERPT_MAX)
+            if (event.success)
+                info(
+                    LogCategory.TOOL, event.toolName,
+                    "完成 (${event.durationMs}ms) out=${event.output.length}字\n[输出] $excerpt",
+                    tags = arrayOf("tool:${event.toolName}", "call-complete", "with-output")
+                )
+            else
+                error(
+                    LogCategory.TOOL, event.toolName,
+                    "失败 (${event.durationMs}ms): ${event.output.take(OUTPUT_EXCERPT_MAX)}\n[输出] $excerpt",
+                    tags = arrayOf("tool:${event.toolName}", "call-error", "with-output")
+                )
+        }
+        is AgentEvent.ToolProgress ->
+            // P3-e 修复：固定 Locale.ROOT——默认 Locale（如阿拉伯语系）会把 %.0f
+            // 格式化成阿拉伯-印度数字，日志文本不可机读。
+            debug(LogCategory.TOOL, "Engine", "进度 ${event.percent?.let { "%.0f%%".format(Locale.ROOT, it * 100) } ?: ""} ${event.message ?: ""}", "progress")
+        is AgentEvent.ContextCompressed ->
+            warn(LogCategory.ENGINE, "Compressor", "上下文压缩 ${event.beforeTokens}→${event.afterTokens} tokens, 策略=${event.strategy}, 移除=${event.messagesRemoved}", "compression")
+        is AgentEvent.Error ->
+            error(LogCategory.ENGINE, "Engine", event.message, tags = arrayOf("engine-error"))
+        is AgentEvent.Complete ->
+            info(LogCategory.ENGINE, "Engine", "完成: ${event.totalIterations} 迭代, ${event.totalToolCalls} 工具调用, ${event.totalDurationMs}ms", "complete")
+        is AgentEvent.Aborted ->
+            warn(LogCategory.ENGINE, "Engine", "任务中止", "aborted")
+        else -> { /* 流式 chunk 类事件不落日志，避免刷屏 */ }
+    }
+}
+
+/** 工具输出进日志中枢的单条上限（字符）—— 用户选定口径：命令全记，输出截 2KB。 */
+private const val OUTPUT_EXCERPT_MAX = 2000
