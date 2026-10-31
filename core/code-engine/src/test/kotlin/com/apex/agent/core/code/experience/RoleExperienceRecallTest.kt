@@ -193,15 +193,15 @@ class RoleExperienceRecallTest {
         t.onEvent(AgentEvent.IterationStart(1))
         t.onEvent(AgentEvent.ToolCallStart("c1", "CodeRead", """{"path":"a.kt"}"""))
         t.onEvent(
-            AgentEvent.ToolCallComplete("c1", "CodeRead", """{"path":"a.kt"}"", "ok", "ok", true, 10)
+            AgentEvent.ToolCallComplete("c1", "CodeRead", """{"path":"a.kt"}""", "ok", "ok", true, 10)
         )
         t.onEvent(AgentEvent.ToolCallStart("c2", "CodeEdit", """{"path":"a.kt"}"""))
         t.onEvent(
-            AgentEvent.ToolCallComplete("c2", "CodeEdit", """{"path":"a.kt"}"", "ok", "ok", true, 10)
+            AgentEvent.ToolCallComplete("c2", "CodeEdit", """{"path":"a.kt"}""", "ok", "ok", true, 10)
         )
         t.onEvent(AgentEvent.ToolCallStart("c3", "CodeEdit", """{"path":"a.kt"}"""))
         t.onEvent(
-            AgentEvent.ToolCallComplete("c3", "CodeEdit", """{"path":"a.kt"}"", "ok", "ok", true, 10)
+            AgentEvent.ToolCallComplete("c3", "CodeEdit", """{"path":"a.kt"}""", "ok", "ok", true, 10)
         )
         val exp = t.endRun("COMPLETED")
         assertNotNull(exp)
