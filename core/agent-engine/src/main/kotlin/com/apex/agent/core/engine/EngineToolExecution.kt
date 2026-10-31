@@ -232,12 +232,17 @@ internal suspend fun ApexAgentEngine.executeToolCallStreamingCore(
     // 需要注册表 id（TerminalExec）——经当前计划的反向映射解析。
     // 无映射时（旧会话回放/模型直呼 registry id）原样直查，两条路都通。
     val registryToolId = EngineToolPlanner.registryIdOf(currentToolPlan, toolCall.name)
+    // 溯源打标（能力生态三分类）：注册表元数据 → MCP/技能/内置，随事件下发。
+    // 元数据缺失/未打标 → BUILTIN（kit 适配器与旁路注册同款缺省，不误标）。
+    val originInfo = resolveToolOrigin(registryToolId)
 
     emit(
         AgentEvent.ToolCallStart(
             callId = toolCall.id,
             toolName = toolCall.name,
-            arguments = toolCall.arguments
+            arguments = toolCall.arguments,
+            origin = originInfo.origin,
+            originLabel = originInfo.label
         )
     )
 
@@ -386,7 +391,11 @@ internal suspend fun ApexAgentEngine.executeToolCallStreamingCore(
             channel = completeMeta.channel,
             cwd = completeMeta.cwd,
             errorKind = completeMeta.errorKind,
-            waitingInput = completeMeta.waitingInput
+            waitingInput = completeMeta.waitingInput,
+            // 溯源同款透传（Complete 单独携带：重放/恢复场景 Start 丢失时
+            // 消费端补建胶囊仍能拿到权威分类）。
+            origin = originInfo.origin,
+            originLabel = originInfo.label
         )
     )
     return ToolExecutionOutcome(result, actionSuccess, registryToolId)

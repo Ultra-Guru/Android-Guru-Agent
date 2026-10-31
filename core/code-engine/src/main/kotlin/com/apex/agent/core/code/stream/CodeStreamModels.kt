@@ -1,5 +1,7 @@
 package com.apex.agent.core.code.stream
 
+import com.apex.agent.core.engine.ToolCallOrigin
+
 /**
  * # Code Stream Models — Coding 工作流胶囊流式输出的数据模型
  *
@@ -44,8 +46,10 @@ sealed interface ToolKind {
     data object TEST : ToolKind
     /** 计划 / todo 变更（CodeTodo / plan）。 */
     data object PLAN : ToolKind
-    /** MCP 自定义工具（mcp.* 与未知名——保守展示为自定义工具）。 */
+    /** MCP 远程工具（first-class 注册，origin 溯源 / mcp.* 未知名兼容回退）。 */
     data object MCP_CUSTOM : ToolKind
+    /** 技能工具（技能贡献的 composite / script——origin 溯源打标，区别于内置）。 */
+    data object SKILL : ToolKind
 
     companion object {
         /**
@@ -106,6 +110,9 @@ enum class ToolCallStatus { WAITING, RUNNING, SUCCESS, FAILED, APPLIED, PARTIAL 
  * @param streamingPreview 参数生成期实时预览（ToolCallArgsDelta 归约；
  *   写/编辑类的半截 JSON 提取——绿增红删代码窗的数据源。WAITING/RUNNING
  *   期间持续刷新，终态时由会话清空 = 代码窗自动收回）。
+ * @param origin 调用溯源（引擎事件下发；缺省 BUILTIN —— kit 路径/旧档
+ *   未打标时按内置渲染，与既有行为一致）。
+ * @param originLabel 溯源标签：MCP = 服务器名 / SKILL = 技能 id；null = 无。
  */
 data class StreamToolCall(
     val id: String,
@@ -125,7 +132,9 @@ data class StreamToolCall(
     val progressPercent: Float? = null,
     val progressMessage: String? = null,
     val summary: String? = null,
-    val streamingPreview: StreamArgsPreview? = null
+    val streamingPreview: StreamArgsPreview? = null,
+    val origin: ToolCallOrigin = ToolCallOrigin.BUILTIN,
+    val originLabel: String? = null
 ) {
     /** 是否编辑/写类（点击行为 → 文件 Diff）。 */
     val isEditFamily: Boolean
@@ -244,6 +253,10 @@ sealed interface StreamEntry {
      * @param failedCalls 本轮失败的工具调用数（会话按 run 归零统计）。
      * @param filesTouched 本轮触碰的文件数（affectedFiles 每 run 清零）。
      * @param durationMs 本轮总耗时（引擎 totalDurationMs）。
+     * @param skillCalls 本轮技能工具调用数（溯源归零统计；旧档缺省 0）。
+     * @param mcpCalls 本轮 MCP 工具调用数（溯源归零统计；旧档缺省 0）。
+     * @param skills 本轮涉及的技能 id（去重，首现序）。
+     * @param mcpServers 本轮涉及的 MCP 服务器名（去重，首现序）。
      */
     data class RunStatsEntry(
         override val id: String,
@@ -251,9 +264,34 @@ sealed interface StreamEntry {
         val toolCalls: Int,
         val failedCalls: Int = 0,
         val filesTouched: Int = 0,
-        val durationMs: Long = 0
+        val durationMs: Long = 0,
+        val skillCalls: Int = 0,
+        val mcpCalls: Int = 0,
+        val skills: List<String> = emptyList(),
+        val mcpServers: List<String> = emptyList()
     ) : StreamEntry
 }
+
+/**
+ * 本轮运行的工具使用聚合（「已调用 N 个工具」的溯源分解）——完整档
+ * 加载卡实时计数与收尾统计卡的共同数据源，会话在胶囊建立点随建随计、
+ * beginRun 归零（与 affectedFiles 同款 run 粒度会计）。
+ *
+ * @param total 本轮工具调用总数（含技能 / MCP / 内置）。
+ * @param builtinCount / skillCount / mcpCount 三分类计数。
+ * @param failedCount 本轮失败的工具调用数（run 粒度；收尾卡/加载卡共用）。
+ * @param skills 本轮涉及的技能 id（去重，首现序）。
+ * @param mcpServers 本轮涉及的 MCP 服务器名（去重，首现序）。
+ */
+data class ToolUsageStats(
+    val total: Int = 0,
+    val builtinCount: Int = 0,
+    val skillCount: Int = 0,
+    val mcpCount: Int = 0,
+    val failedCount: Int = 0,
+    val skills: List<String> = emptyList(),
+    val mcpServers: List<String> = emptyList()
+)
 
 /**
  * 渲染快照：时间轴 + 派生统计。会话在 25ms 攒批窗口内聚合变更，
@@ -265,6 +303,8 @@ data class CodeStreamSnapshot(
     val toolCallCount: Int = 0,
     /** 当前运行失败的工具调用数。 */
     val failedToolCallCount: Int = 0,
+    /** 本轮工具使用聚合（溯源三分类 + 技能/服务器清单；run 粒度归零）。 */
+    val toolUsage: ToolUsageStats = ToolUsageStats(),
     /** 最新错误（ErrorBar 通道；null = 无）。 */
     val lastError: ErrorInfo? = null,
     /** 运行中的 BASH 胶囊（终端面板跟随对象；null = 无活跃终端）。 */

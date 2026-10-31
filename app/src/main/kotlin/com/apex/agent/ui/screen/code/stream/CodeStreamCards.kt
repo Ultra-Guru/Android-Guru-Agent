@@ -15,11 +15,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Notes
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Loop
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.StopCircle
@@ -366,6 +368,20 @@ private fun RunStatsCard(entry: StreamEntry.RunStatsEntry) {
                     icon = Icons.Default.Build,
                     label = stringResource(R.string.code_stream_run_tools_fmt, entry.toolCalls)
                 )
+                // 溯源分解（v1.5.1）：技能 / MCP 调用数（非零才显）——本轮
+                // 用了哪些能力生态一眼可辨（与聚合卡同源会计）
+                if (entry.skillCalls > 0) {
+                    StatChip(
+                        icon = Icons.Default.AutoAwesome,
+                        label = stringResource(R.string.code_stream_run_skills_fmt, entry.skillCalls)
+                    )
+                }
+                if (entry.mcpCalls > 0) {
+                    StatChip(
+                        icon = Icons.Default.Extension,
+                        label = stringResource(R.string.code_stream_run_mcp_fmt, entry.mcpCalls)
+                    )
+                }
                 if (entry.filesTouched > 0) {
                     StatChip(
                         icon = Icons.AutoMirrored.Filled.Notes,
