@@ -30,4 +30,20 @@
     <string name="templates_use_result">Generated prompt (deterministic analysis appendix included for built-ins)</string>
     <string name="templates_use_copied">Copied — paste into chat</string>
     <string name="templates_builtin_locked">Built-in (locked — use or duplicate)</string>
+<!-- ═══ v1.9 角色详情（经验卡 + Git 专属技能）═══ -->
+    <string name="templates_role_activate">Activate this role</string>
+    <string name="templates_role_active">Active role</string>
+    <string name="templates_role_experience_title">Experience cards</string>
+    <string name="templates_role_experience_count">%1$d cards</string>
+    <string name="templates_role_experience_empty">No experience yet — cards are distilled automatically after each task (scenario, tool chain, outcome, notes for next time) and injected when a similar task starts.</string>
+    <string name="templates_role_experience_clear">Clear</string>
+    <string name="templates_role_experience_clear_confirm_title">Clear experience cards?</string>
+    <string name="templates_role_experience_clear_confirm_body">All distilled experience for this role will be removed. This cannot be undone.</string>
+    <string name="templates_role_experience_notes">Next time: %1$s</string>
+    <string name="templates_role_experience_hits">reused %1$d times</string>
+    <string name="templates_role_experience_meta">%1$d iters · %2$d tool calls</string>
+    <string name="templates_role_delete_exp">Delete this experience card</string>
+    <string name="templates_role_skills_title">Git skills (role-exclusive)</string>
+    <string name="templates_role_skills_subtitle">Staged runbooks — all enabled by default; toggle off the ones you don\'t need. Changes take effect on the next request (no restart).</string>
+    <string name="templates_role_skill_source">Source: %1$s</string>
 </resources>
