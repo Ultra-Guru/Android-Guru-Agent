@@ -53,10 +53,6 @@ public:
                           int rows, int cols);
 
     bool write(int sessionId, const char* data, size_t len);
-    bool writeLine(int sessionId, const std::string& line);
-
-    /** Legacy：仅返回数据字节（不区分 idle/EOF/error）。保留供旧 JNI String 通道。 */
-    std::string read(int sessionId, int maxBytes);
 
     /**
      * P70-1/P70-2：带状态的二进制安全读取。生产路径（nativeReadBytes）唯一入口。
