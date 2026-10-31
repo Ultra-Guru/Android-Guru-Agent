@@ -84,7 +84,7 @@ enum class DepGroup { BASIC, JAVA, ANDROID, RUNTIME }
  *    sdkmanager 仓库无法换源（谷歌硬编码 dl.google.com）→ 镜像开关对 sdkmanager
  *    条目不生效（两模板相同，诚实不伪装）；
  *  - **PATH 持久化**：所有二进制 symlink 进 /usr/local/bin（任何 shell 直接可用），
- *    结构化变量（ANDROID_HOME 等）写 /etc/profile.d/*.sh；
+ *    结构化变量（ANDROID_HOME 等）写 /etc/profile.d 目录下的 .sh 片段；
  *  - **幂等**：重复安装安全（unzip -o / ln -sf / apt -y）。
  */
 object DepCatalog {
