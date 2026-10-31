@@ -398,7 +398,7 @@ class FusionBundleCoreTest {
     @Test
     fun `toolwright 激活双技能进注册表且零 MCP 连接`() = runTest {
         val registry = FusionBundleRegistry(tmp.newFolder("tw"))
-        registry.install(FusionBundlePresets.TOOLWRIGHT_BUNDLE_JSON)
+        registry.install(FusionToolwrightPreset.TOOLWRIGHT_BUNDLE_JSON)
         val skills = FakeSkillInstaller()
         val mcp = FakeMcpConnector()
         val prompt = FakePromptInjector()
