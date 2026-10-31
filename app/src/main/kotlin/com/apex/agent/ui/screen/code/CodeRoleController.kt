@@ -1,5 +1,6 @@
 package com.apex.agent.ui.screen.code
 
+import com.apex.agent.core.code.gitskill.GitRoleSkillEngine
 import com.apex.agent.ui.screen.settings.AgentRole
 import com.apex.agent.ui.screen.settings.SettingsRepository
 import com.apex.agent.ui.screen.settings.activeCodingRole
@@ -34,6 +35,12 @@ import kotlinx.coroutines.launch
  * v1.8.0：[knowledgeBaseService] —— 角色绑定了专属知识库时，
  * applyToEngine 把检索指引（must_read → index/search → read）追加进
  * Role definition，随引擎人设通道下发。
+ *
+ * v1.9：Git 角色专属技能（用户规格 9 套阶段化 runbook）—— 归属角色
+ * （含「另存为」副本）时，启用技能的紧凑目录 + 安全红线同样追加进
+ * Role definition；开关（AgentSettings.roleSkillToggles）变化也走
+ * 人设热重下（distinctUntilChangedBy 的键扩了 roleSkillToggles ——
+ * 模板工坊里拨开关，下一轮请求即生效，无需重启）。
  */
 class CodeRoleController(
     private val settingsRepository: SettingsRepository,
@@ -54,10 +61,12 @@ class CodeRoleController(
 
     init {
         // 设置流 → 引擎人设（启动首帧与运行时热切换同一条通道）。
+        // v1.9：键扩 roleSkillToggles —— 技能开关变化同样触发人设重下
+        //（Git 技能目录拼在 definition 里，开关即时生效）。
         scope.launch {
             settingsRepository.agentSettings
-                .distinctUntilChangedBy { it.codeActiveRoleId }
-                .collect { settings -> applyToEngine(settings.activeCodingRole()) }
+                .distinctUntilChangedBy { it.codeActiveRoleId to it.roleSkillToggles }
+                .collect { settings -> applyToEngine(settings.activeCodingRole(), settings) }
         }
     }
 
@@ -66,15 +75,30 @@ class CodeRoleController(
         settingsRepository.updateAgentSettings { withCodingRoleActivated(roleId) }
     }
 
-    private suspend fun applyToEngine(role: AgentRole) {
+    private suspend fun applyToEngine(role: AgentRole, settings: com.apex.agent.ui.screen.settings.AgentSettings) {
         // v2 多卷制：角色绑定的全部知识卷（可无限扩充）都写进 Role definition
         // —— 检索指引按卷 id 逐一给出（must_read → index/search → read）。
         val kbHint = knowledgeBaseService.roleDefinitionHintFor(
             knowledgeBaseService.volumesForRole(role.id)
         )
         engineAccessor()?.updateRolePersona(
-            roleDefinition = role.roleDefinition + kbHint,
+            roleDefinition = role.roleDefinition + kbHint + gitSkillHintFor(role, settings),
             rolePrompt = role.systemPrompt.ifBlank { null }
+        )
+    }
+
+    /**
+     * v1.9 Git 角色专属技能注入段：归属角色（含副本）且存在启用技能时，
+     * 拼紧凑目录 + 安全红线（完整 runbook 由 [GitRoleSkillEngine.renderRunbook]
+     * 按需展开）。非 Git 角色 → 空串零影响。
+     */
+    private fun gitSkillHintFor(
+        role: AgentRole,
+        settings: com.apex.agent.ui.screen.settings.AgentSettings
+    ): String {
+        if (!GitRoleSkillEngine.skillsApplyToRole(role.id, role.roleDefinition)) return ""
+        return GitRoleSkillEngine.definitionHintFor(
+            GitRoleSkillEngine.enabledSkills(settings.roleSkillToggles)
         )
     }
 }

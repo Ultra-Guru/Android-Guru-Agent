@@ -7,6 +7,8 @@ import com.apex.agent.core.code.CodeAgentEngine
 import com.apex.agent.core.code.CodeEngineFacade
 import com.apex.agent.core.code.longtask.LongTaskStatus
 import com.apex.agent.core.code.longtask.LongTaskStore
+import com.apex.agent.core.code.experience.RoleExperienceStore
+import com.apex.agent.core.code.experience.RoleExperienceTracker
 import com.apex.agent.core.code.longtask.LongTaskTracker
 import com.apex.agent.core.code.longtask.TaskCopyEngine
 import com.apex.agent.core.code.standard.DualLogicCodeEngine
@@ -131,6 +133,10 @@ class CodeViewModel @Inject constructor(
     // v1.2 长任务中心：追踪器/复制引擎/存储/档位统计。longTaskTracker 供
     // CodeEventReducer.kt；taskCopyEngine/longTaskStore/thinkingEvolutionTracker 供 CodeLongTaskCenterOps.kt。
     internal val longTaskTracker: LongTaskTracker,
+    // v1.9 角色经验卡：事件流聚合器（沉淀/注入/强化三通道，控制器代理
+    // 见 RoleExperienceController —— God-file 预算：VM 只做暴露）。
+    internal val roleExperienceTracker: RoleExperienceTracker,
+    internal val roleExperienceStore: RoleExperienceStore,
     internal val taskCopyEngine: TaskCopyEngine,
     internal val longTaskStore: LongTaskStore,
     internal val thinkingEvolutionTracker: CodeThinkingEvolutionTracker,
@@ -143,10 +149,11 @@ class CodeViewModel @Inject constructor(
     internal val toolkitStore: ChatToolkitStore,
     /** 「功能聚合」16 项能力注入（见 neon/NeonOrbFeatures.kt）。 */
     internal val neonOrbStore: com.apex.agent.ui.screen.code.neon.NeonOrbStore,
-    /** GitHub PAT 连接（Coding 屏的 gh 连接入口）。 */
+    /** GitHub PAT 连接（Coding 屏的 gh 连接入口 + v1.9 MCP 配置面对话框）。 */
     internal val githubTokenManager: GithubTokenManager,
-    /** 斜杠路由需要 MCP 连接快照（/mcp:<id> 引导提示词据此生成）。 */
-    private val mcpManager: com.apex.agent.core.tools.mcp.McpManager,
+    /** 斜杠路由需要 MCP 连接快照（/mcp:<id> 引导提示词据此生成）；
+     * v1.9 起同时喂给输入框 GitHub 图标的 MCP 配置对话框（internal）。 */
+    internal val mcpManager: com.apex.agent.core.tools.mcp.McpManager,
     // Plugin System v2：斜杠路由需要功能性插件指令贡献快照
     // （/plugin:<id> 命中时注入插件声明的定制 prompt）。
     private val unifiedPluginRegistry: com.apex.agent.plugin.host.functional.UnifiedPluginRegistry,
@@ -240,6 +247,16 @@ class CodeViewModel @Inject constructor(
     /** Coding 专家模板（模式行胶囊；设置流 → 引擎人设通道）。 */
     internal val roleController: CodeRoleController by lazy {
         CodeRoleController(settingsRepository, { codeEngineImpl }, knowledgeBaseService, viewModelScope)
+    }
+
+    /** 角色经验卡（沉淀/注入/强化三通道；经验域逻辑全在控制器内）。 */
+    internal val roleExperience: RoleExperienceController by lazy {
+        RoleExperienceController(
+            tracker = roleExperienceTracker,
+            store = roleExperienceStore,
+            settingsRepository = settingsRepository,
+            scope = viewModelScope
+        )
     }
 
     init {
@@ -586,8 +603,12 @@ class CodeViewModel @Inject constructor(
         // v4 强制工具计划。prepareForTask 的 refreshContext 会把 extras 拼进
         // additionalSystemContext（顺序：先存 extras 再刷上下文）。 ═══
         // 功能聚合注入段（16 项能力）同通道追加 —— 小圆环在前、功能聚合在后。
+        // v1.9 角色经验卡：召回的相关经验段拼在末位（同类任务先读历史教训）。
         codeEngineImpl?.updateSessionExtras(
-            neonOrbStore.mergeWith(toolkitStore.buildSessionContext())
+            roleExperience.enrichExtras(
+                base = neonOrbStore.mergeWith(toolkitStore.buildSessionContext()),
+                goal = goal
+            )
         )
         codeEngineImpl?.updateForcedTools(
             forcedToolIds = toolkitStore.forcedToolIds(),
@@ -615,6 +636,9 @@ class CodeViewModel @Inject constructor(
             agentMode = _uiState.value.mode.name
         )
 
+        // v1.9 角色经验卡：本轮任务的聚合归零（当前激活角色领卡）。
+        roleExperience.beginRun(goal, _uiState.value.activeWorkspace?.name ?: "")
+
         // 深水区升级观察器归零（新 run 重新计数）。
         runToolCalls = 0
         recentToolOutcomes.clear()
@@ -629,6 +653,7 @@ class CodeViewModel @Inject constructor(
             try {
                 codeEngine.execute(UserInput(text = engineInput)).collect { event ->
                     longTaskTracker.onEvent(event)
+                    roleExperience.onEvent(event)
                     maybeEscalateOnDeepWater(event)
                     if (event is AgentEvent.ThinkingChunk && event.text.contains(GOAL_NOTICE_MARKER)) {
                         // v3 GOAL：验收结论不走思考卡（默认折叠只有 80 字预览，
@@ -678,6 +703,8 @@ class CodeViewModel @Inject constructor(
                     // tracker 内部 scope 完成）
                     thinkingEvolutionTracker.ingest(record)
                 }
+                // v1.9 角色经验卡：确定性提炼 + 落卷（纯聊天轮内部静默丢弃）。
+                roleExperience.endRun(taskStatus.name, errorMessage = finalError)
                 if (_uiState.value.longTaskSheetVisible) refreshLongTasks()
                 scheduleSessionPersist()
                 // 任务排队收尾（干净完成 → 自动接力；失败/中止 → 等确认，见 QueuedTaskPolicy）
