@@ -110,6 +110,18 @@ class DeepLinkTool(
                 scheme.first().isLetter() &&
                 scheme.all { it.isLetterOrDigit() || it in "+-." }
         }
+
+        /**
+         * #460：危险 scheme 判定（JVM 可测）。深链工具设计上放行 http(s)与
+         * market:///app 内部页等合法深链，但代码执行（javascript/data）、本地
+         * 文件触达（file/content）、组件穿透（intent）不属于「打开链接」语义。
+         */
+        fun isDangerousScheme(scheme: String): Boolean =
+            scheme.lowercase() in DANGEROUS_URI_SCHEMES
+
+        private val DANGEROUS_URI_SCHEMES = setOf(
+            "javascript", "vbscript", "data", "file", "content", "intent"
+        )
     }
 }
 
@@ -139,6 +151,11 @@ object AndroidIntents {
             val uri = Uri.parse(uriText.trim())
             if (uri.scheme.isNullOrBlank()) {
                 return "Error: '$uriText' has no scheme — use a full URI like https://example.com or the app's deep-link scheme."
+            }
+            // #460：危险 scheme 拦截 —— 模型被诱导输出 javascript:/file: 之类
+            // URI 时在工具边界拒绝（深链语义只放行链接型 scheme）。
+            if (DeepLinkTool.isDangerousScheme(uri.scheme!!)) {
+                return "Error: scheme '${uri.scheme}' is blocked for safety — this tool only opens web links and app deep links, never executable or local-file URIs."
             }
             val view = Intent(Intent.ACTION_VIEW, uri).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
