@@ -79,6 +79,11 @@ class ApexCoreService : LifecycleService() {
     @Inject
     lateinit var terminalRuntime: TerminalRuntime
 
+    /** SearXNG 本地搜索生命周期编排（Spec §8：Service 承载协程入口 —— UI 只
+     * 发 action，enable/disable/reconcile 在服务协程内执行；单例注入零成本）。 */
+    @Inject
+    lateinit var searxngCoordinator: com.apex.agent.platform.terminal.searxng.SearxngLifecycleCoordinator
+
     /** 前台判定（Activity STARTED 计数）—— 收尾分工用，见 onDestroy。 */
     @Inject
     lateinit var foregroundTracker: ForegroundTracker
@@ -129,6 +134,9 @@ class ApexCoreService : LifecycleService() {
                     }
             }
         }
+        // SearXNG 意图对账（Spec §8 INV5）：意图开而运行态死 → 拉起；意图关而
+        // 残留 → 停止。reconcile 内部幂等（opMutex + 状态机门禁）。
+        scope.launch { runCatching { searxngCoordinator.reconcile() } }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -141,6 +149,24 @@ class ApexCoreService : LifecycleService() {
             0
         }
         ServiceCompat.startForeground(this, NOTIFICATION_ID, createNotification(), serviceType)
+
+        // SearXNG 本地搜索开关 action（Spec §8：UI 开关只发 action —— Service
+        // 协程内调 Coordinator；先写意图由 UI 侧完成，action 失败由 reconcile
+        // 在下次启动补偿）。
+        when (intent?.action) {
+            ACTION_START_SEARXNG -> scope.launch {
+                runCatching { searxngCoordinator.enable() }
+                    .onFailure {
+                        android.util.Log.w("ApexCoreService", "searxng enable failed: ${it.message}")
+                    }
+            }
+            ACTION_STOP_SEARXNG -> scope.launch {
+                runCatching { searxngCoordinator.disable() }
+                    .onFailure {
+                        android.util.Log.w("ApexCoreService", "searxng disable failed: ${it.message}")
+                    }
+            }
+        }
 
         return START_STICKY
     }
@@ -160,6 +186,11 @@ class ApexCoreService : LifecycleService() {
         //    用户正在敲字的活跃会话。
         // 幂等（runtime 内部 shutdownGate）+ 10s 有界等待；独立作用域执行
         // （本 service 的 scope 即将 cancel）。
+        // SearXNG 宿主收尾（Spec §8「Service onDestroy 兜底」）：抑制自动重启、
+        // 状态归 Off —— 意图保持（F6/F7），会话本体由下方 TerminalRuntime
+        // 收尾关闭（headless 会话属 runtime 全集）。前台跳过分支同理：前台
+        // 收尾权在 MainActivity，且 coordinator 状态由下次服务启动 reconcile。
+        runCatching { searxngCoordinator.onHostShutdown() }
         if (!foregroundTracker.isForeground) {
             CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
                 runCatching {
@@ -228,5 +259,9 @@ class ApexCoreService : LifecycleService() {
     companion object {
         private const val CHANNEL_ID = "apex_core_service"
         private const val NOTIFICATION_ID = 1001
+
+        /** SearXNG 开关 action（设置页 UI → Service；Spec §8）。 */
+        const val ACTION_START_SEARXNG = "com.apex.agent.action.START_SEARXNG"
+        const val ACTION_STOP_SEARXNG = "com.apex.agent.action.STOP_SEARXNG"
     }
 }

@@ -373,6 +373,8 @@ private fun SettingsPageRouter(
         "interface/notifications" -> SettingsLeafColumn {
             NotificationsPage(agent, onAgent)
         }
+        // ═══ 搜索 ═══（SearXNG 本地搜索 + 网络搜索设置）
+        "search/local" -> SearchLocalPage()
         // ═══ 终端 ═══（三个 store 为 Hilt 单例，与终端页共享内存态）
         "terminal/appearance" -> TerminalAppearancePage()
         "terminal/policy" -> TerminalCommandPolicyPage()

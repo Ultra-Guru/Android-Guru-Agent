@@ -6,6 +6,7 @@ import androidx.compose.material.icons.automirrored.outlined.ListAlt
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Cloud
@@ -16,6 +17,7 @@ import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Rule
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Subject
@@ -89,6 +91,15 @@ val SettingsNavTree: List<SettingsCategory> = listOf(
             SettingsLeaf("workspace/goal", R.string.settings_nav_workspace_goal, Icons.Outlined.TrackChanges),
             SettingsLeaf("workspace/github", R.string.settings_nav_workspace_github, Icons.Outlined.Hub),
             SettingsLeaf("workspace/memory", R.string.settings_nav_workspace_memory, Icons.Outlined.Psychology),
+        )
+    ),
+    SettingsCategory(
+        route = "search",
+        titleRes = R.string.settings_nav_cat_search,
+        icon = Icons.Filled.Search,
+        // SearXNG 本地搜索（Spec §11）+ 网络搜索相关设置聚合（开放问题 2）
+        children = listOf(
+            SettingsLeaf("search/local", R.string.settings_nav_search_local, Icons.Outlined.Search),
         )
     ),
     SettingsCategory(

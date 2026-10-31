@@ -258,13 +258,39 @@ class WebFetchTool(
 }
 
 /**
+ * 本地搜索源端口（SearXNG Local Search Spec v1.0 §10 —— 链首插点）。
+ *
+ * 实现在 app 模块（SearxngProviderImpl：OkHttp 调 127.0.0.1:8888 的 JSON API，
+ * 经 Coordinator.isReady() 门禁）；core:tool-registry 只依赖本端口，保持
+ * 纯 JVM 可测（既有零参构造的调用方 —— 单测/BuiltinSearchMcpTransport 默认
+ * —— 不传实现，行为零变化）。
+ *
+ * 契约：Ready 且解析成功才返回非空列表；否则 null（null 不打断回退链 ——
+ * 调用方继续下一 attempt，Spec §10「静默回退，用户无感」）。
+ */
+fun interface LocalSearchSource {
+    suspend fun search(query: String, limit: Int): List<LocalSearchResult>?
+}
+
+/** 本地搜索结果（[WebSearchTool] 内部 SearchResult 的模块边界投影）。 */
+data class LocalSearchResult(
+    val title: String,
+    val url: String,
+    val snippet: String,
+    /** 来源引擎（如 "google"；埋点区分本地实例命中，Spec §10）。 */
+    val engine: String? = null
+)
+
+/**
  * 网络搜索工具（多供应商回退链）
  *
  * P0 修复：旧实现单一依赖 DuckDuckGo html 端点爬虫——该端点对非浏览器流量
  * （尤其数据中心 IP）返回 403 反爬拦截，且页面改版后正则解析静默产出
  * "No results found"。表象即"网络搜索不能用"。
  *
- * 现改为三级供应商链，每个供应商独立解析器，任一返回非空结果即成功：
+ * 现为「本地优先 + 三级远程回退」链（Spec §10：SearXNG 链首插入，回退哲学不变）：
+ * 0. 本地 SearXNG 实例（[localSource]；127.0.0.1 JSON API —— 就绪时优先，结果
+ *    聚合自用户选定引擎，无反爬/IP 限流问题；不可用自动跳过）
  * 1. DuckDuckGo HTML（无需 Key，结果质量好）
  * 2. DuckDuckGo Lite（同源但轻量模板，反爬策略不同）
  * 3. Bing Web（无 Key 可用，桌面 UA）
@@ -274,7 +300,9 @@ class WebFetchTool(
  * 误判为成功，导致模型反复重试烧限流额度）。
  */
 class WebSearchTool(
-    private val httpClient: OkHttpClient = WebFetchTool.defaultClient()
+    private val httpClient: OkHttpClient = WebFetchTool.defaultClient(),
+    /** 本地搜索源（null = 未接线 —— 单测/MCP 默认构造，行为与旧版完全一致）。 */
+    private val localSource: LocalSearchSource? = null
 ) : AgentTool {
 
     override val id = "WebSearch"
@@ -349,14 +377,57 @@ class WebSearchTool(
             null
         }
 
-        val results = attempt("duckduckgo-html") { searchDuckDuckGoHtml(query, maxResults) }
+        // 链首：本地 SearXNG 实例（Spec §10 —— 就绪且解析成功才采纳；null/空/异常
+        // 静默降级到远程链，用户无感。来源标记 engine=searxng 供埋点区分）
+        val results = attemptLocal(query, maxResults)
+            ?: attempt("duckduckgo-html") { searchDuckDuckGoHtml(query, maxResults) }
             ?: attempt("duckduckgo-lite") { searchDuckDuckGoLite(query, maxResults) }
             ?: attempt("bing") { searchBing(query, maxResults) }
-            ?: return "Error: search failed for \"$query\" — all 3 providers exhausted " +
+            ?: return "Error: search failed for \"$query\" — all providers exhausted " +
                 "(${failures.joinToString("; ")}). Likely network blocking or anti-bot " +
                 "interception. Try WebFetch on a specific URL instead, or rephrase the query."
 
         return formatResults(query, results)
+    }
+
+    /**
+     * 本地 SearXNG attempt：null = 未接线/不就绪/失败/空结果（降级继续，Spec §10
+     * 触发条件）。结果映射 title/url/content→snippet/engine→来源标记。
+     */
+    private suspend fun attemptLocal(query: String, maxResults: Int): List<SearchResult>? {
+        val source = localSource ?: return null
+        return try {
+            val local = source.search(query, maxResults)
+                ?: run { recordLocalFallback("not ready or fetch failed"); return null }
+            if (local.isEmpty()) {
+                recordLocalFallback("empty results")
+                null
+            } else {
+                local.map { r ->
+                    SearchResult(
+                        title = r.title,
+                        url = r.url,
+                        snippet = if (r.engine != null) "[searxng:${r.engine}] ${r.snippet}" else r.snippet
+                    )
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            recordLocalFallback(e.message ?: e::class.simpleName ?: "error")
+            null
+        }
+    }
+
+    /** 本地回退留痕（Spec §10 可观测性：不向 UI 暴露，仅调试日志）。 */
+    private fun recordLocalFallback(reason: String) {
+        runCatching {
+            com.apex.agent.core.logging.AppLogger.instance.info(
+                com.apex.agent.core.logging.LogCategory.TOOL,
+                "WebSearchTool",
+                "searxng local fallback → remote chain ($reason)"
+            )
+        }
     }
 
     private data class SearchResult(val title: String, val url: String, val snippet: String)

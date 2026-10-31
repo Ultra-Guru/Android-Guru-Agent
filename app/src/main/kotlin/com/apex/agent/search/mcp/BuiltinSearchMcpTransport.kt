@@ -71,11 +71,13 @@ object BuiltinSearchMcpServer {
  * 真正的网络调用发生在 tools/call 时（OkHttp 挂起，IO 友好）。
  */
 class BuiltinSearchMcpTransport(
-    httpClient: okhttp3.OkHttpClient
+    httpClient: okhttp3.OkHttpClient,
+    /** SearXNG 本地搜索源（Spec §10 链首插点 —— 与 ToolRegistry 同一语义；null = 未接线）。 */
+    private val localSearchSource: com.apex.agent.core.tools.builtin.LocalSearchSource? = null
 ) : McpTransportHandle {
 
     private val json = Json { ignoreUnknownKeys = true }
-    private val searchTool = WebSearchTool(httpClient)
+    private val searchTool = WebSearchTool(httpClient, localSearchSource)
     private val fetchTool = WebFetchTool(httpClient)
 
     override suspend fun send(id: Int?, payload: String): JsonObject? {
