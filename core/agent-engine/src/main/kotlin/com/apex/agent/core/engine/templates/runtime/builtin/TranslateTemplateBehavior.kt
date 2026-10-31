@@ -37,8 +37,12 @@ import com.apex.agent.core.engine.templates.runtime.TemplateValidationReport
  *    - payloadOnly 契约：译文只能是纯载荷（寒暄/解释段违规）；
  *    - 结构保真比对：丢失标题/占位符/列表条目 = 违规；
  *    - 术语一致性：同一术语多种译法 = 违规；
- * 4. **REPAIR**：剥「以下是译文」前导与「翻译说明」尾部块；
- * 5. **RENDER**：净化后译文 + 机器摘要（源/目标语言、术语命中、保真结论）。
+ *    - 质量质检（PR 17）：数字保真/标点宽度/括号配对/段落对齐/
+ *      长度比异常/漏译段/空白卫生七族确定性检查；
+ * 4. **REPAIR**：剥「以下是译文」前导与「翻译说明」尾部块 +
+ *    标点宽度确定性归一（代码块逐字保留）；
+ * 5. **RENDER**：净化后译文 + 机器摘要（源/目标语言、术语命中、
+ *    保真结论、质检百分制得分）。
  */
 open class TranslateTemplateBehavior : TemplateBehaviorBase() {
 
@@ -69,7 +73,7 @@ open class TranslateTemplateBehavior : TemplateBehaviorBase() {
         ),
         deterministicPreAnalysis = true,
         promptEnrichmentMode = TemplatePromptEnrichmentMode.APPEND_FINDINGS,
-        behaviorVersion = 1
+        behaviorVersion = 2
     )
 
     // ═══ ANALYZE ═══
@@ -182,12 +186,63 @@ open class TranslateTemplateBehavior : TemplateBehaviorBase() {
             )
         }
 
+        // 5) 源侧体检 + 标点家族预告（PR 17 质检器）
+        val sourceLint = TranslateQualityLinter.lintSource(text)
+        for (issue in sourceLint.issues.take(MAX_LINT_FINDINGS)) {
+            findings.add(
+                TemplateFinding(
+                    ruleId = issue.ruleId,
+                    category = TemplateFindingCategory.CONSISTENCY,
+                    severity = when (issue.severity) {
+                        TranslateLintSeverity.CRITICAL -> TemplateSeverity.BLOCKER
+                        TranslateLintSeverity.MAJOR -> TemplateSeverity.IMPORTANT
+                        TranslateLintSeverity.MINOR -> TemplateSeverity.MINOR
+                        TranslateLintSeverity.INFO -> TemplateSeverity.INFO
+                    },
+                    title = "原文体检：${issue.title}",
+                    evidence = issue.evidence,
+                    suggestion = issue.detail,
+                    confidence = 1.0
+                )
+            )
+        }
+        val family = TranslateQualityLinter.punctuationFamilyOf(effectiveTarget)
+        findings.add(
+            TemplateFinding(
+                ruleId = "translate.punctuation-family",
+                category = TemplateFindingCategory.STYLE,
+                severity = TemplateSeverity.INFO,
+                title = "目标语言标点家族：${family.label}",
+                suggestion = if (family == TranslateQualityLinter.PunctuationFamily.FULL_WIDTH) {
+                    "译文正文标点使用全角（，。；：？！）与弯引号"
+                } else {
+                    "译文正文标点使用半角（,.;:?!）与直引号"
+                },
+                confidence = 1.0
+            )
+        )
+        val sourceNumbers = TranslateQualityLinter.extractNumbers(TranslateQualityLinter.stripCode(text))
+        if (sourceNumbers.isNotEmpty()) {
+            findings.add(
+                TemplateFinding(
+                    ruleId = "translate.number-inventory",
+                    category = TemplateFindingCategory.COMPLETENESS,
+                    severity = TemplateSeverity.INFO,
+                    title = "原文数字清单 ${sourceNumbers.size} 个（必须逐字保留）",
+                    evidence = sourceNumbers.take(8).joinToString("、"),
+                    suggestion = "数字/百分比/日期/版本号逐字保留，不做单位换算",
+                    confidence = 1.0
+                )
+            )
+        }
+
         var stats = TemplateAnalysisStats.empty()
             .with(TemplateAnalysisStats.KEY_RULE_COUNT, findings.size)
             .with(TemplateAnalysisStats.KEY_ANALYZED_LINES, text.lines().size)
             .with(METRIC_TERM_HITS, hits.size)
             .with(METRIC_SOURCE_LANG, sourceGuess?.first ?: "unknown")
             .with(METRIC_TARGET_LANG, effectiveTarget)
+            .with(METRIC_SOURCE_LINT_SCORE, sourceLint.score)
 
         val hints = mutableListOf<String>()
         hints += "领域：${domain.label}" + (if (domain != GlossaryDomain.GENERAL) "（已加载专属术语表）" else "（通用术语表）")
@@ -196,6 +251,9 @@ open class TranslateTemplateBehavior : TemplateBehaviorBase() {
         hints += "目标语言：${TranslateGlossary.displayNameOf(effectiveTarget)}"
         if (hits.isNotEmpty()) {
             hints += "术语对照（必须全文统一）：" + hits.take(8).joinToString("；") { "${it.entry.term}→${it.suggested}" }
+        }
+        if (sourceNumbers.isNotEmpty()) {
+            hints += "数字保真（回包后逐个校验）：" + sourceNumbers.take(10).joinToString("、")
         }
 
         return TemplateAnalysis.of(
@@ -278,6 +336,24 @@ open class TranslateTemplateBehavior : TemplateBehaviorBase() {
                 )
             )
         }
+
+        // 4) 质量质检（PR 17）：数字保真/宽度/配对/对齐/长度比/漏译/空白
+        val sourceLang = TranslateGlossary.guessSourceLanguage(text)?.first ?: ""
+        val lint = TranslateQualityLinter.lintTranslation(text, raw, sourceLang, target)
+        for (issue in lint.issues) {
+            if (issue.severity == TranslateLintSeverity.INFO) continue
+            violations.add(
+                TemplateContractViolation(
+                    kind = when (issue.severity) {
+                        TranslateLintSeverity.CRITICAL -> TemplateContractViolationKind.PLACEHOLDER_LEAK
+                        else -> TemplateContractViolationKind.BAD_SEVERITY_MARK
+                    },
+                    section = "译文质检",
+                    detail = "[${issue.aspect.label}·${issue.severity.label}] ${issue.title}",
+                    evidence = issue.evidence
+                )
+            )
+        }
         return TemplateValidationReport(
             violations = violations,
             parsedSections = base.parsedSections,
@@ -308,7 +384,16 @@ open class TranslateTemplateBehavior : TemplateBehaviorBase() {
             context.log("translation trailing notes stripped")
         }
         while (lines.isNotEmpty() && lines.first().isBlank()) lines.removeAt(0)
-        return lines.joinToString("\n")
+        text = lines.joinToString("\n")
+        // 专项（PR 17）：标点宽度确定性归一 + 空白清理（代码块逐字保留）
+        val target = TranslateGlossary.normalizeTargetLanguage(
+            context.variableOr("target_language", "")
+        ) ?: "en"
+        val (repaired, lintNotes) = TranslateQualityLinter.repair(text, target)
+        if (lintNotes.isNotEmpty()) {
+            context.log("translation lint repaired: ${lintNotes.joinToString("; ")}")
+        }
+        return repaired
     }
 
     // ═══ RENDER ═══
@@ -329,12 +414,16 @@ open class TranslateTemplateBehavior : TemplateBehaviorBase() {
             TemplateMarkdownScanner.scan(text),
             TemplateMarkdownScanner.scan(raw)
         )
+        val sourceLang = TranslateGlossary.guessSourceLanguage(text)?.first ?: ""
+        val lint = TranslateQualityLinter.lintTranslation(text, raw, sourceLang, target)
         val summary = mapOf(
             META_SOURCE_LANG to (TranslateGlossary.guessSourceLanguage(text)?.first ?: "unknown"),
             META_TARGET_LANG to target,
             META_DOMAIN to domain.label,
             META_TERM_HITS to hits.size.toString(),
-            META_FIDELITY_OK to fidelity.isFaithful.toString()
+            META_FIDELITY_OK to fidelity.isFaithful.toString(),
+            META_LINT_SCORE to lint.score.toString(),
+            META_LINT_CRITICAL to lint.hasCritical.toString()
         )
         return base.copy(
             sections = listOf(
@@ -360,6 +449,10 @@ open class TranslateTemplateBehavior : TemplateBehaviorBase() {
         const val META_DOMAIN = "domain"
         const val META_TERM_HITS = "termHitCount"
         const val META_FIDELITY_OK = "fidelityOk"
+        const val META_LINT_SCORE = "lintScore"
+        const val META_LINT_CRITICAL = "lintHasCritical"
+        const val METRIC_SOURCE_LINT_SCORE = "sourceLintScore"
+        const val MAX_LINT_FINDINGS = 6
 
         /** 前导噪音标记（纯载荷不允许）。 */
         val NOISE_MARKERS = listOf(
