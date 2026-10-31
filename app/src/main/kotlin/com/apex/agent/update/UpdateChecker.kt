@@ -3,20 +3,10 @@ package com.apex.agent.update
 import android.os.Build
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import okhttp3.Call
-import okhttp3.Callback
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.Response
-import java.io.IOException
 import java.util.concurrent.TimeUnit
-import kotlin.coroutines.resumeWithException
-import kotlin.coroutines.resume
 
 /**
  * 应用内更新检查 —— 双仓库发布架构的客户端侧。
@@ -26,28 +16,23 @@ import kotlin.coroutines.resume
  *
  * 设计约束：
  * - **零鉴权**：清单走 raw.githubusercontent CDN（公开仓库），无需任何 Token；
+ * - **镜像回退**：请求经 [CheckMirror] 出口 —— 公共反代镜像在前、直连殿后，
+ *   国内无梯子也能完成检查（详见 [CheckMirror] 的设计约束）；
  * - **零新依赖**：OkHttp + kotlinx.serialization 均为项目既有栈；
  * - **三态结果**：[UpdateCheckResult] 密封层级让 UI 直接按类型渲染，无散落布尔；
- * - **共享客户端**：默认取 [UpdateHttp.client]（连接池/线程池进程级共享，
- *   避免每次进页新建 OkHttp 实例堆积空闲连接）；
- * - **可取消**：[check] 用 enqueue + invokeOnCancellation —— 离开页面即断流，
+ * - **可取消**：底层 enqueue + invokeOnCancellation —— 离开页面即断流，
  *   不再占用 IO 线程等到超时。
  */
-class UpdateChecker(
-    private val client: OkHttpClient = UpdateHttp.client
-) {
+class UpdateChecker {
     private val json = Json { ignoreUnknownKeys = true }
 
     /**
-     * 拉取清单并比对版本。协程取消会同步 cancel 底层 OkHttp 调用；
-     * 网络异常一律折叠为 [UpdateCheckResult.Failed] —— 检查更新永不打断用户流程。
+     * 拉取清单并比对版本。经 [CheckMirror.fetch] 走镜像回退链；协程取消会
+     * 同步 cancel 底层 OkHttp 调用；网络异常一律折叠为
+     * [UpdateCheckResult.Failed] —— 检查更新永不打断用户流程。
      */
     suspend fun check(currentVersionCode: Int): UpdateCheckResult = runCatching {
-        val request = Request.Builder()
-            .url(UPDATE_MANIFEST_URL)
-            .header("Cache-Control", "no-cache")
-            .build()
-        val body = withContext(Dispatchers.IO) { client.awaitBody(request) }
+        val body = CheckMirror.fetch(UPDATE_MANIFEST_URL)
         json.decodeFromString<UpdateManifest>(body)
     }.fold(
         onSuccess = { manifest ->
@@ -75,17 +60,13 @@ class UpdateChecker(
     /**
      * 拉取补丁全量索引（跨版本链式增量的数据源）。
      *
-     * 与 [check] 同一网络链路（共享客户端/可取消/超时）；失败折叠 null ——
-     * 索引不存在（旧发布仓库）或网络抖动时，调用方回退 version.json 的
-     * 单补丁档或全量包，更新链路不因索引缺失而中断。
+     * 与 [check] 同一网络链路（[CheckMirror] 镜像回退/可取消）；失败折叠
+     * null —— 索引不存在（旧发布仓库）或网络抖动时，调用方回退 version.json
+     * 的单补丁档或全量包，更新链路不因索引缺失而中断。
      */
     suspend fun fetchPatchIndex(): PatchIndex.Model? {
-        val request = Request.Builder()
-            .url(PATCH_INDEX_URL)
-            .header("Cache-Control", "no-cache")
-            .build()
         return runCatching {
-            val body = withContext(Dispatchers.IO) { client.awaitBody(request) }
+            val body = CheckMirror.fetch(PATCH_INDEX_URL)
             PatchIndex.parse(body)
         }.onFailure { e ->
             AppLogger.instance.warn(
@@ -215,8 +196,8 @@ const val PATCH_INDEX_URL = PatchIndex.PATCH_INDEX_URL
  *
  * OkHttp 官方要求客户端实例共享：每个实例自带连接池 + dispatcher 线程池，
  * 页面级 remember 会在反复进出页时堆积空闲连接/线程（最长滞留 5 分钟）。
- * 更新检查与镜像测速共用本实例（测速的“不跟随重定向”语义在调用点
- * 用 newBuilder 派生，不另起炉灶）。
+ * 更新检查（直连档/镜像档派生）与镜像测速共用本实例（测速的“不跟随重定向”
+ * 语义在调用点用 newBuilder 派生，不另起炉灶）。
  */
 object UpdateHttp {
     val client: OkHttpClient = OkHttpClient.Builder()
@@ -224,31 +205,6 @@ object UpdateHttp {
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
 }
-
-/**
- * 可取消的同步化请求：协程取消 → call.cancel()，响应体自动关闭。
- * （顶级扩展——object 内声明的扩展函数同包也不自动解析，需 import 成员路径）
- */
-private suspend fun OkHttpClient.awaitBody(request: Request): String =
-    suspendCancellableCoroutine { cont ->
-        val call = newCall(request)
-        cont.invokeOnCancellation { call.cancel() }
-        call.enqueue(object : Callback {
-            override fun onResponse(call: Call, response: Response) {
-                response.use {
-                    val text = runCatching {
-                        if (!it.isSuccessful) error("HTTP ${it.code}")
-                        it.body?.string() ?: error("empty manifest body")
-                    }
-                    cont.resumeWith(text)
-                }
-            }
-
-            override fun onFailure(call: Call, e: IOException) {
-                if (cont.isActive) cont.resumeWithException(e)
-            }
-        })
-    }
 
 /** 更新检查结果三态 —— UI 按类型渲染，无需解析错误码。 */
 sealed interface UpdateCheckResult {

@@ -143,7 +143,7 @@ internal suspend fun submitFeedback(message: String, contact: String): FeedbackR
 
 /**
  * 可取消的同步化 POST：协程取消 → call.cancel()（对话框关闭即断流）。
- * 与 UpdateChecker.awaitBody / ChangelogRepository 同款纪律 —— 唯一差别
+ * 与 CheckMirror（更新检查链路）同款纪律 —— 唯一差别
  * 是不折叠错误码：200 → 成功；4xx → 解析服务端 error 文案透传给用户。
  */
 private suspend fun postAwait(request: Request): FeedbackResult =
