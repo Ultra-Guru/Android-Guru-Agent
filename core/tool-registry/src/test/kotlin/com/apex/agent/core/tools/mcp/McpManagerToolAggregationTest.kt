@@ -22,7 +22,7 @@ import org.junit.rules.TemporaryFolder
 class McpManagerToolAggregationTest {
     @get:Rule val tmp = TemporaryFolder()
 
-    private class Transport(val list: suspend () -> Unit) : McpTransportHandle {
+    private class Transport(val name: String = "tool", val list: suspend () -> Unit) : McpTransportHandle {
         override suspend fun send(id: Int?, payload: String): JsonObject? {
             if (id == null) return null
             val method = Json.parseToJsonElement(payload) as JsonObject
@@ -34,7 +34,7 @@ class McpManagerToolAggregationTest {
                 putJsonObject("result") {
                     if (listing) putJsonArray("tools") {
                         add(buildJsonObject {
-                            put("name", "tool")
+                            put("name", name)
                             putJsonObject("inputSchema") { put("type", "object") }
                         })
                     } else putJsonObject("capabilities") { putJsonObject("tools") {} }
@@ -54,13 +54,13 @@ class McpManagerToolAggregationTest {
 
     @Test fun `list requests overlap instead of adding server latency`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
-        val manager = McpManager(tmp.newFolder(), builtinTransports = listOf("first", "second").associateWith {
-            { Transport { withContext(dispatcher) { delay(100) } } }
+        val manager = McpManager(tmp.newFolder(), builtinTransports = listOf("first", "second").associateWith { name ->
+            { Transport(name) { withContext(dispatcher) { delay(100) } } }
         })
         connect(manager, "first", "second")
         val started = testScheduler.currentTime
         val tools = manager.getAllTools()
-        assertEquals(listOf("first", "second"), tools.map { it.serverName })
+        assertEquals(listOf("first", "second"), tools.map { it.name })
         assertEquals("Independent sources must overlap", 100L, testScheduler.currentTime - started)
     }
 }
