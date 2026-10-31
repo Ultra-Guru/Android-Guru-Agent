@@ -205,7 +205,7 @@ class UbuntuTerminalRuntimeWiringTest {
         TerminalRuntimeImpl(
             native = pty,
             policy = TerminalPolicyImpl(),
-            backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend())
+            backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend(), FixtureLinuxBackend())
         )
 
     /**

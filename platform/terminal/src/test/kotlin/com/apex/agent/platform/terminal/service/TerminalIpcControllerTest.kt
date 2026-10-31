@@ -3,6 +3,7 @@ package com.apex.agent.platform.terminal.service
 import com.apex.agent.platform.terminal.pty.FakeNativePty
 import com.apex.agent.platform.terminal.policy.TerminalPolicyImpl
 import com.apex.agent.platform.terminal.runtime.ExecutionBackendRegistry
+import com.apex.agent.platform.terminal.runtime.FixtureLinuxBackend
 import com.apex.agent.platform.terminal.runtime.LocalShellBackend
 import com.apex.agent.platform.terminal.runtime.TerminalRuntimeImpl
 import kotlinx.coroutines.CoroutineScope
@@ -68,7 +69,7 @@ class TerminalIpcControllerTest {
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         runtime = TerminalRuntimeImpl(
             native = pty, policy = TerminalPolicyImpl(),
-            backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend())
+            backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend(), FixtureLinuxBackend())
         )
         installed = runtime
         controller = TerminalIpcController(
