@@ -1,9 +1,8 @@
 package com.apex.agent.ui.screen.memory
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,21 +10,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -37,68 +30,33 @@ import com.apex.memkit.core.model.GraphEntity
 import com.apex.memkit.core.model.GraphRelation
 
 /**
- * 「知识图谱」分区（记忆页 v2）—— 实体/关系的文字化浏览面。
+ * 「知识图谱」分区（记忆页 v2，v3 单列扁平化）—— 实体/关系的文字化
+ * 精读形态。
  *
  * 图谱画布（memory-graph-ui）是「空间认知」形态；本分区是同数据的
  * 「线性精读」形态，两者互补：
- *  - 实体卡：名称 + 类型徽章 + 观察列表（可展开）+ 关联关系（方向归一
- *    呈现「本实体 —关系→ 对端」）；
- *  - 点击实体卡 → 回调 [onOpenInGraph]（宿主切到图谱视图并 navigateTo
- *    定位该实体节点 —— 列表 ↔ 图谱双向联动）；
- *  - 排序：关联数降序（最中心的知识排最前），同位数按名称。
+ *  - [MemoryKnowledgeHeader]：分区头（实体 / 关系计数）；
+ *  - [MemoryEntityCard]：实体卡 —— 类型徽章 + 观察列表（可展开）+
+ *    关联关系（方向归一呈现「本实体 —关系→ 对端」）；
+ *  - 点击「在图谱中查看」→ 回调 [onOpenInGraph]（宿主切图谱视图并
+ *    navigateTo 定位该实体节点 —— 列表 ↔ 图谱双向联动）。
+ *
+ * v3 变化：v2 的 ColumnScope 包装拆为头 / 卡两个独立编址部件（单列
+ * 列表条目）；展开动画显式 animateContentSize（列表条目级动画由宿主
+ * animateItem 承担）。排序（关联中心度降序）与折叠上限住在宿主 /
+ * MemoryListPlan。
  *
  * 数据源 = MemKit.readGraph()（MCP memory 语义的 name / entityType /
  * observations / 三元组），agent 在任务中经 MemoryGraph 工具或经验整理
  * 自动沉淀，本分区全部只读 —— 管理动作在图谱画布的详情 Sheet。
  */
+
+/** 分区头（标题 + 计数行 —— 与聊天记忆分区头同一视觉语言）。 */
 @Composable
-fun ColumnScope.KnowledgeGraphSection(
-    entities: List<GraphEntity>,
-    relations: List<GraphRelation>,
-    onOpenInGraph: (entityName: String) -> Unit
+internal fun MemoryKnowledgeHeader(
+    entityCount: Int,
+    relationCount: Int,
 ) {
-    // 中心度排序（关联数降序 → 名称）：快照本身小（数百级），重组成本可忽略
-    val relationCounts = remember(relations) {
-        relations.flatMap { listOf(it.from, it.to) }
-            .groupingBy { it }
-            .eachCount()
-    }
-    val sorted = remember(entities, relationCounts) {
-        entities.sortedWith(
-            compareByDescending<GraphEntity> { relationCounts[it.name] ?: 0 }.thenBy { it.name }
-        )
-    }
-
-    SectionHeader(
-        title = stringResource(R.string.memory_knowledge_title),
-        countText = stringResource(R.string.memory_knowledge_count_fmt, entities.size, relations.size)
-    )
-
-    if (sorted.isEmpty()) {
-        EmptyHint(stringResource(R.string.memory_knowledge_empty))
-        return
-    }
-
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxWidth()
-            .weight(1f, fill = false)
-            .padding(horizontal = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(sorted, key = { it.name }) { entity ->
-            EntityCard(
-                entity = entity,
-                relations = relationsOf(entity.name, relations),
-                onOpen = { onOpenInGraph(entity.name) }
-            )
-        }
-    }
-}
-
-/** 分区头（标题 + 计数行 —— 与 ChatMemorySection 头部同一视觉语言）。 */
-@Composable
-private fun SectionHeader(title: String, countText: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -106,38 +64,41 @@ private fun SectionHeader(title: String, countText: String) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            Icons.Default.Hub, contentDescription = null,
+            Icons.Outlined.Hub, contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(16.dp)
         )
         Spacer(Modifier.width(6.dp))
         Text(
-            title,
+            stringResource(R.string.memory_knowledge_title),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.primary
         )
         Spacer(Modifier.width(6.dp))
         Text(
-            countText,
+            stringResource(R.string.memory_knowledge_count_fmt, entityCount, relationCount),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
 
-/** 实体卡：名称行（类型徽章 + 图谱入口）+ 观察 + 关联。 */
+/** 实体卡：名称行（类型徽章 + 图谱入口）+ 观察 + 关联（点击展开/收起）。 */
 @Composable
-private fun EntityCard(
+internal fun MemoryEntityCard(
     entity: GraphEntity,
     relations: List<EntityRelationView>,
-    onOpen: () -> Unit
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onOpenInGraph: (entityName: String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    var expanded by remember { mutableStateOf(false) }
     ElevatedCard(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = { expanded = !expanded })
+            .animateContentSize()
+            .clickable(onClick = onToggle)
     ) {
         Column(Modifier.padding(start = 16.dp, top = 12.dp, end = 12.dp, bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -156,7 +117,7 @@ private fun EntityCard(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
-                        .clickable(onClick = onOpen)
+                        .clickable(onClick = { onOpenInGraph(entity.name) })
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 )
             }
