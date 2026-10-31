@@ -653,7 +653,9 @@ object ToolModule {
         val prootSpawner = ProotCommandSpawner(
             hostEnvironment = hostEnvironment,
             rootfsDir = rootfsBaseDir,
-            isRootfsReady = { File(rootfsBaseDir, "current").exists() },
+            // P1（路由/审批口径一致）：诚实判定（标记可解析或裸布局）——标记损坏时
+            // 不再出现「审批说 Ubuntu、实际回落宿主」的分叉。
+            isRootfsReady = { ProotCommandSpawner.isRootfsResolvable(rootfsBaseDir) },
             defaultWorkspaceDir = File(context.filesDir, "linux/workspaces/default"),
             persistentHomeDir = File(context.filesDir, "linux/home"),
             fallback = PrivilegedCommandSpawner(),
@@ -670,9 +672,9 @@ object ToolModule {
                     PermissionMode.BYPASS
                 // v3：审批上下文 —— 与实际路由同源判定（rootfs 就绪 + 非 Android 专有
                 // → Ubuntu 沙箱；否则宿主 shell），并携带实际执行目录。
-                // 口径与 ProotCommandSpawner.resolveUbuntuRoute 一致（current 标记存在
+                // 口径与 ProotCommandSpawner.resolveUbuntuRoute 一致（诚实就绪判定
                 // + 非 Android 专有命令），避免 DI 层第二套路由判定漂移。
-                val ubuntuRoute = File(rootfsBaseDir, "current").exists() &&
+                val ubuntuRoute = ProotCommandSpawner.isRootfsResolvable(rootfsBaseDir) &&
                     !prootSpawner.isAndroidOnlyCommand(cmd)
                 val execContext = buildString {
                     append(
@@ -813,7 +815,7 @@ object ToolModule {
                         val probeEngine = ExecEngine(ProotCommandSpawner(
                             hostEnvironment = hostEnvironment,
                             rootfsDir = rootfsBaseDir,
-                            isRootfsReady = { File(rootfsBaseDir, "current").exists() },
+                            isRootfsReady = { ProotCommandSpawner.isRootfsResolvable(rootfsBaseDir) },
                             defaultWorkspaceDir = File(context.filesDir, "linux/workspaces/default"),
                             persistentHomeDir = File(context.filesDir, "linux/home"),
                             fallback = PrivilegedCommandSpawner(),
