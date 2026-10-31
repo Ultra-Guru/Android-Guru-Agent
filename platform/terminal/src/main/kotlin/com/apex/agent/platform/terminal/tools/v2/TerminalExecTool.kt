@@ -275,7 +275,7 @@ class TerminalExecTool(
             // 总量上限：截到剩余额度（最后一次转发后静默丢弃）
             val remaining = MAX_TOTAL_CHARS - totalForwarded
             val out = if (pending.length <= remaining) pending.toString()
-            else pending.take(remaining.coerceAtLeast(0))
+            else pending.take(remaining.coerceAtLeast(0)).toString()
             totalForwarded += out.length
             pending.setLength(0)
             lastFlushAt = now

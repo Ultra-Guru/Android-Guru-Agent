@@ -1,0 +1,3 @@
+- 安全加固：XML 诊断解析器补齐 XXE 七项纵深防御（禁外部实体/DTD/XInclude），与 XML 提取工具同标准
+- 稳定性：分享文本超长（>20万字符）提前拒绝并给出分段/落盘建议，防 TransactionTooLargeException
+- 修复：terminal 流式预览 drainLocked 截断分支 StringBuilder.take 返回 CharSequence 导致编译失败（080e6bd4 引入），补 toString 对齐 String? 签名
