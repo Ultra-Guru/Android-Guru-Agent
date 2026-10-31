@@ -906,7 +906,10 @@ object ToolModule {
             clipboardSetter = { text ->
                 // Android 10+ 前台限制：后台写入剪贴板可能抛异常 ——
                 // 由 VaultPasteTool 捕获并转成可自修复的 Error 文本。
-                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                // #452：CLIPBOARD_SERVICE 极端环境可能为 null —— error() 同样
+                // 被 VaultPasteTool 捕获，与原 as 崩溃路径语义一致。
+                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    ?: error("clipboard service unavailable")
                 cm.setPrimaryClip(ClipData.newPlainText("vault", text))
             },
             terminalWriter = { sessionId, text ->
