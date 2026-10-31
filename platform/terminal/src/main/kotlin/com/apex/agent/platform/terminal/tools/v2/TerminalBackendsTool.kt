@@ -15,7 +15,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * ExecutionBackend.kt 注释指定的 P73 交付物：availability() 的 Agent 出口。
  *
  * 列出所有已注册执行后端及其真实可用性：
- *   - local          ANDROID_LOCAL  恒 READY
+ *   - linux-ubuntu   LINUX          READY / NEEDS_ROOTFS / FAILED
  *   - linux-ubuntu   LINUX          READY（rootfs 已装）/ NEEDS_ROOTFS（先用
  *                                   TerminalUbuntuInstall 引导）/ FAILED（proot 缺失等）
  *

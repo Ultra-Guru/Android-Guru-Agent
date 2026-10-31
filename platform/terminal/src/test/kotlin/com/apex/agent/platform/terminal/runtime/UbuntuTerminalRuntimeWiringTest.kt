@@ -200,9 +200,13 @@ class UbuntuTerminalRuntimeWiringTest {
         )
     }
 
-    /** 仅本地后端的 runtime（W4 用 —— 不依赖 host proot）。 */
+    /** 仅夹具 shell 后端的 runtime（W4 用 —— 不依赖 host proot）。 */
     private fun newLocalRuntime(pty: FakeNativePty): TerminalRuntimeImpl =
-        TerminalRuntimeImpl(native = pty, policy = TerminalPolicyImpl())
+        TerminalRuntimeImpl(
+            native = pty,
+            policy = TerminalPolicyImpl(),
+            backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend())
+        )
 
     /**
      * T91（D5）：host proot 能力集实测 —— 生产 provider 的双探针
@@ -229,8 +233,6 @@ class UbuntuTerminalRuntimeWiringTest {
         assertTrue("availability: $ubuntu", ubuntu.available)
         assertEquals("READY", ubuntu.state)
         assertEquals("LINUX", ubuntu.runtimeType)
-        val local = rt.backends().first { it.id == "local" }
-        assertTrue(local.available)
     }
 
     @Test
@@ -294,13 +296,13 @@ class UbuntuTerminalRuntimeWiringTest {
     }
 
     @Test
-    fun `W4 local default path still works alongside linux backend`() = runBlocking {
+    fun `W4 fixture shell backend still routes alongside linux backend`() = runBlocking {
         assumeTrue("install failed: $installError", installed)
         val pty = FakeNativePty()
         val rt = newLocalRuntime(pty)
-        val r = rt.create(shell = "/system/bin/sh", cwd = "/sdcard").getOrThrow()
+        val r = rt.create(cwd = "/sdcard", backendId = "local").getOrThrow()
         assertEquals("local", r.backendId)
-        assertEquals("ANDROID_LOCAL", r.runtimeType)
+        assertEquals("LINUX", r.runtimeType)
         val nativeId = rt.sessionManager.assembly(r.sessionId)!!.nativeSessionId
         assertEquals("golden argv preserved", listOf("/system/bin/sh", "-i"), pty.argvOf(nativeId))
     }

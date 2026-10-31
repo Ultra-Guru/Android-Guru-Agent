@@ -40,19 +40,18 @@ interface TerminalRuntime {
 
     // ───────── create ─────────
     // Spec §34.1 + T73: backendId 路由（ExecutionBackendRegistry）。
-    // "local" = Android 本地 shell（默认，与历史行为一致）；"linux-ubuntu" =
-    // PRoot + Ubuntu RootFS 会话（需 rootfs 已 provision，否则失败并携带引导信息）。
+    // "linux-ubuntu"（默认）= PRoot + Ubuntu RootFS 会话（需 rootfs 已 provision，
+    // 否则失败并携带引导信息）。Android 本地 Shell 后端已移除（Ubuntu-only）。
     suspend fun create(
-        shell: String = "/system/bin/sh",
         cwd: String = "/sdcard",
         rows: Int = 24,
         cols: Int = 80,
         env: Map<String, String> = emptyMap(),
         privilege: PrivilegeLevel = PrivilegeLevel.NORMAL,
-        backendId: String = "local",
+        backendId: String = "linux-ubuntu",
         /**
          * T75: workspace id（仅 LINUX 后端；null/blank → "default"）。合法格式
-         * （^[a-z0-9][a-z0-9_-]{0,63}$）的 id 懒创建。LOCAL + 非空 → InvalidInput。
+         * （^[a-z0-9][a-z0-9_-]{0,63}$）的 id 懒创建。
          */
         workspaceId: String? = null
     ): RuntimeResult<CreateResult>
@@ -68,8 +67,8 @@ interface TerminalRuntime {
         val state: String,         // SessionState name
         val cursor: Long,
         // ── T73: 后端路由结果（Agent 可感知会话落在哪个执行环境）──
-        val backendId: String = "local",
-        val runtimeType: String = "ANDROID_LOCAL",   // BackendRuntimeType name
+        val backendId: String = "linux-ubuntu",
+        val runtimeType: String = "LINUX",   // BackendRuntimeType name
         val rootfsId: String? = null,                // LINUX: 已就绪 rootfs 的 id
         val guestCwd: String? = null,                // LINUX: guest 语义 cwd
         // ── T75: workspace（LINUX 会话的隔离文件区）──
@@ -85,7 +84,7 @@ interface TerminalRuntime {
     /** 单个后端的可用性快照（T73）。 */
     data class BackendStatus(
         val id: String,
-        val runtimeType: String,        // BackendRuntimeType.name: ANDROID_LOCAL | LINUX
+        val runtimeType: String,        // BackendRuntimeType.name: LINUX
         val available: Boolean,         // availability is Ready
         val state: String,              // READY | NEEDS_ROOTFS[:state] | FAILED
         val detail: String? = null      // 失败原因 / 引导提示

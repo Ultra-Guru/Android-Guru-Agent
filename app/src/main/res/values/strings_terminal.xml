@@ -5,12 +5,9 @@
     <string name="term_back">Back</string>
     <string name="term_cmd_hint">Type a command…</string>
     <string name="term_new_session_title">New session</string>
-    <string name="term_use_android_first">Use Android Shell first</string>
     <string name="term_new_ubuntu_session">New Ubuntu session</string>
-    <string name="term_new_android_session">Android Shell</string>
     <string name="term_close_session">Close session</string>
     <string name="term_tab_ubuntu">Ubuntu</string>
-    <string name="term_tab_android">Android</string>
     <string name="term_state_dead">dead</string>
 
     <!-- ═══ 会话/环境内联面板 ═══ -->
@@ -41,7 +38,6 @@
 
     <!-- ═══ 通知（VM）═══ -->
     <string name="term_notice_recovered">Recovered %1$d interrupted session(s) — shown as dead tabs</string>
-    <string name="term_notice_fallback_session">Ubuntu unavailable (%1$s) — fell back to Android Shell</string>
     <string name="term_notice_ubuntu_unavailable">Ubuntu unavailable: %1$s</string>
     <string name="term_notice_create_failed">Session create failed: %1$s</string>
     <string name="term_notice_no_session_input">No active session — create one first</string>
@@ -52,7 +48,6 @@
     <string name="term_notice_wait_timeout">Wait timed out — terminated</string>
     <string name="term_notice_session_gone">Session ended during execution</string>
     <string name="term_notice_no_pty">No session available for install</string>
-    <string name="term_notice_fallback_android">Fell back to Android Shell — apt only works in Ubuntu</string>
     <string name="term_notice_truncated">…output truncated…\n</string>
     <string name="term_notice_install_all_start">▶ install all (mirror=%1$s)\n</string>
     <string name="term_notice_install_all_done">✓ all dependencies installed\n</string>
@@ -87,9 +82,6 @@
     <string name="term_phase_ready">Ready</string>
     <string name="term_phase_recovering">Recovering</string>
     <string name="term_phase_failed">Failed</string>
-    <string name="term_android_shell_title">Android Shell</string>
-    <string name="term_android_shell_desc">mksh on Android toybox — works without any installation</string>
-    <string name="term_builtin">Built-in</string>
     <string name="term_deps_title">Dependencies (apt)</string>
     <string name="term_use_mirror">Use TUNA mirror</string>
     <string name="term_mirror_desc">Faster in CN; falls back to official sources</string>

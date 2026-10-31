@@ -24,9 +24,9 @@ import kotlinx.coroutines.withContext
  * [EnvironmentProvisioner] 的 UI 侧编排：依赖目录、镜像开关、安装运行态
  * 与 apt 命令的会话路由。
  *
- * 会话路由语义：DepCatalog 的 apt 命令必须跑在 linux-ubuntu 会话（Android
- * shell 里只有 command not found）。Ubuntu 拉起失败时诚实降级到 local
- * session（输出真实报错，绝不伪造成功）。
+ * 会话路由语义：DepCatalog 的 apt 命令必须跑在 linux-ubuntu 会话（AndroidShell
+ * 后端已移除 —— terminal 收敛 Ubuntu 单后端）。Ubuntu 拉起失败时如实报错引导
+ * 安装 rootfs，绝不伪造成功。
  *
  * 本类保持批式 execAndAppend 口径（安装日志整段追加）—— 与
  * [RealCommandExecutor] 的流式口径（控制台实时上屏）职责分离。
@@ -180,21 +180,10 @@ internal class TerminalDepCenter(
             depSessionId = it
             return it
         }
-        // 降级：复用当前活跃的 local 会话（无则新建）
-        val active = registry.activeSessionId.value
-        if (active != null && registry.sessionTabs.value.any { it.id == active && it.isAlive }) {
-            depSessionId = active
-            return active
-        }
-        _install.update { it.copy(log = it.log + lang.getString(R.string.term_notice_fallback_android)) }
-        val r = runtime.create(backendId = SessionRegistry.BACKEND_LOCAL)
-        return if (r.isSuccess) {
-            val sid = r.getOrThrow().sessionId
-            registry.recordBackend(sid, SessionRegistry.BACKEND_LOCAL, "ANDROID_LOCAL")
-            depSessionId = sid
-            onSessionsChanged()
-            sid
-        } else null
+        // AndroidShell 后端已移除：无降级 —— apt 只在 Ubuntu 会话可用，
+        // 引导用户先装 Ubuntu（环境中心 rootfs 卡 / 空态覆盖层）。
+        _install.update { it.copy(log = it.log + lang.getString(R.string.term_notice_ubuntu_unavailable) + "\n") }
+        return null
     }
 
     companion object {

@@ -5,7 +5,6 @@ import com.apex.agent.platform.terminal.pty.JniNativePty
 import com.apex.agent.platform.terminal.pty.NativePty
 import com.apex.agent.platform.terminal.policy.TerminalPolicy
 import com.apex.agent.platform.terminal.policy.TerminalPolicyImpl
-import com.apex.agent.platform.terminal.compat.LegacyTerminalManager
 import com.apex.agent.platform.terminal.linux.CpuArchitecture
 import com.apex.agent.platform.terminal.linux.RootfsProvider
 import com.apex.agent.platform.terminal.proot.LinuxPRootBackend
@@ -14,7 +13,6 @@ import com.apex.agent.platform.terminal.proot.PRootBinaryProvider
 import com.apex.agent.platform.terminal.proot.PRootCapabilitySource
 import com.apex.agent.platform.terminal.proot.PRootHostEnvironment
 import com.apex.agent.platform.terminal.runtime.ExecutionBackendRegistry
-import com.apex.agent.platform.terminal.runtime.LocalShellBackend
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
 import com.apex.agent.platform.terminal.persistence.SessionMetadataStore
 import com.apex.agent.platform.terminal.runtime.TerminalRuntimeImpl
@@ -341,7 +339,6 @@ object TerminalModule {
     fun provideExecutionBackendRegistry(
         linuxBackend: LinuxPRootBackend
     ): ExecutionBackendRegistry = ExecutionBackendRegistry.of(
-        LocalShellBackend(),
         linuxBackend
     )
 
@@ -381,11 +378,6 @@ object TerminalModule {
         }
     }
 
-    /** Compat facade: old TerminalManager API → new Runtime (settle-time DELETED). Spec §35. */
-    @Provides
-    @Singleton
-    fun provideLegacyTerminalManager(runtime: TerminalRuntime): LegacyTerminalManager =
-        LegacyTerminalManager(runtime)
 
     // ═══════════════════════════════════════════════════════════════════════
     // T76: Ubuntu Linux Environment Productionization —

@@ -39,13 +39,13 @@ import com.apex.agent.platform.terminal.ubuntu.lifecycle.UbuntuLifecycleCoordina
 /**
  * 环境中心 Sheet（T96 自旧版全量转移 + M3 化重写）。
  *
- * 三卡结构（语义与旧版一致）：
+ * 双卡结构（AndroidShell 后端移除后收敛起）：
  *  1. Ubuntu rootfs 卡 —— 阶段徽章 / 磁盘占用 / 安装进度 / 能力清单 /
  *     失败根因 / 降级引导；按钮按阶段切换（解包/取消/收尾引导/修复/删除，
  *     删除带确认对话框）；
- *  2. Android 本地 Shell 卡（内置徽章）；
- *  3. 依赖安装卡 —— 镜像开关（TUNA，持久化 dep_use_mirror）、一键全装/
- *     仅 Android 组、逐项安装 + 等宽安装日志。
+ *  2. 依赖安装卡 —— 镜像开关（TUNA，持久化 dep_use_mirror）、一键全装/
+ *     逐项安装 + 等宽安装日志（apt 装进 Ubuntu，Android 组保留为工具链
+ *     档案）。
  */
 @Composable
 internal fun EnvironmentCenterSheet(
@@ -82,9 +82,6 @@ internal fun EnvironmentCenterSheet(
                 }
                 item {
                     UbuntuCard(viewModel, lifecycle, progress, rootfsSize)
-                }
-                item {
-                    AndroidShellCard()
                 }
                 item {
                     DepsCard(
@@ -255,25 +252,6 @@ private fun PhaseBadge(phase: UbuntuLifecycleCoordinator.Phase) {
 
 // ═══════════════ Android Shell 卡 ═══════════════
 
-@Composable
-private fun AndroidShellCard() {
-    SectionCard(title = stringResource(R.string.term_android_shell_title)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                stringResource(R.string.term_android_shell_desc),
-                style = MaterialTheme.typography.bodySmall,
-                color = ConsoleTokens.onSurfaceVariant,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                stringResource(R.string.term_builtin),
-                style = MaterialTheme.typography.labelMedium,
-                color = ConsoleTokens.amber,
-                fontFamily = FontFamily.Monospace
-            )
-        }
-    }
-}
 
 // ═══════════════ 依赖安装卡 ═══════════════
 

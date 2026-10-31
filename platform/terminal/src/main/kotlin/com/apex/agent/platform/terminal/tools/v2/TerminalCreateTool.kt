@@ -39,20 +39,19 @@ class TerminalCreateTool(
     override val description: String = """
         Create a long-lived terminal Session (PTY + shell). A Session is a workspace, not a single
         command. Returns sessionId for subsequent run/observe/wait/write calls.
-        backend="local" runs the Android shell; backend="linux-ubuntu" runs Ubuntu 24.04 via PRoot
+        backend="linux-ubuntu" (default) runs Ubuntu 24.04 via PRoot
         (requires the rootfs to be installed — check TerminalBackends, install via TerminalUbuntuInstall).
-        For linux-ubuntu, workspaceId selects an isolated file area bound to guest /workspace
+        workspaceId selects an isolated file area bound to guest /workspace
         (persists across sessions; unknown valid ids are auto-created; default: "default" —
         manage via TerminalWorkspaces).
     """.trimIndent()
 
     override val parametersSchema: String = """
-{"type":"object","properties":{"shell":{"type":"string","default":"/system/bin/sh","description":"Android shell path (local backend only; linux-ubuntu always uses /bin/bash)"},"cwd":{"type":"string","default":"/sdcard","description":"Initial working directory. linux-ubuntu: guest path (/workspace default; relative paths land under /workspace)"},"rows":{"type":"integer","default":24},"cols":{"type":"integer","default":200,"description":"Terminal width in columns. Agent sessions default to 200 — the legacy 80-col default hard-wrapped long commands, splitting identifiers across SCREEN-mode read lines (misread risk). Human-facing views re-flow independently."},"env":{"type":"object","additionalProperties":{"type":"string"},"description":"Extra environment variables (local: appended to defaults; linux-ubuntu: passed into the guest)"},"backend":{"type":"string","default":"local","enum":["local","linux-ubuntu"],"description":"Execution backend: local = Android shell, linux-ubuntu = Ubuntu 24.04 via PRoot"},"workspaceId":{"type":"string","description":"linux-ubuntu only: isolated workspace id bound to guest /workspace. Pattern: lowercase alphanumeric, may contain - and _, max 64 chars. Unknown valid ids are auto-created. Ignored (error) for local backend."}},"required":[]}
+{"type":"object","properties":{"cwd":{"type":"string","default":"/sdcard","description":"Initial working directory (guest path; /workspace default; relative paths land under /workspace)"},"rows":{"type":"integer","default":24},"cols":{"type":"integer","default":200,"description":"Terminal width in columns. Agent sessions default to 200 — the legacy 80-col default hard-wrapped long commands, splitting identifiers across SCREEN-mode read lines (misread risk). Human-facing views re-flow independently."},"env":{"type":"object","additionalProperties":{"type":"string"},"description":"Extra environment variables (passed into the guest)"},"backend":{"type":"string","default":"linux-ubuntu","enum":["linux-ubuntu"],"description":"Execution backend: linux-ubuntu = Ubuntu 24.04 via PRoot"},"workspaceId":{"type":"string","description":"Isolated workspace id bound to guest /workspace. Pattern: lowercase alphanumeric, may contain - and _, max 64 chars. Unknown valid ids are auto-created."}},"required":[]}
     """.trimIndent()
 
     suspend fun execute(input: Input): Output {
         val result = runtime.create(
-            shell = input.shell,
             cwd = input.cwd,
             rows = input.rows,
             cols = input.cols,
@@ -76,13 +75,12 @@ class TerminalCreateTool(
 
     override suspend fun invoke(arguments: String): String {
         val json = Json.parseToJsonElement(arguments).jsonObject
-        val shell = json.stringArg("shell") ?: "/system/bin/sh"
         val cwd = json.stringArg("cwd") ?: "/sdcard"
         val rows = json.intArg("rows") ?: 24
         // 实录 #15：80 列硬折行把长命令/标识符拆碎（isinstance → isins/tance），
         // SCREEN 读屏极易看错。Agent 会话默认 200 列（IPC 层夹在 2..1024 内）。
         val cols = json.intArg("cols") ?: AGENT_DEFAULT_COLS
-        val backend = json["backend"]?.jsonPrimitive?.content ?: "local"
+        val backend = json["backend"]?.jsonPrimitive?.content ?: "linux-ubuntu"
         val workspaceId = json["workspaceId"]?.jsonPrimitive?.contentOrNull
         // P3 fix（审计 6-b）：实现 schema 已声明的 privilege 参数解析 ——
         // 原实现硬编码 NORMAL，schema 里的 "NORMAL"|"SHIZUKU"|"ROOT" 形同虚设。
@@ -93,7 +91,7 @@ class TerminalCreateTool(
         val env = json["env"]?.jsonObject?.entries?.associate {
             it.key to (it.value as? JsonPrimitive ?: JsonPrimitive("")).content
         } ?: emptyMap()
-        val out = execute(Input(shell, cwd, rows, cols, env, privilege, backend, workspaceId))
+        val out = execute(Input(cwd, rows, cols, env, privilege, backend, workspaceId))
         return buildJsonObject {
             put("sessionId", JsonPrimitive(out.sessionId)); put("pid", JsonPrimitive(out.pid))
             put("shell", JsonPrimitive(out.shell)); put("cwd", JsonPrimitive(out.cwd))
@@ -107,13 +105,12 @@ class TerminalCreateTool(
     }
 
     data class Input(
-        val shell: String = "/system/bin/sh",
         val cwd: String = "/sdcard",
         val rows: Int = 24,
         val cols: Int = AGENT_DEFAULT_COLS,
         val env: Map<String, String> = emptyMap(),
         val privilege: PrivilegeLevel = PrivilegeLevel.NORMAL,
-        val backend: String = "local",
+        val backend: String = "linux-ubuntu",
         val workspaceId: String? = null
     )
 
@@ -127,8 +124,8 @@ class TerminalCreateTool(
         val privilege: String,
         val state: String,
         val cursor: Long,
-        val backendId: String = "local",
-        val runtimeType: String = "ANDROID_LOCAL",
+        val backendId: String = "linux-ubuntu",
+        val runtimeType: String = "LINUX",
         val rootfsId: String? = null,
         val guestCwd: String? = null,
         val workspaceId: String? = null

@@ -73,7 +73,7 @@ class TerminalDiagnosticsToolTest {
     private fun backend(id: String, state: String): TerminalRuntime.BackendStatus =
         TerminalRuntime.BackendStatus(
             id = id,
-            runtimeType = if (id == "linux-ubuntu") "LINUX" else "ANDROID_LOCAL",
+            runtimeType = "LINUX",
             available = state == "READY",
             state = state,
             detail = if (state == "FAILED") "proot binary missing" else null
@@ -82,7 +82,7 @@ class TerminalDiagnosticsToolTest {
     @Test
     fun `healthy stack reports ok with sessions and backends`() = runBlocking {
         val runtime = FakeRuntime(
-            listOf(backend("local", "READY"), backend("linux-ubuntu", "READY")),
+            listOf(backend("linux-ubuntu", "READY")),
             listOf(semantic(1, SessionState.READY))
         )
         val tool = TerminalDiagnosticsTool(runtime, execProbe = null)
@@ -97,7 +97,7 @@ class TerminalDiagnosticsToolTest {
     @Test
     fun `dead session gets verdict and close action`() = runBlocking {
         val runtime = FakeRuntime(
-            listOf(backend("local", "READY")),
+            listOf(backend("linux-ubuntu", "READY")),
             listOf(semantic(7, SessionState.EXITED))
         )
         val tool = TerminalDiagnosticsTool(runtime, execProbe = null)
