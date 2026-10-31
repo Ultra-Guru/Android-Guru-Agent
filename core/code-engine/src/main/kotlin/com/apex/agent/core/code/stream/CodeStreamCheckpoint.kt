@@ -35,6 +35,9 @@ import kotlinx.serialization.json.Json
  */
 object CodeStreamCheckpoint {
 
+    /** #567：工作区 id 清洗正则预编译 —— fileNameOf 每次调用复用。 */
+    private val UNSAFE_FILENAME_CHARS = Regex("[^A-Za-z0-9_-]")
+
     // ═══ 可持久化模型（全扁平，kotlinx.serialization）═══
 
     @Serializable
@@ -211,7 +214,7 @@ object CodeStreamCheckpoint {
     }
 
     private fun fileNameOf(workspaceId: String): String {
-        val safe = workspaceId.replace(Regex("[^A-Za-z0-9_-]"), "_")
+        val safe = workspaceId.replace(UNSAFE_FILENAME_CHARS, "_")
         return "stream_$safe.json"
     }
 
