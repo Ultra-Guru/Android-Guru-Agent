@@ -47,7 +47,9 @@ class FusionBundleController @Inject constructor(
     /** 三端口编排中枢（FusionActivate 工具与 UI 共用；由 FusionModule 装配）。 */
     val activator: FusionBundleActivator,
     /** 引擎懒引用（dagger.Lazy 断环：ToolRegistry→Controller→引擎→ToolRegistry）——
-     *  Fusion Catalog 目录段写入 additionalSystemContext 用。 */
+     *  Fusion Catalog 目录段写入 additionalSystemContext 用。qualifier 对齐
+     *  FusionModule 的 @Named("code")（Agent 模式移除后唯一引擎绑定）。 */
+    @javax.inject.Named("code")
     private val engineLazy: dagger.Lazy<com.apex.agent.core.engine.AgentEngine>
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
