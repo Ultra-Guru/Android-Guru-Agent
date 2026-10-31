@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>码农打字 · Code Typist</title>
+<style>
+:root{
+  --bg:#0a0f0c; --ink:#d7ffe8; --dim:#5d8a70;
+  --neon:#2ee66b; --amber:#ffb454; --red:#ff5470;
+  --font-mono:ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+  --font-sans:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:radial-gradient(1100px 700px at 50% -10%,#10231a 0%,var(--bg) 60%);
+  color:var(--ink);font-family:var(--font-sans);
+  display:flex;flex-direction:column;overflow:hidden;
+  -webkit-tap-highlight-color:transparent;
+}
+header{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:10px 14px;border-bottom:1px solid #1d3327;background:rgba(10,15,12,.85);
+}
+.logo{width:10px;height:22px;background:var(--neon);box-shadow:0 0 12px var(--neon);border-radius:2px}
+h1{font:600 15px/1 var(--font-mono);letter-spacing:.08em}
+h1 small{color:var(--dim);font-weight:400;margin-left:6px}
+.hud{margin-left:auto;display:flex;gap:16px;font:600 12px/1 var(--font-mono);color:var(--dim)}
+.hud b{font-size:16px;color:var(--ink);margin-left:6px}
+.hud b.amber{color:var(--amber)}
+.hud b.red{color:var(--red)}
+main{flex:1;display:flex;flex-direction:column;overflow:auto;padding:16px 14px 8px}
+.meta{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;
+  font:12px/1 var(--font-mono);color:var(--dim);
+}
+.meta .tag{border:1px solid #274a37;border-radius:6px;padding:6px 10px;color:#9fd8b4}
+.timers{display:flex;gap:8px;margin-right:auto}
+.timers button{
+  min-height:36px;padding:0 14px;border-radius:8px;border:1px solid #274a37;
+  background:transparent;color:var(--dim);font:700 12px/36px var(--font-mono);cursor:pointer;
+}
+.timers button[aria-pressed=true]{color:#04170c;background:var(--neon);border-color:var(--neon);box-shadow:0 0 12px rgba(46,230,107,.35)}
+.stage{
+  flex:1;display:flex;flex-direction:column;min-height:0;
+  background:rgba(12,20,16,.72);border:1px solid #1f3a2b;border-radius:12px;
+  padding:18px;overflow:auto;
+}
+.text{
+  font:15px/2.1 var(--font-mono);letter-spacing:.01em;white-space:pre-wrap;word-break:break-all;
+  color:#3f5f4d;outline:none;
+}
+.text .ch{position:relative;transition:color .08s;border-radius:2px}
+.text .ch.done{color:var(--ink)}
+.text .ch.ok{color:var(--ink)}
+.text .ch.bad{color:var(--red);background:rgba(255,84,112,.14)}
+.text .ch.bad::after{content:"";position:absolute;left:2px;right:2px;bottom:2px;height:2px;background:var(--red);border-radius:2px}
+.text .ch.cur{
+  background:rgba(46,230,107,.18);color:var(--ink);
+  box-shadow:0 0 0 1px rgba(46,230,107,.4);
+}
+.caret{display:inline-block;width:2px;height:1.4em;background:var(--neon);vertical-align:-4px;
+  animation:blink 1s steps(1) infinite;margin-left:1px}
+@keyframes blink{50%{opacity:0}}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 6px}
+.btn{
+  min-height:44px;padding:0 20px;border:none;border-radius:8px;cursor:pointer;
+  background:var(--neon);color:#04170c;font:700 14px/44px var(--font-mono);letter-spacing:.1em;
+  box-shadow:0 0 16px rgba(46,230,107,.4);transition:transform .12s;
+}
+.btn:active{transform:scale(.96)}
+.btn.ghost{background:transparent;color:var(--dim);border:1px solid #274a37;box-shadow:none}
+#input{
+  position:fixed;opacity:0;pointer-events:none;top:50%;left:50%;
+  width:1px;height:1px;
+}
+.result{
+  display:none;flex-direction:column;gap:10px;
+  background:rgba(12,20,16,.72);border:1px solid #1f3a2b;border-radius:12px;padding:18px;margin-bottom:8px;
+}
+.result.show{display:flex}
+.result h2{font:700 14px/1 var(--font-mono);letter-spacing:.16em;color:var(--neon);margin-bottom:4px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.grid .cell{background:rgba(20,32,25,.7);border:1px solid #1f3a2b;border-radius:8px;padding:10px}
+.grid .cell i{display:block;font-style:normal;color:var(--dim);font-size:11px;letter-spacing:.12em;margin-bottom:6px}
+.grid .cell b{font:700 22px/1 var(--font-mono);color:var(--ink)}
+.grid .cell b small{font-size:11px;color:var(--dim);font-weight:400}
+.result .note{color:var(--dim);font-size:12px;line-height:1.7}
+.result .note b{color:var(--ink)}
+.result .row-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+.empty{
+  display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  text-align:center;color:var(--dim);padding:30px 10px;
+}
+footer{padding:8px 14px;border-top:1px solid #16281f;font:12px/1.6 var(--font-mono);color:var(--dim)}
+footer kbd{background:#142119;border:1px solid #274a37;border-radius:4px;padding:2px 6px;color:#9fd8b4;font:11px var(--font-mono)}
+@media (prefers-reduced-motion:reduce){.caret{animation:none}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo" aria-hidden="true"></div>
+  <h1>码农打字<small>CODE TYPIST</small></h1>
+  <div class="hud" role="status">
+    <span>WPM<b id="hudWpm">0</b></span>
+    <span>准确率<b class="amber" id="hudAcc">100%</b></span>
+    <span>错字<b class="red" id="hudErr">0</b></span>
+    <span>最佳<b id="hudBest" title="60 秒模式最佳 WPM">--</b></span>
+  </div>
+</header>
+<main>
+  <div class="meta">
+    <div class="timers" role="group" aria-label="计时时长">
+      <button data-d="30" aria-pressed="false">30 秒</button>
+      <button data-d="60" aria-pressed="true">60 秒</button>
+      <button data-d="0" aria-pressed="false">整段</button>
+    </div>
+    <span class="tag" id="tagLang">--</span>
+    <span class="tag" id="tagIdx">1 / 8</span>
+    <span style="margin-left:auto" id="timeLeft">--</span>
+  </div>
+  <div class="result" id="result" aria-live="polite">
+    <h2>结果</h2>
+    <div class="grid">
+      <div class="cell"><i>净 WPM</i><b id="rWpm">0</b></div>
+      <div class="cell"><i>准确率</i><b id="rAcc">100%</b></div>
+      <div class="cell"><i>击键</i><b id="rKeys">0</b></div>
+      <div class="cell"><i>错字</i><b id="rErr">0</b></div>
+    </div>
+    <p class="note" id="rNote"></p>
+    <div class="row-actions">
+      <button class="btn" id="rAgain">再来一段 ↻</button>
+      <button class="btn ghost" id="rCopy">复制结果</button>
+    </div>
+  </div>
+  <div class="stage" id="stageBox">
+    <div class="text" id="textEl" tabindex="0" role="textbox" aria-label="打字文本区域，点击后开始输入" aria-live="off"></div>
+    <input id="input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-hidden="true" tabindex="-1">
+  </div>
+  <div class="empty" id="emptyBox">
+    <p style="font:700 16px/1 var(--font-mono);letter-spacing:.2em;color:var(--neon">准备就绪</p>
+    <p>点击 / 触碰下方文本区开始——第一个字符落下即计时。</p>
+  </div>
+  <div class="actions">
+    <button class="btn" id="btnNew">新段落 ↻</button>
+    <button class="btn ghost" id="btnReset">重置成绩</button>
+  </div>
+</main>
+<footer>
+  <span><kbd>Tab</kbd> 新段落 · <kbd>Esc</kbd> 重置本段</span>
+  <span style="margin-left:auto">GURU · 游乐场</span>
+</footer>
+<script>
+(function(){
+"use strict";
+var store={get:function(k){try{return localStorage.getItem(k)}catch(e){return null}},
+           set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+var BEST_KEY="guru.pg.code-typist.hi";
+
+var SNIPPETS=[
+  {lang:"TypeScript",code:"const memo = new Map<number, number>();\nfunction fib(n: number): number {\n  if (n <= 1) return n;\n  const hit = memo.get(n);\n  if (hit !== undefined) return hit;\n  const value = fib(n - 1) + fib(n - 2);\n  memo.set(n, value);\n  return value;\n}"},
+  {lang:"JavaScript",code:"document.querySelectorAll('.card').forEach(card => {\n  card.addEventListener('pointerdown', () => {\n    card.classList.add('active');\n    setTimeout(() => card.classList.remove('active'), 240);\n  });\n});"},
+  {lang:"Python",code:"def quicksort(items):\n    if len(items) <= 1:\n        return items\n    pivot = items[len(items) // 2]\n    left = [x for x in items if x < pivot]\n    mid = [x for x in items if x == pivot]\n    right = [x for x in items if x > pivot]\n    return quicksort(left) + mid + quicksort(right)"},
+  {lang:"Rust",code:"fn main() {\n    let primes: Vec<u32> = (2..100)\n        .filter(|n| (2..*n).all(|d| n % d != 0))\n        .collect();\n    println!(\"primes: {:?}\", primes);\n}"},
+  {lang:"SQL",code:"SELECT dept.name, COUNT(emp.id) AS headcount,\n       AVG(emp.salary) AS avg_salary\nFROM employees emp\nJOIN departments dept ON dept.id = emp.dept_id\nWHERE emp.hired_at >= '2024-01-01'\nGROUP BY dept.name\nHAVING COUNT(emp.id) > 5\nORDER BY headcount DESC;"},
+  {lang:"Go",code:"func worker(id int, jobs <-chan int, results chan<- int) {\n    for j := range jobs {\n        time.Sleep(200 * time.Millisecond)\n        results <- j * 2\n    }\n}\n// 输入输出都走 channel，工人池天然背压。"},
+  {lang:"TypeScript",code:"type Result<T> =\n  | { ok: true; value: T }\n  | { ok: false; error: Error };\n\nasync function withRetry<T>(fn: () => Promise<T>, times = 3): Promise<Result<T>> {\n  for (let i = 0; i < times; i++) {\n    try { return { ok: true, value: await fn() }; }\n    catch (e) { if (i === times - 1) return { ok: false, error: e }; }\n  }\n  throw new Error('unreachable');\n}"},
+  {lang:"Shell",code:"grep -rn \"TODO\" src/ \\\n  | cut -d: -f1 \\\n  | sort | uniq -c \\\n  | sort -rn | head -5\n# 找出 TODO 最多的五个文件，先啃硬骨头。"}
+];
+
+var duration=60, snippetIdx=0;
+var chars=[], pos=0, started=false, finished=false;
+var t0=0, timerId=0, remainMs=0;
+var correct=0, wrong=0, totalTyped=0;
+var bestWpm=parseFloat(store.get(BEST_KEY)||"")||null;
+
+var textEl=document.getElementById("textEl");
+var inputEl=document.getElementById("input");
+var emptyBox=document.getElementById("emptyBox");
+var resultEl=document.getElementById("result");
+var hudBest=document.getElementById("hudBest");
+
+if(bestWpm)hudBest.textContent=String(Math.round(bestWpm));
+
+function loadSnippet(i){
+  snippetIdx=(i+SNIPPETS.length)%SNIPPETS.length;
+  var s=SNIPPETS[snippetIdx];
+  document.getElementById("tagLang").textContent=s.lang;
+  document.getElementById("tagIdx").textContent=(snippetIdx+1)+" / "+SNIPPETS.length;
+  chars=s.code.split("");
+  pos=0; started=false; finished=false; correct=0; wrong=0; totalTyped=0;
+  stopTimer();
+  document.getElementById("timeLeft").textContent=duration>0?(duration+" 秒"):"整段";
+  document.getElementById("hudWpm").textContent="0";
+  document.getElementById("hudAcc").textContent="100%";
+  document.getElementById("hudErr").textContent="0";
+  resultEl.classList.remove("show");
+  emptyBox.style.display="flex";
+  render();
+}
+function render(){
+  var html="";
+  for(var i=0;i<chars.length;i++){
+    var cls="ch";
+    if(i<pos){
+      var ok=chars[i].ok;
+      cls+=" done "+(ok?"ok":"bad");
+    }
+    if(i===pos&&!finished)cls+=" cur";
+    html+='<span class="'+cls+'">'+escapeHtml(chars[i].c)+'</span>';
+    if(i===pos&&!finished)html+='<span class="caret"></span>';
+  }
+  if(finished&&!html)html="";
+  textEl.innerHTML=html||'<span style="color:#3f5f4d">（空）</span>';
+}
+function escapeHtml(c){
+  return c==="<"?"&lt;":c===">"?"&gt;":c==="&"?"&amp;":c==="\n"?"<br>":c;
+}
+
+function startTick(){
+  t0=performance.now();
+  var el=document.getElementById("timeLeft");
+  timerId=setInterval(function(){
+    var elapsed=(performance.now()-t0)/1000;
+    if(duration>0){
+      var left=Math.max(0,duration-elapsed);
+      el.textContent=Math.ceil(left)+" 秒";
+      if(left<=0){finish("时间到");}
+    }else{
+      el.textContent=Math.floor(elapsed)+" 秒";
+    }
+    hud();
+  },200);
+}
+function stopTimer(){clearInterval(timerId);timerId=0;}
+function hud(){
+  var elapsed=Math.max(0.001,(performance.now()-t0)/1000);
+  var elapsedMin=elapsed/60;
+  var netWpm=totalTyped>0?Math.round((correct/5)/elapsedMin):0;
+  var acc=totalTyped>0?Math.round(correct/totalTyped*100):100;
+  document.getElementById("hudWpm").textContent=String(netWpm);
+  document.getElementById("hudAcc").textContent=acc+"%";
+  document.getElementById("hudErr").textContent=String(wrong);
+  return netWpm;
+}
+
+function onKeyDown(e){
+  if(finished)return;
+  if(e.key==="Escape"){loadSnippet(snippetIdx);return;}
+  if(e.key==="Tab"){e.preventDefault();nextSnippet();return;}
+  if(e.ctrlKey||e.metaKey||e.altKey)return;
+  if(e.key==="Backspace"){
+    if(pos>0){
+      pos--;
+      if(!chars[pos].ok)wrong=Math.max(0,wrong-1);
+      totalTyped=Math.max(0,totalTyped-1);
+      correct=chars.slice(0,pos).filter(function(c){return c.ok}).length;
+      render();
+    }
+    return;
+  }
+  if(e.key.length!==1)return;
+  e.preventDefault();
+  if(!started){started=true;emptyBox.style.display="none";startTick();}
+  var expected=chars[pos]?chars[pos].c:null;
+  if(expected===null)return;
+  var ok=e.key===expected;
+  chars[pos]={c:expected,ok:ok};
+  totalTyped++;
+  if(ok)correct++;else wrong++;
+  pos++;
+  if(pos>=chars.length){finish("整段完成");return;}
+  hud();render();
+}
+textEl.addEventListener("keydown",onKeyDown);
+inputEl.addEventListener("keydown",onKeyDown);
+
+function focusTyping(){
+  textEl.focus();
+  inputEl.focus({preventScroll:true});
+  if(!started&&!finished)emptyBox.style.display="none";
+  textEl.scrollIntoView({block:"nearest"});
+}
+textEl.addEventListener("pointerdown",function(){setTimeout(focusTyping,0);});
+stageBoxFocus();
+
+function stageBoxFocus(){
+  document.getElementById("stageBox").addEventListener("pointerdown",function(e){
+    if(e.target!==textEl){setTimeout(focusTyping,0);}
+  });
+}
+
+function finish(reason){
+  if(finished)return;
+  finished=true;stopTimer();
+  var elapsed=Math.max(1,(performance.now()-t0)/1000);
+  var elapsedMin=elapsed/60;
+  var gross=totalTyped>0?Math.round((totalTyped/5)/elapsedMin):0;
+  var net=correct>0?Math.round((correct/5)/elapsedMin):0;
+  var acc=totalTyped>0?Math.round(correct/totalTyped*100):100;
+
+  document.getElementById("rWpm").textContent=String(net);
+  document.getElementById("rAcc").textContent=acc+"%";
+  document.getElementById("rKeys").textContent=String(totalTyped);
+  document.getElementById("rErr").textContent=String(wrong);
+  document.getElementById("timeLeft").textContent="--";
+
+  var isRecord=false;
+  if(duration===60&&net>0){
+    if(bestWpm===null||net>bestWpm){bestWpm=net;store.set(BEST_KEY,String(net));isRecord=true;
+      hudBest.textContent=String(net);}
+  }
+  document.getElementById("rNote").innerHTML=
+    (isRecord?"<b>新纪录！</b>":"")+"净速 <b>"+net+"</b> WPM（毛速 "+gross+"），准确率 <b>"+acc+"%</b>。"+
+    (acc<92?" 准确率优先于速度——慢下来打稳，成绩反而会涨。":" 节奏很稳，继续保持。");
+  resultEl.classList.add("show");
+  render();
+}
+function nextSnippet(){loadSnippet(snippetIdx+1);}
+
+document.getElementById("btnNew").addEventListener("click",nextSnippet);
+document.getElementById("rAgain").addEventListener("click",nextSnippet);
+document.getElementById("btnReset").addEventListener("click",function(){
+  bestWpm=null;store.set(BEST_KEY,"");hudBest.textContent="--";
+  toastNote("最佳纪录已清空");
+});
+document.getElementById("rCopy").addEventListener("click",function(){
+  var text="码农打字 · 60 秒\n净 "+document.getElementById("rWpm").textContent+" WPM / 准确率 "+
+    document.getElementById("rAcc").textContent+" / 错字 "+document.getElementById("rErr").textContent;
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(function(){toastNote("已复制")},function(){toastNote("复制失败")});
+  }else{toastNote("复制不可用");}
+});
+document.querySelector(".timers").addEventListener("click",function(e){
+  var b=e.target.closest("[data-d]");if(!b)return;
+  duration=+b.dataset.d;
+  this.querySelectorAll("[data-d]").forEach(function(c){c.setAttribute("aria-pressed",String(c===b))});
+  loadSnippet(snippetIdx);
+});
+var noteTimer=0;
+function toastNote(msg){
+  var el=document.getElementById("timeLeft");
+  el.textContent=msg;clearTimeout(noteTimer);
+  noteTimer=setTimeout(function(){el.textContent="--";},1600);
+}
+document.addEventListener("visibilitychange",function(){
+  if(document.hidden&&started&&!finished){
+    stopTimer();started=false;pos=pos;finished=false;
+    toastNote("已中断，重新敲键继续");
+    // 重新开始计时：简化处理——重置本段
+    loadSnippet(snippetIdx);
+  }
+});
+
+loadSnippet(0);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>粒子星河 · Particle Galaxy</title>
+<style>
+:root{
+  --bg:#07090d; --ink:#e8f4ff; --dim:#5f7386;
+  --neon:#38e8d0; --amber:#ffb454;
+  --font-mono:ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+  --font-sans:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg);color:var(--ink);font-family:var(--font-sans);
+  display:flex;flex-direction:column;overflow:hidden;
+  -webkit-tap-highlight-color:transparent;
+}
+header{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 14px;border-bottom:1px solid #14202b;background:rgba(7,9,13,.85);
+}
+.logo{width:10px;height:22px;background:var(--neon);box-shadow:0 0 12px var(--neon);border-radius:2px}
+h1{font:600 15px/1 var(--font-mono);letter-spacing:.08em}
+h1 small{color:var(--dim);font-weight:400;margin-left:6px}
+.hud{margin-left:auto;display:flex;gap:12px;font:600 12px/1 var(--font-mono);color:var(--dim)}
+.hud b{color:var(--ink)}
+main{flex:1;position:relative;overflow:hidden}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair}
+.panel{
+  position:absolute;right:12px;top:12px;width:min(240px,72vw);
+  background:rgba(10,16,22,.9);border:1px solid #1e3242;border-radius:12px;
+  padding:14px;backdrop-filter:blur(8px);box-shadow:0 12px 40px rgba(0,0,0,.45);
+  transition:transform .25s, opacity .25s;
+}
+.panel.collapsed{transform:translateX(calc(100% + 20px));opacity:0;pointer-events:none}
+.panel h3{font:700 12px/1 var(--font-mono);color:var(--neon);letter-spacing:.18em;margin-bottom:12px}
+.row{margin-bottom:12px}
+.row label{display:flex;justify-content:space-between;font:12px/1.4 var(--font-mono);color:var(--dim);margin-bottom:6px}
+.row label output{color:var(--ink)}
+input[type=range]{
+  width:100%;min-height:28px;appearance:none;-webkit-appearance:none;background:transparent;cursor:pointer;
+}
+input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:#1e3242}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;width:20px;height:20px;margin-top:-8px;border-radius:50%;
+  background:var(--neon);box-shadow:0 0 10px rgba(56,232,208,.5);border:none;
+}
+input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#1e3242}
+input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:var(--neon);border:none;box-shadow:0 0 10px rgba(56,232,208,.5)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{
+  min-height:34px;padding:0 12px;border-radius:8px;border:1px solid #24404f;background:transparent;
+  color:var(--dim);font:600 12px/34px var(--font-mono);cursor:pointer;letter-spacing:.06em;
+}
+.chip[aria-pressed=true]{color:#04170c;background:var(--neon);border-color:var(--neon);box-shadow:0 0 12px rgba(56,232,208,.4)}
+.panel .foot{display:flex;gap:8px;margin-top:2px}
+.panel .foot .chip{flex:1;text-align:center}
+.overlay{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+  background:rgba(5,8,11,.72);backdrop-filter:blur(2px);text-align:center;padding:24px;transition:opacity .35s;
+}
+.overlay.hide{opacity:0;pointer-events:none}
+.overlay h2{font:700 clamp(20px,5vw,30px)/1.15 var(--font-mono);letter-spacing:.14em;color:var(--neon);
+  text-shadow:0 0 22px rgba(56,232,208,.6)}
+.overlay p{color:var(--dim);font-size:13px;line-height:1.8;max-width:360px}
+.overlay p b{color:var(--ink)}
+.btn{
+  min-height:44px;padding:0 24px;border:none;border-radius:8px;cursor:pointer;
+  background:var(--neon);color:#04170c;font:700 14px/44px var(--font-mono);letter-spacing:.12em;
+  box-shadow:0 0 20px rgba(56,232,208,.5);transition:transform .12s;
+}
+.btn:active{transform:scale(.96)}
+.toggle{
+  position:absolute;left:12px;top:12px;width:44px;height:44px;border-radius:10px;
+  border:1px solid #1e3242;background:rgba(10,16,22,.9);color:var(--neon);
+  font:700 16px/1 var(--font-mono);cursor:pointer;z-index:5;
+}
+.hint{position:absolute;left:12px;bottom:12px;font:11px/1.6 var(--font-mono);color:var(--dim);
+  background:rgba(10,16,22,.75);padding:8px 12px;border-radius:8px;pointer-events:none}
+@media (max-width:560px){.hint{display:none}}
+@media (prefers-reduced-motion:reduce){
+  .overlay{transition:none}.panel{transition:none}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo" aria-hidden="true"></div>
+  <h1>粒子星河<small>PARTICLE GALAXY</small></h1>
+  <div class="hud" role="status">
+    <span>粒子 <b id="hudCount">0</b></span>
+    <span>FPS <b id="hudFps">--</b></span>
+  </div>
+</header>
+<main>
+  <canvas id="cv" role="img" aria-label="粒子星河生成艺术画面"></canvas>
+  <button class="toggle" id="btnPanel" aria-label="参数面板开关">☰</button>
+  <div class="panel" id="panel">
+    <h3>参数</h3>
+    <div class="row">
+      <label for="rCount">粒子数量 <output id="oCount">1600</output></label>
+      <input type="range" id="rCount" min="300" max="4000" step="100" value="1600" aria-label="粒子数量">
+    </div>
+    <div class="row">
+      <label for="rTrail">余晖长度 <output id="oTrail">0.86</output></label>
+      <input type="range" id="rTrail" min="0.5" max="0.97" step="0.01" value="0.86" aria-label="余晖长度">
+    </div>
+    <div class="row">
+      <label for="rSpeed">流速 <output id="oSpeed">1.0</output></label>
+      <input type="range" id="rSpeed" min="0.2" max="2.4" step="0.1" value="1" aria-label="流速">
+    </div>
+    <div class="row">
+      <label>调色板</label>
+      <div class="chips" id="palettes" role="group" aria-label="调色板选择">
+        <button class="chip" data-p="0" aria-pressed="true">极光</button>
+        <button class="chip" data-p="1" aria-pressed="false">熔金</button>
+        <button class="chip" data-p="2" aria-pressed="false">霓虹</button>
+        <button class="chip" data-p="3" aria-pressed="false">深海</button>
+      </div>
+    </div>
+    <div class="row">
+      <label>指针作用</label>
+      <div class="chips" role="group" aria-label="指针作用方式">
+        <button class="chip" id="pRepel" aria-pressed="true">扰动</button>
+        <button class="chip" id="pOrbit" aria-pressed="false">牵引</button>
+      </div>
+    </div>
+    <div class="foot">
+      <button class="chip" id="btnReseed">↻ 重新播种</button>
+    </div>
+  </div>
+  <div class="overlay" id="ov">
+    <h2>粒子星河</h2>
+    <p>数千粒子沿流场漂移，织成星河。移动指针可<b>扰动</b>或<b>牵引</b>粒子；<br>
+    右上角 <b>☰</b> 打开参数面板：数量 / 余晖 / 流速 / 调色板。<br>
+    性能不足时会自动降粒子数保帧率。</p>
+    <button class="btn" id="btnStart" aria-label="开始">进入星河 ▸</button>
+  </div>
+  <div class="hint">移动 / 触摸指针交互 · 空格暂停</div>
+</main>
+<script>
+(function(){
+"use strict";
+var store={get:function(k){try{return localStorage.getItem(k)}catch(e){return null}},
+           set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+var reduced=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+var cv=document.getElementById("cv"), ctx=cv.getContext("2d");
+var W=0,H=0,DPR=Math.min(window.devicePixelRatio||1,2);
+var PALETTES=[
+  [56,232,208],[125,255,176],[255,180,84],[150,120,255],
+  [56,232,208],[125,255,176],[255,180,84],[150,120,255]
+];
+var paletteIdx=0;
+
+var cfg={count:1600,trail:0.86,speed:1,mode:"repel"};
+var paused=false, running=false;
+var pointer={x:-9999,y:-9999,down:false};
+var seed=[Math.random()*100,Math.random()*100,Math.random()*100];
+var particles=[];
+
+function resize(){
+  W=window.innerWidth; H=window.innerHeight;
+  cv.width=W*DPR; cv.height=H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.fillStyle="#07090d";ctx.fillRect(0,0,W,H);
+}
+window.addEventListener("resize",resize);
+
+function newParticle(){
+  return {x:Math.random()*W,y:Math.random()*H,
+    vx:0,vy:0,life:6+Math.random()*10,t:0,
+    hue:(Math.random()*PALETTES.length)|0,size:0.8+Math.random()*1.6};
+}
+function reseed(){
+  particles.length=0;
+  for(var i=0;i<cfg.count;i++)particles.push(newParticle());
+  document.getElementById("hudCount").textContent=particles.length;
+}
+
+// 流场：三角函数叠层（廉价 curl 风）
+function field(x,y,t){
+  var s=seed;
+  var a=Math.sin(x*0.0022+s[0])*Math.cos(y*0.0026+s[1])
+       +Math.sin((x+y)*0.0012+t*0.11+s[2])*0.7
+       +Math.sin(x*0.0007-t*0.06)*Math.cos(y*0.0009+t*0.05)*0.5;
+  return a*Math.PI; // 输出角度
+}
+
+var lastT=0, fpsAcc=0, fpsN=0, fpsAt=0, lowT=0;
+function loop(t){
+  requestAnimationFrame(loop);
+  if(!running)return;
+  var dt=Math.min(50,t-lastT); lastT=t;
+  var dtS=dt/1000;
+
+  // FPS 统计
+  fpsAcc+=dt; fpsN++;
+  if(fpsAcc>500){
+    var fps=Math.round(1000/(fpsAcc/fpsN));
+    document.getElementById("hudFps").textContent=String(fps);
+    if(fps<40&&particles.length>500&&!reduced){lowT+=fpsAcc;if(lowT>1600){adaptQuality();lowT=0;}}
+    else lowT=0;
+    fpsAcc=0;fpsN=0;
+  }
+
+  if(paused||reduced){
+    if(reduced)render(1); // 静态单帧
+    return;
+  }
+
+  // 余晖
+  ctx.fillStyle="rgba(7,9,13,"+(1-cfg.trail)+")";
+  ctx.fillRect(0,0,W,H);
+
+  var tS=t/1000;
+  for(var i=0;i<particles.length;i++){
+    var p=particles[i];
+    p.t+=dtS;
+    if(p.t>p.life||p.x<-20||p.x>W+20||p.y<-20||p.y>H+20){
+      particles[i]=newParticle();
+      continue;
+    }
+    var ang=field(p.x,p.y,tS);
+    var ax=Math.cos(ang), ay=Math.sin(ang);
+    // 指针作用
+    var dx=p.x-pointer.x, dy=p.y-pointer.y;
+    var d2=dx*dx+dy*dy, R=160;
+    if(d2<R*R){
+      var d=Math.sqrt(d2)+0.001, f=(1-d/R);
+      if(cfg.mode==="repel"){
+        ax+=(-dx/d)*f*2.2; ay+=(-dy/d)*f*2.2;
+      }else{
+        var tang=Math.atan2(dy,dx)+Math.PI/2;
+        ax+=(Math.cos(tang))*f*2.6-dx/d*f*0.5;
+        ay+=(Math.sin(tang))*f*2.6-dy/d*f*0.5;
+      }
+    }
+    p.vx=(p.vx+ax*46*cfg.speed*dtS)*0.96;
+    p.vy=(p.vy+ay*46*cfg.speed*dtS)*0.96;
+    var sp=Math.sqrt(p.vx*p.vx+p.vy*p.vy);
+    if(sp>240){p.vx*=240/sp;p.vy*=240/sp;}
+    p.x+=p.vx*dtS; p.y+=p.vy*dtS;
+
+    // 渲染
+    var pal=PALETTES[paletteIdx];
+    var c=pal[((p.hue+paletteIdx)%pal.length+pal.length)%pal.length];
+    var fade=Math.min(1,p.t*3)*(1-Math.pow(p.t/p.life,2));
+    var alpha=fade*0.75;
+    ctx.strokeStyle="rgba("+c[0]+","+c[1]+","+c[2]+","+alpha+")";
+    ctx.lineWidth=p.size;
+    ctx.beginPath();
+    ctx.moveTo(p.x-p.vx*0.05,p.y-p.vy*0.05);
+    ctx.lineTo(p.x,p.y);
+    ctx.stroke();
+  }
+}
+function render(){ctx.fillStyle="#07090d";ctx.fillRect(0,0,W,H);}
+
+// 性能自适应：降粒子
+function adaptQuality(){
+  var target=Math.max(500,particles.length-400);
+  particles.length=target;
+  cfg.count=target;
+  document.getElementById("rCount").value=target;
+  document.getElementById("oCount").textContent=target;
+  document.getElementById("hudCount").textContent=target;
+}
+
+// ── 指针 ──
+function movePointer(e){pointer.x=e.clientX;pointer.y=e.clientY;}
+cv.addEventListener("pointermove",movePointer);
+cv.addEventListener("pointerdown",function(e){movePointer(e);pointer.down=true;});
+cv.addEventListener("pointerup",function(){pointer.down=false;});
+cv.addEventListener("pointerleave",function(){pointer.x=-9999;pointer.y=-9999;});
+window.addEventListener("keydown",function(e){
+  if(e.keyCode===32&&running){e.preventDefault();paused=!paused;}
+});
+
+// ── 面板 ──
+var panel=document.getElementById("panel");
+document.getElementById("btnPanel").addEventListener("click",function(){
+  panel.classList.toggle("collapsed");
+});
+document.getElementById("rCount").addEventListener("input",function(){
+  cfg.count=+this.value; document.getElementById("oCount").textContent=cfg.count;
+  while(particles.length<cfg.count)particles.push(newParticle());
+  if(particles.length>cfg.count)particles.length=cfg.count;
+  document.getElementById("hudCount").textContent=particles.length;
+});
+document.getElementById("rTrail").addEventListener("input",function(){
+  cfg.trail=+this.value; document.getElementById("oTrail").textContent=cfg.trail.toFixed(2);
+});
+document.getElementById("rSpeed").addEventListener("input",function(){
+  cfg.speed=+this.value; document.getElementById("oSpeed").textContent=cfg.speed.toFixed(1);
+});
+document.getElementById("palettes").addEventListener("click",function(e){
+  var b=e.target.closest("[data-p]"); if(!b)return;
+  paletteIdx=+b.dataset.p;
+  this.querySelectorAll("[data-p]").forEach(function(c){c.setAttribute("aria-pressed",String(c===b))});
+});
+document.getElementById("pRepel").addEventListener("click",function(){
+  cfg.mode="repel"; this.setAttribute("aria-pressed","true");
+  document.getElementById("pOrbit").setAttribute("aria-pressed","false");
+});
+document.getElementById("pOrbit").addEventListener("click",function(){
+  cfg.mode="orbit"; this.setAttribute("aria-pressed","true");
+  document.getElementById("pRepel").setAttribute("aria-pressed","false");
+});
+document.getElementById("btnReseed").addEventListener("click",function(){
+  seed=[Math.random()*100,Math.random()*100,Math.random()*100];
+  reseed();
+});
+document.addEventListener("visibilitychange",function(){
+  if(document.hidden&&running)paused=true;
+});
+
+document.getElementById("btnStart").addEventListener("click",function(){
+  document.getElementById("ov").classList.add("hide");
+  running=true; reseed();
+  ctx.fillStyle="#07090d";ctx.fillRect(0,0,W,H);
+});
+
+resize();
+requestAnimationFrame(function(t){lastT=t;loop(t);});
+})();
+</script>
+</body>
+</html>
