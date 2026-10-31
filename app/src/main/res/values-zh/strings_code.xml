@@ -27,6 +27,10 @@
     <string name="code_question_hint">输入你的回答…</string>
     <string name="code_question_default_yes">是</string>
     <string name="code_question_submit">回答</string>
+    <string name="code_notif_recovery_title">通知已关闭 —— 这次任务完成没有提醒你</string>
+    <string name="code_notif_recovery_body">任务在后台跑完了，但本应用没有通知权限，所以没有发出完成提醒。</string>
+    <string name="code_notif_recovery_open">去开启</string>
+    <string name="code_notif_recovery_dismiss">稍后</string>
     <string name="code_question_cancel">取消</string>
     <string name="code_question_cancel_hint">取消作答：智能体会被告知你没有给出答案。</string>
 

@@ -505,6 +505,17 @@ fun CodeScreen(
                 onDismiss = { showApiMissingNotice = false }
             )
         }
+
+        // ═══ #237 通知恢复横幅（后台完成但通知发不出去 → 一次性引导）═══
+        if (state.notificationRecoveryPending) {
+            NotificationRecoveryBanner(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .zIndex(11f),
+                onOpenSettings = viewModel::dismissNotificationRecovery,
+                onDismiss = viewModel::dismissNotificationRecovery
+            )
+        }
     }
 
     // v1.0 #155：工具/权限门的结构化提问已在上方 Column 内渲染

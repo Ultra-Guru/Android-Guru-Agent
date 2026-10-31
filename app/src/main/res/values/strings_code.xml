@@ -27,6 +27,10 @@
     <string name="code_question_hint">Type your answer…</string>
     <string name="code_question_default_yes">yes</string>
     <string name="code_question_submit">Answer</string>
+    <string name="code_notif_recovery_title">Notifications are off — you were not told this task finished</string>
+    <string name="code_notif_recovery_body">The task ran in the background but this app is not allowed to post notifications, so no completion alert was sent.</string>
+    <string name="code_notif_recovery_open">Open settings</string>
+    <string name="code_notif_recovery_dismiss">Later</string>
     <string name="code_question_cancel">Cancel</string>
     <string name="code_question_cancel_hint">Cancel without answering: the agent is told no answer was given.</string>
 
