@@ -8,6 +8,7 @@ import com.apex.agent.core.tools.ToolAnnotations
 import com.apex.agent.core.tools.ToolCategory
 import com.apex.agent.core.tools.ToolMetadata
 import com.apex.agent.core.tools.ToolRisk
+import java.util.Locale
 
 /**
  * 系统意图工具（#172 高级设备工具包）：分享与深链。
@@ -117,6 +118,14 @@ class DeepLinkTool(
 object AndroidIntents {
 
     fun share(context: Context, text: String, title: String?): String {
+        // Binder 事务缓冲上限 1MB（进程级共享）——超长文本直接 startActivity
+        // 会抛 TransactionTooLargeException 甚至远端崩溃；提前拒绝并给出
+        // 可操作建议（分段 / 落盘分享文件），模型能据此自修复。
+        if (text.length > MAX_SHARE_CHARS) {
+            return "Error: text is ${text.length} chars — the Android share sheet cannot " +
+                "carry more than $MAX_SHARE_CHARS chars (binder transaction limit). " +
+                "Split the content into chunks, or write it to a file and share the file instead."
+        }
         return try {
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
@@ -140,6 +149,16 @@ object AndroidIntents {
             if (uri.scheme.isNullOrBlank()) {
                 return "Error: '$uriText' has no scheme — use a full URI like https://example.com or the app's deep-link scheme."
             }
+            // scheme 安全门：拒绝注入/重定向载体（javascript: XSS、intent: 嵌套
+            // extra 启动任意组件、file/content 越权读取——本地文件走专门的
+            // FileProvider 工具）；大小写不敏感，其余 scheme（http/app/market…）
+            // 由 ACTION_VIEW + 用户选目标应用兑底。
+            val scheme = uri.scheme!!.lowercase(Locale.ROOT)
+            if (scheme in BLOCKED_SCHEMES) {
+                return "Error: scheme '$scheme' is blocked for safety (no javascript:/data:/intent: " +
+                    "or file: URIs via this tool). Use an https:// link, or the dedicated file " +
+                    "tools (FileProvider-backed) for local files."
+            }
             val view = Intent(Intent.ACTION_VIEW, uri).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -151,5 +170,20 @@ object AndroidIntents {
         } catch (e: Exception) {
             "Error: cannot open '$uriText': ${e.message ?: e::class.simpleName}"
         }
+    }
+
+    private companion object {
+        /** 分享文本上限（chars）——Binder 事务 1MB 进程级共享的保守安全值。 */
+        const val MAX_SHARE_CHARS = 200_000
+
+        /**
+         * 危险 scheme（小写）：ACTION_VIEW 载体中的注入/重定向通道。
+         * javascript/data → WebView 注入载体；intent → Intent 重定向
+         * （嵌套 extra 可启动任意组件）；file/content → 本地文件越权读取
+         * （应走 FileProvider）；about/blob/ws 同属浏览器内部通道。
+         */
+        val BLOCKED_SCHEMES = setOf(
+            "javascript", "data", "intent", "about", "blob", "file", "content", "ws", "wss"
+        )
     }
 }

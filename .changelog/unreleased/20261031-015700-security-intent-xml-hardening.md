@@ -1,0 +1,3 @@
+- 安全加固：XML 诊断解析器补齐 XXE 七项纵深防御（禁外部实体/DTD/XInclude），与 XML 提取工具同标准
+- 安全加固：深链工具拦截危险 scheme（javascript/data/intent/file 等），防 Intent 重定向与本地文件越权
+- 稳定性：分享文本超长（>20万字符）提前拒绝并给出分段/落盘建议，防 TransactionTooLargeException
