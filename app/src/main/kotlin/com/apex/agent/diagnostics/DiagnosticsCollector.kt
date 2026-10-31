@@ -203,7 +203,7 @@ class DiagnosticsCollector @Inject constructor(
 
     /**
      * 生成诊断报告 zip（cacheDir/diagnostics/apex-diag-<yyyyMMdd-HHmmss>.zip），
-     * 内含 device.txt + logs/ + crashes/。仅当完全失败时返回 null。
+     * 内含 device.txt + logs/ + crashes/ + anr/。仅当完全失败时返回 null。
      */
     fun buildDiagnosticsReport(): File? {
         val dir = File(context.cacheDir, DIAG_DIR)
@@ -223,6 +223,8 @@ class DiagnosticsCollector @Inject constructor(
                 writeDeviceTxt(zos)
                 copyDirIntoZip(File(context.filesDir, LOG_DIR), "logs", zos)
                 copyDirIntoZip(File(context.filesDir, CRASH_DIR), "crashes", zos)
+                // 日志增强：ANR 看门狗堆栈转储一并入包（目录不存在时静默跳过）
+                copyDirIntoZip(File(context.filesDir, ANR_DIR), "anr", zos)
             }
             zip.isFile && zip.length() > 0L
         }.getOrDefault(false)
@@ -280,6 +282,7 @@ class DiagnosticsCollector @Inject constructor(
         private const val DIAG_DIR = "diagnostics"
         private const val LOG_DIR = "logs"
         private const val CRASH_DIR = "crash"
+        private const val ANR_DIR = "anr"
         private const val REPORT_PREFIX = "apex-diag-"
         private const val REPORT_SUFFIX = ".zip"
         private const val REPORT_RETENTION_MS = 7L * 24 * 60 * 60 * 1000

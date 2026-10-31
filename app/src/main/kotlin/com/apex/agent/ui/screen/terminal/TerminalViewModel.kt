@@ -10,6 +10,8 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.apex.agent.R
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.environment.EnvironmentProvisioner
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
 import com.apex.agent.platform.terminal.ubuntu.lifecycle.UbuntuLifecycleCoordinator
@@ -389,6 +391,7 @@ class TerminalViewModel @Inject constructor(
             return
         }
         commandHistory.record(cmd)
+        logUserCommand(cmd)
         historyIndex = -1
         savedLiveInput = ""
 
@@ -507,6 +510,25 @@ class TerminalViewModel @Inject constructor(
     fun removeWhitelist(cmd: String) = policyStore.removeWhitelist(cmd)
 
     fun clearHistory() = commandHistory.clear()
+
+    /**
+     * 日志增强：用户命令提交进日志中枢（TERMINAL 分类）。
+     *
+     * 只记通过门禁的提交（与 commandHistory 入史同口径）；Agent 侧终端
+     * 命令不在此记（引擎事件 ToolCallStart/Complete 已带输出摘录，双计
+     * 会重复）。交互 PTY 的输出流无法按命令归因（readline/全屏程序混流），
+     * 故不记输出 —— Agent 侧结构化输出在 EngineLogExtensions 有 2KB 摘录。
+     * 失败静默（观测不干扰输入链路）。
+     */
+    private fun logUserCommand(cmd: String) {
+        runCatching {
+            AppLogger.instance.info(
+                LogCategory.TERMINAL, "UserInput",
+                "提交命令: $cmd",
+                tags = arrayOf("terminal", "user", "submit")
+            )
+        }
+    }
 
     /** 复制成功反馈（历史 Sheet 复制按钮 → 通知条）。 */
     fun onHistoryCopied(chars: Int) {
