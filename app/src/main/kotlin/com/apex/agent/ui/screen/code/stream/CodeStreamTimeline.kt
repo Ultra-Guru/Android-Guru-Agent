@@ -138,10 +138,12 @@ internal fun CodeStreamTimeline(
     // 点时间轴空白/非交互区域收起输入法（与 Agent 聊天屏同款 IME 纪律，
     // 2026-10 用户反馈三连修；见 ImeDismiss.kt）。
     val imeDismisser = rememberImeDismisser()
-    // FAB 可见性只依赖可追踪的 derived state（anchor.isAtBottom）；
-    // entries 判空放到组合处——原实现把首次组合时的空 snapshot 闭包进
-    // derivedStateOf，普通属性读取不被追踪 → FAB 永远不出现（P0）
-    val showFab by remember { derivedStateOf { !anchor.isAtBottom } }
+    // FAB 可见性只依赖可追踪的 derived state（阅读模式锁存 + 贴底派生）：
+    // 流式跟随期间的「内容增长 → snap 落定」瞬态不再闪 FAB（20261031
+    // 滚动锚重构：旧判据 !isAtBottom 在每个 25ms 攒批拍之间都会瞬时翻
+    // 假）；entries 判空放到组合处——原实现把首次组合时的空 snapshot
+    // 闭包进 derivedStateOf，普通属性读取不被追踪 → FAB 永远不出现（P0）
+    val showFab by remember { derivedStateOf { anchor.isDetachedFromBottom } }
 
     // ═══ 展开动画补锚（内联终端胶囊）═══
     // busy 翻转触发的结构 snap 落在 AnimatedVisibility 高度动画早期 ——

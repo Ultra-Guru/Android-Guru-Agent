@@ -483,6 +483,11 @@ class CodeStreamSession {
         // 工具开跑 = 思考阶段已过：收口可能仍挂着「思考中…」的流式卡
         //（引擎 notice 类思考分片没有 Complete 事件，见 closeStreamingThinking）
         closeStreamingThinking()
+        // 工具开跑 = 本段正文已收束：收口流式气泡 —— 工具后的新正文（下一轮
+        // 迭代引导语 / 最终回答）另起新条目落位时间轴末尾（工具之后），
+        // 不再原位并进工具前的旧气泡（收尾回答悬在工具记录上方的根因，
+        // 20261031 用户实测）
+        closeStreamingAssistant()
         // 溯源优先：引擎打标（技能 / MCP）覆盖名字启发式 —— 技能工具不再
         // 被误折进「MCP 自定义」；未打标（kit 路径 / 旧档）回退名字归一。
         val kind = kindOf(event.toolName, event.origin)
@@ -558,6 +563,10 @@ class CodeStreamSession {
         val existing = toolCalls[event.callId]
         // Start 已到（RUNNING/终态）= 全量参数已入胶囊，迟到/重放分片无信息量
         if (existing != null && existing.status != ToolCallStatus.WAITING) return
+        // 参数分片 = 工具意图先行（可先于 Start 到达）：与 onToolStart 同款
+        // 收口正文段 —— 流式参数开始即本段正文定格，工具后的正文（含最终
+        // 回答）另起新条目追加到时间轴末尾，保证时序「思考 → 工具 → 结论」
+        closeStreamingAssistant()
         val state = argsStreams.getOrPut(event.callId) { ArgsStreamState() }
         if (event.toolName.isNotBlank()) state.toolName = event.toolName
         state.raw.append(event.delta)
@@ -817,6 +826,22 @@ class CodeStreamSession {
     private fun closeStreamingThinking() {
         streamingThinking?.let { closeStreamingEntry(it) }
         streamingThinking = null
+    }
+
+    /**
+     * 收口流式正文气泡（工具信号到达路径，与 closeStreamingThinking 同款
+     * 防御语义）：ReAct 每轮迭代的正文段以工具调用为界 —— 参数分片开始
+     * 流式或工具开跑即本段正文收束定格（已累积文本保留在原位，时序上
+     * 它确实在工具之前），之后的正文（下一轮迭代引导语 / 最终回答）
+     * 另起新条目追加到时间轴末尾。
+     *
+     * 旧实现跨轮共用同一条 AssistantEntry（replaceEntry 原位合并）
+     * —— 最终回答被拼进首轮建立的早期气泡，位置恒在全部工具胶囊
+     * 上方（20261031 用户实测：收尾回答显示在工具调用记录之前）。
+     */
+    private fun closeStreamingAssistant() {
+        streamingAssistant?.let { closeStreamingEntry(it) }
+        streamingAssistant = null
     }
 
     private fun updateCall(call: StreamToolCall) {

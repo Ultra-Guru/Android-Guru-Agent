@@ -94,8 +94,15 @@ android {
         // 宿主同 keystore 签名随 Release 分发（修复「市场 → 插件」页永远空的问题）；
         // gradle/browser-kit.lock 锁定库版本，sync-browser-kit 工作流随库仓库
         // 新绿提交自动 bump 并触发发布（主仓随库仓更新而更新，全自动）。
-        versionCode = (project.findProperty("apexVersionCode") as String?)?.toInt() ?: 74
-        versionName = (project.findProperty("apexVersionName") as String?) ?: "1.4.9"
+        // v1.5（20261031）：时间轴时序与滚动体验双修 —— ①收尾回答落位修复：
+        // 工具信号收口流式正文段，最终回答另起新条目追加到时间轴末尾（旧：
+        // 原位并进工具前旧气泡，收尾回答恒显示在工具记录上方）；②流式滚动
+        // 锚重构：手势锁存 + canScrollForward 精确贴底 + 拖拽期停跟 ——
+        // 流式输出可自由上滑回看，点「回到底部」FAB 或滑回底部恢复跟随
+        // （旧：强制吸底滑不开）。v1.4.9 档期 CI 自动追加到 .102，1.5 起新版号
+        // 档期归零；versionCode 取 179：上一版 v1.4.9.102 为 178，单调无碰撞。
+        versionCode = (project.findProperty("apexVersionCode") as String?)?.toInt() ?: 179
+        versionName = (project.findProperty("apexVersionName") as String?) ?: "1.5"
 
         ndk {
             // T83: 发布 arm64 纯净包（-PapexAbi=arm64-v8a）—— 内置 rootfs 伪 .so

@@ -601,9 +601,12 @@ class CodeStreamSessionTest {
 
     @Test
     fun `response complete keeps accumulated text when engine fullText is last iteration only`() {
-        // 回归：引擎 contentBuilder 每轮迭代局部重建，ResponseComplete 只带
+        // 回归 1：引擎 contentBuilder 每轮迭代局部重建，ResponseComplete 只带
         // 末轮文本 —— 旧实现用 fullText 整体覆写，跨轮累积的结论被截成
         // 末轮残句（用户实测「思考完成后回答只剩两个字」）。
+        // 回归 2（20261031）：工具信号收口正文段 —— 最终回答必须另起新条目
+        // 落位全部工具胶囊之后；旧实现原位并进工具前旧气泡，收尾回答恒
+        // 显示在工具调用记录上方（时序错乱）。
         val s = CodeStreamSession()
         s.beginRun("多轮工具任务")
         s.onEvent(AgentEvent.ResponseChunk("我先分析一下，"))
@@ -612,9 +615,46 @@ class CodeStreamSessionTest {
         s.onEvent(AgentEvent.ResponseChunk("结论如下："))
         s.onEvent(AgentEvent.ResponseComplete("好的"))
         val snap = s.snapshot()
-        val assistant = snap.entries.filterIsInstance<StreamEntry.AssistantEntry>().single()
-        assertEquals("UI 累积优先，fullText 仅空时兜底", "我先分析一下，结论如下：", assistant.text)
-        assertTrue(!assistant.isStreaming)
+        val assistants = snap.entries.filterIsInstance<StreamEntry.AssistantEntry>()
+        assertEquals("工具前后各一条正文（时序分界 = 工具信号）", 2, assistants.size)
+        assertEquals("工具前正文留在原位定格", "我先分析一下，", assistants[0].text)
+        assertTrue("工具前正文收口为终态", !assistants[0].isStreaming)
+        val final = assistants[1]
+        assertEquals("UI 累积优先，fullText 仅空时兜底", "结论如下：", final.text)
+        assertTrue(!final.isStreaming)
+        // 核心诉求：最终回答位于工具胶囊之后（收尾回答在时间轴末尾）
+        val toolIndex = snap.entries.indexOfFirst { it is StreamEntry.ToolCapsuleEntry }
+        val finalIndex = snap.entries.indexOfLast { it is StreamEntry.AssistantEntry }
+        assertTrue("最终回答排在工具记录之后（toolIndex=$toolIndex finalIndex=$finalIndex）", finalIndex > toolIndex)
+    }
+
+    @Test
+    fun `tool args delta closes streaming assistant before capsule creation`() {
+        // 参数分片先于 Start 到达的流式路径：首个分片即收口正文段 ——
+        // 工具后的正文（含最终回答）另起新条目，不再并进工具前旧气泡。
+        val s = CodeStreamSession()
+        s.beginRun("参数流式任务")
+        s.onEvent(AgentEvent.ResponseChunk("先看看文件，"))
+        // 参数分片（有工具名 + 可提取预览 → 建等待态胶囊）
+        s.onEvent(AgentEvent.ToolCallArgsDelta("w1", "CodeWrite", """{"path":"A.kt","conte"""))
+        s.onEvent(AgentEvent.ToolCallArgsDelta("w1", "CodeWrite", """nt":"x"}"""))
+        s.onEvent(AgentEvent.ToolCallStart("w1", "CodeWrite", """{"path":"A.kt","content":"x"}"""))
+        s.onEvent(AgentEvent.ToolCallComplete("w1", "CodeWrite", "{}", "written", "", true, 5))
+        s.onEvent(AgentEvent.ResponseChunk("写好了。"))
+        s.onEvent(AgentEvent.ResponseComplete("写好了。"))
+        val snap = s.snapshot()
+        val assistants = snap.entries.filterIsInstance<StreamEntry.AssistantEntry>()
+        assertEquals("工具前后各一条正文", 2, assistants.size)
+        assertEquals("先看看文件，", assistants[0].text)
+        assertEquals("写好了。", assistants[1].text)
+        assertTrue(!assistants[1].isStreaming)
+        // 时序：工具前正文 → 胶囊 → 最终回答
+        val capsuleIndex = snap.entries.indexOfFirst { it is StreamEntry.ToolCapsuleEntry }
+        val finalIndex = snap.entries.indexOfLast { it is StreamEntry.AssistantEntry }
+        assertTrue(
+            "最终回答排在工具记录之后（capsuleIndex=$capsuleIndex finalIndex=$finalIndex）",
+            finalIndex > capsuleIndex
+        )
     }
 
     @Test
