@@ -287,7 +287,7 @@ object GitRoleSkillCatalog {
             )
         ),
         guards = listOf(
-            "secrets 只经 ${{ secrets.X }} 引用，绝不 echo/写日志（pull_request_target 的 checkout 污染向量单独评估）",
+            "secrets 只经 \${{ secrets.X }} 引用，绝不 echo/写日志（pull_request_target 的 checkout 污染向量单独评估）",
             "第三方 action 必须 pin 全长 SHA 并可溯源仓库；新加 workflow 前先本地过 YAML 解析器"
         ),
         whenToUse = "设计/评审/加固 .github/workflows 下任何文件时；CI 双倍运行、超预算、action 失效类事故排查。"
