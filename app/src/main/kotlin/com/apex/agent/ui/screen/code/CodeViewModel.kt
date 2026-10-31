@@ -143,6 +143,8 @@ class CodeViewModel @Inject constructor(
     // apexNotifications/foregroundTracker/appContext：任务完成通知（设置开关
     // 真接线 —— 后台时跑完发系统通知，前台静音）。
     internal val usageLedger: com.apex.agent.usage.UsageLedger,
+    // #221：用量归属会话（运行时层记账读取；切工作区时更新）。
+    internal val currentUsageSession: com.apex.agent.usage.CurrentUsageSession,
     internal val apexNotifications: com.apex.agent.notify.ApexNotifications,
     internal val foregroundTracker: com.apex.agent.notify.ForegroundTracker,
     @dagger.hilt.android.qualifiers.ApplicationContext internal val appContext: android.content.Context,
@@ -1056,6 +1058,8 @@ class CodeViewModel @Inject constructor(
             buildSessionSnapshot(previousId)
         } else null
         boundWorkspaceId = ws.workspaceId
+        // #221：用量观测在运行时层记账，需要知道当前会话归属（切工作区即换桶）。
+        currentUsageSession.bind(ws.workspaceId)
         sessionPersistJob?.cancel()
         sessionLoadJob?.cancel()
         editorJob?.cancel()
