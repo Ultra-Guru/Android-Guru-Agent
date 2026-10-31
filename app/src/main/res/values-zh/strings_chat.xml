@@ -125,6 +125,7 @@
 
     <!-- ═══ SlashMenuProvider（斜杠菜单分组）═══ -->
     <string name="chat_slash_no_skills">暂无已启用 Skill</string>
+    <string name="chat_slash_no_fusion">尚未安装任何聚合包</string>
     <string name="chat_slash_mcp_servers">MCP 服务器</string>
     <string name="chat_slash_mcp_connected">已连接 %1$d</string>
     <string name="chat_slash_plugins">插件</string>

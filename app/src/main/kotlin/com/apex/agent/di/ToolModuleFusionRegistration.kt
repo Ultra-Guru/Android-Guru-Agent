@@ -4,7 +4,9 @@ import com.apex.agent.core.tools.DefaultToolRegistry
 import com.apex.agent.core.tools.SafeAgentTool
 import com.apex.agent.core.tools.fusion.FusionActivationSink
 import com.apex.agent.core.tools.fusion.FusionActivateTool
+import com.apex.agent.core.tools.fusion.FusionCreateTool
 import com.apex.agent.core.tools.fusion.FusionInfoTool
+import com.apex.agent.core.tools.fusion.FusionInstallMembersTool
 import com.apex.agent.core.tools.fusion.FusionListTool
 import com.apex.agent.fusion.FusionBundleController
 
@@ -21,7 +23,10 @@ import com.apex.agent.fusion.FusionBundleController
  */
 internal fun registerFusionBundleTools(
     registry: DefaultToolRegistry,
-    fusionController: FusionBundleController
+    fusionController: FusionBundleController,
+    skillRegistry: com.apex.agent.core.tools.skill.SkillRegistry,
+    mcpManager: com.apex.agent.core.tools.mcp.McpManager,
+    activationStore: com.apex.agent.core.tools.skill.SkillActivationStore
 ) {
     val fusionRegistry = fusionController.registryForTools
     registry.register(SafeAgentTool(FusionListTool(fusionRegistry)))
@@ -41,4 +46,15 @@ internal fun registerFusionBundleTools(
             )
         )
     )
+    registry.register(
+        SafeAgentTool(
+            FusionCreateTool(
+                registry = fusionRegistry,
+                installedSkillIds = { skillRegistry.getInstalled().map { it.manifest.id }.toSet() },
+                configuredMcpNames = { mcpManager.getConfigs().map { it.name }.toSet() },
+                activeSkillIds = { activationStore.snapshot() }
+            )
+        )
+    )
+    registry.register(SafeAgentTool(FusionInstallMembersTool(fusionController.activator)))
 }

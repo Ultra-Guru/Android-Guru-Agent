@@ -125,6 +125,7 @@
 
     <!-- ═══ SlashMenuProvider (slash menu groups) ═══ -->
     <string name="chat_slash_no_skills">No active skills</string>
+    <string name="chat_slash_no_fusion">No aggregation packs installed</string>
     <string name="chat_slash_mcp_servers">MCP servers</string>
     <string name="chat_slash_mcp_connected">%1$d connected</string>
     <string name="chat_slash_plugins">Plugins</string>
