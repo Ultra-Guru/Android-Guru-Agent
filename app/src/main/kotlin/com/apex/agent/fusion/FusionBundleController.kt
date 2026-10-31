@@ -45,7 +45,10 @@ class FusionBundleController @Inject constructor(
     @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: Context,
     private val registry: FusionBundleRegistry,
     /** 三端口编排中枢（FusionActivate 工具与 UI 共用；由 FusionModule 装配）。 */
-    val activator: FusionBundleActivator
+    val activator: FusionBundleActivator,
+    /** 引擎懒引用（dagger.Lazy 断环：ToolRegistry→Controller→引擎→ToolRegistry）——
+     *  Fusion Catalog 目录段写入 additionalSystemContext 用。 */
+    private val engineLazy: dagger.Lazy<com.apex.agent.core.engine.AgentEngine>
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val prefs: SharedPreferences =
@@ -65,9 +68,12 @@ class FusionBundleController @Inject constructor(
 
     init {
         refreshBundles()
-        // registry 变化（安装/卸载/内置升级）→ 清单自动刷新
+        // registry 变化（安装/卸载/内置升级）→ 清单自动刷新 + 目录段同步
         scope.launch {
-            registry.changes.collect { refreshBundles() }
+            registry.changes.collect {
+                refreshBundles()
+                refreshFusionCatalog()
+            }
         }
     }
 
@@ -81,6 +87,7 @@ class FusionBundleController @Inject constructor(
      */
     fun ensureWarmedUp() {
         if (!warmedUp.compareAndSet(false, true)) return
+        refreshFusionCatalog()
         val lastActive = prefs.getString(KEY_ACTIVE_BUNDLE, null) ?: return
         scope.launch {
             activator.activate(lastActive)
@@ -142,6 +149,45 @@ class FusionBundleController @Inject constructor(
     fun onModelDeactivation() {
         prefs.edit().remove(KEY_ACTIVE_BUNDLE).apply()
         _activeBundle.value = null
+    }
+
+    /**
+     * Fusion Catalog 目录段（**常驻提示词**——与 Skill Catalog 同级别的
+     * 一等公民待遇）：已装聚合的一行式清单写入引擎 additionalSystemContext，
+     * 模型「天生知道」有哪些聚合可用（激活用 FusionActivate / 装成员用
+     * FusionInstallMembers），不再需要一次 FusionList 探测调用。
+     *
+     * 标记包围（<!-- FUSION_CATALOG -->...）幂等刷新：变更时移除旧段重插，
+     * 与聚合激活的人设注入（EnginePromptPort 读改写）互不踩踏。
+     */
+    private fun refreshFusionCatalog() {
+        val apex = engineLazy.get() as? com.apex.agent.core.engine.ApexAgentEngine ?: return
+        val digests = registry.digests()
+        val section = if (digests.isEmpty()) "" else buildString {
+            appendLine("<!-- FUSION_CATALOG -->")
+            appendLine("## Fusion Catalog (${digests.size} packs installed)")
+            appendLine("Compound packs (skills + MCP + plugins + workflow) are installed but NOT active by default.")
+            appendLine("When the user's task matches a pack below, call FusionActivate(id) to turn the whole system on;")
+            appendLine("FusionInstallMembers(id) installs members without activating.")
+            digests.forEach { d ->
+                appendLine("- ${d.id}「${d.name}」: ${d.description.take(80)}（技能×${d.skillCount} MCP×${d.mcpServerCount}）")
+            }
+            append("<!-- /FUSION_CATALOG -->")
+        }
+        runCatching {
+            apex.patchConfig { cfg ->
+                val cleaned = cfg.additionalSystemContext
+                    .replace(Regex("<!-- FUSION_CATALOG -->[\\s\\S]*?<!-- /FUSION_CATALOG -->
+?"), "")
+                    .trim()
+                cfg.copy(
+                    additionalSystemContext =
+                    if (section.isBlank()) cleaned else listOf(section, cleaned).filter { it.isNotBlank() }.joinToString("
+
+")
+                )
+            }
+        }
     }
 
     companion object {

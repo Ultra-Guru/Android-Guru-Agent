@@ -5,6 +5,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Api
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.apex.agent.core.tools.connector.ConnectorRegistry
@@ -57,6 +58,7 @@ class SlashMenuProvider @Inject constructor(
     private val skills: SkillMenuProvider,
     private val skillRegistry: SkillRegistry,
     private val mcpManager: McpManager,
+    private val fusionController: com.apex.agent.fusion.FusionBundleController,
     private val pluginManager: PluginManager,
     // Plugin System v2：功能性插件的斜杠指令贡献（已激活插件快照）。
     private val unifiedPluginRegistry: UnifiedPluginRegistry,
@@ -121,6 +123,7 @@ class SlashMenuProvider @Inject constructor(
             categories = listOf(
                 buildSkillsCategory(),
                 buildMcpCategory(),
+                buildFusionCategory(),
                 buildPluginsCategory(),
                 buildConnectorsCategory()
             )
@@ -159,6 +162,31 @@ class SlashMenuProvider @Inject constructor(
             items = items,
             badge = if (active.isNotEmpty()) "${active.size}" else null,
             hint = if (active.isEmpty()) languageManager.getString(R.string.chat_slash_no_skills) else null
+        )
+    }
+
+    // ── Fusion：已安装聚合包（激活即整体系就绪）——与技能/MCP 同级类目 ──
+    // 门控对齐斜杠总则：列出全部已装包（激活语义是"整队启用"而非运行态，
+    // 未激活的包同样应可见——选用动作本身就是激活入口）。
+    private fun buildFusionCategory(): SlashMenuCategory {
+        val digests = fusionController.bundles.value
+        val activeId = fusionController.activeBundle.value?.id
+        val items = digests.map { d ->
+            SlashMenuItem(
+                label = d.name,
+                command = "/fusion:${d.id} ",
+                description = d.description,
+                status = if (d.id == activeId) SlashItemStatus.CONNECTED else SlashItemStatus.READY,
+                scope = d.scope
+            )
+        }
+        return SlashMenuCategory(
+            id = "fusion",
+            title = "Fusion",
+            icon = Icons.Default.WorkspacePremium,
+            items = items,
+            badge = if (activeId != null) "1" else null,
+            hint = if (items.isEmpty()) languageManager.getString(R.string.chat_slash_no_fusion) else null
         )
     }
 

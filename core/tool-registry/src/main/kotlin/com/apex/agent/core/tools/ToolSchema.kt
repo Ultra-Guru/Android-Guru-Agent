@@ -337,6 +337,18 @@ class ToolSchema internal constructor(
             )
         )
 
+        /** 字符串数组参数（id 清单类；渲染为 array of string）。 */
+        fun stringArray(
+            name: String,
+            required: Boolean = false,
+            description: String = ""
+        ) = add(
+            ToolParam(
+                name, ToolParamType.ARRAY, required, description,
+                emptyList(), null
+            )
+        )
+
         fun build(): ToolSchema = ToolSchema(params.toList())
     }
 

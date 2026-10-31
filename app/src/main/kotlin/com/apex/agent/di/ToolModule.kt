@@ -992,7 +992,7 @@ object ToolModule {
         registry.register(SafeAgentTool(SkillActivateTool(skillRegistry, skillActivation)))
 
         // ═══ 13b. FusionBundle 工具族（FusionList/FusionInfo/FusionActivate —— 注册体在卫星文件）═══
-        registerFusionBundleTools(registry, fusionController)
+        registerFusionBundleTools(registry, fusionController, skillRegistry, mcpManager, skillActivation)
 
         // ═══ 14. Tool System v3/v5 新工具（纯 JVM）—— 注册体拆至同文件（同上 SRP 预算）
         registerToolSystemV3V5Tools(registry, conversationMemory, contextArchive)
