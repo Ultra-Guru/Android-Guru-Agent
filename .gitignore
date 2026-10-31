@@ -190,3 +190,6 @@ platform/terminal/src/main/jniLibs/*/libubuntu-rootfs.so
 # time (scripts/changelog.py build) and embedded as the offline fallback
 # asset — the generated copy is never committed (source tree stays clean)
 app/src/main/assets/changelog.json
+
+# Guru Web 运行时产物（不入库）
+/.zscripts/dev.pid
