@@ -52,6 +52,21 @@ class McpManagerToolAggregationTest {
         }
     }
 
+    @Test fun `slow source cannot hold healthy tools beyond aggregation budget`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val logs = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val manager = McpManager(tmp.newFolder(), builtinTransports = linkedMapOf(
+            "slow" to { Transport("slow") { withContext(dispatcher) { delay(60_000) } } },
+            "healthy" to { Transport("healthy") {} }
+        ), errorLog = { logs += it })
+        connect(manager, "slow", "healthy")
+        val started = testScheduler.currentTime
+        val tools = manager.getAllTools()
+        assertEquals(listOf("healthy"), tools.map { it.name })
+        assertTrue("Slow source must have a short aggregation budget", testScheduler.currentTime - started <= 5_000)
+        assertTrue(logs.any { "slow" in it && "timeout" in it })
+    }
+
     @Test fun `list requests overlap instead of adding server latency`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val manager = McpManager(tmp.newFolder(), builtinTransports = listOf("first", "second").associateWith { name ->
