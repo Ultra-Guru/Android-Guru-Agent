@@ -91,6 +91,14 @@ class UbuntuLifecycleCoordinator(
      * 短路前刷一次（文件对比，毫秒级），切网自愈。
      */
     private val dnsRefreshFn: (suspend () -> Boolean)? = null,
+    /**
+     * ★ 能力探测缓存失效端口（生产：LinuxCapabilityProbe::invalidate；null=未接线）。
+     * 背景：probe 有 5 分钟 TTL 缓存 —— bootstrap 实际跑过（BASE_PACKAGES 安装/
+     * dpkg --configure -a 自愈）后，缓存里可能仍是旧的 BROKEN（如半装的 git）→
+     * READY 状态卡着过期的 BROKEN 能力列表。bootstrap 实际执行过（非 ALREADY_READY
+     * 短路）→ 探测前失效缓存，确保快照是刚装完的真相。
+     */
+    private val probeInvalidateFn: (() -> Unit)? = null,
     private val target: RootfsTarget,
     private val defaultTimeoutMs: Long = DEFAULT_ENSURE_TIMEOUT_MS,
     private val clock: () -> Long = { System.currentTimeMillis() },
@@ -412,6 +420,13 @@ class UbuntuLifecycleCoordinator(
         }
 
         // ── Stage 3: capability 快照（诊断性 —— 探测失败不否定 READY）──
+        // ★ bootstrap 实际执行过（非 ALREADY_READY 短路）→ 先失效能力探测缓存：
+        // BASE_PACKAGES 可能刚装好/自愈了半装的包（如 git BROKEN→AVAILABLE），
+        // 或 FAILED 前部分安装已落盘 —— 缓存不失效则快照里还是旧状态。
+        //（IN_PROGRESS/CANCELLED/BUSY 已在上文提前 return，不会到达此处。）
+        if (br == null || br.outcome != BootstrapOutcome.ALREADY_READY) {
+            runCatching { probeInvalidateFn?.invoke() }
+        }
         // Kotlin try/catch 的 definite assignment 规则禁止 val 双路径赋值 → var 局部。
         var caps: List<CapabilityEntry> = emptyList()
         var probeDegraded = false

@@ -46,6 +46,14 @@ enum class LinuxErrorCode(
     /** apt/dpkg lock 被占（另一操作进行中 / stale lock）。Agent 应稍后重试。 */
     APT_LOCKED(recoverable = true, repairable = false, stage = "apt"),
 
+    /**
+     * ★ dpkg 中断（半装状态）：apt-get install 被强杀（超时/App 死亡/系统杀
+     * proot）→ unpacked-not-configured / updates 残留 —— 后续 apt 写操作立即
+     * 报 "dpkg was interrupted"。修复路径确定性：dpkg --configure -a（既可自动
+     * （UbuntuAptPackageManager 自愈 / EnvironmentRepairService）也可 Agent 手动）。
+     */
+    DPKG_INTERRUPTED(recoverable = true, repairable = true, stage = "apt"),
+
     /** apt 操作执行失败（依赖冲突 / 脚本错误 / dpkg 中断）。 */
     APT_FAILED(recoverable = false, repairable = true, stage = "apt"),
 
