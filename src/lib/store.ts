@@ -10,10 +10,12 @@ interface AppState {
   activeWorkspaceId: string | null
   activeConversationId: string | null
   mobileNavOpen: boolean
+  paletteOpen: boolean
   setView: (v: ViewKey) => void
   setActiveWorkspace: (id: string | null, opts?: { pickConversation?: string | null }) => void
   setActiveConversation: (id: string | null) => void
   setMobileNavOpen: (open: boolean) => void
+  setPaletteOpen: (open: boolean) => void
 }
 
 const LS_KEY = 'guru.activeWorkspaceId'
@@ -31,6 +33,7 @@ export const useApp = create<AppState>((set) => ({
   activeWorkspaceId: typeof window !== 'undefined' ? readStoredWorkspace() : null,
   activeConversationId: null,
   mobileNavOpen: false,
+  paletteOpen: false,
   setView: (v) => set({ view: v, mobileNavOpen: false }),
   setActiveWorkspace: (id, opts) => {
     try {
@@ -41,4 +44,6 @@ export const useApp = create<AppState>((set) => ({
     set({ activeWorkspaceId: id, activeConversationId: opts?.pickConversation ?? null, mobileNavOpen: false })
   },
   setActiveConversation: (id) => set({ activeConversationId: id, mobileNavOpen: false }),
+  setMobileNavOpen: (open) => set({ mobileNavOpen: open }),
+  setPaletteOpen: (open) => set({ paletteOpen: open }),
 }))

@@ -116,6 +116,20 @@ export interface ImportStats {
   skippedProfile: number
 }
 
+export interface SearchResult {
+  conversationId: string
+  title: string
+  mode: 'agent' | 'coding'
+  workspaceId: string
+  workspaceName: string
+  workspaceEmoji: string
+  updatedAt: string
+  messageCount: number
+  hit: 'title' | 'content'
+  snippet: string | null
+  snippetRole: 'user' | 'assistant' | null
+}
+
 export class ApiError extends Error {
   status: number
   constructor(message: string, status: number) {
@@ -246,6 +260,12 @@ export const api = {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(data),
     }).then((r) => json<{ ok: boolean; stats: ImportStats; error?: string }>(r)),
+
+  /** 全局深度搜索（命令面板）：跨工作区匹配对话标题与消息内容 */
+  searchAll: (q: string) =>
+    fetch(`/api/search?q=${encodeURIComponent(q)}`).then((r) =>
+      json<{ query: string; results: SearchResult[] }>(r)
+    ),
 
   saveRules: (data: { scope: 'global' | 'workspace'; rules: string; workspaceId?: string }) =>
     fetch('/api/rules', {

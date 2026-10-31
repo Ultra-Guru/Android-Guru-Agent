@@ -5,10 +5,11 @@ import { ChatView } from '@/components/app/chat-view'
 import { MemoryView } from '@/components/app/memory-view'
 import { PlaygroundView } from '@/components/app/playground-view'
 import { SettingsView } from '@/components/app/settings-view'
+import { CommandPalette } from '@/components/app/command-palette'
 import { useApp, type ViewKey } from '@/lib/store'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/client'
-import { MessageSquare, Brain, Gamepad2, Settings2, Sun, Moon } from 'lucide-react'
+import { MessageSquare, Brain, Gamepad2, Settings2, Sun, Moon, Search } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -47,6 +48,7 @@ function AppShell() {
   const view = useApp((s) => s.view)
   const setView = useApp((s) => s.setView)
   const activeWorkspaceId = useApp((s) => s.activeWorkspaceId)
+  const setPaletteOpen = useApp((s) => s.setPaletteOpen)
 
   const { data: wsData } = useQuery({ queryKey: ['workspaces'], queryFn: api.listWorkspaces })
   const { data: convData } = useQuery({
@@ -101,6 +103,18 @@ function AppShell() {
             <span className="hidden md:inline text-[11px] font-mono text-muted-foreground mr-2 max-w-52 truncate">
               {workspace ? `${workspace.emoji} ${workspace.name} · ${convCount} 对话` : '初始化…'}
             </span>
+            {/* 全局搜索 / 命令面板入口（Cmd+K） */}
+            <Button
+              variant="ghost"
+              onClick={() => setPaletteOpen(true)}
+              className="h-9 gap-2 px-2.5 text-muted-foreground hover:text-primary"
+              aria-label="打开全局搜索与命令面板（快捷键 Command K）"
+            >
+              <Search className="size-4" />
+              <kbd className="hidden sm:inline-flex items-center h-5 px-1.5 rounded border border-border bg-muted font-mono text-[10px] tracking-wider">
+                ⌘K
+              </kbd>
+            </Button>
             <ThemeToggle />
           </div>
         </div>
@@ -112,6 +126,9 @@ function AppShell() {
         {view === 'playground' && <PlaygroundView />}
         {view === 'settings' && <SettingsView />}
       </main>
+
+      {/* 全局命令面板（Cmd+K）：跨工作区深度搜索 + 快速动作 */}
+      <CommandPalette />
 
       <footer className="h-8 shrink-0 border-t border-border bg-card/50 flex items-center gap-3 px-4 text-[11px] font-mono text-muted-foreground">
         <span className="text-primary/90">●</span>
@@ -125,7 +142,14 @@ function AppShell() {
           {view === 'playground' && '自包含 HTML 作品'}
           {view === 'settings' && '软件级 + 项目级规则'}
         </span>
-        <span className="ml-auto hidden sm:inline">GURU WEB v1</span>
+        <button
+          onClick={() => setPaletteOpen(true)}
+          className="ml-auto hidden sm:inline-flex items-center gap-1.5 hover:text-primary transition-colors"
+          aria-label="打开全局搜索与命令面板"
+        >
+          <Search className="size-3" /> ⌘K 深度搜索
+        </button>
+        <span className="sm:ml-0 ml-auto">GURU WEB v1</span>
       </footer>
     </div>
   )

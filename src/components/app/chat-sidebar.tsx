@@ -56,6 +56,7 @@ import {
 } from 'lucide-react'
 import { toast } from '@/hooks/use-toast'
 import { useApp } from '@/lib/store'
+import { Command } from 'lucide-react'
 
 const EMOJI_CHOICES = ['🗂', '🚀', '🧪', '💡', '🧠', '⚡', '🎯', '🔧', '📦', '🌱', '🎨', '📡']
 
@@ -183,6 +184,7 @@ export function ChatSidebar({
   onDeleteConversation: (id: string) => void
 }) {
   const setView = useApp((s) => s.setView)
+  const setPaletteOpen = useApp((s) => s.setPaletteOpen)
   const queryClient = useQueryClient()
   const [query, setQuery] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<ConversationSummary | null>(null)
@@ -292,6 +294,15 @@ export function ChatSidebar({
             aria-label="搜索当前工作区的对话"
           />
         </div>
+        {/* 深度搜索入口：跨工作区、命中消息内容 */}
+        <button
+          onClick={() => setPaletteOpen(true)}
+          className="w-full flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground/70 hover:text-primary transition-colors px-1"
+          aria-label="打开全局深度搜索（快捷键 Command K）"
+        >
+          <Command className="size-3" />
+          <span>K 全局深度搜索 · 跨工作区 · 含消息内容</span>
+        </button>
       </div>
 
       {/* 对话列表：max-h + 滚动 */}
