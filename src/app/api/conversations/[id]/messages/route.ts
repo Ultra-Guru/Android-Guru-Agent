@@ -20,8 +20,9 @@ function sse(obj: unknown): Uint8Array {
 export async function POST(req: Request, { params }: Params) {
   const { id } = await params
   const body = await req.json().catch(() => null)
+  const regenerate = body?.regenerate === true
   const content = (body?.content || '').toString().trim()
-  if (!content || content.length > 24000) {
+  if (!regenerate && (!content || content.length > 24000)) {
     return new Response(JSON.stringify({ error: '消息内容无效（1 ~ 24000 字）' }), {
       status: 400,
       headers: { 'content-type': 'application/json' },
@@ -41,23 +42,54 @@ export async function POST(req: Request, { params }: Params) {
 
   const mode: 'agent' | 'coding' = conv.mode === 'coding' ? 'coding' : 'agent'
 
-  // ── 保存用户消息 + 自动标题 + 触碰工作区 ──
-  const isFirst = conv.messages.length === 0
-  const userMsg = await db.message.create({
-    data: { conversationId: id, role: 'user', content },
-  })
+  let history: Array<{ role: 'user' | 'assistant'; content: string }>
   let newTitle: string | null = null
-  if (isFirst && conv.title === '新对话') {
-    newTitle = content.replace(/\s+/g, ' ').slice(0, 18) + (content.length > 18 ? '…' : '')
+  let userMsgId = ''
+
+  if (regenerate) {
+    // ── 重新生成：删除尾部连续的 assistant 消息，用既有历史重推 ──
+    const msgs = [...conv.messages]
+    const trailing: string[] = []
+    while (msgs.length > 0 && msgs[msgs.length - 1].role === 'assistant') {
+      trailing.push(msgs.pop()!.id)
+    }
+    if (msgs.length === 0) {
+      return new Response(JSON.stringify({ error: '没有可重新生成的回复（缺少用户消息）' }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (trailing.length > 0) {
+      await db.message.deleteMany({ where: { id: { in: trailing } } })
+    }
+    history = msgs.slice(-HISTORY_LIMIT).map((m) => ({
+      role: m.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+      content: m.content,
+    }))
+  } else {
+    // ── 常规发送：保存用户消息 + 自动标题 + 触碰工作区 ──
+    const isFirst = conv.messages.length === 0
+    const userMsg = await db.message.create({
+      data: { conversationId: id, role: 'user', content },
+    })
+    userMsgId = userMsg.id
+    if (isFirst && conv.title === '新对话') {
+      newTitle = content.replace(/\s+/g, ' ').slice(0, 18) + (content.length > 18 ? '…' : '')
+    }
+    await db.conversation.update({
+      where: { id },
+      data: { updatedAt: new Date(), ...(newTitle ? { title: newTitle } : {}) },
+    })
+    await db.workspace.update({
+      where: { id: conv.workspaceId },
+      data: { lastUsedAt: new Date() },
+    })
+    history = conv.messages.slice(-HISTORY_LIMIT).map((m) => ({
+      role: m.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+      content: m.content,
+    }))
+    history.push({ role: 'user', content })
   }
-  await db.conversation.update({
-    where: { id },
-    data: { updatedAt: new Date(), ...(newTitle ? { title: newTitle } : {}) },
-  })
-  await db.workspace.update({
-    where: { id: conv.workspaceId },
-    data: { lastUsedAt: new Date() },
-  })
 
   // ── 组装上下文 ──
   const globalRules =
@@ -72,11 +104,19 @@ export async function POST(req: Request, { params }: Params) {
     ? (await db.profileItem.findMany({ orderBy: { confidence: 'desc' }, take: PROFILE_INJECT }))
     : []
 
-  const history = conv.messages.slice(-HISTORY_LIMIT).map((m) => ({
-    role: m.role === 'assistant' ? ('assistant' as const) : ('user' as const),
-    content: m.content,
-  }))
-  history.push({ role: 'user', content })
+  // 注入即访问：递增 accessCount / 刷新 lastAccessedAt（诚实上报，反馈到评分召回）
+  if (memories.length > 0) {
+    await db.memoryItem.updateMany({
+      where: { id: { in: memories.map((m) => m.id) } },
+      data: { accessCount: { increment: 1 }, lastAccessedAt: new Date() },
+    })
+  }
+  if (profileItems.length > 0) {
+    await db.profileItem.updateMany({
+      where: { id: { in: profileItems.map((p) => p.id) } },
+      data: { accessCount: { increment: 1 }, lastAccessedAt: new Date() },
+    })
+  }
 
   const systemPrompt = buildSystemPrompt({
     mode,
@@ -99,7 +139,13 @@ export async function POST(req: Request, { params }: Params) {
           }
         }
       }
-      safeEnqueue(sse({ type: 'user', id: userMsg.id, content, title: newTitle }))
+      safeEnqueue(
+        sse(
+          regenerate
+            ? { type: 'user', id: '', content: '', title: null, regenerated: true }
+            : { type: 'user', id: userMsgId, content, title: newTitle }
+        )
+      )
 
       const full = await streamText(
         [{ role: 'system', content: systemPrompt }, ...history],
@@ -126,12 +172,13 @@ export async function POST(req: Request, { params }: Params) {
         controller.close()
       } catch {}
 
-      // 消息后提炼（批量蒸馏）—— 绝不拖垮主流程
+      // 消息后提炼（批量蒸馏）—— 绝不拖垮主流程；重新生成时以末条用户消息为锚
+      const lastUserContent = history.length > 0 ? history[history.length - 1].content : ''
       after(async () => {
         await runDigest({
           mode,
           recentTurns: [
-            { role: 'user', content },
+            { role: 'user', content: lastUserContent },
             { role: 'assistant', content: full },
           ],
         })

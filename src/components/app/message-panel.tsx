@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   api,
+  RULE_TEMPLATES,
   type ChatMessage,
   type ConversationSummary,
   type WorkspaceSummary,
@@ -14,6 +15,7 @@ import { Markdown } from '@/components/app/markdown'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { toast } from '@/hooks/use-toast'
@@ -31,9 +33,104 @@ import {
   FileText,
   Loader2,
   Menu,
+  RefreshCw,
+  ScanSearch,
 } from 'lucide-react'
 
 type Mode = 'agent' | 'coding'
+
+// ═══════════ 注入预览（诚实上报） ═══════════
+// 与服务端 /api/context 同源：展示本次对话将注入的每个系统提示词分段
+function ContextPreview({
+  workspace,
+  initialMode,
+  compact,
+}: {
+  workspace: WorkspaceSummary
+  initialMode: Mode
+  compact?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [mode, setMode] = useState<Mode>(initialMode)
+  const { data, isFetching } = useQuery({
+    queryKey: ['context-preview', workspace.id, mode],
+    queryFn: () => api.getContextPreview(workspace.id, mode),
+    enabled: open,
+    staleTime: 20_000,
+  })
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className={cn(
+            'flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-[11px] font-mono transition-colors border',
+            compact
+              ? 'text-muted-foreground hover:text-primary hover:border-primary/40 border-border'
+              : 'text-muted-foreground hover:text-primary hover:border-primary/40 border-border bg-card'
+          )}
+          aria-label="预览本次注入的上下文"
+        >
+          <ScanSearch className="size-3.5" />
+          注入预览
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[26rem] p-0" sideOffset={8}>
+        <div className="p-3 border-b border-border">
+          <div className="flex items-center gap-2">
+            <ScanSearch className="size-3.5 text-primary shrink-0" />
+            <p className="text-xs font-semibold flex-1 truncate">本次注入（诚实上报）</p>
+            <div className="flex p-0.5 rounded-lg bg-muted gap-0.5" role="tablist" aria-label="预览模式">
+              {(['agent', 'coding'] as Mode[]).map((m) => (
+                <button
+                  key={m}
+                  role="tab"
+                  aria-selected={mode === m}
+                  onClick={() => setMode(m)}
+                  className={cn(
+                    'h-6 px-2 rounded-md text-[10px] font-semibold transition-colors',
+                    mode === m ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  {m === 'agent' ? '智能体' : '编码'}
+                </button>
+              ))}
+            </div>
+          </div>
+          {data && (
+            <p className="mt-1.5 text-[10px] font-mono text-muted-foreground leading-relaxed">
+              共 {data.stats.totalChars} 字符 · 记忆 {data.stats.memoryCount}/{data.stats.memoryPool} 条
+              {mode === 'coding' && ` · 画像 ${data.stats.profileCount} 条`}
+            </p>
+          )}
+        </div>
+        <ScrollArea className="max-h-80">
+          <div className="p-3 space-y-3">
+            {isFetching && !data ? (
+              <p className="text-center text-[11px] font-mono text-muted-foreground py-6">计算中…</p>
+            ) : data && data.sections.length > 0 ? (
+              data.sections.map((s) => (
+                <section key={s.key}>
+                  <header className="flex items-baseline gap-2 flex-wrap">
+                    <h4 className="text-[11px] font-bold">{s.title}</h4>
+                    <span className="text-[10px] font-mono text-muted-foreground/80">
+                      {s.subtitle} · {s.chars} 字
+                    </span>
+                  </header>
+                  <pre className="mt-1 rounded-lg bg-muted/60 border border-border p-2.5 text-[10px] leading-relaxed font-mono whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+                    {s.body}
+                  </pre>
+                </section>
+              ))
+            ) : (
+              <p className="text-center text-[11px] text-muted-foreground py-6">暂无可注入内容</p>
+            )}
+          </div>
+        </ScrollArea>
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 // ═══════════ 空态 ═══════════
 function EmptyState({
@@ -81,6 +178,10 @@ function EmptyState({
             <BrainCircuit className="size-3" />
             用户画像 {profileCount > 0 ? `${profileCount} 条` : '待建立'}
           </Badge>
+        </div>
+
+        <div className="mt-4 flex justify-center">
+          <ContextPreview workspace={workspace} initialMode="agent" compact />
         </div>
 
         <div className="mt-8 grid sm:grid-cols-2 gap-3">
@@ -172,6 +273,23 @@ function RulesQuickEdit({ workspace }: { workspace: WorkspaceSummary }) {
           <p className="text-[11px] text-muted-foreground leading-relaxed">
             仅在本工作区生效（优先于软件级规则）；也可在 设置 → 规则 里编辑。
           </p>
+        </div>
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {RULE_TEMPLATES.map((t) => (
+            <button
+              key={t.label}
+              type="button"
+              onClick={() =>
+                setDraftByWs({
+                  id: workspace.id,
+                  value: (draft.trimEnd() ? draft.trimEnd() + '\n' : '') + t.text,
+                })
+              }
+              className="h-6 px-2 rounded-md text-[10px] font-mono border border-border text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
+            >
+              + {t.label}
+            </button>
+          ))}
         </div>
         <Textarea
           value={draft}
@@ -290,6 +408,9 @@ export function MessagePanel({
     enabled: !!conversationId,
   })
   const messages: ChatMessage[] = convData?.conversation?.messages ?? []
+  const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null
+  const canRegenerate =
+    !sending && streamBuf === null && !streamInterrupted && lastMsg?.role === 'assistant'
 
   // 自动滚动（用户手动上翻则不打扰）
   useEffect(() => {
@@ -319,48 +440,69 @@ export function MessagePanel({
     }
   }
 
-  const send = () => {
-    const content = draft.trim()
-    if (!content || !conversationId || sending) return
-    setDraft('')
+  // ── 共享流处理：常规发送与重新生成走同一管线 ──
+  const runStream = (content: string, regenerate: boolean) => {
+    if (!conversationId) return
     setSending(true)
     setStreamBuf('')
+    setStreamInterrupted(null)
     pinnedRef.current = true
     let buffer = ''
-    const { promise, abort } = api.sendMessage(conversationId, content, (ev) => {
-      if (ev.type === 'user') {
-        // 用户消息已落库：失效查询使其立即显示
-        queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
-        if (ev.title) onTitleChanged()
-      } else if (ev.type === 'delta') {
-        buffer += String(ev.text)
-        setStreamBuf(buffer)
-      } else if (ev.type === 'done') {
-        setStreamBuf(null)
-        queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
-        setSending(false)
-        onTitleChanged()
-      } else if (ev.type === 'error') {
-        if (buffer.trim()) {
-          setStreamInterrupted({
-            id: 'local-interrupted',
-            role: 'assistant',
-            content: buffer,
-            createdAt: new Date().toISOString(),
-          })
+    const { promise, abort } = api.sendMessage(
+      conversationId,
+      content,
+      (ev) => {
+        if (ev.type === 'user') {
+          // 用户消息已落库（或重新生成已删除旧回复）：失效查询同步界面
+          queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
+          if (ev.title) onTitleChanged()
+        } else if (ev.type === 'delta') {
+          buffer += String(ev.text)
+          setStreamBuf(buffer)
+        } else if (ev.type === 'done') {
           setStreamBuf(null)
-        } else {
-          toast({ title: '发送失败', description: String(ev.message) || '请重试', variant: 'destructive' })
-          setStreamBuf(null)
+          queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
+          setSending(false)
+          onTitleChanged()
+        } else if (ev.type === 'error') {
+          if (buffer.trim()) {
+            setStreamInterrupted({
+              id: 'local-interrupted',
+              role: 'assistant',
+              content: buffer,
+              createdAt: new Date().toISOString(),
+            })
+            setStreamBuf(null)
+          } else {
+            toast({
+              title: regenerate ? '重新生成失败' : '发送失败',
+              description: String(ev.message) || '请重试',
+              variant: 'destructive',
+            })
+            setStreamBuf(null)
+          }
+          setSending(false)
         }
-        setSending(false)
-      }
-    })
+      },
+      { regenerate }
+    )
     abortRef.current = abort
     promise.then((ok) => {
       if (!ok) setSending(false)
       abortRef.current = null
     })
+  }
+
+  const send = () => {
+    const content = draft.trim()
+    if (!content || !conversationId || sending) return
+    setDraft('')
+    runStream(content, false)
+  }
+
+  const regenerate = () => {
+    if (!conversationId || sending) return
+    runStream('', true)
   }
 
   if (!conversationId || !current) {
@@ -385,6 +527,9 @@ export function MessagePanel({
           <span className="text-[10px] font-mono text-muted-foreground/70 shrink-0">
             {messages.length} 条
           </span>
+        </div>
+        <div className="hidden sm:block">
+          <ContextPreview key={mode} workspace={workspace} initialMode={mode} compact />
         </div>
         <div
           role="tablist"
@@ -430,6 +575,17 @@ export function MessagePanel({
             <p className="text-center text-xs text-muted-foreground font-mono py-10">加载对话…</p>
           ) : (
             messages.map((m) => <MessageBubble key={m.id} msg={m} />)
+          )}
+          {canRegenerate && (
+            <div className="flex px-1">
+              <button
+                onClick={regenerate}
+                className="inline-flex items-center gap-1 text-[10px] font-mono text-muted-foreground hover:text-primary transition-colors"
+                aria-label="重新生成最后一条回复"
+              >
+                <RefreshCw className="size-3" /> 重新生成
+              </button>
+            </div>
           )}
           {streamInterrupted && <MessageBubble msg={streamInterrupted} interrupted />}
           {streamBuf !== null && (

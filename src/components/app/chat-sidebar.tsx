@@ -9,7 +9,7 @@ import {
   type ConversationSummary,
   type WorkspaceSummary,
 } from '@/lib/client'
-import { useQuery } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -183,8 +183,30 @@ export function ChatSidebar({
   onDeleteConversation: (id: string) => void
 }) {
   const setView = useApp((s) => s.setView)
+  const queryClient = useQueryClient()
   const [query, setQuery] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<ConversationSummary | null>(null)
+  const [renaming, setRenaming] = useState<ConversationSummary | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [renamingBusy, setRenamingBusy] = useState(false)
+
+  const doRename = async () => {
+    if (!renaming || !renameValue.trim() || renamingBusy) return
+    setRenamingBusy(true)
+    try {
+      await api.updateConversation(renaming.id, { title: renameValue.trim() })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['conversations'] }),
+        queryClient.invalidateQueries({ queryKey: ['conversation', renaming.id] }),
+      ])
+      setRenaming(null)
+      toast({ title: '对话已重命名' })
+    } catch (e) {
+      toast({ title: '重命名失败', description: (e as Error).message, variant: 'destructive' })
+    } finally {
+      setRenamingBusy(false)
+    }
+  }
 
   const filtered = useMemo(() => {
     if (!query.trim()) return conversations
@@ -327,6 +349,15 @@ export function ChatSidebar({
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-44">
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setRenaming(c)
+                              setRenameValue(c.title)
+                            }}
+                            className="gap-2"
+                          >
+                            <Pencil className="size-3.5" /> 重命名
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => setDeleteTarget(c)} className="gap-2 text-destructive focus:text-destructive">
                             <Trash2 className="size-3.5" /> 删除对话
                           </DropdownMenuItem>
@@ -371,6 +402,34 @@ export function ChatSidebar({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!renaming} onOpenChange={(v) => !v && setRenaming(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>重命名对话</DialogTitle>
+            <DialogDescription>修改标题后保存，立即生效。</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-1">
+            <Label htmlFor="rename-conv">标题</Label>
+            <Input
+              id="rename-conv"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              maxLength={80}
+              autoFocus
+              onKeyDown={(e) => e.key === 'Enter' && doRename()}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenaming(null)} disabled={renamingBusy}>
+              取消
+            </Button>
+            <Button onClick={doRename} disabled={!renameValue.trim() || renamingBusy}>
+              {renamingBusy ? '保存中…' : '保存'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

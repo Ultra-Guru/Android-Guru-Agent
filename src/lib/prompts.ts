@@ -102,35 +102,93 @@ export interface SystemPromptInput {
   memoryItems: Array<{ category: string; content: string }>
 }
 
-export function buildSystemPrompt(input: SystemPromptInput): string {
-  const parts: string[] = []
-  parts.push(input.mode === 'coding' ? IDENTITY_CODING : IDENTITY_AGENT)
+/** 结构化分段 —— 单一数据源：buildSystemPrompt 与注入预览共用，保证所见即所发 */
+export interface PromptSection {
+  key: 'identity' | 'workspace' | 'global-rules' | 'project-rules' | 'profile' | 'memories' | 'priority'
+  title: string
+  subtitle: string
+  body: string
+}
+
+export function buildPromptSections(input: SystemPromptInput): PromptSection[] {
+  const coding = input.mode === 'coding'
+  const sections: PromptSection[] = []
+
+  sections.push({
+    key: 'identity',
+    title: '身份',
+    subtitle: coding ? '编码工位 · 工程任务人格' : '通用智能助手人格',
+    body: coding ? IDENTITY_CODING : IDENTITY_AGENT,
+  })
 
   const wsDesc = input.workspace.description?.trim()
   if (wsDesc) {
-    parts.push(`## 工作区\n当前工作区：「${input.workspace.name}」——${wsDesc}`)
+    sections.push({
+      key: 'workspace',
+      title: '工作区',
+      subtitle: input.workspace.name,
+      body: `## 工作区\n当前工作区：「${input.workspace.name}」——${wsDesc}`,
+    })
   }
 
   const global = formatGlobalRules(input.globalRules)
-  if (global) parts.push(global)
+  if (global) {
+    sections.push({
+      key: 'global-rules',
+      title: '软件级规则',
+      subtitle: '全局 · 所有工作区 · 所有模式',
+      body: global,
+    })
+  }
 
   const project = formatProjectRules(input.workspace)
-  if (project) parts.push(project)
+  if (project) {
+    sections.push({
+      key: 'project-rules',
+      title: '项目级规则',
+      subtitle: `仅工作区「${input.workspace.name}」`,
+      body: project,
+    })
+  }
 
-  if (input.mode === 'coding') {
+  if (coding) {
     const profile = formatUserProfile(input.profileItems)
-    if (profile) parts.push(profile)
+    if (profile) {
+      sections.push({
+        key: 'profile',
+        title: '用户画像',
+        subtitle: '编码模式注入 · 按置信度排序',
+        body: profile,
+      })
+    }
   }
 
   const memories = formatMemories(input.memoryItems)
-  if (memories) parts.push(memories)
+  if (memories) {
+    sections.push({
+      key: 'memories',
+      title: '相关记忆',
+      subtitle: '按综合评分召回',
+      body: memories,
+    })
+  }
 
-  parts.push(
-    input.mode === 'coding'
+  sections.push({
+    key: 'priority',
+    title: '优先级声明',
+    subtitle: '规则冲突时的裁决顺序',
+    body: coding
       ? '规则优先级：安全约束 > 项目级规则 > 软件级规则 > 画像与记忆 > 一般偏好。'
-      : '规则优先级：安全约束 > 项目级规则 > 软件级规则 > 记忆 > 一般偏好。'
-  )
-  return parts.join('\n\n')
+      : '规则优先级：安全约束 > 项目级规则 > 软件级规则 > 记忆 > 一般偏好。',
+  })
+
+  return sections
+}
+
+export function buildSystemPrompt(input: SystemPromptInput): string {
+  return buildPromptSections(input)
+    .map((s) => s.body)
+    .join('\n\n')
 }
 
 // ═══════════════ 消息后提炼（批量蒸馏 + 写入门禁） ═══════════════
@@ -293,10 +351,6 @@ export function validatePlaygroundHtml(html: string): string[] {
     if (re.test(html)) errors.push(msg)
   }
 
-  // localStorage 安全包裹：直接调用 getItem/setItem 且没有 try 包裹时给出提醒级错误
-  if (/localStorage\.(get|set|remove)Item/.test(html) && !/function\s*\(|=>|try\s*\{/.test('')) {
-    // 无法静态判断时跳过
-  }
   if (html.length > 80 * 1024) errors.push(`文件过大（${(html.length / 1024) | 0}KB > 80KB 硬上限）`)
   return errors
 }

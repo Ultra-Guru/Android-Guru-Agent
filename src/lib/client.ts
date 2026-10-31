@@ -83,6 +83,39 @@ export interface PlaygroundAppSummary {
   updatedAt: string
 }
 
+export interface ContextSection {
+  key: string
+  title: string
+  subtitle: string
+  body: string
+  chars: number
+}
+
+export interface ContextPreview {
+  mode: 'agent' | 'coding'
+  sections: ContextSection[]
+  prompt: string
+  stats: {
+    totalChars: number
+    memoryCount: number
+    memoryPool: number
+    profileCount: number
+    globalRulesChars: number
+    projectRulesChars: number
+  }
+}
+
+export interface ImportStats {
+  workspaces: number
+  conversations: number
+  messages: number
+  memories: number
+  profile: number
+  playground: number
+  skippedMemories: number
+  skippedProfile: number
+}
+
 export class ApiError extends Error {
   status: number
   constructor(message: string, status: number) {
@@ -146,18 +179,19 @@ export const api = {
   deleteConversation: (id: string) =>
     fetch(`/api/conversations/${id}`, { method: 'DELETE' }).then((r) => json<{ ok: boolean }>(r)),
 
-  /** 发送消息（SSE 流）。onEvent 接收逐事件；返回中止函数 */
+  /** 发送消息（SSE 流）。onEvent 接收逐事件；regenerate=true 时重推末条回复；返回中止函数 */
   sendMessage: (
     convId: string,
     content: string,
-    onEvent: (ev: { type: 'user' | 'delta' | 'done' | 'error'; [k: string]: unknown }) => void
+    onEvent: (ev: { type: 'user' | 'delta' | 'done' | 'error'; [k: string]: unknown }) => void,
+    opts?: { regenerate?: boolean }
   ): { promise: Promise<boolean>; abort: () => void } => {
     const controller = new AbortController()
     const promise = (async () => {
       const res = await fetch(`/api/conversations/${convId}/messages`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, regenerate: opts?.regenerate ?? false }),
         signal: controller.signal,
       })
       if (!res.ok || !res.body) {
@@ -200,6 +234,18 @@ export const api = {
     fetch('/api/rules').then((r) =>
       json<{ globalRules: string; workspaces: Array<{ id: string; name: string; emoji: string; projectRules: string; conversationCount: number }> }>(r)
     ),
+
+  getContextPreview: (workspaceId: string, mode: 'agent' | 'coding') =>
+    fetch(`/api/context?workspaceId=${encodeURIComponent(workspaceId)}&mode=${mode}`).then((r) =>
+      json<ContextPreview>(r)
+    ),
+
+  importData: (data: unknown) =>
+    fetch('/api/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(data),
+    }).then((r) => json<{ ok: boolean; stats: ImportStats; error?: string }>(r)),
 
   saveRules: (data: { scope: 'global' | 'workspace'; rules: string; workspaceId?: string }) =>
     fetch('/api/rules', {
@@ -284,6 +330,26 @@ export const MEMORY_CATEGORIES: Record<string, { label: string; badge: string }>
   milestone: { label: '里程碑', badge: '碑' },
   preference: { label: '偏好', badge: '好' },
 }
+
+/** 规则模板：一键插入常用规则片段（设置页与编码输入框共用） */
+export const RULE_TEMPLATES: Array<{ label: string; text: string }> = [
+  {
+    label: '语言口吻',
+    text: '· 默认使用简体中文回答；专业术语保留英文原文\n· 回答先给结论，再给依据',
+  },
+  {
+    label: '代码风格',
+    text: '· 代码使用 TypeScript strict 模式\n· 标识符用英文，注释用中文\n· 优先复用现有组件，不重复造轮子',
+  },
+  {
+    label: '输出格式',
+    text: '· 长回答用小节标题组织\n· 关键结论加粗，结尾给出可执行的下一步',
+  },
+  {
+    label: '安全约束',
+    text: '· 不修改与任务无关的代码\n· 涉及删除/覆盖类操作时，先说明影响再给出方案',
+  },
+]
 
 export const PROFILE_ASPECTS: Array<{ key: string; label: string; hint: string; icon: string }> = [
   { key: 'tech-stack', label: '技术栈', hint: '常用语言、框架、工具链', icon: '⌨' },
