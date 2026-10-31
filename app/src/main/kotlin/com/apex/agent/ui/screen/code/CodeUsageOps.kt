@@ -38,16 +38,10 @@ internal fun CodeViewModel.recordUsage(event: AgentEvent.UsageUpdated) {
             sessionCachedTokens = state.sessionCachedTokens + event.cachedTokens
         )
     }
-    // 用量账本（fire-and-forget，内部 IO scope 落盘）：会话 id 用工作区，
-    // 模型 id 取当前默认 Profile —— 仪表盘的按模型/按日聚合据此成真。
-    val modelId = settingsRepository.profiles.value
-        .firstOrNull { it.isDefault }?.modelId.orEmpty()
-    usageLedger.record(
-        sessionId = boundWorkspaceId,
-        modelId = modelId,
-        promptTokens = event.promptTokens.toLong(),
-        completionTokens = event.completionTokens.toLong()
-    )
+    // 用量账本由运行时层按**真实** profile 记账（#221：LedgerUsageObserver
+    // 在 ModelRuntime 执行层收到实际 profile/model/role）——此处不再落账，
+    // 否则同一轮会被记两次，且旧口径会把角色路由的消耗错记到默认模型头上。
+    // 本函数只负责 UI 侧圆环与会话累计。
 }
 
 /**
