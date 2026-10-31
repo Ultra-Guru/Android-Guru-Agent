@@ -232,9 +232,11 @@ class TestCasesTemplateBehaviorTest {
             - 异常 2 条
 
             ## 测试代码
-            ```
+            ```kotlin
             @Test
-            fun testProcessOrder_normal() {}
+            fun testProcessOrder_normal() {
+                assertEquals(42, processOrder(1))
+            }
             ```
         """.trimIndent()
         val report = behavior.validateOutput(raw, context(kotlinCode), requestStub())

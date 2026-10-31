@@ -100,7 +100,7 @@ class CodeReviewHeuristicsTest {
 
     @Test
     fun `god file tendency is flagged`() {
-        val code = (1..22).joinToString("\n") { "fun helper$it(x: Int) = x + $it" }
+        val code = (1..22).joinToString("\n") { "fun helper$it(x: Int): Int {\n    return x + $it\n}" }
         val spans = CodeReviewTemplateBehavior().findFunctions(code, "kotlin")
         val findings = CodeReviewHeuristics.structuralSmellFindings(code, spans)
         assertTrue(findings.any { it.ruleId == "heuristic.god-file" })
@@ -164,7 +164,9 @@ class CodeReviewHeuristicsTest {
             appendLine("class OrderActivity {")
             appendLine("    fun load() { dao.rawQuery(\"SELECT * FROM orders\") }")
             appendLine("}")
-            repeat(22) { appendLine("fun helper$it(a: Int) = 3600 + $it") }
+            repeat(22) { appendLine("fun helper$it(a: Int): Int {")
+                appendLine("    return 3600 + $it")
+                appendLine("}") }
         }
         val spans = CodeReviewTemplateBehavior().findFunctions(code, "kotlin")
         val findings = CodeReviewHeuristics.allFindings(code, "kotlin", spans)
