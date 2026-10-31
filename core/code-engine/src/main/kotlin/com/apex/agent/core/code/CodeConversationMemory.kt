@@ -31,6 +31,11 @@ class CodeConversationMemory(
     private val baseDir: File
 ) : ConversationMemory {
 
+    companion object {
+        /** #567：工作区 id 清洗正则预编译 —— bindWorkspace 每次调用复用。 */
+        private val UNSAFE_FILENAME_CHARS = Regex("[^A-Za-z0-9._-]")
+    }
+
     @Serializable
     private data class StoredMessage(
         val role: String,
@@ -98,7 +103,7 @@ class CodeConversationMemory(
      * @param workspaceId 工作区 id（文件名安全字符集之外会被清洗）
      */
     fun bindWorkspace(workspaceId: String) {
-        val safe = workspaceId.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val safe = workspaceId.replace(UNSAFE_FILENAME_CHARS, "_")
         slot.set(Slot(File(baseDir, "ws_$safe.json"), null))
     }
 

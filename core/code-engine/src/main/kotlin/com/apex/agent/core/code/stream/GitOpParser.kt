@@ -36,6 +36,37 @@ package com.apex.agent.core.code.stream
  */
 internal object GitOpParser {
 
+    // ═══ #566：解析正则预编译（旧实现在函数体内逐次编译，git 操作高频路径）═══
+
+    /** status 备注：「（…）」全角括号组。 */
+    private val NOTE_PAREN = Regex("（([^（）]*)）")
+
+    /** status 领先/落后提交数。 */
+    private val AHEAD_COUNT = Regex("领先\\s*(\\d+)")
+    private val BEHIND_COUNT = Regex("落后\\s*(\\d+)")
+
+    /** 「已暂存（将进入下次提交）（2）：」尾部括号组计数。 */
+    private val GROUP_COUNT = Regex("（(\\d+)）\\s*：?\\s*$")
+
+    /** commit 主行：「已提交 <hash> : <subject>」。 */
+    private val COMMIT_LINE = Regex("已提交\\s+([0-9a-fA-F]{7,40})\\s*:\\s*(.*)")
+
+    /** commit 剩余变更数。 */
+    private val REMAINING_CHANGES = Regex("剩余未提交变更[:：]\\s*(\\d+)\\s*个文件")
+
+    /** log 行形状：「<hash> <date> <subject>」。 */
+    private val LOG_COMMIT_LINE = Regex("^[0-9a-fA-F]{6,40}\\s+\\S+\\s+.+")
+
+    /** log 主题列切分（hash + date 之后）。 */
+    private val LOG_SUBJECT_SPLIT = Regex("\\s+")
+
+    /** branch 各动作行。 */
+    private val BRANCH_LIST_COUNT = Regex("分支列表（(\\d+)）：")
+    private val BRANCH_CURRENT = Regex("当前分支[:：]\\s*(\\S+)")
+    private val BRANCH_CREATED = Regex("已创建分支\\s+(\\S+)")
+    private val BRANCH_SWITCHED = Regex("已切换到分支\\s+(\\S+)")
+    private val BRANCH_DELETED = Regex("已删除分支\\s+(\\S+)")
+
     /** 工具名（v5 id / 历史别名 / 裸短名均可）→ 可视化卡数据；不可解析返回 null。 */
     fun parse(toolName: String, output: String): GitOpSummary? = when (normalize(toolName)) {
         "codegitstatus" -> parseStatus(output)
@@ -132,9 +163,9 @@ internal object GitOpParser {
             )
         }
         val branch = body.substringBefore("（").trim().ifEmpty { body }
-        val note = Regex("（([^（）]*)）").find(body)?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() }
-        val ahead = Regex("领先\\s*(\\d+)").find(body)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-        val behind = Regex("落后\\s*(\\d+)").find(body)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val note = NOTE_PAREN.find(body)?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() }
+        val ahead = AHEAD_COUNT.find(body)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val behind = BEHIND_COUNT.find(body)?.groupValues?.get(1)?.toIntOrNull() ?: 0
 
         var staged = 0
         var unstaged = 0
@@ -171,7 +202,7 @@ internal object GitOpParser {
 
     /** 「已暂存（将进入下次提交）（2）：」→ 2（取最后一个括号组；防御非数字）。 */
     private fun groupCount(header: String): Int? =
-        Regex("（(\\d+)）\\s*：?\\s*$").find(header)?.groupValues?.get(1)?.toIntOrNull()
+        GROUP_COUNT.find(header)?.groupValues?.get(1)?.toIntOrNull()
 
     // ── Commit ───────────────────────────────────────────────────────
 
@@ -185,10 +216,10 @@ internal object GitOpParser {
                 note = "工作区干净，没有新提交产生"
             )
         }
-        val m = Regex("已提交\\s+([0-9a-fA-F]{7,40})\\s*:\\s*(.*)").find(first) ?: return null
+        val m = COMMIT_LINE.find(first) ?: return null
         val hash = m.groupValues[1].take(7)
         val subject = m.groupValues[2].trim().take(HEADLINE_MAX)
-        val remaining = Regex("剩余未提交变更[:：]\\s*(\\d+)\\s*个文件").find(output)
+        val remaining = REMAINING_CHANGES.find(output)
             ?.groupValues?.get(1)?.toIntOrNull()
             ?: if (output.contains("剩余未提交变更：无")) 0 else null
         return GitOpSummary(
@@ -260,13 +291,13 @@ internal object GitOpParser {
             )
         }
         // 每行「<hash7> <yyyy-MM-dd> <subject>」；防御混入的非提交行
-        val commitLine = Regex("^[0-9a-fA-F]{6,40}\\s+\\S+\\s+.+")
+        val commitLine = LOG_COMMIT_LINE
         val commits = trimmed.lineSequence()
             .filter { it.isNotBlank() && commitLine.matches(it.trim()) }
             .toList()
         if (commits.isEmpty()) return null
         val latest = commits.first().trim()
-        val subject = latest.split(Regex("\\s+"), limit = 3).getOrNull(2)?.take(HEADLINE_MAX)
+        val subject = latest.split(LOG_SUBJECT_SPLIT, limit = 3).getOrNull(2)?.take(HEADLINE_MAX)
         return GitOpSummary(
             op = GitOpSummary.GitOpType.LOG,
             headline = subject ?: "最近 ${commits.size} 条提交",
@@ -279,7 +310,7 @@ internal object GitOpParser {
     private fun parseBranch(output: String): GitOpSummary? {
         val first = output.lineSequence().firstOrNull { it.isNotBlank() } ?: return null
 
-        Regex("分支列表（(\\d+)）：").find(first)?.let { m ->
+        BRANCH_LIST_COUNT.find(first)?.let { m ->
             val count = m.groupValues[1].toIntOrNull() ?: 0
             // 当前分支 = 「* 」开头的行（去掉星标后的名字，可能带（跟踪）说明）
             val current = output.lineSequence()
@@ -295,7 +326,7 @@ internal object GitOpParser {
             )
         }
 
-        Regex("当前分支[:：]\\s*(\\S+)").find(first)?.let { m ->
+        BRANCH_CURRENT.find(first)?.let { m ->
             return GitOpSummary(
                 op = GitOpSummary.GitOpType.BRANCH,
                 headline = m.groupValues[1],
@@ -305,7 +336,7 @@ internal object GitOpParser {
             )
         }
 
-        Regex("已创建分支\\s+(\\S+)").find(first)?.let { m ->
+        BRANCH_CREATED.find(first)?.let { m ->
             return GitOpSummary(
                 op = GitOpSummary.GitOpType.BRANCH,
                 headline = "已创建 ${m.groupValues[1]}",
@@ -313,7 +344,7 @@ internal object GitOpParser {
                 branchAction = "create"
             )
         }
-        Regex("已切换到分支\\s+(\\S+)").find(first)?.let { m ->
+        BRANCH_SWITCHED.find(first)?.let { m ->
             return GitOpSummary(
                 op = GitOpSummary.GitOpType.BRANCH,
                 headline = "已切换 ${m.groupValues[1]}",
@@ -321,7 +352,7 @@ internal object GitOpParser {
                 branchAction = "switch"
             )
         }
-        Regex("已删除分支\\s+(\\S+)").find(first)?.let { m ->
+        BRANCH_DELETED.find(first)?.let { m ->
             return GitOpSummary(
                 op = GitOpSummary.GitOpType.BRANCH,
                 headline = "已删除 ${m.groupValues[1]}",
