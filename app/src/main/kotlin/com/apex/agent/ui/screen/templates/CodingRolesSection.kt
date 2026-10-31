@@ -27,7 +27,6 @@ import com.apex.agent.ui.screen.settings.SectionCard
 import com.apex.agent.ui.screen.settings.activeCodingRole
 import com.apex.agent.ui.screen.settings.codingRoles
 import com.apex.agent.ui.screen.settings.duplicateForEditing
-import com.apex.agent.ui.screen.settings.withCodingRoleActivated
 import com.apex.agent.ui.screen.settings.withRoleRemoved
 import com.apex.agent.ui.screen.settings.withRoleUpserted
 
@@ -37,12 +36,13 @@ import com.apex.agent.ui.screen.settings.withRoleUpserted
  * 用户诉求：「每个语言专家模板应该出现在左侧抽屉模板里」。此前左侧抽屉
  * 的模板工坊 Coding 页签只有提示词模板、没有角色区；本区把
  * CODING_EXPERTS 内置专家（官方品牌图标 + 名称 + 一句摘要）与用户自
- * 定义角色一并列出，点击即激活。
+ * 自定义角色一并列出。
  *
- * 生效链路（与 Coding 模式行 AgentRoleSelector 同源，零新通道）：
- * 点击 → [withCodingRoleActivated] 持久化 codeActiveRoleId →
- * CodeRoleController 的设置流 collector → CodeEngineFacade
- * .updateRolePersona 引擎人设热切换（下一轮请求生效，无需重启）。
+ * v1.9 交互升级（用户规格：点击具体 agent 模板**查看**）：行点击从
+ * 「直接激活」改为「打开角色详情」（[onOpenDetail] → RoleDetailSheet：
+ * 激活入口 + 经验卡 + Git 专属技能开关）；激活动作沉到面板里，查看与
+ * 激活不再互相打断。激活链路零变化（面板内激活仍走
+ * [withCodingRoleActivated] 持久化 → CodeRoleController 人设热切换）。
  *
  * 内置专家不可编辑/删除（锁语义与设置中心惯例一致，可「另存为自定义」
  * 后改写）；自定义角色支持编辑/删除（复用 AgentRoleEditorDialog，
@@ -51,7 +51,8 @@ import com.apex.agent.ui.screen.settings.withRoleUpserted
 @Composable
 internal fun CodingRolesSection(
     agent: AgentSettings,
-    onAgent: (AgentSettings) -> Unit
+    onAgent: (AgentSettings) -> Unit,
+    onOpenDetail: (AgentRole) -> Unit
 ) {
     // 编辑对话框状态：null = 关闭；AgentRole = 另存草稿或编辑自定义角色
     var editing by remember { mutableStateOf<AgentRole?>(null) }
@@ -68,7 +69,7 @@ internal fun CodingRolesSection(
             CodingRoleRow(
                 role = role,
                 isActive = role.id == active.id,
-                onActivate = { onAgent(agent.withCodingRoleActivated(role.id)) },
+                onOpenDetail = { onOpenDetail(role) },
                 onEdit = if (role.isBuiltIn) null else ({ editing = role }),
                 onDuplicate = { editing = role.duplicateForEditing() },
                 onDelete = if (role.isBuiltIn) null else ({ onAgent(agent.withRoleRemoved(role.id)) })
@@ -92,13 +93,14 @@ internal fun CodingRolesSection(
 
 /**
  * 紧凑角色行：品牌图标 + 名称 + 一句摘要（角色定义首句）；
- * 整行点击 = 激活；右侧动作图标（激活勾 / 编辑 / 另存 / 删除）。
+ * 整行点击 = 打开角色详情（v1.9：查看经验卡/技能开关，激活动作在面板里）；
+ * 右侧动作图标（激活勾 / 编辑 / 另存 / 删除）。
  */
 @Composable
 private fun CodingRoleRow(
     role: AgentRole,
     isActive: Boolean,
-    onActivate: () -> Unit,
+    onOpenDetail: () -> Unit,
     onEdit: (() -> Unit)?,
     onDuplicate: () -> Unit,
     onDelete: (() -> Unit)?
@@ -106,7 +108,7 @@ private fun CodingRoleRow(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onActivate() },
+            .clickable { onOpenDetail() },
         colors = CardDefaults.cardColors(
             containerColor = if (isActive) MaterialTheme.colorScheme.secondaryContainer
             else MaterialTheme.colorScheme.surfaceContainerLow

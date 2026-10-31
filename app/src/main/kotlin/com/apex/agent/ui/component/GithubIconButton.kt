@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -55,10 +57,15 @@ import kotlinx.coroutines.launch
  * 点击展开下拉菜单：
  * - 已连接 → 默认仓库信息行（v3 S3，defaultRepo 流）+ 用户名 + 断开按钮
  * - 未连接 → "连接 GitHub"（浏览器跳转）+ "Token 密钥访问"（弹对话框输入）
+ * - 两种态尾部均带 **GitHub MCP 配置**（v1.9 用户规格：官方 MCP 放在
+ *   输入框的 GitHub 图标里，点击即可配置；非 Git 角色专属 —— 任何角色/
+ *   工位可用，两台服务器（内置 github + 官方远程 github-official）的
+ *   启停与工具集订阅统一在 [GithubMcpConfigDialog]）。
  */
 @Composable
 fun GithubIconButton(
     tokenManager: GithubTokenManager,
+    mcpManager: com.apex.agent.core.tools.mcp.McpManager,
     modifier: Modifier = Modifier
 ) {
     val connectionState by tokenManager.connectionState.collectAsStateWithLifecycle()
@@ -66,6 +73,8 @@ fun GithubIconButton(
     val defaultRepo by tokenManager.defaultRepo.collectAsStateWithLifecycle()
     var showMenu by remember { mutableStateOf(false) }
     var showTokenDialog by remember { mutableStateOf(false) }
+    // v1.9：GitHub MCP 配置入口（两台服务器的统一配置面）。
+    var showMcpDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     Box(modifier = modifier) {
@@ -163,6 +172,22 @@ fun GithubIconButton(
                     }
                 )
             }
+
+            // ═══ v1.9 GitHub MCP 配置（连接/未连接两态恒在；非角色专属）═══
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.github_menu_mcp_config)) },
+                leadingIcon = {
+                    Icon(
+                        Icons.Outlined.Hub,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                },
+                onClick = {
+                    showMenu = false
+                    showMcpDialog = true
+                }
+            )
         }
     }
 
@@ -179,6 +204,15 @@ fun GithubIconButton(
                 normalizedRepo?.let { tokenManager.saveDefaultRepoCanonical(it) }
                 showTokenDialog = false
             }
+        )
+    }
+
+    // ═══ v1.9 GitHub MCP 配置对话框（内置 + 官方远程两台服务器）═══
+    if (showMcpDialog) {
+        GithubMcpConfigDialog(
+            mcpManager = mcpManager,
+            tokenManager = tokenManager,
+            onDismiss = { showMcpDialog = false }
         )
     }
 }

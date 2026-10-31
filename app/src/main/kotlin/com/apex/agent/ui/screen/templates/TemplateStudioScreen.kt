@@ -59,6 +59,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import com.apex.agent.core.engine.templates.PromptTemplate
 import com.apex.agent.core.engine.templates.TemplateScope
+import com.apex.agent.ui.screen.settings.activeCodingRole
+import com.apex.agent.ui.screen.settings.withCodingRoleActivated
 
 /**
  * #197 模板工坊 —— 提示词模板的独立管理页（左侧抽屉直达入口）。
@@ -89,6 +91,9 @@ fun TemplateStudioScreen(
     val useState by viewModel.useState.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val agentSettings by viewModel.agentSettings.collectAsStateWithLifecycle()
+    // v1.9 角色详情（经验卡 + Git 技能开关；点击角色行打开）。
+    val roleDetail by viewModel.roleDetail.collectAsStateWithLifecycle()
+    val roleDetailExperiences by viewModel.roleDetailExperiences.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(message) {
@@ -143,11 +148,12 @@ fun TemplateStudioScreen(
                         }
                     }
                     TemplateScope.CODING -> {
-                        // ═══ Coding 专家角色（官方品牌图标 + 选择即激活 codeActiveRoleId）═══
+                        // ═══ Coding 专家角色（官方品牌图标 + 行点击打开角色详情）═══
                         item(key = "coding-roles") {
                             CodingRolesSection(
                                 agent = agentSettings,
-                                onAgent = { viewModel.updateAgentSettings { it } }
+                                onAgent = { viewModel.updateAgentSettings { it } },
+                                onOpenDetail = { viewModel.openRoleDetail(it) }
                             )
                         }
 
@@ -194,6 +200,26 @@ fun TemplateStudioScreen(
             onVariable = viewModel::updateUseVariable,
             onGenerate = viewModel::generateUsePrompt,
             onDismiss = viewModel::closeUse
+        )
+    }
+
+    // ═══ v1.9 角色详情（经验卡 + Git 专属技能开关；点击角色模板查看）═══
+    roleDetail?.let { role ->
+        val activeRole = agentSettings.activeCodingRole()
+        RoleDetailSheet(
+            role = role,
+            experiences = roleDetailExperiences,
+            isActive = role.id == activeRole.id,
+            onActivate = {
+                viewModel.updateAgentSettings {
+                    it.withCodingRoleActivated(role.id)
+                }
+            },
+            onDismiss = viewModel::closeRoleDetail,
+            onDeleteExperience = viewModel::deleteRoleExperience,
+            onClearExperiences = viewModel::clearRoleExperiences,
+            skillToggles = agentSettings.roleSkillToggles,
+            onToggleSkill = viewModel::toggleRoleSkill
         )
     }
 }

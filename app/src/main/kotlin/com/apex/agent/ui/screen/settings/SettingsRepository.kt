@@ -558,6 +558,14 @@ data class AgentSettings(
     val agentRoles: List<AgentRole> = emptyList(),
     val codeActiveRoleId: String = AgentRole.BUILTIN_CODING_FULL_STACK_ID,
 
+    // ═══ 角色专属技能开关（v1.9 Git 角色先行，用户规格「默认全开」）═══
+    // skillId → false 的稀疏表：**缺席 = 默认开启**（默认全开语义在存储
+    // 形态上就是稀疏的，升级新增技能天然全开）；true 永不落盘（重新开启
+    // = 移除键）。开关面在模板工坊 → 角色详情（Git 角色 9 套专属技能），
+    // 引擎侧注入经 CodeRoleController 人设通道（roleSkillToggles 变化即
+    // 热重下人设）。操作助手见 GitRoleSkillSettings.kt。
+    val roleSkillToggles: Map<String, Boolean> = emptyMap(),
+
     // ═══ 工具权限（v1.0 #155 业界标准式权限模式；默认档全开）═══
     // 引擎执行器门控：模式（BYPASS/DEFAULT/ACCEPT_EDITS/PLAN）+ 按序首匹配
     // 规则三元组（ALLOW/ASK/DENY，pattern 支持尾缀星号通配，覆盖 mcp__

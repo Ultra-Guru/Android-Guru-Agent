@@ -2,12 +2,15 @@ package com.apex.agent.ui.screen.templates
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.apex.agent.core.code.experience.RoleExperience
+import com.apex.agent.core.code.experience.RoleExperienceStore
 import com.apex.agent.core.engine.templates.PromptTemplate
 import com.apex.agent.core.engine.templates.PromptTemplateRegistry
 import com.apex.agent.core.engine.templates.TemplateScope
 import com.apex.agent.core.engine.templates.runtime.TemplateActivation
 import com.apex.agent.core.engine.templates.runtime.TemplateRuntime
 import com.apex.agent.ui.screen.settings.SettingsRepository
+import com.apex.agent.ui.screen.settings.withRoleSkillToggled
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
@@ -50,7 +53,9 @@ data class TemplateUseState(
 class TemplateStudioViewModel @Inject constructor(
     val settingsRepository: SettingsRepository,
     private val templateRegistry: PromptTemplateRegistry,
-    private val templateRuntime: TemplateRuntime
+    private val templateRuntime: TemplateRuntime,
+    // v1.9 角色经验卡：模板工坊 → 角色详情 → 经验卡列表/删除/清空。
+    private val roleExperienceStore: RoleExperienceStore
 ) : ViewModel() {
 
     /** 当前页签（Agent 模板 / Coding 模板）。 */
@@ -235,9 +240,57 @@ class TemplateStudioViewModel @Inject constructor(
     /** AgentSettings 快照（Agent 页签的角色分区消费）。 */
     val agentSettings = settingsRepository.agentSettings
 
-    /** 角色激活/编辑落回设置仓库（生效链路与聊天顶栏选择器同源）。 */
+    /** 角色变更落回设置仓库（生效链路与聊天顶栏选择器同源）。 */
     fun updateAgentSettings(transform: (com.apex.agent.ui.screen.settings.AgentSettings) ->
         com.apex.agent.ui.screen.settings.AgentSettings) {
         settingsRepository.updateAgentSettings { transform(this) }
+    }
+
+    // ═══ v1.9 角色详情（经验卡 + Git 专属技能开关）═══
+
+    /** 打开详情的角色（null = 关闭；用户规格：点击具体 agent 模板查看）。 */
+    private val _roleDetail = MutableStateFlow<com.apex.agent.ui.screen.settings.AgentRole?>(null)
+    val roleDetail: StateFlow<com.apex.agent.ui.screen.settings.AgentRole?> = _roleDetail.asStateFlow()
+
+    /** 详情角色的经验卡列表（时间序，新在尾；打开详情时后台装载）。 */
+    private val _roleDetailExperiences = MutableStateFlow<List<RoleExperience>>(emptyList())
+    val roleDetailExperiences: StateFlow<List<RoleExperience>> = _roleDetailExperiences.asStateFlow()
+
+    /** 打开角色详情（IO 装载该角色的经验卷）。 */
+    fun openRoleDetail(role: com.apex.agent.ui.screen.settings.AgentRole) {
+        _roleDetail.value = role
+        viewModelScope.launch(Dispatchers.IO) {
+            _roleDetailExperiences.value = roleExperienceStore.list(role.id)
+        }
+    }
+
+    /** 关闭角色详情。 */
+    fun closeRoleDetail() {
+        _roleDetail.value = null
+        _roleDetailExperiences.value = emptyList()
+    }
+
+    /** 删除详情里的一条经验（刷新列表；卷内幂等）。 */
+    fun deleteRoleExperience(experienceId: String) {
+        val role = _roleDetail.value ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            roleExperienceStore.delete(role.id, experienceId)
+            _roleDetailExperiences.value = roleExperienceStore.list(role.id)
+        }
+    }
+
+    /** 清空详情角色的经验卷（确认弹层由 UI 自理）。 */
+    fun clearRoleExperiences() {
+        val role = _roleDetail.value ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            roleExperienceStore.clear(role.id)
+            _roleDetailExperiences.value = emptyList()
+            _message.value = "已清空「${role.name}」的经验卡"
+        }
+    }
+
+    /** Git 角色专属技能开关（设置仓库持久化 → 人设通道热重下）。 */
+    fun toggleRoleSkill(skillId: String, enabled: Boolean) {
+        updateAgentSettings { it.withRoleSkillToggled(skillId, enabled) }
     }
 }
