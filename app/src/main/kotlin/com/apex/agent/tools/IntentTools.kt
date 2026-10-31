@@ -172,18 +172,16 @@ object AndroidIntents {
         }
     }
 
-    private companion object {
-        /** 分享文本上限（chars）——Binder 事务 1MB 进程级共享的保守安全值。 */
-        const val MAX_SHARE_CHARS = 200_000
+    /** 分享文本上限（chars）——Binder 事务 1MB 进程级共享的保守安全值。 */
+    private const val MAX_SHARE_CHARS = 200_000
 
-        /**
-         * 危险 scheme（小写）：ACTION_VIEW 载体中的注入/重定向通道。
-         * javascript/data → WebView 注入载体；intent → Intent 重定向
-         * （嵌套 extra 可启动任意组件）；file/content → 本地文件越权读取
-         * （应走 FileProvider）；about/blob/ws 同属浏览器内部通道。
-         */
-        val BLOCKED_SCHEMES = setOf(
-            "javascript", "data", "intent", "about", "blob", "file", "content", "ws", "wss"
-        )
-    }
+    /**
+     * 危险 scheme（小写）：ACTION_VIEW 载体中的注入/重定向通道。
+     * javascript/data → WebView 注入载体；intent → Intent 重定向
+     * （嵌套 extra 可启动任意组件）；file/content → 本地文件越权读取
+     * （应走 FileProvider）；about/blob/ws 同属浏览器内部通道。
+     */
+    private val BLOCKED_SCHEMES = setOf(
+        "javascript", "data", "intent", "about", "blob", "file", "content", "ws", "wss"
+    )
 }
