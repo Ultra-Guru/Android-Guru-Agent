@@ -25,7 +25,9 @@ import com.apex.agent.core.engine.templates.runtime.TemplateTurnRequest
  *
  * 1. **ANALYZE**（确定性）：严重度推断（26 组关键词分级）、复现质量
  *    评分（步骤/确定性/具体工件三维）、环境结构化解析、原因假设排序
- *    （8 类启发表）、五要素结构性矛盾检测；
+ *    （8 类启发表）、五要素结构性矛盾检测 + 分诊引擎（PR 18：P0-P4
+ *    优先级 / 环境指纹与已知问题库 / 症状签名查重 / 根因排查树 /
+ *    回归测试指引 / 升级规则）；
  * 2. **COMPOSE**：正文 + 判读附录（严重度建议/质量评分/假设排序/缺口清单）；
  * 3. **VALIDATE**：回包必需章节 = 标题 / 严重程度评估 / 可能原因分析（按
  *    可能性排序）/ 下一步排查建议；严重度与代码侧建议冲突检测；
@@ -68,7 +70,7 @@ open class BugReportTemplateBehavior : TemplateBehaviorBase() {
         ),
         deterministicPreAnalysis = true,
         promptEnrichmentMode = TemplatePromptEnrichmentMode.APPEND_FINDINGS,
-        behaviorVersion = 1
+        behaviorVersion = 2
     )
 
     // ═══ ANALYZE ═══
@@ -164,11 +166,132 @@ open class BugReportTemplateBehavior : TemplateBehaviorBase() {
             BugReportAnalyzer.qualityIssues(symptom, reproduce, expected, actual, environment)
         )
 
+        // 6) 分诊引擎（PR 18）：优先级 / 环境指纹 / 签名 / 排查树 / 回归指引
+        val triage = BugReportTriageEngine.triage(severity.severity, symptom, actual, reproduce)
+        findings.add(
+            TemplateFinding(
+                ruleId = "bugreport.triage-priority",
+                category = TemplateFindingCategory.RISK,
+                severity = when (triage.priority) {
+                    TriagePriority.P0 -> TemplateSeverity.BLOCKER
+                    TriagePriority.P1 -> TemplateSeverity.IMPORTANT
+                    TriagePriority.P2 -> TemplateSeverity.MINOR
+                    TriagePriority.P3, TriagePriority.P4 -> TemplateSeverity.INFO
+                },
+                title = "工单优先级：${triage.priority.name}（${triage.priority.label}，${triage.priority.sla}）",
+                evidence = triage.rationale,
+                suggestion = "报告的严重程度评估应与该优先级对齐；处置节奏按 SLA 执行",
+                confidence = 0.9
+            )
+        )
+        if (triage.requiresEscalation) {
+            findings.add(
+                TemplateFinding(
+                    ruleId = "bugreport.escalation",
+                    category = TemplateFindingCategory.RISK,
+                    severity = TemplateSeverity.BLOCKER,
+                    title = "必须升级：安全/数据类缺陷",
+                    evidence = triage.escalationReason,
+                    suggestion = "报告需包含升级通道与止血方案（回滚/开关）",
+                    confidence = 1.0
+                )
+            )
+        }
+        val fieldEscalation = BugReportTriageEngine.needsFieldEscalation(
+            severity.severity, reproQuality.score
+        )
+        if (fieldEscalation.first) {
+            findings.add(
+                TemplateFinding(
+                    ruleId = "bugreport.field-escalation",
+                    category = TemplateFindingCategory.COMPLETENESS,
+                    severity = TemplateSeverity.IMPORTANT,
+                    title = "需升级补现场",
+                    evidence = fieldEscalation.second,
+                    suggestion = "在排查建议中列出需要用户补充的具体信息清单",
+                    confidence = 1.0
+                )
+            )
+        }
+        if (environment.isNotBlank()) {
+            val fingerprint = BugReportTriageEngine.fingerprint(environment)
+            for (hit in fingerprint.knownIssueHits.take(MAX_KNOWN_ISSUE_FINDINGS)) {
+                findings.add(
+                    TemplateFinding(
+                        ruleId = "bugreport.known-issue",
+                        category = TemplateFindingCategory.CORRECTNESS,
+                        severity = TemplateSeverity.IMPORTANT,
+                        title = "已知问题命中：${hit.title}（指纹 ${fingerprint.signature()}）",
+                        evidence = hit.patternId,
+                        suggestion = hit.advice,
+                        confidence = 0.85
+                    )
+                )
+            }
+            if (fingerprint.platform == "unknown") {
+                findings.add(
+                    TemplateFinding(
+                        ruleId = "bugreport.fingerprint-unknown",
+                        category = TemplateFindingCategory.COMPLETENESS,
+                        severity = TemplateSeverity.MINOR,
+                        title = "环境指纹未能识别（平台未知）",
+                        suggestion = "建议按「平台 / 系统版本 / 设备 / 应用版本」四段式重写环境信息",
+                        confidence = 1.0
+                    )
+                )
+            }
+        }
+        val signature = BugReportTriageEngine.symptomSignature(symptom, actual)
+        if (BugReportTriageEngine.signatureIsQueryable(signature)) {
+            findings.add(
+                TemplateFinding(
+                    ruleId = "bugreport.duplicate-hint",
+                    category = TemplateFindingCategory.CONSISTENCY,
+                    severity = TemplateSeverity.INFO,
+                    title = "症状签名已生成（查重提示）",
+                    evidence = signature,
+                    suggestion = "排查前先按签名检索历史工单，同签名大概率同一根因",
+                    confidence = 1.0
+                )
+            )
+        }
+        for (hypothesis in hypotheses.take(MAX_TREE_FINDINGS)) {
+            val tree = BugReportTriageEngine.investigationTreeFor(hypothesis.category)
+            if (tree.isNotEmpty()) {
+                findings.add(
+                    TemplateFinding(
+                        ruleId = "bugreport.investigation-tree",
+                        category = TemplateFindingCategory.CORRECTNESS,
+                        severity = TemplateSeverity.INFO,
+                        title = "排查树（${hypothesis.category.substringBefore("：")}）：${tree.size} 步确定性路径",
+                        evidence = tree.joinToString(" → ") { "${it.order}.${it.action.take(14)}" },
+                        suggestion = "排查建议按此路径展开（每步有期望观察）",
+                        confidence = 1.0
+                    )
+                )
+            }
+            BugReportTriageEngine.regressionGuideFor(hypothesis.category)?.let { guide ->
+                findings.add(
+                    TemplateFinding(
+                        ruleId = "bugreport.regression-guide",
+                        category = TemplateFindingCategory.MAINTAINABILITY,
+                        severity = TemplateSeverity.INFO,
+                        title = "回归测试指引：${guide.testName}",
+                        evidence = guide.assertionTarget,
+                        suggestion = "边界条件必覆盖：" + guide.boundaryConditions.joinToString("、"),
+                        confidence = 1.0
+                    )
+                )
+            }
+        }
+
         var stats = TemplateAnalysisStats.empty()
             .with(TemplateAnalysisStats.KEY_RULE_COUNT, findings.size)
             .with(TemplateAnalysisStats.KEY_ANALYZED_LINES, (symptom + reproduce + actual).lines().size)
             .with(METRIC_REPRO_SCORE, reproQuality.score)
             .with(METRIC_HYPOTHESES, hypotheses.size)
+            .with(METRIC_TRIAGE_SCORE, triage.compositeScore)
+            .with(METRIC_KNOWN_HITS, BugReportTriageEngine.fingerprint(environment).knownIssueHits.size)
 
         val hints = mutableListOf<String>()
         hints += "严重度基线：${severity.severity.marker}${severity.severity.label}（${severity.rationale}）"
@@ -180,6 +303,11 @@ open class BugReportTemplateBehavior : TemplateBehaviorBase() {
         if (reproQuality.suggestions.isNotEmpty()) {
             hints += "报告需引导补充：" + reproQuality.suggestions.joinToString("；")
         }
+        hints += "分诊结论：${triage.priority.name}（${triage.priority.label}）—— ${triage.rationale}"
+        hints += "处置节奏：${triage.priority.sla}"
+        if (BugReportTriageEngine.signatureIsQueryable(signature)) {
+            hints += "查重签名：$signature（先检索历史工单再排查）"
+        }
 
         return TemplateAnalysis.of(
             findings = findings,
@@ -189,6 +317,9 @@ open class BugReportTemplateBehavior : TemplateBehaviorBase() {
                 put("severity", severity.severity.name)
                 put("reproScore", reproQuality.score.toString())
                 put("hypothesisCount", hypotheses.size.toString())
+                put("triagePriority", triage.priority.name)
+                put("triageScore", triage.compositeScore.toString())
+                put("requiresEscalation", triage.requiresEscalation.toString())
             }
         )
     }
@@ -230,7 +361,11 @@ open class BugReportTemplateBehavior : TemplateBehaviorBase() {
                 TemplateRenderedReport.KEY_SEVERITY_TOP to severity.severity.label,
                 META_REPRO_SCORE to repro.score.toString(),
                 META_HYPOTHESIS_COUNT to hypotheses.size.toString(),
-                META_GAP_COUNT to gaps.size.toString()
+                META_GAP_COUNT to gaps.size.toString(),
+                META_TRIAGE_PRIORITY to BugReportTriageEngine.triage(
+                    severity.severity, symptom, actual,
+                    context.variable("reproduce").orEmpty()
+                ).priority.name
             )
         )
     }
@@ -239,8 +374,13 @@ open class BugReportTemplateBehavior : TemplateBehaviorBase() {
         const val TEMPLATE_ID = "builtin_bug_report"
         const val METRIC_REPRO_SCORE = "reproScore"
         const val METRIC_HYPOTHESES = "hypotheses"
+        const val METRIC_TRIAGE_SCORE = "triageScore"
+        const val METRIC_KNOWN_HITS = "knownIssueHits"
         const val META_REPRO_SCORE = "reproScore"
         const val META_HYPOTHESIS_COUNT = "hypothesisCount"
         const val META_GAP_COUNT = "gapCount"
+        const val META_TRIAGE_PRIORITY = "triagePriority"
+        const val MAX_KNOWN_ISSUE_FINDINGS = 3
+        const val MAX_TREE_FINDINGS = 3
     }
 }

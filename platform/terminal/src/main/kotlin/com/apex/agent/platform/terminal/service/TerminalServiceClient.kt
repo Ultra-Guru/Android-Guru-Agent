@@ -18,7 +18,7 @@ import android.os.IBinder
  *     override fun onSessionStateChanged(sessionId: Long, state: String) { … }
  * }
  * client.bind()                       // ON_START
- * client.service?.createSession("local", 24, 80, null, null)
+ * client.service?.createSession("linux-ubuntu", 24, 80, null, null)
  * client.unbind()                     // ON_STOP
  * ```
  *

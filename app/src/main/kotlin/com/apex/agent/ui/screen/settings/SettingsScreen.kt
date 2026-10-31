@@ -57,7 +57,7 @@ import kotlinx.coroutines.launch
  * 结构（对齐浏览器式设置中心惯例）：
  * - 总抽屉点「设置」进入本页时，总抽屉收回（根层 navigateToTopLevel 语义），
  *   **设置抽屉自动打开**（独立 ModalNavigationDrawer，与总抽屉互不干扰）；
- * - 设置抽屉第一列 = 一级大分类（模型配置 / Agent 配置 / 界面外观 / 数据与备份）；
+ * - 设置抽屉第一列 = 一级大分类（模型配置 / 工作台 / 终端 / 界面外观 / 数据与备份）；
  * - 点击分类展开二级叶子（手风琴，同一时刻仅一个分类展开）；
  * - 点击叶子（如模型配置 → 配置 / 参数）→ 抽屉收回 → 内容区渲染对应页面；
  * - 顶栏汉堡钮可随时重开设置抽屉切换页面（页面状态保留）。
@@ -340,10 +340,10 @@ private fun SettingsPageRouter(
             onManageProviders = onManageProviders,
             onManageRoles = onManageRoles
         )
-        // ═══ Agent 配置 ═══
-        "agent/execution" -> SettingsLeafColumn { AgentSection(agent, onAgent) }
-        "agent/roles" -> SettingsLeafColumn { AgentRolesSection(agent, onAgent) }
-        "agent/permissions" -> SettingsLeafColumn {
+        // ═══ 工作台（原 Agent 配置：Agent 专属叶子已随 Agent 模式移除）═══
+        "workspace/coding" -> SettingsLeafColumn { CodingSettingsSection(agent, onAgent) }
+        "workspace/subagent" -> SettingsLeafColumn { SubAgentSettingsSection(agent, onAgent) }
+        "workspace/permissions" -> SettingsLeafColumn {
             PermissionSettingsSection(
                 mode = agent.permissionMode,
                 rules = agent.permissionRules,
@@ -351,24 +351,19 @@ private fun SettingsPageRouter(
                 onRulesChange = { rs -> onAgent(agent.copy(permissionRules = rs)) }
             )
         }
-        "agent/rules" -> SettingsLeafColumn {
+        "workspace/rules" -> SettingsLeafColumn {
             AgentRulesSectionBlock(agent, onAgent, viewModel)
         }
-        "agent/hooks" -> SettingsLeafColumn {
+        "workspace/hooks" -> SettingsLeafColumn {
             AgentHooksSectionBlock(viewModel)
         }
-        "agent/presets" -> SettingsLeafColumn { ModePresetEditorSection(agent, onAgent) }
-        "agent/subagent" -> SettingsLeafColumn { SubAgentSettingsSection(agent, onAgent) }
-        "agent/goal-loop" -> SettingsLeafColumn {
-            GoalSettingsSection(agent, onAgent)
-            LoopSettingsSection(agent, onAgent)
-        }
-        "agent/coding" -> SettingsLeafColumn { CodingSettingsSection(agent, onAgent) }
-        "agent/github" -> SettingsLeafColumn { GithubSettingsSection(viewModel) }
-        "agent/compression" -> SettingsLeafColumn { CompressionSection(agent, onAgent) }
-        "agent/vision" -> SettingsLeafColumn {
+        "workspace/compression" -> SettingsLeafColumn { CompressionSection(agent, onAgent) }
+        "workspace/vision" -> SettingsLeafColumn {
             VisionSection(agent, roles, profiles, viewModel)
         }
+        "workspace/goal" -> SettingsLeafColumn { GoalSettingsSection(agent, onAgent) }
+        "workspace/github" -> SettingsLeafColumn { GithubSettingsSection(viewModel) }
+        "workspace/memory" -> SettingsLeafColumn { MemoryCaptureSection(agent, onAgent) }
         // ═══ 界面外观 ═══
         "interface/appearance" -> SettingsLeafColumn {
             AppearanceSection(agent, onAgent)
@@ -381,6 +376,7 @@ private fun SettingsPageRouter(
         // ═══ 终端 ═══（三个 store 为 Hilt 单例，与终端页共享内存态）
         "terminal/appearance" -> TerminalAppearancePage()
         "terminal/policy" -> TerminalCommandPolicyPage()
+        "terminal/service" -> TerminalServicePage(agent, onAgent)
         // ═══ 数据与备份 ═══
         "data/backup" -> SettingsLeafColumn { BackupSection() }
         "data/update" -> SettingsLeafColumn { UpdatePage(agent, onAgent) }

@@ -1,44 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Mode system v2 strings (#168): custom-mode presets + mode guide.
-     English default; Chinese in values-zh/strings_modes.xml. -->
+<!-- Mode system strings (#168): mode-guide entry (the "?" icon next to the
+     Coding-screen mode selector). The custom-mode preset keys (mode_presets_*,
+     25 keys) were removed with the Agent CUSTOM mode and the settings-domain
+     preset editor (PR 4/6 + 5/6). English default; Chinese in
+     values-zh/strings_modes.xml. -->
 <resources>
-
-    <!-- ═══ Custom-mode presets (Settings → Agent, ModePresetEditorSection) ═══ -->
-    <string name="mode_presets_section_title">Custom Mode Presets</string>
-    <string name="mode_presets_section_subtitle">Named instruction sets for Custom mode — pick one and it is injected on the next request</string>
-    <string name="mode_presets_select_hint">Tap a preset to use it in Custom mode. The selected preset\'s instruction is appended to the system prompt; effective from the next request.</string>
-    <string name="mode_presets_none_selected">No preset (legacy instruction)</string>
-    <string name="mode_presets_none_selected_desc">Falls back to the single custom instruction string; pick a preset for reusable behavior</string>
-    <string name="mode_presets_builtin_group">Built-in presets</string>
-    <string name="mode_presets_custom_group">Your presets</string>
-    <string name="mode_presets_builtin_badge">Built-in preset, locked</string>
-    <string name="mode_presets_selected_badge">Active preset</string>
-    <string name="mode_presets_new">New preset</string>
-    <string name="mode_presets_edit_cd">Edit preset</string>
-    <string name="mode_presets_duplicate_cd">Duplicate preset as custom copy</string>
-    <string name="mode_presets_delete_cd">Delete preset</string>
-    <string name="mode_presets_delete_confirm_title">Delete this preset?</string>
-    <string name="mode_presets_delete_confirm_text">\"%1$s\" will be removed permanently. The agent will not use it again.</string>
-    <string name="mode_presets_delete_confirm_yes">Delete</string>
-    <string name="mode_presets_cancel">Cancel</string>
-    <string name="mode_presets_save">Save</string>
-    <string name="mode_presets_editor_new_title">New custom preset</string>
-    <string name="mode_presets_editor_edit_title">Edit preset</string>
-    <string name="mode_presets_field_name">Preset name</string>
-    <string name="mode_presets_field_name_desc">Shown in the preset list and chat header chip</string>
-    <string name="mode_presets_field_instruction">Instruction</string>
-    <string name="mode_presets_field_instruction_desc">Appended to the system prompt in Custom mode. Use MUST / NEVER style constraints for best compliance.</string>
-    <string name="mode_presets_migration_note">Your previous custom instruction was saved as a preset automatically.</string>
 
     <!-- ═══ Mode guide (ModeGuideSheet, opened from the "?" icon next to the mode selector) ═══ -->
     <string name="mode_guide_open_cd">Open mode guide</string>
-
-
-
-
-
-
-
-    <!-- ═══ Thinking levels quick table (same sheet, data from ThinkingProfile) ═══ -->
-    <!-- ═══ #197 Agent screen dual-mode guide (Chat/Agent) ═══ -->
 </resources>

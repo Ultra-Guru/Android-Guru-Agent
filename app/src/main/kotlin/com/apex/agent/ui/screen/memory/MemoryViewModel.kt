@@ -110,6 +110,16 @@ class MemoryViewModel @Inject constructor(
     private val _chatMemory = MutableStateFlow<List<ChatMemoryEntry>>(emptyList())
     val chatMemory: StateFlow<List<ChatMemoryEntry>> = _chatMemory.asStateFlow()
 
+    // ═══ v3：刷新可见性（下拉刷新指示 + 概览区「上次刷新」行）═══
+
+    /** 快照刷新进行中（PullToRefreshBox 指示；true 期间重复 refresh 直接丢弃）。 */
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
+    /** 最近一次快照刷新完成时刻（null = 尚未完成过一次）。 */
+    private val _lastRefreshAt = MutableStateFlow<Long?>(null)
+    val lastRefreshAt: StateFlow<Long?> = _lastRefreshAt.asStateFlow()
+
     init {
         refresh()
         // P2-12（6-c）：搜索防抖——query 流经 debounce(250) + distinctUntilChanged
@@ -135,6 +145,10 @@ class MemoryViewModel @Inject constructor(
     }
 
     fun refresh() {
+        // v3：并发防抖 —— 刷新进行中重复触发（下拉手势 + 写入后回刷重叠）
+        // 直接丢弃；进行中标志同时驱动 PullToRefreshBox 指示器。
+        if (_isRefreshing.value) return
+        _isRefreshing.value = true
         viewModelScope.launch {
             runCatching {
                 val eps = memKit.recentEpisodes(limit = 50)
@@ -159,6 +173,11 @@ class MemoryViewModel @Inject constructor(
                     R.string.memory_msg_load_failed, e.message ?: ""
                 )
             }
+            // 隔离区计数并入同一拍刷新（v3 前是独立的 init 触发；单入口后
+            // 进屏 / 下拉 / 写入回刷都一并进行，不再有半新半旧的健康卡）。
+            _quarantinedCount.value = runCatching { memKit.quarantineCount() }.getOrDefault(0)
+            _lastRefreshAt.value = System.currentTimeMillis()
+            _isRefreshing.value = false
         }
     }
 
@@ -266,8 +285,6 @@ class MemoryViewModel @Inject constructor(
     /** 维护整理进行中。 */
     private val _maintenanceRunning = MutableStateFlow(false)
     val maintenanceRunning: StateFlow<Boolean> = _maintenanceRunning.asStateFlow()
-
-    init { refreshQuarantineCount() }
 
     fun refreshQuarantineCount() {
         viewModelScope.launch {

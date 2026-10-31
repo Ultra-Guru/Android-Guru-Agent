@@ -23,4 +23,11 @@
     <string name="templates_vars_detected">检测到变量：%1$s</string>
     <string name="templates_save">保存</string>
     <string name="templates_cancel">取消</string>
+    <string name="templates_use">使用模板</string>
+    <string name="templates_use_title">使用：%1$s</string>
+    <string name="templates_use_optional">%1$s（可选）</string>
+    <string name="templates_use_generate">生成</string>
+    <string name="templates_use_result">生成的提示词（内置模板已注入确定性分析附录）</string>
+    <string name="templates_use_copied">已复制 —— 粘贴到聊天即可使用</string>
+    <string name="templates_builtin_locked">内置模板（锁定 —— 可使用或复制）</string>
 </resources>

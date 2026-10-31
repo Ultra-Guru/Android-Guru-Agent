@@ -63,12 +63,12 @@ class SessionMetadataStoreBackendTest {
             rows = 24, cols = 80, privilege = PrivilegeLevel.NORMAL,
             state = SessionState.READY, createdAt = System.currentTimeMillis(),
             lastExitCode = null, cursor = 0L,
-            backend = BackendSessionMetadata(backendId = "local")
+            backend = BackendSessionMetadata(backendId = "linux-ubuntu")
         )
         store.save(local, emptyList(), emptyList())
 
         val loaded = store.load(7L)!!
-        assertEquals("local", loaded.backendId)
+        assertEquals("linux-ubuntu", loaded.backendId)
         assertNull(loaded.rootfsId)
         assertTrue(loaded.binds.isEmpty())
     }
@@ -76,7 +76,7 @@ class SessionMetadataStoreBackendTest {
     @Test
     fun `v1 record without backend fields still loads (schema migration)`() = runBlocking {
         // 模拟 T73 之前写出的 v1 文件（无 backend 字段）—— ignoreUnknownKeys/默认值
-        // 保证升级后旧记录可读，backendId=null 语义上等同 "local"。
+        // 保证升级后旧记录可读，backendId=null 语义上等同旧缺省后端。
         val dir = tmp.newFolder()
         val v1Json = """
             {"schemaVersion":1,"id":5,"shell":"/system/bin/sh","initialCwd":"/sdcard",
