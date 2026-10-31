@@ -132,7 +132,7 @@ data class FusionBundleManifest(
             if (manifest.plugins.any { it.pluginId != it.inlinePluginId }) return null
             if (manifest.skillPicks.any { it.isBlank() }) return null
             if (manifest.mcpPicks.any { it.isBlank() }) return null
-            if (!manifest.policies.isSelfConsistent(manifest.skillIds)) return null
+            if (!manifest.policies.isSelfConsistent(manifest.skillIds())) return null
             return manifest
         }
 
