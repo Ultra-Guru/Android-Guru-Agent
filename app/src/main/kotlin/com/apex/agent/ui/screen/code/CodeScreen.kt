@@ -514,7 +514,8 @@ fun CodeScreen(
     state.pendingQuestion?.let { question ->
         PendingQuestionDialog(
             question = question,
-            onSubmit = viewModel::submitUserInput
+            onSubmit = viewModel::submitUserInput,
+            onCancel = viewModel::cancelPendingQuestion
         )
     }
 
@@ -1149,36 +1150,5 @@ private fun ErrorBar(
             }
         }
     }
-}
-
-@Composable
-private fun PendingQuestionDialog(
-    question: String,
-    onSubmit: (String) -> Unit
-) {
-    // rememberSaveable：旋转/重建后已输入的回答不丢（String 可入 Bundle）。
-    var answer by rememberSaveable { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = { },
-        title = { Text(stringResource(R.string.code_question_title)) },
-        text = {
-            Column {
-                Text(question, style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = answer,
-                    onValueChange = { answer = it },
-                    placeholder = { Text(stringResource(R.string.code_question_hint)) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            val defaultYes = stringResource(R.string.code_question_default_yes)
-            TextButton(
-                onClick = { onSubmit(answer.ifBlank { defaultYes }) }
-            ) { Text(stringResource(R.string.code_question_submit)) }
-        }
-    )
 }
 

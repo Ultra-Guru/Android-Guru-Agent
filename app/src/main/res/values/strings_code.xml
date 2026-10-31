@@ -27,6 +27,8 @@
     <string name="code_question_hint">Type your answer…</string>
     <string name="code_question_default_yes">yes</string>
     <string name="code_question_submit">Answer</string>
+    <string name="code_question_cancel">Cancel</string>
+    <string name="code_question_cancel_hint">Cancel without answering: the agent is told no answer was given.</string>
 
     <!-- New workspace dialog -->
     <string name="code_new_workspace_title">New coding workspace</string>
