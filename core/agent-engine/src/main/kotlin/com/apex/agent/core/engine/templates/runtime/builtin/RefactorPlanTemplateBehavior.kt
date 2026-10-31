@@ -16,6 +16,7 @@ import com.apex.agent.core.engine.templates.runtime.TemplateRenderedReport
 import com.apex.agent.core.engine.templates.runtime.TemplateSectionRequirement
 import com.apex.agent.core.engine.templates.runtime.TemplateSeverity
 import com.apex.agent.core.engine.templates.runtime.TemplateTurnRequest
+import com.apex.agent.core.engine.templates.runtime.TemplateValidationReport
 import com.apex.agent.core.engine.templates.runtime.TemplateLanguageDetector
 
 /**
