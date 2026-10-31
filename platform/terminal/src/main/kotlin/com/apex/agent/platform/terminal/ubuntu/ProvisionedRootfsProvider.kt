@@ -31,7 +31,7 @@ class ProvisionedRootfsProvider(
     /**
      * §21: returns the currently-active rootfs, or null if none installed.
      * LinuxPRootBackend.availability() calls this; if null, the backend reports
-     * NeedsRootfs (caller should invoke the provisioner via TerminalUbuntuInstall).
+     * NeedsRootfs (caller should invoke the provisioner via TerminalUbuntuEnsure).
      */
     override suspend fun current(): RootfsDescriptor? = provisioner.current()
 

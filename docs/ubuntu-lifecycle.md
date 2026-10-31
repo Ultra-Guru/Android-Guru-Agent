@@ -12,7 +12,7 @@ bootstrap + apt + capability probe + repair），但 T82 Phase 0 审计发现产
 |---|------|------|
 | B-1 | App 启动不感知 Ubuntu 状态：无 reconcile、无状态派生 | `ApexApp.onCreate()` 只做 Shizuku/CS-Mem/attachment，无任何 Ubuntu 生命周期调用 |
 | B-2 | Terminal UI 依赖安装中心 100% 失效：`DepCatalog` 全部是 apt 命令，但 `ensureSession()` 用默认 local backend 创建 Android shell 会话执行 → `apt-get: command not found` | `TerminalViewModel.ensureSession()` 调 `terminalRuntime.create()`（无 backendId）；`DepCatalog` v2 注释自述"apt/Ubuntu proot 命令" |
-| B-3 | Agent 拉起 Ubuntu 需要 3 次工具调用（install→bootstrap→capabilities）并自行解读 3 套状态机 | `TerminalUbuntuInstallTool` / `TerminalLinuxBootstrapTool` / `TerminalLinuxCapabilitiesTool` 三个独立入口、三种状态语义 |
+| B-3 | Agent 拉起 Ubuntu 需要 3 次工具调用（install→bootstrap→capabilities）并自行解读 3 套状态机 | `TerminalUbuntuInstallTool` / `TerminalLinuxBootstrapTool` / `TerminalLinuxCapabilitiesTool` 三个独立入口、三种状态语义（P0-#3 已收敛：三入口移除，ensure 是唯一拉起入口） |
 | B-4 | crash 后"上次中断在哪"需要 Agent 自己探测 | bootstrap 持久化有 `isInProgress` 标记但产品层无人消费 |
 
 ## 2. 方案：UbuntuLifecycleCoordinator（编排层，非重复实现）
@@ -40,9 +40,9 @@ NOT_INSTALLED ──install──▶ INSTALLING ──▶ ROOTFS_READY ──boo
 - 不新建第二套 Provisioner/PackageManager/RootfsManager —— bootstrap/probe/repair
   以**函数端口**注入（生产 DI 适配既有单例；JVM 测试注入 fake）；
 - 状态派生而非复制：`rootfsState/bootstrapState` 直接取底层当前值；
-- 既有细粒度工具（TerminalUbuntuInstall / TerminalLinuxBootstrap /
-  TerminalLinuxCapabilities / TerminalLinuxRepair）**全部保留**，ensure 是聚合
-  入口，不是替代。
+- 细粒度入口收敛（P0-#3 工具面收敛）：TerminalUbuntuInstall / TerminalLinuxBootstrap /
+  TerminalLinuxCapabilities 已移除，ensure 是唯一拉起入口；细粒度包操作走
+  TerminalLinuxPackages，修复走 TerminalLinuxRepair。
 
 ## 3. 接线（5 处产品层断点修复）
 

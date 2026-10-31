@@ -313,10 +313,6 @@ object ToolIdAliases {
 
         "terminal.fs" to "TerminalFs",
 
-        "terminal.linux.bootstrap" to "TerminalLinuxBootstrap",
-
-        "terminal.linux.capabilities" to "TerminalLinuxCapabilities",
-
         "terminal.linux.network" to "TerminalLinuxNetwork",
 
         "terminal.linux.packages" to "TerminalLinuxPackages",
@@ -336,8 +332,6 @@ object ToolIdAliases {
         "terminal.snapshot" to "TerminalSnapshot",
 
         "terminal.ubuntu.ensure" to "TerminalUbuntuEnsure",
-
-        "terminal.ubuntu.install" to "TerminalUbuntuInstall",
 
         "terminal.ubuntu.status" to "TerminalUbuntuStatus",
 

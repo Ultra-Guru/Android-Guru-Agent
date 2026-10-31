@@ -65,7 +65,7 @@ class TerminalBackendsToolTest {
             FakeRuntime(
                 listOf(
                     TerminalRuntime.BackendStatus("local", "LINUX", true, "READY"),
-                    TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", false, "NEEDS_ROOTFS:not_provisioned", "先调用 TerminalUbuntuInstall")
+                    TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", false, "NEEDS_ROOTFS:not_provisioned", "先调用 TerminalUbuntuEnsure")
                 )
             )
         )
@@ -82,7 +82,7 @@ class TerminalBackendsToolTest {
         assertEquals("linux-ubuntu", ubuntu["id"]!!.jsonPrimitive.content)
         assertEquals("false", ubuntu["available"]!!.jsonPrimitive.content)
         assertEquals("NEEDS_ROOTFS:not_provisioned", ubuntu["state"]!!.jsonPrimitive.content)
-        assertEquals("先调用 TerminalUbuntuInstall", ubuntu["detail"]!!.jsonPrimitive.content)
+        assertEquals("先调用 TerminalUbuntuEnsure", ubuntu["detail"]!!.jsonPrimitive.content)
     }
 
     @Test

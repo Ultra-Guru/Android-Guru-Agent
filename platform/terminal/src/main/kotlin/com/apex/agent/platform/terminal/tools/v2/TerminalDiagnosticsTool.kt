@@ -93,7 +93,7 @@ class TerminalDiagnosticsTool(
                 })
                 when {
                     b.state == "NEEDS_ROOTFS" -> nextActions.add(
-                        "backend '${b.id}' needs rootfs — call TerminalUbuntuInstall first (offline, minutes)"
+                        "backend '${b.id}' needs rootfs — call TerminalUbuntuEnsure first (offline, minutes)"
                     )
                     b.state == "FAILED" -> nextActions.add(
                         "backend '${b.id}' failed: ${b.detail ?: "unknown"}"

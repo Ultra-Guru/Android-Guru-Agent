@@ -78,7 +78,7 @@ interface TerminalRuntime {
     // ───────── backends（T73：Agent 后端能力发现）─────────
     // Spec §33（Agent 只依赖 TerminalRuntime 门面）：列出所有已注册执行后端及
     // 其真实可用性。Agent 据此决定 create(backendId=…) 的目标，或在
-    // NEEDS_ROOTFS 时先调 TerminalUbuntuInstall 引导安装。
+    // NEEDS_ROOTFS 时先调 TerminalUbuntuEnsure 引导安装。
     suspend fun backends(): List<BackendStatus>
 
     /** 单个后端的可用性快照（T73）。 */

@@ -370,7 +370,7 @@ class RootfsInstallLock {
 
 // ─── Section 24: RootfsProvisioner API ───
 // The orchestrator. Production code calls install() once (Agent 入口 =
-// TerminalUbuntuInstall 工具, T73); LinuxPRootBackend's RootfsProvider
+// TerminalUbuntuEnsure 工具的 install 阶段, T73→P0-#3); LinuxPRootBackend's RootfsProvider
 // (ProvisionedRootfsProvider) reads the result via current().
 interface RootfsProvisioner {
     /**

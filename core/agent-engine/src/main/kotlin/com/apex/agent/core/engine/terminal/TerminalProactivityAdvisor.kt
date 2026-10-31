@@ -180,7 +180,7 @@ class TerminalProactivityAdvisor {
 
         /** Ubuntu 探测工具：出现即视为"模型已知环境状态"，不再给预备建议。 */
         val UBUNTU_PROBE_TOOLS = setOf(
-            "TerminalUbuntuEnsure", "TerminalUbuntuInstall",
+            "TerminalUbuntuEnsure",
             "TerminalUbuntuStatus", "TerminalBackends"
         )
 

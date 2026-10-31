@@ -26,7 +26,8 @@ import kotlinx.coroutines.withTimeoutOrNull
  *   - Terminal UI 的 `ensureSession()` 永远走 local backend；
  *   - DepCatalog 的 apt 命令被投进 Android shell（必然 command not found）；
  *   - Agent 需要**三次**工具调用（TerminalUbuntuInstall → TerminalLinuxBootstrap
- *     → TerminalLinuxCapabilities）才能把 Ubuntu 拉到可用，还要自己解读三套状态机。
+ *     → TerminalLinuxCapabilities）才能把 Ubuntu 拉到可用，还要自己解读三套状态机
+ *     （P0-#3 工具面收敛后这三个旧入口已移除，ensure 是唯一拉起入口）。
  *
  * ## 本类职责（编排，不重复实现）
  * 把两阶段初始化合成一个产品级入口：

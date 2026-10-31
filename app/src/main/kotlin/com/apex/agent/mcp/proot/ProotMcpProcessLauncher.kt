@@ -175,7 +175,7 @@ class ProotMcpProcessLauncher(
                 if (versionDir.isDirectory) return versionDir
                 throw McpException(
                     "Ubuntu rootfs 已损坏：版本标记指向的目录缺失（${versionDir.absolutePath}）" +
-                        "—— 请在终端页重装 Ubuntu（TerminalUbuntuInstall）"
+                        "—— 请在终端页重装 Ubuntu（TerminalUbuntuEnsure）"
                 )
             }
         }
@@ -342,7 +342,7 @@ class ProotMcpProcessLauncher(
 
         /** rootfs 未就绪时的用户引导文案（Issue #149 验收口径）。 */
         internal const val ROOTFS_NOT_READY_MESSAGE =
-            "Ubuntu 沙箱未安装——先在终端页安装 Ubuntu（TerminalUbuntuInstall），" +
+            "Ubuntu 沙箱未安装——先在终端页安装 Ubuntu（TerminalUbuntuEnsure），" +
                 "或在设置里初始化；随后可在沙箱内安装 nodejs：apt install -y nodejs npm"
     }
 }

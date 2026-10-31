@@ -144,7 +144,7 @@ VISION、能力不匹配降级）。
 | 环境自适应 | EnvironmentTest / LinuxEnvironmentManagerTest / AdaptiveEnvironmentTest | 环境配置 + 自适应修复环（DiagnosticRules） |
 | 观察/智能/控制 | Observation2Test / IntelligenceLayerTest / ControlPlaneTest | 语义状态降维、PromptDetector/JobStateMachine、控制平面 |
 | API/策略/可靠性 | TerminalApiContractTest / ApiHardeningTest / LinuxErrorTest / ReliabilityTest | 契约 + 错误分类 + 恢复协调 |
-| 工具 v2 | TerminalLinuxPackagesToolTest / TerminalLinuxStatusToolTest / TerminalBackendsToolTest / TerminalUbuntuInstallToolTest / TerminalWorkspacesToolTest | `terminal.*` 工具参数与输出契约 |
+| 工具 v2 | TerminalLinuxPackagesToolTest / TerminalLinuxStatusToolTest / TerminalBackendsToolTest / TerminalWorkspacesToolTest | `terminal.*` 工具参数与输出契约 |
 | JNI 桥 | JniBridgeMappingTest | Kotlin↔C++ 符号映射（纯 JVM 侧校验） |
 
 **仪器测试（5 个，真机）**：NativePtyJniInstrumentationTest（真实 forkpty）、
