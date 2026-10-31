@@ -1,0 +1,233 @@
+name: Media Activity Results
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+concurrency:
+  group: media-results-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  instrumentation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read apex-kit-browser pin
+        id: bkitpin
+        # 锁定文件 gradle/browser-kit.lock 由 sync-browser-kit 工作流自动维护：
+        # browser-kit main 有新绿提交 → 锁文件 bump → 本仓库 push → 全流水线
+        # 以新锁定版本构建。缺锁回退 main（防御旧分支/分叉构建）—— CI 只验证
+        # 不发货，回退可接受；但 #352 起从静默回退升级为 warning 级可见
+        #（正式发布流水线 release.yml 同场景 fail-closed，绝不回退）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/browser-kit.lock 2>/dev/null || true)
+          if [ -z "$PIN" ]; then
+            echo "::warning::gradle/browser-kit.lock 缺失 —— 防御性回退 browser-kit main HEAD（仅限 CI 验证；发布流水线 release.yml 缺锁即硬失败）"
+          fi
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-browser (browser-kit composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-browser
+          ref: ${{ steps.bkitpin.outputs.sha }}
+          path: apex-kit-browser
+      - name: Read apex-kit-workspace pin
+        id: wkitpin
+        # 工作区浏览器库（com.apex.workspace:{core,explorer}）锁定文件
+        # gradle/workspace-kit.lock —— 缺锁回退 main（防御旧分支/分叉构建）。
+        # 本地开发：兄弟目录 ../apex-kit-workspace 存在时 settings 自动
+        # includeBuild；CI 嵌套路径同样命中兜底分支。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/workspace-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-workspace (workspace-kit composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-workspace
+          ref: ${{ steps.wkitpin.outputs.sha }}
+          path: apex-kit-workspace
+
+      - name: Verify apex-kit-browser checkout SHA
+        # #352：轻量审计（纯日志、不阻塞）—— 实际检出 SHA 写入 job summary
+        # 并与锁值对照，防 ref 解析异常（如锁文件误填分支名/短 SHA 时肉眼
+        # 可辨）。不一致只发 ::warning 不阻塞：硬门禁是上面的锁检出与构建本身。
+        run: |
+          ACTUAL=$(git -C apex-kit-browser rev-parse HEAD 2>/dev/null || true)
+          PIN=$(head -n 1 gradle/browser-kit.lock 2>/dev/null || true)
+          echo "browser-kit 实际检出: ${ACTUAL:-未知} / 锁定值: ${PIN:-缺锁（回退 main）}"
+          {
+            echo "### 🧬 apex-kit-browser 检出（#352）"
+            echo "- 实际检出 SHA: \`${ACTUAL:-未知}\`"
+            echo "- 锁定值: \`${PIN:-缺锁（回退 main）}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$ACTUAL" ] && [ -n "$PIN" ] && [ "$ACTUAL" != "$PIN" ]; then
+            echo "::warning::browser-kit 实际检出 $ACTUAL 与锁 $PIN 不一致（ref 解析异常？）"
+          fi
+
+      - name: Read apex-kit-standard pin
+        id: akitpin
+        # 锁定文件 gradle/standard-kit.lock 由 sync-standard-kit 工作流自动维护：
+        # standard-kit main 有新绿提交 → 锁文件 bump → 本仓库 push → 全流水线
+        # 以新锁定版本构建。缺锁回退 main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/standard-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-standard (standard-loop composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-standard
+          ref: ${{ steps.akitpin.outputs.sha }}
+          path: apex-kit-standard
+      - name: Read apex-kit-loom pin
+        id: lkitpin
+        # 锁定文件 gradle/loom-kit.lock 由 sync-loom-kit 工作流自动维护：
+        # loom-kit main 有新绿提交 → 锁文件 bump → 本仓库 push → 全流水线
+        # 以新锁定版本构建。缺锁回退 main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/loom-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-loom (loom-weave composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-loom
+          ref: ${{ steps.lkitpin.outputs.sha }}
+          path: apex-kit-loom
+
+      - name: Read apex-kit-courier pin
+        id: ckitpin
+        # 锁定文件 gradle/courier-kit.lock 由 sync-courier-kit 工作流自动维护：
+        # courier-kit main 有新绿提交 → 锁文件 bump → 本仓库 push → 全流水线
+        # 以新锁定版本构建。缺锁回退 main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/courier-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-courier (courier-dispatch composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-courier
+          ref: ${{ steps.ckitpin.outputs.sha }}
+          path: apex-kit-courier
+
+      - name: Read apex-kit-memory pin
+        id: mkitpin
+        # 认知记忆库（com.apex.memkit:memory-core）锁定文件 gradle/memory-kit.lock
+        # 由 sync-memory-kit 工作流自动维护：memory-kit main 有新绿提交 →
+        # 锁文件 bump → 本仓库 push → 全流水线以新锁定版本构建。缺锁回退
+        # main（防御旧分支/分叉构建）。
+        run: |
+          set -euo pipefail
+          PIN=$(head -n 1 gradle/memory-kit.lock 2>/dev/null || true)
+          echo "sha=${PIN:-main}" >> "$GITHUB_OUTPUT"
+      - name: Checkout apex-kit-memory (memory-core composite build, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: Ultra-Guru/apex-kit-memory
+          ref: ${{ steps.mkitpin.outputs.sha }}
+          path: apex-kit-memory
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Configure pre-installed Android SDK
+        run: |
+          # ubuntu-latest 自带 Android SDK，只需配置路径
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          # NDK 27.0.12077973 由 :terminal-native / :core:code-native 显式 ndkVersion 钉版
+          #（AGP 8.13.2 时代防默认 NDK 漂移到 28.x）。sdkmanager 偶发半截安装
+          #（目录在、source.properties 缺失 → CXX1101 硬失败，2026-10-05 run
+          # 37327280591 实测：pull_request run 翻车而同 SHA 的 push run 通过，
+          # 纯 runner 环境差异）。三重防线（与 apk.yml / #330 对齐）：
+          #   1) 完整性校验先行：已完好则零开销跳过；
+          #   2) sdkmanager 安装后校验，坏了立即清掉重试；
+          #   3) 仍失败 → dl.google.com 官方 zip 直下兜底（免许可/免鉴权/稳定）。
+          NDK_VER="27.0.12077973"
+          NDK_DIR="$ANDROID_HOME/ndk/$NDK_VER"
+          if [ -f "$NDK_DIR/source.properties" ]; then
+            echo "✅ NDK $NDK_VER 已就绪（缓存命中）"
+          else
+            rm -rf "$NDK_DIR"
+            NDK_OK=0
+            for ATTEMPT in 1 2; do
+              if yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+                  --install "ndk;$NDK_VER" >/dev/null 2>&1 && \
+                 [ -f "$NDK_DIR/source.properties" ]; then
+                NDK_OK=1; break
+              fi
+              rm -rf "$NDK_DIR"
+              sleep 5
+            done
+            if [ "$NDK_OK" != "1" ]; then
+              echo "⚠️ sdkmanager 安装 NDK 失败 —— dl.google.com 官方 zip 直下兜底"
+              rm -rf "$NDK_DIR" /tmp/ndk-r27.zip /tmp/ndk-extract
+              curl -sfL --retry 3 -o /tmp/ndk-r27.zip \
+                "https://dl.google.com/android/repository/android-ndk-r27-linux.zip"
+              unzip -q /tmp/ndk-r27.zip -d /tmp/ndk-extract
+              mkdir -p "$ANDROID_HOME/ndk"
+              mv /tmp/ndk-extract/android-ndk-r27 "$NDK_DIR"
+            fi
+            [ -f "$NDK_DIR/source.properties" ] \
+              && echo "✅ NDK $NDK_VER 就绪" \
+              || { echo "::error::NDK $NDK_VER 安装失败（sdkmanager 与直下均不可用）"; exit 1; }
+          fi
+          # 检查 NDK 目录
+          ls "$ANDROID_HOME/ndk/" 2>/dev/null || echo "No NDK pre-installed"
+          # 写入 local.properties（不设 ndk.dir，让 AGP 自动从 SDK 查找）
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          cat local.properties
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14'
+
+      - name: Generate Gradle wrapper
+        run: gradle wrapper --gradle-version 8.14
+
+      - name: Prewarm dependencies (retry on JitPack flakiness)
+        run: |
+          attempts=5
+          for i in $(seq 1 $attempts); do
+            # --write-locks 在首次运行时生成依赖锁文件（app/gradle.lockfile），
+            # 后续运行进入 strict 模式校验，保证 EasyFloat 等版本可复现。
+            if ./gradlew :app:dependencies \
+                --configuration debugAndroidTestRuntimeClasspath \
+                --write-locks \
+                --stacktrace; then
+              echo "✅ Dependency resolution succeeded on attempt $i"
+              exit 0
+            fi
+            echo "⚠️ Dependency resolution attempt $i failed, retrying..."
+            sleep $((i * 30))
+          done
+          echo "❌ Dependency resolution failed after $attempts attempts"
+          exit 1
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # App minSdk=26; API 35 exercises modern URI grants. No bundled rootfs needed.
+      - name: Real host ActivityResult instrumentation
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: ./gradlew :app:connectedDebugAndroidTest -PapexAbi=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=com.apex.agent.tools.MediaResultIntegrationTest --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: media-result-reports
+          path: app/build/reports/androidTests/
