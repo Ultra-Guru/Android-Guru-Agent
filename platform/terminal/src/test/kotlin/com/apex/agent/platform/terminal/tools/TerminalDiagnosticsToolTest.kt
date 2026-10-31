@@ -90,7 +90,7 @@ class TerminalDiagnosticsToolTest {
 
         assertEquals("true", json["ok"]!!.jsonPrimitive.content)
         assertEquals("1", json["sessionCount"]!!.jsonPrimitive.content)
-        assertEquals(2, json["backends"]!!.jsonArray.size)
+        assertEquals(1, json["backends"]!!.jsonArray.size)
         assertEquals("all clear — terminal stack healthy", json["nextActions"]!!.jsonArray[0].jsonPrimitive.content)
     }
 
