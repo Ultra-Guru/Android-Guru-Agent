@@ -3,6 +3,8 @@ package com.apex.agent.core.engine
 import com.apex.agent.core.engine.plan.PLAN_CONFIRMATION_TIMEOUT_MS
 import com.apex.agent.core.llm.LlmMessage
 import com.apex.agent.core.llm.ToolCall
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
@@ -28,7 +30,14 @@ internal suspend fun ApexAgentEngine.handleAskUserToolCall(
 
     val args = try {
         kotlinx.serialization.json.Json.parseToJsonElement(toolCall.arguments).jsonObject
-    } catch (_: Exception) {
+    } catch (e: Exception) {
+        // 防御式 IO 纪律：解析失败折叠为空参数继续走（question 回退默认文案），
+        // 但不再静默 —— AppLogger 留痕，排查模型输出非合法 JSON 时有据可查。
+        AppLogger.instance.warn(
+            LogCategory.ENGINE,
+            "EngineAskUserFlow",
+            "AskUser toolCall.arguments 非 JSON 对象，按空参数处理: ${e.message}"
+        )
         emptyMap<String, String>()
     }
     // P3-d 修复：旧实现 `?.toString()?.trim('"')` 依赖 JsonPrimitive.toString()
