@@ -279,7 +279,9 @@ class TerminalExecTool(
             totalForwarded += out.length
             pending.setLength(0)
             lastFlushAt = now
-            return out.takeIf { it.isNotEmpty() }
+            // pending 是 StringBuilder：take() 返回 CharSequence —— 函数契约
+            // String? 需要 toString 收敛（上游 080e6bd4 遗留，main CI 红）。
+            return out.takeIf { it.isNotEmpty() }?.toString()
         }
 
         private companion object {
