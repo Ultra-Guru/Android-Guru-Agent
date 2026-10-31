@@ -13,7 +13,7 @@
 
 一个开源的 Android 端 AI 编码应用：OpenAI 兼容流式 LLM 接入、四条思考逻辑线
 （深潜七档 / 标准 / 织造 / 信使，运行时可切）、
-百级内置工具（超时/重试/限流/熔断/追踪/批量/组合动作八层执行硬化；P83 环境闭环补全；MCP/技能按工位作用域隔离）、PRoot 沙箱化 Ubuntu 终端、仿生认知记忆系统（差分摄取 → 轨迹蒸馏 →
+百级内置工具（超时/重试/限流/熔断/追踪/批量/组合动作八层执行硬化；P83 环境闭环补全；MCP/技能按工位作用域隔离）、模板行为运行时（十大内置模板全部代码化：六阶段管线 + 不可更改 + 每模板双层确定性引擎，切换模板 = 装配管线而非注入提示词）、PRoot 沙箱化 Ubuntu 终端、仿生认知记忆系统（差分摄取 → 轨迹蒸馏 →
 FSM 旁路回放 → 梦境巩固）、Root/Shizuku/无障碍三级权限链、插件化 SDK ——
 全部跑在一台手机上，无需任何服务器。（Agent 聊天模式已拆分至独立仓库 Theocracy，本仓库专注 Coding。）
 
@@ -1143,6 +1143,7 @@ Android-Guru-Agent/
 | [docs/key-pool.md](docs/key-pool.md) | **P90 API Key 池**：三态门控/四轮换模式/指数退避/请求层换 Key 重试环（对标 operit MultiApiKeyProvider + rikka LruKeyRoulette） |
 | [docs/prompt-variables.md](docs/prompt-variables.md) | **P91 提示词变量**：19 内置变量/转义与默认值语法/递归环安全（对标 rikka PlaceholderTransformer） |
 | [docs/prompt-template-library.md](docs/prompt-template-library.md) | **P92 提示词模板库**：10 内置模板/四级变量合并/原子持久化/导入导出（对标 operit 提示词库） |
+| [docs/template-runtime.md](docs/template-runtime.md) | **模板行为运行时**：六阶段管线/十行为 1:1 目录/内置不可更改/每模板双层确定性引擎（20 个 PR 架构全解） |
 | [docs/message-branching.md](docs/message-branching.md) | **P93 消息分支**：MessageBranchNode 候选数组模型/九操作/树存储与迁移（对标 rikka MessageNode） |
 | [docs/search-providers.md](docs/search-providers.md) | **P94 搜索供应商框架**：Tavily/Brave/Exa/SearXNG/DDG/Bing 六供应商/三阶段回退/缓存限流（对标 rikka 19 家搜索抽象） |
 | [docs/persona-cards.md](docs/persona-cards.md) | **P95 角色卡**：SillyTavern V1/V2/PNG tEXt 导入/Lorebook 触发（对标 operit 角色卡 + rikka AssistantImporter） |
