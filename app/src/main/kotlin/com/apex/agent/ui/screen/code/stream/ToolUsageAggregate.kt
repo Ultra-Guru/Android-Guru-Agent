@@ -47,7 +47,7 @@ import com.apex.agent.core.code.stream.ToolKind
 import com.apex.agent.core.engine.ToolCallOrigin
 
 /**
- * # Tool Usage Aggregate — 完整档（Rikka 风格）的工具调用聚合卡
+ * # Tool Usage Aggregate — 完整档的工具调用聚合卡（时间轴风格专用）
  *
  * ## 设计立场（用户需求：「完整档增加调用工具聚合 + 技能 / MCP 展示」）
  *

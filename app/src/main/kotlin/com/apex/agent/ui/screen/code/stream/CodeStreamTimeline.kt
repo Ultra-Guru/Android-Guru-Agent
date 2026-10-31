@@ -79,7 +79,7 @@ import kotlinx.coroutines.launch
  * 以 [CompleteModeGeneratingCard]（加载进度卡）占位；run 收束后
  * 切片解除，完整时间轴一次性渲染并由锚定收尾动画滚动一次到底
  * （规格书：「完成后渲染完整内容 + 完成后滚动一次」）。STREAMING 档
- * 零变化（既有 Rikka 风格实时渲染）。
+ * 零变化（既有实时渲染；Rikka 风格时间轴见 RikkaStreamTimeline）。
  *
  * ## v5 玻璃接线
  *
@@ -112,7 +112,7 @@ internal fun CodeStreamTimeline(
     val visibleEntries = remember(snapshot.entries, completeActive) {
         if (completeActive) completeModeVisibleEntries(snapshot.entries) else snapshot.entries
     }
-    // 完整档聚合（Rikka 风格抽屉）：收束后的连续工具胶囊段折叠为聚合卡
+    // 完整档聚合（聚合抽屉）：收束后的连续工具胶囊段折叠为聚合卡
     //（技能 / MCP / 内置三分类摘要 + 可展开明细）；生成中同款适用——历史轮
     // 的胶囊段也收进抽屉，时间轴只剩结论与抽屉。流式档零变化（平铺 + 同族
     // 折叠的既有行为）。
@@ -343,8 +343,10 @@ internal data class TerminalPanelState(
 /**
  * 终端胶囊结构位（并入锚定 itemCountKey）：无 = 0 / 静默 = 1 / 运行中 = 2。
  * 出现与开跑（展开）都算结构变化 → 触发一次贴尾跟随。
+ *
+ * internal：Rikka 风格时间轴（RikkaStreamTimeline）同款锚定复用。
  */
-private fun terminalStructureKey(terminal: TerminalPanelState?): Int = when {
+internal fun terminalStructureKey(terminal: TerminalPanelState?): Int = when {
     terminal == null -> 0
     terminal.busy -> 2
     else -> 1
@@ -414,8 +416,8 @@ internal fun groupConsecutive(
 /** 完整档聚合阈值：连续胶囊数 > 此值（即 ≥2）才包聚合卡。 */
 private const val AGGREGATE_THRESHOLD = 1
 
-/** 条目内容长度（节流档位 key 的素材）。 */
-private fun entryContentLength(entry: StreamEntry): Int = when (entry) {
+/** 条目内容长度（节流档位 key 的素材；Rikka 时间轴同款锚定复用）。 */
+internal fun entryContentLength(entry: StreamEntry): Int = when (entry) {
     is StreamEntry.UserEntry -> entry.text.length
     is StreamEntry.AssistantEntry -> entry.text.length
     is StreamEntry.ThinkingEntry -> entry.text.length
@@ -434,4 +436,4 @@ private fun entryContentLength(entry: StreamEntry): Int = when (entry) {
     is StreamEntry.RunStatsEntry -> 160
 }
 
-private fun anchorFollowTick(contentLength: Int): Int = contentLength / 200
+internal fun anchorFollowTick(contentLength: Int): Int = contentLength / 200
