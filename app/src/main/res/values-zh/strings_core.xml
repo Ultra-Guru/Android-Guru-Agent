@@ -437,13 +437,10 @@
     <string name="memory_delete_episode_text">确定删除 \"%1$s\" 吗？关联的边会一并清除（节点为共享字典，不随删硬删）。</string>
     <string name="memory_delete">删除</string>
     <string name="memory_cancel">取消</string>
-    <string name="memory_episode_meta">%1$s · %2$s · %3$d 动作</string>
-    <string name="memory_distilled">已蒸馏为宏</string>
     <string name="memory_no_text">(无文本)</string>
     <string name="memory_generic">通用</string>
     <string name="memory_macro_stats">%1$s · 成功 %2$d / 失败 %3$d</string>
     <string name="memory_crystallized">已晶化</string>
-    <string name="memory_steps">%1$d 步</string>
     <string name="memory_dream_title">梦境整理</string>
     <string name="memory_dream_running">整理中：衰减 / 修剪 / 宏优化…</string>
     <string name="memory_dream_desc">能量衰减 + 修剪低价值记忆（周期自动，可手动）</string>
@@ -525,6 +522,49 @@
     <string name="memory_search_type_fact">事实</string>
     <string name="memory_search_type_entity">实体</string>
     <string name="memory_search_type_node">节点</string>
+
+    <!-- ═══ 记忆页 v3（单列列表 / 分区导航 / 下拉刷新 / 过滤芯片）═══ -->
+    <string name="memory_section_all">全部</string>
+    <string name="memory_section_chat">聊天记忆</string>
+    <string name="memory_section_knowledge">知识图谱</string>
+    <string name="memory_section_episodes">近期经历</string>
+    <string name="memory_section_macros">宏技能</string>
+    <string name="memory_refreshed_at_fmt">上次刷新 %1$s</string>
+    <string name="memory_search_clear">清空搜索</string>
+    <string name="memory_search_hint">三轨同检：事实 / 实体 / 场景节点</string>
+    <string name="memory_search_summary_fmt">命中 %1$d 条</string>
+    <string name="memory_episode_filter_all">全部</string>
+    <string name="memory_episode_filter_running">进行中</string>
+    <string name="memory_episode_filter_succeeded">成功</string>
+    <string name="memory_episode_filter_failed">失败</string>
+    <string name="memory_episode_filter_abandoned">已放弃</string>
+    <string name="memory_episode_filter_empty">该状态下暂无经历</string>
+    <string name="memory_episode_status_running">进行中</string>
+    <string name="memory_episode_status_succeeded">成功</string>
+    <string name="memory_episode_status_failed">失败</string>
+    <string name="memory_episode_status_abandoned">已放弃</string>
+    <string name="memory_episode_meta_time_actions_fmt">%1$s · %2$d 次操作</string>
+    <string name="memory_duration_hours_fmt">%1$d 时 %2$d 分</string>
+    <string name="memory_duration_minutes_fmt">%1$d 分 %2$d 秒</string>
+    <string name="memory_duration_seconds_fmt">%1$d 秒</string>
+    <string name="memory_episode_manual">手动</string>
+    <string name="memory_macro_distilled_fmt">已蒸馏 %1$d 个宏</string>
+    <string name="memory_expand_hint">详情</string>
+    <string name="memory_collapse">收起</string>
+    <string name="memory_macro_goal_label">目标</string>
+    <string name="memory_macro_steps_detail_header">动作序列</string>
+    <string name="memory_macro_step_fmt">%1$d. %2$s</string>
+    <string name="memory_macro_step_tap">点按</string>
+    <string name="memory_macro_step_swipe">滑动</string>
+    <string name="memory_macro_step_input">输入文本</string>
+    <string name="memory_macro_step_back">返回键</string>
+    <string name="memory_macro_step_home">回桌面</string>
+    <string name="memory_macro_more_steps_fmt">还有 %1$d 步未展示</string>
+    <string name="memory_macro_created_fmt">沉淀于 %1$s</string>
+    <string name="memory_macro_source_fmt">蒸馏自情景 %1$s</string>
+    <string name="memory_macro_last_used_fmt">最近回放 %1$s</string>
+    <string name="memory_knowledge_show_all_fmt">显示全部 %1$d 个实体</string>
+    <string name="memory_knowledge_show_top">收起，只看高频实体</string>
 
     <!-- ═══ 权限管理（PermissionsScreen）═══ -->
     <string name="perms_title">权限管理</string>
