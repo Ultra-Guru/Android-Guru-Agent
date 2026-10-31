@@ -240,7 +240,7 @@ class FusionCreateTool(
         val unknownMcps = args.optionalStringList("mcp_names").orEmpty().filter { it !in configuredMcpNames() }
         if (skills.isEmpty() && mcps.isEmpty()) {
             return ToolResult.fail(
-                ToolErrorCode.INVALID_ARGUMENTS,
+                ToolErrorCode.INVALID_ARGUMENT,
                 "没有可加入的成员：给定的 id 都不是已安装实体" +
                     (if (unknownSkills.isNotEmpty()) "；未知技能=" + unknownSkills.joinToString(",") else "") +
                     (if (unknownMcps.isNotEmpty()) "；未知MCP=" + unknownMcps.joinToString(",") else "") +
