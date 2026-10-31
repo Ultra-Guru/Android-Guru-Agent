@@ -157,9 +157,15 @@ object RefactorRiskModel {
         // 只保留清单里实际出现的种类之间的依赖边
         val edges = HARD_DEPENDENCIES.filter { it.from in kinds && it.to in kinds }
         val unmet = mutableListOf<String>()
-        for (edge in HARD_DEPENDENCIES) {
-            if (edge.to in kinds && edge.from !in kinds) {
-                unmet += "${edge.to.label} 需要 ${edge.from.label}（${edge.reason}），但清单中缺少该步骤"
+        // OR 语义：一个步骤只要有任一硬依赖前驱在清单中即视为满足；
+        // 全部前驱都缺席才报未满足（如清单只有拆分函数却没有保护网/提取重复）。
+        for (target in kinds) {
+            val predecessors = HARD_DEPENDENCIES.filter { it.to == target }.map { it.from }
+            if (predecessors.isEmpty()) continue
+            if (predecessors.none { it in kinds }) {
+                val representative = HARD_DEPENDENCIES.first { it.to == target }
+                unmet += "${target.label} 需要前置步骤（${representative.reason}），但清单中缺少全部前置（" +
+                    predecessors.joinToString(" 或 ") { it.label } + "）"
             }
         }
         // Kahn：入度表 + 队列（声明序决胜）
