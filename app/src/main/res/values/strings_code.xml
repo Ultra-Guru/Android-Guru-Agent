@@ -324,6 +324,25 @@
     <!-- Workspace selection (input-bar selector, 2026-10): real folder + whole system -->
     <string name="code_workspace_pick_folder">Select Folder…</string>
     <string name="code_workspace_whole_system">Whole System</string>
+    <!-- Web search channels + toolbench expand menu (2026-10 toolbar regroup) -->
+    <string name="code_websearch_cd">Web search</string>
+    <string name="code_websearch_builtin">Built-in search</string>
+    <string name="code_websearch_builtin_desc">Model-side web search toolchain</string>
+    <string name="code_websearch_searxng">SearXNG local</string>
+    <string name="code_websearch_searxng_desc">Prefer local SearXNG metasearch</string>
+    <string name="code_websearch_mcp">Search MCP</string>
+    <string name="code_websearch_mcp_desc">Pick one of three local search MCP servers</string>
+    <string name="code_websearch_mcp_fs_desc">Local-first multi-engine search, fetch &amp; doc read</string>
+    <string name="code_websearch_mcp_sl_desc">7-engine search, smart cache &amp; failover</string>
+    <string name="code_websearch_mcp_as_desc">Free EN/Chinese search router, token-frugal</string>
+    <string name="code_websearch_install_progress">Installing in sandbox…</string>
+    <string name="code_websearch_install_done">Search MCP installed and enabled</string>
+    <string name="code_toolbench_cd">Expand toolbench</string>
+    <string name="code_toolbench_slash">Slash commands</string>
+    <string name="code_toolbench_fusion">Tool bundles</string>
+    <string name="code_toolbench_github">GitHub connection</string>
+    <string name="code_toolbench_toolkit">Calls · time · rules</string>
+    <string name="code_toolbench_neon">Feature hub</string>
     <string name="code_workspace_browser_cd">Open workspace browser</string>
     <string name="drawer_workspace_browser">Workspace</string>
     <string name="code_stream_terminal_running">Running</string>
