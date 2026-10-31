@@ -763,6 +763,11 @@ class CodeViewModel @Inject constructor(
         userQuestionBridge.submit(AgentAnswer(questionId = question.id, skipped = true))
     }
 
+    /** #237：用户看过了通知恢复提示（或点了「去开启」）—— 不再重复展示。 */
+    fun dismissNotificationRecovery() {
+        _uiState.update { it.copy(notificationRecoveryPending = false) }
+    }
+
     fun dismissError() {
         _uiState.update { it.copy(error = null, errorRetriable = false) }
     }
