@@ -1,64 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- ═══ 屏体 ═══ -->
-    <string name="term_title">Terminal</string>
+    <!-- ═══ 屏体（T97：Ubuntu 开发环境安装页 —— 控制台已退役）═══ -->
+    <string name="term_ubuntu_env_title">Ubuntu Environment</string>
+    <string name="term_ubuntu_env_desc">Ubuntu is fully agent-controlled. This page only installs dev environments (version selectable) — the agent runs all commands via its terminal tools.</string>
     <string name="term_back">Back</string>
-    <string name="term_cmd_hint">Type a command…</string>
-    <string name="term_new_session_title">New session</string>
-    <string name="term_new_ubuntu_session">New Ubuntu session</string>
-    <string name="term_close_session">Close session</string>
-    <string name="term_tab_ubuntu">Ubuntu</string>
-    <string name="term_state_dead">dead</string>
+    <string name="term_status_refresh">Refresh installed status</string>
+    <string name="term_env_removed">Ubuntu environment removed</string>
 
-    <!-- ═══ 会话/环境内联面板 ═══ -->
-    <string name="term_env_prep_title">Preparing Ubuntu environment</string>
-    <string name="term_env_prep_desc">First run unpacks the built-in rootfs, then bootstraps apt. Progress is shown here.</string>
-    <string name="term_starting">Starting…</string>
-    <string name="term_step_unpack">Unpack</string>
-    <string name="term_step_configure">Configure</string>
-    <string name="term_step_toolchain">Toolchain</string>
-    <string name="term_prep_footnote">Offline bundled image; takes 2–5 minutes on first run.</string>
-    <string name="term_env_failed_title">Environment failed</string>
-    <string name="term_no_terminal_session">No session</string>
-    <string name="term_env_ready_hint">Ubuntu is ready. Real bash / gcc / python3 available.</string>
-    <string name="term_retry">Retry</string>
-    <string name="term_session_dead_title">Session ended</string>
-    <string name="term_session_dead_ubuntu">The Ubuntu session process is gone. Restart to relaunch it.</string>
-    <string name="term_session_dead_local">The Android shell session is gone. Restart to relaunch it.</string>
-    <string name="term_session_restart">Restart session</string>
-    <string name="term_session_opened">Session opened (%1$s) — real commands run here</string>
-
-    <!-- ═══ 帮助 / EXIT 行 ═══ -->
-    <string name="term_help_body">Console help\n· Commands run in a real shell session (Ubuntu PRoot or Android toybox)\n· help / clear are console built-ins; everything else is executed for real\n· ↑/↓ recalls command history; hold to copy output\n· Manage environments in the Environment center</string>
-    <string name="term_exit_ok">✓ exit 0</string>
-    <string name="term_exit_code">✗ exit %1$d</string>
-    <string name="term_exit_unknown">✓ exit ?</string>
-    <string name="term_exit_timeout">✗ timed out (SIGTERM)</string>
-    <string name="term_exit_session_gone">✗ session ended</string>
-
-    <!-- ═══ 通知（VM）═══ -->
-    <string name="term_notice_recovered">Recovered %1$d interrupted session(s) — shown as dead tabs</string>
-    <string name="term_notice_ubuntu_unavailable">Ubuntu unavailable: %1$s</string>
-    <string name="term_notice_create_failed">Session create failed: %1$s</string>
-    <string name="term_notice_no_session_input">No active session — create one first</string>
-    <string name="term_notice_session_dead">Session has ended — restart it</string>
-    <string name="term_notice_blocked">Blocked by command policy: %1$s</string>
-    <string name="term_notice_run_failed">Execution failed: %1$s</string>
-    <string name="term_notice_wait_failed">Wait failed: %1$s</string>
-    <string name="term_notice_wait_timeout">Wait timed out — terminated</string>
-    <string name="term_notice_session_gone">Session ended during execution</string>
-    <string name="term_notice_no_pty">No session available for install</string>
-    <string name="term_notice_truncated">…output truncated…\n</string>
-    <string name="term_notice_install_all_start">▶ install all (mirror=%1$s)\n</string>
-    <string name="term_notice_install_all_done">✓ all dependencies installed\n</string>
-    <string name="term_notice_install_android_start">▶ install android deps (mirror=%1$s)\n</string>
-    <string name="term_notice_install_android_done">✓ android dependencies installed\n</string>
-    <string name="term_copy_done">Copied %1$d chars</string>
-
-    <!-- ═══ 环境中心 ═══ -->
-    <string name="term_env_center">Environment center</string>
-    <string name="term_env_center_title">Environment center</string>
-    <string name="term_env_center_desc">Ubuntu rootfs, backends and dependency installs</string>
+    <!-- ═══ Ubuntu rootfs 卡 ═══ -->
     <string name="term_ubuntu_card_title">Ubuntu (PRoot)</string>
     <string name="term_ubuntu_card_desc">Real bash / gcc / python3 in a chroot-like rootfs</string>
     <string name="term_disk_usage">Disk usage: %1$s</string>
@@ -82,34 +31,43 @@
     <string name="term_phase_ready">Ready</string>
     <string name="term_phase_recovering">Recovering</string>
     <string name="term_phase_failed">Failed</string>
-    <string name="term_deps_title">Dependencies (apt)</string>
-    <string name="term_use_mirror">Use TUNA mirror</string>
-    <string name="term_mirror_desc">Faster in CN; falls back to official sources</string>
+
+    <!-- ═══ 开发环境安装卡（版本自选）═══ -->
+    <string name="term_deps_title">Dev environments</string>
+    <string name="term_mirror_note">Mirror applies to apt/direct downloads; sdkmanager fetches from Google and cannot be re-hosted.</string>
+    <string name="term_use_mirror">Use CN mirrors</string>
+    <string name="term_mirror_desc">TUNA / Tencent / npmmirror / USTC / rsproxy; faster in CN</string>
     <string name="term_install_all">Install all</string>
     <string name="term_android_deps">Android only</string>
+    <string name="term_group_basic">Basic tools</string>
+    <string name="term_group_java">Java &amp; build</string>
+    <string name="term_group_android">Android development</string>
+    <string name="term_group_runtime">More runtimes</string>
     <string name="term_installing">Installing…</string>
     <string name="term_install">Install</string>
+    <string name="term_dep_installed">Installed</string>
+    <string name="term_dep_missing">Not installed</string>
+    <string name="term_dep_checking">Checking…</string>
+    <string name="term_dep_log">Install log</string>
 
-    <!-- ═══ 历史 ═══ -->
-    <string name="term_history_title">Command history</string>
-    <string name="term_history_hint">Tap to run again · copy per row</string>
-    <string name="term_history_clear">Clear</string>
-    <string name="term_history_empty">No history yet</string>
-    <string name="term_copy">Copy</string>
+    <!-- ═══ 通知（DepCenter / VM）═══ -->
+    <string name="term_notice_ubuntu_unavailable">Ubuntu unavailable: %1$s</string>
+    <string name="term_notice_run_failed">Execution failed: %1$s</string>
+    <string name="term_notice_wait_failed">Wait failed: %1$s</string>
+    <string name="term_notice_wait_timeout">Wait timed out — terminated</string>
+    <string name="term_notice_session_gone">Session ended during execution</string>
+    <string name="term_notice_no_pty">No session available for install</string>
+    <string name="term_notice_truncated">…output truncated…\n</string>
+    <string name="term_notice_install_all_start">▶ install all (mirror=%1$s)\n</string>
+    <string name="term_notice_install_all_done">✓ all dependencies installed\n</string>
+    <string name="term_notice_install_android_start">▶ install android deps (mirror=%1$s)\n</string>
+    <string name="term_notice_install_android_done">✓ android dependencies installed\n</string>
 
-    <!-- ═══ 设置 ═══ -->
-    <string name="term_settings_title">Terminal settings</string>
-    <string name="term_appearance">Appearance</string>
-    <string name="term_font_size">Font size (8–24)</string>
-    <string name="term_feedback">Feedback</string>
-    <string name="term_keep_screen_on">Keep screen on</string>
-    <string name="term_keep_screen_on_desc">Hold the display awake while the console is open</string>
+    <!-- ═══ 设置中心：命令黑白名单（Agent 执行门禁）═══ -->
     <string name="term_blacklist_title">Command blacklist</string>
-    <string name="term_blacklist_desc">Blocked heads never run; matched exactly (rm does not block rmdir)</string>
+    <string name="term_blacklist_desc">Blocked heads never run (gates agent-side terminal tools too); matched exactly (rm does not block rmdir)</string>
     <string name="term_whitelist">Whitelist</string>
     <string name="term_policy_hint">command head, e.g. rm</string>
     <string name="term_add">Add</string>
     <string name="term_remove">Remove</string>
-    <string name="term_policy_empty">Empty — everything is allowed</string>
-    <string name="term_env_hint">Lists persist across restarts and are shared with agent-side runtime policy.</string>
 </resources>

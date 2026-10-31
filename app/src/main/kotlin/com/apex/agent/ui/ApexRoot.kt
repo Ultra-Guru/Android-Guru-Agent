@@ -89,7 +89,7 @@ import com.apex.agent.ui.screen.playground.PlaygroundScreen
 import com.apex.agent.ui.screen.settings.SettingsScreen
 import com.apex.agent.ui.screen.memory.MemoryScreen
 import com.apex.agent.ui.screen.storage.StorageScreen
-import com.apex.agent.ui.screen.terminal.TerminalScreen
+import com.apex.agent.ui.screen.terminal.UbuntuEnvironmentScreen
 import com.apex.agent.ui.screen.templates.TemplateStudioScreen
 import com.apex.agent.ui.screen.usage.UsageDashboardScreen
 import com.apex.agent.ui.screen.vault.VaultScreen
@@ -115,9 +115,10 @@ sealed class DrawerDestination(
     data object Code : DrawerDestination("code", R.string.drawer_code, Icons.Default.Code)
     // #197 模板工坊：Agent/Coding 双层模板 + Agent 角色详细设置的独立页面入口。
     data object Templates : DrawerDestination("templates", R.string.drawer_templates, Icons.AutoMirrored.Filled.ListAlt)
-    data object Terminal : DrawerDestination("terminal", R.string.drawer_terminal, Icons.Default.Terminal)
-    // T96 终端大重构：M³ 入口与旧交互终端入口已合并为本 Terminal —— 唯一终端
-    //（M3 控制台视觉 × 真实 PTY 执行 × 多会话/环境/历史全量功能）。
+    // T97 Ubuntu 大重构：控制台 UI 退役（Ubuntu 归 Agent 全权掌控），本目的地
+    // 改指 Ubuntu 开发环境安装页（rootfs 生命周期 + 版本自选依赖安装）。
+    // route 保留 "terminal" —— NavigationBackStack 的 Saver 往返零迁移成本。
+    data object UbuntuEnv : DrawerDestination("terminal", R.string.drawer_ubuntu_env, Icons.Default.Terminal)
     // Skill 屏已移除 —— 技能的安装/启停统一由「市场 · Skills」页承担，
     // 抽屉里再放一个只读列表是重复入口（两者数据源同一份 SkillRegistry）。
     // 工具聚合中心（原「市场」顶层整体退役）：route 保留 "market" ——
@@ -312,7 +313,7 @@ fun ApexRoot() {
             topBar = {
                 // 终端屏自带二级顶栏（含终端抽屉入口）——若此处再渲染根顶栏，会出现双顶栏双汉堡
                 // 工作区浏览器页自带头部（胶囊标签栏 + 叉号），与终端页同款排除
-                if (currentDestination != DrawerDestination.Terminal &&
+                if (currentDestination != DrawerDestination.UbuntuEnv &&
                     currentDestination != DrawerDestination.WorkspaceBrowser
                 ) {
                     TopAppBar(
@@ -411,8 +412,8 @@ fun ApexRoot() {
                                 onClose = navigateBack
                             )
                             DrawerDestination.Templates -> TemplateStudioScreen()
-                            DrawerDestination.Terminal -> TerminalScreen(
-                                // 终端页不再有汉堡/边缘滑动拉抽屉 —— 返回钮走统一
+                            DrawerDestination.UbuntuEnv -> UbuntuEnvironmentScreen(
+                                // 环境页不再有汉堡/边缘滑动拉抽屉 —— 返回钮走统一
                                 // 返回链（弹历史栈；栈空兑底回 Agent 主页，抽屉在那里可达）
                                 onBack = navigateBack
                             )

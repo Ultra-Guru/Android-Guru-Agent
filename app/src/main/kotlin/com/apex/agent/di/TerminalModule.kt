@@ -66,20 +66,13 @@ object TerminalModule {
     fun provideNativePty(): NativePty = JniNativePty()
 
     /**
-     * 终端设置共享单例（设置中心 v2 扩展）：设置页「终端」大分类与终端页
-     * 必须看到同一份内存态 —— store 提升为 Hilt 单例后，任意一侧改动经
-     * 同一 StateFlow 即时广播到另一侧（此前各 VM 私建实例，prefs 落盘虽
-     * 共享但内存态互不可见，改动要等 VM 重建才生效）。
+     * T97（Ubuntu 大重构）：TerminalSettingsStore（字号/亮屏 —— 控制台专属）
+     * 已随终端控制台退役删除；环境页在安装进行中自主亮屏。
      *
-     * 两个 store 同绑 "apex_terminal" prefs（与 [provideTerminalPolicy] 的
-     * 动态策略读同一文件），无新存储面。配色方案单例已随旧交互终端退役
-     * （T96 终端大重构删除 scheme 子包），不再提供。
+     * CommandPolicyStore（命令黑白名单）保留 —— 设置中心 terminal/policy 叶
+     * 与 [provideTerminalPolicy] 的 dynamicPolicy 共享 "apex_terminal" prefs，
+     * 是 **Agent 侧执行门禁**（Agent 工具执行与用户名单共享同一份策略）。
      */
-    @Provides
-    @Singleton
-    fun provideTerminalSettingsStore(@ApplicationContext context: Context): com.apex.agent.ui.screen.terminal.TerminalSettingsStore =
-        com.apex.agent.ui.screen.terminal.TerminalSettingsStore(context)
-
     @Provides
     @Singleton
     fun provideCommandPolicyStore(@ApplicationContext context: Context): com.apex.agent.ui.screen.terminal.CommandPolicyStore =
@@ -89,7 +82,7 @@ object TerminalModule {
     /**
      * 终端策略接线（设置页黑白名单 → LINE 写入策略层）。
      *
-     * TerminalViewModel 的设置页把用户黑白名单写入 "apex_terminal" prefs
+     * 设置中心 terminal/policy 页把用户黑白名单写入 "apex_terminal" prefs
      * （键 cmd_blacklist / cmd_whitelist，值 = 命令头 token 的小写集合）。
      * 此前该配置**从未被任何执行路径消费**（设置页是纯装饰）—— 这里通过
      * [TerminalPolicyImpl] 的 dynamicPolicy 每次检查时实时读取 prefs 接入：

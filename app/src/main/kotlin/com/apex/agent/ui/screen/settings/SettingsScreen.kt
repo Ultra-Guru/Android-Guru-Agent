@@ -375,8 +375,7 @@ private fun SettingsPageRouter(
         }
         // ═══ 搜索 ═══（SearXNG 本地搜索 + 网络搜索设置）
         "search/local" -> SearchLocalPage()
-        // ═══ 终端 ═══（三个 store 为 Hilt 单例，与终端页共享内存态）
-        "terminal/appearance" -> TerminalAppearancePage()
+        // ═══ 终端 ═══（T97：控制台退役后仅剩策略门禁与服务保活两叶）
         "terminal/policy" -> TerminalCommandPolicyPage()
         "terminal/service" -> TerminalServicePage(agent, onAgent)
         // ═══ 数据与备份 ═══

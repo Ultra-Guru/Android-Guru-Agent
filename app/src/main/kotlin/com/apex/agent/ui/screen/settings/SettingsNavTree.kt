@@ -106,10 +106,10 @@ val SettingsNavTree: List<SettingsCategory> = listOf(
         route = "terminal",
         titleRes = R.string.settings_nav_cat_terminal,
         icon = Icons.Filled.Terminal,
-        // T96 终端大重构后收窄：配色/扩展键两叶随旧交互终端退役；
+        // T97 Ubuntu 大重构后收窄：appearance 叶（字号/亮屏 —— 控制台专属）
+        // 随控制台退役；policy 叶 = Agent 侧执行门禁；
         // service 叶 = Ubuntu 终端运行时宿主（ApexCoreService 保活）
         children = listOf(
-            SettingsLeaf("terminal/appearance", R.string.settings_nav_terminal_appearance, Icons.Outlined.Palette),
             SettingsLeaf("terminal/policy", R.string.settings_nav_terminal_policy, Icons.Outlined.Rule),
             SettingsLeaf("terminal/service", R.string.settings_nav_terminal_service, Icons.Outlined.Settings),
         )

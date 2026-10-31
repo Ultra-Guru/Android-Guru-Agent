@@ -1,64 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- ═══ 屏体 ═══ -->
-    <string name="term_title">终端</string>
+    <!-- ═══ 屏体（T97：Ubuntu 开发环境安装页 —— 控制台已退役）═══ -->
+    <string name="term_ubuntu_env_title">Ubuntu 环境</string>
+    <string name="term_ubuntu_env_desc">Ubuntu 由 Agent 全权掌控。本页仅安装开发环境（版本自选）—— 命令一律由 Agent 的终端工具执行。</string>
     <string name="term_back">返回</string>
-    <string name="term_cmd_hint">输入命令…</string>
-    <string name="term_new_session_title">新建会话</string>
-    <string name="term_new_ubuntu_session">新建 Ubuntu 会话</string>
-    <string name="term_close_session">关闭会话</string>
-    <string name="term_tab_ubuntu">Ubuntu</string>
-    <string name="term_state_dead">已中断</string>
+    <string name="term_status_refresh">刷新已装状态</string>
+    <string name="term_env_removed">Ubuntu 环境已删除</string>
 
-    <!-- ═══ 会话/环境内联面板 ═══ -->
-    <string name="term_env_prep_title">正在准备 Ubuntu 环境</string>
-    <string name="term_env_prep_desc">首次运行解包内置 rootfs 并引导 apt，进度在此展示。</string>
-    <string name="term_starting">启动中…</string>
-    <string name="term_step_unpack">解包</string>
-    <string name="term_step_configure">配置</string>
-    <string name="term_step_toolchain">工具链</string>
-    <string name="term_prep_footnote">内置离线镜像，首次约 2–5 分钟。</string>
-    <string name="term_env_failed_title">环境失败</string>
-    <string name="term_no_terminal_session">暂无会话</string>
-    <string name="term_env_ready_hint">Ubuntu 已就绪：真实 bash / gcc / python3 可用。</string>
-    <string name="term_retry">重试</string>
-    <string name="term_session_dead_title">会话已结束</string>
-    <string name="term_session_dead_ubuntu">Ubuntu 会话进程已消失，重启可重新拉起。</string>
-    <string name="term_session_dead_local">Android Shell 会话已消失，重启可重新拉起。</string>
-    <string name="term_session_restart">重启会话</string>
-    <string name="term_session_opened">会话已开启（%1$s）—— 此处命令为真实执行</string>
-
-    <!-- ═══ 帮助 / EXIT 行 ═══ -->
-    <string name="term_help_body">控制台帮助\n· 命令在真实 shell 会话中执行（Ubuntu PRoot 或 Android toybox）\n· help / clear 为控制台内建，其余命令全部真实执行\n· ↑/↓ 召回历史；长按输出可复制\n· 环境管理请打开环境中心</string>
-    <string name="term_exit_ok">✓ exit 0</string>
-    <string name="term_exit_code">✗ exit %1$d</string>
-    <string name="term_exit_unknown">✓ exit ?</string>
-    <string name="term_exit_timeout">✗ 超时（SIGTERM）</string>
-    <string name="term_exit_session_gone">✗ 会话已结束</string>
-
-    <!-- ═══ 通知（VM）═══ -->
-    <string name="term_notice_recovered">已恢复 %1$d 个中断会话 —— 以死标签可见</string>
-    <string name="term_notice_ubuntu_unavailable">Ubuntu 不可用：%1$s</string>
-    <string name="term_notice_create_failed">会话创建失败:%1$s</string>
-    <string name="term_notice_no_session_input">无活跃会话 —— 请先新建</string>
-    <string name="term_notice_session_dead">会话已结束 —— 请重启</string>
-    <string name="term_notice_blocked">命令被名单拦截:%1$s</string>
-    <string name="term_notice_run_failed">执行失败:%1$s</string>
-    <string name="term_notice_wait_failed">等待失败:%1$s</string>
-    <string name="term_notice_wait_timeout">等待超时 —— 已终止</string>
-    <string name="term_notice_session_gone">执行期间会话结束</string>
-    <string name="term_notice_no_pty">没有可用会话执行安装</string>
-    <string name="term_notice_truncated">…输出已截断…\n</string>
-    <string name="term_notice_install_all_start">▶ 全部安装（镜像=%1$s）\n</string>
-    <string name="term_notice_install_all_done">✓ 全部依赖安装完成\n</string>
-    <string name="term_notice_install_android_start">▶ 安装 Android 依赖（镜像=%1$s）\n</string>
-    <string name="term_notice_install_android_done">✓ Android 依赖安装完成\n</string>
-    <string name="term_copy_done">已复制 %1$d 字符</string>
-
-    <!-- ═══ 环境中心 ═══ -->
-    <string name="term_env_center">环境中心</string>
-    <string name="term_env_center_title">环境中心</string>
-    <string name="term_env_center_desc">Ubuntu rootfs、后端与依赖安装</string>
+    <!-- ═══ Ubuntu rootfs 卡 ═══ -->
     <string name="term_ubuntu_card_title">Ubuntu（PRoot）</string>
     <string name="term_ubuntu_card_desc">类 chroot rootfs 中的真实 bash / gcc / python3</string>
     <string name="term_disk_usage">磁盘占用:%1$s</string>
@@ -82,34 +31,43 @@
     <string name="term_phase_ready">就绪</string>
     <string name="term_phase_recovering">恢复中</string>
     <string name="term_phase_failed">失败</string>
-    <string name="term_deps_title">依赖（apt）</string>
-    <string name="term_use_mirror">使用 TUNA 镜像</string>
-    <string name="term_mirror_desc">国内更快；失败回退官方源</string>
+
+    <!-- ═══ 开发环境安装卡（版本自选）═══ -->
+    <string name="term_deps_title">开发环境</string>
+    <string name="term_mirror_note">镜像对 apt / 直链下载生效；sdkmanager 走谷歌源无法换镜像。</string>
+    <string name="term_use_mirror">使用国内镜像</string>
+    <string name="term_mirror_desc">TUNA / 腾讯 / npmmirror / USTC / rsproxy；国内更快</string>
     <string name="term_install_all">全部安装</string>
     <string name="term_android_deps">仅 Android 组</string>
+    <string name="term_group_basic">基础工具</string>
+    <string name="term_group_java">Java 与构建</string>
+    <string name="term_group_android">Android 开发环境</string>
+    <string name="term_group_runtime">更多开发环境</string>
     <string name="term_installing">安装中…</string>
     <string name="term_install">安装</string>
+    <string name="term_dep_installed">已安装</string>
+    <string name="term_dep_missing">未安装</string>
+    <string name="term_dep_checking">检测中…</string>
+    <string name="term_dep_log">安装日志</string>
 
-    <!-- ═══ 历史 ═══ -->
-    <string name="term_history_title">命令历史</string>
-    <string name="term_history_hint">点按重跑 · 逐行复制</string>
-    <string name="term_history_clear">清空</string>
-    <string name="term_history_empty">暂无历史</string>
-    <string name="term_copy">复制</string>
+    <!-- ═══ 通知（DepCenter / VM）═══ -->
+    <string name="term_notice_ubuntu_unavailable">Ubuntu 不可用：%1$s</string>
+    <string name="term_notice_run_failed">执行失败:%1$s</string>
+    <string name="term_notice_wait_failed">等待失败:%1$s</string>
+    <string name="term_notice_wait_timeout">等待超时 —— 已终止</string>
+    <string name="term_notice_session_gone">执行期间会话结束</string>
+    <string name="term_notice_no_pty">没有可用会话执行安装</string>
+    <string name="term_notice_truncated">…输出已截断…\n</string>
+    <string name="term_notice_install_all_start">▶ 全部安装（镜像=%1$s）\n</string>
+    <string name="term_notice_install_all_done">✓ 全部依赖安装完成\n</string>
+    <string name="term_notice_install_android_start">▶ 安装 Android 依赖（镜像=%1$s）\n</string>
+    <string name="term_notice_install_android_done">✓ Android 依赖安装完成\n</string>
 
-    <!-- ═══ 设置 ═══ -->
-    <string name="term_settings_title">终端设置</string>
-    <string name="term_appearance">外观</string>
-    <string name="term_font_size">字号（8–24）</string>
-    <string name="term_feedback">反馈</string>
-    <string name="term_keep_screen_on">保持亮屏</string>
-    <string name="term_keep_screen_on_desc">控制台打开时保持屏幕常亮</string>
+    <!-- ═══ 设置中心：命令黑白名单（Agent 执行门禁）═══ -->
     <string name="term_blacklist_title">命令黑名单</string>
-    <string name="term_blacklist_desc">命中命令头的命令不再执行；精确匹配（rm 不会拦 rmdir）</string>
+    <string name="term_blacklist_desc">命中命令头的命令不再执行（同时门禁 Agent 侧终端工具）；精确匹配（rm 不会拦 rmdir）</string>
     <string name="term_whitelist">白名单</string>
     <string name="term_policy_hint">命令头，如 rm</string>
     <string name="term_add">添加</string>
     <string name="term_remove">移除</string>
-    <string name="term_policy_empty">空 —— 一切放行</string>
-    <string name="term_env_hint">名单跨重启持久化，并与 Agent 侧运行时策略共享。</string>
 </resources>

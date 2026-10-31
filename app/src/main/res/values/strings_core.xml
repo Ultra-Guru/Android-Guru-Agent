@@ -4,7 +4,7 @@
      through LanguageManager + MainActivity attachBaseContext/recreate. -->
 <resources>
     <!-- ═══ Drawer and navigation destinations (ApexRoot / ApexDrawerContent) ═══ -->
-    <string name="drawer_terminal">Terminal</string>
+    <string name="drawer_ubuntu_env">Ubuntu Env</string>
 <!-- #197 Template Studio -->
     <string name="drawer_templates">Template Studio</string>
     <string name="drawer_market">Aggregation Center</string>
@@ -64,7 +64,6 @@
     <string name="settings_nav_interface_appearance">Appearance</string>
     <string name="settings_nav_interface_chat">Chat Display</string>
     <string name="settings_nav_interface_notifications">Notifications</string>
-    <string name="settings_nav_terminal_appearance">Appearance &amp; Feedback</string>
     <string name="settings_nav_terminal_policy">Command Policy</string>
     <string name="settings_nav_terminal_service">Background Service</string>
     <string name="settings_nav_data_backup">Backup &amp; Restore</string>

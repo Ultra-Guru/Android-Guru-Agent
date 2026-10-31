@@ -4,8 +4,7 @@
      LanguageManager + MainActivity attachBaseContext/recreate 生效。 -->
 <resources>
     <!-- ═══ 抽屉与导航目的地（ApexRoot / ApexDrawerContent）═══ -->
-    <string name="drawer_terminal">终端</string>
-<!-- M³ 现代终端（Material 3 Terminal UI）：轻量 REPL 命令台 -->
+    <string name="drawer_ubuntu_env">Ubuntu 环境</string>
 <!-- #197 模板工坊 -->
     <string name="drawer_templates">模板工坊</string>
     <string name="drawer_market">工具聚合中心</string>
@@ -65,7 +64,6 @@
     <string name="settings_nav_interface_appearance">外观</string>
     <string name="settings_nav_interface_chat">聊天显示</string>
     <string name="settings_nav_interface_notifications">通知</string>
-    <string name="settings_nav_terminal_appearance">外观与反馈</string>
     <string name="settings_nav_terminal_policy">命令策略</string>
     <string name="settings_nav_terminal_service">后台服务</string>
     <string name="settings_nav_data_backup">备份与恢复</string>

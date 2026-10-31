@@ -9,7 +9,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -30,65 +29,25 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import com.apex.agent.ui.screen.terminal.CommandPolicyStore
-import com.apex.agent.ui.screen.terminal.TerminalSettings
-import com.apex.agent.ui.screen.terminal.TerminalSettingsStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 
 /**
- * 设置中心「终端」大分类（扩展阶段）。
+ * 设置中心「终端」大分类（T97 裁剪版）。
  *
- * 终端持久化设置此前只活在终端页 bottom sheet（TerminalSettingsSheet），
- * 入口深、无全局归纳 —— 本文件把它们接入设置中心两级抽屉：
- *  - terminal/appearance：字号 / 屏幕常亮；
- *  - terminal/policy：命令黑白名单；
- *  - terminal/service：Ubuntu 终端运行时宿主（ApexCoreService）保活开关
- *    （原 Agent 设置分区的 Keep Alive 开关迁入——服务本体是终端生命周期宿主）。
- *
- * T96 终端大重构后叶子随控制台收窄：配色方案与扩展键宏已随旧交互终端
- * 退役（scheme/extrakeys 子包删除），terminal/scheme 与 terminal/keys
- * 两叶不再存在；网格时代字段（monochrome/showKeybar/vibrateBell）一并
- * 退役，appearance 叶只剩控制台仍消费的两项。
- *
- * 两个 store 为 Hilt 单例（TerminalModule 提供）—— 与终端控制台共享
- * 同一内存态：在设置中心改字号，终端页（若在后栈）经同一 StateFlow
- * 即时刷新；反向亦然。终端页设置 Sheet 保留（场景内快捷调整），两入口
- * 等价。
- *
- * UI 控件对齐 SettingsWidgets 惯例（SwitchRow / IntFieldRow），
- * 文案复用终端域既有 term_* i18n 键（en+zh 已对称），无新增存储面。
+ * T97（Ubuntu 大重构）：终端控制台退役后，terminal/appearance 叶
+ * （字号 / 屏幕常亮 —— 控制台专属消费项）随之删除；环境页在安装进行中
+ * 自主亮屏，无需全局开关。保留两叶：
+ *  - terminal/policy：命令黑白名单 —— **Agent 侧执行门禁**（TerminalPolicyImpl
+ *    dynamicPolicy 实时消费 prefs，Agent 工具执行与本名单共享同一份策略）；
+ *  - terminal/service：Ubuntu 终端运行时宿主（ApexCoreService）保活开关。
  */
 @HiltViewModel
 class SettingsTerminalViewModel @Inject constructor(
-    val settingsStore: TerminalSettingsStore,
-    val policyStore: CommandPolicyStore,
+    val policyStore: CommandPolicyStore
 ) : ViewModel()
 
-// ═══════════════ terminal/appearance：外观与反馈 ═══════════════
-
-@Composable
-internal fun TerminalAppearancePage(viewModel: SettingsTerminalViewModel = hiltViewModel()) {
-    val settings by viewModel.settingsStore.settings.collectAsStateWithLifecycle()
-    SettingsLeafColumn {
-        SectionCard(
-            title = stringResource(R.string.term_appearance),
-            icon = Icons.Default.Settings
-        ) {
-            IntFieldRow(
-                label = stringResource(R.string.term_font_size),
-                value = settings.fontSize,
-                min = TerminalSettings.MIN_FONT_SIZE,
-                max = TerminalSettings.MAX_FONT_SIZE
-            ) { n -> viewModel.settingsStore.update { copy(fontSize = n) } }
-            SwitchRow(
-                stringResource(R.string.term_keep_screen_on), settings.keepScreenOn,
-                description = stringResource(R.string.term_keep_screen_on_desc)
-            ) { on -> viewModel.settingsStore.update { copy(keepScreenOn = on) } }
-        }
-    }
-}
-
-// ═══════════════ terminal/policy：命令黑白名单 ═══════════════
+// ═══════════════ terminal/policy：命令黑白名单（Agent 执行门禁）═══════════════
 
 @Composable
 internal fun TerminalCommandPolicyPage(viewModel: SettingsTerminalViewModel = hiltViewModel()) {
@@ -128,7 +87,7 @@ internal fun TerminalCommandPolicyPage(viewModel: SettingsTerminalViewModel = hi
 
 /**
  * 后台服务页：ApexCoreService（TerminalRuntime 生命周期宿主）的 Keep Alive
- * 开关（自原 Agent 设置分区迁入，接线不变：CoreServiceGate.apply 即时启停）。
+ * 开关（接线不变：CoreServiceGate.apply 即时启停）。
  */
 @Composable
 internal fun TerminalServicePage(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {

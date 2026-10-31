@@ -7,13 +7,13 @@ import androidx.compose.ui.graphics.Color
 import java.util.Locale
 
 /**
- * 终端控制台视觉基座（T96 —— 终端大重构）。
+ * Ubuntu 环境页视觉基座（T97 —— 自 T96 终端控制台主题裁剪）。
  *
- * 本文件是整个终端包的共享契约层：
- *  - [ConsoleTokens] GitHub Dark 令牌（恒暗 —— 终端语义要求白天模式也是深色
- *    面板，与旧 TerminalGlass 的恒暗材质同一决策；禁用靛蓝系）；
- *  - [TerminalConsoleTheme] M3 暗色 MaterialTheme 包装 + 等宽排版；
- *  - [ConsoleLine] 控制台行模型 —— 引擎层与 UI 层的唯一行契约；
+ * 控制台行模型（ConsoleLine）与语法高亮色板已随终端 UI 退役（Ubuntu 归
+ * Agent 全权掌控）；保留：
+ *  - [ConsoleTokens] GitHub Dark 令牌（恒暗 —— 环境语义要求白天模式也是深色
+ *    面板，与旧终端恒暗材质同一决策；禁用靛蓝系）；
+ *  - [TerminalConsoleTheme] M3 暗色 MaterialTheme 包装；
  *  - [formatBytes] 磁盘用量格式化（StorageScreen 跨屏复用，保持历史导入
  *    路径 `com.apex.agent.ui.screen.terminal.formatBytes` 不变）。
  */
@@ -34,50 +34,20 @@ internal object ConsoleTokens {
     val onErrorContainer = Color(0xFFFF7B72)
     val amber = Color(0xFFFFB454)
 
-    // ── 行类型色（ConsoleLine.kind → 前景色）──
-    val lineCmd = Color(0xFF7EE787)       // 提交行：命令主体
-    val lineCmdPrompt = Color(0xFF8B949E) // 提交行：提示符部分
-    val lineOut = Color(0xFFE6EDF3)       // 真实输出
-    val lineExitOk = Color(0xFF7EE787)    // exit 0
-    val lineExitBad = Color(0xFFFF7B72)   // exit 非 0 / 会话中断
-    val lineInfo = Color(0xFF8B949E)      // 系统提示（降级/恢复等）
-    val lineError = Color(0xFFFF7B72)     // 执行失败
-
-    // ── 语法高亮色板（TerminalSyntax 消费）──
-    val syntaxKeyword = Color(0xFFFF7B72)
-    val syntaxString = Color(0xFFA5D6FF)
-    val syntaxNumber = Color(0xFF79C0FF)
-    val syntaxPath = Color(0xFF7EE787)
-    val syntaxOperator = Color(0xFFFF7B72)
-    val syntaxFlag = Color(0xFFFFB454)
-    val syntaxPlain = Color(0xFFE6EDF3)
-    val syntaxDim = Color(0xFF8B949E)
+    // ── 语义色（环境卡/状态徽章/通知条消费）──
+    val lineExitOk = Color(0xFF7EE787)    // 已装徽章 / READY 徽章
+    val lineInfo = Color(0xFF8B949E)      // 能力清单
+    val lineError = Color(0xFFFF7B72)     // 失败根因 / 错误通知
 }
 
 /**
- * 控制台行模型 —— 引擎（RealCommandExecutor / VM 提交管线）与 UI
- * （LazyColumn 渲染）之间的唯一行契约。
+ * M3 恒暗主题包装 —— Ubuntu 环境域内所有 Composable 必须包裹在本主题内，
+ * 保证暗色令牌不随 App 亮色主题泄漏。
  *
- * [kind] 决定前景色与渲染方式；[text] 为已清洗的纯文本（无 ANSI/OSC 控制
- * 序列 —— 剥离发生在 RawStreamSanitizer）。
- */
-data class ConsoleLine(
-    val kind: LineKind,
-    val text: String
-) {
-    enum class LineKind { CMD, OUT, EXIT_OK, EXIT_BAD, INFO, ERROR }
-}
-
-/**
- * M3 恒暗主题包装 —— 终端域内所有 Composable（屏体 + 三个 Sheet + 对话框）
- * 必须包裹在本主题内，保证暗色令牌不随 App 亮色主题泄漏。
- *
- * 排版：等宽 Monospace 13sp / 行高 20sp（控制台正文与代码高亮的统一基线）。
+ * 恒暗是有意决策（不读 isSystemInDarkTheme）：白天模式下环境页也是深色面板。
  */
 @Composable
 internal fun TerminalConsoleTheme(content: @Composable () -> Unit) {
-    // 恒暗是有意决策（不读 isSystemInDarkTheme）：白天模式下终端也是深色面板，
-    // 与旧 TerminalGlass 恒暗材质、TerminalView 深色配色同一语义。
     MaterialTheme(
         colorScheme = darkColorScheme(
             primary = ConsoleTokens.primary,
@@ -110,10 +80,8 @@ internal fun TerminalConsoleTheme(content: @Composable () -> Unit) {
 }
 
 /**
- * 磁盘用量格式化（T96 转移自旧 EnvironmentCenterSheet，原实现语义不变）。
- *
- * StorageScreen 以 `com.apex.agent.ui.screen.terminal.formatBytes` 路径导入 ——
- * 本函数保持包级可见性，StorageScreen 零改动。
+ * 磁盘用量格式化（StorageScreen 以 `com.apex.agent.ui.screen.terminal.formatBytes`
+ * 路径导入 —— 本函数保持包级可见性，StorageScreen 零改动）。
  */
 internal fun formatBytes(bytes: Long): String {
     if (bytes < 1024) return "$bytes B"

@@ -31,18 +31,23 @@ data class BasePackageProfile(
          *
          * 分组（语义可读，非功能性）：
          *  - 网络与 TLS：ca-certificates, curl, wget
-         *  - shell 与文本：bash, coreutils, findutils, grep, sed, awk, less, file
+         *  - shell 与文本：bash, coreutils, findutils, grep, sed, mawk, less, file
          *  - 归档：tar, gzip, bzip2, xz-utils, unzip, zip
          *  - 进程与系统：procps, psmisc
          *  - 版本控制：git
          *  - 运行时：python3, python3-pip
+         *
+         * T96 修复：`awk` 是 Debian/Ubuntu 的**虚拟包**（由 mawk 提供的默认
+         * alternative）—— `apt-get install awk` 报
+         * "Package 'awk' has no installation candidate"（exit 100）并令
+         * BASE_PACKAGES 阶段整体失败（截图实测）。真实包名为 mawk。
          */
         val DEFAULT = BasePackageProfile(
             essential = listOf(
                 // 网络 / TLS
                 "ca-certificates", "curl", "wget",
-                // shell / 文本
-                "bash", "coreutils", "findutils", "grep", "sed", "awk", "less", "file",
+                // shell / 文本（mawk 提供 awk——虚拟包不可直接安装）
+                "bash", "coreutils", "findutils", "grep", "sed", "mawk", "less", "file",
                 // 归档
                 "tar", "gzip", "bzip2", "xz-utils", "unzip", "zip",
                 // 进程 / 系统
