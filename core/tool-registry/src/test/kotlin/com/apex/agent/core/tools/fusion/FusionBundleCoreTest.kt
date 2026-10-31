@@ -93,7 +93,8 @@ class FusionBundleCoreTest {
         val all = FusionBundlePresets.all()
         // 首发 REA + 扩充三大体系（Superpowers / SuperClaude / BMAD）
         // + 第三波三体系（AnthropicSkills / ClaudeFlow / Shrimp）
-        assertEquals(7, all.size)
+        // + 第四波元能力（Toolwright · CreateSkill/CreateMcp）
+        assertEquals(8, all.size)
         assertEquals("rea", all[0].first.id)
         assertEquals(FusionBundlePresets.REA_BUNDLE_JSON, all[0].second)
     }
@@ -377,6 +378,37 @@ class FusionBundleCoreTest {
             act.skipped.any { it.startsWith("prompt:") && it.contains("patchConfig") }
         )
         assertEquals("MCP 照常连上", listOf("rea"), act.connectedServers)
+    }
+
+    // ═══ 第四波 Toolwright（元能力：CreateSkill / CreateMcp）══════════
+
+    @Test
+    fun `toolwright 预置契约（双元技能零 MCP 宿主原生）`() {
+        val manifest = FusionBundlePresets.all().first { it.first.id == "toolwright" }.first
+        assertEquals(listOf("CreateSkill", "CreateMcp"), manifest.skills.map { it.skillId })
+        assertEquals("双技能零 MCP（方法论 + 工具面全宿主原生）", 0, manifest.mcpServers.size)
+        assertTrue(manifest.bundled)
+        assertTrue("注入工具提示指明宿主工具面",
+            manifest.toolActivationHints.containsAll(listOf("SkillCreate", "McpConnect")))
+        // 正文含宿主工具真实 id（agent 可直接照做，不教不存在的能力）
+        assertTrue(manifest.skills[0].manifest.promptInjection!!.contains("SkillCreate"))
+        assertTrue(manifest.skills[1].manifest.promptInjection!!.contains("McpConnect"))
+    }
+
+    @Test
+    fun `toolwright 激活双技能进注册表且零 MCP 连接`() = runTest {
+        val registry = FusionBundleRegistry(tmp.newFolder("tw"))
+        registry.install(FusionBundlePresets.TOOLWRIGHT_BUNDLE_JSON)
+        val skills = FakeSkillInstaller()
+        val mcp = FakeMcpConnector()
+        val prompt = FakePromptInjector()
+        val activator = FusionBundleActivator(registry, skills, mcp, prompt)
+
+        val act = activator.activate("toolwright").getOrThrow()
+        assertEquals(listOf("CreateSkill", "CreateMcp"), act.installedSkills)
+        assertTrue("零 MCP —— 连接清单恒空", act.connectedServers.isEmpty())
+        assertTrue(act.skipped.isEmpty())
+        assertTrue("人设注入含工具创造者身份", prompt.applied!!.contains("工具创造者"))
     }
 
     // ═══ plugins[] 聚合段 + 自定义组合器（用户自由聚合）══════════════

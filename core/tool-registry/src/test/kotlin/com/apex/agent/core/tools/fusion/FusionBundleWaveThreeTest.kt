@@ -28,7 +28,7 @@ class FusionBundleWaveThreeTest {
     @Test
     fun `第三波三包预置全部解析成功且 id 唯一`() {
         val ids = FusionBundlePresets.all().map { it.first.id }
-        assertEquals(7, ids.size)
+        assertEquals(8, ids.size)
         assertEquals(ids.size, ids.toSet().size) // 全目录无重复
         assertTrue(ids.containsAll(listOf("anthropicskills", "claudeflow", "shrimp")))
     }

@@ -265,6 +265,7 @@ FusionBundle 是**通用装载单位**，不绑定 REA。首发即内置七包�
 | `bmad` | bmad-code-org v6.12.0（MIT） | 敏捷交付环代理体系 | 5 环阶段技能（Clarify/Plan/Shard/Build/Verify）+ 编排者人设；增益层聚合 thinking + search 两台内置 MCP（超出上游） |
 | `anthropicskills` | anthropics/skills（官方技能体系） | 文档生产力 + 技能工程 | 8 技能：文档四件（Word/Excel/PPT/PDF，经 PRoot Ubuntu Python 工具链真实产出）+ skill-creator/mcp-builder/webapp-testing/frontend-design；上游无 MCP 如实保持零服务器。**许可如实**：上游文档技能 source-available（© Anthropic 保留所有权利）—— 本移植为**原创等能力重述**（零上游文本/脚本复制）；工程类技能对齐上游 Apache-2.0 方法论 |
 | `claudeflow` | ruvnet/ruflo（claude-flow）v3.56.10（MIT） | SPARC 方法论 + 群智编排 + 持久记忆 | 7 技能：五阶段（Specify/Architect/TDD/Review/Complete）+ SparcSwarm（Task 子代理并行派发）+ SparcMemory（知识图谱沉淀）；上游增强 MCP 的内置等价映射 —— sequential-thinking→`thinking`、自学习记忆→`memory` |
+| `toolwright` | 宿主原生（非移植） | 元能力双技能 | CreateSkill（把重复流程沉淀为 apex-skill-v1 技能，SkillCreate 工具 + 命名规范 + 验证闭环）+ CreateMcp（McpConnect 四形态选型 + 配置模板 + 启动失败三查：rootfs 就绪 → 启用开关 → 镜像拉包冷启动）；零 MCP —— 教的全是宿主自有工具面 |
 | `shrimp` | cjo4m06/mcp-shrimp-task-manager v1.0.21（MIT） | 结构化任务管理 MCP | **16 工具全目录进程内实现**（第七台内置 MCP：规划/执行/验证/反思/研究/思维链，上游 docs/tools.md 逐名对齐）；任务数据 JSON 原子写持久 + 清档自动备份；超出上游的零依赖形态（无需 Node/npx/网络） |
 
 扩充包的能力对齐原则与 REA 相同：**主干技能全量移植**（方法论
