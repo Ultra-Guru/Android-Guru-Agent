@@ -7,7 +7,7 @@ package com.apex.agent.core.logging
  * 是日志查看器进行分段、聚合统计、一键筛选的主维度。
  *
  * 覆盖应用内全部日志来源：引擎、模型适配、工具执行、UI 交互、网络请求、
- * 系统生命周期、插件/技能。
+ * 系统生命周期、插件/技能、终端命令。
  */
 enum class LogCategory(
     val displayName: String,
@@ -35,7 +35,10 @@ enum class LogCategory(
     PLUGIN("插件", "PLG"),
 
     /** CS-Mem 认知空间记忆：感知、差分、蒸馏、免疫隔离、梦境遗忘。 */
-    CS_MEM("记忆", "MEM");
+    CS_MEM("记忆", "MEM"),
+
+    /** 终端命令：用户交互提交、Agent 终端工具执行过程与输出。 */
+    TERMINAL("终端", "TRM");
 
     companion object {
         /** 由短码反查（用于反序列化/外部接入）。找不到返回 [SYSTEM]。 */

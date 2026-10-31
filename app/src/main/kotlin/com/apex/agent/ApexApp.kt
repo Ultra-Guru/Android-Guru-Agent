@@ -5,7 +5,10 @@ import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.diagnostics.AnrWatchdog
+import com.apex.agent.diagnostics.CrashLogcat
 import com.apex.agent.diagnostics.LogFileSink
+import com.apex.agent.diagnostics.LogcatCollector
 import com.apex.agent.net.NetworkMonitor
 import com.apex.agent.notify.ApexNotifications
 import com.apex.agent.notify.ForegroundTracker
@@ -72,6 +75,18 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
     @Inject
     lateinit var logFileSink: LogFileSink
 
+    /** 常驻 logcat 采集（仅本进程）：android 日志行 → AppLogger（SYSTEM/logcat）。 */
+    @Inject
+    lateinit var logcatCollector: LogcatCollector
+
+    /** 崩溃 logcat 快照（崩溃瞬间）+ 冷启动回捞（系统 crash buffer）。 */
+    @Inject
+    lateinit var crashLogcat: CrashLogcat
+
+    /** 主线程无响应看门狗：心跳 gap > 5s → 堆栈转储 filesDir/anr/ + ERROR 留痕。 */
+    @Inject
+    lateinit var anrWatchdog: AnrWatchdog
+
     /** #4 前台跟踪：ActivityLifecycleCallbacks 计数器（任务完成通知的静音判定）。 */
     @Inject
     lateinit var foregroundTracker: ForegroundTracker
@@ -133,6 +148,24 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
         // 网络监测注入即回调注册（StateFlow 初值同步探测）。
         runCatching { foregroundTracker.register(this) }
         runCatching { logFileSink.start() }
+        // 日志增强三件套：紧随 logFileSink —— 同属观测旁路，顺序为
+        // 采集（logcat tail）→ 回捞（crash buffer）→ 看门狗（ANR 心跳）。
+        // 全部失败静默（组件内部自带防御），绝不阻断启动。
+        runCatching { logcatCollector.start() }
+        runCatching { anrWatchdog.start() }
+        // 冷启动回捞：异步（子进程 exec 不占主线程；结果写 crash 文件 + 留痕）。
+        runCatching {
+            appScope.launch {
+                val summary = crashLogcat.salvageOnStartup { java.io.File(filesDir, "crash") }
+                if (summary != null) {
+                    AppLogger.instance.info(
+                        LogCategory.SYSTEM, "CrashLogcat",
+                        "冷启动回捞完成：$summary",
+                        tags = arrayOf("crash", "salvage")
+                    )
+                }
+            }
+        }
         runCatching { notifications.ensureChannels(this) }
         runCatching { networkMonitor.isOnline.value } // 触发单例创建 + 回调注册
         // v1.4.5：更新中枢就绪（应用级增量流水线 + 断点续传 + 启动检测；
@@ -348,6 +381,9 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
         )
         // 只保留最近 10 个崩溃文件，防止磁盘膨胀
         crashDir.listFiles()?.sortedByDescending { it.name }?.drop(10)?.forEach { it.delete() }
+        // 日志增强：崩溃文件追加崩溃前 logcat 快照（最近 300 行本进程上下文）。
+        // FATAL 行本身由系统在 handler 链尾打印，由下次启动的 CrashLogcat 回捞补齐。
+        runCatching { crashLogcat.appendSnapshot(file) }
     }
 
     /**
