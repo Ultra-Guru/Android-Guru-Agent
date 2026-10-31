@@ -163,8 +163,10 @@ object ModelConfigText {
         "true", "True", "TRUE", "yes", "Yes", "YES", "on", "On", "ON" -> JsonPrimitive(true)
         "false", "False", "FALSE", "no", "No", "NO", "off", "Off", "OFF" -> JsonPrimitive(false)
         else -> when {
-            YAML_INT.matches(raw) -> JsonPrimitive(raw.toLong())
-            YAML_FLOAT.matches(raw) -> JsonPrimitive(raw.toDouble())
+            // OrNull：超 Long/Double 范围的病态标量按原字符串落 JSON，
+            // 而非让整个导入失败（与上方裸标量分支同款防御）
+            YAML_INT.matches(raw) -> raw.toLongOrNull()?.let { JsonPrimitive(it) } ?: JsonPrimitive(raw)
+            YAML_FLOAT.matches(raw) -> raw.toDoubleOrNull()?.let { JsonPrimitive(it) } ?: JsonPrimitive(raw)
             else -> JsonPrimitive(raw)
         }
     }

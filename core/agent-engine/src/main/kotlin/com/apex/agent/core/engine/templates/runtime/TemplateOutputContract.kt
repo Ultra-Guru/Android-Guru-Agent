@@ -120,12 +120,15 @@ data class TemplateOutputContract(
     val requiredTitles: List<String> get() = requiredSections.filter { it.required }.map { it.title }
 
     companion object {
+        // 预编译（normalizeHeader 逐标题行调用，函数体内 Regex() 会重编译）
+        private val LEADING_INDEX = Regex("""^\d+[.、)）]?\s*""")
+
         /** 标题归一化：去空白/井号/编号/全角空格/末尾标点，转小写。 */
         fun normalizeHeader(line: String): String {
             var text = line.trim()
             if (text.isEmpty()) return ""
             text = text.trimStart('#', ' ', '　').trim()
-            text = text.replaceFirst(Regex("""^\d+[.、)）]?\s*"""), "")
+            text = text.replaceFirst(LEADING_INDEX, "")
             text = text.trimEnd(':', '：', ' ', '　')
             return text.lowercase()
         }

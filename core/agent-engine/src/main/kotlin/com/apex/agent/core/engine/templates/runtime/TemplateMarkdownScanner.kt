@@ -143,13 +143,14 @@ object TemplateMarkdownScanner {
     private val INLINE_CODE = Regex("""`[^`\n]+`""")
     private val BOLD = Regex("""\*\*[^*\n]+\*\*""")
 
-    private val PLACEHOLDER_PATTERNS = listOf(
-        """\{\{\s*[a-zA-Z][a-zA-Z0-9_]*\s*(\|\s*[^{}]+\s*)?\}\}""" to TemplatePlaceholderMark.Kind.MUSTACHE,
-        """%[sdfox@]""" to TemplatePlaceholderMark.Kind.PERCENT,
-        """\{\d+\}""" to TemplatePlaceholderMark.Kind.BRACE_INDEX,
-        // 美元占位符用普通转义串：raw 串里 `\${` 会触发模板插值
-        "\\$\\{[a-zA-Z][a-zA-Z0-9_]*\\}" to TemplatePlaceholderMark.Kind.DOLLAR_BRACE,
-        "\\$\\d+" to TemplatePlaceholderMark.Kind.ENV_STYLE
+    // 预编译（占位符探测每次 scan 都跑，循环内 Regex() 会逐次重编译）
+    private val PLACEHOLDER_PATTERNS: List<Pair<Regex, TemplatePlaceholderMark.Kind>> = listOf(
+        Regex("""\{\{\s*[a-zA-Z][a-zA-Z0-9_]*\s*(\|\s*[^{}]+\s*)?\}\}""") to TemplatePlaceholderMark.Kind.MUSTACHE,
+        Regex("""%[sdfox@]""") to TemplatePlaceholderMark.Kind.PERCENT,
+        Regex("""\{\d+\}""") to TemplatePlaceholderMark.Kind.BRACE_INDEX,
+        // 美元占位符用普通转义串：raw 串里 `${` 会触发模板插值
+        Regex("\\$\\{[a-zA-Z][a-zA-Z0-9_]*\\}") to TemplatePlaceholderMark.Kind.DOLLAR_BRACE,
+        Regex("\\$\\d+") to TemplatePlaceholderMark.Kind.ENV_STYLE
     )
 
     /** 全量扫描。 */
@@ -247,8 +248,8 @@ object TemplateMarkdownScanner {
         if (text.isBlank()) return emptyList()
         val counts = LinkedHashMap<String, Int>()
         val kinds = HashMap<String, TemplatePlaceholderMark.Kind>()
-        for ((pattern, kind) in PLACEHOLDER_PATTERNS) {
-            for (match in Regex(pattern).findAll(text)) {
+        for ((regex, kind) in PLACEHOLDER_PATTERNS) {
+            for (match in regex.findAll(text)) {
                 val raw = match.value
                 counts[raw] = (counts[raw] ?: 0) + 1
                 kinds[raw] = kind
