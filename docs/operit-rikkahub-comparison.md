@@ -1,7 +1,7 @@
 # Operit × RikkaHub × apex-agent 三方深度对比
 
 > 状态：调研完成（v1）· 对标：AAswordman/Operit（Android 端最完整的 Agent 平台）· rikkahub/rikkahub（多供应商聊天客户端标杆）· 结论：七个能力域落地为本仓库 P9x 系列
-> 前置：[tool-system-v4.md](tool-system-v4.md)（工具渐进披露）· [agent-modes.md](agent-modes.md)（六模式）· [reverse-mcp-host.md](reverse-mcp-host.md)（逆向 MCP Host）
+> 前置：[tool-system-v4.md](tool-system-v4.md)（工具渐进披露）· [reverse-mcp-host.md](reverse-mcp-host.md)（逆向 MCP Host）（原六模式文档已随 Agent 模式移除）
 > 证据基线：三仓库本地源码精读（operit @ 1402 Kotlin 文件 / rikkahub @ 683 / apex-agent @ 1102），本文所有论断均附文件路径证据，未验证的推测明确标注「推测」。
 
 ---

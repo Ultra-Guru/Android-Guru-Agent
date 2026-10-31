@@ -4,7 +4,7 @@
 > 审查基线：`main` @ `e34c176`（feat(agent-engine): A68.1 — Execution Orchestrator Core）
 > 审查时间：2026-08-27（UTC）
 > 审查方式：纯云端静态审查（GitHub API + 只读 clone），未执行动态/模拟器测试（原因见附录 B）
-> 关联文档：本报告是对 `docs/agent-ui-audit.md`（2026-08-11，聚焦"Agent 输出呈现"）的全应用扩展。该文档中的 P0-P3 缺口（错误高亮、工具分类、搜索结构化卡片）在当前代码中已基本落地，本报告不再重复计入。
+> 关联文档：本报告原是对 `agent-ui-audit.md`（已随 Agent 模式移除）的全应用扩展，其 P0-P3 缺口已在当前代码基本落地。
 
 ---
 
@@ -89,7 +89,7 @@
 ## 3. 亮点与良好实践
 
 1. **统一且有辨识度的设计语言**：`Theme.kt` 完整定义明暗两套 scheme（mint 主色 / amber 强调 / magenta 危险态），排版体系"显示 Sans + 正文等宽"呼应终端美学；绝大多数组件严格消费 `MaterialTheme.colorScheme/typography`，自定义动效（120-400ms tween、带 label）克制规范。
-2. **`docs/agent-ui-audit.md` 的自审文化**：团队自己维护 UI 审查文档并按 P0-P3 逐项落地（ErrorBlock 红色高亮、ToolKindBadge 五类来源徽章、WebSearchResultsCard 结构化卡片均已实现），注释中保留"缺陷 N 修复"追溯——这是本仓库最值得保持的工程习惯。
+2. **（原 agent-ui-audit.md）的自审文化**：团队自己维护 UI 审查文档并按 P0-P3 逐项落地（ErrorBlock 红色高亮、ToolKindBadge 五类来源徽章、WebSearchResultsCard 结构化卡片均已实现），注释中保留"缺陷 N 修复"追溯——这是本仓库最值得保持的工程习惯。
 3. **`GithubTokenDialog`（GithubIconButton.kt:174-259）是异步表单的正确姿势**：suspend 校验 + 验证期禁用输入/按钮 + inline 错误不关窗 + `ghp_/github_pat_` 格式预检 + `PasswordVisualTransformation`——全仓库唯一做对的密钥输入（对比 UI-006 的设置屏）。
 4. **Skill/Memory 屏的"四件套"范式**：空态文案、`items(key=)`、删除二次确认、Snackbar 反馈齐备，可直接作为其他屏幕整改模板；权限屏三态 Pill 用"颜色 + 文字"双通道表达状态，对色盲用户友好。
 5. **稳健的系统交互样板**：`FileOpener` 用 FileProvider + `ActivityNotFoundException` 替代 Android 11+ 失效的 `resolveActivity()`，配 MIME 兜底表与路径预检；`BrowserEngine` 11 处 `withContext(Dispatchers.Main)` 系统性包装 WebView 操作；输入草稿用 `SavedStateHandle`（规避 Bundle 1MB 限制）。
@@ -162,7 +162,7 @@
 - GitHub REST API（repo/issues/actions 元数据）、只读 `git clone`（`main@e34c176`，深度 50）
 - 逐行人工审查 ~12,000 行 UI 代码；ripgrep 模式扫描 10 项（见附录 A）
 - 参考基线：Material Design 3 规范（触摸目标 ≥48dp、对比度 WCAG AA 4.5:1/3:1）、Android 官方 edge-to-edge 与预测性返回指南
-- 仓库内既有文档：`docs/agent-ui-audit.md`、`docs/PERF.md`、Issue #69（用户体验优化）
+- 仓库内既有文档：`docs/PERF.md`、Issue #69（用户体验优化）
 - 交叉验证：所有"高"严重度结论均经独立 grep/源码复读复核（imePadding=0、BackHandler=0、Navigation=0、stringResource=0、rememberSaveable=0、VisualTransformation=0）
 
 ### D. 参考资料

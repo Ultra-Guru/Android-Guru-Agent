@@ -3,7 +3,6 @@
 > 状态：已落地（v2，2026-10 重组）
 > 主题：内置收敛 + 仓库分发 + 使用门控——技能与 MCP 从「全量内置」演进为
 > 「官方仓库按需安装」，市场完成 安装 → 配置 → 启动 全闭环。
-> 前置：[agent-life-skills-and-memory.md](agent-life-skills-and-memory.md)（技能矩阵与渐进披露）
 > · [mcp-sandbox.md](mcp-sandbox.md)（PRoot 沙箱 MCP）
 > 参考：业界标准 CLI 编码智能体的远程技能注册表模式
 > （`index.json` 元数据索引 + 按需下载 + 缓存原子更新）。
