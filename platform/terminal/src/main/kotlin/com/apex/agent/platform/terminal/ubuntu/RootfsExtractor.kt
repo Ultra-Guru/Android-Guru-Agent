@@ -81,13 +81,14 @@ class RootfsExtractor(
         targetDir: File,
         progress: (suspend (Long, Long) -> Unit)? = null
     ): Result<ExtractResult> = try {
-        val fis = archiveFile.inputStream().buffered()
-        val gz = GZIPInputStream(fis)
-        try {
-            Result.success(extractTarStream(gz, archiveFile.length(), targetDir, progress))
-        } finally {
-            runCatching { gz.close() }
-            runCatching { fis.close() }
+        // #669/#643：use{} 惯用法（结构等价于原 try/finally，但覆盖面更全）——
+        // 旧写法从 GZIPInputStream **构造成功之后**才开始兜底：档案头损坏
+        //（非 gzip / 截断 → 构造函数内抛 ZipException）时外层 fis 泄漏。
+        // use 先包外层再包内层：任何一步构造失败，此前已打开的流都会被关闭。
+        archiveFile.inputStream().buffered().use { fis ->
+            GZIPInputStream(fis).use { gz ->
+                Result.success(extractTarStream(gz, archiveFile.length(), targetDir, progress))
+            }
         }
     } catch (e: kotlinx.coroutines.CancellationException) {
         throw e

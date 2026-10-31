@@ -324,14 +324,25 @@ class UbuntuLifecycleCoordinator(
         } catch (ce: CancellationException) {
             throw ce
         } catch (e: Exception) {
-            return markFailed(Stage.INSTALL, "install crashed: ${e.message}", retryable = true)
+            // #235：人话前置（UI 横幅 take(200) 不再被英文内部串占满），
+            // 原始异常细节保真保留在括号内（日志/Agent 诊断可见）。
+            return markFailed(
+                Stage.INSTALL,
+                "Ubuntu 安装过程异常退出（install crashed: ${e.message ?: e::class.java.simpleName}）—— 可重试",
+                retryable = true
+            )
         }
         when (installResult) {
             is ProvisioningResult.Ready, is ProvisioningResult.AlreadyReady -> Unit
             is ProvisioningResult.Failed -> {
                 return markFailed(
                     Stage.INSTALL,
-                    "${installResult.error.code}: ${installResult.error.message} | ${installResult.error.userMessage}",
+                    // #235 残余修复：userMessage（中文「发生了什么 + 怎么办」）前置。
+                    // 旧序 "${code}: ${message} | ${userMessage}" 把英文内部码顶在
+                    // 最前 —— UI 横幅 take(200) 先吃掉几十上百字符的技术串，
+                    // 空间不足这类高频失败的中文指引可能被截断甚至完全挤掉。
+                    // 内部码 + 原始技术串折叠为括号后缀（诊断保真，不进头部队列）。
+                    "${installResult.error.userMessage}（${installResult.error.code}: ${installResult.error.message}）",
                     installResult.error.recoverable
                 )
             }

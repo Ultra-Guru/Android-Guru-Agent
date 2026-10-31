@@ -14,6 +14,7 @@ import com.apex.agent.platform.terminal.ubuntu.ReconciliationAction
 import com.apex.agent.platform.terminal.ubuntu.ReconciliationResult
 import com.apex.agent.platform.terminal.ubuntu.RootfsProvisioner
 import com.apex.agent.platform.terminal.ubuntu.RootfsTarget
+import com.apex.agent.platform.terminal.ubuntu.userMessage
 import com.apex.agent.platform.terminal.workspace.AbsolutePath
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -295,6 +296,16 @@ class UbuntuLifecycleCoordinatorTest {
         assertEquals(UbuntuLifecycleCoordinator.Stage.INSTALL, r.stage)
         assertTrue(r.retryable)
         assertTrue(r.message.contains("NETWORK_FAILURE"))
+        // #235 残余回归锁：中文 userMessage 必须前置于内部码 —— UI 横幅
+        // take(200) 先读到的应是「发生了什么 + 怎么办」的人话，不是
+        // "NETWORK_FAILURE: dns down" 技术串（诊断细节保留在括号后缀里）。
+        val userMsg = ProvisioningError(ProvisioningErrorCode.NETWORK_FAILURE, "dns down").userMessage
+        val codeIdx = r.message.indexOf("NETWORK_FAILURE")
+        assertTrue("internal code kept as diagnostic suffix: ${r.message}", codeIdx > 0)
+        assertTrue(
+            "userMessage must precede internal code (UI banner truncation safety): ${r.message}",
+            r.message.indexOf(userMsg) < codeIdx
+        )
         assertEquals(UbuntuLifecycleCoordinator.Phase.FAILED, env.coordinator.stateFlow.value.phase)
         assertEquals("INSTALL", env.coordinator.stateFlow.value.failedStage)
         // bootstrap/probe 未被调用（fail fast）

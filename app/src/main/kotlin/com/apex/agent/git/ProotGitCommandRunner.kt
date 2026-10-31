@@ -368,6 +368,11 @@ class ProotGitCommandRunner(
             }
             if (timedOut) {
                 killProcessTree(process)
+                // #638：双保险收尾 —— 关流是主手段（阻塞 read 因管道关闭抛
+                // IOException/EOF 退出），interrupt 是副手段（对阻塞 read 无效，
+                // 但能把处于可中断状态的 drain 线程踢出等待，缩窄泄漏窗口）。
+                runCatching { stdoutDrain.interrupt() }
+                runCatching { stderrDrain.interrupt() }
                 runCatching { stdoutDrain.join(DRAIN_JOIN_MS) }
                 runCatching { stderrDrain.join(DRAIN_JOIN_MS) }
                 // join 宽限用尽 = drain 线程仍活着（孙进程持有管道）—— 如实标注
@@ -390,18 +395,21 @@ class ProotGitCommandRunner(
                 stderr = stderrCapture.snapshot()
             )
         } catch (e: CancellationException) {
-            // 协程取消：收尾进程树（关流+强杀）后原样上抛（保持取消语义诚实）
+            // 协程取消：收尾进程树（关流+强杀）后原样上抛（保持取消语义诚实）；
+            // drain 线程同样补 interrupt（#638，同超时路径的双保险语义）
             killProcessTree(process)
+            runCatching { stdoutDrain.interrupt() }
+            runCatching { stderrDrain.interrupt() }
             throw e
         }
     }
 
     /**
      * 超时/取消收尾：先关三根流再强杀进程——关闭流使 drain 线程阻塞的
-     * read() 立即以 IOException/EOF 退出（interrupt 无法中断阻塞读，关流
-     * 才是有效手段）；不关流时若 git 派生了子进程（ssh/gpg/凭据助手）持有
-     * 管道写端，drain 线程会永久泄漏。与 ProotSandboxCommandRunner.
-     * killProcessTree 同款语义。
+     * read() 立即以 IOException/EOF 退出（interrupt 无法中断阻塞 read，关流
+     * 才是主手段；interrupt 作为副手段在调用点补发，见 #638）；不关流时
+     * 若 git 派生了子进程（ssh/gpg/凭据助手）持有管道写端，drain 线程会
+     * 永久泄漏。与 ProotSandboxCommandRunner.killProcessTree 同款语义。
      */
     private fun killProcessTree(process: Process) {
         runCatching { process.outputStream.close() }
