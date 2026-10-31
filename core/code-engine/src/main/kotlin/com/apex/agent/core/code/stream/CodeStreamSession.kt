@@ -3,6 +3,9 @@ package com.apex.agent.core.code.stream
 import com.apex.agent.core.engine.AgentEvent
 import com.apex.agent.core.engine.ToolCallOrigin
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
@@ -42,6 +45,10 @@ class CodeStreamSession {
     private val entries = mutableListOf<StreamEntry>()
     private val toolCalls = LinkedHashMap<String, StreamToolCall>()
     private val terminalBuffers = LinkedHashMap<String, TerminalPulseBuffer>()
+
+    /** 已收到过 preview 片段的 callId（结构化工具标识：权威收尾 = JSON 信封，
+     * 不进终端视图；无 preview 的旧工具收尾文本仍进 —— 两种路径都保输出完整）。 */
+    private val previewSeenCalls = mutableSetOf<String>()
 
     /** 参数流式状态表（callId → 分片缓冲 + 追踪器；Start/终态即移除）。 */
     private val argsStreams = LinkedHashMap<String, ArgsStreamState>()
@@ -210,11 +217,26 @@ class CodeStreamSession {
 
             is AgentEvent.ToolOutputChunk -> {
                 toolCalls[event.callId]?.let { call ->
-                    terminalBuffers[event.callId]?.append(event.chunk)
-                    // 通用 logTail（非 BASH 族的输出尾窗，DetailSheet 用）
-                    val merged = call.logTail + event.chunk
-                    updateCall(call.copy(logTail = merged.takeLast(NON_BASH_LOG_TAIL_CHARS)))
-                    if (call.kind == ToolKind.BASH) activeTerminalCallId = event.callId
+                    if (event.preview) {
+                        // 实时预览片段（TerminalExec 执行期间的 stdout/stderr）：
+                        // 终端视图唯一入口。标记后本次调用的非 preview 收尾不再
+                        // 灌入（见下）。
+                        previewSeenCalls.add(event.callId)
+                        terminalBuffers[event.callId]?.append(event.chunk)
+                        if (call.kind == ToolKind.BASH) activeTerminalCallId = event.callId
+                    } else if (call.kind == ToolKind.BASH && event.callId in previewSeenCalls) {
+                        // 结构化工具的权威收尾分片（TerminalExec 的最终 JSON 信封，
+                        // 可达 ~20K）：不进终端视图 —— 否则把已流式呈现的干净
+                        // stdout/stderr 预览整段挤出 16K 尾窗，面板/详情弹层只剩
+                        // JSON 噶音（权威数据在 Complete.output，详情另有通道）。
+                    } else {
+                        // 旧工具（无 preview 能力）或非 BASH 工具：分片即展示文本，
+                        // 维持既有行为（脉冲缓冲 + logTail 尾窗同步）。
+                        terminalBuffers[event.callId]?.append(event.chunk)
+                        val merged = call.logTail + event.chunk
+                        updateCall(call.copy(logTail = merged.takeLast(NON_BASH_LOG_TAIL_CHARS)))
+                        if (call.kind == ToolKind.BASH) activeTerminalCallId = event.callId
+                    }
                 }
             }
 
@@ -425,6 +447,7 @@ class CodeStreamSession {
         entrySeq = restored.maxOfOrNull { entrySeqOf(it.id) } ?: 0L
         toolCalls.clear()
         terminalBuffers.clear()
+        previewSeenCalls.clear()
         affectedFiles.clear()
         // committedFiles 语义恢复：从最后一个 FileChipsEntry 回填（重启后
         // 会话快照的 committedFiles 不再清零）
@@ -469,9 +492,9 @@ class CodeStreamSession {
     /** 只读条目访问（检查点序列化用）。 */
     fun entriesSnapshot(): List<StreamEntry> = entries.toList()
 
-    /** 终端胶囊的尾窗内容（DetailSheet 查看历史 BASH 输出）。 */
+    /** 终端胶囊的尾窗内容（DetailSheet 查看历史 BASH 输出；含滚出裁剪标记）。 */
     fun terminalContentOf(callId: String): String? =
-        terminalBuffers[callId]?.content()?.takeIf { it.isNotEmpty() }
+        terminalBuffers[callId]?.renderedContent()?.takeIf { it.isNotEmpty() }
 
     // ═══ 内部：工具生命周期 ═══
 
@@ -628,8 +651,11 @@ class CodeStreamSession {
         }
         val buffer = terminalBuffers[event.callId]
         buffer?.flush()
-        val logTail = buffer?.content()?.takeIf { it.isNotEmpty() }
+        // P0（输出完整性）：终端视图优先脉冲缓冲（含滚出裁剪标记）；
+        // 缓冲空（无 preview 的旧工具/恢复会话）退回 event.output 尾窗。
+        val logTail = buffer?.renderedContent()?.takeIf { it.isNotEmpty() }
             ?: safeTakeLast(existing.logTail + event.output, NON_BASH_LOG_TAIL_CHARS)
+        previewSeenCalls.remove(event.callId)
 
         val diff = if (existing.isEditFamily) UnifiedDiffParser.parse(event.fullOutput.ifBlank { event.output }) else null
         val hunksTotal = diff?.hunks?.size ?: 0
@@ -638,7 +664,11 @@ class CodeStreamSession {
             existing.isEditFamily -> if (hunksTotal > 0) ToolCallStatus.APPLIED else ToolCallStatus.SUCCESS
             else -> ToolCallStatus.SUCCESS
         }
-        val exitCode = exitCodeOf(event.output, existing.kind)
+        // P0（输出完整性）：退出码优先结构化元数据（引擎从 TerminalExec 的
+        // Complete.meta 透传的 waitpid 真实值），正则文本解析仅作兑底 ——
+        // 旧正则永远匹配不上 JSON 形态的 "exit_code":0（下划线断裂模式），
+        // 导致胶囊/面板永远拿不到退出码、绿红点失明。
+        val exitCode = event.exitCode ?: exitCodeOf(event.output, existing.kind)
 
         val updated = existing.copy(
             status = status,
@@ -876,7 +906,7 @@ class CodeStreamSession {
             toolUsage = buildToolUsage(),
             lastError = lastError,
             activeTerminalCallId = activeTerminalCallId,
-            terminalContent = activeBuf?.content() ?: "",
+            terminalContent = activeBuf?.renderedContent() ?: "",
             affectedFiles = affectedFiles.toList(),
             terminalBusy = terminalBusy,
             terminalCommandSummary = terminalCommandSummary,
@@ -1021,6 +1051,10 @@ class CodeStreamSession {
         output: String
     ): String {
         if (status == ToolCallStatus.FAILED) {
+            // P0（输出完整性）：结构化工具（TerminalExec）失败时优先从 JSON 信封
+            // 提取人读摘要（exit 码 + stderr 首行）—— 旧实现直接取输出首行，
+            // 拿到的是 `{"stdout":"","stderr":"...` 这类 JSON 噶音。
+            structuredFailureSummary(output, exitCode)?.let { return it }
             val line = output.lineSequence().firstOrNull { it.isNotBlank() } ?: "失败"
             return line.take(SUMMARY_MAX)
         }
@@ -1030,6 +1064,24 @@ class CodeStreamSession {
         exitCode?.let { return "exit $it" }
         val line = output.lineSequence().firstOrNull { it.isNotBlank() }
         return line?.take(SUMMARY_MAX) ?: "完成"
+    }
+
+    /**
+     * 结构化工具失败摘要：JSON 信封 → 「exit N · stderr 首行」（人读）。
+     *
+     * 兑底序：stderr 首个非空行 → stdout 首个非空行（命令静默失败场景）→
+     * 纯 exit 码。非 JSON（旧工具纯文本输出 / 半截 JSON）→ null 交回旧逻辑。
+     */
+    private fun structuredFailureSummary(output: String, exitCode: Int?): String? {
+        if (!output.trimStart().startsWith("{")) return null
+        val json = runCatching { Json.parseToJsonElement(output).jsonObject }.getOrNull() ?: return null
+        fun strField(key: String): String? =
+            (json[key] as? JsonPrimitive)?.contentOrNull
+        val line = strField("stderr")?.lineSequence()?.firstOrNull { it.isNotBlank() }
+            ?: strField("stdout")?.lineSequence()?.firstOrNull { it.isNotBlank() }
+            ?: return exitCode?.let { "exit $it" }
+        val prefix = exitCode?.let { "exit $it · " } ?: ""
+        return (prefix + line).take(SUMMARY_MAX)
     }
 
     /** JsonPrimitive content 的 null 安全读取（非 primitive 返回 null）。 */

@@ -59,10 +59,14 @@ class ExecEngine(
      * @param onStdoutChunk 可选的 stdout 增量预览回调（尽力而为：仅人看实时
      *   呈现，不保证完整/不保证 UTF-8 边界对齐；权威输出仍在返回值）。
      *   回调在 IO drain 协程上调用 —— 实现方自行保证线程安全。
+     * @param onStderrChunk 可选的 stderr 增量预览回调（同语义；两回调各在
+     *   自己的 drain 协程上并发调用，交织顺序不保证 —— 真实终端的合并视感）。
+     *   失败型命令（gcc/python 错误全走 stderr）运行期间不再对用户隐形。
      */
     suspend fun execute(
         request: ExecRequest,
-        onStdoutChunk: ((chunk: String) -> Unit)? = null
+        onStdoutChunk: ((chunk: String) -> Unit)? = null,
+        onStderrChunk: ((chunk: String) -> Unit)? = null
     ): CommandResult = withContext(dispatcher) {
         val startedAt = System.nanoTime()
 
@@ -96,7 +100,7 @@ class ExecEngine(
             // ── 并发排空（阻塞读跑在 IO 线程；waitFor 与之并发，超时才真正生效）──
             drainJobs += drainScope.launch { drainStream(spawned.stdout, stdoutCapture, onStdoutChunk) }
             if (stderrStream != null) {
-                drainJobs += drainScope.launch { drainStream(stderrStream, stderrCapture, null) }
+                drainJobs += drainScope.launch { drainStream(stderrStream, stderrCapture, onStderrChunk) }
             }
 
             // ── 等待退出或超时（runInterruptible：协程取消 → 线程中断 → finally 杀进程）──

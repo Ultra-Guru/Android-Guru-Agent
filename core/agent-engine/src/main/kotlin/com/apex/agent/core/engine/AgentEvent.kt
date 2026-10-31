@@ -94,10 +94,19 @@ sealed interface AgentEvent {
         val originLabel: String? = null
     ) : AgentEvent
     
-    /** 工具输出（流式）*/
+    /**
+     * 工具输出（流式）。
+     *
+     * [preview] = true：**实时预览片段**（TerminalExec 执行期间的 stdout/stderr
+     * 增量，尽力而为：只推 UI 实时呈现，不进引擎累积与历史）。false = 权威
+     * 输出分片（进引擎累积，Complete 的 output 与之同源）。UI 的终端视图
+     * （Coding 屏脉冲缓冲）只应吞 preview 片段 —— 权威收尾是结构化 JSON
+     * 信封，灌进 16K 尾窗会把干净的 stdout 预览整段挤出去。
+     */
     data class ToolOutputChunk(
         val callId: String,
-        val chunk: String
+        val chunk: String,
+        val preview: Boolean = false
     ) : AgentEvent
 
     /**

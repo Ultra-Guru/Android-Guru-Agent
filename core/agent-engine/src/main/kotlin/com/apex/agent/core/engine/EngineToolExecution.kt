@@ -287,7 +287,8 @@ internal suspend fun ApexAgentEngine.executeToolCallStreamingCore(
                             emit(
                                 AgentEvent.ToolOutputChunk(
                                     callId = toolCall.id,
-                                    chunk = event.chunk
+                                    chunk = event.chunk,
+                                    preview = true
                                 )
                             )
                         } else {
@@ -382,8 +383,12 @@ internal suspend fun ApexAgentEngine.executeToolCallStreamingCore(
     // stdout 实际只见 ~1.9K（扣掉 JSON 键开销），“输出不完整”成常态。
     // 现在从本次调用的参数里解析模型显式声明的预算（max_output_chars 等通用
     // 命名约定），以 max(配置预算, 声明预算) 为本次生效预算（硬顶内）。
-    // 未声明 → null → 沿用构造预算，行为与旧版完全一致。
-    val perCallBudget = resolvePerCallToolBudget(toolCall)
+    // P2 补齐（输出完整性第二轮）：模型**未显式声明**时，工具 schema 的
+    // default 同样计入声明预算 —— 模型读 schema 即有合理预期「不传 =
+    // 默认 12000」，引擎只给配置预算（如 Coding 8000）是对同一契约的
+    // 静默违背：诚实截断但每次默认调用都亏一段、还赔一整轮「收窄重跑」。
+    // schema 无 default 的工具零变化（null → 沿用构造预算）。
+    val perCallBudget = resolvePerCallToolBudget(toolCall, registryToolId)
 
     // P7 Layer 1: 工具输出截断（始终生效）
     val rawOutput = outputBuilder.toString()
@@ -506,17 +511,52 @@ internal suspend fun ApexAgentEngine.finalizeToolCallOutcome(
 // ══════════════════════════════════════════════════════════════════════════
 
 /**
- * 解析本次工具调用的输出预算上限（null = 未声明，沿用构造预算）。
+ * 解析本次工具调用的输出预算上限（null = 未声明且无 schema default，沿用构造预算）。
  *
  * 生效预算 = max(思考档位解析的配置预算, 模型声明预算)，并钳制在
- * [HARD_TOOL_OUTPUT_CEILING] 硬顶内 —— 模型在工具参数里显式要的输出量
+ * [HARD_TOOL_OUTPUT_CEILING] 硬顶内 —— 声明优先级：模型参数显式声明 >
+ * 工具 schema 的 default（模型不传参数时 schema default 即其合理预期）。
+ * 模型在工具参数里显式要的输出量
  * （如 TerminalExec 的 max_output_chars=12000）不再被引擎配置预算
  * 静默作废；同时硬顶保证任何单次工具结果都不会撑爆上下文。
  */
-internal fun ApexAgentEngine.resolvePerCallToolBudget(toolCall: ToolCall): Int? {
-    val declared = declaredToolOutputBudget(toolCall.arguments) ?: return null
+internal fun ApexAgentEngine.resolvePerCallToolBudget(toolCall: ToolCall, registryToolId: String): Int? {
+    val declared = declaredToolOutputBudget(toolCall.arguments)
+        ?: schemaDeclaredToolBudget(registryToolId)
+        ?: return null
     val base = thinkingController.resolveToolOutputBudget(config.maxToolOutputLength)
     return maxOf(base, declared).coerceAtMost(HARD_TOOL_OUTPUT_CEILING)
+}
+
+/**
+ * 从注册表工具的 parametersSchema 里解析 default 预算（模型未显式声明时的
+ * 兜底声明）：properties.max_output_chars.default + max_error_chars.default
+ * + JSON 信封开销。与 [declaredToolOutputBudget] 同一公式 —— 仅声明源不同。
+ *
+ * 防御式：schema 缺失/非 JSON/无 default 字段 → null，永不因解析抛错影响执行；
+ * 注册表查询失败（未知工具/并发即栽）同样 null。
+ */
+internal fun ApexAgentEngine.schemaDeclaredToolBudget(registryToolId: String): Int? {
+    val schema = runCatching { toolRegistry.getTool(registryToolId)?.parametersSchema }.getOrNull()
+        ?: return null
+    if (schema.isBlank() || schema.length > MAX_BUDGET_ARG_SCAN_CHARS) return null
+    return runCatching {
+        val props = Json.parseToJsonElement(schema).jsonObject["properties"] as? JsonObject
+            ?: return@runCatching null
+        // JSON Schema 语义：properties.<name> 是 JsonObject，default 藏在内层
+        // （{"type":"integer","default":12000}）—— 不能用 intFieldOf（只匹配
+        // 顶层 JsonPrimitive，对本形态恒 null）。
+        fun defaultInt(vararg keys: String): Int? =
+            keys.firstNotNullOfOrNull { k ->
+                (props[k] as? JsonObject)?.get("default")?.let { d ->
+                    (d as? JsonPrimitive)?.content?.toIntOrNull()?.takeIf { it > 0 }
+                }
+            }
+        val outputChars = defaultInt("max_output_chars", "maxOutputChars", "max_chars")
+            ?: return@runCatching null
+        val errorChars = defaultInt("max_error_chars", "maxErrorChars") ?: 0
+        (outputChars + errorChars + JSON_ENVELOPE_OVERHEAD).coerceAtLeast(1)
+    }.getOrNull()
 }
 
 /**

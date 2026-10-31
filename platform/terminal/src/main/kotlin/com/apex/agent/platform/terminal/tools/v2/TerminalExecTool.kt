@@ -135,9 +135,19 @@ class TerminalExecTool(
         )
         val throttle = onPreview?.let { PreviewThrottle(it) }
         val result = if (throttle != null) {
-            engine.execute(request) { chunk ->
-                throttle.append(AnsiSanitizer.sanitize(chunk, input.ansi).text)
-            }.also { throttle.flushFinal() }
+            // 双流预览：stdout + stderr 都进同一节流器（真实终端的合并视感，
+            // 无锁定序 —— [PreviewThrottle.append] 监视器锁并发安全）。失败型
+            // 命令（gcc/python 编译错误全走 stderr）运行期间对用户不再隐形；
+            // 权威分离输出仍在最终 JSON（stdout/stderr 各自字段，模型契约不变）。
+            engine.execute(
+                request,
+                onStdoutChunk = { chunk ->
+                    throttle.append(AnsiSanitizer.sanitize(chunk, input.ansi).text)
+                },
+                onStderrChunk = { chunk ->
+                    throttle.append(AnsiSanitizer.sanitize(chunk, input.ansi).text)
+                }
+            ).also { throttle.flushFinal() }
         } else {
             engine.execute(request)
         }
@@ -239,8 +249,8 @@ class TerminalExecTool(
      * 双阈值冲刷 + 总量上限（[MAX_TOTAL_CHARS]，超出即静默丢弃后续 —— 终端
      * 尾窗只展示最新 16KB，总量上限仅防内存膨胀）+ 收尾冲刷（EOF 尾巴不丢）。
      *
-     * 线程模型：drain 协程（append）与流收集协程（flushFinal）并发 ——
-     * 监视器锁保护；回调在锁外调用（防回调内再进本锁死锁）。
+     * 线程模型：stdout/stderr 两个 drain 协程（append）与流收集协程
+     * （flushFinal）并发 —— 监视器锁保护；回调在锁外调用（防回调内再进本锁死锁）。
      */
     internal class PreviewThrottle(
         private val onPreview: (chunk: String) -> Unit
