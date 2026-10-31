@@ -49,20 +49,16 @@
     <string name="settings_nav_model_tools">Tools</string>
     <string name="settings_nav_model_network">Network</string>
     <string name="settings_nav_model_prompt">Prompt</string>
-    <string name="settings_nav_model_advanced">Advanced</string>
     <string name="settings_nav_model_providers">Providers &amp; Roles</string>
     <string name="settings_nav_workspace_coding">Coding</string>
     <string name="settings_nav_workspace_subagent">Sub-Agents</string>
     <string name="settings_nav_workspace_permissions">Permissions</string>
     <string name="settings_nav_workspace_rules">Rules</string>
     <string name="settings_nav_workspace_hooks">Hooks</string>
-    <string name="settings_nav_workspace_compression">Compression</string>
-    <string name="settings_nav_workspace_vision">Vision</string>
     <string name="settings_nav_workspace_goal">Goal</string>
     <string name="settings_nav_workspace_github">GitHub</string>
     <string name="settings_nav_workspace_memory">Memory</string>
     <string name="settings_nav_interface_appearance">Appearance</string>
-    <string name="settings_nav_interface_chat">Chat Display</string>
     <string name="settings_nav_interface_notifications">Notifications</string>
     <string name="settings_nav_terminal_policy">Command Policy</string>
     <string name="settings_nav_terminal_service">Background Service</string>
@@ -132,11 +128,6 @@
     <string name="settings_tool_result_desc">Token truncation threshold before tool results enter the context</string>
 
     <!-- Vision -->
-    <string name="settings_section_vision">Vision</string>
-    <string name="settings_vision_desc">Let the Agent read screenshots / images (data plumbed; engine hookup later)</string>
-    <string name="settings_screenshot_quality_desc">Compression quality when screenshots enter the context (data plumbed)</string>
-    <string name="settings_max_screenshots_desc">Max number of screenshots kept in context (data plumbed)</string>
-    <string name="settings_vision_model_label">Vision Model (role)</string>
     <string name="settings_not_set">Not set</string>
 
     <!-- Network -->
@@ -193,7 +184,6 @@
     <string name="settings_tool_loop_section">Tool loop</string>
     <string name="settings_tool_parallelism">Parallel tool executions per turn</string>
     <string name="settings_tool_parallelism_desc">How many tools of one model turn may run simultaneously (1 = sequential, historical behavior). Higher = fewer LLM round-trips; terminal outputs may interleave</string>
-    <string name="settings_nav_model_rate_limit">Rate-Limit Friendly</string>
     <string name="settings_rate_limit_section">Rate-limit friendly mode</string>
     <string name="settings_rate_limit_enabled">Enable rate-limit friendly mode</string>
     <string name="settings_rate_limit_enabled_desc">Only for users on vendors with RPM/TPM or daily request quotas (free tiers, pay-per-request gateways). Throttles all LLM requests and packs more context per request. Off = zero behavior change</string>

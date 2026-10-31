@@ -166,6 +166,11 @@ internal fun CodeViewModel.reduce(event: AgentEvent) {
             scheduleSessionPersist()
         }
 
+        // 真实用量更新（服务端 token 统计）：上下文圆环实时推进 + 会话累计
+        //（输入/输出/缓存命中，详情弹层数据面）+ 用量账本逐轮落账（仪表盘
+        // 数据源）。胶囊时间轴不展示用量条目（见 CodeStreamSession 同分支）。
+        is AgentEvent.UsageUpdated -> recordUsage(event)
+
         is AgentEvent.Complete -> {
             val summary = languageManager.getString(
                 R.string.code_run_complete_fmt,

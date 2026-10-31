@@ -3,7 +3,6 @@ package com.apex.agent.ui.screen.code
 import com.apex.agent.core.code.longtask.LongTaskRecord
 import com.apex.agent.core.code.standard.StandardLogicMode
 import com.apex.agent.core.code.stream.CodeStreamSnapshot
-import com.apex.agent.core.code.thinking.CodeThinkingEvolutionTracker
 import com.apex.agent.core.code.thinking.CodeThinkingLevel
 import com.apex.agent.core.codetools.tools.CodeTodoTool
 import com.apex.agent.core.engine.goal.GoalRuntimeState
@@ -43,9 +42,17 @@ data class CodeUiState(
     // ── Todo（CodeTodo 快照）──
     val todos: List<CodeTodoTool.Todo> = emptyList(),
 
-    // ── 上下文仪表 ──
+    // ── 上下文仪表（圆环数据面：白弧按 used/max 百分比填充）──
     val contextUsedTokens: Int = 0,
     val contextMaxTokens: Int = 0,
+
+    // ── 会话累计 token 用量（圆环点击详情：输入/输出/缓存命中）──
+    // 每轮 AgentEvent.UsageUpdated 累加；新会话/切工作区/恢复历史时归零
+    //（历史归档不存 token 统计，恢复后从零计是诚实口径）。
+    val sessionInputTokens: Int = 0,
+    val sessionOutputTokens: Int = 0,
+    /** 命中缓存的输入侧 token 累计（端点不返回时恒 0 → 详情页显示「暂无数据」）。 */
+    val sessionCachedTokens: Int = 0,
 
     // ── 思考档位（coding 专属七档）──
     // 选择器直改 + AgentSettings.codeThinkingLevel 持久化，引擎侧三通道
@@ -66,9 +73,6 @@ data class CodeUiState(
     val longTaskSheetVisible: Boolean = false,
     val longTasks: List<LongTaskRecord> = emptyList(),
     val longTaskLoading: Boolean = false,
-
-    /** 档位效能统计（当前工作区；null = 未加载/无工作区）。 */
-    val thinkingStats: CodeThinkingEvolutionTracker.WorkspaceThinkingStats? = null,
 
     // ── 胶囊时间轴（渲染主通道快照）──
     // 25ms ≤40Hz 攒批推送；entries/终端尾窗/派生统计一体的不可变值。
@@ -136,6 +140,26 @@ enum class QueuedTaskState {
     /** 等待排队：上一任务失败/中止，需用户点击「开始排队」确认。 */
     NEEDS_CONFIRM
 }
+
+/**
+ * 会话 token 用量快照（上下文圆环点击后的详情弹层数据面）。
+ *
+ * 圆环本体只消费 contextUsed/Max 两个字段；详情弹层（CodeContextSheet）
+ * 追加展示会话累计输入/输出与缓存命中（命中率 = cached / input，
+ * 端点不返回缓存统计时 cached = 0 → 显示「暂无数据」而非假 0%）。
+ */
+data class CodeSessionUsage(
+    /** 当前上下文已用 token（圆环分子）。 */
+    val contextUsedTokens: Int,
+    /** 当前上下文窗口预算（圆环分母；默认模型 Profile 的 contextWindow）。 */
+    val contextMaxTokens: Int,
+    /** 本会话累计输入侧 token（服务端 usage 真实统计逐轮累加）。 */
+    val sessionInputTokens: Int,
+    /** 本会话累计输出侧 token。 */
+    val sessionOutputTokens: Int,
+    /** 本会话累计命中缓存的输入侧 token。 */
+    val sessionCachedTokens: Int
+)
 
 /**
  * 聊天条目（用户 / 助手 / 工具卡片 / 系统提示）。

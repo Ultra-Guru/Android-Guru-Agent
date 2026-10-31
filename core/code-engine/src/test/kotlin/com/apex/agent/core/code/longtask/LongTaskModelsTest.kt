@@ -76,7 +76,6 @@ class LongTaskModelsTest {
         todoSnapshot = listOf("☑ 已完成", "☐ 未完成"),
         parentTaskId = "task-parent-root",
         copyCount = 7,
-        isTemplate = false,
         tags = listOf("refactor", "quality")
     )
 
@@ -116,7 +115,6 @@ class LongTaskModelsTest {
         assertTrue(record.todoSnapshot.isEmpty())
         assertNull(record.parentTaskId)
         assertEquals(0, record.copyCount)
-        assertFalse(record.isTemplate)
         assertTrue(record.tags.isEmpty())
         // 必填字段原样保真
         assertEquals("task-models-min", record.id)
@@ -183,7 +181,6 @@ class LongTaskModelsTest {
         assertFalse(options.includeCheckpoints)
         assertNull(options.newTitle)
         assertNull(options.targetWorkspaceId)
-        assertNull(options.thinkingLevelOverride)
     }
 
     // ═════════════════ 序列化保真 ═════════════════
@@ -265,7 +262,6 @@ class LongTaskModelsTest {
         }
         val encoded = storeLikeJson.encodeToString(LongTaskRecord.serializer(), record)
         assertTrue("copyCount 默认值应显式落盘", encoded.contains("\"copyCount\""))
-        assertTrue("isTemplate 默认值应显式落盘", encoded.contains("\"isTemplate\""))
         assertTrue("filesTouched 默认值应显式落盘", encoded.contains("\"filesTouched\""))
         assertTrue("toolsUsed 默认值应显式落盘", encoded.contains("\"toolsUsed\""))
         assertTrue("parentTaskId 默认值应显式落盘", encoded.contains("\"parentTaskId\""))

@@ -18,12 +18,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.AddComment
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -204,6 +203,9 @@ fun CodeScreen(
             onOpenLongTasks = viewModel::openLongTaskCenter,
             onOpenHistory = { showCodeHistory = true },
             onOpenContext = { showContextSheet = true },
+            // 上下文用量圆环数据面（UsageUpdated 实时推进 + run 收尾/切区校准）
+            contextUsedTokens = state.contextUsedTokens,
+            contextMaxTokens = state.contextMaxTokens,
             // v1.5 右上角思考逻辑切换（深潜 = 自研 / 标准 = 标准任务循环）
             logicMode = state.logicMode,
             onSwitchLogic = viewModel::setLogicMode,
@@ -576,19 +578,17 @@ fun CodeScreen(
         )
     }
 
-    // v1.2 长任务中心（ModalBottomSheet）：任务记录 + 任务模板 + 档位效能三页签
+    // v1.2 长任务中心（ModalBottomSheet）：执行过的任务记录（复制/重跑/续跑）
     CodeLongTaskSheet(
         visible = state.longTaskSheetVisible,
         records = state.longTasks,
         loading = state.longTaskLoading,
-        stats = state.thinkingStats,
         onDismiss = viewModel::closeLongTaskCenter,
         onCopy = viewModel::copyTask,
         onRelaunch = viewModel::relaunchTask,
         onResume = viewModel::resumeTask,
         onDelete = viewModel::deleteLongTask,
         onCompareWithParent = viewModel::compareWithParent,
-        onStartTemplate = viewModel::startFromTemplate,
         onExport = { id -> viewModel.exportLongTask(context, id) }
     )
 
@@ -599,7 +599,17 @@ fun CodeScreen(
     if (showContextSheet) {
         // 打开时拉取一次快照（不进状态流 —— 查看是即时动作，会话推进后重开即刷新）
         val contextSnapshot = remember(showContextSheet) { viewModel.contextSnapshot() }
-        CodeContextSheet(snapshot = contextSnapshot, onDismiss = { showContextSheet = false })
+        CodeContextSheet(
+            snapshot = contextSnapshot,
+            usage = CodeSessionUsage(
+                contextUsedTokens = state.contextUsedTokens,
+                contextMaxTokens = state.contextMaxTokens,
+                sessionInputTokens = state.sessionInputTokens,
+                sessionOutputTokens = state.sessionOutputTokens,
+                sessionCachedTokens = state.sessionCachedTokens
+            ),
+            onDismiss = { showContextSheet = false }
+        )
     }
 }
 
@@ -610,8 +620,11 @@ private fun WorkspaceBar(
     onClearChat: () -> Unit,
     onOpenLongTasks: () -> Unit,
     onOpenHistory: () -> Unit = {},
-    // 会话上下文查看（当前激活逻辑线的消息序列 + 注入段 + token 统计）
+    // 会话上下文详情（圆环点击打开：消息序列 + 注入段 + token 用量详情）
     onOpenContext: () -> Unit = {},
+    // 上下文用量圆环数据面（白弧按百分比填充）
+    contextUsedTokens: Int = 0,
+    contextMaxTokens: Int = 0,
     logicMode: StandardLogicMode = StandardLogicMode.DEEP_DIVE,
     onSwitchLogic: (StandardLogicMode) -> Boolean = { false },
     onOpenWorkspaceBrowser: () -> Unit = {},
@@ -660,41 +673,39 @@ private fun WorkspaceBar(
                 )
             }
 
-            // 会话上下文查看（当前激活线的消息序列 + 注入段 + token 统计；
-            // UI-012：48dp 触区红线）
-            IconButton(onClick = onOpenContext, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
-                Icon(
-                    Icons.Outlined.Visibility,
-                    contentDescription = stringResource(R.string.code_context_open),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-
-            // v1.2 长任务中心入口（记录/模板两页签的 ModalBottomSheet）
-            // UI-012：48dp 触区红线（原 28dp）
+            // v1.2 长任务中心入口（执行过的任务：复制/重跑；对话气泡图标，
+            // 与对话历史的时钟图标互换）。UI-012：48dp 触区红线。
             IconButton(onClick = onOpenLongTasks, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
                 Icon(
-                    Icons.Outlined.History,
+                    Icons.AutoMirrored.Outlined.Chat,
                     contentDescription = stringResource(R.string.code_longtask_open),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)
                 )
             }
 
-            // v1.4.10 历史对话入口（新会话自动归档；与长任务中心相邻语义区分：
-            // History=任务记录，Chat=对话历史）
+            // v1.4.10 历史对话入口（时钟图标，语义直指「历史」；新会话自动归档，
+            // 可恢复/导出/删除）
             CodeHistoryIconButton(onClick = onOpenHistory)
 
-            // 新会话：图标按钮（对齐 Agent 屏 History 邻钮；UI-012：48dp 触区红线，原 28dp）
+            // 新会话：对话气泡+加号图标（旧「＋」含义不明 —— 用户反馈换成
+            // 一眼可读的「发起新对话」意象）。UI-012：48dp 触区红线。
             IconButton(onClick = onClearChat, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
                 Icon(
-                    Icons.Default.Add,
+                    Icons.Outlined.AddComment,
                     contentDescription = stringResource(R.string.code_clear_chat),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)
                 )
             }
+
+            // ═══ 上下文用量圆环（新对话图标右侧）：白弧按 used/max 百分比填充，
+            // 点击打开会话上下文详情（具体用量 / token 输入输出 / 缓存命中率）═══
+            ContextUsageRingButton(
+                usedTokens = contextUsedTokens,
+                maxTokens = contextMaxTokens,
+                onClick = onOpenContext
+            )
 
             // ═══ 小大脑（LLM 模型选择）：右端空隙位（用户反馈补齐）═══
             // Spacer 占位把模型按钮推到行尾 —— 与输入栏工具行的 modelMenu 同一数据源

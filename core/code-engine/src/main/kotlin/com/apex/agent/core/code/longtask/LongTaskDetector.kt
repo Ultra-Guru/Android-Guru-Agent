@@ -36,7 +36,7 @@ package com.apex.agent.core.code.longtask
  *
  * ## 为什么是 object 而不是顶层 fun
  *
- * 与 [LongTaskTemplates] / [LongTaskDiff] 同构：无状态纯函数族收拢在
+ * 与 [LongTaskDiff] 同构：无状态纯函数族收拢在
  * 具名命名空间下，调用点自文档（`LongTaskDetector.isLongTask(...)` 一眼
  * 看出在问谁），也便于未来加第二套阈值（如用户自定义门槛）时挂伴生配置。
  */

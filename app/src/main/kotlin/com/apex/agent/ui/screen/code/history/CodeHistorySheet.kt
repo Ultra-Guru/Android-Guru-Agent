@@ -18,9 +18,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -61,14 +61,15 @@ import java.util.Locale
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * 历史入口按钮（工作区条尾部）：对话历史（区别于长任务中心的 History 图标）。
+ * 历史入口按钮（工作区条尾部）：对话历史（时钟图标 —— 与长任务中心的
+ * 对话气泡图标互换，时钟意象更直觉地指向「历史」）。
  * UI-012：48dp 触区红线。
  */
 @Composable
 fun CodeHistoryIconButton(onClick: () -> Unit) {
     IconButton(onClick = onClick, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
         Icon(
-            Icons.AutoMirrored.Outlined.Chat,
+            Icons.Outlined.History,
             contentDescription = stringResource(R.string.code_history_open),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(18.dp)
@@ -111,7 +112,7 @@ fun CodeHistorySheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Icon(
-                    Icons.AutoMirrored.Outlined.Chat,
+                    Icons.Outlined.History,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(18.dp)

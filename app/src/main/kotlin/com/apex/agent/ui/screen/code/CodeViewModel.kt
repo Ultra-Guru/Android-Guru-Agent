@@ -18,7 +18,6 @@ import com.apex.agent.core.code.stream.CodeStreamCheckpoint
 import com.apex.agent.core.code.stream.CodeStreamSession
 import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.core.code.thinking.CodeAdaptiveThinkingSelector
-import com.apex.agent.core.code.thinking.CodeThinkingEvolutionTracker
 import com.apex.agent.core.code.thinking.CodeThinkingLevel
 import com.apex.agent.core.codetools.CodeWorkspaceRoots
 import com.apex.agent.core.codetools.tools.CodeTodoTool
@@ -130,8 +129,8 @@ class CodeViewModel @Inject constructor(
     // Issue #164：全局规则（设置页编辑）——发送前同步到引擎，refreshContext 时
     // 经 RulesProvider 注入（goal 扩展 CodeGoalController.kt 同包消费）
     internal val settingsRepository: com.apex.agent.ui.screen.settings.SettingsRepository,
-    // v1.2 长任务中心：追踪器/复制引擎/存储/档位统计。longTaskTracker 供
-    // CodeEventReducer.kt；taskCopyEngine/longTaskStore/thinkingEvolutionTracker 供 CodeLongTaskCenterOps.kt。
+    // v1.2 长任务中心：追踪器/复制引擎/存储。longTaskTracker 供
+    // CodeEventReducer.kt；taskCopyEngine/longTaskStore 供 CodeLongTaskCenterOps.kt。
     internal val longTaskTracker: LongTaskTracker,
     // v1.9 角色经验卡：事件流聚合器（沉淀/注入/强化三通道，控制器代理
     // 见 RoleExperienceController —— God-file 预算：VM 只做暴露）。
@@ -139,7 +138,14 @@ class CodeViewModel @Inject constructor(
     internal val roleExperienceStore: RoleExperienceStore,
     internal val taskCopyEngine: TaskCopyEngine,
     internal val longTaskStore: LongTaskStore,
-    internal val thinkingEvolutionTracker: CodeThinkingEvolutionTracker,
+    // ═══ 会话用量与通知（上下文圆环详情数据面 + 任务完成通知）═══
+    // usageLedger：逐轮落账（用量仪表盘数据源，圆环详情的会话累计）；
+    // apexNotifications/foregroundTracker/appContext：任务完成通知（设置开关
+    // 真接线 —— 后台时跑完发系统通知，前台静音）。
+    internal val usageLedger: com.apex.agent.usage.UsageLedger,
+    internal val apexNotifications: com.apex.agent.notify.ApexNotifications,
+    internal val foregroundTracker: com.apex.agent.notify.ForegroundTracker,
+    @dagger.hilt.android.qualifiers.ApplicationContext internal val appContext: android.content.Context,
     // AUTO 档自治选档器（发送前预检 + 运行中深水区升级观察）
     private val adaptiveSelector: CodeAdaptiveThinkingSelector,
     // #197 函数调用二级菜单候选工具（注册表快照；小圆环迁移至 Coding 屏）
@@ -266,8 +272,8 @@ class CodeViewModel @Inject constructor(
         if (active != null) {
             bindWorkspace(active)
         }
-        // v1.2 七档思考系统：恢复持久化档位（Agent 聊天页的
-        // thinkingLevelOverride 已随 Agent 模式移除，本字段独立记忆）
+        // v1.2 七档思考系统：恢复持久化档位（本字段独立记忆，
+        // 不随任何复制/模板选项覆盖 —— 档位覆盖位已随任务模板功能移除）
         restoreThinkingLevel()
         // v1.5 双思考逻辑：恢复持久化档位（空/未知 → 深潜）。先于 setMode：
         // GOAL 恢复强制深潜线，在后恢复会反切持久化线、破坏「GOAL 恒走深潜」。
@@ -691,7 +697,7 @@ class CodeViewModel @Inject constructor(
                         isRunning = false,
                         messages = it.messages.map { m -> if (m.isStreaming) m.copy(isStreaming = false) else m },
                         contextUsedTokens = codeEngineImpl?.currentTokenCount() ?: 0,
-                        contextMaxTokens = codeEngineImpl?.maxContextTokens() ?: 0,
+                        contextMaxTokens = contextWindowTokens(),
                         todos = codeTodoTool.snapshot()
                     )
                 }
@@ -708,13 +714,12 @@ class CodeViewModel @Inject constructor(
                     finalError != null -> LongTaskStatus.FAILED
                     else -> LongTaskStatus.COMPLETED
                 }
-                longTaskTracker.endRun(taskStatus, errorMessage = finalError)?.let { record ->
-                    // 档位效能统计摄入（同 fire-and-forget 语义，IO 落盘在
-                    // tracker 内部 scope 完成）
-                    thinkingEvolutionTracker.ingest(record)
-                }
+                longTaskTracker.endRun(taskStatus, errorMessage = finalError)
                 // v1.9 角色经验卡：确定性提炼 + 落卷（纯聊天轮内部静默丢弃）。
                 roleExperience.endRun(taskStatus.name, errorMessage = finalError)
+                // 任务完成通知（设置 → 通知 真接线：后台时跑完发系统通知，
+                // 前台静音；中止不发 —— 用户自己按的停）。
+                notifyRunCompletion(taskStatus, lastRunDisplayGoal)
                 if (_uiState.value.longTaskSheetVisible) refreshLongTasks()
                 scheduleSessionPersist()
                 // 任务排队收尾（干净完成 → 自动接力；失败/中止 → 等确认，见 QueuedTaskPolicy）
@@ -1044,13 +1049,17 @@ class CodeViewModel @Inject constructor(
             root = File(ws.hostRootPath)
         )
 
-        // UI 先切到「新工作区空态」，快照异步恢复（含旧快照冲刷）
+        // UI 先切到「新工作区空态」，快照异步恢复（含旧快照冲刷）；
+        // 会话累计 token 随会话边界归零（历史归档不存 token 统计）。
         _uiState.update {
             it.copy(
                 activeWorkspace = ws,
                 workspaces = workspaceManager.list(),
                 contextUsedTokens = codeEngineImpl?.currentTokenCount() ?: 0,
-                contextMaxTokens = codeEngineImpl?.maxContextTokens() ?: 0,
+                contextMaxTokens = contextWindowTokens(),
+                sessionInputTokens = 0,
+                sessionOutputTokens = 0,
+                sessionCachedTokens = 0,
                 editorFilePath = null, editorFile = null, editorError = null,
                 editorLoading = false
             )

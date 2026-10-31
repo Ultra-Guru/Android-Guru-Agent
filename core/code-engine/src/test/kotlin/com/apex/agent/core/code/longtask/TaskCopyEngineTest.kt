@@ -72,7 +72,6 @@ class TaskCopyEngineTest {
         todoSnapshot = listOf("☑ 迁移 Client", "☐ 修集成测试"),
         parentTaskId = null,
         copyCount = copyCount,
-        isTemplate = false,
         tags = listOf("refactor")
     )
 
@@ -106,7 +105,6 @@ class TaskCopyEngineTest {
         assertEquals(source.workspaceId, copy.workspaceId)
         assertEquals(source.thinkingLevel, copy.thinkingLevel)
         assertEquals(source.tags, copy.tags)
-        assertFalse(copy.isTemplate)
         // 默认开关：todos / files 复制，checkpoints 不复制
         assertEquals(source.todoSnapshot, copy.todoSnapshot)
         assertEquals(source.filesTouched, copy.filesTouched)
@@ -121,18 +119,17 @@ class TaskCopyEngineTest {
     }
 
     @Test
-    fun `copy with new title and thinking override`() = runTest {
+    fun `copy with new title`() = runTest {
         val source = sourceRecord()
         store.upsert(source)
         val copy = engine.copy(
             source.id,
-            LongTaskCopyOptions(newTitle = "自定义标题", thinkingLevelOverride = "ULTRACODE")
+            LongTaskCopyOptions(newTitle = "自定义标题")
         ).getOrThrow()
 
         assertEquals("自定义标题", copy.title)
-        assertEquals("ULTRACODE", copy.thinkingLevel)
-        // 源档位不动
-        assertEquals("DEEP", store.get(source.id)!!.thinkingLevel)
+        // 档位恒沿用源记录（无覆盖位）
+        assertEquals("DEEP", copy.thinkingLevel)
     }
 
     @Test
@@ -177,17 +174,6 @@ class TaskCopyEngineTest {
         assertTrue("应失败于 NoSuchElementException，实际 $error", error is NoSuchElementException)
         // 失败路径不产生任何记录
         assertTrue(store.list().isEmpty())
-    }
-
-    @Test
-    fun `copy of a template yields a non template record`() = runTest {
-        val template = LongTaskTemplates.instantiate(
-            LongTaskTemplates.byKey("refactor")!!, "ws-alpha-1a2b3c", "Alpha 项目"
-        )
-        store.upsert(template)
-        val copy = engine.copy(template.id, LongTaskCopyOptions()).getOrThrow()
-        assertFalse(copy.isTemplate)
-        assertEquals(template.id, copy.parentTaskId)
     }
 
     @Test

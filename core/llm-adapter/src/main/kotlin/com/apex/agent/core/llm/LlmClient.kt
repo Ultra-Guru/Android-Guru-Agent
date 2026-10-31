@@ -165,7 +165,10 @@ data class ToolCall(
 data class Usage(
     val promptTokens: Int,
     val completionTokens: Int,
-    val totalTokens: Int
+    val totalTokens: Int,
+    /** 命中缓存的输入侧 token（OpenAI 兼容端点的 prompt_tokens_details.
+     * cached_tokens；端点未返回时为 0）。缓存命中率 = cachedTokens / promptTokens。 */
+    val cachedTokens: Int = 0
 )
 
 data class ToolDefinition(

@@ -324,12 +324,20 @@ object CodeModule {
         // AgentModule 同源字段；maxIterations 0 = 无上限哨兵）。
         val agentSettings = settingsRepository.agentSettings.value
         val richPayload = agentSettings.rateLimitFriendly && agentSettings.rateLimitRichPayload
+        // Issue #222 真接线：上下文预算取默认模型 Profile 的 contextWindow
+        //（8k 模型不再按 128k 满打满算地压水位/触发压缩），缺失/非法回退
+        // 全局 maxContextTokens 设置值。UI 侧圆环分母同源（CodeUsageOps.
+        // contextWindowTokens），引擎快照与圆环口径一致。
+        val codeContextWindow = settingsRepository.profiles.value
+            .firstOrNull { it.isDefault }
+            ?.effectiveContextWindow(agentSettings.maxContextTokens)
+            ?: agentSettings.maxContextTokens
         val codeConfig = AgentConfig(
             mode = AgentMode.BUILD,
             thinkingLevel = CodeThinkingLevel.STANDARD.toAgentLevel(),
             maxIterations = 40,
             toolCallParallelism = agentSettings.toolCallParallelism,
-            maxContextTokens = 128_000,
+            maxContextTokens = codeContextWindow,
             maxToolOutputLength = if (richPayload) 16_000 else 8_000,
             compressionThreshold = if (richPayload) 0.85f else 0.8f,
             preserveRecentTurns = if (richPayload) 9 else 6,

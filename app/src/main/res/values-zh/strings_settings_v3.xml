@@ -53,14 +53,6 @@
     <!-- Coding 工位分区 -->
     <string name="settings_v3_coding_title">Coding 工位</string>
     <string name="settings_v3_coding_subtitle">Code 屏的工具面与防护</string>
-    <string name="settings_v3_coding_surface">工具面</string>
-    <string name="settings_v3_coding_surface_desc">全量 = CORE + 激活扩展；聚焦核心 = 仅 code、git、github 与 terminal</string>
-    <string name="settings_v3_coding_surface_full">全量（CORE + 激活）</string>
-    <string name="settings_v3_coding_surface_core">聚焦核心（code / git / github / terminal）</string>
-    <string name="settings_v3_coding_read_guard">读守卫</string>
-    <string name="settings_v3_coding_read_guard_desc">编辑前必须先读文件——业界标准防误改</string>
-    <string name="settings_v3_coding_auto_rules">自动项目规则</string>
-    <string name="settings_v3_coding_auto_rules_desc">自动发现并注入工作区的 AGENTS.md / CLAUDE.md / .cursorrules</string>
     <string name="settings_v3_coding_mcp_scope">MCP 与技能作用域隔离</string>
     <string name="settings_v3_coding_mcp_scope_desc">按市场分级在引擎侧隔离 MCP 与技能工具；关闭回到 v2 全局可见</string>
     <!-- Coding 输出风格（v1.6 经典时间轴 / Rikka 聊天式） -->

@@ -6,7 +6,6 @@ import androidx.compose.material.icons.automirrored.outlined.ListAlt
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.SmartToy
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Cloud
@@ -19,27 +18,24 @@ import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Rule
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Storage
-import androidx.compose.material.icons.outlined.Subject
-import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.SmartToy
+import androidx.compose.material.icons.outlined.Subject
 import androidx.compose.material.icons.outlined.TrackChanges
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Update
-import androidx.compose.material.icons.outlined.ViewCompact
-import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.apex.agent.R
 
 /**
  * 设置导航树（两级分层抽屉的数据源）。
  *
- * 结构（Agent 模式移除后，原「Agent 配置」大分类收敛为「工作台」——
- * 只保留 Coding 工位与双模式共享的引擎/权限/规则设置）：
+ * 结构（v3 归类合并：小而散的叶子并入同类页，搜索分类并入工作台）：
  * - 一级 [SettingsCategory] = 抽屉第一列的大分类（模型配置 / 工作台 /
  *   终端 / 界面外观 / 数据与备份）；
  * - 二级 [SettingsLeaf] = 分类抽屉展开后的具体页面入口（如模型配置 →
- *   配置 / 参数 / 推理 …）。
+ *   档案 / 参数 / 推理 …）；
+ * - 合并页：上下文 ← 上下文压缩；网络 ← 限速友好；提示词 ← 高级选项；
+ *   外观 ← 对话显示（同类设置归为一页，不再一个开关一页）。
  *
  * route 命名「分类/叶子」两段式（如 `model/generation`），全局唯一且稳定，
  * 供页面路由、浏览器式标签（PR2）与 rememberSaveable 持久化复用。
@@ -70,9 +66,7 @@ val SettingsNavTree: List<SettingsCategory> = listOf(
             SettingsLeaf("model/context", R.string.settings_nav_model_context, Icons.Outlined.Subject),
             SettingsLeaf("model/tools", R.string.settings_nav_model_tools, Icons.Outlined.Build),
             SettingsLeaf("model/network", R.string.settings_nav_model_network, Icons.Outlined.Cloud),
-            SettingsLeaf("model/rate-limit", R.string.settings_nav_model_rate_limit, Icons.Outlined.Speed),
             SettingsLeaf("model/prompt", R.string.settings_nav_model_prompt, Icons.Outlined.EditNote),
-            SettingsLeaf("model/advanced", R.string.settings_nav_model_advanced, Icons.Outlined.ViewCompact),
             SettingsLeaf("model/providers-roles", R.string.settings_nav_model_providers, Icons.Outlined.Hub),
         )
     ),
@@ -86,19 +80,10 @@ val SettingsNavTree: List<SettingsCategory> = listOf(
             SettingsLeaf("workspace/permissions", R.string.settings_nav_workspace_permissions, Icons.Outlined.Rule),
             SettingsLeaf("workspace/rules", R.string.settings_nav_workspace_rules, Icons.AutoMirrored.Outlined.ListAlt),
             SettingsLeaf("workspace/hooks", R.string.settings_nav_workspace_hooks, Icons.Outlined.Extension),
-            SettingsLeaf("workspace/compression", R.string.settings_nav_workspace_compression, Icons.Outlined.Storage),
-            SettingsLeaf("workspace/vision", R.string.settings_nav_workspace_vision, Icons.Outlined.Visibility),
             SettingsLeaf("workspace/goal", R.string.settings_nav_workspace_goal, Icons.Outlined.TrackChanges),
             SettingsLeaf("workspace/github", R.string.settings_nav_workspace_github, Icons.Outlined.Hub),
             SettingsLeaf("workspace/memory", R.string.settings_nav_workspace_memory, Icons.Outlined.Psychology),
-        )
-    ),
-    SettingsCategory(
-        route = "search",
-        titleRes = R.string.settings_nav_cat_search,
-        icon = Icons.Filled.Search,
-        // SearXNG 本地搜索（Spec §11）+ 网络搜索相关设置聚合（开放问题 2）
-        children = listOf(
+            // 本地搜索（原独立「搜索」分类仅此一叶 —— 并入工作台同类归并）
             SettingsLeaf("search/local", R.string.settings_nav_search_local, Icons.Outlined.Search),
         )
     ),
@@ -106,8 +91,7 @@ val SettingsNavTree: List<SettingsCategory> = listOf(
         route = "terminal",
         titleRes = R.string.settings_nav_cat_terminal,
         icon = Icons.Filled.Terminal,
-        // T97 Ubuntu 大重构后收窄：appearance 叶（字号/亮屏 —— 控制台专属）
-        // 随控制台退役；policy 叶 = Agent 侧执行门禁；
+        // T97 Ubuntu 大重构后收窄：policy 叶 = Agent 侧执行门禁；
         // service 叶 = Ubuntu 终端运行时宿主（ApexCoreService 保活）
         children = listOf(
             SettingsLeaf("terminal/policy", R.string.settings_nav_terminal_policy, Icons.Outlined.Rule),
@@ -120,7 +104,6 @@ val SettingsNavTree: List<SettingsCategory> = listOf(
         icon = Icons.Outlined.Palette,
         children = listOf(
             SettingsLeaf("interface/appearance", R.string.settings_nav_interface_appearance, Icons.Outlined.Palette),
-            SettingsLeaf("interface/chat", R.string.settings_nav_interface_chat, Icons.Outlined.ViewCompact),
             SettingsLeaf("interface/notifications", R.string.settings_nav_interface_notifications, Icons.Outlined.Notifications),
         )
     ),

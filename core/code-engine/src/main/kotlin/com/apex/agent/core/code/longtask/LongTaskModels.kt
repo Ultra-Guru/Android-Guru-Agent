@@ -20,8 +20,8 @@ import kotlinx.serialization.Serializable
  *    在重跑时全部重新踩一遍。
  *
  * 长任务中心的答案：**把达到规模阈值（见 [LongTaskDetector]）的运行聚合成
- * 一份 [LongTaskRecord] 持久化**，在其上提供复制重跑（[TaskCopyEngine]）、
- * 模板化（[LongTaskTemplates]）与运行对比（[LongTaskDiff]）三类顶级操作。
+ * 一份 [LongTaskRecord] 持久化**，在其上提供复制重跑（[TaskCopyEngine]）
+ * 与运行对比（[LongTaskDiff]）两类顶级操作。
  *
  * ## 数据流
  *
@@ -31,10 +31,10 @@ import kotlinx.serialization.Serializable
  *                                  ▼ 达阈值
  *                            LongTaskStore（records 目录 JSON 持久化）
  *                                  │
- *              ┌───────────────────┼──────────────────┐
- *              ▼                   ▼                  ▼
- *        TaskCopyEngine      LongTaskTemplates    LongTaskDiff
- *        （复制/重跑）        （内置模板）         （两次运行对比）
+ *              ┌───────────────────┴─────────────┐
+ *              ▼                               ▼
+ *        TaskCopyEngine                   LongTaskDiff
+ *        （复制/重跑）                  （两次运行对比）
  * ```
  *
  * ## 序列化与兼容
@@ -211,14 +211,11 @@ data class LongTaskCheckpoint(
 /**
  * 一次长任务运行的完整画像（长任务中心的中心实体）。
  *
- * 由 [LongTaskTracker] 在运行结束时组装（阈值判定通过才落库）、由
+ * 由 [LongTaskTracker] 在运行结束时组装（阈值判定通过才落库）、被
  * [LongTaskStore] 持久化、被 [TaskCopyEngine] 复制派生、被 [LongTaskDiff]
- * 两两对比。[LongTaskTemplates.instantiate] 产出的模板记录是它的特例
- * （[isTemplate] = true）。
+ * 两两对比。
  *
- * @property id 记录唯一标识。真实运行 = UUID 字符串（Tracker 生成）；
- *   模板记录 = 稳定 id（`template-<key>-<workspaceId>`，同工作区重复
- *   实例化幂等覆盖，见 [LongTaskTemplates.instantiate]）。
+ * @property id 记录唯一标识（UUID 字符串，Tracker 生成）。
  * @property title 列表展示标题 = goal 首行截断 ≤[TITLE_MAX_CHARS]（60）
  *   字符。多行 goal 只取第一行；首行超 60 字符截断保头。副本由
  *   [TaskCopyEngine] 加「（副本 n）」后缀。
@@ -264,9 +261,7 @@ data class LongTaskCheckpoint(
  *   使用场景；③ 审计——副本的统计归零了，只有链能还原真实总工作量。
  * @property copyCount 本记录**作为复制源**被复制过的次数（驱动副本标题
  *   的「（副本 n）」编号；副本自身 copyCount 归零重新计数）。
- * @property isTemplate 是否为模板记录（[LongTaskTemplates] 产出的起点
- *   记录）。模板豁免 prune，且不出现在真实运行的统计口径里。
- * @property tags 标签（模板自带；真实运行目前为空，预留给 UI 分组）。
+ * @property tags 标签（真实运行目前为空，预留给 UI 分组）。
  */
 @Serializable
 data class LongTaskRecord(
@@ -292,7 +287,6 @@ data class LongTaskRecord(
     val todoSnapshot: List<String> = emptyList(),
     val parentTaskId: String? = null,
     val copyCount: Int = 0,
-    val isTemplate: Boolean = false,
     val tags: List<String> = emptyList()
 ) {
     companion object {
@@ -342,8 +336,6 @@ data class LongTaskRecord(
  * @property newTitle 副本标题覆盖；null = 源标题 +「（副本 n）」自动编号。
  * @property targetWorkspaceId 目标工作区；null = 同工作区复制。跨工作区
  *    复制时 workspaceName 沿用源记录（UI 以 id 解析为准）。
- * @property thinkingLevelOverride 思考档位覆盖（如用 ULTRACODE 重跑一次
- *    DEEP 的任务做对比）；null = 沿用源档位。
  */
 data class LongTaskCopyOptions(
     val includeConversation: Boolean = true,
@@ -351,6 +343,5 @@ data class LongTaskCopyOptions(
     val includeFilesList: Boolean = true,
     val includeCheckpoints: Boolean = false,
     val newTitle: String? = null,
-    val targetWorkspaceId: String? = null,
-    val thinkingLevelOverride: String? = null
+    val targetWorkspaceId: String? = null
 )

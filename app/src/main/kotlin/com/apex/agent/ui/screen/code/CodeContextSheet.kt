@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
@@ -36,18 +37,24 @@ import com.apex.agent.core.code.CodeContextRole
 import com.apex.agent.core.code.CodeContextSnapshot
 
 /**
- * # Code Context Sheet — Coding 会话上下文查看（底部弹层）
+ * # Code Context Sheet — 会话上下文详情（底部弹层）
  *
- * 展示当前激活逻辑线发给模型的上下文：会话消息序列（角色徽标 + 全文）
- * + 全局规则 / 会话附加注入段 + token 用量。数据来自
- * [com.apex.agent.core.code.CodeEngineFacade.contextSnapshot]（点开时
- * 拉取一次）：深潜线全量导出；标准/织造/信使三条 kit 线的引擎未开放
- * 消息导出 API，仅显示用量统计 + 降级说明（诚实告知，不假装有内容）。
+ * 顶栏「上下文用量圆环」点击后打开：Token 用量卡（上下文占用百分比 /
+ * 会话累计输入输出 / 缓存命中率）+ 发给模型的上下文全文（会话消息序列
+ * （角色徽标 + 全文）+ 全局规则 / 会话附加注入段）。
+ *
+ * 数据源双通道：
+ * - [snapshot]：[com.apex.agent.core.code.CodeEngineFacade.contextSnapshot]
+ *   （点开时拉取一次）—— 深潜线全量导出；标准/织造/信使三条 kit 线的引擎
+ *   未开放消息导出 API，仅统计 + 降级说明（诚实告知，不假装有内容）；
+ * - [usage]：CodeUiState 派生的会话累计（UsageUpdated 逐轮累加）——
+ *   圆环详情的输入/输出/缓存命中率数据面。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CodeContextSheet(
     snapshot: CodeContextSnapshot?,
+    usage: CodeSessionUsage? = null,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -117,14 +124,8 @@ internal fun CodeContextSheet(
                 return@Column
             }
 
-            Text(
-                text = stringResource(
-                    R.string.code_context_stats_fmt,
-                    snapshot.tokenUsed, snapshot.tokenMax, snapshot.entries.size
-                ),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            // ═══ Token 用量卡（圆环点击要看的「具体用了多少」）═══
+            UsageStatsCard(snapshot = snapshot, usage = usage)
             Spacer(modifier = Modifier.padding(top = 8.dp))
 
             if (snapshot.entries.isEmpty() &&
@@ -142,7 +143,7 @@ internal fun CodeContextSheet(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 460.dp)
+                        .heightIn(max = 440.dp)
                 ) {
                     // 注入段置顶：全局规则 / 会话附加（系统语义）
                     snapshot.globalRules?.takeIf { it.isNotBlank() }?.let {
@@ -174,6 +175,91 @@ internal fun CodeContextSheet(
                 Spacer(modifier = Modifier.padding(bottom = 16.dp))
             }
         }
+    }
+}
+
+/**
+ * Token 用量卡：上下文占用（圆环的数字形态）+ 会话累计输入/输出 + 缓存命中率。
+ *
+ * 口径说明：
+ * - 上下文行：snapshot 的引擎统计优先，缺省回退 [CodeSessionUsage]（UI 流
+ *   同源数据）；百分比 = used / max；
+ * - 输入/输出：会话累计（服务端 usage 真实统计逐轮累加，UsageUpdated 事件）；
+ * - 缓存命中率 = cached / input；端点不返回缓存统计（cached = 0）时显式
+ *   显示「暂无数据」而非误导性的 0%。
+ */
+@Composable
+private fun UsageStatsCard(snapshot: CodeContextSnapshot, usage: CodeSessionUsage?) {
+    val used = snapshot.tokenUsed.takeIf { it > 0 } ?: usage?.contextUsedTokens ?: 0
+    val max = snapshot.tokenMax.takeIf { it > 0 } ?: usage?.contextMaxTokens ?: 0
+    val pct = if (max > 0) used * 100L / max else 0L
+    val inTokens = usage?.sessionInputTokens ?: 0
+    val outTokens = usage?.sessionOutputTokens ?: 0
+    val cached = usage?.sessionCachedTokens ?: 0
+    val cacheKnown = inTokens > 0 && cached > 0
+
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(10.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.code_context_usage_section),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            UsageRow(
+                label = stringResource(R.string.code_context_usage_context),
+                value = stringResource(R.string.code_context_usage_ctx_fmt, used, max, pct)
+            )
+            UsageRow(
+                label = stringResource(R.string.code_context_usage_in),
+                value = stringResource(R.string.code_context_usage_tokens_fmt, inTokens)
+            )
+            UsageRow(
+                label = stringResource(R.string.code_context_usage_out),
+                value = stringResource(R.string.code_context_usage_tokens_fmt, outTokens)
+            )
+            UsageRow(
+                label = stringResource(R.string.code_context_usage_cache),
+                value = if (cacheKnown) {
+                    stringResource(R.string.code_context_usage_pct_fmt, cached * 100L / inTokens)
+                } else {
+                    stringResource(R.string.code_context_usage_cache_na)
+                }
+            )
+            UsageRow(
+                label = stringResource(R.string.code_context_usage_messages),
+                value = stringResource(R.string.code_context_usage_tokens_fmt, snapshot.entries.size)
+            )
+        }
+    }
+}
+
+/** 用量行：标签 + 右对齐数值（monospace 对齐数字列）。 */
+@Composable
+private fun UsageRow(label: String, value: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

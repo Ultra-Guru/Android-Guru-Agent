@@ -49,20 +49,16 @@
     <string name="settings_nav_model_tools">工具</string>
     <string name="settings_nav_model_network">网络</string>
     <string name="settings_nav_model_prompt">提示词</string>
-    <string name="settings_nav_model_advanced">高级</string>
     <string name="settings_nav_model_providers">服务商与角色</string>
     <string name="settings_nav_workspace_coding">编程工位</string>
     <string name="settings_nav_workspace_subagent">子代理</string>
     <string name="settings_nav_workspace_permissions">权限</string>
     <string name="settings_nav_workspace_rules">规则</string>
     <string name="settings_nav_workspace_hooks">钩子</string>
-    <string name="settings_nav_workspace_compression">上下文压缩</string>
-    <string name="settings_nav_workspace_vision">视觉</string>
     <string name="settings_nav_workspace_goal">目标模式</string>
     <string name="settings_nav_workspace_github">GitHub</string>
     <string name="settings_nav_workspace_memory">记忆</string>
     <string name="settings_nav_interface_appearance">外观</string>
-    <string name="settings_nav_interface_chat">聊天显示</string>
     <string name="settings_nav_interface_notifications">通知</string>
     <string name="settings_nav_terminal_policy">命令策略</string>
     <string name="settings_nav_terminal_service">后台服务</string>
@@ -132,11 +128,6 @@
     <string name="settings_tool_result_desc">工具结果注入上下文前的 token 截断阈值</string>
 
     <!-- Vision -->
-    <string name="settings_section_vision">Vision · 视觉</string>
-    <string name="settings_vision_desc">允许 Agent 读取截图 / 图片（数据预埋，引擎后续接入）</string>
-    <string name="settings_screenshot_quality_desc">截图注入上下文时的压缩质量（数据预埋）</string>
-    <string name="settings_max_screenshots_desc">上下文中最多保留的截图张数（数据预埋）</string>
-    <string name="settings_vision_model_label">Vision Model (角色)</string>
     <string name="settings_not_set">未指定</string>
 
     <!-- Network -->
@@ -193,7 +184,6 @@
     <string name="settings_tool_loop_section">工具循环</string>
     <string name="settings_tool_parallelism">单轮并行执行上限</string>
     <string name="settings_tool_parallelism_desc">模型一轮返回多个工具时最多几个同时执行（1 = 顺序执行，历史行为）。调高可减少请求轮次；终端类工具输出可能交错</string>
-    <string name="settings_nav_model_rate_limit">限速友好</string>
     <string name="settings_rate_limit_section">限速友好模式</string>
     <string name="settings_rate_limit_enabled">开启限速友好模式</string>
     <string name="settings_rate_limit_enabled_desc">只针对某些用户：所用厂商有 RPM/TPM 或每日请求次数配额（免费档 / 按次计费网关）时才需要开。开启后全部 LLM 请求节流放行、单请求携带更多上下文；关闭 = 行为零变化</string>

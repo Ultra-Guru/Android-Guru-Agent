@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
@@ -29,9 +30,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.CompareArrows
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.History
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -63,23 +62,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
-import com.apex.agent.ui.component.ReliabilityTier
-import com.apex.agent.ui.component.reliabilityTierOf
 import com.apex.agent.core.code.longtask.LongTaskCheckpoint
 import com.apex.agent.core.code.longtask.LongTaskCopyOptions
 import com.apex.agent.core.code.longtask.LongTaskDetector
 import com.apex.agent.core.code.longtask.LongTaskMagnitude
 import com.apex.agent.core.code.longtask.LongTaskRecord
 import com.apex.agent.core.code.longtask.LongTaskStatus
-import com.apex.agent.core.code.longtask.LongTaskTemplates
-import com.apex.agent.core.code.thinking.CodeThinkingEvolutionTracker
-import com.apex.agent.core.code.thinking.CodeThinkingLevel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
-/** 面板页签（三页签：记录 / 模板 / 档位效能）。 */
-private enum class LongTaskTab { RECORDS, TEMPLATES, THINKING_STATS }
 
 /** 任务列表状态过滤（null = 全部）。 */
 private enum class TaskStatusFilter(val status: LongTaskStatus?) {
@@ -92,18 +83,15 @@ private enum class TaskStatusFilter(val status: LongTaskStatus?) {
 /**
  * # Code Long Task Sheet — 长任务中心（v1.2）
  *
- * Coding 屏工作区条「长任务」按钮唤起的 ModalBottomSheet，三个页签：
+ * Coding 屏工作区条「长任务」按钮唤起的 ModalBottomSheet，展示**执行过的
+ * 任务记录**：
  *
  * - **任务记录**：当前工作区自动留档的长任务（迭代/工具/时长/文件任一
  *   过阈值即入库，见 [LongTaskDetector]）。支持状态过滤；卡片展示状态/
  *   规模徽标/统计行，展开看目标、改动文件、todo 快照、检查点数与错误；
- *   操作：复制任务（选项对话框：上下文/todo/文件清单/档位覆盖/立即重跑）·
- *   重跑（默认全携带）· **从检查点续跑**（顶级优化：不从头重跑，接着干）·
- *   与上次对比（复制链 parentTaskId 指向源时可用）· 删除（确认）。
- * - **任务模板**：8 个内置模板（重构/修Bug/新功能/评审/测试/文档/性能/
- *   迁移）一键启动——应用推荐思考档位 + 预置 todo 骨架 + goal 模板发送。
- * - **档位效能**：工作区 × 思考档位的长任务聚合统计（runs/成功率/
- *   平均迭代/工具/时长）——用用户自己的历史数据支撑选档。
+ *   操作：复制任务（选项对话框：上下文/todo/文件清单/立即重跑）·
+ *   重跑（默认全携带）· **从检查点续跑**（不从头重跑，接着干）·
+ *   与上次对比（复制链 parentTaskId 指向源时可用）· 导出/分享 · 删除（确认）。
  *
  * 数据流：记录由 LongTaskTracker 在运行收尾时 fire-and-forget 入库，
  * VM 收尾后刷新（面板可见时）；本组件纯渲染 + 回调，不碰存储。
@@ -114,19 +102,16 @@ fun CodeLongTaskSheet(
     visible: Boolean,
     records: List<LongTaskRecord>,
     loading: Boolean,
-    stats: CodeThinkingEvolutionTracker.WorkspaceThinkingStats?,
     onDismiss: () -> Unit,
     onCopy: (id: String, options: LongTaskCopyOptions, relaunch: Boolean) -> Unit,
     onRelaunch: (id: String) -> Unit,
     onResume: (id: String, checkpointId: String?) -> Unit,
     onDelete: (id: String) -> Unit,
     onCompareWithParent: (id: String) -> Unit,
-    onStartTemplate: (key: String) -> Unit,
     onExport: (id: String) -> Unit = { _ -> }
 ) {
     if (!visible) return
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var tab by remember { mutableStateOf(LongTaskTab.RECORDS) }
     var statusFilter by remember { mutableStateOf(TaskStatusFilter.ALL) }
 
     ModalBottomSheet(
@@ -134,10 +119,10 @@ fun CodeLongTaskSheet(
         sheetState = sheetState
     ) {
         Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-            // ── 标题 + 页签 ──
+            // ── 标题行（对话气泡图标 = 长任务，与对话历史的时钟图标互换）──
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    Icons.Outlined.History,
+                    Icons.AutoMirrored.Outlined.Chat,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
@@ -155,45 +140,19 @@ fun CodeLongTaskSheet(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp)
-            ) {
-                FilterChip(
-                    selected = tab == LongTaskTab.RECORDS,
-                    onClick = { tab = LongTaskTab.RECORDS },
-                    label = { Text(stringResource(R.string.code_longtask_tab_tasks)) }
-                )
-                FilterChip(
-                    selected = tab == LongTaskTab.TEMPLATES,
-                    onClick = { tab = LongTaskTab.TEMPLATES },
-                    label = { Text(stringResource(R.string.code_longtask_tab_templates)) }
-                )
-                FilterChip(
-                    selected = tab == LongTaskTab.THINKING_STATS,
-                    onClick = { tab = LongTaskTab.THINKING_STATS },
-                    label = { Text(stringResource(R.string.code_longtask_tab_stats)) }
-                )
-            }
 
-            when (tab) {
-                LongTaskTab.TEMPLATES -> TemplateTab(onStartTemplate)
-                LongTaskTab.THINKING_STATS -> ThinkingStatsTab(stats)
-                LongTaskTab.RECORDS -> TaskTab(
-                    records = records,
-                    loading = loading,
-                    statusFilter = statusFilter,
-                    onStatusFilter = { statusFilter = it },
-                    onCopy = onCopy,
-                    onRelaunch = onRelaunch,
-                    onResume = onResume,
-                    onDelete = onDelete,
-                    onCompareWithParent = onCompareWithParent,
-                    onExport = onExport
-                )
-            }
+            TaskTab(
+                records = records,
+                loading = loading,
+                statusFilter = statusFilter,
+                onStatusFilter = { statusFilter = it },
+                onCopy = onCopy,
+                onRelaunch = onRelaunch,
+                onResume = onResume,
+                onDelete = onDelete,
+                onCompareWithParent = onCompareWithParent,
+                onExport = onExport
+            )
         }
     }
 }
@@ -749,7 +708,7 @@ private fun Badge(label: String, color: Color) {
 // ═══ 复制选项对话框 ═══
 
 /**
- * 复制任务选项：上下文/todo/文件清单三开关 + 档位覆盖 + 立即重跑。
+ * 复制任务选项：上下文/todo/文件清单三开关 + 立即重跑。
  * 默认值对齐「带完整上下文重跑」的高频场景（relaunch 默认开）。
  */
 @Composable
@@ -763,8 +722,6 @@ private fun CopyOptionsDialog(
     var includeFiles by remember { mutableStateOf(true) }
     var relaunch by remember { mutableStateOf(true) }
     var title by remember { mutableStateOf("") }
-    var thinkingOverride by remember { mutableStateOf<CodeThinkingLevel?>(null) }
-    var thinkingMenuOpen by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -800,42 +757,6 @@ private fun CopyOptionsDialog(
                     onChecked = { relaunch = it }
                 )
 
-                // 档位覆盖（默认沿用源档位）
-                Box {
-                    Text(
-                        text = stringResource(
-                            R.string.code_longtask_thinking_current_fmt,
-                            thinkingOverride?.name ?: record.thinkingLevel
-                        ),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .clickable { thinkingMenuOpen = true }
-                            .padding(vertical = 6.dp)
-                    )
-                    DropdownMenu(
-                        expanded = thinkingMenuOpen,
-                        onDismissRequest = { thinkingMenuOpen = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.code_longtask_thinking_follow)) },
-                            onClick = {
-                                thinkingMenuOpen = false
-                                thinkingOverride = null
-                            }
-                        )
-                        CodeThinkingLevel.entries.forEach { level ->
-                            DropdownMenuItem(
-                                text = { Text("${level.name} · ${level.description}") },
-                                onClick = {
-                                    thinkingMenuOpen = false
-                                    thinkingOverride = level
-                                }
-                            )
-                        }
-                    }
-                }
-
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
@@ -852,8 +773,7 @@ private fun CopyOptionsDialog(
                         includeConversation = includeConversation,
                         includeTodos = includeTodos,
                         includeFilesList = includeFiles,
-                        newTitle = title.takeIf { it.isNotBlank() },
-                        thinkingLevelOverride = thinkingOverride?.name
+                        newTitle = title.takeIf { it.isNotBlank() }
                     ),
                     relaunch
                 )
@@ -877,142 +797,6 @@ private fun SwitchRow(label: String, checked: Boolean, onChecked: (Boolean) -> U
             modifier = Modifier.weight(1f)
         )
         Switch(checked = checked, onCheckedChange = onChecked)
-    }
-}
-
-// ═══ 档位效能页签 ═══
-
-/**
- * 档位效能表：工作区 × 档位的长任务聚合（runs/可靠性定性/平均迭代/工具/时长）。
- * 数据源 ThinkingEvolutionTracker——帮用户用自己的历史选档，而非凭感觉。
- * #365：成功率百分比→定性档位（稳定/一般/不稳定）——「87% vs 91%」在
- * 选档决策上无差别，档位词可直接读到结论。
- */
-@Composable
-private fun ThinkingStatsTab(stats: CodeThinkingEvolutionTracker.WorkspaceThinkingStats?) {
-    val levels = stats?.levels?.values.orEmpty()
-    if (levels.isEmpty()) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 32.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.code_longtask_stats_empty),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = stringResource(R.string.code_longtask_stats_empty_hint),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-        }
-        return
-    }
-    Column(
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
-    ) {
-        levels.forEach { stat ->
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                ),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = stat.level,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            text = stringResource(R.string.code_longtask_stats_runs_fmt, stat.runs),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    // #365：可靠性定性档位（runs>0 必有数据，无需 UNUSED 分支）
-                    val reliability = when (reliabilityTierOf(stat.successRate, stat.runs > 0)) {
-                        ReliabilityTier.STABLE -> stringResource(R.string.code_reliability_stable)
-                        ReliabilityTier.FAIR -> stringResource(R.string.code_reliability_fair)
-                        ReliabilityTier.UNSTABLE -> stringResource(R.string.code_reliability_unstable)
-                        ReliabilityTier.UNUSED -> stringResource(R.string.market_reliability_unused)
-                    }
-                    Text(
-                        text = stringResource(
-                            R.string.code_longtask_stats_row_fmt,
-                            reliability,
-                            stat.avgIterations,
-                            stat.avgToolCalls,
-                            formatDuration(stat.avgDurationMs)
-                        ),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-// ═══ 模板页签 ═══
-
-@Composable
-private fun TemplateTab(onStartTemplate: (key: String) -> Unit) {
-    LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 480.dp)
-            .padding(bottom = 24.dp)
-    ) {
-        items(LongTaskTemplates.ALL, key = { it.key }) { template ->
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                ),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = template.titleZh,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.weight(1f)
-                        )
-                        AssistChip(
-                            onClick = { onStartTemplate(template.key) },
-                            label = { Text(stringResource(R.string.code_longtask_template_start)) }
-                        )
-                    }
-                    Text(
-                        text = stringResource(R.string.code_longtask_template_level_fmt, template.recommendedThinkingLevel),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
-                    Text(
-                        text = template.todoSkeleton.joinToString(" · "),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
-            }
-        }
     }
 }
 

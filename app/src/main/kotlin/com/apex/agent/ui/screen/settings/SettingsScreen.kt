@@ -237,7 +237,6 @@ fun SettingsScreen(
                                 profiles = profiles,
                                 selected = selected,
                                 agent = agent,
-                                roles = roles,
                                 viewModel = viewModel,
                                 onAgent = onAgent,
                                 onSelect = { selectedId = it },
@@ -293,7 +292,6 @@ private fun SettingsPageRouter(
     profiles: List<ModelProfile>,
     selected: ModelProfile?,
     agent: AgentSettings,
-    roles: com.apex.agent.core.llm.ModelRoleConfig,
     viewModel: SettingsViewModel,
     onAgent: (AgentSettings) -> Unit,
     onSelect: (String) -> Unit,
@@ -322,18 +320,20 @@ private fun SettingsPageRouter(
         }
         "model/context" -> SettingsLeafColumn {
             selected?.let { ContextSection(it, onUpdate) } ?: EmptyProfileHint()
+            // 归并页：上下文压缩（原工作台独立叶）与上下文窗口同类归为一页
+            CompressionSection(agent, onAgent)
         }
         "model/tools" -> SettingsLeafColumn {
             selected?.let { ToolsSection(it, onUpdate) } ?: EmptyProfileHint()
         }
         "model/network" -> SettingsLeafColumn {
             selected?.let { NetworkSection(it, onUpdate) } ?: EmptyProfileHint()
+            // 归并页：限速友好（原独立叶）与网络参数同类归为一页
+            RateLimitSection(agent, onAgent)
         }
-        "model/rate-limit" -> SettingsLeafColumn { RateLimitSection(agent, onAgent) }
         "model/prompt" -> SettingsLeafColumn {
             selected?.let { PromptSection(it, onUpdate) } ?: EmptyProfileHint()
-        }
-        "model/advanced" -> SettingsLeafColumn {
+            // 归并页：高级选项（结构化输出/自定义头）与提示词同类归为一页
             selected?.let { AdvancedSection(it, onUpdate) } ?: EmptyProfileHint()
         }
         "model/providers-roles" -> ProvidersRolesPage(
@@ -357,19 +357,15 @@ private fun SettingsPageRouter(
         "workspace/hooks" -> SettingsLeafColumn {
             AgentHooksSectionBlock(viewModel)
         }
-        "workspace/compression" -> SettingsLeafColumn { CompressionSection(agent, onAgent) }
-        "workspace/vision" -> SettingsLeafColumn {
-            VisionSection(agent, roles, profiles, viewModel)
-        }
         "workspace/goal" -> SettingsLeafColumn { GoalSettingsSection(agent, onAgent) }
         "workspace/github" -> SettingsLeafColumn { GithubSettingsSection(viewModel) }
         "workspace/memory" -> SettingsLeafColumn { MemoryCaptureSection(agent, onAgent) }
-        // ═══ 界面外观 ═══
+        // ═══ 界面外观（对话显示归并到外观页：同为界面呈现类设置）═══
         "interface/appearance" -> SettingsLeafColumn {
             AppearanceSection(agent, onAgent)
             BackgroundSection(agent, onAgent)
+            ChatDisplaySection(agent, onAgent)
         }
-        "interface/chat" -> SettingsLeafColumn { ChatDisplaySection(agent, onAgent) }
         "interface/notifications" -> SettingsLeafColumn {
             NotificationsPage(agent, onAgent)
         }

@@ -108,10 +108,9 @@
     <string name="code_thinking_guide_footer_linkage">A tier drives more than the prompt: iteration cap, compression threshold and tool-output budget all scale with it (see the ladder above).</string>
     <string name="code_thinking_guide_footer_apex">APEXCODE is manual-only: the adaptive selector never picks it, and its token cost sits at the top of the whole ladder.</string>
 
-    <!-- ═══ v1.4.11 session context viewer (CodeContextSheet; deep-dive full / kit lines degraded) ═══ -->
-    <string name="code_context_open">View context</string>
+    <!-- ═══ Session context (usage ring + detail sheet; deep-dive full / kit lines degraded) ═══ -->
+    <string name="code_context_ring_cd_fmt">Context usage: %1$d%%</string>
     <string name="code_context_title">Session context</string>
-    <string name="code_context_stats_fmt">Context %1$d / %2$d tokens · %3$d messages</string>
     <string name="code_context_copy_all">Copy all</string>
     <string name="code_context_copied">Copied</string>
     <string name="code_context_no_engine">Engine not ready</string>
@@ -122,6 +121,18 @@
     <string name="code_context_role_tool">Tool</string>
     <string name="code_context_rules">Global rules</string>
     <string name="code_context_extras">Session extras</string>
+
+    <!-- ═══ Token usage card (ring detail: exact usage / input / output / cache hit rate) ═══ -->
+    <string name="code_context_usage_section">Token usage</string>
+    <string name="code_context_usage_context">Context window</string>
+    <string name="code_context_usage_ctx_fmt">%1$d / %2$d (%3$d%%)</string>
+    <string name="code_context_usage_in">Input tokens (session)</string>
+    <string name="code_context_usage_out">Output tokens (session)</string>
+    <string name="code_context_usage_cache">Cache hit rate</string>
+    <string name="code_context_usage_pct_fmt">%1$d%%</string>
+    <string name="code_context_usage_cache_na">n/a</string>
+    <string name="code_context_usage_messages">Messages</string>
+    <string name="code_context_usage_tokens_fmt">%1$d</string>
 
     <!-- ═══ v1.4.10 Coding 历史对话（新会话自动归档，可恢复）═══ -->
     <string name="code_history_open">Chat history</string>
@@ -142,8 +153,6 @@
     <!-- ═══ v1.2 long-task center ═══ -->
     <string name="code_longtask_open">Long-task center</string>
     <string name="code_longtask_sheet_title">Long Tasks</string>
-    <string name="code_longtask_tab_tasks">Task records</string>
-    <string name="code_longtask_tab_templates">Templates</string>
     <string name="code_longtask_empty">No long-task records yet</string>
     <string name="code_longtask_empty_hint">Coding runs beyond a threshold (iterations / tools / duration / files) are archived automatically</string>
     <string name="code_longtask_status_completed">Completed</string>
@@ -173,23 +182,11 @@
     <string name="code_longtask_option_files">Carry files list</string>
     <string name="code_longtask_option_relaunch">Rerun immediately after copying</string>
     <string name="code_longtask_option_title">New title (optional)</string>
-    <string name="code_longtask_thinking_current_fmt">Thinking tier: %1$s</string>
-    <string name="code_longtask_thinking_follow">Follow source tier</string>
-    <string name="code_longtask_template_start">Start</string>
-    <string name="code_longtask_template_level_fmt">Recommended tier: %1$s</string>
-    <string name="code_longtask_tab_stats">Tier stats</string>
     <string name="code_longtask_filter_all">All</string>
     <string name="code_longtask_resume">Resume</string>
     <string name="code_longtask_resume_latest">Resume from last checkpoint</string>
     <string name="code_longtask_resume_at_fmt">Resume from iteration %1$d</string>
     <string name="code_longtask_resume_fallback">No checkpoint — rerun with context</string>
-    <string name="code_longtask_stats_empty">No tier stats yet</string>
-    <string name="code_longtask_stats_empty_hint">Stats aggregate automatically from archived long tasks per tier</string>
-    <string name="code_longtask_stats_runs_fmt">%1$d runs</string>
-    <string name="code_longtask_stats_row_fmt">reliability %1$s · avg %2$d iters · %3$d tools · %4$s</string>
-    <string name="code_reliability_stable">Stable</string>
-    <string name="code_reliability_fair">Fair</string>
-    <string name="code_reliability_unstable">Unstable</string>
 
     <!-- v1.2 checkpoint timeline (CodeLongTaskSheet expanded section) -->
     <string name="code_longtask_cp_round_fmt">Round %1$d</string>

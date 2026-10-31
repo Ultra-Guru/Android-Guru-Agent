@@ -53,14 +53,6 @@
     <!-- Coding workspace section -->
     <string name="settings_v3_coding_title">Coding Workspace</string>
     <string name="settings_v3_coding_subtitle">Tool surface and guardrails for the Code screen</string>
-    <string name="settings_v3_coding_surface">Tool surface</string>
-    <string name="settings_v3_coding_surface_desc">Full = CORE + activated extras; Core = code, git, github and terminal only</string>
-    <string name="settings_v3_coding_surface_full">Full (CORE + activated)</string>
-    <string name="settings_v3_coding_surface_core">Core (code / git / github / terminal)</string>
-    <string name="settings_v3_coding_read_guard">Read guard</string>
-    <string name="settings_v3_coding_read_guard_desc">Files must be read before editing — the industry-standard misuse guard</string>
-    <string name="settings_v3_coding_auto_rules">Auto project rules</string>
-    <string name="settings_v3_coding_auto_rules_desc">Auto-discover and inject the workspace\'s AGENTS.md / CLAUDE.md / .cursorrules</string>
     <string name="settings_v3_coding_mcp_scope">MCP and skill scope isolation</string>
     <string name="settings_v3_coding_mcp_scope_desc">Isolate MCP and skill tools by market tier in the engine; off restores v2 global visibility</string>
     <!-- Coding output style (v1.6 timeline vs Rikka chat) -->

@@ -653,7 +653,8 @@ class StreamingOpenAiClient(
                 Usage(
                     promptTokens = u["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
                     completionTokens = u["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-                    totalTokens = u["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+                    totalTokens = u["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
+                    cachedTokens = parseCachedTokens(u)
                 )
             }
             val choices = json["choices"]?.jsonArray
@@ -817,7 +818,8 @@ class StreamingOpenAiClient(
             Usage(
                 promptTokens = u["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
                 completionTokens = u["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-                totalTokens = u["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+                totalTokens = u["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
+                cachedTokens = parseCachedTokens(u)
             )
         }
 
@@ -894,5 +896,21 @@ sealed class LlmException(message: String, cause: Throwable? = null) : Exception
     /** P2 fix：响应体非法（HTML 错误页/畸形 JSON/数值类型漂移），供 ErrorClassifier 映射到
      *  ModelResponseInvalid 而非落入未分类异常。 */
     class Parse(cause: Throwable? = null) : LlmException("Response parse error: ${cause?.message}", cause)
+}
+
+/**
+ * 解析 usage 里的缓存命中 token（OpenAI 兼容端点：`prompt_tokens_details.
+ * cached_tokens`；Anthropic 兼容字段 `cache_read_input_tokens` 兜底）。
+ *
+ * 两个安全口径：`prompt_tokens_details` 可能缺席 / 为 null / 非对象（部分
+ * 中转站裁剪该字段）——`as? JsonObject` 静默降级 0；数值宽容 `intOrNull`
+ * （容忍字符串 / 小数形态），与两条 usage 解析路径同口径。
+ */
+private fun parseCachedTokens(usage: JsonObject): Int {
+    (usage["prompt_tokens_details"] as? JsonObject)?.let { details ->
+        details["cached_tokens"]?.jsonPrimitive?.intOrNull?.let { return it }
+    }
+    usage["cache_read_input_tokens"]?.jsonPrimitive?.intOrNull?.let { return it }
+    return 0
 }
 

@@ -222,13 +222,9 @@ class LongTaskStore(private val baseDir: File) {
     }
 
     /**
-     * 裁剪历史：保留最新 [keep] 条非模板记录，其余删除。
+     * 裁剪历史：保留最新 [keep] 条记录，其余删除。
      *
-     * **模板记录（isTemplate=true）豁免**——它们是用户可反复实例化的
-     * 起点（且不占 keep 名额：模板被裁掉等于功能消失，而模板数量天然
-     * 有界——每工作区每模板至多一条稳定 id 记录）。
-     *
-     * @param keep 保留条数（负数按 0 处理 = 清空全部非模板记录）。
+     * @param keep 保留条数（负数按 0 处理 = 清空全部）。
      * @return 实际删除的条数（磁盘删除失败也计入——内存视角已删除）。
      */
     suspend fun prune(keep: Int = 50): Int {
@@ -236,7 +232,7 @@ class LongTaskStore(private val baseDir: File) {
         mutex.withLock {
             ensureLoaded()
             val newestFirst = cache.values.sortedByDescending { it.updatedAt }
-            val doomed = newestFirst.filter { !it.isTemplate }.drop(keepCount)
+            val doomed = newestFirst.drop(keepCount)
             if (doomed.isEmpty()) return 0
             val next = cache.toMutableMap()
             for (record in doomed) {

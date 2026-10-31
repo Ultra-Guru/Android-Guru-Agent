@@ -204,7 +204,10 @@ sealed interface AgentEvent {
         /** 本次请求输出侧 token。 */
         val completionTokens: Int,
         /** 输入 + 输出合计。 */
-        val totalTokens: Int
+        val totalTokens: Int,
+        /** 命中缓存的输入侧 token（端点未返回统计时为 0；
+         * 缓存命中率 = cachedTokens / promptTokens）。 */
+        val cachedTokens: Int = 0
     ) : AgentEvent
     
     /** 需要用户输入/确认 */

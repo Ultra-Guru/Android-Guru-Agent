@@ -57,6 +57,6 @@ internal class EngineUsageTracker(
         if (u == null || u.totalTokens <= 0) return null
         track(u)
         sessionTotalTokensReal.addAndGet(u.totalTokens.toLong())
-        return AgentEvent.UsageUpdated(u.promptTokens, u.completionTokens, u.totalTokens)
+        return AgentEvent.UsageUpdated(u.promptTokens, u.completionTokens, u.totalTokens, u.cachedTokens)
     }
 }

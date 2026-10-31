@@ -71,6 +71,8 @@ internal fun CodeViewModel.clearConversationWithArchive() {
     _uiState.update {
         it.copy(
             messages = emptyList(), todos = emptyList(), contextUsedTokens = 0,
+            // 会话累计 token 随新会话归零（历史归档不存 token 统计）
+            sessionInputTokens = 0, sessionOutputTokens = 0, sessionCachedTokens = 0,
             inputDraft = "", editorFilePath = null, editorFile = null, editorError = null,
             stream = CodeStreamSnapshot(),
             // 新会话同步清掉排队任务（旧会话的排队意图不带入新会话）

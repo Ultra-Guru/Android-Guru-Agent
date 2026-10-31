@@ -108,10 +108,9 @@
     <string name="code_thinking_guide_footer_linkage">档位联动的不只是提示词：迭代上限、压缩阈值与工具输出预算都随档位缩放（数值见上方总表）。</string>
     <string name="code_thinking_guide_footer_apex">APEXCODE 仅手动可选：AUTO 选档永不触及，token 成本也是全梯度天花板。</string>
 
-    <!-- ═══ v1.4.11 会话上下文查看（CodeContextSheet；深潜线全量 / kit 线降级）═══ -->
-    <string name="code_context_open">查看上下文</string>
+    <!-- ═══ 会话上下文（上下文用量圆环 + 详情弹层；深潜线全量 / kit 线降级）═══ -->
+    <string name="code_context_ring_cd_fmt">上下文用量：%1$d%%</string>
     <string name="code_context_title">会话上下文</string>
-    <string name="code_context_stats_fmt">上下文 %1$d / %2$d tokens · %3$d 条消息</string>
     <string name="code_context_copy_all">复制全部</string>
     <string name="code_context_copied">已复制</string>
     <string name="code_context_no_engine">引擎未就绪</string>
@@ -122,6 +121,18 @@
     <string name="code_context_role_tool">工具</string>
     <string name="code_context_rules">全局规则</string>
     <string name="code_context_extras">会话附加</string>
+
+    <!-- ═══ Token 用量卡（圆环点击详情：具体用了多少 / 输入输出 / 缓存命中率）═══ -->
+    <string name="code_context_usage_section">Token 用量</string>
+    <string name="code_context_usage_context">上下文占用</string>
+    <string name="code_context_usage_ctx_fmt">%1$d / %2$d（%3$d%%）</string>
+    <string name="code_context_usage_in">输入 tokens（会话累计）</string>
+    <string name="code_context_usage_out">输出 tokens（会话累计）</string>
+    <string name="code_context_usage_cache">缓存命中率</string>
+    <string name="code_context_usage_pct_fmt">%1$d%%</string>
+    <string name="code_context_usage_cache_na">暂无数据</string>
+    <string name="code_context_usage_messages">消息条数</string>
+    <string name="code_context_usage_tokens_fmt">%1$d</string>
 
     <!-- ═══ v1.4.10 Coding 历史对话（新会话自动归档，可恢复）═══ -->
     <string name="code_history_open">对话历史</string>
@@ -142,8 +153,6 @@
     <!-- ═══ v1.2 长任务中心 ═══ -->
     <string name="code_longtask_open">长任务中心</string>
     <string name="code_longtask_sheet_title">长任务</string>
-    <string name="code_longtask_tab_tasks">任务记录</string>
-    <string name="code_longtask_tab_templates">任务模板</string>
     <string name="code_longtask_empty">还没有长任务记录</string>
     <string name="code_longtask_empty_hint">超过阈值的编码运行（迭代/工具/时长/文件）会自动留档</string>
     <string name="code_longtask_status_completed">已完成</string>
@@ -173,23 +182,11 @@
     <string name="code_longtask_option_files">携带文件清单</string>
     <string name="code_longtask_option_relaunch">复制后立即重跑</string>
     <string name="code_longtask_option_title">新标题（可选）</string>
-    <string name="code_longtask_thinking_current_fmt">思考档位：%1$s</string>
-    <string name="code_longtask_thinking_follow">沿用源档位</string>
-    <string name="code_longtask_template_start">开始任务</string>
-    <string name="code_longtask_template_level_fmt">推荐档位：%1$s</string>
-    <string name="code_longtask_tab_stats">档位效能</string>
     <string name="code_longtask_filter_all">全部</string>
     <string name="code_longtask_resume">续跑</string>
     <string name="code_longtask_resume_latest">从最后检查点续跑</string>
     <string name="code_longtask_resume_at_fmt">从第 %1$d 轮检查点续跑</string>
     <string name="code_longtask_resume_fallback">无检查点——带上下文重跑</string>
-    <string name="code_longtask_stats_empty">暂无档位效能数据</string>
-    <string name="code_longtask_stats_empty_hint">长任务留档后按档位自动聚合统计</string>
-    <string name="code_longtask_stats_runs_fmt">%1$d 次运行</string>
-    <string name="code_longtask_stats_row_fmt">可靠性 %1$s · 平均 %2$d 轮 · %3$d 工具 · %4$s</string>
-    <string name="code_reliability_stable">稳定</string>
-    <string name="code_reliability_fair">一般</string>
-    <string name="code_reliability_unstable">不稳定</string>
 
     <!-- v1.2 检查点时间线（CodeLongTaskSheet 展开区） -->
     <string name="code_longtask_cp_round_fmt">第 %1$d 轮</string>

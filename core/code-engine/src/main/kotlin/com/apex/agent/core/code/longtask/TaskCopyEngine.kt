@@ -55,14 +55,12 @@ class TaskCopyEngine(private val store: LongTaskStore) {
      *   副本编号 n）；
      * - **沿用**：goal（重跑语义锚点）、agentMode、tags；
      * - **可覆盖**：title（newTitle ?: 源标题 +「（副本 n）」，n = 源
-     *   copyCount + 1）；thinkingLevel（override ?: 源档位）；workspaceId
-     *   （target ?: 源工作区）；
+     *   copyCount + 1）；workspaceId（target ?: 源工作区）；
      * - **按开关**：todoSnapshot（includeTodos）、filesTouched
      *   （includeFilesList）、checkpoints（includeCheckpoints）；
      * - workspaceName 恒沿用源记录——选项只带 id 不带名，跨工作区复制时
      *   显示名可能滞后一拍（UI 以 workspaceId 解析实时名为准，见
-     *   [LongTaskRecord.workspaceName] 的冗余存储说明）；
-     * - isTemplate 恒 false——模板被复制即成为一次真实运行的起点。
+     *   [LongTaskRecord.workspaceName] 的冗余存储说明）。
      *
      * @return 成功 → 已入库的副本记录；源不存在 →
      *   [Result.failure]（NoSuchElementException）。
@@ -79,7 +77,7 @@ class TaskCopyEngine(private val store: LongTaskStore) {
             goal = source.goal,
             workspaceId = options.targetWorkspaceId ?: source.workspaceId,
             workspaceName = source.workspaceName,
-            thinkingLevel = options.thinkingLevelOverride ?: source.thinkingLevel,
+            thinkingLevel = source.thinkingLevel,
             agentMode = source.agentMode,
             status = LongTaskStatus.RUNNING,
             createdAt = now,
@@ -96,7 +94,6 @@ class TaskCopyEngine(private val store: LongTaskStore) {
             todoSnapshot = if (options.includeTodos) source.todoSnapshot else emptyList(),
             parentTaskId = source.id,
             copyCount = 0,
-            isTemplate = false,
             tags = source.tags
         )
         store.upsert(record)

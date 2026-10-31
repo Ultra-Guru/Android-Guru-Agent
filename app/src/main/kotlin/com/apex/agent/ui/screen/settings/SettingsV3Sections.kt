@@ -33,7 +33,6 @@ import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Terminal
-import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -47,8 +46,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import com.apex.agent.core.code.subagent.CustomSubAgent
 import com.apex.agent.core.code.subagent.SubAgentSettings
-import com.apex.agent.core.llm.ModelProfile
-import com.apex.agent.core.llm.ModelRoleConfig
 import com.apex.agent.ui.theme.AccentPalette
 import com.apex.agent.ui.theme.UiStyle
 import com.apex.agent.ui.theme.UiStylePickerExcluded
@@ -103,36 +100,6 @@ internal fun CompressionSection(agent: AgentSettings, onAgent: (AgentSettings) -
         IntFieldRow("Max Tool Output Length", agent.maxToolOutputLength,
             description = stringResource(R.string.settings_tool_output_len_desc), min = 200, max = 100_000) {
             onAgent(agent.copy(maxToolOutputLength = it))
-        }
-    }
-}
-
-@Composable
-internal fun VisionSection(
-    agent: AgentSettings,
-    roles: ModelRoleConfig,
-    profiles: List<ModelProfile>,
-    viewModel: SettingsViewModel
-) {
-    SectionCard(stringResource(R.string.settings_section_vision), Icons.Outlined.Visibility) {
-        SwitchRow("Enable Vision", agent.visionEnabled,
-            description = stringResource(R.string.settings_vision_desc)) {
-            viewModel.updateAgentSettings { copy(visionEnabled = it) }
-        }
-        DropdownRow("Screenshot Quality",
-            listOf("auto" to "Auto", "low" to "Low", "medium" to "Medium", "high" to "High"),
-            agent.screenshotQuality,
-            description = stringResource(R.string.settings_screenshot_quality_desc)) {
-            viewModel.updateAgentSettings { copy(screenshotQuality = it) }
-        }
-        IntFieldRow("Max Screenshots in Context", agent.maxScreenshots,
-            description = stringResource(R.string.settings_max_screenshots_desc), min = 1, max = 20) {
-            viewModel.updateAgentSettings { copy(maxScreenshots = it) }
-        }
-        DropdownRow(stringResource(R.string.settings_vision_model_label),
-            listOf("" to stringResource(R.string.settings_not_set)) + profiles.map { it.id to it.name },
-            roles.visionProfileId) {
-            viewModel.updateRoles { copy(visionProfileId = it) }
         }
     }
 }
@@ -746,10 +713,10 @@ internal fun GoalSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings)
 
 /**
  * Coding 工位分区：输出风格（经典时间轴 / Rikka 聊天式——纯 UI 开关）、
- * 工具面（全量 / 聚焦核心）、输出展示档（流式 / 整段）、读守卫、自动
- * 项目规则、MCP 与技能作用域隔离、单轮并行执行上限。后六项全部被引擎
- * 侧消费（EngineToolPlanner / 标准线引擎 / RulesProvider / CodeModule
- * 引擎配置）；输出风格/展示档为 UI 渲染层开关（引擎零参与）。
+ * 输出展示档（流式 / 整段）、MCP 与技能作用域隔离、单轮并行执行上限。
+ * 各项全部被渲染/引擎侧真消费（CodeOutputStyleOps / CodeOutputModeOps /
+ * AgentConfig / CodeModule）——无摆设开关（工具面/读守卫/自动规则三个
+ * 假开关已随真设置清理移除）。
  */
 @Composable
 internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings) -> Unit) {
@@ -771,15 +738,6 @@ internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSetting
             agent.codeOutputStyle.ifBlank { "timeline" },
             description = stringResource(R.string.settings_v3_coding_output_style_desc)
         ) { style -> onUpdate(agent.copy(codeOutputStyle = style)) }
-        DropdownRow(
-            stringResource(R.string.settings_v3_coding_surface),
-            listOf(
-                "full" to stringResource(R.string.settings_v3_coding_surface_full),
-                "core" to stringResource(R.string.settings_v3_coding_surface_core),
-            ),
-            agent.codingToolSurface,
-            description = stringResource(R.string.settings_v3_coding_surface_desc)
-        ) { surface -> onUpdate(agent.copy(codingToolSurface = surface)) }
         // ═══ v1.5 输出展示档（流式 / 整段）：Coding 屏时间轴揭示时机 ═══
         // 纯 UI 层开关（引擎/会话零参与）——流式 = 实时渲染（默认，既有
         // 行为）；整段 = 生成中仅加载进度卡、收束后一次性渲染完整时间轴。
@@ -794,16 +752,6 @@ internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSetting
             agent.codeOutputMode.ifBlank { "streaming" },
             description = stringResource(R.string.settings_v3_coding_output_mode_desc)
         ) { mode -> onUpdate(agent.copy(codeOutputMode = mode)) }
-        SwitchRow(
-            stringResource(R.string.settings_v3_coding_read_guard),
-            agent.codingReadGuard,
-            description = stringResource(R.string.settings_v3_coding_read_guard_desc)
-        ) { on -> onUpdate(agent.copy(codingReadGuard = on)) }
-        SwitchRow(
-            stringResource(R.string.settings_v3_coding_auto_rules),
-            agent.codingAutoRules,
-            description = stringResource(R.string.settings_v3_coding_auto_rules_desc)
-        ) { on -> onUpdate(agent.copy(codingAutoRules = on)) }
         SwitchRow(
             stringResource(R.string.settings_v3_coding_mcp_scope),
             agent.mcpScopeIsolation,
