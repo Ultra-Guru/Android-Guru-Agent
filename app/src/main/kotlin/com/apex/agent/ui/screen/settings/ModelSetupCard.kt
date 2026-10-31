@@ -50,7 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
+
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -116,8 +116,21 @@ internal fun ModelSetupCard(
     val providerId = selected?.providerId.orEmpty()
     val provider = providers.firstOrNull { it.id == providerId }
 
-    var baseUrl by remember { mutableStateOf(provider?.baseUrl.orEmpty()) }
-    var apiKey by remember { mutableStateOf(viewModel.getProviderApiKey(providerId)) }
+    val connectionEditor = remember(providerId, viewModel) {
+        ProviderConnectionEditor(
+            providerId = providerId,
+            read = { id ->
+                viewModel.getProvider(id)?.let {
+                    ProviderConnectionValues(it.baseUrl, viewModel.getProviderApiKey(id))
+                }
+            },
+            writeUrl = viewModel::setProviderBaseUrl,
+            writeKey = viewModel::setProviderApiKey
+        )
+    }
+    val connection by connectionEditor.state.collectAsStateWithLifecycle()
+    val baseUrl = connection.baseUrl
+    val apiKey = connection.apiKey
     var keyVisible by remember { mutableStateOf(false) }
     var expandedProfile by remember { mutableStateOf(false) }
     var expandedProvider by remember { mutableStateOf(false) }
@@ -151,51 +164,23 @@ internal fun ModelSetupCard(
     val urlDeviated = officialBaseUrl.isNotBlank() &&
         baseUrl.trim().trimEnd('/').equals(officialBaseUrl.trimEnd('/'), ignoreCase = true).not()
 
-    // 最新值引用（DisposableEffect 冲刷时取离开屏幕那一刻的值，而非首次组合的旧值）
-    val latestProviderId by rememberUpdatedState(providerId)
-    val latestBaseUrl by rememberUpdatedState(baseUrl)
-    val latestApiKey by rememberUpdatedState(apiKey)
-    val latestProviders by rememberUpdatedState(providers)
+    // Capture the editor, not a latest provider ID paired with another provider's values.
+    fun flushEdits() = connectionEditor.flush()
 
-    /** 把当前编辑中的 URL/Key 冲刷进持久层（切档案 / 切服务商 / dispose / 拉模型前调用）。 */
-    fun flushEdits(targetProviderId: String = latestProviderId) {
-        if (targetProviderId.isBlank()) return
-        val persistedUrl = latestProviders.firstOrNull { it.id == targetProviderId }?.baseUrl.orEmpty()
-        if (latestBaseUrl.trim() != persistedUrl) {
-            viewModel.setProviderBaseUrl(targetProviderId, latestBaseUrl)
-        }
-        if (latestApiKey != viewModel.getProviderApiKey(targetProviderId)) {
-            viewModel.setProviderApiKey(targetProviderId, latestApiKey)
-        }
+    DisposableEffect(connectionEditor) {
+        onDispose { connectionEditor.flush() }
     }
 
-    // 离开设置页时冲刷未落盘的编辑（防抖任务会随组合销毁被取消）
-    DisposableEffect(Unit) {
-        onDispose { flushEdits() }
-    }
+    // Refresh same-ID external edits (including key-only updates) from the live repository.
+    LaunchedEffect(connectionEditor, provider) { connectionEditor.refresh() }
 
-    // URL 防抖落盘：停顿 500ms 才写（避免每键一次 JSON 序列化 + 写盘）。
-    // 回写后的 Provider 流更新会触发重组，此时 baseUrl == provider.baseUrl → 提前返回，不会回环。
-    LaunchedEffect(baseUrl, providerId) {
-        if (baseUrl == provider?.baseUrl) return@LaunchedEffect
+    LaunchedEffect(connectionEditor, baseUrl) {
         delay(500)
-        viewModel.setProviderBaseUrl(providerId, baseUrl)
+        connectionEditor.flushUrl()
     }
-
-    // Key 防抖落盘：EncryptedSharedPreferences 每次写入都重加密整文件，
-    // 每键同步会掉帧；停顿 500ms + 离开页面冲刷保证不丢。
-    LaunchedEffect(apiKey, providerId) {
-        if (apiKey == viewModel.getProviderApiKey(providerId)) return@LaunchedEffect
+    LaunchedEffect(connectionEditor, apiKey) {
         delay(500)
-        viewModel.setProviderApiKey(providerId, apiKey)
-    }
-
-    // 切换档案 / 服务商导致 providerId 变化时：回填新服务商的当前 URL/Key
-    // （旧服务商编辑中的值已在各下拉 onClick 里同步冲刷，不依赖防抖 ——
-    //   防抖任务会因 key 变化被取消）
-    LaunchedEffect(providerId) {
-        baseUrl = provider?.baseUrl.orEmpty()
-        apiKey = viewModel.getProviderApiKey(providerId)
+        connectionEditor.flushKey()
     }
 
     /**
@@ -204,7 +189,7 @@ internal fun ModelSetupCard(
      */
     fun createProfile() {
         // 新档的 provider 大概率与当前不同：先冲刷旧 provider 编辑中的值
-        flushEdits(providerId)
+        flushEdits()
         val newProviderId = providers.firstOrNull { it.id == "custom_openai" }?.id
             ?: providers.firstOrNull()?.id ?: ""
         val id = "profile_${System.currentTimeMillis()}"
@@ -212,11 +197,7 @@ internal fun ModelSetupCard(
             ModelProfile(id = id, name = newProfileName, providerId = newProviderId, modelId = "")
         )
         onSelect(id)
-        // 同步回填新 provider 的 URL/Key —— 若留给 LaunchedEffect 回填，期间重启的
-        // 防抖任务会拿旧值比对并可能把旧 provider 的 URL 写进新 provider
-        val np = providers.firstOrNull { it.id == newProviderId }
-        baseUrl = np?.baseUrl.orEmpty()
-        apiKey = viewModel.getProviderApiKey(newProviderId)
+        // The next provider gets a new, owner-bound editor during composition.
     }
 
     Card(
@@ -317,12 +298,9 @@ internal fun ModelSetupCard(
                                 if (p.id != sel.id) {
                                     // 先冲刷旧 provider 编辑中的值（防抖任务会随 providerId
                                     // 变化被取消），再切档 —— 否则 500ms 内切走的编辑会丢
-                                    flushEdits(providerId)
+                                    flushEdits()
                                     onSelect(p.id)
-                                    // 同步回填新档 provider 的 URL/Key（防抖旧值写入新 provider）
-                                    val np = providers.firstOrNull { prov -> prov.id == p.providerId }
-                                    baseUrl = np?.baseUrl.orEmpty()
-                                    apiKey = viewModel.getProviderApiKey(p.providerId)
+
                                 }
                                 expandedProfile = false
                             }
@@ -411,10 +389,9 @@ internal fun ModelSetupCard(
                             onClick = {
                                 // 先冲刷旧服务商编辑中的值（防抖任务会随 providerId 变化被取消），
                                 // 再切档位 —— 否则 500ms 内切走的编辑会丢
-                                flushEdits(providerId)
+                                flushEdits()
                                 viewModel.upsertProfile(sel.copy(providerId = prov.id))
-                                baseUrl = prov.baseUrl
-                                apiKey = viewModel.getProviderApiKey(prov.id)
+
                                 expandedProvider = false
                             }
                         )
@@ -425,7 +402,7 @@ internal fun ModelSetupCard(
             // ── Base URL（选服务商后自动预填，仍可手改；防抖 500ms 落盘）──
             OutlinedTextField(
                 value = baseUrl,
-                onValueChange = { baseUrl = it },
+                onValueChange = connectionEditor::editUrl,
                 label = { Text("Base URL") },
                 leadingIcon = { Icon(Icons.Outlined.Link, null, Modifier.size(18.dp)) },
                 supportingText = {
@@ -465,8 +442,8 @@ internal fun ModelSetupCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     TextButton(onClick = {
-                        baseUrl = officialBaseUrl
-                        viewModel.setProviderBaseUrl(providerId, officialBaseUrl)
+                        connectionEditor.editUrl(officialBaseUrl)
+                        connectionEditor.flushUrl()
                     }) {
                         Icon(Icons.Outlined.Refresh, null, Modifier.size(14.dp))
                         Spacer(Modifier.width(4.dp))
@@ -478,7 +455,7 @@ internal fun ModelSetupCard(
             // ── API Key（用户输入；防抖 500ms 加密落盘）──
             OutlinedTextField(
                 value = apiKey,
-                onValueChange = { apiKey = it },
+                onValueChange = connectionEditor::editKey,
                 label = { Text("API Key") },
                 leadingIcon = { Icon(Icons.Outlined.Key, null, Modifier.size(18.dp)) },
                 trailingIcon = {
@@ -528,7 +505,7 @@ internal fun ModelSetupCard(
                         scope.launch {
                             // 拉模型前先冲刷防抖中的 URL/Key，确保请求用的就是眼前编辑的值
                             flushEdits()
-                            viewModel.fetchModels(providerId, baseUrlOverride = baseUrl).fold(
+                            viewModel.fetchModels(connectionEditor.providerId, baseUrlOverride = connectionEditor.state.value.baseUrl).fold(
                                 onSuccess = { list ->
                                     discoveredModels = list
                                     showModelPicker = true
@@ -569,7 +546,7 @@ internal fun ModelSetupCard(
                     if (sel.isDefault) stringResource(R.string.model_is_default)
                     else stringResource(R.string.model_set_default)
                 ) }
-                TextButton(onClick = onManageProviders) { Text("Providers…") }
+                TextButton(onClick = { flushEdits(); onManageProviders() }) { Text("Providers…") }
                 TextButton(onClick = onManageRoles) { Text(stringResource(R.string.model_role_mapping)) }
             }
 
