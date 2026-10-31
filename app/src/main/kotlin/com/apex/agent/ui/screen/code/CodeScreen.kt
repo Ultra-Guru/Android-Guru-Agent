@@ -425,6 +425,7 @@ fun CodeScreen(
                     onChipsChange = { viewModel.setPendingCommands(it) },
                     backdrop = streamBackdrop,
                     githubTokenManager = viewModel.githubTokenManager,
+                    mcpManager = viewModel.mcpManager,
                     toolkit = toolkit,
                     // 回车键行为（与 Agent 屏同源设置；此前 Coding 屏落默认值，
                     // Enter 被消费却无动作 —— 换不了行的直接根因）
@@ -781,6 +782,9 @@ private fun CodeInputBar(
     onChipsChange: (List<PendingPipelineCommand>) -> Unit,
     backdrop: Backdrop,
     githubTokenManager: com.apex.agent.github.GithubTokenManager,
+    // v1.9：GitHub 图标下拉里的 MCP 配置对话框需要（两台服务器启停 +
+    // 官方远程工具集订阅；非角色专属的输入框级配置面）。
+    mcpManager: com.apex.agent.core.tools.mcp.McpManager,
     toolkit: com.apex.agent.ui.chatkit.ChatToolkitStore,
     // 回车键行为（send | newline，设置页可配；Agent 屏同款消费）
     sendKeyBehavior: String = "send",
@@ -868,8 +872,8 @@ private fun CodeInputBar(
                 // 选包激活 + chip 回灌输入框 + /fusion 强制使用）═══
                 FusionCodingButton(onBundleChip = onAddPendingCommand)
 
-                // ═══ GitHub 连接按钮（#197 从 Agent 屏迁入）═══
-                GithubIconButton(tokenManager = githubTokenManager)
+                // ═══ GitHub 连接按钮（#197 从 Agent 屏迁入；v1.9 下拉含 MCP 配置）═══
+                GithubIconButton(tokenManager = githubTokenManager, mcpManager = mcpManager)
 
                 // ═══ 小圆环：函数调用/搜索/时间/结构化输出/规则（#197 迁入）═══
                 ToolkitRingButton(
