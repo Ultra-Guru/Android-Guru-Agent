@@ -93,7 +93,27 @@ class LegacyExecTool(
         val obs = obsResult.getOrElse { throw it }
         // 修复：成功路径此前恒报 durationMs=0 —— 现在如实测量端到端耗时
         val durationMs = (System.nanoTime() - t0) / 1_000_000
-        return Output(output = obs.raw ?: "", exitCode = exitCode, truncated = obs.truncated, durationMs = durationMs, timedOut = false)
+        // overrun 诚实上报（P1 修复）：RingTerminalBuffer 溢出后 observe 返回
+        // raw="" + overrun=true（afterCursor 比最老数据还老）—— 旧实现只透传
+        // obs.truncated，模型看到「空输出且未截断」，把缓冲溢出误判成命令
+        // 无输出。现在 overrun 也标记 truncated，并在 output 里写明发生了
+        // 什么、怎么重读（从 oldestCursor 重同步）。
+        val honestOutput = if (obs.overrun) {
+            val notice = "[OUTPUT BUFFER OVERRUN: the session ring buffer (256KB) was " +
+                "overwritten after cursor ${run.startCursor}; earliest available cursor is " +
+                "${obs.oldestCursor}. Re-observe with afterCursor=${obs.oldestCursor} to read " +
+                "the surviving tail, or re-run the command with narrower output.]"
+            (obs.raw ?: "").ifEmpty { notice }
+        } else {
+            obs.raw ?: ""
+        }
+        return Output(
+            output = honestOutput,
+            exitCode = exitCode,
+            truncated = obs.truncated || obs.overrun,
+            durationMs = durationMs,
+            timedOut = false
+        )
     }
 
     override suspend fun invoke(arguments: String): String {

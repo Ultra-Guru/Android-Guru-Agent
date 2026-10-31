@@ -8,7 +8,6 @@ import com.apex.agent.core.tools.ToolAnnotations
 import com.apex.agent.core.tools.ToolCategory
 import com.apex.agent.core.tools.ToolMetadata
 import com.apex.agent.core.tools.ToolRisk
-import java.util.Locale
 
 /**
  * 系统意图工具（#172 高级设备工具包）：分享与深链。
@@ -111,6 +110,18 @@ class DeepLinkTool(
                 scheme.first().isLetter() &&
                 scheme.all { it.isLetterOrDigit() || it in "+-." }
         }
+
+        /**
+         * #460：危险 scheme 判定（JVM 可测）。深链工具设计上放行 http(s)与
+         * market:///app 内部页等合法深链，但代码执行（javascript/data）、本地
+         * 文件触达（file/content）、组件穿透（intent）不属于「打开链接」语义。
+         */
+        fun isDangerousScheme(scheme: String): Boolean =
+            scheme.lowercase() in DANGEROUS_URI_SCHEMES
+
+        private val DANGEROUS_URI_SCHEMES = setOf(
+            "javascript", "vbscript", "data", "file", "content", "intent"
+        )
     }
 }
 
@@ -149,15 +160,10 @@ object AndroidIntents {
             if (uri.scheme.isNullOrBlank()) {
                 return "Error: '$uriText' has no scheme — use a full URI like https://example.com or the app's deep-link scheme."
             }
-            // scheme 安全门：拒绝注入/重定向载体（javascript: XSS、intent: 嵌套
-            // extra 启动任意组件、file/content 越权读取——本地文件走专门的
-            // FileProvider 工具）；大小写不敏感，其余 scheme（http/app/market…）
-            // 由 ACTION_VIEW + 用户选目标应用兑底。
-            val scheme = uri.scheme!!.lowercase(Locale.ROOT)
-            if (scheme in BLOCKED_SCHEMES) {
-                return "Error: scheme '$scheme' is blocked for safety (no javascript:/data:/intent: " +
-                    "or file: URIs via this tool). Use an https:// link, or the dedicated file " +
-                    "tools (FileProvider-backed) for local files."
+            // #460：危险 scheme 拦截 —— 模型被诱导输出 javascript:/file: 之类
+            // URI 时在工具边界拒绝（深链语义只放行链接型 scheme）。
+            if (DeepLinkTool.isDangerousScheme(uri.scheme!!)) {
+                return "Error: scheme '${uri.scheme}' is blocked for safety — this tool only opens web links and app deep links, never executable or local-file URIs."
             }
             val view = Intent(Intent.ACTION_VIEW, uri).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -174,14 +180,4 @@ object AndroidIntents {
 
     /** 分享文本上限（chars）——Binder 事务 1MB 进程级共享的保守安全值。 */
     private const val MAX_SHARE_CHARS = 200_000
-
-    /**
-     * 危险 scheme（小写）：ACTION_VIEW 载体中的注入/重定向通道。
-     * javascript/data → WebView 注入载体；intent → Intent 重定向
-     * （嵌套 extra 可启动任意组件）；file/content → 本地文件越权读取
-     * （应走 FileProvider）；about/blob/ws 同属浏览器内部通道。
-     */
-    private val BLOCKED_SCHEMES = setOf(
-        "javascript", "data", "intent", "about", "blob", "file", "content", "ws", "wss"
-    )
 }

@@ -604,6 +604,12 @@ data class AgentSettings(
     // mcpScopeIsolation：MCP/技能复合工具按市场分级在引擎侧隔离的开关
     // （默认开；关闭后回到 v2 的全局可见行为）。
     val codingToolSurface: String = "full",
+    // codeOutputMode：Coding 屏输出展示档——"streaming"（默认，Rikka 风格
+    // 流式：逐字/逐胶囊实时渲染）| "complete"（整段模式：生成中仅加载进度
+    // 卡，run 收束后一次性渲染完整时间轴）。UI 渲染层开关（引擎/会话零
+    // 参与），档位在每轮 run 开始时捕获（运行中改设置不打断当前轮）。
+    // 见 ui/screen/code/CodeOutputMode.kt。
+    val codeOutputMode: String = "streaming",
     val codingReadGuard: Boolean = true,
     val codingAutoRules: Boolean = true,
     val mcpScopeIsolation: Boolean = true,

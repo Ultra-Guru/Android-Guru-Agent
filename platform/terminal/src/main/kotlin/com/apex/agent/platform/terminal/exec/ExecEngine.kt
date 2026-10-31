@@ -53,7 +53,17 @@ class ExecEngine(
         val postKillDrainGraceMs: Long = 800
     )
 
-    suspend fun execute(request: ExecRequest): CommandResult = withContext(dispatcher) {
+    /**
+     * 执行一个请求。
+     *
+     * @param onStdoutChunk 可选的 stdout 增量预览回调（尽力而为：仅人看实时
+     *   呈现，不保证完整/不保证 UTF-8 边界对齐；权威输出仍在返回值）。
+     *   回调在 IO drain 协程上调用 —— 实现方自行保证线程安全。
+     */
+    suspend fun execute(
+        request: ExecRequest,
+        onStdoutChunk: ((chunk: String) -> Unit)? = null
+    ): CommandResult = withContext(dispatcher) {
         val startedAt = System.nanoTime()
 
         val spawned: SpawnedCommand = try {
@@ -84,9 +94,9 @@ class ExecEngine(
         var exitCode: Int? = null
         try {
             // ── 并发排空（阻塞读跑在 IO 线程；waitFor 与之并发，超时才真正生效）──
-            drainJobs += drainScope.launch { drainStream(spawned.stdout, stdoutCapture) }
+            drainJobs += drainScope.launch { drainStream(spawned.stdout, stdoutCapture, onStdoutChunk) }
             if (stderrStream != null) {
-                drainJobs += drainScope.launch { drainStream(stderrStream, stderrCapture) }
+                drainJobs += drainScope.launch { drainStream(stderrStream, stderrCapture, null) }
             }
 
             // ── 等待退出或超时（runInterruptible：协程取消 → 线程中断 → finally 杀进程）──
@@ -148,13 +158,24 @@ class ExecEngine(
 
     // ── 内部 ──
 
-    private suspend fun CoroutineScope.drainStream(stream: InputStream, target: BoundedCapture) {
+    private suspend fun CoroutineScope.drainStream(
+        stream: InputStream,
+        target: BoundedCapture,
+        onChunk: ((chunk: String) -> Unit)? = null
+    ) {
         try {
             val buf = ByteArray(8 * 1024)
             while (true) {
                 val n = stream.read(buf)
                 if (n < 0) break
-                if (n > 0) target.write(buf, 0, n)
+                if (n > 0) {
+                    target.write(buf, 0, n)
+                    // 预览回调：尽力而为（宽容解码；跨块多字节字符可能出替换符，
+                    // 预览容错；异常不碰主流程）
+                    if (onChunk != null) {
+                        runCatching { onChunk(String(buf, 0, n, Charsets.UTF_8)) }
+                    }
+                }
             }
         } catch (_: java.io.IOException) {
             // 进程被杀/管道破裂：已采集内容即为终态 —— 诚实保留

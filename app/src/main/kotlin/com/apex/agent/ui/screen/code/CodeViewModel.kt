@@ -255,6 +255,8 @@ class CodeViewModel @Inject constructor(
         // v1.5 双思考逻辑：恢复持久化档位（空/未知 → 深潜）。先于 setMode：
         // GOAL 恢复强制深潜线，在后恢复会反切持久化线、破坏「GOAL 恒走深潜」。
         restoreLogicMode()
+        // v1.5 输出展示档恢复（流式/整段；见 CodeOutputModeOps.kt）
+        restoreOutputMode()
         // #197：Coding 屏模式同步（引擎侧恒为 BUILD/PLAN；未知值回退 BUILD）
         val startupMode = settingsRepository.agentSettings.value.let { s ->
             s.codeExecutionMode.takeIf { it.isNotBlank() }
@@ -620,6 +622,8 @@ class CodeViewModel @Inject constructor(
         recentToolOutcomes.clear()
 
         // 胶囊时间轴：用户气泡入轴 + 渲染 ticker 启动（25ms ≤40Hz 攒批）。
+        // 输出展示档本轮捕获（运行中改设置不打断当前轮，见 CodeOutputModeOps.kt）。
+        captureRunOutputMode()
         streamSession.beginRun(goal)
         startRenderTicker()
 

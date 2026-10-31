@@ -1,5 +1,6 @@
 package com.apex.agent.core.code.stream
 
+import com.apex.agent.core.engine.ToolCallOrigin
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
 import java.io.File
@@ -35,6 +36,9 @@ import kotlinx.serialization.json.Json
  */
 object CodeStreamCheckpoint {
 
+    /** #567：工作区 id 清洗正则预编译 —— fileNameOf 每次调用复用。 */
+    private val UNSAFE_FILENAME_CHARS = Regex("[^A-Za-z0-9_-]")
+
     // ═══ 可持久化模型（全扁平，kotlinx.serialization）═══
 
     @Serializable
@@ -53,7 +57,10 @@ object CodeStreamCheckpoint {
         val exitCode: Int? = null,
         val logTail: String = "",
         val diffText: String? = null,
-        val summary: String? = null
+        val summary: String? = null,
+        // 溯源（v1.5.1）：BUILTIN 缺省 + ignoreUnknownKeys 双向兼容旧档。
+        val originName: String = "BUILTIN",
+        val originLabel: String? = null
     )
 
     @Serializable
@@ -78,7 +85,12 @@ object CodeStreamCheckpoint {
         val runToolCalls: Int = 0,
         val runFailedCalls: Int = 0,
         val runFilesTouched: Int = 0,
-        val runDurationMs: Long = 0
+        val runDurationMs: Long = 0,
+        // 溯源分解（v1.5.1）：技能 / MCP 计数与清单；旧档缺省空。
+        val runSkillCalls: Int = 0,
+        val runMcpCalls: Int = 0,
+        val runSkills: List<String> = emptyList(),
+        val runMcpServers: List<String> = emptyList()
     )
 
     @Serializable
@@ -167,7 +179,11 @@ object CodeStreamCheckpoint {
                     toolCalls = storable.runToolCalls,
                     failedCalls = storable.runFailedCalls,
                     filesTouched = storable.runFilesTouched,
-                    durationMs = storable.runDurationMs
+                    durationMs = storable.runDurationMs,
+                    skillCalls = storable.runSkillCalls,
+                    mcpCalls = storable.runMcpCalls,
+                    skills = storable.runSkills,
+                    mcpServers = storable.runMcpServers
                 )
                 else -> null
             }
@@ -211,7 +227,7 @@ object CodeStreamCheckpoint {
     }
 
     private fun fileNameOf(workspaceId: String): String {
-        val safe = workspaceId.replace(Regex("[^A-Za-z0-9_-]"), "_")
+        val safe = workspaceId.replace(UNSAFE_FILENAME_CHARS, "_")
         return "stream_$safe.json"
     }
 
@@ -237,7 +253,9 @@ object CodeStreamCheckpoint {
                 exitCode = call.exitCode,
                 logTail = call.logTail.take(LOG_TAIL_PERSIST_MAX),
                 diffText = call.diffText,
-                summary = call.summary
+                summary = call.summary,
+                originName = call.origin.name,
+                originLabel = call.originLabel
             )
         )
         is StreamEntry.VerifyCycleEntry -> StorableStreamEntry(
@@ -263,7 +281,11 @@ object CodeStreamCheckpoint {
             runToolCalls = toolCalls,
             runFailedCalls = failedCalls,
             runFilesTouched = filesTouched,
-            runDurationMs = durationMs
+            runDurationMs = durationMs,
+            runSkillCalls = skillCalls,
+            runMcpCalls = mcpCalls,
+            runSkills = skills,
+            runMcpServers = mcpServers
         )
     }
 
@@ -282,7 +304,10 @@ object CodeStreamCheckpoint {
         exitCode = exitCode,
         logTail = logTail,
         diffText = diffText,
-        summary = summary
+        summary = summary,
+        // 溯源回放：旧档缺省 BUILTIN（未打标 = 内置，与既有渲染一致）
+        origin = runCatching { ToolCallOrigin.valueOf(originName) }.getOrDefault(ToolCallOrigin.BUILTIN),
+        originLabel = originLabel
     )
 
     private fun kindNameOf(kind: ToolKind): String = when (kind) {
@@ -296,6 +321,7 @@ object CodeStreamCheckpoint {
         ToolKind.TEST -> "TEST"
         ToolKind.PLAN -> "PLAN"
         ToolKind.MCP_CUSTOM -> "MCP_CUSTOM"
+        ToolKind.SKILL -> "SKILL"
     }
 
     private fun kindOf(name: String): ToolKind = when (name) {
@@ -308,6 +334,7 @@ object CodeStreamCheckpoint {
         "LINT" -> ToolKind.LINT
         "TEST" -> ToolKind.TEST
         "PLAN" -> ToolKind.PLAN
+        "SKILL" -> ToolKind.SKILL
         else -> ToolKind.MCP_CUSTOM
     }
 

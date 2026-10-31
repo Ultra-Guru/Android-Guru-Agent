@@ -279,6 +279,8 @@
     <string name="code_stream_run_tools_fmt">%1$d tool calls</string>
     <string name="code_stream_run_files_fmt">%1$d files</string>
     <string name="code_stream_run_failed_fmt">%1$d failed</string>
+    <string name="code_stream_run_skills_fmt">%1$d skill calls</string>
+    <string name="code_stream_run_mcp_fmt">%1$d MCP calls</string>
     <!-- ═══ Thinking tier selector v2: short tier names + capsule labels ═══ -->
     <string name="code_thinking_chip">Thinking · %1$s</string>
     <string name="code_thinking_short_none">Off</string>
@@ -371,4 +373,31 @@
     <string name="code_thinking_view_maximum">Danger-zone refactors: core data structures, shared utility functions, state-machine transitions — one broken invariant cascades into a chain of bugs. Invariant identification, ripple-effect review and the final three-question checklist are all enabled, at iterations x1.5. Worth it only where a wrong edit costs more to roll back than the thinking does.</string>
     <string name="code_thinking_view_ultracode">Cross-module deep changes: one edit ripples into three or more modules, or you must map the whole call chain before starting. The coding loop of dependency map → candidate edits → risk ranking → minimal change → immediate verification → regression sweep, at iterations x2.0 with an output budget of 12000 — several times the token cost of STANDARD, in exchange for verified edits and no regression debt.</string>
     <string name="code_thinking_view_apexcode">Architecture-scale changes: framework swaps, data-layer migrations, redrawing module boundaries — the kind of work where a wrong edit sinks the project. Impact-radius mapping, a multi-option comparison matrix, adversarial self-review, a full verification matrix and evidence-chain reporting, at iterations x3.0, budget 65536, with later compaction preserving the full evidence chain — the cost ceiling of the whole ladder. Reserve it for genuinely big jobs: enabling it for daily tasks just burns tokens.</string>
-    <string name="code_thinking_view_auto">Pick this when unsure: the engine re-picks the tier each turn from task complexity (length, multi-step indicators, code content, risk words, error history) — simple questions drop to NONE instantly, and deep-water situations auto-escalate to ULTRACODE. It never auto-picks APEXCODE (the cost guardrail); the top tier must always be chosen manually.</string></resources>
+    <string name="code_thinking_view_auto">Pick this when unsure: the engine re-picks the tier each turn from task complexity (length, multi-step indicators, code content, risk words, error history) — simple questions drop to NONE instantly, and deep-water situations auto-escalate to ULTRACODE. It never auto-picks APEXCODE (the cost guardrail); the top tier must always be chosen manually.</string>    <!-- Complete-mode generating card (v1.5) -->
+    <string name="code_stream_generating_title">Generating complete reply…</string>
+    <string name="code_stream_generating_tools_fmt">%1$d tool calls</string>
+    <string name="code_stream_generating_failed_fmt">%1$d failed</string>
+    <!-- ═══ Tool usage aggregate + origin attribution (v1.5.1) ═══ -->
+    <string name="code_stream_aggregate_title_fmt">%1$d tool calls</string>
+    <string name="code_stream_aggregate_builtin_fmt">Built-in %1$d</string>
+    <string name="code_stream_aggregate_skill_fmt">Skills %1$d</string>
+    <string name="code_stream_aggregate_mcp_fmt">MCP %1$d</string>
+    <string name="code_stream_aggregate_section_skills">Skills</string>
+    <string name="code_stream_aggregate_section_mcp">MCP servers</string>
+    <string name="code_stream_aggregate_section_builtin">Built-in tools</string>
+    <string name="code_stream_aggregate_details">Call details</string>
+    <string name="code_stream_aggregate_failed_short_fmt">%1$d failed</string>
+    <string name="code_stream_kind_read">Read</string>
+    <string name="code_stream_kind_write">Write</string>
+    <string name="code_stream_kind_edit">Edit</string>
+    <string name="code_stream_kind_grep">Search</string>
+    <string name="code_stream_kind_bash">Command</string>
+    <string name="code_stream_kind_git">Git</string>
+    <string name="code_stream_kind_lint">Lint</string>
+    <string name="code_stream_kind_test">Test</string>
+    <string name="code_stream_kind_plan">Plan</string>
+    <string name="code_stream_kind_mcp">MCP</string>
+    <string name="code_stream_kind_skill">Skill</string>
+    <string name="code_stream_detail_origin_skill">Skill</string>
+    <string name="code_stream_detail_origin_mcp">MCP</string>
+</resources>

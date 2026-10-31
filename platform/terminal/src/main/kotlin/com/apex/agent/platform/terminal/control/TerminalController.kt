@@ -76,7 +76,6 @@ interface TerminalController {
  * PR #55 §23: Unified event stream (bounded, no unbounded cache).
  */
 sealed interface TerminalControlEvent {
-    data class SessionStateChanged(val sessionId: Long, val from: String, val to: String) : TerminalControlEvent
     data class JobStateChanged(val sessionId: Long, val jobId: Long, val newState: String) : TerminalControlEvent
     data class OutputAvailable(val sessionId: Long, val cursor: Long) : TerminalControlEvent
     data class ProcessExited(val sessionId: Long, val jobId: Long?, val exitCode: Int?) : TerminalControlEvent

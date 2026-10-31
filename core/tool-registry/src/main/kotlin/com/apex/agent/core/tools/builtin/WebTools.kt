@@ -488,6 +488,10 @@ class WebSearchTool(
         if (!url.contains("bing.com/ck/")) return url
         return try {
             val clean = url.replace("&amp;", "&")
+            // #448：substringAfter 在分隔符缺失时返回整串 —— 无 &u= 参数的
+            // /ck/ 链接（如纯 FORM 跟踪变体）会被误当 base64 解码出垃圾，
+            // 先校验存在性，缺参即原样返回。
+            if (!clean.contains("&u=")) return url
             val u = clean.substringAfter("&u=").substringBefore("&")
             if (u.length > 2) {
                 val b64 = u.substring(2)

@@ -1,6 +1,7 @@
 package com.apex.agent.platform.terminal.tools.v2
 
 import com.apex.agent.platform.TerminalExec.AnsiMode
+import com.apex.agent.platform.TerminalExec.AnsiSanitizer
 import com.apex.agent.platform.TerminalExec.CommandResult
 import com.apex.agent.platform.TerminalExec.ExecEngine
 import com.apex.agent.platform.TerminalExec.ExecRequest
@@ -24,6 +25,10 @@ import kotlinx.serialization.json.jsonPrimitive
  * 执行形态（Termux Run Command / OperIt bridge 语义）：pipe 通道 spawn
  * （stdout/stderr 分离）→ 并发有界采集 → 真实 waitpid → ANSI 净化 → head+tail
  * 限长 → 结构化 JSON。
+ *
+ * 流式预览（[invokeStreaming]）：执行期间经 onPreview 增量上报净化后的
+ * stdout（时间窗 150ms + 体量窗 16KB 双阈值节流，总预览上限 256KB）——
+ * 终端胶囊实时滚动；权威输出仍是最终 JSON（模型契约零变化）。
  *
  * JSON 输入（snake_case）：
  * ```json
@@ -91,7 +96,14 @@ class TerminalExecTool(
         {"type":"object","properties":{"command":{"type":"string","description":"Shell command to execute"},"cwd":{"type":"string","description":"Working directory (default: remembered cd dir)"},"timeout_ms":{"type":"integer","default":30000,"description":"Kill after this many ms (1000..600000)"},"max_output_chars":{"type":"integer","default":12000},"max_error_chars":{"type":"integer","default":6000},"head_lines":{"type":"integer","default":60},"tail_lines":{"type":"integer","default":60},"ansi":{"type":"string","enum":["strip","keep"],"default":"strip"},"env":{"type":"object","additionalProperties":{"type":"string"},"description":"Extra env vars; honored on local-sh/shizuku channels (env_applied=false means the channel could not pass them, e.g. su -c)"}},"required":["command"]}
     """.trimIndent()
 
-    suspend fun execute(input: Input): Output {
+    suspend fun execute(input: Input): Output = execute(input, onPreview = null)
+
+    /**
+     * 带实时预览的执行（[onPreview] 可空 —— 空时行为与 [execute] 完全一致）。
+     * 预览经过 ANSI 净化 + 节流（[PreviewThrottle]），尽力而为：不进结果、
+     * 不影响正确性。
+     */
+    suspend fun execute(input: Input, onPreview: ((chunk: String) -> Unit)?): Output {
         // ── 门禁（app 层注入；拒绝 = 结构化 126，不重试原命令）──
         // effectiveCwd 先行解析：审批弹窗需要「将在哪个目录执行」（v3：双模式下
         // 用户必须能分辨命令跑在哪个根，裸命令字符串不足以支撑授权决策）。
@@ -121,7 +133,14 @@ class TerminalExecTool(
             tailLines = input.tailLines,
             ansi = input.ansi
         )
-        val result = engine.execute(request)
+        val throttle = onPreview?.let { PreviewThrottle(it) }
+        val result = if (throttle != null) {
+            engine.execute(request) { chunk ->
+                throttle.append(AnsiSanitizer.sanitize(chunk, input.ansi).text)
+            }.also { throttle.flushFinal() }
+        } else {
+            engine.execute(request)
+        }
 
         if (result.exitCode == 0 && result.spawnError == null) {
             onCommandSucceeded?.invoke(input.command, result)
@@ -129,14 +148,36 @@ class TerminalExecTool(
         return Output.from(result, error = if (result.spawnError != null) "spawn_failed" else null)
     }
 
+    /**
+     * 流式预览入口（TerminalTool 可选能力）：解析参数 → 带预览执行 →
+     * 序列化结构化 JSON。预览节流见 [PreviewThrottle]；返回值与 [invoke]
+     * 同一契约（权威输出，模型可见信息零变化）。
+     */
+    override suspend fun invokeStreaming(
+        arguments: String,
+        onPreview: (chunk: String) -> Unit
+    ): String {
+        val json = Json.parseToJsonElement(arguments).jsonObject
+        val input = parseInput(json)
+        val out = execute(input, onPreview = onPreview)
+        return serializeOutput(out)
+    }
+
     override suspend fun invoke(arguments: String): String {
         val json = Json.parseToJsonElement(arguments).jsonObject
+        val input = parseInput(json)
+        val out = execute(input)
+        return serializeOutput(out)
+    }
+
+    /** 参数解析（invoke / invokeStreaming 共用；防御式钳制不变）。 */
+    private fun parseInput(json: kotlinx.serialization.json.JsonObject): Input {
         val command = json["command"]?.jsonPrimitive?.content
             ?: throw IllegalArgumentException("TerminalError:InvalidInput — 'command' (string) required")
         if (command.isBlank()) {
             throw IllegalArgumentException("TerminalError:InvalidInput — 'command' must not be blank")
         }
-        val input = Input(
+        return Input(
             command = command,
             cwd = json["cwd"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() },
             timeoutMs = clamp(
@@ -169,27 +210,86 @@ class TerminalExecTool(
                 }.getOrDefault(emptyMap())
             } ?: emptyMap()
         )
-        val out = execute(input)
-        return buildJsonObject {
-            put("stdout", JsonPrimitive(out.stdout))
-            put("stderr", JsonPrimitive(out.stderr))
-            put("exit_code", JsonPrimitive(out.exitCode))
-            put("duration_ms", JsonPrimitive(out.durationMs))
-            put("truncated", JsonPrimitive(out.truncated))
-            put("timed_out", JsonPrimitive(out.timedOut))
-            put("killed", JsonPrimitive(out.killed))
-            put("stdout_bytes_total", JsonPrimitive(out.stdoutBytesTotal))
-            put("stderr_bytes_total", JsonPrimitive(out.stderrBytesTotal))
-            put("stdout_truncated", JsonPrimitive(out.stdoutTruncated))
-            put("stderr_truncated", JsonPrimitive(out.stderrTruncated))
-            put("ansi_mode", JsonPrimitive(out.ansiMode))
-            put("ansi_sequences_removed", JsonPrimitive(out.ansiSequencesRemoved))
-            put("channel", JsonPrimitive(out.channel))
-            put("stderr_separated", JsonPrimitive(out.stderrSeparated))
-            put("env_applied", JsonPrimitive(out.envApplied))
-            out.cwd?.let { put("cwd", JsonPrimitive(it)) }
-            out.error?.let { put("error", JsonPrimitive(it)) }
-        }.toString()
+    }
+
+    /** 输出序列化（invoke / invokeStreaming 共用）。 */
+    private fun serializeOutput(out: Output): String = buildJsonObject {
+        put("stdout", JsonPrimitive(out.stdout))
+        put("stderr", JsonPrimitive(out.stderr))
+        put("exit_code", JsonPrimitive(out.exitCode))
+        put("duration_ms", JsonPrimitive(out.durationMs))
+        put("truncated", JsonPrimitive(out.truncated))
+        put("timed_out", JsonPrimitive(out.timedOut))
+        put("killed", JsonPrimitive(out.killed))
+        put("stdout_bytes_total", JsonPrimitive(out.stdoutBytesTotal))
+        put("stderr_bytes_total", JsonPrimitive(out.stderrBytesTotal))
+        put("stdout_truncated", JsonPrimitive(out.stdoutTruncated))
+        put("stderr_truncated", JsonPrimitive(out.stderrTruncated))
+        put("ansi_mode", JsonPrimitive(out.ansiMode))
+        put("ansi_sequences_removed", JsonPrimitive(out.ansiSequencesRemoved))
+        put("channel", JsonPrimitive(out.channel))
+        put("stderr_separated", JsonPrimitive(out.stderrSeparated))
+        put("env_applied", JsonPrimitive(out.envApplied))
+        out.cwd?.let { put("cwd", JsonPrimitive(it)) }
+        out.error?.let { put("error", JsonPrimitive(it)) }
+    }.toString()
+
+    /**
+     * 预览节流器：时间窗（[FLUSH_INTERVAL_MS]）+ 体量窗（[FLUSH_SIZE_CHARS]）
+     * 双阈值冲刷 + 总量上限（[MAX_TOTAL_CHARS]，超出即静默丢弃后续 —— 终端
+     * 尾窗只展示最新 16KB，总量上限仅防内存膨胀）+ 收尾冲刷（EOF 尾巴不丢）。
+     *
+     * 线程模型：drain 协程（append）与流收集协程（flushFinal）并发 ——
+     * 监视器锁保护；回调在锁外调用（防回调内再进本锁死锁）。
+     */
+    internal class PreviewThrottle(
+        private val onPreview: (chunk: String) -> Unit
+    ) {
+        private val pending = StringBuilder()
+        private var lastFlushAt = 0L
+        private var totalForwarded = 0
+
+        fun append(chunk: String) {
+            if (chunk.isEmpty()) return
+            val flushNow: String? = synchronized(this) {
+                if (totalForwarded >= MAX_TOTAL_CHARS) return
+                pending.append(chunk)
+                val now = System.currentTimeMillis()
+                val sizeHit = pending.length >= FLUSH_SIZE_CHARS
+                val timeHit = lastFlushAt == 0L || now - lastFlushAt >= FLUSH_INTERVAL_MS
+                if (sizeHit || timeHit) drainLocked(now) else null
+            }
+            flushNow?.let { runCatching { onPreview(it) } }
+        }
+
+        /** 收尾：冲刷残留尾巴（EOF 后调用 —— 预览末段不丢）。 */
+        fun flushFinal() {
+            val flushNow: String? = synchronized(this) {
+                if (pending.isNotEmpty()) drainLocked(System.currentTimeMillis()) else null
+            }
+            flushNow?.let { runCatching { onPreview(it) } }
+        }
+
+        private fun drainLocked(now: Long): String? {
+            if (pending.isEmpty()) return null
+            // 总量上限：截到剩余额度（最后一次转发后静默丢弃）
+            val remaining = MAX_TOTAL_CHARS - totalForwarded
+            val out = if (pending.length <= remaining) pending.toString()
+            else pending.take(remaining.coerceAtLeast(0))
+            totalForwarded += out.length
+            pending.setLength(0)
+            lastFlushAt = now
+            return out.takeIf { it.isNotEmpty() }
+        }
+
+        private companion object {
+            /** 时间窗：与 TerminalPulseBuffer 的 120ms 脉冲同量级（略宽）。 */
+            const val FLUSH_INTERVAL_MS = 150L
+            /** 体量窗：快速输出也能及时上屏。 */
+            const val FLUSH_SIZE_CHARS = 16 * 1024
+            /** 总量上限：防 pathological 输出把预览通道灌爆（终端只看尾窗）。 */
+            const val MAX_TOTAL_CHARS = 256 * 1024
+        }
     }
 
     private fun clamp(v: Long, min: Long, max: Long): Long = v.coerceIn(min, max)
