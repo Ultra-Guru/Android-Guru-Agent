@@ -75,12 +75,19 @@ object FileOpener {
     }
 
     /**
-     * 打开外部 URL（http/https）：优先唤起能处理该 scheme 的应用（浏览器等）。
+     * 打开外部 URL（仅 http/https）：优先唤起能处理该 scheme 的应用（浏览器等）。
      *
      * Markdown 里的视频卡 / 链接点击时使用；与 [openFile] 的区别是无需
      * FileProvider（remote URL 不在沙箱目录内）。
+     * #565：出口统一 scheme 白名单 —— 调用方（如 MarkdownText 的 onOpenLink
+     * 回调）不保证全部前置检查，非 http(s) 直接拒绝防 intent 重定向。
      */
     fun openUrl(context: Context, url: String): Boolean {
+        val scheme = Uri.parse(url).scheme?.lowercase()
+        if (scheme != "http" && scheme != "https") {
+            Log.w(TAG, "Blocked non-http(s) url: $scheme")
+            return false
+        }
         return try {
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 data = Uri.parse(url)
