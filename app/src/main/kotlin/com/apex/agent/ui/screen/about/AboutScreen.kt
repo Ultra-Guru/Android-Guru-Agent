@@ -1041,7 +1041,9 @@ private fun StarCard(onOpen: () -> Unit) {
 
 /**
  * ACTION_VIEW 打开外链的统一出口：runCatching 兜底极端环境无浏览器 Activity
- * 时不崩溃，Toast 告知（本页与 [UpdatePanel] 共用）。
+ * 时不崩溃，Toast 告知（本页与 [UpdatePanel] 共用）。NEW_TASK：context 可能为
+ * 非 Activity（如 Application），不加 flag 会抛 AndroidRuntimeException 被
+ * runCatching 吞掉——不崩溃但外链静默打不开。
  */
 internal fun openUrl(context: android.content.Context, url: String, noBrowserHint: String) {
     // #565：scheme 白名单 —— 本页 url 多为硬编码 https，但 LinkRow 的 url 形参
@@ -1049,7 +1051,9 @@ internal fun openUrl(context: android.content.Context, url: String, noBrowserHin
     val scheme = Uri.parse(url).scheme?.lowercase()
     if (scheme != "http" && scheme != "https") return
     runCatching {
-        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
     }.onFailure {
         Toast.makeText(context, noBrowserHint, Toast.LENGTH_SHORT).show()
     }
