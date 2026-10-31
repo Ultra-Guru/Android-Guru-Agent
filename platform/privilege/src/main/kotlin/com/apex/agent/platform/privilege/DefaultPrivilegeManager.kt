@@ -5,6 +5,8 @@ import android.content.Context
 import android.os.Build
 import android.util.Base64
 import android.view.accessibility.AccessibilityNodeInfo
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.platform.privilege.accessibility.ApexAccessibilityService
 import com.apex.agent.platform.privilege.shizuku.ShizukuCommandExecutor
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -70,7 +72,12 @@ class DefaultPrivilegeManager @Inject constructor(
             // Shizuku 未安装/未初始化：StateFlow 保持 false，executeShell 走 Root/NONE 路径。
             // #260：debug 级留痕区分「未安装」（ClassNotFoundException 类）与
             // 「已安装但监听注册崩了」—— 后者是选路异常，需要现场诊断。
-            android.util.Log.d("PrivilegeManager", "Shizuku binder watch unavailable: ${e::class.simpleName}: ${e.message}")
+            // #595：改走 AppLogger 统一日志中枢（debug 级语义不变，release 不再落 logcat）。
+            AppLogger.instance.debug(
+                LogCategory.SYSTEM,
+                "PrivilegeManager",
+                "Shizuku binder watch unavailable: ${e::class.simpleName}: ${e.message}"
+            )
         }
     }
 
