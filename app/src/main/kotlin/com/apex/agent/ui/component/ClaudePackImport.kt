@@ -73,7 +73,8 @@ fun rememberClaudeImportLauncher(controller: FusionBundleController): androidx.a
                                     "（含 ${imported.skillZips.size} 个脚本资源技能）" else ""
                             feedback.show(
                                 String.format(
-                                    donePattern, it.name,
+                                    // #454：显式 Locale —— 防区域化数字漂移。
+                                    java.util.Locale.US, donePattern, it.name,
                                     it.skills.size,
                                     it.plugins.firstOrNull()
                                         ?.let { p -> countSlashCommands(p) } ?: 0,
