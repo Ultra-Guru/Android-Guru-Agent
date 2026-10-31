@@ -78,4 +78,9 @@
     <string name="settings_v3_github_repo_saved">已保存</string>
     <string name="settings_v3_github_clear">清除</string>
     <string name="settings_v3_github_disconnect">断开连接</string>
+    <!-- Coding 输出展示档（v1.5 流式 / 整段） -->
+    <string name="settings_v3_coding_output_mode">输出方式</string>
+    <string name="settings_v3_coding_output_mode_desc">流式 = 逐字实时显示、实时工具窗；完整 = 生成中仅显示进度卡，运行结束后一次性展示全部内容。下一轮运行生效。</string>
+    <string name="settings_v3_coding_output_mode_streaming">流式（实时逐字）</string>
+    <string name="settings_v3_coding_output_mode_complete">完整（完成后展示）</string>
 </resources>

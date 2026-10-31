@@ -267,9 +267,14 @@ fun CodeScreen(
         val streamBackdrop = rememberLayerBackdrop()
         var lowerStackInsetPx by remember { mutableIntStateOf(0) }
         val lowerStackInsetDp = with(LocalDensity.current) { lowerStackInsetPx.toDp() }
-        // 内联终端胶囊状态：活跃 BASH 或有历史输出即渲染（时间轴末条）
+        // 内联终端胶囊状态：活跃 BASH 或有历史输出即渲染（时间轴末条）。
+        // v1.5 输出展示档：完整档生成中终端尾窗同档静默（实时命令输出属于
+        // 过程条目，由加载进度卡代位），收束后随完整内容一起回归（折叠态）。
+        val completeGenerating = state.isRunning && state.renderMode == CodeOutputMode.COMPLETE
         val terminalState =
-            if (state.stream.activeTerminalCallId != null || state.stream.terminalContent.isNotBlank()) {
+            if (!completeGenerating &&
+                (state.stream.activeTerminalCallId != null || state.stream.terminalContent.isNotBlank())
+            ) {
                 TerminalPanelState(
                     content = state.stream.terminalContent,
                     activeCommand = state.stream.terminalCommandSummary.ifBlank { null },
@@ -284,6 +289,7 @@ fun CodeScreen(
             CodeStreamTimeline(
                 snapshot = state.stream,
                 isStreaming = state.isRunning,
+                renderMode = state.renderMode,
                 bottomInset = lowerStackInsetDp,
                 backdrop = streamBackdrop,
                 onToolClick = { call -> selectedToolCallId = call.id },
