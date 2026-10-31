@@ -183,9 +183,10 @@ internal fun EpisodeCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (episode.appPackage != null) {
+                val pkg = episode.appPackage
+                if (pkg != null) {
                     Text(
-                        episode.appPackage,
+                        pkg,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline,
                         maxLines = 1, overflow = TextOverflow.Ellipsis
@@ -349,8 +350,9 @@ internal fun MacroCard(
                 Spacer(Modifier.height(8.dp))
                 val meta = buildList {
                     add(stringResource(R.string.memory_macro_created_fmt, formatTime(macro.createdAt)))
-                    if (macro.sourceEpisodeId != null) {
-                        add(stringResource(R.string.memory_macro_source_fmt, macro.sourceEpisodeId))
+                    val source = macro.sourceEpisodeId
+                    if (source != null) {
+                        add(stringResource(R.string.memory_macro_source_fmt, source))
                     }
                     if (macro.stats.lastExecutedAt > 0) {
                         add(stringResource(R.string.memory_macro_last_used_fmt, formatTime(macro.stats.lastExecutedAt)))
