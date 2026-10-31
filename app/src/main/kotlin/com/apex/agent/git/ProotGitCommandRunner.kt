@@ -367,7 +367,7 @@ class ProotGitCommandRunner(
                 coroutineContext.ensureActive()
             }
             if (timedOut) {
-                runCatching { process.destroyForcibly() }
+                killProcessTree(process)
                 runCatching { stdoutDrain.join(DRAIN_JOIN_MS) }
                 runCatching { stderrDrain.join(DRAIN_JOIN_MS) }
                 return GitCommandResult(
@@ -384,10 +384,24 @@ class ProotGitCommandRunner(
                 stderr = stderrCapture.snapshot()
             )
         } catch (e: CancellationException) {
-            // 协程取消：销毁进程后原样上抛（保持取消语义诚实）
-            runCatching { process.destroyForcibly() }
+            // 协程取消：收尾进程树（关流+强杀）后原样上抛（保持取消语义诚实）
+            killProcessTree(process)
             throw e
         }
+    }
+
+    /**
+     * 超时/取消收尾：先关三根流再强杀进程——关闭流使 drain 线程阻塞的
+     * read() 立即以 IOException/EOF 退出（interrupt 无法中断阻塞读，关流
+     * 才是有效手段）；不关流时若 git 派生了子进程（ssh/gpg/凭据助手）持有
+     * 管道写端，drain 线程会永久泄漏。与 ProotSandboxCommandRunner.
+     * killProcessTree 同款语义。
+     */
+    private fun killProcessTree(process: Process) {
+        runCatching { process.outputStream.close() }
+        runCatching { process.inputStream.close() }
+        runCatching { process.errorStream.close() }
+        runCatching { process.destroyForcibly() }
     }
 
     /** 起一个 daemon 线程持续 drain 一根流（防管道缓冲区写满死锁）。 */
