@@ -37,6 +37,7 @@ import com.apex.agent.R
 import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.core.code.stream.ToolCallStatus
 import com.apex.agent.core.code.stream.ToolKind
+import com.apex.agent.core.engine.ToolCallOrigin
 
 /**
  * # Code Tool Detail Sheet — 胶囊详情弹层（分族路由）
@@ -103,6 +104,16 @@ internal fun CodeToolDetailSheet(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    // 溯源行（v1.5.1）：技能 id / MCP 服务器名——来自哪层能力
+                    // 生态，详情页显式交代（内置工具不占行）；色与族图标同源
+                    if (call.origin != ToolCallOrigin.BUILTIN) {
+                        Text(
+                            text = originMetaText(call),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = style.color
+                        )
+                    }
                 }
             }
 
@@ -121,6 +132,17 @@ internal fun CodeToolDetailSheet(
             Spacer(Modifier.heightIn(min = 24.dp))
         }
     }
+}
+
+/** 溯源行文案：「技能 · id」/「MCP · server」（无标签退宽名）。 */
+@Composable
+private fun originMetaText(call: StreamToolCall): String {
+    val origin = when (call.origin) {
+        ToolCallOrigin.SKILL -> stringResource(R.string.code_stream_detail_origin_skill)
+        ToolCallOrigin.MCP -> stringResource(R.string.code_stream_detail_origin_mcp)
+        ToolCallOrigin.BUILTIN -> ""
+    }
+    return call.originLabel?.let { "$origin · $it" } ?: origin
 }
 
 /** 状态徽标文案（本地化；不再是裸枚举名 "PARTIAL"）。 */

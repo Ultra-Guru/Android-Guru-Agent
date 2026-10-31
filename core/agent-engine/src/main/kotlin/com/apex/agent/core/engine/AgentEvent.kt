@@ -1,6 +1,21 @@
 package com.apex.agent.core.engine
 
 /**
+ * 工具调用溯源（能力生态三分类）：一次调用来自哪一层。
+ *
+ * 事件层新增字段（ToolCallStart / ToolCallComplete.origin）由引擎在解析
+ * 注册表 id 时从 [com.apex.agent.core.tools.ToolMetadata] 打标 ——
+ * MCP（first-class 注册的远程工具，label = 服务器名）/ SKILL（技能贡献的
+ * composite/script 工具，label = 技能 id）/ BUILTIN（内置工具，无 label）。
+ * 消费端（Coding 胶囊时间轴）据此把「技能」「MCP」与内置工具区分展示，
+ * 不再靠工具名前缀猜测（旧启发式把技能工具误标成「MCP 自定义工具」）。
+ *
+ * 全部带默认值 BUILTIN：kit 适配器（标准线/织机/信使）与旧发射点零改动，
+ * 未打标的调用按内置工具渲染（与既有行为一致）。
+ */
+enum class ToolCallOrigin { BUILTIN, MCP, SKILL }
+
+/**
  * Agent执行过程中发射的所有事件
  * UI层通过Flow<AgentEvent>接收，实现流式更新
  */
@@ -72,7 +87,11 @@ sealed interface AgentEvent {
     data class ToolCallStart(
         val callId: String,
         val toolName: String,
-        val arguments: String
+        val arguments: String,
+        /** 调用溯源（注册表元数据打标；缺省 BUILTIN，kit 路径零改动）。 */
+        val origin: ToolCallOrigin = ToolCallOrigin.BUILTIN,
+        /** 溯源标签：MCP = 服务器名 / SKILL = 技能 id；BUILTIN = null。 */
+        val originLabel: String? = null
     ) : AgentEvent
     
     /** 工具输出（流式）*/
@@ -126,7 +145,11 @@ sealed interface AgentEvent {
         /** 结构化错误类别（spawn_failed / permission_denied / ...）。 */
         val errorKind: String? = null,
         /** 命令在前台等待用户输入（INPUT_REQUIRED）。 */
-        val waitingInput: Boolean = false
+        val waitingInput: Boolean = false,
+        /** 调用溯源（与 ToolCallStart 同款；重放补建胶囊时也携带）。 */
+        val origin: ToolCallOrigin = ToolCallOrigin.BUILTIN,
+        /** 溯源标签：MCP = 服务器名 / SKILL = 技能 id；BUILTIN = null。 */
+        val originLabel: String? = null
     ) : AgentEvent
     
     // ═══ 回复阶段 ═══
