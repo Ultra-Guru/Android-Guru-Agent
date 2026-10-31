@@ -86,7 +86,13 @@ object LongTaskExporter {
         }.apply {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(intent, result.markdownFile.name))
+        // NEW_TASK：调用方 context 类型不可约束（ViewModel 扩展可从任意
+        // Context 传入），非 Activity context 不加 flag 会抛
+        // AndroidRuntimeException——与 StorageViewModel/UsageDashboard 同款。
+        context.startActivity(
+            Intent.createChooser(intent, result.markdownFile.name)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
         true
     }.onFailure { e ->
         AppLogger.instance.warn(

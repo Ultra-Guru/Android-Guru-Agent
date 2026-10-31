@@ -1,0 +1,1 @@
+- 稳定性：长任务导出分享面板补 NEW_TASK 标记，非 Activity 上下文不再抛 AndroidRuntimeException
