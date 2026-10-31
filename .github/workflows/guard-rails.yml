@@ -78,8 +78,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          # PR 事件 checkout 真实 head（非 merge ref）—— base..head 恰为 PR 提交
-          ref: "${{ github.event.pull_request.head.sha || github.sha }}"
+          # Keep the script and workflow on the same event checkout (PR merge ref).
+          # The checker uses base..HEAD with --no-merges, so PR commits remain checked.
       - name: "Commit message convention check (type(scope): subject / keywords)"
         env:
           IS_PR: "${{ github.event_name == 'pull_request' }}"
