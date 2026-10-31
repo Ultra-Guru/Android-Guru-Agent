@@ -85,7 +85,7 @@ fun rememberClaudeImportLauncher(controller: FusionBundleController): androidx.a
                         },
                         onFailure = {
                             feedback.show(
-                                String.format(failedPattern, it.message ?: ""),
+                                String.format(java.util.Locale.US, failedPattern, it.message ?: ""),
                                 FeedbackSeverity.WARNING
                             )
                         }
@@ -93,7 +93,7 @@ fun rememberClaudeImportLauncher(controller: FusionBundleController): androidx.a
                 },
                 onFailure = {
                     feedback.show(
-                        String.format(failedPattern, it.message ?: ""),
+                        String.format(java.util.Locale.US, failedPattern, it.message ?: ""),
                         FeedbackSeverity.WARNING
                     )
                 }
