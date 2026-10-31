@@ -104,6 +104,9 @@ jobs:
       - name: Commit-message range regression suite
         run: python3 scripts/test_check_commit_messages.py
 
+      - name: Guard Rails checkout/script interface regression
+        run: python3 scripts/test_guard_rails_ref_consistency.py
+
       # 注释完整性门禁的回归用例（两个真实事故样本 + 合法形态零误报）。
       - name: Comment integrity regression suite
         run: python3 scripts/test_check_comment_integrity.py
