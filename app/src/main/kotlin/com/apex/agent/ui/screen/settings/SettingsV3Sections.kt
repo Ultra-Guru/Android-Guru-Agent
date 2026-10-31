@@ -765,6 +765,19 @@ internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSetting
             agent.codingToolSurface,
             description = stringResource(R.string.settings_v3_coding_surface_desc)
         ) { surface -> onUpdate(agent.copy(codingToolSurface = surface)) }
+        // ═══ v1.5 输出展示档（流式 / 整段）：Coding 屏时间轴渲染策略 ═══
+        // 纯 UI 层开关（引擎/会话零参与）——流式 = Rikka 风格实时渲染（默认，
+        // 既有行为）；整段 = 生成中仅加载进度卡、收束后一次性渲染完整时间轴。
+        // 档位在每轮 run 开始时捕获：生成中改设置不打断当前轮，下一轮生效。
+        DropdownRow(
+            stringResource(R.string.settings_v3_coding_output_mode),
+            listOf(
+                "streaming" to stringResource(R.string.settings_v3_coding_output_mode_streaming),
+                "complete" to stringResource(R.string.settings_v3_coding_output_mode_complete),
+            ),
+            agent.codeOutputMode.ifBlank { "streaming" },
+            description = stringResource(R.string.settings_v3_coding_output_mode_desc)
+        ) { mode -> onUpdate(agent.copy(codeOutputMode = mode)) }
         SwitchRow(
             stringResource(R.string.settings_v3_coding_read_guard),
             agent.codingReadGuard,

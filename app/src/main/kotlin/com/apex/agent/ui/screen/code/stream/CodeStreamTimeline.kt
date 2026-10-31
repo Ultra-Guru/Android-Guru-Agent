@@ -44,6 +44,8 @@ import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.core.code.stream.ToolKind
 import com.apex.agent.ui.component.imeDismissOnTap
 import com.apex.agent.ui.component.rememberImeDismisser
+import com.apex.agent.ui.screen.code.CodeOutputMode
+import com.apex.agent.ui.screen.code.completeModeVisibleEntries
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import kotlinx.coroutines.delay
@@ -70,6 +72,15 @@ import kotlinx.coroutines.launch
  * [rememberStreamAnchor]：流式即时跟随 + 阅读模式保护 + 收尾动画；
  * 底部 FAB（不在底部时出现）一键回底。
  *
+ * ## 输出展示档（v1.5 双档：[CodeOutputMode]）
+ *
+ * [renderMode] = COMPLETE 且生成中：本轮运行的过程条目（思考/胶囊/
+ * 终端尾窗/结论）全部静默——可见切片只保留到最后一条用户输入，末尾
+ * 以 [CompleteModeGeneratingCard]（加载进度卡）占位；run 收束后
+ * 切片解除，完整时间轴一次性渲染并由锚定收尾动画滚动一次到底
+ * （规格书：「完成后渲染完整内容 + 完成后滚动一次」）。STREAMING 档
+ * 零变化（既有 Rikka 风格实时渲染）。
+ *
  * ## v5 玻璃接线
  *
  * - [backdrop]：时间轴 = 玻璃采样源（悬浮输入栏 GlassCard 的 backdrop
@@ -89,21 +100,37 @@ internal fun CodeStreamTimeline(
     modifier: Modifier = Modifier,
     // ═══ 内联终端胶囊（跟随流水式输出；null = 无活跃/历史终端会话）═══
     terminal: TerminalPanelState? = null,
-    onToggleTerminalCollapse: () -> Unit = {}
+    onToggleTerminalCollapse: () -> Unit = {},
+    // ═══ 输出展示档（v1.5）：COMPLETE + 生成中 = 过程条目静默 + 加载卡；
+    // 由 CodeScreen 从 uiState.renderMode（run 粒度快照）传入═══
+    renderMode: CodeOutputMode = CodeOutputMode.STREAMING
 ) {
     val listState = rememberLazyListState()
-    val grouped = remember(snapshot.entries) { groupConsecutive(snapshot.entries) }
+    // ═══ 完整档切片：生成中只留用户输入及更早的终态内容，本轮过程条目
+    // 静默（切片是纯派生视图——session 侧数据不变，切换不丢任何条目）═══
+    val completeActive = isStreaming && renderMode == CodeOutputMode.COMPLETE
+    val visibleEntries = remember(snapshot.entries, completeActive) {
+        if (completeActive) completeModeVisibleEntries(snapshot.entries) else snapshot.entries
+    }
+    // 完整档聚合（Rikka 风格抽屉）：收束后的连续工具胶囊段折叠为聚合卡
+    //（技能 / MCP / 内置三分类摘要 + 可展开明细）；生成中同款适用——历史轮
+    // 的胶囊段也收进抽屉，时间轴只剩结论与抽屉。流式档零变化（平铺 + 同族
+    // 折叠的既有行为）。
+    val aggregateTools = renderMode == CodeOutputMode.COMPLETE
+    val grouped = remember(visibleEntries, aggregateTools) { groupConsecutive(visibleEntries, aggregateTools) }
     // 终端输出计入锚定素材：尾窗在末条目内增长也要触发贴尾跟随
+    // （完整档生成中 terminal 恒为 null——调用方 CodeScreen 同档门控）
     val terminalLength = terminal?.content?.length ?: 0
-    val contentLength = remember(snapshot.entries, terminalLength) {
-        snapshot.entries.sumOf { entryContentLength(it) } + terminalLength
+    val contentLength = remember(visibleEntries, terminalLength) {
+        visibleEntries.sumOf { entryContentLength(it) } + terminalLength
     }
     val anchor = rememberStreamAnchor(
         listState = listState,
         // 终端胶囊的结构位（无=0 / 静默=1 / 运行中=2）并入结构 key ——
         // 尾窗出现/开跑（展开）时视同结构变化触发跟随，收束折叠不追问。
         // ×3 展开编码保证 (entries.size, 结构位) 二元组无碰撞。
-        itemCountKey = snapshot.entries.size * 3 + terminalStructureKey(terminal),
+        // 完整档收束瞬间切片解除 → 可见条目数跳变 → 锚定收尾动画滚一次到底
+        itemCountKey = visibleEntries.size * 3 + terminalStructureKey(terminal),
         contentTickKey = anchorFollowTick(contentLength),
         isStreaming = isStreaming
     )
@@ -135,7 +162,9 @@ internal fun CodeStreamTimeline(
         // 的引导位：图标 + 一句话 + 历史入口方向，空工作区不再「无响应」。
         // 判据只看渲染素材（entries + 终端尾窗），流式标志不参与 —— 用户
         // 消息入列即占位消失，无闪烁窗口。
-        if (grouped.isEmpty() && terminal == null) {
+        // 完整档生成中切片可能短暂为空（首帧快照未推）——占位不闪现，
+        // 由末尾的加载进度卡接住视觉。
+        if (grouped.isEmpty() && terminal == null && !completeActive) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
@@ -184,6 +213,15 @@ internal fun CodeStreamTimeline(
                             )
                         }
                     }
+
+                    is Segment.ToolAggregate -> {
+                        item(key = segment.groupKey) {
+                            ToolAggregateCard(
+                                calls = segment.calls,
+                                onToolClick = onToolClick
+                            )
+                        }
+                    }
                 }
             }
             // ═══ 内联终端胶囊：时间轴末条（尾哨兵之前）═══
@@ -201,6 +239,16 @@ internal fun CodeStreamTimeline(
                         exitCode = term.exitCode,
                         collapsed = term.collapsed,
                         onToggleCollapse = onToggleTerminalCollapse
+                    )
+                }
+            }
+            // ═══ 完整档生成中：加载进度卡（本轮过程的唯一可见占位）═══
+            // 置于尾哨兵之前（贴近列表末尾，与未来出现的完整内容同位）；
+            // 计数取快照实时值——静默不等于黑箱，推进感由真实工具计数提供。
+            if (completeActive) {
+                item(key = KEY_COMPLETE_GENERATING) {
+                    CompleteModeGeneratingCard(
+                        toolUsage = snapshot.toolUsage
                     )
                 }
             }
@@ -271,6 +319,9 @@ private fun GroupExpandable(
 /** 内联终端胶囊的稳定 item key。 */
 private const val KEY_TERMINAL_INLINE = "stream-terminal-inline"
 
+/** 完整档加载进度卡的稳定 item key。 */
+private const val KEY_COMPLETE_GENERATING = "stream-complete-generating"
+
 /** 展开弹簧收敛时长（补锚延时）： AnimatedVisibility 默认 spring ≈ 300ms。 */
 private const val EXPAND_SETTLE_MS = 350L
 
@@ -299,31 +350,44 @@ private fun terminalStructureKey(terminal: TerminalPanelState?): Int = when {
 
 // ═══ 分段逻辑（纯函数）═══
 
-/** 渲染分段：单条 or 同族连续胶囊组。 */
+/** 渲染分段：单条 / 同族连续胶囊组 / 完整档跨族聚合段。 */
 internal sealed interface Segment {
     data class Single(val entry: StreamEntry) : Segment
     data class Group(val groupKey: String, val kind: ToolKind, val calls: List<StreamToolCall>) : Segment
+
+    /** 完整档聚合段：跨族连续胶囊 ≥2 收进一张聚合卡（ToolAggregateCard）。 */
+    data class ToolAggregate(val groupKey: String, val calls: List<StreamToolCall>) : Segment
 }
 
 /**
  * 同族**连续**胶囊聚合：仅当相邻且同 [ToolKind] 的胶囊数超过阈值时
  * 成组（分组键 = 族名 + 首胶囊 id，保稳定）。
+ *
+ * [aggregateTools]（完整档）：跨族连片不拆段——连续胶囊 ≥2 即收进
+ * [Segment.ToolAggregate]（族信息降级为聚合卡展开态的分组摘要）；
+ * 单颗胶囊不包卡（已是极简形态）。
  */
-internal fun groupConsecutive(entries: List<StreamEntry>): List<Segment> {
+internal fun groupConsecutive(
+    entries: List<StreamEntry>,
+    aggregateTools: Boolean = false
+): List<Segment> {
     val out = mutableListOf<Segment>()
     var bufferKind: ToolKind? = null
     val buffer = mutableListOf<StreamEntry.ToolCapsuleEntry>()
 
     fun flush() {
         val kind = bufferKind
-        if (kind != null && buffer.size > StreamEntryGroup.GROUP_THRESHOLD) {
-            out += Segment.Group(
+        when {
+            aggregateTools && buffer.size > AGGREGATE_THRESHOLD -> out += Segment.ToolAggregate(
+                groupKey = "agg-${buffer.first().id}",
+                calls = buffer.map { it.call }
+            )
+            kind != null && buffer.size > StreamEntryGroup.GROUP_THRESHOLD -> out += Segment.Group(
                 groupKey = "group-${kind.toString().lowercase()}-${buffer.first().id}",
                 kind = kind,
                 calls = buffer.map { it.call }
             )
-        } else {
-            buffer.forEach { out += Segment.Single(it) }
+            else -> buffer.forEach { out += Segment.Single(it) }
         }
         buffer.clear()
         bufferKind = null
@@ -331,7 +395,9 @@ internal fun groupConsecutive(entries: List<StreamEntry>): List<Segment> {
 
     entries.forEach { entry ->
         if (entry is StreamEntry.ToolCapsuleEntry) {
-            if (bufferKind != null && bufferKind != entry.call.kind) flush()
+            // 聚合模式跨族连片（族切换不拆段）；流式模式按族分段（同族 ≥2
+            // 折叠为聚合胶囊行——防刷屏且最新命令可见的既有语义）。
+            if (!aggregateTools && bufferKind != null && bufferKind != entry.call.kind) flush()
             bufferKind = entry.call.kind
             buffer += entry
         } else {
@@ -342,6 +408,9 @@ internal fun groupConsecutive(entries: List<StreamEntry>): List<Segment> {
     flush()
     return out
 }
+
+/** 完整档聚合阈值：连续胶囊数 > 此值（即 ≥2）才包聚合卡。 */
+private const val AGGREGATE_THRESHOLD = 1
 
 /** 条目内容长度（节流档位 key 的素材）。 */
 private fun entryContentLength(entry: StreamEntry): Int = when (entry) {
