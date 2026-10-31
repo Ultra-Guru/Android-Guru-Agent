@@ -80,6 +80,7 @@ echo "── compiling terminal-emulator + terminal-native + platform/terminal �
 # 全栈一次编译内存压力大（UnicodeWidthTables 大区间表 + 800+ 源文件）：-J-Xmx4g
 JAVA_OPTS="-Xmx4g" "$KOTLINC" -J-Xmx4g -jvm-target 17 -nowarn -Xplugin="$PLUGIN" \
   "$STUBS" \
+  core/logging/src/main/kotlin \
   terminal-emulator/src/main/kotlin \
   terminal-emulator/src/test/kotlin \
   terminal-native/src/main/kotlin \
