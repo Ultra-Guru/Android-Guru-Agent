@@ -114,16 +114,7 @@ class TestCaseFrameworkKitTest {
     }
 
     // ═══ 测试片段生成 ═══
-
-    @Test
-    fun `test snippets are language specific`() {
-        val kotlinSnippet = TestCaseFrameworkKit.generateTestSnippet("\\d+", "kotlin")
-        assertTrue(kotlinSnippet.contains("Regex"))
-        val pythonSnippet = TestCaseFrameworkKit.generateTestSnippet("\\d+", "python")
-        assertTrue(pythonSnippet.contains("re.search"))
-        val jsSnippet = TestCaseFrameworkKit.generateTestSnippet("\\d+", "javascript")
-        assertTrue(jsSnippet.contains("pattern.test"))
-    }
+    // （正则测试片段生成属于 RegexToolkit —— 由 RegexToolkitTest 覆盖）
 
     // ═══ 反模式 lint ═══
 
