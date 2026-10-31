@@ -212,13 +212,14 @@ class SummarizeStructureBuilderTest {
         val overlaps = SummarizeStructureBuilder.checkBulletOverlap(
             listOf(
                 "内存占用下降了 40%，性能显著提升",
-                "内存占用下降 40%，性能有明显提升",
+                "内存占用下降了 40%，性能有显著提升",
                 "服务器负载保持稳定"
             )
         )
         assertEquals(1, overlaps.size)
         assertEquals(0, overlaps.first().firstIndex)
         assertEquals(1, overlaps.first().secondIndex)
+        assertTrue(overlaps.first().similarity >= SummarizeStructureBuilder.BULLET_OVERLAP_THRESHOLD)
     }
 
     @Test
