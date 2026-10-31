@@ -20,17 +20,20 @@ class SearxngSettingsWriterTest {
     @get:Rule
     val tmp = TemporaryFolder()
 
-    /** 进程内意图端口（JVM 单测标准夹具语义）。 */
+    /**
+     * 进程内意图端口。字段名刻意避开接口方法名（JVM 平台声明冲突 ——
+     * private var engines 生成 setEngines(Set) 与 override 撞签名）。
+     */
     private class FakeIntent(
-        private var engines: Set<String> = SEARXNG_DEFAULT_ENGINES,
-        private val secret: String = "a".repeat(64)
+        private var enginesState: Set<String> = SEARXNG_DEFAULT_ENGINES,
+        private val secretValue: String = "a".repeat(64)
     ) : SearxngIntentPort {
-        var enabled = false
-        override fun isEnabled(): Boolean = enabled
-        override fun setEnabled(value: Boolean) { enabled = value }
-        override fun engines(): Set<String> = engines
-        override fun setEngines(engines: Set<String>) { this.engines = engines }
-        override fun secretKey(): String = secret
+        var enabledState = false
+        override fun isEnabled(): Boolean = enabledState
+        override fun setEnabled(value: Boolean) { enabledState = value }
+        override fun engines(): Set<String> = enginesState
+        override fun setEngines(engines: Set<String>) { this.enginesState = engines }
+        override fun secretKey(): String = secretValue
     }
 
     /** rootfs 指向临时目录的命令端口（Writer 只用 rootfsDir —— exec 不可达）。 */
@@ -68,7 +71,7 @@ class SearxngSettingsWriterTest {
 
     @Test
     fun `keep_only contains selected engines and only those`() {
-        val intent = FakeIntent(engines = setOf("wikipedia", "arxiv"))
+        val intent = FakeIntent(enginesState = setOf("wikipedia", "arxiv"))
         val yml = writer(intent, tmp.newFolder()).render()
         assertTrue("- wikipedia" in yml)
         assertTrue("- arxiv" in yml)
@@ -86,7 +89,7 @@ class SearxngSettingsWriterTest {
 
     @Test
     fun `illegal engine ids are filtered`() {
-        val intent = FakeIntent(engines = setOf("google", "not-a-real-engine"))
+        val intent = FakeIntent(enginesState = setOf("google", "not-a-real-engine"))
         val current = writer(intent, tmp.newFolder()).currentEngines()
         assertEquals(setOf("google"), current)
     }
@@ -116,7 +119,7 @@ class SearxngSettingsWriterTest {
     @Test
     fun `ensureConfig rewrites when engines change`() = runTest {
         val rootfs = tmp.newFolder()
-        val intent = FakeIntent(engines = setOf("google"))
+        val intent = FakeIntent(enginesState = setOf("google"))
         val w = writer(intent, rootfs)
         assertTrue(w.ensureConfig().isSuccess)
         val before = SearxngScripts.hostSettingsFile(rootfs).readText()

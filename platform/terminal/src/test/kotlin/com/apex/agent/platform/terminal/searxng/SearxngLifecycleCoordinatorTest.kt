@@ -143,14 +143,18 @@ class SearxngLifecycleCoordinatorTest {
         override fun terminalEventFlow(sessionId: Long, afterCursor: Long): Flow<TerminalEvent>? = null
     }
 
-    /** 进程内意图端口。 */
+    /**
+     * 进程内意图端口。字段名刻意避开接口方法名（JVM 平台声明冲突：
+     * `var enabled` 生成 setEnabled(Z)V 与 override 撞签名 —— Gradle 编译
+     * 硬错误，kotlinc CLI 镜像编译不查后端签名故本地漏网）。
+     */
     private class FakeIntent : SearxngIntentPort {
-        var enabled = false
-        var engines: Set<String> = SEARXNG_DEFAULT_ENGINES
-        override fun isEnabled(): Boolean = enabled
-        override fun setEnabled(value: Boolean) { enabled = value }
-        override fun engines(): Set<String> = engines
-        override fun setEngines(engines: Set<String>) { this.engines = engines }
+        var enabledState = false
+        var enginesState: Set<String> = SEARXNG_DEFAULT_ENGINES
+        override fun isEnabled(): Boolean = enabledState
+        override fun setEnabled(value: Boolean) { enabledState = value }
+        override fun engines(): Set<String> = enginesState
+        override fun setEngines(engines: Set<String>) { this.enginesState = engines }
         override fun secretKey(): String = "s".repeat(64)
     }
 
@@ -291,7 +295,7 @@ class SearxngLifecycleCoordinatorTest {
     @Test
     fun `reconcile starts when intent enabled and runtime off`() = runTest {
         val h = Harness(this, tempRootfs())
-        h.intent.enabled = true
+        h.intent.setEnabled(true)
         h.coordinator.reconcile()
         runCurrent()
         assertTrue(
@@ -306,7 +310,7 @@ class SearxngLifecycleCoordinatorTest {
         h.coordinator.enable()
         runCurrent()
         assertTrue(h.coordinator.state.value is SearxngState.Ready)
-        h.intent.enabled = false
+        h.intent.setEnabled(false)
         h.coordinator.reconcile()
         runCurrent()
         assertTrue(
