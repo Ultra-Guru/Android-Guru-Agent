@@ -39,6 +39,7 @@
     <string name="settings_no_profile_hint">暂无模型档案 —— 请先到「模型配置 · 配置」新建</string>
     <string name="settings_nav_cat_model">模型配置</string>
     <string name="settings_nav_cat_workspace">工作台</string>
+    <string name="settings_nav_cat_integrations">集成与扩展</string>
     <string name="settings_nav_cat_interface">界面外观</string>
     <string name="settings_nav_cat_data">数据与备份</string>
     <string name="settings_nav_cat_terminal">终端</string>
