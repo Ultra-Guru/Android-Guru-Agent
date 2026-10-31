@@ -979,4 +979,89 @@ class CodeStreamSessionTest {
         assertEquals("main", visual.summary.branch)
         assertEquals("g4", visual.callId)
     }
+
+    // ═══ 终端预览分片 × 结构化收尾（P0 输出完整性回归）═══
+
+    @Test
+    fun `preview chunks feed terminal view but authoritative json tail does not`() {
+        val s = CodeStreamSession()
+        s.beginRun("跑构建")
+        s.onEvent(bashStart("p1", "./gradlew assemble"))
+        // TerminalExec 执行期间的 stdout 实时预览分片：终端视图唯一入口
+        s.onEvent(AgentEvent.ToolOutputChunk(callId = "p1", chunk = "line1\n", preview = true))
+        s.onEvent(AgentEvent.ToolOutputChunk(callId = "p1", chunk = "line2\n", preview = true))
+        s.onEvent(AgentEvent.ToolOutputChunk(callId = "p1", chunk = "line3\n", preview = true))
+        s.tick(1_000) // 时间窗基准（本拍无脉冲）
+        val pulsed = s.tick(1_121) // 时间窗（≥120ms）命中脉冲
+        assertNotNull("预览分片经时间窗脉冲产出快照", pulsed)
+        assertTrue(pulsed!!.terminalContent.contains("line1"))
+        assertTrue(pulsed!!.terminalContent.contains("line2"))
+        assertTrue(pulsed!!.terminalContent.contains("line3"))
+        // 同 callId 的权威收尾分片（最终 JSON 信封，可达 ~20K）：不进终端
+        // 视图——否则干净预览被整段挤出 16K 尾窗，面板只剩 JSON 噪音
+        val envelope =
+            """{"stdout":"line1\nline2\nline3","stderr":"","exit_code":0,"durationMs":1200,"cwd":"/workspace/android-guru","channel":"proot-ubuntu","sessionId":"t-9"}"""
+        s.onEvent(AgentEvent.ToolOutputChunk(callId = "p1", chunk = envelope, preview = false))
+        val afterJson = s.snapshot()
+        assertFalse("权威 JSON 信封不进终端视图", afterJson.terminalContent.contains("exit_code"))
+        assertTrue("干净预览未被挤出", afterJson.terminalContent.contains("line3"))
+        // 退出码取自事件结构化字段：JSON 文本形态（"exit_code":0）旧正则
+        // 永远匹配不上，exit 0 只能来自 exitCode 新路径
+        s.onEvent(
+            AgentEvent.ToolCallComplete(
+                callId = "p1", toolName = "TerminalExec", arguments = "",
+                output = envelope, fullOutput = "",
+                success = true, durationMs = 1_200, exitCode = 0
+            )
+        )
+        val finalSnap = s.snapshot()
+        val capsule = finalSnap.entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertEquals(0, capsule.call.exitCode)
+        assertEquals("exit 0", capsule.call.summary)
+        assertEquals("结构化退出码同步面板头行信号", 0, finalSnap.terminalExitCode)
+    }
+
+    @Test
+    fun `legacy non preview chunks still feed terminal view`() {
+        val s = CodeStreamSession()
+        s.beginRun("旧工具直通")
+        s.onEvent(
+            AgentEvent.ToolCallStart(
+                callId = "l1", toolName = "ShellExecute", arguments = """{"command":"echo plain"}"""
+            )
+        )
+        // 无 preview 前导的非 preview 分片：旧工具路径维持既有行为
+        s.onEvent(AgentEvent.ToolOutputChunk(callId = "l1", chunk = "plain text output\n", preview = false))
+        s.tick(1_000)
+        val snap = s.tick(1_121)
+        assertNotNull("旧路径分片照常触发脉冲", snap)
+        assertTrue("旧工具分片仍进终端视图（新门控不影响）", snap!!.terminalContent.contains("plain text output"))
+        val capsule = s.snapshot().entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertTrue("logTail 维持旧行为（分片合并进胶囊尾窗）", capsule.call.logTail.contains("plain text output"))
+    }
+
+    @Test
+    fun `structured failure summary extracts stderr line from json envelope`() {
+        val s = CodeStreamSession()
+        s.beginRun("编译失败")
+        s.onEvent(bashStart("f1", "gcc main.c"))
+        s.onEvent(AgentEvent.ToolOutputChunk(callId = "f1", chunk = "compiling...\n", preview = true))
+        val envelope =
+            """{"stdout":"","stderr":"gcc: error: no such file\n","exit_code":1,"durationMs":850,"cwd":"/workspace/app","channel":"proot-ubuntu"}"""
+        s.onEvent(
+            AgentEvent.ToolCallComplete(
+                callId = "f1", toolName = "TerminalExec", arguments = "",
+                output = envelope, fullOutput = "",
+                success = false, durationMs = 850, exitCode = 1
+            )
+        )
+        val snap = s.snapshot()
+        val capsule = snap.entries.filterIsInstance<StreamEntry.ToolCapsuleEntry>().single()
+        assertEquals(ToolCallStatus.FAILED, capsule.call.status)
+        assertEquals(1, capsule.call.exitCode)
+        val summary = capsule.call.summary.orEmpty()
+        assertTrue("摘要携带结构化退出码", summary.contains("exit 1"))
+        assertTrue("摘要提取 stderr 首行（人读）", summary.contains("gcc: error"))
+        assertFalse("摘要不再是 JSON 首行噪音", summary.contains("stdout"))
+    }
 }
