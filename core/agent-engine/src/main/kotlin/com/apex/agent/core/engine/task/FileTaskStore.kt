@@ -107,7 +107,7 @@ class FileTaskStore(
 
     private fun fileFor(taskId: String): File {
         // 防路径穿越：taskId 只允许 [a-z0-9-]（TaskIds 生成器保证）
-        require(taskId.matches(Regex("[a-zA-Z0-9_-]+"))) { "illegal taskId: $taskId" }
+        require(taskId.matches(TASK_ID_REGEX)) { "illegal taskId: $taskId" }
         return File(rootDir, "$taskId$SUFFIX")
     }
 
@@ -150,5 +150,8 @@ class FileTaskStore(
         const val SUFFIX = ".json"
         const val TMP_SUFFIX = ".json.tmp"
         const val CORRUPT_DIR = "corrupt"
+
+        /** #568：taskId 防路径穿越白名单 —— 每次任务文件访问都走这里，预编译复用。 */
+        val TASK_ID_REGEX = Regex("[a-zA-Z0-9_-]+")
     }
 }
