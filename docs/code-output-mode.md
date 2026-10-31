@@ -1,8 +1,9 @@
 # Coding 工位输出展示双档（流式 / 完整）
 
-> v1.5 · 对应 PR：feat/code-output-mode
+> v1.5.1 · 对应 PR：feat/code-output-mode
 > 需求原话：「模仿 Rikka Hub 的输出方式，再做一种，与我原来的可以切换，
-> 在设置里切换。」
+> 在设置里切换。」「要包含 skill 以及 mcp，然后还要增加调用工具聚合，
+> 以及更多。」
 
 ## 1. 目标
 
@@ -11,7 +12,7 @@ Coding 模式（胶囊时间轴）支持全局切换两种输出展示档：
 | 档位 | 生成中 | 完成后 |
 | --- | --- | --- |
 | **流式 STREAMING**（默认） | 结论气泡逐字追加 + 光标；思考链流式展开；写/编辑实时代码窗；终端尾窗随输出贴尾；自动跟随滚动 | 完整内容（既有行为，零变化） |
-| **完整 COMPLETE**（新增） | 本轮过程条目全部静默，仅一张加载进度卡（呼吸圆点 + 已用时 + 工具计数 + 骨架条） | 切片解除，完整时间轴一次性渲染 + 滚动一次到底 |
+| **完整 COMPLETE**（新增） | 本轮过程条目全部静默，仅一张加载进度卡（呼吸圆点 + 已用时 + 工具使用聚合计数 + 骨架条） | 切片解除，完整时间轴一次性渲染 + 滚动一次到底；工具胶囊段折叠为聚合卡 |
 
 两档共享同一份 `CodeStreamSnapshot` 渲染通道与消息模型（**不维护两套
 消息列表**）；完整档的「隐藏」是渲染侧的纯派生切片，session 侧数据
@@ -68,10 +69,63 @@ data class CodeUiState(
 
 - 三枚呼吸圆点（相位错开 180ms）+ 标题 + 已用时（每秒跳，复用
   `formatCapsuleDuration` 格式）；
-- 进度行：本轮工具计数（`snapshot.toolCallCount`）+ 失败计数
-  （`snapshot.failedToolCallCount`，错误色）——静默不等于黑箱；
+- 进度行：**工具使用聚合**（v1.5.1）——本轮总数（`snapshot.toolUsage.total`，
+  run 粒度归零）+ 技能 / MCP 分类计数（非零才显，图标区分）+ 失败计数
+  （错误色）——静默不等于黑箱，「用了哪些能力生态」一眼可辨；
 - 两道骨架占位条（呼吸透明度），传达「内容将在完成后一次性出现」；
 - 卡片高度恒定（计数/用时只改文本不改结构），不触发时间轴锚定跟随。
+
+## 5a. 调用溯源（skill / mcp / builtin 三分类，v1.5.1）
+
+需求：「要包含 skill 以及 mcp」。旧链路事件只携带 `toolName`，胶囊 UI 靠
+名字启发式猜测——技能工具（任意命名的 PascalCase id）一律被误标成
+「MCP 自定义工具」。v1.5.1 打通权威溯源：
+
+```
+SkillToolAdapter / McpAgentTool        ToolMetadata
+  category(SKILL) + tag("skill:X")        |
+  category(MCP)  + tag("server:Y")        v
+EngineToolExecution（registryToolId 已解析处）-> resolveToolOrigin()
+  v AgentEvent.ToolCallStart/Complete.origin + originLabel（默认 BUILTIN）
+CodeStreamSession -> StreamToolCall.origin / originLabel（Kind 覆盖：
+  SKILL -> ToolKind.SKILL，MCP -> ToolKind.MCP_CUSTOM）
+  v 两档共用：流式胶囊星芒/拼图图标 + 详情页溯源行；完整档聚合卡分组
+```
+
+- 引擎事件新增字段全部带默认值 `BUILTIN`：kit 适配器（标准线/织机/信使）
+  与旧发射点零改动，未打标按内置渲染（与既有行为一致）；
+- `SkillToolAdapter` 元数据补上显式 `category(SKILL)` + `skill:{id}` 标签
+  （旧实现靠 id 猜，仅 id 含 "Skill" 才命中——FetchTodos 这类被折进
+  UTILITY）；MCP 工具 v4 起已有 `category(MCP)` + `server:{name}` 打标；
+- 胶囊展示：技能 = 星芒图标（teal）+「技能 · id」；MCP = 拼图图标
+  （tertiary）+「MCP · 服务器名」；详情页多一行等宽溯源行；
+- 持久化：`StorableToolCall.originName/originLabel` + 收尾卡
+  `runSkillCalls/runMcpCalls/runSkills/runMcpServers`（缺省值 +
+  `ignoreUnknownKeys` 双向兼容旧档）；
+- run 粒度会计：`CodeStreamSession.runToolOrigins`（beginRun 归零，
+  ArgsDelta 期占位 BUILTIN、Start 到达时被引擎权威打标覆盖——put 语义
+  不重复计数），派生 `CodeStreamSnapshot.toolUsage: ToolUsageStats`。
+
+## 5b. 工具调用聚合（完整档收束后的「抽屉」，v1.5.1）
+
+需求：「增加调用工具聚合」。完整档收束后的连续工具胶囊段不再平铺，
+折叠为一张 `ToolAggregateCard`（规格书：「完成后折叠『已调用 N 个
+工具』」）：
+
+- **折叠态**（默认）：「已调用 N 个工具」+ 三分类 chips（内置 / 技能 /
+  MCP，非零才显）+ 失败徽标（>0 错误色）；
+- **展开态**：技能 / MCP 服务器 / 内置族三段分组摘要（各带 xN 与失败
+  数）+ 调用明细（原序胶囊，点击仍进 DetailSheet 看 diff / 终端全文
+  ——聚合不吞可达性）；
+- **分段策略**：`groupConsecutive(entries, aggregateTools)`——跨族连续
+  胶囊 >= 2 收进一张卡（单颗不包卡）；验证轮次卡（VerifyCycleEntry）
+  本就是折叠形态，自然断段独立成卡；Git 操作卡同理；
+- **与流式档聚合的分工**：流式档按同族聚合（防刷屏 + 最新命令可见，
+  既有行为零变化）；完整档按调用段聚合（过程收进抽屉，结论留在台面）；
+- 收尾统计卡（RunStatsCard）同步增加「技能 N」「MCP N」chips（非零
+  才显）；
+- 聚合是纯派生视图（`computeToolAggregate` 对胶囊列表的只读归约 +
+  `remember` 派生段）——切回流式档即还原平铺，不丢任何条目。
 
 ## 6. 涉及文件
 
@@ -82,8 +136,19 @@ data class CodeUiState(
 | `ui/screen/code/CodeUiState.kt` | `renderMode` 字段 |
 | `ui/screen/code/CodeViewModel.kt` | 两处单行调用点（init 恢复 / runEngine 捕获） |
 | `ui/screen/code/CodeScreen.kt` | renderMode 传入时间轴 + 完整档终端尾窗门控 |
-| `ui/screen/code/stream/CodeStreamTimeline.kt` | 切片渲染 + 加载卡条目 + 锚定 key 改派生切片 |
-| `ui/screen/code/stream/CompleteModeGeneratingCard.kt` | 加载进度卡本体 |
+| `ui/screen/code/stream/CodeStreamTimeline.kt` | 切片渲染 + 加载卡条目 + 聚合分段（aggregateTools）+ 锚定 key 改派生切片 |
+| `ui/screen/code/stream/CompleteModeGeneratingCard.kt` | 加载进度卡本体（工具使用聚合计数） |
+| `ui/screen/code/stream/ToolUsageAggregate.kt` | 聚合卡本体 + 摘要纯函数（v1.5.1） |
+| `ui/screen/code/stream/CodeCapsule.kt` | 族样式 + SKILL（星芒 teal）/ MCP 拼图图标 |
+| `ui/screen/code/stream/CodeStreamCards.kt` | 收尾统计卡 + 技能 / MCP chips |
+| `ui/screen/code/stream/CodeToolDetailSheet.kt` | 详情页溯源行（v1.5.1） |
+| `core/engine/AgentEvent.kt` | `ToolCallOrigin` + 双事件溯源字段（默认 BUILTIN） |
+| `core/engine/EngineToolOrigin.kt` | 注册表 id -> 溯源信息（元数据打标读取） |
+| `core/engine/EngineToolExecution.kt` | Start / Complete 溯源透传 |
+| `core/tools/skill/SkillToolAdapter.kt` | 显式 SKILL 打标（category + skill:{id}） |
+| `core/code/stream/CodeStreamModels.kt` | `ToolKind.SKILL` / `StreamToolCall.origin` / `ToolUsageStats` / 收尾卡溯源字段 |
+| `core/code/stream/CodeStreamSession.kt` | 溯源归约 + run 粒度会计 + 快照聚合统计 |
+| `core/code/stream/CodeStreamCheckpoint.kt` | 溯源持久化（双向兼容） |
 | `ui/screen/settings/SettingsRepository.kt` | `AgentSettings.codeOutputMode` 字段 |
 | `ui/screen/settings/SettingsV3Sections.kt` | 设置行（DropdownRow） |
 | `res/values{,-zh}/strings_settings_v3.xml`、`strings_code.xml` | 双语字符串 |
@@ -99,4 +164,12 @@ data class CodeUiState(
 - 消息内容 / 工具调用 / 错误态两档一致：同一 session 数据源 + ErrorBar
   统一错误通道；
 - 切换不丢会话数据：切片是 `remember` 派生视图，session / 落盘 /
-  检查点恢复全链路无感知。
+  检查点恢复全链路无感知；
+- **技能 / MCP 展示（v1.5.1）**：事件层权威溯源（引擎注册表元数据打标），
+  两档共用——技能胶囊星芒图标 + 技能 id、MCP 胶囊拼图图标 + 服务器名、
+  详情页溯源行；流式档不再把技能误标成「MCP 自定义工具」；
+- **工具调用聚合（v1.5.1）**：完整档收束后连续胶囊段折叠为聚合卡
+  （三分类摘要 + 可展开明细，明细胶囊仍可进 DetailSheet）；聚合为纯
+  派生视图，切回流式档即还原平铺；
+- **旧档兼容（v1.5.1）**：溯源字段全部缺省值 + `ignoreUnknownKeys`，
+  旧检查点恢复按内置工具渲染，收尾卡溯源计数缺省 0。

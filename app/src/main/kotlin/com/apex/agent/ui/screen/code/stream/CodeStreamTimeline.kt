@@ -112,7 +112,12 @@ internal fun CodeStreamTimeline(
     val visibleEntries = remember(snapshot.entries, completeActive) {
         if (completeActive) completeModeVisibleEntries(snapshot.entries) else snapshot.entries
     }
-    val grouped = remember(visibleEntries) { groupConsecutive(visibleEntries) }
+    // 完整档聚合（Rikka 风格抽屉）：收束后的连续工具胶囊段折叠为聚合卡
+    //（技能 / MCP / 内置三分类摘要 + 可展开明细）；生成中同款适用——历史轮
+    // 的胶囊段也收进抽屉，时间轴只剩结论与抽屉。流式档零变化（平铺 + 同族
+    // 折叠的既有行为）。
+    val aggregateTools = renderMode == CodeOutputMode.COMPLETE
+    val grouped = remember(visibleEntries, aggregateTools) { groupConsecutive(visibleEntries, aggregateTools) }
     // 终端输出计入锚定素材：尾窗在末条目内增长也要触发贴尾跟随
     // （完整档生成中 terminal 恒为 null——调用方 CodeScreen 同档门控）
     val terminalLength = terminal?.content?.length ?: 0
@@ -208,6 +213,15 @@ internal fun CodeStreamTimeline(
                             )
                         }
                     }
+
+                    is Segment.ToolAggregate -> {
+                        item(key = segment.groupKey) {
+                            ToolAggregateCard(
+                                calls = segment.calls,
+                                onToolClick = onToolClick
+                            )
+                        }
+                    }
                 }
             }
             // ═══ 内联终端胶囊：时间轴末条（尾哨兵之前）═══
@@ -234,8 +248,7 @@ internal fun CodeStreamTimeline(
             if (completeActive) {
                 item(key = KEY_COMPLETE_GENERATING) {
                     CompleteModeGeneratingCard(
-                        toolCalls = snapshot.toolCallCount,
-                        failedCalls = snapshot.failedToolCallCount
+                        toolUsage = snapshot.toolUsage
                     )
                 }
             }
@@ -337,31 +350,44 @@ private fun terminalStructureKey(terminal: TerminalPanelState?): Int = when {
 
 // ═══ 分段逻辑（纯函数）═══
 
-/** 渲染分段：单条 or 同族连续胶囊组。 */
+/** 渲染分段：单条 / 同族连续胶囊组 / 完整档跨族聚合段。 */
 internal sealed interface Segment {
     data class Single(val entry: StreamEntry) : Segment
     data class Group(val groupKey: String, val kind: ToolKind, val calls: List<StreamToolCall>) : Segment
+
+    /** 完整档聚合段：跨族连续胶囊 ≥2 收进一张聚合卡（ToolAggregateCard）。 */
+    data class ToolAggregate(val groupKey: String, val calls: List<StreamToolCall>) : Segment
 }
 
 /**
  * 同族**连续**胶囊聚合：仅当相邻且同 [ToolKind] 的胶囊数超过阈值时
  * 成组（分组键 = 族名 + 首胶囊 id，保稳定）。
+ *
+ * [aggregateTools]（完整档）：跨族连片不拆段——连续胶囊 ≥2 即收进
+ * [Segment.ToolAggregate]（族信息降级为聚合卡展开态的分组摘要）；
+ * 单颗胶囊不包卡（已是极简形态）。
  */
-internal fun groupConsecutive(entries: List<StreamEntry>): List<Segment> {
+internal fun groupConsecutive(
+    entries: List<StreamEntry>,
+    aggregateTools: Boolean = false
+): List<Segment> {
     val out = mutableListOf<Segment>()
     var bufferKind: ToolKind? = null
     val buffer = mutableListOf<StreamEntry.ToolCapsuleEntry>()
 
     fun flush() {
         val kind = bufferKind
-        if (kind != null && buffer.size > StreamEntryGroup.GROUP_THRESHOLD) {
-            out += Segment.Group(
+        when {
+            aggregateTools && buffer.size > AGGREGATE_THRESHOLD -> out += Segment.ToolAggregate(
+                groupKey = "agg-${buffer.first().id}",
+                calls = buffer.map { it.call }
+            )
+            kind != null && buffer.size > StreamEntryGroup.GROUP_THRESHOLD -> out += Segment.Group(
                 groupKey = "group-${kind.toString().lowercase()}-${buffer.first().id}",
                 kind = kind,
                 calls = buffer.map { it.call }
             )
-        } else {
-            buffer.forEach { out += Segment.Single(it) }
+            else -> buffer.forEach { out += Segment.Single(it) }
         }
         buffer.clear()
         bufferKind = null
@@ -369,7 +395,9 @@ internal fun groupConsecutive(entries: List<StreamEntry>): List<Segment> {
 
     entries.forEach { entry ->
         if (entry is StreamEntry.ToolCapsuleEntry) {
-            if (bufferKind != null && bufferKind != entry.call.kind) flush()
+            // 聚合模式跨族连片（族切换不拆段）；流式模式按族分段（同族 ≥2
+            // 折叠为聚合胶囊行——防刷屏且最新命令可见的既有语义）。
+            if (!aggregateTools && bufferKind != null && bufferKind != entry.call.kind) flush()
             bufferKind = entry.call.kind
             buffer += entry
         } else {
@@ -380,6 +408,9 @@ internal fun groupConsecutive(entries: List<StreamEntry>): List<Segment> {
     flush()
     return out
 }
+
+/** 完整档聚合阈值：连续胶囊数 > 此值（即 ≥2）才包聚合卡。 */
+private const val AGGREGATE_THRESHOLD = 1
 
 /** 条目内容长度（节流档位 key 的素材）。 */
 private fun entryContentLength(entry: StreamEntry): Int = when (entry) {

@@ -17,6 +17,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -34,6 +38,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
+import com.apex.agent.core.code.stream.ToolUsageStats
 import com.apex.agent.ui.glass.GlassCard
 import com.apex.agent.ui.glass.GlassStyle
 import kotlinx.coroutines.delay
@@ -42,20 +47,21 @@ import kotlinx.coroutines.isActive
 /**
  * # CompleteModeGeneratingCard — 整段模式的生成中加载卡
  *
- * [CodeOutputMode.COMPLETE] 档在 run 进行中替代时间轴过程条目的唯一可见
+ * [CodeOutputMode] COMPLETE 档在 run 进行中替代时间轴过程条目的唯一可见
  * 元素（规格书：「完整模式：生成完成后一次性展示，生成中显示加载态」）：
  *
  * - 头行：三枚呼吸圆点 + 标题 + 已用时（每秒跳动，复用胶囊耗时格式）；
- * - 进度行：本轮已调用工具数（>0 时显示）+ 失败数（>0 时错误色强调）
- *   ——静默不等于黑箱，长任务的推进感由真实计数提供；
+ * - 进度行：本轮工具使用聚合（v1.5.1 溯源三分类）——总数（>0 时显示）
+ *   + 内置 / 技能 / MCP 分类计数（非零才显，图标区分）+ 失败数（>0
+ *   错误色强调）——静默不等于黑箱，长任务的推进感由真实计数提供，
+ *   「用了哪些能力」一眼可辨；
  * - 骨架条：两道呼吸占位条，直观传达「内容将在完成后一次性出现」。
  *
  * 卡片高度恒定（计数/用时只改文本不改结构），不触发时间轴锚定跟随。
  */
 @Composable
 internal fun CompleteModeGeneratingCard(
-    toolCalls: Int,
-    failedCalls: Int
+    toolUsage: ToolUsageStats
 ) {
     // 呼吸动画（三圆点相位错开 + 骨架条透明度脉冲），同一 transition 驱动
     val pulse = rememberInfiniteTransition(label = "complete-generating")
@@ -129,21 +135,33 @@ internal fun CompleteModeGeneratingCard(
                     )
                 }
             }
-            // ── 进度行：工具计数（推进感）+ 失败计数（错误色）──
-            if (toolCalls > 0) {
+            // ── 进度行：工具使用聚合（推进感 + 溯源分类）+ 失败计数 ──
+            if (toolUsage.total > 0) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.padding(top = 4.dp, start = 23.dp)
                 ) {
                     Text(
-                        text = stringResource(R.string.code_stream_generating_tools_fmt, toolCalls),
+                        text = stringResource(R.string.code_stream_generating_tools_fmt, toolUsage.total),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    if (failedCalls > 0) {
+                    if (toolUsage.skillCount > 0) {
+                        OriginCounter(
+                            icon = Icons.Default.AutoAwesome,
+                            label = stringResource(R.string.code_stream_aggregate_skill_fmt, toolUsage.skillCount)
+                        )
+                    }
+                    if (toolUsage.mcpCount > 0) {
+                        OriginCounter(
+                            icon = Icons.Default.Extension,
+                            label = stringResource(R.string.code_stream_aggregate_mcp_fmt, toolUsage.mcpCount)
+                        )
+                    }
+                    if (toolUsage.failedCount > 0) {
                         Text(
-                            text = stringResource(R.string.code_stream_generating_failed_fmt, failedCalls),
+                            text = stringResource(R.string.code_stream_generating_failed_fmt, toolUsage.failedCount),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.error
                         )
@@ -175,6 +193,25 @@ private fun GeneratingDot(alpha: Float) {
             .size(5.dp)
             .alpha(alpha)
     ) {}
+}
+
+/** 溯源分类计数（图标 + 文案，onSurfaceVariant 静态色——推进感由计数变化提供）。 */
+@Composable
+private fun OriginCounter(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(11.dp)
+        )
+        Spacer(Modifier.width(3.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
 
 /** 骨架占位条：宽度按 [fraction] 裁剪 + 呼吸透明度。 */

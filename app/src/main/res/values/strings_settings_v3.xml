@@ -80,7 +80,7 @@
     <string name="settings_v3_github_disconnect">Disconnect</string>
     <!-- Coding output presentation mode (v1.5 streaming vs complete) -->
     <string name="settings_v3_coding_output_mode">Output style</string>
-    <string name="settings_v3_coding_output_mode_desc">Streaming = live typing, live tool windows; Complete = show a progress card while generating, then reveal everything at once when the run finishes. Takes effect on the next run.</string>
+    <string name="settings_v3_coding_output_mode_desc">Streaming = live typing, live tool windows; Complete = a progress card while generating (with live skill/MCP/tool counters), then the run is revealed at once — tool calls collapsed into aggregate cards (skill / MCP / built-in breakdown, expandable details). Takes effect on the next run.</string>
     <string name="settings_v3_coding_output_mode_streaming">Streaming (live typing)</string>
     <string name="settings_v3_coding_output_mode_complete">Complete (reveal when done)</string>
 </resources>

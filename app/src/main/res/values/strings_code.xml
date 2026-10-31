@@ -279,6 +279,8 @@
     <string name="code_stream_run_tools_fmt">%1$d tool calls</string>
     <string name="code_stream_run_files_fmt">%1$d files</string>
     <string name="code_stream_run_failed_fmt">%1$d failed</string>
+    <string name="code_stream_run_skills_fmt">%1$d skill calls</string>
+    <string name="code_stream_run_mcp_fmt">%1$d MCP calls</string>
     <!-- ═══ Thinking tier selector v2: short tier names + capsule labels ═══ -->
     <string name="code_thinking_chip">Thinking · %1$s</string>
     <string name="code_thinking_short_none">Off</string>
@@ -375,4 +377,27 @@
     <string name="code_stream_generating_title">Generating complete reply…</string>
     <string name="code_stream_generating_tools_fmt">%1$d tool calls</string>
     <string name="code_stream_generating_failed_fmt">%1$d failed</string>
+    <!-- ═══ Tool usage aggregate + origin attribution (v1.5.1) ═══ -->
+    <string name="code_stream_aggregate_title_fmt">%1$d tool calls</string>
+    <string name="code_stream_aggregate_builtin_fmt">Built-in %1$d</string>
+    <string name="code_stream_aggregate_skill_fmt">Skills %1$d</string>
+    <string name="code_stream_aggregate_mcp_fmt">MCP %1$d</string>
+    <string name="code_stream_aggregate_section_skills">Skills</string>
+    <string name="code_stream_aggregate_section_mcp">MCP servers</string>
+    <string name="code_stream_aggregate_section_builtin">Built-in tools</string>
+    <string name="code_stream_aggregate_details">Call details</string>
+    <string name="code_stream_aggregate_failed_short_fmt">%1$d failed</string>
+    <string name="code_stream_kind_read">Read</string>
+    <string name="code_stream_kind_write">Write</string>
+    <string name="code_stream_kind_edit">Edit</string>
+    <string name="code_stream_kind_grep">Search</string>
+    <string name="code_stream_kind_bash">Command</string>
+    <string name="code_stream_kind_git">Git</string>
+    <string name="code_stream_kind_lint">Lint</string>
+    <string name="code_stream_kind_test">Test</string>
+    <string name="code_stream_kind_plan">Plan</string>
+    <string name="code_stream_kind_mcp">MCP</string>
+    <string name="code_stream_kind_skill">Skill</string>
+    <string name="code_stream_detail_origin_skill">Skill</string>
+    <string name="code_stream_detail_origin_mcp">MCP</string>
 </resources>
