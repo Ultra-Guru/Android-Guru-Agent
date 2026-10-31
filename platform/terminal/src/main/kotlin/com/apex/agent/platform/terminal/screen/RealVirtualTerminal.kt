@@ -1,5 +1,7 @@
 package com.apex.agent.platform.terminal.screen
 
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.terminalemulator.ScreenMutation
 import com.apex.agent.terminalemulator.TerminalEngine
 import com.apex.agent.terminalemulator.TerminalRenderSnapshot
@@ -227,7 +229,12 @@ class RealVirtualTerminal(
                 .onFailure {
                     // 引擎销毁失败不再可恢复（句柄生命周期已终结）—— 记录后吞掉，
                     // 不让会话清理链中断（nativeCloseSession 仍在调用方序列中）。
-                    System.err.println("RealVirtualTerminal: engine close failed: ${it.message}")
+                    // #595：改走 AppLogger 统一日志中枢 —— release 不再落 stderr。
+                    AppLogger.instance.warn(
+                        LogCategory.SYSTEM,
+                        "RealVirtualTerminal",
+                        "engine close failed: ${it.message}"
+                    )
                 }
         }
     }

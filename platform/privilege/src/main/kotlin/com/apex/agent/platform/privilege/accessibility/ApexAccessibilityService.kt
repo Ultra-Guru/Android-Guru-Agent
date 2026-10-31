@@ -11,6 +11,8 @@ import android.os.Bundle
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
 
 /**
  * 核心无障碍服务
@@ -325,8 +327,13 @@ class ApexAccessibilityService : AccessibilityService() {
                 child.recycle()
             } catch (e: Exception) {
                 // #260：高频 UI 树遍历路径用 debug 级（避免刷屏）；单子树失败
-                // 不阻断整树采集（其余兄弟节点继续）
-                android.util.Log.d("ApexA11yService", "traverseNode child[$i] failed: ${e.message}")
+                // 不阻断整树采集（其余兄弟节点继续）。
+                // #595：改走 AppLogger 统一日志中枢（debug 级语义不变，release 不再落 logcat）。
+                AppLogger.instance.debug(
+                    LogCategory.SYSTEM,
+                    "ApexA11yService",
+                    "traverseNode child[$i] failed: ${e.message}"
+                )
             }
         }
     }
