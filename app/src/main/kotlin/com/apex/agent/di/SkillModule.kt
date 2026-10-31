@@ -249,7 +249,8 @@ object SkillModule {
         // Plugin System v2：统一插件门面（功能性插件斜杠指令贡献数据源）。
         unifiedPluginRegistry: com.apex.agent.plugin.host.functional.UnifiedPluginRegistry,
         connectorRegistry: ConnectorRegistry,
-        languageManager: LanguageManager
+        languageManager: LanguageManager,
+        fusionController: com.apex.agent.fusion.FusionBundleController
     ): SlashMenuProvider {
         return SlashMenuProvider(
             skills = skillMenuProvider,
@@ -258,7 +259,8 @@ object SkillModule {
             pluginManager = pluginManager,
             unifiedPluginRegistry = unifiedPluginRegistry,
             connectorRegistry = connectorRegistry,
-            languageManager = languageManager
+            languageManager = languageManager,
+            fusionController = fusionController
         )
     }
 }

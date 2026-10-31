@@ -177,14 +177,11 @@ class FusionBundleController @Inject constructor(
         runCatching {
             apex.patchConfig { cfg ->
                 val cleaned = cfg.additionalSystemContext
-                    .replace(Regex("<!-- FUSION_CATALOG -->[\\s\\S]*?<!-- /FUSION_CATALOG -->
-?"), "")
+                    .replace(Regex("<!-- FUSION_CATALOG -->[\\s\\S]*?<!-- /FUSION_CATALOG -->\\n?"), "")
                     .trim()
                 cfg.copy(
                     additionalSystemContext =
-                    if (section.isBlank()) cleaned else listOf(section, cleaned).filter { it.isNotBlank() }.joinToString("
-
-")
+                    if (section.isBlank()) cleaned else listOf(section, cleaned).filter { it.isNotBlank() }.joinToString("\n\n")
                 )
             }
         }
