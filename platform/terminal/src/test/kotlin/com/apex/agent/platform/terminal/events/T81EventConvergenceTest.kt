@@ -8,6 +8,8 @@ import com.apex.agent.platform.terminal.io.WriteResult
 import com.apex.agent.platform.terminal.pty.FakeNativePty
 import com.apex.agent.platform.terminal.policy.PrivilegeLevel
 import com.apex.agent.platform.terminal.policy.TerminalPolicyImpl
+import com.apex.agent.platform.terminal.runtime.ExecutionBackendRegistry
+import com.apex.agent.platform.terminal.runtime.LocalShellBackend
 import com.apex.agent.platform.terminal.runtime.TerminalRuntimeImpl
 import com.apex.agent.platform.terminal.screen.RealVirtualTerminal
 import com.apex.agent.platform.terminal.state.SemanticStateReducer
@@ -136,6 +138,7 @@ class T81CloseConvergenceTest {
     private fun newRuntime(): TerminalRuntimeImpl = TerminalRuntimeImpl(
         native = FakeNativePty(),
         policy = TerminalPolicyImpl(),
+        backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend()),
         virtualTerminalFactory = { r, c -> RealVirtualTerminal(r, c) }
     )
 

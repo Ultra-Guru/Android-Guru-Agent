@@ -5,6 +5,8 @@ import com.apex.agent.platform.terminal.io.UnixSignal
 import com.apex.agent.platform.terminal.pty.FakeNativePty
 import com.apex.agent.platform.terminal.policy.TerminalPolicyImpl
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
+import com.apex.agent.platform.terminal.runtime.ExecutionBackendRegistry
+import com.apex.agent.platform.terminal.runtime.LocalShellBackend
 import com.apex.agent.platform.terminal.runtime.TerminalRuntimeImpl
 import com.apex.agent.platform.terminal.screen.RealVirtualTerminal
 import com.apex.agent.platform.TerminalWait.WaitCondition
@@ -37,6 +39,7 @@ class ProcessGroupSignalTest {
         val rt: TerminalRuntime = TerminalRuntimeImpl(
             native = native,
             policy = TerminalPolicyImpl(),
+            backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend()),
             virtualTerminalFactory = { r, c -> RealVirtualTerminal(r, c) }
         )
         return rt to native
