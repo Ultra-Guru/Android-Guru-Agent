@@ -4,9 +4,6 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
-import com.apex.agent.core.engine.modes.ModePreset
-import com.apex.agent.core.engine.modes.migrateLegacyCustomInstruction
-import com.apex.agent.core.engine.modes.selectedModePreset
 import com.apex.agent.core.code.subagent.SubAgentSettings
 import com.apex.agent.core.llm.*
 import com.apex.agent.core.logging.AppLogger
@@ -270,21 +267,6 @@ class SettingsRepository @Inject constructor(
         persistAgentSettings()
     }
 
-    /**
-     * #168 当前生效的 CUSTOM 模式指令（单一解析源，AgentModule 启动快照与
-     * AgentChatViewModel 运行时热切换共用）：
-     * 1. 选中预设（[AgentSettings.selectedModePresetId] 命中内置或用户预设）
-     *    → 该预设的 instruction；
-     * 2. 未选预设 → 回退旧单串 `custom_mode_instruction`（兼容通道）；
-     * 3. 都为空 → ""（CUSTOM 模式不注入任何额外指令）。
-     */
-    fun effectiveCustomInstruction(): String {
-        val agent = _agentSettings.value
-        selectedModePreset(agent.customModePresets, agent.selectedModePresetId)
-            ?.let { return it.instruction.trim() }
-        return prefs.getString(LEGACY_KEY_CUSTOM_INSTRUCTION, null)?.trim().orEmpty()
-    }
-
     // ── 持久化 ─────────────────────────────────────────────────
     private fun persistProfiles() =
         prefs.edit().putString(KEY_PROFILES, json.encodeToString(_profiles.value)).apply()
@@ -324,43 +306,12 @@ class SettingsRepository @Inject constructor(
         val raw = prefs.getString(KEY_AGENT, null)
         if (raw != null) {
             runCatching { json.decodeFromString<AgentSettings>(raw) }.getOrNull()
-                ?.let {
-                    return migratePermissionDefaultBypass(
-                        migrateToolLoopDefaults(migrateCustomModePresets(it))
-                    )
-                }
+                ?.let { return migratePermissionDefaultBypass(it) }
         }
-        // 兼容旧版散装 Agent 设置 Key
+        // 兼容旧版散装 Key（仅保留仍在消费的 keepAlive；Agent 模式散装键
+        // 已随模式移除，ignoreUnknownKeys 吞掉存量 JSON 里的 Agent 字段）
         return migratePermissionDefaultBypass(
-            migrateToolLoopDefaults(
-                migrateCustomModePresets(
-                    AgentSettings(
-                        defaultMode = prefs.getString("agent_default_mode", "auto") ?: "auto",
-                        thinkLevel = prefs.getString("agent_think_level", "standard") ?: "standard",
-                        maxIterations = prefs.getInt("agent_max_iterations", 20),
-                        keepAlive = prefs.getBoolean("agent_keep_alive", true),
-                    )
-                )
-            )
-        )
-    }
-
-    /**
-     * #168 预设迁移：旧版 CUSTOM 单串指令（SharedPreferences 平键
-     * `custom_mode_instruction`，AgentChatViewModel 写入）→ 首个用户预设。
-     *
-     * 迁移条件见 [migrateLegacyCustomInstruction]（旧指令非空 + 尚无用户预设
-     * + 未迁移过 → 幂等）；迁移后自动选中，保证升级前后 CUSTOM 模式的
-     * system prompt 注入内容逐字一致（行为零变化）。新用户（无旧指令）
-     * 不产生任何预设，选中留空 = 走旧单串兼容路径（选中预设优先于旧串）。
-     */
-    private fun migrateCustomModePresets(settings: AgentSettings): AgentSettings {
-        if (settings.customModePresets.isNotEmpty()) return settings
-        val legacy = prefs.getString(LEGACY_KEY_CUSTOM_INSTRUCTION, null)
-        val migrated = migrateLegacyCustomInstruction(emptyList(), legacy) ?: return settings
-        return settings.copy(
-            customModePresets = listOf(migrated),
-            selectedModePresetId = migrated.id
+            AgentSettings(keepAlive = prefs.getBoolean("agent_keep_alive", true))
         )
     }
 
@@ -414,9 +365,6 @@ class SettingsRepository @Inject constructor(
         private const val KEY_AGENT = "agent_settings_v2"
         private const val KEY_LEGACY_MIGRATED = "legacy_migrated_v2"
 
-        /** #168：旧版 CUSTOM 单串指令键（AgentChatViewModel 同款键名，迁移读取源）。 */
-        private const val LEGACY_KEY_CUSTOM_INSTRUCTION = "custom_mode_instruction"
-
         /** 加密 Preference 文件名 */
         private const val PREF_SECURE = "apex_secure_settings"
         /** Keystore 不可用时的退化文件名 */
@@ -426,23 +374,6 @@ class SettingsRepository @Inject constructor(
     }
 }
 
-/**
- * 工具循环默认无上限迁移（用户显式要求：一个任务的工具调用次数要无上限）。
- *
- * - 存量用户（持久化 JSON 里 maxIterations=20 等）一次性翻为 0（无上限哨兵，
- *   引擎侧 [ThinkingModeController.effectiveMaxIterations] 统一消费）；
- * - 新装机用户走字段默认 0，不触发本迁移行为差异；
- * - [AgentSettings.toolLoopMigrated] 置 true 后幂等短路（init 的
- *   persistAgentSettings 立即回写，升级只发生一次）；
- * - 失控防线不变：循环检测（同动作阈值 + 恢复预算）+ 用户手动停止仍是
- *   兑底，只是「轮次硬顶」不再默认打断长任务。
- *
- * 文件级 internal（与 migratePermissionDefaultBypass 同款可测口径）。
- */
-internal fun migrateToolLoopDefaults(settings: AgentSettings): AgentSettings {
-    if (settings.toolLoopMigrated) return settings
-    return settings.copy(maxIterations = 0, toolLoopMigrated = true)
-}
 
 /**
  * 工具权限默认档迁移（2026-10 用户反馈「默认就是开启所有工具，agent
@@ -458,8 +389,7 @@ internal fun migrateToolLoopDefaults(settings: AgentSettings): AgentSettings {
  *   persistAgentSettings 立即回写，升级只发生一次）。
  *
  * 文件级 internal（非成员 private）：纯函数、零 Android 依赖，单测
- * （PermissionDefaultBypassMigrationTest）直接调用（与
- * migrateLegacyCustomInstruction 的可测性口径一致）。
+ * （PermissionDefaultBypassMigrationTest）直接调用。
  */
 internal fun migratePermissionDefaultBypass(settings: AgentSettings): AgentSettings {
     if (settings.permissionBypassMigrated) return settings
@@ -471,46 +401,20 @@ internal fun migratePermissionDefaultBypass(settings: AgentSettings): AgentSetti
 }
 
 /**
- * Agent 运行参数（扩展版）。
+ * 运行参数（Agent 模式移除后的收敛版：只保留 Coding 工位与通用层仍在
+ * 消费的字段；Agent 聊天专属字段——执行模式/思考档位/预设/角色激活/
+ * 重试与循环防护/反思规划——已随模式删除，存量 JSON 由
+ * ignoreUnknownKeys 静默吞掉）。
  *
- * 字段中已真正打通到 [com.apex.agent.core.engine.AgentConfig] 的有（DI 一次性快照，
- * 设置变更需重启应用生效）：
- * defaultMode / thinkLevel / maxIterations / reflection / reflectionRounds /
- * maxContextTokens / compressionThreshold / preserveRecentTurns / maxToolOutputLength
- * （streaming / temperature 则来自选中的模型 Profile）。
- *
- * 其余字段为数据预埋，由对应层后续接入：
- *  - loopDetection / planning / replanning / backgroundExecution / keepAlive /
- *    autoRetry 等 → Agent 引擎后续接入（UI 已逐项暴露）；
- *  - visionEnabled / screenshotQuality / maxScreenshots → 视觉管线后续接入；
- *  - themeMode / dynamicColor / fontScale / showTimestamps / uiStyle /
- *    accentPalette → 界面/主题层消费（后四者设计为立即生效）。
+ * 字段中已真正打通到引擎配置（[com.apex.agent.core.engine.AgentConfig]，
+ * DI 一次性快照，设置变更需重启应用生效）的有：
+ * toolCallParallelism / maxContextTokens / compressionThreshold /
+ * preserveRecentTurns / maxToolOutputLength / rateLimit* / subagent /
+ * permissionMode / permissionRules / coding*（streaming / temperature
+ * 则来自选中的模型 Profile）。
  */
 @kotlinx.serialization.Serializable
 data class AgentSettings(
-    val defaultMode: String = "auto",        // auto | chat | build
-    val thinkLevel: String = "standard",     // standard | deep | minimal | auto
-    /**
-     * #168 聊天页思考档位覆盖（持久化）："" = 未覆盖（跟随 thinkLevel 启动默认 +
-     * Profile 原生 reasoningEffort）；"auto" = AUTO 自适应；其余 = ThinkingLevel
-     * 枚举名小写（none/light/standard/deep/maximum）。聊天页选择器写入，
-     * AgentChatViewModel init 恢复（patchConfig 运行时生效，无需重启）。
-     */
-    val thinkingLevelOverride: String = "",
-    /**
-     * 双级思考控制（RikkaHub 式）第二级：强制深度思考。
-     *
-     * 与第一级（模型原生 reasoningEffort，存 ModelProfile）完全解耦：
-     * - 第一级只走 API 原生参数（reasoning_effort / thinking.budget_tokens /
-     *   enable_thinking），仅对支持思考模式的模型生效；
-     * - 本开关为 true 时，引擎侧把 ThinkingLevel 钉在 MAXIMUM —— 通过
-     *   system prompt 注入七步 Tree-of-Thoughts 深度推理框架 + 工具自检 +
-     *   终检清单（提示词层强制，对**任何**模型生效，包括不支持原生思考
-     *   参数的模型），并同步迭代上限 ×1.5 / 更大工具输出预算。
-     *
-     * false = 引擎回退 STANDARD 三步 CoT（默认）。
-     */
-    val forceDeepThinking: Boolean = false,
     /**
      * v1.5 Coding 屏思考逻辑（双引擎路由）："" / "deep_dive" = 深潜
      * （自研七档思考，v1.2 既有行为）；"standard" = 标准（业界标准 Agent
@@ -519,26 +423,20 @@ data class AgentSettings(
      */
     val codeThinkingLogic: String = "",
     /**
-     * v1.2 Coding 模式思考档位（持久化，与聊天页 thinkingLevelOverride 互不
-     * 干扰——两模式各自记忆）："" = 未设置（回退 STANDARD）；"auto" = AUTO
-     * 自适应；其余 = ThinkingLevel 枚举名小写
+     * v1.2 Coding 模式思考档位（持久化）："" = 未设置（回退 STANDARD）；
+     * "auto" = AUTO 自适应；其余 = ThinkingLevel 枚举名小写
      * （none/light/standard/deep/maximum/ultracode/apexcode）。
      * Coding 页选择器写入，CodeViewModel init 恢复（updateThinkingLevel
      * 双通道运行时生效，无需重启）。
      */
     val codeThinkingLevel: String = "",
     /**
-     * #197 Coding 屏执行模式（与 Agent 屏的 defaultMode 互不干扰，两工位各自
-     * 记忆）："" / "build" = BUILD（边想边做）；"plan" = PLAN（先出完整计划，
-     * 确认后执行）。CodeViewModel init 恢复 + setMode 双通道运行时生效。
+     * #197 Coding 屏执行模式："" / "build" = BUILD（边想边做）；
+     * "plan" = PLAN（先出完整计划，确认后执行）；
+     * "goal" = GOAL（目标验收循环）。CodeViewModel init 恢复 + setMode
+     * 双通道运行时生效。
      */
     val codeExecutionMode: String = "",
-    /**
-     * 任务最大迭代轮数：**0 = 无上限**（哨兵，工具循环设置页可切；默认 0
-     * —— 存量用户经 [migrateToolLoopDefaults] 一次性翻为 0）。失控防线 =
-     * 循环检测 + 用户手动停止，不再靠轮次硬顶打断长任务。
-     */
-    val maxIterations: Int = 0,
     /**
      * ═══ 工具循环 v2（引擎已真接线）═══
      *
@@ -549,36 +447,19 @@ data class AgentSettings(
      * 追求确定性逐个执行请保持 1。
      */
     val toolCallParallelism: Int = 1,
-    /** 工具循环迁移标记（见 [migrateToolLoopDefaults]，幂等短路）。 */
-    val toolLoopMigrated: Boolean = false,
+
+    /** 后台服务保活（ApexCoreService = TerminalRuntime 生命周期宿主；#236）。 */
     val keepAlive: Boolean = true,
 
-    // 重试 / 循环防护
-    val autoRetry: Boolean = true,
-    val maxRetryPerAction: Int = 2,
-    val loopDetection: Boolean = true,
-    val loopDetectionWindow: Int = 5,
-    val sameActionThreshold: Int = 3,
-    val autoRecovery: Boolean = true,
-
-    // 高级 Agent 行为（数据预埋，引擎后续接入）
-    val reflection: Boolean = true,
-    val planning: Boolean = true,
-    val replanning: Boolean = false,
-
-    /** 已废弃（引擎从未接线，被 toolCallParallelism 取代）：仅存 JSON 兼容。 */
-    val parallelToolExecution: Boolean = true,
-    val backgroundExecution: Boolean = false,
-
-    // 视觉 / 截图（数据预埋，引擎后续接入）
+    // 视觉 / 截图（通用模型能力，视觉管线消费）
     val visionEnabled: Boolean = true,
     val screenshotQuality: String = "auto",   // auto | low | medium | high
     val maxScreenshots: Int = 3,
 
     /**
-     * v1.4.4 #4：任务完成通知（✅已接线——AgentChatEventApplier Complete 钩子）。
-     * App 在后台时任务/轮次跑完发系统通知（高优先级渠道，5 分钟自动消失，
-     * 前台静音）；关闭则永不打扰。
+     * v1.4.4 #4：任务完成通知（✅已接线——引擎完成钩子）。App 在后台时
+     * 任务/轮次跑完发系统通知（高优先级渠道，5 分钟自动消失，前台静音）；
+     * 关闭则永不打扰。
      */
     val taskCompletionNotify: Boolean = true,
 
@@ -595,7 +476,8 @@ data class AgentSettings(
     val autoUpdateCheck: Boolean = true,
 
     /**
-     * #218：聊天记忆自动摄取总开关（默认开，保持既有行为）。
+     * #218：聊天记忆自动摄取总开关（默认开，保持既有行为；记忆功能主仓库
+     * 保留，设置 → 工作台 → 记忆）。
      *
      * 关闭后：对话内容不再自动沉淀到画像/近况/里程碑（含 LLM 蒸馏与
      * 启发式捕获），召回注入同步静默 —— 已有记忆不受影响，可在记忆页
@@ -604,29 +486,15 @@ data class AgentSettings(
      */
     val chatMemoryCapture: Boolean = true,
 
-    // ── 上下文压缩（对应 AgentConfig，重启应用/新会话后生效）──
+    // ── 上下文压缩（对应引擎配置，重启应用/新会话后生效）──
     // Issue #222：本字段不再是水位条/压缩门的直接分母 —— 生效值改为当前默认
     // 模型 Profile 的 contextWindow（ModelProfile.effectiveContextWindow，切换
-    // 模型时 AgentChatViewModel patchConfig 热更新）；此处仅作 Profile 窗口
-    // 字段缺失/非法（≤0）时的回退值（防分母塌 0）。
+    // 模型时热更新）；此处仅作 Profile 窗口字段缺失/非法（≤0）时的回退值
+    // （防分母塌 0）。
     val maxContextTokens: Int = 128_000,
     val compressionThreshold: Float = 0.8f,   // 0.5..0.95
     val preserveRecentTurns: Int = 5,
     val maxToolOutputLength: Int = 2000,
-
-    // ── 反思 ──
-    val reflectionRounds: Int = 1,            // 1..3（设置页 Slider 绑定）
-
-    // ═══ #168 CUSTOM 模式预设（多套命名指令）═══
-    // customModePresets 只存用户自定义预设；内置 4 套由
-    // BuiltinModePresets.ALL 运行时合成（effectiveModePresets）。
-    // selectedModePresetId = "" → 未选：回退旧单串 custom_mode_instruction
-    // （AgentChatViewModel 兼容通道）；选中预设的 instruction 由 VM 拍平进
-    // AgentConfig.customInstruction（既有 "## Custom Instructions" 注入点，
-    // 引擎/提示词零新概念）。旧单串首启自动迁移为预设（幂等，见
-    // SettingsRepository.migrateCustomModePresets）。
-    val customModePresets: List<ModePreset> = emptyList(),
-    val selectedModePresetId: String = "",
 
     // ── 界面 ──
     val themeMode: String = "system",         // system | dark | light
@@ -658,8 +526,7 @@ data class AgentSettings(
 
     // ── 语言 / 输入行为（界面层即时消费；语言切换由 MainActivity recreate 生效）──
     val language: String = "system",          // system | zh | en
-    val sendKeyBehavior: String = "send",      // send | newline（聊天输入框 IME 行为）
-    val showRunSummary: Boolean = false,       // 任务总结卡默认隐藏
+    val sendKeyBehavior: String = "send",      // send | newline（Coding 输入框 IME 行为）
 
     // ── 新手引导 ──
     // 首次启动展示 Onboarding（欢迎/能力/权限/模型配置四页）；
@@ -683,27 +550,23 @@ data class AgentSettings(
     val workspaceFolderUri: String = "",
     val workspaceFolderName: String = "",
 
-    // ═══ Agent 角色（人设层 · 运行时可热切换，无需重启）═══
-    // agentRoles 只存自定义角色；内置全能角色运行时合成（AgentRole.ALL_ROUNDER，
-    // 升级即最新且不可删）。activeRoleId 悬空/被删 → activeRole() 诚实回落内置。
-    // 操作助手见 AgentRole.kt（withRoleUpserted/withRoleRemoved/withRoleActivated）。
+    // ═══ Coding 专家角色（人设层 · 运行时可热切换，无需重启）═══
+    // agentRoles 只存自定义角色；内置专家模板（AgentRole.CODING_EXPERTS，
+    // 升级即最新且不可删）运行时合成。codeActiveRoleId 悬空/被删 →
+    // activeCodingRole() 诚实回落全栈置顶。操作助手见 AgentRole.kt
+    // （withRoleUpserted/withRoleRemoved/withCodingRoleActivated）。
     val agentRoles: List<AgentRole> = emptyList(),
-    val activeRoleId: String = AgentRole.BUILTIN_ALL_ROUNDER_ID,
-
-    // v6 Coding 专家模板：Coding 工位的激活角色（独立于 Agent 屏 activeRoleId，
-    // 同一份 agentRoles 自定义池跨模式复用）。悬空/被删 → activeCodingRole()
-    // 诚实回落全栈置顶。操作助手 withCodingRoleActivated（AgentRole.kt）。
     val codeActiveRoleId: String = AgentRole.BUILTIN_CODING_FULL_STACK_ID,
 
     // ═══ 工具权限（v1.0 #155 业界标准式权限模式；默认档全开）═══
-    // 两模式共享的 ToolExecutor 门控：模式（BYPASS/DEFAULT/ACCEPT_EDITS/PLAN）
-    // + 按序首匹配规则三元组（ALLOW/ASK/DENY，pattern 支持尾缀星号通配，
-    // 覆盖 mcp__ 动态 id）。决策器见 PermissionDecider，门见 PermissionModeGate。
+    // 引擎执行器门控：模式（BYPASS/DEFAULT/ACCEPT_EDITS/PLAN）+ 按序首匹配
+    // 规则三元组（ALLOW/ASK/DENY，pattern 支持尾缀星号通配，覆盖 mcp__
+    // 动态 id）。决策器见 PermissionDecider，门见 PermissionModeGate。
     // 2026-10 用户反馈（默认全开）：agent 默认就应能直接使用全部工具 /
     // MCP / 技能 / shell 命令，不该逐个弹「请求执行」确认 —— 默认档由
     // DEFAULT 改为 BYPASS（全自动），存量 DEFAULT 用户经
     // [permissionBypassMigrated] 一次性迁移；需要确认预算的用户可在
-    // 设置 → 工具权限 切回其他档位。
+    // 设置 → 工作台 → 权限 切回其他档位。
     val permissionMode: PermissionMode = PermissionMode.BYPASS,
     val permissionRules: List<PermissionRule> = emptyList(),
 
@@ -713,9 +576,8 @@ data class AgentSettings(
     val permissionBypassMigrated: Boolean = false,
 
     // ═══ 行为规则（v1.1 #164 Rules 规则系统）═══
-    // 全局规则：设置层持久化的自由文本，对所有工作区/两种模式生效，
-    // 注入系统提示词 "## Global Rules" 段（coding 模式经 additionalSystemContext
-    // 通道、agent 模式经 EnginePrompts.globalRules 参数——二选一，防双注）。
+    // 全局规则：设置层持久化的自由文本，对所有工作区生效，注入系统提示词
+    // "## Global Rules" 段（coding 模式经 additionalSystemContext 通道注入）。
     // 项目规则（AGENTS.md/CLAUDE.md/.cursorrules）不持久化，由 RulesProvider
     // 每轮从工作区即时发现。默认空串 = 无规则，向后兼容零迁移。
     val globalRules: String = "",
@@ -726,23 +588,11 @@ data class AgentSettings(
     // 同款消费。自定义类型由 CodeTask 的 custom 类型 + custom_name 按名解析。
     val subagent: SubAgentSettings = SubAgentSettings(),
 
-    // ═══ v3 GOAL 目标模式 ═══
+    // ═══ v3 GOAL 目标模式（Coding 屏 GOAL 模式默认值）═══
     // goalMaxRounds：新目标的默认验收轮次上限（创建对话框预填）。
     // goalVerifierEnabled：快速模型验收开关（关闭后信任主模型自评，省 token）。
-    // goalAutoResume：会话恢复时若有未完成目标自动提示续跑（仅提示不自动执行）。
     val goalMaxRounds: Int = 8,
     val goalVerifierEnabled: Boolean = true,
-    val goalAutoResume: Boolean = true,
-
-    // ═══ v3 LOOP 循环与 Cron 模式 ═══
-    // loopDefaultIntervalMs：新循环默认间隔（创建对话框预填）。
-    // loopMaxRunsDefault：新循环默认最大执行次数。
-    // loopNotifyOnRun：App 在后台时循环触发/完成发系统通知（前台静音）。
-    // loopCatchUpMissed：会话重新打开时补跑错过的到期轮（一次性提醒除外）。
-    val loopDefaultIntervalMs: Long = 300_000L,
-    val loopMaxRunsDefault: Int = 10,
-    val loopNotifyOnRun: Boolean = true,
-    val loopCatchUpMissed: Boolean = false,
 
     // ═══ v3 Coding 工位增强 ═══
     // codingToolSurface：Coding 屏工具面——"full"（默认，CORE+激活全量）|
@@ -751,9 +601,15 @@ data class AgentSettings(
     // 旧工作流免读直改，风险自担）。
     // codingAutoRules：AGENTS.md/CLAUDE.md/.cursorrules 自动发现注入开关
     // （关闭后仅全局规则生效，项目规则被忽略）。
-    // mcpScopeIsolation：MCP/技能复合工具按市场分级（agent/coding）在引擎
-    // 侧隔离的开关（默认开；关闭后回到 v2 的全局可见行为）。
+    // mcpScopeIsolation：MCP/技能复合工具按市场分级在引擎侧隔离的开关
+    // （默认开；关闭后回到 v2 的全局可见行为）。
     val codingToolSurface: String = "full",
+    // codeOutputMode：Coding 屏输出展示档——"streaming"（默认，Rikka 风格
+    // 流式：逐字/逐胶囊实时渲染）| "complete"（整段模式：生成中仅加载进度
+    // 卡，run 收束后一次性渲染完整时间轴）。UI 渲染层开关（引擎/会话零
+    // 参与），档位在每轮 run 开始时捕获（运行中改设置不打断当前轮）。
+    // 见 ui/screen/code/CodeOutputMode.kt。
+    val codeOutputMode: String = "streaming",
     val codingReadGuard: Boolean = true,
     val codingAutoRules: Boolean = true,
     val mcpScopeIsolation: Boolean = true,
@@ -768,7 +624,7 @@ data class AgentSettings(
     //    近轮 +3、压缩阈值上浮（更晚压缩）—— 单请求携带更多上下文，
     //    用更少的请求完成同样的任务（AgentModule/CodeModule 拍平进引擎）。
     // 建议组合（设置页一键应用）：并行工具执行 ≥4（一轮多工具 = 少几轮
-    // 请求）+ 任务轮次无上限 + 上述两项。
+    // 请求）+ 上述两项。
     val rateLimitFriendly: Boolean = false,
     val rateLimitMinIntervalMs: Int = 4000,    // 0..60000（0 = 不节流间隔）
     val rateLimitRichPayload: Boolean = true,

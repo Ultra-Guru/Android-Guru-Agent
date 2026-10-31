@@ -13,7 +13,6 @@ import com.apex.agent.platform.terminal.proot.PRootBinaryProvider
 import com.apex.agent.platform.terminal.proot.PRootCapabilitySource
 import com.apex.agent.platform.terminal.proot.PRootHostEnvironment
 import com.apex.agent.platform.terminal.runtime.ExecutionBackendRegistry
-import com.apex.agent.platform.terminal.runtime.LocalShellBackend
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
 import com.apex.agent.platform.terminal.persistence.SessionMetadataStore
 import com.apex.agent.platform.terminal.runtime.TerminalRuntimeImpl
@@ -340,7 +339,6 @@ object TerminalModule {
     fun provideExecutionBackendRegistry(
         linuxBackend: LinuxPRootBackend
     ): ExecutionBackendRegistry = ExecutionBackendRegistry.of(
-        LocalShellBackend(),
         linuxBackend
     )
 

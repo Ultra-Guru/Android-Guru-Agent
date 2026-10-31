@@ -1,6 +1,7 @@
 package com.apex.agent.core.tools.skill
 
 import com.apex.agent.core.tools.AgentTool
+import com.apex.agent.core.tools.ToolCategory
 import com.apex.agent.core.tools.ToolExecutor
 import com.apex.agent.core.tools.ToolMetadata
 import kotlinx.serialization.json.Json
@@ -44,10 +45,16 @@ class SkillToolAdapter(
 
     /**
      * v3 作用域打标：manifest.scope → ToolMetadata.scope（脏值折叠 all）。
-     * 显式覆盖接口默认的 id 推断元数据只为携带 scope——category / risk /
-     * annotations 仍走同款推断，除 scope 外逐字段等值，存量行为零变化。
+     * v5 溯源打标：category 强制 SKILL + `skill:{id}` 标签 —— 旧实现走
+     * id 推断（仅 id 含 "Skill" 才命中），任意命名的技能工具（如
+     * FetchTodos）会被折进 UTILITY，事件层溯源拿不到权威分类。现在
+     * 与 McpAgentTool 同款显式打标（引擎 resolveToolOrigin / 胶囊 UI
+     * 溯源展示的固定消费方）；risk/annotations 仍走同款推断，除新增
+     * 两项外逐字段等值。
      */
     override val metadata: ToolMetadata = ToolMetadata.meta(id) {
+        category(ToolCategory.SKILL)
+        tag("skill", "skill:${skillTool.id}")
         scope(ToolMetadata.normalizeScope(skillScope))
     }
 

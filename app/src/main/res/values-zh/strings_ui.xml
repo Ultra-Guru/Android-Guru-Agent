@@ -16,9 +16,6 @@
     <string name="settings_send_key_send">发送消息</string>
     <string name="settings_send_key_newline">换行</string>
 
-    <!-- 任务总结卡片 -->
-    <string name="settings_show_run_summary">显示任务总结卡片</string>
-    <string name="settings_show_run_summary_desc">任务完成时显示总结卡片（默认关闭）</string>
 
     <!-- 详细输入（分层编辑入口） -->
     <string name="detailed_input">详细输入</string>

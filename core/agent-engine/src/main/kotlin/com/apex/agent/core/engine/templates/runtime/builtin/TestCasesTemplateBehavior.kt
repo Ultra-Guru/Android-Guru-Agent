@@ -22,10 +22,13 @@ import com.apex.agent.core.engine.templates.runtime.TemplateLanguageDetector
  * 「测试用例」模板的代码化行为：
  * 1. **ANALYZE**：函数签名提取（复用函数探测）→ 类型等价类表 →
  *    边界值推导（数字/字符串/集合/浮点特值/空安全）→ 测试矩阵骨架；
- *    框架约定库（JUnit4/5、Kotest、pytest、Jest、go test）随附录注入；
+ *    框架约定库（JUnit4/5、Kotest、pytest、Jest、go test）随附录注入
+ *    + 框架套件（PR 19：八套框架规范/命名规则/断言映射/骨架生成/
+ *    TC 编号覆盖矩阵）；
  * 2. **VALIDATE**：三必需章节（等价类与边界条件 / 覆盖矩阵 / 测试代码），
- *    测试代码章节必须含围栏代码块；
- * 3. **RENDER**：机器摘要（函数数/参数数/等价类数/用例骨架数）。
+ *    测试代码章节必须含围栏代码块 + 反模式门禁（PR 19：无断言测试/
+ *    循环内断言/裸捕获/魔法 sleep/一测多行为/过宽异常）；
+ * 3. **RENDER**：机器摘要（函数数/参数数/等价类数/用例骨架数/TC 编号数/反模式数）。
  */
 open class TestCasesTemplateBehavior : TemplateBehaviorBase() {
 
@@ -58,7 +61,7 @@ open class TestCasesTemplateBehavior : TemplateBehaviorBase() {
         ),
         deterministicPreAnalysis = true,
         promptEnrichmentMode = TemplatePromptEnrichmentMode.APPEND_FINDINGS,
-        behaviorVersion = 1
+        behaviorVersion = 2
     )
 
     override suspend fun analyze(
@@ -90,6 +93,37 @@ open class TestCasesTemplateBehavior : TemplateBehaviorBase() {
             )
         }
 
+        // PR 19：框架套件（规范/命名/断言映射/骨架生成/覆盖矩阵）
+        val spec = TestCaseFrameworkKit.resolveFramework(framework)
+        val skeletons = TestCaseFrameworkKit.generateSkeletons(spec, analysis.functions)
+        val matrix = TestCaseFrameworkKit.buildCoverageMatrix(spec, analysis.functions)
+        if (skeletons.isNotEmpty()) {
+            findings.add(
+                com.apex.agent.core.engine.templates.runtime.TemplateFinding(
+                    ruleId = "test.framework-kit",
+                    category = TemplateFindingCategory.STRUCTURE,
+                    severity = com.apex.agent.core.engine.templates.runtime.TemplateSeverity.INFO,
+                    title = "框架套件就绪：${spec.label}（${skeletons.size} 条骨架 / ${matrix.size} 格覆盖矩阵）",
+                    evidence = "断言库：${spec.assertionLibrary}｜命名：${spec.namingStyle.label}｜mock：${spec.mockLibrary}",
+                    suggestion = "测试代码按骨架填充：arrange-act-assert 三段 + 具体断言",
+                    confidence = 1.0
+                )
+            )
+            for (skeleton in skeletons.take(MAX_SKELETON_FINDINGS)) {
+                findings.add(
+                    com.apex.agent.core.engine.templates.runtime.TemplateFinding(
+                        ruleId = "test.case-skeleton",
+                        category = TemplateFindingCategory.STRUCTURE,
+                        severity = com.apex.agent.core.engine.templates.runtime.TemplateSeverity.INFO,
+                        title = "${skeleton.caseId}（${skeleton.category.label}）：${skeleton.testName}",
+                        evidence = skeleton.code.lines().firstOrNull { it.isNotBlank() }?.take(60) ?: "",
+                        suggestion = "按此骨架展开具体测试",
+                        confidence = 1.0
+                    )
+                )
+            }
+        }
+
         var stats = TemplateAnalysisStats.empty()
             .with(TemplateAnalysisStats.KEY_RULE_COUNT, findings.size)
             .with(TemplateAnalysisStats.KEY_ANALYZED_LINES, code.lines().size)
@@ -99,8 +133,13 @@ open class TestCasesTemplateBehavior : TemplateBehaviorBase() {
             .with(METRIC_SKELETONS, analysis.skeletons.size)
 
         val hints = mutableListOf<String>()
-        hints += "测试框架：$framework"
+        hints += "测试框架：$framework（解析为 ${spec.label}）"
         hints += "框架约定：" + TestCasesAnalyzer.frameworkConventions(framework).joinToString("；")
+        hints += "断言库：${spec.assertionLibrary}（${spec.assertionImports.joinToString(" / ")})"
+        hints += "参数化形态：${spec.parameterizedPattern}"
+        if (skeletons.isNotEmpty()) {
+            hints += "覆盖矩阵（TC 编号已定）：" + matrix.take(6).joinToString("；") { TestCaseFrameworkKit.matrixLineOf(it) }
+        }
         if (analysis.functions.isNotEmpty()) {
             hints += "被测函数基线：" + analysis.functions.joinToString("、") { it.name }
             hints += "等价类总数 ${analysis.equivalenceClasses.size}（正常/边界/异常三分），用例骨架 ${analysis.skeletons.size} 条（已按函数分组）"
@@ -140,6 +179,23 @@ open class TestCasesTemplateBehavior : TemplateBehaviorBase() {
                 )
             )
         }
+        // 专项（PR 19）：测试代码反模式门禁
+        if (hasFence) {
+            for (issue in TestCaseFrameworkKit.lintAntiPatterns(raw).take(MAX_ANTI_PATTERN_VIOLATIONS)) {
+                violations.add(
+                    com.apex.agent.core.engine.templates.runtime.TemplateContractViolation(
+                        kind = if (issue.repairable) {
+                            com.apex.agent.core.engine.templates.runtime.TemplateContractViolationKind.BAD_SEVERITY_MARK
+                        } else {
+                            com.apex.agent.core.engine.templates.runtime.TemplateContractViolationKind.SECTION_EMPTY
+                        },
+                        section = "测试代码",
+                        detail = "[${issue.kind.label}] ${issue.detail}",
+                        evidence = issue.evidence
+                    )
+                )
+            }
+        }
         return com.apex.agent.core.engine.templates.runtime.TemplateValidationReport(
             violations = violations,
             parsedSections = base.parsedSections,
@@ -156,12 +212,16 @@ open class TestCasesTemplateBehavior : TemplateBehaviorBase() {
         val code = context.variable("code").orEmpty()
         val language = TemplateLanguageDetector.detect(code).takeIf { it.isConfident }?.detected
         val analysis = TestCasesAnalyzer.analyze(code, language, context.variableOr("framework", "JUnit"))
+        val spec = TestCaseFrameworkKit.resolveFramework(context.variableOr("framework", "JUnit"))
+        val skeletons = TestCaseFrameworkKit.generateSkeletons(spec, analysis.functions)
         return base.copy(
             summary = mapOf(
                 META_FUNCTION_COUNT to analysis.functions.size.toString(),
                 META_PARAM_COUNT to analysis.functions.sumOf { it.params.size }.toString(),
                 META_CLASS_COUNT to analysis.equivalenceClasses.size.toString(),
-                META_SKELETON_COUNT to analysis.skeletons.size.toString()
+                META_SKELETON_COUNT to analysis.skeletons.size.toString(),
+                META_TC_COUNT to skeletons.size.toString(),
+                META_ANTI_PATTERNS to TestCaseFrameworkKit.lintAntiPatterns(raw).size.toString()
             )
         )
     }
@@ -176,5 +236,9 @@ open class TestCasesTemplateBehavior : TemplateBehaviorBase() {
         const val META_PARAM_COUNT = "paramCount"
         const val META_CLASS_COUNT = "classCount"
         const val META_SKELETON_COUNT = "skeletonCount"
+        const val META_TC_COUNT = "tcSkeletonCount"
+        const val META_ANTI_PATTERNS = "antiPatternCount"
+        const val MAX_SKELETON_FINDINGS = 5
+        const val MAX_ANTI_PATTERN_VIOLATIONS = 4
     }
 }

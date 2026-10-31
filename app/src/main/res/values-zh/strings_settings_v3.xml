@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- v3 设置扩展分区（中文）。英文默认在 values/strings_settings_v3.xml。 -->
 <resources>
-    <!-- 子代理分区（设置 → Agent 页） -->
+    <!-- 子代理分区（设置 → 工作台） -->
     <string name="settings_v3_subagent_title">子代理</string>
     <string name="settings_v3_subagent_subtitle">Coding 模式的委派工作者，预算可调</string>
-    <string name="settings_v3_subagent_scope_hint">仅 Coding 模式生效：Agent 聊天工位不暴露编码工具（CodeTask 隔离），这里的开关与预算只在编程工位起作用。</string>
+    <string name="settings_v3_subagent_scope_hint">仅 Coding 工位生效：这里的开关与预算只在编程工位起作用（CodeTask 隔离）。</string>
     <string name="settings_v3_subagent_enabled">启用子代理</string>
     <string name="settings_v3_subagent_enabled_desc">关闭后主代理改为亲自执行探索，不再委派</string>
     <string name="settings_v3_subagent_concurrency">并发上限</string>
@@ -41,28 +41,14 @@
     <string name="settings_v3_subagent_custom_turns_desc">填 0 时沿用全局迭代上限</string>
     <string name="settings_v3_subagent_custom_delete">删除子代理</string>
 
-    <!-- GOAL 分区 -->
+    <!-- GOAL 分区（Coding 屏 GOAL 模式默认值） -->
     <string name="settings_v3_goal_title">GOAL 目标模式</string>
     <string name="settings_v3_goal_subtitle">可验收目标循环默认值</string>
     <string name="settings_v3_goal_verifier">快速模型验收</string>
     <string name="settings_v3_goal_verifier_desc">关闭后信任主模型自评，省 token</string>
     <string name="settings_v3_goal_max_rounds">默认最大验收轮次</string>
     <string name="settings_v3_goal_max_rounds_desc">新目标的上限预填（创建对话框）</string>
-    <string name="settings_v3_goal_auto_resume">会话恢复提示续跑</string>
-    <string name="settings_v3_goal_auto_resume_desc">仅提示，未完成目标绝不自动执行</string>
     <string name="settings_v3_goal_note">验收走「快速模型」角色——可在 模型 Tab→Roles 里为它配置便宜小模型</string>
-
-    <!-- LOOP 分区 -->
-    <string name="settings_v3_loop_title">LOOP 循环模式</string>
-    <string name="settings_v3_loop_subtitle">定时循环默认值</string>
-    <string name="settings_v3_loop_interval">默认间隔</string>
-    <string name="settings_v3_loop_interval_desc">新循环的预填值（创建对话框）</string>
-    <string name="settings_v3_loop_max_runs">默认最大执行次数</string>
-    <string name="settings_v3_loop_max_runs_desc">新循环的执行次数上限预填</string>
-    <string name="settings_v3_loop_notify">后台触发通知</string>
-    <string name="settings_v3_loop_notify_desc">App 在后台时循环触发发系统通知，前台静音</string>
-    <string name="settings_v3_loop_catch_up">补跑错过的轮次</string>
-    <string name="settings_v3_loop_catch_up_desc">会话重新打开时补跑错过的到期轮；一次性提醒总是即时补发</string>
 
     <!-- Coding 工位分区 -->
     <string name="settings_v3_coding_title">Coding 工位</string>
@@ -76,7 +62,7 @@
     <string name="settings_v3_coding_auto_rules">自动项目规则</string>
     <string name="settings_v3_coding_auto_rules_desc">自动发现并注入工作区的 AGENTS.md / CLAUDE.md / .cursorrules</string>
     <string name="settings_v3_coding_mcp_scope">MCP 与技能作用域隔离</string>
-    <string name="settings_v3_coding_mcp_scope_desc">按市场分级（Agent / Coding）隔离 MCP 与技能工具；关闭回到 v2 全局可见</string>
+    <string name="settings_v3_coding_mcp_scope_desc">按市场分级在引擎侧隔离 MCP 与技能工具；关闭回到 v2 全局可见</string>
 
     <!-- GitHub 分区 -->
     <string name="settings_v3_github_title">GitHub</string>
@@ -92,4 +78,9 @@
     <string name="settings_v3_github_repo_saved">已保存</string>
     <string name="settings_v3_github_clear">清除</string>
     <string name="settings_v3_github_disconnect">断开连接</string>
+    <!-- Coding 输出展示档（v1.5 流式 / 整段） -->
+    <string name="settings_v3_coding_output_mode">输出方式</string>
+    <string name="settings_v3_coding_output_mode_desc">流式 = 逐字实时显示、实时工具窗；完整 = 生成中仅进度卡（实时技能 / MCP / 工具计数），收束后一次性揭示——工具调用折叠为聚合卡（技能 / MCP / 内置分组，可展开明细）。下一轮运行生效。</string>
+    <string name="settings_v3_coding_output_mode_streaming">流式（实时逐字）</string>
+    <string name="settings_v3_coding_output_mode_complete">完整（完成后展示）</string>
 </resources>

@@ -53,16 +53,16 @@ import kotlinx.coroutines.cancel
  *
  * Spec ref: ATR 2.0 Final Spec §6.1 / §33 / §34
  *
- * T73: create() 统一经 [ExecutionBackendRegistry] 路由 —— backendId="local" 走
- * LocalShellBackend（与旧硬编码 spawn 逐字节一致，ExecutionBackendGoldenTest 锁定），
- * backendId="linux-ubuntu" 走 LinuxPRootBackend（forkpty → proot → Ubuntu bash）。
+ * T73: create() 统一经 [ExecutionBackendRegistry] 路由 —— backendId="linux-ubuntu"
+ * 走 LinuxPRootBackend（forkpty → proot → Ubuntu bash）。
  * 会话的后端元数据进 TerminalSession.backend 并持久化（SessionRecord schema v2）。
+ * AndroidShell 后端已移除（Ubuntu-only 收敛；测试夹具 LocalShellBackend 在测试源集）。
  *
  * Construction (Hilt in real repo; manual here):
  *   val runtime = TerminalRuntimeImpl(
  *       native = FakeNativePty() or JniNativePty(),
  *       policy = TerminalPolicyImpl(),
- *       backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend(), linuxBackend),
+ *       backendRegistry = ExecutionBackendRegistry.of(linuxBackend),
  *       virtualTerminalFactory = { r, c -> RealVirtualTerminal(r, c) }   // Phase 2: real VT
  *   )
  *
@@ -74,7 +74,7 @@ import kotlinx.coroutines.cancel
 class TerminalRuntimeImpl(
     private val native: NativePty,
     private val policy: TerminalPolicy,
-    private val backendRegistry: ExecutionBackendRegistry = ExecutionBackendRegistry.of(LocalShellBackend()),
+    private val backendRegistry: ExecutionBackendRegistry,
     private val virtualTerminalFactory: (Int, Int) -> VirtualTerminal = { r, c ->
         com.apex.agent.platform.terminal.screen.RealVirtualTerminal(r, c)
     },
@@ -206,7 +206,7 @@ class TerminalRuntimeImpl(
 
     // ───────── create ─────────
     override suspend fun create(
-        shell: String, cwd: String, rows: Int, cols: Int,
+        cwd: String, rows: Int, cols: Int,
         env: Map<String, String>, privilege: PrivilegeLevel,
         backendId: String, workspaceId: String?
     ): Result<CreateResult> {
@@ -214,8 +214,7 @@ class TerminalRuntimeImpl(
         if (shutdownGate.get()) {
             return Result.failure(com.apex.agent.platform.terminal.errors.TerminalOperationException(com.apex.agent.platform.terminal.errors.TerminalError.UnsupportedOperation, "runtime 已 shutdown"))
         }
-        // T73: 后端路由。local 默认 —— 与历史行为一致（golden）；
-        // linux-ubuntu —— 失败时给出可行动错误（引导 Agent 先装 rootfs）。
+        // T73: 后端路由。linux-ubuntu（默认）—— 失败时给出可行动错误（引导先装 rootfs）。
         val backend = backendRegistry.get(backendId)
             ?: return Result.failure(
                 RuntimeException(
@@ -223,15 +222,6 @@ class TerminalRuntimeImpl(
                         backendRegistry.list().joinToString(", ") { it.id } + "）"
                 )
             )
-        // T75: workspace 是 LINUX 后端概念 —— LOCAL 会话拒绝（显式报错优于静默忽略）。
-        if (!workspaceId.isNullOrBlank() && backend.runtimeType != BackendRuntimeType.LINUX) {
-            return Result.failure(
-                IllegalArgumentException(
-                    "TerminalError:InvalidInput — workspaceId 仅支持 LINUX 后端" +
-                        "（当前 backend='${backend.id}'）。workspace 管理见 TerminalWorkspaces。"
-                )
-            )
-        }
         when (val av = backend.availability()) {
             is BackendAvailability.Ready -> Unit
             is BackendAvailability.NeedsRootfs -> return Result.failure(
@@ -247,7 +237,6 @@ class TerminalRuntimeImpl(
             )
         }
         val request = SessionSpawnRequest(
-            shellHint = shell.takeIf { backendId == LocalShellBackend.ID },
             cwd = cwd, rows = rows, cols = cols, env = env, privilege = privilege,
             workspaceId = workspaceId
         )

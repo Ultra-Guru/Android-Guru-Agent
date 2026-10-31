@@ -10,6 +10,7 @@ import com.apex.agent.core.code.longtask.LongTaskStore
 import com.apex.agent.core.code.longtask.LongTaskTracker
 import com.apex.agent.core.code.longtask.TaskCopyEngine
 import com.apex.agent.core.code.standard.DualLogicCodeEngine
+import com.apex.agent.core.code.CodeContextSnapshot
 import com.apex.agent.core.code.standard.StandardLogicMode
 import com.apex.agent.core.code.stream.CodeStreamCheckpoint
 import com.apex.agent.core.code.stream.CodeStreamSession
@@ -248,12 +249,14 @@ class CodeViewModel @Inject constructor(
         if (active != null) {
             bindWorkspace(active)
         }
-        // v1.2 七档思考系统：恢复持久化档位（与聊天页 thinkingLevelOverride
-        // 互不干扰，两模式各自记忆）
+        // v1.2 七档思考系统：恢复持久化档位（Agent 聊天页的
+        // thinkingLevelOverride 已随 Agent 模式移除，本字段独立记忆）
         restoreThinkingLevel()
         // v1.5 双思考逻辑：恢复持久化档位（空/未知 → 深潜）。先于 setMode：
         // GOAL 恢复强制深潜线，在后恢复会反切持久化线、破坏「GOAL 恒走深潜」。
         restoreLogicMode()
+        // v1.5 输出展示档恢复（流式/整段；见 CodeOutputModeOps.kt）
+        restoreOutputMode()
         // #197：Coding 屏模式同步（引擎侧恒为 BUILD/PLAN；未知值回退 BUILD）
         val startupMode = settingsRepository.agentSettings.value.let { s ->
             s.codeExecutionMode.takeIf { it.isNotBlank() }
@@ -309,6 +312,9 @@ class CodeViewModel @Inject constructor(
         codeEngineImpl?.updateMode(_uiState.value.mode)
         codeEngineImpl?.updateThinkingLevel(_uiState.value.thinkingLevel)
     }
+
+    /** 上下文查看（路由到当前激活逻辑线；深潜线全量，kit 线统计降级）。 */
+    fun contextSnapshot(): CodeContextSnapshot? = codeEngineImpl?.contextSnapshot()
 
     // ═══ #197 执行模式（Build/Plan）═══
 
@@ -616,6 +622,8 @@ class CodeViewModel @Inject constructor(
         recentToolOutcomes.clear()
 
         // 胶囊时间轴：用户气泡入轴 + 渲染 ticker 启动（25ms ≤40Hz 攒批）。
+        // 输出展示档本轮捕获（运行中改设置不打断当前轮，见 CodeOutputModeOps.kt）。
+        captureRunOutputMode()
         streamSession.beginRun(goal)
         startRenderTicker()
 

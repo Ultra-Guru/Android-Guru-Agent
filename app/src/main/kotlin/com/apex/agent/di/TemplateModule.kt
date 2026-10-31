@@ -3,6 +3,8 @@ package com.apex.agent.di
 import android.content.Context
 import android.util.Log
 import com.apex.agent.core.engine.templates.PromptTemplateRegistry
+import com.apex.agent.core.engine.templates.runtime.TemplateRuntime
+import com.apex.agent.core.engine.templates.runtime.builtin.BuiltinBehaviorCatalog
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -50,4 +52,17 @@ object TemplateModule {
         }
         return registry
     }
+
+    /**
+     * 模板行为运行时（#20 步系列）：内置模板绑定代码行为（十行为 1:1 目录），
+     * 自定义模板自动回落兜底行为（纯变量替换管线）。行为无状态，进程内共享安全。
+     */
+    @Provides
+    @Singleton
+    fun provideTemplateRuntime(
+        registry: PromptTemplateRegistry
+    ): TemplateRuntime = TemplateRuntime(
+        registry = registry,
+        behaviors = BuiltinBehaviorCatalog.ALL
+    )
 }
