@@ -234,7 +234,9 @@ private fun vaultEventText(event: VaultEvent): String = when (event) {
 /** 系统剪贴板复制（用户随后手动粘贴到任意应用）。 */
 private fun copyToClipboard(context: Context, text: String) {
     runCatching {
-        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        // #452：CLIPBOARD_SERVICE 极端环境可能为 null —— as? 存活，
+        // 服务缺失时静默跳过（runCatching 原本就吞复制失败）。
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
         cm.setPrimaryClip(ClipData.newPlainText("vault", text))
     }
 }
