@@ -54,7 +54,8 @@ class TemplateRuntimeEndToEndTest {
         assertEquals(9, ApiDesignConventionLibrary.RULE_IDS.size)
         assertEquals(8, TestCaseFrameworkKit.SPECS.size)
         assertEquals(4, DocType.entries.size)
-        assertEquals(5, RegexFlavor.entries.size)
+        // 五方言（PCRE/Python/Java/JS/POSIX；UNKNOWN 哨兵不计入）
+        assertEquals(5, RegexFlavor.entries.count { it != RegexFlavor.UNKNOWN })
     }
 
     // ═══ 2) 全链路冒烟（深化模块专属信号注入附录）═══
