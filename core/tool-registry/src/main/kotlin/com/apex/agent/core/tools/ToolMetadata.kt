@@ -393,7 +393,7 @@ data class ToolMetadata(
 
         /** Fluent metadata construction: `meta("JsonPathLegacy") { tag("json") }`. */
         @JvmStatic
-        fun meta(id: String, block: Builder.() -> Unit = {}): ToolMetadata =
+        fun meta(id: String, block: Builder.() -> Unit): ToolMetadata =
             Builder(id).apply(block).build()
 
         /**
