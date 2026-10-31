@@ -744,6 +744,19 @@ class CodeViewModel @Inject constructor(
         codeEngine.submitUserInput(answer)
     }
 
+    /**
+     * #509：用户取消挂起的提问（返回键 / 取消按钮）。
+     *
+     * 必须同时关界面**并**唤醒引擎等待 —— 只清 `pendingQuestion` 会让引擎
+     * 继续挂在 5 分钟超时上，界面看似已取消而任务实际停摆。
+     * `cancelUserInput()` 以空答案唤醒，引擎侧由 `AskUserOutcome.NoAnswer`
+     * 明确告知模型「没有作答」，不再伪造 `User answered:`。
+     */
+    fun cancelPendingQuestion() {
+        _uiState.update { it.copy(pendingQuestion = null) }
+        codeEngine.cancelUserInput()
+    }
+
     /** 用户回答了工具/权限门的结构化提问（QuestionCard 回传）。 */
     fun answerAgentQuestion(selectedIds: List<String>, customText: String?) {
         val question = userQuestionBridge.pendingQuestion.value ?: return
