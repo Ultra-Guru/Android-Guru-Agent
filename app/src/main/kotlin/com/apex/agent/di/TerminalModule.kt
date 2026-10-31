@@ -7,6 +7,8 @@ import com.apex.agent.platform.terminal.policy.TerminalPolicy
 import com.apex.agent.platform.terminal.policy.TerminalPolicyImpl
 import com.apex.agent.platform.terminal.linux.CpuArchitecture
 import com.apex.agent.platform.terminal.linux.RootfsProvider
+import com.apex.agent.platform.terminal.chroot.LinuxChrootBackend
+import com.apex.agent.platform.terminal.chroot.SuBinaryLocator
 import com.apex.agent.platform.terminal.proot.LinuxPRootBackend
 import com.apex.agent.platform.terminal.proot.NativeLibraryPRootBinaryProvider
 import com.apex.agent.platform.terminal.proot.PRootBinaryProvider
@@ -326,13 +328,49 @@ object TerminalModule {
             hostDirProvider = { File("/storage/emulated/0").takeIf { it.isDirectory } }
         )
 
-    /** 后端注册表：local（默认，golden 行为）+ linux-ubuntu。 */
+    /**
+     * T98：su 二进制定位器（chroot 后端 Root 门禁探测；只 stat 不 exec ——
+     * 授权弹窗副作用见 SuBinaryLocator KDoc）。
+     */
+    @Provides
+    @Singleton
+    fun provideSuBinaryLocator(): SuBinaryLocator = SuBinaryLocator()
+
+    /**
+     * T98：chroot 后端 —— 与 PRoot 后端共享同一 rootfs / workspace 池 / 持久化
+     * home / guest env 基线（双模式数据互通）；仅 su + mount + chroot 的
+     * spawn 路径不同。见 LinuxChrootBackend KDoc 双模式定位表。
+     */
+    @Provides
+    @Singleton
+    fun provideLinuxChrootBackend(
+        suLocator: SuBinaryLocator,
+        rootfsProvider: RootfsProvider,
+        workspaces: LinuxWorkspaceManager,
+        userHome: GuestUserHome,
+        sharedStorage: SharedStorageBridge
+    ): LinuxChrootBackend = LinuxChrootBackend(
+        suLocator = suLocator,
+        rootfsProvider = rootfsProvider,
+        workspaces = workspaces,
+        userHome = userHome,
+        sharedStorage = sharedStorage
+    )
+
+    /**
+     * 后端注册表：linux-ubuntu（默认，PRoot）+ linux-ubuntu-chroot（真 Root 设备
+     * 的原生通道，T98）。首位 = 默认后端不变；chroot 由 Agent 经
+     * TerminalBackends 发现、TerminalCreate 显式选择（不隐式自动切换 ——
+     * 见 LinuxChrootBackend KDoc 的诚实性取舍）。
+     */
     @Provides
     @Singleton
     fun provideExecutionBackendRegistry(
-        linuxBackend: LinuxPRootBackend
+        linuxBackend: LinuxPRootBackend,
+        chrootBackend: LinuxChrootBackend
     ): ExecutionBackendRegistry = ExecutionBackendRegistry.of(
-        linuxBackend
+        linuxBackend,
+        chrootBackend
     )
 
     /** TerminalRuntime —— T73: 注入后端注册表，create(backendId=…) 路由生效。

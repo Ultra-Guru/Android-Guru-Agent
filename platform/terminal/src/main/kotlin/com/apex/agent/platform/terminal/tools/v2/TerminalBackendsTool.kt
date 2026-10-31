@@ -35,6 +35,9 @@ class TerminalBackendsTool(
         Returns each backend's id (use as TerminalCreate's "backend" parameter), runtime type,
         and state: READY (usable now) / NEEDS_ROOTFS (bundled archive not yet extracted — call TerminalUbuntuInstall, offline, minutes for the full ~1GB environment) /
         FAILED (with reason). Check this before creating a linux-ubuntu session.
+        linux-ubuntu (PRoot, works on any device) is the default; linux-ubuntu-chroot (real-root
+        chroot, near-native performance, no ptrace dependency) is READY only on rooted devices —
+        prefer it there when PRoot is slow or blocked.
     """.trimIndent()
 
     override val parametersSchema: String = """

@@ -41,13 +41,16 @@ class TerminalCreateTool(
         command. Returns sessionId for subsequent run/observe/wait/write calls.
         backend="linux-ubuntu" (default) runs Ubuntu 24.04 via PRoot
         (requires the rootfs to be installed — check TerminalBackends, install via TerminalUbuntuInstall).
+        backend="linux-ubuntu-chroot" runs the SAME Ubuntu rootfs via real-root chroot —
+        needs a rooted device (su); use it when PRoot is blocked (ptrace-restricted ROMs) or
+        when syscall-translation overhead matters (check TerminalBackends for availability).
         workspaceId selects an isolated file area bound to guest /workspace
         (persists across sessions; unknown valid ids are auto-created; default: "default" —
         manage via TerminalWorkspaces).
     """.trimIndent()
 
     override val parametersSchema: String = """
-{"type":"object","properties":{"cwd":{"type":"string","default":"/sdcard","description":"Initial working directory (guest path; /workspace default; relative paths land under /workspace)"},"rows":{"type":"integer","default":24},"cols":{"type":"integer","default":200,"description":"Terminal width in columns. Agent sessions default to 200 — the legacy 80-col default hard-wrapped long commands, splitting identifiers across SCREEN-mode read lines (misread risk). Human-facing views re-flow independently."},"env":{"type":"object","additionalProperties":{"type":"string"},"description":"Extra environment variables (passed into the guest)"},"backend":{"type":"string","default":"linux-ubuntu","enum":["linux-ubuntu"],"description":"Execution backend: linux-ubuntu = Ubuntu 24.04 via PRoot"},"workspaceId":{"type":"string","description":"Isolated workspace id bound to guest /workspace. Pattern: lowercase alphanumeric, may contain - and _, max 64 chars. Unknown valid ids are auto-created."}},"required":[]}
+{"type":"object","properties":{"cwd":{"type":"string","default":"/sdcard","description":"Initial working directory (guest path; /workspace default; relative paths land under /workspace)"},"rows":{"type":"integer","default":24},"cols":{"type":"integer","default":200,"description":"Terminal width in columns. Agent sessions default to 200 — the legacy 80-col default hard-wrapped long commands, splitting identifiers across SCREEN-mode read lines (misread risk). Human-facing views re-flow independently."},"env":{"type":"object","additionalProperties":{"type":"string"},"description":"Extra environment variables (passed into the guest)"},"backend":{"type":"string","default":"linux-ubuntu","enum":["linux-ubuntu","linux-ubuntu-chroot"],"description":"Execution backend: linux-ubuntu = Ubuntu 24.04 via PRoot (works everywhere, ptrace userspace translation); linux-ubuntu-chroot = same rootfs via real-root chroot (rooted devices only; no ptrace dependency, near-native syscall performance; verify availability with TerminalBackends first)"},"workspaceId":{"type":"string","description":"Isolated workspace id bound to guest /workspace. Pattern: lowercase alphanumeric, may contain - and _, max 64 chars. Unknown valid ids are auto-created."}},"required":[]}
     """.trimIndent()
 
     suspend fun execute(input: Input): Output {

@@ -201,18 +201,11 @@ class LinuxPRootBackend(
         environment.interactiveGuestEnv(requestEnv)
 
     /**
-     * request.cwd → guest cwd。"/" 或空 → /workspace。
-     * T73: "/sdcard" 是 TerminalRuntime 的 LOCAL 默认 cwd（Android host 路径）——
-     * 在 guest 内无意义，落 /workspace（与 "" 同语义）。显式 guest 绝对路径仍直通。
+     * request.cwd → guest cwd（T98 起委托 [GuestCwdMapper] 单一事实源 ——
+     * chroot 后端逐字节同映射；语义见其 KDoc，行为与 T73 内联版完全一致）。
      */
-    internal fun mapGuestCwd(cwd: String): String {
-        val trimmed = cwd.trim()
-        if (trimmed.isEmpty() || trimmed == "/") return "/workspace"
-        if (trimmed == "/sdcard") {  // 旧 LocalShellBackend.LEGACY_DEFAULT_CWD 的字面值（AndroidShell 移除后内联）
-            return "/workspace"
-        }
-        return if (trimmed.startsWith("/")) trimmed else "/workspace/$trimmed"
-    }
+    internal fun mapGuestCwd(cwd: String): String =
+        com.apex.agent.platform.terminal.workspace.GuestCwdMapper.map(cwd)
 
     companion object {
         const val ID = "linux-ubuntu"
