@@ -18,15 +18,16 @@ import kotlinx.serialization.json.jsonObject
  *
  * | 维度 | LongTaskTracker | 本类 |
  * |------|-----------------|------|
- * | 入库门槛 | 长任务阈值（短任务丢弃） | **零门槛**：≥1 工具调用或 ≥1 迭代即沉淀（经验的单位是「复用」不是「规模」） |
+ * | 入库门槛 | 长任务阈值（短任务丢弃） | **零门槛**：≥1 工具调用即沉淀（经验的单位是「复用」不是「规模」） |
  * | 工具形态 | 频次表 toolsUsed | **真序列** orderedTools（相邻折叠后落卡） |
  * | 产出 | LongTaskRecord（审计画像） | RoleExperience（下次注意 + 强化信号） |
  * | 落盘 | 自持 persistScope | 自持 persistScope（fire-and-forget，同款纪律） |
  *
  * ## 什么不沉淀（诚实门槛）
  *
- * - 纯聊天轮（零工具、零迭代）：没有可复用的**执行**证据 —— 沉淀只会
- *   把经验卡稀释成对话摘要；
+ * - 纯聊天轮（零工具调用）：没有可复用的**执行**证据 —— 沉淀只会
+ *   把经验卡稀释成对话摘要。注意引擎每轮 LLM 循环都会发 IterationStart
+ *   （纯聊天也有），所以**迭代数不算执行证据，只有工具调用算**；
  * - goal 空白：场景维度无根（UI 正常路径不会发生，防御口径）。
  *
  * ## beginRun 的防御（对齐 LongTaskTracker 先例）
@@ -58,8 +59,9 @@ class RoleExperienceTracker(
     /** 工具 × 次数（频次视角）。 */
     private val toolCounts = LinkedHashMap<String, Int>()
 
-    /** 成功触碰的文件数（与 LongTaskTracker 同款提取口径）。 */
-    private var filesTouchedCount = 0
+    /** 成功触碰的文件路径（去重集合 —— 与 LongTaskTracker.filesTouched 同款口径：
+     *  同一文件反复编辑只计 1，filesTouchedCount 取 set.size）。 */
+    private val filesTouched = LinkedHashSet<String>()
 
     /** 解析 ToolCallComplete.arguments 的只读 Json。 */
     private val argsJson = Json
@@ -90,7 +92,7 @@ class RoleExperienceTracker(
         toolFailures = 0
         orderedTools.clear()
         toolCounts.clear()
-        filesTouchedCount = 0
+        filesTouched.clear()
     }
 
     /**
@@ -114,7 +116,7 @@ class RoleExperienceTracker(
                     return
                 }
                 if (event.toolName in FILE_TOUCH_TOOLS) {
-                    if (extractPath(event.arguments) != null) filesTouchedCount++
+                    extractPath(event.arguments)?.let { filesTouched.add(it) }
                 }
             }
             else -> Unit
@@ -140,9 +142,10 @@ class RoleExperienceTracker(
 
     private fun finalize(outcome: String, errorMessage: String?): RoleExperience? {
         active = false
-        val meaningful = goal.isNotBlank() && (toolCallCount > 0 || iterationCount > 0)
+        // 诚实门槛：纯聊天轮不沉淀（类 KDoc「什么不沉淀」——迭代数不算
+        // 执行证据，引擎每轮 LLM 都会发 IterationStart）。
+        val meaningful = goal.isNotBlank() && toolCallCount > 0
         if (!meaningful) {
-            // 诚实门槛：纯聊天轮不沉淀（类 KDoc「什么不沉淀」）。
             return null
         }
         val input = ExperienceRawInput(
@@ -155,7 +158,7 @@ class RoleExperienceTracker(
             toolFailures = toolFailures,
             orderedTools = orderedTools.toList(),
             toolCounts = toolCounts.toMap(),
-            filesTouchedCount = filesTouchedCount,
+            filesTouchedCount = filesTouched.size,
             durationMs = (clock() - startedAt).coerceAtLeast(0),
             errorMessage = errorMessage,
             clock = clock

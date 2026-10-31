@@ -14,8 +14,8 @@ import kotlinx.serialization.Serializable
  * - 本包住在 core:code-engine（纯 JVM），与 [com.apex.agent.core.code.longtask]
  *   平级：长任务中心回答「这次跑了多久/多大」，经验卡回答「这个角色下次
  *   遇到同类任务该怎么做」—— 两者都从同一条 AgentEvent 流取材，但聚合
- *   目标不同（长任务按规模阈值入库；经验卡**每轮必提炼**，因为一条经验
- *   的价值不在规模而在复用）；
+ *   目标不同（长任务按规模阈值入库；经验卡凡**带工具调用的轮**必提炼
+ *   —— 经验的价值不在规模而在复用，纯聊天轮无执行证据不沉淀）；
  * - 提炼是**确定性代码**（[RoleExperienceExtractor] 的规则表），不是提示词
  *   注入 —— 场景标签靠关键词表分类、注意点靠规则引擎生成，跨会话可复现；
  * - 引擎不感知本包：CodeViewModel 在 runEngine 的收尾链路调用
