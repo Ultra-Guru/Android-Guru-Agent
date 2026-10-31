@@ -270,8 +270,18 @@ class ProotSandboxCommandRunner(
             }
             if (timedOut) {
                 killProcessTree(process)
+                // #671：双保险收尾 —— 关流是主手段（阻塞 read 因管道关闭抛
+                // IOException/EOF 退出），interrupt 是副手段（对阻塞 read 无效，
+                // 但能把处于可中断状态（read 间隙/sleep/join）的 drain 线程
+                // 踢出等待，缩窄永久泄漏窗口）。
+                runCatching { stdoutDrain.interrupt() }
+                runCatching { stderrDrain.interrupt() }
                 runCatching { stdoutDrain.join(DRAIN_JOIN_MS) }
                 runCatching { stderrDrain.join(DRAIN_JOIN_MS) }
+                // join 宽限用尽 = drain 仍活着（孙进程持有管道）—— 如实标注
+                // 输出不完整，绝不假装完整（对齐 git runner / ExecEngine 契约）
+                if (stdoutDrain.isAlive) stdoutCapture.markIncomplete()
+                if (stderrDrain.isAlive) stderrCapture.markIncomplete()
                 return SandboxCommandResult(
                     exitCode = INFRA_EXIT_CODE,
                     stdout = stdoutCapture.snapshot(),
@@ -280,6 +290,10 @@ class ProotSandboxCommandRunner(
             }
             runCatching { stdoutDrain.join(DRAIN_JOIN_MS) }
             runCatching { stderrDrain.join(DRAIN_JOIN_MS) }
+            // #671：正常退出路径同样对齐 git runner —— join 宽限用尽时
+            // 输出可能不完整，快照尾部如实标注（旧版无条件当完整报告）。
+            if (stdoutDrain.isAlive) stdoutCapture.markIncomplete()
+            if (stderrDrain.isAlive) stderrCapture.markIncomplete()
             val result = SandboxCommandResult(
                 exitCode = process.exitValue(),
                 stdout = stdoutCapture.snapshot(),
@@ -296,8 +310,11 @@ class ProotSandboxCommandRunner(
             }
             return result
         } catch (e: CancellationException) {
-            // 协程取消：同样收尾进程树后原样上抛（保持取消语义诚实）
+            // 协程取消：同样收尾进程树后原样上抛（保持取消语义诚实）；
+            // drain 线程同样补 interrupt（#671，同超时路径的双保险语义）
             killProcessTree(process)
+            runCatching { stdoutDrain.interrupt() }
+            runCatching { stderrDrain.interrupt() }
             throw e
         }
     }
@@ -360,6 +377,8 @@ class ProotSandboxCommandRunner(
 /**
  * 有界流捕获器（git runner 同款算法的私有镜像）：未达预算时全文累积；
  * 超预算后首部固化，尾部滚动，海量 npm 输出不撑爆内存。
+ * #671：补齐 markIncomplete 契约（与 git runner / ProotExecutor 的
+ * BoundedOutputCapture 对齐）—— 采集未收尾时快照尾部如实标注。
  */
 private class BoundedCapture(private val budgetChars: Int) {
 
@@ -369,7 +388,14 @@ private class BoundedCapture(private val budgetChars: Int) {
     var truncated: Boolean = false
         private set
 
+    /** 采集未收尾（drain 线程 join 宽限用尽仍存活）—— snapshot 尾部加告示。 */
+    private var incomplete = false
+
     private val halfBudget: Int get() = (budgetChars / 2).coerceAtLeast(1)
+
+    fun markIncomplete() {
+        incomplete = true
+    }
 
     fun append(buf: CharArray, len: Int) {
         if (len <= 0) return
@@ -396,11 +422,13 @@ private class BoundedCapture(private val budgetChars: Int) {
     }
 
     fun snapshot(): String {
-        if (!truncated) return head.toString()
+        val incompleteNotice = if (incomplete) "\n...[输出可能不完整：快照时采集仍在进行]...\n" else ""
+        if (!truncated) return head.toString() + incompleteNotice
         return buildString {
             append(head)
             append("\n...[输出已截断]...\n")
             append(tail)
+            append(incompleteNotice)
         }
     }
 }
