@@ -107,7 +107,7 @@ class BugReportTriageEngineTest {
     fun `ios 17 fingerprint hits webkit issue`() {
         val fingerprint = BugReportTriageEngine.fingerprint("iPhone 15, iOS 17.2")
         assertEquals("ios", fingerprint.platform)
-        assertTrue(fingerprint.knownIssueHits.any { it.title.contains("WebKit") })
+        assertTrue(fingerprint.knownIssueHits.any { it.title.contains("WebView") })
     }
 
     // ═══ 症状签名 ═══
