@@ -251,7 +251,7 @@ class GitOpParserTest {
     @Test
     fun `failure env not ready parses with guidance`() {
         val out = "Error: execution failed: Ubuntu 环境未安装或未就绪——Git 工具依赖沙箱内预装的 git，" +
-            "请先在终端页安装 Ubuntu（TerminalUbuntuInstall）后再试"
+            "请先在终端页安装 Ubuntu（TerminalUbuntuEnsure）后再试"
         val s = GitOpParser.parseFailure("CodeGitStatus", out)
         assertNotNull(s)
         assertTrue(s!!.failed)

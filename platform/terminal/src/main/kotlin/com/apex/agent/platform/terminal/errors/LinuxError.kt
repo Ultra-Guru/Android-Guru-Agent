@@ -22,7 +22,7 @@ enum class LinuxErrorCode(
     val repairable: Boolean,
     val stage: String
 ) {
-    /** rootfs 未安装 / 元数据缺失 / 健康检查失败。需先 TerminalUbuntuInstall。 */
+    /** rootfs 未安装 / 元数据缺失 / 健康检查失败。需先 TerminalUbuntuEnsure。 */
     ROOTFS_NOT_READY(recoverable = false, repairable = true, stage = "rootfs"),
 
     /** libproot.so 缺失 / ELF 架构不符 / 不可执行。需 reinstall APK。 */

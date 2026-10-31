@@ -45,7 +45,7 @@ App 启动时**幂等预置**以下条目（`enabled=false`，只预置不连接
 
 ## rootfs 前置条件
 
-1. 终端页安装 Ubuntu（`TerminalUbuntuInstall`），或设置里初始化；
+1. 终端页安装 Ubuntu（`TerminalUbuntuEnsure`），或设置里初始化；
 2. 沙箱内需有 nodejs/npm：完整 rootfs（`scripts/build_full_rootfs.sh` 构建，
    已预装 nodejs/npm 并 **npm 全局预装上述三个 server**）开箱即用；最小
    rootfs 需手动 `apt install -y nodejs npm`。

@@ -42,7 +42,6 @@ import com.apex.agent.platform.TerminalExec.ExecEngine
 import com.apex.agent.tools.PrivilegedCommandSpawner
 import com.apex.agent.tools.ProotCommandSpawner
 import com.apex.agent.platform.terminal.proot.PRootHostEnvironment
-import com.apex.agent.platform.terminal.tools.v2.TerminalLinuxBootstrapTool
 import com.apex.agent.platform.terminal.tools.v2.TerminalLinuxNetworkTool
 import com.apex.agent.platform.terminal.tools.v2.TerminalLinuxPackagesTool
 import com.apex.agent.platform.terminal.tools.v2.TerminalLinuxStatusTool
@@ -51,7 +50,6 @@ import com.apex.agent.platform.terminal.tools.v2.TerminalResizeTool
 import com.apex.agent.platform.terminal.tools.v2.TerminalRunTool
 import com.apex.agent.platform.terminal.tools.v2.TerminalSignalTool
 import com.apex.agent.platform.terminal.tools.v2.TerminalSnapshotTool
-import com.apex.agent.platform.terminal.tools.v2.TerminalUbuntuInstallTool
 import com.apex.agent.platform.terminal.tools.v2.TerminalWaitTool
 import com.apex.agent.platform.terminal.tools.v2.TerminalWorkspacesTool
 import com.apex.agent.platform.terminal.tools.v2.TerminalWorkspaceEnvironmentTool
@@ -840,20 +838,20 @@ object ToolModule {
                 }
             )
         )))
-        registry.register(SafeAgentTool(TerminalToolAdapter(
-            TerminalUbuntuInstallTool(rootfsProvisioner, rootfsTarget)
-        )))
+        // P0-#3 工具面收敛：TerminalUbuntuInstall（T72/T73）已移除 —— rootfs
+        // 解包由 TerminalUbuntuEnsure 聚合入口接管（install→bootstrap→capability
+        // 幂等链，旧入口的 force/timeoutMs 语义由 ensure 的同名字段承接）。
         // T75: workspace 管理（list/create/inspect/delete —— 隔离文件区生命周期）。
         registry.register(SafeAgentTool(TerminalToolAdapter(TerminalWorkspacesTool(workspaceManager))))
         // P83 (T4): 项目感知开发环境 —— analyze（只读）/ ensure（Ubuntu 就绪 + 按项目补装工具链）。
         registry.register(SafeAgentTool(TerminalToolAdapter(TerminalWorkspaceEnvironmentTool(projectEnvironment))))
-        // T76: Ubuntu Linux Environment Productionization —— 4 个 Agent 工具
+        // T76: Ubuntu Linux Environment Productionization —— 3 个 Agent 工具
         //   TerminalLinuxStatus    统一健康快照（6 维度 + bootstrap）
-        //   TerminalLinuxBootstrap  rootfs→sources→network→apt-update→base-packages→READY
         //   TerminalLinuxNetwork    DNS/HTTP/HTTPS/APT_REPOSITORY 分维诊断
         //   TerminalLinuxPackages   结构化 apt API（update/install/remove/upgrade/search/...）
+        //   （TerminalLinuxBootstrap 已于 P0-#3 移除：bootstrap 编排由
+        //     TerminalUbuntuEnsure 聚合入口承接，细粒度包操作走 TerminalLinuxPackages）
         registry.register(SafeAgentTool(TerminalToolAdapter(TerminalLinuxStatusTool(linuxEnvironmentHealth))))
-        registry.register(SafeAgentTool(TerminalToolAdapter(TerminalLinuxBootstrapTool(ubuntuBootstrapManager))))
         registry.register(SafeAgentTool(TerminalToolAdapter(TerminalLinuxNetworkTool(linuxNetworkProbe))))
         // T82：镜像（mirror list/set）+ 真实 installed 列表 + autoremove/clean。
         registry.register(SafeAgentTool(TerminalToolAdapter(
@@ -864,17 +862,14 @@ object ToolModule {
                 arch = { rootfsTarget.architecture }
             )
         )))
-        // T81: 环境能力真实探测（§29）+ 单轮自动修复编排（§30）
-        // T82：ensure action（probe → install missing → re-probe 一发式工具链供给）。
-        registry.register(SafeAgentTool(TerminalToolAdapter(
-            com.apex.agent.platform.terminal.tools.v2.TerminalLinuxCapabilitiesTool(
-                probe = linuxCapabilityProbe,
-                packages = linuxPackageManager
-            ))))
+        // T81: 单轮自动修复编排（§30）。环境能力探测（§29）已随 P0-#3
+        // 收敛进 TerminalUbuntuEnsure 的 capabilities 快照输出；一发式按项目
+        // 补装工具链走 TerminalWorkspaceEnvironment ensure。
         registry.register(SafeAgentTool(TerminalToolAdapter(
             com.apex.agent.platform.terminal.tools.v2.TerminalLinuxRepairTool(environmentRepairService))))
         // T82: Ubuntu 产品级生命周期 —— 一键 ensure（install→bootstrap→capability
         // 聚合入口，替代 Agent 三次调用三套状态机的编排负担）+ 只读 status 快照。
+        // P0-#3 后：Ensure/Status 是 Ubuntu 拉起与能力查询的唯一 Agent 入口。
         registry.register(SafeAgentTool(TerminalToolAdapter(
             com.apex.agent.platform.terminal.tools.v2.TerminalUbuntuEnsureTool(ubuntuLifecycle))))
         registry.register(SafeAgentTool(TerminalToolAdapter(

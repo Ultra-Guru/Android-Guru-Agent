@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * 本探测经 [ProotExecutor] 在真实 rootfs 内执行 `which <cmd>` + `<cmd> --version`，
  * 产出结构化 CapabilityReport（状态 + 版本 + 可安装性）—— Agent 直接查询
- * TerminalLinuxCapabilities，不再猜。
+ * TerminalUbuntuEnsure 的 capabilities 输出，不再猜。
  *
  * 状态语义（§29）：
  *  - AVAILABLE：which 命中且 --version 成功（version 提取自首行输出）
