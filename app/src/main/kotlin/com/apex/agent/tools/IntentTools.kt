@@ -129,6 +129,14 @@ class DeepLinkTool(
 object AndroidIntents {
 
     fun share(context: Context, text: String, title: String?): String {
+        // Binder 事务缓冲上限 1MB（进程级共享）——超长文本直接 startActivity
+        // 会抛 TransactionTooLargeException 甚至远端崩溃；提前拒绝并给出
+        // 可操作建议（分段 / 落盘分享文件），模型能据此自修复。
+        if (text.length > MAX_SHARE_CHARS) {
+            return "Error: text is ${text.length} chars — the Android share sheet cannot " +
+                "carry more than $MAX_SHARE_CHARS chars (binder transaction limit). " +
+                "Split the content into chunks, or write it to a file and share the file instead."
+        }
         return try {
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
@@ -169,4 +177,7 @@ object AndroidIntents {
             "Error: cannot open '$uriText': ${e.message ?: e::class.simpleName}"
         }
     }
+
+    /** 分享文本上限（chars）——Binder 事务 1MB 进程级共享的保守安全值。 */
+    private const val MAX_SHARE_CHARS = 200_000
 }
