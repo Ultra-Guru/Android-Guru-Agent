@@ -463,6 +463,9 @@ object ToolModule {
         linuxCapabilityProbe: com.apex.agent.platform.terminal.environment.LinuxCapabilityProbe,
         environmentRepairService: com.apex.agent.platform.terminal.health.EnvironmentRepairService,
         ubuntuLifecycle: com.apex.agent.platform.terminal.ubuntu.lifecycle.UbuntuLifecycleCoordinator,
+        // SearXNG 本地搜索（Spec §10）：WebSearchTool 链首源（null 语义由 DI
+        // 保证非空 —— 注解为可空仅匹配构造签名默认值）
+        localSearchSource: com.apex.agent.core.tools.builtin.LocalSearchSource,
         // P83 (T4): 项目感知环境闭环（TerminalWorkspaceEnvironment 工具）
         projectEnvironment: com.apex.agent.platform.terminal.environment.ProjectEnvironmentCoordinator,
         // T82：guest fs API + apexctl 桥 + 镜像/ensure 接线（rootfsTarget 见上方 P83 区）
@@ -756,7 +759,9 @@ object ToolModule {
 
         // ═══ 3. 网络 (4) ═══
         registry.register(SafeAgentTool(WebFetchTool(httpClient)))
-        registry.register(SafeAgentTool(WebSearchTool(httpClient)))
+        // SearXNG 链首插点（Spec §10）：本地实例就绪时优先，否则静默降级到
+        // DDG→DDG-Lite→Bing 三级远程链（回退哲学不变，只做链首插入）。
+        registry.register(SafeAgentTool(WebSearchTool(httpClient, localSearchSource)))
         registry.register(SafeAgentTool(HttpRequestTool(httpClient)))
         registry.register(SafeAgentTool(DownloadFileTool(httpClient, downloadDir)))
 

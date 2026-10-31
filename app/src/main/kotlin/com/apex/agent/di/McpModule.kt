@@ -77,7 +77,10 @@ object McpModule {
         reaWorkspace: ReaWorkspace,
         // FusionBundle 第三波：Shrimp 任务存储（16 工具进程内任务规划
         // MCP —— 单例共享，任务数据跨连接持久）。
-        shrimpTaskStore: ShrimpTaskStore
+        shrimpTaskStore: ShrimpTaskStore,
+        // SearXNG 本地搜索源（Spec §10）：内置 search MCP 与 ToolRegistry 的
+        // WebSearchTool 同一链首语义（就绪时本地优先，否则远程三级回退）。
+        localSearchSource: com.apex.agent.core.tools.builtin.LocalSearchSource
     ): McpManager {
         val configDir = File(context.filesDir, "mcp_config")
         val manager = McpManager(
@@ -95,7 +98,7 @@ object McpModule {
             //   语义，per-connection 状态零持久化）
             builtinTransports = mapOf(
                 BuiltinGithubMcpServer.ID to { BuiltinGithubMcpTransport(githubApi, githubTokens) },
-                BuiltinSearchMcpServer.ID to { BuiltinSearchMcpTransport(httpClient) },
+                BuiltinSearchMcpServer.ID to { BuiltinSearchMcpTransport(httpClient, localSearchSource) },
                 BuiltinFsMcpServer.ID to { BuiltinFsMcpTransport(codeWorkspaceRoots) },
                 BuiltinMemoryMcpServer.ID to {
                     BuiltinMemoryMcpTransport(memKit.store)
