@@ -173,10 +173,15 @@ class SearxngLifecycleCoordinatorTest {
         var ubuntuOk: Boolean = true
         var portBusy: Boolean = false
         val commands = AlwaysOkCommands(rootfs)
+        // 虚拟时间确定性：文件写走 TestDispatcher（见 Writer 的 ioDispatcher 注记）
+        val writer = SearxngSettingsWriter(
+            commands, intent,
+            kotlinx.coroutines.test.StandardTestDispatcher(scope.testScheduler)
+        )
         val coordinator = SearxngLifecycleCoordinator(
             runtime = runtime,
             installer = SearxngInstaller(commands),
-            settingsWriter = SearxngSettingsWriter(commands, intent),
+            settingsWriter = writer,
             intent = intent,
             healthProbe = { healthOk },
             ubuntuReady = { ubuntuOk },

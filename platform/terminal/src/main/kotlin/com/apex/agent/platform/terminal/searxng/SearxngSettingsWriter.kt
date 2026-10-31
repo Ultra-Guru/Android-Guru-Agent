@@ -1,6 +1,7 @@
 package com.apex.agent.platform.terminal.searxng
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -36,7 +37,13 @@ import java.io.File
  */
 class SearxngSettingsWriter(
     private val commands: SearxngCommandPort,
-    private val intent: SearxngIntentPort
+    private val intent: SearxngIntentPort,
+    /**
+     * 文件写调度器（可注入 —— JVM 测试注入 TestDispatcher 保持虚拟时间确定性：
+     * Dispatchers.IO 是真线程池，runTest 的 runCurrent/advanceTimeBy 等不到它，
+     * 后台链会停在挂起点上让断言读到中间态）。
+     */
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
 
     /** 渲染 settings.yml 全文（纯函数 —— 单测逐行断言）。 */
@@ -88,7 +95,7 @@ class SearxngSettingsWriter(
             target.readText() == content
         }.getOrDefault(false)
         if (!unchanged) {
-            withContext(Dispatchers.IO) {
+            withContext(ioDispatcher) {
                 target.parentFile?.mkdirs()
                 val tmp = File(target.parentFile, target.name + ".tmp")
                 tmp.writeText(content)

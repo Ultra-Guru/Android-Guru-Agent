@@ -135,8 +135,9 @@ class SearxngInstallerTest {
     fun `pip compile failure classified as build failed`() = runTest {
         val rootfs = tmp.newFolder()
         val commands = FakeCommands(rootfs)
+        // 前缀必须匹配真实命令串（/opt/searxng/.venv/bin/pip install …—— 非 "pip install" 开头）
         commands.fail(
-            "pip install",
+            SearxngContract.GUEST_VENV_DIR + "/bin/pip install",
             "error: command 'x86_64-linux-gnu-gcc' failed with exit status 1\n" +
                 "  src/lxml/etree.c: build failed"
         )
