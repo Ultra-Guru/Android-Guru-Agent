@@ -69,8 +69,16 @@ class Hit:
 
 
 def skip_string(text: str, i: int) -> int:
-    """Return the index just past the string literal starting at `i`."""
+    """Return the index just past the string literal starting at `i`.
+
+    Raw strings (`\"\"\"…\"\"\"`) are handled separately: Kotlin tool files embed
+    JSON schemas in them, and counting their braces as code would corrupt every
+    enclosing class body (and therefore every class attribution).
+    """
     n = len(text)
+    if text.startswith('"""', i):
+        end = text.find('"""', i + 3)
+        return n if end == -1 else end + 3
     j = i + 1
     while j < n:
         if text[j] == "\\":

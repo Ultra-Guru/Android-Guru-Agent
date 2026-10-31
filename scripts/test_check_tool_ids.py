@@ -158,6 +158,27 @@ class First : AgentTool {
         })
         self.assertIn('1 个静态可解析 ID', output)
 
+    def test_raw_string_schema_does_not_corrupt_class_attribution(self):
+        # Real tool files embed JSON schemas in `"""…"""` raw strings. If their
+        # braces are counted as code, class bodies close early and ids get
+        # attributed to the wrong class — producing phantom duplicates.
+        output = self.assert_clean({
+            'core/tool-registry/src/main/kotlin/A.kt': '''class First : AgentTool {
+ override val id = "alpha"
+ override val parametersSchema = """
+   {"type":"object","properties":{"a":{"type":"string"}},"required":[]}
+ """.trimIndent()
+}
+class Second : AgentTool {
+ override val id = "beta"
+ override val parametersSchema = """
+   {"type":"object","properties":{"b":{"type":"integer"}},"required":[]}
+ """.trimIndent()
+}
+''',
+        })
+        self.assertIn('2 个静态可解析 ID', output)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
