@@ -1,6 +1,7 @@
 package com.apex.agent.tools
 
 import com.apex.agent.platform.TerminalExec.SpawnRequest
+import com.apex.agent.platform.terminal.proot.HostRootBridge
 import com.apex.agent.platform.terminal.proot.PRootHostEnvironment
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
