@@ -291,8 +291,6 @@ object ToolIdAliases {
 
         "string_distance" to "StringDistance",
 
-        "terminal_close" to "TerminalCloseLegacy",
-
         "terminal_exec" to "TerminalExecLegacy",
 
         "terminal_list" to "TerminalListLegacy",
@@ -300,8 +298,6 @@ object ToolIdAliases {
         "terminal_read" to "TerminalReadLegacy",
 
         "terminal_send" to "TerminalSendLegacy",
-
-        "terminal_signal" to "TerminalSignalLegacy",
 
         "terminal.backends" to "TerminalBackends",
 

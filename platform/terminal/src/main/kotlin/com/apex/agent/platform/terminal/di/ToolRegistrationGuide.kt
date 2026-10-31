@@ -13,12 +13,10 @@ import com.apex.agent.platform.terminal.tools.v2.TerminalUbuntuInstallTool
 import com.apex.agent.platform.terminal.tools.v2.TerminalWaitTool
 import com.apex.agent.platform.terminal.tools.v2.TerminalWorkspacesTool
 import com.apex.agent.platform.terminal.tools.v2.TerminalWriteTool
-import com.apex.agent.platform.terminal.tools.legacy.LegacyCloseTool
 import com.apex.agent.platform.terminal.tools.legacy.LegacyExecTool
 import com.apex.agent.platform.terminal.tools.legacy.LegacyListTool
 import com.apex.agent.platform.terminal.tools.legacy.LegacyReadTool
 import com.apex.agent.platform.terminal.tools.legacy.LegacySendTool
-import com.apex.agent.platform.terminal.tools.legacy.LegacySignalTool
 
 /**
  * Tool registration guide for `app/.../di/ToolModule.kt`.
@@ -44,13 +42,11 @@ import com.apex.agent.platform.terminal.tools.legacy.LegacySignalTool
  *   registry.register(TerminalSnapshotTool(runtime))
  *   registry.register(TerminalCloseTool(runtime))
  *
- *   // ── 6 legacy compat aliases (deprecated, kept for 1 version) ──
+ *   // ── legacy compat aliases (deprecated; #585 起 Signal/Close 已删) ──
  *   registry.register(LegacyExecTool(runtime))      // id="TerminalExecLegacy"     → run+wait+observe
  *   registry.register(LegacyReadTool(runtime))      // id="TerminalReadLegacy"      → observe(RAW)
  *   registry.register(LegacySendTool(runtime))      // id="TerminalSendLegacy"      → write
- *   registry.register(LegacySignalTool(runtime))    // id="TerminalSignalLegacy"    → signal
  *   registry.register(LegacyListTool(runtime))      // id="TerminalListLegacy"      → snapshot(SESSIONS)
- *   registry.register(LegacyCloseTool(runtime))     // id="TerminalCloseLegacy"     → close
  *
  *   // ── DELETED: StreamingTerminalExecTool (id collision with TerminalExecLegacy) ──
  *   // The old line 139 `registry.register(SafeAgentTool(StreamingTerminalExecTool(terminalManager)))`
@@ -81,6 +77,8 @@ import com.apex.agent.platform.terminal.tools.legacy.LegacySignalTool
  *   Phase 3 (this): register 9 new + 6 legacy; Agent Engine can use either.
  *   Phase 4: mark 6 legacy as @Deprecated; delete StreamingTerminalExecTool.kt.
  *   Phase 5: remove 6 legacy entirely (or keep longer if external plugins depend on them).
+ *   [#585 update] Signal/Close 两个 legacy 别名从未注册过（ToolModule 只登记了
+ *   Exec/Send/Read/List 四个），类与条目已先一步删除 —— 剩余 4 个待 Phase 5。
  */
 object ToolRegistrationGuide {
 
@@ -127,14 +125,12 @@ object ToolRegistrationGuide {
         com.apex.agent.platform.terminal.tools.v2.TerminalWorkspaceEnvironmentTool(projectEnvironment)
     )
 
-    /** Construct all 6 legacy compat aliases (call once during Hilt init). */
+    /** Construct legacy compat aliases (call once during Hilt init; #585 起 4 个). */
     fun legacyTools(rt: TerminalRuntime) = listOf(
         LegacyExecTool(rt),
         LegacyReadTool(rt),
         LegacySendTool(rt),
-        LegacySignalTool(rt),
         LegacyListTool(rt),
-        LegacyCloseTool(rt)
     )
 
     /** Tool id → spec section, for documentation / introspection. */
@@ -156,8 +152,6 @@ object ToolRegistrationGuide {
         "TerminalExecLegacy" to "§35 (compat → run+wait+observe)",
         "TerminalReadLegacy" to "§35 (compat → observe RAW)",
         "TerminalSendLegacy" to "§35 (compat → write)",
-        "TerminalSignalLegacy" to "§35 (compat → signal)",
-        "TerminalListLegacy" to "§35 (compat → snapshot SESSIONS)",
-        "TerminalCloseLegacy" to "§35 (compat → close)"
+        "TerminalListLegacy" to "§35 (compat → snapshot SESSIONS)"
     )
 }
