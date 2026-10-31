@@ -6,7 +6,7 @@ import com.apex.agent.core.tools.ToolResultMeta
 import com.apex.agent.core.tools.ToolStreamEvent
 import com.apex.agent.platform.terminal.tools.TerminalTool
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -37,6 +37,22 @@ import kotlinx.serialization.json.jsonPrimitive
  * JSON 输出文本**原样**上抛（Output + Complete.output 均为原始串）—— 模型
  * 可见信息零变化；meta 只丰富 engine 的成败判定与 UI 呈现。
  *
+ * ## v4：真流式预览（修复「假流式」）
+ *
+ * 旧实现的 executeStream 在 tool.invoke 完成后才 emit 一个 Output ——
+ * TerminalExec 运行期间（构建/测试/apt，分钟级）UI 终端胶囊零事件、面板
+ * 空白。现在经 [TerminalTool.invokeStreaming] 拿到执行期间的增量预览
+ * （命令 stdout 的实时流动），立即转成 `preview=true` 的 Output 事件推送；
+ * 工具完成后 Complete 携带最终结构化 JSON（权威输出 —— 预览不进引擎
+ * 累积，模型契约零变化）。
+ *
+ * 并发模型（channelFlow）：
+ *  - 工具本体跑在 producer 协程 —— 引擎侧取消沿 invokeStreaming →
+ *    ExecEngine 的 runInterruptible → 底层进程 destroy 传播；
+ *  - 预览回调在 drain 线程上执行，经 `trySend` 无锁投递（尽力而为：
+ *    消费方迟滞时丢预览不丢权威输出）；所有事件同走一条 Channel，
+ *    顺序天然保真（预览在前、最终 JSON + Complete 在后）。
+ *
  * 解析失败（非 JSON 输出 / 字段类型异常）静默降级为空 meta —— 老工具与
  * 错误字符串输出不受影响，永不因解析抛错打断执行。
  */
@@ -50,12 +66,15 @@ class TerminalToolAdapter(
 
     override suspend fun execute(arguments: String): String = tool.invoke(arguments)
 
-    override fun executeStream(arguments: String): Flow<ToolStreamEvent> = flow {
-        val result = tool.invoke(arguments)
-        if (result.isNotEmpty()) {
-            emit(ToolStreamEvent.Output(result))
+    override fun executeStream(arguments: String): Flow<ToolStreamEvent> = channelFlow {
+        val result = tool.invokeStreaming(arguments) { chunk ->
+            trySend(ToolStreamEvent.Output(chunk, preview = true))
         }
-        emit(ToolStreamEvent.Complete(result, meta = parseMeta(result)))
+        // 权威输出收尾：非预览 Output（引擎累积为 rawOutput 的防御路径）+ Complete。
+        if (result.isNotEmpty()) {
+            send(ToolStreamEvent.Output(result))
+        }
+        send(ToolStreamEvent.Complete(result, meta = parseMeta(result)))
     }
 
     /** 从终端工具 JSON 输出提取结构化元数据；解析失败 → 空 meta（见类 KDoc）。 */

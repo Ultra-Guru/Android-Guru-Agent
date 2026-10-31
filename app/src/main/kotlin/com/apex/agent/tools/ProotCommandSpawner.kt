@@ -521,6 +521,27 @@ class ProotCommandSpawner(
         private const val SHARED_STORAGE_HOST_DIR = "/storage/emulated/0"
 
         /**
+         * rootfs 就绪的**诚实**判定（与 resolveActiveRootfs 同语义）：
+         * current 标记存在且指向的 versions/ 目录真实存在，或裸布局 bin 目录存在。
+         *
+         * P1 修复（路由/审批口径一致）：DI 层旧的 `current 标记存在` 判定在标记
+         * 损坏（指向缺失的 versions/ 目录）时与实际路由分叉 —— 审批弹窗说
+         * 「Ubuntu 沙箱执行」，实际回落宿主 shell（resolveActiveRootfs 返回
+         * null）。本助手供 isRootfsReady 门禁与审批上下文同源使用。
+         */
+        fun isRootfsResolvable(rootfsDir: File): Boolean {
+            val marker = File(rootfsDir, CURRENT_MARKER)
+            if (marker.isFile) {
+                val artifactId = runCatching { marker.readText().trim() }.getOrDefault("")
+                if (artifactId.isNotEmpty()) {
+                    return File(rootfsDir, "$VERSIONS_DIR/$artifactId").isDirectory
+                }
+                // 空标记：与 resolveActiveRootfs 一致 —— 落到裸布局检查
+            }
+            return File(rootfsDir, "bin").isDirectory
+        }
+
+        /**
          * Android 专有二进制集合：这些命令只在宿主有意义。
          * 集合刻意保守 —— 只收录 Ubuntu base 里确定不存在、且语义纯 Android 的名字。
          */

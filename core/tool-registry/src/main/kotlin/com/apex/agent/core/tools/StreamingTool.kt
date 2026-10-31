@@ -20,8 +20,22 @@ sealed interface ToolStreamEvent {
      * 普通输出片段。多个片段由 engine 拼接，并逐段转成
      * `AgentEvent.ToolOutputChunk` 推送到 UI，让用户在工具执行期间就能看到
      * 实时输出（而非等工具完成后一次性显示）。
+     *
+     * ## 预览片段（preview=true）
+     *
+     * 结构化工具（如 TerminalExec）执行期间的**人看**增量输出（命令 stdout
+     * 的实时流动）：推送到 UI（终端胶囊 / 日志尾窗）但**不进入** engine 的
+     * 累积输出 —— 该类工具的权威输出是 [Complete] 携带的最终结构化 JSON
+     * （stdout/stderr/exit_code 一次性回灌 LLM）。
+     *
+     * 语义对照：
+     *  - preview=false（默认）：片段即权威输出的增量，Complete.output 被忽略；
+     *  - preview=true：片段仅供 UI 实时呈现，Complete.output 始终是权威结果。
+     *
+     * 这样长命令（构建/测试/apt install）执行期间终端面板不再空白，而模型
+     * 可见信息保持结构化契约零变化。
      */
-    data class Output(val chunk: String) : ToolStreamEvent
+    data class Output(val chunk: String, val preview: Boolean = false) : ToolStreamEvent
 
     /**
      * 进度事件。用于长时间运行、能估算完成度的工具（如下载、大文件处理）。
@@ -34,9 +48,11 @@ sealed interface ToolStreamEvent {
     ) : ToolStreamEvent
 
     /**
-     * 工具正常完成。[output] 携带完整最终输出；当已发过 [Output] 片段时，
-     * engine 忽略 [output]（以累积值为准），仅把它当作“成功”的终端信号。
-     * 仅当工具完全没发 [Output]（非典型）时，engine 才把 [output] 补发一次。
+     * 工具正常完成。[output] 携带完整最终输出；当已发过**非预览** [Output]
+     * 片段时，engine 忽略 [output]（以累积值为准），仅把它当作“成功”的终端
+     * 信号。仅当工具完全没发 [Output]（非典型）时，engine 才把 [output]
+     * 补发一次。预览片段（[Output.preview]=true）不影响此判定 —— 结构化
+     * 工具的权威输出永远从这里取。
      *
      * [meta] 携带工具自知的结构化执行元数据（退出码 / 会话标注 / 通道）。
      * 关键语义：**非 null 的 meta.exitCode 是成败的权威信号** —— engine 以
