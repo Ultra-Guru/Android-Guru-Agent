@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -48,7 +49,11 @@ internal fun TerminalHistorySheet(
     TerminalConsoleTheme {
         val entries by viewModel.history.collectAsStateWithLifecycle()
         val context = LocalContext.current
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        // as? 安全强转 + remember：服务异常时降级为 null（复制按钮安全调用），
+        // 组合期抛 ClassCastException 会崩掉整个终端历史面板。
+        val clipboard = remember(context) {
+            context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        }
 
         ModalBottomSheet(onDismissRequest = onDismiss, containerColor = ConsoleTokens.background) {
             Column(
@@ -114,7 +119,7 @@ internal fun TerminalHistorySheet(
                                 )
                                 IconButton(
                                     onClick = {
-                                        clipboard.setPrimaryClip(
+                                        clipboard?.setPrimaryClip(
                                             ClipData.newPlainText("terminal", cmd)
                                         )
                                         // 复制成功反馈（通知条）

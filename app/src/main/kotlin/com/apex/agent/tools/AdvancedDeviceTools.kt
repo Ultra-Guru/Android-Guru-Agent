@@ -105,19 +105,23 @@ class TorchTool(
 
 /** [TorchTool] 的生产接线：遍历 cameraIdList 找闪光灯单元并 setTorchMode。 */
 class CameraTorchController(private val context: Context) {
-    private val cameraManager by lazy { context.getSystemService(Context.CAMERA_SERVICE) as CameraManager }
+    // as? 安全强转：极端环境（OEM 裁剪/服务未注册）getSystemService 返回 null
+    // 时降级为明确错误文本，而不是 ClassCastException 崩溃。
+    private val cameraManager by lazy { context.getSystemService(Context.CAMERA_SERVICE) as? CameraManager }
 
     operator fun invoke(on: Boolean): String {
+        val manager = cameraManager
+            ?: return "Error: CameraManager unavailable on this device — flashlight is not supported."
         val flashId = try {
-            cameraManager.cameraIdList.firstOrNull { id ->
-                cameraManager.getCameraCharacteristics(id)
+            manager.cameraIdList.firstOrNull { id ->
+                manager.getCameraCharacteristics(id)
                     .get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
             }
         } catch (e: Exception) {
             return "Error: cannot enumerate cameras (flashlight unavailable): ${e.message ?: e::class.simpleName}"
         } ?: return "Error: no flash unit on this device — flashlight is not supported. Suggest screen brightness instead."
         return try {
-            cameraManager.setTorchMode(flashId, on)
+            manager.setTorchMode(flashId, on)
             "Torch ${if (on) "ON" else "OFF"} (camera $flashId)."
         } catch (e: Exception) {
             "Error: cannot switch torch (camera may be in use): ${e.message ?: e::class.simpleName}. " +
@@ -335,7 +339,9 @@ class NetworkInfoTool(
 object AndroidNetworkInfoReader {
     fun read(context: Context): String {
         return try {
-            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            // as? 安全强转：服务不可用时降级为明确错误文本而非崩溃。
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                ?: return "Error: ConnectivityManager unavailable on this device."
             val network = cm.activeNetwork
             if (network == null) {
                 return "type: none (no active network)"
