@@ -4,7 +4,6 @@ package com.apex.agent.platform.terminal.session
  * PR #54 §4: Session creation config. Config ≠ Runtime State.
  */
 data class TerminalSessionConfig(
-    val shell: String? = null,
     val workingDirectory: String? = null,
     val rows: Int = 24,
     val cols: Int = 80,

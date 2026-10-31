@@ -5,12 +5,9 @@
     <string name="term_back">返回</string>
     <string name="term_cmd_hint">输入命令…</string>
     <string name="term_new_session_title">新建会话</string>
-    <string name="term_use_android_first">先用 Android Shell</string>
     <string name="term_new_ubuntu_session">新建 Ubuntu 会话</string>
-    <string name="term_new_android_session">Android Shell</string>
     <string name="term_close_session">关闭会话</string>
     <string name="term_tab_ubuntu">Ubuntu</string>
-    <string name="term_tab_android">Android</string>
     <string name="term_state_dead">已中断</string>
 
     <!-- ═══ 会话/环境内联面板 ═══ -->
@@ -41,7 +38,6 @@
 
     <!-- ═══ 通知（VM）═══ -->
     <string name="term_notice_recovered">已恢复 %1$d 个中断会话 —— 以死标签可见</string>
-    <string name="term_notice_fallback_session">Ubuntu 不可用（%1$s）—— 已降级到 Android Shell</string>
     <string name="term_notice_ubuntu_unavailable">Ubuntu 不可用：%1$s</string>
     <string name="term_notice_create_failed">会话创建失败:%1$s</string>
     <string name="term_notice_no_session_input">无活跃会话 —— 请先新建</string>
@@ -52,7 +48,6 @@
     <string name="term_notice_wait_timeout">等待超时 —— 已终止</string>
     <string name="term_notice_session_gone">执行期间会话结束</string>
     <string name="term_notice_no_pty">没有可用会话执行安装</string>
-    <string name="term_notice_fallback_android">已降级 Android Shell —— apt 仅在 Ubuntu 可用</string>
     <string name="term_notice_truncated">…输出已截断…\n</string>
     <string name="term_notice_install_all_start">▶ 全部安装（镜像=%1$s）\n</string>
     <string name="term_notice_install_all_done">✓ 全部依赖安装完成\n</string>
@@ -87,9 +82,6 @@
     <string name="term_phase_ready">就绪</string>
     <string name="term_phase_recovering">恢复中</string>
     <string name="term_phase_failed">失败</string>
-    <string name="term_android_shell_title">Android Shell</string>
-    <string name="term_android_shell_desc">基于 Android toybox 的 mksh —— 无需任何安装即可使用</string>
-    <string name="term_builtin">内置</string>
     <string name="term_deps_title">依赖（apt）</string>
     <string name="term_use_mirror">使用 TUNA 镜像</string>
     <string name="term_mirror_desc">国内更快；失败回退官方源</string>

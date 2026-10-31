@@ -107,7 +107,7 @@ class SessionManagerImpl(
         shell: String, cwd: String, rows: Int, cols: Int,
         env: Map<String, String>, privilege: PrivilegeLevel
     ): Result<TerminalSession> = mutex.withLock {
-        // 1. forkpty（旧路径：单 shell + env 数组；与 LocalShellBackend.prepare
+        // 1. forkpty（旧路径：单 shell + env 数组；与朴素 shell 后端的 prepare
         //    产出的 argv 路径在 C++ 层逐字节等价 —— T73 统一路由后仅作兼容入口保留）
         val envArray = env.map { "${it.key}=${it.value}" }.toTypedArray()
         val nativeId = native.nativeCreateSession(shell, cwd, rows, cols, envArray)
