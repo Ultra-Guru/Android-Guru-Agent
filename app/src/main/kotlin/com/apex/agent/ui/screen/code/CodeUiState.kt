@@ -74,12 +74,20 @@ data class CodeUiState(
     // 25ms ≤40Hz 攒批推送；entries/终端尾窗/派生统计一体的不可变值。
     val stream: CodeStreamSnapshot = CodeStreamSnapshot(),
 
-    // ── 输出展示档（v1.5 双档：流式 / 整段）──
-    // STREAMING = Rikka 风格实时渲染（既有行为）；COMPLETE = 生成中静默
-    // （仅加载进度卡）、收束后一次性渲染。run 粒度快照：每轮 runEngine
-    // 开始时捕获（运行中改设置不打断当前轮，下一轮生效）。捕获与恢复
-    // 逻辑见 CodeOutputModeOps.kt，档位定义见 CodeOutputMode.kt。
+    // ── 输出展示档（v1.5 双档：流式 / 整段——揭示时机维度）──
+    // STREAMING = 实时渲染（既有行为）；COMPLETE = 生成中静默（仅加载
+    // 进度卡）、收束后一次性渲染。与 outputStyle（视觉形态维度）正交。
+    // run 粒度快照：每轮 runEngine 开始时捕获（运行中改设置不打断当前轮，
+    // 下一轮生效）。捕获与恢复逻辑见 CodeOutputModeOps.kt，档位定义见
+    // CodeOutputMode.kt。
     val renderMode: CodeOutputMode = CodeOutputMode.STREAMING,
+
+    // ── 输出风格（v1.6 双风格：经典时间轴 / Rikka 聊天式）──
+    // TIMELINE = 胶囊时间轴（既有行为）；RIKKA = Rikka 风格聊天输出
+    // （用户右对齐气泡 + Markdown 结论 + 思考折叠卡 + 工具调用聚合块，
+    // 含技能 / MCP 标识与三分类聚合）。与 renderMode（揭示时机）正交；
+    // run 粒度快照 + idle 期设置流实时同步，见 CodeOutputStyleOps.kt。
+    val outputStyle: CodeOutputStyle = CodeOutputStyle.TIMELINE,
 
     // ── 编辑器面板（v1.0 #154）──
     // editorFilePath 非空即挂载面板；editorFile 为加载结果（null = 加载中/失败态）。

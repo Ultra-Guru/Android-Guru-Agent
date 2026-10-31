@@ -3,14 +3,16 @@ package com.apex.agent.ui.screen.code
 import com.apex.agent.core.code.stream.StreamEntry
 
 /**
- * # CodeOutputMode — Coding 工位输出展示模式（双档）
+ * # CodeOutputMode — Coding 工位输出展示模式（双档：揭示时机维度）
  *
- * ## 设计立场（用户需求：「模仿 Rikka Hub 的输出方式，再做一种，可切换」）
+ * ## 设计立场
  *
- * 两档共享同一份 [com.apex.agent.core.code.stream.CodeStreamSnapshot] 渲染
- * 通道与消息模型（不维护两套列表），只差**展示策略**：
+ * 与 [CodeOutputStyle]（经典时间轴 / Rikka 聊天式 = **视觉形态**维度）
+ * 正交，本枚举承载**揭示时机**维度。两档共享同一份
+ * [com.apex.agent.core.code.stream.CodeStreamSnapshot] 渲染通道与消息
+ * 模型（不维护两套列表），只差展示策略：
  *
- * - [STREAMING]（默认，Rikka 风格）：逐字/逐胶囊实时渲染——结论气泡流式
+ * - [STREAMING]（默认，实时渲染）：逐字/逐胶囊实时渲染——结论气泡流式
  *   追加 + 光标、思考链流式展开、实时代码窗、终端尾窗随输出贴尾。即
  *   capsule-stream 既有行为，零变化。
  * - [COMPLETE]（整段模式）：生成中**只显示加载进度卡**（呼吸指示 + 已用
@@ -19,11 +21,11 @@ import com.apex.agent.core.code.stream.StreamEntry
  *   一次到底，工具胶囊段折叠为**聚合卡**（已调用 N 个工具 · 技能 / MCP /
  *   内置分组摘要 + 可展开明细，见 ToolAggregateCard）。对应规格书
  *   「完整模式：生成完成后一次性展示，生成中显示加载态；工具调用完成后
- *   折叠『已调用 N 个工具』」。
+ *   折叠『已调用 N 个工具』」。两档均适用于两种输出风格（Rikka 风格下
+ *   收束后的聚合由 RikkaToolBlock 承担）。
  *
  * 两档共享同一套溯源数据（引擎事件携带 skill / mcp / builtin 分类，
- * ToolKind.SKILL 独立族）——流式档的技能胶囊同样拿到星芒图标与技能 id
- * 标签（旧启发式把技能误标成「MCP 自定义工具」的问题一并修复）。
+ * ToolKind.SKILL 独立族）。
  *
  * ## 切换语义（规格书交互规则）
  *
@@ -40,7 +42,7 @@ import com.apex.agent.core.code.stream.StreamEntry
  */
 enum class CodeOutputMode(val persistenceName: String) {
 
-    /** 流式模式：实时逐字显示 + 实时滚动跟随（Rikka 风格，既有行为）。 */
+    /** 流式模式：实时逐字显示 + 实时滚动跟随（既有行为）。 */
     STREAMING("streaming"),
 
     /** 整段模式：生成中显示加载进度卡，完成后一次性渲染全部条目。 */

@@ -207,6 +207,9 @@
     <string name="code_stream_terminal_empty">（暂无输出）</string>
     <string name="code_stream_thinking_running">思考中…</string>
     <string name="code_stream_thinking_done">思考链 · 点击展开</string>
+    <!-- Rikka 风格输出（v1.6 聊天式时间轴） -->
+    <string name="rikka_thinking_title">思考过程</string>
+    <string name="rikka_tool_block_running">正在调用工具…</string>
     <string name="code_stream_verify_round_fmt">验证轮次 %1$d</string>
     <string name="code_stream_verify_passed">通过</string>
     <string name="code_stream_verify_failed">未通过</string>

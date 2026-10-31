@@ -612,12 +612,20 @@ data class AgentSettings(
     // mcpScopeIsolation：MCP/技能复合工具按市场分级在引擎侧隔离的开关
     // （默认开；关闭后回到 v2 的全局可见行为）。
     val codingToolSurface: String = "full",
-    // codeOutputMode：Coding 屏输出展示档——"streaming"（默认，Rikka 风格
-    // 流式：逐字/逐胶囊实时渲染）| "complete"（整段模式：生成中仅加载进度
-    // 卡，run 收束后一次性渲染完整时间轴）。UI 渲染层开关（引擎/会话零
-    // 参与），档位在每轮 run 开始时捕获（运行中改设置不打断当前轮）。
+    // codeOutputMode：Coding 屏输出展示档（揭示时机维度）——"streaming"
+    // （默认，实时渲染：逐字/逐胶囊流式）| "complete"（整段模式：生成中
+    // 仅加载进度卡，run 收束后一次性渲染完整时间轴）。与 codeOutputStyle
+    // （视觉形态维度）正交，两档均适用于两种风格。UI 渲染层开关（引擎/
+    // 会话零参与），档位在每轮 run 开始时捕获（运行中改设置不打断当前轮）。
     // 见 ui/screen/code/CodeOutputMode.kt。
     val codeOutputMode: String = "streaming",
+    // codeOutputStyle：Coding 屏输出风格——"timeline"（默认，经典胶囊
+    // 时间轴：胶囊流水/同族折叠/实时代码窗）| "rikka"（Rikka 风格聊天式：
+    // 用户右对齐气泡 + Markdown 结论 + 思考折叠卡 + 工具调用聚合块，含
+    // 技能/MCP 溯源标识与三分类聚合）。与 codeOutputMode（揭示时机）正交；
+    // UI 渲染层开关（引擎/会话零参与），run 粒度捕获 + idle 期设置流实时
+    // 同步。见 ui/screen/code/CodeOutputStyle.kt。
+    val codeOutputStyle: String = "timeline",
     val codingReadGuard: Boolean = true,
     val codingAutoRules: Boolean = true,
     val mcpScopeIsolation: Boolean = true,

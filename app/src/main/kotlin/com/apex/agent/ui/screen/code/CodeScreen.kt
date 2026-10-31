@@ -83,6 +83,7 @@ import com.apex.agent.ui.screen.code.history.CodeHistoryIconButton
 import com.apex.agent.ui.screen.code.history.CodeHistorySheet
 import com.apex.agent.ui.screen.code.longtask.CodeLongTaskSheet
 import com.apex.agent.ui.screen.code.stream.CodeStreamTimeline
+import com.apex.agent.ui.screen.code.stream.RikkaStreamTimeline
 import com.apex.agent.ui.screen.code.stream.TerminalPanelState
 import com.apex.agent.ui.screen.code.stream.CodeToolDetailSheet
 import com.apex.agent.ui.glass.GlassCard
@@ -286,25 +287,46 @@ fun CodeScreen(
                 null
             }
         Box(modifier = Modifier.weight(1f)) {
-            CodeStreamTimeline(
-                snapshot = state.stream,
-                isStreaming = state.isRunning,
-                renderMode = state.renderMode,
-                bottomInset = lowerStackInsetDp,
-                backdrop = streamBackdrop,
-                onToolClick = { call -> selectedToolCallId = call.id },
-                terminal = terminalState,
-                onToggleTerminalCollapse = {
-                    terminalUserToggled = true
-                    terminalCollapsed = !terminalCollapsed
-                },
-                // ═══ 玻璃幕帘（2026-10 用户反馈）：提问卡挂起时时间轴整体模糊 ═══
-                // 液态玻璃的 backdrop 采样存在盲区（动画图层/采样时序差），盲区
-                // 文字会以锐利形态透过霜面与卡内内容叠字 —— 被覆盖内容自身先
-                // blur（修饰序在 layerBackdrop 外层，采样源不失真），屏幕透出的
-                // 只能是模糊像素。
-                modifier = Modifier.glassModalBlur(pendingAgentQuestion != null)
-            )
+            // ═══ v1.6 输出风格分派：经典胶囊时间轴 / Rikka 聊天式 ═══
+            // 两风格共享同一 snapshot 数据通道、滚动锚定、终端胶囊与
+            // 输出方式档（流式/整段）语义——只差分段与皮肤（见
+            // CodeOutputStyle.kt；idle 期热切换，运行中 run 粒度捕获）。
+            if (state.outputStyle == CodeOutputStyle.RIKKA) {
+                RikkaStreamTimeline(
+                    snapshot = state.stream,
+                    isStreaming = state.isRunning,
+                    renderMode = state.renderMode,
+                    bottomInset = lowerStackInsetDp,
+                    backdrop = streamBackdrop,
+                    onToolClick = { call -> selectedToolCallId = call.id },
+                    terminal = terminalState,
+                    onToggleTerminalCollapse = {
+                        terminalUserToggled = true
+                        terminalCollapsed = !terminalCollapsed
+                    },
+                    modifier = Modifier.glassModalBlur(pendingAgentQuestion != null)
+                )
+            } else {
+                CodeStreamTimeline(
+                    snapshot = state.stream,
+                    isStreaming = state.isRunning,
+                    renderMode = state.renderMode,
+                    bottomInset = lowerStackInsetDp,
+                    backdrop = streamBackdrop,
+                    onToolClick = { call -> selectedToolCallId = call.id },
+                    terminal = terminalState,
+                    onToggleTerminalCollapse = {
+                        terminalUserToggled = true
+                        terminalCollapsed = !terminalCollapsed
+                    },
+                    // ═══ 玻璃幕帘（2026-10 用户反馈）：提问卡挂起时时间轴整体模糊 ═══
+                    // 液态玻璃的 backdrop 采样存在盲区（动画图层/采样时序差），盲区
+                    // 文字会以锐利形态透过霜面与卡内内容叠字 —— 被覆盖内容自身先
+                    // blur（修饰序在 layerBackdrop 外层，采样源不失真），屏幕透出的
+                    // 只能是模糊像素。
+                    modifier = Modifier.glassModalBlur(pendingAgentQuestion != null)
+                )
+            }
 
             // ═══ 模态幕帘：scrim 兜底（API < 31 无 blur）+ 点击拦截（门控必须先作答）═══
             if (pendingAgentQuestion != null) {

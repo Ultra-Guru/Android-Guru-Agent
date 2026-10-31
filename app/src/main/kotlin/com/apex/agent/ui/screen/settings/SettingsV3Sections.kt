@@ -745,9 +745,11 @@ internal fun GoalSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings)
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * Coding 工位分区：工具面（全量 / 聚焦核心）、读守卫、自动项目规则、
- * MCP 与技能作用域隔离、单轮并行执行上限。五项全部被引擎侧消费
- * （EngineToolPlanner / 标准线引擎 / RulesProvider / CodeModule 引擎配置）。
+ * Coding 工位分区：输出风格（经典时间轴 / Rikka 聊天式——纯 UI 开关）、
+ * 工具面（全量 / 聚焦核心）、输出展示档（流式 / 整段）、读守卫、自动
+ * 项目规则、MCP 与技能作用域隔离、单轮并行执行上限。后六项全部被引擎
+ * 侧消费（EngineToolPlanner / 标准线引擎 / RulesProvider / CodeModule
+ * 引擎配置）；输出风格/展示档为 UI 渲染层开关（引擎零参与）。
  */
 @Composable
 internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings) -> Unit) {
@@ -756,6 +758,19 @@ internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSetting
         icon = Icons.Outlined.Terminal,
         subtitle = stringResource(R.string.settings_v3_coding_subtitle)
     ) {
+        // ═══ v1.6 输出风格（经典时间轴 / Rikka 聊天式）：Coding 屏时间轴的
+        // 视觉形态。纯 UI 层开关（引擎/会话零参与）——idle 期切换即时生效，
+        // 运行中不打断当前轮（run 粒度捕获）。与下方「输出方式」（揭示
+        // 时机：流式/整段）正交，两种风格都适用。═══
+        DropdownRow(
+            stringResource(R.string.settings_v3_coding_output_style),
+            listOf(
+                "timeline" to stringResource(R.string.settings_v3_coding_output_style_timeline),
+                "rikka" to stringResource(R.string.settings_v3_coding_output_style_rikka),
+            ),
+            agent.codeOutputStyle.ifBlank { "timeline" },
+            description = stringResource(R.string.settings_v3_coding_output_style_desc)
+        ) { style -> onUpdate(agent.copy(codeOutputStyle = style)) }
         DropdownRow(
             stringResource(R.string.settings_v3_coding_surface),
             listOf(
@@ -765,10 +780,11 @@ internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSetting
             agent.codingToolSurface,
             description = stringResource(R.string.settings_v3_coding_surface_desc)
         ) { surface -> onUpdate(agent.copy(codingToolSurface = surface)) }
-        // ═══ v1.5 输出展示档（流式 / 整段）：Coding 屏时间轴渲染策略 ═══
-        // 纯 UI 层开关（引擎/会话零参与）——流式 = Rikka 风格实时渲染（默认，
-        // 既有行为）；整段 = 生成中仅加载进度卡、收束后一次性渲染完整时间轴。
+        // ═══ v1.5 输出展示档（流式 / 整段）：Coding 屏时间轴揭示时机 ═══
+        // 纯 UI 层开关（引擎/会话零参与）——流式 = 实时渲染（默认，既有
+        // 行为）；整段 = 生成中仅加载进度卡、收束后一次性渲染完整时间轴。
         // 档位在每轮 run 开始时捕获：生成中改设置不打断当前轮，下一轮生效。
+        // 与上方「输出风格」（视觉形态）正交，两种风格都适用。
         DropdownRow(
             stringResource(R.string.settings_v3_coding_output_mode),
             listOf(

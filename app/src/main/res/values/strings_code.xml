@@ -207,6 +207,9 @@
     <string name="code_stream_terminal_empty">(no output yet)</string>
     <string name="code_stream_thinking_running">Thinking…</string>
     <string name="code_stream_thinking_done">Thought chain · tap to expand</string>
+    <!-- Rikka-style output (v1.6 chat-style timeline) -->
+    <string name="rikka_thinking_title">Thought process</string>
+    <string name="rikka_tool_block_running">Running tools…</string>
     <string name="code_stream_verify_round_fmt">Verify round %1$d</string>
     <string name="code_stream_verify_passed">passed</string>
     <string name="code_stream_verify_failed">failed</string>

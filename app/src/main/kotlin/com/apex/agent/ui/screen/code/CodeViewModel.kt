@@ -274,6 +274,10 @@ class CodeViewModel @Inject constructor(
         restoreLogicMode()
         // v1.5 输出展示档恢复（流式/整段；见 CodeOutputModeOps.kt）
         restoreOutputMode()
+        // v1.6 输出风格恢复（经典时间轴/Rikka；见 CodeOutputStyleOps.kt）
+        // + 设置流订阅：idle 期切风格回屏即生效（消灭「切了没反应」）
+        restoreOutputStyle()
+        observeOutputStyle()
         // #197：Coding 屏模式同步（引擎侧恒为 BUILD/PLAN；未知值回退 BUILD）
         val startupMode = settingsRepository.agentSettings.value.let { s ->
             s.codeExecutionMode.takeIf { it.isNotBlank() }
@@ -646,8 +650,10 @@ class CodeViewModel @Inject constructor(
         recentToolOutcomes.clear()
 
         // 胶囊时间轴：用户气泡入轴 + 渲染 ticker 启动（25ms ≤40Hz 攒批）。
-        // 输出展示档本轮捕获（运行中改设置不打断当前轮，见 CodeOutputModeOps.kt）。
+        // 输出展示档/风格本轮捕获（运行中改设置不打断当前轮，见
+        // CodeOutputModeOps.kt / CodeOutputStyleOps.kt）。
         captureRunOutputMode()
+        captureRunOutputStyle()
         streamSession.beginRun(goal)
         startRenderTicker()
 

@@ -63,6 +63,11 @@
     <string name="settings_v3_coding_auto_rules_desc">自动发现并注入工作区的 AGENTS.md / CLAUDE.md / .cursorrules</string>
     <string name="settings_v3_coding_mcp_scope">MCP 与技能作用域隔离</string>
     <string name="settings_v3_coding_mcp_scope_desc">按市场分级在引擎侧隔离 MCP 与技能工具；关闭回到 v2 全局可见</string>
+    <!-- Coding 输出风格（v1.6 经典时间轴 / Rikka 聊天式） -->
+    <string name="settings_v3_coding_output_style">输出风格</string>
+    <string name="settings_v3_coding_output_style_desc">时间轴 = 经典胶囊流水（实时代码窗 / 终端尾窗）；Rikka = 聊天式输出——右对齐用户气泡、Markdown 结论、可折叠思考过程、工具调用聚合块（技能 / MCP 徽标，可展开每次调用明细）。空闲时切换即时生效；与「输出方式」（流式 / 完整）正交，两种风格都适用。</string>
+    <string name="settings_v3_coding_output_style_timeline">时间轴（经典胶囊）</string>
+    <string name="settings_v3_coding_output_style_rikka">Rikka（聊天气泡）</string>
 
     <!-- GitHub 分区 -->
     <string name="settings_v3_github_title">GitHub</string>

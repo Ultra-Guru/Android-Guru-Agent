@@ -63,6 +63,11 @@
     <string name="settings_v3_coding_auto_rules_desc">Auto-discover and inject the workspace\'s AGENTS.md / CLAUDE.md / .cursorrules</string>
     <string name="settings_v3_coding_mcp_scope">MCP and skill scope isolation</string>
     <string name="settings_v3_coding_mcp_scope_desc">Isolate MCP and skill tools by market tier in the engine; off restores v2 global visibility</string>
+    <!-- Coding output style (v1.6 timeline vs Rikka chat) -->
+    <string name="settings_v3_coding_output_style">Output style</string>
+    <string name="settings_v3_coding_output_style_desc">Timeline = the classic capsule stream (live code windows, terminal tail); Rikka = chat-style output — right-aligned user bubbles, Markdown replies, collapsible thinking, and aggregated tool-call blocks with skill / MCP badges and expandable per-call details. Applies instantly while idle; orthogonal to Output mode (streaming / complete).</string>
+    <string name="settings_v3_coding_output_style_timeline">Timeline (classic capsules)</string>
+    <string name="settings_v3_coding_output_style_rikka">Rikka (chat bubbles)</string>
 
     <!-- GitHub section -->
     <string name="settings_v3_github_title">GitHub</string>
@@ -79,7 +84,7 @@
     <string name="settings_v3_github_clear">Clear</string>
     <string name="settings_v3_github_disconnect">Disconnect</string>
     <!-- Coding output presentation mode (v1.5 streaming vs complete) -->
-    <string name="settings_v3_coding_output_mode">Output style</string>
+    <string name="settings_v3_coding_output_mode">Output mode</string>
     <string name="settings_v3_coding_output_mode_desc">Streaming = live typing, live tool windows; Complete = a progress card while generating (with live skill/MCP/tool counters), then the run is revealed at once — tool calls collapsed into aggregate cards (skill / MCP / built-in breakdown, expandable details). Takes effect on the next run.</string>
     <string name="settings_v3_coding_output_mode_streaming">Streaming (live typing)</string>
     <string name="settings_v3_coding_output_mode_complete">Complete (reveal when done)</string>
