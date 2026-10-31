@@ -111,6 +111,9 @@ jobs:
       - name: Comment integrity regression suite
         run: python3 scripts/test_check_comment_integrity.py
 
+      - name: Tool ID uniqueness regression suite
+        run: python3 scripts/test_check_tool_ids.py
+
   workflow-metadata:
     name: Run Metadata
     runs-on: ubuntu-latest
