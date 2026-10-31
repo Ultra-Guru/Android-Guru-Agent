@@ -30,16 +30,20 @@ import com.apex.agent.core.engine.templates.runtime.TemplateValidationReport
  * 1. **PREPARE**：主输入 changes（diff 或文字说明）+ 可选 style；
  * 2. **ANALYZE**：统一 diff 状态机解析 → 文件清单/增删统计/hunk 数；
  *    conventional 类型打分（路径与形态证据）；破坏性变更三通道扫描
- *    （公开符号删除/显式标记/契约文件）；scope 推导（改动最集中目录）；
+ *    （公开符号删除/显式标记/契约文件）；scope 推导（改动最集中目录）
+ *    + 规范体系（PR 17：四种风格解析 + 十二类型知识库 + 主题草稿合成）；
  * 3. **COMPOSE**：正文变量替换 + 「变更判读附录」（类型候选/破坏性
  *    信号/scope 建议）；
  * 4. **VALIDATE**：回包必须含「提交信息」章节，且围栏内的提交信息
  *    本身要过 [CommitMessageDiffAnalyzer.validateCommitMessage]
- *    （格式/长度/折行/语气/中文冗余）；
+ *    （格式/长度/折行/语气/中文冗余）+ 风格感知规范校验（PR 17：
+ *    [CommitMessageConventions.validate] 按 conventional/gitmoji/plain/
+ *    kernel 各自规则逐项检查）；
  * 5. **REPAIR**：公共修复 + 提交信息确定性修复（type 归一/句号剥离/
- *    超长折行/祈使语气）；
+ *    超长折行/祈使语气）+ 风格感知修复（PR 17：类型别名纠正/
+ *    issue 引用入 footer/正文重折/! 与 BREAKING CHANGE 对齐）；
  * 6. **RENDER**：提交信息代码块 + 变更解读 + 机器摘要
- *    （type/scope/files/insertions/deletions/breaking）。
+ *    （type/scope/files/insertions/deletions/breaking/style）。
  */
 open class CommitMessageTemplateBehavior : TemplateBehaviorBase() {
 
@@ -76,7 +80,7 @@ open class CommitMessageTemplateBehavior : TemplateBehaviorBase() {
         ),
         deterministicPreAnalysis = true,
         promptEnrichmentMode = TemplatePromptEnrichmentMode.APPEND_FINDINGS,
-        behaviorVersion = 1
+        behaviorVersion = 2
     )
 
     // ═══ ANALYZE ═══
@@ -93,6 +97,8 @@ open class CommitMessageTemplateBehavior : TemplateBehaviorBase() {
             )
         }
         val style = context.variableOr("style", DEFAULT_STYLE)
+        val styleKind = CommitStyleKind.parse(style) ?: CommitStyleKind.CONVENTIONAL
+        val styleSpec = CommitStyleSpec.of(styleKind)
 
         val findings = mutableListOf<TemplateFinding>()
         val summary = CommitMessageDiffAnalyzer.parseUnifiedDiff(changes)
@@ -187,6 +193,51 @@ open class CommitMessageTemplateBehavior : TemplateBehaviorBase() {
             )
         }
 
+        // 5) 规范体系（PR 17）：风格解析 + 主题草稿合成
+        if (CommitStyleKind.parse(style) == null && style.isNotBlank()) {
+            findings.add(
+                TemplateFinding(
+                    ruleId = "commit.style-unresolved",
+                    category = TemplateFindingCategory.COMPLETENESS,
+                    severity = TemplateSeverity.MINOR,
+                    title = "提交风格无法识别（$style），按 conventional 执行",
+                    suggestion = "支持：conventional commits / gitmoji / 内核风格 / 自由格式",
+                    confidence = 1.0
+                )
+            )
+        }
+        findings.add(
+            TemplateFinding(
+                ruleId = "commit.style-spec",
+                category = TemplateFindingCategory.STRUCTURE,
+                severity = TemplateSeverity.INFO,
+                title = "风格规范：${styleSpec.kind.label}（主题软限 ${styleSpec.subjectSoftMax}/硬限 ${styleSpec.subjectHardMax}，正文 ${styleSpec.bodyWrapColumns} 列折行）",
+                evidence = styleSpec.guidance,
+                suggestion = "按该风格规范书写提交信息",
+                confidence = 1.0
+            )
+        )
+        val topType = typeCandidates.firstOrNull()?.type ?: "chore"
+        val draftSubject = CommitMessageConventions.draftSubject(
+            type = topType,
+            scope = scope,
+            objectText = draftObjectOf(summary, breaking.isNotEmpty()),
+            spec = styleSpec,
+            preferChinese = true
+        )
+        if (draftSubject.isNotBlank()) {
+            findings.add(
+                TemplateFinding(
+                    ruleId = "commit.subject-draft",
+                    category = TemplateFindingCategory.STRUCTURE,
+                    severity = TemplateSeverity.INFO,
+                    title = "主题草稿（$styleKind）：$draftSubject",
+                    suggestion = "核对事实后润色，保持风格形态",
+                    confidence = 0.9
+                )
+            )
+        }
+
         var stats = TemplateAnalysisStats.empty()
             .with(TemplateAnalysisStats.KEY_RULE_COUNT, findings.size)
             .with(TemplateAnalysisStats.KEY_ANALYZED_LINES, changes.lines().size)
@@ -196,7 +247,8 @@ open class CommitMessageTemplateBehavior : TemplateBehaviorBase() {
             .with(METRIC_BREAKING, breaking.size)
 
         val hints = mutableListOf<String>()
-        hints += "提交风格：$style"
+        hints += "提交风格：$style（${styleSpec.kind.label}）"
+        hints += "风格规范：${styleSpec.guidance}"
         if (typeCandidates.size > 1) {
             hints += "类型候选（按置信度）：" + typeCandidates.joinToString(" > ") { "${it.type}(${it.confidence})" }
         }
@@ -261,6 +313,25 @@ open class CommitMessageTemplateBehavior : TemplateBehaviorBase() {
                     )
                 )
             }
+            // 专项（PR 17）：风格感知规范校验
+            val styleKind = CommitStyleKind.parse(
+                context.variableOr("style", DEFAULT_STYLE)
+            ) ?: CommitStyleKind.CONVENTIONAL
+            val styleSpec = CommitStyleSpec.of(styleKind)
+            for (issue in CommitMessageConventions.validate(extracted, styleSpec)) {
+                violations.add(
+                    TemplateContractViolation(
+                        kind = if (issue.repairable) {
+                            TemplateContractViolationKind.BAD_SEVERITY_MARK
+                        } else {
+                            TemplateContractViolationKind.SECTION_EMPTY
+                        },
+                        section = "提交信息",
+                        detail = "[${issue.kind.label}] ${issue.detail}",
+                        evidence = issue.evidence
+                    )
+                )
+            }
         }
         return TemplateValidationReport(
             violations = violations,
@@ -294,10 +365,18 @@ open class CommitMessageTemplateBehavior : TemplateBehaviorBase() {
         // 专项：围栏内提交信息修复（type 归一/句号/折行/祈使语气）
         val fenceMatch = FENCE_BLOCK.find(text) ?: return text
         val message = fenceMatch.groupValues[1].trim()
-        val (repaired, notes) = CommitMessageDiffAnalyzer.repairCommitMessage(message)
+        val (baseRepaired, baseNotes) = CommitMessageDiffAnalyzer.repairCommitMessage(message)
+        // 专项（PR 17）：风格感知修复（别名纠正/issue 引用入 footer/重折）
+        val styleKind = CommitStyleKind.parse(
+            context.variableOr("style", DEFAULT_STYLE)
+        ) ?: CommitStyleKind.CONVENTIONAL
+        val (repaired, styleNotes) = CommitMessageConventions.repair(
+            baseRepaired,
+            CommitStyleSpec.of(styleKind)
+        )
         if (repaired != message) {
             text = text.replace(fenceMatch.value, "```\n$repaired\n```")
-            context.log("commit message repaired: ${notes.joinToString("; ")}")
+            context.log("commit message repaired: ${(baseNotes + styleNotes).joinToString("; ")}")
         }
         return text
     }
@@ -337,10 +416,37 @@ open class CommitMessageTemplateBehavior : TemplateBehaviorBase() {
         } else {
             emptyList()
         }
+        val styleKind = CommitStyleKind.parse(
+            context.variableOr("style", DEFAULT_STYLE)
+        ) ?: CommitStyleKind.CONVENTIONAL
+        val styleSpec = CommitStyleSpec.of(styleKind)
+        val styleConformant = message != null &&
+            CommitMessageConventions.validate(message, styleSpec).isEmpty()
+        val summaryWithStyle = summaryMap + (META_STYLE to styleSpec.kind.label) +
+            (META_STYLE_CONFORMANT to styleConformant.toString())
         return base.copy(
             sections = (messageSection + base.sections).sortedBy { it.orderKey },
-            summary = summaryMap
+            summary = summaryWithStyle
         )
+    }
+
+    /** 草稿对象描述（从 diff 事实推导主题里的「做了什么」）。 */
+    private fun draftObjectOf(summary: DiffSummary, breaking: Boolean): String {
+        val newCount = summary.newFiles.size
+        val deletedCount = summary.deletedFiles.size
+        val testOnly = summary.files.isNotEmpty() && summary.files.all { it in summary.testFiles }
+        return when {
+            breaking -> "破坏性变更（含迁移说明）"
+            newCount > 0 && deletedCount == 0 ->
+                "${newCount} 个新文件（${summary.newFiles.first().displayPath.substringAfterLast('/')})"
+            deletedCount > 0 && newCount == 0 ->
+                "移除 ${deletedCount} 个文件（${summary.deletedFiles.first().displayPath.substringAfterLast('/')})"
+            testOnly -> "测试覆盖（${summary.fileCount} 个文件）"
+            summary.docFiles.isNotEmpty() && summary.files.size == summary.docFiles.size ->
+                "文档更新（${summary.fileCount} 个文件）"
+            else ->
+                "${summary.fileCount} 个文件的行为变更"
+        }
     }
 
     private fun extractType(message: String?): String {
@@ -364,6 +470,8 @@ open class CommitMessageTemplateBehavior : TemplateBehaviorBase() {
         const val META_TYPE = "commitType"
         const val META_SCOPE = "commitScope"
         const val META_SUBJECT_OK = "subjectOk"
+        const val META_STYLE = "commitStyle"
+        const val META_STYLE_CONFORMANT = "styleConformant"
 
         /** 提交信息围栏块（``` 纯围栏或 ```text）。 */
         val FENCE_BLOCK: Regex = Regex("""```[a-z]*\n(.*?)```""", RegexOption.DOT_MATCHES_ALL)
