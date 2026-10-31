@@ -203,6 +203,8 @@ object SkillModule {
         return SkillPolicyIndex()
     }
 
+    @Provides
+    @Singleton
     fun provideSkillActivationStore(policyIndex: SkillPolicyIndex): SkillActivationStore {
         return SkillActivationStore(maxActive = 8, policyIndex = policyIndex)
     }
