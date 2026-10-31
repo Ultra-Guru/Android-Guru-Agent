@@ -51,7 +51,8 @@ DECL_HEAD = re.compile(
     r"data|value|inline|inner|enum|annotation|expect|actual|companion)\s+)*"
     r"(?:class|object)\s+(\w+)"
 )
-ID_DECL = re.compile(r"override\s+val\s+id\s*(?::\s*[\w<>.?,\s]+?)?\s*=\s*([^\n;]+)")
+ID_DECL = re.compile(r"override\s+val\s+id\b\s*(?::[^=\n]*)?=\s*([^\n;]+)")
+BASE_TOOL_CALL = re.compile(r"\bBaseTool\s*\(([^)]*)\)", re.S)
 ID_ARG = re.compile(r"\bid\s*=\s*\"([^\"]*)\"")
 CONST_DECL = re.compile(r"\bconst\s+val\s+(\w+)\s*(?::\s*String\s*)?=\s*\"([^\"]*)\"")
 STRING_LITERAL = re.compile(r'^"([^"]*)"$')
@@ -107,7 +108,11 @@ def strip_comments(text: str) -> str:
 
 
 def declaration_body(text: str, start: int) -> tuple[str, str] | None:
-    """Split a class/object declaration into (header, body) starting at `start`."""
+    """Split a class/object declaration into (header, body) starting at `start`.
+
+    A declaration without a `{` body returns an empty body so callers can still
+    inspect the header (e.g. `BaseTool(id = "X", …)` with no class body).
+    """
     paren = 0
     i = start
     while i < len(text):
@@ -136,7 +141,9 @@ def declaration_body(text: str, start: int) -> tuple[str, str] | None:
                 j += 1
             return header, text[i:]
         elif ch == "\n" and paren == 0:
-            return None  # body-less declaration
+            # Body-less declaration (`class X : BaseTool(id = "…", …)`) —
+            # keep the header, it may carry a constructor id argument.
+            return text[start:i], ""
         i += 1
     return None
 
@@ -174,8 +181,9 @@ def scan(path: Path) -> tuple[list[Hit], list[Hit]]:
         cls = match.group(1)
         base_line = text.count("\n", 0, match.start()) + 1
 
-        for arg in ID_ARG.finditer(header):
-            resolved.append(Hit(path, base_line, cls, arg.group(1), "BaseTool(id=…)"))
+        for call in BASE_TOOL_CALL.finditer(header):
+            for arg in ID_ARG.finditer(call.group(1)):
+                resolved.append(Hit(path, base_line, cls, arg.group(1), "BaseTool(id=…)"))
 
         for m in ID_DECL.finditer(body):
             if depth_at(body, m.start()) != 1:
