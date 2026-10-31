@@ -34,7 +34,7 @@ import com.apex.agent.update.MirrorPrefs
  * 同源同效（autoUpdateCheck 走 AgentSettings 单一可信源；镜像走
  * MirrorPrefs 同一持久化键）。
  *
- * 记忆（workspace/memory）：#218 聊天记忆自动摄取开关（Agent 聊天分区
+ * 记忆（integrations/memory）：#218 聊天记忆自动摄取开关（Agent 聊天分区
  * 删除后迁入本文件；记忆功能主仓库保留，开关双引擎共享）。
  */
 @Composable
@@ -76,7 +76,7 @@ internal fun NotificationsPage(agent: AgentSettings, onAgent: (AgentSettings) ->
 }
 
 /**
- * 记忆摄取分区（workspace/memory 叶）：#218 聊天记忆自动摄取总开关。
+ * 记忆摄取分区（integrations/memory 叶）：#218 聊天记忆自动摄取总开关。
  * 记忆观察者为双引擎共享单例（深潜线 + 标准线同源），关闭 = 新会话不
  * 落盘 + 召回静默；已有记忆去记忆页管理（记忆功能主仓库保留）。
  */
