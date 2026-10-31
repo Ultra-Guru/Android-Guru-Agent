@@ -47,3 +47,23 @@ class LocalShellBackend : ExecutionBackend {
         const val DEFAULT_CWD = "/data/local/tmp"
     }
 }
+
+/**
+ * 测试夹具 —— 以 "linux-ubuntu" id 注册的朴素 shell 后端：create() 默认路由
+ * （linux-ubuntu）的免 rootfs 落点，让契约/并发/观察测试无需真实 proot。
+ * spawn 形态与 [LocalShellBackend] 一致，仅元数据 backendId 改写为本 id。
+ */
+class FixtureLinuxBackend : ExecutionBackend {
+
+    private val delegate = LocalShellBackend()
+
+    override val id: String = "linux-ubuntu"
+    override val runtimeType: BackendRuntimeType = BackendRuntimeType.LINUX
+
+    override suspend fun availability(): BackendAvailability = delegate.availability()
+
+    override suspend fun prepare(request: SessionSpawnRequest): Result<SpawnSpec> =
+        delegate.prepare(request).map { spec ->
+            spec.copy(metadata = spec.metadata.copy(backendId = id))
+        }
+}

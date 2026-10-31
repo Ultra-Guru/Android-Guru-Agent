@@ -4,6 +4,7 @@ import com.apex.agent.platform.terminal.pty.FakeNativePty
 import com.apex.agent.platform.terminal.policy.PrivilegeLevel
 import com.apex.agent.platform.terminal.policy.TerminalPolicyImpl
 import com.apex.agent.platform.terminal.runtime.ExecutionBackendRegistry
+import com.apex.agent.platform.terminal.runtime.FixtureLinuxBackend
 import com.apex.agent.platform.terminal.runtime.LocalShellBackend
 import com.apex.agent.platform.terminal.runtime.TerminalRuntimeImpl
 import com.apex.agent.platform.terminal.screen.RealVirtualTerminal
@@ -94,7 +95,7 @@ class T81ShutdownTest {
     private fun newRuntime(): TerminalRuntimeImpl = TerminalRuntimeImpl(
         native = FakeNativePty(),
         policy = TerminalPolicyImpl(),
-        backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend()),
+        backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend(), FixtureLinuxBackend()),
         virtualTerminalFactory = { r, c -> RealVirtualTerminal(r, c) }
     )
 
@@ -144,7 +145,7 @@ class T81RecoveryConvergenceTest {
         val rt = TerminalRuntimeImpl(
             native = FakeNativePty(),
             policy = TerminalPolicyImpl(),
-            backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend()),
+            backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend(), FixtureLinuxBackend()),
             virtualTerminalFactory = { r, c -> RealVirtualTerminal(r, c) },
             persistenceStore = store
         )
@@ -213,7 +214,7 @@ class T81RecoveryConvergenceTest {
         val rt = TerminalRuntimeImpl(
             native = FakeNativePty(),
             policy = TerminalPolicyImpl(),
-            backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend()),
+            backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend(), FixtureLinuxBackend()),
             virtualTerminalFactory = { r, c -> RealVirtualTerminal(r, c) },
             persistenceStore = store
         )
@@ -239,7 +240,7 @@ class T223RecoveryVisibilityTest {
     private fun newRuntime(store: SessionMetadataStore) = TerminalRuntimeImpl(
         native = FakeNativePty(),
         policy = TerminalPolicyImpl(),
-        backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend()),
+        backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend(), FixtureLinuxBackend()),
         virtualTerminalFactory = { r, c -> RealVirtualTerminal(r, c) },
         persistenceStore = store
     )
