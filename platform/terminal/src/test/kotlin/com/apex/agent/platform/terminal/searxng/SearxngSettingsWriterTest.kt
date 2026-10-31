@@ -82,7 +82,7 @@ class SearxngSettingsWriterTest {
 
     @Test
     fun `empty engine selection falls back to defaults`() {
-        val intent = FakeIntent(engines = emptySet())
+        val intent = FakeIntent(enginesState = emptySet())
         val current = writer(intent, tmp.newFolder()).currentEngines()
         assertEquals(SEARXNG_DEFAULT_ENGINES, current)
     }
