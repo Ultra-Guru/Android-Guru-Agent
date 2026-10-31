@@ -60,7 +60,7 @@ open class RegexExplainTemplateBehavior : TemplateBehaviorBase() {
         ),
         deterministicPreAnalysis = true,
         promptEnrichmentMode = TemplatePromptEnrichmentMode.APPEND_FINDINGS,
-        behaviorVersion = 1
+        behaviorVersion = 2
     )
 
     override suspend fun analyze(
@@ -168,11 +168,56 @@ open class RegexExplainTemplateBehavior : TemplateBehaviorBase() {
             )
         }
 
+        // 5) 工具箱（PR 19）：方言探测 / 优化重写 / 结构画像 / 测试片段
+        val flavor = RegexFlavor.detect(pattern)
+        findings.add(
+            TemplateFinding(
+                ruleId = "regex.flavor",
+                category = TemplateFindingCategory.STRUCTURE,
+                severity = TemplateSeverity.INFO,
+                title = "方言探测：${flavor.label}",
+                evidence = "构造特征判定（命名组形态/旗标/POSIX 类）",
+                suggestion = "解释与示例按该方言的语法与运行时行为展开",
+                confidence = 0.85
+            )
+        )
+        val structureProfile = RegexToolkit.profile(pattern)
+        findings.add(
+            TemplateFinding(
+                ruleId = "regex.structure-profile",
+                category = TemplateFindingCategory.STRUCTURE,
+                severity = TemplateSeverity.INFO,
+                title = "结构画像：${if (structureProfile.anchoredStart) "^" else "无^"}${if (structureProfile.anchoredEnd) "$" else " 无$"} 锚定 / 贪婪量词 ${structureProfile.greedyQuantifiers} 个 / 情性 ${structureProfile.lazyQuantifiers} 个 / 交替 ${structureProfile.alternationCount} 处",
+                evidence = "捕获组 ${structureProfile.capturingGroups}（命名 ${structureProfile.namedGroups}）",
+                suggestion = if (RegexToolkit.isFullyAnchored(pattern)) {
+                    "两端锚定：性能章节说明整串匹配语义"
+                } else {
+                    "未两端锚定：大文本上是子串扫描，性能章节需说明 match/search 差异"
+                },
+                confidence = 1.0
+            )
+        )
+        for (optimization in RegexToolkit.optimize(pattern).take(MAX_OPTIMIZATION_FINDINGS)) {
+            findings.add(
+                TemplateFinding(
+                    ruleId = "regex.optimization",
+                    category = TemplateFindingCategory.PERFORMANCE,
+                    severity = TemplateSeverity.IMPORTANT,
+                    title = "优化建议：[${optimization.kind.label}] ${optimization.detail}",
+                    evidence = "原片段：${optimization.original}" +
+                        (if (optimization.rewritten.isNotBlank()) " → 改写：${optimization.rewritten}" else ""),
+                    suggestion = optimization.benefit,
+                    confidence = 0.85
+                )
+            )
+        }
+
         var stats = TemplateAnalysisStats.empty()
             .with(TemplateAnalysisStats.KEY_RULE_COUNT, findings.size)
             .with(METRIC_SEGMENTS, segments.size)
             .with(METRIC_GROUPS, result.groupCount)
             .with(METRIC_RISKS, risks.size)
+            .with(METRIC_OPTIMIZATIONS, RegexToolkit.optimize(pattern).size)
 
         val hints = mutableListOf<String>()
         hints += "解析状态：成功（${segments.size} 个语义段，${result.groupCount} 个捕获组）"
@@ -185,6 +230,8 @@ open class RegexExplainTemplateBehavior : TemplateBehaviorBase() {
         if (simplifications.isNotEmpty()) {
             hints += "简化建议：" + simplifications.joinToString("；")
         }
+        hints += "方言与验证：${flavor.label}，建议测试语言 ${RegexToolkit.recommendTestLanguage(flavor)}；代码侧已生成正/反例断言片段（回包可引用）"
+        hints += "测试片段（Kotlin 形态）：\n" + RegexToolkit.generateTestSnippet(pattern, "kotlin")
 
         return TemplateAnalysis.of(
             findings = findings,
@@ -220,7 +267,9 @@ open class RegexExplainTemplateBehavior : TemplateBehaviorBase() {
                 META_PARSE_OK to (result.error == null).toString(),
                 META_SEGMENT_COUNT to (result.root?.let { RegexParser.explain(it).size } ?: 0).toString(),
                 META_GROUP_COUNT to result.groupCount.toString(),
-                META_TOP_RISK to topRisk
+                META_TOP_RISK to topRisk,
+                META_FLAVOR to RegexFlavor.detect(pattern).label,
+                META_ANCHORED to RegexToolkit.isFullyAnchored(pattern).toString()
             )
         )
     }
@@ -234,5 +283,9 @@ open class RegexExplainTemplateBehavior : TemplateBehaviorBase() {
         const val META_SEGMENT_COUNT = "segmentCount"
         const val META_GROUP_COUNT = "groupCount"
         const val META_TOP_RISK = "topRisk"
+        const val META_FLAVOR = "flavor"
+        const val META_ANCHORED = "fullyAnchored"
+        const val METRIC_OPTIMIZATIONS = "optimizations"
+        const val MAX_OPTIMIZATION_FINDINGS = 3
     }
 }

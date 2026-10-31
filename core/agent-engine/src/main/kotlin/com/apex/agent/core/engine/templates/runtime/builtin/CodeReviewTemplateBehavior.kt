@@ -87,7 +87,7 @@ open class CodeReviewTemplateBehavior : TemplateBehaviorBase() {
         ),
         deterministicPreAnalysis = true,
         promptEnrichmentMode = TemplatePromptEnrichmentMode.APPEND_FINDINGS,
-        behaviorVersion = 1
+        behaviorVersion = 2
     )
 
     // ═══ ANALYZE：确定性分析 ═══
@@ -116,6 +116,9 @@ open class CodeReviewTemplateBehavior : TemplateBehaviorBase() {
         val spans = findFunctions(code, language)
         val metrics = CodeReviewStructureMetrics.report(code, language, spans)
         findings += CodeReviewStructureMetrics.findingsFrom(metrics)
+
+        // 第三层（PR 19）：命名/注释/跨函数/层次启发器
+        findings += CodeReviewHeuristics.allFindings(code, language, spans)
 
         val lines = code.lines()
         var stats = TemplateAnalysisStats.empty()
