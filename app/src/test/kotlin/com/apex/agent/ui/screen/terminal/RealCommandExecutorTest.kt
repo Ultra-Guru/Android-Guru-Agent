@@ -100,7 +100,7 @@ class RealCommandExecutorTest {
         }
 
         override suspend fun create(
-            shell: String, cwd: String, rows: Int, cols: Int, env: Map<String, String>,
+            cwd: String, rows: Int, cols: Int, env: Map<String, String>,
             privilege: PrivilegeLevel, backendId: String, workspaceId: String?
         ): Result<TerminalRuntime.CreateResult> = Result.failure(RuntimeException("unused"))
 

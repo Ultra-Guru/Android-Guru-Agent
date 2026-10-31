@@ -37,7 +37,7 @@ class TerminalDiagnosticsToolTest {
         override suspend fun backends(): List<TerminalRuntime.BackendStatus> = statuses
         override suspend fun snapshot(mode: TerminalRuntime.SnapshotMode, sessionId: Long?, recentEvents: Int, recentOutputBytes: Int): Result<TerminalRuntime.SnapshotResult> =
             Result.success(TerminalRuntime.SnapshotResult(sessions, 0L, emptyList(), ""))
-        override suspend fun create(shell: String, cwd: String, rows: Int, cols: Int, env: Map<String, String>, privilege: PrivilegeLevel, backendId: String, workspaceId: String?): Result<TerminalRuntime.CreateResult> = throw UnsupportedOperationException()
+        override suspend fun create(cwd: String, rows: Int, cols: Int, env: Map<String, String>, privilege: PrivilegeLevel, backendId: String, workspaceId: String?): Result<TerminalRuntime.CreateResult> = throw UnsupportedOperationException()
         override suspend fun run(sessionId: Long, command: String, owner: InputOwner, background: Boolean, timeoutMs: Long): Result<TerminalRuntime.RunResult> = throw UnsupportedOperationException()
         override suspend fun observe(sessionId: Long, mode: TerminalRuntime.ObserveMode, afterCursor: Long, maxBytes: Int, maxEvents: Int, scrollbackLines: Int): Result<TerminalRuntime.ObserveResult> = throw UnsupportedOperationException()
         override suspend fun wait(sessionId: Long, condition: com.apex.agent.platform.TerminalWait.WaitCondition, timeoutMs: Long): Result<com.apex.agent.platform.TerminalWait.WaitResult> = throw UnsupportedOperationException()
