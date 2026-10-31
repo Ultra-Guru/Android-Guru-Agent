@@ -48,17 +48,17 @@ class TestCaseFrameworkKitTest {
         val kotlinStyle = TestCaseFrameworkKit.resolveFramework("kotlin.test")
 
         val junitName = TestCaseFrameworkKit.testNamingOf(
-            junit, "parseOrder", TestCaseSkeleton.CaseCategory.BOUNDARY
+            junit, "parseOrder", FrameworkTestSkeleton.CaseCategory.BOUNDARY
         )
         assertTrue(junitName.startsWith("handles") || junitName.startsWith("returns"))
 
         val pytestName = TestCaseFrameworkKit.testNamingOf(
-            pytest, "parseOrder", TestCaseSkeleton.CaseCategory.EXCEPTION
+            pytest, "parseOrder", FrameworkTestSkeleton.CaseCategory.EXCEPTION
         )
         assertTrue(pytestName.startsWith("test_"))
 
         val kotlinName = TestCaseFrameworkKit.testNamingOf(
-            kotlinStyle, "parseOrder", TestCaseSkeleton.CaseCategory.NORMAL
+            kotlinStyle, "parseOrder", FrameworkTestSkeleton.CaseCategory.NORMAL
         )
         assertTrue(kotlinName.contains("parseOrder"))
     }
