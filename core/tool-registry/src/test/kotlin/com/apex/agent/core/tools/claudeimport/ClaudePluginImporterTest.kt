@@ -51,6 +51,10 @@ class ClaudePluginImporterTest {
             Follow these steps to generate PDFs.
             """.trimIndent()
         )
+        File(pkg, "skills/pdf-generation/scripts").apply { mkdirs() }
+        File(pkg, "skills/pdf-generation/scripts/convert.py").writeText("print('convert')")
+        File(pkg, "skills/pdf-generation/references").apply { mkdirs() }
+        File(pkg, "skills/pdf-generation/references/api.md").writeText("# API notes")
         File(pkg, "skills/data_analysis").apply { mkdirs() }
         File(pkg, "skills/data_analysis/SKILL.md").writeText(
             """
@@ -164,6 +168,25 @@ class ClaudePluginImporterTest {
         assertEquals("Body here.", doc.body)
         // 有开头无闭合围栏 → null（坏文档拒绝）
         assertNull("---\nname: broken".toClaudeDocOrNull())
+    }
+
+    @Test
+    fun `带脚本资源的技能产出安装 zip 且内容齐全`() {
+        val imported = ClaudePluginImporter.importFromDir(tmp.newFolder("pkg6").also(::writeFullPackage))
+        // 只有 pdf-generation 带 scripts/references —— 纯 MD 的 data_analysis 不产 zip
+        assertEquals(listOf("PdfGeneration"), imported.skillZips.keys.toList())
+
+        // zip 内容往返：manifest + 脚本 + 参考 + SKILL.md 原文逐名对账
+        val extracted = java.util.zip.ZipInputStream(imported.skillZips["PdfGeneration"]!!.inputStream()).use { zis ->
+            generateSequence { zis.nextEntry }.associate { it.name to zis.readBytes() }
+        }
+        assertEquals(
+            setOf("PdfGeneration.json", "SKILL.md", "scripts/convert.py", "references/api.md"),
+            extracted.keys.toSet()
+        )
+        val manifestRaw = String(extracted["PdfGeneration.json"]!!, Charsets.UTF_8)
+        assertTrue(manifestRaw.contains("\"id\":\"PdfGeneration\""))
+        assertEquals("print('convert')", String(extracted["scripts/convert.py"]!!, Charsets.UTF_8).trim())
     }
 
     @Test

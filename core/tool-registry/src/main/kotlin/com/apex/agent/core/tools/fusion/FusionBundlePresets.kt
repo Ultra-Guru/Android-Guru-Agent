@@ -108,7 +108,8 @@ object FusionBundlePresets {
         preset("bmad", FusionBmadPreset.BMAD_BUNDLE_JSON),
         preset("anthropicskills", FusionAnthropicSkillsPreset.ANTHROPIC_SKILLS_BUNDLE_JSON),
         preset("claudeflow", FusionClaudeFlowPreset.CLAUDEFLOW_BUNDLE_JSON),
-        preset("shrimp", FusionShrimpPreset.SHRIMP_BUNDLE_JSON)
+        preset("shrimp", FusionShrimpPreset.SHRIMP_BUNDLE_JSON),
+        preset("toolwright", FusionToolwrightPreset.TOOLWRIGHT_BUNDLE_JSON)
     )
 
     /** 解析 + 编码期自检（内置 manifest 非法属编码期错误，fail-fast）。 */

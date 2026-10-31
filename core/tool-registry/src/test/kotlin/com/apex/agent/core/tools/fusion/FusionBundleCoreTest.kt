@@ -1,5 +1,6 @@
 package com.apex.agent.core.tools.fusion
 
+import com.apex.agent.core.tools.skill.SkillManifest
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -93,7 +94,8 @@ class FusionBundleCoreTest {
         val all = FusionBundlePresets.all()
         // 首发 REA + 扩充三大体系（Superpowers / SuperClaude / BMAD）
         // + 第三波三体系（AnthropicSkills / ClaudeFlow / Shrimp）
-        assertEquals(7, all.size)
+        // + 第四波元能力（Toolwright · CreateSkill/CreateMcp）
+        assertEquals(8, all.size)
         assertEquals("rea", all[0].first.id)
         assertEquals(FusionBundlePresets.REA_BUNDLE_JSON, all[0].second)
     }
@@ -377,6 +379,120 @@ class FusionBundleCoreTest {
             act.skipped.any { it.startsWith("prompt:") && it.contains("patchConfig") }
         )
         assertEquals("MCP 照常连上", listOf("rea"), act.connectedServers)
+    }
+
+    // ═══ policies 策略段（因果规则）parse 四防线 ═══════════════════
+
+    /** 带 policies 的最小合法 manifest JSON 片段工厂（skillIds 控制成员集）。 */
+    private fun policiesBundleJson(
+        policiesJson: String,
+        skillIds: List<String> = listOf("PkgSkill", "PkgSkill2")
+    ): String {
+        val manifest = FusionBundleComposer.build(
+            bundleId = "custom-policy",
+            name = "策略包",
+            persona = "",
+            skills = skillIds.map {
+                SkillManifest(
+                    id = it, name = it, version = "1.0",
+                    description = "d", promptInjection = "body", scope = "all"
+                )
+            },
+            mcpServers = emptyList(),
+            plugins = emptyList()
+        )
+        // 注入 policies 段（Composer 不产 policies —— 手写包形态）
+        val json = FusionBundleComposer.toJson(manifest)
+            .replace("\"skills\":", "\"policies\":$policiesJson,\"skills\":")
+        return json
+    }
+
+    @Test
+    fun `policies 引用完整性 —— alwaysOn 引用不存在成员被拒`() {
+        val json = policiesBundleJson(
+            "{\"maxActiveSkills\":0,\"alwaysOn\":[\"Ghost\"],\"mutuallyExclusive\":[],\"triggers\":[]}"
+        )
+        assertNull("alwaysOn 引用幽灵成员须被拒", FusionBundleManifest.parse(json))
+    }
+
+    @Test
+    fun `policies 合法双成员互斥组通过且字段还原`() {
+        val ok = FusionBundleManifest.parse(
+            policiesBundleJson(
+                "{\"maxActiveSkills\":4,\"alwaysOn\":[],\"mutuallyExclusive\":[[\"PkgSkill\",\"PkgSkill2\"]]," +
+                    "\"triggers\":[{\"skillId\":\"PkgSkill\",\"when\":\"逆向场景\",\"keywords\":[\"apk\"]}]}"
+            )
+        )!!
+        assertEquals(4, ok.policies.maxActiveSkills)
+        assertEquals(listOf(listOf("PkgSkill", "PkgSkill2")), ok.policies.mutuallyExclusive)
+        assertEquals("逆向场景", ok.policies.triggers[0].scenario)
+        assertEquals(listOf("apk"), ok.policies.triggers[0].keywords)
+    }
+
+    @Test
+    fun `policies 互斥组形状与 alwaysOn 冲突被拒`() {
+        // 单元素组
+        assertNull(
+            FusionBundleManifest.parse(
+                policiesBundleJson(
+                    "{\"maxActiveSkills\":0,\"alwaysOn\":[],\"mutuallyExclusive\":[[\"PkgSkill\"]],\"triggers\":[]}"
+                )
+            )
+        )
+        // alwaysOn 与互斥组同成员（配置矛盾）
+        assertNull(
+            FusionBundleManifest.parse(
+                policiesBundleJson(
+                    "{\"maxActiveSkills\":0,\"alwaysOn\":[\"PkgSkill\"],\"mutuallyExclusive\":[[\"PkgSkill\",\"PkgSkill2\"]],\"triggers\":[]}"
+                )
+            )
+        )
+    }
+
+    @Test
+    fun `Superpowers 激活注入任务路由段与互斥约束`() = runTest {
+        val registry = FusionBundleRegistry(tmp.newFolder("sp-pol"))
+        registry.install(FusionSuperpowersPreset.SUPERPOWERS_BUNDLE_JSON)
+        val prompt = FakePromptInjector()
+        val activator = FusionBundleActivator(
+            registry, FakeSkillInstaller(), FakeMcpConnector(), prompt
+        )
+        activator.activate("superpowers").getOrThrow()
+        val applied = prompt.applied!!
+        assertTrue("路由段须含 when 场景", applied.contains("### 任务路由"))
+        assertTrue("路由段须指向具体技能 id", applied.contains("SuperpowersTdd"))
+        assertTrue("互斥约束须出现在激活提示", applied.contains("### 互斥约束"))
+    }
+
+    // ═══ 第四波 Toolwright（元能力：CreateSkill / CreateMcp）══════════
+
+    @Test
+    fun `toolwright 预置契约（双元技能零 MCP 宿主原生）`() {
+        val manifest = FusionBundlePresets.all().first { it.first.id == "toolwright" }.first
+        assertEquals(listOf("CreateSkill", "CreateMcp"), manifest.skills.map { it.skillId })
+        assertEquals("双技能零 MCP（方法论 + 工具面全宿主原生）", 0, manifest.mcpServers.size)
+        assertTrue(manifest.bundled)
+        assertTrue("注入工具提示指明宿主工具面",
+            manifest.toolActivationHints.containsAll(listOf("SkillCreate", "McpConnect")))
+        // 正文含宿主工具真实 id（agent 可直接照做，不教不存在的能力）
+        assertTrue(manifest.skills[0].manifest.promptInjection!!.contains("SkillCreate"))
+        assertTrue(manifest.skills[1].manifest.promptInjection!!.contains("McpConnect"))
+    }
+
+    @Test
+    fun `toolwright 激活双技能进注册表且零 MCP 连接`() = runTest {
+        val registry = FusionBundleRegistry(tmp.newFolder("tw"))
+        registry.install(FusionToolwrightPreset.TOOLWRIGHT_BUNDLE_JSON)
+        val skills = FakeSkillInstaller()
+        val mcp = FakeMcpConnector()
+        val prompt = FakePromptInjector()
+        val activator = FusionBundleActivator(registry, skills, mcp, prompt)
+
+        val act = activator.activate("toolwright").getOrThrow()
+        assertEquals(listOf("CreateSkill", "CreateMcp"), act.installedSkills)
+        assertTrue("零 MCP —— 连接清单恒空", act.connectedServers.isEmpty())
+        assertTrue(act.skipped.isEmpty())
+        assertTrue("人设注入含工具创造者身份", prompt.applied!!.contains("工具创造者"))
     }
 
     // ═══ plugins[] 聚合段 + 自定义组合器（用户自由聚合）══════════════

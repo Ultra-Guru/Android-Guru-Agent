@@ -8,7 +8,7 @@
 <!-- M³ 现代终端（Material 3 Terminal UI）：轻量 REPL 命令台 -->
 <!-- #197 模板工坊 -->
     <string name="drawer_templates">模板工坊</string>
-    <string name="drawer_market">市场</string>
+    <string name="drawer_market">工具聚合中心</string>
     <string name="drawer_browser">浏览器</string>
     <string name="drawer_memory">记忆</string>
     <string name="drawer_storage">存储</string>

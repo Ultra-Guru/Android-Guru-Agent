@@ -51,10 +51,24 @@ import kotlinx.serialization.json.put
  */
 object ClaudePluginImporter {
 
-    /** 导入产物：聚合 manifest + 其安装用 JSON（commands 已内联进 plugins[]）。 */
+    /**
+     * 导入产物：聚合 manifest + 其安装用 JSON（commands 已内联进 plugins[]）
+     * + 带资源技能的安装 zip。
+     *
+     * [skillZips] 是**带脚本资源**的技能兼容面：Claude 生态大量 skill 携带
+     * scripts/references/assets（纯 MD 装不下真实产出能力），导入器把每个
+     * 技能目录打包成宿主 [com.apex.agent.core.tools.skill.SkillRegistry.installFromZip]
+     * 的标准形态（`<PascalId>.json` manifest + 其余文件并入 `skillsDir/<id>/`
+     * 资源目录）。纯 MD 技能不产 zip —— 走聚合 skills[] 内联激活即可。
+     *
+     * 跨机边界（诚实声明）：聚合包 JSON 分享**不含**资源 zip —— 资源落盘在
+     * 导入设备的技能目录；跨机迁移建议分享原始 Claude zip 重新导入。
+     */
     data class Imported(
         val manifest: FusionBundleManifest,
-        val manifestJson: String
+        val manifestJson: String,
+        /** 技能 id → 安装 zip 字节（`<id>.json` + 资源文件；仅带资源的技能）。 */
+        val skillZips: Map<String, ByteArray> = emptyMap()
     )
 
     /** 解析出的 Claude 文档（SKILL.md / command / agent 共用形态）。 */
@@ -81,6 +95,23 @@ object ClaudePluginImporter {
         val skills = pkgRoot.resolve("skills").takeIf { it.isDirectory }
             ?.walkSKillDocs()?.mapNotNull { (dirName, doc) -> doc.toSkillManifest(dirName) }
             ?.sortedBy { it.id }?.toList().orEmpty()
+        // 带资源的技能目录 → installFromZip 标准包（manifest + 资源全量）。
+        // 资源兼容是 Claude 生态的核心诉求：SKILL.md 引用 scripts/… 的技能
+        // 在纯 MD 形态下是"说明书没带工具"，落盘后模型经终端真实执行。
+        val skillZips = pkgRoot.resolve("skills").takeIf { it.isDirectory }
+            ?.listFiles { f -> f.isDirectory }
+            ?.mapNotNull { dir ->
+                val doc = File(dir, "SKILL.md").takeIf { it.isFile }
+                    ?.readText()?.toClaudeDoc() ?: return@mapNotNull null
+                val manifest = doc.toSkillManifest(dir.name) ?: return@mapNotNull null
+                val files = dir.walkTopDown()
+                    .filter { it.isFile }
+                    .filter { !it.name.equals("SKILL.md", ignoreCase = true) }
+                    .toList()
+                if (files.isEmpty()) return@mapNotNull null
+                manifest.id to buildSkillZip(manifest, dir, files)
+            }
+            ?.toMap().orEmpty()
         val commands = pkgRoot.resolve("commands").takeIf { it.isDirectory }
             ?.listFiles { f -> f.isFile && f.extension.equals("md", true) }
             ?.sortedBy { it.name }
@@ -117,7 +148,7 @@ object ClaudePluginImporter {
         )
         val json = FusionBundleManifest.json
             .encodeToString(FusionBundleManifest.serializer(), manifest)
-        return Imported(manifest, json)
+        return Imported(manifest, json, skillZips)
     }
 
     // ── 文档解析 ─────────────────────────────────────────────────────
@@ -181,6 +212,40 @@ object ClaudePluginImporter {
             name = name, version = version, description = description,
             author = author, license = license
         )
+    }
+
+    /**
+     * 技能目录 → installFromZip 标准包字节：条目 = `<PascalId>.json`
+     * （manifest，宿主 zip 安装协议要求的顶层唯一 .json）+ 资源文件
+     * （保留相对路径 scripts/… references/…；SKILL.md 原文也并入，模型
+     * 可按需回读）。纯 java.util.zip（core 纯 JVM 无依赖）。
+     */
+    private fun buildSkillZip(
+        manifest: com.apex.agent.core.tools.skill.SkillManifest,
+        skillDir: File,
+        files: List<File>
+    ): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use { zos ->
+            fun put(name: String, bytes: ByteArray) {
+                zos.putNextEntry(java.util.zip.ZipEntry(name))
+                zos.write(bytes)
+                zos.closeEntry()
+            }
+            put(
+                "${manifest.id}.json",
+                FusionBundleManifest.json.encodeToString(
+                    com.apex.agent.core.tools.skill.SkillManifest.serializer(), manifest
+                ).toByteArray(Charsets.UTF_8)
+            )
+            put("SKILL.md", File(skillDir, "SKILL.md").readBytes())
+            val rootCanonical = skillDir.canonicalPath + File.separator
+            files.forEach { f ->
+                val rel = f.canonicalPath.removePrefix(rootCanonical).replace('\\', '/')
+                put(rel, f.readBytes())
+            }
+        }
+        return out.toByteArray()
     }
 
     /** skills 目录下的 (目录名, SKILL.md 文档) 序列（缺 SKILL.md 的子目录跳过）。 */

@@ -61,10 +61,10 @@ class NavigationBackStackTest {
         stack.push(DrawerDestination.Settings)
 
         // 抽屉切换一级目的地 = 全新历史（顶层切换不吃返回键层级）
-        stack.navigateToTopLevel(DrawerDestination.Market)
+        stack.navigateToTopLevel(DrawerDestination.HubCenter)
         assertFalse(stack.canPop)
         assertFalse(stack.pop())
-        assertEquals(DrawerDestination.Market, stack.current)
+        assertEquals(DrawerDestination.HubCenter, stack.current)
     }
 
     @Test
@@ -95,10 +95,11 @@ class NavigationBackStackTest {
     }
 
     @Test
-    fun `老 skill route 兜底 Code`() {
-        // Agent 模式移除（PR 2/6）：skill 老路由走未知兜底（Code）。
+    fun `老 skill route 落到聚合中心`() {
+        // Agent 模式移除后 skill 老路由曾被上游兜底 Code；本分支重新映射到
+        // 工具聚合中心（HubCenter）—— 老用户停在 Skill 页不落空且直达聚合。
         val restored = NavigationBackStack.Saver.restore(arrayListOf("skill"))!!
-        assertEquals(DrawerDestination.Code, restored.current)
+        assertEquals(DrawerDestination.HubCenter, restored.current)
     }
 
     @Test

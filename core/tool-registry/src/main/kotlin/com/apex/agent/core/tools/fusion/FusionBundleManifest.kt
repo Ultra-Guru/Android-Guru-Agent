@@ -4,6 +4,7 @@ import com.apex.agent.core.tools.mcp.McpServerConfig
 import com.apex.agent.core.tools.mcp.McpTransport
 import com.apex.agent.core.tools.skill.ChangelogEntry
 import com.apex.agent.core.tools.skill.SkillManifest
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -82,6 +83,13 @@ data class FusionBundleManifest(
     val toolActivationHints: List<String> = emptyList(),
     /** 运行时引擎声明（全部 optional —— BYO 引擎模型，缺失时对应工具降级并给证据）。 */
     val runtime: FusionBundleRuntime = FusionBundleRuntime(),
+    /**
+     * 聚合策略（**因果规则**——「因果文件」的 manifest 落地形态）：互斥组 /
+     * 包级预算 / 常驻成员 / 触发条件。混合双轨执行 —— 结构化约束
+     * （互斥/预算/alwaysOn）由宿主硬执行（SkillPolicyIndex 过滤激活集），
+     * 语义条件（triggers.when）编译进激活总纲由模型软判断。
+     */
+    val policies: FusionPolicies = FusionPolicies(),
     val changelog: List<ChangelogEntry> = emptyList()
 ) {
     companion object {
@@ -108,7 +116,8 @@ data class FusionBundleManifest(
          * 4. MCP 服务器 name 非空（它是 connect 的键）；
          * 5. 每个 FusionPluginRef.pluginId 与内联 plugin.json 的 id 字段一致
          *    （防装配错位 —— 与技能引用同一防线；manifest 载体是不透明 JSON，
-         *    只能取 id 字符串比对）。
+         *    只能取 id 字符串比对）；
+         * 6. policies 段自洽（引用完整性 / 互斥组形状 / alwaysOn 冲突 / 预算）。
          */
         fun parse(manifestJson: String): FusionBundleManifest? {
             val manifest = try {
@@ -123,10 +132,73 @@ data class FusionBundleManifest(
             if (manifest.plugins.any { it.pluginId != it.inlinePluginId }) return null
             if (manifest.skillPicks.any { it.isBlank() }) return null
             if (manifest.mcpPicks.any { it.isBlank() }) return null
+            if (!manifest.policies.isSelfConsistent(manifest.skillIds())) return null
             return manifest
         }
+
+        /** skills[] 内联 ∪ skillPicks 引用的全部技能 id（policies 引用完整性基准）。 */
+        private fun FusionBundleManifest.skillIds(): Set<String> =
+            skills.map { it.skillId }.toSet() + skillPicks.toSet()
     }
 }
+
+/**
+ * # 聚合策略（因果规则）—— 聚合作为「一支队伍」的调度约束
+ *
+ * 混合双轨执行（[FusionBundleManifest.policies]）：
+ * - **硬轨（宿主执行）**：[mutuallyExclusive] 互斥组（激活先到先得，后者
+ *   被拒并如实反馈）、[maxActiveSkills] 包级激活预算（覆盖全局 FIFO 上限）、
+ *   [alwaysOn] 常驻成员（激活即入激活集且免 FIFO 淘汰）—— 全部经
+ *   SkillPolicyIndex 在 SkillActivationStore 过滤层强制；
+ * - **软轨（模型判断）**：[triggers] 的 when 场景条件（自然语言，宿主无法
+ *   判定）编译进激活总纲「任务路由」表 —— 模型按任务对表选技能，配合
+ *   SkillActivate 与 autoEquip 关键词双通道。
+ */
+@Serializable
+data class FusionPolicies(
+    /** 包级同时激活技能数上限（0 = 不限，用全局默认 FIFO 上限）。 */
+    val maxActiveSkills: Int = 0,
+    /** 常驻成员：聚合激活即入激活集，且免 FIFO 淘汰（pin）。 */
+    val alwaysOn: List<String> = emptyList(),
+    /** 硬互斥组：组内技能同时最多激活一个（先到先得）。每组至少 2 个成员。 */
+    val mutuallyExclusive: List<List<String>> = emptyList(),
+    /** 触发条件：每成员的场景描述（when）+ 字面关键词（keywords 加权自动装备）。 */
+    val triggers: List<FusionTrigger> = emptyList()
+) {
+    /**
+     * 策略自洽校验（parse 期 fail closed）：
+     * 1. 全部引用 id（alwaysOn / 互斥组成员 / triggers.skillId）必须是包成员
+     *    （skills[]∪skillPicks —— 引用不存在的成员 = 装配错位，拒绝）；
+     * 2. 互斥组每组 ≥2（单元素组无意义）；
+     * 3. alwaysOn 成员不得出现在任何互斥组（常驻与互斥同组 = 配置矛盾）；
+     * 4. 预算非负。
+     */
+    fun isSelfConsistent(memberIds: Set<String>): Boolean {
+        if (maxActiveSkills < 0) return false
+        if (alwaysOn.any { it !in memberIds }) return false
+        if (triggers.any { it.skillId !in memberIds }) return false
+        for (group in mutuallyExclusive) {
+            if (group.size < 2) return false
+            if (group.any { it !in memberIds }) return false
+            if (group.any { it in alwaysOn }) return false
+        }
+        return true
+    }
+}
+
+/** 单成员触发条件：when 场景（模型软判断）+ keywords 字面命中（autoEquip 加权）。 */
+@Serializable
+data class FusionTrigger(
+    /** 目标技能 id（必须是包成员 —— parse 校验）。 */
+    val skillId: String,
+    /**
+     * 场景条件（自然语言，JSON 键 `"when"`）—— 编译进激活总纲的任务路由表，
+     * 模型按任务语义对表选择。Kotlin 侧用 [scenario] 承载（when 是关键字）。
+     */
+    @SerialName("when") val scenario: String = "",
+    /** 字面关键词：autoEquip 打分加权（包声明优先于 tags/id 兜底）。 */
+    val keywords: List<String> = emptyList()
+)
 
 /** agent 工作流人设：激活后「直接使用这个体系 agent」的提示词来源。 */
 @Serializable

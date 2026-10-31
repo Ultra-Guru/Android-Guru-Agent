@@ -132,8 +132,9 @@ internal fun destinationFromRoute(route: String): DrawerDestination = when (rout
     DrawerDestination.Code.route -> DrawerDestination.Code
     DrawerDestination.Templates.route -> DrawerDestination.Templates
     DrawerDestination.Terminal.route -> DrawerDestination.Terminal
-    // "skill" route 兜底 Code（Agent 模式移除 PR 2/6：老路由统一未知兜底）
-    DrawerDestination.Market.route -> DrawerDestination.Market
+    // "skill" route 保留兜底：老用户重建时若停留在原 Skill 页，落到聚合中心
+    "skill" -> DrawerDestination.HubCenter
+    DrawerDestination.HubCenter.route -> DrawerDestination.HubCenter
     DrawerDestination.Browser.route -> DrawerDestination.Browser
     DrawerDestination.Memory.route -> DrawerDestination.Memory
     DrawerDestination.Storage.route -> DrawerDestination.Storage

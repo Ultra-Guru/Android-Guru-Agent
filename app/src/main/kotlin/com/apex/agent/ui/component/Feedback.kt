@@ -53,7 +53,7 @@ import java.util.concurrent.atomic.AtomicLong
  * ═══════════════════════════════════════════════════════════════
  *
  * 现状（Task 5-d 之前）：全 app 17 处裸 `Toast.makeText` + 多处各自为政的
- * SnackbarHost（BrowserChrome / MarketScreen 各 remember 一套）+ AgentChat 的
+ * SnackbarHost（BrowserChrome / AggregationCenterScreen 各 remember 一套）+ AgentChat 的
  * `_uiFeedback` SharedFlow 再转 Toast —— 反馈路径六种风格混乱。本文件收敛为一个
  * 组件一条路径（主控接入：ApexRoot 外包一层 `FeedbackHost { ApexRoot() }`）：
  *

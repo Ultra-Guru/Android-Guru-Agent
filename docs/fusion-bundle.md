@@ -265,6 +265,7 @@ FusionBundle 是**通用装载单位**，不绑定 REA。首发即内置七包�
 | `bmad` | bmad-code-org v6.12.0（MIT） | 敏捷交付环代理体系 | 5 环阶段技能（Clarify/Plan/Shard/Build/Verify）+ 编排者人设；增益层聚合 thinking + search 两台内置 MCP（超出上游） |
 | `anthropicskills` | anthropics/skills（官方技能体系） | 文档生产力 + 技能工程 | 8 技能：文档四件（Word/Excel/PPT/PDF，经 PRoot Ubuntu Python 工具链真实产出）+ skill-creator/mcp-builder/webapp-testing/frontend-design；上游无 MCP 如实保持零服务器。**许可如实**：上游文档技能 source-available（© Anthropic 保留所有权利）—— 本移植为**原创等能力重述**（零上游文本/脚本复制）；工程类技能对齐上游 Apache-2.0 方法论 |
 | `claudeflow` | ruvnet/ruflo（claude-flow）v3.56.10（MIT） | SPARC 方法论 + 群智编排 + 持久记忆 | 7 技能：五阶段（Specify/Architect/TDD/Review/Complete）+ SparcSwarm（Task 子代理并行派发）+ SparcMemory（知识图谱沉淀）；上游增强 MCP 的内置等价映射 —— sequential-thinking→`thinking`、自学习记忆→`memory` |
+| `toolwright` | 宿主原生（非移植） | 元能力双技能 | CreateSkill（把重复流程沉淀为 apex-skill-v1 技能，SkillCreate 工具 + 命名规范 + 验证闭环）+ CreateMcp（McpConnect 四形态选型 + 配置模板 + 启动失败三查：rootfs 就绪 → 启用开关 → 镜像拉包冷启动）；零 MCP —— 教的全是宿主自有工具面 |
 | `shrimp` | cjo4m06/mcp-shrimp-task-manager v1.0.21（MIT） | 结构化任务管理 MCP | **16 工具全目录进程内实现**（第七台内置 MCP：规划/执行/验证/反思/研究/思维链，上游 docs/tools.md 逐名对齐）；任务数据 JSON 原子写持久 + 清档自动备份；超出上游的零依赖形态（无需 Node/npx/网络） |
 
 扩充包的能力对齐原则与 REA 相同：**主干技能全量移植**（方法论
@@ -328,6 +329,16 @@ manifest 以不透明 JsonObject 载体内联 —— core 模块不依赖 plugin
 产物即一个自洽聚合包，与内置七大包完全同权。命名映射全部安装期强校验
 （fail closed：结构不合法整体拒绝，不装半截包）。
 
+**资源兼容（带脚本的 skill）**：Claude 生态大量 skill 携带
+scripts/references/assets（纯 MD 装不下"真实产出 xlsx / 跑测试"这类能力）。
+导入器为每个带资源的技能目录产出 `installFromZip` 标准包
+（`<PascalId>.json` manifest + 资源全量），导入即落盘
+`skillsDir/<id>/`（脚本随技能升级覆盖、卸载随目录清理）——激活幂等跳过，
+模型经注入尾部的资源目录注记拿到绝对路径，脚本经 PRoot Ubuntu 终端 /
+ShellExecute 真实执行，references 用文件工具按路径读取。纯 MD 技能不产
+zip，走聚合 skills[] 内联激活。跨机边界如实：聚合包 JSON 分享不含资源
+zip，跨机迁移分享原始 Claude zip 重新导入。
+
 ### 8.4 安装型聚合（skillPicks/mcpPicks 引用段 + installMembers）
 
 **「专门安装 skills / MCP / 插件的聚合，在用户要安装的时候调用」**：
@@ -350,7 +361,7 @@ manifest 新增 `skillPicks[]` / `mcpPicks[]` 引用段 —— 成员不内联�
 市场手动启动）。组合器新增「官方仓库技能 / MCP」两段（懒加载目录勾选，
 写进 picks）——自建聚合从此可以先建套装再装设备。
 
-## 9. 测试
+## 10. 测试
 
 纯 JVM（JUnit4 + runTest + TemporaryFolder，手写 fake，无 mock 框架）：
 

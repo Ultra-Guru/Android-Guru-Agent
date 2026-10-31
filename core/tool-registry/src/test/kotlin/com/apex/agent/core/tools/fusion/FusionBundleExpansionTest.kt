@@ -28,7 +28,7 @@ class FusionBundleExpansionTest {
     @Test
     fun `前四波预置全部解析成功且 id 唯一`() {
         val all = FusionBundlePresets.all()
-        assertEquals(7, all.size)
+        assertEquals(8, all.size)
         assertEquals(
             listOf("rea", "superpowers", "superclaude", "bmad"),
             all.map { it.first.id }.take(4)
@@ -235,13 +235,13 @@ class FusionBundleExpansionTest {
         for ((m, _) in FusionBundlePresets.all()) {
             assertTrue("释放 '${m.id}'", registry.installBundled(m, "{}").isSuccess)
         }
-        assertEquals(7, registry.list().size)
-        assertEquals(7, registry.list().count { it.bundled })
+        assertEquals(8, registry.list().size)
+        assertEquals(8, registry.list().count { it.bundled })
         // 幂等：二次释放不重复
         for ((m, _) in FusionBundlePresets.all()) {
             registry.installBundled(m, "{}")
         }
-        assertEquals(7, registry.list().size)
+        assertEquals(8, registry.list().size)
     }
 
     // ═══ 测试 fake（与 FusionBundleCoreTest 同构）══════════════════════

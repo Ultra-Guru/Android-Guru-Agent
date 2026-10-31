@@ -35,7 +35,6 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Info
@@ -84,7 +83,7 @@ import com.apex.agent.ui.screen.code.CodeScreen
 import com.apex.agent.ui.screen.diagnostics.DiagnosticsScreen
 import com.apex.agent.ui.screen.glass.GlassLabScreen
 import com.apex.agent.ui.screen.log.LogViewerScreen
-import com.apex.agent.ui.screen.market.MarketScreen
+import com.apex.agent.ui.screen.hubcenter.AggregationCenterScreen
 import com.apex.agent.ui.screen.permissions.PermissionsScreen
 import com.apex.agent.ui.screen.playground.PlaygroundScreen
 import com.apex.agent.ui.screen.settings.SettingsScreen
@@ -121,7 +120,9 @@ sealed class DrawerDestination(
     //（M3 控制台视觉 × 真实 PTY 执行 × 多会话/环境/历史全量功能）。
     // Skill 屏已移除 —— 技能的安装/启停统一由「市场 · Skills」页承担，
     // 抽屉里再放一个只读列表是重复入口（两者数据源同一份 SkillRegistry）。
-    data object Market : DrawerDestination("market", R.string.drawer_market, Icons.Default.Storefront)
+    // 工具聚合中心（原「市场」顶层整体退役）：route 保留 "market" ——
+    // NavigationBackStack 的 Saver 往返与老 "skill" 兜底路由零迁移成本。
+    data object HubCenter : DrawerDestination("market", R.string.drawer_market, Icons.Default.Hub)
     // 浏览器大功能（v1.5.0 内置化）：会话状态/标签/最近动作驾驶舱 + 人工接管入口。
     // Language 图标即地球，与浏览器语义天然契合。
     data object Browser : DrawerDestination("browser", R.string.drawer_browser, Icons.Default.Language)
@@ -415,7 +416,7 @@ fun ApexRoot() {
                                 // 返回链（弹历史栈；栈空兑底回 Agent 主页，抽屉在那里可达）
                                 onBack = navigateBack
                             )
-                            DrawerDestination.Market -> MarketScreen()
+                            DrawerDestination.HubCenter -> AggregationCenterScreen()
                             DrawerDestination.Browser -> BrowserScreen()
                             DrawerDestination.Memory -> MemoryScreen()
                             DrawerDestination.Storage -> StorageScreen()

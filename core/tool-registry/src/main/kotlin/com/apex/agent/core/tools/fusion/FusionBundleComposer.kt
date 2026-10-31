@@ -45,6 +45,7 @@ object FusionBundleComposer {
         plugins: List<Pair<String, JsonObject>>,
         skillPicks: List<String> = emptyList(),
         mcpPicks: List<String> = emptyList(),
+        policies: FusionPolicies = FusionPolicies(),
         version: String = "1"
     ): FusionBundleManifest = FusionBundleManifest(
         id = bundleId,
@@ -63,7 +64,8 @@ object FusionBundleComposer {
         mcpServers = mcpServers.map { it.toFusionRef() },
         plugins = plugins.map { (id, raw) -> FusionPluginRef(pluginId = id, manifest = raw) },
         skillPicks = skillPicks,
-        mcpPicks = mcpPicks
+        mcpPicks = mcpPicks,
+        policies = policies
     )
 
     /** manifest → 安装用 JSON 字符串（注册表入参形态）。 */

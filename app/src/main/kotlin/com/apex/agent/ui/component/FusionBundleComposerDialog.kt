@@ -2,6 +2,7 @@ package com.apex.agent.ui.component
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,12 +15,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -124,6 +128,64 @@ fun FusionBundleComposerDialog(
     }
     var hubCatalog by remember { mutableStateOf<HubCatalogState>(HubCatalogState.Loading) }
 
+    // ── 策略编辑态（因果规则）：预算 / 常驻 / 互斥组 / 每技能触发条件 ──────
+    var budgetText by remember(editing) {
+        mutableStateOf(
+            editing?.policies?.maxActiveSkills?.takeIf { it > 0 }?.toString() ?: ""
+        )
+    }
+    var alwaysOn by remember(editing) {
+        mutableStateOf<Set<String>>(editing?.policies?.alwaysOn?.toSet() ?: emptySet())
+    }
+    var exclusiveGroups by remember(editing) {
+        mutableStateOf<List<Set<String>>>(
+            editing?.policies?.mutuallyExclusive
+                ?.map { it.toSet() }?.takeIf { it.isNotEmpty() }
+                ?: listOf(emptySet())
+        )
+    }
+    /** 每技能触发条件（key = 技能 id，含 hub picks；编辑回填）。 */
+    var triggers by remember(editing) {
+        mutableStateOf<Map<String, com.apex.agent.core.tools.fusion.FusionTrigger>>(
+            editing?.policies?.triggers?.associate { it.skillId to it } ?: emptyMap()
+        )
+    }
+
+    /** 已选技能全集（内联勾选命中 + hub 引用）——策略段的候选域。 */
+    val selectableSkills = remember(selected, hubSkillPicks) {
+        memberSources.skills.filter { it.manifest.id in selected }
+            .map { it.manifest.id }.toSet() + hubSkillPicks
+    }
+
+    /** 策略候选的显示名（技能名优先，hub 引用回退 id）。 */
+    fun skillLabelOf(id: String): String =
+        memberSources.skills.firstOrNull { it.manifest.id == id }?.manifest?.name ?: id
+
+    /** 组装 policies（保存用；UI 态 → manifest 模型，防线上线与 parse 防线一致）。 */
+    fun buildPolicies(): com.apex.agent.core.tools.fusion.FusionPolicies {
+        val budget = budgetText.trim().toIntOrNull()?.takeIf { it > 0 } ?: 0
+        val groups = exclusiveGroups
+            .map { g -> g.filter { it in selectableSkills } }
+            .filter { it.size >= 2 }
+            .map { it.toList() }
+            .distinct()
+        val always = alwaysOn.filter { it in selectableSkills }
+            .filter { id -> groups.none { id in it } }
+        val trig = selectableSkills.mapNotNull { id ->
+            val t = triggers[id] ?: return@mapNotNull null
+            if (t.scenario.isBlank() && t.keywords.isEmpty()) null
+            else com.apex.agent.core.tools.fusion.FusionTrigger(
+                skillId = id, scenario = t.scenario, keywords = t.keywords
+            )
+        }
+        return com.apex.agent.core.tools.fusion.FusionPolicies(
+            maxActiveSkills = budget,
+            alwaysOn = always,
+            mutuallyExclusive = groups,
+            triggers = trig
+        )
+    }
+
     androidx.compose.runtime.LaunchedEffect(Unit) {
         val skills = entryPoint.hubSource().listSkills()
         val mcps = entryPoint.hubSource().listMcpServers()
@@ -184,6 +246,7 @@ fun FusionBundleComposerDialog(
                     plugins = pickedPlugins,
                     skillPicks = hubSkillPicks.toList(),
                     mcpPicks = hubMcpPicks.toList(),
+                    policies = buildPolicies(),
                     version = version
                 )
                 registry.install(FusionBundleComposer.toJson(manifest))
@@ -350,6 +413,144 @@ fun FusionBundleComposerDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 10.dp)
                     )
+                }
+
+                // ── 策略段（因果规则）：预算 / 常驻 / 互斥组 / 触发条件 ──
+                Text(
+                    text = stringResource(R.string.fusion_policy_section),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(top = 16.dp)
+                )
+                OutlinedTextField(
+                    value = budgetText,
+                    onValueChange = { budgetText = it.filter { ch -> ch.isDigit() }.take(2) },
+                    label = { Text(stringResource(R.string.fusion_policy_budget)) },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp)
+                )
+                if (selectableSkills.isNotEmpty()) {
+                    Text(
+                        text = stringResource(R.string.fusion_policy_alwayson),
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(top = 10.dp)
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp)
+                    ) {
+                        selectableSkills.sorted().forEach { id ->
+                            FilterChip(
+                                selected = id in alwaysOn,
+                                onClick = {
+                                    alwaysOn =
+                                        if (id in alwaysOn) alwaysOn - id
+                                        else alwaysOn + id
+                                },
+                                label = { Text(skillLabelOf(id), style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
+                    }
+                    // ── 互斥组 ──
+                    Text(
+                        text = stringResource(R.string.fusion_policy_exclusive),
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(top = 10.dp)
+                    )
+                    exclusiveGroups.forEachIndexed { gi, group ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp)
+                        ) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                selectableSkills.sorted().forEach { id ->
+                                    FilterChip(
+                                        selected = id in group,
+                                        onClick = {
+                                            val next = if (id in group) group - id else group + id
+                                            exclusiveGroups =
+                                                exclusiveGroups.toMutableList()
+                                                    .also { it[gi] = next }
+                                        },
+                                        label = { Text(skillLabelOf(id), style = MaterialTheme.typography.labelSmall) }
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = {
+                                    exclusiveGroups =
+                                        exclusiveGroups.toMutableList().also { it.removeAt(gi) }
+                                },
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = stringResource(R.string.fusion_policy_remove_group),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                    TextButton(onClick = {
+                        exclusiveGroups = exclusiveGroups + emptySet()
+                    }) {
+                        Text(stringResource(R.string.fusion_policy_add_group))
+                    }
+                    // ── 每技能触发条件 ──
+                    Text(
+                        text = stringResource(R.string.fusion_policy_triggers),
+                        style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.padding(top = 10.dp)
+                    )
+                    selectableSkills.sorted().forEach { id ->
+                        val t = triggers[id]
+                        Column(modifier = Modifier.padding(top = 6.dp)) {
+                            Text(
+                                text = skillLabelOf(id),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            OutlinedTextField(
+                                value = t?.scenario.orEmpty(),
+                                onValueChange = { v ->
+                                    triggers = triggers + (id to com.apex.agent.core.tools.fusion.FusionTrigger(
+                                        skillId = id, scenario = v,
+                                        keywords = t?.keywords ?: emptyList()
+                                    ))
+                                },
+                                placeholder = { Text(stringResource(R.string.fusion_policy_when_placeholder)) },
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 2.dp)
+                            )
+                            OutlinedTextField(
+                                value = t?.keywords?.joinToString(",") ?: "",
+                                onValueChange = { v ->
+                                    triggers = triggers + (id to com.apex.agent.core.tools.fusion.FusionTrigger(
+                                        skillId = id, scenario = t?.scenario.orEmpty(),
+                                        keywords = v.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                                    ))
+                                },
+                                placeholder = { Text(stringResource(R.string.fusion_policy_keywords_placeholder)) },
+                                singleLine = true,
+                                textStyle = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 2.dp)
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))

@@ -276,7 +276,14 @@ class ProotMcpProcessLauncher(
             "SHELL" to "/bin/bash",
             "PATH" to LinuxEnvironmentManager.GUEST_PATH,
             "TMPDIR" to "/tmp",
-            "PWD" to GUEST_CWD
+            "PWD" to GUEST_CWD,
+            // 「本地 MCP 总是失败」的头号根因修复：沙箱内 npx -y 首次运行要
+            // 从 registry.npmjs.org 拉包 —— guest 无宿主代理（127.0.0.1 是
+            // guest 自己），该源在国内网络大面积超时，首次启动几乎必挂。
+            // 注入 npm 官方 env 机制的镜像源（npmmirror，全球 CDN），已缓存
+            // 包零影响；MCP 配置 env 显式同名键在下方最后覆盖 —— 用户自配
+            // registry / 内网源永远优先。
+            "npm_config_registry" to "https://registry.npmmirror.com"
         )
         for ((key, value) in requestEnv) {
             validateGuestEnvEntry(key, value)

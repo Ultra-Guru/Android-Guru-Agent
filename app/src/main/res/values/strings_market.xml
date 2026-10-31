@@ -108,7 +108,7 @@
 
     <!-- ═══ Installed · Plugins (Plugin System v2: functional + APK dual-kind) ═══ -->
     <string name="market_installed_plugins_empty">No plugins installed yet \u2014 functional plugins can be imported from JSON below, and plugin APKs discovered in \u201CMarket\u201D load here automatically</string>
-    <string name="market_installed_plugins_go">Load in Market</string>
+    <string name="market_installed_plugins_go">Go load</string>
     <string name="market_installed_plugins_header">%1$d plugins loaded; unloading only unbinds the service \u2014 the APK stays on the device and can be reloaded anytime.</string>
     <string name="market_installed_plugins_header_v2">%1$d functional · %2$d APK plugins. Functional plugins toggle instantly (tools register/unregister); APK unloading only unbinds \u2014 the APK stays on the device.</string>
     <string name="market_plugins_uninstall_title">Unload plugin</string>
@@ -133,7 +133,7 @@
 
     <!-- ═══ Installed · Skills ═══ -->
     <string name="market_installed_skills_empty">No skills installed yet \u2014 install from GitHub / URL / ModelScope in \u201CMarket\u201D</string>
-    <string name="market_installed_skills_go">Install from Market</string>
+    <string name="market_installed_skills_go">Install now</string>
     <string name="market_installed_skills_empty_short">No skills installed</string>
     <string name="market_installed_skills_header">%1$d skills installed (sorted by recent use); tap a card for cognitive details (energy / crystallization / usage stats / circuit breaker / traces); the switch controls whether it is injected into conversations; uninstalling deletes the manifest and resource directory.</string>
     <string name="market_skill_last_used">Used %1$s</string>
@@ -144,7 +144,7 @@
 
     <!-- ═══ Installed · MCP ═══ -->
     <string name="market_installed_mcp_empty">No MCP tool sources configured \u2014 add remote HTTP/SSE or local command STDIO in \u201CMarket\u201D</string>
-    <string name="market_installed_go_add">Add in Market</string>
+    <string name="market_installed_go_add">Add now</string>
     <string name="market_installed_mcp_empty_short">No MCP tool sources configured</string>
     <string name="market_installed_mcp_header">%1$d MCP tool sources configured; once connected their tools join conversations and /mcp:&lt;name&gt; appears in the / menu.</string>
     <string name="market_transport_stdio">Transport: STDIO (local command)</string>
@@ -164,7 +164,7 @@
 
     <!-- ═══ Installed · Integrations ═══ -->
     <string name="market_installed_integrations_empty">No skills installed from remote repositories (ModelScope / GitHub / ClawHub) yet \u2014 browse and install from \u201CMarket\u201D</string>
-    <string name="market_installed_integrations_go">Browse Market</string>
+    <string name="market_installed_integrations_go">Browse sources</string>
     <string name="market_installed_integrations_empty_short">No skills from remote sources</string>
     <string name="market_installed_integrations_header">The ms- prefix = installed from ModelScope; gh- = converted from a GitHub repository; ch- = installed from the ClawHub repository. GitHub skills with custom manifests are managed on the Skills tab.</string>
     <string name="market_source_modelscope">ModelScope</string>
