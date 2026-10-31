@@ -136,8 +136,10 @@ object UnifiedDiffParser {
             // git 格式：@@ -12,5 +13,6 @@ → 解析起始行号
             val m = Regex("""^@@+\s*-(\d+)(?:,\d+)?\s*\+(\d+)(?:,\d+)?\s*@@""").find(header)
             if (m != null) {
-                gitOldStart = m.groupValues[1].toInt()
-                gitNewStart = m.groupValues[2].toInt()
+                // toIntOrNull：容错契约（空/非 diff → 空 ParsedDiff）——病态
+                // 头部行号超 Int 范围时降级 null（行号缺失）而非抛 NumberFormat
+                gitOldStart = m.groupValues[1].toIntOrNull()
+                gitNewStart = m.groupValues[2].toIntOrNull()
             }
         }
 
@@ -174,10 +176,12 @@ object UnifiedDiffParser {
     private fun stripPrefix(path: String): String =
         path.removePrefix("a/").removePrefix("b/")
 
-    /** mini 结尾统计行 `(N added, M removed)`。 */
+    /** mini 结尾统计行 `(N added, M removed)`。病态超大数字 → 视为非统计行（null）。 */
     private fun parseSummary(line: String): Pair<Int, Int>? {
         val m = Regex("""^\((\d+) added, (\d+) removed\)$""").find(line.trim()) ?: return null
-        return m.groupValues[1].toInt() to m.groupValues[2].toInt()
+        val added = m.groupValues[1].toIntOrNull() ?: return null
+        val removed = m.groupValues[2].toIntOrNull() ?: return null
+        return added to removed
     }
 
     /** 隐式 hunk 的占位头（mini 格式无 @@ 标记时的上下文起点）。 */

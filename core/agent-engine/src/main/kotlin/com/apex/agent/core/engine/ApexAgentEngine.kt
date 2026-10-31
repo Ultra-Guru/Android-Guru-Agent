@@ -472,6 +472,16 @@ class ApexAgentEngine(
                 )
             }
 
+            // ═══ 日志会话分段（日志增强接线）═══
+            // 打通 AppLogger.beginSession/endSession 的「死代码」：每个 Agent
+            // 回合 = 一个会话段（label 带用户任务摘要），日志查看器的「会话段」
+            // 下拉从此有内容，支持按单次任务浏览/导出全过程。begin 放在回合
+            // 尽头（finally 尾 endSession），覆盖思考/规划/工具调用/压缩/错误
+            // 全部事件流；endSession 若无活跃会话则安全 no-op。
+            runCatching {
+                AppLogger.instance.beginSession("任务: ${input.text.trim().take(48)}")
+            }
+
             // ═══ 聊天记忆召回（发送前、历史追加前）═══
             // 聊天长期记忆召回：失败折叠为 null（记忆子系统异常绝不阻断主对话）。
             chatMemoryNote = try {
@@ -595,6 +605,9 @@ class ApexAgentEngine(
                     totalDurationMs = System.currentTimeMillis() - startTime
                 )
             )
+            // 会话段收口（与回合开头的 beginSession 成对；含 finally 补发的
+            // Complete 留痕，但收口本身在最后 —— 收口后不再有本回合日志）。
+            runCatching { AppLogger.instance.endSession() }
         }
     }
 

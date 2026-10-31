@@ -212,7 +212,9 @@ class GetTimeTool : AgentTool {
 
     override suspend fun execute(arguments: String): String {
         val now = java.util.Calendar.getInstance()
-        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss zzz", java.util.Locale.getDefault())
+        // Locale.US：工具输出面向 Agent/机器消费——默认 Locale 在部分语言
+            // （阿拉伯/东亚数字）会本地化数字与时区缩写，破坏下游可解析性
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss zzz", java.util.Locale.US)
         val timestamp = System.currentTimeMillis()
 
         return buildString {

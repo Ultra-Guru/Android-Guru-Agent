@@ -245,6 +245,9 @@ private fun GlassLabContent(mode: GlassLabMode) {
         // 本页为动效验证屏的豁免规则见文件头）
         EffectsWorkshopSection()
         BackdropZone(state = backdropState, mode = mode)
+        // v1.5.2：酷安式深色 Dock —— 第二采样场景（固定栏 + 滚动内容），
+        // 两个实验室共用（嵌套强制深色主题，与实验室模式正交）
+        DarkBarSection()
         SamplesSection(mode = mode)
         // kyant0：Ambient 材质对照样本（agent 回复气泡同款，白天/夜间自动跟随主题）
         AmbientMaterialSection()
