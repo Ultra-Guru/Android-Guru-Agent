@@ -76,7 +76,7 @@ data class DocStyleIssue(
 }
 
 /** 术语表条目。 */
-data class GlossaryEntry(
+data class DocGlossaryEntry(
     val term: String,
     /** 首次出现位置（字符序）。 */
     val firstOccurrence: Int,
@@ -288,13 +288,13 @@ object TechDocStyleGuide {
      * 「定义」判定 = 术语首次出现位置之前，文中存在「X（英文全称）」
      * 括注形态或存在术语表章节（## 术语表 之后的行）。
      */
-    fun buildGlossary(text: String): List<GlossaryEntry> {
+    fun buildGlossary(text: String): List<DocGlossaryEntry> {
         if (text.isBlank()) return emptyList()
         // 术语表章节起点（字符位置；无术语表 = 无限大）
         val glossaryAnchor = Regex("""^#{1,3}\s*(?:术语表|词汇表|术语与缩写)""", RegexOption.MULTILINE)
             .find(text)?.range?.first ?: Int.MAX_VALUE
 
-        val entries = mutableListOf<GlossaryEntry>()
+        val entries = mutableListOf<DocGlossaryEntry>()
         for (match in ACRONYM.findAll(text)) {
             val term = match.value
             if (term in KNOWN_NON_TERMS) continue
@@ -304,7 +304,7 @@ object TechDocStyleGuide {
             val definedByParen = charBefore == '(' || charBefore == '（'
             // 定义形态2：术语表章节在首现之前
             val definedByGlossary = glossaryAnchor < first
-            entries += GlossaryEntry(
+            entries += DocGlossaryEntry(
                 term = term,
                 firstOccurrence = first,
                 definedBeforeFirstUse = definedByParen || definedByGlossary

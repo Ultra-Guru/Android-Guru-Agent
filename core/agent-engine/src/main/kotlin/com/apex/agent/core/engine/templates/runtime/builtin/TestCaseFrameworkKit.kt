@@ -61,7 +61,7 @@ data class TestFrameworkSpec(
 }
 
 /** 一条测试骨架（函数 × 用例类别）。 */
-data class TestCaseSkeleton(
+data class FrameworkTestSkeleton(
     /** 用例编号（TC-001 形态）。 */
     val caseId: String,
     /** 被测函数名。 */
@@ -84,7 +84,7 @@ data class TestCaseSkeleton(
 data class CoverageMatrixCell(
     val caseId: String,
     val functionName: String,
-    val category: TestCaseSkeleton.CaseCategory,
+    val category: FrameworkTestSkeleton.CaseCategory,
     /** 一句话用例描述（矩阵行内容）。 */
     val description: String
 )
@@ -256,14 +256,14 @@ object TestCaseFrameworkKit {
     fun testNamingOf(
         spec: TestFrameworkSpec,
         functionName: String,
-        category: TestCaseSkeleton.CaseCategory,
+        category: FrameworkTestSkeleton.CaseCategory,
         scenario: String = ""
     ): String {
         val scene = scenario.ifBlank {
             when (category) {
-                TestCaseSkeleton.CaseCategory.NORMAL -> "常规输入"
-                TestCaseSkeleton.CaseCategory.BOUNDARY -> "边界输入"
-                TestCaseSkeleton.CaseCategory.EXCEPTION -> "非法输入"
+                FrameworkTestSkeleton.CaseCategory.NORMAL -> "常规输入"
+                FrameworkTestSkeleton.CaseCategory.BOUNDARY -> "边界输入"
+                FrameworkTestSkeleton.CaseCategory.EXCEPTION -> "非法输入"
             }
         }
         return when (spec.namingStyle) {
@@ -311,7 +311,7 @@ object TestCaseFrameworkKit {
     ): String = when (spec.id) {
         "junit4" -> when (kind) {
             AssertionKind.EQUALS -> "assertEquals($expected, $actual);"
-            AssertionKind.THROWS -> "try { $actual; fail(\"应抛异常\"); } catch (Exception expected) { }"
+            AssertionKind.THROWS -> "try { $actual; fail(\"应抛异常\"); } catch (Exception expected) { /* 断言异常已到达 */ }"
             AssertionKind.TRUE -> "assertTrue($actual);"
             AssertionKind.FALSE -> "assertFalse($actual);"
             AssertionKind.NULL -> "assertNull($actual);"
@@ -376,19 +376,19 @@ object TestCaseFrameworkKit {
         spec: TestFrameworkSpec,
         functions: List<TestCaseFunction>,
         maxCases: Int = 12
-    ): List<TestCaseSkeleton> {
-        val skeletons = mutableListOf<TestCaseSkeleton>()
+    ): List<FrameworkTestSkeleton> {
+        val skeletons = mutableListOf<FrameworkTestSkeleton>()
         var sequence = 0
         outer@ for (function in functions) {
-            for (category in TestCaseSkeleton.CaseCategory.entries) {
+            for (category in FrameworkTestSkeleton.CaseCategory.entries) {
                 if (skeletons.size >= maxCases) break@outer
                 sequence++
                 val caseId = "TC-%03d".format(sequence)
                 val testName = testNamingOf(spec, function.name, category)
                 val assertionKind = when (category) {
-                    TestCaseSkeleton.CaseCategory.NORMAL -> AssertionKind.EQUALS
-                    TestCaseSkeleton.CaseCategory.BOUNDARY -> AssertionKind.EQUALS
-                    TestCaseSkeleton.CaseCategory.EXCEPTION -> AssertionKind.THROWS
+                    FrameworkTestSkeleton.CaseCategory.NORMAL -> AssertionKind.EQUALS
+                    FrameworkTestSkeleton.CaseCategory.BOUNDARY -> AssertionKind.EQUALS
+                    FrameworkTestSkeleton.CaseCategory.EXCEPTION -> AssertionKind.THROWS
                 }
                 val callExpression = callExpressionOf(function, category)
                 val assertion = assertionOf(
@@ -401,7 +401,7 @@ object TestCaseFrameworkKit {
                     .replace("{name-class}", scenePascal(testName))
                     .replace("{name}", testName)
                     .replace("{calls}", indentAssertion(assertion, spec))
-                skeletons += TestCaseSkeleton(
+                skeletons += FrameworkTestSkeleton(
                     caseId = caseId,
                     functionName = function.name,
                     category = category,
@@ -414,21 +414,21 @@ object TestCaseFrameworkKit {
     }
 
     /** 被测函数调用表达式（骨架 act 段占位）。 */
-    private fun callExpressionOf(function: TestCaseFunction, category: TestCaseSkeleton.CaseCategory): String {
+    private fun callExpressionOf(function: TestCaseFunction, category: FrameworkTestSkeleton.CaseCategory): String {
         val args = function.params.joinToString(", ") { param ->
             when (category) {
-                TestCaseSkeleton.CaseCategory.NORMAL -> "${param.name} = 合法值"
-                TestCaseSkeleton.CaseCategory.BOUNDARY -> "${param.name} = 边界值"
-                TestCaseSkeleton.CaseCategory.EXCEPTION -> "${param.name} = 非法值"
+                FrameworkTestSkeleton.CaseCategory.NORMAL -> "${param.name} = 合法值"
+                FrameworkTestSkeleton.CaseCategory.BOUNDARY -> "${param.name} = 边界值"
+                FrameworkTestSkeleton.CaseCategory.EXCEPTION -> "${param.name} = 非法值"
             }
         }
         return "val result = ${function.name}($args)"
     }
 
-    private fun expectedPlaceholderOf(category: TestCaseSkeleton.CaseCategory): String = when (category) {
-        TestCaseSkeleton.CaseCategory.NORMAL -> "期望值"
-        TestCaseSkeleton.CaseCategory.BOUNDARY -> "边界期望值"
-        TestCaseSkeleton.CaseCategory.EXCEPTION -> "异常类型"
+    private fun expectedPlaceholderOf(category: FrameworkTestSkeleton.CaseCategory): String = when (category) {
+        FrameworkTestSkeleton.CaseCategory.NORMAL -> "期望值"
+        FrameworkTestSkeleton.CaseCategory.BOUNDARY -> "边界期望值"
+        FrameworkTestSkeleton.CaseCategory.EXCEPTION -> "异常类型"
     }
 
     /** 断言块缩进适配（Python/JS/Golang 的缩进风格差异）。 */
