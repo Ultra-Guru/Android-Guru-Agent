@@ -21,6 +21,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
 import org.junit.Test
@@ -265,26 +268,37 @@ class T81TimeoutControllerIsolationTest {
         scope.cancel()
     }
 
-    @Test fun `cancelled timer sends no signals`() = runBlocking {
+    /**
+     * 虚拟时间驱动（issue #276 方向）：真实时钟版 `delay(2)` 对 5ms 定时器在
+     * CI 高负载下偶发超线 —— runner 卡顿 3ms 即 TERM 先于 cancelTimeout 落地，
+     * 假阴失败已实际击中 PR #672 的 App Module Compile 门。改 [runTest] +
+     * 共享 [StandardTestDispatcher] 后挂起/取消全在虚拟时间轴上，零竞态。
+     */
+    @Test fun `cancelled timer sends no signals`() = runTest {
         val im = RecordingInputManager()
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
         val tc = com.apex.agent.platform.terminal.process.TimeoutController(im, scope, gracePeriodMs = 5L)
         tc.startTimeout(1L, 99L, 5L) { }
-        delay(2)
+        advanceTimeBy(2)   // 虚拟 2ms < 5ms 超时线 —— 定时器必然仍在挂起
         tc.cancelTimeout(99L)
-        delay(60)
+        advanceTimeBy(60)  // 虚拟 60ms —— 若取消失效，TERM/KILL 早已可观测
         assertTrue("cancelled timer must not deliver signals, got=${im.signals[99L]}",
             im.signals[99L].isNullOrEmpty())
         scope.cancel()
     }
 
-    @Test fun `timeout expiry delivers TERM then KILL after grace`() = runBlocking {
+    /**
+     * 同上虚拟化：原 `delay(200)` 真实等待既拖慢套件（每跑一次白等 200ms），
+     * 又在 runner 冻结场景下可能测不到已排程的 TERM/KILL —— 假阴。
+     * 虚拟时间轴上 10ms 超时 → 50ms 宽限 → KILL 的全链路确定走完。
+     */
+    @Test fun `timeout expiry delivers TERM then KILL after grace`() = runTest {
         val im = RecordingInputManager()
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
         val tc = com.apex.agent.platform.terminal.process.TimeoutController(im, scope, gracePeriodMs = 50L)
         var fired = false
         tc.startTimeout(1L, 5L, 10L) { fired = true }
-        delay(200)
+        advanceTimeBy(200)   // 虚拟 200ms：TERM@10 → KILL@60 → onTimeout 全链落地
         assertTrue(fired)
         val sig = im.signals[5L] ?: ""
         assertTrue("expected TERM then KILL, got=$sig", sig.contains("SIGTERM") && sig.contains("SIGKILL"))
