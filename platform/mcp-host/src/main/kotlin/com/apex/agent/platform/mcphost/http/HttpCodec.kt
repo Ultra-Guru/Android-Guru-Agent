@@ -5,6 +5,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.charset.StandardCharsets
+import java.util.Locale
 
 /**
  * # 逆向 MCP Host — 最小 HTTP/1.1 编解码
@@ -82,7 +83,7 @@ internal fun jsonEscape(raw: String): String {
             ch == '\n' -> sb.append("\\n")
             ch == '\r' -> sb.append("\\r")
             ch == '\t' -> sb.append("\\t")
-            ch < ' ' -> sb.append("\\u").append(String.format("%04x", ch.code))
+            ch < ' ' -> sb.append("\\u").append(String.format(Locale.ROOT, "%04x", ch.code))
             else -> sb.append(ch)
         }
     }

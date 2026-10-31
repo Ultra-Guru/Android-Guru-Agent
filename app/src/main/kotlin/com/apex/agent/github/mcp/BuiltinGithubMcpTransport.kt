@@ -414,8 +414,8 @@ class BuiltinGithubMcpTransport(
 /**
  * 内置 GitHub MCP 的启动器：幂等预置配置 + 后台自动连接。
  *
- * 由 app 的 McpModule 在 `provideMcpManager` 里调用（@Provides 副作用模式，
- * 与 AttachmentModule 触发 schedulePeriodicCleanup 相同）—— McpManager 是
+ * 由 app 的 McpModule 在 `provideMcpManager` 里调用（@Provides 副作用模式）
+ * —— McpManager 是
  * @Singleton 懒创建，首次注入（聊天页/工具注册表/市场页）即触发本逻辑。
  *
  * ensure/connect 是挂起函数，放到自持 IO scope 执行，不阻塞注入线程；

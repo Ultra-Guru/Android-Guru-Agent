@@ -262,7 +262,6 @@ interface Subscription {
 
 // ─── §40: Terminal API Contract Events (for subscribe) ───
 sealed interface TerminalApiEvent {
-    data class SessionStateChanged(val sessionId: SessionId, val from: String, val to: String) : TerminalApiEvent
     data class JobStateChanged(val sessionId: SessionId, val jobId: JobId, val newState: String) : TerminalApiEvent
     data class OutputAvailable(val sessionId: SessionId, val cursor: String) : TerminalApiEvent
     data class ProcessExited(val sessionId: SessionId, val jobId: JobId, val exitCode: Int?) : TerminalApiEvent

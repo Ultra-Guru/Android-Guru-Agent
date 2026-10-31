@@ -375,10 +375,10 @@ data class ToolMetadata(
                 id.startsWith("Github") && (id.contains("Write") || id.contains("Create")) ||
                 id.startsWith("Plugin") -> ToolRisk.MEDIUM
 
-            // v5：MEDIUM 风险——agent 设置写入、profile/role/preset 修改、
+            // v5：MEDIUM 风险——agent 设置写入、profile/role 修改、
             // 闹钟、文件选择、拍照、通知发布均涉及用户感官或运行时行为变化。
             id.startsWith("AgentSettingSet") || id.startsWith("AgentProfileSet") ||
-                id.startsWith("AgentRoleActivate") || id.startsWith("AgentModePresetSelect") ||
+                id.startsWith("AgentRoleActivate") ||
                 id == "AlarmSet" || id == "FilePick" || id == "ImageCapture" ||
                 id == "NotificationPost" -> ToolRisk.MEDIUM
 
@@ -393,7 +393,7 @@ data class ToolMetadata(
 
         /** Fluent metadata construction: `meta("JsonPathLegacy") { tag("json") }`. */
         @JvmStatic
-        fun meta(id: String, block: Builder.() -> Unit = {}): ToolMetadata =
+        fun meta(id: String, block: Builder.() -> Unit): ToolMetadata =
             Builder(id).apply(block).build()
 
         /**

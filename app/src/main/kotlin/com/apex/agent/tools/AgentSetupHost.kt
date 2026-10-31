@@ -1,13 +1,11 @@
 package com.apex.agent.tools
 
 import com.apex.agent.core.llm.ModelProfile
-import com.apex.agent.core.engine.modes.ModePreset
 import com.apex.agent.core.tools.builtin.AgentRoleConfigSnapshot
 import com.apex.agent.core.tools.builtin.AgentSettingsHost
 import com.apex.agent.core.tools.builtin.AgentSettingsPatch
 import com.apex.agent.core.tools.builtin.AgentSettingsSnapshot
 import com.apex.agent.core.tools.builtin.ModelProfileSummary
-import com.apex.agent.core.tools.builtin.ModePresetSummary
 import com.apex.agent.ui.screen.settings.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -30,36 +28,21 @@ class AgentSetupHost(
     override suspend fun snapshot(): AgentSettingsSnapshot = withContext(Dispatchers.IO) {
         val s = settingsRepository.agentSettings.value
         AgentSettingsSnapshot(
-            defaultMode = s.defaultMode,
-            thinkLevel = s.thinkLevel,
-            thinkingLevelOverride = s.thinkingLevelOverride,
-            forceDeepThinking = s.forceDeepThinking,
             codeThinkingLogic = s.codeThinkingLogic,
             codeThinkingLevel = s.codeThinkingLevel,
             codeExecutionMode = s.codeExecutionMode,
-            maxIterations = s.maxIterations,
             keepAlive = s.keepAlive,
-            autoRetry = s.autoRetry,
-            maxRetryPerAction = s.maxRetryPerAction,
-            loopDetection = s.loopDetection,
-            loopDetectionWindow = s.loopDetectionWindow,
-            sameActionThreshold = s.sameActionThreshold,
-            autoRecovery = s.autoRecovery,
-            parallelToolExecution = s.parallelToolExecution,
             taskCompletionNotify = s.taskCompletionNotify,
             maxContextTokens = s.maxContextTokens,
             compressionThreshold = s.compressionThreshold,
             preserveRecentTurns = s.preserveRecentTurns,
             maxToolOutputLength = s.maxToolOutputLength,
-            reflectionRounds = s.reflectionRounds,
-            selectedModePresetId = s.selectedModePresetId,
             themeMode = s.themeMode,
             accentPalette = s.accentPalette,
             fontScale = s.fontScale,
             showTimestamps = s.showTimestamps,
             language = s.language,
-            sendKeyBehavior = s.sendKeyBehavior,
-            showRunSummary = s.showRunSummary
+            sendKeyBehavior = s.sendKeyBehavior
         )
     }
 
@@ -67,36 +50,21 @@ class AgentSetupHost(
         try {
             settingsRepository.updateAgentSettings {
                 copy(
-                    defaultMode = patch.defaultMode ?: defaultMode,
-                    thinkLevel = patch.thinkLevel ?: thinkLevel,
-                    thinkingLevelOverride = patch.thinkingLevelOverride ?: thinkingLevelOverride,
-                    forceDeepThinking = patch.forceDeepThinking ?: forceDeepThinking,
                     codeThinkingLogic = patch.codeThinkingLogic ?: codeThinkingLogic,
                     codeThinkingLevel = patch.codeThinkingLevel ?: codeThinkingLevel,
                     codeExecutionMode = patch.codeExecutionMode ?: codeExecutionMode,
-                    maxIterations = patch.maxIterations ?: maxIterations,
                     keepAlive = patch.keepAlive ?: keepAlive,
-                    autoRetry = patch.autoRetry ?: autoRetry,
-                    maxRetryPerAction = patch.maxRetryPerAction ?: maxRetryPerAction,
-                    loopDetection = patch.loopDetection ?: loopDetection,
-                    loopDetectionWindow = patch.loopDetectionWindow ?: loopDetectionWindow,
-                    sameActionThreshold = patch.sameActionThreshold ?: sameActionThreshold,
-                    autoRecovery = patch.autoRecovery ?: autoRecovery,
-                    parallelToolExecution = patch.parallelToolExecution ?: parallelToolExecution,
                     taskCompletionNotify = patch.taskCompletionNotify ?: taskCompletionNotify,
                     maxContextTokens = patch.maxContextTokens ?: maxContextTokens,
                     compressionThreshold = patch.compressionThreshold ?: compressionThreshold,
                     preserveRecentTurns = patch.preserveRecentTurns ?: preserveRecentTurns,
                     maxToolOutputLength = patch.maxToolOutputLength ?: maxToolOutputLength,
-                    reflectionRounds = patch.reflectionRounds ?: reflectionRounds,
-                    selectedModePresetId = patch.selectedModePresetId ?: selectedModePresetId,
                     themeMode = patch.themeMode ?: themeMode,
                     accentPalette = patch.accentPalette ?: accentPalette,
                     fontScale = patch.fontScale ?: fontScale,
                     showTimestamps = patch.showTimestamps ?: showTimestamps,
                     language = patch.language ?: language,
-                    sendKeyBehavior = patch.sendKeyBehavior ?: sendKeyBehavior,
-                    showRunSummary = patch.showRunSummary ?: showRunSummary
+                    sendKeyBehavior = patch.sendKeyBehavior ?: sendKeyBehavior
                 )
             }
             true
@@ -195,49 +163,7 @@ suspend fun SettingsRepository.setProviderApiKeyAsync(providerId: String, apiKey
         }
     }
 
-/**
- * 列出模式预设摘要（内置 + 用户自定义）。
- */
-suspend fun SettingsRepository.listModePresetSummaries(): List<ModePresetSummary> =
-    withContext(Dispatchers.IO) {
-        // 自定义预设（持久化的）
-        val userPresets = agentSettings.value.customModePresets.map { p: ModePreset ->
-            ModePresetSummary(
-                id = p.id,
-                name = p.name,
-                builtin = p.builtin,
-                summary = p.summary()
-            )
-        }
-        // 内置预设（运行时合成）
-        val builtin = com.apex.agent.core.engine.modes.BuiltinModePresets.ALL.map { p ->
-            ModePresetSummary(
-                id = p.id,
-                name = p.name,
-                builtin = true,
-                summary = p.summary()
-            )
-        }
-        builtin + userPresets
-    }
-
-/**
- * 选中模式预设。
- */
-suspend fun SettingsRepository.selectModePresetAsync(presetId: String): Boolean =
-    withContext(Dispatchers.IO) {
-        try {
-            // 空串 = 清除
-            if (presetId.isBlank()) {
-                updateAgentSettings { copy(selectedModePresetId = "") }
-                return@withContext true
-            }
-            // 校验：必须是内置或用户预设 id
-            val all = listModePresetSummaries()
-            if (all.none { it.id == presetId }) return@withContext false
-            updateAgentSettings { copy(selectedModePresetId = presetId) }
-            true
-        } catch (_: Throwable) {
-            false
-        }
-    }
+// 模式预设扩展（listModePresetSummaries / selectModePresetAsync）已随
+// AgentModePresetList/Select 工具与 Agent CUSTOM 模式移除（PR 4/6）；
+// AgentSettings.selectedModePresetId / customModePresets 字段与快照/
+// 补丁里的 Agent 模式字段已随设置域收口（PR 5/6）删除。

@@ -70,16 +70,6 @@ bool PtyEngine::write(int sessionId, const char* data, size_t len) {
     return s ? s->write(data, len) : false;
 }
 
-bool PtyEngine::writeLine(int sessionId, const std::string& line) {
-    auto s = acquire(sessionId);
-    return s ? s->writeLine(line) : false;
-}
-
-std::string PtyEngine::read(int sessionId, int maxBytes) {
-    auto s = acquire(sessionId);
-    return s ? s->read(maxBytes) : "";
-}
-
 // ReadOutcome 声明于 apex 命名空间作用域（pty_engine.h:28），
 // 而非 PtyEngine 的嵌套类型 —— 此处不得写 PtyEngine::ReadOutcome。
 ReadOutcome PtyEngine::readEx(int sessionId, int maxBytes) {

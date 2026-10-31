@@ -253,11 +253,12 @@ fun FusionBundleComposerDialog(
             }
             result.fold(
                 onSuccess = {
-                    feedback.show(String.format(savedPattern, it.name), FeedbackSeverity.INFO)
+                    // #454：显式 Locale —— 防区域化数字/文本漂移（与 MarketDetailDialog 惯例一致）。
+                    feedback.show(String.format(java.util.Locale.US, savedPattern, it.name), FeedbackSeverity.INFO)
                     onDismiss()
                 },
                 onFailure = {
-                    feedback.show(String.format(saveFailedPattern, it.message ?: ""), FeedbackSeverity.WARNING)
+                    feedback.show(String.format(java.util.Locale.US, saveFailedPattern, it.message ?: ""), FeedbackSeverity.WARNING)
                 }
             )
         }
@@ -268,7 +269,7 @@ fun FusionBundleComposerDialog(
         scope.launch {
             val ok = withContext(Dispatchers.IO) { controller.registryForTools.uninstall(target.id) }
             if (ok) {
-                feedback.show(String.format(deletedPattern, target.name), FeedbackSeverity.INFO)
+                feedback.show(String.format(java.util.Locale.US, deletedPattern, target.name), FeedbackSeverity.INFO)
                 onDismiss()
             }
         }
@@ -310,7 +311,7 @@ fun FusionBundleComposerDialog(
                         )
                         if (editing != null) {
                             Text(
-                                text = String.format(idPattern, editing.id),
+                                text = String.format(java.util.Locale.US, idPattern, editing.id),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -398,6 +399,7 @@ fun FusionBundleComposerDialog(
                     }
                     is HubCatalogState.Error -> Text(
                         text = String.format(
+                            java.util.Locale.US,
                             stringResource(R.string.fusion_composer_hub_error),
                             catalog.message
                         ),
@@ -561,6 +563,7 @@ fun FusionBundleComposerDialog(
                 ) {
                     Text(
                         text = String.format(
+                            java.util.Locale.US,
                             stringResource(R.string.fusion_composer_selected_count),
                             selected.size + hubSkillPicks.size + hubMcpPicks.size
                         ),

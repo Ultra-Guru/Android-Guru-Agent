@@ -4,6 +4,9 @@ import com.apex.agent.platform.terminal.io.InputOwner
 import com.apex.agent.platform.terminal.pty.FakeNativePty
 import com.apex.agent.platform.terminal.policy.TerminalPolicyImpl
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
+import com.apex.agent.platform.terminal.runtime.ExecutionBackendRegistry
+import com.apex.agent.platform.terminal.runtime.FixtureLinuxBackend
+import com.apex.agent.platform.terminal.runtime.LocalShellBackend
 import com.apex.agent.platform.terminal.runtime.TerminalRuntimeImpl
 import com.apex.agent.platform.terminal.screen.RealVirtualTerminal
 import kotlinx.coroutines.async
@@ -29,6 +32,7 @@ class T81ConcurrencyStressTest {
     private fun newRuntime(): TerminalRuntimeImpl = TerminalRuntimeImpl(
         native = FakeNativePty(),
         policy = TerminalPolicyImpl(),
+        backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend(), FixtureLinuxBackend()),
         virtualTerminalFactory = { r, c -> RealVirtualTerminal(r, c) }
     )
 
@@ -180,6 +184,7 @@ class T81ObserveMatrixTest {
     private fun newRuntime(): TerminalRuntimeImpl = TerminalRuntimeImpl(
         native = FakeNativePty(),
         policy = TerminalPolicyImpl(),
+        backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend(), FixtureLinuxBackend()),
         virtualTerminalFactory = { r, c -> RealVirtualTerminal(r, c) }
     )
 

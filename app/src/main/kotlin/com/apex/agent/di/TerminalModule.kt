@@ -5,7 +5,6 @@ import com.apex.agent.platform.terminal.pty.JniNativePty
 import com.apex.agent.platform.terminal.pty.NativePty
 import com.apex.agent.platform.terminal.policy.TerminalPolicy
 import com.apex.agent.platform.terminal.policy.TerminalPolicyImpl
-import com.apex.agent.platform.terminal.compat.LegacyTerminalManager
 import com.apex.agent.platform.terminal.linux.CpuArchitecture
 import com.apex.agent.platform.terminal.linux.RootfsProvider
 import com.apex.agent.platform.terminal.proot.LinuxPRootBackend
@@ -14,7 +13,6 @@ import com.apex.agent.platform.terminal.proot.PRootBinaryProvider
 import com.apex.agent.platform.terminal.proot.PRootCapabilitySource
 import com.apex.agent.platform.terminal.proot.PRootHostEnvironment
 import com.apex.agent.platform.terminal.runtime.ExecutionBackendRegistry
-import com.apex.agent.platform.terminal.runtime.LocalShellBackend
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
 import com.apex.agent.platform.terminal.persistence.SessionMetadataStore
 import com.apex.agent.platform.terminal.runtime.TerminalRuntimeImpl
@@ -341,7 +339,6 @@ object TerminalModule {
     fun provideExecutionBackendRegistry(
         linuxBackend: LinuxPRootBackend
     ): ExecutionBackendRegistry = ExecutionBackendRegistry.of(
-        LocalShellBackend(),
         linuxBackend
     )
 
@@ -349,8 +346,7 @@ object TerminalModule {
      *  T75: 注入 workspaceBinder（LinuxWorkspaceManager）—— 会话创建/关闭时
      *  维护活跃绑定计数（workspace delete 门禁）。
      *  T91（D2-D4）：创建即安装进 TerminalRuntimeRegistry —— TerminalService
-     *  （specialUse 前台服务）由此取得同一单例（与 AttachmentCleanupManager
-     *  的 @Provides 副作用先例同构；AIDL 消费路径见 TerminalServiceClient）。 */
+     *  （specialUse 前台服务）由此取得同一单例；AIDL 消费路径见 TerminalServiceClient）。 */
     @Provides
     @Singleton
     fun provideTerminalRuntime(
@@ -381,12 +377,6 @@ object TerminalModule {
             com.apex.agent.platform.terminal.service.TerminalRuntimeRegistry.install(it)
         }
     }
-
-    /** Compat facade: old TerminalManager API → new Runtime (settle-time DELETED). Spec §35. */
-    @Provides
-    @Singleton
-    fun provideLegacyTerminalManager(runtime: TerminalRuntime): LegacyTerminalManager =
-        LegacyTerminalManager(runtime)
 
     // ═══════════════════════════════════════════════════════════════════════
     // T76: Ubuntu Linux Environment Productionization —

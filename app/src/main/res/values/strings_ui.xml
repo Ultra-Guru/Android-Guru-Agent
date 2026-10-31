@@ -16,9 +16,6 @@
     <string name="settings_send_key_send">Send message</string>
     <string name="settings_send_key_newline">New line</string>
 
-    <!-- Task summary card -->
-    <string name="settings_show_run_summary">Show task summary card</string>
-    <string name="settings_show_run_summary_desc">Show a summary card when a task finishes (off by default)</string>
 
     <!-- Detailed input (layered editing entry) -->
     <string name="detailed_input">Detailed input</string>

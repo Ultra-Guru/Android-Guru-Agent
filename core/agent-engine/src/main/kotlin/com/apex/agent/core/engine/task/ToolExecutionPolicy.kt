@@ -136,8 +136,8 @@ class ToolExecutionPolicy {
             put("TerminalReadLegacy", ToolIdempotencyClass.READ_ONLY)
             put("TerminalExecLegacy", ToolIdempotencyClass.UNKNOWN)        // 任意命令
             put("TerminalSendLegacy", ToolIdempotencyClass.NON_IDEMPOTENT) // 发送即执行新命令
-            put("TerminalSignalLegacy", ToolIdempotencyClass.NON_IDEMPOTENT)
-            put("TerminalCloseLegacy", ToolIdempotencyClass.NON_IDEMPOTENT)
+            // #585：TerminalSignalLegacy / TerminalCloseLegacy 条目已删 ——
+            // 两个工具从未在 ToolModule 注册（永不触发的分类），类文件一并移除。
 
             // ═══ Browser 自动化 ═══
             put("BrowserNavigate", ToolIdempotencyClass.IDEMPOTENT_WRITE) // 重复导航同一 URL 等价

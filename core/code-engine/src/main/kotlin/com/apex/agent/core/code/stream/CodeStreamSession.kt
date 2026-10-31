@@ -1,6 +1,7 @@
 package com.apex.agent.core.code.stream
 
 import com.apex.agent.core.engine.AgentEvent
+import com.apex.agent.core.engine.ToolCallOrigin
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -77,6 +78,16 @@ class CodeStreamSession {
     /** 本 run 起点时的累计失败数（Complete 时差值 = 本轮失败数）。 */
     private var runStartFailedCount = 0
 
+    // ═══ 本轮工具使用聚合（溯源三分类；beginRun 归零，与 affectedFiles
+    //    同款 run 粒度会计）——加载卡实时计数 / 收尾统计卡的共同数据源。 ═══
+
+    /** callId → (溯源, 标签)。put 语义：ArgsDelta 建的 BUILTIN 占位在
+     *  Start 升级时被引擎权威打标覆盖（计数不重复，分类可修正）。 */
+    private val runToolOrigins = LinkedHashMap<String, Pair<ToolCallOrigin, String?>>()
+
+    /** 本轮失败的工具调用数（run 粒度；加载卡/收尾卡共用，beginRun 归零）。 */
+    private var runFailedCount = 0
+
     // ═══ 验证闭环追踪 ═══
     private var cycleRound = 0
     private var openCycleEdits = mutableListOf<String>()
@@ -101,6 +112,9 @@ class CodeStreamSession {
         argsStreams.clear()
         // 文档语义：「本轮运行」触碰的文件 —— 每 run 归零重新累计
         affectedFiles.clear()
+        // 本轮工具使用聚合同款归零（溯源计数 / 技能 / 服务器清单）
+        runToolOrigins.clear()
+        runFailedCount = 0
         // 统计收尾卡的本轮失败数基线（failedToolCallCount 跨 run 累积）
         runStartFailedCount = failedToolCallCount
         append(StreamEntry.UserEntry(nextId(), userText))
@@ -310,7 +324,13 @@ class CodeStreamSession {
                             toolCalls = event.totalToolCalls,
                             failedCalls = (failedToolCallCount - runStartFailedCount).coerceAtLeast(0),
                             filesTouched = affectedFiles.size,
-                            durationMs = event.totalDurationMs
+                            durationMs = event.totalDurationMs,
+                            // 溯源分解（收尾卡 stat chips 数据源）：技能 / MCP
+                            // 计数与清单从本轮会计现算，旧档恢复缺省 0。
+                            skillCalls = runToolOrigins.countOf(ToolCallOrigin.SKILL),
+                            mcpCalls = runToolOrigins.countOf(ToolCallOrigin.MCP),
+                            skills = runToolOrigins.labelsOf(ToolCallOrigin.SKILL),
+                            mcpServers = runToolOrigins.labelsOf(ToolCallOrigin.MCP)
                         )
                     )
                 } else {
@@ -339,17 +359,10 @@ class CodeStreamSession {
             is AgentEvent.PlanAwaitingConfirmation ->
                 append(StreamEntry.StatusEntry(nextId(), "等待计划确认"))
 
-            is AgentEvent.SpecGenerated ->
-                append(StreamEntry.StatusEntry(nextId(), "规格已生成（${event.spec.requirements.size} 项需求）"))
-
-            is AgentEvent.ReflectionReview ->
-                append(StreamEntry.StatusEntry(nextId(), "评审：${event.reviewText.take(60)}"))
-
             is AgentEvent.StepStart ->
                 append(StreamEntry.StatusEntry(nextId(), event.description.take(80)))
 
-            is AgentEvent.PlanConfirmed, is AgentEvent.SpecConfirmed,
-            is AgentEvent.SpecAwaitingConfirmation -> Unit
+            is AgentEvent.PlanConfirmed -> Unit
 
             // 真实用量更新（服务端 token 统计）—— 归 VM/仪表盘通道消费，
             // 胶囊时间轴不展示用量条目（低频元数据，非工作流事件）。
@@ -425,6 +438,17 @@ class CodeStreamSession {
         terminalCommandSummary = ""
         terminalExitCode = null
         argsStreams.clear()
+        // 溯源会计从恢复轴重建：恢复条目全部视为「本轮」基线（idle 期两档
+        // 渲染等价，不消费；下一次 beginRun 归零后进入真实 run 粒度会计）
+        runToolOrigins.clear()
+        restored.forEach { entry ->
+            if (entry is StreamEntry.ToolCapsuleEntry) {
+                runToolOrigins[entry.call.id] = entry.call.origin to entry.call.originLabel
+            }
+        }
+        runFailedCount = restored.count {
+            (it as? StreamEntry.ToolCapsuleEntry)?.call?.status == ToolCallStatus.FAILED
+        }
         toolCallCount = restored.count { it is StreamEntry.ToolCapsuleEntry }
         failedToolCallCount = restored.count {
             (it as? StreamEntry.ToolCapsuleEntry)?.call?.status == ToolCallStatus.FAILED
@@ -459,31 +483,39 @@ class CodeStreamSession {
         // 工具开跑 = 思考阶段已过：收口可能仍挂着「思考中…」的流式卡
         //（引擎 notice 类思考分片没有 Complete 事件，见 closeStreamingThinking）
         closeStreamingThinking()
-        val kind = ToolKind.fromToolName(event.toolName)
+        // 溯源优先：引擎打标（技能 / MCP）覆盖名字启发式 —— 技能工具不再
+        // 被误折进「MCP 自定义」；未打标（kit 路径 / 旧档）回退名字归一。
+        val kind = kindOf(event.toolName, event.origin)
         val args = parseArgs(event.arguments)
         val resolvedTarget = targetOf(kind, args, event.toolName)
+        // 本轮溯源会计：put 语义覆盖 ArgsDelta 期的 BUILTIN 占位（不重复计数）
+        runToolOrigins[event.callId] = event.origin to event.originLabel
         val call = if (existing == null) {
             toolCallCount++
             StreamToolCall(
                 id = event.callId,
                 kind = kind,
-                displayName = displayNameOf(kind, event.toolName),
+                displayName = displayNameOf(kind, event.origin, event.originLabel),
                 target = resolvedTarget,
                 argsSummary = args.values.firstOrNull()?.toString()?.take(ARGS_SUMMARY_MAX) ?: "",
                 status = ToolCallStatus.RUNNING,
-                startAt = System.currentTimeMillis()
+                startAt = System.currentTimeMillis(),
+                origin = event.origin,
+                originLabel = event.originLabel
             )
         } else {
             // 等待态升级为运行态：流式预览保留（代码窗持续到 Complete 自动
             // 收回）；族名/目标/摘要以全量参数为准（流式期可能只提取到前缀）
             existing.copy(
                 kind = kind,
-                displayName = displayNameOf(kind, event.toolName),
+                displayName = displayNameOf(kind, event.origin, event.originLabel),
                 target = resolvedTarget.takeIf { it != UNKNOWN_TARGET } ?: existing.target,
                 argsSummary = args.values.firstOrNull()?.toString()?.take(ARGS_SUMMARY_MAX)
                     ?: existing.argsSummary,
                 status = ToolCallStatus.RUNNING,
-                startAt = System.currentTimeMillis()
+                startAt = System.currentTimeMillis(),
+                origin = event.origin,
+                originLabel = event.originLabel
             )
         }
         toolCalls[event.callId] = call
@@ -552,7 +584,7 @@ class CodeStreamSession {
         val call = StreamToolCall(
             id = event.callId,
             kind = kind,
-            displayName = displayNameOf(kind, state.toolName),
+            displayName = displayNameOf(kind),
             target = preview.target?.takeIf { it.isNotBlank() } ?: UNKNOWN_TARGET,
             status = ToolCallStatus.WAITING,
             startAt = System.currentTimeMillis(),
@@ -560,14 +592,23 @@ class CodeStreamSession {
         )
         toolCalls[event.callId] = call
         toolCallCount++
+        // 溯源占位记账（BUILTIN）：Start 到达时被引擎权威打标覆盖（put 语义）
+        runToolOrigins[event.callId] = ToolCallOrigin.BUILTIN to null
         append(StreamEntry.ToolCapsuleEntry(toolEntryId(event.callId), call))
     }
 
     private fun onToolComplete(event: AgentEvent.ToolCallComplete) {
         val existing = toolCalls[event.callId] ?: run {
-            // 恢复/重放场景：Start 丢失时补建（幂等）
+            // 恢复/重放场景：Start 丢失时补建（幂等）——溯源随 Complete
+            // 透传（引擎双事件同源字段），补建胶囊同样拿到权威分类。
             onToolStart(
-                AgentEvent.ToolCallStart(event.callId, event.toolName, event.arguments)
+                AgentEvent.ToolCallStart(
+                    callId = event.callId,
+                    toolName = event.toolName,
+                    arguments = event.arguments,
+                    origin = event.origin,
+                    originLabel = event.originLabel
+                )
             )
             toolCalls[event.callId] ?: return
         }
@@ -605,7 +646,10 @@ class CodeStreamSession {
             streamingPreview = null
         )
         updateCall(updated)
-        if (status == ToolCallStatus.FAILED) failedToolCallCount++
+        if (status == ToolCallStatus.FAILED) {
+            failedToolCallCount++
+            runFailedCount++
+        }
         if (existing.isEditFamily) {
             existing.target.takeIf { it.isNotBlank() && it != UNKNOWN_TARGET }?.let { affectedFiles.add(it) }
         }
@@ -804,6 +848,7 @@ class CodeStreamSession {
             entries = entries.toList(),
             toolCallCount = toolCallCount,
             failedToolCallCount = failedToolCallCount,
+            toolUsage = buildToolUsage(),
             lastError = lastError,
             activeTerminalCallId = activeTerminalCallId,
             terminalContent = activeBuf?.content() ?: "",
@@ -813,6 +858,46 @@ class CodeStreamSession {
             terminalExitCode = terminalExitCode
         )
     }
+
+    /** 本轮工具使用聚合（快照派生统计；空会计零分配直达缺省值）。 */
+    private fun buildToolUsage(): ToolUsageStats {
+        if (runToolOrigins.isEmpty()) return ToolUsageStats()
+        var builtin = 0
+        var skill = 0
+        var mcp = 0
+        val skills = LinkedHashSet<String>()
+        val servers = LinkedHashSet<String>()
+        runToolOrigins.values.forEach { (origin, label) ->
+            when (origin) {
+                ToolCallOrigin.BUILTIN -> builtin++
+                ToolCallOrigin.MCP -> {
+                    mcp++
+                    label?.let { servers.add(it) }
+                }
+                ToolCallOrigin.SKILL -> {
+                    skill++
+                    label?.let { skills.add(it) }
+                }
+            }
+        }
+        return ToolUsageStats(
+            total = builtin + skill + mcp,
+            builtinCount = builtin,
+            skillCount = skill,
+            mcpCount = mcp,
+            failedCount = runFailedCount,
+            skills = skills.toList(),
+            mcpServers = servers.toList()
+        )
+    }
+
+    /** 本轮指定溯源的调用数（收尾统计卡用）。 */
+    private fun Map<String, Pair<ToolCallOrigin, String?>>.countOf(origin: ToolCallOrigin): Int =
+        values.count { it.first == origin }
+
+    /** 本轮指定溯源的去重标签清单（首现序；收尾统计卡用）。 */
+    private fun Map<String, Pair<ToolCallOrigin, String?>>.labelsOf(origin: ToolCallOrigin): List<String> =
+        values.mapNotNull { (o, label) -> label?.takeIf { o == origin } }.distinct()
 
     // ═══ 内部：参数解析 / 展示文案 ═══
 
@@ -864,7 +949,19 @@ class CodeStreamSession {
         }
     }
 
-    private fun displayNameOf(kind: ToolKind, toolName: String): String = when (kind) {
+    /** 溯源优先的族判定：引擎打标（技能 / MCP）覆盖名字启发式，未打标
+     *  （kit 路径 / 旧档回放）回退 [ToolKind.fromToolName]（行为同旧）。 */
+    private fun kindOf(toolName: String, origin: ToolCallOrigin): ToolKind = when (origin) {
+        ToolCallOrigin.SKILL -> ToolKind.SKILL
+        ToolCallOrigin.MCP -> ToolKind.MCP_CUSTOM
+        ToolCallOrigin.BUILTIN -> ToolKind.fromToolName(toolName)
+    }
+
+    private fun displayNameOf(
+        kind: ToolKind,
+        origin: ToolCallOrigin = ToolCallOrigin.BUILTIN,
+        originLabel: String? = null
+    ): String = when (kind) {
         ToolKind.READ_FILE -> "读取"
         ToolKind.WRITE_FILE -> "写入"
         ToolKind.EDIT_FILE -> "编辑"
@@ -874,7 +971,10 @@ class CodeStreamSession {
         ToolKind.LINT -> "Lint"
         ToolKind.TEST -> "测试"
         ToolKind.PLAN -> "计划"
-        ToolKind.MCP_CUSTOM -> toolName.take(16)
+        // 溯源展示：MCP · 服务器名 / 技能 · 技能 id（无标签退宽名；
+        // target 侧仍保留工具名，信息不丢失）
+        ToolKind.MCP_CUSTOM -> originLabel?.let { "MCP · $it" } ?: "MCP"
+        ToolKind.SKILL -> originLabel?.let { "技能 · $it" } ?: "技能"
     }
 
     /** 命令退出码：尾部若干行内逐行匹配（TerminalExec 的 `exit N` 尾缀；

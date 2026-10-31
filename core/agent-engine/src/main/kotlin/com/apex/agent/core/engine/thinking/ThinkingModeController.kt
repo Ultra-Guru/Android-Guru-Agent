@@ -66,7 +66,7 @@ class ThinkingModeController(
         historyToolCalls: Int = USE_INTERNAL_COUNTERS,
         recentErrors: Int = USE_INTERNAL_COUNTERS,
         userText: String? = null,
-        planMode: Boolean = config.mode == AgentMode.PLAN || config.mode == AgentMode.SPEC
+        planMode: Boolean = config.mode == AgentMode.PLAN
     ): ThinkingProfile {
         if (iteration <= 1) {
             this.historyToolCalls = 0

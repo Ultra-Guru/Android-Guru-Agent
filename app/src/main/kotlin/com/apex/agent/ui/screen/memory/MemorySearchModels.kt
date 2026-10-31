@@ -109,3 +109,24 @@ data class EntityRelationView(
     val other: String,
     val relationType: String,
 )
+
+/**
+ * 命中词在文本中的区间（记忆页 v3 搜索高亮）—— 大小写不敏感的全部
+ * 出现位置（含重叠安全：非重叠扫描，左起贪心推进）。
+ *
+ * 纯函数独立于 Compose（区间计算 JVM 直测；UI 侧 buildAnnotatedString
+ * 只消费区间），空词 / 无命中返回空表。
+ */
+fun queryMatchRanges(text: String, query: String): List<IntRange> {
+    val q = query.trim()
+    if (q.isEmpty()) return emptyList()
+    val ranges = mutableListOf<IntRange>()
+    var from = 0
+    while (from <= text.length - q.length) {
+        val idx = text.indexOf(q, startIndex = from, ignoreCase = true)
+        if (idx < 0) break
+        ranges += idx until idx + q.length
+        from = idx + q.length
+    }
+    return ranges
+}

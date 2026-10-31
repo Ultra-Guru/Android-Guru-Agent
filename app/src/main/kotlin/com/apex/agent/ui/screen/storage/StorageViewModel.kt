@@ -5,7 +5,6 @@ import android.content.Intent
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.apex.agent.attachment.AttachmentCleanupManager
 import com.apex.agent.core.engine.ConversationMemory
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.di.FileContextArchive
@@ -25,14 +24,12 @@ import javax.inject.Inject
 /**
  * 存储与数据管理页 ViewModel。
  *
- * T76 审计 §7 缺口补齐：AttachmentCleanupManager 的存储用量/清理 API 此前只有
- * WorkManager 周期自清在调用，无用户入口；Ubuntu rootfs（完整环境，~1GB）无删除入口；
+ * T76 审计 §7 缺口补齐：Ubuntu rootfs（完整环境，~1GB）无删除入口；
  * 全局会话历史（apex_memory: conversation_history）无导出/管理页 —— 本页统一承接。
  */
 @HiltViewModel
 class StorageViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val attachmentCleanup: AttachmentCleanupManager,
     private val conversationMemory: ConversationMemory,
     // #396：会话归档随「清空会话历史」一并清空（防孤儿归档被检索工具读到）。
     private val contextArchive: FileContextArchive,
@@ -41,14 +38,12 @@ class StorageViewModel @Inject constructor(
 
     data class UiState(
         val loading: Boolean = true,
-        val attachmentsSize: Long = 0L,
-        val attachmentsCount: Int = 0,
         val conversationCount: Int = 0,
         val rootfsSize: Long? = null,
         val rootfsPhase: UbuntuLifecycleCoordinator.Phase = UbuntuLifecycleCoordinator.Phase.NOT_INSTALLED,
         val logCount: Int = 0,
         val logBytes: Long = 0L,
-        /** 破坏性操作进行中（清附件/清会话/删 rootfs）。 */
+        /** 破坏性操作进行中（清会话/删 rootfs）。 */
         val busy: Boolean = false,
         /** 结果反馈（UI 消费后调 consumeMessage）。 */
         val message: String? = null
@@ -64,8 +59,6 @@ class StorageViewModel @Inject constructor(
     fun refresh() {
         viewModelScope.launch {
             _uiState.update { it.copy(loading = true) }
-            val attSize = attachmentCleanup.getTotalSize()
-            val attCount = attachmentCleanup.getFileCount()
             val convCount = withContext(Dispatchers.Default) {
                 runCatching { conversationMemory.count() }.getOrDefault(0)
             }
@@ -75,8 +68,6 @@ class StorageViewModel @Inject constructor(
             _uiState.update {
                 it.copy(
                     loading = false,
-                    attachmentsSize = attSize,
-                    attachmentsCount = attCount,
                     conversationCount = convCount,
                     rootfsSize = rootfsSize,
                     rootfsPhase = rootfsPhase,
@@ -88,22 +79,6 @@ class StorageViewModel @Inject constructor(
     }
 
     fun consumeMessage() = _uiState.update { it.copy(message = null) }
-
-    /** 清空附件沙箱（破坏性 —— UI 二次确认后调用）。 */
-    fun clearAttachments() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(busy = true) }
-            attachmentCleanup.clearAll()
-            _uiState.update {
-                it.copy(
-                    busy = false,
-                    message = "附件已清空",
-                    attachmentsSize = 0L,
-                    attachmentsCount = 0
-                )
-            }
-        }
-    }
 
     /** 清空全局会话历史（破坏性 —— UI 二次确认后调用）。 */
     fun clearConversation() {

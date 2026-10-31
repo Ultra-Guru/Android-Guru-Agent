@@ -99,4 +99,19 @@ interface CodeEngineFacade : AgentEngine {
 
     /** 上下文窗口预算（上下文仪表盘）。 */
     fun maxContextTokens(): Int
+
+    /**
+     * 当前会话上下文快照（上下文查看工具的数据源，见 [CodeContextSnapshot]）。
+     *
+     * 默认实现 = 仅统计的降级快照（entries 为空）：深潜线 override 提供
+     * 完整消息序列与提示注入段；标准/织造/信使三条 kit 线的引擎未开放
+     * 消息导出 API，沿用默认（UI 显示降级说明，统计仍真实）。
+     */
+    fun contextSnapshot(): CodeContextSnapshot = CodeContextSnapshot(
+        entries = emptyList(),
+        globalRules = null,
+        sessionExtras = null,
+        tokenUsed = currentTokenCount(),
+        tokenMax = maxContextTokens()
+    )
 }

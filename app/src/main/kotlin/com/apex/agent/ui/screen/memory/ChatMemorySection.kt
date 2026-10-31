@@ -1,20 +1,16 @@
 package com.apex.agent.ui.screen.memory
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -23,10 +19,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -37,36 +29,42 @@ import com.apex.agent.R
 import com.apex.memkit.core.model.ChatFact
 
 /**
- * 「聊天记忆」分区（#219 隐私合规，v2 账本化）—— 聊天记忆库的可见性与管理入口。
+ * 「聊天记忆」分区（#219 隐私合规，v2 账本化，v3 单列扁平化）——
+ * 聊天记忆库的可见性与管理入口。
  *
  * 数据源是 apex-kit-memory 的聊天事实账本（memory_kit/chat.json），与
- * 轨迹库、memory MCP 图谱同库不同文档：ChatEngine 在对话中自动沉淀三类记忆
- * （画像 / 近况 / 里程碑，含「近期偏低落」这类敏感情绪判断），本分区提供：
- *  - 查看：三类记忆逐条呈现（类别徽章 + 内容 + 元数据行：重要度 / 来源 /
- *    召回次数 —— v2 账本的生命体征）；
- *  - 逐条删除：主键精确删除（二次确认，Episode 删除同款对话框模式）；
- *  - 一键清空：三类自动记忆全量（独立二次确认）。
+ * 轨迹库、memory MCP 图谱同库不同文档：ChatEngine 在对话中自动沉淀三类
+ * 记忆（画像 / 近况 / 里程碑，含「近期偏低落」这类敏感情绪判断）。
+ *
+ * v3 拆分：v2 的 ColumnScope 包装（自带内滚 LazyColumn + 删除确认
+ * 对话框）拆成两个可独立编址的部件 —— [MemoryChatHeader]（分区头：
+ * 标题 + 条数 + 一键清空入口）与 [MemoryChatEntryCard]（类别卡：逐条
+ * 记录含元数据行，每条可删）。二者作为单列列表的独立条目渲染；删除
+ * / 清空的二次确认对话框上提到 MemoryScreen 统一持有（对话框与触发的
+ * 卡片分离 —— LazyColumn 条目离屏不丢确认现场）。
  *
  * 视觉沿用记忆页既有语言：ElevatedCard 条目 / titleSmall 分区标题 /
  * labelSmall 徽章 / error 色破坏性动作。
  */
-@Composable
-fun ColumnScope.ChatMemorySection(
-    entries: List<ChatMemoryEntry>,
-    onDeleteRecord: (recordId: String) -> Unit,
-    onClearAll: () -> Unit
-) {
-    var pendingRecord by remember { mutableStateOf<ChatFact?>(null) }
-    var showClearConfirm by remember { mutableStateOf(false) }
-    val recordCount = entries.sumOf { it.records.size }
 
-    // 分区头：标题 + 已记条数 + 一键清空（有内容才出现清空入口）
+/** 分区头：标题 + 已记条数 + 一键清空（有内容才出现清空入口）。 */
+@Composable
+internal fun MemoryChatHeader(
+    recordCount: Int,
+    onClearAll: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        Icon(
+            Icons.Outlined.Forum, contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(Modifier.width(6.dp))
         Text(
             stringResource(R.string.memory_chat_title),
             style = MaterialTheme.typography.titleSmall,
@@ -83,7 +81,7 @@ fun ColumnScope.ChatMemorySection(
         }
         Spacer(Modifier.weight(1f))
         if (recordCount > 0) {
-            TextButton(onClick = { showClearConfirm = true }) {
+            TextButton(onClick = onClearAll) {
                 Text(
                     stringResource(R.string.memory_chat_clear),
                     style = MaterialTheme.typography.labelMedium,
@@ -92,75 +90,16 @@ fun ColumnScope.ChatMemorySection(
             }
         }
     }
-
-    if (entries.isEmpty()) {
-        // 空态说明来源：聊天记忆是从对话中自动生成的，不是用户手动存的
-        EmptyHint(stringResource(R.string.memory_chat_empty))
-    } else {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f, fill = false)
-                .padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(entries, key = { it.kind.name }) { entry ->
-                ChatMemoryEntryCard(
-                    entry = entry,
-                    onDeleteRecord = { record -> pendingRecord = record }
-                )
-            }
-        }
-    }
-
-    // 逐条删除确认（破坏性操作，Episode 删除同款模式）
-    pendingRecord?.let { record ->
-        AlertDialog(
-            onDismissRequest = { pendingRecord = null },
-            title = { Text(stringResource(R.string.memory_chat_delete_title)) },
-            text = { Text(stringResource(R.string.memory_chat_delete_text, record.content)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    onDeleteRecord(record.id)
-                    pendingRecord = null
-                }) { Text(stringResource(R.string.memory_delete), color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingRecord = null }) {
-                    Text(stringResource(R.string.memory_cancel))
-                }
-            }
-        )
-    }
-
-    // 一键清空确认（独立二次确认，正文带条数与不可恢复提示）
-    if (showClearConfirm) {
-        AlertDialog(
-            onDismissRequest = { showClearConfirm = false },
-            title = { Text(stringResource(R.string.memory_chat_clear_title)) },
-            text = { Text(stringResource(R.string.memory_chat_clear_text, recordCount)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    onClearAll()
-                    showClearConfirm = false
-                }) { Text(stringResource(R.string.memory_chat_clear), color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearConfirm = false }) {
-                    Text(stringResource(R.string.memory_cancel))
-                }
-            }
-        )
-    }
 }
 
 /** 单个聊天记忆类别的卡片：类别徽章 + 名称 + 逐条记录（含元数据行，每条可删）。 */
 @Composable
-private fun ChatMemoryEntryCard(
+internal fun MemoryChatEntryCard(
     entry: ChatMemoryEntry,
-    onDeleteRecord: (record: ChatFact) -> Unit
+    onDeleteRecord: (record: ChatFact) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+    ElevatedCard(modifier = modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(start = 16.dp, top = 12.dp, end = 4.dp, bottom = 4.dp)
         ) {

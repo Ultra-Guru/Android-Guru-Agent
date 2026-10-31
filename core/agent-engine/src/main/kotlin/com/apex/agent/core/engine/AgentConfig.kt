@@ -1,26 +1,20 @@
 package com.apex.agent.core.engine
 
 /**
- * Agent执行模式
+ * Agent 执行模式。
  *
- * #197 双工位拆分：Agent 聊天屏只暴露 [CHAT] / [AGENT] / [LOOP]（全能智能体
- * 工位，v3 新增 Loop）；Coding 屏暴露 [BUILD] / [PLAN] / [GOAL]（编码工位，
- * v3 新增 Goal）；Spec/Reflect/Assist/Custom 为存量枚举（老配置反序列化
- * 兼容，不再出现在任何模式选择 UI）。
+ * Agent 模式移除（PR 3/6）：Agent 聊天屏档位（CHAT / AGENT / LOOP）与
+ * v1/v2 存量档位（SPEC / REFLECTION / HUMAN_ASSIST / CUSTOM）已删 ——
+ * 本软件为纯 Coding 模式软件，只保留编码工位三档：
+ * - [BUILD]：边想边做（ReAct 主循环）
+ * - [PLAN]：先规划确认后执行
+ * - [GOAL]：目标驱动持续验收（goal 包）
+ *
+ * 存量配置兼容：持久化的 mode 字符串经 `AgentMode.valueOf` 解析处均有
+ * runCatching 回退（CodeViewModel 启动消毒到 BUILD、LoomKitAdapter
+ * getOrDefault(BUILD)），删除的档位名解析失败自动落到 BUILD，无迁移需求。
  */
 enum class AgentMode(val displayName: String, val description: String) {
-    /**
-     * 聊天模式（Agent 屏）：纯对话——无工具、无人机协同复杂度，
-     * 人设 + 聊天 Skill 驱动的轻量陪伴/问答体验。
-     */
-    CHAT("Chat", "纯聊天：人设与聊天技能驱动的对话"),
-
-    /**
-     * 智能体模式（Agent 屏）：全能智能体——生活/知识/系统级工具自主调用，
-     * 编程类请求引导用户切换到 Coding 模式（非编程工位）。
-     */
-    AGENT("Agent", "全能智能体：自主调用通用工具完成任务"),
-
     /**
      * 构建模式（Coding 屏）：边想边做，实时执行
      */
@@ -38,39 +32,7 @@ enum class AgentMode(val displayName: String, val description: String) {
      * [com.apex.agent.core.engine.goal.GoalModeCoordinator] 持有，引擎只挂
      * 每轮验收钩子，见 goal 包）。
      */
-    GOAL("Goal", "目标驱动：设定可验证条件，持续工作直至达成"),
-
-    /**
-     * 循环模式（Agent 屏，v3）：会话内调度器周期性重放提示词 / 轮询状态 /
-     * 一次性提醒（间隔 · Cron · 单次三型，见 app 层 loop 包与
-     * LoopScheduler）。引擎侧只是提示词层告知「你处于周期性任务中」，
-     * 真正的调度与触发在 VM/服务层，不在引擎循环内。
-     */
-    LOOP("Loop", "循环与定时：重复运行提示词/轮询/提醒"),
-
-    /**
-     * 规格模式：先产出需求规格（目标 / 需求 / 约束 / 验收标准 / 交付物），
-     * 用户确认后再逐项执行。比 Plan 更强调"做什么、做成什么样才算完成"。
-     */
-    SPEC("Spec", "先产出需求规格，确认后再执行"),
-
-    /**
-     * 反思模式：Agent 通过"生成 → 评审 → 修正"循环自我审视并改进输出，
-     * 适合代码生成、内容创作等对质量要求高的场景。
-     */
-    REFLECTION("Reflect", "生成 → 评审 → 修正，提高输出质量"),
-
-    /**
-     * 人工协助模式：Agent 遇到多种选择（方案 / 目标 / 偏好）时，
-     * 强制弹出选项菜单交由人工决策，不擅自猜测。
-     */
-    HUMAN_ASSIST("Assist", "遇多选时弹出选项菜单，人工决策"),
-
-    /**
-     * 自定义模式：附加用户自定义指令（如输出格式 / 语言 / 行为约束），
-     * 指令持久化保存并拼入 system prompt。
-     */
-    CUSTOM("Custom", "附加自定义指令运行")
+    GOAL("Goal", "目标驱动：设定可验证条件，持续工作直至达成")
 }
 
 /**
@@ -172,17 +134,9 @@ data class AgentConfig(
     /** 模型名称覆盖 */
     val modelOverride: String? = null,
 
-    /**
-     * 反思模式轮数（[AgentMode.REFLECTION] 生效）：每轮执行一次
-     * "评审 → 修正"。默认 1 轮（生成 → 评审 → 修正）。
-     */
-    val reflectionRounds: Int = 1,
-
-    /**
-     * 自定义模式附加指令（[AgentMode.CUSTOM] 生效）：
-     * 原样拼入 system prompt 的 "## Custom Instructions" 段落。
-     */
-    val customInstruction: String? = null,
+    // 反思轮数（reflectionRounds）与自定义指令（customInstruction）两个
+    // 历史遗留字段已随 Agent 模式移除收口：REFLECTION/CUSTOM 档位在 PR 3/6
+    // 删除注入点，PR 4/6（AgentSetupTools）/ PR 5/6（设置域）删除最后消费方。
 
     /**
      * 追加到 system prompt 末尾的动态上下文（任意模式生效）。

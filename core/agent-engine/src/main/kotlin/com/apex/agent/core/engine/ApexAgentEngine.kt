@@ -1,7 +1,5 @@
 package com.apex.agent.core.engine
 
-import com.apex.agent.core.engine.assist.HumanAssistFlow
-import com.apex.agent.core.engine.assist.ReflectionFlow
 import com.apex.agent.core.engine.compression.ContextCompressor
 import com.apex.agent.core.engine.compression.CompressionReport
 import com.apex.agent.core.engine.compression.TokenEstimator
@@ -52,19 +50,12 @@ import kotlinx.serialization.json.jsonPrimitive
 /**
  * Apex Agent Engine — production implementation.
  *
- * Execution modes:
+ * Execution modes (Agent 模式移除 PR 3/6 后仅剩编码工位三档):
  * - [AgentMode.BUILD]: streaming ReAct loop (Think → Act → Observe → repeat → Done).
  * - [AgentMode.PLAN]: Think → Plan → stream plan to UI → await user confirmation
  *   → execute each [PlanStep] in sequence → emit a final reflection.
- * - [AgentMode.SPEC]: Think → Spec → stream [ExecutionSpec] to UI → await user
- *   confirmation → execute each deliverable in sequence → emit a final summary.
- * - [AgentMode.REFLECTION]: Build loop + "generate → review → revise" cycle on the
- *   final text turn ([AgentConfig.reflectionRounds] rounds), emitting
- *   [AgentEvent.ReflectionReview] between passes.
- * - [AgentMode.HUMAN_ASSIST]: Build loop with a system prompt that mandates
- *   AskUserChoice whenever multiple options exist (human-in-the-loop).
- * - [AgentMode.CUSTOM]: Build loop with a user-supplied custom instruction
- *   appended to the system prompt.
+ * - [AgentMode.GOAL]: BUILD loop + per-turn goal verification hook
+ *   ([GoalModeCoordinator] decides continue/stop between natural endings).
  *
  * All modes:
  * - Stream every LLM response token-by-token via [AgentEvent.ResponseChunk] / [AgentEvent.ThinkingChunk].
@@ -73,7 +64,8 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 class ApexAgentEngine(
     private val llmClient: LlmClient,
-    // #168：internal —— EnginePromptDelegates.kt 同包扩展需要工具清单桥接。
+    // internal —— 同包扩展（EngineToolExecution / EngineSkillPromptResolver 等）
+    // 需要工具清单桥接。（EnginePromptDelegates.kt 已随 SPEC/Reflection 模式删除。）
     internal val toolRegistry: ToolRegistry,
     // internal —— EngineToolExecution.kt 同包扩展直调（工具执行流）。
     internal val toolExecutor: ToolExecutor,
@@ -176,24 +168,12 @@ class ApexAgentEngine(
     internal var executionTags: Pair<String?, String?>? = null
 
     /**
-     * 本轮为「会话首条用户消息且纯问候」（SmallTalkDetector 判定）。
-     * execute() 入口置位 / finally 复位；系统提示词据此注入
-     * First-Turn Greeting 硬约束段（见 EnginePrompts）。
-     */
-    @Volatile
-    private var firstGreetingTurn = false
-
-    /**
      * 本轮召回的聊天长期记忆（已格式化文本；null = 无可召回内容）。
      * execute() 入口经 memoryObserver.recallChatMemory 填充，finally 复位；
      * 系统提示词据此注入 "## Remembered About You" 段。
      */
     @Volatile
     private var chatMemoryNote: String? = null
-
-    /** 本轮聊天信号（共情/澄清，ChatSignalDetector）。execute() 入口填充，finally 复位。 */
-    @Volatile
-    private var chatSignal: ChatSignal? = null
 
     /** T76 — 压缩后重注入的任务状态 system 消息（N-9，TaskRuntime 调用）。 */
     fun injectSystemContext(content: String) {
@@ -282,10 +262,6 @@ class ApexAgentEngine(
     @Volatile
     internal var planConfirmationDeferred: CompletableDeferred<PlanDecision>? = null
 
-    /** UI 回投 SPEC 确认（[executeSpecMode] 挂在 [awaitSpecConfirmation] 时）。@Volatile 同 plan 通道。 */
-    @Volatile
-    internal var specConfirmationDeferred: CompletableDeferred<Boolean>? = null
-
     /**
      * Channel for the UI to deliver user-input answers back to the engine
      * while [executeBuildLoop] is suspended on awaitUserInput
@@ -299,14 +275,14 @@ class ApexAgentEngine(
     internal var userInputDeferred: CompletableDeferred<String>? = null
 
     /**
-     * #340：确认通道三件套（userInput/plan/spec）的注册/中止互斥锁。
+     * #340：确认通道两件套（userInput/plan）的注册/中止互斥锁。
      *
      * 旧 abort() 的“complete-then-null”两步与注册方（await* 的 deferred 赋值）
      * 之间无 happens-before——abort 恰在两步之间执行时，引擎新注册的
      * deferred 会被 null 覆盖，UI 后续提交全部落空，引擎挂满 5 分钟超时
      * （用户看到的就是「chat 卡死」）。注册与 abort 全部收进同一把锁，
      * 窗口结构性消除；锁内无挂起点（complete/赋值均同步），不阻塞调度。
-     * internal：plan/EngineSpecFlow 扩展的注册/清理与 abort 同锁。
+     * internal：plan 扩展的注册/清理与 abort 同锁。
      */
     internal val confirmationLock = Any()
 
@@ -317,8 +293,8 @@ class ApexAgentEngine(
     }
 
     /**
-     * Issue #164 —— 全局规则（设置页编辑；Agent 模式经 EnginePrompts 的
-     * "## Global Rules" 段注入。coding 实例不设值——它走 RulesProvider 通道，
+     * Issue #164 —— 全局规则（设置页编辑；经 EnginePrompts 的
+     * "## Global Rules" 段直注。coding 实例不设值——它走 RulesProvider 通道，
      * 两通道互斥防双注）。
      */
     @Volatile
@@ -391,7 +367,7 @@ class ApexAgentEngine(
     /** 上下文 token 上限（占用百分比的分母）。 */
     fun maxContextTokens(): Int = config.maxContextTokens
 
-    /** 累加一轮真实 usage 并发射仪表盘事件（无统计时零开销；spec 流复用）。 */
+    /** 累加一轮真实 usage 并发射仪表盘事件（无统计时零开销；规划/反思流复用）。 */
     internal suspend fun recordAndEmitUsage(u: Usage?, emit: suspend (AgentEvent) -> Unit) {
         usageTracker.accumulate(u)?.let { emit(it) }
     }
@@ -454,17 +430,6 @@ class ApexAgentEngine(
         }
 
     /**
-     * Called from the UI (e.g. `ChatViewModel.submitSpecConfirmation`) to resume the
-     * suspended spec-mode execution. No-op if no spec is currently awaiting confirmation.
-     * Exposed to the orchestrator via the [ConfirmationSink] interface.
-     * #340：同 plan 通道的 Boolean 回执（语义见 [submitPlanConfirmation]）。
-     */
-    override fun submitSpecConfirmation(confirmed: Boolean): Boolean =
-        synchronized(confirmationLock) {
-            specConfirmationDeferred?.complete(confirmed) ?: false
-        }
-
-    /**
      * 兼容旧接口：纯文本输入委托给多模态入口。
      */
     override fun execute(input: String): Flow<AgentEvent> = execute(UserInput.text(input))
@@ -507,12 +472,7 @@ class ApexAgentEngine(
                 )
             }
 
-            // ═══ 首轮问候检测 + 聊天记忆召回（发送前、历史追加前）═══
-            // 首轮 = 历史尚无任何 User 消息；纯问候 → 系统提示词注入硬约束段。
-            firstGreetingTurn =
-                conversationHistory.none { it is LlmMessage.User } &&
-                    SmallTalkDetector.isGreetingOnly(input.text)
-            chatSignal = ChatSignalDetector.detect(input.text)
+            // ═══ 聊天记忆召回（发送前、历史追加前）═══
             // 聊天长期记忆召回：失败折叠为 null（记忆子系统异常绝不阻断主对话）。
             chatMemoryNote = try {
                 memoryObserver?.recallChatMemory(input.text)?.takeIf { it.isNotBlank() }
@@ -540,19 +500,9 @@ class ApexAgentEngine(
             )
 
             when (config.mode) {
-                AgentMode.BUILD -> {
-                    val iter = executeBuildLoop { event ->
-                        if (event is AgentEvent.ToolCallComplete) totalToolCalls++
-                        if (event is AgentEvent.IterationStart) totalIterations =
-                            maxOf(totalIterations, event.iteration)
-                        AppLogger.instance.logEvent(event)
-                        emit(event)
-                    }
-                    totalIterations = maxOf(totalIterations, iter)
-                }
-                // #197：CHAT（零工具）/ AGENT（非编程全能）/ LOOP 共享 ReAct 主循环，
-                // 差异在工具计划与提示词模式段；调度在 VM 层，引擎只跑单次。
-                AgentMode.CHAT, AgentMode.AGENT, AgentMode.LOOP -> {
+                // Agent 模式移除（PR 3/6）：档位收敛为编码工位三档
+                // BUILD / GOAL —— ReAct 主循环；PLAN —— 规划确认后逐步骤执行。
+                AgentMode.BUILD, AgentMode.GOAL -> {
                     val iter = executeBuildLoop { event ->
                         if (event is AgentEvent.ToolCallComplete) totalToolCalls++
                         if (event is AgentEvent.IterationStart) totalIterations =
@@ -572,28 +522,6 @@ class ApexAgentEngine(
                     }
                     totalIterations = maxOf(totalIterations, planIterations)
                 }
-                AgentMode.SPEC -> {
-                    val specIterations = executeSpecMode(userText) { event ->
-                        if (event is AgentEvent.ToolCallComplete) totalToolCalls++
-                        if (event is AgentEvent.IterationStart) totalIterations =
-                            maxOf(totalIterations, event.iteration)
-                        AppLogger.instance.logEvent(event)
-                        emit(event)
-                    }
-                    totalIterations = maxOf(totalIterations, specIterations)
-                }
-                // REFLECTION / HUMAN_ASSIST / CUSTOM / GOAL 共享 ReAct 主循环：差异由
-                // buildSystemPrompt 的 Mode 段驱动；GOAL 走 executeBuildLoop 钩子。
-                AgentMode.REFLECTION, AgentMode.HUMAN_ASSIST, AgentMode.CUSTOM, AgentMode.GOAL -> {
-                    val iter = executeBuildLoop { event ->
-                        if (event is AgentEvent.ToolCallComplete) totalToolCalls++
-                        if (event is AgentEvent.IterationStart) totalIterations =
-                            maxOf(totalIterations, event.iteration)
-                        AppLogger.instance.logEvent(event)
-                        emit(event)
-                    }
-                    totalIterations = maxOf(totalIterations, iter)
-                }
             }
 
             // #165：Stop——本回合正常完成（错误/中止不触发）。
@@ -605,9 +533,9 @@ class ApexAgentEngine(
                 AppLogger.instance.warn(LogCategory.ENGINE, "ApexAgentEngine", "外层超时取消穿透引擎，重抛 TCE")
                 throw e
             }
-            AppLogger.instance.error(LogCategory.ENGINE, "ApexAgentEngine", "计划/规格确认超时: ${PLAN_CONFIRMATION_TIMEOUT_MS / 1000}s")
+            AppLogger.instance.error(LogCategory.ENGINE, "ApexAgentEngine", "计划确认超时: ${PLAN_CONFIRMATION_TIMEOUT_MS / 1000}s")
             // #216：引擎自身产生的用户可见错误文案统一中文（技术细节留在 AppLogger）。
-            emit(AgentEvent.Error("计划/规格确认超时（${PLAN_CONFIRMATION_TIMEOUT_MS / 1000}s 无响应），任务已中止", recoverable = false))
+            emit(AgentEvent.Error("计划确认超时（${PLAN_CONFIRMATION_TIMEOUT_MS / 1000}s 无响应），任务已中止", recoverable = false))
         } catch (e: CancellationException) {
             AppLogger.instance.warn(LogCategory.ENGINE, "ApexAgentEngine", "任务被中止 (CancellationException)")
             emit(AgentEvent.Aborted)
@@ -654,15 +582,11 @@ class ApexAgentEngine(
                     "memoryObserver.onConversationTurn threw: ${e.message}"
                 )
             }
-            // 复位轮次级注入态（防止下一轮携带上一轮的问候约束/记忆快照）。
-            firstGreetingTurn = false
+            // 复位轮次级注入态（防止下一轮携带上一轮的记忆快照）。
             chatMemoryNote = null
-            chatSignal = null
             // Cancel any dangling plan-confirmation deferred so it doesn't leak.
             planConfirmationDeferred?.complete(PlanDecision.legacy(false))
             planConfirmationDeferred = null
-            specConfirmationDeferred?.complete(false)
-            specConfirmationDeferred = null
             emit(
                 AgentEvent.Complete(
                     summary = "",
@@ -764,10 +688,8 @@ class ApexAgentEngine(
     }
 
     // awaitPlanConfirmation 已迁至 plan/PlanExecutionSupport.kt（#169：Boolean → PlanDecision）。
-    // ═══════════════════════════════════════════════════════
-    // SPEC mode —— executeSpecMode / awaitSpecConfirmation 已迁至
-    // EngineSpecFlow.kt（同包扩展 + internal 成员直调，调用点零改动）。
-    // ═══════════════════════════════════════════════════════
+    // （Agent 模式移除 PR 3/6：SPEC 模式整域（executeSpecMode / awaitSpecConfirmation /
+    // EngineSpecFlow.kt）已删。）
 
     // ═══════════════════════════════════════════════════════
     // BUILD mode (ReAct loop)
@@ -975,38 +897,9 @@ class ApexAgentEngine(
                     executeToolCallTurn(contentBuilder.toString(), toolCalls, emit)
 
                 contentBuilder.isNotEmpty() -> {
-                    // ═══ #168 HUMAN_ASSIST 模式：决策点后置检测 ═══
-                    // 模型常不调 AskUserChoice 直接写对比文本 —— 检出 → 挂起等选择
-                    // → 回填 continue；无/超时 → null 照常收尾（不丢回复）。
-                    // 规则见 assist/DecisionPointDetector.kt；流程见 assist/HumanAssistFlow.kt。
-                    if (config.mode == AgentMode.HUMAN_ASSIST) {
-                        // #214：超时发 UserInputExpired 关闭挂起对话框；空答复折叠为空串照常收尾。
-                        val followUp = HumanAssistFlow(emit) {
-                            awaitUserInput { emit(AgentEvent.UserInputExpired) } ?: ""
-                        }.interceptResponse(contentBuilder.toString())
-                        if (followUp != null) {
-                            addMessage(LlmMessage.Assistant(contentBuilder.toString()))
-                            addMessage(LlmMessage.User(followUp))
-                            continue
-                        }
-                    }
-
-                    // ═══ Reflection 模式：生成 → 评审 → 修正 ═══
-                    // 循环体迁至 assist/ReflectionFlow.kt（依赖全注入，纯 Kotlin
-                    // 可单测）；此处只保留接线与收尾。
-                    if (config.mode == AgentMode.REFLECTION && config.reflectionRounds > 0) {
-                        val final = ReflectionFlow(
-                            runtime = runtime,
-                            systemPrompt = { buildSystemPrompt() },
-                            tagged = { tagged(it) },
-                            reviewPromptOf = { buildReviewPrompt(it) },
-                            revisePromptOf = { d, r, n -> buildRevisePrompt(d, r, n) },
-                            addAssistantMessage = { addMessage(LlmMessage.Assistant(it)) }
-                        ).run(contentBuilder.toString(), config.reflectionRounds, emit)
-
-                        emit(AgentEvent.ResponseComplete(final))
-                        return iteration
-                    }
+                    // （Agent 模式移除 PR 3/6：HUMAN_ASSIST 决策点后置检测与
+                    // Reflection「生成 → 评审 → 修正」流已随档位删除 —— 决策点
+                    // 交互统一收敛到 AskUser/AskUserChoice 工具通道。）
 
                     // ═══ P0 修复（承诺未执行催促，BUILD 模式）═══
                     // 纯文本轮是 BUILD 循环的终止条件 —— 弱模型常只叙述计划不调
@@ -1135,17 +1028,16 @@ class ApexAgentEngine(
         skillCatalog = skillCatalogDigests,
         environmentSummary = environmentInfoProvider?.environmentSummary(),
         connectedServices = connectedServicesProvider?.connectedServicesSummary(),
-        // Issue #164：全局规则（Agent 模式通道；coding 实例不设值，见 updateGlobalRules KDoc）
+        // Issue #164：全局规则（引擎直注通道；coding 实例不设值，见 updateGlobalRules KDoc）
         globalRules = globalRulesText,
-        // 首轮纯问候硬约束 + 聊天记忆召回（execute() 置位，finally 复位）。
-        firstTurnGreeting = firstGreetingTurn,
-        memoryContext = chatMemoryNote,
-        chatSignal = chatSignal
+        // 聊天记忆召回（execute() 置位，finally 复位）。
+        memoryContext = chatMemoryNote
     )
 
-    // SPEC / Reflection 模式 prompt 包装器已迁至 EnginePromptDelegates.kt（#168 零净增腾挪，调用点零改动）。
+    // （Agent 模式移除 PR 3/6：SPEC / Reflection 模式 prompt 包装器
+    // （原 EnginePromptDelegates.kt）已随档位删除。）
     // ═══════════════════════════════════════════════════════
-    // Plan / Spec parsing — delegated to [EngineResponseParsers]
+    // Plan parsing — delegated to [EngineResponseParsers]
     // ═══════════════════════════════════════════════════════
 
     override suspend fun abort() {
@@ -1173,9 +1065,8 @@ class ApexAgentEngine(
     }
 
     // maybeCompressContext 迁至 EngineCompressionGate.kt（同包顶层扩展，
-    // 调用点零改动 —— 模式与 EnginePromptDelegates / EngineAskUserFlow 一致）。
+    // 调用点零改动 —— 模式与 EngineAskUserFlow 一致）。
     // awaitUserInput / abortConfirmationChannels 迁至 ConfirmationChannels.kt
     //（同包顶层扩展，#340 确认通道治理 + God-file 预算）；
-    // awaitPlanConfirmationDecision / awaitSpecConfirmation 分别留在
-    // plan/PlanExecutionSupport.kt 与 EngineSpecFlow.kt（同步治理）。
+    // awaitPlanConfirmationDecision 留在 plan/PlanExecutionSupport.kt（同步治理）。
 }

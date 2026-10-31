@@ -4,7 +4,6 @@
      LanguageManager + MainActivity attachBaseContext/recreate 生效。 -->
 <resources>
     <!-- ═══ 抽屉与导航目的地（ApexRoot / ApexDrawerContent）═══ -->
-    <string name="drawer_agent">Agent</string>
     <string name="drawer_terminal">终端</string>
 <!-- M³ 现代终端（Material 3 Terminal UI）：轻量 REPL 命令台 -->
 <!-- #197 模板工坊 -->
@@ -12,7 +11,6 @@
     <string name="drawer_market">工具聚合中心</string>
     <string name="drawer_browser">浏览器</string>
     <string name="drawer_memory">记忆</string>
-    <string name="drawer_tasks">任务</string>
     <string name="drawer_storage">存储</string>
     <string name="drawer_permissions">权限</string>
     <string name="drawer_vault">保险库</string>
@@ -23,26 +21,12 @@
     <string name="drawer_about">关于</string>
     <string name="drawer_open_nav">打开导航</string>
     <string name="drawer_tagline">Android 上的 Agent 工作台</string>
-    <string name="drawer_mem_count">%1$d 条</string>
     <string name="drawer_github_not_connected">GitHub 未连接</string>
 
     <!-- ═══ 顶部上下文仪表盘（ContextMeterBar）═══ -->
-    <string name="context_dashboard">上下文仪表盘</string>
-    <string name="context_used_tokens">已用 Token</string>
-    <string name="context_max_tokens">上下文上限</string>
-    <string name="context_usage_ratio">占用比例</string>
-    <string name="context_session_total_tokens">会话累计消耗</string>
-    <string name="context_status">状态</string>
-    <string name="context_status_danger">危险</string>
-    <string name="context_status_warning">警告</string>
-    <string name="context_status_normal">正常</string>
-    <string name="context_compress">压缩上下文</string>
-    <string name="context_compress_hint">自动压缩在占用超阈值时由引擎触发</string>
 
     <!-- ═══ 设置中心（SettingsScreen）═══ -->
     <string name="settings_title">设置</string>
-    <string name="settings_tab_models">模型</string>
-    <string name="settings_tab_interface">界面</string>
     <string name="settings_testing">测试中…</string>
     <string name="settings_test">测试</string>
     <string name="settings_conn_success">连接成功</string>
@@ -55,7 +39,7 @@
     <string name="settings_landing_body">打开抽屉按分类浏览 —— 选择具体页面后在此打开</string>
     <string name="settings_no_profile_hint">暂无模型档案 —— 请先到「模型配置 · 配置」新建</string>
     <string name="settings_nav_cat_model">模型配置</string>
-    <string name="settings_nav_cat_agent">Agent 配置</string>
+    <string name="settings_nav_cat_workspace">工作台</string>
     <string name="settings_nav_cat_interface">界面外观</string>
     <string name="settings_nav_cat_data">数据与备份</string>
     <string name="settings_nav_cat_terminal">终端</string>
@@ -68,23 +52,22 @@
     <string name="settings_nav_model_prompt">提示词</string>
     <string name="settings_nav_model_advanced">高级</string>
     <string name="settings_nav_model_providers">服务商与角色</string>
-    <string name="settings_nav_agent_execution">执行</string>
-    <string name="settings_nav_agent_roles">角色人设</string>
-    <string name="settings_nav_agent_permissions">权限</string>
-    <string name="settings_nav_agent_rules">规则</string>
-    <string name="settings_nav_agent_hooks">钩子</string>
-    <string name="settings_nav_agent_presets">模式预设</string>
-    <string name="settings_nav_agent_subagent">子代理</string>
-    <string name="settings_nav_agent_goal_loop">目标与循环</string>
-    <string name="settings_nav_agent_coding">编程工位</string>
-    <string name="settings_nav_agent_github">GitHub</string>
-    <string name="settings_nav_agent_compression">上下文压缩</string>
-    <string name="settings_nav_agent_vision">视觉</string>
+    <string name="settings_nav_workspace_coding">编程工位</string>
+    <string name="settings_nav_workspace_subagent">子代理</string>
+    <string name="settings_nav_workspace_permissions">权限</string>
+    <string name="settings_nav_workspace_rules">规则</string>
+    <string name="settings_nav_workspace_hooks">钩子</string>
+    <string name="settings_nav_workspace_compression">上下文压缩</string>
+    <string name="settings_nav_workspace_vision">视觉</string>
+    <string name="settings_nav_workspace_goal">目标模式</string>
+    <string name="settings_nav_workspace_github">GitHub</string>
+    <string name="settings_nav_workspace_memory">记忆</string>
     <string name="settings_nav_interface_appearance">外观</string>
     <string name="settings_nav_interface_chat">聊天显示</string>
     <string name="settings_nav_interface_notifications">通知</string>
     <string name="settings_nav_terminal_appearance">外观与反馈</string>
     <string name="settings_nav_terminal_policy">命令策略</string>
+    <string name="settings_nav_terminal_service">后台服务</string>
     <string name="settings_nav_data_backup">备份与恢复</string>
     <string name="settings_nav_data_update">应用更新</string>
     <string name="settings_providers_roles_hint">管理服务商（地址 / 密钥 / 轮换）与模型角色映射（主力 · 视觉 · 推理 · 快速 · 摘要）。</string>
@@ -177,11 +160,7 @@
     <string name="settings_section_advanced">Advanced · 高级</string>
     <string name="settings_strict_schema_desc">JSON Schema 严格模式（仅部分 Provider 支持）</string>
 
-    <!-- Agent -->
-    <!-- Agent Roles (persona layer) -->
-    <string name="settings_roles_section">Agent 角色</string>
-    <string name="settings_roles_subtitle">Agent 是谁：内置全能角色 + 你的自定义人设；切换后下一轮请求即生效（无需重启）</string>
-    <string name="settings_roles_new">新建角色</string>
+    <!-- Coding 专家角色（人设层；编辑器共享键） -->
     <string name="settings_roles_builtin">内置角色（不可编辑，可另存为自定义）</string>
     <string name="settings_roles_active">当前使用</string>
     <string name="settings_roles_edit">编辑角色</string>
@@ -211,31 +190,9 @@
     <string name="settings_roles_language_en">始终英文</string>
     <string name="settings_roles_save">保存</string>
     <string name="settings_roles_cancel">取消</string>
-    <string name="settings_section_agent">Agent · 运行参数</string>
-    <string name="settings_mode_auto">Auto · 自动（旧）</string>
-    <string name="settings_mode_build">Build · 边想边做</string>
-    <string name="settings_mode_chat">Chat · 对话（旧）</string>
-    <string name="settings_mode_plan">Plan · 先规划后执行</string>
-    <string name="settings_mode_goal">Goal · 可验证目标循环</string>
-    <string name="settings_mode_loop">Loop · 循环与定时</string>
-    <string name="settings_mode_spec">Spec · 规格确认后执行</string>
-    <string name="settings_mode_reflect">Reflect · 反思改进</string>
-    <string name="settings_mode_assist">Assist · 人工决策</string>
-    <string name="settings_mode_custom">Custom · 自定义指令</string>
-    <string name="settings_mode_desc">默认执行模式，修改后重启应用生效</string>
-    <string name="settings_think_auto">Auto · 自适应选档</string>
-    <string name="settings_think_minimal">Minimal · 直接执行</string>
-    <string name="settings_think_light">Light · 简短思考</string>
-    <string name="settings_think_standard">Standard · 标准推理</string>
-    <string name="settings_think_deep">Deep · 深度思考</string>
-    <string name="settings_think_maximum">Maximum · 极深思考</string>
-    <string name="settings_think_desc">决策前推理深度（影响 system prompt，重启应用生效）</string>
-    <string name="settings_max_iterations_desc">单任务最大迭代次数，防止无限循环</string>
 
     <!-- ═══ 工具循环 v2 / 限速友好 / 自定义背景（三件套）═══ -->
     <string name="settings_tool_loop_section">工具循环</string>
-    <string name="settings_tool_iterations_unlimited">任务轮次无上限</string>
-    <string name="settings_tool_iterations_unlimited_desc">一个任务的工具调用次数不设轮次硬顶（默认开）；失控由循环检测兑底，也可随时手动停止</string>
     <string name="settings_tool_parallelism">单轮并行执行上限</string>
     <string name="settings_tool_parallelism_desc">模型一轮返回多个工具时最多几个同时执行（1 = 顺序执行，历史行为）。调高可减少请求轮次；终端类工具输出可能交错</string>
     <string name="settings_nav_model_rate_limit">限速友好</string>
@@ -257,9 +214,6 @@
     <string name="settings_background_clear">清除背景</string>
     <string name="settings_background_dim">纱罩强度</string>
     <string name="settings_background_dim_desc">在自适应基数上的手动叠加——觉得文字看不清就调高</string>
-    <string name="settings_reflection_rounds_desc">Reflect 模式每轮执行一次「评审 → 修正」</string>
-    <string name="settings_advanced_behavior">Advanced Agent Behavior（数据预埋）</string>
-    <string name="settings_reflection_desc">启用生成后的自我评审与修正</string>
 
     <!-- Compression -->
     <string name="settings_section_compression">Context Compression · 上下文压缩</string>
@@ -298,8 +252,6 @@
     <string name="settings_timestamps_desc">在消息气泡旁显示 HH:mm 时间戳，立即生效</string>
 
     <!-- Notes -->
-    <string name="settings_section_notes">说明 · Notes</string>
-    <string name="settings_notes_body">· 终端字号、最大行数、单色模式等在「终端」页的「终端外观」卡片中设置。\n· 部分开关为数据预埋（标注见各项说明），由对应引擎层后续接入。\n· 模型 Profile / Provider / 角色映射等改动即时保存，Agent 引擎参数重启应用后生效。</string>
 
     <!-- Providers dialog -->
     <string name="settings_close">关闭</string>
@@ -441,12 +393,7 @@
     <!-- ═══ 存储与数据管理（StorageScreen）═══ -->
     <string name="storage_title">存储</string>
     <string name="storage_refresh">刷新</string>
-    <string name="storage_attachments">附件</string>
     <string name="storage_space_used">占用空间</string>
-    <string name="storage_files">文件数</string>
-    <string name="storage_unit_files">%1$d 个</string>
-    <string name="storage_clear_attachments">清空附件</string>
-    <string name="storage_attachments_desc">聊天附件的本地缓存；清除后历史消息中的附件预览将不可用（Agent 侧引用路径失效）。</string>
     <string name="storage_ubuntu_title">Ubuntu 环境（rootfs，内置）</string>
     <string name="storage_status">状态</string>
     <string name="storage_rootfs_not_installed">未解包</string>
@@ -465,8 +412,6 @@
     <string name="storage_records">记录数</string>
     <string name="storage_usage">占用</string>
     <string name="storage_log_desc">日志位于内存环形缓冲（App 重启即释放）；完整查看与导出在「运行日志」页。</string>
-    <string name="storage_confirm_attachments_title">清空附件？</string>
-    <string name="storage_confirm_attachments_text">将删除全部 %1$d 个附件文件（%2$s）。此操作不可撤销。</string>
     <string name="storage_confirm_rootfs_title">删除 Ubuntu 环境？</string>
     <string name="storage_confirm_rootfs_text">将删除解包后的 rootfs（%1$s）与解包缓存；内置安装包随 APK 保留，可随时重新离线解包；用户数据（/root、workspace）保留。</string>
     <string name="storage_about_1gb">约 1GB</string>
@@ -484,7 +429,6 @@
     <string name="memory_nodes">节点</string>
     <string name="memory_macros">宏技能</string>
     <string name="memory_search_label">搜索节点（文本 / 关键词）</string>
-    <string name="memory_no_match">没有匹配 \"%1$s\" 的记忆节点</string>
     <string name="MemoryRecentEpisodes">近期会话</string>
     <string name="memory_empty_episodes">还没有任何记忆会话\nAgent 执行任务后这里会沉淀 Episode</string>
     <string name="memory_frequent_macros">高频宏技能</string>
@@ -493,13 +437,10 @@
     <string name="memory_delete_episode_text">确定删除 \"%1$s\" 吗？关联的边会一并清除（节点为共享字典，不随删硬删）。</string>
     <string name="memory_delete">删除</string>
     <string name="memory_cancel">取消</string>
-    <string name="memory_episode_meta">%1$s · %2$s · %3$d 动作</string>
-    <string name="memory_distilled">已蒸馏为宏</string>
     <string name="memory_no_text">(无文本)</string>
     <string name="memory_generic">通用</string>
     <string name="memory_macro_stats">%1$s · 成功 %2$d / 失败 %3$d</string>
     <string name="memory_crystallized">已晶化</string>
-    <string name="memory_steps">%1$d 步</string>
     <string name="memory_dream_title">梦境整理</string>
     <string name="memory_dream_running">整理中：衰减 / 修剪 / 宏优化…</string>
     <string name="memory_dream_desc">能量衰减 + 修剪低价值记忆（周期自动，可手动）</string>
@@ -582,38 +523,48 @@
     <string name="memory_search_type_entity">实体</string>
     <string name="memory_search_type_node">节点</string>
 
-    <!-- ═══ 任务历史（TaskHistoryScreen）═══ -->
-    <string name="tasks_title">任务</string>
-    <string name="tasks_refresh">刷新</string>
-    <string name="tasks_empty_title">暂无任务记录</string>
-    <string name="tasks_empty_desc">在聊天页以任务模式（Plan / Spec）发起请求后，\n任务会持久化并出现在这里（跨重启保留）。</string>
-    <string name="tasks_overview">任务总览</string>
-    <string name="tasks_total">总数</string>
-    <string name="tasks_active">进行中</string>
-    <string name="tasks_completed">完成</string>
-    <string name="tasks_failed">失败</string>
-    <string name="tasks_cancelled">取消</string>
-    <string name="tasks_daily_created">近 7 日创建</string>
-    <string name="tasks_card_meta">%1$s · %2$s</string>
-    <string name="tasks_card_meta_duration">%1$s · %2$s · 用时 %3$s</string>
-    <string name="tasks_collapse">收起</string>
-    <string name="tasks_expand">展开</string>
-    <string name="tasks_user_input">用户输入</string>
-    <string name="tasks_plan_steps">计划步骤</string>
-    <string name="tasks_result">结果</string>
-    <string name="tasks_error">错误</string>
-    <string name="tasks_id_retry">ID：%1$s · 重试 %2$d 次</string>
-    <string name="tasks_status_pending">排队</string>
-    <string name="tasks_status_planning">规划中</string>
-    <string name="tasks_status_running">执行中</string>
-    <string name="tasks_status_waiting">等确认</string>
-    <string name="tasks_status_paused">已暂停</string>
-    <string name="tasks_status_cancelling">取消中</string>
-    <string name="tasks_status_recovering">恢复中</string>
-    <string name="tasks_status_retrying">重试中</string>
-    <string name="tasks_status_completed">完成</string>
-    <string name="tasks_status_failed">失败</string>
-    <string name="tasks_status_cancelled">已取消</string>
+    <!-- ═══ 记忆页 v3（单列列表 / 分区导航 / 下拉刷新 / 过滤芯片）═══ -->
+    <string name="memory_section_all">全部</string>
+    <string name="memory_section_chat">聊天记忆</string>
+    <string name="memory_section_knowledge">知识图谱</string>
+    <string name="memory_section_episodes">近期经历</string>
+    <string name="memory_section_macros">宏技能</string>
+    <string name="memory_refreshed_at_fmt">上次刷新 %1$s</string>
+    <string name="memory_search_clear">清空搜索</string>
+    <string name="memory_search_hint">三轨同检：事实 / 实体 / 场景节点</string>
+    <string name="memory_search_summary_fmt">命中 %1$d 条</string>
+    <string name="memory_episode_filter_all">全部</string>
+    <string name="memory_episode_filter_running">进行中</string>
+    <string name="memory_episode_filter_succeeded">成功</string>
+    <string name="memory_episode_filter_failed">失败</string>
+    <string name="memory_episode_filter_abandoned">已放弃</string>
+    <string name="memory_episode_filter_empty">该状态下暂无经历</string>
+    <string name="memory_episode_status_running">进行中</string>
+    <string name="memory_episode_status_succeeded">成功</string>
+    <string name="memory_episode_status_failed">失败</string>
+    <string name="memory_episode_status_abandoned">已放弃</string>
+    <string name="memory_episode_meta_time_actions_fmt">%1$s · %2$d 次操作</string>
+    <string name="memory_duration_hours_fmt">%1$d 时 %2$d 分</string>
+    <string name="memory_duration_minutes_fmt">%1$d 分 %2$d 秒</string>
+    <string name="memory_duration_seconds_fmt">%1$d 秒</string>
+    <string name="memory_episode_manual">手动</string>
+    <string name="memory_macro_distilled_fmt">已蒸馏 %1$d 个宏</string>
+    <string name="memory_expand_hint">详情</string>
+    <string name="memory_collapse">收起</string>
+    <string name="memory_macro_goal_label">目标</string>
+    <string name="memory_macro_steps_detail_header">动作序列</string>
+    <string name="memory_macro_step_fmt">%1$d. %2$s</string>
+    <string name="memory_macro_step_tap">点按</string>
+    <string name="memory_macro_step_swipe">滑动</string>
+    <string name="memory_macro_step_input">输入文本</string>
+    <string name="memory_macro_step_back">返回键</string>
+    <string name="memory_macro_step_home">回桌面</string>
+    <string name="memory_macro_more_steps_fmt">还有 %1$d 步未展示</string>
+    <string name="memory_macro_created_fmt">沉淀于 %1$s</string>
+    <string name="memory_macro_source_fmt">蒸馏自情景 %1$s</string>
+    <string name="memory_macro_last_used_fmt">最近回放 %1$s</string>
+    <string name="memory_knowledge_show_all_fmt">显示全部 %1$d 个实体</string>
+    <string name="memory_knowledge_show_top">收起，只看高频实体</string>
 
     <!-- ═══ 权限管理（PermissionsScreen）═══ -->
     <string name="perms_title">权限管理</string>
@@ -868,32 +819,19 @@
     <string name="settings_memory_capture_title">聊天记忆自动摄取</string>
     <string name="settings_memory_capture_desc">自动从对话中沉淀关于你的稳定事实，并在后续对话中召回参考。关闭后不再新增任何记忆 —— 已有记忆可在记忆页查看或删除</string>
     <!-- ═══ Settings 英文残留资源化（Agent 行为区 + 工具/网络区高频项）═══ -->
-    <string name="settings_tab_agent">Agent</string>
     <string name="settings_dialog_ok">确定</string>
     <string name="settings_enable_tools">启用工具</string>
     <string name="settings_streaming">流式输出</string>
     <string name="settings_keep_alive_conn">连接保活</string>
     <string name="settings_keep_alive_service">后台常驻</string>
     <string name="settings_retry_count">重试次数</string>
-    <string name="settings_max_iterations">最大迭代轮数</string>
-    <string name="settings_reflection_rounds">评审轮数</string>
-    <string name="settings_retry_loop_section">重试与循环检测</string>
-    <string name="settings_auto_retry">自动重试</string>
-    <string name="settings_max_retry_per_action">单动作最大重试</string>
-    <string name="settings_loop_detection">循环检测</string>
-    <string name="settings_loop_detection_window">检测窗口（步）</string>
-    <string name="settings_same_action_threshold">同动作阈值</string>
-    <string name="settings_auto_recovery">自动恢复</string>
-    <string name="settings_reflection_label">自我评审</string>
-    <string name="settings_planning">规划</string>
-    <string name="settings_replanning">重规划</string>
-    <string name="settings_parallel_tool_execution">并行工具执行</string>
-    <string name="settings_background_execution">后台执行</string>
-    <string name="memory_capture_privacy_notice">对话内容在本机处理以构建你的画像（事实 / 近况 / 里程碑）。可在设置 → Agent 中关闭自动摄取，也可随时在此删除任何一条记忆。</string>
+    <!-- ═══ terminal/service 叶：Ubuntu 终端运行时宿主保活（原 Agent 分区迁入）═══ -->
+    <string name="settings_terminal_service_section">后台服务</string>
+    <string name="settings_terminal_service_desc">保持终端运行时宿主服务后台常驻；关闭即立即停服务</string>
+    <!-- ═══ workspace/memory 叶：#218 聊天记忆自动摄取（原 Agent 分区迁入）═══ -->
+    <string name="settings_memory_section">记忆</string>
+    <string name="memory_capture_privacy_notice">对话内容在本机处理以构建你的画像（事实 / 近况 / 里程碑）。可在设置 → 工作台中关闭自动摄取，也可随时在此删除任何一条记忆。</string>
     <!-- #237 通知权限回收引导 -->
-    <string name="notif_permission_hint_title">后台通知未送达</string>
-    <string name="notif_permission_hint_body">系统通知权限已关闭，后台任务完成的提醒被静默丢弃。开启通知后才能收到。</string>
-    <string name="notif_permission_hint_action">去开启通知</string>
 
     <!-- ═══ #208：权限 / 风险门弹窗文案（GateDialogStrings.Res）═══ -->
     <string name="gate_perm_title_fmt">工具执行授权：%1$s</string>
@@ -909,8 +847,6 @@
     <string name="gate_risk_hint_medium">平衡：会修改数据或状态</string>
     <string name="gate_risk_line_fmt">%1$s（%2$s）</string>
     <string name="risk_label_dangerous">危险</string>
-    <string name="risk_label_balanced">平衡</string>
-    <string name="risk_label_safe">无危险</string>
     <string name="gate_opt_allow_session">本会话允许</string>
     <string name="gate_opt_allow_session_desc">本次会话中该工具不再询问</string>
     <string name="gate_opt_allow_once">仅允许一次</string>

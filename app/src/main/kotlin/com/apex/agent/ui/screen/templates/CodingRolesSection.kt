@@ -35,8 +35,7 @@ import com.apex.agent.ui.screen.settings.withRoleUpserted
  * ═══ 模板工坊 Coding 页签 —— 专家角色区 ═══
  *
  * 用户诉求：「每个语言专家模板应该出现在左侧抽屉模板里」。此前左侧抽屉
- * 的模板工坊 Coding 页签只有提示词模板、没有角色区（Agent 页签有
- * [com.apex.agent.ui.screen.settings.AgentRolesSection]）；本区把
+ * 的模板工坊 Coding 页签只有提示词模板、没有角色区；本区把
  * CODING_EXPERTS 内置专家（官方品牌图标 + 名称 + 一句摘要）与用户自
  * 定义角色一并列出，点击即激活。
  *
@@ -45,7 +44,7 @@ import com.apex.agent.ui.screen.settings.withRoleUpserted
  * CodeRoleController 的设置流 collector → CodeEngineFacade
  * .updateRolePersona 引擎人设热切换（下一轮请求生效，无需重启）。
  *
- * 内置专家不可编辑/删除（锁语义同 AgentRolesSection，可「另存为自定义」
+ * 内置专家不可编辑/删除（锁语义与设置中心惯例一致，可「另存为自定义」
  * 后改写）；自定义角色支持编辑/删除（复用 AgentRoleEditorDialog，
  * 保存走 withRoleUpserted 同源链路）。
  */

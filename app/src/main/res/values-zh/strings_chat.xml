@@ -4,153 +4,30 @@
 <resources>
 
     <!-- ═══ AgentChatScreen ═══ -->
-    <string name="chat_cd_chat_history">历史对话</string>
-    <string name="chat_cd_new_chat">新会话</string>
-    <string name="chat_cd_back_to_bottom">回到底部</string>
     <string name="chat_unknown_provider">未知 Provider</string>
-    <string name="chat_hint_plan">描述任务，Agent先规划…</string>
-    <string name="chat_hint_goal">描述目标与可验证的完成条件…</string>
-    <string name="chat_hint_loop">配置循环：提示词 + 间隔/Cron/单次…</string>
-    <string name="chat_hint_chat">纯聊天模式，输入消息即可开始对话…</string>
-    <string name="chat_hint_agent">输入任务或问题，Agent 会逐步执行并汇报…</string>
-    <string name="chat_hint_spec">描述需求，Agent先产出规格…</string>
-    <string name="chat_hint_reflection">描述任务，Agent生成→评审→修正…</string>
-    <string name="chat_hint_human_assist">描述任务，有选择时Agent弹出选项菜单…</string>
-    <string name="chat_hint_custom">输入指令（自定义模式生效）…</string>
-    <string name="chat_hint_build">输入指令，/ 触发快捷…</string>
-    <string name="chat_cd_stop">停止</string>
-    <string name="chat_cd_send">发送</string>
-    <string name="chat_task_status_pending">准备中</string>
-    <string name="chat_task_status_planning">规划中</string>
-    <string name="chat_task_status_running">执行中</string>
-    <string name="chat_task_status_waiting_user">等待输入</string>
-    <string name="chat_task_status_paused">已暂停</string>
-    <string name="chat_task_status_cancelling">正在取消</string>
-    <string name="chat_task_status_recovering">崩溃恢复</string>
-    <string name="chat_task_status_retrying">重试中</string>
-    <string name="chat_task_status_completed">已完成</string>
-    <string name="chat_task_status_failed">失败</string>
-    <string name="chat_task_status_cancelled">已取消</string>
 
     <!-- ═══ AgentChatMessages ═══ -->
-    <string name="chat_copied">已复制</string>
-    <string name="chat_cd_copy">复制</string>
-    <string name="chat_cd_edit">编辑消息</string>
-    <string name="chat_thinking_process">思考过程</string>
-    <string name="chat_thinking_done_tap">思考完成 · 点击查看</string>
-    <string name="chat_reasoning_in_progress">推理中…</string>
-    <string name="chat_cd_collapse_thinking">折叠思考内容</string>
-    <string name="chat_cd_expand_thinking">展开思考内容</string>
-    <string name="chat_execution_error">执行出错</string>
-    <string name="chat_copied_error">已复制错误信息</string>
-    <string name="chat_cd_copy_error">复制错误信息</string>
-    <string name="chat_review_opinion">评审意见</string>
 
     <!-- ═══ AgentChatPlanCards ═══ -->
-    <string name="chat_pipeline_calling_connector">正在调用连接器</string>
-    <string name="chat_pipeline_calling_plugin">正在调用插件</string>
-    <string name="chat_pipeline_running_skill">正在执行 Skill</string>
-    <string name="chat_pipeline_running_fusion">FUSION 体系强制使用中</string>
-    <string name="chat_pipeline_connector_done">连接器执行完成</string>
-    <string name="chat_pipeline_plugin_done">插件执行完成</string>
-    <string name="chat_pipeline_fusion_done">FUSION 体系执行完成</string>
-    <string name="chat_pipeline_skill_done">Skill 执行完成</string>
-    <string name="chat_cd_done">已完成</string>
     <string name="chat_confirm_plan_title">确认执行此计划？</string>
     <string name="chat_cancel">取消</string>
     <string name="chat_execute">执行</string>
     <!-- #169 Plan 模式强化（plan_ 前缀） -->
-    <string name="plan_locked">已锁定</string>
-    <string name="chat_plan_title">执行计划</string>
     <string name="plan_step_enable">启用此步骤</string>
     <string name="plan_move_up">上移步骤</string>
     <string name="plan_move_down">下移步骤</string>
     <string name="plan_adjust_hint">执行前可调整：取消勾选跳过步骤，箭头调整顺序</string>
     <string name="plan_planning_readonly">规划中 · 只读</string>
-    <string name="chat_spec_title">需求规格</string>
-    <string name="chat_risk_level">风险 %1$s</string>
-    <string name="chat_risk_low">无危险</string>
-    <string name="chat_risk_medium">平衡</string>
-    <string name="chat_risk_high">危险</string>
-    <string name="chat_risk_critical">极度危险</string>
-    <string name="chat_spec_goal">目标</string>
-    <string name="chat_spec_requirements">需求</string>
-    <string name="chat_spec_constraints">约束</string>
-    <string name="chat_spec_acceptance">验收标准</string>
-    <string name="chat_spec_deliverables">交付物</string>
-    <string name="chat_confirm_spec_title">确认此规格并开始执行？</string>
-    <string name="chat_spec_goal_line">目标：%1$s</string>
-    <string name="chat_spec_deliverables_line">交付物：%1$s</string>
-    <string name="chat_reject">驳回</string>
-    <string name="chat_confirm_execute">确认执行</string>
 
     <!-- ═══ AgentChatOutputCards ═══ -->
     <string name="chat_cd_copied">已复制</string>
-    <string name="chat_output_full">完整输出</string>
-    <string name="chat_output_summary">输出摘要</string>
-    <string name="chat_output_truncated">已截断，展开查看全部</string>
-    <string name="chat_output_stats">%1$d 行 · %2$d 字符</string>
-    <string name="chat_line_count">%1$d 行</string>
-    <string name="chat_fileop_created">新建</string>
-    <string name="chat_fileop_overwritten">覆盖</string>
-    <string name="chat_fileop_appended">追加</string>
-    <string name="chat_fileop_edited">编辑</string>
-    <string name="chat_fileop_deleted">删除</string>
-    <string name="chat_fileop_moved">移动</string>
-    <string name="chat_fileop_copied">复制</string>
-    <string name="chat_fileop_write">写入</string>
-    <string name="chat_fileop_edit">编辑</string>
-    <string name="chat_fileop_delete">删除</string>
-    <string name="chat_fileop_copy_move">复制/移动</string>
-    <string name="chat_fileop_generic">文件操作</string>
-    <string name="chat_file">文件</string>
-    <string name="chat_exec_output_failed">执行输出（失败）</string>
-    <string name="chat_exec_output">执行输出</string>
-    <string name="chat_output_label">输出</string>
     <string name="chat_structured_output">结构化输出</string>
-    <string name="chat_json_items">%1$d 项</string>
-    <string name="chat_json_items_collapsed">… %1$d 项</string>
-    <string name="chat_cd_collapse">折叠</string>
-    <string name="chat_cd_expand">展开</string>
-    <string name="chat_json_more">… 还有 %1$d 项</string>
-    <string name="chat_run_stats">运行统计</string>
-    <string name="chat_step">步骤 %1$d</string>
 
     <!-- ═══ AgentChatToolCards ═══ -->
-    <string name="chat_toolkind_local">本地工具</string>
-    <string name="chat_toolkind_mcp">MCP</string>
-    <string name="chat_toolkind_skill">Skill</string>
-    <string name="chat_toolkind_github">GitHub</string>
-    <string name="chat_toolkind_web_search">联网搜索</string>
-    <string name="chat_toolkind_web_fetch">网页抓取</string>
-    <string name="chat_toolkind_browser">浏览器</string>
-    <string name="chat_toolkind_connector">连接器</string>
-    <string name="chat_toolkind_plugin">插件</string>
-    <string name="chat_toolkind_fusion">FUSION</string>
-    <string name="chat_toolkind_terminal">终端</string>
     <!-- v3: 终端工具执行元数据（exit 徽标 / 等待输入 / 会话标注） -->
-    <string name="chat_tool_waiting_input">等待输入</string>
-    <string name="chat_tool_session">会话 %1$s</string>
     <!-- 浏览器截图渲染（BrowserToolCards.kt） -->
-    <string name="chat_browser_screenshot_label">截图预览</string>
-    <string name="chat_browser_screenshot_size">%1$d × %2$d px</string>
-    <string name="chat_cd_enlarge_screenshot">放大截图</string>
-    <string name="chat_cd_close_screenshot">关闭截图</string>
     <!-- 浏览器快照渲染（BrowserToolCards.kt，v1.8.0） -->
-    <string name="chat_browser_snapshot_label">页面快照</string>
-    <string name="chat_browser_snapshot_expand">展开元素列表</string>
-    <string name="chat_browser_snapshot_collapse">收起元素列表</string>
-    <string name="chat_browser_snapshot_truncated">已截断</string>
-    <string name="chat_status_done">完成</string>
-    <string name="chat_status_failed">失败</string>
-    <string name="chat_status_running">运行</string>
-    <string name="chat_cd_collapse_tool">折叠工具详情</string>
-    <string name="chat_cd_expand_tool">展开工具详情</string>
-    <string name="chat_params">参数</string>
-    <string name="chat_execution_steps">执行过程</string>
     <string name="chat_retry">重试</string>
-    <string name="chat_search_query">搜索：%1$s</string>
-    <string name="chat_cd_open_link">打开链接</string>
 
     <!-- ═══ AgentChatDialogs ═══ -->
     <string name="chat_save">保存</string>
@@ -167,13 +44,6 @@
     <string name="chat_custom">自定义</string>
     <string name="chat_skip">跳过</string>
     <string name="chat_continue">继续</string>
-    <string name="chat_confirm">确认</string>
-    <string name="chat_submit">提交</string>
-    <string name="chat_decline">拒绝</string>
-    <string name="chat_input_required_title">需要你的输入</string>
-    <string name="chat_custom_answer_label">或输入自定义答案</string>
-    <string name="chat_confirmation_hint">点击「确认」继续执行，或「拒绝」终止。</string>
-    <string name="chat_your_answer">你的回答</string>
 
     <!-- ═══ BrainMenuButton ═══ -->
     <string name="chat_cd_brain">小大脑</string>
@@ -233,82 +103,25 @@
 
     <!-- ═══ AgentModeSelector ═══ -->
     <string name="chat_mode_selector_cd">任务模式：%1$s，点击切换</string>
-    <!-- #168 CUSTOM 模式预设 chip（顶栏当前预设名） -->
     <string name="chat_role_selector_cd">Agent 角色：%1$s，点击切换</string>
     <string name="chat_role_builtin_cd">内置角色</string>
-    <string name="chat_mode_chat_desc">纯聊天——人设与聊天技能驱动</string>
-    <string name="chat_mode_agent_desc">全能智能体——通用工具，编程请去 Coding</string>
     <string name="chat_mode_build_desc">边想边做，实时执行</string>
     <string name="chat_mode_plan_desc">先制定完整计划，确认后再执行</string>
     <string name="chat_mode_goal_desc">目标驱动——可验证条件，不达成不罢休</string>
-    <string name="chat_mode_loop_desc">循环与定时——重复提示词/轮询/提醒</string>
-    <string name="chat_mode_spec_desc">先产出需求规格，确认后再执行</string>
-    <string name="chat_mode_reflect_desc">生成 → 评审 → 修正，提高输出质量</string>
-    <string name="chat_mode_assist_desc">遇多选时弹出选项菜单，人工决策</string>
-    <string name="chat_mode_custom_desc">附加自定义指令运行</string>
 
     <!-- ═══ ChatHistorySheet ═══ -->
-    <string name="chat_history_title">历史对话（%1$d）</string>
-    <string name="chat_clear_all">清空全部</string>
-    <string name="chat_history_hint">会话自动归档；点击恢复到当前聊天，上下文接续可用</string>
-    <string name="chat_history_archived_notice">已达历史会话上限 —— 最早会话「%1$s」已移入归档区（数据保留，未删除）</string>
-    <string name="chat_history_empty">还没有历史会话\n发出第一条消息后自动归档</string>
-    <string name="chat_delete_session_title">删除会话</string>
-    <string name="chat_delete_session_text">删除「%1$s」？\n\n该会话的消息记录将被清除，不可恢复。</string>
-    <string name="chat_delete">删除</string>
-    <string name="chat_clear_history_title">清空历史对话</string>
-    <string name="chat_clear_history_text">确定删除全部 %1$d 个会话？\n\n该操作不可恢复。</string>
-    <string name="chat_delete_all">全部删除</string>
-    <string name="chat_msg_count">%1$d 条</string>
-    <string name="chat_current_session">当前会话</string>
-    <string name="chat_time_just_now">刚刚</string>
-    <string name="chat_time_minutes_ago">%1$d 分钟前</string>
-    <string name="chat_time_hours_ago">%1$d 小时前</string>
-    <string name="chat_time_yesterday">昨天</string>
-    <string name="chat_date_pattern_this_year">M月d日</string>
-    <string name="chat_date_pattern_full">yyyy年M月d日</string>
 
     <!-- ═══ AgentChatOnboarding ═══ -->
-    <string name="chat_setup_title">接入模型</string>
-    <string name="chat_setup_subtitle">三分钟完成接入，之后即可对话与执行任务</string>
-    <string name="chat_setup_body">尚未配置可用的模型端点。设置一个 Provider 并填入 API Key，即可开始对话、执行工具与长任务。</string>
     <!-- #197 模型 API 未配置浮窗（发送拦截时弹出） -->
     <string name="chat_api_missing_title">模型 API 未配置</string>
     <string name="chat_api_missing_body">你还没有配置模型 API，消息无法发送。请先到设置页添加 Provider 并填写 API Key。</string>
-    <string name="chat_go_setup">去配置</string>
-    <string name="chat_setup_supported">支持 DeepSeek / OpenRouter / Ollama 等任意 OpenAI 兼容端点</string>
 
     <!-- ═══ TaskStatusCard / TaskRecoveryBanner ═══ -->
-    <string name="chat_retried_n">已重试 %1$d 次</string>
-    <string name="chat_cd_pause_task">暂停任务</string>
-    <string name="chat_cd_cancel_task">取消任务</string>
-    <string name="chat_cd_resume_task">继续任务</string>
-    <string name="chat_cd_retry_task">重试任务</string>
-    <string name="chat_cd_abandon_task">放弃任务</string>
-    <string name="chat_recovery_title">发现未完成的任务</string>
-    <string name="chat_interrupted_at_step">中断于步骤 %1$d/%2$d</string>
 
     <!-- ═══ AgentChatViewModel（用户可见 toast / 系统行 / 工具步骤）═══ -->
-    <string name="chat_compress_unavailable">压缩不可用：未启用压缩引擎</string>
-    <string name="chat_vm_context_compressed_manual">已压缩上下文：%1$d→%2$d tokens（策略=%3$s，移除 %4$d 条）</string>
-    <string name="chat_vm_context_compressed">已压缩上下文：%1$d→%2$d tokens（%3$s，移除 %4$d 条%5$s）</string>
-    <string name="chat_vm_truncated_suffix">，截断 %1$d 条</string>
-    <string name="chat_slash_attachments_removed">斜杠指令不携带附件，已移除 %1$d 个</string>
-    <string name="chat_attachment_failed">附件处理失败：%1$s</string>
-    <string name="chat_execution_failed">执行失败：%1$s</string>
-    <string name="chat_tool_step_start">调用 %1$s，参数：\n%2$s</string>
-    <string name="chat_progress_percent">进度 %1$d%%</string>
-    <string name="chat_tool_step_done">完成（%1$dms）：%2$s</string>
-    <string name="chat_tool_step_failed">失败（%1$dms）：%2$s</string>
-    <string name="chat_aborted">已中止</string>
-    <string name="chat_restore_empty">会话数据不可用（本地记录缺失或损坏），未恢复</string>
 
     <!-- ═══ #214/#215 用户输入超时诚实提示（引擎按「超时未决」继续）═══ -->
-    <string name="chat_user_input_expired">等待 5 分钟未获回答，提问已关闭，Agent 继续执行。需要时可重新提问。</string>
-    <string name="chat_user_input_late">该提问已等待超时，你的回答未能送达引擎。如仍想补充，请直接发送新消息。</string>
-    <string name="chat_question_expired">确认等待超时（5 分钟），已按未决处理：本次未执行，下次调用将再次询问。</string>
     <string name="chat_plan_confirm_late">计划确认未送达：当前无等待中的计划确认（或已超时收场）。如仍需确认，请重新发送消息。</string>
-    <string name="chat_spec_confirm_late">规格确认未送达：当前无等待中的规格确认（或已超时收场）。如仍需确认，请重新发送消息。</string>
 
     <!-- ═══ SlashMenuProvider（斜杠菜单分组）═══ -->
     <string name="chat_slash_no_skills">暂无已启用 Skill</string>
@@ -326,29 +139,11 @@
     <string name="chat_llm_not_configured">请先在设置中配置API（Base URL + API Key + Model）</string>
     <string name="chat_llm_not_configured_short">请先在设置中配置API</string>
     <!-- ═══ 消息操作（2026-10 重定口径：复制/编辑图标行，overflow 菜单退役）═══ -->
-    <string name="chat_edit_title">编辑消息</string>
-    <string name="chat_edit_send">重新发送</string>
-    <string name="chat_edit_cancel">取消</string>
-    <string name="chat_edit_busy">正在生成回复，稍后再编辑</string>
-    <string name="chat_send_busy">任务执行中——请先点停止再发送</string>
     <!-- ═══ P2 i18n: 附件按钮菜单（AttachButton）═══ -->
-    <string name="chat_attach_file">上传文件</string>
-    <string name="chat_attach_image">上传图片</string>
-    <string name="chat_cd_attach_close">关闭</string>
-    <string name="chat_cd_attach_add">添加附件</string>
 
     <!-- ═══ 双级思考控制（模型原生强度 + 强制深度思考）═══ -->
-    <string name="chat_cd_thinking_menu">Thinking controls</string>
-    <string name="chat_thinking_chip_default">思考</string>
-    <string name="chat_thinking_chip_effort">%1$s</string>
-    <string name="chat_thinking_chip_forced">强制深度思考</string>
-    <string name="chat_thinking_effort_title">Reasoning Effort (API-native)</string>
-    <string name="chat_thinking_effort_desc">Sent as native API params (reasoning_effort / thinking budget). Only models with a thinking mode respond to it; harmless for others.</string>
-    <string name="chat_thinking_force_title">Force Deep Thinking</string>
-    <string name="chat_thinking_force_desc">Prompt-level forcing for ANY model: exhaustive Tree-of-Thoughts reasoning, post-tool verification and a final self-check. Stacks with the effort above.</string>
 
     <!-- ═══ HTML 产物应用内预览 ═══ -->
-    <string name="chat_cd_preview_html">预览 HTML</string>
     <string name="html_preview_refresh">重新加载</string>
     <string name="html_preview_close">关闭预览</string>
     <string name="html_preview_load_failed">文件读取失败</string>
@@ -360,27 +155,6 @@
     <string name="html_preview_legend_block">块级元素</string>
 
     <!-- ═══ v1.4.4 #5：会话操作补全 —— 搜索/置顶/重命名/导出导入/分享接收 ═══ -->
-    <string name="chat_session_search_hint">搜索标题与消息内容</string>
-    <string name="chat_session_search_empty">没有匹配的会话</string>
-    <string name="chat_session_pinned_group">置顶</string>
-    <string name="chat_session_recent_group">最近会话</string>
-    <string name="chat_session_pin">置顶会话</string>
-    <string name="chat_session_unpin">取消置顶</string>
-    <string name="chat_session_more">更多操作</string>
-    <string name="chat_session_rename">重命名</string>
-    <string name="chat_session_rename_title">重命名会话</string>
-    <string name="chat_session_rename_hint">会话标题</string>
-    <string name="chat_session_rename_confirm">保存</string>
-    <string name="chat_session_renamed">已重命名为 %1$s</string>
-    <string name="chat_session_rename_failed">重命名失败（标题为空或会话不存在）</string>
-    <string name="chat_session_export">导出为 Markdown</string>
-    <string name="chat_session_export_chooser">分享会话</string>
-    <string name="chat_session_export_not_found">会话不存在或为空</string>
-    <string name="chat_session_export_failed">导出失败</string>
-    <string name="chat_session_import">导入会话</string>
-    <string name="chat_session_import_failed">导入失败（文件无效或无消息）</string>
-    <string name="chat_session_imported">会话已导入</string>
-    <string name="chat_share_received">已接收分享内容 —— 确认后再发送</string>
     <string name="chat_slash_mcp_none_running">暂无运行中的 MCP —— 请到 市场 → MCP 安装并启动</string>
 
     <!-- ═══ MarkdownText 媒体卡 / 代码块（#280：硬编码中文收编）═══ -->
@@ -389,17 +163,6 @@
     <string name="chat_media_video_label">视频</string>
     <string name="chat_cd_copy_code">复制代码</string>
 
-    <!-- ═══ ViroPet 桌宠（#280：硬编码中文收编）═══ -->
-    <string name="viro_play_onclick">和 Viro 玩</string>
-    <string name="viro_cd_state_fmt">Viro 桌宠（当前状态：%1$s）</string>
-    <string name="viro_mood_idle">待机</string>
-    <string name="viro_mood_thinking">思考中</string>
-    <string name="viro_mood_tool_running">执行工具</string>
-    <string name="viro_mood_streaming">回复中</string>
-    <string name="viro_mood_waiting_user">等待输入</string>
-    <string name="viro_mood_review_plan">待确认</string>
-    <string name="viro_mood_error">出错了</string>
-    <string name="viro_mood_success">任务完成</string>
     <!-- ═══ NeonOrbButton（Coding 输入栏功能聚合 · 面板）═══ -->
     <string name="neon_cd_orb">功能聚合面板</string>
     <string name="neon_panel_title">功能聚合</string>

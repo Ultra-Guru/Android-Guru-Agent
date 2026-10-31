@@ -26,12 +26,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Psychology
@@ -462,7 +464,8 @@ private const val LIVE_TAIL_MAX_LINES = 6
 /** 聚合历史状态条的上限 tick 数（超出显 +N 文本，不无限拉宽）。 */
 private const val GROUP_STRIP_MAX_TICKS = 12
 
-/** 族样式：读灰 / 写改蓝 / 命令紫 / lint 黄 / 测试绿 / git 品牌灰。 */
+/** 族样式：读灰 / 写改蓝 / 命令紫 / lint 黄 / 测试绿 / git 品牌灰 /
+ *  MCP 拼图（tertiary）/ 技能星芒（teal）。 */
 @Composable
 internal fun capsuleStyle(kind: ToolKind): CapsuleStyle = when (kind) {
     ToolKind.READ_FILE -> CapsuleStyle(
@@ -483,10 +486,13 @@ internal fun capsuleStyle(kind: ToolKind): CapsuleStyle = when (kind) {
         Icons.Default.Psychology,
         MaterialTheme.colorScheme.primary
     )
+    // MCP 拼图语义（v1.5.1：远程能力插件；旧 Bolt 与 lint 同形易混）
     ToolKind.MCP_CUSTOM -> CapsuleStyle(
-        Icons.Default.Bolt,
+        Icons.Default.Extension,
         MaterialTheme.colorScheme.tertiary
     )
+    // 技能星芒（teal——与测试绿/命令紫拉开色相，能力生态的第三色）
+    ToolKind.SKILL -> CapsuleStyle(Icons.Default.AutoAwesome, Color(0xFF0D9488))
 }
 
 @Composable

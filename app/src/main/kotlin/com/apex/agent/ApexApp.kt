@@ -4,7 +4,6 @@ import android.app.Application
 import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
-import com.apex.agent.attachment.AttachmentCleanupManager
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.diagnostics.LogFileSink
 import com.apex.agent.net.NetworkMonitor
@@ -37,12 +36,6 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
 
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
-
-    // ★ 保留此字段以触发 Hilt 创建 AttachmentCleanupManager @Singleton 实例。
-    // 实例创建时，AttachmentModule 的 @Provides apply block 会自动调用
-    // schedulePeriodicCleanup()，无需在此处手动调用。
-    @Inject
-    lateinit var attachmentCleanupManager: AttachmentCleanupManager
 
     // ★ 触发 Hilt 创建记忆库单例（MemKit 构造 = 加载 + 旧存储一次性迁移 + 管道启动）。
     @Inject
@@ -121,7 +114,7 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
 
     // #174 模型品牌图标：SimpleIcons CDN 提供的是 SVG，需在全局 ImageLoader
     // 注册 SvgDecoder（Coil 2.x 经 ImageLoaderFactory 接管默认加载器；
-    // 附件预览/Markdown 图片等其他 Coil 调用点不受影响，仅多一种解码能力）。
+    // Markdown 图片等其他 Coil 调用点不受影响，仅多一种解码能力）。
     override fun newImageLoader(): ImageLoader =
         ImageLoader.Builder(this)
             .components { add(SvgDecoder.Factory()) }
@@ -146,8 +139,6 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
         // 实际网络检查由 ApexRoot 的 LaunchedEffect 触发，保证 UI 已组合）
         runCatching { com.apex.agent.update.UpdateCenter.ensure(this) }
         initShizuku()
-        // attachmentCleanupManager 字段已通过 Hilt @Inject 触发单例创建，
-        // schedulePeriodicCleanup() 已在 AttachmentModule 的 @Provides apply block 中调用。
 
         // 启动 CS-Mem 记忆写入管道与后台梦境整理（见报告 P0：初始化缺口）。
         initCsMem()

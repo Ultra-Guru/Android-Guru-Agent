@@ -280,6 +280,10 @@ class McpStdioTransport internal constructor(
         // 对它们是无效操作（已删）—— 真正的退出机制是 destroy() 关闭进程管道
         // → readLine 返回 EOF → 泵线程自然退出；daemon 标记兜底进程退出。
         runCatching { handle.destroy() }
+        // #453：reader 显式关闭 —— destroy 只关底层进程管道，BufferedReader /
+        // InputStreamReader 的字符缓冲不释放；多次重连会话下逐步累积。
+        // 关闭时仍在 readLine 的泵线程会收到 StreamClosed → 既有 catch 收尾。
+        runCatching { reader.close() }
         runCatching { pump.interrupt() }
     }
 

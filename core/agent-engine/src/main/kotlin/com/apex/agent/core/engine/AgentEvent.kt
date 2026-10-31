@@ -1,6 +1,21 @@
 package com.apex.agent.core.engine
 
 /**
+ * 工具调用溯源（能力生态三分类）：一次调用来自哪一层。
+ *
+ * 事件层新增字段（ToolCallStart / ToolCallComplete.origin）由引擎在解析
+ * 注册表 id 时从 [com.apex.agent.core.tools.ToolMetadata] 打标 ——
+ * MCP（first-class 注册的远程工具，label = 服务器名）/ SKILL（技能贡献的
+ * composite/script 工具，label = 技能 id）/ BUILTIN（内置工具，无 label）。
+ * 消费端（Coding 胶囊时间轴）据此把「技能」「MCP」与内置工具区分展示，
+ * 不再靠工具名前缀猜测（旧启发式把技能工具误标成「MCP 自定义工具」）。
+ *
+ * 全部带默认值 BUILTIN：kit 适配器（标准线/织机/信使）与旧发射点零改动，
+ * 未打标的调用按内置工具渲染（与既有行为一致）。
+ */
+enum class ToolCallOrigin { BUILTIN, MCP, SKILL }
+
+/**
  * Agent执行过程中发射的所有事件
  * UI层通过Flow<AgentEvent>接收，实现流式更新
  */
@@ -41,33 +56,6 @@ sealed interface AgentEvent {
         val plan: ExecutionPlan
     ) : AgentEvent
 
-    // ═══ 规格阶段（Spec模式）═══
-
-    /** Agent 生成了需求规格 */
-    data class SpecGenerated(
-        val spec: ExecutionSpec
-    ) : AgentEvent
-
-    /** 等待用户确认规格 */
-    data class SpecAwaitingConfirmation(
-        val spec: ExecutionSpec
-    ) : AgentEvent
-
-    /** 用户确认了规格 */
-    data class SpecConfirmed(
-        val spec: ExecutionSpec
-    ) : AgentEvent
-
-    // ═══ 反思阶段（Reflection模式）═══
-
-    /**
-     * 反思模式评审意见："生成 → 评审 → 修正"循环中评审环节的产物。
-     * UI 据此展示评审卡片，随后 Agent 输出修正后的最终回复。
-     */
-    data class ReflectionReview(
-        val reviewText: String
-    ) : AgentEvent
-    
     // ═══ 执行阶段 ═══
     
     /** 开始执行某个步骤 */
@@ -99,7 +87,11 @@ sealed interface AgentEvent {
     data class ToolCallStart(
         val callId: String,
         val toolName: String,
-        val arguments: String
+        val arguments: String,
+        /** 调用溯源（注册表元数据打标；缺省 BUILTIN，kit 路径零改动）。 */
+        val origin: ToolCallOrigin = ToolCallOrigin.BUILTIN,
+        /** 溯源标签：MCP = 服务器名 / SKILL = 技能 id；BUILTIN = null。 */
+        val originLabel: String? = null
     ) : AgentEvent
     
     /** 工具输出（流式）*/
@@ -153,7 +145,11 @@ sealed interface AgentEvent {
         /** 结构化错误类别（spawn_failed / permission_denied / ...）。 */
         val errorKind: String? = null,
         /** 命令在前台等待用户输入（INPUT_REQUIRED）。 */
-        val waitingInput: Boolean = false
+        val waitingInput: Boolean = false,
+        /** 调用溯源（与 ToolCallStart 同款；重放补建胶囊时也携带）。 */
+        val origin: ToolCallOrigin = ToolCallOrigin.BUILTIN,
+        /** 溯源标签：MCP = 服务器名 / SKILL = 技能 id；BUILTIN = null。 */
+        val originLabel: String? = null
     ) : AgentEvent
     
     // ═══ 回复阶段 ═══
@@ -209,7 +205,7 @@ sealed interface AgentEvent {
     ) : AgentEvent
 
     /**
-     * #214 用户输入等待超时：AskUser / HUMAN_ASSIST 决策点在超时窗口内
+     * #214 用户输入等待超时：AskUser 决策点在超时窗口内
      * 未获回答，引擎已按「超时未决」继续执行。UI 收到后关闭挂起的输入
      * 对话框并给出提示行；迟到的提交由 VM 侧 [ApexAgentEngine.submitUserInputIfAwaiting]
      * 回执驱动显式失败提示，不再静默丢弃。
@@ -284,20 +280,3 @@ enum class RiskLevel {
     HIGH,     // 系统级操作
     CRITICAL  // 不可逆操作
 }
-
-/**
- * 需求规格（Spec 模式的产物）。
- *
- * 比 [ExecutionPlan] 更强调"要交付什么、做成什么样才算完成"：
- * 目标 / 需求清单 / 约束 / 验收标准 / 交付物，确认后逐项执行。
- */
-data class ExecutionSpec(
-    val goal: String,
-    val requirements: List<String> = emptyList(),
-    val constraints: List<String> = emptyList(),
-    val acceptanceCriteria: List<String> = emptyList(),
-    val deliverables: List<String> = emptyList(),
-    val estimatedToolCalls: Int = 1,
-    val riskLevel: RiskLevel = RiskLevel.MEDIUM,
-    val reasoning: String = ""
-)

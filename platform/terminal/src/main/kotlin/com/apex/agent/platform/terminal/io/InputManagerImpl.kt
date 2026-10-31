@@ -1,5 +1,7 @@
 package com.apex.agent.platform.terminal.io
 
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.platform.terminal.errors.TerminalError
 import com.apex.agent.platform.terminal.events.TerminalEvent
 import com.apex.agent.platform.terminal.events.TerminalEventBus
@@ -435,11 +437,12 @@ class InputManagerImpl(
      */
     private fun warnUnmappedKeyOnce(key: TerminalKey) {
         if (warnedUnmappedKeys.add(key)) {
-            // This module has no logging framework dependency; System.err is the
-            // lightest diagnostic channel (consistent with the existing diagnostic
-            // prints elsewhere in the IO layer).
-            System.err.println(
-                "[InputManagerImpl] WARN: unmapped TerminalKey '$key' — no bytes sent " +
+            // #595：改走 AppLogger 统一日志中枢（warn 级，每个未知键仅一次的
+            // 去重语义不变）—— release 不再落 stderr，日志查看器可按类别筛选。
+            AppLogger.instance.warn(
+                LogCategory.SYSTEM,
+                "InputManagerImpl",
+                "unmapped TerminalKey '$key' — no bytes sent " +
                     "(was previously silently ENTER, which could confirm destructive prompts)"
             )
         }

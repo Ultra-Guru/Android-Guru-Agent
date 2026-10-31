@@ -16,14 +16,14 @@ import kotlinx.serialization.json.Json
  * # Agent Self-Setup Tools (v5)
  *
  * 让 Agent 自己读取/修改本应用的设置——模式 / 思考档位 / 重试策略 /
- * 上下文窗口 / 主题 / 语言 / 通知 / 自定义模式预设——一键完成 onboarding 后续
+ * 上下文窗口 / 主题 / 语言 / 通知 ——一键完成 onboarding 后续
  * 的"调优"环节，无需引导用户翻设置页。
  *
  * 安全契约：
  * - 读类工具（`AgentSettingGet` / `AgentProfileList` / `AgentRoleList`）
  *   无副作用，LOW 风险，无门控；
- * - 写类工具（`AgentSettingSet` / `agent_profile_*` / `AgentRoleActivate`
- *   / `AgentModePresetSelect`）MEDIUM 风险，走风险门确认一次（HIGH 风险的
+ * - 写类工具（`AgentSettingSet` / `agent_profile_*` / `AgentRoleActivate`）
+ *   MEDIUM 风险，走风险门确认一次（HIGH 风险的
  *   `AgentProviderSetKey` 走会话级确认）；
  * - 写入的字段集是**白名单**：只允许 [AgentSettingsPatch] 中显式声明的字段，
  *   未知字段直接忽略——防 LLM 越权改 `permissionMode`/`permissionRules`
@@ -41,36 +41,21 @@ import kotlinx.serialization.json.Json
  */
 @Serializable
 data class AgentSettingsSnapshot(
-    val defaultMode: String = "auto",
-    val thinkLevel: String = "standard",
-    val thinkingLevelOverride: String = "",
-    val forceDeepThinking: Boolean = false,
     val codeThinkingLogic: String = "",
     val codeThinkingLevel: String = "",
     val codeExecutionMode: String = "",
-    val maxIterations: Int = 20,
     val keepAlive: Boolean = true,
-    val autoRetry: Boolean = true,
-    val maxRetryPerAction: Int = 2,
-    val loopDetection: Boolean = true,
-    val loopDetectionWindow: Int = 5,
-    val sameActionThreshold: Int = 3,
-    val autoRecovery: Boolean = true,
-    val parallelToolExecution: Boolean = true,
     val taskCompletionNotify: Boolean = true,
     val maxContextTokens: Int = 128_000,
     val compressionThreshold: Float = 0.8f,
     val preserveRecentTurns: Int = 5,
     val maxToolOutputLength: Int = 2000,
-    val reflectionRounds: Int = 1,
-    val selectedModePresetId: String = "",
     val themeMode: String = "system",
     val accentPalette: String = "mint",
     val fontScale: Float = 1.0f,
     val showTimestamps: Boolean = true,
     val language: String = "system",
-    val sendKeyBehavior: String = "send",
-    val showRunSummary: Boolean = false
+    val sendKeyBehavior: String = "send"
 ) {
     companion object {
         val EMPTY = AgentSettingsSnapshot()
@@ -78,109 +63,67 @@ data class AgentSettingsSnapshot(
 }
 
 /**
- * Agent 设置增量补丁——只允许暴露给 LLM 的字段子集。
+ * Agent 设置增量补丁——只允许暴露给 LLM 的字段子集（Agent 聊天模式字段
+ * 已随模式移除，白名单收敛为 Coding 工位与通用层字段）。
  *
  * 字段含义：
- * - `defaultMode`: 启动默认模式（auto/chat/build/agent/plan/goal/loop/spec/reflection/custom）；
- * - `thinkLevel`: 思考档位（standard/deep/minimal/auto）；
- * - `thinkingLevelOverride`: 聊天页思考覆盖（""/"auto"/"none/light/standard/deep/maximum"）；
- * - `forceDeepThinking`: 强制深度思考（提示词层强制，对任何模型生效）；
- * - `maxIterations`: 单轮工具迭代上限（1..50）；
- * - `keepAlive`: 会话保活（保持上下文连续）；
- * - `autoRetry` / `maxRetryPerAction`: 工具失败自动重试 + 上限；
- * - `loopDetection` / `loopDetectionWindow` / `sameActionThreshold`: 循环检测；
- * - `parallelToolExecution`: 工具并行执行；
+ * - `codeThinkingLogic` / `codeThinkingLevel` / `codeExecutionMode`:
+ *   Coding 屏思考逻辑 / 思考档位 / 执行模式；
+ * - `keepAlive`: 后台服务保活（终端运行时宿主）；
  * - `taskCompletionNotify`: 后台任务完成发系统通知；
  * - `maxContextTokens` / `compressionThreshold` / `preserveRecentTurns` / `maxToolOutputLength`:
  *   上下文压缩配置；
- * - `selectedModePresetId`: 当前选中的自定义模式预设 id（"" 表示未选）；
  * - `themeMode` / `accentPalette` / `fontScale` / `showTimestamps` / `language` /
- *   `sendKeyBehavior` / `showRunSummary`: 界面层参数（即时生效或下个 Activity 重建生效）。
+ *   `sendKeyBehavior`: 界面层参数（即时生效或下个 Activity 重建生效）。
  *
  * **未暴露的安全相关字段**（必须由用户手动改）：`permissionMode`、`permissionRules`、
  * `mcpScopeIsolation`、`skillScope`、`onboardingVersion`——LLM 不应自行放宽权限。
  */
 @Serializable
 data class AgentSettingsPatch(
-    val defaultMode: String? = null,
-    val thinkLevel: String? = null,
-    val thinkingLevelOverride: String? = null,
-    val forceDeepThinking: Boolean? = null,
     val codeThinkingLogic: String? = null,
     val codeThinkingLevel: String? = null,
     val codeExecutionMode: String? = null,
-    val maxIterations: Int? = null,
     val keepAlive: Boolean? = null,
-    val autoRetry: Boolean? = null,
-    val maxRetryPerAction: Int? = null,
-    val loopDetection: Boolean? = null,
-    val loopDetectionWindow: Int? = null,
-    val sameActionThreshold: Int? = null,
-    val autoRecovery: Boolean? = null,
-    val parallelToolExecution: Boolean? = null,
     val taskCompletionNotify: Boolean? = null,
     val maxContextTokens: Int? = null,
     val compressionThreshold: Float? = null,
     val preserveRecentTurns: Int? = null,
     val maxToolOutputLength: Int? = null,
-    val reflectionRounds: Int? = null,
-    val selectedModePresetId: String? = null,
     val themeMode: String? = null,
     val accentPalette: String? = null,
     val fontScale: Float? = null,
     val showTimestamps: Boolean? = null,
     val language: String? = null,
-    val sendKeyBehavior: String? = null,
-    val showRunSummary: Boolean? = null
+    val sendKeyBehavior: String? = null
 ) {
     /** 是否所有字段都为 null（无操作）。 */
-    fun isEmpty(): Boolean = defaultMode == null && thinkLevel == null &&
-        thinkingLevelOverride == null && forceDeepThinking == null &&
-        codeThinkingLogic == null && codeThinkingLevel == null &&
-        codeExecutionMode == null && maxIterations == null && keepAlive == null &&
-        autoRetry == null && maxRetryPerAction == null && loopDetection == null &&
-        loopDetectionWindow == null && sameActionThreshold == null &&
-        autoRecovery == null && parallelToolExecution == null &&
+    fun isEmpty(): Boolean = codeThinkingLogic == null && codeThinkingLevel == null &&
+        codeExecutionMode == null && keepAlive == null &&
         taskCompletionNotify == null && maxContextTokens == null &&
         compressionThreshold == null && preserveRecentTurns == null &&
-        maxToolOutputLength == null && reflectionRounds == null &&
-        selectedModePresetId == null && themeMode == null && accentPalette == null &&
+        maxToolOutputLength == null && themeMode == null && accentPalette == null &&
         fontScale == null && showTimestamps == null && language == null &&
-        sendKeyBehavior == null && showRunSummary == null
+        sendKeyBehavior == null
 
     /** 已设置的字段数（用于结果展示）。 */
     fun changedFieldCount(): Int {
         var n = 0
-        if (defaultMode != null) n++
-        if (thinkLevel != null) n++
-        if (thinkingLevelOverride != null) n++
-        if (forceDeepThinking != null) n++
         if (codeThinkingLogic != null) n++
         if (codeThinkingLevel != null) n++
         if (codeExecutionMode != null) n++
-        if (maxIterations != null) n++
         if (keepAlive != null) n++
-        if (autoRetry != null) n++
-        if (maxRetryPerAction != null) n++
-        if (loopDetection != null) n++
-        if (loopDetectionWindow != null) n++
-        if (sameActionThreshold != null) n++
-        if (autoRecovery != null) n++
-        if (parallelToolExecution != null) n++
         if (taskCompletionNotify != null) n++
         if (maxContextTokens != null) n++
         if (compressionThreshold != null) n++
         if (preserveRecentTurns != null) n++
         if (maxToolOutputLength != null) n++
-        if (reflectionRounds != null) n++
-        if (selectedModePresetId != null) n++
         if (themeMode != null) n++
         if (accentPalette != null) n++
         if (fontScale != null) n++
         if (showTimestamps != null) n++
         if (language != null) n++
         if (sendKeyBehavior != null) n++
-        if (showRunSummary != null) n++
         return n
     }
 }
@@ -212,8 +155,8 @@ class AgentSettingGetTool(
     id = "AgentSettingGet",
     name = "Get Agent Settings",
     description = """
-        Read a snapshot of the agent's own runtime configuration: default mode,
-        thinking level, retry policy, context window, theme, language and more.
+        Read a snapshot of the agent's own runtime configuration: coding
+        thinking level, context window, theme, language and more.
         Use this before [AgentSettingSet] to see what is currently in effect,
         and before reporting "I cannot do X" — your limits may be configurable.
         No arguments. 返回当前 Agent 配置快照（JSON）。
@@ -264,8 +207,7 @@ class AgentSettingGetTool(
  * 字段白名单校验在 [validatePatch] 中。
  *
  * 示例：
- * - {"max_iterations": 30} —— 把单轮迭代上限改为 30
- * - {"force_deep_thinking": true, "default_mode": "build"} —— 强制深度思考 + BUILD 模式
+ * - {"code_thinking_level": "deep"} —— Coding 思考档位切深潜
  * - {"language": "zh", "theme_mode": "dark"} —— 中文界面 + 暗色主题
  */
 class AgentSettingSetTool(
@@ -277,23 +219,15 @@ class AgentSettingSetTool(
         Incrementally update the agent's own runtime configuration. Only the
         fields you provide are changed; the rest stay as-is.
         Allowed fields (all optional, but at least one is required):
-          - default_mode (auto|chat|build|agent|plan|goal|loop|spec|custom)
-          - think_level (standard|deep|minimal|auto)
-          - thinking_level_override ("", "auto", or none/light/standard/deep/maximum)
-          - force_deep_thinking (true|false) — prompt-level forced deep thinking
-          - max_iterations (1..50)
+          - code_thinking_logic (""|deep_dive|standard), code_thinking_level
+            (""|auto|none/light/standard/deep/maximum/ultracode/apexcode),
+            code_execution_mode (""|build|plan|goal)
           - keep_alive (true|false)
-          - auto_retry (true|false), max_retry_per_action (0..5)
-          - loop_detection (true|false), loop_detection_window (3..20),
-            same_action_threshold (2..10)
-          - parallel_tool_execution (true|false)
           - task_completion_notify (true|false)
           - max_context_tokens (8192..1_000_000),
             compression_threshold (0.5..0.95),
             preserve_recent_turns (1..20),
             max_tool_output_length (200..20000)
-          - reflection_rounds (1..3)
-          - selected_mode_preset_id (string, "" to clear)
           - theme_mode (system|dark|light)
           - accent_palette (mint|amber|coral|violet|ocean|rose|forest|cyan|sunset|
             gold|crimson|lavender|magenta|lime|sakura|matcha|peach|plum)
@@ -301,33 +235,18 @@ class AgentSettingSetTool(
           - show_timestamps (true|false)
           - language (system|zh|en)
           - send_key_behavior (send|newline)
-          - show_run_summary (true|false)
         字段名按 snake_case；以下划线分隔的字段名 LLM 友好。
         Examples:
-        - {"max_iterations": 30}
-        - {"force_deep_thinking": true, "default_mode": "build"}
+        - {"code_thinking_level": "deep"}
         - {"language": "zh", "theme_mode": "dark"}
     """.trimIndent(),
     declaredSchema = toolSchema {
         // 所有字段都是可选的，至少 1 个；具体校验由 validatePatch 完成
-        string("default_mode", description = "Default agent mode at session start")
-        string("think_level", description = "Thinking level: standard|deep|minimal|auto")
-        string("thinking_level_override",
-            description = "Chat-page thinking override (\"\"/auto/none/light/standard/deep/maximum)")
-        boolean("force_deep_thinking",
-            description = "Force deep thinking via prompt layer (works on any model)")
-        integer("max_iterations", description = "Max iterations per turn (1..50)",
-            minimum = 1.0, maximum = 50.0)
-        boolean("keep_alive", description = "Keep session context alive")
-        boolean("auto_retry", description = "Auto-retry failed tool calls")
-        integer("max_retry_per_action", description = "Max retries per action (0..5)",
-            minimum = 0.0, maximum = 5.0)
-        boolean("loop_detection", description = "Enable loop detection")
-        integer("loop_detection_window", description = "Loop detection window (3..20)",
-            minimum = 3.0, maximum = 20.0)
-        integer("same_action_threshold", description = "Same-action threshold (2..10)",
-            minimum = 2.0, maximum = 10.0)
-        boolean("parallel_tool_execution", description = "Allow parallel tool execution")
+        string("code_thinking_logic", description = "Coding thinking logic: \"\"|deep_dive|standard")
+        string("code_thinking_level",
+            description = "Coding thinking level (\"\"/auto/none/light/standard/deep/maximum/ultracode/apexcode)")
+        string("code_execution_mode", description = "Coding execution mode: \"\"|build|plan|goal")
+        boolean("keep_alive", description = "Keep the background service alive")
         boolean("task_completion_notify",
             description = "Send system notification when background task completes")
         integer("max_context_tokens", description = "Max context tokens (8192..1000000)",
@@ -338,10 +257,6 @@ class AgentSettingSetTool(
             minimum = 1.0, maximum = 20.0)
         integer("max_tool_output_length", description = "Max tool output length (200..20000)",
             minimum = 200.0, maximum = 20_000.0)
-        integer("reflection_rounds", description = "Reflection rounds (1..3)",
-            minimum = 1.0, maximum = 3.0)
-        string("selected_mode_preset_id",
-            description = "Custom mode preset id (\"\" to clear)")
         string("theme_mode", description = "system|dark|light")
         string("accent_palette",
             description = "mint|amber|coral|violet|ocean|rose|forest|cyan|sunset|gold|crimson|lavender|magenta|lime|sakura|matcha|peach|plum")
@@ -350,7 +265,6 @@ class AgentSettingSetTool(
         boolean("show_timestamps", description = "Show timestamps in chat")
         string("language", description = "system|zh|en")
         string("send_key_behavior", description = "send|newline (IME action)")
-        boolean("show_run_summary", description = "Show task run summary card by default")
     }
 ) {
     override fun buildMetadata(): ToolMetadata = ToolMetadata.meta(id) {
@@ -402,57 +316,27 @@ class AgentSettingSetTool(
      * 任何字段缺失 → null（patch 中跳过该字段）。
      */
     private fun parsePatch(args: ToolArguments): AgentSettingsPatch = AgentSettingsPatch(
-        defaultMode = args.optionalString("default_mode"),
-        thinkLevel = args.optionalString("think_level"),
-        thinkingLevelOverride = args.optionalString("thinking_level_override"),
-        forceDeepThinking = args.optionalBoolean("force_deep_thinking"),
         codeThinkingLogic = args.optionalString("code_thinking_logic"),
         codeThinkingLevel = args.optionalString("code_thinking_level"),
         codeExecutionMode = args.optionalString("code_execution_mode"),
-        maxIterations = args.optionalInt("max_iterations"),
         keepAlive = args.optionalBoolean("keep_alive"),
-        autoRetry = args.optionalBoolean("auto_retry"),
-        maxRetryPerAction = args.optionalInt("max_retry_per_action"),
-        loopDetection = args.optionalBoolean("loop_detection"),
-        loopDetectionWindow = args.optionalInt("loop_detection_window"),
-        sameActionThreshold = args.optionalInt("same_action_threshold"),
-        autoRecovery = args.optionalBoolean("auto_recovery"),
-        parallelToolExecution = args.optionalBoolean("parallel_tool_execution"),
         taskCompletionNotify = args.optionalBoolean("task_completion_notify"),
         maxContextTokens = args.optionalInt("max_context_tokens"),
         compressionThreshold = args.optionalDouble("compression_threshold")?.toFloat(),
         preserveRecentTurns = args.optionalInt("preserve_recent_turns"),
         maxToolOutputLength = args.optionalInt("max_tool_output_length"),
-        reflectionRounds = args.optionalInt("reflection_rounds"),
-        selectedModePresetId = args.optionalString("selected_mode_preset_id"),
         themeMode = args.optionalString("theme_mode"),
         accentPalette = args.optionalString("accent_palette"),
         fontScale = args.optionalDouble("font_scale")?.toFloat(),
         showTimestamps = args.optionalBoolean("show_timestamps"),
         language = args.optionalString("language"),
-        sendKeyBehavior = args.optionalString("send_key_behavior"),
-        showRunSummary = args.optionalBoolean("show_run_summary")
+        sendKeyBehavior = args.optionalString("send_key_behavior")
     )
 
     companion object {
         /** LLM 可见的字段白名单 + 枚举值校验。返回空列表 = 通过。 */
         fun validatePatch(p: AgentSettingsPatch): List<String> {
             val violations = mutableListOf<String>()
-            p.defaultMode?.let { v ->
-                if (v !in DEFAULT_MODE_VALUES) {
-                    violations.add("default_mode='$v' must be one of ${DEFAULT_MODE_VALUES.joinToString("/")}")
-                }
-            }
-            p.thinkLevel?.let { v ->
-                if (v !in THINK_LEVEL_VALUES) {
-                    violations.add("think_level='$v' must be one of ${THINK_LEVEL_VALUES.joinToString("/")}")
-                }
-            }
-            p.thinkingLevelOverride?.let { v ->
-                if (v.isNotBlank() && v != "auto" && v !in THINKING_LEVEL_OVERRIDE_VALUES) {
-                    violations.add("thinking_level_override='$v' must be \"\", \"auto\", or one of ${THINKING_LEVEL_OVERRIDE_VALUES.joinToString("/")}")
-                }
-            }
             p.codeThinkingLogic?.let { v ->
                 if (v.isNotBlank() && v !in CODE_THINKING_LOGIC_VALUES) {
                     violations.add("code_thinking_logic='$v' must be \"\", \"deep_dive\", or \"standard\"")
@@ -465,20 +349,8 @@ class AgentSettingSetTool(
             }
             p.codeExecutionMode?.let { v ->
                 if (v.isNotBlank() && v !in CODE_EXECUTION_MODE_VALUES) {
-                    violations.add("code_execution_mode='$v' must be \"\", \"build\", or \"plan\"")
+                    violations.add("code_execution_mode='$v' must be \"\", \"build\", \"plan\", or \"goal\"")
                 }
-            }
-            p.maxIterations?.let { v ->
-                if (v !in 1..50) violations.add("max_iterations=$v must be 1..50")
-            }
-            p.maxRetryPerAction?.let { v ->
-                if (v !in 0..5) violations.add("max_retry_per_action=$v must be 0..5")
-            }
-            p.loopDetectionWindow?.let { v ->
-                if (v !in 3..20) violations.add("loop_detection_window=$v must be 3..20")
-            }
-            p.sameActionThreshold?.let { v ->
-                if (v !in 2..10) violations.add("same_action_threshold=$v must be 2..10")
             }
             p.maxContextTokens?.let { v ->
                 if (v !in 8192..1_000_000) violations.add("max_context_tokens=$v must be 8192..1000000")
@@ -491,9 +363,6 @@ class AgentSettingSetTool(
             }
             p.maxToolOutputLength?.let { v ->
                 if (v !in 200..20_000) violations.add("max_tool_output_length=$v must be 200..20000")
-            }
-            p.reflectionRounds?.let { v ->
-                if (v !in 1..3) violations.add("reflection_rounds=$v must be 1..3")
             }
             p.themeMode?.let { v ->
                 if (v !in THEME_MODE_VALUES) violations.add("theme_mode='$v' must be one of ${THEME_MODE_VALUES.joinToString("/")}")
@@ -514,18 +383,11 @@ class AgentSettingSetTool(
         }
 
         // ── 字段枚举值集合（与 SettingsRepository/AgentSettings 默认值同源）──
-        val DEFAULT_MODE_VALUES = setOf(
-            "auto", "chat", "build", "agent", "plan", "goal", "loop", "spec", "custom"
-        )
-        val THINK_LEVEL_VALUES = setOf("standard", "deep", "minimal", "auto")
-        val THINKING_LEVEL_OVERRIDE_VALUES = setOf(
-            "none", "light", "standard", "deep", "maximum"
-        )
         val CODE_THINKING_LOGIC_VALUES = setOf("deep_dive", "standard")
         val CODE_THINKING_LEVEL_VALUES = setOf(
             "none", "light", "standard", "deep", "maximum", "ultracode", "apexcode"
         )
-        val CODE_EXECUTION_MODE_VALUES = setOf("build", "plan")
+        val CODE_EXECUTION_MODE_VALUES = setOf("build", "plan", "goal")
         val THEME_MODE_VALUES = setOf("system", "dark", "light")
         val LANGUAGE_VALUES = setOf("system", "zh", "en")
         val SEND_KEY_BEHAVIOR_VALUES = setOf("send", "newline")
@@ -823,103 +685,10 @@ class AgentRoleActivateTool(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 工具 8-9: AgentModePresetList / AgentModePresetSelect
+// 工具 8-9: AgentModePresetList / AgentModePresetSelect 已随 Agent CUSTOM 模式
+// 移除（PR 4/6）—— 预设是 Agent 聊天档位专属指令源，纯 Coding 软件不再有
+// CUSTOM 模式；设置域的预设编辑器与 AgentSettings 预设字段已随 PR 5/6 删除。
 // ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * 自定义模式预设的精简视图（用于 LLM 阅读）。
- */
-@Serializable
-data class ModePresetSummary(
-    val id: String,
-    val name: String,
-    val builtin: Boolean,
-    val summary: String
-)
-
-/**
- * `AgentModePresetList` — 列出所有内置 + 用户自定义模式预设。
- */
-class AgentModePresetListTool(
-    private val listProvider: suspend () -> List<ModePresetSummary>
-) : BaseTool(
-    id = "AgentModePresetList",
-    name = "List Mode Presets",
-    description = """
-        List all custom mode presets (built-in + user-defined). Each preset is
-        a named instruction injected into the system prompt when CUSTOM mode is
-        active. Use this to discover available presets before
-        [AgentModePresetSelect]. No arguments.
-    """.trimIndent(),
-    declaredSchema = toolSchema { }
-) {
-    override fun buildMetadata(): ToolMetadata = ToolMetadata.meta(id) {
-        category(ToolCategory.AGENT)
-        risk(ToolRisk.LOW)
-        tag("agent", "preset", "mode", "custom", "self-setup")
-        annotations(ToolAnnotations.readOnly())
-    }
-
-    override suspend fun executeStructured(arguments: String): ToolResult {
-        val list = listProvider()
-        if (list.isEmpty()) {
-            return ToolResult.ok("No mode presets configured. Built-in presets should always exist; if missing, the host may be misconfigured.")
-        }
-        val json = AgentSettingsJson.encodeToString(
-            kotlinx.serialization.builtins.ListSerializer(ModePresetSummary.serializer()),
-            list
-        )
-        return ToolResult.ok(json)
-    }
-}
-
-/**
- * `AgentModePresetSelect` — 选中某个预设作为当前 CUSTOM 模式指令源。
- */
-class AgentModePresetSelectTool(
-    private val selector: suspend (String) -> Boolean
-) : BaseTool(
-    id = "AgentModePresetSelect",
-    name = "Select Mode Preset",
-    description = """
-        Select a custom mode preset as the active instruction source for
-        CUSTOM mode. Pass a preset id from [AgentModePresetList], or pass
-        empty string "" to clear the selection.
-        Examples:
-        - {"preset_id": "builtin_translator"}
-        - {"preset_id": ""}  # clear
-    """.trimIndent(),
-    declaredSchema = toolSchema {
-        string("preset_id", required = true,
-            description = "Preset id (from AgentModePresetList) or \"\" to clear")
-    }
-) {
-    override fun buildMetadata(): ToolMetadata = ToolMetadata.meta(id) {
-        category(ToolCategory.AGENT)
-        risk(ToolRisk.MEDIUM)
-        tag("agent", "preset", "mode", "custom", "self-setup")
-        annotations(ToolAnnotations.idempotentWrite())
-    }
-
-    override suspend fun executeStructured(arguments: String): ToolResult {
-        val args = when (val parsed = ToolArguments.of(arguments)) {
-            is ToolArguments.ParseOutcome.Ok -> parsed.args
-            is ToolArguments.ParseOutcome.Bad -> return parsed.result
-        }
-        val presetId = args.requireString("preset_id")
-        val ok = selector(presetId)
-        return if (ok) {
-            val msg = if (presetId.isBlank()) {
-                "OK: mode preset selection cleared. CUSTOM mode will fall back to the legacy custom instruction (or no instruction if none set)."
-            } else {
-                "OK: mode preset '$presetId' selected. Switch to CUSTOM mode (AgentSettingSet with default_mode=custom) to activate."
-            }
-            ToolResult.ok(msg)
-        } else {
-            ToolResult.fail(ToolErrorCode.EXECUTION_FAILED, "host rejected preset selection (preset may not exist)")
-        }
-    }
-}
 
 /**
  * 模块级 JSON 实例（与 AgentSettings 共用，pretty print 给 LLM 易读）。

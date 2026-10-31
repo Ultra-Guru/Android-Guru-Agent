@@ -9,7 +9,7 @@ import com.apex.agent.core.tools.skill.SkillRegistry
  * - T76 executionTags → LlmRequestContext（tagged）；
  * - #197 双工位 × 渐进披露 —— 系统提示词的技能注入解析（自
  * [ApexAgentEngine.buildSystemPrompt] 迁出，SRP 预算腾挪；模式与
- * [EngineCompressionGate] / [EnginePromptDelegates] 相同：同包顶层扩展 +
+ * [EngineCompressionGate] 相同：同包顶层扩展 +
  * internal 成员直调，引擎调用点零改动）。
  *
  * 两条注入通道按优先级合成：

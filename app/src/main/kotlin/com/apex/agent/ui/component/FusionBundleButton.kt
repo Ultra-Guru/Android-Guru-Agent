@@ -116,8 +116,69 @@ fun FusionBundleButton(
         if (isActive) R.string.fusion_cd_bundle_active else R.string.fusion_cd_bundle
     )
 
+<<<<<<< HEAD
     // ── Claude 插件包导入（共享 launcher —— 与工具聚合中心同一实现）──
     val importLauncher = rememberClaudeImportLauncher(controller)
+=======
+    // ── Claude 插件包导入（SAF 选 zip → 安全解压 → 导入器 → 聚合注册表）──
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val feedback = LocalFeedbackController.current
+    val importScope = rememberCoroutineScope()
+    val importDonePattern = stringResource(R.string.fusion_import_claude_done)
+    val importFailedPattern = stringResource(R.string.fusion_import_claude_failed)
+    val importLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        importScope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                val cacheDir = java.io.File(context.cacheDir, "claude-import")
+                    .apply { deleteRecursively(); mkdirs() }
+                val zipFile = java.io.File(cacheDir, "pack.zip")
+                context.contentResolver.openInputStream(uri)!!.use { input ->
+                    zipFile.outputStream().use { output -> input.copyTo(output) }
+                }
+                val extractDir = java.io.File(cacheDir, "unzipped")
+                com.apex.agent.core.tools.skill.SafeZipExtractor.extract(zipFile, extractDir)
+                com.apex.agent.core.tools.claudeimport.ClaudePluginImporter.importFromDir(extractDir)
+            }
+            result.fold(
+                onSuccess = { imported ->
+                    val installed = controller.registryForTools.install(imported.manifestJson)
+                    installed.fold(
+                        onSuccess = {
+                            feedback.show(
+                                String.format(
+                                    // #454：显式 Locale —— 防区域化数字漂移。
+                                    java.util.Locale.US, importDonePattern, it.name,
+                                    it.skills.size,
+                                    it.plugins.firstOrNull()
+                                        ?.let { p -> countSlashCommands(p) } ?: 0,
+                                    if (it.agent.persona.isBlank()) 0 else 1
+                                ),
+                                FeedbackSeverity.INFO
+                            )
+                        },
+                        onFailure = {
+                            feedback.show(
+                                String.format(java.util.Locale.US, importFailedPattern, it.message ?: ""),
+                                FeedbackSeverity.WARNING
+                            )
+                        }
+                    )
+                },
+                onFailure = {
+                    feedback.show(
+                        String.format(java.util.Locale.US, importFailedPattern, it.message ?: ""),
+                        FeedbackSeverity.WARNING
+                    )
+                }
+            )
+            // 导入缓存清理（保留注册表落盘的 bundle json，临时物即用即弃）
+            java.io.File(context.cacheDir, "claude-import").deleteRecursively()
+        }
+    }
+>>>>>>> origin/main
 
     // 锚点纵坐标（窗口系；翻转判定用）
     var anchorTopInWindow by remember { mutableStateOf(Float.MAX_VALUE) }
@@ -304,9 +365,9 @@ private fun FusionCrownMenuPopup(
                                                         )
                                                         val skippedNote =
                                                             if (act.skipped.isEmpty()) ""
-                                                            else String.format(skippedPattern, act.skipped.size)
+                                                            else String.format(java.util.Locale.US, skippedPattern, act.skipped.size)
                                                         feedback.show(
-                                                            String.format(activatedPattern, act.bundleName) + skippedNote,
+                                                            String.format(java.util.Locale.US, activatedPattern, act.bundleName) + skippedNote,
                                                             FeedbackSeverity.INFO
                                                         )
                                                         onDismiss()
@@ -330,7 +391,7 @@ private fun FusionCrownMenuPopup(
                                                 }
                                                 .onSuccess {
                                                     feedback.show(
-                                                        String.format(deactivatedPattern, digest.name),
+                                                        String.format(java.util.Locale.US, deactivatedPattern, digest.name),
                                                         FeedbackSeverity.INFO
                                                     )
                                                 }
@@ -346,10 +407,10 @@ private fun FusionCrownMenuPopup(
                                                 controller.installMembers(digest.id).fold(
                                                     onSuccess = { report ->
                                                         val note = if (report.skipped.isEmpty()) ""
-                                                        else String.format(skippedPattern, report.skipped.size)
+                                                        else String.format(java.util.Locale.US, skippedPattern, report.skipped.size)
                                                         feedback.show(
                                                             String.format(
-                                                                installedPattern, report.bundleName,
+                                                                java.util.Locale.US, installedPattern, report.bundleName,
                                                                 report.installedSkills.size,
                                                                 report.configuredServers.size +
                                                                     report.connectedServers.size,
