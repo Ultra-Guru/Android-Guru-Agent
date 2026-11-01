@@ -283,15 +283,19 @@ class CodeStreamSession {
                     // 全程空白回复（纯工具调用轮）：移除空气泡而非留白
                     removeEntry(cur.id)
                 } else {
-                    // ═══ 一致性修复（对齐 Agent 屏 AgentChatEventApplier 同款）═══
-                    // 引擎 contentBuilder 每轮迭代局部重建（ReAct 多轮只带
-                    // 末轮文本），完成事件用 fullText 整体覆写会把跨轮累积
-                    // 的气泡截成末轮残句（用户实测：多轮工具调用后结论
-                    // 只剩末轮两三个字）。UI 已流式累积的文本才是用户看到
-                    // 的全文；fullText 仅在 UI 侧为空时兑底（反思修正轮等
-                    // 文本可能从未流经 UI，避免落空气泡）。
-                    val finalText = cur.text.ifBlank { event.fullText }
-                    replaceEntry(cur.id, cur.copy(text = finalText, isStreaming = false))
+                    // ═══ P0 不丢字（reconcileStreamText 仲裁，2026-11 修订）═══
+                    // 历史包袱已消除：旧实现跨轮共用一条气泡时 fullText（末轮
+                    // 文本）覆写会截断跨轮累积（用户实测回归）——气泡按轮分立
+                    // 后，fullText 即本气泡的权威全文。TaskRuntime 高水位丢弃
+                    // ResponseChunk 的契约（「丢过程不丢结果」）依赖此处按
+                    // fullText 回填：缺尾/缺口一律以引擎全文修复。
+                    replaceEntry(
+                        cur.id,
+                        cur.copy(
+                            text = reconcileStreamText(cur.text, event.fullText),
+                            isStreaming = false
+                        )
+                    )
                 }
                 streamingAssistant = null
             }

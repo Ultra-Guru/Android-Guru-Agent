@@ -100,4 +100,31 @@ class CodeStreamModelsTest {
         assertEquals("", snap.terminalContent)
         assertTrue(snap.affectedFiles.isEmpty())
     }
+
+    @Test
+    fun `reconcile fullText wins when non-blank`() {
+        // 水位丢 chunk 契约：fullText 是引擎权威全文（缺尾/缺口都修复）
+        assertEquals(
+            "今天上海的天气很好",
+            reconcileStreamText(accumulated = "今天的", fullText = "今天上海的天气很好")
+        )
+        assertEquals(
+            "完整回复",
+            reconcileStreamText(accumulated = "完整回", fullText = "完整回复")
+        )
+        assertEquals("全文", reconcileStreamText(accumulated = "", fullText = "全文"))
+    }
+
+    @Test
+    fun `reconcile blank fullText keeps accumulated`() {
+        // 反思修正轮等文本从未流经引擎累积器：fullText 空串不得清空 UI
+        assertEquals("用户看到的文本", reconcileStreamText("用户看到的文本", ""))
+        assertEquals("", reconcileStreamText("", ""))
+    }
+
+    @Test
+    fun `reconcile equal inputs stable`() {
+        val t = "同一段文本"
+        assertEquals(t, reconcileStreamText(t, t))
+    }
 }

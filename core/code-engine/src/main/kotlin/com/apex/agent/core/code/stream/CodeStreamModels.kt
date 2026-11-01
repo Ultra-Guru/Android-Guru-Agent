@@ -82,6 +82,26 @@ sealed interface ToolKind {
 }
 
 /**
+ * 流式回复收束一致性仲裁（Streaming Pipeline 2.0 · P0 不丢字）：
+ * TaskRuntime 高水位会丢弃 [com.apex.agent.core.engine.AgentEvent.ResponseChunk]
+ * 过程事件（isDroppableUnderPressure），其契约是「最终文本由 ResponseComplete
+ * 的 fullText 全量携带」——UI 收束时必须据此回填，否则被丢的 chunk 永久缺字。
+ *
+ * 仲裁规则（按气泡粒度，引擎 contentBuilder 每轮迭代局部重建、气泡已按轮
+ * 分立，fullText 即本气泡的权威全文）：
+ * - fullText 空白 → 保留累积（反思修正轮等文本可能从未流经引擎累积器，
+ *   引擎发空 fullText 时 UI 看到的就是全部）；
+ * - 其余（含相等）→ **fullText 优先**：无论 UI 累积是缺尾（水位恰在收尾
+ *   前抬升）还是缺中（积压中途丢弃产生缺口），引擎全文都是无损真相。
+ *
+ * 历史：旧 UI 跨轮共用同一条气泡时 fullText（末轮文本）整体覆写会把跨轮
+ * 累积截成残句（用户实测回归）——该根源已随「气泡按轮分立」修复消除，
+ * fullText 优先自此安全。
+ */
+fun reconcileStreamText(accumulated: String, fullText: String): String =
+    if (fullText.isBlank()) accumulated else fullText
+
+/**
  * 胶囊状态机：waiting → running → 终态。
  *
  * 终态四值：success（干净成功）/ failed（失败，exitCode 或错误输出）/

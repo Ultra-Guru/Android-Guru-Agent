@@ -207,6 +207,9 @@ class CodeViewModel @Inject constructor(
     /** 渲染 ticker：运行期每 25ms 拉一次快照（≤40Hz 攒批）。 */
     private var renderJob: Job? = null
 
+    /** 回复聚合器（P1 Event Aggregator，类与纪律见 CodeResponseAggregator.kt）。 */
+    private val responseAggregator = ResponseAggregator()
+
     /** 当前绑定的会话归属工作区（null = 尚未绑定，不落盘）。 */
     internal var boundWorkspaceId: String? = null
 
@@ -683,11 +686,21 @@ class CodeViewModel @Inject constructor(
                         // v3 GOAL：验收结论不走思考卡（默认折叠只有 80 字预览，
                         // 且下一轮 ThinkingComplete 会整体覆写文本吞掉通知）
                         // → 注入系统行，时间轴常驻可见并随会话落盘。
+                        // 系统行插队前先冲回复缓冲（边界强制刷新，保顺序）。
+                        responseAggregator.flush { reduce(it) }
                         appendSystemMessage(event.text.trim())
                     } else {
                         streamSession.onEvent(event)
                     }
-                    reduce(event)
+                    when (event) {
+                        // P1 聚合：chunk 进缓冲由 ticker 批量归约；胶囊路径自批
+                        is AgentEvent.ResponseChunk -> responseAggregator.append(event.text)
+                        // 边界事件强制先冲文本再归约（保顺序，见 CodeResponseAggregator）
+                        else -> {
+                            responseAggregator.flush { reduce(it) }
+                            reduce(event)
+                        }
+                    }
                     // v1.6 工作区浏览器实时跟随：文件类工具事件 → 库控制器
                     //（callId 幂等去重在库内；浏览器未打开时仅进 feed，零开销）
                     workspaceKit.onAgentEvent(event)
@@ -700,6 +713,8 @@ class CodeViewModel @Inject constructor(
                 // 再进错误条 —— 裸英文堆栈串不再直出；本次运行可一键重试。
                 showError(sanitizeErrorText(e), retriable = true)
             } finally {
+                // 取消/收束：冲残留缓冲（先于 isStreaming 收口，冲入文本一并收口）
+                responseAggregator.flush { reduce(it) }
                 _uiState.update {
                     it.copy(
                         isRunning = false,
@@ -1151,6 +1166,7 @@ class CodeViewModel @Inject constructor(
         renderJob = viewModelScope.launch {
             while (isActive) {
                 delay(RENDER_TICK_MS)
+                responseAggregator.flush { reduce(it) } // P1 聚合冲刷（与胶囊快照同节拍）
                 streamSession.tick()?.let { snap ->
                     _uiState.update { it.copy(stream = snap) }
                 }
@@ -1174,7 +1190,10 @@ class CodeViewModel @Inject constructor(
     fun toolCallById(call: StreamToolCall): StreamToolCall = call
 
     private companion object {
-        /** 渲染攒批窗口：25ms = 上限 40Hz（规格书：脉冲式输出）。 */
+        /**
+         * 渲染攒批窗口：25ms = 上限 40Hz（规格书：脉冲式输出；Streaming
+         * Pipeline 2.0 目标带 16~33ms，25ms 兼顾流畅与低端机渲染压力）。
+         */
         const val RENDER_TICK_MS = 25L
     }
 }
