@@ -142,25 +142,9 @@ class HubSource(
 
     // ── 内部实现 ──
 
-    // JsonObject 安全取值：字段缺失 / 类型不符 / null 均返回安全默认
-    private fun JsonObject?.str(key: String): String? =
-        (this?.get(key) as? JsonPrimitive)?.contentOrNull
-
-    private fun JsonObject?.bool(key: String): Boolean? =
-        (this?.get(key) as? JsonPrimitive)?.booleanOrNull
-
-    private fun JsonObject.strings(key: String): List<String> =
-        (this.get(key) as? kotlinx.serialization.json.JsonArray)
-            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
-            .orEmpty()
-
-    private fun JsonObject.strMap(key: String): Map<String, String> {
-        val obj = this.get(key) as? JsonObject ?: return emptyMap()
-        return obj.entries.mapNotNull { (k, v) ->
-            (v as? JsonPrimitive)?.contentOrNull?.let { k to it }
-        }.toMap()
-    }
-
+    // #354 ⑤：实例级 str/bool/strings/strMap 四件套已删除 —— 解析逻辑全部在
+    // companion object 里（parseSkillEntry / parseMcpEntry 是 companion 成员），
+    // 实例级这四个函数零调用，属死代码。
     private fun hubUnavailableMessage(kind: String, detail: String? = null): String {
         val reason = detail?.let { "：$it" }.orEmpty()
         return "无法连接官方${if (kind == "mcp") " MCP " else " "}仓库（网络不可用或超时，" +
