@@ -148,7 +148,15 @@ class ClawHubSource(
             try {
                 httpClient.newCall(request).execute().use { resp ->
                     if (!resp.isSuccessful) {
-                        return@use Result.failure(Exception("HTTP ${resp.code}"))
+                        // #354 ④：安装失败的文案直接进 snackbar —— 只说状态码
+                        // 用户既不知道是哪个技能、也不知道是不是该重试。
+                        return@use Result.failure(
+                            Exception(
+                                "技能「${entry.slug}」安装包下载失败：HTTP ${resp.code}" +
+                                    "（若为 404 说明该技能已下架，可回列表刷新；" +
+                                    "5xx 或 429 请稍后重试）"
+                            )
+                        )
                     }
                     val body = resp.body ?: return@use Result.failure(Exception("空响应"))
                     val bytes = body.byteStream().use { it.readBytesLimited(MAX_ZIP_BYTES) }

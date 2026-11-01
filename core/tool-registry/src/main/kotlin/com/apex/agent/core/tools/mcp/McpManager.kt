@@ -426,7 +426,11 @@ class McpManager(
         // 于是一次 tools/list 超时就把该服务器已注册的一等工具全部注销。
         // 现在失败与"空清单"是两件事，调用方据此决定是否保留既有注册。
         val client = synchronized(lock) { clients[serverName] }
-            ?: return Result.failure(Exception("Server '$serverName' not connected"))
+            // #354 ④：文案经 MarketViewModel 的「工具发现失败：…」直达用户 ——
+            // 旧英文句子混在中文提示里，且没说用户能做什么。
+            ?: return Result.failure(
+                Exception("服务器「$serverName」未连接，无法列出工具；请先在该服务器的设置里连接后重试")
+            )
         return client.listTools()
     }
 
@@ -435,7 +439,10 @@ class McpManager(
      */
     suspend fun callTool(serverName: String, toolName: String, arguments: String): Result<McpToolResult> {
         val client = synchronized(lock) { clients[serverName] }
-            ?: return Result.failure(Exception("Server '$serverName' not connected"))
+            // #354 ④：同上 —— 工具调用失败会原样进模型上下文与用户提示。
+            ?: return Result.failure(
+                Exception("服务器「$serverName」未连接，无法调用工具「$toolName」；请先连接该服务器")
+            )
         return client.callTool(toolName, arguments)
     }
 
