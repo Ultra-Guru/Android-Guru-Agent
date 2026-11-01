@@ -99,8 +99,6 @@ fun SettingsScreen(
 
     var showProviders by remember { mutableStateOf(false) }
     var showRoles by remember { mutableStateOf(false) }
-    var testResult by remember { mutableStateOf<TestResult?>(null) }
-    var isTesting by remember { mutableStateOf(false) } // 修复：测试连接期间禁用按钮，防连点并发请求
 
     // Agent 设置统一更新入口
     val onAgent: (AgentSettings) -> Unit = { next -> viewModel.updateAgentSettings { next } }
@@ -176,32 +174,6 @@ fun SettingsScreen(
                         }
                     },
                     actions = {
-                        Button(
-                            onClick = {
-                                selected?.let {
-                                    scope.launch {
-                                        isTesting = true
-                                        try {
-                                            testResult = viewModel.testConnection(it.id)
-                                        } finally {
-                                            isTesting = false
-                                        }
-                                    }
-                                }
-                            },
-                            enabled = selected != null && !isTesting
-                        ) {
-                            if (isTesting) {
-                                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            } else {
-                                Icon(Icons.Outlined.Science, null, Modifier.size(18.dp))
-                            }
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                if (isTesting) stringResource(R.string.settings_testing)
-                                else stringResource(R.string.settings_test)
-                            )
-                        }
                     }
                 )
             }
@@ -257,21 +229,6 @@ fun SettingsScreen(
     }
     if (showRoles) {
         RolesDialog(roles, profiles, viewModel) { showRoles = false }
-    }
-    testResult?.let { r ->
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { testResult = null },
-            confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { testResult = null }) { Text(stringResource(R.string.settings_dialog_ok)) }
-            },
-            title = {
-                Text(
-                    if (r.success) stringResource(R.string.settings_conn_success)
-                    else stringResource(R.string.settings_conn_failed)
-                )
-            },
-            text = { Text(r.message) }
-        )
     }
 }
 

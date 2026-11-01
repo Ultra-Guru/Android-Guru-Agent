@@ -25,6 +25,9 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -58,6 +61,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -149,6 +153,10 @@ internal fun ModelSetupCard(
     // 删除 / 重置参数的确认框（自 SettingsScreen.ModelsSection 迁入）
     var deleteTarget by remember { mutableStateOf<ModelProfile?>(null) }
     var resetTarget by remember { mutableStateOf<ModelProfile?>(null) }
+
+    // 测试连接状态
+    var testingConn by remember { mutableStateOf(false) }
+    var connResult by remember { mutableStateOf<TestResult?>(null) }
 
     val scope = rememberCoroutineScope()
 
@@ -565,6 +573,85 @@ internal fun ModelSetupCard(
             Text(stringResource(R.string.model_capabilities), style = MaterialTheme.typography.labelMedium)
             CapabilityEditor(sel.capabilities) { caps ->
                 viewModel.upsertProfile(sel.copy(capabilities = caps))
+            }
+
+            // ── 测试连接 ──
+            OutlinedButton(
+                enabled = sel.modelId.isNotBlank() && baseUrl.startsWith("http") && !testingConn,
+                onClick = {
+                    testingConn = true
+                    connResult = null
+                    scope.launch {
+                        try {
+                            // 测试前冲刷防抖中的 URL/Key
+                            flushEdits()
+                            connResult = viewModel.testConnection(sel.id)
+                        } finally {
+                            testingConn = false
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (testingConn) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.settings_testing))
+                } else {
+                    Icon(Icons.Outlined.Science, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.settings_test_connection))
+                }
+            }
+
+            // ── 连接信息 ──
+            connResult?.let { r ->
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (r.success) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.errorContainer
+                        }
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                if (r.success) Icons.Default.CheckCircle
+                                else Icons.Default.Error,
+                                null,
+                                tint = if (r.success) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.error
+                                },
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                if (r.success) stringResource(R.string.settings_conn_success)
+                                else stringResource(R.string.settings_conn_failed),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (r.success) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.error
+                                }
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            r.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
         }
     }
