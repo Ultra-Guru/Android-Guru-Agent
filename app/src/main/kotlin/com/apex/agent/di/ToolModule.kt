@@ -455,6 +455,7 @@ object ToolModule {
         browserAgentTools: BrowserAgentTools,
         browserSessionTools: BrowserSessionTools,
         browserLayoutTools: com.apex.agent.platform.browser.BrowserLayoutTools,
+        browserAsyncTools: com.apex.agent.platform.browser.BrowserAsyncTools,
         fusionController: com.apex.agent.fusion.FusionBundleController,
         // T76: Linux environment productionization 依赖
         linuxEnvironmentHealth: LinuxEnvironmentHealth,
@@ -771,7 +772,10 @@ object ToolModule {
         registry.register(SafeAgentTool(DownloadFileTool(httpClient, downloadDir)))
 
         // ═══ 3.5 内置浏览器自动化 (34) ═══
-        registerBrowserTools(registry, browserAgentTools, browserSessionTools, browserLayoutTools)
+        registerBrowserTools(
+            registry, browserAgentTools, browserSessionTools, browserLayoutTools,
+            browserAsyncTools = browserAsyncTools,
+        )
 
         // ═══ 4. 记忆 (apex-kit-memory 库经 platform:memory-host 接线) ═══
         // 旧 FileMemoryStore/MemorizeTool/RecallTool/ForgetTool 已移除；
