@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.CircleShape
@@ -64,14 +65,23 @@ enum class CodePanel {
  * 屏底自动向上翻）；再点按钮或点空白关闭；展开/收起图标随状态旋转。
  * 菜单项点击不直接干活，而是经 [onPanelChange] 请求 [CodeScreen] 打开
  * 对应原面板（弹层锚点统一挂在展开按钮处）。
+ *
+ * 激活态标识（2026-11 完善）：四件已收进菜单的工具各自携带生效状态
+ * （GitHub 已连 / 王冠激活 / 小圆环有开关 / 功能聚合计数）——菜单项
+ * 尾部状态点 + 按钮底色泛光，收起后也能一眼看到「有工具在生效」。
  */
 @Composable
 fun ToolbenchExpandButton(
     activePanel: CodePanel?,
     onPanelChange: (CodePanel?) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    githubConnected: Boolean = false,
+    fusionActive: Boolean = false,
+    toolkitActive: Boolean = false,
+    neonActiveCount: Int = 0
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    val anyActive = githubConnected || fusionActive || toolkitActive || neonActiveCount > 0
     val cd = stringResource(R.string.code_toolbench_cd)
     val rotation by animateFloatAsState(
         targetValue = if (menuOpen) 180f else 0f,
@@ -83,7 +93,7 @@ fun ToolbenchExpandButton(
         modifier = modifier
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             .background(
-                color = if (menuOpen || activePanel != null) {
+                color = if (menuOpen || activePanel != null || anyActive) {
                     MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                 } else {
                     MaterialTheme.colorScheme.surfaceContainerHigh
@@ -100,7 +110,7 @@ fun ToolbenchExpandButton(
         Icon(
             imageVector = Icons.Default.ExpandLess,
             contentDescription = null,
-            tint = if (menuOpen || activePanel != null) MaterialTheme.colorScheme.primary
+            tint = if (menuOpen || activePanel != null || anyActive) MaterialTheme.colorScheme.primary
             else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .size(20.dp)
@@ -127,6 +137,7 @@ fun ToolbenchExpandButton(
                 leadingIcon = {
                     Icon(Icons.Default.Build, null, modifier = Modifier.size(18.dp))
                 },
+                trailingIcon = { StatusDot(visible = fusionActive) },
                 onClick = {
                     menuOpen = false
                     onPanelChange(CodePanel.FUSION)
@@ -141,6 +152,7 @@ fun ToolbenchExpandButton(
                         modifier = Modifier.size(18.dp)
                     )
                 },
+                trailingIcon = { StatusDot(visible = githubConnected) },
                 onClick = {
                     menuOpen = false
                     onPanelChange(CodePanel.GITHUB)
@@ -151,13 +163,22 @@ fun ToolbenchExpandButton(
                 leadingIcon = {
                     Icon(Icons.Default.Tune, null, modifier = Modifier.size(18.dp))
                 },
+                trailingIcon = { StatusDot(visible = toolkitActive) },
                 onClick = {
                     menuOpen = false
                     onPanelChange(CodePanel.TOOLKIT)
                 }
             )
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.code_toolbench_neon)) },
+                text = {
+                    Text(
+                        if (neonActiveCount > 0) {
+                            stringResource(R.string.code_toolbench_neon_n, neonActiveCount)
+                        } else {
+                            stringResource(R.string.code_toolbench_neon)
+                        }
+                    )
+                },
                 leadingIcon = {
                     Icon(Icons.Default.Extension, null, modifier = Modifier.size(18.dp))
                 },
@@ -168,4 +189,16 @@ fun ToolbenchExpandButton(
             )
         }
     }
+}
+
+/** 菜单项尾部状态点：该工具面板内有生效项时点亮（7dp 主色圆）。 */
+@Composable
+private fun StatusDot(visible: Boolean) {
+    if (!visible) return
+    Box(
+        modifier = Modifier
+            .padding(horizontal = 6.dp)
+            .size(7.dp)
+            .background(color = MaterialTheme.colorScheme.primary, shape = CircleShape)
+    )
 }

@@ -62,6 +62,7 @@ import com.apex.agent.ui.component.SkillChipInputField
 import com.apex.agent.ui.component.SlashMenuProvider
 import com.apex.agent.ui.component.FusionCodingBanner
 import com.apex.agent.ui.component.FusionCodingButton
+import com.apex.agent.ui.component.rememberFusionBundleController
 import com.apex.agent.ui.component.rememberSlashMenuProvider
 import com.apex.agent.ui.chatkit.CODING_SCREEN_MODES
 import com.apex.agent.ui.chatkit.AgentModeSelector
@@ -894,10 +895,25 @@ private fun CodeInputBar(
                 WebSearchMenuButton(toolkit = toolkit, mcpManager = mcpManager)
 
                 // ═══ 展开 ▲：第 3 位 + 五件套弹层锚点（宿主见 ToolbenchPanelHost.kt）═══
+                // 激活态徽标数据源：GitHub 连接态 / 王冠激活包 / 小圆环任一
+                // 开关 / 功能聚合计数 —— 收进菜单的工具在收起后仍可见生效
+                val githubState by githubTokenManager.connectionState.collectAsStateWithLifecycle()
+                val fusionActive by rememberFusionBundleController()
+                    .activeBundle.collectAsStateWithLifecycle()
+                val toolkitActive = toolkitState.webSearchEnabled || toolkitState.timeEnabled ||
+                    toolkitState.selectedFunctionIds.isNotEmpty() ||
+                    toolkitState.outputFormat != OutputFormat.NONE ||
+                    toolkitState.rules.any { it.enabled }
+                val neonActiveCount = neonOrbStore?.state
+                    ?.collectAsStateWithLifecycle()?.value?.activeCount ?: 0
                 Box {
                     ToolbenchExpandButton(
                         activePanel = activePanel,
-                        onPanelChange = { activePanel = it }
+                        onPanelChange = { activePanel = it },
+                        githubConnected = githubState.isConnected,
+                        fusionActive = fusionActive != null,
+                        toolkitActive = toolkitActive,
+                        neonActiveCount = neonActiveCount
                     )
                     CodeToolbenchPanels(
                         activePanel = activePanel,
