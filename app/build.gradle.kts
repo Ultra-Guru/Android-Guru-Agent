@@ -55,6 +55,7 @@ android {
     defaultConfig {
         applicationId = "com.apex.agent"
         minSdk = 26
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // ── 真机红线修复：targetSdk 必须 ≤ 28 ─────────────────────────────
         // targetSdk ≥ 29 的 app 运行在 SELinux untrusted_app 域，Android 10 起
         // 该域禁止 execute app_data_file（W^X 强制）：
@@ -308,6 +309,8 @@ dependencies {
     // Unit testing (pure-JVM src/test)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
 
 // 依赖锁定：固定已解析版本，避免 JitPack/EasyFloat 在不同时刻解析到不同工件，提升 CI 复现性
