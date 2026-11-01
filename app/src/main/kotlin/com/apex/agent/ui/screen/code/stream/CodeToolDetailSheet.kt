@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
+import com.apex.agent.ui.component.MarkdownText
 import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.core.code.stream.ToolCallStatus
 import com.apex.agent.core.code.stream.ToolKind
@@ -291,9 +292,15 @@ private fun TerminalDetailBody(
 ) {
     Text(
         text = stringResource(
-            if (call.kind == ToolKind.BASH || call.kind == ToolKind.GIT)
-                R.string.code_stream_detail_terminal_title
-            else R.string.code_stream_detail_output_title
+            when {
+                call.kind == ToolKind.BASH || call.kind == ToolKind.GIT ->
+                    R.string.code_stream_detail_terminal_title
+                // 网络搜索族：结果是 LLM 优化的 Markdown（标题+链接列表），
+                // 走主题化 Markdown 渲染而非等宽代码块（2026-11 专属流水式）
+                call.kind == ToolKind.WEB_SEARCH ->
+                    R.string.code_stream_detail_search_title
+                else -> R.string.code_stream_detail_output_title
+            }
         ),
         style = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.SemiBold,
@@ -303,6 +310,24 @@ private fun TerminalDetailBody(
     val raw = terminalFallback?.takeIf { it.isNotBlank() } ?: call.logTail
     val text = remember(raw) { stripTerminalAnsi(raw) }
     val scroll = rememberScrollState()
+    if (call.kind == ToolKind.WEB_SEARCH) {
+        // 搜索结果主题化渲染：标题/列表/链接在浅色表面卡上直接可读
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 480.dp)
+        ) {
+            MarkdownText(
+                markdown = text.ifBlank { stringResource(R.string.code_stream_terminal_empty) },
+                modifier = Modifier
+                    .verticalScroll(scroll)
+                    .padding(10.dp)
+            )
+        }
+        return
+    }
     Surface(
         shape = RoundedCornerShape(10.dp),
         color = Color(0xFF101418),

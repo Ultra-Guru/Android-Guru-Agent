@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Timelapse
 import androidx.compose.material3.Icon
@@ -478,6 +479,8 @@ internal fun capsuleStyle(kind: ToolKind): CapsuleStyle = when (kind) {
         Icons.Default.Search,
         MaterialTheme.colorScheme.secondary
     )
+    // 网络搜索（天蓝——与本地 grep 的 secondary 拉开：查的是网页不是代码）
+    ToolKind.WEB_SEARCH -> CapsuleStyle(Icons.Default.Public, Color(0xFF0EA5E9))
     ToolKind.BASH -> CapsuleStyle(Icons.Default.Terminal, Color(0xFF7C3AED))
     ToolKind.GIT -> CapsuleStyle(Icons.Default.FolderOpen, Color(0xFF6E7681))
     ToolKind.LINT -> CapsuleStyle(Icons.Default.Bolt, Color(0xFFD97706))

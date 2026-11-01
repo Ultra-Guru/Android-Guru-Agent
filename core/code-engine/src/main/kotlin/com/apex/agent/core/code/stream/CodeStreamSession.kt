@@ -680,7 +680,7 @@ class CodeStreamSession {
             logTail = logTail,
             diffText = diff?.takeIf { it.hunks.isNotEmpty() }?.let { event.fullOutput.ifBlank { event.output } },
             progressPercent = null,
-            summary = summaryOf(status, diff, exitCode, event.output),
+            summary = summaryOf(existing.kind, status, diff, exitCode, event.output),
             // 终态即收回实时代码窗（自动折叠为单行胶囊；详情看 diff/日志）
             streamingPreview = null
         )
@@ -1045,6 +1045,7 @@ class CodeStreamSession {
     }
 
     private fun summaryOf(
+        kind: ToolKind,
         status: ToolCallStatus,
         diff: UnifiedDiffParser.ParsedDiff?,
         exitCode: Int?,
@@ -1057,6 +1058,13 @@ class CodeStreamSession {
             structuredFailureSummary(output, exitCode)?.let { return it }
             val line = output.lineSequence().firstOrNull { it.isNotBlank() } ?: "失败"
             return line.take(SUMMARY_MAX)
+        }
+        // 网络搜索族（2026-11 搜索专属流水式输出）：输出里数来源链接
+        //（内置 JSON 信封与 MCP 的 LLM 优化 Markdown 都含 url），给
+        // 「网页搜索 · N 条来源」结构化摘要，替代裸输出首行
+        if (kind == ToolKind.WEB_SEARCH && status == ToolCallStatus.SUCCESS) {
+            val sources = SOURCE_LINK_REGEX.findAll(output).distinct().count()
+            return if (sources > 0) "网页搜索 · $sources 条来源" else "网页搜索完成"
         }
         diff?.let { d ->
             if (d.hunks.isNotEmpty()) return "+${d.totalAdded} −${d.totalRemoved} · ${d.hunks.size} hunk"
@@ -1099,5 +1107,8 @@ class CodeStreamSession {
         const val ABORTED_TEXT = "已中止"
         val EXIT_CODE_REGEX = Regex("""(?:exit(?:\s+code)?|Exit:)[:\s]+(\d+)\b""", RegexOption.IGNORE_CASE)
         val ENTRY_SEQ_REGEX = Regex("""(?:^|-)e-(\d+)$""")
+
+        /** 网络搜索结果来源链接（去重计数用；截到右括号/引号前，容 markdown/JSON 两种形态）。 */
+        val SOURCE_LINK_REGEX = Regex("""https?://[^\s\)\]>"']+""")
     }
 }
