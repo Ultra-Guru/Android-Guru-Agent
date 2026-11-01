@@ -5,8 +5,10 @@ import com.apex.agent.core.code.CodeContextProvider
 import com.apex.agent.core.code.CodeConversationMemory
 import com.apex.agent.core.code.CodeEngineFacade
 import com.apex.agent.core.code.CodePrompts
+import com.apex.agent.core.code.KitRequestSanitizer
 import com.apex.agent.core.code.RulesProvider
 import com.apex.agent.core.code.StandardTextKernel
+import com.apex.agent.core.code.loadNormalized
 import com.apex.agent.core.code.subagent.SubAgentSettings
 import com.apex.agent.core.code.thinking.CodeThinkingLevel
 import com.apex.agent.core.engine.AgentEngine
@@ -17,7 +19,6 @@ import com.apex.agent.core.engine.PlanStep
 import com.apex.agent.core.engine.RiskLevel
 import com.apex.agent.core.engine.UserInput
 import com.apex.agent.core.engine.InputType
-import com.apex.agent.core.engine.task.DanglingToolCallRepair
 import com.apex.agent.core.llm.LlmMessage
 import com.apex.agent.core.llm.ToolChoiceSpec
 import com.apex.agent.core.llm.runtime.LlmRequestContext
@@ -192,7 +193,12 @@ class StandardKitAdapter(
         ): Flow<KitStreamChunk> =
             runtime.chatStream(
                 context = requestContext(contextTag),
-                messages = messages.map { it.toLlmMessage() },
+                // 请求出站消毒：库引擎内存态 session 可能在「中止后继续」场景下
+                // 携带悬空 tool_calls（硬取消绕过库内补齐路径）——在此归一化，
+                // 深潜线 buildMessages 同款纯函数修补（见 KitRequestSanitizer KDoc）。
+                messages = KitRequestSanitizer.sanitize(
+                    messages.map { it.toLlmMessage() }, LOG_TAG
+                ),
                 tools = tools.map { it.toToolDefinition() },
                 temperature = options.temperature,
                 maxTokens = options.maxTokens,
@@ -223,7 +229,10 @@ class StandardKitAdapter(
         ): KitChatResponse =
             runtime.chat(
                 context = requestContext(contextTag),
-                messages = messages.map { it.toLlmMessage() },
+                // 压缩摘要等非流式请求同样消毒（携悬空配对的历史摘要也会 400）
+                messages = KitRequestSanitizer.sanitize(
+                    messages.map { it.toLlmMessage() }, LOG_TAG
+                ),
                 temperature = temperature,
                 maxTokens = maxTokens
             ).let { response ->
@@ -324,10 +333,11 @@ class StandardKitAdapter(
         // 工具执行中被中止（stop/进程被杀/提问等待中退出）→ 末尾留下无
         // 配对的 Assistant.toolCalls → 恢复后每个后续请求都 400
         // （"tool_calls must be followed by tool messages"）→ 会话级报废。
-        // 深潜线在 buildMessages 逐请求修补；标准线在 KitMemory.load
-        // 这个单一入口归一化 + 回写，成本同样是无悬空零开销。
+        // 深潜线在 buildMessages 逐请求修补；标准线双保险：load 入口归一化
+        // （下行 loadNormalized）+ 请求出站消毒（RuntimeModelClient 内
+        // KitRequestSanitizer——库引擎内存态残局也拦截）。
         override fun load(): List<KitMessage> =
-            memory.loadNormalized().map { it.toKitMessage() }
+            memory.loadNormalized(LOG_TAG).map { it.toKitMessage() }
 
         override fun clear() = memory.clear()
         override fun count(): Int = memory.count()
@@ -474,6 +484,9 @@ class StandardKitAdapter(
 
         /** env 块的平台行（与 PRoot Ubuntu 沙箱宿主一致）。 */
         private const val PLATFORM_TEXT = "Android with a PRoot Ubuntu sandbox"
+
+        /** 请求消毒/加载归一化留痕日志的调用方标签。 */
+        private const val LOG_TAG = "StandardKitAdapter"
     }
 }
 
@@ -658,25 +671,7 @@ private fun com.apex.standardkit.loop.KitInputType.toHost(): InputType = when (t
     com.apex.standardkit.loop.KitInputType.CHOICE -> InputType.CHOICE
 }
 
-// ═══ 标准线加载归一化（悬空 toolCall 自愈，见 MemoryAdapter.load 注释）═══
-
-/**
- * 读取 + 归一化：悬空修补（[DanglingToolCallRepair]）有动作时同步回写
- * 落盘记忆，返回可直接发送的干净历史。无悬空零开销、幂等可重入。
- */
-internal fun CodeConversationMemory.loadNormalized(): List<LlmMessage> {
-    val history = load()
-    val report = DanglingToolCallRepair.repair(history)
-    if (!report.hasRepairs) return history
-    save(report.repairedHistory)
-    AppLogger.instance.warn(
-        LogCategory.ENGINE, "StandardKitAdapter",
-        "standard-line history normalized on load: " +
-            "${report.repairedCallIds.size} synthesized, " +
-            "${report.movedCallIds.size} moved back, " +
-            "${report.droppedToolResultIds.size} orphan toolResults dropped, " +
-            "${report.strippedCallIds.size} duplicate declarations stripped",
-        tags = arrayOf("dangling-repair")
-    )
-    return report.repairedHistory
-}
+// ═══ 标准线加载归一化（悬空 toolCall 自愈）═══
+// loadNormalized 扩展已上收共享（com.apex.agent.core.code 包
+// KitRequestSanitizer.kt）：织造/信使线 MemoryAdapter 同缺陷复用同入口，
+// 原私有实现删除（行为契约见 StandardHistoryNormalizationTest）。

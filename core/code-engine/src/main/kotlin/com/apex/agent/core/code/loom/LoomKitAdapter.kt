@@ -5,8 +5,10 @@ import com.apex.agent.core.code.CodeContextProvider
 import com.apex.agent.core.code.CodeConversationMemory
 import com.apex.agent.core.code.CodeEngineFacade
 import com.apex.agent.core.code.CodePrompts
+import com.apex.agent.core.code.KitRequestSanitizer
 import com.apex.agent.core.code.RulesProvider
 import com.apex.agent.core.code.StandardTextKernel
+import com.apex.agent.core.code.loadNormalized
 import com.apex.agent.core.code.thinking.CodeThinkingLevel
 import com.apex.agent.core.engine.AgentEngine
 import com.apex.agent.core.engine.AgentEvent
@@ -406,7 +408,12 @@ class LoomKitAdapter(
             maxTokens: Int
         ): Flow<WeaveStreamChunk> = runtime.chatStream(
             context = requestContext(contextTag),
-            messages = messages.map { it.toHost() },
+            // 请求出站消毒（与标准线同款）：中止后继续场景下库引擎内存态可能
+            // 携带悬空 tool_calls —— 在此归一化，保证出站请求配对协议恒成立
+            //（见 KitRequestSanitizer KDoc 的缺陷链路复盘）。
+            messages = KitRequestSanitizer.sanitize(
+                messages.map { it.toHost() }, TAG
+            ),
             tools = tools.map { it.toHost() },
             temperature = temperature,
             maxTokens = maxTokens
@@ -419,7 +426,10 @@ class LoomKitAdapter(
             maxTokens: Int
         ): WeaveModelResponse = runtime.chat(
             context = requestContext(contextTag),
-            messages = messages.map { it.toHost() },
+            // digest 压缩等非流式请求同样消毒（携悬空配对的历史摘要也会 400）
+            messages = KitRequestSanitizer.sanitize(
+                messages.map { it.toHost() }, TAG
+            ),
             temperature = temperature,
             maxTokens = maxTokens
         ).toWeave()
@@ -481,7 +491,11 @@ class LoomKitAdapter(
 
     /** 记忆端口：CodeConversationMemory（独立通道 code_memory_loom）。 */
     private class MemoryAdapter(private val memory: CodeConversationMemory) : LoomMemory {
-        override fun load(): List<WeaveMessage> = memory.load().map { it.toWeave() }
+        // 加载归一化（与标准线同款）：中止/被杀残留的悬空 toolCalls 在 load
+        // 入口修补并回写——旧实现纯 load，同一 400 会话级报废缺陷在重启恢复
+        // 路径上复现（见 KitRequestSanitizer KDoc）。
+        override fun load(): List<WeaveMessage> =
+            memory.loadNormalized(TAG).map { it.toWeave() }
         override fun append(message: WeaveMessage) = memory.append(message.toHost())
         override fun save(messages: List<WeaveMessage>) =
             memory.save(messages.map { it.toHost() })

@@ -7,6 +7,7 @@ import com.apex.agent.core.engine.AgentEngine
 import com.apex.agent.core.engine.AgentEvent
 import com.apex.agent.core.engine.AgentMode
 import com.apex.agent.core.engine.UserInput
+import com.apex.agent.core.engine.UserQuestionGateway
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
 import java.io.File
@@ -52,7 +53,16 @@ class DualLogicCodeEngine(
     /** 织造线（经纬交织范式）。 */
     private val loom: CodeEngineFacade? = null,
     /** 信使线（驿传调度范式）。 */
-    private val courier: CodeEngineFacade? = null
+    private val courier: CodeEngineFacade? = null,
+    /**
+     * #395 同款中止收口（四线统一）：宿主侧工具门（权限门/风险门/提问工具）
+     * 在工具 execute() 内部挂起在自己的 deferred 上——深潜线原本由
+     * ApexAgentEngine.abort 内部收口，kit 三线（标准/织造/信使）无同等
+     * 接线，中止后提问卡残留 UI（用户点「继续」把答案投给已死任务）。
+     * 在本统一路由层前置收口，四线一次覆盖；幂等（深潜线内层二次调用
+     * 时 deferred 已清，返回 false 零副作用）。
+     */
+    private val userQuestionGateway: UserQuestionGateway? = null
 ) : AgentEngine, CodeEngineFacade {
 
     @Volatile
@@ -102,7 +112,12 @@ class DualLogicCodeEngine(
 
     override fun execute(input: UserInput): Flow<AgentEvent> = active.execute(input)
 
-    override suspend fun abort() = active.abort()
+    override suspend fun abort() {
+        // 先收口宿主侧挂起提问，再路由引擎中止：工具门挂起的 deferred 若不
+        // 唤醒，硬取消后提问卡残留在 UI 上（见构造参数 KDoc）。
+        userQuestionGateway?.abortActiveQuestion()
+        active.abort()
+    }
 
     override fun submitUserInput(answer: String) = active.submitUserInput(answer)
 

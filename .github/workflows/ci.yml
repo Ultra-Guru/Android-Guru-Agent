@@ -243,6 +243,21 @@ jobs:
             $(find core/code-engine/src/main/kotlin -name "*.kt") \
             -jvm-target 17
 
+      - name: Kit request sanitizer regression tests
+        run: |
+          # 中止后继续的悬空 toolCall 400 自愈回归（KitRequestSanitizer）：
+          # kit 三线（标准/织造/信使）请求出站消毒的行为契约 —— 悬空合成 /
+          # 中部配对修复（中止后继续场景）/ 孤儿丢弃 / 幂等 / 协议形态校验。
+          # friend-paths 让测试编译可见 main 编译的 internal 声明（Gradle
+          # test 同款语义），junit/hamcrest 由前置步骤已下载进 /tmp/apex-libs。
+          set -euo pipefail
+          CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')/tmp/build/code-engine:/tmp/build/standard-loop:/tmp/build/loom-weave:/tmp/build/courier-dispatch:/tmp/build/agent-engine:/tmp/build/tool-registry:/tmp/build/llm-adapter:/tmp/build/logging"
+          kotlinc -Xfriend-paths=/tmp/build/code-engine -cp "$CLASSPATH" -d /tmp/build/code-engine-tests \
+            core/code-engine/src/test/kotlin/com/apex/agent/core/code/KitRequestSanitizerTest.kt \
+            -jvm-target 17
+          java -cp "/tmp/build/code-engine:/tmp/build/code-engine-tests:$CLASSPATH" org.junit.runner.JUnitCore \
+            com.apex.agent.core.code.KitRequestSanitizerTest
+
       - name: Compile platform:code-workspace (编码工作区管理)
         run: |
           SER_PLUGIN=$HOME/kotlinc/lib/kotlinx-serialization-compiler-plugin.jar
