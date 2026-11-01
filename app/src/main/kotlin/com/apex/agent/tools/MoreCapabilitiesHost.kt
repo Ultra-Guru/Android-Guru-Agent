@@ -348,12 +348,10 @@ class AlarmSetter(private val context: Context) {
 /**
  * 文件选择器——经 SAF (ACTION_OPEN_DOCUMENT)。
  *
- * **注意**：本实现是 fire-and-forget——返回 SAF picker 启动结果，但 URIs
- * 不通过工具结果回传。Agent 拿到结果后，可经 [shell] / [TerminalWrite]
- * 命令用户复制文件（用户也可在 SAF UI 内手动选文件）。
- *
- * 完整 Activity Result API 接入需要宿主 Activity 注册 launcher——本实现
- * 走简化版：仅触发 SAF UI，URIs 通过广播或后续调用查询。
+ * #343：真实 Activity Result 契约——经 [MediaResultBroker] 蹦床等待宿主回传，
+ * RESULT_OK 时把用户真实选中的 URIs + 显示名（OpenableColumns.DISPLAY_NAME）
+ * 原样上抛；取消 / 超时返回空清单（诚实结果，不再是「SAF picker launched」
+ * 占位假名）。
  */
 class FilePicker(private val context: Context) {
     suspend fun pick(mimeType: String, allowMultiple: Boolean): FilePickTool.FilePickResult =
@@ -365,54 +363,109 @@ class FilePicker(private val context: Context) {
                     if (allowMultiple) {
                         putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
                     }
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-                val chooser = Intent.createChooser(intent, "Pick file").apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                val host = MediaResultBroker.awaitResult(context, intent)
+                    ?: return@withContext FilePickTool.FilePickResult(
+                        uris = emptyList(),
+                        displayNames = emptyList()
+                    )
+                if (host.resultCode != android.app.Activity.RESULT_OK) {
+                    // 用户取消 / 宿主失败：诚实空结果，不伪装成功
+                    return@withContext FilePickTool.FilePickResult(uris = emptyList())
                 }
-                context.startActivity(chooser)
+                val uris = extractPickedUris(host.data)
+                if (uris.isEmpty()) {
+                    return@withContext FilePickTool.FilePickResult(uris = emptyList())
+                }
                 FilePickTool.FilePickResult(
-                    uris = emptyList(),
-                    displayNames = listOf("SAF picker launched — waiting for user selection")
+                    uris = uris.map { it.toString() },
+                    displayNames = uris.map { queryDisplayName(it) },
+                    mimeTypes = uris.map { context.contentResolver.getType(it) ?: "" }
                 )
             } catch (e: Exception) {
                 AppLogger.instance.warn(LogCategory.PLUGIN, "FilePicker", "pick failed: ${e.message}")
                 FilePickTool.FilePickResult(uris = emptyList())
             }
         }
+
+    /** SAF 结果里可能单选（data）或多选（clipData），全量提取。 */
+    private fun extractPickedUris(data: Intent?): List<Uri> {
+        if (data == null) return emptyList()
+        val out = mutableListOf<Uri>()
+        data.data?.let { out += it }
+        val clip = data.clipData ?: return out.toList()
+        for (i in 0 until clip.itemCount) {
+            clip.getItemAt(i).uri?.let { out += it }
+        }
+        return out.toList()
+    }
+
+    /** 显示名：OpenableColumns.DISPLAY_NAME 查询，查不到退化 lastPathSegment。 */
+    private fun queryDisplayName(uri: Uri): String {
+        return runCatching {
+            context.contentResolver.query(
+                uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null
+            )?.use { c ->
+                if (c.moveToFirst()) c.getString(0) else null
+            } ?: uri.lastPathSegment.orEmpty()
+        }.getOrDefault(uri.lastPathSegment.orEmpty())
+    }
 }
 
 /**
  * 拍照——经 [android.provider.MediaStore.ACTION_IMAGE_CAPTURE]。
  *
- * 与 FilePicker 同样走 fire-and-forget 模式：仅启动相机 App，
- * 实际拍照结果由系统相机 App 自己保存（或交给 Activity Result API
- * 接入，目前简化版不接入）。
+ * #343：真实 Activity Result 契约——经 [MediaResultBroker] 蹦床等待相机回传：
+ * - 启动相机 ≠ 拍到照片：RESULT_CANCELED / RESULT_OK 但零字节都是失败；
+ * - 输出经 FileProvider content:// URI（EXTRA_OUTPUT + clipData 双落点、
+ *   FLAG_GRANT_WRITE），不再用 file://（targetSdk 26+ 相机几乎都不接）；
+ * - 成功必验真实字节（文件存在且 > 0），结果常实际尺寸；
+ * - 用户指定 savePath 不在 FileProvider 覆盖范围时：先拍入 cache 再拷贝
+ *   到目标路径，拷贝失败如实报失败。
  */
 class CameraCapturer(private val context: Context) {
     suspend fun capture(params: ImageCaptureTool.CaptureParams): ImageCaptureTool.CaptureResult =
         withContext(Dispatchers.IO) {
             try {
-                val intent = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    if (params.savePath != null) {
-                        val uri = Uri.fromFile(java.io.File(params.savePath))
-                        putExtra(android.provider.MediaStore.EXTRA_OUTPUT, uri)
-                    }
+                // 拍摄落地文件：savePath 可直用则直用，否则先落 cache（provider 覆盖）
+                val directTarget = params.savePath?.let { java.io.File(it) }
+                val captureFile = if (directTarget != null && isUnderProviderRoot(directTarget)) {
+                    directTarget
+                } else {
+                    java.io.File(java.io.File(context.cacheDir, "camera").apply { mkdirs() },
+                        "capture_${System.currentTimeMillis()}.jpg")
                 }
-                if (intent.resolveActivity(context.packageManager) == null) {
-                    return@withContext ImageCaptureTool.CaptureResult(
-                        success = false,
-                        errorMessage = "no camera app available on this device"
+                captureFile.parentFile?.mkdirs()
+
+                val authority = "${context.packageName}.fileprovider"
+                val uri = androidx.core.content.FileProvider.getUriForFile(context, authority, captureFile)
+                val intent = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                    putExtra(android.provider.MediaStore.EXTRA_OUTPUT, uri)
+                    // 授权随 intent flags + clipData 双通道：不同相机实现读的位置不同
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                    clipData = android.content.ClipData.newUri(
+                        context.contentResolver, "capture", uri
                     )
                 }
-                context.startActivity(intent)
-                ImageCaptureTool.CaptureResult(
-                    success = true,
-                    savedPath = params.savePath ?: "(default camera storage)",
-                    mimeType = "image/jpeg"
-                )
+
+                val host = MediaResultBroker.awaitResult(context, intent)
+                    ?: return@withContext ImageCaptureTool.CaptureResult(
+                        success = false,
+                        errorMessage = "相机结果等待失败（broker 启动失败或超时）"
+                    )
+                when {
+                    host.resultCode != android.app.Activity.RESULT_OK -> ImageCaptureTool.CaptureResult(
+                        success = false,
+                        errorMessage = "相机已取消或失败（resultCode=${host.resultCode}）——启动相机不等于拍到照片"
+                    )
+                    !captureFile.exists() || captureFile.length() <= 0L -> ImageCaptureTool.CaptureResult(
+                        success = false,
+                        errorMessage = "相机返回 OK 但未写入任何图像字节（${captureFile.absolutePath}）"
+                    )
+                    else -> finalizeCapture(params, captureFile, directTarget)
+                }
             } catch (e: Exception) {
                 ImageCaptureTool.CaptureResult(
                     success = false,
@@ -420,6 +473,44 @@ class CameraCapturer(private val context: Context) {
                 )
             }
         }
+
+    /** 成功路径收尾：savePath 落地 / 缩略图 / 真实字节数。 */
+    private suspend fun finalizeCapture(
+        params: ImageCaptureTool.CaptureParams,
+        captureFile: java.io.File,
+        directTarget: java.io.File?
+    ): ImageCaptureTool.CaptureResult {
+        var finalFile = captureFile
+        if (directTarget != null && directTarget != captureFile) {
+            // savePath 不在 provider 覆盖范围：拷贝到用户指定路径，失败如实报
+            runCatching { captureFile.copyTo(directTarget, overwrite = true) }
+                .getOrElse { e ->
+                    return ImageCaptureTool.CaptureResult(
+                        success = false,
+                        errorMessage = "图像已拍入缓存但拷贝到目标路径失败: ${e.message}"
+                    )
+                }
+            finalFile = directTarget
+        }
+        return ImageCaptureTool.CaptureResult(
+            success = true,
+            savedPath = finalFile.absolutePath,
+            sizeBytes = finalFile.length(),
+            mimeType = "image/jpeg"
+        )
+    }
+
+    /** 判断文件是否落在 FileProvider 覆盖的根下（files/cache/external 同款配置）。 */
+    private fun isUnderProviderRoot(file: java.io.File): Boolean {
+        val roots = listOfNotNull(
+            context.filesDir,
+            context.cacheDir,
+            context.getExternalFilesDir(null),
+            context.externalCacheDir
+        )
+        val path = file.canonicalPath
+        return roots.any { path.startsWith(it.canonicalPath + java.io.File.separator) }
+    }
 }
 
 /**

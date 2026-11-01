@@ -126,6 +126,17 @@
             </intent-filter>
         </receiver>
 
+        <!-- #343 媒体结果蹦床：无 UI 上下文里的 FilePicker / CameraCapturer 经此
+             Activity 走真正的 startActivityForResult → onActivityResult 分发。
+             透明无历史、独立任务栈、不进最近任务；exported=false（仅本应用启动）。 -->
+        <activity
+            android:name="com.apex.agent.tools.MediaResultBrokerActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- WorkManager初始化 -->
         <provider
             android:name="androidx.startup.InitializationProvider"
