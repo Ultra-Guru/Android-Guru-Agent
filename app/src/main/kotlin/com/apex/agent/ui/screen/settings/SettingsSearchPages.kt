@@ -61,10 +61,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
- * 设置中心「搜索」大分类（SearXNG Local Search Spec v1.0 §11 + 开放问题 2
- * 拍板「先增加网络搜索相关所有设置」）。
+ * 设置中心「本地搜索」页（SearXNG Local Search Spec v1.0 §11 + 开放问题 2
+ * 拍板「先增加网络搜索相关所有设置」；v3.1 归入「集成与扩展」分类）。
  *
- *  - search/local：本地搜索（SearXNG）开关卡（状态机可视：Installing 阶段进度
+ *  - integrations/search：本地搜索（SearXNG）开关卡（状态机可视：Installing 阶段进度
  *    / Starting 不确定进度 / Ready 绿点 / Failed 重试按钮）+ 引擎多选（v1 固定
  *    6 个目录）+ 清除安装入口（设置页二级，确认对话框门禁）+ 地址展示（F12）。
  *
@@ -127,7 +127,7 @@ class SearxngViewModel @Inject constructor(
     }
 }
 
-// ═══════════════ search/local：本地搜索（SearXNG）═══════════════
+// ═══════════════ integrations/search：本地搜索（SearXNG）═══════════════
 
 @Composable
 internal fun SearchLocalPage(viewModel: SearxngViewModel = hiltViewModel()) {

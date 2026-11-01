@@ -135,11 +135,16 @@ class LinuxPRootBackend(
         // 5. 构造 launch request（guest env 经 trampoline；T75: 用户 home → /root 持久化 bind）
         val guestEnv = buildGuestEnv(request.env)
         // T82：home bind + 系统级 bind（/proc /dev /sys，proot-distro 语义）+
-        // 共享存储 bind（授权可用时 → guest /sdcard）。
+        // 共享存储 bind（授权可用时 → guest /sdcard）+
+        // 真实系统根 bind（2026-10「整个系统」工作区 → guest /host；跟随
+        // STANDARD 档 —— NONE 档保持旧裸 -r 隔离语义，绝不满地开花）。
         val binds = buildList {
             add(PRootBind(AbsolutePath(userHomeDir.absolutePath), GuestUserHome.GUEST_PATH))
             addAll(systemBinds.toBinds())
             sharedStorage?.toBind()?.let { add(it) }
+            if (systemBinds == SystemBindProfile.STANDARD) {
+                add(HostRootBridge.toBind())
+            }
         }
         val launch = PRootLaunchRequest(
             rootfs = rootfs,

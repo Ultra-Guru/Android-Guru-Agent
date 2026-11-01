@@ -28,7 +28,7 @@ import kotlinx.serialization.json.jsonPrimitive
  *     backendId: string, runtimeType: string, rootfsId?: string, guestCwd?: string,
  *     workspaceId?: string }
  * Errors: PtyUnavailable, InvalidInput, PermissionDenied, BackendNotFound,
- *         RootfsNotReady（先调 TerminalUbuntuInstall）, BackendFailed,
+ *         RootfsNotReady（先调 TerminalUbuntuEnsure）, BackendFailed,
  *         WorkspaceError:InvalidId（workspaceId 非法）
  */
 class TerminalCreateTool(
@@ -40,7 +40,7 @@ class TerminalCreateTool(
         Create a long-lived terminal Session (PTY + shell). A Session is a workspace, not a single
         command. Returns sessionId for subsequent run/observe/wait/write calls.
         backend="linux-ubuntu" (default) runs Ubuntu 24.04 via PRoot
-        (requires the rootfs to be installed — check TerminalBackends, install via TerminalUbuntuInstall).
+        (requires the rootfs to be installed — check TerminalBackends, install via TerminalUbuntuEnsure).
         backend="linux-ubuntu-chroot" runs the SAME Ubuntu rootfs via real-root chroot —
         needs a rooted device (su); use it when PRoot is blocked (ptrace-restricted ROMs) or
         when syscall-translation overhead matters (check TerminalBackends for availability).

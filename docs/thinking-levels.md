@@ -2,9 +2,9 @@
 
 > **Coding 页专属**的思考深度控制体系（7 深度档 + 1 个 AUTO 元档）。
 > （原 Agent 聊天页的独立六档体系已随 Agent 模式移除至 Theocracy 仓库 ——
-> 本仓库仅存 Coding 一套阶梯，枚举 / 画像 / 选档器 / 效能统计 / 文案 /
+> 本仓库仅存 Coding 一套阶梯，枚举 / 画像 / 选档器 / 文案 /
 > 持久化字段即本文件的唯一主体，仅共享引擎执行内核，
-> 见「二、三层注入架构」。）
+> 见「二、三层注入架构」。档位效能统计已随 v1.5.8 用户反馈移除。）
 
 ## 一、七档阶梯总览
 
@@ -109,7 +109,6 @@ AUTO）：
 | 引擎同步 | `CodeAgentEngine.updateThinkingLevel`：三通道（①档位映射 ②旋钮补偿 ③编码指令） |
 | 原生 effort | T1 通道（默认 Profile 持久化 + 即时重建）；AUTO 档不动 effort |
 | AUTO 可解释 | 预检决策进 `adaptiveDecision` + 「🧠 自适应预检：…」系统消息；深水区升级「⚠️」系统消息 |
-| 档位效能 | `CodeThinkingEvolutionTracker`（见 [long-tasks.md](long-tasks.md) §5） |
 
 ### 档位描述文案
 
@@ -123,13 +122,11 @@ AUTO）：
 | `core/code-engine/.../code/thinking/CodeThinkingLevel.kt` | coding 七档枚举（7 深度档 + AUTO）+ toAgentLevel 映射 + fromName 解析 |
 | `core/code-engine/.../code/thinking/CodeThinkingProfile.kt` | 七档画像表 + APEX 五问清单 + compensated* 旋钮补偿纯函数 |
 | `core/code-engine/.../code/thinking/CodeAdaptiveThinkingSelector.kt` | AUTO 预检选档 + 深水区升级观察器（纯函数） |
-| `core/code-engine/.../code/thinking/CodeThinkingEvolutionTracker.kt` | 档位效能统计（工作区 × 档位聚合） |
 | `core/code-engine/.../code/thinking/CodeThinkingPrompts.kt` | 编码特化思考指令（7 档 + AUTO 兜底 + APEX 五问内嵌） |
 | `core/code-engine/.../code/CodeAgentEngine.kt` | updateThinkingLevel 三通道 + 旋钮基数快照 |
 | `app/.../ui/screen/code/CodeThinkingSelector.kt` | Coding 屏选择器（含预检决策回显） |
 | `app/.../ui/screen/code/CodeThinkingGuideSheet.kt` | 档位指南弹层 |
 | `app/.../di/CodeModule.kt` | 选档器 DI 注册 + 引擎装配 |
-| `app/.../di/CodeLongTaskModule.kt` | 效能统计 DI（长任务中心共用） |
 
 （Agent 聊天页六档体系的文件在 `core/agent-engine/.../engine/thinking/`
 与 `AgentChatDialogs.kt` / `ModeGuideSheet.kt`，与本文档无耦合。）

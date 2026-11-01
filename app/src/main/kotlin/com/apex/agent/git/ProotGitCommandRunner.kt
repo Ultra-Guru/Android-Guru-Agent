@@ -219,7 +219,7 @@ class ProotGitCommandRunner(
                 return RootfsResolution(
                     null,
                     "Ubuntu rootfs 已损坏：版本标记指向的目录缺失（${versionDir.absolutePath}）" +
-                        "—— 请在终端页重装 Ubuntu（TerminalUbuntuInstall）"
+                        "—— 请在终端页重装 Ubuntu（TerminalUbuntuEnsure）"
                 )
             }
         }
@@ -454,7 +454,7 @@ class ProotGitCommandRunner(
         /** rootfs 未就绪时的用户引导文案。 */
         internal const val ROOTFS_NOT_READY_MESSAGE =
             "Ubuntu 环境未安装或未就绪——Git 工具依赖沙箱内预装的 git，" +
-                "请先在终端页安装 Ubuntu（TerminalUbuntuInstall）后再试"
+                "请先在终端页安装 Ubuntu（TerminalUbuntuEnsure）后再试"
 
         /** 无激活工作区时的引导文案。 */
         internal const val NO_ACTIVE_WORKSPACE_MESSAGE =

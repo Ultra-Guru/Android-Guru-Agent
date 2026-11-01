@@ -56,7 +56,7 @@ class GuestUserHome(
      * 幂等注入工具链环境探测块到 guest `~/.bashrc`。
      *
      * 背景（Ubuntu 环境探索验证，docs/ubuntu-environment-exploration.md §7）：
-     * `TerminalLinuxCapabilities ensure` / `TerminalWorkspaceEnvironment ensure`
+     * `TerminalWorkspaceEnvironment ensure` / `TerminalLinuxPackages install`
      * 能经 apt 装上 default-jdk / golang 等，但 guest 环境从不导出 JAVA_HOME ——
      * PATH 里 `java` 能跑，而 gradle / sdkmanager / 一切 `JAVA_HOME` 依赖脚本
      * 全部失败（能力矩阵 7.6 规划了 env profile 持久化，此前未实现）。

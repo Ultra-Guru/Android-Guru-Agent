@@ -62,33 +62,25 @@ internal suspend fun ApexAgentEngine.handleAskUserToolCall(
         beforeWait = { emit(AgentEvent.UserInputRequired(question, eventType)) }
     )
     val waitedMs = (System.nanoTime() - waitStartNs) / 1_000_000L
-    if (answer == null) {
-        // #214 超时未决：显式失败收场（UserInputExpired 已由 onExpired 发射）。
-        val timeoutNote = "User input timed out after ${PLAN_CONFIRMATION_TIMEOUT_MS / 1000}s; " +
-            "the question was closed unanswered. Do not treat silence as consent — " +
-            "proceed with the safest default or re-ask the user later."
-        addMessage(LlmMessage.ToolResult(toolCall.id, timeoutNote))
-        emit(
-            AgentEvent.ToolCallComplete(
-                callId = toolCall.id,
-                toolName = toolCall.name,
-                arguments = toolCall.arguments,
-                output = timeoutNote,
-                success = false,
-                // 超时等待同样是用户可感知的等待时长，与正常回答同口径计时。
-                durationMs = waitedMs
-            )
+    // #509：三态收场。旧实现只区分「null=超时」与「其余=作答」，于是
+    // cancelUserInput/abort 的空串唤醒被当成正常回答回填
+    // `User answered: `（success=true）—— 取消被模型读成默许。
+    val outcome = askUserOutcome(answer)
+    val note = when (outcome) {
+        is AskUserOutcome.TimedOut -> outcome.toolResultNote.replace(
+            "timed out",
+            "timed out after ${PLAN_CONFIRMATION_TIMEOUT_MS / 1000}s",
         )
-        return true
+        else -> outcome.toolResultNote
     }
-    addMessage(LlmMessage.ToolResult(toolCall.id, "User answered: $answer"))
+    addMessage(LlmMessage.ToolResult(toolCall.id, note))
     emit(
         AgentEvent.ToolCallComplete(
             callId = toolCall.id,
             toolName = toolCall.name,
             arguments = toolCall.arguments,
-            output = "User answered: $answer",
-            success = true,
+            output = note,
+            success = outcome.isSuccess,
             durationMs = waitedMs
         )
     )

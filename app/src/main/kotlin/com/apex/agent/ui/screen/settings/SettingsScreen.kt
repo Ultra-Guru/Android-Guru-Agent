@@ -57,7 +57,8 @@ import kotlinx.coroutines.launch
  * 结构（对齐浏览器式设置中心惯例）：
  * - 总抽屉点「设置」进入本页时，总抽屉收回（根层 navigateToTopLevel 语义），
  *   **设置抽屉自动打开**（独立 ModalNavigationDrawer，与总抽屉互不干扰）；
- * - 设置抽屉第一列 = 一级大分类（模型配置 / 工作台 / 终端 / 界面外观 / 数据与备份）；
+ * - 设置抽屉第一列 = 一级大分类（模型配置 / 工作台 / 集成与扩展 / 终端 /
+ *   界面外观 / 数据与备份）；
  * - 点击分类展开二级叶子（手风琴，同一时刻仅一个分类展开）；
  * - 点击叶子（如模型配置 → 配置 / 参数）→ 抽屉收回 → 内容区渲染对应页面；
  * - 顶栏汉堡钮可随时重开设置抽屉切换页面（页面状态保留）。
@@ -314,6 +315,9 @@ private fun SettingsPageRouter(
         }
         "model/generation" -> SettingsLeafColumn {
             selected?.let { GenerationSection(it, onUpdate) } ?: EmptyProfileHint()
+            // 归并页：高级选项（结构化输出/自定义头）是请求参数而非提示词，
+            // 自提示词页迁入 —— 与生成参数同为「发请求时生效」的模型档位
+            selected?.let { AdvancedSection(it, onUpdate) } ?: EmptyProfileHint()
         }
         "model/reasoning" -> SettingsLeafColumn {
             selected?.let { ReasoningSection(it, onUpdate) } ?: EmptyProfileHint()
@@ -333,8 +337,6 @@ private fun SettingsPageRouter(
         }
         "model/prompt" -> SettingsLeafColumn {
             selected?.let { PromptSection(it, onUpdate) } ?: EmptyProfileHint()
-            // 归并页：高级选项（结构化输出/自定义头）与提示词同类归为一页
-            selected?.let { AdvancedSection(it, onUpdate) } ?: EmptyProfileHint()
         }
         "model/providers-roles" -> ProvidersRolesPage(
             onManageProviders = onManageProviders,
@@ -358,8 +360,10 @@ private fun SettingsPageRouter(
             AgentHooksSectionBlock(viewModel)
         }
         "workspace/goal" -> SettingsLeafColumn { GoalSettingsSection(agent, onAgent) }
-        "workspace/github" -> SettingsLeafColumn { GithubSettingsSection(viewModel) }
-        "workspace/memory" -> SettingsLeafColumn { MemoryCaptureSection(agent, onAgent) }
+        // ═══ 集成与扩展（v3.1 自工作台析出：外部服务 / 检索能力 / 知识扩展）═══
+        "integrations/github" -> SettingsLeafColumn { GithubSettingsSection(viewModel) }
+        "integrations/search" -> SearchLocalPage()
+        "integrations/memory" -> SettingsLeafColumn { MemoryCaptureSection(agent, onAgent) }
         // ═══ 界面外观（对话显示归并到外观页：同为界面呈现类设置）═══
         "interface/appearance" -> SettingsLeafColumn {
             AppearanceSection(agent, onAgent)
@@ -369,8 +373,6 @@ private fun SettingsPageRouter(
         "interface/notifications" -> SettingsLeafColumn {
             NotificationsPage(agent, onAgent)
         }
-        // ═══ 搜索 ═══（SearXNG 本地搜索 + 网络搜索设置）
-        "search/local" -> SearchLocalPage()
         // ═══ 终端 ═══（T97：控制台退役后仅剩策略门禁与服务保活两叶）
         "terminal/policy" -> TerminalCommandPolicyPage()
         "terminal/service" -> TerminalServicePage(agent, onAgent)

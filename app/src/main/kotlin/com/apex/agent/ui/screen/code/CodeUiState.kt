@@ -27,6 +27,11 @@ data class CodeUiState(
     val errorRetriable: Boolean = false,
     val pendingQuestion: String? = null,
 
+    // ── #237 通知恢复提示 ──
+    // 后台任务完成、用户开了「任务完成通知」但系统不允许发通知时置 true；
+    // 回到前台展示一次「去开启」，展示后清除（不反复骚扰）。
+    val notificationRecoveryPending: Boolean = false,
+
     // ── v1.5 思考逻辑（双引擎：深潜 = 自研七档 / 标准 = 标准任务循环）──
     // 右上角选择器直改 + AgentSettings.codeThinkingLogic 持久化；
     // DualLogicCodeEngine 按此路由 execute/abort/问答。

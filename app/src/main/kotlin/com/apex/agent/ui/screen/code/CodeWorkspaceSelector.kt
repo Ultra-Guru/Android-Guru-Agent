@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -52,6 +53,9 @@ import com.apex.agent.R
 import com.apex.agent.platform.code.ws.CodeWorkspace
 import com.apex.agent.platform.code.ws.CodeWorkspaceManager
 
+/** 工作区触发胶囊固定宽度 —— 长名截断省略，工具行右侧图标位置恒定。 */
+private val WORKSPACE_CHIP_WIDTH = 132.dp
+
 /**
  * # Code Workspace Selector — 输入栏内工作区选择器（2026-10 用户需求）
  *
@@ -64,7 +68,8 @@ import com.apex.agent.platform.code.ws.CodeWorkspaceManager
  * 3. **默认整个系统**：`system` 工作区（根 = /）恒列首项 —— 不选文件夹时
  *    的默认工作区即全系统。
  *
- * 触发胶囊与其他工具行按钮同规格（28dp 无边框圆角胶囊，13dp 图标）；
+ * 触发胶囊与其他工具行按钮同规格（28dp 无边框圆角胶囊，13dp 图标），宽度
+ * 固定 [WORKSPACE_CHIP_WIDTH]（长名省略号截断，不随选择内容跳动）；
  * 下拉为系统感知宽度（窄屏自动收缩，永不溢出屏幕）。
  */
 @Composable
@@ -94,6 +99,8 @@ internal fun CodeWorkspaceSelectorChip(
 
     Box(modifier = modifier) {
         // ── 触发胶囊（28dp 无边框；对齐工具行其他按钮规格）──
+        // 固定宽度（2026-10 用户需求）：长工作区名不再撑开整行，超出省略号
+        // 收尾 —— 工具行右侧图标位置恒定，切换工作区零布局跳动。
         Surface(
             onClick = { menuOpen = true },
             shape = RoundedCornerShape(50),
@@ -107,7 +114,9 @@ internal fun CodeWorkspaceSelectorChip(
             } else {
                 MaterialTheme.colorScheme.onSecondaryContainer
             },
-            modifier = Modifier.heightIn(min = 28.dp)
+            modifier = Modifier
+                .width(WORKSPACE_CHIP_WIDTH)
+                .heightIn(min = 28.dp)
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
@@ -125,7 +134,8 @@ internal fun CodeWorkspaceSelectorChip(
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
                 Icon(
                     imageVector = Icons.Default.ArrowDropDown,

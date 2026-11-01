@@ -55,9 +55,28 @@ data class DepItem(
      */
     fun installCommand(useMirror: Boolean, version: String? = null): String {
         val template = if (useMirror) installMirror else installOfficial
-        if (!template.contains("{V}")) return template
-        val v = if (versioned) (version ?: preferredVersion) else null
-        return if (v != null) template.replace("{V}", v) else template
+        val interpolated = if (!template.contains("{V}")) template else {
+            val v = if (versioned) (version ?: preferredVersion) else null
+            if (v != null) template.replace("{V}", v) else template
+        }
+        // ★ dpkg 中断自愈前缀（apt 类命令）：上次 apt 被强杀（超时/App 死亡）
+        // 留下的半装状态会让 apt-get install 在 dpkg 前置检查即失败
+        // （"E: dpkg was interrupted…"）—— 本页安装按钮同样死循环。
+        // 前挂 DEBIAN_FRONTEND=noninteractive dpkg --configure -a：幂等
+        // （干净态秒级 no-op）；内联 env 只作用于本条命令，不污染交互会话
+        // （apt 变量不进交互 shell 的 T81 设计规则不被破坏 —— 与
+        // SearxngScripts 的同款模式）。
+        return if (interpolated.contains("apt-get install")) {
+            "$DPKG_SELF_HEAL_PREFIX$interpolated"
+        } else {
+            interpolated
+        }
+    }
+
+    private companion object {
+        /** dpkg 半装状态自愈前缀（apt 类安装命令专用）。 */
+        const val DPKG_SELF_HEAL_PREFIX =
+            "DEBIAN_FRONTEND=noninteractive dpkg --configure -a && "
     }
 }
 

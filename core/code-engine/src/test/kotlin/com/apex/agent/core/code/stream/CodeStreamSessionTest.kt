@@ -907,7 +907,7 @@ class CodeStreamSessionTest {
         s.onEvent(
             AgentEvent.ToolCallComplete(
                 callId = "g3", toolName = "CodeGitStatus", arguments = "{}",
-                output = "Error: execution failed: Ubuntu 环境未安装或未就绪——Git 工具依赖沙箱内预装的 git，请先在终端页安装 Ubuntu（TerminalUbuntuInstall）后再试",
+                output = "Error: execution failed: Ubuntu 环境未安装或未就绪——Git 工具依赖沙箱内预装的 git，请先在终端页安装 Ubuntu（TerminalUbuntuEnsure）后再试",
                 fullOutput = "", success = false, durationMs = 30
             )
         )

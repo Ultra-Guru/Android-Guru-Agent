@@ -29,7 +29,7 @@ import org.junit.runner.RunWith
  *  11. apt package install（TerminalLinuxPackages install）
  *  12. session close
  *
- * 真机执行前置：TerminalUbuntuInstall + TerminalLinuxBootstrap 已完成（READY）。
+ * 真机执行前置：TerminalUbuntuEnsure 已完成（READY）。
  */
 @RunWith(AndroidJUnit4::class)
 class UbuntuLinuxEnvironmentInstrumentationTest {

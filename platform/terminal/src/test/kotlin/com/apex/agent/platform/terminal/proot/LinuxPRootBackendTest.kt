@@ -423,13 +423,15 @@ class LinuxPRootBackendTest {
         val b = backend(systemBinds = SystemBindProfile.STANDARD)
         val spec = b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80, env = emptyMap())).getOrThrow()
         val bindArgs = spec.argv.zipWithNext().filter { (a, _) -> a == "-b" }.map { it.second }
-        // 顺序契约：home 先（T75），系统 bind 中间（T82），workspace 最后（builder 追加）
+        // 顺序契约：home 先（T75），系统 bind 中间（T82），真实系统根 bind
+        //（2026-10「整个系统」→ /host，跟随 STANDARD 档），workspace 最后（builder 追加）
         assertEquals(
             listOf(
                 "${File(tmp.root, "home").absolutePath}:/root",
                 "/proc:/proc",
                 "/dev:/dev",
                 "/sys:/sys",
+                "/:/host",
                 "${File(File(tmp.root, "workspaces"), "default").absolutePath}:/workspace"
             ),
             bindArgs

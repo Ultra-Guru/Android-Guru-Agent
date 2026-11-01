@@ -33,6 +33,7 @@ class StreamingOpenAiClient(
 
     /** 解析失败限次计数（防整页 HTML 错误片段刷屏日志；实例可能被并发流共享 → 原子）。 */
     private val parseFailuresLogged = java.util.concurrent.atomic.AtomicInteger()
+    private val sanitizeFallbacksLogged = java.util.concurrent.atomic.AtomicInteger()
 
     override suspend fun chat(
         messages: List<LlmMessage>,
@@ -606,11 +607,29 @@ class StreamingOpenAiClient(
     private fun sanitizeParameters(parameters: String): JsonElement {
         val parsed = runCatching { Json.parseToJsonElement(parameters) }
             .getOrElse {
+                // #500：静默空 schema 会把该工具的调用能力一并静默禁用 ——
+                // 限次留痕（与 #501 parseFailuresLogged 同模式）供诊断。
+                logSanitizeFallback("tool parameters are not valid JSON", it, parameters)
                 return Json.parseToJsonElement("""{"type":"object","properties":{}}""")
             }
         if (!isGeminiCompatEndpoint()) return parsed
         return runCatching { stripGeminiUnsupported(parsed) }
-            .getOrDefault(Json.parseToJsonElement("""{"type":"object","properties":{}}"""))
+            .getOrElse {
+                logSanitizeFallback("stripGeminiUnsupported failed", it, parameters)
+                Json.parseToJsonElement("""{"type":"object","properties":{}}""")
+            }
+    }
+
+    /** #500：sanitize 回退空 schema 的限次日志（首 3 次 + 之后每 50 条一条）。 */
+    private fun logSanitizeFallback(reason: String, e: Throwable, parameters: String) {
+        val failureNo = sanitizeFallbacksLogged.incrementAndGet()
+        if (failureNo <= 3 || failureNo % 50 == 0) {
+            AppLogger.instance.warn(
+                LogCategory.LLM, "StreamingOpenAiClient",
+                "sanitizeParameters fallback #$failureNo: $reason — " +
+                    "${e::class.simpleName}: ${e.message?.take(120)} — schema head: ${parameters.take(80)}"
+            )
+        }
     }
 
     private fun isGeminiCompatEndpoint(): Boolean {

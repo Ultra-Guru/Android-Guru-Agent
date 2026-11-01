@@ -124,7 +124,10 @@ object LlmModule {
     fun provideModelRuntime(
         router: ModelRoleRouter,
         registry: ModelRuntimeRegistry,
-        repo: SettingsRepository
+        repo: SettingsRepository,
+        // #221：每请求真实用量观测（按实际 profile/model 记账，覆盖角色路由、
+        // 子代理与压缩摘要等不经主事件流的请求）。
+        usageObserver: com.apex.agent.usage.LedgerUsageObserver
     ): ModelRuntime {
         // Kotlin 陷阱（AGENTS.md 清单 #2）：尾随 lambda 绑定的是**末参** clock
         // 而非 policyProvider —— 显式具名传参，防绑定错位。
@@ -135,7 +138,11 @@ object LlmModule {
                 minIntervalMs = s.rateLimitMinIntervalMs.toLong().coerceIn(0L, 60_000L)
             )
         })
-        return DefaultModelRuntime(router, registry, rateLimits = governor)
+        return DefaultModelRuntime(
+            router, registry,
+            rateLimits = governor,
+            usageObserver = usageObserver
+        )
     }
 }
 

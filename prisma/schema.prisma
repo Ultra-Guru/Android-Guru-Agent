@@ -1,0 +1,105 @@
+// Guru Web — 数据模型
+// 设计对标 Android-Guru-Agent：工作区（CodeWorkspace）· 规则分级（RulesProvider）
+// · 记忆账本（cs-mem v2）· 用户画像（结构化 aspects）· 游乐场（自包含 HTML + manifest）
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ═══════════════ 工作区 ═══════════════
+// 一个工作区 = 一个项目。对话归属工作区；项目级规则存在工作区上（只在本工作区生效）。
+model Workspace {
+  id           String         @id @default(cuid())
+  name         String
+  description  String?
+  emoji        String         @default("🗂")
+  projectRules String         @default("")
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  lastUsedAt   DateTime       @default(now())
+  conversations Conversation[]
+
+  @@index([lastUsedAt])
+}
+
+// ═══════════════ 对话 ═══════════════
+// 对话严格绑定工作区：切换工作区 = 切换对话集合；新对话永远落在当前工作区。
+model Conversation {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  title       String    @default("新对话")
+  mode        String    @default("agent") // agent | coding
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  messages    Message[]
+
+  @@index([workspaceId, updatedAt])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String // user | assistant
+  content        String
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+// ═══════════════ 记忆（对话记忆，cs-mem v2 结构化账本） ═══════════════
+// importance × recency × frequency 综合评分召回；写入门禁在提炼提示词层。
+model MemoryItem {
+  id            String   @id @default(cuid())
+  category      String   @default("fact") // fact 事实 | state 近况 | milestone 里程碑 | preference 偏好
+  content       String
+  importance    Float    @default(0.6)
+  accessCount   Int      @default(0)
+  lastAccessedAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+  source        String   @default("manual") // manual | auto
+}
+
+// ═══════════════ 用户画像（Coding 模式专用，独立页面） ═══════════════
+// 结构化维度 + 置信度 + 证据链；注入 Coding 模式系统提示词。
+model ProfileItem {
+  id            String   @id @default(cuid())
+  aspect        String   @default("tech-stack") // tech-stack | coding-style | preferences | domains | habits | goals
+  content       String
+  confidence    Float    @default(0.6)
+  evidence      String?
+  source        String   @default("manual") // manual | derived
+  accessCount   Int      @default(0)
+  lastAccessedAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ═══════════════ 游乐场 ═══════════════
+// 每个作品 = 一个自包含 HTML 文件（零网络、触屏优先、终端暗色霓虹设计语言）。
+model PlaygroundApp {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  category    String   @default("game") // game | tool | viz | animation
+  prompt      String?
+  html        String
+  version     Int      @default(1)
+  builtin     Boolean  @default(false)
+  sortOrder   Int      @default(100)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ═══════════════ 键值设置 ═══════════════
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}

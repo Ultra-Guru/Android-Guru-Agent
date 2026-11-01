@@ -110,9 +110,18 @@ fun ToolkitRingButton(
     onUpsertRule: (ChatRule) -> Unit,
     onDeleteRule: (String) -> Unit,
     onToggleRule: (String, Boolean) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    menuOpen: Boolean? = null,
+    onMenuDismiss: (() -> Unit)? = null,
+    triggerHidden: Boolean = false
 ) {
-    var menuOpen by remember { mutableStateOf(false) }
+    // 弹层状态外提（2026-10 工具台重排）：menuOpen 非空 = 调用方托管
+    //（Code 屏展开菜单锚点模式）；null = 内部自管（Agent 屏零改动）。
+    var internalOpen by remember { mutableStateOf(false) }
+    val showMenu = menuOpen ?: internalOpen
+    val closeMenu: () -> Unit = {
+        if (menuOpen == null) internalOpen = false else onMenuDismiss?.invoke()
+    }
     var functionsExpanded by remember { mutableStateOf(false) }
     var formatExpanded by remember { mutableStateOf(false) }
     var showRulesDialog by remember { mutableStateOf(false) }
@@ -121,32 +130,36 @@ fun ToolkitRingButton(
     val anyActive = webSearchEnabled || timeEnabled ||
         selectedFunctionIds.isNotEmpty() || outputFormat != OutputFormat.NONE ||
         rules.any { it.enabled }
-    val ringColor = if (menuOpen || anyActive) MaterialTheme.colorScheme.primary
+    val ringColor = if (showMenu || anyActive) MaterialTheme.colorScheme.primary
     else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
 
     Box(modifier = modifier) {
-        // ── 圆环按钮 ─────────────────────────────────────────
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                // UI-012：48dp 触区红线（原 40dp 视觉系提升为 48 系，与
-                // Attach/Github/Send/斜杠全行统一 —— 圆环视觉随节点同步放大）
-                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                .clip(CircleShape)
-                .border(width = 1.5.dp, color = ringColor, shape = CircleShape)
-                .clickable { menuOpen = !menuOpen }
-        ) {
-            Icon(
-                Icons.Default.Extension,
-                contentDescription = stringResource(R.string.chat_cd_toolkit),
-                tint = ringColor,
-                modifier = Modifier.size(16.dp)
-            )
+        // ── 圆环按钮（triggerHidden = 锚点模式：不画触发钮仅留锚点）──
+        if (!triggerHidden) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    // UI-012：48dp 触区红线（原 40dp 视觉系提升为 48 系，与
+                    // Attach/Github/Send/斜杠全行统一 —— 圆环视觉随节点同步放大）
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    .clip(CircleShape)
+                    .border(width = 1.5.dp, color = ringColor, shape = CircleShape)
+                    .clickable {
+                        if (showMenu) closeMenu() else internalOpen = true
+                    }
+            ) {
+                Icon(
+                    Icons.Default.Extension,
+                    contentDescription = stringResource(R.string.chat_cd_toolkit),
+                    tint = ringColor,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
         }
 
         DropdownMenu(
-            expanded = menuOpen,
-            onDismissRequest = { menuOpen = false },
+            expanded = showMenu,
+            onDismissRequest = closeMenu,
             shape = RoundedCornerShape(16.dp),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
             tonalElevation = 4.dp,
@@ -311,7 +324,7 @@ fun ToolkitRingButton(
                         else stringResource(R.string.chat_rules)
                     },
                     onClick = {
-                        menuOpen = false
+                        closeMenu()
                         showRulesDialog = true
                     }
                 )

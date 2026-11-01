@@ -133,7 +133,7 @@ class ToolOpenTool(
             "tool_name",
             required = true,
             description = "Tool id from the catalog (e.g. 'GithubCreateIssue', " +
-                "'TerminalLinuxBootstrap')"
+                "'TerminalUbuntuEnsure')"
         )
     }
 ) {

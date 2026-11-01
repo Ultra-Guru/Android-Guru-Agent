@@ -79,26 +79,37 @@ import com.apex.agent.R
 @Composable
 fun NeonOrbButton(
     store: NeonOrbStore,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    menuOpen: Boolean? = null,
+    onMenuDismiss: (() -> Unit)? = null,
+    triggerHidden: Boolean = false
 ) {
     val state by store.state.collectAsStateWithLifecycle()
-    var menuOpen by remember { mutableStateOf(false) }
+    // 弹层状态外提（2026-10 工具台重排）：menuOpen 非空 = 调用方托管
+    //（Code 屏展开菜单锚点模式）；null = 内部自管（既有行为零改动）。
+    var internalOpen by remember { mutableStateOf(false) }
+    val showMenu = menuOpen ?: internalOpen
+    val closeMenu: () -> Unit = {
+        if (menuOpen == null) internalOpen = false else onMenuDismiss?.invoke()
+    }
     var formatExpanded by remember { mutableStateOf(false) }
     var langExpanded by remember { mutableStateOf(false) }
     var toneExpanded by remember { mutableStateOf(false) }
 
     Box(modifier = modifier) {
-        // ── 功能聚合 mini 图标（去霓虹重做）─────
-        NeonOrbIcon(
-            active = state.anyActive,
-            activeCount = state.activeCount,
-            contentDescription = stringResource(R.string.neon_cd_orb),
-            onClick = { menuOpen = !menuOpen }
-        )
+        // ── 功能聚合 mini 图标（triggerHidden = 锚点模式不画触发钮）──
+        if (!triggerHidden) {
+            NeonOrbIcon(
+                active = state.anyActive,
+                activeCount = state.activeCount,
+                contentDescription = stringResource(R.string.neon_cd_orb),
+                onClick = { if (showMenu) closeMenu() else internalOpen = true }
+            )
+        }
 
         DropdownMenu(
-            expanded = menuOpen,
-            onDismissRequest = { menuOpen = false },
+            expanded = showMenu,
+            onDismissRequest = closeMenu,
             shape = RoundedCornerShape(16.dp),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)),
             tonalElevation = 4.dp,

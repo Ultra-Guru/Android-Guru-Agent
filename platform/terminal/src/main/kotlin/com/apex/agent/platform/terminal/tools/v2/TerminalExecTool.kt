@@ -85,7 +85,10 @@ class TerminalExecTool(
         installed and ready, non-Android commands (python3, gcc, apt, git, npm, pip,
         make, node, bash scripts, ...) run inside the PRoot Ubuntu sandbox
         (channel="proot-ubuntu"; /sdcard maps to shared storage, /workspace to the
-        active workspace) — toolchain commands work out of the box. Android-specific
+        active workspace, /host to the real device filesystem root — e.g.
+        /host/system/build.prop is the host /system/build.prop; /data and other app
+        private dirs are denied without root) — toolchain commands work out of the
+        box. Android-specific
         commands (am, pm, dumpsys, settings, input, ...) and any command while Ubuntu
         is not installed fall back to the Android host shell (root-su / shizuku /
         local-sh). Prefer this over TerminalExecLegacy for non-interactive commands; use

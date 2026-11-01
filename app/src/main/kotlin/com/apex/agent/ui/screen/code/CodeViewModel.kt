@@ -143,6 +143,8 @@ class CodeViewModel @Inject constructor(
     // apexNotifications/foregroundTracker/appContext：任务完成通知（设置开关
     // 真接线 —— 后台时跑完发系统通知，前台静音）。
     internal val usageLedger: com.apex.agent.usage.UsageLedger,
+    // #221：用量归属会话（运行时层记账读取；切工作区时更新）。
+    internal val currentUsageSession: com.apex.agent.usage.CurrentUsageSession,
     internal val apexNotifications: com.apex.agent.notify.ApexNotifications,
     internal val foregroundTracker: com.apex.agent.notify.ForegroundTracker,
     @dagger.hilt.android.qualifiers.ApplicationContext internal val appContext: android.content.Context,
@@ -744,6 +746,19 @@ class CodeViewModel @Inject constructor(
         codeEngine.submitUserInput(answer)
     }
 
+    /**
+     * #509：用户取消挂起的提问（返回键 / 取消按钮）。
+     *
+     * 必须同时关界面**并**唤醒引擎等待 —— 只清 `pendingQuestion` 会让引擎
+     * 继续挂在 5 分钟超时上，界面看似已取消而任务实际停摆。
+     * `cancelUserInput()` 以空答案唤醒，引擎侧由 `AskUserOutcome.NoAnswer`
+     * 明确告知模型「没有作答」，不再伪造 `User answered:`。
+     */
+    fun cancelPendingQuestion() {
+        _uiState.update { it.copy(pendingQuestion = null) }
+        codeEngine.cancelUserInput()
+    }
+
     /** 用户回答了工具/权限门的结构化提问（QuestionCard 回传）。 */
     fun answerAgentQuestion(selectedIds: List<String>, customText: String?) {
         val question = userQuestionBridge.pendingQuestion.value ?: return
@@ -761,6 +776,11 @@ class CodeViewModel @Inject constructor(
     fun cancelAgentQuestion() {
         val question = userQuestionBridge.pendingQuestion.value ?: return
         userQuestionBridge.submit(AgentAnswer(questionId = question.id, skipped = true))
+    }
+
+    /** #237：用户看过了通知恢复提示（或点了「去开启」）—— 不再重复展示。 */
+    fun dismissNotificationRecovery() {
+        _uiState.update { it.copy(notificationRecoveryPending = false) }
     }
 
     fun dismissError() {
@@ -1038,6 +1058,8 @@ class CodeViewModel @Inject constructor(
             buildSessionSnapshot(previousId)
         } else null
         boundWorkspaceId = ws.workspaceId
+        // #221：用量观测在运行时层记账，需要知道当前会话归属（切工作区即换桶）。
+        currentUsageSession.bind(ws.workspaceId)
         sessionPersistJob?.cancel()
         sessionLoadJob?.cancel()
         editorJob?.cancel()

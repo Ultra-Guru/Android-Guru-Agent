@@ -587,6 +587,10 @@ object TerminalModule {
                     configurator.refreshDnsIfChanged(java.io.File(loc.value))
                 } ?: false
             },
+            // ★ 能力探测缓存失效：bootstrap 实际执行后（BASE_PACKAGES 安装 /
+            // dpkg --configure -a 自愈）清 LinuxCapabilityProbe 的 5min TTL 缓存，
+            // READY 快照不再挂着过期的 BROKEN（半装 git 修复后立即翻 AVAILABLE）。
+            probeInvalidateFn = { capabilityProbe.invalidate() },
             target = target
         )
     }

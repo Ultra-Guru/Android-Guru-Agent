@@ -42,7 +42,14 @@ class DefaultModelRuntime(
     private val diagnostics: ModelRuntimeDiagnostics = ModelRuntimeDiagnostics(),
     private val maxAttempts: Int = 4,
     /** 限速友好节流器（默认 NOOP = 历史行为零变化；见 [RateLimitGovernor]）。 */
-    private val rateLimits: RateLimitGovernor = RateLimitGovernor.NOOP
+    private val rateLimits: RateLimitGovernor = RateLimitGovernor.NOOP,
+    /**
+     * 每请求真实用量观测点（#221）。默认 NOOP —— 未接线时行为与旧版一致。
+     *
+     * 观测在**执行层**上报，因此天然带真实 profile/model/role：旧口径取
+     * 「当前默认 Profile」记账，角色路由与辅助请求全部记错或漏记。
+     */
+    private val usageObserver: ModelUsageObserver = ModelUsageObserver.NOOP
 ) : ModelRuntime {
 
     override suspend fun chat(
@@ -93,6 +100,7 @@ class DefaultModelRuntime(
                     fallback = attempt,
                     success = true,
                 )
+                notifyUsage(context, resolved, resp.usage)
                 return resp
             } catch (ce: CancellationException) {
                 throw ce
@@ -158,10 +166,13 @@ class DefaultModelRuntime(
             rateLimits.awaitPermit()
             val start = System.currentTimeMillis()
             var streamedAny = false
+            var lastUsage: com.apex.agent.core.llm.Usage? = null
             try {
                 val stream = client.chatStream(effectiveMessages, tools, temperature, maxTokens, toolChoice)
                 stream.collect { chunk ->
                     streamedAny = true
+                    // 流式统计帧可能多帧携带 usage（末帧覆盖前帧）；只保留最新。
+                    chunk.usage?.let { lastUsage = it }
                     emit(chunk)
                 }
                 diagnostics.recordAttempt(
@@ -173,6 +184,8 @@ class DefaultModelRuntime(
                     fallback = attempt,
                     success = true,
                 )
+                // 一次逻辑请求只上报一次（多帧 usage 已收敛为 lastUsage）。
+                notifyUsage(context, resolved, lastUsage)
                 return@flow
             } catch (ce: CancellationException) {
                 throw ce
@@ -213,6 +226,26 @@ class DefaultModelRuntime(
         return when (val res = router.resolve(context.role, context.requiredCapabilities)) {
             is ModelRoleRouter.ResolutionResult.Success -> res.chain
             is ModelRoleRouter.ResolutionResult.Failure -> throw res.error
+        }
+    }
+
+    /**
+     * #221：把**本次真实执行**的 profile/model/role 连同服务端 usage 上报给
+     * 观测点。观测失败绝不影响请求（观测不能成为单点故障）。
+     */
+    private fun notifyUsage(
+        context: LlmRequestContext,
+        resolved: ModelRoleRouter.ResolvedProfile,
+        usage: com.apex.agent.core.llm.Usage?
+    ) {
+        runCatching {
+            usageObserver.onUsage(
+                requestId = context.requestId,
+                role = context.role.name,
+                profileId = resolved.profile.id,
+                modelId = resolved.profile.modelId,
+                usage = usage
+            )
         }
     }
 

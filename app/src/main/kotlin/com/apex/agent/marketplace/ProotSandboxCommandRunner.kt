@@ -48,7 +48,7 @@ private const val MAX_STREAM_CHARS = 524_288
  *
  * ## rootfs 就绪门禁
  * [isRootfsReady] 为 false → 引导性失败结果（不抛异常），文案指向
- * 终端页 `TerminalUbuntuInstall`——与 MCP launcher / git runner 同口径；
+ * 终端页 `TerminalUbuntuEnsure`——与 MCP launcher / git runner 同口径；
  * 版本标记指向的目录缺失（升级中断/文件被清）→ 「已损坏请重装」文案，
  * 与「未安装」的安装引导分流（与 git runner 的 RootfsResolution 同款）。
  *
@@ -140,7 +140,7 @@ class ProotSandboxCommandRunner(
                 return RootfsResolution(
                     null,
                     "Ubuntu rootfs 已损坏：版本标记指向的目录缺失" +
-                        "（${versionDir.absolutePath}）—— 请在终端页重装 Ubuntu（TerminalUbuntuInstall）"
+                        "（${versionDir.absolutePath}）—— 请在终端页重装 Ubuntu（TerminalUbuntuEnsure）"
                 )
             }
         }
@@ -369,7 +369,7 @@ class ProotSandboxCommandRunner(
         /** rootfs 未就绪时的用户引导文案。 */
         internal const val ROOTFS_NOT_READY_MESSAGE =
             "Ubuntu 沙箱未安装——npm 形态的 MCP 服务器需要沙箱内运行，" +
-                "请先在终端页安装 Ubuntu（TerminalUbuntuInstall），" +
+                "请先在终端页安装 Ubuntu（TerminalUbuntuEnsure），" +
                 "并在沙箱内安装 nodejs：apt install -y nodejs npm"
     }
 }

@@ -39,6 +39,7 @@
     <string name="settings_no_profile_hint">暂无模型档案 —— 请先到「模型配置 · 配置」新建</string>
     <string name="settings_nav_cat_model">模型配置</string>
     <string name="settings_nav_cat_workspace">工作台</string>
+    <string name="settings_nav_cat_integrations">集成与扩展</string>
     <string name="settings_nav_cat_interface">界面外观</string>
     <string name="settings_nav_cat_data">数据与备份</string>
     <string name="settings_nav_cat_terminal">终端</string>
@@ -104,10 +105,8 @@
     <string name="settings_reasoning_effort_label">思考强度</string>
     <string name="settings_thinking_budget_label">思考预算（tokens）</string>
     <string name="settings_thinking_budget_auto">自动</string>
-    <string name="settings_show_thinking_label">显示思考过程</string>
     <string name="settings_effort_desc">模型原生思考强度（OpenAI o 系 / DeepSeek-R1 / Qwen3 等）；不支持的模型自动忽略</string>
     <string name="settings_budget_desc">思维链 token 预算；与 Effort 不强行绑定（不同 Provider 语义不同）</string>
-    <string name="settings_show_thinking_desc">在对话流中展示模型的思考过程（数据预埋，对话渲染层后续接入）</string>
 
     <!-- Context -->
     <string name="settings_section_context">Context · 上下文</string>
@@ -126,6 +125,10 @@
     <string name="settings_max_tool_calls_desc">单轮对话的工具调用次数上限</string>
     <string name="settings_tool_timeout_desc">单个工具执行超时</string>
     <string name="settings_tool_result_desc">工具结果注入上下文前的 token 截断阈值</string>
+    <string name="settings_web_search_label">原生联网搜索</string>
+    <string name="settings_web_search_off">关闭</string>
+    <string name="settings_web_search_auto">自动</string>
+    <string name="settings_web_search_desc">按端点注入 Provider 原生搜索参数；“自动”按端点识别，未知端点不发送（防 400）</string>
 
     <!-- Vision -->
     <string name="settings_not_set">未指定</string>
@@ -137,7 +140,6 @@
     <string name="settings_retry_count_desc">请求失败后的自动重试次数</string>
     <string name="settings_retry_delay_desc">首次重试等待（此后指数退避）</string>
     <string name="settings_streaming_desc">流式输出（打字机效果）；关闭后整段返回</string>
-    <string name="settings_keep_alive_desc">连接复用开关（数据预埋；客户端当前始终启用连接池）</string>
 
     <!-- Prompt -->
     <string name="settings_section_prompt">Prompt · 提示词</string>
@@ -148,6 +150,7 @@
     <!-- Advanced -->
     <string name="settings_section_advanced">Advanced · 高级</string>
     <string name="settings_strict_schema_desc">JSON Schema 严格模式（仅部分 Provider 支持）</string>
+    <string name="settings_json_schema_desc">结构化输出为 JSON_SCHEMA 模式时作为响应格式 schema 发送；留空回退最简对象</string>
 
     <!-- Coding 专家角色（人设层；编辑器共享键） -->
     <string name="settings_roles_builtin">内置角色（不可编辑，可另存为自定义）</string>
@@ -252,19 +255,14 @@
     <string name="settings_cancel">取消</string>
     <string name="settings_save">保存</string>
     <string name="settings_edit_provider">编辑 Provider</string>
-    <string name="settings_keys_hint">API Keys（每行一个）</string>
-    <string name="settings_rotation_disabled">DISABLED · 禁用</string>
-    <string name="settings_rotation_sequential">SEQUENTIAL · 顺序轮换</string>
-    <string name="settings_rotation_on_error">ON_ERROR · 出错切换</string>
-    <string name="settings_rotation_rate_limit">ON_RATE_LIMIT · 仅 429 切换</string>
-    <string name="settings_rotation_desc">多 Key 轮换策略（数据预埋，客户端后续接入）</string>
+    <string name="settings_keys_hint">API Keys（每行一个；当前始终使用第一个 Key）</string>
     <string name="settings_default_headers">Default Headers（Provider 级默认请求头）</string>
     <string name="settings_base_url_hint">OpenAI 兼容端点，如 https://api.openai.com/v1</string>
 
     <!-- Roles dialog -->
     <string name="settings_done">完成</string>
     <string name="settings_model_roles">Model Roles · 多模型角色</string>
-    <string name="settings_role_note">角色映射已保存；真正的多 client 路由由 Agent 引擎后续接入。</string>
+    <string name="settings_role_note">角色映射已生效：FAST 驱动目标校验、SUMMARY 驱动上下文压缩、VISION/REASONING 按能力路由，缺失时自动回退主模型。</string>
 
     <!-- About -->
     <string name="settings_about_version">版本</string>
@@ -361,6 +359,12 @@
     <string name="model_manual_id_label">或手动填写模型 ID</string>
     <string name="model_use_custom_id">使用自定义 ID</string>
     <string name="model_close">关闭</string>
+    <!-- #526：此前漏网的硬编码标签（所在文件其余文本均已走 stringResource） -->
+    <string name="model_base_url_label">Base URL</string>
+    <string name="model_api_key_label">API Key</string>
+    <string name="model_manage_providers">服务商…</string>
+    <string name="model_providers_title">服务商</string>
+    <string name="model_provider_keys_count">API Keys：%1$d</string>
 
     <!-- ═══ 模型配置导入弹窗（ModelConfigImportDialog —— 粘贴 JSON / Python / YAML / TOML）═══ -->
     <string name="model_import">导入配置</string>
@@ -810,7 +814,6 @@
     <string name="settings_dialog_ok">确定</string>
     <string name="settings_enable_tools">启用工具</string>
     <string name="settings_streaming">流式输出</string>
-    <string name="settings_keep_alive_conn">连接保活</string>
     <string name="settings_keep_alive_service">后台常驻</string>
     <string name="settings_retry_count">重试次数</string>
     <!-- ═══ terminal/service 叶：Ubuntu 终端运行时宿主保活（原 Agent 分区迁入）═══ -->

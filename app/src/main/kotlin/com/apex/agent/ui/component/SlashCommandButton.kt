@@ -88,9 +88,19 @@ fun SlashCommandButton(
     onItemSelected: (SlashMenuItem) -> Boolean,
     modifier: Modifier = Modifier,
     scope: String = "agent",
-    isSelected: (SlashMenuItem) -> Boolean = { false }
+    isSelected: (SlashMenuItem) -> Boolean = { false },
+    menuOpen: Boolean? = null,
+    onMenuDismiss: (() -> Unit)? = null,
+    triggerHidden: Boolean = false
 ) {
-    var showMenu by remember { mutableStateOf(false) }
+    // 弹层状态外提（2026-10 工具台重排）：menuOpen 非空 = 调用方托管
+    //（Code 屏展开菜单锚点模式，triggerHidden 时不画触发钮仅留 1dp 锚点）；
+    // null = 内部自管（Agent 屏既有行为零改动）。
+    var internalOpen by remember { mutableStateOf(false) }
+    val showMenu = menuOpen ?: internalOpen
+    val closeMenu: () -> Unit = {
+        if (menuOpen == null) internalOpen = false else onMenuDismiss?.invoke()
+    }
 
     // UI-016：青粉硬编码渐变改 primary→tertiary token —— 暗态恰为薄荷→玫瑰
     // （强调色双端身份保留，已随去霓虹重调转为低饱和），亮态 0E7A57→B33A65 对浅底达 AA（原青 00E5FF 仅 1.44:1）
@@ -103,34 +113,43 @@ fun SlashCommandButton(
     var anchorTopInWindow by remember { mutableStateOf(Float.MAX_VALUE) }
 
     Box(
-        modifier = modifier
-            // UI-012：48dp 触区红线（原 40dp 视觉系提升为 48 系，与
-            // Attach/Github/Send/Toolkit 全行统一；圆底视觉随节点同步放大）
-            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .onGloballyPositioned { coords ->
-                anchorTopInWindow = coords.positionInWindow().y
-            }
-            .background(
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                shape = CircleShape // 精修：与 Attach/Github/Toolkit 统一圆形剪裁（原 10dp 方角，行内独树一帜）
-            )
-            .semantics { contentDescription = openMenuCd }
-            .clickable { showMenu = true },
-        contentAlignment = Alignment.Center
+        modifier = modifier.onGloballyPositioned { coords ->
+            anchorTopInWindow = coords.positionInWindow().y
+        }
     ) {
-        Canvas(modifier = Modifier.size(22.dp)) {
-            val canvasSize = size
-            val strokeWidth = canvasSize.width * 0.18f
-            drawLine(
-                brush = slashGradient,
-                start = Offset(canvasSize.width * 0.78f, canvasSize.height * 0.18f),
-                end = Offset(canvasSize.width * 0.22f, canvasSize.height * 0.82f),
-                strokeWidth = strokeWidth,
-                cap = StrokeCap.Round
-            )
+        if (!triggerHidden) {
+            Box(
+                modifier = Modifier
+                    // UI-012：48dp 触区红线（原 40dp 视觉系提升为 48 系，与
+                    // Attach/Github/Send/Toolkit 全行统一；圆底视觉随节点同步放大）
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                        shape = CircleShape // 精修：与 Attach/Github/Toolkit 统一圆形剪裁（原 10dp 方角，行内独树一帜）
+                    )
+                    .semantics { contentDescription = openMenuCd }
+                    .clickable { internalOpen = true },
+                contentAlignment = Alignment.Center
+            ) {
+                Canvas(modifier = Modifier.size(22.dp)) {
+                    val canvasSize = size
+                    val strokeWidth = canvasSize.width * 0.18f
+                    drawLine(
+                        brush = slashGradient,
+                        start = Offset(canvasSize.width * 0.78f, canvasSize.height * 0.18f),
+                        end = Offset(canvasSize.width * 0.22f, canvasSize.height * 0.82f),
+                        strokeWidth = strokeWidth,
+                        cap = StrokeCap.Round
+                    )
+                }
+            }
+        } else {
+            // 锚点模式：1dp 占位维持 Popup 空间翻转判定的坐标测量
+            Box(modifier = Modifier.size(1.dp))
         }
 
         // v3：菜单打开时才组合 Popup —— 弹窗窗口不再常驻。
+        // （外提后挂在外层锚点 Box：锚点坐标 = 触发钮/1dp 占位所在处）
         if (showMenu) {
             SlashMenuPopup(
                 menuFlow = slashMenuProvider.menu,
@@ -138,10 +157,12 @@ fun SlashCommandButton(
                 anchorTopInWindow = anchorTopInWindow,
                 isSelected = isSelected,
                 onRefresh = slashMenuProvider::refresh,
-                onDismiss = { showMenu = false },
+                onDismiss = closeMenu,
                 onItemSelected = { item ->
                     // 调用方决定保持展开（多选 chip）还是收起（普通指令）
-                    showMenu = onItemSelected(item) && showMenu
+                    val keepOpen = onItemSelected(item) && showMenu
+                    if (menuOpen == null) internalOpen = keepOpen
+                    else if (!keepOpen) onMenuDismiss?.invoke()
                 }
             )
         }

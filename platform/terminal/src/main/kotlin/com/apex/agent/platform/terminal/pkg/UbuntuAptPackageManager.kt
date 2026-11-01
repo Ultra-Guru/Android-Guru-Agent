@@ -123,14 +123,32 @@ class UbuntuAptPackageManager(
         val dpkgOk = dpkgProbe != null && dpkgProbe.exitCode == 0
         val available = aptOk && dpkgOk
         val version = aptProbe?.stdout?.lineSequence()?.firstOrNull()?.trim()
+        // ★ 半装状态检测（用户实测缺陷）：dpkg --version 只证明二进制能跑，
+        // 对「apt-get install 被强杀后留下的 unpacked-not-configured / updates
+        // 残留」完全无感 —— 环境实际已坏（每次 apt install 立即报
+        // "dpkg was interrupted"），health check 却判 HEALTHY →
+        // EnvironmentRepairService 不会触发 dpkg --configure -a。
+        // dpkg --audit 列出所有处于非一致状态的包（只读 dpkg 数据库，零网络，
+        // 秒级）—— 输出非空即 NEEDS_CONFIGURATION，包名解析进 brokenPackages。
+        val audit = if (dpkgOk) {
+            runAptRead(rootfs, listOf("dpkg", "--audit"), timeoutMs = 15_000)
+        } else {
+            null
+        }
+        val brokenFromAudit = audit?.let { parseAuditPackages(it.stdout) } ?: emptyList()
+        val databaseState = when {
+            !dpkgOk -> PackageDatabaseState.BROKEN
+            brokenFromAudit.isNotEmpty() -> PackageDatabaseState.NEEDS_CONFIGURATION
+            else -> PackageDatabaseState.HEALTHY
+        }
         return PackageManagerStatus(
             available = available,
             manager = if (aptOk) "apt-get" else "none",
             version = version,
-            databaseState = if (dpkgOk) PackageDatabaseState.HEALTHY else PackageDatabaseState.BROKEN,
+            databaseState = databaseState,
             lockState = if (lock.isLocked()) PackageLockState.LOCKED else PackageLockState.FREE,
             metadataState = PackageMetadataState.UNKNOWN,
-            brokenPackages = emptyList()
+            brokenPackages = brokenFromAudit
         )
     }
 
@@ -179,6 +197,25 @@ class UbuntuAptPackageManager(
         options: PackageInstallOptions
     ): PackageOperation {
         require(packages.isNotEmpty()) { "PackageError:EmptyInstall — 至少指定一个包" }
+        val first = installInternal(packages, options)
+        // ★ dpkg 中断自愈（用户实测致命缺陷）：apt-get install 被强杀（超时
+        // destroyForcibly / App 进程死亡 / 系统杀 proot）→ dpkg 数据库留在
+        // 「半装状态」（unpacked-not-configured / updates 残留）。此后**每一次**
+        // 重试 apt-get install 都在 dpkg 前置检查即失败：
+        //   "E: dpkg was interrupted, you must manually run 'dpkg --configure -a'"
+        // —— bootstrap BASE_PACKAGES 因此永久 FAILED → 降级 READY 注记永挂，
+        // 修复按钮（ensureReady 重跑 bootstrap）陷入同错死循环；且 T97 控制台
+        // 已退役，用户没有手动执行 dpkg --configure -a 的通道。
+        // 修复：识别 DPKG_INTERRUPTED → 自动 repair()（dpkg --configure -a）→
+        // 成功则重试一次 install。锁安全：installInternal 与 repair 各自完整的
+        // runWriteOp 生命周期（先获取后释放），顺序调用无重入。
+        return autoHealDpkgInterrupted(first) { installInternal(packages, options) }
+    }
+
+    private suspend fun installInternal(
+        packages: List<PackageSpec>,
+        options: PackageInstallOptions
+    ): PackageOperation {
         val opId = newOpId()
         val argv = AptCommandBuilder().buildInstall(packages, options)
         return runWriteOp(opId, PackageOperationType.INSTALL, packages, argv, defaultTimeoutMs) { exec, _ ->
@@ -241,6 +278,13 @@ class UbuntuAptPackageManager(
         packages: List<PackageSpec>,
         options: PackageUpgradeOptions
     ): PackageOperation {
+        val first = upgradeInternal(packages)
+        // 同 install：dpkg 中断自愈（见 install KDoc —— upgrade 同样会碰
+        // "dpkg was interrupted" 前置检查失败）。
+        return autoHealDpkgInterrupted(first) { upgradeInternal(packages) }
+    }
+
+    private suspend fun upgradeInternal(packages: List<PackageSpec>): PackageOperation {
         val opId = newOpId()
         val argv = AptCommandBuilder().buildUpgrade(packages)
         return runWriteOp(opId, PackageOperationType.UPGRADE, packages, argv, defaultTimeoutMs) { exec, _ ->
@@ -449,6 +493,88 @@ class UbuntuAptPackageManager(
                 maxOutputBytes = maxOutputBytes
             )
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // dpkg 中断自愈（install / upgrade 共用）
+    // ──────────────────────────────────────────────────────────────────
+
+    /**
+     * ★ dpkg 中断自动愈合：首次操作失败且错误码为 [PackageErrorCode.DPKG_INTERRUPTED]
+     * 时，自动执行 [repair]（`dpkg --configure -a`）完成半装包的配置，成功后重试
+     * 一次原操作。
+     *
+     * 为什么必须在这里做（而非 bootstrap / 工具层各做一遍）：
+     *  - 所有 apt 写路径（bootstrap BASE_PACKAGES / TerminalLinuxPackages 工具 /
+     *    DepCenter 环境安装）都经过本类 —— 单点修复全覆盖；
+     *  - 错误映射 [mapExecToError] 已产出结构化 DPKG_INTERRUPTED（recoverable=true），
+     *    但此前**无人消费**该信号 —— 用户实测：bootstrap 降级注记
+     *    "E: dpkg was interrupted…" 永挂，修复按钮重跑 bootstrap 同错死循环
+     *    （T97 控制台退役后用户也没有手动跑 dpkg --configure -a 的通道）。
+     *
+     * 语义：
+     *  - 首次成功 / 非中断错误 → 原样返回（零行为变化）；
+     *  - 中断 → repair → 成功 → 重试一次，重试结果即最终结果（重试成功时
+     *    stderr 首行附注自愈轨迹，Agent/用户可见「发生了什么」）；
+     *  - 中断 → repair → 失败 → 返回原始失败，但 error.message 附带 repair 失败
+     *    原因（诊断保真 —— 两个失败都可见，不再只有第一条）；
+     *  - CancellationException 自然透传（installInternal/repair 各自重抛）。
+     *
+     * 事件流：repair 与重试各自完整发事件（Failed/Completed/Progress）——
+     * 订阅者看到真实自愈轨迹，无隐藏副作用。
+     */
+    private suspend fun autoHealDpkgInterrupted(
+        first: PackageOperation,
+        retry: suspend () -> PackageOperation
+    ): PackageOperation {
+        if (first.state == PackageOperationState.SUCCEEDED) return first
+        // TIMED_OUT 伴随的中断不自动重试：首要问题是慢/挂死而非 dpkg 状态，
+        // 立即重跑大概率再超时一次（多花一整轮 apt 超时预算）—— 交还调用方决策。
+        if (first.state == PackageOperationState.TIMED_OUT) return first
+        val originalError = first.error ?: return first
+        if (originalError.code != PackageErrorCode.DPKG_INTERRUPTED) return first
+        val opId = first.id
+        emit(
+            PackageOperationEvent.Progress(
+                opId,
+                "AUTO_HEAL",
+                "dpkg was interrupted — running dpkg --configure -a then retrying once"
+            )
+        )
+        val repairOp = repair()
+        if (repairOp.state != PackageOperationState.SUCCEEDED) {
+            val repairDetail = repairOp.error?.message
+                ?: repairOp.result?.stderr?.lineSequence()?.filter { it.startsWith("E:") }
+                    ?.take(3)?.joinToString("; ")?.ifBlank { null }
+                ?: repairOp.result?.stderr?.take(200)
+                ?: "dpkg --configure -a failed (exit ${repairOp.exitCode})"
+            val healedError = originalError.copy(
+                message = "${originalError.message.take(300)} | 自动修复失败: $repairDetail — " +
+                    "dpkg 状态未收敛，请重试或删除重装 Ubuntu 环境"
+            )
+            // 不重发 Failed（首 op 已如实发过）—— 修复失败的合并诊断随返回值
+            // 交给调用方（bootstrap note / 工具层 error.message 均可见）。
+            return first.copy(error = healedError)
+        }
+        emit(
+            PackageOperationEvent.Progress(
+                opId, "AUTO_HEAL",
+                "dpkg --configure -a succeeded — retrying original operation once"
+            )
+        )
+        val second = retry()
+        // 重试成功：结果 stderr 首行附注自愈轨迹（有界输出内的诚实标注，
+        // 不吞不造 —— 原始 apt 输出原样保留在后）。事件流不重发 Completed：
+        // 首 op 已如实发过 Failed，重试 op（新 opId）有自己的完整生命周期，
+        // 两个 AUTO_HEAL Progress 已标注自愈轨迹。
+        if (second.state == PackageOperationState.SUCCEEDED && second.result != null) {
+            val annotated = second.result.copy(
+                stderr = "[auto-healed: dpkg was interrupted → dpkg --configure -a → retried]\n" +
+                    second.result.stderr
+            )
+            return second.copy(result = annotated)
+        }
+        return second
     }
 
     // ──────────────────────────────────────────────────────────────────
@@ -855,6 +981,46 @@ class UbuntuAptPackageManager(
                 }
             }
             return packages.associateWith { it in installedNames }
+        }
+
+        /**
+         * ★ `dpkg --audit` 输出解析（纯函数）—— 半装/未配置包名提取。
+         *
+         * 输出形态（各段落说明文字 + 空行后的包名行）：
+         * ```text
+         * The following packages have been unpacked but not yet configured.
+         *  They must be configured using dpkg --configure or the configure
+         *  menu option in dselect for them to work:
+         *
+         *  clickhouse-common-static libc6
+         *
+         * The following packages are only half configured, ...
+         * ```
+         * 判定规则（保守，不误收说明文字）：一行内**所有**空白分隔 token 都是
+         * 包名形状（`[a-z0-9][a-z0-9.+-]*(:arch)?`，尾部逗号/句号剥掉）才算包名行
+         * —— 说明句含大写开头/逗号/冒号等标点，天然被排除。多行包名各自解析。
+         */
+        internal fun parseAuditPackages(auditStdout: String): List<String> {
+            if (auditStdout.isBlank()) return emptyList()
+            val tokenShape = Regex("[a-z0-9][a-z0-9.+\\-]*(?::[a-z0-9]+)?")
+            return auditStdout.lineSequence()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .filter { line ->
+                    // 至少一个 token 且全部为包名形状（说明文字必含大写/标点 → 排除）
+                    val tokens = line.split(Regex("\\s+"))
+                        .map { it.trimEnd(',', '.', ';') }
+                        .filter { it.isNotEmpty() }
+                    tokens.isNotEmpty() && tokens.all { tokenShape.matches(it) }
+                }
+                .flatMap { line ->
+                    line.split(Regex("\\s+"))
+                        .map { it.trimEnd(',', '.', ';') }
+                        .filter { it.isNotEmpty() }
+                }
+                .distinct()
+                .take(50)   // 有界：极端损坏时防日志/事件爆炸
+                .toList()
         }
     }
 }

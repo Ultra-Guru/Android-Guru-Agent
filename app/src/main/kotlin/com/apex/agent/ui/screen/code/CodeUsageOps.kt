@@ -2,6 +2,7 @@ package com.apex.agent.ui.screen.code
 
 import com.apex.agent.core.code.longtask.LongTaskStatus
 import com.apex.agent.core.engine.AgentEvent
+import com.apex.agent.notify.NotificationRecovery
 import kotlinx.coroutines.flow.update
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,16 +38,10 @@ internal fun CodeViewModel.recordUsage(event: AgentEvent.UsageUpdated) {
             sessionCachedTokens = state.sessionCachedTokens + event.cachedTokens
         )
     }
-    // 用量账本（fire-and-forget，内部 IO scope 落盘）：会话 id 用工作区，
-    // 模型 id 取当前默认 Profile —— 仪表盘的按模型/按日聚合据此成真。
-    val modelId = settingsRepository.profiles.value
-        .firstOrNull { it.isDefault }?.modelId.orEmpty()
-    usageLedger.record(
-        sessionId = boundWorkspaceId,
-        modelId = modelId,
-        promptTokens = event.promptTokens.toLong(),
-        completionTokens = event.completionTokens.toLong()
-    )
+    // 用量账本由运行时层按**真实** profile 记账（#221：LedgerUsageObserver
+    // 在 ModelRuntime 执行层收到实际 profile/model/role）——此处不再落账，
+    // 否则同一轮会被记两次，且旧口径会把角色路由的消耗错记到默认模型头上。
+    // 本函数只负责 UI 侧圆环与会话累计。
 }
 
 /**
@@ -72,9 +67,28 @@ internal fun CodeViewModel.contextWindowTokens(): Int {
  * ABORTED 不通知（用户主动中止，无「办完了」语义）。
  */
 internal fun CodeViewModel.notifyRunCompletion(status: LongTaskStatus, goal: String?) {
-    if (status == LongTaskStatus.ABORTED) return
-    if (!settingsRepository.agentSettings.value.taskCompletionNotify) return
+    val aborted = status == LongTaskStatus.ABORTED
+    val enabled = settingsRepository.agentSettings.value.taskCompletionNotify
+    if (aborted) return
+    if (!enabled) return
     if (foregroundTracker.isForeground) return
+    // #237：通知本该送达却发不出去（系统授权被拒/总开关关闭/渠道关闭）时，
+    // notifyTaskDone 只会静默 return，用户永远不知道「后台跑完了」。
+    // 判定收敛在 NotificationRecovery（纯函数，状态矩阵有单测）。
+    val canPost = apexNotifications.canPost(appContext)
+    if (NotificationRecovery.shouldPrompt(
+            NotificationRecovery.Facts(
+                taskCompletionNotifyEnabled = enabled,
+                isForeground = false,
+                canPost = canPost,
+                aborted = false
+            )
+        )
+    ) {
+        _uiState.update { it.copy(notificationRecoveryPending = true) }
+        return
+    }
+    if (!canPost) return
     // 预览取末条助手消息（无则通用完成文案由通知层兜底）
     val preview = _uiState.value.messages
         .lastOrNull { it.role == CodeChatMessage.Role.ASSISTANT }?.text.orEmpty()

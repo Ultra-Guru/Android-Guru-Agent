@@ -66,46 +66,58 @@ import kotlinx.coroutines.launch
 fun GithubIconButton(
     tokenManager: GithubTokenManager,
     mcpManager: com.apex.agent.core.tools.mcp.McpManager,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    menuOpen: Boolean? = null,
+    onMenuDismiss: (() -> Unit)? = null,
+    triggerHidden: Boolean = false
 ) {
     val connectionState by tokenManager.connectionState.collectAsStateWithLifecycle()
     // v3 S3：默认仓库信息行（连接态菜单首行；未设置时显示引导文案）
     val defaultRepo by tokenManager.defaultRepo.collectAsStateWithLifecycle()
-    var showMenu by remember { mutableStateOf(false) }
+    // 弹层状态外提（2026-10 工具台重排）：menuOpen 非空 = 调用方托管
+    //（Code 屏展开菜单锚点模式，triggerHidden 时不画触发钮仅留锚点）；
+    // null = 内部自管（Agent 屏既有行为零改动）。
+    var internalOpen by remember { mutableStateOf(false) }
+    val showMenu = menuOpen ?: internalOpen
+    val closeMenu: () -> Unit = {
+        if (menuOpen == null) internalOpen = false else onMenuDismiss?.invoke()
+    }
     var showTokenDialog by remember { mutableStateOf(false) }
     // v1.9：GitHub MCP 配置入口（两台服务器的统一配置面）。
     var showMcpDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     Box(modifier = modifier) {
-        Surface(
-            shape = CircleShape,
-            color = if (connectionState.isConnected)
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-            else
-                MaterialTheme.colorScheme.surfaceContainerHigh,
-            // UI-012：48dp 触区红线（原 40dp，与输入行全列按钮统一 48 系）
-            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-        ) {
-            IconButton(
-                onClick = { showMenu = true },
+        if (!triggerHidden) {
+            Surface(
+                shape = CircleShape,
+                color = if (connectionState.isConnected)
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                else
+                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                // UI-012：48dp 触区红线（原 40dp，与输入行全列按钮统一 48 系）
                 modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_github_mark),
-                    contentDescription = "GitHub",
-                    tint = if (connectionState.isConnected)
-                        MaterialTheme.colorScheme.primary
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
+                IconButton(
+                    onClick = { internalOpen = true },
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_github_mark),
+                        contentDescription = "GitHub",
+                        tint = if (connectionState.isConnected)
+                            MaterialTheme.colorScheme.primary
+                        else
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
 
         DropdownMenu(
             expanded = showMenu,
-            onDismissRequest = { showMenu = false }
+            onDismissRequest = closeMenu
         ) {
             if (connectionState.isConnected) {
                 // 默认仓库信息行（非交互 Text —— 菜单 Column 直接子项）：
@@ -137,7 +149,7 @@ fun GithubIconButton(
                     },
                     onClick = {
                         tokenManager.disconnect()
-                        showMenu = false
+                        closeMenu()
                     }
                 )
             } else {
@@ -150,7 +162,7 @@ fun GithubIconButton(
                         )
                     },
                     onClick = {
-                        showMenu = false
+                        closeMenu()
                         val intent = Intent(Intent.ACTION_VIEW).apply {
                             data = Uri.parse("https://github.com/settings/tokens?type=beta")
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -167,7 +179,7 @@ fun GithubIconButton(
                         )
                     },
                     onClick = {
-                        showMenu = false
+                        closeMenu()
                         showTokenDialog = true
                     }
                 )
@@ -184,7 +196,7 @@ fun GithubIconButton(
                     )
                 },
                 onClick = {
-                    showMenu = false
+                    closeMenu()
                     showMcpDialog = true
                 }
             )

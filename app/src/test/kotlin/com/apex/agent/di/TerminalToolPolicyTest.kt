@@ -26,12 +26,8 @@ class TerminalToolPolicyTest {
         "TerminalUbuntuEnsure" to 1_800_000L,
         // ProjectEnvironmentCoordinator.ensure 默认 timeoutMs = 900_000
         "TerminalWorkspaceEnvironment" to 900_000L,
-        // UbuntuAptPackageManager.DEFAULT_APT_TIMEOUT_MS = 600_000（ensure 动作复用）
-        "TerminalLinuxCapabilities" to 600_000L,
         // network diagnose 端到端探针 = 一次真实 apt-get update（600s apt 超时）
         "TerminalLinuxNetwork" to 600_000L,
-        // UbuntuBootstrapManager.DEFAULT_BOOTSTRAP_TIMEOUT_MS = 600_000
-        "TerminalLinuxBootstrap" to 600_000L,
         // apt 包安装/升级写操作
         "TerminalLinuxPackages" to 600_000L
     )
@@ -39,11 +35,8 @@ class TerminalToolPolicyTest {
     @Test
     fun `all long-budget environment tools are covered by explicit policies`() {
         val mustCover = listOf(
-            "TerminalUbuntuInstall",
             "TerminalUbuntuEnsure",
-            "TerminalLinuxBootstrap",
             "TerminalLinuxPackages",
-            "TerminalLinuxCapabilities",
             "TerminalLinuxNetwork",
             "TerminalLinuxRepair",
             "TerminalLinuxStatus",

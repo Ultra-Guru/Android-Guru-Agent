@@ -172,6 +172,20 @@ class LinuxEnvironmentHealth(
                     DimensionCheck("apt", HealthStatus.FAILED, LinuxErrorCode.APT_UNAVAILABLE.name, "apt unavailable: ${status.manager}", true)
                 status.databaseState == com.apex.agent.platform.terminal.pkg.PackageDatabaseState.BROKEN ->
                     DimensionCheck("apt", HealthStatus.DEGRADED, LinuxErrorCode.APT_FAILED.name, "dpkg database broken", true)
+                // ★ 半装状态（用户实测缺陷）：apt-get install 被强杀后 dpkg 留下
+                // unpacked-not-configured / updates 残留 —— 每次后续 apt 写操作立即
+                // 报 "dpkg was interrupted"。此前 status() 用 dpkg --version 判
+                // HEALTHY（半装完全不可见）→ autoRepair 永不触发 → 降级注记永挂。
+                // 现由 UbuntuAptPackageManager.status 的 dpkg --audit 产出
+                // NEEDS_CONFIGURATION + brokenPackages —— 此处归 DEGRADED(可修复)，
+                // EnvironmentRepairService.autoRepair 即会执行 dpkg --configure -a。
+                status.databaseState == com.apex.agent.platform.terminal.pkg.PackageDatabaseState.NEEDS_CONFIGURATION ->
+                    DimensionCheck(
+                        "apt", HealthStatus.DEGRADED, LinuxErrorCode.DPKG_INTERRUPTED.name,
+                        "dpkg interrupted — ${status.brokenPackages.size} half-configured package(s): " +
+                            status.brokenPackages.take(8).joinToString(","),
+                        true
+                    )
                 status.lockState == com.apex.agent.platform.terminal.pkg.PackageLockState.LOCKED ->
                     DimensionCheck("apt", HealthStatus.DEGRADED, LinuxErrorCode.APT_LOCKED.name, "apt lock held", false)
                 else ->

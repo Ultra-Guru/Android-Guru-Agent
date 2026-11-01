@@ -149,8 +149,11 @@ class WatchdogWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
+        // #490：极端 ROM 上 ACTIVITY_SERVICE 可能拿不到 —— as? 降级 + retry，
+        // 与 #452（da536b79 六处 getSystemService 安全强转）同口径；强转失败
+        // 直接抛 ClassCastException 会让任务以失败告终而非等待下次调度。
         val am = applicationContext.getSystemService(Context.ACTIVITY_SERVICE)
-            as android.app.ActivityManager
+            as? android.app.ActivityManager ?: return Result.retry()
 
         val isRunning = am.runningAppProcesses?.any {
             it.processName == applicationContext.packageName

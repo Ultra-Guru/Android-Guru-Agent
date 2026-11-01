@@ -87,6 +87,11 @@ object CodePrompts {
     /**
      * 工作区动态上下文（JIT 注入，随 workspace 切换/环境变化刷新）。
      *
+     * 「整个系统」工作区（root = `/`）单独成段：明确告知模型 code_* 工具在
+     * 真实文件系统上操作（非沙箱副本）、/data 需 root 的权限边界、以及终端
+     * 侧真实系统根挂载在 /host —— 否则模型按「沙箱内操作」的默认措辞自我
+     * 设限，用户选择整个系统后操作仍落回工作区/沙箱。
+     *
      * @param workspaceName 工作区名
      * @param rootLabel 根路径（host 视角，供日志显示）
      * @param guestPath guest（Ubuntu）视角挂载点
@@ -104,12 +109,35 @@ object CodePrompts {
     ): String = buildString {
         appendLine("## Active Workspace: $workspaceName")
         appendLine("- host root: $rootLabel")
-        appendLine("- guest path（terminal/Ubuntu 视角）: $guestPath")
+        if (rootLabel == WHOLE_SYSTEM_ROOT) {
+            // 整个系统工作区：真实文件系统，非沙箱。
+            appendLine(
+                "- 真实系统根：code_* 工具以绝对路径直接读写真实 Android 文件系统" +
+                    "（/system、/vendor、/etc、/product、/sdcard 与应用自身目录），" +
+                    "不是沙箱副本；相对路径以 / 解析"
+            )
+            appendLine(
+                "- 权限边界（属预期，不要反复重试）：/data 及其他应用私有目录需要 " +
+                    "root，普通权限下返回 Permission denied；/system 等系统分区为" +
+                    "只读挂载，写入会失败"
+            )
+            appendLine(
+                "- guest path（terminal/Ubuntu 视角）: /workspace（默认工作区挂载点）· " +
+                    "/host（真实系统根 —— /host/system/build.prop 即宿主 /system/build.prop，" +
+                    "TerminalExec 可传 cwd=/host/system 探索宿主系统）"
+            )
+            appendLine("code_* 工具在整个系统范围内真实读写（受 Android 权限约束）。")
+        } else {
+            appendLine("- guest path（terminal/Ubuntu 视角）: $guestPath")
+            appendLine("所有相对路径以工作区根解析；code_* 工具在此沙箱内操作。")
+        }
         if (!environmentSummary.isNullOrBlank()) appendLine("- environment: $environmentSummary")
         if (!projectStats.isNullOrBlank()) appendLine("- project: $projectStats")
         if (!activeFile.isNullOrBlank()) appendLine("- user is viewing: $activeFile")
-        appendLine("所有相对路径以工作区根解析；code_* 工具在此沙箱内操作。")
     }
+
+    /** 整个系统工作区的 host 根（CodeWorkspaceManager.SYSTEM 工作区 root 值）。 */
+    private const val WHOLE_SYSTEM_ROOT = "/"
 
     /** 任务前缀指令（每轮用户消息发送前拼接的会话任务上下文）。 */
     fun taskHint(task: String): String =

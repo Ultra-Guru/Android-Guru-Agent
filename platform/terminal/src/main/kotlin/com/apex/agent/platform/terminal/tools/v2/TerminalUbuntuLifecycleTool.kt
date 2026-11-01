@@ -33,9 +33,11 @@ import kotlinx.serialization.json.put
  *   "probeDegraded"?: bool, "durationMs"?: int, "message": "..." }
  * ```
  *
- * 既有工具（TerminalUbuntuInstall / TerminalLinuxBootstrap /
- * TerminalLinuxCapabilities / TerminalLinuxRepair）全部保留 —— 细粒度控制入口
- * 不删；ensure 是产品级聚合入口（用户明确要求"不删除已有能力重做"）。
+ * 既有细粒度入口收敛（P0-#3 工具面收敛）：TerminalUbuntuInstall /
+ * TerminalLinuxBootstrap / TerminalLinuxCapabilities 已移除 —— 本工具是
+ * Ubuntu 拉起的唯一 Agent 入口；细粒度包操作走 TerminalLinuxPackages，
+ * 修复走 TerminalLinuxRepair，按项目补装工具链走 TerminalWorkspaceEnvironment
+ * 的 ensure action。
  */
 class TerminalUbuntuEnsureTool(
     private val lifecycle: UbuntuLifecycleCoordinator
