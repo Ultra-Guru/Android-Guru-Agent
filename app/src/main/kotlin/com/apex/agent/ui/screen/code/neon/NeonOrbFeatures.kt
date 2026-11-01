@@ -173,7 +173,9 @@ fun buildNeonSessionContext(state: NeonOrbState, now: Date = Date()): String = b
 
     if (state.timeInjection) {
         val tz = TimeZone.getDefault()
-        val dateTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(now)
+        // #479：同 ChatToolkitStore —— prompt 里的时间戳给模型解析，
+        // 必须固定 Locale（泰语佛历/阿拉伯数字会产出模型读不懂的时间）。
+        val dateTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(now)
         val weekday = SimpleDateFormat("EEEE", Locale.CHINA).format(now)
         appendLine("- 当前时间：$dateTime（$weekday，时区 ${tz.id}）。回答涉及日期、星期、倒计时、时效性的问题时必须以此为准，禁止凭训练数据猜测。")
     }

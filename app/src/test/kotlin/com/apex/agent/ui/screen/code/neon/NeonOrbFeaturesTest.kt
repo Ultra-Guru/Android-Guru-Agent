@@ -94,6 +94,40 @@ class NeonOrbFeaturesTest {
         }
     }
 
+    /**
+     * #479 回归：注入 prompt 的时间戳必须与设备区域无关。
+     *
+     * 泰语默认区域（th-TH）使用佛历 —— `yyyy` 会输出 2569 而不是 2026；
+     * 阿拉伯语默认区域会输出阿拉伯-印度数字。两者都会让模型读到无法解析的
+     * 时间，而这段 prompt 明确要求「以此为准」，等于把模型引向错误日期。
+     * 旧实现用 Locale.getDefault()，在中文/英文设备上测不出来。
+     */
+    @Test
+    fun `时间注入不受设备区域影响`() {
+        val originalLocale = Locale.getDefault()
+        val originalTz = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"))
+            val fixed = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+                .parse("2026-10-24 09:30:00")!!
+
+            val outputs = listOf("th-TH", "ar-EG", "en-US").map { tag ->
+                Locale.setDefault(Locale.forLanguageTag(tag))
+                buildNeonSessionContext(NeonOrbState(timeInjection = true), now = fixed)
+            }
+
+            // 三种区域下注入的时间戳必须完全一致，且是可被模型解析的公历格式。
+            val stamps = outputs.map { ctx ->
+                ctx.lineSequence().first { it.startsWith("- 当前时间：") }
+            }
+            assertEquals("不同区域注入的时间行必须一致", 1, stamps.toSet().size)
+            assertTrue("必须含公历 2026（不是佛历 2569）: ${stamps[0]}", stamps[0].contains("2026-10-24"))
+        } finally {
+            Locale.setDefault(originalLocale)
+            TimeZone.setDefault(originalTz)
+        }
+    }
+
     @Test
     fun `网络搜索强制先搜后答`() {
         val ctx = buildNeonSessionContext(NeonOrbState(webSearch = true))
