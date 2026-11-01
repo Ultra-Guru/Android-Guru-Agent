@@ -277,21 +277,21 @@ class MoreCapabilitiesToolsTest {
 
     @Test
     fun `NotificationPost rejects empty title`() = runTest {
-        val tool = NotificationPostTool { _ -> true }
+        val tool = NotificationPostTool(poster = { _ -> true })
         val result = tool.execute("""{"title": "", "text": "body"}""")
         assertTrue("should fail: $result", result.startsWith("Error"))
     }
 
     @Test
     fun `NotificationPost rejects empty text`() = runTest {
-        val tool = NotificationPostTool { _ -> true }
+        val tool = NotificationPostTool(poster = { _ -> true })
         val result = tool.execute("""{"title": "hi", "text": ""}""")
         assertTrue("should fail: $result", result.startsWith("Error"))
     }
 
     @Test
     fun `NotificationPost rejects too long title`() = runTest {
-        val tool = NotificationPostTool { _ -> true }
+        val tool = NotificationPostTool(poster = { _ -> true })
         val longTitle = "x".repeat(101)
         val result = tool.execute("""{"title": "$longTitle", "text": "body"}""")
         assertTrue("should fail: $result", result.startsWith("Error"))
@@ -299,7 +299,11 @@ class MoreCapabilitiesToolsTest {
 
     @Test
     fun `NotificationPost succeeds with valid params`() = runTest {
-        val tool = NotificationPostTool { _ -> true }
+        // #354 ⑥：渠道必须在白名单内 —— 用例显式注入自定义渠道以保留「渠道名回显」断言。
+        val tool = NotificationPostTool(
+            poster = { _ -> true },
+            allowedChannelIds = setOf("agent_reminder")
+        )
         val result = tool.execute(
             """{"title": "Task Done", "text": "Build finished", "channel_id": "agent_reminder"}"""
         )
@@ -309,7 +313,7 @@ class MoreCapabilitiesToolsTest {
 
     @Test
     fun `NotificationPost reports poster failure`() = runTest {
-        val tool = NotificationPostTool { _ -> false }
+        val tool = NotificationPostTool(poster = { _ -> false })
         val result = tool.execute("""{"title": "hi", "text": "body"}""")
         assertTrue("should fail: $result", result.startsWith("Error"))
     }
