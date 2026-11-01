@@ -1,5 +1,8 @@
 package com.apex.agent.tools
 
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
+
 /**
  * ═══ 工具参数敏感字段脱敏器（issue #336）═══
  *
@@ -119,7 +122,17 @@ object SensitiveArgRedactor {
                 "$name=$quote${maskValue(value)}$quote"
             }
             out
-        } catch (_: Throwable) {
+        } catch (e: Throwable) {
+            // #480：防御契约不变（原样返回、绝不炸审计链路），但补留痕 ——
+            // 脱敏静默失效意味着明文漏进审计/弹窗，无痕迹则正则失配的形态
+            // 永远无人知晓。日志自身 runCatching 包裹，留痕失败也不影响契约。
+            runCatching {
+                AppLogger.instance.warn(
+                    LogCategory.TOOL, "SensitiveArgRedactor",
+                    "redact failed — raw passed through unmasked: " +
+                        "${e::class.simpleName}: ${e.message?.take(80)}"
+                )
+            }
             raw
         }
     }
