@@ -594,7 +594,12 @@ object CodeModule {
             deepDive = deepDive,
             standard = standard,
             loom = loom,
-            courier = courier
+            courier = courier,
+            // #395 同款中止收口（四线统一）：深潜线原本在 ApexAgentEngine.abort
+            // 内部收口 userQuestionBridge，kit 三线（标准/织造/信使）无同等接线
+            // ——中止后提问卡残留 UI，「继续」把答案投给已死任务。统一路由层
+            // 前置收口（幂等：深潜线内层二次调用时 deferred 已清，零副作用）。
+            userQuestionGateway = userQuestionBridge
         )
     }
 
