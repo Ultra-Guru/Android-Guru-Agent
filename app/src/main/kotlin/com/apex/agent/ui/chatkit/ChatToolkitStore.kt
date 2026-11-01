@@ -61,6 +61,10 @@ class ChatToolkitStore @Inject constructor(
     private val _webSearchEnabled = MutableStateFlow(prefs.getBoolean(KEY_WEB_SEARCH, false))
     val webSearchEnabled: StateFlow<Boolean> = _webSearchEnabled.asStateFlow()
 
+    /** 网络搜索通道提示（Coding 工位通道菜单写入；buildSessionContext 据此注入调用指引）。 */
+    private val _searchChannelHint = MutableStateFlow(SearchChannelHint.fromStored(prefs.getString(KEY_SEARCH_CHANNEL, null)))
+    val searchChannelHint: StateFlow<SearchChannelHint?> = _searchChannelHint.asStateFlow()
+
     private val _timeEnabled = MutableStateFlow(prefs.getBoolean(KEY_TIME, false))
     val timeEnabled: StateFlow<Boolean> = _timeEnabled.asStateFlow()
 
@@ -85,6 +89,16 @@ class ChatToolkitStore @Inject constructor(
     fun setWebSearchEnabled(enabled: Boolean) {
         _webSearchEnabled.value = enabled
         prefs.edit().putBoolean(KEY_WEB_SEARCH, enabled).apply()
+    }
+
+    /**
+     * 网络搜索通道提示（持久化）：null = 未选通道（沿用 legacy 内置指引）。
+     * 与 webSearchEnabled 解耦——MCP 通道激活时内置开关为 false，但提示
+     * 仍在，[buildSessionContext] 据此注入 MCP 工具的调用指引。
+     */
+    fun setSearchChannelHint(hint: SearchChannelHint?) {
+        _searchChannelHint.value = hint
+        prefs.edit().putString(KEY_SEARCH_CHANNEL, SearchChannelHint.encode(hint)).apply()
     }
 
     fun setTimeEnabled(enabled: Boolean) {
@@ -163,13 +177,30 @@ class ChatToolkitStore @Inject constructor(
             appendLine("回答与日期/星期/倒计时/时效性相关的问题时，必须以上述时间为准。")
             appendLine()
         }
-        if (_webSearchEnabled.value) {
+        if (_webSearchEnabled.value || _searchChannelHint.value != null) {
             appendLine("### 网络搜索（强制）")
-            appendLine("用户已开启网络搜索（当前 Provider 支持时已同时启用模型内置联网搜索）。")
-            appendLine("若本轮响应已附带模型内置搜索的引用来源（**Sources:** 列表），直接基于其结果作答并保留来源标注；")
-            appendLine("否则，涉及实时信息、新闻、天气、价格、文档、不确定的事实时，必须先调用 WebSearch 工具")
-            appendLine("获取最新结果（必要时 WebFetch 读取全文）再作答，禁止仅凭训练知识猜测。")
-            appendLine("引用搜索结果中的关键信息时，注明来源标题与链接。")
+            when (_searchChannelHint.value?.kind) {
+                SearchChannelHint.Kind.MCP -> {
+                    appendLine("用户已启用本地搜索 MCP「${_searchChannelHint.value?.displayName}」。")
+                    appendLine("涉及实时信息、新闻、天气、价格、文档、不确定的事实时，必须优先调用该服务器的")
+                    appendLine("搜索工具（注册名形如 mcp__<server>__web_search，可用 ToolSearch/工具列表检索），")
+                    appendLine("需要读取网页全文时调用其读取工具（如 mcp__<server>__web_read）。")
+                    appendLine("搜索失败时如实说明，不要静默回退到训练知识猜测。")
+                }
+                SearchChannelHint.Kind.SEARXNG -> {
+                    appendLine("用户已启用 SearXNG 本地元搜索（WebSearch 工具的链首源，本地服务已在运行）。")
+                    appendLine("涉及实时信息、新闻、天气、价格、文档、不确定的事实时，必须先调用 WebSearch 获取")
+                    appendLine("最新结果（必要时 WebFetch 读取全文）再作答——本地源优先于公共引擎，")
+                    appendLine("禁止仅凭训练知识猜测。引用搜索结果中的关键信息时，注明来源标题与链接。")
+                }
+                else -> {
+                    appendLine("用户已开启网络搜索（当前 Provider 支持时已同时启用模型内置联网搜索）。")
+                    appendLine("若本轮响应已附带模型内置搜索的引用来源（**Sources:** 列表），直接基于其结果作答并保留来源标注；")
+                    appendLine("否则，涉及实时信息、新闻、天气、价格、文档、不确定的事实时，必须先调用 WebSearch 工具")
+                    appendLine("获取最新结果（必要时 WebFetch 读取全文）再作答，禁止仅凭训练知识猜测。")
+                    appendLine("引用搜索结果中的关键信息时，注明来源标题与链接。")
+                }
+            }
             appendLine()
         }
         // v4：强制函数调用说明（引擎会同步发 tool_choice=required/具体函数）
@@ -238,12 +269,48 @@ class ChatToolkitStore @Inject constructor(
 
     companion object {
         private const val KEY_WEB_SEARCH = "toolkit_web_search"
+        private const val KEY_SEARCH_CHANNEL = "toolkit_search_channel"
         private const val KEY_TIME = "toolkit_time"
         private const val KEY_FUNCTIONS = "toolkit_functions"
         private const val KEY_FORMAT = "toolkit_output_format"
         private const val KEY_SCHEMA = "toolkit_custom_schema"
         private const val KEY_RULES = "toolkit_rules"
         private const val KEY_EXPOSE_ALL = "toolkit_expose_all"
+    }
+}
+
+/**
+ * 网络搜索通道提示（2026-11「agent 要会调用」：通道激活后模型侧的指名
+ * 指引）——通道菜单写入 [ChatToolkitStore]，[ChatToolkitStore.buildSessionContext]
+ * 按此把「该调哪个搜索工具」注入 system prompt。
+ *
+ * 不直接引用 Code 屏的 WebSearchChannel 枚举（chatkit 不反向依赖 code 屏），
+ * 经 [encode]/[fromStored] 字符串编解码落盘（进程重启恢复）。
+ */
+data class SearchChannelHint(
+    val kind: Kind,
+    /** MCP 通道的服务器展示名（与 mcp__<name>__ 工具前缀同源）。 */
+    val displayName: String? = null
+) {
+    enum class Kind { BUILTIN, SEARXNG, MCP }
+
+    companion object {
+        private const val MCP_PREFIX = "mcp:"
+
+        fun encode(hint: SearchChannelHint?): String? = when (hint?.kind) {
+            Kind.BUILTIN -> "builtin"
+            Kind.SEARXNG -> "searxng"
+            Kind.MCP -> MCP_PREFIX + hint.displayName.orEmpty()
+            null -> null
+        }
+
+        fun fromStored(raw: String?): SearchChannelHint? = when {
+            raw == null -> null
+            raw == "builtin" -> SearchChannelHint(Kind.BUILTIN)
+            raw == "searxng" -> SearchChannelHint(Kind.SEARXNG)
+            raw.startsWith(MCP_PREFIX) -> SearchChannelHint(Kind.MCP, raw.removePrefix(MCP_PREFIX))
+            else -> null
+        }
     }
 }
 
