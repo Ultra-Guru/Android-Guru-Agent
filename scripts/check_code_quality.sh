@@ -52,7 +52,7 @@ MAIN_KT_LIST=$(find . -path "*/src/main/*" -name "*.kt" -not -path "*/build/*" -
 REFLECT_HITS=""
 if [ -n "$MAIN_KT_LIST" ]; then
     REFLECT_HITS=$(printf '%s\n' "$MAIN_KT_LIST" \
-        | xargs grep -n "javaClass\.getMethod" 2>/dev/null \
+        | xargs grep -Hn "javaClass\.getMethod" 2>/dev/null \
         | grep -v ':[0-9]*: *\*' || true)
 fi
 
@@ -71,7 +71,7 @@ fi
 STACK_HITS=""
 if [ -n "$MAIN_KT_LIST" ]; then
     STACK_HITS=$(printf '%s\n' "$MAIN_KT_LIST" \
-        | xargs grep -n "printStackTrace" 2>/dev/null || true)
+        | xargs grep -Hn "printStackTrace" 2>/dev/null || true)
 fi
 
 if [ -n "$STACK_HITS" ]; then
@@ -117,7 +117,7 @@ if [ -n "$MAIN_KT_LIST" ]; then
     # 此前绕过 [a-zA-Z. :]+ —— MoreCapabilitiesHost/ApkInstaller/UiRenderer
     # 三处真实违规即由此漏网；弃名参数不豁免（要忽略就写明为何可安全吞）。
     EMPTY_CATCH_HITS=$(printf '%s\n' "$MAIN_KT_LIST" \
-        | xargs grep -nE 'catch \([a-zA-Z. :_]+\) \{ *\}' 2>/dev/null \
+        | xargs grep -HnE 'catch \([a-zA-Z. :_]+\) \{ *\}' 2>/dev/null \
         | grep -vE ':[0-9]+:[[:space:]]*(\*|//)' \
         || true)
     EMPTY_CATCH_COUNT=$(printf '%s\n' "$EMPTY_CATCH_HITS" | grep -c . || true)

@@ -1,0 +1,16 @@
+# 静态分析 job 的 Maven 依赖清单（单一事实源）
+#
+# 用途：.github/workflows/ci.yml 的 static-analysis job 用它做两件事——
+#   1) 生成 actions/cache 的 key（hashFiles 本文件）：清单变化 → key 变化 →
+#      缓存自动失效，不会出现「加了 jar 但忘了 bump 静态版本号」导致每次都
+#      重新下载的问题（#353-⑤）；
+#   2) 驱动下载循环：本文件每一行是一个 Maven 坐标路径，脚本直接 curl 它。
+#
+# 格式：每行 `<group/path>/<artifact>/<version>/<artifact>-<version>.jar`
+#       `#` 开头为注释，空行忽略。
+org/jetbrains/kotlin/kotlin-stdlib/2.3.21/kotlin-stdlib-2.3.21.jar
+org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.10.2/kotlinx-coroutines-core-jvm-1.10.2.jar
+org/jetbrains/kotlinx/kotlinx-serialization-json-jvm/1.9.0/kotlinx-serialization-json-jvm-1.9.0.jar
+org/jetbrains/kotlinx/kotlinx-serialization-core-jvm/1.9.0/kotlinx-serialization-core-jvm-1.9.0.jar
+com/squareup/okhttp3/okhttp/4.12.0/okhttp-4.12.0.jar
+com/squareup/okio/okio-jvm/3.6.0/okio-jvm-3.6.0.jar
