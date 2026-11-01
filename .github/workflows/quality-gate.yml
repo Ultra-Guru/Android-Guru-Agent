@@ -124,6 +124,10 @@ jobs:
       - name: Static-analysis dependency manifest contract
         run: python3 scripts/test_fetch_static_analysis_deps.py
 
+      # #268：锁定备份/恢复结果反馈使用现有明暗状态色入口。
+      - name: Backup feedback status-color wiring
+        run: python3 scripts/test_backup_feedback_status_color.py
+
   workflow-metadata:
     name: Run Metadata
     runs-on: ubuntu-latest
