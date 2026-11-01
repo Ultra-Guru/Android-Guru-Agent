@@ -322,6 +322,19 @@ class AppDownloadInstallTool(
 
         // ── 第一步：下载 ──
         downloadDir.mkdirs()
+        // #354 ⑦：目录总量配额。单次 [MAX_APK_BYTES] 只约束「这一个文件」，
+        // allow_session 之后一轮可跑 20–50 次下载 —— 每次都合法、每次都 500MB，
+        // 存储就这么被填满。这里在下载前把配额外的旧 APK 按最久未用清掉，
+        // 清不动（不可删/被占用）就明确拒绝本次下载，而不是继续写盘。
+        val pruned = pruneDownloadsToQuota()
+        if (pruned.isFailure) {
+            return ToolResult.fail(
+                ToolErrorCode.EXECUTION_FAILED,
+                "下载目录配额已满且无法自动清理：" +
+                    (pruned.exceptionOrNull()?.message ?: "未知原因") +
+                    "\n请先手动删除 $downloadDir 下的旧 APK 后重试"
+            )
+        }
         val apkFile = File(downloadDir, filename)
         val downloadResult = try {
             downloadApk(url, apkFile)
@@ -372,6 +385,41 @@ class AppDownloadInstallTool(
                     "The APK file is kept for retry; you can call AppInstallApk again with the same path."
             )
         }
+    }
+
+    /**
+     * 按 [MAX_DOWNLOAD_DIR_BYTES] 修剪下载目录（#354 ⑦）。
+     *
+     * 只动 `*.apk`：下载目录是宿主专门给本工具用的，但保守起见不碰其他扩展名。
+     * 顺序按 **最后修改时间升序**（最久未用先删）—— 刚下载好还没装完的 APK
+     * 天然排在最后，不会被自己刚写的半成品清掉。
+     *
+     * 返回 failure 表示「清到不能再清仍超配额」（典型：文件被系统占用、
+     * 或单个文件本身就大于配额）—— 调用方据此拒绝本次下载，而不是继续写盘。
+     */
+    private fun pruneDownloadsToQuota(): Result<Unit> {
+        val apks = downloadDir.listFiles { f -> f.isFile && f.name.endsWith(".apk", ignoreCase = true) }
+            ?: return Result.success(Unit)
+        var total = apks.sumOf { it.length() }
+        if (total <= MAX_DOWNLOAD_DIR_BYTES) return Result.success(Unit)
+
+        val failures = mutableListOf<String>()
+        for (file in apks.sortedBy { it.lastModified() }) {
+            if (total <= MAX_DOWNLOAD_DIR_BYTES) break
+            val size = file.length()
+            if (file.delete()) {
+                total -= size
+            } else {
+                failures += file.name
+            }
+        }
+        if (total <= MAX_DOWNLOAD_DIR_BYTES) return Result.success(Unit)
+        return Result.failure(
+            IllegalStateException(
+                "清理后仍占用 ${total / MIB}MB（配额 ${MAX_DOWNLOAD_DIR_BYTES / MIB}MB）" +
+                    if (failures.isEmpty()) "" else "，无法删除：${failures.joinToString("、")}"
+            )
+        )
     }
 
     /**
@@ -471,6 +519,11 @@ class AppDownloadInstallTool(
 
     companion object {
         const val MAX_APK_BYTES = 500L * 1024 * 1024  // 500MB
+        /**
+         * 下载目录总量配额（#354 ⑦）：单次 500MB × 反复调用会填满存储。
+         * 1GB ≈ 两个最大 APK，够「下载完 → 安装 → 换下一个」的正常节奏。
+         */
+        const val MAX_DOWNLOAD_DIR_BYTES = 1024L * 1024 * 1024  // 1GB
         const val MIB = 1024L * 1024
     }
 }
