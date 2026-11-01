@@ -2,6 +2,12 @@ package com.apex.agent.ui.screen.code.stream
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
@@ -30,11 +36,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -47,6 +55,7 @@ import com.apex.agent.R
 import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.core.code.stream.ToolCallStatus
 import com.apex.agent.ui.theme.LocalExtendedColors
+import kotlinx.coroutines.delay
 
 /**
  * # Rikka Tool Block — Rikka 风格的工具调用聚合块
@@ -90,6 +99,17 @@ internal fun RikkaToolBlock(
     val summary = remember(calls) { computeToolAggregate(calls) }
     val title = if (hasLive) stringResource(R.string.rikka_tool_block_running)
     else stringResource(R.string.code_stream_aggregate_title_fmt, calls.size)
+    // 运行中标题呼吸（rikkahub shimmer 扫光的轻量同义替代）
+    val titlePulse by rememberInfiniteTransition(label = "rikka-block-pulse")
+        .animateFloat(
+            initialValue = 0.6f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 800, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "rikka-block-pulse-alpha"
+        )
 
     Surface(
         shape = RoundedCornerShape(16.dp),
@@ -131,6 +151,7 @@ internal fun RikkaToolBlock(
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
+                            .copy(alpha = if (hasLive) titlePulse else 1f)
                     )
                     Spacer(Modifier.width(8.dp))
                     if (summary.failedCount > 0) {
@@ -198,6 +219,32 @@ internal fun RikkaToolBlock(
                     }
                 }
             }
+            // ═══ 折叠态尾部预览（rikkahub ChainOfThought「默认只留最新两步」
+            // 同哲学）：收束折叠不等于黑盒——露出最近 ≤2 次调用（弱化透明），
+            // 更早的收进「还有 N 次」计数行；点击头部展开看全部。 ═══
+            if (!expanded && calls.size > PEEK_CALLS) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    calls.takeLast(PEEK_CALLS).forEach { call ->
+                        RikkaToolRow(
+                            call = call,
+                            onClick = onToolClick,
+                            modifier = Modifier.alpha(0.7f)
+                        )
+                    }
+                    Text(
+                        text = stringResource(
+                            R.string.rikka_tool_block_more_fmt,
+                            calls.size - PEEK_CALLS
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 2.dp)
+                    )
+                }
+            }
         }
     }
 }
@@ -206,12 +253,14 @@ internal fun RikkaToolBlock(
  * 单次工具调用行（聊天 App 紧凑形态，验证轮次卡展开态复用）：
  * 族图标井 + 名称·target + 参数/摘要副行 + 状态徽标 + 耗时；
  * 活跃期带实时代码窗（参数流式）与输出尾窗（写入过程可见）；
- * 点击进详情弹层（diff / grep / 终端全文）。
+ * 点击进详情弹层（diff / grep / 终端全文）。运行中同步显示实时
+ * 耗时（rikkahub rememberToolDuration 同语义：进行中也在计时）。
  */
 @Composable
 internal fun RikkaToolRow(
     call: StreamToolCall,
-    onClick: (StreamToolCall) -> Unit
+    onClick: (StreamToolCall) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val style = capsuleStyle(call.kind)
     val statusColor by animateColorAsState(
@@ -231,10 +280,19 @@ internal fun RikkaToolRow(
             ToolCallStatus.PARTIAL -> R.string.code_stream_status_partial
         }
     )
+    // ── 运行中实时耗时（rikkahub 同语义）：500ms 步进刷新 displayDuration，
+    // 进行中也能看到「跑了多久」，终态回退引擎上报值 ──
+    var nowTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(call.isLive) {
+        while (call.isLive) {
+            nowTick = System.currentTimeMillis()
+            delay(TOOL_ROW_TICK_MS)
+        }
+    }
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(role = Role.Button) { onClick(call) }
             .semantics { contentDescription = "${call.displayName} ${call.target}, $statusDesc" }
@@ -311,6 +369,16 @@ internal fun RikkaToolRow(
                     Spacer(Modifier.width(6.dp))
                 }
                 if (call.isLive) {
+                    // 运行中：实时耗时（rikkahub：>=100ms 才显示，避免闪一下就消失）
+                    val liveDuration = call.displayDuration(nowTick)
+                    if (liveDuration >= MIN_LIVE_DURATION_MS) {
+                        Text(
+                            text = formatCapsuleDuration(liveDuration),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    }
                     CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(13.dp))
                 } else {
                     val shownDuration = call.displayDuration(System.currentTimeMillis())
@@ -372,6 +440,15 @@ internal fun RikkaToolRow(
         }
     }
 }
+
+/** 聚合块折叠态尾部预览的露出行数（rikkahub ChainOfThought 同款：默认只留最新两步）。 */
+private const val PEEK_CALLS = 2
+
+/** 工具行运行中实时耗时的刷新步进。 */
+private const val TOOL_ROW_TICK_MS = 500L
+
+/** 运行中耗时的最低显示门槛（rikkahub 同款 100ms：避免一闪而过）。 */
+private const val MIN_LIVE_DURATION_MS = 100L
 
 /** 聚合块折叠态的三分类计数 chip（非交互展示，与 StatChip 同语言）。 */
 @Composable

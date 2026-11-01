@@ -718,11 +718,11 @@ internal fun GoalSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings)
 // ═══════════════════════════════════════════════════════════════════
 
 /**
- * Coding 工位分区：输出风格（经典时间轴 / Rikka 聊天式——纯 UI 开关）、
- * 输出展示档（流式 / 整段）、MCP 与技能作用域隔离、单轮并行执行上限。
- * 各项全部被渲染/引擎侧真消费（CodeOutputStyleOps / CodeOutputModeOps /
- * AgentConfig / CodeModule）——无摆设开关（工具面/读守卫/自动规则三个
- * 假开关已随真设置清理移除）。
+ * Coding 工位分区：「流水式输出UI」开关（开 = Rikka 聊天式流水输出 /
+ * 关 = 经典胶囊时间轴——纯 UI 开关）、输出展示档（流式 / 整段）、MCP 与
+ * 技能作用域隔离、单轮并行执行上限。各项全部被渲染/引擎侧真消费
+ * （CodeOutputStyleOps / CodeOutputModeOps / AgentConfig / CodeModule）
+ * ——无摆设开关（工具面/读守卫/自动规则三个假开关已随真设置清理移除）。
  */
 @Composable
 internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings) -> Unit) {
@@ -731,19 +731,18 @@ internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSetting
         icon = Icons.Outlined.Terminal,
         subtitle = stringResource(R.string.settings_v3_coding_subtitle)
     ) {
-        // ═══ v1.6 输出风格（经典时间轴 / Rikka 聊天式）：Coding 屏时间轴的
-        // 视觉形态。纯 UI 层开关（引擎/会话零参与）——idle 期切换即时生效，
-        // 运行中不打断当前轮（run 粒度捕获）。与下方「输出方式」（揭示
-        // 时机：流式/整段）正交，两种风格都适用。═══
-        DropdownRow(
+        // ═══ v1.6「流水式输出UI」（2026-11 用户反馈：原下拉藏在选项里不好找，
+        // 改为开关 + 指定命名）：开 = 模仿 RikkaHub 的聊天式流水输出（右对齐
+        // 用户气泡 / Markdown 结论直铺 / 思考折叠卡 / 工具调用聚合块）；
+        // 关 = 经典胶囊时间轴（实时代码窗 / 终端尾窗）。持久化仍是
+        // codeOutputStyle（rikka / timeline）——旧值无缝兼容。纯 UI 层开关
+        // （引擎/会话零参与）——idle 期切换即时生效，运行中不打断当前轮
+        // （run 粒度捕获）。与下方「输出方式」（揭示时机：流式/整段）正交。═══
+        SwitchRow(
             stringResource(R.string.settings_v3_coding_output_style),
-            listOf(
-                "timeline" to stringResource(R.string.settings_v3_coding_output_style_timeline),
-                "rikka" to stringResource(R.string.settings_v3_coding_output_style_rikka),
-            ),
-            agent.codeOutputStyle.ifBlank { "timeline" },
+            agent.codeOutputStyle == "rikka",
             description = stringResource(R.string.settings_v3_coding_output_style_desc)
-        ) { style -> onUpdate(agent.copy(codeOutputStyle = style)) }
+        ) { on -> onUpdate(agent.copy(codeOutputStyle = if (on) "rikka" else "timeline")) }
         // ═══ v1.5 输出展示档（流式 / 整段）：Coding 屏时间轴揭示时机 ═══
         // 纯 UI 层开关（引擎/会话零参与）——流式 = 实时渲染（默认，既有
         // 行为）；整段 = 生成中仅加载进度卡、收束后一次性渲染完整时间轴。
