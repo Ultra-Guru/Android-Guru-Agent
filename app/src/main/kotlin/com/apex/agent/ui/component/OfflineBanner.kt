@@ -19,19 +19,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
+
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
+import com.apex.agent.ui.theme.LocalExtendedColors
 
-/**
- * 琥珀警示容器色（#268/#269：明暗成对）—— 与 FeedbackSeverity.WARNING
- * 同一视觉锚点；浅色主题换深琥珀（B45309，白字 5.0:1），对比度不再失控。
- */
-private val AmberWarningDark = Color(0xFFE8A33D)
-private val AmberWarningLight = Color(0xFFB45309)
 
 /**
  * ═══ 离线横幅 ═══
@@ -60,12 +54,12 @@ fun OfflineBanner(
         exit = shrinkVertically() + fadeOut(),
         modifier = modifier
     ) {
-        // #268/#269：明暗分档容器 + 语义内容色（白字两档全 AA）
-        val light = MaterialTheme.colorScheme.background.luminance() > 0.5f
-        val onWarning = Color.White
+        // #269：底色与文字成对从主题取；深色亮琥珀底不能再配白字。
+        val warningColors = LocalExtendedColors.current
+        val onWarning = warningColors.onWarningContainer
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            color = if (light) AmberWarningLight else AmberWarningDark,
+            color = warningColors.warningContainer,
             contentColor = onWarning
         ) {
             Row(
@@ -91,7 +85,7 @@ fun OfflineBanner(
                     Text(
                         text = kindLabel,
                         style = MaterialTheme.typography.labelSmall,
-                        color = onWarning.copy(alpha = 0.85f)
+                        color = onWarning
                     )
                 }
             }
