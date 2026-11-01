@@ -1,6 +1,12 @@
 package com.apex.agent.ui.screen.code.stream
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Notes
@@ -24,8 +31,10 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Loop
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.StopCircle
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -33,8 +42,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +58,7 @@ import com.apex.agent.R
 import com.apex.agent.core.code.stream.StreamEntry
 import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.ui.component.MarkdownText
+import kotlinx.coroutines.delay
 
 /**
  * # Rikka Cards — Rikka 风格的时间轴卡片族
@@ -77,56 +89,129 @@ internal fun RikkaStreamCard(entry: StreamEntry, onToolClick: (StreamToolCall) -
     }
 }
 
-// ═══ 用户气泡（右对齐实色——「谁说的」一眼可辨的聊天形态）═══
+// ═══ 用户气泡（右对齐——RikkaHub 同款：头像 + 顶角收紧的大圆角容器色气泡）═══
+// rikkahub 形态：24dp 圆角、靠头像侧顶角 6dp 收紧、primaryContainer 柔和
+// 容器色（非实色 primary）、气泡不占满行；左侧 28dp 圆形头像定锚「谁说的」。
 
 @Composable
 private fun RikkaUserBubble(text: String) {
     Row(
-        horizontalArrangement = Arrangement.End,
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+        verticalAlignment = Alignment.Bottom,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp)
     ) {
         Surface(
-            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 4.dp),
-            color = MaterialTheme.colorScheme.primary,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 6.dp, bottomStart = 24.dp, bottomEnd = 24.dp),
+            color = MaterialTheme.colorScheme.primaryContainer,
             modifier = Modifier.widthIn(max = 320.dp)
         ) {
             Text(
                 text = text,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimary,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+            )
+        }
+        // 头像（rikkahub 同尺寸 28dp；人形图标 + 容器色底，用户身份锚点）
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            modifier = Modifier.size(28.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Person,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .padding(5.dp)
+                    .size(18.dp)
             )
         }
     }
 }
 
-// ═══ 结论气泡（Markdown，流式容忍；左置表面容器实底）═══
+// ═══ 结论区（RikkaHub 默认无助手气泡：Markdown 直铺背景 + 身份头行）═══
+// rikkahub 的 showAssistantBubble 默认 false——助手正文直接铺在聊天背景
+// 上渲染，靠顶部的头像/模型名行定锚。此处对齐：身份头行（终端图标井 +
+// Guru）+ Markdown 直铺 + 流式光标；无容器色、零阴影。
 
 @Composable
 private fun RikkaAssistantBubble(text: String, isStreaming: Boolean) {
-    Surface(
-        shape = RoundedCornerShape(topStart = 4.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-            MarkdownText(markdown = text)
-            if (isStreaming) {
-                Text(
-                    text = "▍",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                modifier = Modifier.size(20.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Terminal,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier
+                        .padding(3.dp)
+                        .size(14.dp)
                 )
             }
+            Text(
+                text = stringResource(R.string.rikka_agent_label),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (isStreaming) {
+                // 流式呼吸点（rikkahub DotLoading 同语义：轻量不抢戏）
+                RikkaStreamingDot()
+            }
+        }
+        MarkdownText(
+            markdown = text,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+        if (isStreaming) {
+            Text(
+                text = "▍",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
         }
     }
 }
 
-// ═══ 思考过程折叠卡（流式展开跟随全文 / 收束自动折叠）═══
+/** 流式呼吸圆点（10dp；与 rikkahub DotLoading 同语义的轻量加载指示）。 */
+@Composable
+private fun RikkaStreamingDot() {
+    val pulse by rememberInfiniteTransition(label = "rikka-dot")
+        .animateFloat(
+            initialValue = 0.35f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 700, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "rikka-dot-alpha"
+        )
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primary.copy(alpha = pulse),
+        modifier = Modifier.size(10.dp)
+    ) {}
+}
+
+// ═══ 思考过程折叠卡（RikkaHub 同款：实时秒表标题 + 流式展开 / 收束折叠）═══
+// rikkahub 形态：「思考了 %1$.1f 秒」实时计时（50ms 级刷新的秒表语言），
+// 流式中标题呼吸；完成后定格总时长。UI 层测时（ThinkingEntry 无耗时
+// 字段，不侵入 core）：startedAt 首帧记录 + rememberSaveable 防列表滚动
+// 重建重置；收束瞬间定格 finalElapsed。
 
 @Composable
 private fun RikkaThinkingCard(text: String, isStreaming: Boolean) {
@@ -137,6 +222,44 @@ private fun RikkaThinkingCard(text: String, isStreaming: Boolean) {
     LaunchedEffect(isStreaming) {
         if (!userToggled) expanded = isStreaming
     }
+    // ── 实时秒表（rikkahub「思考了 X 秒」）：首帧起表，100ms 步进；
+    // 收束瞬间定格，滚动重建不重置（rememberSaveable）──
+    var startedAt by rememberSaveable { mutableLongStateOf(0L) }
+    var finalElapsedMs by rememberSaveable { mutableLongStateOf(0L) }
+    var tickMs by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(isStreaming) {
+        if (isStreaming) {
+            if (startedAt == 0L) startedAt = System.currentTimeMillis()
+            while (true) {
+                tickMs = System.currentTimeMillis()
+                delay(THINKING_TICK_MS)
+            }
+        } else if (startedAt > 0L && finalElapsedMs == 0L) {
+            finalElapsedMs = (System.currentTimeMillis() - startedAt).coerceAtLeast(0L)
+        }
+    }
+    val elapsedSeconds = when {
+        isStreaming && startedAt > 0L ->
+            (((tickMs.takeIf { it > startedAt } ?: startedAt) - startedAt) / 1000f)
+        finalElapsedMs > 0L -> finalElapsedMs / 1000f
+        else -> 0f
+    }
+    val titleText = if (isStreaming) {
+        stringResource(R.string.rikka_thinking_running_fmt, elapsedSeconds)
+    } else {
+        stringResource(R.string.rikka_thinking_elapsed_fmt, elapsedSeconds)
+    }
+    // 流式标题呼吸（rikkahub shimmer 同语义的轻量替代）
+    val titlePulse by rememberInfiniteTransition(label = "rikka-think-pulse")
+        .animateFloat(
+            initialValue = 0.6f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 800, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "rikka-think-pulse-alpha"
+        )
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -161,10 +284,10 @@ private fun RikkaThinkingCard(text: String, isStreaming: Boolean) {
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = if (isStreaming) stringResource(R.string.code_stream_thinking_running)
-                    else stringResource(R.string.rikka_thinking_title),
+                    text = titleText,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                        .copy(alpha = if (isStreaming) titlePulse else 1f)
                 )
                 Spacer(Modifier.weight(1f))
                 Icon(
@@ -539,3 +662,6 @@ private fun RikkaPillLine(
 }
 
 private const val FILE_CHIPS_MAX = 6
+
+/** 思考卡秒表步进（rikkahub 同量级；过低无感知，过高浪费重组）。 */
+private const val THINKING_TICK_MS = 100L
