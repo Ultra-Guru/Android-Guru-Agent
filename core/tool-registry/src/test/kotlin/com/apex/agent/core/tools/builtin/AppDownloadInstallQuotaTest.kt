@@ -106,21 +106,26 @@ class AppDownloadInstallQuotaTest {
 
     @Test
     fun `清理不动时拒绝下载且不写盘`() = runTest {
-        // 单个文件就超过配额，且无法通过清理解决（唯一文件就是它）。
+        // 目录不可写 → 旧 APK 删不掉（真实场景：文件被系统占用 / 存储只读）。
         val huge = sparseApk("huge.apk", AppDownloadInstallTool.MAX_DOWNLOAD_DIR_BYTES + 1, 1_000L)
-        // 让删除失败：目录占用不了时用只读文件模拟（部分平台 delete 仍成功，
-        // 因此这里改为断言「要么清掉、要么拒绝」，两者都不能静默超配额）。
-        val tool = AppDownloadInstallTool(httpClient, dir, Installer(), ssrfProtectionEnabled = false)
+        enqueueApk()
+        val installer = Installer()
+        val tool = AppDownloadInstallTool(httpClient, dir, installer, ssrfProtectionEnabled = false)
 
-        val result = tool.execute("""{"url": "${server.url("/new.apk")}"}""")
+        assertTrue("前置：目录需可置为不可写", dir.setWritable(false, false))
+        try {
+            val result = tool.execute("""{"url": "${server.url("/new.apk")}"}""")
 
-        if (result.startsWith("OK")) {
-            // 清理成功路径：旧文件必须已消失，目录总量不得超配额。
-            assertFalse("清理后旧文件应消失", huge.exists())
-        } else {
+            assertTrue("须拒绝: $result", result.startsWith("Error"))
             assertTrue("拒绝时须说明配额: $result", result.contains("配额"))
-            assertTrue("拒绝时不得写盘", dir.listFiles()!!.none { it.name == "new.apk" })
+            assertTrue("拒绝时须给出下一步: $result", result.contains("手动删除"))
+            assertEquals("拒绝时不得调用安装", 0, installer.calls)
+        } finally {
+            dir.setWritable(true, false)
         }
+        // 拒绝路径不得留下本次下载文件；旧文件仍在（没被误删）。
+        assertTrue("拒绝时不得写盘", dir.listFiles()!!.none { it.name == "new.apk" })
+        assertTrue("删不掉的旧文件应保留", huge.exists())
     }
 
     @Test
