@@ -334,6 +334,7 @@
     <string name="code_websearch_builtin_desc">Model-side web search toolchain</string>
     <string name="code_websearch_searxng">SearXNG local</string>
     <string name="code_websearch_searxng_desc">Prefer local SearXNG metasearch</string>
+    <string name="code_websearch_searxng_on_hint">SearXNG enabled — first install/start progress in Settings → Local search</string>
     <string name="code_websearch_mcp">Search MCP</string>
     <string name="code_websearch_mcp_desc">Pick one of three local search MCP servers</string>
     <string name="code_websearch_mcp_fs_desc">Local-first multi-engine search, fetch &amp; doc read</string>
@@ -347,6 +348,10 @@
     <string name="code_toolbench_github">GitHub connection</string>
     <string name="code_toolbench_toolkit">Calls · time · rules</string>
     <string name="code_toolbench_neon">Feature hub</string>
+    <string name="code_toolbench_neon_n">Feature hub (%1$d active)</string>
+    <string name="code_websearch_searxng_ready">Local service running</string>
+    <string name="code_websearch_searxng_busy">Installing / starting…</string>
+    <string name="code_websearch_searxng_failed">Start failed — retry in Settings → Local search</string>
     <string name="code_workspace_browser_cd">Open workspace browser</string>
     <string name="drawer_workspace_browser">Workspace</string>
     <string name="code_stream_terminal_running">Running</string>

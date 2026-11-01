@@ -42,10 +42,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import com.apex.agent.core.tools.mcp.McpManager
 import com.apex.agent.marketplace.SearchMcpInstaller
 import com.apex.agent.marketplace.SearchMcpPreset
+import com.apex.agent.platform.terminal.searxng.SearxngLifecycleCoordinator
+import com.apex.agent.platform.terminal.searxng.SearxngState
 import com.apex.agent.service.ApexCoreService
 import com.apex.agent.searxng.SearxngSettingsStore
 import com.apex.agent.ui.chatkit.ChatToolkitStore
@@ -195,6 +198,7 @@ private fun rememberSearchMcpInstaller(): SearchMcpInstaller {
 @InstallIn(SingletonComponent::class)
 interface WebSearchChannelEntryPoint {
     fun searchMcpInstaller(): SearchMcpInstaller
+    fun searxngLifecycleCoordinator(): SearxngLifecycleCoordinator
 }
 
 /**
@@ -214,6 +218,15 @@ fun WebSearchMenuButton(
     val feedback = LocalFeedbackController.current
     val scope = rememberCoroutineScope()
     val installer = rememberSearchMcpInstaller()
+    // SearXNG 状态流直通（INV4：状态由 Coordinator 驱动）—— 菜单内动态
+    // 副标题让「本地服务跑没跑」在 Code 工位直接可见，不必跳设置页
+    val searxngCoordinator = remember(context) {
+        EntryPointAccessors.fromApplication(
+            context.applicationContext,
+            WebSearchChannelEntryPoint::class.java
+        ).searxngLifecycleCoordinator()
+    }
+    val searxngState by searxngCoordinator.state.collectAsStateWithLifecycle()
     val effects = remember(context, toolkit, mcpManager, installer) {
         WebSearchChannelEffects(context, toolkit, mcpManager, installer)
     }
@@ -239,6 +252,14 @@ fun WebSearchMenuButton(
                     feedback.show(
                         context.getString(R.string.code_websearch_install_done),
                         FeedbackSeverity.SUCCESS
+                    )
+                }
+                if (plan.activate == WebSearchChannel.SEARXNG) {
+                    // 首次启用会触发 SearXNG 安装（apt/clone/venv 分钟级）——
+                    // Code 工位看不到进度条，指路设置中心的状态机页面
+                    feedback.show(
+                        context.getString(R.string.code_websearch_searxng_on_hint),
+                        FeedbackSeverity.INFO
                     )
                 }
                 channel = plan.activate
@@ -281,10 +302,10 @@ fun WebSearchMenuButton(
                 enabled = !installing,
                 onClick = { toggle(WebSearchChannel.BUILTIN) }
             )
-            // ═══ SearXNG 本地 ═══
+            // ═══ SearXNG 本地（副标题随 Coordinator 状态机实时变化）═══
             ChannelItem(
                 title = stringResource(R.string.code_websearch_searxng),
-                subtitle = stringResource(R.string.code_websearch_searxng_desc),
+                subtitle = searxngStatusLabel(searxngState),
                 selected = channel == WebSearchChannel.SEARXNG,
                 enabled = !installing,
                 onClick = { toggle(WebSearchChannel.SEARXNG) }
@@ -411,3 +432,14 @@ private fun presetSubtitle(preset: SearchMcpPreset): String = stringResource(
         SearchMcpPreset.AGENT_SEARCH -> R.string.code_websearch_mcp_as_desc
     }
 )
+
+/** SearXNG 状态机 → 菜单副标题（Off/Stopping 走静态描述，其余如实播报）。 */
+@Composable
+private fun searxngStatusLabel(state: SearxngState): String = when (state) {
+    is SearxngState.Ready -> stringResource(R.string.code_websearch_searxng_ready)
+    is SearxngState.Installing, is SearxngState.Starting,
+    is SearxngState.Restarting, is SearxngState.Stopping ->
+        stringResource(R.string.code_websearch_searxng_busy)
+    is SearxngState.Failed -> stringResource(R.string.code_websearch_searxng_failed)
+    SearxngState.Off -> stringResource(R.string.code_websearch_searxng_desc)
+}
