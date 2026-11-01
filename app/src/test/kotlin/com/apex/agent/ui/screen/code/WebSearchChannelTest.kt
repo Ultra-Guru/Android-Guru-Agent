@@ -2,6 +2,7 @@ package com.apex.agent.ui.screen.code
 
 import com.apex.agent.core.tools.mcp.McpTransport
 import com.apex.agent.marketplace.SearchMcpPreset
+import com.apex.agent.ui.chatkit.SearchChannelHint
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
