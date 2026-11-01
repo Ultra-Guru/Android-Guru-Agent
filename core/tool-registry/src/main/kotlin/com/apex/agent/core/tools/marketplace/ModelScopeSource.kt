@@ -69,48 +69,63 @@ class ModelScopeSource(
         val files: List<String>    // 插件目录内全部文件路径
     )
 
-    /** 列出仓库中全部可用 Skill（GitHub git/trees API，无需 token）。 */
-    suspend fun listSkills(): Result<List<ModelScopeSkill>> = withContext(Dispatchers.IO) {
-        try {
-            val tree = fetchTree() ?: return@withContext Result.failure(
-                Exception("无法读取 modelscope-skills 仓库目录（网络不可达或被限流）")
-            )
-            val skillDirs = tree
-                .filter { it.startsWith("skills/") && it.endsWith("/SKILL.md") }
-                .map { it.removeSuffix("/SKILL.md") }
-                .sorted()
+    /**
+     * 列出仓库中全部可用 Skill（GitHub git/trees API，无需 token）。
+     *
+     * #354 取消传播（确定性）：CancellationException 不作为异常穿过
+     * `withContext(Dispatchers.IO)` 边界 —— 其完成机制对块内抛出的 CE 存在
+     * 时序敏感的实例替换竞态（JUnitCore 直跑与 Gradle 全量并行下行为不同）。
+     * CE 在块内捕获后作为数据携带，边界外**原实例**重抛：取消语义不变，
+     * assertSame 级别的实例保真有确定保证。
+     */
+    suspend fun listSkills(): Result<List<ModelScopeSkill>> {
+        var cancelled: kotlinx.coroutines.CancellationException? = null
+        val result = withContext(Dispatchers.IO) {
+            try {
+                val tree = fetchTree() ?: return@withContext Result.failure(
+                    Exception("无法读取 modelscope-skills 仓库目录（网络不可达或被限流）")
+                )
+                val skillDirs = tree
+                    .filter { it.startsWith("skills/") && it.endsWith("/SKILL.md") }
+                    .map { it.removeSuffix("/SKILL.md") }
+                    .sorted()
 
-            // P2-5：frontmatter 抓取改 Semaphore(4) 受控并发 —— 串行时几十上百
-            // 个技能目录要数十秒；map + awaitAll 保证结果顺序与目录序一致，
-            // 单条失败保留条目（对齐「抓到但无 frontmatter」的既有回退分支）。
-            val semaphore = Semaphore(FRONTMATTER_CONCURRENCY)
-            val skills = coroutineScope {
-                skillDirs.map { dir ->
-                    async {
-                        val id = dir.substringAfterLast('/')
-                        // 只抓 SKILL.md 头部做 frontmatter 解析（64KB 截断读，省流量）
-                        val frontmatter = semaphore.withPermit {
-                            fetchFrontmatter("$dir/SKILL.md")
+                // P2-5：frontmatter 抓取改 Semaphore(4) 受控并发 —— 串行时几十上百
+                // 个技能目录要数十秒；map + awaitAll 保证结果顺序与目录序一致，
+                // 单条失败保留条目（对齐「抓到但无 frontmatter」的既有回退分支）。
+                val semaphore = Semaphore(FRONTMATTER_CONCURRENCY)
+                val skills = coroutineScope {
+                    skillDirs.map { dir ->
+                        async {
+                            val id = dir.substringAfterLast('/')
+                            // 只抓 SKILL.md 头部做 frontmatter 解析（64KB 截断读，省流量）
+                            val frontmatter = semaphore.withPermit {
+                                fetchFrontmatter("$dir/SKILL.md")
+                            }
+                            ModelScopeSkill(
+                                id = id,
+                                name = frontmatter?.first ?: id,
+                                description = frontmatter?.second ?: "",
+                                path = "$dir/SKILL.md",
+                                files = tree.filter { it.startsWith("$dir/") }
+                            )
                         }
-                        ModelScopeSkill(
-                            id = id,
-                            name = frontmatter?.first ?: id,
-                            description = frontmatter?.second ?: "",
-                            path = "$dir/SKILL.md",
-                            files = tree.filter { it.startsWith("$dir/") }
-                        )
-                    }
-                }.awaitAll()
+                    }.awaitAll()
+                }
+                Result.success(skills)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // #354：取消不吞 —— token provider 抛出的 CancellationException 是
+                // 调用方的取消意图，不是列表失败；折叠成 Result.failure 会把取消
+                // 静默变成「成功返回了一个失败结果」，取消方永远等不到传播。
+                // 捕获后经 [cancelled] 携带，边界外原实例重抛（见上）。
+                cancelled = e
+                Result.failure(e) // 占位返回值：外层检测到 [cancelled] 后丢弃并原实例重抛
+            } catch (e: Exception) {
+                Result.failure(Exception("ModelScope 列表失败: ${e.message}"))
             }
-            Result.success(skills)
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            // #354：取消不吞 —— token provider 抛出的 CancellationException 是
-            // 调用方的取消意图，不是列表失败；折叠成 Result.failure 会把取消
-            // 静默变成「成功返回了一个失败结果」，取消方永远等不到传播。
-            throw e
-        } catch (e: Exception) {
-            Result.failure(Exception("ModelScope 列表失败: ${e.message}"))
         }
+        cancelled?.let { throw it }
+        return result
     }
 
     /** 下载某个 Skill 的 SKILL.md 全文（用于转 apex-skill-v1 manifest）。 */

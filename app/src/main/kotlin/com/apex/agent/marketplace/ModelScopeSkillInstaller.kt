@@ -20,7 +20,9 @@ import java.io.File
  *    （旧实现 resourceFailed 只追加一句提示照常安装）；
  * 4. **确认通过才发布**：登记成功后把暂存资源合并进 skillHome
  *    （只覆盖同名文件，其余用户文件原样保留）；
- * 5. **取消传播**：CancellationException 原实例重抛（结构化并发纪律），
+ * 5. **取消传播（确定性）**：CancellationException 不作为异常穿过
+ *    `withContext(Dispatchers.IO)` 边界（其完成机制对块内 CE 存在时序敏感的
+ *    实例替换竞态）——块内捕获后经 `cancelled` 携带，边界外**原实例**重抛；
  *    暂存目录总被回收；
  * 6. **零残留**：全新安装被拒 / 失败 → 不留任何目录（旧实现拒绝后连
  *    既有资源目录一起 deleteRecursively，正是 #354 的数据损失根因）。
@@ -34,81 +36,87 @@ internal class ModelScopeSkillInstaller(
     suspend fun install(
         skill: ModelScopeSource.ModelScopeSkill,
         defaultScope: String? = null
-    ): Result<String> = withContext(Dispatchers.IO) {
-        val skillId = "ms-${skill.id}"
-        val skillHome = File(skillsDir, skillId)
+    ): Result<String> {
+        var cancelled: CancellationException? = null
+        val result = withContext(Dispatchers.IO) {
+            val skillId = "ms-${skill.id}"
+            val skillHome = File(skillsDir, skillId)
 
-        // ① 重复安装前置拒绝：已登记技能不进确认门、不做任何下载 / 写盘
-        if (skillRegistry.get(skillId) != null) {
-            return@withContext Result.failure(
-                Exception("技能 $skillId 已安装，重复安装已拒绝；如需重装请先卸载")
-            )
-        }
-
-        val markdown = modelScopeSource.fetchSkillMarkdown(skill).getOrElse {
-            return@withContext Result.failure(Exception("SKILL.md 下载失败：${it.message}"))
-        }
-
-        // ② 资源全部先落暂存目录：任何失败路径都不触碰既有 ms-<id>/ 用户数据
-        val staging = File(skillsDir, "$skillId.staging")
-        runCatching { staging.deleteRecursively() } // 上次中断的残骸清理（幂等）
-        try {
-            if (!staging.mkdirs()) {
-                return@withContext Result.failure(Exception("无法创建暂存目录：$staging"))
+            // ① 重复安装前置拒绝：已登记技能不进确认门、不做任何下载 / 写盘
+            if (skillRegistry.get(skillId) != null) {
+                return@withContext Result.failure(
+                    Exception("技能 $skillId 已安装，重复安装已拒绝；如需重装请先卸载")
+                )
             }
 
-            // ③ 逐个下载到暂存；任一失败 → 整体中止（拒绝安装半成品技能）
-            val resourceFiles = skill.files.filter { it != skill.path && !it.endsWith("/") }
-            for (filePath in resourceFiles) {
-                val content = modelScopeSource.fetchSkillResource(skill, filePath).getOrElse {
-                    return@withContext Result.failure(
-                        Exception("资源文件下载失败（$filePath）：${it.message} —— 已中止安装"
-                        )
-                    )
+            val markdown = modelScopeSource.fetchSkillMarkdown(skill).getOrElse {
+                return@withContext Result.failure(Exception("SKILL.md 下载失败：${it.message}"))
+            }
+
+            // ② 资源全部先落暂存目录：任何失败路径都不触碰既有 ms-<id>/ 用户数据
+            val staging = File(skillsDir, "$skillId.staging")
+            runCatching { staging.deleteRecursively() } // 上次中断的残骸清理（幂等）
+            try {
+                if (!staging.mkdirs()) {
+                    return@withContext Result.failure(Exception("无法创建暂存目录：$staging"))
                 }
-                val rel = filePath.removePrefix("skills/${skill.id}/")
-                if (rel.isBlank() || rel.contains("..")) continue
-                val target = File(staging, rel)
-                // 路径穿越防御：目标必须仍在暂存目录内
-                if (!target.canonicalPath.startsWith(staging.canonicalPath + File.separator)) continue
-                target.parentFile?.mkdirs()
-                target.writeText(content)
-            }
 
-            // 构建 prompt 型 manifest：promptInjection = SKILL.md 全文
-            val manifest = buildString {
-                append("{\n")
-                append("\"schema\":\"apex-skill-v1\",\n")
-                append("\"id\":\"${escapeJson(skillId)}\",\n")
-                append("\"name\":\"${escapeJson(skill.name)}\",\n")
-                append("\"version\":\"1.0.0\",\n")
-                append("\"description\":\"${escapeJson(skill.description)}\",\n")
-                append("\"author\":\"modelscope\",\n")
-                append("\"promptInjection\":\"${escapeJson(markdown)}\",\n")
-                append("\"tools\":[],\n")
-                append("\"configuration\":{\"autoSetup\":[]}\n")
-                append("}")
-            }
+                // ③ 逐个下载到暂存；任一失败 → 整体中止（拒绝安装半成品技能）
+                val resourceFiles = skill.files.filter { it != skill.path && !it.endsWith("/") }
+                for (filePath in resourceFiles) {
+                    val content = modelScopeSource.fetchSkillResource(skill, filePath).getOrElse {
+                        return@withContext Result.failure(
+                            Exception("资源文件下载失败（$filePath）：${it.message} —— 已中止安装")
+                        )
+                    }
+                    val rel = filePath.removePrefix("skills/${skill.id}/")
+                    if (rel.isBlank() || rel.contains("..")) continue
+                    val target = File(staging, rel)
+                    // 路径穿越防御：目标必须仍在暂存目录内
+                    if (!target.canonicalPath.startsWith(staging.canonicalPath + File.separator)) continue
+                    target.parentFile?.mkdirs()
+                    target.writeText(content)
+                }
 
-            // ④ 确认门：拒绝 / 失败 → 只回收暂存（finally），既有 skillHome 零接触
-            val registered = installManifest(manifest, defaultScope)
-            if (registered.isFailure) {
-                return@withContext registered
-            }
+                // 构建 prompt 型 manifest：promptInjection = SKILL.md 全文
+                val manifest = buildString {
+                    append("{\n")
+                    append("\"schema\":\"apex-skill-v1\",\n")
+                    append("\"id\":\"${escapeJson(skillId)}\",\n")
+                    append("\"name\":\"${escapeJson(skill.name)}\",\n")
+                    append("\"version\":\"1.0.0\",\n")
+                    append("\"description\":\"${escapeJson(skill.description)}\",\n")
+                    append("\"author\":\"modelscope\",\n")
+                    append("\"promptInjection\":\"${escapeJson(markdown)}\",\n")
+                    append("\"tools\":[],\n")
+                    append("\"configuration\":{\"autoSetup\":[]}\n")
+                    append("}")
+                }
 
-            // ⑤ 确认通过 → 发布暂存资源进 skillHome（合并：仅覆盖同名文件）
-            val allPublished = publishStaged(staging, skillHome)
-            if (allPublished) registered else registered.map { msg -> "$msg（部分资源文件发布失败）" }
-        } catch (e: CancellationException) {
-            // 取消不吞（原实例重抛）；暂存回收交给 finally
-            throw e
-        } catch (e: Exception) {
-            // 磁盘 IO 等意外异常统一转友好失败；暂存回收交给 finally
-            Result.failure(Exception("魔搭技能安装失败：${e.message}"))
-        } finally {
-            // 幂等兜底：成功路径 publishStaged 后暂存已清；失败 / 取消 / 早退路径必清
-            runCatching { staging.deleteRecursively() }
+                // ④ 确认门：拒绝 / 失败 → 只回收暂存（finally），既有 skillHome 零接触
+                val registered = installManifest(manifest, defaultScope)
+                if (registered.isFailure) {
+                    return@withContext registered
+                }
+
+                // ⑤ 确认通过 → 发布暂存资源进 skillHome（合并：仅覆盖同名文件）
+                val allPublished = publishStaged(staging, skillHome)
+                if (allPublished) registered else registered.map { msg -> "$msg（部分资源文件发布失败）" }
+            } catch (e: CancellationException) {
+                // 取消不吞：块内捕获、经 cancelled 数据通道携带，边界外原实例重抛
+                //（不作为异常穿过 withContext 边界 —— 避免其完成机制的实例替换竞态）
+                cancelled = e
+                Result.failure(e) // 占位返回值：外层检测到 cancelled 后丢弃并重抛
+            } catch (e: Exception) {
+                // 磁盘 IO 等意外异常统一转友好失败；暂存回收交给 finally
+                Result.failure(Exception("魔搭技能安装失败：${e.message}"))
+            } finally {
+                // 幂等兜底：成功路径 publishStaged 后暂存已清；失败 / 取消 / 早退路径必清
+                runCatching { staging.deleteRecursively() }
+            }
         }
+        cancelled?.let { throw it }
+        return result
     }
 
     /**
