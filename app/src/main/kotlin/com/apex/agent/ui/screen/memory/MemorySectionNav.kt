@@ -11,6 +11,7 @@ import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Hub
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -72,6 +73,7 @@ internal fun MemorySectionNavRow(
 ) {
     val chips: List<NavChip> = listOf(
         NavChip(stringResource(R.string.memory_section_all), Icons.Outlined.Apps, section = null),
+        NavChip(stringResource(R.string.memory_section_profile), Icons.Outlined.Person, MemorySection.PROFILE),
         NavChip(stringResource(R.string.memory_section_chat), Icons.Outlined.Forum, MemorySection.CHAT),
         NavChip(stringResource(R.string.memory_section_knowledge), Icons.Outlined.Hub, MemorySection.KNOWLEDGE),
         NavChip(stringResource(R.string.memory_section_episodes), Icons.Outlined.History, MemorySection.EPISODES),
