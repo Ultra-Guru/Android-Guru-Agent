@@ -341,7 +341,7 @@ internal fun ProvidersDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = { TextButton(onDismiss) { Text(stringResource(R.string.settings_close)) } },
-        title = { Text("Providers") },
+        title = { Text(stringResource(R.string.model_providers_title)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 providers.forEach { prov ->
@@ -372,7 +372,7 @@ internal fun ProvidersDialog(
                                 }
                             }
                             Text(prov.baseUrl, style = MaterialTheme.typography.bodySmall)
-                            Text("Keys: ${prov.apiKeys.size}", style = MaterialTheme.typography.labelSmall)
+                            Text(stringResource(R.string.model_provider_keys_count, prov.apiKeys.size), style = MaterialTheme.typography.labelSmall)
                             Row {
                                 TextButton(onClick = { editing = prov }) { Text(stringResource(R.string.settings_edit)) }
                                 if (!prov.isBuiltIn) TextButton(onClick = { deleteProvTarget = prov }) { Text(stringResource(R.string.settings_delete)) }

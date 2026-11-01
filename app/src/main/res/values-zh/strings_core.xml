@@ -359,6 +359,12 @@
     <string name="model_manual_id_label">或手动填写模型 ID</string>
     <string name="model_use_custom_id">使用自定义 ID</string>
     <string name="model_close">关闭</string>
+    <!-- #526：此前漏网的硬编码标签（所在文件其余文本均已走 stringResource） -->
+    <string name="model_base_url_label">Base URL</string>
+    <string name="model_api_key_label">API Key</string>
+    <string name="model_manage_providers">服务商…</string>
+    <string name="model_providers_title">服务商</string>
+    <string name="model_provider_keys_count">API Keys：%1$d</string>
 
     <!-- ═══ 模型配置导入弹窗（ModelConfigImportDialog —— 粘贴 JSON / Python / YAML / TOML）═══ -->
     <string name="model_import">导入配置</string>
