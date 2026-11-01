@@ -1,6 +1,6 @@
 package com.apex.agent.core.tools.builtin
 
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -38,7 +38,7 @@ class NotificationPostChannelWhitelistTest {
     }
 
     @Test
-    fun `白名单内渠道正常投递`() = runBlocking {
+    fun `白名单内渠道正常投递`() = runTest {
         val poster = Poster()
         val result = tool(poster).executeStructured(args("apex_task_done"))
         assertTrue(result.isSuccess)
@@ -46,7 +46,7 @@ class NotificationPostChannelWhitelistTest {
     }
 
     @Test
-    fun `省略渠道时用默认渠道`() = runBlocking {
+    fun `省略渠道时用默认渠道`() = runTest {
         val poster = Poster()
         val result = tool(poster).executeStructured(args())
         assertTrue(result.isSuccess)
@@ -54,7 +54,7 @@ class NotificationPostChannelWhitelistTest {
     }
 
     @Test
-    fun `越界渠道在调用宿主前被拒绝`() = runBlocking {
+    fun `越界渠道在调用宿主前被拒绝`() = runTest {
         val poster = Poster()
         val result = tool(poster).executeStructured(args("agent_spam_1"))
         assertFalse(result.isSuccess)
@@ -63,7 +63,7 @@ class NotificationPostChannelWhitelistTest {
     }
 
     @Test
-    fun `拒绝信息列出可用渠道`() = runBlocking {
+    fun `拒绝信息列出可用渠道`() = runTest {
         val poster = Poster()
         val result = tool(poster).executeStructured(args("agent_spam_2"))
         val text = result.render()
@@ -73,7 +73,7 @@ class NotificationPostChannelWhitelistTest {
     }
 
     @Test
-    fun `默认白名单只含默认渠道`() = runBlocking {
+    fun `默认白名单只含默认渠道`() = runTest {
         val poster = Poster()
         val defaultTool = NotificationPostTool(poster = { poster.post(it) })
         val rejected = defaultTool.executeStructured(args("apex_task_done"))
