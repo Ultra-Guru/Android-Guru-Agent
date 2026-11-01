@@ -52,6 +52,7 @@ import com.apex.agent.platform.terminal.searxng.SearxngState
 import com.apex.agent.service.ApexCoreService
 import com.apex.agent.searxng.SearxngSettingsStore
 import com.apex.agent.ui.chatkit.ChatToolkitStore
+import com.apex.agent.ui.chatkit.SearchChannelHint
 import com.apex.agent.ui.component.FeedbackSeverity
 import com.apex.agent.ui.component.LocalFeedbackController
 import dagger.hilt.EntryPoint
@@ -132,21 +133,16 @@ class WebSearchChannelEffects(
 ) {
 
     /**
-     * 应用切换计划。MCP 通道未安装时先沙箱安装（失败返回 false 并把错误
-     * 文案交给 [onError] 供反馈条展示）。返回 true = 通道态已落盘生效。
+     * 应用切换计划。顺序 = 先开新（MCP 安装失败时旧通道原样保留，不出现
+     * 「双无」）→ 智能停旧（同基建复用时不误关，如 BUILTIN→SEARXNG 都靠
+     * webSearch 开关）→ 通道提示殿后落库（模型侧 buildSessionContext 注入）。
+     * MCP 通道未安装时先沙箱安装（失败返回 false 并把错误文案交给
+     * [onError] 供反馈条展示）。返回 true = 通道态已落盘生效。
      */
     suspend fun apply(plan: WebSearchChannelPlan, onError: (String) -> Unit): Boolean {
-        // ① 停旧：按旧通道类型关对应基建
-        plan.deactivate?.let { old ->
-            when (old) {
-                WebSearchChannel.BUILTIN, WebSearchChannel.SEARXNG ->
-                    toolkit.setWebSearchEnabled(false)
-                else -> old.preset?.let { installer.setEnabled(it, false) }
-            }
-        }
-        // ② 开新：MCP 先保证安装（失败即中止，通道态不变）
-        val target = plan.activate ?: return true
-        if (target.preset != null) {
+        // ① 开新：MCP 先保证安装（失败即中止，旧通道态不变）
+        val target = plan.activate
+        if (target?.preset != null) {
             val installed = runCatching { installer.ensureInstalled(target.preset) }
             if (installed.isFailure) {
                 onError(installed.exceptionOrNull()?.message ?: "搜索 MCP 安装失败")
@@ -173,11 +169,30 @@ class WebSearchChannelEffects(
             }
         }
         // 三台搜索 MCP 互斥：启用任一台时其余两台静默停用
-        if (target.preset != null) {
+        target?.preset?.let { active ->
             SearchMcpPreset.entries
-                .filter { it != target.preset }
+                .filter { it != active }
                 .forEach { runCatching { installer.setEnabled(it, false) } }
         }
+        // ② 停旧：同基建复用时不误关（BUILTIN↔SEARXNG 都靠 webSearch 开关，
+        // 互切时不能把新通道刚打开的开关又关掉）
+        plan.deactivate?.let { old ->
+            when (old) {
+                WebSearchChannel.BUILTIN, WebSearchChannel.SEARXNG ->
+                    if (target == null || target.preset != null) toolkit.setWebSearchEnabled(false)
+                else -> old.preset?.let { installer.setEnabled(it, false) }
+            }
+        }
+        // ③ 通道提示殿后落库（模型侧 buildSessionContext 据此注入调用指引；
+        // 关闭通道 = 置空回到 legacy 内置指引）
+        toolkit.setSearchChannelHint(
+            when (target) {
+                WebSearchChannel.BUILTIN -> SearchChannelHint(SearchChannelHint.Kind.BUILTIN)
+                WebSearchChannel.SEARXNG -> SearchChannelHint(SearchChannelHint.Kind.SEARXNG)
+                null -> null
+                else -> SearchChannelHint(SearchChannelHint.Kind.MCP, target.preset?.serverName)
+            }
+        )
         return true
     }
 }

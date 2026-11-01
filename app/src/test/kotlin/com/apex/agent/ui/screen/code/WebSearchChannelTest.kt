@@ -94,4 +94,35 @@ class WebSearchChannelTest {
             SearchMcpPreset.AGENT_SEARCH.uninstallCommand().joinToString(" ")
         )
     }
+
+    @Test
+    fun `通道提示编解码往返`() {
+        // 三种通道 + 空值 + 未知串的编解码契约（持久化落盘形态）
+        assertNull(SearchChannelHint.encode(null))
+        assertNull(SearchChannelHint.fromStored(null))
+        assertNull(SearchChannelHint.fromStored("garbage"))
+
+        for (kind in listOf(
+            SearchChannelHint(SearchChannelHint.Kind.BUILTIN),
+            SearchChannelHint(SearchChannelHint.Kind.SEARXNG),
+            SearchChannelHint(SearchChannelHint.Kind.MCP, "searchlight")
+        )) {
+            val restored = SearchChannelHint.fromStored(SearchChannelHint.encode(kind))
+            assertEquals(kind.kind, restored?.kind)
+            assertEquals(kind.displayName, restored?.displayName)
+        }
+    }
+
+    @Test
+    fun `MCP提示编码含服务器名与工具前缀同源`() {
+        val encoded = SearchChannelHint.encode(
+            SearchChannelHint(SearchChannelHint.Kind.MCP, "searchlight")
+        )
+        assertEquals("mcp:searchlight", encoded)
+        // displayName 与 McpManager 配置名同源 → 提示词里 mcp__<name>__ 前缀可被模型直接对上
+        assertEquals(
+            SearchMcpPreset.SEARCHLIGHT.serverName,
+            SearchChannelHint.fromStored(encoded)?.displayName
+        )
+    }
 }
