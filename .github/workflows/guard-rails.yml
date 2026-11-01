@@ -66,7 +66,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # git ls-files 需完整索引
+          # #353-④：check_secrets.py 只用 `git ls-files`（读 index）+ 工作树
+          # 文件内容，不扫历史 blob —— depth=1 即够，免全量历史 clone 拖慢
+          # "<30s" 目标。（commit-convention 的 depth=0 是真需要：base..HEAD 范围）
+          fetch-depth: 1
       - name: Credential fingerprint scan (GitHub/AWS/Google/Slack/OpenAI/keys)
         run: python3 scripts/check_secrets.py
 

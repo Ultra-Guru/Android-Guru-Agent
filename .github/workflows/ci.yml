@@ -19,10 +19,19 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# 最小权限默认（#353-③）：static-analysis / app-compile / foundry-build 三 job
+# 原先继承仓库默认（若 read-write 则过权）。build-apk 自带块（contents: read
+# + pull-requests: write）完全覆盖本默认，不受影响。
+permissions:
+  contents: read
+
 jobs:
   static-analysis:
     name: Static Analysis
     runs-on: ubuntu-latest
+    # #353-①：全仓唯一无超时 job —— kotlinc 挂起会烧默认 360 分钟。
+    # 30 分钟对静态分析（无 Gradle 构建，kotlinc 裸编译单文件族）余量充足。
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
