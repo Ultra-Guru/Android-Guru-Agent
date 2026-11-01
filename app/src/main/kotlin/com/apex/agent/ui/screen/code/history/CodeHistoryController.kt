@@ -61,6 +61,9 @@ internal fun CodeViewModel.clearConversationWithArchive() {
     }
     // ═══ 旧清空链路（原 clearConversation 逐行为迁移，语义不变）═══
     codeEngineImpl?.clearConversation()
+    // 会话边界：AUTO 预检/升级信号全量清零（旧会话错误史不带入新会话首检，
+    // 见 CodeViewModel.resetAdaptiveThinkingSignals）。
+    resetAdaptiveThinkingSignals()
     codeTodoTool.clear()
     if (wsId != null) {
         viewModelScope.launch {
@@ -115,6 +118,10 @@ internal fun CodeViewModel.restoreCodeHistoryEntry(entry: CodeHistoryEntry) {
                 appendSystemMessage(languageManager.getString(R.string.code_history_restore_failed))
                 return@launch
             }
+            // 会话边界（替换语义）：AUTO 信号随会话一并重置（归档会话的错误史
+            // 未随快照保存，新现场从零计数；同工作区重绨不触发 bind 侧边界重置，
+            // 必须在此显式清零）。
+            resetAdaptiveThinkingSignals()
             withContext(Dispatchers.IO) {
                 runCatching { codeSessionStore.save(restored) }
                     .onFailure {

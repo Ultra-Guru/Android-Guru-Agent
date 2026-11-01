@@ -376,6 +376,14 @@
     <string name="model_import_from_file">从文件导入</string>
     <string name="model_import_file_error">读取文件失败：%1$s</string>
 
+    <!-- ═══ 模型配置导出弹窗（ModelConfigExportDialog —— 与导入对称，密钥永不导出）═══ -->
+    <string name="model_export">导出配置</string>
+    <string name="model_export_title">导出模型配置</string>
+    <string name="model_export_redacted">导出内容永不包含 API Key（密钥脱敏）——在另一台设备导入后需重新填写。下方文本可直接粘贴回导入弹窗原样恢复。</string>
+    <string name="model_export_copy">复制</string>
+    <string name="model_export_copied">已复制到剪贴板</string>
+    <string name="model_export_empty">无可导出内容：该服务商既没有 Base URL 也没有模型。</string>
+
     <!-- ═══ 存储与数据管理（StorageScreen）═══ -->
     <string name="storage_title">存储</string>
     <string name="storage_refresh">刷新</string>

@@ -130,6 +130,9 @@ internal fun ModelSetupCard(
     // 多语言配置导入弹窗（粘贴 JSON / Python / YAML / TOML 一键导入）
     var showImportDialog by remember { mutableStateOf(false) }
 
+    // 配置导出弹窗（导入的对称闭环：当前服务商 + 其全部档案 → 可读 JSON，密钥永不导出）
+    var showExportDialog by remember { mutableStateOf(false) }
+
     // 删除 / 重置参数的确认框（自 SettingsScreen.ModelsSection 迁入）
     var deleteTarget by remember { mutableStateOf<ModelProfile?>(null) }
     var resetTarget by remember { mutableStateOf<ModelProfile?>(null) }
@@ -331,7 +334,7 @@ internal fun ModelSetupCard(
                 }
             }
 
-            // ── 档案操作：新建 / 复制 / 重置参数（带确认）/ 删除（带确认）/ 导入配置 ──
+            // ── 档案操作：新建 / 复制 / 重置参数（带确认）/ 删除（带确认）/ 导入 / 导出配置 ──
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = { createProfile() }) { Text(stringResource(R.string.model_new), fontSize = 12.sp) }
                 TextButton(onClick = { viewModel.duplicateProfile(sel.id) }) { Text(stringResource(R.string.model_duplicate), fontSize = 12.sp) }
@@ -344,6 +347,14 @@ internal fun ModelSetupCard(
                     // 粘贴 JSON / Python / YAML / TOML 配置直接建 Provider + 档案
                     onClick = { showImportDialog = true }
                 ) { Text(stringResource(R.string.model_import), fontSize = 12.sp) }
+                TextButton(
+                    // 对称导出：先冲刷未落盘的 URL/Key 编辑（同「获取模型」的预冲刷惯例），
+                    // 再弹预览（密钥脱敏，见 ModelConfigExportDialog）
+                    onClick = {
+                        flushEdits()
+                        showExportDialog = true
+                    }
+                ) { Text(stringResource(R.string.model_export), fontSize = 12.sp) }
             }
 
             // ── 档案名称 ──
@@ -614,6 +625,15 @@ internal fun ModelSetupCard(
             viewModel = viewModel,
             onDismiss = { showImportDialog = false },
             onImported = { onSelect(it) }
+        )
+    }
+
+    // 配置导出弹窗（与导入同源对称：导出的文本可直接粘回导入弹窗恢复）
+    if (showExportDialog && provider != null) {
+        ModelConfigExportDialog(
+            provider = provider,
+            profiles = profiles,
+            onDismiss = { showExportDialog = false }
         )
     }
 
