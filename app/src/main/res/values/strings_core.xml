@@ -382,6 +382,14 @@
     <string name="model_import_from_file">Import from file</string>
     <string name="model_import_file_error">Failed to read file: %1$s</string>
 
+    <!-- ═══ Model config export dialog (ModelConfigExportDialog — symmetric to import, API keys never exported) ═══ -->
+    <string name="model_export">Export config</string>
+    <string name="model_export_title">Export model configuration</string>
+    <string name="model_export_redacted">API keys are never included in exports — re-enter the key after importing on the other device. The text below can be pasted back into the import dialog as-is.</string>
+    <string name="model_export_copy">Copy</string>
+    <string name="model_export_copied">Copied to clipboard</string>
+    <string name="model_export_empty">Nothing to export: this provider has no base URL and no models.</string>
+
     <!-- ═══ Storage and data management (StorageScreen) ═══ -->
     <string name="storage_title">Storage</string>
     <string name="storage_refresh">Refresh</string>
