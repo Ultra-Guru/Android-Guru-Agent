@@ -184,7 +184,19 @@ data class ToolMetadata(
     val risk: ToolRisk,
     val tags: List<String> = emptyList(),
     val annotations: ToolAnnotations = ToolAnnotations.infer(id, risk),
-    val scope: String = "all"
+    val scope: String = "all",
+    /**
+     * v2.1.0 工具来源（评审 B1）：与 category 正交的身份面。默认按 id 推断
+     * （[BrowserRolePolicy.sourceFor]，显式声明恒覆盖）——审计与目录展示用。
+     */
+    val source: ToolSource = ToolSource.CORE,
+    /**
+     * v2.1.0 角色门禁（评审 B1/P0-4）：调用本工具所需的全部角色。
+     * 空集 = 不限制（存量 111 工具默认零漂移）；browser_* 经
+     * [BrowserRolePolicy.requiredRolesFor] 注入（infer fallback，显式声明恒覆盖）。
+     * 强制点三处：EngineToolPlanner 计划层 / RoleGate 调用层 / 目录 roleFilter。
+     */
+    val requiredRoles: Set<String> = emptySet()
 ) {
     /** True when this tool's risk level requires gated approval. */
     val isHighRisk: Boolean get() = risk == ToolRisk.HIGH
@@ -208,10 +220,21 @@ data class ToolMetadata(
         private var risk: ToolRisk? = null
         private var annotations: ToolAnnotations? = null
         private var scope: String = "all"
+        private var source: ToolSource? = null
+        private var roles: Set<String>? = null
         private val tags = mutableListOf<String>()
 
         /** Set the workspace scope ("agent" | "coding" | "all"). */
         fun scope(scope: String) = apply { this.scope = scope }
+
+        /** v2.1.0：显式声明来源（覆盖 id 推断）。 */
+        fun source(source: ToolSource) = apply { this.source = source }
+
+        /**
+         * v2.1.0：显式声明必需角色（**恒覆盖** [BrowserRolePolicy] 的 id 推断
+         * —— 评审 P0-9：infer 仅 fallback，细分角色从这里走）。
+         */
+        fun requiredRoles(vararg roles: String) = apply { this.roles = roles.toSet() }
 
         /** Set the category; inferred from the id if never called. */
         fun category(category: ToolCategory) = apply { this.category = category }
@@ -248,7 +271,9 @@ data class ToolMetadata(
                 risk = resolvedRisk,
                 tags = tags,
                 annotations = annotations ?: ToolAnnotations.infer(id, resolvedRisk),
-                scope = scope
+                scope = scope,
+                source = source ?: BrowserRolePolicy.sourceFor(id),
+                requiredRoles = roles ?: BrowserRolePolicy.requiredRolesFor(id)
             )
         }
     }
@@ -264,7 +289,9 @@ data class ToolMetadata(
         fun infer(id: String): ToolMetadata = ToolMetadata(
             id = id,
             category = inferCategory(id),
-            risk = inferRisk(id, inferCategory(id))
+            risk = inferRisk(id, inferCategory(id)),
+            source = BrowserRolePolicy.sourceFor(id),
+            requiredRoles = BrowserRolePolicy.requiredRolesFor(id)
         )
 
         /** Category inference from the id's prefix family. */

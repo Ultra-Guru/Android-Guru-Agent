@@ -388,6 +388,9 @@ object ToolModule {
         // 风险门（防双弹窗），仅默认放行才落风险门继续把关。
         .gate(CompositeToolGate(
             ToolEnvironmentGate(environmentState),
+            // v2.1.0 角色门（评审 B3）：requiredRoles 非空的工具要求会话授予集
+            // 全覆盖——授予集现取 BrowserRoleAuth（设置+模板，热生效）。
+            com.apex.agent.core.tools.RoleGate { com.apex.agent.tools.BrowserRoleAuth.currentGrants() },
             PermissionAwareToolGate(permissionModeGate, riskAwareToolGate)
         ))
         // Issue #165 —— PreToolUse/PostToolUse 插槽：桥接 HookRegistry。
@@ -945,9 +948,12 @@ object ToolModule {
         // 直接 400）。CORE 集常驻，其余能力经目录按需加载：
         //   ToolSearch 找 → ToolOpen 加载（描述+schema 作为工具结果注入，
         //   下一轮即可调用）→ ToolList 总览。
-        registry.register(SafeAgentTool(ToolSearchTool(registry)))
+        // v2.1.0：目录三工具的角色过滤（app 现取 BrowserRoleAuth——设置热生效）
+        val browserRoleFilter: (com.apex.agent.core.tools.ToolMetadata) -> Boolean =
+            { com.apex.agent.tools.BrowserRoleAuth.isVisible(it) }
+        registry.register(SafeAgentTool(ToolSearchTool(registry, browserRoleFilter)))
         registry.register(SafeAgentTool(ToolOpenTool(registry, toolActivation)))
-        registry.register(SafeAgentTool(ToolListTool(registry)))
+        registry.register(SafeAgentTool(ToolListTool(registry, browserRoleFilter)))
 
         // ═══ 12b. 能力自省元工具（「agent 不懂自己能干什么」的根因修复）═══
         // CapabilityReport：权限阶梯（与系统提示词同源）/ 实时环境 / 工具与
@@ -966,6 +972,14 @@ object ToolModule {
                     connectedMcpCount = { mcpManager.getConnectedServers().size },
                     // v3 S3：GitHub 连接快照（"login|repo"，未设置仓库 = "-"；
                     // 未连接 = null）—— CapabilityReport 的 GitHub 行数据源
+                    // v2.1.0：Browser 行仅授权会话可见（未授权=provider 返 null=整行省略）
+                    browserRuntimeProvider = {
+                        com.apex.agent.tools.BrowserRoleAuth.currentGrants()
+                            .takeIf { com.apex.agent.core.tools.BrowserRolePolicy.ROLE_BROWSER_AUTOMATION in it }
+                            ?.let { "ready (engine in-process; roles granted: browser-automation" +
+                                (if (com.apex.agent.tools.BrowserRoleAuth.currentGrants().contains(
+                                        com.apex.agent.core.tools.BrowserRolePolicy.ROLE_BROWSER_SENSITIVE)) " + sensitive" else "") + ")" }
+                    },
                     githubStateProvider = {
                         githubTokenManager.connectionState.value.takeIf { it.isConnected }
                             ?.let { s ->

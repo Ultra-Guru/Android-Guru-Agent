@@ -51,7 +51,14 @@ class CapabilityReportTool(
      * 零改动，向后兼容）；core 经 lambda 拿快照，不依赖 app 层
      * GithubTokenManager，保持纯 JVM 可测。
      */
-    private val githubStateProvider: (() -> String?)? = null
+    private val githubStateProvider: (() -> String?)? = null,
+    /**
+     * v2.1.0 角色过滤 + Browser 行（评审 B3/P0-8）：roleFilter 同目录两工具；
+     * browserRuntimeProvider 仅在当前会话含 browser-automation 时由 app 注入
+     * 非空快照——未授权角色**整行省略**（不泄露引擎运行状态，fail-silent）。
+     */
+    private val roleFilter: (ToolMetadata) -> Boolean = { true },
+    private val browserRuntimeProvider: (() -> String?)? = null
 ) : BaseTool(
     id = "CapabilityReport",
     name = "Capability Report",
@@ -77,6 +84,7 @@ class CapabilityReportTool(
         val info = PrivilegeLadder.infoFor(privilegeLevel())
 
         val allTools = registry.getAllTools()
+            .filter { roleFilter(it.metadata) }
             .filterNot { ToolTierPolicy.isLegacyAlias(it.id) }
         val coreCount = allTools.count { ToolTierPolicy.isCore(it.id) }
         val catalogCount = allTools.size - coreCount
@@ -128,6 +136,13 @@ class CapabilityReportTool(
                     } else {
                         appendLine("GitHub: not connected — github_* tools need a PAT (ask the user).")
                     }
+                }
+                // v2.1.0 Browser runtime 行（评审 P0-8 信息不泄露）：仅当前会话
+                // 含 browser-automation 角色时 app 才注入非空 provider——未授权
+                // 角色整行省略（不显示引擎状态/文档代际）。
+                if (browserRuntimeProvider != null) {
+                    val browser = runCatching { browserRuntimeProvider() }.getOrNull()
+                    if (browser != null) appendLine("Browser runtime: $browser")
                 }
                 // v3 双工位作用域（事实性描述）：本工具不感知设置开关
                 // （AgentSettings.mcpScopeIsolation），只陈述引擎计划层的

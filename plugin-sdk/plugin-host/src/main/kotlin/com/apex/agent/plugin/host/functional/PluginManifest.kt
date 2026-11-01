@@ -50,8 +50,34 @@ data class PluginManifest(
     /** 工位作用域（"agent" / "coding" / "all"，缺省 all——注册侧经 ToolMetadata.normalizeScope 归一）。 */
     val scope: String? = null,
     /** 贡献点集合（工具宏 / 斜杠指令 / 预留提示词注入）。 */
-    val contributions: PluginContributions = PluginContributions()
+    val contributions: PluginContributions = PluginContributions(),
+    /**
+     * v2.1.0 插件权限（评审 B5/P0-5，**三态 fail-closed**）：
+     * - `null`（旧 manifest 无此字段）= legacy——非浏览器能力照旧，浏览器默认
+     *   **不授**（[isLegacyManifest]=true，首次调 browser 工具走用户确认流）；
+     * - 空数组 = 新 manifest 显式不授任何可选宿主权限；
+     * - 非空 = 按 token 授予：`browser`（普通浏览器族，不含敏感）/
+     *   `browser:sensitive`（四件套须单独声明）/ 精确工具 id；未知 token=无权限
+     *   （绝不扩大）。
+     */
+    val permissions: List<String>? = null
 ) {
+    /** 旧版 manifest（无 permissions 字段）——legacy 兼容标记。 */
+    val isLegacyManifest: Boolean get() = permissions == null
+
+    /** 是否授予某工具（fail-closed：legacy=false；未知 token 不扩权）。 */
+    fun grantsTool(toolId: String): Boolean {
+        val perms = permissions ?: return false
+        if (toolId in perms) return true
+        val browserOrdinary = toolId.startsWith("Browser") &&
+            toolId !in setOf("BrowserExecuteJs", "BrowserGetCookies", "BrowserFileUpload", "BrowserClearData")
+        return when {
+            "browser" in perms && browserOrdinary -> true
+            "browser:sensitive" in perms && toolId.startsWith("Browser") -> true
+            else -> false
+        }
+    }
+}
     /** 解析后的形态（kind 字段宽松归一）。 */
     val resolvedKind: PluginKind get() = PluginKind.fromRaw(kind)
 

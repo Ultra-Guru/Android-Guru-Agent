@@ -35,7 +35,12 @@ data class McpHostConfig(
      * `ShareContent` 为未来共享工具预留的防御性条目。
      */
     val blockedToolIds: List<String> = listOf(
-        "VaultSave", "VaultPaste", "VaultDelete", "VaultList", "ShareContent"
+        "VaultSave", "VaultPaste", "VaultDelete", "VaultList", "ShareContent",
+        // v2.1.0：浏览器敏感四件套默认封禁（评审 B6）——即使把 BROWSER 加入分类
+        // 白名单，这四个也不经外部 AI 通道出入；确需开放须从本清单显式移除。
+        // 注意：这只是 MCP 入口防护之一，宿主执行层的 browser-sensitive 角色
+        // （BrowserRolePolicy/RoleGate）才是全入口防线。
+        "BrowserExecuteJs", "BrowserGetCookies", "BrowserFileUpload", "BrowserClearData",
     ),
     /** 每远程地址每分钟请求上限（令牌桶限速）。 */
     val rateLimitPerMinute: Int = 60
