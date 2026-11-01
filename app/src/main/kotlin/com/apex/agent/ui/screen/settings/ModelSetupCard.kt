@@ -426,7 +426,7 @@ internal fun ModelSetupCard(
             OutlinedTextField(
                 value = baseUrl,
                 onValueChange = { baseUrl = it },
-                label = { Text("Base URL") },
+                label = { Text(stringResource(R.string.model_base_url_label)) },
                 leadingIcon = { Icon(Icons.Outlined.Link, null, Modifier.size(18.dp)) },
                 supportingText = {
                     Column {
@@ -479,7 +479,7 @@ internal fun ModelSetupCard(
             OutlinedTextField(
                 value = apiKey,
                 onValueChange = { apiKey = it },
-                label = { Text("API Key") },
+                label = { Text(stringResource(R.string.model_api_key_label)) },
                 leadingIcon = { Icon(Icons.Outlined.Key, null, Modifier.size(18.dp)) },
                 trailingIcon = {
                     IconButton(onClick = { keyVisible = !keyVisible }) {
@@ -569,7 +569,7 @@ internal fun ModelSetupCard(
                     if (sel.isDefault) stringResource(R.string.model_is_default)
                     else stringResource(R.string.model_set_default)
                 ) }
-                TextButton(onClick = onManageProviders) { Text("Providers…") }
+                TextButton(onClick = onManageProviders) { Text(stringResource(R.string.model_manage_providers)) }
                 TextButton(onClick = onManageRoles) { Text(stringResource(R.string.model_role_mapping)) }
             }
 

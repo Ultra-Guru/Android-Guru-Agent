@@ -359,6 +359,12 @@
     <string name="model_manual_id_label">Or enter a model ID manually</string>
     <string name="model_use_custom_id">Use custom ID</string>
     <string name="model_close">Close</string>
+    <!-- #526: labels that previously slipped through the i18n net (hardcoded in files that otherwise use stringResource everywhere) -->
+    <string name="model_base_url_label">Base URL</string>
+    <string name="model_api_key_label">API Key</string>
+    <string name="model_manage_providers">Providers…</string>
+    <string name="model_providers_title">Providers</string>
+    <string name="model_provider_keys_count">Keys: %1$d</string>
 
     <!-- ═══ Model config import dialog (ModelConfigImportDialog — paste JSON / Python / YAML / TOML) ═══ -->
     <string name="model_import">Import config</string>
