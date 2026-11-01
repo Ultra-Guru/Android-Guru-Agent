@@ -517,7 +517,11 @@ object ToolModule {
         // 全自动模式（BYPASS）短路命令级确认门的设置源（实时读取，改设置即生效）。
         settingsRepository: SettingsRepository,
         // §14h App Control：工具 → UI 的真实导航桥（打开设置/诊断等页面）。
-        navigationBridge: com.apex.agent.tools.AppNavigationBridge
+        navigationBridge: com.apex.agent.tools.AppNavigationBridge,
+        // §12c 统一扩展模型（PR-A）：闸门 + 账本 + 适配器注册表（ExtensionModule 提供）。
+        extensionInstaller: com.apex.agent.core.tools.extension.ExtensionInstaller,
+        extensionAdapters: com.apex.agent.core.tools.extension.ExtensionAdapterRegistry,
+        extensionLedger: com.apex.agent.core.tools.extension.ExtensionRegistry
     ): ToolRegistry {
         val registry = DefaultToolRegistry()
 
@@ -980,6 +984,17 @@ object ToolModule {
                     fetchMcpServers = { hubSource.listMcpServers() }
                 )
             )
+        )
+
+        // ═══ 12c. 统一扩展模型（市场重构 PR-A）—— 七工具注册体拆至卫星文件；
+        // hash 门（先看后装）+ 确认门 + 账本；旧入口双轨保留（PR-B 转接）。
+        registerExtensionTools(
+            registry = registry,
+            installer = extensionInstaller,
+            adapterRegistry = extensionAdapters,
+            ledger = extensionLedger,
+            skillRegistry = skillRegistry,
+            mcpManager = mcpManager
         )
 
         // ═══ 13. Skill 工具接线（管理工具 + composite/script 装载注册）═══

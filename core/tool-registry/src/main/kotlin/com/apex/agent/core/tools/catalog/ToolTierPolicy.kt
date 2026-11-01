@@ -113,6 +113,12 @@ object ToolTierPolicy {
         // MarketSearch：官方技能+MCP 市场检索（「没装的能力一步之遥」）。
         "CapabilityReport", "MarketSearch",
 
+        // ── extension（市场完全重构 PR-A：统一安装闸门三步入 CORE）──
+        // ExtensionResolve（认路）/ ExtensionInspect（看清）/ ExtensionInstall
+        //（装，manifest_hash 硬门）—— 五生态安装语义的统一入口；List/Uninstall/
+        // Sync/Doctor 留 CATALOG（低频运维面，ToolSearch 渐进披露）。
+        "ExtensionResolve", "ExtensionInspect", "ExtensionInstall",
+
         // ── v5：agent 自主设置（让 agent 自查/自调自身配置）──
         // AgentSettingGet 入 CORE：模型应在每次会话开始就知道当前运行配置
         // （避免"我不知道我能调多少迭代上限"的盲调）；AgentSettingSet 与
