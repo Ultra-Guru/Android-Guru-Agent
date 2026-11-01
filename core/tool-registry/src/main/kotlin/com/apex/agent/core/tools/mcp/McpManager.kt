@@ -2,10 +2,16 @@ package com.apex.agent.core.tools.mcp
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -113,6 +119,12 @@ class McpManager(
 ) {
     private val clients = LinkedHashMap<String, McpClient>()
     private val configs = LinkedHashMap<String, McpServerConfig>()
+
+    /**
+     * #488：getAllTools 并发聚合限流器——同一时刻最多
+     * [AGGREGATION_CONCURRENCY] 台服务器在途 listTools。
+     */
+    private val aggregationLimiter = Semaphore(AGGREGATION_CONCURRENCY)
 
     /**
      * 连接代数（v3 修复）：服务器名 → 当前代。disconnect / setEnabled(false) /
@@ -337,34 +349,71 @@ class McpManager(
     /**
      * 获取所有可用MCP工具（对 clients 快照迭代，锁内零网络调用）。
      *
-     * 单台服务器失败不再静默：Result 失败与抛出的异常均经 [errorLog]
-     * 外送留痕（旧实现 `catch (_: Exception) {}` 违反仓库「防御式 IO：
-     * 异常折叠 + 留痕」纪律）。CancellationException 照常重抛 ——
-     * [McpClient.listTools] 现已遵守全仓取消纪律，聚合层不得再把它吞掉。
+     * #488 修复（v5 并发聚合）：旧实现串行逐台 listTools——延迟相加，
+     * 任一慢源/挂起源把后面所有服务器的工具一并拖死。现在：
+     * - **有界并发**：每台服务器的 listTools 在独立子协程中并行执行，
+     *   [AGGREGATION_CONCURRENCY] 信号量限流——几十台服务器也不会同时
+     *   打满连接与文件描述符；
+     * - **单源预算**：每台独立 [AGGREGATION_BUDGET_MS] 超时（withTimeoutOrNull），
+     *   慢源超时降级为「该台零工具 + timeout 留痕」，健康源照常返回，
+     *   互不拖累；预算只在真正开始请求后才计时（信号量排队时间不计入）；
+     * - **稳定顺序**：结果按快照顺序（LinkedHashMap 注册序）拼接，
+     *   并发完成先后不影响工具顺序；
+     * - 留痕与取消纪律不变：Result 失败与抛出异常经 [errorLog] 外送
+     *   （不吞）；调用方取消（非预算产生的 CancellationException）照常
+     *   重抛——预算超时被 withTimeoutOrNull 折叠为 null 返回值，不会与
+     *   调用方取消混淆。
      */
     suspend fun getAllTools(): List<McpToolDef> {
         val snapshot = synchronized(lock) { clients.entries.map { it.key to it.value } }
-        val allTools = mutableListOf<McpToolDef>()
-        for ((serverName, client) in snapshot) {
-            try {
-                client.listTools()
-                    .onSuccess { allTools.addAll(it) }
-                    .onFailure { e ->
-                        errorLog(
-                            "McpManager.getAllTools: server '$serverName' listTools failed: " +
-                                "${e.message ?: e::class.simpleName}"
-                        )
-                    }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                errorLog(
-                    "McpManager.getAllTools: server '$serverName' listTools threw: " +
-                        "${e.message ?: e::class.simpleName}"
-                )
-            }
+        if (snapshot.isEmpty()) return emptyList()
+        return coroutineScope {
+            snapshot.map { (serverName, client) ->
+                async { aggregateServerToolsWithBudget(serverName, client) }
+            }.awaitAll().flatten()
         }
-        return allTools
+    }
+
+    /**
+     * [getAllTools] 的单台聚合：限流并发 + 预算超时 + 失败留痕。
+     *
+     * 超时/失败/异常均折叠为该台的空清单（其余服务器不受影响），
+     * 唯一重抛的是调用方自己的取消（CancellationException）。
+     */
+    private suspend fun aggregateServerToolsWithBudget(
+        serverName: String,
+        client: McpClient
+    ): List<McpToolDef> = aggregationLimiter.withPermit {
+        try {
+            val result = withTimeoutOrNull(AGGREGATION_BUDGET_MS) { client.listTools() }
+            if (result == null) {
+                errorLog(
+                    "McpManager.getAllTools: server '$serverName' listTools timeout " +
+                        "after ${AGGREGATION_BUDGET_MS}ms (aggregation budget) — " +
+                        "source skipped, other servers unaffected"
+                )
+                return@withPermit emptyList()
+            }
+            result.fold(
+                onSuccess = { it },
+                onFailure = { e ->
+                    errorLog(
+                        "McpManager.getAllTools: server '$serverName' listTools failed: " +
+                            "${e.message ?: e::class.simpleName}"
+                    )
+                    emptyList()
+                }
+            )
+        } catch (e: CancellationException) {
+            // 只可能是调用方取消（预算超时已折叠为 null，不会走到这里）——重抛
+            throw e
+        } catch (e: Exception) {
+            errorLog(
+                "McpManager.getAllTools: server '$serverName' listTools threw: " +
+                    "${e.message ?: e::class.simpleName}"
+            )
+            emptyList()
+        }
     }
 
     /**
@@ -607,6 +656,22 @@ class McpManager(
          * "\${GITHUB_TOKEN}"（$ 转义防模板插值）。
          */
         const val GITHUB_TOKEN_PLACEHOLDER = "\${GITHUB_TOKEN}"
+
+        /**
+         * #488：getAllTools 单台服务器的聚合预算（毫秒）。
+         *
+         * 聚合是「尽力而为的全景快照」而不是单台命令：一次工具清单请求
+         * 正常在百毫秒量级，5s 已覆盖沙箱 npx 热启动后的常规响应；超过
+         * 预算的慢源降级为空清单 + timeout 留痕，绝不拖住健康源
+         * （单台诊断可走 [listServerTools]，无聚合预算）。
+         */
+        const val AGGREGATION_BUDGET_MS = 5_000L
+
+        /**
+         * #488：getAllTools 并发聚合上限——超过的请求在信号量处排队
+         * （排队不计时，真正开始请求后才进入预算窗口）。
+         */
+        const val AGGREGATION_CONCURRENCY = 8
 
         /**
          * 沙箱 STDIO 连接的握手/请求超时（Issue #163）。
