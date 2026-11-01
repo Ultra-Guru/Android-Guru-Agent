@@ -197,6 +197,12 @@ class McpStdioTransport internal constructor(
             }
         } catch (_: Exception) {
             // 进程销毁时流关闭属正常路径
+        } finally {
+            // #508：对齐 close() 里 #453 的主 reader 收尾 —— destroy() 只关底层
+            // 进程管道，BufferedReader / InputStreamReader 的字符缓冲不释放；
+            // 多次重连会话下逐步累积。close() 时仍在 readLine 的本线程会收到
+            // StreamClosed → 既有 catch 收尾后到这里兜底关闭。
+            runCatching { reader.close() }
         }
     }
 
