@@ -518,8 +518,7 @@ object ToolModule {
         settingsRepository: SettingsRepository,
         // §14h App Control：工具 → UI 的真实导航桥（打开设置/诊断等页面）。
         navigationBridge: com.apex.agent.tools.AppNavigationBridge,
-        // §12c 统一扩展模型（市场完全重构 PR-A）：闸门 + 账本 + 适配器注册表
-        //（ExtensionModule 提供；七工具注册体见 ToolModuleExtensionRegistration）。
+        // §12c 统一扩展模型（PR-A）：闸门 + 账本 + 适配器注册表（ExtensionModule 提供）。
         extensionInstaller: com.apex.agent.core.tools.extension.ExtensionInstaller,
         extensionAdapters: com.apex.agent.core.tools.extension.ExtensionAdapterRegistry,
         extensionLedger: com.apex.agent.core.tools.extension.ExtensionRegistry
@@ -987,9 +986,8 @@ object ToolModule {
             )
         )
 
-        // ═══ 12c. 统一扩展模型（市场完全重构 PR-A）—— 七工具注册体拆至卫星文件 ═══
-        // resolve→inspect→install 统一闸门 + hash 门（先看后装）+ 确认门 + 账本。
-        // 旧入口（SkillInstall / McpConnect）双轨保留，PR-B 再内部转接。
+        // ═══ 12c. 统一扩展模型（市场重构 PR-A）—— 七工具注册体拆至卫星文件；
+        // hash 门（先看后装）+ 确认门 + 账本；旧入口双轨保留（PR-B 转接）。
         registerExtensionTools(
             registry = registry,
             installer = extensionInstaller,

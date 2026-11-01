@@ -14,6 +14,7 @@ import com.apex.agent.core.tools.mcp.McpServerConfig
 import com.apex.agent.core.tools.mcp.McpTransport
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import java.io.File
 
