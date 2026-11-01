@@ -728,8 +728,8 @@ class NotificationPostTool(
      * **只允许用户手动逐个删除**，属于不可逆的系统状态污染。
      *
      * 现在渠道必须落在宿主预建的集合内；越界即 INVALID_ARGUMENT 并回报可用
-     * 渠道名（模型能自我纠正，而不是撞墙）。默认只允许 [DEFAULT_CHANNEL]，
-     * 宿主可注入自己的渠道表。
+     * 渠道名（模型能自我纠正，而不是撞墙）。[DEFAULT_CHANNEL] 恒定放行
+     * （单个固定渠道，省略 channel_id 时的默认值）；其余渠道由宿主注入。
      */
     private val allowedChannelIds: Set<String> = setOf(DEFAULT_CHANNEL)
 ) : BaseTool(
@@ -788,11 +788,13 @@ class NotificationPostTool(
         val channelId = args.stringWithDefault("channel_id", DEFAULT_CHANNEL)
         // #354 ⑥：渠道白名单 —— 模型不得让宿主批量创建系统渠道（Android 只能
         // 由用户逐个删除）。越界给出可用清单，让模型一次纠正成功。
-        if (channelId !in allowedChannelIds) {
+        // [DEFAULT_CHANNEL] 恒定放行：省略 channel_id 的调用不能因宿主漏配而失败，
+        // 且它是**固定单个**渠道名，不构成批量创建面。
+        if (channelId != DEFAULT_CHANNEL && channelId !in allowedChannelIds) {
             return ToolResult.invalid(
                 field = "channel_id",
                 message = "unsupported channel '$channelId'; allowed: " +
-                    allowedChannelIds.sorted().joinToString(", ")
+                    (allowedChannelIds + DEFAULT_CHANNEL).sorted().joinToString(", ")
             )
         }
         val tag = args.stringWithDefault("tag", DEFAULT_TAG)
