@@ -41,8 +41,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
-import com.apex.agent.core.llm.AuthType
-import com.apex.agent.core.llm.KeyRotationMode
 import com.apex.agent.core.llm.ModelProfile
 import com.apex.agent.core.llm.ModelRole
 import com.apex.agent.core.llm.ModelRoleConfig
@@ -50,6 +48,7 @@ import com.apex.agent.core.llm.ProviderConfig
 import com.apex.agent.core.llm.ReasoningEffort
 import com.apex.agent.core.llm.StructuredOutputMode
 import com.apex.agent.core.llm.ToolChoiceMode
+import com.apex.agent.core.llm.WebSearchMode
 import com.apex.agent.ui.component.BrandLogo
 import com.apex.agent.ui.component.ModelBrands
 import java.util.Locale
@@ -127,12 +126,6 @@ internal fun ReasoningSection(p: ModelProfile, onUpdate: (ModelProfile) -> Unit)
             description = stringResource(R.string.settings_budget_desc)) {
             onUpdate(p.copy(thinkingBudget = it))
         }
-        SwitchRow(
-            stringResource(R.string.settings_show_thinking_label),
-            p.showThinking,
-            description = stringResource(R.string.settings_show_thinking_desc)) {
-            onUpdate(p.copy(showThinking = it))
-        }
     }
 }
 
@@ -207,6 +200,24 @@ internal fun ToolsSection(p: ModelProfile, onUpdate: (ModelProfile) -> Unit) {
             description = stringResource(R.string.settings_tool_result_desc), min = 100, max = 100_000) {
             onUpdate(p.copy(maxToolResultTokens = it))
         }
+        // 补全缺失设置（用户反馈“设置不全面”）：webSearch 后端全链真消费
+        // （StreamingOpenAiClient 按端点分支注入原生搜索参数），此前无 UI 入口。
+        // 本地化标签先提升到 Composable 作用域，map lambda 内不可调 stringResource
+        val webSearchOff = stringResource(R.string.settings_web_search_off)
+        val webSearchAuto = stringResource(R.string.settings_web_search_auto)
+        DropdownRow(
+            stringResource(R.string.settings_web_search_label),
+            WebSearchMode.entries.map { mode ->
+                mode to when (mode) {
+                    WebSearchMode.OFF -> webSearchOff
+                    WebSearchMode.AUTO -> webSearchAuto
+                    else -> mode.displayName
+                }
+            },
+            p.webSearch,
+            description = stringResource(R.string.settings_web_search_desc)) {
+            onUpdate(p.copy(webSearch = it))
+        }
     }
 }
 
@@ -241,10 +252,6 @@ internal fun NetworkSection(p: ModelProfile, onUpdate: (ModelProfile) -> Unit) {
         SwitchRow(stringResource(R.string.settings_streaming), p.streaming,
             description = stringResource(R.string.settings_streaming_desc)) {
             onUpdate(p.copy(streaming = it))
-        }
-        SwitchRow(stringResource(R.string.settings_keep_alive_conn), p.keepAlive,
-            description = stringResource(R.string.settings_keep_alive_desc)) {
-            onUpdate(p.copy(keepAlive = it))
         }
     }
 }
@@ -308,6 +315,12 @@ internal fun AdvancedSection(p: ModelProfile, onUpdate: (ModelProfile) -> Unit) 
         SwitchRow("Strict Schema", p.structuredOutputStrict,
             description = stringResource(R.string.settings_strict_schema_desc)) {
             onUpdate(p.copy(structuredOutputStrict = it))
+        }
+        // 补全缺失设置：jsonSchema 请求侧真消费（JSON_SCHEMA 模式下作为
+        // response_format.json_schema.schema 发送），此前只能手改落盘 JSON
+        TextFieldRow("JSON Schema", p.jsonSchema ?: "",
+            description = stringResource(R.string.settings_json_schema_desc)) {
+            onUpdate(p.copy(jsonSchema = it.takeIf { s -> s.isNotBlank() }))
         }
         KeyValueEditor("Custom Headers", p.customHeaders) {
             onUpdate(p.copy(customHeaders = it))
@@ -409,27 +422,14 @@ internal fun ProviderEditorDialog(
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextFieldRow("Display Name", p.displayName) { p = p.copy(displayName = it) }
                 TextFieldRow("Base URL", p.baseUrl, description = stringResource(R.string.settings_base_url_hint)) { p = p.copy(baseUrl = it) }
-                DropdownRow("Auth Type", AuthType.values().map { it to it.name }, p.authType) { p = p.copy(authType = it) }
-                TextFieldRow("Organization", p.organization) { p = p.copy(organization = it) }
-                TextFieldRow("Project", p.project) { p = p.copy(project = it) }
-                // 多 Key + 轮换策略
+                // 假设置清理：Auth Type / Organization / Project / Key Rotation 四项
+                // 均为“数据预埋”（无任何运行时消费方），随本轮真设置化移除
                 Text(stringResource(R.string.settings_keys_hint), style = MaterialTheme.typography.labelMedium)
                 OutlinedTextField(
                     p.apiKeys.joinToString("\n"),
                     { p = p.copy(apiKeys = it.lines().map { s -> s.trim() }.filter { s -> s.isNotBlank() }) },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp), maxLines = 6
                 )
-                DropdownRow("Key Rotation",
-                    listOf(
-                        KeyRotationMode.DISABLED to stringResource(R.string.settings_rotation_disabled),
-                        KeyRotationMode.SEQUENTIAL to stringResource(R.string.settings_rotation_sequential),
-                        KeyRotationMode.ON_ERROR to stringResource(R.string.settings_rotation_on_error),
-                        KeyRotationMode.ON_RATE_LIMIT to stringResource(R.string.settings_rotation_rate_limit),
-                    ),
-                    p.keyRotationMode,
-                    description = stringResource(R.string.settings_rotation_desc)) {
-                    p = p.copy(keyRotationMode = it)
-                }
                 KeyValueEditor(stringResource(R.string.settings_default_headers), p.defaultHeaders) {
                     p = p.copy(defaultHeaders = it)
                 }

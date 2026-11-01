@@ -488,8 +488,10 @@ data class AgentSettings(
     // （防分母塌 0）。
     val maxContextTokens: Int = 128_000,
     val compressionThreshold: Float = 0.8f,   // 0.5..0.95
-    val preserveRecentTurns: Int = 5,
-    val maxToolOutputLength: Int = 2000,
+    // 压缩三件套真接线（本轮）：默认值对齐 Coding 引擎原硬编码基准（6 轮 / 8000 字符），
+    // 保证默认用户在接线后零行为漂移；此前引擎侧硬编码 6/8000、设置侧默认 5/2000 互相打架。
+    val preserveRecentTurns: Int = 6,
+    val maxToolOutputLength: Int = 8_000,
 
     // ── 界面 ──
     val themeMode: String = "system",         // system | dark | light

@@ -44,12 +44,9 @@ enum class StructuredOutputMode { TEXT, JSON, JSON_SCHEMA }
 @Serializable
 enum class ToolChoiceMode { AUTO, REQUIRED, NONE }
 
-/** Provider 鉴权类型。 */
-@Serializable
-enum class AuthType { BEARER, API_KEY_QUERY, CUSTOM }
-
 /**
- * 多 API Key 轮换策略。Agent 长任务遇到限流/配额错误时自动切换下一个 Key。
+ * 多 API Key 轮换策略（keypool 运行时 [com.apex.agent.core.llm.keypool.KeyPoolLlmClient]
+ * 的轮换语义；该运行时尚未接线到生产 client，当前单 client 始终取第一个 Key）。
  */
 @Serializable
 enum class KeyRotationMode {
@@ -70,13 +67,8 @@ data class ProviderConfig(
     val id: String,
     val displayName: String,
     val baseUrl: String,
-    val authType: AuthType = AuthType.BEARER,
-    /** 支持多个 Key（[KeyRotationMode] 决定如何轮换）。 */
+    /** 支持多个 Key；当前运行时始终取第一个（历史预埋字段 authType/organization/project/keyRotationMode 已随假设置清理移除）。 */
     val apiKeys: List<String> = emptyList(),
-    /** 多 Key 轮换策略（数据预埋：客户端轮换逻辑由 LLM client 层后续接入）。 */
-    val keyRotationMode: KeyRotationMode = KeyRotationMode.DISABLED,
-    val organization: String = "",
-    val project: String = "",
     /** Provider 级默认请求头；会与 Profile 级 [ModelProfile.customHeaders] 合并（Profile 优先）。 */
     val defaultHeaders: Map<String, String> = emptyMap(),
     val capabilities: ModelCapabilities = ModelCapabilities(),
@@ -115,7 +107,6 @@ data class ModelProfile(
     val reasoningEffort: ReasoningEffort = ReasoningEffort.MEDIUM,
     /** 思维预算（tokens）。null = Auto。与 [reasoningEffort] 不强行绑定（不同 Provider 语义不同）。 */
     val thinkingBudget: Int? = null,
-    val showThinking: Boolean = true,
 
     // ── Context ───────────────────────────────────────────────
     /** 模型标称上下文窗口（tokens），如 128000 / 200000 / 1000000。 */
@@ -134,7 +125,6 @@ data class ModelProfile(
     val maxRetryDelayMs: Long = 10_000,
     val retryOnCodes: Set<Int> = setOf(408, 429, 500, 502, 503, 504),
     val streaming: Boolean = true,
-    val keepAlive: Boolean = true,
 
     // ── Tools ─────────────────────────────────────────────────
     val enableTools: Boolean = true,

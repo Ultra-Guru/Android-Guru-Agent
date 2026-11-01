@@ -105,10 +105,8 @@
     <string name="settings_reasoning_effort_label">Reasoning Effort</string>
     <string name="settings_thinking_budget_label">Thinking Budget (tokens)</string>
     <string name="settings_thinking_budget_auto">Auto</string>
-    <string name="settings_show_thinking_label">Show Thinking</string>
     <string name="settings_effort_desc">The model\'s native thinking intensity (OpenAI o-series / DeepSeek-R1 / Qwen3 etc.); ignored automatically by unsupported models</string>
     <string name="settings_budget_desc">Chain-of-thought token budget; not hard-tied to Effort (providers differ in semantics)</string>
-    <string name="settings_show_thinking_desc">Show the model\'s thinking process in the chat stream (data plumbed; chat rendering comes later)</string>
 
     <!-- Context -->
     <string name="settings_section_context">Context</string>
@@ -127,6 +125,10 @@
     <string name="settings_max_tool_calls_desc">Tool call limit per turn</string>
     <string name="settings_tool_timeout_desc">Timeout for a single tool execution</string>
     <string name="settings_tool_result_desc">Token truncation threshold before tool results enter the context</string>
+    <string name="settings_web_search_label">Native Web Search</string>
+    <string name="settings_web_search_off">Off</string>
+    <string name="settings_web_search_auto">Auto</string>
+    <string name="settings_web_search_desc">Provider-native web search params injected per endpoint; Auto infers from the endpoint and stays off for unknown ones (avoids 400)</string>
 
     <!-- Vision -->
     <string name="settings_not_set">Not set</string>
@@ -138,7 +140,6 @@
     <string name="settings_retry_count_desc">Automatic retries after a failed request</string>
     <string name="settings_retry_delay_desc">Wait before the first retry (exponential backoff afterwards)</string>
     <string name="settings_streaming_desc">Streaming output (typewriter effect); off returns the whole block at once</string>
-    <string name="settings_keep_alive_desc">Connection reuse toggle (data plumbed; the client currently always pools connections)</string>
 
     <!-- Prompt -->
     <string name="settings_section_prompt">Prompt</string>
@@ -149,6 +150,7 @@
     <!-- Advanced -->
     <string name="settings_section_advanced">Advanced</string>
     <string name="settings_strict_schema_desc">Strict JSON Schema mode (supported by only some providers)</string>
+    <string name="settings_json_schema_desc">Sent as the response_format schema when Structured Output is JSON_SCHEMA; leave empty to fall back to a bare object</string>
 
     <!-- Coding expert roles (persona layer; shared editor keys) -->
     <string name="settings_roles_builtin">Built-in role (not editable, duplicate to customize)</string>
@@ -253,19 +255,14 @@
     <string name="settings_cancel">Cancel</string>
     <string name="settings_save">Save</string>
     <string name="settings_edit_provider">Edit provider</string>
-    <string name="settings_keys_hint">API Keys (one per line)</string>
-    <string name="settings_rotation_disabled">DISABLED · off</string>
-    <string name="settings_rotation_sequential">SEQUENTIAL · round-robin</string>
-    <string name="settings_rotation_on_error">ON_ERROR · switch on error</string>
-    <string name="settings_rotation_rate_limit">ON_RATE_LIMIT · switch on 429 only</string>
-    <string name="settings_rotation_desc">Multi-key rotation strategy (data plumbed; client hookup later)</string>
+    <string name="settings_keys_hint">API Keys (one per line; currently the first key is always used)</string>
     <string name="settings_default_headers">Default Headers (provider-level defaults)</string>
     <string name="settings_base_url_hint">OpenAI-compatible endpoint, e.g. https://api.openai.com/v1</string>
 
     <!-- Roles dialog -->
     <string name="settings_done">Done</string>
     <string name="settings_model_roles">Model Roles · multi-model</string>
-    <string name="settings_role_note">Role mappings are saved; real multi-client routing lands in the Agent engine later.</string>
+    <string name="settings_role_note">Role mappings are live: FAST drives goal verification, SUMMARY drives context compression, VISION/REASONING route by capability with automatic fallback to the primary model.</string>
 
     <!-- About -->
     <string name="settings_about_version">Version</string>
@@ -811,7 +808,6 @@
     <string name="settings_dialog_ok">OK</string>
     <string name="settings_enable_tools">Enable tools</string>
     <string name="settings_streaming">Streaming</string>
-    <string name="settings_keep_alive_conn">Keep connection alive</string>
     <string name="settings_keep_alive_service">Keep service alive</string>
     <string name="settings_retry_count">Retry count</string>
     <!-- ═══ terminal/service 叶：Ubuntu 终端运行时宿主保活（原 Agent 分区迁入）═══ -->

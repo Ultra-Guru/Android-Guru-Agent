@@ -1,8 +1,9 @@
 # 长任务中心 — 追踪 / 检查点 / 复制 / 续跑（v1.2）
 
 > 对专属 agent 长任务复制任务的顶级优化：长任务自动留档、检查点快照、
-> 复制任务（带上下文重跑）、从检查点续跑、运行对比、内置模板、档位
-> 效能统计——全部在 Coding 屏「长任务」面板可用，引擎零改动。
+> 复制任务（带上下文重跑）、从检查点续跑、运行对比——全部在 Coding 屏
+> 「长任务」面板可用，引擎零改动。（v1.5.8 起任务模板 / 档位效能两页签
+> 已随用户反馈整体移除，本档同步收敛为纯任务记录中心。）
 
 ## 一、总览
 
@@ -14,13 +15,13 @@ LongTaskTracker（纯内存聚合）
       │  endRun：LongTaskDetector 判定规模
       │  ├─ 短任务 → null（静默丢弃）
       │  └─ 长任务 → LongTaskRecord
-      │        │ fire-and-forget            │ ingest
-      │        ▼                            ▼
-      │  LongTaskStore                CodeThinkingEvolutionTracker
-      │  （filesDir/longtask/，        （工作区×档位效能统计）
+      │        │ fire-and-forget
+      │        ▼
+      │  LongTaskStore
+      │  （filesDir/longtask/，
       │   原子写+内存缓存+保留策略）
       ▼
-CodeLongTaskSheet（三页签：任务记录 / 任务模板 / 档位效能）
+CodeLongTaskSheet（任务记录页签）
       │  复制 / 重跑 / 续跑 / 对比 / 删除
       ▼
 TaskCopyEngine（复制语义 + 上下文摘要 + 续跑提示词 + 复制链）
@@ -125,61 +126,29 @@ CodeViewModel.sendMessage（组装好的提示词直接进引擎）
 上限 64。UI 的「对比上次」按钮用 `LongTaskDiff.compare` 渲染两次
 运行的文件交集/差集、迭代/工具/时长差，以系统消息进对话。
 
-## 五、档位效能统计（CodeThinkingEvolutionTracker，coding 专属）
-
-把长任务留档按「工作区 × 档位」聚合：runs / 状态三分计数 / 平均
-迭代/工具/时长/文件数 / 成功率派生。
-
-- **口径诚实**：只统计长任务（与长任务中心同源）；AUTO 聚合在 AUTO
-  名下（「选 AUTO 这个决策的表现」，不冒领到逐轮实际档位）；
-- 持久化 `filesDir/longtask/thinking-stats/stats_<ws>.json`，原子写 +
-  损坏重置；
-- `ingest` 在 VM 收尾链路 fire-and-forget，主线程零 IO；
-- UI：长任务面板第三页签——用户用自己的历史数据选档，而非凭感觉。
-
-## 六、内置模板（LongTaskTemplates）
-
-8 个模板一键启动（应用推荐档位 + 预置 todo 骨架 + goal 模板发送）：
-
-| key | 模板 | 推荐档位 |
-|-----|------|----------|
-| refactor | 模块重构 | DEEP |
-| bugfix | 修 Bug | STANDARD |
-| feature | 新功能开发 | DEEP |
-| code-review | 代码评审 | ULTRACODE |
-| test-gen | 补测试 | STANDARD |
-| docs-gen | 文档生成 | LIGHT |
-| perf-opt | 性能优化 | ULTRACODE |
-| migrate | 依赖迁移 | MAXIMUM |
-
-模板实例 `isTemplate = true`：留档豁免 prune、不计入档位效能统计
-（不是真实运行）。
-
-## 七、存储与保留策略（LongTaskStore）
+## 五、存储与保留策略（LongTaskStore）
 
 - `filesDir/longtask/records/<id>.json`，kotlinx.serialization，
   `ignoreUnknownKeys`（字段演进的向后兼容）；
 - **原子写**（tmp + renameTo，失败直写目标兜底）；
 - 内存缓存 + Mutex 串行，`snapshotBlocking` 供主线程快速读；
-- **保留策略**：启动时后台 prune（保留最新 50 条，`isTemplate` 豁免），
-  失败仅 warn——prune 是优化不是正确性前提；
+- **保留策略**：启动时后台 prune（保留最新 50 条），失败仅 warn
+  ——prune 是优化不是正确性前提；
 - 损坏 JSON 跳过并留痕，不影响其他记录。
 
-## 八、UI（CodeLongTaskSheet）
+## 六、UI（CodeLongTaskSheet）
 
-Coding 屏工作区条「长任务」按钮唤起 ModalBottomSheet，三页签：
+Coding 屏工作区条「长任务」按钮唤起 ModalBottomSheet，任务记录页签：
 
-1. **任务记录**：状态过滤 chips（全部/已完成/失败/已中止）；卡片 =
+状态过滤 chips（全部/已完成/失败/已中止）；卡片 =
    状态图标 + 标题 + 规模徽标（MED/LONG/EPIC，展示层重算——与入库
    判定同源保证一致）+ 档位/状态/时间 + 统计行；展开 = 目标/改动
    文件（横向滚动 chip）/todo 快照/检查点数与最近摘要/错误块；操作 =
-   复制（选项对话框：上下文/todo/文件清单/档位覆盖/立即重跑）·
+   复制（选项对话框：上下文/todo/文件清单/立即重跑）·
    重跑 · **续跑**（最后检查点 / 指定轮次）· 对比上次（有父任务时）·
-   删除（确认）；
-2. **任务模板**：8 模板卡片，一键开始；
-3. **档位效能**：每档一行（runs + 成功率/平均迭代/工具/时长）。
+   删除（确认）。
 
-## 九、相关文件索引
+## 七、相关文件索引
 
 | 文件 | 职责 |
 |------|------|
@@ -188,14 +157,12 @@ Coding 屏工作区条「长任务」按钮唤起 ModalBottomSheet，三页签�
 | `core/code-engine/.../code/longtask/LongTaskStore.kt` | JSON 存储（原子写/缓存/prune） |
 | `core/code-engine/.../code/longtask/LongTaskTracker.kt` | 事件流聚合 + 检查点 |
 | `core/code-engine/.../code/longtask/TaskCopyEngine.kt` | 复制/重跑/续跑/摘要/复制链 |
-| `core/code-engine/.../code/longtask/LongTaskTemplates.kt` | 8 内置模板 |
 | `core/code-engine/.../code/longtask/LongTaskDiff.kt` | 运行对比 |
-| `core/code-engine/.../code/thinking/CodeCodeThinkingEvolutionTracker.kt` | 档位效能统计 |
 | `app/.../di/CodeLongTaskModule.kt` | DI 装配（含启动 prune） |
-| `app/.../ui/screen/code/longtask/CodeLongTaskSheet.kt` | 三页签面板 |
+| `app/.../ui/screen/code/longtask/CodeLongTaskSheet.kt` | 任务记录面板 |
 | `app/.../ui/screen/code/CodeViewModel.kt` | 追踪接线 + 复制/重跑/续跑/对比 API |
 
-## 十、设计取舍 FAQ
+## 八、设计取舍 FAQ
 
 **Q: 为什么追踪在 VM 层而不是引擎层？**
 引擎零改动 = agent 模式零风险；事件流对 VM 完全可见（collect 链），

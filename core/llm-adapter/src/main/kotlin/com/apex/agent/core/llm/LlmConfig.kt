@@ -72,7 +72,6 @@ data class LlmConfig(
     // ── Reasoning 扩展 ─────────────────────────────────────────
     /** 思维预算（tokens），null = Auto。与 [reasoningEffort] 不强行绑定。 */
     val thinkingBudget: Int? = null,
-    val showThinking: Boolean = true,
 
     // ── Context ────────────────────────────────────────────────
     val contextWindow: Int = 128_000,
@@ -88,7 +87,6 @@ data class LlmConfig(
     val retryDelayMs: Long = 1_000,
     val maxRetryDelayMs: Long = 10_000,
     val retryOnCodes: Set<Int> = setOf(408, 429, 500, 502, 503, 504),
-    val keepAlive: Boolean = true,
 
     // ── Tools ──────────────────────────────────────────────────
     val enableTools: Boolean = true,
@@ -277,7 +275,6 @@ data class LlmConfig(
                 seed = profile.seed,
                 stopSequences = profile.stopSequences,
                 thinkingBudget = profile.thinkingBudget,
-                showThinking = profile.showThinking,
                 contextWindow = profile.contextWindow,
                 reservedOutputTokens = profile.reservedOutputTokens,
                 connectTimeoutMs = profile.connectTimeoutMs,
@@ -288,7 +285,6 @@ data class LlmConfig(
                 retryDelayMs = profile.retryDelayMs,
                 maxRetryDelayMs = profile.maxRetryDelayMs,
                 retryOnCodes = profile.retryOnCodes,
-                keepAlive = profile.keepAlive,
                 enableTools = profile.enableTools,
                 toolChoice = profile.toolChoice,
                 parallelToolCalls = profile.parallelToolCalls,

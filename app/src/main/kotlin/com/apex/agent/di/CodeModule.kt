@@ -338,9 +338,16 @@ object CodeModule {
             maxIterations = 40,
             toolCallParallelism = agentSettings.toolCallParallelism,
             maxContextTokens = codeContextWindow,
-            maxToolOutputLength = if (richPayload) 16_000 else 8_000,
-            compressionThreshold = if (richPayload) 0.85f else 0.8f,
-            preserveRecentTurns = if (richPayload) 9 else 6,
+            // 压缩三件套真接线（用户反馈"假设置"）：基准改读设置值，不再硬编码。
+            // 富载荷模式按其产品语义在用户基准上做增量抬升 —— ×2 / +0.05 / +3，
+            // 与旧硬编码对的差值完全一致（8k→16k、0.8→0.85、6→9），默认用户零行为漂移；
+            // 用户显式改过设置后，改动真实生效（设置页"重启生效"提示已覆盖 DI 快照语义）。
+            maxToolOutputLength = (if (richPayload) agentSettings.maxToolOutputLength * 2
+            else agentSettings.maxToolOutputLength).coerceIn(200, 100_000),
+            compressionThreshold = (if (richPayload) agentSettings.compressionThreshold + 0.05f
+            else agentSettings.compressionThreshold).coerceIn(0.5f, 0.95f),
+            preserveRecentTurns = (if (richPayload) agentSettings.preserveRecentTurns + 3
+            else agentSettings.preserveRecentTurns).coerceIn(1, 50),
             // #197 工位作用域：coding 引擎只注入 coding/all 编码技能
             // （与 Agent 屏的聊天技能提示词层完全独立）
             skillScope = "coding"
