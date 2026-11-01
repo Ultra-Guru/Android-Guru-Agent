@@ -328,6 +328,7 @@
     <string name="code_websearch_builtin_desc">模型侧联网搜索工具链</string>
     <string name="code_websearch_searxng">SearXNG 本地</string>
     <string name="code_websearch_searxng_desc">优先本地 SearXNG 元搜索</string>
+    <string name="code_websearch_searxng_on_hint">SearXNG 已启用——首次安装/启动进度见设置中心「本地搜索」</string>
     <string name="code_websearch_mcp">搜索 MCP</string>
     <string name="code_websearch_mcp_desc">本地搜索 MCP 服务器三选一</string>
     <string name="code_websearch_mcp_fs_desc">本地优先多引擎搜索·页面抓取·文档读取</string>
@@ -341,6 +342,10 @@
     <string name="code_toolbench_github">GitHub 连接</string>
     <string name="code_toolbench_toolkit">调用·时间·规则</string>
     <string name="code_toolbench_neon">功能聚合</string>
+    <string name="code_toolbench_neon_n">功能聚合（%1$d 项生效）</string>
+    <string name="code_websearch_searxng_ready">本地服务运行中</string>
+    <string name="code_websearch_searxng_busy">安装/启动中…</string>
+    <string name="code_websearch_searxng_failed">启动失败——到设置中心「本地搜索」可重试</string>
     <string name="drawer_workspace_browser">工作区</string>
     <string name="code_stream_terminal_running">运行中</string>
 
