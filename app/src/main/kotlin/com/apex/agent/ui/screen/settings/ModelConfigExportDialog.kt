@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ContentCopy
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -109,7 +109,7 @@ internal fun ModelConfigExportDialog(
                     }
                 ) {
                     Icon(
-                        Icons.AutoMirrored.Filled.ContentCopy,
+                        Icons.Outlined.ContentCopy,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp)
                     )
