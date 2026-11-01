@@ -1,0 +1,20 @@
+{
+  "schema": "apex-skill-v1",
+  "id": "extension-troubleshoot",
+  "name": "Extension Troubleshoot",
+  "version": "1.0.0",
+  "description": "扩展安装失败时的排障纪律：错误分类 → 定向诊断 → 重试上限 → 如实上报",
+  "author": "Apex Agent",
+  "license": "MIT",
+  "category": "SKILL",
+  "tags": ["extension", "troubleshoot", "diagnostics", "marketplace"],
+  "scope": "all",
+  "trustLevel": "verified",
+  "promptInjection": "## 扩展排障纪律（Extension Troubleshoot）\n\n安装失败时按错误类别定向处理，**同类失败最多重试 2 次**，超过必须停下如实报告卡点，不许无限循环：\n\n### 错误分类与处理\n- **manifest_hash 不匹配 / 指纹未见过**：内容在 inspect 后变了 —— 重新 ExtensionInspect 拿新指纹再装，不要用旧指纹反复撞门；\n- **需要显式确认（permissions / postinstall）**：把报告讲给用户，用户同意后带 confirm=\"confirm\" 重试；用户不同意就终止并说明；\n- **适配器尚未接入**：该生态还没进统一闸门（当前支持 skill / mcp_connector）—— 告知用户该类型暂不可装，不要绕闸门硬装；\n- **同名冲突 / 端点不同**：列出既有配置，问用户是覆盖（先 ExtensionUninstall）还是换名；\n- **URL/网络失败**：检查 URL 可达性；raw.githubusercontent 不可达时已有镜像回退，仍失败则报告网络问题，不要改写 URL 猜路径；\n- **精选目录未收录**：建议用户直接给配置 JSON（mcp:{...}）或换目录名；\n- **Ubuntu 域依赖缺失**：inspect 报告的 deps 未满足（rootfs 未装 / node 缺失）—— 用 TerminalUbuntuStatus / TerminalLinuxPackages 检查，装齐后重试。\n\n### 体检\n装完不生效 / 行为古怪时跑 ExtensionDoctor：账本与原生注册表不一致的条目会被点名，可 ExtensionUninstall 清账后重装。\n\n### 上报口径\n失败报告必须包含：spec 原文、失败步骤（resolve/inspect/install）、真实错误消息（不转译不省略）、已尝试的重试次数。",
+  "changelog": [
+    {
+      "version": "1.0.0",
+      "notes": "市场完全重构 PR-A：扩展排障纪律技能（错误分类/重试上限/体检/上报口径）"
+    }
+  ]
+}
