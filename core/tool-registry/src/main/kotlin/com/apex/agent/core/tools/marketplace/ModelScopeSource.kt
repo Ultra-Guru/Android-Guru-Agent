@@ -13,7 +13,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.IOException
 
 /**
  * 魔搭（ModelScope）集成源
@@ -104,6 +103,11 @@ class ModelScopeSource(
                 }.awaitAll()
             }
             Result.success(skills)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // #354：取消不吞 —— token provider 抛出的 CancellationException 是
+            // 调用方的取消意图，不是列表失败；折叠成 Result.failure 会把取消
+            // 静默变成「成功返回了一个失败结果」，取消方永远等不到传播。
+            throw e
         } catch (e: Exception) {
             Result.failure(Exception("ModelScope 列表失败: ${e.message}"))
         }
@@ -232,7 +236,14 @@ class ModelScopeSource(
             bearerForRawOnly = gitHubTokenProvider()
         )
         String(bytes, Charsets.UTF_8)
-    } catch (e: IOException) {
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        // #354：取消照常传播（不得折叠成 null —— 那是「下载失败」的语义）。
+        throw e
+    } catch (e: Exception) {
+        // #354：token provider 异常与网络 IO 统一折叠为 null，由调用方以
+        // Result 报失败。旧实现只捕 IOException：provider 抛出的
+        // IllegalStateException 会直接击穿 fetchSkillMarkdown / fetchSkillResource
+        // 的 withContext 边界，把整个安装流程炸成未捕获异常。
         null
     }
 

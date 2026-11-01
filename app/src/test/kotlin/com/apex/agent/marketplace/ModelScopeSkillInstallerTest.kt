@@ -1,6 +1,7 @@
 package com.apex.agent.marketplace
 
 import com.apex.agent.core.tools.marketplace.ModelScopeSource
+import com.apex.agent.core.tools.skill.SkillNaming
 import com.apex.agent.core.tools.skill.SkillRegistry
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -52,6 +53,10 @@ class ModelScopeSkillInstallerTest {
         val registry = SkillRegistry(dir)
         val original = """{"id":"ms-demo","name":"Original","version":"1","description":"old","promptInjection":"old prompt"}"""
         registry.install(original).getOrThrow()
+        // v5 技能 id 归一：manifest 落盘为 <canonicalId>.json（ms-demo → MsDemo），
+        // 内容为重序列化后的规范形式 —— 断言「落盘内容前后一致」而不是字面量
+        val manifestFile = File(dir, "${SkillNaming.canonicalId("ms-demo")}.json")
+        val persistedBefore = manifestFile.readText()
         val old = File(dir, "ms-demo/references/api.md").apply { parentFile.mkdirs(); writeText("user data") }
         var called = false
         val result = installer(dir, registry) { content, _ ->
@@ -61,7 +66,7 @@ class ModelScopeSkillInstallerTest {
         assertTrue("duplicate must be rejected", result.isFailure)
         assertFalse(called)
         assertEquals("Original", registry.get("ms-demo")?.manifest?.name)
-        assertEquals(original, File(dir, "ms-demo.json").readText())
+        assertEquals("on-disk manifest must stay untouched", persistedBefore, manifestFile.readText())
         assertEquals("user data", old.readText())
     }
 
