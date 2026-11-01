@@ -90,6 +90,12 @@ class ModelScopeSource(
                     .map { it.removeSuffix("/SKILL.md") }
                     .sorted()
 
+                // #354 ③：先把整棵树按「技能目录」分一次桶，之后每个技能 O(1)
+                // 取自己的文件清单。旧实现每个 skillDir 都全量扫一遍 tree.filter，
+                // 复杂度 O(技能数 × 文件数) —— 上百技能 × 数千文件时是纯浪费
+                // （结果完全相同，只是重复比较字符串前缀）。
+                val filesBySkillDir = bucketSkillFiles(tree, skillDirs.toSet())
+
                 // P2-5：frontmatter 抓取改 Semaphore(4) 受控并发 —— 串行时几十上百
                 // 个技能目录要数十秒；map + awaitAll 保证结果顺序与目录序一致，
                 // 单条失败保留条目（对齐「抓到但无 frontmatter」的既有回退分支）。
@@ -107,7 +113,7 @@ class ModelScopeSource(
                                 name = frontmatter?.first ?: id,
                                 description = frontmatter?.second ?: "",
                                 path = "$dir/SKILL.md",
-                                files = tree.filter { it.startsWith("$dir/") }
+                                files = filesBySkillDir[dir].orEmpty()
                             )
                         }
                     }.awaitAll()
@@ -260,6 +266,39 @@ class ModelScopeSource(
         // IllegalStateException 会直接击穿 fetchSkillMarkdown / fetchSkillResource
         // 的 withContext 边界，把整个安装流程炸成未捕获异常。
         null
+    }
+
+    /**
+     * 把仓库整棵树按「技能目录」分桶（#354 ③）。
+     *
+     * 旧实现为每个技能目录全量重扫 `tree.filter { it.startsWith("$dir/") }`，
+     * 复杂度 O(技能数 × 文件数)：上百技能 × 数千文件时要做几十万次前缀比较，
+     * 且每轮都在 IO 调度之外重复分配。这里只扫一遍树：
+     * - 文件路径按 `/` 逐级回溯，命中 [skillDirs] 的最长前缀即归入该技能；
+     * - 只保留**已知技能目录**（`skills/<id>/SKILL.md` 存在的那些），
+     *   避免把 `skills/` 下的游离文件塞进某个技能；
+     * - 结果与旧实现的 `startsWith` 口径一致（同样含 SKILL.md 自身与子目录
+     *   结尾带 `/` 的目录项），因此下游 `MarketInstallManager` 的
+     *   `filter { it != skill.path && !it.endsWith("/") }` 行为不变。
+     */
+    private fun bucketSkillFiles(
+        tree: List<String>,
+        skillDirs: Set<String>
+    ): Map<String, List<String>> {
+        if (skillDirs.isEmpty()) return emptyMap()
+        val buckets = LinkedHashMap<String, MutableList<String>>(skillDirs.size)
+        for (path in tree) {
+            var idx = path.lastIndexOf('/')
+            while (idx > 0) {
+                val candidate = path.substring(0, idx)
+                if (candidate in skillDirs) {
+                    buckets.getOrPut(candidate) { mutableListOf() } += path
+                    break
+                }
+                idx = candidate.lastIndexOf('/')
+            }
+        }
+        return buckets
     }
 
     companion object {
