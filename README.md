@@ -15,7 +15,10 @@
 （深潜七档 / 标准 / 织造 / 信使，运行时可切）、
 百级内置工具（超时/重试/限流/熔断/追踪/批量/组合动作八层执行硬化；P83 环境闭环补全；MCP/技能按工位作用域隔离）、模板行为运行时（十大内置模板全部代码化：六阶段管线 + 不可更改 + 每模板双层确定性引擎，切换模板 = 装配管线而非注入提示词）、PRoot 沙箱化 Ubuntu 终端、仿生认知记忆系统（差分摄取 → 轨迹蒸馏 →
 FSM 旁路回放 → 梦境巩固）、Root/Shizuku/无障碍三级权限链、插件化 SDK ——
-全部跑在一台手机上，无需任何服务器。（Agent 聊天模式已拆分至独立仓库 Theocracy，本仓库专注 Coding。）
+全部跑在一台手机上，无需自建服务器。**找不到原来的纯聊天页面？** 它已从本应用移除；
+本仓库专注 Coding，Agent 聊天模式转至独立项目 [Theocracy](https://github.com/Ultra-Guru/Theocracy)。
+安装包发布情况以该项目的 [Releases](https://github.com/Ultra-Guru/Theocracy/releases) 实际列表为准；
+不要仅为找回入口就覆盖安装旧版，聊天数据迁移兼容性尚未在此验证。
 
 **CI · 质量门禁 · 贡献**
 
@@ -77,7 +80,7 @@ FSM 旁路回放 → 梦境巩固）、Root/Shizuku/无障碍三级权限链、�
 <a href="https://github.com/Ultra-Guru/Android-Guru-Agent/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/🧪_CI_artifacts-debug_构建-2088FF?logo=githubactions&logoColor=white" alt="Get debug APK from CI"/></a>
 <a href="#quickstart"><img src="https://img.shields.io/badge/🚀_quick_start-5_分钟-1F6FEB" alt="Quick Start"/></a>
 <a href="#docs-index"><img src="https://img.shields.io/badge/📚_docs-deep_dives-0077B5" alt="Docs"/></a>
-<a href="#faq"><img src="https://img.shields.io/badge/❓_FAQ-6_问答-8B5CF6" alt="FAQ"/></a>
+<a href="#faq"><img src="https://img.shields.io/badge/❓_FAQ-7_问答-8B5CF6" alt="FAQ"/></a>
 <a href="#glossary"><img src="https://img.shields.io/badge/🧭_glossary-术语速查-6E7681" alt="Glossary"/></a>
 
 **分享与交流**
@@ -1200,10 +1203,13 @@ Ubuntu 24.04 完整 CLI 环境随 APK 内置（rootfs 档案 ~300MB+、解压后
 </details>
 
 <details>
-<summary><b>5️⃣ 为什么仓库里没有 gradlew？</b></summary>
+<summary><b>5️⃣ 想自己编译或下载 APK，从哪里开始？</b></summary>
 
-仓库未锁定 wrapper。一条命令现场生成（见快速开始），或直接下载 CI 产出的
-debug APK 工件（每次构建保留 14 天），零环境开箱体验。
+本仓库已提交 `gradlew`、`gradle/wrapper/gradle-wrapper.jar` 和
+`gradle-wrapper.properties`，无需现场生成 wrapper。普通用户可从
+[发布仓库](https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases) 查看
+Android-Guru-Agent 的正式 APK；源码构建见[快速开始](#quickstart)。
+**这不是 Theocracy 的安装包**，两个项目的下载入口不要混淆。
 
 </details>
 
@@ -1213,6 +1219,23 @@ debug APK 工件（每次构建保留 14 天），零环境开箱体验。
 任务成功后，`TraceDistiller` 把 ReAct 轨迹蒸馏成 FSM 宏技能。之后再次遇到
 相同界面指纹时，`BypassExecutionEngine` 直接回放动作序列——**完全绕过 LLM**，
 0 token、微秒级返回。App 升级导致指纹漂移时，拓扑同胚迁移通过别名桥保鲜。
+
+</details>
+
+<details>
+<summary><b>7️⃣ 最新版的“助手纯聊天”模式去哪了？</b></summary>
+
+**不是隐藏在设置里：本应用已移除原来的独立 Agent／纯聊天页面。**
+当前 Android-Guru-Agent 只有 Coding 工作面；它仍可对话，但不等同于原来的
+纯聊天模式。Agent 方向已拆至独立项目
+[Theocracy](https://github.com/Ultra-Guru/Theocracy)；请先查看该项目的
+[Releases](https://github.com/Ultra-Guru/Theocracy/releases) 是否真的有安装包，
+不能把 README 中的下载描述当作已发布的保证。
+
+如果你保留了旧版聊天记录，**不要把降级或覆盖安装当作已验证的迁移方案**：
+旧数据是否能在两个应用间转移尚未确认。需要当前应用重新提供独立纯聊天入口？
+请在 [Issue #758](https://github.com/Ultra-Guru/Android-Guru-Agent/issues/758)
+说明使用场景，供维护者决定是否支持。
 
 </details>
 
