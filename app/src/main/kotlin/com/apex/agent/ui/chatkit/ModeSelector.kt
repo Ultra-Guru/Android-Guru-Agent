@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.apex.agent.core.engine.AgentMode
 import com.apex.agent.R
+import com.apex.agent.ui.theme.selectorOutlineColor
 
 /** 可选模式（#197：plan/build；v3 新增 GOAL 目标驱动）—— Agent 屏移除后本软件唯一工位。 */
 val CODING_SCREEN_MODES: List<AgentMode> =
@@ -83,7 +84,7 @@ internal fun AgentModeSelector(
                 shape = RoundedCornerShape(50),
                 color = MaterialTheme.colorScheme.secondaryContainer,
                 contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+                border = BorderStroke(1.dp, selectorOutlineColor()),
                 modifier = Modifier
                     .heightIn(min = 28.dp)
                     .semantics { contentDescription = selectorDescription }
