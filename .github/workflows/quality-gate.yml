@@ -128,6 +128,10 @@ jobs:
       - name: Backup feedback status-color wiring
         run: python3 scripts/test_backup_feedback_status_color.py
 
+      # #270：同款顶栏选择器的弱描边共享一个主题语义入口。
+      - name: Chat selector outline token wiring
+        run: python3 scripts/test_selector_outline_token.py
+
   workflow-metadata:
     name: Run Metadata
     runs-on: ubuntu-latest
