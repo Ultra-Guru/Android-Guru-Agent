@@ -287,12 +287,14 @@ class MemoryListPlanTest {
     fun `current section follows first visible index against anchors`() {
         val plan = buildMemoryListPlan(input())
         val anchors = plan.sectionAnchors()
+        val profile = anchors.getValue(MemorySection.PROFILE)
         val chat = anchors.getValue(MemorySection.CHAT)
         val knowledge = anchors.getValue(MemorySection.KNOWLEDGE)
 
-        // 概览区（首可见在第一个分区头之前）→ null（「全部」芯片高亮）
+        // 概览区（首可见在第一个分区头「用户画像」之前）→ null（「全部」芯片高亮）
         assertNull(currentSection(0, anchors))
-        assertNull(currentSection(chat - 1, anchors))
+        assertNull(currentSection(profile - 1, anchors))
+        assertEquals(MemorySection.PROFILE, currentSection(profile, anchors))
         assertEquals(MemorySection.CHAT, currentSection(chat, anchors))
         assertEquals(MemorySection.KNOWLEDGE, currentSection(knowledge, anchors))
         assertEquals(MemorySection.MACROS, currentSection(plan.lastIndex, anchors))

@@ -77,8 +77,8 @@ class UserProfileModelsTest {
     fun `toSystemContextSection formats with aspect label and confidence`() {
         val section = listOf(
             item("a", ProfileAspect.TECH_STACK, "主用 Kotlin", confidence = 0.9f)
-        ).toSystemContextSection()
-        assertTrue(section != null && section.contains("## 用户画像"))
+        ).toSystemContextSection() ?: error("非空画像列表应生成注入段")
+        assertTrue(section.contains("## 用户画像"))
         assertTrue(section.contains("- [技术栈] 主用 Kotlin（置信度 90%）"))
     }
 
