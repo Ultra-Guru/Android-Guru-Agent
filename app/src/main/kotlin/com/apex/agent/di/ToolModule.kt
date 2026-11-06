@@ -3,9 +3,7 @@ package com.apex.agent.di
 import android.content.Context
 import com.apex.agent.core.tools.*
 import com.apex.agent.core.tools.builtin.*
-import com.apex.agent.core.tools.catalog.CapabilityReportTool
 import com.apex.agent.core.tools.catalog.McpToolRegistrar
-import com.apex.agent.core.tools.catalog.MarketSearchTool
 import com.apex.agent.core.tools.catalog.ToolActivationStore
 import com.apex.agent.core.tools.catalog.ToolListTool
 import com.apex.agent.core.tools.catalog.ToolOpenTool
@@ -959,49 +957,15 @@ object ToolModule {
         registry.register(SafeAgentTool(ToolOpenTool(registry, toolActivation)))
         registry.register(SafeAgentTool(ToolListTool(registry, browserRoleFilter)))
 
-        // ═══ 12b. 能力自省元工具（「agent 不懂自己能干什么」的根因修复）═══
-        // CapabilityReport：权限阶梯（与系统提示词同源）/ 实时环境 / 工具与
-        // 技能与 MCP 库存 + 扩展梯度，一键自省——遇 permission denied 或
-        // 「我能做 X 吗」时先自省再行动，不猜不弃；
-        // MarketSearch：官方技能+MCP 市场检索（此前 7 个市场源只服务 UI，
-        // agent 侧完全不可见）——「没装的能力一步之遥」。
-        registry.register(
-            SafeAgentTool(
-                CapabilityReportTool(
-                    registry = registry,
-                    environmentState = environmentState,
-                    privilegeLevel = { privilegeInfoProvider.currentLevel() },
-                    installedSkillCount = { skillRegistry.getInstalled().size },
-                    configuredMcpCount = { mcpManager.getConfigs().size },
-                    connectedMcpCount = { mcpManager.getConnectedServers().size },
-                    // v3 S3：GitHub 连接快照（"login|repo"，未设置仓库 = "-"；
-                    // 未连接 = null）—— CapabilityReport 的 GitHub 行数据源
-                    // v2.1.0：Browser 行仅授权会话可见（未授权=provider 返 null=整行省略）
-                    browserRuntimeProvider = {
-                        com.apex.agent.tools.BrowserRoleAuth.currentGrants()
-                            .takeIf { com.apex.agent.core.tools.BrowserRolePolicy.ROLE_BROWSER_AUTOMATION in it }
-                            ?.let { "ready (engine in-process; roles granted: browser-automation" +
-                                (if (com.apex.agent.tools.BrowserRoleAuth.currentGrants().contains(
-                                        com.apex.agent.core.tools.BrowserRolePolicy.ROLE_BROWSER_SENSITIVE)) " + sensitive" else "") + ")" }
-                    },
-                    githubStateProvider = {
-                        githubTokenManager.connectionState.value.takeIf { it.isConnected }
-                            ?.let { s ->
-                                val login = s.username ?: "(unknown)"
-                                val repo = githubTokenManager.defaultRepo.value.ifBlank { "-" }
-                                "$login|$repo"
-                            }
-                    }
-                )
-            )
-        )
-        registry.register(
-            SafeAgentTool(
-                MarketSearchTool(
-                    fetchSkills = { hubSource.listSkills() },
-                    fetchMcpServers = { hubSource.listMcpServers() }
-                )
-            )
+        // ═══ 12b. 能力自省元工具 —— 注册体拆至 ToolModuleCapabilityIntrospection.kt（SRP 预算）═══
+        registerCapabilityIntrospectionTools(
+            registry = registry,
+            environmentState = environmentState,
+            privilegeInfoProvider = privilegeInfoProvider,
+            skillRegistry = skillRegistry,
+            mcpManager = mcpManager,
+            githubTokenManager = githubTokenManager,
+            hubSource = hubSource
         )
 
         // ═══ 12c. 统一扩展模型（市场重构 PR-A）—— 七工具注册体拆至卫星文件；

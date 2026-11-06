@@ -193,10 +193,8 @@ class BrowserAgentTools @Inject constructor(
                         ?: return "Error: mode=focused 需要 root_selector（子树根选择器）"
                     val snap = engine.snapshotFocused(root, tokenBudget = budget, strategy = strategy)
                         ?: return "(无激活标签页)"
-                    val dialogNote = engine.lastDialog?.let { "
-💬 页面弹出对话: $it" } ?: ""
-                    return snap.domSummary + "
-(doc_id=${snap.docId}——后续动作可带 expected_doc_id 做 STALE 校验)$dialogNote"
+                    val dialogNote = engine.lastDialog?.let { "\n💬 页面弹出对话: $it" } ?: ""
+                    return snap.domSummary + "\n(doc_id=${snap.docId}——后续动作可带 expected_doc_id 做 STALE 校验)$dialogNote"
                 }
                 "diff" -> {
                     val base = argStr(arguments, "base_doc_id")

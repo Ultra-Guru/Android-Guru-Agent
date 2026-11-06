@@ -227,15 +227,15 @@ class PromptTemplateRegistryTest {
 
     @Test
     fun `reseedBuiltIns is idempotent and inserts only when missing`() = runTest {
-        assertEquals(2, registry.reseedBuiltIns())
+        assertEquals(3, registry.reseedBuiltIns())
         assertEquals(0, registry.reseedBuiltIns())
         assertEquals(0, registry.reseedBuiltIns(force = true)) // 出厂态原样 → 无改动
 
         val templates = registry.list()
-        assertEquals(2, templates.size)
-        assertEquals(2, templates.map { it.id }.toSet().size)
+        assertEquals(3, templates.size)
+        assertEquals(3, templates.map { it.id }.toSet().size)
         assertTrue(templates.all { it.isBuiltIn })
-        assertEquals(2, PromptTemplateRegistry(dir).list().size) // 落盘确认
+        assertEquals(3, PromptTemplateRegistry(dir).list().size) // 落盘确认
     }
 
     @Test
@@ -310,15 +310,16 @@ class PromptTemplateRegistryTest {
     @Test
     fun `built-ins cover five categories with consistent variable declarations`() {
         val byCategory = BuiltinPromptTemplates.ALL.groupBy { it.category }
-        // 市场剥离 Agent 模式：仅存 CODING 双模板（code_review / test_cases）
-        assertEquals(1, byCategory.keys.size)
+        // 市场剥离 Agent 模式：CODING 双模板 + PRODUCTIVITY 浏览器专家角色模板
+        assertEquals(2, byCategory.keys.size)
         assertEquals(2, byCategory[TemplateCategory.CODING]!!.size)
+        assertEquals(1, byCategory[TemplateCategory.PRODUCTIVITY]!!.size)
         // 声明变量与正文引用一一对应（模板引擎缺失判定的前提）
         for (t in BuiltinPromptTemplates.ALL) {
             assertEquals("declared vs referenced mismatch: ${t.id}", t.variables.map { it.name }.toSet(), t.referencedVariables())
         }
         assertTrue(BuiltinPromptTemplates.ALL.all { it.id.startsWith(PromptTemplate.BUILTIN_ID_PREFIX) })
-        assertEquals(2, BuiltinPromptTemplates.BUILTIN_IDS.size)
+        assertEquals(3, BuiltinPromptTemplates.BUILTIN_IDS.size)
     }
 
     // ═══ 列表与分类 ═══
@@ -327,7 +328,7 @@ class PromptTemplateRegistryTest {
     fun `list filters by category`() = runTest {
         registry.reseedBuiltIns()
         registry.save(sampleTemplate(id = "tpl_mine"))
-        assertEquals(3, registry.list().size)
+        assertEquals(4, registry.list().size)
         assertEquals(3, registry.list(TemplateCategory.CODING).size) // 2 内置 + 1 自定义
         assertEquals(0, registry.list(TemplateCategory.TRANSLATION).size)
         assertEquals(0, registry.list(TemplateCategory.CUSTOM).size)
@@ -370,7 +371,7 @@ class PromptTemplateRegistryTest {
         val result = other.importLibrary(exported, ImportMode.MERGE)
         assertTrue(result.ok)
         assertEquals(1, result.importedCount) // 内置 10 条按规则跳过
-        assertEquals(2, result.skippedBuiltInCount)
+        assertEquals(3, result.skippedBuiltInCount)
         // MERGE 不会播种内置：空库导入后只剩自定义模板
         assertEquals(1, other.list().size)
         val reimported = other.get("tpl_sample")!!
@@ -410,7 +411,7 @@ class PromptTemplateRegistryTest {
         assertTrue(builtin.isBuiltIn)
         // 导入条目一律为自定义（防伪内置）
         assertFalse(registry.get("tpl_new_from_import")!!.isBuiltIn)
-        assertEquals(4, registry.list().size) // 2 内置 + 2 自定义
+        assertEquals(5, registry.list().size) // 3 内置 + 2 自定义
     }
 
     @Test
@@ -429,11 +430,11 @@ class PromptTemplateRegistryTest {
         assertEquals(listOf("tpl_replaced_a", "tpl_replaced_b"), registry.list().map { it.id })
 
         // REPLACE 把内置一并清空 → reseedBuiltIns 可还原（逃生通道）
-        assertEquals(2, registry.reseedBuiltIns())
-        assertEquals(4, registry.list().size)
+        assertEquals(3, registry.reseedBuiltIns())
+        assertEquals(5, registry.list().size)
 
         // 落盘确认
-        assertEquals(4, PromptTemplateRegistry(dir).list().size)
+        assertEquals(5, PromptTemplateRegistry(dir).list().size)
     }
 
     @Test
@@ -457,7 +458,7 @@ class PromptTemplateRegistryTest {
         assertNotNull(result.error)
         assertEquals(0, result.importedCount)
         // 原库不受影响
-        assertEquals(2, registry.list().size)
+        assertEquals(3, registry.list().size)
         assertTrue(logs.any { it.contains("parse failed") })
     }
 
@@ -484,7 +485,7 @@ class PromptTemplateRegistryTest {
             logger = {},
             onChanged = { changes++ }
         )
-        assertEquals(2, reg.reseedBuiltIns())
+        assertEquals(3, reg.reseedBuiltIns())
         assertEquals(1, changes)
         assertEquals(0, reg.reseedBuiltIns()) // 幂等无变化
         assertEquals(1, changes)

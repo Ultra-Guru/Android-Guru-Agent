@@ -30,7 +30,7 @@ class BuiltinBehaviorCatalogTest {
     @Test
     fun `catalog keys match builtin template ids exactly`() {
         assertEquals(BuiltinPromptTemplates.BUILTIN_IDS, BuiltinBehaviorCatalog.ALL.keys)
-        assertEquals(2, BuiltinBehaviorCatalog.ALL.size)
+        assertEquals(3, BuiltinBehaviorCatalog.ALL.size)
     }
 
     @Test
@@ -38,6 +38,7 @@ class BuiltinBehaviorCatalogTest {
         assertNotNull(BuiltinBehaviorCatalog.behaviorFor("builtin_code_review"))
         assertEquals(null, BuiltinBehaviorCatalog.behaviorFor("tpl_user_defined"))
         assertTrue(BuiltinBehaviorCatalog.hasBehaviorFor("builtin_test_cases"))
+        assertTrue(BuiltinBehaviorCatalog.hasBehaviorFor("builtin_browser_expert"))
         // 已删除的 Agent 族模板不再入目录
         assertTrue(!BuiltinBehaviorCatalog.hasBehaviorFor("builtin_translate"))
         assertTrue(!BuiltinBehaviorCatalog.hasBehaviorFor("builtin_ghost"))
@@ -90,7 +91,9 @@ class BuiltinBehaviorCatalogTest {
     /** 每个内置模板的代表性输入（冒烟用：全链路跑通 + 确定性）。 */
     private val smokeInputs: Map<String, Map<String, String>> = mapOf(
         "builtin_code_review" to mapOf("code" to "fun a() {\n    val x = p!!.name\n}", "language" to "kotlin"),
-        "builtin_test_cases" to mapOf("code" to "fun calc(amount: Int, coupon: String?): Int = 0", "framework" to "JUnit")
+        "builtin_test_cases" to mapOf("code" to "fun calc(amount: Int, coupon: String?): Int = 0", "framework" to "JUnit"),
+        // 角色模板（无变量）：激活即授角色 + 注入纪律附录
+        "builtin_browser_expert" to emptyMap()
     )
 
     @Test
@@ -135,6 +138,7 @@ class BuiltinBehaviorCatalogTest {
     private fun smokeResponseFor(templateId: String): String = when (templateId) {
         "builtin_code_review" -> "## 总体结论\n有条件通过。\n\n## 问题清单\n1. 🔴 阻断 非空断言风险"
         "builtin_test_cases" -> "## 等价类与边界条件\n- 0/1/-1\n\n## 覆盖矩阵\n- 正常 1\n\n## 测试代码\n```\n@Test fun t() {}\n```"
+        "builtin_browser_expert" -> "## 任务理解与拆解\n登录并抓取订单列表。\n\n## BrowserTask 步骤编排\n1. NavigateAsync 打开登录页\n2. 填表提交（wait_for network_idle）\n3. BrowserSnapshot focused(订单表)\n\n## 风险与人工确认点\n- 登录失败：CHECKPOINT 暂停交用户"
         else -> "通用回包"
     }
 

@@ -77,7 +77,7 @@ data class PluginManifest(
             else -> false
         }
     }
-}
+
     /** 解析后的形态（kind 字段宽松归一）。 */
     val resolvedKind: PluginKind get() = PluginKind.fromRaw(kind)
 

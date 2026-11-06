@@ -47,7 +47,7 @@ class TemplateRuntimeEndToEndTest {
 
     @Test
     fun `all deep modules are present with stable rule ids`() {
-        assertEquals(2, BuiltinBehaviorCatalog.ALL.size)
+        assertEquals(3, BuiltinBehaviorCatalog.ALL.size)
         assertEquals(17, TranslateQualityLinter.RULE_IDS.size)
         assertEquals(8, RefactorRiskModel.RULE_IDS.size)
         assertEquals(7, BugReportTriageEngine.RULE_IDS.size)
