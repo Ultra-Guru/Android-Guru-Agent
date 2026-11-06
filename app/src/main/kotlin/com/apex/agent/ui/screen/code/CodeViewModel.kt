@@ -614,7 +614,6 @@ class CodeViewModel @Inject constructor(
         captureRunOutputStyle()
         streamSession.beginRun(goal)
         _uiState.update { it.copy(stream = streamSession.snapshot(), isRunning = true, error = null, errorRetriable = false) }
-
         // #209：记录本次运行输入 —— 失败后错误条「重试」按原样重放
         //（sendMessage / 斜杠路由 / 模板启动等所有入口统一覆盖）。
         lastRunEngineInput = engineInput
@@ -715,11 +714,8 @@ class CodeViewModel @Inject constructor(
                 aborted = true
                 // abort 或 VM 清理：静默
             } catch (e: Exception) {
-                // #209：异常文本先净化（类名映射/首行有效信息/过滤堆栈与 null），
-                // 再进错误条 —— 裸英文堆栈串不再直出；本次运行可一键重试。
+                // collect 异常没有 Error 事件：收束空占位并保留已生成内容。
                 val message = sanitizeErrorText(e)
-                // collect 在异常时不会发 AgentEvent.Error：本地补齐时间轴收尾，
-                // 保留已输出正文并移除尚无正文的等待位。
                 streamSession.onEvent(AgentEvent.Error(message, recoverable = true))
                 showError(message, retriable = true)
             } finally {
