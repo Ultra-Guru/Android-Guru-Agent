@@ -84,22 +84,28 @@ sealed interface ToolKind {
 /**
  * 流式回复收束一致性仲裁（Streaming Pipeline 2.0 · P0 不丢字）：
  * TaskRuntime 高水位会丢弃 [com.apex.agent.core.engine.AgentEvent.ResponseChunk]
- * 过程事件（isDroppableUnderPressure），其契约是「最终文本由 ResponseComplete
- * 的 fullText 全量携带」——UI 收束时必须据此回填，否则被丢的 chunk 永久缺字。
+ * 过程事件——收束时按本函数修复 UI 累积文本。
  *
- * 仲裁规则（按气泡粒度，引擎 contentBuilder 每轮迭代局部重建、气泡已按轮
- * 分立，fullText 即本气泡的权威全文）：
+ * 仲裁规则（前缀感知，双契约兼容）：
  * - fullText 空白 → 保留累积（反思修正轮等文本可能从未流经引擎累积器，
- *   引擎发空 fullText 时 UI 看到的就是全部）；
- * - 其余（含相等）→ **fullText 优先**：无论 UI 累积是缺尾（水位恰在收尾
- *   前抬升）还是缺中（积压中途丢弃产生缺口），引擎全文都是无损真相。
+ *   fullText 为空时 UI 看到的就是全部）；
+ * - accumulated 空白 → 采信 fullText（收集器全程缺席：UI 零累积）；
+ * - **fullText 是累积的真延长**（`startsWith`）→ 采信 fullText——这是
+ *   高水位尾部丢弃的可修复形态（引擎全文无损延长了 UI 所见）；
+ * - 其余（分叉）→ 保留累积。引擎 fullText 可能与流式分片异源
+ *   （contentBuilder 每轮局部重建 / 反思轮异源文本），盲信会复现
+ *   「跨轮结论被截成末轮残句」的用户实测回归——分叉时用户所见优先。
  *
- * 历史：旧 UI 跨轮共用同一条气泡时 fullText（末轮文本）整体覆写会把跨轮
- * 累积截成残句（用户实测回归）——该根源已随「气泡按轮分立」修复消除，
- * fullText 优先自此安全。
+ * 诚实边界：积压**中途**丢弃（累积带洞、非前缀关系）不可由 fullText
+ * 盲目修复——该形态回落累积优先（现状），两侧字符串无公共前缀可辨，
+ * 盲并会产生重复文本。
  */
-fun reconcileStreamText(accumulated: String, fullText: String): String =
-    if (fullText.isBlank()) accumulated else fullText
+fun reconcileStreamText(accumulated: String, fullText: String): String = when {
+    fullText.isBlank() -> accumulated
+    accumulated.isBlank() -> fullText
+    fullText.startsWith(accumulated) -> fullText
+    else -> accumulated
+}
 
 /**
  * 胶囊状态机：waiting → running → 终态。
