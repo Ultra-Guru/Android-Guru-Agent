@@ -185,7 +185,8 @@ class CodeStreamSessionTest {
         s.beginRun("你好")
         // provider 发 content:"" 的 tool_calls 前导帧
         s.onEvent(AgentEvent.ResponseChunk(""))
-        assertEquals(0, s.snapshot().entries.count { it is StreamEntry.AssistantEntry })
+        assertEquals("空分片不会增加第二个助手条目", 1,
+            s.snapshot().entries.count { it is StreamEntry.AssistantEntry })
         s.onEvent(AgentEvent.ResponseComplete(""))
         assertEquals(
             "空白收尾不残留空气泡", 0,

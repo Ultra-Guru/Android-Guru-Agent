@@ -608,6 +608,13 @@ class CodeViewModel @Inject constructor(
     private fun runEngine(engineInput: String, displayGoal: String? = null) {
         val goal = displayGoal ?: engineInput
 
+        // 在同步模型预检/工作区准备之前先把用户消息与助手等待位一起入轴；
+        // 直接发布快照，不等 25ms ticker，更不能等服务端首个 token。
+        captureRunOutputMode()
+        captureRunOutputStyle()
+        streamSession.beginRun(goal)
+        _uiState.update { it.copy(stream = streamSession.snapshot(), isRunning = true, error = null, errorRetriable = false) }
+
         // #209：记录本次运行输入 —— 失败后错误条「重试」按原样重放
         //（sendMessage / 斜杠路由 / 模板启动等所有入口统一覆盖）。
         lastRunEngineInput = engineInput
@@ -681,9 +688,6 @@ class CodeViewModel @Inject constructor(
         // 胶囊时间轴：用户气泡入轴 + 渲染 ticker 启动（25ms ≤40Hz 攒批）。
         // 输出展示档/风格本轮捕获（运行中改设置不打断当前轮，见
         // CodeOutputModeOps.kt / CodeOutputStyleOps.kt）。
-        captureRunOutputMode()
-        captureRunOutputStyle()
-        streamSession.beginRun(goal)
         startRenderTicker()
 
         runJob = viewModelScope.launch {

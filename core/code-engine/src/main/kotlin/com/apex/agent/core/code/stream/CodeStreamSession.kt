@@ -125,6 +125,10 @@ class CodeStreamSession {
         // 统计收尾卡的本轮失败数基线（failedToolCallCount 跨 run 累积）
         runStartFailedCount = failedToolCallCount
         append(StreamEntry.UserEntry(nextId(), userText))
+        // 发送即占位；首个正文分片复用该 id。纯工具/空回复的收束路径
+        // 会移除空条目，不向检查点留下幽灵气泡。
+        streamingAssistant = StreamEntry.AssistantEntry(nextId(), "", true)
+        append(streamingAssistant!!)
         activeTerminalCallId = null
         // 新 run 归零终端面板三信号（上一轮命令的尾窗不再展示）
         terminalBusy = false

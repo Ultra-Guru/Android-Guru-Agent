@@ -119,6 +119,13 @@ private fun AssistantBubble(text: String, isStreaming: Boolean) {
     ) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
             MarkdownText(markdown = text)
+            if (isStreaming && text.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.code_stream_status_waiting),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             if (isStreaming) {
                 Text(
                     text = "▍",
