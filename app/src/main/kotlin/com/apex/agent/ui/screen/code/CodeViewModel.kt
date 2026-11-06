@@ -210,10 +210,10 @@ class CodeViewModel @Inject constructor(
     internal val streamSession = CodeStreamSession()
 
     /** 渲染 ticker：运行期每 25ms 拉一次快照（≤40Hz 攒批）。 */
-    private var renderJob: Job? = null
+    internal var renderJob: Job? = null
 
     /** 回复聚合器（P1 Event Aggregator，类与纪律见 CodeResponseAggregator.kt）。 */
-    private val responseAggregator = ResponseAggregator()
+    internal val responseAggregator = ResponseAggregator()
 
     /** 当前绑定的会话归属工作区（null = 尚未绑定，不落盘）。 */
     internal var boundWorkspaceId: String? = null
@@ -1172,30 +1172,7 @@ class CodeViewModel @Inject constructor(
         super.onCleared()
     }
 
-    // ═══ 胶囊时间轴：渲染 ticker 与详情数据 ═══
-
-    /** 启动渲染 ticker（25ms ≤40Hz；脏才推快照，无变更零重组）。 */
-    private fun startRenderTicker() {
-        renderJob?.cancel()
-        renderJob = viewModelScope.launch {
-            while (isActive) {
-                delay(RENDER_TICK_MS)
-                responseAggregator.flush { reduce(it) } // P1 聚合冲刷（与胶囊快照同节拍）
-                streamSession.tick()?.let { snap ->
-                    _uiState.update { it.copy(stream = snap) }
-                }
-            }
-        }
-    }
-
-    /** 停止 ticker 并冲最后一次快照（run 收尾调用）。 */
-    private fun stopRenderTicker() {
-        renderJob?.cancel()
-        renderJob = null
-        streamSession.snapshot().let { snap ->
-            _uiState.value = _uiState.value.copy(stream = snap)
-        }
-    }
+    // ═══ 胶囊时间轴：渲染 ticker 见 CodeRenderTickerOps.kt ═══
 
     /** 详情弹层的终端尾窗（历史 BASH 调用的输出回看）。 */
     fun terminalLogOf(callId: String): String? = streamSession.terminalContentOf(callId)
@@ -1203,7 +1180,7 @@ class CodeViewModel @Inject constructor(
     /** 详情弹层入参便捷转换（UI 持有 StreamToolCall 时调用）。 */
     fun toolCallById(call: StreamToolCall): StreamToolCall = call
 
-    private companion object {
+    internal companion object {
         /** 渲染攒批窗口：25ms = 上限 40Hz（Pipeline 2.0 目标带 16~33ms 取中）。 */
         const val RENDER_TICK_MS = 25L
     }
