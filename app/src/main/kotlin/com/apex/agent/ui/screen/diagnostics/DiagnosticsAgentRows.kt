@@ -131,17 +131,7 @@ internal fun SkillListRow(row: SkillRow) {
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    buildString {
-                        append(
-                            else stringResource(R.string.diag_skill_scope_agent) + " ✕"
-                        )
-                        append("  ·  ")
-                        append(
-                            else stringResource(R.string.diag_skill_scope_coding) + " ✕"
-                        )
-                        append("  ·  ")
-                        append(stringResource(R.string.diag_skill_tools_unit, row.toolCount))
-                    },
+                    stringResource(R.string.diag_skill_tools_unit, row.toolCount),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

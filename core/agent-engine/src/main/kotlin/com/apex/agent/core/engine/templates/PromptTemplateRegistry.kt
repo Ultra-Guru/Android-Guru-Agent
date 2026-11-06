@@ -237,7 +237,10 @@ class PromptTemplateRegistry(
             val next = if (mode == ImportMode.REPLACE) LinkedHashMap() else LinkedHashMap(cache)
             for (incoming in library.templates) {
                 when {
-                    BuiltinPromptTemplates.isKnownBuiltInId(incoming.id) -> {
+                    // 前缀判断（而非 isKnownBuiltInId）：已删除的内置 id（如旧版导出的
+                    // builtin_translate）同样不得混入 —— 内置命名空间整体保留给
+                    // reseedBuiltIns 单一事实源，杜绝任何伪造内置条目。
+                    incoming.id.startsWith(PromptTemplate.BUILTIN_ID_PREFIX) -> {
                         skippedBuiltIn++
                         logger("PromptTemplateRegistry: import skipped built-in id '${incoming.id}'")
                     }

@@ -1,5 +1,6 @@
 package com.apex.agent.ui.screen.code.stream
 
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
