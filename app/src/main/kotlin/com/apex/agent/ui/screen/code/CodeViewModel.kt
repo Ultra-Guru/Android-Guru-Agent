@@ -666,9 +666,8 @@ class CodeViewModel @Inject constructor(
         // 深水区升级观察器归零（新 run 重新计数；归档信号不动——预检已消费）。
         adaptiveSignals.beginRun()
 
-        // 胶囊时间轴：用户气泡入轴 + 渲染 ticker 启动（25ms ≤40Hz 攒批）。
-        // 输出展示档/风格本轮捕获（运行中改设置不打断当前轮，见
-        // CodeOutputModeOps.kt / CodeOutputStyleOps.kt）。
+        // 胶囊时间轴：用户气泡入轴 + 渲染 ticker 启动（25ms ≤40Hz 攒批）；
+        // 输出展示档/风格本轮捕获（运行中改设置不打断当前轮）
         captureRunOutputMode()
         captureRunOutputStyle()
         streamSession.beginRun(goal)
@@ -1190,10 +1189,7 @@ class CodeViewModel @Inject constructor(
     fun toolCallById(call: StreamToolCall): StreamToolCall = call
 
     private companion object {
-        /**
-         * 渲染攒批窗口：25ms = 上限 40Hz（规格书：脉冲式输出；Streaming
-         * Pipeline 2.0 目标带 16~33ms，25ms 兼顾流畅与低端机渲染压力）。
-         */
+        /** 渲染攒批窗口：25ms = 上限 40Hz（Pipeline 2.0 目标带 16~33ms 取中）。 */
         const val RENDER_TICK_MS = 25L
     }
 }
