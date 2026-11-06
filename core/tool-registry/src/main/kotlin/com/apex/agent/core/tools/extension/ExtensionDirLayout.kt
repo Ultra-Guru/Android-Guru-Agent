@@ -7,7 +7,7 @@ import java.io.File
  *
  * `<root>/<extId>/` 下三件套：
  * - `pkg/`     已发布实体（原子 rename 的落点，对外唯一可见形态）；
- * - `tmp-*/`   安装暂存（npm install / git clone 先落这里，成功才 publish）；
+ * - `tmp-<时间戳>/` 安装暂存（npm install / git clone 先落这里，成功才 publish）；
  * - `profile/` 生态注册文件（DSH profile.json / OpenCode 元数据等）。
  *
  * **原子性**（brief 要求）：安装失败绝不留半装状态 —— tmp 阶段任何一步失败
