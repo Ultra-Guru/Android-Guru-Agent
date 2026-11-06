@@ -616,6 +616,7 @@ data class AgentSettings(
     // （默认开；关闭后回到 v2 的全局可见行为）。
     val codeOutputMode: String = "streaming",
     val codeOutputStyle: String = "timeline",
+    val codeRikkaThinkingCollapsed: Boolean = false,
     val mcpScopeIsolation: Boolean = true,
 
     // ═══ v2.1.0 浏览器角色门禁（评审 B2）═══

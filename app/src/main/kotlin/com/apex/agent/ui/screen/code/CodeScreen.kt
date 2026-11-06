@@ -134,6 +134,7 @@ fun CodeScreen(
         ?: codeProfiles.firstOrNull()?.id
     // 输入行为设置（sendKeyBehavior：send 回车直发 / newline 回车换行）
     val uiSettings by viewModel.codeUiSettings.collectAsStateWithLifecycle()
+    val agentPresentation by viewModel.settingsRepository.agentSettings.collectAsStateWithLifecycle()
     // 原生 reasoning 参数生效判定（与客户端能力位门控同口径：Profile 勾了
     // reasoning 或 o-series/gpt-5 模型名才随请求发 reasoning_effort ——
     // 思考选择器/指南据此出「不生效」提示，回答用户「切换是不是真实的」）
@@ -297,6 +298,10 @@ fun CodeScreen(
             // CodeOutputStyle.kt；idle 期热切换，运行中 run 粒度捕获）。
             if (state.outputStyle == CodeOutputStyle.RIKKA) {
                 RikkaStreamTimeline(
+                    thinkingCollapsed = agentPresentation.codeRikkaThinkingCollapsed,
+                    onThinkingCollapsedChange = { collapsed ->
+                        viewModel.settingsRepository.updateAgentSettings { copy(codeRikkaThinkingCollapsed = collapsed) }
+                    },
                     snapshot = state.stream,
                     isStreaming = state.isRunning,
                     renderMode = state.renderMode,
