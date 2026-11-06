@@ -473,6 +473,43 @@
     <string name="memory_chat_source_manual">Manual</string>
     <string name="memory_chat_source_migrated">Migrated</string>
 
+    <!-- ═══ User profile section (five aspects / distill from coding / manual entries) ═══ -->
+    <string name="memory_profile_title">User profile</string>
+    <string name="memory_profile_count_fmt">%1$d entries</string>
+    <string name="memory_profile_empty">No profile yet\nDistill stable traits from your coding conversations, or add entries manually</string>
+    <string name="memory_profile_distill">Distill</string>
+    <string name="memory_profile_distilling">Distilling…</string>
+    <string name="memory_profile_add">Add entry</string>
+    <string name="memory_profile_edit">Edit</string>
+    <string name="memory_profile_clear">Clear all</string>
+    <string name="memory_profile_meta_fmt">Confidence %1$d%% · %2$s</string>
+    <string name="memory_profile_source_distilled">Distilled</string>
+    <string name="memory_profile_source_manual">Manual</string>
+    <string name="memory_profile_aspect_tech_stack">Tech stack</string>
+    <string name="memory_profile_aspect_coding_style">Coding style</string>
+    <string name="memory_profile_aspect_preferences">Preferences</string>
+    <string name="memory_profile_aspect_domains">Domains</string>
+    <string name="memory_profile_aspect_habits">Work habits</string>
+    <string name="memory_profile_add_title">Add profile entry</string>
+    <string name="memory_profile_edit_title">Edit profile entry</string>
+    <string name="memory_profile_content_label">Content</string>
+    <string name="memory_profile_content_hint">Third-person statement, e.g. prefers Kotlin with explicit types</string>
+    <string name="memory_profile_confidence_fmt">Confidence %1$d%%</string>
+    <string name="memory_profile_save">Save</string>
+    <string name="memory_profile_cancel">Cancel</string>
+    <string name="memory_profile_delete_title">Delete this entry?</string>
+    <string name="memory_profile_delete_text">"%1$s" will be permanently deleted.</string>
+    <string name="memory_profile_clear_title">Clear all profile entries?</string>
+    <string name="memory_profile_clear_text">All %1$d entries will be permanently deleted.</string>
+    <string name="memory_profile_msg_added">Profile entry added</string>
+    <string name="memory_profile_msg_updated">Profile entry updated</string>
+    <string name="memory_profile_msg_deleted">Profile entry deleted</string>
+    <string name="memory_profile_msg_cleared">All profile entries cleared</string>
+    <string name="memory_profile_msg_write_failed">Write failed: %1$s</string>
+    <string name="memory_profile_msg_distill_done">Distilled: %1$d added · %2$d updated · %3$d skipped</string>
+    <string name="memory_profile_msg_distill_empty">No signal found (no coding conversations yet, or nothing stable to distill)</string>
+    <string name="memory_profile_msg_distill_failed">Distill failed: %1$s</string>
+
     <!-- ═══ Memory page v2: six-way stats / knowledge graph section / write entries / unified search ═══ -->
     <string name="memory_stats_episodes">Episodes</string>
     <string name="memory_stats_facts">Facts</string>
@@ -525,6 +562,7 @@
 
     <!-- ═══ Memory page v3 (single-column list / section nav / pull-to-refresh / filters) ═══ -->
     <string name="memory_section_all">All</string>
+    <string name="memory_section_profile">Profile</string>
     <string name="memory_section_chat">Chat memory</string>
     <string name="memory_section_knowledge">Knowledge graph</string>
     <string name="memory_section_episodes">Episodes</string>

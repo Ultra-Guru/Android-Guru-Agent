@@ -7,6 +7,9 @@ import com.apex.memkit.core.model.GraphEntity
 import com.apex.memkit.core.model.MacroAction
 import com.apex.memkit.core.model.MacroSkill
 import com.apex.memkit.core.model.MacroStats
+import com.apex.memkit.core.model.MacroStep
+import com.apex.agent.ui.screen.memory.profile.ProfileAspect
+import com.apex.agent.ui.screen.memory.profile.ProfileAspectEntry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -70,6 +73,7 @@ class MemoryListPlanTest {
     private fun input(
         searchActive: Boolean = false,
         searchResults: List<MemorySearchHit> = emptyList(),
+        profileEntries: List<ProfileAspectEntry> = emptyList(),
         chatEntries: List<ChatMemoryEntry> = listOf(chatEntry(ChatFact.Kind.PROFILE, "f1")),
         knowledgeEntities: List<GraphEntity> = listOf(entity("E1"), entity("E2")),
         knowledgeExpanded: Boolean = false,
@@ -80,6 +84,7 @@ class MemoryListPlanTest {
     ): MemoryListPlanInput = MemoryListPlanInput(
         searchActive = searchActive,
         searchResults = searchResults,
+        profileEntries = profileEntries,
         chatEntries = chatEntries,
         knowledgeEntities = knowledgeEntities,
         knowledgeExpanded = knowledgeExpanded,
@@ -98,29 +103,53 @@ class MemoryListPlanTest {
     fun `normal plan keeps canonical section order with anchors at headers`() {
         val plan = buildMemoryListPlan(input())
 
-        // 骨架：概览 → 健康 → 隐私 → 四分区（头 + 卡）→ 尾部
+        // 骨架：概览 → 健康 → 隐私 → 五分区（头 + 卡）→ 尾部
         assertEquals(MemoryListItem.Stats, plan.first())
         assertEquals(MemoryListItem.Health, plan[1])
         assertEquals(MemoryListItem.Privacy, plan[2])
         assertTrue(plan.last() is MemoryListItem.Footer)
 
         val anchors = plan.sectionAnchors()
-        assertEquals(4, anchors.size)
+        assertEquals(5, anchors.size)
+        assertEquals(MemoryListItem.ProfileHeader, plan[anchors.getValue(MemorySection.PROFILE)])
         assertEquals(MemoryListItem.ChatHeader, plan[anchors.getValue(MemorySection.CHAT)])
         assertEquals(MemoryListItem.KnowledgeHeader, plan[anchors.getValue(MemorySection.KNOWLEDGE)])
         assertEquals(MemoryListItem.EpisodesHeader, plan[anchors.getValue(MemorySection.EPISODES)])
         assertEquals(MemoryListItem.MacrosHeader, plan[anchors.getValue(MemorySection.MACROS)])
 
-        // 分区序：聊天 < 知识 < 经历 < 宏
+        // 分区序：画像 < 聊天 < 知识 < 经历 < 宏
+        assertTrue(anchors.getValue(MemorySection.PROFILE) < anchors.getValue(MemorySection.CHAT))
         assertTrue(anchors.getValue(MemorySection.CHAT) < anchors.getValue(MemorySection.KNOWLEDGE))
         assertTrue(anchors.getValue(MemorySection.KNOWLEDGE) < anchors.getValue(MemorySection.EPISODES))
         assertTrue(anchors.getValue(MemorySection.EPISODES) < anchors.getValue(MemorySection.MACROS))
     }
 
     @Test
+    fun `profile section renders aspect cards after header`() {
+        val plan = buildMemoryListPlan(
+            input(
+                profileEntries = listOf(
+                    ProfileAspectEntry(ProfileAspect.TECH_STACK, emptyList()),
+                    ProfileAspectEntry(ProfileAspect.HABITS, emptyList()),
+                )
+            )
+        )
+        val profileIndex = plan.indexOf(MemoryListItem.ProfileHeader)
+        assertTrue(profileIndex >= 0)
+        // 紧随分区头的是两张维度卡，且位于聊天记忆头之前
+        assertTrue(plan[profileIndex + 1] is MemoryListItem.ProfileAspectCard)
+        assertTrue(plan[profileIndex + 2] is MemoryListItem.ProfileAspectCard)
+        assertTrue(plan.indexOf(MemoryListItem.ChatHeader) > profileIndex + 2)
+    }
+
+    @Test
     fun `all item keys are unique`() {
         val plan = buildMemoryListPlan(
             input(
+                profileEntries = listOf(
+                    ProfileAspectEntry(ProfileAspect.TECH_STACK, emptyList()),
+                    ProfileAspectEntry(ProfileAspect.DOMAINS, emptyList()),
+                ),
                 chatEntries = listOf(
                     chatEntry(ChatFact.Kind.PROFILE, "f1"),
                     chatEntry(ChatFact.Kind.STATE, "f2"),
@@ -258,12 +287,14 @@ class MemoryListPlanTest {
     fun `current section follows first visible index against anchors`() {
         val plan = buildMemoryListPlan(input())
         val anchors = plan.sectionAnchors()
+        val profile = anchors.getValue(MemorySection.PROFILE)
         val chat = anchors.getValue(MemorySection.CHAT)
         val knowledge = anchors.getValue(MemorySection.KNOWLEDGE)
 
-        // 概览区（首可见在第一个分区头之前）→ null（「全部」芯片高亮）
+        // 概览区（首可见在第一个分区头「用户画像」之前）→ null（「全部」芯片高亮）
         assertNull(currentSection(0, anchors))
-        assertNull(currentSection(chat - 1, anchors))
+        assertNull(currentSection(profile - 1, anchors))
+        assertEquals(MemorySection.PROFILE, currentSection(profile, anchors))
         assertEquals(MemorySection.CHAT, currentSection(chat, anchors))
         assertEquals(MemorySection.KNOWLEDGE, currentSection(knowledge, anchors))
         assertEquals(MemorySection.MACROS, currentSection(plan.lastIndex, anchors))
@@ -276,7 +307,7 @@ class MemoryListPlanTest {
         val big = macro("m1").let { base ->
             base.copy(
                 steps = (1..(MACRO_EXPANDED_STEP_LIMIT + 3)).map {
-                    com.apex.memkit.core.model.MacroStep(
+                    MacroStep(
                         action = MacroAction.Tap(it, it),
                         anchorFingerprints = emptySet(),
                         nextAnchorFingerprints = emptySet(),
