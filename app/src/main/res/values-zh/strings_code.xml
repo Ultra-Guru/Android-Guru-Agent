@@ -421,6 +421,7 @@
     <string name="code_stream_kind_write">写入</string>
     <string name="code_stream_kind_edit">编辑</string>
     <string name="code_stream_kind_grep">搜索</string>
+    <string name="code_stream_kind_web">网页搜索</string>
     <string name="code_stream_kind_bash">命令</string>
     <string name="code_stream_kind_git">Git</string>
     <string name="code_stream_kind_lint">Lint</string>
