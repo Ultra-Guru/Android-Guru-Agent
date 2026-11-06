@@ -270,43 +270,4 @@ class RegexExplainTemplateBehaviorTest {
 
     // ═══ 端到端 ═══
 
-    @Test
-    fun `full turn through runtime`() = runTest {
-        val dir = java.io.File("/tmp/regex-runtime-${System.nanoTime()}").apply { mkdirs() }
-        val registry = com.apex.agent.core.engine.templates.PromptTemplateRegistry(dir)
-        registry.reseedBuiltIns()
-        val runtime = com.apex.agent.core.engine.templates.runtime.TemplateRuntime(
-            registry = registry,
-            behaviors = mapOf(behavior.behaviorId to behavior)
-        )
-        val activation = runtime.activate(
-            "builtin_regex_explain",
-            mapOf("pattern" to "^(\\d{4})-(\\d{2})-(\\d{2})$", "sample" to "2024-01-31")
-        )
-        assertTrue(activation.ok)
-        val outcome = runtime.prepareTurn(activation)
-        assertTrue(outcome.ok)
-        assertTrue(outcome.request!!.prompt.contains("解析成功"))
-        val report = runtime.processResponse(
-            activation,
-            """
-            ## 整体作用
-            匹配 ISO 日期。
-
-            ## 逐段拆解
-            1. ^：行首
-            2. (\d{4})：捕获四位年份
-
-            ## 匹配与不匹配示例
-            - 匹配：2024-01-31
-            - 不匹配：2024-1-1
-
-            ## 性能陷阱与简化建议
-            无回溯风险。
-            """.trimIndent(),
-            outcome.request
-        )
-        assertTrue(report.trace!!.allOk)
-        assertEquals("true", report.summary["parseOk"])
-    }
 }

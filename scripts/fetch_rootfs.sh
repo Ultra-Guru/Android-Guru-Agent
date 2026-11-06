@@ -88,6 +88,8 @@ verify_manifest_agreement() {
 
 verify_staged() {
   # 日志走 stderr —— stdout 只回传已验证计数（供命令替换捕获）。只验选中 ABI。
+  # #353-⑩：坏档自愈 —— 指纹/尺寸不符时**删除该档并跳过计数**（而不是 fail
+  # 直接退出）：调用方据此重新下载，本地不再需要手动 --clean。
   local staged=0
   for entry in "${FILTERED_ARTIFACTS[@]}"; do
     IFS='|' read -r abi _ubuntu_arch sha size <<< "$entry"
@@ -95,10 +97,15 @@ verify_staged() {
     if [ -f "$f" ]; then
       local actual
       actual="$(sha256sum "$f" | cut -d' ' -f1)"
-      [ "$actual" = "$sha" ] || fail "staged $abi archive digest mismatch (expected=$sha actual=$actual)"
       local actual_size
       actual_size="$(stat -c%s "$f")"
-      [ "$actual_size" = "$size" ] || fail "staged $abi archive size mismatch (expected=$size actual=$actual_size)"
+      if [ "$actual" != "$sha" ] || [ "$actual_size" != "$size" ]; then
+        log "⚠️ staged $abi archive is corrupt (digest/size mismatch) — deleting for re-download" >&2
+        log "   expected sha=$sha size=$size" >&2
+        log "   actual   sha=$actual size=$actual_size" >&2
+        rm -f "$f" || fail "cannot remove corrupt staged archive: $f"
+        continue
+      fi
       log "staged $abi OK ($(numfmt --to=iec "$size" 2>/dev/null || echo "${size}B"))" >&2
       staged=$((staged + 1))
     fi
@@ -117,7 +124,8 @@ case "${1:-fetch}" in
     ;;
   --check)
     verify_manifest_agreement
-    staged="$(verify_staged)"
+    staged="$(verify_staged || true)"
+    case "$staged" in ''|*[!0-9]*) staged=0 ;; esac
     if [ "$staged" -eq ${#FILTERED_ARTIFACTS[@]} ]; then
       log "✅ all ${#FILTERED_ARTIFACTS[@]} selected archives verified (${WANTED_ABIS[*]})"
     else
@@ -134,6 +142,9 @@ verify_manifest_agreement
 
 # 幂等：已暂存且指纹正确 → 跳过下载（本地反复 assemble 不重复花流量）。
 already="$(verify_staged || true)"
+# #353-⑩：verify_staged 异常退出时命令替换返回空串，`[ "" -eq N ]` 会报
+# 「integer expression expected」并把脚本带进未定义分支。显式归一为 0。
+case "$already" in ''|*[!0-9]*) already=0 ;; esac
 if [ "$already" -eq ${#FILTERED_ARTIFACTS[@]} ]; then
   log "✅ all ${#FILTERED_ARTIFACTS[@]} selected archives already staged & verified — nothing to do"
   exit 0

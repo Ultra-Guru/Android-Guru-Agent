@@ -1,6 +1,7 @@
 package com.apex.agent.core.code.standard
 
 import com.apex.agent.core.code.CodeConversationMemory
+import com.apex.agent.core.code.loadNormalized
 import com.apex.agent.core.llm.LlmMessage
 import com.apex.agent.core.llm.ToolCall
 import org.junit.Assert.assertEquals

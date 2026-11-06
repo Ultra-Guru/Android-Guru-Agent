@@ -17,8 +17,10 @@ import com.apex.agent.core.code.standard.StandardLogicMode
 import com.apex.agent.core.code.stream.CodeStreamCheckpoint
 import com.apex.agent.core.code.stream.CodeStreamSession
 import com.apex.agent.core.code.stream.StreamToolCall
+import com.apex.agent.core.code.thinking.CodeAdaptiveSignalTracker
 import com.apex.agent.core.code.thinking.CodeAdaptiveThinkingSelector
 import com.apex.agent.core.code.thinking.CodeThinkingLevel
+import com.apex.agent.core.code.subagent.SubAgentPrompts
 import com.apex.agent.core.codetools.CodeWorkspaceRoots
 import com.apex.agent.core.codetools.tools.CodeTodoTool
 import com.apex.agent.core.engine.AgentAnswer
@@ -47,6 +49,8 @@ import com.apex.agent.ui.screen.code.editor.EditorFileException
 import com.apex.agent.ui.screen.code.editor.EditorFileLoader
 import com.apex.agent.ui.screen.code.editor.EditorLoadError
 import com.apex.agent.ui.screen.code.session.CodeSessionStore
+import com.apex.agent.ui.screen.memory.profile.topForInjection
+import com.apex.agent.ui.screen.memory.profile.toSystemContextSection
 import com.apex.agent.ui.screen.code.history.CodeHistoryStore
 import com.apex.agent.ui.screen.code.history.clearConversationWithArchive
 import com.apex.agent.ui.chatkit.ChatToolkitStore
@@ -136,6 +140,9 @@ class CodeViewModel @Inject constructor(
     // 见 RoleExperienceController —— God-file 预算：VM 只做暴露）。
     internal val roleExperienceTracker: RoleExperienceTracker,
     internal val roleExperienceStore: RoleExperienceStore,
+    // 用户画像（五维长期特征）：发送路径按置信度 Top-8 注入 sessionExtras
+    //（存储在 filesDir/user_profile，蒸馏入口在记忆页画像分区）。
+    internal val userProfileStore: com.apex.agent.ui.screen.memory.profile.UserProfileStore,
     internal val taskCopyEngine: TaskCopyEngine,
     internal val longTaskStore: LongTaskStore,
     // ═══ 会话用量与通知（上下文圆环详情数据面 + 任务完成通知）═══
@@ -210,20 +217,17 @@ class CodeViewModel @Inject constructor(
 
     // ═══ AUTO 档自治状态（coding 专属，引擎零参与）═══
 
-    /** 本轮 run 累计工具调用数（深水区升级观察器信号）。 */
-    private var runToolCalls = 0
-
-    /** 本轮 run 最近 3 次工具成败滑窗（true = 成功）。 */
-    private val recentToolOutcomes = ArrayDeque<Boolean>()
+    /**
+     * AUTO 预检/升级信号追踪器（v1.5.17 提取自本 VM 四个散落字段，状态机
+     * 契约见 CodeAdaptiveSignalTracker KDoc）：预检读归档 → beginRun 只清
+     * 本轮 → onToolComplete×N → endRun 归档；会话边界（新会话/恢复历史/
+     * 切工作区）经 [resetAdaptiveThinkingSignals] 全量清零——旧会话的错误史
+     * 不再泄漏进新会话首检。
+     */
+    private val adaptiveSignals = CodeAdaptiveSignalTracker()
 
     /** 本轮 run 生效的深度档（AUTO 预检解析结果；非 AUTO = 用户显式档）。 */
     private var effectiveRunLevel: CodeThinkingLevel = CodeThinkingLevel.STANDARD
-
-    /** 上一轮 run 的工具调用总数（下轮 AUTO 预检的错误史信号）。 */
-    private var lastRunToolCalls = 0
-
-    /** 上一轮 run 的错误数（引擎 3 滑窗口径近似：run 内滑窗错误峰值）。 */
-    private var lastRunErrors = 0
 
     // ═══ #209 错误条「重试」通道 ═══
 
@@ -617,10 +621,28 @@ class CodeViewModel @Inject constructor(
         // v4 强制工具计划。prepareForTask 的 refreshContext 会把 extras 拼进
         // additionalSystemContext（顺序：先存 extras 再刷上下文）。 ═══
         // 功能聚合注入段（16 项能力）同通道追加 —— 小圆环在前、功能聚合在后。
-        // v1.9 角色经验卡：召回的相关经验段拼在末位（同类任务先读历史教训）。
+        // 用户画像（五维长期特征）：置信度 Top-8 段拼在最前（个性化基线，
+        // snapshotBlocking 主线程安全）；v1.9 角色经验卡：召回的相关经验段
+        // 拼在末位（同类任务先读历史教训）。
+        val profileSection = userProfileStore.snapshotBlocking()
+            .topForInjection()
+            .toSystemContextSection()
+        // v1.5.17 自定义子代理类型目录：CodeTask 的工具描述是静态的（DI
+        // 期构建），自定义角色对主模型不可见——目录拼进会话附加段让主
+        // 模型知道有哪些角色可委派（空清单零注入，零 token 开销）。
+        val baseExtras = neonOrbStore.mergeWith(toolkitStore.buildSessionContext())
+            .let { base ->
+                SubAgentPrompts.customTypeCatalog(
+                    settingsRepository.agentSettings.value.subagent.customTypes
+                ).takeIf { it.isNotBlank() }?.let { "$base\n\n$it" } ?: base
+            }
         codeEngineImpl?.updateSessionExtras(
             roleExperience.enrichExtras(
-                base = neonOrbStore.mergeWith(toolkitStore.buildSessionContext()),
+                base = if (profileSection == null) {
+                    baseExtras
+                } else {
+                    "$profileSection\n\n$baseExtras"
+                },
                 goal = goal
             )
         )
@@ -653,9 +675,8 @@ class CodeViewModel @Inject constructor(
         // v1.9 角色经验卡：本轮任务的聚合归零（当前激活角色领卡）。
         roleExperience.beginRun(goal, _uiState.value.activeWorkspace?.name ?: "")
 
-        // 深水区升级观察器归零（新 run 重新计数）。
-        runToolCalls = 0
-        recentToolOutcomes.clear()
+        // 深水区升级观察器归零（新 run 重新计数；归档信号不动——预检已消费）。
+        adaptiveSignals.beginRun()
 
         // 胶囊时间轴：用户气泡入轴 + 渲染 ticker 启动（25ms ≤40Hz 攒批）。
         // 输出展示档/风格本轮捕获（运行中改设置不打断当前轮，见
@@ -704,8 +725,7 @@ class CodeViewModel @Inject constructor(
                     )
                 }
                 // 上一轮错误史归档（下轮 AUTO 预检的输入信号）。
-                lastRunToolCalls = runToolCalls
-                lastRunErrors = recentToolOutcomes.count { !it }
+                adaptiveSignals.endRun()
                 // 渲染收尾：停 ticker 前冲最后一次快照（尾巴事件不丢）。
                 stopRenderTicker()
                 // v1.2 长任务收尾：状态裁决（中止/失败/完成）+ 长任务判定入库
@@ -854,6 +874,23 @@ class CodeViewModel @Inject constructor(
     }
 
     /**
+     * 会话边界的 AUTO 信号全量清零（v1.5.17 修复跨会话泄漏）：
+     *
+     * 新会话 / 恢复历史 / 切换工作区都是会话边界——旧会话的错误史对新会话
+     * 首检毫无意义（上一任务的深水区失败不该抬升新任务档位）。此前四个
+     * 计数器散落本 VM 私有字段、无边界重置，AUTO 首检会把上一会话的信号
+     * 错误地带入新会话（错误史 +2 分且强制升一档，甚至可能触发深水区连环
+     * 失败保底 ULTRACODE）。
+     *
+     * 同时清掉 uiState.adaptiveDecision（选择器旁的旧会话预检回显文案）。
+     * 调用方（CodeHistoryController / bindWorkspace）均已保证非运行中调用。
+     */
+    internal fun resetAdaptiveThinkingSignals() {
+        adaptiveSignals.resetConversation()
+        _uiState.update { it.copy(adaptiveDecision = null) }
+    }
+
+    /**
      * AUTO 档发送前预检：解析出本轮生效深度档并下发引擎（**四线统一**）。
      *
      * - 预检信号：任务 goal + 上一轮 lastRun 计数/错误史；
@@ -874,10 +911,11 @@ class CodeViewModel @Inject constructor(
             codeEngineImpl?.updateThinkingLevel(selected)
             return
         }
+        val pre = adaptiveSignals.preCheckSignals()
         val decision = adaptiveSelector.select(
             goalText = goal,
-            lastRunToolCalls = lastRunToolCalls,
-            lastRunErrors = lastRunErrors
+            lastRunToolCalls = pre.lastRunToolCalls,
+            lastRunErrors = pre.lastRunErrors
         )
         effectiveRunLevel = decision.level
         codeEngineImpl?.updateThinkingLevel(decision.level)
@@ -900,13 +938,12 @@ class CodeViewModel @Inject constructor(
      */
     private fun maybeEscalateOnDeepWater(event: AgentEvent) {
         if (event !is AgentEvent.ToolCallComplete) return
-        runToolCalls++
-        recentToolOutcomes.addLast(event.success)
-        while (recentToolOutcomes.size > RECENT_OUTCOME_WINDOW) recentToolOutcomes.removeFirst()
+        adaptiveSignals.onToolComplete(event.success)
         if (_uiState.value.thinkingLevel != CodeThinkingLevel.AUTO) return
+        val esc = adaptiveSignals.escalationSignals()
         val decision = adaptiveSelector.escalateOnDeepWater(
-            runToolCalls = runToolCalls,
-            recentWindowErrors = recentToolOutcomes.count { !it },
+            runToolCalls = esc.runToolCalls,
+            recentWindowErrors = esc.recentWindowErrors,
             current = effectiveRunLevel
         ) ?: return
         effectiveRunLevel = decision.level
@@ -1058,6 +1095,11 @@ class CodeViewModel @Inject constructor(
             buildSessionSnapshot(previousId)
         } else null
         boundWorkspaceId = ws.workspaceId
+        // 切换到不同工作区 = 会话边界：AUTO 预检/升级信号全量清零（旧工作区
+        // 的错误史不带入新工作区首检；运行中不重置，防干扰在飞 run 的计数）。
+        if (previousId != ws.workspaceId && !_uiState.value.isRunning) {
+            resetAdaptiveThinkingSignals()
+        }
         // #221：用量观测在运行时层记账，需要知道当前会话归属（切工作区即换桶）。
         currentUsageSession.bind(ws.workspaceId)
         sessionPersistJob?.cancel()
@@ -1147,9 +1189,6 @@ class CodeViewModel @Inject constructor(
     fun toolCallById(call: StreamToolCall): StreamToolCall = call
 
     private companion object {
-        /** 深水区升级观察器的工具成败滑窗长度（与选档器口径一致：最近 3 次）。 */
-        const val RECENT_OUTCOME_WINDOW = 3
-
         /** 渲染攒批窗口：25ms = 上限 40Hz（规格书：脉冲式输出）。 */
         const val RENDER_TICK_MS = 25L
     }

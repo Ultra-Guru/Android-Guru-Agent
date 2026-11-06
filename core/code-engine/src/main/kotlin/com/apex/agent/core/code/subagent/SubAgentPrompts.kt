@@ -134,4 +134,48 @@ object SubAgentPrompts {
         ## 委派任务
         $description
     """.trimIndent()
+
+    /**
+     * 自定义子代理类型目录（主代理可见性注入，v1.5.17）。
+     *
+     * ## 为什么需要它
+     *
+     * CodeTask 工具的 description / schema 是静态的（DI 期构建），只列四
+     * 内置类型——用户在「设置 → 子代理 → 自定义类型」里配置的角色对主
+     * 模型**不可见**，只能靠调用失败后的错误提示摸黑试错。本函数把已配置
+     * 的自定义类型（key + 职责描述 + 工具白名单）编成一段目录，由 VM 发送
+     * 前拼进会话附加段（sessionExtras 通道），主模型由此知道有哪些角色
+     * 可委派、各适合什么活。
+     *
+     * ## 形态
+     *
+     * ```text
+     * ### 可用自定义子代理类型（CodeTask 的 subagent_type=custom + custom_name）
+     * - api-auditor — 审计 OpenAPI 定义与实现的一致性（工具：CodeRead, CodeGrep）
+     * - perf-analyst — 定位热点与冗余调用，给出量化结论
+     * ```
+     *
+     * @param types 设置层自定义类型清单；空清单 / 全部 key 无效时返回空串
+     *   （调用方按空串跳过注入，零 token 开销）。无描述的类型回退展示名。
+     */
+    fun customTypeCatalog(types: List<CustomSubAgent>): String {
+        if (types.isEmpty()) return ""
+        val lines = types.mapNotNull { t ->
+            val key = t.key.trim()
+            if (key.isEmpty()) return@mapNotNull null
+            val tools = t.toolIds.filter { it.isNotBlank() }
+                .joinToString(", ")
+                .takeIf { it.isNotEmpty() }
+                ?.let { "（工具：$it）" }
+                .orEmpty()
+            val desc = t.description.trim()
+            "- $key — ${if (desc.isEmpty()) t.displayName.trim() else desc}$tools"
+        }
+        if (lines.isEmpty()) return ""
+        return buildString {
+            appendLine("### 可用自定义子代理类型（CodeTask 的 subagent_type=custom + custom_name）")
+            appendLine("委派时在 CodeTask 里传 subagent_type=custom、custom_name=<下列 key>；描述给一句话任务、prompt 给自包含完整指令。")
+            lines.forEach { appendLine(it) }
+        }.trimEnd()
+    }
 }

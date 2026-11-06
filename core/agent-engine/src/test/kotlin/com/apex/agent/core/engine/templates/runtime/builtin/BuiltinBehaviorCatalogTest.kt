@@ -30,14 +30,17 @@ class BuiltinBehaviorCatalogTest {
     @Test
     fun `catalog keys match builtin template ids exactly`() {
         assertEquals(BuiltinPromptTemplates.BUILTIN_IDS, BuiltinBehaviorCatalog.ALL.keys)
-        assertEquals(10, BuiltinBehaviorCatalog.ALL.size)
+        assertEquals(3, BuiltinBehaviorCatalog.ALL.size)
     }
 
     @Test
     fun `lookup and miss behave`() {
         assertNotNull(BuiltinBehaviorCatalog.behaviorFor("builtin_code_review"))
         assertEquals(null, BuiltinBehaviorCatalog.behaviorFor("tpl_user_defined"))
-        assertTrue(BuiltinBehaviorCatalog.hasBehaviorFor("builtin_translate"))
+        assertTrue(BuiltinBehaviorCatalog.hasBehaviorFor("builtin_test_cases"))
+        assertTrue(BuiltinBehaviorCatalog.hasBehaviorFor("builtin_browser_expert"))
+        // 已删除的 Agent 族模板不再入目录
+        assertTrue(!BuiltinBehaviorCatalog.hasBehaviorFor("builtin_translate"))
         assertTrue(!BuiltinBehaviorCatalog.hasBehaviorFor("builtin_ghost"))
     }
 
@@ -58,18 +61,15 @@ class BuiltinBehaviorCatalogTest {
     }
 
     @Test
-    fun `payloadOnly contract only used by translate`() {
+    fun `payloadOnly contract not used by structural behaviors`() {
+        // 翻译模板（纯载荷契约）已随 Agent 族删除；存续行为均为结构化章节契约
         for ((id, behavior) in BuiltinBehaviorCatalog.ALL) {
             val payloadOnly = behavior.manifest().outputContract.payloadOnly
-            if (id == "builtin_translate") {
-                assertTrue("翻译必须是纯载荷契约", payloadOnly)
-            } else {
-                assertTrue("$id 不应使用纯载荷契约（需要结构化章节）", !payloadOnly)
-                assertTrue(
-                    "$id 契约缺少必需章节",
-                    behavior.manifest().outputContract.requiredTitles.isNotEmpty()
-                )
-            }
+            assertTrue("$id 不应使用纯载荷契约（需要结构化章节）", !payloadOnly)
+            assertTrue(
+                "$id 契约缺少必需章节",
+                behavior.manifest().outputContract.requiredTitles.isNotEmpty()
+            )
         }
     }
 
@@ -91,27 +91,9 @@ class BuiltinBehaviorCatalogTest {
     /** 每个内置模板的代表性输入（冒烟用：全链路跑通 + 确定性）。 */
     private val smokeInputs: Map<String, Map<String, String>> = mapOf(
         "builtin_code_review" to mapOf("code" to "fun a() {\n    val x = p!!.name\n}", "language" to "kotlin"),
-        "builtin_commit_message" to mapOf(
-            "changes" to "diff --git a/x.kt b/x.kt\n--- a/x.kt\n+++ b/x.kt\n@@ -1,2 +1,3 @@\n ctx\n-old\n+new\n+add",
-            "style" to "conventional commits"
-        ),
-        "builtin_translate" to mapOf("text" to "系统启用熔断与灰度发布。", "target_language" to "英文", "domain" to "技术"),
-        "builtin_summarize" to mapOf("content" to "延迟从 320ms 降到 45ms。命中率提升 30%。不支持降级。", "length" to "200 字以内"),
-        "builtin_refactor_plan" to mapOf(
-            "code" to "fun tangled(a: Int): Int {\n    if (a > 1) {\n        if (a > 2) {\n            if (a > 3) {\n                return a\n            }\n        }\n    }\n    return 0\n}",
-            "goal" to "降低嵌套"
-        ),
-        "builtin_bug_report" to mapOf(
-            "symptom" to "提交后应用崩溃",
-            "reproduce" to "1. 打开订单页\n2. 点击提交（每次必现）",
-            "expected" to "提交成功",
-            "actual" to "应用闪退",
-            "environment" to "Android 15 / 2.3.1"
-        ),
-        "builtin_api_design" to mapOf("requirement" to "查询商品列表、创建订单、订单审核", "style" to "RESTful"),
         "builtin_test_cases" to mapOf("code" to "fun calc(amount: Int, coupon: String?): Int = 0", "framework" to "JUnit"),
-        "builtin_tech_doc" to mapOf("topic" to "模板行为运行时", "audience" to "新成员"),
-        "builtin_regex_explain" to mapOf("pattern" to "^(\\d{4})-(\\d{2})$", "sample" to "2024-01")
+        // 角色模板（无变量）：激活即授角色 + 注入纪律附录
+        "builtin_browser_expert" to emptyMap()
     )
 
     @Test
@@ -155,15 +137,8 @@ class BuiltinBehaviorCatalogTest {
     /** 冒烟回包（对多数行为是「不完美但可解析」的形态 —— 验证链路不崩即可）。 */
     private fun smokeResponseFor(templateId: String): String = when (templateId) {
         "builtin_code_review" -> "## 总体结论\n有条件通过。\n\n## 问题清单\n1. 🔴 阻断 非空断言风险"
-        "builtin_commit_message" -> "## 提交信息\n```\nfeat(x): add new line\n\n- 说明\n```"
-        "builtin_translate" -> "The system enables circuit breaking and canary release."
-        "builtin_summarize" -> "## 一句话结论\n性能显著改善。\n\n## 要点\n- 延迟从 320ms 降到 45ms\n- 命中率提升 30%\n- 不支持降级"
-        "builtin_refactor_plan" -> "## 现状问题诊断\n- 嵌套过深\n\n## 分步重构方案\n1. 补测试\n2. 卫语句化\n\n## 每步的风险与回滚\n- 低风险\n\n## 重构完成后的验证清单\n- 测试全绿"
-        "builtin_bug_report" -> "## 标题\n提交崩溃\n\n## 严重程度评估\n🔴 阻断\n\n## 可能原因分析\n1. 空指针\n\n## 下一步排查建议\n抓堆栈"
-        "builtin_api_design" -> "## 资源与端点清单\n- GET /orders\n\n## 请求与响应结构\n{ id }\n\n## 错误码设计\n400\n\n## 横切关注点说明\n游标分页"
         "builtin_test_cases" -> "## 等价类与边界条件\n- 0/1/-1\n\n## 覆盖矩阵\n- 正常 1\n\n## 测试代码\n```\n@Test fun t() {}\n```"
-        "builtin_tech_doc" -> "## 一句话概述与适用场景\n概述。\n\n## 背景与动机\n背景。\n\n## 核心概念与工作原理\n原理。\n\n## 使用示例\n```\nx()\n```\n\n## 常见问题与注意事项\n问题。"
-        "builtin_regex_explain" -> "## 整体作用\n匹配日期。\n\n## 逐段拆解\n1. ^ 行首\n\n## 匹配与不匹配示例\n- 匹配：2024-01\n- 不匹配：24-1\n\n## 性能陷阱与简化建议\n无"
+        "builtin_browser_expert" -> "## 任务理解与拆解\n登录并抓取订单列表。\n\n## BrowserTask 步骤编排\n1. NavigateAsync 打开登录页\n2. 填表提交（wait_for network_idle）\n3. BrowserSnapshot focused(订单表)\n\n## 风险与人工确认点\n- 登录失败：CHECKPOINT 暂停交用户"
         else -> "通用回包"
     }
 

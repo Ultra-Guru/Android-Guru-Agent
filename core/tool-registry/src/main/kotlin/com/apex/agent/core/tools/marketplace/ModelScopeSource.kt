@@ -13,7 +13,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.IOException
 
 /**
  * 魔搭（ModelScope）集成源
@@ -70,43 +69,69 @@ class ModelScopeSource(
         val files: List<String>    // 插件目录内全部文件路径
     )
 
-    /** 列出仓库中全部可用 Skill（GitHub git/trees API，无需 token）。 */
-    suspend fun listSkills(): Result<List<ModelScopeSkill>> = withContext(Dispatchers.IO) {
-        try {
-            val tree = fetchTree() ?: return@withContext Result.failure(
-                Exception("无法读取 modelscope-skills 仓库目录（网络不可达或被限流）")
-            )
-            val skillDirs = tree
-                .filter { it.startsWith("skills/") && it.endsWith("/SKILL.md") }
-                .map { it.removeSuffix("/SKILL.md") }
-                .sorted()
+    /**
+     * 列出仓库中全部可用 Skill（GitHub git/trees API，无需 token）。
+     *
+     * #354 取消传播（确定性）：CancellationException 不作为异常穿过
+     * `withContext(Dispatchers.IO)` 边界 —— 其完成机制对块内抛出的 CE 存在
+     * 时序敏感的实例替换竞态（JUnitCore 直跑与 Gradle 全量并行下行为不同）。
+     * CE 在块内捕获后作为数据携带，边界外**原实例**重抛：取消语义不变，
+     * assertSame 级别的实例保真有确定保证。
+     */
+    suspend fun listSkills(): Result<List<ModelScopeSkill>> {
+        var cancelled: kotlinx.coroutines.CancellationException? = null
+        val result = withContext(Dispatchers.IO) {
+            try {
+                val tree = fetchTree() ?: return@withContext Result.failure(
+                    Exception("无法读取 modelscope-skills 仓库目录（网络不可达或被限流）")
+                )
+                val skillDirs = tree
+                    .filter { it.startsWith("skills/") && it.endsWith("/SKILL.md") }
+                    .map { it.removeSuffix("/SKILL.md") }
+                    .sorted()
 
-            // P2-5：frontmatter 抓取改 Semaphore(4) 受控并发 —— 串行时几十上百
-            // 个技能目录要数十秒；map + awaitAll 保证结果顺序与目录序一致，
-            // 单条失败保留条目（对齐「抓到但无 frontmatter」的既有回退分支）。
-            val semaphore = Semaphore(FRONTMATTER_CONCURRENCY)
-            val skills = coroutineScope {
-                skillDirs.map { dir ->
-                    async {
-                        val id = dir.substringAfterLast('/')
-                        // 只抓 SKILL.md 头部做 frontmatter 解析（64KB 截断读，省流量）
-                        val frontmatter = semaphore.withPermit {
-                            fetchFrontmatter("$dir/SKILL.md")
+                // #354 ③：先把整棵树按「技能目录」分一次桶，之后每个技能 O(1)
+                // 取自己的文件清单。旧实现每个 skillDir 都全量扫一遍 tree.filter，
+                // 复杂度 O(技能数 × 文件数) —— 上百技能 × 数千文件时是纯浪费
+                // （结果完全相同，只是重复比较字符串前缀）。
+                val filesBySkillDir = bucketSkillFiles(tree, skillDirs.toSet())
+
+                // P2-5：frontmatter 抓取改 Semaphore(4) 受控并发 —— 串行时几十上百
+                // 个技能目录要数十秒；map + awaitAll 保证结果顺序与目录序一致，
+                // 单条失败保留条目（对齐「抓到但无 frontmatter」的既有回退分支）。
+                val semaphore = Semaphore(FRONTMATTER_CONCURRENCY)
+                val skills = coroutineScope {
+                    skillDirs.map { dir ->
+                        async {
+                            val id = dir.substringAfterLast('/')
+                            // 只抓 SKILL.md 头部做 frontmatter 解析（64KB 截断读，省流量）
+                            val frontmatter = semaphore.withPermit {
+                                fetchFrontmatter("$dir/SKILL.md")
+                            }
+                            ModelScopeSkill(
+                                id = id,
+                                name = frontmatter?.first ?: id,
+                                description = frontmatter?.second ?: "",
+                                path = "$dir/SKILL.md",
+                                files = filesBySkillDir[dir].orEmpty()
+                            )
                         }
-                        ModelScopeSkill(
-                            id = id,
-                            name = frontmatter?.first ?: id,
-                            description = frontmatter?.second ?: "",
-                            path = "$dir/SKILL.md",
-                            files = tree.filter { it.startsWith("$dir/") }
-                        )
-                    }
-                }.awaitAll()
+                    }.awaitAll()
+                }
+                Result.success(skills)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // #354：取消不吞 —— token provider 抛出的 CancellationException 是
+                // 调用方的取消意图，不是列表失败；折叠成 Result.failure 会把取消
+                // 静默变成「成功返回了一个失败结果」，取消方永远等不到传播。
+                // 捕获后经 [cancelled] 携带，边界外原实例重抛（见上）。
+                cancelled = e
+                Result.failure(e) // 占位返回值：外层检测到 [cancelled] 后丢弃并原实例重抛
+            } catch (e: Exception) {
+                Result.failure(Exception("ModelScope 列表失败: ${e.message}"))
             }
-            Result.success(skills)
-        } catch (e: Exception) {
-            Result.failure(Exception("ModelScope 列表失败: ${e.message}"))
         }
+        cancelled?.let { throw it }
+        return result
     }
 
     /** 下载某个 Skill 的 SKILL.md 全文（用于转 apex-skill-v1 manifest）。 */
@@ -232,8 +257,48 @@ class ModelScopeSource(
             bearerForRawOnly = gitHubTokenProvider()
         )
         String(bytes, Charsets.UTF_8)
-    } catch (e: IOException) {
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        // #354：取消照常传播（不得折叠成 null —— 那是「下载失败」的语义）。
+        throw e
+    } catch (e: Exception) {
+        // #354：token provider 异常与网络 IO 统一折叠为 null，由调用方以
+        // Result 报失败。旧实现只捕 IOException：provider 抛出的
+        // IllegalStateException 会直接击穿 fetchSkillMarkdown / fetchSkillResource
+        // 的 withContext 边界，把整个安装流程炸成未捕获异常。
         null
+    }
+
+    /**
+     * 把仓库整棵树按「技能目录」分桶（#354 ③）。
+     *
+     * 旧实现为每个技能目录全量重扫 `tree.filter { it.startsWith("$dir/") }`，
+     * 复杂度 O(技能数 × 文件数)：上百技能 × 数千文件时要做几十万次前缀比较，
+     * 且每轮都在 IO 调度之外重复分配。这里只扫一遍树：
+     * - 文件路径按 `/` 逐级回溯，命中 [skillDirs] 的最长前缀即归入该技能；
+     * - 只保留**已知技能目录**（`skills/<id>/SKILL.md` 存在的那些），
+     *   避免把 `skills/` 下的游离文件塞进某个技能；
+     * - 结果与旧实现的 `startsWith` 口径一致（同样含 SKILL.md 自身与子目录
+     *   结尾带 `/` 的目录项），因此下游 `MarketInstallManager` 的
+     *   `filter { it != skill.path && !it.endsWith("/") }` 行为不变。
+     */
+    private fun bucketSkillFiles(
+        tree: List<String>,
+        skillDirs: Set<String>
+    ): Map<String, List<String>> {
+        if (skillDirs.isEmpty()) return emptyMap()
+        val buckets = LinkedHashMap<String, MutableList<String>>(skillDirs.size)
+        for (path in tree) {
+            var idx = path.lastIndexOf('/')
+            while (idx > 0) {
+                val candidate = path.substring(0, idx)
+                if (candidate in skillDirs) {
+                    buckets.getOrPut(candidate) { mutableListOf() } += path
+                    break
+                }
+                idx = candidate.lastIndexOf('/')
+            }
+        }
+        return buckets
     }
 
     companion object {

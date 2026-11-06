@@ -179,8 +179,6 @@ class DiagnosticsViewModel @Inject constructor(
                         id = s.manifest.id,
                         name = s.manifest.name,
                         version = s.manifest.version,
-                        enabledAgent = s.enabledAgent,
-                        enabledCoding = s.enabledCoding,
                         toolCount = s.manifest.tools.size
                     )
                 }

@@ -16,8 +16,10 @@ import androidx.compose.ui.graphics.Color
  *
  * 色值全部取自仓内既有色（终端琥珀 FFB454 = 品牌 amber 身份、语法
  * 高亮绿 4ADE80、Mint 浅色族 15803D / B45309），非外来色；明暗成对
- * 定义，四值在各自背景下均 >= 4.5:1（AA）。danger 不新建 —— 复用
- * colorScheme.error（已成对，暗 E57390 / 亮 BA1A4A）。
+ * 定义；success/warning 前景色须按其使用背景验收。新增的警告容器/文字
+ * 也成对校验对比度（见 WarningContainerContrastTest）。它们按 ApexTheme
+ * 的 darkTheme 选择，动态取色路径同样注入，但不从 Material You 派生。
+ * danger 不新建 —— 复用 colorScheme.error（已成对）。
  *
  * 注入见 Theme.kt（ApexTheme 内 CompositionLocalProvider），dynamicColor
  * 路径同样适用 —— 扩展色独立于 accent 派生，不随 Material You 漂移。
@@ -25,19 +27,26 @@ import androidx.compose.ui.graphics.Color
 @Immutable
 data class ExtendedColors(
     val success: Color,
-    val warning: Color
+    val warning: Color,
+    /** 警告底色与前景色必须成对使用；不能把 warning 文字色直接当背景色。 */
+    val warningContainer: Color,
+    val onWarningContainer: Color
 ) {
     companion object {
         /** 深色基底（近黑带蓝）：亮字色，视觉延续既有品牌观感（去霓虹重调后保持同族）。 */
         val Dark = ExtendedColors(
             success = Color(0xFF4ADE80), // 语法高亮既有绿，深底 10.6:1
-            warning = Color(0xFFFFB454) // 终端琥珀 = 品牌 amber 身份
+            warning = Color(0xFFFFB454), // 终端琥珀 = 品牌 amber 身份
+            warningContainer = Color(0xFFE8A33D), // 旧横幅/反馈背景
+            onWarningContainer = Color.Black // 亮琥珀底用深色字
         )
 
         /** 浅色基底：深一档的同族色，对浅底达 AA。 */
         val Light = ExtendedColors(
             success = Color(0xFF15803D), // Mint 浅色族绿，5.0:1
-            warning = Color(0xFFB45309) // 琥珀深档，5.0:1
+            warning = Color(0xFFB45309), // 琥珀深档，5.0:1
+            warningContainer = Color(0xFFB45309),
+            onWarningContainer = Color.White
         )
     }
 }

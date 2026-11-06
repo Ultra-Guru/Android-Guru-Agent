@@ -19,10 +19,19 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# 最小权限默认（#353-③）：static-analysis / app-compile / foundry-build 三 job
+# 原先继承仓库默认（若 read-write 则过权）。build-apk 自带块（contents: read
+# + pull-requests: write）完全覆盖本默认，不受影响。
+permissions:
+  contents: read
+
 jobs:
   static-analysis:
     name: Static Analysis
     runs-on: ubuntu-latest
+    # #353-①：全仓唯一无超时 job —— kotlinc 挂起会烧默认 360 分钟。
+    # 30 分钟对静态分析（无 Gradle 构建，kotlinc 裸编译单文件族）余量充足。
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -84,7 +93,13 @@ jobs:
           path: |
             ~/kotlinc
             /tmp/apex-libs
-          key: kotlinc-2.3.21-libs-v1
+          # #353-⑤：key 拼 jar 清单哈希 —— 旧实现是静态字符串
+          # `kotlinc-2.3.21-libs-v1`，清单加 jar 却忘了 bump 版本号时，
+          # 缓存永远命中旧内容，新 jar 每次 run 都要重新下载（而且清单
+          # 与下载循环是两处手写，改一处漏一处不会报错）。
+          # 现在清单是 scripts/static-analysis-deps.txt（单一事实源），
+          # 清单变 → hash 变 → 缓存自动失效；kotlinc 版本仍显式带上。
+          key: kotlinc-2.3.21-libs-${{ hashFiles('scripts/static-analysis-deps.txt') }}
 
       - name: Install Kotlin compiler
         run: |
@@ -95,36 +110,22 @@ jobs:
           echo "$HOME/kotlinc/bin" >> $GITHUB_PATH
 
       - name: Download Maven dependencies
+        # #353-⑤：清单与下载循环同源（scripts/static-analysis-deps.txt），
+        # 不再有两处手写列表不同步的风险；失败即 exit 1（旧实现 curl -sL
+        # 无 -f，404 会把错误页写成 .jar 然后继续编译）。
+        run: scripts/fetch_static_analysis_deps.sh /tmp/apex-libs
+
+      - name: Provider connection draft regression (production Kotlin + JUnit)
         run: |
-          mkdir -p /tmp/apex-libs
-          # Skip downloads when the cache hit already provisioned every jar.
-          NEED_DL=0
-          for jar in kotlin-stdlib-2.3.21.jar \
-                     kotlinx-coroutines-core-jvm-1.10.2.jar \
-                     kotlinx-serialization-json-jvm-1.9.0.jar \
-                     kotlinx-serialization-core-jvm-1.9.0.jar \
-                     okhttp-4.12.0.jar \
-                     okio-jvm-3.6.0.jar; do
-            [ -f "/tmp/apex-libs/$jar" ] || NEED_DL=1
-          done
-          if [ "$NEED_DL" -eq 0 ]; then
-            echo "✅ All Maven jars restored from cache"
-            exit 0
-          fi
-          KOTLIN_VER=2.3.21
-          COROUTINES_VER=1.10.2
-          SERIALIZATION_VER=1.9.0
-          OKHTTP_VER=4.12.0
-          for dep in \
-            "org/jetbrains/kotlin/kotlin-stdlib/$KOTLIN_VER/kotlin-stdlib-$KOTLIN_VER.jar" \
-            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/$COROUTINES_VER/kotlinx-coroutines-core-jvm-$COROUTINES_VER.jar" \
-            "org/jetbrains/kotlinx/kotlinx-serialization-json-jvm/$SERIALIZATION_VER/kotlinx-serialization-json-jvm-$SERIALIZATION_VER.jar" \
-            "org/jetbrains/kotlinx/kotlinx-serialization-core-jvm/$SERIALIZATION_VER/kotlinx-serialization-core-jvm-$SERIALIZATION_VER.jar" \
-            "com/squareup/okhttp3/okhttp/$OKHTTP_VER/okhttp-$OKHTTP_VER.jar" \
-            "com/squareup/okio/okio-jvm/3.6.0/okio-jvm-3.6.0.jar"; do
-            fname=$(basename "$dep")
-            curl -sL "https://repo1.maven.org/maven2/$dep" -o "/tmp/apex-libs/$fname"
-          done
+          set -euo pipefail
+          curl -fsSL --retry 3 https://repo.maven.apache.org/maven2/junit/junit/4.13.2/junit-4.13.2.jar -o /tmp/apex-libs/junit-4.13.2.jar
+          curl -fsSL --retry 3 https://repo.maven.apache.org/maven2/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar -o /tmp/apex-libs/hamcrest-core-1.3.jar
+          CP="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')"
+          kotlinc -jvm-target 17 -cp "$CP" -d /tmp/build/provider-drafts \
+            app/src/main/kotlin/com/apex/agent/ui/screen/settings/ProviderConnectionEditor.kt \
+            app/src/test/kotlin/com/apex/agent/ui/screen/settings/ProviderConnectionEditorTest.kt
+          java -cp "/tmp/build/provider-drafts:$CP" org.junit.runner.JUnitCore \
+            com.apex.agent.ui.screen.settings.ProviderConnectionEditorTest
 
       - name: Compile core:logging
         run: |
@@ -157,6 +158,22 @@ jobs:
           kotlinc -Xplugin=$SER_PLUGIN -cp "$CLASSPATH" -d /tmp/build/tool-registry \
             $(find core/tool-registry/src/main/kotlin -name "*.kt") \
             -jvm-target 17
+
+      - name: MCP aggregation regression tests
+        run: |
+          set -euo pipefail
+          for dep in \
+            junit/junit/4.13.2/junit-4.13.2.jar \
+            org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar \
+            org/jetbrains/kotlinx/kotlinx-coroutines-test-jvm/1.10.2/kotlinx-coroutines-test-jvm-1.10.2.jar; do
+            curl --fail --silent --show-error --location --retry 3 "https://repo.maven.apache.org/maven2/$dep" -o "/tmp/apex-libs/$(basename "$dep")"
+          done
+          CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')/tmp/build/llm-adapter:/tmp/build/logging:/tmp/build/tool-registry"
+          kotlinc -cp "$CLASSPATH" -d /tmp/build/mcp-tests \
+            core/tool-registry/src/test/kotlin/com/apex/agent/core/tools/mcp/McpManagerToolAggregationTest.kt \
+            -jvm-target 17
+          kotlin -cp "$CLASSPATH:/tmp/build/mcp-tests" org.junit.runner.JUnitCore \
+            com.apex.agent.core.tools.mcp.McpManagerToolAggregationTest
 
       - name: Compile core:agent-engine
         run: |
@@ -214,6 +231,21 @@ jobs:
           kotlinc -Xplugin=$SER_PLUGIN -cp "$CLASSPATH" -d /tmp/build/code-engine \
             $(find core/code-engine/src/main/kotlin -name "*.kt") \
             -jvm-target 17
+
+      - name: Kit request sanitizer regression tests
+        run: |
+          # 中止后继续的悬空 toolCall 400 自愈回归（KitRequestSanitizer）：
+          # kit 三线（标准/织造/信使）请求出站消毒的行为契约 —— 悬空合成 /
+          # 中部配对修复（中止后继续场景）/ 孤儿丢弃 / 幂等 / 协议形态校验。
+          # friend-paths 让测试编译可见 main 编译的 internal 声明（Gradle
+          # test 同款语义），junit/hamcrest 由前置步骤已下载进 /tmp/apex-libs。
+          set -euo pipefail
+          CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')/tmp/build/code-engine:/tmp/build/standard-loop:/tmp/build/loom-weave:/tmp/build/courier-dispatch:/tmp/build/agent-engine:/tmp/build/tool-registry:/tmp/build/llm-adapter:/tmp/build/logging"
+          kotlinc -Xfriend-paths=/tmp/build/code-engine -cp "$CLASSPATH" -d /tmp/build/code-engine-tests \
+            core/code-engine/src/test/kotlin/com/apex/agent/core/code/KitRequestSanitizerTest.kt \
+            -jvm-target 17
+          java -cp "/tmp/build/code-engine:/tmp/build/code-engine-tests:$CLASSPATH" org.junit.runner.JUnitCore \
+            com.apex.agent.core.code.KitRequestSanitizerTest
 
       - name: Compile platform:code-workspace (编码工作区管理)
         run: |
@@ -474,8 +506,27 @@ jobs:
         with:
           gradle-version: '8.14'
 
-      - name: Generate Gradle wrapper
-        run: gradle wrapper --gradle-version 8.14
+      - name: Verify Gradle wrapper is in sync with CI
+        # #353-⑥：旧实现每 job 跑 `gradle wrapper --gradle-version 8.14`，
+        # 把仓库里已提交的 wrapper **覆盖回 8.14**。后果：有人升级
+        # gradle-wrapper.properties（例如为了新版 AGP）后，CI 仍然强制用
+        # 8.14 构建 —— 本地能过、CI 过、发布产物与仓库声明脱钩，且全程无告警。
+        # wrapper 本身已入库（gradlew + gradle-wrapper.jar + properties），
+        # 生成动作纯冗余；改为**校验**：版本不一致就红，让漂移可见。
+        run: |
+          set -euo pipefail
+          PROP=gradle/wrapper/gradle-wrapper.properties
+          [ -f "$PROP" ] || { echo "::error::$PROP missing — wrapper must be committed"; exit 1; }
+          [ -f gradle/wrapper/gradle-wrapper.jar ] || { echo "::error::gradle-wrapper.jar missing — wrapper must be committed"; exit 1; }
+          WANTED=$(grep -E '^distributionUrl=' "$PROP" | sed -E 's#.*gradle-([0-9.]+)-(bin|all)\.zip#\1#')
+          [ -n "$WANTED" ] || { echo "::error::cannot parse distributionUrl in $PROP"; exit 1; }
+          if [ "$WANTED" != "8.14" ]; then
+            echo "::error::Gradle wrapper is $WANTED but this job pins 8.14."
+            echo "Fix: update gradle-version in .github/workflows/ci.yml to $WANTED"
+            echo "     (or revert $PROP) — do NOT let CI silently override the wrapper."
+            exit 1
+          fi
+          echo "✅ Gradle wrapper $WANTED matches CI pin"
 
       - name: Prewarm dependencies (retry on JitPack flakiness)
         run: |
@@ -632,11 +683,28 @@ jobs:
           fi
 
           # Separate KSP errors from Kotlin compilation errors
-          KSP_ERRORS=$(grep -c "\[ksp\]\|Error occurred in KSP\|daemon has terminated" build.log || true)
-          KOTLIN_ERRORS=$(grep -E "^e: " build.log | grep -v "\[ksp\]\|Error occurred in KSP\|daemon has terminated" | wc -l || true)
+          # #353-②：`daemon has terminated` 原先被并进 KSP 计数，随后整段以
+          # exit 0 收场 —— 一次 Kotlin daemon 崩溃（真正的基础设施故障）会被
+          # 判成「pre-existing Hilt 配置问题」并给绿灯。现在把它单列并硬失败。
+          DAEMON_CRASHES=$(grep -c "daemon has terminated" build.log || true)
+          # 只数**错误**行：`w: [ksp] …` 是注解处理器的 warning，把 warning
+          # 算成 error 会让这条门禁变成噪音源（旧实现的 `grep -c "\[ksp\]"`
+          # 就同时匹配了 w: 与 e:）。
+          KSP_ERRORS=$(grep -cE "^e: .*\[ksp\]|Error occurred in KSP" build.log || true)
+          KOTLIN_ERRORS=$(grep -E "^e: " build.log | grep -v "\[ksp\]" | wc -l || true)
 
+          echo "  Kotlin daemon crashes: $DAEMON_CRASHES"
           echo "  KSP/Hilt annotation errors: $KSP_ERRORS"
           echo "  Kotlin compilation errors: $KOTLIN_ERRORS"
+
+          if [ "$DAEMON_CRASHES" -gt 0 ]; then
+            echo ""
+            echo "❌ Kotlin compiler daemon terminated during the build."
+            echo "   This is an infrastructure failure (OOM / crash), not a code error —"
+            echo "   the build result below is NOT trustworthy. Re-run the job."
+            grep -n "daemon has terminated" build.log | head -5
+            exit 1
+          fi
 
           if [ "$KOTLIN_ERRORS" -gt 0 ]; then
             echo ""
@@ -647,14 +715,13 @@ jobs:
 
           if [ "$KSP_ERRORS" -gt 0 ]; then
             echo ""
-            echo "⚠️ KSP/Hilt annotation processing failed, but all Kotlin code compiles."
-            echo "   This is a pre-existing Hilt DI configuration issue, not a code error."
-            echo "   KSP errors (for reference):"
-            grep "\[ksp\]" build.log | head -10
-            echo ""
-            echo "   ✅ Kotlin compilation: PASSED"
-            echo "   ⚠️ Hilt KSP: FAILED (pre-existing DI config issue)"
-            exit 0
+            echo "❌ KSP / Hilt annotation processing failed."
+            echo "   Hilt codegen 是 app 可运行的前提：KSP 失败时 assembleDebug 打出的"
+            echo "   APK 缺少 Dagger 组件，装上去会崩在启动期。旧实现此处 exit 0 并打印"
+            echo "   「✅ Kotlin compilation: PASSED」——绿灯误导（#353-②）。"
+            echo "   KSP errors:"
+            grep -E "^e: .*\[ksp\]|Error occurred in KSP" build.log | head -20
+            exit 1
           fi
 
           echo "⚠️ Unexpected failure — last 30 lines:"
@@ -848,8 +915,20 @@ jobs:
         with:
           gradle-version: '8.14'
 
-      - name: Generate Gradle wrapper
-        run: gradle wrapper --gradle-version 8.14
+      - name: Verify Gradle wrapper is in sync with CI
+        # #353-⑥：同上 —— wrapper 已入库，生成是冗余；改成校验让漂移可见。
+        run: |
+          set -euo pipefail
+          PROP=gradle/wrapper/gradle-wrapper.properties
+          [ -f "$PROP" ] || { echo "::error::$PROP missing — wrapper must be committed"; exit 1; }
+          [ -f gradle/wrapper/gradle-wrapper.jar ] || { echo "::error::gradle-wrapper.jar missing — wrapper must be committed"; exit 1; }
+          WANTED=$(grep -E '^distributionUrl=' "$PROP" | sed -E 's#.*gradle-([0-9.]+)-(bin|all)\.zip#\1#')
+          [ -n "$WANTED" ] || { echo "::error::cannot parse distributionUrl in $PROP"; exit 1; }
+          if [ "$WANTED" != "8.14" ]; then
+            echo "::error::Gradle wrapper is $WANTED but this job pins 8.14."
+            exit 1
+          fi
+          echo "✅ Gradle wrapper $WANTED matches CI pin"
 
       - name: Stage bundled Ubuntu rootfs (T83 内置交付)
         run: |

@@ -44,6 +44,11 @@ class ApexCoreService : LifecycleService() {
     @Inject
     lateinit var cyberNeonBall: CyberNeonBallManager
 
+    // v2.1.0：浏览器角色授权面初始化（BrowserRoleAuth.attach 设置读取器）——
+    // RoleGate/目录过滤/CapabilityReport 的授予集自此现取设置（热生效）。
+    @Inject
+    lateinit var browserRoleAuthInit: com.apex.agent.tools.BrowserRoleAuthInitializer
+
     // 内置浏览器引擎（长会话内存维护钩子 onTrimMemory）
     @Inject
     lateinit var browserEngine: BrowserEngine

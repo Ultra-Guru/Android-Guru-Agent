@@ -114,6 +114,24 @@ jobs:
       - name: Tool ID uniqueness regression suite
         run: python3 scripts/test_check_tool_ids.py
 
+      # #353 剩余子项的契约回归：CI 门禁本身不许回退（KSP 绿灯 / wrapper 覆盖 /
+      # grep -H / rootfs 坏档自愈）。这些改动改的都是「门禁的可靠性」，一旦被
+      # 后续 PR 悄悄改回去，没有任何其它检查会发现 —— 只能靠本套件钉住。
+      - name: CI gate integrity regression suite
+        run: python3 scripts/test_ci_gate_integrity.py
+
+      # #353-⑤：static-analysis 的 Maven 清单必须与 cache key 同源（单一事实源）。
+      - name: Static-analysis dependency manifest contract
+        run: python3 scripts/test_fetch_static_analysis_deps.py
+
+      # #268：锁定备份/恢复结果反馈使用现有明暗状态色入口。
+      - name: Backup feedback status-color wiring
+        run: python3 scripts/test_backup_feedback_status_color.py
+
+      # #270：同款顶栏选择器的弱描边共享一个主题语义入口。
+      - name: Chat selector outline token wiring
+        run: python3 scripts/test_selector_outline_token.py
+
   workflow-metadata:
     name: Run Metadata
     runs-on: ubuntu-latest

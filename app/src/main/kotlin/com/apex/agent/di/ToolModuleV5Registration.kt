@@ -145,6 +145,12 @@ internal fun registerV5EnhancementTools(
         capturer = { params -> cameraCapturer.capture(params) }
     )))
     registry.register(SafeAgentTool(NotificationPostTool(
-        poster = { params -> notificationPoster.post(params) }
+        poster = { params -> notificationPoster.post(params) },
+        // #354 ⑥：只允许宿主预建的两个渠道 —— 模型不能再让系统批量创建渠道
+        //（Android 只允许用户逐个手动删除，属于不可逆状态污染）。
+        allowedChannelIds = setOf(
+            com.apex.agent.notify.ApexNotifications.CHANNEL_GENERAL,
+            com.apex.agent.notify.ApexNotifications.CHANNEL_TASK_DONE
+        )
     )))
 }

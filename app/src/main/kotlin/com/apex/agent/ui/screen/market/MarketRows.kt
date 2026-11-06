@@ -25,13 +25,6 @@ data class MarketSkillRow(
     val name: String,
     val description: String,
     val installed: Boolean,
-    /**
-     * per-scope 启停（双工位隔离）：Agent 分级 / Coding 分级的开关各自独立，
-     * 已安装管理页的 Switch 按当前 [MarketTier] 读写对应字段 —— 在 Coding 市场
-     * 关掉不影响 Agent 市场（修「两分级同步」问题）。
-     */
-    val enabledAgent: Boolean = true,
-    val enabledCoding: Boolean = true,
     val source: String = "",   // local / modelscope / github
     /**
      * true = App 内置模板：能力已在二进制里（工具原生注册），不存在"下载/安装"这一步。
@@ -77,12 +70,7 @@ data class MarketSkillRow(
     /** 是否低能量（需要被使用否则会衰减）。 */
     val isLowEnergy: Boolean get() = installed && energy < 0.5f && !isCrystallized
 
-    /** 双工位至少一开（旧消费方口径；分级开关请读 enabledAgent/enabledCoding）。 */
-    val enabled: Boolean get() = enabledAgent || enabledCoding
-
-    /** 当前分级下该行是否处于开启态（已安装管理页 Switch 的读写口径）。 */
-    fun enabledForTier(tier: MarketTier): Boolean =
-        if (tier == MarketTier.CODING) enabledCoding else enabledAgent
+    val enabled: Boolean get() = installed
 }
 
 data class MarketMcpRow(
@@ -128,16 +116,6 @@ enum class MarketScope(@StringRes val labelRes: Int) {
 }
 
 /**
- * #197 市场分级：双工位市场（与技能/MCP 的 scope 字段同源）。
- * - [AGENT] Agent 市场 —— 服务于 Agent 屏（聊天技能 / 联网搜索 / 记忆 / 思维链…）；
- * - [CODING] Coding 市场 —— 服务于 Coding 屏（开发技能 / GitHub / 文件系统 / 沙箱…）。
- */
-enum class MarketTier(@StringRes val labelRes: Int) {
-    AGENT(R.string.market_tier_agent),
-    CODING(R.string.market_tier_coding)
-}
-
-/**
  * 市场 · Skills 页签的仓库源切换：
  * - [LOCAL] —— 本地技能（已安装 + 内置模板 + 四个本地安装入口）；
  * - [HUB] —— 官方技能仓库（apex-skill-hub：内置瘦身后迁出的 62 个生活/通用
@@ -156,8 +134,6 @@ enum class SkillRepoSource(@StringRes val labelRes: Int) {
 data class MarketUiState(
     val scope: MarketScope = MarketScope.BROWSE,
     val selectedTab: MarketTab = MarketTab.PLUGINS,
-    // #197 市场分级（Agent 市场 / Coding 市场）
-    val tier: MarketTier = MarketTier.AGENT,
     // Skills
     val skills: List<MarketSkillRow> = emptyList(),
     val skillTemplates: List<MarketSkillRow> = emptyList(),

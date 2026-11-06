@@ -43,6 +43,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
+import com.apex.agent.ui.theme.LocalExtendedColors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicLong
@@ -67,8 +68,8 @@ import java.util.concurrent.atomic.AtomicLong
  * ```
  *
  * 视觉语言对齐 GlassComponents：INFO 走 surfaceVariant 中性档（轻、不抢焦点），
- * SUCCESS/WARNING/ERROR 用固定语义容器色 + 白字（WARNING 与 OfflineBanner
- * 的琥珀警示同一视觉锚点）。
+ * SUCCESS/ERROR 用固定语义容器色；WARNING 与 OfflineBanner 共用主题
+ * 容器/文字配对（深色亮琥珀配深字，浅色深琥珀配白字）。
  *
  * 与既有 `_uiFeedback`（AgentChatViewModel）的关系：语义重叠，迁移由主控完成
  * —— Screen 层收集后改调 `LocalFeedbackController.current.show(...)`，收敛后旁路可移除。
@@ -86,16 +87,12 @@ enum class FeedbackSeverity(@StringRes val labelRes: Int) {
 }
 
 /**
- * 语义容器色（#268/#269：明暗成对，白字内容两档全 AA）。
- * - 深色主题：品牌反馈绿 / 琥珀警示（与 OfflineBanner 同一锚点）/ 错误红；
- * - 浅色主题：同族深一档（与 ExtendedColors.Light 同族：15803D / B45309 /
- *   BA1A4A）—— 白字对浅色容器 4.5:1+，浅色主题对比度不再失控。
+ * SUCCESS/ERROR 存量局部容器色（本 PR 不处理）；WARNING 的容器与文字
+ * 已统一走 ExtendedColors（与 OfflineBanner 同一锚点），不在这里复制。
  */
 private val SuccessContainerDark = Color(0xFF3FB27F)
-private val WarningContainerDark = Color(0xFFE8A33D)
 private val ErrorContainerDark = Color(0xFFE5533D)
 private val SuccessContainerLight = Color(0xFF15803D)
-private val WarningContainerLight = Color(0xFFB45309)
 private val ErrorContainerLight = Color(0xFFBA1A4A)
 
 /**
@@ -230,13 +227,12 @@ private fun FeedbackSnackbar(data: SnackbarData) {
     val visuals = data.visuals as? FeedbackVisuals
     val severity = visuals?.severity ?: FeedbackSeverity.INFO
     val scheme = MaterialTheme.colorScheme
-    // #268/#269：明暗分档选容器 —— 白字内容在浅色主题同样达 AA（≥4.5:1）
+    val warningColors = LocalExtendedColors.current
+    // SUCCESS/ERROR 的存量选色逻辑不变；WARNING 改用主题明暗配对。
     val light = scheme.background.luminance() > 0.5f
 
     val containerColor: Color
-    // 白字是状态容器的语义内容色（Snackbar 同 Material onPrimary 范式）：
-    // 容器已在两档主题下校准对比度，这里经 onStatusContent 别名取词，
-    // 不再裸用 Color.White（#269：通用组件颜色直用收编）。
+    // 存量 SUCCESS/ERROR 的白字，仅服务于两档局部容器；WARNING 不再复用它。
     val onStatusContent = Color.White
     val contentColor: Color
     val actionColor: Color
@@ -255,9 +251,9 @@ private fun FeedbackSnackbar(data: SnackbarData) {
             icon = Icons.Filled.CheckCircle
         }
         FeedbackSeverity.WARNING -> {
-            containerColor = if (light) WarningContainerLight else WarningContainerDark
-            contentColor = onStatusContent
-            actionColor = onStatusContent
+            containerColor = warningColors.warningContainer
+            contentColor = warningColors.onWarningContainer
+            actionColor = warningColors.onWarningContainer
             icon = Icons.Outlined.Warning
         }
         FeedbackSeverity.ERROR -> {

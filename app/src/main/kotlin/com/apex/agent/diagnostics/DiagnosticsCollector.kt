@@ -49,7 +49,12 @@ data class DiagRow(val key: String, val value: String)
 class DiagnosticsCollector @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
-    private val dateTimeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+    /**
+     * #479：诊断报告是给**人读也是给 issue 贴**的机器可读文本 ——
+     * `yyyy` 在泰语区域（th-TH）会按佛历输出 2569，阿拉伯语区域会输出
+     * 阿拉伯-印度数字。维修者拿到这种时间戳无法与日志对时。固定 Locale.US。
+     */
+    private val dateTimeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
     private val reportNameFormat = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
 
     // ───────────────────────── 应用信息 ─────────────────────────

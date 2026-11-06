@@ -116,6 +116,15 @@ object BrowserKitModule {
     fun provideEngineDisplayController(engine: BrowserEngine): EngineDisplayController =
         EngineDisplayControllerFactory.get(engine)
 
+    /** v2.1.0：异步导航协议 + BrowserTask 工具集（5 个，ToolModule 注册进 registry）。 */
+    @Provides
+    @Singleton
+    fun provideBrowserAsyncTools(
+        engine: BrowserEngine,
+        tracer: com.apex.browser.engine.BrowserTracer,
+    ): com.apex.agent.platform.browser.BrowserAsyncTools =
+        com.apex.agent.platform.browser.BrowserAsyncTools(engine, tracer)
+
     /** v1.7.0：会话级浏览器工具集（9 个新工具，ToolModule 注册进 registry）。 */
     @Provides
     @Singleton

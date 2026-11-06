@@ -61,6 +61,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import com.apex.memkit.core.model.ChatFact
+import com.apex.agent.ui.screen.memory.profile.UserProfileItem
+import androidx.compose.material.icons.outlined.Person
 import com.apex.memkit.core.model.EpisodeSummary
 import com.apex.memkit.core.model.GraphEntity
 import com.apex.memkit.graph.screen.MemoryGraphContent
@@ -113,12 +115,20 @@ fun MemoryScreen(
     val knowledge by viewModel.knowledge.collectAsStateWithLifecycle()
     val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
     val lastRefreshAt by viewModel.lastRefreshAt.collectAsStateWithLifecycle()
+    val profile by viewModel.profile.collectAsStateWithLifecycle()
+    val profileDistilling by viewModel.profileDistilling.collectAsStateWithLifecycle()
 
     var showSearch by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<EpisodeSummary?>(null) }
     var pendingChatRecord by remember { mutableStateOf<ChatFact?>(null) }
     var showClearChatConfirm by remember { mutableStateOf(false) }
     var showToast by remember { mutableStateOf(false) }
+
+    // 画像分区：添加 / 编辑对话框双态 + 删除 / 清空二次确认
+    var profileEditing by remember { mutableStateOf<UserProfileItem?>(null) }
+    var profileAdding by remember { mutableStateOf(false) }
+    var pendingProfileDelete by remember { mutableStateOf<UserProfileItem?>(null) }
+    var showClearProfileConfirm by remember { mutableStateOf(false) }
 
     // 写入口（记忆页 v2）：顶栏「添加」菜单 → 记事实 / 教经验两个对话框
     var showAddMenu by remember { mutableStateOf(false) }
@@ -159,12 +169,13 @@ fun MemoryScreen(
     val expandedMacroSnapshot = expandedMacros.toSet()
     val plan = remember(
         searchActive, searchResults, chatMemory, knowledgeSorted, knowledgeExpanded,
-        episodes, episodeFilter, macros, expandedMacroSnapshot,
+        episodes, episodeFilter, macros, expandedMacroSnapshot, profile,
     ) {
         buildMemoryListPlan(
             MemoryListPlanInput(
                 searchActive = searchActive,
                 searchResults = searchResults,
+                profileEntries = profile,
                 chatEntries = chatMemory,
                 knowledgeEntities = knowledgeSorted,
                 knowledgeExpanded = knowledgeExpanded,
@@ -381,6 +392,31 @@ fun MemoryScreen(
                                     .padding(horizontal = 12.dp),
                             )
 
+                            MemoryListItem.ProfileHeader -> {
+                                MemoryProfileHeader(
+                                    itemCount = profile.sumOf { it.items.size },
+                                    distilling = profileDistilling,
+                                    onDistill = viewModel::distillProfile,
+                                    onAdd = { profileAdding = true },
+                                    onClearAll = { showClearProfileConfirm = true },
+                                )
+                                if (profile.isEmpty()) {
+                                    EmptyHint(
+                                        stringResource(R.string.memory_profile_empty),
+                                        Icons.Outlined.Person,
+                                    )
+                                }
+                            }
+
+                            is MemoryListItem.ProfileAspectCard -> MemoryProfileAspectCard(
+                                entry = item.entry,
+                                onEdit = { profileItem -> profileEditing = profileItem },
+                                onDelete = { profileItem -> pendingProfileDelete = profileItem },
+                                modifier = Modifier
+                                    .animateItem()
+                                    .padding(horizontal = 12.dp),
+                            )
+
                             MemoryListItem.ChatHeader -> {
                                 MemoryChatHeader(
                                     recordCount = chatMemory.sumOf { it.records.size },
@@ -577,6 +613,65 @@ fun MemoryScreen(
         TeachExperienceDialog(
             onDismiss = { showTeachDialog = false },
             onTeach = viewModel::teachExperience
+        )
+    }
+
+    // ═══ 画像分区对话框：添加 / 编辑双态 + 删除 / 清空二次确认 ═══
+    if (profileAdding) {
+        ProfileEditDialog(
+            existing = null,
+            onDismiss = { profileAdding = false },
+            onConfirm = { aspect, content, confidence ->
+                viewModel.addProfileItem(aspect, content, confidence)
+                profileAdding = false
+            }
+        )
+    }
+    profileEditing?.let { editing ->
+        ProfileEditDialog(
+            existing = editing,
+            onDismiss = { profileEditing = null },
+            onConfirm = { _, content, confidence ->
+                viewModel.updateProfileItem(editing, content, confidence)
+                profileEditing = null
+            }
+        )
+    }
+    pendingProfileDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingProfileDelete = null },
+            title = { Text(stringResource(R.string.memory_profile_delete_title)) },
+            text = { Text(stringResource(R.string.memory_profile_delete_text, target.content)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteProfileItem(target.id)
+                    pendingProfileDelete = null
+                }) { Text(stringResource(R.string.memory_delete), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingProfileDelete = null }) {
+                    Text(stringResource(R.string.memory_cancel))
+                }
+            }
+        )
+    }
+    if (showClearProfileConfirm) {
+        val itemCount = profile.sumOf { it.items.size }
+        AlertDialog(
+            onDismissRequest = { showClearProfileConfirm = false },
+            title = { Text(stringResource(R.string.memory_profile_clear_title)) },
+            text = { Text(stringResource(R.string.memory_profile_clear_text, itemCount)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.clearProfile()
+                    showClearProfileConfirm = false
+                }) { Text(stringResource(R.string.memory_profile_clear), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearProfileConfirm = false }) {
+                    Text(stringResource(R.string.memory_cancel))
+                }
+            }
         )
     }
 }

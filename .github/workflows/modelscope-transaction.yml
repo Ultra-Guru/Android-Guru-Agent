@@ -1,0 +1,71 @@
+name: ModelScope transaction regression
+
+on:
+  pull_request:
+    paths:
+      - 'app/src/main/kotlin/com/apex/agent/marketplace/**'
+      - 'app/src/test/kotlin/com/apex/agent/marketplace/**'
+      - 'core/tool-registry/src/**'
+      - '.github/workflows/modelscope-transaction.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install pinned Kotlin compiler and JVM dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fLsS --retry 3 https://github.com/JetBrains/kotlin/releases/download/v2.3.21/kotlin-compiler-2.3.21.zip -o "$RUNNER_TEMP/kotlin.zip"
+          unzip -q "$RUNNER_TEMP/kotlin.zip" -d "$RUNNER_TEMP"
+          mkdir -p "$RUNNER_TEMP/libs"
+          for dep in \
+            org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.10.2/kotlinx-coroutines-core-jvm-1.10.2.jar \
+            org/jetbrains/kotlinx/kotlinx-serialization-json-jvm/1.9.0/kotlinx-serialization-json-jvm-1.9.0.jar \
+            org/jetbrains/kotlinx/kotlinx-serialization-core-jvm/1.9.0/kotlinx-serialization-core-jvm-1.9.0.jar \
+            com/squareup/okhttp3/okhttp/4.12.0/okhttp-4.12.0.jar \
+            com/squareup/okio/okio-jvm/3.6.0/okio-jvm-3.6.0.jar \
+            junit/junit/4.13.2/junit-4.13.2.jar \
+            org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar; do
+            curl -fLsS --retry 3 "https://repo.maven.apache.org/maven2/$dep" -o "$RUNNER_TEMP/libs/${dep##*/}"
+          done
+      - name: Compile real production sources and regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          CP=$(find "$RUNNER_TEMP/libs" -name '*.jar' -printf '%p:' )
+          "$RUNNER_TEMP/kotlinc/bin/kotlinc" -J-Xmx4g -jvm-target 17 \
+            -Xplugin="$RUNNER_TEMP/kotlinc/lib/kotlinx-serialization-compiler-plugin.jar" \
+            -cp "$CP" -d "$RUNNER_TEMP/classes" \
+            core/logging/src/main/kotlin \
+            core/llm-adapter/src/main/kotlin \
+            core/tool-registry/src/main/kotlin \
+            app/src/main/kotlin/com/apex/agent/marketplace/ModelScopeSkillInstaller.kt \
+            app/src/test/kotlin/com/apex/agent/marketplace/ModelScopeSkillInstallerTest.kt \
+            core/tool-registry/src/test/kotlin/com/apex/agent/core/tools/marketplace/ModelScopeSourceTest.kt
+      - name: Run transaction and source regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          CP=$(find "$RUNNER_TEMP/libs" -name '*.jar' -printf '%p:' )
+          java -cp "$RUNNER_TEMP/classes:$CP:$RUNNER_TEMP/kotlinc/lib/kotlin-stdlib.jar:$RUNNER_TEMP/kotlinc/lib/kotlin-reflect.jar" \
+            org.junit.runner.JUnitCore \
+            com.apex.agent.marketplace.ModelScopeSkillInstallerTest \
+            com.apex.agent.core.tools.marketplace.ModelScopeSourceTest \
+            2>&1 | tee "$RUNNER_TEMP/modelscope-junit.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: modelscope-regression-log
+          path: ${{ runner.temp }}/modelscope-junit.log
+          if-no-files-found: warn

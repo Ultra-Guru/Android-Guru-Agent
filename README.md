@@ -15,7 +15,10 @@
 （深潜七档 / 标准 / 织造 / 信使，运行时可切）、
 百级内置工具（超时/重试/限流/熔断/追踪/批量/组合动作八层执行硬化；P83 环境闭环补全；MCP/技能按工位作用域隔离）、模板行为运行时（十大内置模板全部代码化：六阶段管线 + 不可更改 + 每模板双层确定性引擎，切换模板 = 装配管线而非注入提示词）、PRoot 沙箱化 Ubuntu 终端、仿生认知记忆系统（差分摄取 → 轨迹蒸馏 →
 FSM 旁路回放 → 梦境巩固）、Root/Shizuku/无障碍三级权限链、插件化 SDK ——
-全部跑在一台手机上，无需任何服务器。（Agent 聊天模式已拆分至独立仓库 Theocracy，本仓库专注 Coding。）
+全部跑在一台手机上，无需自建服务器。**找不到原来的纯聊天页面？** 它已从本应用移除；
+本仓库专注 Coding，Agent 聊天模式转至独立项目 [Theocracy](https://github.com/Ultra-Guru/Theocracy)。
+安装包发布情况以该项目的 [Releases](https://github.com/Ultra-Guru/Theocracy/releases) 实际列表为准；
+不要仅为找回入口就覆盖安装旧版，聊天数据迁移兼容性尚未在此验证。
 
 **CI · 质量门禁 · 贡献**
 
@@ -77,7 +80,7 @@ FSM 旁路回放 → 梦境巩固）、Root/Shizuku/无障碍三级权限链、�
 <a href="https://github.com/Ultra-Guru/Android-Guru-Agent/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/🧪_CI_artifacts-debug_构建-2088FF?logo=githubactions&logoColor=white" alt="Get debug APK from CI"/></a>
 <a href="#quickstart"><img src="https://img.shields.io/badge/🚀_quick_start-5_分钟-1F6FEB" alt="Quick Start"/></a>
 <a href="#docs-index"><img src="https://img.shields.io/badge/📚_docs-deep_dives-0077B5" alt="Docs"/></a>
-<a href="#faq"><img src="https://img.shields.io/badge/❓_FAQ-6_问答-8B5CF6" alt="FAQ"/></a>
+<a href="#faq"><img src="https://img.shields.io/badge/❓_FAQ-7_问答-8B5CF6" alt="FAQ"/></a>
 <a href="#glossary"><img src="https://img.shields.io/badge/🧭_glossary-术语速查-6E7681" alt="Glossary"/></a>
 
 **分享与交流**
@@ -219,7 +222,7 @@ Root → Shizuku → 沙箱 Shell 自动降级<br/>无 Root 也能执行特权�
 | ⚡ | **三级权限链** | Root → Shizuku → 普通沙箱 shell 自动降级选择，无 Root 设备也能执行特权命令 |
 | 🧩 | **插件 SDK v2（双类型）+ 技能市场** | 功能性插件（plugin.json 声明式贡献点：工具宏/斜杠指令，零代码执行面）+ APK 插件（AIDL 跨进程）统一管理；技能市场（工具/技能/MCP/插件/连接器五个货架）+ 40+ 可安装技能模板；plugin-workflow 为参考 APK 插件、functional-samples 为功能性插件样本 |
 | ⚛️ | **FusionBundle 复合技能包（聚变包）** | 「技能 + MCP 服务器 + 工具 + agent 工作流」一键聚合激活的装载单位（fusion-bundle-v1 manifest，输入栏直选即用）；内置七大顶级开源体系 —— **REA · Reverse Engineer Anything**（207 工具面逐名对齐上游 v6.5.0，静态分析核心纯设备直跑、adb 族原生设备执行、BYO 引擎桥与证据纪律信封）、**Superpowers**（obra v7.0.0 软件开发方法论八技能）、**SuperClaude**（v4.3.0 五行为模式 + 上游 8 台增强 MCP 的内置等价聚合）、**BMAD**（v6.12 敏捷交付环五阶段）、**Anthropic Skills**（官方技能体系设备端移植：Word/Excel/PPT/PDF 文档四件经 PRoot Python 工具链真实产出 + 技能/MCP/测试工程）、**Claude Flow SPARC**（结构化开发五阶段 + Task 子代理群智编排 + 持久记忆）、**Shrimp Task Manager**（16 工具结构化任务规划，进程内 MCP 第七台：依赖 DAG/反思洞察/项目规则/思维链，任务账本持久 + 自动备份）—— 详见 [docs/fusion-bundle.md](docs/fusion-bundle.md) |
-| 🌐 | **内置浏览器大功能（v1.5.0 起非插件）** | 24 个 `browser_*` 工具（DOM 级操控 + 高级键鼠/抽取/JS 逃生舱）+ 悬浮球 + 浮窗浏览器，工具体系直连可编排 |
+| 🌐 | **内置浏览器大功能（v1.5.0 起非插件）** | 41 个 `browser_*` 工具（DOM 级操控 + 键鼠/抽取/JS 逃生舱 + v2.1.0 异步导航协议/BrowserTask 编排/增量快照）+ 悬浮球 + 浮窗浏览器，工具体系直连可编排 |
 | 💭 | **七档思考系统（Coding 页专属）** | NONE→ULTRACODE→APEXCODE 七深度档 + AUTO 预检自适应（发送前选档 + 深水区升级）；档位驱动提示词 / 模型参数 / 迭代倍率 / 压缩阈值 / 输出预算**全执行画像** |
 | 🕓 | **长任务中心（v1.2）** | 超阈值运行自动留档；检查点时间线回看（轮次 / 相对时间 / todo 完成度）+ 续跑不从头、复制带上下文重跑、同目标运行对比 |
 
@@ -643,7 +646,7 @@ linux_bootstrap / linux_status / linux_packages / linux_network / ubuntu_install
 
 对标 Operit 的 `BrowserAgent`：DOM 级网页操控而非截图盲点。
 
-- **34 个 `browser_*` 工具（v1.5.0 起内置大功能，非插件；v1.7.0 会话面扩至 34）**：
+- **41 个 `browser_*` 工具（v1.5.0 起内置大功能，非插件；v2.1.0 异步协议面扩至 41）**：
   基础 15 项 `navigate / click / input / scroll / select / screenshot /
   snapshot / toggle / show / download_list / file_upload / date_input /
   context_summary / network_log / debug_dump` + 高级动作 10 项
@@ -690,7 +693,7 @@ linux_bootstrap / linux_status / linux_packages / linux_network / ubuntu_install
 | 🧱 结构化 v2（15） | `RegexExtractLegacy` `RegexReplaceLegacy` `TextDiff` `JsonPathLegacy` `XmlExtract` `CsvQuery` `BaseConvert` `UnitConvert` `DurationConvertLegacy` `StringDistance` `RandomGenerateLegacy` `UuidGenerateLegacy` `FileHash` `datetime` `CronNextLegacy`（全部纯 JVM / 离线 / 确定性） |
 | ⚡ 执行硬化 v3（7） | `wait`（≤300s 可取消等待）· `JsonTransformLegacy`（jq 风格七操作管线）· `VersionCompare`（SemVer 排序）· `ToolBatchRun`（批量首错即停 + 步间引用）· `ShortcutDefine` / `ShortcutList` / `ShortcutRun`（组合动作：定义→热注册、清单+挖掘建议、执行）——详见 [docs/tool-system-v3.md](docs/tool-system-v3.md) |
 
-**platform:browser-agent —— 24 个 `browser_*`（v1.5.0 起内置大功能，非插件）**
+**platform:browser-agent —— 41 个 `browser_*`（v1.5.0 起内置大功能，非插件；v2.1.0 起含 5 个异步协议面工具）**
 
 | 类别 | 工具 |
 |------|------|
@@ -1200,10 +1203,13 @@ Ubuntu 24.04 完整 CLI 环境随 APK 内置（rootfs 档案 ~300MB+、解压后
 </details>
 
 <details>
-<summary><b>5️⃣ 为什么仓库里没有 gradlew？</b></summary>
+<summary><b>5️⃣ 想自己编译或下载 APK，从哪里开始？</b></summary>
 
-仓库未锁定 wrapper。一条命令现场生成（见快速开始），或直接下载 CI 产出的
-debug APK 工件（每次构建保留 14 天），零环境开箱体验。
+本仓库已提交 `gradlew`、`gradle/wrapper/gradle-wrapper.jar` 和
+`gradle-wrapper.properties`，无需现场生成 wrapper。普通用户可从
+[发布仓库](https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases) 查看
+Android-Guru-Agent 的正式 APK；源码构建见[快速开始](#quickstart)。
+**这不是 Theocracy 的安装包**，两个项目的下载入口不要混淆。
 
 </details>
 
@@ -1213,6 +1219,23 @@ debug APK 工件（每次构建保留 14 天），零环境开箱体验。
 任务成功后，`TraceDistiller` 把 ReAct 轨迹蒸馏成 FSM 宏技能。之后再次遇到
 相同界面指纹时，`BypassExecutionEngine` 直接回放动作序列——**完全绕过 LLM**，
 0 token、微秒级返回。App 升级导致指纹漂移时，拓扑同胚迁移通过别名桥保鲜。
+
+</details>
+
+<details>
+<summary><b>7️⃣ 最新版的“助手纯聊天”模式去哪了？</b></summary>
+
+**不是隐藏在设置里：本应用已移除原来的独立 Agent／纯聊天页面。**
+当前 Android-Guru-Agent 只有 Coding 工作面；它仍可对话，但不等同于原来的
+纯聊天模式。Agent 方向已拆至独立项目
+[Theocracy](https://github.com/Ultra-Guru/Theocracy)；请先查看该项目的
+[Releases](https://github.com/Ultra-Guru/Theocracy/releases) 是否真的有安装包，
+不能把 README 中的下载描述当作已发布的保证。
+
+如果你保留了旧版聊天记录，**不要把降级或覆盖安装当作已验证的迁移方案**：
+旧数据是否能在两个应用间转移尚未确认。需要当前应用重新提供独立纯聊天入口？
+请在 [Issue #758](https://github.com/Ultra-Guru/Android-Guru-Agent/issues/758)
+说明使用场景，供维护者决定是否支持。
 
 </details>
 

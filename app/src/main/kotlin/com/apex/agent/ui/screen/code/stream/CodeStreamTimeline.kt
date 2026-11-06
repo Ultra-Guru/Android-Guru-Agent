@@ -436,4 +436,4 @@ internal fun entryContentLength(entry: StreamEntry): Int = when (entry) {
     is StreamEntry.RunStatsEntry -> 160
 }
 
-internal fun anchorFollowTick(contentLength: Int): Int = contentLength / 200
+internal fun anchorFollowTick(contentLength: Int): Int = contentLength / 50
