@@ -202,9 +202,10 @@ class TemplateStudioViewModel @Inject constructor(
                 state.template.id,
                 overrides
             )
-            // v2.1.0：激活成功即并入模板角色（仅内置模板生效——onTemplateActivatedForRole 校验）
-            if (activation.ok && activation.template?.toolRole?.isNotBlank() == true) {
-                onTemplateActivatedForRole(activation.template)
+            // v2.1.0：激活成功即并入模板角色（仅内置模板生效——onTemplateActivatedForRole 校验）。
+            // 注意取 state.template（完整模型）：激活快照 TemplateTemplateSnapshot 无 toolRole 字段。
+            if (activation.ok && state.template.toolRole.isNotBlank()) {
+                onTemplateActivatedForRole(state.template)
             }
             if (!activation.ok) {
                 _useState.value = state.copy(

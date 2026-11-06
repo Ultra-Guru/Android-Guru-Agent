@@ -1,7 +1,7 @@
 package com.apex.agent.platform.browser
 
 import com.apex.agent.core.tools.AgentTool
-import com.apex.browser.core.DiffResult
+import com.apex.browser.engine.DiffResult
 import com.apex.browser.core.Disambiguation
 import com.apex.browser.core.DomParser
 import com.apex.browser.core.READINESS_SETTLED
@@ -15,6 +15,7 @@ import com.apex.browser.engine.cancelNavigation
 import com.apex.browser.engine.cancelTask
 import com.apex.browser.engine.docEvents
 import com.apex.browser.engine.navigateAsync
+import com.apex.browser.engine.navigationState
 import com.apex.browser.engine.releaseNavigation
 import com.apex.browser.engine.runTask
 import com.apex.browser.engine.taskState
@@ -22,6 +23,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import javax.inject.Inject
 
 /**
