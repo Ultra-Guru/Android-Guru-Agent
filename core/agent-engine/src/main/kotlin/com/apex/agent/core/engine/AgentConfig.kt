@@ -212,7 +212,17 @@ data class AgentConfig(
      * coding 级 MCP 工具，反之亦然。false = 回退 v2 全局可见行为。
      * 设置层（AgentSettings.mcpScopeIsolation）热更新，经 patchConfig 生效。
      */
-    val mcpScopeIsolation: Boolean = true
+    val mcpScopeIsolation: Boolean = true,
+
+    /**
+     * v2.1.0 会话级角色授予（评审 P0-3）：本会话已被授予的受限角色集（不可变快照）。
+     * 空集 = 未授予任何受限角色（**默认严格**：browser_* 不可见不可调）。
+     * 授予来源：设置开关关闭 → 全会话默认授 browser-automation（BrowserRolePolicy.
+     * defaultGrants）；模板工坊「浏览器自动化专家」激活 → toolRole 并入（仅内置模板
+     * 可授，评审 P0-3 可信来源约束）；browser-sensitive 仅用户显式授权。
+     * 强制点：EngineToolPlanner 计划层（按本字段过滤）+ RoleGate 调用层（现取）。
+     */
+    val grantedRoles: Set<String> = emptySet()
 ) {
     companion object {
         /** 快速模式：Build + 无思考 */

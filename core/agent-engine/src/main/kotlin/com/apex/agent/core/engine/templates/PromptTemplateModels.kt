@@ -82,7 +82,14 @@ data class PromptTemplate(
      * #197 工位作用域（缺省按分类推导：CODING 分类 → CODING 工位，
      * 其余 → AGENT 工位；旧 JSON 无此字段时反序列化自动归位，向后兼容）。
      */
-    val scope: TemplateScope = TemplateScope.CODING
+    val scope: TemplateScope = TemplateScope.CODING,
+    /**
+     * v2.1.0 模板角色（评审 P0-3 可信来源约束）：激活本模板时并入会话授予的角色。
+     * **仅 isBuiltIn=true 的模板可授**（内置「浏览器自动化专家」= browser-automation）；
+     * 自定义/导入模板即使填写本字段也不生效——授予入口在 TemplateStudioViewModel
+     * 激活点校验，防止普通用户模板自授特权。
+     */
+    val toolRole: String = ""
 ) {
     /**
      * 扫描 content 实际引用的变量名（规范小写集合；转义占位符不计）。
@@ -128,6 +135,36 @@ data class TemplateLibrary(
 object BuiltinPromptTemplates {
 
     val ALL: List<PromptTemplate> = listOf(
+        PromptTemplate(
+            id = "builtin_browser_expert",
+            name = "浏览器自动化专家",
+            description = "唯一可调用 browser_* 工具的角色：异步导航协议/BrowserTask 编排/增量快照纪律",
+            category = TemplateCategory.PRODUCTIVITY,
+            tags = listOf("浏览器", "自动化", "角色"),
+            isBuiltIn = true,
+            toolRole = "browser-automation",
+            content = """
+                你是浏览器自动化专家，是本会话唯一被授予 browser_* 工具的角色。执行纪律：
+
+                1. **任务优先**：确定性连续操作（导航→等待→填表→点击→抽取）用 BrowserTask 一次提交，
+                   运行时自主推进、返回压缩结果——不要拆成多次单步工具调用。
+                2. **判断节点交给你**：BrowserTask 在 selector 多命中时会暂停（CHECKPOINT）返回候选 ref；
+                   你决策后用收敛的 selector 重新提交剩余步骤。
+                3. **异步并行**：BrowserNavigateAsync 立即返回句柄，期间可先做其他独立调用；
+                   用 BrowserDocState(navigation_id, mode="wait") 等就绪——等待超时≠页面失败（可再等）。
+                4. **增量上下文**：整页只需看一次（BrowserSnapshot FULL，记下返回的 doc_id）；
+                   之后局部看用 mode=focused(root_selector)、变化看用 mode=diff(base_doc_id)。
+                5. **快照过期闭环**：click/input 等动作带 expected_doc_id（上次快照返回的 doc_id），
+                   STALE_DOCUMENT 说明页面已变，先重新快照。
+                6. **等待纪律**：点击/提交后用 BrowserWaitFor 或任务内 wait_for 替代盲重试；
+                   network_idle 有 750ms 静默窗口。
+                7. **人工优先**：SYSTEM_LOCKED 表示用户接管中（可等待恢复，不是失败）；
+                   你的后台任务会被接管取代，接管结束后重新提交。
+                8. 敏感操作（execute_js/get_cookies/file_upload/clear_data）需用户已授权敏感 tier，
+                   且逐会话弹确认——不要反复重试被拒的敏感调用。
+            """.trimIndent(),
+            variables = listOf()
+        ),
         PromptTemplate(
             id = "builtin_code_review",
             name = "代码审查",

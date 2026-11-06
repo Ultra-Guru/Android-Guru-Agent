@@ -762,6 +762,18 @@ internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSetting
             agent.mcpScopeIsolation,
             description = stringResource(R.string.settings_v3_coding_mcp_scope_desc)
         ) { on -> onUpdate(agent.copy(mcpScopeIsolation = on)) }
+        // v2.1.0 浏览器角色门禁（评审 B2）：默认开 = browser_* 仅「浏览器自动化
+        // 专家」角色可用；敏感四件套需二次显式授权。
+        SwitchRow(
+            "浏览器工具仅限专家角色",
+            agent.browserRoleRestrictionEnabled,
+            description = "开启后普通会话看不到 browser_* 工具；需激活模板工坊「浏览器自动化专家」"
+        ) { on -> onUpdate(agent.copy(browserRoleRestrictionEnabled = on)) }
+        SwitchRow(
+            "允许浏览器敏感操作",
+            agent.browserSensitiveAllowed,
+            description = "execute_js / get_cookies / file_upload / clear_data 四件套的会话级授权（仍逐会话弹确认）"
+        ) { on -> onUpdate(agent.copy(browserSensitiveAllowed = on)) }
         // ═══ 工具循环 v2（引擎真接线，自原 Agent 执行分区迁入）：单轮并行执行上限 ═══
         HorizontalDivider()
         Text(stringResource(R.string.settings_tool_loop_section), style = MaterialTheme.typography.labelMedium)

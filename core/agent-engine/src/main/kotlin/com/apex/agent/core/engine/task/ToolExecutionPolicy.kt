@@ -169,6 +169,13 @@ class ToolExecutionPolicy {
             put("BrowserLocate", ToolIdempotencyClass.READ_ONLY)
             put("BrowserWaitFor", ToolIdempotencyClass.READ_ONLY)
             put("BrowserTabs", ToolIdempotencyClass.NON_IDEMPOTENT)
+            // ═══ v2.1.0 异步协议面（评审 B4：静态 id 表不支持按参分支，
+            // new_tab 场景从宽统一 NON_IDEMPOTENT）═══
+            put("BrowserTask", ToolIdempotencyClass.NON_IDEMPOTENT)
+            put("BrowserNavigateAsync", ToolIdempotencyClass.NON_IDEMPOTENT)
+            put("BrowserDocState", ToolIdempotencyClass.READ_ONLY)
+            put("BrowserDocEvents", ToolIdempotencyClass.READ_ONLY)
+            put("BrowserDocControl", ToolIdempotencyClass.NON_IDEMPOTENT)
             // v1.7.0 会话工具集
             put("BrowserBack", ToolIdempotencyClass.NON_IDEMPOTENT)
             put("BrowserForward", ToolIdempotencyClass.NON_IDEMPOTENT)

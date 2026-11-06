@@ -3,6 +3,7 @@ package com.apex.agent.di
 import com.apex.agent.core.tools.DefaultToolRegistry
 import com.apex.agent.core.tools.SafeAgentTool
 import com.apex.agent.platform.browser.BrowserAgentTools
+import com.apex.agent.platform.browser.BrowserAsyncTools
 import com.apex.agent.platform.browser.BrowserLayoutTools
 import com.apex.agent.platform.browser.BrowserSessionTools
 
@@ -19,6 +20,7 @@ import com.apex.agent.platform.browser.BrowserSessionTools
  *   页内查找、下载中心、书签、文字缩放、清除浏览数据——对标 Playwright
  *   MCP 的会话面；
  * - [BrowserLayoutTools]（1 个布局分析工具，v1.8.0）：当前页真实渲染几何
+ * - BrowserAsyncTools（5 个协议面工具，v2.1.0）：BrowserTask/NavigateAsync/DocState/DocEvents/DocControl
  *   采集（视口溢出/landmarks/flex·grid/定位/层叠/标题链），与 core 层
  *   HtmlAnalyzeLayout（静态文件分析）互补。
  */
@@ -27,6 +29,7 @@ internal fun registerBrowserTools(
     browserAgentTools: BrowserAgentTools,
     browserSessionTools: BrowserSessionTools,
     browserLayoutTools: BrowserLayoutTools,
+    browserAsyncTools: BrowserAsyncTools,
 ) {
     // ═══ 3.5 内置浏览器自动化 (26) ═══
     // 对标 Operit 的 BrowserAgent：DOM 级网页操控，带语义哈希稳定 ref（抗 SPA 刷新），
@@ -43,4 +46,11 @@ internal fun registerBrowserTools(
     // v1.8.0：真实渲染几何采集（getComputedStyle / getBoundingClientRect），
     // 横向溢出根因定位 / flex·grid 属性 / absolute 定位祖先判定 / z-index 失配。
     browserLayoutTools.all().forEach { registry.register(SafeAgentTool(it)) }
+
+    // ═══ 3.5d 异步导航协议 + BrowserTask（v2.1.0，5 个）═══
+    // 协议面：BrowserTask（一次提交 N 步自主推进，模型往返 N→1）/
+    // BrowserNavigateAsync（立即回句柄）/ BrowserDocState（双状态）/ BrowserDocEvents
+    // （增量游标）/ BrowserDocControl（cancel/release）。apk 插件桥**不含**本族
+    // （async 协议默认不对插件暴露——fail-closed）。
+    browserAsyncTools.all().forEach { registry.register(SafeAgentTool(it)) }
 }

@@ -618,6 +618,15 @@ data class AgentSettings(
     val codeOutputStyle: String = "timeline",
     val mcpScopeIsolation: Boolean = true,
 
+    // ═══ v2.1.0 浏览器角色门禁（评审 B2）═══
+    // browserRoleRestrictionEnabled：默认开 = 严格——普通会话不授予
+    // browser-automation，browser_* 工具不可见不可调（计划层+RoleGate 三处强制）；
+    // 关闭 = 所有会话默认授予 browser-automation（最小权限语义，无 ALL 全开）。
+    // browserSensitiveAllowed：敏感 tier（execute_js/get_cookies/file_upload/
+    // clear_data 四件套）的用户显式授权——即使专家角色已授，未开此开关仍不可调。
+    val browserRoleRestrictionEnabled: Boolean = true,
+    val browserSensitiveAllowed: Boolean = false,
+
     // ═══ 模型限速友好（只针对某些用户：有 RPM/TPM/日次数配额的厂商）═══
     // 默认全关 = 历史行为零变化。开启后的三根支柱：
     //  - rateLimitFriendly：总开关（设置 → 模型配置 → 限速友好）；

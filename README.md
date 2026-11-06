@@ -222,7 +222,7 @@ Root → Shizuku → 沙箱 Shell 自动降级<br/>无 Root 也能执行特权�
 | ⚡ | **三级权限链** | Root → Shizuku → 普通沙箱 shell 自动降级选择，无 Root 设备也能执行特权命令 |
 | 🧩 | **插件 SDK v2（双类型）+ 技能市场** | 功能性插件（plugin.json 声明式贡献点：工具宏/斜杠指令，零代码执行面）+ APK 插件（AIDL 跨进程）统一管理；技能市场（工具/技能/MCP/插件/连接器五个货架）+ 40+ 可安装技能模板；plugin-workflow 为参考 APK 插件、functional-samples 为功能性插件样本 |
 | ⚛️ | **FusionBundle 复合技能包（聚变包）** | 「技能 + MCP 服务器 + 工具 + agent 工作流」一键聚合激活的装载单位（fusion-bundle-v1 manifest，输入栏直选即用）；内置七大顶级开源体系 —— **REA · Reverse Engineer Anything**（207 工具面逐名对齐上游 v6.5.0，静态分析核心纯设备直跑、adb 族原生设备执行、BYO 引擎桥与证据纪律信封）、**Superpowers**（obra v7.0.0 软件开发方法论八技能）、**SuperClaude**（v4.3.0 五行为模式 + 上游 8 台增强 MCP 的内置等价聚合）、**BMAD**（v6.12 敏捷交付环五阶段）、**Anthropic Skills**（官方技能体系设备端移植：Word/Excel/PPT/PDF 文档四件经 PRoot Python 工具链真实产出 + 技能/MCP/测试工程）、**Claude Flow SPARC**（结构化开发五阶段 + Task 子代理群智编排 + 持久记忆）、**Shrimp Task Manager**（16 工具结构化任务规划，进程内 MCP 第七台：依赖 DAG/反思洞察/项目规则/思维链，任务账本持久 + 自动备份）—— 详见 [docs/fusion-bundle.md](docs/fusion-bundle.md) |
-| 🌐 | **内置浏览器大功能（v1.5.0 起非插件）** | 24 个 `browser_*` 工具（DOM 级操控 + 高级键鼠/抽取/JS 逃生舱）+ 悬浮球 + 浮窗浏览器，工具体系直连可编排 |
+| 🌐 | **内置浏览器大功能（v1.5.0 起非插件）** | 41 个 `browser_*` 工具（DOM 级操控 + 键鼠/抽取/JS 逃生舱 + v2.1.0 异步导航协议/BrowserTask 编排/增量快照）+ 悬浮球 + 浮窗浏览器，工具体系直连可编排 |
 | 💭 | **七档思考系统（Coding 页专属）** | NONE→ULTRACODE→APEXCODE 七深度档 + AUTO 预检自适应（发送前选档 + 深水区升级）；档位驱动提示词 / 模型参数 / 迭代倍率 / 压缩阈值 / 输出预算**全执行画像** |
 | 🕓 | **长任务中心（v1.2）** | 超阈值运行自动留档；检查点时间线回看（轮次 / 相对时间 / todo 完成度）+ 续跑不从头、复制带上下文重跑、同目标运行对比 |
 
@@ -646,7 +646,7 @@ linux_bootstrap / linux_status / linux_packages / linux_network / ubuntu_install
 
 对标 Operit 的 `BrowserAgent`：DOM 级网页操控而非截图盲点。
 
-- **34 个 `browser_*` 工具（v1.5.0 起内置大功能，非插件；v1.7.0 会话面扩至 34）**：
+- **41 个 `browser_*` 工具（v1.5.0 起内置大功能，非插件；v2.1.0 异步协议面扩至 41）**：
   基础 15 项 `navigate / click / input / scroll / select / screenshot /
   snapshot / toggle / show / download_list / file_upload / date_input /
   context_summary / network_log / debug_dump` + 高级动作 10 项
@@ -693,7 +693,7 @@ linux_bootstrap / linux_status / linux_packages / linux_network / ubuntu_install
 | 🧱 结构化 v2（15） | `RegexExtractLegacy` `RegexReplaceLegacy` `TextDiff` `JsonPathLegacy` `XmlExtract` `CsvQuery` `BaseConvert` `UnitConvert` `DurationConvertLegacy` `StringDistance` `RandomGenerateLegacy` `UuidGenerateLegacy` `FileHash` `datetime` `CronNextLegacy`（全部纯 JVM / 离线 / 确定性） |
 | ⚡ 执行硬化 v3（7） | `wait`（≤300s 可取消等待）· `JsonTransformLegacy`（jq 风格七操作管线）· `VersionCompare`（SemVer 排序）· `ToolBatchRun`（批量首错即停 + 步间引用）· `ShortcutDefine` / `ShortcutList` / `ShortcutRun`（组合动作：定义→热注册、清单+挖掘建议、执行）——详见 [docs/tool-system-v3.md](docs/tool-system-v3.md) |
 
-**platform:browser-agent —— 24 个 `browser_*`（v1.5.0 起内置大功能，非插件）**
+**platform:browser-agent —— 41 个 `browser_*`（v1.5.0 起内置大功能，非插件；v2.1.0 起含 5 个异步协议面工具）**
 
 | 类别 | 工具 |
 |------|------|

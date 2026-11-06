@@ -58,7 +58,15 @@ class TemplateStudioViewModel @Inject constructor(
     private val roleExperienceStore: RoleExperienceStore
 ) : ViewModel() {
 
+    /** v2.1.0：模板激活的角色授予入口（仅 isBuiltIn 模板可授——可信来源约束）。 */
+    fun onTemplateActivatedForRole(template: PromptTemplate) {
+        if (template.isBuiltIn && template.toolRole.isNotBlank()) {
+            com.apex.agent.tools.BrowserRoleAuth.grantForSession(template.toolRole)
+        }
+    }
+
     /** 模板清单（内置在前）。 */
+
     private val _templates = MutableStateFlow<List<PromptTemplate>>(emptyList())
     val templates: StateFlow<List<PromptTemplate>> = _templates.asStateFlow()
 
@@ -194,6 +202,11 @@ class TemplateStudioViewModel @Inject constructor(
                 state.template.id,
                 overrides
             )
+            // v2.1.0：激活成功即并入模板角色（仅内置模板生效——onTemplateActivatedForRole 校验）。
+            // 注意取 state.template（完整模型）：激活快照 TemplateTemplateSnapshot 无 toolRole 字段。
+            if (activation.ok && state.template.toolRole.isNotBlank()) {
+                onTemplateActivatedForRole(state.template)
+            }
             if (!activation.ok) {
                 _useState.value = state.copy(
                     error = when (activation.failureReason) {
@@ -210,6 +223,7 @@ class TemplateStudioViewModel @Inject constructor(
                 return@launch
             }
             templateRuntime.deactivate(activation)
+            // v2.1.0：模板任务收尾不回收角色（专家角色绑定会话而非单次模板任务）
             _useState.value = state.copy(
                 generatedPrompt = outcome.request!!.prompt,
                 generationNotes = outcome.request!!.enrichmentNotes,
