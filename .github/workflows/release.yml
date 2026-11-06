@@ -1013,9 +1013,13 @@ jobs:
           # 环境变量只携带文件路径，内容一律落盘。
           EXISTING_FILE=/tmp/existing_patches.json
           FETCH_OK=0
+          # v1.5.25 修复：patches.json 累积已超 1MB（Contents API 默认 JSON 响应对
+          # >1MB 文件不返回 content 字段——encoding=none、content=null，旧
+          # base64 管道恒产空文件）。改用 raw 媒体类型直取原始内容（该通道
+          # 支持 100MB 以内文件），base64/tr 解码管道随之退役。
           if gh api "repos/${RELEASE_REPO}/contents/patches.json?ref=main" \
-              --jq '.content' 2>/dev/null | tr -d '\n' | base64 -d 2>/dev/null \
-              > "$EXISTING_FILE" && [ -s "$EXISTING_FILE" ]; then
+              -H "Accept: application/vnd.github.raw" > "$EXISTING_FILE" 2>/dev/null \
+              && [ -s "$EXISTING_FILE" ]; then
             FETCH_OK=1
           fi
           if [ "$FETCH_OK" != "1" ]; then
