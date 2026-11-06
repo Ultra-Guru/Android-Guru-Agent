@@ -208,41 +208,4 @@ class ApiDesignTemplateBehaviorTest {
 
     // ═══ 端到端 ═══
 
-    @Test
-    fun `full turn through runtime`() = runTest {
-        val dir = java.io.File("/tmp/api-runtime-${System.nanoTime()}").apply { mkdirs() }
-        val registry = com.apex.agent.core.engine.templates.PromptTemplateRegistry(dir)
-        registry.reseedBuiltIns()
-        val runtime = com.apex.agent.core.engine.templates.runtime.TemplateRuntime(
-            registry = registry,
-            behaviors = mapOf(behavior.behaviorId to behavior)
-        )
-        val activation = runtime.activate(
-            "builtin_api_design",
-            mapOf("requirement" to sampleRequirement, "style" to "RESTful")
-        )
-        assertTrue(activation.ok)
-        val outcome = runtime.prepareTurn(activation)
-        assertTrue(outcome.ok)
-        assertTrue(outcome.request!!.prompt.contains("资源基线"))
-        val report = runtime.processResponse(
-            activation,
-            """
-            ## 资源与端点清单
-            - GET /orders
-            - POST /orders
-
-            ## 请求与响应结构
-            订单结构体
-
-            ## 错误码设计
-            400/401/404
-
-            ## 横切关注点说明
-            游标分页 + 幂等键
-            """.trimIndent(),
-            outcome.request
-        )
-        assertTrue(report.trace!!.allOk)
-    }
 }

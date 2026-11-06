@@ -33,11 +33,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -58,34 +56,28 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import com.apex.agent.core.engine.templates.PromptTemplate
-import com.apex.agent.core.engine.templates.TemplateScope
 import com.apex.agent.ui.screen.settings.activeCodingRole
 import com.apex.agent.ui.screen.settings.withCodingRoleActivated
 
 /**
- * #197 模板工坊 —— 提示词模板的独立管理页（左侧抽屉直达入口）。
+ * 模板工坊 —— 提示词模板的独立管理页（左侧抽屉直达入口）。
  *
  * ```
  * ┌──────────────────────────────────────────────┐
- * │  [Agent 模板]  [Coding 模板]   ← scope 分层（互不串扰）
+ * │  Coding 模板                                     │
  * ├──────────────────────────────────────────────┤
- * │  各层：提示词模板列表（新建/编辑/复制/删除）        │
- * │  Coding 层顶部：专家角色区 [CodingRolesSection]   │
+ * │  顶部：专家角色区 [CodingRolesSection]           │
+ * │  提示词模板列表（新建/编辑/复制/删除）           │
  * └──────────────────────────────────────────────┘
  * ```
  *
- * 模板的 scope 由 [TemplateScope] 分层（scope 分层是模板运行时概念，由
- * 模板运行时会话演进）。Agent 角色详细设置分区（原复用设置页
- * AgentRolesSection 的人设卡 CRUD）已随 Agent 模式移除（PR 5/6）；
- * Coding 页签顶部保留专家角色区 [CodingRolesSection]（品牌图标 + 选择即
- * 激活 codeActiveRoleId，引擎人设通道热切换）。
+ * Coding 专家角色区（品牌图标 + 选择即激活 codeActiveRoleId，引擎人设通道热切换）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TemplateStudioScreen(
     viewModel: TemplateStudioViewModel = hiltViewModel()
 ) {
-    val tab by viewModel.tab.collectAsStateWithLifecycle()
     val templates by viewModel.templates.collectAsStateWithLifecycle()
     val editing by viewModel.editing.collectAsStateWithLifecycle()
     val useState by viewModel.useState.collectAsStateWithLifecycle()
@@ -105,20 +97,6 @@ fun TemplateStudioScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // ═══ 工位分层页签：Agent 模板 / Coding 模板 ═══
-            SecondaryTabRow(selectedTabIndex = tab.ordinal) {
-                Tab(
-                    selected = tab == TemplateScope.AGENT,
-                    onClick = { viewModel.selectTab(TemplateScope.AGENT) },
-                    text = { Text(stringResource(R.string.templates_tab_agent)) }
-                )
-                Tab(
-                    selected = tab == TemplateScope.CODING,
-                    onClick = { viewModel.selectTab(TemplateScope.CODING) },
-                    text = { Text(stringResource(R.string.templates_tab_coding)) }
-                )
-            }
-
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
@@ -126,55 +104,32 @@ fun TemplateStudioScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                when (tab) {
-                    TemplateScope.AGENT -> {
-                        // ═══ Agent 提示词模板（角色详细设置分区已随 Agent 模式移除 PR 5/6）═══
-                        item(key = "agent-templates-header") {
-                            TemplateListHeader(
-                                title = stringResource(R.string.templates_agent_list_title),
-                                subtitle = stringResource(R.string.templates_agent_list_subtitle),
-                                onCreate = { viewModel.openEditor(null) }
-                            )
-                        }
+                // ═══ Coding 专家角色（官方品牌图标 + 行点击打开角色详情）═══
+                item(key = "coding-roles") {
+                    CodingRolesSection(
+                        agent = agentSettings,
+                        onAgent = { viewModel.updateAgentSettings { it } },
+                        onOpenDetail = { viewModel.openRoleDetail(it) }
+                    )
+                }
 
-                        items(templates, key = { it.id }) { template ->
-                            TemplateCard(
-                                template = template,
-                                onUse = { viewModel.openUse(template) },
-                                onEdit = { viewModel.openEditor(template) },
-                                onDuplicate = { viewModel.duplicateTemplate(template) },
-                                onDelete = { viewModel.deleteTemplate(template.id) }
-                            )
-                        }
-                    }
-                    TemplateScope.CODING -> {
-                        // ═══ Coding 专家角色（官方品牌图标 + 行点击打开角色详情）═══
-                        item(key = "coding-roles") {
-                            CodingRolesSection(
-                                agent = agentSettings,
-                                onAgent = { viewModel.updateAgentSettings { it } },
-                                onOpenDetail = { viewModel.openRoleDetail(it) }
-                            )
-                        }
+                // ═══ Coding 提示词模板 ═══
+                item(key = "coding-templates-header") {
+                    TemplateListHeader(
+                        title = stringResource(R.string.templates_coding_list_title),
+                        subtitle = stringResource(R.string.templates_coding_list_subtitle),
+                        onCreate = { viewModel.openEditor(null) }
+                    )
+                }
 
-                        item(key = "coding-templates-header") {
-                            TemplateListHeader(
-                                title = stringResource(R.string.templates_coding_list_title),
-                                subtitle = stringResource(R.string.templates_coding_list_subtitle),
-                                onCreate = { viewModel.openEditor(null) }
-                            )
-                        }
-
-                        items(templates, key = { it.id }) { template ->
-                            TemplateCard(
-                                template = template,
-                                onUse = { viewModel.openUse(template) },
-                                onEdit = { viewModel.openEditor(template) },
-                                onDuplicate = { viewModel.duplicateTemplate(template) },
-                                onDelete = { viewModel.deleteTemplate(template.id) }
-                            )
-                        }
-                    }
+                items(templates, key = { it.id }) { template ->
+                    TemplateCard(
+                        template = template,
+                        onUse = { viewModel.openUse(template) },
+                        onEdit = { viewModel.openEditor(template) },
+                        onDuplicate = { viewModel.duplicateTemplate(template) },
+                        onDelete = { viewModel.deleteTemplate(template.id) }
+                    )
                 }
             }
         }

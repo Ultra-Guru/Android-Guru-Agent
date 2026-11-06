@@ -908,4 +908,6 @@
     <string name="tool_cat_github">GitHub</string>
     <string name="tool_cat_plugin">Plugins</string>
     <string name="tool_cat_utility">Utilities</string>
+    <string name="settings_test_connection">Test Connection</string>
+    <string name="settings_json_schema_label">JSON Schema</string>
 </resources>

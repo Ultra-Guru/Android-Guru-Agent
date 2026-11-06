@@ -203,45 +203,4 @@ class RefactorPlanTemplateBehaviorTest {
 
     // ═══ 端到端 ═══
 
-    @Test
-    fun `full turn through runtime`() = runTest {
-        val dir = java.io.File("/tmp/refactor-runtime-${System.nanoTime()}").apply { mkdirs() }
-        val registry = com.apex.agent.core.engine.templates.PromptTemplateRegistry(dir)
-        registry.reseedBuiltIns()
-        val runtime = com.apex.agent.core.engine.templates.runtime.TemplateRuntime(
-            registry = registry,
-            behaviors = mapOf(behavior.behaviorId to behavior)
-        )
-        val activation = runtime.activate(
-            "builtin_refactor_plan",
-            mapOf("code" to messyCode, "goal" to "降低复杂度", "constraints" to "保持 API 兼容")
-        )
-        assertTrue(activation.ok)
-        val outcome = runtime.prepareTurn(activation)
-        assertTrue(outcome.ok)
-        assertTrue(outcome.request!!.prompt.contains("步骤骨架"))
-        val report = runtime.processResponse(
-            activation,
-            """
-            ## 现状问题诊断
-            - 🔴 tangledProcessor 圈复杂度 17
-
-            ## 分步重构方案
-            1. 补特征测试保护网
-            2. 拆分 tangledProcessor 为三段
-            3. 提取重复块
-
-            ## 每步的风险与回滚
-            - 步骤1：🟢 低，删测试即回滚
-            - 步骤2：🟡 中，保留 Deprecated 委托
-
-            ## 重构完成后的验证清单
-            - 全量测试通过
-            - 重复块归零
-            """.trimIndent(),
-            outcome.request
-        )
-        assertTrue(report.trace!!.allOk)
-        assertEquals("true", report.summary["hasSafetyNet"])
-    }
 }

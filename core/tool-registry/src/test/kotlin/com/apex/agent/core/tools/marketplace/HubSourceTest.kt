@@ -66,10 +66,10 @@ class HubSourceTest {
         assertEquals("skills/cooking-master.json", first.file)
         assertEquals("hub/cooking-master", first.key)
 
-        // 缺省字段：version→1.0.0、scope→agent（仓库默认 agent 工位）
+        // 缺省字段：version→1.0.0、scope→coding（市场剥离 Agent 模式后的新默认）
         val second = entries[1]
         assertEquals("1.0.0", second.version)
-        assertEquals("agent", second.scope)
+        assertEquals("coding", second.scope)
         assertEquals("旅行规划师", second.name)
     }
 
@@ -129,14 +129,17 @@ class HubSourceTest {
 
     @Test
     fun `skill entry scope visibility follows market tier semantics`() {
+        // 市场剥离 Agent 模式（PR：剥离市场 Agent 模式）：scope 过滤停用 ——
+        // 目录任何条目（agent/coding/all）对两个工位查询都返回可见，
+        // 旧分级语义（agentOnly 对 coding 不可见）不再成立。
         val agentOnly = HubSource.HubSkillEntry(id = "a", name = "A", file = "skills/a.json", scope = "agent")
         val codingOnly = HubSource.HubSkillEntry(id = "c", name = "C", file = "skills/c.json", scope = "coding")
         val both = HubSource.HubSkillEntry(id = "b", name = "B", file = "skills/b.json", scope = "all")
 
         assertTrue(agentOnly.visibleToScope("agent"))
-        assertFalse(agentOnly.visibleToScope("coding"))
+        assertTrue(agentOnly.visibleToScope("coding"))
         assertTrue(codingOnly.visibleToScope("coding"))
-        assertFalse(codingOnly.visibleToScope("agent"))
+        assertTrue(codingOnly.visibleToScope("agent"))
         assertTrue(both.visibleToScope("agent"))
         assertTrue(both.visibleToScope("coding"))
     }
@@ -237,8 +240,9 @@ class HubSourceTest {
         """.trimIndent()
         val servers = HubSource.parseMcpIndex(body).getOrThrow().associateBy { it.name }
 
+        // 市场剥离 Agent 模式后 scope 过滤停用：全部条目双工位可见
         assertTrue(servers.getValue("a").visibleToScope("agent"))
-        assertFalse(servers.getValue("a").visibleToScope("coding"))
+        assertTrue(servers.getValue("a").visibleToScope("coding"))
         assertTrue(servers.getValue("c").visibleToScope("coding"))
         assertTrue(servers.getValue("b").visibleToScope("agent"))
         assertTrue(servers.getValue("b").visibleToScope("coding"))

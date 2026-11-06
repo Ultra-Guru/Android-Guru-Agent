@@ -94,7 +94,7 @@ class MarketHubController @Inject constructor(
             try {
                 hubSource.downloadSkillManifest(entry).fold(
                     onSuccess = { manifestJson ->
-                        val defaultScope = entry.scope.takeIf { it == "agent" || it == "coding" }
+                        val defaultScope = "coding"
                         installManager.installSkillFromJson(manifestJson, defaultScope = defaultScope)
                     },
                     onFailure = { Result.failure(it) }

@@ -180,7 +180,7 @@ internal fun MarketViewModel.loadMcpCatalog() {
 
 /** 当前分级下可见的目录条目（#197 tier 过滤 + 分类过滤）。 */
 fun MarketViewModel.visibleCatalog(state: MarketUiState): List<McpServerCatalog.McpCatalogEntry> {
-    val tier = state.tier.name.lowercase()
+    val tier = "coding"
     return state.mcpCatalog
         .filter { it.visibleToTier(tier) }
         .filter { state.mcpCatalogCategory == null || it.category == state.mcpCatalogCategory }
