@@ -717,7 +717,11 @@ class CodeViewModel @Inject constructor(
             } catch (e: Exception) {
                 // #209：异常文本先净化（类名映射/首行有效信息/过滤堆栈与 null），
                 // 再进错误条 —— 裸英文堆栈串不再直出；本次运行可一键重试。
-                showError(sanitizeErrorText(e), retriable = true)
+                val message = sanitizeErrorText(e)
+                // collect 在异常时不会发 AgentEvent.Error：本地补齐时间轴收尾，
+                // 保留已输出正文并移除尚无正文的等待位。
+                streamSession.onEvent(AgentEvent.Error(message, recoverable = true))
+                showError(message, retriable = true)
             } finally {
                 _uiState.update {
                     it.copy(

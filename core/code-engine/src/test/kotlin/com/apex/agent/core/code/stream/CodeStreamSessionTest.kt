@@ -195,6 +195,16 @@ class CodeStreamSessionTest {
     }
 
     @Test
+    fun `error before first token removes the empty slot but keeps inline error`() {
+        val s = CodeStreamSession()
+        s.beginRun("断线")
+        s.onEvent(AgentEvent.Error("连接中断", recoverable = true))
+        val entries = s.snapshot().entries
+        assertEquals(0, entries.count { it is StreamEntry.AssistantEntry })
+        assertEquals("连接中断", entries.filterIsInstance<StreamEntry.ErrorEntry>().single().message)
+    }
+
+    @Test
     fun `blank response chunks never create empty assistant bubble`() {
         val s = CodeStreamSession()
         s.beginRun("你好")
