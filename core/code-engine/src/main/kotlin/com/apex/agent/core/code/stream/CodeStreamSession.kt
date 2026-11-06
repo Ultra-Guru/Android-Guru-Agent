@@ -971,6 +971,7 @@ class CodeStreamSession {
             ToolKind.READ_FILE, ToolKind.WRITE_FILE, ToolKind.EDIT_FILE ->
                 str("path") ?: str("file") ?: str("file_path") ?: UNKNOWN_TARGET
             ToolKind.GREP_SEARCH -> str("pattern") ?: str("query") ?: str("keyword") ?: toolName
+            ToolKind.WEB_SEARCH -> str("query") ?: str("keyword") ?: str("q") ?: toolName
             ToolKind.BASH -> str("command")?.lineSequence()?.firstOrNull()?.take(40) ?: toolName
             ToolKind.GIT -> gitTargetOf(toolName, args) ?: toolName
             ToolKind.LINT, ToolKind.TEST -> str("path") ?: str("target") ?: toolName
@@ -1021,6 +1022,7 @@ class CodeStreamSession {
         ToolKind.WRITE_FILE -> "写入"
         ToolKind.EDIT_FILE -> "编辑"
         ToolKind.GREP_SEARCH -> "搜索"
+        ToolKind.WEB_SEARCH -> "网页搜索"
         ToolKind.BASH -> "命令"
         ToolKind.GIT -> "Git"
         ToolKind.LINT -> "Lint"

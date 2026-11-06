@@ -315,6 +315,7 @@ object CodeStreamCheckpoint {
         ToolKind.WRITE_FILE -> "WRITE_FILE"
         ToolKind.EDIT_FILE -> "EDIT_FILE"
         ToolKind.GREP_SEARCH -> "GREP_SEARCH"
+        ToolKind.WEB_SEARCH -> "WEB_SEARCH"
         ToolKind.BASH -> "BASH"
         ToolKind.GIT -> "GIT"
         ToolKind.LINT -> "LINT"
