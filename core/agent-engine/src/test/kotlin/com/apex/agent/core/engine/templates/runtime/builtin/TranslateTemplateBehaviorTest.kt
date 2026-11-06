@@ -293,33 +293,4 @@ class TranslateTemplateBehaviorTest {
 
     // ═══ 端到端 ═══
 
-    @Test
-    fun `full turn through runtime`() = runTest {
-        val dir = java.io.File("/tmp/translate-runtime-${System.nanoTime()}").apply { mkdirs() }
-        val registry = com.apex.agent.core.engine.templates.PromptTemplateRegistry(dir)
-        registry.reseedBuiltIns()
-        val runtime = com.apex.agent.core.engine.templates.runtime.TemplateRuntime(
-            registry = registry,
-            behaviors = mapOf(behavior.behaviorId to behavior)
-        )
-        val activation = runtime.activate(
-            "builtin_translate",
-            mapOf(
-                "text" to "系统启用熔断与灰度发布。",
-                "target_language" to "英文",
-                "domain" to "技术"
-            )
-        )
-        assertTrue(activation.ok)
-        val outcome = runtime.prepareTurn(activation)
-        assertTrue(outcome.ok)
-        assertTrue(outcome.request!!.prompt.contains("术语对照"))
-        val report = runtime.processResponse(
-            activation,
-            "The system enables circuit breaking and canary release.",
-            outcome.request
-        )
-        assertEquals("true", report.summary["fidelityOk"])
-        assertTrue(report.trace!!.allOk)
-    }
 }

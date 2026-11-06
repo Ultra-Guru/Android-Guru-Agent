@@ -1,0 +1,4 @@
+- **浏览器角色门禁（默认严格）**：browser_* 工具仅「浏览器自动化专家」角色可用——设置中心新增「浏览器工具仅限专家角色」（默认开）与「允许浏览器敏感操作」两开关；敏感四件套（execute_js/get_cookies/file_upload/clear_data）需敏感 tier 显式授权且逐会话弹确认
+- **异步导航协议 + BrowserTask 编排**：新增 BrowserTask（一次提交 navigate/wait_for/fill/click/extract 序列，运行时自主推进返回压缩结果，N 次模型往返→1 次）/BrowserNavigateAsync（立即返回句柄，模型与浏览器并行）/BrowserDocState（导航+就绪双状态）/BrowserDocEvents（增量事件游标）/BrowserDocControl（取消/释放）；同 tab 重复发起导航自动 SUPERSEDED，人工接管优先
+- **增量快照**：BrowserSnapshot 新增 mode=focused（只采集指定子树）/mode=diff（与上次快照做增量），不再反复传全页；快照返回 doc_id，动作可带 expected_doc_id 检测页面已变（STALE_DOCUMENT）
+- **MCP Host 收紧**：浏览器敏感四件套默认加入封禁清单（即使放行 BROWSER 分类也不经外部 AI 通道）；插件 manifest 新增 permissions 字段（三态 fail-closed，`browser` 与 `browser:sensitive` 分权，旧插件默认不授浏览器能力）

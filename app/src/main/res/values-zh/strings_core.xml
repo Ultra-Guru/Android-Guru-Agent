@@ -473,6 +473,43 @@
     <string name="memory_chat_source_manual">手动</string>
     <string name="memory_chat_source_migrated">迁移</string>
 
+    <!-- ═══ 用户画像分区（五维度 / 从编码对话提炼 / 手动录入）═══ -->
+    <string name="memory_profile_title">用户画像</string>
+    <string name="memory_profile_count_fmt">%1$d 条</string>
+    <string name="memory_profile_empty">还没有画像\n可从编码对话提炼长期特征，或手动添加</string>
+    <string name="memory_profile_distill">提炼</string>
+    <string name="memory_profile_distilling">提炼中…</string>
+    <string name="memory_profile_add">添加条目</string>
+    <string name="memory_profile_edit">编辑</string>
+    <string name="memory_profile_clear">清空</string>
+    <string name="memory_profile_meta_fmt">置信度 %1$d%% · %2$s</string>
+    <string name="memory_profile_source_distilled">提炼</string>
+    <string name="memory_profile_source_manual">手动</string>
+    <string name="memory_profile_aspect_tech_stack">技术栈</string>
+    <string name="memory_profile_aspect_coding_style">编码风格</string>
+    <string name="memory_profile_aspect_preferences">偏好</string>
+    <string name="memory_profile_aspect_domains">关注领域</string>
+    <string name="memory_profile_aspect_habits">工作习惯</string>
+    <string name="memory_profile_add_title">添加画像条目</string>
+    <string name="memory_profile_edit_title">编辑画像条目</string>
+    <string name="memory_profile_content_label">内容</string>
+    <string name="memory_profile_content_hint">第三人称陈述，如：惯用 Kotlin，偏好显式类型标注</string>
+    <string name="memory_profile_confidence_fmt">置信度 %1$d%%</string>
+    <string name="memory_profile_save">保存</string>
+    <string name="memory_profile_cancel">取消</string>
+    <string name="memory_profile_delete_title">删除这条画像？</string>
+    <string name="memory_profile_delete_text">「%1$s」将被永久删除。</string>
+    <string name="memory_profile_clear_title">清空全部画像？</string>
+    <string name="memory_profile_clear_text">全部 %1$d 条画像将被永久删除。</string>
+    <string name="memory_profile_msg_added">画像条目已添加</string>
+    <string name="memory_profile_msg_updated">画像条目已更新</string>
+    <string name="memory_profile_msg_deleted">画像条目已删除</string>
+    <string name="memory_profile_msg_cleared">画像已全部清空</string>
+    <string name="memory_profile_msg_write_failed">写入失败：%1$s</string>
+    <string name="memory_profile_msg_distill_done">提炼完成：新增 %1$d · 更新 %2$d · 跳过 %3$d</string>
+    <string name="memory_profile_msg_distill_empty">未提炼到信号（暂无编码对话，或没有长期稳定特征可记）</string>
+    <string name="memory_profile_msg_distill_failed">提炼失败：%1$s</string>
+
     <!-- ═══ 记忆页 v2：六项统计 / 知识图谱分区 / 手动写入口 / 统一搜索 ═══ -->
     <string name="memory_stats_episodes">会话</string>
     <string name="memory_stats_facts">事实</string>
@@ -525,6 +562,7 @@
 
     <!-- ═══ 记忆页 v3（单列列表 / 分区导航 / 下拉刷新 / 过滤芯片）═══ -->
     <string name="memory_section_all">全部</string>
+    <string name="memory_section_profile">用户画像</string>
     <string name="memory_section_chat">聊天记忆</string>
     <string name="memory_section_knowledge">知识图谱</string>
     <string name="memory_section_episodes">近期经历</string>
@@ -870,4 +908,6 @@
     <string name="tool_cat_github">GitHub</string>
     <string name="tool_cat_plugin">插件</string>
     <string name="tool_cat_utility">实用工具</string>
+    <string name="settings_test_connection">测试连接</string>
+    <string name="settings_json_schema_label">JSON Schema</string>
 </resources>

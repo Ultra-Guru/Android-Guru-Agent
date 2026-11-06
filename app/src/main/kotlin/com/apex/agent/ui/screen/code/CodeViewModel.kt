@@ -49,6 +49,8 @@ import com.apex.agent.ui.screen.code.editor.EditorFileException
 import com.apex.agent.ui.screen.code.editor.EditorFileLoader
 import com.apex.agent.ui.screen.code.editor.EditorLoadError
 import com.apex.agent.ui.screen.code.session.CodeSessionStore
+import com.apex.agent.ui.screen.memory.profile.topForInjection
+import com.apex.agent.ui.screen.memory.profile.toSystemContextSection
 import com.apex.agent.ui.screen.code.history.CodeHistoryStore
 import com.apex.agent.ui.screen.code.history.clearConversationWithArchive
 import com.apex.agent.ui.chatkit.ChatToolkitStore
@@ -138,6 +140,9 @@ class CodeViewModel @Inject constructor(
     // 见 RoleExperienceController —— God-file 预算：VM 只做暴露）。
     internal val roleExperienceTracker: RoleExperienceTracker,
     internal val roleExperienceStore: RoleExperienceStore,
+    // 用户画像（五维长期特征）：发送路径按置信度 Top-8 注入 sessionExtras
+    //（存储在 filesDir/user_profile，蒸馏入口在记忆页画像分区）。
+    internal val userProfileStore: com.apex.agent.ui.screen.memory.profile.UserProfileStore,
     internal val taskCopyEngine: TaskCopyEngine,
     internal val longTaskStore: LongTaskStore,
     // ═══ 会话用量与通知（上下文圆环详情数据面 + 任务完成通知）═══
@@ -619,18 +624,28 @@ class CodeViewModel @Inject constructor(
         // v4 强制工具计划。prepareForTask 的 refreshContext 会把 extras 拼进
         // additionalSystemContext（顺序：先存 extras 再刷上下文）。 ═══
         // 功能聚合注入段（16 项能力）同通道追加 —— 小圆环在前、功能聚合在后。
-        // v1.9 角色经验卡：召回的相关经验段拼在末位（同类任务先读历史教训）。
+        // 用户画像（五维长期特征）：置信度 Top-8 段拼在最前（个性化基线，
+        // snapshotBlocking 主线程安全）；v1.9 角色经验卡：召回的相关经验段
+        // 拼在末位（同类任务先读历史教训）。
+        val profileSection = userProfileStore.snapshotBlocking()
+            .topForInjection()
+            .toSystemContextSection()
+        // v1.5.17 自定义子代理类型目录：CodeTask 的工具描述是静态的（DI
+        // 期构建），自定义角色对主模型不可见——目录拼进会话附加段让主
+        // 模型知道有哪些角色可委派（空清单零注入，零 token 开销）。
+        val baseExtras = neonOrbStore.mergeWith(toolkitStore.buildSessionContext())
+            .let { base ->
+                SubAgentPrompts.customTypeCatalog(
+                    settingsRepository.agentSettings.value.subagent.customTypes
+                ).takeIf { it.isNotBlank() }?.let { "$base\n\n$it" } ?: base
+            }
         codeEngineImpl?.updateSessionExtras(
             roleExperience.enrichExtras(
-                // v1.5.17 自定义子代理类型目录：CodeTask 的工具描述是静态的（DI
-                // 期构建），自定义角色对主模型不可见——目录拼进会话附加段让主
-                // 模型知道有哪些角色可委派（空清单零注入，零 token 开销）。
-                base = neonOrbStore.mergeWith(toolkitStore.buildSessionContext())
-                    .let { base ->
-                        SubAgentPrompts.customTypeCatalog(
-                            settingsRepository.agentSettings.value.subagent.customTypes
-                        ).takeIf { it.isNotBlank() }?.let { "$base\n\n$it" } ?: base
-                    },
+                base = if (profileSection == null) {
+                    baseExtras
+                } else {
+                    "$profileSection\n\n$baseExtras"
+                },
                 goal = goal
             )
         )

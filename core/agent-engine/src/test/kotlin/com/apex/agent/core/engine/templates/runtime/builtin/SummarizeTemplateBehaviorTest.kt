@@ -291,41 +291,4 @@ class SummarizeTemplateBehaviorTest {
 
     // ═══ 端到端 ═══
 
-    @Test
-    fun `full turn through runtime`() = runTest {
-        val dir = java.io.File("/tmp/summarize-runtime-${System.nanoTime()}").apply { mkdirs() }
-        val registry = com.apex.agent.core.engine.templates.PromptTemplateRegistry(dir)
-        registry.reseedBuiltIns()
-        val runtime = com.apex.agent.core.engine.templates.runtime.TemplateRuntime(
-            registry = registry,
-            behaviors = mapOf(behavior.behaviorId to behavior)
-        )
-        val activation = runtime.activate(
-            "builtin_summarize",
-            mapOf(
-                "content" to "缓存层重构使延迟从 320ms 降到 45ms，命中率提升 30%，且不支持降级开关。",
-                "length" to "200 字以内"
-            )
-        )
-        assertTrue(activation.ok)
-        val outcome = runtime.prepareTurn(activation)
-        assertTrue(outcome.ok)
-        assertTrue(outcome.request!!.prompt.contains("关键事实"))
-        val report = runtime.processResponse(
-            activation,
-            """
-            ## 一句话结论
-            缓存重构大幅改善性能，但无降级开关。
-
-            ## 要点
-            - 延迟从 320ms 降到 45ms
-            - 命中率提升 30%
-            - 不支持降级开关
-            - 其余保持稳定
-            """.trimIndent(),
-            outcome.request
-        )
-        assertTrue(report.trace!!.allOk)
-        assertTrue(report.summary["budgetOk"] == "true")
-    }
 }

@@ -6,6 +6,7 @@ import com.apex.memkit.core.model.GraphEntity
 import com.apex.memkit.core.model.MacroAction
 import com.apex.memkit.core.model.MacroSkill
 import com.apex.memkit.core.model.MacroStep
+import com.apex.agent.ui.screen.memory.profile.ProfileAspectEntry
 
 /**
  * 记忆页单列列表计划（记忆页 v3）—— 列表视图从「多个嵌套 LazyColumn
@@ -26,7 +27,7 @@ import com.apex.memkit.core.model.MacroStep
 // ═══ 分区与过滤（UI 状态侧的枚举契约）══════════════════════════════
 
 /** 列表分区锚点（分区导航芯片的目标；全部 = 回顶，不在枚举内）。 */
-enum class MemorySection { CHAT, KNOWLEDGE, EPISODES, MACROS }
+enum class MemorySection { PROFILE, CHAT, KNOWLEDGE, EPISODES, MACROS }
 
 /** 经历分区状态过滤（芯片行；ALL = 不筛）。 */
 enum class EpisodeFilter { ALL, RUNNING, SUCCEEDED, FAILED, ABANDONED }
@@ -72,6 +73,16 @@ sealed interface MemoryListItem {
     /** 单条搜索命中卡。 */
     data class SearchHit(val hit: MemorySearchHit) : MemoryListItem {
         override val key: String get() = "search_hit_${hit.uid}"
+    }
+
+    /** 分区头：用户画像（[MemorySection.PROFILE] 锚点）。 */
+    data object ProfileHeader : MemoryListItem {
+        override val key: String get() = "header_profile"
+    }
+
+    /** 画像维度卡（一维度一卡：技术栈 / 编码风格 / 偏好 / 关注领域 / 工作习惯）。 */
+    data class ProfileAspectCard(val entry: ProfileAspectEntry) : MemoryListItem {
+        override val key: String get() = "profile_${entry.aspect.key}"
     }
 
     /** 分区头：聊天记忆（[MemorySection.CHAT] 锚点）。 */
@@ -143,6 +154,8 @@ data class MemoryListPlanInput(
     /** 搜索态（query 非空）—— 计划整段替换为命中列表（概览/健康/隐私保留）。 */
     val searchActive: Boolean,
     val searchResults: List<MemorySearchHit>,
+    /** 用户画像维度卡（空维度已被 toProfileAspectEntries 剔除）。 */
+    val profileEntries: List<ProfileAspectEntry> = emptyList(),
     /** 聊天记忆类别卡（空类别已被 toChatMemoryEntries 剔除）。 */
     val chatEntries: List<ChatMemoryEntry>,
     /** 知识实体（宿主已按关联中心度降序排好）。 */
@@ -158,9 +171,9 @@ data class MemoryListPlanInput(
 /**
  * 输入 → 单列列表计划（纯函数）。
  *
- * 非搜索态分区顺序：概览 → 健康 → 隐私 → 聊天记忆 → 知识图谱 →
- * 近期经历 → 高频宏 → 尾部。搜索态：概览 → 健康 → 隐私 → 命中摘要 →
- * 按三轨分组的命中卡（沿用 [MemorySearchHitType] 枚举序）。
+ * 非搜索态分区顺序：概览 → 健康 → 隐私 → 用户画像 → 聊天记忆 →
+ * 知识图谱 → 近期经历 → 高频宏 → 尾部。搜索态：概览 → 健康 → 隐私 →
+ * 命中摘要 → 按三轨分组的命中卡（沿用 [MemorySearchHitType] 枚举序）。
  */
 fun buildMemoryListPlan(input: MemoryListPlanInput): List<MemoryListItem> {
     if (input.searchActive) return buildSearchPlan(input)
@@ -169,6 +182,10 @@ fun buildMemoryListPlan(input: MemoryListPlanInput): List<MemoryListItem> {
     plan += MemoryListItem.Stats
     plan += MemoryListItem.Health
     plan += MemoryListItem.Privacy
+
+    // ── 用户画像 ──
+    plan += MemoryListItem.ProfileHeader
+    plan += input.profileEntries.map { MemoryListItem.ProfileAspectCard(it) }
 
     // ── 聊天记忆 ──
     plan += MemoryListItem.ChatHeader
@@ -243,6 +260,7 @@ fun filterEpisodes(
 fun List<MemoryListItem>.sectionAnchors(): Map<MemorySection, Int> = buildMap {
     this@sectionAnchors.forEachIndexed { index, item ->
         when (item) {
+            MemoryListItem.ProfileHeader -> put(MemorySection.PROFILE, index)
             MemoryListItem.ChatHeader -> put(MemorySection.CHAT, index)
             MemoryListItem.KnowledgeHeader -> put(MemorySection.KNOWLEDGE, index)
             MemoryListItem.EpisodesHeader -> put(MemorySection.EPISODES, index)

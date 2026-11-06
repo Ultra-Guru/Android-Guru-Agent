@@ -3,9 +3,7 @@ package com.apex.agent.di
 import android.content.Context
 import com.apex.agent.core.tools.*
 import com.apex.agent.core.tools.builtin.*
-import com.apex.agent.core.tools.catalog.CapabilityReportTool
 import com.apex.agent.core.tools.catalog.McpToolRegistrar
-import com.apex.agent.core.tools.catalog.MarketSearchTool
 import com.apex.agent.core.tools.catalog.ToolActivationStore
 import com.apex.agent.core.tools.catalog.ToolListTool
 import com.apex.agent.core.tools.catalog.ToolOpenTool
@@ -388,6 +386,9 @@ object ToolModule {
         // 风险门（防双弹窗），仅默认放行才落风险门继续把关。
         .gate(CompositeToolGate(
             ToolEnvironmentGate(environmentState),
+            // v2.1.0 角色门（评审 B3）：requiredRoles 非空的工具要求会话授予集
+            // 全覆盖——授予集现取 BrowserRoleAuth（设置+模板，热生效）。
+            com.apex.agent.core.tools.RoleGate { com.apex.agent.tools.BrowserRoleAuth.currentGrants() },
             PermissionAwareToolGate(permissionModeGate, riskAwareToolGate)
         ))
         // Issue #165 —— PreToolUse/PostToolUse 插槽：桥接 HookRegistry。
@@ -452,6 +453,7 @@ object ToolModule {
         browserAgentTools: BrowserAgentTools,
         browserSessionTools: BrowserSessionTools,
         browserLayoutTools: com.apex.agent.platform.browser.BrowserLayoutTools,
+        browserAsyncTools: com.apex.agent.platform.browser.BrowserAsyncTools,
         fusionController: com.apex.agent.fusion.FusionBundleController,
         // T76: Linux environment productionization 依赖
         linuxEnvironmentHealth: LinuxEnvironmentHealth,
@@ -768,7 +770,10 @@ object ToolModule {
         registry.register(SafeAgentTool(DownloadFileTool(httpClient, downloadDir)))
 
         // ═══ 3.5 内置浏览器自动化 (34) ═══
-        registerBrowserTools(registry, browserAgentTools, browserSessionTools, browserLayoutTools)
+        registerBrowserTools(
+            registry, browserAgentTools, browserSessionTools, browserLayoutTools,
+            browserAsyncTools = browserAsyncTools,
+        )
 
         // ═══ 4. 记忆 (apex-kit-memory 库经 platform:memory-host 接线) ═══
         // 旧 FileMemoryStore/MemorizeTool/RecallTool/ForgetTool 已移除；
@@ -945,45 +950,22 @@ object ToolModule {
         // 直接 400）。CORE 集常驻，其余能力经目录按需加载：
         //   ToolSearch 找 → ToolOpen 加载（描述+schema 作为工具结果注入，
         //   下一轮即可调用）→ ToolList 总览。
-        registry.register(SafeAgentTool(ToolSearchTool(registry)))
+        // v2.1.0：目录三工具的角色过滤（app 现取 BrowserRoleAuth——设置热生效）
+        val browserRoleFilter: (com.apex.agent.core.tools.ToolMetadata) -> Boolean =
+            { com.apex.agent.tools.BrowserRoleAuth.isVisible(it) }
+        registry.register(SafeAgentTool(ToolSearchTool(registry, browserRoleFilter)))
         registry.register(SafeAgentTool(ToolOpenTool(registry, toolActivation)))
-        registry.register(SafeAgentTool(ToolListTool(registry)))
+        registry.register(SafeAgentTool(ToolListTool(registry, browserRoleFilter)))
 
-        // ═══ 12b. 能力自省元工具（「agent 不懂自己能干什么」的根因修复）═══
-        // CapabilityReport：权限阶梯（与系统提示词同源）/ 实时环境 / 工具与
-        // 技能与 MCP 库存 + 扩展梯度，一键自省——遇 permission denied 或
-        // 「我能做 X 吗」时先自省再行动，不猜不弃；
-        // MarketSearch：官方技能+MCP 市场检索（此前 7 个市场源只服务 UI，
-        // agent 侧完全不可见）——「没装的能力一步之遥」。
-        registry.register(
-            SafeAgentTool(
-                CapabilityReportTool(
-                    registry = registry,
-                    environmentState = environmentState,
-                    privilegeLevel = { privilegeInfoProvider.currentLevel() },
-                    installedSkillCount = { skillRegistry.getInstalled().size },
-                    configuredMcpCount = { mcpManager.getConfigs().size },
-                    connectedMcpCount = { mcpManager.getConnectedServers().size },
-                    // v3 S3：GitHub 连接快照（"login|repo"，未设置仓库 = "-"；
-                    // 未连接 = null）—— CapabilityReport 的 GitHub 行数据源
-                    githubStateProvider = {
-                        githubTokenManager.connectionState.value.takeIf { it.isConnected }
-                            ?.let { s ->
-                                val login = s.username ?: "(unknown)"
-                                val repo = githubTokenManager.defaultRepo.value.ifBlank { "-" }
-                                "$login|$repo"
-                            }
-                    }
-                )
-            )
-        )
-        registry.register(
-            SafeAgentTool(
-                MarketSearchTool(
-                    fetchSkills = { hubSource.listSkills() },
-                    fetchMcpServers = { hubSource.listMcpServers() }
-                )
-            )
+        // ═══ 12b. 能力自省元工具 —— 注册体拆至 ToolModuleCapabilityIntrospection.kt（SRP 预算）═══
+        registerCapabilityIntrospectionTools(
+            registry = registry,
+            environmentState = environmentState,
+            privilegeInfoProvider = privilegeInfoProvider,
+            skillRegistry = skillRegistry,
+            mcpManager = mcpManager,
+            githubTokenManager = githubTokenManager,
+            hubSource = hubSource
         )
 
         // ═══ 12c. 统一扩展模型（市场重构 PR-A）—— 七工具注册体拆至卫星文件；

@@ -85,6 +85,23 @@ class CodeSessionStore(private val baseDir: File) {
         fileFor(workspaceId).delete()
     }
 
+    /**
+     * 枚举全部工作区快照（用户画像蒸馏的跨工作区数据源）。
+     *
+     * 扫描 baseDir 下全部 ws_*.json，逐个走 [load]（坏档自动隔离并跳过，
+     * 单卷损坏不影响其余）；非快照命名（.corrupt / .tmp 残留）不触碰。
+     * 返回顺序未定义，调用方自行按需排序。
+     */
+    fun listAll(): List<CodeSessionSnapshot> {
+        val files = baseDir.listFiles { f ->
+            f.name.startsWith("ws_") && f.name.endsWith(".json")
+        } ?: return emptyList()
+        return files.mapNotNull { file ->
+            val workspaceId = file.name.removePrefix("ws_").removeSuffix(".json")
+            load(workspaceId)
+        }
+    }
+
     // ── 内部 ─────────────────────────────────────────────────────────
 
     /** 目标文件：ws_<清洗后 id>.json，恒定落在 baseDir 内。 */

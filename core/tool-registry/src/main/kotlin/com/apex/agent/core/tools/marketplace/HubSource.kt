@@ -43,7 +43,7 @@ class HubSource(
         val description: String = "",
         val category: String? = null,
         val tags: List<String> = emptyList(),
-        val scope: String = "agent",
+        val scope: String = "coding",
         val author: String = "",
         /** 相对仓库根的 manifest 路径（下载时拼 RAW 基址）。 */
         val file: String
@@ -53,7 +53,7 @@ class HubSource(
 
         /** 对某工位是否可见（scope=all 双工位都保留，与市场分级口径一致）。 */
         fun visibleToScope(scope: String): Boolean =
-            scope.isBlank() || this.scope == "all" || this.scope == scope
+            scope.isBlank() || this.scope == "all" || this.scope == "coding" || this.scope == "agent"
     }
 
     /**
@@ -115,7 +115,7 @@ class HubSource(
     ) {
         /** 对某工位是否可见。 */
         fun visibleToScope(scope: String): Boolean =
-            scope.isBlank() || this.scope == "all" || this.scope == scope
+            scope.isBlank() || this.scope == "all" || this.scope == "coding" || this.scope == "agent"
 
         /** 一行端点摘要（与 MarketMcpRow.endpointSummary 同口径）。 */
         fun endpointSummary(): String = when (transport.uppercase()) {
@@ -142,25 +142,9 @@ class HubSource(
 
     // ── 内部实现 ──
 
-    // JsonObject 安全取值：字段缺失 / 类型不符 / null 均返回安全默认
-    private fun JsonObject?.str(key: String): String? =
-        (this?.get(key) as? JsonPrimitive)?.contentOrNull
-
-    private fun JsonObject?.bool(key: String): Boolean? =
-        (this?.get(key) as? JsonPrimitive)?.booleanOrNull
-
-    private fun JsonObject.strings(key: String): List<String> =
-        (this.get(key) as? kotlinx.serialization.json.JsonArray)
-            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
-            .orEmpty()
-
-    private fun JsonObject.strMap(key: String): Map<String, String> {
-        val obj = this.get(key) as? JsonObject ?: return emptyMap()
-        return obj.entries.mapNotNull { (k, v) ->
-            (v as? JsonPrimitive)?.contentOrNull?.let { k to it }
-        }.toMap()
-    }
-
+    // #354 ⑤：实例级 str/bool/strings/strMap 四件套已删除 —— 解析逻辑全部在
+    // companion object 里（parseSkillEntry / parseMcpEntry 是 companion 成员），
+    // 实例级这四个函数零调用，属死代码。
     private fun hubUnavailableMessage(kind: String, detail: String? = null): String {
         val reason = detail?.let { "：$it" }.orEmpty()
         return "无法连接官方${if (kind == "mcp") " MCP " else " "}仓库（网络不可用或超时，" +
@@ -235,7 +219,7 @@ class HubSource(
                 description = obj.str("description").orEmpty(),
                 category = obj.str("category"),
                 tags = obj.strings("tags"),
-                scope = obj.str("scope")?.takeIf { it.isNotBlank() } ?: "agent",
+                scope = obj.str("scope")?.takeIf { it.isNotBlank() } ?: "coding",
                 author = obj.str("author").orEmpty(),
                 file = file
             )

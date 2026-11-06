@@ -485,15 +485,11 @@ class SystemDiagnoseTool(
             id: String,
             name: String,
             version: String,
-            enabledAgent: Boolean,
-            enabledCoding: Boolean,
             toolCount: Int
         ) = buildJsonObject {
             put("id", id)
             put("name", name)
             put("version", version)
-            put("enabledAgent", enabledAgent)
-            put("enabledCoding", enabledCoding)
             put("tools", toolCount)
         }
 

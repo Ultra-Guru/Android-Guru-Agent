@@ -75,7 +75,6 @@ import com.apex.agent.ui.screen.market.ManifestDryRunDialog
 import com.apex.agent.ui.screen.market.MarketScope
 import com.apex.agent.ui.screen.market.MarketSkillDetailDialog
 import com.apex.agent.ui.screen.market.MarketTab
-import com.apex.agent.ui.screen.market.MarketTier
 import com.apex.agent.ui.screen.market.MarketUiState
 import com.apex.agent.ui.screen.market.MarketViewModel
 import com.apex.agent.ui.screen.market.McpStartupProgressDialog
@@ -145,8 +144,8 @@ fun AggregationCenterScreen(viewModel: MarketViewModel = hiltViewModel()) {
     val installedPattern = stringResource(R.string.fusion_result_installed)
     val failedText = stringResource(R.string.fusion_result_failed)
 
-    // #197 分级过滤态：Skills/MCP 按当前工位分级过滤（与斜杠菜单同口径）
-    val tierState = remember(state.tier, state.skills, state.mcps) {
+    // 技能/MCP 可见性过滤（Coding 工位口径）
+    val filteredState = remember(state.skills, state.mcps) {
         state.copy(
             skills = viewModel.visibleSkills(state),
             mcps = viewModel.visibleMcps(state)
@@ -246,7 +245,7 @@ fun AggregationCenterScreen(viewModel: MarketViewModel = hiltViewModel()) {
             }
 
             // ═══ 第三层：成员体系 ═══
-            // 分级（Agent/Coding 工位分流 —— scope 语义核心，保留）
+            // 添加成员 / 我的成员（旧市场双视图收编为段控）
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -254,16 +253,6 @@ fun AggregationCenterScreen(viewModel: MarketViewModel = hiltViewModel()) {
                     .horizontalScroll(rememberScrollState())
                     .padding(horizontal = 12.dp, vertical = 4.dp)
             ) {
-                MarketTier.entries.forEach { t ->
-                    FilterChip(
-                        selected = state.tier == t,
-                        onClick = { viewModel.selectTier(t) },
-                        label = { Text(stringResource(t.labelRes)) },
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                // 添加成员 / 我的成员（旧市场双视图收编为段控）
                 FilterChip(
                     selected = state.scope == MarketScope.BROWSE,
                     onClick = { viewModel.selectScope(MarketScope.BROWSE) },
@@ -297,18 +286,18 @@ fun AggregationCenterScreen(viewModel: MarketViewModel = hiltViewModel()) {
             Box(modifier = Modifier.weight(1f)) {
                 when (state.scope) {
                     MarketScope.BROWSE -> when (state.selectedTab) {
-                        MarketTab.PLUGINS -> BrowsePluginsTab(tierState, viewModel)
-                        MarketTab.SKILLS -> BrowseSkillsTab(tierState, viewModel)
-                        MarketTab.MCP -> BrowseMcpTab(tierState, viewModel)
-                        MarketTab.CONNECTORS -> BrowseConnectorsTab(tierState, viewModel)
-                        MarketTab.INTEGRATIONS -> BrowseIntegrationsTab(tierState, viewModel)
+                        MarketTab.PLUGINS -> BrowsePluginsTab(filteredState, viewModel)
+                        MarketTab.SKILLS -> BrowseSkillsTab(filteredState, viewModel)
+                        MarketTab.MCP -> BrowseMcpTab(filteredState, viewModel)
+                        MarketTab.CONNECTORS -> BrowseConnectorsTab(filteredState, viewModel)
+                        MarketTab.INTEGRATIONS -> BrowseIntegrationsTab(filteredState, viewModel)
                     }
                     MarketScope.INSTALLED -> when (state.selectedTab) {
-                        MarketTab.PLUGINS -> InstalledPluginsTab(tierState, viewModel)
-                        MarketTab.SKILLS -> InstalledSkillsTab(tierState, viewModel)
-                        MarketTab.MCP -> InstalledMcpTab(tierState, viewModel)
-                        MarketTab.CONNECTORS -> InstalledConnectorsTab(tierState, viewModel)
-                        MarketTab.INTEGRATIONS -> InstalledIntegrationsTab(tierState, viewModel)
+                        MarketTab.PLUGINS -> InstalledPluginsTab(filteredState, viewModel)
+                        MarketTab.SKILLS -> InstalledSkillsTab(filteredState, viewModel)
+                        MarketTab.MCP -> InstalledMcpTab(filteredState, viewModel)
+                        MarketTab.CONNECTORS -> InstalledConnectorsTab(filteredState, viewModel)
+                        MarketTab.INTEGRATIONS -> InstalledIntegrationsTab(filteredState, viewModel)
                     }
                 }
             }

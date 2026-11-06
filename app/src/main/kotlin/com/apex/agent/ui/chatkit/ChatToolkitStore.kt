@@ -169,7 +169,11 @@ class ChatToolkitStore @Inject constructor(
         if (_timeEnabled.value) {
             val now = Date()
             val tz = TimeZone.getDefault()
-            val dateTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(now)
+            // #479：注入 prompt 的时间戳必须用固定 Locale —— 模型要解析它，
+            // 而不是给人看。Locale.getDefault() 在泰语（佛历 2569）、阿拉伯语
+            // （阿拉伯-印度数字 ٠٩）等区域会产出模型读不懂的年份/数字，
+            // 直接毁掉「以此时钟为准」这条指令。中文星期另用 Locale.CHINA。
+            val dateTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(now)
             val dateCn = SimpleDateFormat("yyyy年M月d日 EEEE", Locale.CHINA).format(now)
             appendLine("### 当前时间（实时注入）")
             appendLine("当前时间：$dateTime (${tz.id})")

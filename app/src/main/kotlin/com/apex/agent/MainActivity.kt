@@ -12,6 +12,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
@@ -19,6 +21,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.core.content.ContextCompat
@@ -165,51 +168,59 @@ class MainActivity : ComponentActivity() {
                     ),
                     LocalShowTimestamps provides settings.showTimestamps
                 ) {
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.background
-                    ) {
-                        // 自定义背景（界面外观 → 自定义背景）：垫在全部内容之下的
-                        // 专属优化图层（降采样解码 / 亮度自适应纱罩 / 一图一缓存）。
-                        // URI 失效时内部诚实降级为不渲染（回退纯色背景）。
+                    // 自定义背景层：垫在全部内容之下
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        // 底层：自定义背景或纯色 fallback
                         if (settings.backgroundImageUri.isNotBlank()) {
                             CustomBackgroundLayer(
                                 uri = settings.backgroundImageUri,
                                 darkTheme = darkTheme,
                                 dim = settings.backgroundDim
                             )
-                        }
-                        // 新手引导：首次启动（或升级到新引导版本后的首启）先走
-                        // 五页 Onboarding；完成标记持久化在 AgentSettings
-                        // （onboardingCompleted + onboardingVersion 双字段 ——
-                        // 版本低于当前引导版的老用户重看一次，新权限步骤与
-                        // 工作区选择借引导页布道，与 v1 重看语义一致）。
-                        if (settings.onboardingCompleted &&
-                            settings.onboardingVersion >= OnboardingFlow.CURRENT_VERSION
-                        ) {
-                            ApexRoot()
                         } else {
-                            OnboardingScreen(
-                                workspaceScope = settings.workspaceScope,
-                                workspaceFolderName = settings.workspaceFolderName,
-                                onWorkspaceSelected = { scope, folderUri, folderName ->
-                                    settingsRepository.updateAgentSettings {
-                                        copy(
-                                            workspaceScope = scope,
-                                            workspaceFolderUri = folderUri,
-                                            workspaceFolderName = folderName
-                                        )
-                                    }
-                                },
-                                onFinished = {
-                                    settingsRepository.updateAgentSettings {
-                                        copy(
-                                            onboardingCompleted = true,
-                                            onboardingVersion = OnboardingFlow.CURRENT_VERSION
-                                        )
-                                    }
-                                }
+                            Box(
+                                Modifier.fillMaxSize()
+                                    .background(MaterialTheme.colorScheme.background)
                             )
+                        }
+
+                        // 内容层：透明 Surface，让背景层透出
+                        Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            color = Color.Transparent
+                        ) {
+                            // 新手引导：首次启动（或升级到新引导版本后的首启）先走
+                            // 五页 Onboarding；完成标记持久化在 AgentSettings
+                            // （onboardingCompleted + onboardingVersion 双字段 ——
+                            // 版本低于当前引导版的老用户重看一次，新权限步骤与
+                            // 工作区选择借引导页布道，与 v1 重看语义一致）。
+                            if (settings.onboardingCompleted &&
+                                settings.onboardingVersion >= OnboardingFlow.CURRENT_VERSION
+                            ) {
+                                ApexRoot()
+                            } else {
+                                OnboardingScreen(
+                                    workspaceScope = settings.workspaceScope,
+                                    workspaceFolderName = settings.workspaceFolderName,
+                                    onWorkspaceSelected = { scope, folderUri, folderName ->
+                                        settingsRepository.updateAgentSettings {
+                                            copy(
+                                                workspaceScope = scope,
+                                                workspaceFolderUri = folderUri,
+                                                workspaceFolderName = folderName
+                                            )
+                                        }
+                                    },
+                                    onFinished = {
+                                        settingsRepository.updateAgentSettings {
+                                            copy(
+                                                onboardingCompleted = true,
+                                                onboardingVersion = OnboardingFlow.CURRENT_VERSION
+                                            )
+                                        }
+                                    }
+                                )
+                            }
                         }
                     }
                 }

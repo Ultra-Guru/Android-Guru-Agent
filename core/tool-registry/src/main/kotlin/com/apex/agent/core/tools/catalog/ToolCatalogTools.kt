@@ -29,7 +29,9 @@ import com.apex.agent.core.tools.builtin.BaseTool
  * stays ~20 KB.
  */
 class ToolSearchTool(
-    private val registry: ToolRegistry
+    private val registry: ToolRegistry,
+    /** v2.1.0 角色过滤（评审 B3 目录层强制点）：默认恒真=零漂移；app 注入现取判定。 */
+    private val roleFilter: (ToolMetadata) -> Boolean = { true }
 ) : BaseTool(
     id = "ToolSearch",
     name = "Tool Search",
@@ -79,6 +81,7 @@ class ToolSearchTool(
 
         val scored = registry.getAllTools()
             .asSequence()
+            .filter { roleFilter(it.metadata) }
             .map { tool ->
                 val id = tool.id.lowercase()
                 val name = tool.name.lowercase()
@@ -186,7 +189,9 @@ class ToolOpenTool(
 }
 
 class ToolListTool(
-    private val registry: ToolRegistry
+    private val registry: ToolRegistry,
+    /** v2.1.0 角色过滤（同 ToolSearchTool）。 */
+    private val roleFilter: (ToolMetadata) -> Boolean = { true }
 ) : BaseTool(
     id = "ToolList",
     name = "Tool List",
@@ -215,9 +220,10 @@ class ToolListTool(
         }
         val categoryFilter = args.optionalString("category")?.trim()
 
-        val all = registry.getAllTools().filterNot {
-            ToolTierPolicy.isLegacyAlias(it.id)
-        }
+        val all = registry.getAllTools().asSequence()
+            .filter { roleFilter(it.metadata) }
+            .filterNot { ToolTierPolicy.isLegacyAlias(it.id) }
+            .toList()
         val grouped = all.groupBy { it.metadata.category }
             .toSortedMap(compareBy { it.order })
             .filter { (cat, _) ->

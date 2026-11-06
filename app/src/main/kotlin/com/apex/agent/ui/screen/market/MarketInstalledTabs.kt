@@ -366,15 +366,6 @@ internal fun InstalledSkillsTab(state: MarketUiState, viewModel: MarketViewModel
                 MarketHeader(
                     stringResource(R.string.market_installed_skills_header, state.skills.size)
                 )
-                // per-scope 启停提示：开关只写当前分级工位（另一侧独立）
-                Text(
-                    text = stringResource(
-                        R.string.market_installed_skills_tier_hint,
-                        stringResource(state.tier.labelRes)
-                    ),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     ) { skill ->
@@ -418,7 +409,7 @@ internal fun InstalledSkillsTab(state: MarketUiState, viewModel: MarketViewModel
                         }
                         Switch(
                             // per-scope：开关读写当前市场分级对应工位（另一侧独立）
-                            checked = skill.enabledForTier(state.tier),
+                            checked = skill.enabled,
                             onCheckedChange = { viewModel.toggleSkill(skill.id, it) }
                         )
                         // Issue #166：内置技能不可卸载（可禁用）——不渲染删除按钮，
@@ -792,7 +783,7 @@ internal fun InstalledIntegrationsTab(state: MarketUiState, viewModel: MarketVie
                     }
                     Switch(
                         // per-scope：开关读写当前市场分级对应工位（另一侧独立）
-                        checked = skill.enabledForTier(state.tier),
+                        checked = skill.enabled,
                         onCheckedChange = { viewModel.toggleSkill(skill.id, it) }
                     )
                     IconButton(onClick = { pendingUninstall = skill }) {

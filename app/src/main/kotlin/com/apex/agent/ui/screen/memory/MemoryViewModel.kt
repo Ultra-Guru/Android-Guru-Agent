@@ -16,6 +16,13 @@ import com.apex.memkit.core.model.MacroSkill
 import com.apex.memkit.core.store.clearFacts
 import com.apex.memkit.core.store.removeFact
 import com.apex.agent.ui.language.LanguageManager
+import com.apex.agent.ui.screen.memory.profile.DistillReport
+import com.apex.agent.ui.screen.memory.profile.ProfileAspect
+import com.apex.agent.ui.screen.memory.profile.ProfileAspectEntry
+import com.apex.agent.ui.screen.memory.profile.ProfileDistiller
+import com.apex.agent.ui.screen.memory.profile.UserProfileItem
+import com.apex.agent.ui.screen.memory.profile.UserProfileStore
+import com.apex.agent.ui.screen.memory.profile.toProfileAspectEntries
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -56,6 +63,8 @@ import javax.inject.Inject
 class MemoryViewModel @Inject constructor(
     private val memKit: MemKit,
     private val maintenanceScheduler: MaintenanceScheduler,
+    private val userProfileStore: UserProfileStore,
+    private val profileDistiller: ProfileDistiller,
     // 记忆页文案走资源（en/zh 双语）；VM 层非 Compose 场景按仓库惯例经
     // LanguageManager 取词（SettingsViewModel 同款模式）。
     private val languageManager: LanguageManager
@@ -110,6 +119,16 @@ class MemoryViewModel @Inject constructor(
     private val _chatMemory = MutableStateFlow<List<ChatMemoryEntry>>(emptyList())
     val chatMemory: StateFlow<List<ChatMemoryEntry>> = _chatMemory.asStateFlow()
 
+    // ═══ 用户画像（五维度长期特征 —— 蒸馏 + 手动双入口）═══
+
+    /** 画像分维度展示条目（固定五维序；空维度不占位）。 */
+    private val _profile = MutableStateFlow<List<ProfileAspectEntry>>(emptyList())
+    val profile: StateFlow<List<ProfileAspectEntry>> = _profile.asStateFlow()
+
+    /** 「从编码对话提炼」进行中（按钮转圈 + 防重入）。 */
+    private val _profileDistilling = MutableStateFlow(false)
+    val profileDistilling: StateFlow<Boolean> = _profileDistilling.asStateFlow()
+
     // ═══ v3：刷新可见性（下拉刷新指示 + 概览区「上次刷新」行）═══
 
     /** 快照刷新进行中（PullToRefreshBox 指示；true 期间重复 refresh 直接丢弃）。 */
@@ -156,9 +175,11 @@ class MemoryViewModel @Inject constructor(
                 val counts = memKit.counts()
                 val facts = withContext(Dispatchers.IO) { memKit.allFacts() }
                 val graph = withContext(Dispatchers.IO) { memKit.readGraph() }
+                val profileItems = withContext(Dispatchers.IO) { userProfileStore.list() }
                 _episodes.value = eps
                 _macros.value = macs
                 _chatMemory.value = facts.toChatMemoryEntries()
+                _profile.value = profileItems.toProfileAspectEntries()
                 _knowledge.value = KnowledgeSnapshot(graph.first, graph.second)
                 _stats.value = MemoryStats(
                     episodeCount = eps.size,
@@ -406,6 +427,140 @@ class MemoryViewModel @Inject constructor(
                     R.string.memory_chat_msg_failed, e.message ?: ""
                 )
             }
+        }
+    }
+
+    // ═══ 用户画像（五维度长期特征）═══
+
+    /** 刷新画像分维度快照（写入 / 删除 / 蒸馏后的回刷也走这里）。 */
+    private fun refreshProfile() {
+        viewModelScope.launch {
+            runCatching {
+                val items = withContext(Dispatchers.IO) { userProfileStore.list() }
+                _profile.value = items.toProfileAspectEntries()
+            }
+        }
+    }
+
+    /** 手动添加一条画像（手动录入默认满置信度）。 */
+    fun addProfileItem(aspect: ProfileAspect, content: String, confidence: Float) {
+        val text = content.trim()
+        if (text.isEmpty()) return
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    userProfileStore.upsert(
+                        UserProfileItem(
+                            id = "profile_${now}",
+                            aspect = aspect.key,
+                            content = text,
+                            confidence = confidence.coerceIn(0.3f, 1.0f),
+                            source = UserProfileItem.SOURCE_MANUAL,
+                            createdAt = now,
+                            updatedAt = now
+                        )
+                    )
+                }
+            }.onSuccess {
+                _lastMessage.value = languageManager.getString(R.string.memory_profile_msg_added)
+                refreshProfile()
+            }.onFailure { e ->
+                _lastMessage.value = languageManager.getString(
+                    R.string.memory_profile_msg_write_failed, e.message ?: ""
+                )
+            }
+        }
+    }
+
+    /** 编辑既有条目（内容 / 置信度；维度不变）。 */
+    fun updateProfileItem(item: UserProfileItem, content: String, confidence: Float) {
+        val text = content.trim()
+        if (text.isEmpty()) return
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    userProfileStore.upsert(
+                        item.copy(
+                            content = text,
+                            confidence = confidence.coerceIn(0.3f, 1.0f),
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    )
+                }
+            }.onSuccess {
+                _lastMessage.value = languageManager.getString(R.string.memory_profile_msg_updated)
+                refreshProfile()
+            }.onFailure { e ->
+                _lastMessage.value = languageManager.getString(
+                    R.string.memory_profile_msg_write_failed, e.message ?: ""
+                )
+            }
+        }
+    }
+
+    /** 删除单条画像（UI 二次确认后调用）。 */
+    fun deleteProfileItem(itemId: String) {
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { userProfileStore.delete(itemId) } }
+                .onSuccess {
+                    _lastMessage.value = languageManager.getString(R.string.memory_profile_msg_deleted)
+                    refreshProfile()
+                }
+                .onFailure { e ->
+                    _lastMessage.value = languageManager.getString(
+                        R.string.memory_profile_msg_write_failed, e.message ?: ""
+                    )
+                }
+        }
+    }
+
+    /** 清空全部画像（UI 二次确认后调用）。 */
+    fun clearProfile() {
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { userProfileStore.clear() } }
+                .onSuccess {
+                    _lastMessage.value = languageManager.getString(R.string.memory_profile_msg_cleared)
+                    refreshProfile()
+                }
+                .onFailure { e ->
+                    _lastMessage.value = languageManager.getString(
+                        R.string.memory_profile_msg_write_failed, e.message ?: ""
+                    )
+                }
+        }
+    }
+
+    /**
+     * 「从编码对话提炼」—— 扫描编码会话存档 → LLM 结构化蒸馏 → 落账。
+     * 防重入；IO + LLM 往返全程后台协程。
+     */
+    fun distillProfile() {
+        if (_profileDistilling.value) return
+        _profileDistilling.value = true
+        viewModelScope.launch {
+            val report = runCatching {
+                withContext(Dispatchers.IO) { profileDistiller.distill() }
+            }
+            _profileDistilling.value = false
+            _lastMessage.value = when {
+                report.isFailure -> languageManager.getString(
+                    R.string.memory_profile_msg_distill_failed,
+                    report.exceptionOrNull()?.message ?: ""
+                )
+
+                report.getOrThrow().noSignal -> languageManager.getString(
+                    R.string.memory_profile_msg_distill_empty
+                )
+
+                else -> {
+                    val r: DistillReport = report.getOrThrow()
+                    languageManager.getString(
+                        R.string.memory_profile_msg_distill_done, r.added, r.updated, r.skipped
+                    )
+                }
+            }
+            refreshProfile()
         }
     }
 }

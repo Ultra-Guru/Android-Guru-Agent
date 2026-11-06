@@ -16,7 +16,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -35,6 +34,8 @@ import com.apex.agent.ui.glass.GlassButton
 import com.apex.agent.ui.glass.GlassCard
 import com.apex.agent.ui.glass.GlassIconButton
 import com.apex.agent.ui.language.LanguageManager
+import com.apex.agent.ui.theme.statusError
+import com.apex.agent.ui.theme.statusSuccess
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -319,7 +320,7 @@ fun BackupSection(viewModel: BackupViewModel = hiltViewModel()) {
                 Row(verticalAlignment = Alignment.Top) {
                     Text(
                         msg, style = MaterialTheme.typography.bodySmall,
-                        color = if (state.isError) MaterialTheme.colorScheme.error else BackupSuccessGreen,
+                        color = if (state.isError) statusError() else statusSuccess(),
                         modifier = Modifier.weight(1f),
                     )
                     Spacer(Modifier.width(8.dp))
@@ -444,6 +445,3 @@ private fun BackupSwitchRow(
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
-
-/** 成功反馈绿（Material Green 400：深浅色玻璃面上均可读；失败色走主题 error）。 */
-private val BackupSuccessGreen = Color(0xFF66BB6A)

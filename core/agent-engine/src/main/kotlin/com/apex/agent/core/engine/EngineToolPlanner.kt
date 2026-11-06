@@ -53,6 +53,7 @@ internal object EngineToolPlanner {
      */
     fun isToolVisibleInScope(metadata: ToolMetadata, skillScope: String): Boolean {
         if (skillScope.isBlank() || skillScope == SCOPE_ALL) return true
+        if (skillScope == "coding" && metadata.scope == "agent") return false
         val scope = metadata.scope
         return scope == SCOPE_ALL || scope == skillScope
     }
@@ -95,6 +96,8 @@ internal object EngineToolPlanner {
                 ToolRequestBudget.planForced(registry, forced)
             // #147 子代理：仅收窄工具集，不附带 tool_choice=required —— 子代理的
             // 最终轮需要能输出纯文本结论（forced 语义会迫使每轮调用工具）。
+            // 子代理**默认不继承** browser 角色（v2.1.0 文档口径）：cfg 未显式
+            // 带 grantedRoles 即为空集 = 受限角色全不可见。
             allowed.isNotEmpty() && degradationLevel == 0 ->
                 ToolRequestBudget.planForced(registry, allowed)
             // 默认计划（BUILD / PLAN / GOAL 同待遇：编码工位全量工具面 +
@@ -106,7 +109,50 @@ internal object EngineToolPlanner {
                 coreOnly = degradationLevel >= DEGRADATION_CORE_ONLY,
                 serviceToolIds = if (degradationLevel == 0) serviceToolIds else emptySet()
             ).applyScopeIsolation(registry, config)
+        }.applyRoleIsolation(registry, config.grantedRoles)
+    }
+
+    /**
+     * v2.1.0 角色可见性（评审 B1/P0-4）：[ToolMetadata.requiredRoles] 非空的工具，
+     * 要求会话授予集包含**全部**所需角色。角色是硬边界（区别于 scope 偏好）——
+     * forced/allowed/default 三条计划路径统一过滤（[buildToolPlan] 收口处一刀切），
+     * 子代理收窄路径同样被拦。
+     */
+    fun isToolVisibleInRoles(metadata: ToolMetadata, grantedRoles: Set<String>): Boolean {
+        val required = metadata.requiredRoles
+        if (required.isEmpty()) return true
+        return grantedRoles.containsAll(required)
+    }
+
+    /** 计划级角色过滤收口：三条路径统一套用（硬边界，无开关）。 */
+    private fun ToolRequestBudget.RequestToolPlan.applyRoleIsolation(
+        registry: ToolRegistry,
+        grantedRoles: Set<String>,
+    ): ToolRequestBudget.RequestToolPlan {
+        if (grantedRoles.containsAll(
+                registry.getAllTools().asSequence()
+                    .map { it.metadata.requiredRoles }
+                    .filter { it.isNotEmpty() }
+                    .flatten().toSet()
+            )
+        ) return this // 全角色已授：快路径零过滤
+        fun offRole(def: com.apex.agent.core.llm.ToolDefinition): Boolean {
+            val registryId = providerNameToId[def.name] ?: def.name
+            val metadata = registry.getTool(registryId)?.metadata ?: return false
+            return !isToolVisibleInRoles(metadata, grantedRoles)
         }
+        if (tools.none { offRole(it) }) return this
+        val kept = tools.filterNot { offRole(it) }
+        val keptNames = kept.map { it.name }.toSet()
+        val keptNameToId = providerNameToId.filterKeys { it in keptNames }
+        val keptIds = keptNameToId.values.toSet()
+        return ToolRequestBudget.RequestToolPlan(
+            tools = kept,
+            providerNameToId = keptNameToId,
+            visibleRegistryIds = visibleRegistryIds.intersect(keptIds),
+            totalBytes = kept.sumOf { it.parameters.length + it.description.length + it.name.length + 48 },
+            droppedByBudget = droppedByBudget
+        )
     }
 
     /**

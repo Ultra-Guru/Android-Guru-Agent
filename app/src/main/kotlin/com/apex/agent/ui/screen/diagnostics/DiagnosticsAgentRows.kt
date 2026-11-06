@@ -55,8 +55,6 @@ data class SkillRow(
     val id: String,
     val name: String,
     val version: String,
-    val enabledAgent: Boolean,
-    val enabledCoding: Boolean,
     val toolCount: Int
 )
 
@@ -133,19 +131,7 @@ internal fun SkillListRow(row: SkillRow) {
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    buildString {
-                        append(
-                            if (row.enabledAgent) stringResource(R.string.diag_skill_scope_agent) + " ✓"
-                            else stringResource(R.string.diag_skill_scope_agent) + " ✕"
-                        )
-                        append("  ·  ")
-                        append(
-                            if (row.enabledCoding) stringResource(R.string.diag_skill_scope_coding) + " ✓"
-                            else stringResource(R.string.diag_skill_scope_coding) + " ✕"
-                        )
-                        append("  ·  ")
-                        append(stringResource(R.string.diag_skill_tools_unit, row.toolCount))
-                    },
+                    stringResource(R.string.diag_skill_tools_unit, row.toolCount),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

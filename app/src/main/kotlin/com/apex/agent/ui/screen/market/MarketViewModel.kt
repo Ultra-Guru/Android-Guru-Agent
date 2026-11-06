@@ -227,10 +227,8 @@ class MarketViewModel @Inject constructor(
                 // 视图与瞬时态保留：scope 不保留 →「已安装管理」里任何开关/卸载/连接
                 // （全部以 refresh() 收尾）都会把顶栏弹回「市场」视图；mcpConnecting
                 // 不保留 → 长连接期间重进屏幕丢失防双击并发保护。
-                // #206 修复：tier 不保留 → 任何操作后 Coding 市场选择被弹回 Agent 市场。
                 scope = state.scope,
                 mcpConnecting = state.mcpConnecting,
-                tier = state.tier,
                 // #205：进度弹窗与目录状态跨 refresh 保留 —— 连接完成后
                 // refresh() 不再把弹窗抹掉（完整时间线由用户手动关闭）；
                 // 目录资产只加载一次，不能被快照重置回空表。
@@ -300,8 +298,6 @@ class MarketViewModel @Inject constructor(
                     description = it.manifest.description,
                     installed = true,
                     // per-scope 启停（双工位隔离）：分级开关各自独立读写
-                    enabledAgent = it.enabledAgent,
-                    enabledCoding = it.enabledCoding,
                     // 就绪门禁：必填配置未填齐 → 「需配置」徽标 + 菜单隐藏
                     needsConfig = !skillRegistry.isConfigured(it.manifest.id),
                     energy = h?.energy ?: 1.0f,
@@ -322,7 +318,7 @@ class MarketViewModel @Inject constructor(
                 val tpl = SkillMenuProvider.BUILTIN_TEMPLATES.firstOrNull { it.id == t.id }
                 MarketSkillRow(
                     id = t.id, name = t.label, description = t.description,
-                    installed = false, enabledAgent = false, enabledCoding = false,
+                    installed = false,
                     source = "builtin", builtin = true,
                     category = tpl?.category,
                     tags = tpl?.tags.orEmpty()
@@ -366,26 +362,21 @@ class MarketViewModel @Inject constructor(
     /** 切换顶栏视图（市场 ⇄ 已安装管理），保留当前子页签。 */
     fun selectScope(scope: MarketScope) = _uiState.update { it.copy(scope = scope) }
 
-    // #206：selectTier 迁至 MCP 目录区（切换分级时同步校正目录分类选择），见下方。
-
-    /** #197 当前分级下可见的技能列表（scope=all 两级都保留）。 */
+    /** 可见的技能列表（scope=all 保留）。 */
     fun visibleSkills(state: MarketUiState): List<MarketSkillRow> {
-        val scope = state.tier.name.lowercase()
-        return state.skills.filter { it.scope == "all" || it.scope == scope }
+        return state.skills.filter { it.scope == "all" || it.scope == "coding" }
     }
 
-    /** #197 当前分级下可见的 MCP 列表。 */
+    /** 可见的 MCP 列表。 */
     fun visibleMcps(state: MarketUiState): List<MarketMcpRow> {
-        val scope = state.tier.name.lowercase()
-        return state.mcps.filter { it.scope == "all" || it.scope == scope }
+        return state.mcps.filter { it.scope == "all" || it.scope == "coding" }
     }
 
     fun clearMessage() = _uiState.update { it.copy(lastMessage = null) }
 
     internal fun message(msg: String) = _uiState.update { it.copy(lastMessage = msg) }
 
-    /** 当前市场分级的 scope 值（安装默认启用工位 / 分级开关写入口径；PR378 per-scope）。 */
-    internal fun tierScope(): String = _uiState.value.tier.name.lowercase()
+    internal fun tierScope(): String = "coding"
 
     // ═══ MCP ═══
 
@@ -399,22 +390,6 @@ class MarketViewModel @Inject constructor(
     /** 正在编辑的 MCP 配置快照（null = 编辑器关闭）。UI 据此渲染 [EditMcpDialog]。 */
     internal val _editingMcp = MutableStateFlow<McpServerConfig?>(null)
     val editingMcp: StateFlow<McpServerConfig?> = _editingMcp.asStateFlow()
-
-    /**
-     * #197/#206 切换市场分级：同时校正目录分类选择 —— coding 专属分类在
-     * Agent 分级下无条目，旧选择留着只会得到空列表。
-     */
-    fun selectTier(tier: MarketTier) {
-        _uiState.update { state ->
-            val catStillVisible = state.mcpCatalogCategory?.let { cat ->
-                state.mcpCatalog.any { it.category == cat && it.visibleToTier(tier.name.lowercase()) }
-            } ?: true
-            state.copy(
-                tier = tier,
-                mcpCatalogCategory = if (catStillVisible) state.mcpCatalogCategory else null
-            )
-        }
-    }
 
     // ═══ 连接器 ═══
 

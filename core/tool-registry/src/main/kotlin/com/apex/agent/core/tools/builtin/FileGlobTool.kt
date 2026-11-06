@@ -34,7 +34,9 @@ class FileGlobTool(
 
         fun formatTimestamp(epochMs: Long): String {
             synchronized(LOCK) {
-                val fmt = sharedFormat ?: SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+                // #479：本工具输出直接进模型上下文 —— 阿拉伯语等区域默认 Locale
+                // 会产出阿拉伯-印度数字（٠٩:٣٠），模型无法据此判断文件新旧。
+                val fmt = sharedFormat ?: SimpleDateFormat("MM-dd HH:mm", Locale.US)
                     .also { sharedFormat = it }
                 return fmt.format(Date(epochMs))
             }

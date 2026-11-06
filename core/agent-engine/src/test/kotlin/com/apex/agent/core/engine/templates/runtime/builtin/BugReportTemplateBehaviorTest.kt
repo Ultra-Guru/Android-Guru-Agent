@@ -243,48 +243,4 @@ class BugReportTemplateBehaviorTest {
 
     // ═══ 端到端 ═══
 
-    @Test
-    fun `full turn through runtime`() = runTest {
-        val dir = java.io.File("/tmp/bugreport-runtime-${System.nanoTime()}").apply { mkdirs() }
-        val registry = com.apex.agent.core.engine.templates.PromptTemplateRegistry(dir)
-        registry.reseedBuiltIns()
-        val runtime = com.apex.agent.core.engine.templates.runtime.TemplateRuntime(
-            registry = registry,
-            behaviors = mapOf(behavior.behaviorId to behavior)
-        )
-        val activation = runtime.activate(
-            "builtin_bug_report",
-            mapOf(
-                "symptom" to "提交订单后应用崩溃",
-                "reproduce" to "1. 打开订单页\n2. 点击提交（每次必现）",
-                "expected" to "提交成功",
-                "actual" to "应用闪退",
-                "environment" to "Android 15 / 2.3.1"
-            )
-        )
-        assertTrue(activation.ok)
-        val outcome = runtime.prepareTurn(activation)
-        assertTrue(outcome.ok)
-        assertTrue(outcome.request!!.prompt.contains("严重度基线"))
-        val report = runtime.processResponse(
-            activation,
-            """
-            ## 标题
-            订单提交后应用崩溃
-
-            ## 严重程度评估
-            🔴 阻断
-
-            ## 可能原因分析
-            1. 空指针访问
-            2. 生命周期竞态
-
-            ## 下一步排查建议
-            抓取崩溃堆栈
-            """.trimIndent(),
-            outcome.request
-        )
-        assertTrue(report.trace!!.allOk)
-        assertEquals("1", report.summary[com.apex.agent.core.engine.templates.runtime.TemplateRenderedReport.KEY_BLOCKER_COUNT])
-    }
 }

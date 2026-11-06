@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
+import com.apex.agent.ui.theme.selectorOutlineColor
 import com.apex.agent.ui.icons.AgentRoleAvatarIcon
 import com.apex.agent.ui.screen.settings.AgentRole
 
@@ -60,7 +61,7 @@ internal fun AgentRoleSelector(
             shape = RoundedCornerShape(50),
             color = MaterialTheme.colorScheme.tertiaryContainer,
             contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+            border = BorderStroke(1.dp, selectorOutlineColor()),
             modifier = Modifier
                 .heightIn(min = 28.dp)
                 .semantics { contentDescription = selectorDescription }

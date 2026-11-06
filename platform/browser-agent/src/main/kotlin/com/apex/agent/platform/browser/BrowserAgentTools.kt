@@ -12,6 +12,8 @@ import com.apex.browser.engine.BrowserEngine
 import com.apex.browser.engine.BrowserTracer
 import com.apex.browser.engine.batchExecute
 import com.apex.browser.engine.fullPageScreenshot
+import com.apex.browser.engine.snapshotDiff
+import com.apex.browser.engine.snapshotFocused
 import com.apex.browser.engine.scrollToBoundary
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.awaitClose
@@ -168,7 +170,10 @@ class BrowserAgentTools @Inject constructor(
             "type":"object",
             "properties":{
                 "focus":{"type":"string","description":"剪枝策略: all(默认,全交互元素) | form(仅表单输入) | content(仅文本/链接/标题)"},
-                "token_budget":{"type":"integer","description":"摘要字符预算，默认 1600（400..4000）；元素被折叠过多时调大"}
+                "token_budget":{"type":"integer","description":"摘要字符预算，默认 1600（400..4000）；元素被折叠过多时调大"},
+                "mode":{"type":"string","enum":["full","focused","diff"],"description":"v2.1.0 增量模式：full=整页（默认，零漂移）；focused=只采集 root_selector 子树；diff=与 base_doc_id 基准的增量（added/removed/updated）"},
+                "root_selector":{"type":"string","description":"mode=focused 必填：子树根选择器"},
+                "base_doc_id":{"type":"string","description":"mode=diff 必填：基准快照的 doc_id（上次快照返回值里取）"}
             }
         }"""
         override suspend fun execute(arguments: String): String {
@@ -180,6 +185,23 @@ class BrowserAgentTools @Inject constructor(
                 else -> DomParser.SnapshotStrategy.INTERACTIVE_ONLY
             }
             val budget = argInt(arguments, "token_budget", 1600).coerceIn(400, 4000)
+            // v2.1.0 增量上下文：focused/diff 模式（评审 A5/P1）——只把必要结构化信息
+            // 与变化部分交给模型，不再反复传全页。基准缓存按 docId 键控，文档切换即失效。
+            when (argStr(arguments, "mode")?.lowercase()) {
+                "focused" -> {
+                    val root = argStr(arguments, "root_selector")
+                        ?: return "Error: mode=focused 需要 root_selector（子树根选择器）"
+                    val snap = engine.snapshotFocused(root, tokenBudget = budget, strategy = strategy)
+                        ?: return "(无激活标签页)"
+                    val dialogNote = engine.lastDialog?.let { "\n💬 页面弹出对话: $it" } ?: ""
+                    return snap.domSummary + "\n(doc_id=${snap.docId}——后续动作可带 expected_doc_id 做 STALE 校验)$dialogNote"
+                }
+                "diff" -> {
+                    val base = argStr(arguments, "base_doc_id")
+                        ?: return "Error: mode=diff 需要 base_doc_id（上次快照返回的 doc_id）"
+                    return BrowserAsyncTools.renderDiff(engine.snapshotDiff(base, tokenBudget = budget, strategy = strategy))
+                }
+            }
             val snap = engine.snapshot(tokenBudget = budget, strategy = strategy)
             val dialogNote = engine.lastDialog?.let { "\n💬 页面弹出对话: $it" } ?: ""
             return if (snap.interactiveCount == 0) "(当前页面无可交互元素或尚未加载)$dialogNote"
