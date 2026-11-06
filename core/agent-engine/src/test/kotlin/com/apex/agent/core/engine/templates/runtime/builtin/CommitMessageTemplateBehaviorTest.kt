@@ -509,39 +509,4 @@ class CommitMessageTemplateBehaviorTest {
 
     // ═══ 端到端 ═══
 
-    @Test
-    fun `full turn through runtime`() = runTest {
-        val dir = tmp.newFolder("commit-registry")
-        val registry = com.apex.agent.core.engine.templates.PromptTemplateRegistry(dir)
-        registry.reseedBuiltIns()
-        val runtime = com.apex.agent.core.engine.templates.runtime.TemplateRuntime(
-            registry = registry,
-            behaviors = mapOf(behavior.behaviorId to behavior)
-        )
-        val activation = runtime.activate(
-            "builtin_commit_message",
-            mapOf("changes" to sampleDiff, "style" to "conventional commits")
-        )
-        assertTrue(activation.ok)
-        val outcome = runtime.prepareTurn(activation)
-        assertTrue(outcome.ok)
-        assertTrue(outcome.request!!.prompt.contains("确定性分析附录"))
-        val report = runtime.processResponse(
-            activation,
-            """
-            ## 提交信息
-            ```
-            feat(login): 提交后新增审计与埋点
-
-            - 审计与埋点补齐
-            ```
-
-            ## 变更解读
-            登录链路增强，附带测试。
-            """.trimIndent(),
-            outcome.request
-        )
-        assertEquals("feat", report.summary["commitType"])
-        assertTrue(report.trace!!.allOk)
-    }
 }

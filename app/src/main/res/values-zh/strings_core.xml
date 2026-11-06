@@ -871,9 +871,5 @@
     <string name="tool_cat_plugin">插件</string>
     <string name="tool_cat_utility">实用工具</string>
     <string name="settings_test_connection">测试连接</string>
-    <string name="settings_web_search_label">联网搜索</string>
-    <string name="settings_web_search_off">关闭</string>
-    <string name="settings_web_search_auto">自动</string>
-    <string name="settings_web_search_desc">启用模型原生联网搜索能力</string>
     <string name="settings_json_schema_label">JSON Schema</string>
 </resources>
