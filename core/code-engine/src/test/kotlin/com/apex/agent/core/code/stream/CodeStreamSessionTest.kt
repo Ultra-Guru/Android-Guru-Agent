@@ -180,6 +180,21 @@ class CodeStreamSessionTest {
     }
 
     @Test
+    fun `thinking stays before the pending assistant and first answer keeps its slot`() {
+        val s = CodeStreamSession()
+        s.beginRun("问题")
+        val slotId = s.snapshot().entries.filterIsInstance<StreamEntry.AssistantEntry>().single().id
+        s.onEvent(AgentEvent.ThinkingChunk("推理"))
+        val pending = s.snapshot().entries
+        assertTrue(pending.indexOfFirst { it is StreamEntry.ThinkingEntry } <
+            pending.indexOfFirst { it.id == slotId })
+        s.onEvent(AgentEvent.ResponseChunk("答案"))
+        val answer = s.snapshot().entries.filterIsInstance<StreamEntry.AssistantEntry>().single()
+        assertEquals(slotId, answer.id)
+        assertEquals("答案", answer.text)
+    }
+
+    @Test
     fun `blank response chunks never create empty assistant bubble`() {
         val s = CodeStreamSession()
         s.beginRun("你好")
