@@ -167,6 +167,19 @@ class CodeStreamSessionTest {
     }
 
     @Test
+    fun `sending creates a visible assistant slot before the first response token`() {
+        val s = CodeStreamSession()
+        s.beginRun("你好")
+        val placeholder = s.snapshot().entries.filterIsInstance<StreamEntry.AssistantEntry>().single()
+        assertEquals("", placeholder.text)
+        assertTrue(placeholder.isStreaming)
+        s.onEvent(AgentEvent.ResponseChunk("回答"))
+        val answer = s.snapshot().entries.filterIsInstance<StreamEntry.AssistantEntry>().single()
+        assertEquals(placeholder.id, answer.id)
+        assertEquals("回答", answer.text)
+    }
+
+    @Test
     fun `blank response chunks never create empty assistant bubble`() {
         val s = CodeStreamSession()
         s.beginRun("你好")
