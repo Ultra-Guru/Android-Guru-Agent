@@ -518,10 +518,12 @@ object ToolModule {
         settingsRepository: SettingsRepository,
         // §14h App Control：工具 → UI 的真实导航桥（打开设置/诊断等页面）。
         navigationBridge: com.apex.agent.tools.AppNavigationBridge,
-        // §12c 统一扩展模型（PR-A）：闸门 + 账本 + 适配器注册表（ExtensionModule 提供）。
+        // §12c 统一扩展模型（PR-A 闸门/账本 + PR-B Claude 落点与 Node 安装端口）。
         extensionInstaller: com.apex.agent.core.tools.extension.ExtensionInstaller,
         extensionAdapters: com.apex.agent.core.tools.extension.ExtensionAdapterRegistry,
-        extensionLedger: com.apex.agent.core.tools.extension.ExtensionRegistry
+        extensionLedger: com.apex.agent.core.tools.extension.ExtensionRegistry,
+        fusionBundleRegistry: com.apex.agent.core.tools.fusion.FusionBundleRegistry,
+        nodeInstallPort: com.apex.agent.core.tools.extension.NodeInstallPort
     ): ToolRegistry {
         val registry = DefaultToolRegistry()
 
@@ -986,20 +988,17 @@ object ToolModule {
             )
         )
 
-        // ═══ 12c. 统一扩展模型（市场重构 PR-A）—— 七工具注册体拆至卫星文件；
-        // hash 门（先看后装）+ 确认门 + 账本；旧入口双轨保留（PR-B 转接）。
+        // ═══ 12c. 统一扩展模型 —— 七工具注册体拆至卫星文件（hash 门/确认门/账本/锁）
         registerExtensionTools(
-            registry = registry,
-            installer = extensionInstaller,
-            adapterRegistry = extensionAdapters,
-            ledger = extensionLedger,
-            skillRegistry = skillRegistry,
-            mcpManager = mcpManager
+            registry = registry, installer = extensionInstaller, adapterRegistry = extensionAdapters,
+            ledger = extensionLedger, skillRegistry = skillRegistry, mcpManager = mcpManager,
+            fusionRegistry = fusionBundleRegistry, nodeInstallPort = nodeInstallPort
         )
 
         // ═══ 13. Skill 工具接线（管理工具 + composite/script 装载注册）═══
         registry.register(SafeAgentTool(SkillSearchTool(httpClient)))
-        registry.register(SafeAgentTool(SkillInstallTool(skillRegistry, httpClient, skillActivation)))
+        // PR-B：SkillInstall 内部转接统一扩展闸门（账本/锁同源；id/schema/输出零变化）
+        registry.register(SafeAgentTool(SkillInstallTool(skillRegistry, httpClient, skillActivation, extensionInstaller)))
         registry.register(SafeAgentTool(SkillCreateTool(skillRegistry)))
         registry.register(SafeAgentTool(SkillListTool(skillRegistry)))
         registry.register(SafeAgentTool(SkillUninstallTool(skillRegistry)))

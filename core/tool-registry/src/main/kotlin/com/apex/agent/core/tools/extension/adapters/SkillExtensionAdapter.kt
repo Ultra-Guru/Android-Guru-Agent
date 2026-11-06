@@ -44,35 +44,7 @@ class SkillExtensionAdapter(
             else -> Result.failure(IllegalArgumentException("skill spec 载荷无法识别：${draft.raw}"))
         }.getOrElse { return Result.failure(it) }
 
-        val obj = runCatching {
-            com.apex.agent.core.tools.extension.ExtensionJson.json.parseToJsonElement(jsonText).jsonObject
-        }.getOrElse { return Result.failure(IllegalArgumentException("技能 manifest 不是合法 JSON：${it.message}")) }
-
-        val sid = obj.str("id")
-            ?: return Result.failure(IllegalArgumentException("manifest 缺少 id 字段（apex-skill-v1 必填）"))
-        if (!SID_PATTERN.matches(sid)) {
-            return Result.failure(IllegalArgumentException("技能 id 含非法字符（只允许字母数字与 -_）：'$sid'"))
-        }
-        val name = obj.str("name") ?: sid
-        val version = obj.str("version") ?: "1.0.0"
-        val description = obj.str("description").orEmpty()
-        val hasBody = obj["promptInjection"] != null
-
-        val manifest = ExtensionManifest(
-            id = "skill.$sid",
-            type = ExtensionTypes.SKILL,
-            spec = draft.raw,
-            name = name,
-            version = version,
-            sourceKind = draft.sourceKind ?: SourceKinds.JSON,
-            runtime = RuntimeDomains.ANDROID,
-            trustLevel = obj.str("trustLevel") ?: "community",
-            resolved = obj,
-            summary = "技能「$name」v$version" +
-                (if (description.isNotBlank()) "：${description.take(80)}" else "") +
-                (if (hasBody) "（prompt 型，正文将注入对话）" else "")
-        )
-        return Result.success(manifest.copy(manifestHash = manifest.computeHash()))
+        return manifestFromJson(jsonText, spec = draft.raw, sourceKind = draft.sourceKind)
     }
 
     override suspend fun inspect(manifest: ExtensionManifest): Result<InspectReport> {
@@ -130,10 +102,53 @@ class SkillExtensionAdapter(
     private fun JsonObject.str(key: String): String? =
         this[key]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
 
-    private companion object {
+    internal companion object {
         const val MAX_MANIFEST_BYTES = 2L * 1024 * 1024
 
         /** 技能 id 白名单（账本键安全：禁止路径分隔符/空白/点分注入）。 */
         val SID_PATTERN = Regex("^[A-Za-z0-9_-]{1,64}$")
+
+        /**
+         * 技能 manifest JSON → ExtensionManifest（resolve 与旧入口
+         * SkillInstallTool 内部转接共用的单源构造；含指纹计算）。
+         */
+        fun manifestFromJson(
+            jsonText: String,
+            spec: String,
+            sourceKind: String? = SourceKinds.JSON
+        ): Result<ExtensionManifest> {
+            val obj = runCatching {
+                com.apex.agent.core.tools.extension.ExtensionJson.json.parseToJsonElement(jsonText).jsonObject
+            }.getOrElse { return Result.failure(IllegalArgumentException("技能 manifest 不是合法 JSON：${it.message}")) }
+
+            fun JsonObject.str(key: String): String? =
+                this[key]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+
+            val sid = obj.str("id")
+                ?: return Result.failure(IllegalArgumentException("manifest 缺少 id 字段（apex-skill-v1 必填）"))
+            if (!SID_PATTERN.matches(sid)) {
+                return Result.failure(IllegalArgumentException("技能 id 含非法字符（只允许字母数字与 -_）：'$sid'"))
+            }
+            val name = obj.str("name") ?: sid
+            val version = obj.str("version") ?: "1.0.0"
+            val description = obj.str("description").orEmpty()
+            val hasBody = obj["promptInjection"] != null
+
+            val manifest = ExtensionManifest(
+                id = "skill.$sid",
+                type = ExtensionTypes.SKILL,
+                spec = spec,
+                name = name,
+                version = version,
+                sourceKind = sourceKind ?: SourceKinds.JSON,
+                runtime = RuntimeDomains.ANDROID,
+                trustLevel = obj.str("trustLevel") ?: "community",
+                resolved = obj,
+                summary = "技能「$name」v$version" +
+                    (if (description.isNotBlank()) "：${description.take(80)}" else "") +
+                    (if (hasBody) "（prompt 型，正文将注入对话）" else "")
+            )
+            return Result.success(manifest.copy(manifestHash = manifest.computeHash()))
+        }
     }
 }

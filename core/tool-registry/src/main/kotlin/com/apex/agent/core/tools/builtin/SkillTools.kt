@@ -138,7 +138,13 @@ class SkillInstallTool(
     private val skillRegistry: SkillRegistry,
     private val httpClient: OkHttpClient,
     /** 安装即装备（市场热加载闭环）：非空时安装成功后直接进激活集。 */
-    private val activationStore: SkillActivationStore? = null
+    private val activationStore: SkillActivationStore? = null,
+    /**
+     * PR-B 内部转接：非空时安装走统一扩展闸门（ExtensionInstaller）——
+     * 账本/锁与 ExtensionInstall 同源；id / schema / 输出格式对模型零变化。
+     * null = 旧直连 SkillRegistry 路径（测试夹具兼容）。
+     */
+    private val extensionInstaller: com.apex.agent.core.tools.extension.ExtensionInstaller? = null
 ) : AgentTool {
 
     override val id = "SkillInstall"
@@ -191,6 +197,54 @@ class SkillInstallTool(
         }
 
         if (manifestJson.startsWith("Error")) return manifestJson
+
+        // PR-B 内部转接：走统一扩展闸门（账本/锁与 ExtensionInstall 同源）；
+        // 失败回退不隐匿 —— 闸门拒绝（如 hash/确认门）按失败如实渲染。
+        if (extensionInstaller != null) {
+            val gateManifest = com.apex.agent.core.tools.extension.adapters.SkillExtensionAdapter
+                .manifestFromJson(manifestJson, spec = "skill:install")
+            val gateOutcome = gateManifest.fold(
+                onSuccess = { m ->
+                    extensionInstaller.install(
+                        m.manifestHash,
+                        manifestJson = com.apex.agent.core.tools.extension.ExtensionManifest.canonicalJson(m)
+                    )
+                },
+                onFailure = { Result.failure(it) }
+            )
+            return gateOutcome.fold(
+                onSuccess = { outcome ->
+                    val obj = runCatching {
+                        Json.parseToJsonElement(manifestJson).jsonObject
+                    }.getOrNull()
+                    activationStore?.activate(
+                        obj?.get("id")?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+                            ?: outcome.id.removePrefix("skill.")
+                    )
+                    buildString {
+                        appendLine("✅ Skill installed successfully!")
+                        appendLine("  Name: ${outcome.where.substringAfter(": ").ifBlank { outcome.id }}")
+                        appendLine("  ID: ${outcome.id}")
+                        appendLine("  Version: ${outcome.version}")
+                        val toolIds = obj?.get("tools")?.let { t ->
+                            runCatching { t.jsonArray.mapNotNull { e ->
+                                runCatching { e.jsonObject["id"]?.jsonPrimitive?.content }.getOrNull()
+                            } }.getOrDefault(emptyList())
+                        }.orEmpty()
+                        appendLine("  Tools added: ${toolIds.joinToString(", ").ifEmpty { "none" }}")
+                        if (obj?.get("promptInjection") != null) {
+                            appendLine("  Prompt injection: active")
+                        }
+                        if (activationStore != null) {
+                            appendLine("  Equipped: its methodology is live in your system prompt from this turn on.")
+                        }
+                        appendLine()
+                        appendLine("Hot-reload: the skill's tools register immediately — no restart needed. You may use them now.")
+                    }
+                },
+                onFailure = { e -> "❌ Skill installation failed: ${e.message}" }
+            )
+        }
 
         val result = skillRegistry.install(manifestJson)
 

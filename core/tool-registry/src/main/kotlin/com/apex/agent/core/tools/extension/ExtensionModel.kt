@@ -100,7 +100,7 @@ object ExtensionJson {
     }
 }
 
-/** 扩展类型常量（PR-A 实现 skill / mcp_connector；其余为 PR-B/C 预留占位）。 */
+/** 扩展类型常量（PR-A：skill / mcp_connector；PR-B：opencode / claude / dsh；apk_package PR-C）。 */
 object ExtensionTypes {
     const val SKILL = "skill"
     const val MCP_CONNECTOR = "mcp_connector"
@@ -111,7 +111,9 @@ object ExtensionTypes {
     const val APK_PACKAGE = "apk_package"
 
     /** 当前已注册适配器的类型（诚实能力面 —— resolve 前可查）。 */
-    fun implemented(): Set<String> = setOf(SKILL, MCP_CONNECTOR)
+    fun implemented(): Set<String> = setOf(
+        SKILL, MCP_CONNECTOR, OPENCODE_PLUGIN, CLAUDE_PLUGIN, DSH_PLUGIN
+    )
 }
 
 /** 运行时域常量。 */

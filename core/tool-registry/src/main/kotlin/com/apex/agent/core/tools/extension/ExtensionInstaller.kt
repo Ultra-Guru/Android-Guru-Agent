@@ -154,17 +154,25 @@ class ExtensionInstaller(
      * 声明式批量链（ExtensionSync 专用）：spec 清单逐个 resolve → inspect →
      * install。inspect 报告经 [onInspect] 回调透出（sync 汇总进输出）——
      * 敏感扩展仍被确认门拦截（调用方按 [InstallOutcome]/异常分辨呈现）。
+     * [filter] 返回 false = 该项跳过安装（以失败结果呈现跳过原因，如锁漂移）。
      */
     suspend fun installFromSpecs(
         specs: List<String>,
         confirmToken: String? = null,
+        filter: ((ExtensionManifest) -> Boolean)? = null,
         onInspect: (suspend (String, InspectReport?) -> Unit)? = null
     ): List<Pair<String, Result<InstallOutcome>>> = specs.map { spec ->
         val outcome = resolve(spec).fold(
             onSuccess = { manifest ->
-                val report = inspect(manifest).getOrNull()
-                onInspect?.invoke(spec, report)
-                install(manifest.manifestHash, confirmToken = confirmToken)
+                if (filter?.invoke(manifest) == false) {
+                    Result.failure<InstallOutcome>(
+                        IllegalStateException("已跳过：版本锁定中，源指纹与锁不一致（update=true 重钉）")
+                    )
+                } else {
+                    val report = inspect(manifest).getOrNull()
+                    onInspect?.invoke(spec, report)
+                    install(manifest.manifestHash, confirmToken = confirmToken)
+                }
             },
             onFailure = { Result.failure<InstallOutcome>(it) }
         )

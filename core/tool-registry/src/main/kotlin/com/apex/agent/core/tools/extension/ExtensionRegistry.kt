@@ -105,6 +105,70 @@ class ExtensionRegistry(
     }
 
     private fun persistLockedSafely() = synchronized(lock) { persistLocked() }
+
+    // ═══ 锁文件（lock.json）—— 声明式同步的版本钉扎（brief：防悄悄换版本）═══
+
+    /** 锁条目：sync 安装成功即锁；resolve 指纹 ≠ 锁 = 版本漂移。 */
+    @Serializable
+    data class LockEntry(
+        val id: String,
+        val manifestHash: String,
+        val version: String,
+        val spec: String,
+        val lockedAt: Long
+    )
+
+    @Serializable
+    private data class LockFile(val locks: List<LockEntry> = emptyList())
+
+    private val lockFile: File get() = File(dir, "lock.json")
+
+    /** 锁快照（内存缓存 + 落盘）。 */
+    private val locks = LinkedHashMap<String, LockEntry>()
+
+    init {
+        loadLocks()
+    }
+
+    private fun loadLocks() {
+        if (!lockFile.isFile) return
+        val parsed = runCatching {
+            ExtensionRegistryJson.json.decodeFromString(LockFile.serializer(), lockFile.readText())
+        }.getOrElse { return }
+        synchronized(lock) { parsed.locks.forEach { locks[it.id] = it } }
+    }
+
+    private fun persistLocksLocked() {
+        runCatching {
+            synchronized(lock) {
+                AtomicFileWrite.writeText(
+                    lockFile,
+                    ExtensionRegistryJson.json.encodeToString(
+                        LockFile.serializer(),
+                        LockFile(locks.values.toList())
+                    )
+                )
+            }
+        }
+    }
+
+    /** 钉版（sync 安装成功后调用；同 id 覆盖 = 重新钉版）。 */
+    fun lock(entry: LockEntry) {
+        synchronized(lock) {
+            locks[entry.id] = entry
+            persistLocksLocked()
+        }
+    }
+
+    fun getLock(id: String): LockEntry? = synchronized(lock) { locks[id] }
+
+    fun allLocks(): List<LockEntry> = synchronized(lock) { locks.values.toList() }
+
+    fun unlock(id: String): Boolean = synchronized(lock) {
+        val removed = locks.remove(id) != null
+        if (removed) persistLocksLocked()
+        removed
+    }
 }
 
 /** 账本 JSON 编解码器（Registry 与测试共用）。 */
