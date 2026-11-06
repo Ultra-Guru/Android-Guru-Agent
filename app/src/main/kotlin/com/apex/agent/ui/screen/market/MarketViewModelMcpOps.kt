@@ -216,7 +216,6 @@ fun MarketViewModel.dismissMcpStartup() {
     _uiState.update { it.copy(mcpStartup = null) }
 }
 
-/**
 fun MarketViewModel.disconnectMcp(name: String) {
     viewModelScope.launch {
         mcpManager.disconnect(name)
