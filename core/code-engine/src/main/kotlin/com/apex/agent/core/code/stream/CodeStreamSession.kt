@@ -183,6 +183,12 @@ class CodeStreamSession {
                     if (event.text.isBlank()) return
                     streamingThinking = StreamEntry.ThinkingEntry(nextId(), event.text, true)
                     append(streamingThinking!!)
+                    // 空助手位只负责等待正文；思考开始后让思考卡先于它，
+                    // 使首个回答仍能在同一稳定 id 的尾部接续。
+                    streamingAssistant?.takeIf { it.text.isEmpty() }?.let { pending ->
+                        entries.removeAll { it.id == pending.id }
+                        append(pending)
+                    }
                 } else {
                     // 引用同步回写：不回写则 cur 永远停在首块快照，第三个
                     // Chunk 起条目被「首块+最新块」覆盖（中间块丢失）。
