@@ -161,7 +161,7 @@ class StreamingArgsPreviewTest {
         t.append("""天气"}""")
         val done = t.preview()
         assertEquals("今天上海的天气", done?.target)
-        assertFalse(done!!.hasCode)
+        assertFalse(done?.hasCode == true)
     }
 
     @Test
