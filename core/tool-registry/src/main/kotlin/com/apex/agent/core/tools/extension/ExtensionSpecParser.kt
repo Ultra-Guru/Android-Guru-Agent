@@ -11,7 +11,7 @@ package com.apex.agent.core.tools.extension
  * | `mcp:{…}`（JSON 字面量）/ `mcp:import:<文件>` / `mcp:<目录名>` | mcp_connector | register/import 语义分离 |
  * | `claude:<name>@<marketplace>` / `claude:<zip路径|仓库URL>` | claude_plugin | PR-B |
  * | `dsh:<pkg>` / `dsh:github:owner/repo` | dsh_plugin | PR-B |
- * | `npm:<pkg>`（`dsh-*` 前缀自动判 DSH） | opencode/dsh_plugin | PR-B |
+ * | `opencode:<pkg|路径|github:owner/repo>` / `npm:<pkg>`（`dsh-*` 前缀自动判 DSH） | opencode/dsh_plugin | PR-B |
  * | `github:owner/repo` | 按仓库内容判定（适配器探测） | PR-B |
  * | `apk:<路径>` | apk_package | PR-C |
  * | 裸 `https://…json` | 按扩展名猜测（skill） | 尽力而为 |
@@ -47,7 +47,15 @@ object ExtensionSpecParser {
             "skill" -> parseSkill(rest, spec)
             "mcp" -> parseMcp(rest, spec)
             "claude" -> parseClaude(rest, spec)
-            "dsh" -> Result.success(SpecDraft(spec, ExtensionTypes.DSH_PLUGIN, rest, SourceKinds.NPM.takeIf { isNpmName(rest) } ?: SourceKinds.GITHUB.takeIf { rest.startsWith("github:") }))
+            "opencode" -> Result.success(
+                SpecDraft(
+                    spec, ExtensionTypes.OPENCODE_PLUGIN, rest,
+                    SourceKinds.NPM.takeIf { isNpmName(rest) }
+                        ?: SourceKinds.GITHUB.takeIf { githubRepoOf(rest) != null }
+                        ?: SourceKinds.LOCAL
+                )
+            )
+            "dsh" -> Result.success(SpecDraft(spec, ExtensionTypes.DSH_PLUGIN, rest, SourceKinds.NPM.takeIf { isNpmName(rest) } ?: SourceKinds.GITHUB.takeIf { githubRepoOf(rest) != null }))
             "npm" -> Result.success(
                 if (!isNpmName(rest)) {
                     SpecDraft(spec, null, rest) // 非法 npm 名 → 适配器侧诚实报错
@@ -113,4 +121,19 @@ object ExtensionSpecParser {
 
     /** npm 包名白名单判定（防注入：适配器后续拼命令只允许过本检查的名字）。 */
     fun isNpmName(raw: String): Boolean = raw.isNotEmpty() && NPM_NAME.matches(raw)
+
+    /**
+     * GitHub 仓库解析（`github:owner/repo` 或裸 `owner/repo`）→ `owner/repo`。
+     * 白名单字符（owner ≤39 / repo ≤100，字母数字点下划连字符）—— 适配器
+     * 后续拼 clone/zip URL 只允许过本检查的形态，防 URL 注入。
+     */
+    fun githubRepoOf(payload: String): String? {
+        val repo = payload.removePrefix("github:").trim().trimEnd('/')
+        if (!repo.contains('/')) return null
+        val owner = repo.substringBefore('/')
+        val name = repo.substringAfter('/')
+        if (name.isEmpty() || name.contains('/')) return null
+        val ok = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,38}$") to Regex("^[A-Za-z0-9._-]{1,100}$")
+        return if (ok.first.matches(owner) && ok.second.matches(name)) "$owner/$name" else null
+    }
 }

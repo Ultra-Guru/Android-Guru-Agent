@@ -5,6 +5,7 @@ import com.apex.agent.core.tools.SafeAgentTool
 import com.apex.agent.core.tools.extension.ExtensionAdapterRegistry
 import com.apex.agent.core.tools.extension.ExtensionInstaller
 import com.apex.agent.core.tools.extension.ExtensionRegistry
+import com.apex.agent.core.tools.extension.NodeInstallPort
 import com.apex.agent.core.tools.extension.tools.ExtensionDoctorTool
 import com.apex.agent.core.tools.extension.tools.ExtensionInstallTool
 import com.apex.agent.core.tools.extension.tools.ExtensionInspectTool
@@ -16,12 +17,14 @@ import com.apex.agent.core.tools.mcp.McpManager
 import com.apex.agent.core.tools.skill.SkillRegistry
 
 /**
- * §12c 统一扩展模型（市场完全重构 PR-A）—— 七工具注册体，自 ToolModule.kt
+ * §12c 统一扩展模型（市场完全重构）—— 工具注册体，自 ToolModule.kt
  * 拆分（SRP 预算纪律，同 [ToolModuleRegistrySections] 惯例）。
  *
- * 工具面：Resolve / Inspect / Install（三步入 CORE 集，ToolTierPolicy）+
- * List / Uninstall / Sync / Doctor（CATALOG 渐进披露）。旧入口
- * （SkillInstall / McpConnect）本 PR 原样保留 —— 双轨，PR-B 再内部转接。
+ * PR-A：Resolve / Inspect / Install（三步入 CORE 集）+ List / Uninstall /
+ * Sync / Doctor（CATALOG 渐进披露）；旧入口（SkillInstall / McpConnect）
+ * 双轨保留。
+ * PR-B：适配器面扩到 opencode / claude / dsh；Doctor 加 ubuntu 域探针与
+ * 锁计数；Uninstall 联动清锁。
  */
 internal fun registerExtensionTools(
     registry: DefaultToolRegistry,
@@ -29,14 +32,16 @@ internal fun registerExtensionTools(
     adapterRegistry: ExtensionAdapterRegistry,
     ledger: ExtensionRegistry,
     skillRegistry: SkillRegistry,
-    mcpManager: McpManager
+    mcpManager: McpManager,
+    fusionRegistry: com.apex.agent.core.tools.fusion.FusionBundleRegistry,
+    nodeInstallPort: NodeInstallPort?
 ) {
     registry.register(SafeAgentTool(ExtensionResolveTool(installer)))
     registry.register(SafeAgentTool(ExtensionInspectTool(installer)))
     registry.register(SafeAgentTool(ExtensionInstallTool(installer)))
     registry.register(SafeAgentTool(ExtensionListTool(ledger)))
-    registry.register(SafeAgentTool(ExtensionUninstallTool(installer)))
-    registry.register(SafeAgentTool(ExtensionSyncTool(installer)))
+    registry.register(SafeAgentTool(ExtensionUninstallTool(installer, ledger)))
+    registry.register(SafeAgentTool(ExtensionSyncTool(installer, ledger)))
     registry.register(
         SafeAgentTool(
             ExtensionDoctorTool(
@@ -50,9 +55,16 @@ internal fun registerExtensionTools(
                         "mcp_connector" -> mcpManager.getConfigs().any {
                             it.name == record.id.removePrefix("mcp.")
                         }
-                        else -> true // PR-B/C 类型占位 —— 适配器接入时补探针
+                        // Claude 适配器：实体 = 聚合包（claude.<slug> → claude-<slug>）
+                        "claude_plugin" -> fusionRegistry.get(record.id.replace('.', '-')) != null
+                        else -> true // apk_package（PR-C）等占位
                     }
-                }
+                },
+                // ubuntu 域探针（node/npm 版本）—— PR-B 接 NodeInstallPort 后启用
+                ubuntuProbe = nodeInstallPort?.let { port ->
+                    { port.probeRuntime() }
+                },
+                lockSummary = { ledger.allLocks().size }
             )
         )
     )

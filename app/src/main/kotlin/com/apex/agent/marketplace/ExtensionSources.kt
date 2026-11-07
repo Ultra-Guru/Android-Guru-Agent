@@ -22,15 +22,20 @@ import javax.inject.Singleton
  * （同 MarketInstallManager / RegistryMcpInstaller 形态）。
  */
 
-/** URL 文本拉取（skill:<url> 等远端 manifest）：raw 镜像回退链 + 2MB 上限。 */
+/** URL 拉取（skill:<url> 等远端 manifest 文本 + Claude zipball 字节）：镜像回退链 + 上限。 */
 @Singleton
 class ExtensionTextFetcher @Inject constructor(
     private val httpClient: OkHttpClient
 ) {
-    suspend fun fetch(url: String): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun fetch(url: String): Result<String> = fetchBytes(url).mapCatching {
+        it.toString(Charsets.UTF_8)
+    }
+
+    /** 字节拉取（Claude zipball 上限 64MB / 文本 2MB 由调用方语义决定）。 */
+    suspend fun fetchBytes(url: String): Result<ByteArray> = withContext(Dispatchers.IO) {
         runCatching {
-            val bytes = RawGitHubMirrors.fetchWithFallback(httpClient, url, MAX_MANIFEST_BYTES)
-            bytes.toString(Charsets.UTF_8)
+            val bytes = RawGitHubMirrors.fetchWithFallback(httpClient, url, MAX_FETCH_BYTES)
+            bytes
         }.onFailure {
             AppLogger.instance.warn(
                 LogCategory.TOOL, "ExtensionSources", "extension fetch 失败 $url: ${it.message}"
@@ -39,7 +44,7 @@ class ExtensionTextFetcher @Inject constructor(
     }
 
     private companion object {
-        const val MAX_MANIFEST_BYTES = 2 * 1024 * 1024
+        const val MAX_FETCH_BYTES = 64 * 1024 * 1024
     }
 }
 

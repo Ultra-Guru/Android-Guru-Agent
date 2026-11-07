@@ -159,17 +159,21 @@ class ExtensionListTool(
     }
 }
 
-/** 体检：账本一致性 + 适配器可用面。 */
+/** 体检：账本一致性 + 适配器可用面 + ubuntu 域 node/npm 探针。 */
 class ExtensionDoctorTool(
     private val installer: ExtensionInstaller,
     private val registry: ExtensionRegistry,
     private val adapters: ExtensionAdapterRegistry,
     /** 账本一致性探针：id → true=实体仍在原生注册表（适配器各自实现）。 */
-    private val existenceProbe: suspend (ExtensionRegistry.Record) -> Boolean = { true }
+    private val existenceProbe: suspend (ExtensionRegistry.Record) -> Boolean = { true },
+    /** ubuntu 域探针（node/npm 版本；null = 无 ubuntu 域扩展或探针未接线）。 */
+    private val ubuntuProbe: (suspend () -> com.apex.agent.core.tools.extension.NodeInstallPort.RuntimeProbe)? = null,
+    /** 锁文件摘要行（sync 钉版状态）。 */
+    private val lockSummary: () -> Int = { 0 }
 ) : BaseTool(
     id = "ExtensionDoctor",
     name = "Extension Doctor",
-    description = "Diagnose the extension subsystem: ledger consistency (recorded extensions whose native entity disappeared), adapter availability, runtime domain readiness. Run this when installs behave oddly.",
+    description = "Diagnose the extension subsystem: ledger consistency (recorded extensions whose native entity disappeared), adapter availability, sync lock count, Ubuntu-domain node/npm readiness. Run this when installs behave oddly.",
     declaredSchema = toolSchema {}
 ) {
     override fun buildMetadata(): ToolMetadata = ToolMetadata.meta(id) {
@@ -190,12 +194,23 @@ class ExtensionDoctorTool(
             buildString {
                 appendLine("== Extension Doctor ==")
                 appendLine("adapters available: ${adapters.availableTypes().sorted().joinToString(", ")}")
-                appendLine("ledger size: ${all.size}")
+                appendLine("ledger size: ${all.size} · sync locks: ${lockSummary()}")
                 if (missing.isEmpty()) {
                     appendLine("ledger consistency: OK（账本与原生注册表一致）")
                 } else {
                     appendLine("ledger consistency: ${missing.size} 个账目实体已消失（可 ExtensionUninstall 清账）：")
                     missing.forEach { appendLine("  - $it") }
+                }
+                if (ubuntuProbe != null) {
+                    val probe = runCatching { ubuntuProbe!!() }.getOrNull()
+                    appendLine(
+                        "ubuntu domain (node/npm): " + when {
+                            probe == null -> "探针失败（PRoot 未就绪或执行通道异常）"
+                            probe.ready -> "ready（node ${probe.nodeVersion} / npm ${probe.npmVersion}）"
+                            else -> "NOT ready —— node=${probe.nodeVersion ?: "missing"} npm=${probe.npmVersion ?: "missing"}" +
+                                "（先 TerminalLinuxBootstrap / TerminalLinuxPackages 装齐）"
+                        }
+                    )
                 }
             }
         )
