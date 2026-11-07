@@ -245,15 +245,17 @@ class NativeLibraryPRootBinaryProvider(
         private val SEPARATOR_PROBE_SHELLS = listOf("/bin/sh", "/system/bin/sh")
 
         /**
-         * 启动探针子进程，宿主侧流**先丢弃再等待**。
+         * 启动探针子进程，宿主侧流**落到丢弃文件再等**。
+         * （不用 ProcessBuilder.Redirect.DISCARD：该常量在当前 Android 编译目标
+         * 下不可解析。等价的 Redirect.to(临时文件) 在所有目标上可编译；探针
+         * 输出本无消费价值，文件只做 drain。）
          *
          * 旧实现 `readText()` 耗尽流**之后**才 waitFor：被 ptrace 卡死或故意
          * 挂起的 tracer 拿着 stdout 管道不吐 EOF，readText 永不返回，10s 截止
          * 从未到达 → 探针把 availability/create 冻住（T99 RED 回归锁的根因）。
-         * 丢弃语义与生产冒烟探针一致：proot 诊断输出无消费价值。
          */
         private fun startProbe(argv: List<String>, env: Map<String, String>): Process =
-            ProcessBuilder(argv).withCapture(env) { it.redirectOutput(ProcessBuilder.Redirect.DISCARD) }
+            startProbe(argv, env, File(hostEnv.prootTmpDir, "pr99-probe.out"))
 
         private fun startProbe(argv: List<String>, env: Map<String, String>, output: File): Process =
             ProcessBuilder(argv).withCapture(env) { it.redirectOutput(ProcessBuilder.Redirect.to(output)) }

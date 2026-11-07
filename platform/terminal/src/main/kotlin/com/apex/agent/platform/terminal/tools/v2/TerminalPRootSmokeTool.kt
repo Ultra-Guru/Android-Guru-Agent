@@ -9,7 +9,6 @@ import com.apex.agent.platform.terminal.tools.TerminalTool
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
@@ -48,9 +47,6 @@ class TerminalPRootSmokeTool(
     """.trimIndent()
 
     override suspend fun invoke(arguments: String): String {
-        if (arguments.isNotBlank()) {
-            runCatching { Json.parseToJsonElement(arguments).jsonObject }
-        }
         val backends = runtime.backends()
         val ready = backends.any { it.id == LinuxPRootBackend.ID && it.state == "READY" }
         val smoke = if (ready) {
