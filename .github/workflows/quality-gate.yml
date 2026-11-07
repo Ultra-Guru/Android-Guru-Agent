@@ -114,6 +114,11 @@ jobs:
       - name: Tool ID uniqueness regression suite
         run: python3 scripts/test_check_tool_ids.py
 
+      # S-05：凭据类 prefs 备份排除校验的回归（fixture 漏配必报 / 齐备必过 /
+      # 非敏感 prefs 不误报）—— check_backup_exclusions.py 由 guard-rails 执行。
+      - name: Backup-exclusion gate regression suite
+        run: python3 scripts/test_check_backup_exclusions.py
+
       # #353 剩余子项的契约回归：CI 门禁本身不许回退（KSP 绿灯 / wrapper 覆盖 /
       # grep -H / rootfs 坏档自愈）。这些改动改的都是「门禁的可靠性」，一旦被
       # 后续 PR 悄悄改回去，没有任何其它检查会发现 —— 只能靠本套件钉住。

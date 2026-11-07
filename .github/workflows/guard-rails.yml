@@ -73,6 +73,11 @@ jobs:
       - name: Credential fingerprint scan (GitHub/AWS/Google/Slack/OpenAI/keys)
         run: python3 scripts/check_secrets.py
 
+      # S-05：凭据类 prefs 的备份排除校验（漏配 = 凭据随云备份/设备迁移出设备，
+      # 编译期零提示）—— 与凭证指纹扫描同属「凭据不得出设备」防线。
+      - name: Credential prefs backup-exclusion check
+        run: python3 scripts/check_backup_exclusions.py
+
   commit-convention:
     name: Commit Message Convention
     runs-on: ubuntu-latest

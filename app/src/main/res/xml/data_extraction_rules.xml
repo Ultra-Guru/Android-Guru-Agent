@@ -19,6 +19,13 @@
         <exclude domain="sharedpref" path="vault_prefs_fallback.xml" />
         <exclude domain="sharedpref" path="apex_secure_settings.xml" />
         <exclude domain="sharedpref" path="apex_secure_settings_fallback.xml" />
+        <!-- S-05：逆向 MCP Host 的 Bearer token（McpHostManager，明文 prefs）；
+             PulseMCP 凭据（PulseMcpCredentialsStore，EncryptedSharedPreferences
+             + keystore 失配时的明文 fallback）—— 与上方六项同源缺口：
+             密文迁移到新机必触发明文降级，明文 token 更不该出设备。 -->
+        <exclude domain="sharedpref" path="mcp_host_prefs.xml" />
+        <exclude domain="sharedpref" path="pulse_mcp_secure_prefs.xml" />
+        <exclude domain="sharedpref" path="pulse_mcp_secure_prefs-fallback.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="github_secure_prefs.xml" />
@@ -27,5 +34,9 @@
         <exclude domain="sharedpref" path="vault_prefs_fallback.xml" />
         <exclude domain="sharedpref" path="apex_secure_settings.xml" />
         <exclude domain="sharedpref" path="apex_secure_settings_fallback.xml" />
+        <!-- S-05：同 cloud-backup —— 凭据类 prefs 不随设备迁移出设备。 -->
+        <exclude domain="sharedpref" path="mcp_host_prefs.xml" />
+        <exclude domain="sharedpref" path="pulse_mcp_secure_prefs.xml" />
+        <exclude domain="sharedpref" path="pulse_mcp_secure_prefs-fallback.xml" />
     </device-transfer>
 </data-extraction-rules>
