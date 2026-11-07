@@ -440,3 +440,78 @@ class ExtensionRunToolTest {
         assertEquals("篡改后的 entry 不得触发任何执行", beforeRun, port.lastCommand)
     }
 }
+
+
+// ═══ ⑨ ExtensionAutoSyncRunner —— 生产化加固（方向④评估核）════════════
+
+class ExtensionAutoSyncRunnerTest {
+
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    private class FakeSyncPort : NodeInstallPort {
+        var lastCommand: List<String>? = null
+        override suspend fun exec(command: List<String>, cwd: File, timeoutMs: Long): Result<NodeInstallPort.ExecOutcome> {
+            lastCommand = command
+            if (command.firstOrNull() == "npm") {
+                val prefix = command[command.indexOf("--prefix") + 1]
+                val pkg = command.last()
+                val pkgDir = File(prefix, "node_modules/$pkg")
+                pkgDir.mkdirs()
+                File(pkgDir, "index.js").writeText("// entry")
+                File(pkgDir, "package.json").writeText("{}")
+            }
+            return Result.success(NodeInstallPort.ExecOutcome(0, "", ""))
+        }
+        override suspend fun probeRuntime() = NodeInstallPort.RuntimeProbe("v22", "10")
+    }
+
+    private fun recordOf(id: String, hash: String) = ExtensionRegistry.Record(
+        id = id, type = ExtensionTypes.OPENCODE_PLUGIN, spec = "npm:x", name = id,
+        version = "1.0", runtime = RuntimeDomains.UBUNTU, sourceKind = SourceKinds.NPM,
+        manifestHash = hash, installedAt = 1L
+    )
+
+    @Test
+    fun `漂移与失败入报告 lastSync 落盘`() = runTest {
+        val ledger = ExtensionRegistry(tmp.newFolder("sync-ledger"))
+        val port = FakeSyncPort()
+        val installer = ExtensionInstaller(
+            ExtensionAdapterRegistry(listOf(OpenCodeExtensionAdapter(port, ExtensionDirLayout(tmp.newFolder("ext-root"))))),
+            ledger
+        )
+        // 预装一个扩展并手动钉一把「旧指纹」锁 → 源指纹必然不同 = 漂移
+        val manifest = installer.resolve("npm:pkg-drift").getOrThrow()
+        ledger.record(recordOf(manifest.id, "stale-hash").copy(runtime = RuntimeDomains.UBUNTU))
+        ledger.lock(ExtensionRegistry.LockEntry(manifest.id, "stale-hash", "1.0", "npm:pkg-drift", 1L))
+
+        val runner = ExtensionAutoSyncRunner(installer, ledger)
+        val report = runner.run(listOf("npm:pkg-drift", "npm:pkg-new", "skill:json:{bad"))
+
+        assertEquals(1, report.ok)
+        assertTrue("漂移项入报告", report.drifted.any { it.startsWith("opencode.pkg-drift") })
+        assertTrue("失败项入报告（skill:json:{bad 语法非法）", report.failed.any { it.contains("skill:json:{bad") })
+        assertTrue(report.hasIssues)
+
+        // lastSync 落盘 + 重载隔离（新实例只读自己的目录 → 空）
+        val reloaded = ExtensionRegistry(tmp.newFolder("sync-ledger-copy"))
+        assertNull(reloaded.lastSync())
+        val live = ledger.lastSync()
+        assertNotNull(live)
+        assertEquals(report.ok, live!!.ok)
+    }
+
+    @Test
+    fun `空清单零报告`() = runTest {
+        val ledger = ExtensionRegistry(tmp.newFolder("sync-ok"))
+        val runner = ExtensionAutoSyncRunner(
+            ExtensionInstaller(
+                ExtensionAdapterRegistry(emptyList()),
+                ledger
+            )
+        )
+        val empty = runner.run(emptyList())
+        assertEquals(0, empty.ok)
+        assertTrue(!empty.hasIssues)
+    }
+}
