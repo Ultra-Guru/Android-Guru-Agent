@@ -74,12 +74,20 @@ fun parseMarkdown(input: String): List<MarkdownNode> {
 
         // ═══ 围栏代码块 ═══
         if (line.trim().startsWith("```")) {
+            val fenceStart = i
             val lang = line.trim().removePrefix("```").trim()
             val codeLines = mutableListOf<String>()
             i++
             while (i < lines.size && !lines[i].trim().startsWith("```")) {
                 codeLines.add(lines[i])
                 i++
+            }
+            if (i == lines.size) {
+                // 围栏尚未闭合：保留原文与换行，避免把代码误排为标题/粗体。
+                nodes.add(MarkdownNode.Paragraph(
+                    listOf(InlineSegment.Text(lines.subList(fenceStart, i).joinToString("\n")))
+                ))
+                continue
             }
             i++ // 跳过结束的 ```
             nodes.add(MarkdownNode.CodeBlock(lang, codeLines.joinToString("\n")))

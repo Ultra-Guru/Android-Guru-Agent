@@ -167,12 +167,51 @@ class CodeStreamSessionTest {
     }
 
     @Test
+    fun `sending creates a visible assistant slot before the first response token`() {
+        val s = CodeStreamSession()
+        s.beginRun("你好")
+        val placeholder = s.snapshot().entries.filterIsInstance<StreamEntry.AssistantEntry>().single()
+        assertEquals("", placeholder.text)
+        assertTrue(placeholder.isStreaming)
+        s.onEvent(AgentEvent.ResponseChunk("回答"))
+        val answer = s.snapshot().entries.filterIsInstance<StreamEntry.AssistantEntry>().single()
+        assertEquals(placeholder.id, answer.id)
+        assertEquals("回答", answer.text)
+    }
+
+    @Test
+    fun `thinking stays before the pending assistant and first answer keeps its slot`() {
+        val s = CodeStreamSession()
+        s.beginRun("问题")
+        val slotId = s.snapshot().entries.filterIsInstance<StreamEntry.AssistantEntry>().single().id
+        s.onEvent(AgentEvent.ThinkingChunk("推理"))
+        val pending = s.snapshot().entries
+        assertTrue(pending.indexOfFirst { it is StreamEntry.ThinkingEntry } <
+            pending.indexOfFirst { it.id == slotId })
+        s.onEvent(AgentEvent.ResponseChunk("答案"))
+        val answer = s.snapshot().entries.filterIsInstance<StreamEntry.AssistantEntry>().single()
+        assertEquals(slotId, answer.id)
+        assertEquals("答案", answer.text)
+    }
+
+    @Test
+    fun `error before first token removes the empty slot but keeps inline error`() {
+        val s = CodeStreamSession()
+        s.beginRun("断线")
+        s.onEvent(AgentEvent.Error("连接中断", recoverable = true))
+        val entries = s.snapshot().entries
+        assertEquals(0, entries.count { it is StreamEntry.AssistantEntry })
+        assertEquals("连接中断", entries.filterIsInstance<StreamEntry.ErrorEntry>().single().message)
+    }
+
+    @Test
     fun `blank response chunks never create empty assistant bubble`() {
         val s = CodeStreamSession()
         s.beginRun("你好")
         // provider 发 content:"" 的 tool_calls 前导帧
         s.onEvent(AgentEvent.ResponseChunk(""))
-        assertEquals(0, s.snapshot().entries.count { it is StreamEntry.AssistantEntry })
+        assertEquals("空分片不会增加第二个助手条目", 1,
+            s.snapshot().entries.count { it is StreamEntry.AssistantEntry })
         s.onEvent(AgentEvent.ResponseComplete(""))
         assertEquals(
             "空白收尾不残留空气泡", 0,

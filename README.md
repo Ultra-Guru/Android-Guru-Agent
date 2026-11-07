@@ -1,164 +1,53 @@
 <a id="readme-top"></a>
+
+<!-- ═══════════════════════════ HERO ═══════════════════════════ -->
+
 <div align="center">
 
-<img src="docs/assets/banner.svg" alt="Android Guru Agent" width="900"/>
+<img src="docs/assets/banner.svg" alt="Android Guru Agent — 把整个 AI 编码工作台装进一部 Android 手机" width="1200"/>
 
-<a href="#quickstart"><img src="https://readme-typing-svg.demolab.com?font=Fira+Code&amp;weight=600&amp;size=20&amp;pause=1200&amp;color=00C2D1&amp;center=true&amp;vCenter=true&amp;width=820&amp;height=64&amp;lines=An+autonomous+AI+agent+that+lives+entirely+on+your+Android+device.;111+tools+%C2%B7+6+agent+modes+%C2%B7+PRoot+Ubuntu+24.04+%C2%B7+cs-mem;No+server.+No+PC.+Bring+your+own+LLM." alt="Android Guru Agent — typing"/></a>
+<a href="#quickstart"><img src="https://readme-typing-svg.demolab.com?font=Fira+Code&amp;weight=600&amp;size=18&amp;pause=1200&amp;color=00C2D1&amp;center=true&amp;vCenter=true&amp;width=940&amp;height=76&amp;lines=Code.+Compile.+Browse.+Remember.+%E2%80%94+entirely+on+one+device.;228+tools+%C2%B7+3+agent+modes+%C2%B7+PRoot+Ubuntu+24.04+%C2%B7+apex-kit-memory;No+server.+No+PC.+Bring+your+own+LLM." alt="Android Guru Agent — typing"/></a>
 
 # Android Guru Agent
 
-### 🧑‍💻 原生于 Android 的 AI 编码工作台 —— 设备上的大脑、终端、与肌肉记忆
+**看代码 · 写代码 · 跑终端 · 开浏览器 · 记经验 —— 一部 Android 手机全部做完。**
 
-**An AI coding workstation that lives entirely on your Android device.**
+一个开源的 Android 端 AI 编码工作台：OpenAI 兼容流式 LLM 接入、四条思考逻辑线
+（深潜七档 / 标准 / 织造 / 信使，运行时可切）、**228 个静态注册工具**（八层执行
+硬化 + v4 渐进披露）、PRoot 沙箱化 **Ubuntu 24.04** 终端（真 `apt`、C++ PTY）、
+**41 个浏览器自动化工具**、apex-kit-memory 认知记忆（差分摄取 → 轨迹蒸馏 →
+FSM 旁路回放 → 梦境巩固）、Root → Shizuku → Shell 三级权限执行链、
+MCP × 技能 × 市场 × 插件四层扩展 —— 全部跑在一台手机上，无需服务器，无需 PC。
 
-一个开源的 Android 端 AI 编码应用：OpenAI 兼容流式 LLM 接入、四条思考逻辑线
-（深潜七档 / 标准 / 织造 / 信使，运行时可切）、
-百级内置工具（超时/重试/限流/熔断/追踪/批量/组合动作八层执行硬化；P83 环境闭环补全；MCP/技能按工位作用域隔离）、模板行为运行时（十大内置模板全部代码化：六阶段管线 + 不可更改 + 每模板双层确定性引擎，切换模板 = 装配管线而非注入提示词）、PRoot 沙箱化 Ubuntu 终端、仿生认知记忆系统（差分摄取 → 轨迹蒸馏 →
-FSM 旁路回放 → 梦境巩固）、Root/Shizuku/无障碍三级权限链、插件化 SDK ——
-全部跑在一台手机上，无需自建服务器。**找不到原来的纯聊天页面？** 它已从本应用移除；
-本仓库专注 Coding，Agent 聊天模式转至独立项目 [Theocracy](https://github.com/Ultra-Guru/Theocracy)。
-安装包发布情况以该项目的 [Releases](https://github.com/Ultra-Guru/Theocracy/releases) 实际列表为准；
-不要仅为找回入口就覆盖安装旧版，聊天数据迁移兼容性尚未在此验证。
+> [!NOTE]
+> **找不到原来的纯聊天页面？** 它已从本应用移除。本仓库专注 Coding，
+> Agent 聊天模式转至独立项目 [Theocracy](https://github.com/Ultra-Guru/Theocracy)；
+> 其安装包发布情况以该项目 [Releases](https://github.com/Ultra-Guru/Theocracy/releases)
+> 实际列表为准，不要仅为找回入口就覆盖安装旧版（聊天数据迁移兼容性尚未验证）。
 
-**CI · 质量门禁 · 贡献**
+**徽章**
 
 <a href="https://github.com/Ultra-Guru/Android-Guru-Agent/actions/workflows/ci.yml"><img src="https://github.com/Ultra-Guru/Android-Guru-Agent/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"/></a>
 <a href="https://github.com/Ultra-Guru/Android-Guru-Agent/actions/workflows/quality-gate.yml"><img src="https://github.com/Ultra-Guru/Android-Guru-Agent/actions/workflows/quality-gate.yml/badge.svg?branch=main" alt="Quality Gate"/></a>
-<a href="#contributing"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen?logo=github" alt="PRs Welcome"/></a>
-<img src="https://img.shields.io/badge/Gradle-8.10-02303A?logo=gradle&logoColor=white" alt="Gradle"/>
-<img src="https://img.shields.io/badge/JDK-17-orange?logo=openjdk&logoColor=white" alt="JDK 17"/>
-
-**技术栈**
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://skillicons.dev/icons?i=kotlin,java,androidstudio,gradle,sqlite,bash,git,github&amp;theme=dark"/>
-  <img src="https://skillicons.dev/icons?i=kotlin,java,androidstudio,gradle,sqlite,bash,git,github&amp;theme=light" alt="Tech Stack" height="42"/>
-</picture>
-
-<br/>
-
-<img src="https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin"/>
-<img src="https://img.shields.io/badge/AGP-8.7.3-3DDC84?logo=android&logoColor=white" alt="AGP"/>
-<img src="https://img.shields.io/badge/Jetpack_Compose-BOM_2024.12.01-4285F4?logo=jetpackcompose&logoColor=white" alt="Compose"/>
-<img src="https://img.shields.io/badge/Hilt-2.53.1-00B4AB?logo=dagger" alt="Hilt"/>
-<img src="https://img.shields.io/badge/Room-2.6.1-6200EE?logo=sqlite&logoColor=white" alt="Room"/>
-<img src="https://img.shields.io/badge/OkHttp-4.12.0-EF6C00?logo=okhttp" alt="OkHttp"/>
-<img src="https://img.shields.io/badge/platform-Android_8.0%2B-3DDC84?logo=android&logoColor=white" alt="Platform"/>
-<img src="https://img.shields.io/badge/compileSdk-35-blue" alt="compileSdk"/>
-<img src="https://img.shields.io/badge/minSdk-26_(Android_8.0)-green" alt="minSdk"/>
-
-**仓库动态**
-
-<a href="https://github.com/Ultra-Guru/Android-Guru-Agent/stargazers"><img src="https://img.shields.io/github/stars/Ultra-Guru/Android-Guru-Agent?style=flat-square&color=yellow" alt="Stars"/></a>
-<a href="https://github.com/Ultra-Guru/Android-Guru-Agent/network/members"><img src="https://img.shields.io/github/forks/Ultra-Guru/Android-Guru-Agent?style=flat-square&color=blue" alt="Forks"/></a>
-<a href="https://github.com/Ultra-Guru/Android-Guru-Agent/issues"><img src="https://img.shields.io/github/issues/Ultra-Guru/Android-Guru-Agent?style=flat-square&color=orange" alt="Issues"/></a>
-<a href="https://github.com/Ultra-Guru/Android-Guru-Agent/pulls"><img src="https://img.shields.io/github/issues-pr/Ultra-Guru/Android-Guru-Agent?style=flat-square&color=brightgreen" alt="PRs"/></a>
-<a href="https://github.com/Ultra-Guru/Android-Guru-Agent/graphs/contributors"><img src="https://img.shields.io/github/contributors/Ultra-Guru/Android-Guru-Agent?style=flat-square&color=purple" alt="Contributors"/></a>
-<img src="https://img.shields.io/github/last-commit/Ultra-Guru/Android-Guru-Agent?style=flat-square&label=last%20commit" alt="Last Commit"/>
-<img src="https://img.shields.io/github/commit-activity/y/Ultra-Guru/Android-Guru-Agent?style=flat-square&color=blueviolet" alt="Commit Activity"/>
-<img src="https://img.shields.io/github/repo-size/Ultra-Guru/Android-Guru-Agent?style=flat-square&color=teal" alt="Repo Size"/>
-<img src="https://img.shields.io/github/languages/code-size/Ultra-Guru/Android-Guru-Agent?style=flat-square&color=9cf" alt="Code Size"/>
-<a href="https://github.com/Ultra-Guru/Android-Guru-Agent/search?l=kotlin"><img src="https://img.shields.io/github/languages/top/Ultra-Guru/Android-Guru-Agent?style=flat-square&color=7F52FF" alt="Top Language"/></a>
-
-**项目事实**
-
-<a href="#tools"><img src="https://img.shields.io/badge/🧰_tools-111-ff69b4" alt="111 Tools"/></a>
-<a href="#engine"><img src="https://img.shields.io/badge/🧠_thinking_lines-4-00C2D1" alt="4 Thinking Lines"/></a>
-<a href="#architecture"><img src="https://img.shields.io/badge/📦_gradle_modules-20-8A2BE2" alt="20 Modules"/></a>
-<a href="#testing"><img src="https://img.shields.io/badge/🧪_tests-252_files_·_4k_用例-2EA44F" alt="252 Tests"/></a>
-<a href="#cs-mem"><img src="https://img.shields.io/badge/🧠_memory-cs--mem-00C2D1" alt="cs-mem"/></a>
-<a href="#terminal-runtime"><img src="https://img.shields.io/badge/sandbox-PRoot_Ubuntu_24.04-E95420?logo=ubuntu&logoColor=white" alt="Ubuntu"/></a>
-<img src="https://img.shields.io/badge/ABI-arm64·x86__64·v7a-3DDC84" alt="ABI"/>
-<img src="https://img.shields.io/badge/API-OpenAI_compatible-412991?logo=openai&logoColor=white" alt="OpenAI-compatible"/>
-<img src="https://img.shields.io/badge/🛰️_LLM-none_required_locally-559E39" alt="BYO LLM"/>
-<img src="https://img.shields.io/badge/status-active·alpha-2ea44f?logo=git&logoColor=white" alt="Status"/>
+<a href="https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases/latest"><img src="https://img.shields.io/badge/📦_下载_APK-发布仓库-2EA44F?logo=github" alt="Download APK"/></a>
+<img src="https://img.shields.io/badge/Kotlin-2.3.21-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin 2.3.21"/>
+<img src="https://img.shields.io/badge/Android-8.0%2B_(API_26)-3DDC84?logo=android&logoColor=white" alt="Android 8.0+"/>
+<a href="#tools"><img src="https://img.shields.io/badge/🧰_内置工具-228-00C2D1" alt="228 Tools"/></a>
+<a href="#testing"><img src="https://img.shields.io/badge/🧪_测试-383_文件_·_5,434_用例-2EA44F" alt="Tests"/></a>
+<a href="#architecture"><img src="https://img.shields.io/badge/📦_Gradle_模块-22-8A2BE2" alt="22 Modules"/></a>
 <a href="#license"><img src="https://img.shields.io/badge/🪶_license-UGRL_v1.0·受限使用-red" alt="License: UGRL v1.0 restricted"/></a>
 
 **快速跳转**
 
-<a href="https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases/latest"><img src="https://img.shields.io/badge/📦_下载_APK-发布仓库-2ea44f?logo=github&logoColor=white" alt="Download APK from Release Repo"/></a>
-<a href="https://github.com/Ultra-Guru/Android-Guru-Agent/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/🧪_CI_artifacts-debug_构建-2088FF?logo=githubactions&logoColor=white" alt="Get debug APK from CI"/></a>
-<a href="#quickstart"><img src="https://img.shields.io/badge/🚀_quick_start-5_分钟-1F6FEB" alt="Quick Start"/></a>
-<a href="#docs-index"><img src="https://img.shields.io/badge/📚_docs-deep_dives-0077B5" alt="Docs"/></a>
-<a href="#faq"><img src="https://img.shields.io/badge/❓_FAQ-7_问答-8B5CF6" alt="FAQ"/></a>
-<a href="#glossary"><img src="https://img.shields.io/badge/🧭_glossary-术语速查-6E7681" alt="Glossary"/></a>
-
-**分享与交流**
-
-<a href="https://twitter.com/intent/tweet?text=%F0%9F%A4%96%20Android%20Guru%20Agent%20%E2%80%94%20%E8%B7%91%E5%9C%A8%E6%89%8B%E6%9C%BA%E4%B8%8A%E7%9A%84%E8%87%AA%E4%B8%BB%E6%99%BA%E8%83%BD%E4%BD%93%EF%BC%88111%20%E5%B7%A5%E5%85%B7%20%C2%B7%20Ubuntu%20%E7%BB%88%E7%AB%AF%20%C2%B7%20cs-mem%20%E8%AE%B0%E5%BF%86%EF%BC%89&url=https%3A%2F%2Fgithub.com%2FUltra-Guru%2FAndroid-Guru-Agent"><img src="https://img.shields.io/badge/分享-Twitter-1DA1F2?logo=x&logoColor=white" alt="Share on Twitter"/></a>
-<a href="https://t.me/share/url?url=https%3A%2F%2Fgithub.com%2FUltra-Guru%2FAndroid-Guru-Agent&text=%F0%9F%A4%96%20Android%20Guru%20Agent%20%E2%80%94%20%E8%AE%BE%E5%A4%87%E4%B8%8A%E7%9A%84%E8%87%AA%E4%B8%BB%E6%99%BA%E8%83%BD%E4%BD%93"><img src="https://img.shields.io/badge/分享-Telegram-26A5E4?logo=telegram&logoColor=white" alt="Share on Telegram"/></a>
-<a href="https://www.reddit.com/submit?url=https%3A%2F%2Fgithub.com%2FUltra-Guru%2FAndroid-Guru-Agent&title=Android%20Guru%20Agent%20%E2%80%94%20Autonomous%20AI%20agent%20on-device"><img src="https://img.shields.io/badge/分享-Reddit-FF4500?logo=reddit&logoColor=white" alt="Share on Reddit"/></a>
-<a href="https://github.com/AceGuru-mjh?tab=followers"><img src="https://img.shields.io/github/followers/AceGuru-mjh?label=Follow&style=flat-square&logo=github" alt="Follow"/></a>
+<a href="#quickstart"><img src="https://img.shields.io/badge/🚀_快速开始-1C2A3A?style=flat-square" alt="Quick Start"/></a>
+<a href="#fit-matrix"><img src="https://img.shields.io/badge/🧩_我能不能用-1C2A3A?style=flat-square" alt="Fit Matrix"/></a>
+<a href="#tools"><img src="https://img.shields.io/badge/🔧_工具全景-1C2A3A?style=flat-square" alt="Tools"/></a>
+<a href="#architecture"><img src="https://img.shields.io/badge/🏗️_架构-1C2A3A?style=flat-square" alt="Architecture"/></a>
+<a href="#docs-index"><img src="https://img.shields.io/badge/📚_文档-1C2A3A?style=flat-square" alt="Docs"/></a>
+<a href="#faq"><img src="https://img.shields.io/badge/❓_FAQ-1C2A3A?style=flat-square" alt="FAQ"/></a>
+<a href="https://github.com/Ultra-Guru/Android-Guru-Agent/releases"><img src="https://img.shields.io/badge/📦_Releases-1C2A3A?style=flat-square" alt="Releases"/></a>
 
 </div>
-
----
-
-<a id="at-a-glance"></a>
-## 🔭 一眼看懂
-
-<table>
-<tr>
-<td align="center" width="33%">
-
-🧠
-
-**仿生认知记忆**
-
-屏幕感知 → 语义降维 → FSM 宏技能<br/>指纹命中即 **0 token** 旁路回放
-
-</td>
-<td align="center" width="33%">
-
-🖥️
-
-**真 Linux 终端**
-
-设备上 PRoot 沙箱跑 Ubuntu 24.04<br/>原生 PTY + 自研 VT100，`apt install` 可用
-
-</td>
-<td align="center" width="33%">
-
-🔀
-
-**双引擎工作流**
-
-流式 ReAct 循环 + 任务编排器<br/>状态机 · 恢复规划 · 用户交互门
-
-</td>
-</tr>
-<tr>
-<td align="center" width="33%">
-
-🗜️
-
-**上下文工程**
-
-三级压缩：工具输出截断 → 滑动窗口<br/>→ LLM 摘要，长任务不爆窗口
-
-</td>
-<td align="center" width="33%">
-
-🛰️
-
-**BYO-LLM**
-
-任意 OpenAI 兼容端点 / 局域网 Ollama<br/>多模型角色路由 + 原生思维链透传
-
-</td>
-<td align="center" width="33%">
-
-⚡
-
-**三级权限链**
-
-Root → Shizuku → 沙箱 Shell 自动降级<br/>无 Root 也能执行特权命令
-
-</td>
-</tr>
-</table>
-
-<p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
 
 ---
 
@@ -168,37 +57,27 @@ Root → Shizuku → 沙箱 Shell 自动降级<br/>无 Root 也能执行特权�
 <tr>
 <td valign="top" width="50%">
 
-**核心能力**
-- [🔭 一眼看懂](#at-a-glance)
-- [✨ 项目亮点](#highlights)
-- [🆚 与其他方案对比](#comparison)
-- [🏗️ 架构总览](#architecture)
-- [🧠 认知记忆系统 cs-mem](#cs-mem)
-- [🔄 Agent 引擎与六种工作模式](#engine)
-- [🗜️ 上下文工程（P7 三级压缩）](#context-compression)
+**能力**
+- [📦 立即获取](#download)
+- [🧩 我能不能用（能力矩阵）](#fit-matrix)
+- [✨ 核心能力总览](#highlights)
+- [🔄 Agent 引擎与三种模式](#engine)
+- [💭 思考系统（四条逻辑线）](#thinking)
 - [🖥️ 终端运行时（Ubuntu + PRoot）](#terminal-runtime)
-- [🌐 浏览器智能体](#browser)
-- [🔧 工具全景（111 个）](#tools)
-- [⚡ 权限执行链](#privilege)
+- [🌐 浏览器智能体（41 工具）](#browser)
+- [🧠 认知记忆（apex-kit-memory）](#memory)
 
 </td>
 <td valign="top" width="50%">
 
-**使用与工程**
-- [🧩 技能系统与市场](#skills)
-- [💬 斜杠命令](#slash-commands)
-- [🔌 插件 SDK](#plugin-sdk)
-- [🎨 ComposeFoundry（伴侣工程）](#composefoundry)
-- [📚 库模块（拆库生态）](#library-modules)
-- [💎 Liquid Glass 玻璃组件系统](#liquid-glass)
-- [📱 应用界面](#ui-screens)
-- [🚀 快速开始](#quickstart)
-- [🧪 测试与质量保障](#testing)
-- [📊 CI/CD 流水线](#cicd)
-- [📁 仓库结构与代码规模](#structure)
-- [🗺️ 路线图](#roadmap) · [📄 文档索引](#docs-index)
-- [❓ FAQ](#faq) · [🧭 术语速查](#glossary) · [🤝 贡献指南](#contributing)
-- [📊 开发者统计](#dev-stats) · [⭐ Star History](#star-history) · [👥 贡献者](#contributors)
+**工程**
+- [⚡ 权限执行链](#privilege) · [🧩 扩展生态](#ecosystem)
+- [🏗️ 架构总览](#architecture) · [🔧 工具全景（228）](#tools)
+- [🚀 快速开始](#quickstart) · [🆚 横向对比](#comparison)
+- [🧪 测试与质量](#testing) · [📊 CI/CD（18 流水线）](#cicd)
+- [📁 仓库结构与规模](#structure) · [🗺️ 路线图](#roadmap)
+- [🎮 周边与彩蛋](#playground) · [📄 文档索引](#docs-index)
+- [❓ FAQ](#faq) · [🧭 术语速查](#glossary) · [🤝 贡献](#contributing) · [⚖️ 许可证](#license)
 
 </td>
 </tr>
@@ -206,407 +85,123 @@ Root → Shizuku → 沙箱 Shell 自动降级<br/>无 Root 也能执行特权�
 
 ---
 
-<a id="highlights"></a>
-## ✨ 项目亮点
+<a id="download"></a>
+## 📦 立即获取
 
-| | 亮点 | 说明 |
+| 渠道 | 说明 |
+|------|------|
+| 📦 **[发布仓库 Releases](https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases/latest)** | 正式版 APK（arm64 / universal）。双仓库架构：**PR 合并进 main 即自动构建发布**，无需打 tag |
+| 🔄 应用内更新 | 「设置 → 关于 → 检查更新」—— VCDIFF 增量补丁（约 14MB vs 全量 300MB+），下载后应用内自动合成并拉起安装，跨版本按 [patches.json](https://github.com/Ultra-Guru/Android-Guru-Agent-Release/blob/main/patches.json) 链式升级 |
+| 🧪 [CI debug 工件](https://github.com/Ultra-Guru/Android-Guru-Agent/actions/workflows/ci.yml) | `app-debug-apk`（debug 构建，保留 14 天） |
+| 💬 聊天版？ | 纯聊天模式在 [Theocracy](https://github.com/Ultra-Guru/Theocracy/releases) —— 两个项目下载入口不要混淆 |
+
+> 版本口径：源码基线 `1.5`（versionCode 179），发布线已滚动至 **v1.5.24**；
+> 以发布仓库 Releases 实际列表为准。
+
+<p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
+
+---
+
+<a id="fit-matrix"></a>
+## 🧩 我能不能用？（可组合能力矩阵）
+
+**每列独立成立，任选组合** —— 三列都满足，就是完整的口袋智能体：
+
+| 🧠 大脑 Brain | 🦾 肌肉 Muscles | 🧵 记忆 Memory |
+|--------------|----------------|---------------|
+| 任一 **OpenAI 兼容端点**：OpenAI（含 o1/o3/o4-mini/gpt-5 严格推理模型）/ DeepSeek / Qwen(DashScope) / OpenRouter / Gemini OpenAI 兼容层 / Anthropic 兼容层 / vLLM / OneAPI / 局域网 Ollama | **PRoot Ubuntu 24.04** 沙箱终端（免 Root）<br/>41 个 `browser_*` 网页自动化工具<br/>a11y UI 语义交互 + 三级权限 shell | **apex-kit-memory**：语义图 + FSM 宏<br/>命中即 **0 token** 旁路回放<br/>App 升级后拓扑别名桥保鲜 |
+| 加分项：Key 池轮换 · 多模型角色路由 · `reasoning_content` 思维链透传 | 加分项：Root 设备解锁 chroot 后端 | 加分项：充电空闲时梦境巩固 |
+
+**设备适配阶梯**（从零配置到全解锁）：
+
+| 你的设备 | 解锁的能力 |
+|----------|-----------|
+| 普通 Android 8.0+（API 26） | ✅ 全功能基线：PRoot Ubuntu 沙箱终端 + 应用沙箱 shell + 228 工具 + 浏览器 + 记忆 |
+| + [Shizuku](https://shizuku.rikka.app/) | ➕ ADB 级权限（uid=2000）：pm install / settings / input / dumpsys |
+| + Root | ➕ chroot Ubuntu 后端（T98）+ `su` 特权链全系统操作 |
+| + 无障碍授权 | ➕ UI 语义交互（UiTap/UiDump）+ 屏幕感知（记忆采集）+ a11y 截图 |
+| ABI 覆盖 | arm64-v8a · armeabi-v7a · x86_64（PRoot 三 ABI 内置，sha256 锁定） |
+
+> targetSdk 有意钉死 **28**（与 Termux 同款：保住 SELinux `untrusted_app` 的
+> W^X 执行红线，PRoot 用户态翻译必须的 `exec()` 才能活）。compileSdk 36。
+
+<p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
+
+---
+
+<a id="highlights"></a>
+## ✨ 核心能力总览
+
+| | 能力 | 说明 |
 |:---:|------|------|
-| 🧠 | **仿生认知记忆** | UI 感知 → 语义降维（体积压缩 90%+）→ 差分摄取（再压缩 95%+）→ ReAct 轨迹蒸馏为有限状态机 → **0 token 的"肌肉记忆"旁路回放**，App 升级后经拓扑同胚迁移保鲜 |
-| 🛡️ | **记忆免疫系统** | 悬浮窗钓鱼 / 无障碍劫持 / 记忆中毒防御：敏感词分级 + 结构完整性校验 + 可疑指纹隔离（Quarantine） |
-| 🌙 | **梦境渲染** | 息屏 + 充电 + WiFi 时后台巩固记忆：低能宏保鲜验证、能量衰减、跨版本拓扑迁移（借鉴人类睡眠记忆巩固） |
-| 🔥 | **能量遗忘与晶化** | 每条记忆带能量值：使用增能、时间衰减、低能坍缩删除；能量≥8 且成功率≥90% 的高频宏**晶化为 ROM 级永久技能**，免疫衰减与剪枝 |
-| 🖥️ | **真·Linux 终端** | 设备上供给 Ubuntu 24.04 官方 rootfs，PRoot 用户态沙箱执行 + 原生 C++ PTY（forkpty/JNI）+ 自研 VT100/ANSI 模拟器，`apt install`、跑 bash 脚本皆可 |
-| 🔀 | **双引擎工作流** | 直连 ReAct 引擎 + 任务编排器（状态机/恢复规划/用户交互门/多模型路由）两条执行路径，复杂任务自动上编排 |
-| 🗜️ | **上下文工程** | 三级压缩（工具输出智能截断 → 滑动窗口 → LLM 摘要），双引擎统一水位检查，长任务不爆上下文窗口 |
-| 🛰️ | **BYO-LLM** | OpenAI 兼容协议 + DeepSeek / OpenRouter / Ollama / 自定义端点预设；多模型运行时按角色路由（含图片自动走 VISION）；原生支持 `reasoning_content` 思维链（R1 / Qwen3-thinking / o 系列） |
-| ⚡ | **三级权限链** | Root → Shizuku → 普通沙箱 shell 自动降级选择，无 Root 设备也能执行特权命令 |
-| 🧩 | **插件 SDK v2（双类型）+ 技能市场** | 功能性插件（plugin.json 声明式贡献点：工具宏/斜杠指令，零代码执行面）+ APK 插件（AIDL 跨进程）统一管理；技能市场（工具/技能/MCP/插件/连接器五个货架）+ 40+ 可安装技能模板；plugin-workflow 为参考 APK 插件、functional-samples 为功能性插件样本 |
-| ⚛️ | **FusionBundle 复合技能包（聚变包）** | 「技能 + MCP 服务器 + 工具 + agent 工作流」一键聚合激活的装载单位（fusion-bundle-v1 manifest，输入栏直选即用）；内置七大顶级开源体系 —— **REA · Reverse Engineer Anything**（207 工具面逐名对齐上游 v6.5.0，静态分析核心纯设备直跑、adb 族原生设备执行、BYO 引擎桥与证据纪律信封）、**Superpowers**（obra v7.0.0 软件开发方法论八技能）、**SuperClaude**（v4.3.0 五行为模式 + 上游 8 台增强 MCP 的内置等价聚合）、**BMAD**（v6.12 敏捷交付环五阶段）、**Anthropic Skills**（官方技能体系设备端移植：Word/Excel/PPT/PDF 文档四件经 PRoot Python 工具链真实产出 + 技能/MCP/测试工程）、**Claude Flow SPARC**（结构化开发五阶段 + Task 子代理群智编排 + 持久记忆）、**Shrimp Task Manager**（16 工具结构化任务规划，进程内 MCP 第七台：依赖 DAG/反思洞察/项目规则/思维链，任务账本持久 + 自动备份）—— 详见 [docs/fusion-bundle.md](docs/fusion-bundle.md) |
-| 🌐 | **内置浏览器大功能（v1.5.0 起非插件）** | 41 个 `browser_*` 工具（DOM 级操控 + 键鼠/抽取/JS 逃生舱 + v2.1.0 异步导航协议/BrowserTask 编排/增量快照）+ 悬浮球 + 浮窗浏览器，工具体系直连可编排 |
-| 💭 | **七档思考系统（Coding 页专属）** | NONE→ULTRACODE→APEXCODE 七深度档 + AUTO 预检自适应（发送前选档 + 深水区升级）；档位驱动提示词 / 模型参数 / 迭代倍率 / 压缩阈值 / 输出预算**全执行画像** |
-| 🕓 | **长任务中心（v1.2）** | 超阈值运行自动留档；检查点时间线回看（轮次 / 相对时间 / todo 完成度）+ 续跑不从头、复制带上下文重跑、同目标运行对比 |
+| 🖥️ | **真 Linux 终端** | 设备上供给 Ubuntu 24.04 官方 rootfs（24.04.4 / noble，sha256 锁定），PRoot 用户态沙箱 + 原生 C++ PTY（forkpty/JNI）+ 自研 VT100/ANSI 模拟器（C++17 热路径零堆分配），`apt install`、bash 脚本皆可 |
+| 🌐 | **内置浏览器智能体** | 41 个 `browser_*` 工具：DOM 级操控 + 语义哈希稳定 ref（SPA 刷新不失效）+ 批量动作 + v2.1.0 异步导航协议（BrowserTask 编排）+ executeJs 逃生舱 + 悬浮球 / 浮窗浏览器 |
+| 🧠 | **仿生认知记忆** | 差分摄取（SceneDiffer，压缩 95%+）→ ReAct 轨迹蒸馏（MacroDistiller）→ FSM 宏 **0 token 旁路回放** → 梦境巩固（充电+空闲维护窗）；能量遗忘与晶化、记忆免疫隔离、跨版本拓扑迁移 |
+| 💭 | **四条思考逻辑线** | 深潜（七档 NONE→ULTRACODE→APEXCODE + AUTO 预检）/ 标准（五画像·权限三态门·task 子代理）/ 织造（apex-kit-loom 经纬交织）/ 信使（apex-kit-courier 驿传并行），运行时可切 |
+| 🛰️ | **BYO-LLM** | OpenAI 兼容协议 + 多模型角色路由（含图片自动走 VISION）+ Key 池四轮换模式 + `reasoning_content` 原生思维链透传（R1 / Qwen3-thinking / o 系列） |
+| 🖐️ | **工具系统 V5** | **228 个静态注册工具**（v4 渐进披露：70 个 CORE 常驻，按需展开）+ 八层执行硬化（超时/重试/限流/熔断/追踪/批量/组合动作/环境门控）+ MCP/技能/插件动态扩展 |
+| 🗜️ | **上下文工程** | 三级压缩：工具输出智能截断 → 滑动窗口 → LLM 摘要；双引擎统一水位检查，长任务不爆窗口 |
+| ⚡ | **三级权限执行链** | Root → Shizuku → 普通沙箱 shell 自动降级（30s 缓存 + 审计日志），无 Root 设备也能执行 ADB 级命令；无障碍服务作为独立 UI 能力层 |
+| 🧩 | **四层扩展生态** | MCP（7 台内置服务器 + stdio/http 双传输 + `run_in_sandbox` 路由进 PRoot）× 技能（热重载装卸）× 市场（8 个源）× 插件（声明式功能性 + APK AIDL 双形态） |
+| ⚛️ | **FusionBundle 聚变包** | 「技能+MCP+工具+工作流」一键聚合激活：内置 REA / Superpowers / SuperClaude / BMAD / Anthropic Skills / Claude Flow SPARC / Shrimp 七大体系 |
+| 🕓 | **长任务中心** | 超阈值运行自动留档；检查点时间线回看 + 续跑不从头 + 复制带上下文重跑 + 同目标运行对比 |
+| 🪞 | **Liquid Glass 玻璃系统** | vendored kyant backdrop 引擎（Apache-2.0）：七档材质玻璃组件，彩色高光 + 深浅色适配 |
 
 > [!IMPORTANT]
 > **这一切跑在一台普通 Android 手机上。** 不需要服务器，不需要 PC 伴侣，
-> 配置任意 OpenAI 兼容 API（或局域网 Ollama）即获得完整的智能体能力。
-
-<p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
-
----
-
-<a id="comparison"></a>
-## 🆚 与其他方案对比
-
-| 维度 | **Android Guru Agent** | PC 端编码智能体（Claude Code / OpenHands 等） | 传统自动化工具（Tasker 类） | 手机 AI 聊天 App |
-|------|------------------------|--------------------------------|------------------------------|------------------|
-| 运行位置 | 📱 全程在设备上 | 💻 PC / 服务器 | 📱 设备上 | ☁️ 云端 |
-| 需要服务器/PC | ❌ 不需要 | ✅ 需要 | ❌ 不需要 | ✅（厂商云） |
-| LLM 可换性 | ✅ 任意 OpenAI 兼容端点 / 局域网 Ollama | 固定模型或自配 | 无 LLM | ❌ 固定 |
-| 执行能力 | 102 工具：shell / 文件 / 结构化查询 / UI 自动化 / 浏览器 / 终端 | 文件 + shell + web | 规则触发，无推理 | 仅对话 |
-| Linux 环境 | ✅ PRoot Ubuntu 24.04 沙箱 | ✅ 宿主 OS | ❌ | ❌ |
-| 跨会话记忆 | ✅ 认知记忆：陈述性（语义图）+ 程序性（FSM 宏旁路回放） | 仓库内文件（CLAUDE.md 等） | ❌ | 云端会话 |
-| 离线记忆 | ✅ Room 本地图数据库 | — | — | ❌ |
-| 特权操作 | Root / Shizuku / 沙箱三级降级 | 宿主用户权限 | 需 Root 的居多 | ❌ |
-| 可扩展 | 插件 APK（AIDL）+ 技能 + MCP | MCP 等 | 插件市场 | ❌ |
-
-> [!NOTE]
-> 对比基于各方案公开形态的定性归纳；PC 端智能体在代码工程深度上依然更强，
-> 本项目的差异化在于**把完整的智能体闭环装进口袋**。
-
-<p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
-
----
-
-<a id="architecture"></a>
-## 🏗️ 架构总览
-
-```mermaid
-flowchart TB
-    subgraph APP["📱 :app — Compose UI + Hilt 装配"]
-        direction LR
-        CHAT["Code 屏（唯一工作面）<br/>胶囊流时间轴 · 四条思考逻辑线<br/>工作区 · 计划确认卡"]
-        SCREENS["Terminal · Skill · Market<br/>Memory · Permissions · Log · Settings"]
-    end
-
-    subgraph CORE["⚙️ core:* — 纯 JVM · 零 Android 依赖"]
-        direction LR
-        ENGINE["agent-engine<br/>共享引擎协议<br/>会话记忆·压缩<br/>双工位分轨"]
-        TOOLS["tool-registry<br/>内置工具 · schema 即校验<br/>SkillRegistry · MCP 客户端 · Hub 源"]
-        LLM["llm-adapter<br/>OpenAI 兼容 SSE<br/>多模型运行时 · 角色路由"]
-        LOGC["logging<br/>结构化日志"]
-        CODEENG["code-engine<br/>编码工位引擎<br/>长任务韧性 · 子代理 · 胶囊流"]
-    end
-
-    subgraph PLAT["🧱 platform:* — Android 平台层"]
-        direction LR
-        PRIV["privilege<br/>Root / Shizuku / Shell<br/>三级权限链"]
-        PERSIST["persistence<br/>前台服务 + 看门狗"]
-        TERM["terminal<br/>Ubuntu rootfs · PRoot<br/>原生 PTY · 25 工具"]
-        CSMEM["cs-mem 认知记忆<br/>apex-kit-memory 库 + memory-host 接线<br/>蒸馏 · 旁路回放 · 维护周期<br/>JSON 原子文档"]
-        MCPH["mcp-host<br/>逆向 MCP Host<br/>:8765 · Bearer · 白名单"]
-    end
-
-    VTE["🖥️ terminal-emulator<br/>自研 VT100 / ANSI 模拟器"]
-    VTN["🚀 terminal-native<br/>apex-native-vt C++17 引擎<br/>（JNI 零分配热路径）"]
-    TVW["🪟 terminal-view<br/>Compose 画布渲染 · 手势 · IME"]
-
-    subgraph PLUG["🧩 plugin-sdk — AIDL 跨进程"]
-        PAPI["plugin-api · IApexPlugin"]
-        PHOST["plugin-host<br/>发现 · 绑定 · 工具桥接"]
-        PLUGINS["plugins:* 插件 APK"]
-    end
-
-    CHAT --> ENGINE
-    SCREENS --> ENGINE
-    ENGINE -->|工具调用| TOOLS
-    ENGINE -->|LLM 请求| LLM
-    TOOLS -->|LLM 请求| LLM
-    TOOLS --> PRIV
-    TOOLS --> TERM
-    CSMEM -->|记忆召回工具| TOOLS
-    ENGINE -->|会话记忆观察| CSMEM
-    TERM --> VTE
-    VTE -.native 加速.-> VTN
-    TERM --> TVW
-    MCPH -->|工具暴露·同一门控链| TOOLS
-    PHOST -->|插件工具注册| TOOLS
-    PERSIST -.前台保活.-> APP
-    PAPI -.契约.-> PHOST
-    PLUGINS -.实现.-> PAPI
-```
-
-**20 个 Gradle 模块**（单一仓库 `settings.gradle.kts`）：
-
-| 模块 | 类型 | 职责 |
-|------|:---:|------|
-| `:app` | Android App | Compose UI（抽屉导航）、Hilt 装配、浏览器/GitHub 工具、悬浮球 |
-| `:core:agent-engine` | 纯 JVM | 共享引擎基座（AgentEvent/AgentConfig 协议、上下文压缩、会话记忆）—— Coding 引擎依赖 |
-| `:core:tool-registry` | 纯 JVM | 内置工具（schema 即校验 + 风险门 + 使用统计）+ 工具执行器 + SkillRegistry + MCP 客户端 + Hub 源 |
-| `:core:llm-adapter` | 纯 JVM | OpenAI 兼容流式客户端 + 多模型运行时（角色路由/能力校验/错误分类） |
-| `:core:logging` | 纯 JVM | 结构化日志（LogCategory/LogLevel/LogRecord） |
-| `:core:code-tools` | 纯 JVM | 编码工具包：文件编辑 / git / 诊断 / TODO |
-| `:core:code-engine` | 纯 JVM | 编码工位专用引擎：长任务韧性 / 子代理 / 胶囊流式 / 思考档位 |
-| `:platform:privilege` | Android Lib | Root/Shizuku/普通三级权限链 + 无障碍服务 + 进程流工厂 |
-| `:platform:persistence` | Android Lib | 前台服务 + WorkManager 看门狗（被杀自动拉起） |
-| `:platform:terminal` | Android Lib | 终端运行时 2.0：rootfs 供给、PRoot 后端、原生 PTY、Ubuntu 生命周期编排、25 个工具 |
-| `:platform:memory-host` | Android Lib | 认知记忆宿主层：apex-kit-memory 的平台端口 / DI / 旧存储迁移 / 维护调度 / 召回工具（库本体见 [apex-kit-memory](https://github.com/Ultra-Guru/apex-kit-memory)，见下节） |
-| `:platform:code-workspace` | Android Lib | 编码工作区：安全根目录与生命周期 |
-| `:platform:mcp-host` | 纯 JVM | 逆向 MCP Host：把手机工具暴露给 PC 客户端（零第三方依赖） |
-| `:platform:browser-agent` | Android Lib | 浏览器自动化大功能：browser_* 工具协议 + apex-kit-browser DI 接线 |
-| `:terminal-emulator` | 纯 Kotlin | 自研 VT100/ANSI 终端模拟器（零依赖）+ `TerminalEngine` 引擎抽象 |
-| `:terminal-native` | Android Lib | apex-native-vt C++17 零分配 VT 引擎（vendored + JNI，运行时回退 Kotlin） |
-| `:terminal-view` | Android Lib | Compose 终端视图层：画布渲染 / 手势 / 选区 / IME 连接 |
-| `:plugin-sdk:plugin-api` | Android Lib | AIDL `IApexPlugin` + PluginContract 常量 |
-| `:plugin-sdk:plugin-host` | Android Lib | 插件发现/绑定/工具桥接 |
-| `:plugins:plugin-workflow` | Android App | 参考插件 APK（工作流三工具） |
-
-> [!NOTE]
-> 📌 `ComposeFoundry/` 是**独立的 Gradle 工程**（有自己的 `settings.gradle.kts`），
-> 不参与主构建 —— 详见 [ComposeFoundry 章节](#composefoundry)。
-> 上图为控制/数据流示意（非严格 Gradle 依赖图）。
-
-<p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
-
----
-<a id="cs-mem"></a>
-## 🧠 认知记忆系统（apex-kit-memory）
-
-记忆域已拆库为独立库模块 [apex-kit-memory](https://github.com/Ultra-Guru/apex-kit-memory)
-（`com.apex.memkit:memory-core`，纯 Kotlin JVM，63 项单测），主仓以 composite
-build 消费；宿主侧只剩薄接线层 `:platform:memory-host`（平台端口 / DI /
-旧存储迁移 / 维护调度 / 召回工具）。它不只是"给 LLM 塞一段历史"，
-而是一套把 **屏幕感知转化为可复用程序性记忆** 的完整管线，并统一了旧
-cs-mem（UI 轨迹/FSM 宏）与内置知识图谱/聊天记忆三套存储为同一套原子文档。
-
-### 管线全景
-
-```mermaid
-flowchart TB
-    subgraph INGEST["🔵 摄取侧 —— 每次动作后自动触发"]
-        direction LR
-        A["👁 感知<br/>SceneCapture 端口<br/>（宿主：PrivilegeManager 嵌套树）"]
-        B["✂️ 语义降维<br/>SceneReducer<br/>同一条「捕获→降维→指纹」路径<br/>采集与匹配共用（P0-2 根治）"]
-        C["Δ 差分摄取<br/>SceneDiffer<br/>只存状态跃迁"]
-        G["🛡️ IngestGuard<br/>摄取前防护：敏感词/包名分级<br/>可疑指纹隔离（TTL）"]
-        A --> B --> C --> G
-    end
-
-    E[("🗄 MemoryStore<br/>JSON 原子文档<br/>nodes · episodes · macros<br/>chat · graph · quarantine")]
-    G --> E
-
-    subgraph CONSUME["🟢 消费侧"]
-        direction LR
-        R1["召回工具 ×3<br/>MemorySearchNodes<br/>MemoryRecentEpisodes<br/>MemoryRecallMacro"]
-        R2["轨迹蒸馏<br/>MacroDistiller<br/>入口指纹集合 → 类型化动作"]
-        R2 --> M["MacroSkill 宏技能"]
-        M --> BY["⚡ 旁路回放 MacroRunner<br/>入口指纹集合重合率匹配<br/>绕过 LLM · 微秒级 · 0 token"]
-    end
-
-    E --> R1
-    E --> R2
-
-    MT["🔧 MacroMaintenance（WorkManager）<br/>息屏+充电+WiFi 时维护<br/>能量衰减 · 剪枝 · 晶化 · 别名发现"] -.维护.-> E
-    CH["💬 ChatEngine<br/>聊天事实蒸馏 + 召回<br/>（#218 隐私门控）"] -.同库.-> E
-```
-
-### 记忆的三种形态
-
-| 形态 | 模型 | 产生 | 消费 |
-|------|------|------|------|
-| **陈述性记忆（UI）** | `NodeDictEntry` 语义节点 + `EpisodeRecord` 情景 | 每次动作后差分摄取；`appPackage`/`appVersion` 由捕获端口单源贯穿（P0-1 根治） | `MemorySearchNodes` / `MemoryRecentEpisodes` 召回工具；记忆屏可视化 |
-| **程序性记忆** | `MacroSkill` 类型化步骤（`MacroAction` sealed：Tap/Swipe/Input/Back/Home） | 任务成功后 `MacroDistiller`：入口指纹集合 → 动作序列 | `MacroRunner.tryBypass()`：入口指纹集合重合率命中即**绕过 LLM 直接回放** |
-| **对话记忆** | `ChatFact` 事实账本 + 知识图谱（`GraphEntity`/`GraphRelation`） | 对话轮次启发式 + 后台 LLM 蒸馏（待蒸馏队列持久化）；`mcp__memory__*` 工具读写图谱 | 召回注入 system prompt（#218 门控）；`/mcp:memory` 斜杠指令 |
-
-### 生命周期管理（去隐喻后的真实机制）
-
-| 机制 | 组件 | 触发 | 效果 |
-|------|------|------|------|
-| 🔋 **能量衰减** | `MacroMaintenance` | 维护周期（原"梦境"语义：息屏+充电+WiFi，每 2h） | 成功执行 → 能量增加；时间推移 → 指数衰减（艾宾浩斯曲线） |
-| 💎 **晶化** | `MacroMaintenance` | 能量/成功率阈值 | 高价值宏固化：免疫衰减/剪枝/删除 |
-| ✂️ **剪枝保鲜** | `MacroMaintenance` | 维护周期 | 低能宏验证回放、容量治理 |
-| 🛡️ **摄取防护** | `IngestGuard`（原"免疫"） | 每次摄取前 | 敏感词分级 / 包名可信分级 / 可疑指纹隔离（带 TTL 重新评估） |
-
-### 跨版本记忆保鲜（拓扑别名桥）
-
-目标 App 升级会改变 UI（resourceId / 布局 / 文案）→ 旧指纹失效 → 宏集体失配。
-解法是**别名桥**而不是改写历史：`appVersion` 取**被采集目标 App** 的版本
-（宿主经 PackageManager 解析），维护周期发现同构新旧节点对写入
-`FingerprintAlias`，匹配侧精确失配时按别名回退 —— 旧指纹不丢弃，
-新指纹可回溯。
-
-> [!TIP]
-> 深入阅读：[docs/memory-and-workflow-research.md](docs/memory-and-workflow-research.md)
-> —— 对标 MemGPT/Letta、Mem0、A-MEM、Zep/Graphiti、Voyager[^research] 的完整调研与差距分析。
-
-> [!NOTE]
-> 旧存储（Room `cs_mem_graph.db` / `mcp_memory/memory.json` /
-> `chat_memory/ledger.json`）在首次启动时由 `LegacyCsMemMigrator`
-> 一次性搬迁（幂等；动作无法类型化的旧宏整宏丢弃，不留半迁移状态）。
+> 配置任意 OpenAI 兼容 API（或局域网 Ollama）即获得完整的智能体闭环。
 
 <p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
 
 ---
 
 <a id="engine"></a>
-## 🔄 Agent 引擎与六种工作模式
+## 🔄 Agent 引擎与三种模式
 
-`core:agent-engine` 提供两条执行路径，UI 自动选择：
+`core:agent-engine` 的编排内核：任务状态机（`TaskStatusMachine`）+ Plan 图
+（`PlanGraph` 人工确认闸）+ 失败分类与恢复规划（`FailureClassifier` /
+`RecoveryPlanner`）+ 用户交互门（AskUser 桥，可中止）+ 压缩门与钩子协调。
 
-1. **直连路径 `ApexAgentEngine`** —— 流式 ReAct 循环（Think → Act → Observe → …），
-   全事件流输出，适合绝大多数对话式任务；
-2. **编排路径 `DefaultTaskOrchestrator`** —— 复杂长任务：任务状态机、
-   批量工具执行引擎、失败分类 + 恢复规划器、重试策略、循环检测（LoopDetector）、
-   用户交互门（AskUser 挂起等待人工决策）、生命周期事件（SharedFlow）。
+**三种工作模式**（`AgentMode`，v1.5 随聊天模式剥离后的纯 Coding 面）：
 
-### 编排器任务状态机（真实转移）
-
-```mermaid
-stateDiagram-v2
-    direction LR
-    [*] --> Idle
-    Idle --> Planning : execute(mode)
-    Planning --> AwaitingPlanConfirmation : PlanGenerated
-    AwaitingPlanConfirmation --> Planning : 确认 / 重规划
-    Planning --> AwaitingSpecConfirmation : SpecGenerated
-    AwaitingSpecConfirmation --> Planning : 确认 / 重规划
-    Planning --> Acting : ToolCallScheduled
-    Acting --> Observing : ToolCallFinished
-    Observing --> Planning : 下一轮迭代
-    Observing --> Responding : 无更多工具调用
-    Acting --> AwaitingUserInput : AskUser / 权限门
-    AwaitingUserInput --> Acting : 用户答复
-    Responding --> Completed : ResponseComplete
-    Planning --> Failed : 异常 / 重试耗尽
-    Acting --> Failed : 批量执行失败
-    Observing --> Failed : 恢复规划失败
-    Responding --> Failed : LLM 错误
-    Planning --> Aborted : cancel
-    Acting --> Aborted : cancel
-    Responding --> Aborted : cancel
-    Completed --> [*]
-    Failed --> [*]
-    Aborted --> [*]
-```
-
-> [!NOTE]
-> 图为 `TaskStateMachine` + `DefaultTaskOrchestrator` / `BatchExecutionEngine`
-> 中全部 `transitionTo(...)` 调用的合并视图；`Finished` 是 sealed 终态
-> （Completed / Failed / Aborted），终态不可逆。
-
-### 六种模式（`AgentMode`）
-
-| 模式 | 行为 | 适用 |
+| 模式 | 行为 | 适合 |
 |------|------|------|
-| **Build** | 边想边做，实时执行 | 简单任务、快速响应 |
-| **Plan** | 先产出完整计划，用户确认后逐步执行 | 复杂多步操作 |
-| **Spec** | 先产出需求规格（目标/需求/约束/验收标准/交付物），确认后逐项执行 | "做什么、做成什么样才算完成" |
-| **Reflect** | 生成 → 评审 → 修正 自我循环 | 代码生成、内容创作等高质量场景 |
-| **Assist** | 遇到多选（方案/目标/偏好）强制弹出选项菜单人工决策 | 不擅自猜测的谨慎场景 |
-| **Custom** | 附加用户自定义指令（输出格式/语言/行为约束），持久化保存 | 个性化定制 |
+| 🔨 **BUILD** | 边想边做，实时执行工具 | 日常编码、小改动、探索式任务 |
+| 📋 **PLAN** | 先产出完整计划，**人工确认后**才开始执行 | 高风险操作、跨文件重构 |
+| 🎯 **GOAL** | 目标驱动：设定可验证条件，持续工作直至达成（`GoalVerifier` 校验） | 长任务、迭代收敛型目标 |
 
-### 双层思考深度（v1.2：7 档 + AUTO）
+> 历史注记：旧版 CHAT/AGENT/LOOP 档位与 v1/v2 的 SPEC / REFLECTION /
+> HUMAN_ASSIST / CUSTOM 模式已随 Agent 聊天剥离移除，旧持久化值自动回退 BUILD。
 
-| 层 | 控制点 | 档位 | 效果 |
-|----|--------|------|------|
-| **提示词思考** | Coding 七档 `CodeThinkingLevel` | 独立阶梯：NONE/LIGHT/STANDARD/DEEP/MAXIMUM+AUTO，另有 ULTRACODE/APEXCODE 深水两档 | 系统提示注入推理指令强度；档位同时驱动**执行画像**（迭代倍率 / 压缩阈值 / 输出预算，深水两档经旋钮补偿反补） |
-| **原生思考** | `ReasoningEffort` | NONE / LOW / MEDIUM / HIGH / MAX | 直接写 `reasoning_effort` 请求参数（o 系列 / R1 / Qwen3-thinking），MAX 档同时抬高 `max_completion_tokens` 给思维链留空间 |
-
-**七档思考阶梯**（**Coding 页专属**；Code 屏另有「思考档位指南」弹层摊开全部画像）：
-
-| 档位 | 定位 | budget | 迭代倍率 | 输出预算 |
-|------|------|--------|----------|----------|
-| NONE | 直接执行不推理 | 0 | ×0.8 | 6000 |
-| LIGHT | 1-2 句简思 | 256 | ×0.9 | 7000 |
-| STANDARD | CoT 三步 | 1024 | ×1.0 | 8000 |
-| DEEP | 多路径 5 步 + 工具失败自检 | 4096 | ×1.2 | 9000 |
-| MAXIMUM | ToT 7 步 + 终检三问清单 | 16384 | ×1.5 | 10000 |
-| ULTRACODE | 编码闭环 7 步（不变量→候选改法→风险排序→最小修改→即时验证） | 32768 | ×2.0 | 12000 |
-| APEXCODE | 架构级穷举 + 对抗性自审 + 全量验证矩阵 + 证据链汇报 | 65536 | ×3.0 | 16000 |
-| AUTO | 元档：发送前预检选档 + 深水区升级（可升至 ULTRACODE，**永不自动选 APEXCODE**） | — | — | — |
-
-Coding 模式在通用画像之上还有一层**编码特化指令**（`CodeThinkingPrompts`：
-一读一改 / 标准编码循环 / 改动集思维 / 不变量守护 / 依赖地图→回归扫描 /
-影响半径测绘→证据链汇报）——「怎么想」与「编码时具体怎么想」三层分工，
-互不重复注入。
-
-两层**正交**：可以 NONE+MAX（纯模型原生思考）也可以 DEEP+NONE（纯提示引导）。
-原生思维链通过 `LlmStreamChunk.reasoningContent` 透传为 `ThinkingChunk` 事件，
-UI 实时显示推理过程（正文与思维链严格分流，双引擎同语义）。
-
-### 多模型运行时（T72）
-
-- `ModelRoleRouter`：按角色（默认/VISION）路由到不同模型；
-- 会话含图片时自动要求 `vision + imageInput` 能力，全链无视觉模型则抛
-  `ModelCapabilityMismatch`（能力校验 + 诚实降级）；
-- `ModelProfileValidator` 校验档案，`ErrorClassifier` 分类运行时错误供重试决策。
-
-### 🧑‍💻 Coding 模式（Code 屏 —— 本应用的顶层工作面）
-
-**Coding 模式是本应用唯一的顶层工作面**（Agent 聊天模式已拆分至 Theocracy 仓库）：
-Code 屏拥有独立引擎实例、按工作区隔离的会话记忆、以及业界标准
-契约的编码工具集 —— 底座是**全量能力基础设施**（工具注册表 +
-v3 执行硬化 + v4 目录 / 技能注入 / MCP 一等工具 / 插件 / 多模型路由）。
+**编排器状态机（真实转移）**：
 
 ```text
-┌─ Code 屏（app/ui/screen/code）──────────────────────────────────┐
-│ 工作区条（切换/新建/删除 + 环境探测摘要）                          │
-│ Todo 面板（CodeTodo 实时快照 → checklist 渲染）                  │
-│ 消息流（用户 / 助手 Markdown / 工具卡 diff 着色 +/-）              │
-│ 输入栏（发送 / 停止 / AskUser 应答）                             │
-└──────────────────────────────────────────────────────────────────┘
-        │ @Named("code") 独立引擎实例（CodeAgentEngine）
-        ▼
-┌─ core/code-engine ──────────┐   ┌─ core/code-tools（6 工具）────┐
-│ CodePrompts（编码行为注入）   │   │ CodeRead   行号契约+目录+纠错  │
-│ CodeConversationMemory      │   │ CodeEdit   7级模糊替换链+护栏   │
-│ （per-workspace 会话记忆）    │   │ CodeWrite  全量写+diff 回显    │
-│ JIT 上下文（环境/统计注入）    │   │ CodeGrep   ripgrep 语义搜索    │
-└─────────────────────────────┘   │ CodeGlob   递归模式匹配        │
-        │ 共享单例                 │ CodeTodo   任务清单状态机      │
-        ▼                         └────────────────────────────────┘
-┌─ platform/code-workspace ───┐   ┌─ MCP（BUILTIN 进程内服务器）────┐
-│ 工作区生命周期 + 环境探测      │   │ search：WebSearch/WebFetch    │
-│ 默认工作区=Agent 沙箱同源目录  │   │ （Agent/Code 两模式互用）       │
-│ host↔guest(/workspace) 同一文件│  └────────────────────────────────┘
-└─────────────────────────────┘
+CREATED ──▶ PLANNING ──▶ AWAITING_CONFIRM ──▶ RUNNING ──▶ COMPLETED
+                │              │ (拒绝)            │
+                │              ▼                   ├─▶ PAUSED ──▶ RUNNING
+                │          CANCELLED               ├─▶ ASKING_USER ──▶ RUNNING
+                └──────────────┴───────────────────┴─▶ FAILED ──▶ (恢复规划) ──▶ RUNNING
 ```
-
-**关键设计**：
-
-- **不重写 Agent Loop** —— `CodeAgentEngine` 是 `ApexAgentEngine` 的薄包装，
-  编码行为经 `additionalSystemContext` 通道注入（BUILD 循环 + 业界标准风格
-  编码行为段落）；
-- **CodeEdit 的成功率就是编码循环的效率** —— 精确匹配失败后依次尝试
-  行 trim / 块锚点+Levenshtein / 空白归一 / 缩进平移 / 边界 trim / replaceAll
-  七级回退；失衡护栏（模糊命中 span 远大于 old_string 时拒绝）防止"吞代码"；
-- **工作区即沙箱** —— code_* 工具的根经 `CodeWorkspaceRoots` 动态解析，
-  切换工作区即时生效；默认工作区与 Agent 文件工具、Ubuntu 终端会话三方
-  看同一份文件（`linux/workspaces/default` ↔ guest `/workspace`）；
-- **网络搜索 MCP 本地运行** —— `BuiltinSearchMcpTransport` 把成熟搜索栈
-  （DuckDuckGo/Bing 三级回退 + 智能正文提取）包装为进程内 MCP 服务器，
-  Agent 与 Coding 两模式共享 `mcp__search__web_search` 一等工具。
-
-### 🕓 长任务中心（v1.2）
-
-跑完即散是深度任务的死穴：几十轮迭代的重构 / 修 Bug / 评审一旦会话清理
-就全部蒸发，想「再来一遍」只能从头描述。Code 屏工作区条的「长任务」入口
-把达到规模阈值（迭代 ≥8 / 工具 ≥12 / 时长 ≥120s / 文件 ≥3，四维任一达标，
-`LongTaskDetector`）的运行**自动留档**，并在其上提供六类顶级操作：
-
-| 能力 | 说明 |
-|------|------|
-| 🕓 **检查点时间线** | 运行中每 5 轮 / 60s 拍一张廉价快照（≤10 个，超限丢最旧）；展开记录卡即是时间线渲染——轮次徽标 + 相对时间（+45s）+ 累计计数（工具 / 文件）+ monospace 对话摘要 + todo 完成度（☑3 ☐2），上次卡在哪、绕了哪些弯一眼可见 |
-| 📋 **复制任务** | 携带上次的结论再跑：上下文 / todo 快照 / 文件清单三开关 + 跨工作区复制 + 复制链谱系（`parentTaskId` 溯源整条重跑历史） |
-| ⏯️ **检查点续跑** | 不从头重跑——从指定检查点（或最后检查点）接着干，上次的弯路不重走；无检查点时诚实回退为带上下文重跑 |
-| 🔄 **运行对比** | 同 parent 的兄弟记录天然是「同一目标的不同尝试」，`LongTaskDiff` 产出迭代 / 工具 / 时长 / 文件集的结构化对比报告 |
 
 <p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
 
 ---
 
-<a id="context-compression"></a>
-## 🗜️ 上下文工程（P7 三级压缩）
+<a id="thinking"></a>
+## 💭 思考系统：四条逻辑线
 
-长任务的死穴是上下文窗口。双引擎共享同一套 `HybridCompressor`，在
-`TokenEstimator` 估计超阈值（默认 128k×80%）时逐级触发：
+Coding 屏右上角随时切换（`/logic` 斜杠命令同效）：
 
-```mermaid
-flowchart TD
-    IN["新工具输出 / 新一轮迭代"] --> W{"水位检查<br/>TokenEstimator > 128k × 80% ?"}
-    W -- 否 --> KEEP["保持原样"]
-    W -- 是 --> C1["Layer 1 · ToolOutputTruncator（零成本 · 永远在跑）<br/>JSON → 保头 + 尾 200 字符（闭合结构）<br/>列表多于 20 短行 → 保首 15 + 尾 10 行<br/>Read 类 → 只保头<br/>默认 → 头 1200 + 尾 600 字符 + 省略标注"]
-    C1 --> W2{"仍超阈值？"}
-    W2 -- 否 --> DONE1["✅ 完成"]
-    W2 -- 是 --> C2["Layer 2 · SlidingWindowCompressor（零成本）<br/>保系统提示 + 最近 N 轮<br/>中段折叠为单条规则摘要"]
-    C2 --> W3{"仍超阈值？"}
-    W3 -- 否 --> DONE2["✅ 完成"]
-    W3 -- 是 --> C3["Layer 3 · LlmSummaryCompressor（一次额外 LLM 调用）<br/>中段结构化摘要（Task / Progress / State / Key Data ≤400 词）<br/>失败自动回退规则摘要"]
-```
+| 逻辑线 | 引擎 | 范式 |
+|--------|------|------|
+| 🤿 **深潜** | `code-engine`（CodeThinkingLevel） | **七档深度 + AUTO**：NONE / LIGHT / STANDARD / DEEP / MAXIMUM / ULTRACODE / APEXCODE；档位驱动提示词、模型参数、迭代倍率、压缩阈值、输出预算**全执行画像**；AUTO 发送前预检选档、深水区自动升级 |
+| ⚙️ **标准** | 标准任务循环 | 五画像 · 权限三态门 · task 子代理 · 上下文压缩 · C++ 文本核加速 |
+| 🧶 **织造** | [apex-kit-loom](docs/loom-engine.md) | 经纬交织范式：in-band XML 工具协议 · 梭回合机 · 子线程群 · digest 织入压缩 |
+| 📮 **信使** | [apex-kit-courier](docs/courier-engine.md) | 驿传调度范式：收发匣投递 · 趟次步进机并行纤程 · 勘通配则例 · 档房卷宗压缩 · 下站子驿委派 |
 
-> [!NOTE]
-> **永不压缩**：系统提示 / 最新用户任务 / 最近 5 轮 / 执行中工具调用。
-> 压缩后发射 `AgentEvent.ContextCompressed(before, after, strategy, ...)`，
-> UI 渲染为系统消息，压缩结果同步回持久化记忆（重启后加载已压缩状态）。
+自适应思考选择（`AdaptiveThinkingSelector` + `ThinkingSignalAnalyzer`）：
+按任务信号（复杂度 / 失败历史 / token 预算）在档位间升降，
+避免简单任务烧深度、复杂任务欠思考。
 
 <p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
 
@@ -619,19 +214,18 @@ flowchart TD
 
 | 层 | 实现 | 要点 |
 |----|------|------|
-| rootfs 供给 | `RootfsDownloader/Extractor/Configurator` + `UbuntuBootstrapManager` | 官方 Ubuntu 24.04.4 归档（sha256 锁定）、断点续装、`sources.list` 配置、基础包档案 |
-| 执行后端 | `LinuxPRootBackend` + `ProotExecutor` | PRoot 用户态沙箱（无需 root！）、预编译 so 随包分发（指纹校验防篡改）、Fake 后端供测试 |
+| rootfs 供给 | `BundledRootfsSource` + `UbuntuBootstrapManager` | 官方 Ubuntu 24.04.4 归档（sha256 锁定，tag `ubuntu-rootfs-24.04.4-full`）+ 58 基础包；断点续装、自举状态机 |
+| 执行后端 | `LinuxPRootBackend` / `LinuxChrootBackend` | PRoot 用户态沙箱（**无需 Root**）；rooted 设备可切 T98 真 chroot 后端；PRoot so 随 APK jniLibs 分发（三 ABI，指纹校验防篡改） |
 | PTY | C++ `forkpty`（`pty_engine.cpp` / `jni_bridge.cpp`） | 原生伪终端、argv 编组、进程组信号、会话隔离 |
-| 终端模拟 | `terminal-emulator` + `terminal-native` | 自研 VT100/ANSI：转义序列解析、滚动区、24 位色、UTF-8 解码；热路径由 C++17 引擎（`apex-native-vt`，每字符零堆分配）加速，Kotlin 实现保留为语义基准与 JVM 回退 |
-| 背压 IO | `PtyOutputPump` + `BackpressureConfig` | 有界输出泵、EOF 语义、丢帧保护 |
-| 观察引擎 | `ObservationEngine2` + `SemanticStateReducer` | 把 ANSI 噪音降维成语义状态（等待输入/运行中/完成/错误），`InputWaitingDetector` 识别提示符 |
-| 包管理 | `UbuntuAptPackageManager` + `PackageOperationLock` | 设备上 `apt install`，并发锁防交错 |
+| 终端模拟 | `terminal-emulator` + `terminal-native` | 自研 VT100/ANSI：转义解析、滚动区、24 位色、UTF-8 边界；热路径 C++17 引擎（apex-native-vt，每字符零堆分配），Kotlin 实现保留为语义基准与 JVM 回退 |
+| 观察引擎 | `ObservationEngine2` + `SemanticStateReducer` | 把 ANSI 噪音降维成语义状态（等待输入/运行中/完成/错误），提示符识别 |
+| 包管理 | `UbuntuAptPackageManager` + `PackageOperationLock` | 设备上 `apt install`（含 Ubuntu 批量状态解析），并发锁防交错 |
 | 环境自适应 | `AdaptiveProvisionLoop` + `DiagnosticRules` | 执行观察 → 诊断规则 → 自动修复（ResolverCache） |
-| 会话持久化 | `SessionMetadataStore` + `RuntimeRecoveryService` | 重启恢复会话元数据 |
+| 会话持久化 | `SessionMetadataStore` + 关机恢复 | 重启恢复会话元数据 |
+| 本地搜索 | `SearxngLifecycleCoordinator` | SearxNG 本地实例安装与生命周期 —— [本地优先搜索链](docs/searxng-local-search.md) |
 
-16 个 `terminal.*` 工具暴露给 LLM：`TerminalCreate / run / write / observe /
-snapshot / wait / resize / signal / close / workspaces / backends /
-linux_bootstrap / linux_status / linux_packages / linux_network / ubuntu_install`。
+**terminal.\* 工具族**暴露给 LLM：会话创建 / 结构化 exec / 观察与快照 / 信号 /
+PTY 写入 / 工作区 / 后端清单 / Ubuntu 一键生命周期编排 / 包管理 / 诊断与自修复。
 
 > [!TIP]
 > 测试含**真实 E2E**：CI 下载真 Ubuntu rootfs + Debian proot 5.4 跑真实 guest
@@ -642,84 +236,71 @@ linux_bootstrap / linux_status / linux_packages / linux_network / ubuntu_install
 ---
 
 <a id="browser"></a>
-## 🌐 浏览器智能体
+## 🌐 浏览器智能体（41 工具）
 
-对标 Operit 的 `BrowserAgent`：DOM 级网页操控而非截图盲点。
+对标 Operit BrowserAgent / Playwright MCP：DOM 级网页操控，而非截图盲点。
 
-- **41 个 `browser_*` 工具（v1.5.0 起内置大功能，非插件；v2.1.0 异步协议面扩至 41）**：
-  基础 15 项 `navigate / click / input / scroll / select / screenshot /
-  snapshot / toggle / show / download_list / file_upload / date_input /
-  context_summary / network_log / debug_dump` + 高级动作 10 项
-  `press_key / hover / drag / extract_content / execute_js / get_cookies /
-  locate / wait_for / page_type / tabs` + **v1.7.0 会话工具集 9 项**
-  `back / forward / reload / history / find / downloads / bookmarks /
-  zoom / clear_data`（对标 Playwright MCP 的会话面：历史导航、浏览历史、
-  页内查找计数、下载全量台账 + 取消/重试、书签管理、文字缩放、清除浏览数据）；
-- **语义哈希稳定 ref**：元素引用基于语义哈希而非 DOM 序号，SPA 局部刷新后
-  ref 依然有效；
-- `BrowserTracer`（容量 100 的操作轨迹）+ `RetryPolicy` 支撑断点续控；
-- **v1.7.0 人用 Chrome 增强**（apex-kit-browser v1.7.0 同步）：书签面板
-  （utm 变体归一去重 / MRU / 文件夹 / 搜索）、阅读模式全屏层（结构块 +
-  目录跳转 + 字号调节）、显示设置（文字缩放 / 夜间模式反色 / 清除浏览
-  数据确认流）、真实 favicon（DuckDuckGo Icons + LRU）、复制干净链接
-  （剔除跟踪参数）；全页截图（BrowserScreenshot `full_page`，滚动分段
-  拼接，上限 5 屏）。
+| 工具族 | 数量 | 内容 |
+|--------|------|------|
+| 🕸️ **Agent** | 26 | `navigate` `click` `input` `select` `toggle` `scroll` `screenshot`(含全页拼接) `snapshot`(focused/diff 模式) `show` `file_upload` `date_input` `context_summary` `network_log` `download_list` `wait_for` `page_type` `press_key` `hover` `drag` `extract_content` `execute_js` `get_cookies` `locate` `tabs` + **`batch_actions`**（一次串行 ≤8 动作） |
+| 🧭 **Session** | 9 | `back` `forward` `reload` `history` `find` `downloads` `bookmarks` `zoom` `clear_data` |
+| 📐 **Layout** | 1 | `analyze_layout` —— 真实渲染几何分析 |
+| ⚡ **Async（v2.1.0）** | 5 | `BrowserTask`（异步任务编排）`navigate_async` `doc_state` `doc_events` `doc_control` |
+
+**工程细节**：
+
+- **语义哈希稳定 ref**：元素引用基于语义哈希而非 DOM 序号，SPA 局部刷新后 ref 依然有效；
+- **角色门禁**：`browser_*` 工具需 `browser-automation` 角色授予（`BrowserRolePolicy` 两级角色 + `AgentConfig.grantedRoles` 双开关），CORE 集只常驻 5 个入口，未授权工具整行隐藏；
+- `BrowserTracer`（容量 100 操作轨迹）+ `RetryPolicy` 支撑断点续控；
+- 人用浏览器增强（apex-kit-browser 同步）：书签面板（utm 归一去重 / MRU）、阅读模式全屏层、真实 favicon（LRU）、复制干净链接（剔除跟踪参数）。
 
 <p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
 
 ---
 
-<a id="tools"></a>
-## 🔧 工具全景（111 个）
+<a id="memory"></a>
+## 🧠 认知记忆系统（apex-kit-memory）
 
-<details open>
-<summary><b>📦 点击展开 / 折叠完整工具清单（按模块分组）</b></summary>
+记忆域已拆库为 [apex-kit-memory](https://github.com/Ultra-Guru/apex-kit-memory)
+（`com.apex.memkit:memory-core` + `memory-graph-ui`），本仓 `:platform:memory-host`
+为宿主层（统一旧 cs-mem 与 builtin/memory 双轨记忆域）。
 
-**core:tool-registry —— 66 个内置工具**
+**管线全景**：
 
-| 类别 | 工具 |
-|------|------|
-| 🖥️ Shell | `ShellExecute`（三级权限链 + 流式输出） |
-| 📁 文件 | `Read` `Write` `Edit` `ListFiles` `GlobFiles` `SearchFiles` `CopyMoveFile` `DeleteFile` |
-| 🌐 网络 | `WebFetch` `WebSearch` `HttpRequest` `DownloadFile`（流式进度） |
-| 🧠 文件记忆 | `memorize` `recall` `forget` |
-| 📱 应用 | `AppList` `AppLaunch` `AppInstall` `AppUninstall` `AppForceStop` `AppInfo` |
-| ⚙️ 系统 | `GetDeviceInfo` `GetSetSettings` `ControlMedia` `clipboard` `GetTimeLegacy` `logcat` |
-| 🖱️ UI 自动化 | `UiTap` `UiSwipe` `UiDump` `screenshot` `InputText` |
-| 🧮 实用 | `calculate` `TextTransform` `GetLocation` `NotificationRead` |
-| 🧩 技能 | `SkillSearch` `SkillInstall` `SkillCreate` `SkillList` `SkillUninstall` |
-| 🛰️ MCP | `McpConnect` `McpList` `McpCall` |
-| 🧭 目录与自省（5） | `ToolSearch` `ToolOpen` `ToolList`（v4 渐进披露）· `CapabilityReport`（权限阶梯/环境/技能/MCP 一键自省）· `MarketSearch`（官方技能+MCP 市场检索，返回可执行安装指令）——详见 [docs/capability-introspection.md](docs/capability-introspection.md) |
-| 🧱 结构化 v2（15） | `RegexExtractLegacy` `RegexReplaceLegacy` `TextDiff` `JsonPathLegacy` `XmlExtract` `CsvQuery` `BaseConvert` `UnitConvert` `DurationConvertLegacy` `StringDistance` `RandomGenerateLegacy` `UuidGenerateLegacy` `FileHash` `datetime` `CronNextLegacy`（全部纯 JVM / 离线 / 确定性） |
-| ⚡ 执行硬化 v3（7） | `wait`（≤300s 可取消等待）· `JsonTransformLegacy`（jq 风格七操作管线）· `VersionCompare`（SemVer 排序）· `ToolBatchRun`（批量首错即停 + 步间引用）· `ShortcutDefine` / `ShortcutList` / `ShortcutRun`（组合动作：定义→热注册、清单+挖掘建议、执行）——详见 [docs/tool-system-v3.md](docs/tool-system-v3.md) |
+```text
+场景感知(SceneCapture)                    ← 无障碍屏幕事件流（可选授权）
+   │
+   ▼
+语义降维(SceneReducer)                    ← UI 噪音 → 语义节点，体积压缩 90%+
+   │
+   ▼
+差分摄取(SceneDiffer + IngestGuard)       ← 只存状态跃迁，不存整帧 → 再压缩 95%+
+   │
+   ├──▶ 记忆五库(nodes · episodes · macros · chat · graph)   原子 JSON 存储
+   │
+   ▼
+轨迹蒸馏(MacroDistiller)                  ← 成功 ReAct 轨迹 → FSM 宏技能
+   │
+   ▼
+FSM 旁路回放(ExecutionMemoryObserver)     ← 相同界面指纹命中 → 跳过 LLM
+                                            ★ 0 token · 微秒级 ★
+   │
+   ▼
+梦境巩固(MaintenanceWorker)               ← 充电 + 电量≥20% + 空闲 + WiFi 维护窗：
+                                            低能宏保鲜验证 · 能量衰减 · 拓扑迁移
+```
 
-**platform:browser-agent —— 41 个 `browser_*`（v1.5.0 起内置大功能，非插件；v2.1.0 起含 5 个异步协议面工具）**
+**记忆的三种形态**：陈述性（语义图 / 事实）、情景性（episode 回顾）、程序性
+（FSM 宏技能）。6 个记忆工具直连 LLM：召回侧 `MemorySearchNodes` /
+`MemoryRecentEpisodes` / `MemoryRecallMacro`，写入侧 `MemorySaveFact` /
+`MemoryConsolidateExperience` / `MemoryGraph`。
 
-| 类别 | 工具 |
-|------|------|
-| 🌐 浏览器（24） | 基础 15：`BrowserNavigate/click/input/scroll/select/screenshot/snapshot/toggle/show/download_list/file_upload/date_input/context_summary/network_log/debug_dump` · 高级 9：`BrowserPressKey/hover/drag/extract_content/execute_js/get_cookies/locate/wait_for/page_type` |
-
-**app 模块 —— 7 个**
-
-| 类别 | 工具 |
-|------|------|
-| 🐙 GitHub（7） | `GithubGetUser/list_repos/Read/Write/create_issue/list_issues/search_code`（配置 PAT 后注册） |
-
-**platform:terminal —— 18 个** `terminal.*`（见[终端运行时](#terminal-runtime)；T82 新增 `TerminalUbuntuEnsure` / `TerminalUbuntuStatus` 一键生命周期编排）
-
-**platform:memory-host —— 3 个记忆召回**
-
-| 工具 | 用途 |
-|------|------|
-| `MemorySearchNodes` | 按文本/角色搜索语义节点（支持迁移别名解析） |
-| `MemoryRecentEpisodes` | 近期情景回顾 |
-| `MemoryRecallMacro` | 宏技能召回 |
-
-</details>
+**安全机制**：敏感词分级 + 结构完整性校验 + 可疑指纹隔离（Quarantine）；
+App 升级指纹漂移时经拓扑同胚别名桥保鲜（`LegacyCsMemMigrator` 迁移旧数据）。
 
 > [!NOTE]
-> 动态安装的技能（Skill）会通过 `SkillToolAdapter` 注册为运行时工具
-> （如 `web_scrape`），上表为静态注册基线。CI 有工具 ID 唯一性门禁。
+> 设计调研对标 MemGPT/Letta、Mem0、A-MEM、Zep/Graphiti、Voyager，全文见
+> [docs/memory-and-workflow-research.md](docs/memory-and-workflow-research.md)。
 
 <p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
 
@@ -728,208 +309,188 @@ linux_bootstrap / linux_status / linux_packages / linux_network / ubuntu_install
 <a id="privilege"></a>
 ## ⚡ 权限执行链
 
-```
-┌──────────────────────────── 优先级递降 ────────────────────────────┐
-│ ① Root      su -c                    全系统：/system /data mount    │
-│                                          SELinux iptables ptrace    │
-│ ② Shizuku   Shizuku.newProcess        ADB 级(uid=2000)：pm install  │
-│             （uid=2000，无需 root）      am start/stop settings put   │
-│                                          dumpsys input screencap     │
-│ ③ Shell     sh -c                     应用沙箱：/sdcard 基本文件操作 │
-└────────────────────────────────────────────────────────────────────┘
-```
-
-`PrivilegeDetector` 运行时探测（su 二进制扫描 + binder 活性 + 授权检查），
-`getPrivilegeLevel()` 返回 ROOT/SHIZUKU/NORMAL_SHELL 并注入系统提示
-（`PrivilegeInfoProvider` 纯 JVM 接口 + app 侧实现）—— 智能体知道自己能做什么、
-缺什么权限时主动建议用户装 Shizuku。Shell 三层共享同一条**流式**读取管道
-（`ProcessStreamFactory`），`stderr` 行前缀 `[stderr]` 与 stdout 交错实时上屏。
-
-<p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
-
----
-<a id="skills"></a>
-## 🧩 技能系统与市场
-
-**Skill = 可组合能力包**（JSON manifest，schema `apex-skill-v1`，存于
-`filesDir/skills/<id>.json`）：
-
-| 类型 | 机制 | 示例 |
-|------|------|------|
-| Composite | `steps[]` 链式编排既有工具，`{{var}}`/`{{prev_output}}` 模板替换 | 网页爬虫 = fetch → 解析 → 存档 |
-| Prompt | 启用时注入系统提示片段 | "回答带引用来源" |
-| Script | 内嵌 Python/Shell 脚本，`ShellExecute` 执行 | 数据清洗脚本 |
-| Connector | 连接外部服务（URL/SSH） | Google Drive 桥（孵化中） |
-
-技能可以从市场（Market 屏）发现安装，也可以让智能体**自己安装**：
-`SkillSearch` → `SkillInstall`（URL / 内置模板 / 内容）→ `auto_setup` 执行
-→ `SkillList` 确认，全程 LLM 自主闭环。市场货架含**工具 / 技能 / MCP /
-插件 / 连接器**五类。
-
-### 官方 Hub 仓库生态（技能 / MCP 分发）
-
-APK 内置技能只保留 **13 个核心**（8 个 coding 强技能 + 3 个 agent 通用 +
-2 个双工位文档技能），其余 **62 个生活/通用技能全部迁往官方技能仓库**
-[apex-skill-hub](https://github.com/Ultra-Guru/apex-skill-hub)；MCP 同理
-——内置仅保留 5 台进程内必要服务器（github / search / fs / memory /
-thinking），沙箱与远端 MCP 目录迁往
-[apex-mcp-hub](https://github.com/Ultra-Guru/apex-mcp-hub)。市场里
-「官方仓库」源直连 raw.githubusercontent.com 拉取 `index.json` 注册表
-（学习业界标准 CLI 编码智能体的远程注册表模式：元数据小体积索引 + 技能正文按需单文件
-下载），一键安装，装完与本地技能同权管理。升级用户由
-`pruneStaleBundled` 白名单反向迁移自动清理旧内置残留。
-
-**斜杠门控**：聊天输入框 `/` 菜单的 Skills 分组只出现**已安装且已开启**
-的技能；MCP 分组只出现**已安装且正在运行**的服务器——未安装/未启动的
-不可选用（市场 → MCP 里安装并启动）。MCP 在市场内有**配置 / 启动 / 停止**
-完整闭环（含 BUILTIN 服务器的配置对话框：作用域 / 启停 / 连接 /
-GitHub Token）。
-
-<p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
-
----
-
-<a id="slash-commands"></a>
-## 💬 斜杠命令
-
-输入栏 <kbd>/</kbd> 按钮弹出四类命令（实时联想、追加不覆盖已输入文本）：
+`platform:privilege` 的三级执行链（`PrivilegeDetector`，30s 权限缓存 +
+privilege-chain 审计日志）：
 
 ```text
-/<type>:<id> [key=value ...] [自由文本]
-
-/skill:code_interpreter
-/skill:WebSearch query=Android 18 news
-/mcp:github repo=owner/name        ← 未连接时自动引导 GitHub 连接流程
-/connector:google_drive
-/plugin:pdf_reader
+① su -c           Root        uid=0     全系统（/system、SELinux、ptrace…）
+② Shizuku AIDL    ADB 级      uid=2000  pm install / settings / input / dumpsys
+③ sh -c           应用沙箱    uid=APP   应用私有域
+        ▲ 自动降级选择：探测 su → Shizuku → 沙箱 shell
 ```
 
-文法容错（空白容忍、畸形降级为 `Unknown` 原样转发），解析与路由在
-纯 JVM 包 `com.apex.agent.slash` 中实现（独立可测，4 个测试类锁定行为）。
+**无障碍服务（`ApexAccessibilityService`）是独立的 UI 能力层**，不在执行链
+降级序列中：UI 工具族优先 a11y 语义交互、shell 回落；截图走 a11y API（30+）
+→ root screencap 回退；屏幕感知为记忆采集供数据。权限自省见
+[docs/terminal/PRIVILEGE_CHAIN_AUDIT_T92.md](docs/terminal/PRIVILEGE_CHAIN_AUDIT_T92.md)。
 
 <p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
 
 ---
 
-<a id="plugin-sdk"></a>
-## 🔌 插件 SDK（v2 双类型体系）
+<a id="ecosystem"></a>
+## 🧩 扩展生态：MCP × 技能 × 市场 × 插件
 
-插件分两种形态（详见 [docs/plugin-system-v2.md](docs/plugin-system-v2.md)）：
+### MCP（Model Context Protocol）
 
-- **功能性插件（FUNCTIONAL）**——进程内的**声明式数据**（一个
-  `plugin.json`，类比 coding 平台扩展的 contributes 段）：声明「贡献点」
-  （工具宏 / 斜杠指令 / 预留提示词注入），宿主适配成进程内能力。工具宏
-  = 对既有宿主工具的声明式组合（`{{input.field}}` 变量插值 / 步间数据流
-  / 失败短路），**零代码执行面**——经市场导入或 JSON 粘贴即装即生效；
-  工具 id 冲突 REJECT（数据永不覆盖二进制能力）。参考样本
-  `plugins/functional-samples/`；
-- **APK 插件（APK）**——独立 APK 声明 `IApexPlugin` AIDL 服务；宿主
-  `PluginManager` 经 PackageManager 发现 → 绑定 → 把插件声明的工具桥接进
-  `ToolRegistry`（签名门 + 版本门 + metadata 钳制三道 fail-closed 防线，
-  同签名信任下 REPLACE 语义）。参考实现 `plugins:plugin-workflow` 暴露
-  三个工具：`workflow/save`、`workflow/execute`、`workflow/list`。
+- **双传输**：stdio（可 `run_in_sandbox` 路由进内嵌 PRoot Ubuntu 运行）+ http；
+- **7 台内置 MCP 服务器**：`fs` / `memory` / `thinking`（app 内置）+ `github` /
+  `search` / `rea` / `shrimp`（进程内第七台，16 工具结构化任务规划）；
+- 连接后远程工具以 `mcp__server__tool` **一等函数**注册进工具目录；
+- 支持 Claude Desktop 配置一键导入（`McpConfigImport`）；
+- **逆向 MCP Host**（`platform:mcp-host`）：手机反过来做 MCP 服务器，
+  让局域网内的 PC / 其他客户端消费手机能力 —— [docs/reverse-mcp-host.md](docs/reverse-mcp-host.md)。
 
-统一注册表 `UnifiedPluginRegistry` 把两种形态合并成一份目录、一套启停
-装卸语义——市场「已安装 · 插件」页双形态徽章并列管理，斜杠菜单插件类目
-合并展示，`/plugin:<id>` 命中功能性指令时注入插件声明的定制 prompt。
+### 技能系统
+
+`apex-skill-v1` manifest：**热重载**（装卸启停免重启）、Composite / Prompt 两型、
+作用域隔离（agent / coding / all）、随包内置 2 个技能、6 个管理工具
+（Search / Install / Create / List / Uninstall / Activate）。
+
+### 市场（8 源统一检索）
+
+HubSource（官方 [apex-skill-hub](https://github.com/Ultra-Guru/apex-skill-hub) /
+[apex-mcp-hub](https://github.com/Ultra-Guru/apex-mcp-hub)）· OfficialRegistry ·
+McpSo · PulseMcp · ClawHub · GitHub · ModelScope · OperitPlugin —— 跨源去重 +
+统一扩展模型 7 工具（Resolve / Inspect / Install / List / Uninstall / Sync /
+Doctor，hash 门 + 确认门）。详见 [docs/market-registry-sources.md](docs/market-registry-sources.md)。
+
+### FusionBundle 聚变包
+
+「技能 + MCP 服务器 + 工具 + agent 工作流」一键聚合激活的装载单位，
+输入栏直选即用。**内置七大体系**（[docs/fusion-bundle.md](docs/fusion-bundle.md)）：
+
+| 体系 | 内容 |
+|------|------|
+| **REA** · Reverse Engineer Anything | 207 工具面逐名对齐上游 v6.5.0；静态分析纯设备直跑 |
+| **Superpowers** | obra v7.0.0 软件开发方法论八技能 |
+| **SuperClaude** | v4.3.0 五行为模式 + 上游 8 台增强 MCP 的内置等价聚合 |
+| **BMAD** | v6.12 敏捷交付环五阶段 |
+| **Anthropic Skills** | 官方技能体系设备端移植：Word/Excel/PPT/PDF 四件经 PRoot Python 工具链真实产出 |
+| **Claude Flow SPARC** | 结构化开发五阶段 + Task 子代理群智编排 + 持久记忆 |
+| **Shrimp Task Manager** | 16 工具结构化任务规划（进程内 MCP 第七台）：依赖 DAG / 反思洞察 / 项目规则 |
+
+### 插件 SDK（v2 双类型体系）
+
+- **功能性插件（FUNCTIONAL）**：进程内声明式数据（一个 `plugin.json` 的
+  contributes 段：工具宏 / 斜杠指令 / 提示词注入）——工具宏是对既有宿主工具的
+  声明式组合（变量插值 / 步间数据流 / 失败短路），**零代码执行面**，JSON 粘贴即装；
+- **APK 插件（APK）**：独立 APK 声明 `IApexPlugin` AIDL 服务；签名门 + 版本门 +
+  metadata 钳制三道 fail-closed 防线；参考实现 `plugins:plugin-workflow`；
+- `UnifiedPluginRegistry` 双形态统一目录与装卸语义。详见
+  [docs/plugin-system-v2.md](docs/plugin-system-v2.md)。
+
+<p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
+
+---
+
+<a id="architecture"></a>
+## 🏗️ 架构总览
+
+**22 个 Gradle 模块** + 6 个 kit 兄弟库（composite build 条件接入）+
+ComposeFoundry 独立工程：
+
+```text
+Android-Guru-Agent/
+├── app/                       # 主 APK（applicationId com.apex.agent）：
+│                              #   Agent UI + 编排接入 + 228 个工具注册点(di/ 10 文件)
+├── core/
+│   ├── agent-engine/          # 编排内核：状态机 / Plan 图 / AskUser / 压缩门 / 思考控制
+│   ├── llm-adapter/           # OpenAI 兼容流式客户端 / 多模型路由 / Key 池 / reasoning 透传
+│   ├── tool-registry/         # 工具系统 V5：注册 / 门禁 / 弹性阶梯 / MCP / 技能 / 市场
+│   ├── code-tools/            # 代码七件套 + Git 六件套 + HTML 布局分析
+│   ├── code-engine/           # Coding 引擎：七档思考 + AUTO 自适应
+│   ├── code-native/           # C++17 JNI 文本加速核
+│   └── logging/               # 结构化分级日志
+├── platform/
+│   ├── terminal/              # Ubuntu 24.04 rootfs 编配 + PRoot/chroot 双后端 + C++ PTY
+│   ├── browser-agent/         # 41 个浏览器工具协议层（内核在 apex-kit-browser）
+│   ├── privilege/             # Root→Shizuku→Shell 执行链 + 无障碍服务
+│   ├── memory-host/           # apex-kit-memory 宿主：维护调度 / 迁移 / 6 记忆工具
+│   ├── mcp-host/              # 逆向 MCP Host（手机做服务器）
+│   ├── code-workspace/        # 代码工位管理
+│   └── persistence/           # 持久化引擎
+├── terminal-emulator/         # vendored VT100/ANSI 模拟器
+├── terminal-native/           # vendored C++17 VT 引擎（apex-native-vt）
+├── terminal-view/             # Termux 级自定义终端 View
+├── plugin-sdk/                # plugin-api + plugin-host
+├── plugins/                   # 参考插件 APK（plugin-workflow）
+├── vendor/backdrop/           # vendored Liquid Glass 引擎（kyant，Apache-2.0）
+├── ComposeFoundry/            # 独立工程：JSON → Compose UI 预览器（见「周边与彩蛋」）
+└── playground/                # 十款小游戏 + APK 插件模板（不参与主构建）
+```
+
+**kit 库生态**（composite build，`gradle/*-kit.lock` 锁定，6 条 sync workflow 自动同步）：
+
+| 库 | 职责 |
+|----|------|
+| apex-kit-browser | 浏览器内核（core / engine / chrome 三件） |
+| apex-kit-standard | 标准思考线任务循环 |
+| apex-kit-loom | 织造引擎 |
+| apex-kit-courier | 信使引擎 |
+| apex-kit-workspace | 工作区 |
+| apex-kit-memory | 认知记忆（memory-core + memory-graph-ui） |
+
+**一次请求的生命周期**：
+
+```mermaid
+flowchart TB
+    U["用户输入 · Code 屏"] --> ENG["Agent 引擎<br/>BUILD / PLAN / GOAL"]
+    ENG --> THINK["思考系统<br/>深潜七档 · 标准 · 织造 · 信使"]
+    THINK --> LLM["LLM 适配层<br/>OpenAI 兼容 · Key 池 · 角色路由"]
+    LLM --> TOOLS["工具系统 V5<br/>228 内置 + MCP/技能/插件动态"]
+    TOOLS --> T1["PRoot Ubuntu 终端"]
+    TOOLS --> T2["浏览器 41 工具"]
+    TOOLS --> T3["设备 / UI / 文件 / Git"]
+    TOOLS --> T4["记忆 6 工具"]
+    T4 --> MEM[("apex-kit-memory<br/>语义图 + FSM 宏")]
+    MEM -. "指纹命中 · 0 token 旁路回放" .-> ENG
+```
+
+<p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
+
+---
+
+<a id="tools"></a>
+## 🔧 工具全景（228 个静态注册）
+
+<details open>
+<summary><b>📦 按能力域分组（数字来自 v1.5 源码静态盘点，各项相加 = 228）</b></summary>
+
+| 能力域 | 数量 | 代表能力 |
+|--------|-----:|----------|
+| 🌐 浏览器自动化 | 41 | `navigate` `click` `input` `snapshot` `batch_actions`(≤8 串行) `execute_js` `tabs` + 5 异步协议面 |
+| 🛠️ 实用工具 | 44 | 时间 / datetime / Cron / JSON 管线 / 正则 / 随机 / UUID / 文件哈希 / 版本比较 / 文本变换 |
+| 📱 设备与 App 控制 | 33 | a11y 语义交互（UiTap/UiSwipe/UiDump）/ App 装卸启停 / 快捷方式定义与挖掘 / 通知白名单通道 / 截图 / 剪贴板 |
+| 🖥️ 终端与 Linux | 23 | C++ PTY 会话族 / 结构化 `terminal exec` / Ubuntu 生命周期 / 包管理 / 环境与诊断 / 自修复 |
+| 📂 文件与代码 | 18 | 读写编辑 / 模糊替换 / Grep / Glob / Check / Todo / 知识库 / HTML 布局分析与对比 |
+| 🐙 GitHub | 10 | 仓库 / Issue / PR / 代码搜索（配置 PAT 后注册） |
+| 🧩 技能 + 扩展 + Fusion | 18 | 技能装卸热重载 / 扩展模型七件套 / FusionBundle 五件套 |
+| ⚙️ 编排与自省 | 12 | AskUser 桥 / 批量组合动作（ShortcutDefine/Run）/ 能力自省报告 / 目录元工具 / CodeTask |
+| 🔀 Git | 6 | `status` `log` `diff` `commit` `branch` `run` |
+| 🧠 记忆 | 6 | 语义节点搜索 / 情景回顾 / 宏召回 / 事实写入 / 经验巩固 / 图谱 |
+| 🔐 金库与连接器 | 6 | 安全剪贴板金库（VaultAgent）/ IM 连接器 |
+| 🌍 Web 与搜索 | 4 | WebFetch / WebSearch（SearxNG 本地优先链）/ HttpRequest / DownloadFile |
+| 🖲️ Shell + AskUser | 3 | 三级权限链 ShellExecute / 流式输出 / 用户问询门 |
+| 🗄️ 兼容别名 | 14 | 旧工具 id 兼容（注册但不下发，`ToolTierPolicy.LEGACY_ALIAS_IDS`） |
+| **合计** | **228** | 另有 MCP `mcp__server__tool` / 技能 / 插件**动态注册**，不计入 |
+
+</details>
+
+**渐进披露（v4）**：`CORE_TOOL_IDS` 只常驻 **70 个**高频核心，其余按需经
+`ToolSearch` / `ToolOpen` 展开 —— 228 个工具不挤爆系统提示词。
+**执行硬化八层**：超时 → 重试阶梯 → 限流 → 熔断 → 追踪 → 批量 → 组合动作 →
+环境门控（详见 [docs/tool-retry-ladder.md](docs/tool-retry-ladder.md)）。
 
 > [!NOTE]
-> v1.5.0 起浏览器自动化已内置为宿主大功能（`:platform:browser-agent`，
-> 24 个 `browser_*` 工具），旧网页自动化插件退役：已侧载旧 APK 的用户
-> 直接卸载即可——宿主会在加载时拦截并日志引导卸载（防旧 15 工具清单
-> REPLACE 覆盖内置 24 工具）。
+> 精确清单以 App 内 `ToolList` / `CapabilityReport` 运行时输出为准；
+> CI 有工具 ID 唯一性门禁。
 
-<p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
-
----
-
-<a id="composefoundry"></a>
-## 🎨 ComposeFoundry（伴侣工程）
-
-`ComposeFoundry/` 是**独立 Gradle 工程**（不参与主构建）：一个 UI DSL
-预览器 —— 用 JSON 描述 Compose 界面（`sample_preview.androidui.json`），
-引擎（`UiParser/UiValidator/UiRenderer/DiagnosticsEngine`）即时渲染 + 诊断，
-配合沙箱预览面（`PreviewSurface`）与主题系统。它是智能体未来"画 UI"能力的
-实验场：LLM 产出 DSL → Foundry 预览 → 人确认后落码。
-
-<p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
-
----
-
-<a id="library-modules"></a>
-## 📚 库模块（拆库生态）
-
-主工程的能力内核已按领域拆出**六个独立库仓库**（均为本作者自研维护），主仓库通过
-**composite build + lock 锁定检出**消费 —— 本仓库 APK 始终携带**经过全量 CI 验证的
-已知好版本**，且随库仓库的更新**自动同步**（无需人工介入）：
-
-| 库模块 | 仓库 | 坐标 | 在主工程中的角色 |
-|---|---|---|---|
-| **apex-kit-browser** | [Ultra-Guru/apex-kit-browser](https://github.com/Ultra-Guru/apex-kit-browser) | `com.apex.browser:{core,engine,chrome}` | 浏览器智能体内核：WebView 自动化引擎 + Compose chrome UI（DI 接线层为本仓 `:platform:browser-agent`） |
-| **apex-kit-standard** | [Ultra-Guru/apex-kit-standard](https://github.com/Ultra-Guru/apex-kit-standard) | `com.apex.standardkit:standard-loop` | Coding 模式「标准思考逻辑线」循环引擎（画像/权限门/压缩/子代理/并行工具/续跑/MCP 指引，纯 Kotlin JVM） |
-| **apex-kit-loom** | [Ultra-Guru/apex-kit-loom](https://github.com/Ultra-Guru/apex-kit-loom) | `com.apex.loomkit:loom-weave` | Coding 模式「织造思考逻辑线」循环引擎（in-band XML 标记协议 / 梭回合机 / 权限三态门 / 子线程群 / 织造包 / digest 压缩 / 运行中转向，纯 Kotlin JVM） |
-| **apex-kit-courier** | [Ultra-Guru/apex-kit-courier](https://github.com/Ultra-Guru/apex-kit-courier) | `com.apex.courierkit:courier-dispatch` | Coding 模式「信使思考逻辑线」循环引擎（收发匣投递 / 趟次步进机 / 勘合通行证 / 档房卷宗压缩 / 示廊增量 / 下站子驿，纯 Kotlin JVM） |
-| **apex-kit-workspace** | [Ultra-Guru/apex-kit-workspace](https://github.com/Ultra-Guru/apex-kit-workspace) | `com.apex.workspace:{core,explorer}` | Coding 工作区浏览器：文件树 / 多格式预览 / Git 面板 / 变更和产物 / 实时跟随 |
-| **apex-native-vt** | [Ultra-Guru/apex-native-vt](https://github.com/Ultra-Guru/apex-native-vt) | C++17 静态库（vendored 为 `:terminal-native`） | 终端热路径 VT/ANSI 引擎（零分配 8 字节 POD cell / 389 项奇偶校验测试 / NDK 三 ABI 交叉编译 CI） |
-
-### 消费与同步机制
-
-- **本地开发**：`settings.gradle.kts` 条件 `includeBuild` —— 兄弟目录
-  `../apex-*-kit` 存在时自动接入（改一处两边生效）；
-- **CI 可复现**：`gradle/{browser,standard,workspace,loom,courier}-kit.lock` 锁定各库 SHA，
-  ci / apk / release 三条流水线按锁 pinned checkout（`com.apex.*` 坐标无远端
-  仓库，锁定检出即唯一构建输入）；
-- **自动更新**：库仓库 main 出现新绿提交 → 其 `notify-host.yml`
-  `repository_dispatch` 本仓库 → `sync-*-kit.yml` 校验上游 CI 全绿后 bump
-  对应 lock 并 push main → release 流水线自动构建发布（新库随 APK 交付）；
-  每 30 分钟 cron 轮询兜底防丢事件。**红提交拒绝同步（fail closed）**；
-- **下游防崩**：每个库仓库的 CI 自带 `consumer-check` —— 把本仓库检出为
-  宿主编译 `:app:compileDebugKotlin`（五 kit 全量兄弟检出），库的每次
-  PR 都先证明「宿主不炸」才允许合入；
-- **vendored vt-native**：`terminal-native/src/main/cpp/vt-native/` 整树 vendor
-  自上游仓库（契约见 `docs/VENDOR.md` —— 上游修复回传 → 整树 re-vendor），
-  上下游奇偶校验测试对账防漂移。
-
-<p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
-
----
-
-<a id="liquid-glass"></a>
-## 💎 Liquid Glass 玻璃组件系统
-
-普通 Android UI + 精确使用的 Liquid Glass 组件，而非“整个 App 一坨透明塑料”：
-
-- **两个诚实材质档**：Backdrop 档经 [Haze](https://github.com/chrisbanes/haze) 以 `GraphicsLayer` 真实采样背后内容（API 32+ 走 GPU `RenderEffect` 模糊，低版本自动 scrim 降级）；Frosted 档仅主题色薄霜 + 边缘光 + 高光，不冒充 backdrop
-- **七档材质**：`Subtle / Control / Card / Navigation / Floating / Dialog / Strong`，tint、边缘、高光、噪声全部从 MaterialTheme 动态派生，Light / Dark / Dynamic Color 自适应
-- **已玻璃化**：抽屉导航项（悬浮于氛围背景之上）、聊天悬浮输入栏（采样消息流）、回到底部 FAB、工具卡 / 计划卡 / 任务状态卡、顶栏菜单钮、玻璃对话框（HazeDialog 跨窗口采样）
-- **明确不玻璃化**：终端渲染区（性能敏感）、页面背景、气泡正文
-- **未实现即声明**：Refraction（折射位移）明确标注 NOT IMPLEMENTED，拒绝“alpha + blur 冒充玻璃”
-
-组件 API 与验收细则见 [docs/liquid-glass-system.md](docs/liquid-glass-system.md)，抽屉内“玻璃实验室”屏可真机验证 backdrop / blur / 边缘 / 交互。
-
-<p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
-
----
-
-<a id="ui-screens"></a>
-## 📱 应用界面
-
-单 Activity Compose 应用，`ModalNavigationDrawer` 抽屉导航：
-
-| 屏 | 内容 |
-|----|------|
-| **Coding** | 主工作面：胶囊流时间轴 / 四条思考逻辑线（深潜·标准·织造·信使）/ 工具卡 diff 着色 / 计划确认卡 / Todo 面板 / 工作区条 |
-| **终端** | 真 Ubuntu 终端（Ubuntu 单后端）：VT100 渲染、SDK 下载器、rootfs 引导进度 |
-| **Skill** | 已装技能列表 + 启停（持久化） |
-| **市场** | 工具/技能/MCP/插件/连接器五货架 |
-| **记忆** | cs-mem 可视化：Episode 统计 / 宏技能数 / 近期情景 / 删除 |
-| **权限** | Root / Shizuku（三态卡片）/ 无障碍 / 悬浮窗 / 通知 / 存储 |
-| **运行日志** | 结构化运行日志浏览 |
-| **游乐场** | 插件化街机：十款 pretext HTML 游戏插件（游戏即单文件 HTML，可导入可转 APK 插件，详见 [docs/playground-plugin-arcade.md](docs/playground-plugin-arcade.md)）+ 原生《字符风暴 GLYPH STORM》（[docs/playground-glyph-storm.md](docs/playground-glyph-storm.md)） |
-| **玻璃实验室** | Liquid Glass 内部验收页：可拖动玻璃片 / 档位阶梯 / 工具卡状态 / 诚实验收清单 |
-| **设置** | LLM 预设（OpenAI/DeepSeek/OpenRouter/Ollama/自定义）+ Base URL/Key/模型 + 温度 + 连接测试 + 通用设置 |
-
-另有赛博霓虹悬浮球（EasyFloat）快速唤起。
+**提示词模板运行时**：在册内置模板 3 个（`builtin_code_review` /
+`builtin_test_cases` / `builtin_browser_expert`），行为全部代码化（六阶段管线 +
+每模板双层确定性引擎）；另有 8 个行为引擎（commit_message / translate /
+summarize / refactor_plan / bug_report / api_design / tech_doc / regex_explain）
+保留为休眠代码 —— 详见 [docs/template-runtime.md](docs/template-runtime.md)。
 
 <p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
 
@@ -938,62 +499,54 @@ GitHub Token）。
 <a id="quickstart"></a>
 ## 🚀 快速开始
 
-### 环境要求
+### ① 获取 APK
+
+直接下载正式版：[发布仓库 Releases](https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases/latest)
+（arm64 / universal；PR 合并进 main 即自动构建发布）。
+已装用户走应用内「检查更新」增量升级。
+
+### ② 或源码构建
 
 | 依赖 | 版本 | 说明 |
 |------|------|------|
-| JDK | 17 | Temurin 推荐 |
-| Android SDK | 35 | AGP 8.7.3 默认需要 NDK 27.0.12077973（terminal 原生层） |
-| 设备 | Android 8.0+ (API 26) | arm64 / x86_64 / armeabi-v7a 均带 PRoot 二进制 |
-
-### 构建
+| JDK | 17 | Temurin 推荐（settings.gradle 有版本门禁） |
+| Android SDK | Platform 36 | AGP 8.13.2；NDK 27.0.12077973（terminal 原生层） |
+| Gradle | 8.14 | **wrapper 已入库**（`gradlew` + wrapper jar），首次执行自动下载发行版 |
 
 ```bash
 git clone https://github.com/Ultra-Guru/Android-Guru-Agent.git
 cd Android-Guru-Agent
 
-# 仓库未锁定 wrapper——用本机 Gradle 8.10 现场生成（仅首次）：
-gradle wrapper --gradle-version 8.10
-chmod +x gradlew
-
 ./gradlew :app:assembleDebug --stacktrace
+# 产物：app/build/outputs/apk/debug/app-debug.apk
 ```
 
 > [!TIP]
-> 不想自己构建？**直接下载正式版**：[发布仓库 Releases](https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases/latest)
-> （arm64 / universal 两个变体；**PR 合并进 main 即自动构建发布**，无需打 tag）。
-> 已装用户可在 App「设置 → 关于 → 检查更新」直接升级 —— 支持增量补丁
-> （~14MB vs 全量 300MB+）与高速节点/镜像加速下载；补丁下载后**应用内自动
-> 合成新版本并拉起安装**（纯 Kotlin VCDIFF 解码器，零命令行），跨十个
-> 小版本内自动按 [patches.json](https://github.com/Ultra-Guru/Android-Guru-Agent-Release/blob/main/patches.json)
-> 直达补丁一步升级，更早版本链式逐段升级。
-> 也可以用 CI 的 `app-debug-apk` 工件（debug 构建，保留 14 天）；或参考
-> `.github/workflows/ci.yml` 的 `Configure pre-installed Android SDK` 步骤配置环境。
+> 离线 Ubuntu rootfs（~300MB/ABI）由发布流水线自动打包
+> （`scripts/fetch_rootfs.sh` + `checkBundledRootfs` SHA-256 守卫）；
+> 本地构建细节见 [docs/ubuntu-rootfs-t72.md](docs/ubuntu-rootfs-t72.md)。
 
-产物：`app/build/outputs/apk/debug/app-debug.apk`。
+### ③ 配置模型（BYO-LLM）
 
-### 配置智能体
-
-1. 安装启动 → 抽屉「设置」；
-2. 选择预设（OpenAI / DeepSeek / OpenRouter / Ollama / 自定义）；
+1. 安装启动 → 抽屉「设置 → 模型」；
+2. 选预设（OpenAI / DeepSeek / OpenRouter / Ollama / 自定义）；
 3. 填 Base URL + API Key + 模型名（局域网 Ollama 填 `http://<pc-ip>:11434`）；
 4. 点「测试连接」（发送 `Say 'OK' in one word.` 验证）→ 保存。
 
 未配置时注入 `NoOpLlmClient`，界面友好提示而不崩溃。
 
-### 解锁更多能力（可选）
+### ④ 解锁更多能力（可选）
 
-- **Shizuku**（[shizuku.rikka.app](https://shizuku.rikka.app/)）：无 root 获得
-  ADB 级权限（pm install / settings / input / dumpsys）；
-- **无障碍服务**：UI 自动化（UiTap / UiDump）与 cs-mem 屏幕感知；
-- **终端**：Ubuntu 24.04 完整 CLI 环境随 APK 内置（gcc/python3/git/vim/man，
-  rootfs 档案 ~300MB+，首次使用离线解包约 2~5 分钟；此后只有 apt 装新包才联网）。
+- **Shizuku**（[shizuku.rikka.app](https://shizuku.rikka.app/)）：无 Root 获得 ADB 级权限；
+- **无障碍服务**：UI 语义自动化 + 记忆屏幕感知；
+- **Root**：chroot Ubuntu 后端 + 全系统特权链；
+- **GitHub PAT**：解锁 10 个 GitHub 工具（`EncryptedSharedPreferences` 加密存储）。
 
-### 三分钟体验路线
+### ⑤ 三分钟体验路线
 
 ```text
 ① 对话：  "帮我看看设备还剩多少存储，清理一下下载目录的大文件"
-② 感知：  "打开设置，看看当前 Wi-Fi 名"          ← UiTap/UiDump 工具链
+② 感知：  "打开设置，看看当前 Wi-Fi 名"          ← a11y UI 工具链
 ③ 终端：  终端屏引导装 Ubuntu，然后 "在终端里装 figlet 并打印 HELLO"
 ④ 记忆：  多做几次 ③，之后说"再打印一次 HELLO"  ← FSM 宏旁路，0 token 秒回
 ```
@@ -1002,47 +555,71 @@ chmod +x gradlew
 
 ---
 
+<a id="comparison"></a>
+## 🆚 与其他方案对比
+
+| 维度 | **Android Guru Agent** | PC 端编码智能体（Claude Code / OpenHands 等） | 传统自动化（Tasker 类） | 手机 AI 聊天 App |
+|------|------------------------|--------------------------------|------------------------|------------------|
+| 运行位置 | 📱 全程在设备上 | 💻 PC / 服务器 | 📱 设备上 | ☁️ 云端 |
+| 需要服务器/PC | ❌ 不需要 | ✅ 需要 | ❌ 不需要 | ✅（厂商云） |
+| LLM 可换性 | ✅ 任意 OpenAI 兼容 / 局域网 Ollama / Key 池 | 固定模型或自配 | 无 LLM | ❌ 固定 |
+| 执行能力 | **228 工具**：终端 / 文件 / Git / 浏览器 / 设备 UI / 记忆 | 文件 + shell + web | 规则触发，无推理 | 仅对话 |
+| Linux 环境 | ✅ PRoot Ubuntu 24.04 沙箱（免 Root） | ✅ 宿主 OS | ❌ | ❌ |
+| 跨会话记忆 | ✅ 语义图 + FSM 宏旁路回放（0 token） | 仓库内文件（CLAUDE.md 等） | ❌ | 云端会话 |
+| 特权操作 | Root → Shizuku → 沙箱三级降级 | 宿主用户权限 | 需 Root 的居多 | ❌ |
+| 可扩展 | MCP × 技能 × 市场 × 插件四层 | MCP 等 | 插件市场 | ❌ |
+
+> [!NOTE]
+> 定性归纳基于各方案公开形态；PC 端智能体在代码工程深度上依然更强，
+> 本项目的差异化在于**把完整的智能体闭环装进口袋**。
+
+<p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
+
+---
+
 <a id="testing"></a>
 ## 🧪 测试与质量保障
 
-**252 个测试文件**（246 JVM 单测 + 6 真机仪器测试，≈4,008 个 `@Test` 用例）+ 三道静态门禁：
+**383 个 JVM 测试文件 + 8 个仪器测试文件，≈5,434 个 `@Test` 用例** +
+三道静态门禁（CI / Quality Gate / Guard Rails）：
 
-| 模块 | 单测 | 亮点 |
-|------|------|------|
-| `core:agent-engine` | 3 套件 | 编排器 6 大类（状态机/执行/失败传播/取消/超时/事件）+ 韧性套件 + 角色路由黄金用例 + 流式语义回归组 |
-| `platform:terminal` | 45 | 全域覆盖，含**真实 Ubuntu rootfs E2E**（真 proot 进程） |
-| `core:llm-adapter` | 6 | 多模型运行时：档案校验/注册表/能力解析/错误分类/路由 |
-| `core:tool-registry` | 4 | 流式透传回归（SafeAgentTool 包装器不吞流式）+ DOM 解析 |
-| `platform:memory-host` | 6 | 旧宏 transitions 类型化迁移 / 丢步防护 / 别名回退 / 队列保留 |
-| `app` / `privilege` / `terminal-emulator` | 6 | 斜杠文法路由 / 进程流 / VT100 核心 |
+| 模块 | 测试文件 | 亮点 |
+|------|---------:|------|
+| `platform:terminal` | 86 | 全域覆盖，含**真实 Ubuntu rootfs E2E**（真 proot 进程跑 bash / apt） |
+| `core:tool-registry` | 69 | 工具 ID 唯一性 / 流式透传回归 / MCP 协议矩阵 / 市场 8 源契约 |
+| `core:agent-engine` | 62 | 编排器韧性套件（状态机/执行/失败传播/取消/超时/事件）+ 角色路由黄金用例 |
+| `app` | 53 | 斜杠文法路由 / 工具注册矩阵 / 兼容性别名 |
+| `core:code-engine` | 34 | 七档思考画像 / 自适应选择器 |
+| 其余（terminal-emulator / llm-adapter / code-tools …） | 79 | VT100 语义 / 多模型运行时 / HTML 布局 |
 
 ```bash
 # 全量 JVM 测试（约 3–8 分钟）
 ./gradlew :core:agent-engine:test :core:tool-registry:test \
   :platform:terminal:testDebugUnitTest :platform:memory-host:testDebugUnitTest \
-  --no-daemon -Pkotlin.incremental=false
+  --no-daemon
 
 # 真机仪器测试（需连接设备）
 ./gradlew :platform:terminal:connectedDebugAndroidTest
 ```
 
-> [!TIP]
-> 📖 完整测试文档：[docs/TESTING.md](docs/TESTING.md)（理念 / 矩阵 / 替身规范 /
-> FAQ / 文件清单 —— 清单撰写时 74 文件，主干现已 252，待同步）。
+> 📖 完整测试文档：[docs/TESTING.md](docs/TESTING.md)（理念 / 矩阵 / 替身规范 / FAQ）。
 
 <p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
 
 ---
 
 <a id="cicd"></a>
-## 📊 CI/CD 流水线
+## 📊 CI/CD 流水线（18 条 workflow）
 
-| 工作流 | 内容 |
+| 工作流 | 职责 |
 |--------|------|
-| **ci.yml** | ① 静态分析：kotlinc 编译 core 四模块 + 工具 ID 唯一性 + 括号平衡 + PRoot 二进制 sha256 校验；② app-compile：`:app:compileDebugKotlin` + 四模块单测（agent-engine / tool-registry / terminal / cs-mem）+ 仪器测试编译；③ build-apk：assembleDebug + PR 尺寸评论 |
-| **quality-gate.yml** | 文件大小预算（main≤1200 / test≤1600 行，反 God 文件）、反模式（反射分发 / printStackTrace）、空 catch + TODO 普查 |
-| **sync-{browser,standard,workspace}-kit.yml** | 三库模块 lock 自动同步：库仓库新绿提交（事件/cron 双通道）→ 校验上游 CI 全绿 → bump `gradle/*-kit.lock` → push main 点燃发布（[链路详见库模块章节](#library-modules)） |
-| **pr-labeler.yml** | 按改动路径自动打 area/risk 标签 |
+| **ci.yml** | 静态分析（kotlinc 编译 + 工具 ID 唯一性 + 括号平衡 + PRoot sha256 校验）→ app 编译 → 四模块单测 → debug APK + PR 尺寸评论 |
+| **quality-gate.yml** | 文件行数预算（main≤1200 / test≤1600 行，反 God 文件）、反模式（反射分发 / printStackTrace）、空 catch + TODO 普查 |
+| **release.yml** | **双仓库发布**：PR 合并 main → 全自动构建发布（版本冲突自动追加序号）→ version.json + changelog 三落点 + **xdelta3 增量补丁** 双落点 |
+| **rootfs.yml** | Ubuntu 全量 rootfs 构建（T84，tag `ubuntu-rootfs-24.04.4-full`） |
+| **apk.yml** | 手动触发的 debug / release APK 构建 |
+| **sync-{browser,standard,loom,courier,workspace,memory}-kit.yml** ×6 | kit 库仓新绿提交 → 校验上游 CI 全绿 → bump `gradle/*-kit.lock` → 点燃发布 |
+| **guard-rails / changelog-gate / pr-labeler / mirror-to-gitee / patch-backfill / media-results / modelscope-transaction** | 护栏（提交范围与 YAML 守卫）/ changelog 片段门 / 自动打标 / Gitee 镜像 / 补丁回填 / 媒体产物 / ModelScope 事务 |
 
 <p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
 
@@ -1051,49 +628,18 @@ chmod +x gradlew
 <a id="structure"></a>
 ## 📁 仓库结构与代码规模
 
-```
-Android-Guru-Agent/
-├── app/                          # 主应用（Compose UI + Hilt 装配）
-│   └── src/main/kotlin/com/apex/agent/
-│       ├── ui/                   #   ApexRoot（抽屉导航）+ screen/（含浏览器大功能页 BrowserScreen）
-│       ├── browser/              #   浏览器视觉装饰（霓虹球/霓虹环；工具协议在 platform:browser-agent）
-│       ├── github/               #   GitHub 工具（7 个）
-│       ├── slash/                #   斜杠命令（纯 JVM 可测）
-│       └── di/                   #   Hilt 模块（工具/引擎接线）
-├── core/
-│   ├── agent-engine/             # 纯 JVM：引擎 + 编排器 + 压缩
-│   ├── tool-registry/            # 纯 JVM：42 工具 + 技能注册 + MCP
-│   ├── llm-adapter/              # 纯 JVM：流式客户端 + 多模型运行时
-│   └── logging/                  # 纯 JVM：结构化日志
-├── platform/
-│   ├── privilege/                # Root/Shizuku/无障碍三级链
-│   ├── persistence/              # 前台服务 + 看门狗
-│   ├── browser-agent/            # 浏览器自动化大功能（browser_* 工具协议 + 库 DI 接线，v1.5.0 内置化）
-│   ├── terminal/                 # 终端运行时 2.0（rootfs/PRoot/PTY/工具）
-│   │   ├── src/main/cpp/         #   C++ forkpty/JNI 桥
-│   │   └── src/main/jniLibs/     #   预编译 PRoot 二进制（sha256 锁定）
-│   └── cs-mem/                   # 认知记忆系统（本仓库差异化核心）
-├── terminal-emulator/            # 自研 VT100/ANSI 模拟器（TerminalEngine 接口 + Kotlin 基准实现）
-├── terminal-native/              # apex-native-vt C++17 VT 引擎（vendored，见 VENDOR.md）
-│   ├── src/main/cpp/vt-native/   #   C++ 核心 + JNI 桥（上游 CI 跑 129 项奇偶校验）
-│   └── src/main/kotlin/          #   NativeVtCore 包装器 + VtEngineFactory 回退工厂
-├── plugin-sdk/                   # AIDL 插件 SDK（api + host）
-├── plugins/plugin-workflow/      # 参考插件 APK
-├── ComposeFoundry/               # 独立工程：UI DSL 预览器
-├── docs/                         # 深度文档（见文档索引）
-└── .github/workflows/            # ci / quality-gate / pr-labeler
-```
-
-**代码规模**（自动统计于当前主干）：
-
 | 指标 | 数值 |
-|------|-----:|
-| Kotlin 主源码 | 802 个文件 / 183,615 行 |
-| Kotlin 测试源码 | 252 个文件 / 64,116 行（≈4,008 个 `@Test` 用例） |
-| C++（终端 PTY/JNI/VT 原生层） | 37 个文件 / 10,650 行 |
-| Gradle 模块 | 20 |
-| 内置工具 | 111 |
-| 测试代码 / 主源码比例 | ≈ 35% |
+|------|------|
+| Gradle 模块 | **22**（+ ComposeFoundry 独立工程 + playground 模板不参与构建） |
+| Kotlin 主源码 | **1,076 文件 / 257,743 行** |
+| Kotlin 测试 | **383 文件 / 87,269 行**（+ 8 仪器测试文件） |
+| C / C++ | **11,316 行**（PTY + JNI + apex-native-vt 引擎） |
+| CI workflow | 18 条 |
+| 技术栈 | Kotlin 2.3.21 · AGP 8.13.2 · Gradle 8.14 · Compose BOM 2026.02.00 · Hilt 2.58 · Room 2.8.5 · OkHttp 4.12.0 · JDK 17 |
+
+**周边目录**：`docs/`（90+ 篇深潜文档）· `scripts/`（rootfs 构建 / 质量检查 /
+changelog 工具链）· `keystore/`（签名）· `promo/`（宣传视频）· `.changelog/`
+（两级更新日志：unreleased 片段 → released 归档）。
 
 <p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
 
@@ -1102,15 +648,14 @@ Android-Guru-Agent/
 <a id="roadmap"></a>
 ## 🗺️ 路线图
 
-- [x] 流式 ReAct 引擎 + Plan 模式 + 五档思考深度
+- [x] 流式 ReAct 引擎 + Plan / Goal 模式
 - [x] 三级权限链 + 无障碍 UI 自动化
-- [x] P7 三级上下文压缩（双引擎对齐）
-- [x] cs-mem 认知记忆全管线（蒸馏 / 旁路 / 能量 / 梦境 / 免疫 / 迁移闭环）
-- [x] 终端运行时 2.0（Ubuntu rootfs + PRoot + 原生 PTY + VT100）
-- [x] 多模型运行时（角色路由 + VISION）
-- [x] 浏览器智能体（DOM 级 + 稳定 ref）
-- [x] v1.2 七档思考系统（NONE→ULTRACODE→APEXCODE + AUTO 预检自适应，Coding 页专属）
-- [x] v1.2 长任务中心（自动留档 / 检查点时间线与续跑 / 复制对比）
+- [x] 三级上下文压缩（双引擎对齐）
+- [x] 认知记忆全管线（蒸馏 / 旁路 / 能量 / 梦境 / 免疫 / 迁移闭环 → apex-kit-memory 拆库）
+- [x] 终端运行时 2.0（Ubuntu rootfs + PRoot + 原生 PTY + VT100 → chroot 后端）
+- [x] 多模型运行时（角色路由 + VISION + Key 池）
+- [x] 浏览器智能体（DOM 级 41 工具 + 稳定 ref + 异步协议 + 角色门禁）
+- [x] 七档思考系统 + 长任务中心 + 工具系统 V5（渐进披露）
 - [ ] 宏技能语义检索（嵌入索引，跨 App 近邻复用 —— Voyager 启发）
 - [ ] 记忆软删除与双时间线（Zep/Graphiti 启发）
 - [ ] 编排器并行子代理扇出（Claude Code 启发）
@@ -1121,39 +666,98 @@ Android-Guru-Agent/
 
 ---
 
+<a id="playground"></a>
+## 🎮 周边与彩蛋
+
+<details>
+<summary><b>💬 斜杠命令 —— 输入栏 <kbd>/</kbd> 实时联想四类命令</b></summary>
+
+```text
+/<type>:<id> [key=value ...] [自由文本]
+
+/skill:code_interpreter
+/skill:WebSearch query=Android 18 news
+/mcp:github repo=owner/name        ← 未连接时自动引导连接流程
+/connector:google_drive
+/plugin:pdf_reader
+```
+
+文法容错（空白容忍、畸形降级为 `Unknown` 原样转发），解析与路由在纯 JVM 包
+`com.apex.agent.slash` 实现（独立可测，4 个测试类锁定行为）。
+
+</details>
+
+<details>
+<summary><b>🎨 ComposeFoundry —— 独立 UI DSL 预览器工程</b></summary>
+
+`ComposeFoundry/` 是独立 Gradle 工程（不参与主构建）：用 JSON 描述 Compose
+界面（`sample_preview.androidui.json`），`UiParser/UiValidator/UiRenderer/
+DiagnosticsEngine` 即时渲染 + 诊断。它是智能体未来「画 UI」能力的实验场：
+LLM 产出 DSL → Foundry 预览 → 人确认后落码。
+
+</details>
+
+<details>
+<summary><b>🕹️ Playground —— 十款触屏小游戏 + APK 插件毕业路径</b></summary>
+
+`app/src/main/assets/playground/games/` 内置十款自研触屏游戏（glyph-rain /
+bubble-sniper / layout-golf / width-maze / line-fill / line-quiz / width-match /
+kerning-tetris / flow-route / shrink-stack），统一「终端暗色霓虹」设计语言，
+全部满足 [GAME-SPEC.md](playground/GAME-SPEC.md) 的 11 条硬性契约（单文件
+自包含 / 零网络 / 触屏优先 ≥44px / rAF 主循环）。
+
+`playground/apk-plugin-template/` 是「HTML 游戏 → APK 插件」的可拷贝模板：
+WebView 壳 + 与宿主同 keystore 签名 → `PluginManager` 绑定 → 斜杠菜单出现
+`game_play_<id>` 工具。详见 [docs/playground-plugin-arcade.md](docs/playground-plugin-arcade.md)。
+
+</details>
+
+<details>
+<summary><b>🪞 Liquid Glass 玻璃组件系统</b></summary>
+
+vendored [kyant backdrop](https://github.com/kyant0/AndroidLiquidGlass) 引擎
+（Apache-2.0）：七档材质（清透→厚雾）、彩色 DefaultHighlight、深浅色适配。
+架构与验收矩阵见 [docs/liquid-glass-system.md](docs/liquid-glass-system.md)。
+
+</details>
+
+<p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
+
+---
+
 <a id="docs-index"></a>
-## 📄 文档索引
+## 📄 文档索引（docs/ 精选）
 
 | 文档 | 内容 |
 |------|------|
-| [docs/tool-system-v3.md](docs/tool-system-v3.md) | **工具系统 v3**：执行硬化八层（超时/重试/限流/熔断/追踪/批量/组合动作/环境门控），MCP·LangGraph·Anthropic CU·Mobile-Agent-E 对标 |
-| [docs/TESTING.md](docs/TESTING.md) | **测试总指南**：理念/矩阵/替身规范/FAQ/文件清单（撰写时 74，现已 252，待同步） |
-| [docs/liquid-glass-system.md](docs/liquid-glass-system.md) | **Liquid Glass 玻璃组件系统**：架构/七档材质/组件 API/真实性验收矩阵 |
-| [docs/memory-and-workflow-research.md](docs/memory-and-workflow-research.md) | **记忆与工作流调研报告**：对标 MemGPT/Mem0/A-MEM/Zep/Voyager/Claude Code/OpenHands/SWE-agent |
-| [docs/terminal-api.md](docs/terminal-api.md) | 终端 API 契约 |
-| [docs/terminal/TERMINAL_EXPERIENCE_OVERHAUL_T87.md](docs/terminal/TERMINAL_EXPERIENCE_OVERHAUL_T87.md) | **T87 终端体验大修**：7 项用户实测反馈的根因对照与修复（输入失败/exec 失败捕获、滚动空白、黑字、21 套配色、apt 引导） |
-| [docs/terminal/AGENT_TERMINAL_CALLCHAIN.md](docs/terminal/AGENT_TERMINAL_CALLCHAIN.md) | **Agent↔终端调用链**：全部 terminal.* 工具表 + exec 链路图 + TerminalDiagnostics 自证 |
-| [docs/terminal/TERMINAL_CONFIGURATION.md](docs/terminal/TERMINAL_CONFIGURATION.md) | **终端配置系统**：配色/扩展键宏语法/持久化键/新增方案指南 |
-| [docs/ubuntu-rootfs-t72.md](docs/ubuntu-rootfs-t72.md) | T72 Ubuntu rootfs 供给设计 |
-| [docs/cs-mem-gaps-spec.md](docs/cs-mem-gaps-spec.md) | cs-mem 缺口补全规格（含缺口 #9 拓扑迁移） |
-| [docs/proot-binary-provenance.md](docs/proot-binary-provenance.md) | PRoot 预编译二进制来源与指纹 |
-| [docs/pipeline-output-optimization.md](docs/pipeline-output-optimization.md) | 流水线输出优化记录 |
-| [docs/PERF.md](docs/PERF.md) | 性能笔记 |
-| [docs/MIGRATION_REPORT.md](docs/MIGRATION_REPORT.md) | 迁移报告 |
-| [docs/operit-rikkahub-comparison.md](docs/operit-rikkahub-comparison.md) | **P9x 系列调研**：operit vs rikkahub 全面对比（架构/执行循环/Key 管理/记忆/角色/分支/提示词/搜索/终端/生态/质量 11 域），产出 P90-P96 七项落地 |
-| [docs/key-pool.md](docs/key-pool.md) | **P90 API Key 池**：三态门控/四轮换模式/指数退避/请求层换 Key 重试环（对标 operit MultiApiKeyProvider + rikka LruKeyRoulette） |
-| [docs/prompt-variables.md](docs/prompt-variables.md) | **P91 提示词变量**：19 内置变量/转义与默认值语法/递归环安全（对标 rikka PlaceholderTransformer） |
-| [docs/prompt-template-library.md](docs/prompt-template-library.md) | **P92 提示词模板库**：10 内置模板/四级变量合并/原子持久化/导入导出（对标 operit 提示词库） |
-| [docs/template-runtime.md](docs/template-runtime.md) | **模板行为运行时**：六阶段管线/十行为 1:1 目录/内置不可更改/每模板双层确定性引擎（20 个 PR 架构全解） |
-| [docs/message-branching.md](docs/message-branching.md) | **P93 消息分支**：MessageBranchNode 候选数组模型/九操作/树存储与迁移（对标 rikka MessageNode） |
-| [docs/search-providers.md](docs/search-providers.md) | **P94 搜索供应商框架**：Tavily/Brave/Exa/SearXNG/DDG/Bing 六供应商/三阶段回退/缓存限流（对标 rikka 19 家搜索抽象） |
-| [docs/persona-cards.md](docs/persona-cards.md) | **P95 角色卡**：SillyTavern V1/V2/PNG tEXt 导入/Lorebook 触发（对标 operit 角色卡 + rikka AssistantImporter） |
-| [docs/provider-share.md](docs/provider-share.md) | **P96 供应商分享**：四层洋葱 URI/Key 脱敏/GZIP/QR 版本估算（对标 rikka QR 分享） |
-| [docs/capsule-stream.md](docs/capsule-stream.md) | **胶囊流式输出系统**：Coding 工作流时间轴 / 双通道架构 / 幂等与检查点 / 验收矩阵 |
-| [docs/dual-logic-engines.md](docs/dual-logic-engines.md) | **双思考逻辑引擎**：Coding 屏右上角「深潜/标准」切换 / DualLogicCodeEngine 门面路由 / 标准任务循环（五画像·权限三态门·task 子代理·上下文压缩·C++ 文本核）/ `/logic` 斜杠命令 / 现场隔离 |
-| [docs/loom-engine.md](docs/loom-engine.md) | **织造引擎（第三思考逻辑线）**：经纬交织范式 / in-band XML 工具协议 / 梭回合机 / 子线程群 / 织造包 / digest 织入压缩 / 拆库 apex-kit-loom + 端口-适配器接入 |
-| [docs/courier-engine.md](docs/courier-engine.md) | **信使引擎（第四思考逻辑线）**：驿传调度范式 / 收发匣投递 / 趟次步进机并行纤程 / 勘合通配则例 / 档房卷宗压缩 / 下站子驿委派 / 拆库 apex-kit-courier + 端口-适配器接入 |
-| [docs/capability-introspection.md](docs/capability-introspection.md) | **能力自省与自主扩展**：权限阶梯知识库（prompt/工具/编排三线同源）/ CapabilityReport 一键自省 / MarketSearch 市场检索（返回可执行安装指令）/ Capability Expansion Playbook 六条扩展梯度 |
+| [tool-system-v4.md](docs/tool-system-v4.md) · [tool-system-v3.md](docs/tool-system-v3.md) · [tool-system-v2.md](docs/tool-system-v2.md) | **工具系统演进**：V2 基础 → V3 执行硬化八层 → V4 渐进披露 |
+| [tool-retry-ladder.md](docs/tool-retry-ladder.md) | 工具重试阶梯与弹性设计 |
+| [capability-introspection.md](docs/capability-introspection.md) | **能力自省**：CapabilityReport 一键自省 + MarketSearch 返回可执行安装指令 |
+| [mcp-sandbox.md](docs/mcp-sandbox.md) · [reverse-mcp-host.md](docs/reverse-mcp-host.md) | MCP 沙箱路由 · 逆向 MCP Host（手机做服务器） |
+| [market-registry-sources.md](docs/market-registry-sources.md) · [market-scope-isolation-v2.md](docs/market-scope-isolation-v2.md) | 市场 8 源 · 技能作用域隔离 |
+| [fusion-bundle.md](docs/fusion-bundle.md) | FusionBundle 聚变包：七大体系装载设计 |
+| [loom-engine.md](docs/loom-engine.md) · [courier-engine.md](docs/courier-engine.md) · [dual-logic-engines.md](docs/dual-logic-engines.md) | **四条思考逻辑线**：织造 / 信使 / 双引擎切换 |
+| [thinking-levels.md](docs/thinking-levels.md) | 思考档位体系设计 |
+| [memory-and-workflow-research.md](docs/memory-and-workflow-research.md) | **记忆与工作流调研**：MemGPT/Mem0/A-MEM/Zep/Voyager/Claude Code/OpenHands/SWE-agent |
+| [cs-mem-gaps-spec.md](docs/cs-mem-gaps-spec.md) | 记忆缺口补全规格（含拓扑迁移） |
+| [ubuntu-rootfs-t72.md](docs/ubuntu-rootfs-t72.md) · [ubuntu-lifecycle.md](docs/ubuntu-lifecycle.md) | Ubuntu rootfs 供给设计 · 生命周期 |
+| [terminal-api.md](docs/terminal-api.md) · [docs/terminal/](docs/terminal/) | 终端 API 契约 · T87–T98 全系列深潜文档 |
+| [proot-binary-provenance.md](docs/proot-binary-provenance.md) | PRoot 预编译二进制来源与指纹 |
+| [searxng-local-search.md](docs/searxng-local-search.md) | SearxNG 本地搜索链 |
+| [key-pool.md](docs/key-pool.md) | **API Key 池**：三态门控 / 四轮换模式 / 指数退避 |
+| [template-runtime.md](docs/template-runtime.md) · [prompt-template-library.md](docs/prompt-template-library.md) | 模板行为运行时 · 提示词模板库 |
+| [capsule-stream.md](docs/capsule-stream.md) | 胶囊流式输出系统：时间轴 / 双通道 / 幂等检查点 |
+| [long-tasks.md](docs/long-tasks.md) · [task-execution-architecture.md](docs/task-execution-architecture.md) | 长任务中心 · 任务执行架构 |
+| [hot-update-pipeline.md](docs/hot-update-pipeline.md) · [incremental-update-auto-apply.md](docs/incremental-update-auto-apply.md) | 增量更新流水线（VCDIFF）与应用内自动合成 |
+| [operit-rikkahub-comparison.md](docs/operit-rikkahub-comparison.md) | **P9x 调研**：operit vs rikkahub 11 域对比，产出 P90–P96 落地 |
+| [hub-ecosystem.md](docs/hub-ecosystem.md) | 官方 Hub 仓库生态（技能 / MCP 分发） |
+| [plugin-system-v2.md](docs/plugin-system-v2.md) | 插件 SDK v2 双类型体系 |
+| [liquid-glass-system.md](docs/liquid-glass-system.md) | Liquid Glass 玻璃组件系统 |
+| [TESTING.md](docs/TESTING.md) · [PERF.md](docs/PERF.md) | 测试总指南 · 性能笔记 |
+| [benchmark.md](docs/benchmark.md) | 基准测试协议 |
+| [user-profile.md](docs/user-profile.md) · [onboarding-permissions.md](docs/onboarding-permissions.md) | 用户画像 · 权限引导设计 |
+
+> 90+ 篇全量文档直接浏览 [docs/](docs/) 目录。
 
 <p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
 
@@ -1165,19 +769,19 @@ Android-Guru-Agent/
 <details>
 <summary><b>1️⃣ 需要 Root 吗？</b></summary>
 
-**不需要。** 三级权限链会自动降级：无 Root 时优先用 Shizuku（ADB 级，
-免 Root 装应用 / 改设置 / 模拟输入），再不行就用普通应用沙箱 shell。
-Root 只是解锁全系统操作（`/system`、SELinux、ptrace 等）的上限增强。
+**不需要。** 三级权限链自动降级：无 Root 时优先 Shizuku（ADB 级，
+免 Root 装应用 / 改设置 / 模拟输入），再不行用应用沙箱 shell。
+Root 只是解锁全系统操作与 chroot Ubuntu 后端的上限增强。
 
 </details>
 
 <details>
 <summary><b>2️⃣ 必须配置 API Key 吗？支持哪些模型？</b></summary>
 
-需要一个任意 OpenAI 兼容端点的 Key（OpenAI / DeepSeek / OpenRouter / 中转 /
-局域网 Ollama 均可）。未配置时应用以 `NoOpLlmClient` 优雅降级、界面提示而不
-崩溃。DeepSeek-R1 / Qwen3-thinking / o 系列的原生思维链（`reasoning_content`）
-会透传到 UI 实时显示。
+需要一个任意 OpenAI 兼容端点的 Key（OpenAI / DeepSeek / Qwen / OpenRouter /
+中转 / 局域网 Ollama 均可）。未配置时应用以 `NoOpLlmClient` 优雅降级、界面
+提示而不崩溃。DeepSeek-R1 / Qwen3-thinking / o 系列的原生思维链
+（`reasoning_content`）会透传到 UI 实时显示。
 
 </details>
 
@@ -1195,29 +799,27 @@ Root 只是解锁全系统操作（`/system`、SELinux、ptrace 等）的上限�
 <details>
 <summary><b>4️⃣ 终端的 Ubuntu 会很费流量 / 存储吗？</b></summary>
 
-Ubuntu 24.04 完整 CLI 环境随 APK 内置（rootfs 档案 ~300MB+、解压后 ~1GB，
-构建期 SHA-256 锁定），首次使用离线解包约 2~5 分钟；此后完全离线，
-只有 `apt install` 装新包时才联网。PRoot 是用户态沙箱，
-不修改系统分区。
+Ubuntu 24.04 完整 CLI 环境随 APK 内置（rootfs 档案 ~300MB+ / ABI、
+sha256 锁定），首次使用离线解包约 2~5 分钟；此后完全离线，
+只有 `apt install` 装新包时才联网。PRoot 是用户态沙箱，不修改系统分区。
 
 </details>
 
 <details>
 <summary><b>5️⃣ 想自己编译或下载 APK，从哪里开始？</b></summary>
 
-本仓库已提交 `gradlew`、`gradle/wrapper/gradle-wrapper.jar` 和
-`gradle-wrapper.properties`，无需现场生成 wrapper。普通用户可从
-[发布仓库](https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases) 查看
-Android-Guru-Agent 的正式 APK；源码构建见[快速开始](#quickstart)。
+本仓库已提交 `gradlew` + wrapper（Gradle 8.14），无需现场生成。
+普通用户从[发布仓库](https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases)
+下载正式 APK；源码构建见[快速开始](#quickstart)。
 **这不是 Theocracy 的安装包**，两个项目的下载入口不要混淆。
 
 </details>
 
 <details>
-<summary><b>6️⃣ "肌肉记忆"是什么意思？真的省 token 吗？</b></summary>
+<summary><b>6️⃣ “肌肉记忆”是什么意思？真的省 token 吗？</b></summary>
 
-任务成功后，`TraceDistiller` 把 ReAct 轨迹蒸馏成 FSM 宏技能。之后再次遇到
-相同界面指纹时，`BypassExecutionEngine` 直接回放动作序列——**完全绕过 LLM**，
+任务成功后，`MacroDistiller` 把 ReAct 轨迹蒸馏成 FSM 宏技能。再次遇到相同
+界面指纹时，`ExecutionMemoryObserver` 直接回放动作序列——**完全绕过 LLM**，
 0 token、微秒级返回。App 升级导致指纹漂移时，拓扑同胚迁移通过别名桥保鲜。
 
 </details>
@@ -1248,12 +850,12 @@ Android-Guru-Agent 的正式 APK；源码构建见[快速开始](#quickstart)。
 
 | 术语 | 一句话解释 |
 |------|-----------|
-| **cs-mem** | 本项目的认知记忆系统（cognitive memory）：屏幕感知 → 语义图 + FSM 宏技能 |
-| **差分摄取** | 只存 UI 状态之间的"跃迁"，而不是整帧快照，压缩 95%+ |
-| **节点指纹** | UI 节点的 SHA-256 内容哈希，是记忆索引与宏回放匹配的主键 |
+| **apex-kit-memory** | 本项目的认知记忆库（前身 cs-mem）：屏幕感知 → 语义图 + FSM 宏技能 |
+| **差分摄取** | 只存 UI 状态之间的“跃迁”，而不是整帧快照，压缩 95%+ |
+| **节点指纹** | UI 节点的内容哈希，是记忆索引与宏回放匹配的主键 |
 | **FSM 宏** | 把成功任务轨迹编译成的有限状态机技能，可 0 token 旁路回放 |
 | **晶化** | 高能量高成功率的宏固化为 ROM 级永久技能，免疫遗忘与剪枝 |
-| **梦境渲染** | 息屏+充电+WiFi 时的后台记忆巩固周期（保鲜验证/衰减/迁移） |
+| **梦境巩固** | 充电 + 空闲 + WiFi 维护窗的后台记忆巩固周期（保鲜验证/衰减/迁移） |
 | **PRoot** | 用户态 ptrace 沙箱，免 Root 运行完整 Linux 发行版 |
 | **PTY** | 伪终端（C++ forkpty 实现），交互式 shell 的底层通道 |
 | **VT100/ANSI** | 终端转义序列标准，自研模拟器负责渲染与解析 |
@@ -1261,7 +863,8 @@ Android-Guru-Agent 的正式 APK；源码构建见[快速开始](#quickstart)。
 | **MCP** | Model Context Protocol——外部工具服务器的标准接入协议 |
 | **BYO-LLM** | Bring Your Own LLM：自带任意 OpenAI 兼容端点与 Key |
 | **AIDL** | Android 接口定义语言，插件 APK 与宿主跨进程通信的契约 |
-| **P7 三级压缩** | 工具输出截断 → 滑动窗口 → LLM 摘要的上下文预算防线 |
+| **三级压缩** | 工具输出截断 → 滑动窗口 → LLM 摘要的上下文预算防线 |
+| **渐进披露（v4）** | CORE 70 工具常驻，其余按需 ToolSearch/ToolOpen 展开 |
 
 <p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
 
@@ -1272,12 +875,11 @@ Android-Guru-Agent 的正式 APK；源码构建见[快速开始](#quickstart)。
 
 欢迎 Issue / PR！提交前请自查：
 
-1. **CI 全绿**是硬门禁（含 cs-mem / agent-engine / tool-registry / terminal 测试）；
+1. **CI 全绿**是硬门禁（含 agent-engine / tool-registry / terminal / memory-host 测试）；
 2. 遵循 `type(scope): description` 提交规范（feat / fix / docs / refactor / chore）；
 3. 结构预算：单文件 main ≤1200 行 / test ≤1600 行，超了先拆再提；
 4. 修缺陷必须带回归测试（先红后绿，KDoc 注明锁定的缺陷）；
-5. 新工具必须过工具 ID 唯一性检查；`core:tool-registry` 测试步骤**不允许**通过
-   跳过来变绿；
+5. 新工具必须过工具 ID 唯一性检查；`core:tool-registry` 测试步骤**不允许**跳过来变绿；
 6. 记忆系统改动请同步更新
    [docs/memory-and-workflow-research.md](docs/memory-and-workflow-research.md)
    的对应结论。
@@ -1301,8 +903,7 @@ Android-Guru-Agent 的正式 APK；源码构建见[快速开始](#quickstart)。
    应用或网络实施上述操作属于违法行为。作者无法审查每一位下载者的
    用途，也无力替任何人的滥用行为兜底，只能在许可层面把口子收紧。
 3. **alpha 阶段的安全边界仍在建设。** 功能跑得快，防护跑得慢；
-   在沙箱、审计与高危操作门控全部就位之前，不希望它被大规模分发
-   后失控。
+   在沙箱、审计与高危操作门控全部就位之前，不希望它被大规模分发后失控。
 
 ### 一句话版本
 
@@ -1316,7 +917,7 @@ Android-Guru-Agent 的正式 APK；源码构建见[快速开始](#quickstart)。
 
 > [!IMPORTANT]
 > 安装、编译或运行本软件，即视为已完整阅读并接受 [LICENSE](LICENSE)
-> 的全部条款，包括 "按现状" 免责声明：**一切风险与合规义务由使用者
+> 的全部条款，包括“按现状”免责声明：**一切风险与合规义务由使用者
 > 独自承担。** 向本仓库提交 PR 即表示同意你的贡献按 UGRL v1.0 同样
 > 条款授权给本项目。
 
@@ -1327,8 +928,6 @@ Android-Guru-Agent 的正式 APK；源码构建见[快速开始](#quickstart)。
 
 <div align="center">
 
-<!-- github-readme-stats：统计卡 + 语言占比（tokyonight 主题与仓库名片一致） -->
-
 <a href="https://github.com/AceGuru-mjh">
   <img height="165" src="https://github-readme-stats.vercel.app/api?username=AceGuru-mjh&show_icons=true&hide_border=true&theme=tokyonight&include_all_commits=true&count_private=true" alt="GitHub Stats"/>
 </a>
@@ -1338,21 +937,18 @@ Android-Guru-Agent 的正式 APK；源码构建见[快速开始](#quickstart)。
 
 <br/>
 
-<!-- streak-stats：连续贡献热力 -->
 <a href="https://github.com/AceGuru-mjh">
   <img width="640" src="https://streak-stats.demolab.com?user=AceGuru-mjh&hide_border=true&theme=tokyonight&date_format=%5BY.%5Dn.j" alt="GitHub Streak"/>
 </a>
 
 <br/>
 
-<!-- profile-trophy：成就奖杯 -->
 <a href="https://github.com/ryo-ma/github-profile-trophy">
   <img width="1000" src="https://github-profile-trophy.vercel.app/?username=AceGuru-mjh&theme=tokyonight&no-frame=true&no-bg=true&margin-w=8&margin-h=8&column=7" alt="GitHub Trophies"/>
 </a>
 
 <br/>
 
-<!-- activity-graph：贡献活动曲线 -->
 <a href="https://github.com/ashutosh00710/github-readme-activity-graph">
   <img width="920" src="https://github-readme-activity-graph.vercel.app/graph?username=AceGuru-mjh&theme=tokyo-night&hide_border=true&area=true&custom_title=%E8%B4%A1%E7%8C%AE%E6%B4%BB%E5%8A%A8%E6%9B%B2%E7%BA%BF" alt="Contribution Activity Graph"/>
 </a>
@@ -1382,7 +978,11 @@ Android-Guru-Agent 的正式 APK；源码构建见[快速开始](#quickstart)。
   <img src="https://contrib.rocks/image?repo=Ultra-Guru/Android-Guru-Agent" alt="Contributors"/>
 </a>
 
+</div>
+
 ---
+
+<div align="center">
 
 ## 🪪 仓库名片
 
@@ -1393,13 +993,13 @@ Android-Guru-Agent 的正式 APK；源码构建见[快速开始](#quickstart)。
 
 <br/><br/>
 
-<img src="https://komarev.com/ghpvc/?username=AceGuru-mjh&amp;repo=Android-Guru-Agent&amp;color=blueviolet&amp;style=flat-square" alt="Repo Views"/>
+<img src="https://komarev.com/ghpvc/?username=AceGuru-mjh&amp;repo=Android-Guru-Agent&amp;color=00C2D1&amp;style=flat-square" alt="Repo Views"/>
 
 ---
 
 **如果这个项目对你有帮助，请点一个 ⭐ Star —— 这是持续开发的动力。**
 
-Made with ❤️ and a lot of ☕ · Kotlin · Compose · PRoot · Room
+Made with ❤️ and a lot of ☕ · Kotlin · Compose · PRoot · Ubuntu
 
 **Android Guru Agent** · [报告问题](https://github.com/Ultra-Guru/Android-Guru-Agent/issues) · [发起 PR](https://github.com/Ultra-Guru/Android-Guru-Agent/pulls) · [回到顶部](#readme-top)
 

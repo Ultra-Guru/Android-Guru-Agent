@@ -75,7 +75,9 @@ internal fun RikkaStreamTimeline(
     modifier: Modifier = Modifier,
     terminal: TerminalPanelState? = null,
     onToggleTerminalCollapse: () -> Unit = {},
-    renderMode: CodeOutputMode = CodeOutputMode.STREAMING
+    renderMode: CodeOutputMode = CodeOutputMode.STREAMING,
+    thinkingCollapsed: Boolean = false,
+    onThinkingCollapsedChange: (Boolean) -> Unit = {}
 ) {
     val listState = rememberLazyListState()
     // ═══ 完整档切片（与胶囊时间轴同款）：生成中只留用户输入及更早的
@@ -148,7 +150,26 @@ internal fun RikkaStreamTimeline(
                 when (segment) {
                     is RikkaSegment.Single ->
                         item(key = segment.entry.id) {
-                            RikkaStreamCard(entry = segment.entry, onToolClick = onToolClick)
+                            val entryIndex = visibleEntries.indexOfFirst { it.id == segment.entry.id }
+                            val nextAnswer = visibleEntries.drop(entryIndex + 1)
+                                .takeWhile { it !is StreamEntry.UserEntry }
+                                .filterIsInstance<StreamEntry.AssistantEntry>()
+                                .firstOrNull { it.text.isNotBlank() }
+                            RikkaStreamCard(
+                                entry = segment.entry,
+                                onToolClick = onToolClick,
+                                thinkingCollapsed = thinkingCollapsed,
+                                onThinkingCollapsedChange = onThinkingCollapsedChange,
+                                onShowAnswer = nextAnswer?.let { answer ->
+                                    {
+                                        val index = segments.indexOfFirst {
+                                            it is RikkaSegment.Single && it.entry.id == answer.id
+                                        }
+                                        scope.launch { if (index >= 0) listState.animateScrollToItem(index) }
+                                        Unit
+                                    }
+                                }
+                            )
                         }
 
                     is RikkaSegment.ToolBlock ->

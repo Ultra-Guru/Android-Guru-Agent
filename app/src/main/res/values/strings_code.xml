@@ -242,6 +242,7 @@
     <string name="code_stream_detail_grep_empty">No hits captured</string>
     <string name="code_stream_detail_terminal_title">Terminal output</string>
     <string name="code_stream_detail_output_title">Tool output</string>
+    <string name="code_stream_detail_search_title">Search results</string>
     <!-- ═══ Git operation visual card (streaming git visualization) ═══ -->
     <string name="code_git_visual_status">Branch status</string>
     <string name="code_git_visual_commit">Committed</string>
@@ -425,6 +426,7 @@
     <string name="code_stream_kind_write">Write</string>
     <string name="code_stream_kind_edit">Edit</string>
     <string name="code_stream_kind_grep">Search</string>
+    <string name="code_stream_kind_web">Web search</string>
     <string name="code_stream_kind_bash">Command</string>
     <string name="code_stream_kind_git">Git</string>
     <string name="code_stream_kind_lint">Lint</string>
@@ -434,4 +436,8 @@
     <string name="code_stream_kind_skill">Skill</string>
     <string name="code_stream_detail_origin_skill">Skill</string>
     <string name="code_stream_detail_origin_mcp">MCP</string>
+    <string name="rikka_thinking_preview_fmt">First sentence: %1$s</string>
+    <string name="rikka_thinking_show_answer">Go straight to answer</string>
+    <string name="rikka_thinking_default_collapsed">Collapse thinking by default</string>
+    <string name="rikka_thinking_default_collapsed_desc">Remembered across sessions; the full thought remains available.</string>
 </resources>

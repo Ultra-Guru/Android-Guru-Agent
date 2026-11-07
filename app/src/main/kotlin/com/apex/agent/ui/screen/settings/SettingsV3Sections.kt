@@ -743,6 +743,11 @@ internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSetting
             agent.codeOutputStyle == "rikka",
             description = stringResource(R.string.settings_v3_coding_output_style_desc)
         ) { on -> onUpdate(agent.copy(codeOutputStyle = if (on) "rikka" else "timeline")) }
+        SwitchRow(
+            stringResource(R.string.rikka_thinking_default_collapsed),
+            agent.codeRikkaThinkingCollapsed,
+            description = stringResource(R.string.rikka_thinking_default_collapsed_desc)
+        ) { on -> onUpdate(agent.copy(codeRikkaThinkingCollapsed = on)) }
         // ═══ v1.5 输出展示档（流式 / 整段）：Coding 屏时间轴揭示时机 ═══
         // 纯 UI 层开关（引擎/会话零参与）——流式 = 实时渲染（默认，既有
         // 行为）；整段 = 生成中仅加载进度卡、收束后一次性渲染完整时间轴。
