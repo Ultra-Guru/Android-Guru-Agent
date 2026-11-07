@@ -959,7 +959,11 @@ jobs:
 
       - name: Build debug APK
         run: |
+          # S-01：显式 debug 签名 —— release keystore 已移出版本控制，PR CI
+          # 永远不接触发布密钥材料（无凭据时构建脚本也会回退 debug 签名，
+          # 此处显式声明意图，避免依赖回退分支）。
           ./gradlew :app:assembleDebug \
+            -PapexDebugSign=true \
             --no-daemon \
             -Pkotlin.incremental=false \
             --stacktrace

@@ -506,6 +506,43 @@ jobs:
           cp dist/changelog.json app/src/main/assets/changelog.json
           echo "✅ changelog.json 已生成并内置 APK assets（一级 $(jq -r '.latest.notes | length' dist/changelog.json) 条 + 二级 $(jq -r '.latest.pr | length' dist/changelog.json) 组 / history $(jq -r '.history | length' dist/changelog.json) 条 / 本版消费片段 $(wc -l < dist/consumed-fragments.txt | tr -d ' ') 个）"
 
+      # ═══ S-01：发布签名凭据注入（keystore 已移出版本控制）════════════════
+      # 旧路径（入库 keystore + 构建脚本默认口令）已废除 —— 现从 repo secrets 注入：
+      #   APEX_RELEASE_KEYSTORE_BASE64 ：发布 keystore 文件的 base64
+      #   APEX_KEYSTORE_PASSWORD / APEX_KEY_ALIAS / APEX_KEY_PASSWORD
+      # 生成新 keystore：scripts/generate_release_keystore.sh（口令经 env 注入，
+      # 产物不入库）。任一 secret 缺失 → 本步骤失败并给出配置指引（发布列车
+      # fail-closed，绝不回退默认口令 —— 见 app/build.gradle.kts
+      # checkReleaseSigningCredentials 门禁）。
+      - name: "Restore release keystore from secrets (S-01)"
+        env:
+          APEX_RELEASE_KEYSTORE_BASE64: ${{ secrets.APEX_RELEASE_KEYSTORE_BASE64 }}
+          APEX_KEYSTORE_PASSWORD: ${{ secrets.APEX_KEYSTORE_PASSWORD }}
+          APEX_KEY_ALIAS: ${{ secrets.APEX_KEY_ALIAS }}
+          APEX_KEY_PASSWORD: ${{ secrets.APEX_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "${APEX_RELEASE_KEYSTORE_BASE64:-}" ]] || missing+=("APEX_RELEASE_KEYSTORE_BASE64")
+          [[ -n "${APEX_KEYSTORE_PASSWORD:-}" ]] || missing+=("APEX_KEYSTORE_PASSWORD")
+          [[ -n "${APEX_KEY_ALIAS:-}" ]] || missing+=("APEX_KEY_ALIAS")
+          [[ -n "${APEX_KEY_PASSWORD:-}" ]] || missing+=("APEX_KEY_PASSWORD")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "❌ S-01 fail-closed：发布签名凭据未配置（keystore 已移出版本控制，无默认口令可回退）"
+            echo "   缺失 secrets：${missing[*]}"
+            echo "   配置入口：repo Settings → Secrets and variables → Actions"
+            echo "   新 keystore 生成：APEX_KEYSTORE_PASSWORD=… APEX_KEY_ALIAS=… APEX_KEY_PASSWORD=… scripts/generate_release_keystore.sh"
+            echo "   然后：base64 -w0 keystore/apex-release.jks → APEX_RELEASE_KEYSTORE_BASE64"
+            exit 1
+          fi
+          KEYSTORE_PATH="$RUNNER_TEMP/apex-release.jks"
+          printf '%s' "$APEX_RELEASE_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
+          echo "APEX_KEYSTORE_FILE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+          echo "APEX_KEYSTORE_PASSWORD=$APEX_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "APEX_KEY_ALIAS=$APEX_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "APEX_KEY_PASSWORD=$APEX_KEY_PASSWORD" >> "$GITHUB_ENV"
+          echo "✅ 发布 keystore 已从 secrets 还原（后续构建步骤经 GITHUB_ENV 注入）"
+
       # 版本注入：resolve 阶段可能自动追加了构建序号（v1.4.2.1）或提升了
       # versionCode —— 经 Gradle 属性注入最终值，不回写仓库文件（源码保持干净）。
       - name: Build APK (universal + arm64, version injected)
@@ -565,9 +602,10 @@ jobs:
       - name: "Extract signing certificate digest (signature pre-flight)"
         run: |
           set -euo pipefail
-          # v1.4.8 起发布 APK 用**固定入库 keystore**（keystore/apex-release.jks，
-          # 凭据 name=meng411722 / key=meng411722）签名 —— CI 与本地构建签名指纹
-          # 恒定，增量更新合成的 APK 与已装 APK 签名一致，覆盖安装无冲突。
+          # S-01 起发布 APK 用**secrets 注入的 keystore**签名（上游
+          # "Restore release keystore from secrets" 步骤还原，口令不入库、
+          # 无默认值）—— CI 与本地构建签名指纹恒定，增量更新合成的 APK 与
+          # 已装 APK 签名一致，覆盖安装无冲突。
           # 本步骤提取证书 SHA-256 指纹注入 version.json.signingCertSha256，供
           # App 端签名预检（UpdateCenter.signatureMismatch）—— 客户端比对本地
           # 指纹，不一致时（旧版/分叉构建）提前劝导热更/卸载重装。

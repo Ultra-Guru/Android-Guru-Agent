@@ -120,6 +120,11 @@ jobs:
       - name: CI gate integrity regression suite
         run: python3 scripts/test_ci_gate_integrity.py
 
+      # S-01：check_secrets.py 的二进制密钥库拦截（后缀 + JKS magic 双通道）
+      # 回归 —— keystore 已移出版本控制，任何一条通道回退都等于私钥重新裸奔。
+      - name: Secrets-scan keystore gate regression suite
+        run: python3 scripts/test_check_secrets.py
+
       # #353-⑤：static-analysis 的 Maven 清单必须与 cache key 同源（单一事实源）。
       - name: Static-analysis dependency manifest contract
         run: python3 scripts/test_fetch_static_analysis_deps.py
