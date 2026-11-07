@@ -39,6 +39,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -70,11 +72,17 @@ import kotlinx.coroutines.delay
  * Git 操作可视化卡直接复用（GitOpVisualCard 与皮肤无关）。
  */
 @Composable
-internal fun RikkaStreamCard(entry: StreamEntry, onToolClick: (StreamToolCall) -> Unit) {
+internal fun RikkaStreamCard(
+    entry: StreamEntry,
+    onToolClick: (StreamToolCall) -> Unit,
+    thinkingCollapsed: Boolean = false,
+    onThinkingCollapsedChange: (Boolean) -> Unit = {},
+    onShowAnswer: (() -> Unit)? = null
+) {
     when (entry) {
         is StreamEntry.UserEntry -> RikkaUserBubble(entry.text)
         is StreamEntry.AssistantEntry -> RikkaAssistantBubble(entry.text, entry.isStreaming)
-        is StreamEntry.ThinkingEntry -> RikkaThinkingCard(entry.text, entry.isStreaming)
+        is StreamEntry.ThinkingEntry -> RikkaThinkingCard(entry.text, entry.isStreaming, thinkingCollapsed, onThinkingCollapsedChange, onShowAnswer)
         // 时间轴分段层已把连续胶囊收进 RikkaToolBlock，此分支只在单胶囊
         // 直渲染（防御）时触达——单调用块本身就是一行工具卡。
         is StreamEntry.ToolCapsuleEntry -> RikkaToolBlock(listOf(entry.call), onToolClick)
@@ -214,13 +222,31 @@ private fun RikkaStreamingDot() {
 // 重建重置；收束瞬间定格 finalElapsed。
 
 @Composable
-private fun RikkaThinkingCard(text: String, isStreaming: Boolean) {
+private fun RikkaThinkingCard(
+    text: String,
+    isStreaming: Boolean,
+    defaultCollapsed: Boolean,
+    onCollapsedChange: (Boolean) -> Unit,
+    onShowAnswer: (() -> Unit)?
+) {
     // key 语义与胶囊思考卡同款：不能拿派生值当 key（空卡点开后首 token
     // 到达会重置展开态）；手动干预优先于自动展开/折叠。
-    var expanded by remember { mutableStateOf(isStreaming) }
-    var userToggled by remember { mutableStateOf(false) }
+    var expanded by rememberSaveable { mutableStateOf(isStreaming && !defaultCollapsed) }
     LaunchedEffect(isStreaming) {
-        if (!userToggled) expanded = isStreaming
+        if (!isStreaming) expanded = false
+    }
+    val latestText by rememberUpdatedState(text)
+    var displayed by remember { mutableStateOf(if (isStreaming) "" else text) }
+    val reveal = remember { RikkaThinkingReveal() }
+    LaunchedEffect(isStreaming) {
+        if (!isStreaming) {
+            displayed = reveal.advance(latestText, isStreaming = false)
+        } else {
+            while (true) {
+                displayed = reveal.advance(latestText, isStreaming = true)
+                delay(25L)
+            }
+        }
     }
     // ── 实时秒表（rikkahub「思考了 X 秒」）：首帧起表，100ms 步进；
     // 收束瞬间定格，滚动重建不重置（rememberSaveable）──
@@ -271,8 +297,8 @@ private fun RikkaThinkingCard(text: String, isStreaming: Boolean) {
             modifier = Modifier
                 .padding(horizontal = 12.dp, vertical = 8.dp)
                 .clickable {
-                    userToggled = true
                     expanded = !expanded
+                    onCollapsedChange(!expanded)
                 }
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -299,16 +325,21 @@ private fun RikkaThinkingCard(text: String, isStreaming: Boolean) {
             }
             AnimatedVisibility(visible = expanded) {
                 Text(
-                    text = text,
+                    text = if (isStreaming) displayed else text,
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp)
                 )
             }
+            if (onShowAnswer != null) {
+                TextButton(onClick = { expanded = false; onShowAnswer() }) {
+                    Text(stringResource(R.string.rikka_thinking_show_answer))
+                }
+            }
             if (!expanded && text.isNotBlank()) {
                 Text(
-                    text = text.take(80),
+                    text = stringResource(R.string.rikka_thinking_preview_fmt, rikkaThinkingFirstSentence(text)),
                     style = MaterialTheme.typography.labelSmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.outline,
