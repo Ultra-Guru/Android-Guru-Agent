@@ -5,6 +5,7 @@ import com.apex.agent.core.engine.AgentQuestion
 import com.apex.agent.core.engine.UserQuestionGateway
 import com.apex.agent.core.tools.AgentTool
 import com.apex.agent.core.tools.GateDecision
+import com.apex.agent.core.tools.SessionToolDecision
 import com.apex.agent.core.tools.ToolAnnotations
 import com.apex.agent.core.tools.ToolCategory
 import com.apex.agent.core.tools.ToolMetadata
@@ -46,23 +47,28 @@ class RiskAwareToolGateGitCommandTest {
         }
     }
 
-    private fun gate(responder: (AgentQuestion) -> AgentAnswer) =
-        RiskAwareToolGate(FakeGateway(responder)) to FakeGitRunTool()
+    /** 返回 (风险门, 网关, CodeGitRun 假工具)——问题记录在网关上。 */
+    private fun gate(
+        responder: (AgentQuestion) -> AgentAnswer
+    ): Triple<RiskAwareToolGate, FakeGateway, FakeGitRunTool> {
+        val gateway = FakeGateway(responder)
+        return Triple(RiskAwareToolGate(gateway), gateway, FakeGitRunTool())
+    }
 
     private fun args(command: String): String =
         """{"command": "${command.replace("\"", "\\\"")}"}"""
 
     @Test
     fun `READ 命令直通不弹窗`() = runTest {
-        val (g, tool) = gate { AgentAnswer(questionId = "x", selectedOptionId = "allow_once") }
+        val (g, gw, tool) = gate { AgentAnswer(questionId = "x", selectedOptionId = "allow_once") }
         val decision = g.check(tool, args("status"))
         assertTrue(decision is GateDecision.Allow)
-        assertEquals(0, g.questions.size)
+        assertEquals(0, gw.questions.size)
     }
 
     @Test
     fun `破坏性命令逐次确认且不提供会话放行`() = runTest {
-        val (g, tool) = gate { q ->
+        val (g, gw, tool) = gate { q ->
             AgentAnswer(questionId = q.id, selectedOptionId = "allow_once")
         }
         val first = g.check(tool, args("push --force origin main"))
@@ -70,15 +76,15 @@ class RiskAwareToolGateGitCommandTest {
         val second = g.check(tool, args("push --force origin main"))
         assertTrue(second is GateDecision.Allow)
         // 逐次:两次调用都弹了窗(无会话记忆)
-        assertEquals(2, g.questions.size)
+        assertEquals(2, gw.questions.size)
         // 弹窗不提供 allow_session 选项
-        assertTrue(g.questions.all { q -> q.options.none { it.id == "allow_session" } })
+        assertTrue(gw.questions.all { q -> q.options.none { it.id == "allow_session" } })
     }
 
     @Test
     fun `拒绝破坏性命令不写会话状态不毒化其他命令`() = runTest {
         var allow = false
-        val (g, tool) = gate { q ->
+        val (g, gw, tool) = gate { q ->
             if (allow) AgentAnswer(questionId = q.id, selectedOptionId = "allow_once")
             else AgentAnswer(questionId = q.id, selectedOptionId = "deny")
         }
@@ -91,34 +97,34 @@ class RiskAwareToolGateGitCommandTest {
         allow = true
         val localWrite = g.check(tool, args("add -A"))
         assertTrue(localWrite is GateDecision.Allow)
-        assertTrue(g.questions.last().options.any { it.id == "allow_session" })
+        assertTrue(gw.questions.last().options.any { it.id == "allow_session" })
     }
 
     @Test
     fun `配置逃逸硬拒绝不弹窗`() = runTest {
-        val (g, tool) = gate { AgentAnswer(questionId = "x", selectedOptionId = "allow_once") }
+        val (g, gw, tool) = gate { AgentAnswer(questionId = "x", selectedOptionId = "allow_once") }
         val decision = g.check(tool, args("-c credential.helper=!curl push origin main"))
         assertTrue(decision is GateDecision.Deny)
-        assertEquals(0, g.questions.size)
+        assertEquals(0, gw.questions.size)
         assertTrue((decision as GateDecision.Deny).reason.contains("credential.helper") ||
             decision.reason.contains("-c"))
     }
 
     @Test
     fun `外向命令逐次确认`() = runTest {
-        val (g, tool) = gate { q -> AgentAnswer(questionId = q.id, selectedOptionId = "allow_once") }
+        val (g, gw, tool) = gate { q -> AgentAnswer(questionId = q.id, selectedOptionId = "allow_once") }
         assertTrue(g.check(tool, args("push origin main")) is GateDecision.Allow)
         assertTrue(g.check(tool, args("push origin main")) is GateDecision.Allow)
-        assertEquals(2, g.questions.size)
+        assertEquals(2, gw.questions.size)
     }
 
     @Test
     fun `LOCAL_WRITE 保持工具级会话放行语义`() = runTest {
-        val (g, tool) = gate { q -> AgentAnswer(questionId = q.id, selectedOptionId = "allow_session") }
+        val (g, gw, tool) = gate { q -> AgentAnswer(questionId = q.id, selectedOptionId = "allow_session") }
         assertTrue(g.check(tool, args("add -A")) is GateDecision.Allow)
         // 会话放行生效:第二次不弹窗
         assertTrue(g.check(tool, args("commit -m x")) is GateDecision.Allow)
-        assertEquals(1, g.questions.size)
+        assertEquals(1, gw.questions.size)
         assertEquals(SessionToolDecision.ALLOWED_SESSION, g.sessionSnapshot()["CodeGitRun"])
     }
 
