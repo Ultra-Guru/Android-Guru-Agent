@@ -57,8 +57,9 @@ class ExtensionEcosystemsTest {
                 File(pkgDir, "index.js").writeText("// fake plugin")
             }
             if (command.firstOrNull() == "git") {
-                val target = command.last().trim('\'')
-                File(target).resolve("README.md").writeText("# fake repo")
+                val target = File(command.last().trim('\''))
+                target.mkdirs()
+                File(target, "README.md").writeText("# fake repo")
             }
             return Result.success(NodeInstallPort.ExecOutcome(0, "ok", ""))
         }
@@ -139,9 +140,11 @@ class ExtensionEcosystemsTest {
     fun `OpenCode 本地 ts 文件源安装`() = runTest {
         val src = tmp.newFolder("src").resolve("my-plugin.ts").apply { writeText("export default {}") }
         val adapter = OpenCodeExtensionAdapter(FakeNodePort(), newLayout())
-        val manifest = adapter.resolve(ExtensionSpecParser.parse("opencode:${src.absolutePath}").getOrThrow()).getOrThrow()
+        // 消息化断言：本机无 JDK，失败原因只能靠 CI 回传 —— 带上真实异常文本
+        val manifest = adapter.resolve(ExtensionSpecParser.parse("opencode:${src.absolutePath}"))
+            .getOrElse { throw IllegalStateException("resolve failed: ${it.message}", it) }
         assertEquals("opencode.my-plugin", manifest.id)
-        assertTrue(adapter.install(manifest).isSuccess)
+        adapter.install(manifest).getOrElse { throw IllegalStateException("install failed: ${it.message}", it) }
     }
 
     // ═══ ③ DSH 适配器 ════════════════════════════════════════════════

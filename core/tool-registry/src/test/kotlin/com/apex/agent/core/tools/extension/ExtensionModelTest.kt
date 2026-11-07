@@ -232,9 +232,11 @@ class ExtensionModelTest {
         assertTrue(report.targetRegistry.contains("SkillRegistry"))
 
         val outcome = adapter.install(manifest).getOrThrow()
-        assertEquals("SkillRegistry: web-scraper", outcome.where)
+        // SkillRegistry v5：id 归一无分隔符 PascalCase（kebab 第三方源同样收敛）
+        val canonical = com.apex.agent.core.tools.skill.SkillNaming.canonicalId("web-scraper")
+        assertEquals("SkillRegistry: $canonical", outcome.where)
         // 实体真落 SkillRegistry
-        assertNotNull(registry.get("web-scraper"))
+        assertNotNull(registry.get(canonical))
     }
 
     @Test

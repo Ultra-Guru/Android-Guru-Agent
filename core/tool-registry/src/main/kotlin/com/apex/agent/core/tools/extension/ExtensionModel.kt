@@ -84,8 +84,13 @@ data class ExtensionManifest(
             json.encodeToString(serializer(), manifest)
     }
 
-    /** 指纹计算：sha-256(canonical JSON)。 */
-    fun computeHash(): String = hashlib(canonicalJson(this))
+    /**
+     * 指纹计算：sha-256(canonical JSON **剔除 manifestHash 自身**)。
+     * hash 字段参与自身计算是自引用 —— resolve 时空 hash 得 H，install 回传
+     * 原文（已含 H）重算必不匹配，正本也会被篡改门误杀。剔除后：改任何
+     * 实质字段都变指纹；单独改 hash 字段无效（它是凭证不是被保护数据）。
+     */
+    fun computeHash(): String = hashlib(canonicalJson(copy(manifestHash = "")))
 
     private fun hashlib(input: String): String =
         MessageDigest.getInstance("SHA-256").digest(input.toByteArray(Charsets.UTF_8))

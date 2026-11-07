@@ -67,8 +67,23 @@ class ClaudeExtensionAdapter(
                 payload.removePrefix("github:") to buildJsonObject {
                     put("kind", "repo"); put("repo", ExtensionSpecParser.githubRepoOf(payload)!!)
                 }
-            else -> File(payload).takeIf { it.isDirectory }?.let {
-                it.name to buildJsonObject { put("kind", "local"); put("path", payload) }
+            else -> File(payload).takeIf { it.isDirectory }?.let { dir ->
+                // 本地包：以 plugin.json 的 name 为准（与 importer 的聚合包 id
+                // 对齐 —— 账本 id replace('.','-') 必须能命中 claude-<slug>）；
+                // 读不到时兜底目录名。
+                val metaName = runCatching {
+                    val pkgRoot = sequenceOf(dir, dir.listFiles()?.firstOrNull { it.isDirectory })
+                        .filterNotNull().firstOrNull { File(it, ".claude-plugin/plugin.json").isFile }
+                    pkgRoot?.let { root ->
+                        val obj = ExtensionJson.json.parseToJsonElement(
+                            File(root, ".claude-plugin/plugin.json").readText()
+                        ).jsonObject
+                        obj["name"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+                    }
+                }.getOrNull()
+                (metaName ?: dir.name) to buildJsonObject {
+                    put("kind", "local"); put("path", payload)
+                }
             } ?: return Result.failure(
                 IllegalArgumentException("claude spec 无法识别：'$payload'（支持 <name>@<marketplace> / owner/repo / 本地包目录）")
             )
