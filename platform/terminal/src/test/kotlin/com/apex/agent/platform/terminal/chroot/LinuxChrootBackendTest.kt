@@ -140,6 +140,16 @@ class LinuxChrootBackendTest {
     // ─── prepare → SpawnSpec argv 契约 ───
 
     @Test
+    fun `mounts use a shared lock and exact mount table guard instead of stacking when mountpoint is absent`() = runBlocking {
+        val script = backend().prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80))
+            .getOrThrow().argv[2]
+        assertTrue("mount operations must be serialized across sessions", script.contains("flock -x"))
+        assertTrue("mount identity must be checked without mountpoint", script.contains("/proc/self/mountinfo"))
+        assertFalse("mountpoint-only guard stacks on stripped ROMs", script.contains("mountpoint -q"))
+        assertTrue("cleanup must also run after interrupted guest", script.contains("trap 'cleanup_mounts' EXIT"))
+    }
+
+    @Test
     fun `prepare argv is su -c script with idempotent mounts and chroot trampoline`() = runBlocking {
         val wsRoot = File(tmp.root, "ws")
         val homeRoot = File(tmp.root, "home")
