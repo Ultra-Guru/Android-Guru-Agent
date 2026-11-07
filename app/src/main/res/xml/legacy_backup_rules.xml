@@ -13,4 +13,9 @@
     <exclude domain="sharedpref" path="vault_prefs_fallback.xml" />
     <exclude domain="sharedpref" path="apex_secure_settings.xml" />
     <exclude domain="sharedpref" path="apex_secure_settings_fallback.xml" />
+    <!-- S-05：MCP Host token 与 PulseMCP 凭据（含明文 fallback），与
+         data_extraction_rules.xml 语义一致（Android 11- 全量备份通道）。 -->
+    <exclude domain="sharedpref" path="mcp_host_prefs.xml" />
+    <exclude domain="sharedpref" path="pulse_mcp_secure_prefs.xml" />
+    <exclude domain="sharedpref" path="pulse_mcp_secure_prefs-fallback.xml" />
 </full-backup-content>
