@@ -366,7 +366,7 @@ object GitCommandPolicy {
         "verify-commit", "verify-tag", "ls-files", "ls-tree", "for-each-ref", "help",
         "version", "diff-files", "diff-index", "diff-tree", "symbolic-ref",
         "check-ref-format", "check-ignore", "check-attr", "var", "merge-base", "fsck",
-        "peak", "bugreport", "maintenance", "rerere",
+        "peak", "bugreport", "maintenance", "rerere", "ls-remote",
     )
 
     private fun classifySub(sub: String, rest: List<String>): GitActionClass {
@@ -383,7 +383,7 @@ object GitCommandPolicy {
                 else -> GitActionClass.OUTBOUND
             }
             "send-pack" -> GitActionClass.OUTBOUND
-            "fetch", "pull", "ls-remote" -> GitActionClass.OUTBOUND
+            "fetch", "pull" -> GitActionClass.OUTBOUND
             "clone" -> GitActionClass.OUTBOUND
             "remote" -> when (firstPositional) {
                 "set-url" -> GitActionClass.OUTBOUND

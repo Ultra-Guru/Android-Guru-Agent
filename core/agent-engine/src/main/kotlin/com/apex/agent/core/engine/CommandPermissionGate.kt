@@ -93,7 +93,10 @@ class CommandPermissionGate(
         "push --force",
         "push -f ",
         "clean -f",
-        "branch -D",
+        // 注意:isHighRisk 对命令 lowercase 后匹配——模式必须全小写
+        // ("branch -D" 永不命中大写原文被小写化后的文本);副作用:小写化后
+        // "git -C <dir>" 与 "git -c <k=v>" 无法区分,一并保守确认
+        "branch -d",
         "filter-branch",
         "reflog expire",
         "update-ref -d",

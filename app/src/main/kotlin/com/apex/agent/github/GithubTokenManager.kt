@@ -242,7 +242,7 @@ internal class InMemorySharedPreferences : SharedPreferences {
     private val values = LinkedHashMap<String, Any?>()
     private val lock = Any()
 
-    private fun get(key: String): Any? = synchronized(lock) { values[key] }
+    private fun get(key: String?): Any? = synchronized(lock) { values[key] }
 
     override fun getAll(): MutableMap<String, *> = synchronized(lock) { LinkedHashMap(values) }
     override fun getString(key: String?, defValue: String?): String? = get(key) as? String ?: defValue
