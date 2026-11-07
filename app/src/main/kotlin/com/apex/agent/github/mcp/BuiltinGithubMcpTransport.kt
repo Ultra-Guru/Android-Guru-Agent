@@ -10,6 +10,7 @@ import com.apex.agent.core.tools.mcp.McpTransportHandle
 import com.apex.agent.github.GithubApiException
 import com.apex.agent.github.GithubApiService
 import com.apex.agent.github.GithubTokenManager
+import com.apex.agent.github.GithubWriteGuard
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -228,6 +229,17 @@ class BuiltinGithubMcpTransport(
         val branch = args["branch"]?.jsonPrimitive?.contentOrNull
         val explicitSha = args["sha"]?.jsonPrimitive?.contentOrNull
 
+        // Git 审计 P1-13：私有仓写保护统一走 GithubWriteGuard——旧版只有
+        // 原生 GithubWriteFile 有可见性探针 + 确认标志，内置 MCP 通路可
+        // 绕过 #273/#274 防线；现在两条通路共用同一守卫（fail-closed）。
+        when (val verdict = GithubWriteGuard.ensureWritable(
+            api, owner, repo, "文件 $path（commit: $message）", GithubWriteGuard.readConfirmFlag(args)
+        )) {
+            is GithubWriteGuard.Verdict.Blocked -> return "Error: ${verdict.message}"
+            is GithubWriteGuard.Verdict.Failed -> return "Error: ${verdict.message}"
+            GithubWriteGuard.Verdict.Allowed -> {}
+        }
+
         // 与原生 GithubWriteFile 相同的探针：无显式 sha 时先查现存文件
         // （404 → 新建；其他错误向上抛、由 callTool 折叠为工具错误），
         // 避免盲 PUT 被 GitHub 422 拒绝（"sha missing"）。
@@ -362,7 +374,7 @@ class BuiltinGithubMcpTransport(
             })
             add(buildJsonObject {
                 put("name", "create_or_update_file")
-                put("description", "在 GitHub 仓库中创建或更新文件（自动 commit）")
+                put("description", "在 GitHub 仓库中创建或更新文件（自动 commit）。私有仓库需先向用户确认后携带 confirm_private_write=true")
                 put("inputSchema", schema(buildJsonObject {
                     put("owner", prop("string", "仓库所有者"))
                     put("repo", prop("string", "仓库名"))
@@ -371,6 +383,7 @@ class BuiltinGithubMcpTransport(
                     put("content", prop("string", "文件新内容（纯文本，base64 自动处理）"))
                     put("branch", prop("string", "目标分支，省略则用默认分支"))
                     put("sha", prop("string", "被替换文件的 blob SHA；新建文件时省略"))
+                    put("confirm_private_write", prop("boolean", "仅当用户明确同意向该私有仓库写入后才设为 true"))
                 }, listOf("owner", "repo", "path", "message", "content")))
             })
             add(buildJsonObject {

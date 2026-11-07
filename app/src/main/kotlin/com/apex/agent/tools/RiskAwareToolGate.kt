@@ -1,8 +1,10 @@
 package com.apex.agent.tools
 
+import com.apex.agent.core.codetools.git.policy.GitActionClass
 import com.apex.agent.core.engine.AgentQuestion
 import com.apex.agent.core.engine.AgentQuestionOption
 import com.apex.agent.core.engine.UserQuestionGateway
+import com.apex.agent.permission.GitToolGateSupport
 import com.apex.agent.core.tools.AgentTool
 import com.apex.agent.core.tools.GateDecision
 import com.apex.agent.core.tools.SessionToolDecision
@@ -72,6 +74,28 @@ class RiskAwareToolGate(
 
     override suspend fun check(tool: AgentTool, arguments: String): GateDecision {
         if (tool.id in manager.selfGatedToolIds) return GateDecision.Allow
+
+        // ═══ Git 审计 P0-5：CodeGitRun 按命令分类走专用门禁 ═══
+        // 旧口径 HIGH 按 tool.id 弹一次窗 + 会话放行 → 一次授权后本会话
+        // 任意 git 命令静默执行。新口径：READ 直通；CONFIG_ESCAPE 硬拒绝；
+        // DESTRUCTIVE/OUTBOUND/ARBITRARY 逐次确认（无会话放行、拒绝不写
+        // 会话状态）；LOCAL_WRITE 保持原有工具级流程。
+        GitToolGateSupport.classifyRunCommand(tool.id, arguments)?.let { gitClass ->
+            when (gitClass) {
+                GitActionClass.READ -> {
+                    audit?.log(ToolAuditLogger.Event(tool = tool.id, decision = "allow", detail = "git read"))
+                    return GateDecision.Allow
+                }
+                GitActionClass.CONFIG_ESCAPE -> {
+                    audit?.log(ToolAuditLogger.Event(tool = tool.id, decision = "deny", detail = "git config escape"))
+                    return GateDecision.Deny(GitToolGateSupport.configEscapeDenial(tool.id))
+                }
+                GitActionClass.DESTRUCTIVE,
+                GitActionClass.OUTBOUND,
+                GitActionClass.ARBITRARY -> return promptGitCommandOnce(tool, tool.metadata, arguments, gitClass)
+                GitActionClass.LOCAL_WRITE -> { /* 原有流程：会话放行可用 */ }
+            }
+        }
 
         val metadata = tool.metadata
         // S-03：恢复风险判定（见 requiresPrompt）—— 默认档（DEFAULT）下
@@ -189,6 +213,94 @@ class RiskAwareToolGate(
                 )
             }
         }
+    }
+
+    /**
+     * git 单条命令的逐次确认（Git 审计 P0-5）：无「本会话允许」选项、
+     * 不写会话 FSM（拒掉一条 force-push 不毒化后续 add/commit）、超时
+     * 短冷却沿用工具级防环路语义。
+     */
+    private suspend fun promptGitCommandOnce(
+        tool: AgentTool,
+        metadata: ToolMetadata,
+        arguments: String,
+        gitClass: GitActionClass,
+    ): GateDecision {
+        val startedAt = System.currentTimeMillis()
+        val answer = gateway.ask(buildGitCommandQuestion(metadata, arguments, gitClass))
+        val durationMs = System.currentTimeMillis() - startedAt
+        return when {
+            answer.timedOut -> {
+                lastConfirmTimeoutAt[tool.id] = System.currentTimeMillis()
+                audit?.log(ToolAuditLogger.Event(
+                    tool = tool.id, decision = "confirm_timeout", durationMs = durationMs,
+                    command = SensitiveArgRedactor.redact(arguments).take(200),
+                    detail = "git command ask timed out"
+                ))
+                GateDecision.Deny(
+                    "confirmation for git command (${gitClass.name.lowercase()}) timed out " +
+                        "(${ASK_TIMEOUT_MS / 1000}s); treat it as unanswered — the user likely " +
+                        "missed the dialog. Ask the user for an explicit decision first"
+                )
+            }
+            answer.selectedOptionId == "allow_once" -> {
+                audit?.log(ToolAuditLogger.Event(
+                    tool = tool.id, decision = "allow_once", durationMs = durationMs,
+                    command = SensitiveArgRedactor.redact(arguments).take(200),
+                    detail = "git command approved once (${gitClass.name.lowercase()})"
+                ))
+                GateDecision.Allow
+            }
+            else -> {
+                // 拒绝不写 manager 会话状态——逐次确认按命令生效
+                audit?.log(ToolAuditLogger.Event(
+                    tool = tool.id, decision = "denied_by_user", durationMs = durationMs,
+                    command = SensitiveArgRedactor.redact(arguments).take(200),
+                    detail = "git command denied (${gitClass.name.lowercase()})"
+                ))
+                GateDecision.Deny(
+                    "user denied this git command (${gitClass.name.lowercase()}); do not retry " +
+                        "the same command — propose an alternative and explain to the user. " +
+                        "Other git commands are still subject to their own per-command prompts"
+                )
+            }
+        }
+    }
+
+    /** git 命令确认问题（无会话放行选项——破坏性/外向操作逐次确认语义）。 */
+    private fun buildGitCommandQuestion(
+        metadata: ToolMetadata,
+        arguments: String,
+        gitClass: GitActionClass,
+    ): AgentQuestion {
+        val classHint = when (gitClass) {
+            GitActionClass.DESTRUCTIVE ->
+                "破坏性 git 操作（改写历史/丢弃数据/强推远端）"
+            GitActionClass.OUTBOUND ->
+                "外向 git 操作（代码/数据将发往远端）"
+            else -> "未识别的 git 子命令"
+        }
+        return AgentQuestion(
+            title = "git 命令需要确认：${gitClass.name.lowercase()}（${metadata.id}）",
+            description = "$classHint\n" +
+                "参数摘要：${SensitiveArgRedactor.redact(arguments).take(200).replace('\n', ' ')}",
+            options = buildList {
+                add(AgentQuestionOption(
+                    id = "allow_once",
+                    label = strings.allowOnceLabel(),
+                    description = strings.allowOnceDesc()
+                ))
+                add(AgentQuestionOption(
+                    id = "deny",
+                    label = strings.denyLabel(),
+                    description = strings.denyDesc(),
+                    recommended = true
+                ))
+            },
+            allowCustom = false,
+            allowSkip = false,
+            timeoutMs = ASK_TIMEOUT_MS
+        )
     }
 
     private fun buildQuestion(metadata: ToolMetadata, arguments: String): AgentQuestion {

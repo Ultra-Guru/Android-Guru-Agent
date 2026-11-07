@@ -26,6 +26,15 @@
         <exclude domain="sharedpref" path="mcp_host_prefs.xml" />
         <exclude domain="sharedpref" path="pulse_mcp_secure_prefs.xml" />
         <exclude domain="sharedpref" path="pulse_mcp_secure_prefs-fallback.xml" />
+        <!-- Git 审计 P2-10（#836）：file domain 一并排除——logs/ 含
+             tool-audit.jsonl（工具审计的完整命令串）、crash/ 含崩溃现场
+             （可能带敏感参数）、mcp_config/ 含 MCP 服务器配置（headers 可
+             含令牌字段）、rootfs/ 是 Ubuntu 沙箱本体（体积巨大且
+             rootfs/tmp 可能残留 askpass 凭据脚本）——全部不应出设备。 -->
+        <exclude domain="file" path="logs/" />
+        <exclude domain="file" path="crash/" />
+        <exclude domain="file" path="mcp_config/" />
+        <exclude domain="file" path="rootfs/" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="github_secure_prefs.xml" />
@@ -34,9 +43,15 @@
         <exclude domain="sharedpref" path="vault_prefs_fallback.xml" />
         <exclude domain="sharedpref" path="apex_secure_settings.xml" />
         <exclude domain="sharedpref" path="apex_secure_settings_fallback.xml" />
-        <!-- S-05：同 cloud-backup —— 凭据类 prefs 不随设备迁移出设备。 -->
+        <!-- S-05：同 cloud-backup —— 凭据类 prefs 不随设备迁移出设备。
+             Git 审计 P2-10：file domain 同源排除（审计日志/崩溃现场/MCP
+             配置/沙箱本体）。 -->
         <exclude domain="sharedpref" path="mcp_host_prefs.xml" />
         <exclude domain="sharedpref" path="pulse_mcp_secure_prefs.xml" />
         <exclude domain="sharedpref" path="pulse_mcp_secure_prefs-fallback.xml" />
+        <exclude domain="file" path="logs/" />
+        <exclude domain="file" path="crash/" />
+        <exclude domain="file" path="mcp_config/" />
+        <exclude domain="file" path="rootfs/" />
     </device-transfer>
 </data-extraction-rules>

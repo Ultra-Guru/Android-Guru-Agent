@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.File
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,6 +38,14 @@ import javax.inject.Singleton
 class GithubTokenManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
+    /**
+     * 存储后端（Git 审计 P2-9 fail-closed）：EncryptedSharedPreferences 初始化
+     * 失败（keystore 损坏/厂商 ROM 异常）时**不再降级明文落盘**——旧实现把
+     * Token 静默写进明文 prefs（仅一条 WARN）。新实现降级为**纯内存**
+     * 存储：本会话内 GitHub 连接照常可用，但 Token 不落任何盘、重启后
+     * 需重新连接。启动时顺带把历史明文降级留下的 token 迁回加密存储并
+     * 删除明文文件（[migrateLegacyPlaintext]）。
+     */
     private val prefs: SharedPreferences by lazy {
         try {
             val masterKey = MasterKey.Builder(context)
@@ -46,20 +55,41 @@ class GithubTokenManager @Inject constructor(
                 context, "github_secure_prefs", masterKey,
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
+            ).also { migrateLegacyPlaintext(it) }
         } catch (e: Exception) {
-            // P2 修复（静默降级告警）：加密存储初始化失败（keystore 损坏/厂商
-            // ROM 异常）时降级明文 prefs —— 旧实现完全静默，用户不知道 Token
-            // 以明文落盘。至少留一条 WARN 日志（诊断与安全审计可见）。
             runCatching {
                 AppLogger.instance.warn(
                     LogCategory.SYSTEM, "GithubTokenManager",
-                    "EncryptedSharedPreferences 初始化失败，GitHub Token 将以明文存储" +
-                        "（${e.javaClass.simpleName}: ${e.message}）—— 建议在系统设置中" +
-                        "清除应用数据后重新连接 GitHub"
+                    "EncryptedSharedPreferences 初始化失败（${e.javaClass.simpleName}: ${e.message}）" +
+                        "——Git 审计 P2-9：Token 改为纯内存存储（不落盘），重启后需重新连接 GitHub"
                 )
             }
-            context.getSharedPreferences("github_prefs_fallback", Context.MODE_PRIVATE)
+            InMemorySharedPreferences()
+        }
+    }
+
+    /**
+     * 历史明文迁移：旧版本在加密存储初始化失败时把 token 写进了明文
+     * github_prefs_fallback——存在即迁回加密存储并删除明文文件。
+     */
+    private fun migrateLegacyPlaintext(secure: SharedPreferences) {
+        runCatching {
+            val legacy = context.getSharedPreferences("github_prefs_fallback", Context.MODE_PRIVATE)
+            val legacyToken = legacy.getString(KEY_TOKEN, null)
+            if (!legacyToken.isNullOrBlank()) {
+                secure.edit()
+                    .putString(KEY_TOKEN, legacyToken)
+                    .putString(KEY_USERNAME, legacy.getString(KEY_USERNAME, null) ?: "")
+                    .putLong(KEY_CONNECTED_AT, legacy.getLong(KEY_CONNECTED_AT, 0))
+                    .apply()
+                runCatching {
+                    File(context.applicationInfo.dataDir, "shared_prefs/github_prefs_fallback.xml").delete()
+                }
+                AppLogger.instance.info(
+                    LogCategory.SYSTEM, "GithubTokenManager",
+                    "已将明文降级的旧 GitHub Token 迁回加密存储并清除明文残留"
+                )
+            }
         }
     }
 
@@ -74,12 +104,15 @@ class GithubTokenManager @Inject constructor(
     val defaultRepo: StateFlow<String> = _defaultRepo.asStateFlow()
 
     fun saveToken(token: String, username: String?) {
+        // Git 审计 P2-12：trim（粘贴录入常见首尾空白/换行——原样落库会让
+        // 认证头带上不可见字符，且比较口径漂移）
+        val trimmed = token.trim()
         prefs.edit()
-            .putString(KEY_TOKEN, token)
-            .putString(KEY_USERNAME, username ?: "")
+            .putString(KEY_TOKEN, trimmed)
+            .putString(KEY_USERNAME, username?.trim() ?: "")
             .putLong(KEY_CONNECTED_AT, System.currentTimeMillis())
             .apply()
-        _connectionState.value = GithubConnectionState(true, token, username, System.currentTimeMillis())
+        _connectionState.value = GithubConnectionState(true, trimmed, username, System.currentTimeMillis())
     }
 
     fun getToken(): String? = prefs.getString(KEY_TOKEN, null)
@@ -199,3 +232,67 @@ data class GithubConnectionState(
     val username: String? = null,
     val connectedAt: Long = 0
 )
+
+/**
+ * 纯内存 SharedPreferences（Git 审计 P2-9）：加密存储初始化失败时的
+ * fail-closed 降级——接口语义完整但**零落盘**，进程死亡即消失。
+ * 仅承载 GithubTokenManager 的五个键；其余方法给出最小实现。
+ */
+internal class InMemorySharedPreferences : SharedPreferences {
+    private val values = LinkedHashMap<String, Any?>()
+    private val lock = Any()
+
+    private fun get(key: String): Any? = synchronized(lock) { values[key] }
+
+    override fun getAll(): MutableMap<String, *> = synchronized(lock) { LinkedHashMap(values) }
+    override fun getString(key: String?, defValue: String?): String? = get(key) as? String ?: defValue
+    override fun getStringSet(key: String?, defValues: MutableSet<String>?): MutableSet<String> =
+        @Suppress("UNCHECKED_CAST")
+        (get(key) as? Set<String>)?.toMutableSet() ?: defValues ?: mutableSetOf()
+    override fun getInt(key: String?, defValue: Int): Int = (get(key) as? Int) ?: defValue
+    override fun getLong(key: String?, defValue: Long): Long = (get(key) as? Long) ?: defValue
+    override fun getFloat(key: String?, defValue: Float): Float = (get(key) as? Float) ?: defValue
+    override fun getBoolean(key: String?, defValue: Boolean): Boolean = (get(key) as? Boolean) ?: defValue
+    override fun contains(key: String?): Boolean = synchronized(lock) { values.containsKey(key) }
+    override fun edit(): SharedPreferences.Editor = MemoryEditor()
+    override fun registerOnSharedPreferenceChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener?) {}
+    override fun unregisterOnSharedPreferenceChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener?) {}
+
+    private inner class MemoryEditor : SharedPreferences.Editor {
+        private val pending = LinkedHashMap<String, Any?>()
+        private val removals = mutableSetOf<String>()
+        private var clearAll = false
+
+        override fun putString(key: String?, value: String?) = put(key, value)
+        override fun putStringSet(key: String?, values: MutableSet<String>?) = put(key, values)
+        override fun putInt(key: String?, value: Int) = put(key, value)
+        override fun putLong(key: String?, value: Long) = put(key, value)
+        override fun putFloat(key: String?, value: Float) = put(key, value)
+        override fun putBoolean(key: String?, value: Boolean) = put(key, value)
+        private fun put(key: String?, value: Any?): SharedPreferences.Editor {
+            key?.let { pending[it] = value }
+            return this
+        }
+
+        override fun remove(key: String?): SharedPreferences.Editor {
+            key?.let { removals += it }
+            return this
+        }
+
+        override fun clear(): SharedPreferences.Editor {
+            clearAll = true
+            return this
+        }
+
+        override fun commit(): Boolean {
+            synchronized(lock) {
+                if (clearAll) values.clear()
+                removals.forEach { values.remove(it) }
+                pending.forEach { (k, v) -> if (v != null) values[k] = v else values.remove(k) }
+            }
+            return true
+        }
+
+        override fun apply() = commit()
+    }
+}

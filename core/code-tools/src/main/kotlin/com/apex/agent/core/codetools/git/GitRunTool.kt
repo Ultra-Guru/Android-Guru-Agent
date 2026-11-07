@@ -1,5 +1,6 @@
 package com.apex.agent.core.codetools.git
 
+import com.apex.agent.core.codetools.git.policy.GitCommandPolicy
 import com.apex.agent.core.tools.ToolArguments
 import com.apex.agent.core.tools.ToolMetadata
 import com.apex.agent.core.tools.ToolResult
@@ -14,18 +15,26 @@ import com.apex.agent.core.tools.toolSchema
  * 直达。GitHub 任务（提交、推送、开分支）**应该走 git 命令完成**，而不是
  * 用浏览器自动化去点网页——本工具就是那条通路。
  *
- * 凭据：GitHub 已连接时，执行环境自动注入 GH_TOKEN / GITHUB_TOKEN 与
- * git 凭据桥（credential.helper=!gh auth git，见 app 层
- * GithubTerminalEnvInjector）——https 的 push/pull 无需手工配置凭据；
- * 未连接时 push 会收到 401/凭据报错，引导用户先在设置里连接 GitHub。
+ * 凭据：GitHub 已连接时，执行环境自动注入一次性 GIT_ASKPASS 凭据脚本
+ * （Git 审计 P0-1 根修：PAT 零进 env，凭据只流向 github.com，见 app 层
+ * GithubCredentialIssuer / GithubTerminalEnvInjector）——https 的
+ * push/pull 无需手工配置凭据；未连接时 push 会收到 401/凭据报错，
+ * 引导用户先在设置里连接 GitHub。
  *
  * 工作目录：恒为当前激活的编码工作区（guest /workspace）。clone 请用
  * `clone <url> <目录名>`（落在工作区内）；跨仓操作先 clone 再 cd 由
  * 工具族自行串接（run 无 cd 语义，用 `git -C <目录> ...` 切仓）。
  *
- * 安全：非交互执行（push/pull 不会弹终端提示，凭据全走 env 桥）；
- * `git push --force` / `reset --hard` 等破坏性子命令按字面执行——
- * 风险分级 HIGH，输出如实回报。交互式命令（如 `git add -p`）不可用。
+ * 安全（Git 审计 P0 修复，代码级门禁而非提示词自觉）：
+ * - 非交互执行（交互式命令按 **解析后 argv** 位置无关识别，提前拒绝）；
+ * - `-c` 注入式配置与 `git config` 子命令默认禁止（credential.helper /
+ *   hooksPath 可执行任意程序——P0-2）；
+ * - `git -C` 目标词法校验必须落在激活工作区内（P0-8 逃逸面关闭）；
+ * - clone/push/fetch 等远程地址仅 https + github.com 白名单，拒绝
+ *   file://、ext::、userinfo 内嵌凭据（P0-8 任意 URL clone 关闭）；
+ * - `git push --force` / `reset --hard` 等破坏性/外向子命令经
+ *   [GitCommandPolicy] 分类后由权限门/风险门**逐次确认**（任何权限档，
+ *   含 BYPASS，不提供会话级放行）——HIGH 只是元数据，策略才是门禁。
  */
 class GitRunTool(
     private val runner: GitCommandRunner
@@ -70,7 +79,16 @@ class GitRunTool(
         tag("code")
         tag("git")
         tag("shell")
-        annotations(com.apex.agent.core.tools.ToolAnnotations.mutating())
+        // Git 审计 P1-12：显式注解（不再依赖 mutating() 默认值）——本工具
+        // 可承载破坏性命令（reset --hard / push --force），destructive 必须
+        // 如实为 true；非幂等（重放 push 语义不同）。
+        annotations(
+            com.apex.agent.core.tools.ToolAnnotations(
+                readOnlyHint = false,
+                destructiveHint = true,
+                idempotentHint = false,
+            )
+        )
     }
 
     override suspend fun executeStructured(arguments: String): ToolResult {
@@ -88,20 +106,29 @@ class GitRunTool(
                 "command 不要带 git 前缀（本工具自动补上）；如 \"push origin main\" 而非 \"git push origin main\"",
             )
         }
-        // 交互式子命令白名单前置拒绝：非交互环境里它们会挂起到超时，提前给出可操作提示
-        val interactiveHit = INTERACTIVE_HINTS.firstOrNull { raw.startsWith(it) }
-        if (interactiveHit != null) {
-            return ToolResult.invalid(
-                "command",
-                "git $raw 是交互式命令，非交互环境不可用。替代：git add -A 全量暂存；" +
-                    "分段提交用多次 add <path> + commit；rebase 冲突走 edit 后 git rebase --continue。",
-            )
-        }
         val timeoutSec = parsed.intWithDefault("timeout_sec", DEFAULT_TIMEOUT_SEC)
             .coerceIn(MIN_TIMEOUT_SEC, MAX_TIMEOUT_SEC)
-        val args = splitGitArgs(raw)
+        // 严格切分：引号未闭合直接拒绝（P0-7——旧实现静默接受，剩余字符
+        // 被并进单参数后策略层无从检查）
+        val args = when (val split = GitCommandPolicy.parse(raw)) {
+            is GitCommandPolicy.ParsedArgs.Ok -> split.args
+            is GitCommandPolicy.ParsedArgs.Bad -> return ToolResult.invalid("command", split.reason)
+        }
         if (args.isEmpty()) {
             return ToolResult.invalid("command", "command 解析后为空")
+        }
+        // ═══ 策略门（Git 审计 P0-2/7/8）：分类纯函数，命中即拒绝 ═══
+        GitCommandPolicy.configEscapeReason(args)?.let {
+            return ToolResult.invalid("command", "git $raw 被拒绝：$it")
+        }
+        GitCommandPolicy.interactiveReason(args)?.let {
+            return ToolResult.invalid("command", it)
+        }
+        GitCommandPolicy.workspaceEscapeReason(args)?.let {
+            return ToolResult.invalid("command", "git $raw 被拒绝：$it")
+        }
+        GitCommandPolicy.urlViolationReason(args)?.let {
+            return ToolResult.invalid("command", "git $raw 被拒绝：$it")
         }
         val result = runner.run(args, timeoutMs = timeoutSec * 1_000L)
         return when {
@@ -138,9 +165,6 @@ class GitRunTool(
         const val DEFAULT_TIMEOUT_SEC = 60
         const val MIN_TIMEOUT_SEC = 5
         const val MAX_TIMEOUT_SEC = 600
-
-        /** 交互式子命令前缀（挂起到超时的主因，提前拒绝并给替代方案）。 */
-        val INTERACTIVE_HINTS = listOf("add -p", "add --patch", "commit -p", "rebase -i", "checkout -p", "restore -p", "clean -i")
 
         /** 远程操作的进度输出在 stderr（成功时也附带尾部供确认）。 */
         val REMOTE_OPS = setOf("push", "pull", "fetch", "clone", "remote")
