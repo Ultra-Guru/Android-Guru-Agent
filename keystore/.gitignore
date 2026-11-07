@@ -1,3 +1,12 @@
+# S-01：keystore 本体不入库（私钥公开 = 签名防线失效）。
+# 凭据经 env / Gradle 属性注入（见 app/build.gradle.kts signingConfigs）。
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pkcs12
+# scripts/check_secrets.py 按后缀 + JKS magic 双通道兜底拦截（防改名绕过）。
+
 # 排除 keystore 备份文件（凭据变更时 generate_release_keystore.sh 自动生成的 .bak）
 *.bak
 *.bak.*
