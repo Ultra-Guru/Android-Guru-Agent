@@ -1,0 +1,1 @@
+{"id":"accordion-tune","name":"手风琴调音","nameEn":"Accordion Tuner","tagline":"展开与收起，用 pretext 实测高度把面板总高校准到目标线","version":1,"engine":"pretext@0.0.9","apis":["prepare","layout"],"controls":"点按分区标题 / 定格按钮","scoreKey":"aga.pg.accordion-tune.hi"}

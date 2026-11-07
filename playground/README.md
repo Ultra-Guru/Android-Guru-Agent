@@ -13,8 +13,9 @@ playground/
 └── apk-plugin-template/   # HTML → APK 插件的可拷贝转化模板（不参与构建）
 ```
 
-十款内置游戏本体在 `app/src/main/assets/playground/games/<id>/`
-（随 APK 打包；每个 index.html 自包含，内联 vendored pretext）。
+十七款内置游戏本体在 `app/src/main/assets/playground/games/<id>/`
+（随 APK 打包；每个 index.html 自包含，内联 vendored pretext；
+第一批十款见 GAME-SPEC.md，第二批/第三批模仿官网 demo，见下文速查）。
 
 ## 一、HTML 游戏插件格式
 
@@ -45,7 +46,10 @@ playground/
 - `id`：小写字母数字连字符（目录名即 id）；
 - `apis`：游戏**真实调用**的 pretext API（目录卡片的「测量即玩法」徽章，
   诚实工程：没调用的不写）；
-- `engine`：测量引擎标识（内置十款均为 `pretext@0.0.9`）。
+- `engine`：测量引擎标识（内置均为 `pretext@0.0.9`）。
+
+> 官网十个 demo 中，rich-note（富文本内联）需要 `@chenglou/pretext/rich-inline`
+> API，vendored 0.0.9 IIFE 不含该导出，如实缺席；升级 vendored 版本后再补。
 
 ### 游戏硬性契约（摘自 GAME-SPEC.md，全量见该文件）
 
@@ -87,7 +91,9 @@ WebView 壳 APK 插件：
 可导入 / 零签名），APK 插件是**代码**（同签名 REPLACE / 系统安装）。
 模板细节见 [apk-plugin-template/README.md](apk-plugin-template/README.md)。
 
-## 三、内置十款游戏速查
+## 三、内置游戏速查
+
+### 第一批（GAME-SPEC 十连）
 
 | 游戏 | id | pretext 锚点 |
 | --- | --- | --- |
@@ -102,11 +108,28 @@ WebView 壳 APK 插件：
 | 文本引流 Flow Route | `flow-route` | `layoutNextLineRange` + `materializeLineRange`（**逐行变宽路由** —— pretext 独门能力） |
 | 收缩塔 Shrink Stack | `shrink-stack` | `prepare` + `measureLineStats` + `layoutWithLines`（板材宽高全由排版尺寸决定） |
 
+### 第二批（模仿官网 demo，2026-10）
+
+| 游戏 | id | 模仿 demo | pretext 锚点 |
+| --- | --- | --- | --- |
+| 裁纸刀 Ellipsis Cutter | `ellipsis-cut` | Ellipsis | `prepareWithSegments` + `layoutWithLines`（拖刀实时行数/高度，…按末行实测宽度落位） |
+| 瀑布打包 Masonry Packer | `masonry-pack` | Masonry | `prepare` + `measureLineStats`（卡片高度 = 收缩排版高度，落成对照理论最优） |
+| 手风琴调音 Accordion Tuner | `accordion-tune` | Accordion | `prepare` + `layout`（分区展开高度 = 实测读数，总高校准到目标线） |
+| 赝品画廊 Forgery Gallery | `ascii-forgery` | Variable Typographic ASCII | `prepare` + `measureNaturalWidth`（**实测宽度 = 真伪鉴定仪**：假宽排布现形） |
+
+### 第三批（模仿官网 demo，2026-11）
+
+| 游戏 | id | 模仿 demo | pretext 锚点 |
+| --- | --- | --- | --- |
+| 河流猎人 River Hunt | `river-hunt` | Justification Comparison | `prepareWithSegments` + `layoutWithLines`（两端对齐的词缝 = 实测宽度摊出，找最宽的河） |
+| 弹球引流 Orbit Reflow | `orbit-reflow` | Editorial Engine | `layoutNextLineRange` + `materializeLineRange`（**弹球障碍逐行变宽路由，每帧重排**） |
+| 代码洪水 Code Flood | `code-flood` | Markdown Chat | `prepare` + `layout`（**pre-wrap 白空格模式实测代码块高度**，滚动只认测量值） |
+
 ## 四、致谢
 
 - [chenglou/pretext](https://github.com/chenglou/pretext)（MIT）—— 纯 JS
-  多行文本测量与排版库，全部十款游戏的测量引擎。官网 demo：
+  多行文本测量与排版库，全部内置游戏的测量引擎。官网 demo：
   [chenglou.me/pretext](https://chenglou.me/pretext/)（accordion / bubbles /
   masonry / ellipsis / dynamic-layout / justification 等十个官方样例，
-  本街机的玩法灵感来源）。
+  本街机的玩法灵感来源；第二批四款为直接模仿）。
 - vendored 构建保留上游 MIT 许可头；测量契约版本：`@chenglou/pretext@0.0.9`。
