@@ -543,47 +543,6 @@ class CodeStreamSession {
         }
     }
 
-    /** 阶梯延迟的人读形态（1s / 30s / 1m / 3m）。 */
-    private fun formatLadderDelay(ms: Long): String = when {
-        ms < 1_000 -> "${ms}ms"
-        ms < 60_000 -> "${ms / 1000}s"
-        else -> "${ms / 60_000}m"
-    }
-
-    /**
-     * 读取类行号范围（参数侧）：offset（1-based，缺省 1）与 limit（缺省
-     * 800）→ 「L1-L800」；目录读取（无 offset/limit 语义）返回 null。
-     */
-    private fun readLineRangeOf(args: Map<String, kotlinx.serialization.json.JsonElement>): String? {
-        val int = { key: String ->
-            (args[key] as? kotlinx.serialization.json.JsonPrimitive)
-                ?.contentOrNullSafe()?.toIntOrNull()
-        }
-        // offset 缺省 1（CodeRead 契约）；目录读取在完成时按输出形态清零
-        val offset = int("offset") ?: 1
-        val limit = int("limit") ?: DEFAULT_READ_LIMIT
-        return "L$offset-L${offset + limit - 1}"
-    }
-
-    /**
-     * 读取类行号范围（输出侧）：CodeRead 输出每行带「N: 」前缀 ——
-     * 首尾行号即为实际读取范围（「L1-L42」，读到文件尾早于 limit 时
-     * 如实反映）；非行号格式（目录清单/错误输出）返回 null。
-     */
-    private fun actualReadLineRangeOf(output: String): String? {
-        var first: Int? = null
-        var last: Int? = null
-        output.lineSequence().forEach { line ->
-            val m = READ_LINE_PREFIX_REGEX.find(line) ?: return@forEach
-            val n = m.groupValues[1].toIntOrNull() ?: return@forEach
-            if (first == null) first = n
-            last = n
-        }
-        val f = first ?: return null
-        val l = last ?: return null
-        return if (l > f || l == f) "L$f-L$l" else null
-    }
-
     private fun onToolStart(event: AgentEvent.ToolCallStart) {
         val existing = toolCalls[event.callId]
         // 幂等：已越过等待态的 Start 重放直接跳过（检查点恢复/重放安全）。
@@ -1195,18 +1154,12 @@ class CodeStreamSession {
         return (prefix + line).take(SUMMARY_MAX)
     }
 
-    /** JsonPrimitive content 的 null 安全读取（非 primitive 返回 null）。 */
-    private fun kotlinx.serialization.json.JsonPrimitive.contentOrNullSafe(): String? =
-        runCatching { content }.getOrNull()
-
     private companion object {
         const val UNKNOWN_TARGET = "…"
         const val ARGS_SUMMARY_MAX = 80
         const val SUMMARY_MAX = 24
         const val NON_BASH_LOG_TAIL_CHARS = 2000
         const val EXIT_CODE_TAIL_LINES = 8
-        /** CodeRead 契约的默认读取行数（无 limit 参数时）。 */
-        const val DEFAULT_READ_LIMIT = 800
         /** 用户规格 LLM 重试阶梯级数（1s…180s 共 10 级）。 */
         const val LADDER_TOTAL_RETRIES = 10
 
@@ -1214,9 +1167,6 @@ class CodeStreamSession {
         const val ABORTED_TEXT = "已中止"
         val EXIT_CODE_REGEX = Regex("""(?:exit(?:\s+code)?|Exit:)[:\s]+(\d+)\b""", RegexOption.IGNORE_CASE)
         val ENTRY_SEQ_REGEX = Regex("""(?:^|-)e-(\d+)$""")
-        /** CodeRead 输出行号前缀（cat -n 风格「N: 」）。 */
-        val READ_LINE_PREFIX_REGEX = Regex("""^\s*(\d+):""")
-
         /** 网络搜索结果来源链接（去重计数用；截到右括号/引号前，容 markdown/JSON 两种形态）。 */
         val SOURCE_LINK_REGEX = Regex("""https?://[^\s\)\]>"']+""")
     }
