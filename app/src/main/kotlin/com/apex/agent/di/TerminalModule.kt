@@ -256,6 +256,20 @@ object TerminalModule {
         supportedAbis = { Build.SUPPORTED_ABIS.toList() }
     )
 
+    /** T99: tool-triggered only; construction and backend availability never exec PRoot. */
+    @Provides
+    @Singleton
+    fun providePRootSmokeProbe(
+        binaryProvider: PRootBinaryProvider,
+        rootfsProvider: RootfsProvider,
+        hostEnv: PRootHostEnvironment
+    ): com.apex.agent.platform.terminal.proot.PRootSmokeProbe =
+        com.apex.agent.platform.terminal.proot.PRootSmokeProbe(
+            binaryProvider = binaryProvider,
+            rootfsProvider = rootfsProvider,
+            hostEnvironment = { hostEnv.prepare().getOrNull()?.let { hostEnv.hostEnv() } }
+        )
+
     /**
      * T92（D5 完成度）：argv 能力源 —— app 模块三类 argv 构造点
      * （ProotCommandSpawner / ProotGitCommandRunner / ProotMcpProcessLauncher）

@@ -1,5 +1,9 @@
 package com.apex.agent.platform.terminal.tools.v2
 
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
+import com.apex.agent.platform.terminal.proot.LinuxPRootBackend
+import com.apex.agent.platform.terminal.proot.PRootSmokeProbe
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
 import com.apex.agent.platform.terminal.tools.TerminalTool
 import kotlinx.serialization.json.Json
@@ -8,6 +12,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.coroutines.CancellationException
 
 /**
  * Agent tool: TerminalBackends — T73（后端能力发现）
@@ -26,7 +31,9 @@ import kotlinx.serialization.json.jsonPrimitive
  * JSON Schema (output): { backends: [ { id, runtimeType, available, state, detail? } ] }
  */
 class TerminalBackendsTool(
-    private val runtime: TerminalRuntime
+    private val runtime: TerminalRuntime,
+    /** Explicit tool invocation only; never called from backend availability or app startup. */
+    private val smokeProbe: (suspend () -> PRootSmokeProbe.SmokeResult)? = null
 ) : TerminalTool {
     override val id: String = "TerminalBackends"
     override val name: String = id
@@ -50,6 +57,25 @@ class TerminalBackendsTool(
             runCatching { Json.parseToJsonElement(arguments).jsonObject }
         }
         val list = runtime.backends()
+        val smoke = if (smokeProbe != null && list.any { it.id == LinuxPRootBackend.ID && it.state == "READY" }) {
+            try {
+                smokeProbe.invoke()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                PRootSmokeProbe.SmokeResult(PRootSmokeProbe.Status.BINARY_ERROR)
+            }
+        } else null
+        val suggestion = when (smoke?.status) {
+            PRootSmokeProbe.Status.TIMED_OUT, PRootSmokeProbe.Status.PTRACE_SIGNAL ->
+                "PRoot smoke probe ${smoke.status.name.lowercase()}: ptrace restrictions on this device are likely, " +
+                    "but not proven. Sessions may hang. Consider backend 'linux-ubuntu-chroot' " +
+                    "if superuser is granted, or report the issue. No backend was switched."
+            else -> null
+        }
+        if (suggestion != null) {
+            runCatching { AppLogger.instance.warn(LogCategory.TOOL, "TerminalBackends", suggestion) }
+        }
         return buildJsonObject {
             put("backends", buildJsonArray {
                 for (b in list) {
@@ -58,10 +84,14 @@ class TerminalBackendsTool(
                         put("runtimeType", JsonPrimitive(b.runtimeType))
                         put("available", JsonPrimitive(b.available))
                         put("state", JsonPrimitive(b.state))
+                        if (b.id == LinuxPRootBackend.ID && b.state == "READY" && smoke != null &&
+                            smoke.status != PRootSmokeProbe.Status.NOT_READY
+                        ) put("smoke", JsonPrimitive(smoke.status.name.lowercase()))
                         b.detail?.let { put("detail", JsonPrimitive(it)) }
                     })
                 }
             })
+            suggestion?.let { put("suggestion", JsonPrimitive(it)) }
         }.toString()
     }
 }

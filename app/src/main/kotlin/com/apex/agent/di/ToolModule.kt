@@ -431,6 +431,7 @@ object ToolModule {
         httpClient: OkHttpClient,
         toolActivation: ToolActivationStore,
         terminalRuntime: TerminalRuntime,
+        prootSmokeProbe: com.apex.agent.platform.terminal.proot.PRootSmokeProbe,
         rootfsProvisioner: RootfsProvisioner,
         rootfsTarget: RootfsTarget,
         workspaceManager: com.apex.agent.platform.terminal.workspace.LinuxWorkspaceManager,
@@ -820,7 +821,7 @@ object ToolModule {
 
         // ═══ 10. Terminal PTY 前排 9+1 工具 —— 注册体拆至 ToolModuleRegistrySections.kt（SRP 预算）═══
         // T-audit（#289）：signal/run/close 等七通道审计经 [auditedTerminalTool] 注入（见拆分文件）
-        registerTerminalPtyTools(registry, terminalRuntime, toolAuditLogger)
+        registerTerminalPtyTools(registry, terminalRuntime, toolAuditLogger, prootSmokeProbe)
 
         // T87：终端栈自诊断（会话/后端/exec 探针自证 —— Agent 可先诊断后行动）。
         // 探针与 TerminalExec 共用同一 ExecEngine/ProotCommandSpawner 构造参数

@@ -5,6 +5,7 @@ import com.apex.agent.core.tools.SafeAgentTool
 import com.apex.agent.github.GithubApiService
 import com.apex.agent.github.tools.*
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
+import com.apex.agent.platform.terminal.proot.PRootSmokeProbe
 import com.apex.agent.platform.terminal.tools.*
 import com.apex.agent.platform.terminal.tools.v2.*
 import com.apex.agent.tools.ToolAuditLogger
@@ -22,7 +23,8 @@ import com.apex.agent.tools.ToolAuditLogger
 internal fun registerTerminalPtyTools(
     registry: DefaultToolRegistry,
     terminalRuntime: TerminalRuntime,
-    toolAuditLogger: ToolAuditLogger
+    toolAuditLogger: ToolAuditLogger,
+    smokeProbe: PRootSmokeProbe
 ) {
     // ═══ 10. Terminal PTY — ATR 2.0 (9 new Agent-Native + 4 legacy compat + T73 ×2) ═══
     // 9 new Agent-Native tools (Spec §34) — non-blocking, incremental, event-driven.
@@ -36,7 +38,7 @@ internal fun registerTerminalPtyTools(
     registry.register(SafeAgentTool(TerminalToolAdapter(auditedTerminalTool(toolAuditLogger, TerminalSnapshotTool(terminalRuntime)))))
     registry.register(SafeAgentTool(TerminalToolAdapter(auditedTerminalTool(toolAuditLogger, TerminalCloseTool(terminalRuntime)))))
     // T73: 后端能力发现 + Ubuntu rootfs 安装引导（Agent 自主进入 Ubuntu 的入口）。
-    registry.register(SafeAgentTool(TerminalToolAdapter(TerminalBackendsTool(terminalRuntime))))
+    registry.register(SafeAgentTool(TerminalToolAdapter(TerminalBackendsTool(terminalRuntime, smokeProbe::probe))))
 }
 
 /** §11：GitHub 9 工具（无条件注册 —— 运行时连接状态由 GithubApiService 报错语义兜底）。 */

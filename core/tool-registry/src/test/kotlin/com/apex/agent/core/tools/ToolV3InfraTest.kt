@@ -399,7 +399,7 @@ class ToolV3InfraTest {
     fun `chroot availability appears beside Ubuntu in prompt telemetry`() {
         val state = ToolEnvironmentState()
         state.set(ToolEnvironmentState.Flags.UBUNTU_READY, true)
-        state.set("chroot_ready", true)
+        state.set(ToolEnvironmentState.Flags.CHROOT_READY, true)
         state.set(ToolEnvironmentState.Flags.TERMINAL_SESSION_OPEN, true)
 
         assertEquals(

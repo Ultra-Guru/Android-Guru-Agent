@@ -1,6 +1,7 @@
 package com.apex.agent.platform.terminal.tools
 
 import com.apex.agent.platform.terminal.runtime.BackendAvailability
+import com.apex.agent.platform.terminal.proot.PRootSmokeProbe
 import com.apex.agent.platform.terminal.runtime.BackendRuntimeType
 import com.apex.agent.platform.terminal.runtime.ExecutionBackend
 import com.apex.agent.platform.terminal.runtime.SessionSpawnRequest
@@ -100,5 +101,55 @@ class TerminalBackendsToolTest {
         val ubuntu = parse(tool.invoke("{}"))[0].jsonObject
         assertEquals("FAILED", ubuntu["state"]!!.jsonPrimitive.content)
         assertEquals("PRootError:BINARY_NOT_FOUND", ubuntu["detail"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `hung smoke appends advice without changing registered backend order or routing`() = runBlocking {
+        val runtime = FakeRuntime(listOf(
+            TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", true, "READY"),
+            TerminalRuntime.BackendStatus("linux-ubuntu-chroot", "LINUX", true, "READY")
+        ))
+        val tool = TerminalBackendsTool(runtime, smokeProbe = {
+            PRootSmokeProbe.SmokeResult(PRootSmokeProbe.Status.TIMED_OUT)
+        })
+        val json = kotlinx.serialization.json.Json.parseToJsonElement(tool.invoke("{}")).jsonObject
+        val backends = json["backends"]!!.jsonArray
+        assertEquals(listOf("linux-ubuntu", "linux-ubuntu-chroot"),
+            backends.map { it.jsonObject["id"]!!.jsonPrimitive.content })
+        assertEquals("READY", backends[0].jsonObject["state"]!!.jsonPrimitive.content)
+        assertEquals("timed_out", backends[0].jsonObject["smoke"]!!.jsonPrimitive.content)
+        val advice = json["suggestion"]!!.jsonPrimitive.content
+        assertTrue(advice.contains("likely"))
+        assertTrue(advice.contains("linux-ubuntu-chroot"))
+        assertTrue(advice.contains("if superuser is granted"))
+    }
+
+    @Test
+    fun `ordinary binary error and healthy smoke never advise switching`() = runBlocking {
+        val runtime = FakeRuntime(listOf(TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", true, "READY")))
+        for ((status, expected) in listOf(
+            PRootSmokeProbe.Status.OK to "ok",
+            PRootSmokeProbe.Status.BINARY_ERROR to "binary_error"
+        )) {
+            val tool = TerminalBackendsTool(runtime, smokeProbe = {
+                PRootSmokeProbe.SmokeResult(status, if (status == PRootSmokeProbe.Status.BINARY_ERROR) 127 else 0)
+            })
+            val json = kotlinx.serialization.json.Json.parseToJsonElement(tool.invoke("{}")).jsonObject
+            assertEquals(expected, json["backends"]!!.jsonArray[0].jsonObject["smoke"]!!.jsonPrimitive.content)
+            assertNull("$status is not evidence for ptrace advice", json["suggestion"])
+        }
+    }
+
+    @Test
+    fun `availability-only discovery never starts the runtime probe`() = runBlocking {
+        var probes = 0
+        val tool = TerminalBackendsTool(
+            FakeRuntime(listOf(TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", false, "NEEDS_ROOTFS"))),
+            smokeProbe = { probes++; PRootSmokeProbe.SmokeResult(PRootSmokeProbe.Status.OK) }
+        )
+        val json = kotlinx.serialization.json.Json.parseToJsonElement(tool.invoke("{}")).jsonObject
+        assertEquals(0, probes)
+        assertNull(json["suggestion"])
+        assertNull(json["backends"]!!.jsonArray[0].jsonObject["smoke"])
     }
 }
