@@ -141,7 +141,7 @@ class SubAgentRunnerTest {
         assertEquals(4000, cfg.maxToolOutputLength)
         assertEquals(64_000, cfg.maxContextTokens)
         assertEquals(0.3f, cfg.temperature, 0.0001f)
-        assertEquals(setOf("CodeRead", "CodeGrep", "CodeGlob"), cfg.allowedToolIds)
+        assertEquals(setOf("CodeRepoMap", "CodeRead", "CodeGrep", "CodeGlob"), cfg.allowedToolIds)
         assertTrue(cfg.additionalSystemContext.contains("explore"))
         assertTrue(cfg.additionalSystemContext.contains("探索任务"))
         // 完整指令作为子代理引擎的第一条用户消息
@@ -155,7 +155,7 @@ class SubAgentRunnerTest {
         val runner = SubAgentRunner(rec.factory)
 
         runner.run(SubAgentRunner.SubAgentType.EXPLORE, "t", "p").getOrThrow()
-        assertEquals(setOf("CodeRead", "CodeGrep", "CodeGlob"), rec.configs.last().allowedToolIds)
+        assertEquals(setOf("CodeRepoMap", "CodeRead", "CodeGrep", "CodeGlob"), rec.configs.last().allowedToolIds)
 
         runner.run(SubAgentRunner.SubAgentType.RESEARCH, "t", "p").getOrThrow()
         assertEquals(setOf("WebSearch", "WebFetch", "HttpRequest"), rec.configs.last().allowedToolIds)
@@ -334,7 +334,7 @@ class SubAgentRunnerTest {
         assertTrue(output.contains("1 次工具调用"))
         assertTrue(output.contains("找到了 3 处引用"))
         // 委派链路：工厂收到 explore 工具集配置；引擎收到自包含指令
-        assertEquals(setOf("CodeRead", "CodeGrep", "CodeGlob"), rec.configs.single().allowedToolIds)
+        assertEquals(setOf("CodeRepoMap", "CodeRead", "CodeGrep", "CodeGlob"), rec.configs.single().allowedToolIds)
         assertTrue(rec.inputs.single().contains("loginUser"))
     }
 

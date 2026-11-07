@@ -1,6 +1,7 @@
 package com.apex.agent.core.codetools
 
 import com.apex.agent.core.codetools.diagnostics.CodeDiagnostics
+import com.apex.agent.core.codetools.repomap.CodeRepoMapTool
 import com.apex.agent.core.codetools.tools.CodeCheckTool
 import com.apex.agent.core.codetools.tools.CodeEditTool
 import com.apex.agent.core.codetools.tools.CodeGlobTool
@@ -39,6 +40,7 @@ object CodeTools {
         CodeWriteTool(roots, diagnostics),
         CodeGrepTool(roots),
         CodeGlobTool(roots),
+        CodeRepoMapTool(roots),
         CodeCheckTool(roots, diagnostics ?: CodeDiagnostics()),
         todo ?: CodeTodoTool()
     )
