@@ -117,7 +117,7 @@ object ExtensionTypes {
 
     /** 当前已注册适配器的类型（诚实能力面 —— resolve 前可查）。 */
     fun implemented(): Set<String> = setOf(
-        SKILL, MCP_CONNECTOR, OPENCODE_PLUGIN, CLAUDE_PLUGIN, DSH_PLUGIN
+        SKILL, MCP_CONNECTOR, OPENCODE_PLUGIN, CLAUDE_PLUGIN, DSH_PLUGIN, APK_PACKAGE
     )
 }
 

@@ -78,6 +78,8 @@ class MarketViewModel @Inject constructor(
     val registry: MarketRegistryController,
     // Operit 社区插件（GitHub 聚合，MCP 形态探测安装）——同构独立状态域
     val operit: MarketOperitController,
+    // 统一安装向导（市场完全重构 PR-C）：与 agent 侧三工具同一闸门实例
+    val extensionWizard: com.apex.agent.marketplace.ExtensionWizardController,
     // 语言切换：VM 侧消息（snackbar）按当前语言取词
     internal val languageManager: LanguageManager,
     // ── v2 认知市场：注入 cs-mem + 工具分析四件套（均为 @Singleton）──

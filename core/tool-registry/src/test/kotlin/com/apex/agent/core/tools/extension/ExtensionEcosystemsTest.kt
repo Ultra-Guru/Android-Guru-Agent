@@ -1,5 +1,6 @@
 package com.apex.agent.core.tools.extension
 
+import com.apex.agent.core.tools.extension.adapters.ApkPackageExtensionAdapter
 import com.apex.agent.core.tools.extension.adapters.ClaudeExtensionAdapter
 import com.apex.agent.core.tools.extension.adapters.DshExtensionAdapter
 import com.apex.agent.core.tools.extension.adapters.OpenCodeExtensionAdapter
@@ -288,5 +289,59 @@ description: PDF 处理方法论
         assertNull(ExtensionSpecParser.githubRepoOf("owner/repo/extra"))
         assertNull(ExtensionSpecParser.githubRepoOf("ow ner/repo"))
         assertNull(ExtensionSpecParser.githubRepoOf("owner/re po"))
+    }
+}
+
+// ═══ ⑦ APK 适配器（系统安装端口 fake，双重确认语义）═════════════════
+
+class ApkPackageExtensionAdapterTest {
+
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    private class FakeApkPort : ApkPackageExtensionAdapter.ApkInstallPort {
+        var initiated = 0
+        override suspend fun installApk(apkPath: String): Result<String> {
+            initiated++
+            return Result.success("系统安装器已发起（sessionId 模拟）")
+        }
+    }
+
+    @Test
+    fun `APK resolve 路径校验与指纹`() = runTest {
+        val adapter = ApkPackageExtensionAdapter(FakeApkPort())
+        // 非 .apk 拒绝
+        val notApk = tmp.newFile("plugin.zip")
+        assertTrue(adapter.resolve(ExtensionSpecParser.parse("apk:${notApk.absolutePath}").getOrThrow()).isFailure)
+        // 不存在拒绝
+        assertTrue(adapter.resolve(ExtensionSpecParser.parse("apk:/nonexistent/x.apk").getOrThrow()).isFailure)
+        // 合法
+        val apk = tmp.newFile("my-ext.apk")
+        val manifest = adapter.resolve(ExtensionSpecParser.parse("apk:${apk.absolutePath}").getOrThrow()).getOrThrow()
+        assertTrue(manifest.id.startsWith("apk.my-ext-"))
+        assertEquals(RuntimeDomains.ANDROID, manifest.runtime)
+        assertTrue("系统安装 = 生命周期副作用，必须确认", manifest.hasPostinstall)
+        assertTrue(manifest.permissions.contains("install-app"))
+    }
+
+    @Test
+    fun `APK install 双重确认语义`() = runTest {
+        val port = FakeApkPort()
+        val ledger = ExtensionRegistry(tmp.newFolder("apk-ledger"))
+        val installer = ExtensionInstaller(
+            ExtensionAdapterRegistry(listOf(ApkPackageExtensionAdapter(port))), ledger
+        )
+        val apk = tmp.newFile("signed-ext.apk")
+        val manifest = installer.resolve("apk:${apk.absolutePath}").getOrThrow()
+
+        // 无 confirm → 确认门拒绝（确认门在 ExtensionInstaller —— 走真实链路测）
+        assertTrue(installer.install(manifest.manifestHash).exceptionOrNull() is SecurityException)
+        assertEquals(0, port.initiated)
+        // confirm → 发起系统安装
+        val outcome = installer.install(manifest.manifestHash, confirmToken = "confirm").getOrThrow()
+        assertEquals(1, port.initiated)
+        assertTrue(outcome.where.contains("系统安装器"))
+        // 卸载诚实拒绝（系统级卸载不归闸门）
+        assertTrue(installer.uninstall(manifest.id).isFailure)
     }
 }

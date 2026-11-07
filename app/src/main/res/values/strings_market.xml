@@ -436,4 +436,11 @@
     <string name="market_skill_config_save">Save configuration</string>
     <string name="market_skill_config_saved">Configuration saved</string>
     <string name="market_skill_config_options">Options: %1$s</string>
+    <!-- ═══ Extension wizard (PR-C: unified install entry) ═══ -->
+    <string name="market_extension_wizard_entry">Universal install</string>
+    <string name="market_extension_wizard_title">Universal extension install</string>
+    <string name="market_extension_wizard_hint">npm:@scope/pkg / claude:name@marketplace / mcp:{…} / skill:url / dsh:pkg / github:owner/repo / apk:/path</string>
+    <string name="market_extension_wizard_grammar">One syntax for every ecosystem — resolves, previews what will be installed (registry / runtime / permissions / scripts), then installs through the same gate the agent uses.</string>
+    <string name="market_extension_wizard_confirm">I have shown the preview to the user and they agreed to install</string>
+    <string name="market_extension_wizard_preview">Preview</string>
 </resources>

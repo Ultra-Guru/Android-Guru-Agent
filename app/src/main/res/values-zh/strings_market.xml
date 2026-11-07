@@ -436,4 +436,11 @@
     <string name="market_skill_config_save">保存配置</string>
     <string name="market_skill_config_saved">配置已保存</string>
     <string name="market_skill_config_options">可选值：%1$s</string>
+    <!-- ═══ 统一安装向导（市场完全重构 PR-C）═══ -->
+    <string name="market_extension_wizard_entry">统一安装</string>
+    <string name="market_extension_wizard_title">统一扩展安装</string>
+    <string name="market_extension_wizard_hint">npm:@scope/pkg / claude:名字@市场 / mcp:{…} / skill:链接 / dsh:包名 / github:owner/repo / apk:/路径</string>
+    <string name="market_extension_wizard_grammar">一种语法装所有生态 —— 自动识别来源、预览将装内容（目标注册表 / 运行时域 / 权限 / 脚本），经与 Agent 相同的统一闸门安装。</string>
+    <string name="market_extension_wizard_confirm">我已把预览内容展示给用户，用户同意安装</string>
+    <string name="market_extension_wizard_preview">预览</string>
 </resources>
