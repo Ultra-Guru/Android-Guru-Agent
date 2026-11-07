@@ -45,6 +45,9 @@ object LlmErrorText {
     /** 空响应 / 解析失败。 */
     const val RESPONSE_INVALID = "模型返回了无效响应，请重试或更换模型"
 
+    /** 非流式响应超过安全上限。 */
+    const val RESPONSE_TOO_LARGE = "模型响应过大，请缩短请求或更换模型"
+
     /** Profile / Provider 配置非法。 */
     const val CONFIG_INVALID = "模型配置不完整，请在设置中检查模型配置"
 
@@ -150,6 +153,7 @@ object LlmErrorText {
             else -> withSummary("$REQUEST_REJECTED（HTTP ${e.code}）", e.body)
         }
         is LlmException.Network -> NETWORK_FAILED
+        is LlmException.ResponseTooLarge -> RESPONSE_TOO_LARGE
         is LlmException.EmptyResponse, is LlmException.EmptyBody, is LlmException.Parse ->
             RESPONSE_INVALID
     }

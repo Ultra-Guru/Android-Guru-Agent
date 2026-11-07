@@ -47,14 +47,16 @@ class StreamingOpenAiClient(
 
         val request = buildRequest(body)
         // #259：重试在 suspend 层（可取消的 delay 退避，总预算见 SuspendHttpRetry）
-        val response = SuspendHttpRetry.execute(config) { httpClient.newCall(request).await() }
-        val responseBody = response.body?.string() ?: throw LlmException.EmptyResponse()
-
-        if (!response.isSuccessful) {
-            throw LlmException.Http(response.code, responseBody)
+        return SuspendHttpRetry.execute(config) { httpClient.newCall(request).await() }.use { response ->
+            if (!response.isSuccessful) {
+                throw LlmException.Http(response.code, response.errorBodyHead())
+            }
+            val body = response.body ?: throw LlmException.EmptyResponse()
+            val bytes = body.byteStream().use { stream ->
+                BoundedReads.readAtMost(stream, MAX_NON_STREAM_RESPONSE_BYTES)
+            } ?: throw LlmException.ResponseTooLarge(MAX_NON_STREAM_RESPONSE_BYTES)
+            parseNonStreamResponse(bytes.toString(Charsets.UTF_8))
         }
-
-        return parseNonStreamResponse(responseBody)
     }
 
     // ═══ Tool System v4 — per-request tool choice（强制函数调用）═══
@@ -73,14 +75,16 @@ class StreamingOpenAiClient(
 
         val request = buildRequest(body)
         // #259：重试在 suspend 层（可取消的 delay 退避，总预算见 SuspendHttpRetry）
-        val response = SuspendHttpRetry.execute(config) { httpClient.newCall(request).await() }
-        val responseBody = response.body?.string() ?: throw LlmException.EmptyResponse()
-
-        if (!response.isSuccessful) {
-            throw LlmException.Http(response.code, responseBody)
+        return SuspendHttpRetry.execute(config) { httpClient.newCall(request).await() }.use { response ->
+            if (!response.isSuccessful) {
+                throw LlmException.Http(response.code, response.errorBodyHead())
+            }
+            val body = response.body ?: throw LlmException.EmptyResponse()
+            val bytes = body.byteStream().use { stream ->
+                BoundedReads.readAtMost(stream, MAX_NON_STREAM_RESPONSE_BYTES)
+            } ?: throw LlmException.ResponseTooLarge(MAX_NON_STREAM_RESPONSE_BYTES)
+            parseNonStreamResponse(bytes.toString(Charsets.UTF_8))
         }
-
-        return parseNonStreamResponse(responseBody)
     }
 
     override fun chatStream(
@@ -898,6 +902,8 @@ class StreamingOpenAiClient(
     }
 
     private companion object {
+        const val MAX_NON_STREAM_RESPONSE_BYTES = 8_000_000
+        const val MAX_ERROR_BODY_BYTES = 200
         /**
          * 已知接受 top_k / min_p / repetition_penalty 等非标准采样参数的 Provider。
          * OpenAI / Anthropic / Google / DeepSeek / OpenRouter 的官方端点不接受这些参数
@@ -921,6 +927,10 @@ class StreamingOpenAiClient(
             ReasoningEffort.MAX to 16384
         )
     }
+
+    private fun Response.errorBodyHead(): String = body?.byteStream()?.use { stream ->
+        BoundedReads.readHead(stream, MAX_ERROR_BODY_BYTES).toString(Charsets.UTF_8)
+    } ?: "Unknown error"
 }
 
 /**
@@ -943,6 +953,10 @@ sealed class LlmException(message: String, cause: Throwable? = null) : Exception
 
     /** 流式响应体为空。 */
     class EmptyBody : LlmException("Empty response body")
+
+    /** The endpoint returned more than the bounded non-stream response limit. */
+    class ResponseTooLarge(val limitBytes: Int) :
+        LlmException("Response body exceeds the $limitBytes-byte limit")
 
     /** 网络层错误（连接失败 / DNS / SocketTimeout 等），包装原始 [IOException]。 */
     class Network(cause: java.io.IOException) : LlmException("Network error: ${cause.message}", cause)
