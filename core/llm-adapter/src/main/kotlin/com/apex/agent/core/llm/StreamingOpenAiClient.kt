@@ -5,10 +5,11 @@ import com.apex.agent.core.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 import okhttp3.Call
 import okhttp3.Callback
@@ -18,6 +19,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.BufferedReader
+import java.io.IOException
 import java.io.InputStreamReader
 import kotlin.coroutines.coroutineContext
 import kotlin.coroutines.resume
@@ -102,13 +104,19 @@ class StreamingOpenAiClient(
         )
         val request = buildRequest(body)
 
-        val call = httpClient.newCall(request)
-        // #259：重试在 suspend 层（仅覆盖「响应头返回前」阶段；首 chunk 发射后
-        // 不重试——与旧拦截器语义一致）。取消传播：execute 内 delay 即挂起点。
-        val response = SuspendHttpRetry.execute(config) { call.await() }
+        // #762 第 4 项安全切片（#765）：OpenAI Chat Completions 的 POST 流式
+        // **没有**可依赖的稳定事件 ID / 断点续传 —— 断线（含响应头返回前的
+        // IOException）与可重试状态码（503 等）一律直接上抛，**绝不自动重放**。
+        // 重放 = 同一请求计两次费 + 已执行的工具副作用再执行一遍；且旧路径经
+        // SuspendHttpRetry 重试时复用同一 Call，会触发 OkHttp
+        // IllegalStateException("Already Executed")。是否重发由用户在 UI 手动决定。
+        val response = httpClient.newCall(request).await()
 
         if (!response.isSuccessful) {
-            val errorBody = response.body?.string() ?: "Unknown error"
+            // 错误体读取是阻塞 IO —— 包在 IO 调度器（本 flow 不再整体 flowOn，见下方读循环注释）
+            val errorBody = withContext(Dispatchers.IO) {
+                response.body?.string() ?: "Unknown error"
+            }
             response.close()
             throw LlmException.Http(response.code, errorBody)
         }
@@ -126,37 +134,64 @@ class StreamingOpenAiClient(
             ?.invokeOnCompletion { runCatching { response.close() } }
 
         try {
-            var line: String?
             // 末帧兜底（v1.5.x 修复）：部分网关（智谱等）把完整正文挂在最后一帧
             // 的 choice.message 上（增量 delta 缺失/为空）—— 记录本流是否见过
             // 增量正文，parseStreamChunk 据此决定是否用 message.content 兜底
             //（见过则不用，防正文重复一遍）。
             var sawDeltaContent = false
-            while (reader.readLine().also { line = it } != null) {
+            // 截断守卫（#762/#765）：本流是否见过任何服务端完成标记 ——
+            // `[DONE]` 帧或携带 finish_reason 的帧（stop / tool_calls / length /
+            // content_filter … 均算正常收尾；兼容发完 finish_reason 帧就断流、
+            // 不补 [DONE] 的网关）。
+            var sawFinish = false
+            // #765：SSE 逐行读取是阻塞 IO，但本 flow 不再用 flowOn(Dispatchers.IO)
+            // 整体搬运 —— flowOn 会在 emit 与收集者之间引入 ChannelFlow 中转，
+            // 上游「发完最后一块后立刻抛异常」（断线 / 截断守卫）时，异常投递
+            // 可能跑赢缓冲里的部分输出，把它整个丢掉 —— 恰好违背本 PR
+            // 「部分输出留存」的目标（复现：runTest 下约 1/3 概率丢块）。
+            // 改为仅把阻塞读取包进 withContext(IO)：发射是收集者上下文里的
+            // 直接挂起调用，「先收到部分输出、后收到异常」的顺序有了硬保证。
+            while (true) {
                 // 每行检查一次取消状态（readLine 阻塞期间靠上面的 invokeOnCompletion 兜底）
                 coroutineContext.ensureActive()
-                val currentLine = line ?: break
+                val currentLine = withContext(Dispatchers.IO) { reader.readLine() } ?: break
                 // 兼容 OpenAI SSE 规范允许的两种前缀：`data:` 与 `data: `。
                 // 旧实现只认 `data: `（带一个空格），部分代理发 `data:{...}` 会被静默丢弃。
                 if (!currentLine.startsWith("data:")) continue
 
                 val data = currentLine.removePrefix("data:").trim()
                 if (data == "[DONE]") {
+                    sawFinish = true
                     emit(LlmStreamChunk(isFinish = true))
                     break
                 }
 
                 parseStreamChunk(data, sawDeltaContent)?.let {
                     if (!it.content.isNullOrEmpty()) sawDeltaContent = true
+                    if (it.isFinish || it.finishReason != null) sawFinish = true
                     emit(it)
                 }
             }
+            // 截断守卫：EOF 前未见任何完成标记 —— 这不是一份完整回答。已发射
+            // 的部分输出不吞块（收集者已拿到、对话里原样保留），但流必须以异常
+            // 收尾，防止上层把残段当完整结果写进历史 / 触发后续工具轮次。
+            // 不自动重放（见上方请求阶段注释）；弱网下是否重发由用户手动决定。
+            if (!sawFinish) {
+                throw IOException(
+                    "SSE 流意外终止：未见完成标记（[DONE]/finish_reason），" +
+                        "输出可能被截断——已收到的部分内容已保留"
+                )
+            }
         } finally {
             cancelHandle?.dispose()
-            reader.close()
-            response.close()
+            // 关闭是阻塞 IO：即便协程已被取消也要完成（NonCancellable），
+            // 且 runCatching 防止 close 自身的异常掩盖真正的失败原因。
+            withContext(NonCancellable + Dispatchers.IO) {
+                runCatching { reader.close() }
+                runCatching { response.close() }
+            }
         }
-    }.flowOn(Dispatchers.IO)
+    }
 
     // ═══ 内部方法 ═══
     

@@ -626,6 +626,7 @@ jobs:
             :terminal-view:testDebugUnitTest \
             :platform:terminal:compileDebugAndroidTestKotlin \
             :core:agent-engine:test \
+            :core:llm-adapter:test \
             :core:code-tools:test \
             :core:code-engine:test \
             :core:tool-registry:test \
@@ -672,7 +673,7 @@ jobs:
           MISSING_TESTS=""
           for t in :app:testDebugUnitTest :platform:terminal:testDebugUnitTest \
                    :terminal-emulator:testDebugUnitTest :terminal-view:testDebugUnitTest \
-                   :core:agent-engine:test :core:code-tools:test :core:code-engine:test \
+                   :core:agent-engine:test :core:llm-adapter:test :core:code-tools:test :core:code-engine:test \
                    :core:tool-registry:test :platform:memory-host:testDebugUnitTest \
                    :platform:privilege:testDebugUnitTest :plugins:plugin-workflow:testDebugUnitTest; do
             grep -q "^> Task $t" build.log || MISSING_TESTS="$MISSING_TESTS $t"
