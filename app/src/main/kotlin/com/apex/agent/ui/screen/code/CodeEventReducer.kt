@@ -2,6 +2,7 @@ package com.apex.agent.ui.screen.code
 
 import com.apex.agent.R
 import com.apex.agent.core.codetools.tools.CodeTodoTool
+import com.apex.agent.core.code.stream.reconcileStreamText
 import com.apex.agent.core.engine.AgentEvent
 import kotlinx.coroutines.flow.update
 import kotlinx.serialization.json.Json
@@ -52,11 +53,28 @@ internal fun CodeViewModel.reduce(event: AgentEvent) {
         }
 
         is AgentEvent.ResponseComplete -> {
+            // ═══ P0 不丢字（Streaming Pipeline 2.0）═══
+            // TaskRuntime 高水位会丢弃 ResponseChunk 过程事件（契约：最终
+            // 文本由 Complete 的 fullText 全量携带）——收束时必须按
+            // [reconcileStreamText] 仲裁回填，否则被丢 chunk 永久缺字
+            //（旧实现只翻 isStreaming 标志，契约在这条路径上不成立）。
             _uiState.update { state ->
+                var repaired = false
                 state.copy(
-                    messages = state.messages.map { m ->
-                        if (m.isStreaming) m.copy(isStreaming = false) else m
-                    }
+                    messages = state.messages.asReversed().map { m ->
+                        if (!m.isStreaming) return@map m
+                        when {
+                            // 最后一条流式助手消息 = 本气泡：fullText 权威回填
+                            m.role == CodeChatMessage.Role.ASSISTANT && !repaired -> {
+                                repaired = true
+                                m.copy(
+                                    text = reconcileStreamText(m.text, event.fullText),
+                                    isStreaming = false
+                                )
+                            }
+                            else -> m.copy(isStreaming = false)
+                        }
+                    }.asReversed()
                 )
             }
             scheduleSessionPersist()

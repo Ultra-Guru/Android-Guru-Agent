@@ -95,3 +95,28 @@ CI 以原始字符计数检查 `.kt` 文件的括号配对（含字符串/注释
 - `StepMarkerCard`：步骤编号升级为带旗帜图标的胶囊徽章，层级更清晰；
 - `RunSummaryCard`：补充细描边，与文件操作卡/代码卡视觉同族；
 - 工具卡完成态耗时统一走 `formatDuration`（`1.2s` / `2m05s`），等宽字体对齐。
+
+---
+
+## 五、Streaming Pipeline 2.0 修订（2026-11，P0 正确性 + P1 聚合）
+
+> 本节对齐「Apex Streaming Engine 2.0」规格书的 P0/P1 条目。P0 已实施；P1 聚合已实施；增量 Markdown 渲染器与动态刷新频率留作独立后续（见文末路线）。
+
+### P0 内容完整性（不丢字）——已实施
+
+**问题实证**：`TaskRuntime` 高水位（1024）丢弃 `ResponseChunk/ThinkingChunk/ToolOutputChunk/ToolProgress`（`isDroppableUnderPressure`），其契约「丢过程不丢结果」依赖 UI 在 `ResponseComplete` 用 `fullText` 回填——但 `CodeEventReducer` 旧实现只翻 `isStreaming` 标志，被丢 chunk 在 messages 路径永久缺字（`ToolOutputChunk` 有 `ToolCallComplete.output` 自愈，`ThinkingChunk` 有胶囊侧 `fullThought` 回填，唯回复文本无修复）。
+
+**修复**：新增 `reconcileStreamText(accumulated, fullText)` 纯函数（CodeStreamModels，双端共用+单测）——`fullText` 非空即权威全文（引擎 contentBuilder 每轮迭代局部重建、气泡已按轮分立，跨轮覆写回归的根源已消除），空白时保留 UI 累积（反思修正轮文本可能从未流经引擎累积器）。`CodeEventReducer` 与 `CodeStreamSession` 两处收束统一走该仲裁。
+
+### P1 Event Aggregator——已实施
+
+**问题实证**：胶囊时间轴有 25ms（≤40Hz）渲染 ticker 攒批，但 messages 路径每 `ResponseChunk` 仍做一次 `_uiState.update` + 全消息列表拷贝 + 字符串追加（`CodeEventReducer.kt` 旧注释自认「不做 16ms 节流」）。
+
+**修复**：`CodeViewModel` 新增 `pendingResponseText` 聚合缓冲——`ResponseChunk` 只追加缓冲，渲染 ticker 每 25ms 批量归约；边界事件（工具开始/收束/错误/系统行插队/Complete/取消）强制先冲文本再归约，保顺序；`finally` 冲残留（取消时刷新已收到内容）。聚合只合并、不丢字。
+
+### 后续路线（独立任务）
+
+- **P1 增量 Markdown 渲染器**：现 `MarkdownText` 为 `remember(markdown)` 全量解析（流式尾段每 tick 重解析、有界但非增量）。方向：块级增量解析（已完成区块缓存 + 活动区块单独更新 + 未闭合围栏容错 + 代码块闭合后才语法高亮）。涉及 `MarkdownParser` 结构改造，独立 PR。
+- **P2 动态刷新频率**：25ms 固定档 → 按设备负载 16/25/33ms 自适应。
+- **P2 流式诊断**：首 token 延迟 / 数据间隔 / 丢弃计数上报诊断页（TaskRuntime 已有 droppedUnderPressure 日志，可结构化）。
+- **P2 长输出内存**：messages 路径的 4000 字工具输出截断已存在；长回复考虑分段落盘。

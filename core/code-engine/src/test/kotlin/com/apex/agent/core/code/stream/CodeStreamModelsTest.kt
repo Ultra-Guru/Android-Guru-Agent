@@ -103,6 +103,39 @@ class CodeStreamModelsTest {
     }
 
     @Test
+    fun `reconcile fullText extends accumulated prefix`() {
+        // 高水位尾部丢弃：fullText 是累积的真延长 → 采信引擎全文
+        assertEquals(
+            "今天上海的天气很好",
+            reconcileStreamText(accumulated = "今天上海", fullText = "今天上海的天气很好")
+        )
+        assertEquals("完整回复", reconcileStreamText("完整回", "完整回复"))
+    }
+
+    @Test
+    fun `reconcile blank fullText keeps accumulated`() {
+        // 反思修正轮等文本从未流经引擎累积器：fullText 空串不得清空 UI
+        assertEquals("用户看到的文本", reconcileStreamText("用户看到的文本", ""))
+        assertEquals("", reconcileStreamText("", ""))
+    }
+
+    @Test
+    fun `reconcile blank accumulated adopts fullText`() {
+        // 收集器全程缺席：UI 零累积 → 采信引擎全文
+        assertEquals("全文", reconcileStreamText("", "全文"))
+    }
+
+    @Test
+    fun `reconcile diverged texts keep accumulated`() {
+        // 引擎 fullText 与流式分片异源（末轮切片/反思轮）：用户所见优先，
+        // 盲信 fullText 会复现「跨轮结论截成末轮残句」的用户实测回归
+        assertEquals("结论如下：", reconcileStreamText("结论如下：", "好的"))
+        assertEquals("我先分析一下，结论如下：", reconcileStreamText("我先分析一下，结论如下：", "结论如下："))
+        val t = "同一段文本"
+        assertEquals(t, reconcileStreamText(t, t))
+    }
+
+    @Test
     fun `web search family classification`() {
         // 内置家族
         assertEquals(ToolKind.WEB_SEARCH, ToolKind.fromToolName("web_search"))
