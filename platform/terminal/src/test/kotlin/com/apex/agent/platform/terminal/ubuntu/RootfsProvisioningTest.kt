@@ -527,8 +527,7 @@ class RootfsProvisioningTest {
     @Test fun `repair restores a missing CA bundle in an otherwise ready legacy rootfs`() = kotlinx.coroutines.test.runTest {
         val layout = tempLayout()
         val trustedBundle = Files.createTempFile("t99-trusted-ca-", ".crt").toFile().apply {
-            writeText(requireNotNull(javaClass.getResourceAsStream("/isrg-root-x1.pem"))
-                .bufferedReader().use { it.readText() })
+            writeText(TestCaFixtures.isrgRootX1Pem)
         }
         var hostAvailable = false
         val configurator = RootfsConfigurator(

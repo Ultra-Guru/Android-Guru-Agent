@@ -10,6 +10,12 @@ import java.nio.file.Files
  */
 class RootfsConfiguratorTest {
 
+    /** Real ISRG Root X1 (Android system store shape); avoids resource/classpath coupling. */
+    private val rootX1: String by lazy {
+        requireNotNull(javaClass.getResourceAsStream("/isrg-root-x1.pem"))
+            .bufferedReader().use { it.readText() }
+    }
+
     private fun tmpRoot(): File {
         val root = Files.createTempDirectory("t72-cfg-").toFile()
         // minimal ubuntu-ish skeleton
@@ -107,8 +113,7 @@ class RootfsConfiguratorTest {
     @Test fun `empty legacy CA is repaired only from the trusted Android system store`() {
         val root = tmpRoot()
         val store = Files.createTempDirectory("android-system-cas-").toFile()
-        val pem = requireNotNull(javaClass.getResourceAsStream("/isrg-root-x1.pem"))
-            .bufferedReader().use { it.readText() }
+        val pem = TestCaFixtures.isrgRootX1Pem
         File(store, "aaaaaaaa.0").writeText(pem)
         File(store, "bbbbbbbb.0").writeText("-----BEGIN CERTIFICATE-----\ninvalid\n-----END CERTIFICATE-----\n")
         File(store, "rogue.pem").writeText(pem) // not a hashed system CA name
@@ -141,8 +146,7 @@ class RootfsConfiguratorTest {
 
     @Test fun `ca bundle copied when host provides one`() {
         val hostCa = Files.createTempFile("t72-ca", ".pem").toFile().apply {
-            writeText(requireNotNull(javaClass.getResourceAsStream("/isrg-root-x1.pem"))
-                .bufferedReader().use { it.readText() })
+            writeText(TestCaFixtures.isrgRootX1Pem)
         }
         val root = tmpRoot()
         val cfg = RootfsConfigurator(

@@ -300,7 +300,7 @@ class RootfsConfigurator(
         if (bytes.isEmpty() || bytes.size > MAX_CA_BYTES) return@runCatching false
         val certs = CertificateFactory.getInstance("X.509")
             .generateCertificates(bytes.inputStream())
-        certs.isNotEmpty() && certs.all { (it as? X509Certificate)?.basicConstraints?.let { bc -> bc >= 0 } == true }
+        certs.isNotEmpty() && certs.all { it is X509Certificate }
     }.getOrDefault(false)
 
     private fun trustedAndroidSystemCas(): ByteArray? {

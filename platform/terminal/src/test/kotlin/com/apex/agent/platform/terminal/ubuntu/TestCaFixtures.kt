@@ -1,4 +1,16 @@
------BEGIN CERTIFICATE-----
+package com.apex.agent.platform.terminal.ubuntu
+
+/**
+ * Public trust anchor (ISRG Root X1) for tests. Normalizes line endings because
+ * git on Windows may rewrite CRLF, which would corrupt PEM parsing.
+ */
+object TestCaFixtures {
+    /**
+     * ISRG Root X1 public trust anchor, normalized to LF (git may rewrite
+     * CRLF on Windows checkouts, which would corrupt PEM parsing).
+     */
+    val isrgRootX1Pem: String by lazy {
+        val pem = """-----BEGIN CERTIFICATE-----
 MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
 TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
 cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4
@@ -29,3 +41,7 @@ oyi3B43njTOQ5yOf+1CceWxG1bQVs5ZufpsMljq4Ui0/1lvh+wjChP4kqKOJ2qxq
 mRGunUHBcnWEvgJBQl9nJEiU0Zsnvgc/ubhPgXRR4Xq37Z0j4r7g1SgEEzwxA57d
 emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 -----END CERTIFICATE-----
+"""
+        pem.replace("\r\n", "\n")
+    }
+}
