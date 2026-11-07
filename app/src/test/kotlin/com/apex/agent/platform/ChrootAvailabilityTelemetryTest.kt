@@ -6,7 +6,7 @@ import com.apex.agent.platform.terminal.runtime.BackendRuntimeType
 import com.apex.agent.platform.terminal.runtime.ExecutionBackend
 import com.apex.agent.platform.terminal.runtime.SessionSpawnRequest
 import com.apex.agent.platform.terminal.runtime.SpawnSpec
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -21,7 +21,7 @@ class ChrootAvailabilityTelemetryTest {
             error("telemetry must not spawn sessions or execute su")
     }
 
-    @Test fun `ready is visible and missing su is explicitly off`() = runBlocking {
+    @Test fun `ready is visible and missing su is explicitly off`() = runTest {
         val state = ToolEnvironmentState()
         val backend = Backend(BackendAvailability.Ready)
         refreshChrootAvailability(backend, state)
@@ -35,7 +35,7 @@ class ChrootAvailabilityTelemetryTest {
         assertEquals(2, backend.lookups)
     }
 
-    @Test fun `rootfs pending and authorization unknown clear stale telemetry instead of denying`() = runBlocking {
+    @Test fun `rootfs pending and authorization unknown clear stale telemetry instead of denying`() = runTest {
         val state = ToolEnvironmentState()
         val backend = Backend(BackendAvailability.Ready)
         refreshChrootAvailability(backend, state)
@@ -49,7 +49,7 @@ class ChrootAvailabilityTelemetryTest {
         assertNull(state.get(ToolEnvironmentState.Flags.CHROOT_READY))
     }
 
-    @Test fun `missing backend and unexpected failure remain unknown`() = runBlocking {
+    @Test fun `missing backend and unexpected failure remain unknown`() = runTest {
         val state = ToolEnvironmentState()
         state.set(ToolEnvironmentState.Flags.CHROOT_READY, true)
         refreshChrootAvailability(null, state)

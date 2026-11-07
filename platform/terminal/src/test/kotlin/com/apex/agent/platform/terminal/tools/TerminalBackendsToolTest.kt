@@ -9,6 +9,7 @@ import com.apex.agent.platform.terminal.runtime.SpawnSpec
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
 import com.apex.agent.platform.terminal.tools.v2.TerminalBackendsTool
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -104,7 +105,7 @@ class TerminalBackendsToolTest {
     }
 
     @Test
-    fun `hung smoke appends advice without changing registered backend order or routing`() = runBlocking {
+    fun `hung smoke appends advice without changing registered backend order or routing`() = runTest {
         val runtime = FakeRuntime(listOf(
             TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", true, "READY"),
             TerminalRuntime.BackendStatus("linux-ubuntu-chroot", "LINUX", true, "READY")
@@ -125,7 +126,7 @@ class TerminalBackendsToolTest {
     }
 
     @Test
-    fun `ordinary binary error and healthy smoke never advise switching`() = runBlocking {
+    fun `ordinary binary error and healthy smoke never advise switching`() = runTest {
         val runtime = FakeRuntime(listOf(TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", true, "READY")))
         for ((status, expected) in listOf(
             PRootSmokeProbe.Status.OK to "ok",
@@ -141,7 +142,7 @@ class TerminalBackendsToolTest {
     }
 
     @Test
-    fun `availability-only discovery never starts the runtime probe`() = runBlocking {
+    fun `availability-only discovery never starts the runtime probe`() = runTest {
         var probes = 0
         val tool = TerminalBackendsTool(
             FakeRuntime(listOf(TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", false, "NEEDS_ROOTFS"))),

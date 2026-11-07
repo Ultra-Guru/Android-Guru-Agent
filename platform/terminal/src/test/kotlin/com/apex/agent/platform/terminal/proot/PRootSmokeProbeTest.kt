@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -68,7 +68,7 @@ class PRootSmokeProbeTest {
         processFactory = { argv, env -> onStart(argv, env); process }
     )
 
-    @Test fun `success runs true inside the installed rootfs without changing backend`() = runBlocking {
+    @Test fun `success runs true inside the installed rootfs without changing backend`() = runTest {
         val process = ScriptedProcess(true)
         var argv: List<String>? = null
         var env: Map<String, String>? = null
@@ -80,7 +80,7 @@ class PRootSmokeProbeTest {
         assertFalse(process.destroyed)
     }
 
-    @Test fun `hung process is bounded and forcibly destroyed without claiming ptrace proof`() = runBlocking {
+    @Test fun `hung process is bounded and forcibly destroyed without claiming ptrace proof`() = runTest {
         val process = ScriptedProcess(false)
         val result = probe(process).probe()
         assertEquals(PRootSmokeProbe.Status.TIMED_OUT, result.status)
@@ -88,7 +88,7 @@ class PRootSmokeProbeTest {
         assertTrue(process.destroyed)
     }
 
-    @Test fun `ptrace-related signal is distinct from ordinary binary failure`() = runBlocking {
+    @Test fun `ptrace-related signal is distinct from ordinary binary failure`() = runTest {
         assertEquals(PRootSmokeProbe.Status.PTRACE_SIGNAL, probe(ScriptedProcess(true, 133)).probe().status)
         assertEquals(PRootSmokeProbe.Status.PTRACE_SIGNAL, probe(ScriptedProcess(true, 159)).probe().status)
         val ordinary = probe(ScriptedProcess(true, 127)).probe()
@@ -96,14 +96,14 @@ class PRootSmokeProbeTest {
         assertEquals(127, ordinary.exitCode)
     }
 
-    @Test fun `probe skips missing rootfs without spawning`() = runBlocking {
+    @Test fun `probe skips missing rootfs without spawning`() = runTest {
         var starts = 0
         val result = probe(ScriptedProcess(true), rootfsReady = false, onStart = { _, _ -> starts++ }).probe()
         assertEquals(PRootSmokeProbe.Status.NOT_READY, result.status)
         assertEquals(0, starts)
     }
 
-    @Test fun `ttl reuses result then expiry and explicit invalidation reprobe`() = runBlocking {
+    @Test fun `ttl reuses result then expiry and explicit invalidation reprobe`() = runTest {
         var now = 100L
         var starts = 0
         val probe = probe(ScriptedProcess(true), clock = { now }, onStart = { _, _ -> starts++ })
@@ -119,7 +119,7 @@ class PRootSmokeProbeTest {
         assertEquals(3, starts)
     }
 
-    @Test fun `cancellation interrupts wait and kills in-flight child`() = runBlocking {
+    @Test fun `cancellation interrupts wait and kills in-flight child`() = runTest {
         val started = CountDownLatch(1)
         val process = object : Process() {
             @Volatile var destroyed = false
