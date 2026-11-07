@@ -36,6 +36,8 @@ sealed interface ToolKind {
     data object EDIT_FILE : ToolKind
     /** 内容搜索（CodeGrep / grep_search）。 */
     data object GREP_SEARCH : ToolKind
+    /** 网络搜索/网页读取（内置 WebSearch/WebFetch + 搜索 MCP 的 web_search/web_read）。 */
+    data object WEB_SEARCH : ToolKind
     /** 终端会话命令（TerminalExec / ShellExecute）。 */
     data object BASH : ToolKind
     /** git 操作（git / CodeGitDiff）。 */
@@ -68,6 +70,13 @@ sealed interface ToolKind {
                     key == "multiedit" -> EDIT_FILE
                 key == "codegrep" || key == "grep" || key == "search" ||
                     key == "grepsearch" -> GREP_SEARCH
+                // 网络搜索族（2026-11 搜索专属流水式输出）：内置 WebSearch/
+                // WebFetch + 搜索 MCP 的 web_* 工具（Searchlight/Agent Search/
+                // free-search-mcp 均按 web_search/web_read 命名惯例）。
+                // 用 endsWith 而非 contains——不误吞 grep_search 这类同尾工具
+                key == "websearch" || key == "webfetch" || key == "searchhint" ||
+                    key.endsWith("websearch") || key.endsWith("webread") ||
+                    key.endsWith("webfetch") || key.contains("searxng") -> WEB_SEARCH
                 key == "terminalexec" || key == "shellexecute" || key == "bash" ||
                     key == "shell" || key == "execute" -> BASH
                 key.startsWith("codegit") || key == "git" -> GIT

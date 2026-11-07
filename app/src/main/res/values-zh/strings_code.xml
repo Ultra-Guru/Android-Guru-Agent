@@ -246,6 +246,7 @@
     <string name="code_stream_detail_grep_empty">未捕获到命中结果</string>
     <string name="code_stream_detail_terminal_title">终端输出</string>
     <string name="code_stream_detail_output_title">工具输出</string>
+    <string name="code_stream_detail_search_title">搜索结果</string>
     <!-- ═══ Git 操作可视化卡（流水式 Git 可视化）═══ -->
     <string name="code_git_visual_status">分支状态</string>
     <string name="code_git_visual_commit">已提交</string>
@@ -428,6 +429,7 @@
     <string name="code_stream_kind_write">写入</string>
     <string name="code_stream_kind_edit">编辑</string>
     <string name="code_stream_kind_grep">搜索</string>
+    <string name="code_stream_kind_web">网页搜索</string>
     <string name="code_stream_kind_bash">命令</string>
     <string name="code_stream_kind_git">Git</string>
     <string name="code_stream_kind_lint">Lint</string>
