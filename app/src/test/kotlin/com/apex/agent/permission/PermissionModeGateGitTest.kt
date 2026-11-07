@@ -124,7 +124,10 @@ class PermissionModeGateGitTest {
 
     @Test
     fun `DEFAULT 下 LOCAL_WRITE 走原有会话记忆流程`() = runTest {
-        val (g, gw) = gate(PermissionMode.DEFAULT)
+        // 用户点「本会话允许」→ 会话记忆生效(与破坏性命令的逐次语义对比)
+        val (g, gw) = gate(PermissionMode.DEFAULT) { q ->
+            AgentAnswer(questionId = q.id, selectedOptionId = "allow_session")
+        }
         val first = g.checkDetailed(FakeGitRunTool(), args("add -A"))
         assertTrue(first is PermissionModeGate.DetailedDecision.ExplicitAllow)
         val second = g.checkDetailed(FakeGitRunTool(), args("commit -m x"))
@@ -132,6 +135,17 @@ class PermissionModeGateGitTest {
         // 第一次弹窗 + 会话记忆第二次免问(与破坏性命令的逐次语义形成对比)
         assertEquals(1, gw.questions.size)
         assertEquals(1, g.sessionAllowedSnapshot().size)
+    }
+
+    @Test
+    fun `DEFAULT 下 LOCAL_WRITE 仅允许一次则逐次再问`() = runTest {
+        val (g, gw) = gate(PermissionMode.DEFAULT) { q ->
+            AgentAnswer(questionId = q.id, selectedOptionId = "allow_once")
+        }
+        assertTrue(g.checkDetailed(FakeGitRunTool(), args("add -A")) is PermissionModeGate.DetailedDecision.ExplicitAllow)
+        assertTrue(g.checkDetailed(FakeGitRunTool(), args("commit -m x")) is PermissionModeGate.DetailedDecision.ExplicitAllow)
+        assertEquals(2, gw.questions.size)
+        assertTrue("allow_once 不写会话记忆", g.sessionAllowedSnapshot().isEmpty())
     }
 
     @Test

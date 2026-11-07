@@ -17,8 +17,10 @@ class GithubTerminalEnvInjectorTest {
 
     @Test
     fun `askpass 路径注入且 PAT 不进 env`() {
+        // 首词必须是 git/gh(与 runner/spawner 的真实调用形态一致——runner 传
+        // "git ..." 全串,spawner 传终端命令原串按首词判定)
         val env = GithubTerminalEnvInjector.inject(
-            mapOf("PATH" to "/usr/bin"), "push origin main", "/tmp/guru-askpass-1.sh"
+            mapOf("PATH" to "/usr/bin"), "git push origin main", "/tmp/guru-askpass-1.sh"
         )
         assertEquals("/tmp/guru-askpass-1.sh", env["GIT_ASKPASS"])
         assertEquals("0", env["GIT_TERMINAL_PROMPT"])
