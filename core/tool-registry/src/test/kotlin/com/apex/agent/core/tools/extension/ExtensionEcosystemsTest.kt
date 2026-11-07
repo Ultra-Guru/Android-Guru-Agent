@@ -358,6 +358,15 @@ class ExtensionRunToolTest {
         var lastCommand: List<String>? = null
         override suspend fun exec(command: List<String>, cwd: File, timeoutMs: Long): Result<NodeInstallPort.ExecOutcome> {
             lastCommand = command
+            // npm 形态模拟真实安装产物：node_modules/<pkg>/index.js + package.json(main)
+            if (command.firstOrNull() == "npm") {
+                val prefix = command[command.indexOf("--prefix") + 1]
+                val pkg = command.last()
+                val pkgDir = File(prefix, "node_modules/" + pkg)
+                pkgDir.mkdirs()
+                File(pkgDir, "index.js").writeText("// fake plugin entry")
+                File(pkgDir, "package.json").writeText("{}")
+            }
             return Result.success(NodeInstallPort.ExecOutcome(0, "ran ok", ""))
         }
         override suspend fun probeRuntime() = NodeInstallPort.RuntimeProbe("v22", "10")
@@ -425,8 +434,9 @@ class ExtensionRunToolTest {
         profileFile.writeText("""{"runtime":"node","entryHint":"/etc/passwd"}""")
         val tool = ExtensionRunTool(ledger, layout, port)
 
+        val beforeRun = port.lastCommand
         val result = tool.executeStructured("""{"id":"opencode.evil-pkg"}""")
         assertTrue("entry 逃逸必须被归属校验拦截: ${result.render()}", !result.isSuccess)
-        assertTrue("恶意命令不得执行", port.lastCommand == null)
+        assertEquals("篡改后的 entry 不得触发任何执行", beforeRun, port.lastCommand)
     }
 }
