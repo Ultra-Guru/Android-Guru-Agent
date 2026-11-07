@@ -49,10 +49,23 @@ internal object ChrootMountScript {
         "  [ \"\$mi_seen\" = 1 ] || return 1",
         "  printf '%s' \"\$mi_found\"",
         "}",
+        "mount_count() {",
+        "  [ -r \"\$MI\" ] || return 1",
+        "  mi_n=0",
+        "  while IFS=' ' read -r mi_id mi_parent mi_device mi_root mi_target mi_options mi_rest; do",
+        "    case \"\$mi_id\" in ''|*[!0-9]*) return 1 ;; esac",
+        "    [ \"\$mi_target\" = \"\$1\" ] && mi_n=\$((mi_n + 1))",
+        "  done < \"\$MI\"",
+        "  printf '%s' \"\$mi_n\"",
+        "}",
         "rollback_mount() {",
         "  rollback_id=\"\$2\"",
         "  rollback_current=\"\$(mount_id \"\$MI_R/\$1\")\" || return 1",
         "  [ -n \"\$rollback_id\" ] && [ \"\$rollback_current\" = \"\$rollback_id\" ] || return 1",
+        // We only reach a bind when no mount existed, so exactly one entry must
+        // still be ours. Anything more means a foreign overmount raced in: never
+        // umount a target we cannot attribute (fail closed, leak ours instead).
+        "  [ \"\$(mount_count \"\$MI_R/\$1\")\" = 1 ] || return 1",
         "  umount \"\$R/\$1\" 2>/dev/null",
         "}",
         "ensure_mount() {",

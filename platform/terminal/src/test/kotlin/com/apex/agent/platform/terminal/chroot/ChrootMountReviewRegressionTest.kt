@@ -129,7 +129,12 @@ printf 'umount %s\n' "§1" >> "§OPS"
         val table = table("mi-overmount")
         val ops = File(tmp.root, "ops-overmount").apply { writeText("") }
         val binaries = bin()
-        File(binaries, "mount").appendText("printf '999 1 0:1 / %s rw - other fake rw\\n' \"\$actual\" >> \"\$TABLE\"\n")
+        // Race model: our bind (ID 2) lands, then a foreign overmount (ID 999)
+        // appears on the same target before the marker write fails. mount_id()
+        // returns the last ID, so a correct rollback must compare IDs and refuse.
+        File(binaries, "mount").appendText(
+            "printf '999 1 0:1 / %s rw - other fake rw\\n' \"\$actual\" >> \"\$TABLE\"\n"
+        )
         assertEquals(1, run(script(root, table), binaries, table, ops))
         assertFalse("never detach an unrelated overmount", ops.readLines().any { it.startsWith("umount ") })
         assertTrue(table.readText().contains("999 1 0:1 / ${root.absolutePath}/proc"))
