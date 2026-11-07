@@ -332,7 +332,7 @@ class ApkPackageExtensionAdapterTest {
             ExtensionAdapterRegistry(listOf(ApkPackageExtensionAdapter(port))), ledger
         )
         val apk = tmp.newFile("signed-ext.apk")
-        val manifest = installer.resolve(ExtensionSpecParser.parse("apk:${apk.absolutePath}").getOrThrow()).getOrThrow()
+        val manifest = installer.resolve("apk:${apk.absolutePath}").getOrThrow()
 
         // 无 confirm → 确认门拒绝（确认门在 ExtensionInstaller —— 走真实链路测）
         assertTrue(installer.install(manifest.manifestHash).exceptionOrNull() is SecurityException)
