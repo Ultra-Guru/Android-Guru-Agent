@@ -369,6 +369,7 @@ class PRootArgvCapabilitiesTest {
     @Test
     fun `real separator process holding stdout open cannot block capability discovery`() {
         org.junit.Assume.assumeTrue("需要 /bin/sh 的 JVM 沙箱", File("/bin/sh").exists())
+        org.junit.Assume.assumeTrue("需要 /bin/kill 的 JVM 沙箱", File("/bin/kill").exists())
         val dir = tmp.newFolder().apply { dummyTalloc(this) }
         val binary = File(dir, "libproot.so").apply {
             writeText("#!/bin/sh\nif [ \"\$1\" = '--kill-on-exit' ]; then exit 0; fi\n" +
@@ -391,12 +392,13 @@ class PRootArgvCapabilitiesTest {
             assertTrue("the quick option probe still succeeds", capabilities.supportsKillOnExit)
             assertFalse("timed-out separator must be omitted", capabilities.supportsOptionSeparator)
             val pid = pidFile.readText().trim().toLong()
-            assertFalse("timed-out tracer must be reaped", ProcessHandle.of(pid).orElseThrow().isAlive)
+            assertTrue("timed-out tracer must be reaped",
+                ProcessBuilder("/bin/kill", "-0", pid.toString()).start().waitFor() != 0)
         } finally {
             // RED run on the old implementation still owns a sleeping real process.
             // Kill it to unblock readText and let the Actions runner exit cleanly.
             pidFile.takeIf { it.exists() }?.readText()?.trim()?.toLongOrNull()?.let { pid ->
-                ProcessHandle.of(pid).ifPresent { it.destroyForcibly() }
+                ProcessBuilder("/bin/kill", "-9", pid.toString()).start().waitFor()
             }
             executor.shutdownNow()
         }
