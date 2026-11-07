@@ -131,6 +131,32 @@ class RootfsConfiguratorTest {
         assertFalse("second repair must not replace bundle", cfg.repairCaIfMissing(root))
     }
 
+    @Test fun `repaired CA bundle is readable by non-root guest processes`() {
+        val root = tmpRoot()
+        val host = Files.createTempFile("trusted-host-ca", ".pem").toFile().apply {
+            writeText(TestCaFixtures.isrgRootX1Pem)
+        }
+        assertTrue(RootfsConfigurator(hostCaBundle = { host }).repairCaIfMissing(root))
+        val guest = File(root, "etc/ssl/certs/ca-certificates.crt")
+        val mode = Files.getPosixFilePermissions(guest.toPath())
+        assertTrue("other users must read CA", java.nio.file.attribute.PosixFilePermission.OTHERS_READ in mode)
+        assertTrue("group must read CA", java.nio.file.attribute.PosixFilePermission.GROUP_READ in mode)
+    }
+
+    @Test fun `disabled system CA is not restored from raw system directory`() {
+        val root = tmpRoot()
+        val base = Files.createTempDirectory("android-system-ca-disabled-").toFile()
+        val store = File(base, "cacerts").apply { mkdirs() }
+        File(store, "aaaaaaaa.0").writeText(TestCaFixtures.isrgRootX1Pem)
+        // Android's SystemCertificateSource checks the user's cacerts-removed;
+        // a raw directory scan would incorrectly resurrect this disabled anchor.
+        File(base, "cacerts-removed").mkdirs()
+        File(base, "cacerts-removed/aaaaaaaa.0").writeText(TestCaFixtures.isrgRootX1Pem)
+        val cfg = RootfsConfigurator(hostCaBundle = { null }, androidSystemCaDirs = { listOf(store) })
+        assertFalse(cfg.repairCaIfMissing(root))
+        assertFalse(File(root, "etc/ssl/certs/ca-certificates.crt").exists())
+    }
+
     @Test fun `CA repair refuses symlink target and does not write outside rootfs`() {
         val root = tmpRoot()
         val outside = Files.createTempFile("outside-rootfs-", ".crt").toFile().apply { writeText("external") }
