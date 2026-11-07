@@ -207,7 +207,7 @@ class NativeLibraryPRootBinaryProvider(
         private fun defaultKillOnExitProbe(binary: File, hostEnv: PRootHostEnvironment): Boolean? {
             return try {
                 val envMap = probeEnv(hostEnv) ?: return null
-                val proc = startProbe(listOf(binary.absolutePath, KILL_ON_EXIT_OPTION, "--version"), envMap)
+                val proc = startProbe(listOf(binary.absolutePath, KILL_ON_EXIT_OPTION, "--version"), envMap, hostEnv)
                 boundedExit(proc)
             } catch (e: Exception) {
                 null
@@ -228,7 +228,7 @@ class NativeLibraryPRootBinaryProvider(
             val envMap = probeEnv(hostEnv) ?: return null
             for (shell in SEPARATOR_PROBE_SHELLS) {
                 val supported = try {
-                    boundedExit(startProbe(listOf(binary.absolutePath, "--", shell, "-c", "true"), envMap))
+                    boundedExit(startProbe(listOf(binary.absolutePath, "--", shell, "-c", "true"), envMap, hostEnv))
                 } catch (e: Exception) {
                     null
                 }
@@ -254,11 +254,13 @@ class NativeLibraryPRootBinaryProvider(
          * 挂起的 tracer 拿着 stdout 管道不吐 EOF，readText 永不返回，10s 截止
          * 从未到达 → 探针把 availability/create 冻住（T99 RED 回归锁的根因）。
          */
-        private fun startProbe(argv: List<String>, env: Map<String, String>): Process =
+        private fun startProbe(argv: List<String>, env: Map<String, String>, hostEnv: PRootHostEnvironment): Process =
             startProbe(argv, env, File(hostEnv.prootTmpDir, "pr99-probe.out"))
 
-        private fun startProbe(argv: List<String>, env: Map<String, String>, output: File): Process =
-            ProcessBuilder(argv).withCapture(env) { it.redirectOutput(ProcessBuilder.Redirect.to(output)) }
+        private fun startProbe(argv: List<String>, env: Map<String, String>, output: File): Process {
+            if (output.parentFile?.isDirectory != true) output.parentFile?.mkdirs()
+            return ProcessBuilder(argv).withCapture(env) { it.redirectOutput(ProcessBuilder.Redirect.to(output)) }
+        }
 
         private fun ProcessBuilder.withCapture(
             env: Map<String, String>,
