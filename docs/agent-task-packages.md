@@ -1,5 +1,23 @@
 # Agent Task Packages —— 方案到实施的 Agent 可执行分解规范
 
+> ### 🗺️ 系列导读 —— 本文档属于「四份姊妹 Spec」批次（2026-11）
+>
+> | # | 文档 | 管什么 |
+> |---|------|--------|
+> | ① | **本文（系列方法论）** | spec → Agent 任务包的分解规范：六条硬约束 + 分解四步法 + 执行协议 + 反模式清单 |
+> | ② | [`terminal/TERMINAL_CHROOT_MATURITY_T99.md`](terminal/TERMINAL_CHROOT_MATURITY_T99.md) | 运行时纵深：chroot 后端生产化 —— T98 自认六缺口的逐条清偿（su 统一 / 授权缓存 / 挂载自愈 / 冒烟探针 / CA bundle / 遥测接活） |
+> | ③ | [`permission-degradation-ladder.md`](permission-degradation-ladder.md) | 运行时纵深：未授权诚实降级 —— 六域声明式阶梯 + 选路归一 + 错误类型化 + 能力面统一 |
+> | ④ | [`readme-v3-beautify.md`](readme-v3-beautify.md) | 展示层：README v3 美化 —— 数据治理 → 素材激活 → 结构重组 → 视觉升级 |
+>
+> **推荐阅读顺序**：本文先行（②③④ 的「实施分解」节均按本文的任务包结构撰写，
+> 每包 ≤3 文件 / 验收可脚本化 / 回滚无残留）→ ② 与 ③ 可任选或并行（二者共享
+> `SuAuthorizationCache` 与统一 su 候选表，交叉点与边界已在 ③ 的 §8 声明）→
+> ④ 独立（展示层，随时可做）。四份可独立采纳，不互相阻塞。
+>
+> **系列来源**：源自仓库主人 2026-11 的方案讨论链（chroot 实现 → Ubuntu 本地
+> 化 → 最优方案创新 → Agent 任务化执行 → 未授权降级语义 → README 美化参考），
+> 逐环收敛为可评审、可分包实施、可独立回滚的 spec。
+
 > 状态：**Spec（待评审）**。回答一个反复出现的问题：仓库主人审阅一份
 > spec（如 `docs/terminal/TERMINAL_CHROOT_MATURITY_T99.md`）后说
 > 「我用 agent 完成」——那么这份 spec 必须先被分解成**Agent 真正能
