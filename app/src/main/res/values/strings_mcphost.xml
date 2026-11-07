@@ -14,6 +14,16 @@
     <string name="mcphost_rate_label">Rate limit (req/min)</string>
     <string name="mcphost_field_range">Enter %1$d–%2$d</string>
 
+    <!-- ═══ S-04: binding & exposure switches ═══ -->
+    <string name="mcphost_lan_label">Allow LAN access (bind all interfaces)</string>
+    <string name="mcphost_lan_warning">⚠️ Traffic is plain HTTP — anyone on the same network can intercept it. Default binding is loopback-only (127.0.0.1); PC clients need this switch on a trusted network (an SSH tunnel is safer).</string>
+    <string name="mcphost_write_label">Expose write/exec tools</string>
+    <string name="mcphost_write_hint">Off by default: file writes, git commits and other side-effect tools are not exposed to external AI; read-only tools are unaffected. High-risk tools (delete / uninstall / force-stop) are never exposed.</string>
+    <string name="mcphost_enable_confirm_title">Enable MCP Host?</string>
+    <string name="mcphost_enable_confirm_text">Starts a local HTTP server on port %1$d. Every request must carry the bearer token. Default binding is loopback-only; only read-only tools are exposed by default (write tools need their own switch, high-risk tools are never exposed).</string>
+    <string name="mcphost_enable_confirm_ok">Enable</string>
+    <string name="mcphost_enable_confirm_cancel">Not now</string>
+
     <!-- ═══ Token row ═══ -->
     <string name="mcphost_token_label">Access token (bearer)</string>
     <string name="mcphost_token_show">Show token</string>
@@ -41,7 +51,7 @@
 
     <!-- ═══ How to connect ═══ -->
     <string name="mcphost_connect_title">How to connect (PC side)</string>
-    <string name="mcphost_connect_hint">Add this server in Cline / Claude Desktop (mcp-remote) with the JSON below. Phone and PC must be on the same LAN; keep this app alive while connected.</string>
+    <string name="mcphost_connect_hint">Add this server in Cline / Claude Desktop (mcp-remote) with the JSON below. Phone and PC must be on the same LAN with "Allow LAN access" enabled (default binding is loopback-only); keep this app alive while connected.</string>
     <string name="mcphost_connect_ip_placeholder">phone-ip</string>
     <string name="mcphost_connect_json">{
   \"mcpServers\": {
