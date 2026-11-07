@@ -48,7 +48,7 @@
 
     <!-- ═══ 市场 · 插件 ═══ -->
     <string name="market_plugins_empty_hint">未发现已安装的 Apex 插件（安装包含 PLUGIN intent 服务的插件 APK 后自动出现）</string>
-    <string name="market_plugins_header">通过 PLUGIN intent 服务发现的 Apex 插件。加载会验证插件 APK 与服务连通；Agent 工具桥接建设中（暂不能通过 /plugin: 执行工具）。</string>
+    <string name="market_plugins_header">经 PLUGIN intent 服务发现的 Apex 插件。加载会验证插件 APK 与服务连通；插件声明的工具会注册进 Agent 工具面（经 ToolSearch 渐进披露可调用），插件进程死亡时自动降级为宿主直调。</string>
 
     <!-- ═══ 市场 · Skills（本地源）═══ -->
     <string name="market_skills_action_github">GitHub 获取</string>

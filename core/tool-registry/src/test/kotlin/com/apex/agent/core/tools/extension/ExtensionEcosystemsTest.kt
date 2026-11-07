@@ -1,6 +1,7 @@
 package com.apex.agent.core.tools.extension
 
 import com.apex.agent.core.tools.extension.adapters.ApkPackageExtensionAdapter
+import com.apex.agent.core.tools.extension.tools.ExtensionRunTool
 import com.apex.agent.core.tools.extension.adapters.ClaudeExtensionAdapter
 import com.apex.agent.core.tools.extension.adapters.DshExtensionAdapter
 import com.apex.agent.core.tools.extension.adapters.OpenCodeExtensionAdapter
@@ -343,5 +344,87 @@ class ApkPackageExtensionAdapterTest {
         assertTrue(outcome.where.contains("系统安装器"))
         // 卸载诚实拒绝（系统级卸载不归闸门）
         assertTrue(installer.uninstall(manifest.id).isFailure)
+    }
+}
+
+// ═══ ⑧ ExtensionRun —— ubuntu 域扩展运行入口（方向②执行桥生产化）══════
+
+class ExtensionRunToolTest {
+
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    private class FakeRunPort : NodeInstallPort {
+        var lastCommand: List<String>? = null
+        override suspend fun exec(command: List<String>, cwd: File, timeoutMs: Long): Result<NodeInstallPort.ExecOutcome> {
+            lastCommand = command
+            return Result.success(NodeInstallPort.ExecOutcome(0, "ran ok", ""))
+        }
+        override suspend fun probeRuntime() = NodeInstallPort.RuntimeProbe("v22", "10")
+    }
+
+    /** 走真实 OpenCode 适配器安装（生成 profile 元数据），再记账本供 RunTool 寻址。 */
+    private fun installOpencodePlugin(port: FakeRunPort, layout: ExtensionDirLayout, pkgName: String): ExtensionRegistry {
+        val adapter = OpenCodeExtensionAdapter(port, layout)
+        val manifest = adapter.resolve(ExtensionSpecParser.parse("npm:$pkgName").getOrThrow()).getOrThrow()
+        adapter.install(manifest).getOrThrow()
+        val ledger = ExtensionRegistry(tmp.newFolder("run-ledger"))
+        ledger.record(
+            ExtensionRegistry.Record(
+                id = manifest.id, type = manifest.type, spec = manifest.spec,
+                name = manifest.name, version = manifest.version, runtime = manifest.runtime,
+                sourceKind = manifest.sourceKind, installedAt = System.currentTimeMillis()
+            )
+        )
+        return ledger
+    }
+
+    @Test
+    fun `Run npm 扩展 node 入口白名单执行`() = runTest {
+        val port = FakeRunPort()
+        val layout = newLayout()
+        val ledger = installOpencodePlugin(port, layout, "scope-tool")
+        val tool = ExtensionRunTool(ledger, layout, port)
+
+        val result = tool.executeStructured("""{"id":"opencode.scope-tool"}""")
+        assertTrue("应成功执行: ${result.render()}", result.isSuccess)
+        assertEquals("node", port.lastCommand!!.first())
+        assertTrue(port.lastCommand!!.any { it.contains("node_modules") || it.contains("pkg") })
+    }
+
+    @Test
+    fun `Run 未安装与 android 域诚实拒绝`() = runTest {
+        val port = FakeRunPort()
+        val layout = newLayout()
+        val ledger = ExtensionRegistry(tmp.newFolder("run-ledger-2"))
+        ledger.record(
+            ExtensionRegistry.Record(
+                id = "skill.some-skill", type = "skill", spec = "x", name = "x", version = "1",
+                runtime = RuntimeDomains.ANDROID, sourceKind = SourceKinds.JSON, installedAt = 1L
+            )
+        )
+        val tool = ExtensionRunTool(ledger, layout, port)
+
+        val missing = tool.executeStructured("""{"id":"opencode.ghost"}""")
+        assertTrue(missing.error != null)
+
+        val android = tool.executeStructured("""{"id":"skill.some-skill"}""")
+        assertTrue(android.error != null)
+        assertTrue(android.error!!.render().contains("android 域"))
+    }
+
+    @Test
+    fun `Run profile 元数据被篡改指向外部脚本 拒绝`() = runTest {
+        val port = FakeRunPort()
+        val layout = newLayout()
+        val ledger = installOpencodePlugin(port, layout, "evil-pkg")
+        // 篡改 profile：entryHint 指向账本目录之外
+        val profileFile = layout.profileFile("opencode.evil-pkg", "opencode.json").getOrThrow()
+        profileFile.writeText("""{"runtime":"node","entryHint":"/etc/passwd"}""")
+        val tool = ExtensionRunTool(ledger, layout, port)
+
+        val result = tool.executeStructured("""{"id":"opencode.evil-pkg"}""")
+        assertTrue("entry 逃逸必须被归属校验拦截: ${result.render()}", !result.isSuccess)
+        assertTrue("恶意命令不得执行", port.lastCommand == null)
     }
 }

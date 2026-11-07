@@ -31,6 +31,48 @@ class ExtensionDirLayout(private val root: File) {
 
     fun profileDir(extId: String): File = File(extensionDir(extId), "profile")
 
+    /**
+     * 规范化归属校验的 profile 文件句柄（**公共安全助手** —— ExtensionRun /
+     * 适配器写 profile / Doctor 三处共用同一套检查，禁止各调用点自写路径拼接）：
+     * relativePath 允许一级子目录（如 `dsh/profile.json`），但禁止 `..`；
+     * canonical 化后必须仍落在该扩展的 extensionDir 之内（防 bind 挂载/符号
+     * 链接造成的 canonical 漂移 —— PRoot 环境下 plain startsWith 不可靠）。
+     *
+     * @return 文件句柄（可能尚不存在，调用方决定读/写）；路径逃逸 → failure
+     */
+    fun profileFile(extId: String, relativePath: String): Result<File> = runCatching {
+        safeId(extId)
+        require(!relativePath.contains("..")) { "profile 路径含 .. 序列：'$relativePath'" }
+        val dir = profileDir(extId).apply { mkdirs() }
+        val file = File(dir, relativePath.trim('/'))
+        val dirCanonical = dir.canonicalFile
+        val fileCanonical = file.canonicalFile
+        require(
+            fileCanonical == dirCanonical ||
+                fileCanonical.path.startsWith(dirCanonical.path + File.separator)
+        ) { "profile 路径逃逸出扩展目录：${fileCanonical.path}" }
+        file
+    }
+
+    /**
+     * pkg 内的规范化文件句柄（ExtensionRun 的 entry 校验用，同 [profileFile] 语义）：
+     * canonical 化后必须仍落在 pkg 目录内 —— entry 来自安装期 profile 元数据，
+     * 但元数据本身可能被篡改，运行前以文件系统真相复核。
+     */
+    fun pkgFile(extId: String, relativePath: String): Result<File> = runCatching {
+        safeId(extId)
+        val pkg = pkgDir(extId)
+        require(pkg.isDirectory) { "扩展未安装或未发布：$extId" }
+        val file = File(pkg, relativePath.removePrefix("/"))
+        val pkgCanonical = pkg.canonicalFile
+        val fileCanonical = file.canonicalFile
+        require(
+            fileCanonical == pkgCanonical ||
+                fileCanonical.path.startsWith(pkgCanonical.path + File.separator)
+        ) { "entry 路径逃逸出 pkg 目录：${fileCanonical.path}" }
+        file
+    }
+
     /** 新建暂存目录（调用方负责最终 publish 或 deleteRecursively）。 */
     fun newTmpDir(extId: String): File =
         File(extensionDir(extId), "tmp-${System.currentTimeMillis()}").apply { mkdirs() }

@@ -48,7 +48,7 @@
 
     <!-- ═══ Browse · Plugins ═══ -->
     <string name="market_plugins_empty_hint">No Apex plugins installed yet (plugin APKs exposing a PLUGIN intent service appear here automatically)</string>
-    <string name="market_plugins_header">Apex plugins discovered via the PLUGIN intent service. Loading verifies the plugin APK and service connectivity; the agent tool bridge is under construction (tools cannot be invoked via /plugin: yet).</string>
+    <string name="market_plugins_header">Apex plugins discovered via the PLUGIN intent service. Loading verifies the plugin APK and service connectivity; the plugin's declared tools are registered into the agent tool surface (discoverable via ToolSearch) and degrade to host-direct fallback if the plugin process dies.</string>
 
     <!-- ═══ Browse · Skills (local source) ═══ -->
     <string name="market_skills_action_github">GitHub</string>

@@ -96,8 +96,9 @@ class OpenCodeExtensionAdapter(
             else -> return Result.failure(IllegalArgumentException("未知来源 kind：$kind"))
         }.getOrElse { return Result.failure(it) }
 
-        // 注册元数据（opencode 未来运行时调度的入口清单；执行桥 experimental）
-        val profile = layoutRef.profileDir(manifest.id).apply { mkdirs() }
+        // 注册元数据（ExtensionRun 的运行入口清单）：runtime/main 供
+        // NodeInstallPort 白名单执行；profile 文件经 layout 规范化归属校验
+        val profileFile = layoutRef.profileFile(manifest.id, "opencode.json").getOrElse { return Result.failure(it) }
         // 入口提示按 kind 取 —— npm 看 node_modules/<pkg>，clone 看 src/，
         // 其余（local 单文件等）退 published 根；kind 键缺失的源不强取 pkg
         val entryHint = when (kind) {
@@ -112,12 +113,13 @@ class OpenCodeExtensionAdapter(
                 put("name", manifest.name)
                 put("spec", manifest.spec)
                 put("kind", kind ?: "unknown")
+                put("runtime", RUNTIME_NODE)
                 put("publishedAt", System.currentTimeMillis())
                 put("pkgPath", published.absolutePath)
                 put("entryHint", entryHint)
                 put("experimental", true)
             }
-        ).let { File(profile, "opencode.json").writeText(it) }
+        ).let { profileFile.writeText(it) }
 
         return Result.success(
             InstallOutcome(
@@ -140,6 +142,9 @@ class OpenCodeExtensionAdapter(
             ?: throw IllegalArgumentException("resolved manifest 缺少 $key")
 
     internal companion object {
+        /** 运行时标记（ExtensionRun 白名单执行依据：node 入口）。 */
+        const val RUNTIME_NODE = "node"
+
         /** npm scoped 名（@scope/name）与包名 → 账本 id 安全 slug。 */
         fun slugOf(raw: String): String = raw.lowercase()
             .removePrefix("@").replace('/', '-').replace('_', '-')

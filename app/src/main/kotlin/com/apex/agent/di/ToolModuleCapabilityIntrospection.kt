@@ -23,7 +23,9 @@ internal fun registerCapabilityIntrospectionTools(
     skillRegistry: SkillRegistry,
     mcpManager: McpManager,
     githubTokenManager: GithubTokenManager,
-    hubSource: HubSource
+    hubSource: HubSource,
+    extensionLedger: com.apex.agent.core.tools.extension.ExtensionRegistry,
+    extensionAdapters: com.apex.agent.core.tools.extension.ExtensionAdapterRegistry
 ) {
     // ═══ 12b. 能力自省元工具（「agent 不懂自己能干什么」的根因修复）═══
     // CapabilityReport：权限阶梯（与系统提示词同源）/ 实时环境 / 工具与
@@ -49,6 +51,15 @@ internal fun registerCapabilityIntrospectionTools(
                         ?.let { "ready (engine in-process; roles granted: browser-automation" +
                             (if (com.apex.agent.tools.BrowserRoleAuth.currentGrants().contains(
                                     com.apex.agent.core.tools.BrowserRolePolicy.ROLE_BROWSER_SENSITIVE)) " + sensitive" else "") + ")" }
+                },
+                // PR-D：统一扩展快照（账本/锁/适配器面一行摘要，fail-silent）
+                extensionSnapshot = {
+                    val all = extensionLedger.all()
+                    val locks = extensionLedger.allLocks().size
+                    "installed ${all.size} (locks $locks) · adapters: " +
+                        extensionAdapters.availableTypes().sorted().joinToString("/") +
+                        if (all.isEmpty()) "" else " · " + all.take(3).joinToString(", ") { it.id } +
+                            (if (all.size > 3) " +${all.size - 3} more" else "")
                 },
                 githubStateProvider = {
                     githubTokenManager.connectionState.value.takeIf { it.isConnected }
