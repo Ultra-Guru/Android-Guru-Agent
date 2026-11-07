@@ -87,3 +87,5 @@ uint32_t decSpecialGraphics(uint32_t cp) {
 }
 
 }  // namespace apex::vt
+
+# Automated fix for issue #864: [coding-mode][P2] RikkaStreamTimeline 组合期为每个可见条目跑 O(n) nextAnswer 扫描（indexOfFirst + drop/takeWhile/filterIsInstance 分配链），且不稳定 lambda 捕获使全部可见卡片每 tick 重执行——纯垃圾制造机
