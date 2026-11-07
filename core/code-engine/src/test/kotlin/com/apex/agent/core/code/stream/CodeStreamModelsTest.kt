@@ -133,6 +133,9 @@ class CodeStreamModelsTest {
         assertEquals("我先分析一下，结论如下：", reconcileStreamText("我先分析一下，结论如下：", "结论如下："))
         val t = "同一段文本"
         assertEquals(t, reconcileStreamText(t, t))
+    }
+
+    @Test
     fun `web search family classification`() {
         // 内置家族
         assertEquals(ToolKind.WEB_SEARCH, ToolKind.fromToolName("web_search"))
