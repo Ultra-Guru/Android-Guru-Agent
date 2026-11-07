@@ -85,9 +85,9 @@ class ExtensionWizardController @javax.inject.Inject constructor(
         if (st.busy) return
         _state.update { it.copy(busy = true) }
         scope.launch {
-            val outcome = runCatching {
-                installer.install(hash, confirmToken = if (confirmed) "confirm" else null)
-            }
+            // install 返回 Result（闸门失败走 failure）；runCatching 仅兜底意外崩溃后摊平嵌套
+            val outcome = runCatching { installer.install(hash, confirmToken = if (confirmed) "confirm" else null) }
+                .fold({ it }, { Result.failure(it) })
             _state.update { cur ->
                 outcome.fold(
                     onSuccess = { o ->

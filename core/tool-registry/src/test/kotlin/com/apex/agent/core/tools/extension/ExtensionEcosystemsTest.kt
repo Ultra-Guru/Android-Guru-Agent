@@ -327,18 +327,21 @@ class ApkPackageExtensionAdapterTest {
     @Test
     fun `APK install 双重确认语义`() = runTest {
         val port = FakeApkPort()
-        val adapter = ApkPackageExtensionAdapter(port)
+        val ledger = ExtensionRegistry(tmp.newFolder("apk-ledger"))
+        val installer = ExtensionInstaller(
+            ExtensionAdapterRegistry(listOf(ApkPackageExtensionAdapter(port))), ledger
+        )
         val apk = tmp.newFile("signed-ext.apk")
-        val manifest = adapter.resolve(ExtensionSpecParser.parse("apk:${apk.absolutePath}").getOrThrow()).getOrThrow()
+        val manifest = installer.resolve(ExtensionSpecParser.parse("apk:${apk.absolutePath}").getOrThrow()).getOrThrow()
 
-        // 无 confirm → 确认门拒绝
-        assertTrue(adapter.install(manifest).isFailure)
+        // 无 confirm → 确认门拒绝（确认门在 ExtensionInstaller —— 走真实链路测）
+        assertTrue(installer.install(manifest.manifestHash).exceptionOrNull() is SecurityException)
         assertEquals(0, port.initiated)
-        // 有 confirm → 发起系统安装
-        val outcome = adapter.install(manifest.copy(manifestHash = manifest.manifestHash)).getOrThrow()
+        // confirm → 发起系统安装
+        val outcome = installer.install(manifest.manifestHash, confirmToken = "confirm").getOrThrow()
         assertEquals(1, port.initiated)
         assertTrue(outcome.where.contains("系统安装器"))
         // 卸载诚实拒绝（系统级卸载不归闸门）
-        assertTrue(adapter.uninstall(manifest).isFailure)
+        assertTrue(installer.uninstall(manifest.id).isFailure)
     }
 }
