@@ -412,6 +412,7 @@ private fun kindLabelOf(kind: ToolKind): String = stringResource(
         ToolKind.WRITE_FILE -> R.string.code_stream_kind_write
         ToolKind.EDIT_FILE -> R.string.code_stream_kind_edit
         ToolKind.GREP_SEARCH -> R.string.code_stream_kind_grep
+        ToolKind.WEB_SEARCH -> R.string.code_stream_kind_web
         ToolKind.BASH -> R.string.code_stream_kind_bash
         ToolKind.GIT -> R.string.code_stream_kind_git
         ToolKind.LINT -> R.string.code_stream_kind_lint
