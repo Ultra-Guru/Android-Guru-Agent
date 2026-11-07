@@ -20,7 +20,7 @@ class ExtensionAutoSyncRunner(
 
     data class Report(
         val ok: Int,
-        val fresh: List<String>,
+        val fresh: Int,
         val drifted: List<String>,
         val failed: List<String>
     ) {
