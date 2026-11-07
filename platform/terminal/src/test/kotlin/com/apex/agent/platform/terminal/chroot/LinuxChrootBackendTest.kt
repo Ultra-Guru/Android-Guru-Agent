@@ -172,17 +172,18 @@ class LinuxChrootBackendTest {
         assertEquals("R='/fake/rootfs'", rootfsLine)
         val lines = script.lineSequence().toList()
 
-        // 系统挂载三连（mountpoint 幂等守卫 + 2>/dev/null）—— 与 SystemBindProfile.STANDARD 同集
-        assertTrue(lines.any { it == "mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\" 2>/dev/null" })
-        assertTrue(lines.any { it == "mountpoint -q \"\$R/sys\" || mount -t sysfs sys \"\$R/sys\" 2>/dev/null" })
-        assertTrue(lines.any { it == "mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\" 2>/dev/null" })
+        // T99：挂载表精确守卫与跨会话锁；无 mountpoint 也不能堆叠。
+        assertTrue(script.contains("/proc/self/mountinfo"))
+        assertTrue(script.contains("flock -s 9"))
+        assertTrue(script.contains("flock -x 8"))
+        assertTrue(script.contains(ChrootMountScript.mount("proc", "mount", "-t", "proc", "proc")))
+        assertTrue(script.contains(ChrootMountScript.mount("sys", "mount", "-t", "sysfs", "sys")))
+        assertTrue(script.contains(ChrootMountScript.mount("dev", "mount", "--bind", "/dev")))
 
         // home → /root 与 workspace → /workspace 的 bind（mkdir 先行 —— rootfs 内无该目录）
-        val homeArg = "'${homeRoot.absolutePath}'"
-        assertTrue(lines.any { it == "mountpoint -q \"\$R/root\" || mount --bind $homeArg \"\$R/root\" 2>/dev/null" })
-        val wsArg = "'${File(wsRoot, "default").absolutePath}'"
-        assertTrue(lines.any { it == "mkdir -p \"\$R/workspace\" 2>/dev/null" })
-        assertTrue(lines.any { it == "mountpoint -q \"\$R/workspace\" || mount --bind $wsArg \"\$R/workspace\" 2>/dev/null" })
+        assertTrue(lines.any { it == ChrootMountScript.mount("root", "mount", "--bind", homeRoot.absolutePath) })
+        assertTrue(lines.any { it == "mkdir -p \"\$R/workspace\" || exit 1" })
+        assertTrue(lines.any { it == ChrootMountScript.mount("workspace", "mount", "--bind", File(wsRoot, "default").absolutePath) })
 
         // chroot 行：env trampoline（与 PRoot 后端同源）+ cd guest cwd + exec bash -i
         val chrootLine = lines.first { it.startsWith("chroot ") }
@@ -193,12 +194,13 @@ class LinuxChrootBackendTest {
         assertTrue(chrootLine.contains("'PATH="))
         assertTrue(chrootLine.contains("/bin/sh -c 'cd /workspace && exec /bin/bash -i'"))
 
-        // LIFO umount 收尾（workspace → root → dev → sys → proc，分号分隔的多条命令）
-        val lastLine = lines.last()
-        assertTrue(lastLine.startsWith("umount \"\$R/workspace\""))
-        assertTrue(lastLine.contains("umount \"\$R/dev\""))
-        assertTrue(lastLine.contains("umount \"\$R/sys\""))
-        assertTrue(lastLine.trim().endsWith("umount \"\$R/proc\" 2>/dev/null"))
+        assertTrue(chrootLine.endsWith("8>&- 9>&-"))
+        assertTrue(script.contains("cleanup_one workspace\n"))
+        assertTrue(script.contains("cleanup_one root\n"))
+        assertTrue(script.contains("cleanup_one dev\n"))
+        assertTrue(script.contains("cleanup_one sys\n"))
+        assertTrue(script.contains("cleanup_one proc\n"))
+        assertTrue(script.contains("flock -n -x 9"))
 
         // SpawnSpec 展示语义（与 PRoot 后端同口径）
         assertEquals("/bin/bash", spec.shellDisplay)
@@ -242,8 +244,8 @@ class LinuxChrootBackendTest {
         )
         val spec = b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80)).getOrThrow()
         val script = spec.argv[2]
-        assertTrue(script.contains("mount --bind '${shared.absolutePath}' \"\$R/sdcard\" 2>/dev/null"))
-        assertTrue(script.contains("umount \"\$R/sdcard\""))
+        assertTrue(script.contains(ChrootMountScript.mount("sdcard", "mount", "--bind", shared.absolutePath)))
+        assertTrue(script.contains("cleanup_one sdcard"))
         assertTrue(spec.metadata.binds.any { it == "${shared.absolutePath}:/sdcard" })
 
         // 不可用（hostDirProvider 返回 null）→ 无 sdcard 行（诚实降级，不伪造）
@@ -251,7 +253,7 @@ class LinuxChrootBackendTest {
             sharedStorage = SharedStorageBridge(hostDirProvider = { null })
         )
         val spec2 = b2.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80)).getOrThrow()
-        assertFalse(spec2.argv[2].contains("sdcard"))
+        assertFalse(spec2.argv[2].contains("ensure_mount 'sdcard'"))
         assertFalse(spec2.metadata.binds.any { it.endsWith(":/sdcard") })
     }
 

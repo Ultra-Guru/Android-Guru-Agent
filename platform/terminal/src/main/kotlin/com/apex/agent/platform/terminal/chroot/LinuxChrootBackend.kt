@@ -224,17 +224,18 @@ class LinuxChrootBackend(
 
         // ── 1. 系统级挂载（与 SystemBindProfile.STANDARD 同集 —— /proc /dev /sys）──
         lines += "R=$r"
-        lines += "mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\" 2>/dev/null"
-        lines += "mountpoint -q \"\$R/sys\" || mount -t sysfs sys \"\$R/sys\" 2>/dev/null"
-        lines += "mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\" 2>/dev/null"
+        lines += ChrootMountScript.header(rootfsDir)
+        lines += ChrootMountScript.mount("proc", "mount", "-t", "proc", "proc")
+        lines += ChrootMountScript.mount("sys", "mount", "-t", "sysfs", "sys")
+        lines += ChrootMountScript.mount("dev", "mount", "--bind", "/dev")
 
         // ── 2. 持久化 home / workspace / 共享存储（bind）──
-        lines += "mountpoint -q \"\$R/root\" || mount --bind ${shellQuote(homeDir)} \"\$R/root\" 2>/dev/null"
-        lines += "mkdir -p \"\$R/workspace\" 2>/dev/null"
-        lines += "mountpoint -q \"\$R/workspace\" || mount --bind ${shellQuote(workspaceDir)} \"\$R/workspace\" 2>/dev/null"
+        lines += ChrootMountScript.mount("root", "mount", "--bind", homeDir)
+        lines += "mkdir -p \"\$R/workspace\" || exit 1"
+        lines += ChrootMountScript.mount("workspace", "mount", "--bind", workspaceDir)
         if (sharedStorageHostDir != null) {
-            lines += "mkdir -p \"\$R/sdcard\" 2>/dev/null"
-            lines += "mountpoint -q \"\$R/sdcard\" || mount --bind ${shellQuote(sharedStorageHostDir)} \"\$R/sdcard\" 2>/dev/null"
+            lines += "mkdir -p \"\$R/sdcard\" || exit 1"
+            lines += ChrootMountScript.mount("sdcard", "mount", "--bind", sharedStorageHostDir)
         }
 
         // ── 3. chroot + env trampoline（/usr/bin/env -i K=V … 与 PRoot 后端同源）──
@@ -244,13 +245,10 @@ class LinuxChrootBackend(
         val envTokens = PRootEnvTrampoline.guestPrefix(guestEnv)
             .drop(ENV_EXECUTABLE_PREFIX_SIZE)   // 剥掉 /usr/bin/env -i（chroot 命令自带）
             .joinToString(" ") { shellQuote(it) }
-        lines += "chroot \"\$R\" ${shellQuote(ENV_EXECUTABLE)} -i $envTokens /bin/sh -c 'cd $guestCwd && exec /bin/bash -i'"
-
-        // ── 4. LIFO 最佳努力收尾（bash 退出后执行；EBUSY=并发会话共享，静默）──
-        val umounts = mutableListOf("\$R/workspace", "\$R/root")
-        if (sharedStorageHostDir != null) umounts.add(0, "\$R/sdcard")
-        umounts += listOf("\$R/dev", "\$R/sys", "\$R/proc")
-        lines += umounts.joinToString(" ; ") { "umount \"$it\" 2>/dev/null" }
+        // Guest must not inherit lock FDs (especially background jobs that outlive the shell).
+        lines += ChrootMountScript.releaseOperationsLock
+        lines += "chroot \"\$R\" ${shellQuote(ENV_EXECUTABLE)} -i $envTokens /bin/sh -c 'cd $guestCwd && exec /bin/bash -i' 8>&- 9>&-"
+        // EXIT trap in ChrootMountScript handles normal exit, signals and partial setup.
         return lines.joinToString("\n")
     }
 
