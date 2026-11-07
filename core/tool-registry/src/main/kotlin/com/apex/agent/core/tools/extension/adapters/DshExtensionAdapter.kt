@@ -136,7 +136,8 @@ class DshExtensionAdapter(
         ).let { profileFile.writeText(it) }
 
         // ── 动态验证（Native Plugin Host）：capabilities 快照 + 真实版本回填 ──
-        val capabilities = introspector?.introspectAndStore(manifest.id, pinned.toDescriptor()).getOrNull()
+        //（注意 ?. 只保第一跳 —— getOrNull 也须安全调用，否则空 introspector 直接 NPE）
+        val capabilities = introspector?.introspectAndStore(manifest.id, pinned.toDescriptor())?.getOrNull()
         val realVersion = capabilities?.plugin?.version?.takeIf { it.isNotBlank() }
             ?: pinned.version ?: manifest.version
         val notes = buildList {

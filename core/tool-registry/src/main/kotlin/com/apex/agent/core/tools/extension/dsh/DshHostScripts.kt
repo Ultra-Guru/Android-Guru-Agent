@@ -6,9 +6,9 @@ import java.io.File
 /**
  * # DshHostScripts —— shim/分析器脚本的沙箱部署与钉版 bootstrap
  *
- * core 资源（`src/main/resources/dsh-host/*.js`）在首次使用时部署到沙箱扩展根
- * `<extRoot>/.dsh-host/scripts-v<版本>/`——**版本化目录**保证脚本升级后旧内容
- * 不被复用；部署幂等（已存在即跳过）。
+ * core 资源（`src/main/resources/dsh-host/` 下四脚本）在首次使用时部署到沙箱
+ * 扩展根 `<extRoot>/.dsh-host/scripts-v<版本>/`——**版本化目录**保证脚本升级
+ * 后旧内容不被复用；部署幂等（已存在即跳过）。
  *
  * analyzer 运行时（acorn）独立 bootstrap：钉版 `npm install --prefix`，marker
  * 文件记录已装版本（dphmoblie 纪律：运行时依赖钉版，不漂移）。

@@ -6,8 +6,8 @@ import com.apex.agent.core.tools.extension.NodeInstallPort
  * # DshCompatibilityResolver —— DSH/Cordis/Node 版本兼容性判定（纯 JVM）
  *
  * dphmoblie 纪律（mobile-plugin-compat）：运行时依赖是一个整体 —— Node 与
- * DSH 依赖族版本必须协调，`@deepseek-ai/*` 出现多物理副本会分裂 Cordis 的
- * Symbol 身份。本判定器只做**版本面**的诚实分级；服务面（哪些 Cordis
+ * DSH 依赖族版本必须协调，`@deepseek-ai/` 依赖族出现多物理副本会分裂 Cordis
+ * 的 Symbol 身份。本判定器只做**版本面**的诚实分级；服务面（哪些 Cordis
  * service 宿主能提供）见 [SERVICE_SUPPORT] —— 数据源与 docs/dsh-compat.md
  * 钉定的验证结论同源，绝不在此虚报未验证的支持。
  *
