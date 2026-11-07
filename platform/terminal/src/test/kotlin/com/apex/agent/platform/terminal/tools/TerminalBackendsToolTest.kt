@@ -183,7 +183,7 @@ class TerminalBackendsToolTest {
         val json = kotlinx.serialization.json.Json.parseToJsonElement(smoke.invoke("{}")).jsonObject
         assertEquals(1, launches)
         assertEquals("TerminalPRootSmoke", json["id"]!!.jsonPrimitive.content)
-        assertEquals(true, json["proot"]!!.jsonPrimitive.content)
+        assertEquals("true", json["proot"]!!.jsonPrimitive.content)
         assertEquals("ptrace_signal", json["smoke"]!!.jsonPrimitive.content)
         assertEquals(159, json["exitCode"]!!.jsonPrimitive.content.toInt())
         val advice = json["suggestion"]!!.jsonPrimitive.content
