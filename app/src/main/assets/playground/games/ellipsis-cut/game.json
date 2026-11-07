@@ -1,0 +1,1 @@
+{"id":"ellipsis-cut","name":"裁纸刀","nameEn":"Ellipsis Cutter","tagline":"拖动裁刀让段落恰好截断在目标高度，行数由 pretext 实时算出","version":1,"engine":"pretext@0.0.9","apis":["prepareWithSegments","layoutWithLines"],"controls":"拖动裁刀 / 键盘↑↓·Enter","scoreKey":"aga.pg.ellipsis-cut.hi"}

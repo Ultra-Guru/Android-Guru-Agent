@@ -1,0 +1,1 @@
+{"id":"masonry-pack","name":"瀑布打包","nameEn":"Masonry Packer","tagline":"卡片高度由 pretext 实测决定，把墙码得越矮越平衡分越高","version":1,"engine":"pretext@0.0.9","apis":["prepare","measureLineStats"],"controls":"点选列放置 / 弃卡按钮","scoreKey":"aga.pg.masonry-pack.hi"}
