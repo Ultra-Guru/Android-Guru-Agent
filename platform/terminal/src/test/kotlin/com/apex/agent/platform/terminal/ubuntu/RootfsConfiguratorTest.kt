@@ -148,11 +148,29 @@ class RootfsConfiguratorTest {
         val base = Files.createTempDirectory("android-system-ca-disabled-").toFile()
         val store = File(base, "cacerts").apply { mkdirs() }
         File(store, "aaaaaaaa.0").writeText(TestCaFixtures.isrgRootX1Pem)
-        // Android's SystemCertificateSource checks the user's cacerts-removed;
-        // a raw directory scan would incorrectly resurrect this disabled anchor.
+        // Android's SystemCertificateSource skips anchors marked in the user's
+        // cacerts-removed dir; a raw directory scan would wrongly trust them.
         File(base, "cacerts-removed").mkdirs()
         File(base, "cacerts-removed/aaaaaaaa.0").writeText(TestCaFixtures.isrgRootX1Pem)
-        val cfg = RootfsConfigurator(hostCaBundle = { null }, androidSystemCaDirs = { listOf(store) })
+        val cfg = RootfsConfigurator(
+            hostCaBundle = { null },
+            androidSystemCaDirs = { listOf(store) },
+            androidSystemCaRemovedDirs = { listOf(File(base, "cacerts-removed")) }
+        )
+        assertFalse(cfg.repairCaIfMissing(root))
+        assertFalse(File(root, "etc/ssl/certs/ca-certificates.crt").exists())
+    }
+
+    @Test fun `system CA directory without known revocation source is not trusted`() {
+        val root = tmpRoot()
+        val store = Files.createTempDirectory("android-system-ca-unknown-").toFile()
+        File(store, "aaaaaaaa.0").writeText(TestCaFixtures.isrgRootX1Pem)
+        // Unknown removal state must fail closed, not silently trust the anchor.
+        val cfg = RootfsConfigurator(
+            hostCaBundle = { null },
+            androidSystemCaDirs = { listOf(store) },
+            androidSystemCaRemovedDirs = { listOf(null) }
+        )
         assertFalse(cfg.repairCaIfMissing(root))
         assertFalse(File(root, "etc/ssl/certs/ca-certificates.crt").exists())
     }

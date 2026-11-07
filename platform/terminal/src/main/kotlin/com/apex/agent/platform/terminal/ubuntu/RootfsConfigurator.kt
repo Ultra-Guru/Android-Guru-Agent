@@ -39,6 +39,17 @@ class RootfsConfigurator(
     private val androidSystemCaDirs: () -> List<File> = {
         listOf(File("/apex/com.android.conscrypt/cacerts"), File("/system/etc/security/cacerts"))
     },
+    /**
+     * 每个系统 CA 目录对应的「已停用证书」目录（Android SystemCertificateSource
+     * 用 cacerts-removed 标记被用户关闭的系统锚点）。目录顺序与
+     * [androidSystemCaDirs] 一一对应。该目录不存在 = 没有任何停用标记
+     * （Android 只在用户停用时创建它）；显式 null = 未知 revocation 来源，
+     * 该系统目录的锚点一律不导入（fail closed）。不导入 cacerts-added /
+     * 用户安装证书；不写 guest bundle 之外的任何路径。
+     */
+    private val androidSystemCaRemovedDirs: () -> List<File?> = {
+        List(androidSystemCaDirs().size) { null }
+    },
     /** guest 主机名。 */
     private val hostname: String = DEFAULT_HOSTNAME,
     /**
@@ -282,6 +293,12 @@ class RootfsConfigurator(
             val temp = File.createTempFile(".ca-certificates-", ".tmp", parent)
             try {
                 temp.writeBytes(source.second)
+                // Guest processes run as non-root (Android app uid + su subshell);
+                // a 0600 anchor file would make /etc/ssl/certs unreadable there.
+                // createTempFile starts at 0600; CA bundles must be readable by
+                // the non-root guest uid (and by su subshells), like 0644.
+                temp.setReadable(true, false)
+                temp.setReadable(true, true)
                 if (Files.isSymbolicLink(guest.toPath()) || hasContent(guest)) return@runCatching null
                 try {
                     Files.move(temp.toPath(), guest.toPath(), StandardCopyOption.ATOMIC_MOVE,
@@ -303,17 +320,23 @@ class RootfsConfigurator(
         certs.isNotEmpty() && certs.all { it is X509Certificate }
     }.getOrDefault(false)
 
+    /** Mirrors Android SystemCertificateSource.isCertMarkedAsRemoved(). */
+    private fun isCertMarkedAsRemoved(removedDir: File, caFile: String): Boolean =
+        // File.exists() misses dangling markers; Files.exists() does not.
+        java.nio.file.Files.exists(File(removedDir, caFile).toPath())
+
     private fun trustedAndroidSystemCas(): ByteArray? {
         val factory = CertificateFactory.getInstance("X.509")
         // APEX (Android 14+) takes precedence over the older /system store.
         // Never include user-installed credentials or arbitrary PEM files.
-        for (dir in androidSystemCaDirs()) {
+        androidSystemCaDirs().zip(androidSystemCaRemovedDirs()).forEach { (dir, removedDir) ->
             if (!dir.isDirectory) continue
             val seen = HashSet<String>()
             val pem = StringBuilder()
             dir.listFiles().orEmpty().asSequence()
                 .filter { it.name.matches(SYSTEM_CA_FILENAME) && it.isFile &&
                     !Files.isSymbolicLink(it.toPath()) && it.length() in 1..MAX_CERT_BYTES.toLong() }
+                .filterNot { file -> isCertMarkedAsRemoved(removedDir, file.name) }
                 .sortedBy { it.name }
                 .take(MAX_SYSTEM_CERTS)
                 .forEach { file ->

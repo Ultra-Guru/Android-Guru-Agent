@@ -25,20 +25,22 @@ class ChrootMountScriptTest {
         assertFalse(log.readText().contains("${root.absolutePath}/proc\n"))
         assertTrue(fixture.readText().contains("${root.absolutePath}/proc"))
         assertEquals("keep", guestFile.readText())
-        assertTrue("other owned mounts were cleaned", File(root, ".t99-chroot-mounts/sys").exists().not())
+        val state = File(root.parentFile, ".t99-chroot-state/${root.name}")
+        assertTrue("other owned mounts were cleaned", File(state, "sys").exists().not())
     }
 
     @Test fun `reused owned mount is cleaned after guest exit and repeat does not stack`() {
         val root = tmp.newFolder("guest")
         val fixture = tmp.newFile("mountinfo")
         fixture.writeText("1 0 0:1 / / rw - rootfs fake rw\n4 1 0:1 / ${root.absolutePath}/proc rw - proc proc rw\n")
-        File(root, ".t99-chroot-mounts/proc").apply { parentFile.mkdirs(); writeText("4\n") }
+        val state = File(root.parentFile, ".t99-chroot-state/${root.name}")
+        File(state, "proc").apply { parentFile.mkdirs(); writeText("4\n") }
         val log = tmp.newFile("ops")
         val bin = fakeCommands()
         assertEquals(7, runScript(script(root, fixture), bin, fixture, log))
         assertEquals("1 0 0:1 / / rw - rootfs fake rw\n", fixture.readText())
         assertFalse("first run must reuse proc", log.readLines().any { it == "mount ${root.absolutePath}/proc" })
-        assertFalse(File(root, ".t99-chroot-mounts/proc").exists())
+        assertFalse(File(state, "proc").exists())
         assertEquals(7, runScript(script(root, fixture), bin, fixture, log))
         assertEquals("one new proc mount", 1, log.readLines().count { it == "mount ${root.absolutePath}/proc" })
         assertEquals("one new proc detach", 2, log.readLines().count { it == "umount ${root.absolutePath}/proc" })
