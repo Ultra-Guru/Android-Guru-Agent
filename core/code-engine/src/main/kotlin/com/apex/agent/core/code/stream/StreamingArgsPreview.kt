@@ -264,6 +264,10 @@ class StreamingArgsTracker private constructor(
                 )
                 ToolKind.BASH, ToolKind.READ_FILE, ToolKind.GREP_SEARCH ->
                     StreamingArgsTracker(codeSlots = emptyMap(), targetSlot = targetSlot)
+                // 网络搜索：query 实时流水（TARGET_KEYS 含 query）——搜索词
+                // 随模型生成逐字流入胶囊目标行，等待期即有「过程感」
+                ToolKind.WEB_SEARCH ->
+                    StreamingArgsTracker(codeSlots = emptyMap(), targetSlot = targetSlot)
                 else -> null
             }
         }

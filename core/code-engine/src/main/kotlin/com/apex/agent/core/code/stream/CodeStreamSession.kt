@@ -125,6 +125,10 @@ class CodeStreamSession {
         // 统计收尾卡的本轮失败数基线（failedToolCallCount 跨 run 累积）
         runStartFailedCount = failedToolCallCount
         append(StreamEntry.UserEntry(nextId(), userText))
+        // 发送即占位；首个正文分片复用该 id。纯工具/空回复的收束路径
+        // 会移除空条目，不向检查点留下幽灵气泡。
+        streamingAssistant = StreamEntry.AssistantEntry(nextId(), "", true)
+        append(streamingAssistant!!)
         activeTerminalCallId = null
         // 新 run 归零终端面板三信号（上一轮命令的尾窗不再展示）
         terminalBusy = false
@@ -179,6 +183,12 @@ class CodeStreamSession {
                     if (event.text.isBlank()) return
                     streamingThinking = StreamEntry.ThinkingEntry(nextId(), event.text, true)
                     append(streamingThinking!!)
+                    // 空助手位只负责等待正文；思考开始后让思考卡先于它，
+                    // 使首个回答仍能在同一稳定 id 的尾部接续。
+                    streamingAssistant?.takeIf { it.text.isEmpty() }?.let { pending ->
+                        entries.removeAll { it.id == pending.id }
+                        append(pending)
+                    }
                 } else {
                     // 引用同步回写：不回写则 cur 永远停在首块快照，第三个
                     // Chunk 起条目被「首块+最新块」覆盖（中间块丢失）。
@@ -684,7 +694,7 @@ class CodeStreamSession {
             logTail = logTail,
             diffText = diff?.takeIf { it.hunks.isNotEmpty() }?.let { event.fullOutput.ifBlank { event.output } },
             progressPercent = null,
-            summary = summaryOf(status, diff, exitCode, event.output),
+            summary = summaryOf(existing.kind, status, diff, exitCode, event.output),
             // 终态即收回实时代码窗（自动折叠为单行胶囊；详情看 diff/日志）
             streamingPreview = null
         )
@@ -975,6 +985,7 @@ class CodeStreamSession {
             ToolKind.READ_FILE, ToolKind.WRITE_FILE, ToolKind.EDIT_FILE ->
                 str("path") ?: str("file") ?: str("file_path") ?: UNKNOWN_TARGET
             ToolKind.GREP_SEARCH -> str("pattern") ?: str("query") ?: str("keyword") ?: toolName
+            ToolKind.WEB_SEARCH -> str("query") ?: str("keyword") ?: str("q") ?: toolName
             ToolKind.BASH -> str("command")?.lineSequence()?.firstOrNull()?.take(40) ?: toolName
             ToolKind.GIT -> gitTargetOf(toolName, args) ?: toolName
             ToolKind.LINT, ToolKind.TEST -> str("path") ?: str("target") ?: toolName
@@ -1025,6 +1036,7 @@ class CodeStreamSession {
         ToolKind.WRITE_FILE -> "写入"
         ToolKind.EDIT_FILE -> "编辑"
         ToolKind.GREP_SEARCH -> "搜索"
+        ToolKind.WEB_SEARCH -> "网页搜索"
         ToolKind.BASH -> "命令"
         ToolKind.GIT -> "Git"
         ToolKind.LINT -> "Lint"
@@ -1049,6 +1061,7 @@ class CodeStreamSession {
     }
 
     private fun summaryOf(
+        kind: ToolKind,
         status: ToolCallStatus,
         diff: UnifiedDiffParser.ParsedDiff?,
         exitCode: Int?,
@@ -1061,6 +1074,13 @@ class CodeStreamSession {
             structuredFailureSummary(output, exitCode)?.let { return it }
             val line = output.lineSequence().firstOrNull { it.isNotBlank() } ?: "失败"
             return line.take(SUMMARY_MAX)
+        }
+        // 网络搜索族（2026-11 搜索专属流水式输出）：输出里数来源链接
+        //（内置 JSON 信封与 MCP 的 LLM 优化 Markdown 都含 url），给
+        // 「网页搜索 · N 条来源」结构化摘要，替代裸输出首行
+        if (kind == ToolKind.WEB_SEARCH && status == ToolCallStatus.SUCCESS) {
+            val sources = SOURCE_LINK_REGEX.findAll(output).distinct().count()
+            return if (sources > 0) "网页搜索 · $sources 条来源" else "网页搜索完成"
         }
         diff?.let { d ->
             if (d.hunks.isNotEmpty()) return "+${d.totalAdded} −${d.totalRemoved} · ${d.hunks.size} hunk"
@@ -1103,5 +1123,8 @@ class CodeStreamSession {
         const val ABORTED_TEXT = "已中止"
         val EXIT_CODE_REGEX = Regex("""(?:exit(?:\s+code)?|Exit:)[:\s]+(\d+)\b""", RegexOption.IGNORE_CASE)
         val ENTRY_SEQ_REGEX = Regex("""(?:^|-)e-(\d+)$""")
+
+        /** 网络搜索结果来源链接（去重计数用；截到右括号/引号前，容 markdown/JSON 两种形态）。 */
+        val SOURCE_LINK_REGEX = Regex("""https?://[^\s\)\]>"']+""")
     }
 }

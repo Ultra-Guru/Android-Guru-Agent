@@ -149,4 +149,26 @@ class StreamingArgsPreviewTest {
         assertNull(StreamingArgsTracker.forKind(ToolKind.MCP_CUSTOM))
         assertNull(StreamingArgsTracker.forKind(ToolKind.GIT))
     }
+
+    @Test
+    fun `web search query streams into target`() {
+        val t = tracker(ToolKind.WEB_SEARCH)
+        // 半截 JSON：query 值未闭合时 target 应已有部分内容（流水感）
+        t.append("""{"query": "今天上海的""")
+        val partial = t.preview()
+        assertEquals("今天上海的", partial?.target)
+
+        t.append("""天气"}""")
+        val done = t.preview()
+        assertEquals("今天上海的天气", done?.target)
+        assertFalse(done?.hasCode == true)
+    }
+
+    @Test
+    fun `web search alternate arg keys still stream`() {
+        // 候选查询键（query/keyword/… 均在 TARGET_KEYS）——换键名流水不中断
+        val t = tracker(ToolKind.WEB_SEARCH)
+        t.append("""{"keyword": "compose streaming"}""")
+        assertEquals("compose streaming", t.preview()?.target)
+    }
 }

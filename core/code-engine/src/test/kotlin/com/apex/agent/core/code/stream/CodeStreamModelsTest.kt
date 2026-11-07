@@ -24,7 +24,8 @@ class CodeStreamModelsTest {
         assertEquals(ToolKind.LINT, ToolKind.fromToolName("lint"))
         assertEquals(ToolKind.TEST, ToolKind.fromToolName("test"))
         assertEquals(ToolKind.PLAN, ToolKind.fromToolName("CodeTodo"))
-        assertEquals(ToolKind.MCP_CUSTOM, ToolKind.fromToolName("mcp_web_search"))
+        // 2026-11 网络搜索族上线：mcp_web_search 归 WEB_SEARCH（原 MCP 回退化石断言）
+        assertEquals(ToolKind.WEB_SEARCH, ToolKind.fromToolName("mcp_web_search"))
         assertEquals("未知名保守归 MCP_CUSTOM", ToolKind.MCP_CUSTOM, ToolKind.fromToolName("whatever_tool"))
     }
 
@@ -132,5 +133,36 @@ class CodeStreamModelsTest {
         assertEquals("我先分析一下，结论如下：", reconcileStreamText("我先分析一下，结论如下：", "结论如下："))
         val t = "同一段文本"
         assertEquals(t, reconcileStreamText(t, t))
+    fun `web search family classification`() {
+        // 内置家族
+        assertEquals(ToolKind.WEB_SEARCH, ToolKind.fromToolName("web_search"))
+        assertEquals(ToolKind.WEB_SEARCH, ToolKind.fromToolName("WebSearch"))
+        assertEquals(ToolKind.WEB_SEARCH, ToolKind.fromToolName("WebFetch"))
+        assertEquals(ToolKind.WEB_SEARCH, ToolKind.fromToolName("search_hint"))
+        // MCP 搜索服务器（Searchlight / Agent Search / free-search-mcp 命名惯例）
+        assertEquals(
+            ToolKind.WEB_SEARCH,
+            ToolKind.fromToolName("mcp__searchlight__web_search")
+        )
+        assertEquals(
+            ToolKind.WEB_SEARCH,
+            ToolKind.fromToolName("mcp__agent-search__web_read")
+        )
+        assertEquals(
+            ToolKind.WEB_SEARCH,
+            ToolKind.fromToolName("mcp__free-search-mcp__web_search")
+        )
+        // searxng 命名直接命中
+        assertEquals(ToolKind.WEB_SEARCH, ToolKind.fromToolName("searxng_search"))
+        // 不误吞同尾工具：grep_search 仍是本地代码搜索
+        assertEquals(ToolKind.GREP_SEARCH, ToolKind.fromToolName("grep_search"))
+        // 泛化 MCP 的 grep 工具（非 web_* 命名）仍落 MCP_CUSTOM——规则按
+        // web_* 后缀精确归类，不做 contains 泛化（防误吞）
+        assertEquals(ToolKind.MCP_CUSTOM, ToolKind.fromToolName("mcp__x__grep_search"))
+        // 无关 MCP 工具仍落 MCP_CUSTOM
+        assertEquals(
+            ToolKind.MCP_CUSTOM,
+            ToolKind.fromToolName("mcp__other__list_files")
+        )
     }
 }
