@@ -143,7 +143,7 @@ class ExtensionRunTool(
     }
 
     private companion object {
-        const val DEFAULT_TIMEOUT_MS = 120_000
+        const val DEFAULT_TIMEOUT_MS = 120_000L
         const val MAX_OUTPUT_CHARS = 12_000
         const val MAX_ERROR_CHARS = 6_000
 
