@@ -18,6 +18,9 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicInteger
 
 /** 共享夹具：静态 rootfs 描述（外层类与嵌套 provider 均可用）。 */
@@ -361,5 +364,41 @@ class PRootArgvCapabilitiesTest {
         }
         val caps = provider.capabilitiesFor(trapScript)
         assertEquals("prepare 失败 → 不可判定 → 保守省略", PRootArgvCapabilities.UPSTREAM_SAFE, caps)
+    }
+
+    @Test
+    fun `real separator process holding stdout open cannot block capability discovery`() {
+        org.junit.Assume.assumeTrue("需要 /bin/sh 的 JVM 沙箱", File("/bin/sh").exists())
+        val dir = tmp.newFolder().apply { dummyTalloc(this) }
+        val binary = File(dir, "libproot.so").apply {
+            writeText("#!/bin/sh\nif [ \"\$1\" = '--kill-on-exit' ]; then exit 0; fi\n" +
+                            "if [ \"\$2\" = '/system/bin/sh' ]; then exit 1; fi\n" +
+                            "printf 'started\\n'; printf '%s' \"\$\$\" > \"\$0.pid\"\nexec /bin/sleep 60\n")
+            setExecutable(true, false)
+        }
+        val pidFile = File("${binary.absolutePath}.pid")
+        val provider = NativeLibraryPRootBinaryProvider(
+            PRootHostEnvironment(dir.absolutePath, tmp.newFolder(), tmp.newFolder())
+        )
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val pending = executor.submit<PRootArgvCapabilities> { provider.capabilitiesFor(binary) }
+            val capabilities = try {
+                pending.get(14, TimeUnit.SECONDS)
+            } catch (_: TimeoutException) {
+                throw AssertionError("readText blocked before the process deadline")
+            }
+            assertTrue("the quick option probe still succeeds", capabilities.supportsKillOnExit)
+            assertFalse("timed-out separator must be omitted", capabilities.supportsOptionSeparator)
+            val pid = pidFile.readText().trim().toLong()
+            assertFalse("timed-out tracer must be reaped", ProcessHandle.of(pid).orElseThrow().isAlive)
+        } finally {
+            // RED run on the old implementation still owns a sleeping real process.
+            // Kill it to unblock readText and let the Actions runner exit cleanly.
+            pidFile.takeIf { it.exists() }?.readText()?.trim()?.toLongOrNull()?.let { pid ->
+                ProcessHandle.of(pid).ifPresent { it.destroyForcibly() }
+            }
+            executor.shutdownNow()
+        }
     }
 }

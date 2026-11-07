@@ -153,4 +153,17 @@ class TerminalBackendsToolTest {
         assertNull(json["suggestion"])
         assertNull(json["backends"]!!.jsonArray[0].jsonObject["smoke"])
     }
+
+    @Test
+    fun `ready discovery cannot execute guest code on the read-only permission path`() = runTest {
+        var launches = 0
+        val tool = TerminalBackendsTool(
+            FakeRuntime(listOf(TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", true, "READY"))),
+            smokeProbe = { launches++; PRootSmokeProbe.SmokeResult(PRootSmokeProbe.Status.TIMED_OUT) }
+        )
+        val json = kotlinx.serialization.json.Json.parseToJsonElement(tool.invoke("{}")).jsonObject
+        assertEquals("read-only discovery must not execute /bin/true", 0, launches)
+        assertNull("no probe has run yet", json["backends"]!!.jsonArray[0].jsonObject["smoke"])
+        assertNull("no uncached diagnosis", json["suggestion"])
+    }
 }
