@@ -1,6 +1,8 @@
 package com.apex.agent.platform.browser
 
 import com.apex.agent.core.tools.AgentTool
+import com.apex.agent.core.tools.StreamingAgentTool
+import com.apex.agent.core.tools.ToolStreamEvent
 import com.apex.browser.engine.DiffResult
 import com.apex.browser.core.Disambiguation
 import com.apex.browser.core.DomParser
@@ -19,6 +21,10 @@ import com.apex.browser.engine.navigationState
 import com.apex.browser.engine.releaseNavigation
 import com.apex.browser.engine.runTask
 import com.apex.browser.engine.taskState
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -64,7 +70,7 @@ class BrowserAsyncTools @Inject constructor(
 
     // ═══ 1. BrowserTask：一次提交 N 步，运行时自主推进 ═══
 
-    val task = object : AgentTool {
+    val task = object : StreamingAgentTool {
         override val id = "BrowserTask"
         override val name = "BrowserTask"
         override val description =
@@ -110,6 +116,55 @@ class BrowserAsyncTools @Inject constructor(
             val total = argInt(arguments, "total_timeout_ms", 90_000).coerceIn(5_000, 600_000).toLong()
             val outcome = engine.runTask(steps, mode = mode, totalTimeoutMs = total)
             return outcome.summarize()
+        }
+
+        /**
+         * v2.1.2 流水任务卡：步级事件经 preview 块实时流入时间轴（人看，不进模型），
+         * 权威输出=Complete 携带的最终 summarize。事件源=engine.taskEvents
+         * （replay 128,先订阅后执行,按 taskId 过滤,订阅晚于发射不丢）。
+         */
+        override fun executeStream(arguments: String): Flow<ToolStreamEvent> = channelFlow {
+            guard()?.let { send(ToolStreamEvent.Error(it)); close(); return@channelFlow }
+            val steps = parseSteps(arguments)
+            if (steps == null) { send(ToolStreamEvent.Error("Error: steps 参数不合法")); close(); return@channelFlow }
+            val errors = TaskValidator.validate(steps)
+            if (errors.isNotEmpty()) {
+                send(ToolStreamEvent.Complete("任务未执行（预校验失败，零副作用）：
+" + errors.joinToString("
+")))
+                close(); return@channelFlow
+            }
+            val mode = if (argStr(arguments, "mode")?.lowercase() == "background") "background" else "wait"
+            val total = argInt(arguments, "total_timeout_ms", 90_000).coerceIn(5_000, 600_000).toLong()
+            if (mode == "background") {
+                val outcome = engine.runTask(steps, mode = mode, totalTimeoutMs = total)
+                send(ToolStreamEvent.Complete(outcome.summarize())); close(); return@channelFlow
+            }
+            val taskId = "t" + java.util.UUID.randomUUID().toString().substring(0, 8)
+            fun cardLine(e: com.apex.browser.core.TaskStepEvent): String {
+                val mark = when (e.phase) {
+                    com.apex.browser.core.TaskStepPhase.STARTED -> "▶"
+                    com.apex.browser.core.TaskStepPhase.OK -> "✓"
+                    com.apex.browser.core.TaskStepPhase.FAILED -> "✗"
+                    com.apex.browser.core.TaskStepPhase.CHECKPOINT -> "⏸"
+                }
+                return "$mark [${e.stepIndex + 1}/${e.totalSteps}] ${e.type}  ${e.detail.take(100)}"
+            }
+            // 先订阅（replay 补早发事件），再启动任务
+            val eventsJob = launch {
+                engine.taskEvents.filter { it.taskId == taskId }.collect { e ->
+                    send(ToolStreamEvent.Output(cardLine(e), preview = true))
+                }
+            }
+            var finalText = ""
+            val runJob = launch {
+                val outcome = engine.runTask(steps, mode = mode, totalTimeoutMs = total, taskIdHint = taskId)
+                finalText = outcome.summarize()
+            }
+            runJob.join()
+            eventsJob.cancel()
+            send(ToolStreamEvent.Complete(finalText))
+            close()
         }
     }
 
