@@ -338,8 +338,10 @@ object TerminalModule {
 
     @Provides
     @Singleton
-    fun provideSuAuthorizationCache(): com.apex.agent.platform.terminal.chroot.SuAuthorizationCache =
-        com.apex.agent.platform.terminal.chroot.SuAuthorizationCache()
+    fun provideSuAuthorizationCache(
+        @ApplicationContext context: android.content.Context
+    ): com.apex.agent.platform.terminal.chroot.SuAuthorizationCache =
+        com.apex.agent.platform.terminal.chroot.SuAuthorizationCache(outputDir = context.cacheDir)
 
     /**
      * T98：chroot 后端 —— 与 PRoot 后端共享同一 rootfs / workspace 池 / 持久化

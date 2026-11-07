@@ -34,7 +34,9 @@ import java.io.File
  */
 class SuBinaryLocator(
     /** 候选路径列表（JVM 测试注入 tmp 目录假 su；生产用 [DEFAULT_CANDIDATES]）。 */
-    private val candidatesProvider: () -> List<File> = { DEFAULT_CANDIDATES.map(::File) },
+    private val candidatesProvider: () -> List<File> = {
+        DEFAULT_CANDIDATES.map(::File) + listOfNotNull(locateFromPath(System.getenv("PATH") ?: ""))
+    },
     /**
      * 额外候选（app 层可注入用户指定路径，如非标准 Root 方案）；在标准
      * 候选之后探测。默认空。
@@ -52,5 +54,11 @@ class SuBinaryLocator(
     companion object {
         /** Compatibility alias; paths live in the pure-JVM registry shared with privilege routing. */
         val DEFAULT_CANDIDATES: List<String> = SuCandidateRegistry.paths
+
+        /** Like PATH-based privilege routing, but stat-only: never run `which` or su. */
+        internal fun locateFromPath(path: String): File? = path.split(File.pathSeparatorChar)
+            .asSequence().filter { File(it).isAbsolute }
+            .map { File(it, "su") }
+            .firstOrNull { it.isFile && it.canExecute() }
     }
 }

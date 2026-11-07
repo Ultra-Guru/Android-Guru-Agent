@@ -109,6 +109,14 @@ class LinuxChrootBackendTest {
     }
 
     @Test
+    fun `su on absolute PATH directory can be found by stat without execution`() {
+        val dir = tmp.newFolder("nonstandard-path")
+        val su = File(dir, "su").apply { writeText("not a real su"); setExecutable(true) }
+        assertEquals(su.absolutePath, SuBinaryLocator.locateFromPath(dir.absolutePath)?.absolutePath)
+        assertEquals(null, SuBinaryLocator.locateFromPath("relative:.:"))
+    }
+
+    @Test
     fun `su locator default candidates cover mainstream root schemes`() {
         // 契约锁：默认候选必须含 Magisk/KernelSU 标准落点（顺序敏感 —— 探测序即优先级）。
         assertEquals("/system/bin/su", SuBinaryLocator.DEFAULT_CANDIDATES.first())

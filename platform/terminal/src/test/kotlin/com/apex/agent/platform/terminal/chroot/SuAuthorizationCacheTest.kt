@@ -82,4 +82,27 @@ class SuAuthorizationCacheTest {
         val fake = su("child-su", "sleep 8 & echo 'uid=0(root)'; exit 0")
         assertEquals(SuAuthorizationCache.State.GRANTED, SuAuthorizationCache().authorize(fake))
     }
+
+    @Test fun `permission refresh invalidates even an in-flight grant`() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val su = su("refresh-su", "exit 0")
+        val cache = SuAuthorizationCache(probe = {
+            entered.countDown()
+            assertTrue(release.await(5, TimeUnit.SECONDS))
+            SuAuthorizationCache.State.GRANTED
+        })
+        val pool = Executors.newSingleThreadExecutor()
+        try {
+            val first = pool.submit<SuAuthorizationCache.State> { cache.authorize(su) }
+            assertTrue(entered.await(2, TimeUnit.SECONDS))
+            cache.invalidate()
+            release.countDown()
+            assertEquals(SuAuthorizationCache.State.UNKNOWN, first.get(2, TimeUnit.SECONDS))
+            assertEquals(SuAuthorizationCache.State.UNKNOWN, cache.state(su))
+        } finally {
+            release.countDown()
+            pool.shutdownNow()
+        }
+    }
 }
