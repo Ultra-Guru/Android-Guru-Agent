@@ -106,7 +106,7 @@ class CodeStreamModelsTest {
         // 高水位尾部丢弃：fullText 是累积的真延长 → 采信引擎全文
         assertEquals(
             "今天上海的天气很好",
-            reconcileStreamText(accumulated = "今天的", fullText = "今天上海的天气很好")
+            reconcileStreamText(accumulated = "今天上海", fullText = "今天上海的天气很好")
         )
         assertEquals("完整回复", reconcileStreamText("完整回", "完整回复"))
     }
