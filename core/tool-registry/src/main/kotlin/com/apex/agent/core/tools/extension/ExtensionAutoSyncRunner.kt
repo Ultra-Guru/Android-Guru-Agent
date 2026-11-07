@@ -28,7 +28,7 @@ class ExtensionAutoSyncRunner(
 
         /** 一行人读摘要（通知/Doctor 共用）。 */
         fun summary(): String = buildString {
-            append("ok=$ok fresh=${fresh.size} drift=${drifted.size} failed=${failed.size}")
+            append("ok=$ok fresh=$fresh drift=${drifted.size} failed=${failed.size}")
             if (drifted.isNotEmpty()) append(" · 漂移: " + drifted.take(3).joinToString(", "))
             if (failed.isNotEmpty()) append(" · 失败: " + failed.take(3).joinToString(", "))
         }
