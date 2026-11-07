@@ -38,7 +38,12 @@ internal fun registerTerminalPtyTools(
     registry.register(SafeAgentTool(TerminalToolAdapter(auditedTerminalTool(toolAuditLogger, TerminalSnapshotTool(terminalRuntime)))))
     registry.register(SafeAgentTool(TerminalToolAdapter(auditedTerminalTool(toolAuditLogger, TerminalCloseTool(terminalRuntime)))))
     // T73: 后端能力发现 + Ubuntu rootfs 安装引导（Agent 自主进入 Ubuntu 的入口）。
-    registry.register(SafeAgentTool(TerminalToolAdapter(TerminalBackendsTool(terminalRuntime, smokeProbe::probe))))
+    // T99 评审 B1：TerminalBackends 保持纯发现（readOnly），不再在 READY 查询里
+    // 执行 guest 探针；真正的 PRoot 健康探测由 TerminalPRootSmoke 显式承载
+    // （非只读注解 → PLAN 拒绝、DEFAULT/RiskAwareToolGate 既有副作用门）。
+    registry.register(SafeAgentTool(TerminalToolAdapter(TerminalBackendsTool(terminalRuntime))))
+    registry.register(SafeAgentTool(TerminalToolAdapter(
+        TerminalPRootSmokeTool(terminalRuntime, smokeProbe::probe))))
 }
 
 /** §11：GitHub 9 工具（无条件注册 —— 运行时连接状态由 GithubApiService 报错语义兜底）。 */
