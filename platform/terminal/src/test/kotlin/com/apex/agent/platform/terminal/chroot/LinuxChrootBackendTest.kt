@@ -184,7 +184,10 @@ class LinuxChrootBackendTest {
         assertTrue(chrootLine.contains("'PATH="))
         assertTrue(chrootLine.contains("/bin/sh -c 'cd /workspace && exec /bin/bash -i'"))
 
-        assertTrue(chrootLine.endsWith("8>&- 9>&-"))
+        // Guest inherits fd 9 (shared users lock) so an orphan guest keeps it;
+        // only the operations lock fd 8 is closed before exec.
+        assertTrue(chrootLine.endsWith("8>&-"))
+        assertFalse("guest must inherit the shared users lock", chrootLine.contains("9>&-"))
         assertTrue(script.contains("cleanup_one workspace\n"))
         assertTrue(script.contains("cleanup_one root\n"))
         assertTrue(script.contains("cleanup_one dev\n"))

@@ -240,9 +240,13 @@ class LinuxChrootBackend(
         val envTokens = PRootEnvTrampoline.guestPrefix(guestEnv)
             .drop(ENV_EXECUTABLE_PREFIX_SIZE)   // 剥掉 /usr/bin/env -i（chroot 命令自带）
             .joinToString(" ") { shellQuote(it) }
-        // Guest must not inherit lock FDs (especially background jobs that outlive the shell).
+        // Release only the operations lock; fd 9 stays open and is INHERITED by
+        // the guest. Every descendant holds the shared users lock, so when the su
+        // shell is killed but the guest survives, a later shell cannot acquire an
+        // exclusive lock and detach mounts the orphan still uses (finding #3).
+        // fd 8 is closed so a guest background job cannot hold the ops lock.
         lines += ChrootMountScript.releaseOperationsLock
-        lines += "chroot \"\$R\" ${shellQuote(ENV_EXECUTABLE)} -i $envTokens /bin/sh -c 'cd $guestCwd && exec /bin/bash -i' 8>&- 9>&-"
+        lines += "chroot \"\$R\" ${shellQuote(ENV_EXECUTABLE)} -i $envTokens /bin/sh -c 'cd $guestCwd && exec /bin/bash -i' 8>&-"
         // EXIT trap in ChrootMountScript handles normal exit, signals and partial setup.
         return lines.joinToString("\n")
     }

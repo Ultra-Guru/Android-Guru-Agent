@@ -30,7 +30,11 @@ class ChrootMountReviewRegressionTest {
         for (target in targets) File(root, target).mkdirs()
     }
     private fun table(name: String) = File(tmp.root, name).apply { writeText("1 0 0:1 / / rw - rootfs fake rw\n") }
-    private fun script(root: File, table: File, name: String = "proc", guest: String = "chroot \"\$R\" /bin/false 8>&- 9>&-"): String = listOf(
+    /**
+     * The fake guest inherits fd 9 exactly like the real chroot line (only fd 8
+     * is closed), so it holds the shared users lock for its whole lifetime.
+     */
+    private fun script(root: File, table: File, name: String = "proc", guest: String = "chroot \"\$R\" /bin/false 8>&-"): String = listOf(
         "R=${shellQuote(root.absolutePath)}",
         ChrootMountScript.header(root.absolutePath, table.absolutePath),
         // The real backend mkdir's each bind target; mirror that in the fixture.
@@ -189,12 +193,16 @@ printf 'umount %s\n' "§1" >> "§OPS"
         val original = start(script(root, table), binaries, table, ops, gate)
         try {
             assertEquals("orphan guest started", "READY", original.inputStream.bufferedReader().readLine())
+            // SIGKILL the su shell; the orphan guest keeps its inherited fd 9.
             original.destroyForcibly()
             assertTrue(original.waitFor(5, TimeUnit.SECONDS))
             // A subsequent short guest must not detach mounts the orphan uses.
             File(binaries, "chroot").writeText("#!/bin/sh\nexit 7\n")
             assertEquals(7, run(script(root, table), binaries, table, ops))
-            assertFalse("orphan holds shared lock", ops.readLines().any { it.startsWith("umount ") })
+            assertFalse(
+                "orphan still holds the shared lock: nothing may be detached",
+                ops.readLines().any { it.startsWith("umount ") }
+            )
             // Signal the orphan to exit; the kernel closes its inherited fd 9.
             runCatching {
                 gate.outputStream().bufferedWriter().use { it.write("exit\n") }

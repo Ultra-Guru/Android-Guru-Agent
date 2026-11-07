@@ -129,7 +129,8 @@ class ChrootMountScriptTest {
         ChrootMountScript.mount("sys", "mount", "-t", "sysfs", "sys"),
         ChrootMountScript.mount("dev", "mount", "--bind", "/dev"),
         ChrootMountScript.releaseOperationsLock,
-        "chroot \"\$R\" /bin/false 8>&- 9>&-"
+        // Guest inherits fd 9 (shared users lock), closes only the ops lock fd 8.
+        "chroot \"\$R\" /bin/false 8>&-"
     ).joinToString("\n")
 
     private fun fakeCommands(): File = tmp.newFolder("bin").also { bin ->
