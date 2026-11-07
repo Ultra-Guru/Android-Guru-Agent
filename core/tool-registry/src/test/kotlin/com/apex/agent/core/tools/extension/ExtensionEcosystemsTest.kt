@@ -44,7 +44,8 @@ class ExtensionEcosystemsTest {
         override suspend fun exec(
             command: List<String>,
             cwd: File,
-            timeoutMs: Long
+            timeoutMs: Long,
+            stdin: String?
         ): Result<NodeInstallPort.ExecOutcome> {
             executed += command
             if (failCommand != null && command.firstOrNull() == failCommand) {
@@ -356,7 +357,7 @@ class ExtensionRunToolTest {
 
     private class FakeRunPort : NodeInstallPort {
         var lastCommand: List<String>? = null
-        override suspend fun exec(command: List<String>, cwd: File, timeoutMs: Long): Result<NodeInstallPort.ExecOutcome> {
+        override suspend fun exec(command: List<String>, cwd: File, timeoutMs: Long, stdin: String?): Result<NodeInstallPort.ExecOutcome> {
             lastCommand = command
             // npm 形态模拟真实安装产物：node_modules/<pkg>/index.js + package.json(main)
             if (command.firstOrNull() == "npm") {

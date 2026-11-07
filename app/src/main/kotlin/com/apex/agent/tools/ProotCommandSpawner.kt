@@ -274,8 +274,9 @@ class ProotCommandSpawner(
                 // cwd 不存在等场景：ProcessBuilder 语义原样透传给引擎的 spawn failure
                 throw e
             }
-            runCatching { proc.outputStream.close() }
-            return PrivilegedCommandSpawner.JvmProcessCommand(proc)
+            // stdin 保持打开，由 ExecEngine 收尾（写载荷→close / 无载荷直接 close =
+            // 原有「spawn 后即 EOF」语义不变）。proot ubuntu 通道 stdin 语义确定真实。
+            return PrivilegedCommandSpawner.JvmProcessCommand(proc, stdinSupported = true)
         }
     }
 

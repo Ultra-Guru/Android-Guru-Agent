@@ -1,0 +1,6 @@
+{
+  "name": "dsh-fixture-fn-cjs",
+  "version": "1.2.3",
+  "description": "P0 fixture: CJS 函数模块 + 裸对象 register + 有状态闭包",
+  "main": "index.js"
+}

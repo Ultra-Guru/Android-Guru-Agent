@@ -114,15 +114,18 @@ object ExtensionModule {
             override suspend fun exec(
                 command: List<String>,
                 cwd: File,
-                timeoutMs: Long
+                timeoutMs: Long,
+                stdin: String?
             ): Result<NodeInstallPort.ExecOutcome> = withContext(Dispatchers.IO) {
                 runCatching {
-                    // ExecRequest.command 为单字符串（shell 形态）——argv 单引号包安全拼接
+                    // ExecRequest.command 为单字符串（shell 形态）——argv 单引号包安全拼接；
+                    // 结构化载荷（DSH 工具参数 JSON）走 stdin，永不拼进命令串
                     val joined = command.joinToString(" ") { "'${it.replace("'", "")}'" }
                     val result = engine.execute(
                         ExecRequest(
                             command = joined,
                             cwd = cwd.absolutePath,
+                            stdin = stdin,
                             timeoutMs = timeoutMs,
                             maxOutputChars = 24_000
                         )
@@ -161,6 +164,15 @@ object ExtensionModule {
         apkInstallPort: com.apex.agent.core.tools.extension.adapters.ApkPackageExtensionAdapter.ApkInstallPort,
         layout: com.apex.agent.core.tools.extension.ExtensionDirLayout
     ): ExtensionAdapterRegistry {
+        // DSH Native Plugin Host（2026-11）：静态分析 + 动态验证 + 能力快照编排
+        val dshStore = com.apex.agent.core.tools.extension.dsh.DshCapabilitiesStore(layout)
+        val dshAnalyzer = com.apex.agent.core.tools.extension.dsh.DshArtifactAnalyzer(
+            port = nodeInstallPort, layout = layout, extensionRoot = layout.extensionRoot
+        )
+        val dshIntrospector = com.apex.agent.core.tools.extension.dsh.DshPluginIntrospector(
+            port = nodeInstallPort, layout = layout, extensionRoot = layout.extensionRoot,
+            analyzer = dshAnalyzer, store = dshStore
+        )
         return ExtensionAdapterRegistry(
             listOf(
                 SkillExtensionAdapter(
@@ -178,7 +190,7 @@ object ExtensionModule {
                     skillRegistry = skillRegistry,
                     fetchBytes = { url -> textFetcher.fetchBytes(url) }
                 ),
-                DshExtensionAdapter(port = nodeInstallPort, layout = layout),
+                DshExtensionAdapter(port = nodeInstallPort, layout = layout, introspector = dshIntrospector),
                 ApkPackageExtensionAdapter(port = apkInstallPort)
             )
         )
