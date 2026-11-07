@@ -64,7 +64,8 @@ class JsonTransformTool : BaseTool(
     """.trimIndent(),
     declaredSchema = toolSchema {
         string("json", required = true, description = "The JSON document to transform (raw text)")
-        string(
+        // 双形态（FlexibleJson 口径）：内联数组首选，字符串编码宽容。
+        stringArray(
             "operations",
             required = true,
             description = "JSON array of operation objects, applied in order"

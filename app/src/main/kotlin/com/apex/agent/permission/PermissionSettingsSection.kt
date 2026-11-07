@@ -46,7 +46,9 @@ import com.apex.agent.ui.screen.settings.SectionCard
  * 业界标准式权限模式的设置面：
  *  - 模式区：四选一（BYPASS / DEFAULT / ACCEPT_EDITS / PLAN），
  *    每模式一行中文说明（FilterChip 选择形态对齐设置页
- *    ReasoningSection 的既有先例）；
+ *    ReasoningSection 的既有先例）；S-03：切入 BYPASS（全自动）需经
+ *    二次确认对话框 —— 全自动意味着副作用工具不再逐个确认，必须是
+ *    用户的显式选择而非默认状态；
  *  - 规则区：按序首匹配的 allow / ask / deny 规则列表——pattern 等宽
  *    字体展示，效应徽标三色（绿 / 琥珀 / 红，对齐 CodeScreen 的
  *    DiffOutput 色板），支持删除与对话框添加。
@@ -65,7 +67,7 @@ import com.apex.agent.ui.screen.settings.SectionCard
  * )
  *
  * 其中 permissionMode / permissionRules 为 AgentSettings 字段
- * （默认 BYPASS 全自动 + 空规则，见 SettingsRepository 默认档说明），
+ * （S-03 起默认 DEFAULT + 空规则，见 SettingsRepository 默认档说明），
  * stringResource 键（code_perm_ 前缀）见文件底部 KDoc 的键清单。
  *
  * ── stringResource 键清单（主控加入 strings xml；en / zh 文案）──
@@ -78,6 +80,10 @@ import com.apex.agent.ui.screen.settings.SectionCard
  * code_perm_mode_accept_edits     接受编辑 / Accept Edits
  * code_perm_mode_plan             规划模式 / Plan
  * code_perm_mode_bypass_desc      所有工具直接放行，不再询问（请谨慎使用）
+ * code_perm_bypass_confirm_title  S-03：启用全自动前的二次确认标题
+ * code_perm_bypass_confirm_text   S-03：全自动后果说明（副作用工具免确认）
+ * code_perm_bypass_confirm_ok     S-03：仍然启用
+ * code_perm_bypass_confirm_cancel S-03：暂不启用
  * code_perm_mode_default_desc     只读工具自动放行，其余一律先询问
  * code_perm_mode_accept_edits_desc 文件编辑与 git 提交自动放行，其余先询问
  * code_perm_mode_plan_desc        只读规划：任何会修改环境的工具都会被拒绝
@@ -102,8 +108,21 @@ internal fun PermissionSettingsSection(
     onModeChange: (PermissionMode) -> Unit,
     onRulesChange: (List<PermissionRule>) -> Unit
 ) {
-    // 「添加规则」对话框开关（唯一 UI 瞬态；数据本身无本地状态）
+    // 「添加规则」对话框开关（UI 瞬态；数据本身无本地状态）
     var showAddDialog by remember { mutableStateOf(false) }
+
+    // S-03：切入 BYPASS 的二次确认开关 —— 全自动 = 副作用工具免确认，
+    // 必须是显式选择（默认档是 DEFAULT）；关闭（切出）BYPASS 不需要确认。
+    var showBypassConfirmDialog by remember { mutableStateOf(false) }
+
+    // 模式切换守卫：只有「从非 BYPASS 切入 BYPASS」弹确认，其余直通。
+    val guardedModeChange: (PermissionMode) -> Unit = { candidate ->
+        if (candidate == PermissionMode.BYPASS && mode != PermissionMode.BYPASS) {
+            showBypassConfirmDialog = true
+        } else {
+            onModeChange(candidate)
+        }
+    }
 
     SectionCard(
         title = stringResource(R.string.code_perm_section_title),
@@ -120,7 +139,7 @@ internal fun PermissionSettingsSection(
             ModeRow(
                 mode = candidate,
                 current = mode,
-                onModeChange = onModeChange
+                onModeChange = guardedModeChange
             )
         }
 
@@ -156,6 +175,17 @@ internal fun PermissionSettingsSection(
         }
     }
 
+    // ── S-03：BYPASS 二次确认对话框 ──
+    if (showBypassConfirmDialog) {
+        BypassConfirmDialog(
+            onConfirm = {
+                showBypassConfirmDialog = false
+                onModeChange(PermissionMode.BYPASS)
+            },
+            onDismiss = { showBypassConfirmDialog = false }
+        )
+    }
+
     // ── 添加规则对话框 ──
     if (showAddDialog) {
         AddRuleDialog(
@@ -166,6 +196,35 @@ internal fun PermissionSettingsSection(
             }
         )
     }
+}
+
+/**
+ * S-03：切入 BYPASS（全自动）的二次确认对话框。
+ *
+ * 全自动 = 写文件 / git 提交 / shell 高危命令之外的全部副作用工具免确认
+ * （DENY/ASK 规则与 sensitiveAction 仍兜底）—— 列明后果后才允许切换，
+ * 保证「全自动」永远是用户的显式选择。取消即保持当前档位。
+ */
+@Composable
+private fun BypassConfirmDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.code_perm_bypass_confirm_title)) },
+        text = { Text(stringResource(R.string.code_perm_bypass_confirm_text)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.code_perm_bypass_confirm_ok))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.code_perm_bypass_confirm_cancel))
+            }
+        }
+    )
 }
 
 /**

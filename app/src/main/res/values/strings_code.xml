@@ -13,6 +13,7 @@
 
     <!-- Todo panel -->
     <string name="code_todo_progress">Tasks %1$d/%2$d</string>
+    <string name="code_todo_streaming">Tasks · generating (%1$d)</string>
 
     <!-- Message stream / input -->
     <string name="code_input_hint">Describe a coding task…</string>
@@ -52,12 +53,17 @@
     <string name="code_perm_section_title">Tool permissions</string>
     <string name="code_perm_section_subtitle">standard permission mode and rules</string>
     <string name="code_perm_mode_label">Permission mode</string>
-    <string name="code_perm_mode_bypass">Full Auto (Default)</string>
-    <string name="code_perm_mode_default">Standard (asks high-risk)</string>
+    <string name="code_perm_mode_bypass">Full Auto (confirm to enable)</string>
+    <string name="code_perm_mode_default">Standard (Default)</string>
     <string name="code_perm_mode_accept_edits">Accept Edits</string>
     <string name="code_perm_mode_plan">Plan</string>
-    <string name="code_perm_mode_bypass_desc">Every tool (shell, MCP, skills included) runs directly — the default mode; DENY and ASK rules still apply, and sensitive actions (paid tools) still confirm each time</string>
-    <string name="code_perm_mode_default_desc">Basic tools run automatically; only delete-like high-risk actions ask first</string>
+    <string name="code_perm_mode_bypass_desc">Every tool (shell, MCP, skills included) runs without confirmation — enable it deliberately; DENY and ASK rules still apply, and sensitive actions (paid tools) still confirm each time</string>
+    <string name="code_perm_mode_default_desc">Read-only tools run automatically; side effects (file writes, git commits) and high-risk actions ask first</string>
+    <!-- S-03: BYPASS explicit opt-in confirmation -->
+    <string name="code_perm_bypass_confirm_title">Enable Full Auto mode?</string>
+    <string name="code_perm_bypass_confirm_text">Full Auto skips confirmation for side-effecting tools: file writes, git commits, MCP and skill actions will run without asking (DENY/ASK rules and paid per-use actions still confirm). High-risk shell commands also stop being gated. This is intended for users who fully trust the agent — you can switch back at any time.</string>
+    <string name="code_perm_bypass_confirm_ok">Enable Full Auto</string>
+    <string name="code_perm_bypass_confirm_cancel">Keep current mode</string>
     <string name="code_perm_mode_accept_edits_desc">File edits and git commits are allowed; everything else asks first</string>
     <string name="code_perm_mode_plan_desc">Read-only planning: any tool that mutates the environment is denied</string>
     <string name="code_perm_rules_title">Tool permission rules (first match wins)</string>

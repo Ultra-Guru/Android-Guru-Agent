@@ -139,6 +139,8 @@ object ToolIdAliases {
 
         "code_read" to "CodeRead",
 
+        "code_repo_map" to "CodeRepoMap",
+
         "code_task" to "CodeTask",
 
         "code_todo" to "CodeTodo",

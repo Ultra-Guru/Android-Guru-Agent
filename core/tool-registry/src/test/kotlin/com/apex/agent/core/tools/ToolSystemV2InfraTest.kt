@@ -67,6 +67,43 @@ class ToolSystemV2InfraTest {
     }
 
     @Test
+    fun `array params accept inline and string-encoded shapes`() {
+        // CodeTodo 实测回归：todos 声明为 string 时内联数组在 preCheck 就被
+        // 拒（"expected string"）。声明 array 后，字符串编码的 JSON 数组同样
+        // 宽容放行（FlexibleJson 口径），普通字符串/数字仍被拒。
+        val schema = toolSchema {
+            stringArray("items", required = true)
+        }
+        assertTrue(schema.validateArguments("""{"items": [{"a": 1}]}""").isValid)
+        assertTrue(schema.validateArguments("""{"items": "[{\"a\": 1}]"}""").isValid)
+        assertTrue(schema.validateArguments("""{"items": "[]"}""").isValid)
+
+        val number = schema.validateArguments("""{"items": 42}""")
+        assertFalse(number.isValid)
+        assertTrue(number.summary().contains("expected array"))
+
+        val plainString = schema.validateArguments("""{"items": "just text"}""")
+        assertFalse(plainString.isValid)
+        assertTrue(plainString.summary().contains("expected array"))
+
+        val brokenJson = schema.validateArguments("""{"items": "[not json"}""")
+        assertFalse(brokenJson.isValid)
+    }
+
+    @Test
+    fun `object params accept inline and string-encoded shapes`() {
+        val schema = toolSchema {
+            objectParam("definition", required = true)
+        }
+        assertTrue(schema.validateArguments("""{"definition": {"id": "x"}}""").isValid)
+        assertTrue(schema.validateArguments("""{"definition": "{\"id\": \"x\"}"}""").isValid)
+
+        val arrayValue = schema.validateArguments("""{"definition": [1, 2]}""")
+        assertFalse(arrayValue.isValid)
+        assertTrue(arrayValue.summary().contains("expected object"))
+    }
+
+    @Test
     fun `schema validation tolerates unknown extra keys and null optionals`() {
         val schema = toolSchema {
             string("name", required = true)

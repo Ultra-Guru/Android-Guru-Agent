@@ -41,8 +41,11 @@ apk-plugin-template/
 1. **放游戏**：`assets/game.html` ← 你的自包含 HTML（含内联 pretext）；
 2. **改身份**：`GamePluginService.kt` 顶部常量 `GAME_ID` / `GAME_NAME` /
    `GAME_DESC`（或读 manifest 式的 `meta-data`）；
-3. **同签名构建**：用宿主 keystore（仓库 keystore/apex-release.jks）签名
-   `assembleRelease` → 产物即 APK 插件。
+3. **同签名构建**：用宿主 keystore 签名 `assembleRelease` → 产物即 APK 插件。
+   （S-01 起宿主 keystore 不再随仓库分发 —— 经 env 注入：
+   `APEX_KEYSTORE_FILE` / `APEX_KEYSTORE_PASSWORD` / `APEX_KEY_ALIAS` /
+   `APEX_KEY_PASSWORD`，或等价 Gradle 属性；生成见
+   `scripts/generate_release_keystore.sh`。）
 
 宿主侧重装后经 `PluginManager`（queryIntentServices 发现 +
 `com.apex.agent.plugin.PLUGIN` action + 版本门 + 签名门）自动绑定；

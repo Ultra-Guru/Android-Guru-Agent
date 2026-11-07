@@ -145,7 +145,6 @@ class StreamingArgsPreviewTest {
 
     @Test
     fun `non-preview kinds get no tracker`() {
-        assertNull(StreamingArgsTracker.forKind(ToolKind.PLAN))
         assertNull(StreamingArgsTracker.forKind(ToolKind.MCP_CUSTOM))
         assertNull(StreamingArgsTracker.forKind(ToolKind.GIT))
     }
@@ -170,5 +169,83 @@ class StreamingArgsPreviewTest {
         val t = tracker(ToolKind.WEB_SEARCH)
         t.append("""{"keyword": "compose streaming"}""")
         assertEquals("compose streaming", t.preview()?.target)
+    }
+
+    // ── PLAN 族：todos 随参数生成逐条落地 ──────────────────────
+
+    @Test
+    fun `plan todos stream item by item from inline array`() {
+        // 三段人工切分（substring 规避原始字符串尾引号歧义）：第一条闭合后
+        // 预览即出 1 条，第二条闭合出 2 条，全量到达出 3 条 ——
+        // 「随生成逐条落地、不等参数 JSON 结束」的行为断言
+        val args = """{"todos": [{"content": "克隆仓库", "status": "completed"}, {"content": "修复参数", "status": "in_progress", "priority": "high"}, {"content": "提交 PR", "status": "pending"}]}"""
+        val cut1 = args.indexOf("修复参数")
+        val cut2 = args.indexOf("提交 PR")
+
+        val t = tracker(ToolKind.PLAN)
+        t.append(args.substring(0, cut1))
+        val early = t.preview()!!
+        assertEquals(1, early.todos?.size)
+        assertTrue(early.hasTodos)
+        assertEquals("1 项", early.target)
+
+        t.append(args.substring(cut1, cut2))
+        val mid = t.preview()!!
+        assertEquals(2, mid.todos!!.size)
+        assertEquals("修复参数", mid.todos!![1].content)
+        assertEquals("in_progress", mid.todos!![1].status)
+        assertEquals("high", mid.todos!![1].priority)
+
+        t.append(args.substring(cut2))
+        val done = t.preview()!!
+        assertEquals(3, done.todos!!.size)
+        assertEquals("3 项", done.target)
+    }
+
+    @Test
+    fun `plan todos accept string-encoded array with brace escapes`() {
+        // 编码形态：值是字符串，内部转义解析后条目逐个落地；字符串值里的
+        // 花括号（a}b{c）不得破坏对象扫描。chunked 模拟逐 token 分片。
+        val args =
+            """{"todos": "[{\"content\": \"a}b{c\", \"status\": \"pending\"}, {\"content\": \"x\"}]"}"""
+        val t = tracker(ToolKind.PLAN)
+        args.chunked(9).forEach { t.append(it) }
+        val p = t.preview()!!
+        assertEquals(2, p.todos?.size)
+        assertEquals("a}b{c", p.todos!![0].content)
+        assertEquals("pending", p.todos!![0].status)
+        assertEquals("x", p.todos!![1].content)
+        assertEquals("medium", p.todos!![1].priority)
+        assertEquals("2 项", p.target)
+    }
+
+    @Test
+    fun `plan todos incomplete unicode escape waits for next fragment`() {
+        val t = tracker(ToolKind.PLAN)
+        // \u4e2 只到 3 位十六进制：不得吞半，等下片补齐（编码形态解码器）
+        t.append("""{"todos": "[{\"content\": \"修复\u4e2""")
+        // 半截转义：对象未闭合 → 零条目 → 无预览（等待，不硬建胶囊）
+        assertNull(t.preview())
+        t.append("""d\", \"status\": \"in_progress\"}]"}""")
+        val done = t.preview()!!
+        assertEquals(1, done.todos?.size)
+        assertEquals("修复中", done.todos!![0].content)
+    }
+
+    @Test
+    fun `plan non-array todos value yields no preview`() {
+        val t = tracker(ToolKind.PLAN)
+        t.append("""{"todos": 42}""")
+        assertNull(t.preview())
+    }
+
+    @Test
+    fun `plan key inside another string is not anchored`() {
+        // 其他字符串值里写 "todos" 字样不得劫持锚定（结构性校验）
+        val t = tracker(ToolKind.PLAN)
+        t.append("""{"note": "see \"todos\" docs", "todos": [{"content": "real", "status": "pending"}]}""")
+        val p = t.preview()!!
+        assertEquals(1, p.todos?.size)
+        assertEquals("real", p.todos!![0].content)
     }
 }

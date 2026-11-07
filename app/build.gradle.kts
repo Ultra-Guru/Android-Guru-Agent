@@ -12,39 +12,55 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// ═══ 发布签名凭据解析（S-01：脚本级单一解析点，android 块与门禁任务共用）═══
+// 优先级：Gradle 属性 > 环境变量 > 无默认值（fail-closed，见 checkReleaseSigningCredentials）。
+val releaseKeystorePath: String = (project.findProperty("apexKeystoreFile") as String?)
+    ?: System.getenv("APEX_KEYSTORE_FILE")
+    ?: rootProject.file("keystore/apex-release.jks").absolutePath
+val releaseStorePassword: String? = (project.findProperty("apexKeystorePassword") as String?)
+    ?: System.getenv("APEX_KEYSTORE_PASSWORD")
+val releaseKeyAlias: String? = (project.findProperty("apexKeyAlias") as String?)
+    ?: System.getenv("APEX_KEY_ALIAS")
+val releaseKeyPassword: String? = (project.findProperty("apexKeyPassword") as String?)
+    ?: System.getenv("APEX_KEY_PASSWORD")
+val releaseSigningReady: Boolean =
+    file(releaseKeystorePath).isFile &&
+        !releaseStorePassword.isNullOrBlank() &&
+        !releaseKeyAlias.isNullOrBlank() &&
+        !releaseKeyPassword.isNullOrBlank()
+
 android {
     namespace = "com.apex.agent"
     compileSdk = 36
 
-    // ═══ 固定发布签名 keystore（v1.4.8 签名漂移根因修复）══════════════════════
+    // ═══ 发布签名（S-01：凭据 fail-closed，keystore 不入库）══════════════════
     //
-    // 背景：v1.4.7 及之前 release 用 signingConfigs.getByName("debug") ——
-    // debug.keystore 是机器本地的（~/.android/debug.keystore），CI runner 与
-    // 开发者本机必然不同 → 增量更新（VCDIFF 合成）的 APK 字节级保留源 APK
-    // 签名块，但远端新版是 CI debug key 签的 → 覆盖安装必报
-    // INSTALL_FAILED_UPDATE_INCOMPATIBLE（签名冲突）。本地构建/分叉构建
-    // 用户更是永远装不上增量合成的 APK。
+    // 历史：v1.4.7 及之前 release 用 signingConfigs.getByName("debug") ——
+    // debug.keystore 是机器本地的，CI runner 与开发者本机必然不同 →
+    // 增量更新（VCDIFF 合成）的 APK 字节级保留源 APK 签名块，但远端新版
+    // 是 CI debug key 签的 → 覆盖安装必报 INSTALL_FAILED_UPDATE_INCOMPATIBLE。
+    // v1.4.8 改为「入库 keystore + 默认口令」—— 指纹恒定了，但私钥与口令
+    // 随公开仓库分发，等同于没有签名防线（S-01 修复对象）。
     //
-    // 修法：发布签名固定为一份入库的 keystore（scripts/generate_release_keystore.sh
-    // 生成，凭据 name=meng411722 / key=meng411722），CI 与本地构建共用同一份 →
-    // 签名指纹恒定 → 增量合成 APK 与已装 APK 签名一致，覆盖安装无冲突。
+    // 现状（S-01）：keystore 移出版本控制（keystore/.gitignore 拦再入库；
+    // scripts/check_secrets.py 按「文件名后缀 + JKS magic 头」双通道拦截）；
+    // 凭据一律经 env / Gradle 属性注入，无任何默认值 —— 缺失即构建失败
+    // （checkReleaseSigningCredentials 任务，挂在 preReleaseBuild）。
     //
-    // 个人项目经 GitHub Releases 侧载分发（非 Play Store），入库 keystore 是
-    // 开源 Android 应用的标准做法（Termux / F-Droid 同款）。逃生门：环境变量
-    // APEX_KEYSTORE_FILE / APEX_KEYSTORE_PASSWORD / APEX_KEY_ALIAS /
-    // APEX_KEY_PASSWORD 可覆盖路径（CI secret 注入场景）。
+    // 注入通道（优先级：Gradle 属性 > env > 失败）：
+    //   -PapexKeystoreFile / APEX_KEYSTORE_FILE（keystore 文件路径）
+    //   -PapexKeystorePassword / APEX_KEYSTORE_PASSWORD（store 口令）
+    //   -PapexKeyAlias / APEX_KEY_ALIAS
+    //   -PapexKeyPassword / APEX_KEY_PASSWORD
+    // CI 注入点：release.yml / apk.yml 的「Restore release keystore from
+    // secrets」步骤（APEX_RELEASE_KEYSTORE_BASE64 等四个 repo secrets）。
+    // 本地生成新 keystore：scripts/generate_release_keystore.sh（口令经 env 注入）。
     signingConfigs {
         create("release") {
-            val keystoreFile = (project.findProperty("apexKeystoreFile") as String?)
-                ?: System.getenv("APEX_KEYSTORE_FILE")
-                ?: rootProject.file("keystore/apex-release.jks").absolutePath
-            storeFile = file(keystoreFile)
-            storePassword = (project.findProperty("apexKeystorePassword") as String?)
-                ?: System.getenv("APEX_KEYSTORE_PASSWORD") ?: "meng411722"
-            keyAlias = (project.findProperty("apexKeyAlias") as String?)
-                ?: System.getenv("APEX_KEY_ALIAS") ?: "meng411722"
-            keyPassword = (project.findProperty("apexKeyPassword") as String?)
-                ?: System.getenv("APEX_KEY_PASSWORD") ?: "meng411722"
+            storeFile = file(releaseKeystorePath)
+            storePassword = releaseStorePassword
+            keyAlias = releaseKeyAlias
+            keyPassword = releaseKeyPassword
             // 启用 v1/v2/v3 签名方案（v2 是 Android 7+ 覆盖安装首选，v1 兼容旧机）
             enableV1Signing = true
             enableV2Signing = true
@@ -75,11 +91,12 @@ android {
         // v1.4.2：双仓库发布架构升级 —— PR 合并即自动发版（release.yml push main 触发）。
         // CI 通过 -PapexVersionName / -PapexVersionCode 注入最终版本（版本号冲突时
         // 自动追加构建序号，如 1.4.2.1，并自动递增 versionCode）；本地构建走源码值。
-        // v1.4.8：签名漂移根因修复 —— 发布签名固定为入库 keystore（凭据
-        // name=meng411722 / key=meng411722），CI 与本地构建签名指纹恒定 → 增量
-        // 合成 APK 与已装 APK 签名一致，覆盖安装无冲突；本地 APK 常驻关于页
-        // （不再随 UpToDate/版本切换自动清理）；installApk 复制内部 cache 再
-        // 授权，修复 MIUI/EMUI「未找到 SD 储存卡」。
+        // v1.4.8：签名漂移根因修复 —— 发布签名固定为单一 keystore，CI 与本地
+        // 构建签名指纹恒定 → 增量合成 APK 与已装 APK 签名一致，覆盖安装无
+        // 冲突；本地 APK 常驻关于页（不再随 UpToDate/版本切换自动清理）；
+        // installApk 复制内部 cache 再授权，修复 MIUI/EMUI「未找到 SD 储存卡」。
+        // （v1.4.8 当时以「入库 keystore + 默认口令」实现；S-01 起凭据移出
+        // 版本控制，语义不变：指纹恒定，来源改为 env/CI secrets 注入。）
         // v1.4.7：热更新体系（data-only 版本零安装热载 / 签名预检 / CI 热更包 /
         // 发布仓库应急热修通道，见 docs/hot-update-pipeline.md）。
         // v1.4.6：聊天输入 v5 —— 技能 chip 内联输入框（多选/去重/可删）/ 流式玻璃
@@ -137,11 +154,11 @@ android {
     }
 
     buildTypes {
-        // 发布 APK 以**固定 release keystore**签名（v1.4.8 签名漂移根因修复）：
-        // v1.4.7 及之前用 debug 签名（机器本地 → CI/本地/分叉必然不同），导致
-        // 增量更新合成的 APK 覆盖安装时报签名冲突。现统一用入库的
-        // keystore/apex-release.jks（凭据见 signingConfigs.release），CI 与本地
-        // 构建签名指纹恒定 → 增量合成 APK 与已装 APK 签名一致，覆盖安装无冲突。
+        // 发布 APK 以**注入式 release keystore**签名（S-01：keystore 不入库，
+        // 凭据经 env / Gradle 属性 / CI secrets 注入，见 signingConfigs 上方
+        // 说明）：签名指纹恒定 → 增量合成 APK 与已装 APK 签名一致，覆盖安装
+        // 无冲突。凭据缺失时 preReleaseBuild 前置的 checkReleaseSigningCredentials
+        // 任务以明确指引失败（fail-closed，不回退默认值）。
         //
         // 【不使用代码混淆】本 APK 明确不做 R8/ProGuard 混淆与资源缩减：
         //  - 持久化大量依赖 kotlinx.serialization 的字段名（ModelProfile / ProviderConfig /
@@ -154,14 +171,26 @@ android {
             isShrinkResources = false
             signingConfig = signingConfigs.getByName("release")
         }
-        // debug 构建也用 release 签名 —— 让本地构建的 APK 可覆盖安装 CI 发布版
-        // （签名一致 → 不再 INSTALL_FAILED_UPDATE_INCOMPATIBLE），开发者本地
-        // 构建直装真机即可与 CI 产物互换覆盖。如需纯调试签名可加 -PapexDebugSign
-        // 逃生门（见 signingConfigs 上方属性覆盖）。
+        // debug 构建优先也用 release 签名 —— 让本地构建的 APK 可覆盖安装 CI
+        // 发布版（签名一致 → 不再 INSTALL_FAILED_UPDATE_INCOMPATIBLE）。
+        // S-01：keystore 移出版本控制后，本地/CI 无凭据时**回退 debug 签名**
+        // （响亮警告，不阻断 —— PR CI 的 debug APK 工件、新克隆环境、
+        // instrument 测试都走此路径）；凭据齐备时维持旧行为（release 签名）。
+        // 如需强制纯调试签名可加 -PapexDebugSign=true（开发调试隔离场景）。
         debug {
             // 仅当显式传 -PapexDebugSign=true 时回退到 debug 签名（开发调试隔离场景）
             if ((project.findProperty("apexDebugSign") as String?) != "true") {
-                signingConfig = signingConfigs.getByName("release")
+                if (releaseSigningReady) {
+                    signingConfig = signingConfigs.getByName("release")
+                } else {
+                    logger.warn(
+                        "[signing] ⚠️ release 凭据/keystore 不可用（S-01：已移出版本控制）" +
+                            " —— 本次 debug 构建使用 debug 签名。" +
+                            "需要与发布版同签名：export APEX_KEYSTORE_FILE/PASSWORD " +
+                            "APEX_KEY_ALIAS/APEX_KEY_PASSWORD 后重试，" +
+                            "或 -PapexKeystoreFile 等属性注入。"
+                    )
+                }
             }
         }
     }
@@ -440,11 +469,55 @@ tasks.register("warnBundledRootfs") {
     }
 }
 
-// release：严格门禁（缺失/指纹不符 = 构建失败）；debug：存在性警告（不阻断迭代）
+// ═══ S-01 门禁：发布签名凭据 fail-closed ═══
+//
+// 背景：v1.4.8 起 release 签名曾以「入库 keystore + 默认口令」实现 —— 私钥
+// 与口令随公开仓库分发，任何人可用其签出与本 App 同签名的 APK（插件信任、
+// 覆盖安装防线全部失效）。S-01 把 keystore 移出版本控制后，构建脚本里不再
+// 有任何默认口令；本任务在 release 构建前置位校验凭据完整性，缺失即以可
+// 操作的指引失败（AGP 自身的报错更晚且含混）。
+//
+// 语义：keystore 文件存在 + store 口令 / alias / key 口令齐备（env 或 Gradle
+// 属性注入，无默认值）。debug 构建不受影响（无凭据时回退 debug 签名，见
+// buildTypes.debug）。
+tasks.register("checkReleaseSigningCredentials") {
+    group = "verification"
+    description = "S-01 guard: release signing credentials must be injected via env/Gradle properties (no defaults since keystore left VCS)."
+    doLast {
+        val problems = mutableListOf<String>()
+        if (!file(releaseKeystorePath).isFile) {
+            problems += "keystore 文件不存在：$releaseKeystorePath（设 APEX_KEYSTORE_FILE 或 -PapexKeystoreFile）"
+        }
+        if (releaseStorePassword.isNullOrBlank()) {
+            problems += "storePassword 缺失：设 APEX_KEYSTORE_PASSWORD（或 -PapexKeystorePassword）"
+        }
+        if (releaseKeyAlias.isNullOrBlank()) {
+            problems += "keyAlias 缺失：设 APEX_KEY_ALIAS（或 -PapexKeyAlias）"
+        }
+        if (releaseKeyPassword.isNullOrBlank()) {
+            problems += "keyPassword 缺失：设 APEX_KEY_PASSWORD（或 -PapexKeyPassword）"
+        }
+        if (problems.isNotEmpty()) {
+            throw GradleException(
+                buildString {
+                    appendLine("[signing-guard] S-01 fail-closed：发布签名凭据不完整 —— 无默认值可回退（keystore 已移出版本控制）。")
+                    problems.forEach { appendLine("  - $it") }
+                    appendLine("本地生成新 keystore：scripts/generate_release_keystore.sh（口令经 env 注入，不入库）。")
+                    appendLine("CI 配置：repo secrets APEX_RELEASE_KEYSTORE_BASE64 / APEX_KEYSTORE_PASSWORD / APEX_KEY_ALIAS / APEX_KEY_PASSWORD。")
+                    appendLine("开发迭代免发布签名：-PapexDebugSign=true（debug 签名）。")
+                }
+            )
+        }
+        logger.lifecycle("[signing-guard] OK — 发布签名凭据就绪（keystore=${file(releaseKeystorePath).name}）")
+    }
+}
+
+// release：严格门禁（rootfs 缺失/指纹不符、签名凭据缺失 = 构建失败）；
+// debug：存在性警告（不阻断迭代）。
 // ⚠️ 时机：AGP 的 preBuild/preReleaseBuild 在 afterEvaluate 之前尚未注册 ——
 // 直接 tasks.named(...) 在脚本执行期即抛 "Task not found"（CI 实测）。
 // 挪入 afterEvaluate：任务注册完成后解析，严格性不降级（不存在照样报错）。
 project.afterEvaluate {
-    tasks.named("preReleaseBuild") { dependsOn("checkBundledRootfs") }
+    tasks.named("preReleaseBuild") { dependsOn("checkBundledRootfs", "checkReleaseSigningCredentials") }
     tasks.named("preBuild") { dependsOn("warnBundledRootfs") }
 }

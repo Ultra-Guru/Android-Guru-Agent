@@ -1,5 +1,7 @@
 package com.apex.agent.core.engine
 
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -137,7 +139,23 @@ class UserQuestionBridge : UserQuestionGateway {
 
     fun submit(answer: AgentAnswer) {
         synchronized(this) {
-            answerDeferred?.complete(answer)
+            val deferred = answerDeferred ?: return
+            // S-11（chaos-crash-audit L-11）：迟到/错配答案不得注入当前挂起问题。
+            // 竞态窗口：A 超时收场（或被 abort）与新问题 B 注册之间，UI 迟到的
+            // A 答案若直接 complete 到 B 的 deferred，Agent 会拿着 A 的选择继续
+            // 执行 B 的破坏性动作。比对 questionId，不一致即丢弃并留审计痕
+            // （两个 id + 时间戳），不 complete —— B 保持挂起等待真实回答。
+            val pendingId = _pendingQuestion.value?.id
+            if (pendingId != null && answer.questionId != pendingId) {
+                AppLogger.instance.warn(
+                    LogCategory.ENGINE, TAG,
+                    "dropped mismatched answer: answer.questionId=${answer.questionId} " +
+                        "!= pending.questionId=$pendingId (late or stale UI submit, " +
+                        "ts=${System.currentTimeMillis()})"
+                )
+                return
+            }
+            deferred.complete(answer)
         }
     }
 
@@ -168,3 +186,6 @@ class UserQuestionBridge : UserQuestionGateway {
         }
     }
 }
+
+/** S-11：错配答案丢弃的审计日志来源标识。 */
+private const val TAG = "UserQuestionBridge"

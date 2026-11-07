@@ -608,6 +608,10 @@ jobs:
         #       引擎 234+ 项 + View 层 148 项纯 JVM 测试（proot -E 事故教训）
         #   :platform:terminal:compileDebugAndroidTestKotlin —— P70：真 JNI
         #       PTY instrumentation 测试无模拟器，只编译保绿（设备上 connected*）
+        #   :platform:mcp-host:test —— S-04：全方法鉴权/回环绑定/暴露面收窄
+        #       回归（真实端口集成 + bridge 判定矩阵）。此前该模块只被 kotlinc
+        #       镜像编译、测试从未进矩阵（S-09 盲区模式）—— 本 PR 触及该模块
+        #       安全语义，其测试必须进 CI。
         #   :core:agent-engine:test —— A68.1 编排器状态机/循环/超时/取消（纯 JVM）
         #   :core:code-tools:test —— #148 进程内 LSP 诊断回注（纯 JVM，37/37）
         #   :core:code-engine:test —— #147 子代理事件收集/超时/并发闸门（纯 JVM）
@@ -628,6 +632,7 @@ jobs:
             :core:agent-engine:test \
             :core:llm-adapter:test \
             :core:code-tools:test \
+            :platform:mcp-host:test \
             :core:code-engine:test \
             :core:tool-registry:test \
             :platform:memory-host:testDebugUnitTest \
@@ -959,7 +964,11 @@ jobs:
 
       - name: Build debug APK
         run: |
+          # S-01：显式 debug 签名 —— release keystore 已移出版本控制，PR CI
+          # 永远不接触发布密钥材料（无凭据时构建脚本也会回退 debug 签名，
+          # 此处显式声明意图，避免依赖回退分支）。
           ./gradlew :app:assembleDebug \
+            -PapexDebugSign=true \
             --no-daemon \
             -Pkotlin.incremental=false \
             --stacktrace

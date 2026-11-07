@@ -25,12 +25,19 @@ import javax.inject.Provider
  * # 逆向 MCP Host 管理器（app 层接线）
  *
  * 持有 [McpHostServer] 生命周期与配置持久化：
- * - 配置经 SharedPreferences + kotlinx.serialization JSON 持久化
- *   （token 本身 32 位高熵随机串，无需 EncryptedSharedPreferences 加密层）；
+ * - 配置经 SharedPreferences + kotlinx.serialization JSON 持久化；
  * - 首启自动生成 token；
- * - `enabled=true` 时自动 start；端口变更自动重启；App 启动时若 enabled 延迟自启
- *   （本单例经 [com.apex.agent.di.McpHostModule] 提供、被 ApexApp @Inject 触发创建）；
+ * - `enabled=true` 时自动 start；端口或绑定面（allowLan）变更自动重启；
+ *   App 启动时若 enabled 延迟自启（本单例经 [com.apex.agent.di.McpHostModule]
+ *   提供、被 ApexApp @Inject 触发创建）；
+ * - serverInfo.version 注入 BuildConfig.VERSION_NAME（S-04：消除与
+ *   versionName 的硬编码漂移）；
  * - 不触碰 McpManager/McpModule（内置 MCP transport 由并行工作流维护）。
+ *
+ * ⚠️ 已知遗留（S-04 部分 / S-07 范围）：token 仍以明文 JSON 存于
+ * mcp_host_prefs.xml（32 位高熵随机串 + S-05 已把该 prefs 排除出云备份/
+ * 设备迁移）。静态加密（EncryptedSharedPreferences + fail-closed 降级
+ * 语义）与全仓其他凭据存储一并由 S-07 统一整改，避免两套降级口径。
  *
  * 绑定见 McpHostModule（@Provides @Singleton，无 @Inject 构造绑定避免重复）。
  */
@@ -90,7 +97,9 @@ class McpHostManager(
     private val server = McpHostServer(
         configProvider = { _config.value },
         bridge = bridge,
-        scope = scope
+        scope = scope,
+        // S-04：serverInfo.version 与 versionName 单一事实源（曾 1.4.4 vs 1.5 漂移）
+        serverVersion = com.apex.agent.BuildConfig.VERSION_NAME
     )
 
     init {
@@ -145,8 +154,10 @@ class McpHostManager(
     /**
      * 更新配置并同步生命周期：
      * - enabled off → stop；on → start；
-     * - 端口变化且运行中 → 新端口重启；
-     * - token/白名单/黑名单/限速 → 即时生效（configProvider 每请求读取）。
+     * - 端口或绑定面（allowLan）变化且运行中 → 重启生效（绑定地址是
+     *   ServerSocket 构造参数，无法热切换）；
+     * - token/白名单/黑名单/限速/写类暴露开关 → 即时生效（configProvider
+     *   每请求读取）。
      */
     fun updateConfig(newConfig: McpHostConfig) {
         val old = _config.value
@@ -158,11 +169,12 @@ class McpHostManager(
         _config.value = normalized
 
         val portChanged = old.effectivePort != normalized.effectivePort
+        val bindChanged = old.allowLan != normalized.allowLan
         val wasRunning = server.isRunning.value
         when {
             !normalized.enabled && wasRunning -> stop()
             normalized.enabled && !wasRunning -> start()
-            normalized.enabled && wasRunning && portChanged -> {
+            normalized.enabled && wasRunning && (portChanged || bindChanged) -> {
                 stop()
                 start()
             }

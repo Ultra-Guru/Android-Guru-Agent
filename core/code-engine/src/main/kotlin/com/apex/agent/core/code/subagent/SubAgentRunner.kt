@@ -125,8 +125,8 @@ class SubAgentRunner(
         val displayName: String,
         val toolIds: Set<String>
     ) {
-        /** 只读代码探索员：CodeRead / CodeGrep / CodeGlob。 */
-        EXPLORE("explore", "代码探索", setOf("CodeRead", "CodeGrep", "CodeGlob")),
+        /** 只读代码探索员：CodeRepoMap 全局导航 + CodeRead / CodeGrep / CodeGlob 下钻。 */
+        EXPLORE("explore", "代码探索", setOf("CodeRepoMap", "CodeRead", "CodeGrep", "CodeGlob")),
 
         /** 联网调研员：WebSearch / WebFetch / HttpRequest。 */
         RESEARCH("research", "联网调研", setOf("WebSearch", "WebFetch", "HttpRequest")),
@@ -140,7 +140,7 @@ class SubAgentRunner(
          * 输出分级发现（阻断/警告/建议）与合入结论。
          */
         REVIEWER("reviewer", "代码评审", setOf(
-            "CodeRead", "CodeGrep", "CodeGlob", "CodeCheck",
+            "CodeRepoMap", "CodeRead", "CodeGrep", "CodeGlob", "CodeCheck",
             "CodeGitStatus", "CodeGitDiff"
         ));
 

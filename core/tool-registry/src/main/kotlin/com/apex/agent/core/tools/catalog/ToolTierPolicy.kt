@@ -62,6 +62,9 @@ object ToolTierPolicy {
         // v0.2：CodeTask（#147 子代理委派）与 CodeCheck（#148 即时诊断）入 CORE。
         "CodeRead", "CodeEdit", "CodeWrite", "CodeGrep", "CodeGlob", "CodeTodo",
         "CodeTask", "CodeCheck",
+        // CodeRepoMap（Aider repo-map 移植）：仓库全局视野的第一跳 ——
+        // 陌生仓库导航入口，schema 极小（两个可选参数），常驻成本可忽略。
+        "CodeRepoMap",
 
         // ── git (v1.0 #153；经 PRoot Ubuntu 沙箱执行，两模式互用) ──
         "CodeGitStatus", "CodeGitDiff", "CodeGitLog", "CodeGitCommit", "CodeGitBranch",

@@ -1,6 +1,7 @@
 package com.apex.agent.core.tools.extension
 
 import com.apex.agent.core.tools.extension.adapters.ApkPackageExtensionAdapter
+import com.apex.agent.core.tools.extension.tools.ExtensionRunTool
 import com.apex.agent.core.tools.extension.adapters.ClaudeExtensionAdapter
 import com.apex.agent.core.tools.extension.adapters.DshExtensionAdapter
 import com.apex.agent.core.tools.extension.adapters.OpenCodeExtensionAdapter
@@ -346,6 +347,101 @@ class ApkPackageExtensionAdapterTest {
     }
 }
 
+// ═══ ⑧ ExtensionRun —— ubuntu 域扩展运行入口（方向②执行桥生产化）══════
+
+class ExtensionRunToolTest {
+
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    private class FakeRunPort : NodeInstallPort {
+        var lastCommand: List<String>? = null
+        override suspend fun exec(command: List<String>, cwd: File, timeoutMs: Long): Result<NodeInstallPort.ExecOutcome> {
+            lastCommand = command
+            // npm 形态模拟真实安装产物：node_modules/<pkg>/index.js + package.json(main)
+            if (command.firstOrNull() == "npm") {
+                val prefix = command[command.indexOf("--prefix") + 1]
+                val pkg = command.last()
+                val pkgDir = File(prefix, "node_modules/" + pkg)
+                pkgDir.mkdirs()
+                File(pkgDir, "index.js").writeText("// fake plugin entry")
+                File(pkgDir, "package.json").writeText("{}")
+            }
+            return Result.success(NodeInstallPort.ExecOutcome(0, "ran ok", ""))
+        }
+        override suspend fun probeRuntime() = NodeInstallPort.RuntimeProbe("v22", "10")
+    }
+
+    private fun newLayout(): ExtensionDirLayout = ExtensionDirLayout(tmp.newFolder("run-ext-root"))
+
+    /** 走真实 OpenCode 适配器安装（生成 profile 元数据），再记账本供 RunTool 寻址。 */
+    private suspend fun installOpencodePlugin(port: FakeRunPort, layout: ExtensionDirLayout, pkgName: String): ExtensionRegistry {
+        val adapter = OpenCodeExtensionAdapter(port, layout)
+        val manifest = adapter.resolve(ExtensionSpecParser.parse("npm:$pkgName").getOrThrow()).getOrThrow()
+        adapter.install(manifest).getOrThrow()
+        val ledger = ExtensionRegistry(tmp.newFolder("run-ledger-" + pkgName))
+        ledger.record(
+            ExtensionRegistry.Record(
+                id = manifest.id, type = manifest.type, spec = manifest.spec,
+                name = manifest.name, version = manifest.version, runtime = manifest.runtime,
+                sourceKind = manifest.sourceKind, installedAt = System.currentTimeMillis()
+            )
+        )
+        return ledger
+    }
+
+    @Test
+    fun `Run npm 扩展 node 入口白名单执行`() = runTest {
+        val port = FakeRunPort()
+        val layout = newLayout()
+        val ledger = installOpencodePlugin(port, layout, "scope-tool")  // ledger: run-ledger-npm
+        val tool = ExtensionRunTool(ledger, layout, port)
+
+        val result = tool.executeStructured("""{"id":"opencode.scope-tool"}""")
+        assertTrue("应成功执行: ${result.render()}", result.isSuccess)
+        assertEquals("node", port.lastCommand!!.first())
+        assertTrue(port.lastCommand!!.any { it.contains("node_modules") || it.contains("pkg") })
+    }
+
+    @Test
+    fun `Run 未安装与 android 域诚实拒绝`() = runTest {
+        val port = FakeRunPort()
+        val layout = newLayout()
+        val ledger = ExtensionRegistry(tmp.newFolder("run-ledger-2"))
+        ledger.record(
+            ExtensionRegistry.Record(
+                id = "skill.some-skill", type = "skill", spec = "x", name = "x", version = "1",
+                runtime = RuntimeDomains.ANDROID, sourceKind = SourceKinds.JSON, installedAt = 1L
+            )
+        )
+        val tool = ExtensionRunTool(ledger, layout, port)
+
+        val missing = tool.executeStructured("""{"id":"opencode.ghost"}""")
+        assertTrue(missing.error != null)
+
+        val android = tool.executeStructured("""{"id":"skill.some-skill"}""")
+        assertTrue(android.error != null)
+        assertTrue(android.error!!.render().contains("android 域"))
+    }
+
+    @Test
+    fun `Run profile 元数据被篡改指向外部脚本 拒绝`() = runTest {
+        val port = FakeRunPort()
+        val layout = newLayout()
+        val ledger = installOpencodePlugin(port, layout, "evil-pkg")  // ledger: run-ledger-tamper
+        // 篡改 profile：entryHint 指向账本目录之外
+        val profileFile = layout.profileFile("opencode.evil-pkg", "opencode.json").getOrThrow()
+        profileFile.writeText("""{"runtime":"node","entryHint":"/etc/passwd"}""")
+        val tool = ExtensionRunTool(ledger, layout, port)
+
+        val beforeRun = port.lastCommand
+        val result = tool.executeStructured("""{"id":"opencode.evil-pkg"}""")
+        assertTrue("entry 逃逸必须被归属校验拦截: ${result.render()}", !result.isSuccess)
+        assertEquals("篡改后的 entry 不得触发任何执行", beforeRun, port.lastCommand)
+    }
+}
+
+
 // ═══ ⑨ ExtensionAutoSyncRunner —— 生产化加固（方向④评估核）════════════
 
 class ExtensionAutoSyncRunnerTest {
@@ -397,7 +493,7 @@ class ExtensionAutoSyncRunnerTest {
         assertTrue("失败项入报告（skill:json:{bad 语法非法）", report.failed.any { it.contains("skill:json:{bad") })
         assertTrue(report.hasIssues)
 
-        // lastSync 落盘 + 重载
+        // lastSync 落盘 + 重载隔离（新实例只读自己的目录 → 空）
         val reloaded = ExtensionRegistry(tmp.newFolder("sync-ledger-copy"))
         assertNull(reloaded.lastSync())
         val live = ledger.lastSync()
@@ -406,7 +502,7 @@ class ExtensionAutoSyncRunnerTest {
     }
 
     @Test
-    fun `无问题报告 hasIssues 为假且不含漂移`() = runTest {
+    fun `空清单零报告`() = runTest {
         val ledger = ExtensionRegistry(tmp.newFolder("sync-ok"))
         val runner = ExtensionAutoSyncRunner(
             ExtensionInstaller(
@@ -414,7 +510,6 @@ class ExtensionAutoSyncRunnerTest {
                 ledger
             )
         )
-        // 无适配器可解析 → 全失败（验证 failed 通道）；空清单 → 零报告
         val empty = runner.run(emptyList())
         assertEquals(0, empty.ok)
         assertTrue(!empty.hasIssues)
