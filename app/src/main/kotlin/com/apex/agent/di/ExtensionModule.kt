@@ -186,4 +186,21 @@ object ExtensionModule {
         registry: ExtensionRegistry,
         adapters: ExtensionAdapterRegistry
     ): ExtensionInstaller = ExtensionInstaller(adapters = adapters, registry = registry)
+
+    /**
+     * 启动期自动同步（PR-E）：设置开关 + 清单存在才评估；漂移/失败通知。
+     * @Provides 副作用启动（同 SkillModule.releaseBundledSkills 惯例——
+     * 自持 IO 协程，失败只记日志不阻断启动）。
+     */
+    @Provides
+    @Singleton
+    fun provideExtensionAutoSync(
+        @ApplicationContext context: Context,
+        installer: ExtensionInstaller,
+        registry: ExtensionRegistry,
+        settingsRepository: com.apex.agent.ui.screen.settings.SettingsRepository,
+        notifications: com.apex.agent.notify.ApexNotifications
+    ): com.apex.agent.marketplace.ExtensionAutoSync =
+        com.apex.agent.marketplace.ExtensionAutoSync(context, installer, registry, settingsRepository, notifications)
+            .also { it.start() }
 }

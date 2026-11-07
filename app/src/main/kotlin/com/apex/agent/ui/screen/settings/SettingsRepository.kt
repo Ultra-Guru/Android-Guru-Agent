@@ -642,4 +642,14 @@ data class AgentSettings(
     val rateLimitFriendly: Boolean = false,
     val rateLimitMinIntervalMs: Int = 4000,    // 0..60000（0 = 不节流间隔）
     val rateLimitRichPayload: Boolean = true,
+
+    /**
+     * 扩展自动同步（市场完全重构 PR-E）：开启后每次进程启动检查
+     * `<filesDir>/extensions/extensions.json` 声明式清单 —— resolve 全部
+     * spec，与锁文件（lock.json）比对版本漂移；**漂移/失败经系统通知提醒，
+     * 不自动安装**（防 Agent 后续会话悄悄换版本 —— 重装需用户显式操作或
+     * Agent 经 ExtensionSync update=true）。默认关（无清单时零开销）。
+     * Agent 侧经 AgentSettingSet 可改（设置 JSON 字段直通）。
+     */
+    val extensionAutoSync: Boolean = false,
 )
