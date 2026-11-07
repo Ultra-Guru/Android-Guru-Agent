@@ -11,7 +11,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -43,7 +43,7 @@ class DshBridgeTransportTest {
     private fun shEngine() = ExecEngine(ProcessBuilderSpawner(shell = "/bin/sh"))
 
     @Test
-    fun `stdin payload reaches process then EOF`() = runBlocking<Unit> {
+    fun `stdin payload reaches process then EOF`() = runTest {
         val result = shEngine().execute(
             ExecRequest(command = "cat", stdin = "{\"tool\":\"dsh.demo\",\"args\":[1,2,3]}", timeoutMs = 15_000)
         )
@@ -53,7 +53,7 @@ class DshBridgeTransportTest {
     }
 
     @Test
-    fun `stdin payload preserves unicode quotes and newlines`() = runBlocking<Unit> {
+    fun `stdin payload preserves unicode quotes and newlines`() = runTest {
         val payload = "{\"q\":\"中文 引号'\\\"\",\"n\":1}\n{\"second\":true}"
         val result = shEngine().execute(ExecRequest(command = "cat", stdin = payload, timeoutMs = 15_000))
         assertEquals(0, result.exitCode)
@@ -61,7 +61,7 @@ class DshBridgeTransportTest {
     }
 
     @Test
-    fun `no payload keeps immediate EOF semantics (cat exits, no hang)`() = runBlocking<Unit> {
+    fun `no payload keeps immediate EOF semantics (cat exits, no hang)`() = runTest {
         val result = shEngine().execute(ExecRequest(command = "cat", timeoutMs = 5_000))
         assertEquals(0, result.exitCode)
         assertEquals("", result.stdout)
@@ -69,7 +69,7 @@ class DshBridgeTransportTest {
     }
 
     @Test
-    fun `oversized stdin fails honestly without truncation`() = runBlocking<Unit> {
+    fun `oversized stdin fails honestly without truncation`() = runTest {
         val payload = "x".repeat(ExecEngine.MAX_STDIN_BYTES + 1)
         val result = shEngine().execute(ExecRequest(command = "cat", stdin = payload, timeoutMs = 15_000))
         assertNull("超限载荷必须结构化失败，而不是截断后执行", result.exitCode)
@@ -78,7 +78,7 @@ class DshBridgeTransportTest {
     }
 
     @Test
-    fun `channel without stdin plus payload is honest spawn failure`() = runBlocking<Unit> {
+    fun `channel without stdin plus payload is honest spawn failure`() = runTest {
         val engine = ExecEngine(object : CommandSpawner {
             override val channel = "no-stdin-fake"
             override val supportsEnv = true
@@ -97,7 +97,7 @@ class DshBridgeTransportTest {
     }
 
     @Test
-    fun `stdin write failure is a structured failure`() = runBlocking<Unit> {
+    fun `stdin write failure is a structured failure`() = runTest {
         val engine = ExecEngine(object : CommandSpawner {
             override val channel = "broken-stdin-fake"
             override val supportsEnv = true
@@ -122,8 +122,8 @@ class DshBridgeTransportTest {
 
     /** 管道对拼 fake：测试作对端（peer）写 stdout / 读 stdin。 */
     private class FakeProcess : SpawnedCommand {
-        val stdinToProcess = PipedOutputStream()
-        private val stdinFromEngine = PipedInputStream(stdinToProcess, 65_536)
+        // 进程 stdin = 引擎写入端（PipedOutputStream）；连接的读端由 sink 字段持有
+        val stdinToProcess = PipedOutputStream().also { PipedInputStream(it, 65_536) }
         private val stdoutFromProcessWriter = PipedOutputStream()
         val stdoutToEngine = PipedInputStream(stdoutFromProcessWriter, 65_536)
         private val stderrFromProcessWriter = PipedOutputStream()
@@ -134,7 +134,7 @@ class DshBridgeTransportTest {
 
         override val stdout: InputStream get() = stdoutToEngine
         override val stderr: InputStream? get() = stderrToEngine
-        override val stdin: OutputStream get() = stdinFromEngine
+        override val stdin: OutputStream get() = stdinToProcess
         override fun waitFor(timeoutMs: Long): Boolean = alive
         override fun exitValue(): Int =
             if (alive) throw IllegalThreadStateException("still running") else exitCode
@@ -237,7 +237,7 @@ class DshBridgeTransportTest {
     }
 
     @Test
-    fun `send rejects oversized payload and closed channel`() = runBlocking<Unit> {
+    fun `send rejects oversized payload and closed channel`() = runTest {
         val proc = FakeProcess()
         val listener = CollectingListener()
         val channel = PersistentFrameChannel(proc, generation = 1, listener = listener)
@@ -265,7 +265,7 @@ class DshBridgeTransportTest {
             proc.peerCloseStdout()
             assertTrue(listener.exitLatch.await(5, TimeUnit.SECONDS))
             channel.destroy()
-            Thread.sleep(200)
+            // CAS 恰好一次语义：destroy 返回后再查仍是 1（迟到读协程赢不了 compareAndSet）
             assertEquals("EOF + destroy 只允许一次终态上报", 1, listener.exits.size)
         } finally {
             scope.cancel()
@@ -299,7 +299,7 @@ class DshBridgeTransportTest {
     }.getOrDefault(false)
 
     @Test
-    fun `real node frame echo end to end`() = runBlocking<Unit> {
+    fun `real node frame echo end to end`() = runTest {
         assumeTrue("本机无 node —— CI ubuntu runner 必跑", nodeAvailable())
         val script = File.createTempFile("dsh-frame-echo", ".js")
         script.deleteOnExit()
@@ -352,15 +352,14 @@ class DshBridgeTransportTest {
             channel.send("{\"type\":\"echo\",\"seq\":1,\"text\":\"中文 帧 ✓\"}").getOrThrow()
             channel.send("{\"type\":\"echo\",\"seq\":2,\"text\":\"plain\"}").getOrThrow()
             assertTrue(listener.firstAck.await(20, TimeUnit.SECONDS))
-            // stderr 日志行与帧流并发到达 —— 给读协程一点时间确认没有污染帧解析
-            Thread.sleep(300)
+            channel.send("{\"type\":\"die\"}").getOrThrow()
+            assertTrue(listener.exit.await(20, TimeUnit.SECONDS))
+            // stderr 日志与帧流并发的最终裁决：全程恰好 2 帧且无坏帧（污染会破坏解析）
             val acks = synchronized(listener.acks) { listener.acks.toList() }
             assertEquals(2, acks.size)
             assertTrue(acks[0].contains("\"echo_ack\""))
             assertTrue(acks[0].contains("中文 帧 ✓"))
             assertTrue(acks[1].contains("\"seq\":2"))
-            channel.send("{\"type\":\"die\"}").getOrThrow()
-            assertTrue(listener.exit.await(20, TimeUnit.SECONDS))
             assertEquals("die 路径退出码必须如实", 7, listener.exitCode)
         } finally {
             channel.destroy()

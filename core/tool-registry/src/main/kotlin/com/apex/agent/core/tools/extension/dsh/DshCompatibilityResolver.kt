@@ -92,7 +92,7 @@ class DshCompatibilityResolver {
         substringBefore('.').filter { it.isDigit() }.toIntOrNull()
 
     private fun String.minorOrZero(): Int =
-        substringAfter('.', "").substringBefore('.').filter { it.isDigit() }.toIntOrNull().takeIf { it >= 0 } ?: 0
+        substringAfter('.', "").substringBefore('.').filter { it.isDigit() }.toIntOrNull()?.takeIf { it >= 0 } ?: 0
 
     /** 服务支持等级（市场/能力图展示用，与 unavailable 原因一一对应）。 */
     enum class ServiceLevel { SUPPORTED, STATIC_ONLY, PLANNED, UNSUPPORTED }
