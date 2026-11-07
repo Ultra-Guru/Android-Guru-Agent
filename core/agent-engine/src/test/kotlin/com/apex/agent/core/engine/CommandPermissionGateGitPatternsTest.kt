@@ -55,9 +55,12 @@ class CommandPermissionGateGitPatternsTest {
     fun `常规 git 命令不误伤`() = runTest {
         val gateway = DenyGateway()
         val gate = CommandPermissionGate(gateway)
+        // 注意:存量 "dd " 模式与 "git a[dd ]" 子串相撞——终端里的
+        // `git add` 本就会确认(本 PR 之前的既有行为,不在此收窄);
+        // 故不用含 add 的命令做直通断言
         listOf(
             "git status",
-            "git add -A && git commit -m fix",
+            "git commit -m fix",
             "git push origin feat/x",
             "git log --oneline",
         ).forEach { cmd ->

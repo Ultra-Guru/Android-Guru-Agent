@@ -293,6 +293,8 @@ internal class InMemorySharedPreferences : SharedPreferences {
             return true
         }
 
-        override fun apply() = commit()
+        override fun apply() {
+            commit()
+        }
     }
 }
