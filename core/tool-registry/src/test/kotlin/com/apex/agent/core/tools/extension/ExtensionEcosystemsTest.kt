@@ -141,7 +141,9 @@ class ExtensionEcosystemsTest {
         val src = tmp.newFolder("src").resolve("my-plugin.ts").apply { writeText("export default {}") }
         val adapter = OpenCodeExtensionAdapter(FakeNodePort(), newLayout())
         // 消息化断言：本机无 JDK，失败原因只能靠 CI 回传 —— 带上真实异常文本
-        val manifest = adapter.resolve(ExtensionSpecParser.parse("opencode:${src.absolutePath}"))
+        val draft = ExtensionSpecParser.parse("opencode:${src.absolutePath}")
+            .getOrElse { throw IllegalStateException("parse failed: ${it.message}", it) }
+        val manifest = adapter.resolve(draft)
             .getOrElse { throw IllegalStateException("resolve failed: ${it.message}", it) }
         assertEquals("opencode.my-plugin", manifest.id)
         adapter.install(manifest).getOrElse { throw IllegalStateException("install failed: ${it.message}", it) }
