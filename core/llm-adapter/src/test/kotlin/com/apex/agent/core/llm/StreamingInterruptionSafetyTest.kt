@@ -2,7 +2,7 @@ package com.apex.agent.core.llm
 
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -38,7 +38,7 @@ class StreamingInterruptionSafetyTest {
         Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
             .code(code).message("test").body(body).build()
 
-    @Test fun `connection lost before headers never replays POST`() = runBlocking {
+    @Test fun `connection lost before headers never replays POST`() = runTest {
         val calls = AtomicInteger()
         try {
             stream(Interceptor { chain ->
@@ -52,7 +52,7 @@ class StreamingInterruptionSafetyTest {
         }
     }
 
-    @Test fun `retryable server error does not replay uncertain POST`() = runBlocking {
+    @Test fun `retryable server error does not replay uncertain POST`() = runTest {
         val calls = AtomicInteger()
         try {
             stream(Interceptor { chain ->
@@ -66,7 +66,7 @@ class StreamingInterruptionSafetyTest {
         }
     }
 
-    @Test fun `partial text survives broken body and never retries`() = runBlocking {
+    @Test fun `partial text survives broken body and never retries`() = runTest {
         val calls = AtomicInteger()
         val chunks = mutableListOf<LlmStreamChunk>()
         try {
@@ -82,7 +82,7 @@ class StreamingInterruptionSafetyTest {
         }
     }
 
-    @Test fun `EOF without finish marker is not a completed answer`() = runBlocking {
+    @Test fun `EOF without finish marker is not a completed answer`() = runTest {
         val chunks = mutableListOf<LlmStreamChunk>()
         try {
             stream(Interceptor { chain ->
