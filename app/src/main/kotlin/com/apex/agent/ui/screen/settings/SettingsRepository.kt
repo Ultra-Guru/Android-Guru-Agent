@@ -376,28 +376,29 @@ class SettingsRepository @Inject constructor(
 
 
 /**
- * 工具权限默认档迁移（2026-10 用户反馈「默认就是开启所有工具，agent
- * 可以直接使用」）：旧默认 DEFAULT（写类/删除类工具逐个弹「请求执行」
- * 确认）→ 新默认 BYPASS（全自动：工具/MCP/技能/shell 命令全放行，
- * 仅 DENY 规则仍生效）。
+ * 工具权限模式兼容迁移（S-03 语义反转：不再自动提权）。
  *
- * - 仅翻转恰好停在旧默认 DEFAULT 的存量用户（持久化 JSON 全字段落盘，
- *   无法区分「显式选了 DEFAULT」与「从未动过」——统一翻一次，想收紧
- *   的用户可在 设置 → 工具权限 切回）；
- * - 显式选过 ACCEPT_EDITS / PLAN / BYPASS 的用户模式不动，仅落迁移标记；
- * - [AgentSettings.permissionBypassMigrated] 置 true 后幂等短路（init 的
- *   persistAgentSettings 立即回写，升级只发生一次）。
+ * 历史：2026-10 曾按用户反馈把默认档 DEFAULT → BYPASS，并对恰好停在旧默认
+ * DEFAULT 的存量用户做「一次性翻转」—— 这等价于在用户无感知的情况下把
+ * 权限从「高危询问」静默升到「全自动」，违反最小授权（S-03 修复对象）。
+ *
+ * 现状（S-03）：
+ * - 新默认档回到 [PermissionMode.DEFAULT]（见 AgentSettings.permissionMode）；
+ * - 本迁移绝不改变 permissionMode：已停在 BYPASS 的存量用户保持不动
+ *   （无法区分「被旧迁移翻上去」与「显式选择」，反向翻转同样是无感知
+ *   变更 —— 想收紧的用户可在 设置 → 工具权限 切回；新切 BYPASS 需二次
+ *   确认，见 PermissionSettingsSection）；
+ * - 尚未跑过旧迁移（flag=false）的 DEFAULT 用户不再被翻转（自动提权
+ *   路径就此关闭）；
+ * - [AgentSettings.permissionBypassMigrated] 仅作「迁移系统已运行」标记
+ *   落位（幂等短路），字段保留是为存量 JSON 向后兼容。
  *
  * 文件级 internal（非成员 private）：纯函数、零 Android 依赖，单测
  * （PermissionDefaultBypassMigrationTest）直接调用。
  */
 internal fun migratePermissionDefaultBypass(settings: AgentSettings): AgentSettings {
     if (settings.permissionBypassMigrated) return settings
-    return if (settings.permissionMode == PermissionMode.DEFAULT) {
-        settings.copy(permissionMode = PermissionMode.BYPASS, permissionBypassMigrated = true)
-    } else {
-        settings.copy(permissionBypassMigrated = true)
-    }
+    return settings.copy(permissionBypassMigrated = true)
 }
 
 /**
@@ -563,21 +564,22 @@ data class AgentSettings(
     // 热重下人设）。操作助手见 GitRoleSkillSettings.kt。
     val roleSkillToggles: Map<String, Boolean> = emptyMap(),
 
-    // ═══ 工具权限（v1.0 #155 业界标准式权限模式；默认档全开）═══
+    // ═══ 工具权限（v1.0 #155 业界标准式权限模式；S-03：默认档 DEFAULT）═══
     // 引擎执行器门控：模式（BYPASS/DEFAULT/ACCEPT_EDITS/PLAN）+ 按序首匹配
     // 规则三元组（ALLOW/ASK/DENY，pattern 支持尾缀星号通配，覆盖 mcp__
     // 动态 id）。决策器见 PermissionDecider，门见 PermissionModeGate。
-    // 2026-10 用户反馈（默认全开）：agent 默认就应能直接使用全部工具 /
-    // MCP / 技能 / shell 命令，不该逐个弹「请求执行」确认 —— 默认档由
-    // DEFAULT 改为 BYPASS（全自动），存量 DEFAULT 用户经
-    // [permissionBypassMigrated] 一次性迁移；需要确认预算的用户可在
-    // 设置 → 工作台 → 权限 切回其他档位。
-    val permissionMode: PermissionMode = PermissionMode.BYPASS,
+    // 历史：2026-10 曾按用户反馈把默认档改为 BYPASS（全自动）并对存量
+    // DEFAULT 用户一次性翻转 —— 等于无感知自动提权（S-03 修复对象）。
+    // 现状（S-03）：默认档回到 DEFAULT（高危/副作用类工具在 RiskAware-
+    // ToolGate 弹确认）；BYPASS 保留但需用户在设置页显式开启（二次确认，
+    // 见 PermissionSettingsSection），随时可关；存量 BYPASS 用户档位不动。
+    val permissionMode: PermissionMode = PermissionMode.DEFAULT,
     val permissionRules: List<PermissionRule> = emptyList(),
 
-    // 默认档迁移标记（见上字段）：存量 JSON 缺省 false → 首启执行一次
-    // [migratePermissionDefaultBypass] 并置 true（与 onboardingVersion 同款
-    // 版本化迁移惯例，字段缺省值对旧 JSON 向后兼容）。
+    // 迁移系统运行标记（S-03：语义反转，仅幂等短路用 —— 见
+    // [migratePermissionDefaultBypass]，不再触发任何档位变更）：存量 JSON
+    // 缺省 false → 首启执行一次并置 true（与 onboardingVersion 同款版本化
+    // 迁移惯例，字段缺省值对旧 JSON 向后兼容）。
     val permissionBypassMigrated: Boolean = false,
 
     // ═══ 行为规则（v1.1 #164 Rules 规则系统）═══

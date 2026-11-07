@@ -19,14 +19,14 @@ import java.util.concurrent.ConcurrentHashMap
  * [ToolPermissionManager]（core，纯 JVM 状态机）+ 用户确认对话框的组合，
  * 注入 [DefaultToolExecutor] 后即生效：
  *
- * - **确认面收敛（2026-10 用户反馈：skill / mcp / 工具全部不再确认）**：
- *   本门不再对常规工具弹确认 —— 第三方动态来源（mcp_ / plugin 前缀）的
- *   首次确认与 HIGH/MEDIUM 风险弹窗全部移除（mcp_list 都要确认一次，
- *   实测打断感远大于安全感），与 PermissionDecider 的默认放行口径共同
- *   构成「常规使用零打扰」的手感。删除类/敏感动作的兜底询问仍由上游
- *   PermissionModeGate 的模式语义承担；本门仅剩显式 sensitiveAction
- *   工具的会话内一次确认。ShellExecute 的高危命令仍由
- *   CommandPermissionGate 在命令级拦截。
+ * - **确认面（S-03 恢复风险判定）**：默认档（DEFAULT）下副作用工具需
+ *   确认 —— sensitiveAction（付费/逐次同意类）、HIGH 风险（删除/卸载/
+ *   force-stop 族）、MEDIUM 风险且非只读（写文件 / git 提交 / 改状态）
+ *   都会弹窗；只读 MEDIUM 与 LOW 静默放行。2026-10 曾把 HIGH/MEDIUM
+ *   弹窗全部移除并默认 BYPASS（新装机即全自动），S-03 修复：默认档回到
+ *   DEFAULT、弹窗面恢复；BYPASS 用户不进本门（PermissionModeGate 对
+ *   AllowExplicit 直通），显式开启后行为与旧版一致。ShellExecute 的
+ *   高危命令仍由 CommandPermissionGate 在命令级拦截。
  * - "仅允许一次" → 本次放行但不记录（下次再问）；
  * - "本会话允许" → 状态机记 ALLOWED_SESSION，之后静默放行；
  * - 拒绝（用户显式点击，或弹窗被主动取消）→ 状态机记 DENIED_SESSION，
@@ -74,14 +74,11 @@ class RiskAwareToolGate(
         if (tool.id in manager.selfGatedToolIds) return GateDecision.Allow
 
         val metadata = tool.metadata
-        // 确认面收敛（2026-10 用户反馈）：skill / mcp / 工具全部不再确认。
-        // 旧实现两级弹窗：① HIGH（删除/卸载/force-stop 族）；② 第三方动态
-        // 来源的 MEDIUM（mcp_ / plugin 前缀）—— 两级全部静默放行：删除类/
-        // 敏感动作的兜底询问仍由上游 PermissionModeGate 的模式语义承担
-        // （DEFAULT 下删除类才询问），ShellExecute 的高危命令仍由
-        // CommandPermissionGate 在命令级拦截。本门仅剩显式 sensitiveAction
-        // 工具（AutoGPT 语义的会话内人审）的确认面；会话决定状态机保留，
-        // 供设置界面/测试显式注入与审计举证。
+        // S-03：恢复风险判定（见 requiresPrompt）—— 默认档（DEFAULT）下
+        // sensitiveAction / HIGH / MEDIUM-副作用工具进入确认面；上游
+        // PermissionModeGate 的模式语义不变（BYPASS 全放行不进本门、
+        // PLAN 只读、删除类在权限门先问），ShellExecute（selfGated）的
+        // 高危命令仍由 CommandPermissionGate 在命令级拦截。
         if (!requiresPrompt(metadata)) return GateDecision.Allow
 
         return when (manager.decisionFor(tool.id)) {
@@ -202,7 +199,7 @@ class RiskAwareToolGate(
             ToolRisk.LOW -> "无危险"
         }
         return AgentQuestion(
-            // 敏感动作确认（确认面收敛后本门唯一弹窗面）：标题按语义命名
+            // 风险确认（S-03 恢复后的确认面）：标题按语义命名
             title = "敏感操作需要确认：${metadata.id}",
             description = "$riskHint（${categoryLabel(metadata.category)}）\n" +
                 // #336：弹窗参数摘要先脱敏再截断——api_key 等凭证值折叠，
@@ -243,12 +240,25 @@ class RiskAwareToolGate(
     }
 
     /**
-     * 仍需弹窗的工具（确认面收敛后的残留面）：仅显式声明敏感动作的工具
-     * （sensitiveAction —— AutoGPT 语义的会话内人审，如浏览器凭据读取）。
-     * HIGH/MEDIUM 风险本身不再触发弹窗 —— 常规使用零打扰。
+     * 仍需弹窗的工具（S-03 恢复风险判定）：
+     *
+     * ① 显式声明敏感动作的工具（sensitiveAction —— AutoGPT 语义的会话内
+     *    人审，如浏览器凭据读取、付费动作）；
+     * ② HIGH 风险工具（删除 / 卸载 / force-stop 族 —— 不可逆动作必问）；
+     * ③ MEDIUM 风险且非只读的工具（写文件 / git 提交 / 改状态等副作用）。
+     *
+     * 2026-10 曾按用户反馈「常规使用零打扰」把 HIGH/MEDIUM 弹窗全部移除、
+     * 并把默认档翻成 BYPASS（S-03 修复对象：新装机即全自动 + 存量静默提权）。
+     * S-03 后默认档回到 DEFAULT —— 本门重新承担「副作用工具的默认确认面」；
+     * 想要零打扰的用户显式切 BYPASS（PermissionModeGate 对 AllowExplicit
+     * 直通，不再进本门），语义与旧版一致。
+     *
+     * 只读的 MEDIUM 工具（查询类）不弹 —— 确认预算留给真正改环境的动作。
      */
     private fun requiresPrompt(metadata: ToolMetadata): Boolean =
-        metadata.annotations.sensitiveAction
+        metadata.annotations.sensitiveAction ||
+            metadata.risk == ToolRisk.HIGH ||
+            (metadata.risk == ToolRisk.MEDIUM && !metadata.annotations.readOnlyHint)
 
     /** 会话级强制拒绝（设置界面 / 测试用）。 */
     fun denyForSession(toolId: String) = manager.denyForSession(toolId)
@@ -280,8 +290,9 @@ class RiskAwareToolGate(
          * 本引用保留向后兼容（内部消费点未改）。修正注：工具 id 已
          * PascalCase 化（SmsSend），旧 snake_case 条目从不命中——#342
          * 逐次确认实际已失效一整段，两态并存防回归。
-         * （合并注：THIRD_PARTY_PREFIXES / isThirdPartyDynamic 随确认面收敛
-         * 移除——第三方首次确认已不弹，判定器无消费方。）
+         * （合并注：THIRD_PARTY_PREFIXES / isThirdPartyDynamic 随 2026-10
+         * 确认面收敛移除；S-03 恢复风险判定后第三方 MEDIUM-副作用工具经
+         * 通用风险通道进入确认面，无需独立判定器。）
          */
         val NO_SESSION_ALLOW_TOOLS = com.apex.agent.permission.NO_SESSION_ALLOW_TOOLS
     }

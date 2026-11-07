@@ -52,12 +52,17 @@
     <string name="code_perm_section_title">工具权限</string>
     <string name="code_perm_section_subtitle">标准权限模式与规则</string>
     <string name="code_perm_mode_label">权限模式</string>
-    <string name="code_perm_mode_bypass">全自动（默认）</string>
-    <string name="code_perm_mode_default">标准（高危询问）</string>
+    <string name="code_perm_mode_bypass">全自动（需确认启用）</string>
+    <string name="code_perm_mode_default">标准（默认）</string>
     <string name="code_perm_mode_accept_edits">接受编辑</string>
     <string name="code_perm_mode_plan">规划模式</string>
-    <string name="code_perm_mode_bypass_desc">所有工具（含 shell 命令、MCP、技能）直接执行 —— 默认档位；拒绝与询问规则仍生效，付费等敏感动作仍逐次确认</string>
-    <string name="code_perm_mode_default_desc">基础工具自动放行，仅删除等高危操作需要确认</string>
+    <string name="code_perm_mode_bypass_desc">所有工具（含 shell 命令、MCP、技能）直接执行、不再逐个确认 —— 需显式开启；拒绝与询问规则仍生效，付费等敏感动作仍逐次确认</string>
+    <string name="code_perm_mode_default_desc">只读工具自动放行；写文件、git 提交等副作用操作与删除等高危动作需先确认</string>
+    <!-- S-03：切入 BYPASS（全自动）的二次确认 -->
+    <string name="code_perm_bypass_confirm_title">启用全自动模式？</string>
+    <string name="code_perm_bypass_confirm_text">全自动会跳过副作用工具的确认：写文件、git 提交、MCP 与技能动作将直接执行不再询问（拒绝/询问规则与付费类逐次确认动作仍会兜底），shell 高危命令也不再拦截。适合完全信任 Agent 的用户 —— 可随时切回其他档位。</string>
+    <string name="code_perm_bypass_confirm_ok">仍然启用全自动</string>
+    <string name="code_perm_bypass_confirm_cancel">保持当前档位</string>
     <string name="code_perm_mode_accept_edits_desc">文件编辑与 git 提交自动放行，其余先询问</string>
     <string name="code_perm_mode_plan_desc">只读规划：任何会修改环境的工具都会被拒绝</string>
     <string name="code_perm_rules_title">工具权限规则（按序首匹配）</string>
