@@ -141,6 +141,100 @@ class LinuxChrootBackendTest {
         assertTrue(b.availability() is BackendAvailability.Ready)
     }
 
+    @Test
+    fun `denied authorization is visible without executing su during availability`() = runBlocking {
+        var probes = 0
+        val su = fakeSu("denied-su")
+        val cache = SuAuthorizationCache(probe = { probes++; SuAuthorizationCache.State.DENIED })
+        val b = LinuxChrootBackend(
+            suLocator = SuBinaryLocator(candidatesProvider = { listOf(su) }),
+            rootfsProvider = FakeRootfsProvider(),
+            workspaces = LinuxWorkspaceManager(File(tmp.root, "workspaces")),
+            userHome = GuestUserHome(File(tmp.root, "home")),
+            authorizationCache = cache,
+        )
+        assertTrue(b.availability() is BackendAvailability.Ready) // UNKNOWN is not DENIED
+        assertEquals(0, probes)
+        val result = b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80))
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()!!.message!!.contains("ChrootError:SU_NOT_AUTHORIZED"))
+        assertEquals(1, probes)
+        val av = b.availability() as BackendAvailability.Failed
+        assertTrue(av.reason.contains("Fix:"))
+        assertEquals(1, probes)
+    }
+
+    @Test
+    fun `authorization cache expires and can be invalidated after permissions change`() {
+        var now = 0L
+        var calls = 0
+        var next = SuAuthorizationCache.State.DENIED
+        val su = fakeSu("cache-su")
+        val cache = SuAuthorizationCache(clock = { now }, probe = { calls++; next })
+        assertEquals(SuAuthorizationCache.State.UNKNOWN, cache.state(su))
+        assertEquals(SuAuthorizationCache.State.DENIED, cache.authorize(su))
+        next = SuAuthorizationCache.State.GRANTED
+        assertEquals(SuAuthorizationCache.State.DENIED, cache.authorize(su))
+        assertEquals(1, calls)
+        now = 30_000L
+        assertEquals(SuAuthorizationCache.State.UNKNOWN, cache.state(su))
+        assertEquals(SuAuthorizationCache.State.GRANTED, cache.authorize(su))
+        assertEquals(2, calls)
+        cache.invalidate()
+        assertEquals(SuAuthorizationCache.State.UNKNOWN, cache.state(su))
+    }
+
+    @Test
+    fun `granted authorization is cached and subsequent prepares do not re-prompt`() = runBlocking {
+        var probes = 0
+        val su = fakeSu("granted-su")
+        val cache = SuAuthorizationCache(probe = { probes++; SuAuthorizationCache.State.GRANTED })
+        val b = LinuxChrootBackend(
+            suLocator = SuBinaryLocator(candidatesProvider = { listOf(su) }),
+            rootfsProvider = FakeRootfsProvider(),
+            workspaces = LinuxWorkspaceManager(File(tmp.root, "workspaces")),
+            userHome = GuestUserHome(File(tmp.root, "home")),
+            authorizationCache = cache,
+        )
+        assertTrue(b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80)).isSuccess)
+        assertTrue(b.availability() is BackendAvailability.Ready)
+        assertTrue(b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80)).isSuccess)
+        assertEquals(1, probes)
+    }
+
+    @Test
+    fun `absent rootfs does not trigger authorization prompt`() = runBlocking {
+        var probes = 0
+        val cache = SuAuthorizationCache(probe = { probes++; SuAuthorizationCache.State.GRANTED })
+        val b = LinuxChrootBackend(
+            suLocator = SuBinaryLocator(candidatesProvider = { listOf(fakeSu("rootfs-missing-su")) }),
+            rootfsProvider = NullRootfsProvider(),
+            workspaces = LinuxWorkspaceManager(File(tmp.root, "workspaces")),
+            userHome = GuestUserHome(File(tmp.root, "home")),
+            authorizationCache = cache,
+        )
+        assertTrue(b.availability() is BackendAvailability.NeedsRootfs)
+        assertTrue(b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80)).isFailure)
+        assertEquals(0, probes)
+    }
+
+    @Test
+    fun `invalid cwd is rejected before authorization prompt`() = runBlocking {
+        var probes = 0
+        val cache = SuAuthorizationCache(probe = { probes++; SuAuthorizationCache.State.GRANTED })
+        val b = LinuxChrootBackend(
+            suLocator = SuBinaryLocator(candidatesProvider = { listOf(fakeSu("invalid-cwd-su")) }),
+            rootfsProvider = FakeRootfsProvider(),
+            workspaces = LinuxWorkspaceManager(File(tmp.root, "workspaces")),
+            userHome = GuestUserHome(File(tmp.root, "home")),
+            authorizationCache = cache,
+        )
+        val result = b.prepare(SessionSpawnRequest(cwd = "/'; rm -rf /", rows = 24, cols = 80))
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()!!.message!!.contains("ChrootError:InvalidCwd"))
+        assertEquals(0, probes)
+    }
+
     // ─── prepare → SpawnSpec argv 契约 ───
 
     @Test

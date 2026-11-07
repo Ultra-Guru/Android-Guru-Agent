@@ -2,6 +2,7 @@ package com.apex.agent.platform.privilege
 
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
+import com.apex.agent.core.su.SuCandidateRegistry
 import com.apex.agent.platform.privilege.shizuku.ShizukuCommandExecutor
 import kotlinx.coroutines.runBlocking
 import java.io.File
@@ -42,17 +43,7 @@ object PrivilegeDetector {
      * 检测Root是否可用
      */
     fun detectRoot(): Boolean {
-        val suPaths = listOf(
-            "/system/bin/su",
-            "/system/xbin/su",
-            "/sbin/su",
-            "/su/bin/su",
-            "/magisk/.core/bin/su",
-            "/data/adb/ksu/bin/su",  // KernelSU
-            "/data/adb/ap/bin/su"    // APatch
-        )
-        if (suPaths.any { File(it).exists() }) return true
-
+        val su = rootExecutable()
         return try {
             // 探「真实可用 root」而非「su 二进制存在」：桌面 Linux（CI runner /
             // 开发机）人手一份 util-linux su，`su --version` 必退出 0 —— 旧口径
@@ -61,7 +52,7 @@ object PrivilegeDetector {
             // `su -c id` 并验证 uid=0：已授权设备返回 "uid=0(root)"；桌面
             // 无 tty 密码认证即刻失败；waitFor 3s 兜底防挂（id 输出 << 管道
             // 缓冲，无排空死锁面）。
-            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
+            val process = Runtime.getRuntime().exec(arrayOf(su, "-c", "id"))
             val completed = process.waitFor(3, TimeUnit.SECONDS)
             if (!completed) {
                 process.destroyForcibly()
@@ -73,6 +64,10 @@ object PrivilegeDetector {
             false
         }
     }
+
+    /** The same executable is used for both root probing and real commands. */
+    internal fun rootExecutable(candidates: List<String> = SuCandidateRegistry.paths): String =
+        candidates.firstOrNull { File(it).isFile && File(it).canExecute() } ?: "su"
 
     /**
      * 检测Shizuku是否可用且已授权
@@ -185,7 +180,7 @@ object PrivilegeDetector {
                 command
             }
             return executeWithTimeout(
-                arrayOf("su", "-c", suCommand),
+                arrayOf(rootExecutable(), "-c", suCommand),
                 timeoutMs,
                 "root",
                 effectiveWorkDir?.absolutePath,

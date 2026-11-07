@@ -336,6 +336,11 @@ object TerminalModule {
     @Singleton
     fun provideSuBinaryLocator(): SuBinaryLocator = SuBinaryLocator()
 
+    @Provides
+    @Singleton
+    fun provideSuAuthorizationCache(): com.apex.agent.platform.terminal.chroot.SuAuthorizationCache =
+        com.apex.agent.platform.terminal.chroot.SuAuthorizationCache()
+
     /**
      * T98：chroot 后端 —— 与 PRoot 后端共享同一 rootfs / workspace 池 / 持久化
      * home / guest env 基线（双模式数据互通）；仅 su + mount + chroot 的
@@ -345,12 +350,14 @@ object TerminalModule {
     @Singleton
     fun provideLinuxChrootBackend(
         suLocator: SuBinaryLocator,
+        authorizationCache: com.apex.agent.platform.terminal.chroot.SuAuthorizationCache,
         rootfsProvider: RootfsProvider,
         workspaces: LinuxWorkspaceManager,
         userHome: GuestUserHome,
         sharedStorage: SharedStorageBridge
     ): LinuxChrootBackend = LinuxChrootBackend(
         suLocator = suLocator,
+        authorizationCache = authorizationCache,
         rootfsProvider = rootfsProvider,
         workspaces = workspaces,
         userHome = userHome,
