@@ -117,12 +117,17 @@ class RootfsConfiguratorTest {
         File(store, "aaaaaaaa.0").writeText(pem)
         File(store, "bbbbbbbb.0").writeText("-----BEGIN CERTIFICATE-----\ninvalid\n-----END CERTIFICATE-----\n")
         File(store, "rogue.pem").writeText(pem) // not a hashed system CA name
+        // Empty removal dir = no system anchor is marked as disabled (Android
+        // only creates it when a user actually disables one). This is the known
+        // revocation source that lets the store's surviving anchors be trusted.
+        val removed = File(store.parentFile, "cacerts-removed").apply { mkdirs() }
         val guest = File(root, "etc/ssl/certs/ca-certificates.crt")
         guest.parentFile.mkdirs()
         guest.writeText("")
         val cfg = RootfsConfigurator(
             dnsServers = { listOf("10.0.0.1") }, hostCaBundle = { null },
-            androidSystemCaDirs = { listOf(store) }
+            androidSystemCaDirs = { listOf(store) },
+            androidSystemCaRemovedDirs = { listOf(removed) }
         )
         val report = cfg.configure(root)
         assertTrue("trusted host CA installed", guest.readText().contains("-----BEGIN CERTIFICATE-----"))

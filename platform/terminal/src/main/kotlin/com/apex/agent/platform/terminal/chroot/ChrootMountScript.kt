@@ -63,14 +63,15 @@ internal object ChrootMountScript {
         "  [ ! -L \"\$guard_target\" ] && [ -d \"\$guard_target\" ] || return 1",
         "  [ ! -L \"\$guard_marker\" ] || return 1",
         "  guard_current=\"\$(mount_id \"\$MI_R/\$guard_name\")\" || return 1",
-        "  [ -z \"\$guard_current\" ] || return 0",
+        "  [ -n \"\$guard_current\" ] || return 1",
         "  \"\$@\" \"\$guard_target\" 2>/dev/null || return 1",
         "  guard_current=\"\$(mount_id \"\$MI_R/\$guard_name\")\" || return 1",
         "  [ -n \"\$guard_current\" ] || return 1",
         // Without a marker the EXIT trap cannot see our bind. Roll it back
-        // only if its newly observed mount ID is still the topmost mount.
+        // only if the mount ID we observed is still there. A foreign overmount
+        // on the same target leaves our ID absent, so we never umount it.
         "  printf '%s\\n' \"\$guard_current\" > \"\$guard_marker\" || {",
-        "    rollback_mount \"\$guard_name\" \"\$guard_current\"",
+        "    rollback_mount \"\$guard_name\" \"\$guard_current\" || true",
         "    return 1",
         "  }",
         "}",

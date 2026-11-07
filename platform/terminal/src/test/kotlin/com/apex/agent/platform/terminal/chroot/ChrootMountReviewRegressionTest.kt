@@ -17,6 +17,10 @@ class ChrootMountReviewRegressionTest {
 
     private fun linuxOnly() = assumeTrue("POSIX shell integration", System.getProperty("os.name").contains("Linux"))
     private fun state(root: File) = File(root.parentFile, ".t99-chroot-state/${root.name}")
+    /** Rootfs skeleton: every bind target the real backend's script can mount. */
+    private fun guestRoot(name: String): File = tmp.newFolder(name).also { root ->
+        for (target in listOf("proc", "sys", "dev", "root", "workspace")) File(root, target).mkdirs()
+    }
     private fun table(name: String) = File(tmp.root, name).apply { writeText("1 0 0:1 / / rw - rootfs fake rw\n") }
     private fun script(root: File, table: File, name: String = "proc", guest: String = "chroot \"\$R\" /bin/false 8>&- 9>&-"): String = listOf(
         "R=${shellQuote(root.absolutePath)}",
@@ -50,13 +54,11 @@ printf 'umount %s\n' "§1" >> "§OPS"
     }
 
     private fun start(script: String, binaries: File, table: File, ops: File, gate: File? = null): Process =
-        ProcessBuilder("sh", "-c", script).apply {
+        ProcessBuilder("sh", "-c", script).redirectErrorStream(true).apply {
             environment()["PATH"] = "${binaries.absolutePath}:${System.getenv("PATH")}"
             environment()["TABLE"] = table.absolutePath
             environment()["OPS"] = ops.absolutePath
             gate?.let { environment()["GATE"] = it.absolutePath }
-            redirectOutput(File(tmp.root, "script-out"))
-            redirectError(File(tmp.root, "script-err"))
         }.start()
 
     private fun run(script: String, binaries: File, table: File, ops: File): Int {
@@ -67,8 +69,7 @@ printf 'umount %s\n' "§1" >> "§OPS"
 
     @Test fun `rootfs alias matches canonical mountinfo without stacking`() {
         linuxOnly()
-        val root = tmp.newFolder("real-rootfs")
-        File(root, "proc").mkdirs()
+        val root = guestRoot("real-rootfs")
         val alias = File(tmp.root, "user-zero-alias")
         Files.createSymbolicLink(alias.toPath(), root.toPath())
         val table = table("mi-alias").apply { appendText("2 1 0:1 / ${root.absolutePath}/proc rw - bind fake rw\n") }
@@ -82,7 +83,7 @@ printf 'umount %s\n' "§1" >> "§OPS"
         linuxOnly()
         val binaries = bin()
         for (name in listOf("proc", "sys", "dev", "root", "workspace", "sdcard")) {
-            val root = tmp.newFolder("guest-$name")
+            val root = guestRoot("guest-$name")
             val outside = tmp.newFolder("outside-$name")
             File(outside, "sentinel").writeText("keep")
             Files.createSymbolicLink(File(root, name).toPath(), outside.toPath())
@@ -96,8 +97,7 @@ printf 'umount %s\n' "§1" >> "§OPS"
 
     @Test fun `mount state and locks live outside guest rootfs`() {
         linuxOnly()
-        val root = tmp.newFolder("guest-state")
-        File(root, "proc").mkdirs()
+        val root = guestRoot("guest-state")
         val table = table("mi-state")
         val ops = File(tmp.root, "ops-state").apply { writeText("") }
         assertEquals(7, run(script(root, table), bin(), table, ops))
@@ -111,8 +111,7 @@ printf 'umount %s\n' "§1" >> "§OPS"
 
     @Test fun `failed marker write rolls back exactly the new mount`() {
         linuxOnly()
-        val root = tmp.newFolder("guest-marker")
-        File(root, "proc").mkdirs()
+        val root = guestRoot("guest-marker")
         for (dir in listOf(File(root, ".t99-chroot-mounts"), state(root))) {
             File(dir, "proc").mkdirs() // redirect to a directory must fail
         }
@@ -125,8 +124,7 @@ printf 'umount %s\n' "§1" >> "§OPS"
 
     @Test fun `failed marker write cannot unmount a different overmount`() {
         linuxOnly()
-        val root = tmp.newFolder("guest-overmount")
-        File(root, "proc").mkdirs()
+        val root = guestRoot("guest-overmount")
         for (dir in listOf(File(root, ".t99-chroot-mounts"), state(root))) File(dir, "proc").mkdirs()
         val table = table("mi-overmount")
         val ops = File(tmp.root, "ops-overmount").apply { writeText("") }
@@ -143,8 +141,7 @@ printf 'umount %s\n' "§1" >> "§OPS"
      */
     @Test fun `orphan guest keeps users lock when su shell is killed`() {
         linuxOnly()
-        val root = tmp.newFolder("guest-orphan")
-        File(root, "proc").mkdirs()
+        val root = guestRoot("guest-orphan")
         val table = table("mi-orphan")
         val ops = File(tmp.root, "ops-orphan").apply { writeText("") }
         val gate = File(tmp.root, "orphan-fifo")

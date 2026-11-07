@@ -14,7 +14,7 @@ class ChrootMountScriptTest {
     @get:Rule val tmp = TemporaryFolder()
 
     @Test fun `preexisting unowned mount is neither stacked nor detached and guest files remain`() {
-        val root = tmp.newFolder("guest")
+        val root = guestRoot()
         val fixture = tmp.newFile("mountinfo")
         fixture.writeText("1 0 0:1 / / rw - rootfs fake rw\n2 1 0:1 / ${root.absolutePath}/proc rw - proc proc rw\n")
         val guestFile = File(root, "proc/guest-file").apply { parentFile.mkdirs(); writeText("keep") }
@@ -30,7 +30,7 @@ class ChrootMountScriptTest {
     }
 
     @Test fun `reused owned mount is cleaned after guest exit and repeat does not stack`() {
-        val root = tmp.newFolder("guest")
+        val root = guestRoot()
         val fixture = tmp.newFile("mountinfo")
         fixture.writeText("1 0 0:1 / / rw - rootfs fake rw\n4 1 0:1 / ${root.absolutePath}/proc rw - proc proc rw\n")
         val state = File(root.parentFile, ".t99-chroot-state/${root.name}")
@@ -48,7 +48,7 @@ class ChrootMountScriptTest {
 
     @Test fun `concurrent guests share mounts and only the last exit detaches them`() {
         org.junit.Assume.assumeTrue("POSIX FIFO integration", System.getProperty("os.name").contains("Linux"))
-        val root = tmp.newFolder("guest")
+        val root = guestRoot()
         val fixture = tmp.newFile("mountinfo").apply { writeText("1 0 0:1 / / rw - rootfs fake rw\n") }
         val log = tmp.newFile("ops")
         val bin = fakeCommands()
@@ -85,6 +85,11 @@ class ChrootMountScriptTest {
         }
     }
 
+    /** Fake rootfs with every target the real script binds. */
+    private fun guestRoot(): File = tmp.newFolder("guest").also { root ->
+        for (target in listOf("proc", "sys", "dev", "root", "workspace")) File(root, target).mkdirs()
+    }
+
     private fun fifo(name: String): File = File(tmp.root, name).also { file ->
         val p = ProcessBuilder("mkfifo", file.absolutePath).start()
         assertTrue(p.waitFor(5, TimeUnit.SECONDS))
@@ -92,7 +97,7 @@ class ChrootMountScriptTest {
     }
 
     @Test fun `mountinfo failure fails closed without attempting a bind`() {
-        val root = tmp.newFolder("guest")
+        val root = guestRoot()
         val fixture = tmp.newFile("mountinfo")
         fixture.writeText("corrupt mount table\n")
         val log = tmp.newFile("ops")
