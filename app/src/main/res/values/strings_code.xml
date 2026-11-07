@@ -13,6 +13,7 @@
 
     <!-- Todo panel -->
     <string name="code_todo_progress">Tasks %1$d/%2$d</string>
+    <string name="code_todo_streaming">Tasks · generating (%1$d)</string>
 
     <!-- Message stream / input -->
     <string name="code_input_hint">Describe a coding task…</string>

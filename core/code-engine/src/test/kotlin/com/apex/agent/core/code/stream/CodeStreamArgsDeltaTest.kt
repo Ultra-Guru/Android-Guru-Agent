@@ -182,4 +182,40 @@ class CodeStreamArgsDeltaTest {
         assertEquals("late.kt", call.target)
         assertEquals("code first", call.streamingPreview?.writeContent)
     }
+
+    @Test
+    fun `plan todo deltas surface streaming todos in snapshot until complete`() {
+        val s = CodeStreamSession()
+        s.beginRun("计划先行")
+        val args = """{"todos": [{"content": "第一步", "status": "in_progress"}, {"content": "第二步", "status": "pending"}]}"""
+        val cut = args.indexOf("第二步")
+        s.onEvent(delta("p1", "CodeTodo", args.substring(0, cut)))
+        s.onEvent(delta("p1", "CodeTodo", args.substring(cut)))
+
+        // 流式清单进快照（不等工具完成）；胶囊目标 = 条目数摘要
+        val snap = s.snapshot()
+        val todos = snap.streamingTodos
+        assertEquals(2, todos?.size)
+        assertEquals("第一步", todos!![0].content)
+        assertEquals("in_progress", todos[0].status)
+        assertEquals("pending", todos[1].status)
+        assertEquals("2 项", capsules(s).single().target)
+
+        // Start 升级：预览保留（执行期清单持续可见）
+        s.onEvent(
+            AgentEvent.ToolCallStart("p1", "CodeTodo", args)
+        )
+        assertEquals(2, s.snapshot().streamingTodos?.size)
+
+        // Complete：流式清单收回（UI 回落 todos 终态快照通道）
+        s.onEvent(
+            AgentEvent.ToolCallComplete(
+                callId = "p1", toolName = "CodeTodo",
+                arguments = args,
+                output = "todo: 0/2 completed", fullOutput = "",
+                success = true, durationMs = 8
+            )
+        )
+        assertNull(s.snapshot().streamingTodos)
+    }
 }

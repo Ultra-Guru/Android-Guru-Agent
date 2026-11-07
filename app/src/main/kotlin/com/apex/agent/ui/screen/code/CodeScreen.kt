@@ -2,9 +2,11 @@ package com.apex.agent.ui.screen.code
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -234,7 +236,16 @@ fun CodeScreen(
             }
         )
 
-        if (state.todos.isNotEmpty()) {
+        // 任务清单（流式实时渲染）：PLAN 参数生成期间 todos 随分片逐条
+        // 落地 —— 流式清单优先（不等工具完成）；无流式清单时回落 CodeTodo
+        // 终态快照（工具完成后由 reducer 刷新）。
+        val liveTodos = state.stream.streamingTodos
+        if (liveTodos != null) {
+            TodoPanel(
+                todos = liveTodos.map { CodeTodoTool.Todo(it.content, it.status, it.priority) },
+                streaming = true
+            )
+        } else if (state.todos.isNotEmpty()) {
             TodoPanel(todos = state.todos)
         }
 
@@ -741,8 +752,12 @@ private fun WorkspaceBar(
 
 // ═══ Todo 面板 ═══
 
+/**
+ * @param streaming true = 流式生成中（PLAN 参数分片逐条落地）：头行显示
+ *   「生成中」计数而非完成度，条目持续追加；工具完成后回落终态快照。
+ */
 @Composable
-private fun TodoPanel(todos: List<CodeTodoTool.Todo>) {
+private fun TodoPanel(todos: List<CodeTodoTool.Todo>, streaming: Boolean = false) {
     var expanded by remember { mutableStateOf(true) }
     val done = todos.count { it.status == "completed" }
 
@@ -768,38 +783,47 @@ private fun TodoPanel(todos: List<CodeTodoTool.Todo>) {
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = stringResource(R.string.code_todo_progress, done, todos.size),
+                    text = if (streaming) stringResource(R.string.code_todo_streaming, todos.size)
+                    else stringResource(R.string.code_todo_progress, done, todos.size),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold
                 )
             }
             if (expanded) {
                 Spacer(Modifier.height(6.dp))
-                todos.forEach { todo ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(vertical = 1.dp)
-                    ) {
-                        val mark = when (todo.status) {
-                            "completed" -> "✔"
-                            "in_progress" -> "▶"
-                            "cancelled" -> "✖"
-                            else -> "○"
+                // 条目数不设上限（一个流水式输出不限制清单数量）：长清单
+                // 以内部滚动承载，不挤压时间轴可用高度。
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 236.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    todos.forEach { todo ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(vertical = 1.dp)
+                        ) {
+                            val mark = when (todo.status) {
+                                "completed" -> "✔"
+                                "in_progress" -> "▶"
+                                "cancelled" -> "✖"
+                                else -> "○"
+                            }
+                            val color = when (todo.status) {
+                                "completed" -> MaterialTheme.colorScheme.primary
+                                "in_progress" -> MaterialTheme.colorScheme.tertiary
+                                "cancelled" -> MaterialTheme.colorScheme.outline
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                            Text(mark, color = color, style = MaterialTheme.typography.labelMedium)
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = if (todo.priority == "high") "${todo.content} (!)" else todo.content,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (todo.status == "cancelled") MaterialTheme.colorScheme.outline
+                                else MaterialTheme.colorScheme.onSurface
+                            )
                         }
-                        val color = when (todo.status) {
-                            "completed" -> MaterialTheme.colorScheme.primary
-                            "in_progress" -> MaterialTheme.colorScheme.tertiary
-                            "cancelled" -> MaterialTheme.colorScheme.outline
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                        Text(mark, color = color, style = MaterialTheme.typography.labelMedium)
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = if (todo.priority == "high") "${todo.content} (!)" else todo.content,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (todo.status == "cancelled") MaterialTheme.colorScheme.outline
-                            else MaterialTheme.colorScheme.onSurface
-                        )
                     }
                 }
             }

@@ -167,4 +167,36 @@ class CodeToolsTest {
         val out = tool.executeSafe("""{"todos": "[{\"content\": \"a\", \"status\": \"done\"}]"}""").render()
         assertTrue(out, out.contains("invalid status"))
     }
+
+    // ── 双形态（内联数组 / 字符串编码）与数量上限 ──────────────────
+
+    @Test
+    fun `todo accepts inline json array`() = runTest {
+        val tool = CodeTodoTool()
+        val payload = """
+            {"todos": [{"content": "a", "status": "completed"}, {"content": "b", "status": "in_progress", "priority": "high"}]}
+        """.trimIndent()
+        val out = tool.executeSafe(payload).render()
+        assertTrue(out, out.contains("1/2"))
+        assertTrue(out, out.contains("[x] 1. a"))
+        assertEquals(2, tool.snapshot().size)
+    }
+
+    @Test
+    fun `todo wraps a single inline object into an array`() = runTest {
+        val tool = CodeTodoTool()
+        val out = tool.executeSafe("""{"todos": {"content": "only", "status": "pending"}}""").render()
+        assertTrue(out, out.contains("1. only"))
+        assertEquals(1, tool.snapshot().size)
+    }
+
+    @Test
+    fun `todo has no item count limit`() = runTest {
+        // 用户规格：一个流水式输出不限制清单数量 —— 旧 max 50 硬拒绝已移除
+        val tool = CodeTodoTool()
+        val items = (1..80).joinToString(",") { """{"content": "step $it", "status": "pending"}""" }
+        val out = tool.executeSafe("""{"todos": [$items]}""").render()
+        assertTrue(out, out.contains("0/80"))
+        assertEquals(80, tool.snapshot().size)
+    }
 }
