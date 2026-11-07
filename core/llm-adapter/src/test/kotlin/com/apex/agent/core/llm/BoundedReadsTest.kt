@@ -1,7 +1,9 @@
 package com.apex.agent.core.llm
 
 import java.io.ByteArrayInputStream
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
@@ -42,7 +44,7 @@ class BoundedReadsTest {
     }
 
     @Test
-    fun `non-stream chat rejects an oversized successful response`() = runBlocking {
+    fun `non-stream chat rejects an oversized successful response`() = runTest {
         val http = OkHttpClient.Builder()
             .addInterceptor { chain ->
                 Response.Builder()
@@ -60,7 +62,12 @@ class BoundedReadsTest {
         )
 
         try {
-            client.chat(listOf(LlmMessage.User("hello")), emptyList(), 0.5f, 16)
+            // chat() 内 SuspendHttpRetry 的总预算 withTimeoutOrNull 在 runTest
+            // 虚拟时间下会被空闲快进抢先触发（真实 OkHttp 回调永远慢于虚拟时钟）
+            // —— 把被测调用放回真实调度器，超时语义才与生产一致。
+            withContext(Dispatchers.Default) {
+                client.chat(listOf(LlmMessage.User("hello")), emptyList(), 0.5f, 16)
+            }
             fail("expected an oversized response to be rejected")
         } catch (error: LlmException.ResponseTooLarge) {
             assertEquals(8_000_000, error.limitBytes)
@@ -69,7 +76,7 @@ class BoundedReadsTest {
     }
 
     @Test
-    fun `http error body is capped before it reaches the exception`() = runBlocking {
+    fun `http error body is capped before it reaches the exception`() = runTest {
         val http = OkHttpClient.Builder()
             .addInterceptor { chain ->
                 Response.Builder()
@@ -87,7 +94,10 @@ class BoundedReadsTest {
         )
 
         try {
-            client.chat(listOf(LlmMessage.User("hello")), emptyList(), 0.5f, 16)
+            // 同上：真实调度器承载被测调用（502 会走 retryOnCodes 真实退避）。
+            withContext(Dispatchers.Default) {
+                client.chat(listOf(LlmMessage.User("hello")), emptyList(), 0.5f, 16)
+            }
             fail("expected the HTTP error to be propagated")
         } catch (error: LlmException.Http) {
             assertEquals(502, error.code)
