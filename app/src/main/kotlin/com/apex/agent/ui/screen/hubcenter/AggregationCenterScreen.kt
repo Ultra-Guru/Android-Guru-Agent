@@ -264,7 +264,18 @@ fun AggregationCenterScreen(viewModel: MarketViewModel = hiltViewModel()) {
                     onClick = { viewModel.selectScope(MarketScope.INSTALLED) },
                     label = { Text(stringResource(R.string.hub_mode_mine)) }
                 )
+
+                // ═══ 统一安装向导入口（市场完全重构 PR-C）：粘贴任意 spec 走统一闸门 ═══
+                androidx.compose.material3.TextButton(
+                    onClick = { viewModel.extensionWizard.show() },
+                    modifier = Modifier.padding(start = 4.dp)
+                ) {
+                    Text(stringResource(R.string.market_extension_wizard_entry))
+                }
             }
+
+            // 统一安装向导对话框（与 agent 侧三工具同一闸门实例）
+            com.apex.agent.ui.screen.market.ExtensionWizardDialog(viewModel.extensionWizard)
 
             SecondaryTabRow(selectedTabIndex = state.selectedTab.ordinal) {
                 MarketTab.entries.forEach { tab ->

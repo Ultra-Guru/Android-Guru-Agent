@@ -7,6 +7,7 @@ import com.apex.agent.core.tools.extension.ExtensionInstaller
 import com.apex.agent.core.tools.extension.ExtensionRegistry
 import com.apex.agent.core.tools.extension.NodeInstallPort
 import com.apex.agent.core.tools.extension.adapters.ClaudeExtensionAdapter
+import com.apex.agent.core.tools.extension.adapters.ApkPackageExtensionAdapter
 import com.apex.agent.core.tools.extension.adapters.DshExtensionAdapter
 import com.apex.agent.core.tools.extension.adapters.McpExtensionAdapter
 import com.apex.agent.core.tools.extension.adapters.OpenCodeExtensionAdapter
@@ -144,6 +145,7 @@ object ExtensionModule {
         catalogLookup: ExtensionMcpCatalogLookup,
         fusionRegistry: FusionBundleRegistry,
         nodeInstallPort: NodeInstallPort,
+        apkInstallPort: com.apex.agent.core.tools.extension.adapters.ApkPackageExtensionAdapter.ApkInstallPort,
         @ApplicationContext context: Context
     ): ExtensionAdapterRegistry {
         val layout = ExtensionDirLayout(File(context.filesDir, "linux/extensions"))
@@ -164,7 +166,8 @@ object ExtensionModule {
                     skillRegistry = skillRegistry,
                     fetchBytes = { url -> textFetcher.fetchBytes(url) }
                 ),
-                DshExtensionAdapter(port = nodeInstallPort, layout = layout)
+                DshExtensionAdapter(port = nodeInstallPort, layout = layout),
+                ApkPackageExtensionAdapter(port = apkInstallPort)
             )
         )
     }

@@ -1,0 +1,20 @@
+{
+  "schema": "apex-skill-v1",
+  "id": "extension-authoring",
+  "name": "Extension Authoring",
+  "version": "1.0.0",
+  "description": "教 Agent 把用户的脚本/配置/应用包装成符合统一扩展模型的可安装产物",
+  "author": "Apex Agent",
+  "license": "MIT",
+  "category": "SKILL",
+  "tags": ["extension", "authoring", "marketplace", "packaging"],
+  "scope": "all",
+  "trustLevel": "verified",
+  "promptInjection": "## 扩展编写纪律（Extension Authoring）\n\n用户想把一段脚本 / 一组配置 / 一个 App 包装成「可安装的扩展」时，按目标生态选形态并产出标准 manifest —— 不要发明私有格式：\n\n### 形态选择\n- **一组方法论/说明书**（prompt 型）→ apex-skill-v1 技能（SkillCreate 即可，无需包装）：id 用小写连字符、promptInjection 写正文；\n- **技能 + 资源脚本** → 本地目录按 Claude 插件包结构组织（.claude-plugin/plugin.json + skills/<名>/SKILL.md + scripts/），再走 claude:<本地目录> 安装（资源文件会随 zip 落盘、模型经终端真实执行）；\n- **MCP 服务器** → mcp:{\"command\":…} 或远端 url 配置；本地脚本先确认沙箱内有可解析的运行时（node/python）；\n- **OpenCode 插件** → 单 .ts/.js 文件（opencode 插件 API）或 npm 包 → opencode:<路径|包名>；\n- **Android 功能插件** → plugin.json 工具宏（只组合宿主既有工具，零代码执行）；\n- **Android App 扩展** → 带 PLUGIN intent-service 的 APK（开发者侧工程，agent 只协助触发安装 apk:<路径>）。\n\n### 通用纪律\n- manifest 字段如实填写：version、description、trustLevel（自产 = community）；\n- 产物先落本地文件再以对应 spec 走统一安装闸门（resolve→inspect→install），**不要绕闸门直接写注册表**；\n- 给用户的交付物 = 目录/文件 + 一行安装 spec + 预期行为说明；\n- 脚本类技能提醒用户：资源脚本在终端真实执行 —— 自己写的脚本自己负责，但第三方来源一律先 inspect。",
+  "changelog": [
+    {
+      "version": "1.0.0",
+      "notes": "市场完全重构 PR-C：扩展编写纪律技能（形态选择/通用纪律/交付口径）"
+    }
+  ]
+}

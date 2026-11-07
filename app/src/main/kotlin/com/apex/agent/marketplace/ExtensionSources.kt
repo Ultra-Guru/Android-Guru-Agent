@@ -88,3 +88,21 @@ class ExtensionMcpCatalogLookup @Inject constructor(
         const val CATALOG_DIR = "mcp_catalog"
     }
 }
+
+/**
+ * APK 系统安装端口（apk_package 适配器的执行端）：PackageInstaller 会话安装
+ * （commit 后等用户在系统 UI 确认；返回仅代表已发起 —— 真实结果系统通知）。
+ */
+@Singleton
+class ExtensionApkInstallPort @Inject constructor(
+    @ApplicationContext private val context: Context
+) : com.apex.agent.core.tools.extension.adapters.ApkPackageExtensionAdapter.ApkInstallPort {
+
+    private val installer by lazy { com.apex.agent.tools.AndroidApkInstaller(context) }
+
+    override suspend fun installApk(apkPath: String): Result<String> =
+        installer.install(apkPath, sourceUrl = null).let { r ->
+            if (r.success) Result.success(r.message)
+            else Result.failure(IllegalStateException(r.message))
+        }
+}
