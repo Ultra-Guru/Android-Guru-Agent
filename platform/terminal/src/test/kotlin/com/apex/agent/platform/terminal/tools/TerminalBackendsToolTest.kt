@@ -7,6 +7,7 @@ import com.apex.agent.platform.terminal.runtime.ExecutionBackend
 import com.apex.agent.platform.terminal.runtime.SessionSpawnRequest
 import com.apex.agent.platform.terminal.runtime.SpawnSpec
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
+import com.apex.agent.platform.terminal.tools.v2.TerminalPRootSmokeTool
 import com.apex.agent.platform.terminal.tools.v2.TerminalBackendsTool
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -165,5 +166,35 @@ class TerminalBackendsToolTest {
         assertEquals("read-only discovery must not execute /bin/true", 0, launches)
         assertNull("no probe has run yet", json["backends"]!!.jsonArray[0].jsonObject["smoke"])
         assertNull("no uncached diagnosis", json["suggestion"])
+    }
+
+    @Test
+    fun `guest execution is explicit tool with mutating annotations and explicit smoke`() = runTest {
+        // T99 评审 B1 修复回归锁：只读发现永不跑 guest 探针；真正的执行探测
+        // 是独立的显式工具，注解保持非只读（PLAN 拒绝），输出仍是建议不改路由。
+        var launches = 0
+        val runtime = FakeRuntime(listOf(
+            TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", true, "READY")
+        ))
+        val smoke = TerminalPRootSmokeTool(runtime) {
+            launches++; PRootSmokeProbe.SmokeResult(PRootSmokeProbe.Status.PTRACE_SIGNAL, 159)
+        }
+
+        val json = kotlinx.serialization.json.Json.parseToJsonElement(smoke.invoke("{}")).jsonObject
+        assertEquals(1, launches)
+        assertEquals("TerminalPRootSmoke", json["id"]!!.jsonPrimitive.content)
+        assertEquals(true, json["proot"]!!.jsonPrimitive.content)
+        assertEquals("ptrace_signal", json["smoke"]!!.jsonPrimitive.content)
+        assertEquals(159, json["exitCode"]!!.jsonPrimitive.content.toInt())
+        val advice = json["suggestion"]!!.jsonPrimitive.content
+        assertTrue(advice.contains("likely"))
+        assertTrue(advice.contains("linux-ubuntu-chroot"))
+
+        // 只读发现保持零执行（同请求上下文）。
+        val backends = TerminalBackendsTool(runtime, smokeProbe = {
+            launches++; PRootSmokeProbe.SmokeResult(PRootSmokeProbe.Status.TIMED_OUT)
+        })
+        backends.invoke("{}")
+        assertEquals("read-only request never launches the tracer", 1, launches)
     }
 }
