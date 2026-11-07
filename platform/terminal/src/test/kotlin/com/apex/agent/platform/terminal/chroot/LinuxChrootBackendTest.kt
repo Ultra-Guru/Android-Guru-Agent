@@ -13,6 +13,7 @@ import com.apex.agent.platform.terminal.workspace.GuestCwdMapper
 import com.apex.agent.platform.terminal.workspace.GuestUserHome
 import com.apex.agent.platform.terminal.workspace.LinuxWorkspaceManager
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -142,7 +143,7 @@ class LinuxChrootBackendTest {
     }
 
     @Test
-    fun `denied authorization is visible without executing su during availability`() = runBlocking {
+    fun `denied authorization is visible without executing su during availability`() = runTest {
         var probes = 0
         val su = fakeSu("denied-su")
         val cache = SuAuthorizationCache(probe = { probes++; SuAuthorizationCache.State.DENIED })
@@ -185,7 +186,7 @@ class LinuxChrootBackendTest {
     }
 
     @Test
-    fun `granted authorization is cached and subsequent prepares do not re-prompt`() = runBlocking {
+    fun `granted authorization is cached and subsequent prepares do not re-prompt`() = runTest {
         var probes = 0
         val su = fakeSu("granted-su")
         val cache = SuAuthorizationCache(probe = { probes++; SuAuthorizationCache.State.GRANTED })
@@ -203,7 +204,7 @@ class LinuxChrootBackendTest {
     }
 
     @Test
-    fun `absent rootfs does not trigger authorization prompt`() = runBlocking {
+    fun `absent rootfs does not trigger authorization prompt`() = runTest {
         var probes = 0
         val cache = SuAuthorizationCache(probe = { probes++; SuAuthorizationCache.State.GRANTED })
         val b = LinuxChrootBackend(
@@ -219,7 +220,7 @@ class LinuxChrootBackendTest {
     }
 
     @Test
-    fun `invalid cwd is rejected before authorization prompt`() = runBlocking {
+    fun `invalid cwd is rejected before authorization prompt`() = runTest {
         var probes = 0
         val cache = SuAuthorizationCache(probe = { probes++; SuAuthorizationCache.State.GRANTED })
         val b = LinuxChrootBackend(
