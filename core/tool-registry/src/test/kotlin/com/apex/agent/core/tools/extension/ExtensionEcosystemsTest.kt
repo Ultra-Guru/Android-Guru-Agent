@@ -308,7 +308,7 @@ class ApkPackageExtensionAdapterTest {
     }
 
     @Test
-    fun `APK resolve 路径校验与指纹`() {
+    fun `APK resolve 路径校验与指纹`() = runTest {
         val adapter = ApkPackageExtensionAdapter(FakeApkPort())
         // 非 .apk 拒绝
         val notApk = tmp.newFile("plugin.zip")

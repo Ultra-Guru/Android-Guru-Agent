@@ -15,8 +15,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -38,7 +38,7 @@ import com.apex.agent.R
 internal fun ExtensionWizardDialog(
     controller: com.apex.agent.marketplace.ExtensionWizardController
 ) {
-    val state by controller.state.collectAsState()
+    val state by controller.state.collectAsStateWithLifecycle()
     if (!state.visible) return
 
     var confirmChecked by remember(state.manifestHash) { mutableStateOf(false) }
