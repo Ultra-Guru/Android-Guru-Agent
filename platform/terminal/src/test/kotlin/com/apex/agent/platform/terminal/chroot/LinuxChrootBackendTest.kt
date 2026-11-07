@@ -112,6 +112,10 @@ class LinuxChrootBackendTest {
         // 契约锁：默认候选必须含 Magisk/KernelSU 标准落点（顺序敏感 —— 探测序即优先级）。
         assertEquals("/system/bin/su", SuBinaryLocator.DEFAULT_CANDIDATES.first())
         assertTrue(SuBinaryLocator.DEFAULT_CANDIDATES.contains("/system/xbin/su"))
+        // T99: privilege routing already knows these paths; chroot must not say SU_NOT_FOUND.
+        assertTrue(SuBinaryLocator.DEFAULT_CANDIDATES.contains("/data/adb/ksu/bin/su"))
+        assertTrue(SuBinaryLocator.DEFAULT_CANDIDATES.contains("/data/adb/ap/bin/su"))
+        assertTrue(SuBinaryLocator.DEFAULT_CANDIDATES.contains("/magisk/.core/bin/su"))
     }
 
     // ─── availability 三态 ───
