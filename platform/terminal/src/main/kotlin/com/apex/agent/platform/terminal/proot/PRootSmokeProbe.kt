@@ -49,7 +49,9 @@ class PRootSmokeProbe(
             ?.let { return@withLock it.result }
 
         val result = try {
-            withTimeout(TIMEOUT_MS) { runOnce() }
+            // The timeout is wall-clock IO time, not a runTest virtual-time timer that
+            // can fire before the child thread even starts on a busy CI runner.
+            withContext(Dispatchers.IO) { withTimeout(TIMEOUT_MS) { runOnce() } }
         } catch (_: TimeoutCancellationException) {
             SmokeResult(Status.TIMED_OUT)
         } catch (e: CancellationException) {
