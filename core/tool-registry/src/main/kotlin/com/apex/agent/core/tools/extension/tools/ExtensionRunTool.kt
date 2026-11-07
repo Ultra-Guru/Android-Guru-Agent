@@ -7,6 +7,7 @@ import com.apex.agent.core.tools.ToolResult
 import com.apex.agent.core.tools.builtin.BaseTool
 import com.apex.agent.core.tools.extension.ExtensionDirLayout
 import com.apex.agent.core.tools.extension.ExtensionJson
+import com.apex.agent.core.tools.extension.ExtensionTypes
 import com.apex.agent.core.tools.extension.ExtensionRegistry
 import com.apex.agent.core.tools.extension.NodeInstallPort
 import com.apex.agent.core.tools.extension.RuntimeDomains
@@ -72,7 +73,7 @@ class ExtensionRunTool(
         val id = args.requireString("id")
         val extraArgs = (args.optionalString("args") ?: "")
             .split(Regex("\\s+")).filter { it.isNotBlank() }
-        val timeoutMs = (args.optionalInt("timeout_ms") ?: DEFAULT_TIMEOUT_MS).coerceIn(5_000, 600_000)
+        val timeoutMs = (args.optionalInt("timeout_ms")?.toLong() ?: DEFAULT_TIMEOUT_MS).coerceIn(5_000L, 600_000L)
 
         // ── 账本寻址 + 域校验（runtime 字段显式判断，不猜）──
         val record = registry.get(id)
