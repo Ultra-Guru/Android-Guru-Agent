@@ -102,8 +102,11 @@ class ChrootMountScriptTest {
     }
 
     @Test fun `mountinfo path escapes whitespace and backslashes`() {
-        val header = ChrootMountScript.header("/data/guest root\\test")
-        assertTrue(header.contains("MI_R='/data/guest\\040root\\134test'"))
+        val root = tmp.newFolder("root with space\\name")
+        val header = ChrootMountScript.header(root.absolutePath)
+        val expected = root.canonicalPath
+            .replace("\\", "\\134").replace(" ", "\\040")
+        assertTrue("canonical escaped target in header: $header", header.contains("MI_R='$expected'"))
     }
 
     private fun script(root: File, fixture: File): String = listOf(

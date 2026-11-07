@@ -137,6 +137,10 @@ printf 'umount %s\n' "§1" >> "§OPS"
         assertTrue(table.readText().contains("999 1 0:1 / ${root.absolutePath}/proc"))
     }
 
+    /**
+     * SIGKILL on the su shell must leave the long-lived guest holding the shared
+     * users lock, so a later shell cannot detach mounts the guest still uses.
+     */
     @Test fun `orphan guest keeps users lock when su shell is killed`() {
         linuxOnly()
         val root = tmp.newFolder("guest-orphan")
@@ -148,15 +152,15 @@ printf 'umount %s\n' "§1" >> "§OPS"
         assertTrue(mkfifo.waitFor(5, TimeUnit.SECONDS))
         assertEquals(0, mkfifo.exitValue())
         val binaries = bin()
-        File(binaries, "chroot").writeText("#!/bin/sh\nprintf 'READY\\n' >> \"\$OPS\"\nread -r answer < \"\$GATE\"\nexit 0\n")
+        File(binaries, "chroot").writeText(
+            "#!/bin/sh\nprintf 'READY\\n' >> \"\$OPS\"\nread -r answer < \"\$GATE\"\nexit 0\n"
+        )
         val original = start(script(root, table), binaries, table, ops, gate)
         try {
-            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
-            while (!ops.readText().contains("READY") && System.nanoTime() < deadline) Thread.sleep(10)
-            assertTrue("orphan guest started", ops.readText().contains("READY"))
+            assertEquals("orphan guest started", "READY", original.inputStream.bufferedReader().readLine())
             original.destroyForcibly()
             assertTrue(original.waitFor(5, TimeUnit.SECONDS))
-            // A subsequent short guest must not detach mounts used by the orphan.
+            // A subsequent short guest must not detach mounts the orphan uses.
             File(binaries, "chroot").writeText("#!/bin/sh\nexit 7\n")
             assertEquals(7, run(script(root, table), binaries, table, ops))
             assertFalse("orphan holds shared lock", ops.readLines().any { it.startsWith("umount ") })
@@ -167,7 +171,6 @@ printf 'umount %s\n' "§1" >> "§OPS"
             original.destroyForcibly()
             // Release a still-blocked fake guest if an assertion failed.
             if (!ops.readLines().any { it.startsWith("umount ") }) {
-                runCatching { File(binaries, "chroot").writeText("#!/bin/sh\nexit 7\n") }
                 runCatching { ProcessBuilder("sh", "-c", "printf 'exit\\n' > '${gate.absolutePath}'").start().waitFor(2, TimeUnit.SECONDS) }
             }
         }

@@ -329,31 +329,58 @@ class RootfsConfigurator(
         val factory = CertificateFactory.getInstance("X.509")
         // APEX (Android 14+) takes precedence over the older /system store.
         // Never include user-installed credentials or arbitrary PEM files.
-        androidSystemCaDirs().zip(androidSystemCaRemovedDirs()).forEach { (dir, removedDir) ->
+        val dirs = androidSystemCaDirs()
+        val removedDirs = androidSystemCaRemovedDirs()
+        for (index in dirs.indices) {
+            val dir = dirs[index]
+            // null removal dir = unknown revocation source for this system dir.
+            val removedDir = removedDirs.getOrNull(index) ?: continue
             if (!dir.isDirectory) continue
-            val seen = HashSet<String>()
-            val pem = StringBuilder()
-            dir.listFiles().orEmpty().asSequence()
-                .filter { it.name.matches(SYSTEM_CA_FILENAME) && it.isFile &&
-                    !Files.isSymbolicLink(it.toPath()) && it.length() in 1..MAX_CERT_BYTES.toLong() }
-                .filterNot { file -> isCertMarkedAsRemoved(removedDir, file.name) }
-                .sortedBy { it.name }
-                .take(MAX_SYSTEM_CERTS)
-                .forEach { file ->
-                    val cert = runCatching {
-                        file.inputStream().use { factory.generateCertificate(it) as? X509Certificate }
-                    }.getOrNull()?.takeIf { it.basicConstraints >= 0 } ?: return@forEach
-                    val der = cert.encoded
-                    val encoded = Base64.getMimeEncoder(64, byteArrayOf('\n'.code.toByte()))
-                        .encodeToString(der)
-                    if (seen.add(encoded)) {
-                        pem.append("-----BEGIN CERTIFICATE-----\n")
-                            .append(encoded).append("\n-----END CERTIFICATE-----\n")
-                    }
-                }
-            if (pem.isNotEmpty() && pem.length <= MAX_CA_BYTES) return pem.toString().toByteArray(Charsets.US_ASCII)
+            val certs = collectTrustedSystemCertificates(factory, dir, removedDir)
+            if (certs.isNotEmpty()) return trustedBundle(certs)
         }
         return null
+    }
+
+    private fun trustedBundle(certs: List<X509Certificate>): ByteArray {
+        val pem = StringBuilder()
+        for (cert in certs) {
+            val encoded = Base64.getMimeEncoder(64, byteArrayOf('\n'.code.toByte())).encodeToString(cert.encoded)
+            pem.append("-----BEGIN CERTIFICATE-----\n").append(encoded).append("\n-----END CERTIFICATE-----\n")
+        }
+        require(pem.isNotEmpty() && pem.length <= MAX_CA_BYTES) { "invalid trusted bundle" }
+        return pem.toString().toByteArray(Charsets.US_ASCII)
+    }
+
+    private fun collectTrustedSystemCertificates(
+        factory: CertificateFactory,
+        dir: File,
+        removedDir: File
+    ): List<X509Certificate> {
+        val seen = HashSet<String>()
+        return dir.listFiles().orEmpty().asSequence()
+            .filter { it.name.matches(SYSTEM_CA_FILENAME) && it.isFile &&
+                !Files.isSymbolicLink(it.toPath()) && it.length() in 1..MAX_CERT_BYTES.toLong() }
+            .filterNot { file -> isCertMarkedAsRemoved(removedDir, file.name) }
+            .sortedBy { it.name }
+            .take(MAX_SYSTEM_CERTS)
+            .mapNotNull { file ->
+                runCatching {
+                    file.inputStream().use { factory.generateCertificate(it) as? X509Certificate }
+                }.getOrNull()?.takeIf { it.basicConstraints >= 0 }
+            }
+            .filter { cert -> seen.add(cert.subjectX500Principal.name + cert.serialNumber) }
+            .toList()
+    }
+
+    private fun List<X509Certificate>.toBundle(): ByteArray {
+        val pem = StringBuilder()
+        for (cert in this) {
+            val encoded = Base64.getMimeEncoder(64, byteArrayOf('\n'.code.toByte())).encodeToString(cert.encoded)
+            pem.append("-----BEGIN CERTIFICATE-----\n").append(encoded).append("\n-----END CERTIFICATE-----\n")
+        }
+        require(pem.isNotEmpty() && pem.length <= MAX_CA_BYTES) { "invalid trusted bundle" }
+        return pem.toString().toByteArray(Charsets.US_ASCII)
     }
 
     /**
