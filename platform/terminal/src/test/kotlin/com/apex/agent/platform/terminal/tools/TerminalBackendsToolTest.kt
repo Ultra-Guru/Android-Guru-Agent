@@ -106,24 +106,22 @@ class TerminalBackendsToolTest {
     }
 
     @Test
-    fun `hung smoke appends advice without changing registered backend order or routing`() = runTest {
+    fun `hung smoke advice comes only from the explicit tool`() = runTest {
         val runtime = FakeRuntime(listOf(
             TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", true, "READY"),
             TerminalRuntime.BackendStatus("linux-ubuntu-chroot", "LINUX", true, "READY")
         ))
-        val tool = TerminalBackendsTool(runtime, smokeProbe = {
+        val smoke = TerminalPRootSmokeTool(runtime) {
             PRootSmokeProbe.SmokeResult(PRootSmokeProbe.Status.TIMED_OUT)
-        })
-        val json = kotlinx.serialization.json.Json.parseToJsonElement(tool.invoke("{}")).jsonObject
-        val backends = json["backends"]!!.jsonArray
-        assertEquals(listOf("linux-ubuntu", "linux-ubuntu-chroot"),
-            backends.map { it.jsonObject["id"]!!.jsonPrimitive.content })
-        assertEquals("READY", backends[0].jsonObject["state"]!!.jsonPrimitive.content)
-        assertEquals("timed_out", backends[0].jsonObject["smoke"]!!.jsonPrimitive.content)
+        }
+        val json = kotlinx.serialization.json.Json.parseToJsonElement(smoke.invoke("{}")).jsonObject
+        assertEquals("timed_out", json["smoke"]!!.jsonPrimitive.content)
         val advice = json["suggestion"]!!.jsonPrimitive.content
         assertTrue(advice.contains("likely"))
         assertTrue(advice.contains("linux-ubuntu-chroot"))
         assertTrue(advice.contains("if superuser is granted"))
+        // 建议只是信息：smoke 工具不返回后端表、不改注册顺序或路由。
+        assertNull(json["backends"])
     }
 
     @Test
@@ -133,45 +131,34 @@ class TerminalBackendsToolTest {
             PRootSmokeProbe.Status.OK to "ok",
             PRootSmokeProbe.Status.BINARY_ERROR to "binary_error"
         )) {
-            val tool = TerminalBackendsTool(runtime, smokeProbe = {
+            val smoke = TerminalPRootSmokeTool(runtime) {
                 PRootSmokeProbe.SmokeResult(status, if (status == PRootSmokeProbe.Status.BINARY_ERROR) 127 else 0)
-            })
-            val json = kotlinx.serialization.json.Json.parseToJsonElement(tool.invoke("{}")).jsonObject
-            assertEquals(expected, json["backends"]!!.jsonArray[0].jsonObject["smoke"]!!.jsonPrimitive.content)
+            }
+            val json = kotlinx.serialization.json.Json.parseToJsonElement(smoke.invoke("{}")).jsonObject
+            assertEquals(expected, json["smoke"]!!.jsonPrimitive.content)
             assertNull("$status is not evidence for ptrace advice", json["suggestion"])
         }
     }
 
     @Test
-    fun `availability-only discovery never starts the runtime probe`() = runTest {
-        var probes = 0
-        val tool = TerminalBackendsTool(
-            FakeRuntime(listOf(TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", false, "NEEDS_ROOTFS"))),
-            smokeProbe = { probes++; PRootSmokeProbe.SmokeResult(PRootSmokeProbe.Status.OK) }
-        )
-        val json = kotlinx.serialization.json.Json.parseToJsonElement(tool.invoke("{}")).jsonObject
-        assertEquals(0, probes)
+    fun `discovery is pure read-only — no smoke field or suggestion on any state`() = runTest {
+        // T99 评审 B1 回归锁：READY 查询也绝不附 smoke/suggestion（执行已拆到
+        // 显式工具）。此前 READY 会在此跑 `<proot> … /bin/true`。
+        val runtime = FakeRuntime(listOf(
+            TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", true, "READY"),
+            TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", false, "NEEDS_ROOTFS")
+        ))
+        val json = kotlinx.serialization.json.Json.parseToJsonElement(
+            TerminalBackendsTool(runtime).invoke("{}")
+        ).jsonObject
+        for (b in json["backends"]!!.jsonArray) {
+            assertNull("read-only discovery must not carry smoke", b.jsonObject["smoke"])
+        }
         assertNull(json["suggestion"])
-        assertNull(json["backends"]!!.jsonArray[0].jsonObject["smoke"])
     }
 
     @Test
-    fun `ready discovery cannot execute guest code on the read-only permission path`() = runTest {
-        var launches = 0
-        val tool = TerminalBackendsTool(
-            FakeRuntime(listOf(TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", true, "READY"))),
-            smokeProbe = { launches++; PRootSmokeProbe.SmokeResult(PRootSmokeProbe.Status.TIMED_OUT) }
-        )
-        val json = kotlinx.serialization.json.Json.parseToJsonElement(tool.invoke("{}")).jsonObject
-        assertEquals("read-only discovery must not execute /bin/true", 0, launches)
-        assertNull("no probe has run yet", json["backends"]!!.jsonArray[0].jsonObject["smoke"])
-        assertNull("no uncached diagnosis", json["suggestion"])
-    }
-
-    @Test
-    fun `guest execution is explicit tool with mutating annotations and explicit smoke`() = runTest {
-        // T99 评审 B1 修复回归锁：只读发现永不跑 guest 探针；真正的执行探测
-        // 是独立的显式工具，注解保持非只读（PLAN 拒绝），输出仍是建议不改路由。
+    fun `guest execution lives only in the explicit non-readonly tool`() = runTest {
         var launches = 0
         val runtime = FakeRuntime(listOf(
             TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", true, "READY")
@@ -179,22 +166,11 @@ class TerminalBackendsToolTest {
         val smoke = TerminalPRootSmokeTool(runtime) {
             launches++; PRootSmokeProbe.SmokeResult(PRootSmokeProbe.Status.PTRACE_SIGNAL, 159)
         }
-
         val json = kotlinx.serialization.json.Json.parseToJsonElement(smoke.invoke("{}")).jsonObject
         assertEquals(1, launches)
         assertEquals("TerminalPRootSmoke", json["id"]!!.jsonPrimitive.content)
         assertEquals("true", json["proot"]!!.jsonPrimitive.content)
         assertEquals("ptrace_signal", json["smoke"]!!.jsonPrimitive.content)
         assertEquals(159, json["exitCode"]!!.jsonPrimitive.content.toInt())
-        val advice = json["suggestion"]!!.jsonPrimitive.content
-        assertTrue(advice.contains("likely"))
-        assertTrue(advice.contains("linux-ubuntu-chroot"))
-
-        // 只读发现保持零执行（同请求上下文）。
-        val backends = TerminalBackendsTool(runtime, smokeProbe = {
-            launches++; PRootSmokeProbe.SmokeResult(PRootSmokeProbe.Status.TIMED_OUT)
-        })
-        backends.invoke("{}")
-        assertEquals("read-only request never launches the tracer", 1, launches)
     }
 }
