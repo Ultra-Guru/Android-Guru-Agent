@@ -60,7 +60,8 @@ class ToolBatchRunTool(
         Step 1 pipes step 0's output via {0}; step 2 pipes step 1's via {1}.
     """.trimIndent(),
     declaredSchema = toolSchema {
-        string(
+        // 双形态（FlexibleJson 口径）：内联数组首选，字符串编码宽容。
+        stringArray(
             "steps",
             required = true,
             description = "JSON array of step objects: tool + arguments; " +
@@ -177,7 +178,8 @@ class ShortcutDefineTool(
         step's output. Redefining an existing id replaces it.
     """.trimIndent(),
     declaredSchema = toolSchema {
-        string(
+        // 双形态（FlexibleJson 口径）：内联对象首选，字符串编码宽容。
+        objectParam(
             "definition",
             required = true,
             description = "The shortcut definition as a JSON object (see shape above)"
@@ -363,7 +365,8 @@ class ShortcutRunTool(
     """.trimIndent(),
     declaredSchema = toolSchema {
         string("id", required = true, description = "Shortcut id (shortcut.<name>)")
-        string("args", description = "JSON object of the shortcut's declared parameters")
+        // 双形态（FlexibleJson 口径）：内联对象首选，字符串编码宽容。
+        objectParam("args", description = "JSON object of the shortcut's declared parameters")
     }
 ) {
 

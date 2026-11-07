@@ -69,7 +69,8 @@ class JsonTool : BaseTool(
         string("op", required = true, description = "query | transform | validate | format", enumValues = listOf("query", "transform", "validate", "format"))
         string("json", required = true, description = "The JSON document (raw text)")
         string("path", description = "JSONPath expression for op=query, e.g. \$.store.book[?(@.price<10)].title")
-        string("operations", description = "JSON array of transform operations for op=transform, applied in order")
+        // 双形态（FlexibleJson 口径）：内联数组首选，字符串编码宽容。
+        stringArray("operations", description = "JSON array of transform operations for op=transform, applied in order")
         string("style", description = "op=format output style: pretty | compact (default pretty)", enumValues = listOf("pretty", "compact"), defaultValue = "pretty")
         integer("indent", description = "Pretty-print indent width for op=format (default 2, 1..8)", defaultValue = 2, minimum = 1.0, maximum = 8.0)
     }

@@ -245,12 +245,19 @@ class ToolSchema internal constructor(
                 }
             }
             ToolParamType.ARRAY -> {
-                if (value !is JsonArray) {
+                // 双形态宽容（builtin/FlexibleJson 同口径）：内联数组是首选
+                // 形态，字符串编码的 JSON 数组（"items": "[{…}]"）同样放行 ——
+                // 模型两种发射形态都真实存在，工具层用 flexible 读取兑底；
+                // 此处硬拒内联形态只会制造 preCheck 重试循环（CodeTodo 实测
+                // 2ms "expected string" FAILED）。普通字符串（路径/命令）解
+                // 析不出数组，不影响真正的字符串语义校验。
+                if (value !is JsonArray && !isEncodedJson(value) { it is JsonArray }) {
                     out += SchemaViolation(p.name, "expected array")
                 }
             }
             ToolParamType.OBJECT -> {
-                if (value !is JsonObject) {
+                // 同上：内联对象放行之外，字符串编码的 JSON 对象也宽容。
+                if (value !is JsonObject && !isEncodedJson(value) { it is JsonObject }) {
                     out += SchemaViolation(p.name, "expected object")
                 }
             }
@@ -260,6 +267,19 @@ class ToolSchema internal constructor(
     private fun checkBounds(p: ToolParam, v: Double, out: MutableList<SchemaViolation>) {
         p.minimum?.let { if (v < it) out += SchemaViolation(p.name, "must be >= $it") }
         p.maximum?.let { if (v > it) out += SchemaViolation(p.name, "must be <= $it") }
+    }
+
+    /**
+     * 字符串编码的 JSON 结构判定：值必须是带引号的字符串，且内容能完整
+     * 解析为 [shape] 描述的数组/对象。普通字符串（路径、命令）首字符既非
+     * `[` 也非 `{`，快速短路后交回真字符串语义的调用方。
+     */
+    private fun isEncodedJson(value: JsonElement, shape: (JsonElement) -> Boolean): Boolean {
+        val primitive = value as? JsonPrimitive ?: return false
+        if (!primitive.isString) return false
+        val text = primitive.content
+        if (text.isEmpty() || (text[0] != '[' && text[0] != '{')) return false
+        return runCatching { shape(Json.parseToJsonElement(text)) }.getOrDefault(false)
     }
 
     /**
@@ -345,6 +365,22 @@ class ToolSchema internal constructor(
         ) = add(
             ToolParam(
                 name, ToolParamType.ARRAY, required, description,
+                emptyList(), null
+            )
+        )
+
+        /**
+         * 对象参数（复合 JSON 值；渲染为 type: object）。校验层对字符串
+         * 编码的 JSON 对象同样宽容（见 validateValue）——与 flexible 读取
+         * 工具的双形态口径对齐。
+         */
+        fun objectParam(
+            name: String,
+            required: Boolean = false,
+            description: String = ""
+        ) = add(
+            ToolParam(
+                name, ToolParamType.OBJECT, required, description,
                 emptyList(), null
             )
         )

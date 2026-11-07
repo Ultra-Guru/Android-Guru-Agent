@@ -117,6 +117,18 @@ fun reconcileStreamText(accumulated: String, fullText: String): String = when {
 }
 
 /**
+ * 流式任务清单条目（PLAN 族参数预览的提取结果）。
+ *
+ * 字段与 CodeTodoTool.Todo 同构（content/status/priority），刻意不复用
+ * 该类型：code-engine 不依赖 code-tools（模块边界），UI 层做一次廉价映射。
+ */
+data class StreamTodoItem(
+    val content: String,
+    val status: String,
+    val priority: String
+)
+
+/**
  * 胶囊状态机：waiting → running → 终态。
  *
  * 终态四值：success（干净成功）/ failed（失败，exitCode 或错误输出）/
@@ -381,7 +393,13 @@ data class CodeStreamSnapshot(
     /** 终端面板头行展示的命令摘要（活跃/最近 BASH 的首行命令；空 = 无）。 */
     val terminalCommandSummary: String = "",
     /** 最近一次终端命令的退出码（null = 未知 / 无命令）；完成态头行展示。 */
-    val terminalExitCode: Int? = null
+    val terminalExitCode: Int? = null,
+    /**
+     * 流式任务清单（活跃 PLAN 调用的 todos 参数逐条落地——参数生成期间
+     * 实时可见，不等工具完成；null = 无流式清单，UI 回落 todos 终态快照
+     * 通道）。条目数不设上限（用户规格：一个流水式输出不限制清单数量）。
+     */
+    val streamingTodos: List<StreamTodoItem>? = null
 ) {
     /** 结构化错误信息（CodeUiState.error 通道共用）。 */
     data class ErrorInfo(val message: String, val recoverable: Boolean)

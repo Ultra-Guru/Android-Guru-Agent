@@ -974,9 +974,16 @@ class CodeStreamSession {
             affectedFiles = affectedFiles.toList(),
             terminalBusy = terminalBusy,
             terminalCommandSummary = terminalCommandSummary,
-            terminalExitCode = terminalExitCode
+            terminalExitCode = terminalExitCode,
+            streamingTodos = streamingTodosOf()
         )
     }
+
+    /** 流式任务清单：活跃 PLAN 胶囊的 todos 预览（生成中实时可见）。 */
+    private fun streamingTodosOf(): List<StreamTodoItem>? =
+        toolCalls.values
+            .lastOrNull { it.kind == ToolKind.PLAN && it.isLive && it.streamingPreview?.hasTodos == true }
+            ?.streamingPreview?.todos
 
     /** 本轮工具使用聚合（快照派生统计；空会计零分配直达缺省值）。 */
     private fun buildToolUsage(): ToolUsageStats {
@@ -1039,8 +1046,20 @@ class CodeStreamSession {
             ToolKind.BASH -> str("command")?.lineSequence()?.firstOrNull()?.take(40) ?: toolName
             ToolKind.GIT -> gitTargetOf(toolName, args) ?: toolName
             ToolKind.LINT, ToolKind.TEST -> str("path") ?: str("target") ?: toolName
+            ToolKind.PLAN -> planTargetOf(args) ?: toolName
             else -> str("name") ?: str("server") ?: toolName
         }
+    }
+
+    /** PLAN 胶囊目标：todos 条目数（「N 项」）；内联直数，编码形态宽容解析。 */
+    private fun planTargetOf(args: Map<String, kotlinx.serialization.json.JsonElement>): String? {
+        val el = args["todos"]
+        val count = (el as? kotlinx.serialization.json.JsonArray)?.size
+            ?: (el as? JsonPrimitive)?.content?.let {
+                runCatching { Json.parseToJsonElement(it) as? kotlinx.serialization.json.JsonArray }
+                    .getOrNull()?.size
+            }
+        return count?.let { "$it 项" }
     }
 
     /**
