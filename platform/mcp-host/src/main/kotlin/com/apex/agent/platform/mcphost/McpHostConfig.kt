@@ -6,10 +6,15 @@ import java.security.SecureRandom
 /**
  * # 逆向 MCP Host 配置
  *
- * 三重安全模型的第一层：**Token 鉴权 + 分类白名单 + 工具黑名单**。
+ * 三重安全模型的第一层：**Token 鉴权 + 绑定面 + 工具暴露面收窄**。
  * 外部 AI（PC 端 Cline/Claude Desktop 等）能调用的工具面由本配置收窄：
+ * - 绑定面（[allowLan]）：默认只绑 loopback（127.0.0.1）—— 局域网暴露
+ *   （0.0.0.0）是显式开关且 UI 明示风险（S-04）；
  * - 分类白名单（[allowedCategories]）：只放行 `ToolCategory.name` 命中的分类；
  * - 工具黑名单（[blockedToolIds]）：分类放行后仍强制禁用的个别工具；
+ * - 写/执行类工具默认不暴露（[exposeWriteTools]，S-04）：非只读工具
+ *   （写文件 / git 提交 / 改状态）须显式放开；HIGH 风险工具在
+ *   [McpHostBridge] 内**写死永禁**；
  * - `vault_*` 家族在 [McpHostBridge] 内**写死硬拦截**（安全红线，
  *   即使配置放开也拦截——金库密钥绝不经外部 AI 通道出入）。
  */
@@ -17,8 +22,23 @@ import java.security.SecureRandom
 data class McpHostConfig(
     /** 总开关（false 时服务器不监听）。 */
     val enabled: Boolean = false,
-    /** 监听端口（0.0.0.0 全网卡；局域网内 PC 访问）。 */
+    /** 监听端口。 */
     val port: Int = 8765,
+    /**
+     * S-04：是否监听全部网卡（0.0.0.0，局域网内 PC 可访问）。
+     * 默认 false —— 只绑 loopback（127.0.0.1），局域网设备无法连接；
+     * PC 端控制场景需显式开启（UI 带明文 HTTP 风险警示）。存量配置缺省
+     * 该字段时按 false 解码（ignoreUnknownKeys 反向兼容：旧 JSON 无此键
+     * → 回落默认值），已开启的存量用户升级后回到 loopback，需重新打开。
+     */
+    val allowLan: Boolean = false,
+    /**
+     * S-04：是否暴露写/执行类工具（非只读副作用工具 —— 写文件、git 提交、
+     * 改状态等）。默认 false —— FILE 分类中的写/执行工具不再默认暴露，
+     * tools/list 与 tools/call 同判定；只读工具不受影响。确需远程写操作
+     * 的场景显式开启。
+     */
+    val exposeWriteTools: Boolean = false,
     /** Bearer Token：首启生成 32 位随机，可重置；空 = 拒绝所有外部请求。 */
     val token: String = "",
     /**

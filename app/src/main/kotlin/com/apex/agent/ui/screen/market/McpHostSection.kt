@@ -98,6 +98,14 @@ class McpHostViewModel @Inject constructor(
     fun setRateLimit(rate: Int) =
         manager.updateConfig(manager.config.value.copy(rateLimitPerMinute = rate))
 
+    /** S-04：局域网暴露开关（变更经 updateConfig 自动重启生效绑定面）。 */
+    fun setAllowLan(allow: Boolean) =
+        manager.updateConfig(manager.config.value.copy(allowLan = allow))
+
+    /** S-04：写/执行类工具暴露开关（即时生效，configProvider 每请求读取）。 */
+    fun setExposeWriteTools(expose: Boolean) =
+        manager.updateConfig(manager.config.value.copy(exposeWriteTools = expose))
+
     fun toggleCategory(name: String) = manager.toggleCategory(name)
 
     fun regenerateToken() = manager.regenerateToken()
@@ -122,6 +130,8 @@ internal fun McpHostSection(viewModel: McpHostViewModel = hiltViewModel()) {
     var tokenVisible by rememberSaveable { mutableStateOf(false) }
     var showRegenDialog by remember { mutableStateOf(false) }
     var connectExpanded by rememberSaveable { mutableStateOf(false) }
+    // S-04：首次/每次启用前的确认弹窗（列明监听面、鉴权与工具暴露口径）
+    var showEnableConfirmDialog by remember { mutableStateOf(false) }
 
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -158,7 +168,11 @@ internal fun McpHostSection(viewModel: McpHostViewModel = hiltViewModel()) {
                 Spacer(Modifier.width(8.dp))
                 Switch(
                     checked = config.enabled,
-                    onCheckedChange = viewModel::setEnabled
+                    // S-04：开启须经确认弹窗（列明暴露面）；关闭直通
+                    onCheckedChange = { turningOn ->
+                        if (turningOn) showEnableConfirmDialog = true
+                        else viewModel.setEnabled(false)
+                    }
                 )
             }
 
@@ -193,6 +207,32 @@ internal fun McpHostSection(viewModel: McpHostViewModel = hiltViewModel()) {
                     onCommit = viewModel::setRateLimit
                 )
             }
+
+            // ── S-04：绑定面开关（默认 loopback；局域网暴露需显式开启 + 风险警示）──
+            SettingSwitchRow(
+                label = stringResource(R.string.mcphost_lan_label),
+                checked = config.allowLan,
+                onCheckedChange = viewModel::setAllowLan
+            )
+            if (config.allowLan) {
+                Text(
+                    stringResource(R.string.mcphost_lan_warning),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            // ── S-04：写/执行类工具暴露开关（默认关；高危工具永不暴露）──
+            SettingSwitchRow(
+                label = stringResource(R.string.mcphost_write_label),
+                checked = config.exposeWriteTools,
+                onCheckedChange = viewModel::setExposeWriteTools
+            )
+            Text(
+                stringResource(R.string.mcphost_write_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             // ── Token 行 ──
             Spacer(Modifier.height(8.dp))
@@ -338,6 +378,33 @@ internal fun McpHostSection(viewModel: McpHostViewModel = hiltViewModel()) {
         }
     }
 
+    // S-04：启用确认 —— 列明端口/鉴权/绑定面/工具暴露口径，确认才真正开启
+    if (showEnableConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showEnableConfirmDialog = false },
+            title = { Text(stringResource(R.string.mcphost_enable_confirm_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.mcphost_enable_confirm_text,
+                        config.effectivePort
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.setEnabled(true)
+                    showEnableConfirmDialog = false
+                }) { Text(stringResource(R.string.mcphost_enable_confirm_ok)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEnableConfirmDialog = false }) {
+                    Text(stringResource(R.string.mcphost_enable_confirm_cancel))
+                }
+            }
+        )
+    }
+
     if (showRegenDialog) {
         AlertDialog(
             onDismissRequest = { showRegenDialog = false },
@@ -355,6 +422,28 @@ internal fun McpHostSection(viewModel: McpHostViewModel = hiltViewModel()) {
                 }
             }
         )
+    }
+}
+
+/** S-04：设置行形态的开关（label 左、Switch 右；与卡片内其他行密度一致）。 */
+@Composable
+private fun SettingSwitchRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1f)
+        )
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 

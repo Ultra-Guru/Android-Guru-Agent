@@ -13,6 +13,15 @@
     <string name="mcphost_rate_label">限速（请求/分钟）</string>
     <string name="mcphost_field_range">请输入 %1$d–%2$d</string>
 
+    <!-- ═══ S-04：绑定面与暴露面开关 ═══ -->
+    <string name="mcphost_lan_label">允许局域网访问（监听全部网卡）</string>
+    <string name="mcphost_lan_warning">⚠️ 流量为明文 HTTP —— 同网络者皆可截获。默认仅监听本机回环（127.0.0.1）；PC 连接需开启本开关并确保网络可信（更安全的做法是走 SSH 隧道）。</string>
+    <string name="mcphost_write_label">暴露写/执行类工具</string>
+    <string name="mcphost_write_hint">默认关闭：写文件、git 提交等副作用工具不暴露给外部 AI，只读工具不受影响；删除/卸载/强停等高危工具永不暴露。</string>
+    <string name="mcphost_enable_confirm_title">启用 MCP Host？</string>
+    <string name="mcphost_enable_confirm_text">将在本机启动 HTTP 服务器（端口 %1$d）。每个请求都必须携带 Bearer 令牌；默认仅监听回环地址、仅暴露只读工具（写类工具有独立开关，高危工具永不暴露）。</string>
+    <string name="mcphost_enable_confirm_ok">启用</string>
+    <string name="mcphost_enable_confirm_cancel">暂不启用</string>
     <!-- ═══ Token 行 ═══ -->
     <string name="mcphost_token_label">访问令牌（Bearer）</string>
     <string name="mcphost_token_show">显示令牌</string>
@@ -40,7 +49,7 @@
 
     <!-- ═══ 如何连接 ═══ -->
     <string name="mcphost_connect_title">如何连接（PC 端）</string>
-    <string name="mcphost_connect_hint">在 Cline / Claude Desktop（mcp-remote）中按下述 JSON 添加本服务器。手机与 PC 需在同一局域网；使用期间请保持本应用存活。</string>
+    <string name="mcphost_connect_hint">在 Cline / Claude Desktop（mcp-remote）中按下述 JSON 添加本服务器。手机与 PC 需在同一局域网，且需开启「允许局域网访问」（默认仅监听本机回环）；使用期间请保持本应用存活。</string>
     <string name="mcphost_connect_ip_placeholder">手机IP</string>
     <string name="mcphost_connect_json">{
   \"mcpServers\": {

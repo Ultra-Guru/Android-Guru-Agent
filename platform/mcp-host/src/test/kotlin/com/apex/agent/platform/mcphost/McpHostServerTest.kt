@@ -83,9 +83,10 @@ class McpHostServerTest {
         path: String,
         body: String? = null,
         token: String? = TOKEN,
-        session: String? = null
+        session: String? = null,
+        host: String = "127.0.0.1"
     ): Resp {
-        val conn = URL("http://127.0.0.1:$port$path").openConnection() as HttpURLConnection
+        val conn = URL("http://$host:$port$path").openConnection() as HttpURLConnection
         conn.requestMethod = method
         conn.connectTimeout = 5000
         conn.readTimeout = 10_000
@@ -156,6 +157,79 @@ class McpHostServerTest {
     }
 
     // ═══ initialize / 会话 ═══
+
+    // ═══ S-04：分发层常时鉴权（GET / DELETE / 未知方法）═══
+
+    @Test
+    fun `DELETE without token yields 401 and keeps session alive`() {
+        // S-04 核心回归：旧实现 DELETE 不鉴权，未授权方可直接删除任意会话
+        val sessionId = initialize()
+        val resp = http("DELETE", "/mcp", session = sessionId, token = null)
+        assertEquals(401, resp.status)
+        // 会话不受影响：带 token 仍可正常请求
+        val alive = http(
+            "POST", "/mcp",
+            body = """{"jsonrpc":"2.0","id":61,"method":"tools/list"}""",
+            session = sessionId
+        )
+        assertEquals(200, alive.status)
+    }
+
+    @Test
+    fun `GET without token yields 401`() {
+        val resp = http("GET", "/mcp", token = null)
+        assertEquals(401, resp.status)
+    }
+
+    @Test
+    fun `unknown method without token yields 401`() {
+        val resp = http("PUT", "/mcp", token = null)
+        assertEquals(401, resp.status)
+    }
+
+    // ═══ S-04：默认绑定 loopback；allowLan 才监听全部网卡 ═══
+
+    /** 站点本地 IPv4（CI runner / 本机 eth0；取不到返回 null 则跳过断言）。 */
+    private fun siteLocalAddress(): String? = runCatching {
+        java.net.NetworkInterface.getNetworkInterfaces().asSequence()
+            .filter { it.isUp && !it.isLoopback }
+            .flatMap { it.inetAddresses.asSequence() }
+            .filterIsInstance<java.net.Inet4Address>()
+            .firstOrNull { it.isSiteLocalAddress }
+            ?.hostAddress
+    }.getOrNull()
+
+    @Test
+    fun `default binding is loopback only`() {
+        val external = siteLocalAddress() ?: return // 无非回环网卡的环境无法验证
+        val resp = runCatching { http("POST", "/mcp", body = initBody(), host = external) }
+        assertTrue("非回环地址连接必须被拒绝（默认只绑 127.0.0.1）", resp.isFailure)
+    }
+
+    @Test
+    fun `allowLan true binds all interfaces`() {
+        val external = siteLocalAddress() ?: return // 无非回环网卡的环境无法验证
+        val lanPort = freePort()
+        val lanStore = InMemoryMcpHostConfigStore(
+            McpHostConfig(enabled = true, port = lanPort, token = TOKEN, allowLan = true)
+        )
+        val emptyRegistry = DefaultToolRegistry()
+        val lanServer = McpHostServer(
+            configProvider = lanStore::load,
+            bridge = McpHostBridge(emptyRegistry, DefaultToolExecutor(emptyRegistry), lanStore::load),
+            scope = scope
+        )
+        lanServer.start()
+        val savedPort = port
+        try {
+            port = lanPort
+            val resp = http("POST", "/mcp", body = initBody(), host = external)
+            assertEquals(200, resp.status)
+        } finally {
+            port = savedPort
+            lanServer.stop()
+        }
+    }
 
     @Test
     fun `initialize returns session id and server info`() {

@@ -13,7 +13,7 @@ BUILTIN 四传输）**互为逆向**。
 ┌─────────────────┐        LAN HTTP (streamable 子集)        ┌──────────────────┐
 │   PC AI 客户端   │ ───────────────────────────────────────▶ │   Android 手机    │
 │  Cline / Claude │    POST /mcp  + Bearer Token             │  McpHostServer    │
-│                 │ ◀─────────────────────────────────────── │  (0.0.0.0:8765)  │
+│                 │ ◀─────────────────────────────────────── │  (127.0.0.1:8765 默认 / 0.0.0.0 显式 allowLan)  │
 └─────────────────┘    JSON-RPC 2.0 响应                      └────────┬─────────┘
                                                                 白名单过滤
                                                                     │
@@ -56,7 +56,7 @@ AndroidMCP 类项目（维护差、无权限门控）不满足安全要求，故
 | `POST /mcp`（`tools/call {name,arguments}`） | 成功 `result{content:[{type:"text",text}],isError:false}`；业务失败 `isError:true`；未知/未暴露工具 → error `-32602` |
 | `POST /mcp`（`ping`） | 200 + 空 `result{}` |
 | `GET /mcp` | 405（本 Host 无服务器推送流 —— spec 允许） |
-| `DELETE /mcp`（带会话头） | 会话已知 → 200 并移除；未知 → 404 |
+| `DELETE /mcp`（须带 Bearer + 会话头） | 会话已知 → 200 并移除；未知 → 404；未鉴权 → 401（S-04 全方法统一鉴权） |
 | 其它路径 / 其它方法 | 404 |
 
 - **每请求一连接**（`Connection: close`）：连接生命周期 == 请求生命周期，
@@ -117,16 +117,26 @@ Claude Desktop 经 `mcp-remote` 连接器接入同一 URL。UI 的「如何连�
 - `McpHostServerTest`（22）：**真实端口集成**——initialize/202/401/404/405/
   tools/call 加法工具/DELETE 终结/限速 429/stop 后连接拒绝/审计断言。
 
-## 7. 局限性（v1 如实声明）
+## 7. 局限性与安全边界（S-04 后口径）
 
 - **App 存活期可用**：无前台服务，应用进程被杀即服务终止（下版本可加
   Foreground Service）；
 - **无 SSE 推送流**：`GET /mcp` 一律 405，服务端无法主动推送（progress/
   通知）—— 单请求-响应模型；
 - **每请求一连接**：无 keep-alive，高频调用有 TCP 握手开销；
-- **HTTP 明文**：局域网内传输（家庭/办公网可信前提下可接受；token 泄露
-  风险与 HTTPS 缺失的中间人风险并存，公网/不可信网络请勿开启）；
-- initialize 响应固定 `2024-11-05` 协议版本（不协商降级）。
+- **HTTP 明文（不可关闭的警示）**：S-04 起默认只绑 loopback（127.0.0.1），
+  局域网暴露（`allowLan`，绑 0.0.0.0）是显式开关且 UI 常驻红色警示 ——
+  token 与流量在局域网内明文传输，中间人风险与 HTTPS 缺失并存；公网/
+  不可信网络勿开，跨网段场景建议 SSH 隧道（`adb reverse tcp:8765
+  tcp:8765` 即可在不开启 allowLan 的前提下让 PC 经本机回环保连）；
+- **鉴权全方法覆盖（S-04 修复）**：GET / DELETE / 未知方法与 POST 统一
+  先过 Bearer 常时比较（旧实现仅 POST 鉴权，未授权 DELETE 可删除会话）；
+- **工具暴露面（S-04 收窄）**：HIGH 风险工具（删除/卸载/force-stop 族）
+  写死永禁；写/执行类工具（写文件/git 提交等非只读副作用）默认不暴露，
+  需 `exposeWriteTools` 显式开启；只读工具不受影响；
+- initialize 响应固定 `2024-11-05` 协议版本（不协商降级）；
+- serverInfo.version 自 S-04 起由 app 层注入 `BuildConfig.VERSION_NAME`
+  （旧常量漂移：1.4.4 vs versionName 1.5）。
 
 ## 8. 冲突面（与并行工作流）
 

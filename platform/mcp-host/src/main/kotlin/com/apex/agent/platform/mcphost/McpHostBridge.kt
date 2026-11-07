@@ -3,6 +3,7 @@ package com.apex.agent.platform.mcphost
 import com.apex.agent.core.tools.AgentTool
 import com.apex.agent.core.tools.ToolExecutor
 import com.apex.agent.core.tools.ToolRegistry
+import com.apex.agent.core.tools.ToolRisk
 import com.apex.agent.core.tools.catalog.ToolTierPolicy
 import kotlinx.coroutines.CancellationException
 
@@ -13,10 +14,17 @@ import kotlinx.coroutines.CancellationException
  * 即外部 AI 同样受环境门 / 权限门 / 风险门 / schema 校验 / 熔断 / 限流
  * 的完整约束 —— MCP Host 不旁路任何工具门控。
  *
- * 白名单三重过滤（tools/list 与 tools/call 双向一致，防"列表不含但可调"漏洞）：
+ * 白名单五重过滤（tools/list 与 tools/call 双向一致，防"列表不含但可调"漏洞）：
  * 1. 分类在 [McpHostConfig.allowedCategories] 内；
  * 2. id 不在 [McpHostConfig.blockedToolIds] 黑名单；
- * 3. 非 legacy 别名（[ToolTierPolicy.isLegacyAlias]）。
+ * 3. 非 legacy 别名（[ToolTierPolicy.isLegacyAlias]）；
+ * 4. **HIGH 风险永禁**（S-04 写死、不受配置影响）：删除 / 卸载 /
+ *    force-stop 族不可逆工具绝不经外部 AI 通道暴露 —— 即使分类白名单
+ *    放开也拦截；
+ * 5. **写/执行类默认不暴露**（S-04）：非只读工具（写文件 / git 提交 /
+ *    改状态）须 [McpHostConfig.exposeWriteTools] 显式放开 —— FILE 分类
+ *    中的 CodeWrite / CodeEdit / GitCommit / Write / Edit 等默认不出现在
+ *    tools/list，也不可被 tools/call 触达。
  *
  * 额外硬规则（安全红线，**写死**、不受配置影响）：`vault_*` 家族一律禁止
  * 暴露与调用 —— 金库密钥绝不经外部 AI 通道出入，即使把 SECURITY 加入
@@ -63,6 +71,12 @@ class McpHostBridge(
         if (ToolTierPolicy.isLegacyAlias(tool.id)) {
             return "legacy alias tools are not exposed"
         }
+        if (tool.metadata.risk == ToolRisk.HIGH) {
+            return "high-risk tools are never exposed via MCP Host (irreversible actions are device-local only)"
+        }
+        if (!tool.metadata.annotations.readOnlyHint && !config.exposeWriteTools) {
+            return "write/exec tools are not exposed by default; enable 'expose write tools' in MCP Host settings"
+        }
         if (config.isToolBlocked(tool.id)) {
             return "blocked by MCP Host tool blacklist"
         }
@@ -79,6 +93,9 @@ class McpHostBridge(
             .asSequence()
             .filter { !isVaultTool(it.id) }
             .filter { !ToolTierPolicy.isLegacyAlias(it.id) }
+            // S-04：HIGH 风险永禁 + 写/执行类默认不暴露（判定与 exposureBlockReason 一致）
+            .filter { it.metadata.risk != ToolRisk.HIGH }
+            .filter { it.metadata.annotations.readOnlyHint || config.exposeWriteTools }
             .filter { it.id !in config.blockedToolIds }
             .filter { config.isCategoryAllowed(it.metadata.category.name) }
             .sortedBy { it.id }

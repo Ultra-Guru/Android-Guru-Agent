@@ -106,6 +106,96 @@ class McpHostBridgeTest {
         assertFalse(bridge.isVaultTool("Calculate"))
     }
 
+    // ═══ S-04：HIGH 风险永禁 + 写/执行类默认不暴露 ═══
+
+    /** 显式元数据工具（S-04 判定走 risk/annotations，不受 id 推断影响）。 */
+    private class ExplicitTool(
+        override val id: String,
+        risk: com.apex.agent.core.tools.ToolRisk,
+        annotations: com.apex.agent.core.tools.ToolAnnotations
+    ) : AgentTool {
+        override val name: String = id
+        override val description: String = "explicit meta tool $id"
+        override val parametersSchema: String = """{"type":"object"}"""
+        override val metadata: ToolMetadata = ToolMetadata(
+            id = id,
+            category = com.apex.agent.core.tools.ToolCategory.FILE,
+            risk = risk,
+            annotations = annotations
+        )
+
+        override suspend fun execute(arguments: String): String = "ok:$id"
+    }
+
+    @Test
+    fun `high risk tool never exposed even when category allowed and unblocked`() {
+        // S-04：删除/卸载/force-stop 族 —— 分类白名单放开 + 黑名单不含也拦截（写死）
+        val high = ExplicitTool(
+            "AppUninstall",
+            com.apex.agent.core.tools.ToolRisk.HIGH,
+            com.apex.agent.core.tools.ToolAnnotations(readOnlyHint = false, destructiveHint = true, idempotentHint = false)
+        )
+        val registry = registryOf(high)
+        val bridge = McpHostBridge(registry, DefaultToolExecutor(registry), {
+            configOf(categories = listOf("FILE"))
+        })
+
+        assertTrue("HIGH 风险工具不得出现在 tools/list", bridge.toolDefinitions().isEmpty())
+        assertTrue(
+            "HIGH 风险工具调用必须被拒",
+            bridge.exposureBlockReason("AppUninstall")!!.contains("high-risk")
+        )
+    }
+
+    @Test
+    fun `write tool hidden by default and revealed only via exposeWriteTools`() = runTest {
+        // S-04：FILE 分类中的写/执行工具（CodeWrite / GitCommit / Write …）
+        // 默认不出现在 tools/list，也不可被 tools/call 触达
+        val write = ExplicitTool(
+            "CodeWrite",
+            com.apex.agent.core.tools.ToolRisk.MEDIUM,
+            com.apex.agent.core.tools.ToolAnnotations(readOnlyHint = false, destructiveHint = true, idempotentHint = true)
+        )
+        val registry = registryOf(write)
+
+        val defaultBridge = McpHostBridge(registry, DefaultToolExecutor(registry), {
+            configOf(categories = listOf("FILE"))
+        })
+        assertTrue("写工具默认不进 tools/list", defaultBridge.toolDefinitions().isEmpty())
+        val blocked = defaultBridge.callTool("CodeWrite", "{}")
+        assertTrue(
+            "写工具默认不可被调用（list 与 call 同判定）",
+            blocked is McpHostBridge.HostToolResult.UnknownTool
+        )
+
+        val exposingBridge = McpHostBridge(registry, DefaultToolExecutor(registry), {
+            configOf(categories = listOf("FILE")).copy(exposeWriteTools = true)
+        })
+        assertEquals(
+            "显式放开写类后 tools/list 恢复",
+            1,
+            exposingBridge.toolDefinitions().size
+        )
+        val allowed = exposingBridge.callTool("CodeWrite", "{}")
+        assertTrue("显式放开后可调用", allowed is McpHostBridge.HostToolResult.Ok)
+    }
+
+    @Test
+    fun `read-only tool exposed without exposeWriteTools`() {
+        // 只读工具不受 S-04 写类默认关影响（PC 端读文件/查状态主场景保持可用）
+        val read = ExplicitTool(
+            "Read",
+            com.apex.agent.core.tools.ToolRisk.LOW,
+            com.apex.agent.core.tools.ToolAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true)
+        )
+        val registry = registryOf(read)
+        val bridge = McpHostBridge(registry, DefaultToolExecutor(registry), {
+            configOf(categories = listOf("FILE"))
+        })
+        assertEquals(1, bridge.toolDefinitions().size)
+        assertNull(bridge.exposureBlockReason("Read"))
+    }
+
     @Test
     fun `tool list sorted by id and schema passthrough`() {
         val registry = registryOf(
@@ -163,11 +253,15 @@ class McpHostBridgeTest {
 
     @Test
     fun `whitelisted-out tool cannot be called directly (list 与调用一致)`() = runTest {
-        val registry = registryOf(FakeTool("ShellExecute"))
+        // S-04 注：示例工具从 ShellExecute 换为 Read —— ShellExecute 现在会被
+        // 更早的 HIGH 风险永禁规则拦截（reason="high-risk…"，见
+        // `high risk tool never exposed…` 用例）；本用例验证的是「分类白名单
+        // 拦截」通道，用只读 FILE 工具才能走到的正是该分支。
+        val registry = registryOf(FakeTool("Read"))
         val bridge = McpHostBridge(registry, DefaultToolExecutor(registry)) {
-            configOf(categories = listOf("UTILITY")) // SHELL 不在白名单
+            configOf(categories = listOf("UTILITY")) // FILE 不在白名单
         }
-        val result = bridge.callTool("ShellExecute", """{"command":"ls"}""")
+        val result = bridge.callTool("Read", """{"path":"a.txt"}""")
         assertTrue(result is McpHostBridge.HostToolResult.UnknownTool)
         assertTrue((result as McpHostBridge.HostToolResult.UnknownTool).reason.contains("not in the allowed list"))
     }
