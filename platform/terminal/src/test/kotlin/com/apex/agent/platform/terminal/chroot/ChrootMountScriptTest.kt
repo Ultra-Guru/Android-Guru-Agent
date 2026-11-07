@@ -44,6 +44,51 @@ class ChrootMountScriptTest {
         assertEquals("one new proc detach", 2, log.readLines().count { it == "umount ${root.absolutePath}/proc" })
     }
 
+    @Test fun `concurrent guests share mounts and only the last exit detaches them`() {
+        org.junit.Assume.assumeTrue("POSIX FIFO integration", System.getProperty("os.name").contains("Linux"))
+        val root = tmp.newFolder("guest")
+        val fixture = tmp.newFile("mountinfo").apply { writeText("1 0 0:1 / / rw - rootfs fake rw\n") }
+        val log = tmp.newFile("ops")
+        val bin = fakeCommands()
+        File(bin, "chroot").writeText("#!/bin/sh\nprintf 'READY\\n'\nread -r answer < \"\$GUEST_FIFO\"\nexit 0\n")
+        val gateA = fifo("guest-a")
+        val gateB = fifo("guest-b")
+        fun start(gate: File): Process = ProcessBuilder("sh", "-c", script(root, fixture))
+            .redirectErrorStream(true).apply {
+                environment()["PATH"] = "${bin.absolutePath}:${System.getenv("PATH")}"
+                environment()["MI_FIXTURE"] = fixture.absolutePath
+                environment()["OP_LOG"] = log.absolutePath
+                environment()["GUEST_FIFO"] = gate.absolutePath
+            }.start()
+        val a = start(gateA)
+        var b: Process? = null
+        try {
+            assertEquals("READY", a.inputStream.bufferedReader().readLine())
+            val second = start(gateB)
+            b = second
+            assertEquals("READY", second.inputStream.bufferedReader().readLine())
+            assertEquals(3, log.readLines().count { it.startsWith("mount ") })
+            gateA.outputStream().bufferedWriter().use { it.write("go\n") }
+            assertTrue(a.waitFor(10, TimeUnit.SECONDS))
+            assertEquals(0, a.exitValue())
+            assertFalse("first exit must not detach shared mounts", log.readLines().any { it.startsWith("umount ") })
+            gateB.outputStream().bufferedWriter().use { it.write("go\n") }
+            assertTrue(second.waitFor(10, TimeUnit.SECONDS))
+            assertEquals(0, second.exitValue())
+            assertEquals(3, log.readLines().count { it.startsWith("umount ") })
+            assertEquals("1 0 0:1 / / rw - rootfs fake rw\n", fixture.readText())
+        } finally {
+            a.destroyForcibly()
+            b?.destroyForcibly()
+        }
+    }
+
+    private fun fifo(name: String): File = File(tmp.root, name).also { file ->
+        val p = ProcessBuilder("mkfifo", file.absolutePath).start()
+        assertTrue(p.waitFor(5, TimeUnit.SECONDS))
+        assertEquals(0, p.exitValue())
+    }
+
     @Test fun `mountinfo failure fails closed without attempting a bind`() {
         val root = tmp.newFolder("guest")
         val fixture = tmp.newFile("mountinfo")

@@ -92,9 +92,57 @@ class RootfsConfiguratorTest {
         assertTrue(report2.warnings.none { it.startsWith("apt-dir") })
     }
 
+    @Test fun `existing packaged CA is preserved even when a host store exists`() {
+        val root = tmpRoot()
+        val guest = File(root, "etc/ssl/certs/ca-certificates.crt")
+        guest.parentFile.mkdirs()
+        guest.writeText("packaged-rootfs-bundle\n")
+        val host = Files.createTempFile("host-ca", ".crt").toFile().apply { writeText("different-host-bundle") }
+        val cfg = RootfsConfigurator(dnsServers = { listOf("10.0.0.1") }, hostCaBundle = { host })
+        val report = cfg.configure(root)
+        assertEquals("packaged-rootfs-bundle\n", guest.readText())
+        assertTrue(report.actions.any { it.contains("kept existing bundle") })
+    }
+
+    @Test fun `empty legacy CA is repaired only from the trusted Android system store`() {
+        val root = tmpRoot()
+        val store = Files.createTempDirectory("android-system-cas-").toFile()
+        val pem = requireNotNull(javaClass.getResourceAsStream("/isrg-root-x1.pem"))
+            .bufferedReader().use { it.readText() }
+        File(store, "aaaaaaaa.0").writeText(pem)
+        File(store, "bbbbbbbb.0").writeText("-----BEGIN CERTIFICATE-----\ninvalid\n-----END CERTIFICATE-----\n")
+        File(store, "rogue.pem").writeText(pem) // not a hashed system CA name
+        val guest = File(root, "etc/ssl/certs/ca-certificates.crt")
+        guest.parentFile.mkdirs()
+        guest.writeText("")
+        val cfg = RootfsConfigurator(
+            dnsServers = { listOf("10.0.0.1") }, hostCaBundle = { null },
+            androidSystemCaDirs = { listOf(store) }
+        )
+        val report = cfg.configure(root)
+        assertTrue("trusted host CA installed", guest.readText().contains("-----BEGIN CERTIFICATE-----"))
+        assertEquals("only one valid, hashed CA", 1, guest.readText().split("-----BEGIN CERTIFICATE-----").size - 1)
+        assertTrue(report.warnings.none { it.contains("ca-certificates: ABSENT") })
+        assertFalse("second repair must not replace bundle", cfg.repairCaIfMissing(root))
+    }
+
+    @Test fun `CA repair refuses symlink target and does not write outside rootfs`() {
+        val root = tmpRoot()
+        val outside = Files.createTempFile("outside-rootfs-", ".crt").toFile().apply { writeText("external") }
+        val guest = File(root, "etc/ssl/certs/ca-certificates.crt")
+        guest.parentFile.mkdirs()
+        Files.createSymbolicLink(guest.toPath(), outside.toPath())
+        val cfg = RootfsConfigurator(
+            dnsServers = { listOf("10.0.0.1") }, hostCaBundle = { outside }
+        )
+        assertFalse(cfg.repairCaIfMissing(root))
+        assertEquals("external", outside.readText())
+    }
+
     @Test fun `ca bundle copied when host provides one`() {
         val hostCa = Files.createTempFile("t72-ca", ".pem").toFile().apply {
-            writeText("-----BEGIN CERTIFICATE-----\nfakebundle\n-----END CERTIFICATE-----\n")
+            writeText(requireNotNull(javaClass.getResourceAsStream("/isrg-root-x1.pem"))
+                .bufferedReader().use { it.readText() })
         }
         val root = tmpRoot()
         val cfg = RootfsConfigurator(

@@ -48,15 +48,10 @@ import java.io.File
  * ```
  * <su> -c '
  *   R=<rootfs>
- *   mountpoint -q "$R/proc"      || mount -t proc  proc     "$R/proc"      2>/dev/null
- *   mountpoint -q "$R/sys"       || mount -t sysfs sys      "$R/sys"       2>/dev/null
- *   mountpoint -q "$R/dev"       || mount --bind /dev       "$R/dev"       2>/dev/null
- *   mountpoint -q "$R/root"      || mount --bind <homeDir>  "$R/root"      2>/dev/null
- *   mkdir -p "$R/workspace" 2>/dev/null
- *   mountpoint -q "$R/workspace" || mount --bind <wsDir>    "$R/workspace" 2>/dev/null
- *   [共享存储可用时] mkdir -p "$R/sdcard"; mount --bind /storage/emulated/0 "$R/sdcard"
+ *   会话共享锁 + 挂载操作锁；/proc/self/mountinfo 逐目标守卫
+ *   缺失时挂 proc/sysfs/dev/root/workspace（可选 sdcard），记录挂载 ID
  *   chroot "$R" /usr/bin/env -i 'K=V' … /bin/sh -c "cd <guestCwd> && exec /bin/bash -i"
- *   umount …（LIFO 最佳努力收尾）
+ *   EXIT trap：最后会话仅卸载挂载 ID 匹配的已管理目标
  * '
  * ```
  *
@@ -67,9 +62,9 @@ import java.io.File
  *    语义是通用的 env 清洗器；
  *  - **cwd**：chroot(1) 落 guest "/"，要进 /workspace 必须经 sh -c cd（无 -w
  *    等价物）；guestCwd 走 [GuestCwdMapper]（与 PRoot 同映射）；
- *  - **挂载幂等**：mountpoint -q 守卫 —— 上次会话异常退出留下的挂载直接复用，
- *    不叠加堆叠挂载；多个 chroot 会话并发时共享挂载（先退出的 umount 因
- *    EBUSY 静默失败，最后退出的清场 —— 最佳努力，无泄漏累积）；
+ *  - **挂载守卫**：/proc/self/mountinfo 精确匹配 + flock 跨会话锁（无 mountpoint
+ *    的 ROM 也不堆叠）；并发会话经共享使用锁复用挂载，仅最后会话卸载本后端
+ *    记录的挂载 ID；守卫不可用时 fail-closed（绝不直挂堆叠）。
  *  - **PTY 语义**：forkpty 使 su 成为会话/进程组长（PGID==su PID）→
  *    kill(-PGID)/TIOCSWINSZ/tcgetpgrp 与 LOCAL/PRoot 会话同一套语义；
  *    bash 拿到的是真 PTY slave（su/chroot 只传递 fd，不翻译）。

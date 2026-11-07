@@ -1,6 +1,11 @@
 package com.apex.agent.platform.terminal.ubuntu
 
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
+import java.util.Base64
 
 /**
  * T72: RootFS Configurator —— 把一个"刚解压出来的 Ubuntu Base"配置成
@@ -12,8 +17,8 @@ import java.io.File
  *  1. /etc/resolv.conf 是空文件 → guest 内 DNS 解析全灭 → apt update 必败。
  *  2. /etc/hosts 是空文件 → localhost 反解失败（apt/sudo 等会卡警告）。
  *  3. /etc/hostname 空 → bash 提示符出现 "(none)"。
- *  4. CA certificates 完全缺失（Ubuntu Base 不含 ca-certificates 包）→
- *     https 源不可用；http 源不受影响。
+ *  4. 旧 Ubuntu Base 无 CA；完整 rootfs 已在构建期预装 ca-certificates，
+ *     只对确实缺失/为空的存量环境做修复。
  *  5. apt 的工作目录（lists/partial、archives/partial、dpkg updates…）
  *     Ubuntu Base 自带，但删除重装/异常中断后可能缺——幂等确保。
  *
@@ -21,9 +26,8 @@ import java.io.File
  *  - DNS：优先注入（Android 生产由 DI 传系统 DNS）；其次复制 host
  *    /etc/resolv.conf（CI/Linux 有效）；最后 fallback 公共 DNS 并记录
  *    warning —— 绝不假装"配置好了"而不说明来源。
- *  - CA：host 有 bundle（CI/Linux）就复制进 rootfs（真实可用）；没有
- *    （Android）就保留缺失并记录 warning（http apt 源照常工作）。
- *    绝不伪造空 bundle 冒充已配置。
+ *  - CA：已有的打包证书优先；缺失时从可信宿主 bundle 或 Android 系统证书
+ *    目录修复。来源不可读则告警，不从网络或用户目录下载/拼接证书。
  *  - 所有写入幂等：已存在且非空的非托管文件不覆盖（用户/上游改动优先）。
  */
 class RootfsConfigurator(
@@ -31,6 +35,10 @@ class RootfsConfigurator(
     private val dnsServers: () -> List<String> = { emptyList() },
     /** host 侧 CA bundle（默认 CI/Linux 路径；Android 上不存在 → null）。 */
     private val hostCaBundle: () -> File? = { File("/etc/ssl/certs/ca-certificates.crt").takeIf { it.isFile && it.length() > 0 } },
+    /** 仅系统级 Android CA；不读取用户安装的 CA 或任意下载目录。 */
+    private val androidSystemCaDirs: () -> List<File> = {
+        listOf(File("/apex/com.android.conscrypt/cacerts"), File("/system/etc/security/cacerts"))
+    },
     /** guest 主机名。 */
     private val hostname: String = DEFAULT_HOSTNAME,
     /**
@@ -180,26 +188,22 @@ class RootfsConfigurator(
         }
         actions.add("apt-dirs: ${aptDirs.size - warnings.count { it.startsWith("apt-dir") }} present, $madeDirs created")
 
-        // ── 6. CA certificates：host 有就复制；没有就如实标注 ──
+        // ── 6. CA certificates：完整包自带；仅缺失/空时从可信宿主修复 ──
         val guestCa = File(root, "etc/ssl/certs/ca-certificates.crt")
-        val caSource = hostCaBundle()
         when {
+            Files.isSymbolicLink(guestCa.toPath()) -> warnings.add("ca-certificates: unsafe symlink — not followed")
             hasContent(guestCa) -> actions.add("ca-certificates: kept existing bundle (${guestCa.length()} bytes)")
-            caSource != null && caSource.isFile && caSource.length() > 0 -> {
-                guestCa.parentFile?.mkdirs()
-                // 复制真实 bundle（~200KB，流式）
-                caSource.inputStream().use { input ->
-                    guestCa.outputStream().use { output -> input.copyTo(output, 64 * 1024) }
+            else -> {
+                val supplied = supplyCaIfMissing(root)
+                if (supplied != null) {
+                    actions.add("ca-certificates: copied $supplied (${guestCa.length()} bytes)")
+                } else {
+                    warnings.add(
+                        "ca-certificates: ABSENT — http apt sources work unchanged; " +
+                            "https needs a trusted system CA store or a repaired ca-certificates package"
+                    )
                 }
-                // Debian/Ubuntu 的 SSL 布局惯例：/usr/lib/ssl/certs → /etc/ssl/certs
-                val usrLibSsl = File(root, "usr/lib/ssl")
-                if (!usrLibSsl.isDirectory) usrLibSsl.mkdirs()
-                actions.add("ca-certificates: copied host bundle (${guestCa.length()} bytes)")
             }
-            else -> warnings.add(
-                "ca-certificates: ABSENT — http apt sources work unchanged; " +
-                    "https requires `apt install ca-certificates` inside the guest"
-            )
         }
 
         // ── 7. timezone：Ubuntu Base 自带 /etc/localtime → Etc/UTC ──
@@ -247,6 +251,86 @@ class RootfsConfigurator(
         actions.add("base-dirs: tmp/home/root/workspace ensured (tmp world-writable)")
 
         return ConfigureReport(actions, warnings)
+    }
+
+    /**
+     * Repair a legacy rootfs without reinstalling the pinned archive. A nonempty
+     * packaged/user bundle is never touched. Missing/unreadable trusted host
+     * sources leave the guest unchanged (no insecure network fallback).
+     */
+    fun repairCaIfMissing(root: File): Boolean = supplyCaIfMissing(root) != null
+
+    private fun supplyCaIfMissing(root: File): String? {
+        if (!root.isDirectory || Files.isSymbolicLink(root.toPath())) return null
+        val guest = File(root, "etc/ssl/certs/ca-certificates.crt")
+        if (listOf("etc", "etc/ssl", "etc/ssl/certs").any {
+                Files.isSymbolicLink(File(root, it).toPath())
+            } || Files.isSymbolicLink(guest.toPath()) || hasContent(guest)) return null
+
+        return runCatching {
+            val host = hostCaBundle()?.takeIf { it.isFile && it.length() in 1..MAX_CA_BYTES.toLong() }
+            val hostBytes = host?.readBytes()?.takeIf { validCaBundle(it) }
+            val source = if (hostBytes != null) {
+                "host bundle" to hostBytes
+            } else {
+                val systemBytes = trustedAndroidSystemCas() ?: return@runCatching null
+                "Android system CA store" to systemBytes
+            }
+            val parent = guest.parentFile ?: return@runCatching null
+            if (!parent.isDirectory && !parent.mkdirs()) return@runCatching null
+            // Same-directory temporary file + rename: never expose a partial trust store.
+            val temp = File.createTempFile(".ca-certificates-", ".tmp", parent)
+            try {
+                temp.writeBytes(source.second)
+                if (Files.isSymbolicLink(guest.toPath()) || hasContent(guest)) return@runCatching null
+                try {
+                    Files.move(temp.toPath(), guest.toPath(), StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING)
+                } catch (_: Exception) {
+                    Files.move(temp.toPath(), guest.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                }
+                source.first
+            } finally {
+                temp.delete()
+            }
+        }.getOrNull()
+    }
+
+    private fun validCaBundle(bytes: ByteArray): Boolean = runCatching {
+        if (bytes.isEmpty() || bytes.size > MAX_CA_BYTES) return@runCatching false
+        val certs = CertificateFactory.getInstance("X.509")
+            .generateCertificates(bytes.inputStream())
+        certs.isNotEmpty() && certs.all { (it as? X509Certificate)?.basicConstraints?.let { bc -> bc >= 0 } == true }
+    }.getOrDefault(false)
+
+    private fun trustedAndroidSystemCas(): ByteArray? {
+        val factory = CertificateFactory.getInstance("X.509")
+        // APEX (Android 14+) takes precedence over the older /system store.
+        // Never include user-installed credentials or arbitrary PEM files.
+        for (dir in androidSystemCaDirs()) {
+            if (!dir.isDirectory) continue
+            val seen = HashSet<String>()
+            val pem = StringBuilder()
+            dir.listFiles().orEmpty().asSequence()
+                .filter { it.name.matches(SYSTEM_CA_FILENAME) && it.isFile &&
+                    !Files.isSymbolicLink(it.toPath()) && it.length() in 1..MAX_CERT_BYTES.toLong() }
+                .sortedBy { it.name }
+                .take(MAX_SYSTEM_CERTS)
+                .forEach { file ->
+                    val cert = runCatching {
+                        file.inputStream().use { factory.generateCertificate(it) as? X509Certificate }
+                    }.getOrNull()?.takeIf { it.basicConstraints >= 0 } ?: return@forEach
+                    val der = cert.encoded
+                    val encoded = Base64.getMimeEncoder(64, byteArrayOf('\n'.code.toByte()))
+                        .encodeToString(der)
+                    if (seen.add(encoded)) {
+                        pem.append("-----BEGIN CERTIFICATE-----\n")
+                            .append(encoded).append("\n-----END CERTIFICATE-----\n")
+                    }
+                }
+            if (pem.isNotEmpty() && pem.length <= MAX_CA_BYTES) return pem.toString().toByteArray(Charsets.US_ASCII)
+        }
+        return null
     }
 
     /**
@@ -316,6 +400,10 @@ class RootfsConfigurator(
 
     companion object {
         const val DEFAULT_HOSTNAME = "android-guru"
+        private const val MAX_CA_BYTES = 8 * 1024 * 1024
+        private const val MAX_CERT_BYTES = 64 * 1024
+        private const val MAX_SYSTEM_CERTS = 512
+        private val SYSTEM_CA_FILENAME = Regex("^[0-9a-f]{8}\\.[0-9]+$")
 
         /**
          * 解析 /proc/self/status 的 “Groups:” 行（实录 #14 的生产采集端）。

@@ -582,9 +582,15 @@ object TerminalModule {
             bundledChecksumFn = { bundledSource.registryChecksumFor(target) },
             // P1（DNS 快照刷新）：ensureReady 短路前对一次宿主 DNS，切网自愈
             //（resolv.conf 是安装时刻快照，不刷新则切网后 guest DNS 全灭）。
+            // READY 短路和降级重试均会调用此端口：顺手修复确实缺失的
+            // 存量 CA bundle，优先保留完整 rootfs 自带证书；无可信源则不动作。
             dnsRefreshFn = {
                 provisioner.current()?.location?.let { loc ->
-                    configurator.refreshDnsIfChanged(java.io.File(loc.value))
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val root = java.io.File(loc.value)
+                        configurator.repairCaIfMissing(root)
+                        configurator.refreshDnsIfChanged(root)
+                    }
                 } ?: false
             },
             // ★ 能力探测缓存失效：bootstrap 实际执行后（BASE_PACKAGES 安装 /
