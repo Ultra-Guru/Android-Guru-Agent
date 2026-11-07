@@ -182,7 +182,9 @@ printf 'umount %s\n' "§1" >> "§OPS"
         assertEquals(0, mkfifo.exitValue())
         val binaries = bin()
         File(binaries, "chroot").writeText(
-            "#!/bin/sh\nprintf 'READY\\n' >> \"\$OPS\"\nread -r answer < \"\$GATE\"\nexit 0\n"
+            // READY on stdout so the test's readLine() sees it; the ops log
+            // records that the guest (and its inherited fd 9) is live.
+            "#!/bin/sh\nprintf 'READY\\n'\nprintf 'GUEST_UP\\n' >> \"\$OPS\"\nread -r answer < \"\$GATE\"\nexit 0\n"
         )
         val original = start(script(root, table), binaries, table, ops, gate)
         try {
@@ -193,14 +195,22 @@ printf 'umount %s\n' "§1" >> "§OPS"
             File(binaries, "chroot").writeText("#!/bin/sh\nexit 7\n")
             assertEquals(7, run(script(root, table), binaries, table, ops))
             assertFalse("orphan holds shared lock", ops.readLines().any { it.startsWith("umount ") })
-            gate.outputStream().bufferedWriter().use { it.write("exit\n") }
+            // Signal the orphan to exit; the kernel closes its inherited fd 9.
+            runCatching {
+                gate.outputStream().bufferedWriter().use { it.write("exit\n") }
+            }
             assertEquals(7, run(script(root, table), binaries, table, ops))
-            assertEquals(1, ops.readLines().count { it == "umount ${root.absolutePath}/proc" })
+            assertEquals(
+                "exactly one detach after the orphan is gone",
+                1, ops.readLines().count { it == "umount ${root.absolutePath}/proc" }
+            )
         } finally {
+            // Always unblock a possibly-still-blocked fake guest so a failed
+            // assertion cannot wedge the whole suite on a FIFO write.
             original.destroyForcibly()
-            // Release a still-blocked fake guest if an assertion failed.
-            if (!ops.readLines().any { it.startsWith("umount ") }) {
-                runCatching { ProcessBuilder("sh", "-c", "printf 'exit\\n' > '${gate.absolutePath}'").start().waitFor(2, TimeUnit.SECONDS) }
+            runCatching {
+                ProcessBuilder("sh", "-c", "printf 'exit\\n' > '${gate.absolutePath}'")
+                    .start().waitFor(3, TimeUnit.SECONDS)
             }
         }
     }
