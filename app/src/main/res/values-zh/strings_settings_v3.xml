@@ -55,9 +55,11 @@
     <string name="settings_v3_coding_subtitle">Code 屏的工具面与防护</string>
     <string name="settings_v3_coding_mcp_scope">MCP 与技能作用域隔离</string>
     <string name="settings_v3_coding_mcp_scope_desc">按市场分级在引擎侧隔离 MCP 与技能工具；关闭回到 v2 全局可见</string>
-    <!-- Coding 流水式输出UI（v1.6：开 = Rikka 聊天式 / 关 = 经典胶囊时间轴） -->
+    <!-- Coding 流水式输出UI（v1.6：双选项命名 2026-11 —— 第一种「默认」= 经典胶囊时间轴；第二种「rikka思考方式UI」= Rikka 聊天式） -->
     <string name="settings_v3_coding_output_style">流水式输出UI</string>
-    <string name="settings_v3_coding_output_style_desc">开启 = 模仿 RikkaHub 的聊天式流水输出——带头像的右对齐用户气泡、Markdown 结论直铺、带实时计时的可折叠思考卡、工具调用聚合块（技能 / MCP 徽标，折叠时露出最近调用，可展开全部明细）。关闭 = 经典胶囊时间轴（实时代码窗 / 终端尾窗）。空闲时切换即时生效；与「输出方式」（流式 / 完整）正交，两种风格都适用。</string>
+    <string name="settings_v3_coding_output_style_timeline">默认</string>
+    <string name="settings_v3_coding_output_style_rikka">rikka思考方式UI</string>
+    <string name="settings_v3_coding_output_style_desc">默认 = 经典胶囊时间轴（实时代码窗 / 终端尾窗）。rikka思考方式UI = 模仿 RikkaHub 的聊天式流水输出——带头像的右对齐用户气泡、Markdown 结论直铺、带实时计时的可折叠思考卡、工具调用聚合块（技能 / MCP 徽标，折叠时露出最近调用，可展开全部明细）。空闲时切换即时生效；与「输出方式」（流式 / 完整）正交，两种风格都适用。</string>
 
     <!-- GitHub 分区 -->
     <string name="settings_v3_github_title">GitHub</string>

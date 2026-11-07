@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import com.apex.agent.R
 import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.core.code.stream.ToolCallStatus
+import com.apex.agent.core.code.stream.ToolKind
 import com.apex.agent.ui.theme.LocalExtendedColors
 import kotlinx.coroutines.delay
 
@@ -251,10 +252,11 @@ internal fun RikkaToolBlock(
 
 /**
  * 单次工具调用行（聊天 App 紧凑形态，验证轮次卡展开态复用）：
- * 族图标井 + 名称·target + 参数/摘要副行 + 状态徽标 + 耗时；
- * 活跃期带实时代码窗（参数流式）与输出尾窗（写入过程可见）；
- * 点击进详情弹层（diff / grep / 终端全文）。运行中同步显示实时
- * 耗时（rikkahub rememberToolDuration 同语义：进行中也在计时）。
+ * 图标井（文件三族 = 语言官方品牌色 monogram）+ 名称·文件名/target +
+ * 参数/摘要副行 + 状态徽标 + 耗时；活跃期带实时代码窗（参数流式）与
+ * 输出尾窗（写入过程可见）；点击进详情弹层（diff / grep / 终端全文）。
+ * 运行中同步显示实时耗时（rikkahub rememberToolDuration 同语义：
+ * 进行中也在计时）。
  */
 @Composable
 internal fun RikkaToolRow(
@@ -304,19 +306,28 @@ internal fun RikkaToolRow(
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 6.dp)
             ) {
-                // 左：族图标井（技能星芒 teal / MCP 拼图 tertiary 与胶囊同源）
-                Surface(
-                    shape = RoundedCornerShape(7.dp),
-                    color = style.color.copy(alpha = 0.14f)
-                ) {
-                    Icon(
-                        imageVector = style.icon,
-                        contentDescription = null,
-                        tint = style.color,
-                        modifier = Modifier
-                            .padding(3.dp)
-                            .size(14.dp)
-                    )
+                // 左：图标井 —— 文件三族 = 语言品牌色 monogram（与胶囊时间轴
+                // 同源 [FileLanguageIcon]）；其余族 = ToolKind 着色图标井
+                when (call.kind) {
+                    ToolKind.READ_FILE, ToolKind.WRITE_FILE, ToolKind.EDIT_FILE ->
+                        FileLanguageIcon(
+                            path = call.target,
+                            fallbackIcon = style.icon,
+                            fallbackColor = style.color
+                        )
+                    else -> Surface(
+                        shape = RoundedCornerShape(7.dp),
+                        color = style.color.copy(alpha = 0.14f)
+                    ) {
+                        Icon(
+                            imageVector = style.icon,
+                            contentDescription = null,
+                            tint = style.color,
+                            modifier = Modifier
+                                .padding(3.dp)
+                                .size(14.dp)
+                        )
+                    }
                 }
                 Spacer(Modifier.width(7.dp))
                 // ── 中：名称（含技能·id / MCP·服务器 溯源）+ target + 副行 ──
@@ -333,7 +344,7 @@ internal fun RikkaToolRow(
                         if (call.target.isNotBlank()) {
                             Spacer(Modifier.width(5.dp))
                             Text(
-                                text = call.target,
+                                text = capsuleDisplayTarget(call),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontFamily = FontFamily.Monospace,
                                 color = MaterialTheme.colorScheme.primary,
@@ -398,13 +409,18 @@ internal fun RikkaToolRow(
                     )
                 }
             }
-            // ═══ 参数流式期实时代码窗（绿增红删，与胶囊同款；终态收回）═══
+            // ═══ 参数流式期实时代码窗（绿增红删 + 行级浅色背景，与胶囊同款；
+            // 终态收回；220ms/180ms 缓入缓出曲线 —— 展开丝滑）═══
             var lastPreview by remember(call.id) { mutableStateOf(call.streamingPreview) }
             call.streamingPreview?.let { lastPreview = it }
             AnimatedVisibility(
                 visible = call.isLive && lastPreview?.hasCode == true,
-                enter = expandVertically(),
-                exit = shrinkVertically(),
+                enter = expandVertically(
+                    animationSpec = tween(220, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+                ),
+                exit = shrinkVertically(
+                    animationSpec = tween(180, easing = androidx.compose.animation.core.FastOutLinearInEasing)
+                ),
                 modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
             ) {
                 lastPreview?.let { preview ->

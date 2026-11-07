@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
+import com.apex.agent.core.code.stream.LlmRetryInfo
 import com.apex.agent.core.code.stream.ToolUsageStats
 import com.apex.agent.ui.glass.GlassCard
 import com.apex.agent.ui.glass.GlassStyle
@@ -50,7 +51,8 @@ import kotlinx.coroutines.isActive
  * [CodeOutputMode] COMPLETE 档在 run 进行中替代时间轴过程条目的唯一可见
  * 元素（规格书：「完整模式：生成完成后一次性展示，生成中显示加载态」）：
  *
- * - 头行：三枚呼吸圆点 + 标题 + 已用时（每秒跳动，复用胶囊耗时格式）；
+ * - 头行：三枚呼吸圆点 + 标题（重试等待中切换为「重试中 · 第 N/T 次」）
+ *   + 已用时（每秒跳动，复用胶囊耗时格式）；
  * - 进度行：本轮工具使用聚合（v1.5.1 溯源三分类）——总数（>0 时显示）
  *   + 内置 / 技能 / MCP 分类计数（非零才显，图标区分）+ 失败数（>0
  *   错误色强调）——静默不等于黑箱，长任务的推进感由真实计数提供，
@@ -61,7 +63,8 @@ import kotlinx.coroutines.isActive
  */
 @Composable
 internal fun CompleteModeGeneratingCard(
-    toolUsage: ToolUsageStats
+    toolUsage: ToolUsageStats,
+    llmRetry: LlmRetryInfo? = null
 ) {
     // 呼吸动画（三圆点相位错开 + 骨架条透明度脉冲），同一 transition 驱动
     val pulse = rememberInfiniteTransition(label = "complete-generating")
@@ -105,13 +108,14 @@ internal fun CompleteModeGeneratingCard(
     GlassCard(
         style = GlassStyle.Card,
         shape = RoundedCornerShape(12.dp),
-        accent = MaterialTheme.colorScheme.primary,
+        accent = if (llmRetry != null) MaterialTheme.colorScheme.error
+        else MaterialTheme.colorScheme.primary,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
     ) {
         Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
-            // ── 头行：呼吸圆点 + 标题 + 已用时 ──
+            // ── 头行：呼吸圆点 + 标题（重试中切换）+ 已用时 ──
             Row(verticalAlignment = Alignment.CenterVertically) {
                 GeneratingDot(alpha = dot1)
                 Spacer(Modifier.width(3.dp))
@@ -120,10 +124,19 @@ internal fun CompleteModeGeneratingCard(
                 GeneratingDot(alpha = dot3)
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = stringResource(R.string.code_stream_generating_title),
+                    text = if (llmRetry != null) {
+                        stringResource(
+                            R.string.code_stream_retrying_fmt,
+                            llmRetry.attempt,
+                            llmRetry.totalRetries
+                        )
+                    } else {
+                        stringResource(R.string.code_stream_generating_title)
+                    },
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = if (llmRetry != null) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(Modifier.weight(1f))
                 if (elapsedMs > 0) {

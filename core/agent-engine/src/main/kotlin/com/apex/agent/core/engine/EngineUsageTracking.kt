@@ -36,6 +36,25 @@ internal class EngineUsageTracker(
     }
 
     /**
+     * 会话边界复位（clearHistory / restoreHistory 调用）：陈旧的
+     * lastRealUsage 会泄漏到新会话（新会话首个 usage 帧到达前，圆环
+     * 显示的仍是上一会话的 token 占用）；会话累计同步归零。
+     */
+    fun reset() {
+        lastRealUsage = null
+        sessionTotalTokensReal.set(0L)
+    }
+
+    /**
+     * 压缩后失效陈旧真实值：lastRealUsage 反映的是压缩前全上下文，
+     * 压缩后 currentContextTokens 应回落到估算器口径（按压缩后历史
+     * 估算），下一轮真实 usage 到达前不再回跳。
+     */
+    fun resetRealUsage() {
+        lastRealUsage = null
+    }
+
+    /**
      * 当前上下文 token 数（UI 仪表盘）：
      * 优先返回最近一次响应的**真实**统计（prompt+completion ≈ 压缩后全上下文），
      * 端点不返回 usage 时回退 [TokenEstimator] 启发式估算（与压缩阈值同源）。

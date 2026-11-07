@@ -181,9 +181,12 @@ internal fun CodeContextSheet(
 /**
  * Token 用量卡：上下文占用（圆环的数字形态）+ 会话累计输入/输出 + 缓存命中率。
  *
- * 口径说明：
- * - 上下文行：snapshot 的引擎统计优先，缺省回退 [CodeSessionUsage]（UI 流
- *   同源数据）；百分比 = used / max；
+ * 口径说明（圆环一致性修复 2026-11）：
+ * - 上下文行：分子优先引擎统计、缺省回退 [CodeSessionUsage]（UI 流同源
+ *   数据）；**分母优先 UI 流的 contextMaxTokens（与顶栏圆环同分母 ——
+ *   Profile 实时窗口）**，缺省回退 snapshot.tokenMax —— 旧优先序会让弹层
+ *   分母用引擎启动快照，与圆环分母不一致，两处百分比互相对不上；
+ * - 百分比钳制 0..100（与圆环同口径；used>max 时弹层不再显示 160%）；
  * - 输入/输出：会话累计（服务端 usage 真实统计逐轮累加，UsageUpdated 事件）；
  * - 缓存命中率 = cached / input；端点不返回缓存统计（cached = 0）时显式
  *   显示「暂无数据」而非误导性的 0%。
@@ -191,8 +194,10 @@ internal fun CodeContextSheet(
 @Composable
 private fun UsageStatsCard(snapshot: CodeContextSnapshot, usage: CodeSessionUsage?) {
     val used = snapshot.tokenUsed.takeIf { it > 0 } ?: usage?.contextUsedTokens ?: 0
-    val max = snapshot.tokenMax.takeIf { it > 0 } ?: usage?.contextMaxTokens ?: 0
-    val pct = if (max > 0) used * 100L / max else 0L
+    // 分母与顶栏圆环同源优先（Profile 实时窗口）——两处百分比永远一致
+    val max = usage?.contextMaxTokens?.takeIf { it > 0 }
+        ?: snapshot.tokenMax.takeIf { it > 0 } ?: 0
+    val pct = if (max > 0) (used * 100L / max).coerceIn(0L, 100L) else 0L
     val inTokens = usage?.sessionInputTokens ?: 0
     val outTokens = usage?.sessionOutputTokens ?: 0
     val cached = usage?.sessionCachedTokens ?: 0

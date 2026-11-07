@@ -91,6 +91,20 @@ sealed interface ToolKind {
 enum class ToolCallStatus { WAITING, RUNNING, SUCCESS, FAILED, APPLIED, PARTIAL }
 
 /**
+ * LLM 重试状态（用户规格 2026-11：重试期间「正在工作/思考中」切换为
+ * 「重试中」）：[CodeStreamSnapshot.llmRetry] 非空即重试等待中。
+ *
+ * @param attempt 即将进行的重试序号（1-based）。
+ * @param delayMs 重试前等待毫秒（阶梯：1s/3s/5s/8s/13s/20s/30s/60s/120s/180s）。
+ * @param totalRetries 本任务重试预算（默认 10）。
+ */
+data class LlmRetryInfo(
+    val attempt: Int,
+    val delayMs: Long,
+    val totalRetries: Int
+)
+
+/**
  * 工具调用胶囊的视图态（规格书【1】）：一颗胶囊从 ToolCallStart 到
  * ToolCallComplete 的完整生命周期数据。
  *
@@ -110,6 +124,11 @@ enum class ToolCallStatus { WAITING, RUNNING, SUCCESS, FAILED, APPLIED, PARTIAL 
  * @param streamingPreview 参数生成期实时预览（ToolCallArgsDelta 归约；
  *   写/编辑类的半截 JSON 提取——绿增红删代码窗的数据源。WAITING/RUNNING
  *   期间持续刷新，终态时由会话清空 = 代码窗自动收回）。
+ * @param readLineRange 读取类的实际行号范围（「L1-L800」——从输出行号
+ *   前缀解析，未完成时从 offset/limit 参数预置；非读取类为 null）。
+ * @param linesAdded 写/编辑类的 diff 新增行数（终态从 diff 解析；流式期
+ *   由实时预览行数折算，写入胶囊尾部「+N」绿徽标）。
+ * @param linesRemoved 编辑类的 diff 删除行数（「−M」红徽标；0 = 无删除）。
  * @param origin 调用溯源（引擎事件下发；缺省 BUILTIN —— kit 路径/旧档
  *   未打标时按内置渲染，与既有行为一致）。
  * @param originLabel 溯源标签：MCP = 服务器名 / SKILL = 技能 id；null = 无。
@@ -133,6 +152,9 @@ data class StreamToolCall(
     val progressMessage: String? = null,
     val summary: String? = null,
     val streamingPreview: StreamArgsPreview? = null,
+    val readLineRange: String? = null,
+    val linesAdded: Int = 0,
+    val linesRemoved: Int = 0,
     val origin: ToolCallOrigin = ToolCallOrigin.BUILTIN,
     val originLabel: String? = null
 ) {
@@ -309,6 +331,8 @@ data class CodeStreamSnapshot(
     val lastError: ErrorInfo? = null,
     /** 运行中的 BASH 胶囊（终端面板跟随对象；null = 无活跃终端）。 */
     val activeTerminalCallId: String? = null,
+    /** LLM 重试等待中（「重试中」状态；null = 正常运行 / 无重试）。 */
+    val llmRetry: LlmRetryInfo? = null,
     /** 终端面板内容（活跃 BASH 胶囊的脉冲缓冲尾窗；面板独立锚定渲染）。 */
     val terminalContent: String = "",
     /** 本轮运行触碰的文件（去重，最新在后）。 */

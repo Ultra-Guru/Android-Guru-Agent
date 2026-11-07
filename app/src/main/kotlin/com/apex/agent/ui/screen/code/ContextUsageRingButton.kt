@@ -21,6 +21,9 @@ import androidx.compose.ui.unit.dp
 import com.apex.agent.R
 import kotlin.math.min
 
+/** 小比例用量的最小可见弧度数（22dp 圆环上 <2% ≈ 一个点，不可辨）。 */
+private const val MIN_VISIBLE_SWEEP_DEG = 6f
+
 /**
  * # Context Usage Ring — 会话上下文用量圆环（替代旧的眼睛图标入口）
  *
@@ -74,7 +77,10 @@ internal fun ContextUsageRingButton(
                     style = stroke
                 )
                 if (fraction > 0f) {
-                    val sweep = 360f * fraction
+                    // ═══ 最小可见弧（圆环口径修复 2026-11）：22dp / 2.6dp 的弧长下
+                    // 小比例（<2%）的 360°×f 几乎不可见（视觉上像 0%）——用最小
+                    // 6° 弧保证「有用量」与「空转态」可区分；百分比仍按真实值。
+                    val sweep = (360f * fraction).coerceAtLeast(MIN_VISIBLE_SWEEP_DEG)
                     // ── 进度弧外晕（先画，白弧压在上面）──
                     drawArc(
                         color = haloColor,

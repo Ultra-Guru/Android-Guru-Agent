@@ -32,7 +32,9 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Loop
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.Icon
@@ -57,6 +59,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
+import com.apex.agent.core.code.stream.LlmRetryInfo
 import com.apex.agent.core.code.stream.StreamEntry
 import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.ui.component.MarkdownText
@@ -68,8 +71,13 @@ import kotlinx.coroutines.delay
  * 胶囊时间轴（CodeStreamCards）的 Rikka 皮肤版：工具胶囊改走聚合块
  * （RikkaToolBlock，时间轴分段层负责聚段），其余成员按聊天 App 语言
  * 重绘——用户右对齐实色气泡 / 结论 Markdown 气泡 / 思考过程折叠卡 /
- * 验证轮次卡 / 居中状态 pill / 错误与停止卡 / 文件 chips / 运行统计卡。
- * Git 操作可视化卡直接复用（GitOpVisualCard 与皮肤无关）。
+ * 验证轮次卡 / 居中状态 pill / 错误与停止卡（含「继续完成」入口）/ 文件
+ * chips / 运行统计卡。Git 操作可视化卡直接复用（GitOpVisualCard 与皮肤
+ * 无关）。
+ *
+ * @param llmRetry LLM 重试等待中（思考卡标题「思考中 · X 秒」切换为
+ *   「重试中 · 第 N/T 次」；null = 正常运行）
+ * @param onRetryRun 失败结尾「继续完成」回调（错误卡尾部播放入口）
  */
 @Composable
 internal fun RikkaStreamCard(
@@ -77,19 +85,21 @@ internal fun RikkaStreamCard(
     onToolClick: (StreamToolCall) -> Unit,
     thinkingCollapsed: Boolean = false,
     onThinkingCollapsedChange: (Boolean) -> Unit = {},
-    onShowAnswer: (() -> Unit)? = null
+    onShowAnswer: (() -> Unit)? = null,
+    llmRetry: LlmRetryInfo? = null,
+    onRetryRun: (() -> Unit)? = null
 ) {
     when (entry) {
         is StreamEntry.UserEntry -> RikkaUserBubble(entry.text)
         is StreamEntry.AssistantEntry -> RikkaAssistantBubble(entry.text, entry.isStreaming)
-        is StreamEntry.ThinkingEntry -> RikkaThinkingCard(entry.text, entry.isStreaming, thinkingCollapsed, onThinkingCollapsedChange, onShowAnswer)
+        is StreamEntry.ThinkingEntry -> RikkaThinkingCard(entry.text, entry.isStreaming, thinkingCollapsed, onThinkingCollapsedChange, onShowAnswer, llmRetry)
         // 时间轴分段层已把连续胶囊收进 RikkaToolBlock，此分支只在单胶囊
         // 直渲染（防御）时触达——单调用块本身就是一行工具卡。
         is StreamEntry.ToolCapsuleEntry -> RikkaToolBlock(listOf(entry.call), onToolClick)
         is StreamEntry.VerifyCycleEntry -> RikkaVerifyCard(entry, onToolClick)
         is StreamEntry.StatusEntry -> RikkaPillLine(text = entry.text, emphasized = false)
         is StreamEntry.SystemEntry -> RikkaPillLine(text = entry.text, emphasized = true)
-        is StreamEntry.ErrorEntry -> RikkaErrorCard(entry)
+        is StreamEntry.ErrorEntry -> RikkaErrorCard(entry, onRetryRun)
         is StreamEntry.StopEntry -> RikkaStopCard(entry.reason)
         is StreamEntry.FileChipsEntry -> RikkaFileChips(entry.files)
         is StreamEntry.GitOpEntry -> GitOpVisualCard(entry)
@@ -227,7 +237,8 @@ private fun RikkaThinkingCard(
     isStreaming: Boolean,
     defaultCollapsed: Boolean,
     onCollapsedChange: (Boolean) -> Unit,
-    onShowAnswer: (() -> Unit)?
+    onShowAnswer: (() -> Unit)?,
+    llmRetry: LlmRetryInfo? = null
 ) {
     // key 语义与胶囊思考卡同款：不能拿派生值当 key（空卡点开后首 token
     // 到达会重置展开态）；手动干预优先于自动展开/折叠。
@@ -270,7 +281,11 @@ private fun RikkaThinkingCard(
         finalElapsedMs > 0L -> finalElapsedMs / 1000f
         else -> 0f
     }
-    val titleText = if (isStreaming) {
+    val titleText = if (llmRetry != null) {
+        // 重试等待中（用户规格 2026-11）：标题从「思考中 · X 秒」切换为
+        // 「重试中 · 第 N/T 次」——重试成功后回到秒表口径。
+        stringResource(R.string.code_stream_retrying_fmt, llmRetry.attempt, llmRetry.totalRetries)
+    } else if (isStreaming) {
         stringResource(R.string.rikka_thinking_running_fmt, elapsedSeconds)
     } else {
         stringResource(R.string.rikka_thinking_elapsed_fmt, elapsedSeconds)
@@ -303,16 +318,18 @@ private fun RikkaThinkingCard(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = Icons.Default.Psychology,
+                    imageVector = if (llmRetry != null) Icons.Default.Refresh else Icons.Default.Psychology,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.secondary,
+                    tint = if (llmRetry != null) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.secondary,
                     modifier = Modifier.size(14.dp)
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
                     text = titleText,
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (llmRetry != null) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant
                         .copy(alpha = if (isStreaming) titlePulse else 1f)
                 )
                 Spacer(Modifier.weight(1f))
@@ -540,8 +557,12 @@ private fun RikkaStatChip(
 
 // ═══ 结构化错误卡 ═══
 
+/**
+ * 错误卡（Rikka 皮肤）：与胶囊时间轴 ErrorCard 同语义——失败结尾带
+ * 「继续完成」动作行（用户规格 2026-11），播放入口重放本任务输入。
+ */
 @Composable
-private fun RikkaErrorCard(entry: StreamEntry.ErrorEntry) {
+private fun RikkaErrorCard(entry: StreamEntry.ErrorEntry, onRetryRun: (() -> Unit)? = null) {
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
@@ -579,6 +600,42 @@ private fun RikkaErrorCard(entry: StreamEntry.ErrorEntry) {
                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
                     modifier = Modifier.padding(top = 2.dp)
                 )
+            }
+            // ═══ 继续完成（失败结尾的动作行）═══
+            if (onRetryRun != null && entry.recoverable) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.10f),
+                        modifier = Modifier.clickable(
+                            role = androidx.compose.ui.semantics.Role.Button
+                        ) { onRetryRun() }
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = stringResource(R.string.code_stream_error_continue),
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = stringResource(R.string.code_stream_error_continue),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
             }
         }
     }

@@ -2,6 +2,8 @@ package com.apex.agent.ui.screen.code.stream
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -72,14 +74,19 @@ import com.apex.agent.ui.theme.LocalExtendedColors
 /**
  * # Code Capsule — 工具调用胶囊（规格书【2】胶囊层）
  *
- * 结构：左（ToolKind 着色图标）+ 中（名称 + target 可点击）+
- * 右（状态徽标 + 耗时 + hunk 进度）+ 副标题（动态文案 / 完成摘要 ≤24 字）。
+ * 结构：左（语言图标井 / ToolKind 着色图标）+ 中（名称 + 文件名/命令
+ * target 可点击）+ 右（行号范围 / 增删行徽标 + 状态徽标 + 耗时 + hunk
+ * 进度）+ 副标题（动态文案 / 完成摘要 ≤24 字）。
  *
  * - 点击区 ≥48dp（内容垂直 padding 8dp + 双行主体保证可触面积）；
  * - 点击行为按族路由（onOpen 回调携带意图：BASH→终端面板、
  *   EDIT/WRITE→文件 Diff、GREP→结果列表、TEST→失败用例）；
  * - 着色语义：读灰 / 写蓝 / 命令紫 / lint 黄 / 测试绿 / 错误红
  *   （深浅主题取 MaterialTheme 动态色打底，族色用固定色相保证跨主题一致）；
+ * - 文件三族（读/写/编）图标井显示**语言官方品牌色 monogram**
+ *   （[FileLanguageIcon]，未知扩展名回退族图标），主体显示文件名，
+ *   尾部显示行号范围（读取 L1-Ln）/ 增删行数（写/编 +N −M）；
+ * - 写入完成（SUCCESS/APPLIED）：胶囊底色覆盖浅绿（“写入落盘”语义色）；
  * - 运行态内嵌实时输出尾窗（「使用中详细展示、完成后折叠成胶囊」）：
  *   RUNNING 时在胶囊行下方流式展示 [StreamToolCall.logTail]，终态自动收起。
  */
@@ -96,6 +103,15 @@ internal fun CodeCapsule(
     // 终态语义色（成对槽位）：浅色主题下 exit 0 的亮绿 4ADE80 对白底仅
     // ~2:1 对比度（UI-016 同源问题），改走 LocalExtendedColors 明暗成对色
     val successColor = LocalExtendedColors.current.success
+    // 写入落盘语义底色（用户规格 2026-11）：写入类成功后胶囊底覆盖浅绿 ——
+    // 与 diff 新增行背景同色系，一眼可辨「这颗胶囊写入了内容」。
+    val capsuleBg = if (call.kind == ToolKind.WRITE_FILE &&
+        (call.status == ToolCallStatus.SUCCESS || call.status == ToolCallStatus.APPLIED)
+    ) {
+        successColor.copy(alpha = 0.10f)
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
     // 状态的无障碍描述：成败不能只靠色/形传达（TalkBack 不可感知）
     val statusDesc = stringResource(
         when (call.status) {
@@ -109,7 +125,7 @@ internal fun CodeCapsule(
     )
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = capsuleBg,
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 44.dp)
@@ -124,23 +140,12 @@ internal fun CodeCapsule(
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 5.dp)
             ) {
-                // 左：族图标（着色底，紧凑井 20dp）
-                Surface(
-                    shape = RoundedCornerShape(7.dp),
-                    color = style.color.copy(alpha = 0.14f)
-                ) {
-                    Icon(
-                        imageVector = style.icon,
-                        contentDescription = null,
-                        tint = style.color,
-                        modifier = Modifier
-                            .padding(3.dp)
-                            .size(14.dp)
-                    )
-                }
+                // 左：图标井 —— 文件三族 = 语言官方品牌色 monogram（未知扩展名
+                // 回退族图标）；其余族 = ToolKind 着色图标
+                CapsuleIconWell(call = call, style = style)
                 Spacer(Modifier.width(6.dp))
 
-                // ── 中：名称 + target（可点击主体）──
+                // ── 中：名称 + 文件名/target（可点击主体）──
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -151,7 +156,7 @@ internal fun CodeCapsule(
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = call.target,
+                            text = capsuleDisplayTarget(call),
                             style = MaterialTheme.typography.labelMedium,
                             fontFamily = FontFamily.Monospace,
                             color = MaterialTheme.colorScheme.primary,
@@ -173,7 +178,39 @@ internal fun CodeCapsule(
                     )
                 }
 
-                // ── 右：hunk 进度 + exit code + 耗时 + 状态徽标 ──
+                // ── 右：行号范围 / 增删行徽标 + hunk 进度 + exit code + 耗时 + 状态徽标 ──
+                // 读取类：尾部行号范围（L1-Ln / L1-Lend，用户规格 2026-11）
+                if (call.kind == ToolKind.READ_FILE && !call.readLineRange.isNullOrEmpty()) {
+                    Text(
+                        text = call.readLineRange.orEmpty(),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                // 写/编辑类：尾部增删行数（写入 = +N 绿；编辑 = +N 绿 / −M 红，
+                // 删除行用红、未变不显——与 diff 行背景同语义）
+                if (call.isEditFamily && call.linesAdded > 0) {
+                    Text(
+                        text = "+${call.linesAdded}",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.SemiBold,
+                        color = successColor
+                    )
+                    Spacer(Modifier.width(4.dp))
+                }
+                if (call.isEditFamily && call.linesRemoved > 0) {
+                    Text(
+                        text = "−${call.linesRemoved}",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(Modifier.width(4.dp))
+                }
                 if (call.hunksTotal > 0) {
                     Text(
                         text = "${call.hunksApplied}/${call.hunksTotal}",
@@ -224,12 +261,14 @@ internal fun CodeCapsule(
             // 终态自动收回（AnimatedVisibility 收束）；点击胶囊可回看详情。
             // lastPreview 缓存：终态时会话已把 preview 清空，收束动画的最后一帧
             // 仍需旧内容可渲染（写入 state 属收敛性缓存，不会无限重组）。
+            // 动画规格（2026-11 用户规格「展开写入要非常丝滑」）：220ms 减速曲线
+            // 展开 / 180ms 加速曲线收束 —— 时间轴锚点随内容增长自动贴底跟随。
             var lastPreview by remember(call.id) { mutableStateOf(call.streamingPreview) }
             call.streamingPreview?.let { lastPreview = it }
             AnimatedVisibility(
                 visible = call.isLive && lastPreview?.hasCode == true,
-                enter = expandVertically(),
-                exit = shrinkVertically(),
+                enter = expandVertically(animationSpec = tween(220, easing = FastOutSlowInEasing)),
+                exit = shrinkVertically(animationSpec = tween(180, easing = FastOutLinearInEasing)),
                 modifier = Modifier.padding(start = 34.dp, end = 10.dp, bottom = 8.dp)
             ) {
                 lastPreview?.let { preview ->
@@ -326,19 +365,7 @@ internal fun CodeCapsuleGroupRow(
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 5.dp)
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(7.dp),
-                        color = style.color.copy(alpha = 0.14f)
-                    ) {
-                        Icon(
-                            imageVector = style.icon,
-                            contentDescription = null,
-                            tint = style.color,
-                            modifier = Modifier
-                                .padding(3.dp)
-                                .size(14.dp)
-                        )
-                    }
+                    CapsuleIconWell(call = latest, style = style)
                     Spacer(Modifier.width(6.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -350,7 +377,7 @@ internal fun CodeCapsuleGroupRow(
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                text = latest.target,
+                                text = capsuleDisplayTarget(latest),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontFamily = FontFamily.Monospace,
                                 color = MaterialTheme.colorScheme.primary,
@@ -457,6 +484,46 @@ internal fun CodeCapsuleGroupRow(
 // ═══ 内部：样式与文案 ═══
 
 internal data class CapsuleStyle(val icon: ImageVector, val color: Color)
+
+/**
+ * 胶囊图标井：文件三族（读/写/编）显示语言官方品牌色 monogram
+ * （[FileLanguageIcon]，未知扩展名回退族图标）；其余族沿用 ToolKind
+ * 着色图标井（20dp 圆角方块 + 14dp 图标）。
+ */
+@Composable
+private fun CapsuleIconWell(call: StreamToolCall, style: CapsuleStyle) {
+    when (call.kind) {
+        ToolKind.READ_FILE, ToolKind.WRITE_FILE, ToolKind.EDIT_FILE ->
+            FileLanguageIcon(
+                path = call.target,
+                fallbackIcon = style.icon,
+                fallbackColor = style.color
+            )
+        else -> Surface(
+            shape = RoundedCornerShape(7.dp),
+            color = style.color.copy(alpha = 0.14f)
+        ) {
+            Icon(
+                imageVector = style.icon,
+                contentDescription = null,
+                tint = style.color,
+                modifier = Modifier
+                    .padding(3.dp)
+                    .size(14.dp)
+            )
+        }
+    }
+}
+
+/**
+ * 胶囊主体 target：文件三族显示文件名（用户规格 2026-11「中间显示具体
+ * 文件名」——完整路径在副标题/详情可达）；其余族维持原 target 口径。
+ */
+internal fun capsuleDisplayTarget(call: StreamToolCall): String = when (call.kind) {
+    ToolKind.READ_FILE, ToolKind.WRITE_FILE, ToolKind.EDIT_FILE ->
+        call.target.substringAfterLast('/').takeIf { it.isNotBlank() } ?: call.target
+    else -> call.target
+}
 
 /** 运行中实时尾窗的最大行数（限高防长输出撑爆时间轴）。 */
 private const val LIVE_TAIL_MAX_LINES = 6

@@ -210,6 +210,10 @@
     <string name="code_stream_terminal_empty">（暂无输出）</string>
     <string name="code_stream_thinking_running">思考中…</string>
     <string name="code_stream_thinking_done">思考链 · 点击展开</string>
+    <!-- LLM 重试态（2026-11 用户规格：十级阶梯 1s…180s；重试期间「思考中/正在工作」切换为「重试中」） -->
+    <string name="code_stream_retrying_fmt">重试中 · 第 %1$d/%2$d 次</string>
+    <string name="code_stream_retry_delay_fmt">%1$s 后再试</string>
+    <string name="code_stream_error_continue">继续完成</string>
     <!-- Rikka 风格输出（v1.6 聊天式时间轴） -->
     <string name="rikka_tool_block_running">正在调用工具…</string>
     <!-- Rikka 流水式输出UI（2026-11 对齐 rikkahub 源码） -->
