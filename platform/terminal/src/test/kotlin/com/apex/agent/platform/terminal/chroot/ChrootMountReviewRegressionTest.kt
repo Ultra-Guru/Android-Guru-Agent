@@ -16,19 +16,30 @@ class ChrootMountReviewRegressionTest {
     @get:Rule val tmp = TemporaryFolder()
 
     private fun linuxOnly() = assumeTrue("POSIX shell integration", System.getProperty("os.name").contains("Linux"))
-    private fun state(root: File) = File(root.parentFile, ".t99-chroot-state/${root.name}")
-    /** Rootfs skeleton: every bind target the real backend's script can mount. */
-    private fun guestRoot(name: String): File = tmp.newFolder(name).also { root ->
-        for (target in listOf("proc", "sys", "dev", "root", "workspace")) File(root, target).mkdirs()
+    /** Mirrors ChrootMountScript: canonical root, sibling STATE_BASE, leaf name. */
+    private fun state(root: File): File {
+        val canonical = root.canonicalPath
+        return File(File(canonical).parentFile, ".t99-chroot-state/${File(canonical).name}")
+    }
+
+    /**
+     * Rootfs skeleton without any bind targets: the symlink test must replace
+     * them and every other fixture starts from a clean root.
+     */
+    private fun guestRoot(name: String, vararg targets: String): File = tmp.newFolder(name).also { root ->
+        for (target in targets) File(root, target).mkdirs()
     }
     private fun table(name: String) = File(tmp.root, name).apply { writeText("1 0 0:1 / / rw - rootfs fake rw\n") }
     private fun script(root: File, table: File, name: String = "proc", guest: String = "chroot \"\$R\" /bin/false 8>&- 9>&-"): String = listOf(
         "R=${shellQuote(root.absolutePath)}",
         ChrootMountScript.header(root.absolutePath, table.absolutePath),
+        // The real backend mkdir's each bind target; mirror that in the fixture.
+        "mkdir -p \"\$R/$name\" || exit 1",
         ChrootMountScript.mount(name, "mount", "--bind", "/source"),
         ChrootMountScript.releaseOperationsLock,
         guest
     ).joinToString("\n")
+    private fun target(name: String, root: File): File = File(root, name).apply { mkdirs() }
 
     private fun bin(): File = File(tmp.root, "bin").apply {
         mkdirs()
@@ -64,7 +75,21 @@ printf 'umount %s\n' "§1" >> "§OPS"
     private fun run(script: String, binaries: File, table: File, ops: File): Int {
         val process = start(script, binaries, table, ops)
         assertTrue("script timed out", process.waitFor(10, TimeUnit.SECONDS))
+        val output = process.inputStream.bufferedReader().readText()
+        if (process.exitValue() !in listOf(1, 7)) {
+            throw AssertionError("unexpected rc=${process.exitValue()}: $output")
+        }
         return process.exitValue()
+    }
+
+    /** Guest rc=7 means every guard passed; any guard exit fails with its output. */
+    private fun runGuest(script: String, binaries: File, table: File, ops: File): Int {
+        val process = start(script, binaries, table, ops)
+        assertTrue("script timed out", process.waitFor(10, TimeUnit.SECONDS))
+        val output = process.inputStream.bufferedReader().readText()
+        return if (process.exitValue() == 7) 7 else {
+            throw AssertionError("guard failed rc=${process.exitValue()}: $output")
+        }
     }
 
     @Test fun `rootfs alias matches canonical mountinfo without stacking`() {
@@ -97,10 +122,10 @@ printf 'umount %s\n' "§1" >> "§OPS"
 
     @Test fun `mount state and locks live outside guest rootfs`() {
         linuxOnly()
-        val root = guestRoot("guest-state")
+        val root = guestRoot("guest-state", "proc")
         val table = table("mi-state")
         val ops = File(tmp.root, "ops-state").apply { writeText("") }
-        assertEquals(7, run(script(root, table), bin(), table, ops))
+        assertEquals("guest must start", 7, run(script(root, table), bin(), table, ops))
         assertTrue("host-only state directory", state(root).isDirectory)
         assertTrue(File(state(root), "users.lock").isFile)
         assertTrue(File(state(root), "ops.lock").isFile)
@@ -112,12 +137,13 @@ printf 'umount %s\n' "§1" >> "§OPS"
     @Test fun `failed marker write rolls back exactly the new mount`() {
         linuxOnly()
         val root = guestRoot("guest-marker")
+        target("proc", root)
         for (dir in listOf(File(root, ".t99-chroot-mounts"), state(root))) {
             File(dir, "proc").mkdirs() // redirect to a directory must fail
         }
         val table = table("mi-marker")
         val ops = File(tmp.root, "ops-marker").apply { writeText("") }
-        assertEquals(1, run(script(root, table), bin(), table, ops))
+        assertEquals("marker redirect must fail closed", 1, run(script(root, table), bin(), table, ops))
         assertEquals(listOf("mount ${root.absolutePath}/proc", "umount ${root.absolutePath}/proc"), ops.readLines())
         assertFalse(table.readText().contains("${root.absolutePath}/proc"))
     }
@@ -125,6 +151,7 @@ printf 'umount %s\n' "§1" >> "§OPS"
     @Test fun `failed marker write cannot unmount a different overmount`() {
         linuxOnly()
         val root = guestRoot("guest-overmount")
+        target("proc", root)
         for (dir in listOf(File(root, ".t99-chroot-mounts"), state(root))) File(dir, "proc").mkdirs()
         val table = table("mi-overmount")
         val ops = File(tmp.root, "ops-overmount").apply { writeText("") }
@@ -135,7 +162,7 @@ printf 'umount %s\n' "§1" >> "§OPS"
         File(binaries, "mount").appendText(
             "printf '999 1 0:1 / %s rw - other fake rw\\n' \"\$actual\" >> \"\$TABLE\"\n"
         )
-        assertEquals(1, run(script(root, table), binaries, table, ops))
+        assertEquals("overmount race must fail closed", 1, run(script(root, table), binaries, table, ops))
         assertFalse("never detach an unrelated overmount", ops.readLines().any { it.startsWith("umount ") })
         assertTrue(table.readText().contains("999 1 0:1 / ${root.absolutePath}/proc"))
     }
@@ -146,7 +173,7 @@ printf 'umount %s\n' "§1" >> "§OPS"
      */
     @Test fun `orphan guest keeps users lock when su shell is killed`() {
         linuxOnly()
-        val root = guestRoot("guest-orphan")
+        val root = guestRoot("guest-orphan", "proc")
         val table = table("mi-orphan")
         val ops = File(tmp.root, "ops-orphan").apply { writeText("") }
         val gate = File(tmp.root, "orphan-fifo")

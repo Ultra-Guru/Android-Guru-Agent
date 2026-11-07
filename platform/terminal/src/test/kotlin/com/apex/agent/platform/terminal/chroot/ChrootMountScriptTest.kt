@@ -25,7 +25,7 @@ class ChrootMountScriptTest {
         assertFalse(log.readText().contains("${root.absolutePath}/proc\n"))
         assertTrue(fixture.readText().contains("${root.absolutePath}/proc"))
         assertEquals("keep", guestFile.readText())
-        val state = File(root.parentFile, ".t99-chroot-state/${root.name}")
+        val state = stateDir(root)
         assertTrue("other owned mounts were cleaned", File(state, "sys").exists().not())
     }
 
@@ -33,7 +33,7 @@ class ChrootMountScriptTest {
         val root = guestRoot()
         val fixture = tmp.newFile("mountinfo")
         fixture.writeText("1 0 0:1 / / rw - rootfs fake rw\n4 1 0:1 / ${root.absolutePath}/proc rw - proc proc rw\n")
-        val state = File(root.parentFile, ".t99-chroot-state/${root.name}")
+        val state = stateDir(root)
         File(state, "proc").apply { parentFile.mkdirs(); writeText("4\n") }
         val log = tmp.newFile("ops")
         val bin = fakeCommands()
@@ -90,6 +90,12 @@ class ChrootMountScriptTest {
         for (target in listOf("proc", "sys", "dev", "root", "workspace")) File(root, target).mkdirs()
     }
 
+    /** Mirrors ChrootMountScript: canonical root, sibling STATE_BASE, leaf name. */
+    private fun stateDir(root: File): File {
+        val canonical = root.canonicalPath
+        return File(File(canonical).parentFile, ".t99-chroot-state/${File(canonical).name}")
+    }
+
     private fun fifo(name: String): File = File(tmp.root, name).also { file ->
         val p = ProcessBuilder("mkfifo", file.absolutePath).start()
         assertTrue(p.waitFor(5, TimeUnit.SECONDS))
@@ -117,6 +123,8 @@ class ChrootMountScriptTest {
     private fun script(root: File, fixture: File): String = listOf(
         "R=${shellQuote(root.absolutePath)}",
         ChrootMountScript.header(root.absolutePath, fixture.absolutePath),
+        // The real backend mkdir's each bind target; mirror that in the fixture.
+        "mkdir -p \"\$R/proc\" \"\$R/sys\" \"\$R/dev\" \"\$R/root\" \"\$R/workspace\" || exit 1",
         ChrootMountScript.mount("proc", "mount", "-t", "proc", "proc"),
         ChrootMountScript.mount("sys", "mount", "-t", "sysfs", "sys"),
         ChrootMountScript.mount("dev", "mount", "--bind", "/dev"),

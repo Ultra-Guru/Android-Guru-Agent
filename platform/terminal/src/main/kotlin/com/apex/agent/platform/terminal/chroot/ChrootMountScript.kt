@@ -76,7 +76,8 @@ internal object ChrootMountScript {
         "  [ ! -L \"\$guard_target\" ] && [ -d \"\$guard_target\" ] || return 1",
         "  [ ! -L \"\$guard_marker\" ] || return 1",
         "  guard_current=\"\$(mount_id \"\$MI_R/\$guard_name\")\" || return 1",
-        "  [ -n \"\$guard_current\" ] || return 1",
+        // Existing mount we do not own: reuse it, never stack a second bind.
+        "  [ -z \"\$guard_current\" ] || return 0",
         "  \"\$@\" \"\$guard_target\" 2>/dev/null || return 1",
         "  guard_current=\"\$(mount_id \"\$MI_R/\$guard_name\")\" || return 1",
         "  [ -n \"\$guard_current\" ] || return 1",

@@ -190,10 +190,12 @@ class LinuxChrootBackendTest {
         assertTrue(script.contains("cleanup_one dev\n"))
         assertTrue(script.contains("cleanup_one sys\n"))
         assertTrue(script.contains("cleanup_one proc\n"))
-        // New descriptor: unlocking the guest's inherited fd 9 would release its lock.
-        assertTrue(script.contains("exec 9>&-"))
+        // Orphan guests inherit fd 9's open file description, so cleanup must
+        // re-acquire exclusive on a NEW descriptor (7) and never flock -u 9.
+        assertTrue(script.contains("flock -u 8 2>/dev/null"))
+        assertFalse("flock -u 9 would also unlock the orphan's lock", script.contains("flock -u 9"))
         assertTrue(script.contains("exec 7>>\"\$STATE/users.lock\""))
-        assertTrue(script.contains("flock -n -x 7"))
+        assertTrue(script.contains("flock -n -x 7 2>/dev/null"))
 
         // SpawnSpec 展示语义（与 PRoot 后端同口径）
         assertEquals("/bin/bash", spec.shellDisplay)
