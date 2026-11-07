@@ -65,6 +65,7 @@ import com.apex.agent.core.engine.UserQuestionGateway
 import com.apex.agent.tools.AskUserChoiceTool
 import com.apex.agent.tools.AskUserTool
 import com.apex.agent.tools.GateDialogStrings
+import com.apex.agent.tools.NotifySendTool
 import com.apex.agent.tools.RiskAwareToolGate
 import com.apex.agent.tools.ToolAuditLogger
 import com.apex.agent.permission.PermissionMode
@@ -525,7 +526,9 @@ object ToolModule {
         extensionAdapters: com.apex.agent.core.tools.extension.ExtensionAdapterRegistry,
         extensionLedger: com.apex.agent.core.tools.extension.ExtensionRegistry,
         fusionBundleRegistry: com.apex.agent.core.tools.fusion.FusionBundleRegistry,
-        nodeInstallPort: com.apex.agent.core.tools.extension.NodeInstallPort
+        nodeInstallPort: com.apex.agent.core.tools.extension.NodeInstallPort,
+        extensionLayout: com.apex.agent.core.tools.extension.ExtensionDirLayout,
+        apexNotifications: com.apex.agent.notify.ApexNotifications
     ): ToolRegistry {
         val registry = DefaultToolRegistry()
 
@@ -716,6 +719,8 @@ object ToolModule {
         // ═══ Agent 主动提问工具 ═══
         registry.register(SafeAgentTool(AskUserChoiceTool(userQuestionGateway)))
         registry.register(SafeAgentTool(AskUserTool()))
+        // PR-D：通知栏推送（长任务收尾提醒；Android 13+ 权限诚实上报）
+        registry.register(SafeAgentTool(NotifySendTool(apexNotifications, context)))
         // StreamingTerminalExecTool removed (§46 id collision); streaming = TerminalRun + TerminalObserve
 
         // ═══ 2. 文件操作 (7 + P83 补齐 Edit) ═══
@@ -967,14 +972,17 @@ object ToolModule {
             skillRegistry = skillRegistry,
             mcpManager = mcpManager,
             githubTokenManager = githubTokenManager,
-            hubSource = hubSource
+            hubSource = hubSource,
+            extensionLedger = extensionLedger,
+            extensionAdapters = extensionAdapters
         )
 
         // ═══ 12c. 统一扩展模型 —— 七工具注册体拆至卫星文件（hash 门/确认门/账本/锁）
         registerExtensionTools(
             registry = registry, installer = extensionInstaller, adapterRegistry = extensionAdapters,
             ledger = extensionLedger, skillRegistry = skillRegistry, mcpManager = mcpManager,
-            fusionRegistry = fusionBundleRegistry, nodeInstallPort = nodeInstallPort
+            fusionRegistry = fusionBundleRegistry, nodeInstallPort = nodeInstallPort,
+            extensionLayout = extensionLayout
         )
 
         // ═══ 13. Skill 工具接线（管理工具 + composite/script 装载注册）═══

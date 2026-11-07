@@ -68,6 +68,12 @@ object ExtensionModule {
         impl: com.apex.agent.marketplace.ExtensionApkInstallPort
     ): com.apex.agent.core.tools.extension.adapters.ApkPackageExtensionAdapter.ApkInstallPort = impl
 
+    /** 沙箱扩展目录布局单例（适配器 install 与 ExtensionRun 共用同一 root）。 */
+    @Provides
+    @Singleton
+    fun provideExtensionDirLayout(@ApplicationContext context: Context): com.apex.agent.core.tools.extension.ExtensionDirLayout =
+        com.apex.agent.core.tools.extension.ExtensionDirLayout(File(context.filesDir, "linux/extensions"))
+
     /** MCP 配置端口：McpManager 最小交面（add/remove/list —— 不真连进程）。 */
     @Provides
     @Singleton
@@ -153,9 +159,8 @@ object ExtensionModule {
         fusionRegistry: FusionBundleRegistry,
         nodeInstallPort: NodeInstallPort,
         apkInstallPort: com.apex.agent.core.tools.extension.adapters.ApkPackageExtensionAdapter.ApkInstallPort,
-        @ApplicationContext context: Context
+        layout: com.apex.agent.core.tools.extension.ExtensionDirLayout
     ): ExtensionAdapterRegistry {
-        val layout = ExtensionDirLayout(File(context.filesDir, "linux/extensions"))
         return ExtensionAdapterRegistry(
             listOf(
                 SkillExtensionAdapter(

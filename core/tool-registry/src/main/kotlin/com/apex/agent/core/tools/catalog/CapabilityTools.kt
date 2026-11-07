@@ -58,7 +58,12 @@ class CapabilityReportTool(
      * 非空快照——未授权角色**整行省略**（不泄露引擎运行状态，fail-silent）。
      */
     private val roleFilter: (ToolMetadata) -> Boolean = { true },
-    private val browserRuntimeProvider: (() -> String?)? = null
+    private val browserRuntimeProvider: (() -> String?)? = null,
+    /**
+     * 统一扩展快照（市场完全重构 PR-D）：一行摘要（账本数/锁数/适配器面），
+     * null = 未接线（整行省略，与 githubStateProvider 同款 fail-silent）。
+     */
+    private val extensionSnapshot: (() -> String?)? = null
 ) : BaseTool(
     id = "CapabilityReport",
     name = "Capability Report",
@@ -124,6 +129,11 @@ class CapabilityReportTool(
                 // v3 S3：GitHub 连接行（宿主未注入 provider 时整行省略——
                 // 纯 JVM 测试/既有构造点零变化）。快照解析防御式：lambda 抛
                 // 异常或格式异常折叠为 not connected（不教模型假事实）。
+                if (extensionSnapshot != null) {
+                    runCatching { extensionSnapshot() }.getOrNull()?.let { line ->
+                        if (line.isNotBlank()) appendLine("- extensions: $line")
+                    }
+                }
                 if (githubStateProvider != null) {
                     val snapshot = runCatching { githubStateProvider() }.getOrNull()
                     val parts = snapshot?.split('|', limit = 2)

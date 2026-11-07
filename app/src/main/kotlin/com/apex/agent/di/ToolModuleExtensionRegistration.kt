@@ -11,6 +11,7 @@ import com.apex.agent.core.tools.extension.tools.ExtensionInstallTool
 import com.apex.agent.core.tools.extension.tools.ExtensionInspectTool
 import com.apex.agent.core.tools.extension.tools.ExtensionListTool
 import com.apex.agent.core.tools.extension.tools.ExtensionResolveTool
+import com.apex.agent.core.tools.extension.tools.ExtensionRunTool
 import com.apex.agent.core.tools.extension.tools.ExtensionSyncTool
 import com.apex.agent.core.tools.extension.tools.ExtensionUninstallTool
 import com.apex.agent.core.tools.mcp.McpManager
@@ -34,12 +35,25 @@ internal fun registerExtensionTools(
     skillRegistry: SkillRegistry,
     mcpManager: McpManager,
     fusionRegistry: com.apex.agent.core.tools.fusion.FusionBundleRegistry,
-    nodeInstallPort: NodeInstallPort?
+    nodeInstallPort: NodeInstallPort?,
+    extensionLayout: com.apex.agent.core.tools.extension.ExtensionDirLayout
 ) {
     registry.register(SafeAgentTool(ExtensionResolveTool(installer)))
     registry.register(SafeAgentTool(ExtensionInspectTool(installer)))
     registry.register(SafeAgentTool(ExtensionInstallTool(installer)))
     registry.register(SafeAgentTool(ExtensionListTool(ledger)))
+    // PR-D：ubuntu 域扩展运行入口（OpenCode/DSH 执行桥生产化 —— 不再只装不跑）
+    nodeInstallPort?.let { port ->
+        registry.register(
+            SafeAgentTool(
+                ExtensionRunTool(
+                    registry = ledger,
+                    layout = extensionLayout,
+                    port = port
+                )
+            )
+        )
+    }
     registry.register(SafeAgentTool(ExtensionUninstallTool(installer, ledger)))
     registry.register(SafeAgentTool(ExtensionSyncTool(installer, ledger)))
     registry.register(

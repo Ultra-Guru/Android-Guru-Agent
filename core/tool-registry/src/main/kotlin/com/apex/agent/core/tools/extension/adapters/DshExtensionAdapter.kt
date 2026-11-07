@@ -38,6 +38,11 @@ class DshExtensionAdapter(
 
     override val supportedTypes: Set<String> = setOf(ExtensionTypes.DSH_PLUGIN)
 
+    internal companion object {
+        /** 运行时标记（ExtensionRun 白名单执行依据：node 入口）。 */
+        const val RUNTIME_NODE = "node"
+    }
+
     override suspend fun resolve(draft: ExtensionSpecParser.SpecDraft): Result<ExtensionManifest> {
         val payload = draft.payload
         val (name, sourceKind, descriptor) = when {
@@ -100,7 +105,7 @@ class DshExtensionAdapter(
         }.getOrElse { return Result.failure(it) }
 
         // dsh plugin add 语义模拟：profile 注册清单（DSH harness 接入沙箱时的发现入口）
-        val profileDir = layoutRef.profileDir(manifest.id).resolve("dsh").apply { mkdirs() }
+        val profileFile = layoutRef.profileFile(manifest.id, "dsh/profile.json").getOrElse { return Result.failure(it) }
         ExtensionJson.json.encodeToString(
             kotlinx.serialization.json.JsonObject.serializer(),
             buildJsonObject {
@@ -109,13 +114,14 @@ class DshExtensionAdapter(
                 put("name", manifest.name)
                 put("spec", manifest.spec)
                 put("kind", kind ?: "unknown")
+                put("runtime", RUNTIME_NODE)
                 put("version", manifest.version)
                 put("pkgPath", published.absolutePath)
                 put("entryHint", entryHint(published))
                 put("registeredAt", System.currentTimeMillis())
                 put("experimental", true)
             }
-        ).let { File(profileDir, "profile.json").writeText(it) }
+        ).let { profileFile.writeText(it) }
 
         return Result.success(
             InstallOutcome(
