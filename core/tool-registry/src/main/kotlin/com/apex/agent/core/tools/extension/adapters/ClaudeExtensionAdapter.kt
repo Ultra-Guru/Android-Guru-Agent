@@ -18,6 +18,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import java.io.File
 
 /**
@@ -47,7 +48,7 @@ class ClaudeExtensionAdapter(
 
     override suspend fun resolve(draft: ExtensionSpecParser.SpecDraft): Result<ExtensionManifest> {
         val payload = draft.payload
-        val (name, sourceKind, descriptor) = when {
+        val (name, descriptor) = when {
             // name@marketplace（PR-A 解析器已保证此形态无路径分隔符与协议）
             '@' in payload && !payload.contains(':') -> {
                 val pluginName = payload.substringBefore('@')
@@ -131,7 +132,7 @@ class ClaudeExtensionAdapter(
     override suspend fun uninstall(manifest: ExtensionManifest): Result<Unit> {
         val bundleId = bundleIdOf(manifest)
         // 先清包内技能（聚合 manifest 反查），再卸聚合包
-        val skillIds = fusionRegistry.get(bundleId)?.manifest?.skills?.map { it.skillId }.orEmpty()
+        val skillIds = fusionRegistry.get(bundleId)?.skills?.map { it.skillId }.orEmpty()
         skillIds.forEach { skillRegistry.uninstall(it) }
         if (!fusionRegistry.uninstall(bundleId)) {
             return Result.failure(IllegalStateException("聚合包 $bundleId 不存在或不可卸载"))
