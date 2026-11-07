@@ -23,7 +23,9 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Loop
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -43,9 +45,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
+import com.apex.agent.core.code.stream.LlmRetryInfo
 import com.apex.agent.core.code.stream.StreamEntry
 import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.core.code.stream.UnifiedDiffParser
+import androidx.compose.ui.semantics.Role
 import com.apex.agent.ui.component.MarkdownText
 import com.apex.agent.ui.glass.GlassCard
 import com.apex.agent.ui.glass.GlassStyle
@@ -55,22 +59,32 @@ import com.apex.agent.ui.theme.LocalExtendedColors
  * # Code Stream Cards — 时间轴卡片族
  *
  * 胶囊之外的时间轴成员：思考链（独立可折叠）/ 验证轮次卡（可折叠轮次
- * 胶囊）/ 结构化错误卡 / 停止卡 / Git 操作可视化卡 / 受影响文件 chips /
- * 流式结论气泡 / 用户气泡 / 状态与系统行。正文气泡只放结论（Markdown
- * 渲染，容忍不完整片段），思考链与工具细节全部走独立卡片——规格书【0】
- * 的「非聊天」立场。
+ * 胶囊）/ 结构化错误卡（失败结尾的「继续完成」入口）/ 停止卡 / Git 操作
+ * 可视化卡 / 受影响文件 chips / 流式结论气泡 / 用户气泡 / 状态与系统行。
+ * 正文气泡只放结论（Markdown 渲染，容忍不完整片段），思考链与工具细节
+ * 全部走独立卡片——规格书【0】的「非聊天」立场。
+ *
+ * @param llmRetry LLM 重试等待中（思考卡标题「思考中…」切换为
+ *   「重试中 · 第 N/T 次」；null = 正常运行）
+ * @param onRetryRun 失败结尾「继续完成」回调（ErrorCard 尾部的播放入口；
+ *   null = 不渲染动作行）
  */
 @Composable
-internal fun StreamCard(entry: StreamEntry, onToolClick: (StreamToolCall) -> Unit) {
+internal fun StreamCard(
+    entry: StreamEntry,
+    onToolClick: (StreamToolCall) -> Unit,
+    llmRetry: LlmRetryInfo? = null,
+    onRetryRun: (() -> Unit)? = null
+) {
     when (entry) {
         is StreamEntry.UserEntry -> UserBubble(entry.text)
         is StreamEntry.AssistantEntry -> AssistantBubble(entry.text, entry.isStreaming)
-        is StreamEntry.ThinkingEntry -> ThinkingCard(entry.text, entry.isStreaming)
+        is StreamEntry.ThinkingEntry -> ThinkingCard(entry.text, entry.isStreaming, llmRetry)
         is StreamEntry.ToolCapsuleEntry -> CodeCapsule(entry.call, onToolClick)
         is StreamEntry.VerifyCycleEntry -> VerifyCycleCard(entry, onToolClick)
         is StreamEntry.StatusEntry -> LightLine(entry.text)
         is StreamEntry.SystemEntry -> SystemLine(entry.text)
-        is StreamEntry.ErrorEntry -> ErrorCard(entry)
+        is StreamEntry.ErrorEntry -> ErrorCard(entry, onRetryRun)
         is StreamEntry.StopEntry -> StopCard(entry.reason)
         is StreamEntry.FileChipsEntry -> FileChipsCard(entry.files)
         is StreamEntry.GitOpEntry -> GitOpVisualCard(entry)
@@ -140,7 +154,11 @@ private fun AssistantBubble(text: String, isStreaming: Boolean) {
 // ═══ 思考链卡（单独、可折叠）═══
 
 @Composable
-private fun ThinkingCard(text: String, isStreaming: Boolean) {
+private fun ThinkingCard(
+    text: String,
+    isStreaming: Boolean,
+    llmRetry: LlmRetryInfo? = null
+) {
     // 注意 key：不能用 text.isEmpty() 这类派生值——空思考卡点开后首个
     // token 到达（isEmpty 翻转）会重置展开态，吞掉用户的点击
     //
@@ -157,7 +175,8 @@ private fun ThinkingCard(text: String, isStreaming: Boolean) {
     GlassCard(
         style = GlassStyle.Card,
         shape = RoundedCornerShape(12.dp),
-        accent = MaterialTheme.colorScheme.secondary,
+        accent = if (llmRetry != null) MaterialTheme.colorScheme.error
+        else MaterialTheme.colorScheme.secondary,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 2.dp)
@@ -171,19 +190,53 @@ private fun ThinkingCard(text: String, isStreaming: Boolean) {
                 }
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Psychology,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = if (isStreaming) stringResource(R.string.code_stream_thinking_running)
-                    else stringResource(R.string.code_stream_thinking_done),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                // ═══ 标题：重试等待中 = 「重试中 · 第 N/T 次」（用户规格
+                // 2026-11：重试期间「思考中/正在工作」切换为「重试中」）═══
+                if (llmRetry != null) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = stringResource(
+                            R.string.code_stream_retrying_fmt,
+                            llmRetry.attempt,
+                            llmRetry.totalRetries
+                        ),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    // 阶梯延迟副语（3s 后再试 / 1m 后再试）——重试节奏可见
+                    if (llmRetry.delayMs > 0) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(
+                                R.string.code_stream_retry_delay_fmt,
+                                formatRetryDelayLabel(llmRetry.delayMs)
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.75f)
+                        )
+                    }
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Psychology,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = if (isStreaming) stringResource(R.string.code_stream_thinking_running)
+                        else stringResource(R.string.code_stream_thinking_done),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Spacer(Modifier.weight(1f))
                 Icon(
                     imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
@@ -407,6 +460,13 @@ private fun RunStatsCard(entry: StreamEntry.RunStatsEntry) {
     }
 }
 
+/** 重试延迟的人读形态（1s / 30s / 1m / 3m，与 core 侧状态行同口径）。 */
+private fun formatRetryDelayLabel(ms: Long): String = when {
+    ms < 1_000 -> "${ms}ms"
+    ms < 60_000 -> "${ms / 1000}s"
+    else -> "${ms / 60_000}m"
+}
+
 /** 单枚统计 chip：图标 + 文案（surfaceContainer 薄底，非交互展示）。 */
 @Composable
 private fun StatChip(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, tint: androidx.compose.ui.graphics.Color? = null) {
@@ -448,8 +508,13 @@ private fun VerifyDeltaBadge(added: Int, removed: Int) {
 
 // ═══ 结构化错误卡 ═══
 
+/**
+ * 错误卡：原因 + 简短文案 + **「继续完成」动作行**（用户规格 2026-11：
+ * 任务失败结尾必须有继续推进的入口——播放入口重放本任务输入，与底部
+ * ErrorBar 的「重试」同语义，时间轴内自含闭环）。
+ */
 @Composable
-private fun ErrorCard(entry: StreamEntry.ErrorEntry) {
+private fun ErrorCard(entry: StreamEntry.ErrorEntry, onRetryRun: (() -> Unit)? = null) {
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
@@ -487,6 +552,40 @@ private fun ErrorCard(entry: StreamEntry.ErrorEntry) {
                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
                     modifier = Modifier.padding(top = 2.dp)
                 )
+            }
+            // ═══ 继续完成（失败结尾的动作行）═══
+            if (onRetryRun != null && entry.recoverable) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.10f),
+                        modifier = Modifier.clickable(role = Role.Button) { onRetryRun() }
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = stringResource(R.string.code_stream_error_continue),
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = stringResource(R.string.code_stream_error_continue),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
             }
         }
     }

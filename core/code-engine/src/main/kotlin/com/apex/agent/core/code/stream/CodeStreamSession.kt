@@ -77,6 +77,13 @@ class CodeStreamSession {
     /** 最近一次终端命令退出码（完成态头行展示；null = 未知）。 */
     private var terminalExitCode: Int? = null
 
+    /**
+     * LLM 重试等待中（「重试中」状态；null = 正常运行）：LlmRetryScheduled
+     * 置位，任一进展事件（思考/正文/工具分片）清零 —— 重试成功回到
+     * 正常运行态，思考卡标题随快照实时切换。
+     */
+    private var llmRetry: LlmRetryInfo? = null
+
     private val affectedFiles = LinkedHashSet<String>()
     private var lastError: CodeStreamSnapshot.ErrorInfo? = null
     private var toolCallCount = 0
@@ -106,6 +113,8 @@ class CodeStreamSession {
 
     /** 新 run 开始：用户气泡入轴 + 运行态归零（时间轴跨 run 累积）。 */
     fun beginRun(userText: String) {
+        // 新任务不带上一任务的重试态（「重试中」不能跨 run 泄漏）
+        llmRetry = null
         // 收口上一轮残留的流式条目：中止路径没有 Complete 事件，引用
         // 悬挂会导致下一轮首个 Chunk 把新文本拼进旧气泡（跨轮串台）
         streamingThinking?.let { closeStreamingEntry(it) }
@@ -178,6 +187,8 @@ class CodeStreamSession {
                 // ThinkingComplete → 永不收尾）。首块空白直接忽略；已有条目
                 // 时空白拼接无害但也无意义，一并跳过。
                 if (event.text.isEmpty()) return
+                // 重试成功 = 思考流恢复（脱离「重试中」态）
+                clearLlmRetry()
                 val cur = streamingThinking
                 if (cur == null) {
                     if (event.text.isBlank()) return
@@ -223,7 +234,11 @@ class CodeStreamSession {
             // 胶囊内嵌代码窗即可实时渲染「代码正在写入」（绿增红删）。
             is AgentEvent.ToolCallArgsDelta -> onToolArgsDelta(event)
 
-            is AgentEvent.ToolCallStart -> onToolStart(event)
+            is AgentEvent.ToolCallStart -> {
+                // 重试成功后引擎继续推进 = 任意工具启动即脱离重试态
+                clearLlmRetry()
+                onToolStart(event)
+            }
 
             is AgentEvent.ToolOutputChunk -> {
                 toolCalls[event.callId]?.let { call ->
@@ -259,6 +274,8 @@ class CodeStreamSession {
             is AgentEvent.ToolCallComplete -> onToolComplete(event)
 
             is AgentEvent.ResponseChunk -> {
+                // 重试成功 = 正文流恢复（脱离「重试中」态）
+                clearLlmRetry()
                 // 空回复分片不建条目（与空思考卡同源：部分 provider 发
                 // content:"" 的 tool_calls 前导帧）——空气泡流式占位无意义
                 if (event.text.isEmpty()) return
@@ -318,6 +335,7 @@ class CodeStreamSession {
             is AgentEvent.Error -> {
                 // 出错即收束：流式思考/结论条目定格为终态（错误后引擎不会
                 // 再续流，「思考中…」不能带出运行边界）
+                clearLlmRetry()
                 closeStreamingThinking()
                 streamingAssistant?.let { closeStreamingEntry(it) }
                 streamingAssistant = null
@@ -340,6 +358,7 @@ class CodeStreamSession {
                 // 运行收束：残留的流式思考/结论条目防御性定格（标准线库
                 // 事件集没有思考完成事件、引擎 notice 路径也只发 Chunk——
                 // 「思考中…」不能带出运行边界）
+                clearLlmRetry()
                 closeStreamingThinking()
                 streamingAssistant?.let { closeStreamingEntry(it) }
                 streamingAssistant = null
@@ -407,9 +426,17 @@ class CodeStreamSession {
             }
 
             // LLM 请求容错（重试/降级续跑）：过程可见性状态行，不弹错误横幅。
+            // 2026-11 用户规格：重试期间「正在工作/思考中」切换为「重试中」——
+            // 状态机层记录 [LlmRetryInfo]，快照驱动思考卡/加载卡标题切换；
+            // 状态行同步留痕（第 N 次重试 + 阶梯延迟）。
             is AgentEvent.LlmRetryScheduled -> {
+                llmRetry = LlmRetryInfo(
+                    attempt = event.attempt,
+                    delayMs = event.delayMs,
+                    totalRetries = LADDER_TOTAL_RETRIES
+                )
                 val text = if (event.delayMs > 0) {
-                    "请求失败（${event.reason}），${event.delayMs / 1000}s 后第 ${event.attempt} 次重试"
+                    "重试中（${event.reason}）· 第 ${event.attempt} 次 · ${formatLadderDelay(event.delayMs)}后再试"
                 } else {
                     event.reason
                 }
@@ -508,6 +535,14 @@ class CodeStreamSession {
 
     // ═══ 内部：工具生命周期 ═══
 
+    /** 重试态清零（任一进展事件到达即脱离「重试中」）。 */
+    private fun clearLlmRetry() {
+        if (llmRetry != null) {
+            llmRetry = null
+            dirty = true
+        }
+    }
+
     private fun onToolStart(event: AgentEvent.ToolCallStart) {
         val existing = toolCalls[event.callId]
         // 幂等：已越过等待态的 Start 重放直接跳过（检查点恢复/重放安全）。
@@ -538,6 +573,7 @@ class CodeStreamSession {
                 argsSummary = args.values.firstOrNull()?.toString()?.take(ARGS_SUMMARY_MAX) ?: "",
                 status = ToolCallStatus.RUNNING,
                 startAt = System.currentTimeMillis(),
+                readLineRange = if (kind == ToolKind.READ_FILE) readLineRangeOf(args) else null,
                 origin = event.origin,
                 originLabel = event.originLabel
             )
@@ -552,6 +588,9 @@ class CodeStreamSession {
                     ?: existing.argsSummary,
                 status = ToolCallStatus.RUNNING,
                 startAt = System.currentTimeMillis(),
+                readLineRange = if (kind == ToolKind.READ_FILE) {
+                    readLineRangeOf(args) ?: existing.readLineRange
+                } else existing.readLineRange,
                 origin = event.origin,
                 originLabel = event.originLabel
             )
@@ -612,11 +651,14 @@ class CodeStreamSession {
         }
         val preview = state.tracker?.preview() ?: return
         if (existing != null) {
-            // 等待态胶囊已建：刷新预览与目标（path/命令可能随后续分片补全）
+            // 等待态胶囊已建：刷新预览与目标（path/命令可能随后续分片补全）；
+            // 写入类同步推进实时行数（胶囊尾部「+N」徽标随写入流增长）
             updateCall(
                 existing.copy(
                     streamingPreview = preview,
-                    target = preview.target?.takeIf { it.isNotBlank() } ?: existing.target
+                    target = preview.target?.takeIf { it.isNotBlank() } ?: existing.target,
+                    linesAdded = preview.writeContent?.lineSequence()?.count()
+                        ?.takeIf { it > 0 } ?: existing.linesAdded
                 )
             )
             return
@@ -691,6 +733,13 @@ class CodeStreamSession {
             diffText = diff?.takeIf { it.hunks.isNotEmpty() }?.let { event.fullOutput.ifBlank { event.output } },
             progressPercent = null,
             summary = summaryOf(existing.kind, status, diff, exitCode, event.output),
+            // 读取类：输出侧行号前缀解析实际范围（目录/错误输出 → null 清零）；
+            // 写/编辑类：diff 增删行数入胶囊（尾部 +N/−M 徽标数据源）。
+            readLineRange = if (existing.kind == ToolKind.READ_FILE) {
+                actualReadLineRangeOf(event.output)
+            } else existing.readLineRange,
+            linesAdded = diff?.totalAdded ?: 0,
+            linesRemoved = diff?.totalRemoved ?: 0,
             // 终态即收回实时代码窗（自动折叠为单行胶囊；详情看 diff/日志）
             streamingPreview = null
         )
@@ -916,6 +965,7 @@ class CodeStreamSession {
             toolUsage = buildToolUsage(),
             lastError = lastError,
             activeTerminalCallId = activeTerminalCallId,
+            llmRetry = llmRetry,
             terminalContent = activeBuf?.renderedContent() ?: "",
             affectedFiles = affectedFiles.toList(),
             terminalBusy = terminalBusy,
@@ -1104,22 +1154,19 @@ class CodeStreamSession {
         return (prefix + line).take(SUMMARY_MAX)
     }
 
-    /** JsonPrimitive content 的 null 安全读取（非 primitive 返回 null）。 */
-    private fun kotlinx.serialization.json.JsonPrimitive.contentOrNullSafe(): String? =
-        runCatching { content }.getOrNull()
-
     private companion object {
         const val UNKNOWN_TARGET = "…"
         const val ARGS_SUMMARY_MAX = 80
         const val SUMMARY_MAX = 24
         const val NON_BASH_LOG_TAIL_CHARS = 2000
         const val EXIT_CODE_TAIL_LINES = 8
+        /** 用户规格 LLM 重试阶梯级数（1s…180s 共 10 级）。 */
+        const val LADDER_TOTAL_RETRIES = 10
 
         /** 中止文案：停止卡与中断胶囊的副标题共用。 */
         const val ABORTED_TEXT = "已中止"
         val EXIT_CODE_REGEX = Regex("""(?:exit(?:\s+code)?|Exit:)[:\s]+(\d+)\b""", RegexOption.IGNORE_CASE)
         val ENTRY_SEQ_REGEX = Regex("""(?:^|-)e-(\d+)$""")
-
         /** 网络搜索结果来源链接（去重计数用；截到右括号/引号前，容 markdown/JSON 两种形态）。 */
         val SOURCE_LINK_REGEX = Regex("""https?://[^\s\)\]>"']+""")
     }

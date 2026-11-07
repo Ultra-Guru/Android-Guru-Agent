@@ -313,6 +313,10 @@ fun CodeScreen(
                         terminalUserToggled = true
                         terminalCollapsed = !terminalCollapsed
                     },
+                    // 失败结尾「继续完成」（用户规格 2026-11）：错误卡尾部播放入口
+                    onRetryRun = if (state.errorRetriable && !state.isRunning) {
+                        { viewModel.retryLastRun() }
+                    } else null,
                     modifier = Modifier.glassModalBlur(pendingAgentQuestion != null)
                 )
             } else {
@@ -328,6 +332,10 @@ fun CodeScreen(
                         terminalUserToggled = true
                         terminalCollapsed = !terminalCollapsed
                     },
+                    // 失败结尾「继续完成」（用户规格 2026-11）：错误卡尾部播放入口
+                    onRetryRun = if (state.errorRetriable && !state.isRunning) {
+                        { viewModel.retryLastRun() }
+                    } else null,
                     // ═══ 玻璃幕帘（2026-10 用户反馈）：提问卡挂起时时间轴整体模糊 ═══
                     // 液态玻璃的 backdrop 采样存在盲区（动画图层/采样时序差），盲区
                     // 文字会以锐利形态透过霜面与卡内内容叠字 —— 被覆盖内容自身先

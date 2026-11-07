@@ -233,6 +233,26 @@ class ApexAgentEngine(
      */
     private var toolDegradationLevel = 0
 
+    /**
+     * LLM 重试阶梯耗尽标记（本任务内）：主循环 Stop 分支置位，外层 catch
+     * 据此把最终失败折叠为极简文案（网络失败/模型调用失败）；任务开始复位。
+     */
+    @Volatile
+    private var llmRetryExhausted = false
+
+    /**
+     * 重试状态行的一短原因（与 [LlmErrorText.briefMessage] 同量级，只两个词）：
+     * 限流/超时/服务不可用/无效响应/网络错误；未知异常取类名。
+     */
+    private fun briefRetryReason(e: Throwable): String = when (e) {
+        is ModelRuntimeException.ModelRateLimited -> "限流"
+        is ModelRuntimeException.ModelTimeout -> "超时"
+        is ModelRuntimeException.ModelUnavailable -> "服务不可用"
+        is ModelRuntimeException.ModelResponseInvalid -> "无效响应"
+        is java.io.IOException -> "网络错误"
+        else -> e::class.simpleName ?: "错误"
+    }
+
     // internal —— EngineCompressionGate.kt 传入压缩器/持久化。
     internal val conversationHistory: MutableList<LlmMessage> = mutableListOf<LlmMessage>().apply {
         memory?.load()?.let { addAll(it) }
@@ -336,6 +356,9 @@ class ApexAgentEngine(
         conversationHistory.clear()
         memory?.clear()
         contextArchive?.clear()
+        // 圆环口径修复（2026-11）：旧会话的 lastRealUsage 会泄漏到新会话 ——
+        // 清史后圆环仍显上一会话的 token 占用（首个 usage 帧到达前全部失真）。
+        usageTracker.reset()
     }
 
     /** 恢复会话：内存历史与持久化记忆同步替换；归档随会话边界重置。 */
@@ -344,6 +367,8 @@ class ApexAgentEngine(
         conversationHistory.addAll(messages)
         memory?.save(messages)
         contextArchive?.clear()
+        // 同 clearHistory：陈旧 usage 必须随会话边界失效（回退估算器口径）。
+        usageTracker.reset()
     }
 
     /** 当前持久化的消息条数（UI 显示历史深度）。 */
@@ -356,7 +381,8 @@ class ApexAgentEngine(
     // stream_options.include_usage（客户端层），流尾统计帧解析进
     // LlmStreamChunk.usage，每轮结束发射 [AgentEvent.UsageUpdated]，
     // 仪表盘显示服务端返回的真实 token 数。
-    private val usageTracker = EngineUsageTracker { conversationHistory }
+    // internal —— EngineCompressionGate.kt 压缩后失效陈旧真实值（圆环口径）。
+    internal val usageTracker = EngineUsageTracker { conversationHistory }
 
     /** 当前上下文 token 数（UI 仪表盘）：优先真实 usage，回退启发式估算。 */
     fun currentTokenCount(): Int = usageTracker.currentContextTokens()
@@ -367,9 +393,19 @@ class ApexAgentEngine(
     /** 上下文 token 上限（占用百分比的分母）。 */
     fun maxContextTokens(): Int = config.maxContextTokens
 
-    /** 累加一轮真实 usage 并发射仪表盘事件（无统计时零开销；规划/反思流复用）。 */
+    /** 累加一轮真实 usage 并发射仪表盘事件（无统计时零开销；主循环用）。 */
     internal suspend fun recordAndEmitUsage(u: Usage?, emit: suspend (AgentEvent) -> Unit) {
         usageTracker.accumulate(u)?.let { emit(it) }
+    }
+
+    /**
+     * 只记账不发射：规划/反思等**非会话上下文**请求（prompt 是计划提示词而
+     * 非对话历史）的 usage 只进会话累计，不发射 [AgentEvent.UsageUpdated] ——
+     * 否则上下文圆环分子被计划请求的 totalTokens 污染（纯 PLAN 轮结束后
+     * 圆环骤降，与真实上下文无关）。
+     */
+    internal fun trackUsageSilently(u: Usage?) {
+        usageTracker.accumulate(u)
     }
 
     /**
@@ -446,6 +482,8 @@ class ApexAgentEngine(
         pendingSystemNotes.clear()
         // 长任务韧性：新任务重置重试/换路/熔断预算（冷却期不跨任务）。
         resilience.resetForTask()
+        // 重试耗尽标记同步复位（上一任务的极简文案口径不泄漏到本任务）。
+        llmRetryExhausted = false
         runCatching { toolExecutor.resetBreakers() }
         // 循环检测：新任务清空检测窗口与恢复预算。
         loopDetector.reset()
@@ -558,13 +596,27 @@ class ApexAgentEngine(
                 "模型运行时错误 [${e::class.simpleName}]: ${e.message}"
             )
             taskHadFailure = true
-            emit(AgentEvent.Error(LlmErrorText.userMessage(e), recoverable = !fatal))
+            // 重试阶梯耗尽（用户规格 2026-11）：最终失败不抛原始错误 ——
+            // 极简文案（网络失败/模型调用失败）收口，细节留日志。
+            emit(
+                AgentEvent.Error(
+                    if (llmRetryExhausted) LlmErrorText.briefMessage(e)
+                    else LlmErrorText.userMessage(e),
+                    recoverable = !fatal
+                )
+            )
         } catch (e: Exception) {
             // #213：原始 message 落日志，用户气泡中文指引；recoverable=true
             //（未识别异常往往是一次性抖动，可手动重试；自动重试交给韧性守卫）。
             AppLogger.instance.error(LogCategory.ENGINE, "ApexAgentEngine", "运行异常: ${e.message}", e)
             taskHadFailure = true
-            emit(AgentEvent.Error(LlmErrorText.userMessage(e), recoverable = true))
+            emit(
+                AgentEvent.Error(
+                    if (llmRetryExhausted) LlmErrorText.briefMessage(e)
+                    else LlmErrorText.userMessage(e),
+                    recoverable = true
+                )
+            )
         } finally {
             isRunning = false
             // 隐式记忆采集：finally 保证无论成败都关闭会话；观察者异常兜底不阻断 Complete。
@@ -637,8 +689,9 @@ class ApexAgentEngine(
                 planResponseBuilder.append(it)
                 emit(AgentEvent.ThinkingChunk(it))
             }
-            // 真实用量：规划期请求同样计入会话统计与仪表盘
-            recordAndEmitUsage(chunk.usage, emit)
+            // 真实用量：规划期请求只进会话累计，不发射 UsageUpdated（其 prompt
+            // 是计划提示词而非会话上下文，发射会污染上下文圆环分子）。
+            trackUsageSilently(chunk.usage)
         }
 
         val planResponse = planResponseBuilder.toString()
@@ -693,7 +746,8 @@ class ApexAgentEngine(
                 reflectionBuilder.append(it)
                 emit(AgentEvent.ResponseChunk(it))
             }
-            recordAndEmitUsage(chunk.usage, emit)
+            // 同规划期：反思流不是会话上下文请求，静默记账不发射。
+            trackUsageSilently(chunk.usage)
         }
         emit(AgentEvent.ResponseComplete(reflectionBuilder.toString()))
 
@@ -871,18 +925,24 @@ class ApexAgentEngine(
                             "LLM 瞬时失败（${e::class.simpleName}），退避 ${retryDecision.delayMs}ms " +
                                 "后自动重试（${retryDecision.attempt}/${resilience.policy.maxLlmRetries}）: ${e.message}"
                         )
+                        // 结构化重试事件（2026-11）：思考卡标题「思考中/正在工作」
+                        // 切换为「重试中」由 UI 消费本事件驱动；状态行留痕同步。
                         emit(
-                            AgentEvent.ThinkingChunk(
-                                "[engine] 模型暂时不可用（${e::class.simpleName ?: "error"}）— " +
-                                    "${retryDecision.delayMs / 1000.0}s 后自动重试 " +
-                                    "（${retryDecision.attempt}/${resilience.policy.maxLlmRetries}）\n"
+                            AgentEvent.LlmRetryScheduled(
+                                attempt = retryDecision.attempt,
+                                delayMs = retryDecision.delayMs,
+                                reason = briefRetryReason(e)
                             )
                         )
                         delay(retryDecision.delayMs)
                         iteration--
                         continue
                     }
-                    is EngineResilienceGuard.LlmRetryDecision.Stop -> throw e
+                    is EngineResilienceGuard.LlmRetryDecision.Stop -> {
+                        // 预算耗尽（vs 非瞬时）：标记供外层 catch 折叠极简文案。
+                        if (resilience.llmRetriesExhausted) llmRetryExhausted = true
+                        throw e
+                    }
                 }
             }
 

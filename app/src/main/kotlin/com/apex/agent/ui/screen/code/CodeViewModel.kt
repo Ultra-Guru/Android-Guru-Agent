@@ -290,6 +290,7 @@ class CodeViewModel @Inject constructor(
         // + 设置流订阅：idle 期切风格回屏即生效（消灭「切了没反应」）
         restoreOutputStyle()
         observeOutputStyle()
+        observeContextDenominator() // 圆环分母热刷新（Profile 流订阅，CodeUsageOps.kt）
         // #197：Coding 屏模式同步（引擎侧恒为 BUILD/PLAN；未知值回退 BUILD）
         val startupMode = settingsRepository.agentSettings.value.let { s ->
             s.codeExecutionMode.takeIf { it.isNotBlank() }

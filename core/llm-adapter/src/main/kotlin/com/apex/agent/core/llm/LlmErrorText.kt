@@ -57,6 +57,45 @@ object LlmErrorText {
     /** 未识别错误的兜底文案（后接截断的原始摘要）。 */
     const val UNKNOWN = "出现未知错误，请重试；若持续失败请查看日志详情"
 
+    // ═══ 重试耗尽后的极简文案（用户规格 2026-11：十级阶梯全部试完仍失败，
+    // 不抛原始错误惊吓用户，一句话收口——「网络失败」/「模型调用失败」量级）═══
+
+    /** 网络类失败的极简文案。 */
+    const val BRIEF_NETWORK_FAILED = "网络失败"
+
+    /** 模型调用类失败的极简文案。 */
+    const val BRIEF_MODEL_CALL_FAILED = "模型调用失败"
+
+    /** 限流失败的极简文案（可重试的短暂拥塞）。 */
+    const val BRIEF_RATE_LIMITED = "模型调用失败（限流）"
+
+    /**
+     * 重试阶梯耗尽后的极简文案：把异常折叠为「网络失败 / 模型调用失败」
+     * 量级的一句话（技术细节已由 AppLogger 落日志，用户可见面不重复）。
+     */
+    fun briefMessage(e: Throwable): String = when (e) {
+        is ModelRuntimeException -> when (e) {
+            is ModelRuntimeException.ModelRateLimited -> BRIEF_RATE_LIMITED
+            is ModelRuntimeException.ModelTimeout -> BRIEF_NETWORK_FAILED
+            is ModelRuntimeException.ModelUnavailable -> when (e.cause) {
+                is SocketTimeoutException, is IOException -> BRIEF_NETWORK_FAILED
+                else -> BRIEF_MODEL_CALL_FAILED
+            }
+            else -> BRIEF_MODEL_CALL_FAILED
+        }
+        is LlmException -> when (e) {
+            is LlmException.Network -> BRIEF_NETWORK_FAILED
+            is LlmException.Http -> when (e.code) {
+                429 -> BRIEF_RATE_LIMITED
+                408 -> BRIEF_NETWORK_FAILED
+                else -> BRIEF_MODEL_CALL_FAILED
+            }
+            else -> BRIEF_MODEL_CALL_FAILED
+        }
+        is SocketTimeoutException, is IOException -> BRIEF_NETWORK_FAILED
+        else -> BRIEF_MODEL_CALL_FAILED
+    }
+
     /** 原始错误摘要的截断长度。 */
     const val MAX_SUMMARY_LENGTH = 160
 

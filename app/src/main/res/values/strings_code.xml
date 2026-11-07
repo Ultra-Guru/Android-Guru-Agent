@@ -210,6 +210,10 @@
     <string name="code_stream_terminal_empty">(no output yet)</string>
     <string name="code_stream_thinking_running">Thinking…</string>
     <string name="code_stream_thinking_done">Thought chain · tap to expand</string>
+    <!-- LLM retry state (2026-11 user spec: ten-step ladder 1s…180s; "thinking/working" switches to "retrying") -->
+    <string name="code_stream_retrying_fmt">Retrying · attempt %1$d/%2$d</string>
+    <string name="code_stream_retry_delay_fmt">retry in %1$s</string>
+    <string name="code_stream_error_continue">Continue</string>
     <!-- Rikka-style output (v1.6 chat-style timeline) -->
     <string name="rikka_tool_block_running">Running tools…</string>
     <!-- Rikka flow-style output UI (2026-11 alignment with rikkahub source) -->

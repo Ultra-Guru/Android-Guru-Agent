@@ -89,4 +89,59 @@ class EngineLadderRetryTest {
         val stop = g.onToolFailure("WebFetch", "c8", "socket timeout", 8)
         assertTrue(stop is RetryPolicy.RetryDecision.Stop)
     }
+
+    // ═══ LLM 十级精确阶梯（用户规格 2026-11）═══
+
+    @Test
+    fun `llm ladder follows the user spec exactly with ten deterministic steps`() {
+        val expected = listOf(
+            1_000L, 3_000L, 5_000L, 8_000L, 13_000L,
+            20_000L, 30_000L, 60_000L, 120_000L, 180_000L
+        )
+        assertEquals(expected, EngineResiliencePolicy.LLM_LADDER_MS)
+        assertEquals(10, EngineResiliencePolicy.DEFAULT.maxLlmRetries)
+        assertEquals(EngineResiliencePolicy.LLM_LADDER_MS, EngineResiliencePolicy.DEFAULT.llmLadderDelaysMs)
+        // 确定性：同 attempt 同延迟（无抖动）
+        val g = EngineResilienceGuard(EngineResiliencePolicy.DEFAULT)
+        assertEquals(g.llmRetryDelayMs(3), g.llmRetryDelayMs(3))
+        // 越界重复末级（180s 封顶语义）
+        assertEquals(180_000L, g.llmRetryDelayMs(11))
+    }
+
+    @Test
+    fun `guard retries llm failures ten times through the ladder then stops`() {
+        val g = EngineResilienceGuard(EngineResiliencePolicy.DEFAULT)
+        g.resetForTask()
+        var lastDelay = 0L
+        repeat(10) {
+            val decision = g.onLlmFailure(
+                com.apex.agent.core.llm.runtime.ModelRuntimeException
+                    .ModelRateLimited("429", profileId = "p1")
+            )
+            assertTrue("attempt ${it + 1} should retry", decision is EngineResilienceGuard.LlmRetryDecision.Retry)
+            lastDelay = (decision as EngineResilienceGuard.LlmRetryDecision.Retry).delayMs
+        }
+        // 第 10 次延迟 = 180s（阶梯末级）
+        assertEquals(180_000L, lastDelay)
+        // 第 11 次失败：预算耗尽 → Stop + 耗尽标记
+        val stop = g.onLlmFailure(
+            com.apex.agent.core.llm.runtime.ModelRuntimeException
+                .ModelRateLimited("429", profileId = "p1")
+        )
+        assertTrue(stop is EngineResilienceGuard.LlmRetryDecision.Stop)
+        assertTrue(g.llmRetriesExhausted)
+    }
+
+    @Test
+    fun `test presets without ladder keep legacy exponential semantics`() {
+        // FAST / 显式构造不设阶梯 → 指数退避路径（既有测试语义零变更）
+        val policy = EngineResiliencePolicy(
+            maxLlmRetries = 3,
+            initialBackoffMs = 1000, maxBackoffMs = 5000, jitterRatio = 0.0
+        )
+        val g = EngineResilienceGuard(policy)
+        org.junit.Assert.assertEquals(1000L, g.llmRetryDelayMs(1))
+        org.junit.Assert.assertEquals(2000L, g.llmRetryDelayMs(2))
+        org.junit.Assert.assertEquals(4000L, g.llmRetryDelayMs(3))
+    }
 }

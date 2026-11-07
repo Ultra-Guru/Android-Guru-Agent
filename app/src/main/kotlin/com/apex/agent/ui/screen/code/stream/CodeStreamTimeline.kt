@@ -103,7 +103,10 @@ internal fun CodeStreamTimeline(
     onToggleTerminalCollapse: () -> Unit = {},
     // ═══ 输出展示档（v1.5）：COMPLETE + 生成中 = 过程条目静默 + 加载卡；
     // 由 CodeScreen 从 uiState.renderMode（run 粒度快照）传入═══
-    renderMode: CodeOutputMode = CodeOutputMode.STREAMING
+    renderMode: CodeOutputMode = CodeOutputMode.STREAMING,
+    // ═══ 失败结尾「继续完成」（用户规格 2026-11）：ErrorCard 尾部的播放入口，
+    // 重放本任务输入；null = 不渲染动作行 ═══
+    onRetryRun: (() -> Unit)? = null
 ) {
     val listState = rememberLazyListState()
     // ═══ 完整档切片：生成中只留用户输入及更早的终态内容，本轮过程条目
@@ -204,7 +207,12 @@ internal fun CodeStreamTimeline(
                 when (segment) {
                     is Segment.Single ->
                         item(key = segment.entry.id) {
-                            StreamCard(entry = segment.entry, onToolClick = onToolClick)
+                            StreamCard(
+                                entry = segment.entry,
+                                onToolClick = onToolClick,
+                                llmRetry = snapshot.llmRetry,
+                                onRetryRun = onRetryRun
+                            )
                         }
 
                     is Segment.Group -> {
@@ -250,7 +258,8 @@ internal fun CodeStreamTimeline(
             if (completeActive) {
                 item(key = KEY_COMPLETE_GENERATING) {
                     CompleteModeGeneratingCard(
-                        toolUsage = snapshot.toolUsage
+                        toolUsage = snapshot.toolUsage,
+                        llmRetry = snapshot.llmRetry
                     )
                 }
             }

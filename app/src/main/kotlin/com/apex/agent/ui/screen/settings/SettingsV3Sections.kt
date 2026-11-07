@@ -731,18 +731,23 @@ internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSetting
         icon = Icons.Outlined.Terminal,
         subtitle = stringResource(R.string.settings_v3_coding_subtitle)
     ) {
-        // ═══ v1.6「流水式输出UI」（2026-11 用户反馈：原下拉藏在选项里不好找，
-        // 改为开关 + 指定命名）：开 = 模仿 RikkaHub 的聊天式流水输出（右对齐
-        // 用户气泡 / Markdown 结论直铺 / 思考折叠卡 / 工具调用聚合块）；
-        // 关 = 经典胶囊时间轴（实时代码窗 / 终端尾窗）。持久化仍是
-        // codeOutputStyle（rikka / timeline）——旧值无缝兼容。纯 UI 层开关
-        // （引擎/会话零参与）——idle 期切换即时生效，运行中不打断当前轮
-        // （run 粒度捕获）。与下方「输出方式」（揭示时机：流式/整段）正交。═══
-        SwitchRow(
-            stringResource(R.string.settings_v3_coding_output_style),
-            agent.codeOutputStyle == "rikka",
+        // ═══ v1.6「流水式输出UI」（2026-11 用户指定命名：双选项选择器——
+        // 第一种「默认」= 经典胶囊时间轴（实时代码窗 / 终端尾窗）；
+        // 第二种「rikka思考方式UI」= 模仿 RikkaHub 的聊天式流水输出（右对齐
+        // 用户气泡 / Markdown 结论直铺 / 思考折叠卡 / 工具调用聚合块））。
+        // 持久化仍是 codeOutputStyle（rikka / timeline）——旧值无缝兼容。
+        // 纯 UI 层开关（引擎/会话零参与）——idle 期切换即时生效，运行中
+        // 不打断当前轮（run 粒度捕获）。与下方「输出方式」（揭示时机：
+        // 流式/整段）正交。═══
+        DropdownRow(
+            label = stringResource(R.string.settings_v3_coding_output_style),
+            options = listOf(
+                "timeline" to stringResource(R.string.settings_v3_coding_output_style_timeline),
+                "rikka" to stringResource(R.string.settings_v3_coding_output_style_rikka),
+            ),
+            selected = agent.codeOutputStyle.ifBlank { "timeline" },
             description = stringResource(R.string.settings_v3_coding_output_style_desc)
-        ) { on -> onUpdate(agent.copy(codeOutputStyle = if (on) "rikka" else "timeline")) }
+        ) { style -> onUpdate(agent.copy(codeOutputStyle = style)) }
         SwitchRow(
             stringResource(R.string.rikka_thinking_default_collapsed),
             agent.codeRikkaThinkingCollapsed,

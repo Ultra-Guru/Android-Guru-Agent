@@ -77,7 +77,9 @@ internal fun RikkaStreamTimeline(
     onToggleTerminalCollapse: () -> Unit = {},
     renderMode: CodeOutputMode = CodeOutputMode.STREAMING,
     thinkingCollapsed: Boolean = false,
-    onThinkingCollapsedChange: (Boolean) -> Unit = {}
+    onThinkingCollapsedChange: (Boolean) -> Unit = {},
+    // ═══ 失败结尾「继续完成」（用户规格 2026-11）：错误卡尾部播放入口 ═══
+    onRetryRun: (() -> Unit)? = null
 ) {
     val listState = rememberLazyListState()
     // ═══ 完整档切片（与胶囊时间轴同款）：生成中只留用户输入及更早的
@@ -168,7 +170,9 @@ internal fun RikkaStreamTimeline(
                                         scope.launch { if (index >= 0) listState.animateScrollToItem(index) }
                                         Unit
                                     }
-                                }
+                                },
+                                llmRetry = snapshot.llmRetry,
+                                onRetryRun = onRetryRun
                             )
                         }
 
@@ -198,7 +202,8 @@ internal fun RikkaStreamTimeline(
             if (completeActive) {
                 item(key = KEY_RIKKA_COMPLETE_GENERATING) {
                     CompleteModeGeneratingCard(
-                        toolUsage = snapshot.toolUsage
+                        toolUsage = snapshot.toolUsage,
+                        llmRetry = snapshot.llmRetry
                     )
                 }
             }

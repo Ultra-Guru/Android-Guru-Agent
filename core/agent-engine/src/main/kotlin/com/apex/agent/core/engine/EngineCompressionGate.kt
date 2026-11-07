@@ -49,6 +49,12 @@ internal suspend fun ApexAgentEngine.maybeCompressContext(emit: suspend (AgentEv
     // 同步到持久化记忆（如果存在）
     memory?.save(conversationHistory)
 
+    // 压缩后失效陈旧真实 usage（圆环口径修复 2026-11）：lastRealUsage 是
+    // 压缩前全上下文的统计，保留会让 currentTokenCount 在压缩后回跳到
+    // 压缩前水位 —— 回落估算器口径，下一轮真实 usage 到达前按压缩后
+    // 历史估算，与 ContextCompressed.afterTokens 一致。
+    usageTracker.resetRealUsage()
+
     // 发射压缩事件
     emit(
         AgentEvent.ContextCompressed(

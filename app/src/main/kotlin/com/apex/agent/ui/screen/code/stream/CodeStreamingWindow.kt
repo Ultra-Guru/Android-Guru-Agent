@@ -5,6 +5,8 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -41,6 +43,9 @@ import com.apex.agent.core.code.stream.ToolCallStatus
  * - **写文件**（CodeWrite）：全文绿色（正在落笔的字符流）+ 尾部光标块；
  * - **编辑文件**（CodeEdit）：旧串红色（将删除）在前、新串绿色（将写入）
  *   在后，与 hunk Diff 的增删语义同色（浅绿/红在深底上取亮色变体）；
+ * - **行级浅色背景**（用户规格 2026-11，与 CodeDiffView 同语义）：新增行
+ *   覆盖浅绿底、删除行覆盖浅红底、未变行无背景 —— 深底上取低透明度
+ *   叠加，语义色不冲淡正文；
  * - 恒深底（与终端详情体同款 0xFF101418）：跨主题观感一致，写码场景的
  *   语义色不受浅色主题冲淡；
  * - 只展示**尾窗**（[STREAM_WINDOW_MAX_LINES]）：流式写入的增量永远在
@@ -107,6 +112,7 @@ internal fun StreamingCodeWindow(
                 StreamCodeBlock(
                     text = tailLines(writeContent, maxLines) + cursor,
                     color = STREAM_ADD,
+                    lineBg = STREAM_ADD,
                     cursorAlpha = if (cursor.isNotEmpty()) cursorAlpha else null,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                 )
@@ -118,6 +124,7 @@ internal fun StreamingCodeWindow(
                     StreamCodeBlock(
                         text = tailLines(old, maxLines).prependMinus(),
                         color = STREAM_REMOVE,
+                        lineBg = STREAM_REMOVE,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                     )
                 }
@@ -125,6 +132,7 @@ internal fun StreamingCodeWindow(
                     StreamCodeBlock(
                         text = (tailLines(new, maxLines) + cursor).prependPlus(),
                         color = STREAM_ADD,
+                        lineBg = STREAM_ADD,
                         cursorAlpha = if (cursor.isNotEmpty()) cursorAlpha else null,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                     )
@@ -149,45 +157,61 @@ private fun StreamOmittedHint(truncated: Boolean) {
 }
 
 /**
- * 等宽代码块（单 Text 节点承载整段，行数由 [tailLines] 钉在尾窗）。
- * [cursorAlpha] 非空时，尾缀光标块以呼吸透明度单独着色（流式进行中的
- * “活”感；尾窗 ≤14 行，每帧重建 span 的开销可忽略）。
+ * 等宽代码块（逐行渲染，行数由 [tailLines] 钉在尾窗）：
+ * - [lineBg] 非空时每行覆盖浅色背景（新增 = 浅绿 / 删除 = 浅红，
+ *   与 [CodeDiffView] 行背景同语义；未变行不传 = 无背景）；
+ * - [cursorAlpha] 非空时，末行尾缀光标块以呼吸透明度单独着色（流式
+ *   进行中的“活”感；尾窗 ≤14 行，逐行 Text 的重组开销可忽略）。
  */
 @Composable
 private fun StreamCodeBlock(
     text: String,
     color: Color,
     modifier: Modifier = Modifier,
-    cursorAlpha: Float? = null
+    cursorAlpha: Float? = null,
+    lineBg: Color? = null
 ) {
-    if (cursorAlpha == null) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall,
-            fontFamily = FontFamily.Monospace,
-            color = color,
-            modifier = modifier.fillMaxWidth()
-        )
-        return
-    }
-    val annotated = buildAnnotatedString {
-        val cursorAt = text.lastIndexOf(STREAM_CURSOR)
-        if (cursorAt >= 0) {
-            append(text.substring(0, cursorAt))
-            withStyle(SpanStyle(color = color.copy(alpha = cursorAlpha))) {
-                append(STREAM_CURSOR)
+    val rowBg = lineBg?.copy(alpha = STREAM_LINE_BG_ALPHA)
+    Column(modifier = modifier.fillMaxWidth()) {
+        val lines = text.split('\n')
+        lines.forEachIndexed { index, line ->
+            val isLast = index == lines.lastIndex
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(if (rowBg != null) Modifier.background(rowBg) else Modifier)
+            ) {
+                if (isLast && cursorAlpha != null) {
+                    val annotated = buildAnnotatedString {
+                        val cursorAt = line.lastIndexOf(STREAM_CURSOR)
+                        if (cursorAt >= 0) {
+                            append(line.substring(0, cursorAt))
+                            withStyle(SpanStyle(color = color.copy(alpha = cursorAlpha))) {
+                                append(STREAM_CURSOR)
+                            }
+                        } else {
+                            append(line)
+                        }
+                    }
+                    Text(
+                        text = annotated,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = color,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    Text(
+                        text = line.ifEmpty { " " },
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = color,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
-        } else {
-            append(text)
         }
     }
-    Text(
-        text = annotated,
-        style = MaterialTheme.typography.labelSmall,
-        fontFamily = FontFamily.Monospace,
-        color = color,
-        modifier = modifier.fillMaxWidth()
-    )
 }
 
 /** 头行右侧的规模文案：写 = 行数；编辑 = −旧行/+新行。 */
@@ -216,7 +240,7 @@ private fun tailLines(content: String, maxLines: Int): String =
 private fun String.prependMinus(): String = lineSequence().joinToString("\n") { "− $it" }
 private fun String.prependPlus(): String = lineSequence().joinToString("\n") { "+ $it" }
 
-// ═══ 恒定色（深底亮变体；跨主题一致，与终端详情体同规）═══
+/** ═══ 恒定色（深底亮变体；跨主题一致，与终端详情体同规）═══ */
 
 /** 深底（恒定，同 TerminalDetailBody）。 */
 internal val STREAM_BG = Color(0xFF101418)
@@ -226,6 +250,9 @@ internal val STREAM_ADD = Color(0xFF4ADE80)
 
 /** 删除/旧串：亮红。 */
 internal val STREAM_REMOVE = Color(0xFFF87171)
+
+/** 行级浅色背景透明度（深底上叠出「浅绿/浅红」行底）。 */
+private const val STREAM_LINE_BG_ALPHA = 0.12f
 
 /** 头行/说明文字：暗灰。 */
 private val STREAM_MUTED = Color(0xFF8B949E)
