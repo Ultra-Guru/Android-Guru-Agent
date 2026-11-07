@@ -65,6 +65,7 @@ import com.apex.agent.core.engine.UserQuestionGateway
 import com.apex.agent.tools.AskUserChoiceTool
 import com.apex.agent.tools.AskUserTool
 import com.apex.agent.tools.GateDialogStrings
+import com.apex.agent.tools.NotifySendTool
 import com.apex.agent.tools.RiskAwareToolGate
 import com.apex.agent.tools.ToolAuditLogger
 import com.apex.agent.permission.PermissionMode

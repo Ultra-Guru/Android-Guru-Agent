@@ -363,8 +363,10 @@ class ExtensionRunToolTest {
         override suspend fun probeRuntime() = NodeInstallPort.RuntimeProbe("v22", "10")
     }
 
+    private fun newLayout(): ExtensionDirLayout = ExtensionDirLayout(tmp.newFolder("run-ext-root"))
+
     /** 走真实 OpenCode 适配器安装（生成 profile 元数据），再记账本供 RunTool 寻址。 */
-    private fun installOpencodePlugin(port: FakeRunPort, layout: ExtensionDirLayout, pkgName: String): ExtensionRegistry {
+    private suspend fun installOpencodePlugin(port: FakeRunPort, layout: ExtensionDirLayout, pkgName: String): ExtensionRegistry {
         val adapter = OpenCodeExtensionAdapter(port, layout)
         val manifest = adapter.resolve(ExtensionSpecParser.parse("npm:$pkgName").getOrThrow()).getOrThrow()
         adapter.install(manifest).getOrThrow()
