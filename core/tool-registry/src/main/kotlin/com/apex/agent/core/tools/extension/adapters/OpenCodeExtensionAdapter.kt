@@ -98,6 +98,13 @@ class OpenCodeExtensionAdapter(
 
         // 注册元数据（opencode 未来运行时调度的入口清单；执行桥 experimental）
         val profile = layoutRef.profileDir(manifest.id).apply { mkdirs() }
+        // 入口提示按 kind 取 —— npm 看 node_modules/<pkg>，clone 看 src/，
+        // 其余（local 单文件等）退 published 根；kind 键缺失的源不强取 pkg
+        val entryHint = when (kind) {
+            "npm" -> File(published, "node_modules/${str(manifest, "pkg")}").takeIf { it.isDirectory }?.absolutePath
+            "github" -> File(published, "src").takeIf { it.isDirectory }?.absolutePath
+            else -> null
+        } ?: published.absolutePath
         ExtensionJson.json.encodeToString(
             kotlinx.serialization.json.JsonObject.serializer(),
             buildJsonObject {
@@ -107,9 +114,7 @@ class OpenCodeExtensionAdapter(
                 put("kind", kind ?: "unknown")
                 put("publishedAt", System.currentTimeMillis())
                 put("pkgPath", published.absolutePath)
-                put("entryHint", File(published, "node_modules/${str(manifest, "pkg")}").takeIf { it.isDirectory }?.absolutePath
-                    ?: File(published, "src").takeIf { it.isDirectory }?.absolutePath
-                    ?: published.absolutePath)
+                put("entryHint", entryHint)
                 put("experimental", true)
             }
         ).let { File(profile, "opencode.json").writeText(it) }
