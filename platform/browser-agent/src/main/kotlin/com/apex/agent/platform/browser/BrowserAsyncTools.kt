@@ -129,9 +129,7 @@ class BrowserAsyncTools @Inject constructor(
             if (steps == null) { send(ToolStreamEvent.Error("Error: steps 参数不合法")); close(); return@channelFlow }
             val errors = TaskValidator.validate(steps)
             if (errors.isNotEmpty()) {
-                send(ToolStreamEvent.Complete("任务未执行（预校验失败，零副作用）：
-" + errors.joinToString("
-")))
+                send(ToolStreamEvent.Complete("任务未执行（预校验失败，零副作用）：\n" + errors.joinToString("\n")))
                 close(); return@channelFlow
             }
             val mode = if (argStr(arguments, "mode")?.lowercase() == "background") "background" else "wait"

@@ -2,7 +2,7 @@ package com.apex.agent.core.engine
 
 import com.apex.agent.core.tools.AgentTool
 import com.apex.agent.core.tools.DefaultToolRegistry
-import com.apex.agent.core.tools.ToolActivationStore
+import com.apex.agent.core.tools.catalog.ToolActivationStore
 import com.apex.agent.core.tools.ToolMetadata
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
