@@ -508,7 +508,8 @@ class ExtensionAutoSyncRunnerTest {
             ExtensionInstaller(
                 ExtensionAdapterRegistry(emptyList()),
                 ledger
-            )
+            ),
+            ledger
         )
         val empty = runner.run(emptyList())
         assertEquals(0, empty.ok)
