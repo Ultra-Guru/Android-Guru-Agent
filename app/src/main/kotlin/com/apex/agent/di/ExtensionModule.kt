@@ -61,6 +61,13 @@ object ExtensionModule {
     fun provideExtensionRegistry(@ApplicationContext context: Context): ExtensionRegistry =
         ExtensionRegistry(dir = File(context.filesDir, "extensions"))
 
+    /** APK 系统安装端口绑定（接口 → ExtensionSources 的会话安装器实现）。 */
+    @Provides
+    @Singleton
+    fun provideApkInstallPort(
+        impl: com.apex.agent.marketplace.ExtensionApkInstallPort
+    ): com.apex.agent.core.tools.extension.adapters.ApkPackageExtensionAdapter.ApkInstallPort = impl
+
     /** MCP 配置端口：McpManager 最小交面（add/remove/list —— 不真连进程）。 */
     @Provides
     @Singleton
