@@ -12,6 +12,7 @@ import com.apex.agent.core.tools.extension.ExtensionRegistry
 import com.apex.agent.core.tools.extension.NodeInstallPort
 import com.apex.agent.core.tools.extension.RuntimeDomains
 import com.apex.agent.core.tools.toolSchema
+import java.io.File
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -116,8 +117,17 @@ class ExtensionRunTool(
         val entryRelative = entryHint
             .removePrefix(layout.pkgDir(id).canonicalFile.path)
             .ifBlank { "/" }
-        val entryFile = layout.pkgFile(id, entryRelative)
+        var entryFile = layout.pkgFile(id, entryRelative)
             .getOrElse { return ToolResult.fail(ToolErrorCode.SANDBOX_VIOLATION, it.message ?: "entry 路径校验失败") }
+        // npm 形态的 entryHint 指向包目录 —— 经 package.json main（缺省 index.js）落到真实入口文件
+        if (entryFile.isDirectory) {
+            val mainRel = runCatching {
+                com.apex.agent.core.tools.extension.ExtensionJson.json
+                    .parseToJsonElement(File(entryFile, "package.json").readText())
+                    .jsonObject["main"]?.jsonPrimitive?.content
+            }.getOrNull() ?: "index.js"
+            entryFile = File(entryFile, mainRel)
+        }
         if (!entryFile.isFile) {
             return ToolResult.fail(ToolErrorCode.NOT_FOUND, "入口文件不存在：${entryFile.path}")
         }

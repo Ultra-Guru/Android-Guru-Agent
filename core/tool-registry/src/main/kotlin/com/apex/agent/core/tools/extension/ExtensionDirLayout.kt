@@ -45,6 +45,7 @@ class ExtensionDirLayout(private val root: File) {
         require(!relativePath.contains("..")) { "profile 路径含 .. 序列：'$relativePath'" }
         val dir = profileDir(extId).apply { mkdirs() }
         val file = File(dir, relativePath.trim('/'))
+        file.parentFile?.takeIf { !it.exists() }?.mkdirs()
         val dirCanonical = dir.canonicalFile
         val fileCanonical = file.canonicalFile
         require(

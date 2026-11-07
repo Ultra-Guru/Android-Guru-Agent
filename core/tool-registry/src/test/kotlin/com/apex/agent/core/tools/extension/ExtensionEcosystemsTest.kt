@@ -370,7 +370,7 @@ class ExtensionRunToolTest {
         val adapter = OpenCodeExtensionAdapter(port, layout)
         val manifest = adapter.resolve(ExtensionSpecParser.parse("npm:$pkgName").getOrThrow()).getOrThrow()
         adapter.install(manifest).getOrThrow()
-        val ledger = ExtensionRegistry(tmp.newFolder("run-ledger"))
+        val ledger = ExtensionRegistry(tmp.newFolder("run-ledger-" + pkgName))
         ledger.record(
             ExtensionRegistry.Record(
                 id = manifest.id, type = manifest.type, spec = manifest.spec,
@@ -385,7 +385,7 @@ class ExtensionRunToolTest {
     fun `Run npm 扩展 node 入口白名单执行`() = runTest {
         val port = FakeRunPort()
         val layout = newLayout()
-        val ledger = installOpencodePlugin(port, layout, "scope-tool")
+        val ledger = installOpencodePlugin(port, layout, "scope-tool")  // ledger: run-ledger-npm
         val tool = ExtensionRunTool(ledger, layout, port)
 
         val result = tool.executeStructured("""{"id":"opencode.scope-tool"}""")
@@ -419,7 +419,7 @@ class ExtensionRunToolTest {
     fun `Run profile 元数据被篡改指向外部脚本 拒绝`() = runTest {
         val port = FakeRunPort()
         val layout = newLayout()
-        val ledger = installOpencodePlugin(port, layout, "evil-pkg")
+        val ledger = installOpencodePlugin(port, layout, "evil-pkg")  // ledger: run-ledger-tamper
         // 篡改 profile：entryHint 指向账本目录之外
         val profileFile = layout.profileFile("opencode.evil-pkg", "opencode.json").getOrThrow()
         profileFile.writeText("""{"runtime":"node","entryHint":"/etc/passwd"}""")
