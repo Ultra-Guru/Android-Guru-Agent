@@ -37,7 +37,7 @@ class ChrootMountScriptTest {
         val bin = fakeCommands()
         assertEquals(7, runScript(script(root, fixture), bin, fixture, log))
         assertEquals("1 0 0:1 / / rw - rootfs fake rw\n", fixture.readText())
-        assertFalse("first run must reuse proc", log.readText().contains("mount ${root.absolutePath}/proc\n"))
+        assertFalse("first run must reuse proc", log.readLines().any { it == "mount ${root.absolutePath}/proc" })
         assertFalse(File(root, ".t99-chroot-mounts/proc").exists())
         assertEquals(7, runScript(script(root, fixture), bin, fixture, log))
         assertEquals("one new proc mount", 1, log.readLines().count { it == "mount ${root.absolutePath}/proc" })
