@@ -283,7 +283,7 @@ class CodeStreamSession {
                     // 全程空白回复（纯工具调用轮）：移除空气泡而非留白
                     removeEntry(cur.id)
                 } else {
-                    // ═══ P0 不丢字（reconcileStreamText 仲裁，2026-11 修订）═══
+                    // ═══ P0 不丢字：reconcileStreamText 仲裁（2026-11 修订）═══
                     // 历史包袱已消除：旧实现跨轮共用一条气泡时 fullText（末轮
                     // 文本）覆写会截断跨轮累积（用户实测回归）——气泡按轮分立
                     // 后，fullText 即本气泡的权威全文。TaskRuntime 高水位丢弃
