@@ -169,9 +169,12 @@ class ManifestTrustException(val reason: String) : Exception(reason)
  */
 sealed interface TrustedManifest {
 
+    /** 清单原文（两种形态同构携带 —— 调用方无需分流取正文）。 */
+    val text: String
+
     /** 签名验证通过的清单原文。 */
-    data class Verified(val text: String) : TrustedManifest
+    data class Verified(override val text: String) : TrustedManifest
 
     /** 过渡期内放行的无签名清单原文（WARN 留痕；到期后此形态不再出现）。 */
-    data class LegacyUnsigned(val text: String) : TrustedManifest
+    data class LegacyUnsigned(override val text: String) : TrustedManifest
 }
