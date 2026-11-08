@@ -206,12 +206,12 @@ class DshNativeHostTest {
             registry = ledger
         )
 
-        // 直接过 introspector：失败时异常原样上抛（CI 可见真栈），不吞成 null
-        val capsDirect = introspector.introspectAndStore("dsh.dsh-demo", "npm:test").getOrThrow()
-        assertEquals("动态验证产出真实版本", "2.7.1", capsDirect.plugin.version)
-
         val manifest = installer.resolve("dsh:dsh-demo").getOrThrow()
         installer.install(manifest.manifestHash, confirmToken = "confirm").getOrThrow()
+
+        // 安装产物就位后直过 introspector：失败时异常原样上抛（CI 可见真栈），不吞成 null
+        val capsDirect = introspector.introspectAndStore("dsh.dsh-demo", "npm:test").getOrThrow()
+        assertEquals("动态验证产出真实版本", "2.7.1", capsDirect.plugin.version)
 
         val record = ledger.get("dsh.dsh-demo")!!
         assertEquals("账本版本 = 安装产物真实版本（修正四）", "2.7.1", record.version)

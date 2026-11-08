@@ -324,7 +324,7 @@ class DshBridgeTransportTest {
                     p.waitFor(10, TimeUnit.SECONDS) && p.exitValue() == 0
                 }.getOrDefault(false)
             }
-        assumeTrue("无 node 环境跳过（本机已验证；真机 P0 才是硬门槛）", nodeBin != null)
+        if (nodeBin == null) return@runTest // 无 node 环境跳过（真机 P0 才是硬门槛）
         val script = File.createTempFile("dsh-frame-echo", ".js")
         script.deleteOnExit()
         script.writeText(
@@ -375,9 +375,9 @@ class DshBridgeTransportTest {
             channel.start(scope)
             channel.send("{\"type\":\"echo\",\"seq\":1,\"text\":\"中文 帧 ✓\"}").getOrThrow()
             channel.send("{\"type\":\"echo\",\"seq\":2,\"text\":\"plain\"}").getOrThrow()
-            assertTrue(listener.firstAck.await(20, TimeUnit.SECONDS))
+            assertTrue("20s 内未收到 echo_ack（node 帧回显失败）", listener.firstAck.await(20, TimeUnit.SECONDS))
             channel.send("{\"type\":\"die\"}").getOrThrow()
-            assertTrue(listener.exit.await(20, TimeUnit.SECONDS))
+            assertTrue("20s 内未等到 die 退出（进程退出路径失败）", listener.exit.await(20, TimeUnit.SECONDS))
             // stderr 日志与帧流并发的最终裁决：全程恰好 2 帧且无坏帧（污染会破坏解析）
             val acks = synchronized(listener.acks) { listener.acks.toList() }
             assertEquals(2, acks.size)
