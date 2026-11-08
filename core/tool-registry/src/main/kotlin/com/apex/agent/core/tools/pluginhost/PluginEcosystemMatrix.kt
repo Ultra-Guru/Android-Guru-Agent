@@ -57,16 +57,16 @@ object PluginEcosystemMatrix {
             "人设与提示词经 FusionBundle 注入；官方 prompt 模板变量仅部分映射"
         ),
         PluginCapability.HOOKS to EcosystemCapabilityStatus(
-            PluginCapability.HOOKS, CapabilitySupport.PLANNED,
-            "hooks.json 事件调度未实现（导入器当前跳过该文件）", plannedPhase = 5
+            PluginCapability.HOOKS, CapabilitySupport.PARTIAL,
+            "官方协议调度已实现（真实 sh E2E 锁：stdin JSON / exit code 语义 / hookSpecificOutput 解析）；安装链路接线待 Phase 6"
         ),
         PluginCapability.MCP_SERVERS to EcosystemCapabilityStatus(
-            PluginCapability.MCP_SERVERS, CapabilitySupport.PLANNED,
-            "插件内 .mcp.json 未被导入链路解析（Phase 5 接入既有 McpManager）", plannedPhase = 5
+            PluginCapability.MCP_SERVERS, CapabilitySupport.PARTIAL,
+            ".mcp.json → 既有 McpManager 桥已实现（stdio 沙箱 + 来源归属账本）；安装链路接线待 Phase 6"
         ),
         PluginCapability.LSP to EcosystemCapabilityStatus(
             PluginCapability.LSP, CapabilitySupport.PLANNED,
-            ".lsp.json 未处理；语言服务器宿主属独立子系统", plannedPhase = 5
+            ".lsp.json 检测与诚实报告已实现（识别但不启动不伪装）；统一 LSP Host 属后续独立子系统", plannedPhase = 6
         ),
         PluginCapability.TOOLS to EcosystemCapabilityStatus(
             PluginCapability.TOOLS, CapabilitySupport.UNSUPPORTED,

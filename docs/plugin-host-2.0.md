@@ -89,16 +89,20 @@ Agent Core（ToolRegistry / SkillRegistry / FusionBundle / McpManager）
 
 ## 5. Phase 1 基线矩阵（审计结论）
 
-### Claude Code 插件
+### Claude Code 插件（Phase 5 后）
+
+官方协议事实（2026-11 审计 code.claude.com/docs/en/hooks + plugins）：hooks.json 事件 →
+匹配组（matcher 为工具名 regex）→ hook 条目（type=command，stdin JSON 入 / stdout JSON
+出 / exit 0 成功 / exit 2 阻断）；`.mcp.json` 与桌面导出同构（`{mcpServers:…}`）。
 
 | 能力 | 状态 | 说明 |
 |------|------|------|
 | SKILLS | SUPPORTED | ClaudePluginImporter → SkillRegistry（含资源文件） |
 | COMMANDS | SUPPORTED | commands 目录 → FusionBundle 斜杠指令 |
 | AGENTS | PARTIAL | 合并为人设/提示词；完整 Subagent 生命周期未实现 |
-| HOOKS | PLANNED (Phase 5) | hooks.json 事件调度未实现 |
-| MCP_SERVERS | PLANNED (Phase 5) | `.mcp.json` 未接入导入链路 |
-| LSP | PLANNED (Phase 5) | `.lsp.json` 未处理 |
+| HOOKS | PARTIAL | `ClaudeHookAdapter` 官方协议调度已实现（stdin JSON / exit code 语义 / hookSpecificOutput 解析 / matcher regex / 超时强杀，真实 sh E2E 锁）；安装链路接线待 Phase 6 |
+| MCP_SERVERS | PARTIAL | `ClaudeMcpBridge` → 既有 McpConfigPort（stdio 沙箱 + http + 来源归属账本：卸载只删插件带来的，用户自建不动）；安装链路接线待 Phase 6 |
+| LSP | PLANNED | `.lsp.json` 检测与诚实报告（识别但不启动不伪装）；统一 LSP Host 属后续独立子系统 |
 | TUI / GUI | UNSUPPORTED | Android 无终端/桌面宿主 |
 
 ### OpenCode 插件（V1/V2 分立 ABI，Phase 4 后）
@@ -150,7 +154,7 @@ SDK 垫片：插件目录未安装 `@opencode/plugin` 时落盘最小实现
 | 2 | PluginWorker + 换行 JSON IPC + Supervisor 崩溃恢复 + Node/Bun RuntimeProvider | ✅（真实 node E2E 锁定） |
 | 3 | Unified Capability Bridge + ToolRegistry 动态注册 + 生命周期管理器 | ✅（真实 node E2E 锁定） |
 | 4 | OpenCode V1/V2 Loader + 官方 SDK 上下文桥 | ✅（官方形状 fixture 真实 node 锁定） |
-| 5 | Claude Hooks + `.mcp.json` + `.lsp.json` 兼容 | 计划 |
+| 5 | Claude Hooks + `.mcp.json` + `.lsp.json` 兼容 | ✅（真实 sh E2E 锁定；安装链路接线在 Phase 6） |
 | 6 | DSH 审计 + App DI 接线 + Doctor/Inspect 集成 + 端到端链路 | 计划 |
 
 每个 Phase 的矩阵状态迁移（PLANNED→SUPPORTED）必须同步更新
