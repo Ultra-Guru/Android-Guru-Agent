@@ -61,8 +61,9 @@ object PluginHostModule {
 
     @Provides
     @Singleton
-    fun providePluginToolBridge(toolRegistry: ToolRegistry): PluginToolBridge =
-        PluginToolBridge(toolRegistry)
+    fun providePluginToolBridge(
+        lazyRegistry: dagger.Lazy<ToolRegistry>
+    ): PluginToolBridge = PluginToolBridge { lazyRegistry.get() }
 
     @Provides
     @Singleton

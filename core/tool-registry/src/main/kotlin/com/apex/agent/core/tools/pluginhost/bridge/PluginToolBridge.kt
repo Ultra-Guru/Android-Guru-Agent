@@ -20,10 +20,17 @@ import kotlinx.coroutines.sync.withLock
  *   （spec 禁止事项 #10）；
  * - **追踪**：pluginId → 已注册 id 集合，供诊断与生命周期清理。
  *
+ * DI 循环依赖规避：桥持有**惰性** registry 提供函数（App 的 Hilt 图里
+ * ToolRegistry 的 provider 需要本桥注册 Doctor 工具，本桥又需要 registry
+ * —— 直接互注即成环；惰性解析把环打开到使用期，构造期无环）。
+ *
  * 渐进披露（spec §12.2）：注册即入目录，ToolSearch/ToolOpen/请求预算的
  * 既有机制自动覆盖插件工具 —— 本桥不另建第二套目录体系。
  */
-class PluginToolBridge(private val registry: ToolRegistry) {
+class PluginToolBridge(private val registryProvider: () -> ToolRegistry) {
+
+    /** 直接持有实例的便捷构造（测试/同作用域 wiring 用）。 */
+    constructor(registry: ToolRegistry) : this({ registry })
 
     /** bind 结果（部分失败也如实报告 —— 全成功才静默）。 */
     data class BindResult(
@@ -48,7 +55,7 @@ class PluginToolBridge(private val registry: ToolRegistry) {
         val mine = bound.getOrPut(pluginId) { ConcurrentHashMap.newKeySet() }
         for (tool in tools) {
             val agentTool = PluginAgentTool(pluginId, ecosystem, tool, executor)
-            val existing = registry.getTool(agentTool.id)
+            val existing = registryProvider().getTool(agentTool.id)
             if (existing != null && existing !is PluginAgentTool) {
                 // 与内置/其它来源工具撞名：拒绝（数据永不覆盖代码）
                 rejected += BindResult.RejectedTool(
@@ -57,7 +64,7 @@ class PluginToolBridge(private val registry: ToolRegistry) {
                 )
                 continue
             }
-            registry.register(agentTool, DuplicateToolIdPolicy.REPLACE)
+            registryProvider().register(agentTool, DuplicateToolIdPolicy.REPLACE)
             registered += agentTool.id
             mine += agentTool.id
         }
@@ -67,7 +74,7 @@ class PluginToolBridge(private val registry: ToolRegistry) {
     /** 注销插件全部工具（停止/禁用/卸载路径；幂等）。 */
     suspend fun unbind(pluginId: String): Int = mutex.withLock {
         val ids = bound.remove(pluginId) ?: return@withLock 0
-        ids.forEach { registry.unregister(it) }
+        ids.forEach { registryProvider().unregister(it) }
         ids.size
     }
 
