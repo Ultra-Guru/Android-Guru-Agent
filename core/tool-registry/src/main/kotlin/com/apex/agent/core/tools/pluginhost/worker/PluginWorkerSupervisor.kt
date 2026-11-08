@@ -63,12 +63,15 @@ class PluginWorkerSupervisor(
         data class Stopped(override val pluginId: String) : Event
     }
 
-    /** 受看护插件的重放规格（重启后 load 参数）。 */
+    /** 受看护插件的重放规格（重启后 load 参数，含 OpenCode 兼容层载荷）。 */
     private data class LoadSpec(
         val pluginId: String,
         val workingDir: File,
         val entryPath: String,
-        val format: String?
+        val format: String?,
+        val ecosystem: String = "",
+        val optionsJson: String = "{}",
+        val storageFile: String = ""
     )
 
     val events: SharedFlow<Event> get() = eventsFlow.asSharedFlow()
@@ -83,12 +86,18 @@ class PluginWorkerSupervisor(
     private val gaveUp = ConcurrentHashMap<String, String>()
     private val watchJobs = ConcurrentHashMap<String, Job>()
 
-    /** 启动并加载插件（handshake + load 全链路）。 */
+    /**
+     * 启动并加载插件（handshake + load 全链路）。OpenCode 兼容层经
+     * [ecosystem]/[optionsJson]/[storageFile] 传递载荷（重启重放同款）。
+     */
     suspend fun start(
         pluginId: String,
         workingDir: File,
         entryPath: String,
-        format: String? = null
+        format: String? = null,
+        ecosystem: String = "",
+        optionsJson: String = "{}",
+        storageFile: String = ""
     ): Result<PluginWorker> = mutex.withLock {
         gaveUp.remove(pluginId)
         val bootstrap = PluginWorkerBootstrap.writeTo(bootstrapDir)
@@ -105,7 +114,10 @@ class PluginWorkerSupervisor(
             worker.kill()
             return@withLock Result.failure(IllegalStateException("握手失败: ${it.message}"))
         }
-        val loaded = worker.load(entryPath, format).getOrElse {
+        val loaded = worker.load(
+            entryPath, format, ecosystem, pluginId,
+            workingDir.canonicalFile.path, optionsJson, storageFile
+        ).getOrElse {
             worker.kill()
             return@withLock Result.failure(IllegalStateException("插件模块加载失败: ${it.message}"))
         }
@@ -114,7 +126,10 @@ class PluginWorkerSupervisor(
             return@withLock Result.failure(IllegalStateException("插件 setup 失败: ${loaded.error}"))
         }
         workers[pluginId] = worker
-        specs[pluginId] = LoadSpec(pluginId, workingDir, entryPath, format)
+        specs[pluginId] = LoadSpec(
+            pluginId, workingDir, entryPath, format,
+            ecosystem, optionsJson, storageFile
+        )
         startedAt[pluginId] = clock()
         watchJobs[pluginId]?.cancel()
         watchJobs[pluginId] = scope.launch { watchWorker(worker) }
@@ -218,7 +233,10 @@ class PluginWorkerSupervisor(
         }
         history.add(now)
         val attempt = history.size
-        val restarted = start(spec.pluginId, spec.workingDir, spec.entryPath, spec.format)
+        val restarted = start(
+            spec.pluginId, spec.workingDir, spec.entryPath, spec.format,
+            spec.ecosystem, spec.optionsJson, spec.storageFile
+        )
         if (restarted.isSuccess) {
             eventsFlow.tryEmit(Event.Restarted(pluginId, attempt))
         } else {

@@ -82,29 +82,28 @@ object PluginEcosystemMatrix {
         )
     )
 
-    // ── OpenCode 插件（V1/V2 同槽位矩阵，ABI 探测在加载器侧）────────────
-    // 审计结论：安装链路（npm/github/local → PRoot）已通；ExtensionRun
-    // 只做 node 入口执行，Plugin SDK 上下文/hooks/工具注册未实现（Phase 4）。
-    private val opencodeCommon: Map<PluginCapability, EcosystemCapabilityStatus> = mapOf(
+    // ── OpenCode V2（现行 SDK：Plugin.define + ctx）─────────────────────
+    // Phase 4 落地：工具注册桥 + 钩子转发 + 文件存储（真实 node E2E 锁）。
+    private val opencodeV2: Map<PluginCapability, EcosystemCapabilityStatus> = mapOf(
         PluginCapability.TOOLS to EcosystemCapabilityStatus(
-            PluginCapability.TOOLS, CapabilitySupport.PLANNED,
-            "插件工具注册到 Agent ToolRegistry 的桥未实现（ExtensionRun 仅执行 node 入口）", plannedPhase = 4
+            PluginCapability.TOOLS, CapabilitySupport.SUPPORTED,
+            "ctx.tool.transform 注册的工具经 PluginToolBridge 一等注册进 ToolRegistry（真实 node E2E 锁）"
         ),
         PluginCapability.HOOKS to EcosystemCapabilityStatus(
-            PluginCapability.HOOKS, CapabilitySupport.PLANNED,
-            "官方 SDK Hooks 生命周期未实现", plannedPhase = 4
+            PluginCapability.HOOKS, CapabilitySupport.PARTIAL,
+            "tool.execute.before/after 与 session.prompt 钩子经宿主事件转发；context/compaction 等请求级钩子未接"
         ),
         PluginCapability.EVENTS to EcosystemCapabilityStatus(
-            PluginCapability.EVENTS, CapabilitySupport.PLANNED,
-            "插件事件订阅/分发未实现", plannedPhase = 4
+            PluginCapability.EVENTS, CapabilitySupport.PARTIAL,
+            "ctx.event.subscribe 订阅经宿主事件转发；插件主动上报事件未接"
         ),
         PluginCapability.STORAGE to EcosystemCapabilityStatus(
-            PluginCapability.STORAGE, CapabilitySupport.PLANNED,
-            "ctx.storage 桥接未实现", plannedPhase = 4
+            PluginCapability.STORAGE, CapabilitySupport.SUPPORTED,
+            "ctx.storage 插件目录内 JSON 文件持久化（随卸载清理）"
         ),
         PluginCapability.CONTEXT to EcosystemCapabilityStatus(
             PluginCapability.CONTEXT, CapabilitySupport.PLANNED,
-            "插件上下文注入未实现", plannedPhase = 4
+            "插件上下文注入（session.hook('context') 系统注入）未接", plannedPhase = 6
         ),
         PluginCapability.TUI to EcosystemCapabilityStatus(
             PluginCapability.TUI, CapabilitySupport.UNSUPPORTED,
@@ -112,7 +111,35 @@ object PluginEcosystemMatrix {
         ),
         PluginCapability.GUI to EcosystemCapabilityStatus(
             PluginCapability.GUI, CapabilitySupport.UNSUPPORTED,
-            "OpenCode GUI 扩展依赖桌面宿主，Android 平台不可行"
+            "OpenCode GUI（gui-experimental）依赖桌面宿主，Android 平台不可行"
+        )
+    )
+
+    // ── OpenCode V1（遗留：hook map 形状）─────────────────────────────
+    private val opencodeV1: Map<PluginCapability, EcosystemCapabilityStatus> = mapOf(
+        PluginCapability.TOOLS to EcosystemCapabilityStatus(
+            PluginCapability.TOOLS, CapabilitySupport.UNKNOWN,
+            "V1 hook map 的工具条目形状未完成官方审计（V1 已被官方标记迁移态）"
+        ),
+        PluginCapability.HOOKS to EcosystemCapabilityStatus(
+            PluginCapability.HOOKS, CapabilitySupport.PARTIAL,
+            "V1 hook map（tool.execute.before 等）经兼容层分发（真实 node 锁）"
+        ),
+        PluginCapability.EVENTS to EcosystemCapabilityStatus(
+            PluginCapability.EVENTS, CapabilitySupport.PARTIAL,
+            "V1 事件订阅经兼容层转发"
+        ),
+        PluginCapability.STORAGE to EcosystemCapabilityStatus(
+            PluginCapability.STORAGE, CapabilitySupport.SUPPORTED,
+            "兼容层提供给 V1 client 的存储同一套文件持久化"
+        ),
+        PluginCapability.TUI to EcosystemCapabilityStatus(
+            PluginCapability.TUI, CapabilitySupport.UNSUPPORTED,
+            "OpenCode TUI 扩展依赖终端宿主，Android 平台不可行"
+        ),
+        PluginCapability.GUI to EcosystemCapabilityStatus(
+            PluginCapability.GUI, CapabilitySupport.UNSUPPORTED,
+            "OpenCode GUI（gui-experimental）依赖桌面宿主，Android 平台不可行"
         )
     )
 
@@ -171,8 +198,8 @@ object PluginEcosystemMatrix {
 
     private val matrices: Map<PluginEcosystem, Map<PluginCapability, EcosystemCapabilityStatus>> = mapOf(
         PluginEcosystem.CLAUDE to claude,
-        PluginEcosystem.OPENCODE_V1 to opencodeCommon,
-        PluginEcosystem.OPENCODE_V2 to opencodeCommon,
+        PluginEcosystem.OPENCODE_V1 to opencodeV1,
+        PluginEcosystem.OPENCODE_V2 to opencodeV2,
         PluginEcosystem.DSH to dsh,
         PluginEcosystem.MCP to mcp,
         PluginEcosystem.FUNCTIONAL to functional,

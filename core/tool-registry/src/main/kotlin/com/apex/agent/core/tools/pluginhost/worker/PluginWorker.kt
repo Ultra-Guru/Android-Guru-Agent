@@ -102,11 +102,29 @@ class PluginWorker(
                 ?: error("ready 消息负载损坏")
         }
 
-    /** 加载插件模块（load→loaded）。 */
-    suspend fun load(entryPath: String, format: String? = null): Result<WorkerProtocol.Loaded> =
-        roundTrip(WorkerProtocol.load(nextRequestId(), entryPath, format ?: ""), Type.LOADED).mapC { msg ->
+    /**
+     * 加载插件模块（load→loaded）。OpenCode 兼容层载荷（ecosystem/
+     * pluginId/pluginDir/options/storageFile）由各生态加载器提供，
+     * 通用插件只需 entryPath/format。
+     */
+    suspend fun load(
+        entryPath: String,
+        format: String? = null,
+        ecosystem: String = "",
+        pluginId: String = "",
+        pluginDir: String = "",
+        optionsJson: String = "{}",
+        storageFile: String = ""
+    ): Result<WorkerProtocol.Loaded> =
+        roundTrip(
+            WorkerProtocol.load(
+                nextRequestId(), entryPath, format ?: "",
+                ecosystem, pluginId, pluginDir, optionsJson, storageFile
+            ),
+            Type.LOADED
+        ).mapC { msg ->
             WorkerProtocol.Loaded.from(msg) ?: error("loaded 消息负载损坏")
-        }
+        }.onSuccess { lastLoadedResult = it }
 
     /** 调用插件工具（tool.execute→tool.result），返回 output 文本。 */
     suspend fun callTool(toolName: String, argsJson: String): Result<String> {
@@ -157,10 +175,13 @@ class PluginWorker(
             if (process.isAlive) process.destroyForcibly()
         }
         state = State.STOPPED
+        // 同步终结在途请求：看护协程被取消时收尾块可能被跳过（竞态），
+        // 这里主动兜底（幂等 —— 已完成的不受影响）
+        failAllPending(-1)
         scope.cancel()
     }
 
-    /** 强制终止（崩溃处理路径用）：同步等待死亡落定后再返回。 */
+    /** 强制终止（崩溃处理路径用）：同步等死亡落定后再返回。 */
     fun kill() {
         if (state != State.STOPPED) {
             process.destroyForcibly()
@@ -169,12 +190,31 @@ class PluginWorker(
             // 把已杀进程当活实例，后续逻辑全部错拍。
             runCatching { process.waitFor(2, TimeUnit.SECONDS) }
             state = State.STOPPED
+            // 同步终结在途请求（不能依赖被取消的看护协程：scope.cancel 后
+            // 看护协程的 NonCancellable 收尾块存在被跳过的竞态 —— CI 实证）
+            failAllPending(-1)
         }
         scope.cancel()
     }
 
+    /** 终结全部在途请求（失败而非悬挂；幂等，线程安全）。 */
+    private fun failAllPending(code: Int) {
+        val failure = IllegalStateException("worker 进程已退出（code=$code）")
+        pending.values.forEach { it.completeExceptionally(failure) }
+        pending.clear()
+    }
+
     /** 最近一次 fatal 原因（诊断）。 */
     fun lastFatalReason(): String? = lastFatalReason
+
+    /**
+     * 最近一次成功 load 的 Loaded 快照（Supervisor 重启重放后刷新）。
+     * 加载器用它取工具/钩子清单，避免二次 load 重复触发插件 setup。
+     */
+    @Volatile
+    private var lastLoadedResult: WorkerProtocol.Loaded? = null
+
+    fun lastLoaded(): WorkerProtocol.Loaded? = lastLoadedResult
 
     /** STDERR 环形缓冲快照（诊断）。 */
     fun stderrSnapshot(): List<String> = synchronized(stderrLock) { stderrRing.toList() }
@@ -289,13 +329,11 @@ class PluginWorker(
         val code = withContext(Dispatchers.IO) {
             runCatching { process.waitFor() }.getOrDefault(-1)
         }
-        // NonCancellable：kill() 会先 cancel scope 再等退出 —— 若无此保护，
-        // 取消的协程在 waitFor 返回后直接丢弃后续代码，在途请求永远悬挂
-        //（真实事故模式：崩溃后的调用全部卡死到超时）。
+        // NonCancellable：尽力而为的收尾（事件流发射 + 状态落定）；在途请求
+        // 的终结不依赖这里 —— kill/shutdown 已同步兜底（本块存在被取消跳过的
+        // 竞态，仅作为自然死亡路径的事件源）。
         withContext(NonCancellable) {
-            val failure = IllegalStateException("worker 进程已退出（code=$code）")
-            pending.values.forEach { it.completeExceptionally(failure) }
-            pending.clear()
+            failAllPending(code)
             if (state != State.STOPPING && state != State.STOPPED) {
                 state = State.STOPPED
             }
