@@ -86,7 +86,7 @@ class DshCompatibilityResolver {
     }
 
     private fun nodeMajorOf(version: String): Int? =
-        version.trim().removePrefix("v").substringBefore('.').toIntOrNull()
+        version.trim().removePrefix("v").substringBefore('.').filter { it.isDigit() }.toIntOrNull()
 
     private fun String.majorOrCaretFloor(): Int? =
         substringBefore('.').filter { it.isDigit() }.toIntOrNull()

@@ -168,6 +168,17 @@ class DshBridgeTransportTest {
         fun peerCloseStdout() {
             runCatching { stdoutFromProcessWriter.close() }
         }
+
+        /** 真·半帧：声明 [declared] 字节载荷，只写 [actual] 字节即关流。 */
+        fun stdoutHalfFrame(declared: Int, actual: Int) {
+            stdoutFromProcessWriter.write(byteArrayOf(
+                (declared ushr 24).toByte(), (declared ushr 16).toByte(),
+                (declared ushr 8).toByte(), declared.toByte()
+            ))
+            stdoutFromProcessWriter.write(ByteArray(actual))
+            stdoutFromProcessWriter.flush()
+            peerCloseStdout()
+        }
     }
 
     private class CollectingListener : PersistentFrameChannel.Listener {
@@ -212,7 +223,7 @@ class DshBridgeTransportTest {
         try {
             channel.start(scope)
             proc.peerSendBadLength(PersistentFrameChannel.DEFAULT_FRAME_MAX_BYTES + 1)
-            assertTrue(listener.exitLatch.await(5, TimeUnit.SECONDS))
+            assertTrue("超限帧头必须 fail-fast", listener.exitLatch.await(5, TimeUnit.SECONDS))
             assertTrue(listener.exits.single().second!!.contains("out of range"))
         } finally {
             scope.cancel()
@@ -227,10 +238,13 @@ class DshBridgeTransportTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         try {
             channel.start(scope)
-            proc.peerSend("{\"partial")
-            proc.peerCloseStdout()
-            assertTrue(listener.exitLatch.await(5, TimeUnit.SECONDS))
-            assertTrue(listener.exits.single().second!!.contains("EOF mid-frame"))
+            // 合法头声明 20 字节载荷，只发 5 字节即 EOF → 真·半帧破损
+            proc.stdoutHalfFrame(declared = 20, actual = 5)
+            assertTrue("半帧 EOF 必须触发终态", listener.exitLatch.await(5, TimeUnit.SECONDS))
+            assertTrue(
+                "原因必须如实（got ${listener.exits.single().second}）",
+                listener.exits.single().second!!.contains("EOF mid-frame")
+            )
         } finally {
             scope.cancel()
         }
@@ -293,14 +307,24 @@ class DshBridgeTransportTest {
 
     // ═══ ③ 真实 node 端到端（CI 有 node；本机无则跳过）══════════════════
 
-    private fun nodeAvailable(): Boolean = runCatching {
-        val p = ProcessBuilder("node", "--version").start()
-        p.waitFor(5, TimeUnit.SECONDS) && p.exitValue() == 0
-    }.getOrDefault(false)
+    private fun nodeAvailable(): Boolean = listOf("node", "nodejs", "/usr/bin/node", "/usr/local/bin/node")
+        .any { candidate ->
+            runCatching {
+                val p = ProcessBuilder(candidate, "--version").start()
+                p.waitFor(10, TimeUnit.SECONDS) && p.exitValue() == 0
+            }.getOrDefault(false)
+        }
 
     @Test
     fun `real node frame echo end to end`() = runTest {
-        assumeTrue("本机无 node —— CI ubuntu runner 必跑", nodeAvailable())
+        val nodeBin = listOf("node", "nodejs", "/usr/bin/node", "/usr/local/bin/node")
+            .firstOrNull { candidate ->
+                runCatching {
+                    val p = ProcessBuilder(candidate, "--version").start()
+                    p.waitFor(10, TimeUnit.SECONDS) && p.exitValue() == 0
+                }.getOrDefault(false)
+            }
+        assumeTrue("无 node 环境跳过（本机已验证；真机 P0 才是硬门槛）", nodeBin != null)
         val script = File.createTempFile("dsh-frame-echo", ".js")
         script.deleteOnExit()
         script.writeText(

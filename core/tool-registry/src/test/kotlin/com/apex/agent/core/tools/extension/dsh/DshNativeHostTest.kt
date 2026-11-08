@@ -156,6 +156,7 @@ class DshNativeHostTest {
         )
         File(pkg, "lib").mkdirs()
         File(pkg, "lib/index.js").writeText("module.exports = () => {}")
+        File(pkg, "node_modules/dep").mkdirs()
         File(pkg, "node_modules/dep/index.js").writeText("// 依赖不入本体清单")
         repeat(5) { File(pkg, "pad-$it.txt").writeText("x") }
 
@@ -168,7 +169,7 @@ class DshNativeHostTest {
         assertEquals(">=18", report.declaredNodeRange)
         assertEquals("lib/index.js", report.mainEntry)
         assertTrue("指纹非空且稳定", report.fingerprint.length == 64)
-        assertEquals("node_modules 不入清单", 6, report.analyzedFiles)
+        assertEquals("node_modules 不入清单（1 pkg.json + 1 lib + 5 pad）", 7, report.analyzedFiles)
         assertNull("acorn 未 bootstrap = analyzer 诚实 null", report.analyzerUsed)
     }
 
@@ -186,7 +187,7 @@ class DshNativeHostTest {
 
         // git：commit SHA 钉定
         val (_, gitPinned) = installer.gitClonePinned("dsh.demo2", "owner/dsh-repo").getOrThrow()
-        assertEquals("abc123def456", gitPinned.toDescriptor())
+        assertEquals("git@abc123def456", gitPinned.toDescriptor())
         assertEquals("abc123def4567890abc123def4567890abc12345", gitPinned.revision)
     }
 
@@ -204,6 +205,10 @@ class DshNativeHostTest {
             adapters = com.apex.agent.core.tools.extension.ExtensionAdapterRegistry(listOf(adapter)),
             registry = ledger
         )
+
+        // 直接过 introspector：失败时异常原样上抛（CI 可见真栈），不吞成 null
+        val capsDirect = introspector.introspectAndStore("dsh.dsh-demo", "npm:test").getOrThrow()
+        assertEquals("动态验证产出真实版本", "2.7.1", capsDirect.plugin.version)
 
         val manifest = installer.resolve("dsh:dsh-demo").getOrThrow()
         installer.install(manifest.manifestHash, confirmToken = "confirm").getOrThrow()
