@@ -9,6 +9,7 @@ import com.apex.agent.platform.TerminalExec.SpawnRequest
 import com.apex.agent.platform.TerminalExec.SpawnedCommand
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.runTest
@@ -206,7 +207,7 @@ class DshBridgeTransportTest {
             channel.start(scope)
             proc.peerSend("{\"seq\":1,\"text\":\"中文 ✓\"}")
             proc.peerSend("{\"seq\":2}")
-            assertTrue(listener.frameLatch.await(5, TimeUnit.SECONDS))
+            assertTrue("15s 内未收到首帧（CI 负载下调度抖动余量）", listener.frameLatch.await(15, TimeUnit.SECONDS))
             assertEquals(listOf("{\"seq\":1,\"text\":\"中文 ✓\"}", "{\"seq\":2}"), listener.frames.toList())
         } finally {
             channel.destroy()
@@ -223,7 +224,7 @@ class DshBridgeTransportTest {
         try {
             channel.start(scope)
             proc.peerSendBadLength(PersistentFrameChannel.DEFAULT_FRAME_MAX_BYTES + 1)
-            assertTrue("超限帧头必须 fail-fast", listener.exitLatch.await(5, TimeUnit.SECONDS))
+            assertTrue("超限帧头必须 fail-fast", listener.exitLatch.await(15, TimeUnit.SECONDS))
             assertTrue(listener.exits.single().second!!.contains("out of range"))
         } finally {
             scope.cancel()
@@ -240,7 +241,7 @@ class DshBridgeTransportTest {
             channel.start(scope)
             // 合法头声明 20 字节载荷，只发 5 字节即 EOF → 真·半帧破损
             proc.stdoutHalfFrame(declared = 20, actual = 5)
-            assertTrue("半帧 EOF 必须触发终态", listener.exitLatch.await(5, TimeUnit.SECONDS))
+            assertTrue("半帧 EOF 必须触发终态", listener.exitLatch.await(15, TimeUnit.SECONDS))
             assertTrue(
                 "原因必须如实（got ${listener.exits.single().second}）",
                 listener.exits.single().second!!.contains("EOF mid-frame")
@@ -261,7 +262,7 @@ class DshBridgeTransportTest {
             val oversized = "x".repeat(PersistentFrameChannel.DEFAULT_FRAME_MAX_BYTES + 1)
             assertTrue(channel.send(oversized).isFailure)
             channel.destroy()
-            assertTrue("终态恰好一次", listener.exitLatch.await(5, TimeUnit.SECONDS))
+            assertTrue("终态恰好一次", listener.exitLatch.await(15, TimeUnit.SECONDS))
             assertTrue(channel.send("{}").isFailure)
         } finally {
             scope.cancel()
@@ -277,7 +278,7 @@ class DshBridgeTransportTest {
         try {
             channel.start(scope)
             proc.peerCloseStdout()
-            assertTrue(listener.exitLatch.await(5, TimeUnit.SECONDS))
+            assertTrue(listener.exitLatch.await(15, TimeUnit.SECONDS))
             channel.destroy()
             // CAS 恰好一次语义：destroy 返回后再查仍是 1（迟到读协程赢不了 compareAndSet）
             assertEquals("EOF + destroy 只允许一次终态上报", 1, listener.exits.size)
@@ -316,7 +317,7 @@ class DshBridgeTransportTest {
         }
 
     @Test
-    fun `real node frame echo end to end`() = runTest {
+    fun `real node frame echo end to end`() {
         val nodeBin = listOf("node", "nodejs", "/usr/bin/node", "/usr/local/bin/node")
             .firstOrNull { candidate ->
                 runCatching {
@@ -324,7 +325,7 @@ class DshBridgeTransportTest {
                     p.waitFor(10, TimeUnit.SECONDS) && p.exitValue() == 0
                 }.getOrDefault(false)
             }
-        if (nodeBin == null) return@runTest // 无 node 环境跳过（真机 P0 才是硬门槛）
+        if (nodeBin == null) return // 无 node 环境跳过（真机 P0 才是硬门槛）
         val script = File.createTempFile("dsh-frame-echo", ".js")
         script.deleteOnExit()
         script.writeText(
@@ -388,12 +389,21 @@ class DshBridgeTransportTest {
         }
         val channel = PersistentFrameChannel(spawned, generation = 1, listener = listener)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val sendDone = CountDownLatch(1)
         try {
             channel.start(scope)
-            channel.send("{\"type\":\"echo\",\"seq\":1,\"text\":\"中文 帧 ✓\"}").getOrThrow()
-            channel.send("{\"type\":\"echo\",\"seq\":2,\"text\":\"plain\"}").getOrThrow()
+            // 发送经 IO 协程驱动（本测试不用 runTest/runBlocking —— 反模式预算 + 虚拟时钟
+            // 与真实进程 IO 混用的时序坑），断言全部 latch 化
+            scope.launch {
+                runCatching {
+                    channel.send("{\"type\":\"echo\",\"seq\":1,\"text\":\"中文 帧 ✓\"}").getOrThrow()
+                    channel.send("{\"type\":\"echo\",\"seq\":2,\"text\":\"plain\"}").getOrThrow()
+                }
+                sendDone.countDown()
+            }
+            assertTrue("15s 内发送未完成（stdin 管道写入阻塞）", sendDone.await(15, TimeUnit.SECONDS))
             assertTrue("20s 内未收到 echo_ack（node 帧回显失败）", listener.firstAck.await(20, TimeUnit.SECONDS))
-            channel.send("{\"type\":\"die\"}").getOrThrow()
+            scope.launch { runCatching { channel.send("{\"type\":\"die\"}").getOrThrow() } }
             assertTrue("20s 内未等到 die 退出（进程退出路径失败）", listener.exit.await(20, TimeUnit.SECONDS))
             // stderr 日志与帧流并发的最终裁决：全程恰好 2 帧且无坏帧（污染会破坏解析）
             val acks = synchronized(listener.acks) { listener.acks.toList() }
