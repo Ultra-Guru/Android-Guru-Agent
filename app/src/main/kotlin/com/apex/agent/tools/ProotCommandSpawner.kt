@@ -175,6 +175,90 @@ class ProotCommandSpawner(
     }
 
     // ══════════════════════════════════════════════════════════════════
+    //  Native Plugin Host 2.0：长驻 Worker 进程（Phase 6，待设备验证）
+    // ══════════════════════════════════════════════════════════════════
+
+    /**
+     * 在 Ubuntu 沙箱内启动**长驻**进程（stdin 保持打开 —— Plugin Worker 的
+     * 换行 JSON IPC 通道）。与 [spawn] 的差异：进程不自动收干退出、
+     * stdin 不关闭、不做宿主通道回落（Worker 必须在沙箱里 —— rootfs 未
+     * 就绪即失败，不用宿主 node 冒充）。
+     *
+     * 复用 [spawn] 的全部路由/bind/env 约定（filesDir 下的 host 目录经
+     * 同路径 bind 进 guest —— Worker 引导脚本与插件目录的 host 绝对路径
+     * 在 guest 内同值可达）。
+     *
+     * ⚠️ 诚实边界（spec §16.5）：CI 只验证编译与 JVM E2E；沙箱长驻进程的
+     * 实机行为（rootfs 就绪度 / bind 映射 / ARM64 node）属**待设备验证**。
+     *
+     * @param argv guest 视角命令（首词经 guest PATH 解析，如 node）
+     * @param cwd host 侧工作目录（必须真实存在；经 planGuestCwd 映射）
+     */
+    fun spawnLongLived(
+        argv: List<String>,
+        cwd: File,
+        env: Map<String, String> = emptyMap()
+    ): Result<Process> {
+        if (argv.isEmpty()) {
+            return Result.failure(IllegalArgumentException("argv must not be empty"))
+        }
+        if (!isRootfsReady()) {
+            return Result.failure(IllegalStateException("rootfs 未就绪 —— Worker 必须在沙箱内执行，不回落宿主通道"))
+        }
+        if (!cwd.isDirectory) {
+            return Result.failure(IllegalArgumentException("cwd 不存在: ${cwd.absolutePath}"))
+        }
+        val rootfs = resolveActiveRootfs()
+            ?: return Result.failure(IllegalStateException("rootfs 解析失败"))
+        val plan = planGuestCwd(cwd.absolutePath)
+        val guestEnv = LinkedHashMap<String, String>()
+        guestEnv["PATH"] = LinuxEnvironmentManager.GUEST_PATH
+        guestEnv["TERM"] = "dumb"
+        guestEnv["HOME"] = GuestUserHome.GUEST_PATH
+        guestEnv["LANG"] = "C.UTF-8"
+        guestEnv["PWD"] = plan.guestCwd
+        guestEnv["TMPDIR"] = "/tmp"
+        guestEnv.putAll(env)
+        val pr = PRootLaunchRequest(
+            rootfs = RootfsDescriptor(
+                id = "ubuntu",
+                distribution = LinuxDistribution.UBUNTU,
+                version = null,
+                architecture = CpuArchitecture.UNKNOWN,
+                location = AbsolutePath(rootfs.absolutePath),
+                sizeBytes = null,
+                checksum = null,
+                readOnly = false
+            ),
+            executable = argv.first(),
+            arguments = argv.drop(1),
+            workingDirectory = plan.workingDirectory,
+            environment = guestEnv,
+            binds = buildBinds(plan),
+            fakeRoot = true,
+            killOnExit = true
+        )
+        val wsHost = plan.workspaceHostDir
+            ?: defaultWorkspaceDir?.takeIf { it.isDirectory }
+            ?: File(rootfs, "workspace").also { runCatching { it.mkdirs() } }
+        val command = commandBuilder.build(
+            pr,
+            prootBinary = AbsolutePath(hostEnvironment.prootBinary.absolutePath),
+            rootfsPath = AbsolutePath(rootfs.absolutePath),
+            workspacePath = AbsolutePath(wsHost.absolutePath),
+            capabilities = capabilities()
+        )
+        val hostArgv = listOf(command.executable.value) + command.arguments
+        return runCatching {
+            val pb = ProcessBuilder(hostArgv).redirectErrorStream(false)
+            // G4 同款：宿主 env 清空整体替换（不继承 app 进程变量）
+            pb.environment().clear()
+            pb.environment().putAll(prepareHostEnv())
+            pb.start() // stdin 保持打开 —— IPC 通道由调用方管理
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
     //  路由决策
     // ══════════════════════════════════════════════════════════════════
 

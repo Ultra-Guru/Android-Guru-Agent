@@ -14,6 +14,13 @@ import com.apex.agent.core.tools.extension.tools.ExtensionResolveTool
 import com.apex.agent.core.tools.extension.tools.ExtensionRunTool
 import com.apex.agent.core.tools.extension.tools.ExtensionSyncTool
 import com.apex.agent.core.tools.extension.tools.ExtensionUninstallTool
+import com.apex.agent.core.tools.pluginhost.bridge.PluginEventBus
+import com.apex.agent.core.tools.pluginhost.bridge.PluginToolBridge
+import com.apex.agent.core.tools.pluginhost.doctor.PluginHostDoctorTool
+import com.apex.agent.core.tools.pluginhost.lifecycle.PluginLifecycleManager
+import com.apex.agent.core.tools.pluginhost.worker.BunRuntimeProvider
+import com.apex.agent.core.tools.pluginhost.worker.NodeRuntimeProvider
+import com.apex.agent.core.tools.pluginhost.worker.PluginWorkerSupervisor
 import com.apex.agent.core.tools.mcp.McpManager
 import com.apex.agent.core.tools.skill.SkillRegistry
 
@@ -36,7 +43,10 @@ internal fun registerExtensionTools(
     mcpManager: McpManager,
     fusionRegistry: com.apex.agent.core.tools.fusion.FusionBundleRegistry,
     nodeInstallPort: NodeInstallPort?,
-    extensionLayout: com.apex.agent.core.tools.extension.ExtensionDirLayout
+    extensionLayout: com.apex.agent.core.tools.extension.ExtensionDirLayout,
+    pluginLifecycle: PluginLifecycleManager? = null,
+    pluginSupervisor: PluginWorkerSupervisor? = null,
+    pluginToolBridge: PluginToolBridge? = null
 ) {
     registry.register(SafeAgentTool(ExtensionResolveTool(installer)))
     registry.register(SafeAgentTool(ExtensionInspectTool(installer)))
@@ -55,6 +65,20 @@ internal fun registerExtensionTools(
         )
     }
     registry.register(SafeAgentTool(ExtensionUninstallTool(installer, ledger)))
+    // Native Plugin Host 2.0：宿主诊断（生命周期/Worker 健康/工具绑定/运行时探测）
+    if (pluginLifecycle != null && pluginSupervisor != null && pluginToolBridge != null && nodeInstallPort != null) {
+        registry.register(
+            SafeAgentTool(
+                PluginHostDoctorTool(
+                    lifecycle = pluginLifecycle,
+                    supervisor = pluginSupervisor,
+                    toolBridge = pluginToolBridge,
+                    nodeProvider = NodeRuntimeProvider(nodeInstallPort),
+                    bunProvider = BunRuntimeProvider(nodeInstallPort)
+                )
+            )
+        )
+    }
     registry.register(SafeAgentTool(ExtensionSyncTool(installer, ledger)))
     registry.register(
         SafeAgentTool(
