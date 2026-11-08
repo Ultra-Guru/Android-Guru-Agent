@@ -155,7 +155,15 @@ SDK 垫片：插件目录未安装 `@opencode/plugin` 时落盘最小实现
 | 3 | Unified Capability Bridge + ToolRegistry 动态注册 + 生命周期管理器 | ✅（真实 node E2E 锁定） |
 | 4 | OpenCode V1/V2 Loader + 官方 SDK 上下文桥 | ✅（官方形状 fixture 真实 node 锁定） |
 | 5 | Claude Hooks + `.mcp.json` + `.lsp.json` 兼容 | ✅（真实 sh E2E 锁定；安装链路接线在 Phase 6） |
-| 6 | DSH 审计 + App DI 接线 + Doctor/Inspect 集成 + 端到端链路 | 计划 |
+| 6 | App DI 接线 + PluginHostDoctor 诊断工具 + 沙箱长驻进程端口 | ✅（CI 编译 + JVM 验证；沙箱实机行为待设备验证） |
+
+### Phase 6 之后（后续独立工作）
+
+- DSH 真实协议审计（矩阵当前如实 UNKNOWN）
+- Claude 兼容层接入 ClaudeExtensionAdapter.install 链（hooks.json/.mcp.json 自动挂接）
+- OpenCode Loader 接入 ExtensionInstallTool 装后自动启动
+- 统一 LSP Host（Code Mode 与插件共用）
+- Android ARM64 实机回归（PRoot 长驻 Worker / bind 映射 / rootfs 就绪度 —— spec §16.5 明确 CI 不可替代）
 
 每个 Phase 的矩阵状态迁移（PLANNED→SUPPORTED）必须同步更新
 `PluginEcosystemMatrix` 与 `PluginHostModelTest` 契约锁 —— 评级永远
