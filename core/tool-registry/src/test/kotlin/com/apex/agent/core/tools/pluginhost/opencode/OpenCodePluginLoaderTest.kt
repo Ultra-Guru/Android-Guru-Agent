@@ -319,7 +319,8 @@ class OpenCodePluginLoaderTest {
         override suspend fun exec(
             command: List<String>,
             cwd: File,
-            timeoutMs: Long
+            timeoutMs: Long,
+            stdin: String?
         ): Result<com.apex.agent.core.tools.extension.NodeInstallPort.ExecOutcome> =
             Result.failure(UnsupportedOperationException("probe not wired"))
 

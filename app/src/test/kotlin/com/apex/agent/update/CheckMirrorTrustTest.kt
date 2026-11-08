@@ -180,9 +180,11 @@ class CheckMirrorTrustTest {
     }
 
     @Test
-    fun `hijacked mirror with unsigned direct stays untrusted but usable in grace`() = runTest {
-        // 现实过渡期场景：镜像被劫持返回坏签名，直连真实但尚未发布签名 ——
-        // 镜像的坏签名被记账，但直连无签名内容在过渡期内按旧 schema 放行
+    fun `hijacked mirror with unsigned direct hard-rejects even in grace`() = runTest {
+        // 现实过渡期场景：镜像被劫持返回坏签名（篡改证据），直连真实但尚未
+        // 发布签名 —— 篡改证据优先级高于过渡期放行：链上见过坏签名即硬拒绝，
+        // 绝不退回「无签名按旧 schema 放行」（spec：任何「无签名放行」都
+        // 不适用于已检出篡改的链）
         val mirrorUrl = DownloadMirror.NODES.first().prefix + rawUrl
         val hijacked = """{"versionName":"9.9.9","versionCode":999}"""
         val transport = fakeTransport(
@@ -192,11 +194,15 @@ class CheckMirrorTrustTest {
                 directUrl to goodManifest
             )
         )
-        val result = CheckMirror.fetchVerified(
-            rawUrl, nowEpochMs = withinGrace, fetcher = transport,
-            verifier = publisherVerifier
-        )
-        assertTrue(result is TrustedManifest.LegacyUnsigned)
+        try {
+            CheckMirror.fetchVerified(
+                rawUrl, nowEpochMs = withinGrace, fetcher = transport,
+                verifier = publisherVerifier
+            )
+            throw AssertionError("见过坏签名的链必须硬拒绝，即使过渡期内有无签名候选")
+        } catch (expected: ManifestTrustException) {
+            assertTrue(expected.reason.contains("疑似被篡改"))
+        }
     }
 
     // ── 坏镜像的挑战页防御 ──────────────────────────────────────────────
