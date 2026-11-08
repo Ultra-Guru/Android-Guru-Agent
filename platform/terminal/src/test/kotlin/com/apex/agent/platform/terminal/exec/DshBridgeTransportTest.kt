@@ -354,7 +354,25 @@ class DshBridgeTransportTest {
             """.trimIndent()
         )
         val spawned = ProcessBuilderSpawner(shell = "/bin/sh")
-            .spawn(SpawnRequest(command = "node \"${script.absolutePath}\"", cwd = null, env = emptyMap()))
+        // 直 argv 通道（与 DshNativeHostTest.RealNodePort 同款 —— 已验证路径）：
+        // 经 shell 的间接层只在 CI 引入变量，帧通道契约本身与 shell 无关
+        val directSpawner = object : CommandSpawner {
+            override val channel = "test-argv"
+            override val supportsEnv = true
+            override fun spawn(request: SpawnRequest): SpawnedCommand {
+                val proc = ProcessBuilder(request.command.split(" ", limit = 2)).start()
+                return object : SpawnedCommand {
+                    override val stdout: InputStream get() = proc.inputStream
+                    override val stderr: InputStream? get() = proc.errorStream
+                    override val stdin: OutputStream get() = proc.outputStream
+                    override fun waitFor(timeoutMs: Long) = proc.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
+                    override fun exitValue() = proc.exitValue()
+                    override fun destroy() { proc.destroyForcibly() }
+                }
+            }
+        }
+        val spawned = directSpawner.spawn(SpawnRequest(command = "node ${script.absolutePath}", cwd = null, env = emptyMap()))
+        println("[dsh-e2e] spawned node, script=${script.absolutePath}")
         val listener = object : PersistentFrameChannel.Listener {
             val acks = mutableListOf<String>()
             val firstAck = CountDownLatch(1)
@@ -385,6 +403,7 @@ class DshBridgeTransportTest {
             assertTrue(acks[0].contains("中文 帧 ✓"))
             assertTrue(acks[1].contains("\"seq\":2"))
             assertEquals("die 路径退出码必须如实", 7, listener.exitCode)
+            println("[dsh-e2e] completed ok")
         } finally {
             channel.destroy()
             scope.cancel()
