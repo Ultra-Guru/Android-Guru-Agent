@@ -407,6 +407,8 @@ class DshBridgeTransportTest {
             assertTrue("20s 内未等到 die 退出（进程退出路径失败）", listener.exit.await(20, TimeUnit.SECONDS))
             // stderr 日志与帧流并发的最终裁决：全程恰好 2 帧且无坏帧（污染会破坏解析）
             val acks = synchronized(listener.acks) { listener.acks.toList() }
+            println("[dsh-e2e] acks=" + acks.joinToString(" | ") { it })
+            println("[dsh-e2e] exit=" + listener.exitCode + " cause=" + listener.exitCause)
             assertEquals(2, acks.size)
             assertTrue(acks[0].contains("\"echo_ack\""))
             assertTrue(acks[0].contains("中文 帧 ✓"))
