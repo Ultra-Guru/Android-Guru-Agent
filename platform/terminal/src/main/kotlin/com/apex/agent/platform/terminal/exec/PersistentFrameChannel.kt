@@ -96,7 +96,7 @@ class PersistentFrameChannel(
                 stream.flush()
             }.onFailure {
                 // 管道破裂：进程已死 —— 判破并上报，不假装发送成功
-                failClosed(exitCode = safeExitCode(), cause = "send failed: ${it.message}")
+                failClosed(exitCode = settledExitCode(), cause = "send failed: ${it.message}")
                 return@withContext Result.failure(it)
             }
             Result.success(Unit)
@@ -108,7 +108,7 @@ class PersistentFrameChannel(
         if (destroyed) return
         destroyed = true
         runCatching { process.destroy() }
-        failClosed(exitCode = safeExitCode(), cause = "destroyed")
+        failClosed(exitCode = settledExitCode(), cause = "destroyed")
     }
 
     // ── 内部 ──
@@ -119,22 +119,22 @@ class PersistentFrameChannel(
             while (true) {
                 val length = readIntBE(stdout) ?: break // EOF = 正常终态
                 if (length < 0 || length > frameMaxBytes) {
-                    failClosed(safeExitCode(), "frame length $length out of range (0..$frameMaxBytes)")
+                    failClosed(settledExitCode(), "frame length $length out of range (0..$frameMaxBytes)")
                     return
                 }
                 val payload = ByteArray(length)
                 if (!readFully(stdout, payload)) {
-                    failClosed(safeExitCode(), "EOF mid-frame (expected $length bytes)")
+                    failClosed(settledExitCode(), "EOF mid-frame (expected $length bytes)")
                     return
                 }
                 // listener 异常不能静默杀死读协程（协程挂了 = 通道假活）—— 判破如实上报
                 runCatching { listener.onFrame(String(payload, Charsets.UTF_8)) }
-                    .onFailure { failClosed(safeExitCode(), "listener threw: ${it.message}"); return }
+                    .onFailure { failClosed(settledExitCode(), "listener threw: ${it.message}"); return }
             }
-            failClosed(safeExitCode(), "stdout EOF")
+            failClosed(settledExitCode(), "stdout EOF")
         } catch (e: java.io.IOException) {
             // 进程被杀/管道破裂 —— 已收内容即终态
-            failClosed(safeExitCode(), "stdout IO error: ${e.message}")
+            failClosed(settledExitCode(), "stdout IO error: ${e.message}")
         }
     }
 
@@ -148,8 +148,18 @@ class PersistentFrameChannel(
         }
     }
 
-    /** 进程若已退出拿真实退出码；仍活着（孙进程持有 stdout 等）= null 诚实上报。 */
-    private fun safeExitCode(): Int? = runCatching { process.exitValue() }.getOrNull()
+    /**
+     * 进程真实退出码（限时收尾）：stdout EOF 常早于进程退出完成 —— 此时
+     * exitValue() 抛 IllegalThreadStateException，直接吞成 null 会把真实
+     * 退出码（如 die 路径的 7）报成「未知」。先探一次，仍活着则限时 waitFor
+     * （2s 上限，杀路径也不至于拖死读协程），拿到即如实上报。
+     */
+    private fun settledExitCode(): Int? {
+        val direct = runCatching { process.exitValue() }.getOrNull()
+        if (direct != null) return direct
+        val settled = runCatching { process.waitFor(EXIT_SETTLE_TIMEOUT_MS) }.getOrDefault(false)
+        return if (settled) runCatching { process.exitValue() }.getOrNull() else null
+    }
 
     private fun writeIntBE(out: OutputStream, value: Int) {
         out.write((value ushr 24) and 0xFF)
@@ -185,6 +195,9 @@ class PersistentFrameChannel(
 
         /** 帧头字节数（诊断/测试用）。 */
         const val HEADER_BYTES: Int = 4
+
+        /** EOF 后等进程收尾的上限（真实退出码如实上报的窗口）。 */
+        const val EXIT_SETTLE_TIMEOUT_MS: Long = 2_000
 
         /** 代次分配器（Worker 管理层共用；进程级唯一即可）。 */
         val GENERATION = AtomicLong(1)
