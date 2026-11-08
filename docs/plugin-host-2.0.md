@@ -59,6 +59,22 @@ Agent Core（ToolRegistry / SkillRegistry / FusionBundle / McpManager）
 | `PluginEcosystemMatrix` | 生态 × 能力支持矩阵 —— 兼容性分析的单一事实源 |
 | `PluginCompatibilityAnalyzer` | 安装前评级引擎（A/B/C/D/F），评级只依据真实实现与真实探测 |
 
+## 3.1 Worker 运行时（Phase 2 已落地）
+
+`.../pluginhost/worker/`：
+
+| 组件 | 职责 |
+|------|------|
+| `WorkerProtocol` | 换行 JSON IPC 信封（protocol/plugin-host v1）：hello/ready、load/loaded、tool.execute/tool.result、event.emit/plugin.event、ping/pong、cancel、shutdown、fatal —— STDOUT 纯协议、日志全走 STDERR |
+| `PluginWorkerBootstrap` | Worker 侧 JS 引导脚本（通用插件模块契约：ESM/CJS 的 tools 导出 + 可选 setup）；console.log 重定向 STDERR，TS 入口在 node 下如实拒绝 |
+| `PluginWorker` | 持久化 Worker：读循环 requestId 关联分发、写互斥、STDERR 环形缓冲、退出看护（NonCancellable 终结在途请求）、优雅停机/强杀 |
+| `PluginWorkerSupervisor` | 崩溃看护：窗口计数重启策略 + 上限 GaveUp + 重启后 handshake/load 重放 + 用户 stop 不触发重启 |
+| `WorkerProcessPort` / `LocalProcessWorkerPort` | 长驻进程生成端口（JVM 直启实现供 CI/桌面；Android 走 PRoot 通道，Phase 6 接线） |
+| `RuntimeProvider`（Node/Bun） | 运行时探测与启动命令构造 —— Node 与 Bun 探测/命令分离，缺失如实报告，禁止互相冒充 |
+
+验收锚点（真实 node E2E）：完整 IPC 链路、工具热调用复用 Worker、错误隔离（工具抛异常进程不死）、
+在途请求随进程死亡失败而非悬挂、崩溃→自动重启→调用恢复、重启预算耗尽→GaveUp、用户 stop 不重启。
+
 ## 4. 兼容性等级
 
 | 等级 | 含义 | 判定依据 |
@@ -118,8 +134,8 @@ Agent Core（ToolRegistry / SkillRegistry / FusionBundle / McpManager）
 | Phase | 交付 | 状态 |
 |-------|------|------|
 | 0 | 现状审计 + 协议研究 + 兼容矩阵 | ✅ 本档 §5 |
-| 1 | 统一核心模型 + 兼容性分析引擎 | ✅ 本 PR |
-| 2 | PluginWorker + JSON-RPC IPC + Supervisor 崩溃恢复 + Node/Bun RuntimeProvider | 计划 |
+| 1 | 统一核心模型 + 兼容性分析引擎 | ✅ |
+| 2 | PluginWorker + 换行 JSON IPC + Supervisor 崩溃恢复 + Node/Bun RuntimeProvider | ✅（真实 node E2E 锁定） |
 | 3 | Unified Capability Bridge + ToolRegistry 动态注册 + 生命周期管理器 | 计划 |
 | 4 | OpenCode V1/V2 Loader + 官方 SDK 上下文桥 | 计划 |
 | 5 | Claude Hooks + `.mcp.json` + `.lsp.json` 兼容 | 计划 |
