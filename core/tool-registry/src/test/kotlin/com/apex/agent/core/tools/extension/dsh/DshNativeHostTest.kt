@@ -230,11 +230,11 @@ class DshNativeHostTest {
     private class RealNodePort(private val cwd: File) : NodeInstallPort {
         override suspend fun exec(
             command: List<String>,
-            cwd2: File,
+            dir: File,
             timeoutMs: Long,
             stdin: String?
         ): Result<NodeInstallPort.ExecOutcome> = runCatching {
-            val proc = ProcessBuilder(command).directory(cwd2.takeIf { it.isDirectory } ?: cwd)
+            val proc = ProcessBuilder(command).directory(dir.takeIf { it.isDirectory } ?: cwd)
                 .redirectErrorStream(false).start()
             if (stdin != null) {
                 proc.outputStream.use { it.write(stdin.toByteArray(Charsets.UTF_8)) }
@@ -274,7 +274,7 @@ class DshNativeHostTest {
                 "node", File(deployed, "dsh-introspect.js").absolutePath,
                 layout.pkgDir("dsh.fncjs").absolutePath
             ),
-            cwd = layout.extensionRoot,
+            dir = layout.extensionRoot,
             timeoutMs = 60_000
         ).getOrThrow()
         assertTrue("exit 0：${outcome.stderr}", outcome.success)
@@ -305,7 +305,7 @@ class DshNativeHostTest {
                 "node", File(deployed, "dsh-run-tool.js").absolutePath,
                 layout.pkgDir("dsh.fncjs").absolutePath, "fixture_hello"
             ),
-            cwd = layout.extensionRoot,
+            dir = layout.extensionRoot,
             timeoutMs = 60_000,
             stdin = """{"name":"Guru"}"""
         ).getOrThrow()
@@ -328,7 +328,7 @@ class DshNativeHostTest {
                 "node", File(deployed, "dsh-introspect.js").absolutePath,
                 layout.pkgDir("dsh.objesm").absolutePath
             ),
-            cwd = layout.extensionRoot,
+            dir = layout.extensionRoot,
             timeoutMs = 60_000
         ).getOrThrow()
         val env = ExtensionJson.json.parseToJsonElement(outcome.stdout.trim()).jsonObject
@@ -351,7 +351,7 @@ class DshNativeHostTest {
                 "node", File(deployed, "dsh-introspect.js").absolutePath,
                 layout.pkgDir("dsh.abort").absolutePath
             ),
-            cwd = layout.extensionRoot,
+            dir = layout.extensionRoot,
             timeoutMs = 60_000
         ).getOrThrow()
         val env = ExtensionJson.json.parseToJsonElement(outcome.stdout.trim()).jsonObject
@@ -376,7 +376,7 @@ class DshNativeHostTest {
                 "node", File(deployed, "dsh-introspect.js").absolutePath,
                 layout.pkgDir("dsh.cls").absolutePath
             ),
-            cwd = layout.extensionRoot,
+            dir = layout.extensionRoot,
             timeoutMs = 60_000
         ).getOrThrow()
         val env = ExtensionJson.json.parseToJsonElement(outcome.stdout.trim()).jsonObject
