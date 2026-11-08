@@ -136,7 +136,7 @@ Agent Core（ToolRegistry / SkillRegistry / FusionBundle / McpManager）
 | 0 | 现状审计 + 协议研究 + 兼容矩阵 | ✅ 本档 §5 |
 | 1 | 统一核心模型 + 兼容性分析引擎 | ✅ |
 | 2 | PluginWorker + 换行 JSON IPC + Supervisor 崩溃恢复 + Node/Bun RuntimeProvider | ✅（真实 node E2E 锁定） |
-| 3 | Unified Capability Bridge + ToolRegistry 动态注册 + 生命周期管理器 | 计划 |
+| 3 | Unified Capability Bridge + ToolRegistry 动态注册 + 生命周期管理器 | ✅（真实 node E2E 锁定） |
 | 4 | OpenCode V1/V2 Loader + 官方 SDK 上下文桥 | 计划 |
 | 5 | Claude Hooks + `.mcp.json` + `.lsp.json` 兼容 | 计划 |
 | 6 | DSH 审计 + App DI 接线 + Doctor/Inspect 集成 + 端到端链路 | 计划 |
