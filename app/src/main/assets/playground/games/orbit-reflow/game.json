@@ -1,0 +1,1 @@
+{"id":"orbit-reflow","name":"弹球引流","nameEn":"Orbit Reflow","tagline":"弹球撞进版面，文章逐行变宽绕行，点爆弹球别让末行溢出","version":1,"engine":"pretext@0.0.9","apis":["prepareWithSegments","layoutNextLineRange","materializeLineRange"],"controls":"点弹球三下点爆","scoreKey":"aga.pg.orbit-reflow.hi"}
