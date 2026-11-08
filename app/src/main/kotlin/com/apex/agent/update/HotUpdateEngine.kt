@@ -11,6 +11,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.security.MessageDigest
 
@@ -24,7 +25,7 @@ import java.security.MessageDigest
  * 全程不碰 PackageManager —— **签名冲突在热更通道上不存在**（这正是
  * debug 密钥签名时代增量重装路径的救命通道，见 docs/hot-update-pipeline.md）。
  *
- * 流水线五段（全部 IO 线程，状态经 [StateListener] 单向上报）：
+ * 流水线六段（全部 IO 线程，状态经 [StateListener] 单向上报）：
  *
  * 1. **断点复用**：热更包已完整落盘（体积 + SHA-256 对账）则跳过下载；
  * 2. **下载**：系统 DownloadManager 托管（通知栏进度 / 断点续传 / 进程被杀
@@ -33,9 +34,12 @@ import java.security.MessageDigest
  * 4. **解包复核**：[SafeZipExtractor]（路径穿越 + zip bomb 防御）解压暂存
  *   → `hotmanifest.json` 解析（schema 校验）→ **逐文件 SHA-256 复核**
  *   （第二道防线：外层指纹对账后内容再被篡改的极端场景）；
- * 5. **落位生效**：[HotContentStore.applyPackage] 原子换位 → 技能经
- *   [SkillReapplier] 立即注入注册表（版本化幂等升级，保持用户启停态；
- *   SkillHotReloader 令新工具即时可用）→ 上报 [State.Applied]。
+ * 5. **用户确认（S-02）**：热更内容按代码对待 —— 变更清单就绪后挂起等待
+ *   [ConfirmationGate]（UI 弹确认框，可取消；超时视为取消）；
+ * 6. **落位生效**：[HotContentStore.applyPackage] 原子换位（上一代 overlay
+ *   保留在 backup 位供回滚，见 S-02）→ 技能经 [SkillReapplier] 立即注入
+ *   注册表（版本化幂等升级，保持用户启停态；SkillHotReloader 令新工具
+ *   即时可用）→ 上报 [State.Applied]。
  *
  * 失败折叠为 [State.Failed]（[FailKind] 供 UI 本地化），不向上抛；
  * MCP 目录为读取时 overlay（市场页下次加载即见新目录），无需主动刷新。
@@ -43,8 +47,20 @@ import java.security.MessageDigest
 class HotUpdateEngine(
     private val downloader: UpdateDownloader,
     private val store: HotContentStore,
-    private val skillReapplier: SkillReapplier
+    private val skillReapplier: SkillReapplier,
+    private val confirmationGate: ConfirmationGate = ConfirmationGate { _ -> true }
 ) {
+
+    /**
+     * 落位前用户确认闸门（S-02：热更按代码对待）。
+     *
+     * 解包复核通过、变更清单就绪后调用；返回 false = 用户拒绝本次注入
+     * —— 引擎按取消收尾（已下载 ZIP 保留，重试/换版语义不变）。默认
+     * 实现恒 true（单测 / 无 UI 环境兼容）。
+     */
+    fun interface ConfirmationGate {
+        suspend fun confirm(pkg: HotPackage.Manifest): Boolean
+    }
 
     /**
      * 技能重放出口 —— 引擎不持有 DI 图；由 [UpdateCenter] 以 Hilt EntryPoint
@@ -57,7 +73,7 @@ class HotUpdateEngine(
     }
 
     /** 失败类别 —— UI 据此出本地化文案。 */
-    enum class FailKind { SPACE, DOWNLOAD, VERIFY, UNPACK, APPLY }
+    enum class FailKind { SPACE, DOWNLOAD, VERIFY, UNPACK, APPLY, CANCELLED }
 
     /** 流水线状态 —— UI 按类型渲染。 */
     sealed interface State {
@@ -66,6 +82,15 @@ class HotUpdateEngine(
 
         /** 校验阶段（ZIP 指纹 + 解包 + 逐文件复核 + 换位，时长不定）。 */
         data object Verifying : State
+
+        /**
+         * 变更清单就绪，等待用户确认注入（S-02）—— UI 据此弹确认框，
+         * 列出目标版本与全部文件路径后答复；超时按取消处理。
+         */
+        data class AwaitingConfirmation(
+            val targetVersionName: String,
+            val entries: Int
+        ) : State
 
         /** 热更生效 —— target 版本 / 包内文件数 / 技能注入数。 */
         data class Applied(
@@ -203,7 +228,30 @@ class HotUpdateEngine(
                 }
             }
 
-            // ── 阶段三：原子落位 + 技能即时注入 ────────────────────────────
+            // ── 阶段三：用户确认（S-02：热更按代码对待，注入前必须可取消）──
+            listener.onStateChanged(
+                State.AwaitingConfirmation(
+                    packageManifest.targetVersionName,
+                    packageManifest.entries.size
+                )
+            )
+            val approved = runCatching {
+                withTimeout(CONFIRM_TIMEOUT_MS) {
+                    confirmationGate.confirm(packageManifest)
+                }
+            }.getOrDefault(false)
+            if (!approved) {
+                AppLogger.instance.info(
+                    LogCategory.SYSTEM, "HotUpdateEngine",
+                    "热更注入被取消（v${packageManifest.targetVersionName}）—— 暂存清理，ZIP 保留供重试"
+                )
+                listener.onStateChanged(
+                    State.Failed(FailKind.CANCELLED, packageManifest.targetVersionName)
+                )
+                return
+            }
+
+            // ── 阶段四：原子落位 + 技能即时注入 ────────────────────────────
             // packageSha256（version.json hot 档）随应用记账 —— 发布仓库应急
             // 重发同版本包时，门控凭指纹判定需要重新应用
             if (!store.applyPackage(stage, packageManifest, manifest.tag, hot.sha256)) {
@@ -261,11 +309,15 @@ class HotUpdateEngine(
         }
     }
 
-    /** 热更包完整性判定（体积对账先行，SHA-256 兜底；无指纹时体积即放行）。 */
+    /**
+     * 热更包完整性判定（体积对账先行，SHA-256 兜底）。无指纹策略统一
+     * 收敛到 [UpdateDownloader.verifySha256]（S-02：fail-closed + 编译期
+     * 过渡），本方法不再单独放行无指纹包。
+     */
     private fun isZipComplete(file: File, hot: HotAsset): Boolean {
         if (!file.exists() || file.length() == 0L) return false
         if (hot.sizeBytes > 0 && file.length() != hot.sizeBytes) return false
-        return hot.sha256.isNullOrBlank() || downloader.verifySha256(file, hot.sha256)
+        return downloader.verifySha256(file, hot.sha256)
     }
 
     /** 解析包内清单（缺失/损坏/schema 不符 → null）。 */
@@ -292,5 +344,8 @@ class HotUpdateEngine(
 
     private companion object {
         const val POLL_INTERVAL_MS = 600L
+
+        /** 用户确认超时：超时按取消处理（防「页面无人应答挂死流水线」）。 */
+        const val CONFIRM_TIMEOUT_MS = 10L * 60 * 1000
     }
 }

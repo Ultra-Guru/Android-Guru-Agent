@@ -719,6 +719,19 @@ internal fun UpdatePanel() {
                                             color = MaterialTheme.colorScheme.primary
                                         )
                                     }
+                                    // S-02：回滚入口 —— 有上一代 overlay（backup 位）才展示
+                                    if (center.hotStore.hasBackup()) {
+                                        OutlinedButton(
+                                            onClick = { center.rollbackHotUpdate() },
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                stringResource(
+                                                    R.string.about_update_hot_rollback
+                                                )
+                                            )
+                                        }
+                                    }
                                 }
                                 // 热更失败态：错误行 + 重试
                                 val failedHot = hotFlow as? HotUpdateEngine.State.Failed
@@ -747,7 +760,13 @@ internal fun UpdatePanel() {
                                     }
                                 }
                                 // 热更可用：主推卡片（免安装 · 即时生效 · 无签名冲突）
-                                val hotAsset = if (appliedHot == null && failedHot == null) {
+                                // S-02：确认中（对话框挂起等用户答复）不重复出卡，
+                                // 防止确认框期间再点一次按钮
+                                val awaitingConfirm =
+                                    activeHot is HotUpdateEngine.State.AwaitingConfirmation
+                                val hotAsset = if (appliedHot == null && failedHot == null &&
+                                    !awaitingConfirm
+                                ) {
                                     center.resolveHotUpdate(manifest)
                                 } else null
                                 if (hotAsset != null) {
@@ -1104,6 +1123,10 @@ internal fun UpdatePanel() {
             startDownload()
         }
     )
+
+    // ── 热更确认/回滚对话框（S-02：注入前可取消 + 回滚上一代）──
+    // 自含状态收集（hotConfirmRequest）—— 见 AboutUpdateDialogs 的拆分说明。
+    HotUpdateTrustDialogs(center)
 }
 
 /** 热更失败类别的本地化标签（[HotUpdateEngine.FailKind] → 用户可读文案）。 */
@@ -1114,6 +1137,7 @@ internal fun hotFailLabel(kind: HotUpdateEngine.FailKind): String = when (kind) 
     HotUpdateEngine.FailKind.VERIFY -> stringResource(R.string.about_update_hot_fail_verify)
     HotUpdateEngine.FailKind.UNPACK -> stringResource(R.string.about_update_hot_fail_unpack)
     HotUpdateEngine.FailKind.APPLY -> stringResource(R.string.about_update_hot_fail_apply)
+    HotUpdateEngine.FailKind.CANCELLED -> stringResource(R.string.about_update_hot_fail_cancelled)
 }
 
 // ═══ v1.4.8 本地 APK 清单模型（关于页常驻区）══════════════════════════════════
