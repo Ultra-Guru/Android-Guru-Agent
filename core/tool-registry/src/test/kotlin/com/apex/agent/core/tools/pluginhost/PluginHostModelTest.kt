@@ -325,7 +325,7 @@ class PluginHostModelTest {
         private val node: String?,
         private val npm: String?
     ) : NodeInstallPort {
-        override suspend fun exec(command: List<String>, cwd: File, timeoutMs: Long): Result<NodeInstallPort.ExecOutcome> =
+        override suspend fun exec(command: List<String>, cwd: File, timeoutMs: Long, stdin: String?): Result<NodeInstallPort.ExecOutcome> =
             Result.failure(UnsupportedOperationException("fake"))
 
         override suspend fun probeRuntime() = NodeInstallPort.RuntimeProbe(node, npm)

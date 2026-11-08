@@ -185,11 +185,11 @@ class DshBridgeTransportTest {
     private class CollectingListener : PersistentFrameChannel.Listener {
         val frames = mutableListOf<String>()
         val exits = mutableListOf<Pair<Int?, String?>>()
-        val frameLatch = CountDownLatch(1)
+        val frameLatch = CountDownLatch(2)
         val exitLatch = CountDownLatch(1)
         override fun onFrame(payload: String) {
             synchronized(frames) { frames.add(payload) }
-            frameLatch.countDown()
+            frameLatch.countDown() // 每帧一次 —— await(n) 即「等 n 帧到齐」
         }
         override fun onExit(exitCode: Int?, cause: String?) {
             synchronized(exits) { exits.add(exitCode to cause) }

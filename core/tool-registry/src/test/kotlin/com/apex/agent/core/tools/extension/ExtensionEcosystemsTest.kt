@@ -456,7 +456,7 @@ class ExtensionAutoSyncRunnerTest {
 
     private class FakeSyncPort : NodeInstallPort {
         var lastCommand: List<String>? = null
-        override suspend fun exec(command: List<String>, cwd: File, timeoutMs: Long): Result<NodeInstallPort.ExecOutcome> {
+        override suspend fun exec(command: List<String>, cwd: File, timeoutMs: Long, stdin: String?): Result<NodeInstallPort.ExecOutcome> {
             lastCommand = command
             if (command.firstOrNull() == "npm") {
                 val prefix = command[command.indexOf("--prefix") + 1]
