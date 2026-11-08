@@ -101,15 +101,27 @@ Agent Core（ToolRegistry / SkillRegistry / FusionBundle / McpManager）
 | LSP | PLANNED (Phase 5) | `.lsp.json` 未处理 |
 | TUI / GUI | UNSUPPORTED | Android 无终端/桌面宿主 |
 
-### OpenCode 插件（V1/V2）
+### OpenCode 插件（V1/V2 分立 ABI，Phase 4 后）
 
-| 能力 | 状态 | 说明 |
-|------|------|------|
-| 安装（npm/github/local） | 已通 | NodeFamilyInstaller → PRoot 沙箱 |
-| TOOLS | PLANNED (Phase 4) | 工具注册桥未实现（ExtensionRun 仅执行 node 入口） |
-| HOOKS / EVENTS | PLANNED (Phase 4) | SDK 生命周期未实现 |
-| STORAGE / CONTEXT | PLANNED (Phase 4) | ctx 桥未实现 |
-| TUI / GUI | UNSUPPORTED | 平台不可行 |
+官方协议事实（2026-11 审计 docs/build/plugins + migrate-v1）：V2 = `@opencode/plugin` +
+default export `Plugin.define({id, setup(ctx)})`；V1 = `@opencode-ai/plugin`（纯类型）+
+具名异步导出返回 hook map。
+
+| 能力 | V2 状态 | V1 状态 | 说明 |
+|------|---------|---------|------|
+| 安装（npm/github/local） | 已通 | 已通 | NodeFamilyInstaller → PRoot 沙箱 |
+| ABI 探测 | ✅ | ✅ | SDK 依赖声明 + 导出形状，不按包名瞎猜 |
+| 入口解析 | ✅ | ✅ | exports map → main → module → index 兜底 |
+| TOOLS | SUPPORTED | UNKNOWN | V2：`ctx.tool.transform` 注册的工具一等注册进 ToolRegistry（E2E 锁）；V1 工具形状未审计 |
+| HOOKS | PARTIAL | PARTIAL | `tool.execute.before/after`、`session.prompt` 经宿主事件转发；请求级 context/compaction 钩子未接 |
+| EVENTS | PARTIAL | PARTIAL | `ctx.event.subscribe` 经宿主事件转发 |
+| STORAGE | SUPPORTED | SUPPORTED | `ctx.storage` 插件目录 JSON 持久化（随卸载清理） |
+| ctx.options / location / app | ✅ | ✅ | 官方形状注入 |
+| ctx.$ / generate / model… | 如实拒绝 | 如实拒绝 | 调用即抛「not yet supported」描述错误，不静默假装 |
+| TUI / GUI | UNSUPPORTED | UNSUPPORTED | 平台不可行 |
+
+SDK 垫片：插件目录未安装 `@opencode/plugin` 时落盘最小实现
+（`Plugin.define` 原样返回定义 —— 与官方客户端行为等价）；真实包已装时垫片不介入。
 
 ### MCP / FUNCTIONAL / APK
 
@@ -137,7 +149,7 @@ Agent Core（ToolRegistry / SkillRegistry / FusionBundle / McpManager）
 | 1 | 统一核心模型 + 兼容性分析引擎 | ✅ |
 | 2 | PluginWorker + 换行 JSON IPC + Supervisor 崩溃恢复 + Node/Bun RuntimeProvider | ✅（真实 node E2E 锁定） |
 | 3 | Unified Capability Bridge + ToolRegistry 动态注册 + 生命周期管理器 | ✅（真实 node E2E 锁定） |
-| 4 | OpenCode V1/V2 Loader + 官方 SDK 上下文桥 | 计划 |
+| 4 | OpenCode V1/V2 Loader + 官方 SDK 上下文桥 | ✅（官方形状 fixture 真实 node 锁定） |
 | 5 | Claude Hooks + `.mcp.json` + `.lsp.json` 兼容 | 计划 |
 | 6 | DSH 审计 + App DI 接线 + Doctor/Inspect 集成 + 端到端链路 | 计划 |
 

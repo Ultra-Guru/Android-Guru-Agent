@@ -102,11 +102,29 @@ class PluginWorker(
                 ?: error("ready 消息负载损坏")
         }
 
-    /** 加载插件模块（load→loaded）。 */
-    suspend fun load(entryPath: String, format: String? = null): Result<WorkerProtocol.Loaded> =
-        roundTrip(WorkerProtocol.load(nextRequestId(), entryPath, format ?: ""), Type.LOADED).mapC { msg ->
+    /**
+     * 加载插件模块（load→loaded）。OpenCode 兼容层载荷（ecosystem/
+     * pluginId/pluginDir/options/storageFile）由各生态加载器提供，
+     * 通用插件只需 entryPath/format。
+     */
+    suspend fun load(
+        entryPath: String,
+        format: String? = null,
+        ecosystem: String = "",
+        pluginId: String = "",
+        pluginDir: String = "",
+        optionsJson: String = "{}",
+        storageFile: String = ""
+    ): Result<WorkerProtocol.Loaded> =
+        roundTrip(
+            WorkerProtocol.load(
+                nextRequestId(), entryPath, format ?: "",
+                ecosystem, pluginId, pluginDir, optionsJson, storageFile
+            ),
+            Type.LOADED
+        ).mapC { msg ->
             WorkerProtocol.Loaded.from(msg) ?: error("loaded 消息负载损坏")
-        }
+        }.onSuccess { lastLoadedResult = it }
 
     /** 调用插件工具（tool.execute→tool.result），返回 output 文本。 */
     suspend fun callTool(toolName: String, argsJson: String): Result<String> {
@@ -175,6 +193,15 @@ class PluginWorker(
 
     /** 最近一次 fatal 原因（诊断）。 */
     fun lastFatalReason(): String? = lastFatalReason
+
+    /**
+     * 最近一次成功 load 的 Loaded 快照（Supervisor 重启重放后刷新）。
+     * 加载器用它取工具/钩子清单，避免二次 load 重复触发插件 setup。
+     */
+    @Volatile
+    private var lastLoadedResult: WorkerProtocol.Loaded? = null
+
+    fun lastLoaded(): WorkerProtocol.Loaded? = lastLoadedResult
 
     /** STDERR 环形缓冲快照（诊断）。 */
     fun stderrSnapshot(): List<String> = synchronized(stderrLock) { stderrRing.toList() }

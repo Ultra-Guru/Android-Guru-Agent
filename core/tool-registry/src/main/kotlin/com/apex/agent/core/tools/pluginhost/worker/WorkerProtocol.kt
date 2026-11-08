@@ -108,11 +108,28 @@ object WorkerProtocol {
             put("pluginId", pluginId)
         })
 
-    fun load(requestId: String, entryPath: String, format: String): String =
-        encode(Type.LOAD, requestId, buildJsonObject {
-            put("entryPath", entryPath)
-            put("format", format)
-        })
+    fun load(
+        requestId: String,
+        entryPath: String,
+        format: String,
+        ecosystem: String = "",
+        pluginId: String = "",
+        pluginDir: String = "",
+        optionsJson: String = "{}",
+        storageFile: String = ""
+    ): String = encode(Type.LOAD, requestId, buildJsonObject {
+        put("entryPath", entryPath)
+        put("format", format)
+        if (ecosystem.isNotBlank()) put("ecosystem", ecosystem)
+        if (pluginId.isNotBlank()) put("pluginId", pluginId)
+        if (pluginDir.isNotBlank()) put("pluginDir", pluginDir)
+        if (optionsJson.isNotBlank() && optionsJson != "{}") {
+            runCatching {
+                json.parseToJsonElement(optionsJson)
+            }.getOrNull()?.let { put("options", it) }
+        }
+        if (storageFile.isNotBlank()) put("storageFile", storageFile)
+    })
 
     fun toolExecute(requestId: String, toolName: String, argsJson: String): String =
         encode(Type.TOOL_EXECUTE, requestId, buildJsonObject {
@@ -160,10 +177,14 @@ object WorkerProtocol {
         }
     }
 
-    /** loaded 消息负载：模块加载后发现的工具清单。 */
+    /** loaded 消息负载：模块加载后发现的工具与钩子清单。 */
     @Serializable
     data class Loaded(
         val tools: List<DiscoveredTool> = emptyList(),
+        /** 已注册的钩子名（OpenCode 兼容层上报，如 tool.execute.before）。 */
+        val hooks: List<String> = emptyList(),
+        /** ctx.event.subscribe 订阅的事件名。 */
+        val events: List<String> = emptyList(),
         val setupOk: Boolean = true,
         val error: String? = null
     ) {
@@ -183,6 +204,8 @@ object WorkerProtocol {
                                 )
                             }
                         } ?: emptyList(),
+                        hooks = payload.stringList("hooks"),
+                        events = payload.stringList("events"),
                         setupOk = payload["setupOk"]?.jsonPrimitive?.content?.toBoolean() ?: true,
                         error = (payload["error"] as? JsonPrimitive)?.content
                     )
@@ -257,6 +280,11 @@ object WorkerProtocol {
 
     private fun JsonObject.str(key: String): String =
         (this[key] as? JsonPrimitive)?.content ?: ""
+
+    private fun JsonObject.stringList(key: String): List<String> =
+        (this[key] as? kotlinx.serialization.json.JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.content?.takeIf { v -> v.isNotBlank() } }
+            ?: emptyList()
 }
 
 /** 宿主↔Worker 事件（Worker 生命周期观测，供 Supervisor 与诊断消费）。 */

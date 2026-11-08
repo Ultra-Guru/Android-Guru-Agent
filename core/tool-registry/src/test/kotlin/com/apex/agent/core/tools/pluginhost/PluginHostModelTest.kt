@@ -145,20 +145,32 @@ class PluginHostModelTest {
     }
 
     @Test
-    fun `opencode matrix reflects audit baseline`() {
-        // Phase 1 基线：安装链路已通、能力桥未实现 —— TOOLS 必须是 PLANNED
+    fun `opencode matrix reflects phase 4 delivery`() {
+        // Phase 4 后：V2 工具桥已落地（真实 node E2E 锁），钩子/事件/存储部分可用
         assertEquals(
-            CapabilitySupport.PLANNED,
+            CapabilitySupport.SUPPORTED,
             PluginEcosystemMatrix.statusOf(PluginEcosystem.OPENCODE_V2, PluginCapability.TOOLS)?.support
+        )
+        assertEquals(
+            CapabilitySupport.PARTIAL,
+            PluginEcosystemMatrix.statusOf(PluginEcosystem.OPENCODE_V2, PluginCapability.HOOKS)?.support
+        )
+        assertEquals(
+            CapabilitySupport.SUPPORTED,
+            PluginEcosystemMatrix.statusOf(PluginEcosystem.OPENCODE_V2, PluginCapability.STORAGE)?.support
         )
         assertEquals(
             CapabilitySupport.UNSUPPORTED,
             PluginEcosystemMatrix.statusOf(PluginEcosystem.OPENCODE_V2, PluginCapability.TUI)?.support
         )
-        // V1 与 V2 共享槽位矩阵，但 ABI 探测在加载器侧分别进行
+        // V1 与 V2 是不同 ABI，矩阵分立：V1 工具形状未审计（UNKNOWN）
         assertEquals(
-            PluginEcosystemMatrix.statusOf(PluginEcosystem.OPENCODE_V2, PluginCapability.TOOLS),
-            PluginEcosystemMatrix.statusOf(PluginEcosystem.OPENCODE_V1, PluginCapability.TOOLS)
+            CapabilitySupport.UNKNOWN,
+            PluginEcosystemMatrix.statusOf(PluginEcosystem.OPENCODE_V1, PluginCapability.TOOLS)?.support
+        )
+        assertEquals(
+            CapabilitySupport.PARTIAL,
+            PluginEcosystemMatrix.statusOf(PluginEcosystem.OPENCODE_V1, PluginCapability.HOOKS)?.support
         )
     }
 
@@ -171,7 +183,8 @@ class PluginHostModelTest {
     // ── 分析器：评级 ──────────────────────────────────────────────────────
 
     @Test
-    fun `opencode plugin today rates D - installable but not runnable`() {
+    fun `opencode v2 plugin with node rates B via tool bridge`() {
+        // Phase 4 后：TOOLS SUPPORTED + HOOKS/EVENTS PARTIAL + node 就绪 → B
         val plugin = PluginDescriptor(
             id = "opencode.demo",
             name = "Demo",
@@ -181,10 +194,25 @@ class PluginHostModelTest {
         val env = PluginEnvironmentSnapshot(nodeVersion = "v22.11.0", npmVersion = "10.9.0")
         val report = PluginCompatibilityAnalyzer.analyze(plugin, env)
 
-        assertEquals(PluginCompatibilityLevel.D, report.level)
-        // 诚实边界：即使 node 齐备，能力面全 PLANNED 仍评 D
-        assertTrue(report.reasons.any { it.contains("PLANNED") || it.contains("无法真正运行") })
+        assertEquals(PluginCompatibilityLevel.B, report.level)
         assertTrue(report.runtimeVerdicts.single().available)
+    }
+
+    @Test
+    fun `context-only opencode plugin still rates D honestly`() {
+        // 诚实边界：声明能力全未实现（CONTEXT PLANNED）→ D，不因生态其它能力达标而虚高
+        val plugin = PluginDescriptor(
+            id = "opencode.ctx-only",
+            name = "Ctx Only",
+            ecosystem = PluginEcosystem.OPENCODE_V2,
+            declaredCapabilities = setOf(PluginCapability.CONTEXT),
+            runtimeRequirements = setOf(PluginRuntimeKind.NODE)
+        )
+        val env = PluginEnvironmentSnapshot(nodeVersion = "v22.11.0")
+        val report = PluginCompatibilityAnalyzer.analyze(plugin, env)
+
+        assertEquals(PluginCompatibilityLevel.D, report.level)
+        assertTrue(report.reasons.any { it.contains("Phase 6") })
     }
 
     @Test
