@@ -353,7 +353,6 @@ class DshBridgeTransportTest {
             console.error('frame-echo ready (stderr 旁路，不得污染帧流)');
             """.trimIndent()
         )
-        val spawned = ProcessBuilderSpawner(shell = "/bin/sh")
         // 直 argv 通道（与 DshNativeHostTest.RealNodePort 同款 —— 已验证路径）：
         // 经 shell 的间接层只在 CI 引入变量，帧通道契约本身与 shell 无关
         val directSpawner = object : CommandSpawner {
