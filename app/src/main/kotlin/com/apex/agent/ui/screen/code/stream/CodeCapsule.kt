@@ -71,6 +71,9 @@ import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.core.code.stream.ToolCallStatus
 import com.apex.agent.core.code.stream.ToolKind
 import com.apex.agent.ui.theme.LocalExtendedColors
+import com.apex.agent.ui.glass.PartSurface
+import com.apex.agent.ui.theme.CodingPart
+import androidx.compose.foundation.layout.PaddingValues
 
 /**
  * # Code Capsule — 工具调用胶囊（规格书【2】胶囊层）
@@ -104,15 +107,9 @@ internal fun CodeCapsule(
     // 终态语义色（成对槽位）：浅色主题下 exit 0 的亮绿 4ADE80 对白底仅
     // ~2:1 对比度（UI-016 同源问题），改走 LocalExtendedColors 明暗成对色
     val successColor = LocalExtendedColors.current.success
-    // 写入落盘语义底色（用户规格 2026-11）：写入类成功后胶囊底覆盖浅绿 ——
-    // 与 diff 新增行背景同色系，一眼可辨「这颗胶囊写入了内容」。
-    val capsuleBg = if (call.kind == ToolKind.WRITE_FILE &&
-        (call.status == ToolCallStatus.SUCCESS || call.status == ToolCallStatus.APPLIED)
-    ) {
-        successColor.copy(alpha = 0.10f)
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerLow
-    }
+    // 写入落盘语义（用户规格 2026-11）：v1.7 起收编到图标/文字层 —— 成功
+    // 绿勾（statusIcon tint）+ 尾部 +N 绿徽标承载「这颗胶囊写入了内容」；
+    // 容器底色交由 PartSurface 皮肤管理（FR-11：语义色不染容器）。
     // 状态的无障碍描述：成败不能只靠色/形传达（TalkBack 不可感知）
     val statusDesc = stringResource(
         when (call.status) {
@@ -124,16 +121,18 @@ internal fun CodeCapsule(
             ToolCallStatus.PARTIAL -> R.string.code_stream_status_partial
         }
     )
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = capsuleBg,
+    // v1.7 部件皮肤（PartSkin spec §4.1）：胶囊容器收编 PartSurface
+    // （stream.tool_capsule，与 RikkaToolBlock 共享同一 Part ID）—— 默认
+    // PALE_LIQUID 浅白玻璃。写入落盘语义收编到图标/文字（成功绿勾 + +N
+    // 徽标，FR-11：语义色不再染容器底）；点击/触区/尾窗零改动。
+    PartSurface(
+        part = CodingPart.STREAM_TOOL_CAPSULE,
+        onClick = { onClick(call) },
+        contentPadding = PaddingValues(0.dp),
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 44.dp)
             .padding(horizontal = 12.dp, vertical = 1.dp)
-            // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 12dp 圆角
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(role = Role.Button) { onClick(call) }
             .semantics { contentDescription = "${call.displayName} ${call.target}, $statusDesc" }
     ) {
         Column {

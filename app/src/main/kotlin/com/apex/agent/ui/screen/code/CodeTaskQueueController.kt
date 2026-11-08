@@ -60,12 +60,17 @@ internal fun CodeViewModel.finalizeQueuedTaskAfterRun(taskStatus: LongTaskStatus
         QueuedTaskPolicy.Outcome.NEEDS_CONFIRM -> {
             // 失败/中止不自动接力（用户可能要先看错误、重试或改输入）——
             // 转 NEEDS_CONFIRM，排队卡亮出「开始排队」按钮。
+            // DEF-3（PartSkin spec 附录 A）：同时清 error —— 排队卡已承载
+            // 失败上下文（待确认标题 + 提示），ErrorBar 不再同屏叠出「同一
+            // 错误 3~4 层、状态打架」；错误细节仍可从时间轴错误卡回看。
             _uiState.update {
                 it.copy(
                     queuedTask = QueuedTaskPolicy.nextQueuedState(
                         QueuedTaskPolicy.Outcome.NEEDS_CONFIRM,
                         queued
-                    )
+                    ),
+                    error = null,
+                    errorRetriable = false
                 )
             }
         }

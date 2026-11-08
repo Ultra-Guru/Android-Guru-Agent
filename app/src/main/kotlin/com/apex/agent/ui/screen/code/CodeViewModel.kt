@@ -293,6 +293,9 @@ class CodeViewModel @Inject constructor(
         // + 设置流订阅：idle 期切风格回屏即生效（消灭「切了没反应」）
         restoreOutputStyle()
         observeOutputStyle()
+        // v1.7 部件级皮肤恢复 + 订阅（PartSkin spec；见 PartSkinOps.kt）
+        restorePartSkins()
+        observePartSkins()
         observeContextDenominator() // 圆环分母热刷新（Profile 流订阅，CodeUsageOps.kt）
         // #197：Coding 屏模式同步（引擎侧恒为 BUILD/PLAN；未知值回退 BUILD）
         val startupMode = settingsRepository.agentSettings.value.let { s ->
@@ -616,6 +619,7 @@ class CodeViewModel @Inject constructor(
         // 直接发布快照，不等 25ms ticker，更不能等服务端首个 token。
         captureRunOutputMode()
         captureRunOutputStyle()
+        captureRunPartSkins()
         streamSession.beginRun(goal)
         _uiState.update { it.copy(stream = streamSession.snapshot(), isRunning = true, error = null, errorRetriable = false) }
         // #209：记录本次运行输入 —— 失败后错误条「重试」按原样重放

@@ -52,9 +52,10 @@ import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.core.code.stream.UnifiedDiffParser
 import androidx.compose.ui.semantics.Role
 import com.apex.agent.ui.component.MarkdownText
-import com.apex.agent.ui.glass.GlassCard
-import com.apex.agent.ui.glass.GlassStyle
+import com.apex.agent.ui.glass.PartSurface
+import com.apex.agent.ui.theme.CodingPart
 import com.apex.agent.ui.theme.LocalExtendedColors
+import androidx.compose.foundation.layout.PaddingValues
 
 /**
  * # Code Stream Cards — 时间轴卡片族
@@ -97,13 +98,13 @@ internal fun StreamCard(
 
 @Composable
 private fun UserBubble(text: String) {
-    Surface(
+    // PartSkin spec §4.1：stream.user_bubble —— SOLID 实色气泡（新默认
+    // primaryContainer + onPrimaryContainer，与 Rikka 用户气泡同语言；
+    // 「谁说的」与浅白玻璃的结论气泡一眼可辨）。
+    PartSurface(
+        part = CodingPart.STREAM_USER_BUBBLE,
         shape = RoundedCornerShape(topStart = 4.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 16.dp),
-        // 用户/结论气泡区分（用户反馈「两者颜色一样」）：结论气泡是 primary
-        // 玻璃薄霜（≈16% 染色），用户侧旧值 primary@10% 与之同色相仅差 6 个
-        // 百分点透明度——肉眼不可分。改实色 primary + onPrimary：实色 vs 玻璃、
-        // 饱和 vs 淡染，「谁说的」一眼可辨（与 Agent 屏 UserBubble 同口径）。
-        color = MaterialTheme.colorScheme.primary,
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
@@ -111,8 +112,7 @@ private fun UserBubble(text: String) {
         Text(
             text = text,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+            color = MaterialTheme.colorScheme.onPrimaryContainer
         )
     }
 }
@@ -121,33 +121,33 @@ private fun UserBubble(text: String) {
 
 @Composable
 private fun AssistantBubble(text: String, isStreaming: Boolean) {
-    // v5 流式玻璃（用户反馈「coding 屏流式输出无玻璃」）：结论气泡从裸铺
-    // 背景改为 GlassCard Frosted 档 —— 与 Agent 屏 StreamingResponseBubble
-    // 同一套玻璃语言（薄霜渐变 + 边缘光）；流式光标保留。
-    GlassCard(
-        style = GlassStyle.Card,
+    // v5 流式玻璃 → v1.7 部件皮肤：结论气泡从 GlassCard(accent=primary)
+    // 改走 PartSurface(stream.assistant_bubble) —— 新默认 PALE_LIQUID
+    // 浅白液态玻璃（FR-11：accent 移除，语义色只上图标/文字）；流式光标
+    // 保留。换皮只换容器，Markdown 容忍渲染与光标逻辑零改动。
+    PartSurface(
+        part = CodingPart.STREAM_ASSISTANT_BUBBLE,
         shape = RoundedCornerShape(topStart = 4.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 16.dp),
-        accent = MaterialTheme.colorScheme.primary,
+        active = isStreaming,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
-            MarkdownText(markdown = text)
-            if (isStreaming && text.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.code_stream_status_waiting),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            if (isStreaming) {
-                Text(
-                    text = "▍",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
+        MarkdownText(markdown = text)
+        if (isStreaming && text.isEmpty()) {
+            Text(
+                text = stringResource(R.string.code_stream_status_waiting),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (isStreaming) {
+            Text(
+                text = "▍",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
         }
     }
 }
@@ -166,109 +166,104 @@ private fun ThinkingCard(
     // 胶囊化展开态（用户需求：「思考时展示全部思考内容，思考完自动折叠
     // 成胶囊」）：流式期间默认展开跟随全文；流式收束（isStreaming 翻转）
     // 自动折叠 —— 用户手动点过则尊重手动状态，不再自动干预。
+    // FR-9：展开态 key 与 skin 无关（remember 不带 skin —— 换皮不重置）。
     var expanded by remember { mutableStateOf(isStreaming) }
     var userToggled by remember { mutableStateOf(false) }
     LaunchedEffect(isStreaming) {
         if (!userToggled) expanded = isStreaming
     }
-    // v5 流式玻璃：思考卡 Surface → GlassCard Frosted（accent=secondary
-    // 与思考色系一致）；折叠/展开点击收在内容层，涟漪经玻璃层裁剪。
-    GlassCard(
-        style = GlassStyle.Card,
-        shape = RoundedCornerShape(12.dp),
-        accent = if (llmRetry != null) MaterialTheme.colorScheme.error
-        else MaterialTheme.colorScheme.secondary,
+    // v1.7 部件皮肤（PartSkin spec FR-5）：思考卡默认浅白液态玻璃 ——
+    // PALE_LIQUID 乳白霜面 + 微彩光晕；重试态的红色只上图标/标题文字
+    // （FR-11 淘汰 accent=error 整卡染色，消灭粉红卡）；展开/折叠点击收
+    // 在容器层（onClick），涟漪经 clip 跟随卡面圆角。
+    PartSurface(
+        part = CodingPart.STREAM_THINKING,
+        active = isStreaming,
+        onClick = {
+            userToggled = true
+            expanded = !expanded
+        },
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 2.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .padding(horizontal = 10.dp, vertical = 7.dp)
-                // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随卡面 12dp 圆角
-                .clip(RoundedCornerShape(12.dp))
-                .clickable {
-                    userToggled = true
-                    expanded = !expanded
-                }
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // ═══ 标题：重试等待中 = 「重试中 · 第 N/T 次」（用户规格
-                // 2026-11：重试期间「思考中/正在工作」切换为「重试中」）═══
-                if (llmRetry != null) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(14.dp)
-                    )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // ═══ 标题：重试等待中 = 「重试中 · 第 N/T 次」（用户规格
+            // 2026-11：重试期间「思考中/正在工作」切换为「重试中」）═══
+            if (llmRetry != null) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = stringResource(
+                        R.string.code_stream_retrying_fmt,
+                        llmRetry.attempt,
+                        llmRetry.totalRetries
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.error
+                )
+                // 阶梯延迟副语（3s 后再试 / 1m 后再试）——重试节奏可见
+                if (llmRetry.delayMs > 0) {
                     Spacer(Modifier.width(6.dp))
                     Text(
                         text = stringResource(
-                            R.string.code_stream_retrying_fmt,
-                            llmRetry.attempt,
-                            llmRetry.totalRetries
+                            R.string.code_stream_retry_delay_fmt,
+                            formatRetryDelayLabel(llmRetry.delayMs)
                         ),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    // 阶梯延迟副语（3s 后再试 / 1m 后再试）——重试节奏可见
-                    if (llmRetry.delayMs > 0) {
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = stringResource(
-                                R.string.code_stream_retry_delay_fmt,
-                                formatRetryDelayLabel(llmRetry.delayMs)
-                            ),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.75f)
-                        )
-                    }
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Psychology,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = if (isStreaming) stringResource(R.string.code_stream_thinking_running)
-                        else stringResource(R.string.code_stream_thinking_done),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.75f)
                     )
                 }
-                Spacer(Modifier.weight(1f))
+            } else {
                 Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    imageVector = Icons.Default.Psychology,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.outline,
+                    tint = MaterialTheme.colorScheme.secondary,
                     modifier = Modifier.size(14.dp)
                 )
-            }
-            AnimatedVisibility(visible = expanded) {
+                Spacer(Modifier.width(6.dp))
                 Text(
-                    text = text,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 6.dp)
+                    text = if (isStreaming) stringResource(R.string.code_stream_thinking_running)
+                    else stringResource(R.string.code_stream_thinking_done),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            if (!expanded && text.isNotBlank()) {
-                Text(
-                    text = text.take(80),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.outline,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
+            Spacer(Modifier.weight(1f))
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.size(14.dp)
+            )
         }
+        AnimatedVisibility(visible = expanded) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
+        if (!expanded && text.isNotBlank()) {
+            Text(
+                text = text.take(80),
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.outline,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+            }
     }
 }
 
@@ -294,80 +289,78 @@ private fun VerifyCycleCard(entry: StreamEntry.VerifyCycleEntry, onToolClick: (S
         if (parsed.isEmpty()) null
         else parsed.sumOf { it.totalAdded } to parsed.sumOf { it.totalRemoved }
     }
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = tint.copy(alpha = 0.06f),
+    // v1.7 部件皮肤：验证轮次卡默认 PALE_LIQUID；通过/失败语义色只上
+    // 图标与文字（FR-11 淘汰 tint.copy(alpha=0.06f) 容器染色）。
+    PartSurface(
+        part = CodingPart.STREAM_VERIFY_CYCLE,
+        onClick = { expanded = !expanded },
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 2.dp)
-            // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 12dp 圆角
-            .clip(RoundedCornerShape(12.dp))
-            .clickable { expanded = !expanded }
     ) {
-        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    tint = tint,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = stringResource(R.string.code_stream_verify_round_fmt, entry.cycle.round),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = when (passed) {
-                        true -> stringResource(R.string.code_stream_verify_passed)
-                        false -> stringResource(R.string.code_stream_verify_failed)
-                        null -> stringResource(R.string.code_stream_verify_unknown)
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tint
-                )
-                delta?.let { (added, removed) ->
-                    if (added + removed > 0) {
-                        Spacer(Modifier.width(6.dp))
-                        VerifyDeltaBadge(added = added, removed = removed)
-                    }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = stringResource(R.string.code_stream_verify_round_fmt, entry.cycle.round),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = when (passed) {
+                    true -> stringResource(R.string.code_stream_verify_passed)
+                    false -> stringResource(R.string.code_stream_verify_failed)
+                    null -> stringResource(R.string.code_stream_verify_unknown)
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = tint
+            )
+            delta?.let { (added, removed) ->
+                if (added + removed > 0) {
+                    Spacer(Modifier.width(6.dp))
+                    VerifyDeltaBadge(added = added, removed = removed)
                 }
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = stringResource(
-                        R.string.code_stream_verify_counts_fmt,
-                        entry.cycle.editCallIds.size,
-                        entry.cycle.verifyCallIds.size
-                    ),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.width(4.dp))
-                Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.size(14.dp)
-                )
             }
-            AnimatedVisibility(visible = expanded) {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                    modifier = Modifier.padding(top = 6.dp)
-                ) {
-                    entry.calls.forEach { call ->
-                        CodeCapsule(call = call, onClick = onToolClick)
-                    }
-                    if (entry.calls.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.code_stream_verify_details_gone),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                    }
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = stringResource(
+                    R.string.code_stream_verify_counts_fmt,
+                    entry.cycle.editCallIds.size,
+                    entry.cycle.verifyCallIds.size
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.size(14.dp)
+            )
+        }
+        AnimatedVisibility(visible = expanded) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier.padding(top = 6.dp)
+            ) {
+                entry.calls.forEach { call ->
+                    CodeCapsule(call = call, onClick = onToolClick)
+                }
+                if (entry.calls.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.code_stream_verify_details_gone),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
                 }
             }
         }
@@ -385,81 +378,79 @@ private fun VerifyCycleCard(entry: StreamEntry.VerifyCycleEntry, onToolClick: (S
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RunStatsCard(entry: StreamEntry.RunStatsEntry) {
-    // 失败 >0：头行用错误色转述（成功轮次一律 primary，不告警）
+    // 失败 >0：头行用错误色转述（成功轮次一律 primary，不告警）—— v1.7
+    // 部件皮肤：语义色只上图标/chip 文字（FR-11），容器不再 accent 染色。
     val failed = entry.failedCalls > 0
-    val accent = if (failed) MaterialTheme.colorScheme.error
+    val statusTint = if (failed) MaterialTheme.colorScheme.error
     else MaterialTheme.colorScheme.primary
-    GlassCard(
-        style = GlassStyle.Card,
-        shape = RoundedCornerShape(12.dp),
-        accent = accent,
+    PartSurface(
+        part = CodingPart.STREAM_RUN_STATS,
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = if (failed) Icons.Default.BugReport else Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    tint = accent,
-                    modifier = Modifier.size(15.dp)
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = stringResource(R.string.code_stream_run_stats_title),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = formatCapsuleDuration(entry.durationMs),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = if (failed) Icons.Default.BugReport else Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = statusTint,
+                modifier = Modifier.size(15.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = stringResource(R.string.code_stream_run_stats_title),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = formatCapsuleDuration(entry.durationMs),
+                style = MaterialTheme.typography.labelMedium,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(top = 6.dp)
+        ) {
+            StatChip(
+                icon = Icons.Default.Loop,
+                label = stringResource(R.string.code_stream_run_iterations_fmt, entry.iterations)
+            )
+            StatChip(
+                icon = Icons.Default.Build,
+                label = stringResource(R.string.code_stream_run_tools_fmt, entry.toolCalls)
+            )
+            // 溯源分解（v1.5.1）：技能 / MCP 调用数（非零才显）——本轮
+            // 用了哪些能力生态一眼可辨（与聚合卡同源会计）
+            if (entry.skillCalls > 0) {
+                StatChip(
+                    icon = Icons.Default.AutoAwesome,
+                    label = stringResource(R.string.code_stream_run_skills_fmt, entry.skillCalls)
                 )
             }
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.padding(top = 6.dp)
-            ) {
+            if (entry.mcpCalls > 0) {
                 StatChip(
-                    icon = Icons.Default.Loop,
-                    label = stringResource(R.string.code_stream_run_iterations_fmt, entry.iterations)
+                    icon = Icons.Default.Extension,
+                    label = stringResource(R.string.code_stream_run_mcp_fmt, entry.mcpCalls)
                 )
+            }
+            if (entry.filesTouched > 0) {
                 StatChip(
-                    icon = Icons.Default.Build,
-                    label = stringResource(R.string.code_stream_run_tools_fmt, entry.toolCalls)
+                    icon = Icons.AutoMirrored.Filled.Notes,
+                    label = stringResource(R.string.code_stream_run_files_fmt, entry.filesTouched)
                 )
-                // 溯源分解（v1.5.1）：技能 / MCP 调用数（非零才显）——本轮
-                // 用了哪些能力生态一眼可辨（与聚合卡同源会计）
-                if (entry.skillCalls > 0) {
-                    StatChip(
-                        icon = Icons.Default.AutoAwesome,
-                        label = stringResource(R.string.code_stream_run_skills_fmt, entry.skillCalls)
-                    )
-                }
-                if (entry.mcpCalls > 0) {
-                    StatChip(
-                        icon = Icons.Default.Extension,
-                        label = stringResource(R.string.code_stream_run_mcp_fmt, entry.mcpCalls)
-                    )
-                }
-                if (entry.filesTouched > 0) {
-                    StatChip(
-                        icon = Icons.AutoMirrored.Filled.Notes,
-                        label = stringResource(R.string.code_stream_run_files_fmt, entry.filesTouched)
-                    )
-                }
-                if (failed) {
-                    StatChip(
-                        icon = Icons.Default.BugReport,
-                        label = stringResource(R.string.code_stream_run_failed_fmt, entry.failedCalls),
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
+            }
+            if (failed) {
+                StatChip(
+                    icon = Icons.Default.BugReport,
+                    label = stringResource(R.string.code_stream_run_failed_fmt, entry.failedCalls),
+                    tint = MaterialTheme.colorScheme.error
+                )
             }
         }
     }
@@ -517,81 +508,83 @@ private fun VerifyDeltaBadge(added: Int, removed: Int) {
  * 错误卡：原因 + 简短文案 + **「继续完成」动作行**（用户规格 2026-11：
  * 任务失败结尾必须有继续推进的入口——播放入口重放本任务输入，与底部
  * ErrorBar 的「重试」同语义，时间轴内自含闭环）。
+ *
+ * v1.7 部件皮肤：默认 PALE_LIQUID 浅白玻璃 —— 红色仅上图标/标题文字
+ * （FR-11 淘汰 errorContainer@0.5f 整卡染红，消灭粉红卡）；正文/提示
+ * 改 onSurface 保证浅白底对比度（NFR-6 ≥ 4.5:1）。
  */
 @Composable
 private fun ErrorCard(entry: StreamEntry.ErrorEntry, onRetryRun: (() -> Unit)? = null) {
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+    PartSurface(
+        part = CodingPart.STREAM_ERROR,
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.BugReport,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(15.dp)
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = if (entry.recoverable) stringResource(R.string.code_stream_error_recoverable)
-                    else stringResource(R.string.code_stream_error_fatal),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-            Text(
-                text = entry.message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-                modifier = Modifier.padding(top = 4.dp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.BugReport,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(15.dp)
             )
-            entry.hint?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
-            // ═══ 继续完成（失败结尾的动作行）═══
-            if (onRetryRun != null && entry.recoverable) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = if (entry.recoverable) stringResource(R.string.code_stream_error_recoverable)
+                else stringResource(R.string.code_stream_error_fatal),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+        Text(
+            text = entry.message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+        entry.hint?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+        // ═══ 继续完成（失败结尾的动作行）═══
+        if (onRetryRun != null && entry.recoverable) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.10f),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp)
+                        // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 8dp 圆角
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(role = Role.Button) { onRetryRun() }
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.10f),
-                        modifier = Modifier
-                            // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 8dp 圆角
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable(role = Role.Button) { onRetryRun() }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = stringResource(R.string.code_stream_error_continue),
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Text(
-                                text = stringResource(R.string.code_stream_error_continue),
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = stringResource(R.string.code_stream_error_continue),
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = stringResource(R.string.code_stream_error_continue),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.error
+                        )
                     }
                 }
             }
@@ -603,17 +596,14 @@ private fun ErrorCard(entry: StreamEntry.ErrorEntry, onRetryRun: (() -> Unit)? =
 
 @Composable
 private fun StopCard(reason: String) {
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+    PartSurface(
+        part = CodingPart.STREAM_STOP,
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 imageVector = Icons.Default.StopCircle,
                 contentDescription = null,
@@ -635,10 +625,12 @@ private fun StopCard(reason: String) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FileChipsCard(files: List<String>) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 2.dp)
+    // v1.7 部件皮肤：文件 chips 默认 FLAT 裸渲染（与状态行同款 bareInFlat）。
+    PartSurface(
+        part = CodingPart.STREAM_FILE_CHIPS,
+        bareInFlat = true,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+        modifier = Modifier.fillMaxWidth()
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
@@ -694,26 +686,37 @@ private fun FileChipsCard(files: List<String>) {
 
 @Composable
 private fun LightLine(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.outline,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 2.dp)
-    )
+    // v1.7 部件皮肤：状态行默认 FLAT **裸渲染**（§4「细状态行不套玻璃」
+    // —— bareInFlat）；用户切 PALE/CLASSIC 时获得容器（可切换性，FR-7）。
+    PartSurface(
+        part = CodingPart.STREAM_STATUS_LINE,
+        bareInFlat = true,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.outline
+        )
+    }
 }
 
 @Composable
 private fun SystemLine(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.tertiary,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 2.dp)
-    )
+    // 同 LightLine：系统行默认 FLAT 裸渲染（tertiary 强调色保留）。
+    PartSurface(
+        part = CodingPart.STREAM_SYSTEM_LINE,
+        bareInFlat = true,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.tertiary
+        )
+    }
 }
 
 private const val FILE_CHIPS_MAX = 6

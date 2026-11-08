@@ -80,4 +80,52 @@
     <string name="settings_v3_coding_output_mode_desc">流式 = 逐字实时显示、实时工具窗；完整 = 生成中仅进度卡（实时技能 / MCP / 工具计数），收束后一次性揭示——工具调用折叠为聚合卡（技能 / MCP / 内置分组，可展开明细）。下一轮运行生效。</string>
     <string name="settings_v3_coding_output_mode_streaming">流式（实时逐字）</string>
     <string name="settings_v3_coding_output_mode_complete">完整（完成后展示）</string>
+
+    <!-- 部件外观（v1.7 部件级皮肤 + 浅白液态玻璃材质） -->
+    <string name="settings_v3_parts_title">部件外观</string>
+    <string name="settings_v3_parts_subtitle">每个卡片 / 气泡 / 工具块可独立选材质</string>
+    <string name="settings_v3_parts_preview_label">实时预览（思考卡）</string>
+    <string name="settings_v3_parts_preview_body">分析需求中 · 正在读取工作区结构…</string>
+    <string name="settings_v3_parts_preset_label">预设</string>
+    <string name="settings_v3_parts_preset_default">默认</string>
+    <string name="settings_v3_parts_preset_pale">全部浅白液态玻璃</string>
+    <string name="settings_v3_parts_preset_classic">经典玻璃</string>
+    <string name="settings_v3_parts_preset_minimal">极简扁平</string>
+    <string name="settings_v3_parts_reset_follow">恢复跟随全局</string>
+    <string name="settings_v3_parts_glow">光晕强度</string>
+    <string name="settings_v3_parts_glow_desc">浅白玻璃卡片内部漂移彩光的强度；0 = 纯白霜面。对所有浅白液态玻璃部件生效。</string>
+    <string name="settings_v3_parts_group_stream">时间轴卡片族</string>
+    <string name="settings_v3_parts_group_input">输入与悬浮</string>
+    <string name="settings_v3_parts_group_terminal">终端与代码</string>
+    <string name="settings_v3_parts_note">运行中切换在下一轮生效；空闲期即时生效。展开态、滚动位置与思考卡秒表不会被重置。</string>
+    <string name="part_skin_follow">跟随</string>
+    <string name="part_skin_pale_liquid">浅白液态玻璃</string>
+    <string name="part_skin_classic_glass">经典玻璃</string>
+    <string name="part_skin_flat">极简扁平</string>
+    <string name="part_skin_solid">实色气泡</string>
+    <string name="part_skin_neon_terminal">终端霓虹</string>
+    <string name="part_name_stream_user_bubble">用户气泡</string>
+    <string name="part_name_stream_assistant_bubble">助手气泡</string>
+    <string name="part_name_stream_thinking">思考过程卡</string>
+    <string name="part_name_stream_tool_capsule">工具胶囊</string>
+    <string name="part_name_stream_verify_cycle">验证轮次卡</string>
+    <string name="part_name_stream_status_line">状态行</string>
+    <string name="part_name_stream_system_line">系统行</string>
+    <string name="part_name_stream_error">错误卡</string>
+    <string name="part_name_stream_stop">停止卡</string>
+    <string name="part_name_stream_file_chips">受影响文件</string>
+    <string name="part_name_stream_git_op">Git 可视化卡</string>
+    <string name="part_name_stream_run_stats">运行统计卡</string>
+    <string name="part_name_stream_generating">生成中卡</string>
+    <string name="part_name_input_bar">输入栏</string>
+    <string name="part_name_input_queue_card">排队任务卡</string>
+    <string name="part_name_input_question_card">提问卡</string>
+    <string name="part_name_input_plan_confirm">计划确认卡</string>
+    <string name="part_name_overlay_error_bar">错误条</string>
+    <string name="part_name_overlay_offline_banner">离线横幅</string>
+    <string name="part_name_overlay_update_banner">更新横幅</string>
+    <string name="part_name_overlay_tool_detail_sheet">工具详情弹层</string>
+    <string name="part_name_terminal_panel">终端面板</string>
+    <string name="part_name_code_diff">Diff 视图</string>
+    <string name="part_name_code_streaming_window">流式代码窗</string>
 </resources>

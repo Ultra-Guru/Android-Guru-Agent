@@ -450,4 +450,6 @@
     <string name="rikka_thinking_show_answer">Go straight to answer</string>
     <string name="rikka_thinking_default_collapsed">Collapse thinking by default</string>
     <string name="rikka_thinking_default_collapsed_desc">Remembered across sessions; the full thought remains available.</string>
+    <string name="code_error_expand">Show full error</string>
+    <string name="code_error_collapse">Collapse error</string>
 </resources>
