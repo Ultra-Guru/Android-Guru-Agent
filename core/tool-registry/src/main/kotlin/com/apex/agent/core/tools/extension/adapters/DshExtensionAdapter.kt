@@ -113,7 +113,12 @@ class DshExtensionAdapter(
             else -> return Result.failure(IllegalArgumentException("未知来源 kind：$kind"))
         }.getOrElse { return Result.failure(it) }
 
-        val entry = entryHint(published)
+        // npm 布局插件根在 node_modules/<name>/（DshPackageLayout 统一定位）；
+        // 定位失败（无 package.json 的仓库等）→ 回退发布体，entryHint 走目录容忍链
+        val pluginRoot = runCatching {
+            com.apex.agent.core.tools.extension.dsh.DshPackageLayout.pluginRootOf(published)
+        }.getOrDefault(published)
+        val entry = entryHint(pluginRoot)
 
         // dsh plugin add 语义：profile 注册清单（ExtensionRun / DSH Host 发现入口）
         val profileFile = layoutRef.profileFile(manifest.id, "dsh/profile.json").getOrElse { return Result.failure(it) }

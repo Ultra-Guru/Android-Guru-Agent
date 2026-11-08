@@ -62,8 +62,10 @@ class DshArtifactAnalyzer(
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
     suspend fun analyze(extId: String): Result<StaticReport> = runCatching {
-        val pkg = layout.pkgDir(extId)
-        if (!pkg.isDirectory) throw IllegalStateException("扩展未安装：$extId")
+        val pkgDir = layout.pkgDir(extId)
+        if (!pkgDir.isDirectory) throw IllegalStateException("扩展未安装：$extId")
+        // npm 安装布局的插件根在 node_modules/<name>/（DshPackageLayout 统一定位）
+        val pkg = DshPackageLayout.pluginRootOf(pkgDir)
         val pkgJson = File(pkg, "package.json")
         if (!pkgJson.isFile) throw IllegalStateException("package.json 缺失 —— 非 npm 形态插件")
         val meta = json.parseToJsonElement(pkgJson.readText()).jsonObject

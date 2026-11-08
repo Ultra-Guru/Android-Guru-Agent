@@ -52,17 +52,21 @@ class ExtensionEcosystemsTest {
                 return Result.success(NodeInstallPort.ExecOutcome(1, "", "simulated failure"))
             }
             // npm install --prefix <dir> -- <pkg>：模拟产物 node_modules/<pkg>/index.js
+            //（含 package.json —— DshPackageLayout 插件根定位依赖真实 npm 布局）
             if (command.firstOrNull() == "npm") {
                 val prefix = command[command.indexOf("--prefix") + 1]
                 val pkg = command.last()
                 val pkgDir = File(prefix, "node_modules/${pkg.replace("@", "").replace("/", "-")}")
                 pkgDir.mkdirs()
                 File(pkgDir, "index.js").writeText("// fake plugin")
+                File(pkgDir, "package.json").writeText("""{"name":"$pkg","version":"1.0.0","main":"index.js"}""")
             }
             if (command.firstOrNull() == "git") {
                 val target = File(command.last().trim('\''))
                 target.mkdirs()
                 File(target, "README.md").writeText("# fake repo")
+                File(target, "package.json").writeText("""{"name":"fake-repo","version":"0.1.0","main":"index.js"}""")
+                File(target, "index.js").writeText("// fake repo entry")
             }
             return Result.success(NodeInstallPort.ExecOutcome(0, "ok", ""))
         }

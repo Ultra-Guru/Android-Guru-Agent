@@ -127,10 +127,16 @@ class DshPluginIntrospector(
             return Observed(false, null, null, emptyList(), emptyList(), emptyList(), emptyMap(), null,
                 "脚本部署失败：${it.message}")
         }
-        val pkg = layout.pkgDir(extId)
-        if (!pkg.isDirectory) {
+        val pkgDir = layout.pkgDir(extId)
+        if (!pkgDir.isDirectory) {
             return Observed(false, null, null, emptyList(), emptyList(), emptyList(), emptyMap(), null,
                 "扩展 pkg 目录不存在：$extId")
+        }
+        // npm 安装布局的插件根（DshPackageLayout 统一定位 —— 探测的是包本体）
+        val pkg = try {
+            DshPackageLayout.pluginRootOf(pkgDir)
+        } catch (e: IllegalStateException) {
+            return Observed(false, null, null, emptyList(), emptyList(), emptyList(), emptyMap(), null, e.message)
         }
         val outcome = port.exec(
             command = listOf("node", File(deployed, "dsh-introspect.js").absolutePath, pkg.absolutePath),
