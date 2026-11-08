@@ -54,6 +54,7 @@ class ExtensionRegistry(
     init {
         runCatching { dir.mkdirs() }
         loadFromDisk()
+        loadSync()
     }
 
     private fun loadFromDisk() {
@@ -91,6 +92,51 @@ class ExtensionRegistry(
         }
         _changes.tryEmit(Unit)
     }
+
+    // ═══ 最近同步报告（lastSync.json）—— PR-E 生产化加固 ═══
+
+    /** 最近一次声明式同步的结果快照（AutoSync / ExtensionSync 共用）。 */
+    @Serializable
+    data class LastSyncEntry(
+        val time: Long,
+        val ok: Int = 0,
+        val drifted: List<String> = emptyList(),
+        val failed: List<String> = emptyList()
+    ) {
+        val hasIssues: Boolean get() = drifted.isNotEmpty() || failed.isNotEmpty()
+    }
+
+    @Serializable
+    private data class SyncLedger(val last: LastSyncEntry? = null)
+
+    private val syncFile: File get() = File(dir, "lastSync.json")
+
+    private var lastSync: LastSyncEntry? = null
+
+    private fun loadSync() {
+        if (!syncFile.isFile) return
+        lastSync = runCatching {
+            ExtensionRegistryJson.json.decodeFromString(SyncLedger.serializer(), syncFile.readText()).last
+        }.getOrNull()
+    }
+
+    /** 记录一次同步结果（覆盖式 —— 永远只留最近一次）。 */
+    fun recordLastSync(entry: LastSyncEntry) {
+        synchronized(lock) {
+            lastSync = entry
+            runCatching {
+                AtomicFileWrite.writeText(
+                    syncFile,
+                    ExtensionRegistryJson.json.encodeToString(
+                        SyncLedger.serializer(), SyncLedger(entry)
+                    )
+                )
+            }
+        }
+    }
+
+    /** 最近一次同步结果（null = 从未同步）。 */
+    fun lastSync(): LastSyncEntry? = synchronized(lock) { lastSync }
 
     /** 移除账目（返回是否确有此账）。 */
     fun remove(id: String): Boolean {

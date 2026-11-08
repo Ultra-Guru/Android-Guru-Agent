@@ -209,6 +209,17 @@ class ExtensionSyncTool(
             }
         )
         val ok = results.count { it.second.isSuccess }
+        // PR-E：同步结果落 lastSync（Doctor 展示最近一次生产状态）
+        registry.recordLastSync(
+            ExtensionRegistry.LastSyncEntry(
+                time = System.currentTimeMillis(),
+                ok = ok,
+                drifted = results.filter { it.second.isFailure && it.second.exceptionOrNull()?.message?.contains("版本锁定") == true }
+                    .map { it.first },
+                failed = results.filter { it.second.isFailure && it.second.exceptionOrNull()?.message?.contains("版本锁定") != true }
+                    .map { "${it.first} → ${it.second.exceptionOrNull()?.message?.take(100)}" }
+            )
+        )
         return ToolResult.ok(
             buildString {
                 appendLine("sync done: $ok/${specs.size} 安装成功")
