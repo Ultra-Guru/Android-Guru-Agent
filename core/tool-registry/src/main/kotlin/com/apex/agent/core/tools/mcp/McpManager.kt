@@ -115,7 +115,17 @@ class McpManager(
      * null = 宿主未注入（含占位符的配置连接时报「未注入」——与未连接
      * 同文案）；既有构造点零改动兼容。
      */
-    private val gitHubTokenProvider: (() -> String?)? = null
+    private val gitHubTokenProvider: (() -> String?)? = null,
+    /**
+     * Git 审计 P0-3：令牌桥白名单——允许解析 [GITHUB_TOKEN_PLACEHOLDER]
+     * 的服务器名集合（默认仅官方 github-official 预置）。白名单外的
+     * 配置（含恶意市场安装的 .mcp.json 写入
+     * `Authorization: Bearer ${GITHUB_TOKEN}` + 自建 URL 的形态）一律
+     * **拒绝连接**——占位符解析对任意服务器放行等于把 PAT 发给任意主机。
+     */
+    private val gitHubTokenBridgeServers: Set<String> = DEFAULT_GITHUB_TOKEN_BRIDGE_SERVERS,
+    /** 令牌桥白名单的 URL host 集合（防官方服务器名 + 手改 URL 的组合）。 */
+    private val gitHubTokenBridgeHosts: Set<String> = DEFAULT_GITHUB_TOKEN_BRIDGE_HOSTS
 ) {
     private val clients = LinkedHashMap<String, McpClient>()
     private val configs = LinkedHashMap<String, McpServerConfig>()
@@ -256,18 +266,22 @@ class McpManager(
             )
         }
 
-        // v3 S3（G8 令牌桥）：headers/env 值含 ${GITHUB_TOKEN} 占位符时，从
-        // 宿主注入的 provider 取 PAT 填充到本次连接的内存副本（占位符原样
-        // 落盘，真 token 永不进 mcp_servers.json）。GitHub 未连接 → 诚实
-        // 失败并给出可行动指引，不拿占位符串去撞 401。
-        val resolvedConfig = resolveGithubTokenPlaceholders(name, config)
-            ?: return Result.failure(
+        // v3 S3（G8 令牌桥）+ Git 审计 P0-3 白名单：headers/env 值含
+        // ${GITHUB_TOKEN} 占位符时，先校验服务器/主机白名单（fail-closed），
+        // 再从宿主注入的 provider 取 PAT 填充到本次连接的内存副本（占位符
+        // 原样落盘，真 token 永不进 mcp_servers.json）。GitHub 未连接 →
+        // 诚实失败并给出可行动指引，不拿占位符串去撞 401。
+        val resolvedConfig = when (val resolution = resolveGithubTokenPlaceholders(name, config)) {
+            is TokenResolution.Resolved -> resolution.config
+            is TokenResolution.NotConnected -> return Result.failure(
                 Exception(
                     "GitHub 未连接，无法注入令牌 — 服务器 '$name' 的配置引用了 " +
                         "$GITHUB_TOKEN_PLACEHOLDER 占位符，请先连接 GitHub「Coding 屏 " +
                         "GitHub 图标 / 设置 → GitHub」后再启用"
                 )
             )
+            is TokenResolution.Rejected -> return Result.failure(Exception(resolution.reason))
+        }
 
         // #197 真实事件：环境检查（配置形态 + 沙箱就绪态；rootfs 检查同
         // ProotMcpProcessLauncher 的门径 —— 存在性探测，不是模拟）。
@@ -582,23 +596,65 @@ class McpManager(
     }
 
     /**
-     * GitHub 令牌占位符解析（v3 S3 / G8 令牌桥，纯函数 + provider 读取）：
+     * GitHub 令牌占位符解析结果（Git 审计 P0-3 引入三分态）。
+     */
+    private sealed class TokenResolution {
+        /** 无占位符（零拷贝原样）或已解析注入的配置副本。 */
+        data class Resolved(val config: McpServerConfig) : TokenResolution()
+
+        /** 含占位符但 GitHub 未连接——调用方给「先连接 GitHub」文案。 */
+        object NotConnected : TokenResolution() {
+            override fun toString(): String = "NotConnected"
+        }
+
+        /** 含占位符但服务器/主机不在令牌桥白名单——fail-closed 拒绝连接。 */
+        data class Rejected(val reason: String) : TokenResolution()
+    }
+
+    /**
+     * 令牌桥白名单判定（Git 审计 P0-3，internal 供单测穷举）：
+     * 服务器名与 URL host 都必须命中白名单。host 解析防御式——URI 异常、
+     * 空 url（STDIO 内置形态）一律 false。
+     */
+    internal fun githubTokenBridgeAllowed(serverName: String, url: String): Boolean {
+        if (serverName !in gitHubTokenBridgeServers) return false
+        val host = runCatching { java.net.URI(url).host }.getOrNull()
+        return host != null && host in gitHubTokenBridgeHosts
+    }
+
+    /**
+     * GitHub 令牌占位符解析（v3 S3 / G8 令牌桥 + Git 审计 P0-3 白名单）：
      *
      * - headers / env 值均不含 [GITHUB_TOKEN_PLACEHOLDER] → 原样返回（零拷贝）；
-     * - 含占位符 → 从 [gitHubTokenProvider] 取 PAT（null/空白 = 未连接）做
-     *   子串替换（值可以是 `Bearer ${GITHUB_TOKEN}` / 纯占位符 / 嵌在其他
-     *   文本里），返回仅存于本次连接的内存副本；
-     * - 含占位符但未连接 → 返回 null（调用方转为可行动的连接失败文案）。
+     * - 含占位符 → 白名单校验（[githubTokenBridgeAllowed]）：服务器名 +
+     *   URL host 双命中才继续；否则 [TokenResolution.Rejected]（fail-closed
+     *   拒绝连接——恶意配置写 `Authorization: Bearer ${GITHUB_TOKEN}` +
+     *   自建 URL 即可在 connect 时拿到 PAT 的旧通路就此关闭）；
+     * - 白名单命中 → 从 [gitHubTokenProvider] 取 PAT（null/空白 = 未连接）
+     *   做子串替换，返回仅存于本次连接的内存副本。
      *
      * provider 读取侧防御式：抛异常折叠为未连接（不把宿主异常穿透到连接层）。
      */
     private fun resolveGithubTokenPlaceholders(
         serverName: String,
         config: McpServerConfig
-    ): McpServerConfig? {
+    ): TokenResolution {
         val hasPlaceholder = config.headers.values.any { it.contains(GITHUB_TOKEN_PLACEHOLDER) } ||
             config.env.values.any { it.contains(GITHUB_TOKEN_PLACEHOLDER) }
-        if (!hasPlaceholder) return config
+        if (!hasPlaceholder) return TokenResolution.Resolved(config)
+        if (!githubTokenBridgeAllowed(serverName, config.url)) {
+            errorLog(
+                "McpManager.connect('$serverName'): config references " +
+                    "$GITHUB_TOKEN_PLACEHOLDER but the server is NOT in the GitHub token " +
+                    "bridge allowlist (Git audit P0-3) — connection rejected"
+            )
+            return TokenResolution.Rejected(
+                "服务器 '$serverName' 的配置引用了 $GITHUB_TOKEN_PLACEHOLDER 占位符，但它不在 " +
+                    "GitHub 令牌桥白名单内（仅官方 github-official 预置支持）。" +
+                    "为防凭据被第三方 MCP 配置窃取，占位符解析已拒绝该连接：请删除该占位符，" +
+                    "或使用官方预置（市场 → GitHub 官方远程 MCP）"
+            )
+        }
         val token = runCatching { gitHubTokenProvider?.invoke() }
             .getOrNull()
             ?.takeIf { it.isNotBlank() }
@@ -607,15 +663,17 @@ class McpManager(
                     "McpManager.connect('$serverName'): config references " +
                         "$GITHUB_TOKEN_PLACEHOLDER but no GitHub PAT is available"
                 )
-                return null
+                return TokenResolution.NotConnected
             }
-        return config.copy(
-            headers = config.headers.mapValues { (_, v) ->
-                v.replace(GITHUB_TOKEN_PLACEHOLDER, token)
-            },
-            env = config.env.mapValues { (_, v) ->
-                v.replace(GITHUB_TOKEN_PLACEHOLDER, token)
-            }
+        return TokenResolution.Resolved(
+            config.copy(
+                headers = config.headers.mapValues { (_, v) ->
+                    v.replace(GITHUB_TOKEN_PLACEHOLDER, token)
+                },
+                env = config.env.mapValues { (_, v) ->
+                    v.replace(GITHUB_TOKEN_PLACEHOLDER, token)
+                }
+            )
         )
     }
 
@@ -658,11 +716,18 @@ class McpManager(
         /**
          * GitHub PAT 占位符（v3 S3 / G8 令牌桥）：写在配置 headers/env 值里，
          * [connect] 时经 [McpManager] 的 gitHubTokenProvider 解析为真 PAT。
-         * 官方 GitHub 远程 MCP 预置（app 层 OfficialGithubMcp）使用；用户自建
-         * 配置同样可用（真 token 不落盘）。注意 Kotlin 源码内写法：
+         * Git 审计 P0-3 起仅白名单服务器可解析（默认官方 github-official
+         * 预置；自建配置写占位符将被拒绝连接）。注意 Kotlin 源码内写法：
          * "\${GITHUB_TOKEN}"（$ 转义防模板插值）。
          */
         const val GITHUB_TOKEN_PLACEHOLDER = "\${GITHUB_TOKEN}"
+
+        /** 令牌桥白名单默认服务器名（app 层 OfficialGithubMcp.SERVER_NAME 同源）。 */
+        const val DEFAULT_GITHUB_TOKEN_BRIDGE_SERVER = "github-official"
+
+        /** 令牌桥白名单默认 host（官方远程 MCP 端点；api.github.com 预留）。 */
+        val DEFAULT_GITHUB_TOKEN_BRIDGE_SERVERS = setOf(DEFAULT_GITHUB_TOKEN_BRIDGE_SERVER)
+        val DEFAULT_GITHUB_TOKEN_BRIDGE_HOSTS = setOf("api.githubcopilot.com", "api.github.com")
 
         /**
          * #488：getAllTools 单台服务器的聚合预算（毫秒）。
