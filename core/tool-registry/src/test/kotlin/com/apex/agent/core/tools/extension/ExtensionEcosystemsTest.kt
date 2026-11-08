@@ -44,24 +44,29 @@ class ExtensionEcosystemsTest {
         override suspend fun exec(
             command: List<String>,
             cwd: File,
-            timeoutMs: Long
+            timeoutMs: Long,
+            stdin: String?
         ): Result<NodeInstallPort.ExecOutcome> {
             executed += command
             if (failCommand != null && command.firstOrNull() == failCommand) {
                 return Result.success(NodeInstallPort.ExecOutcome(1, "", "simulated failure"))
             }
             // npm install --prefix <dir> -- <pkg>：模拟产物 node_modules/<pkg>/index.js
+            //（含 package.json —— DshPackageLayout 插件根定位依赖真实 npm 布局）
             if (command.firstOrNull() == "npm") {
                 val prefix = command[command.indexOf("--prefix") + 1]
                 val pkg = command.last()
                 val pkgDir = File(prefix, "node_modules/${pkg.replace("@", "").replace("/", "-")}")
                 pkgDir.mkdirs()
                 File(pkgDir, "index.js").writeText("// fake plugin")
+                File(pkgDir, "package.json").writeText("""{"name":"$pkg","version":"1.0.0","main":"index.js"}""")
             }
             if (command.firstOrNull() == "git") {
                 val target = File(command.last().trim('\''))
                 target.mkdirs()
                 File(target, "README.md").writeText("# fake repo")
+                File(target, "package.json").writeText("""{"name":"fake-repo","version":"0.1.0","main":"index.js"}""")
+                File(target, "index.js").writeText("// fake repo entry")
             }
             return Result.success(NodeInstallPort.ExecOutcome(0, "ok", ""))
         }
@@ -356,7 +361,7 @@ class ExtensionRunToolTest {
 
     private class FakeRunPort : NodeInstallPort {
         var lastCommand: List<String>? = null
-        override suspend fun exec(command: List<String>, cwd: File, timeoutMs: Long): Result<NodeInstallPort.ExecOutcome> {
+        override suspend fun exec(command: List<String>, cwd: File, timeoutMs: Long, stdin: String?): Result<NodeInstallPort.ExecOutcome> {
             lastCommand = command
             // npm 形态模拟真实安装产物：node_modules/<pkg>/index.js + package.json(main)
             if (command.firstOrNull() == "npm") {
@@ -451,7 +456,7 @@ class ExtensionAutoSyncRunnerTest {
 
     private class FakeSyncPort : NodeInstallPort {
         var lastCommand: List<String>? = null
-        override suspend fun exec(command: List<String>, cwd: File, timeoutMs: Long): Result<NodeInstallPort.ExecOutcome> {
+        override suspend fun exec(command: List<String>, cwd: File, timeoutMs: Long, stdin: String?): Result<NodeInstallPort.ExecOutcome> {
             lastCommand = command
             if (command.firstOrNull() == "npm") {
                 val prefix = command[command.indexOf("--prefix") + 1]

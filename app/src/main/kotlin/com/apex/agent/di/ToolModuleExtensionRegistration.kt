@@ -95,6 +95,18 @@ internal fun registerExtensionTools(
                         }
                         // Claude 适配器：实体 = 聚合包（claude.<slug> → claude-<slug>）
                         "claude_plugin" -> fusionRegistry.get(record.id.replace('.', '-')) != null
+                        // DSH（2026-11 Native Host）：pkg 目录 + package.json +
+                        // capabilities 快照三重存在才算账实一致（此前默认 true
+                        // —— 目录被清也报健康，不诚实）
+                        "dsh_plugin" -> {
+                            val pkg = extensionLayout.pkgDir(record.id)
+                            val pkgJson = java.io.File(pkg, "package.json")
+                            val caps = extensionLayout.profileFile(
+                                record.id,
+                                com.apex.agent.core.tools.extension.dsh.DshCapabilitiesStore.PROFILE_RELATIVE
+                            ).getOrNull()
+                            pkg.isDirectory && pkgJson.isFile && caps?.isFile == true
+                        }
                         else -> true // apk_package（PR-C）等占位
                     }
                 },

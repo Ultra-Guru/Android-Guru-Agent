@@ -35,7 +35,13 @@ class ExtensionRegistry(
         val manifestHash: String = "",
         val installedAt: Long,
         /** 安装期说明（幂等/已存在等 notes 的留存）。 */
-        val notes: List<String> = emptyList()
+        val notes: List<String> = emptyList(),
+        /**
+         * 来源钉定描述（[com.apex.agent.core.tools.extension.PinnedSource.toDescriptor]，
+         * 如 "npm:1.2.3+sha512-…" / "git@abc123def456"）—— 真实版本与不可变
+         * 来源信息入库（2026-11 DSH Native Host；空 = 旧账或无可钉定生态）。
+         */
+        val pinnedSource: String = ""
     )
 
     @Serializable

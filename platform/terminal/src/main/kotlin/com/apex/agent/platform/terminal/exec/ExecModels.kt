@@ -32,6 +32,19 @@ data class ExecRequest(
     val cwd: String? = null,
     /** 附加环境变量（仅支持 env 透传的通道生效 —— 见 CommandSpawner.supportsEnv）。 */
     val env: Map<String, String> = emptyMap(),
+    /**
+     * 一次性 stdin 载荷（UTF-8；DSH 工具桥的 JSON 参数通道）。
+     *
+     * 契约（2026-11 DSH Native Plugin Host）：
+     * - 载荷原样写入进程 stdin 后**立即关闭**（EOF 语义与旧版「spawn 后即关」
+     *   一致 —— 一次性进程读到完整载荷即见 EOF）；
+     * - **结构化数据永远走 stdin，禁止拼进 command 串**（绕开 shell 单引号
+     *   拼接/剥离的参数破坏面）；
+     * - 超过 [ExecEngine.MAX_STDIN_BYTES] 的载荷 = 结构化失败，不静默截断；
+     * - 通道不支持 stdin（SpawnedCommand.stdin == null）而载荷非空 = 结构化
+     *   spawn 失败（诚实上报，绝不假装写入）。
+     */
+    val stdin: String? = null,
     /** 超时毫秒；超时强杀进程并如实返回 timed_out=true。 */
     val timeoutMs: Long = 30_000L,
     /** stdout 字符预算（ANSI 处理 + 行折叠之后），超出走 head+tail 截断。 */
@@ -143,6 +156,14 @@ interface SpawnedCommand {
     val stdout: java.io.InputStream
     /** null = 通道无法分离 stderr（已并入 stdout）。 */
     val stderr: java.io.InputStream?
+
+    /**
+     * 进程 stdin 写入口（null = 通道无法提供，如 su 中转的进程流）。
+     * 一次性语义由**引擎**收尾（写载荷→flush→close，或无载荷直接 close）：
+     * spawner 不再自行关闭 —— 此前「spawn 后立即关」会让 [ExecRequest.stdin]
+     * 永远写不进去；通道保持打开直到引擎收尾，`cat` 类命令的 EOF 语义不变。
+     */
+    val stdin: java.io.OutputStream? get() = null
 
     /** 是否在 timeoutMs 内正常退出。 */
     fun waitFor(timeoutMs: Long): Boolean
