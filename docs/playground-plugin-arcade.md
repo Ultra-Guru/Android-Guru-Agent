@@ -2,7 +2,7 @@
 
 > 状态：本 PR 落地（2026-10）
 > 主题：游乐场插件化 —— 游戏即 HTML（自包含单文件 + game.json manifest），
-> 十款 pretext 内置插件 + 运行时导入 + 「HTML → WebView 壳 APK 插件」转化路径。
+> 十七款 pretext 内置插件（第一批十款 + 第二批四款 + 第三批三款）+ 运行时导入 + 「HTML → WebView 壳 APK 插件」转化路径。
 > 前置：[playground-glyph-storm.md](playground-glyph-storm.md)（原生街机先例）
 > · [plugin-system-v2.md](plugin-system-v2.md)（双类型插件体系）
 > · [chenglou/pretext](https://github.com/chenglou/pretext)（MIT，测量引擎）
@@ -61,7 +61,7 @@
 | 运行时 | `app/…/playground/HtmlGameScreen.kt` | WebView 街机屏（JS + DOM storage + 同目录 file:// 白名单 + onRelease destroy） |
 | UI | `app/…/playground/PlaygroundScreen.kt` | 目录态 / 游戏态 / 原生详情态三态切换；导入启动器（SAF GetContent）；卸载确认门 |
 | 原生孪生 | `app/…/playground/GlyphStormSection.kt` | 原 PlaygroundScreen 的字符风暴区块原样迁出（降位为目录中「原生」卡） |
-| 资产 | `app/src/main/assets/playground/games/` | 十款内置插件（<id>/index.html + game.json） |
+| 资产 | `app/src/main/assets/playground/games/` | 十七款内置插件（<id>/index.html + game.json） |
 | 规范 | `playground/GAME-SPEC.md` | 统一执行规范（设计语言 / 硬性契约 / 质量自检清单） |
 | 转化 | `playground/apk-plugin-template/` | 可拷贝 WebView 壳 APK 插件模板（不参与构建） |
 | vendored | `playground/vendor/pretext.js` | @chenglou/pretext 0.0.9（MIT 头保留），游戏内联源 |
@@ -79,9 +79,9 @@
 
 WebView 沙箱三纪律（HtmlGameScreen）：JS + DOM storage 开启；file://
 导航仅放行**同插件目录**（防越目录读取）；http(s) 放行留 CDN 兜底但
-内置十款实测零请求。
+内置十七款实测零请求（第二批、第三批同法逐个实测）。
 
-## 4. 十款游戏：测量即玩法（每款锚定不同 pretext API）
+## 4. 游戏：测量即玩法（每款锚定不同 pretext API）
 
 | 游戏 | 机制 | pretext 锚点 |
 | --- | --- | --- |
@@ -95,6 +95,23 @@ WebView 沙箱三纪律（HtmlGameScreen）：JS + DOM storage 开启；file://
 | 排版俄罗斯 | 非等宽词语块下落，行内累计实测宽 ≥92% 消行；等宽对照开关 | `prepareWithSegments` + `measureNaturalWidth` |
 | 文本引流 | 拖障碍盒逐行变宽重路由文章，末行恰好落进一页 | `layoutNextLineRange` + `materializeLineRange`（逐行变宽 = pretext 独门） |
 | 收缩塔 | 收缩宽度板材落塔，新块必须比下方块窄 | `prepare` + `measureLineStats` + `layoutWithLines` |
+
+第二批（2026-10，直接模仿官网 demo，同一设计语言与契约）：
+
+| 游戏 | 机制 | pretext 锚点 |
+| --- | --- | --- |
+| 裁纸刀 | 拖裁刀让段落恰好截断在目标高度虚线框内，…按末行实测宽度落位 | `prepareWithSegments` + `layoutWithLines` |
+| 瀑布打包 | 实测高度的文本卡片码进瀑布墙，越矮越平衡分越高，落成对照理论最优 | `prepare` + `measureLineStats` |
+| 手风琴调音 | 展开收起分区，用实测高度把面板总高校准到目标线（高尔夫计杆） | `prepare` + `layout` |
+| 赝品画廊 | 三幅版画藏一幅假宽排布赝品，量尺实测宽度揭穿它 | `prepare` + `measureNaturalWidth` |
+
+第三批（2026-11，直接模仿官网 demo，同一设计语言与契约）：
+
+| 游戏 | 机制 | pretext 锚点 |
+| --- | --- | --- |
+| 河流猎人 | 两端对齐段落里点出词缝最宽的「河」所在行（末行不参评） | `prepareWithSegments` + `layoutWithLines` + `measureNaturalWidth` |
+| 弹球引流 | 弹球撞进版面，文章逐行变宽绕行每帧重排；点三下点爆，防末行溢出 | `prepareWithSegments` + `layoutNextLineRange` + `materializeLineRange` |
+| 代码洪水 | 聊天流混涌散文与代码块，pre-wrap 实测高度决定滚动，收块防淹 | `prepare`（`whiteSpace:'pre-wrap'`）+ `layout` |
 
 设计语言统一：终端暗色霓虹（深底 #0a0f0c / 等宽 HUD / 绿-琥珀-红），
 中文 UI，触屏优先，`visibilitychange` 暂停，`prefers-reduced-motion`
@@ -126,6 +143,16 @@ gh-pages 的《GLYPH STORM》+ 终端街机（snake/bug/mem）保持不动（另
 
 - [x] 十款游戏 agent-browser 逐个实测：加载零报错、开始/交互/结算闭环、
       pretext 真实调用（宽度差 i=6.9 / W=22.1 / 你=20.0 实测可查）
+- [x] 第二批四款（裁纸刀/瀑布打包/手风琴调音/赝品画廊）同法实测：
+      加载零报错、玩法闭环（命中计分/落成结算/校准结算/鉴定得分）、
+      零网络请求、390×844 触屏布局（2026-10）
+- [x] 第三批三款（河流猎人/弹球引流/代码洪水）同法实测：加载零报错、
+      玩法闭环（河宽判定 +120 / 点爆 +20 与逐行变宽路由 / 收块 +30 与
+      pre-wrap 实测高度）、零网络请求（2026-11）。
+      实测环境备注：IAB 对不可见页冻结 rAF，动态游戏用「仅测试副本 +
+      rAF 帧泵 shim」完成端到端验证（正式文件不含 shim）；
+      vendored 0.0.9 的 `layoutNextLineRange` 光标为**只入参**，
+      调用方必须以 `cursor = range.end` 手动推进（flow-route 同款）。
 - [x] 目录双源扫描（assets + filesDir）与合并去重
 - [x] 导入链路：SAF 选取 → 读取 → 冲突门（REJECT）→ 原子写 → 目录对账
 - [x] 卸载链路：确认门 → 递归删除 → 目录对账（内置不可卸载）

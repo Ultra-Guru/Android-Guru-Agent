@@ -440,7 +440,8 @@ private fun CategoryTab(label: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = container,
-        modifier = Modifier.clickable(onClick = onClick)
+        // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 16dp 圆角胶囊
+        modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick)
     ) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = content, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
     }
@@ -473,7 +474,8 @@ private fun LevelChip(level: LogLevel, active: Boolean, onClick: () -> Unit) {
     Surface(
         shape = RoundedCornerShape(8.dp),
         color = container,
-        modifier = Modifier.clickable(onClick = onClick)
+        // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 8dp 圆角 chip
+        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick)
     ) {
         Text(level.shortTag, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = content, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
     }
@@ -484,7 +486,8 @@ private fun SessionChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
         shape = RoundedCornerShape(8.dp),
         color = if (selected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.clickable(onClick = onClick)
+        // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 8dp 圆角 chip
+        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick)
     ) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = if (selected) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
     }

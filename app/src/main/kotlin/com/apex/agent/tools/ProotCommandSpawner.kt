@@ -69,9 +69,11 @@ private const val TAG = "ProotExec"
  * - guest env 只经 env trampoline 传入：PATH（LinuxEnvironmentManager.GUEST_PATH
  *   单源）、TERM=dumb（管道执行无终端转义）、HOME=/root、LANG=C.UTF-8、
  *   PWD/TMPDIR 对齐 -w；SpawnRequest.env 追加在其后（调用方显式 env 优先）；
- *   v3 S3（G2）：命令首词为 git/gh 且 GitHub 已连接时，
- *   [GithubTerminalEnvInjector] 最后追加 GH_TOKEN / GITHUB_TOKEN + git 凭据
- *   桥（仅存活于本次进程 env；调用方伪造的同名 env 被真实 PAT 覆盖）；
+ *   v3 S3（G2）+ Git 审计 P0-1：命令首词为 git/gh 且 GitHub 已连接时，
+ *   [GithubTerminalEnvInjector] 最后追加 GIT_ASKPASS（一次性凭据脚本
+ *   路径，[com.apex.agent.github.GithubCredentialIssuer] 签发）+
+ *   GIT_TERMINAL_PROMPT=0——**PAT 零进 env**（旧实现把 GH_TOKEN 注入
+ *   整个 sh -c 进程，复合命令后半段与恶意 hooks 可直接读走）；
  * - Android app 进程的任何变量不被继承。
  *   env 值含 `\n` / NUL 的条目（TM6 守卫会拒绝）在进入构建器前被过滤并在
  *   stderr 提示（诚实而非崩溃）。
@@ -248,10 +250,16 @@ class ProotCommandSpawner(
             request.env.forEach { (k, v) ->
                 if (k !in droppedEnv) guestEnv[k] = v
             }
-            // v3 S3（G2）：git/gh 命令凭据注入（放最后——真实 PAT 覆盖调用方
-            // 拼凑的同名 env；仅存活于本次进程，不写盘不进 profile）
+            // Git 审计 P0-1 根修：git/gh 命令凭据不再走「PAT 注入进程 env」
+            // （复合命令后半段与恶意 hooks 可直接读走）——改为一次性
+            // GIT_ASKPASS 脚本（PAT 零进 env，凭据只流向 github.com）。
+            // 终端通道无法感知进程结束，脚本靠 Issuer 签发时的惰性清扫兜底。
+            // 放最后——覆盖调用方拼凑的同名 env。
+            val askPass = gitHubTokenProvider?.invoke()?.let {
+                com.apex.agent.github.GithubCredentialIssuer.issue(route.rootfs, it)
+            }
             val finalGuestEnv = GithubTerminalEnvInjector.inject(
-                guestEnv, request.command, gitHubTokenProvider?.invoke()
+                guestEnv, request.command, askPass?.guestAskPassPath
             )
 
             val command = buildCommand(route, plan, finalGuestEnv, request)
