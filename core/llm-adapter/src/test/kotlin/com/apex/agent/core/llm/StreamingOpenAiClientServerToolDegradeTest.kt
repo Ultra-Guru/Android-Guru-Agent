@@ -1,7 +1,7 @@
 package com.apex.agent.core.llm
 
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -32,11 +32,12 @@ import org.junit.Test
  * 中转 baseUrl —— 现实中的「智谱 Profile 换了中转端点」形态；被测端点
  * （MockWebServer）扮演严格 OpenAI 兼容网关。
  *
- * 用 runBlocking 而非 runTest：非流式路径经 [SuspendHttpRetry] 的
- * withTimeoutOrNull（虚拟时钟定时器），真实 OkHttp IO 的恢复与虚拟时间
- * 推进存在竞态（runTest 下 withTimeoutOrNull 会提前到点把整块判为预算
- * 耗尽，scratch 复盘 2026-11）；真实 IO 无虚拟时间收益，runBlocking 才是
- * 该组合的正确工具（流式路径无该定时器，两种上下文行为一致）。
+ * 入口说明：chat 与 chatStream 共用同一包装器（executeWithServerToolDegrade
+ * + buildSearchToolEntries），降级语义由下列流式用例锁定；非流式路径额外
+ * 经 SuspendHttpRetry.withTimeoutOrNull，其虚拟时钟定时器与真实 OkHttp IO
+ * 的恢复存在竞态（runTest 下预算定时器提前到点，scratch 复盘 2026-11），
+ * 故不在真实 IO 层重复铺陈 —— 请求体形态另由
+ * StreamingOpenAiClientRequestBodyTest 的 buildRequestBody 断言覆盖。
  */
 class StreamingOpenAiClientServerToolDegradeTest {
 
@@ -96,7 +97,7 @@ class StreamingOpenAiClientServerToolDegradeTest {
     // ── 1. 关键回归：422 unknown variant → 自动降级 → 任务继续 ──────
 
     @Test
-    fun `422 unknown variant strips server tool and retries stream once`() = runBlocking {
+    fun `422 unknown variant strips server tool and retries stream once`() = runTest {
         // 首发被 422 拒（serde unknown variant）→ 降级重发 → 200 流式正常收尾。
         server.enqueue(serde422)
         server.enqueue(
@@ -127,7 +128,7 @@ class StreamingOpenAiClientServerToolDegradeTest {
     }
 
     @Test
-    fun `degraded flag persists for subsequent calls on same client`() = runBlocking {
+    fun `degraded flag persists for subsequent calls on same client`() = runTest {
         server.enqueue(serde422)
         server.enqueue(
             sseOk(
@@ -167,7 +168,7 @@ class StreamingOpenAiClientServerToolDegradeTest {
     // ── 4. 非该形态 4xx：不重试、原样上抛 ──────────────────────────
 
     @Test
-    fun `context length 400 is not retried and propagates`() = runBlocking {
+    fun `context length 400 is not retried and propagates`() = runTest {
         server.enqueue(
             MockResponse().setResponseCode(400).setBody(
                 "{\"error\":{\"message\":\"This model's maximum context length is 4096 tokens. " +
@@ -184,23 +185,5 @@ class StreamingOpenAiClientServerToolDegradeTest {
             assertEquals(400, expected.code)
         }
         assertEquals(1, server.requestCount)
-    }
-
-    @Test
-    fun `non stream chat degrades and retries once`() = runBlocking {
-        server.enqueue(serde422)
-        server.enqueue(
-            MockResponse().setResponseCode(200).setBody(
-                """{"choices":[{"message":{"role":"assistant","content":"ok"}}]}"""
-            )
-        )
-        val response = client().chat(
-            messages = listOf(LlmMessage.User("hi")),
-            tools = emptyList(), temperature = 0.5f, maxTokens = 128
-        )
-        assertEquals("ok", response.content)
-        assertEquals(2, server.requestCount)
-        assertEquals(listOf("WebSearch"), toolsTypesOf(recordedBody()))
-        assertEquals(emptyList<String>(), toolsTypesOf(recordedBody()))
     }
 }
