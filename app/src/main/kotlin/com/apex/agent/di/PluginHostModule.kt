@@ -112,7 +112,7 @@ object PluginHostModule {
         toolBridge = toolBridge,
         eventBus = eventBus,
         ledgerRemover = { pluginId ->
-            runCatching { ledger.uninstall(pluginId) }
+            runCatching { ledger.remove(pluginId) }
                 .onFailure {
                     com.apex.agent.core.logging.AppLogger.instance.warn(
                         com.apex.agent.core.logging.LogCategory.PLUGIN,
