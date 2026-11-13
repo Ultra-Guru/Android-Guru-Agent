@@ -373,16 +373,6 @@ class RootfsConfigurator(
             .toList()
     }
 
-    private fun List<X509Certificate>.toBundle(): ByteArray {
-        val pem = StringBuilder()
-        for (cert in this) {
-            val encoded = Base64.getMimeEncoder(64, byteArrayOf('\n'.code.toByte())).encodeToString(cert.encoded)
-            pem.append("-----BEGIN CERTIFICATE-----\n").append(encoded).append("\n-----END CERTIFICATE-----\n")
-        }
-        require(pem.isNotEmpty() && pem.length <= MAX_CA_BYTES) { "invalid trusted bundle" }
-        return pem.toString().toByteArray(Charsets.US_ASCII)
-    }
-
     /**
      * DNS 决策链：注入 > host resolv.conf > 公共 DNS fallback（带 warning）。
      */
