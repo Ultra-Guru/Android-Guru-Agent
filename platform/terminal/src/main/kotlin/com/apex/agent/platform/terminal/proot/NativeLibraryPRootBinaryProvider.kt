@@ -172,8 +172,8 @@ class NativeLibraryPRootBinaryProvider(
         /** `--kill-on-exit` 选项字面量（argv 构造/探针单一事实源）。 */
         const val KILL_ON_EXIT_OPTION: String = "--kill-on-exit"
 
-        /** 探针单次有界等待（无界挂起不可判定 —— 与 E2E 探针同款防御）。 */
-        private const val PROBE_TIMEOUT_SECONDS = 10L
+        /** 探针单次硬截止（无界挂起不可判定 —— 与 E2E 探针同款防御）。 */
+        private const val PROBE_DEADLINE_SECONDS = 10L
 
         /**
          * T92（审计修复）：探针前置 —— 幂等 prepare 成功后才取 host env。
@@ -189,23 +189,11 @@ class NativeLibraryPRootBinaryProvider(
         private fun defaultVersionProbe(binary: File, hostEnv: PRootHostEnvironment): String? {
             return try {
                 val envMap = probeEnv(hostEnv) ?: return null
-                val pb = ProcessBuilder(listOf(binary.absolutePath, "--version"))
-                pb.environment().clear()
-                pb.environment().putAll(envMap)
-                val proc = pb.start()
-                // T94：探针流用完即关 —— 旧实现不关闭 reader，管道 fd 靠 GC
-                // 回收；探针在每次 create/refresh 反复执行，fd 缓慢累积。
-                val out = proc.inputStream.bufferedReader().use { it.readText().trim() }
-                val err = proc.errorStream.bufferedReader().use { it.readText().trim() }
-                // T92：有界等待 —— 无界 waitFor 会把一次挂死的 --version 钉死在
-                // verify（每次会话创建都调）上，进而钉死 create/availability。
-                val exited = proc.waitFor(PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                if (!exited) {
-                    runCatching { proc.destroyForcibly() }
-                    null
-                } else {
-                    out.ifBlank { err }.ifBlank { null }
-                }
+                // --version 的输出要进入 PRootBinaryInfo.version（能力探针则丢弃输出）。
+                val outputFile = File(hostEnv.prootTmpDir, "pr99-version-probe.out")
+                outputFile.parentFile?.mkdirs()
+                val proc = startProbe(listOf(binary.absolutePath, "--version"), envMap, outputFile)
+                boundedText(proc, outputFile)?.ifBlank { null }
             } catch (e: Exception) {
                 null
             }
@@ -219,22 +207,8 @@ class NativeLibraryPRootBinaryProvider(
         private fun defaultKillOnExitProbe(binary: File, hostEnv: PRootHostEnvironment): Boolean? {
             return try {
                 val envMap = probeEnv(hostEnv) ?: return null
-                val pb = ProcessBuilder(
-                    listOf(binary.absolutePath, KILL_ON_EXIT_OPTION, "--version")
-                )
-                pb.environment().clear()
-                pb.environment().putAll(envMap)
-                val proc = pb.start()
-                // T94：探针流用完即关（同版本探针 —— fd 回收不靠 GC）。
-                proc.inputStream.bufferedReader().use { it.readText() }
-                proc.errorStream.bufferedReader().use { it.readText() }
-                val exited = proc.waitFor(PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                if (!exited) {
-                    runCatching { proc.destroyForcibly() }
-                    null
-                } else {
-                    proc.exitValue() == 0
-                }
+                val proc = startProbe(listOf(binary.absolutePath, KILL_ON_EXIT_OPTION, "--version"), envMap, hostEnv)
+                boundedExit(proc)
             } catch (e: Exception) {
                 null
             }
@@ -254,22 +228,7 @@ class NativeLibraryPRootBinaryProvider(
             val envMap = probeEnv(hostEnv) ?: return null
             for (shell in SEPARATOR_PROBE_SHELLS) {
                 val supported = try {
-                    val pb = ProcessBuilder(
-                        listOf(binary.absolutePath, "--", shell, "-c", "true")
-                    )
-                    pb.environment().clear()
-                    pb.environment().putAll(envMap)
-                    val proc = pb.start()
-                    // T94：探针流用完即关（同版本探针 —— fd 回收不靠 GC）。
-                    proc.inputStream.bufferedReader().use { it.readText() }
-                    proc.errorStream.bufferedReader().use { it.readText() }
-                    val exited = proc.waitFor(PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                    if (!exited) {
-                        runCatching { proc.destroyForcibly() }
-                        null
-                    } else {
-                        proc.exitValue() == 0
-                    }
+                    boundedExit(startProbe(listOf(binary.absolutePath, "--", shell, "-c", "true"), envMap, hostEnv))
                 } catch (e: Exception) {
                     null
                 }
@@ -284,5 +243,60 @@ class NativeLibraryPRootBinaryProvider(
 
         /** 分隔符探针的 shell 回退序列（设备/桌面双端覆盖）。 */
         private val SEPARATOR_PROBE_SHELLS = listOf("/bin/sh", "/system/bin/sh")
+
+        /**
+         * 启动探针子进程，宿主侧流**落到丢弃文件再等**。
+         * （不用 ProcessBuilder.Redirect.DISCARD：该常量在当前 Android 编译目标
+         * 下不可解析。等价的 Redirect.to(临时文件) 在所有目标上可编译；探针
+         * 输出本无消费价值，文件只做 drain。）
+         *
+         * 旧实现 `readText()` 耗尽流**之后**才 waitFor：被 ptrace 卡死或故意
+         * 挂起的 tracer 拿着 stdout 管道不吐 EOF，readText 永不返回，10s 截止
+         * 从未到达 → 探针把 availability/create 冻住（T99 RED 回归锁的根因）。
+         */
+        private fun startProbe(argv: List<String>, env: Map<String, String>, hostEnv: PRootHostEnvironment): Process =
+            startProbe(argv, env, File(hostEnv.prootTmpDir, "pr99-probe.out"))
+
+        private fun startProbe(argv: List<String>, env: Map<String, String>, output: File): Process {
+            if (output.parentFile?.isDirectory != true) output.parentFile?.mkdirs()
+            return ProcessBuilder(argv).withCapture(env) { it.redirectOutput(ProcessBuilder.Redirect.to(output)) }
+        }
+
+        private fun ProcessBuilder.withCapture(
+            env: Map<String, String>,
+            output: (ProcessBuilder) -> Unit
+        ): Process {
+            environment().clear()
+            environment().putAll(env)
+            redirectErrorStream(true)
+            output(this)
+            return start()
+        }
+
+        /** 探针硬截止：超时强杀并回收；退出即销毁残留句柄。 */
+        private fun boundedExit(proc: Process): Boolean? =
+            if (proc.waitFor(PROBE_DEADLINE_SECONDS, TimeUnit.SECONDS)) {
+                destroyForcibly(proc)
+                proc.exitValue() == 0
+            } else {
+                destroyForcibly(proc)
+                null
+            }
+
+        private fun boundedText(proc: Process, output: File): String? =
+            if (proc.waitFor(PROBE_DEADLINE_SECONDS, TimeUnit.SECONDS)) {
+                destroyForcibly(proc)
+                runCatching { output.readText().trim() }.getOrNull()
+            } else {
+                destroyForcibly(proc)
+                null
+            }
+
+        private fun destroyForcibly(proc: Process) {
+            runCatching { proc.destroyForcibly() }
+            runCatching { proc.outputStream.close() }
+            runCatching { proc.inputStream.close() }
+            runCatching { proc.errorStream.close() }
+        }
     }
 }

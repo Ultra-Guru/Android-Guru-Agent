@@ -395,6 +395,19 @@ class ToolV3InfraTest {
         )
     }
 
+    @Test
+    fun `chroot availability appears beside Ubuntu in prompt telemetry`() {
+        val state = ToolEnvironmentState()
+        state.set(ToolEnvironmentState.Flags.UBUNTU_READY, true)
+        state.set(ToolEnvironmentState.Flags.CHROOT_READY, true)
+        state.set(ToolEnvironmentState.Flags.TERMINAL_SESSION_OPEN, true)
+
+        assertEquals(
+            "environment: ubuntu_ready=on chroot_ready=on terminal_session_open=on",
+            state.summary()
+        )
+    }
+
     // ═════════════════════════════════════════════════════════════════
     // ToolEnvironmentGate + CompositeToolGate
     // ═════════════════════════════════════════════════════════════════
