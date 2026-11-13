@@ -802,6 +802,15 @@
     <string name="about_update_hot_fail_verify">校验失败</string>
     <string name="about_update_hot_fail_unpack">热更包损坏</string>
     <string name="about_update_hot_fail_apply">应用失败</string>
+    <string name="about_update_hot_fail_cancelled">已取消（已下载内容保留，可随时重试）</string>
+    <!-- S-02 热更确认与回滚 -->
+    <string name="about_update_hot_confirm_title">确认应用热更新</string>
+    <string name="about_update_hot_confirm_body">即将把 v%1$s 的 %2$d 个数据文件注入生效（技能 / MCP 目录）。变更清单：</string>
+    <string name="about_update_hot_confirm_more">…以及另外 %1$d 个文件</string>
+    <string name="about_update_hot_confirm_note">应用后即时生效，可随时回滚到上一版；取消则不改动任何内容</string>
+    <string name="about_update_hot_confirm_apply">确认应用</string>
+    <string name="about_update_hot_confirm_cancel">取消</string>
+    <string name="about_update_hot_rollback">回滚到上一版热更内容</string>
     <string name="about_update_hot_applied_note">数据层已热更至 v%1$s（无需重装）</string>
     <!-- v1.4.8 本地更新包常驻区 -->
     <string name="about_update_local_inventory_title">本地更新包</string>

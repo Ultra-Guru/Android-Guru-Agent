@@ -1,8 +1,12 @@
 package com.apex.agent.core.tools.extension.adapters
 
 import com.apex.agent.core.tools.extension.ExtensionDirLayout
+import com.apex.agent.core.tools.extension.ExtensionJson
 import com.apex.agent.core.tools.extension.ExtensionSpecParser
 import com.apex.agent.core.tools.extension.NodeInstallPort
+import com.apex.agent.core.tools.extension.PinnedSource
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 
 /**
@@ -21,7 +25,15 @@ class NodeFamilyInstaller(
 ) {
 
     /** npm 包安装：`npm install --prefix <tmp> --no-audit --no-fund <pkg>`。 */
-    suspend fun npmInstall(extId: String, pkg: String): Result<File> {
+    suspend fun npmInstall(extId: String, pkg: String): Result<File> =
+        npmInstallPinned(extId, pkg).map { it.first }
+
+    /**
+     * npm 包安装（带来源钉定）：publish 后回读安装产物 package.json 的真实
+     * 版本 + package-lock 的 tarball integrity —— 账本钉定数据源（2026-11，
+     * 修正四：版本不得只存在于展示文字）。
+     */
+    suspend fun npmInstallPinned(extId: String, pkg: String): Result<Pair<File, PinnedSource>> {
         if (!ExtensionSpecParser.isNpmName(pkg)) {
             return Result.failure(IllegalArgumentException("npm 包名不合法（白名单外）：'$pkg'"))
         }
@@ -37,11 +49,17 @@ class NodeFamilyInstaller(
                 IllegalStateException("npm install 失败（exit ${outcome.exitCode}）：${(outcome.stderr.ifBlank { outcome.stdout }).take(300)}")
             )
         }
-        return layout.atomicPublish(extId, tmp)
+        val published = layout.atomicPublish(extId, tmp).getOrElse { return Result.failure(it) }
+        val pinned = readNpmPinned(published, pkg)
+        return Result.success(published to pinned)
     }
 
     /** GitHub 仓库克隆：`git clone --depth 1 <url> <tmp>/src`。 */
-    suspend fun gitClone(extId: String, ownerRepo: String): Result<File> {
+    suspend fun gitClone(extId: String, ownerRepo: String): Result<File> =
+        gitClonePinned(extId, ownerRepo).map { it.first }
+
+    /** GitHub 克隆（带钉定）：clone 后 `git rev-parse HEAD` 取不可变 commit SHA。 */
+    suspend fun gitClonePinned(extId: String, ownerRepo: String): Result<Pair<File, PinnedSource>> {
         val repo = ExtensionSpecParser.githubRepoOf(ownerRepo)
             ?: return Result.failure(IllegalArgumentException("GitHub 仓库不合法（白名单外）：'$ownerRepo'"))
         val tmp = layout.newTmpDir(extId)
@@ -57,8 +75,32 @@ class NodeFamilyInstaller(
                 IllegalStateException("git clone 失败（exit ${outcome.exitCode}）：${(outcome.stderr.ifBlank { outcome.stdout }).take(300)}")
             )
         }
-        // 仓库根即发布体（pkg = tmp 本体语义不同 —— clone 已在 tmp/src，发布整 tmp）
-        return layout.atomicPublish(extId, tmp)
+        val published = layout.atomicPublish(extId, tmp).getOrElse { return Result.failure(it) }
+        // publish 后 .git 在 published/src 内 —— rev-parse 于该目录执行
+        val sha = port.exec(
+            command = listOf("git", "rev-parse", "HEAD"),
+            cwd = File(published, "src"),
+            timeoutMs = 30_000
+        ).getOrNull()?.stdout?.trim()?.takeIf { it.isNotEmpty() }
+        return Result.success(published to PinnedSource(version = null, revision = sha))
+    }
+
+    /** 回读安装产物的真实版本与 integrity（读取失败 = PinnedSource 空，诚实降级）。 */
+    private fun readNpmPinned(published: File, pkg: String): PinnedSource {
+        // scoped 包名（@scope/name）的 '/' 在 File(parent, child) 里按路径解析，跨平台成立
+        val pkgJson = File(published, "node_modules/$pkg/package.json")
+        val version = runCatching {
+            ExtensionJson.json.parseToJsonElement(pkgJson.readText()).jsonObject["version"]
+                ?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+        }.getOrNull()
+        val integrity = runCatching {
+            val lock = File(published, "package-lock.json")
+            if (!lock.isFile) return@runCatching null
+            val packages = ExtensionJson.json.parseToJsonElement(lock.readText()).jsonObject["packages"]?.jsonObject
+            packages?.get("node_modules/$pkg")?.jsonObject?.get("integrity")
+                ?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+        }.getOrNull()
+        return PinnedSource(version = version, integrity = integrity)
     }
 
     /** 本地文件/目录安装（OpenCode 单文件插件）：复制进 tmp → publish。 */

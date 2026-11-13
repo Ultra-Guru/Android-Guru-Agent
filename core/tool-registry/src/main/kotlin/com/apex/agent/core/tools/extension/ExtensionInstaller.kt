@@ -132,19 +132,22 @@ class ExtensionInstaller(
         val outcome = adapter.install(manifest).getOrElse { return Result.failure(it) }
 
         // ── 账本登记（同 id 覆盖 = 升级）──
+        // 版本以 InstallOutcome 为准（适配器回填安装产物真实版本）——
+        // manifest.version 只是 spec 占位（修正四：真实版本不得只活在展示文字里）
         registry.record(
             ExtensionRegistry.Record(
                 id = manifest.id,
                 type = manifest.type,
                 spec = manifest.spec,
                 name = manifest.name,
-                version = manifest.version,
+                version = outcome.version.ifBlank { manifest.version },
                 runtime = manifest.runtime,
                 sourceKind = manifest.sourceKind,
                 trustLevel = manifest.trustLevel,
                 manifestHash = manifest.manifestHash,
                 installedAt = System.currentTimeMillis(),
-                notes = outcome.notes
+                notes = outcome.notes,
+                pinnedSource = outcome.pinned?.toDescriptor() ?: ""
             )
         )
         return Result.success(outcome)

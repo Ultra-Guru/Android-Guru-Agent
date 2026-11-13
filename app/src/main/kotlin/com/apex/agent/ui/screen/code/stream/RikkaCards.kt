@@ -53,6 +53,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -386,6 +387,8 @@ private fun RikkaVerifyCard(entry: StreamEntry.VerifyCycleEntry, onToolClick: (S
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 2.dp)
+            // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 12dp 圆角
+            .clip(RoundedCornerShape(12.dp))
             .clickable { expanded = !expanded }
     ) {
         Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
@@ -612,9 +615,12 @@ private fun RikkaErrorCard(entry: StreamEntry.ErrorEntry, onRetryRun: (() -> Uni
                     Surface(
                         shape = RoundedCornerShape(10.dp),
                         color = MaterialTheme.colorScheme.error.copy(alpha = 0.10f),
-                        modifier = Modifier.clickable(
-                            role = androidx.compose.ui.semantics.Role.Button
-                        ) { onRetryRun() }
+                        modifier = Modifier
+                            // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 10dp 圆角
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable(
+                                role = androidx.compose.ui.semantics.Role.Button
+                            ) { onRetryRun() }
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,

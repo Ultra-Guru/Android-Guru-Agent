@@ -1,8 +1,13 @@
 package com.apex.agent.github.tools
 
 import com.apex.agent.core.tools.AgentTool
+import com.apex.agent.core.tools.ToolAnnotations
+import com.apex.agent.core.tools.ToolCategory
+import com.apex.agent.core.tools.ToolMetadata
+import com.apex.agent.core.tools.ToolRisk
 import com.apex.agent.github.GithubApiException
 import com.apex.agent.github.GithubApiService
+import com.apex.agent.github.GithubWriteGuard
 import kotlinx.serialization.json.*
 
 // ═══ P0 修复（工具大面积失败）═══════════════════════════════════════════
@@ -139,6 +144,21 @@ class GithubWriteFileTool(private val api: GithubApiService) : AgentTool {
     override val name = "Write GitHub File"
     override val description = "Create or update a file in a GitHub repo with an automatic commit. ⚠️HIGH-RISK: real commit to the remote branch; PRIVATE repos additionally need confirm_private_write=true after asking the user. 写入并 commit；私有仓库需用户确认后重试。"
     override val parametersSchema = """{"type":"object","properties":{"owner":{"type":"string"},"repo":{"type":"string"},"path":{"type":"string"},"content":{"type":"string"},"message":{"type":"string"},"branch":{"type":"string"},"confirm_private_write":{"type":"boolean","description":"Set to true ONLY after the user explicitly approved writing to this PRIVATE repo"}},"required":["owner","repo","path","content","message"]}"""
+    // Git 审计 P1-12：显式元数据（不再依赖 id 推断）——真实远端提交 =
+    // HIGH + 外部世界 + 非幂等 + 敏感动作（BYPASS 档也保持逐次确认）。
+    override val metadata: ToolMetadata = ToolMetadata.meta(id) {
+        category(ToolCategory.GITHUB)
+        risk(ToolRisk.HIGH)
+        annotations(
+            ToolAnnotations(
+                readOnlyHint = false,
+                destructiveHint = true,
+                idempotentHint = false,
+                openWorldHint = true,
+                sensitiveAction = true,
+            )
+        )
+    }
     override suspend fun execute(arguments: String): String {
         val json = parseArgs(arguments) ?: return argsParseError(arguments)
         val owner = json.stringOf("owner") ?: return "Error: 需要 owner"
@@ -151,29 +171,12 @@ class GithubWriteFileTool(private val api: GithubApiService) : AgentTool {
         if (owner.isBlank()) return "Error: owner 不能为空"
         if (repo.isBlank()) return "Error: repo 不能为空"
         if (path.isBlank()) return "Error: path 不能为空"
-        // #273/#274：private-fork 写保护接线 —— 写前探仓库可见性（GET /repos
-        // 单次往返），私有仓库必须携带 confirm_private_write=true（且该标志
-        // 只应在向用户转述风险并获得明确同意后设置）。探针失败按 fail-closed
-        // 处理：探针与写入走同一 API 通道，探针挂了写入大概率也挂，宁可诚实
-        // 失败也不降级放行（纵深防御：RiskAwareToolGate 已把本工具纳入会话级
-        // 写入确认弹窗，这里是私有仓的第二道硬门）。
-        val confirmPrivateWrite = (json["confirm_private_write"] as? JsonPrimitive)
-            ?.let { runCatching { it.content.toBooleanStrict() }.getOrNull() } ?: false
-        try {
-            val repoInfo = api.getRepo(owner, repo)
-            if (repoInfo.private && !confirmPrivateWrite) {
-                return "Error: $owner/$repo is a PRIVATE repository. " +
-                    "Writing to private repos requires explicit user approval — " +
-                    "STOP and tell the user: 即将向私有仓库 $owner/$repo 写入文件 $path（commit: $message），" +
-                    "是否确认？ Only after the user explicitly confirms, retry this call " +
-                    "with confirm_private_write=true. Do NOT set the flag without asking."
-            }
-        } catch (e: GithubApiException) {
-            // 404 = 仓库不存在/无权限 —— 写入路径同样会 404，提前失败省一次往返；
-            // 其他错误（网络/5xx）按 fail-closed 诚实上报，不降级放行。
-            return githubError(e)
-        } catch (e: Exception) {
-            return "Error: 检查仓库可见性失败: ${e.message}"
+        // #273/#274 + Git 审计 P1-13：私有仓写保护统一走 GithubWriteGuard
+        // （REST 与内置 MCP 共用同一守卫——旧版只覆盖本工具，MCP 通路可绕过）。
+        when (val verdict = GithubWriteGuard.ensureWritable(api, owner, repo, "文件 $path（commit: $message）", GithubWriteGuard.readConfirmFlag(json))) {
+            is GithubWriteGuard.Verdict.Blocked -> return "Error: ${verdict.message}"
+            is GithubWriteGuard.Verdict.Failed -> return "Error: ${verdict.message}"
+            GithubWriteGuard.Verdict.Allowed -> {}
         }
         var existingSha: String? = null
         try {
@@ -205,6 +208,21 @@ class GithubCreateIssueTool(private val api: GithubApiService) : AgentTool {
     override val name = "Create GitHub Issue"
     override val description = "Create an issue in a GitHub repo (title/body/labels). ⚠️HIGH-RISK: creates a real issue. 创建 Issue。"
     override val parametersSchema = """{"type":"object","properties":{"owner":{"type":"string"},"repo":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"},"labels":{"type":"array","items":{"type":"string"}}},"required":["owner","repo","title"]}"""
+    // Git 审计 P1-12：显式元数据——对外可见的真实创建动作 = HIGH + 外部
+    // 世界 + 非幂等 + 敏感动作（BYPASS 档也保持逐次确认，P1-14 热修深度）。
+    override val metadata: ToolMetadata = ToolMetadata.meta(id) {
+        category(ToolCategory.GITHUB)
+        risk(ToolRisk.HIGH)
+        annotations(
+            ToolAnnotations(
+                readOnlyHint = false,
+                destructiveHint = true,
+                idempotentHint = false,
+                openWorldHint = true,
+                sensitiveAction = true,
+            )
+        )
+    }
     override suspend fun execute(arguments: String): String {
         val json = parseArgs(arguments) ?: return argsParseError(arguments)
         val owner = json.stringOf("owner") ?: return "Error: 需要 owner"
@@ -362,6 +380,20 @@ class GithubCreatePullRequestTool(private val api: GithubApiService) : AgentTool
         "head is the source branch (use \"user:branch\" for cross-repo fork PRs); base is the target branch. " +
         "Typical flow with git tools: CodeGitRun push branch → GithubCreatePullRequest. 创建 PR。"
     override val parametersSchema = """{"type":"object","properties":{"owner":{"type":"string"},"repo":{"type":"string"},"title":{"type":"string"},"head":{"type":"string","description":"Source branch, e.g. feat/x or user:feat/x for fork PRs"},"base":{"type":"string","description":"Target branch, e.g. main"},"body":{"type":"string","description":"PR description (optional)"}},"required":["owner","repo","title","head","base"]}"""
+    // Git 审计 P1-12：显式元数据——对外可见的真实创建动作（同 GithubCreateIssue）。
+    override val metadata: ToolMetadata = ToolMetadata.meta(id) {
+        category(ToolCategory.GITHUB)
+        risk(ToolRisk.HIGH)
+        annotations(
+            ToolAnnotations(
+                readOnlyHint = false,
+                destructiveHint = true,
+                idempotentHint = false,
+                openWorldHint = true,
+                sensitiveAction = true,
+            )
+        )
+    }
     override suspend fun execute(arguments: String): String {
         val json = parseArgs(arguments) ?: return argsParseError(arguments)
         val owner = json.stringOf("owner") ?: return "Error: 需要 owner"

@@ -331,13 +331,14 @@ class PatchUpdateEngine(
     /**
      * 补丁段完整性判定（断点续传的门闩）：
      * - 体积对账先行（零成本）：清单带 sizeBytes 时长度不等 = 断段；
-     * - SHA-256 全量对账（~50ms/16MB）：防坏段/半段被误认完整；
-     * - 旧索引无 SHA：体积对账即放行（与全量包下载同策略）。
+     * - SHA-256 全量对账（~50ms/16MB）：防坏段/半段被误认完整；无指纹
+     *   策略统一收敛到 [UpdateDownloader.verifySha256]（S-02：fail-closed
+     *   + 编译期过渡），本方法不再单独放行无指纹段。
      */
     private fun isSegmentComplete(file: File, step: PatchIndex.Entry): Boolean {
         if (!file.exists() || file.length() == 0L) return false
         if (step.sizeBytes > 0 && file.length() != step.sizeBytes) return false
-        return step.sha256.isNullOrBlank() || downloader.verifySha256(file, step.sha256)
+        return downloader.verifySha256(file, step.sha256)
     }
 
     /**

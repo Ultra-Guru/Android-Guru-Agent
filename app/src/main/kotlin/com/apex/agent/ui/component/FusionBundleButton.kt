@@ -47,6 +47,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -143,6 +144,10 @@ fun FusionBundleButton(
                     // UI-012：48dp 触区红线（与输入行全列按钮统一 48 系）
                     .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                     .semantics { contentDescription = openCd }
+                    // 圆形反馈修复：clip 先于 background/clickable —— ripple 与
+                    // 圆底同被裁成圆，按压/悬停/聚焦不再露出方形矩形底
+                    // （background(CircleShape) 只裁底色，裁不住 clickable 的 ripple）。
+                    .clip(CircleShape)
                     // 激活态换金冠底色光环；常态与同行按钮统一 primary 12% 圆底
                     .background(
                         color = if (isActive) CrownGold.copy(alpha = 0.15f)
@@ -649,6 +654,8 @@ private fun FusionBundleMenuRow(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
                             .size(20.dp)
+                            // 圆形反馈修复：图标涟漪裁成圆，避免 20dp 方形底
+                            .clip(CircleShape)
                             .clickable(onClick = onEdit)
                     )
                 }

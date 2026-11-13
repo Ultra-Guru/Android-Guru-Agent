@@ -72,6 +72,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
@@ -385,6 +386,8 @@ fun AboutScreen() {
                     tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f),
                     modifier = Modifier
                         .size(26.dp)
+                        // 圆形反馈修复：圆徽涟漪裁成圆，避免方形按压底
+                        .clip(CircleShape)
                         .clickable(onClick = { tapLogo() })
                 )
                 Text(
@@ -936,6 +939,8 @@ private fun LinkRow(icon: ImageVector, label: String, url: String, open: (String
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.60f),
         modifier = Modifier
             .fillMaxWidth()
+            // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 10dp 圆角
+            .clip(RoundedCornerShape(10.dp))
             .clickable { open(url) }
     ) {
         Row(
@@ -992,6 +997,8 @@ private fun StarCard(onOpen: () -> Unit) {
         color = Color.Transparent,
         modifier = Modifier
             .fillMaxWidth()
+            // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 14dp 圆角
+            .clip(RoundedCornerShape(14.dp))
             .clickable(onClick = onOpen)
             .drawBehind {
                 // 对角渐变 CTA 底 + 半透明主色描边

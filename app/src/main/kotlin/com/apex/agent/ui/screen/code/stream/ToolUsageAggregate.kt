@@ -32,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -170,6 +171,8 @@ internal fun ToolAggregateCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 2.dp)
+            // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 12dp 圆角
+            .clip(RoundedCornerShape(12.dp))
             .clickable(role = Role.Button) { expanded = !expanded }
             .semantics { contentDescription = title }
     ) {

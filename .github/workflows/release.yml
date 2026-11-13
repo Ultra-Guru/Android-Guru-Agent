@@ -78,6 +78,7 @@ jobs:
         if: github.event_name == 'push'
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_MANIFEST_SIGNING_KEY }}
         run: |
           if [ -z "$RELEASE_TOKEN" ]; then
             echo "::error::RELEASE_REPO_TOKEN secret 未配置（Settings → Secrets and variables → Actions）"
@@ -91,6 +92,13 @@ jobs:
             exit 1
           fi
           echo "✅ RELEASE_REPO_TOKEN 可访问发布仓库 ${RELEASE_REPO}"
+          # S-02：清单发布者签名密钥 —— 未配置仅警告（过渡期内客户端仍接受无签名
+          # 清单，截止 2027-03-01）；但长期缺失 = 发一个版就被到期门槛拦截一次。
+          if [ -z "$UPDATE_SIGNING_KEY" ]; then
+            echo "::warning::UPDATE_MANIFEST_SIGNING_KEY secret 未配置 —— version.json / patches.json 将无发布者签名发布（客户端过渡期截止 2027-03-01）"
+          else
+            echo "✅ UPDATE_MANIFEST_SIGNING_KEY 已配置（清单将携带 detached 签名）"
+          fi
 
       - name: Resolve version metadata
         id: meta
@@ -1212,6 +1220,7 @@ jobs:
         if: needs.resolve.outputs.publishing == 'true'
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_REPO_TOKEN }}
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_MANIFEST_SIGNING_KEY }}
           TAG: ${{ needs.resolve.outputs.tag }}
           SHA8: ${{ needs.resolve.outputs.sha8 }}
         run: |
@@ -1259,6 +1268,34 @@ jobs:
                 f"{len(merged) - kept} = {len(merged)} 条")
           PYEOF
 
+          # ── 清单发布者签名（S-02：离线信任锚的服务端半边）──────────────
+          # 对即将提交的清单原字节做 ECDSA(SHA-256) detached 签名，sidecar 文件
+          # （version.json.sig / patches.json.sig）与清单同 commit 同源分发 ——
+          # 客户端内置公钥验证（UpdateTrust.PUBLISHER_PUBLIC_KEY_B64）。
+          # 签名调用在下方重试循环内（cp / 幂等合并都会改写字节，必须对
+          # 「即将提交」的字节签，且每次重拉重放后重签）。
+          # 密钥形态：UPDATE_MANIFEST_SIGNING_KEY = base64(PEM 私钥单行)。
+          cat > /tmp/sign_manifest.py <<'PYEOF'
+          import base64, os, subprocess, sys
+
+          key_b64 = sys.argv[1]
+          files = sys.argv[2:]
+          pem = base64.b64decode(key_b64)
+          with open("/tmp/update_signing_key.pem", "wb") as f:
+              f.write(pem)
+          try:
+              for path in files:
+                  sig = subprocess.run(
+                      ["openssl", "dgst", "-sha256", "-sign",
+                       "/tmp/update_signing_key.pem", path],
+                      check=True, capture_output=True).stdout
+                  with open(path + ".sig", "wb") as f:
+                      f.write(base64.b64encode(sig))
+                  print(f"🖋 signed {path} → {path}.sig")
+          finally:
+              os.remove("/tmp/update_signing_key.pem")
+          PYEOF
+
           # ── 提交（三次重试：push 被拒时重拉远端重放，防 backfill/hotfix 竞态）──
           pushed=0
           for ATTEMPT in 1 2 3; do
@@ -1274,11 +1311,23 @@ jobs:
             if [ -f dist/patches.json ]; then
               python3 /tmp/merge_patches_index.py
             fi
+            # S-02：签名必须在每次重拉重放之后（merge/cp 都会改写字节）——
+            # sidecar 与清单同一 commit 原子落地；patches.json 缺席（首版）只签
+            # version.json
+            rm -f relrepo/version.json.sig relrepo/patches.json.sig
+            SIGN_TARGETS="relrepo/version.json"
+            if [ -f relrepo/patches.json ]; then
+              SIGN_TARGETS="$SIGN_TARGETS relrepo/patches.json"
+            fi
+            if [ -n "${UPDATE_SIGNING_KEY:-}" ]; then
+              python3 /tmp/sign_manifest.py "$UPDATE_SIGNING_KEY" $SIGN_TARGETS
+            fi
             if (
               cd relrepo
               git config user.name "github-actions[bot]"
               git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
               git add version.json patches.json changelog.json
+              git add version.json.sig patches.json.sig 2>/dev/null || true
               if git diff --cached --quiet; then
                 echo "ℹ️ 清单无变更（幂等重跑）—— 无需提交"
               else
