@@ -93,6 +93,12 @@ class LinuxChrootBackend(
     private val environment: LinuxEnvironmentManager = LinuxEnvironmentManager(),
     /** 共享存储桥（与 PRoot 后端同款约定；不可用 → 不 bind）。 */
     private val sharedStorage: SharedStorageBridge? = null,
+    /**
+     * T99 审计修复：显式 TerminalCreate(backend="linux-ubuntu-chroot") 不经过
+     * EnvironmentProvisioner.ensureUbuntuSession 的 dnsRefreshFn 修复路径，
+     * 存量 rootfs 的缺失 CA 必须在 prepare 阶段补齐；null = 未接线（保持旧语义）。
+     */
+    private val caRepair: (suspend (File) -> Unit)? = null,
     override val id: String = ID
 ) : ExecutionBackend {
 
@@ -138,6 +144,10 @@ class LinuxChrootBackend(
             ?: return Result.failure(
                 RuntimeException("TerminalError:RootfsNotReady — rootfs 无 location")
             )
+
+        // T99 审计：显式 chroot create 不经 ensureReady —— 存量 rootfs 缺 CA 时在
+        // prepare 阶段修复（host bundle 优先；Android system CA + cacerts-removed 兜底）。
+        caRepair?.invoke(File(rootfsPath.value))
 
         // 3. workspace + 持久化 home（与 PRoot 后端同款懒解析/播种 —— 双模式共享）。
         val workspaceId = request.workspaceId?.trim()?.takeIf { it.isNotEmpty() }

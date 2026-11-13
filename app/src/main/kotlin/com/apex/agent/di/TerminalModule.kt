@@ -354,13 +354,19 @@ object TerminalModule {
         rootfsProvider: RootfsProvider,
         workspaces: LinuxWorkspaceManager,
         userHome: GuestUserHome,
-        sharedStorage: SharedStorageBridge
+        sharedStorage: SharedStorageBridge,
+        configurator: RootfsConfigurator
     ): LinuxChrootBackend = LinuxChrootBackend(
         suLocator = suLocator,
         rootfsProvider = rootfsProvider,
         workspaces = workspaces,
         userHome = userHome,
-        sharedStorage = sharedStorage
+        sharedStorage = sharedStorage,
+        // T99 审计修复：显式 chroot create 绕过 ensureUbuntuSession 的 dnsRefreshFn
+        // 修复路径，须在 prepare 阶段补齐存量 rootfs 缺失 CA（幂等、host bundle 优先）。
+        caRepair = { root ->
+            withContext(Dispatchers.IO) { configurator.repairCaIfMissing(root) }
+        }
     )
 
     /**

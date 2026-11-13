@@ -79,13 +79,15 @@ class LinuxChrootBackendTest {
         rootfsProvider: RootfsProvider = FakeRootfsProvider(),
         workspaceRoot: File = File(tmp.root, "workspaces"),
         homeRoot: File = File(tmp.root, "home"),
-        sharedStorage: SharedStorageBridge? = null
+        sharedStorage: SharedStorageBridge? = null,
+        caRepair: (suspend (File) -> Unit)? = null
     ) = LinuxChrootBackend(
         suLocator = suLocator,
         rootfsProvider = rootfsProvider,
         workspaces = LinuxWorkspaceManager(workspaceRoot),
         userHome = GuestUserHome(homeRoot),
-        sharedStorage = sharedStorage
+        sharedStorage = sharedStorage,
+        caRepair = caRepair
     )
 
     // ─── SuBinaryLocator ───
