@@ -8,25 +8,27 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
+import com.apex.agent.update.HotPackage
 import com.apex.agent.update.PatchUpdateEngine
+import com.apex.agent.update.UpdateCenter
 import com.apex.agent.update.UpdateDownloader
 import com.apex.agent.update.UpdateManifest
 import java.io.File
 
 /**
- * ═══════════════════════════════════════════════════════════════
- *  关于页「软件更新」对话框层（v1.4.5 从 AboutUpdatePanel 拆出）
- * ═══════════════════════════════════════════════════════════════
+ * ═══ 关于页「软件更新」对话框层（v1.4.5 从 AboutUpdatePanel 拆出）═══
  *
  * SRP 拆分（1200 行预算合规）：本文件只放「一次性事件对话框」—— 全量包
  * 下载完成三态（就绪安装 / 安装器失败 / 校验失败）+ 增量流水线三态
- *（就绪安装 / 已拉起 / 失败双路）。状态与编排在 [AboutUpdatePanel]，
- * 小控件在 [AboutUpdateWidgets]。
+ *（就绪安装 / 已拉起 / 失败双路）+ 热更确认/回滚（S-02）。状态与编排在
+ * [AboutUpdatePanel]，小控件在 [AboutUpdateWidgets]。
  */
 
 /** 下载完成后的一次性事件（全量包路径；增量路径走 PatchUpdateEngine.State）。 */
@@ -288,4 +290,81 @@ internal fun PatchFlowDialogs(
 
         else -> Unit
     }
+}
+
+/**
+ * 热更确认与回滚对话框（S-02：热更内容按代码对待）。
+ *
+ * 自含状态收集（[UpdateCenter.hotConfirmRequest]）—— 面板只需一处调用，
+ * 不占用 AboutUpdatePanel 行预算：
+ * - **确认**：引擎解包复核通过后挂起，[HotPackage.Manifest] 就绪即弹框，
+ *   列出目标版本 + 变更清单（前 8 条路径 + 折叠计数）+ 生效说明；
+ *   确认/取消/点外关闭均经 [UpdateCenter.answerHotConfirmation] 回传引擎；
+ * - **回滚**：回滚到上一代热更内容（backup 位），完成后 Toast 提示；
+ *   无可回滚时按钮不可见（入口在面板 applied 区）。
+ */
+@Composable
+internal fun HotUpdateTrustDialogs(center: UpdateCenter) {
+    val request by center.hotConfirmRequest.collectAsStateWithLifecycle()
+    if (request != null) {
+        HotConfirmDialog(pkg = request!!, onAnswer = center::answerHotConfirmation)
+    }
+}
+
+/** 热更注入确认框（变更清单就绪 → 用户可取消的最终闸门）。 */
+@Composable
+private fun HotConfirmDialog(
+    pkg: HotPackage.Manifest,
+    onAnswer: (Boolean) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { onAnswer(false) },
+        title = { Text(stringResource(R.string.about_update_hot_confirm_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    stringResource(
+                        R.string.about_update_hot_confirm_body,
+                        pkg.targetVersionName.ifBlank { "?" },
+                        pkg.entries.size
+                    ),
+                    style = MaterialTheme.typography.bodySmall
+                )
+                // 变更清单：前 8 条逐项列出，超出折叠计数（技能/MCP 目录路径）
+                pkg.entries.take(8).forEach { entry ->
+                    Text(
+                        "· ${entry.path}",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                if (pkg.entries.size > 8) {
+                    Text(
+                        stringResource(
+                            R.string.about_update_hot_confirm_more,
+                            pkg.entries.size - 8
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                Text(
+                    stringResource(R.string.about_update_hot_confirm_note),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onAnswer(true) }) {
+                Text(stringResource(R.string.about_update_hot_confirm_apply))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { onAnswer(false) }) {
+                Text(stringResource(R.string.about_update_hot_confirm_cancel))
+            }
+        }
+    )
 }

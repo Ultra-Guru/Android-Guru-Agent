@@ -5,6 +5,7 @@ import com.apex.agent.core.codetools.git.GitCommandRunner
 import com.apex.agent.core.codetools.git.GitCommandResult
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
+import com.apex.agent.github.GithubCredentialIssuer
 import com.apex.agent.github.GithubTerminalEnvInjector
 import com.apex.agent.platform.terminal.environment.LinuxEnvironmentManager
 import com.apex.agent.platform.terminal.linux.CpuArchitecture
@@ -88,9 +89,10 @@ private const val MAX_STREAM_CHARS = 1_048_576
  *   单源）、TERM=dumb（git 无终端交互）、HOME=/root（与终端会话共享持久化
  *   home——git config --global 互通）、LANG=C.UTF-8（git 报错保持英文原文，
  *   解析 "not a git repository" 等特征串才稳定）、PWD/TMPDIR 对齐 -w；
- *   v3 S3（G2）：[GithubTerminalEnvInjector] 在此基线上追加 GH_TOKEN /
- *   GITHUB_TOKEN + git 凭据桥（已连接 GitHub 时；仅存活于本次进程 env，
- *   不写盘不进 profile）；
+ *   v3 S3（G2）+ Git 审计 P0-1：[GithubTerminalEnvInjector] 在此基线上
+ *   追加 GIT_ASKPASS（一次性凭据脚本路径，[GithubCredentialIssuer] 签发、
+ *   run() finally 吊销）+ GIT_TERMINAL_PROMPT=0——**PAT 零进 env**，
+ *   凭据只经脚本流向 github.com；
  * - Android app 进程的任何变量不被继承。
  *
  * ## bind 语义
@@ -145,9 +147,10 @@ class ProotGitCommandRunner(
      */
     private val capabilities: () -> PRootArgvCapabilities = { PRootArgvCapabilities.TERMUX_BUNDLED },
     /**
-     * v3 S3（G2）：GitHub PAT 供应器（null = 不注入，既有测试夹具零变化）。
-     * 已连接时经 [GithubTerminalEnvInjector] 把 GH_TOKEN / GITHUB_TOKEN 与
-     * git 凭据桥注入本次命令的 guest env（不写盘、不进 profile）。
+     * v3 S3（G2）+ Git 审计 P0-1：GitHub PAT 供应器（null = 不签发凭据，
+     * 既有测试夹具零变化）。已连接时经 [GithubCredentialIssuer] 签发一次性
+     * GIT_ASKPASS 脚本（PAT 零进 env），[GithubTerminalEnvInjector] 只把
+     * 脚本路径注入本次命令的 guest env。
      */
     private val gitHubTokenProvider: (() -> String?)? = null
 ) : GitCommandRunner {
@@ -182,9 +185,15 @@ class ProotGitCommandRunner(
         if (!activeRoot.isDirectory) {
             return@withContext infraResult(NO_ACTIVE_WORKSPACE_MESSAGE)
         }
-        // 5. 组装 argv 并执行
-        val command = buildCommand(rootfs, activeRoot, args)
-        val result = executeBounded(command, timeoutMs)
+        // 5. 凭据签发（Git 审计 P0-1：一次性 GIT_ASKPASS 脚本，PAT 零进 env）
+        //    + 组装 argv 并执行（命令结束/超时/取消均吊销脚本）
+        val credentials = GithubCredentialIssuer.issue(rootfs, gitHubTokenProvider?.invoke())
+        val result = try {
+            val command = buildCommand(rootfs, activeRoot, args, credentials?.guestAskPassPath)
+            executeBounded(command, timeoutMs)
+        } finally {
+            credentials?.dispose()
+        }
         if (!result.success) {
             runCatching {
                 AppLogger.instance.debug(
@@ -267,7 +276,12 @@ class ProotGitCommandRunner(
     }
 
     /** 完整命令：构建器产出 libproot + -r/-0/--kill-on-exit + binds + -w + -E 序列 + git。 */
-    internal fun buildCommand(rootfs: File, workspaceRoot: File, gitArgs: List<String>): PRootCommand {
+    internal fun buildCommand(
+        rootfs: File,
+        workspaceRoot: File,
+        gitArgs: List<String>,
+        askPassGuestPath: String?,
+    ): PRootCommand {
         val request = PRootLaunchRequest(
             // 构建器不消费 request.rootfs（真实根目录经 rootfsPath 参数传入），
             // 此处仅为请求对象完整性构造最小描述符。
@@ -284,12 +298,13 @@ class ProotGitCommandRunner(
             executable = "git",
             arguments = gitArgs,
             workingDirectory = WORKSPACE_CWD,
-            // v3 S3（G2）：git 命令凭据注入（已连接 GitHub 时；每次 run 现取
-            // token，连接/断开即时生效）
+            // Git 审计 P0-1：凭据桥只注入 GIT_ASKPASS 脚本路径 +
+            // GIT_TERMINAL_PROMPT=0（PAT 零进 env——一次性 askpass 脚本由
+            // GithubCredentialIssuer 在 run() 里签发、finally 吊销）
             environment = GithubTerminalEnvInjector.inject(
                 guestEnv(),
                 (listOf("git") + gitArgs).joinToString(" "),
-                gitHubTokenProvider?.invoke()
+                askPassGuestPath
             ),
             binds = buildBinds(),
             fakeRoot = true,
@@ -309,8 +324,9 @@ class ProotGitCommandRunner(
      * guest env 基线：PATH 用 LinuxEnvironmentManager.GUEST_PATH 单源；
      * TERM=dumb（管道执行无终端转义）；HOME=/root（持久化 home 与终端共享，
      * git 全局配置互通）；LANG=C.UTF-8 保持 git 报错为可解析的英文原文。
-     * v3 S3（G2）：GitHub 已连接时由 [buildCommand] 在此基线上追加凭据注入
-     * （GH_TOKEN / GITHUB_TOKEN + git→gh 凭据桥，仅存活于本次进程）。
+     * v3 S3（G2）+ Git 审计 P0-1：GitHub 已连接时由 [buildCommand] 在此
+     * 基线上追加 GIT_ASKPASS（一次性凭据脚本路径）与 GIT_TERMINAL_PROMPT=0
+     * ——PAT 不进 env（脚本由 [GithubCredentialIssuer] 签发、run() 吊销）。
      */
     internal fun guestEnv(): Map<String, String> = linkedMapOf(
         "PATH" to LinuxEnvironmentManager.GUEST_PATH,

@@ -527,6 +527,9 @@ object ToolModule {
         extensionLedger: com.apex.agent.core.tools.extension.ExtensionRegistry,
         fusionBundleRegistry: com.apex.agent.core.tools.fusion.FusionBundleRegistry,
         nodeInstallPort: com.apex.agent.core.tools.extension.NodeInstallPort,
+        pluginLifecycleManager: com.apex.agent.core.tools.pluginhost.lifecycle.PluginLifecycleManager,
+        pluginWorkerSupervisor: com.apex.agent.core.tools.pluginhost.worker.PluginWorkerSupervisor,
+        pluginToolBridge: com.apex.agent.core.tools.pluginhost.bridge.PluginToolBridge,
         extensionLayout: com.apex.agent.core.tools.extension.ExtensionDirLayout,
         apexNotifications: com.apex.agent.notify.ApexNotifications
     ): ToolRegistry {
@@ -982,7 +985,10 @@ object ToolModule {
             registry = registry, installer = extensionInstaller, adapterRegistry = extensionAdapters,
             ledger = extensionLedger, skillRegistry = skillRegistry, mcpManager = mcpManager,
             fusionRegistry = fusionBundleRegistry, nodeInstallPort = nodeInstallPort,
-            extensionLayout = extensionLayout
+            extensionLayout = extensionLayout,
+            pluginLifecycle = pluginLifecycleManager,
+            pluginSupervisor = pluginWorkerSupervisor,
+            pluginToolBridge = pluginToolBridge
         )
 
         // ═══ 13. Skill 工具接线（管理工具 + composite/script 装载注册）═══

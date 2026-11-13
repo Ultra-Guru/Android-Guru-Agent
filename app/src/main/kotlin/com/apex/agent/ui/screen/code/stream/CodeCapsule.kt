@@ -131,6 +131,8 @@ internal fun CodeCapsule(
             .fillMaxWidth()
             .heightIn(min = 44.dp)
             .padding(horizontal = 12.dp, vertical = 1.dp)
+            // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 12dp 圆角
+            .clip(RoundedCornerShape(12.dp))
             .clickable(role = Role.Button) { onClick(call) }
             .semantics { contentDescription = "${call.displayName} ${call.target}, $statusDesc" }
     ) {
@@ -353,6 +355,8 @@ internal fun CodeCapsuleGroupRow(
                 .fillMaxWidth()
                 .heightIn(min = 44.dp)
                 .padding(horizontal = 12.dp, vertical = 1.dp)
+                // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 12dp 圆角
+                .clip(RoundedCornerShape(12.dp))
                 .clickable(role = Role.Button) { onToggle() }
                 .semantics {
                     contentDescription = latest.displayName + " " + latest.target +
@@ -440,6 +444,8 @@ internal fun CodeCapsuleGroupRow(
                     .fillMaxWidth()
                     .heightIn(min = 36.dp)
                     .padding(horizontal = 12.dp, vertical = 1.dp)
+                    // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 10dp 圆角
+                    .clip(RoundedCornerShape(10.dp))
                     .clickable(role = Role.Button) { onToggle() }
                     .semantics { contentDescription = groupCountDesc + ", " + collapseDesc }
             ) {

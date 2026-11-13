@@ -1,0 +1,1 @@
+{"id":"ascii-forgery","name":"赝品画廊","nameEn":"Forgery Gallery","tagline":"量尺是真伪鉴定仪：pretext 实测宽度揭穿假宽排布的赝品","version":1,"engine":"pretext@0.0.9","apis":["prepare","measureNaturalWidth"],"controls":"量尺测画 / 鉴定点画","scoreKey":"aga.pg.ascii-forgery.hi"}

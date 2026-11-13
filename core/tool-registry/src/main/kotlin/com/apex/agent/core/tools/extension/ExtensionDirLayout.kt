@@ -19,6 +19,9 @@ class ExtensionDirLayout(private val root: File) {
         runCatching { root.mkdirs() }
     }
 
+    /** 扩展根（DSH Host 的脚本/analyzer bootstrap 落 `<root>/.dsh-host/`）。 */
+    val extensionRoot: File get() = root
+
     /** extId 白名单（账本 id 形如 `opencode.web-scraper` / `dsh.memory`）。 */
     private fun safeId(extId: String): String {
         require(ID_PATTERN.matches(extId)) { "非法扩展 id：'$extId'" }

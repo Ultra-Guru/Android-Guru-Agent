@@ -1,7 +1,10 @@
 package com.apex.agent.github
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
@@ -34,6 +37,68 @@ class GithubApiService @Inject constructor(
     internal val json = Json { ignoreUnknownKeys = true }
     @PublishedApi
     internal val jsonMediaType = "application/json".toMediaType()
+
+    internal companion object {
+
+        /** Git 审计 P0-4：Bearer 头只发往的 API host（Link 分页跟随同此白名单）。 */
+        private const val API_HOST = "api.github.com"
+
+        /** 相对路径 API 基址。 */
+        private const val API_BASE = "https://api.github.com"
+
+        /**
+         * 重试决策纯函数（Git 审计 P1-10/11，internal 供单测穷举）：
+         * 返回本轮重试的退避毫秒数；null = 不重试（方法非幂等 / 状态码
+         * 不在重试集 / 重试预算用尽）。
+         *
+         * - **仅 GET 可重试**——POST/PUT 重发会重复建 Issue/PR/提交；
+         * - 429/503 尊重 Retry-After（封顶 60s，预算 3 次）；
+         * - 其他 5xx 指数退避 1s/2s（预算 2 次）。
+         */
+        internal fun retryDelayMs(
+            method: String,
+            code: Int,
+            attempt: Int,
+            retryAfterSeconds: Long?,
+        ): Long? {
+            if (method != "GET") return null
+            val retryable = code == 429 || code == 503 || code in 500..599
+            if (!retryable) return null
+            val isThrottle = code == 429 || code == 503
+            val maxRetries = if (isThrottle) 3 else 2
+            if (attempt >= maxRetries) return null
+            return if (isThrottle) {
+                (retryAfterSeconds ?: 5L).coerceAtMost(60L) * 1000L
+            } else {
+                (1L shl attempt) * 1000L
+            }
+        }
+
+        /**
+         * URL 白名单解析（Git 审计 P0-4，internal 供单测穷举）：相对路径补
+         * API 基址；完整 URL 仅 https + [API_HOST] 被跟随——fetchPage 翻页
+         * 的 nextUrl 被代理/中间人篡改、http 明文、相似主机
+         * （api.github.com.evil.com）全部拒绝，Bearer 头只发往 api.github.com。
+         */
+        internal fun resolveApiUrl(path: String): String {
+            if (!path.startsWith("http")) return "$API_BASE$path"
+            val uri = runCatching { java.net.URI(path) }.getOrNull()
+                ?: throw GithubApiException("拒绝发送请求：无法解析的 URL（${path.take(120)}）")
+            if (uri.scheme != "https") {
+                throw GithubApiException(
+                    "拒绝发送认证请求：仅允许 https（收到 ${uri.scheme ?: "?"}://）——" +
+                        "明文 http 会把 Bearer 头暴露给中间人（Git 审计 P0-4）"
+                )
+            }
+            if (uri.host != API_HOST) {
+                throw GithubApiException(
+                    "拒绝向 ${uri.host ?: "?"} 发送认证请求：Bearer 头仅发往 $API_HOST。" +
+                        "分页 Link 头被代理/中间人篡改时，凭据不会外泄（Git 审计 P0-4）"
+                )
+            }
+            return path
+        }
+    }
 
     private fun authHeader(): String {
         val token = tokenManager.getToken()
@@ -163,7 +228,8 @@ class GithubApiService @Inject constructor(
      * ```
      *
      * @param path 首次调用使用 GitHub API 路径（如 `/repos/owner/repo/issues`）；
-     *   后续调用使用返回的 [PagedResult.nextUrl]（已是完整 URL，含 host）。
+     *   后续调用使用返回的 [PagedResult.nextUrl]（已是完整 URL，含 host——
+     *   Git 审计 P0-4：仅 https + api.github.com 被跟随，篡改即拒绝）。
      */
     suspend inline fun <reified T> fetchPage(
         path: String,
@@ -206,8 +272,9 @@ class GithubApiService @Inject constructor(
     /** 单次 HTTP 请求（含日志），不重试，不抛业务异常。 */
     @PublishedApi
     internal suspend fun executeOnce(path: String, method: String, body: String?): ApiResponse {
-        // path 可能是完整 URL（fetchPage 翻页时的 nextUrl），也可能是相对路径。
-        val url = if (path.startsWith("http")) path else "https://api.github.com$path"
+        // Git 审计 P0-4：URL host 白名单校验（nextUrl 完整 URL / http 明文 /
+        // 任意主机 → 拒绝——Bearer 头只发往 api.github.com）。
+        val url = resolveApiUrl(path)
         val builder = Request.Builder()
             .url(url)
             .header("Authorization", authHeader())
@@ -226,54 +293,71 @@ class GithubApiService @Inject constructor(
             tags = arrayOf("http", method.lowercase(), "request")
         )
 
-        val response = client.newCall(builder.build()).execute()
-        val responseBody = response.body?.string() ?: ""
-        val retryAfter = response.header("Retry-After")?.toLongOrNull()
-        val nextLink = parseLinkHeader(response.header("Link"))
+        // Git 审计 P1-10：同步 execute() 在 suspend 里不可取消（叠加最长
+        // 3×60s 重试 ≈ 挂 3 分钟）——改 enqueue + invokeOnCancellation{cancel}，
+        // 协程取消在毫秒级打断在途请求。
+        return suspendCancellableCoroutine { cont ->
+            val call = client.newCall(builder.build())
+            cont.invokeOnCancellation { runCatching { call.cancel() } }
+            call.enqueue(object : okhttp3.Callback {
+                override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
+                    // 调用方取消触发的 failure（loop canceled）不可再 resume
+                    if (cont.isActive) cont.resumeWith(Result.failure(e))
+                }
 
-        if (!response.isSuccessful) {
-            val msg = try {
-                Json.parseToJsonElement(responseBody).jsonObject["message"]?.jsonPrimitive?.content ?: responseBody.take(200)
-            } catch (e: Exception) { responseBody.take(200) }
-            AppLogger.instance.error(
-                LogCategory.NETWORK, "GithubApi", "HTTP ${response.code} $method $path: $msg",
-                tags = arrayOf("http", method.lowercase(), "error", "code:${response.code}")
-            )
-        } else {
-            AppLogger.instance.debug(
-                LogCategory.NETWORK, "GithubApi", "HTTP ${response.code} $method $path (${responseBody.length} bytes)",
-                tags = arrayOf("http", method.lowercase(), "response")
-            )
+                override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+                    val result = runCatching {
+                        response.use { resp ->
+                            val responseBody = resp.body?.string() ?: ""
+                            if (!resp.isSuccessful) {
+                                val msg = try {
+                                    Json.parseToJsonElement(responseBody).jsonObject["message"]?.jsonPrimitive?.content
+                                        ?: responseBody.take(200)
+                                } catch (e: Exception) { responseBody.take(200) }
+                                AppLogger.instance.error(
+                                    LogCategory.NETWORK, "GithubApi", "HTTP ${resp.code} $method $path: $msg",
+                                    tags = arrayOf("http", method.lowercase(), "error", "code:${resp.code}")
+                                )
+                            } else {
+                                AppLogger.instance.debug(
+                                    LogCategory.NETWORK, "GithubApi",
+                                    "HTTP ${resp.code} $method $path (${responseBody.length} bytes)",
+                                    tags = arrayOf("http", method.lowercase(), "response")
+                                )
+                            }
+                            ApiResponse(
+                                resp.code,
+                                responseBody,
+                                resp.header("Retry-After")?.toLongOrNull(),
+                                parseLinkHeader(resp.header("Link"))
+                            )
+                        }
+                    }
+                    if (cont.isActive) cont.resumeWith(result)
+                }
+            })
         }
-        return ApiResponse(response.code, responseBody, retryAfter, nextLink)
     }
 
     /**
-     * 带重试的请求：
+     * 带重试的请求（Git 审计 P1-10/11 修正）：
+     * - **仅 GET 自动重试**——POST/PUT 重发会重复建 Issue/PR/提交（与
+     *   ToolExecutionPolicy 的 NON_IDEMPOTENT 契约直接冲突），429/5xx
+     *   直接返回给调用方换可行动错误；
      * - 429 / 503：读 `Retry-After` 头（封顶 60s），重试至多 3 次；
-     * - 其他 5xx：指数退避（1s, 2s, 4s …），重试至多 2 次；
-     * - 其他状态码：直接返回，由调用方判断成功/失败。
+     * - 其他 5xx：指数退避（1s, 2s …），重试至多 2 次；
+     * - 每轮重试前 ensureActive——协程取消立即终止重试链。
      */
     @PublishedApi
     internal suspend fun executeWithRetry(path: String, method: String, body: String?): ApiResponse {
         var attempt = 0
         while (true) {
+            currentCoroutineContext().ensureActive()
             val resp = executeOnce(path, method, body)
-            val retryable = resp.code == 429 || resp.code == 503 || (resp.code in 500..599)
-            val maxRetries = if (resp.code == 429 || resp.code == 503) 3 else 2
-            if (retryable && attempt < maxRetries) {
-                val backoffMs = if (resp.code == 429 || resp.code == 503) {
-                    // 429/503 优先尊重服务器 Retry-After，封顶 60s 防止恶意/超长 sleep
-                    (resp.retryAfterSeconds ?: 5L).coerceAtMost(60L) * 1000L
-                } else {
-                    // 其他 5xx 用指数退避：1s, 2s
-                    (1L shl attempt) * 1000L
-                }
-                delay(backoffMs)
-                attempt++
-                continue
-            }
-            return resp
+            val backoffMs = retryDelayMs(method, resp.code, attempt, resp.retryAfterSeconds)
+                ?: return resp
+            delay(backoffMs)
+            attempt++
         }
     }
 

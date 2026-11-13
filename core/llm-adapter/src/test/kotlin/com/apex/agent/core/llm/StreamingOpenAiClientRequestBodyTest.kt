@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
@@ -321,5 +322,129 @@ class StreamingOpenAiClientRequestBodyTest {
             stream = true
         )
         assertTrue(json["stream"]!!.jsonPrimitive.boolean)
+    }
+
+    // ═══ diag-202611（422 unknown variant 复盘）：WebSearch server tool 端点门控 ═══
+    // 锁定 [WebSearchMode.serverToolSupportedBy] + [StreamingOpenAiClient]
+    // buildSearchToolEntries 的组合行为：显式选择的 server tool 模式与真实
+    // 端点不匹配时不再注入非标准 tools[].type（旧实现照发 → Rust serde 风格
+    // 端点整请求 422）。真实 provider 端点保持注入（回归防阉割）。
+
+    private fun JsonObject.toolsArray() = this["tools"]?.jsonArray
+
+    private fun webSearchBody(
+        baseUrl: String,
+        providerId: String = "",
+        webSearch: WebSearchMode,
+        tools: List<ToolDefinition> = emptyList()
+    ): JsonObject = client(
+        LlmConfig(
+            baseUrl = baseUrl, apiKey = "k", model = "m",
+            providerId = providerId, webSearch = webSearch,
+            contextWindow = 0
+        )
+    ).buildRequestBody(
+        messages = listOf(LlmMessage.User("hi")),
+        tools = tools,
+        temperature = 0.5f,
+        maxTokens = 128,
+        stream = false
+    )
+
+    @Test
+    fun `websearch ZHIPU explicit on generic endpoint omits server tool`() {
+        // 显式 ZHIPU + 通用 OpenAI 兼容网关 —— 422 unknown variant 的原始复现场景。
+        val body = webSearchBody(
+            baseUrl = "https://gateway.example.com/v1", webSearch = WebSearchMode.ZHIPU
+        )
+        // 无 function tools 且搜索条目被门控 → 整个 tools 键不出现（与 OFF 同形）。
+        assertNull(body.toolsArray())
+    }
+
+    @Test
+    fun `websearch ZHIPU explicit on generic endpoint keeps only function tools`() {
+        val fn = ToolDefinition(
+            name = "web_search", description = "d",
+            parameters = """{"type":"object","properties":{}}"""
+        )
+        val body = webSearchBody(
+            baseUrl = "https://gateway.example.com/v1", webSearch = WebSearchMode.ZHIPU,
+            tools = listOf(fn)
+        )
+        val tools = body.toolsArray()!!
+        assertEquals(1, tools.size)
+        // 仅剩 function 形态 —— 非标准 type 变体绝不下发。
+        assertEquals("function", tools[0].jsonObject["type"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `websearch ZHIPU on bigmodel endpoint keeps server tool with nested config`() {
+        val body = webSearchBody(
+            baseUrl = "https://open.bigmodel.cn/api/paas/v4", webSearch = WebSearchMode.ZHIPU
+        )
+        val entry = body.toolsArray()!![0].jsonObject
+        assertEquals("WebSearch", entry["type"]!!.jsonPrimitive.content)
+        val nested = entry["WebSearch"]!!.jsonObject
+        assertTrue(nested["enable"]!!.jsonPrimitive.boolean)
+        assertTrue(nested["search_result"]!!.jsonPrimitive.boolean)
+    }
+
+    @Test
+    fun `websearch ZHIPU via providerId glm on relay baseUrl keeps server tool`() {
+        // providerId 命中 pid 分支（与 AUTO 推断同口径）—— 中转 baseUrl 仍注入；
+        // 该场景由降级重发（executeWithServerToolDegrade）兜底保护。
+        val body = webSearchBody(
+            baseUrl = "https://relay.example.com/v1", providerId = "glm",
+            webSearch = WebSearchMode.ZHIPU
+        )
+        assertEquals(
+            "WebSearch",
+            body.toolsArray()!![0].jsonObject["type"]!!.jsonPrimitive.content
+        )
+    }
+
+    @Test
+    fun `websearch DEEPSEEK on deepseek endpoint keeps bare WebSearch entry`() {
+        val body = webSearchBody(
+            baseUrl = "https://api.deepseek.com/v1", webSearch = WebSearchMode.DEEPSEEK
+        )
+        val entry = body.toolsArray()!![0].jsonObject
+        assertEquals("WebSearch", entry["type"]!!.jsonPrimitive.content)
+        assertNull(entry["WebSearch"])
+    }
+
+    @Test
+    fun `websearch DEEPSEEK explicit on generic endpoint omits server tool`() {
+        val body = webSearchBody(
+            baseUrl = "https://gateway.example.com/v1", webSearch = WebSearchMode.DEEPSEEK
+        )
+        assertNull(body.toolsArray())
+    }
+
+    @Test
+    fun `websearch ANTHROPIC on anthropic endpoint keeps web_search entry`() {
+        val body = webSearchBody(
+            baseUrl = "https://proxy.anthropic.example/v1", webSearch = WebSearchMode.ANTHROPIC
+        )
+        val entry = body.toolsArray()!![0].jsonObject
+        assertEquals("web_search_20250305", entry["type"]!!.jsonPrimitive.content)
+        assertEquals("WebSearch", entry["name"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `websearch ANTHROPIC explicit on generic endpoint omits server tool`() {
+        val body = webSearchBody(
+            baseUrl = "https://gateway.example.com/v1", webSearch = WebSearchMode.ANTHROPIC
+        )
+        assertNull(body.toolsArray())
+    }
+
+    @Test
+    fun `websearch AUTO on unknown endpoint omits server tool`() {
+        // AUTO + 未知端点 → OFF（旧行为已正确，本测试防回归）。
+        val body = webSearchBody(
+            baseUrl = "https://gateway.example.com/v1", webSearch = WebSearchMode.AUTO
+        )
+        assertNull(body.toolsArray())
     }
 }

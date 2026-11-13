@@ -41,6 +41,14 @@ class ExecEngine(
     /** 执行通道标识（透明转发 spawner —— 供工具层在无结果路径上报）。 */
     val channel: String get() = spawner.channel
 
+    companion object {
+        /**
+         * stdin 载荷上限（1MB）：DSH 工具参数 JSON 是 KB 级；超限 = 结构化
+         * 失败而非静默截断（截断的 JSON 比失败更危险 —— 语义不可知）。
+         */
+        const val MAX_STDIN_BYTES: Int = 1_000_000
+    }
+
 
     /**
      * 采集层预算（内存安全上限，与 [ExecRequest] 的字符预算是两层不同的防线）：
@@ -90,6 +98,56 @@ class ExecEngine(
         val stderrCapture = BoundedCapture(capture.headBytes, capture.tailBytes)
         val stderrStream = spawned.stderr
         val stderrSeparated = stderrStream != null
+
+        // ── stdin 一次性收尾（写载荷→flush→close / 无载荷直接 close）──
+        // 必须在任何等待之前完成：载荷通道是「写入即 EOF」的一次性语义；
+        // 通道不支持 stdin 而载荷非空 = 结构化失败（诚实上报，绝不假装写入）。
+        if (request.stdin != null) {
+            val stdinStream = spawned.stdin
+            if (stdinStream == null) {
+                runCatching { spawned.destroy() }
+                return@withContext CommandResult.spawnFailure(
+                    request = request,
+                    channel = spawner.channel,
+                    stderrSeparated = stderrSeparated,
+                    envApplied = spawner.supportsEnv,
+                    durationMs = (System.nanoTime() - startedAt) / 1_000_000,
+                    error = "channel '${spawner.channel}' does not support stdin, but a stdin payload was provided"
+                )
+            }
+            val payloadBytes = request.stdin.toByteArray(Charsets.UTF_8)
+            if (payloadBytes.size > MAX_STDIN_BYTES) {
+                runCatching { spawned.destroy() }
+                return@withContext CommandResult.spawnFailure(
+                    request = request,
+                    channel = spawner.channel,
+                    stderrSeparated = stderrSeparated,
+                    envApplied = spawner.supportsEnv,
+                    durationMs = (System.nanoTime() - startedAt) / 1_000_000,
+                    error = "stdin payload ${payloadBytes.size} bytes exceeds limit $MAX_STDIN_BYTES (not truncated)"
+                )
+            }
+            val stdinResult = runCatching {
+                stdinStream.write(payloadBytes)
+                stdinStream.flush()
+                stdinStream.close()
+            }
+            if (stdinResult.isFailure) {
+                // 管道破裂（进程秒退等）：不伪装成功 —— 转结构化失败
+                runCatching { spawned.destroy() }
+                return@withContext CommandResult.spawnFailure(
+                    request = request,
+                    channel = spawner.channel,
+                    stderrSeparated = stderrSeparated,
+                    envApplied = spawner.supportsEnv,
+                    durationMs = (System.nanoTime() - startedAt) / 1_000_000,
+                    error = "failed to write stdin payload: ${stdinResult.exceptionOrNull()?.message}"
+                )
+            }
+        } else {
+            // 无载荷：维持旧版「spawn 后 stdin 立即 EOF」语义（cat 类命令不挂死）
+            runCatching { spawned.stdin?.close() }
+        }
 
         val drainScope = CoroutineScope(SupervisorJob() + dispatcher)
         val drainJobs = mutableListOf<Job>()
