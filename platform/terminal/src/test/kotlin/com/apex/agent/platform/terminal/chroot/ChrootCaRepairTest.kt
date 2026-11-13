@@ -1,7 +1,7 @@
 package com.apex.agent.platform.terminal.chroot
 
 import com.apex.agent.platform.terminal.runtime.SessionSpawnRequest
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -27,11 +27,17 @@ class ChrootCaRepairTest {
             sizeBytes = null, checksum = null, readOnly = false
         )
         override suspend fun verify(rootfs: com.apex.agent.platform.terminal.linux.RootfsDescriptor) =
-            Result.failure(com.apex.agent.platform.terminal.linux.RootfsVerification(rootfs, emptyList()))
+            Result.success(
+                com.apex.agent.platform.terminal.linux.RootfsVerification(
+                    valid = true,
+                    state = com.apex.agent.platform.terminal.linux.RootfsState.AVAILABLE,
+                    issues = emptyList()
+                )
+            )
     }
 
     @Test
-    fun `prepare repairs missing CA on the live rootfs before returning a spawn spec`() = runBlocking {
+    fun `prepare repairs missing CA on the live rootfs before returning a spawn spec`() = runTest {
         val rootfs = tmp.newFolder("rootfs")
         val provider = RepairingProvider(rootfs.absolutePath)
         var repairs = 0
@@ -55,7 +61,7 @@ class ChrootCaRepairTest {
     }
 
     @Test
-    fun `prepare without rootfs never calls CA repair`() = runBlocking {
+    fun `prepare without rootfs never calls CA repair`() = runTest {
         var repairs = 0
         val su = File(tmp.root, "su").apply { writeText(""); setExecutable(true) }
         val backend = LinuxChrootBackend(
