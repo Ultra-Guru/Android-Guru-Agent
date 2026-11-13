@@ -621,6 +621,10 @@ jobs:
         #       （迁移映射 / 记法解析，纯 JVM returnDefaultValues）
         #   :platform:privilege:testDebugUnitTest —— T92 #255 权限链审计契约
         #   :plugins:plugin-workflow:testDebugUnitTest —— #256 防回退（诚实契约）
+        #   :core:code-native:testDebugUnitTest —— JNI 符号绑定契约（v1.5.39
+        #       CodeNativeBridge 错名事故：编译期无感，运行期 UnsatisfiedLinkError
+        #       刷 E 级 logcat 静默回退纯 Kotlin）。此前该模块零测试进 CI ——
+        #       符号漂移只有真机 logcat 能暴露，现在源级契约单测就地翻红。
         run: |
           ./gradlew \
             :app:compileDebugKotlin \
@@ -638,6 +642,7 @@ jobs:
             :platform:memory-host:testDebugUnitTest \
             :platform:privilege:testDebugUnitTest \
             :plugins:plugin-workflow:testDebugUnitTest \
+            :core:code-native:testDebugUnitTest \
             --no-daemon \
             -Pkotlin.incremental=false \
             --stacktrace \
@@ -680,7 +685,8 @@ jobs:
                    :terminal-emulator:testDebugUnitTest :terminal-view:testDebugUnitTest \
                    :core:agent-engine:test :core:llm-adapter:test :core:code-tools:test :core:code-engine:test \
                    :core:tool-registry:test :platform:memory-host:testDebugUnitTest \
-                   :platform:privilege:testDebugUnitTest :plugins:plugin-workflow:testDebugUnitTest; do
+                   :platform:privilege:testDebugUnitTest :plugins:plugin-workflow:testDebugUnitTest \
+                   :core:code-native:testDebugUnitTest; do
             grep -q "^> Task $t" build.log || MISSING_TESTS="$MISSING_TESTS $t"
           done
           if [ -n "$MISSING_TESTS" ]; then
