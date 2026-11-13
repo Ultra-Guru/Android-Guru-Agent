@@ -222,7 +222,24 @@ data class AgentConfig(
      * 可授，评审 P0-3 可信来源约束）；browser-sensitive 仅用户显式授权。
      * 强制点：EngineToolPlanner 计划层（按本字段过滤）+ RoleGate 调用层（现取）。
      */
-    val grantedRoles: Set<String> = emptySet()
+    val grantedRoles: Set<String> = emptySet(),
+
+    // ═══ v4 三档自主级别（Coding 模式级联选择器）═══
+    // 提问策略维度（与 mode 正交）：null = 未设置（PLAN 模式 / Agent 屏等
+    // 既有消费方），EnginePrompts 不注入 Autonomy 段，行为零变化；
+    // BUILD / GOAL 由 CodeViewModel 从 AgentSettings（codeAutonomyLevel /
+    // codeGoalAutonomyLevel）按当前模式拍平注入，四线同步入口见
+    // DualLogicCodeEngine.updateAutonomy。
+
+    /** 自主级别（交互式 / 半自主 / 完全自主），null = 不注入指令。 */
+    val autonomyLevel: AutonomyLevel? = null,
+
+    /**
+     * 完全自主的「开始前集中澄清」开关（仅 [autonomyLevel] == FULLY 生效，
+     * 语义见 AutonomyLevel.promptInstruction）；默认关闭，切级别保留状态
+     * （持久化在 AgentSettings.codeFullAutoPreClarify）。
+     */
+    val fullAutoPreClarify: Boolean = false
 ) {
     companion object {
         /** 快速模式：Build + 无思考 */

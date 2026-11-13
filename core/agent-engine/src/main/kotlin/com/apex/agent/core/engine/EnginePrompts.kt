@@ -298,6 +298,13 @@ internal object EnginePrompts {
                     appendLine("Be efficient: batch independent reads, verify results between destructive steps.")
                 }
             }
+            // ═══ v4 三档自主级别（提问策略）：BUILD / GOAL 经 AgentConfig 注入；
+            //     null（PLAN 模式 / 未设置）= 段落省略，既有调用方提示词零变化 ═══
+            config.autonomyLevel?.let { autonomy ->
+                appendLine()
+                append(autonomy.promptInstruction(config.fullAutoPreClarify).trimEnd())
+                appendLine()
+            }
             // ═══ #169 规划期只读约束（planningPhase=true 时注入）═══
             // Plan 生成本就不携带 tools（无工具可调）；本段把“只读”显式写进
             // 提示词，防止模型在计划 JSON 外自作主张输出“顺手执行了”的假动作，

@@ -174,6 +174,20 @@ class CodeAgentEngine(
     ): Boolean = delegate.submitPlanConfirmation(confirmed, enabledSteps, order)
 
     /**
+     * v4 三档自主级别（提问策略）：patchConfig 落 AgentConfig，下一轮请求
+     * 由 EnginePrompts 注入 "## Autonomy" 段；null = 清除（PLAN 模式），
+     * 段落省略、行为零变化。
+     */
+    override fun updateAutonomy(
+        level: com.apex.agent.core.engine.AutonomyLevel?,
+        preClarify: Boolean
+    ) {
+        delegate.patchConfig { cfg ->
+            cfg.copy(autonomyLevel = level, fullAutoPreClarify = preClarify)
+        }
+    }
+
+    /**
      * #197 「小圆环」会话上下文附加段（coding 工位独占）：
      * 网络搜索/时间感知/结构化输出/用户规则的组装文本，refreshContext
      * 时追加在编码身份段之后（JIT 语义：存字段，下轮生效）。
