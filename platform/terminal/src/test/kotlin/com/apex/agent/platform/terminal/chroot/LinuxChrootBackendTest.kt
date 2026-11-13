@@ -76,7 +76,7 @@ class LinuxChrootBackendTest {
         }
 
     private fun backend(
-        suLocator: SuBinaryLocator = SuBinaryLocator { listOf(fakeSu()) },
+        suLocator: SuBinaryLocator = SuBinaryLocator(candidatesProvider = { listOf(fakeSu()) }),
         rootfsProvider: RootfsProvider = FakeRootfsProvider(),
         workspaceRoot: File = File(tmp.root, "workspaces"),
         homeRoot: File = File(tmp.root, "home"),
@@ -96,7 +96,7 @@ class LinuxChrootBackendTest {
         val a = tmp.newFile("a-su")            // 存在但不可执行
         val b = tmp.newFile("b-su").apply { setExecutable(true) }
         val c = tmp.newFile("c-su").apply { setExecutable(true) }
-        val loc = SuBinaryLocator { listOf(a, b, c) }
+        val loc = SuBinaryLocator(candidatesProvider = { listOf(a, b, c) })
         assertEquals(b.absolutePath, loc.locate()!!.absolutePath)
     }
 
@@ -104,7 +104,7 @@ class LinuxChrootBackendTest {
     fun `su locator returns null when nothing executable exists`() {
         val missing = File(tmp.root, "nope-su")
         val notExec = tmp.newFile("plain-su")
-        val loc = SuBinaryLocator { listOf(missing, notExec) }
+        val loc = SuBinaryLocator(candidatesProvider = { listOf(missing, notExec) })
         assertEquals(null, loc.locate())
     }
 
@@ -131,7 +131,7 @@ class LinuxChrootBackendTest {
 
     @Test
     fun `availability no su is Failed with SU_NOT_FOUND`() = runBlocking {
-        val b = backend(suLocator = SuBinaryLocator { emptyList() })
+        val b = backend(suLocator = SuBinaryLocator(candidatesProvider = { emptyList() }))
         val av = b.availability()
         assertTrue(av is BackendAvailability.Failed)
         assertTrue((av as BackendAvailability.Failed).reason.contains("ChrootError:SU_NOT_FOUND"))
@@ -252,7 +252,7 @@ class LinuxChrootBackendTest {
         val homeRoot = File(tmp.root, "home")
         val su = fakeSu("su-prod")
         val b = backend(
-            suLocator = SuBinaryLocator { listOf(su) },
+            suLocator = SuBinaryLocator(candidatesProvider = { listOf(su) }),
             workspaceRoot = wsRoot,
             homeRoot = homeRoot
         )
@@ -364,7 +364,7 @@ class LinuxChrootBackendTest {
     fun `prepare fails honestly when su disappears between availability and prepare`() = runBlocking {
         // 并发卸载窗口：availability Ready 之后 su 被删 —— prepare 诚实失败不伪造
         val suFile = tmp.newFile("vanishing-su").apply { setExecutable(true) }
-        val b = backend(suLocator = SuBinaryLocator { listOf(suFile) })
+        val b = backend(suLocator = SuBinaryLocator(candidatesProvider = { listOf(suFile) }))
         assertTrue(b.availability() is BackendAvailability.Ready)
         assertTrue(suFile.delete())
         val r = b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80))
