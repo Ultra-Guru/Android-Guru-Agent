@@ -10,6 +10,12 @@ import java.nio.file.Files
  */
 class RootfsConfiguratorTest {
 
+    /** Real ISRG Root X1 (Android system store shape); avoids resource/classpath coupling. */
+    private val rootX1: String by lazy {
+        requireNotNull(javaClass.getResourceAsStream("/isrg-root-x1.pem"))
+            .bufferedReader().use { it.readText() }
+    }
+
     private fun tmpRoot(): File {
         val root = Files.createTempDirectory("t72-cfg-").toFile()
         // minimal ubuntu-ish skeleton
@@ -92,9 +98,104 @@ class RootfsConfiguratorTest {
         assertTrue(report2.warnings.none { it.startsWith("apt-dir") })
     }
 
+    @Test fun `existing packaged CA is preserved even when a host store exists`() {
+        val root = tmpRoot()
+        val guest = File(root, "etc/ssl/certs/ca-certificates.crt")
+        guest.parentFile.mkdirs()
+        guest.writeText("packaged-rootfs-bundle\n")
+        val host = Files.createTempFile("host-ca", ".crt").toFile().apply { writeText("different-host-bundle") }
+        val cfg = RootfsConfigurator(dnsServers = { listOf("10.0.0.1") }, hostCaBundle = { host })
+        val report = cfg.configure(root)
+        assertEquals("packaged-rootfs-bundle\n", guest.readText())
+        assertTrue(report.actions.any { it.contains("kept existing bundle") })
+    }
+
+    @Test fun `empty legacy CA is repaired only from the trusted Android system store`() {
+        val root = tmpRoot()
+        val store = Files.createTempDirectory("android-system-cas-").toFile()
+        val pem = TestCaFixtures.isrgRootX1Pem
+        File(store, "aaaaaaaa.0").writeText(pem)
+        File(store, "bbbbbbbb.0").writeText("-----BEGIN CERTIFICATE-----\ninvalid\n-----END CERTIFICATE-----\n")
+        File(store, "rogue.pem").writeText(pem) // not a hashed system CA name
+        // Empty removal dir = no system anchor is marked as disabled (Android
+        // only creates it when a user actually disables one). This is the known
+        // revocation source that lets the store's surviving anchors be trusted.
+        val removed = File(store.parentFile, "cacerts-removed").apply { mkdirs() }
+        val guest = File(root, "etc/ssl/certs/ca-certificates.crt")
+        guest.parentFile.mkdirs()
+        guest.writeText("")
+        val cfg = RootfsConfigurator(
+            dnsServers = { listOf("10.0.0.1") }, hostCaBundle = { null },
+            androidSystemCaDirs = { listOf(store) },
+            androidSystemCaRemovedDirs = { listOf(removed) }
+        )
+        val report = cfg.configure(root)
+        assertTrue("trusted host CA installed", guest.readText().contains("-----BEGIN CERTIFICATE-----"))
+        assertEquals("only one valid, hashed CA", 1, guest.readText().split("-----BEGIN CERTIFICATE-----").size - 1)
+        assertTrue(report.warnings.none { it.contains("ca-certificates: ABSENT") })
+        assertFalse("second repair must not replace bundle", cfg.repairCaIfMissing(root))
+    }
+
+    @Test fun `repaired CA bundle is readable by non-root guest processes`() {
+        val root = tmpRoot()
+        val host = Files.createTempFile("trusted-host-ca", ".pem").toFile().apply {
+            writeText(TestCaFixtures.isrgRootX1Pem)
+        }
+        assertTrue(RootfsConfigurator(hostCaBundle = { host }).repairCaIfMissing(root))
+        val guest = File(root, "etc/ssl/certs/ca-certificates.crt")
+        val mode = Files.getPosixFilePermissions(guest.toPath())
+        assertTrue("other users must read CA", java.nio.file.attribute.PosixFilePermission.OTHERS_READ in mode)
+        assertTrue("group must read CA", java.nio.file.attribute.PosixFilePermission.GROUP_READ in mode)
+    }
+
+    @Test fun `disabled system CA is not restored from raw system directory`() {
+        val root = tmpRoot()
+        val base = Files.createTempDirectory("android-system-ca-disabled-").toFile()
+        val store = File(base, "cacerts").apply { mkdirs() }
+        File(store, "aaaaaaaa.0").writeText(TestCaFixtures.isrgRootX1Pem)
+        // Android's SystemCertificateSource skips anchors marked in the user's
+        // cacerts-removed dir; a raw directory scan would wrongly trust them.
+        File(base, "cacerts-removed").mkdirs()
+        File(base, "cacerts-removed/aaaaaaaa.0").writeText(TestCaFixtures.isrgRootX1Pem)
+        val cfg = RootfsConfigurator(
+            hostCaBundle = { null },
+            androidSystemCaDirs = { listOf(store) },
+            androidSystemCaRemovedDirs = { listOf(File(base, "cacerts-removed")) }
+        )
+        assertFalse(cfg.repairCaIfMissing(root))
+        assertFalse(File(root, "etc/ssl/certs/ca-certificates.crt").exists())
+    }
+
+    @Test fun `system CA directory without known revocation source is not trusted`() {
+        val root = tmpRoot()
+        val store = Files.createTempDirectory("android-system-ca-unknown-").toFile()
+        File(store, "aaaaaaaa.0").writeText(TestCaFixtures.isrgRootX1Pem)
+        // Unknown removal state must fail closed, not silently trust the anchor.
+        val cfg = RootfsConfigurator(
+            hostCaBundle = { null },
+            androidSystemCaDirs = { listOf(store) },
+            androidSystemCaRemovedDirs = { listOf(null) }
+        )
+        assertFalse(cfg.repairCaIfMissing(root))
+        assertFalse(File(root, "etc/ssl/certs/ca-certificates.crt").exists())
+    }
+
+    @Test fun `CA repair refuses symlink target and does not write outside rootfs`() {
+        val root = tmpRoot()
+        val outside = Files.createTempFile("outside-rootfs-", ".crt").toFile().apply { writeText("external") }
+        val guest = File(root, "etc/ssl/certs/ca-certificates.crt")
+        guest.parentFile.mkdirs()
+        Files.createSymbolicLink(guest.toPath(), outside.toPath())
+        val cfg = RootfsConfigurator(
+            dnsServers = { listOf("10.0.0.1") }, hostCaBundle = { outside }
+        )
+        assertFalse(cfg.repairCaIfMissing(root))
+        assertEquals("external", outside.readText())
+    }
+
     @Test fun `ca bundle copied when host provides one`() {
         val hostCa = Files.createTempFile("t72-ca", ".pem").toFile().apply {
-            writeText("-----BEGIN CERTIFICATE-----\nfakebundle\n-----END CERTIFICATE-----\n")
+            writeText(TestCaFixtures.isrgRootX1Pem)
         }
         val root = tmpRoot()
         val cfg = RootfsConfigurator(

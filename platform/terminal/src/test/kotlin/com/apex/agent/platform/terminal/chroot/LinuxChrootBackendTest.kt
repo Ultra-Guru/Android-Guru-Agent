@@ -12,7 +12,7 @@ import com.apex.agent.platform.terminal.workspace.AbsolutePath
 import com.apex.agent.platform.terminal.workspace.GuestCwdMapper
 import com.apex.agent.platform.terminal.workspace.GuestUserHome
 import com.apex.agent.platform.terminal.workspace.LinuxWorkspaceManager
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -79,13 +79,15 @@ class LinuxChrootBackendTest {
         rootfsProvider: RootfsProvider = FakeRootfsProvider(),
         workspaceRoot: File = File(tmp.root, "workspaces"),
         homeRoot: File = File(tmp.root, "home"),
-        sharedStorage: SharedStorageBridge? = null
+        sharedStorage: SharedStorageBridge? = null,
+        caRepair: (suspend (File) -> Unit)? = null
     ) = LinuxChrootBackend(
         suLocator = suLocator,
         rootfsProvider = rootfsProvider,
         workspaces = LinuxWorkspaceManager(workspaceRoot),
         userHome = GuestUserHome(homeRoot),
-        sharedStorage = sharedStorage
+        sharedStorage = sharedStorage,
+        caRepair = caRepair
     )
 
     // ─── SuBinaryLocator ───
@@ -117,7 +119,7 @@ class LinuxChrootBackendTest {
     // ─── availability 三态 ───
 
     @Test
-    fun `availability no su is Failed with SU_NOT_FOUND`() = runBlocking {
+    fun `availability no su is Failed with SU_NOT_FOUND`() = runTest {
         val b = backend(suLocator = SuBinaryLocator { emptyList() })
         val av = b.availability()
         assertTrue(av is BackendAvailability.Failed)
@@ -125,14 +127,14 @@ class LinuxChrootBackendTest {
     }
 
     @Test
-    fun `availability su present but no rootfs is NeedsRootfs`() = runBlocking {
+    fun `availability su present but no rootfs is NeedsRootfs`() = runTest {
         val b = backend(rootfsProvider = NullRootfsProvider())
         val av = b.availability()
         assertTrue("expected NeedsRootfs, got $av", av is BackendAvailability.NeedsRootfs)
     }
 
     @Test
-    fun `availability su plus rootfs is Ready`() = runBlocking {
+    fun `availability su plus rootfs is Ready`() = runTest {
         val b = backend()
         assertTrue(b.availability() is BackendAvailability.Ready)
     }
@@ -140,7 +142,7 @@ class LinuxChrootBackendTest {
     // ─── prepare → SpawnSpec argv 契约 ───
 
     @Test
-    fun `prepare argv is su -c script with idempotent mounts and chroot trampoline`() = runBlocking {
+    fun `prepare argv is su -c script with idempotent mounts and chroot trampoline`() = runTest {
         val wsRoot = File(tmp.root, "ws")
         val homeRoot = File(tmp.root, "home")
         val su = fakeSu("su-prod")
@@ -162,17 +164,18 @@ class LinuxChrootBackendTest {
         assertEquals("R='/fake/rootfs'", rootfsLine)
         val lines = script.lineSequence().toList()
 
-        // 系统挂载三连（mountpoint 幂等守卫 + 2>/dev/null）—— 与 SystemBindProfile.STANDARD 同集
-        assertTrue(lines.any { it == "mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\" 2>/dev/null" })
-        assertTrue(lines.any { it == "mountpoint -q \"\$R/sys\" || mount -t sysfs sys \"\$R/sys\" 2>/dev/null" })
-        assertTrue(lines.any { it == "mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\" 2>/dev/null" })
+        // T99：挂载表精确守卫与跨会话锁；无 mountpoint 也不能堆叠。
+        assertTrue(script.contains("/proc/self/mountinfo"))
+        assertTrue(script.contains("flock -s 9"))
+        assertTrue(script.contains("flock -x 8"))
+        assertTrue(script.contains(ChrootMountScript.mount("proc", "mount", "-t", "proc", "proc")))
+        assertTrue(script.contains(ChrootMountScript.mount("sys", "mount", "-t", "sysfs", "sys")))
+        assertTrue(script.contains(ChrootMountScript.mount("dev", "mount", "--bind", "/dev")))
 
         // home → /root 与 workspace → /workspace 的 bind（mkdir 先行 —— rootfs 内无该目录）
-        val homeArg = "'${homeRoot.absolutePath}'"
-        assertTrue(lines.any { it == "mountpoint -q \"\$R/root\" || mount --bind $homeArg \"\$R/root\" 2>/dev/null" })
-        val wsArg = "'${File(wsRoot, "default").absolutePath}'"
-        assertTrue(lines.any { it == "mkdir -p \"\$R/workspace\" 2>/dev/null" })
-        assertTrue(lines.any { it == "mountpoint -q \"\$R/workspace\" || mount --bind $wsArg \"\$R/workspace\" 2>/dev/null" })
+        assertTrue(lines.any { it == ChrootMountScript.mount("root", "mount", "--bind", homeRoot.absolutePath) })
+        assertTrue(lines.any { it == "mkdir -p \"\$R/workspace\" || exit 1" })
+        assertTrue(lines.any { it == ChrootMountScript.mount("workspace", "mount", "--bind", File(wsRoot, "default").absolutePath) })
 
         // chroot 行：env trampoline（与 PRoot 后端同源）+ cd guest cwd + exec bash -i
         val chrootLine = lines.first { it.startsWith("chroot ") }
@@ -183,12 +186,21 @@ class LinuxChrootBackendTest {
         assertTrue(chrootLine.contains("'PATH="))
         assertTrue(chrootLine.contains("/bin/sh -c 'cd /workspace && exec /bin/bash -i'"))
 
-        // LIFO umount 收尾（workspace → root → dev → sys → proc，分号分隔的多条命令）
-        val lastLine = lines.last()
-        assertTrue(lastLine.startsWith("umount \"\$R/workspace\""))
-        assertTrue(lastLine.contains("umount \"\$R/dev\""))
-        assertTrue(lastLine.contains("umount \"\$R/sys\""))
-        assertTrue(lastLine.trim().endsWith("umount \"\$R/proc\" 2>/dev/null"))
+        // Guest inherits fd 9 (shared users lock) so an orphan guest keeps it;
+        // only the operations lock fd 8 is closed before exec.
+        assertTrue(chrootLine.endsWith("8>&-"))
+        assertFalse("guest must inherit the shared users lock", chrootLine.contains("9>&-"))
+        assertTrue(script.contains("cleanup_one workspace\n"))
+        assertTrue(script.contains("cleanup_one root\n"))
+        assertTrue(script.contains("cleanup_one dev\n"))
+        assertTrue(script.contains("cleanup_one sys\n"))
+        assertTrue(script.contains("cleanup_one proc\n"))
+        // Orphan guests inherit fd 9's open file description, so cleanup must
+        // re-acquire exclusive on a NEW descriptor (7) and never flock -u 9.
+        assertTrue(script.contains("flock -u 8 2>/dev/null"))
+        assertFalse("flock -u 9 would also unlock the orphan's lock", script.contains("flock -u 9"))
+        assertTrue(script.contains("exec 7>>\"\$STATE/users.lock\""))
+        assertTrue(script.contains("flock -n -x 7 2>/dev/null"))
 
         // SpawnSpec 展示语义（与 PRoot 后端同口径）
         assertEquals("/bin/bash", spec.shellDisplay)
@@ -202,7 +214,7 @@ class LinuxChrootBackendTest {
     }
 
     @Test
-    fun `prepare maps relative cwd into workspace namespace and absolute passthrough`() = runBlocking {
+    fun `prepare maps relative cwd into workspace namespace and absolute passthrough`() = runTest {
         val b = backend()
         val rel = b.prepare(SessionSpawnRequest(cwd = "src/main", rows = 24, cols = 80)).getOrThrow()
         assertEquals("/workspace/src/main", rel.cwdDisplay)
@@ -216,7 +228,7 @@ class LinuxChrootBackendTest {
     }
 
     @Test
-    fun `prepare rejects shell-metacharacter cwd honestly`() = runBlocking {
+    fun `prepare rejects shell-metacharacter cwd honestly`() = runTest {
         val b = backend()
         // 直通绝对路径含引号（注入探测）—— GUEST_CWD_SAFE 白名单拒绝
         val r = b.prepare(SessionSpawnRequest(cwd = "/'; rm -rf /", rows = 24, cols = 80))
@@ -225,15 +237,15 @@ class LinuxChrootBackendTest {
     }
 
     @Test
-    fun `prepare includes sdcard bind only when shared storage available`() = runBlocking {
+    fun `prepare includes sdcard bind only when shared storage available`() = runTest {
         val shared = tmp.newFolder("sdcard-host")
         val b = backend(
             sharedStorage = SharedStorageBridge(hostDirProvider = { shared })
         )
         val spec = b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80)).getOrThrow()
         val script = spec.argv[2]
-        assertTrue(script.contains("mount --bind '${shared.absolutePath}' \"\$R/sdcard\" 2>/dev/null"))
-        assertTrue(script.contains("umount \"\$R/sdcard\""))
+        assertTrue(script.contains(ChrootMountScript.mount("sdcard", "mount", "--bind", shared.absolutePath)))
+        assertTrue(script.contains("cleanup_one sdcard"))
         assertTrue(spec.metadata.binds.any { it == "${shared.absolutePath}:/sdcard" })
 
         // 不可用（hostDirProvider 返回 null）→ 无 sdcard 行（诚实降级，不伪造）
@@ -241,12 +253,12 @@ class LinuxChrootBackendTest {
             sharedStorage = SharedStorageBridge(hostDirProvider = { null })
         )
         val spec2 = b2.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80)).getOrThrow()
-        assertFalse(spec2.argv[2].contains("sdcard"))
+        assertFalse(spec2.argv[2].contains("ensure_mount 'sdcard'"))
         assertFalse(spec2.metadata.binds.any { it.endsWith(":/sdcard") })
     }
 
     @Test
-    fun `prepare fails honestly without rootfs`() = runBlocking {
+    fun `prepare fails honestly without rootfs`() = runTest {
         val b = backend(rootfsProvider = NullRootfsProvider())
         val r = b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80))
         assertTrue(r.isFailure)
@@ -254,7 +266,7 @@ class LinuxChrootBackendTest {
     }
 
     @Test
-    fun `prepare fails honestly when su disappears between availability and prepare`() = runBlocking {
+    fun `prepare fails honestly when su disappears between availability and prepare`() = runTest {
         // 并发卸载窗口：availability Ready 之后 su 被删 —— prepare 诚实失败不伪造
         val suFile = tmp.newFile("vanishing-su").apply { setExecutable(true) }
         val b = backend(suLocator = SuBinaryLocator { listOf(suFile) })
@@ -266,7 +278,7 @@ class LinuxChrootBackendTest {
     }
 
     @Test
-    fun `prepare seeds persistent home once and shares it with proot backend semantics`() = runBlocking {
+    fun `prepare seeds persistent home once and shares it with proot backend semantics`() = runTest {
         // T75 语义：home 目录随首次 prepare 创建（GuestUserHome.ensureReady 幂等播种）
         val homeRoot = File(tmp.root, "home")
         val b = backend(homeRoot = homeRoot)
@@ -274,6 +286,16 @@ class LinuxChrootBackendTest {
         b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80)).getOrThrow()  // 幂等
         assertTrue("persistent home created", homeRoot.isDirectory)
         assertNotNull("home seeded with bashrc", homeRoot.listFiles()?.firstOrNull { it.name == ".bashrc" })
+    }
+
+    @Test
+    fun `mounts use a shared lock and exact mount table guard instead of stacking when mountpoint is absent`() = runTest {
+        val script = backend().prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80))
+            .getOrThrow().argv[2]
+        assertTrue("mount operations must be serialized across sessions", script.contains("flock -x"))
+        assertTrue("mount identity must be checked without mountpoint", script.contains("/proc/self/mountinfo"))
+        assertFalse("mountpoint-only guard stacks on stripped ROMs", script.contains("mountpoint -q"))
+        assertTrue("cleanup must also run after interrupted guest", script.contains("trap 'cleanup_mounts' EXIT"))
     }
 
     // ─── shellQuote 防注入边界 ───
@@ -289,7 +311,7 @@ class LinuxChrootBackendTest {
     }
 
     @Test
-    fun `env values with spaces are single-quoted tokens in chroot line`() = runBlocking {
+    fun `env values with spaces are single-quoted tokens in chroot line`() = runTest {
         val b = backend()
         val spec = b.prepare(
             SessionSpawnRequest(cwd = "", rows = 24, cols = 80, env = mapOf("PROMPT_COMMAND" to "echo hi there"))
