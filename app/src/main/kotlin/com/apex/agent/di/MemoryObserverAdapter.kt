@@ -10,6 +10,7 @@ import com.apex.agent.platform.memory.tools.TaskConsolidationTracker
 import com.apex.agent.ui.screen.settings.SettingsRepository
 import com.apex.memkit.core.MemKit
 import com.apex.memkit.core.model.ExperienceReport
+import com.apex.memkit.core.store.readGraph
 import com.apex.memkit.core.store.touchFacts
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
