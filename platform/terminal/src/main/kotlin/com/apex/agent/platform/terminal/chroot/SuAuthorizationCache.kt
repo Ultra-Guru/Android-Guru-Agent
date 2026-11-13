@@ -71,23 +71,32 @@ class SuAuthorizationCache(
                 return try {
                     // A user may need time to respond to the manager's authorization prompt.
                     if (!process.waitFor(15, TimeUnit.SECONDS)) return State.UNKNOWN
-                    // readFully (bounded) avoids relying on a single read() filling the buffer.
+                    // Bounded read loop: a single read() may return short, and EOF must
+                    // yield the byte count actually captured (EOFException carries no
+                    // transferred-byte field — that belongs to InterruptedIOException).
                     val bytes = ByteArray(MAX_CAPTURE_BYTES)
                     val n = output.inputStream().use { input ->
-                        runCatching { java.io.DataInputStream(input).readFully(bytes) }
-                            .fold(
-                                onSuccess = { bytes.size },
-                                onFailure = { e ->
-                                    if (e is java.io.EOFException) e.bytesTransferred else 0
-                                }
-                            )
+                        var captured = 0
+                        while (captured < bytes.size) {
+                            val read = runCatching {
+                                input.read(bytes, captured, bytes.size - captured)
+                            }.getOrDefault(-1)
+                            if (read <= 0) break
+                            captured += read
+                        }
+                        captured
                     }
                     val rootId = if (n > 0) String(bytes, 0, n, Charsets.UTF_8)
                         .lineSequence().any { ROOT_ID.containsMatchIn(it.trim()) } else false
+                    val truncated = output.length() > n
                     when {
-                        // Truncation is incomplete evidence: a banner may still be arriving.
-                        process.exitValue() == 0 && rootId && output.length() <= n -> State.GRANTED
-                        process.exitValue() == 0 && output.length() > n -> State.UNKNOWN
+                        // uid=0 inside the captured prefix is conclusive even when a chatty
+                        // manager overflowed the cap: truncation can only hide evidence,
+                        // never fabricate it.
+                        process.exitValue() == 0 && rootId -> State.GRANTED
+                        // No uid=0 yet and the capture is incomplete: the id line may still
+                        // be behind the noise — refuse to call that a denial.
+                        process.exitValue() == 0 && truncated -> State.UNKNOWN
                         else -> State.DENIED
                     }
                 } finally {

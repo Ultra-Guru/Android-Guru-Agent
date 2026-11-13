@@ -73,8 +73,28 @@ class SuAuthorizationCacheTest {
 
     @Test(timeout = 7_000)
     fun `large manager output cannot block bounded authorization probe`() {
-        val fake = su("chatty-su", "echo 'uid=0(root)'; i=0; while [ \"\$i\" -lt 4096 ]; do printf 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'; i=\$((i+1)); done; exit 0")
+        // 4096 × 32 = 128 KiB of noise after the id line overflows the 64 KiB capture cap.
+        // uid=0 inside the captured prefix stays conclusive evidence of root.
+        val fake = su("chatty-su", "echo 'uid=0(root)'; " + NOISE_LOOP + "; exit 0")
         assertEquals(SuAuthorizationCache.State.GRANTED, SuAuthorizationCache().authorize(fake))
+    }
+
+    @Test(timeout = 7_000)
+    fun `truncated output without an id line stays unknown rather than denied`() {
+        val fake = su("noise-only-su", NOISE_LOOP + "; exit 0")
+        assertEquals(SuAuthorizationCache.State.UNKNOWN, SuAuthorizationCache().authorize(fake))
+    }
+
+    @Test(timeout = 7_000)
+    fun `id line behind the capture cap is not treated as a denial`() {
+        val fake = su("late-id-su", NOISE_LOOP + "; echo 'uid=0(root)'; exit 0")
+        assertEquals(SuAuthorizationCache.State.UNKNOWN, SuAuthorizationCache().authorize(fake))
+    }
+
+    @Test(timeout = 7_000)
+    fun `complete output without root id is denied`() {
+        val fake = su("short-noise-su", "printf 'xxxxxxxx'; echo 'uid=10000(app)'; exit 0")
+        assertEquals(SuAuthorizationCache.State.DENIED, SuAuthorizationCache().authorize(fake))
     }
 
     @Test(timeout = 4_000)
@@ -105,4 +125,11 @@ class SuAuthorizationCacheTest {
             pool.shutdownNow()
         }
     }
+
+    private companion object {
+        /** 128 KiB of stdout noise, written by the fake su itself (no host-side pipe). */
+        const val NOISE_LOOP =
+            "i=0; while [ \$i -lt 4096 ]; do printf 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'; i=\$((i+1)); done"
+    }
+
 }
