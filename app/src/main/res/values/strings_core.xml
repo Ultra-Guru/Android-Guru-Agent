@@ -802,6 +802,15 @@
     <string name="about_update_hot_fail_verify">checksum mismatch</string>
     <string name="about_update_hot_fail_unpack">package corrupted</string>
     <string name="about_update_hot_fail_apply">apply failed</string>
+    <string name="about_update_hot_fail_cancelled">cancelled (download kept, retry anytime)</string>
+    <!-- S-02 hot update confirmation & rollback -->
+    <string name="about_update_hot_confirm_title">Confirm hot update</string>
+    <string name="about_update_hot_confirm_body">About to apply %2$d data files (skills / MCP catalog) from v%1$s. Changes:</string>
+    <string name="about_update_hot_confirm_more">…and %1$d more files</string>
+    <string name="about_update_hot_confirm_note">Takes effect immediately; you can roll back afterwards. Cancel leaves nothing changed</string>
+    <string name="about_update_hot_confirm_apply">Apply now</string>
+    <string name="about_update_hot_confirm_cancel">Cancel</string>
+    <string name="about_update_hot_rollback">Roll back hot update</string>
     <string name="about_update_hot_applied_note">Data layer hot-updated to v%1$s (no reinstall)</string>
     <!-- v1.4.8 本地更新包常驻区 -->
     <string name="about_update_local_inventory_title">Local update packages</string>
