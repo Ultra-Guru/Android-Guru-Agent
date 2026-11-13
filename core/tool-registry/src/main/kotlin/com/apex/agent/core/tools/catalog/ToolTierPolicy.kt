@@ -88,7 +88,12 @@ object ToolTierPolicy {
         "TerminalWait", "TerminalSnapshot", "TerminalBackends",
 
         // ── memory (CS-Mem) ──
+        // 记忆 P0 写回闭环：三个写入工具 + 纠正面进 CORE —— 此前藏身
+        // CATALOG（ToolSearch 两跳），弱模型不会主动爬这两步，「任务后
+        // 整理经验」的提示词要求形同虚设；写入面幂等（同内容归并强化），
+        // 常驻只付 schema 成本。三只读 + MemoryForget 同段常驻。
         "MemoryRecentEpisodes", "MemorySearchNodes", "MemoryRecallMacro",
+        "MemoryConsolidateExperience", "MemorySaveFact", "MemoryGraph", "MemoryForget",
 
         // ── apps & device ──
         "AppList", "AppInfo", "AppLaunch",
