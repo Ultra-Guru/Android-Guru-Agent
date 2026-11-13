@@ -140,6 +140,7 @@ include(":core:agent-engine")
 include(":core:llm-adapter")
 include(":core:tool-registry")
 include(":core:logging")
+include(":core:su")  // shared, side-effect-free su candidate registry for terminal + privilege
 
 // Coding 模式（与 Agent 模式同级别）：编码工具集 + 编码引擎
 include(":core:code-tools")

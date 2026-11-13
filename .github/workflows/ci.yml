@@ -639,6 +639,7 @@ jobs:
             :platform:mcp-host:test \
             :core:code-engine:test \
             :core:tool-registry:test \
+            :core:su:test \
             :platform:memory-host:testDebugUnitTest \
             :platform:privilege:testDebugUnitTest \
             :plugins:plugin-workflow:testDebugUnitTest \
@@ -684,7 +685,7 @@ jobs:
           for t in :app:testDebugUnitTest :platform:terminal:testDebugUnitTest \
                    :terminal-emulator:testDebugUnitTest :terminal-view:testDebugUnitTest \
                    :core:agent-engine:test :core:llm-adapter:test :core:code-tools:test :core:code-engine:test \
-                   :core:tool-registry:test :platform:memory-host:testDebugUnitTest \
+                   :core:tool-registry:test :core:su:test :platform:memory-host:testDebugUnitTest \
                    :platform:privilege:testDebugUnitTest :plugins:plugin-workflow:testDebugUnitTest \
                    :core:code-native:testDebugUnitTest; do
             grep -q "^> Task $t" build.log || MISSING_TESTS="$MISSING_TESTS $t"
