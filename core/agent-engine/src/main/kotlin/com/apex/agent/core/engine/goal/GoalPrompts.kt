@@ -30,15 +30,19 @@ internal object GoalPrompts {
         appendLine("  (missing tooling/permissions), say so explicitly and propose an alternative.")
     }
 
-    /** 验收器系统提示词（FAST 角色，便宜小模型可用）。 */
+    /** 验收器系统提示词（FAST 角色，便宜小模型可用；v4 增加逐条判定协议）。 */
     fun verifierSystem(): String = """
         You are a strict acceptance verifier. Judge ONLY by the acceptance criteria and the
         work report provided. Reply with ONE JSON object and nothing else:
         {"achieved": <true|false>, "reason": "<short verdict, cite the evidence>",
-         "evidence": "<the exact verification evidence quoted from the report, or empty>"}
+         "evidence": "<the exact verification evidence quoted from the report, or empty>",
+         "criteria": [<true|false>, ...]}
         Rules:
         - achieved=true ONLY if the report shows concrete verification evidence (commands run,
           outputs, test results, file contents) covering every criterion.
+        - The acceptance criteria may be listed as multiple lines. Additionally return
+          "criteria": a JSON array of booleans, one per criterion line in the same order,
+          each true only if THAT criterion has concrete evidence.
         - Promises and plans ("I will", "should now", "the code should") are NOT evidence.
         - Ignore work unrelated to the criteria. Do not reward effort, only outcomes.
         - If the report is unrelated or empty, achieved=false with reason "no work reported".
@@ -58,10 +62,17 @@ internal object GoalPrompts {
         appendLine("Judge: is EVERY acceptance criterion met with evidence? Reply with the JSON only.")
     }
 
-    /** 未达标时的续跑注入（System 消息，主模型读）。 */
+    /** 未达标时的续跑注入（System 消息，主模型读；v4 附逐条差距摘要）。 */
     fun continuationNote(result: GoalCheckResult, roundsLeft: Int): String = buildString {
         appendLine("[goal-verifier] 验收未通过（剩余 ${roundsLeft} 轮）。")
         appendLine("差距：${result.reason}")
+        result.criteriaResults?.takeIf { it.isNotEmpty() }?.let { items ->
+            appendLine(
+                "逐条结果：" + items.mapIndexed { i, ok ->
+                    "第${i + 1}条" + if (ok) "✓" else "✗"
+                }.joinToString(" ")
+            )
+        }
         result.evidence?.takeIf { it.isNotBlank() }?.let { appendLine("验收依据：$it") }
         appendLine("请直接针对上述差距继续工作并用可验证的证据（命令/输出/文件内容）复核，")
         appendLine("完成后输出完成报告（做了什么 / 验证了什么 / 证据）。不要重新规划整个任务。")

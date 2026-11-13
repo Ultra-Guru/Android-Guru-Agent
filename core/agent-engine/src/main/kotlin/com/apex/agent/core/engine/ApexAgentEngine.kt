@@ -551,6 +551,9 @@ class ApexAgentEngine(
                 // Agent 模式移除（PR 3/6）：档位收敛为编码工位三档
                 // BUILD / GOAL —— ReAct 主循环；PLAN —— 规划确认后逐步骤执行。
                 AgentMode.BUILD, AgentMode.GOAL -> {
+                    // v4 Goal 阶段状态机：GOAL run 启动 → 协调器置 EXECUTING
+                    //（迟到调用零行为，终态不回退；见 GoalModeCoordinator.markExecuting）。
+                    if (config.mode == AgentMode.GOAL) goalCoordinator?.markExecuting()
                     val iter = executeBuildLoop { event ->
                         if (event is AgentEvent.ToolCallComplete) totalToolCalls++
                         if (event is AgentEvent.IterationStart) totalIterations =
