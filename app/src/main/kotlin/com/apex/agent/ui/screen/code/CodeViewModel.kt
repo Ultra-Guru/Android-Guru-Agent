@@ -300,6 +300,9 @@ class CodeViewModel @Inject constructor(
                 ?.let { runCatching { AgentMode.valueOf(it.uppercase()) }.getOrNull() }
         } ?: AgentMode.BUILD
         setMode(if (startupMode in CODING_SCREEN_MODES) startupMode else AgentMode.BUILD)
+        // v4 三档自主级别：按当前模式恢复记忆的级别 + 引擎推送
+        //（扩展接线见 CodeModeAutonomyController.kt）
+        restoreAutonomy()
         // v3 GOAL：协调器全局状态流 → uiState.goalState（状态卡数据源）
         setupGoalController()
     }

@@ -39,6 +39,9 @@ private const val STATEMENT_BUDGET = 400
 
 private const val CRITERIA_BUDGET = 2000
 
+/** v4 可选字段（约束/非目标/成功指标/已知风险）预算。 */
+private const val OPTIONAL_FIELD_BUDGET = 800
+
 /** 轮次上限（预设 chips 最大 20，留裕量防脏值）。 */
 private const val MAX_ROUNDS_LIMIT = 30
 
@@ -96,28 +99,45 @@ internal fun CodeViewModel.maybeGoalFirstSend(text: String): Boolean {
 }
 
 /**
- * 开始目标（设定 Sheet「开始」入口）：构造钳制后的 GoalSpec → 协调器
- * startGoal → 模式兜底切 GOAL（activeSpec 已非空，不会重复弹设定 Sheet）
- * → 关闭弹层 → initialPrompt 非空时走正常发送管线（[sendMessage] 复用：
- * 用户气泡/草稿清理/runEngine 全套，不复制逻辑）。
+ * 开始目标（设定 Sheet「开始」入口）：构造钳制后的 GoalSpec（含 v4 扩展
+ * 字段与自主级别快照）→ 自主级别回写 Goal 模式记忆 → 协调器 startGoal
+ * → 模式兜底切 GOAL（activeSpec 已非空，不会重复弹设定 Sheet）→ 关闭
+ * 弹层 → initialPrompt 非空时走正常发送管线（[sendMessage] 复用：用户
+ * 气泡/草稿清理/runEngine 全套，不复制逻辑）。
  */
-internal fun CodeViewModel.startGoalModeGoal(
-    statement: String,
-    criteria: String,
-    maxRounds: Int,
-    initialPrompt: String
-) {
-    val prompt = initialPrompt.trim()
+internal fun CodeViewModel.startGoalModeGoal(result: GoalSetupResult) {
+    val prompt = result.initialPrompt.trim()
     val spec = GoalSpec(
-        statement = statement.trim().take(STATEMENT_BUDGET),
-        acceptanceCriteria = criteria.trim().take(CRITERIA_BUDGET),
-        maxRounds = maxRounds.coerceIn(1, MAX_ROUNDS_LIMIT),
+        statement = result.statement.trim().take(STATEMENT_BUDGET),
+        acceptanceCriteria = result.criteria.trim().take(CRITERIA_BUDGET),
+        maxRounds = result.maxRounds.coerceIn(1, MAX_ROUNDS_LIMIT),
         createdAt = System.currentTimeMillis(),
-        initialPrompt = prompt
+        initialPrompt = prompt,
+        constraints = result.constraints.trim().take(OPTIONAL_FIELD_BUDGET),
+        nonGoals = result.nonGoals.trim().take(OPTIONAL_FIELD_BUDGET),
+        successMetrics = result.successMetrics.trim().take(OPTIONAL_FIELD_BUDGET),
+        knownRisks = result.knownRisks.trim().take(OPTIONAL_FIELD_BUDGET),
+        autonomyLevel = result.autonomy.persistenceName,
+        preClarify = result.preClarify,
     )
+    // v4：自主级别回写 Goal 模式记忆 + 开关状态持久化（下次设定弹层预选）。
+    settingsRepository.updateAgentSettings {
+        copy(
+            codeGoalAutonomyLevel = result.autonomy.persistenceName,
+            codeFullAutoPreClarify = result.preClarify
+        )
+    }
     goalCoordinator.startGoal(spec)
     if (_uiState.value.mode != AgentMode.GOAL) setMode(AgentMode.GOAL) else ensureDeepDiveLine()
-    _uiState.update { it.copy(showGoalSetup = false, goalSetupDraft = "") }
+    _uiState.update {
+        it.copy(
+            showGoalSetup = false,
+            goalSetupDraft = "",
+            autonomyLevel = result.autonomy,
+            fullAutoPreClarify = result.preClarify
+        )
+    }
+    pushAutonomyToEngine()
     appendSystemMessage(languageManager.getString(R.string.goal_started_notice, spec.statement))
     if (prompt.isNotBlank()) sendMessage(prompt)
 }
