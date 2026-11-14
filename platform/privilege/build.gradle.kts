@@ -36,6 +36,7 @@ dependencies {
     //（唯一消费方 ToolStreamEvent 已删）—— privilege 收紧为叶子模块：
     // core:logging（审计遥测）+ Shizuku SDK + coroutines，无引擎/工具依赖。
     implementation(project(":core:logging"))
+    implementation(project(":core:su"))
     implementation(libs.core.ktx)
     implementation(libs.coroutines.core)
     implementation(libs.coroutines.android)

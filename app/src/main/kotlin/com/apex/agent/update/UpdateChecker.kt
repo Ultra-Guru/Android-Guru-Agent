@@ -16,6 +16,9 @@ import java.util.concurrent.TimeUnit
  *
  * 设计约束：
  * - **零鉴权**：清单走 raw.githubusercontent CDN（公开仓库），无需任何 Token；
+ * - **离线信任锚（S-02）**：清单正文经 [CheckMirror.fetchVerified] 过内置
+ *   发布者公钥的 detached 签名验证 —— 镜像只加速不做信任源，无签名在
+ *   过渡期后 fail-closed（[UpdateTrust]）；
  * - **镜像回退**：请求经 [CheckMirror] 出口 —— 公共反代镜像在前、直连殿后，
  *   国内无梯子也能完成检查（详见 [CheckMirror] 的设计约束）；
  * - **零新依赖**：OkHttp + kotlinx.serialization 均为项目既有栈；
@@ -27,13 +30,15 @@ class UpdateChecker {
     private val json = Json { ignoreUnknownKeys = true }
 
     /**
-     * 拉取清单并比对版本。经 [CheckMirror.fetch] 走镜像回退链；协程取消会
-     * 同步 cancel 底层 OkHttp 调用；网络异常一律折叠为
-     * [UpdateCheckResult.Failed] —— 检查更新永不打断用户流程。
+     * 拉取清单并比对版本。经 [CheckMirror.fetchVerified] 走镜像回退链 +
+     * 发布者签名验证；协程取消会同步 cancel 底层 OkHttp 调用；网络异常与
+     * 信任拒绝（[ManifestTrustException]）一律折叠为
+     * [UpdateCheckResult.Failed]（reason 面向用户展示）—— 检查更新永不
+     * 打断用户流程。
      */
     suspend fun check(currentVersionCode: Int): UpdateCheckResult = runCatching {
-        val body = CheckMirror.fetch(UPDATE_MANIFEST_URL)
-        json.decodeFromString<UpdateManifest>(body)
+        val trusted = CheckMirror.fetchVerified(UPDATE_MANIFEST_URL)
+        json.decodeFromString<UpdateManifest>(trusted.text)
     }.fold(
         onSuccess = { manifest ->
             AppLogger.instance.info(
@@ -60,15 +65,21 @@ class UpdateChecker {
     /**
      * 拉取补丁全量索引（跨版本链式增量的数据源）。
      *
-     * 与 [check] 同一网络链路（[CheckMirror] 镜像回退/可取消）；失败折叠
-     * null —— 索引不存在（旧发布仓库）或网络抖动时，调用方回退 version.json
-     * 的单补丁档或全量包，更新链路不因索引缺失而中断。
+     * 与 [check] 同一网络链路（[CheckMirror.fetchVerified] 镜像回退 + 可取消
+     * + 发布者签名验证）；失败折叠 null —— 索引不存在（旧发布仓库）或网络
+     * 抖动时，调用方回退 version.json 的单补丁档或全量包，更新链路不因索引
+     * 缺失而中断。
+     *
+     * **例外（S-02）**：签名验证硬失败（[ManifestTrustException]，含坏签名
+     * 与过渡期后的无签名）原样上抛 —— 篡改迹象必须拒绝整个更新，绝不允许
+     * 「索引不可信但 version.json 单补丁档照常下载」的混合状态。
      */
     suspend fun fetchPatchIndex(): PatchIndex.Model? {
         return runCatching {
-            val body = CheckMirror.fetch(PATCH_INDEX_URL)
-            PatchIndex.parse(body)
+            val trusted = CheckMirror.fetchVerified(PATCH_INDEX_URL)
+            PatchIndex.parse(trusted.text)
         }.onFailure { e ->
+            if (e is ManifestTrustException) throw e
             AppLogger.instance.warn(
                 LogCategory.SYSTEM,
                 "UpdateChecker",
@@ -266,6 +277,10 @@ data class UpdatePatchMatrix(
  * - [signingCertSha256]：发布 APK 签名证书 SHA-256 指纹 —— 客户端签名
  *   预检（本地指纹不一致 = 增量/全量覆盖安装必报签名冲突，提前告知
  *   用户改走热更或卸载重装，不再下载 300MB 后才在安装器撞墙）。
+ *
+ * S-02 信任口径：清单整体被发布者 detached 签名覆盖（含
+ * [signingCertSha256] 与各资产 sha256）—— 这些自证字段在验签通过的
+ * 前提下才是可信的；无签名清单只在过渡期内放行（[UpdateTrust]）。
  */
 @Serializable
 data class UpdateManifest(

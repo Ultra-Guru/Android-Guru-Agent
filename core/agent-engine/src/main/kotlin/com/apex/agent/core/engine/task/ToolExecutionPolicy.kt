@@ -118,6 +118,13 @@ class ToolExecutionPolicy {
             put("MemoryRecentEpisodes", ToolIdempotencyClass.READ_ONLY)
             put("MemorySearchNodes", ToolIdempotencyClass.READ_ONLY)
             put("MemoryRecallMacro", ToolIdempotencyClass.READ_ONLY)
+            // 记忆 P0 写回闭环：三个写入面均幂等（同内容归并强化 / 同名
+            // 合并去重 / 三元组整体去重），崩溃恢复可安全重放；纠正面
+            // MemoryForget 按 id/名称删除，二次调用返回不存在 —— 同样幂等。
+            put("MemoryConsolidateExperience", ToolIdempotencyClass.IDEMPOTENT_WRITE)
+            put("MemorySaveFact", ToolIdempotencyClass.IDEMPOTENT_WRITE)
+            put("MemoryGraph", ToolIdempotencyClass.IDEMPOTENT_WRITE)
+            put("MemoryForget", ToolIdempotencyClass.IDEMPOTENT_WRITE)
             put("SkillList", ToolIdempotencyClass.READ_ONLY)
             put("SkillSearch", ToolIdempotencyClass.READ_ONLY)
             put("SkillCreate", ToolIdempotencyClass.IDEMPOTENT_WRITE)

@@ -214,13 +214,34 @@ build： Extract signing certificate digest（apksigner → meta/cert_sha256.txt
 
 | 层 | 机制 |
 | --- | --- |
-| ZIP 整包 | SHA-256 对 version.json `hot` 档指纹 |
+| **信任锚（S-02）** | **version.json / patches.json 全量 detached 签名**：内置发布者公钥验证（ECDSA P-256，`UpdateTrust`）；镜像/CDN 任一环节改一字节即拒绝 |
+| ZIP 整包 | SHA-256 对 version.json `hot` 档指纹（清单经验签后指纹才可信；无指纹 fail-closed，过渡期见下） |
 | 包内清单 | schema 校验 + 路径合法性（绝对路径 / `..` / 反斜杠拒绝） |
 | 逐文件 | SHA-256 对 hotmanifest 条目（外层对账后内容再篡改的极端场景） |
 | 解压 | SafeZipExtractor：zip-slip canonical 校验 + zip bomb 三重上限 |
-| 落位 | 原子换位 + 失败回滚 + 暂存残留自清理 |
+| **用户确认（S-02）** | 热更按代码对待：注入前弹确认框（目标版本 + 变更清单），可取消；超时按取消 |
+| 落位 | 原子换位 + 失败回滚 + 暂存残留自清理 + **上一代 backup 保留（S-02）** |
+| **回滚（S-02）** | 一键回滚上一代 overlay + 技能重放 + 自动重检（只保一代回滚点，被下一次 apply 覆盖） |
 | 技能 | installBundled 版本化幂等（降级跳过、保持用户启停态） |
-| 退役 | APK 追平自动清理（防 overlay 虚高掩盖真正的安装更新） |
+| 退役 | APK 追平自动清理（防 overlay 虚高掩盖真正的安装更新；backup 一并清除） |
+
+### S-02：离线信任锚与过渡期
+
+- **信任模型**：发布者私钥只存 CI secret（`UPDATE_MANIFEST_SIGNING_KEY`，
+  base64 单行 PEM），对 version.json / patches.json 的**原字节**签名后以
+  sidecar 文件（`<清单名>.sig`）同 commit 分发；客户端内置公钥验证 ——
+  清单里的 sha256 / signingCertSha256 自此只承担完整性职责，身份认证
+  归离线公钥；
+- **fail-closed 路径**：验签不过 → 拒绝整个更新（含 patches.json 验签
+  失败上抛，不回退单补丁）；无签名在过渡期（编译期常量
+  `UNSIGNED_GRACE_UNTIL_EPOCH_MS = 2027-03-01`，不可被远端翻转）内按旧
+  schema 放行 + WARN 留痕，到期即拒；
+- **无指纹资产**：verifySha256 统一收敛（补丁段 / 热更包 / 终局 APK），
+  过渡期后无指纹一律拒绝；
+- **镜像只是加速**：CheckMirror 每个候选（镜像改写前后同理）都验同一
+  签名；坏签名候选降级不截断回退链，全链坏签名则硬拒绝；
+- **发布侧**：release.yml 在「Commit version.json」步骤内对 merge 后的
+  清单字节签名（幂等合并会改写字节，必须在即将提交的字节上签）。
 
 ## 与既有通道的关系
 
@@ -246,6 +267,11 @@ build： Extract signing certificate digest（apksigner → meta/cert_sha256.txt
 - `HotContentStoreTest`（TemporaryFolder + 内存 fake prefs）：原子换位
   与记账（含包指纹）/ 应急重发指纹覆盖 / 整体替换 / 防御式读取
   （损坏 JSON 跳过）/ APK 追平退役 / 换位失败回滚（staging 消失不丢
-  旧内容）/ 暂存清理；
+  旧内容）/ 暂存清理 / **S-02 backup 保留与 rollback（回滚一代 / 只保
+  一代 / 回滚点消费 / 退役清除）**；
+- `UpdateTrustTest` + `CheckMirrorTrustTest`（S-02 纯 JVM）：验签正路 /
+  字段篡改 / 错钥伪造 / 形态非法折叠 / **内置公钥 × openssl 参考签名
+  交叉验证（CI secret ↔ 常量一致性锁）** / 无签名过渡期与到期拒绝 /
+  镜像劫持降级与硬拒绝 / 挑战页不误判；
 - CI 侧 data-only 判定 / 指纹注入由 release.yml 干跑（workflow_dispatch）
   验证 —— Job Summary 展示热更包体积与基底窗口。

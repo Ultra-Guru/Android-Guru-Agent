@@ -12,6 +12,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,6 +52,15 @@ import java.util.concurrent.atomic.AtomicBoolean
  *   `signingCertSha256` —— 不一致时增量/全量覆盖安装必报签名冲突，UI 提前
  *   劝导热更/卸载重装，不再让用户下载几百 MB 后才撞墙。
  *
+ * S-02（离线信任锚 + 热更按代码对待）：
+ * - **信任拒绝可见**：清单验签硬失败（[ManifestTrustException]）不再静默
+ *   复位 Idle，而是落 [CheckState.Done]（[UpdateCheckResult.Failed] 携带
+ *   面向用户的原因）；
+ * - **热更确认闸门**：引擎解包复核通过后挂起等 UI 答复
+ *   （[hotConfirmRequest] / [answerHotConfirmation]），注入前可取消；
+ * - **热更可回滚**：[rollbackHotUpdate] 恢复上一代 overlay + 技能重放 +
+ *   自动重检（上一代保留见 [HotContentStore]）。
+ *
  * 初始化：`ApexApp.onCreate → UpdateCenter.ensure(this)`（幂等）。全部
  * 耗时操作在 IO 线程；UI 只做 `collectAsStateWithLifecycle`。
  */
@@ -88,9 +98,9 @@ object UpdateCenter {
         )
     }
 
-    /** 热更流水线（下载→校验→落位→技能即时注入；技能重放经 Hilt 接线）。 */
+    /** 热更流水线（下载→校验→确认→落位→技能即时注入；技能重放经 Hilt 接线）。 */
     val hotEngine: HotUpdateEngine by lazy {
-        HotUpdateEngine(downloader, hotStore, hiltSkillReapplier)
+        HotUpdateEngine(downloader, hotStore, hiltSkillReapplier, hotConfirmationGate)
     }
 
     /**
@@ -137,6 +147,34 @@ object UpdateCenter {
     /** 热更流水线状态（null = 未在流水线中；Applied/Failed 终态保留）。 */
     private val _hotState = MutableStateFlow<HotUpdateEngine.State?>(null)
     val hotState: StateFlow<HotUpdateEngine.State?> = _hotState.asStateFlow()
+
+    /**
+     * 待确认的热更变更清单（S-02）—— 非 null 时 UI 弹确认框（目标版本 +
+     * 全部文件路径），用户答复经 [answerHotConfirmation] 回传引擎。
+     */
+    private val _hotConfirmRequest = MutableStateFlow<HotPackage.Manifest?>(null)
+    val hotConfirmRequest: StateFlow<HotPackage.Manifest?> =
+        _hotConfirmRequest.asStateFlow()
+
+    /** 热更确认挂起点（引擎 IO 线程 await / UI 主线程 complete）。 */
+    @Volatile
+    private var hotConfirmDeferred: CompletableDeferred<Boolean>? = null
+
+    /**
+     * 热更落位前确认闸门 —— 引擎解包复核通过后挂起在此，等 UI 答复；
+     * 超时由引擎侧 withTimeout 兑现（按取消处理）。
+     */
+    private val hotConfirmationGate = HotUpdateEngine.ConfirmationGate { pkg ->
+        val deferred = CompletableDeferred<Boolean>()
+        hotConfirmDeferred = deferred
+        _hotConfirmRequest.value = pkg
+        try {
+            deferred.await()
+        } finally {
+            _hotConfirmRequest.value = null
+            hotConfirmDeferred = null
+        }
+    }
 
     /** 浮窗可见性 —— App 启动检查发现新版且未被「忽略此版本」时置真。 */
     private val _bannerVisible = MutableStateFlow(false)
@@ -203,7 +241,8 @@ object UpdateCenter {
                 }
                 val result = checker.check(effective)
                 if (result is UpdateCheckResult.Available) {
-                    // 有新版才拉补丁全量索引（多基底单跳/跨版链数据源）
+                    // 有新版才拉补丁全量索引（多基底单跳/跨版链数据源）；
+                    // 验签硬失败（ManifestTrustException）上抛 —— 拒绝整个更新
                     _patchIndex.value = checker.fetchPatchIndex()
                 }
                 _checkState.value = CheckState.Done(result)
@@ -214,11 +253,23 @@ object UpdateCenter {
                     "更新检查完成（$fromTrigger）：${result.javaClass.simpleName}"
                 )
             }.onFailure { e ->
-                _checkState.value = CheckState.Idle
-                AppLogger.instance.error(
-                    LogCategory.SYSTEM, "UpdateCenter",
-                    "更新检查失败（$fromTrigger，已降级）：${e.message}"
-                )
+                if (e is ManifestTrustException) {
+                    // S-02：信任拒绝必须可见（Done(Failed) 携带面向用户的原因），
+                    // 不允许静默复位 Idle 掩盖篡改/缺签名事实
+                    _checkState.value = CheckState.Done(
+                        UpdateCheckResult.Failed(e.reason)
+                    )
+                    AppLogger.instance.error(
+                        LogCategory.SYSTEM, "UpdateCenter",
+                        "更新检查被信任锚拒绝（$fromTrigger）：${e.reason}"
+                    )
+                } else {
+                    _checkState.value = CheckState.Idle
+                    AppLogger.instance.error(
+                        LogCategory.SYSTEM, "UpdateCenter",
+                        "更新检查失败（$fromTrigger，已降级）：${e.message}"
+                    )
+                }
             }
         }
     }
@@ -290,6 +341,40 @@ object UpdateCenter {
         if (!hotEngine.isRunning) _hotState.value = null
     }
 
+    /**
+     * UI 答复热更确认（S-02）：true = 注入生效；false / 无应答超时 = 取消
+     * （引擎按 Failed(CANCELLED) 收尾，ZIP 保留可重试）。
+     */
+    fun answerHotConfirmation(approve: Boolean) {
+        hotConfirmDeferred?.complete(approve)
+    }
+
+    /**
+     * 回滚到上一代热更内容（S-02：热更可回滚）。
+     *
+     * 恢复 backup 位 overlay → 技能重放（注册表回到上一代清单集）→
+     * 强制重检（有效版本回退，更新面板状态自洽刷新）。
+     *
+     * @return 回滚后的目标 versionCode（-1 = 无可回滚）
+     */
+    fun rollbackHotUpdate(): Int {
+        if (hotEngine.isRunning) return -1
+        val vcode = runCatching { hotStore.rollback() }.getOrDefault(-1)
+        if (vcode > 0) {
+            val replayed = runCatching {
+                hiltSkillReapplier.reapply(hotStore.activeSkillManifests())
+            }.getOrDefault(-1)
+            AppLogger.instance.info(
+                LogCategory.SYSTEM, "UpdateCenter",
+                "热更已回滚 → v$vcode（技能重放 $replayed 条）"
+            )
+            checkForUpdate(
+                BuildConfig.VERSION_CODE, force = true, fromTrigger = "hot-rollback"
+            )
+        }
+        return vcode
+    }
+
     // ═══ 签名预检（v1.4.7）════════════════════════════════════════════
 
     /**
@@ -320,6 +405,11 @@ object UpdateCenter {
 
     /**
      * 签名预检：本地签名与清单 `signingCertSha256` 是否不一致。
+     *
+     * S-02 信任口径：`signingCertSha256` 已被发布者 detached 签名覆盖 ——
+     * 验签通过的清单里该字段即官方口径，伪造 APK（含旧私钥签名的包）
+     * 本地指纹必与之不符而被本预检拦下；无签名清单（过渡期 LegacyUnsigned）
+     * 内该字段仍不可全信，安装器自身仍是最后一道防线。
      *
      * true = 增量/全量覆盖安装**必报签名冲突**（本地构建/分叉构建/不同签名源），
      * UI 应提前劝导热更或卸载重装；false = 一致或任一侧指纹不可得（按旧

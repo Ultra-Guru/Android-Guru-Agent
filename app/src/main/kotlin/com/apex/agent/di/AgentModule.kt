@@ -66,12 +66,15 @@ object AgentModule {
         llmClient: LlmClient,
         modelRuntime: ModelRuntime,
         repo: SettingsRepository,
-        contextArchive: FileContextArchive
+        contextArchive: FileContextArchive,
+        memoryObserver: com.apex.agent.core.engine.ExecutionMemoryObserver,
     ): ContextCompressor {
         val agent = repo.agentSettings.value
         val maxChars = agent.maxToolOutputLength.coerceIn(200, 100_000)
         // #396：归档装饰器包裹 —— 压缩前被裁剪消息先进归档（无损可检索），
         // 再从活跃历史移除；并在头部 upsert 一条 [CONTEXT ARCHIVE] 检索单。
+        // 记忆 P0-3 压缩捕获：被裁消息同步回调给记忆蒸馏管道（观察者内
+        // 后台执行）—— 压缩不再等于「内容对记忆系统不可见」。
         return ArchivingCompressor(
             delegate = HybridCompressor(
                 llmClient = llmClient,
@@ -85,7 +88,8 @@ object AgentModule {
                 // T72 §十：第 3 层 LLM 摘要走 SUMMARY 角色（路由 + 降级）
                 modelRuntime = modelRuntime
             ),
-            archive = contextArchive
+            archive = contextArchive,
+            onPruned = { pruned -> memoryObserver.onContextPruned(pruned) }
         )
     }
 

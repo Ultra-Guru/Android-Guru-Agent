@@ -168,6 +168,9 @@ internal object EnginePrompts {
             appendLine("  confirmed knowledge worth reusing. Failure lessons are as valuable as success ones.")
             appendLine("- DURING chat: save durable user facts with MemorySaveFact; grow the knowledge graph with")
             appendLine("  MemoryGraph (create_entities / add_observations / create_relations / search).")
+            appendLine("- CORRECTIONS: when the user says a memory is wrong or outdated, remove it with")
+            appendLine("  MemoryForget (forget_fact / forget_entity / forget_observations), then save the")
+            appendLine("  corrected fact if needed. Never keep contradicting facts alive.")
             appendLine("- Never re-ask what memory already knows; trust it unless it looks outdated.")
             appendLine()
 

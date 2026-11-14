@@ -10,7 +10,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 /**
  * T92（#255 权限链审计）—— PrivilegeDetector 逐命令审计日志契约锁。
@@ -32,6 +34,13 @@ import org.junit.Test
  *   `timestamp >= startMs` 时间戳下限，免疫跨测试回放与方法执行顺序。
  */
 class PrivilegeDetectorAuditTest {
+    @get:Rule val tmp = TemporaryFolder()
+
+    @Test fun `root executable selection keeps non PATH su for execution`() {
+        val su = tmp.newFile("custom-su").apply { setExecutable(true) }
+        assertEquals(su.absolutePath, PrivilegeDetector.rootExecutable(listOf(su.absolutePath)))
+        assertEquals("su", PrivilegeDetector.rootExecutable(emptyList()))
+    }
 
     @Test
     fun `executeShell 每次执行产出恰好一条审计日志`() = runBlocking {

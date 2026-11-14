@@ -12,6 +12,7 @@ import com.apex.agent.core.code.experience.RoleExperienceTracker
 import com.apex.agent.core.code.longtask.LongTaskTracker
 import com.apex.agent.core.code.longtask.TaskCopyEngine
 import com.apex.agent.core.code.standard.DualLogicCodeEngine
+import com.apex.agent.core.code.standard.MemoryAwareCodeEngine
 import com.apex.agent.core.code.CodeContextSnapshot
 import com.apex.agent.core.code.standard.StandardLogicMode
 import com.apex.agent.core.code.stream.CodeStreamCheckpoint
@@ -252,9 +253,14 @@ class CodeViewModel @Inject constructor(
     internal val codeEngineImpl: CodeEngineFacade?
         get() = codeEngine as? CodeEngineFacade
 
-    /** 双思考逻辑路由门面（右上角切换入口；注入恒为 DualLogicCodeEngine）。 */
+    /**
+     * 双思考逻辑路由门面（右上角切换入口）。@Named("code") 自记忆 P0
+     * 起为 MemoryAwareCodeEngine 包装（四线记忆闭环）—— 先解包再回退裸
+     * DualLogicCodeEngine（防御其它装配形态，如测试 / 未来再包装）。
+     */
     internal val dualLogicEngine: DualLogicCodeEngine?
-        get() = codeEngine as? DualLogicCodeEngine
+        get() = (codeEngine as? MemoryAwareCodeEngine)?.dualLogic
+            ?: codeEngine as? DualLogicCodeEngine
 
     // ═══ v6 控制器接线（lazy：viewModelScope 构造后才可用；God-file 预算：
     //     专家模板逻辑独立成文件，VM 只做暴露）═══
@@ -281,17 +287,10 @@ class CodeViewModel @Inject constructor(
         if (active != null) {
             bindWorkspace(active)
         }
-        // v1.2 七档思考系统：恢复持久化档位（本字段独立记忆，
-        // 不随任何复制/模板选项覆盖 —— 档位覆盖位已随任务模板功能移除）
-        restoreThinkingLevel()
-        // v1.5 双思考逻辑：恢复持久化档位（空/未知 → 深潜）。先于 setMode：
-        // GOAL 恢复强制深潜线，在后恢复会反切持久化线、破坏「GOAL 恒走深潜」。
-        restoreLogicMode()
-        // v1.5 输出展示档恢复（流式/整段；见 CodeOutputModeOps.kt）
-        restoreOutputMode()
-        // v1.6 输出风格恢复（经典时间轴/Rikka；见 CodeOutputStyleOps.kt）
-        // + 设置流订阅：idle 期切风格回屏即生效（消灭「切了没反应」）
-        restoreOutputStyle()
+        restoreThinkingLevel() // v1.2 七档思考系统：档位独立记忆（模板覆盖位已移除）
+        restoreLogicMode() // v1.5 双逻辑档位恢复（空/未知→深潜）；先于 setMode（GOAL 恒深潜）
+        restoreOutputMode() // v1.5 输出展示档恢复（流式/整段）
+        restoreOutputStyle() // v1.6 输出风格恢复 + idle 期热同步（消灭「切了没反应」）
         observeOutputStyle()
         // v1.7 部件级皮肤恢复 + 订阅（PartSkin spec；见 PartSkinOps.kt）
         restorePartSkins()
