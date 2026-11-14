@@ -98,6 +98,28 @@ data class CodeUiState(
     // run 粒度快照 + idle 期设置流实时同步，见 CodeOutputStyleOps.kt。
     val outputStyle: CodeOutputStyle = CodeOutputStyle.TIMELINE,
 
+    // ── 会话皮肤状态机（PartSkin spec v1.2/v1.3，§7.5 / §7.9）──
+    // H-5：皮肤类四维度（uiStyle 材质短路 / outputStyle / renderMode /
+    // partSkins + glow）打包进同一会话快照（同 epoch）；当前对话内
+    // active 恒定零重绘，改动只落 pending；唯一提升点 = 会话边界（新对话
+    // / 恢复历史 / 切工作区）或 IMMEDIATE 策略的 idle 提升点（H-6：任务
+    // 进行中任何模式都冻结）。状态机定义见 ConversationSkin.kt，动作面
+    // （restore / stage / promote / discard / onRunSettled）见 PartSkinOps.kt。
+    // pending 只存内存不落盘（NFR-13）：冷启动直接从 AgentSettings 恢复
+    // active，不会「上次没确认的改动突然生效」。
+    // 注：上方 renderMode / outputStyle 两个既有字段保留（历史镜像，其它
+    // 模块可能读取），但**渲染取值一律改从 conversationSkin.active 读**。
+    val conversationSkin: SkinActivation = SkinActivation(
+        active = ConversationSkinSnapshot(
+            epoch = 0L,
+            uiStyle = com.apex.agent.ui.theme.UiStyle.MINIMAL,
+            outputStyle = CodeOutputStyle.TIMELINE,
+            renderMode = CodeOutputMode.STREAMING,
+            partSkins = com.apex.agent.ui.theme.PartSkinOverrides(),
+            glow = 0.35f
+        )
+    ),
+
     // ── 编辑器面板（v1.0 #154）──
     // editorFilePath 非空即挂载面板；editorFile 为加载结果（null = 加载中/失败态）。
     val editorFilePath: String? = null,

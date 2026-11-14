@@ -7,7 +7,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -40,8 +39,9 @@ import androidx.compose.ui.unit.dp
 import com.apex.agent.R
 import com.apex.agent.core.code.stream.LlmRetryInfo
 import com.apex.agent.core.code.stream.ToolUsageStats
-import com.apex.agent.ui.glass.GlassCard
-import com.apex.agent.ui.glass.GlassStyle
+import com.apex.agent.ui.glass.PartSurface
+import com.apex.agent.ui.theme.CodingPart
+import androidx.compose.foundation.layout.PaddingValues
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -105,16 +105,16 @@ internal fun CompleteModeGeneratingCard(
         }
     }
 
-    GlassCard(
-        style = GlassStyle.Card,
-        shape = RoundedCornerShape(12.dp),
-        accent = if (llmRetry != null) MaterialTheme.colorScheme.error
-        else MaterialTheme.colorScheme.primary,
+    // v1.7 部件皮肤（PartSkin spec FR-6）：生成中卡默认 PALE_LIQUID 且
+    // active=true（生成期间光效流动）；重试红只上标题文字（FR-11 删 accent）。
+    PartSurface(
+        part = CodingPart.STREAM_GENERATING,
+        active = true,
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
             // ── 头行：呼吸圆点 + 标题（重试中切换）+ 已用时 ──
             Row(verticalAlignment = Alignment.CenterVertically) {
                 GeneratingDot(alpha = dot1)
@@ -192,7 +192,6 @@ internal fun CompleteModeGeneratingCard(
                 alpha = skeletonAlpha,
                 modifier = Modifier.padding(top = 5.dp)
             )
-        }
     }
 }
 

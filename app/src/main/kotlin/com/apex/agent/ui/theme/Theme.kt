@@ -7,6 +7,7 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
 
@@ -74,10 +75,26 @@ fun ApexTheme(
     // accent 派生，dynamicColor 路径同样适用）
     val extendedColors = if (darkTheme) ExtendedColors.Dark else ExtendedColors.Light
 
+    // ═══ 部件级皮肤默认注入（PartSkin spec §8-16）═══
+    // LocalPartSkins 兜底默认快照（空表 = 跟随 §4 新默认）—— 保证
+    // GlassLab / 预览页 / 任何未接 run 快照的独立场景不崩；
+    // LocalSkinContext 按 uiStyle 派生全局默认（CodeScreen 用 run 捕获
+    // 快照覆写，静态 CompositionLocal —— 皮肤变更只失效读取方，NFR-1）。
+    val defaultSkinContext = remember(uiStyle) {
+        SkinContext(
+            globalDefault = if (uiStyle == UiStyle.LIQUID_GLASS) PartSkin.CLASSIC_GLASS
+            else PartSkin.FLAT,
+            minimal = uiStyle == UiStyle.MINIMAL
+        )
+    }
+    val defaultPartSkins = remember { PartSkinOverrides() }
+
     CompositionLocalProvider(
         LocalUiStyle provides uiStyle,
         LocalExtendedColors provides extendedColors,
-        LocalAccentColors provides accents
+        LocalAccentColors provides accents,
+        LocalPartSkins provides defaultPartSkins,
+        LocalSkinContext provides defaultSkinContext
     ) {
         MaterialTheme(
             colorScheme = colorScheme,

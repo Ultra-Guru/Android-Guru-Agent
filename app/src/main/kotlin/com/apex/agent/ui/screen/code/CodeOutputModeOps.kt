@@ -10,9 +10,8 @@ import kotlinx.coroutines.flow.update
 // CodeSessionSnapshotOps 拆分惯例——依赖成员开放 internal）。
 //
 // 职责：输出展示档（STREAMING / COMPLETE，见 CodeOutputMode.kt）的
-//  - restoreOutputMode：启动恢复持久化档位进 uiState.renderMode；
-//  - captureRunOutputMode：每轮 run 开始时捕获档位（「切换只影响下一
-//    条消息或完成后的消息」的运行中切换语义）。
+//  - restoreOutputMode：启动恢复持久化档位进 uiState.renderMode（历史
+//    镜像；渲染取值自 v1.2 起改读会话快照 conversationSkin.active）。
 //
 // 为什么档位放 uiState 而非让 Screen 直读设置流：渲染档必须是**run 粒度
 // 的快照**——运行中用户在设置页改档，当前轮继续按旧档渲染到收束，下一轮
@@ -31,14 +30,3 @@ internal fun CodeViewModel.restoreOutputMode() {
     _uiState.update { it.copy(renderMode = mode) }
 }
 
-/**
- * 每轮 run 开始捕获渲染档（runEngine 在 beginRun 前调用）。
- *
- * 捕获而非直读：规格书交互规则「切换只影响下一条消息或完成后的消息」——
- * 运行中改设置不打断当前轮展示；收束后（idle 渲染两档等价）下一轮
- * captureRunOutputMode 自动按新档生效，无需显式回同步。
- */
-internal fun CodeViewModel.captureRunOutputMode() {
-    val mode = settingsRepository.agentSettings.value.codeOutputMode.toCodeOutputMode()
-    _uiState.update { it.copy(renderMode = mode) }
-}

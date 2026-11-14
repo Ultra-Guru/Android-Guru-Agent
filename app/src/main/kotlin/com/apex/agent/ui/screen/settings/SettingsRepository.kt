@@ -621,6 +621,27 @@ data class AgentSettings(
     val codeRikkaThinkingCollapsed: Boolean = false,
     val mcpScopeIsolation: Boolean = true,
 
+    // ═══ 部件级皮肤（PartSkin spec §7.2，v1.7）═══
+    // partSkins：稀疏覆盖表 Part→Skin（"stream.thinking" -> "pale_liquid"），
+    // **缺席 = 跟随上级**（与 roleSkillToggles 同款稀疏语义）；未知 key /
+    // 非法组合在解析时回退 FOLLOW（不报错）。旧 JSON 无该字段 → 空 Map
+    // → 走 §4 新默认皮肤列（思考卡/卡片族 = 浅白液态玻璃），零迁移兼容
+    // （@Serializable + ignoreUnknownKeys + 全字段默认值，导出/备份自动带上）。
+    // partSkinGlow：浅白玻璃光晕强度 0..1（0 = 纯白霜面，1 = 完整彩光，
+    // 默认 0.35 微彩；越界读入 clamp）。
+    // partSkinSchemaVersion：稀疏表结构版本号（未来 ID 重映射用；旧档
+    // 缺省 0 → 走默认解析路径）。
+    val partSkins: Map<String, String> = emptyMap(),
+    val partSkinGlow: Float = 0.35f,
+    val partSkinSchemaVersion: Int = 1,
+    // ═══ 皮肤生效方式（PartSkin spec v1.3，FR-25）═══
+    // skinApplyMode："auto"（默认，按设备分级解析：HIGH→立即 / MID·LOW→新
+    // 对话）| "immediate"（空闲时立即生效；LOW 档被 resolvePolicy 硬拒）
+    // | "on_new_chat"（v1.2 行为：仅会话边界生效）。设置项本身立即写盘，
+    // 只决定后续皮肤变更的提升点，自身不触发换皮；缺省 "auto" → 旧 JSON
+    // 零迁移。任务进行中（H-6）任何模式都冻结到收束后的第一个 idle 点。
+    val skinApplyMode: String = "auto",
+
     // ═══ v2.1.0 浏览器角色门禁（评审 B2）═══
     // browserRoleRestrictionEnabled：默认开 = 严格——普通会话不授予
     // browser-automation，browser_* 工具不可见不可调（计划层+RoleGate 三处强制）；
