@@ -80,4 +80,52 @@
     <string name="settings_v3_coding_output_mode_desc">Streaming = live typing, live tool windows; Complete = a progress card while generating (with live skill/MCP/tool counters), then the run is revealed at once — tool calls collapsed into aggregate cards (skill / MCP / built-in breakdown, expandable details). Takes effect on the next run.</string>
     <string name="settings_v3_coding_output_mode_streaming">Streaming (live typing)</string>
     <string name="settings_v3_coding_output_mode_complete">Complete (reveal when done)</string>
+
+    <!-- Part appearance (v1.7 part-level skins + pale liquid glass material) -->
+    <string name="settings_v3_parts_title">Part appearance</string>
+    <string name="settings_v3_parts_subtitle">Per-part skin switching and the pale liquid glass material</string>
+    <string name="settings_v3_parts_preview_label">Live preview (thinking card)</string>
+    <string name="settings_v3_parts_preview_body">Analyzing requirements · Reading workspace structure…</string>
+    <string name="settings_v3_parts_preset_label">Presets</string>
+    <string name="settings_v3_parts_preset_default">Default</string>
+    <string name="settings_v3_parts_preset_pale">All pale liquid glass</string>
+    <string name="settings_v3_parts_preset_classic">Classic glass</string>
+    <string name="settings_v3_parts_preset_minimal">Minimal flat</string>
+    <string name="settings_v3_parts_reset_follow">Follow global</string>
+    <string name="settings_v3_parts_glow">Glow intensity</string>
+    <string name="settings_v3_parts_glow_desc">Scales the drifting aurora inside pale glass cards; 0 = pure white frost. Applies wherever pale liquid glass is visible.</string>
+    <string name="settings_v3_parts_group_stream">Timeline cards</string>
+    <string name="settings_v3_parts_group_input">Input and overlays</string>
+    <string name="settings_v3_parts_group_terminal">Terminal and code</string>
+    <string name="settings_v3_parts_note">Switching while a run is active takes effect on the next round; changes apply instantly while idle. Expansion state, scrolling and the thinking stopwatch are never reset.</string>
+    <string name="part_skin_follow">Follow</string>
+    <string name="part_skin_pale_liquid">Pale liquid glass</string>
+    <string name="part_skin_classic_glass">Classic glass</string>
+    <string name="part_skin_flat">Flat</string>
+    <string name="part_skin_solid">Solid bubble</string>
+    <string name="part_skin_neon_terminal">Neon terminal</string>
+    <string name="part_name_stream_user_bubble">User bubble</string>
+    <string name="part_name_stream_assistant_bubble">Assistant bubble</string>
+    <string name="part_name_stream_thinking">Thinking card</string>
+    <string name="part_name_stream_tool_capsule">Tool capsule</string>
+    <string name="part_name_stream_verify_cycle">Verify cycle card</string>
+    <string name="part_name_stream_status_line">Status line</string>
+    <string name="part_name_stream_system_line">System line</string>
+    <string name="part_name_stream_error">Error card</string>
+    <string name="part_name_stream_stop">Stop card</string>
+    <string name="part_name_stream_file_chips">File chips</string>
+    <string name="part_name_stream_git_op">Git visual card</string>
+    <string name="part_name_stream_run_stats">Run stats card</string>
+    <string name="part_name_stream_generating">Generating card</string>
+    <string name="part_name_input_bar">Input bar</string>
+    <string name="part_name_input_queue_card">Queued task card</string>
+    <string name="part_name_input_question_card">Question card</string>
+    <string name="part_name_input_plan_confirm">Plan confirmation card</string>
+    <string name="part_name_overlay_error_bar">Error bar</string>
+    <string name="part_name_overlay_offline_banner">Offline banner</string>
+    <string name="part_name_overlay_update_banner">Update banner</string>
+    <string name="part_name_overlay_tool_detail_sheet">Tool detail sheet</string>
+    <string name="part_name_terminal_panel">Terminal panel</string>
+    <string name="part_name_code_diff">Diff view</string>
+    <string name="part_name_code_streaming_window">Streaming code window</string>
 </resources>

@@ -287,18 +287,14 @@ class CodeViewModel @Inject constructor(
         if (active != null) {
             bindWorkspace(active)
         }
-        // v1.2 七档思考系统：恢复持久化档位（本字段独立记忆，
-        // 不随任何复制/模板选项覆盖 —— 档位覆盖位已随任务模板功能移除）
-        restoreThinkingLevel()
-        // v1.5 双思考逻辑：恢复持久化档位（空/未知 → 深潜）。先于 setMode：
-        // GOAL 恢复强制深潜线，在后恢复会反切持久化线、破坏「GOAL 恒走深潜」。
-        restoreLogicMode()
-        // v1.5 输出展示档恢复（流式/整段；见 CodeOutputModeOps.kt）
-        restoreOutputMode()
-        // v1.6 输出风格恢复（经典时间轴/Rikka；见 CodeOutputStyleOps.kt）
-        // + 设置流订阅：idle 期切风格回屏即生效（消灭「切了没反应」）
-        restoreOutputStyle()
+        restoreThinkingLevel() // v1.2 七档思考系统：档位独立记忆（模板覆盖位已移除）
+        restoreLogicMode() // v1.5 双逻辑档位恢复（空/未知→深潜）；先于 setMode（GOAL 恒深潜）
+        restoreOutputMode() // v1.5 输出展示档恢复（流式/整段）
+        restoreOutputStyle() // v1.6 输出风格恢复 + idle 期热同步（消灭「切了没反应」）
         observeOutputStyle()
+        // v1.7 部件级皮肤恢复 + 订阅（PartSkin spec；见 PartSkinOps.kt）
+        restorePartSkins()
+        observePartSkins()
         observeContextDenominator() // 圆环分母热刷新（Profile 流订阅，CodeUsageOps.kt）
         // #197：Coding 屏模式同步（引擎侧恒为 BUILD/PLAN；未知值回退 BUILD）
         val startupMode = settingsRepository.agentSettings.value.let { s ->
@@ -622,6 +618,7 @@ class CodeViewModel @Inject constructor(
         // 直接发布快照，不等 25ms ticker，更不能等服务端首个 token。
         captureRunOutputMode()
         captureRunOutputStyle()
+        captureRunPartSkins()
         streamSession.beginRun(goal)
         _uiState.update { it.copy(stream = streamSession.snapshot(), isRunning = true, error = null, errorRetriable = false) }
         // #209：记录本次运行输入 —— 失败后错误条「重试」按原样重放

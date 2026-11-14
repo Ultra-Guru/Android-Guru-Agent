@@ -98,6 +98,17 @@ data class CodeUiState(
     // run 粒度快照 + idle 期设置流实时同步，见 CodeOutputStyleOps.kt。
     val outputStyle: CodeOutputStyle = CodeOutputStyle.TIMELINE,
 
+    // ── 部件级皮肤（PartSkin spec §7.5，run 粒度快照双通道）──
+    // partSkinOverrides：设置流的实时镜像（下一轮捕获的取值源）；
+    // partSkinSnapshot：runEngine 在 beginRun 前捕获的渲染快照 —— 当前轮
+    // 材质冻结到收束（FR-8），idle 期与 overrides 同步（回屏即生效）。
+    // 皮肤解析/回退链见 ui/theme/PartSkin.kt，restore/observe/capture 见
+    // PartSkinOps.kt。
+    val partSkinOverrides: com.apex.agent.ui.theme.PartSkinOverrides =
+        com.apex.agent.ui.theme.PartSkinOverrides(),
+    val partSkinSnapshot: com.apex.agent.ui.theme.PartSkinOverrides =
+        com.apex.agent.ui.theme.PartSkinOverrides(),
+
     // ── 编辑器面板（v1.0 #154）──
     // editorFilePath 非空即挂载面板；editorFile 为加载结果（null = 加载中/失败态）。
     val editorFilePath: String? = null,

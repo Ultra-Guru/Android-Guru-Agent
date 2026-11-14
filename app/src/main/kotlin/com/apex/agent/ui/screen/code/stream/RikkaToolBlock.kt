@@ -56,7 +56,10 @@ import com.apex.agent.R
 import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.core.code.stream.ToolCallStatus
 import com.apex.agent.core.code.stream.ToolKind
+import com.apex.agent.ui.glass.PartSurface
+import com.apex.agent.ui.theme.CodingPart
 import com.apex.agent.ui.theme.LocalExtendedColors
+import androidx.compose.foundation.layout.PaddingValues
 import kotlinx.coroutines.delay
 
 /**
@@ -113,14 +116,16 @@ internal fun RikkaToolBlock(
             label = "rikka-block-pulse-alpha"
         )
 
-    Surface(
+    // v1.7 部件皮肤：工具聚合块默认 PALE_LIQUID（FR-6）；单层容器（FR-12）。
+    PartSurface(
+        part = CodingPart.STREAM_TOOL_CAPSULE,
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        active = hasLive,
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
             // ── 头行（多调用才有；单调用直接明细行）──
             if (calls.size > 1) {
                 Row(
@@ -247,7 +252,6 @@ internal fun RikkaToolBlock(
                     )
                 }
             }
-        }
     }
 }
 

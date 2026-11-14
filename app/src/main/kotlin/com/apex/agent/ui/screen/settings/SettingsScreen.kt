@@ -300,7 +300,12 @@ private fun SettingsPageRouter(
             onManageRoles = onManageRoles
         )
         // ═══ 工作台（原 Agent 配置：Agent 专属叶子已随 Agent 模式移除）═══
-        "workspace/coding" -> SettingsLeafColumn { CodingSettingsSection(agent, onAgent) }
+        // v1.7 部件外观（PartSkin spec §9）：「流水式输出UI」分区下方 ——
+        // 部件级皮肤切换 + 浅白液态玻璃（预览 / 预设 / 光晕滑杆 / 分组下拉）
+        "workspace/coding" -> SettingsLeafColumn {
+            CodingSettingsSection(agent, onAgent)
+            PartSkinSection(agent, onAgent)
+        }
         "workspace/subagent" -> SettingsLeafColumn { SubAgentSettingsSection(agent, onAgent) }
         "workspace/permissions" -> SettingsLeafColumn {
             PermissionSettingsSection(
