@@ -177,6 +177,17 @@ class PermissionDeciderTest {
         val skillSearch = PermissionDecider.decide(
             PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("SkillSearch")
         )
+        // v5 命名契约回归（T1-c）：MCP 一等工具 id 为 Mcp{Server}{Tool}，
+        // ROUTINE_CAPABILITY_PREFIXES 必须命中 —— 旧前缀表只认 mcp_ / mcp__，
+        // 对 McpGithubCreateIssue 这类真实 id 静默失配（V2 脚本面②）
+        val mcpV5Call = PermissionDecider.decide(
+            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("McpGithubCreateIssue")
+        )
+        val mcpV5Search = PermissionDecider.decide(
+            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("McpSearchWebSearch")
+        )
+        assertTrue(mcpV5Call is PermissionDecision.AllowExplicit)
+        assertTrue(mcpV5Search is PermissionDecision.AllowExplicit)
         assertTrue(skillRun is PermissionDecision.AllowExplicit)
         assertTrue(skillActivate is PermissionDecision.AllowExplicit)
         assertTrue(mcpCall is PermissionDecision.AllowExplicit)

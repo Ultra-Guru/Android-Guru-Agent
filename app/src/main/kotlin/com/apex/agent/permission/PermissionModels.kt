@@ -58,7 +58,7 @@ enum class PermissionEffect {
  * 单条权限规则：模式 + 效应。
  *
  * @param pattern 工具 id 模式——精确 id（如 CodeEdit），或前缀后接单个
- *   星号字符的尾缀通配（如 code_git_ 尾星、mcp__ 尾星）；单独一个星号
+ *   星号字符的尾缀通配（如 CodeGit 尾星、McpGithub 尾星）；单独一个星号
  *   字符匹配一切工具。完整匹配规则见 [PermissionRuleMatcher]。
  * @param effect 命中后的处置动作。
  */
@@ -85,8 +85,9 @@ val NO_SESSION_ALLOW_TOOLS: Set<String> = setOf("SmsSend", "sms_send")
  *  - 模式非法（空串 / 纯空白）→ 永不匹配；
  *  - 单独一个星号字符 → 匹配一切工具（用户显式全放行的快捷方式）；
  *  - 以星号字符结尾 → 去掉末尾星号后做前缀匹配（尾缀通配），
- *    服务 MCP 一等工具的动态注册（mcp__github__ 前缀可命中
- *    mcp__github__create_issue 这类运行期才知道的 id）；
+ *    服务 MCP 一等工具的动态注册（McpGithub 前缀可命中
+ *    McpGithubCreateIssue 这类运行期才知道的 id —— v5 命名
+ *    Mcp{Server}{Tool}，与 McpToolNaming.toolId 同源）；
  *  - 其余 → 精确 id 相等（大小写敏感）。
  *
  * 不支持中间通配——工具 id 是受控命名空间，前缀 + 精确两级已覆盖

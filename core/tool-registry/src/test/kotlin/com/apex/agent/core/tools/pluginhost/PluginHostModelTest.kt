@@ -125,18 +125,19 @@ class PluginHostModelTest {
     // ── 矩阵：审计基线锁 ──────────────────────────────────────────────────
 
     @Test
-    fun `claude matrix reflects phase 5 delivery`() {
+    fun `claude matrix reflects phase 5 delivery and phase 6_5 wiring`() {
         assertEquals(
             CapabilitySupport.SUPPORTED,
             PluginEcosystemMatrix.statusOf(PluginEcosystem.CLAUDE, PluginCapability.SKILLS)?.support
         )
-        // Phase 5 后：钩子调度与 MCP 桥已实现（安装链路接线待 Phase 6）→ PARTIAL
+        // Phase 6.5 收尾：hooks / .mcp.json 装后自动挂接（ClaudeCompatWiring，
+        // 真实 sh E2E + 归属回收锁）→ SUPPORTED
         assertEquals(
-            CapabilitySupport.PARTIAL,
+            CapabilitySupport.SUPPORTED,
             PluginEcosystemMatrix.statusOf(PluginEcosystem.CLAUDE, PluginCapability.HOOKS)?.support
         )
         assertEquals(
-            CapabilitySupport.PARTIAL,
+            CapabilitySupport.SUPPORTED,
             PluginEcosystemMatrix.statusOf(PluginEcosystem.CLAUDE, PluginCapability.MCP_SERVERS)?.support
         )
         assertEquals(

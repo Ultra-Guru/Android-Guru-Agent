@@ -3,7 +3,7 @@ package com.apex.agent.core.tools.catalog
 /**
  * # Tool System v4 — Tool Tiers (default-on core set)
  *
- * Root cause this fixes: the registry holds ~110 tools; sending every schema
+ * Root cause this fixes: the registry holds ~230 tools; sending every schema
  * on every request produced a 70–100 KB payload that small-context models and
  * strict OpenAI-compatible gateways reject outright ("directly sending a
  * message errors, you must pick functions first").
@@ -15,7 +15,7 @@ package com.apex.agent.core.tools.catalog
  *   grows past ~30 tools).
  *
  * v4 policy:
- * - **CORE** — a curated, always-exposed set (~45 ids below). These go into
+ * - **CORE** — a curated, always-exposed set (77 ids below). These go into
  *   every request with full schemas: the agent is *capable by default*.
  * - **CATALOG** — everything else. Not in the request; discoverable through
  *   the `ToolSearch` / `ToolOpen` / `ToolList` meta-tools. `ToolOpen`

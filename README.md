@@ -6,14 +6,14 @@
 
 <img src="docs/assets/banner.svg" alt="Android Guru Agent — 把整个 AI 编码工作台装进一部 Android 手机" width="1200"/>
 
-<a href="#quickstart"><img src="https://readme-typing-svg.demolab.com?font=Fira+Code&amp;weight=600&amp;size=18&amp;pause=1200&amp;color=00C2D1&amp;center=true&amp;vCenter=true&amp;width=940&amp;height=76&amp;lines=Code.+Compile.+Browse.+Remember.+%E2%80%94+entirely+on+one+device.;228+tools+%C2%B7+3+agent+modes+%C2%B7+PRoot+Ubuntu+24.04+%C2%B7+apex-kit-memory;No+server.+No+PC.+Bring+your+own+LLM." alt="Android Guru Agent — typing"/></a>
+<a href="#quickstart"><img src="https://readme-typing-svg.demolab.com?font=Fira+Code&amp;weight=600&amp;size=18&amp;pause=1200&amp;color=00C2D1&amp;center=true&amp;vCenter=true&amp;width=940&amp;height=76&amp;lines=Code.+Compile.+Browse.+Remember.+%E2%80%94+entirely+on+one+device.;180%2B+tools+%C2%B7+3+agent+modes+%C2%B7+PRoot+Ubuntu+24.04+%C2%B7+apex-kit-memory;No+server.+No+PC.+Bring+your+own+LLM." alt="Android Guru Agent — typing"/></a>
 
 # Android Guru Agent
 
 **看代码 · 写代码 · 跑终端 · 开浏览器 · 记经验 —— 一部 Android 手机全部做完。**
 
 一个开源的 Android 端 AI 编码工作台：OpenAI 兼容流式 LLM 接入、四条思考逻辑线
-（深潜七档 / 标准 / 织造 / 信使，运行时可切）、**228 个静态注册工具**（八层执行
+（深潜七档 / 标准 / 织造 / 信使，运行时可切）、**230+ 个静态注册工具**（八层执行
 硬化 + v4 渐进披露）、PRoot 沙箱化 **Ubuntu 24.04** 终端（真 `apt`、C++ PTY）、
 **41 个浏览器自动化工具**、apex-kit-memory 认知记忆（差分摄取 → 轨迹蒸馏 →
 FSM 旁路回放 → 梦境巩固）、Root → Shizuku → Shell 三级权限执行链、
@@ -32,7 +32,7 @@ MCP × 技能 × 市场 × 插件四层扩展 —— 全部跑在一台手机上
 <a href="https://github.com/Ultra-Guru/Android-Guru-Agent-Release/releases/latest"><img src="https://img.shields.io/badge/📦_下载_APK-发布仓库-2EA44F?logo=github" alt="Download APK"/></a>
 <img src="https://img.shields.io/badge/Kotlin-2.3.21-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin 2.3.21"/>
 <img src="https://img.shields.io/badge/Android-8.0%2B_(API_26)-3DDC84?logo=android&logoColor=white" alt="Android 8.0+"/>
-<a href="#tools"><img src="https://img.shields.io/badge/🧰_内置工具-228-00C2D1" alt="228 Tools"/></a>
+<a href="#tools"><img src="https://img.shields.io/badge/🧰_内置工具-230%2B-00C2D1" alt="230+ Tools"/></a>
 <a href="#testing"><img src="https://img.shields.io/badge/🧪_测试-383_文件_·_5,434_用例-2EA44F" alt="Tests"/></a>
 <a href="#architecture"><img src="https://img.shields.io/badge/📦_Gradle_模块-22-8A2BE2" alt="22 Modules"/></a>
 <a href="#license"><img src="https://img.shields.io/badge/🪶_license-UGRL_v1.0·受限使用-red" alt="License: UGRL v1.0 restricted"/></a>
@@ -72,7 +72,7 @@ MCP × 技能 × 市场 × 插件四层扩展 —— 全部跑在一台手机上
 
 **工程**
 - [⚡ 权限执行链](#privilege) · [🧩 扩展生态](#ecosystem)
-- [🏗️ 架构总览](#architecture) · [🔧 工具全景（228）](#tools)
+- [🏗️ 架构总览](#architecture) · [🔧 工具全景（230+）](#tools)
 - [🚀 快速开始](#quickstart) · [🆚 横向对比](#comparison)
 - [🧪 测试与质量](#testing) · [📊 CI/CD（18 流水线）](#cicd)
 - [📁 仓库结构与规模](#structure) · [🗺️ 路线图](#roadmap)
@@ -95,7 +95,7 @@ MCP × 技能 × 市场 × 插件四层扩展 —— 全部跑在一台手机上
 | 🧪 [CI debug 工件](https://github.com/Ultra-Guru/Android-Guru-Agent/actions/workflows/ci.yml) | `app-debug-apk`（debug 构建，保留 14 天） |
 | 💬 聊天版？ | 纯聊天模式在 [Theocracy](https://github.com/Ultra-Guru/Theocracy/releases) —— 两个项目下载入口不要混淆 |
 
-> 版本口径：源码基线 `1.5`（versionCode 179），发布线已滚动至 **v1.5.24**；
+> 版本口径：源码基线 `1.5`（versionCode 179），发布线已滚动至 **v1.5.59**；
 > 以发布仓库 Releases 实际列表为准。
 
 <p align="right"><a href="#readme-top" title="返回顶部">⬆️ 返回顶部</a></p>
@@ -116,7 +116,7 @@ MCP × 技能 × 市场 × 插件四层扩展 —— 全部跑在一台手机上
 
 | 你的设备 | 解锁的能力 |
 |----------|-----------|
-| 普通 Android 8.0+（API 26） | ✅ 全功能基线：PRoot Ubuntu 沙箱终端 + 应用沙箱 shell + 228 工具 + 浏览器 + 记忆 |
+| 普通 Android 8.0+（API 26） | ✅ 全功能基线：PRoot Ubuntu 沙箱终端 + 应用沙箱 shell + 230+ 工具 + 浏览器 + 记忆 |
 | + [Shizuku](https://shizuku.rikka.app/) | ➕ ADB 级权限（uid=2000）：pm install / settings / input / dumpsys |
 | + Root | ➕ chroot Ubuntu 后端（T98）+ `su` 特权链全系统操作 |
 | + 无障碍授权 | ➕ UI 语义交互（UiTap/UiDump）+ 屏幕感知（记忆采集）+ a11y 截图 |
@@ -139,7 +139,7 @@ MCP × 技能 × 市场 × 插件四层扩展 —— 全部跑在一台手机上
 | 🧠 | **仿生认知记忆** | 差分摄取（SceneDiffer，压缩 95%+）→ ReAct 轨迹蒸馏（MacroDistiller）→ FSM 宏 **0 token 旁路回放** → 梦境巩固（充电+空闲维护窗）；能量遗忘与晶化、记忆免疫隔离、跨版本拓扑迁移 |
 | 💭 | **四条思考逻辑线** | 深潜（七档 NONE→ULTRACODE→APEXCODE + AUTO 预检）/ 标准（五画像·权限三态门·task 子代理）/ 织造（apex-kit-loom 经纬交织）/ 信使（apex-kit-courier 驿传并行），运行时可切 |
 | 🛰️ | **BYO-LLM** | OpenAI 兼容协议 + 多模型角色路由（含图片自动走 VISION）+ Key 池四轮换模式 + `reasoning_content` 原生思维链透传（R1 / Qwen3-thinking / o 系列） |
-| 🖐️ | **工具系统 V5** | **228 个静态注册工具**（v4 渐进披露：70 个 CORE 常驻，按需展开）+ 八层执行硬化（超时/重试/限流/熔断/追踪/批量/组合动作/环境门控）+ MCP/技能/插件动态扩展 |
+| 🖐️ | **工具系统 V5** | **230+ 个静态注册工具**（v4 渐进披露：77 个 CORE 常驻，按需展开）+ 八层执行硬化（超时/重试/限流/熔断/追踪/批量/组合动作/环境门控）+ MCP/技能/插件动态扩展 |
 | 🗜️ | **上下文工程** | 三级压缩：工具输出智能截断 → 滑动窗口 → LLM 摘要；双引擎统一水位检查，长任务不爆窗口 |
 | ⚡ | **三级权限执行链** | Root → Shizuku → 普通沙箱 shell 自动降级（30s 缓存 + 审计日志），无 Root 设备也能执行 ADB 级命令；无障碍服务作为独立 UI 能力层 |
 | 🧩 | **四层扩展生态** | MCP（7 台内置服务器 + stdio/http 双传输 + `run_in_sandbox` 路由进 PRoot）× 技能（热重载装卸）× 市场（8 个源）× 插件（声明式功能性 + APK AIDL 双形态） |
@@ -343,8 +343,9 @@ privilege-chain 审计日志）：
 
 ### 技能系统
 
-`apex-skill-v1` manifest：**热重载**（装卸启停免重启）、Composite / Prompt 两型、
-作用域隔离（agent / coding / all）、随包内置 2 个技能、6 个管理工具
+`apex-skill-v1` manifest：**热重载**（装卸启停免重启）、Composite / Prompt /
+Script / Connector 四型、作用域隔离（agent / coding / all）、随包内置
+3 个技能、6 个管理工具
 （Search / Install / Create / List / Uninstall / Activate）。
 
 ### 市场（8 源统一检索）
@@ -393,7 +394,7 @@ ComposeFoundry 独立工程：
 ```text
 Android-Guru-Agent/
 ├── app/                       # 主 APK（applicationId com.apex.agent）：
-│                              #   Agent UI + 编排接入 + 228 个工具注册点(di/ 10 文件)
+│                              #   Agent UI + 编排接入 + 230+ 个工具注册点(di/ 10 文件)
 ├── core/
 │   ├── agent-engine/          # 编排内核：状态机 / Plan 图 / AskUser / 压缩门 / 思考控制
 │   ├── llm-adapter/           # OpenAI 兼容流式客户端 / 多模型路由 / Key 池 / reasoning 透传
@@ -438,7 +439,7 @@ flowchart TB
     U["用户输入 · Code 屏"] --> ENG["Agent 引擎<br/>BUILD / PLAN / GOAL"]
     ENG --> THINK["思考系统<br/>深潜七档 · 标准 · 织造 · 信使"]
     THINK --> LLM["LLM 适配层<br/>OpenAI 兼容 · Key 池 · 角色路由"]
-    LLM --> TOOLS["工具系统 V5<br/>228 内置 + MCP/技能/插件动态"]
+    LLM --> TOOLS["工具系统 V5<br/>238 内置 + MCP/技能/插件动态"]
     TOOLS --> T1["PRoot Ubuntu 终端"]
     TOOLS --> T2["浏览器 41 工具"]
     TOOLS --> T3["设备 / UI / 文件 / Git"]
@@ -452,10 +453,10 @@ flowchart TB
 ---
 
 <a id="tools"></a>
-## 🔧 工具全景（228 个静态注册）
+## 🔧 工具全景（238 个静态注册）
 
 <details open>
-<summary><b>📦 按能力域分组（数字来自 v1.5 源码静态盘点，各项相加 = 228）</b></summary>
+<summary><b>📦 按能力域分组（数字来自 v1.5 源码静态盘点，各项相加 = 238）</b></summary>
 
 | 能力域 | 数量 | 代表能力 |
 |--------|-----:|----------|
@@ -473,12 +474,12 @@ flowchart TB
 | 🌍 Web 与搜索 | 4 | WebFetch / WebSearch（SearxNG 本地优先链）/ HttpRequest / DownloadFile |
 | 🖲️ Shell + AskUser | 3 | 三级权限链 ShellExecute / 流式输出 / 用户问询门 |
 | 🗄️ 兼容别名 | 14 | 旧工具 id 兼容（注册但不下发，`ToolTierPolicy.LEGACY_ALIAS_IDS`） |
-| **合计** | **228** | 另有 MCP `Mcp{Server}{Tool}` / 技能 / 插件**动态注册**，不计入 |
+| **合计** | **238** | 另有 MCP `Mcp{Server}{Tool}` / 技能 / 插件**动态注册**，不计入 |
 
 </details>
 
-**渐进披露（v4）**：`CORE_TOOL_IDS` 只常驻 **70 个**高频核心，其余按需经
-`ToolSearch` / `ToolOpen` 展开 —— 228 个工具不挤爆系统提示词。
+**渐进披露（v4）**：`CORE_TOOL_IDS` 只常驻 **77 个**高频核心，其余按需经
+`ToolSearch` / `ToolOpen` 展开 —— 230+ 个工具不挤爆系统提示词。
 **执行硬化八层**：超时 → 重试阶梯 → 限流 → 熔断 → 追踪 → 批量 → 组合动作 →
 环境门控（详见 [docs/tool-retry-ladder.md](docs/tool-retry-ladder.md)）。
 
@@ -563,7 +564,7 @@ cd Android-Guru-Agent
 | 运行位置 | 📱 全程在设备上 | 💻 PC / 服务器 | 📱 设备上 | ☁️ 云端 |
 | 需要服务器/PC | ❌ 不需要 | ✅ 需要 | ❌ 不需要 | ✅（厂商云） |
 | LLM 可换性 | ✅ 任意 OpenAI 兼容 / 局域网 Ollama / Key 池 | 固定模型或自配 | 无 LLM | ❌ 固定 |
-| 执行能力 | **228 工具**：终端 / 文件 / Git / 浏览器 / 设备 UI / 记忆 | 文件 + shell + web | 规则触发，无推理 | 仅对话 |
+| 执行能力 | **238 工具**：终端 / 文件 / Git / 浏览器 / 设备 UI / 记忆 | 文件 + shell + web | 规则触发，无推理 | 仅对话 |
 | Linux 环境 | ✅ PRoot Ubuntu 24.04 沙箱（免 Root） | ✅ 宿主 OS | ❌ | ❌ |
 | 跨会话记忆 | ✅ 语义图 + FSM 宏旁路回放（0 token） | 仓库内文件（CLAUDE.md 等） | ❌ | 云端会话 |
 | 特权操作 | Root → Shizuku → 沙箱三级降级 | 宿主用户权限 | 需 Root 的居多 | ❌ |
