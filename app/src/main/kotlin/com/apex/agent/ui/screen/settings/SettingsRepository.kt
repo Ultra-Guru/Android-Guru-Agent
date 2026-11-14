@@ -610,7 +610,7 @@ data class AgentSettings(
     // 见 ui/screen/code/CodeOutputMode.kt。
     // codeOutputStyle：Coding 屏输出风格——"timeline"（默认，经典胶囊
     // 时间轴：胶囊流水/同族折叠/实时代码窗）| "rikka"（Rikka 风格聊天式：
-    // 用户右对齐气泡 + Markdown 结论 + 思考折叠卡 + 工具调用聚合块，含
+    // 用户右对齐气泡 + Markdown 结论 + 思考计时卡 + 工具调用聚合块，含
     // 技能/MCP 溯源标识与三分类聚合）。与 codeOutputMode（揭示时机）正交；
     // UI 渲染层开关（引擎/会话零参与），run 粒度捕获 + idle 期设置流实时
     // 同步。见 ui/screen/code/CodeOutputStyle.kt。
@@ -618,7 +618,6 @@ data class AgentSettings(
     // （默认开；关闭后回到 v2 的全局可见行为）。
     val codeOutputMode: String = "streaming",
     val codeOutputStyle: String = "timeline",
-    val codeRikkaThinkingCollapsed: Boolean = false,
     val mcpScopeIsolation: Boolean = true,
 
     // ═══ 部件级皮肤（PartSkin spec §7.2，v1.7）═══

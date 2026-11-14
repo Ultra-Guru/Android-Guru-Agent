@@ -62,7 +62,7 @@ import kotlinx.coroutines.launch
  * - 分段：连续工具胶囊（跨族）收进一张 [RikkaToolBlock]（聚合块）——
  *   流式「正在调用工具…」、收束「已调用 N 个工具」+ 三分类 chips，
  *   可展开每次调用明细（工具名 / 参数摘要 / 状态 / 耗时，点击进详情）；
- * - 皮肤：用户右对齐实色气泡、结论 Markdown 气泡、思考过程折叠卡、
+ * - 皮肤：用户右对齐实色气泡、结论 Markdown 气泡、思考计时状态卡、
  *   居中状态 pill（RikkaCards）——聊天 App 的对话形态。
  */
 @Composable
@@ -76,8 +76,6 @@ internal fun RikkaStreamTimeline(
     terminal: TerminalPanelState? = null,
     onToggleTerminalCollapse: () -> Unit = {},
     renderMode: CodeOutputMode = CodeOutputMode.STREAMING,
-    thinkingCollapsed: Boolean = false,
-    onThinkingCollapsedChange: (Boolean) -> Unit = {},
     // ═══ 失败结尾「继续完成」（用户规格 2026-11）：错误卡尾部播放入口 ═══
     onRetryRun: (() -> Unit)? = null
 ) {
@@ -152,25 +150,9 @@ internal fun RikkaStreamTimeline(
                 when (segment) {
                     is RikkaSegment.Single ->
                         item(key = segment.entry.id) {
-                            val entryIndex = visibleEntries.indexOfFirst { it.id == segment.entry.id }
-                            val nextAnswer = visibleEntries.drop(entryIndex + 1)
-                                .takeWhile { it !is StreamEntry.UserEntry }
-                                .filterIsInstance<StreamEntry.AssistantEntry>()
-                                .firstOrNull { it.text.isNotBlank() }
                             RikkaStreamCard(
                                 entry = segment.entry,
                                 onToolClick = onToolClick,
-                                thinkingCollapsed = thinkingCollapsed,
-                                onThinkingCollapsedChange = onThinkingCollapsedChange,
-                                onShowAnswer = nextAnswer?.let { answer ->
-                                    {
-                                        val index = segments.indexOfFirst {
-                                            it is RikkaSegment.Single && it.entry.id == answer.id
-                                        }
-                                        scope.launch { if (index >= 0) listState.animateScrollToItem(index) }
-                                        Unit
-                                    }
-                                },
                                 llmRetry = snapshot.llmRetry,
                                 onRetryRun = onRetryRun
                             )

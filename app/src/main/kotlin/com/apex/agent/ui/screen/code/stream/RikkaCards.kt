@@ -41,8 +41,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -74,7 +72,7 @@ import kotlinx.coroutines.delay
  *
  * 胶囊时间轴（CodeStreamCards）的 Rikka 皮肤版：工具胶囊改走聚合块
  * （RikkaToolBlock，时间轴分段层负责聚段），其余成员按聊天 App 语言
- * 重绘——用户右对齐实色气泡 / 结论 Markdown 气泡 / 思考过程折叠卡 /
+ * 重绘——用户右对齐实色气泡 / 结论 Markdown 气泡 / 思考计时状态卡 /
  * 验证轮次卡 / 居中状态 pill / 错误与停止卡（含「继续完成」入口）/ 文件
  * chips / 运行统计卡。Git 操作可视化卡直接复用（GitOpVisualCard 与皮肤
  * 无关）。
@@ -87,16 +85,13 @@ import kotlinx.coroutines.delay
 internal fun RikkaStreamCard(
     entry: StreamEntry,
     onToolClick: (StreamToolCall) -> Unit,
-    thinkingCollapsed: Boolean = false,
-    onThinkingCollapsedChange: (Boolean) -> Unit = {},
-    onShowAnswer: (() -> Unit)? = null,
     llmRetry: LlmRetryInfo? = null,
     onRetryRun: (() -> Unit)? = null
 ) {
     when (entry) {
         is StreamEntry.UserEntry -> RikkaUserBubble(entry.text)
         is StreamEntry.AssistantEntry -> RikkaAssistantBubble(entry.text, entry.isStreaming)
-        is StreamEntry.ThinkingEntry -> RikkaThinkingCard(entry.text, entry.isStreaming, thinkingCollapsed, onThinkingCollapsedChange, onShowAnswer, llmRetry)
+        is StreamEntry.ThinkingEntry -> RikkaThinkingCard(entry.isStreaming, llmRetry)
         // 时间轴分段层已把连续胶囊收进 RikkaToolBlock，此分支只在单胶囊
         // 直渲染（防御）时触达——单调用块本身就是一行工具卡。
         is StreamEntry.ToolCapsuleEntry -> RikkaToolBlock(listOf(entry.call), onToolClick)
@@ -245,40 +240,18 @@ private fun RikkaStreamingDot() {
     ) {}
 }
 
-// ═══ 思考过程折叠卡（RikkaHub 同款：实时秒表标题 + 流式展开 / 收束折叠）═══
-// rikkahub 形态：「思考了 %1$.1f 秒」实时计时（50ms 级刷新的秒表语言），
-// 流式中标题呼吸；完成后定格总时长。UI 层测时（ThinkingEntry 无耗时
+// ═══ 思考计时状态卡（只显示计时，不展示思考详细过程——用户规格 2026-11）═══
+// rikkahub 的秒表语言保留：「思考中 · X 秒」实时计时 + 流式标题呼吸，完成
+// 后定格「思考了 X 秒」。思考文本 / 折叠展开 / 首句预览 /「直接看回答」全部
+// 移除（点击交互随之消失，无涟漪黑影）；UI 层测时（ThinkingEntry 无耗时
 // 字段，不侵入 core）：startedAt 首帧记录 + rememberSaveable 防列表滚动
 // 重建重置；收束瞬间定格 finalElapsed。
 
 @Composable
 private fun RikkaThinkingCard(
-    text: String,
     isStreaming: Boolean,
-    defaultCollapsed: Boolean,
-    onCollapsedChange: (Boolean) -> Unit,
-    onShowAnswer: (() -> Unit)?,
     llmRetry: LlmRetryInfo? = null
 ) {
-    // key 语义与胶囊思考卡同款：不能拿派生值当 key（空卡点开后首 token
-    // 到达会重置展开态）；手动干预优先于自动展开/折叠。
-    var expanded by rememberSaveable { mutableStateOf(isStreaming && !defaultCollapsed) }
-    LaunchedEffect(isStreaming) {
-        if (!isStreaming) expanded = false
-    }
-    val latestText by rememberUpdatedState(text)
-    var displayed by remember { mutableStateOf(if (isStreaming) "" else text) }
-    val reveal = remember { RikkaThinkingReveal() }
-    LaunchedEffect(isStreaming) {
-        if (!isStreaming) {
-            displayed = reveal.advance(latestText, isStreaming = false)
-        } else {
-            while (true) {
-                displayed = reveal.advance(latestText, isStreaming = true)
-                delay(25L)
-            }
-        }
-    }
     // ── 实时秒表（rikkahub「思考了 X 秒」）：首帧起表，100ms 步进；
     // 收束瞬间定格，滚动重建不重置（rememberSaveable）──
     var startedAt by rememberSaveable { mutableLongStateOf(0L) }
@@ -322,80 +295,38 @@ private fun RikkaThinkingCard(
             label = "rikka-think-pulse-alpha"
         )
     // v1.7 部件皮肤（PartSkin spec FR-5）：思考卡默认浅白液态玻璃 ——
-    // 秒表/折叠/打字机 reveal 逻辑零改动，只换容器（Surface → PartSurface）；
-    // 重试红只上图标/标题（FR-11）。FR-9：展开态 key 与 skin 无关。
+    // 重试红只上图标/标题（FR-11）。纯状态卡无 onClick：无涟漪反馈。
     PartSurface(
         part = CodingPart.STREAM_THINKING,
         active = isStreaming,
-        onClick = {
-            expanded = !expanded
-            onCollapsedChange(!expanded)
-        },
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
     ) {
-        // v1.2 G2 内部件（P0-E）：标题行/正文可独立换肤；默认 EMBEDDED
+        // v1.2 G2 内部件（P0-E）：标题行可独立换肤；默认 EMBEDDED
         //（零容器，contentPadding=0 保持原视觉），H-4 嵌套退化生效。
         PartSurface(
             part = CodingPart.STREAM_THINKING_HEADER,
             contentPadding = PaddingValues(0.dp)
         ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = if (llmRetry != null) Icons.Default.Refresh else Icons.Default.Psychology,
-                contentDescription = null,
-                tint = if (llmRetry != null) MaterialTheme.colorScheme.error
-                else MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.size(14.dp)
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = titleText,
-                style = MaterialTheme.typography.labelMedium,
-                color = if (llmRetry != null) MaterialTheme.colorScheme.error
-                else MaterialTheme.colorScheme.onSurfaceVariant
-                    .copy(alpha = if (isStreaming) titlePulse else 1f)
-            )
-            Spacer(Modifier.weight(1f))
-            Icon(
-                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.outline,
-                modifier = Modifier.size(14.dp)
-            )
-        }
-        }
-        PartSurface(
-            part = CodingPart.STREAM_THINKING_BODY,
-            contentPadding = PaddingValues(0.dp)
-        ) {
-        AnimatedVisibility(visible = expanded) {
-            Text(
-                text = if (isStreaming) displayed else text,
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 6.dp)
-            )
-        }
-        if (onShowAnswer != null) {
-            TextButton(onClick = { expanded = false; onShowAnswer() }) {
-                Text(stringResource(R.string.rikka_thinking_show_answer))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (llmRetry != null) Icons.Default.Refresh else Icons.Default.Psychology,
+                    contentDescription = null,
+                    tint = if (llmRetry != null) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = titleText,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (llmRetry != null) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                        .copy(alpha = if (isStreaming) titlePulse else 1f)
+                )
             }
-        }
-        if (!expanded && text.isNotBlank()) {
-            Text(
-                text = stringResource(R.string.rikka_thinking_preview_fmt, rikkaThinkingFirstSentence(text)),
-                style = MaterialTheme.typography.labelSmall,
-                fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.outline,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp)
-            )
-        }
         }
     }
 }
