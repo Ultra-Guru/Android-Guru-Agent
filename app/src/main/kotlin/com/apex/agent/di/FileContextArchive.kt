@@ -24,8 +24,17 @@ import java.io.IOException
  *
  * 同一工具结果可能先后以「原文」与「被截断版」两次进归档（先压缩裁剪、
  * 后就地截断的情形）——按 `toolCallId` 去重**保留更长的原文**，其余消息
- * 结构性去重。条数封顶 [MAX_RECORDS]（丢最旧）：一次压缩通常裁几十至
- * 几百条，2000 条已覆盖超长会话的多轮压缩。
+ * 结构性去重。条数封顶 [MAX_RECORDS]（丢最旧）+ 字节封顶 [MAX_ARCHIVE_BYTES]
+ * （#862：归档存未截断原文，单条可达 100k 字符，纯条数上限挡不住数十 MB
+ * 的归档文件）：一次压缩通常裁几十至几百条，2000 条 / 4MB 已覆盖超长
+ * 会话的多轮压缩。
+ *
+ * ## 锁纪律（#862）
+ *
+ * [appendArchived] 锁内只做 merge 与缓存置换；JSON 编码与写盘在锁外
+ * 执行（[persist] 以 [writeEpoch] 守卫：编码期间有新写入/clear 进来则
+ * 本快照过时、放弃落盘——后继快照必含本批消息，不丢数据）。检索工具
+ * （同锁的 [archivedRecords] / [size]）不再被数十 MB 级序列化阻塞。
  *
  * ## 会话生命周期
  *
@@ -85,6 +94,14 @@ class FileContextArchive(private val baseDir: File) : SessionContextArchive {
     @Volatile
     private var cache: List<StoredMessage>? = null
 
+    /**
+     * 写入代数（#862）：锁内递增，锁外 persist 完成编码后核对——不一致即
+     * 本快照已过时（并发 append / clear 领先），放弃落盘。@Volatile：
+     * persist 在锁外读它。
+     */
+    @Volatile
+    private var writeEpoch: Long = 0L
+
     private val file: File
         get() = File(baseDir, ARCHIVE_FILE)
 
@@ -94,13 +111,18 @@ class FileContextArchive(private val baseDir: File) : SessionContextArchive {
 
     override fun appendArchived(messages: List<LlmMessage>) {
         if (messages.isEmpty()) return
+        // #862：锁内仅 merge + 缓存置换；编码与写盘移出锁（见类 KDoc 锁纪律）
+        var merged: List<StoredMessage>
+        var epoch: Long
         synchronized(lock) {
             val base = ensureCache().toMutableList()
-            val merged = merge(base, messages.map { StoredMessage.from(it) })
-                .takeLast(MAX_RECORDS)
+            merged = enforceByteBudget(
+                merge(base, messages.map { StoredMessage.from(it) }).takeLast(MAX_RECORDS)
+            )
             cache = merged
-            persist(merged)
+            epoch = ++writeEpoch
         }
+        persist(merged, epoch)
     }
 
     override fun archivedRecords(): List<ContextRecord> = synchronized(lock) {
@@ -114,6 +136,9 @@ class FileContextArchive(private val baseDir: File) : SessionContextArchive {
     override fun clear() {
         synchronized(lock) {
             cache = emptyList()
+            // #862：clear 也推代数——在途 persist 的旧快照不得在 delete 后
+            // rename 复活归档
+            ++writeEpoch
             runCatching { file.delete() }
                 .onFailure { e ->
                     AppLogger.instance.warn(
@@ -178,6 +203,44 @@ class FileContextArchive(private val baseDir: File) : SessionContextArchive {
         return loaded
     }
 
+    /**
+     * 字节预算（#862）：在条数封顶之外再叠加字节封顶——归档存未截断原文
+     * （单条可达 100k 字符），2000 条纯条数上限可被顶到数十 MB，导致每
+     * 次压缩事件的全量序列化 + 整文件重写都数十 MB 级。超预算从最旧丢起
+     * （保留更新的条目）；单条即超预算时也保留最新一条，绝不清空归档。
+     * 预算按 UTF-8 估算（内容 + 工具调用三字段 + 结构开销），不做真实
+     * 序列化测长（那正是要移出锁外的高成本操作）。
+     */
+    private fun enforceByteBudget(messages: List<StoredMessage>): List<StoredMessage> {
+        var total = 0L
+        for (m in messages) total += estimatedBytes(m)
+        if (total <= MAX_ARCHIVE_BYTES) return messages
+        // 从最新往回累加到预算线，保留该后缀（更旧的丢弃）
+        var acc = 0L
+        var keepFrom = messages.size
+        for (i in messages.indices.reversed()) {
+            val size = estimatedBytes(messages[i])
+            if (acc + size > MAX_ARCHIVE_BYTES) break
+            acc += size
+            keepFrom = i
+        }
+        return if (keepFrom < messages.size) {
+            messages.subList(keepFrom, messages.size).toList()
+        } else {
+            messages.takeLast(1)
+        }
+    }
+
+    /** 单条归档记录的 UTF-8 体积估算（字段长 + 结构开销）。 */
+    private fun estimatedBytes(m: StoredMessage): Long {
+        var n = 64L + m.role.length + m.content.toByteArray(Charsets.UTF_8).size
+        for (c in m.toolCalls) {
+            n += 48L + c.id.length + c.name.length +
+                c.arguments.toByteArray(Charsets.UTF_8).size
+        }
+        return n
+    }
+
     /** 坏档隔离：改名 .corrupt 留排查线索（与 CodeSessionStore 同款策略）。 */
     private fun quarantine() {
         runCatching {
@@ -189,17 +252,29 @@ class FileContextArchive(private val baseDir: File) : SessionContextArchive {
         }
     }
 
-    /** 原子写：tmp + rename，失败降级直写；全部失败留痕（不抛）。 */
-    private fun persist(messages: List<StoredMessage>) {
+    /**
+     * 原子写：tmp + rename，失败降级直写；全部失败留痕（不抛）。
+     *
+     * #862：编码与写盘在锁外执行；[epoch] 是快照拍摄时的写入代数，落盘
+     * 前核对——过时快照（并发 append / clear 已领先）放弃落盘，后继
+     * persist 的快照必含本批消息，不丢数据。
+     */
+    private fun persist(messages: List<StoredMessage>, epoch: Long) {
         try {
             val raw = json.encodeToString(serializer, messages)
             val tmp = File(file.parentFile, file.name + ".tmp")
             tmp.writeText(raw, Charsets.UTF_8)
+            if (writeEpoch != epoch) {
+                // 快照过时：更新版本的快照已在途/已落盘，本份作废
+                runCatching { tmp.delete() }
+                return
+            }
             if (!tmp.renameTo(file)) {
                 tmp.copyTo(file, overwrite = true)
                 tmp.delete()
             }
         } catch (e: IOException) {
+            if (writeEpoch != epoch) return
             runCatching { file.writeText(json.encodeToString(serializer, messages), Charsets.UTF_8) }
                 .onFailure {
                     AppLogger.instance.warn(
@@ -214,5 +289,11 @@ class FileContextArchive(private val baseDir: File) : SessionContextArchive {
         const val ARCHIVE_FILE = "session_archive.json"
         /** 归档条数封顶（丢最旧）：覆盖超长会话的多轮压缩累积。 */
         const val MAX_RECORDS = 2000
+        /**
+         * 归档字节封顶（#862）：UTF-8 估算口径，约 2000 条 × 2KB 均值。
+         * 超限从最旧丢起——防止归档存未截断原文时每次压缩事件都做数十 MB
+         * 级的锁内序列化 + 整文件重写。
+         */
+        const val MAX_ARCHIVE_BYTES: Long = 4L * 1024 * 1024
     }
 }

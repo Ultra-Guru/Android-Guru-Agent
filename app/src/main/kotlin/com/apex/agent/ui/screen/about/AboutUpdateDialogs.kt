@@ -260,6 +260,9 @@ internal fun PatchFlowDialogs(
                 PatchUpdateEngine.FailKind.DECODE -> stringResource(
                     R.string.about_update_patch_failed_decode, flow.detail.orEmpty()
                 )
+                PatchUpdateEngine.FailKind.PATCH_TOO_LARGE -> stringResource(
+                    R.string.about_update_patch_failed_too_large
+                )
                 PatchUpdateEngine.FailKind.INSTALLER -> stringResource(
                     R.string.about_update_patch_failed_installer, flow.detail.orEmpty()
                 )

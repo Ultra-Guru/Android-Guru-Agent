@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.StatFs
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -48,7 +49,7 @@ class PatchUpdateEngine(
 ) {
 
     /** 失败类别 —— UI 据此出本地化文案，detail 供日志/高级折叠。 */
-    enum class FailKind { SPACE, DOWNLOAD, VERIFY, DECODE, INSTALLER }
+    enum class FailKind { SPACE, DOWNLOAD, VERIFY, DECODE, INSTALLER, PATCH_TOO_LARGE }
 
     /** 流水线状态 —— UI 按类型渲染，无需解析错误码。 */
     sealed interface State {
@@ -176,6 +177,18 @@ class PatchUpdateEngine(
             for ((index, step) in chain.steps.withIndex()) {
                 val number = index + 1
                 val fileName = step.url.substringAfterLast('/')
+                // #859 体积门（引擎侧防御，清单体积可谎报/缺字段）：超限段
+                // 直接判失败——readBytes() 整段入堆在中低端机必 OOM，与其下载
+                // 几百 MB 后闪退，不如开局即拦、引导全量。
+                if (step.sizeBytes > PatchIndex.MAX_PATCH_BYTES) {
+                    listener.onStateChanged(
+                        State.Failed(
+                            FailKind.PATCH_TOO_LARGE,
+                            "patch $number: $fileName (${step.sizeBytes}B > ${PatchIndex.MAX_PATCH_BYTES}B)"
+                        )
+                    )
+                    return
+                }
                 val segmentFile = downloader.localFile(fileName)
                 if (isSegmentComplete(segmentFile, step)) {
                     // 断点续传：该段已完整落盘且指纹对账通过 —— 不重下
@@ -207,6 +220,18 @@ class PatchUpdateEngine(
                     )
                 }
                 val file = downloader.localFile(fileName)
+                // #859 体积门（落盘后复检）：清单缺 sizeBytes 或体积谎报时，
+                // 以磁盘真实长度为准拦截，绝不让超限段进 readBytes()。
+                if (file.length() > PatchIndex.MAX_PATCH_BYTES) {
+                    runCatching { file.delete() }
+                    listener.onStateChanged(
+                        State.Failed(
+                            FailKind.PATCH_TOO_LARGE,
+                            "patch $number: $fileName (${file.length()}B on disk)"
+                        )
+                    )
+                    return
+                }
                 if (!file.exists() || !downloader.verifySha256(file, step.sha256)) {
                     listener.onStateChanged(
                         State.Failed(FailKind.VERIFY, "patch $number: $fileName")
@@ -229,6 +254,14 @@ class PatchUpdateEngine(
                 for ((index, patchFile) in patchFiles.withIndex()) {
                     val number = index + 1
                     val isLast = number == patchFiles.size
+                    // #859 体积门（断点续传资产复检）：历史落盘段同样过阈值——
+                    // 链切换/清单修正后旧资产不再无条件信任。
+                    if (patchFile.length() > PatchIndex.MAX_PATCH_BYTES) {
+                        throw FlowException(
+                            FailKind.PATCH_TOO_LARGE,
+                            "patch $number: ${patchFile.name} (${patchFile.length()}B)"
+                        )
+                    }
                     val output = if (isLast) finalApkFile(manifest) else {
                         File(workDir, "ApexAgent-chain-step$number.apk").also {
                             runCatching { it.delete() }
@@ -274,7 +307,21 @@ class PatchUpdateEngine(
             listener.onStateChanged(
                 State.Ready(finalApk, expectedAsset?.sizeBytes ?: finalApk.length())
             )
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // 取消不是失败：流水线被 cancel 时让协程正常终结（状态由调用方重置）
+            if (e is CancellationException) throw e
+            if (e is OutOfMemoryError) {
+                // #859：OOMError 不被 catch(Exception) 捕获，旧实现直接带走
+                // 整个进程（常驻前台服务宿主陪葬）——降级为可恢复失败并引导全量。
+                AppLogger.instance.error(
+                    LogCategory.SYSTEM, "PatchUpdateEngine",
+                    "增量更新内存不足（已降级为失败态，建议改用全量包）"
+                )
+                listener.onStateChanged(
+                    State.Failed(FailKind.PATCH_TOO_LARGE, "OutOfMemoryError while applying patch")
+                )
+                return
+            }
             AppLogger.instance.warn(
                 LogCategory.SYSTEM, "PatchUpdateEngine",
                 "增量更新失败：${e.message}"
