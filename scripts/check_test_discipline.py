@@ -4,7 +4,7 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 # 背景：测试纪律漂移——runBlocking 替代 runTest（虚拟时间不推进、超时语义
 #   失真）、Thread.sleep 轮询替代假钟注入（墙钟依赖、CI 高负载下 flake）。
-#   全仓存量（2026-10 基线）：runBlocking 696 处 / Thread.sleep 33 处，横跨
+#   全仓存量（2026-11 重钉）：runBlocking 704 处 / Thread.sleep 33 处，横跨
 #   83 个测试文件 —— 一次性清零不现实也不安全（大量集成风格测试刻意使用
 #   真实异步 + 轮询等待，见 AGENTS.md「backgroundScope 不受 advanceUntilIdle
 #   推进」的既有约定）。
@@ -33,7 +33,7 @@ import sys
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # ── 棘轮基线（issue #276：只降不升；清理后 --update-baseline 重钉）──────────
-BASELINE_RUN_BLOCKING = 696
+BASELINE_RUN_BLOCKING = 704
 BASELINE_THREAD_SLEEP = 33
 
 RUN_BLOCKING_RE = re.compile(r"\brunBlocking\b")
