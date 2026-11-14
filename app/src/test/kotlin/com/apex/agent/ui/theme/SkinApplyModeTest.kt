@@ -16,25 +16,23 @@ class SkinApplyModeTest {
 
     @Test
     fun `resolve policy full 3x3 matrix`() {
-        // AUTO：仅 HIGH 立即，MID/LOW 新对话
-        assertEquals(SkinApplyPolicy.ON_NEW_CHAT, resolvePolicy(SkinApplyMode.AUTO, DevicePerfTier.LOW))
-        assertEquals(SkinApplyPolicy.ON_NEW_CHAT, resolvePolicy(SkinApplyMode.AUTO, DevicePerfTier.MID))
-        assertEquals(SkinApplyPolicy.IMMEDIATE, resolvePolicy(SkinApplyMode.AUTO, DevicePerfTier.HIGH))
-        // IMMEDIATE：LOW 硬拒（NFR-16），MID/HIGH 立即
-        assertEquals(SkinApplyPolicy.ON_NEW_CHAT, resolvePolicy(SkinApplyMode.IMMEDIATE, DevicePerfTier.LOW))
-        assertEquals(SkinApplyPolicy.IMMEDIATE, resolvePolicy(SkinApplyMode.IMMEDIATE, DevicePerfTier.MID))
-        assertEquals(SkinApplyPolicy.IMMEDIATE, resolvePolicy(SkinApplyMode.IMMEDIATE, DevicePerfTier.HIGH))
-        // ON_NEW_CHAT：全分级新对话
-        assertEquals(SkinApplyPolicy.ON_NEW_CHAT, resolvePolicy(SkinApplyMode.ON_NEW_CHAT, DevicePerfTier.LOW))
-        assertEquals(SkinApplyPolicy.ON_NEW_CHAT, resolvePolicy(SkinApplyMode.ON_NEW_CHAT, DevicePerfTier.MID))
-        assertEquals(SkinApplyPolicy.ON_NEW_CHAT, resolvePolicy(SkinApplyMode.ON_NEW_CHAT, DevicePerfTier.HIGH))
+        // AUTO / IMMEDIATE：全分级立即（2026-11「呈现立即」修订）
+        DevicePerfTier.entries.forEach { tier ->
+            assertEquals(SkinApplyPolicy.IMMEDIATE, resolvePolicy(SkinApplyMode.AUTO, tier))
+            assertEquals(SkinApplyPolicy.IMMEDIATE, resolvePolicy(SkinApplyMode.IMMEDIATE, tier))
+            // ON_NEW_CHAT：全分级新对话（显式 opt-out）
+            assertEquals(SkinApplyPolicy.ON_NEW_CHAT, resolvePolicy(SkinApplyMode.ON_NEW_CHAT, tier))
+        }
     }
 
     @Test
-    fun `immediate plus low is hard rejected`() {
-        // NFR-16：状态机不信任 UI 置灰 —— LOW 档即使手动切 IMMEDIATE 也被拒
-        val policy = resolvePolicy(SkinApplyMode.IMMEDIATE, DevicePerfTier.LOW)
-        assertEquals(SkinApplyPolicy.ON_NEW_CHAT, policy)
+    fun `low tier no longer hard rejected`() {
+        // 2026-11 修订：原 NFR-16 硬拒作废 —— LOW 档手动 IMMEDIATE 也立即；
+        // LOW 渲染防护交给 §10 静帧降级（非提升时机门）
+        assertEquals(
+            SkinApplyPolicy.IMMEDIATE,
+            resolvePolicy(SkinApplyMode.IMMEDIATE, DevicePerfTier.LOW)
+        )
     }
 
     // ═══ DeviceMetrics.tier() 边界（附录 I-1）═══

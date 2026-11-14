@@ -172,21 +172,18 @@ class ConversationSkinTest {
     }
 
     @Test
-    fun `auto resolves per tier in stage`() {
+    fun `auto promotes inline for all tiers when idle`() {
         val next = snapshot(partSkins = nextOverrides)
-        // AUTO + HIGH → IMMEDIATE：idle 立即提升
-        val highAuto = activation(SkinApplyMode.AUTO, DevicePerfTier.HIGH)
-        assertEquals(SkinApplyPolicy.IMMEDIATE, highAuto.effectivePolicy)
-        assertNull(highAuto.stage(next, setOf(changedPart), isRunning = false).pending)
-        // AUTO + MID / LOW → ON_NEW_CHAT：保持 pending
-        val midAuto = activation(SkinApplyMode.AUTO, DevicePerfTier.MID)
-        assertTrue(midAuto.stage(next, setOf(changedPart), isRunning = false).hasPending)
-        val lowAuto = activation(SkinApplyMode.AUTO, DevicePerfTier.LOW)
-        assertTrue(lowAuto.stage(next, setOf(changedPart), isRunning = false).hasPending)
-        // LOW + 手动 IMMEDIATE → resolvePolicy 硬拒（NFR-16）
+        // AUTO 全分级 → IMMEDIATE（2026-11「呈现立即」修订）：idle 全部内联提升
+        DevicePerfTier.entries.forEach { tier ->
+            val activation = activation(SkinApplyMode.AUTO, tier)
+            assertEquals(SkinApplyPolicy.IMMEDIATE, activation.effectivePolicy)
+            assertNull(activation.stage(next, setOf(changedPart), isRunning = false).pending)
+        }
+        // LOW + 手动 IMMEDIATE → 同样立即（原 NFR-16 硬拒作废）
         val lowImmediate = activation(SkinApplyMode.IMMEDIATE, DevicePerfTier.LOW)
-        assertEquals(SkinApplyPolicy.ON_NEW_CHAT, lowImmediate.effectivePolicy)
-        assertTrue(lowImmediate.stage(next, setOf(changedPart), isRunning = false).hasPending)
+        assertEquals(SkinApplyPolicy.IMMEDIATE, lowImmediate.effectivePolicy)
+        assertNull(lowImmediate.stage(next, setOf(changedPart), isRunning = false).pending)
     }
 
     // ═══ onRunSettled 语义（v1.3 §7.9.3）：promote 幂等 + 策略门 ═══

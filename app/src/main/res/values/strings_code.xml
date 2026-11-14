@@ -448,4 +448,8 @@
     <string name="code_stream_detail_origin_mcp">MCP</string>
     <string name="code_error_expand">Show full error</string>
     <string name="code_error_collapse">Collapse error</string>
+    <string name="code_skin_pending_running">Appearance switched · applies when this reply settles</string>
+    <string name="code_skin_pending_new_chat">Appearance switched · applies in a new chat</string>
+    <string name="code_skin_pending_apply_now">Apply now</string>
+    <string name="code_skin_pending_discard">Revert</string>
 </resources>

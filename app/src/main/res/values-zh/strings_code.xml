@@ -447,4 +447,8 @@
     <string name="code_stream_detail_origin_mcp">MCP</string>
     <string name="code_error_expand">展开完整错误</string>
     <string name="code_error_collapse">收起错误</string>
+    <string name="code_skin_pending_running">外观已切换 · 本轮收束后生效</string>
+    <string name="code_skin_pending_new_chat">外观已切换 · 新对话后生效</string>
+    <string name="code_skin_pending_apply_now">立即应用</string>
+    <string name="code_skin_pending_discard">撤销</string>
 </resources>
