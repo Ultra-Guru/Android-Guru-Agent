@@ -25,7 +25,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BlurOn
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.NightsStay
@@ -211,6 +210,12 @@ private fun GlassLabContent(mode: GlassLabMode) {
     var showDialog by remember { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
 
+    // ═══ Gate-0 探针枢纽：各小节写入实测读数，验收清单读取显示（P-4）═══
+    // 降级档探针在本页一次性采集（NFR-14 采样纪律），其余探针由
+    // 并排台 / Dark 栏的按钮触发写入。
+    val probeHub = rememberGlassProbeHub()
+    LadderProbeEffect(probeHub = probeHub)
+
     // 模式专属页面底色：夜间近黑渐沉，白天通透提亮 —— 保证 Frosted 档
     // （无 backdrop 采样）也坐在正确的明暗基底上，不与外层主题串色。
     val pageBrush = if (mode == GlassLabMode.NIGHT) {
@@ -245,9 +250,11 @@ private fun GlassLabContent(mode: GlassLabMode) {
         // 本页为动效验证屏的豁免规则见文件头）
         EffectsWorkshopSection()
         BackdropZone(state = backdropState, mode = mode)
-        // v1.5.2：酷安式深色 Dock —— 第二采样场景（固定栏 + 滚动内容），
-        // 两个实验室共用（嵌套强制深色主题，与实验室模式正交）
-        DarkBarSection()
+        // v1.5.2 酷安式深色 Dock → Gate-0 v2（D-1～D-7 修复版，布局数学在
+        // GlassDockMath；v1 已随 Gate-0 退役）—— 模式驱动采样源明暗（D-5）
+        DarkBarSectionV2(mode = mode, probeHub = probeHub)
+        // Gate-0 P-2：双态并排台（同一配方 × 夜/日双基底 + 会话快照预设 D-10）
+        SideBySideBenchSection(probeHub = probeHub)
         SamplesSection(mode = mode)
         // kyant0：Ambient 材质对照样本（agent 回复气泡同款，白天/夜间自动跟随主题）
         AmbientMaterialSection()
@@ -259,7 +266,7 @@ private fun GlassLabContent(mode: GlassLabMode) {
         ToolStatesSection()
         InputSection()
         DialogSection(onOpen = { showDialog = true })
-        ChecklistSection(mode = mode)
+        ChecklistSection(mode = mode, probeHub = probeHub)
     }
 
     if (showDialog) {

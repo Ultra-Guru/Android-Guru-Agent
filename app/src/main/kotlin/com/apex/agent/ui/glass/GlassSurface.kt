@@ -25,7 +25,6 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.dp
 import com.apex.agent.ui.screen.code.LocalConversationSkin
 import com.apex.agent.ui.theme.LocalUiStyle
-import com.apex.agent.ui.theme.UiStyle
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.BackdropEffectScope
 import com.kyant.backdrop.backdrops.emptyBackdrop
@@ -112,8 +111,15 @@ fun GlassSurface(
     // 会话快照取（LocalConversationSkin —— 会话内冻结，改动只挂 pending）；
     // 壳层 / 设置页 / GlassLab 无会话 → 回落全局 LocalUiStyle（外观不受
     // 「待生效」影响，配色类仍由 ApexTheme 全局下发）。
+    //
+    // Gate-0 D-10：判定经 [GlassSkinGate]（纯函数）—— 生产与玻璃实验室
+    // 并排台（GlassLabBench 显式 provide 会话快照）读同一条短路路径，
+    // Gate0ParityTest 锁语义；实验室结论从此对生产可信。
     val conversation = LocalConversationSkin.current
-    val minimalStyle = (conversation?.uiStyle ?: LocalUiStyle.current) == UiStyle.MINIMAL
+    val minimalStyle = GlassSkinGate.shortCircuitsToFlat(
+        conversationUiStyleKey = conversation?.uiStyle?.key,
+        globalUiStyleKey = LocalUiStyle.current.key
+    )
     if (minimalStyle && !forceGlass) {
         FlatSurface(
             modifier = modifier,

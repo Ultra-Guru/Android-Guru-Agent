@@ -36,5 +36,54 @@
 
     <!-- ═══ Glass Lab：Cloudy 真模糊材质样本（v7 agent 回复气泡）═══ -->
 
+    <!-- ═══ Glass Lab · Gate-0 成品化（深色 Dock v2 / 双态并排台 / 配方导出）═══ -->
+    <string name="glasslab_darkbar_title">Dark 栏 · 酷安式深色 Dock v2</string>
+    <string name="glasslab_darkbar_hint">玻璃底与内容分层：发布按钮凸出栏顶 18dp；五槽分页让 8 项全部可点；药丸页内独立（GlassDockMath）。切换档位对照「为什么 Dock 不能用 FAB 档」。</string>
+    <string name="glasslab_darkbar_chip_dock">Dock</string>
+    <string name="glasslab_darkbar_chip_card">Card</string>
+    <string name="glasslab_darkbar_chip_floating">Floating</string>
+    <string name="glasslab_darkbar_chip_pale">Pale</string>
+    <string name="glasslab_darkbar_caption">8 项双页 · 页内药丸 · 实心发布按钮凸出栏顶 18dp</string>
+    <string name="glasslab_darkbar_probe_traverse">遍历 8 项</string>
+    <string name="glasslab_darkbar_probe_scan">容器完整性扫描</string>
+    <string name="glasslab_darkbar_scan_double">双底边嫌疑</string>
+    <string name="glasslab_darkbar_scan_single">单边界（健康）</string>
+    <string name="glasslab_darkbar_scan_unavailable">像素读回不可用</string>
+    <string name="glasslab_dest_home">首页</string>
+    <string name="glasslab_dest_digital">数码</string>
+    <string name="glasslab_dest_explore">发现</string>
+    <string name="glasslab_dest_mine">我的</string>
+    <string name="glasslab_dest_video">视频</string>
+    <string name="glasslab_dest_game">游戏</string>
+    <string name="glasslab_dest_music">音乐</string>
+    <string name="glasslab_dest_settings">设置</string>
+    <string name="glasslab_bench_title">双态并排台 · NIGHT vs DAY</string>
+    <string name="glasslab_bench_hint">两栏同一配方与滚动相位，差异只来自明暗；会话快照预设走生产 GlassSurface 同一条短路路径（D-10）。</string>
+    <string name="glasslab_bench_preset_liquid">会话：液态玻璃</string>
+    <string name="glasslab_bench_preset_minimal">会话：极简（扁平）</string>
+    <string name="glasslab_bench_phase">采样滚动相位 %1$d%%</string>
+    <string name="glasslab_bench_probe_deltae">ΔE 探针</string>
+    <string name="glasslab_bench_probe_frame">帧时间探针</string>
+    <string name="glasslab_bench_export">导出配方</string>
+    <string name="glasslab_bench_pane_night">NIGHT 栏</string>
+    <string name="glasslab_bench_pane_day">DAY 栏</string>
+    <string name="glasslab_param_title">配方参数（实时）</string>
+    <string name="glasslab_param_blur">模糊半径</string>
+    <string name="glasslab_param_tint">染色强度</string>
+    <string name="glasslab_param_lens_height">折射带高度</string>
+    <string name="glasslab_param_lens_amount">折射位移</string>
+    <string name="glasslab_param_edge">边缘高光</string>
+    <string name="glasslab_param_specular">镜面高光</string>
+    <string name="glasslab_param_elevation">檐口阴影</string>
+    <string name="glasslab_param_scrim">霜底浓度</string>
+    <string name="glasslab_param_corner">圆角</string>
+    <string name="glasslab_param_chroma">色散</string>
+    <string name="glasslab_export_title">导出配方 · %1$s</string>
+    <string name="glasslab_export_kotlin_hint">把该代码块粘进 GlassRecipeBook，实验室与正式 GlassStyle 同步变化（闭环）。</string>
+    <string name="glasslab_export_json_hint">扁平 JSON（工具链用）；GlassRecipe.fromJson 可无损回读。</string>
+    <string name="glasslab_export_copy">复制</string>
+    <string name="glasslab_export_show_kotlin">看 Kotlin</string>
+    <string name="glasslab_export_show_json">看 JSON</string>
+    <string name="glasslab_export_close">关闭</string>
 
 </resources>

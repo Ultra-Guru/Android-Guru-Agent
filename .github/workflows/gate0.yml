@@ -1,0 +1,111 @@
+name: Gate-0 (Glass Lab)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Gate-0 —— 玻璃实验室成品化的一票否决门禁
+#
+# 规格书：《玻璃实验室成品化规格书 Gate-0》§3.4 —— 「新增 Gate-0 check
+# 作为 §0 解禁的唯一信号」。本 check 不绿，v1.2 P0-A~E（74 部件接线）与
+# v1.3 P0-F（生效策略三档）保持 BLOCKED_BY_GATE0，不得替换正式 UI。
+#
+# 覆盖面（纯 JVM · kotlinc 裸编译，与 ci.yml static-analysis 同款通道）：
+#   • GlassRecipeParityTest —— P-1 同源锁（GlassRecipeBook ↔ 生产九档数值）
+#   • Gate0ParityTest —— D-10 路径一致（GlassSkinGate 短路语义 + 降级阶梯）
+#   • GlassLabGoldenTest —— P-5 数值金样（配方 × API 28/31/33 × 短路态）
+#   • GlassLabDarkBarLayoutTest —— D-2/D-3 槽位数学（5 槽 / 页内药丸 / v1 反证）
+#
+# 与 :app:testDebugUnitTest 的关系：同一批测试在 Gradle 通道双跑（app-compile
+# job）；本 workflow 独立成 check 是为了给「Gate-0 解禁」一个**独立、快速
+# （约 2 分钟）、不受重型构建失败干扰**的红绿信号。
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  pull_request:
+    branches: [main, 'feat/**']
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: gate0-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate-0:
+    name: Gate-0 Parity + Golden + Layout
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Cache Kotlin compiler + JUnit jars
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/kotlinc
+            /tmp/gate0-libs
+          key: gate0-kotlinc-2.3.21-junit-v1
+
+      - name: Install Kotlin compiler
+        run: |
+          if [ ! -x "$HOME/kotlinc/bin/kotlinc" ]; then
+            curl -sL https://github.com/JetBrains/kotlin/releases/download/v2.3.21/kotlin-compiler-2.3.21.zip -o /tmp/kotlin.zip
+            unzip -q /tmp/kotlin.zip -d $HOME/
+          fi
+          echo "$HOME/kotlinc/bin" >> $GITHUB_PATH
+
+      - name: Download JUnit
+        run: |
+          mkdir -p /tmp/gate0-libs
+          for dep in \
+            junit/junit/4.13.2/junit-4.13.2.jar \
+            org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar; do
+            curl --fail --silent --show-error --location --retry 3 "https://repo1.maven.org/maven2/$dep" -o "/tmp/gate0-libs/$(basename "$dep")"
+          done
+
+      - name: Compile Gate-0 pure sources + tests
+        run: |
+          set -euo pipefail
+          CP="$(find /tmp/gate0-libs -name '*.jar' | tr '\n' ':')"
+          kotlinc -jvm-target 17 -cp "$CP" -d /tmp/gate0-build \
+            app/src/main/kotlin/com/apex/agent/ui/glass/GlassRecipe.kt \
+            app/src/main/kotlin/com/apex/agent/ui/glass/GlassSkinGate.kt \
+            app/src/main/kotlin/com/apex/agent/ui/screen/glass/GlassDockMath.kt \
+            app/src/test/kotlin/com/apex/agent/ui/glass/GlassRecipeParityTest.kt \
+            app/src/test/kotlin/com/apex/agent/ui/glass/Gate0ParityTest.kt \
+            app/src/test/kotlin/com/apex/agent/ui/glass/GlassLabGoldenTest.kt \
+            app/src/test/kotlin/com/apex/agent/ui/screen/glass/GlassLabDarkBarLayoutTest.kt
+
+      - name: Run Gate-0 suite (unblock signal)
+        run: |
+          set -euo pipefail
+          CP="$(find /tmp/gate0-libs -name '*.jar' | tr '\n' ':')"
+          java -cp "/tmp/gate0-build:$CP" org.junit.runner.JUnitCore \
+            com.apex.agent.ui.glass.GlassRecipeParityTest \
+            com.apex.agent.ui.glass.Gate0ParityTest \
+            com.apex.agent.ui.glass.GlassLabGoldenTest \
+            com.apex.agent.ui.screen.glass.GlassLabDarkBarLayoutTest
+
+      - name: Gate-0 status summary
+        if: always()
+        run: |
+          {
+            echo "## Gate-0 (Glass Lab Productionization)"
+            echo ""
+            echo "| Suite | Locks |"
+            echo "|-------|-------|"
+            echo "| GlassRecipeParityTest | P-1 同源（配方真源 ↔ 生产九档数值）+ P-3 导出闭环 |"
+            echo "| Gate0ParityTest | D-10 路径一致（短路语义 / 预置覆盖 / 降级阶梯 / WCAG·ΔE 数学） |"
+            echo "| GlassLabGoldenTest | P-5 数值金样（四档 × API 28/31/33 × 短路态；位图金样随 instrumentation 通道补齐） |"
+            echo "| GlassLabDarkBarLayoutTest | D-2 五槽可点 / D-3 页内药丸（含 v1 等分反证） |"
+            echo ""
+            echo "本 check 绿 ≠ Gate-0 解禁：G0-1~G0-8 仍需真机探针实测与人工签字（docs/glass-lab-gate0.md）。"
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
