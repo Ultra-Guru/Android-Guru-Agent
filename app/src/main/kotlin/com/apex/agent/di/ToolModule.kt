@@ -310,42 +310,9 @@ object ToolModule {
             scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         )
 
-    /**
-     * 工具使用统计（v2）：DefaultToolExecutor 每次调用后记录
-     * 成败/耗时；设置页与诊断报告从这读取。单例，随进程存活。
-     */
-    @Provides
-    @Singleton
-    fun provideToolUsageTracker(): ToolUsageTracker = ToolUsageTracker()
-
-    // ═══ Tool System v3 单例：环境态 / 追踪 / 熔断 / 组合动作 ═══
-
-    /** 环境能力快照（EnvironmentStateUpdater 灌入；门控与 prompt 共用）。 */
-    @Provides
-    @Singleton
-    fun provideToolEnvironmentState(): ToolEnvironmentState = ToolEnvironmentState()
-
-    /** 结构化调用追踪（v3）：每工具调用一个 span，环形缓冲 + 监听器分发。 */
-    @Provides
-    @Singleton
-    fun provideToolTraceRecorder(): ToolTraceRecorder = ToolTraceRecorder(capacity = 300)
-
-    /** 工具熔断器（v3）：连续失败短路由，防止模型对已损坏工具的无效重试。 */
-    @Provides
-    @Singleton
-    fun provideToolCircuitBreaker(): ToolCircuitBreaker = ToolCircuitBreaker()
-
-    /** 组合动作注册表（v3）：ShortcutDefine 定义 → 热注册为一等工具。 */
-    @Provides
-    @Singleton
-    fun provideShortcutRegistry(): ShortcutRegistry = ShortcutRegistry()
-
-    // ═══ Tool System v4：会话激活 / 目录 / MCP 一等工具 ═══
-
-    /** v4 — 会话激活存储（引擎/目录工具/编排器共享单例）。 */
-    @Provides
-    @Singleton
-    fun provideToolActivationStore(): ToolActivationStore = ToolActivationStore()
+    // ═══ 工具使用统计 / v3 环境态 / 追踪 / 熔断 / 组合动作 / v4 会话激活
+    //     六个无状态单例工厂已拆至 ToolModuleStateSingletons.kt
+    //     （God-file 预算纪律；Hilt 自动聚合，绑定语义零变化）═══
 
     /**
      * v4 — MCP 工具注册器：McpManager 会话事件 → ToolRegistry 一等工具
