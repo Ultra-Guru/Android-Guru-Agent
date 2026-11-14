@@ -46,6 +46,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Apex Agent Engine — production implementation.
@@ -254,9 +255,19 @@ class ApexAgentEngine(
     }
 
     // internal —— EngineCompressionGate.kt 传入压缩器/持久化。
-    internal val conversationHistory: MutableList<LlmMessage> = mutableListOf<LlmMessage>().apply {
-        memory?.load()?.let { addAll(it) }
-    }
+    // #809：本列表跨协程并发读写（引擎循环 append/压缩/修复 vs UI 线程
+    // clearHistory/restoreHistory、TaskRuntime 重注入）—— 改用
+    // CopyOnWriteArrayList：单操作原子 + 迭代永远基于内部快照，
+    // 消除并发迭代时的 ConcurrentModificationException 与「清了一半」
+    // 的撕裂读（memory.save 持久化到的必是某一致快照）。写频远低于读
+    // （每轮工具调用数次 append），COW 写放大可忽略。复合替换
+    // （restoreHistory / repairDanglingToolCalls 的 clear+addAll）另经
+    // [historyLock] 串行化，对读者呈现为单次原子替换。
+    internal val conversationHistory: MutableList<LlmMessage> =
+        CopyOnWriteArrayList<LlmMessage>().apply {
+            memory?.load()?.let { addAll(it) }
+        }
+    private val historyLock = Any()
     // P2-10：isRunning 跨线程读写需 volatile（abort 在引擎循环外调用）。
     // TODO(结构化改造): conversationHistory 的跨协程写入（contextInjector）应
     // 收敛为显式队列（diag-20261011 已消主要并发源：compressNow 运行期拒绝）。
@@ -363,8 +374,13 @@ class ApexAgentEngine(
 
     /** 恢复会话：内存历史与持久化记忆同步替换；归档随会话边界重置。 */
     fun restoreHistory(messages: List<LlmMessage>) {
-        conversationHistory.clear()
-        conversationHistory.addAll(messages)
+        // #809：clear+addAll 复合替换经 historyLock 串行化（历史本体为 COW
+        // 列表，单操作已原子；此处保证并发的引擎 append 与本替换不交错，
+        // 读者看到的要么是完整旧史、要么是完整新史）。
+        synchronized(historyLock) {
+            conversationHistory.clear()
+            conversationHistory.addAll(messages)
+        }
         memory?.save(messages)
         contextArchive?.clear()
         // 同 clearHistory：陈旧 usage 必须随会话边界失效（回退估算器口径）。
@@ -1073,8 +1089,12 @@ class ApexAgentEngine(
     private fun repairDanglingToolCalls(): Boolean {
         val report = DanglingToolCallRepair.repair(conversationHistory)
         if (!report.hasRepairs) return false
-        conversationHistory.clear()
-        conversationHistory.addAll(report.repairedHistory)
+        // #809：clear+addAll 复合替换经 historyLock 串行化（与 restoreHistory
+        // 同语义；repair() 自身的迭代在 COW 快照上进行，天然安全）。
+        synchronized(historyLock) {
+            conversationHistory.clear()
+            conversationHistory.addAll(report.repairedHistory)
+        }
         memory?.save(conversationHistory)
         AppLogger.instance.warn(
             LogCategory.ENGINE, "AgentEngine",
