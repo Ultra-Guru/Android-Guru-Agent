@@ -381,9 +381,7 @@ object ToolModule {
         breaker: ToolCircuitBreaker,
         // Issue #165：钩子注册表（null 安全重载仅为可测性保留；生产性传非空）
         hookRegistry: HookRegistry? = null,
-        // Phase 6 收尾：宿主事件总线——工具事件（BEFORE/AFTER_TOOL_CALL 族）
-        // 的生产者。OpenCode 钩子转发与 Claude Hooks 订阅经此收到真实事件
-        // （此前总线零工具事件生产者，插件订阅永远空转）。
+        // Phase 6 收尾：工具事件总线生产者（插件钩子订阅的事件源）
         pluginEventBus: com.apex.agent.core.tools.pluginhost.bridge.PluginEventBus? = null
     ): com.apex.agent.core.tools.ToolExecutor = ToolExecutorBuilder(registry)
         // v1.0 #55 门控链：环境门 →（权限门 → 风险门）—— PermissionAwareToolGate
@@ -396,38 +394,9 @@ object ToolModule {
             com.apex.agent.core.tools.RoleGate { com.apex.agent.tools.BrowserRoleAuth.currentGrants() },
             PermissionAwareToolGate(permissionModeGate, riskAwareToolGate)
         ))
-        // Issue #165 —— PreToolUse/PostToolUse 插槽：桥接 HookRegistry。
-        // isNoOp（无钩子关心）时返回 null，执行器走原路径零开销；
-        // blocked 透传 reason 短路（文案对齐 gate 拒绝）；modifiedArgs 改写
-        // 后续 schema 校验按新参数执行（钩子改不出绕过校验的载荷）。
-        // 注：builder 的 setter 形参非空且持期望类型——经 .apply{} 条件装配，
-        // lambda 才能推成 suspend（?.let{} / if/else 直传均不行，K2 限制，
-        // 见 .verify/scratch/t2c/test/BridgePatternCheck.kt 三轮验证）。
-        .apply {
-            if (hookRegistry != null || pluginEventBus != null) {
-                beforeToolHooks { toolId, args ->
-                    pluginEventBus?.dispatch(
-                        com.apex.agent.core.tools.pluginhost.bridge.PluginEventBus.PluginHostEvent.BEFORE_TOOL_CALL,
-                        com.apex.agent.core.tools.pluginhost.bridge.PluginEventPayloads.toolCall(toolId, args.raw)
-                    )
-                    hookRegistry?.dispatch(HookEvent.PreToolUse(toolId, args))
-                        ?.takeUnless { it.isNoOp }
-                }
-                afterToolHooks { toolId, args, result, isError, durationMs ->
-                    pluginEventBus?.dispatch(
-                        if (isError) {
-                            com.apex.agent.core.tools.pluginhost.bridge.PluginEventBus.PluginHostEvent.AFTER_TOOL_CALL_FAILURE
-                        } else {
-                            com.apex.agent.core.tools.pluginhost.bridge.PluginEventBus.PluginHostEvent.AFTER_TOOL_CALL
-                        },
-                        com.apex.agent.core.tools.pluginhost.bridge.PluginEventPayloads.toolCall(toolId, args.raw)
-                    )
-                    hookRegistry?.dispatch(
-                        HookEvent.PostToolUse(toolId, args, result, isError, durationMs)
-                    )
-                }
-            }
-        }
+        // Issue #165 + Phase 6 收尾：钩子/事件总线工具插槽（装配体见卫星
+        // ToolModuleHookSlots —— isNoOp 零开销 / blocked 短路 / 总线广播）。
+        .installToolHookSlots(hookRegistry, pluginEventBus)
         .usageTracker(toolUsageTracker)
         .policyResolver(
             DefaultToolRunPolicyResolver(
@@ -551,8 +520,7 @@ object ToolModule {
         pluginToolBridge: com.apex.agent.core.tools.pluginhost.bridge.PluginToolBridge,
         extensionLayout: com.apex.agent.core.tools.extension.ExtensionDirLayout,
         apexNotifications: com.apex.agent.notify.ApexNotifications,
-        // Phase 6 收尾：宿主事件总线（执行器插槽派发工具事件——OpenCode 钩子
-        // 转发与 Claude Hooks 订阅的事件源）+ DSH 工具注册器（启动 sweep）
+        // Phase 6 收尾：事件总线（工具事件源）+ DSH 注册器（启动 sweep）
         pluginEventBus: com.apex.agent.core.tools.pluginhost.bridge.PluginEventBus,
         dshToolRegistrar: com.apex.agent.core.tools.extension.dsh.DshToolRegistrar
     ): ToolRegistry {
@@ -1027,10 +995,9 @@ object ToolModule {
         // 技能渐进披露：模型侧装载入口（全文返回 + 写入激活集持续注入）。
         registry.register(SafeAgentTool(SkillActivateTool(skillRegistry, skillActivation)))
 
-        // ═══ 16b. DSH 工具注册器：能力快照 → 一等工具（Phase 6 收尾）═══
-        // 装后钩子（PluginRuntimeWiring）负责新装即注册；此处启动 sweep 兜住
-        // 「装完重启后工具面丢失」（注册表是进程内的）——对账本全部 dsh_plugin
-        // 记录补注册，IO scope 自持，快照过期/失败只记日志。
+        // ═══ 16b. DSH 注册器启动 sweep（Phase 6 收尾）═══
+        // 装后钩子负责新装即注册；此处对账本 dsh_plugin 记录补注册，兜住
+        // 「装完重启工具面丢失」（注册表进程内；IO scope 自持，失败只记日志）。
         dshToolRegistrar.start(extensionLedger)
 
         // ═══ 13b. FusionBundle 工具族（FusionList/FusionInfo/FusionActivate —— 注册体在卫星文件）═══
