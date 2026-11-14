@@ -1,7 +1,6 @@
 package com.apex.agent.ui.screen.code
 
 import com.apex.agent.R
-import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.update
 
 /**
@@ -23,8 +22,9 @@ import kotlinx.coroutines.flow.update
  */
 internal const val MAX_UI_MESSAGES = 160
 
-/** 折叠摘要条固定 id（幂等替换的定位键；正常消息 id 来自自增发生器）。 */
-private const val FOLDED_NOTICE_ID = Int.MAX_VALUE
+/** 折叠摘要条固定 id（幂等替换的定位键；CodeChatMessage.id 为 Long，
+ *  正常消息 id 来自自增发生器永不触及此值）。 */
+private const val FOLDED_NOTICE_ID = Long.MAX_VALUE
 
 /** 滑动窗口裁剪（仅超限时 O(n) 一次；ticker 每拍 O(1) 检查）。 */
 internal fun CodeViewModel.applyMessagesWindow() {
