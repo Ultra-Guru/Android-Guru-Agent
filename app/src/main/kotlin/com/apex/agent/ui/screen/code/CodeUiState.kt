@@ -83,32 +83,19 @@ data class CodeUiState(
     // 25ms ≤40Hz 攒批推送；entries/终端尾窗/派生统计一体的不可变值。
     val stream: CodeStreamSnapshot = CodeStreamSnapshot(),
 
-    // ── 输出展示档（v1.5 双档：流式 / 整段——揭示时机维度）──
-    // STREAMING = 实时渲染（既有行为）；COMPLETE = 生成中静默（仅加载
-    // 进度卡）、收束后一次性渲染。与 outputStyle（视觉形态维度）正交。
-    // run 粒度快照：每轮 runEngine 开始时捕获（运行中改设置不打断当前轮，
-    // 下一轮生效）。捕获与恢复逻辑见 CodeOutputModeOps.kt，档位定义见
-    // CodeOutputMode.kt。
-    val renderMode: CodeOutputMode = CodeOutputMode.STREAMING,
-
-    // ── 输出风格（v1.6 双风格：经典时间轴 / Rikka 聊天式）──
-    // TIMELINE = 胶囊时间轴（既有行为）；RIKKA = Rikka 风格聊天输出
-    // （用户右对齐气泡 + Markdown 结论 + 思考折叠卡 + 工具调用聚合块，
-    // 含技能 / MCP 标识与三分类聚合）。与 renderMode（揭示时机）正交；
-    // run 粒度快照 + idle 期设置流实时同步，见 CodeOutputStyleOps.kt。
-    val outputStyle: CodeOutputStyle = CodeOutputStyle.TIMELINE,
-
     // ── 会话皮肤状态机（PartSkin spec v1.2/v1.3，§7.5 / §7.9）──
-    // H-5：皮肤类四维度（uiStyle 材质短路 / outputStyle / renderMode /
-    // partSkins + glow）打包进同一会话快照（同 epoch）；当前对话内
-    // active 恒定零重绘，改动只落 pending；唯一提升点 = 会话边界（新对话
-    // / 恢复历史 / 切工作区）或 IMMEDIATE 策略的 idle 提升点（H-6：任务
-    // 进行中任何模式都冻结）。状态机定义见 ConversationSkin.kt，动作面
-    // （restore / stage / promote / discard / onRunSettled）见 PartSkinOps.kt。
+    // H-5（2026-11 修订「呈现立即」）：皮肤类四维度（uiStyle 材质短路 /
+    // outputStyle / renderMode / partSkins + glow）打包进同一会话快照
+    // （同 epoch）；idle 期改动立即整体换皮，运行中只落 pending；提升点
+    // = 会话边界（新对话 / 恢复历史 / 切工作区）、idle 自动提升或显式
+    // ON_NEW_CHAT 档的边界（H-6：任务进行中任何模式都冻结）。状态机定义
+    // 见 ConversationSkin.kt，动作面（restore / stage / promote / discard /
+    // onRunSettled）见 PartSkinOps.kt。**渲染取值（outputStyle / renderMode
+    // / uiStyle / partSkins）一律从 conversationSkin.active 读** —— 原
+    // uiState 层的 renderMode / outputStyle 历史镜像已删（2026-11 审计：
+    // 只写不读的死镜像，restore 入口一并移除）。
     // pending 只存内存不落盘（NFR-13）：冷启动直接从 AgentSettings 恢复
     // active，不会「上次没确认的改动突然生效」。
-    // 注：上方 renderMode / outputStyle 两个既有字段保留（历史镜像，其它
-    // 模块可能读取），但**渲染取值一律改从 conversationSkin.active 读**。
     val conversationSkin: SkinActivation = SkinActivation(
         active = ConversationSkinSnapshot(
             epoch = 0L,

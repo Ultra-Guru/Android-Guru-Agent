@@ -294,8 +294,6 @@ class CodeViewModel @Inject constructor(
         restoreThinkingLevel()
         // v1.5 双思考逻辑：恢复档位（空/未知 → 深潜）；先于 setMode（GOAL 恒深潜）
         restoreLogicMode()
-        restoreOutputMode() // v1.5 输出展示档恢复（历史镜像）
-        restoreOutputStyle() // v1.6 输出风格恢复（历史镜像；渲染读会话快照）
         restoreActiveAtColdStart() // v1.7 部件皮肤会话边界状态机（v1.2/v1.3）
         observeApplyModeAndTier()
         observeContextDenominator() // 圆环分母热刷新（Profile 流订阅，CodeUsageOps.kt）
