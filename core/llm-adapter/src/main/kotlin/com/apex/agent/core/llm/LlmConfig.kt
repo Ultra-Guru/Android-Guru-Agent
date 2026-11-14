@@ -408,6 +408,32 @@ enum class WebSearchMode(val displayName: String) {
         }
     }
 
+    /**
+     * 该模式的 server-side 搜索 tool（写入 tools 数组的形态）是否被给定端点真实支持。
+     *
+     * 背景（422 unknown variant 复盘，2026-11）：[resolveFor] 只对 AUTO 做端点
+     * 推断，显式选择的 ZHIPU / DEEPSEEK / ANTHROPIC 模式原样生效 —— Profile
+     * 迁移 / 中转换端点后，webSearch 模式可能仍停在旧 provider 形态：非标准
+     * `tools[].type`（"WebSearch" / "web_search_20250305"）对 Rust serde 风格
+     * 的严格 OpenAI 兼容端点是**整请求级 422 必败体**（"tools[0].type: unknown
+     * variant `WebSearch`, expected `function`"）——同一体无论重发多少次都失败。
+     *
+     * 判定口径与 [resolveFor] 的 AUTO 分支**完全同源**（语义 = 「AUTO 在该端点
+     * 上会不会解析出该模式」）：不匹配 → 调用方跳过注入，原生搜索意图降级为
+     * 不发，而不是把任务变成协议错误。顶层字段形态（OPENAI / DASHSCOPE /
+     * OPENROUTER）不进 tools 数组，非 server-tool 模式恒真（由各自端点校验）。
+     */
+    fun serverToolSupportedBy(baseUrl: String, providerId: String): Boolean {
+        val url = baseUrl.lowercase()
+        val pid = providerId.lowercase()
+        return when (this) {
+            ZHIPU -> url.contains("bigmodel.cn") || pid.contains("zhipu") || pid.contains("glm")
+            DEEPSEEK -> url.contains("deepseek")
+            ANTHROPIC -> url.contains("anthropic")
+            else -> true
+        }
+    }
+
     companion object {
         /**
          * 静态入口（等价实例 [resolveFor]）：显式模式原样生效，AUTO 按端点推断。

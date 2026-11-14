@@ -12,6 +12,7 @@ import com.apex.agent.core.code.experience.RoleExperienceTracker
 import com.apex.agent.core.code.longtask.LongTaskTracker
 import com.apex.agent.core.code.longtask.TaskCopyEngine
 import com.apex.agent.core.code.standard.DualLogicCodeEngine
+import com.apex.agent.core.code.standard.MemoryAwareCodeEngine
 import com.apex.agent.core.code.CodeContextSnapshot
 import com.apex.agent.core.code.standard.StandardLogicMode
 import com.apex.agent.core.code.stream.CodeStreamCheckpoint
@@ -180,7 +181,7 @@ class CodeViewModel @Inject constructor(
     internal val goalCoordinator: GoalModeCoordinator,
     // ═══ v6 Git 工作区（右上角面板直读）：PRoot 沙箱 git 执行器 ═══
     private val gitRunner: com.apex.agent.core.codetools.git.GitCommandRunner,
-    // v1.3 设备分级采样（PartSkin spec §7.9.2）：接口注入、冷启动/会话边界采样一次
+    // v1.3 设备分级采样（PartSkin spec §7.9.2）：冷启动/会话边界采样一次
     internal val deviceTierProvider: com.apex.agent.ui.screen.settings.DeviceTierProvider
 ) : ViewModel() {
 
@@ -254,9 +255,14 @@ class CodeViewModel @Inject constructor(
     internal val codeEngineImpl: CodeEngineFacade?
         get() = codeEngine as? CodeEngineFacade
 
-    /** 双思考逻辑路由门面（右上角切换入口；注入恒为 DualLogicCodeEngine）。 */
+    /**
+     * 双思考逻辑路由门面（右上角切换入口）。@Named("code") 自记忆 P0
+     * 起为 MemoryAwareCodeEngine 包装（四线记忆闭环）—— 先解包再回退裸
+     * DualLogicCodeEngine（防御其它装配形态，如测试 / 未来再包装）。
+     */
     internal val dualLogicEngine: DualLogicCodeEngine?
-        get() = codeEngine as? DualLogicCodeEngine
+        get() = (codeEngine as? MemoryAwareCodeEngine)?.dualLogic
+            ?: codeEngine as? DualLogicCodeEngine
 
     // ═══ v6 控制器接线（lazy：viewModelScope 构造后才可用；God-file 预算：
     //     专家模板逻辑独立成文件，VM 只做暴露）═══
@@ -286,15 +292,11 @@ class CodeViewModel @Inject constructor(
         // v1.2 七档思考系统：恢复持久化档位（本字段独立记忆，
         // 不随任何复制/模板选项覆盖 —— 档位覆盖位已随任务模板功能移除）
         restoreThinkingLevel()
-        // v1.5 双思考逻辑：恢复持久化档位（空/未知 → 深潜）。先于 setMode：
-        // GOAL 恢复强制深潜线，在后恢复会反切持久化线、破坏「GOAL 恒走深潜」。
+        // v1.5 双思考逻辑：恢复档位（空/未知 → 深潜）；先于 setMode（GOAL 恒深潜）
         restoreLogicMode()
-        // v1.5 输出展示档恢复（流式/整段；见 CodeOutputModeOps.kt）
-        restoreOutputMode()
-        // v1.6 输出风格恢复（历史镜像；渲染取值改读会话快照，见 PartSkinOps）
-        restoreOutputStyle()
-        // v1.7 部件级皮肤：会话边界状态机（v1.2/v1.3）—— 恢复 active + 订阅 pending
-        restoreActiveAtColdStart()
+        restoreOutputMode() // v1.5 输出展示档恢复（历史镜像）
+        restoreOutputStyle() // v1.6 输出风格恢复（历史镜像；渲染读会话快照）
+        restoreActiveAtColdStart() // v1.7 部件皮肤会话边界状态机（v1.2/v1.3）
         observeApplyModeAndTier()
         observeContextDenominator() // 圆环分母热刷新（Profile 流订阅，CodeUsageOps.kt）
         // #197：Coding 屏模式同步（引擎侧恒为 BUILD/PLAN；未知值回退 BUILD）
@@ -617,7 +619,6 @@ class CodeViewModel @Inject constructor(
 
         // 在同步模型预检/工作区准备之前先把用户消息与助手等待位一起入轴；
         // 直接发布快照，不等 25ms ticker，更不能等服务端首个 token。
-        // （v1.2：captureRun* 三行已删 —— run 不再是皮肤生效边界，改读会话快照）
         streamSession.beginRun(goal)
         _uiState.update { it.copy(stream = streamSession.snapshot(), isRunning = true, error = null, errorRetriable = false) }
         // #209：记录本次运行输入 —— 失败后错误条「重试」按原样重放
@@ -750,7 +751,7 @@ class CodeViewModel @Inject constructor(
                 adaptiveSignals.endRun()
                 // 渲染收尾：停 ticker 前冲最后一次快照（尾巴事件不丢）。
                 stopRenderTicker()
-                onRunSettled() // v1.3：收束后第一个 idle 点（IMMEDIATE 自动提升，幂等）
+                onRunSettled() // v1.3：收束后 idle 点（IMMEDIATE 自动提升，幂等）
                 // v1.2 长任务收尾：状态裁决（中止/失败/完成）+ 长任务判定入库
                 // （短任务返回 null 静默丢弃）；入库后刷新面板数据。
                 val finalError = _uiState.value.error
@@ -782,7 +783,7 @@ class CodeViewModel @Inject constructor(
         // 收口后的时间轴立即冲最终快照，不等不会来的 tick。
         stopRenderTicker()
         _uiState.update { it.copy(isRunning = false) }
-        onRunSettled() // v1.3：用户点停同样到达 idle 点（promote 幂等，与 finally 不重复）
+        onRunSettled() // v1.3：点停同样到 idle 点（幂等，与 finally 不重复）
     }
 
     fun submitUserInput(answer: String) {

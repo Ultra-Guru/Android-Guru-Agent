@@ -29,11 +29,15 @@ import kotlinx.serialization.json.jsonObject
  *   LLM 重试或双跳调用不会堆垃圾；
  * - 教训进 PROFILE（STATE 只召回最新一条 —— 放教训会永久沉底）；
  * - 三元组悬空端自动补建占位实体 —— 图谱可视化永不悬空；
- * - 防御式 IO：任何形状的参数异常折叠为错误消息返回，不向上抛。
+ * - 防御式 IO：任何形状的参数异常折叠为错误消息返回，不向上抛；
+ * - 参数钳制（#841）：lessons ≤32 / entities ≤64 / relations ≤128、
+ *   单条 ≤2KB 截断 —— 模型幻觉式刷写在工具层被拦下，越限部分丢弃并
+ *   在回报里显式告知（不静默）。
  */
 @Singleton
 class MemoryConsolidateExperienceTool @Inject constructor(
     private val memKit: MemKit,
+    private val consolidationTracker: TaskConsolidationTracker,
 ) : AgentTool {
     override val id = "MemoryConsolidateExperience"
     override val name = "Memory: Consolidate Experience"
@@ -85,15 +89,22 @@ class MemoryConsolidateExperienceTool @Inject constructor(
         val success = runCatching {
             (root["success"] as? JsonPrimitive)?.booleanOrNull
         }.getOrNull() ?: true
-        val lessons = root.strList("lessons")
-        val entities = root.entities("entities")
-        val relations = root.relations("relations")
+        val lessonsRaw = root.strList("lessons")
+        val entitiesRaw = root.entities("entities")
+        val relationsRaw = root.relations("relations")
+        // #841 参数钳制：数组上限 + 单条 2KB 截断（越限计数进回报，不静默）
+        val lessons = MemoryWriteLimits.clampStrings(lessonsRaw, MemoryWriteLimits.MAX_LESSONS)
+        val entities = MemoryWriteLimits.clampEntities(entitiesRaw)
+        val relations = MemoryWriteLimits.clampRelations(relationsRaw)
+        val droppedLessons = (lessonsRaw.size - lessons.size).coerceAtLeast(0)
+        val droppedEntities = (entitiesRaw.size - entities.size).coerceAtLeast(0)
+        val droppedRelations = (relationsRaw.size - relations.size).coerceAtLeast(0)
 
         val result = runCatching {
             memKit.consolidateExperience(
                 ExperienceReport(
-                    goal = goal,
-                    outcome = outcome,
+                    goal = MemoryWriteLimits.clampText(goal) ?: goal,
+                    outcome = MemoryWriteLimits.clampText(outcome) ?: outcome,
                     success = success,
                     lessons = lessons,
                     entities = entities,
@@ -101,6 +112,9 @@ class MemoryConsolidateExperienceTool @Inject constructor(
                 ),
             )
         }.getOrNull() ?: return "Error: memory store unavailable"
+
+        // P0-2 写回闭环去重闸：模型已主动整理 → 同任务引擎兜底跳过
+        runCatching { consolidationTracker.markCurrentTask() }
 
         return buildString {
             appendLine("Experience consolidated into long-term memory:")
@@ -114,6 +128,16 @@ class MemoryConsolidateExperienceTool @Inject constructor(
             )
             appendLine("- entities: ${result.entitiesUpserted} created (incl. auto-created endpoints)")
             appendLine("- relations: ${result.relationsAdded} added")
+            if (droppedLessons + droppedEntities + droppedRelations > 0) {
+                appendLine(
+                    "- CLAMPED (#841 write limits): dropped " +
+                        "$droppedLessons lesson(s) / $droppedEntities entit(ies) / " +
+                        "$droppedRelations relation(s) over the per-call cap " +
+                        "(${MemoryWriteLimits.MAX_LESSONS}/${MemoryWriteLimits.MAX_ENTITIES}/" +
+                        "${MemoryWriteLimits.MAX_RELATIONS}); oversized texts truncated at " +
+                        "${MemoryWriteLimits.MAX_ITEM_CHARS} chars.",
+                )
+            }
             append("These memories now live in the memory graph as connected nodes and will be ")
             append("recalled in future sessions. Total writes: ${result.totalWrites}.")
         }
@@ -157,12 +181,15 @@ class MemorySaveFactTool @Inject constructor(
             root.str("importance")?.toFloatOrNull()
         }.getOrNull()?.coerceIn(0f, 1f) ?: 0.6f
 
-        val result = runCatching { memKit.saveFact(content, kind, importance) }.getOrNull()
+        // #841：单条事实 2KB 截断（截断标记可见，不静默）
+        val clamped = MemoryWriteLimits.clampText(content)!!
+
+        val result = runCatching { memKit.saveFact(clamped, kind, importance) }.getOrNull()
             ?: return "Error: memory store unavailable"
         return if (result.added) {
-            "Fact saved (${kind.name.lowercase()}, importance ${(importance * 100).toInt()}%): \"$content\""
+            "Fact saved (${kind.name.lowercase()}, importance ${(importance * 100).toInt()}%): \"$clamped\""
         } else {
-            "Fact reinforced (already in memory, importance raised if higher): \"$content\""
+            "Fact reinforced (already in memory, importance raised if higher): \"$clamped\""
         }
     }
 }
@@ -234,8 +261,11 @@ class MemoryGraphTool @Inject constructor(
     }
 
     private suspend fun createEntities(root: JsonObject): String {
-        val entities = root.entities("entities")
-        if (entities.isEmpty()) return "Error: 'entities' array is required for create_entities"
+        val entitiesRaw = root.entities("entities")
+        if (entitiesRaw.isEmpty()) return "Error: 'entities' array is required for create_entities"
+        // #841 钳制：实体 ≤64、单实体观察 ≤16、单条文本 ≤2KB
+        val entities = MemoryWriteLimits.clampEntities(entitiesRaw)
+        val dropped = entitiesRaw.size - entities.size
         val added = memKit.upsertGraphEntities(entities)
         val known = entities.filter { it.name !in added }
         return buildString {
@@ -243,28 +273,49 @@ class MemoryGraphTool @Inject constructor(
             if (known.isNotEmpty()) {
                 appendLine("Merged observations into existing entities: ${known.joinToString(", ") { it.name }}")
             }
+            if (dropped > 0) {
+                appendLine("CLAMPED (#841): dropped $dropped entit(ies) over the per-call cap " +
+                    "of ${MemoryWriteLimits.MAX_ENTITIES}.")
+            }
             append("${entities.size} entity upsert(s) committed.")
         }
     }
 
     private suspend fun addObservations(root: JsonObject): String {
         val entity = root.str("entity")?.trim().orEmpty()
-        val contents = root.strList("contents")
-        if (entity.isBlank() || contents.isEmpty()) {
+        val contentsRaw = root.strList("contents")
+        if (entity.isBlank() || contentsRaw.isEmpty()) {
             return "Error: 'entity' and non-empty 'contents' are required for add_observations"
         }
+        // #841 钳制：观察 ≤32 条、单条 ≤2KB
+        val contents = MemoryWriteLimits.clampStrings(
+            contentsRaw, MemoryWriteLimits.MAX_OBSERVATION_BATCH,
+        )
+        if (contents.isEmpty()) return "Error: 'contents' has no usable entries"
         val ok = memKit.addEntityObservations(entity, contents)
+        val dropped = contentsRaw.size - contents.size
         return if (ok) {
-            "Appended ${contents.size} observation(s) to \"$entity\": ${contents.joinToString("; ")}"
+            buildString {
+                append("Appended ${contents.size} observation(s) to \"$entity\": ")
+                append(contents.joinToString("; "))
+                if (dropped > 0) {
+                    append(" CLAMPED (#841): dropped $dropped over the per-call cap of " +
+                        "${MemoryWriteLimits.MAX_OBSERVATION_BATCH}.")
+                }
+            }
         } else {
             "Error: entity \"$entity\" does not exist — create it first (create_entities)"
         }
     }
 
     private suspend fun createRelations(root: JsonObject): String {
-        val relations = root.relations("relations")
-        if (relations.isEmpty()) return "Error: 'relations' array is required for create_relations"
+        val relationsRaw = root.relations("relations")
+        if (relationsRaw.isEmpty()) return "Error: 'relations' array is required for create_relations"
+        // #841 钳制：关系 ≤128 条、单条文本 ≤2KB
+        val relations = MemoryWriteLimits.clampRelations(relationsRaw)
+        if (relations.isEmpty()) return "Error: 'relations' has no usable entries"
         val added = memKit.addGraphRelations(relations)
+        val dropped = relationsRaw.size - relations.size
         return buildString {
             if (added > 0) {
                 relations.forEach { r ->
@@ -273,6 +324,10 @@ class MemoryGraphTool @Inject constructor(
                 append("$added relation(s) created (duplicates skipped: ${relations.size - added}).")
             } else {
                 append("No new relations created — all ${relations.size} already exist.")
+            }
+            if (dropped > 0) {
+                append(" CLAMPED (#841): dropped $dropped over the per-call cap of " +
+                    "${MemoryWriteLimits.MAX_RELATIONS}.")
             }
         }
     }

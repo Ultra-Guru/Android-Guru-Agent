@@ -431,6 +431,7 @@ object ToolModule {
         httpClient: OkHttpClient,
         toolActivation: ToolActivationStore,
         terminalRuntime: TerminalRuntime,
+        prootSmokeProbe: com.apex.agent.platform.terminal.proot.PRootSmokeProbe,
         rootfsProvisioner: RootfsProvisioner,
         rootfsTarget: RootfsTarget,
         workspaceManager: com.apex.agent.platform.terminal.workspace.LinuxWorkspaceManager,
@@ -451,6 +452,8 @@ object ToolModule {
         memoryConsolidateExperienceTool: MemoryConsolidateExperienceTool,
         memorySaveFactTool: MemorySaveFactTool,
         memoryGraphTool: MemoryGraphTool,
+        // 记忆 P0-3：逐条纠正面（用户说「你记错了」时的删除工具）
+        memoryForgetTool: com.apex.agent.platform.memory.tools.MemoryForgetTool,
         browserAgentTools: BrowserAgentTools,
         browserSessionTools: BrowserSessionTools,
         browserLayoutTools: com.apex.agent.platform.browser.BrowserLayoutTools,
@@ -799,6 +802,9 @@ object ToolModule {
         registry.register(SafeAgentTool(memoryConsolidateExperienceTool))
         registry.register(SafeAgentTool(memorySaveFactTool))
         registry.register(SafeAgentTool(memoryGraphTool))
+        // 记忆 P0-3：纠正面（第 8 个记忆工具）—— 提示词 CORRECTIONS 段指引，
+        // 用户纠正记忆时删除错误条目再存正确版本。
+        registry.register(SafeAgentTool(memoryForgetTool))
 
         // ═══ 4a. 知识库（v1.8.0 · 角色专属知识库检索）═══
         // 每个 Agent 角色模板一套专属知识库（assets/knowledge/*.md）；
@@ -823,7 +829,7 @@ object ToolModule {
 
         // ═══ 10. Terminal PTY 前排 9+1 工具 —— 注册体拆至 ToolModuleRegistrySections.kt（SRP 预算）═══
         // T-audit（#289）：signal/run/close 等七通道审计经 [auditedTerminalTool] 注入（见拆分文件）
-        registerTerminalPtyTools(registry, terminalRuntime, toolAuditLogger)
+        registerTerminalPtyTools(registry, terminalRuntime, toolAuditLogger, prootSmokeProbe)
 
         // T87：终端栈自诊断（会话/后端/exec 探针自证 —— Agent 可先诊断后行动）。
         // 探针与 TerminalExec 共用同一 ExecEngine/ProotCommandSpawner 构造参数

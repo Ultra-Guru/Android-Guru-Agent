@@ -13,6 +13,7 @@ import com.apex.agent.platform.terminal.workspace.GuestCwdMapper
 import com.apex.agent.platform.terminal.workspace.GuestUserHome
 import com.apex.agent.platform.terminal.workspace.LinuxWorkspaceManager
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -75,7 +76,7 @@ class LinuxChrootBackendTest {
         }
 
     private fun backend(
-        suLocator: SuBinaryLocator = SuBinaryLocator { listOf(fakeSu()) },
+        suLocator: SuBinaryLocator = SuBinaryLocator(candidatesProvider = { listOf(fakeSu()) }),
         rootfsProvider: RootfsProvider = FakeRootfsProvider(),
         workspaceRoot: File = File(tmp.root, "workspaces"),
         homeRoot: File = File(tmp.root, "home"),
@@ -95,7 +96,7 @@ class LinuxChrootBackendTest {
         val a = tmp.newFile("a-su")            // 存在但不可执行
         val b = tmp.newFile("b-su").apply { setExecutable(true) }
         val c = tmp.newFile("c-su").apply { setExecutable(true) }
-        val loc = SuBinaryLocator { listOf(a, b, c) }
+        val loc = SuBinaryLocator(candidatesProvider = { listOf(a, b, c) })
         assertEquals(b.absolutePath, loc.locate()!!.absolutePath)
     }
 
@@ -103,8 +104,16 @@ class LinuxChrootBackendTest {
     fun `su locator returns null when nothing executable exists`() {
         val missing = File(tmp.root, "nope-su")
         val notExec = tmp.newFile("plain-su")
-        val loc = SuBinaryLocator { listOf(missing, notExec) }
+        val loc = SuBinaryLocator(candidatesProvider = { listOf(missing, notExec) })
         assertEquals(null, loc.locate())
+    }
+
+    @Test
+    fun `su on absolute PATH directory can be found by stat without execution`() {
+        val dir = tmp.newFolder("nonstandard-path")
+        val su = File(dir, "su").apply { writeText("not a real su"); setExecutable(true) }
+        assertEquals(su.absolutePath, SuBinaryLocator.locateFromPath(dir.absolutePath)?.absolutePath)
+        assertEquals(null, SuBinaryLocator.locateFromPath("relative:.:"))
     }
 
     @Test
@@ -112,13 +121,17 @@ class LinuxChrootBackendTest {
         // 契约锁：默认候选必须含 Magisk/KernelSU 标准落点（顺序敏感 —— 探测序即优先级）。
         assertEquals("/system/bin/su", SuBinaryLocator.DEFAULT_CANDIDATES.first())
         assertTrue(SuBinaryLocator.DEFAULT_CANDIDATES.contains("/system/xbin/su"))
+        // T99: privilege routing already knows these paths; chroot must not say SU_NOT_FOUND.
+        assertTrue(SuBinaryLocator.DEFAULT_CANDIDATES.contains("/data/adb/ksu/bin/su"))
+        assertTrue(SuBinaryLocator.DEFAULT_CANDIDATES.contains("/data/adb/ap/bin/su"))
+        assertTrue(SuBinaryLocator.DEFAULT_CANDIDATES.contains("/magisk/.core/bin/su"))
     }
 
     // ─── availability 三态 ───
 
     @Test
     fun `availability no su is Failed with SU_NOT_FOUND`() = runBlocking {
-        val b = backend(suLocator = SuBinaryLocator { emptyList() })
+        val b = backend(suLocator = SuBinaryLocator(candidatesProvider = { emptyList() }))
         val av = b.availability()
         assertTrue(av is BackendAvailability.Failed)
         assertTrue((av as BackendAvailability.Failed).reason.contains("ChrootError:SU_NOT_FOUND"))
@@ -137,6 +150,100 @@ class LinuxChrootBackendTest {
         assertTrue(b.availability() is BackendAvailability.Ready)
     }
 
+    @Test
+    fun `denied authorization is visible without executing su during availability`() = runTest {
+        var probes = 0
+        val su = fakeSu("denied-su")
+        val cache = SuAuthorizationCache(probe = { probes++; SuAuthorizationCache.State.DENIED })
+        val b = LinuxChrootBackend(
+            suLocator = SuBinaryLocator(candidatesProvider = { listOf(su) }),
+            rootfsProvider = FakeRootfsProvider(),
+            workspaces = LinuxWorkspaceManager(File(tmp.root, "workspaces")),
+            userHome = GuestUserHome(File(tmp.root, "home")),
+            authorizationCache = cache,
+        )
+        assertTrue(b.availability() is BackendAvailability.Ready) // UNKNOWN is not DENIED
+        assertEquals(0, probes)
+        val result = b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80))
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()!!.message!!.contains("ChrootError:SU_NOT_AUTHORIZED"))
+        assertEquals(1, probes)
+        val av = b.availability() as BackendAvailability.Failed
+        assertTrue(av.reason.contains("Fix:"))
+        assertEquals(1, probes)
+    }
+
+    @Test
+    fun `authorization cache expires and can be invalidated after permissions change`() {
+        var now = 0L
+        var calls = 0
+        var next = SuAuthorizationCache.State.DENIED
+        val su = fakeSu("cache-su")
+        val cache = SuAuthorizationCache(clock = { now }, probe = { calls++; next })
+        assertEquals(SuAuthorizationCache.State.UNKNOWN, cache.state(su))
+        assertEquals(SuAuthorizationCache.State.DENIED, cache.authorize(su))
+        next = SuAuthorizationCache.State.GRANTED
+        assertEquals(SuAuthorizationCache.State.DENIED, cache.authorize(su))
+        assertEquals(1, calls)
+        now = 30_000L
+        assertEquals(SuAuthorizationCache.State.UNKNOWN, cache.state(su))
+        assertEquals(SuAuthorizationCache.State.GRANTED, cache.authorize(su))
+        assertEquals(2, calls)
+        cache.invalidate()
+        assertEquals(SuAuthorizationCache.State.UNKNOWN, cache.state(su))
+    }
+
+    @Test
+    fun `granted authorization is cached and subsequent prepares do not re-prompt`() = runTest {
+        var probes = 0
+        val su = fakeSu("granted-su")
+        val cache = SuAuthorizationCache(probe = { probes++; SuAuthorizationCache.State.GRANTED })
+        val b = LinuxChrootBackend(
+            suLocator = SuBinaryLocator(candidatesProvider = { listOf(su) }),
+            rootfsProvider = FakeRootfsProvider(),
+            workspaces = LinuxWorkspaceManager(File(tmp.root, "workspaces")),
+            userHome = GuestUserHome(File(tmp.root, "home")),
+            authorizationCache = cache,
+        )
+        assertTrue(b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80)).isSuccess)
+        assertTrue(b.availability() is BackendAvailability.Ready)
+        assertTrue(b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80)).isSuccess)
+        assertEquals(1, probes)
+    }
+
+    @Test
+    fun `absent rootfs does not trigger authorization prompt`() = runTest {
+        var probes = 0
+        val cache = SuAuthorizationCache(probe = { probes++; SuAuthorizationCache.State.GRANTED })
+        val b = LinuxChrootBackend(
+            suLocator = SuBinaryLocator(candidatesProvider = { listOf(fakeSu("rootfs-missing-su")) }),
+            rootfsProvider = NullRootfsProvider(),
+            workspaces = LinuxWorkspaceManager(File(tmp.root, "workspaces")),
+            userHome = GuestUserHome(File(tmp.root, "home")),
+            authorizationCache = cache,
+        )
+        assertTrue(b.availability() is BackendAvailability.NeedsRootfs)
+        assertTrue(b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80)).isFailure)
+        assertEquals(0, probes)
+    }
+
+    @Test
+    fun `invalid cwd is rejected before authorization prompt`() = runTest {
+        var probes = 0
+        val cache = SuAuthorizationCache(probe = { probes++; SuAuthorizationCache.State.GRANTED })
+        val b = LinuxChrootBackend(
+            suLocator = SuBinaryLocator(candidatesProvider = { listOf(fakeSu("invalid-cwd-su")) }),
+            rootfsProvider = FakeRootfsProvider(),
+            workspaces = LinuxWorkspaceManager(File(tmp.root, "workspaces")),
+            userHome = GuestUserHome(File(tmp.root, "home")),
+            authorizationCache = cache,
+        )
+        val result = b.prepare(SessionSpawnRequest(cwd = "/'; rm -rf /", rows = 24, cols = 80))
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()!!.message!!.contains("ChrootError:InvalidCwd"))
+        assertEquals(0, probes)
+    }
+
     // ─── prepare → SpawnSpec argv 契约 ───
 
     @Test
@@ -145,7 +252,7 @@ class LinuxChrootBackendTest {
         val homeRoot = File(tmp.root, "home")
         val su = fakeSu("su-prod")
         val b = backend(
-            suLocator = SuBinaryLocator { listOf(su) },
+            suLocator = SuBinaryLocator(candidatesProvider = { listOf(su) }),
             workspaceRoot = wsRoot,
             homeRoot = homeRoot
         )
@@ -257,7 +364,7 @@ class LinuxChrootBackendTest {
     fun `prepare fails honestly when su disappears between availability and prepare`() = runBlocking {
         // 并发卸载窗口：availability Ready 之后 su 被删 —— prepare 诚实失败不伪造
         val suFile = tmp.newFile("vanishing-su").apply { setExecutable(true) }
-        val b = backend(suLocator = SuBinaryLocator { listOf(suFile) })
+        val b = backend(suLocator = SuBinaryLocator(candidatesProvider = { listOf(suFile) }))
         assertTrue(b.availability() is BackendAvailability.Ready)
         assertTrue(suFile.delete())
         val r = b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80))
