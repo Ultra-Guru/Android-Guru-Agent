@@ -452,4 +452,8 @@
     <string name="rikka_thinking_default_collapsed_desc">Remembered across sessions; the full thought remains available.</string>
     <string name="code_error_expand">Show full error</string>
     <string name="code_error_collapse">Collapse error</string>
+    <string name="code_skin_pending_running">Appearance switched · applies when this reply settles</string>
+    <string name="code_skin_pending_new_chat">Appearance switched · applies in a new chat</string>
+    <string name="code_skin_pending_apply_now">Apply now</string>
+    <string name="code_skin_pending_discard">Revert</string>
 </resources>

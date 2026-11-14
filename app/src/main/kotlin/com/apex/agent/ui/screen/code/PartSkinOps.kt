@@ -22,13 +22,15 @@ import kotlinx.coroutines.launch
 //
 // v1.2 全改写（H-5）：废除 v1.1 的 idle 期热切换（observePartSkins 直接
 // _uiState.update）与 run 粒度捕获（captureRunPartSkins）—— 皮肤类设置
-// 改完**当前对话一个部件都不重绘**，只写 pending；唯一生效边界：
+// 改完只写 pending，不在重组路径上零碎重绘；生效边界：
 //   ① 新对话 / 恢复历史 / 切工作区（promotePendingAtConversationBoundary）
-//   ② IMMEDIATE 策略的 idle 提升点（stage 内联提升 + onRunSettled 收束
-//     后第一个 idle 点，v1.3）
+//   ② idle 提升点（stage 内联提升 + onRunSettled 收束后第一个 idle 点，
+//     v1.3；**2026-11 修订「呈现立即」：AUTO / IMMEDIATE 全分级 idle 即
+//     提升**，resolvePolicy 只保留 ON_NEW_CHAT 显式 opt-out 的边界语义）
 //
-// H-6（v1.3）：isRunning == true 时任何模式都不提升 —— stage 只挂
-// pending（stagedDuringRun），收束后由 onRunSettled 按策略决定。
+// H-6（硬规则，保留）：isRunning == true 时任何模式都不提升 —— stage 只
+// 挂 pending（stagedDuringRun），收束后由 onRunSettled 提升；Code 屏配
+// SkinPendingBar（「本轮收束后生效」+ 立即应用 / 撤销）。
 //
 // God-file 预算纪律（NFR-12）：会话状态机全部住本文件与
 // ConversationSkin.kt，VM 与 CodeHistoryController 各只加单行调用点。
@@ -99,8 +101,9 @@ internal fun CodeViewModel.restoreActiveAtColdStart() {
  *  - applyMode 同步进状态机（自身不触发换皮，只决定后续提升点）；
  *  - `stage(next, changed, isRunning)`：内容全等不产生 pending
  *    （NFR-15）；H-6 运行中一律挂起；idle 且 effectivePolicy ==
- *    IMMEDIATE → 立刻 promote（HIGH 机型 / 手动立即的旁路）；
- *  - LOW 档在 resolvePolicy 硬拒（NFR-16），不信任 UI 置灰。
+ *    IMMEDIATE → 立刻 promote（**2026-11 修订：AUTO / IMMEDIATE 全分级
+ *    立即**，原「HIGH 机型旁路」语义扩大为默认）；
+ *  - 显式 ON_NEW_CHAT 档维持仅会话边界语义（用户 opt-out，§7.5.1）。
  */
 @OptIn(FlowPreview::class)
 internal fun CodeViewModel.observeApplyModeAndTier() {
@@ -177,4 +180,16 @@ internal fun CodeViewModel.discardPendingSkinChange() {
         )
     }
     _uiState.update { it.copy(conversationSkin = it.conversationSkin.discard()) }
+}
+
+/**
+ * 显式「立即应用」（用户规格 2026-11，SkinPendingBar 动作入口）：一键
+ * 跨过策略门提升 pending —— 运行中先走现成中止能力（[CodeViewModel.abort]
+ * 内部同步收口 isRunning=false 并挂 onRunSettled，幂等不重复），随后
+ * 无条件 promote（幂等：无 pending 原样返回，epoch 不虚增）。适用两种
+ * 形态：IMMEDIATE 策略运行中挂起、显式 ON_NEW_CHAT 档的原地提前生效。
+ */
+internal fun CodeViewModel.applyPendingSkinNow() {
+    if (_uiState.value.isRunning) abort()
+    _uiState.update { it.copy(conversationSkin = it.conversationSkin.promote()) }
 }

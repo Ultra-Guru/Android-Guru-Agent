@@ -458,6 +458,16 @@ fun CodeScreen(
                         }
                     }
 
+                    // ═══ 外观待生效横幅（2026-11「呈现立即」）：设置改完尚未提升的
+                    // 两种形态（运行中挂起 / ON_NEW_CHAT）给非模态提示 + 显式动作，
+                    // 不再让用户对着旧界面猜「切了为什么没反应」═══
+                    SkinPendingBar(
+                        activation = state.conversationSkin,
+                        isRunning = state.isRunning,
+                        onApplyNow = viewModel::applyPendingSkinNow,
+                        onDiscard = viewModel::discardPendingSkinChange
+                    )
+
                     // ═══ #197 模式 + 思考档位选择器行（Build/Plan 双档 + 七档思考）═══
                     //（GOAL 切入的弹层/深潜线保障在 VM setMode → onEnterGoalMode 单点，
                     // 此处保持纯方法引用——选择器与 init 恢复共用同一路径）
