@@ -11,7 +11,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -33,7 +33,8 @@ import org.junit.rules.TemporaryFolder
  * - 卸载摘除：MCP 归属回收 + 钩子退订。
  *
  * 事件等待用真实时间 harness（总线处理器在真实调度器上跑，runTest 虚拟
- * 时钟会虚假到点 —— issue #276 测试纪律）。
+ * 时钟会虚假到点）；纯快速路径用例（注册/降级/报告，无真实异步）用
+ * runTest（issue #276 测试纪律：新测试不得增加阻塞式主线程等待存量）。
  */
 class ClaudeCompatWiringTest {
 
@@ -82,28 +83,26 @@ class ClaudeCompatWiringTest {
     // ── .mcp.json 挂接 ───────────────────────────────────────────────
 
     @Test
-    fun `attach registers mcp servers and detach removes only owned`() {
+    fun `attach registers mcp servers and detach removes only owned`() = runTest {
         val port = FakeMcpPort()
         val bridge = ClaudeMcpBridge(tmp.newFolder(), port)
         val wiring = ClaudeCompatWiring(bridge, null, null)
         // 用户既有服务器（不得被插件卸载误删）
         port.added += McpServerConfig(name = "memory", transport = com.apex.agent.core.tools.mcp.McpTransport.HTTP, url = "https://x")
 
-        val report = kotlinx.coroutines.runBlocking {
-            wiring.attach(
-                pluginId = "claude.helper",
-                pluginRoot = null,
-                hooksJson = null,
-                mcpJson = """{ "mcpServers": { "fs": { "command": "npx", "args": ["-y", "s"] } } }"""
-            )
-        }
+        val report = wiring.attach(
+            pluginId = "claude.helper",
+            pluginRoot = null,
+            hooksJson = null,
+            mcpJson = """{ "mcpServers": { "fs": { "command": "npx", "args": ["-y", "s"] } } }"""
+        )
         assertEquals(listOf("fs"), report.mcpAddedServers)
         assertTrue(report.notes.any { it.contains("McpConnect") })
         // MCP 服务器注册语义：默认停用（用户显式连接）
         val fs = port.added.first { it.name == "fs" }
         assertFalse(fs.enabled)
 
-        val detachNotes = kotlinx.coroutines.runBlocking { wiring.detach("claude.helper") }
+        val detachNotes = wiring.detach("claude.helper")
         assertTrue(detachNotes.any { it.contains("1 台 MCP") })
         assertEquals(listOf("fs"), port.removed)
         assertTrue(port.added.any { it.name == "memory" }) // 用户自建保留
@@ -177,18 +176,16 @@ class ClaudeCompatWiringTest {
     // ── 诚实降级 ─────────────────────────────────────────────────────
 
     @Test
-    fun `hooks without persisted root degrade honestly`() {
+    fun `hooks without persisted root degrade honestly`() = runTest {
         // 组件齐全（桥/适配器/总线）但包根未持久化 → 走"包根未持久化"降级分支
         val bus = PluginEventBus(kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default))
         val wiring = ClaudeCompatWiring(null, ClaudeHookAdapter(ClaudeHookPort.LocalShellHookPort()), bus)
-        val report = kotlinx.coroutines.runBlocking {
-            wiring.attach(
-                pluginId = "claude.x",
-                pluginRoot = null,
-                hooksJson = """{ "hooks": { "SessionStart": [ { "hooks": [ { "type": "command", "command": "echo hi" } ] } ] } }""",
-                mcpJson = null
-            )
-        }
+        val report = wiring.attach(
+            pluginId = "claude.x",
+            pluginRoot = null,
+            hooksJson = """{ "hooks": { "SessionStart": [ { "hooks": [ { "type": "command", "command": "echo hi" } ] } ] } }""",
+            mcpJson = null
+        )
         assertTrue(report.hookedEvents.isEmpty())
         assertTrue(report.notes.any { it.contains("包根未持久化") })
         assertTrue(wiring.hookedPluginIds().isEmpty())
@@ -196,27 +193,23 @@ class ClaudeCompatWiringTest {
     }
 
     @Test
-    fun `broken hooks json degrades honestly without failing install`() {
+    fun `broken hooks json degrades honestly without failing install`() = runTest {
         val wiring = ClaudeCompatWiring(null, ClaudeHookAdapter(ClaudeHookPort.LocalShellHookPort()), null)
-        val report = kotlinx.coroutines.runBlocking {
-            wiring.attach("claude.x", tmp.newFolder(), hooksJson = "not json", mcpJson = null)
-        }
+        val report = wiring.attach("claude.x", tmp.newFolder(), hooksJson = "not json", mcpJson = null)
         assertTrue(report.notes.any { it.contains("解析失败") })
         assertTrue(wiring.hookedPluginIds().isEmpty())
     }
 
     @Test
-    fun `unmapped events are reported honestly`() {
+    fun `unmapped events are reported honestly`() = runTest {
         val bus = PluginEventBus(kotlinx.coroutines.CoroutineScope(Dispatchers.Default))
         val wiring = ClaudeCompatWiring(null, ClaudeHookAdapter(ClaudeHookPort.LocalShellHookPort()), bus)
-        val report = kotlinx.coroutines.runBlocking {
-            wiring.attach(
-                pluginId = "claude.x",
-                pluginRoot = tmp.newFolder(),
-                hooksJson = """{ "hooks": { "SomeFutureEvent": [ { "hooks": [ { "type": "command", "command": "echo x" } ] } ] } }""",
-                mcpJson = null
-            )
-        }
+        val report = wiring.attach(
+            pluginId = "claude.x",
+            pluginRoot = tmp.newFolder(),
+            hooksJson = """{ "hooks": { "SomeFutureEvent": [ { "hooks": [ { "type": "command", "command": "echo x" } ] } ] } }""",
+            mcpJson = null
+        )
         assertEquals(setOf("SomeFutureEvent"), report.unmappedEvents)
         assertTrue(report.hookedEvents.isEmpty())
         assertTrue(report.notes.any { it.contains("未映射事件") })
@@ -224,31 +217,27 @@ class ClaudeCompatWiringTest {
     }
 
     @Test
-    fun `lsp names are reported as detected but not started`() {
+    fun `lsp names are reported as detected but not started`() = runTest {
         val wiring = ClaudeCompatWiring(null, null, null)
-        val report = kotlinx.coroutines.runBlocking {
-            wiring.attach(
-                pluginId = "claude.x",
-                pluginRoot = null,
-                hooksJson = null,
-                mcpJson = null,
-                lspServerNames = listOf("typescript", "rust")
-            )
-        }
+        val report = wiring.attach(
+            pluginId = "claude.x",
+            pluginRoot = null,
+            hooksJson = null,
+            mcpJson = null,
+            lspServerNames = listOf("typescript", "rust")
+        )
         assertTrue(report.notes.any { it.contains("2 个语言服务器") && it.contains("尚未就绪") })
     }
 
     @Test
-    fun `missing wiring components degrade honestly`() {
+    fun `missing wiring components degrade honestly`() = runTest {
         val wiring = ClaudeCompatWiring(mcpBridge = null, hookAdapter = null, eventBus = null)
-        val report = kotlinx.coroutines.runBlocking {
-            wiring.attach(
-                pluginId = "claude.x",
-                pluginRoot = tmp.newFolder(),
-                hooksJson = """{ "hooks": { "PreToolUse": [ { "hooks": [ { "type": "command", "command": "echo x" } ] } ] } }""",
-                mcpJson = """{ "mcpServers": { "fs": { "command": "npx" } } }"""
-            )
-        }
+        val report = wiring.attach(
+            pluginId = "claude.x",
+            pluginRoot = tmp.newFolder(),
+            hooksJson = """{ "hooks": { "PreToolUse": [ { "hooks": [ { "type": "command", "command": "echo x" } ] } ] } }""",
+            mcpJson = """{ "mcpServers": { "fs": { "command": "npx" } } }"""
+        )
         assertTrue(report.notes.any { it.contains("MCP 桥未接线") })
         assertTrue(report.notes.any { it.contains("钩子执行组件未接线") })
     }
