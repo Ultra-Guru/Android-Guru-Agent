@@ -344,6 +344,10 @@ class ApexAgentEngine(
      * 读-改-写式更新配置：保留未触及字段，避免 [updateConfig] 全量替换时
      * 把 maxIterations / maxContextTokens / temperature 等字段重置回默认值。
      */
+    // perf P0-2:发送路径 prepareForTask 已迁 IO 调度器(线程归属由调用方
+    // 决定),与主线程设置变更路径的 patchConfig 可能跨线程并发 —— 读-改-写
+    // 统一互斥(丢更新防线),单写者调用点零竞争代价。
+    @Synchronized
     fun patchConfig(transform: (AgentConfig) -> AgentConfig) {
         val old = config
         config = transform(config)

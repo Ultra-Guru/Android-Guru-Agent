@@ -218,6 +218,9 @@ class CodeViewModel @Inject constructor(
     /** 回复聚合器（P1 Event Aggregator，类与纪律见 CodeResponseAggregator.kt）。 */
     internal val responseAggregator = ResponseAggregator()
 
+    /** 工具输出分片聚合器（perf P0-1，同款 25ms 批量归约，见 CodeToolChunkAggregator.kt）。 */
+    internal val toolChunkAggregator = ToolChunkAggregator()
+
     /** 当前绑定的会话归属工作区（null = 尚未绑定，不落盘）。 */
     internal var boundWorkspaceId: String? = null
 
@@ -588,53 +591,6 @@ class CodeViewModel @Inject constructor(
         lastRunEngineInput = engineInput
         lastRunDisplayGoal = displayGoal
 
-        // Issue #164：发送前同步全局规则（设置页改动无需重启，下轮生效）。
-        // 引擎侧注入详见 CodeAgentEngine.refreshContext + RulesProvider。
-        codeEngineImpl?.updateGlobalRules(settingsRepository.agentSettings.value.globalRules)
-
-        // ═══ #197 「小圆环」函数调用（Coding 工位独占）：会话上下文附加段 +
-        // v4 强制工具计划。prepareForTask 的 refreshContext 会把 extras 拼进
-        // additionalSystemContext（顺序：先存 extras 再刷上下文）。 ═══
-        // 功能聚合注入段（16 项能力）同通道追加 —— 小圆环在前、功能聚合在后。
-        // 用户画像（五维长期特征）：置信度 Top-8 段拼在最前（个性化基线，
-        // snapshotBlocking 主线程安全）；v1.9 角色经验卡：召回的相关经验段
-        // 拼在末位（同类任务先读历史教训）。
-        val profileSection = userProfileStore.snapshotBlocking()
-            .topForInjection()
-            .toSystemContextSection()
-        // v1.5.17 自定义子代理类型目录：CodeTask 的工具描述是静态的（DI
-        // 期构建），自定义角色对主模型不可见——目录拼进会话附加段让主
-        // 模型知道有哪些角色可委派（空清单零注入，零 token 开销）。
-        val baseExtras = neonOrbStore.mergeWith(toolkitStore.buildSessionContext())
-            .let { base ->
-                SubAgentPrompts.customTypeCatalog(
-                    settingsRepository.agentSettings.value.subagent.customTypes
-                ).takeIf { it.isNotBlank() }?.let { "$base\n\n$it" } ?: base
-            }
-        codeEngineImpl?.updateSessionExtras(
-            roleExperience.enrichExtras(
-                base = if (profileSection == null) {
-                    baseExtras
-                } else {
-                    "$profileSection\n\n$baseExtras"
-                },
-                goal = goal
-            )
-        )
-        codeEngineImpl?.updateForcedTools(
-            forcedToolIds = toolkitStore.forcedToolIds(),
-            exposeAll = toolkitStore.exposeAllToolsEnabled()
-        )
-
-        // ═══ AUTO 档自治：发送前预检选档（四线统一，引擎零参与）═══
-        // 先解析、后 prepareForTask：预检结果（具体深度档）先落引擎字段，
-        // refreshContext 再按该档注入编码特化指令——本轮 run 即生效
-        // （旧序为「先 refresh 再预检」，深潜线 AUTO 的编码指令恒滞后一轮）。
-        // 决策进系统消息 + uiState.adaptiveDecision（选择器旁回显）。
-        // 非 AUTO 档直接用用户显式档（引擎档位缓存同步刷新，幂等）。
-        resolveRuntimeThinkingLevel(goal)
-
-        codeEngineImpl?.prepareForTask()
 
         // v1.2 长任务追踪：本次运行的开始（旧 run 未收尾会被自动 ABORTED
         // 收尾，见 LongTaskTracker.beginRun 防御）。档位记用户选择（AUTO 记
@@ -660,6 +616,10 @@ class CodeViewModel @Inject constructor(
 
         runJob = viewModelScope.launch {
             _uiState.update { it.copy(isRunning = true, error = null, errorRetriable = false) }
+            // perf P0-2:全局规则同步 / 画像·聚合·经验段组装 / AUTO 预检 /
+            // prepareForTask(同步磁盘 IO)整体迁出 UI 线程,点击发送不再冻结;
+            // 顺序契约与引擎就绪时点不变(见 CodeEngineContextPrep.kt)。
+            prepareEngineContext(goal)
             var aborted = false
             try {
                 codeEngine.execute(UserInput(text = engineInput)).collect { event ->
@@ -670,7 +630,8 @@ class CodeViewModel @Inject constructor(
                         // v3 GOAL：验收结论不走思考卡（默认折叠只有 80 字预览，
                         // 且下一轮 ThinkingComplete 会整体覆写文本吞掉通知）
                         // → 注入系统行，时间轴常驻可见并随会话落盘。
-                        // 系统行插队前先冲回复缓冲（边界强制刷新，保顺序）。
+                        // 系统行插队前先冲分片/回复缓冲（边界强制刷新，保顺序）。
+                        flushToolChunks()
                         responseAggregator.flush { reduce(it) }
                         appendSystemMessage(event.text.trim())
                     } else {
@@ -679,8 +640,15 @@ class CodeViewModel @Inject constructor(
                     when (event) {
                         // P1 聚合：chunk 进缓冲由 ticker 批量归约；胶囊路径自批
                         is AgentEvent.ResponseChunk -> responseAggregator.append(event.text)
-                        // 边界事件强制先冲文本再归约（保顺序，见 CodeResponseAggregator）
+                        // perf P0-1：工具输出分片同款进缓冲（多工具并发时行/帧级
+                        // 频率，逐片 reduce = 每片全量复制 messages，多工具卡顿主因）
+                        is AgentEvent.ToolOutputChunk -> {
+                            responseAggregator.flush { reduce(it) }
+                            toolChunkAggregator.append(event.chunk)
+                        }
+                        // 边界事件强制先冲文本/分片再归约（保顺序，见两个聚合器）
                         else -> {
+                            flushToolChunks()
                             responseAggregator.flush { reduce(it) }
                             reduce(event)
                         }
@@ -699,6 +667,7 @@ class CodeViewModel @Inject constructor(
                 showError(message, retriable = true)
             } finally {
                 // 取消/收束：冲残留缓冲（先于 isStreaming 收口，冲入文本一并收口）
+                flushToolChunks()
                 responseAggregator.flush { reduce(it) }
                 _uiState.update {
                     it.copy(
@@ -891,7 +860,7 @@ class CodeViewModel @Inject constructor(
      * 引擎从不感知 AUTO——四条逻辑线同语义；标准/织造/信使线的适配器
      * 收到解析后的档位各自映射回合预算倍率（KitThinkingLevel 等价枚举）。
      */
-    private fun resolveRuntimeThinkingLevel(goal: String) {
+    internal fun resolveRuntimeThinkingLevel(goal: String) {
         val selected = _uiState.value.thinkingLevel
         if (selected != CodeThinkingLevel.AUTO) {
             effectiveRunLevel = selected
