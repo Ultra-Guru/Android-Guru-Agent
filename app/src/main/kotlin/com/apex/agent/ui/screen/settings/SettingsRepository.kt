@@ -566,7 +566,7 @@ data class AgentSettings(
 
     // ═══ 工具权限（v1.0 #155 业界标准式权限模式；S-03：默认档 DEFAULT）═══
     // 引擎执行器门控：模式（BYPASS/DEFAULT/ACCEPT_EDITS/PLAN）+ 按序首匹配
-    // 规则三元组（ALLOW/ASK/DENY，pattern 支持尾缀星号通配，覆盖 mcp__
+    // 规则三元组（ALLOW/ASK/DENY，pattern 支持尾缀星号通配，覆盖 Mcp*
     // 动态 id）。决策器见 PermissionDecider，门见 PermissionModeGate。
     // 历史：2026-10 曾按用户反馈把默认档改为 BYPASS（全自动）并对存量
     // DEFAULT 用户一次性翻转 —— 等于无感知自动提权（S-03 修复对象）。

@@ -349,7 +349,7 @@ object ToolModule {
 
     /**
      * v4 — MCP 工具注册器：McpManager 会话事件 → ToolRegistry 一等工具
-     * （mcp__server__tool）。IO 专用 Supervisor 作用域：发现失败不影响宿主，
+     * （v5 命名 Mcp{Server}{Tool}）。IO 专用 Supervisor 作用域：发现失败不影响宿主，
      * 进程级生命周期（不主动取消）。
      */
     @Provides
@@ -380,7 +380,11 @@ object ToolModule {
         traceRecorder: ToolTraceRecorder,
         breaker: ToolCircuitBreaker,
         // Issue #165：钩子注册表（null 安全重载仅为可测性保留；生产性传非空）
-        hookRegistry: HookRegistry? = null
+        hookRegistry: HookRegistry? = null,
+        // Phase 6 收尾：宿主事件总线——工具事件（BEFORE/AFTER_TOOL_CALL 族）
+        // 的生产者。OpenCode 钩子转发与 Claude Hooks 订阅经此收到真实事件
+        // （此前总线零工具事件生产者，插件订阅永远空转）。
+        pluginEventBus: com.apex.agent.core.tools.pluginhost.bridge.PluginEventBus? = null
     ): com.apex.agent.core.tools.ToolExecutor = ToolExecutorBuilder(registry)
         // v1.0 #55 门控链：环境门 →（权限门 → 风险门）—— PermissionAwareToolGate
         // 把权限模式与风险确认合成一门：权限门显式放行/会话记忆命中时跳过
@@ -400,13 +404,25 @@ object ToolModule {
         // lambda 才能推成 suspend（?.let{} / if/else 直传均不行，K2 限制，
         // 见 .verify/scratch/t2c/test/BridgePatternCheck.kt 三轮验证）。
         .apply {
-            if (hookRegistry != null) {
+            if (hookRegistry != null || pluginEventBus != null) {
                 beforeToolHooks { toolId, args ->
-                    hookRegistry.dispatch(HookEvent.PreToolUse(toolId, args))
-                        .takeUnless { it.isNoOp }
+                    pluginEventBus?.dispatch(
+                        com.apex.agent.core.tools.pluginhost.bridge.PluginEventBus.PluginHostEvent.BEFORE_TOOL_CALL,
+                        com.apex.agent.core.tools.pluginhost.bridge.PluginEventPayloads.toolCall(toolId, args.raw)
+                    )
+                    hookRegistry?.dispatch(HookEvent.PreToolUse(toolId, args))
+                        ?.takeUnless { it.isNoOp }
                 }
                 afterToolHooks { toolId, args, result, isError, durationMs ->
-                    hookRegistry.dispatch(
+                    pluginEventBus?.dispatch(
+                        if (isError) {
+                            com.apex.agent.core.tools.pluginhost.bridge.PluginEventBus.PluginHostEvent.AFTER_TOOL_CALL_FAILURE
+                        } else {
+                            com.apex.agent.core.tools.pluginhost.bridge.PluginEventBus.PluginHostEvent.AFTER_TOOL_CALL
+                        },
+                        com.apex.agent.core.tools.pluginhost.bridge.PluginEventPayloads.toolCall(toolId, args.raw)
+                    )
+                    hookRegistry?.dispatch(
                         HookEvent.PostToolUse(toolId, args, result, isError, durationMs)
                     )
                 }
@@ -534,7 +550,11 @@ object ToolModule {
         pluginWorkerSupervisor: com.apex.agent.core.tools.pluginhost.worker.PluginWorkerSupervisor,
         pluginToolBridge: com.apex.agent.core.tools.pluginhost.bridge.PluginToolBridge,
         extensionLayout: com.apex.agent.core.tools.extension.ExtensionDirLayout,
-        apexNotifications: com.apex.agent.notify.ApexNotifications
+        apexNotifications: com.apex.agent.notify.ApexNotifications,
+        // Phase 6 收尾：宿主事件总线（执行器插槽派发工具事件——OpenCode 钩子
+        // 转发与 Claude Hooks 订阅的事件源）+ DSH 工具注册器（启动 sweep）
+        pluginEventBus: com.apex.agent.core.tools.pluginhost.bridge.PluginEventBus,
+        dshToolRegistrar: com.apex.agent.core.tools.extension.dsh.DshToolRegistrar
     ): ToolRegistry {
         val registry = DefaultToolRegistry()
 
@@ -955,7 +975,7 @@ object ToolModule {
         // v3+P83 联合收敛：原实现把 McpCallTool/McpListTool/McpConnectTool 注册了
         // 三次（第 12 节前后各一次 + 尾部重复块）——REPLACE 策略下静默互踩。
         // 此处为唯一注册点（v3 去重 + P83 尾部重复块移除，同题同解）。
-        // v4：连接成功后 McpToolRegistrar 还会把远程工具以 mcp__server__tool
+        // v4/v5：连接成功后 McpToolRegistrar 还会把远程工具以 Mcp{Server}{Tool}
         // 一等函数注册进来（带真实 schema，模型可直接调用）。
         registry.register(SafeAgentTool(McpCallTool(mcpManager)))
         registry.register(SafeAgentTool(McpListTool(mcpManager)))
@@ -1006,6 +1026,12 @@ object ToolModule {
         registry.register(SafeAgentTool(SkillUninstallTool(skillRegistry)))
         // 技能渐进披露：模型侧装载入口（全文返回 + 写入激活集持续注入）。
         registry.register(SafeAgentTool(SkillActivateTool(skillRegistry, skillActivation)))
+
+        // ═══ 16b. DSH 工具注册器：能力快照 → 一等工具（Phase 6 收尾）═══
+        // 装后钩子（PluginRuntimeWiring）负责新装即注册；此处启动 sweep 兜住
+        // 「装完重启后工具面丢失」（注册表是进程内的）——对账本全部 dsh_plugin
+        // 记录补注册，IO scope 自持，快照过期/失败只记日志。
+        dshToolRegistrar.start(extensionLedger)
 
         // ═══ 13b. FusionBundle 工具族（FusionList/FusionInfo/FusionActivate —— 注册体在卫星文件）═══
         registerFusionBundleTools(registry, fusionController, skillRegistry, mcpManager, skillActivation)
@@ -1065,7 +1091,7 @@ object ToolModule {
         val mainExecutor: ToolExecutor = SecretRedactingExecutor(
             delegate = buildV3Executor(
                 registry, riskAwareToolGate, permissionModeGate, toolUsageTracker,
-                environmentState, traceRecorder, circuitBreaker, hookRegistry
+                environmentState, traceRecorder, circuitBreaker, hookRegistry, pluginEventBus
             ),
             redactor = vaultRepository.secretRedactor
         )

@@ -106,7 +106,7 @@ object ToolTierPolicy {
         "GetDeviceInfo", "Time", "ContextRecap", "ContextSearch", "ContextFetch",
         "Clipboard", "Screenshot", "Calculate",
 
-        // ── MCP (first-class tools register as mcp__server__tool) ──
+        // ── MCP (first-class remote tools register as Mcp{Server}{Tool}; 管理三件常驻) ──
         "McpList", "McpConnect", "McpCall",
 
         // ── skills & connectors ──

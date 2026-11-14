@@ -7,7 +7,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
-import java.security.MessageDigest
 
 /**
  * # DshArtifactAnalyzer —— Stage 1 静态能力分析（不执行插件代码）
@@ -86,41 +85,19 @@ class DshArtifactAnalyzer(
             else -> PackageClass.PARTIAL_ARTIFACT
         }
 
-        // ── 文件清单 + 预算 + 内容指纹 ──
+        // ── 文件清单 + 预算 + 内容指纹（DshPackageFingerprint 单一真相源）──
         val notes = mutableListOf<String>()
-        val digest = MessageDigest.getInstance("SHA-256")
-        val scripts = mutableListOf<String>()
-        var analyzedFiles = 0
-        var skippedFiles = 0
-        var totalBytes = 0L
-        pkg.walkTopDown()
+        val fingerprintResult = DshPackageFingerprint.compute(pkg)
+        val analyzedFiles = fingerprintResult.analyzedFiles
+        val skippedFiles = fingerprintResult.skippedFiles
+        val fingerprint = fingerprintResult.fingerprint
+        val scripts = pkg.walkTopDown()
             .filter { it.isFile }
             .filter { f -> !relPath(pkg, f).startsWith("node_modules/") && !relPath(pkg, f).startsWith(".git/") }
-            .sortedBy { relPath(pkg, it) }
-            .forEach { f ->
-                val rel = relPath(pkg, f)
-                if (analyzedFiles >= MAX_FILES || totalBytes >= MAX_TOTAL_BYTES) {
-                    skippedFiles += 1
-                    return@forEach
-                }
-                val bytes = runCatching { f.readBytes() }.getOrNull()
-                if (bytes == null) {
-                    skippedFiles += 1
-                    return@forEach
-                }
-                analyzedFiles += 1
-                totalBytes += bytes.size
-                digest.update(rel.toByteArray(Charsets.UTF_8))
-                digest.update(bytes)
-                if (rel.endsWith(".js") || rel.endsWith(".mjs") || rel.endsWith(".cjs")) scripts.add(rel)
-                if (!rel.endsWith(".js") && !rel.endsWith(".mjs") && !rel.endsWith(".cjs") && !rel.endsWith(".json") &&
-                    !rel.endsWith(".md") && !rel.endsWith(".html") && !rel.endsWith(".txt")
-                ) {
-                    // 非常规扩展名：只进指纹，不进 AST 面如实计数
-                }
-            }
+            .map { relPath(pkg, it) }
+            .filter { it.endsWith(".js") || it.endsWith(".mjs") || it.endsWith(".cjs") }
+            .toList()
         if (skippedFiles > 0) notes.add("文件预算截断：$skippedFiles 个文件未分析（上限 $MAX_FILES 个 / ${MAX_TOTAL_BYTES}B）")
-        val fingerprint = digest.digest().joinToString("") { "%02x".format(it) }
 
         // ── AST 线索（沙箱内 acorn；未 bootstrap = analyzer null 诚实降级）──
         var analyzerUsed: String? = null

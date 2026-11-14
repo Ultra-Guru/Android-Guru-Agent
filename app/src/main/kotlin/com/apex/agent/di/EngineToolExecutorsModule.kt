@@ -12,6 +12,8 @@ import com.apex.agent.core.tools.ToolRateLimiter
 import com.apex.agent.core.tools.ToolRegistry
 import com.apex.agent.core.tools.ToolTraceRecorder
 import com.apex.agent.core.tools.ToolUsageTracker
+import com.apex.agent.core.tools.pluginhost.bridge.PluginEventBus
+import com.apex.agent.core.tools.pluginhost.bridge.PluginEventPayloads
 import com.apex.agent.vault.SecretRedactor
 import com.apex.agent.vault.SecretRedactingExecutor
 import dagger.Module
@@ -52,10 +54,11 @@ object EngineToolExecutorsModule {
         traceRecorder: ToolTraceRecorder,
         circuitBreaker: ToolCircuitBreaker,
         hookRegistry: HookRegistry,
+        pluginEventBus: PluginEventBus,
         secretRedactor: SecretRedactor
     ): ToolExecutor = buildEnvOnlyExecutor(
         registry, toolUsageTracker, environmentState, traceRecorder,
-        circuitBreaker, hookRegistry, secretRedactor
+        circuitBreaker, hookRegistry, pluginEventBus, secretRedactor
     )
 
     /**
@@ -72,10 +75,11 @@ object EngineToolExecutorsModule {
         traceRecorder: ToolTraceRecorder,
         circuitBreaker: ToolCircuitBreaker,
         hookRegistry: HookRegistry,
+        pluginEventBus: PluginEventBus,
         secretRedactor: SecretRedactor
     ): ToolExecutor = buildEnvOnlyExecutor(
         registry, toolUsageTracker, environmentState, traceRecorder,
-        circuitBreaker, hookRegistry, secretRedactor
+        circuitBreaker, hookRegistry, pluginEventBus, secretRedactor
     )
 
     /**
@@ -92,10 +96,11 @@ object EngineToolExecutorsModule {
         traceRecorder: ToolTraceRecorder,
         circuitBreaker: ToolCircuitBreaker,
         hookRegistry: HookRegistry,
+        pluginEventBus: PluginEventBus,
         secretRedactor: SecretRedactor
     ): ToolExecutor = buildEnvOnlyExecutor(
         registry, toolUsageTracker, environmentState, traceRecorder,
-        circuitBreaker, hookRegistry, secretRedactor
+        circuitBreaker, hookRegistry, pluginEventBus, secretRedactor
     )
 
     /** 仅环境门执行器装配（三线同构——策略常量与主执行器同口径）。 */
@@ -106,6 +111,7 @@ object EngineToolExecutorsModule {
         traceRecorder: ToolTraceRecorder,
         circuitBreaker: ToolCircuitBreaker,
         hookRegistry: HookRegistry,
+        pluginEventBus: PluginEventBus?,
         secretRedactor: SecretRedactor
     ): ToolExecutor = SecretRedactingExecutor(
         delegate = ToolExecutorBuilder(registry)
@@ -122,10 +128,22 @@ object EngineToolExecutorsModule {
             .tracer(traceRecorder)
             .apply {
                 beforeToolHooks { toolId, args ->
+                    pluginEventBus?.dispatch(
+                        PluginEventBus.PluginHostEvent.BEFORE_TOOL_CALL,
+                        PluginEventPayloads.toolCall(toolId, args.raw)
+                    )
                     hookRegistry.dispatch(HookEvent.PreToolUse(toolId, args))
                         .takeUnless { it.isNoOp }
                 }
                 afterToolHooks { toolId, args, result, isError, durationMs ->
+                    pluginEventBus?.dispatch(
+                        if (isError) {
+                            PluginEventBus.PluginHostEvent.AFTER_TOOL_CALL_FAILURE
+                        } else {
+                            PluginEventBus.PluginHostEvent.AFTER_TOOL_CALL
+                        },
+                        PluginEventPayloads.toolCall(toolId, args.raw)
+                    )
                     hookRegistry.dispatch(
                         HookEvent.PostToolUse(toolId, args, result, isError, durationMs)
                     )
