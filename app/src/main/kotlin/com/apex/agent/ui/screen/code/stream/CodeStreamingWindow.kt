@@ -17,7 +17,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.State
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -98,8 +99,11 @@ internal fun StreamingCodeWindow(
             // ── 代码体（尾窗）：写 = 绿色流入；编辑 = 红删 + 绿增 ──
             // 光标块呼吸脉冲（0.15↔1，750ms 往返）：写入进行中的“活”感，
             // 替代旧静态「▍」——终态收束后窗口整体收回，动画随组件销毁停。
+            // perf-20261114：动画 State 直接下传、仅在末行 CursorLine 内取值
+            // —— 旧实现组合期取值，呼吸期间整个代码窗（14 行 + 头行）每帧
+            // 重组；现每帧仅末行一个小 Text 重组。
             val transition = rememberInfiniteTransition(label = "stream-cursor")
-            val cursorAlpha by transition.animateFloat(
+            val cursorAlpha = transition.animateFloat(
                 initialValue = 0.15f,
                 targetValue = 1f,
                 animationSpec = infiniteRepeatable(tween(750), RepeatMode.Reverse),
@@ -162,13 +166,15 @@ private fun StreamOmittedHint(truncated: Boolean) {
  *   与 [CodeDiffView] 行背景同语义；未变行不传 = 无背景）；
  * - [cursorAlpha] 非空时，末行尾缀光标块以呼吸透明度单独着色（流式
  *   进行中的“活”感；尾窗 ≤14 行，逐行 Text 的重组开销可忽略）。
+ *   perf-20261114：State 直传，取值收敛到末行 [CursorLine] ——
+ *   呼吸动画每帧只重组末行一个小 Text，不再连带全窗。
  */
 @Composable
 private fun StreamCodeBlock(
     text: String,
     color: Color,
     modifier: Modifier = Modifier,
-    cursorAlpha: Float? = null,
+    cursorAlpha: State<Float>? = null,
     lineBg: Color? = null
 ) {
     val rowBg = lineBg?.copy(alpha = STREAM_LINE_BG_ALPHA)
@@ -182,24 +188,7 @@ private fun StreamCodeBlock(
                     .then(if (rowBg != null) Modifier.background(rowBg) else Modifier)
             ) {
                 if (isLast && cursorAlpha != null) {
-                    val annotated = buildAnnotatedString {
-                        val cursorAt = line.lastIndexOf(STREAM_CURSOR)
-                        if (cursorAt >= 0) {
-                            append(line.substring(0, cursorAt))
-                            withStyle(SpanStyle(color = color.copy(alpha = cursorAlpha))) {
-                                append(STREAM_CURSOR)
-                            }
-                        } else {
-                            append(line)
-                        }
-                    }
-                    Text(
-                        text = annotated,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = color,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    CursorLine(line = line, color = color, cursorAlpha = cursorAlpha)
                 } else {
                     Text(
                         text = line.ifEmpty { " " },
@@ -212,6 +201,37 @@ private fun StreamCodeBlock(
             }
         }
     }
+}
+
+/**
+ * 带呼吸光标的末行（perf-20261114：动画取值的最小重组作用域）。
+ */
+@Composable
+private fun CursorLine(
+    line: String,
+    color: Color,
+    cursorAlpha: State<Float>
+) {
+    val annotated = remember(line, color, cursorAlpha.value) {
+        buildAnnotatedString {
+            val cursorAt = line.lastIndexOf(STREAM_CURSOR)
+            if (cursorAt >= 0) {
+                append(line.substring(0, cursorAt))
+                withStyle(SpanStyle(color = color.copy(alpha = cursorAlpha.value))) {
+                    append(STREAM_CURSOR)
+                }
+            } else {
+                append(line)
+            }
+        }
+    }
+    Text(
+        text = annotated,
+        style = MaterialTheme.typography.labelSmall,
+        fontFamily = FontFamily.Monospace,
+        color = color,
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 /** 头行右侧的规模文案：写 = 行数；编辑 = −旧行/+新行。 */

@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.neverEqualPolicy
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposeRenderEffect
@@ -30,6 +31,8 @@ import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.toIntSize
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.highlight.HighlightElement
@@ -260,6 +263,108 @@ private class DrawBackdropNode(
 
     private var padding by mutableFloatStateOf(0f)
 
+    // ═══ perf-20261114：层重录制输入快照 ═══
+    // recordLayer 的产物只由以下输入决定；输入未变时跳过重录制（draw()
+    // 会被祖先/内容失效连带重入，旧实现每次都整层重录 —— 流式期间每帧
+    // 全部玻璃卡的 display list 重录正是「Record View#draw」尖峰与
+    // RenderThread「flush layers」排队的主要来源）。源层（LayerBackdrop）
+    // 的内容更新不需重录：录制产物持有对源 GraphicsLayer 的活引用，重放
+    // 时自动取源层当前内容；只有位置需要重录。
+    //
+    // 位置差分用 positionInWindow() **值比较**而非 LayoutCoordinates 实例
+    // 比较 —— Compose 的 coordinator 实例在纯位移（滚动/抽屉滑动/IME 平移）
+    // 时复用不变，实例恒等会漏检 → 采样错位。取值 walks coordinator 链，
+    // 代价远低于整层重录。
+    //
+    // 已知取舍：layerBlock 内部读取的动画状态（按压缩放的反演变换）只在
+    // 重录时取样 —— 按压动画期间采样反演滞后约一帧级别（视觉缩放本身经
+    // graphicsLayer 层属性通道仍实时）；本仓列表卡 scaleOnPress=false，
+    // 仅小按钮受影响，亚像素级可忽略。
+    private var recordedPosition: Offset? = null
+    private var recordedSourcePosition: Offset? = null
+    private var recordedPadding: Float = -1f
+    private var recordedBackdrop: Backdrop? = null
+    private var recordedOnDrawBackdrop: (DrawScope.(DrawScope.() -> Unit) -> Unit)? = null
+    private var recordedLayerBlock: (GraphicsLayerScope.() -> Unit)? = null
+    private var recordedSize: IntSize = IntSize(-1, -1)
+    private var recordedDirection: LayoutDirection? = null
+
+    // ═══ exportedBackdrop 包装层的独立快照（主层快照的尺寸含 padding，
+    // 混用会乒乓互触发重录 —— 拆开各自记账）═══
+    private var exportedRecordedSize: IntSize = IntSize(-1, -1)
+    private var exportedRecordedDirection: LayoutDirection? = null
+    private var exportedRecordedOnDrawBehind: (DrawScope.() -> Unit)? = null
+    private var exportedRecordedOnDrawSurface: (DrawScope.() -> Unit)? = null
+    private var exportedRecordedOnDrawFront: (DrawScope.() -> Unit)? = null
+
+    /**
+     * 是否必须重录：未知形态的坐标依赖源（CombinedBackdrop 等组合形态）
+     * 读不到其内部位置状态，保守恒重录（保持旧语义）；LayerBackdrop 与
+     * 坐标无关源（Canvas/Empty）可安全差分。
+     */
+    private fun isAlwaysDirty(): Boolean =
+        backdrop.isCoordinatesDependent && backdrop !is LayerBackdrop
+
+    private fun sourceCoordinates(): LayoutCoordinates? =
+        (backdrop as? LayerBackdrop)?.layerCoordinates
+
+    // 窗口坐标取值（null = 无坐标 —— 坐标无关源恒 null，差分退化为恒等）
+    private fun currentPosition(): Offset? = layoutCoordinates?.positionInWindow()
+
+    private fun sourcePosition(): Offset? = sourceCoordinates()?.positionInWindow()
+
+    private fun inputsChanged(
+        layerSize: IntSize,
+        direction: LayoutDirection
+    ): Boolean {
+        // 逐项引用/值比较 —— 任一输入变化才允许 recordLayer
+        return isAlwaysDirty() ||
+            layerSize != recordedSize ||
+            direction != recordedDirection ||
+            padding != recordedPadding ||
+            currentPosition() != recordedPosition ||
+            sourcePosition() != recordedSourcePosition ||
+            backdrop !== recordedBackdrop ||
+            onDrawBackdrop !== recordedOnDrawBackdrop ||
+            layerBlock !== recordedLayerBlock
+    }
+
+    private fun snapshotInputs(
+        layerSize: IntSize,
+        direction: LayoutDirection
+    ) {
+        recordedSize = layerSize
+        recordedDirection = direction
+        recordedPadding = padding
+        recordedPosition = currentPosition()
+        recordedSourcePosition = sourcePosition()
+        recordedBackdrop = backdrop
+        recordedOnDrawBackdrop = onDrawBackdrop
+        recordedLayerBlock = layerBlock
+    }
+
+    /** exportedBackdrop 包装层的输入差分（尺寸不含 padding，与主层分开记账）。 */
+    private fun exportedInputsChanged(
+        layerSize: IntSize,
+        direction: LayoutDirection
+    ): Boolean =
+        layerSize != exportedRecordedSize ||
+            direction != exportedRecordedDirection ||
+            onDrawBehind !== exportedRecordedOnDrawBehind ||
+            onDrawSurface !== exportedRecordedOnDrawSurface ||
+            onDrawFront !== exportedRecordedOnDrawFront
+
+    private fun snapshotExportedInputs(
+        layerSize: IntSize,
+        direction: LayoutDirection
+    ) {
+        exportedRecordedSize = layerSize
+        exportedRecordedDirection = direction
+        exportedRecordedOnDrawBehind = onDrawBehind
+        exportedRecordedOnDrawSurface = onDrawSurface
+        exportedRecordedOnDrawFront = onDrawFront
+    }
+
     private val recordBackdropBlock: (DrawScope.() -> Unit) = {
         val canvas = drawContext.canvas
         val padding = padding
@@ -281,26 +386,39 @@ private class DrawBackdropNode(
         }
     }
 
-    private val drawBackdropLayer: DrawScope.() -> Unit = {
+    /**
+     * perf-20261114：返回是否重录了层内容 —— exportedBackdrop 的外层包装
+     * 录制以此为脏标记（内部输入未变时包装层同样免重录）。
+     */
+    private val drawBackdropLayer: DrawScope.() -> Boolean = {
+        var recorded = false
         val layer = graphicsLayer
         if (layer != null) {
             val padding = padding
-
-            recordLayer(
-                this@DrawBackdropNode,
-                layer,
-                size = IntSize(
-                    size.width.toInt() + padding.toInt() * 2,
-                    size.height.toInt() + padding.toInt() * 2
-                ),
-                block = recordBackdropBlock
+            val layerSize = IntSize(
+                size.width.toInt() + padding.toInt() * 2,
+                size.height.toInt() + padding.toInt() * 2
             )
+
+            // perf-20261114：输入快照差分 —— 内容失效连带重入但采样输入
+            // 未变时复用已录制层（源层内容更新经活引用自动可见）。
+            if (inputsChanged(layerSize, layoutDirection)) {
+                recordLayer(
+                    this@DrawBackdropNode,
+                    layer,
+                    size = layerSize,
+                    block = recordBackdropBlock
+                )
+                snapshotInputs(layerSize, layoutDirection)
+                recorded = true
+            }
 
             layer.topLeft =
                 if (padding != 0f) IntOffset(-padding.toInt(), -padding.toInt())
                 else IntOffset.Zero
             drawLayer(layer)
         }
+        recorded
     }
 
     override fun MeasureScope.measure(
@@ -319,17 +437,24 @@ private class DrawBackdropNode(
         }
 
         onDrawBehind?.invoke(this)
-        drawBackdropLayer()
+        val backdropRecorded = drawBackdropLayer()
         onDrawSurface?.invoke(this)
         drawContent()
         onDrawFront?.invoke(this)
 
         exportedBackdrop?.graphicsLayer?.let { layer ->
-            recordLayer(this@DrawBackdropNode, layer) {
-                onDrawBehind?.invoke(this)
-                drawBackdropLayer()
-                onDrawSurface?.invoke(this)
-                onDrawFront?.invoke(this)
+            // perf-20261114：包装层独立快照 —— 主层引用是活的（内容更新
+            // 自动可见），只在包装自身输入（尺寸/方向/绘制 lambda 实例）
+            // 变化或主层重录时保守重录。
+            val exportedSize = size.toIntSize()
+            if (backdropRecorded || exportedInputsChanged(exportedSize, layoutDirection)) {
+                recordLayer(this@DrawBackdropNode, layer) {
+                    onDrawBehind?.invoke(this)
+                    drawBackdropLayer()
+                    onDrawSurface?.invoke(this)
+                    onDrawFront?.invoke(this)
+                }
+                snapshotExportedInputs(exportedSize, layoutDirection)
             }
         }
     }
@@ -389,5 +514,19 @@ private class DrawBackdropNode(
         effectScope.reset()
         layoutCoordinates = null
         exportedBackdrop?.layerCoordinates = null
+        // perf-20261114：复位输入快照 —— 复挂后首轮 draw 强制重录
+        recordedSize = IntSize(-1, -1)
+        recordedDirection = null
+        recordedPadding = -1f
+        recordedPosition = null
+        recordedSourcePosition = null
+        recordedBackdrop = null
+        recordedOnDrawBackdrop = null
+        recordedLayerBlock = null
+        exportedRecordedSize = IntSize(-1, -1)
+        exportedRecordedDirection = null
+        exportedRecordedOnDrawBehind = null
+        exportedRecordedOnDrawSurface = null
+        exportedRecordedOnDrawFront = null
     }
 }
