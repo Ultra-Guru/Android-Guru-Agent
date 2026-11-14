@@ -172,8 +172,15 @@ object PrivilegeDetector {
         // 被污染性 cwd 掩盖。
         val effectiveWorkDir = workDir?.let { File(it).absoluteFile }?.takeIf { it.isDirectory }
 
+        // #808：通道判定改走 [getPrivilegeLevel]——复用其 30s TTL 缓存与
+        // invalidateCache 生命周期失效（Shizuku binder 死亡 / 用户起停时主动
+        // 失效）。旧实现每条命令直调 detectRoot()/detectShizuku()，绕过缓存
+        // → 每次都 fork `su -c id` 子进程探测（约 3s/条）。判定语义不变：
+        // ROOT > SHIZUKU > NORMAL_SHELL，与 getPrivilegeLevel() 内部一致。
+        val level = getPrivilegeLevel()
+
         // 优先级1: Root（cd 前缀单引号安全包裹：带空格/元字符的路径不再语法错误）
-        if (detectRoot()) {
+        if (level == PrivilegeLevel.ROOT) {
             val suCommand = if (effectiveWorkDir != null) {
                 "cd ${shellQuote(effectiveWorkDir.absolutePath)} && $command"
             } else {
@@ -188,7 +195,7 @@ object PrivilegeDetector {
         }
 
         // 优先级2: Shizuku —— 真实 ADB 级（IShizukuService.newProcess AIDL）
-        if (detectShizuku()) {
+        if (level == PrivilegeLevel.SHIZUKU) {
             return executeViaShizuku(command, timeoutMs, effectiveWorkDir?.absolutePath)
         }
 
