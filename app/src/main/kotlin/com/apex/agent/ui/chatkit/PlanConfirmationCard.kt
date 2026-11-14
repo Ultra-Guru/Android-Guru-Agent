@@ -1,8 +1,6 @@
 package com.apex.agent.ui.chatkit
 
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,6 +34,9 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
 import com.apex.agent.core.engine.ExecutionPlan
+import com.apex.agent.ui.glass.PartSurface
+import com.apex.agent.ui.theme.CodingPart
+import androidx.compose.foundation.layout.PaddingValues
 
 /**
  * #169 计划确认卡（人控）：每步 Checkbox（默认勾选）+ 上移/下移重排，
@@ -62,118 +63,113 @@ internal fun PlanConfirmationCard(
     }
     val anyEnabled = orderIds.any { enabledIds[it] == true }
 
-    // 2026-10 流式去玻璃：M3 Surface + secondary 语义色 1dp 描边（确认卡）
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(
-                1.dp,
-                MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f),
-                RoundedCornerShape(12.dp)
-            ),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(12.dp)
+    // v1.7 部件皮肤（PartSkin spec）：计划确认卡走 PartSurface(input.plan_confirm)
+    // —— 新默认 PALE_LIQUID 浅白玻璃（secondary 描边淘汰，语义色只上徽标/
+    // 文字，FR-11）；单层容器（FR-12），16dp 内容 padding 由 contentPadding 贡献。
+    PartSurface(
+        part = CodingPart.INPUT_PLAN_CONFIRM,
+        shape = RoundedCornerShape(12.dp),
+        contentPadding = PaddingValues(16.dp),
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(stringResource(R.string.chat_confirm_plan_title), style = MaterialTheme.typography.titleSmall)
+            // 规划期只读徽标（#169）：Agent 处于只读规划阶段，尚未执行任何操作
+            Surface(
+                color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f),
+                shape = RoundedCornerShape(6.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.plan_planning_readonly),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = stringResource(R.string.plan_adjust_hint),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        orderIds.forEachIndexed { displayPos, stepId ->
+            val step = plan.steps.firstOrNull { it.index == stepId } ?: return@forEachIndexed
+            val checked = enabledIds[stepId] == true
+            val stepEnableDesc = stringResource(R.string.plan_step_enable)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                modifier = Modifier.padding(vertical = 1.dp)
             ) {
-                Text(stringResource(R.string.chat_confirm_plan_title), style = MaterialTheme.typography.titleSmall)
-                // 规划期只读徽标（#169）：Agent 处于只读规划阶段，尚未执行任何操作
-                Surface(
-                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f),
-                    shape = RoundedCornerShape(6.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.plan_planning_readonly),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = stringResource(R.string.plan_adjust_hint),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            orderIds.forEachIndexed { displayPos, stepId ->
-                val step = plan.steps.firstOrNull { it.index == stepId } ?: return@forEachIndexed
-                val checked = enabledIds[stepId] == true
-                val stepEnableDesc = stringResource(R.string.plan_step_enable)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(vertical = 1.dp)
-                ) {
-                    Checkbox(
-                        checked = checked,
-                        onCheckedChange = { enabledIds[stepId] = it },
-                        modifier = Modifier
-                            .size(32.dp)
-                            .semantics { contentDescription = stepEnableDesc }
-                    )
-                    Text(
-                        text = "${displayPos + 1}.",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (checked) MaterialTheme.colorScheme.onSurface
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = step.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        // 未勾选步骤：灰色 + 划线（执行时将被跳过）
-                        color = if (checked) MaterialTheme.colorScheme.onSurface
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        textDecoration = if (checked) null else TextDecoration.LineThrough,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(
-                        onClick = {
-                            if (displayPos > 0) orderIds.add(displayPos - 1, orderIds.removeAt(displayPos))
-                        },
-                        enabled = displayPos > 0,
-                        // UI-012：48dp 触区红线（原 28dp）
-                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.KeyboardArrowUp,
-                            stringResource(R.string.plan_move_up),
-                            Modifier.size(18.dp)
-                        )
-                    }
-                    IconButton(
-                        onClick = {
-                            if (displayPos < orderIds.lastIndex) orderIds.add(displayPos + 1, orderIds.removeAt(displayPos))
-                        },
-                        enabled = displayPos < orderIds.lastIndex,
-                        // UI-012：48dp 触区红线（原 28dp）
-                        modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.KeyboardArrowDown,
-                            stringResource(R.string.plan_move_down),
-                            Modifier.size(18.dp)
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-            // 「执行」保持在卡片最末；空选禁用
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = onReject) { Text(stringResource(R.string.chat_cancel)) }
-                Button(
-                    enabled = anyEnabled,
+                Checkbox(
+                    checked = checked,
+                    onCheckedChange = { enabledIds[stepId] = it },
+                    modifier = Modifier
+                        .size(32.dp)
+                        .semantics { contentDescription = stepEnableDesc }
+                )
+                Text(
+                    text = "${displayPos + 1}.",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (checked) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = step.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    // 未勾选步骤：灰色 + 划线（执行时将被跳过）
+                    color = if (checked) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    textDecoration = if (checked) null else TextDecoration.LineThrough,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(
                     onClick = {
-                        onConfirm(orderIds.filter { enabledIds[it] == true }, orderIds.toList())
-                    }
-                ) { Text(stringResource(R.string.chat_execute)) }
+                        if (displayPos > 0) orderIds.add(displayPos - 1, orderIds.removeAt(displayPos))
+                    },
+                    enabled = displayPos > 0,
+                    // UI-012：48dp 触区红线（原 28dp）
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                ) {
+                    Icon(
+                        Icons.Default.KeyboardArrowUp,
+                        stringResource(R.string.plan_move_up),
+                        Modifier.size(18.dp)
+                    )
+                }
+                IconButton(
+                    onClick = {
+                        if (displayPos < orderIds.lastIndex) orderIds.add(displayPos + 1, orderIds.removeAt(displayPos))
+                    },
+                    enabled = displayPos < orderIds.lastIndex,
+                    // UI-012：48dp 触区红线（原 28dp）
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                ) {
+                    Icon(
+                        Icons.Default.KeyboardArrowDown,
+                        stringResource(R.string.plan_move_down),
+                        Modifier.size(18.dp)
+                    )
+                }
             }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        // 「执行」保持在卡片最末；空选禁用
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = onReject) { Text(stringResource(R.string.chat_cancel)) }
+            Button(
+                enabled = anyEnabled,
+                onClick = {
+                    onConfirm(orderIds.filter { enabledIds[it] == true }, orderIds.toList())
+                }
+            ) { Text(stringResource(R.string.chat_execute)) }
         }
     }
 }

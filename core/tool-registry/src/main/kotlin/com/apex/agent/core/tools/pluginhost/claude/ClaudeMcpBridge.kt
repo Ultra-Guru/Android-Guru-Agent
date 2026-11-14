@@ -95,6 +95,12 @@ class ClaudeMcpBridge(
 
     // ── 官方配置 → 宿主 McpServerConfig ────────────────────────────────
 
+    /**
+     * 官方条目 → 宿主配置。**安装 ≠ 启动**（与 RegistryMcpInstaller 的 REMOTE
+     * 语义对齐）：一律 `enabled=false` 落盘——社区插件声明的服务器不因安装
+     * 而自动拉起（stdio 还会在沙箱 fork 进程），用户/模型经 McpConnect 或
+     * 设置开关显式启用；连接后工具自然注册（McpToolRegistrar 链路）。
+     */
     private fun toServerConfig(name: String, cfg: JsonObject): McpServerConfig? {
         val type = cfg["type"]?.jsonPrimitive?.content ?: ""
         val url = cfg["url"]?.jsonPrimitive?.content ?: ""
@@ -108,6 +114,7 @@ class ClaudeMcpBridge(
                     url = url,
                     transport = if (type.equals("sse", true)) McpTransport.SSE else McpTransport.HTTP,
                     headers = cfg.stringMap("headers"),
+                    enabled = false,
                     scope = "all"
                 )
             }
@@ -119,6 +126,7 @@ class ClaudeMcpBridge(
                 args = cfg.stringList("args"),
                 env = cfg.stringMap("env"),
                 runInSandbox = true,
+                enabled = false,
                 scope = "all"
             )
             else -> null

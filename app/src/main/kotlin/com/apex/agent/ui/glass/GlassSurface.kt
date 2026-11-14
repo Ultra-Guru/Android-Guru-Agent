@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.dp
+import com.apex.agent.ui.screen.code.LocalConversationSkin
 import com.apex.agent.ui.theme.LocalUiStyle
 import com.apex.agent.ui.theme.UiStyle
 import com.kyant.backdrop.Backdrop
@@ -63,6 +64,10 @@ import androidx.compose.ui.unit.DpOffset
  * 渲染层级（自下而上）：Compose shadow（裁剪外，可外溢）→ RenderNode 圆角
  * 裁剪层（v1.4.5 白天方角根因的同款保证，杜绝 blur 角部外溢）→ kyant0
  * drawBackdrop（Highlight/InnerShadow 自管理形状）→ 内容。
+ *
+ * NFR-5 豁免（PartSkin spec）：[forceGlass] 为真时绕过 MINIMAL 短路 ——
+ * 供 PaleLiquidSurface 在部件显式开启 forceGlassInMinimal 时保留玻璃管线；
+ * 默认 false，既有调用点行为零变化（短路纪律单点不破）。
  */
 @Composable
 fun GlassSurface(
@@ -76,6 +81,7 @@ fun GlassSurface(
     focused: Boolean = false,
     interactionSource: MutableInteractionSource? = null,
     scaleOnPress: Boolean = true,
+    forceGlass: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val interaction = interactionSource ?: remember { MutableInteractionSource() }
@@ -100,7 +106,15 @@ fun GlassSurface(
     // 风格层的唯一扁平化收敛点（UiStyle Spec：业务组件零感知）—— 实色
     // 底 + 发丝描边 + 同款激活度/按压缩放，零 blur / 零折射 / 零光带。
     // 置于激活度计算之后：交互反馈语言在两种风格间保持一致。
-    if (LocalUiStyle.current == UiStyle.MINIMAL) {
+    // forceGlass = NFR-5 豁免（PartSkin spec）：部件级 forceGlassInMinimal
+    // 显式开启时才绕过短路，默认关 —— 短路纪律不破。
+    // v1.2 双 Local 分离（PartSkin spec §7.5.1）：Coding 子树内材质短路从
+    // 会话快照取（LocalConversationSkin —— 会话内冻结，改动只挂 pending）；
+    // 壳层 / 设置页 / GlassLab 无会话 → 回落全局 LocalUiStyle（外观不受
+    // 「待生效」影响，配色类仍由 ApexTheme 全局下发）。
+    val conversation = LocalConversationSkin.current
+    val minimalStyle = (conversation?.uiStyle ?: LocalUiStyle.current) == UiStyle.MINIMAL
+    if (minimalStyle && !forceGlass) {
         FlatSurface(
             modifier = modifier,
             style = style,

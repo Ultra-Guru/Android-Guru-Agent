@@ -6,13 +6,21 @@ import com.apex.agent.core.tools.extension.ExtensionDirLayout
 import com.apex.agent.core.tools.extension.ExtensionInstaller
 import com.apex.agent.core.tools.extension.ExtensionRegistry
 import com.apex.agent.core.tools.extension.NodeInstallPort
+import com.apex.agent.core.tools.ToolRegistry
 import com.apex.agent.core.tools.extension.adapters.ClaudeExtensionAdapter
 import com.apex.agent.core.tools.extension.adapters.ApkPackageExtensionAdapter
 import com.apex.agent.core.tools.extension.adapters.DshExtensionAdapter
 import com.apex.agent.core.tools.extension.adapters.McpExtensionAdapter
 import com.apex.agent.core.tools.extension.adapters.OpenCodeExtensionAdapter
 import com.apex.agent.core.tools.extension.adapters.SkillExtensionAdapter
+import com.apex.agent.core.tools.extension.dsh.DshCapabilitiesStore
+import com.apex.agent.core.tools.extension.dsh.DshToolRegistrar
 import com.apex.agent.core.tools.fusion.FusionBundleRegistry
+import com.apex.agent.core.tools.pluginhost.bridge.PluginEventBus
+import com.apex.agent.core.tools.pluginhost.claude.ClaudeCompatWiring
+import com.apex.agent.core.tools.pluginhost.claude.ClaudeHookAdapter
+import com.apex.agent.core.tools.pluginhost.claude.ClaudeMcpBridge
+import dagger.Lazy
 import com.apex.agent.core.tools.mcp.McpManager
 import com.apex.agent.core.tools.mcp.McpServerConfig
 import com.apex.agent.core.tools.skill.SkillActivationStore
@@ -162,10 +170,13 @@ object ExtensionModule {
         fusionRegistry: FusionBundleRegistry,
         nodeInstallPort: NodeInstallPort,
         apkInstallPort: com.apex.agent.core.tools.extension.adapters.ApkPackageExtensionAdapter.ApkInstallPort,
-        layout: com.apex.agent.core.tools.extension.ExtensionDirLayout
+        layout: com.apex.agent.core.tools.extension.ExtensionDirLayout,
+        // Phase 6 收尾：DSH 能力快照（registrar 与 introspector 同一份真相）
+        dshStore: DshCapabilitiesStore,
+        // Phase 6 收尾：Claude 兼容层挂接三件（hooks/.mcp.json/.lsp.json 装后自动挂接）
+        claudeCompatWiring: ClaudeCompatWiring
     ): ExtensionAdapterRegistry {
         // DSH Native Plugin Host（2026-11）：静态分析 + 动态验证 + 能力快照编排
-        val dshStore = com.apex.agent.core.tools.extension.dsh.DshCapabilitiesStore(layout)
         val dshAnalyzer = com.apex.agent.core.tools.extension.dsh.DshArtifactAnalyzer(
             port = nodeInstallPort, layout = layout, extensionRoot = layout.extensionRoot
         )
@@ -188,7 +199,9 @@ object ExtensionModule {
                 ClaudeExtensionAdapter(
                     fusionRegistry = fusionRegistry,
                     skillRegistry = skillRegistry,
-                    fetchBytes = { url -> textFetcher.fetchBytes(url) }
+                    fetchBytes = { url -> textFetcher.fetchBytes(url) },
+                    compatWiring = claudeCompatWiring,
+                    layout = layout
                 ),
                 DshExtensionAdapter(port = nodeInstallPort, layout = layout, introspector = dshIntrospector),
                 ApkPackageExtensionAdapter(port = apkInstallPort)
@@ -196,13 +209,68 @@ object ExtensionModule {
         )
     }
 
-    /** 统一安装闸门（resolve/inspect/install 编排 + hash 门/确认门 + 账本/锁）。 */
+    /** DSH 能力快照存储单例（introspector 写 / registrar 读 / Doctor 探针 —— 同一份真相）。 */
+    @Provides
+    @Singleton
+    fun provideDshCapabilitiesStore(
+        layout: com.apex.agent.core.tools.extension.ExtensionDirLayout
+    ): DshCapabilitiesStore = DshCapabilitiesStore(layout)
+
+    /**
+     * DSH 工具注册器（Phase 6 收尾：能力快照 → 一等工具）。
+     * ToolRegistry 经 Lazy 注入防环（registrar 注册的 DSH 工具与内置工具同权，
+     * 但注册表自身的装配不依赖 registrar）。
+     */
+    @Provides
+    @Singleton
+    fun provideDshToolRegistrar(
+        lazyRegistry: Lazy<ToolRegistry>,
+        store: DshCapabilitiesStore,
+        layout: com.apex.agent.core.tools.extension.ExtensionDirLayout,
+        nodeInstallPort: NodeInstallPort
+    ): DshToolRegistrar = DshToolRegistrar(
+        // 惰性解析破环：provideToolRegistry 依赖本注册器（启动 sweep），
+        // 注册表实例推迟到 sweep 首次注册时解析（DI 图已构建完成）。
+        registryProvider = { lazyRegistry.get() },
+        store = store,
+        layout = layout,
+        port = nodeInstallPort,
+        extensionRoot = layout.extensionRoot
+    )
+
+    /**
+     * Claude 兼容层挂接器（Phase 6 收尾：hooks/.mcp.json/.lsp.json 装后自动挂接）。
+     * 三件组件由 PluginHostModule 提供（MCP 桥经既有 McpManager、钩子经沙箱端口、
+     * 事件经宿主总线——复用零新概念）。
+     */
+    @Provides
+    @Singleton
+    fun provideClaudeCompatWiring(
+        mcpBridge: ClaudeMcpBridge,
+        hookAdapter: ClaudeHookAdapter,
+        eventBus: PluginEventBus
+    ): ClaudeCompatWiring = ClaudeCompatWiring(
+        mcpBridge = mcpBridge,
+        hookAdapter = hookAdapter,
+        eventBus = eventBus
+    )
+
+    /**
+     * 统一安装闸门（resolve/inspect/install 编排 + hash 门/确认门 + 账本/锁）。
+     * Phase 6 收尾：挂 [PluginRuntimeWiring] 装后钩子——opencode 装后自动启动
+     * Worker、DSH 能力快照转一等工具（失败不炸安装，notes 如实）。
+     */
     @Provides
     @Singleton
     fun provideExtensionInstaller(
         registry: ExtensionRegistry,
-        adapters: ExtensionAdapterRegistry
-    ): ExtensionInstaller = ExtensionInstaller(adapters = adapters, registry = registry)
+        adapters: ExtensionAdapterRegistry,
+        runtimeWiring: PluginRuntimeWiring
+    ): ExtensionInstaller = ExtensionInstaller(
+        adapters = adapters,
+        registry = registry,
+        lifecycleHook = runtimeWiring
+    )
 
     /**
      * 启动期自动同步（PR-E）：设置开关 + 清单存在才评估；漂移/失败通知。

@@ -50,7 +50,10 @@ class BrowserRolePolicyTest {
 
     @Test
     fun `来源推断_mcp与plugin与skill`() {
-        assertEquals(ToolSource.MCP, BrowserRolePolicy.sourceFor("mcp__search__web_search"))
+        // v5 命名回归：一等 MCP 工具 id 为 Mcp{Server}{Tool}
+        // （v4 旧前缀 mcp__ 在 v5 id 上永不命中，曾把 MCP 工具误标 CORE）
+        assertEquals(ToolSource.MCP, BrowserRolePolicy.sourceFor("McpSearchWebSearch"))
+        assertEquals(ToolSource.MCP, BrowserRolePolicy.sourceFor("McpGithubCreateIssue"))
         assertEquals(ToolSource.PLUGIN, BrowserRolePolicy.sourceFor("PluginWorkflowRun"))
         assertEquals(ToolSource.SKILL, BrowserRolePolicy.sourceFor("SkillInstall"))
         assertEquals(ToolSource.CORE, BrowserRolePolicy.sourceFor("BrowserNavigate"))
