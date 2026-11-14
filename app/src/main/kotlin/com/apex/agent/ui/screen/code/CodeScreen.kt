@@ -345,10 +345,6 @@ fun CodeScreen(
                 // v1.2：风格分派改读会话快照（H-5：当前对话内冻结）。
                 if (activeSkin.outputStyle == CodeOutputStyle.RIKKA) {
                     RikkaStreamTimeline(
-                        thinkingCollapsed = agentPresentation.codeRikkaThinkingCollapsed,
-                        onThinkingCollapsedChange = { collapsed ->
-                            viewModel.settingsRepository.updateAgentSettings { copy(codeRikkaThinkingCollapsed = collapsed) }
-                        },
                         snapshot = state.stream,
                         isStreaming = state.isRunning,
                         renderMode = activeSkin.renderMode,
