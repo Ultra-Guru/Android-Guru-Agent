@@ -601,6 +601,16 @@ data class AgentSettings(
     val goalMaxRounds: Int = 8,
     val goalVerifierEnabled: Boolean = true,
 
+    // ═══ v4 Coding 模式级联选择器：三档自主级别（提问策略）═══
+    // codeAutonomyLevel：Build 模式记忆的自主级别（interactive|semi|fully，
+    // 默认交互式）；codeGoalAutonomyLevel：Goal 模式记忆（GoalSpec 启动时
+    // 拍平快照并回写此处）。两模式各自记忆，切模式互不影响。
+    val codeAutonomyLevel: String = "interactive",
+    val codeGoalAutonomyLevel: String = "interactive",
+    // codeFullAutoPreClarify：完全自主「开始前集中澄清」开关（默认关；
+    // 切到其他自主级别时隐藏但保留状态，见 AutonomyLevel KDoc）。
+    val codeFullAutoPreClarify: Boolean = false,
+
     // ═══ v3 Coding 工位增强 ═══
     // codeOutputMode：Coding 屏输出展示档（揭示时机维度）——"streaming"
     // （默认，实时渲染：逐字/逐胶囊流式）| "complete"（整段模式：生成中

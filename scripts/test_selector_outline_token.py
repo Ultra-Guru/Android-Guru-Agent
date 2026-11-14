@@ -12,11 +12,18 @@ def test_mode_and_role_selectors_share_semantic_outline():
     assert THEME.is_file(), "semantic AlphaTokens.kt is missing"
     token = THEME.read_text(encoding="utf-8")
     assert re.search(r"fun selectorOutlineColor\(\): Color\s*=\s*MaterialTheme\.colorScheme\.outlineVariant\.copy\(alpha\s*=\s*0\.6f\)", token)
-    for filename in ("ModeSelector.kt", "RoleSelector.kt"):
-        source = (CHATKIT / filename).read_text(encoding="utf-8")
-        assert "import com.apex.agent.ui.theme.selectorOutlineColor" in source, filename
-        assert re.search(r"border\s*=\s*BorderStroke\(1\.dp,\s*selectorOutlineColor\(\)\)", source), filename
-        assert "outlineVariant.copy(alpha = 0.6f)" not in source, filename
+    # v4 级联选择器重构：模式胶囊随 CodeModeCascadeSelector 从 chatkit/ModeSelector.kt
+    # 迁至 screen/code（ModeSelector.kt 只剩共享助手）；契约跟随代码——模式
+    # 与角色两个选择器胶囊仍必须共用同一语义描边 token。
+    selectors = (
+        ROOT / "app/src/main/kotlin/com/apex/agent/ui/screen/code/CodeModeCascadeSelector.kt",
+        CHATKIT / "RoleSelector.kt",
+    )
+    for path in selectors:
+        source = path.read_text(encoding="utf-8")
+        assert "import com.apex.agent.ui.theme.selectorOutlineColor" in source, path.name
+        assert re.search(r"border\s*=\s*BorderStroke\(1\.dp,\s*selectorOutlineColor\(\)\)", source), path.name
+        assert "outlineVariant.copy(alpha = 0.6f)" not in source, path.name
 
 
 if __name__ == "__main__":

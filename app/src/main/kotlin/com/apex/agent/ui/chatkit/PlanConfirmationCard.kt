@@ -1,6 +1,8 @@
 package com.apex.agent.ui.chatkit
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -10,6 +12,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Button
@@ -21,9 +26,12 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -36,12 +44,18 @@ import com.apex.agent.R
 import com.apex.agent.core.engine.ExecutionPlan
 import com.apex.agent.ui.glass.PartSurface
 import com.apex.agent.ui.theme.CodingPart
-import androidx.compose.foundation.layout.PaddingValues
 
 /**
- * #169 计划确认卡（人控）：每步 Checkbox（默认勾选）+ 上移/下移重排，
- * 未勾选步骤灰色划线；「执行」保持在卡片最末，未勾选任何步骤时禁用
- * （引擎侧对空集另有防御回退，见 PlanGraph.applyAdjustments）。
+ * #169 计划确认卡（人控；v4 升级三规格区块 + Goal 流转入口）：
+ *
+ * - **三规格区块**（对应计划的三份规格呈现）：计划目标（goal）/ 规划
+ *   依据（reasoning，可折叠）/ 执行步骤（每步 Checkbox 默认勾选 +
+ *   上移/下移重排，未勾选步骤灰色划线）；
+ * - 头行右侧 **Flag 图标**（[onSwitchToGoal]）：带此计划切到 Goal 模式
+ *   （VM 侧驳回挂起计划 + 目标陈述预填计划目标，见 switchToGoalFromPlan）；
+ * - 「开始执行方案」保持在卡片最末（v4 文案，点击后由调用方切 Build
+ *   执行），未勾选任何步骤时禁用（引擎侧对空集另有防御回退，见
+ *   PlanGraph.applyAdjustments）。
  *
  * 提交语义：onConfirm 回传（勾选的原 index 集，展示顺序的原 index 清单）；
  * 引擎 Phase 3.5 用 PlanGraph 应用筛选/重排并做 dependsOn 拓扑校验 ——
@@ -51,7 +65,8 @@ import androidx.compose.foundation.layout.PaddingValues
 internal fun PlanConfirmationCard(
     plan: ExecutionPlan,
     onConfirm: (enabledSteps: List<Int>, order: List<Int>) -> Unit,
-    onReject: () -> Unit
+    onReject: () -> Unit,
+    onSwitchToGoal: (() -> Unit)? = null
 ) {
     // 人控状态：勾选集 + 展示顺序（均存「原 step.index」；确认时整体回传，
     // UI 不预演拓扑结果 —— 锁定前的最终顺序由引擎决定）。
@@ -62,6 +77,8 @@ internal fun PlanConfirmationCard(
         mutableStateListOf<Int>().apply { addAll(plan.steps.map { it.index }) }
     }
     val anyEnabled = orderIds.any { enabledIds[it] == true }
+    var reasoningExpanded by remember { mutableStateOf(false) }
+    val switchGoalCd = stringResource(R.string.plan_switch_to_goal_cd)
 
     // v1.7 部件皮肤（PartSkin spec）：计划确认卡走 PartSurface(input.plan_confirm)
     // —— 新默认 PALE_LIQUID 浅白玻璃（secondary 描边淘汰，语义色只上徽标/
@@ -76,7 +93,11 @@ internal fun PlanConfirmationCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(stringResource(R.string.chat_confirm_plan_title), style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = stringResource(R.string.chat_confirm_plan_title),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f)
+            )
             // 规划期只读徽标（#169）：Agent 处于只读规划阶段，尚未执行任何操作
             Surface(
                 color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f),
@@ -89,6 +110,23 @@ internal fun PlanConfirmationCard(
                     modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                 )
             }
+            // v4：带此计划切到 Goal 模式（驳回挂起计划 + 目标陈述预填）
+            if (onSwitchToGoal != null) {
+                IconButton(
+                    onClick = onSwitchToGoal,
+                    // UI-012：48dp 触区红线
+                    modifier = Modifier
+                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .semantics { contentDescription = switchGoalCd }
+                ) {
+                    Icon(
+                        Icons.Default.Flag,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
         }
         Spacer(modifier = Modifier.height(4.dp))
         Text(
@@ -97,6 +135,52 @@ internal fun PlanConfirmationCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(modifier = Modifier.height(8.dp))
+
+        // ═══ v4 三规格区块 ═══
+        // ① 计划目标（做什么）
+        if (plan.goal.isNotBlank()) {
+            SpecSectionLabel(text = stringResource(R.string.plan_section_goal))
+            Text(
+                text = plan.goal,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+        }
+        // ② 规划依据（为什么这样规划，可折叠）
+        if (plan.reasoning.isNotBlank()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { reasoningExpanded = !reasoningExpanded }
+            ) {
+                Text(
+                    text = stringResource(R.string.plan_section_reasoning),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    imageVector = if (reasoningExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+            if (reasoningExpanded) {
+                Text(
+                    text = plan.reasoning,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+        }
+        // ③ 执行步骤（勾选 / 重排）
+        SpecSectionLabel(text = stringResource(R.string.plan_section_steps))
 
         orderIds.forEachIndexed { displayPos, stepId ->
             val step = plan.steps.firstOrNull { it.index == stepId } ?: return@forEachIndexed
@@ -161,7 +245,7 @@ internal fun PlanConfirmationCard(
         }
 
         Spacer(modifier = Modifier.height(12.dp))
-        // 「执行」保持在卡片最末；空选禁用
+        // 「开始执行方案」保持在卡片最末（点击后由调用方切 Build 执行）；空选禁用
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(onClick = onReject) { Text(stringResource(R.string.chat_cancel)) }
             Button(
@@ -169,7 +253,18 @@ internal fun PlanConfirmationCard(
                 onClick = {
                     onConfirm(orderIds.filter { enabledIds[it] == true }, orderIds.toList())
                 }
-            ) { Text(stringResource(R.string.chat_execute)) }
+            ) { Text(stringResource(R.string.plan_start_execution)) }
         }
     }
+}
+
+/** 规格区块小标题（三规格区块共用）。 */
+@Composable
+private fun SpecSectionLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }

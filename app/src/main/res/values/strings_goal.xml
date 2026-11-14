@@ -10,12 +10,12 @@
     <string name="goal_setup_empty_statement">Goal statement cannot be empty</string>
     <string name="goal_criteria_label">Acceptance criteria (verifiable)</string>
     <string name="goal_criteria_placeholder">All tests pass (./gradlew test, zero failures)\nApp launches to the home screen</string>
-    <string name="goal_criteria_hint">Criteria must be objectively verifiable — the verifier judges by evidence (command output / file contents / test results), not by “should be fine”.</string>
+    <string name="goal_criteria_hint">Criteria must be objectively verifiable — the verifier judges by evidence (command output / file contents / test results), not by “should be fine”. One criterion per line: the verifier checks each line and the status card shows per-criterion results.</string>
     <string name="goal_setup_empty_criteria">Acceptance criteria cannot be empty</string>
     <string name="goal_max_rounds">Max verification rounds</string>
     <string name="goal_start">Start goal</string>
     <string name="goal_how_it_works">How it works</string>
-    <string name="goal_how_it_works_body">After each round the agent finishes, a fast model checks the work against the criteria. If not met, the agent keeps working with the gap analysis injected, until the goal is achieved or the rounds run out.</string>
+    <string name="goal_how_it_works_body">The goal runs as a state machine: clarifying (fully autonomous + batch clarification) → spec ready → executing → verifying → done / blocked. After each round the agent finishes, a fast model checks the work against the criteria line by line. If not met, the agent keeps working with the gap analysis injected, until the goal is achieved or the rounds run out.</string>
 
     <!-- ═══ 状态卡（GoalStatusCard）═══ -->
     <string name="goal_status_active">In progress</string>
