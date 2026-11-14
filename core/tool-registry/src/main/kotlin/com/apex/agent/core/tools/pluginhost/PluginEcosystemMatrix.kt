@@ -37,8 +37,9 @@ data class EcosystemCapabilityStatus(
 object PluginEcosystemMatrix {
 
     // ── Claude Code 插件 ─────────────────────────────────────────────────
-    // 审计结论（aa104f64 基线）：ClaudePluginImporter 已转换 skills /
-    // commands / agents；hooks / .mcp.json / .lsp.json 未接入（Phase 5）。
+    // 审计结论（aa104f64 基线 + Phase 6.5 收尾）：ClaudePluginImporter 转换
+    // skills / commands / agents；hooks / .mcp.json 装后自动挂接
+    // （ClaudeCompatWiring）；.lsp.json 识别但诚实报告不启动。
     private val claude: Map<PluginCapability, EcosystemCapabilityStatus> = mapOf(
         PluginCapability.SKILLS to EcosystemCapabilityStatus(
             PluginCapability.SKILLS, CapabilitySupport.SUPPORTED,
@@ -57,12 +58,14 @@ object PluginEcosystemMatrix {
             "人设与提示词经 FusionBundle 注入；官方 prompt 模板变量仅部分映射"
         ),
         PluginCapability.HOOKS to EcosystemCapabilityStatus(
-            PluginCapability.HOOKS, CapabilitySupport.PARTIAL,
-            "官方协议调度已实现（真实 sh E2E 锁：stdin JSON / exit code 语义 / hookSpecificOutput 解析）；安装链路接线待 Phase 6"
+            PluginCapability.HOOKS, CapabilitySupport.SUPPORTED,
+            "官方协议调度 + 装后自动挂接（ClaudeCompatWiring，Phase 6.5）：宿主工具事件 → stdin JSON / " +
+                "exit code 语义沙箱执行（真实 sh E2E 锁）；卸载自动退订"
         ),
         PluginCapability.MCP_SERVERS to EcosystemCapabilityStatus(
-            PluginCapability.MCP_SERVERS, CapabilitySupport.PARTIAL,
-            ".mcp.json → 既有 McpManager 桥已实现（stdio 沙箱 + 来源归属账本）；安装链路接线待 Phase 6"
+            PluginCapability.MCP_SERVERS, CapabilitySupport.SUPPORTED,
+            ".mcp.json 装后自动注册进既有 McpManager（一律 enabled=false，「安装≠启动」，" +
+                "McpConnect 显式连接）；stdio 沙箱 + 来源归属账本，卸载自动回收"
         ),
         PluginCapability.LSP to EcosystemCapabilityStatus(
             PluginCapability.LSP, CapabilitySupport.PLANNED,
@@ -146,8 +149,10 @@ object PluginEcosystemMatrix {
     // ── DSH 插件 ──────────────────────────────────────────────────────────
     private val dsh: Map<PluginCapability, EcosystemCapabilityStatus> = mapOf(
         PluginCapability.TOOLS to EcosystemCapabilityStatus(
-            PluginCapability.TOOLS, CapabilitySupport.UNKNOWN,
-            "DSH 真实插件协议未完成审计（dsh-* 前缀族仅安装链路已通）", plannedPhase = 6
+            PluginCapability.TOOLS, CapabilitySupport.SUPPORTED,
+            "DshToolRegistrar 把能力快照 observed 工具注册为一等 AgentTool" +
+                "（冷启动执行 node dsh-run-tool.js，快照过期拒绝注册）；真实 dsh-tools " +
+                "defineTool 与 PRoot 持久 Worker 两道真机 P0 待验证（docs/dsh-compat.md）"
         ),
         PluginCapability.HOOKS to EcosystemCapabilityStatus(
             PluginCapability.HOOKS, CapabilitySupport.UNKNOWN,
@@ -168,7 +173,8 @@ object PluginEcosystemMatrix {
         ),
         PluginCapability.STORAGE to EcosystemCapabilityStatus(
             PluginCapability.STORAGE, CapabilitySupport.PARTIAL,
-            "MCP resources 只读桥已具备；写语义按协议能力如实报告"
+            "客户端未实现 resources/list 与 resources/read 调用方法（协议缺口，见 MCP 规格缺口清单）；" +
+                "initialize 握手的 capabilities.resources 布尔位如实上报"
         )
     )
 

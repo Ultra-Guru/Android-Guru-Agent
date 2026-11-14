@@ -950,7 +950,7 @@ object ToolModule {
         registry.register(SafeAgentTool(McpConnectTool(mcpManager)))
 
         // ═══ 12. Tool System v4 — 工具目录元工具（渐进披露）═══
-        // 注册表 ~110 工具不再全量随请求发送（根因：请求体撑爆 + 非法函数名
+        // 注册表 230+ 工具不再全量随请求发送（根因：请求体撑爆 + 非法函数名
         // 直接 400）。CORE 集常驻，其余能力经目录按需加载：
         //   ToolSearch 找 → ToolOpen 加载（描述+schema 作为工具结果注入，
         //   下一轮即可调用）→ ToolList 总览。
