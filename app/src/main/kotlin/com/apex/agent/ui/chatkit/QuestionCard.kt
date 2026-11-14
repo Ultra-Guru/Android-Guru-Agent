@@ -28,15 +28,17 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
 import com.apex.agent.core.engine.AgentQuestion
-import com.apex.agent.ui.glass.GlassCard
+import com.apex.agent.ui.glass.PartSurface
 import com.kyant.backdrop.Backdrop
-import com.apex.agent.ui.glass.GlassStyle
+import com.apex.agent.ui.theme.CodingPart
+import androidx.compose.foundation.layout.PaddingValues
 
 /**
  * 工具/权限门的结构化提问卡（Agent 屏历史形态 + Coding 屏 v6 玻璃接线）。
  *
- * [backdrop]：悬浮栈与时间轴 layerBackdrop 源互为兄弟时传入 —— 提问卡从
- * GlassCard 获得真实 backdrop 采样（白天模式乳白磨砂而非实色 ElevatedCard）；
+ * [backdrop]：悬浮栈与时间轴 layerBackdrop 源互为兄弟时传入 —— 提问卡走
+ * PartSurface(input.question_card) 新默认 PALE_LIQUID 浅白玻璃（真实
+ * backdrop 采样；v1.7 部件皮肤：accent=secondary 整卡染色淘汰，FR-11）；
  * null 时保持原 ElevatedCard 形态（Agent 屏历史调用零变更）。
  */
 @Composable
@@ -47,11 +49,11 @@ internal fun QuestionCard(
     backdrop: Backdrop? = null
 ) {
     if (backdrop != null) {
-        GlassCard(
+        PartSurface(
+            part = CodingPart.INPUT_QUESTION_CARD,
             backdrop = backdrop,
-            style = GlassStyle.Card,
             shape = RoundedCornerShape(12.dp),
-            accent = MaterialTheme.colorScheme.secondary,
+            contentPadding = PaddingValues(0.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             QuestionCardBody(question, onAnswer, onCancel, compactPadding = true)

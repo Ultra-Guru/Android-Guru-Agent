@@ -45,7 +45,7 @@ class MemoryWriteToolsTest {
 
     @Test
     fun `经验整理 - 摘要教训实体关系全量落库并回报`() = runTest {
-        val tool = MemoryConsolidateExperienceTool(kit)
+        val tool = MemoryConsolidateExperienceTool(kit, TaskConsolidationTracker())
         val out = tool.execute(
             """
             {"goal": "给张三发送图片", "outcome": "经聊天窗口附件选择完成", "success": true,
@@ -69,7 +69,7 @@ class MemoryWriteToolsTest {
 
     @Test
     fun `重复提交 - 幂等强化不堆积`() = runTest {
-        val tool = MemoryConsolidateExperienceTool(kit)
+        val tool = MemoryConsolidateExperienceTool(kit, TaskConsolidationTracker())
         val args = """{"goal": "查天气", "outcome": "已完成查询", "success": true,
                       "lessons": ["天气 App 首页即含结果"]}"""
         tool.execute(args)
@@ -80,7 +80,7 @@ class MemoryWriteToolsTest {
 
     @Test
     fun `缺 goal 或 outcome 报错不抛`() = runTest {
-        val tool = MemoryConsolidateExperienceTool(kit)
+        val tool = MemoryConsolidateExperienceTool(kit, TaskConsolidationTracker())
         assertEquals(true, tool.execute("""{"outcome": "x"}""").startsWith("Error:"))
         assertEquals(true, tool.execute("""{"goal": "x"}""").startsWith("Error:"))
         assertEquals(true, tool.execute("not json").startsWith("Error:"))
@@ -88,7 +88,7 @@ class MemoryWriteToolsTest {
 
     @Test
     fun `坏形状数组条目跳过不炸`() = runTest {
-        val tool = MemoryConsolidateExperienceTool(kit)
+        val tool = MemoryConsolidateExperienceTool(kit, TaskConsolidationTracker())
         val out = tool.execute(
             """
             {"goal": "g", "outcome": "o", "success": false,
@@ -103,6 +103,52 @@ class MemoryWriteToolsTest {
         val (entities, _) = kit.readGraph()
         assertTrue(entities.any { it.name == "有效实体" })
         assertEquals(3, entities.size)  // 有效实体 + 微信占位 + 朋友圈占位
+    }
+
+    // ══ #841 参数钳制 ═════════════════════════════════════════════
+
+    @Test
+    fun `钳制 - 教训超 32 条被裁并回报`() = runTest {
+        val tool = MemoryConsolidateExperienceTool(kit, TaskConsolidationTracker())
+        val lessons = (1..60).map { "教训$it" }
+        val args = buildString {
+            append("{\"goal\": \"g\", \"outcome\": \"o\", \"success\": true, \"lessons\": [")
+            append(lessons.joinToString(",") { "\"$it\"" })
+            append("]}")
+        }
+        val out = tool.execute(args)
+        assertTrue(out.contains("Experience consolidated"))
+        assertTrue(out.contains("CLAMPED"))
+        assertEquals(MemoryWriteLimits.MAX_LESSONS, kit.allFacts().count { it.kind == ChatFact.Kind.PROFILE })
+    }
+
+    @Test
+    fun `钳制 - 单条超 2KB 截断带标记`() = runTest {
+        val tool = MemorySaveFactTool(kit)
+        val long = "长".repeat(MemoryWriteLimits.MAX_ITEM_CHARS + 500)
+        val out = tool.execute("""{"content": "$long"}""")
+        assertTrue(out.contains("Fact saved"))
+        val saved = kit.allFacts().single().content
+        assertTrue(saved.length <= MemoryWriteLimits.MAX_ITEM_CHARS + "…[truncated]".length)
+        assertTrue(saved.endsWith("[truncated]"))
+    }
+
+    @Test
+    fun `钳制 - 图谱实体与关系超限裁剪`() = runTest {
+        val tool = MemoryGraphTool(kit)
+        val entities = (1..80).joinToString(",") {
+            "{\"name\": \"实体$it\", \"entityType\": \"app\", \"observations\": [\"观察\"]}"
+        }
+        val out = tool.execute("{\"action\": \"create_entities\", \"entities\": [$entities]}")
+        assertTrue(out.contains("CLAMPED"))
+        val (savedEntities, _) = kit.readGraph()
+        assertEquals(MemoryWriteLimits.MAX_ENTITIES, savedEntities.size)
+
+        val relations = (1..200).joinToString(",") {
+            "{\"from\": \"实体1\", \"to\": \"目标$it\", \"relationType\": \"相关\"}"
+        }
+        val out2 = tool.execute("{\"action\": \"create_relations\", \"relations\": [$relations]}")
+        assertTrue(out2.contains("CLAMPED"))
     }
 
     // ══ MemorySaveFact ═════════════════════════════════════════════

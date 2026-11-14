@@ -13,11 +13,17 @@ package com.apex.agent.core.tools.extension
  * 3. **确认门**：含敏感权限或生命周期脚本的扩展，install 需显式
  *    `confirm="confirm"` 令牌（模型代表用户确认过 inspect 报告）。BYPASS
  *    权限模式**不豁免**本确认（不可信内容的目检与命令门是两回事）；
- * 4. **账本登记**：install 成功后写入 [ExtensionRegistry]（来源回溯 + 锁基础）。
+ * 4. **账本登记**：install 成功后写入 [ExtensionRegistry]（来源回溯 + 锁基础）；
+ * 5. **装后钩子**（Phase 6 收尾：装完 ≠ 生效）：[InstallLifecycleHook] 在
+ *    适配器安装成功后触发（opencode 装后自动启动 Worker、DSH 能力快照转
+ *    一等工具等）。钩子失败**不炸安装**——安装是既成事实，启动/注册失败
+ *    如实进 notes（模型可诊断后重装重试）。
  */
 class ExtensionInstaller(
     private val adapters: ExtensionAdapterRegistry,
-    private val registry: ExtensionRegistry
+    private val registry: ExtensionRegistry,
+    /** 装后/卸前生命周期钩子（null = 无 —— 纯转译安装链保持原行为）。 */
+    private val lifecycleHook: InstallLifecycleHook? = null
 ) {
 
     /**
@@ -131,6 +137,13 @@ class ExtensionInstaller(
         // ── 适配器安装（幂等语义由适配器负责）──
         val outcome = adapter.install(manifest).getOrElse { return Result.failure(it) }
 
+        // ── 装后钩子（Phase 6：装完 ≠ 生效 → 自动启动/注册；失败不炸安装）──
+        val finalOutcome = lifecycleHook?.let { hook ->
+            val hookNotes = runCatching { hook.onInstalled(manifest, outcome) }
+                .getOrElse { listOf("装后钩子异常（安装本身已成功）：${it.message ?: it::class.simpleName}") }
+            if (hookNotes.isEmpty()) outcome else outcome.copy(notes = outcome.notes + hookNotes)
+        } ?: outcome
+
         // ── 账本登记（同 id 覆盖 = 升级）──
         // 版本以 InstallOutcome 为准（适配器回填安装产物真实版本）——
         // manifest.version 只是 spec 占位（修正四：真实版本不得只活在展示文字里）
@@ -140,17 +153,17 @@ class ExtensionInstaller(
                 type = manifest.type,
                 spec = manifest.spec,
                 name = manifest.name,
-                version = outcome.version.ifBlank { manifest.version },
+                version = finalOutcome.version.ifBlank { manifest.version },
                 runtime = manifest.runtime,
                 sourceKind = manifest.sourceKind,
                 trustLevel = manifest.trustLevel,
                 manifestHash = manifest.manifestHash,
                 installedAt = System.currentTimeMillis(),
-                notes = outcome.notes,
-                pinnedSource = outcome.pinned?.toDescriptor() ?: ""
+                notes = finalOutcome.notes,
+                pinnedSource = finalOutcome.pinned?.toDescriptor() ?: ""
             )
         )
-        return Result.success(outcome)
+        return Result.success(finalOutcome)
     }
 
     /**
@@ -182,12 +195,22 @@ class ExtensionInstaller(
         spec to outcome
     }
 
-    /** 卸：账本寻址 → 适配器卸载 → 清账。 */
+    /** 卸：账本寻址 → 卸前钩子（停 Worker/注工具）→ 适配器卸载 → 清账。 */
     suspend fun uninstall(id: String): Result<Unit> {
         val record = registry.get(id)
             ?: return Result.failure(IllegalArgumentException("未安装的扩展 id '$id'（用 ExtensionList 查看已装清单）"))
         val adapter = adapters.forType(record.type)
             ?: return Result.failure(notImplemented(record.type))
+        // 卸前钩子：停 Worker / 注销一等工具须先于目录清除（cwd/文件还在）。
+        // 失败如实继续卸载——目录被清后残留进程由 Supervisor 看门狗收尾。
+        runCatching { lifecycleHook?.onUninstalling(record) }
+            .onFailure {
+                com.apex.agent.core.logging.AppLogger.instance.warn(
+                    com.apex.agent.core.logging.LogCategory.PLUGIN,
+                    "ExtensionInstaller",
+                    "卸前钩子失败 id=$id（继续卸载）: ${it.message}"
+                )
+            }
         val manifest = ExtensionManifest(
             id = record.id,
             type = record.type,
@@ -212,4 +235,27 @@ class ExtensionInstaller(
         /** 显式确认令牌字面量（模型侧协议：confirm="confirm"）。 */
         const val CONFIRM_TOKEN = "confirm"
     }
+}
+
+/**
+ * # InstallLifecycleHook —— 装后/卸前生命周期钩子（Phase 6：装完 ≠ 生效）
+ *
+ * 核查结论（docs/plugin-host-2.0.md「Phase 6 之后」）：`OpenCodePluginLoader.load()`
+ * 与 `PluginLifecycleManager.start()` 此前 0 生产调用点——插件装完后 Worker
+ * 不启动、工具不注册。本钩子把 install 闸门接到运行时：
+ *
+ * - `onInstalled`：适配器安装成功后触发；返回 notes 并入 [InstallOutcome]
+ *   （账本与模型可见）。**实现方必须自行兑错**——异常在此被捕获为一条
+ *   失败 note，绝不炸安装（安装是既成事实）；
+ * - `onUninstalling`：账本寻址命中后、适配器卸载（目录清除）前触发——
+ *   停 Worker / 注销一等工具需要 pkg 目录还在。失败只记日志，卸载继续
+ *   （残留进程由 Supervisor 看门狗收尾）。
+ */
+interface InstallLifecycleHook {
+    suspend fun onInstalled(
+        manifest: ExtensionManifest,
+        outcome: InstallOutcome
+    ): List<String> = emptyList()
+
+    suspend fun onUninstalling(record: ExtensionRegistry.Record) {}
 }

@@ -336,7 +336,7 @@ privilege-chain 审计日志）：
 - **双传输**：stdio（可 `run_in_sandbox` 路由进内嵌 PRoot Ubuntu 运行）+ http；
 - **7 台内置 MCP 服务器**：`fs` / `memory` / `thinking`（app 内置）+ `github` /
   `search` / `rea` / `shrimp`（进程内第七台，16 工具结构化任务规划）；
-- 连接后远程工具以 `mcp__server__tool` **一等函数**注册进工具目录；
+- 连接后远程工具以 `Mcp{Server}{Tool}`（无分隔符 PascalCase）**一等函数**注册进工具目录；
 - 支持 Claude Desktop 配置一键导入（`McpConfigImport`）；
 - **逆向 MCP Host**（`platform:mcp-host`）：手机反过来做 MCP 服务器，
   让局域网内的 PC / 其他客户端消费手机能力 —— [docs/reverse-mcp-host.md](docs/reverse-mcp-host.md)。
@@ -473,7 +473,7 @@ flowchart TB
 | 🌍 Web 与搜索 | 4 | WebFetch / WebSearch（SearxNG 本地优先链）/ HttpRequest / DownloadFile |
 | 🖲️ Shell + AskUser | 3 | 三级权限链 ShellExecute / 流式输出 / 用户问询门 |
 | 🗄️ 兼容别名 | 14 | 旧工具 id 兼容（注册但不下发，`ToolTierPolicy.LEGACY_ALIAS_IDS`） |
-| **合计** | **228** | 另有 MCP `mcp__server__tool` / 技能 / 插件**动态注册**，不计入 |
+| **合计** | **228** | 另有 MCP `Mcp{Server}{Tool}` / 技能 / 插件**动态注册**，不计入 |
 
 </details>
 

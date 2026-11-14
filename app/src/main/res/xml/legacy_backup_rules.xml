@@ -14,8 +14,18 @@
     <exclude domain="sharedpref" path="apex_secure_settings.xml" />
     <exclude domain="sharedpref" path="apex_secure_settings_fallback.xml" />
     <!-- S-05：MCP Host token 与 PulseMCP 凭据（含明文 fallback），与
-         data_extraction_rules.xml 语义一致（Android 11- 全量备份通道）。 -->
+         data_extraction_rules.xml 语义一致（Android 11- 全量备份通道）。
+         记忆 P0（#836 补全）：file domain 排除与 Android 12+ 通道对齐 ——
+         logs/（工具审计命令串）/ crash/（崩溃现场）/ anr/（看门狗堆栈）/
+         mcp_config/（MCP 服务器配置）/ memory_kit/（认知记忆库本体）/
+         rootfs/（Ubuntu 沙箱本体）全部不出设备。 -->
     <exclude domain="sharedpref" path="mcp_host_prefs.xml" />
     <exclude domain="sharedpref" path="pulse_mcp_secure_prefs.xml" />
     <exclude domain="sharedpref" path="pulse_mcp_secure_prefs-fallback.xml" />
+    <exclude domain="file" path="logs/" />
+    <exclude domain="file" path="crash/" />
+    <exclude domain="file" path="anr/" />
+    <exclude domain="file" path="mcp_config/" />
+    <exclude domain="file" path="memory_kit/" />
+    <exclude domain="file" path="rootfs/" />
 </full-backup-content>

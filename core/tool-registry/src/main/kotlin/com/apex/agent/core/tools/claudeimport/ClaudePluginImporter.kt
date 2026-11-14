@@ -4,6 +4,7 @@ import com.apex.agent.core.tools.fusion.FusionBundleAgent
 import com.apex.agent.core.tools.fusion.FusionBundleManifest
 import com.apex.agent.core.tools.fusion.FusionPluginRef
 import com.apex.agent.core.tools.fusion.FusionSkillRef
+import com.apex.agent.core.tools.pluginhost.claude.ClaudeLspReport
 import com.apex.agent.core.tools.skill.SkillManifest
 import com.apex.agent.core.tools.skill.SkillNaming
 import java.io.File
@@ -53,13 +54,20 @@ object ClaudePluginImporter {
 
     /**
      * 导入产物：聚合 manifest + 其安装用 JSON（commands 已内联进 plugins[]）
-     * + 带资源技能的安装 zip。
+     * + 带资源技能的安装 zip + Claude 兼容层三件原文。
      *
      * [skillZips] 是**带脚本资源**的技能兼容面：Claude 生态大量 skill 携带
      * scripts/references/assets（纯 MD 装不下真实产出能力），导入器把每个
      * 技能目录打包成宿主 [com.apex.agent.core.tools.skill.SkillRegistry.installFromZip]
      * 的标准形态（`<PascalId>.json` manifest + 其余文件并入 `skillsDir/<id>/`
      * 资源目录）。纯 MD 技能不产 zip —— 走聚合 skills[] 内联激活即可。
+     *
+     * 兼容层三件（Phase 6 收尾：装完 ≠ 生效 → 安装链挂接）：
+     * - [hooksJson]：`hooks/hooks.json` 原文（无则 null）→ 适配器经
+     *   ClaudeCompatWiring 订阅事件分发；
+     * - [mcpJson]：`.mcp.json` 原文（无则 null）→ 适配器经 ClaudeMcpBridge
+     *   注册进既有 McpManager（enabled=false，用户显式连接）；
+     * - [lspServerNames]：`.lsp.json` 检测到的语言服务器名（只识别不启动）。
      *
      * 跨机边界（诚实声明）：聚合包 JSON 分享**不含**资源 zip —— 资源落盘在
      * 导入设备的技能目录；跨机迁移建议分享原始 Claude zip 重新导入。
@@ -68,7 +76,13 @@ object ClaudePluginImporter {
         val manifest: FusionBundleManifest,
         val manifestJson: String,
         /** 技能 id → 安装 zip 字节（`<id>.json` + 资源文件；仅带资源的技能）。 */
-        val skillZips: Map<String, ByteArray> = emptyMap()
+        val skillZips: Map<String, ByteArray> = emptyMap(),
+        /** `hooks/hooks.json` 原文（无则 null）—— ClaudeCompatWiring 挂接用。 */
+        val hooksJson: String? = null,
+        /** `.mcp.json` 原文（无则 null）—— ClaudeMcpBridge 注册用。 */
+        val mcpJson: String? = null,
+        /** `.lsp.json` 检测到的语言服务器名（只识别不启动）。 */
+        val lspServerNames: List<String> = emptyList()
     )
 
     /** 解析出的 Claude 文档（SKILL.md / command / agent 共用形态）。 */
@@ -148,7 +162,12 @@ object ClaudePluginImporter {
         )
         val json = FusionBundleManifest.json
             .encodeToString(FusionBundleManifest.serializer(), manifest)
-        return Imported(manifest, json, skillZips)
+        // Claude 兼容层三件（Phase 6：装完 ≠ 生效 → 原文交给适配器挂接）。
+        // 只读原文不做解释——解析/订阅/注册的失败语义归 ClaudeCompatWiring。
+        val hooksJson = pkgRoot.resolve("hooks/hooks.json").takeIf { it.isFile }?.readText()
+        val mcpJson = pkgRoot.resolve(".mcp.json").takeIf { it.isFile }?.readText()
+        val lspServerNames = ClaudeLspReport.scan(pkgRoot).serverNames
+        return Imported(manifest, json, skillZips, hooksJson, mcpJson, lspServerNames)
     }
 
     // ── 文档解析 ─────────────────────────────────────────────────────
@@ -352,8 +371,14 @@ object ClaudePluginImporter {
         return slug.ifEmpty { java.lang.Long.toString(System.currentTimeMillis(), 36) }
     }
 
-    /** 定位真实包根：root 本身含 .claude-plugin，或其某个直接子目录含。 */
-    private fun locatePackageRoot(root: File): File? {
+    /**
+     * 定位真实包根：root 本身含 .claude-plugin，或其某个直接子目录含。
+     *
+     * 公开给适配器（Phase 6）：hooks 挂接需要把包根持久化到扩展目录
+     * （`hooks` 命令经 `${CLAUDE_PLUGIN_ROOT}` 引用包内脚本，temp 解包
+     * 目录会被清理）。
+     */
+    fun locatePackageRoot(root: File): File? {
         if (root.resolve(".claude-plugin/plugin.json").isFile) return root
         return root.listFiles { f -> f.isDirectory }
             ?.firstOrNull { it.resolve(".claude-plugin/plugin.json").isFile }
