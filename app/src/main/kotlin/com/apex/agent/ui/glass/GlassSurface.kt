@@ -140,9 +140,18 @@ fun GlassSurface(
     // 低于 31 无法 blur/lens —— 整档降级 Frosted（霜面 + 边缘光，零管线、诚实）。
     val canRender = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
+    // ═══ perf-20261114：Ambient 档剥离 RenderEffect ═══
+    // Ambient 源是纯程序化静态纹理（垂直霜面渐变 + 两条斜向光带，
+    // rememberAmbientBackdrop 的 onDraw 不随帧变化且与坐标无关）——
+    // 对静态软渐变叠 blur(10-24dp) 的输出与输入几乎不可区分，但每帧
+    // 重新执行高斯模糊链（流式期间时间轴上全部卡片 × 60fps）。改为
+    // 直绘纹理 + 霜面（零 RenderEffect），观感几乎一致、GPU 负载归零。
+    // 真实采样源（backdrop != null）不受影响 —— blur/lens 语义完整保留。
+    val ambientTier = backdrop == null && canRender
+
     // ═══ 三档源选择 ═══
-    // Backdrop：页面提供真实采样源；Ambient：程序化材质源（同一条 GPU 管线）；
-    // Frosted：API < 31 的零管线降级。
+    // Backdrop：页面提供真实采样源；Ambient：程序化材质源（perf-20261114
+    // 起零 RenderEffect 直绘）；Frosted：API < 31 的零管线降级。
     val ambient = rememberAmbientBackdrop(palette)
     val effectiveBackdrop: Backdrop = when {
         backdrop != null && canRender -> backdrop
@@ -178,9 +187,10 @@ fun GlassSurface(
     val shapeBlock = remember(shape) { { shape } }
     // 显式带接收者类型：嵌套在 remember 内的 lambda 需要期望类型传播，
     // 否则 vibrancy/blur/lens/drawRect 无接收者上下文无法解析。
-    val effectsBlock: BackdropEffectScope.() -> Unit = remember(style, canRender) {
+    // perf-20261114：Ambient 档空效果链 —— 静态纹理不进 blur/lens 管线。
+    val effectsBlock: BackdropEffectScope.() -> Unit = remember(style, canRender, ambientTier) {
         {
-            if (canRender) {
+            if (canRender && !ambientTier) {
                 if (style.vibrancy > 0f) runCatching { vibrancy() }
                 runCatching { blur(style.blurRadius.toPx()) }
                 if (style.lensHeight > 0.dp) {
@@ -220,9 +230,11 @@ fun GlassSurface(
             )
         }
     }
-    val surfaceBlock: DrawScope.() -> Unit = remember(canRender, palette, frostBrush) {
+    // perf-20261114：Ambient 档表面层改霜面渐变（替代 blur 后的 tint）
+    // —— 与 Frosted 档同语言，保持「有渐变」的材质观感。
+    val surfaceBlock: DrawScope.() -> Unit = remember(canRender, ambientTier, palette, frostBrush) {
         {
-            if (canRender) {
+            if (canRender && !ambientTier) {
                 drawRect(palette.glassTint)
             } else {
                 drawRect(frostBrush)

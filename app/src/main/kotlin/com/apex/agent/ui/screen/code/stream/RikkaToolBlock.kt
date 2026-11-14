@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -104,8 +105,11 @@ internal fun RikkaToolBlock(
     val summary = remember(calls) { computeToolAggregate(calls) }
     val title = if (hasLive) stringResource(R.string.rikka_tool_block_running)
     else stringResource(R.string.code_stream_aggregate_title_fmt, calls.size)
-    // 运行中标题呼吸（rikkahub shimmer 扫光的轻量同义替代）
-    val titlePulse by rememberInfiniteTransition(label = "rikka-block-pulse")
+    // 运行中标题呼吸（rikkahub shimmer 扫光的轻量同义替代）。
+    // perf-20261114：State 直传 + graphicsLayer 块内读取 —— 旧实现组合期
+    // 取值改 Text 颜色，整个工具块（PartSurface 玻璃栈）随脉冲 60fps 重组；
+    // 现仅标题层属性失效，零重组零重测。
+    val titlePulse = rememberInfiniteTransition(label = "rikka-block-pulse")
         .animateFloat(
             initialValue = 0.6f,
             targetValue = 1f,
@@ -157,8 +161,11 @@ internal fun RikkaToolBlock(
                         text = title,
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                            .copy(alpha = if (hasLive) titlePulse else 1f)
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .graphicsLayer {
+                                alpha = if (hasLive) titlePulse.value else 1f
+                            }
                     )
                     Spacer(Modifier.width(8.dp))
                     if (summary.failedCount > 0) {

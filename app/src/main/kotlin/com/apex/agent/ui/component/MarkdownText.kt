@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.input.pointer.pointerInput
@@ -81,7 +82,19 @@ fun MarkdownText(
         nodes.forEach { node ->
             when (node) {
                 is MarkdownNode.Paragraph -> {
-                    val annotated = buildInline(node.segments)
+                    // perf-20261114：行内构建记忆化 —— 旧实现每次重组都重建
+                    // AnnotatedString（流式期间同卡其它段落/父级任何重组都会
+                    // 连带重建全部段落的行内样式串）。键 = 段落内容 + 主题色，
+                    // 未变段落零重建。
+                    val codeBg = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                    val codeFg = MaterialTheme.colorScheme.onPrimaryContainer
+                    val linkColor = MaterialTheme.colorScheme.primary
+                    val boldColor = MaterialTheme.colorScheme.onSurface
+                    val annotated = remember(
+                        node.segments, codeBg, codeFg, linkColor, boldColor
+                    ) {
+                        buildInline(node.segments, codeBg, codeFg, linkColor, boldColor)
+                    }
                     var textLayout by remember(annotated) { mutableStateOf<TextLayoutResult?>(null) }
                     val context = LocalContext.current
                     Text(
@@ -186,13 +199,16 @@ fun MarkdownText(
 }
 
 /**
- * 行内片段 → AnnotatedString。
+ * 行内片段 → AnnotatedString（纯函数，perf-20261114 起由调用方 remember）。
  * 行内代码用等宽+强调色弱底 span；链接带下划线 + "URL" annotation（点击命中）。
  */
-@Composable
-private fun buildInline(segments: List<InlineSegment>): AnnotatedString {
-    val codeBg = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-    val codeFg = MaterialTheme.colorScheme.onPrimaryContainer
+private fun buildInline(
+    segments: List<InlineSegment>,
+    codeBg: Color,
+    codeFg: Color,
+    linkColor: Color,
+    boldColor: Color
+): AnnotatedString {
     return buildAnnotatedString {
         segments.forEach { seg ->
             when (seg) {
@@ -206,14 +222,14 @@ private fun buildInline(segments: List<InlineSegment>): AnnotatedString {
                 ) { append(" ${seg.text} ") }
 
                 is InlineSegment.Bold -> withStyle(
-                    SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    SpanStyle(fontWeight = FontWeight.Bold, color = boldColor)
                 ) { append(seg.text) }
 
                 is InlineSegment.Link -> {
                     pushStringAnnotation("URL", seg.url)
                     withStyle(
                         SpanStyle(
-                            color = MaterialTheme.colorScheme.primary,
+                            color = linkColor,
                             textDecoration = TextDecoration.Underline
                         )
                     ) { append(seg.text) }

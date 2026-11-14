@@ -52,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -223,7 +224,8 @@ private fun RikkaAssistantBubble(text: String, isStreaming: Boolean) {
 /** 流式呼吸圆点（10dp；与 rikkahub DotLoading 同语义的轻量加载指示）。 */
 @Composable
 private fun RikkaStreamingDot() {
-    val pulse by rememberInfiniteTransition(label = "rikka-dot")
+    // perf-20261114：graphicsLayer 块内读动画 —— 零重组（旧实现组合期取值）
+    val pulse = rememberInfiniteTransition(label = "rikka-dot")
         .animateFloat(
             initialValue = 0.35f,
             targetValue = 1f,
@@ -235,8 +237,10 @@ private fun RikkaStreamingDot() {
         )
     Surface(
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.primary.copy(alpha = pulse),
-        modifier = Modifier.size(10.dp)
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .size(10.dp)
+            .graphicsLayer { alpha = pulse.value }
     ) {}
 }
 
@@ -283,8 +287,10 @@ private fun RikkaThinkingCard(
     } else {
         stringResource(R.string.rikka_thinking_elapsed_fmt, elapsedSeconds)
     }
-    // 流式标题呼吸（rikkahub shimmer 同语义的轻量替代）
-    val titlePulse by rememberInfiniteTransition(label = "rikka-think-pulse")
+    // 流式标题呼吸（rikkahub shimmer 同语义的轻量替代）。
+    // perf-20261114：State 直传 + graphicsLayer 块内读取 —— 零重组零重测
+    //（旧实现组合期取值改 Text 颜色，思考卡随脉冲 60fps 重组）。
+    val titlePulse = rememberInfiniteTransition(label = "rikka-think-pulse")
         .animateFloat(
             initialValue = 0.6f,
             targetValue = 1f,
@@ -323,8 +329,11 @@ private fun RikkaThinkingCard(
                     text = titleText,
                     style = MaterialTheme.typography.labelMedium,
                     color = if (llmRetry != null) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurfaceVariant
-                        .copy(alpha = if (isStreaming) titlePulse else 1f)
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .graphicsLayer {
+                            alpha = if (isStreaming) titlePulse.value else 1f
+                        }
                 )
             }
         }

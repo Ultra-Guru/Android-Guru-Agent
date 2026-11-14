@@ -25,13 +25,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -66,14 +67,17 @@ internal fun CompleteModeGeneratingCard(
     toolUsage: ToolUsageStats,
     llmRetry: LlmRetryInfo? = null
 ) {
-    // 呼吸动画（三圆点相位错开 + 骨架条透明度脉冲），同一 transition 驱动
+    // 呼吸动画（三圆点相位错开 + 骨架条透明度脉冲），同一 transition 驱动。
+    // perf-20261114：动画值以 State 传递、graphicsLayer 块内读取（#262 同款
+    // 纪律）—— 旧实现组合期取值，整卡（PartSurface→PaleLiquid 玻璃栈）
+    // 随呼吸 60fps 重组；现仅层属性失效，零重组零重测。
     val pulse = rememberInfiniteTransition(label = "complete-generating")
-    val dot1 by pulse.animateFloat(
+    val dot1 = pulse.animateFloat(
         initialValue = 0.25f, targetValue = 1f,
         animationSpec = infiniteRepeatable(tween(DOT_PULSE_MS), RepeatMode.Reverse),
         label = "dot1"
     )
-    val dot2 by pulse.animateFloat(
+    val dot2 = pulse.animateFloat(
         initialValue = 0.25f, targetValue = 1f,
         animationSpec = infiniteRepeatable(
             tween(DOT_PULSE_MS), RepeatMode.Reverse,
@@ -81,7 +85,7 @@ internal fun CompleteModeGeneratingCard(
         ),
         label = "dot2"
     )
-    val dot3 by pulse.animateFloat(
+    val dot3 = pulse.animateFloat(
         initialValue = 0.25f, targetValue = 1f,
         animationSpec = infiniteRepeatable(
             tween(DOT_PULSE_MS), RepeatMode.Reverse,
@@ -89,7 +93,7 @@ internal fun CompleteModeGeneratingCard(
         ),
         label = "dot3"
     )
-    val skeletonAlpha by pulse.animateFloat(
+    val skeletonAlpha = pulse.animateFloat(
         initialValue = 0.35f, targetValue = 0.9f,
         animationSpec = infiniteRepeatable(tween(SKELETON_PULSE_MS), RepeatMode.Reverse),
         label = "skeleton"
@@ -117,11 +121,11 @@ internal fun CompleteModeGeneratingCard(
     ) {
             // ── 头行：呼吸圆点 + 标题（重试中切换）+ 已用时 ──
             Row(verticalAlignment = Alignment.CenterVertically) {
-                GeneratingDot(alpha = dot1)
+                GeneratingDot(alphaState = dot1)
                 Spacer(Modifier.width(3.dp))
-                GeneratingDot(alpha = dot2)
+                GeneratingDot(alphaState = dot2)
                 Spacer(Modifier.width(3.dp))
-                GeneratingDot(alpha = dot3)
+                GeneratingDot(alphaState = dot3)
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = if (llmRetry != null) {
@@ -184,26 +188,26 @@ internal fun CompleteModeGeneratingCard(
             // ── 骨架条：两道呼吸占位（完成后被真实内容整体替换）──
             SkeletonBar(
                 fraction = 0.92f,
-                alpha = skeletonAlpha,
+                alphaState = skeletonAlpha,
                 modifier = Modifier.padding(top = 8.dp)
             )
             SkeletonBar(
                 fraction = 0.58f,
-                alpha = skeletonAlpha,
+                alphaState = skeletonAlpha,
                 modifier = Modifier.padding(top = 5.dp)
             )
     }
 }
 
-/** 单枚呼吸圆点（primary 色，alpha 由外层动画驱动）。 */
+/** 单枚呼吸圆点（primary 色；alpha 经 graphicsLayer 块读 State —— 零重组）。 */
 @Composable
-private fun GeneratingDot(alpha: Float) {
+private fun GeneratingDot(alphaState: State<Float>) {
     Surface(
         shape = CircleShape,
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier
             .size(5.dp)
-            .alpha(alpha)
+            .graphicsLayer { alpha = alphaState.value }
     ) {}
 }
 
@@ -226,16 +230,16 @@ private fun OriginCounter(icon: androidx.compose.ui.graphics.vector.ImageVector,
     }
 }
 
-/** 骨架占位条：宽度按 [fraction] 裁剪 + 呼吸透明度。 */
+/** 骨架占位条：宽度按 [fraction] 裁剪 + 呼吸透明度（graphicsLayer 读 State）。 */
 @Composable
-private fun SkeletonBar(fraction: Float, alpha: Float, modifier: Modifier = Modifier) {
+private fun SkeletonBar(fraction: Float, alphaState: State<Float>, modifier: Modifier = Modifier) {
     Surface(
         shape = RoundedCornerShape(4.dp),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = modifier
             .fillMaxWidth(fraction)
             .height(8.dp)
-            .alpha(alpha * SKELETON_MAX_ALPHA)
+            .graphicsLayer { alpha = alphaState.value * SKELETON_MAX_ALPHA }
     ) {}
 }
 
