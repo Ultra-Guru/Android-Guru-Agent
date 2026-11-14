@@ -100,8 +100,8 @@ Agent Core（ToolRegistry / SkillRegistry / FusionBundle / McpManager）
 | SKILLS | SUPPORTED | ClaudePluginImporter → SkillRegistry（含资源文件） |
 | COMMANDS | SUPPORTED | commands 目录 → FusionBundle 斜杠指令 |
 | AGENTS | PARTIAL | 合并为人设/提示词；完整 Subagent 生命周期未实现 |
-| HOOKS | PARTIAL | `ClaudeHookAdapter` 官方协议调度已实现（stdin JSON / exit code 语义 / hookSpecificOutput 解析 / matcher regex / 超时强杀，真实 sh E2E 锁）；安装链路接线待 Phase 6 |
-| MCP_SERVERS | PARTIAL | `ClaudeMcpBridge` → 既有 McpConfigPort（stdio 沙箱 + http + 来源归属账本：卸载只删插件带来的，用户自建不动）；安装链路接线待 Phase 6 |
+| HOOKS | PARTIAL | `ClaudeHookAdapter` 官方协议调度已实现（stdin JSON / exit code 语义 / hookSpecificOutput 解析 / matcher regex / 超时强杀，真实 sh E2E 锁）；Phase 6 收尾已接入 install 链——`ClaudeCompatWiring` 装后自动订阅宿主工具事件（`PluginEventPayloads` 契约），钩子命令在沙箱内执行；PreToolUse deny/改参与 additionalContext 注入对话的同步回流仍属后续 |
+| MCP_SERVERS | PARTIAL | `ClaudeMcpBridge` → 既有 McpConfigPort（stdio 沙箱 + http + 来源归属账本：卸载只删插件带来的，用户自建不动）；Phase 6 收尾已接入 install 链——装后自动注册（enabled=false，McpConnect 显式连接） |
 | LSP | PLANNED | `.lsp.json` 检测与诚实报告（识别但不启动不伪装）；统一 LSP Host 属后续独立子系统 |
 | TUI / GUI | UNSUPPORTED | Android 无终端/桌面宿主 |
 
@@ -154,15 +154,16 @@ SDK 垫片：插件目录未安装 `@opencode/plugin` 时落盘最小实现
 | 2 | PluginWorker + 换行 JSON IPC + Supervisor 崩溃恢复 + Node/Bun RuntimeProvider | ✅（真实 node E2E 锁定） |
 | 3 | Unified Capability Bridge + ToolRegistry 动态注册 + 生命周期管理器 | ✅（真实 node E2E 锁定） |
 | 4 | OpenCode V1/V2 Loader + 官方 SDK 上下文桥 | ✅（官方形状 fixture 真实 node 锁定） |
-| 5 | Claude Hooks + `.mcp.json` + `.lsp.json` 兼容 | ✅（真实 sh E2E 锁定；安装链路接线在 Phase 6） |
+| 5 | Claude Hooks + `.mcp.json` + `.lsp.json` 兼容 | ✅（真实 sh E2E 锁定） |
 | 6 | App DI 接线 + PluginHostDoctor 诊断工具 + 沙箱长驻进程端口 | ✅（CI 编译 + JVM 验证；沙箱实机行为待设备验证） |
+| 6.5 | 「装完 ≠ 生效」收尾：install 链 × 运行时钩子（InstallLifecycleHook → OpenCode 装后自动启动 / DshToolRegistrar 能力快照转一等工具 / ClaudeCompatWiring 挂接 hooks+.mcp.json+LSP 报告 / 宿主事件总线工具事件生产者接线） | ✅（JVM 契约锁：ClaudeCompatWiringTest / DshToolRegistrarTest；沙箱实机行为同 Phase 6 待设备验证） |
 
 ### Phase 6 之后（后续独立工作）
 
-- DSH 真实协议审计（矩阵当前如实 UNKNOWN）
-- Claude 兼容层接入 ClaudeExtensionAdapter.install 链（hooks.json/.mcp.json 自动挂接）
-- OpenCode Loader 接入 ExtensionInstallTool 装后自动启动
-- 统一 LSP Host（Code Mode 与插件共用）
+- DSH 真实协议审计（矩阵当前如实 UNKNOWN；`DshToolRegistrar` 只消费能力快照的 observed available 面，不改协议判定）
+- ~~Claude 兼容层接入 ClaudeExtensionAdapter.install 链（hooks.json/.mcp.json 自动挂接）~~ ✅ Phase 6.5 已落地（ClaudeCompatWiring；ClaudeHookPort 沙箱执行 + PluginEventBus 工具事件源已接执行器插槽；PreToolUse deny/改参同步回流与 additionalContext 注入对话属后续）
+- ~~OpenCode Loader 接入 ExtensionInstallTool 装后自动启动~~ ✅ Phase 6.5 已落地（InstallLifecycleHook → PluginRuntimeWiring → OpenCodePluginLoader.load + 卸前 stop）
+- 统一 LSP Host（Code Mode 与插件共用；`.lsp.json` 目前只识别只报告）
 - Android ARM64 实机回归（PRoot 长驻 Worker / bind 映射 / rootfs 就绪度 —— spec §16.5 明确 CI 不可替代）
 
 每个 Phase 的矩阵状态迁移（PLANNED→SUPPORTED）必须同步更新

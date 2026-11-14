@@ -186,12 +186,15 @@ jobs:
           cat local.properties
 
       - name: Set up Gradle
+        # #782：不再钉 gradle-version 预装 —— 本 job 全部经 ./gradlew 用入库
+        # wrapper 构建（setup-gradle 仅提供 GUH 缓存与 wrapper 完整性校验）；
+        # 版本一致性由下方 verify-wrapper 复合动作把关，漂移即红。
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.14'
 
-      - name: Generate Gradle wrapper
-        run: gradle wrapper --gradle-version 8.14
+      - name: Verify Gradle wrapper is in sync
+        uses: ./.github/actions/verify-wrapper
+        with:
+          expected-version: '8.14'
 
       - name: Prewarm dependencies (retry on JitPack flakiness)
         run: |

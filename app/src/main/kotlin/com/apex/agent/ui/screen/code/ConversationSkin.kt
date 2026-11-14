@@ -16,14 +16,15 @@ import com.apex.agent.ui.theme.resolvePolicy
  *  ConversationSkin — 会话边界皮肤状态机（Spec v1.2 §7.5 / v1.3 §7.9）
  * ═══════════════════════════════════════════════════════════════
  *
- * **H-5（硬规则）**：皮肤类设置改完，当前对话内一个部件都不许变。运行
- * 中、idle 期、回屏、旋转、深浅切换、下拉刷新、发消息、run 收束 —— 全
- * 部不触发换皮；只有跨越**会话边界**（新对话 / 恢复历史 / 切工作区）或
- * **IMMEDIATE 策略的 idle 提升点**才整体换皮。
+ * **H-5（2026-11 修订「呈现立即」）**：皮肤类设置改完，idle 期**立即整体
+ * 换皮**（AUTO / IMMEDIATE 全分级；回屏、旋转、深浅切换、下拉刷新、发
+ * 消息照旧不触发换皮）；显式 ON_NEW_CHAT 档沿用 v1.2 语义，只在跨越
+ * **会话边界**（新对话 / 恢复历史 / 切工作区）才整体换皮。
  *
- * **H-6（v1.3 硬规则）**：`isRunning == true` 时任何模式都不提升、不改
+ * **H-6（硬规则，保留）**：`isRunning == true` 时任何模式都不提升、不改
  * `active`、不重绘；改动只挂 pending（[SkinActivation.stagedDuringRun]），
- * 等收束后的第一个 idle 点（`onRunSettled()`）按策略决定。
+ * 等收束后的第一个 idle 点（`onRunSettled()`）自动提升（Code 屏配
+ * SkinPendingBar 提示 + 「立即应用」显式入口）。
  *
  * 四维度同 epoch（FR-21）：`uiStyle`（材质短路）/ `outputStyle` /
  * `renderMode` / `partSkins + glow` 打包在同一 [ConversationSkinSnapshot]，

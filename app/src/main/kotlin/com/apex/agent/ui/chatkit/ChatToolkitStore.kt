@@ -187,8 +187,8 @@ class ChatToolkitStore @Inject constructor(
                 SearchChannelHint.Kind.MCP -> {
                     appendLine("用户已启用本地搜索 MCP「${_searchChannelHint.value?.displayName}」。")
                     appendLine("涉及实时信息、新闻、天气、价格、文档、不确定的事实时，必须优先调用该服务器的")
-                    appendLine("搜索工具（注册名形如 mcp__<server>__web_search，可用 ToolSearch/工具列表检索），")
-                    appendLine("需要读取网页全文时调用其读取工具（如 mcp__<server>__web_read）。")
+                    appendLine("搜索工具（注册名形如 Mcp<Server>WebSearch，可用 ToolSearch/工具列表检索），")
+                    appendLine("需要读取网页全文时调用其读取工具（如 Mcp<Server>WebRead）。")
                     appendLine("搜索失败时如实说明，不要静默回退到训练知识猜测。")
                 }
                 SearchChannelHint.Kind.SEARXNG -> {
@@ -293,7 +293,7 @@ class ChatToolkitStore @Inject constructor(
  */
 data class SearchChannelHint(
     val kind: Kind,
-    /** MCP 通道的服务器展示名（与 mcp__<name>__ 工具前缀同源）。 */
+    /** MCP 通道的服务器展示名（与 Mcp<Name> 工具 id 前缀同源）。 */
     val displayName: String? = null
 ) {
     enum class Kind { BUILTIN, SEARXNG, MCP }

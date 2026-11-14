@@ -65,8 +65,6 @@ import com.apex.agent.ui.component.FusionCodingBanner
 import com.apex.agent.ui.component.FusionCodingButton
 import com.apex.agent.ui.component.rememberFusionBundleController
 import com.apex.agent.ui.component.rememberSlashMenuProvider
-import com.apex.agent.ui.chatkit.CODING_SCREEN_MODES
-import com.apex.agent.ui.chatkit.AgentModeSelector
 import com.apex.agent.ui.chatkit.AgentRoleSelector
 import com.apex.agent.ui.chatkit.BrainMenuButton
 import com.apex.agent.ui.chatkit.PendingPipelineCommand
@@ -287,14 +285,18 @@ fun CodeScreen(
             LocalSkinContext provides skinContext,
             LocalParentSkin provides null
         ) {
-            // ═══ #197 PLAN 模式计划确认卡（人控门；勾选/重排后确认执行）═══
+            // ═══ #197 PLAN 模式计划确认卡（人控门；v4 三规格区块 + Goal 流转）═══
             if (state.awaitingPlanConfirmation && state.plan != null) {
                 PlanConfirmationCard(
                     plan = state.plan!!,
                     onConfirm = { enabledSteps, order ->
                         viewModel.confirmPlan(true, enabledSteps, order)
+                        // v4：开始执行 → 自动切 Build（计划步骤在既有 run 内继续，
+                        // 后续消息直接 Build 模式）
+                        viewModel.switchCascadeMode(com.apex.agent.core.engine.AgentMode.BUILD)
                     },
-                    onReject = { viewModel.confirmPlan(false) }
+                    onReject = { viewModel.confirmPlan(false) },
+                    onSwitchToGoal = viewModel::switchToGoalFromPlan
                 )
             }
         }
@@ -345,10 +347,6 @@ fun CodeScreen(
                 // v1.2：风格分派改读会话快照（H-5：当前对话内冻结）。
                 if (activeSkin.outputStyle == CodeOutputStyle.RIKKA) {
                     RikkaStreamTimeline(
-                        thinkingCollapsed = agentPresentation.codeRikkaThinkingCollapsed,
-                        onThinkingCollapsedChange = { collapsed ->
-                            viewModel.settingsRepository.updateAgentSettings { copy(codeRikkaThinkingCollapsed = collapsed) }
-                        },
                         snapshot = state.stream,
                         isStreaming = state.isRunning,
                         renderMode = activeSkin.renderMode,
@@ -425,6 +423,7 @@ fun CodeScreen(
                     state.goalState?.let { goalState ->
                         GoalStatusCard(
                             state = goalState,
+                            pendingQuestion = pendingAgentQuestion != null,
                             onStop = viewModel::stopActiveGoal,
                             onResume = viewModel::resumeGoal
                         )
@@ -458,6 +457,16 @@ fun CodeScreen(
                         }
                     }
 
+                    // ═══ 外观待生效横幅（2026-11「呈现立即」）：设置改完尚未提升的
+                    // 两种形态（运行中挂起 / ON_NEW_CHAT）给非模态提示 + 显式动作，
+                    // 不再让用户对着旧界面猜「切了为什么没反应」═══
+                    SkinPendingBar(
+                        activation = state.conversationSkin,
+                        isRunning = state.isRunning,
+                        onApplyNow = viewModel::applyPendingSkinNow,
+                        onDiscard = viewModel::discardPendingSkinChange
+                    )
+
                     // ═══ #197 模式 + 思考档位选择器行（Build/Plan 双档 + 七档思考）═══
                     //（GOAL 切入的弹层/深潜线保障在 VM setMode → onEnterGoalMode 单点，
                     // 此处保持纯方法引用——选择器与 init 恢复共用同一路径）
@@ -476,10 +485,15 @@ fun CodeScreen(
                             roles = codingRoles,
                             onSelect = viewModel.roleController::select
                         )
-                        AgentModeSelector(
-                            current = state.mode,
-                            onSelect = viewModel::setMode,
-                            modes = CODING_SCREEN_MODES
+                        // v4 级联模式选择器：Build（二级自主级别）/ Plan / Goal 直选
+                        //（GOAL 附属动作在 VM setMode 尾部单点，与 init 恢复共用路径）
+                        CodeModeCascadeSelector(
+                            currentMode = state.mode,
+                            currentAutonomy = state.autonomyLevel,
+                            preClarify = state.fullAutoPreClarify,
+                            onSelectMode = viewModel::switchCascadeMode,
+                            onSelectAutonomy = viewModel::selectCascadeAutonomy,
+                            onTogglePreClarify = viewModel::toggleFullAutoPreClarify
                         )
                         CodeThinkingSelector(
                             current = state.thinkingLevel,
@@ -604,16 +618,16 @@ fun CodeScreen(
     }
 
     // ═══ v3 GOAL 目标设定弹层（切到 GOAL 无活动目标 / GOAL 模式首条消息
-    // 拦截打开；默认轮次读设置页 goalMaxRounds；开始 → startGoalModeGoal
-    //（关闭弹层 + 首条提示 = 打开时携带的草稿））═══
+    // 拦截 / Plan 确认卡「切 Goal」打开；v4 扩展自主级别 + 高级字段；
+    // 开始 → startGoalModeGoal（GoalSpec 全字段 + 首条提示 = 打开时的草稿））═══
     if (state.showGoalSetup) {
         GoalSetupSheet(
             initialText = state.goalSetupDraft,
             defaultMaxRounds = viewModel.goalDefaultMaxRounds(),
+            defaultAutonomy = viewModel.goalSetupDefaultAutonomy(),
+            defaultPreClarify = viewModel.goalSetupDefaultPreClarify(),
             onDismiss = viewModel::dismissGoalSetup,
-            onStart = { statement, criteria, maxRounds ->
-                viewModel.startGoalModeGoal(statement, criteria, maxRounds, state.goalSetupDraft)
-            }
+            onStart = { result -> viewModel.startGoalModeGoal(result) }
         )
     }
 

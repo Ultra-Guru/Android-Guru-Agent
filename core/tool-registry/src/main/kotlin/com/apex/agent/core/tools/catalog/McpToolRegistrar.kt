@@ -64,7 +64,7 @@ class McpToolRegistrar(
         // 旧行为只挂 listener —— 若 MCP 服务器在 registrar 构造**之前**就已
         // 连接（McpModule 的 @Provides 副作用在自持 IO scope 里 ensureAndConnect，
         // 与 provideMcpToolRegistrar 的构造顺序无任何保证），fireConnected 发生在
-        // addSessionListener 之前 → 无人接收 → mcp__github__* / mcp__search__*
+        // addSessionListener 之前 → 无人接收 → McpGithub* / McpSearch*
         // 等一等工具不注册。此前靠 ApexCoreService.onCreate 的全量重连弥补，
         // 但 service 未跑的窗口期（首启竞态）一等 MCP 工具缺失。
         //

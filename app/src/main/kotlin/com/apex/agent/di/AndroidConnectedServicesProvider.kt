@@ -94,7 +94,7 @@ class AndroidConnectedServicesProvider @Inject constructor(
         if (githubTokenManager.isConnected()) {
             ids += GITHUB_TOOL_IDS
         }
-        // ═══ 已连接 MCP 服务器的一等工具（mcp__{server}__{tool}）═══
+        // ═══ 已连接 MCP 服务器的一等工具（Mcp{Server}{Tool}，上限 MAX_MCP_TOOLS）═══
         // 注册表快照即「当前真实可用」；连接中的沙箱/远程服务器同样适用。
         // 上限保护：MCP 工具总量钳制（大服务器几十个工具时不挤占 CORE 集的
         // 请求预算 —— ToolRequestBudget.MAX_TOOLS=64，超出部分按名称序丢弃）。

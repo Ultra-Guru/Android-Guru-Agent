@@ -144,7 +144,7 @@ interface ToolRunPolicyResolver {
  * Resolution order:
  * 1. explicit [overrides] entry for the tool id (admin pin);
  * 2. explicit [prefixOverrides] entry for the tool id's prefix family
- *    (longest match wins) —— 动态 id 族（mcp__server__tool、browser_*）
+ *    (longest match wins) —— 动态 id 族（Mcp{Server}{Tool}、browser_*）
  *    无法逐个列进静态表，按前缀给整族策略；
  * 3. `AskUser*` → no timeout (the user might take minutes to answer) and
  *    no retry (re-asking after a denial is pestering);
@@ -160,7 +160,7 @@ class DefaultToolRunPolicyResolver(
     override fun resolve(tool: AgentTool): ToolRunPolicy {
         overrides[tool.id]?.let { return it }
 
-        // 前缀族覆盖（最长前缀胜出）：mcp__server__tool 这类动态一等工具
+        // 前缀族覆盖（最长前缀胜出）：Mcp{Server}{Tool} 这类动态一等工具
         // 无法静态枚举，按前缀整族策略。
         prefixOverrides.entries
             .filter { tool.id.startsWith(it.key) }

@@ -310,46 +310,13 @@ object ToolModule {
             scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         )
 
-    /**
-     * 工具使用统计（v2）：DefaultToolExecutor 每次调用后记录
-     * 成败/耗时；设置页与诊断报告从这读取。单例，随进程存活。
-     */
-    @Provides
-    @Singleton
-    fun provideToolUsageTracker(): ToolUsageTracker = ToolUsageTracker()
-
-    // ═══ Tool System v3 单例：环境态 / 追踪 / 熔断 / 组合动作 ═══
-
-    /** 环境能力快照（EnvironmentStateUpdater 灌入；门控与 prompt 共用）。 */
-    @Provides
-    @Singleton
-    fun provideToolEnvironmentState(): ToolEnvironmentState = ToolEnvironmentState()
-
-    /** 结构化调用追踪（v3）：每工具调用一个 span，环形缓冲 + 监听器分发。 */
-    @Provides
-    @Singleton
-    fun provideToolTraceRecorder(): ToolTraceRecorder = ToolTraceRecorder(capacity = 300)
-
-    /** 工具熔断器（v3）：连续失败短路由，防止模型对已损坏工具的无效重试。 */
-    @Provides
-    @Singleton
-    fun provideToolCircuitBreaker(): ToolCircuitBreaker = ToolCircuitBreaker()
-
-    /** 组合动作注册表（v3）：ShortcutDefine 定义 → 热注册为一等工具。 */
-    @Provides
-    @Singleton
-    fun provideShortcutRegistry(): ShortcutRegistry = ShortcutRegistry()
-
-    // ═══ Tool System v4：会话激活 / 目录 / MCP 一等工具 ═══
-
-    /** v4 — 会话激活存储（引擎/目录工具/编排器共享单例）。 */
-    @Provides
-    @Singleton
-    fun provideToolActivationStore(): ToolActivationStore = ToolActivationStore()
+    // ═══ 工具使用统计 / v3 环境态 / 追踪 / 熔断 / 组合动作 / v4 会话激活
+    //     六个无状态单例工厂已拆至 ToolModuleStateSingletons.kt
+    //     （God-file 预算纪律；Hilt 自动聚合，绑定语义零变化）═══
 
     /**
      * v4 — MCP 工具注册器：McpManager 会话事件 → ToolRegistry 一等工具
-     * （mcp__server__tool）。IO 专用 Supervisor 作用域：发现失败不影响宿主，
+     * （v5 命名 Mcp{Server}{Tool}）。IO 专用 Supervisor 作用域：发现失败不影响宿主，
      * 进程级生命周期（不主动取消）。
      */
     @Provides
@@ -380,7 +347,9 @@ object ToolModule {
         traceRecorder: ToolTraceRecorder,
         breaker: ToolCircuitBreaker,
         // Issue #165：钩子注册表（null 安全重载仅为可测性保留；生产性传非空）
-        hookRegistry: HookRegistry? = null
+        hookRegistry: HookRegistry? = null,
+        // Phase 6 收尾：工具事件总线生产者（插件钩子订阅的事件源）
+        pluginEventBus: com.apex.agent.core.tools.pluginhost.bridge.PluginEventBus? = null
     ): com.apex.agent.core.tools.ToolExecutor = ToolExecutorBuilder(registry)
         // v1.0 #55 门控链：环境门 →（权限门 → 风险门）—— PermissionAwareToolGate
         // 把权限模式与风险确认合成一门：权限门显式放行/会话记忆命中时跳过
@@ -392,26 +361,9 @@ object ToolModule {
             com.apex.agent.core.tools.RoleGate { com.apex.agent.tools.BrowserRoleAuth.currentGrants() },
             PermissionAwareToolGate(permissionModeGate, riskAwareToolGate)
         ))
-        // Issue #165 —— PreToolUse/PostToolUse 插槽：桥接 HookRegistry。
-        // isNoOp（无钩子关心）时返回 null，执行器走原路径零开销；
-        // blocked 透传 reason 短路（文案对齐 gate 拒绝）；modifiedArgs 改写
-        // 后续 schema 校验按新参数执行（钩子改不出绕过校验的载荷）。
-        // 注：builder 的 setter 形参非空且持期望类型——经 .apply{} 条件装配，
-        // lambda 才能推成 suspend（?.let{} / if/else 直传均不行，K2 限制，
-        // 见 .verify/scratch/t2c/test/BridgePatternCheck.kt 三轮验证）。
-        .apply {
-            if (hookRegistry != null) {
-                beforeToolHooks { toolId, args ->
-                    hookRegistry.dispatch(HookEvent.PreToolUse(toolId, args))
-                        .takeUnless { it.isNoOp }
-                }
-                afterToolHooks { toolId, args, result, isError, durationMs ->
-                    hookRegistry.dispatch(
-                        HookEvent.PostToolUse(toolId, args, result, isError, durationMs)
-                    )
-                }
-            }
-        }
+        // Issue #165 + Phase 6 收尾：钩子/事件总线工具插槽（装配体见卫星
+        // ToolModuleHookSlots —— isNoOp 零开销 / blocked 短路 / 总线广播）。
+        .installToolHookSlots(hookRegistry, pluginEventBus)
         .usageTracker(toolUsageTracker)
         .policyResolver(
             DefaultToolRunPolicyResolver(
@@ -534,7 +486,10 @@ object ToolModule {
         pluginWorkerSupervisor: com.apex.agent.core.tools.pluginhost.worker.PluginWorkerSupervisor,
         pluginToolBridge: com.apex.agent.core.tools.pluginhost.bridge.PluginToolBridge,
         extensionLayout: com.apex.agent.core.tools.extension.ExtensionDirLayout,
-        apexNotifications: com.apex.agent.notify.ApexNotifications
+        apexNotifications: com.apex.agent.notify.ApexNotifications,
+        // Phase 6 收尾：事件总线（工具事件源）+ DSH 注册器（启动 sweep）
+        pluginEventBus: com.apex.agent.core.tools.pluginhost.bridge.PluginEventBus,
+        dshToolRegistrar: com.apex.agent.core.tools.extension.dsh.DshToolRegistrar
     ): ToolRegistry {
         val registry = DefaultToolRegistry()
 
@@ -955,14 +910,14 @@ object ToolModule {
         // v3+P83 联合收敛：原实现把 McpCallTool/McpListTool/McpConnectTool 注册了
         // 三次（第 12 节前后各一次 + 尾部重复块）——REPLACE 策略下静默互踩。
         // 此处为唯一注册点（v3 去重 + P83 尾部重复块移除，同题同解）。
-        // v4：连接成功后 McpToolRegistrar 还会把远程工具以 mcp__server__tool
+        // v4/v5：连接成功后 McpToolRegistrar 还会把远程工具以 Mcp{Server}{Tool}
         // 一等函数注册进来（带真实 schema，模型可直接调用）。
         registry.register(SafeAgentTool(McpCallTool(mcpManager)))
         registry.register(SafeAgentTool(McpListTool(mcpManager)))
         registry.register(SafeAgentTool(McpConnectTool(mcpManager)))
 
         // ═══ 12. Tool System v4 — 工具目录元工具（渐进披露）═══
-        // 注册表 ~110 工具不再全量随请求发送（根因：请求体撑爆 + 非法函数名
+        // 注册表 230+ 工具不再全量随请求发送（根因：请求体撑爆 + 非法函数名
         // 直接 400）。CORE 集常驻，其余能力经目录按需加载：
         //   ToolSearch 找 → ToolOpen 加载（描述+schema 作为工具结果注入，
         //   下一轮即可调用）→ ToolList 总览。
@@ -1006,6 +961,11 @@ object ToolModule {
         registry.register(SafeAgentTool(SkillUninstallTool(skillRegistry)))
         // 技能渐进披露：模型侧装载入口（全文返回 + 写入激活集持续注入）。
         registry.register(SafeAgentTool(SkillActivateTool(skillRegistry, skillActivation)))
+
+        // ═══ 16b. DSH 注册器启动 sweep（Phase 6 收尾）═══
+        // 装后钩子负责新装即注册；此处对账本 dsh_plugin 记录补注册，兜住
+        // 「装完重启工具面丢失」（注册表进程内；IO scope 自持，失败只记日志）。
+        dshToolRegistrar.start(extensionLedger)
 
         // ═══ 13b. FusionBundle 工具族（FusionList/FusionInfo/FusionActivate —— 注册体在卫星文件）═══
         registerFusionBundleTools(registry, fusionController, skillRegistry, mcpManager, skillActivation)
@@ -1065,7 +1025,7 @@ object ToolModule {
         val mainExecutor: ToolExecutor = SecretRedactingExecutor(
             delegate = buildV3Executor(
                 registry, riskAwareToolGate, permissionModeGate, toolUsageTracker,
-                environmentState, traceRecorder, circuitBreaker, hookRegistry
+                environmentState, traceRecorder, circuitBreaker, hookRegistry, pluginEventBus
             ),
             redactor = vaultRepository.secretRedactor
         )

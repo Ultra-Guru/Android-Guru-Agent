@@ -13,6 +13,7 @@ import com.apex.agent.core.code.thinking.CodeThinkingLevel
 import com.apex.agent.core.engine.AgentEngine
 import com.apex.agent.core.engine.AgentEvent
 import com.apex.agent.core.engine.AgentMode
+import com.apex.agent.core.engine.AutonomyLevel
 import com.apex.agent.core.engine.ExecutionPlan
 import com.apex.agent.core.engine.InputType
 import com.apex.agent.core.engine.PlanStep
@@ -141,6 +142,16 @@ class LoomKitAdapter(
     @Volatile
     private var globalRulesCache: String = ""
 
+    /** v4 三档自主级别指令缓存（updateAutonomy 写入，sessionExtras 透传消费）。 */
+    private var autonomyDirective: String = ""
+
+    /** 自主级别指令拼装：非空时追加在 extras 末尾（两者皆空 = null 原样）。 */
+    private fun appendAutonomyDirective(extras: String?): String? {
+        if (autonomyDirective.isBlank()) return extras
+        if (extras.isNullOrBlank()) return autonomyDirective
+        return extras + "\n\n" + autonomyDirective
+    }
+
     /** 当前打开文件缓存（提示词工作区段的 "user is viewing" 行）。 */
     @Volatile
     private var activeFile: String? = null
@@ -198,6 +209,12 @@ class LoomKitAdapter(
         engine.updateMode(mode.toWeave())
     }
 
+    /** v4 三档自主级别：kit 线无自由 system context 通道，指令存字段、
+     * 拼进 updateSessionExtras 透传（每次 VM 发送前都会重织，下轮生效）。 */
+    override fun updateAutonomy(level: AutonomyLevel?, preClarify: Boolean) {
+        autonomyDirective = level?.promptInstruction(preClarify) ?: ""
+    }
+
     override fun submitPlanConfirmation(
         confirmed: Boolean,
         enabledSteps: List<Int>?,
@@ -205,7 +222,7 @@ class LoomKitAdapter(
     ): Boolean = engine.submitPlanConfirmation(confirmed)
 
     override fun updateSessionExtras(extras: String?) {
-        engine.updateSessionExtras(extras)
+        engine.updateSessionExtras(appendAutonomyDirective(extras))
     }
 
     override fun updateRolePersona(roleDefinition: String, rolePrompt: String?) {

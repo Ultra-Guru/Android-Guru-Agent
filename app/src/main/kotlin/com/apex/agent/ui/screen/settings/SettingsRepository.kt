@@ -566,7 +566,7 @@ data class AgentSettings(
 
     // ═══ 工具权限（v1.0 #155 业界标准式权限模式；S-03：默认档 DEFAULT）═══
     // 引擎执行器门控：模式（BYPASS/DEFAULT/ACCEPT_EDITS/PLAN）+ 按序首匹配
-    // 规则三元组（ALLOW/ASK/DENY，pattern 支持尾缀星号通配，覆盖 mcp__
+    // 规则三元组（ALLOW/ASK/DENY，pattern 支持尾缀星号通配，覆盖 Mcp*
     // 动态 id）。决策器见 PermissionDecider，门见 PermissionModeGate。
     // 历史：2026-10 曾按用户反馈把默认档改为 BYPASS（全自动）并对存量
     // DEFAULT 用户一次性翻转 —— 等于无感知自动提权（S-03 修复对象）。
@@ -601,6 +601,16 @@ data class AgentSettings(
     val goalMaxRounds: Int = 8,
     val goalVerifierEnabled: Boolean = true,
 
+    // ═══ v4 Coding 模式级联选择器：三档自主级别（提问策略）═══
+    // codeAutonomyLevel：Build 模式记忆的自主级别（interactive|semi|fully，
+    // 默认交互式）；codeGoalAutonomyLevel：Goal 模式记忆（GoalSpec 启动时
+    // 拍平快照并回写此处）。两模式各自记忆，切模式互不影响。
+    val codeAutonomyLevel: String = "interactive",
+    val codeGoalAutonomyLevel: String = "interactive",
+    // codeFullAutoPreClarify：完全自主「开始前集中澄清」开关（默认关；
+    // 切到其他自主级别时隐藏但保留状态，见 AutonomyLevel KDoc）。
+    val codeFullAutoPreClarify: Boolean = false,
+
     // ═══ v3 Coding 工位增强 ═══
     // codeOutputMode：Coding 屏输出展示档（揭示时机维度）——"streaming"
     // （默认，实时渲染：逐字/逐胶囊流式）| "complete"（整段模式：生成中
@@ -610,7 +620,7 @@ data class AgentSettings(
     // 见 ui/screen/code/CodeOutputMode.kt。
     // codeOutputStyle：Coding 屏输出风格——"timeline"（默认，经典胶囊
     // 时间轴：胶囊流水/同族折叠/实时代码窗）| "rikka"（Rikka 风格聊天式：
-    // 用户右对齐气泡 + Markdown 结论 + 思考折叠卡 + 工具调用聚合块，含
+    // 用户右对齐气泡 + Markdown 结论 + 思考计时卡 + 工具调用聚合块，含
     // 技能/MCP 溯源标识与三分类聚合）。与 codeOutputMode（揭示时机）正交；
     // UI 渲染层开关（引擎/会话零参与），run 粒度捕获 + idle 期设置流实时
     // 同步。见 ui/screen/code/CodeOutputStyle.kt。
@@ -618,7 +628,6 @@ data class AgentSettings(
     // （默认开；关闭后回到 v2 的全局可见行为）。
     val codeOutputMode: String = "streaming",
     val codeOutputStyle: String = "timeline",
-    val codeRikkaThinkingCollapsed: Boolean = false,
     val mcpScopeIsolation: Boolean = true,
 
     // ═══ 部件级皮肤（PartSkin spec §7.2，v1.7）═══

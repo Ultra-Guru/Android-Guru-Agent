@@ -45,6 +45,11 @@ class HookRegistryTest {
         assertTrue(HookRegistry.matches("CodeGit*", "CodeGit"))
         assertFalse(HookRegistry.matches("CodeGit*", "CodeGrep"))
         assertFalse(HookRegistry.matches("CodeGit*", "ShellExecute"))
+        // v5 命名契约回归（T1-e）：MCP 一等工具 id 为 Mcp{Server}{Tool}，
+        // 钩子通配示例口径的前缀必须命中运行期才知道的真实 id
+        assertTrue(HookRegistry.matches("McpGithub*", "McpGithubCreateIssue"))
+        assertTrue(HookRegistry.matches("Mcp*", "McpSearchWebSearch"))
+        assertFalse(HookRegistry.matches("McpGithub*", "McpSearchWebSearch"))
     }
 
     @Test

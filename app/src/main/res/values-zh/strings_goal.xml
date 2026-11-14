@@ -9,12 +9,12 @@
     <string name="goal_setup_empty_statement">目标陈述不能为空</string>
     <string name="goal_criteria_label">完成条件（可验证）</string>
     <string name="goal_criteria_placeholder">所有测试通过（./gradlew test 零失败）\n应用能正常启动到主页</string>
-    <string name="goal_criteria_hint">条件必须可客观验证——验收器按证据（命令输出/文件内容/测试结果）判定，不接受「应该没问题」。</string>
+    <string name="goal_criteria_hint">条件必须可客观验证——验收器按证据（命令输出/文件内容/测试结果）判定，不接受「应该没问题」。每行一条：验收器逐条判定，状态卡逐条展示结果。</string>
     <string name="goal_setup_empty_criteria">完成条件不能为空</string>
     <string name="goal_max_rounds">最大验收轮次</string>
     <string name="goal_start">开始目标</string>
     <string name="goal_how_it_works">工作方式</string>
-    <string name="goal_how_it_works_body">Agent 每轮收尾后由快速模型对照条件验收，未达标自动续跑并注入差距说明，直到达标或轮次耗尽。</string>
+    <string name="goal_how_it_works_body">目标按状态机推进：前置澄清（完全自主 + 集中澄清）→ 规格就绪 → 执行 → 验收 → 达成 / 阻塞。每轮收尾后由快速模型逐条对照条件验收，未达标自动续跑并注入差距说明，直到达标或轮次耗尽。</string>
 
     <!-- ═══ 状态卡（GoalStatusCard）═══ -->
     <string name="goal_status_active">进行中</string>

@@ -87,7 +87,7 @@ import javax.inject.Singleton
  * |---|---|
  * | ToolRegistry / ToolExecutor | 110+ 工具 + v3 门控/熔断/重试 + v4 目录 —— 两模式同一套规则 |
  * | SkillRegistry | prompt 型技能注入两模式系统提示词（安装即生效） |
- * | McpManager | mcp__search__web_search / mcp__github__* 一等工具两模式可用 |
+ * | McpManager | McpSearchWebSearch / McpGithub* 一等工具两模式可用 |
  * | ModelRuntime | 多模型角色路由（PRIMARY/VISION/REASONING/SUMMARY） |
  * | CS-Mem observer | 编码动作同样进入认知记忆 |
  *
@@ -430,12 +430,14 @@ object CodeModule {
         // MCP 服务器指引源：已连接服务器的 initialize instructions →
         // （服务器名 → 指引 + 注册表 id 前缀）。引擎按当前工具面过滤——
         // 只有该服务器工具真的在面上，指引才注入（防幻觉指引）。
+        // 前缀必须与 McpToolNaming.toolId 同源（v5：Mcp{Server}{Tool}）——
+        // 此前手拼的 v4 写法 mcp__{slug}__ 与实际 id 永不匹配，指引从不注入。
         val standardMcpInstructionSource = KitMcpInstructionSource {
             mcpManager.getServerInstructions().map { (server, instructions) ->
                 KitMcpServerInstructions(
                     serverName = server,
                     instructions = instructions,
-                    toolIdPrefix = "mcp__" + McpToolNaming.slug(server) + "__"
+                    toolIdPrefix = McpToolNaming.serverIdPrefix(server)
                 )
             }
         }

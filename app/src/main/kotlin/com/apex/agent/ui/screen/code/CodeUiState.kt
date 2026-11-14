@@ -40,6 +40,14 @@ data class CodeUiState(
     // ── #197 执行模式（Coding 屏 Build/Plan 双档）──
     val mode: com.apex.agent.core.engine.AgentMode = com.apex.agent.core.engine.AgentMode.BUILD,
 
+    // ── v4 三档自主级别（提问策略，与执行模式正交）──
+    // 当前模式的生效级别（Build/Goal 各自从 AgentSettings 记忆恢复；Plan
+    // 不适用，恒 INTERACTIVE 且引擎侧不注入指令）。标签组合 "Build · 半自主"
+    // 由选择器消费；fullAutoPreClarify 为设置层真值镜像（开关状态展示）。
+    val autonomyLevel: com.apex.agent.core.engine.AutonomyLevel =
+        com.apex.agent.core.engine.AutonomyLevel.INTERACTIVE,
+    val fullAutoPreClarify: Boolean = false,
+
     // ── #197 PLAN 模式计划确认（人控门）──
     val plan: com.apex.agent.core.engine.ExecutionPlan? = null,
     val awaitingPlanConfirmation: Boolean = false,

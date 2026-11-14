@@ -28,7 +28,7 @@ import androidx.compose.runtime.Immutable
  * 不触发换皮**（§7.5.1）。
  */
 enum class SkinApplyMode(val key: String) {
-    /** 默认：按设备分级解析（HIGH → 立即；MID/LOW → 新对话）。 */
+    /** 默认：空闲立即生效（2026-11 修订「呈现立即」，全分级；原按分级解析）。 */
     AUTO("auto"),
 
     /** 空闲时立即生效（当前对话整体换皮一次；运行中挂起到收束）。 */
@@ -94,21 +94,25 @@ fun DeviceMetrics.tier(): DevicePerfTier = when {
 }
 
 /**
- * 策略解析（§7.9.1，纯函数，可 JVM 单测；NFR-16 状态机侧兜底）：
+ * 策略解析（§7.9.1，纯函数，可 JVM 单测；**2026-11 修订「呈现立即」**）：
  *
  * | mode \ tier | LOW | MID | HIGH |
  * |---|---|---|---|
- * | AUTO | ON_NEW_CHAT | ON_NEW_CHAT | **IMMEDIATE** |
- * | IMMEDIATE | **ON_NEW_CHAT（硬拒）** | IMMEDIATE | IMMEDIATE |
+ * | AUTO | **IMMEDIATE** | **IMMEDIATE** | **IMMEDIATE** |
+ * | IMMEDIATE | **IMMEDIATE** | IMMEDIATE | IMMEDIATE |
  * | ON_NEW_CHAT | ON_NEW_CHAT | ON_NEW_CHAT | ON_NEW_CHAT |
  *
- * ★ LOW 硬拒：即使 UI 被绕过（深链接 / 备份导入 / 老数据）也不会在低端
- * 机上开启立即换皮 —— 状态机不信任 UI 置灰（NFR-16）。
+ * 2026-11 用户规格（呈现层立即生效）：AUTO / IMMEDIATE 全分级立即 ——
+ * 「切了没反应」的观感问题（原 MID/LOW 档切风格后当前对话永不生效，只能
+ * 等新对话）自此根除。LOW 档的渲染防护不再走提升时机门（原 NFR-16 硬拒
+ * 作废），交给 §10 静帧降级（PALE_LIQUID → Frosted 静态帧）承担 —— 一次
+ * 性换皮的重绘代价，低于「用户对着旧界面反复确认」的体验代价。
+ * `tier` 参数保留（采样/统计口径不变，为将来按分级调动静/动效深度预留）。
+ * ON_NEW_CHAT 保留为显式 opt-out（沿用 v1.2 仅会话边界语义）。
  */
+@Suppress("UNUSED_PARAMETER")
 fun resolvePolicy(mode: SkinApplyMode, tier: DevicePerfTier): SkinApplyPolicy = when (mode) {
-    SkinApplyMode.IMMEDIATE ->
-        if (tier == DevicePerfTier.LOW) SkinApplyPolicy.ON_NEW_CHAT else SkinApplyPolicy.IMMEDIATE
     SkinApplyMode.ON_NEW_CHAT -> SkinApplyPolicy.ON_NEW_CHAT
-    SkinApplyMode.AUTO ->
-        if (tier == DevicePerfTier.HIGH) SkinApplyPolicy.IMMEDIATE else SkinApplyPolicy.ON_NEW_CHAT
+    SkinApplyMode.IMMEDIATE -> SkinApplyPolicy.IMMEDIATE
+    SkinApplyMode.AUTO -> SkinApplyPolicy.IMMEDIATE
 }
