@@ -140,6 +140,30 @@ data class GlassStyle(
             edgeAlpha = 0.20f, specularAlpha = 0.12f, elevation = 1.dp,
             pressedScale = 1f, scrimAlpha = 0.48f
         )
+
+        /**
+         * 浅白液态玻璃（PartSkin spec §6.2）：乳白霜面为底，零折射、零色散、
+         * 零外阴影的「阅读优先」材质 —— 思考过程卡与全部卡片族的默认皮。
+         *
+         * 与 Card 档的差异化调参（「不同组件不同材质」）：
+         *  - 零折射（lens 0/0dp）：整宽卡片不需要边缘形变；Floating 档的
+         *    10/20dp 折射正是「框中框」放大器（DEF-1 根因）；
+         *  - 零色散：正文旁不出现彩虹分离；
+         *  - 更透的 tint（0.30 vs Card 0.42）：长文阅读优先；
+         *  - 1dp 檐口阴影（vs Card 2dp / Floating 6dp）：去掉 6dp 外阴影后
+         *    不再有第二圈暗边（双底边色差带的另一半根因）；
+         *  - 档位语义沿用 Card（枚举保持稳定，仅参数差异化 —— 与 Bubble 档
+         *    同款做法，docs/liquid-glass-system.md 第八个语义档）。
+         *
+         * 彩光/流光/扫掠不往本档塞：那些是 PaleLiquidSurface 的 overlay 层
+         * （ui/glass/PaleLiquidSurface.kt §6.4/§6.5），材质底座保持纯净。
+         */
+        val PaleLiquid = GlassStyle(
+            tier = GlassTier.Card, blurRadius = 10.dp, tintAlpha = 0.30f,
+            lensHeight = 0.dp, lensAmount = 0.dp, chromaticAberration = false, vibrancy = 0f,
+            edgeAlpha = 0.20f, specularAlpha = 0.14f, elevation = 1.dp,
+            pressedScale = 1f, scrimAlpha = 0.44f
+        )
     }
 }
 
@@ -229,4 +253,64 @@ object GlassShapes {
     val navItem = RoundedCornerShape(12.dp)
     val floating = RoundedCornerShape(50)
     val dialog = RoundedCornerShape(20.dp)
+}
+
+/**
+ * 浅白液态玻璃调色板（PartSkin spec §6.3）—— 与 [glassPalette] 并列，
+ * 原函数零改动。乳白霜面为底：浅色主题是「白基底上的乳白材质」，深色
+ * 主题是「近黑基底上的一层淡白面纱」；主题色只以低饱和光晕形式在玻璃
+ * 内部呼吸（A/B/C 三枚），文字永远是纯 onSurface（NFR-6 对比度）。
+ */
+@Immutable
+internal data class PalePalette(
+    /** 白霜垂直渐变顶（霜面提亮）。 */
+    val frostTop: Color,
+    /** 白霜垂直渐变底（霜面沉底）。 */
+    val frostBottom: Color,
+    /** 漂移彩光 A（primary 相位）。 */
+    val glowA: Color,
+    /** 漂移彩光 B（tertiary 相位）。 */
+    val glowB: Color,
+    /** 漂移彩光 C（secondary 相位）。 */
+    val glowC: Color,
+    /** 镜面扫掠光带色。 */
+    val sheen: Color,
+    /** 轮廓流光光眼色（borderBeam tint）。 */
+    val eye: Color
+)
+
+/**
+ * 当前主题下的浅白玻璃调色板（§6.3 表格逐项落地）。跟随 Dynamic Color /
+ * 预设强调色 —— 光晕从 colorScheme 派生，霜面用固定色相保证跨主题一致。
+ */
+@Composable
+internal fun palePalette(): PalePalette {
+    val scheme = MaterialTheme.colorScheme
+    val dark = scheme.background.luminance() < 0.5f
+    return if (dark) {
+        PalePalette(
+            // 深色：近黑基底上的一层淡白面纱（提亮不刺眼）
+            frostTop = Color(0xFFF3F5FF).copy(alpha = 0.14f),
+            frostBottom = Color(0xFFE9EDFF).copy(alpha = 0.07f),
+            // 光晕比浅色浓一档：暗底上同透明度几乎不可见
+            glowA = scheme.primary.copy(alpha = 0.22f),
+            glowB = scheme.tertiary.copy(alpha = 0.18f),
+            glowC = scheme.secondary.copy(alpha = 0.16f),
+            sheen = Color.White.copy(alpha = 0.14f),
+            // 深色下光眼用白热（白高光物理语义，#269 同款豁免说明）
+            eye = Color.White.copy(alpha = 0.85f)
+        )
+    } else {
+        PalePalette(
+            // 浅色：乳白磨砂（霜面 alpha 上限 0.72 —— NFR-6 对比度的上限钳）
+            frostTop = Color.White.copy(alpha = 0.72f),
+            frostBottom = Color(0xFFF2F5FF).copy(alpha = 0.52f),
+            glowA = scheme.primary.copy(alpha = 0.13f),
+            glowB = scheme.tertiary.copy(alpha = 0.11f),
+            glowC = scheme.secondary.copy(alpha = 0.10f),
+            sheen = Color.White.copy(alpha = 0.20f),
+            // 浅色下光眼走主题色低饱和（primary @ 0.60）
+            eye = scheme.primary.copy(alpha = 0.60f)
+        )
+    }
 }

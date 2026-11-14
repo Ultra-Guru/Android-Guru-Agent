@@ -49,7 +49,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -87,12 +86,19 @@ import com.apex.agent.ui.screen.code.stream.CodeStreamTimeline
 import com.apex.agent.ui.screen.code.stream.RikkaStreamTimeline
 import com.apex.agent.ui.screen.code.stream.TerminalPanelState
 import com.apex.agent.ui.screen.code.stream.CodeToolDetailSheet
-import com.apex.agent.ui.glass.GlassCard
 import com.apex.agent.ui.glass.GlassModalScrim
 import com.apex.agent.ui.glass.GlassStyle
+import com.apex.agent.ui.glass.PartSurface
 import com.apex.agent.ui.glass.glassModalBlur
+import com.apex.agent.ui.theme.CodingPart
+import com.apex.agent.ui.theme.LocalParentSkin
+import com.apex.agent.ui.theme.LocalPartSkins
+import com.apex.agent.ui.theme.LocalSkinContext
+import com.apex.agent.ui.theme.LocalUiStyle
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.runtime.CompositionLocalProvider
 
 /**
  * # Code Screen — Coding 模式主屏（与 Agent 聊天屏同级别）
@@ -194,6 +200,17 @@ fun CodeScreen(
         }
     }
 
+    // ═══ v1.7/v1.2 部件皮肤上下文（PartSkin spec §7.4/§7.6）═══
+    // H-5：渲染只读 conversationSkin.active（会话快照，当前对话内 epoch
+    // 恒定 ⇒ 零皮肤重组）；设置改动只落 pending，经 staticCompositionLocalOf
+    // 下发 —— 皮肤变更只失效读取方（PartSurface），不波及时间轴 Compose
+    // 树（NFR-1）；不重置任何展开态/滚动（FR-9）。四维度（uiStyle 材质
+    // 短路 / outputStyle / renderMode / partSkins+glow）同一 epoch 生效。
+    val uiStyle = LocalUiStyle.current
+    val activeSkin = state.conversationSkin.active
+    val skinContext = remember(activeSkin) {
+        skinContextFor(activeSkin.outputStyle, activeSkin.uiStyle, activeSkin.partSkins.glow)
+    }
     Box(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier.fillMaxSize()
@@ -260,19 +277,28 @@ fun CodeScreen(
             )
         }
 
-        // ═══ #197 PLAN 模式计划确认卡（人控门；v4 三规格区块 + Goal 流转）═══
-        if (state.awaitingPlanConfirmation && state.plan != null) {
-            PlanConfirmationCard(
-                plan = state.plan!!,
-                onConfirm = { enabledSteps, order ->
-                    viewModel.confirmPlan(true, enabledSteps, order)
-                    // v4：开始执行 → 自动切 Build（计划步骤在既有 run 内继续，
-                    // 后续消息直接 Build 模式）
-                    viewModel.switchCascadeMode(com.apex.agent.core.engine.AgentMode.BUILD)
-                },
-                onReject = { viewModel.confirmPlan(false) },
-                onSwitchToGoal = viewModel::switchToGoalFromPlan
-            )
+        // v1.7/v1.2 部件皮肤：计划确认卡共享会话快照（PartSkin providers；
+        // LocalConversationSkin = 材质短路的会话绑定半边，H-5 冻结当前对话）
+        CompositionLocalProvider(
+            LocalConversationSkin provides activeSkin,
+            LocalPartSkins provides activeSkin.partSkins,
+            LocalSkinContext provides skinContext,
+            LocalParentSkin provides null
+        ) {
+            // ═══ #197 PLAN 模式计划确认卡（人控门；v4 三规格区块 + Goal 流转）═══
+            if (state.awaitingPlanConfirmation && state.plan != null) {
+                PlanConfirmationCard(
+                    plan = state.plan!!,
+                    onConfirm = { enabledSteps, order ->
+                        viewModel.confirmPlan(true, enabledSteps, order)
+                        // v4：开始执行 → 自动切 Build（计划步骤在既有 run 内继续，
+                        // 后续消息直接 Build 模式）
+                        viewModel.switchCascadeMode(com.apex.agent.core.engine.AgentMode.BUILD)
+                    },
+                    onReject = { viewModel.confirmPlan(false) },
+                    onSwitchToGoal = viewModel::switchToGoalFromPlan
+                )
+            }
         }
 
         // ═══ v5 玻璃悬浮层重构（Agent 屏同款 overlay 模式；kyant0/backdrop 引擎）═══
@@ -289,7 +315,8 @@ fun CodeScreen(
         // 内联终端胶囊状态：活跃 BASH 或有历史输出即渲染（时间轴末条）。
         // v1.5 输出展示档：完整档生成中终端尾窗同档静默（实时命令输出属于
         // 过程条目，由加载进度卡代位），收束后随完整内容一起回归（折叠态）。
-        val completeGenerating = state.isRunning && state.renderMode == CodeOutputMode.COMPLETE
+        val completeGenerating = state.isRunning &&
+            state.conversationSkin.active.renderMode == CodeOutputMode.COMPLETE
         val terminalState =
             if (!completeGenerating &&
                 (state.stream.activeTerminalCallId != null || state.stream.terminalContent.isNotBlank())
@@ -305,225 +332,239 @@ fun CodeScreen(
                 null
             }
         Box(modifier = Modifier.weight(1f)) {
-            // ═══ v1.6 输出风格分派：经典胶囊时间轴 / Rikka 聊天式 ═══
-            // 两风格共享同一 snapshot 数据通道、滚动锚定、终端胶囊与
-            // 输出方式档（流式/整段）语义——只差分段与皮肤（见
-            // CodeOutputStyle.kt；idle 期热切换，运行中 run 粒度捕获）。
-            if (state.outputStyle == CodeOutputStyle.RIKKA) {
-                RikkaStreamTimeline(
-                    thinkingCollapsed = agentPresentation.codeRikkaThinkingCollapsed,
-                    onThinkingCollapsedChange = { collapsed ->
-                        viewModel.settingsRepository.updateAgentSettings { copy(codeRikkaThinkingCollapsed = collapsed) }
-                    },
-                    snapshot = state.stream,
-                    isStreaming = state.isRunning,
-                    renderMode = state.renderMode,
-                    bottomInset = lowerStackInsetDp,
-                    backdrop = streamBackdrop,
-                    onToolClick = { call -> selectedToolCallId = call.id },
-                    terminal = terminalState,
-                    onToggleTerminalCollapse = {
-                        terminalUserToggled = true
-                        terminalCollapsed = !terminalCollapsed
-                    },
-                    // 失败结尾「继续完成」（用户规格 2026-11）：错误卡尾部播放入口
-                    onRetryRun = if (state.errorRetriable && !state.isRunning) {
-                        { viewModel.retryLastRun() }
-                    } else null,
-                    modifier = Modifier.glassModalBlur(pendingAgentQuestion != null)
-                )
-            } else {
-                CodeStreamTimeline(
-                    snapshot = state.stream,
-                    isStreaming = state.isRunning,
-                    renderMode = state.renderMode,
-                    bottomInset = lowerStackInsetDp,
-                    backdrop = streamBackdrop,
-                    onToolClick = { call -> selectedToolCallId = call.id },
-                    terminal = terminalState,
-                    onToggleTerminalCollapse = {
-                        terminalUserToggled = true
-                        terminalCollapsed = !terminalCollapsed
-                    },
-                    // 失败结尾「继续完成」（用户规格 2026-11）：错误卡尾部播放入口
-                    onRetryRun = if (state.errorRetriable && !state.isRunning) {
-                        { viewModel.retryLastRun() }
-                    } else null,
-                    // ═══ 玻璃幕帘（2026-10 用户反馈）：提问卡挂起时时间轴整体模糊 ═══
-                    // 液态玻璃的 backdrop 采样存在盲区（动画图层/采样时序差），盲区
-                    // 文字会以锐利形态透过霜面与卡内内容叠字 —— 被覆盖内容自身先
-                    // blur（修饰序在 layerBackdrop 外层，采样源不失真），屏幕透出的
-                    // 只能是模糊像素。
-                    modifier = Modifier.glassModalBlur(pendingAgentQuestion != null)
-                )
-            }
-
-            // ═══ 模态幕帘：scrim 兜底（API < 31 无 blur）+ 点击拦截（门控必须先作答）═══
-            if (pendingAgentQuestion != null) {
-                GlassModalScrim(modifier = Modifier.matchParentSize())
-            }
-
-            // ═══ 底部悬浮栈：悬浮于时间轴之上（backdrop 采样前提）═══
-            // （终端尾窗已内联进时间轴 —— 此栈只剩提问卡/错误条/目标卡/
-            // 选择器行/输入栏，高度回落，时间轴可见区变大）
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .onSizeChanged { lowerStackInsetPx = it.height }
+            // ═══ v1.7/v1.2 部件皮肤 providers（PartSkin spec §7.4/§7.6）：时间轴 + 悬浮栈
+            // 共享会话快照 —— PartSurface 读 LocalPartSkins 解析四级回退 + H-4；
+            // LocalConversationSkin 驱动 GlassSurface/PaleLiquid 的 MINIMAL 短路 ═══
+            CompositionLocalProvider(
+                LocalConversationSkin provides activeSkin,
+                LocalPartSkins provides activeSkin.partSkins,
+                LocalSkinContext provides skinContext,
+                LocalParentSkin provides null
             ) {
-                // v1.0 #155：工具/权限门的结构化提问卡（与 AskUser 的纯文本对话框并存；
-                // 工具执行已挂起，用户必须作答才能继续）
-                pendingAgentQuestion?.let { question ->
-                    QuestionCard(
-                        question = question,
-                        onAnswer = { optionIds, customText ->
-                            viewModel.answerAgentQuestion(optionIds, customText)
+                // ═══ v1.6 输出风格分派：经典胶囊时间轴 / Rikka 聊天式 ═══
+                // 两风格共享同一 snapshot 数据通道、滚动锚定、终端胶囊与
+                // 输出方式档语义 —— 只差分段与皮肤（见 CodeOutputStyle.kt）。
+                // v1.2：风格分派改读会话快照（H-5：当前对话内冻结）。
+                if (activeSkin.outputStyle == CodeOutputStyle.RIKKA) {
+                    RikkaStreamTimeline(
+                        thinkingCollapsed = agentPresentation.codeRikkaThinkingCollapsed,
+                        onThinkingCollapsedChange = { collapsed ->
+                            viewModel.settingsRepository.updateAgentSettings { copy(codeRikkaThinkingCollapsed = collapsed) }
                         },
-                        onCancel = viewModel::cancelAgentQuestion,
-                        backdrop = streamBackdrop
-                    )
-                }
-
-                state.error?.let { err ->
-                    // #209：运行失败类错误（errorRetriable）提供一键重试；运行中不重复触发。
-                    // v6 玻璃接线：错误条从实色 errorContainer 改 GlassCard 真采样 ——
-                    // accent=error 保错误语义在玻璃材质上仍可辨。
-                    ErrorBar(
-                        message = err,
+                        snapshot = state.stream,
+                        isStreaming = state.isRunning,
+                        renderMode = activeSkin.renderMode,
+                        bottomInset = lowerStackInsetDp,
                         backdrop = streamBackdrop,
-                        onRetry = if (state.errorRetriable && !state.isRunning) viewModel::retryLastRun else null,
-                        onDismiss = viewModel::dismissError
+                        onToolClick = { call -> selectedToolCallId = call.id },
+                        terminal = terminalState,
+                        onToggleTerminalCollapse = {
+                            terminalUserToggled = true
+                            terminalCollapsed = !terminalCollapsed
+                        },
+                        // 失败结尾「继续完成」（用户规格 2026-11）：错误卡尾部播放入口
+                        onRetryRun = if (state.errorRetriable && !state.isRunning) {
+                            { viewModel.retryLastRun() }
+                        } else null,
+                        modifier = Modifier.glassModalBlur(pendingAgentQuestion != null)
+                    )
+                } else {
+                    CodeStreamTimeline(
+                        snapshot = state.stream,
+                        isStreaming = state.isRunning,
+                        renderMode = activeSkin.renderMode,
+                        bottomInset = lowerStackInsetDp,
+                        backdrop = streamBackdrop,
+                        onToolClick = { call -> selectedToolCallId = call.id },
+                        terminal = terminalState,
+                        onToggleTerminalCollapse = {
+                            terminalUserToggled = true
+                            terminalCollapsed = !terminalCollapsed
+                        },
+                        // 失败结尾「继续完成」（用户规格 2026-11）：错误卡尾部播放入口
+                        onRetryRun = if (state.errorRetriable && !state.isRunning) {
+                            { viewModel.retryLastRun() }
+                        } else null,
+                        // ═══ 玻璃幕帘（2026-10 用户反馈）：提问卡挂起时时间轴整体模糊 ═══
+                        // 液态玻璃的 backdrop 采样存在盲区（动画图层/采样时序差），盲区
+                        // 文字会以锐利形态透过霜面与卡内内容叠字 —— 被覆盖内容自身先
+                        // blur（修饰序在 layerBackdrop 外层，采样源不失真），屏幕透出的
+                        // 只能是模糊像素。
+                        modifier = Modifier.glassModalBlur(pendingAgentQuestion != null)
                     )
                 }
 
-                // ═══ v3 GOAL 目标状态卡（输入栏上方；目标存在即显示——无论
-                // ACTIVE/ACHIEVED/STOPPED、切走模式也显示，可随时停止/重启；
-                // 实现在 GoalSetupSheet.kt 同文件，与 Loop 状态卡同款形态）═══
-                state.goalState?.let { goalState ->
-                    GoalStatusCard(
-                        state = goalState,
-                        pendingQuestion = pendingAgentQuestion != null,
-                        onStop = viewModel::stopActiveGoal,
-                        onResume = viewModel::resumeGoal
-                    )
+                // ═══ 模态幕帘：scrim 兜底（API < 31 无 blur）+ 点击拦截（门控必须先作答）═══
+                if (pendingAgentQuestion != null) {
+                    GlassModalScrim(modifier = Modifier.matchParentSize())
                 }
 
-                // ═══ 任务排队卡（输入栏上方）：运行中发出的第二条任务 ═══
-                // 等待发送（完成后自动接力）/ 等待排队（上一任务失败，需点
-                // 「开始排队」确认）——数据与动作全在 CodeViewModel。
-                state.queuedTask?.let { queued ->
-                    QueuedTaskCard(
-                        task = queued,
-                        onStart = viewModel::startQueuedTask,
-                        onCancel = viewModel::cancelQueuedTask,
-                        backdrop = streamBackdrop
-                    )
-                }
-
-                // ═══ #197 模式 + 思考档位选择器行（Build/Plan 双档 + 七档思考）═══
-                //（GOAL 切入的弹层/深潜线保障在 VM setMode → onEnterGoalMode 单点，
-                // 此处保持纯方法引用——选择器与 init 恢复共用同一路径）
-                // v6 前插专家模板胶囊（全栈置顶/Git/Android/各语言专家——
-                // 选择即持久化 codeActiveRoleId，经 roleController 落引擎人设）
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                // ═══ 底部悬浮栈：悬浮于时间轴之上（backdrop 采样前提）═══
+                // （终端尾窗已内联进时间轴 —— 此栈只剩提问卡/错误条/目标卡/
+                // 选择器行/输入栏，高度回落，时间轴可见区变大）
+                Column(
                     modifier = Modifier
+                        .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 12.dp, vertical = 2.dp)
+                        .onSizeChanged { lowerStackInsetPx = it.height }
                 ) {
-                    AgentRoleSelector(
-                        current = activeCodingRole,
-                        roles = codingRoles,
-                        onSelect = viewModel.roleController::select
-                    )
-                    // v4 级联模式选择器：Build（二级自主级别）/ Plan / Goal 直选
-                    //（GOAL 附属动作在 VM setMode 尾部单点，与 init 恢复共用路径）
-                    CodeModeCascadeSelector(
-                        currentMode = state.mode,
-                        currentAutonomy = state.autonomyLevel,
-                        preClarify = state.fullAutoPreClarify,
-                        onSelectMode = viewModel::switchCascadeMode,
-                        onSelectAutonomy = viewModel::selectCascadeAutonomy,
-                        onTogglePreClarify = viewModel::toggleFullAutoPreClarify
-                    )
-                    CodeThinkingSelector(
-                        current = state.thinkingLevel,
-                        adaptiveDecision = state.adaptiveDecision,
-                        onSelect = viewModel::setThinkingLevel,
-                        onOpenGuide = { showThinkingGuide = true },
-                        nativeEffortActive = nativeEffortActive
+                    // v1.0 #155：工具/权限门的结构化提问卡（与 AskUser 的纯文本对话框并存；
+                    // 工具执行已挂起，用户必须作答才能继续）
+                    pendingAgentQuestion?.let { question ->
+                        QuestionCard(
+                            question = question,
+                            onAnswer = { optionIds, customText ->
+                                viewModel.answerAgentQuestion(optionIds, customText)
+                            },
+                            onCancel = viewModel::cancelAgentQuestion,
+                            backdrop = streamBackdrop
+                        )
+                    }
+
+                    // ═══ v3 GOAL 目标状态卡（输入栏上方；目标存在即显示——无论
+                    // ACTIVE/ACHIEVED/STOPPED、切走模式也显示，可随时停止/重启；
+                    // 实现在 GoalSetupSheet.kt 同文件，与 Loop 状态卡同款形态）═══
+                    state.goalState?.let { goalState ->
+                        GoalStatusCard(
+                            state = goalState,
+                            pendingQuestion = pendingAgentQuestion != null,
+                            onStop = viewModel::stopActiveGoal,
+                            onResume = viewModel::resumeGoal
+                        )
+                    }
+
+                    // ═══ 任务排队卡 / 错误条（DEF-3 单一状态出口）═══
+                    // 旧实现 state.error 与 state.queuedTask 两个独立 let 块同列
+                    // 堆叠——失败路径上排队卡转 NEEDS_CONFIRM 的同时 error 也
+                    // 置位，ErrorBar + 排队卡 3~4 层叠屏、状态打架。收敛为
+                    // when 单一出口：排队卡在场即优先（NEEDS_CONFIRM 态由排队
+                    // 卡承载失败上下文 + 「开始排队」确认入口）；错误条只在无
+                    // 排队任务时渲染。配套：CodeTaskQueueController 在转
+                    // NEEDS_CONFIRM 时清 error（双保险）。
+                    when {
+                        state.queuedTask != null -> state.queuedTask?.let { queued ->
+                            QueuedTaskCard(
+                                task = queued,
+                                onStart = viewModel::startQueuedTask,
+                                onCancel = viewModel::cancelQueuedTask,
+                                backdrop = streamBackdrop
+                            )
+                        }
+                        state.error != null -> state.error?.let { err ->
+                            // #209：运行失败类错误（errorRetriable）提供一键重试；运行中不重复触发。
+                            ErrorBar(
+                                message = err,
+                                backdrop = streamBackdrop,
+                                onRetry = if (state.errorRetriable && !state.isRunning) viewModel::retryLastRun else null,
+                                onDismiss = viewModel::dismissError
+                            )
+                        }
+                    }
+
+                    // ═══ #197 模式 + 思考档位选择器行（Build/Plan 双档 + 七档思考）═══
+                    //（GOAL 切入的弹层/深潜线保障在 VM setMode → onEnterGoalMode 单点，
+                    // 此处保持纯方法引用——选择器与 init 恢复共用同一路径）
+                    // v6 前插专家模板胶囊（全栈置顶/Git/Android/各语言专家——
+                    // 选择即持久化 codeActiveRoleId，经 roleController 落引擎人设）
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 12.dp, vertical = 2.dp)
+                    ) {
+                        AgentRoleSelector(
+                            current = activeCodingRole,
+                            roles = codingRoles,
+                            onSelect = viewModel.roleController::select
+                        )
+                        // v4 级联模式选择器：Build（二级自主级别）/ Plan / Goal 直选
+                        //（GOAL 附属动作在 VM setMode 尾部单点，与 init 恢复共用路径）
+                        CodeModeCascadeSelector(
+                            currentMode = state.mode,
+                            currentAutonomy = state.autonomyLevel,
+                            preClarify = state.fullAutoPreClarify,
+                            onSelectMode = viewModel::switchCascadeMode,
+                            onSelectAutonomy = viewModel::selectCascadeAutonomy,
+                            onTogglePreClarify = viewModel::toggleFullAutoPreClarify
+                        )
+                        CodeThinkingSelector(
+                            current = state.thinkingLevel,
+                            adaptiveDecision = state.adaptiveDecision,
+                            onSelect = viewModel::setThinkingLevel,
+                            onOpenGuide = { showThinkingGuide = true },
+                            nativeEffortActive = nativeEffortActive
+                        )
+                    }
+
+                    CodeInputBar(
+                        draft = state.inputDraft,
+                        onDraftChange = viewModel::updateInputDraft,
+                        isRunning = state.isRunning,
+                        llmConfigured = llmConfigured,
+                        onSendBlocked = { showApiMissingNotice = true },
+                        workspaceMenu = {
+                            CodeWorkspaceSelectorChip(
+                                active = state.activeWorkspace,
+                                workspaces = state.workspaces,
+                                onSelect = viewModel::switchWorkspace,
+                                onCreate = viewModel::createWorkspace,
+                                onImportFolder = { path -> viewModel.importWorkspaceFromFolder(path) },
+                                onDelete = viewModel::deleteWorkspace
+                            )
+                        },
+                        onSend = { text ->
+                            // v3 GOAL：GOAL 模式且尚无活动目标 → 首条消息转目标
+                            // 设定弹层（草稿预填），不直接发送；返回 false（非 GOAL/
+                            // 已有目标/斜杠指令）照常走发送管线。
+                            if (!viewModel.maybeGoalFirstSend(text)) {
+                                viewModel.sendMessage(text)
+                            }
+                        },
+                        onAbort = viewModel::abort,
+                        slashMenuProvider = slashMenuProvider,
+                        onAddPendingCommand = { viewModel.addPendingCommand(it) },
+                        pendingCommands = pendingCommands,
+                        onChipsChange = { viewModel.setPendingCommands(it) },
+                        backdrop = streamBackdrop,
+                        githubTokenManager = viewModel.githubTokenManager,
+                        mcpManager = viewModel.mcpManager,
+                        toolkit = toolkit,
+                        // 回车键行为（与 Agent 屏同源设置；此前 Coding 屏落默认值，
+                        // Enter 被消费却无动作 —— 换不了行的直接根因）
+                        sendKeyBehavior = uiSettings.sendKeyBehavior,
+                        // 「小大脑」模型菜单插槽（Agent 屏同款组件；providerNameOf
+                        // 回调在非 @Composable 上下文触发 —— 兜底文案预解析）
+                        modelMenu = {
+                            val unknownProviderLabel = stringResource(R.string.chat_unknown_provider)
+                            BrainMenuButton(
+                                profiles = codeProfiles,
+                                currentProfileId = codeCurrentProfileId ?: "",
+                                providerNameOf = { providerId ->
+                                    codeProviders.firstOrNull { it.id == providerId }?.displayName
+                                        ?: unknownProviderLabel
+                                },
+                                onSelectProfile = { viewModel.selectCodeModel(it) },
+                                onParamsChanged = { t, p, m -> viewModel.updateCodeModelParams(t, p, m) },
+                                onConfigure = onOpenSettings
+                            )
+                        },
+                        // 功能聚合（16 项真实注入）：2026-10 工具台重排后触发钮
+                        // 收进展开菜单 —— 直传 store，弹层经展开按钮锚点托管
+                        neonOrbStore = viewModel.neonOrbStore,
+                        toolkitState = ToolkitUiState(
+                            webSearchEnabled = webSearchEnabled,
+                            timeEnabled = timeEnabled,
+                            selectedFunctionIds = selectedFunctionIds,
+                            availableTools = availableTools,
+                            outputFormat = outputFormat,
+                            customSchema = customSchema,
+                            rules = rules,
+                            exposeAllTools = toolkit.exposeAllTools.collectAsStateWithLifecycle().value
+                        )
                     )
                 }
-
-                CodeInputBar(
-                    draft = state.inputDraft,
-                    onDraftChange = viewModel::updateInputDraft,
-                    isRunning = state.isRunning,
-                    llmConfigured = llmConfigured,
-                    onSendBlocked = { showApiMissingNotice = true },
-                    workspaceMenu = {
-                        CodeWorkspaceSelectorChip(
-                            active = state.activeWorkspace,
-                            workspaces = state.workspaces,
-                            onSelect = viewModel::switchWorkspace,
-                            onCreate = viewModel::createWorkspace,
-                            onImportFolder = { path -> viewModel.importWorkspaceFromFolder(path) },
-                            onDelete = viewModel::deleteWorkspace
-                        )
-                    },
-                    onSend = { text ->
-                        // v3 GOAL：GOAL 模式且尚无活动目标 → 首条消息转目标
-                        // 设定弹层（草稿预填），不直接发送；返回 false（非 GOAL/
-                        // 已有目标/斜杠指令）照常走发送管线。
-                        if (!viewModel.maybeGoalFirstSend(text)) {
-                            viewModel.sendMessage(text)
-                        }
-                    },
-                    onAbort = viewModel::abort,
-                    slashMenuProvider = slashMenuProvider,
-                    onAddPendingCommand = { viewModel.addPendingCommand(it) },
-                    pendingCommands = pendingCommands,
-                    onChipsChange = { viewModel.setPendingCommands(it) },
-                    backdrop = streamBackdrop,
-                    githubTokenManager = viewModel.githubTokenManager,
-                    mcpManager = viewModel.mcpManager,
-                    toolkit = toolkit,
-                    // 回车键行为（与 Agent 屏同源设置；此前 Coding 屏落默认值，
-                    // Enter 被消费却无动作 —— 换不了行的直接根因）
-                    sendKeyBehavior = uiSettings.sendKeyBehavior,
-                    // 「小大脑」模型菜单插槽（Agent 屏同款组件；providerNameOf
-                    // 回调在非 @Composable 上下文触发 —— 兜底文案预解析）
-                    modelMenu = {
-                        val unknownProviderLabel = stringResource(R.string.chat_unknown_provider)
-                        BrainMenuButton(
-                            profiles = codeProfiles,
-                            currentProfileId = codeCurrentProfileId ?: "",
-                            providerNameOf = { providerId ->
-                                codeProviders.firstOrNull { it.id == providerId }?.displayName
-                                    ?: unknownProviderLabel
-                            },
-                            onSelectProfile = { viewModel.selectCodeModel(it) },
-                            onParamsChanged = { t, p, m -> viewModel.updateCodeModelParams(t, p, m) },
-                            onConfigure = onOpenSettings
-                        )
-                    },
-                    // 功能聚合（16 项真实注入）：2026-10 工具台重排后触发钮
-                    // 收进展开菜单 —— 直传 store，弹层经展开按钮锚点托管
-                    neonOrbStore = viewModel.neonOrbStore,
-                    toolkitState = ToolkitUiState(
-                        webSearchEnabled = webSearchEnabled,
-                        timeEnabled = timeEnabled,
-                        selectedFunctionIds = selectedFunctionIds,
-                        availableTools = availableTools,
-                        outputFormat = outputFormat,
-                        customSchema = customSchema,
-                        rules = rules,
-                        exposeAllTools = toolkit.exposeAllTools.collectAsStateWithLifecycle().value
-                    )
-                )
             }
         }
     }
@@ -572,7 +613,7 @@ fun CodeScreen(
 
     // ═══ v3 GOAL 目标设定弹层（切到 GOAL 无活动目标 / GOAL 模式首条消息
     // 拦截 / Plan 确认卡「切 Goal」打开；v4 扩展自主级别 + 高级字段；
-    // 开始 → startGoalModeGoal（GoalSpec 全字段 + 首条提示 = 打开时的草稿）═══
+    // 开始 → startGoalModeGoal（GoalSpec 全字段 + 首条提示 = 打开时的草稿））═══
     if (state.showGoalSetup) {
         GoalSetupSheet(
             initialText = state.goalSetupDraft,
@@ -891,11 +932,15 @@ private fun CodeInputBar(
     toolkitState: ToolkitUiState
 ) {
     // ═══ v5 玻璃输入栏（Agent 屏同款）：Floating 档 + 顶部双角圆角，悬浮栈
-    // 布局使本卡悬浮于时间轴之上 → backdrop 采样获得真实玻璃材质。═══
-    GlassCard(
+    // 布局使本卡悬浮于时间轴之上 → backdrop 采样获得真实玻璃材质。
+    // v1.7 部件皮肤：收编 PartSurface(input.bar) —— 新默认 CLASSIC_GLASS
+    // (Floating) 与旧观感零差异；可单独切 PALE_LIQUID / FLAT。═══
+    PartSurface(
+        part = CodingPart.INPUT_BAR,
         backdrop = backdrop,
-        style = GlassStyle.Floating,
+        classicStyle = GlassStyle.Floating,
         shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+        contentPadding = PaddingValues(0.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
@@ -1133,53 +1178,3 @@ private fun ApiMissingFloatingNotice(
         }
     }
 }
-
-// ═══ 对话框 ═══
-
-@Composable
-private fun ErrorBar(
-    message: String,
-    backdrop: Backdrop?,
-    onRetry: (() -> Unit)?,
-    onDismiss: () -> Unit
-) {
-    GlassCard(
-        backdrop = backdrop,
-        style = GlassStyle.Floating,
-        shape = RoundedCornerShape(12.dp),
-        accent = MaterialTheme.colorScheme.error,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-        ) {
-            Icon(
-                Icons.Default.ErrorOutline,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f),
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
-            )
-            // #209：可恢复错误提供「重试」（复用错误条既有 action 按钮模式；
-            // 文案复用 chat_retry，与 Agent 屏 RetryChip 同词）。
-            if (onRetry != null) {
-                TextButton(onClick = onRetry) {
-                    Text(stringResource(R.string.chat_retry))
-                }
-            }
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.code_dismiss))
-            }
-        }
-    }
-}
-

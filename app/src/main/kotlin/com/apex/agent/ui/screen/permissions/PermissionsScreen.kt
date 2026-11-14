@@ -62,6 +62,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.apex.agent.R
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
+import com.apex.agent.core.logging.LogLevel
 import com.apex.agent.platform.privilege.PrivilegeDetector
 import com.apex.agent.platform.privilege.PrivilegeManager
 import com.apex.agent.platform.privilege.shizuku.ShizukuCommandExecutor
@@ -81,13 +84,30 @@ import kotlinx.coroutines.withContext
  */
 @HiltViewModel
 class PermissionsViewModel @Inject constructor(
-    private val privilegeManager: PrivilegeManager
+    private val privilegeManager: PrivilegeManager,
+    private val suAuthorizationCache: com.apex.agent.platform.terminal.chroot.SuAuthorizationCache
 ) : ViewModel() {
 
-    /** 重探 Root/Shizuku/无障碍并回灌 StateFlow（幂等，IO 调度由实现内收敛）。 */
+    /**
+     * 重探 Root/Shizuku/无障碍并回灌 StateFlow（幂等，IO 调度由实现内收敛）。
+     * T99：权限页是用户唯一显式「我刚改了超级用户授权」入口，所以两次失效包围
+     * refreshStatus —— 前置立即丢弃旧授权，后置清理 refreshStatus 期间可能写入
+     * 的同一旧证据（它当前只回灌 StateFlow，不知道本缓存）。
+     */
     fun refresh() {
         viewModelScope.launch {
-            runCatching { privilegeManager.refreshStatus() }
+            suAuthorizationCache.invalidate()
+            runCatching { privilegeManager.refreshStatus() }.onFailure {
+                AppLogger.instance.fromAndroid(
+                    level = LogLevel.WARN,
+                    category = LogCategory.SYSTEM,
+                    source = "PermissionsViewModel",
+                    message = "refresh privilege status failed: ${it.message}",
+                    tags = arrayOf("permissions")
+                )
+            }
+            // refreshStatus may have learned a new binary/authorization snapshot.
+            suAuthorizationCache.invalidate()
         }
     }
 }

@@ -29,9 +29,9 @@ import com.apex.agent.core.code.stream.StreamEntry
  *
  * ## 切换语义（规格书交互规则）
  *
- * 「切换只影响下一条消息或完成后的消息」——渲染档在**每轮 run 开始时
- * 捕获**（[CodeOutputModeOps.captureRunOutputMode]），运行中改设置不打断
- * 当前轮的展示风格；收束后下一轮按新档渲染。两档的终态渲染完全一致
+ * v1.2（PartSkin spec H-5）起渲染档从**会话快照**（conversationSkin.active）
+ * 取值 —— 与部件皮肤/风格/uiStyle 同 epoch 生效（FR-21），当前对话内
+ * 冻结，改动只挂 pending，唯一提升点 = 会话边界或 IMMEDIATE idle 点。两档的终态渲染完全一致
  * （完成后都是完整内容 + 折叠胶囊），差异只存在于生成过程中。
  *
  * ## 引擎零参与

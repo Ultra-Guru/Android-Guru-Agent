@@ -50,6 +50,9 @@ class ToolEnvironmentState {
         /** Bundled PRoot Ubuntu rootfs is provisioned (offline extraction complete; apt bootstrap may be degraded but usable). */
         const val UBUNTU_READY = "ubuntu_ready"
 
+        /** Chroot backend availability (visibility only; unknown is absent and never gates tools). */
+        const val CHROOT_READY = "chroot_ready"
+
         /** Terminal runtime has at least one live session. */
         const val TERMINAL_SESSION_OPEN = "terminal_session_open"
 
@@ -151,6 +154,7 @@ class ToolEnvironmentState {
             Flags.ROOT_AVAILABLE,
             Flags.SHIZUKU_AVAILABLE,
             Flags.UBUNTU_READY,
+            Flags.CHROOT_READY,
             Flags.TERMINAL_SESSION_OPEN,
             Flags.BROWSER_ATTACHED,
             Flags.POWER_SUITABLE
