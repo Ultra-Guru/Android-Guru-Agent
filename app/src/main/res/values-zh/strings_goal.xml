@@ -30,4 +30,8 @@
     <string name="goal_started_notice">目标已设定：%1$s</string>
     <string name="goal_stopped_notice">目标已停止</string>
     <string name="goal_restart_notice">目标已重启，继续推进</string>
+
+    <!-- ═══ perf P0-3 UI 消息滑动窗口折叠摘要 ═══ -->
+    <string name="code_messages_folded_fmt">早期 %1$d 条消息已折叠，近期对话完整保留；完整历史在会话快照中</string>
 </resources>
+

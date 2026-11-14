@@ -167,7 +167,12 @@ private suspend fun ApexAgentEngine.executeToolCallChunk(
     chunk: List<ToolCall>,
     emit: suspend (AgentEvent) -> Unit
 ) = coroutineScope {
-    val queues = chunk.map { Channel<AgentEvent>(Channel.UNLIMITED) }
+    // perf P0-4：有界队列（256 帧 ≈ 数百 KB 上限）替代 UNLIMITED —— 并行批
+    // 里先行跑完的工具其事件全量堆在无界 channel 里等发言权，输出量大时
+    // 内存峰值随并行度 × 输出量失控。满时 send 挂起形成自然背压（工具执行
+    // 协程等待放行推进；无死锁：主循环顺序 drain 各队列，先到者先被消费，
+    // 挂起的 send 在轮到该工具时被排空恢复）。
+    val queues = chunk.map { Channel<AgentEvent>(TOOL_EVENT_QUEUE_BUFFER) }
     val outcomes = arrayOfNulls<ToolExecutionOutcome>(chunk.size)
     val jobs = chunk.mapIndexed { idx, toolCall ->
         launch(Dispatchers.IO) {
@@ -589,6 +594,9 @@ private fun intFieldOf(json: JsonObject, vararg keys: String): Int? =
 
 /** 按调用预算的硬顶（单次工具结果进上下文的绝对上限）。 */
 internal const val HARD_TOOL_OUTPUT_CEILING = 150_000
+
+/** 并行批单工具事件队列容量（perf P0-4：有界背压，见 executeToolCallChunk）。 */
+internal const val TOOL_EVENT_QUEUE_BUFFER = 256
 
 /** 结构化工具 JSON 信封开销预算（键名 + 元数据字段 + 截断告示）。 */
 private const val JSON_ENVELOPE_OVERHEAD = 2_500

@@ -181,6 +181,9 @@ internal fun CodeViewModel.reduce(event: AgentEvent) {
                     )
                 )
             }
+            // perf P0-3：引擎压缩收敛后 UI 立即跟进裁剪（历史已被引擎收敛，
+            // 不等下一个超限点；滑动窗口语义见 CodeMessagesWindowOps.kt）
+            applyMessagesWindow()
             scheduleSessionPersist()
         }
 
