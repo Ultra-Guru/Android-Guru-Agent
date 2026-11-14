@@ -49,6 +49,7 @@ import com.apex.agent.ui.glass.GlassButton
 import com.apex.agent.ui.glass.GlassCard
 import com.apex.agent.ui.glass.GlassDialog
 import com.apex.agent.ui.glass.GlassNavigationItem
+import com.apex.agent.ui.glass.GlassRenderTier
 import com.apex.agent.ui.glass.GlassStyle
 import com.apex.agent.ui.glass.GlassTier
 import com.apex.agent.ui.glass.GlassToolCard
@@ -69,7 +70,13 @@ import com.apex.agent.ui.glass.GlassToolStatus
  */
 
 
-/** 验证清单条目 —— 全部字段在组合期求值，禁止静态谎言。 */
+/**
+ * 验证清单条目 —— 全部字段在组合期求值，禁止静态谎言。
+ *
+ * Gate-0（D-8 修复）：status / note 由**运行时探针**（[GlassProbeHub]）
+ * 或真实 API 级判定驱动 —— 未运行的探针如实显示 NOT RUN，绝不折算
+ * 成 PASS；写死的自我介绍已随本 PR 退役。
+ */
 private data class CheckItem(
     val name: String,
     val status: String,
@@ -585,15 +592,23 @@ internal fun LabGlassDialog(onDismiss: () -> Unit) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  诚实验收清单 —— 运行时求值，禁止静态谎言
+//  诚实验收清单 —— 运行时探针驱动（Gate-0 D-8 修复：禁止静态谎言）
 // ═══════════════════════════════════════════════════════════════
 
+/** 探针读数 → 清单状态字（NOT RUN 也是诚实状态，绝不折算成 PASS）。 */
+private fun probeStatus(reading: ProbeReading?): String = when (reading?.pass) {
+    true -> "PASS"
+    false -> "FAIL"
+    null -> "NOT RUN"
+}
+
 @Composable
-internal fun ChecklistSection(mode: GlassLabMode) {
+internal fun ChecklistSection(mode: GlassLabMode, probeHub: GlassProbeHub) {
     val scheme = MaterialTheme.colorScheme
     val pass = Color(0xFF22C55E)
     val fallback = Color(0xFFF59E0B)
     val fail = scheme.error
+    val notRun = scheme.onSurfaceVariant
     // Blur 档运行时判定：API 31+ 才有 RenderEffect GPU 模糊（Android 12 即
     // RenderEffect，与 kyant0 effects.blur 的内部阈值同源；旧代码写 32 把 12 代机型
     // 误判成降级），之下诚实降级 Frosted 霜面
@@ -603,11 +618,31 @@ internal fun ChecklistSection(mode: GlassLabMode) {
     val lensOn = Build.VERSION.SDK_INT >= 33
 
     val items = listOf(
+        // ═══ P-4 运行时探针行（探针未跑 = NOT RUN，诚实显示）═══
         CheckItem(
-            name = "Backdrop",
-            status = "PASS",
-            note = "kyant0 GraphicsLayer 采样背后内容",
-            color = pass
+            name = "Backdrop ΔE",
+            status = probeStatus(probeHub.deltaE),
+            note = probeHub.deltaE?.let { "采样层两相位均值 ΔE ${it.value}（阈值 ≥ $DELTA_E_LIVE_THRESHOLD 判活）—— 并排台「ΔE 探针」实测" }
+                ?: "并排台运行「ΔE 探针」后回填（抓玻璃真正采样的 GraphicsLayer）",
+            color = when (probeHub.deltaE?.pass) {
+                true -> pass; false -> fail; null -> notRun
+            }
+        ),
+        CheckItem(
+            name = "Contrast",
+            status = probeStatus(
+                probeHub.contrastNight?.takeIf { it.pass == true }
+                    ?: probeHub.contrastDay
+            ),
+            note = "夜 ${probeHub.contrastNight?.value ?: "--"} / 日 ${probeHub.contrastDay?.value ?: "--"}" +
+                " —— Frosted 最劣情况 WCAG（NFR-6 ≥ 4.5:1），并排台实时合成",
+            color = when (
+                (probeHub.contrastNight?.pass == true) &&
+                    (probeHub.contrastDay?.pass == true)
+            ) {
+                true -> pass
+                false -> if (probeHub.contrastNight == null && probeHub.contrastDay == null) notRun else fail
+            }
         ),
         CheckItem(
             name = "Blur",
@@ -616,29 +651,53 @@ internal fun ChecklistSection(mode: GlassLabMode) {
             color = if (blurOn) pass else fallback
         ),
         CheckItem(
-            name = "Material response",
-            status = "PASS",
-            note = "按压/聚焦/选中/禁用驱动亮度与形变",
-            color = pass
+            name = "Refraction",
+            status = if (lensOn) "PASS" else "FALLBACK",
+            note = if (lensOn) "AGSL lens 折射/色散（API 33+）" else "API < 33: lens 不生效，仅 blur + tint",
+            color = if (lensOn) pass else fallback
         ),
         CheckItem(
-            name = "Edge lighting",
-            status = "PASS",
-            note = if (mode == GlassLabMode.NIGHT) "kyant0 Highlight 柔边受光描边" else "乳白霜面明度差 + Highlight 受光立轮廓",
-            color = pass
+            name = "Degradation",
+            status = probeHub.ladder?.let { "HIT ${it.renderTier}" } ?: "NOT RUN",
+            note = probeHub.ladder?.let { ladder ->
+                "实际命中 ${ladder.renderTier}（blur=${ladder.blurOn} lens=${ladder.lensOn}" +
+                    (if (ladder.powerSave) " · 省电" else "") +
+                    (if (ladder.reducedMotion) " · 减少动效" else "") + "）"
+            } ?: "读 SDK / 省电 / 动效设置后回填（进入实验室自动采集）",
+            color = when (probeHub.ladder?.renderTier) {
+                GlassRenderTier.BACKDROP, GlassRenderTier.AMBIENT -> pass
+                GlassRenderTier.FROSTED, GlassRenderTier.PALE_FLAT -> fallback
+                null -> notRun
+            }
         ),
         CheckItem(
-            name = "Depth",
-            status = "PASS",
-            note = "外层 Compose shadow + InnerShadow 厚度定界",
-            color = pass
+            name = "Frame P95",
+            status = probeStatus(probeHub.frameP95),
+            note = probeHub.frameP95?.let { "滚动期 ${it.value}（active/idle P95，预算 ${FRAME_BUDGET_MS.toInt()}ms）—— FrameClock 实测" }
+                ?: "并排台运行「帧时间探针」后回填",
+            color = when (probeHub.frameP95?.pass) {
+                true -> pass; false -> fail; null -> notRun
+            }
         ),
         CheckItem(
-            name = "Specular",
-            status = "PASS",
-            note = "Ambient 光带 + 霜面顶缘提亮（kyant0 材质内置；扫掠式动画已随迁移移除）",
-            color = pass
+            name = "Container",
+            status = probeStatus(probeHub.integrity),
+            note = probeHub.integrity?.let { "Dock 底边像素扫描 ${it.value} —— 双底边（DEF-1）即红" }
+                ?: "Dark 栏运行「容器完整性扫描」后回填",
+            color = when (probeHub.integrity?.pass) {
+                true -> pass; false -> fail; null -> notRun
+            }
         ),
+        CheckItem(
+            name = "Interaction",
+            status = probeStatus(probeHub.interaction),
+            note = probeHub.interaction?.let { "程序化遍历 8 项可达 ${it.value}（D-2 回归）" }
+                ?: "Dark 栏运行「遍历 8 项」后回填",
+            color = when (probeHub.interaction?.pass) {
+                true -> pass; false -> fail; null -> notRun
+            }
+        ),
+        // ═══ 结构性诚实声明行（引擎边界，非探针可测）═══
         CheckItem(
             name = "Noise",
             status = "REMOVED",
@@ -648,44 +707,21 @@ internal fun ChecklistSection(mode: GlassLabMode) {
         CheckItem(
             name = "Dynamic theme",
             status = "PASS",
-            note = "调色板组合期派生自 MaterialTheme —— 本页为强制 ${mode.label}，切顶部形态可对照双态",
+            note = "调色板组合期派生自 MaterialTheme —— 本页为强制 ${mode.label}，并排台同屏双态对照",
             color = pass
-        ),
-        CheckItem(
-            name = "Refraction",
-            status = if (lensOn) "PASS" else "FALLBACK",
-            note = if (lensOn) "AGSL lens 折射/色散（API 33+）" else "API < 33: lens 不生效，仅 blur + tint",
-            color = if (lensOn) pass else fallback
         ),
         CheckItem(
             name = "Cross-window",
             status = "NOT IMPLEMENTED",
             note = "Dialog 独立窗口采不到主窗口源 —— Ambient 面板降级，拒绝冒充",
             color = fail
-        ),
-        CheckItem(
-            name = "Interaction",
-            status = "PASS",
-            note = "140ms 激活度动画，非循环",
-            color = pass
-        ),
-        CheckItem(
-            name = "Performance",
-            status = "PASS",
-            note = "静态层与光斑层分离 + GPU RenderEffect 管线（无 CPU 位图回读），动画帧仅 2-3 绘制调用",
-            color = pass
-        ),
-        CheckItem(
-            name = "Fallback",
-            status = "PASS",
-            note = "API < 31 自动 Frosted 霜面（无 RenderEffect 即零管线降级）",
-            color = pass
         )
     )
 
     SectionHeader(
-        title = "诚实验收清单",
-        hint = "运行时逐项核对 —— 本设备 SDK ${Build.VERSION.SDK_INT}，当前 ${mode.label}（强制主题）"
+        title = "诚实验收清单 · 运行时探针",
+        hint = "探针实测优先，未运行如实 NOT RUN —— 本设备 SDK ${Build.VERSION.SDK_INT}，当前 ${mode.label}（强制主题）；" +
+            "八项 G0 验收以本清单 + Gate-0 CI 双绿为准"
     )
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Column(

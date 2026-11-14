@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.apex.agent.ui.theme.PartSkin
 
 /**
  * ═══════════════════════════════════════════════════════════════
@@ -28,10 +29,12 @@ import androidx.compose.ui.unit.dp
  *  2. tint / 高光 / 阴影全部从 MaterialTheme 动态派生，跟随 Light/Dark/Dynamic；
  *  3. 采样源由业务页面显式提供（rememberLayerBackdrop）—— 不再有无中生有的
  *    「假 backdrop」。
+ *
+ * Gate-0（玻璃实验室成品化）P-1 同源：本档位常量自 GlassRecipeBook 生成
+ * （数值唯一真源在 [GlassRecipe.kt]），实验室与生产读同一份配方；
+ * [GlassRecipeParityTest] 逐字段锁定。GlassTier 枚举亦已迁入 GlassRecipe.kt
+ * （包不变，引用零改动）。
  */
-
-/** 玻璃材质档位 —— Spec §4 规定的七档（枚举形状保持稳定）。 */
-enum class GlassTier { Subtle, Control, Card, Navigation, Floating, Dialog, Strong }
 
 /**
  * 玻璃材质参数集。字段与 kyant0 效果链的映射：
@@ -69,102 +72,67 @@ data class GlassStyle(
     val scrimAlpha: Float
 ) {
     companion object {
+        // ═══ Gate-0 P-1 同源：九档全部从 GlassRecipeBook 生成（唯一真源），
+        // 语义注释移至 GlassRecipe.kt；参数改动先过 GlassRecipeParityTest（H-7）。═══
+
         /** 极轻玻璃：小型静态状态组件（徽标）—— 不折射，避免小尺寸形变夸张。 */
-        val Subtle = GlassStyle(
-            tier = GlassTier.Subtle, blurRadius = 8.dp, tintAlpha = 0.30f,
-            lensHeight = 0.dp, lensAmount = 0.dp, chromaticAberration = false, vibrancy = 0f,
-            edgeAlpha = 0.10f, specularAlpha = 0.05f, elevation = 0.dp,
-            pressedScale = 1f, scrimAlpha = 0.42f
-        )
+        val Subtle = GlassRecipeBook.Subtle.toGlassStyle()
 
         /** 控制件玻璃：返回按钮 / 图标按钮 / 输入控制器 —— 轻折射（按压形变）。 */
-        val Control = GlassStyle(
-            tier = GlassTier.Control, blurRadius = 10.dp, tintAlpha = 0.38f,
-            lensHeight = 6.dp, lensAmount = 12.dp, chromaticAberration = false, vibrancy = 0f,
-            edgeAlpha = 0.16f, specularAlpha = 0.08f, elevation = 1.dp,
-            pressedScale = 0.94f, scrimAlpha = 0.52f
-        )
+        val Control = GlassRecipeBook.Control.toGlassStyle()
 
         /** 卡片玻璃：Agent 卡 / Tool 卡 / 状态卡 / 设置与诊断页卡片。 */
-        val Card = GlassStyle(
-            tier = GlassTier.Card, blurRadius = 12.dp, tintAlpha = 0.42f,
-            lensHeight = 8.dp, lensAmount = 16.dp, chromaticAberration = false, vibrancy = 0f,
-            edgeAlpha = 0.18f, specularAlpha = 0.10f, elevation = 2.dp,
-            pressedScale = 1f, scrimAlpha = 0.58f
-        )
+        val Card = GlassRecipeBook.Card.toGlassStyle()
 
         /** 导航项玻璃：Drawer 每一项 —— 正常态必须「非常轻」。 */
-        val Navigation = GlassStyle(
-            tier = GlassTier.Navigation, blurRadius = 10.dp, tintAlpha = 0.34f,
-            lensHeight = 5.dp, lensAmount = 10.dp, chromaticAberration = false, vibrancy = 0f,
-            edgeAlpha = 0.13f, specularAlpha = 0.06f, elevation = 0.dp,
-            pressedScale = 0.98f, scrimAlpha = 0.46f
-        )
+        val Navigation = GlassRecipeBook.Navigation.toGlassStyle()
 
         /** 悬浮件玻璃：FAB / 输入栏 / 快捷浮动操作 —— 最强折射与高光，色散可辨。 */
-        val Floating = GlassStyle(
-            tier = GlassTier.Floating, blurRadius = 16.dp, tintAlpha = 0.46f,
-            lensHeight = 10.dp, lensAmount = 20.dp, chromaticAberration = true, vibrancy = 0f,
-            edgeAlpha = 0.24f, specularAlpha = 0.14f, elevation = 6.dp,
-            pressedScale = 0.92f, scrimAlpha = 0.64f
-        )
+        val Floating = GlassRecipeBook.Floating.toGlassStyle()
 
         /** 对话框玻璃：强材质，但内容保持清晰。 */
-        val Dialog = GlassStyle(
-            tier = GlassTier.Dialog, blurRadius = 20.dp, tintAlpha = 0.52f,
-            lensHeight = 10.dp, lensAmount = 20.dp, chromaticAberration = false, vibrancy = 0f,
-            edgeAlpha = 0.24f, specularAlpha = 0.12f, elevation = 12.dp,
-            pressedScale = 1f, scrimAlpha = 0.74f
-        )
+        val Dialog = GlassRecipeBook.Dialog.toGlassStyle()
 
         /** 最强玻璃：低频、高聚焦的特殊场景。 */
-        val Strong = GlassStyle(
-            tier = GlassTier.Strong, blurRadius = 24.dp, tintAlpha = 0.58f,
-            lensHeight = 12.dp, lensAmount = 24.dp, chromaticAberration = true, vibrancy = 0f,
-            edgeAlpha = 0.28f, specularAlpha = 0.16f, elevation = 4.dp,
-            pressedScale = 1f, scrimAlpha = 0.82f
-        )
+        val Strong = GlassRecipeBook.Strong.toGlassStyle()
 
-        /**
-         * 聊天气泡玻璃：Agent 回复 / 流式 / 思考三气泡专用。
-         *
-         * 与 Card 档的差异化调参（「不同组件不同材质」）：
-         *  - 折射更轻（6/12dp）：气泡圆角大（18dp），重折射会让文字边缘形变；
-         *  - tint 更透（0.34）：长文阅读优先，磨砂下透出氛围背景的呼吸感；
-         *  - 不开色散：正文边缘出现彩虹分离会毁掉可读性；
-         *  - 档位语义沿用 Card（七档枚举保持稳定，仅参数差异化）。
-         */
-        val Bubble = GlassStyle(
-            tier = GlassTier.Card, blurRadius = 10.dp, tintAlpha = 0.34f,
-            lensHeight = 6.dp, lensAmount = 12.dp, chromaticAberration = false, vibrancy = 0f,
-            edgeAlpha = 0.20f, specularAlpha = 0.12f, elevation = 1.dp,
-            pressedScale = 1f, scrimAlpha = 0.48f
-        )
+        /** 聊天气泡玻璃（档位语义沿用 Card，参数差异化 —— 详见 GlassRecipeBook.Bubble）。 */
+        val Bubble = GlassRecipeBook.Bubble.toGlassStyle()
 
-        /**
-         * 浅白液态玻璃（PartSkin spec §6.2）：乳白霜面为底，零折射、零色散、
-         * 零外阴影的「阅读优先」材质 —— 思考过程卡与全部卡片族的默认皮。
-         *
-         * 与 Card 档的差异化调参（「不同组件不同材质」）：
-         *  - 零折射（lens 0/0dp）：整宽卡片不需要边缘形变；Floating 档的
-         *    10/20dp 折射正是「框中框」放大器（DEF-1 根因）；
-         *  - 零色散：正文旁不出现彩虹分离；
-         *  - 更透的 tint（0.30 vs Card 0.42）：长文阅读优先；
-         *  - 1dp 檐口阴影（vs Card 2dp / Floating 6dp）：去掉 6dp 外阴影后
-         *    不再有第二圈暗边（双底边色差带的另一半根因）；
-         *  - 档位语义沿用 Card（枚举保持稳定，仅参数差异化 —— 与 Bubble 档
-         *    同款做法，docs/liquid-glass-system.md 第八个语义档）。
-         *
-         * 彩光/流光/扫掠不往本档塞：那些是 PaleLiquidSurface 的 overlay 层
-         * （ui/glass/PaleLiquidSurface.kt §6.4/§6.5），材质底座保持纯净。
-         */
-        val PaleLiquid = GlassStyle(
-            tier = GlassTier.Card, blurRadius = 10.dp, tintAlpha = 0.30f,
-            lensHeight = 0.dp, lensAmount = 0.dp, chromaticAberration = false, vibrancy = 0f,
-            edgeAlpha = 0.20f, specularAlpha = 0.14f, elevation = 1.dp,
-            pressedScale = 1f, scrimAlpha = 0.44f
-        )
+        /** 浅白液态玻璃（PartSkin spec §6.2，详见 GlassRecipeBook.PaleLiquid）。 */
+        val PaleLiquid = GlassRecipeBook.PaleLiquid.toGlassStyle()
     }
+}
+
+/**
+ * 配方 → 材质参数（Gate-0 P-1）：Compose 侧映射 —— Float dp 值升为 Dp，
+ * 其余逐字段直传。GlassStyle 不承载 corner / accent / glow / partSkin
+ * （那是配方与部件皮肤体系的维度），由消费方直接读配方。
+ */
+fun GlassRecipe.toGlassStyle(): GlassStyle = GlassStyle(
+    tier = tier,
+    blurRadius = blurRadiusDp.dp,
+    tintAlpha = tintAlpha,
+    lensHeight = lensHeightDp.dp,
+    lensAmount = lensAmountDp.dp,
+    chromaticAberration = chromaticAberration,
+    vibrancy = vibrancy,
+    edgeAlpha = edgeAlpha,
+    specularAlpha = specularAlpha,
+    elevation = elevationDp.dp,
+    pressedScale = pressedScale,
+    scrimAlpha = scrimAlpha
+)
+
+/**
+ * 配方 → 部件皮肤（Gate-0 P-1）：key 镜像映射，未知 key 防御式回退
+ * FOLLOW（跟随上级 —— 不冒充、不抛异常）。
+ */
+fun GlassRecipe.toPartSkin(): PartSkin = when (partSkinKey) {
+    RecipeSkinKeys.PALE_LIQUID -> PartSkin.PALE_LIQUID
+    RecipeSkinKeys.CLASSIC_GLASS -> PartSkin.CLASSIC_GLASS
+    RecipeSkinKeys.FLAT -> PartSkin.FLAT
+    else -> PartSkin.FOLLOW
 }
 
 /**

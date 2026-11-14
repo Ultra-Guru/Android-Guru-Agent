@@ -46,7 +46,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -60,6 +59,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.apex.agent.ui.glass.GlassRecipe
+import com.apex.agent.ui.glass.GlassRecipeBook
 import com.apex.agent.ui.glass.GlassShapes
 import com.apex.agent.ui.glass.glassClickable
 import com.kyant.backdrop.Backdrop
@@ -128,16 +129,20 @@ private sealed interface EdgeStyle {
 private data class StreakStyle(val degrees: Float = 15f, val color: Color)
 
 /**
- * 单件玻璃样品的完整配方。tint 已含 alpha；state 传 null（或 API < 31）即
+ * 单件玻璃样品的完整配方（Gate-0 P-1 同源改造）：
+ *
+ * **数值骨架一律来自 [recipe]（[GlassRecipeBook] 派生 + 显式 copy 偏移）**
+ * —— blur / 强度 / 圆角等几何参数不再标本自带常量，标本参数标签
+ * （paramLines）也从 recipe 读取（单一排版出口）。tint 颜色 / 边缘样式 /
+ * 条纹等**视觉装饰**仍是标本专属（旧引擎配方参数 noise / background /
+ * fallback 保留为标签对照，不参与渲染）。state 传 null（或 API < 31）即
  * Frosted 档（诚实降级为主题色薄霜），传 Backdrop（LayerBackdrop 采样源）
- * 即 Backdrop 档（GPU blur + 轻折射实时采样）。noise / background /
- * fallback 为旧引擎时代的配方参数 —— kyant0 管线无噪声通道、无背景兜底
- * 参数，仅保留字段作配方标签与历史对照，不参与渲染。
+ * 即 Backdrop 档（GPU blur + 轻折射实时采样）。
  */
 private data class GlassSpec(
+    val recipe: GlassRecipe,
     val name: String,
     val code: String = "",
-    val blur: Dp = 14.dp,
     val tint: Color,
     val tintTop: Color = Color.Unspecified,     // Frosted 顶部提亮；缺省由 tint 派生
     val background: Color = Color.Unspecified,  // 旧引擎背景兜底参数（kyant0 不消费，仅配方对照）
@@ -147,7 +152,10 @@ private data class GlassSpec(
     val sheen: Float = 0f,                      // 顶部内高光强度 0..1
     val streak: StreakStyle? = null,
     val laminated: Boolean = false              // 双层夹胶：由 LaminatedUnit 渲染
-)
+) {
+    /** 模糊半径：从配方骨架读（P-1 —— 标本不再自带 blur 常量）。 */
+    val blur: Dp get() = recipe.blurRadiusDp.dp
+}
 
 // ═══════════════════════════════════════════════════════════════
 //  小节入口 —— GlassLabContent 两个模式各挂载一份
@@ -246,21 +254,33 @@ private fun RecipeShelf(mode: GlassLabMode) {
     }
 }
 
-/** 六种配方 —— 颜色组合期从当前主题解析，夜间/白天各自调参。 */
+/** 六种配方 —— 骨架自 GlassRecipeBook 派生（P-1 同源：基档 + 显式偏移），
+ * 颜色组合期从当前主题解析，夜间/白天各自调参。 */
 private fun recipeSpecs(night: Boolean, scheme: ColorScheme): List<GlassSpec> {
     val bg = scheme.background
     val scrim = scheme.surfaceContainerHigh
     return listOf(
-        // 1. 水晶清透：低 tint 高透明 + 1dp 亮边 + 微弱内高光
+        // 1. 水晶清透：低 tint 高透明 + 1dp 亮边 + 微弱内高光（骨架：Subtle）
         GlassSpec(
-            name = "水晶清透", code = "CRYSTAL", blur = 8.dp, noise = 0.03f, sheen = 0.10f,
+            recipe = GlassRecipeBook.Subtle.copy(
+                id = "lab-crystal",
+                tintAlpha = if (night) 0.08f else 0.12f,
+                edgeAlpha = if (night) 0.45f else 0.28f
+            ),
+            name = "水晶清透", code = "CRYSTAL", noise = 0.03f, sheen = 0.10f,
             tint = Color.White.copy(alpha = if (night) 0.08f else 0.12f),
             background = bg, fallback = scrim.copy(alpha = 0.30f),
             edge = edgeHairline(night, scheme, 0.45f, 0.28f)
         ),
-        // 2. 磨砂乳白：高模糊 + 乳白 tint + 柔边
+        // 2. 磨砂乳白：高模糊 + 乳白 tint + 柔边（骨架：Card，blur 偏移 26）
         GlassSpec(
-            name = "磨砂乳白", code = "FROSTED_MILK", blur = 26.dp, noise = 0.12f, sheen = 0.14f,
+            recipe = GlassRecipeBook.Card.copy(
+                id = "lab-frosted-milk",
+                blurRadiusDp = 26f,
+                tintAlpha = if (night) 0.34f else 0.58f,
+                cornerDp = 14f
+            ),
+            name = "磨砂乳白", code = "FROSTED_MILK", noise = 0.12f, sheen = 0.14f,
             tint = MilkWhite.copy(alpha = if (night) 0.34f else 0.58f),
             background = bg, fallback = scrim.copy(alpha = 0.62f),
             edge = EdgeStyle.Gradient(
@@ -268,30 +288,50 @@ private fun recipeSpecs(night: Boolean, scheme: ColorScheme): List<GlassSpec> {
                 bottom = if (night) MilkWhite.copy(alpha = 0.06f) else scheme.onSurface.copy(alpha = 0.10f)
             )
         ),
-        // 3. 主色浸染：primary 低比例浸染 —— 白天低饱和粉彩，夜间主色浸染
+        // 3. 主色浸染：primary 低比例浸染 —— 白天低饱和粉彩，夜间主色浸染（骨架：Card）
         GlassSpec(
-            name = "主色浸染", code = "TINTED", blur = 14.dp, noise = 0.08f, sheen = 0.08f,
+            recipe = GlassRecipeBook.Card.copy(
+                id = "lab-tinted",
+                tintAlpha = if (night) 0.24f else 0.15f
+            ),
+            name = "主色浸染", code = "TINTED", noise = 0.08f, sheen = 0.08f,
             tint = scheme.primary.copy(alpha = if (night) 0.24f else 0.15f),
             background = bg, fallback = scrim.copy(alpha = 0.45f),
             edge = EdgeStyle.Hairline(color = scheme.primary.copy(alpha = if (night) 0.35f else 0.30f))
         ),
-        // 4. 深空墨黑：夜间专属 —— 近黑 tint + 顶缘高光（白天显示深板岩变体）
+        // 4. 深空墨黑：夜间专属 —— 近黑 tint + 顶缘高光（骨架：Strong，blur 偏移 20）
         GlassSpec(
-            name = "深空墨黑", code = "OBSIDIAN", blur = 20.dp, noise = 0.05f, sheen = 0.18f,
+            recipe = GlassRecipeBook.Strong.copy(
+                id = "lab-obsidian",
+                blurRadiusDp = 20f,
+                tintAlpha = if (night) 0.78f else 0.55f
+            ),
+            name = "深空墨黑", code = "OBSIDIAN", noise = 0.05f, sheen = 0.18f,
             tint = if (night) Color(0xFF05070D).copy(alpha = 0.78f) else Color(0xFF232A38).copy(alpha = 0.55f),
             background = bg, fallback = scrim.copy(alpha = 0.80f),
             edge = EdgeStyle.Gradient(top = Color.White.copy(alpha = 0.55f), bottom = Color.White.copy(alpha = 0.08f))
         ),
-        // 5. 薄雾轻纱：极低模糊 + 极淡 tint —— 「克制」的极限样本
+        // 5. 薄雾轻纱：极低模糊 + 极淡 tint —— 「克制」的极限样本（骨架：Subtle，blur 偏移 3）
         GlassSpec(
-            name = "薄雾轻纱", code = "VEIL", blur = 3.dp, noise = 0.02f, sheen = 0.04f,
+            recipe = GlassRecipeBook.Subtle.copy(
+                id = "lab-veil",
+                blurRadiusDp = 3f,
+                tintAlpha = if (night) 0.05f else 0.09f,
+                edgeAlpha = if (night) 0.12f else 0.10f
+            ),
+            name = "薄雾轻纱", code = "VEIL", noise = 0.02f, sheen = 0.04f,
             tint = Color.White.copy(alpha = if (night) 0.05f else 0.09f),
             background = bg, fallback = scrim.copy(alpha = 0.20f),
             edge = edgeHairline(night, scheme, 0.12f, 0.10f)
         ),
-        // 6. 双层夹胶：两片错位叠放（LaminatedUnit 专属渲染）
+        // 6. 双层夹胶：两片错位叠放（骨架：Card，blur 偏移 18；LaminatedUnit 专属渲染）
         GlassSpec(
-            name = "双层夹胶", code = "LAMINATED", blur = 18.dp, laminated = true,
+            recipe = GlassRecipeBook.Card.copy(
+                id = "lab-laminated",
+                blurRadiusDp = 18f,
+                tintAlpha = if (night) 0.16f else 0.20f
+            ),
+            name = "双层夹胶", code = "LAMINATED", laminated = true,
             tint = Color.White.copy(alpha = if (night) 0.16f else 0.20f),
             background = bg, fallback = scrim.copy(alpha = 0.40f)
         )
@@ -321,14 +361,21 @@ private fun SpecimenUnit(spec: GlassSpec, state: Backdrop, modifier: Modifier = 
 private fun LaminatedUnit(state: Backdrop, mode: GlassLabMode, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
     val night = mode == GlassLabMode.NIGHT
-    // 后片：轻模糊薄玻璃；前片：重模糊厚玻璃 —— 错位叠出前后景深
+    // 后片：轻模糊薄玻璃（骨架：Navigation）；前片：重模糊厚玻璃（骨架：Card）—— 错位叠出前后景深
     val backSpec = GlassSpec(
-        name = "", code = "L1", blur = 10.dp, noise = 0.03f, tint = Color.White.copy(alpha = 0.10f),
+        recipe = GlassRecipeBook.Navigation.copy(
+            id = "lab-lam-back", blurRadiusDp = 10f, tintAlpha = 0.10f, cornerDp = 10f
+        ),
+        name = "", code = "L1", noise = 0.03f, tint = Color.White.copy(alpha = 0.10f),
         background = scheme.background, fallback = scheme.surfaceContainerHigh.copy(alpha = 0.35f),
         edge = EdgeStyle.Hairline(color = Color.White.copy(alpha = 0.22f))
     )
     val frontSpec = GlassSpec(
-        name = "", code = "L2", blur = 18.dp, noise = 0.08f, sheen = 0.12f,
+        recipe = GlassRecipeBook.Card.copy(
+            id = "lab-lam-front", blurRadiusDp = 18f,
+            tintAlpha = if (night) 0.16f else 0.20f, cornerDp = 10f
+        ),
+        name = "", code = "L2", noise = 0.08f, sheen = 0.12f,
         tint = Color.White.copy(alpha = if (night) 0.16f else 0.20f),
         background = scheme.background, fallback = scheme.surfaceContainerHigh.copy(alpha = 0.45f),
         edge = EdgeStyle.Gradient(top = Color.White.copy(alpha = 0.30f), bottom = Color.White.copy(alpha = 0.08f))
@@ -394,9 +441,13 @@ private fun EdgeStudySection(mode: GlassLabMode) {
         title = "标本 02 · 边缘光变研究",
         hint = "同一 Frosted 基材 × 四种边缘处理 —— 厚度感主要来自边缘受光，而非模糊本身"
     )
-    // 控制变量：四片共用同一基材配方
+    // 控制变量：四片共用同一基材配方（骨架：Card）
     val frost = GlassSpec(
-        name = "", blur = 14.dp, noise = 0.08f, sheen = 0.08f,
+        recipe = GlassRecipeBook.Card.copy(
+            id = "lab-edge-study",
+            tintAlpha = if (night) 0.55f else 0.78f
+        ),
+        name = "", noise = 0.08f, sheen = 0.08f,
         tint = if (night) scheme.surfaceContainerHigh.copy(alpha = 0.55f)
         else scheme.surfaceVariant.copy(alpha = 0.78f),
         tintTop = if (night) scheme.surfaceContainerHighest.copy(alpha = 0.38f) else Color.White.copy(alpha = 0.50f)
@@ -448,7 +499,11 @@ private fun StreakStudySection(mode: GlassLabMode) {
         hint = "静态 15° 倾斜高光带（Canvas 渐变 · 无循环动画）—— 与现有顶缘扫掠对照"
     )
     val base = GlassSpec(
-        name = "", blur = 14.dp, noise = 0.10f,
+        recipe = GlassRecipeBook.Card.copy(
+            id = "lab-streak",
+            tintAlpha = if (night) 0.30f else 0.52f
+        ),
+        name = "", noise = 0.10f,
         tint = MilkWhite.copy(alpha = if (night) 0.30f else 0.52f),
         tintTop = Color.White.copy(alpha = if (night) 0.18f else 0.42f),
         edge = edgeHairline(night, scheme, 0.30f, 0.22f)
@@ -654,7 +709,13 @@ private fun DraggableLiveChip(state: Backdrop, mode: GlassLabMode, zoneSize: Int
     //（首帧 IntSize.Zero → 探针被钳死在原点拖不动）。包 state 让拖动闭包读到最新尺寸。
     val zoneSizeState = androidx.compose.runtime.rememberUpdatedState(zoneSize)
     val spec = GlassSpec(
-        name = "", blur = 18.dp, noise = 0.10f, sheen = 0.12f,
+        recipe = GlassRecipeBook.Card.copy(
+            id = "lab-live-chip",
+            blurRadiusDp = 18f,
+            tintAlpha = if (night) 0.34f else 0.58f,
+            cornerDp = 14f
+        ),
+        name = "", noise = 0.10f, sheen = 0.12f,
         tint = MilkWhite.copy(alpha = if (night) 0.34f else 0.58f),
         background = scheme.background,
         fallback = scheme.surfaceContainerHigh.copy(alpha = 0.55f),
@@ -944,20 +1005,6 @@ private fun DrawScope.drawSpecularStreak(color: Color, degrees: Float) {
 /** 透明度增亮（按压受光）。 */
 private fun Color.boostAlpha(boost: Float): Color = copy(alpha = (alpha * boost).coerceAtMost(1f))
 
-/** 基色十六进制（不含 alpha —— alpha 由标签单独标注）。 */
-private fun Color.hexCode(): String = "#" + (toArgb() and 0xFFFFFF).toString(16).padStart(6, '0').uppercase()
-
-/** 配方参数标签行（等宽小字，实验室标签风格）。 */
-private fun GlassSpec.paramLines(): List<String> = listOf(
-    "blur=${blur.value.toInt()}dp",
-    "tint=${tint.hexCode()}",
-    "α${"%.2f".format(tint.alpha)} ${edge.tag()}"
-)
-
-/** 边缘的简短标签（窄列防换行）。 */
-private fun EdgeStyle.tag(): String = when (this) {
-    EdgeStyle.None -> "e=0"
-    is EdgeStyle.Hairline -> "e=${width.value.toInt()}dp"
-    is EdgeStyle.Gradient -> "e=grad"
-    is EdgeStyle.Glow -> "e=glow"
-}
+/** 配方参数标签行（等宽小字，实验室标签风格）—— P-1 同源：从 [GlassRecipe]
+ * 读取（单一排版出口，标本不再自带参数排版）。 */
+private fun GlassSpec.paramLines(): List<String> = recipe.paramLines()
