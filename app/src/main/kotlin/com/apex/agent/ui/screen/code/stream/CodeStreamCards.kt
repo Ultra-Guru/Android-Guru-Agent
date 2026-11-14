@@ -188,6 +188,13 @@ private fun ThinkingCard(
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 2.dp)
     ) {
+        // v1.2 G2 内部件（P0-E）：标题行/正文可独立换肤；默认 EMBEDDED
+        //（零容器，contentPadding=0 保持原视觉），H-4 由父卡 PartSurface
+        // 下发 LocalParentSkin 参与嵌套退化。
+        PartSurface(
+            part = CodingPart.STREAM_THINKING_HEADER,
+            contentPadding = PaddingValues(0.dp)
+        ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             // ═══ 标题：重试等待中 = 「重试中 · 第 N/T 次」（用户规格
             // 2026-11：重试期间「思考中/正在工作」切换为「重试中」）═══
@@ -244,6 +251,11 @@ private fun ThinkingCard(
                 modifier = Modifier.size(14.dp)
             )
         }
+        }
+        PartSurface(
+            part = CodingPart.STREAM_THINKING_BODY,
+            contentPadding = PaddingValues(0.dp)
+        ) {
         AnimatedVisibility(visible = expanded) {
             Text(
                 text = text,
@@ -264,6 +276,7 @@ private fun ThinkingCard(
                 modifier = Modifier.padding(top = 2.dp)
             )
             }
+        }
     }
 }
 

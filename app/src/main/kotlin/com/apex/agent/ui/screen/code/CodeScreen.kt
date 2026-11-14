@@ -93,6 +93,7 @@ import com.apex.agent.ui.glass.GlassStyle
 import com.apex.agent.ui.glass.PartSurface
 import com.apex.agent.ui.glass.glassModalBlur
 import com.apex.agent.ui.theme.CodingPart
+import com.apex.agent.ui.theme.LocalParentSkin
 import com.apex.agent.ui.theme.LocalPartSkins
 import com.apex.agent.ui.theme.LocalSkinContext
 import com.apex.agent.ui.theme.LocalUiStyle
@@ -201,13 +202,16 @@ fun CodeScreen(
         }
     }
 
-    // ═══ v1.7 部件皮肤上下文（PartSkin spec §7.4）═══
-    // run 捕获快照（partSkinSnapshot）经 staticCompositionLocalOf 下发 —— 皮肤
-    // 变更只失效读取方（PartSurface），不波及时间轴 Compose 树（NFR-1）；
-    // 切换不打断当前轮（FR-8），不重置任何展开态/滚动（FR-9）。
+    // ═══ v1.7/v1.2 部件皮肤上下文（PartSkin spec §7.4/§7.6）═══
+    // H-5：渲染只读 conversationSkin.active（会话快照，当前对话内 epoch
+    // 恒定 ⇒ 零皮肤重组）；设置改动只落 pending，经 staticCompositionLocalOf
+    // 下发 —— 皮肤变更只失效读取方（PartSurface），不波及时间轴 Compose
+    // 树（NFR-1）；不重置任何展开态/滚动（FR-9）。四维度（uiStyle 材质
+    // 短路 / outputStyle / renderMode / partSkins+glow）同一 epoch 生效。
     val uiStyle = LocalUiStyle.current
-    val skinContext = remember(state.outputStyle, uiStyle, state.partSkinSnapshot.glow) {
-        skinContextFor(state.outputStyle, uiStyle, state.partSkinSnapshot.glow)
+    val activeSkin = state.conversationSkin.active
+    val skinContext = remember(activeSkin) {
+        skinContextFor(activeSkin.outputStyle, activeSkin.uiStyle, activeSkin.partSkins.glow)
     }
     Box(modifier = Modifier.fillMaxSize()) {
     Column(
@@ -275,10 +279,13 @@ fun CodeScreen(
             )
         }
 
-        // v1.7 部件皮肤：计划确认卡共享 run 捕获快照（PartSkin providers）
+        // v1.7/v1.2 部件皮肤：计划确认卡共享会话快照（PartSkin providers；
+        // LocalConversationSkin = 材质短路的会话绑定半边，H-5 冻结当前对话）
         CompositionLocalProvider(
-            LocalPartSkins provides state.partSkinSnapshot,
-            LocalSkinContext provides skinContext
+            LocalConversationSkin provides activeSkin,
+            LocalPartSkins provides activeSkin.partSkins,
+            LocalSkinContext provides skinContext,
+            LocalParentSkin provides null
         ) {
             // ═══ #197 PLAN 模式计划确认卡（人控门；勾选/重排后确认执行）═══
             if (state.awaitingPlanConfirmation && state.plan != null) {
@@ -306,7 +313,8 @@ fun CodeScreen(
         // 内联终端胶囊状态：活跃 BASH 或有历史输出即渲染（时间轴末条）。
         // v1.5 输出展示档：完整档生成中终端尾窗同档静默（实时命令输出属于
         // 过程条目，由加载进度卡代位），收束后随完整内容一起回归（折叠态）。
-        val completeGenerating = state.isRunning && state.renderMode == CodeOutputMode.COMPLETE
+        val completeGenerating = state.isRunning &&
+            state.conversationSkin.active.renderMode == CodeOutputMode.COMPLETE
         val terminalState =
             if (!completeGenerating &&
                 (state.stream.activeTerminalCallId != null || state.stream.terminalContent.isNotBlank())
@@ -322,17 +330,20 @@ fun CodeScreen(
                 null
             }
         Box(modifier = Modifier.weight(1f)) {
-            // ═══ v1.7 部件皮肤 providers（PartSkin spec §7.4）：时间轴 + 悬浮栈
-            // 共享 run 捕获快照 —— PartSurface 读 LocalPartSkins 解析三级回退 ═══
+            // ═══ v1.7/v1.2 部件皮肤 providers（PartSkin spec §7.4/§7.6）：时间轴 + 悬浮栈
+            // 共享会话快照 —— PartSurface 读 LocalPartSkins 解析四级回退 + H-4；
+            // LocalConversationSkin 驱动 GlassSurface/PaleLiquid 的 MINIMAL 短路 ═══
             CompositionLocalProvider(
-                LocalPartSkins provides state.partSkinSnapshot,
-                LocalSkinContext provides skinContext
+                LocalConversationSkin provides activeSkin,
+                LocalPartSkins provides activeSkin.partSkins,
+                LocalSkinContext provides skinContext,
+                LocalParentSkin provides null
             ) {
                 // ═══ v1.6 输出风格分派：经典胶囊时间轴 / Rikka 聊天式 ═══
                 // 两风格共享同一 snapshot 数据通道、滚动锚定、终端胶囊与
-                // 输出方式档（流式/整段）语义——只差分段与皮肤（见
-                // CodeOutputStyle.kt；idle 期热切换，运行中 run 粒度捕获）。
-                if (state.outputStyle == CodeOutputStyle.RIKKA) {
+                // 输出方式档语义 —— 只差分段与皮肤（见 CodeOutputStyle.kt）。
+                // v1.2：风格分派改读会话快照（H-5：当前对话内冻结）。
+                if (activeSkin.outputStyle == CodeOutputStyle.RIKKA) {
                     RikkaStreamTimeline(
                         thinkingCollapsed = agentPresentation.codeRikkaThinkingCollapsed,
                         onThinkingCollapsedChange = { collapsed ->
@@ -340,7 +351,7 @@ fun CodeScreen(
                         },
                         snapshot = state.stream,
                         isStreaming = state.isRunning,
-                        renderMode = state.renderMode,
+                        renderMode = activeSkin.renderMode,
                         bottomInset = lowerStackInsetDp,
                         backdrop = streamBackdrop,
                         onToolClick = { call -> selectedToolCallId = call.id },
@@ -359,7 +370,7 @@ fun CodeScreen(
                     CodeStreamTimeline(
                         snapshot = state.stream,
                         isStreaming = state.isRunning,
-                        renderMode = state.renderMode,
+                        renderMode = activeSkin.renderMode,
                         bottomInset = lowerStackInsetDp,
                         backdrop = streamBackdrop,
                         onToolClick = { call -> selectedToolCallId = call.id },

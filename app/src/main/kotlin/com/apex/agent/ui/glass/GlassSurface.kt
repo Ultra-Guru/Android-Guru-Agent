@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.dp
+import com.apex.agent.ui.screen.code.LocalConversationSkin
 import com.apex.agent.ui.theme.LocalUiStyle
 import com.apex.agent.ui.theme.UiStyle
 import com.kyant.backdrop.Backdrop
@@ -107,7 +108,13 @@ fun GlassSurface(
     // 置于激活度计算之后：交互反馈语言在两种风格间保持一致。
     // forceGlass = NFR-5 豁免（PartSkin spec）：部件级 forceGlassInMinimal
     // 显式开启时才绕过短路，默认关 —— 短路纪律不破。
-    if (LocalUiStyle.current == UiStyle.MINIMAL && !forceGlass) {
+    // v1.2 双 Local 分离（PartSkin spec §7.5.1）：Coding 子树内材质短路从
+    // 会话快照取（LocalConversationSkin —— 会话内冻结，改动只挂 pending）；
+    // 壳层 / 设置页 / GlassLab 无会话 → 回落全局 LocalUiStyle（外观不受
+    // 「待生效」影响，配色类仍由 ApexTheme 全局下发）。
+    val conversation = LocalConversationSkin.current
+    val minimalStyle = (conversation?.uiStyle ?: LocalUiStyle.current) == UiStyle.MINIMAL
+    if (minimalStyle && !forceGlass) {
         FlatSurface(
             modifier = modifier,
             style = style,

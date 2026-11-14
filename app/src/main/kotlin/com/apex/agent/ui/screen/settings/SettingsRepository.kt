@@ -634,6 +634,13 @@ data class AgentSettings(
     val partSkins: Map<String, String> = emptyMap(),
     val partSkinGlow: Float = 0.35f,
     val partSkinSchemaVersion: Int = 1,
+    // ═══ 皮肤生效方式（PartSkin spec v1.3，FR-25）═══
+    // skinApplyMode："auto"（默认，按设备分级解析：HIGH→立即 / MID·LOW→新
+    // 对话）| "immediate"（空闲时立即生效；LOW 档被 resolvePolicy 硬拒）
+    // | "on_new_chat"（v1.2 行为：仅会话边界生效）。设置项本身立即写盘，
+    // 只决定后续皮肤变更的提升点，自身不触发换皮；缺省 "auto" → 旧 JSON
+    // 零迁移。任务进行中（H-6）任何模式都冻结到收束后的第一个 idle 点。
+    val skinApplyMode: String = "auto",
 
     // ═══ v2.1.0 浏览器角色门禁（评审 B2）═══
     // browserRoleRestrictionEnabled：默认开 = 严格——普通会话不授予

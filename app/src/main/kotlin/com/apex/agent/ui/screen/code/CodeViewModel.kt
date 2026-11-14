@@ -179,7 +179,9 @@ class CodeViewModel @Inject constructor(
     // 在引擎侧，UI 侧驱动设定弹层/状态卡——扩展接线见 CodeGoalController.kt）
     internal val goalCoordinator: GoalModeCoordinator,
     // ═══ v6 Git 工作区（右上角面板直读）：PRoot 沙箱 git 执行器 ═══
-    private val gitRunner: com.apex.agent.core.codetools.git.GitCommandRunner
+    private val gitRunner: com.apex.agent.core.codetools.git.GitCommandRunner,
+    // v1.3 设备分级采样（PartSkin spec §7.9.2）：接口注入、冷启动/会话边界采样一次
+    internal val deviceTierProvider: com.apex.agent.ui.screen.settings.DeviceTierProvider
 ) : ViewModel() {
 
     // ═══ v1.6 工作区浏览器（全屏页，apex-kit-workspace）═══
@@ -289,13 +291,11 @@ class CodeViewModel @Inject constructor(
         restoreLogicMode()
         // v1.5 输出展示档恢复（流式/整段；见 CodeOutputModeOps.kt）
         restoreOutputMode()
-        // v1.6 输出风格恢复（经典时间轴/Rikka；见 CodeOutputStyleOps.kt）
-        // + 设置流订阅：idle 期切风格回屏即生效（消灭「切了没反应」）
+        // v1.6 输出风格恢复（历史镜像；渲染取值改读会话快照，见 PartSkinOps）
         restoreOutputStyle()
-        observeOutputStyle()
-        // v1.7 部件级皮肤恢复 + 订阅（PartSkin spec；见 PartSkinOps.kt）
-        restorePartSkins()
-        observePartSkins()
+        // v1.7 部件级皮肤：会话边界状态机（v1.2/v1.3）—— 恢复 active + 订阅 pending
+        restoreActiveAtColdStart()
+        observeApplyModeAndTier()
         observeContextDenominator() // 圆环分母热刷新（Profile 流订阅，CodeUsageOps.kt）
         // #197：Coding 屏模式同步（引擎侧恒为 BUILD/PLAN；未知值回退 BUILD）
         val startupMode = settingsRepository.agentSettings.value.let { s ->
@@ -617,9 +617,7 @@ class CodeViewModel @Inject constructor(
 
         // 在同步模型预检/工作区准备之前先把用户消息与助手等待位一起入轴；
         // 直接发布快照，不等 25ms ticker，更不能等服务端首个 token。
-        captureRunOutputMode()
-        captureRunOutputStyle()
-        captureRunPartSkins()
+        // （v1.2：captureRun* 三行已删 —— run 不再是皮肤生效边界，改读会话快照）
         streamSession.beginRun(goal)
         _uiState.update { it.copy(stream = streamSession.snapshot(), isRunning = true, error = null, errorRetriable = false) }
         // #209：记录本次运行输入 —— 失败后错误条「重试」按原样重放
@@ -752,6 +750,7 @@ class CodeViewModel @Inject constructor(
                 adaptiveSignals.endRun()
                 // 渲染收尾：停 ticker 前冲最后一次快照（尾巴事件不丢）。
                 stopRenderTicker()
+                onRunSettled() // v1.3：收束后第一个 idle 点（IMMEDIATE 自动提升，幂等）
                 // v1.2 长任务收尾：状态裁决（中止/失败/完成）+ 长任务判定入库
                 // （短任务返回 null 静默丢弃）；入库后刷新面板数据。
                 val finalError = _uiState.value.error
@@ -783,6 +782,7 @@ class CodeViewModel @Inject constructor(
         // 收口后的时间轴立即冲最终快照，不等不会来的 tick。
         stopRenderTicker()
         _uiState.update { it.copy(isRunning = false) }
+        onRunSettled() // v1.3：用户点停同样到达 idle 点（promote 幂等，与 finally 不重复）
     }
 
     fun submitUserInput(answer: String) {
@@ -1123,6 +1123,7 @@ class CodeViewModel @Inject constructor(
         // 的错误史不带入新工作区首检；运行中不重置，防干扰在飞 run 的计数）。
         if (previousId != ws.workspaceId && !_uiState.value.isRunning) {
             resetAdaptiveThinkingSignals()
+            promotePendingAtConversationBoundary() // v1.2：会话边界提升待生效皮肤
         }
         // #221：用量观测在运行时层记账，需要知道当前会话归属（切工作区即换桶）。
         currentUsageSession.bind(ws.workspaceId)

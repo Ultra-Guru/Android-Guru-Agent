@@ -48,6 +48,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import com.apex.agent.core.llm.ModelProfile
+import com.apex.agent.ui.screen.code.discardPendingSkinChange
 import com.apex.agent.permission.PermissionSettingsSection
 import kotlinx.coroutines.launch
 
@@ -71,6 +72,11 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
     onBack: () -> Unit = {}
 ) {
+    // ═══ v1.2/v1.3 部件外观（PartSkin spec）：会话皮肤状态机（active/pending）
+    // 与「立即新建对话并应用」动作来自 CodeViewModel —— 单 Activity 架构下
+    // hiltViewModel() 解析同一 ViewModelStore，与 CodeScreen 共享同一实例。═══
+    val codeViewModel: com.apex.agent.ui.screen.code.CodeViewModel = hiltViewModel()
+    val codeState by codeViewModel.uiState.collectAsStateWithLifecycle()
     val profiles by viewModel.profiles.collectAsStateWithLifecycle()
     val providers by viewModel.providers.collectAsStateWithLifecycle()
     val roles by viewModel.roles.collectAsStateWithLifecycle()
@@ -215,7 +221,11 @@ fun SettingsScreen(
                                 onSelect = { selectedId = it },
                                 onManageProviders = { showProviders = true },
                                 onManageRoles = { showRoles = true },
-                                onReturnToDrawer = onAllTabsClosed
+                                onReturnToDrawer = onAllTabsClosed,
+                                codeSkinActivation = codeState.conversationSkin,
+                                codeRunning = codeState.isRunning,
+                                onApplySkinViaNewChat = codeViewModel::clearConversation,
+                                onDiscardPendingSkin = codeViewModel::discardPendingSkinChange
                             )
                         }
                     }
@@ -255,7 +265,11 @@ private fun SettingsPageRouter(
     onSelect: (String) -> Unit,
     onManageProviders: () -> Unit,
     onManageRoles: () -> Unit,
-    onReturnToDrawer: () -> Unit
+    onReturnToDrawer: () -> Unit,
+    codeSkinActivation: com.apex.agent.ui.screen.code.SkinActivation,
+    codeRunning: Boolean,
+    onApplySkinViaNewChat: () -> Unit,
+    onDiscardPendingSkin: () -> Unit
 ) {
     val onUpdate: (ModelProfile) -> Unit = { viewModel.upsertProfile(it) }
     when (route) {
@@ -304,7 +318,14 @@ private fun SettingsPageRouter(
         // 部件级皮肤切换 + 浅白液态玻璃（预览 / 预设 / 光晕滑杆 / 分组下拉）
         "workspace/coding" -> SettingsLeafColumn {
             CodingSettingsSection(agent, onAgent)
-            PartSkinSection(agent, onAgent)
+            PartSkinSection(
+                agent = agent,
+                onUpdate = onAgent,
+                activation = codeSkinActivation,
+                isRunning = codeRunning,
+                onApplyNowViaNewChat = onApplySkinViaNewChat,
+                onDiscardPending = onDiscardPendingSkin
+            )
         }
         "workspace/subagent" -> SettingsLeafColumn { SubAgentSettingsSection(agent, onAgent) }
         "workspace/permissions" -> SettingsLeafColumn {

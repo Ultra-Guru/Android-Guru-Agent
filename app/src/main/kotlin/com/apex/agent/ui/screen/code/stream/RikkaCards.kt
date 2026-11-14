@@ -336,6 +336,12 @@ private fun RikkaThinkingCard(
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
     ) {
+        // v1.2 G2 内部件（P0-E）：标题行/正文可独立换肤；默认 EMBEDDED
+        //（零容器，contentPadding=0 保持原视觉），H-4 嵌套退化生效。
+        PartSurface(
+            part = CodingPart.STREAM_THINKING_HEADER,
+            contentPadding = PaddingValues(0.dp)
+        ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 imageVector = if (llmRetry != null) Icons.Default.Refresh else Icons.Default.Psychology,
@@ -360,6 +366,11 @@ private fun RikkaThinkingCard(
                 modifier = Modifier.size(14.dp)
             )
         }
+        }
+        PartSurface(
+            part = CodingPart.STREAM_THINKING_BODY,
+            contentPadding = PaddingValues(0.dp)
+        ) {
         AnimatedVisibility(visible = expanded) {
             Text(
                 text = if (isStreaming) displayed else text,
@@ -384,6 +395,7 @@ private fun RikkaThinkingCard(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 2.dp)
             )
+        }
         }
     }
 }

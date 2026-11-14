@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.apex.agent.ui.screen.code.LocalConversationSkin
 import com.apex.agent.ui.theme.LocalUiStyle
 import com.apex.agent.ui.theme.UiStyle
 import com.kyant.backdrop.Backdrop
@@ -95,10 +96,13 @@ fun PaleLiquidSurface(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val palette = palePalette()
-    // ═══ NFR-5：MINIMAL 短路豁免判定 ═══
-    // 无豁免时 GlassSurface 单点短路为 FlatSurface（实色 + 发丝描边），
-    // 本组件的 overlay 层同步收敛为「静态白霜」——PaleFlat 降级形态。
-    val minimal = LocalUiStyle.current == UiStyle.MINIMAL && !forceGlass
+    // ═══ NFR-5：MINIMAL 短路豁免判定（双 Local 分离，spec §7.5.1）═══
+    // Coding 子树内材质短路从会话快照取（LocalConversationSkin）；壳层 /
+    // 预览页无会话 → 回落全局 LocalUiStyle。无豁免时 GlassSurface 单点
+    // 短路为 FlatSurface（实色 + 发丝描边），本组件的 overlay 层同步收敛
+    // 为「静态白霜」—— PaleFlat 降级形态。
+    val conversation = LocalConversationSkin.current
+    val minimal = (conversation?.uiStyle ?: LocalUiStyle.current) == UiStyle.MINIMAL && !forceGlass
     // ═══ 静态帧判定：MINIMAL / API < 31（Frosted 档）/ 减少动效 / !active ═══
     val animated = active && !minimal &&
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
@@ -195,7 +199,8 @@ fun PaleLiquidSurface(
                         // ① 白霜垂直渐变 —— 恒在（降级帧也「有渐变」）
                         drawRect(brush = frostBrush)
                         if (!minimal) {
-                            // ② 三枚漂移彩光（glow 0..1 乘 alpha，draw 阶段读值）
+                            // ② 三枚漂移彩光（glow 0..1 乘 alpha，draw 阶段读值；
+                            // H-2：静态帧读固定中位 0.5，动画态读 drift.value）
                             if (glowLevel > 0f) {
                                 val t = (if (animated) drift.value else 0.5f) * 2.0 * PI
                                 drawOrb(
@@ -220,7 +225,8 @@ fun PaleLiquidSurface(
                                     alpha = glowLevel
                                 )
                             }
-                            // ③ 镜面扫掠：固定 Brush + 每帧 translate（零分配）
+                            // ③ 镜面扫掠：固定 Brush + 每帧 translate（零分配；
+                            // H-2：静态帧停中位 0.5w）
                             translate(left = (if (animated) sheen.value else 0.5f) * w) {
                                 drawOutline(outline = outline, brush = sheenBrush)
                             }
@@ -235,6 +241,7 @@ fun PaleLiquidSurface(
                     .matchParentSize()
                     .borderBeam(
                         shape = shape,
+                        // H-2：静态帧负相位 = 光眼熄灭只留基环
                         phase = { if (animated) beamPhase.value else -1f },
                         tint = palette.eye,
                         baseRingAlpha = 0.22f,

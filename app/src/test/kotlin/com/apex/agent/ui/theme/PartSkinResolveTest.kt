@@ -237,7 +237,167 @@ class PartSkinResolveTest {
         val ids = CodingPart.entries.map { it.id }
         assertEquals(ids.size, ids.toSet().size)
         assertTrue(ids.all { it == it.lowercase() && it.contains('.') })
-        assertEquals(24, ids.size)
+        // v1.2（FR-16）：24 → 74，只追加不改（附录 F 全表）
+        assertEquals(74, ids.size)
+        // 原 24 个 ID 逐字保留（老设置 JSON 零迁移）
+        val v11 = setOf(
+            "stream.user_bubble", "stream.assistant_bubble", "stream.thinking",
+            "stream.tool_capsule", "stream.verify_cycle", "stream.status_line",
+            "stream.system_line", "stream.error", "stream.stop", "stream.file_chips",
+            "stream.git_op", "stream.run_stats", "stream.generating",
+            "input.bar", "input.queue_card", "input.question_card", "input.plan_confirm",
+            "overlay.error_bar", "overlay.offline_banner", "overlay.update_banner",
+            "overlay.tool_detail_sheet",
+            "terminal.panel", "code.diff", "code.streaming_window"
+        )
+        assertTrue(ids.containsAll(v11))
+    }
+
+    // ═══ ⑤ v1.2 四级回退：部件 > 组 > 预设 > 全局（FR-17）═══
+
+    @Test
+    fun `group key sits between part override and preset`() {
+        val ctx = SkinContext(globalDefault = PartSkin.CLASSIC_GLASS, minimal = false)
+        // 组键 @g1 = FLAT：无部件覆盖时组级默认压过预设建议（思考卡预设浅白）
+        val withGroup = PartSkinOverrides(groups = mapOf(SkinGroup.G1 to PartSkin.FLAT))
+        assertEquals(PartSkin.FLAT, withGroup.resolve(CodingPart.STREAM_THINKING, ctx))
+        // 部件显式覆盖仍最高
+        val withBoth = withGroup.copy(
+            map = mapOf(CodingPart.STREAM_THINKING to PartSkin.CLASSIC_GLASS)
+        )
+        assertEquals(
+            PartSkin.CLASSIC_GLASS,
+            withBoth.resolve(CodingPart.STREAM_THINKING, ctx)
+        )
+        // 无组键无覆盖 → 预设建议（浅白）
+        assertEquals(
+            PartSkin.PALE_LIQUID,
+            PartSkinOverrides().resolve(CodingPart.STREAM_THINKING, ctx)
+        )
+    }
+
+    @Test
+    fun `group key does not leak across groups`() {
+        val ctx = SkinContext(globalDefault = PartSkin.CLASSIC_GLASS, minimal = false)
+        // @g2 = FLAT 不影响 G1 部件（不越组）
+        val withG2 = PartSkinOverrides(groups = mapOf(SkinGroup.G2 to PartSkin.FLAT))
+        assertEquals(
+            PartSkin.PALE_LIQUID,
+            withG2.resolve(CodingPart.STREAM_THINKING, ctx)
+        )
+        // G2 成员吃到组值
+        assertEquals(
+            PartSkin.FLAT,
+            withG2.resolve(CodingPart.STREAM_THINKING_HEADER, ctx)
+        )
+    }
+
+    @Test
+    fun `group expansion filters by allow matrix`() {
+        // @g2 = NEON：G2 里只有 code_block（TERMINAL 族）允许 NEON —— 组展开
+        // 不得把 NEON 写给 EMBEDDED 族成员
+        val parsed = PartSkinOverrides.fromPersisted(
+            mapOf("@g2" to "neon_terminal"),
+            null
+        )
+        assertEquals(PartSkin.NEON_TERMINAL, parsed.resolve(CodingPart.STREAM_CODE_BLOCK, glassCtx))
+        // EMBEDDED 族成员不受组值影响 → 走预设（EMBEDDED）
+        assertEquals(
+            PartSkin.EMBEDDED,
+            parsed.resolve(CodingPart.STREAM_THINKING_HEADER, glassCtx)
+        )
+    }
+
+    @Test
+    fun `fromPersisted parses group and part keys together`() {
+        // 老数据（24 部件键）+ 新组键混合 → 零丢弃、零崩溃
+        val parsed = PartSkinOverrides.fromPersisted(
+            mapOf(
+                "stream.thinking" to "pale_liquid",   // 老 24 项之一
+                "@g1" to "flat",                       // v1.2 组键
+                "@G3" to " CLASSIC_GLASS ",            // 大小写/空白容错
+                "@g99" to "flat",                      // 未知组键 → 丢弃
+                "no.such.part" to "flat"               // 未知部件 → 丢弃
+            ),
+            null
+        )
+        assertEquals(mapOf(CodingPart.STREAM_THINKING to PartSkin.PALE_LIQUID), parsed.map)
+        assertEquals(
+            mapOf(SkinGroup.G1 to PartSkin.FLAT, SkinGroup.G3 to PartSkin.CLASSIC_GLASS),
+            parsed.groups
+        )
+    }
+
+    @Test
+    fun `toPersisted roundtrips parts and groups`() {
+        val original = PartSkinOverrides(
+            map = mapOf(CodingPart.STREAM_THINKING to PartSkin.PALE_LIQUID),
+            groups = mapOf(SkinGroup.G5 to PartSkin.FLAT),
+            glow = 0.6f
+        )
+        val reparsed = PartSkinOverrides.fromPersisted(original.toPersisted(), 0.6f)
+        assertEquals(original.map, reparsed.map)
+        assertEquals(original.groups, reparsed.groups)
+    }
+
+    // ═══ ⑥ H-4 嵌套退化（FR-19 / §6.6）═══
+
+    @Test
+    fun `glass parent forces child to embedded unless explicit`() {
+        val ctx = SkinContext(globalDefault = PartSkin.CLASSIC_GLASS, minimal = false)
+        val overrides = PartSkinOverrides()
+        // 父 = PALE_LIQUID、子解析为 PALE（预设）→ 自动退化 EMBEDDED
+        assertEquals(
+            PartSkin.EMBEDDED,
+            overrides.resolveEffective(CodingPart.STREAM_THINKING_HEADER, ctx, PartSkin.PALE_LIQUID)
+        )
+        // 父 = CLASSIC_GLASS、子解析为 SOLID（头像预设）→ 同样退化
+        assertEquals(
+            PartSkin.EMBEDDED,
+            overrides.resolveEffective(CodingPart.STREAM_USER_AVATAR, ctx, PartSkin.CLASSIC_GLASS)
+        )
+        // 用户显式覆盖 → 尊重（自担嵌套风险）
+        val explicit = PartSkinOverrides(
+            map = mapOf(CodingPart.STREAM_THINKING_HEADER to PartSkin.PALE_LIQUID)
+        )
+        assertEquals(
+            PartSkin.PALE_LIQUID,
+            explicit.resolveEffective(CodingPart.STREAM_THINKING_HEADER, ctx, PartSkin.PALE_LIQUID)
+        )
+        // 父 = FLAT（非玻璃）→ 不退化，子按原解析
+        assertEquals(
+            PartSkin.PALE_LIQUID,
+            overrides.resolveEffective(CodingPart.STREAM_THINKING, ctx, PartSkin.FLAT)
+        )
+        // 顶层部件（parentId == null）永不退化
+        assertEquals(
+            PartSkin.PALE_LIQUID,
+            overrides.resolveEffective(CodingPart.STREAM_THINKING, ctx, PartSkin.PALE_LIQUID)
+        )
+        // 无父上下文（parentSkin = null）→ 不退化
+        assertEquals(
+            PartSkin.EMBEDDED,
+            overrides.resolveEffective(CodingPart.STREAM_THINKING_HEADER, ctx, null)
+        )
+    }
+
+    @Test
+    fun `embedded family defaults and matrix gates`() {
+        // EMBEDDED 族：EMBEDDED/FLAT/PALE ✔，CLASSIC/SOLID/NEON ✗
+        assertTrue(CodingPart.STREAM_THINKING_HEADER.allows(PartSkin.EMBEDDED))
+        assertTrue(CodingPart.STREAM_THINKING_HEADER.allows(PartSkin.FLAT))
+        assertTrue(CodingPart.STREAM_THINKING_HEADER.allows(PartSkin.PALE_LIQUID))
+        assertFalse(CodingPart.STREAM_THINKING_HEADER.allows(PartSkin.CLASSIC_GLASS))
+        assertFalse(CodingPart.STREAM_TOOL_CHIP.allows(PartSkin.SOLID))
+        // CHROME 族（G6/G7 外壳）：PALE/CLASSIC/FLAT/EMBEDDED ✔
+        assertTrue(CodingPart.SHELL_TOP_BAR.allows(PartSkin.CLASSIC_GLASS))
+        assertTrue(CodingPart.PAGE_HISTORY_CARD.allows(PartSkin.PALE_LIQUID))
+        assertFalse(CodingPart.PAGE_HISTORY_CARD.allows(PartSkin.SOLID))
+        // isContainer / isGlassLike
+        assertFalse(PartSkin.EMBEDDED.isContainer)
+        assertTrue(PartSkin.PALE_LIQUID.isContainer)
+        assertTrue(PartSkin.PALE_LIQUID.isGlassLike)
+        assertFalse(PartSkin.FLAT.isGlassLike)
     }
 
     @Test
