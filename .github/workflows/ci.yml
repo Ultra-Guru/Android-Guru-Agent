@@ -502,31 +502,19 @@ jobs:
           cat local.properties
 
       - name: Set up Gradle
+        # #782：不再钉 gradle-version 预装 —— 本 job 全部经 ./gradlew 用入库
+        # wrapper 构建（setup-gradle 仅提供 GUH 缓存与 wrapper 完整性校验）；
+        # 版本一致性由下方 verify-wrapper 复合动作把关，漂移即红。
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.14'
 
-      - name: Verify Gradle wrapper is in sync with CI
+      - name: Verify Gradle wrapper is in sync
         # #353-⑥：旧实现每 job 跑 `gradle wrapper --gradle-version 8.14`，
-        # 把仓库里已提交的 wrapper **覆盖回 8.14**。后果：有人升级
-        # gradle-wrapper.properties（例如为了新版 AGP）后，CI 仍然强制用
-        # 8.14 构建 —— 本地能过、CI 过、发布产物与仓库声明脱钩，且全程无告警。
-        # wrapper 本身已入库（gradlew + gradle-wrapper.jar + properties），
-        # 生成动作纯冗余；改为**校验**：版本不一致就红，让漂移可见。
-        run: |
-          set -euo pipefail
-          PROP=gradle/wrapper/gradle-wrapper.properties
-          [ -f "$PROP" ] || { echo "::error::$PROP missing — wrapper must be committed"; exit 1; }
-          [ -f gradle/wrapper/gradle-wrapper.jar ] || { echo "::error::gradle-wrapper.jar missing — wrapper must be committed"; exit 1; }
-          WANTED=$(grep -E '^distributionUrl=' "$PROP" | sed -E 's#.*gradle-([0-9.]+)-(bin|all)\.zip#\1#')
-          [ -n "$WANTED" ] || { echo "::error::cannot parse distributionUrl in $PROP"; exit 1; }
-          if [ "$WANTED" != "8.14" ]; then
-            echo "::error::Gradle wrapper is $WANTED but this job pins 8.14."
-            echo "Fix: update gradle-version in .github/workflows/ci.yml to $WANTED"
-            echo "     (or revert $PROP) — do NOT let CI silently override the wrapper."
-            exit 1
-          fi
-          echo "✅ Gradle wrapper $WANTED matches CI pin"
+        # 把仓库里已提交的 wrapper **覆盖回 8.14**。改为只校验、漂移即红。
+        # #782：内联校验脚本抽为 .github/actions/verify-wrapper 复合动作，
+        # 与 apk / release / media-results 三条流水线共用单一事实源。
+        uses: ./.github/actions/verify-wrapper
+        with:
+          expected-version: '8.14'
 
       - name: Prewarm dependencies (retry on JitPack flakiness)
         run: |
@@ -621,6 +609,10 @@ jobs:
         #       （迁移映射 / 记法解析，纯 JVM returnDefaultValues）
         #   :platform:privilege:testDebugUnitTest —— T92 #255 权限链审计契约
         #   :plugins:plugin-workflow:testDebugUnitTest —— #256 防回退（诚实契约）
+        #   :plugin-sdk:plugin-host:testDebugUnitTest —— #784 补门禁：Plugin
+        #       System v2 宿主层（manifest 解析 / 目录存储 / 宏适配 / 统一
+        #       注册表，纯 JVM）—— 此前该模块零测试进 CI，注册表/manifest
+        #       回归只能靠下游用户路径暴露
         #   :core:code-native:testDebugUnitTest —— JNI 符号绑定契约（v1.5.39
         #       CodeNativeBridge 错名事故：编译期无感，运行期 UnsatisfiedLinkError
         #       刷 E 级 logcat 静默回退纯 Kotlin）。此前该模块零测试进 CI ——
@@ -643,6 +635,7 @@ jobs:
             :platform:memory-host:testDebugUnitTest \
             :platform:privilege:testDebugUnitTest \
             :plugins:plugin-workflow:testDebugUnitTest \
+            :plugin-sdk:plugin-host:testDebugUnitTest \
             :core:code-native:testDebugUnitTest \
             --no-daemon \
             -Pkotlin.incremental=false \
@@ -659,7 +652,7 @@ jobs:
         run: |
           echo "=== Build Status ==="
           if grep -q "BUILD SUCCESSFUL" build.log; then
-            echo "✅ BUILD SUCCESSFUL — app 编译 + 11 项模块单测 + P70 编译单次通过（#350）"
+            echo "✅ BUILD SUCCESSFUL — app 编译 + 16 项模块单测 + P70 编译单次通过（#350/#784）"
             exit 0
           fi
 
@@ -682,11 +675,16 @@ jobs:
           # 跳过 —— 跳过不产生 FAILED 行，必须单独对账，否则「测试根本没
           # 跑过」会被下面的 KSP 容忍分支误判成通过
           MISSING_TESTS=""
+          # #784：对账清单与上方调用同步 —— :platform:mcp-host:test 此前在
+          # 调用列表里但对账清单漏了（任务被跳过不会翻红），一并补齐；
+          # :plugin-sdk:plugin-host:testDebugUnitTest 为本轮新增门禁。
           for t in :app:testDebugUnitTest :platform:terminal:testDebugUnitTest \
                    :terminal-emulator:testDebugUnitTest :terminal-view:testDebugUnitTest \
                    :core:agent-engine:test :core:llm-adapter:test :core:code-tools:test :core:code-engine:test \
-                   :core:tool-registry:test :core:su:test :platform:memory-host:testDebugUnitTest \
+                   :core:tool-registry:test :core:su:test :platform:mcp-host:test \
+                   :platform:memory-host:testDebugUnitTest \
                    :platform:privilege:testDebugUnitTest :plugins:plugin-workflow:testDebugUnitTest \
+                   :plugin-sdk:plugin-host:testDebugUnitTest \
                    :core:code-native:testDebugUnitTest; do
             grep -q "^> Task $t" build.log || MISSING_TESTS="$MISSING_TESTS $t"
           done
@@ -924,24 +922,17 @@ jobs:
           echo "sdk.dir=$ANDROID_HOME" > local.properties
 
       - name: Set up Gradle
+        # #782：不再钉 gradle-version 预装 —— 本 job 全部经 ./gradlew 用入库
+        # wrapper 构建（setup-gradle 仅提供 GUH 缓存与 wrapper 完整性校验）；
+        # 版本一致性由下方 verify-wrapper 复合动作把关，漂移即红。
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.14'
 
-      - name: Verify Gradle wrapper is in sync with CI
-        # #353-⑥：同上 —— wrapper 已入库，生成是冗余；改成校验让漂移可见。
-        run: |
-          set -euo pipefail
-          PROP=gradle/wrapper/gradle-wrapper.properties
-          [ -f "$PROP" ] || { echo "::error::$PROP missing — wrapper must be committed"; exit 1; }
-          [ -f gradle/wrapper/gradle-wrapper.jar ] || { echo "::error::gradle-wrapper.jar missing — wrapper must be committed"; exit 1; }
-          WANTED=$(grep -E '^distributionUrl=' "$PROP" | sed -E 's#.*gradle-([0-9.]+)-(bin|all)\.zip#\1#')
-          [ -n "$WANTED" ] || { echo "::error::cannot parse distributionUrl in $PROP"; exit 1; }
-          if [ "$WANTED" != "8.14" ]; then
-            echo "::error::Gradle wrapper is $WANTED but this job pins 8.14."
-            exit 1
-          fi
-          echo "✅ Gradle wrapper $WANTED matches CI pin"
+      - name: Verify Gradle wrapper is in sync
+        # #782：内联校验脚本抽为 .github/actions/verify-wrapper 复合动作，
+        # 与 apk / release / media-results 三条流水线共用单一事实源。
+        uses: ./.github/actions/verify-wrapper
+        with:
+          expected-version: '8.14'
 
       - name: Stage bundled Ubuntu rootfs (T83 内置交付)
         run: |

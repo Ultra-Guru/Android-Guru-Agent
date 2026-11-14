@@ -57,8 +57,8 @@ data class PluginManifest(
      *   **不授**（[isLegacyManifest]=true，首次调 browser 工具走用户确认流）；
      * - 空数组 = 新 manifest 显式不授任何可选宿主权限；
      * - 非空 = 按 token 授予：`browser`（普通浏览器族，不含敏感）/
-     *   `browser:sensitive`（四件套须单独声明）/ 精确工具 id；未知 token=无权限
-     *   （绝不扩大）。
+     *   `browser:sensitive`（仅敏感四件套——与 `browser` 分权，普通族须另行
+     *   声明）/ 精确工具 id；未知 token=无权限（绝不扩大）。
      */
     val permissions: List<String>? = null
 ) {
@@ -69,11 +69,12 @@ data class PluginManifest(
     fun grantsTool(toolId: String): Boolean {
         val perms = permissions ?: return false
         if (toolId in perms) return true
-        val browserOrdinary = toolId.startsWith("Browser") &&
-            toolId !in setOf("BrowserExecuteJs", "BrowserGetCookies", "BrowserFileUpload", "BrowserClearData")
+        val browserOrdinary = toolId.startsWith("Browser") && toolId !in SENSITIVE_BROWSER_TOOLS
         return when {
             "browser" in perms && browserOrdinary -> true
-            "browser:sensitive" in perms && toolId.startsWith("Browser") -> true
+            // 分权口径（v1.5.24 ACL changelog）：browser:sensitive 仅授敏感
+            // 四件套，普通族须另声明 browser（fail-closed，不随 sensitive 扩权）。
+            "browser:sensitive" in perms && toolId in SENSITIVE_BROWSER_TOOLS -> true
             else -> false
         }
     }
@@ -88,6 +89,11 @@ data class PluginManifest(
     val displayVersion: String get() = versionName?.trim().takeUnless { it.isNullOrEmpty() } ?: version.toString()
 
     companion object {
+        /** 浏览器敏感四件套（与 MCP Host blocklist 同口径；须单独声明 browser:sensitive）。 */
+        private val SENSITIVE_BROWSER_TOOLS = setOf(
+            "BrowserExecuteJs", "BrowserGetCookies", "BrowserFileUpload", "BrowserClearData"
+        )
+
         /** 宽松解析配置（未来字段向前兼容 + 形态防御）。 */
         private val lenientJson: Json = Json {
             ignoreUnknownKeys = true
