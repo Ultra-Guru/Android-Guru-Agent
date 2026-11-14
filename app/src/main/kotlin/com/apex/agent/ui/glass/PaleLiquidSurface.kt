@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.State
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -25,6 +23,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawOutline          // ★ H-1：顶层扩展函数，非 DrawScope 成员 —— 漏 import 即 compileDebugKotlin 挂
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.platform.LocalContext
@@ -105,49 +104,36 @@ fun PaleLiquidSurface(
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
         !rememberReducedMotion()
 
-    // ── 三枚光晕的 Lissajous 驱动相位（9s 周期；静态帧停中位构图 0.5）──
-    val drift: State<Float> = if (animated) {
-        rememberInfiniteTransition(label = "pale-liquid-drift")
-            .animateFloat(
-                initialValue = 0f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = DRIFT_PERIOD_MS, easing = LinearEasing)
-                ),
-                label = "pale-drift-phase"
-            )
-    } else {
-        remember { mutableStateOf(0.5f) }
-    }
-    // ── 轮廓流光相位（4.2s 一圈；静态帧负相位 = 光眼熄灭只留基环）──
-    val beamPhase: State<Float> = if (animated) {
-        rememberInfiniteTransition(label = "pale-liquid-beam")
-            .animateFloat(
-                initialValue = 0f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = BEAM_PERIOD_MS, easing = LinearEasing)
-                ),
-                label = "pale-beam-phase"
-            )
-    } else {
-        remember { mutableStateOf(-1f) }
-    }
-    // ── 镜面扫掠相位（-0.4 → 1.4，3.6s；静态帧停中位 0.5）──
-    val sheen: State<Float> = if (animated) {
-        rememberInfiniteTransition(label = "pale-liquid-sheen")
-            .animateFloat(
-                initialValue = -0.4f,
-                targetValue = 1.4f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = SHEEN_PERIOD_MS),
-                    repeatMode = RepeatMode.Restart
-                ),
-                label = "pale-sheen-phase"
-            )
-    } else {
-        remember { mutableStateOf(0.5f) }
-    }
+    // ── H-2（硬规则）：transition 与三个 animateFloat **恒定创建**，禁止在
+    // if/else 分支里条件调用 remember*（animated 翻转会改变 slot table 调用
+    // 位置，引发动画状态错位）；静态帧只在 draw 阶段读固定值：
+    // drift 0.5（中位构图）/ beam -1（光眼熄灭只留基环）/ sheen 0.5（中位）。──
+    val transition = rememberInfiniteTransition(label = "pale-liquid")
+    val drift = transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = DRIFT_PERIOD_MS, easing = LinearEasing)
+        ),
+        label = "pale-drift-phase"
+    )
+    val beamPhase = transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = BEAM_PERIOD_MS, easing = LinearEasing)
+        ),
+        label = "pale-beam-phase"
+    )
+    val sheen = transition.animateFloat(
+        initialValue = -0.4f,
+        targetValue = 1.4f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = SHEEN_PERIOD_MS),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "pale-sheen-phase"
+    )
 
     // glow 读入即 clamp（持久化容错的第二道钳，§11.1）
     val glowLevel = glow.coerceIn(0f, 1f)
@@ -211,7 +197,7 @@ fun PaleLiquidSurface(
                         if (!minimal) {
                             // ② 三枚漂移彩光（glow 0..1 乘 alpha，draw 阶段读值）
                             if (glowLevel > 0f) {
-                                val t = drift.value * 2.0 * PI
+                                val t = (if (animated) drift.value else 0.5f) * 2.0 * PI
                                 drawOrb(
                                     brush = orbABrush,
                                     cx = w * (0.80f + 0.09f * sin(t).toFloat()),
@@ -235,7 +221,7 @@ fun PaleLiquidSurface(
                                 )
                             }
                             // ③ 镜面扫掠：固定 Brush + 每帧 translate（零分配）
-                            translate(left = sheen.value * w) {
+                            translate(left = (if (animated) sheen.value else 0.5f) * w) {
                                 drawOutline(outline = outline, brush = sheenBrush)
                             }
                         }
@@ -249,7 +235,7 @@ fun PaleLiquidSurface(
                     .matchParentSize()
                     .borderBeam(
                         shape = shape,
-                        phase = { beamPhase.value },
+                        phase = { if (animated) beamPhase.value else -1f },
                         tint = palette.eye,
                         baseRingAlpha = 0.22f,
                         beamWidth = 1.2.dp,
