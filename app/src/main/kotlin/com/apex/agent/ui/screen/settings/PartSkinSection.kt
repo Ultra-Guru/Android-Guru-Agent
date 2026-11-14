@@ -393,7 +393,10 @@ private fun PendingBanner(
     onDiscard: () -> Unit
 ) {
     if (!activation.hasPending) return
-    val pendingCount = activation.changedParts.size
+    // changedParts 只统计部件/组皮肤差集；outputStyle / renderMode / uiStyle /
+    // glow 等非部件维度的变化同样会让 pending 落地（sameContent 四维度判定），
+    // 此时差集为空 —— 至少计 1，避免出现「0 项待生效」的病句。
+    val pendingCount = maxOf(1, activation.changedParts.size)
     val immediate = activation.effectivePolicy == SkinApplyPolicy.IMMEDIATE
     val message = if (immediate) {
         // IMMEDIATE：改动在收束后的第一个 idle 点自动提升（H-6 挂起中）
