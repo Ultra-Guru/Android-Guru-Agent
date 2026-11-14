@@ -233,8 +233,10 @@ data class IntegrityReadout(
  *  - 底边带 [h−24px, h]：平滑后数硬跳变（> 0.06 luma）—— 双底边即红；
  *  - 顶缘带：y=6% 行与中心的亮度差（镜面高光存在的像素证据）；
  *  - 侧缘：x=3px 列与 x=30% 的亮度差（Highlight 受光的像素证据）。
+ *
+ * suspend：GraphicsLayer.toImageBitmap 读回需在主线程协程内完成。
  */
-fun runIntegrityScan(layer: GraphicsLayer): IntegrityReadout? = runCatching {
+suspend fun runIntegrityScan(layer: GraphicsLayer): IntegrityReadout? = runCatching {
     val bmp = layer.toImageBitmap()
     if (bmp.width < 40 || bmp.height < 40) return null
     val map = bmp.toPixelMap()
