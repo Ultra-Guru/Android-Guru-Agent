@@ -46,14 +46,8 @@ class CodeStreamSession {
     private val toolCalls = LinkedHashMap<String, StreamToolCall>()
     private val terminalBuffers = LinkedHashMap<String, TerminalPulseBuffer>()
 
-    /**
-     * 条目 id → entries 下标索引（perf P0-1）：工具输出分片的热路径
-     * （updateCall / replaceEntry）以 O(1) 定位替代 indexOfFirst 全轴扫描
-     * —— 长会话时间轴上每分片 O(n) 扫描是「多工具时严重卡顿」的主因之一。
-     * 结构性变更（removeEntry / 窗口裁剪 / replaceAll）后整表重建；
-     * 索引 miss 时回退线性查找并回填（自愈，防失配静默丢更新）。
-     */
-    private val entryIndex = HashMap<String, Int>()
+    /** 条目定位/窗口协作器(职责与维护语义见 CodeStreamEntryIndex.kt)。 */
+    private val entryIndex = StreamEntryIndex()
 
     /** 已收到过 preview 片段的 callId（结构化工具标识：权威收尾 = JSON 信封，
      * 不进终端视图；无 preview 的旧工具收尾文本仍进 —— 两种路径都保输出完整）。 */
@@ -492,10 +486,10 @@ class CodeStreamSession {
     fun replaceAll(restored: List<StreamEntry>) {
         entries.clear()
         entries.addAll(restored)
-        rebuildEntryIndex()
+        entryIndex.rebuild(entries)
         // 序号回拨到恢复轴的最大 e-N：不回拨则 nextId() 从 1 重发，与恢复
         // 条目撞号 → LazyColumn 重复 key 直接崩溃（P0）
-        entrySeq = restored.maxOfOrNull { entrySeqOf(it.id) } ?: 0L
+        entrySeq = restored.maxOfOrNull { streamEntrySeqOf(it.id) } ?: 0L
         toolCalls.clear()
         terminalBuffers.clear()
         previewSeenCalls.clear()
@@ -720,7 +714,7 @@ class CodeStreamSession {
         // P0（输出完整性）：终端视图优先脉冲缓冲（含滚出裁剪标记）；
         // 缓冲空（无 preview 的旧工具/恢复会话）退回 event.output 尾窗。
         val logTail = buffer?.renderedContent()?.takeIf { it.isNotEmpty() }
-            ?: safeTakeLast(existing.logTail + event.output, NON_BASH_LOG_TAIL_CHARS)
+            ?: streamSafeTakeLast(existing.logTail + event.output, NON_BASH_LOG_TAIL_CHARS)
         previewSeenCalls.remove(event.callId)
 
         val diff = if (existing.isEditFamily) UnifiedDiffParser.parse(event.fullOutput.ifBlank { event.output }) else null
@@ -888,48 +882,22 @@ class CodeStreamSession {
 
     private fun append(entry: StreamEntry) {
         entries.add(entry)
-        entryIndex[entry.id] = entries.size - 1
-        trimEntriesWindowIfNeeded()
-        dirty = true
+        entryIndex.onAppend(entry.id, entries.size - 1)
+        // perf P0-3:时间轴内存滑动窗口(超限裁最老,语义见 CodeStreamEntryIndex)
+        if (entryIndex.trimWindow(entries, MAX_ENTRIES_IN_MEMORY)) dirty = true
     }
-
-    /**
-     * 时间轴内存滑动窗口（perf P0-3）：entries 跨 run 累积且旧实现无上限
-     * —— 每条目常驻文本（含工具 logTail/diff 引用），长会话单调增长直到
-     * OOM。钉在 [MAX_ENTRIES_IN_MEMORY] 内，超限裁掉最老条目（活跃流式
-     * 条目恒在尾部不受影响；检查点落盘本就 takeLast(400)，恢复链路
-     * replaceAll 不受影响；被裁条目由旧引用持有者（如验证闭环的 openCycle
-     * 追踪）通过 locateEntry miss 安全跳过）。裁剪后整表重建索引。
-     */
-    private fun trimEntriesWindowIfNeeded() {
-        val excess = entries.size - MAX_ENTRIES_IN_MEMORY
-        if (excess <= 0) return
-        entries.subList(0, excess).clear()
-        rebuildEntryIndex()
-    }
-
-    /** 结构性变更后整表重建索引（低频：移除/裁剪/整轴替换）。 */
-    private fun rebuildEntryIndex() {
-        entryIndex.clear()
-        entries.forEachIndexed { i, e -> entryIndex[e.id] = i }
-    }
-
-    /** 索引定位（miss 回退线性查找并回填，防失配静默丢更新）。 */
-    private fun locateEntry(id: String): Int =
-        entryIndex[id]?.takeIf { it < entries.size && entries[it].id == id }
-            ?: entries.indexOfFirst { it.id == id }.also { if (it >= 0) entryIndex[id] = it }
 
     private fun replaceEntry(id: String, entry: StreamEntry) {
-        val idx = locateEntry(id)
+        val idx = entryIndex.locate(id, entries)
         if (idx >= 0) entries[idx] = entry
         dirty = true
     }
 
     private fun removeEntry(id: String) {
-        val idx = locateEntry(id)
+        val idx = entryIndex.locate(id, entries)
         if (idx >= 0) {
             entries.removeAt(idx)
-            rebuildEntryIndex()
+            entryIndex.rebuild(entries)
         }
         dirty = true
     }
@@ -984,7 +952,7 @@ class CodeStreamSession {
     private fun updateCall(call: StreamToolCall) {
         toolCalls[call.id] = call
         // perf P0-1：分片热路径 O(1) 定位（旧实现每分片 indexOfFirst 全轴扫描）
-        val idx = locateEntry(toolEntryId(call.id))
+        val idx = entryIndex.locate(toolEntryId(call.id), entries)
         if (idx >= 0) entries[idx] = StreamEntry.ToolCapsuleEntry(toolEntryId(call.id), call)
         dirty = true
     }
@@ -994,17 +962,6 @@ class CodeStreamSession {
     private fun nextId(): String = "e-${++entrySeq}"
 
     /** 从条目 id 提取序号（“e-42” / “cycle-1-e-43” → 42/43；其余 → 0）。 */
-    private fun entrySeqOf(id: String): Long =
-        ENTRY_SEQ_REGEX.find(id)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
-
-    /** 代理对安全截断：首字符若是低代理项则让位，防 emoji 被劈成豆腐块。 */
-    private fun safeTakeLast(s: String, n: Int): String = when {
-        s.length <= n -> s
-        n <= 0 -> ""
-        Character.isLowSurrogate(s[s.length - n]) -> s.substring(s.length - n + 1)
-        else -> s.substring(s.length - n)
-    }
-
     private fun buildSnapshot(): CodeStreamSnapshot {
         val activeBuf = activeTerminalCallId?.let { terminalBuffers[it] }
         return CodeStreamSnapshot(
@@ -1229,24 +1186,13 @@ class CodeStreamSession {
         const val NON_BASH_LOG_TAIL_CHARS = 2000
         const val EXIT_CODE_TAIL_LINES = 8
 
-        /**
-         * diff 原文内存/落盘上限（perf P0-3）：编辑/写类工具的 fullOutput
-         * 原文（硬顶 150KB）随胶囊常驻 entries 并全量随检查点序列化，几十
-         * 次编辑即数 MB 起步。diff 卡渲染只需头部预览，16KB 上限外的行按
-         * 「diff 已截断」语义由行数徽标承载（hunksTotal 不受影响）。
-         */
-        const val DIFF_TEXT_MAX_CHARS = 16_000
-
-        /** 时间轴条目内存滑动窗口（perf P0-3，见 trimEntriesWindowIfNeeded）。 */
-        const val MAX_ENTRIES_IN_MEMORY = 600
         /** 用户规格 LLM 重试阶梯级数（1s…180s 共 10 级）。 */
         const val LADDER_TOTAL_RETRIES = 10
 
         /** 中止文案：停止卡与中断胶囊的副标题共用。 */
         const val ABORTED_TEXT = "已中止"
         val EXIT_CODE_REGEX = Regex("""(?:exit(?:\s+code)?|Exit:)[:\s]+(\d+)\b""", RegexOption.IGNORE_CASE)
-        val ENTRY_SEQ_REGEX = Regex("""(?:^|-)e-(\d+)$""")
-        /** 网络搜索结果来源链接（去重计数用；截到右括号/引号前，容 markdown/JSON 两种形态）。 */
+            /** 网络搜索结果来源链接（去重计数用；截到右括号/引号前，容 markdown/JSON 两种形态）。 */
         val SOURCE_LINK_REGEX = Regex("""https?://[^\s\)\]>"']+""")
     }
 }
