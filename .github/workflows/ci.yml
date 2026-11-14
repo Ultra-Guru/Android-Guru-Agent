@@ -609,6 +609,10 @@ jobs:
         #       （迁移映射 / 记法解析，纯 JVM returnDefaultValues）
         #   :platform:privilege:testDebugUnitTest —— T92 #255 权限链审计契约
         #   :plugins:plugin-workflow:testDebugUnitTest —— #256 防回退（诚实契约）
+        #   :plugin-sdk:plugin-host:testDebugUnitTest —— #784 补门禁：Plugin
+        #       System v2 宿主层（manifest 解析 / 目录存储 / 宏适配 / 统一
+        #       注册表，纯 JVM）—— 此前该模块零测试进 CI，注册表/manifest
+        #       回归只能靠下游用户路径暴露
         #   :core:code-native:testDebugUnitTest —— JNI 符号绑定契约（v1.5.39
         #       CodeNativeBridge 错名事故：编译期无感，运行期 UnsatisfiedLinkError
         #       刷 E 级 logcat 静默回退纯 Kotlin）。此前该模块零测试进 CI ——
@@ -631,6 +635,7 @@ jobs:
             :platform:memory-host:testDebugUnitTest \
             :platform:privilege:testDebugUnitTest \
             :plugins:plugin-workflow:testDebugUnitTest \
+            :plugin-sdk:plugin-host:testDebugUnitTest \
             :core:code-native:testDebugUnitTest \
             --no-daemon \
             -Pkotlin.incremental=false \
@@ -647,7 +652,7 @@ jobs:
         run: |
           echo "=== Build Status ==="
           if grep -q "BUILD SUCCESSFUL" build.log; then
-            echo "✅ BUILD SUCCESSFUL — app 编译 + 11 项模块单测 + P70 编译单次通过（#350）"
+            echo "✅ BUILD SUCCESSFUL — app 编译 + 16 项模块单测 + P70 编译单次通过（#350/#784）"
             exit 0
           fi
 
@@ -670,11 +675,16 @@ jobs:
           # 跳过 —— 跳过不产生 FAILED 行，必须单独对账，否则「测试根本没
           # 跑过」会被下面的 KSP 容忍分支误判成通过
           MISSING_TESTS=""
+          # #784：对账清单与上方调用同步 —— :platform:mcp-host:test 此前在
+          # 调用列表里但对账清单漏了（任务被跳过不会翻红），一并补齐；
+          # :plugin-sdk:plugin-host:testDebugUnitTest 为本轮新增门禁。
           for t in :app:testDebugUnitTest :platform:terminal:testDebugUnitTest \
                    :terminal-emulator:testDebugUnitTest :terminal-view:testDebugUnitTest \
                    :core:agent-engine:test :core:llm-adapter:test :core:code-tools:test :core:code-engine:test \
-                   :core:tool-registry:test :core:su:test :platform:memory-host:testDebugUnitTest \
+                   :core:tool-registry:test :core:su:test :platform:mcp-host:test \
+                   :platform:memory-host:testDebugUnitTest \
                    :platform:privilege:testDebugUnitTest :plugins:plugin-workflow:testDebugUnitTest \
+                   :plugin-sdk:plugin-host:testDebugUnitTest \
                    :core:code-native:testDebugUnitTest; do
             grep -q "^> Task $t" build.log || MISSING_TESTS="$MISSING_TESTS $t"
           done
