@@ -11,6 +11,7 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -80,8 +81,22 @@ object UpdateCenter {
     /** 应用上下文（[ensure] 注入；全部用 applicationContext，绝无 Activity 泄漏）。 */
     private lateinit var appContext: Context
 
-    /** 更新链路共享作用域 —— 应用生命周期存活（页面导航不取消流水线）。 */
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /**
+     * 更新链路共享作用域 —— 应用生命周期存活（页面导航不取消流水线）。
+     *
+     * #859：补 CEH——更新链路任何逃逸异常（含 readBytes 的 OOMError 等非
+     * Exception Throwable）不再杀死宿主进程，统一降级留痕；各引擎自身
+     * 的 try/catch 仍是一线防线，这里是最后兑底。
+     */
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, t ->
+            AppLogger.instance.error(
+                LogCategory.SYSTEM, "UpdateCenter",
+                "更新链路协程未捕获异常（已降级留痕，流水线状态由各引擎自行上报）: " +
+                    "${t::class.simpleName}: ${t.message}"
+            )
+        }
+    )
 
     val checker = UpdateChecker()
 

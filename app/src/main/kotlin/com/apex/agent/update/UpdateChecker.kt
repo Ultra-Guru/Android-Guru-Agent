@@ -150,7 +150,10 @@ class UpdateChecker {
                 legacy.sizeBytes
             )
         } ?: return null
-        // 体积守卫：链总体积 > 60% 全量包 → 增量无意义，直接全量
+        // 体积守卫①（#859）：任一段 > 32MB → 解码器整段入堆必在中低端机
+        // OOM——直接判不可增量，调用方回退全量（体积门②之前，先保证能解）。
+        if (chain.steps.any { it.sizeBytes > PatchIndex.MAX_PATCH_BYTES }) return null
+        // 体积守卫②：链总体积 > 60% 全量包 → 增量无意义，直接全量
         if (full.sizeBytes > 0 && chain.totalBytes * 10 > full.sizeBytes * 6) return null
         return chain
     }

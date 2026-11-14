@@ -777,6 +777,7 @@
     <string name="about_update_patch_failed_download">A patch download was interrupted. Please retry, or switch to the full package</string>
     <string name="about_update_patch_failed_verify">Checksum failed on %1$s. Please retry, or switch to the full package</string>
     <string name="about_update_patch_failed_decode">Patch could not be applied (%1$s). Please retry, or switch to the full package</string>
+    <string name="about_update_patch_failed_too_large">The delta patch is too large to apply within memory limits. Please use the full package instead</string>
     <string name="about_update_patch_failed_installer">The installer could not be launched. The APK is saved at %1$s</string>
     <string name="about_update_patch_retry">Retry delta update</string>
     <string name="about_update_patch_use_full">Use full package</string>

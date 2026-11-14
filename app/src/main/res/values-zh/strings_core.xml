@@ -777,6 +777,7 @@
     <string name="about_update_patch_failed_download">补丁下载中断。请重试，或改用全量包</string>
     <string name="about_update_patch_failed_verify">校验失败：%1$s。请重试，或改用全量包</string>
     <string name="about_update_patch_failed_decode">补丁合成失败（%1$s）。请重试，或改用全量包</string>
+    <string name="about_update_patch_failed_too_large">增量补丁体积过大，为避免内存不足已停止合成。请改用全量包更新</string>
     <string name="about_update_patch_failed_installer">安装器未能拉起。APK 已保存至 %1$s</string>
     <string name="about_update_patch_retry">重试增量更新</string>
     <string name="about_update_patch_use_full">改用全量包</string>

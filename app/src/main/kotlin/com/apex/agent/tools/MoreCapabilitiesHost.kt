@@ -427,6 +427,12 @@ class FilePicker(private val context: Context) {
 class CameraCapturer(private val context: Context) {
     suspend fun capture(params: ImageCaptureTool.CaptureParams): ImageCaptureTool.CaptureResult =
         withContext(Dispatchers.IO) {
+            // #869：开工先扫历史残留（崩溃/被杀路径留下的 capture_*.jpg），
+            // 超过 STALE_CAPTURE_MS 的临时件已无任何在途回调会再用它——回收。
+            sweepStaleCaptures()
+            // cache 临时件句柄：取消/失败/异常路径统一回收（#869：拷贝成功后
+            // 也由 finalizeCapture 删除，cacheDir/camera 不再单调膨胀）。
+            var tempCaptureFile: java.io.File? = null
             try {
                 // 拍摄落地文件：savePath 可直用则直用，否则先落 cache（provider 覆盖）
                 val directTarget = params.savePath?.let { java.io.File(it) }
@@ -436,6 +442,7 @@ class CameraCapturer(private val context: Context) {
                     java.io.File(java.io.File(context.cacheDir, "camera").apply { mkdirs() },
                         "capture_${System.currentTimeMillis()}.jpg")
                 }
+                if (captureFile != directTarget) tempCaptureFile = captureFile
                 captureFile.parentFile?.mkdirs()
 
                 val authority = "${context.packageName}.fileprovider"
@@ -456,17 +463,24 @@ class CameraCapturer(private val context: Context) {
                         errorMessage = "相机结果等待失败（broker 启动失败或超时）"
                     )
                 when {
-                    host.resultCode != android.app.Activity.RESULT_OK -> ImageCaptureTool.CaptureResult(
-                        success = false,
-                        errorMessage = "相机已取消或失败（resultCode=${host.resultCode}）——启动相机不等于拍到照片"
-                    )
-                    !captureFile.exists() || captureFile.length() <= 0L -> ImageCaptureTool.CaptureResult(
-                        success = false,
-                        errorMessage = "相机返回 OK 但未写入任何图像字节（${captureFile.absolutePath}）"
-                    )
+                    host.resultCode != android.app.Activity.RESULT_OK -> {
+                        cleanupTempCapture(tempCaptureFile)
+                        ImageCaptureTool.CaptureResult(
+                            success = false,
+                            errorMessage = "相机已取消或失败（resultCode=${host.resultCode}）——启动相机不等于拍到照片"
+                        )
+                    }
+                    !captureFile.exists() || captureFile.length() <= 0L -> {
+                        cleanupTempCapture(tempCaptureFile)
+                        ImageCaptureTool.CaptureResult(
+                            success = false,
+                            errorMessage = "相机返回 OK 但未写入任何图像字节（${captureFile.absolutePath}）"
+                        )
+                    }
                     else -> finalizeCapture(params, captureFile, directTarget)
                 }
             } catch (e: Exception) {
+                cleanupTempCapture(tempCaptureFile)
                 ImageCaptureTool.CaptureResult(
                     success = false,
                     errorMessage = "${e::class.simpleName}: ${e.message}"
@@ -485,11 +499,14 @@ class CameraCapturer(private val context: Context) {
             // savePath 不在 provider 覆盖范围：拷贝到用户指定路径，失败如实报
             runCatching { captureFile.copyTo(directTarget, overwrite = true) }
                 .getOrElse { e ->
+                    cleanupTempCapture(captureFile)
                     return ImageCaptureTool.CaptureResult(
                         success = false,
                         errorMessage = "图像已拍入缓存但拷贝到目标路径失败: ${e.message}"
                     )
                 }
+            // #869：拷贝成功后 cache 临时副本使命完成——用完即毁
+            cleanupTempCapture(captureFile)
             finalFile = directTarget
         }
         return ImageCaptureTool.CaptureResult(
@@ -510,6 +527,40 @@ class CameraCapturer(private val context: Context) {
         )
         val path = file.canonicalPath
         return roots.any { path.startsWith(it.canonicalPath + java.io.File.separator) }
+    }
+
+    /** cache 临时副本回收（#869）：删除失败只留痕——cacheDir 本身有系统兜底。 */
+    private fun cleanupTempCapture(file: java.io.File?) {
+        if (file == null) return
+        runCatching { file.delete() }
+            .onFailure { e ->
+                AppLogger.instance.warn(
+                    LogCategory.TOOL, "CameraCapturer",
+                    "临时照片回收失败（${file.name}）: ${e.message}"
+                )
+            }
+    }
+
+    /**
+     * 历史残留回收（#869 兑底）：清 cacheDir/camera 下早于 [STALE_CAPTURE_MS]
+     * 的 capture_*.jpg。在途回调的临时件必是刚创建（mtime 新），3 天阈值下
+     * 绝无误删；崩溃/被杀遗留的半成品在此被收容。
+     */
+    private fun sweepStaleCaptures() {
+        runCatching {
+            val camDir = java.io.File(context.cacheDir, "camera")
+            if (!camDir.isDirectory) return
+            val cutoff = System.currentTimeMillis() - STALE_CAPTURE_MS
+            camDir.listFiles { f ->
+                f.isFile && f.name.startsWith("capture_") && f.name.endsWith(".jpg") &&
+                    f.lastModified() < cutoff
+            }?.forEach { stale -> runCatching { stale.delete() } }
+        }
+    }
+
+    private companion object {
+        /** cache 临时照片的保留窗口：超过即视为历史残留回收。 */
+        const val STALE_CAPTURE_MS = 3L * 24 * 60 * 60 * 1000
     }
 }
 
