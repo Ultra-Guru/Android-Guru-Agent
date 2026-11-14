@@ -27,12 +27,17 @@ import com.apex.agent.core.tools.builtin.context.SessionContextArchive
  * 失败纪律：归档与注记任何异常都不阻断压缩主流程（压缩本身已成功），
  * 留痕降级继续。
  *
+ * 压缩捕获（记忆 P0）：构造参数 [onPruned] 在差集归档后被回调，携带被
+ * 裁剪的原始消息 —— 宿主把它接入记忆蒸馏管道（会话摘要双通道的压缩
+ * 侧），压缩不再等于「内容对记忆系统不可见」。回调异常同样不阻断压缩。
+ *
  * 会话生命周期：归档清空由引擎侧负责（`clearHistory()` /
  * `restoreHistory()` 调 [SessionContextArchive.clear]），本装饰器只写不清。
  */
 class ArchivingCompressor(
     private val delegate: ContextCompressor,
-    private val archive: SessionContextArchive
+    private val archive: SessionContextArchive,
+    private val onPruned: (suspend (pruned: List<LlmMessage>) -> Unit)? = null,
 ) : ContextCompressor {
 
     override fun needsCompression(
@@ -60,6 +65,19 @@ class ArchivingCompressor(
                     "压缩归档失败（压缩本身已成功，被裁剪消息本次未进归档）: ${e.message}"
                 )
             }
+        // 压缩捕获（记忆 P0）：被裁消息回调给记忆蒸馏管道；异常不阻断压缩。
+        val prunedCallback = onPruned
+        if (prunedCallback != null) {
+            runCatching {
+                before.filter { msg -> history.none { it == msg } }.takeIf { it.isNotEmpty() }
+                    ?.let { prunedCallback.invoke(it) }
+            }.onFailure { e ->
+                AppLogger.instance.warn(
+                    LogCategory.ENGINE, "ArchivingCompressor",
+                    "压缩捕获回调失败（忽略，被裁消息仍已在归档中）: ${e.message}"
+                )
+            }
+        }
         return report
     }
 

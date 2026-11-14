@@ -12,6 +12,7 @@ import com.apex.agent.core.code.experience.RoleExperienceTracker
 import com.apex.agent.core.code.longtask.LongTaskTracker
 import com.apex.agent.core.code.longtask.TaskCopyEngine
 import com.apex.agent.core.code.standard.DualLogicCodeEngine
+import com.apex.agent.core.code.standard.MemoryAwareCodeEngine
 import com.apex.agent.core.code.CodeContextSnapshot
 import com.apex.agent.core.code.standard.StandardLogicMode
 import com.apex.agent.core.code.stream.CodeStreamCheckpoint
@@ -252,9 +253,14 @@ class CodeViewModel @Inject constructor(
     internal val codeEngineImpl: CodeEngineFacade?
         get() = codeEngine as? CodeEngineFacade
 
-    /** 双思考逻辑路由门面（右上角切换入口；注入恒为 DualLogicCodeEngine）。 */
+    /**
+     * 双思考逻辑路由门面（右上角切换入口）。@Named("code") 自记忆 P0
+     * 起为 MemoryAwareCodeEngine 包装（四线记忆闭环）—— 先解包再回退裸
+     * DualLogicCodeEngine（防御其它装配形态，如测试 / 未来再包装）。
+     */
     internal val dualLogicEngine: DualLogicCodeEngine?
-        get() = codeEngine as? DualLogicCodeEngine
+        get() = (codeEngine as? MemoryAwareCodeEngine)?.dualLogic
+            ?: codeEngine as? DualLogicCodeEngine
 
     // ═══ v6 控制器接线（lazy：viewModelScope 构造后才可用；God-file 预算：
     //     专家模板逻辑独立成文件，VM 只做暴露）═══
