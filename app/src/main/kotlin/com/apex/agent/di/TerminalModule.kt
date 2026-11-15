@@ -388,7 +388,9 @@ object TerminalModule {
         // T99 审计修复：显式 chroot create 绕过 ensureUbuntuSession 的 dnsRefreshFn
         // 修复路径，须在 prepare 阶段补齐存量 rootfs 缺失 CA（幂等、host bundle 优先）。
         caRepair = { root ->
-            withContext(Dispatchers.IO) { configurator.repairCaIfMissing(root) }
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                configurator.repairCaIfMissing(root)
+            }
         }
     )
 

@@ -18,7 +18,7 @@ import java.io.File
  * 因此本端口在生产 DI 中被注入，把上述 AOSP 已知路径交给配置器使用；目录不可读时仍返回 null
  * （未知来源 → 不导入），与单测 fail-closed 行为保持一致。
  */
-internal object AndroidSystemCaProduction {
+object AndroidSystemCaProduction {
     /** 生产 DI：与 [RootfsConfigurator] 默认 `androidSystemCaDirs` 一致的 AOSP 已知候选。 */
     fun knownSystemDirs(): List<File> {
         val apex = File("/apex/com.android.conscrypt/cacerts")
