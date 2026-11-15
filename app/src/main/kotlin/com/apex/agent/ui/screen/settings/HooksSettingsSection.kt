@@ -160,7 +160,7 @@ private fun HookRow(
 /** 「内置」徽标：中性蓝灰（区别于权限效应的三色语义——钩子无好坏之分）。 */
 @Composable
 private fun BuiltinBadge() {
-    val foreground = Color(0xFF3D6A96)
+    val foreground = MaterialTheme.colorScheme.primary // B3-BUG-29:主题语义色
     Surface(
         shape = RoundedCornerShape(6.dp),
         color = foreground.copy(alpha = 0.12f),

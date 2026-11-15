@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
@@ -54,7 +55,7 @@ fun SettingsTabBar(
     LazyRow(
         modifier = modifier
             .fillMaxWidth()
-            .semantics { contentDescription = "Settings tabs" },
+            .semantics { contentDescription = tabsDesc },
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
@@ -85,6 +86,7 @@ private fun SettingsTabChip(
     onClose: () -> Unit
 ) {
     val closeDesc = stringResource(R.string.settings_tab_close, title)
+    val tabsDesc = stringResource(R.string.settings_tabs_desc)
     Surface(
         // 顶圆角、底直角：激活标签与下方内容区视觉连成一体（浏览器 tab 语言）
         shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
@@ -119,13 +121,12 @@ private fun SettingsTabChip(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.widthIn(max = 132.dp)
             )
-            // 叉号：点按关闭（触区收紧到 28dp——浏览器 tab 惯例密度，
-            // 外层已有 8dp 垂直 padding 补足最小触区）
+            // B3-BUG-28:触区 ≥48dp(视觉图标不变;旧 28dp 低于无障碍红线)
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .padding(start = 2.dp)
-                    .size(28.dp)
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                     .clickable(onClickLabel = closeDesc) { onClose() }
                     .semantics { contentDescription = closeDesc }
             ) {

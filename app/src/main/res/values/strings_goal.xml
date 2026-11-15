@@ -104,6 +104,31 @@
     <string name="settings_ext_autosync_label">Auto-sync extensions on startup</string>
     <string name="settings_ext_autosync_desc">Evaluate installed extension sources at launch; nothing installs without confirmation</string>
     <string name="settings_ext_marketlinks_hint">Per-market links are managed from the marketplace page (coming to settings later).</string>
+    <string name="settings_quick_title">Quick &amp; Recent</string>
+    <string name="settings_quick_onboarding">Suggested</string>
+    <string name="settings_group_page_count_fmt">%1$d pages</string>
+    <string name="settings_meta_sections_fmt">%1$d sections on this page</string>
+    <string name="settings_scope_danger">Caution</string>
+    <string name="settings_favorite_add">Add to favorites</string>
+    <string name="settings_favorite_remove">Remove from favorites</string>
+    <string name="settings_search_hint">Search settings (key:fieldId supported)</string>
+    <string name="settings_search_no_result">No matching settings found.</string>
+    <string name="settings_effective_immediate">Effective immediately</string>
+    <string name="settings_effective_next_run">Effective next run</string>
+    <string name="settings_effective_next_session">Effective in new session</string>
+    <string name="settings_effective_restart">Requires app restart</string>
+    <string name="settings_scope_profile">Current profile</string>
+    <string name="settings_scope_global">Global</string>
+    <string name="settings_scope_device">This device</string>
+    <string name="settings_scope_account">Account</string>
+    <string name="settings_section_expanded">Expanded</string>
+    <string name="settings_section_collapsed">Collapsed</string>
+    <string name="settings_dropdown_unknown">Unknown (value preserved)</string>
+    <string name="settings_notif_open_failed">Failed to open system notification settings.</string>
+    <string name="settings_background_persist_warning">Persisted access to the selected image failed — the wallpaper may need re-selection after restart.</string>
+    <string name="settings_tabs_desc">Settings tabs</string>
 </resources>
+
+
 
 

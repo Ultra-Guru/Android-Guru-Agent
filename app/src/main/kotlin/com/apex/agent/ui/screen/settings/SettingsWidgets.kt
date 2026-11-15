@@ -53,6 +53,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -81,13 +84,27 @@ internal fun SectionCard(
     // 变化(如背景选图完成 hasBackground=true)时卡片随新初值重置展开,
     // 修复「选完背景图卡片仍折叠、看不到清除/纱罩控件」;旋转/重建不丢。
     var expanded by rememberSaveable(initiallyExpanded) { mutableStateOf(initiallyExpanded) }
+    val expandedDesc = stringResource(R.string.settings_section_expanded)
+    val collapsedDesc = stringResource(R.string.settings_section_collapsed)
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Row(
-                Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                Modifier
+                    .fillMaxWidth()
+                    // B3-BUG-27:折叠头语义(TalkBack 可朗读角色与展开状态)
+                    .clickable(
+                        role = androidx.compose.ui.semantics.Role.Button,
+                        onClickLabel = title
+                    ) { expanded = !expanded }
+                    .semantics {
+                        stateDescription = if (expanded) expandedDesc else collapsedDesc
+                    },
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+                Icon(
+                    icon, null, tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clearAndSetSemantics { }
+                )
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(title, style = MaterialTheme.typography.titleMedium)
@@ -99,7 +116,11 @@ internal fun SectionCard(
                         )
                     }
                 }
-                Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
+                Icon(
+                    if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    null,
+                    modifier = Modifier.clearAndSetSemantics { }
+                )
             }
             AnimatedVisibility(expanded) {
                 Column(
@@ -282,7 +303,9 @@ internal fun <T> DropdownRow(
     onSelected: (T) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val current = options.firstOrNull { it.first == selected }?.second ?: selected.toString()
+    // B3-BUG-18:未知选中值显示「未知(保留原值)」而非裸 toString()
+    val current = options.firstOrNull { it.first == selected }?.second
+        ?: stringResource(R.string.settings_dropdown_unknown)
     Column(Modifier.fillMaxWidth()) {
         ExposedDropdownMenuBox(
             expanded = expanded,

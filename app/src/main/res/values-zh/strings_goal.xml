@@ -103,6 +103,31 @@
     <string name="settings_ext_autosync_label">启动时自动同步扩展</string>
     <string name="settings_ext_autosync_desc">启动时评估已装扩展源；未经确认不安装任何内容</string>
     <string name="settings_ext_marketlinks_hint">各市场源链接在市场页管理（后续版本并入设置）。</string>
+    <string name="settings_quick_title">常用与最近</string>
+    <string name="settings_quick_onboarding">建议配置</string>
+    <string name="settings_group_page_count_fmt">%1$d 个页面</string>
+    <string name="settings_meta_sections_fmt">本页 %1$d 个分区</string>
+    <string name="settings_scope_danger">谨慎操作</string>
+    <string name="settings_favorite_add">加入常用</string>
+    <string name="settings_favorite_remove">移出常用</string>
+    <string name="settings_search_hint">搜索设置（支持 key:字段名）</string>
+    <string name="settings_search_no_result">没有匹配的设置项。</string>
+    <string name="settings_effective_immediate">立即生效</string>
+    <string name="settings_effective_next_run">下一轮生效</string>
+    <string name="settings_effective_next_session">新会话生效</string>
+    <string name="settings_effective_restart">需重启应用</string>
+    <string name="settings_scope_profile">当前档案</string>
+    <string name="settings_scope_global">全局</string>
+    <string name="settings_scope_device">本机</string>
+    <string name="settings_scope_account">账号</string>
+    <string name="settings_section_expanded">已展开</string>
+    <string name="settings_section_collapsed">已折叠</string>
+    <string name="settings_dropdown_unknown">未知（保留原值）</string>
+    <string name="settings_notif_open_failed">打开系统通知设置失败。</string>
+    <string name="settings_background_persist_warning">所选图片的持久授权失败——重启后可能需要重新选择背景。</string>
+    <string name="settings_tabs_desc">设置标签</string>
 </resources>
+
+
 
 

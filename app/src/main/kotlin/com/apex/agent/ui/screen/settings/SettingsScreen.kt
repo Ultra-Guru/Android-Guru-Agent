@@ -87,6 +87,10 @@ fun SettingsScreen(
     val codeState by codeViewModel.uiState.collectAsStateWithLifecycle()
     // B0-BUG-01:配置损坏横幅(持久展示;损坏域写回已禁用,原始数据保留在 corrupt_backup_*)
     val corruptedDomains by viewModel.dataCorruption.collectAsStateWithLifecycle()
+    // PR2:导航偏好(最近/收藏/展开分组;独立 prefs 不入备份 Bundle)
+    val navPrefs = remember {
+        SettingsNavPrefs(androidx.compose.ui.platform.LocalContext.current.applicationContext)
+    }
     val profiles by viewModel.profiles.collectAsStateWithLifecycle()
     val providers by viewModel.providers.collectAsStateWithLifecycle()
     val roles by viewModel.roles.collectAsStateWithLifecycle()
@@ -99,12 +103,18 @@ fun SettingsScreen(
     // ═══ 导航状态（rememberSaveable：旋转/进程重建不丢）═══
     // openTabs：浏览器式标签列表（叶子 route，按打开顺序；Saver 转 NUL 分隔串落盘）
     // activeTab：当前激活标签 route（空串 = 无标签，设置抽屉主导）
-    // expandedCategory：抽屉展开中的一级分类（默认模型配置）
+    // expandedGroups：抽屉展开分组多开集（PR2 FR-202）
     var openTabs by rememberSaveable(stateSaver = OpenTabsSaver) {
         mutableStateOf(emptyList<String>())
     }
     var activeTab by rememberSaveable { mutableStateOf("") }
-    var expandedCategory by rememberSaveable { mutableStateOf<String?>(SettingsNavTree.first().route) }
+    // PR2(FR-202):展开分组多开 Set(persist)
+    var expandedGroups by rememberSaveable(
+        stateSaver = Saver<Set<String>, String>(
+            save = { it.joinToString("\u0000") },
+            restore = { s -> s.split("\u0000").filter { it.isNotEmpty() }.toSet() }
+        )
+    ) { mutableStateOf(setOf(SettingsNavTree.first().route)) }
 
     // 各标签页面状态隔离（切标签往返：滚动位置/展开态保留 —— 与根层
     // ApexRoot 的 destinationStateHolder 同款模式）
@@ -130,7 +140,8 @@ fun SettingsScreen(
         scope.launch { settingsDrawerState.open() }
     }
     val onToggleCategory: (String) -> Unit = { route ->
-        expandedCategory = if (expandedCategory == route) null else route
+        // PR2(FR-202):多开语义 —— 点击已展开分组收起,否则加入展开集
+        expandedGroups = if (route in expandedGroups) expandedGroups - route else expandedGroups + route
     }
     // 点击叶子：追加浏览器式标签（已开则仅激活）+ 收回设置抽屉
     val onSelectLeaf: (String) -> Unit = leaf@{ route ->
@@ -138,8 +149,22 @@ fun SettingsScreen(
         val pageId = SettingsNavAliases.resolvePageId(route) ?: return@leaf
         if (!openTabs.contains(pageId)) openTabs = openTabs + pageId
         activeTab = pageId
-        expandedCategory = categoryOfLeaf(route)?.route
+        expandedGroups = expandedGroups + (categoryOfLeaf(route)?.route ?: "")
+        navPrefs.recordRecent(pageId)
+        navPrefs.markOnboardingSeen(pageId)
         scope.launch { settingsDrawerState.close() }
+    }
+
+    val onOpenPageById: (String) -> Unit = { pid ->
+        if (!openTabs.contains(pid)) openTabs = openTabs + pid
+        activeTab = pid
+        navPrefs.recordRecent(pid)
+        navPrefs.markOnboardingSeen(pid)
+    }
+    var favoritesTick by rememberSaveable { mutableStateOf(0) }
+    val onToggleFavorite: (String) -> Unit = { pid ->
+        navPrefs.toggleFavorite(pid)
+        favoritesTick++
     }
     // B1-BUG-13:全部标签关闭 → 显示设置首页(引导态),不再自动重开抽屉
     // (旧实现重复清空状态后又弹抽屉,用户被迫再面对一次遮罩)。
@@ -174,7 +199,7 @@ fun SettingsScreen(
         gesturesEnabled = false,
         drawerContent = {
             SettingsDrawerSheet(
-                expandedCategory = expandedCategory,
+                expandedGroups = expandedGroups,
                 // PR1:activeTab 已是 page.id —— 抽屉叶子高亮反查主旧 route
                 activeLeafRoute = legacyRouteOfCompat(activeTab.ifEmpty { null }),
                 onToggleCategory = onToggleCategory,
@@ -236,7 +261,7 @@ fun SettingsScreen(
                         activeTab = activeTab,
                         onTabClick = { route ->
                             activeTab = route
-                            expandedCategory = categoryOfLeaf(route)?.route
+                            categoryOfLeaf(route)?.route?.let { cat -> expandedGroups = expandedGroups + cat }
                         },
                         onTabClose = onCloseTab
                     )
@@ -246,8 +271,14 @@ fun SettingsScreen(
                 }
                 Box(modifier = Modifier.fillMaxSize()) {
                     if (activeTab.isEmpty()) {
-                        // 未选叶子：引导态（抽屉已打开覆盖其上，关闭后可见）
-                        SettingsLandingHint(onOpenDrawer = openSettingsDrawer)
+                        // PR2 设置首页:搜索 + quick(收藏/最近/必配) + 分组卡
+                        SettingsHomeScreen(
+                            navPrefs = navPrefs,
+                            favoritesTick = favoritesTick,
+                            onOpenPage = onOpenPageById,
+                            onToggleFavorite = onToggleFavorite,
+                            onOpenDrawer = openSettingsDrawer
+                        )
                     } else {
                         // 以标签 route 隔离页面状态：切标签往返不丢滚动位置/展开态
                         pageStateHolder.SaveableStateProvider(activeTab) {

@@ -146,13 +146,11 @@ private fun CommandSetEditor(
         onAdd = onAdd
     )
     if (items.isNotEmpty()) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height((items.size.coerceAtMost(6) * 36).dp)
-        ) {
+        // B3-BUG-31:同向嵌套滚动消除 —— 全量内联展开(Column),不再钳高
+        Column {
+
             // #245：列表源是 Set<String>（去重保证），内容即稳定 key
-            items(items, key = { it }) { cmd ->
+            items.forEach { cmd ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
