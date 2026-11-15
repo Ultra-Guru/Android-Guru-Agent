@@ -1,8 +1,6 @@
 package com.apex.agent.ui.screen.settings
 
 import android.content.Intent
-    // B3-BUG-24:持久授权失败警告(就地可见,提供重新选择提示)
-    var bgPersistWarning by remember { mutableStateOf(false) }
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -46,6 +44,8 @@ internal fun BackgroundSection(agent: AgentSettings, onAgent: (AgentSettings.() 
     val context = LocalContext.current
     val hasBackground = agent.backgroundImageUri.isNotBlank()
 
+    // B3-BUG-24:持久授权失败警告(就地可见,提供重新选择提示)
+    var bgPersistWarning by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
