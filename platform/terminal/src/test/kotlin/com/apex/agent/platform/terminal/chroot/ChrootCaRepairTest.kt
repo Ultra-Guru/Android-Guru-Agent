@@ -104,6 +104,25 @@ class ChrootCaRepairTest {
     }
 
     @Test
+    fun `CA repair IO failure does not block an otherwise valid chroot session`() = runTest {
+        val rootfs = tmp.newFolder("repair-io-rootfs")
+        val su = File(tmp.root, "repair-io-su").apply { writeText(""); setExecutable(true) }
+        val backend = LinuxChrootBackend(
+            suLocator = SuBinaryLocator(candidatesProvider = { listOf(su) }),
+            rootfsProvider = RepairingProvider(rootfs.absolutePath),
+            workspaces = com.apex.agent.platform.terminal.workspace.LinuxWorkspaceManager(
+                File(tmp.root, "workspaces")
+            ),
+            userHome = com.apex.agent.platform.terminal.workspace.GuestUserHome(
+                File(tmp.root, "home")
+            ),
+            caRepair = { throw java.io.IOException("CA store inaccessible") }
+        )
+        val result = backend.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80))
+        assertTrue("CA repair is best effort; terminal remains usable", result.isSuccess)
+    }
+
+    @Test
     fun `prepare without rootfs never calls CA repair`() = runTest {
         var repairs = 0
         val su = File(tmp.root, "su").apply { writeText(""); setExecutable(true) }
