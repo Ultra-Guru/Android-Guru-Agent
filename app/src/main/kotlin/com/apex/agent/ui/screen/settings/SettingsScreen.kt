@@ -88,9 +88,8 @@ fun SettingsScreen(
     // B0-BUG-01:配置损坏横幅(持久展示;损坏域写回已禁用,原始数据保留在 corrupt_backup_*)
     val corruptedDomains by viewModel.dataCorruption.collectAsStateWithLifecycle()
     // PR2:导航偏好(最近/收藏/展开分组;独立 prefs 不入备份 Bundle)
-    val navPrefs = remember {
-        SettingsNavPrefs(androidx.compose.ui.platform.LocalContext.current.applicationContext)
-    }
+    val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val navPrefs = remember { SettingsNavPrefs(appContext) }
     val profiles by viewModel.profiles.collectAsStateWithLifecycle()
     val providers by viewModel.providers.collectAsStateWithLifecycle()
     val roles by viewModel.roles.collectAsStateWithLifecycle()

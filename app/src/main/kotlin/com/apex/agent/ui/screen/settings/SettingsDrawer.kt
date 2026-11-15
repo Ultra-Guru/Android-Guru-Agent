@@ -45,7 +45,7 @@ import com.apex.agent.R
  */
 @Composable
 fun SettingsDrawerSheet(
-    expandedCategory: String?,
+    expandedGroups: Set<String>,
     activeLeafRoute: String?,
     onToggleCategory: (String) -> Unit,
     onSelectLeaf: (String) -> Unit,
@@ -65,7 +65,7 @@ fun SettingsDrawerSheet(
             SettingsNavTree.forEach { category ->
                 CategoryItem(
                     category = category,
-                    expanded = expandedCategory == category.route,
+                    expanded = category.route in expandedGroups,
                     activeLeafRoute = activeLeafRoute,
                     onToggle = { onToggleCategory(category.route) },
                     onSelectLeaf = onSelectLeaf

@@ -52,6 +52,7 @@ fun SettingsTabBar(
     onTabClose: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val tabsDesc = stringResource(R.string.settings_tabs_desc)
     LazyRow(
         modifier = modifier
             .fillMaxWidth()
@@ -86,7 +87,6 @@ private fun SettingsTabChip(
     onClose: () -> Unit
 ) {
     val closeDesc = stringResource(R.string.settings_tab_close, title)
-    val tabsDesc = stringResource(R.string.settings_tabs_desc)
     Surface(
         // 顶圆角、底直角：激活标签与下方内容区视觉连成一体（浏览器 tab 语言）
         shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
