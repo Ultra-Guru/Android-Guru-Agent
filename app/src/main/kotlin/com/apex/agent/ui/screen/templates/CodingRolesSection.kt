@@ -51,7 +51,7 @@ import com.apex.agent.ui.screen.settings.withRoleUpserted
 @Composable
 internal fun CodingRolesSection(
     agent: AgentSettings,
-    onAgent: (AgentSettings) -> Unit,
+    onAgent: (AgentSettings.() -> AgentSettings) -> Unit,
     onOpenDetail: (AgentRole) -> Unit
 ) {
     // 编辑对话框状态：null = 关闭；AgentRole = 另存草稿或编辑自定义角色
@@ -72,7 +72,7 @@ internal fun CodingRolesSection(
                 onOpenDetail = { onOpenDetail(role) },
                 onEdit = if (role.isBuiltIn) null else ({ editing = role }),
                 onDuplicate = { editing = role.duplicateForEditing() },
-                onDelete = if (role.isBuiltIn) null else ({ onAgent(agent.withRoleRemoved(role.id)) })
+                onDelete = if (role.isBuiltIn) null else ({ onAgent { withRoleRemoved(role.id) } })
             )
         }
     }
@@ -84,7 +84,7 @@ internal fun CodingRolesSection(
             isNew = agent.agentRoles.none { it.id == draft.id },
             onDismiss = { editing = null },
             onSave = { role ->
-                onAgent(agent.withRoleUpserted(role))
+                onAgent { withRoleUpserted(role) }
                 editing = null
             }
         )

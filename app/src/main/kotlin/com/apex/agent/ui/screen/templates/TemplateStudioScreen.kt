@@ -108,7 +108,7 @@ fun TemplateStudioScreen(
                 item(key = "coding-roles") {
                     CodingRolesSection(
                         agent = agentSettings,
-                        onAgent = { viewModel.updateAgentSettings { it } },
+                        onAgent = { transform -> viewModel.updateAgentSettings(transform) },
                         onOpenDetail = { viewModel.openRoleDetail(it) }
                     )
                 }

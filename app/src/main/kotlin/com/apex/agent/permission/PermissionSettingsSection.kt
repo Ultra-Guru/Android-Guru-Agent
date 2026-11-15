@@ -62,8 +62,8 @@ import com.apex.agent.ui.screen.settings.SectionCard
  * PermissionSettingsSection(
  *     mode = agent.permissionMode,
  *     rules = agent.permissionRules,
- *     onModeChange = { m -> onAgent(agent.copy(permissionMode = m)) },
- *     onRulesChange = { rs -> onAgent(agent.copy(permissionRules = rs)) }
+ *     onModeChange = { m -> onAgent { copy(permissionMode = m) } },
+ *     onRulesChange = { rs -> onAgent { copy(permissionRules = rs) } }
  * )
  *
  * 其中 permissionMode / permissionRules 为 AgentSettings 字段

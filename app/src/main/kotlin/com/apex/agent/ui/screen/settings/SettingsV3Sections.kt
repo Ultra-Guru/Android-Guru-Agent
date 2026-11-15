@@ -81,7 +81,7 @@ import kotlin.math.roundToInt
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
-internal fun CompressionSection(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {
+internal fun CompressionSection(agent: AgentSettings, onAgent: (AgentSettings.() -> AgentSettings) -> Unit) {
     SectionCard(
         stringResource(R.string.settings_section_compression),
         Icons.Outlined.Storage,
@@ -89,29 +89,29 @@ internal fun CompressionSection(agent: AgentSettings, onAgent: (AgentSettings) -
     ) {
         IntFieldRow("Max Context Tokens", agent.maxContextTokens,
             description = stringResource(R.string.settings_max_ctx_tokens_desc),
-            min = 1000, max = 10_000_000) { onAgent(agent.copy(maxContextTokens = it)) }
+            min = 1000, max = 10_000_000) { onAgent { copy(maxContextTokens = it) } }
         SliderRow("Compression Threshold", agent.compressionThreshold, 0.5f..0.95f, 8,
             description = stringResource(R.string.settings_threshold_desc),
-            onValueChange = { onAgent(agent.copy(compressionThreshold = it)) },
+            onValueChange = { onAgent { copy(compressionThreshold = it) } },
             fmt = { String.format(Locale.US, "%.2f", it) })
         IntFieldRow("Preserve Recent Turns", agent.preserveRecentTurns,
             description = stringResource(R.string.settings_preserve_turns_desc), min = 1, max = 50) {
-            onAgent(agent.copy(preserveRecentTurns = it))
+            onAgent { copy(preserveRecentTurns = it) }
         }
         IntFieldRow("Max Tool Output Length", agent.maxToolOutputLength,
             description = stringResource(R.string.settings_tool_output_len_desc), min = 200, max = 100_000) {
-            onAgent(agent.copy(maxToolOutputLength = it))
+            onAgent { copy(maxToolOutputLength = it) }
         }
     }
 }
 
 @Composable
-internal fun AppearanceSection(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {
+internal fun AppearanceSection(agent: AgentSettings, onAgent: (AgentSettings.() -> AgentSettings) -> Unit) {
     SectionCard(stringResource(R.string.settings_section_appearance), Icons.Outlined.Palette, initiallyExpanded = true) {
         // 界面风格（极简黑白 / 液态玻璃）—— 与深浅模式正交的全局风格维度，
         // 默认极简黑白；切换立即生效（CompositionLocal 驱动，无需 recreate）
         val uiStyle = UiStyle.fromKey(agent.uiStyle)
-        UiStyleRow(selected = uiStyle, onSelect = { onAgent(agent.copy(uiStyle = it.key)) })
+        UiStyleRow(selected = uiStyle, onSelect = { onAgent { copy(uiStyle = it.key) } })
         // 语言（system | zh | en；切换后 MainActivity recreate 生效，见 LanguageManager）
         DropdownRow(
             stringResource(R.string.settings_language),
@@ -123,7 +123,7 @@ internal fun AppearanceSection(agent: AgentSettings, onAgent: (AgentSettings) ->
             agent.language,
             description = stringResource(R.string.settings_language_desc)
         ) {
-            onAgent(agent.copy(language = it))
+            onAgent { copy(language = it) }
         }
         DropdownRow(stringResource(R.string.settings_theme_mode),
             listOf(
@@ -133,17 +133,17 @@ internal fun AppearanceSection(agent: AgentSettings, onAgent: (AgentSettings) ->
             ),
             agent.themeMode,
             description = stringResource(R.string.settings_apply_now)) {
-            onAgent(agent.copy(themeMode = it))
+            onAgent { copy(themeMode = it) }
         }
         if (uiStyle == UiStyle.LIQUID_GLASS) {
             // 液态玻璃风格：Dynamic Color + 预设配色才参与配色合成
             SwitchRow(stringResource(R.string.settings_dynamic_color), agent.dynamicColor,
                 description = stringResource(R.string.settings_dynamic_color_desc)) {
-                onAgent(agent.copy(dynamicColor = it))
+                onAgent { copy(dynamicColor = it) }
             }
             AccentPaletteRow(
                 selected = AccentPalette.fromKey(agent.accentPalette),
-                onSelect = { onAgent(agent.copy(accentPalette = it.key)) }
+                onSelect = { onAgent { copy(accentPalette = it.key) } }
             )
         } else {
             // 极简黑白：配色体系不参与 —— 提示而非隐藏，让用户知道入口在哪
@@ -151,7 +151,7 @@ internal fun AppearanceSection(agent: AgentSettings, onAgent: (AgentSettings) ->
         }
         SliderRow(stringResource(R.string.settings_font_scale), agent.fontScale, 0.8f..1.4f, 12,
             description = stringResource(R.string.settings_font_scale_desc),
-            onValueChange = { onAgent(agent.copy(fontScale = it)) },
+            onValueChange = { onAgent { copy(fontScale = it) } },
             fmt = { "${(it * 100).roundToInt()}%" })
     }
 }
@@ -368,11 +368,11 @@ private fun AccentPaletteRow(
 }
 
 @Composable
-internal fun ChatDisplaySection(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {
+internal fun ChatDisplaySection(agent: AgentSettings, onAgent: (AgentSettings.() -> AgentSettings) -> Unit) {
     SectionCard(stringResource(R.string.settings_section_chat), Icons.Outlined.Chat) {
         SwitchRow(stringResource(R.string.settings_timestamps), agent.showTimestamps,
             description = stringResource(R.string.settings_timestamps_desc)) {
-            onAgent(agent.copy(showTimestamps = it))
+            onAgent { copy(showTimestamps = it) }
         }
         // 发送键行为：send → IME「发送」直接发出；newline → IME「换行」（发送用按钮）
         DropdownRow(
@@ -384,7 +384,7 @@ internal fun ChatDisplaySection(agent: AgentSettings, onAgent: (AgentSettings) -
             agent.sendKeyBehavior,
             description = stringResource(R.string.settings_send_key_desc)
         ) {
-            onAgent(agent.copy(sendKeyBehavior = it))
+            onAgent { copy(sendKeyBehavior = it) }
         }
     }
 }

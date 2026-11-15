@@ -1,6 +1,8 @@
 package com.apex.agent.ui.screen.settings
 
 import android.content.Context
+
+import com.apex.agent.R
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -52,6 +54,8 @@ class SettingsRepository @Inject constructor(
      * `apex_settings` 里 —— 只要设备被 root 或做一次 adb backup，Key 就裸奔。
      * 现在 Key **只**存在于此处，内存中保留一份副本供 [LlmConfig] 构建使用。
      */
+    private val appContext: Context get() = context.applicationContext
+
     private val securePrefs: SharedPreferences by lazy {
         try {
             val masterKey = MasterKey.Builder(context)
@@ -247,9 +251,11 @@ class SettingsRepository @Inject constructor(
 
     fun duplicateProfile(id: String) {
         val src = getProfile(id) ?: return
+        // B1-BUG-07:UUID 替代毫秒时间戳 —— 同一毫秒内连续复制/新建不再冲突;
+        // 副本名走资源化文案(旧 "(副本)" 中文硬编码在英文环境露出)。
         val copy = src.copy(
-            id = "profile_${System.currentTimeMillis()}",
-            name = "${src.name} (副本)",
+            id = "profile_" + java.util.UUID.randomUUID(),
+            name = appContext.getString(R.string.settings_profile_copy_suffix, src.name),
             isDefault = false
         )
         upsertProfile(copy)

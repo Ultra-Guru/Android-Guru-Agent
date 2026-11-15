@@ -39,5 +39,6 @@
     <string name="settings_show_api_key">Show API key</string>
     <string name="settings_hide_api_key">Hide API key</string>
     <string name="settings_corrupt_banner">Some settings files failed to load &#8212; original data preserved, writes to those sections paused. Export diagnostics or restore from backup.</string>
+    <string name="settings_profile_copy_suffix">%1$s (copy)</string>
 </resources>
 

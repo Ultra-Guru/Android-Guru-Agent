@@ -66,7 +66,10 @@ internal fun SectionCard(
     initiallyExpanded: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    var expanded by remember { mutableStateOf(initiallyExpanded) }
+    // B1-BUG-14:折叠态 saveable + 以 initiallyExpanded 为 key —— 外部语义
+    // 变化(如背景选图完成 hasBackground=true)时卡片随新初值重置展开,
+    // 修复「选完背景图卡片仍折叠、看不到清除/纱罩控件」;旋转/重建不丢。
+    var expanded by rememberSaveable(initiallyExpanded) { mutableStateOf(initiallyExpanded) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Row(

@@ -37,7 +37,7 @@ import com.apex.agent.R
  * （信息密度 / 并行度）重启应用生效（DI 快照语义）。
  */
 @Composable
-internal fun RateLimitSection(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {
+internal fun RateLimitSection(agent: AgentSettings, onAgent: (AgentSettings.() -> AgentSettings) -> Unit) {
     SectionCard(
         title = stringResource(R.string.settings_rate_limit_section),
         icon = Icons.Outlined.Speed,
@@ -47,7 +47,7 @@ internal fun RateLimitSection(agent: AgentSettings, onAgent: (AgentSettings) -> 
             label = stringResource(R.string.settings_rate_limit_enabled),
             checked = agent.rateLimitFriendly,
             description = stringResource(R.string.settings_rate_limit_enabled_desc)
-        ) { on -> onAgent(agent.copy(rateLimitFriendly = on)) }
+        ) { on -> onAgent { copy(rateLimitFriendly = on) } }
 
         if (agent.rateLimitFriendly) {
             SliderRow(
@@ -57,7 +57,7 @@ internal fun RateLimitSection(agent: AgentSettings, onAgent: (AgentSettings) -> 
                 steps = 29,
                 description = stringResource(R.string.settings_rate_limit_interval_desc),
                 onValueChange = {
-                    onAgent(agent.copy(rateLimitMinIntervalMs = (it * 1000).toInt()))
+                    onAgent { copy(rateLimitMinIntervalMs = (it * 1000).toInt()) }
                 },
                 fmt = { if (it <= 0f) "0" else "%.1fs".format(it) }
             )
@@ -65,7 +65,7 @@ internal fun RateLimitSection(agent: AgentSettings, onAgent: (AgentSettings) -> 
                 label = stringResource(R.string.settings_rate_limit_rich),
                 checked = agent.rateLimitRichPayload,
                 description = stringResource(R.string.settings_rate_limit_rich_desc)
-            ) { on -> onAgent(agent.copy(rateLimitRichPayload = on)) }
+            ) { on -> onAgent { copy(rateLimitRichPayload = on) } }
         }
 
         HorizontalDivider()

@@ -203,7 +203,8 @@ internal fun ModelSetupCard(
         flushEdits()
         val newProviderId = providers.firstOrNull { it.id == "custom_openai" }?.id
             ?: providers.firstOrNull()?.id ?: ""
-        val id = "profile_${System.currentTimeMillis()}"
+        // B1-BUG-07:UUID 替代毫秒时间戳(同毫秒连续新建不再 ID 冲突覆盖)
+        val id = "profile_" + java.util.UUID.randomUUID()
         viewModel.upsertProfile(
             ModelProfile(id = id, name = newProfileName, providerId = newProviderId, modelId = "")
         )

@@ -44,7 +44,7 @@ import com.apex.agent.R
  *
  * RulesSettingsSection(
  *     globalRules = agent.globalRules,
- *     onGlobalRulesChange = { r -> onAgent(agent.copy(globalRules = r)) },
+ *     onGlobalRulesChange = { r -> onAgent { copy(globalRules = r) } },
  *     workspaceRootLabel = ...,      // CodeWorkspaceManager.activeWorkspace()?.root 相对 filesDir 的标签，null=无
  *     projectRulesStatus = ...,      // RulesProvider.loadProjectRules(root, null) 是否命中（IO，建议 VM 预计算）
  *     onCreateProjectRules = ...     // 在工作区根写入 AGENTS.md 模板后刷新状态；无工作区传 null

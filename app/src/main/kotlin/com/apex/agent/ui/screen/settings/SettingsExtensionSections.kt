@@ -28,7 +28,7 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun AgentRulesSectionBlock(
     agent: AgentSettings,
-    onAgent: (AgentSettings) -> Unit,
+    onAgent: (AgentSettings.() -> AgentSettings) -> Unit,
     viewModel: SettingsViewModel
 ) {
     // ═══ 规则（#164）：全局规则（Agent/coding 双模式）+ 默认工作区 AGENTS.md ═══
@@ -44,7 +44,7 @@ internal fun AgentRulesSectionBlock(
     val loadedFmt = stringResource(R.string.code_rules_project_status_loaded_fmt)
     RulesSettingsSection(
         globalRules = agent.globalRules,
-        onGlobalRulesChange = { rules -> onAgent(agent.copy(globalRules = rules)) },
+        onGlobalRulesChange = { rules -> onAgent { copy(globalRules = rules) } },
         workspaceRootLabel = "linux/workspaces/default",
         projectRulesStatus = projectRulesFile?.let { fileName -> loadedFmt.format(fileName) },
         onCreateProjectRules = {

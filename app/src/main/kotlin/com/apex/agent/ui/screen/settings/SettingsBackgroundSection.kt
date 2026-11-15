@@ -35,7 +35,7 @@ import com.apex.agent.core.logging.LogCategory
  * 对比度下限交给自适应。
  */
 @Composable
-internal fun BackgroundSection(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {
+internal fun BackgroundSection(agent: AgentSettings, onAgent: (AgentSettings.() -> AgentSettings) -> Unit) {
     val context = LocalContext.current
     val hasBackground = agent.backgroundImageUri.isNotBlank()
 
@@ -57,7 +57,7 @@ internal fun BackgroundSection(agent: AgentSettings, onAgent: (AgentSettings) ->
                     )
                 }
             }
-            onAgent(agent.copy(backgroundImageUri = uri.toString()))
+            onAgent { copy(backgroundImageUri = uri.toString()) }
         }
     }
 
@@ -81,7 +81,7 @@ internal fun BackgroundSection(agent: AgentSettings, onAgent: (AgentSettings) ->
                 )
             }
             if (hasBackground) {
-                OutlinedButton(onClick = { onAgent(agent.copy(backgroundImageUri = "")) }) {
+                OutlinedButton(onClick = { onAgent { copy(backgroundImageUri = "") } }) {
                     Text(stringResource(R.string.settings_background_clear))
                 }
             }
@@ -93,7 +93,7 @@ internal fun BackgroundSection(agent: AgentSettings, onAgent: (AgentSettings) ->
                 range = 0.1f..0.8f,
                 steps = 6,
                 description = stringResource(R.string.settings_background_dim_desc),
-                onValueChange = { onAgent(agent.copy(backgroundDim = it)) },
+                onValueChange = { onAgent { copy(backgroundDim = it) } },
                 fmt = { "${(it * 100).toInt()}%" }
             )
         }

@@ -38,5 +38,6 @@
     <string name="settings_show_api_key">显示 API Key</string>
     <string name="settings_hide_api_key">隐藏 API Key</string>
     <string name="settings_corrupt_banner">部分配置文件读取失败——原始数据已保留，相关域已暂停写入；可导出诊断或从备份恢复。</string>
+    <string name="settings_profile_copy_suffix">%1$s（副本）</string>
 </resources>
 

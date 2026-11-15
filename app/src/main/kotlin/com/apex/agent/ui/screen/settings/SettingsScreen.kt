@@ -85,7 +85,8 @@ fun SettingsScreen(
     val roles by viewModel.roles.collectAsStateWithLifecycle()
     val agent by viewModel.agentSettings.collectAsStateWithLifecycle()
 
-    var selectedId by remember { mutableStateOf(viewModel.defaultProfile.id) }
+    // B1-BUG-10:选中档案/弹窗开关 saveable(旋转/进程重建/切标签往返不丢)
+    var selectedId by rememberSaveable { mutableStateOf(viewModel.defaultProfile.id) }
     val selected = profiles.firstOrNull { it.id == selectedId } ?: profiles.firstOrNull()
 
     // ═══ 导航状态（rememberSaveable：旋转/进程重建不丢）═══
@@ -106,11 +107,14 @@ fun SettingsScreen(
     val settingsDrawerState = rememberDrawerState(initialValue = DrawerValue.Open)
     val scope = rememberCoroutineScope()
 
-    var showProviders by remember { mutableStateOf(false) }
-    var showRoles by remember { mutableStateOf(false) }
+    var showProviders by rememberSaveable { mutableStateOf(false) }
+    var showRoles by rememberSaveable { mutableStateOf(false) }
 
     // Agent 设置统一更新入口
-    val onAgent: (AgentSettings) -> Unit = { next -> viewModel.updateAgentSettings { next } }
+    // B1-BUG-05:字段级变换管道(读最新值再变换)—— 旧实现整体覆盖
+    // { next } 快速连点/后台 AgentSettingSet 并发写会互相覆盖。
+    val onAgent: (AgentSettings.() -> AgentSettings) -> Unit =
+        { transform -> viewModel.updateAgentSettings(transform) }
 
     // ═══ 抽屉交互 ═══
     val openSettingsDrawer: () -> Unit = {
@@ -126,11 +130,11 @@ fun SettingsScreen(
         expandedCategory = categoryOfLeaf(route)?.route
         scope.launch { settingsDrawerState.close() }
     }
-    // 全部标签关闭：页面消失 → 返回设置抽屉（重新选分类）
+    // B1-BUG-13:全部标签关闭 → 显示设置首页(引导态),不再自动重开抽屉
+    // (旧实现重复清空状态后又弹抽屉,用户被迫再面对一次遮罩)。
     val onAllTabsClosed: () -> Unit = {
         openTabs = emptyList()
         activeTab = ""
-        openSettingsDrawer()
     }
     // 关闭单个标签：关闭激活标签 → 回退相邻标签（左优先，规则见 closeSettingsTab）
     val onCloseTab: (String) -> Unit = { route ->
@@ -143,6 +147,11 @@ fun SettingsScreen(
     // ═══ 返回键链：抽屉开 → 关抽屉；有标签 → 关当前标签（同点叉号）；否则 → 出设置页 ═══
     BackHandler(enabled = settingsDrawerState.isOpen) {
         scope.launch { settingsDrawerState.close() }
+    }
+    // B1-BUG-09:返回链第三级 —— 无标签且抽屉关 → 真正退出设置
+    // (旧实现 onBack 参数声明后从未调用,返回键在三步内走不完退出链)。
+    BackHandler(enabled = !settingsDrawerState.isOpen && activeTab.isEmpty()) {
+        onBack()
     }
     BackHandler(enabled = !settingsDrawerState.isOpen && activeTab.isNotEmpty()) {
         onCloseTab(activeTab)
@@ -290,7 +299,7 @@ private fun SettingsPageRouter(
     selected: ModelProfile?,
     agent: AgentSettings,
     viewModel: SettingsViewModel,
-    onAgent: (AgentSettings) -> Unit,
+    onAgent: (AgentSettings.() -> AgentSettings) -> Unit,
     onSelect: (String) -> Unit,
     onManageProviders: () -> Unit,
     onManageRoles: () -> Unit,
@@ -361,8 +370,8 @@ private fun SettingsPageRouter(
             PermissionSettingsSection(
                 mode = agent.permissionMode,
                 rules = agent.permissionRules,
-                onModeChange = { m -> onAgent(agent.copy(permissionMode = m)) },
-                onRulesChange = { rs -> onAgent(agent.copy(permissionRules = rs)) }
+                onModeChange = { m -> onAgent { copy(permissionMode = m) } },
+                onRulesChange = { rs -> onAgent { copy(permissionRules = rs) } }
             )
         }
         "workspace/rules" -> SettingsLeafColumn {
