@@ -15,6 +15,9 @@ import com.apex.agent.platform.terminal.workspace.AbsolutePath
 import com.apex.agent.platform.terminal.workspace.GuestCwdMapper
 import com.apex.agent.platform.terminal.workspace.GuestUserHome
 import com.apex.agent.platform.terminal.workspace.LinuxWorkspaceManager
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
+import kotlinx.coroutines.CancellationException
 import java.io.File
 
 /**
@@ -102,9 +105,8 @@ class LinuxChrootBackend(
 
     override val runtimeType: BackendRuntimeType = BackendRuntimeType.LINUX
 
-    // 注意：availability/prepare 不包 withContext(Dispatchers.IO) —— 与
-    // LinuxPRootBackend 同款纪律（内部全是瞬时操作；线程归属由调用方
-    // TerminalRuntime 的 IO 协程决定）。
+    // availability 仅查询 stat/cache，不执行 su 或修复 CA；prepare 的 CA 端口
+    // 由生产 DI 显式切换到 IO，其余步骤沿用调用方调度。
     override suspend fun availability(): BackendAvailability {
         val su = suLocator.locate()
             ?: return BackendAvailability.Failed(
@@ -147,10 +149,6 @@ class LinuxChrootBackend(
                 RuntimeException("TerminalError:RootfsNotReady — rootfs 无 location")
             )
 
-        // T99 审计：显式 chroot create 不经 ensureReady —— 存量 rootfs 缺 CA 时在
-        // prepare 阶段修复（host bundle 优先；Android system CA + cacerts-removed 兜底）。
-        caRepair?.invoke(File(rootfsPath.value))
-
         // 3. workspace + 持久化 home（与 PRoot 后端同款懒解析/播种 —— 双模式共享）。
         val workspaceId = request.workspaceId?.trim()?.takeIf { it.isNotEmpty() }
             ?: LinuxWorkspaceManager.DEFAULT_ID
@@ -180,6 +178,17 @@ class LinuxChrootBackend(
                     "Fix: check the superuser prompt, or choose backend 'linux-ubuntu' (PRoot); retry later."
             ))
             else -> Unit
+        }
+
+        // Explicit, valid, authorized create only: a legacy rootfs can lack the
+        // bundled CA even when it reports READY. Repair is best-effort and must
+        // not block the terminal if no trusted source is available.
+        try {
+            caRepair?.invoke(File(rootfsPath.value))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            runCatching { AppLogger.instance.warn(LogCategory.TERMINAL, ID, "CA repair failed: ${e.message}") }
         }
 
         // 5. guest env（env trampoline 复用 —— 与 PRoot 同源同构造）。

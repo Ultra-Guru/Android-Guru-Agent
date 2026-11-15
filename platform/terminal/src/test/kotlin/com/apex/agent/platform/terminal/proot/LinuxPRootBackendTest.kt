@@ -108,6 +108,12 @@ class LinuxPRootBackendTest {
         assertEquals(0, calls)
     }
 
+    @Test
+    fun `PRoot CA repair IO failure is nonblocking`() = runTest {
+        val b = backend(caRepair = { throw java.io.IOException("CA store inaccessible") })
+        assertTrue(b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80)).isSuccess)
+    }
+
     // ─── argv 契约（§5.2） ───
 
     @Test

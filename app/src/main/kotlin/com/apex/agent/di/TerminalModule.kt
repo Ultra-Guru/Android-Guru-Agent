@@ -189,6 +189,9 @@ object TerminalModule {
         @ApplicationContext context: Context
     ): RootfsConfigurator = RootfsConfigurator(
         dnsServers = { resolveAndroidDnsServers(context) },
+        // Android 上只采用平台过滤后的 system: 锚点。普通 host bundle 若存在，
+        // 不能绕开 AndroidCAStore 对用户停用系统 CA 的过滤。
+        hostCaBundle = { null },
         localeGen = listOf("zh_CN.UTF-8 UTF-8", "en_US.UTF-8 UTF-8"),
         timezone = java.util.TimeZone.getDefault().id,
         // 对话实录 #14：宿主补充组注入 guest /etc/group —— 消除 PRoot 启动时
@@ -325,7 +328,8 @@ object TerminalModule {
         workspaces: LinuxWorkspaceManager,
         userHome: GuestUserHome,
         hostEnv: PRootHostEnvironment,
-        sharedStorage: SharedStorageBridge
+        sharedStorage: SharedStorageBridge,
+        configurator: RootfsConfigurator
     ): LinuxPRootBackend = LinuxPRootBackend(
         binaryProvider = binaryProvider,
         rootfsProvider = rootfsProvider,
@@ -335,7 +339,12 @@ object TerminalModule {
         // T82：系统级 bind（/proc /dev /sys，proot-distro 语义 —— procps 在 guest 内
         // 真实可用）+ 共享存储桥（授权可用时 → guest /sdcard；不可用 → 不 bind）。
         systemBinds = SystemBindProfile.STANDARD,
-        sharedStorage = sharedStorage
+        sharedStorage = sharedStorage,
+        caRepair = { root ->
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                configurator.repairCaIfMissing(root)
+            }
+        }
     )
 
     /**

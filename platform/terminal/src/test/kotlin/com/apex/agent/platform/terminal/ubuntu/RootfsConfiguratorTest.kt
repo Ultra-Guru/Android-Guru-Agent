@@ -100,22 +100,37 @@ class RootfsConfiguratorTest {
 
     @Test fun `AndroidCAStore system aliases supply a legacy bundle without reading raw removal dirs`() {
         val root = tmpRoot()
+        val factory = java.security.cert.CertificateFactory.getInstance("X.509")
+        val systemCert = factory.generateCertificate(TestCaFixtures.isrgRootX1Pem.byteInputStream())
+        val userCert = factory.generateCertificate(TestCaFixtures.userOnlyPem.byteInputStream())
+        val store = java.security.KeyStore.getInstance("JKS").apply {
+            load(null, null)
+            setCertificateEntry("system:aaaaaaaa.0", systemCert)
+            setCertificateEntry("user:bbbbbbbb.0", userCert)
+        }
+        val cfg = RootfsConfigurator(hostCaBundle = { null }, androidCaStore = { store })
+        assertTrue("enabled system anchor must repair missing CA", cfg.repairCaIfMissing(root))
+        val guest = File(root, "etc/ssl/certs/ca-certificates.crt")
+        val guestCerts = factory.generateCertificates(guest.inputStream())
+        assertEquals("only enabled system anchor is trusted", listOf(systemCert), guestCerts.toList())
+        assertFalse("user-added anchor cannot be imported", guestCerts.contains(userCert))
+        assertFalse("existing bundle must not be replaced", cfg.repairCaIfMissing(root))
+    }
+
+    @Test fun `AndroidCAStore disabled system alias is not imported`() {
+        val root = tmpRoot()
         val cert = java.security.cert.CertificateFactory.getInstance("X.509")
             .generateCertificate(TestCaFixtures.isrgRootX1Pem.byteInputStream())
         val store = java.security.KeyStore.getInstance("JKS").apply {
             load(null, null)
             setCertificateEntry("system:aaaaaaaa.0", cert)
-            setCertificateEntry("user:bbbbbbbb.0", cert)
         }
-        val cfg = RootfsConfigurator(
-            hostCaBundle = { null },
-            androidCaStore = { store }
-        )
-        assertTrue("an enabled system anchor must repair missing CA", cfg.repairCaIfMissing(root))
-        val guest = File(root, "etc/ssl/certs/ca-certificates.crt")
-        assertEquals("user: alias must not enter guest trust", 1,
-            guest.readText().split("-----BEGIN CERTIFICATE-----").size - 1)
-        assertFalse("existing bundle must not be replaced", cfg.repairCaIfMissing(root))
+        val cfg = RootfsConfigurator(hostCaBundle = { null }, androidCaStore = { store })
+        assertTrue(cfg.repairCaIfMissing(root))
+        val another = tmpRoot()
+        store.deleteEntry("system:aaaaaaaa.0") // simulate platform omitting a disabled alias
+        assertFalse(cfg.repairCaIfMissing(another))
+        assertFalse(File(another, "etc/ssl/certs/ca-certificates.crt").exists())
     }
 
     @Test fun `AndroidCAStore user aliases alone do not supply a guest CA`() {
