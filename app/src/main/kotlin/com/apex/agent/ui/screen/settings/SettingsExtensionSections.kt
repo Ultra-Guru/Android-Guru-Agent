@@ -1,5 +1,11 @@
 package com.apex.agent.ui.screen.settings
 
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,7 +34,7 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun AgentRulesSectionBlock(
     agent: AgentSettings,
-    onAgent: (AgentSettings) -> Unit,
+    onAgent: (AgentSettings.() -> AgentSettings) -> Unit,
     viewModel: SettingsViewModel
 ) {
     // ═══ 规则（#164）：全局规则（Agent/coding 双模式）+ 默认工作区 AGENTS.md ═══
@@ -44,7 +50,7 @@ internal fun AgentRulesSectionBlock(
     val loadedFmt = stringResource(R.string.code_rules_project_status_loaded_fmt)
     RulesSettingsSection(
         globalRules = agent.globalRules,
-        onGlobalRulesChange = { rules -> onAgent(agent.copy(globalRules = rules)) },
+        onGlobalRulesChange = { rules -> onAgent { copy(globalRules = rules) } },
         workspaceRootLabel = "linux/workspaces/default",
         projectRulesStatus = projectRulesFile?.let { fileName -> loadedFmt.format(fileName) },
         onCreateProjectRules = {
@@ -60,6 +66,24 @@ internal fun AgentRulesSectionBlock(
 @Composable
 internal fun AgentHooksSectionBlock(viewModel: SettingsViewModel) {
     val hooks by viewModel.hooks.collectAsStateWithLifecycle()
+    // B2-BUG-21:启停失败提示有人消费了 —— 旧实现 _hookMessage 全模块无订阅
+    // 点,开关失败(IO 写 hooks.json 失败)时 UI 毫无反应。
+    val hookMessage by viewModel.hookMessage.collectAsStateWithLifecycle()
+    var hookMsgShown by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(hookMessage) {
+        hookMessage?.let {
+            hookMsgShown = it
+            viewModel.consumeHookMessage()
+        }
+    }
+    hookMsgShown?.let { msg ->
+        Text(
+            msg,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(vertical = 4.dp)
+        )
+    }
     HooksSettingsSection(
         hooks = hooks,
         onToggle = { id, enabled -> viewModel.setHookEnabled(id, enabled) }

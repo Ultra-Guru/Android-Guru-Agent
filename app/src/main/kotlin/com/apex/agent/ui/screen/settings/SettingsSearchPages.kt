@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -88,17 +89,24 @@ class SearxngViewModel @Inject constructor(
     private val _engines = MutableStateFlow(settingsStore.engines())
     val engines: StateFlow<Set<String>> = _engines.asStateFlow()
 
-    /** 地址展示（F12 排查用）。 */
-    val address: String get() = coordinator.address()
+    /** 地址展示（F12 排查用）—— B2-BUG-22:StateFlow 化,服务启动后 UI 自动刷新。 */
+    private val _address = MutableStateFlow(coordinator.address())
+    val address: StateFlow<String> = _address.asStateFlow()
 
-    /** 开关切换：先写意图再发 action（Spec §8 事务语义；失败由 reconcile 补偿）。 */
-    fun setEnabled(enabled: Boolean) {
+    fun refreshAddress() {
+        _address.value = coordinator.address()
+    }
+
+    /** 开关切换：先写意图再发 action（Spec §8 事务语义；失败由 reconcile 补偿）。
+     *  B2-BUG-22:返回派发是否成功 —— UI 侧对失败给出可见反馈(旧实现吞异常)。 */
+    fun setEnabled(enabled: Boolean): Boolean {
         settingsStore.setEnabled(enabled)
         val action = if (enabled) ApexCoreService.ACTION_START_SEARXNG else ApexCoreService.ACTION_STOP_SEARXNG
-        runCatching {
+        return runCatching {
             val intent = android.content.Intent(appContext, ApexCoreService::class.java).setAction(action)
             ContextCompat.startForegroundService(appContext, intent)
-        }
+            true
+        }.getOrDefault(false)
     }
 
     /** 失败重试（Spec §6 retry —— Coordinator 直调，仅 Failed 有效）。 */
@@ -133,15 +141,33 @@ class SearxngViewModel @Inject constructor(
 internal fun SearchLocalPage(viewModel: SearxngViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val engines by viewModel.engines.collectAsStateWithLifecycle()
+    // B2-BUG-22:地址 StateFlow 化(状态变化自动刷新)+ 操作结果可见反馈
+    val address by viewModel.address.collectAsStateWithLifecycle()
+    var feedback by remember { mutableStateOf<String?>(null) }
+    // stringResource 仅限 Composable 上下文 —— 预取文案供回调 lambda 使用
+    val dispatchFailedText = stringResource(R.string.search_dispatch_failed)
+    val clearDoneText = stringResource(R.string.search_clear_done)
+    val clearFailedText = stringResource(R.string.search_clear_failed)
+    LaunchedEffect(state) { viewModel.refreshAddress() }
     var showClearDialog by remember { mutableStateOf(false) }
 
     SettingsLeafColumn {
         SearxngSwitchCard(
             state = state,
-            address = viewModel.address,
-            onToggle = viewModel::setEnabled,
+            address = address,
+            onToggle = { on ->
+                feedback = if (viewModel.setEnabled(on)) null else dispatchFailedText
+            },
             onRetry = viewModel::retry
         )
+        feedback?.let { msg ->
+            Text(
+                msg,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
+        }
 
         // 状态细则（Installing 的阶段进度 / Failed 的原因 —— 独立于开关卡的轻量补充）
         when (val s = state) {
@@ -211,7 +237,7 @@ internal fun SearchLocalPage(viewModel: SearxngViewModel = hiltViewModel()) {
         SectionCard(
             title = stringResource(R.string.search_diagnostics_title),
             icon = Icons.Filled.Delete,
-            subtitle = viewModel.address
+            subtitle = address
         ) {
             Text(
                 stringResource(R.string.search_fallback_note),
@@ -248,7 +274,10 @@ internal fun SearchLocalPage(viewModel: SearxngViewModel = hiltViewModel()) {
             confirmButton = {
                 TextButton(onClick = {
                     showClearDialog = false
-                    viewModel.clearInstall { }
+                    // B2-BUG-22:清除结果可见(旧实现忽略 Boolean 结果)
+                    viewModel.clearInstall { ok ->
+                        feedback = if (ok) clearDoneText else clearFailedText
+                    }
                 }) { Text(stringResource(R.string.search_clear_confirm)) }
             },
             dismissButton = {
@@ -276,7 +305,6 @@ private fun SearxngSwitchCard(
         subtitle = address,
         initiallyExpanded = true
     ) {
-        val installing = state is SearxngState.Installing
         val checked = state !is SearxngState.Off
         SwitchRow(
             label = stringResource(R.string.search_local_switch),

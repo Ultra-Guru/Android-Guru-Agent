@@ -33,5 +33,32 @@
 
     <!-- ═══ perf P0-3 UI 消息滑动窗口折叠摘要 ═══ -->
     <string name="code_messages_folded_fmt">早期 %1$d 条消息已折叠，近期对话完整保留；完整历史在会话快照中</string>
+    <string name="settings_page_migrated">页面「%1$s」已迁移或不存在。</string>
+    <string name="settings_show_api_key">显示 API Key</string>
+    <string name="settings_hide_api_key">隐藏 API Key</string>
+    <string name="settings_corrupt_banner">部分配置文件读取失败——原始数据已保留，相关域已暂停写入；可导出诊断或从备份恢复。</string>
+    <string name="settings_profile_copy_suffix">%1$s（副本）</string>
+    <string name="settings_num_err_empty">数值为空。</string>
+    <string name="settings_num_err_nan">不是有效数字。</string>
+    <string name="settings_num_err_range_fmt">超出范围（%1$d – %2$d）。</string>
+    <string name="settings_hook_op_failed">操作失败。</string>
+    <string name="settings_prompt_preset_label">提示词预设</string>
+    <string name="settings_preset_android">Android 专家</string>
+    <string name="settings_preset_coding">Coding 智能体</string>
+    <string name="settings_preset_automation">自动化智能体</string>
+    <string name="settings_preset_custom">自定义</string>
+    <string name="settings_preset_overwrite_title">覆盖自定义提示词？</string>
+    <string name="settings_preset_overwrite_warn">当前自定义前缀将被预设替换，此操作不可撤销。</string>
+    <string name="settings_preset_overwrite_ok">覆盖</string>
+    <string name="settings_rate_limit_field_friendly">限速友好模式</string>
+    <string name="settings_rate_limit_field_interval">最小请求间隔（毫秒）</string>
+    <string name="settings_rate_limit_field_payload">高信息密度载荷</string>
+    <string name="settings_rate_limit_field_parallel">工具调用并行度</string>
+    <string name="settings_rate_limit_restart_hint">注意：工具调用并行度需重启应用生效（DI 快照）。</string>
+    <string name="settings_rate_limit_applied">推荐组合已应用。</string>
+    <string name="settings_rate_limit_undo">撤销</string>
+    <string name="search_dispatch_failed">服务动作派发失败——请重试。</string>
+    <string name="search_clear_done">本地搜索组件已清除。</string>
+    <string name="search_clear_failed">本地搜索组件清除失败。</string>
 </resources>
 
