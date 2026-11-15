@@ -14,7 +14,9 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -229,6 +231,45 @@ class McpHostServerTest {
             port = savedPort
             lanServer.stop()
         }
+    }
+
+    // ═══ 地址行单一事实源：bindHost 状态暴露（UI 不反推 allowLan）═══
+    // 上方两个测试验证的是网络可达性；以下验证的是对外暴露的状态值 ——
+    // 两者互补，别合并。
+
+    @Test
+    fun `bindHost is 127_0_0_1 by default`() {
+        assertTrue(server.isRunning.value)
+        assertEquals("127.0.0.1", server.bindHost.value)
+    }
+
+    @Test
+    fun `bindHost is 0_0_0_0 when allowLan enabled`() {
+        val lanPort = freePort()
+        val lanStore = InMemoryMcpHostConfigStore(
+            McpHostConfig(enabled = true, port = lanPort, token = TOKEN, allowLan = true)
+        )
+        val emptyRegistry = DefaultToolRegistry()
+        val lanServer = McpHostServer(
+            configProvider = lanStore::load,
+            bridge = McpHostBridge(emptyRegistry, DefaultToolExecutor(emptyRegistry), lanStore::load),
+            scope = scope
+        )
+        lanServer.start()
+        try {
+            assertTrue(lanServer.isRunning.value)
+            assertEquals("0.0.0.0", lanServer.bindHost.value)
+        } finally {
+            lanServer.stop()
+        }
+    }
+
+    @Test
+    fun `bindHost clears on stop`() {
+        assertEquals("127.0.0.1", server.bindHost.value)
+        server.stop()
+        assertFalse(server.isRunning.value)
+        assertNull(server.bindHost.value)
     }
 
     @Test

@@ -8,6 +8,10 @@
     <string name="mcphost_status_running">Running · %1$d session(s)</string>
     <string name="mcphost_status_stopped">Stopped</string>
     <string name="mcphost_error_prefix">Error: %1$s</string>
+    <!-- Bind address line: single source of truth from ServerSocket bind params -->
+    <string name="mcphost_bind_running">Running · listening on %1$s</string>
+    <string name="mcphost_bind_pending">Preparing %1$s (not listening yet)</string>
+    <string name="mcphost_bind_stopped">Not listening</string>
 
     <!-- ═══ Port / rate limit fields ═══ -->
     <string name="mcphost_port_label">Port</string>
@@ -51,7 +55,8 @@
 
     <!-- ═══ How to connect ═══ -->
     <string name="mcphost_connect_title">How to connect (PC side)</string>
-    <string name="mcphost_connect_hint">Add this server in Cline / Claude Desktop (mcp-remote) with the JSON below. Phone and PC must be on the same LAN with "Allow LAN access" enabled (default binding is loopback-only); keep this app alive while connected.</string>
+    <string name="mcphost_connect_hint">Add this server in Cline / Claude Desktop (mcp-remote) with the JSON below. The URL host follows the listening address shown above (loopback by default — see the red adb reverse hint); keep this app alive while connected.</string>
+    <string name="mcphost_connect_loopback_hint">Loopback-only mode: the 127.0.0.1 in the JSON is the PC-side address reached through adb reverse / an SSH tunnel — the phone itself is not directly reachable. Run adb reverse tcp:%1$d tcp:%1$d on the PC first, then use the JSON as-is.</string>
     <string name="mcphost_connect_ip_placeholder">phone-ip</string>
     <string name="mcphost_connect_json">{
   \"mcpServers\": {

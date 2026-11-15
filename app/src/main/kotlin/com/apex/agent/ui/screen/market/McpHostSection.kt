@@ -85,6 +85,8 @@ class McpHostViewModel @Inject constructor(
 
     val config = manager.config
     val isRunning = manager.isRunning
+    /** 真实监听地址（服务端 ServerSocket 绑定参数；未监听为 null）。 */
+    val bindHost = manager.bindHost
     val sessions = manager.sessions
     val auditLog = manager.auditLog
     val lastError = manager.lastError
@@ -119,6 +121,7 @@ private val RISKY_CATEGORIES =
 internal fun McpHostSection(viewModel: McpHostViewModel = hiltViewModel()) {
     val config by viewModel.config.collectAsStateWithLifecycle()
     val isRunning by viewModel.isRunning.collectAsStateWithLifecycle()
+    val bindHost by viewModel.bindHost.collectAsStateWithLifecycle()
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
     val auditLog by viewModel.auditLog.collectAsStateWithLifecycle()
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()
@@ -175,6 +178,36 @@ internal fun McpHostSection(viewModel: McpHostViewModel = hiltViewModel()) {
                     }
                 )
             }
+
+            // ── 监听地址行（单一事实源：服务端实际绑定参数，UI 不反推）──
+            // 三态：运行中显示真实绑定面；enabled 未就绪（重启窗口/启动失败）
+            // 显示预期地址（灰态，此处才允许由 allowLan 推断）；否则未监听。
+            // 自带「运行中」字样 —— 截图/无障碍朗读不依赖上方纯色状态灯。
+            val currentBindHost = bindHost
+            val expectedHost = if (config.allowLan) "0.0.0.0" else "127.0.0.1"
+            val bindLine = when {
+                isRunning && currentBindHost != null -> stringResource(
+                    R.string.mcphost_bind_running,
+                    "$currentBindHost:${config.effectivePort}"
+                )
+                config.enabled -> stringResource(
+                    R.string.mcphost_bind_pending,
+                    "$expectedHost:${config.effectivePort}"
+                )
+                else -> stringResource(R.string.mcphost_bind_stopped)
+            }
+            Text(
+                bindLine,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = if (isRunning) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
 
             // ── 启动失败错误 ──
             val error = lastError
@@ -356,6 +389,22 @@ internal fun McpHostSection(viewModel: McpHostViewModel = hiltViewModel()) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(4.dp))
+                // host 与当前绑定面一致：回环态填 PC 侧转发地址 127.0.0.1
+                //（手机自身局域网 IP 永远连不上回环监听）；LAN 态填手机站点 IP。
+                val connectHost = if (config.allowLan)
+                    ip ?: stringResource(R.string.mcphost_connect_ip_placeholder)
+                else "127.0.0.1"
+                if (!config.allowLan) {
+                    Text(
+                        stringResource(
+                            R.string.mcphost_connect_loopback_hint,
+                            config.effectivePort
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainerHighest,
                     shape = MaterialTheme.shapes.small
@@ -363,7 +412,7 @@ internal fun McpHostSection(viewModel: McpHostViewModel = hiltViewModel()) {
                     Text(
                         stringResource(
                             R.string.mcphost_connect_json,
-                            ip ?: stringResource(R.string.mcphost_connect_ip_placeholder),
+                            connectHost,
                             config.effectivePort,
                             config.token
                         ),

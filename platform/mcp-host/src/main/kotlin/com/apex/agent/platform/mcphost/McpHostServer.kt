@@ -131,6 +131,16 @@ class McpHostServer(
     private val _isRunning = MutableStateFlow(false)
     val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
 
+    /**
+     * 真实监听地址（单一事实源）：值即 [start] 实际传给
+     * `InetAddress.getByName()` 的绑定参数（"127.0.0.1" / "0.0.0.0"）。
+     * ServerSocket 构造成功后写入；[stop] 清 null；未监听 / 启动失败
+     * （端口占用抛异常）保持 null。UI 地址行与连接指引都读这份流，
+     * 不再用 allowLan 配置反推 —— 那是「配置意图」而非「绑定事实」。
+     */
+    private val _bindHost = MutableStateFlow<String?>(null)
+    val bindHost: StateFlow<String?> = _bindHost.asStateFlow()
+
     private val _sessions = MutableStateFlow<List<HostSessionInfo>>(emptyList())
     val sessions: StateFlow<List<HostSessionInfo>> = _sessions.asStateFlow()
 
@@ -166,6 +176,8 @@ class McpHostServer(
             val socket = ServerSocket(config.effectivePort, 50, InetAddress.getByName(bindAddress))
             serverSocket = socket
             _isRunning.value = true
+            // 绑定事实（构造成功才写；端口被占用抛异常时保持 null）
+            _bindHost.value = bindAddress
             serverJob = scope.launch(Dispatchers.IO + SupervisorJob()) {
                 launch { acceptLoop(socket) }
                 // P2：空闲会话/陈旧限速器周期扫描（serverJob 取消时连带取消）
@@ -178,6 +190,7 @@ class McpHostServer(
     fun stop() {
         synchronized(stateLock) {
             _isRunning.value = false
+            _bindHost.value = null
             runCatching { serverSocket?.close() }
             serverSocket = null
             serverJob?.cancel()
