@@ -133,9 +133,9 @@ fun SettingsScreen(
         expandedCategory = if (expandedCategory == route) null else route
     }
     // 点击叶子：追加浏览器式标签（已开则仅激活）+ 收回设置抽屉
-    val onSelectLeaf: (String) -> Unit = { route ->
+    val onSelectLeaf: (String) -> Unit = leaf@{ route ->
         // PR1:抽屉仍列旧 SettingsNavTree(分类语境),标签统一存稳定 page.id
-        val pageId = SettingsNavAliases.resolvePageId(route) ?: return@onSelectLeaf
+        val pageId = SettingsNavAliases.resolvePageId(route) ?: return@leaf
         if (!openTabs.contains(pageId)) openTabs = openTabs + pageId
         activeTab = pageId
         expandedCategory = categoryOfLeaf(route)?.route

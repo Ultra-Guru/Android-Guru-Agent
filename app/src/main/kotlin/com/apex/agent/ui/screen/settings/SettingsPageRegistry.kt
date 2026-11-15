@@ -9,6 +9,9 @@ import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.automirrored.outlined.ListAlt
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Hub
+import androidx.compose.material.icons.outlined.Psychology
+import androidx.compose.material.icons.outlined.Subject
+import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Rule
@@ -19,7 +22,6 @@ import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.Update
-import androidx.compose.annotation.StringRes
 import androidx.compose.runtime.Immutable
 import com.apex.agent.R
 
