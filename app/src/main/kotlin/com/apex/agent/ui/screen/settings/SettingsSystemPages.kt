@@ -38,7 +38,7 @@ import com.apex.agent.update.MirrorPrefs
  * 删除后迁入本文件；记忆功能主仓库保留，开关双引擎共享）。
  */
 @Composable
-internal fun NotificationsPage(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {
+internal fun NotificationsPage(agent: AgentSettings, onAgent: (AgentSettings.() -> AgentSettings) -> Unit) {
     val ctx = LocalContext.current
     SettingsLeafColumn {
         SectionCard(
@@ -49,7 +49,7 @@ internal fun NotificationsPage(agent: AgentSettings, onAgent: (AgentSettings) ->
             SwitchRow(
                 stringResource(R.string.settings_task_notify_title), agent.taskCompletionNotify,
                 description = stringResource(R.string.settings_task_notify_desc)
-            ) { on -> onAgent(agent.copy(taskCompletionNotify = on)) }
+            ) { on -> onAgent { copy(taskCompletionNotify = on) } }
         }
         SectionCard(
             title = stringResource(R.string.settings_notif_channel_section),
@@ -81,7 +81,7 @@ internal fun NotificationsPage(agent: AgentSettings, onAgent: (AgentSettings) ->
  * 落盘 + 召回静默；已有记忆去记忆页管理（记忆功能主仓库保留）。
  */
 @Composable
-internal fun MemoryCaptureSection(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {
+internal fun MemoryCaptureSection(agent: AgentSettings, onAgent: (AgentSettings.() -> AgentSettings) -> Unit) {
     SettingsLeafColumn {
         SectionCard(
             title = stringResource(R.string.settings_memory_section),
@@ -89,14 +89,14 @@ internal fun MemoryCaptureSection(agent: AgentSettings, onAgent: (AgentSettings)
         ) {
             SwitchRow(stringResource(R.string.settings_memory_capture_title), agent.chatMemoryCapture,
                 description = stringResource(R.string.settings_memory_capture_desc)) {
-                onAgent(agent.copy(chatMemoryCapture = it))
+                onAgent { copy(chatMemoryCapture = it) }
             }
         }
     }
 }
 
 @Composable
-internal fun UpdatePage(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {
+internal fun UpdatePage(agent: AgentSettings, onAgent: (AgentSettings.() -> AgentSettings) -> Unit) {
     val ctx = LocalContext.current
     // 镜像档位：本地态 + MirrorPrefs 落盘（与关于页更新对话框同一存储键）
     var mirror by remember { mutableStateOf(MirrorPrefs.load(ctx)) }
@@ -117,7 +117,7 @@ internal fun UpdatePage(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) 
             SwitchRow(
                 stringResource(R.string.settings_update_auto), agent.autoUpdateCheck,
                 description = stringResource(R.string.settings_update_auto_desc)
-            ) { on -> onAgent(agent.copy(autoUpdateCheck = on)) }
+            ) { on -> onAgent { copy(autoUpdateCheck = on) } }
             DropdownRow(
                 label = stringResource(R.string.settings_update_mirror),
                 options = options,

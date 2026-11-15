@@ -99,8 +99,9 @@ class PrivilegedCommandSpawner : CommandSpawner {
             val pb = ProcessBuilder("su", "-c", wrapped)
             request.cwd?.let { pb.directory(File(it)) } // su 通常忽略父 cwd，包进命令才是权威
             val proc = pb.start()
-            runCatching { proc.outputStream.close() }
-            return JvmProcessCommand(proc)
+            // stdin 收尾交 ExecEngine（su -c 的 stdin 转发语义未经验证 —— stdinSupported=false，
+            // 带载荷请求会得到诚实的「通道不支持 stdin」失败而非不可预测行为）
+            return JvmProcessCommand(proc, stdinSupported = false)
         }
     }
 
@@ -119,15 +120,26 @@ class PrivilegedCommandSpawner : CommandSpawner {
                 envArray,
                 request.cwd
             )
-            runCatching { proc.outputStream.close() }
-            return JvmProcessCommand(proc)
+            // stdin 收尾交 ExecEngine（shizuku 中转流不宣称 stdin 支持 —— 同 su 保守口径）
+            return JvmProcessCommand(proc, stdinSupported = false)
         }
     }
 
-    /** java.lang.Process → SpawnedCommand（local-su 与 shizuku 共用；waitFor 具备超时语义）。 */
-    internal class JvmProcessCommand(private val proc: Process) : SpawnedCommand {
+    /**
+     * java.lang.Process → SpawnedCommand（su/shizuku 共用；waitFor 具备超时语义）。
+     *
+     * [stdinSupported] 诚实声明通道是否提供可写 stdin：只有语义确定真实的
+     * 通道才暴露（proot-ubuntu 的 ProcessBuilder 直连 = true；su -c / shizuku
+     * 中转未经验证 = false）—— 未知能力绝不假装可用。
+     */
+    internal class JvmProcessCommand(
+        private val proc: Process,
+        private val stdinSupported: Boolean = false
+    ) : SpawnedCommand {
         override val stdout: java.io.InputStream get() = proc.inputStream
         override val stderr: java.io.InputStream get() = proc.errorStream
+        override val stdin: java.io.OutputStream?
+            get() = if (stdinSupported) proc.outputStream else null
         override fun waitFor(timeoutMs: Long): Boolean =
             proc.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
         override fun exitValue(): Int = proc.exitValue()

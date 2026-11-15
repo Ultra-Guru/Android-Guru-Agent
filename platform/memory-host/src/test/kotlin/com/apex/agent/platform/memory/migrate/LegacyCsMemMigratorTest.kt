@@ -83,4 +83,63 @@ class LegacyCsMemMigratorTest {
         ]"""
         assertNull(parse(json))
     }
+
+    // ══ #821 列名 → 字段契约（by-name 取值，列序变更不再静默错位）═══
+
+    private fun row(vararg pairs: Pair<String, Any?>) =
+        LegacyCsMemMigrator.QueryRow(HashMap(mapOf(*pairs)))
+
+    @Test
+    fun `episode record reads started_at and finished_at by column name`() {
+        val record = LegacyCsMemMigrator.episodeRecord(
+            "ep-1",
+            row(
+                "episode_id" to "ep-1",
+                "goal" to "给张三发图片",
+                "app_package" to "com.tencent.mm",
+                "app_version" to "8.0",
+                "status" to "SUCCEEDED",
+                "started_at" to 100L,       // #821：真实开始时间（旧实现错读 finished_at）
+                "finished_at" to 200L,      // #821：旧实现恒丢（恒 null）
+                "total_actions" to 7L,
+            ),
+        )
+        assertEquals("ep-1", record.episodeId)
+        assertEquals("给张三发图片", record.goal)
+        assertEquals("com.tencent.mm", record.appPackage)
+        assertEquals("8.0", record.appVersion)
+        assertEquals(
+            com.apex.memkit.core.model.EpisodeStatus.SUCCEEDED,
+            record.status,
+        )
+        assertEquals(100L, record.startedAt)
+        assertEquals(200L, record.finishedAt)
+        assertEquals(7, record.actionCount)
+    }
+
+    @Test
+    fun `episode record tolerates null and missing columns`() {
+        val record = LegacyCsMemMigrator.episodeRecord(
+            "manual_x",
+            row("episode_id" to "manual_x", "goal" to null),
+        )
+        assertEquals("(未知目标)", record.goal)
+        assertEquals(0L, record.startedAt)
+        assertNull(record.finishedAt)
+        assertEquals(0, record.actionCount)
+        assertTrue(record.manual)   // manual_ 前缀 → 手工情景
+    }
+
+    @Test
+    fun `episode column list matches expected legacy schema`() {
+        // 列名清单钉死旧库 schema（迁移 SQL 的列序契约源）—— 列序变化
+        // 不再影响取值（by-name），但列名缺失会在字段缺省测试里暴露。
+        assertEquals(
+            listOf(
+                "episode_id", "goal", "app_package", "app_version", "status",
+                "started_at", "finished_at", "total_actions",
+            ),
+            LegacyCsMemMigrator.EPISODE_COLUMNS,
+        )
+    }
 }

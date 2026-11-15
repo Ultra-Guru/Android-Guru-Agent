@@ -28,6 +28,7 @@ import com.apex.loomkit.weave.permission.LoomPermissionSnapshot
 import com.apex.loomkit.weave.permission.LoomPermissionSource
 import com.apex.loomkit.weave.permission.LoomRuleEffect
 import com.apex.agent.core.code.standard.DualLogicCodeEngine
+import com.apex.agent.core.code.standard.MemoryAwareCodeEngine
 import com.apex.agent.core.code.standard.StandardKitAdapter
 import com.apex.agent.core.tools.catalog.McpToolNaming
 import com.apex.agent.core.tools.mcp.McpManager
@@ -86,7 +87,7 @@ import javax.inject.Singleton
  * |---|---|
  * | ToolRegistry / ToolExecutor | 110+ 工具 + v3 门控/熔断/重试 + v4 目录 —— 两模式同一套规则 |
  * | SkillRegistry | prompt 型技能注入两模式系统提示词（安装即生效） |
- * | McpManager | mcp__search__web_search / mcp__github__* 一等工具两模式可用 |
+ * | McpManager | McpSearchWebSearch / McpGithub* 一等工具两模式可用 |
  * | ModelRuntime | 多模型角色路由（PRIMARY/VISION/REASONING/SUMMARY） |
  * | CS-Mem observer | 编码动作同样进入认知记忆 |
  *
@@ -258,11 +259,14 @@ object CodeModule {
     fun provideStandardTextKernel(): StandardTextKernel = NativeTextKernel()
 
     /**
-     * Coding 引擎（@Named("code")）—— v1.5 起为**双思考逻辑路由门面**：
+     * Coding 引擎（@Named("code")）—— v1.5 起为**双思考逻辑路由门面**，
+     * 外再包一层记忆统一注入层（记忆 P0-1）：
      *
      * ```
-     * DualLogicCodeEngine ──┬── CodeAgentEngine（深潜线：七档思考，v1.2 既有行为）
-     *                       └── StandardKitAdapter → standard-loop 库（标准线：标准任务循环）
+     * MemoryAwareCodeEngine ──► DualLogicCodeEngine ──┬── CodeAgentEngine（深潜线：七档思考，v1.2 既有行为）
+     * （四线记忆闭环）                          ├── StandardKitAdapter → standard-loop 库（标准线）
+     *                                                    ├── LoomKitAdapter（织造线）
+     *                                                    └── CourierKitAdapter（信使线）
      * ```
      *
      * 深潜线配置取向（与 Agent 默认差异）：BUILD 循环 + 更高迭代上限
@@ -271,8 +275,14 @@ object CodeModule {
      * apex-kit-standard 库内核（画像回合预算 + 权限门 + 会话压缩 + 子代理
      * 派发 + 并行工具执行 + 续跑语义 + MCP 指引——循环语义全部在库中）。
      *
+     * 记忆 P0：kit 三线（标准/织造/信使）此前零记忆接线 —— MemoryAware
+     * 层把「入口召回注入 + 工具轨迹入账 + 任务终局沉淀」补到 kit 三线
+     * （深潜线由内层 ApexAgentEngine 自带，包装层跳过防双份），四个
+     * kit 零改动（extras 通道复用）。
+     *
      * CodeViewModel 只面向 [CodeEngineFacade] / AgentEngine 编程，
-     * 右上角「思考逻辑」切换经 DualLogicCodeEngine.switchLogic 路由。
+     * 右上角「思考逻辑」切换经 MemoryAwareCodeEngine.dualLogic.switchLogic
+     * 路由（VM 的 dualLogicEngine getter 已做解包）。
      */
     @Provides
     @Singleton
@@ -420,12 +430,14 @@ object CodeModule {
         // MCP 服务器指引源：已连接服务器的 initialize instructions →
         // （服务器名 → 指引 + 注册表 id 前缀）。引擎按当前工具面过滤——
         // 只有该服务器工具真的在面上，指引才注入（防幻觉指引）。
+        // 前缀必须与 McpToolNaming.toolId 同源（v5：Mcp{Server}{Tool}）——
+        // 此前手拼的 v4 写法 mcp__{slug}__ 与实际 id 永不匹配，指引从不注入。
         val standardMcpInstructionSource = KitMcpInstructionSource {
             mcpManager.getServerInstructions().map { (server, instructions) ->
                 KitMcpServerInstructions(
                     serverName = server,
                     instructions = instructions,
-                    toolIdPrefix = "mcp__" + McpToolNaming.slug(server) + "__"
+                    toolIdPrefix = McpToolNaming.serverIdPrefix(server)
                 )
             }
         }
@@ -590,16 +602,20 @@ object CodeModule {
             skillCatalog = courierSkillCatalog,
             commandProbe = courierCommandProbe
         )
-        return DualLogicCodeEngine(
-            deepDive = deepDive,
-            standard = standard,
-            loom = loom,
-            courier = courier,
-            // #395 同款中止收口（四线统一）：深潜线原本在 ApexAgentEngine.abort
-            // 内部收口 userQuestionBridge，kit 三线（标准/织造/信使）无同等接线
-            // ——中止后提问卡残留 UI，「继续」把答案投给已死任务。统一路由层
-            // 前置收口（幂等：深潜线内层二次调用时 deferred 已清，零副作用）。
-            userQuestionGateway = userQuestionBridge
+        return MemoryAwareCodeEngine(
+            dualLogic = DualLogicCodeEngine(
+                deepDive = deepDive,
+                standard = standard,
+                loom = loom,
+                courier = courier,
+                // #395 同款中止收口（四线统一）：深潜线原本在 ApexAgentEngine.abort
+                // 内部收口 userQuestionBridge，kit 三线（标准/织造/信使）无同等接线
+                // ——中止后提问卡残留 UI，「继续」把答案投给已死任务。统一路由层
+                // 前置收口（幂等：深潜线内层二次调用时 deferred 已清，零副作用）。
+                userQuestionGateway = userQuestionBridge
+            ),
+            // 记忆 P0-1：kit 三线补齐记忆闭环（深潜线内层已接线，包装层防双份）
+            memoryObserver = memoryObserver,
         )
     }
 

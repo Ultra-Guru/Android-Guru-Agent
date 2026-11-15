@@ -89,7 +89,7 @@ val MARKET_TOOL_RUN_POLICIES: Map<String, ToolRunPolicy> = mapOf(
 /**
  * ═══ P2 修复（开放世界工具族超时错配）：前缀策略表 ═══
  *
- * 背景：browser_*（15 个）/ McpCall / mcp__server__tool（动态一等工具）/
+ * 背景：browser_*（15 个）/ McpCall / Mcp{Server}{Tool}（动态一等工具）/
  * ConnectorSendMessage 按注解推断为 mutating() —— 60s 硬超时 + 0 重试：
  * - 慢网页操作 / 慢 MCP 服务端 > 60s 即被执行器 withTimeout 强杀，而强杀
  *   可能留下半执行的副作用（点击已发生、消息已发出），模型看到超时

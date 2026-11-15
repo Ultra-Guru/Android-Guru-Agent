@@ -81,6 +81,20 @@ interface ExecutionMemoryObserver {
     suspend fun onConversationTurn(userText: String, assistantText: String) {
         // 默认空实现
     }
+
+    /**
+     * 压缩捕获（记忆 P0 会话摘要双通道 —— 压缩侧）。
+     *
+     * ArchivingCompressor 在差集归档后被调用，携带被压缩裁剪的原始
+     * 消息；实现方把 User/Assistant 对转进记忆蒸馏队列（被裁内容对
+     * 记忆系统仍可见），ToolResult 丢弃。回调内必须自行限流与容错，
+     * 绝不阻断压缩主流程。
+     *
+     * 默认空实现（观察者未注入时静默跳过）。
+     */
+    suspend fun onContextPruned(pruned: List<com.apex.agent.core.llm.LlmMessage>) {
+        // 默认空实现
+    }
 }
 
 /**

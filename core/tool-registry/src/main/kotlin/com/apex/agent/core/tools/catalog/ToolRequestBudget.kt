@@ -57,7 +57,7 @@ object ToolRequestBudget {
      *        activations, no exposeAll — used by the engine after a
      *        provider rejected the previous tool payload.
      * @param serviceToolIds ids of tools whose backing service is CONNECTED
-     *        (github_* when a token is configured, mcp__search__* when the
+     *        (github_* when a token is configured, McpSearch* when the
      *        builtin search server is up, …). They join the request with
      *        CORE-tier visibility so the system prompt's "Connected Services"
      *        claims always match the actual tools array (P0 fix). Unknown ids

@@ -21,7 +21,9 @@ internal fun CodeViewModel.startRenderTicker() {
     renderJob = viewModelScope.launch {
         while (isActive) {
             delay(CodeViewModel.RENDER_TICK_MS)
+            flushToolChunks() // perf P0-1：工具分片批量归约（先于文本，保时序）
             responseAggregator.flush { reduce(it) } // P1 聚合冲刷（与胶囊快照同节拍）
+            applyMessagesWindow() // perf P0-3：UI 消息滑动窗口（超限才裁，O(1) 检查）
             streamSession.tick()?.let { snap ->
                 _uiState.update { it.copy(stream = snap) }
             }

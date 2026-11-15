@@ -93,11 +93,9 @@ class LinuxChrootBackend(
     private val environment: LinuxEnvironmentManager = LinuxEnvironmentManager(),
     /** 共享存储桥（与 PRoot 后端同款约定；不可用 → 不 bind）。 */
     private val sharedStorage: SharedStorageBridge? = null,
-    /**
-     * T99 审计修复：显式 TerminalCreate(backend="linux-ubuntu-chroot") 不经过
-     * EnvironmentProvisioner.ensureUbuntuSession 的 dnsRefreshFn 修复路径，
-     * 存量 rootfs 的缺失 CA 必须在 prepare 阶段补齐；null = 未接线（保持旧语义）。
-     */
+    /** Explicit create preflight only; null keeps direct test/legacy constructor compatible. */
+    private val authorizationCache: SuAuthorizationCache? = null,
+    /** Repair a missing legacy CA bundle only during explicit create; null keeps legacy tests compatible. */
     private val caRepair: (suspend (File) -> Unit)? = null,
     override val id: String = ID
 ) : ExecutionBackend {
@@ -117,6 +115,10 @@ class LinuxChrootBackend(
         if (!su.canExecute()) {
             // locate() 已过滤，此处防御并发删除窗口（下一次 availability 重新探测）。
             return BackendAvailability.Failed("ChrootError:SU_NOT_EXECUTABLE — ${su.absolutePath}")
+        }
+        // Cached denial is evidence; unknown is not. Never exec su from availability.
+        if (authorizationCache?.state(su) == SuAuthorizationCache.State.DENIED) {
+            return BackendAvailability.Failed(SU_DENIED_REASON)
         }
         val rootfs = rootfsProvider.current()
             ?: return BackendAvailability.NeedsRootfs()
@@ -168,6 +170,16 @@ class LinuxChrootBackend(
                         "（shell 脚本内嵌安全边界；got \"$guestCwd\"）"
                 )
             )
+        }
+
+        // Only an explicit, otherwise valid TerminalCreate may request su authorization.
+        when (authorizationCache?.authorizeOnIo(su)) {
+            SuAuthorizationCache.State.DENIED -> return Result.failure(IllegalStateException(SU_DENIED_REASON))
+            SuAuthorizationCache.State.UNKNOWN -> return Result.failure(IllegalStateException(
+                "ChrootError:SU_AUTH_UNKNOWN — su authorization probe did not complete. " +
+                    "Fix: check the superuser prompt, or choose backend 'linux-ubuntu' (PRoot); retry later."
+            ))
+            else -> Unit
         }
 
         // 5. guest env（env trampoline 复用 —— 与 PRoot 同源同构造）。
@@ -280,6 +292,9 @@ class LinuxChrootBackend(
 
     companion object {
         const val ID = "linux-ubuntu-chroot"
+        private const val SU_DENIED_REASON =
+            "ChrootError:SU_NOT_AUTHORIZED — su exists but root authorization was denied. " +
+                "Fix: grant this app superuser access in Magisk/KernelSU/APatch, or use backend 'linux-ubuntu' (PRoot)."
         const val GUEST_SHELL = "/bin/bash"
 
         /** guest 内系统挂载点（与 SystemBindProfile.STANDARD 同集）。 */

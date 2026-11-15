@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import kotlin.math.abs
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -203,11 +204,17 @@ class StreamScrollAnchor(
 }
 
 /**
- * 锚定装配：挂载观察协程 + 结构变化自动滚动。
+ * 锚定装配：挂载观察协程 + 结构/内容变化自动滚动。
  *
  * @param itemCountKey 列表结构变化 key（条目数）
  * @param contentTickKey 内容节流档位 key（字符数/50）
  * @param isStreaming 流式中（即时跟随）与收尾（动画）的分野
+ *
+ * perf-20261114：滚动执行帧对齐 —— 旧实现协程常在 draw 派发中段恢复，
+ * scrollToItem 的重测被 AndroidComposeView 以「draw 期 measureAndLayout
+ * 追赶」补执行（perfetto 实测尖峰 106ms）。改为滚动前先对齐到下一帧
+ * 起点（withFrameNanos）—— 重测落回帧内 layout 窗口；快速连拍的 key
+ * 变化会取消未决的帧等待，天然合拍。
  */
 @Composable
 internal fun rememberStreamAnchor(
@@ -220,16 +227,22 @@ internal fun rememberStreamAnchor(
 
     LaunchedEffect(listState) { anchor.observe() }
 
-    // 结构变化（新条目）→ 跟随
+    // 结构变化（新条目）→ 跟随（帧对齐后执行，见下）
     LaunchedEffect(itemCountKey, isStreaming) {
         if (itemCountKey > 0 && anchor.shouldFollow()) {
-            if (isStreaming) anchor.snapToLast() else anchor.animateToLast()
+            if (isStreaming) {
+                withFrameNanos { }
+                if (anchor.shouldFollow()) anchor.snapToLast()
+            } else {
+                anchor.animateToLast()
+            }
         }
     }
-    // 内容增长（同条目变长）→ 节流跟随
+    // 内容增长（同条目变长）→ 节流跟随（流式期间）
     LaunchedEffect(contentTickKey, isStreaming) {
         if (isStreaming && itemCountKey > 0 && anchor.shouldFollow()) {
-            anchor.snapToLast()
+            withFrameNanos { }
+            if (anchor.shouldFollow()) anchor.snapToLast()
         }
     }
     return anchor

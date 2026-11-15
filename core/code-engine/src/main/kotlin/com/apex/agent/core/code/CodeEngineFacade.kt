@@ -4,6 +4,7 @@ import com.apex.agent.core.code.standard.StandardLogicMode
 import com.apex.agent.core.code.thinking.CodeThinkingLevel
 import com.apex.agent.core.engine.AgentEngine
 import com.apex.agent.core.engine.AgentMode
+import com.apex.agent.core.engine.AutonomyLevel
 import java.io.File
 
 /**
@@ -57,6 +58,15 @@ interface CodeEngineFacade : AgentEngine {
         enabledSteps: List<Int>? = null,
         order: List<Int>? = null
     ): Boolean
+
+    /**
+     * v4 三档自主级别（提问策略，与执行模式正交）：null = 清除指令
+     * （PLAN 模式 / 未设置，行为零变化）。深潜线经 patchConfig 落
+     * AgentConfig（EnginePrompts 注入 Autonomy 段）；kit 三线各自包装进
+     * sessionExtras 透传（无自由 system context 通道）。默认空实现：
+     * 未知实现方（测试替身等）零改动。
+     */
+    fun updateAutonomy(level: AutonomyLevel?, preClarify: Boolean) {}
 
     /** 「小圆环」会话上下文附加段（coding 工位独占）。 */
     fun updateSessionExtras(extras: String?)

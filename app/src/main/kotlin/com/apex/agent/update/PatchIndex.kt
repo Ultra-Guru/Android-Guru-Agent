@@ -42,6 +42,15 @@ object PatchIndex {
     /** 链上补丁数量上限 —— 防御环形索引（CI bug / 被篡改）导致死循环。 */
     private const val MAX_CHAIN_LENGTH = 64
 
+    /**
+     * 单段补丁体积硬上限（#859）：解码器把整段补丁 readBytes() 载入堆
+     * （[com.apex.agent.update.VcdiffDecoder] 的内存策略假设 ≤ ~20MB 量级），
+     * 而「链总价 ≤ 全量 60%」的体积门在 rootfs 大改版本可合法放行 100MB+
+     * 的单段——中低端机（dalvik heap 128-256MB）解码必然 OOM。超限链直接
+     * 判不可增量（调用方回退全量），引擎侧再作同阈值防御（清单体积可谎报）。
+     */
+    const val MAX_PATCH_BYTES: Long = 32L * 1024 * 1024
+
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true

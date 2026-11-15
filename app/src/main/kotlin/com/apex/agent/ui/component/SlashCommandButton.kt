@@ -26,6 +26,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -123,6 +124,10 @@ fun SlashCommandButton(
                     // UI-012：48dp 触区红线（原 40dp 视觉系提升为 48 系，与
                     // Attach/Github/Send/Toolkit 全行统一；圆底视觉随节点同步放大）
                     .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    // 圆形反馈修复：clip 先于 background/clickable —— ripple 与
+                    // 底色同被裁成圆，按压/悬停/聚焦不再露出方形矩形底
+                    // （原 background(CircleShape) 只裁底色，裁不住 clickable 的 ripple）。
+                    .clip(CircleShape)
                     .background(
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
                         shape = CircleShape // 精修：与 Attach/Github/Toolkit 统一圆形剪裁（原 10dp 方角，行内独树一帜）

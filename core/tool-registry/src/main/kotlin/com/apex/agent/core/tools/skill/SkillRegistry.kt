@@ -1,6 +1,7 @@
 package com.apex.agent.core.tools.skill
 
 import com.apex.agent.core.tools.ToolMetadata
+import com.apex.agent.core.tools.builtin.AtomicFileWrite
 import com.apex.agent.core.tools.skill.SkillNaming
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -222,9 +223,23 @@ class SkillRegistry(
 
     init {
         runCatching { skillsDir.mkdirs() }
+        sweepStaleTmpFiles()
         loadDisabledIds()
         loadConfigValues()
         loadInstalledSkills()
+    }
+
+    /**
+     * #868：清理上次进程写入中途被杀留下的 `.tmp_*` 残留（原子写的中间件）。
+     * 正常路径 rename 后 tmp 已消失；残留只可能是崩溃/被杀窗口——此刻没有
+     * 在途写入，删除安全。防残留被 [loadInstalledSkills] 误当清单加载
+     * （双保险：清单扫描同样排除点开头文件，与 [reconcileDirectory] 同款）。
+     */
+    private fun sweepStaleTmpFiles() {
+        runCatching {
+            skillsDir.listFiles { f -> f.isFile && f.name.startsWith(".tmp_") }
+                ?.forEach { residue -> runCatching { residue.delete() } }
+        }
     }
 
     private val disabledFile: File get() = File(skillsDir, ".disabled")
@@ -233,31 +248,46 @@ class SkillRegistry(
     private val configFile: File get() = File(skillsDir, ".config.json")
 
     private fun loadDisabledIds() {
-        if (disabledFile.exists()) {
-            disabledFile.readLines().forEach {
-                if (it.isNotBlank()) disabledIds.add(SkillNaming.canonicalId(it))
+        // #868 容错：单个 sidecar 损坏（IO 错误）只丢该文件、不阻断注册表启动；
+        // 半行残留（旧裸写时代的截断产物）经 canonicalId 归一后不会命中任何
+        // 已安装技能 id，自然失效——不会误禁用其它技能。
+        runCatching {
+            if (disabledFile.exists()) {
+                disabledFile.readLines().forEach {
+                    if (it.isNotBlank()) disabledIds.add(SkillNaming.canonicalId(it))
+                }
             }
         }
         // per-scope sidecar（文件缺失 = 空集，首次升级自然兼容）—— 同样走
         // canonicalId 归一：老设备 sidecar 里可能存的是 kebab 旧名，与内存中的
         // PascalCase 键不一致会导致双工位开关失联（主 disabled 集同口径）。
-        if (disabledAgentFile.exists()) {
-            disabledAgentFile.readLines().forEach {
-                if (it.isNotBlank()) disabledAgentIds.add(SkillNaming.canonicalId(it))
+        runCatching {
+            if (disabledAgentFile.exists()) {
+                disabledAgentFile.readLines().forEach {
+                    if (it.isNotBlank()) disabledAgentIds.add(SkillNaming.canonicalId(it))
+                }
             }
         }
-        if (disabledCodingFile.exists()) {
-            disabledCodingFile.readLines().forEach {
-                if (it.isNotBlank()) disabledCodingIds.add(SkillNaming.canonicalId(it))
+        runCatching {
+            if (disabledCodingFile.exists()) {
+                disabledCodingFile.readLines().forEach {
+                    if (it.isNotBlank()) disabledCodingIds.add(SkillNaming.canonicalId(it))
+                }
             }
         }
     }
 
+    /**
+     * #868：启停 sidecar 原子写（tmp + rename，复用 [AtomicFileWrite]）。
+     * 旧裸 writeText 在进程被杀时会留下截断文件：`.disabled*` 截断 → 重启
+     * 默认 enabled=true，**被禁用的技能静默重新启用**（权限面意外放宽）；
+     * 同文件 `.config.json` 早已执行同款纪律，此处拉齐。
+     */
     private fun persistDisabledIds() {
         try {
-            disabledFile.writeText(disabledIds.joinToString("\n"))
-            disabledAgentFile.writeText(disabledAgentIds.joinToString("\n"))
-            disabledCodingFile.writeText(disabledCodingIds.joinToString("\n"))
+            AtomicFileWrite.writeText(disabledFile, disabledIds.joinToString("\n"))
+            AtomicFileWrite.writeText(disabledAgentFile, disabledAgentIds.joinToString("\n"))
+            AtomicFileWrite.writeText(disabledCodingFile, disabledCodingIds.joinToString("\n"))
         } catch (_: Exception) { /* 写失败不阻断内存态，下次 setEnabled 再试 */ }
     }
 
@@ -356,7 +386,11 @@ class SkillRegistry(
                 }
 
                 val skillFile = File(skillsDir, "${manifest.id}.json")
-                skillFile.writeText(json.encodeToString(SkillManifest.serializer(), manifest))
+                // #868：安装清单原子写——裸 writeText 截断后解析抛异常被
+                // per-file try/catch 吞掉，已装技能会从注册表消失需重装
+                AtomicFileWrite.writeText(
+                    skillFile, json.encodeToString(SkillManifest.serializer(), manifest)
+                )
 
                 installedSkills[manifest.id] = InstalledSkill(
                     manifest = manifest,
@@ -412,7 +446,10 @@ class SkillRegistry(
                     ?.forEach { it.copyRecursively(File(skillHome, it.name), overwrite = true) }
 
                 val skillFile = File(skillsDir, "${manifest.id}.json")
-                skillFile.writeText(json.encodeToString(SkillManifest.serializer(), manifest))
+                // #868：与 install 同款原子写纪律
+                AtomicFileWrite.writeText(
+                    skillFile, json.encodeToString(SkillManifest.serializer(), manifest)
+                )
 
                 installedSkills[manifest.id] = InstalledSkill(
                     manifest = manifest,
@@ -918,26 +955,31 @@ class SkillRegistry(
     }
 
     private fun loadInstalledSkills() {
-        skillsDir.listFiles()?.filter { it.extension == "json" }?.forEach { file ->
-            try {
-                val decoded = json.decodeFromString<SkillManifest>(file.readText())
-                // v5：磁盘上的 id 可能是旧 kebab 名（老设备已装技能），读取时归一，
-                // 于是新旧命名在内存里是同一把键（不会并存两份）。
-                val id = SkillNaming.canonicalId(decoded.id)
-                if (validateSkillId(id)) {
-                    val manifest = if (id == decoded.id) decoded else decoded.copy(id = id)
-                    synchronized(lock) {
-                        installedSkills[manifest.id] = InstalledSkill(
-                            manifest = manifest,
-                            // “双禁” sidecar 优先；单工位 sidecar 独立叠加（旧安装无后两者）
-                            enabledAgent = manifest.id !in disabledIds && manifest.id !in disabledAgentIds,
-                            enabledCoding = manifest.id !in disabledIds && manifest.id !in disabledCodingIds,
-                            config = configValues[manifest.id]?.toMutableMap() ?: mutableMapOf()
-                        )
+        // #868：排除点开头文件（原子写中间件 `.tmp_*.json` / sidecar）与
+        // 目录，与 reconcileDirectory 的扫描口径对齐——防止崩溃残留的 tmp
+        // 清单被误当已装技能加载（双保险，主防线是 init 时的 sweepStaleTmpFiles）。
+        skillsDir.listFiles()
+            ?.filter { it.isFile && it.extension == "json" && !it.name.startsWith(".") }
+            ?.forEach { file ->
+                try {
+                    val decoded = json.decodeFromString<SkillManifest>(file.readText())
+                    // v5：磁盘上的 id 可能是旧 kebab 名（老设备已装技能），读取时归一，
+                    // 于是新旧命名在内存里是同一把键（不会并存两份）。
+                    val id = SkillNaming.canonicalId(decoded.id)
+                    if (validateSkillId(id)) {
+                        val manifest = if (id == decoded.id) decoded else decoded.copy(id = id)
+                        synchronized(lock) {
+                            installedSkills[manifest.id] = InstalledSkill(
+                                manifest = manifest,
+                                // “双禁” sidecar 优先；单工位 sidecar 独立叠加（旧安装无后两者）
+                                enabledAgent = manifest.id !in disabledIds && manifest.id !in disabledAgentIds,
+                                enabledCoding = manifest.id !in disabledIds && manifest.id !in disabledCodingIds,
+                                config = configValues[manifest.id]?.toMutableMap() ?: mutableMapOf()
+                            )
+                        }
                     }
-                }
-            } catch (_: Exception) { /* skip malformed */ }
-        }
+                } catch (_: Exception) { /* skip malformed */ }
+            }
     }
 
     /**

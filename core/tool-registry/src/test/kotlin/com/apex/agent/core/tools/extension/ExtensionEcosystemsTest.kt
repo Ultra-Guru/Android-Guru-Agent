@@ -44,24 +44,29 @@ class ExtensionEcosystemsTest {
         override suspend fun exec(
             command: List<String>,
             cwd: File,
-            timeoutMs: Long
+            timeoutMs: Long,
+            stdin: String?
         ): Result<NodeInstallPort.ExecOutcome> {
             executed += command
             if (failCommand != null && command.firstOrNull() == failCommand) {
                 return Result.success(NodeInstallPort.ExecOutcome(1, "", "simulated failure"))
             }
             // npm install --prefix <dir> -- <pkg>：模拟产物 node_modules/<pkg>/index.js
+            //（含 package.json —— DshPackageLayout 插件根定位依赖真实 npm 布局）
             if (command.firstOrNull() == "npm") {
                 val prefix = command[command.indexOf("--prefix") + 1]
                 val pkg = command.last()
                 val pkgDir = File(prefix, "node_modules/${pkg.replace("@", "").replace("/", "-")}")
                 pkgDir.mkdirs()
                 File(pkgDir, "index.js").writeText("// fake plugin")
+                File(pkgDir, "package.json").writeText("""{"name":"$pkg","version":"1.0.0","main":"index.js"}""")
             }
             if (command.firstOrNull() == "git") {
                 val target = File(command.last().trim('\''))
                 target.mkdirs()
                 File(target, "README.md").writeText("# fake repo")
+                File(target, "package.json").writeText("""{"name":"fake-repo","version":"0.1.0","main":"index.js"}""")
+                File(target, "index.js").writeText("// fake repo entry")
             }
             return Result.success(NodeInstallPort.ExecOutcome(0, "ok", ""))
         }
@@ -356,7 +361,7 @@ class ExtensionRunToolTest {
 
     private class FakeRunPort : NodeInstallPort {
         var lastCommand: List<String>? = null
-        override suspend fun exec(command: List<String>, cwd: File, timeoutMs: Long): Result<NodeInstallPort.ExecOutcome> {
+        override suspend fun exec(command: List<String>, cwd: File, timeoutMs: Long, stdin: String?): Result<NodeInstallPort.ExecOutcome> {
             lastCommand = command
             // npm 形态模拟真实安装产物：node_modules/<pkg>/index.js + package.json(main)
             if (command.firstOrNull() == "npm") {
@@ -438,5 +443,81 @@ class ExtensionRunToolTest {
         val result = tool.executeStructured("""{"id":"opencode.evil-pkg"}""")
         assertTrue("entry 逃逸必须被归属校验拦截: ${result.render()}", !result.isSuccess)
         assertEquals("篡改后的 entry 不得触发任何执行", beforeRun, port.lastCommand)
+    }
+}
+
+
+// ═══ ⑨ ExtensionAutoSyncRunner —— 生产化加固（方向④评估核）════════════
+
+class ExtensionAutoSyncRunnerTest {
+
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    private class FakeSyncPort : NodeInstallPort {
+        var lastCommand: List<String>? = null
+        override suspend fun exec(command: List<String>, cwd: File, timeoutMs: Long, stdin: String?): Result<NodeInstallPort.ExecOutcome> {
+            lastCommand = command
+            if (command.firstOrNull() == "npm") {
+                val prefix = command[command.indexOf("--prefix") + 1]
+                val pkg = command.last()
+                val pkgDir = File(prefix, "node_modules/$pkg")
+                pkgDir.mkdirs()
+                File(pkgDir, "index.js").writeText("// entry")
+                File(pkgDir, "package.json").writeText("{}")
+            }
+            return Result.success(NodeInstallPort.ExecOutcome(0, "", ""))
+        }
+        override suspend fun probeRuntime() = NodeInstallPort.RuntimeProbe("v22", "10")
+    }
+
+    private fun recordOf(id: String, hash: String) = ExtensionRegistry.Record(
+        id = id, type = ExtensionTypes.OPENCODE_PLUGIN, spec = "npm:x", name = id,
+        version = "1.0", runtime = RuntimeDomains.UBUNTU, sourceKind = SourceKinds.NPM,
+        manifestHash = hash, installedAt = 1L
+    )
+
+    @Test
+    fun `漂移与失败入报告 lastSync 落盘`() = runTest {
+        val ledger = ExtensionRegistry(tmp.newFolder("sync-ledger"))
+        val port = FakeSyncPort()
+        val installer = ExtensionInstaller(
+            ExtensionAdapterRegistry(listOf(OpenCodeExtensionAdapter(port, ExtensionDirLayout(tmp.newFolder("ext-root"))))),
+            ledger
+        )
+        // 预装一个扩展并手动钉一把「旧指纹」锁 → 源指纹必然不同 = 漂移
+        val manifest = installer.resolve("npm:pkg-drift").getOrThrow()
+        ledger.record(recordOf(manifest.id, "stale-hash").copy(runtime = RuntimeDomains.UBUNTU))
+        ledger.lock(ExtensionRegistry.LockEntry(manifest.id, "stale-hash", "1.0", "npm:pkg-drift", 1L))
+
+        val runner = ExtensionAutoSyncRunner(installer, ledger)
+        val report = runner.run(listOf("npm:pkg-drift", "npm:pkg-new", "skill:json:{bad"))
+
+        assertEquals(1, report.ok)
+        assertTrue("漂移项入报告", report.drifted.any { it.startsWith("opencode.pkg-drift") })
+        assertTrue("失败项入报告（skill:json:{bad 语法非法）", report.failed.any { it.contains("skill:json:{bad") })
+        assertTrue(report.hasIssues)
+
+        // lastSync 落盘 + 重载隔离（新实例只读自己的目录 → 空）
+        val reloaded = ExtensionRegistry(tmp.newFolder("sync-ledger-copy"))
+        assertNull(reloaded.lastSync())
+        val live = ledger.lastSync()
+        assertNotNull(live)
+        assertEquals(report.ok, live!!.ok)
+    }
+
+    @Test
+    fun `空清单零报告`() = runTest {
+        val ledger = ExtensionRegistry(tmp.newFolder("sync-ok"))
+        val runner = ExtensionAutoSyncRunner(
+            ExtensionInstaller(
+                ExtensionAdapterRegistry(emptyList()),
+                ledger
+            ),
+            ledger
+        )
+        val empty = runner.run(emptyList())
+        assertEquals(0, empty.ok)
+        assertTrue(!empty.hasIssues)
     }
 }

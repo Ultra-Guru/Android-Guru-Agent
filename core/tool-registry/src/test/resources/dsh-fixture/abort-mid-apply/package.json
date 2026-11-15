@@ -1,0 +1,6 @@
+{
+  "name": "dsh-fixture-abort-mid-apply",
+  "version": "0.1.0",
+  "description": "P0 fixture: apply 中途触碰未支持服务 —— 部分捕获 + service-unavailable",
+  "main": "index.js"
+}

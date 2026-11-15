@@ -9,6 +9,7 @@ import com.apex.agent.core.logging.LogCategory
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -79,11 +80,21 @@ class FastModelGoalVerifier(
             json.parseToJsonElement(body.substring(start, end + 1)).jsonObject
         }.getOrNull() ?: return null
         val achieved = obj["achieved"]?.jsonPrimitive?.booleanOrNull ?: return null
+        // v4 逐条验收：criteria = 与条件行序对齐的布尔数组（可选；缺失/非法 → null 回退整体判定）。
+        val criteria = obj["criteria"]?.let { el ->
+            runCatching {
+                el.jsonArray.mapNotNull { item ->
+                    runCatching { item.jsonPrimitive.booleanOrNull }.getOrNull()
+                }
+            }.getOrNull()?.takeIf { it.isNotEmpty() }
+        }
         return GoalCheckResult(
-            achieved = achieved,
+            // 逐条数据存在时与整体字段取与（防自相矛盾：任一条未过即未达成）。
+            achieved = achieved && (criteria?.all { it } != false),
             reason = obj["reason"]?.jsonPrimitive?.content?.ifBlank { "（验收器未给出理由）" }?.take(500)
                 ?: "（验收器未给出理由）",
             evidence = obj["evidence"]?.jsonPrimitive?.content?.ifBlank { null }?.take(500),
+            criteriaResults = criteria,
         )
     }
 

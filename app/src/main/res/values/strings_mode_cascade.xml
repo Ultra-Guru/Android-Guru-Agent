@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ═══ v4 Coding 模式级联选择器（Build 二级自主级别 / Plan / Goal）═══ -->
+
+    <!-- 触发胶囊无障碍描述（%1$s = 组合标签，如 "Build · Semi-autonomous (clarify: on)"） -->
+    <string name="code_cascade_chip_cd">Task mode: %1$s. Tap to switch</string>
+
+    <!-- Build 一级项（点击只展开/收起二级，不切换模式） -->
+    <string name="code_cascade_build_expand_cd">Build: expand autonomy submenu</string>
+    <string name="code_cascade_build_collapse_cd">Build: collapse autonomy submenu</string>
+
+    <!-- Plan / Goal 一级项（点击直接选中） -->
+    <string name="code_cascade_mode_select_cd">%1$s: select this mode</string>
+
+    <!-- ═══ 三档自主级别（提问策略）═══ -->
+
+    <string name="autonomy_level_label">Autonomy level</string>
+    <string name="autonomy_name_interactive">Interactive</string>
+    <string name="autonomy_name_semi">Semi-autonomous</string>
+    <string name="autonomy_name_fully">Fully autonomous</string>
+
+    <string name="autonomy_desc_interactive">Asks whenever a correctness-affecting ambiguity exists; merges same-topic questions</string>
+    <string name="autonomy_desc_semi">Asks only what materially affects acceptance; decides the rest and records assumptions</string>
+    <string name="autonomy_desc_fully">Zero questions while executing; decides and records assumptions and risks</string>
+
+    <!-- 自主级别行无障碍描述（%1$s = 级别名；%2$s = 选中态后缀或空） -->
+    <string name="autonomy_option_cd">Autonomy level: %1$s%2$s</string>
+    <string name="autonomy_selected_suffix">, selected</string>
+
+    <!-- 完全自主的「开始前集中澄清」开关（仅完全自主选中时显示；状态跨级别保留） -->
+    <string name="autonomy_pre_clarify_label">Batch clarification up front</string>
+    <string name="autonomy_pre_clarify_desc">Asks all questions once before starting; skipped ones run on default assumptions</string>
+    <string name="autonomy_pre_clarify_on_suffix"> (clarify: on)</string>
+    <string name="autonomy_pre_clarify_cd">Batch clarification up front switch</string>
+
+    <!-- ═══ v4 Goal 目标驱动状态机（GoalSpec 扩展字段 + 阶段展示）═══ -->
+
+    <!-- 设定弹层高级字段折叠区 -->
+    <string name="goal_advanced_section">Advanced fields (all optional)</string>
+    <string name="goal_field_constraints">Constraints</string>
+    <string name="goal_field_non_goals">Non-goals</string>
+    <string name="goal_field_metrics">Success metrics</string>
+    <string name="goal_field_risks">Known risks</string>
+
+    <!-- 阶段徽标（CLARIFYING → SPEC_READY → EXECUTING ⇄ VERIFYING → DONE / BLOCKED） -->
+    <string name="goal_phase_clarifying">Clarifying</string>
+    <string name="goal_phase_spec_ready">Spec ready</string>
+    <string name="goal_phase_executing">Executing</string>
+    <string name="goal_phase_verifying">Verifying</string>
+    <string name="goal_phase_done">Done</string>
+    <string name="goal_phase_blocked">Blocked</string>
+
+    <!-- 阶段对应的下一步提示 -->
+    <string name="goal_next_clarifying">Next: answer the batched questions; execution starts right after</string>
+    <string name="goal_next_spec_ready">Next: send the first message to start working toward the goal</string>
+    <string name="goal_next_executing">Next: the round ends with an automatic verification</string>
+    <string name="goal_next_verifying">Fast model is checking the work against the criteria…</string>
+    <string name="goal_next_done">All acceptance criteria passed</string>
+    <string name="goal_next_blocked">Blocked: review the gaps or restart the goal</string>
+
+    <!-- 逐条验收清单（%1$d = 已通过条数；%2$d = 总条数） -->
+    <string name="goal_criteria_progress">Criteria %1$d/%2$d</string>
+
+    <!-- 规格详情折叠区标题 -->
+    <string name="goal_spec_details">Spec details</string>
+
+    <!-- 自主级别徽标行（%1$s = 级别名） -->
+    <string name="goal_autonomy_badge">Autonomy: %1$s</string>
+
+    <!-- ═══ v4 Plan 确认卡（三规格区块 + Goal 流转）═══ -->
+
+    <string name="plan_start_execution">Start executing plan</string>
+    <string name="plan_switch_to_goal_cd">Switch to Goal mode with this plan</string>
+    <string name="plan_section_goal">Plan goal</string>
+    <string name="plan_section_reasoning">Reasoning</string>
+    <string name="plan_section_steps">Execution steps</string>
+</resources>

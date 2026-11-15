@@ -106,12 +106,15 @@ internal fun ExtensionWizardDialog(
                         Text(stringResource(R.string.market_extension_wizard_preview))
                     }
                 } else {
-                    // 第二步：装（敏感扩展需勾选确认）
+                    // 第二步：装（失败后同按钮即重试 —— hash 仍有效）
                     Button(
                         onClick = { controller.install(confirmed = confirmChecked || !state.requiresConfirm) },
                         enabled = !state.busy && !(state.requiresConfirm && !confirmChecked)
                     ) {
-                        Text(stringResource(R.string.market_action_install))
+                        Text(
+                            if (state.result?.startsWith("❌") == true) stringResource(R.string.market_action_retry)
+                            else stringResource(R.string.market_action_install)
+                        )
                     }
                 }
             }

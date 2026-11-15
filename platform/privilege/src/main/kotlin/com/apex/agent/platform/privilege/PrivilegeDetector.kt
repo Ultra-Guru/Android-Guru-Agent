@@ -2,6 +2,7 @@ package com.apex.agent.platform.privilege
 
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
+import com.apex.agent.core.su.SuCandidateRegistry
 import com.apex.agent.platform.privilege.shizuku.ShizukuCommandExecutor
 import kotlinx.coroutines.runBlocking
 import java.io.File
@@ -42,17 +43,7 @@ object PrivilegeDetector {
      * 检测Root是否可用
      */
     fun detectRoot(): Boolean {
-        val suPaths = listOf(
-            "/system/bin/su",
-            "/system/xbin/su",
-            "/sbin/su",
-            "/su/bin/su",
-            "/magisk/.core/bin/su",
-            "/data/adb/ksu/bin/su",  // KernelSU
-            "/data/adb/ap/bin/su"    // APatch
-        )
-        if (suPaths.any { File(it).exists() }) return true
-
+        val su = rootExecutable()
         return try {
             // 探「真实可用 root」而非「su 二进制存在」：桌面 Linux（CI runner /
             // 开发机）人手一份 util-linux su，`su --version` 必退出 0 —— 旧口径
@@ -61,7 +52,7 @@ object PrivilegeDetector {
             // `su -c id` 并验证 uid=0：已授权设备返回 "uid=0(root)"；桌面
             // 无 tty 密码认证即刻失败；waitFor 3s 兜底防挂（id 输出 << 管道
             // 缓冲，无排空死锁面）。
-            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
+            val process = Runtime.getRuntime().exec(arrayOf(su, "-c", "id"))
             val completed = process.waitFor(3, TimeUnit.SECONDS)
             if (!completed) {
                 process.destroyForcibly()
@@ -73,6 +64,10 @@ object PrivilegeDetector {
             false
         }
     }
+
+    /** The same executable is used for both root probing and real commands. */
+    internal fun rootExecutable(candidates: List<String> = SuCandidateRegistry.paths): String =
+        candidates.firstOrNull { File(it).isFile && File(it).canExecute() } ?: "su"
 
     /**
      * 检测Shizuku是否可用且已授权
@@ -177,15 +172,22 @@ object PrivilegeDetector {
         // 被污染性 cwd 掩盖。
         val effectiveWorkDir = workDir?.let { File(it).absoluteFile }?.takeIf { it.isDirectory }
 
+        // #808：通道判定改走 [getPrivilegeLevel]——复用其 30s TTL 缓存与
+        // invalidateCache 生命周期失效（Shizuku binder 死亡 / 用户起停时主动
+        // 失效）。旧实现每条命令直调 detectRoot()/detectShizuku()，绕过缓存
+        // → 每次都 fork `su -c id` 子进程探测（约 3s/条）。判定语义不变：
+        // ROOT > SHIZUKU > NORMAL_SHELL，与 getPrivilegeLevel() 内部一致。
+        val level = getPrivilegeLevel()
+
         // 优先级1: Root（cd 前缀单引号安全包裹：带空格/元字符的路径不再语法错误）
-        if (detectRoot()) {
+        if (level == PrivilegeLevel.ROOT) {
             val suCommand = if (effectiveWorkDir != null) {
                 "cd ${shellQuote(effectiveWorkDir.absolutePath)} && $command"
             } else {
                 command
             }
             return executeWithTimeout(
-                arrayOf("su", "-c", suCommand),
+                arrayOf(rootExecutable(), "-c", suCommand),
                 timeoutMs,
                 "root",
                 effectiveWorkDir?.absolutePath,
@@ -193,7 +195,7 @@ object PrivilegeDetector {
         }
 
         // 优先级2: Shizuku —— 真实 ADB 级（IShizukuService.newProcess AIDL）
-        if (detectShizuku()) {
+        if (level == PrivilegeLevel.SHIZUKU) {
             return executeViaShizuku(command, timeoutMs, effectiveWorkDir?.absolutePath)
         }
 

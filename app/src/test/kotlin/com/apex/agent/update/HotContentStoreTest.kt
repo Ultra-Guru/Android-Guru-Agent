@@ -14,7 +14,8 @@ import java.io.File
  *
  * 覆盖：applyPackage 原子换位 + 记账 / 技能清单与 id 集读取 / 目录文件读取 /
  * 有效版本口径 / APK 追平退役（清 overlay + 清记账）/ 暂存残留清理 /
- * 换入失败回滚（staging 消失 → 旧内容换回，防「让位后丢内容」）。
+ * 换入失败回滚（staging 消失 → 旧内容换回，防「让位后丢内容」）/ S-02
+ * backup 保留 + rollback 回滚（回上一代内容与记账，可回滚性判定）。
  *
  * prefs 用手写内存 fake（仓库纪律：无 mock 框架）；[Env] 让同一 filesDir +
  * 同一 prefs 在不同 packageVersionCode 下复用（模拟「热更后重装新 APK」）。
@@ -30,6 +31,12 @@ class HotContentStoreTest {
         var targetVname: String? = null
         var tag: String? = null
         var pkgSha: String? = null
+
+        // S-02 回滚点（backup 档）
+        var backupVcode = 0
+        var backupVname: String? = null
+        var backupTag: String? = null
+        var backupPkgSha: String? = null
 
         override fun appliedTargetVersionCode(): Int = targetVcode
         override fun appliedTargetVersionName(): String? = targetVname
@@ -53,6 +60,34 @@ class HotContentStoreTest {
             targetVname = null
             tag = null
             pkgSha = null
+            backupVcode = 0
+            backupVname = null
+            backupTag = null
+            backupPkgSha = null
+        }
+
+        override fun backupTargetVersionCode(): Int = backupVcode
+        override fun backupTargetVersionName(): String? = backupVname
+        override fun backupTag(): String? = backupTag
+        override fun backupPackageSha256(): String? = backupPkgSha
+
+        override fun recordBackup(
+            targetVersionCode: Int,
+            targetVersionName: String,
+            tag: String?,
+            packageSha256: String?
+        ) {
+            backupVcode = targetVersionCode
+            backupVname = targetVersionName
+            backupTag = tag
+            backupPkgSha = packageSha256
+        }
+
+        override fun clearBackup() {
+            backupVcode = 0
+            backupVname = null
+            backupTag = null
+            backupPkgSha = null
         }
     }
 
@@ -264,5 +299,141 @@ class HotContentStoreTest {
         assertFalse(names.contains("active-old"))
         // active 内容不受清理影响
         assertEquals(setOf("a"), store.activeSkillIds())
+    }
+
+    // ── S-02：backup 保留与回滚 ─────────────────────────────────────────
+
+    @Test
+    fun `first apply leaves no rollback point`() {
+        val env = Env()
+        val store = env.store(45)
+        val stage = stagingWith(env.filesDir, skills = mapOf("a" to """{"id":"a"}"""))
+        assertTrue(store.applyPackage(stage, manifest46, "v1.4.5.3", PKG_SHA_A))
+
+        assertFalse("首次 apply 无上一代 → 无可回滚", store.hasBackup())
+        assertEquals(-1, store.rollback())
+    }
+
+    @Test
+    fun `second apply keeps previous overlay as rollback point`() {
+        val env = Env()
+        val store = env.store(45)
+        val first = stagingWith(env.filesDir, skills = mapOf("old" to """{"id":"old"}"""))
+        assertTrue(store.applyPackage(first, manifest46, "v1.4.5.3", PKG_SHA_A))
+
+        val manifest47 = HotPackage.Manifest(
+            schema = HotPackage.SCHEMA,
+            targetVersionCode = 47,
+            targetVersionName = "1.4.5.4",
+            entries = listOf(HotPackage.Entry("skills/new.json", "00"))
+        )
+        val second = stagingWith(env.filesDir, skills = mapOf("new" to """{"id":"new"}"""))
+        assertTrue(store.applyPackage(second, manifest47, "v1.4.5.4", PKG_SHA_B))
+
+        assertTrue("apply 后保留上一代回滚点", store.hasBackup())
+        assertEquals(46, env.prefs.backupVcode)
+        assertEquals("1.4.5.3", env.prefs.backupVname)
+        assertEquals(PKG_SHA_A, env.prefs.backupPkgSha)
+    }
+
+    @Test
+    fun `rollback restores previous content and bookkeeping`() {
+        val env = Env()
+        val store = env.store(45)
+        val first = stagingWith(env.filesDir, skills = mapOf("old" to """{"id":"old"}"""))
+        assertTrue(store.applyPackage(first, manifest46, "v1.4.5.3", PKG_SHA_A))
+
+        val manifest47 = HotPackage.Manifest(
+            schema = HotPackage.SCHEMA,
+            targetVersionCode = 47,
+            targetVersionName = "1.4.5.4",
+            entries = listOf(HotPackage.Entry("skills/new.json", "00"))
+        )
+        val second = stagingWith(env.filesDir, skills = mapOf("new" to """{"id":"new"}"""))
+        assertTrue(store.applyPackage(second, manifest47, "v1.4.5.4", PKG_SHA_B))
+        assertEquals(setOf("new"), store.activeSkillIds())
+        assertEquals(47, store.effectiveVersionCode())
+
+        // 回滚：内容与记账回到上一代（v46），回滚点消费完毕
+        val rolled = store.rollback()
+        assertEquals(46, rolled)
+        assertEquals(setOf("old"), store.activeSkillIds())
+        assertEquals(46, env.prefs.targetVcode)
+        assertEquals("1.4.5.3", env.prefs.targetVname)
+        assertEquals(PKG_SHA_A, env.prefs.pkgSha)
+        assertFalse("回滚点已消费", store.hasBackup())
+        // 回滚点只能用一次：再回滚无点可用
+        assertEquals(-1, store.rollback())
+    }
+
+    @Test
+    fun `rollback only keeps one generation of backup`() {
+        val env = Env()
+        val store = env.store(45)
+        val m47 = HotPackage.Manifest(
+            schema = HotPackage.SCHEMA,
+            targetVersionCode = 47,
+            targetVersionName = "1.4.5.4",
+            entries = listOf(HotPackage.Entry("skills/b.json", "00"))
+        )
+        val m48 = HotPackage.Manifest(
+            schema = HotPackage.SCHEMA,
+            targetVersionCode = 48,
+            targetVersionName = "1.4.5.5",
+            entries = listOf(HotPackage.Entry("skills/c.json", "00"))
+        )
+        assertTrue(
+            store.applyPackage(
+                stagingWith(env.filesDir, skills = mapOf("a" to "1")), manifest46, null, null
+            )
+        )
+        assertTrue(
+            store.applyPackage(
+                stagingWith(env.filesDir, skills = mapOf("b" to "2")), m47, null, null
+            )
+        )
+        assertTrue(
+            store.applyPackage(
+                stagingWith(env.filesDir, skills = mapOf("c" to "3")), m48, null, null
+            )
+        )
+
+        // 只保一代：第三次 apply 后回滚点指向 v47（而非 v46）
+        assertTrue(store.hasBackup())
+        assertEquals(47, env.prefs.backupVcode)
+        assertEquals(47, store.rollback())
+        // 回滚后 active 是 v47 内容（第三次 apply 时的上一代）
+        assertEquals(setOf("b"), store.activeSkillIds())
+        // 回滚点已消费，v47 生效中但无新回滚点
+        assertFalse(store.hasBackup())
+    }
+
+    @Test
+    fun `retirement clears rollback point along with everything`() {
+        val env = Env()
+        val store = env.store(45)
+        assertTrue(
+            store.applyPackage(
+                stagingWith(env.filesDir, skills = mapOf("a" to "1")), manifest46, null, null
+            )
+        )
+        val manifest47 = HotPackage.Manifest(
+            schema = HotPackage.SCHEMA,
+            targetVersionCode = 47,
+            targetVersionName = "1.4.5.4",
+            entries = listOf(HotPackage.Entry("skills/b.json", "00"))
+        )
+        assertTrue(
+            store.applyPackage(
+                stagingWith(env.filesDir, skills = mapOf("b" to "2")), manifest47, null, null
+            )
+        )
+        assertTrue(store.hasBackup())
+
+        // APK 追平退役：backup 位与回滚点记账一并清除
+        val afterInstall = env.store(47)
+        assertFalse(afterInstall.hasBackup())
+        assertEquals(0, env.prefs.backupVcode)
+        assertEquals(-1, afterInstall.rollback())
     }
 }

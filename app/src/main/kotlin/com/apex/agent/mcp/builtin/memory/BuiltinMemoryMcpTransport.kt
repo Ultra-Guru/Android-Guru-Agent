@@ -44,6 +44,11 @@ import kotlinx.serialization.json.putJsonObject
  *
  * 渲染决策：读类工具输出**紧凑 JSON**（与官方返回值同构、机器可再解析）；
  * 写类工具输出简短中文确认（上下文经济）。
+ *
+ * #841 双写入面收口：MCP transport 直连库 store（不经 Agent 工具层），
+ * 写入参数以 MemoryWriteLimits（platform:memory-host）同口径钳制
+ * （实体 ≤64 / 关系 ≤128 / 观察 ≤32、单条 ≤2KB）—— 与 MemoryWriteTools
+ * 工具层同闸，防绕过。
  */
 class BuiltinMemoryMcpTransport(
     private val store: MemoryStore,
@@ -140,7 +145,7 @@ class BuiltinMemoryMcpTransport(
             ?: throw MemoryToolException("需要参数 entities（实体数组）")
         if (array.isEmpty()) return "入参为空，没有需要创建的实体"
 
-        val entities = array.mapIndexed { index, element ->
+        val entitiesRaw = array.mapIndexed { index, element ->
             try {
                 json.decodeFromJsonElement(GraphEntity.serializer(), element).also {
                     if (it.name.isBlank()) {
@@ -153,11 +158,21 @@ class BuiltinMemoryMcpTransport(
                 )
             }
         }
+        // #841 钳制：与 Agent 工具层（MemoryGraph）同闸 —— 实体 ≤64、
+        // 单实体观察 ≤16、单条 ≤2KB；越限部分显式丢弃（回报计数，不静默）。
+        val entities = com.apex.agent.platform.memory.tools.MemoryWriteLimits
+            .clampEntities(entitiesRaw)
+        val dropped = entitiesRaw.size - entities.size
         val added = store.upsertGraphEntities(entities)
-        return if (added.isEmpty()) {
-            "没有变化：入参实体均已存在且无新观察"
-        } else {
-            "✅ 新建 ${added.size} 个（${added.joinToString("、")}）；同名既有实体已合并观察"
+        return buildString {
+            if (added.isEmpty()) {
+                append("没有变化：入参实体均已存在且无新观察")
+            } else {
+                append("✅ 新建 ${added.size} 个（${added.joinToString("、")}）；同名既有实体已合并观察")
+            }
+            if (dropped > 0) {
+                append("；已按 #841 写入上限裁剪 $dropped 个（单次上限 64 实体）")
+            }
         }
     }
 
@@ -166,7 +181,7 @@ class BuiltinMemoryMcpTransport(
             ?: throw MemoryToolException("需要参数 relations（关系数组）")
         if (array.isEmpty()) return "入参为空，没有需要创建的关系"
 
-        val relations = array.mapIndexed { index, element ->
+        val relationsRaw = array.mapIndexed { index, element ->
             try {
                 json.decodeFromJsonElement(GraphRelation.serializer(), element)
             } catch (e: Exception) {
@@ -175,12 +190,17 @@ class BuiltinMemoryMcpTransport(
                 )
             }
         }
+        // #841 钳制：关系 ≤128 条、单条字段 ≤2KB（与 Agent 工具层同闸）
+        val relations = com.apex.agent.platform.memory.tools.MemoryWriteLimits
+            .clampRelations(relationsRaw)
+        val dropped = relationsRaw.size - relations.size
         val added = store.addGraphRelations(relations)
         val duplicates = relations.size - added
         return buildString {
             append("✅ ")
             append(if (added > 0) "新增 $added 条关系" else "没有新增关系")
             if (duplicates > 0) append("；跳过 $duplicates 条重复关系")
+            if (dropped > 0) append("；已按 #841 写入上限裁剪 $dropped 条（单次上限 128 条）")
         }.toString()
     }
 
@@ -189,14 +209,24 @@ class BuiltinMemoryMcpTransport(
             ?: throw MemoryToolException("需要参数 entityName")
         val array = args["contents"] as? JsonArray
             ?: throw MemoryToolException("需要参数 contents（字符串数组）")
-        val contents = array.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+        val contentsRaw = array.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+        // #841 钳制：观察 ≤32 条、单条 ≤2KB（与 Agent 工具层同闸）
+        val contents = com.apex.agent.platform.memory.tools.MemoryWriteLimits
+            .clampStrings(
+                contentsRaw,
+                com.apex.agent.platform.memory.tools.MemoryWriteLimits.MAX_OBSERVATION_BATCH,
+            )
         val ok = store.addObservations(entityName, contents)
         if (!ok) throw MemoryToolException("实体不存在: $entityName")
-        return if (contents.isNotEmpty()) {
-            "✅ 已向实体 $entityName 追加观察（重复项自动去重）"
-        } else {
-            "没有新增观察（内容为空或全部已存在）"
-        }
+        val dropped = contentsRaw.size - contents.size
+        return buildString {
+            if (contents.isNotEmpty()) {
+                append("✅ 已向实体 $entityName 追加观察（重复项自动去重）")
+            } else {
+                append("没有新增观察（内容为空或全部已存在）")
+            }
+            if (dropped > 0) append("；已按 #841 写入上限裁剪 $dropped 条（单次上限 32 条）")
+        }.toString()
     }
 
     private suspend fun callReadGraph(): String {

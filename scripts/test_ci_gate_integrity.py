@@ -27,6 +27,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 CI = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 QUALITY = REPO_ROOT / "scripts" / "check_code_quality.sh"
 ROOTFS = REPO_ROOT / "scripts" / "fetch_rootfs.sh"
+VERIFY_WRAPPER = REPO_ROOT / ".github" / "actions" / "verify-wrapper" / "action.yml"
 
 failures = []
 
@@ -105,13 +106,20 @@ def main() -> int:
     )
 
     # ── ⑥ wrapper 不得被 CI 覆盖 ───────────────────────────────────────────
+    # #782：校验逻辑收编为 .github/actions/verify-wrapper 复合动作（ci/apk/
+    # release/media-results 四条流水线共用，单一事实源）。本契约随之改为
+    # 校验「ci.yml 引用收编动作 + 动作内确有校验步骤」，防回退语义不变。
+    verify_action = read(VERIFY_WRAPPER)
     regen = re.findall(r"gradle wrapper --gradle-version", ci)
-    check("⑥ 无 `gradle wrapper --gradle-version` 覆盖调用", not regen,
-          f"发现 {len(regen)} 处 wrapper 重生成")
+    regen_action = re.findall(r"gradle wrapper --gradle-version", strip_comments(verify_action))
+    check("⑥ 无 `gradle wrapper --gradle-version` 覆盖调用", not regen and not regen_action,
+          f"ci.yml {len(regen)} 处 / 复合动作 {len(regen_action)} 处 wrapper 重生成")
     check(
-        "⑥ 存在 wrapper 版本校验步骤",
-        "Verify Gradle wrapper is in sync with CI" in ci,
-        "找不到 wrapper 校验步骤",
+        "⑥ wrapper 版本校验走 verify-wrapper 复合动作",
+        "uses: ./.github/actions/verify-wrapper" in ci
+        and "Verify Gradle wrapper is in sync" in verify_action
+        and "distributionUrl" in verify_action,
+        "ci.yml 未引用收编复合动作，或动作缺版本校验步骤",
     )
 
     # ── ⑧ check_code_quality.sh 的 grep 必须带 -H ──────────────────────────

@@ -13,8 +13,8 @@ import com.apex.agent.net.NetworkMonitor
 import com.apex.agent.notify.ApexNotifications
 import com.apex.agent.notify.ForegroundTracker
 import com.apex.agent.platform.EnvironmentStateUpdater
+import com.apex.agent.platform.memory.di.MemoryKitInitializer
 import com.apex.agent.platform.memory.work.MaintenanceScheduler
-import com.apex.memkit.core.MemKit
 import com.apex.agent.platform.privilege.PrivilegeDetector
 import com.apex.agent.platform.privilege.PrivilegeManager
 import com.apex.agent.platform.terminal.ubuntu.lifecycle.UbuntuLifecycleCoordinator
@@ -40,9 +40,13 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
 
-    // ★ 触发 Hilt 创建记忆库单例（MemKit 构造 = 加载 + 旧存储一次性迁移 + 管道启动）。
+    // ★ #822 主线程解耦：不再 @Inject MemKit（旧写法在 Application.onCreate
+    // 主线程触发 Hilt 解析 —— runBlocking 的库加载 + 全量旧存储迁移把冷启动
+    // 钉死在主线程 + StrictMode 磁盘违例）。改经 [MemoryKitInitializer] 在
+    // IO 协程懒解析单例并顺带迁移；其他消费方（工具/记忆页/MCP/Worker）
+    // 在此之后解析时创建已在后台完成。
     @Inject
-    lateinit var memKit: MemKit
+    lateinit var memoryKitInitializer: MemoryKitInitializer
 
     // 记忆维护周期调度（WorkManager；梦境语义约束）。
     @Inject
@@ -321,13 +325,21 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
 
     /**
      * 启动记忆库后台管道（apex-kit-memory）。
-     * - MemKit：库写入管道已在 DI 构造时 start（首帧加载 + 旧存储一次性迁移）。
-     * - MaintenanceScheduler：WorkManager 周期维护（衰减/剪枝/晶化/别名发现，
-     *   约束 = 充电 + 电量不低 + 空闲 + WiFi，原 DreamRenderer 梦境语义）。
+     * - MemKit（#822）：单例解析 + 旧存储一次性迁移全部在 IO 协程执行
+     *   （MemoryKitInitializer.initializeAsync；主线程零阻塞零磁盘违例）。
+     * - MaintenanceScheduler（#851）：周期维护（充电 + 电量不低 —— 原约束
+     *   组合「充电 ∧ 深度空闲」在 Doze 语义下永无交集，维护从未跑过）+
+     *   每次冷启动的一次性兜底（Worker 内电量门自适应）。
      */
     private fun initCsMem() {
         runCatching {
+            memoryKitInitializer.initializeAsync()
+        }.onFailure {
+            Log.w("ApexAgent", "Failed to init memory kit in background: ${it.message}")
+        }
+        runCatching {
             maintenanceScheduler.schedule(this)
+            maintenanceScheduler.scheduleStartupFallback(this)
         }.onFailure {
             Log.w("ApexAgent", "Failed to schedule memory maintenance: ${it.message}")
         }

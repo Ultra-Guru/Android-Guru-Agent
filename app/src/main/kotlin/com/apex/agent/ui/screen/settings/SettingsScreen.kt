@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -27,6 +28,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
@@ -48,6 +51,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import com.apex.agent.core.llm.ModelProfile
+import com.apex.agent.ui.screen.code.discardPendingSkinChange
 import com.apex.agent.permission.PermissionSettingsSection
 import kotlinx.coroutines.launch
 
@@ -71,12 +75,24 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
     onBack: () -> Unit = {}
 ) {
+    // ═══ v1.2/v1.3 部件外观（PartSkin spec）：会话皮肤状态机（active/pending）
+    // 与「立即新建对话并应用」动作来自 CodeViewModel —— 单 Activity 架构下
+    // hiltViewModel() 解析同一 ViewModelStore，与 CodeScreen 共享同一实例。═══
+    // BUG-12(Spec02 · 待 SkinActivationRepository 抽取):hiltViewModel() 默认
+    // 作用域是 NavBackStackEntry,跨目的地不保证与 Code 屏共享 —— clearConversation/
+    // discardPendingSkinChange 可能作用于孤儿实例。完整修复 = 抽皮肤激活单例仓 +
+    // 仪器测试验证「设置改皮肤 → Code 屏生效」,工程独立于本批(风险见 Spec §6)。
+    val codeViewModel: com.apex.agent.ui.screen.code.CodeViewModel = hiltViewModel()
+    val codeState by codeViewModel.uiState.collectAsStateWithLifecycle()
+    // B0-BUG-01:配置损坏横幅(持久展示;损坏域写回已禁用,原始数据保留在 corrupt_backup_*)
+    val corruptedDomains by viewModel.dataCorruption.collectAsStateWithLifecycle()
     val profiles by viewModel.profiles.collectAsStateWithLifecycle()
     val providers by viewModel.providers.collectAsStateWithLifecycle()
     val roles by viewModel.roles.collectAsStateWithLifecycle()
     val agent by viewModel.agentSettings.collectAsStateWithLifecycle()
 
-    var selectedId by remember { mutableStateOf(viewModel.defaultProfile.id) }
+    // B1-BUG-10:选中档案/弹窗开关 saveable(旋转/进程重建/切标签往返不丢)
+    var selectedId by rememberSaveable { mutableStateOf(viewModel.defaultProfile.id) }
     val selected = profiles.firstOrNull { it.id == selectedId } ?: profiles.firstOrNull()
 
     // ═══ 导航状态（rememberSaveable：旋转/进程重建不丢）═══
@@ -91,17 +107,23 @@ fun SettingsScreen(
 
     // 各标签页面状态隔离（切标签往返：滚动位置/展开态保留 —— 与根层
     // ApexRoot 的 destinationStateHolder 同款模式）
+            // BUG-11(Spec01 · 待 page.id 元数据):SaveableStateProvider 以 route 为
+            // key —— 分类重排改 route 会丢页面状态;别名表/page.id 落地后切换,
+            // 当前 route 即现状最稳定键(B0 已保证恢复时失效 route 被过滤)。
     val pageStateHolder = rememberSaveableStateHolder()
 
     // 进入设置页即打开设置抽屉（总抽屉已由根层收回）
     val settingsDrawerState = rememberDrawerState(initialValue = DrawerValue.Open)
     val scope = rememberCoroutineScope()
 
-    var showProviders by remember { mutableStateOf(false) }
-    var showRoles by remember { mutableStateOf(false) }
+    var showProviders by rememberSaveable { mutableStateOf(false) }
+    var showRoles by rememberSaveable { mutableStateOf(false) }
 
     // Agent 设置统一更新入口
-    val onAgent: (AgentSettings) -> Unit = { next -> viewModel.updateAgentSettings { next } }
+    // B1-BUG-05:字段级变换管道(读最新值再变换)—— 旧实现整体覆盖
+    // { next } 快速连点/后台 AgentSettingSet 并发写会互相覆盖。
+    val onAgent: (AgentSettings.() -> AgentSettings) -> Unit =
+        { transform -> viewModel.updateAgentSettings(transform) }
 
     // ═══ 抽屉交互 ═══
     val openSettingsDrawer: () -> Unit = {
@@ -117,11 +139,11 @@ fun SettingsScreen(
         expandedCategory = categoryOfLeaf(route)?.route
         scope.launch { settingsDrawerState.close() }
     }
-    // 全部标签关闭：页面消失 → 返回设置抽屉（重新选分类）
+    // B1-BUG-13:全部标签关闭 → 显示设置首页(引导态),不再自动重开抽屉
+    // (旧实现重复清空状态后又弹抽屉,用户被迫再面对一次遮罩)。
     val onAllTabsClosed: () -> Unit = {
         openTabs = emptyList()
         activeTab = ""
-        openSettingsDrawer()
     }
     // 关闭单个标签：关闭激活标签 → 回退相邻标签（左优先，规则见 closeSettingsTab）
     val onCloseTab: (String) -> Unit = { route ->
@@ -134,6 +156,11 @@ fun SettingsScreen(
     // ═══ 返回键链：抽屉开 → 关抽屉；有标签 → 关当前标签（同点叉号）；否则 → 出设置页 ═══
     BackHandler(enabled = settingsDrawerState.isOpen) {
         scope.launch { settingsDrawerState.close() }
+    }
+    // B1-BUG-09:返回链第三级 —— 无标签且抽屉关 → 真正退出设置
+    // (旧实现 onBack 参数声明后从未调用,返回键在三步内走不完退出链)。
+    BackHandler(enabled = !settingsDrawerState.isOpen && activeTab.isEmpty()) {
+        onBack()
     }
     BackHandler(enabled = !settingsDrawerState.isOpen && activeTab.isNotEmpty()) {
         onCloseTab(activeTab)
@@ -183,6 +210,20 @@ fun SettingsScreen(
                     .padding(padding)
                     .fillMaxSize()
             ) {
+                if (corruptedDomains.isNotEmpty()) {
+                    // BUG-01 验收:损坏横幅持久可见,不提供一键忽略
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            stringResource(R.string.settings_corrupt_banner),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        )
+                    }
+                }
                 if (activeTab.isNotEmpty()) {
                     // ═══ 浏览器式标签条：页面排在最上方（顶栏下、内容区上）═══
                     SettingsTabBar(
@@ -215,7 +256,11 @@ fun SettingsScreen(
                                 onSelect = { selectedId = it },
                                 onManageProviders = { showProviders = true },
                                 onManageRoles = { showRoles = true },
-                                onReturnToDrawer = onAllTabsClosed
+                                onReturnToDrawer = onAllTabsClosed,
+                                codeSkinActivation = codeState.conversationSkin,
+                                codeRunning = codeState.isRunning,
+                                onApplySkinViaNewChat = codeViewModel::clearConversation,
+                                onDiscardPendingSkin = codeViewModel::discardPendingSkinChange
                             )
                         }
                     }
@@ -234,10 +279,22 @@ fun SettingsScreen(
 
 // ───────────────────────────── 页面路由 ─────────────────────────────
 
+/** 合法叶子 route 集合（恢复校验用；来自导航树全部二级叶子）。 */
+private val validTabRoutes: Set<String> by lazy {
+    SettingsNavTree.flatMap { it.children }.map { it.route }.toSet()
+}
+
+/**
+ * 恢复串 → 标签列表（BUG-08）：未知/旧 route **只丢弃该项**，不再让一个
+ * 失效标签经 Router else 分支触发 onAllTabsClosed 清空全部标签。
+ */
+internal fun sanitizeRestoredTabs(raw: String, validRoutes: Set<String>): List<String> =
+    raw.split("\u0000").filter { it.isNotEmpty() && it in validRoutes }
+
 /** 标签列表持久化 Saver：List<String> ↔ NUL 分隔串（route 不含控制字符，安全）。 */
 private val OpenTabsSaver = Saver<List<String>, String>(
     save = { it.joinToString("\u0000") },
-    restore = { s -> s.split("\u0000").filter { ch -> ch.isNotEmpty() } }
+    restore = { s -> sanitizeRestoredTabs(s, validTabRoutes) }
 )
 
 /**
@@ -251,11 +308,15 @@ private fun SettingsPageRouter(
     selected: ModelProfile?,
     agent: AgentSettings,
     viewModel: SettingsViewModel,
-    onAgent: (AgentSettings) -> Unit,
+    onAgent: (AgentSettings.() -> AgentSettings) -> Unit,
     onSelect: (String) -> Unit,
     onManageProviders: () -> Unit,
     onManageRoles: () -> Unit,
-    onReturnToDrawer: () -> Unit
+    onReturnToDrawer: () -> Unit,
+    codeSkinActivation: com.apex.agent.ui.screen.code.SkinActivation,
+    codeRunning: Boolean,
+    onApplySkinViaNewChat: () -> Unit,
+    onDiscardPendingSkin: () -> Unit
 ) {
     val onUpdate: (ModelProfile) -> Unit = { viewModel.upsertProfile(it) }
     when (route) {
@@ -300,14 +361,26 @@ private fun SettingsPageRouter(
             onManageRoles = onManageRoles
         )
         // ═══ 工作台（原 Agent 配置：Agent 专属叶子已随 Agent 模式移除）═══
-        "workspace/coding" -> SettingsLeafColumn { CodingSettingsSection(agent, onAgent) }
+        // v1.7 部件外观（PartSkin spec §9）：「流水式输出UI」分区下方 ——
+        // 部件级皮肤切换 + 浅白液态玻璃（预览 / 预设 / 光晕滑杆 / 分组下拉）
+        "workspace/coding" -> SettingsLeafColumn {
+            CodingSettingsSection(agent, onAgent)
+            PartSkinSection(
+                agent = agent,
+                onUpdate = onAgent,
+                activation = codeSkinActivation,
+                isRunning = codeRunning,
+                onApplyNowViaNewChat = onApplySkinViaNewChat,
+                onDiscardPending = onDiscardPendingSkin
+            )
+        }
         "workspace/subagent" -> SettingsLeafColumn { SubAgentSettingsSection(agent, onAgent) }
         "workspace/permissions" -> SettingsLeafColumn {
             PermissionSettingsSection(
                 mode = agent.permissionMode,
                 rules = agent.permissionRules,
-                onModeChange = { m -> onAgent(agent.copy(permissionMode = m)) },
-                onRulesChange = { rs -> onAgent(agent.copy(permissionRules = rs)) }
+                onModeChange = { m -> onAgent { copy(permissionMode = m) } },
+                onRulesChange = { rs -> onAgent { copy(permissionRules = rs) } }
             )
         }
         "workspace/rules" -> SettingsLeafColumn {
@@ -336,8 +409,20 @@ private fun SettingsPageRouter(
         // ═══ 数据与备份 ═══
         "data/backup" -> SettingsLeafColumn { BackupSection() }
         "data/update" -> SettingsLeafColumn { UpdatePage(agent, onAgent) }
-        // 未知 route 兜底：回设置抽屉（不渲染空白页）
-        else -> LaunchedEffect(route) { onReturnToDrawer() }
+        // BUG-08 兜底:未知/已迁移 route 不再自动清空全部标签 —— 渲染迁移
+        // 占位页,由用户手动决定去向(OpenTabsSaver 恢复已逐项过滤,此分支
+        // 仅防御运行期动态构造的未知 route)。
+        else -> SettingsLeafColumn {
+            Text(
+                stringResource(R.string.settings_page_migrated, route),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+            TextButton(onClick = onReturnToDrawer) {
+                Text(stringResource(R.string.settings_open_drawer))
+            }
+        }
     }
 }
 

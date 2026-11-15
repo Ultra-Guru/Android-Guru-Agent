@@ -3,11 +3,13 @@ package com.apex.agent.ui.glass
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -57,7 +59,15 @@ import com.kyant.backdrop.Backdrop
  *  - 所有组件支持 Normal / Pressed / Focused / Selected / Disabled。
  */
 
-/** 玻璃卡片 —— Agent 卡 / Tool 卡 / 状态卡 / Plan 卡 / 设置与诊断页卡片的统一容器。 */
+/**
+ * 玻璃卡片 —— Agent 卡 / Tool 卡 / 状态卡 / Plan 卡 / 设置与诊断页卡片的统一容器。
+ *
+ * PartSkin spec FR-12：新增 [contentPadding] —— 内部只保留一层 `Column`，
+ * padding 统一由本参数贡献；业务侧不再套第二层 `Column(padding)`（两层
+ * padding 叠加 + 两个不一致 radius 正是「双底边色差带」根因）。默认
+ * `PaddingValues(0.dp)` —— 既有调用点布局零变化。[onClick] 同源：
+ * 卡片级点击收在容器层，涟漪经 clip(shape) 跟随卡面圆角。
+ */
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
@@ -69,6 +79,8 @@ fun GlassCard(
     enabled: Boolean = true,
     focused: Boolean = false,
     interactionSource: MutableInteractionSource? = null,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     GlassSurface(
@@ -82,7 +94,17 @@ fun GlassCard(
         focused = focused,
         interactionSource = interactionSource
     ) {
-        Column { content() }
+        Column(
+            modifier = Modifier
+                .then(
+                    if (onClick != null) {
+                        Modifier.clip(shape).clickable { onClick() }
+                    } else Modifier
+                )
+                .padding(contentPadding)
+        ) {
+            content()
+        }
     }
 }
 

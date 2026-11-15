@@ -43,6 +43,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -55,7 +57,10 @@ import com.apex.agent.R
 import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.core.code.stream.ToolCallStatus
 import com.apex.agent.core.code.stream.ToolKind
+import com.apex.agent.ui.glass.PartSurface
+import com.apex.agent.ui.theme.CodingPart
 import com.apex.agent.ui.theme.LocalExtendedColors
+import androidx.compose.foundation.layout.PaddingValues
 import kotlinx.coroutines.delay
 
 /**
@@ -100,8 +105,11 @@ internal fun RikkaToolBlock(
     val summary = remember(calls) { computeToolAggregate(calls) }
     val title = if (hasLive) stringResource(R.string.rikka_tool_block_running)
     else stringResource(R.string.code_stream_aggregate_title_fmt, calls.size)
-    // 运行中标题呼吸（rikkahub shimmer 扫光的轻量同义替代）
-    val titlePulse by rememberInfiniteTransition(label = "rikka-block-pulse")
+    // 运行中标题呼吸（rikkahub shimmer 扫光的轻量同义替代）。
+    // perf-20261114：State 直传 + graphicsLayer 块内读取 —— 旧实现组合期
+    // 取值改 Text 颜色，整个工具块（PartSurface 玻璃栈）随脉冲 60fps 重组；
+    // 现仅标题层属性失效，零重组零重测。
+    val titlePulse = rememberInfiniteTransition(label = "rikka-block-pulse")
         .animateFloat(
             initialValue = 0.6f,
             targetValue = 1f,
@@ -112,14 +120,16 @@ internal fun RikkaToolBlock(
             label = "rikka-block-pulse-alpha"
         )
 
-    Surface(
+    // v1.7 部件皮肤：工具聚合块默认 PALE_LIQUID（FR-6）；单层容器（FR-12）。
+    PartSurface(
+        part = CodingPart.STREAM_TOOL_CAPSULE,
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        active = hasLive,
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
             // ── 头行（多调用才有；单调用直接明细行）──
             if (calls.size > 1) {
                 Row(
@@ -151,8 +161,11 @@ internal fun RikkaToolBlock(
                         text = title,
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                            .copy(alpha = if (hasLive) titlePulse else 1f)
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .graphicsLayer {
+                                alpha = if (hasLive) titlePulse.value else 1f
+                            }
                     )
                     Spacer(Modifier.width(8.dp))
                     if (summary.failedCount > 0) {
@@ -246,7 +259,6 @@ internal fun RikkaToolBlock(
                     )
                 }
             }
-        }
     }
 }
 
@@ -296,6 +308,8 @@ internal fun RikkaToolRow(
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = modifier
             .fillMaxWidth()
+            // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 12dp 圆角
+            .clip(RoundedCornerShape(12.dp))
             .clickable(role = Role.Button) { onClick(call) }
             .semantics { contentDescription = "${call.displayName} ${call.target}, $statusDesc" }
     ) {

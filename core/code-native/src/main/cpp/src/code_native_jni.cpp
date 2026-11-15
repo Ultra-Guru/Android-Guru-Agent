@@ -7,6 +7,12 @@
 //  * 字符串经 GetStringCritical 零拷贝读取（短临界区，无 JNI 调用）；
 //  * diffStat 返回 jintArray{added, removed}；fuzzyLocate 返回
 //    jintArray{index, scorePermille(0..1000)} 或 nullptr（无匹配）。
+//  * 符号绑定：导出函数名必须精确匹配 Kotlin 声明类
+//    com.apex.agent.codenative.NativeTextKernel（external fun 为实例方法，
+//    第二参数是 jobject 而非 jclass）。名字漂移不会让编译失败——运行时
+//    每次调用 UnsatisfiedLinkError 刷 E 级 logcat 并静默回退纯 Kotlin
+//    （CodeNativeBridge 错名事故，v1.5.39 实测 logcat 刷屏）；回归防线
+//    是 JVM 源级契约单测 NativeJniSymbolContractTest（CI 强制执行）。
 // ═══════════════════════════════════════════════════════════════════════════
 #include <jni.h>
 
@@ -57,8 +63,8 @@ private:
 }  // namespace
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_apex_agent_codenative_CodeNativeBridge_nativeEstimateTokens(
-        JNIEnv* env, jclass /*clazz*/, jstring text) {
+Java_com_apex_agent_codenative_NativeTextKernel_nativeEstimateTokens(
+        JNIEnv* env, jobject /*thiz*/, jstring text) {
     if (env == nullptr || text == nullptr) return 0;
     CriticalString critical(env, text);
     if (!critical.valid()) return 0;
@@ -66,8 +72,8 @@ Java_com_apex_agent_codenative_CodeNativeBridge_nativeEstimateTokens(
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
-Java_com_apex_agent_codenative_CodeNativeBridge_nativeDiffStat(
-        JNIEnv* env, jclass /*clazz*/, jstring old_text, jstring new_text) {
+Java_com_apex_agent_codenative_NativeTextKernel_nativeDiffStat(
+        JNIEnv* env, jobject /*thiz*/, jstring old_text, jstring new_text) {
     if (env == nullptr || old_text == nullptr || new_text == nullptr) return nullptr;
     try {
         CriticalString old_critical(env, old_text);
@@ -86,8 +92,8 @@ Java_com_apex_agent_codenative_CodeNativeBridge_nativeDiffStat(
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
-Java_com_apex_agent_codenative_CodeNativeBridge_nativeFuzzyLocate(
-        JNIEnv* env, jclass /*clazz*/, jstring haystack, jstring needle) {
+Java_com_apex_agent_codenative_NativeTextKernel_nativeFuzzyLocate(
+        JNIEnv* env, jobject /*thiz*/, jstring haystack, jstring needle) {
     if (env == nullptr || haystack == nullptr || needle == nullptr) return nullptr;
     try {
         CriticalString hay_critical(env, haystack);

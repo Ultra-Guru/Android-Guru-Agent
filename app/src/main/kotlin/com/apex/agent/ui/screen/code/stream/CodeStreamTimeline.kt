@@ -102,7 +102,7 @@ internal fun CodeStreamTimeline(
     terminal: TerminalPanelState? = null,
     onToggleTerminalCollapse: () -> Unit = {},
     // ═══ 输出展示档（v1.5）：COMPLETE + 生成中 = 过程条目静默 + 加载卡；
-    // 由 CodeScreen 从 uiState.renderMode（run 粒度快照）传入═══
+    // 由 CodeScreen 从会话快照 conversationSkin.active.renderMode 传入═══
     renderMode: CodeOutputMode = CodeOutputMode.STREAMING,
     // ═══ 失败结尾「继续完成」（用户规格 2026-11）：ErrorCard 尾部的播放入口，
     // 重放本任务输入；null = 不渲染动作行 ═══

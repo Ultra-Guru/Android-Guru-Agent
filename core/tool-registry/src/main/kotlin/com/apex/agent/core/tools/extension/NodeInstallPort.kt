@@ -19,8 +19,18 @@ interface NodeInstallPort {
      * 在 [cwd]（host 侧绝对路径目录，必须已存在）执行 [command]。
      * 实现方经 PRoot 通道执行（cwd 同路径 bind 语义，见 ProotCommandSpawner
      * 的「其它真实存在 host 目录」分支），永不继承 app 进程环境变量。
+     *
+     * [stdin]：一次性 UTF-8 载荷（写满即 EOF）——DSH 工具桥的 JSON 参数通道
+     * （2026-11 Native Plugin Host）。**结构化数据永远走 stdin，禁止拼进
+     * command 串**（shell 单引号拼接/剥离会破坏含引号/换行的载荷）。
+     * null = 无载荷（EOF 语义同旧版）。
      */
-    suspend fun exec(command: List<String>, cwd: File, timeoutMs: Long): Result<ExecOutcome>
+    suspend fun exec(
+        command: List<String>,
+        cwd: File,
+        timeoutMs: Long,
+        stdin: String? = null
+    ): Result<ExecOutcome>
 
     /** 探针：node/npm 是否在沙箱内可解析（doctor/inspect 依赖报告用）。 */
     suspend fun probeRuntime(): RuntimeProbe

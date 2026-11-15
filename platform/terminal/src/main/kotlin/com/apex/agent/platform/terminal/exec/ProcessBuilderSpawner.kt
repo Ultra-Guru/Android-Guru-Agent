@@ -13,7 +13,8 @@ import java.util.concurrent.TimeUnit
  * 纯 JVM（java.lang.ProcessBuilder）—— 无 android.* import；Android 上由 app 层
  * 传入 `/system/bin/sh`，JVM 测试默认 `/bin/sh`。
  *
- * spawn 后立即关闭 stdin：无输入命令（如 `cat`）收到 EOF 自行退出，而不是等到超时。
+ * stdin 由 [ExecEngine] 统一收尾（写载荷→close / 无载荷立即 close）：无输入命令
+ * （如 `cat`）收到 EOF 自行退出，而不是等到超时；带载荷时载荷完整写入后才 EOF。
  */
 class ProcessBuilderSpawner(
     override val channel: String = "local-sh",
@@ -27,14 +28,16 @@ class ProcessBuilderSpawner(
         request.cwd?.let { pb.directory(File(it)) }
         request.env.forEach { (k, v) -> pb.environment()[k] = v }
         val proc = pb.start()
-        // stdin 立即 EOF（Termux Run Command 同款语义）
-        runCatching { proc.outputStream.close() }
+        // stdin 保持打开，由 ExecEngine 统一收尾（写载荷→close / 无载荷直接 close
+        // = 原有「立即 EOF」语义不变；spawner 不再自行关闭，否则 ExecRequest.stdin
+        // 永远写不进去 —— 2026-11 DSH Native Plugin Host 修正）
         return ProcessSpawnedCommand(proc)
     }
 
     internal class ProcessSpawnedCommand(private val proc: Process) : SpawnedCommand {
         override val stdout: java.io.InputStream get() = proc.inputStream
         override val stderr: java.io.InputStream get() = proc.errorStream
+        override val stdin: java.io.OutputStream get() = proc.outputStream
         override fun waitFor(timeoutMs: Long): Boolean =
             proc.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
         override fun exitValue(): Int = proc.exitValue()

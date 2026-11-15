@@ -1,6 +1,8 @@
 package com.apex.agent.ui.screen.settings
 
 import android.content.Context
+
+import com.apex.agent.R
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -52,6 +54,8 @@ class SettingsRepository @Inject constructor(
      * `apex_settings` 里 —— 只要设备被 root 或做一次 adb backup，Key 就裸奔。
      * 现在 Key **只**存在于此处，内存中保留一份副本供 [LlmConfig] 构建使用。
      */
+    private val appContext: Context get() = context.applicationContext
+
     private val securePrefs: SharedPreferences by lazy {
         try {
             val masterKey = MasterKey.Builder(context)
@@ -90,22 +94,56 @@ class SettingsRepository @Inject constructor(
     private val _agentSettings = MutableStateFlow(AgentSettings())
     val agentSettings: StateFlow<AgentSettings> = _agentSettings.asStateFlow()
 
+    // ── B0-BUG-01:损坏检测(设置首页横幅数据源)──
+    // 解析失败的存储域清单;这些域在本次进程内**禁止写回**(见 init 写盘纪律),
+    // 原始串已保留到 corrupt_backup_* 键 —— 一次 JSON 损坏不再把用户配置
+    // 永久抹成默认值,修复/导入备份后可完整恢复。
+    private val corruptKeys = LinkedHashSet<String>()
+    private val _dataCorruption = MutableStateFlow<List<String>>(emptyList())
+    val dataCorruption: StateFlow<List<String>> = _dataCorruption.asStateFlow()
+
+    private fun onCorrupt(key: String, raw: String) {
+        if (corruptKeys.add(key)) {
+            // 原始串备份键永不覆盖(时间戳后缀),诊断/手工恢复入口。
+            prefs.edit()
+                .putString("corrupt_backup_" + key + "_" + System.currentTimeMillis(), raw)
+                .apply()
+            _dataCorruption.value = corruptKeys.toList()
+            AppLogger.instance.error(
+                LogCategory.SYSTEM, "SettingsRepository",
+                "配置域解析失败，已保留原始数据并禁用该域写回：$key"
+            )
+        }
+    }
+
     init {
-        // 所有状态流声明完成后，统一执行加载 / 种子 / 迁移，并立即持久化，
-        // 避免字段初始化顺序导致迁移结果被覆盖。
+        // 所有状态流声明完成后，统一执行加载 / 种子 / 迁移。
+        // B0-BUG-01/06 写盘纪律：只在「首次种子（键不存在）」或「迁移发生」
+        // 时落盘，解析失败的损坏域一律禁写（旧实现无条件四连写 —— 解析失败
+        // → 回退默认值 → 写回 = 一次文件损坏把用户配置永久重置）。
+        val freshProviders = !prefs.contains(KEY_PROVIDERS)
+        val freshProfiles = !prefs.contains(KEY_PROFILES)
+        val freshRoles = !prefs.contains(KEY_ROLES)
+        val freshAgent = !prefs.contains(KEY_AGENT)
+
         var provs = readProviders() ?: ModelProfileDefaults.builtInProviders
         var profs = (readProfiles(provs) ?: ModelProfileDefaults.defaultProfiles(provs)).toMutableList()
         provs = migrateAndHydrateApiKeys(provs)
-        migrateLegacyConfig(profs, provs) { newProvs -> provs = newProvs }
+        val legacyMigrated = migrateLegacyConfig(profs, provs) { newProvs -> provs = newProvs }
         provs = migrateAndHydrateApiKeys(provs)
         _providers.value = provs
         _profiles.value = profs
         _roles.value = readRoles(profs) ?: ModelProfileDefaults.defaultRoles(profs)
         _agentSettings.value = readAgentSettings()
-        persistProviders()
-        persistProfiles()
-        persistRoles()
-        persistAgentSettings()
+
+        // B0-BUG-02:迁移完成的旧版本用户补一次旧散装键清扫(旧实现迁移后
+        // 只置标记不删键,明文 Key 永久留在 apex_settings)。
+        clearLegacyKeysIfMigrated()
+
+        if (freshProviders || legacyMigrated) persistProviders()
+        if (freshProfiles || legacyMigrated) persistProfiles()
+        if (freshRoles || legacyMigrated) persistRoles()
+        if (freshAgent || legacyMigrated) persistAgentSettings()
     }
 
     // ── 查询辅助 ───────────────────────────────────────────────
@@ -125,8 +163,9 @@ class SettingsRepository @Inject constructor(
     /** 读取某个 Provider 的 API Key（密文；无则返回空串而非 null，便于直接判空）。 */
     fun getProviderApiKey(providerId: String): String {
         if (providerId.isBlank()) return ""
-        return securePrefs.getString(KEY_PROVIDER_KEY + providerId, null)
-            ?: prefs.getString(KEY_PROVIDER_KEY + providerId, null).orEmpty()
+        // B0-BUG-02:明文旧键回退已随迁移清扫移除 —— Key 只在加密区
+        // (Keystore 降级设备上 securePrefs 为 fallback SP,仍由此单点读取)。
+        return securePrefs.getString(KEY_PROVIDER_KEY + providerId, null).orEmpty()
     }
 
     /**
@@ -212,9 +251,11 @@ class SettingsRepository @Inject constructor(
 
     fun duplicateProfile(id: String) {
         val src = getProfile(id) ?: return
+        // B1-BUG-07:UUID 替代毫秒时间戳 —— 同一毫秒内连续复制/新建不再冲突;
+        // 副本名走资源化文案(旧 "(副本)" 中文硬编码在英文环境露出)。
         val copy = src.copy(
-            id = "profile_${System.currentTimeMillis()}",
-            name = "${src.name} (副本)",
+            id = "profile_" + java.util.UUID.randomUUID(),
+            name = appContext.getString(R.string.settings_profile_copy_suffix, src.name),
             isDefault = false
         )
         upsertProfile(copy)
@@ -288,25 +329,29 @@ class SettingsRepository @Inject constructor(
     private fun readProviders(): List<ProviderConfig>? {
         val raw = prefs.getString(KEY_PROVIDERS, null) ?: return null
         return runCatching { json.decodeFromString<List<ProviderConfig>>(raw) }.getOrNull()
+            .also { if (it == null) onCorrupt(KEY_PROVIDERS, raw) }
     }
 
     private fun readProfiles(providers: List<ProviderConfig>): List<ModelProfile>? {
         val raw = prefs.getString(KEY_PROFILES, null) ?: return null
-        return runCatching { json.decodeFromString<List<ModelProfile>>(raw) }.getOrNull()
-            ?: ModelProfileDefaults.defaultProfiles(providers)
+        val parsed = runCatching { json.decodeFromString<List<ModelProfile>>(raw) }.getOrNull()
+        if (parsed == null) onCorrupt(KEY_PROFILES, raw)
+        return parsed ?: ModelProfileDefaults.defaultProfiles(providers)
     }
 
     private fun readRoles(profiles: List<ModelProfile>): ModelRoleConfig? {
         val raw = prefs.getString(KEY_ROLES, null) ?: return null
-        return runCatching { json.decodeFromString<ModelRoleConfig>(raw) }.getOrNull()
-            ?: ModelProfileDefaults.defaultRoles(profiles)
+        val parsed = runCatching { json.decodeFromString<ModelRoleConfig>(raw) }.getOrNull()
+        if (parsed == null) onCorrupt(KEY_ROLES, raw)
+        return parsed ?: ModelProfileDefaults.defaultRoles(profiles)
     }
 
     private fun readAgentSettings(): AgentSettings {
         val raw = prefs.getString(KEY_AGENT, null)
         if (raw != null) {
-            runCatching { json.decodeFromString<AgentSettings>(raw) }.getOrNull()
-                ?.let { return migratePermissionDefaultBypass(it) }
+            val parsed = runCatching { json.decodeFromString<AgentSettings>(raw) }.getOrNull()
+            if (parsed == null) onCorrupt(KEY_AGENT, raw)
+            parsed?.let { return migratePermissionDefaultBypass(it) }
         }
         // 兼容旧版散装 Key（仅保留仍在消费的 keepAlive；Agent 模式散装键
         // 已随模式移除，ignoreUnknownKeys 吞掉存量 JSON 里的 Agent 字段）
@@ -324,10 +369,10 @@ class SettingsRepository @Inject constructor(
         profiles: MutableList<ModelProfile>,
         providers: List<ProviderConfig>,
         onProvidersChanged: (List<ProviderConfig>) -> Unit
-    ) {
+    ): Boolean {
         val legacyKey = prefs.getString("llm_api_key", null)
-        if (legacyKey.isNullOrBlank()) return
-        if (prefs.getBoolean(KEY_LEGACY_MIGRATED, false)) return
+        if (legacyKey.isNullOrBlank()) return false
+        if (prefs.getBoolean(KEY_LEGACY_MIGRATED, false)) return false
 
         val baseUrl = prefs.getString("llm_base_url", "") ?: ""
         val model = prefs.getString("llm_model", "") ?: ""
@@ -355,7 +400,27 @@ class SettingsRepository @Inject constructor(
         if (idx >= 0) profiles[idx] = profiles[idx].copy(isDefault = false)
         profiles.add(migratedProfile)
         onProvidersChanged(providers + customProvider)
+        // B0-BUG-02:迁移体完成(旧配置已进 Profile/Provider,Key 经
+        // migrateAndHydrateApiKeys 进加密区)——旧散装键立即清除,明文 Key
+        // 不再留在 apex_settings(adb backup / 备份导出不再带得出去)。
+        clearLegacyKeys()
         prefs.edit().putBoolean(KEY_LEGACY_MIGRATED, true).apply()
+        return true
+    }
+
+    /** 旧版本迁移用户的一次性补清扫(旧实现只置标记不删键;幂等)。 */
+    private fun clearLegacyKeysIfMigrated() {
+        if (prefs.getBoolean(KEY_LEGACY_MIGRATED, false)) clearLegacyKeys()
+    }
+
+    private fun clearLegacyKeys() {
+        prefs.edit()
+            .remove("llm_api_key")
+            .remove("llm_base_url")
+            .remove("llm_model")
+            .remove("llm_temperature")
+            .remove("llm_reasoning_effort")
+            .apply()
     }
 
     companion object {
@@ -566,7 +631,7 @@ data class AgentSettings(
 
     // ═══ 工具权限（v1.0 #155 业界标准式权限模式；S-03：默认档 DEFAULT）═══
     // 引擎执行器门控：模式（BYPASS/DEFAULT/ACCEPT_EDITS/PLAN）+ 按序首匹配
-    // 规则三元组（ALLOW/ASK/DENY，pattern 支持尾缀星号通配，覆盖 mcp__
+    // 规则三元组（ALLOW/ASK/DENY，pattern 支持尾缀星号通配，覆盖 Mcp*
     // 动态 id）。决策器见 PermissionDecider，门见 PermissionModeGate。
     // 历史：2026-10 曾按用户反馈把默认档改为 BYPASS（全自动）并对存量
     // DEFAULT 用户一次性翻转 —— 等于无感知自动提权（S-03 修复对象）。
@@ -601,6 +666,16 @@ data class AgentSettings(
     val goalMaxRounds: Int = 8,
     val goalVerifierEnabled: Boolean = true,
 
+    // ═══ v4 Coding 模式级联选择器：三档自主级别（提问策略）═══
+    // codeAutonomyLevel：Build 模式记忆的自主级别（interactive|semi|fully，
+    // 默认交互式）；codeGoalAutonomyLevel：Goal 模式记忆（GoalSpec 启动时
+    // 拍平快照并回写此处）。两模式各自记忆，切模式互不影响。
+    val codeAutonomyLevel: String = "interactive",
+    val codeGoalAutonomyLevel: String = "interactive",
+    // codeFullAutoPreClarify：完全自主「开始前集中澄清」开关（默认关；
+    // 切到其他自主级别时隐藏但保留状态，见 AutonomyLevel KDoc）。
+    val codeFullAutoPreClarify: Boolean = false,
+
     // ═══ v3 Coding 工位增强 ═══
     // codeOutputMode：Coding 屏输出展示档（揭示时机维度）——"streaming"
     // （默认，实时渲染：逐字/逐胶囊流式）| "complete"（整段模式：生成中
@@ -610,7 +685,7 @@ data class AgentSettings(
     // 见 ui/screen/code/CodeOutputMode.kt。
     // codeOutputStyle：Coding 屏输出风格——"timeline"（默认，经典胶囊
     // 时间轴：胶囊流水/同族折叠/实时代码窗）| "rikka"（Rikka 风格聊天式：
-    // 用户右对齐气泡 + Markdown 结论 + 思考折叠卡 + 工具调用聚合块，含
+    // 用户右对齐气泡 + Markdown 结论 + 思考计时卡 + 工具调用聚合块，含
     // 技能/MCP 溯源标识与三分类聚合）。与 codeOutputMode（揭示时机）正交；
     // UI 渲染层开关（引擎/会话零参与），run 粒度捕获 + idle 期设置流实时
     // 同步。见 ui/screen/code/CodeOutputStyle.kt。
@@ -618,8 +693,28 @@ data class AgentSettings(
     // （默认开；关闭后回到 v2 的全局可见行为）。
     val codeOutputMode: String = "streaming",
     val codeOutputStyle: String = "timeline",
-    val codeRikkaThinkingCollapsed: Boolean = false,
     val mcpScopeIsolation: Boolean = true,
+
+    // ═══ 部件级皮肤（PartSkin spec §7.2，v1.7）═══
+    // partSkins：稀疏覆盖表 Part→Skin（"stream.thinking" -> "pale_liquid"），
+    // **缺席 = 跟随上级**（与 roleSkillToggles 同款稀疏语义）；未知 key /
+    // 非法组合在解析时回退 FOLLOW（不报错）。旧 JSON 无该字段 → 空 Map
+    // → 走 §4 新默认皮肤列（思考卡/卡片族 = 浅白液态玻璃），零迁移兼容
+    // （@Serializable + ignoreUnknownKeys + 全字段默认值，导出/备份自动带上）。
+    // partSkinGlow：浅白玻璃光晕强度 0..1（0 = 纯白霜面，1 = 完整彩光，
+    // 默认 0.35 微彩；越界读入 clamp）。
+    // partSkinSchemaVersion：稀疏表结构版本号（未来 ID 重映射用；旧档
+    // 缺省 0 → 走默认解析路径）。
+    val partSkins: Map<String, String> = emptyMap(),
+    val partSkinGlow: Float = 0.35f,
+    val partSkinSchemaVersion: Int = 1,
+    // ═══ 皮肤生效方式（PartSkin spec v1.3，FR-25）═══
+    // skinApplyMode："auto"（默认，按设备分级解析：HIGH→立即 / MID·LOW→新
+    // 对话）| "immediate"（空闲时立即生效；LOW 档被 resolvePolicy 硬拒）
+    // | "on_new_chat"（v1.2 行为：仅会话边界生效）。设置项本身立即写盘，
+    // 只决定后续皮肤变更的提升点，自身不触发换皮；缺省 "auto" → 旧 JSON
+    // 零迁移。任务进行中（H-6）任何模式都冻结到收束后的第一个 idle 点。
+    val skinApplyMode: String = "auto",
 
     // ═══ v2.1.0 浏览器角色门禁（评审 B2）═══
     // browserRoleRestrictionEnabled：默认开 = 严格——普通会话不授予
@@ -644,4 +739,14 @@ data class AgentSettings(
     val rateLimitFriendly: Boolean = false,
     val rateLimitMinIntervalMs: Int = 4000,    // 0..60000（0 = 不节流间隔）
     val rateLimitRichPayload: Boolean = true,
+
+    /**
+     * 扩展自动同步（市场完全重构 PR-E）：开启后每次进程启动检查
+     * `<filesDir>/extensions/extensions.json` 声明式清单 —— resolve 全部
+     * spec，与锁文件（lock.json）比对版本漂移；**漂移/失败经系统通知提醒，
+     * 不自动安装**（防 Agent 后续会话悄悄换版本 —— 重装需用户显式操作或
+     * Agent 经 ExtensionSync update=true）。默认关（无清单时零开销）。
+     * Agent 侧经 AgentSettingSet 可改（设置 JSON 字段直通）。
+     */
+    val extensionAutoSync: Boolean = false,
 )

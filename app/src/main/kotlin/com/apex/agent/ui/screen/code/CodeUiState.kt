@@ -40,6 +40,14 @@ data class CodeUiState(
     // ── #197 执行模式（Coding 屏 Build/Plan 双档）──
     val mode: com.apex.agent.core.engine.AgentMode = com.apex.agent.core.engine.AgentMode.BUILD,
 
+    // ── v4 三档自主级别（提问策略，与执行模式正交）──
+    // 当前模式的生效级别（Build/Goal 各自从 AgentSettings 记忆恢复；Plan
+    // 不适用，恒 INTERACTIVE 且引擎侧不注入指令）。标签组合 "Build · 半自主"
+    // 由选择器消费；fullAutoPreClarify 为设置层真值镜像（开关状态展示）。
+    val autonomyLevel: com.apex.agent.core.engine.AutonomyLevel =
+        com.apex.agent.core.engine.AutonomyLevel.INTERACTIVE,
+    val fullAutoPreClarify: Boolean = false,
+
     // ── #197 PLAN 模式计划确认（人控门）──
     val plan: com.apex.agent.core.engine.ExecutionPlan? = null,
     val awaitingPlanConfirmation: Boolean = false,
@@ -83,20 +91,29 @@ data class CodeUiState(
     // 25ms ≤40Hz 攒批推送；entries/终端尾窗/派生统计一体的不可变值。
     val stream: CodeStreamSnapshot = CodeStreamSnapshot(),
 
-    // ── 输出展示档（v1.5 双档：流式 / 整段——揭示时机维度）──
-    // STREAMING = 实时渲染（既有行为）；COMPLETE = 生成中静默（仅加载
-    // 进度卡）、收束后一次性渲染。与 outputStyle（视觉形态维度）正交。
-    // run 粒度快照：每轮 runEngine 开始时捕获（运行中改设置不打断当前轮，
-    // 下一轮生效）。捕获与恢复逻辑见 CodeOutputModeOps.kt，档位定义见
-    // CodeOutputMode.kt。
-    val renderMode: CodeOutputMode = CodeOutputMode.STREAMING,
-
-    // ── 输出风格（v1.6 双风格：经典时间轴 / Rikka 聊天式）──
-    // TIMELINE = 胶囊时间轴（既有行为）；RIKKA = Rikka 风格聊天输出
-    // （用户右对齐气泡 + Markdown 结论 + 思考折叠卡 + 工具调用聚合块，
-    // 含技能 / MCP 标识与三分类聚合）。与 renderMode（揭示时机）正交；
-    // run 粒度快照 + idle 期设置流实时同步，见 CodeOutputStyleOps.kt。
-    val outputStyle: CodeOutputStyle = CodeOutputStyle.TIMELINE,
+    // ── 会话皮肤状态机（PartSkin spec v1.2/v1.3，§7.5 / §7.9）──
+    // H-5（2026-11 修订「呈现立即」）：皮肤类四维度（uiStyle 材质短路 /
+    // outputStyle / renderMode / partSkins + glow）打包进同一会话快照
+    // （同 epoch）；idle 期改动立即整体换皮，运行中只落 pending；提升点
+    // = 会话边界（新对话 / 恢复历史 / 切工作区）、idle 自动提升或显式
+    // ON_NEW_CHAT 档的边界（H-6：任务进行中任何模式都冻结）。状态机定义
+    // 见 ConversationSkin.kt，动作面（restore / stage / promote / discard /
+    // onRunSettled）见 PartSkinOps.kt。**渲染取值（outputStyle / renderMode
+    // / uiStyle / partSkins）一律从 conversationSkin.active 读** —— 原
+    // uiState 层的 renderMode / outputStyle 历史镜像已删（2026-11 审计：
+    // 只写不读的死镜像，restore 入口一并移除）。
+    // pending 只存内存不落盘（NFR-13）：冷启动直接从 AgentSettings 恢复
+    // active，不会「上次没确认的改动突然生效」。
+    val conversationSkin: SkinActivation = SkinActivation(
+        active = ConversationSkinSnapshot(
+            epoch = 0L,
+            uiStyle = com.apex.agent.ui.theme.UiStyle.MINIMAL,
+            outputStyle = CodeOutputStyle.TIMELINE,
+            renderMode = CodeOutputMode.STREAMING,
+            partSkins = com.apex.agent.ui.theme.PartSkinOverrides(),
+            glow = 0.35f
+        )
+    ),
 
     // ── 编辑器面板（v1.0 #154）──
     // editorFilePath 非空即挂载面板；editorFile 为加载结果（null = 加载中/失败态）。

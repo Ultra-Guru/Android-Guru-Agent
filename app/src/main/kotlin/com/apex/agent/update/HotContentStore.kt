@@ -19,15 +19,25 @@ import java.io.File
  *     mcp_catalog 目录下的 .json ← MCP 精选目录分类文件
  *   staging-<nanoTime>/     ← 解压暂存（应用成功即换名，失败即整体删除）
  *   active-old/             ← 换名过渡位（换入成功后立即清理）
+ *   backup/                 ← 上一代 overlay（S-02 回滚通道：apply 换位时
+ *                             保留，只保一代，被下一次 apply 覆盖）
  * ```
  *
  * ## 原子换位（仓库纪律：tmp + renameTo，rename 失败直写目标兜底）
  *
  * `apply` = staging → active 的目录级换名三步舞：
- * 1. `active` 存在则先 renameTo `active-old`（让出目标名）；
+ * 1. `active` 存在则先 renameTo `backup`（让出目标名；S-02 起保留供回滚，
+ *    换位前先清掉上一代 backup —— 只保一代回滚点）；
  * 2. `staging` renameTo `active`（瞬时完成，读者要么见旧要么见新，无中间态）；
- * 3. 清理 `active-old`。第 2 步 rename 失败（极端：跨挂载点/被占用）时，
+ * 3. 清理残留。第 2 步 rename 失败（极端：跨挂载点/被占用）时，
  *    退化为 `copyRecursively` 直写 + 事后清理 —— 内容正确性优先于原子性。
+ *
+ * ## 回滚（rollback，S-02）
+ *
+ * 热更按代码对待 → 必须可回滚：apply 时把上一代 overlay 保留在 `backup`
+ * 位并记录其元数据（[HotPrefs.recordBackup]）；[rollback] 把 backup 换回
+ * active、prefs 恢复上一代记录。回滚后数据层版本回退，下次检查更新会
+ * 重新推被回退的热更（用户主导，可再应用或继续用旧内容）。
  *
  * ## 退役（supersede）
  *
@@ -60,6 +70,31 @@ class HotContentStore(
             packageSha256: String?
         )
         fun clearApplied()
+
+        // ── S-02 回滚通道：上一代 overlay 的元数据（与 backup/ 目录配套）──
+
+        /** 上一代回滚点的目标 versionCode（0 = 无可回滚）。 */
+        fun backupTargetVersionCode(): Int
+
+        /** 上一代回滚点的目标 versionName（null = 无）。 */
+        fun backupTargetVersionName(): String?
+
+        /** 上一代回滚点的发布 tag（null = 无）。 */
+        fun backupTag(): String?
+
+        /** 上一代回滚点的包 ZIP 指纹（null = 无/未记录）。 */
+        fun backupPackageSha256(): String?
+
+        /** 记录回滚点（apply 换位时写入 —— 上一代的 applied 快照）。 */
+        fun recordBackup(
+            targetVersionCode: Int,
+            targetVersionName: String,
+            tag: String?,
+            packageSha256: String?
+        )
+
+        /** 清除回滚点记录（回滚完成 / 首次 apply 无上一代时）。 */
+        fun clearBackup()
     }
 
     /** SharedPreferences 实现（生产用；文件 `apex_hot_update_prefs`）。 */
@@ -91,7 +126,42 @@ class HotContentStore(
         }
 
         override fun clearApplied() {
+            // clear 全量清除（含回滚点键位）：退役即无回滚可言
             sp.edit().clear().apply()
+        }
+
+        override fun backupTargetVersionCode(): Int =
+            sp.getInt(KEY_BACKUP_VCODE, 0)
+
+        override fun backupTargetVersionName(): String? =
+            sp.getString(KEY_BACKUP_VNAME, null)
+
+        override fun backupTag(): String? = sp.getString(KEY_BACKUP_TAG, null)
+
+        override fun backupPackageSha256(): String? =
+            sp.getString(KEY_BACKUP_PKG_SHA, null)
+
+        override fun recordBackup(
+            targetVersionCode: Int,
+            targetVersionName: String,
+            tag: String?,
+            packageSha256: String?
+        ) {
+            sp.edit()
+                .putInt(KEY_BACKUP_VCODE, targetVersionCode)
+                .putString(KEY_BACKUP_VNAME, targetVersionName)
+                .putString(KEY_BACKUP_TAG, tag)
+                .putString(KEY_BACKUP_PKG_SHA, packageSha256)
+                .apply()
+        }
+
+        override fun clearBackup() {
+            sp.edit()
+                .remove(KEY_BACKUP_VCODE)
+                .remove(KEY_BACKUP_VNAME)
+                .remove(KEY_BACKUP_TAG)
+                .remove(KEY_BACKUP_PKG_SHA)
+                .apply()
         }
 
         private companion object {
@@ -100,11 +170,16 @@ class HotContentStore(
             const val KEY_TARGET_VNAME = "applied_target_vname"
             const val KEY_TAG = "applied_tag"
             const val KEY_PKG_SHA = "applied_package_sha256"
+            const val KEY_BACKUP_VCODE = "backup_target_vcode"
+            const val KEY_BACKUP_VNAME = "backup_target_vname"
+            const val KEY_BACKUP_TAG = "backup_tag"
+            const val KEY_BACKUP_PKG_SHA = "backup_package_sha256"
         }
     }
 
     private val hotRoot: File get() = File(filesDir, "hot")
     private val activeDir: File get() = File(hotRoot, "active")
+    private val backupDir: File get() = File(hotRoot, "backup")
 
     // ═══ 状态查询 ═══════════════════════════════════════════════════════
 
@@ -197,6 +272,10 @@ class HotContentStore(
      * 调用前提：staging 内容已通过 [HotPackage.Manifest] 逐文件指纹复核
      * （引擎负责）—— 本方法只做换位与记账，不再碰内容。
      *
+     * S-02 起换位保留回滚点：上一代 active 挪入 `backup` 位（只保一代，
+     * 本次换位前先清上一代 backup），其 applied 快照记入
+     * [HotPrefs.recordBackup] —— [rollback] 凭此原样恢复。
+     *
      * @param stagingDir 引擎解压并通过复核的暂存目录（换入后归 store 所有）
      * @param manifest 热更包内清单（target 与 version.json 对账过）
      * @param tag 发布 tag（记账展示用）
@@ -211,11 +290,12 @@ class HotContentStore(
         packageSha256: String?
     ): Boolean {
         hotRoot.mkdirs()
-        val old = File(hotRoot, "active-old")
-        runCatching { old.deleteRecursively() }
-        // 三步换名舞：让位 → 换入 → 清理；rename 失败退化直写兜底
+        // 只保一代回滚点：本次换位先清上一代 backup
+        runCatching { backupDir.deleteRecursively() }
+        // 三步换名舞：让位（→ backup，S-02 保留供回滚）→ 换入 → 收尾；
+        // rename 失败退化直写兜底
         val activeExists = activeDir.exists()
-        val vacated = !activeExists || activeDir.renameTo(old)
+        val vacated = !activeExists || activeDir.renameTo(backupDir)
         val movedIn = if (vacated) {
             if (stagingDir.renameTo(activeDir)) {
                 true
@@ -231,23 +311,81 @@ class HotContentStore(
         } else false
         if (!movedIn) {
             // 换入失败：旧内容原样换回（若曾让位），调用方按失败处理
-            if (vacated && old.exists()) runCatching { old.renameTo(activeDir) }
+            if (vacated && backupDir.exists()) {
+                runCatching { backupDir.renameTo(activeDir) }
+            }
             AppLogger.instance.warn(
                 LogCategory.SYSTEM, "HotContentStore",
                 "热更 overlay 换位失败：${stagingDir.name}"
             )
             return false
         }
-        runCatching { old.deleteRecursively() }
+        // 回滚点记账：上一代 applied 快照（有上一代才可回滚）
+        val previousVCode = prefs.appliedTargetVersionCode()
+        if (previousVCode > 0 && activeExists) {
+            prefs.recordBackup(
+                previousVCode,
+                prefs.appliedTargetVersionName().orEmpty(),
+                prefs.appliedTag(),
+                prefs.appliedPackageSha256()
+            )
+        } else {
+            prefs.clearBackup()
+        }
         prefs.recordApplied(
             manifest.targetVersionCode, manifest.targetVersionName, tag, packageSha256
         )
         AppLogger.instance.info(
             LogCategory.SYSTEM, "HotContentStore",
             "热更 overlay 已生效：target v${manifest.targetVersionName}" +
-                "(${manifest.targetVersionCode}) · ${manifest.entries.size} 文件"
+                "(${manifest.targetVersionCode}) · ${manifest.entries.size} 文件" +
+                if (previousVCode > 0 && activeExists) "（可回滚 → v$previousVCode）" else ""
         )
         return true
+    }
+
+    /** 是否存在可回滚的上一代热更（backup 位非空且有元数据）。 */
+    fun hasBackup(): Boolean {
+        ensureRetired()
+        return prefs.backupTargetVersionCode() > 0 &&
+            backupDir.isDirectory &&
+            (backupDir.listFiles()?.isNotEmpty() == true)
+    }
+
+    /**
+     * 回滚到上一代热更内容（S-02：热更可回滚）。
+     *
+     * 当前 active 整体移除，backup 换回 active，prefs 恢复 backup 元数据。
+     * 调用方（[UpdateCenter.rollbackHotUpdate]）负责技能重放与触发重检。
+     *
+     * @return 回滚后的目标 versionCode（-1 = 无可回滚 / 换位失败）
+     */
+    fun rollback(): Int {
+        if (!hasBackup()) return -1
+        val vcode = prefs.backupTargetVersionCode()
+        val vname = prefs.backupTargetVersionName().orEmpty()
+        val tag = prefs.backupTag()
+        val pkgSha = prefs.backupPackageSha256()
+        runCatching {
+            activeDir.deleteRecursively()
+            val moved = backupDir.renameTo(activeDir) ||
+                (backupDir.isDirectory && backupDir.copyRecursively(
+                    activeDir, overwrite = true
+                ))
+            if (!moved) error("rollback swap failed")
+            prefs.recordApplied(vcode, vname, tag, pkgSha)
+            prefs.clearBackup()
+        }.onFailure {
+            AppLogger.instance.warn(
+                LogCategory.SYSTEM, "HotContentStore", "热更回滚失败：${it.message}"
+            )
+            return -1
+        }
+        runCatching { backupDir.deleteRecursively() }
+        AppLogger.instance.info(
+            LogCategory.SYSTEM, "HotContentStore", "热更已回滚：target v$vname($vcode)"
+        )
+        return vcode
     }
 
     /**

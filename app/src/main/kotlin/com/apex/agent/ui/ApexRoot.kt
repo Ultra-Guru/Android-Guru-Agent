@@ -287,6 +287,8 @@ fun ApexRoot() {
         drawerContent = {
             ApexDrawerContent(
                 currentDestination = currentDestination,
+                // perf-20261114：关闭态停用真实采样（见 ApexDrawerContent 头注）
+                drawerState = drawerState,
                 onDestinationSelected = { dest ->
                     // 切页前先收输入法（不等目的地重组，立即执行）
                     imeDismisser.dismiss()

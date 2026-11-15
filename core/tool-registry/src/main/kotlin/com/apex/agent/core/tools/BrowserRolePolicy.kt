@@ -35,7 +35,9 @@ object BrowserRolePolicy {
 
     /** 工具 id → 来源推断（显式声明恒覆盖）。 */
     fun sourceFor(id: String): ToolSource = when {
-        id.startsWith("mcp__") -> ToolSource.MCP
+        // v5 命名：一等 MCP 工具是 Mcp{Server}{Tool}（v4 旧前缀 mcp__ 已废弃
+        // ——旧写法在 v5 id 上永不命中，MCP 工具被误标 CORE）
+        id.startsWith("Mcp") -> ToolSource.MCP
         id.startsWith("Plugin") -> ToolSource.PLUGIN
         id.startsWith("Skill") -> ToolSource.SKILL
         else -> ToolSource.CORE
@@ -55,7 +57,7 @@ object BrowserRolePolicy {
 enum class ToolSource {
     /** 宿主内置（编译期注册）。 */
     CORE,
-    /** MCP 服务器热注册（mcp__ 前缀）。 */
+    /** MCP 服务器热注册（v5 `Mcp` 前缀；含 McpList/McpConnect/McpCall 管理三件）。 */
     MCP,
     /** APK/功能性插件注册。 */
     PLUGIN,

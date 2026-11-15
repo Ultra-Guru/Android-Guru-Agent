@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ═══ v4 Coding 模式级联选择器（Build 二级自主级别 / Plan / Goal）═══ -->
+
+    <!-- 触发胶囊无障碍描述（%1$s = 组合标签，如 "Build · 完全自主（前置澄清：开）"） -->
+    <string name="code_cascade_chip_cd">任务模式：%1$s，点击切换</string>
+
+    <!-- Build 一级项（点击只展开/收起二级，不切换模式） -->
+    <string name="code_cascade_build_expand_cd">Build：展开自主级别菜单</string>
+    <string name="code_cascade_build_collapse_cd">Build：收起自主级别菜单</string>
+
+    <!-- Plan / Goal 一级项（点击直接选中） -->
+    <string name="code_cascade_mode_select_cd">%1$s：选择此模式</string>
+
+    <!-- ═══ 三档自主级别（提问策略）═══ -->
+
+    <string name="autonomy_level_label">自主级别</string>
+    <string name="autonomy_name_interactive">交互式</string>
+    <string name="autonomy_name_semi">半自主</string>
+    <string name="autonomy_name_fully">完全自主</string>
+
+    <string name="autonomy_desc_interactive">存在影响正确性的歧义就提问；同类问题合并，不重复问</string>
+    <string name="autonomy_desc_semi">仅重要且影响验收的事项提问；其余自行决策并记录假设</string>
+    <string name="autonomy_desc_fully">执行全程零提问；自行决策并记录假设与风险</string>
+
+    <!-- 自主级别行无障碍描述（%1$s = 级别名；%2$s = 选中态后缀或空） -->
+    <string name="autonomy_option_cd">自主级别：%1$s%2$s</string>
+    <string name="autonomy_selected_suffix">，已选中</string>
+
+    <!-- 完全自主的「开始前集中澄清」开关（仅完全自主选中时显示；状态跨级别保留） -->
+    <string name="autonomy_pre_clarify_label">开始前集中澄清</string>
+    <string name="autonomy_pre_clarify_desc">任务开始前一次性问完所有问题；跳过的按默认假设执行并记录</string>
+    <string name="autonomy_pre_clarify_on_suffix">（前置澄清：开）</string>
+    <string name="autonomy_pre_clarify_cd">开始前集中澄清开关</string>
+
+    <!-- ═══ v4 Goal 目标驱动状态机（GoalSpec 扩展字段 + 阶段展示）═══ -->
+
+    <!-- 设定弹层高级字段折叠区 -->
+    <string name="goal_advanced_section">高级字段（全部可选）</string>
+    <string name="goal_field_constraints">约束</string>
+    <string name="goal_field_non_goals">非目标</string>
+    <string name="goal_field_metrics">成功指标</string>
+    <string name="goal_field_risks">已知风险</string>
+
+    <!-- 阶段徽标（CLARIFYING → SPEC_READY → EXECUTING ⇄ VERIFYING → DONE / BLOCKED） -->
+    <string name="goal_phase_clarifying">前置澄清</string>
+    <string name="goal_phase_spec_ready">规格就绪</string>
+    <string name="goal_phase_executing">执行中</string>
+    <string name="goal_phase_verifying">验收中</string>
+    <string name="goal_phase_done">已达成</string>
+    <string name="goal_phase_blocked">已阻塞</string>
+
+    <!-- 阶段对应的下一步提示 -->
+    <string name="goal_next_clarifying">下一步：回答前置澄清问题后自动开始执行</string>
+    <string name="goal_next_spec_ready">下一步：发送首条消息开始推进目标</string>
+    <string name="goal_next_executing">下一步：本轮收尾后自动对照验收标准</string>
+    <string name="goal_next_verifying">快速模型正在对照验收标准验收……</string>
+    <string name="goal_next_done">全部验收标准已通过</string>
+    <string name="goal_next_blocked">已阻塞：查看验收差距或重启目标</string>
+
+    <!-- 逐条验收清单（%1$d = 已通过条数；%2$d = 总条数） -->
+    <string name="goal_criteria_progress">验收标准 %1$d/%2$d</string>
+
+    <!-- 规格详情折叠区标题 -->
+    <string name="goal_spec_details">规格详情</string>
+
+    <!-- 自主级别徽标行（%1$s = 级别名） -->
+    <string name="goal_autonomy_badge">自主级别：%1$s</string>
+
+    <!-- ═══ v4 Plan 确认卡（三规格区块 + Goal 流转）═══ -->
+
+    <string name="plan_start_execution">开始执行方案</string>
+    <string name="plan_switch_to_goal_cd">带此计划切换到 Goal 模式</string>
+    <string name="plan_section_goal">计划目标</string>
+    <string name="plan_section_reasoning">规划依据</string>
+    <string name="plan_section_steps">执行步骤</string>
+</resources>

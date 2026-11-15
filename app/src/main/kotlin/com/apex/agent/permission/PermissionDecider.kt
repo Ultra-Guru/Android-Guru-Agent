@@ -130,10 +130,11 @@ object PermissionDecider {
      * 只读承诺不豁免（非只读照旧拒绝）。
      *
      * ⚠️ 前缀双态并存：技能/MCP 工具 id 已 PascalCase 化（SkillSearch /
-     * SkillInstall…），MCP 一等工具保持 mcp__ 前缀——snake_case 旧前缀
+     * SkillInstall… / McpGithubCreateIssue —— v5 命名 Mcp{Server}{Tool}，
+     * 与 McpToolNaming.toolId 同源）；snake_case 旧前缀（mcp_ / mcp__）
      * 一并保留（动态注册的旧式 id / 外部宿主兼容），命中任一即视为常规能力。
      */
-    val ROUTINE_CAPABILITY_PREFIXES: List<String> = listOf("skill_", "Skill", "mcp_", "mcp__")
+    val ROUTINE_CAPABILITY_PREFIXES: List<String> = listOf("skill_", "Skill", "mcp_", "mcp__", "Mcp")
 
     /** 判断工具 id 是否属于技能/MCP 常规能力族（前缀匹配任一）。 */
     fun isRoutineCapability(toolId: String): Boolean =
@@ -179,7 +180,7 @@ object PermissionDecider {
      * 显式档位，安全线语义不变）：
      *
      * 1. 规则首匹配仍参与——DENY 照拒、ASK 照问。用户在全自动档手写的
-     *    规则是唯一安全网（拒 SmsSend / 拒 mcp__*），静默失效等于欺骗；
+     *    规则是唯一安全网（拒 SmsSend / 拒 Mcp*），静默失效等于欺骗；
      * 2. sensitiveAction 工具（付费 / 逐次明示同意类，如 SmsSend）保持
      *    Ask——全自动的承诺不含「替用户花钱」；显式 ALLOW 规则命中时
      *    视为用户已为该工具表态，放行（用户意志优先于保守缺省）。

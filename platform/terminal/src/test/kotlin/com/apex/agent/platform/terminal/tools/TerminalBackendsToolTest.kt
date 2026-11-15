@@ -1,13 +1,16 @@
 package com.apex.agent.platform.terminal.tools
 
 import com.apex.agent.platform.terminal.runtime.BackendAvailability
+import com.apex.agent.platform.terminal.proot.PRootSmokeProbe
 import com.apex.agent.platform.terminal.runtime.BackendRuntimeType
 import com.apex.agent.platform.terminal.runtime.ExecutionBackend
 import com.apex.agent.platform.terminal.runtime.SessionSpawnRequest
 import com.apex.agent.platform.terminal.runtime.SpawnSpec
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
+import com.apex.agent.platform.terminal.tools.v2.TerminalPRootSmokeTool
 import com.apex.agent.platform.terminal.tools.v2.TerminalBackendsTool
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -100,5 +103,74 @@ class TerminalBackendsToolTest {
         val ubuntu = parse(tool.invoke("{}"))[0].jsonObject
         assertEquals("FAILED", ubuntu["state"]!!.jsonPrimitive.content)
         assertEquals("PRootError:BINARY_NOT_FOUND", ubuntu["detail"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `hung smoke advice comes only from the explicit tool`() = runTest {
+        val runtime = FakeRuntime(listOf(
+            TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", true, "READY"),
+            TerminalRuntime.BackendStatus("linux-ubuntu-chroot", "LINUX", true, "READY")
+        ))
+        val smoke = TerminalPRootSmokeTool(runtime) {
+            PRootSmokeProbe.SmokeResult(PRootSmokeProbe.Status.TIMED_OUT)
+        }
+        val json = kotlinx.serialization.json.Json.parseToJsonElement(smoke.invoke("{}")).jsonObject
+        assertEquals("timed_out", json["smoke"]!!.jsonPrimitive.content)
+        val advice = json["suggestion"]!!.jsonPrimitive.content
+        assertTrue(advice.contains("likely"))
+        assertTrue(advice.contains("linux-ubuntu-chroot"))
+        assertTrue(advice.contains("if superuser is granted"))
+        // 建议只是信息：smoke 工具不返回后端表、不改注册顺序或路由。
+        assertNull(json["backends"])
+    }
+
+    @Test
+    fun `ordinary binary error and healthy smoke never advise switching`() = runTest {
+        val runtime = FakeRuntime(listOf(TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", true, "READY")))
+        for ((status, expected) in listOf(
+            PRootSmokeProbe.Status.OK to "ok",
+            PRootSmokeProbe.Status.BINARY_ERROR to "binary_error"
+        )) {
+            val smoke = TerminalPRootSmokeTool(runtime) {
+                PRootSmokeProbe.SmokeResult(status, if (status == PRootSmokeProbe.Status.BINARY_ERROR) 127 else 0)
+            }
+            val json = kotlinx.serialization.json.Json.parseToJsonElement(smoke.invoke("{}")).jsonObject
+            assertEquals(expected, json["smoke"]!!.jsonPrimitive.content)
+            assertNull("$status is not evidence for ptrace advice", json["suggestion"])
+        }
+    }
+
+    @Test
+    fun `discovery is pure read-only — no smoke field or suggestion on any state`() = runTest {
+        // T99 评审 B1 回归锁：READY 查询也绝不附 smoke/suggestion（执行已拆到
+        // 显式工具）。此前 READY 会在此跑 `<proot> … /bin/true`。
+        val runtime = FakeRuntime(listOf(
+            TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", true, "READY"),
+            TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", false, "NEEDS_ROOTFS")
+        ))
+        val json = kotlinx.serialization.json.Json.parseToJsonElement(
+            TerminalBackendsTool(runtime).invoke("{}")
+        ).jsonObject
+        for (b in json["backends"]!!.jsonArray) {
+            assertNull("read-only discovery must not carry smoke", b.jsonObject["smoke"])
+        }
+        assertNull(json["suggestion"])
+    }
+
+    @Test
+    fun `guest execution lives only in the explicit non-readonly tool`() = runTest {
+        var launches = 0
+        val runtime = FakeRuntime(listOf(
+            TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", true, "READY")
+        ))
+        val smoke = TerminalPRootSmokeTool(runtime) {
+            launches++; PRootSmokeProbe.SmokeResult(PRootSmokeProbe.Status.PTRACE_SIGNAL, 159)
+        }
+        val json = kotlinx.serialization.json.Json.parseToJsonElement(smoke.invoke("{}")).jsonObject
+        assertEquals(1, launches)
+        assertEquals("TerminalPRootSmoke", json["id"]!!.jsonPrimitive.content)
+        assertEquals("true", json["proot"]!!.jsonPrimitive.content)
+        assertEquals("ptrace_signal", json["smoke"]!!.jsonPrimitive.content)
+        assertEquals(159, json["exitCode"]!!.jsonPrimitive.content.toInt())
     }
 }

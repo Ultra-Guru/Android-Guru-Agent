@@ -17,7 +17,8 @@ import kotlinx.coroutines.CancellationException
  * with no schemas, which is exactly why "MCP 没什么用". v4 registers every
  * discovered remote tool as a real [AgentTool]:
  *
- * - registry id: `mcp__{server}__{tool}` (see [McpToolNaming]) — collision
+ * - registry id: `Mcp{Server}{Tool}`（v5 无分隔符 PascalCase，见
+ *   [McpToolNaming]；v4 旧形式 `mcp__{server}__{tool}` 已废弃）—— collision
  *   free across servers, and the dots/illegal chars never leave the app
  *   because [ToolNameSanitizer] maps ids to provider-safe names;
  * - schema: the remote `inputSchema`, repaired by [ToolSchemaSanitizer];
@@ -171,6 +172,21 @@ object McpToolNaming {
     /** Provider/registry id for a server+tool pair. */
     fun toolId(serverName: String, toolName: String): String =
         "Mcp" + slug(serverName) + slug(toolName)
+
+    /**
+     * 服务器级 id 前缀（`Mcp{Server}`）：该服务器全部一等工具的公共前缀。
+     *
+     * 指引注入源（app 层 CodeModule 的 KitMcpInstructionSource）按
+     * `toolId.startsWith(prefix)` 过滤——只有该服务器工具真的在当前工具面上，
+     * `initialize.instructions` 才注入（防幻觉指引）。
+     *
+     * ⚠️ 必须与 [toolId] 同源推导，禁止手拼：v5 命名改造时 CodeModule 里
+     * 残留的 v4 写法 `"mcp__" + slug(server) + "__"` 与实际注册 id
+     * `Mcp{Server}{Tool}` 永不匹配，导致 initialize.instructions 从不注入
+     * （核查稿 §6.5，6/6 样本 startsWith 失败）。本方法是那处漂移的
+     * 单一真相源修复。
+     */
+    fun serverIdPrefix(serverName: String): String = "Mcp" + slug(serverName)
 
     /** Normalize an arbitrary server/tool name into a PascalCase segment. */
     fun slug(raw: String): String =

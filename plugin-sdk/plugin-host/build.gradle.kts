@@ -47,4 +47,8 @@ dependencies {
     // 假成功桩无测试报警）。
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
+    // #784：测试 fake 实现 ToolRegistry 接口——getToolDefinitions 签名带
+    // ToolDefinition（core:llm-adapter）。tool-registry 对其是 implementation
+    // 依赖（不传递），测试编译需自备（主源集只持有接口引用，无需上传递）。
+    testImplementation(project(":core:llm-adapter"))
 }

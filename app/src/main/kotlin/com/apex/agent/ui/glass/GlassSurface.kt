@@ -23,8 +23,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.dp
+import com.apex.agent.ui.screen.code.LocalConversationSkin
 import com.apex.agent.ui.theme.LocalUiStyle
-import com.apex.agent.ui.theme.UiStyle
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.BackdropEffectScope
 import com.kyant.backdrop.backdrops.emptyBackdrop
@@ -63,6 +63,10 @@ import androidx.compose.ui.unit.DpOffset
  * 渲染层级（自下而上）：Compose shadow（裁剪外，可外溢）→ RenderNode 圆角
  * 裁剪层（v1.4.5 白天方角根因的同款保证，杜绝 blur 角部外溢）→ kyant0
  * drawBackdrop（Highlight/InnerShadow 自管理形状）→ 内容。
+ *
+ * NFR-5 豁免（PartSkin spec）：[forceGlass] 为真时绕过 MINIMAL 短路 ——
+ * 供 PaleLiquidSurface 在部件显式开启 forceGlassInMinimal 时保留玻璃管线；
+ * 默认 false，既有调用点行为零变化（短路纪律单点不破）。
  */
 @Composable
 fun GlassSurface(
@@ -76,6 +80,7 @@ fun GlassSurface(
     focused: Boolean = false,
     interactionSource: MutableInteractionSource? = null,
     scaleOnPress: Boolean = true,
+    forceGlass: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val interaction = interactionSource ?: remember { MutableInteractionSource() }
@@ -100,7 +105,22 @@ fun GlassSurface(
     // 风格层的唯一扁平化收敛点（UiStyle Spec：业务组件零感知）—— 实色
     // 底 + 发丝描边 + 同款激活度/按压缩放，零 blur / 零折射 / 零光带。
     // 置于激活度计算之后：交互反馈语言在两种风格间保持一致。
-    if (LocalUiStyle.current == UiStyle.MINIMAL) {
+    // forceGlass = NFR-5 豁免（PartSkin spec）：部件级 forceGlassInMinimal
+    // 显式开启时才绕过短路，默认关 —— 短路纪律不破。
+    // v1.2 双 Local 分离（PartSkin spec §7.5.1）：Coding 子树内材质短路从
+    // 会话快照取（LocalConversationSkin —— 会话内冻结，改动只挂 pending）；
+    // 壳层 / 设置页 / GlassLab 无会话 → 回落全局 LocalUiStyle（外观不受
+    // 「待生效」影响，配色类仍由 ApexTheme 全局下发）。
+    //
+    // Gate-0 D-10：判定经 [GlassSkinGate]（纯函数）—— 生产与玻璃实验室
+    // 并排台（GlassLabBench 显式 provide 会话快照）读同一条短路路径，
+    // Gate0ParityTest 锁语义；实验室结论从此对生产可信。
+    val conversation = LocalConversationSkin.current
+    val minimalStyle = GlassSkinGate.shortCircuitsToFlat(
+        conversationUiStyleKey = conversation?.uiStyle?.key,
+        globalUiStyleKey = LocalUiStyle.current.key
+    )
+    if (minimalStyle && !forceGlass) {
         FlatSurface(
             modifier = modifier,
             style = style,
@@ -120,9 +140,18 @@ fun GlassSurface(
     // 低于 31 无法 blur/lens —— 整档降级 Frosted（霜面 + 边缘光，零管线、诚实）。
     val canRender = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
+    // ═══ perf-20261114：Ambient 档剥离 RenderEffect ═══
+    // Ambient 源是纯程序化静态纹理（垂直霜面渐变 + 两条斜向光带，
+    // rememberAmbientBackdrop 的 onDraw 不随帧变化且与坐标无关）——
+    // 对静态软渐变叠 blur(10-24dp) 的输出与输入几乎不可区分，但每帧
+    // 重新执行高斯模糊链（流式期间时间轴上全部卡片 × 60fps）。改为
+    // 直绘纹理 + 霜面（零 RenderEffect），观感几乎一致、GPU 负载归零。
+    // 真实采样源（backdrop != null）不受影响 —— blur/lens 语义完整保留。
+    val ambientTier = backdrop == null && canRender
+
     // ═══ 三档源选择 ═══
-    // Backdrop：页面提供真实采样源；Ambient：程序化材质源（同一条 GPU 管线）；
-    // Frosted：API < 31 的零管线降级。
+    // Backdrop：页面提供真实采样源；Ambient：程序化材质源（perf-20261114
+    // 起零 RenderEffect 直绘）；Frosted：API < 31 的零管线降级。
     val ambient = rememberAmbientBackdrop(palette)
     val effectiveBackdrop: Backdrop = when {
         backdrop != null && canRender -> backdrop
@@ -158,9 +187,10 @@ fun GlassSurface(
     val shapeBlock = remember(shape) { { shape } }
     // 显式带接收者类型：嵌套在 remember 内的 lambda 需要期望类型传播，
     // 否则 vibrancy/blur/lens/drawRect 无接收者上下文无法解析。
-    val effectsBlock: BackdropEffectScope.() -> Unit = remember(style, canRender) {
+    // perf-20261114：Ambient 档空效果链 —— 静态纹理不进 blur/lens 管线。
+    val effectsBlock: BackdropEffectScope.() -> Unit = remember(style, canRender, ambientTier) {
         {
-            if (canRender) {
+            if (canRender && !ambientTier) {
                 if (style.vibrancy > 0f) runCatching { vibrancy() }
                 runCatching { blur(style.blurRadius.toPx()) }
                 if (style.lensHeight > 0.dp) {
@@ -200,9 +230,11 @@ fun GlassSurface(
             )
         }
     }
-    val surfaceBlock: DrawScope.() -> Unit = remember(canRender, palette, frostBrush) {
+    // perf-20261114：Ambient 档表面层改霜面渐变（替代 blur 后的 tint）
+    // —— 与 Frosted 档同语言，保持「有渐变」的材质观感。
+    val surfaceBlock: DrawScope.() -> Unit = remember(canRender, ambientTier, palette, frostBrush) {
         {
-            if (canRender) {
+            if (canRender && !ambientTier) {
                 drawRect(palette.glassTint)
             } else {
                 drawRect(frostBrush)

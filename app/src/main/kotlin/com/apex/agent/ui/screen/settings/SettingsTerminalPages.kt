@@ -90,7 +90,7 @@ internal fun TerminalCommandPolicyPage(viewModel: SettingsTerminalViewModel = hi
  * 开关（接线不变：CoreServiceGate.apply 即时启停）。
  */
 @Composable
-internal fun TerminalServicePage(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {
+internal fun TerminalServicePage(agent: AgentSettings, onAgent: (AgentSettings.() -> AgentSettings) -> Unit) {
     // #236：Keep Alive 开关的运行时接线需要 Context（start/stopService）。
     val ctx = androidx.compose.ui.platform.LocalContext.current
     SettingsLeafColumn {
@@ -103,7 +103,7 @@ internal fun TerminalServicePage(agent: AgentSettings, onAgent: (AgentSettings) 
                 description = stringResource(R.string.settings_terminal_service_desc)
             ) { on ->
                 com.apex.agent.service.CoreServiceGate.apply(ctx, on)
-                onAgent(agent.copy(keepAlive = on))
+                onAgent { copy(keepAlive = on) }
             }
         }
     }

@@ -6,6 +6,7 @@ import com.apex.agent.core.code.thinking.CodeThinkingLevel
 import com.apex.agent.core.engine.AgentEngine
 import com.apex.agent.core.engine.AgentEvent
 import com.apex.agent.core.engine.AgentMode
+import com.apex.agent.core.engine.AutonomyLevel
 import com.apex.agent.core.engine.UserInput
 import com.apex.agent.core.engine.UserQuestionGateway
 import com.apex.agent.core.logging.AppLogger
@@ -178,6 +179,14 @@ class DualLogicCodeEngine(
         standard.updateMode(mode)
         loom?.updateMode(mode)
         courier?.updateMode(mode)
+    }
+
+    /** v4 三档自主级别（四线同步——与 updateMode 同口径，切线后提问策略不丢）。 */
+    override fun updateAutonomy(level: AutonomyLevel?, preClarify: Boolean) {
+        deepDive.updateAutonomy(level, preClarify)
+        standard.updateAutonomy(level, preClarify)
+        loom?.updateAutonomy(level, preClarify)
+        courier?.updateAutonomy(level, preClarify)
     }
 
     // ═══════════════════════════ 当前激活引擎直通 ═══════════════════════════

@@ -50,6 +50,12 @@ import kotlinx.serialization.json.contentOrNull
  * 集合（新蒸馏的宏才有集合入口）。
  *
  * 幂等：meta 标志位 `legacyImported` 守门；坏库 / 坏文件折叠为跳过该源。
+ *
+ * #821 列序契约：行取值一律**按列名**（[QueryRow.byName]），不再依赖
+ * SELECT 列序与数组下标对齐 —— 旧实现的 `r[5]/r[6]` 错位一列把
+ * finished_at 读进 startedAt、真实 started_at 从未被读取，迁移后时间轴
+ * 错乱。各源的列名清单以伴营常量（如 [EPISODE_COLUMNS]）钉死，契约
+ * 测试直接锁「列名 → 字段」映射，列序变更不再静默错位。
  */
 @Singleton
 class LegacyCsMemMigrator @Inject constructor(
@@ -111,21 +117,11 @@ class LegacyCsMemMigrator @Inject constructor(
     }
 
     private suspend fun migrateEpisodes(db: SQLiteDatabase, report: Report) {
-        val rows = query(db, "SELECT episode_id, goal, app_package, app_version, status, started_at, finished_at, total_actions FROM episodes")
+        val rows = query(db, "SELECT ${EPISODE_COLUMNS.joinToString()} FROM episodes")
         for (r in rows) {
-            val id = r[0] as? String ?: continue
+            val id = r.byName("episode_id") as? String ?: continue
             memKit.store.addEpisode(
-                EpisodeRecord(
-                    episodeId = id,
-                    goal = r[1] as? String ?: "(未知目标)",
-                    appPackage = r[2] as? String,
-                    appVersion = r[3] as? String,
-                    status = EpisodeStatus.safe(r[4] as? String),
-                    startedAt = r[6] as? Long ?: 0L,
-                    finishedAt = null,
-                    actionCount = (r[7] as? Long)?.toInt() ?: 0,
-                    manual = id.startsWith("manual_"),
-                ),
+                episodeRecord(id, r),
             )
             report.episodes++
         }
@@ -138,19 +134,19 @@ class LegacyCsMemMigrator @Inject constructor(
                 "first_seen_at, last_seen_at, occurrence_count, energy FROM nodes",
         )
         val entries = rows.mapNotNull { r ->
-            val fp = r[0] as? String ?: return@mapNotNull null
+            val fp = r.byName("fingerprint") as? String ?: return@mapNotNull null
             NodeDictEntry(
                 fingerprint = fp,
-                role = NodeRole.safe(r[1] as? String),
-                text = r[2] as? String,
-                resourceId = r[3] as? String,
-                className = r[4] as? String,
-                appPackage = r[5] as? String,
-                appVersion = r[6] as? String,
-                firstSeenAt = r[7] as? Long ?: 0L,
-                lastSeenAt = r[8] as? Long ?: 0L,
-                occurrences = (r[9] as? Long)?.toInt() ?: 1,
-                energy = (r[10] as? Double)?.toFloat() ?: 1.0f,
+                role = NodeRole.safe(r.byName("role") as? String),
+                text = r.byName("text_hint") as? String,
+                resourceId = r.byName("resource_id") as? String,
+                className = r.byName("class_name") as? String,
+                appPackage = r.byName("app_package") as? String,
+                appVersion = r.byName("app_version") as? String,
+                firstSeenAt = r.byName("first_seen_at") as? Long ?: 0L,
+                lastSeenAt = r.byName("last_seen_at") as? Long ?: 0L,
+                occurrences = (r.byName("occurrence_count") as? Long)?.toInt() ?: 1,
+                energy = (r.byName("energy") as? Double)?.toFloat() ?: 1.0f,
             )
         }
         memKit.store.importNodes(entries)
@@ -164,10 +160,10 @@ class LegacyCsMemMigrator @Inject constructor(
                 "source_episode_id, success_count, failure_count, is_crystallized, last_executed_at, energy FROM fsm_macros",
         )
         for (r in rows) {
-            val skillId = r[0] as? String ?: continue
-            val initial = r[4] as? String
-            val terminal = r[5] as? String
-            val transitionsJson = r[6] as? String
+            val skillId = r.byName("skill_id") as? String ?: continue
+            val initial = r.byName("initial_fingerprint") as? String
+            val terminal = r.byName("terminal_fingerprint") as? String
+            val transitionsJson = r.byName("transitions_json") as? String
             if (initial.isNullOrBlank() || terminal.isNullOrBlank() || transitionsJson.isNullOrBlank()) continue
             val steps = parseLegacyTransitions(transitionsJson)
             if (steps.isNullOrEmpty()) {
@@ -178,20 +174,20 @@ class LegacyCsMemMigrator @Inject constructor(
             memKit.store.saveMacro(
                 MacroSkill(
                     skillId = skillId,
-                    name = r[1] as? String ?: skillId,
-                    goal = r[2] as? String ?: "",
-                    appPackage = r[3] as? String,
+                    name = r.byName("name") as? String ?: skillId,
+                    goal = r.byName("goal") as? String ?: "",
+                    appPackage = r.byName("app_package") as? String,
                     entryFingerprints = setOf(initial),
                     exitFingerprint = terminal,
                     steps = steps,
                     stats = com.apex.memkit.core.model.MacroStats(
-                        successCount = (r[8] as? Long)?.toInt() ?: 0,
-                        failureCount = (r[9] as? Long)?.toInt() ?: 0,
-                        energy = ((r[12] as? Double)?.toFloat() ?: 1.0f).coerceIn(0f, 10f),
-                        crystallized = (r[10] as? Long) == 1L,
-                        lastExecutedAt = r[11] as? Long ?: 0L,
+                        successCount = (r.byName("success_count") as? Long)?.toInt() ?: 0,
+                        failureCount = (r.byName("failure_count") as? Long)?.toInt() ?: 0,
+                        energy = ((r.byName("energy") as? Double)?.toFloat() ?: 1.0f).coerceIn(0f, 10f),
+                        crystallized = (r.byName("is_crystallized") as? Long) == 1L,
+                        lastExecutedAt = r.byName("last_executed_at") as? Long ?: 0L,
                     ),
-                    sourceEpisodeId = r[7] as? String,
+                    sourceEpisodeId = r.byName("source_episode_id") as? String,
                     createdAt = 0L,
                 ),
             )
@@ -207,36 +203,43 @@ class LegacyCsMemMigrator @Inject constructor(
             "SELECT old_fingerprint, new_fingerprint, match_score, from_version, to_version, created_at FROM migration_map",
         )
         for (r in rows) {
-            val old = r[0] as? String ?: continue
-            val new = r[1] as? String ?: continue
+            val old = r.byName("old_fingerprint") as? String ?: continue
+            val new = r.byName("new_fingerprint") as? String ?: continue
             memKit.store.addAlias(
                 FingerprintAlias(
                     oldFingerprint = old,
                     newFingerprint = new,
-                    score = ((r[2] as? Double)?.toFloat() ?: 0.7f).coerceIn(0f, 1f),
-                    fromVersion = r[3] as? String,
-                    toVersion = r[4] as? String,
-                    createdAt = r[5] as? Long ?: 0L,
+                    score = ((r.byName("match_score") as? Double)?.toFloat() ?: 0.7f).coerceIn(0f, 1f),
+                    fromVersion = r.byName("from_version") as? String,
+                    toVersion = r.byName("to_version") as? String,
+                    createdAt = r.byName("created_at") as? Long ?: 0L,
                 ),
             )
             report.aliases++
         }
     }
 
-    private fun query(db: SQLiteDatabase, sql: String): List<Array<Any?>> = runCatching {
-        val out = ArrayList<Array<Any?>>()
+    /** 行包装：列名 → 值（取值按列名，不依赖 SELECT 列序 —— #821）。 */
+    class QueryRow(internal val values: Map<String, Any?>) {
+        fun byName(name: String): Any? = values[name]
+    }
+
+    private fun query(db: SQLiteDatabase, sql: String): List<QueryRow> = runCatching {
+        val out = ArrayList<QueryRow>()
         db.rawQuery(sql, null).use { cursor ->
-            val cols = cursor.columnCount
+            val names = (0 until cursor.columnCount).map { cursor.getColumnName(it) }
             while (cursor.moveToNext()) {
-                out.add(Array<Any?>(cols) { i ->
-                    when (cursor.getType(i)) {
+                val row = HashMap<String, Any?>(names.size)
+                names.forEachIndexed { i, name ->
+                    row[name] = when (cursor.getType(i)) {
                         Cursor.FIELD_TYPE_INTEGER -> cursor.getLong(i)
                         Cursor.FIELD_TYPE_FLOAT -> cursor.getDouble(i)
                         Cursor.FIELD_TYPE_STRING -> cursor.getString(i)
                         Cursor.FIELD_TYPE_BLOB -> null
                         else -> null
                     }
-                })
+                }
+                out.add(QueryRow(row))
             }
         }
         out
@@ -328,6 +331,29 @@ class LegacyCsMemMigrator @Inject constructor(
     companion object {
         private const val TAG = "LegacyMigrator"
         private const val FLAG = "legacyImported"
+
+        /** episodes 表列名清单（与 SELECT 列序一致；契约测试锁映射）。 */
+        internal val EPISODE_COLUMNS = listOf(
+            "episode_id", "goal", "app_package", "app_version", "status",
+            "started_at", "finished_at", "total_actions",
+        )
+
+        /**
+         * episodes 行 → [EpisodeRecord]（纯函数，#821 字段值契约测试直调）：
+         * started_at ← started_at 列（真实开始时间）、finished_at ← finished_at
+         * 列（旧实现错读下一列且恒丢 —— 本函数即修复落点）。
+         */
+        internal fun episodeRecord(id: String, r: QueryRow): EpisodeRecord = EpisodeRecord(
+            episodeId = id,
+            goal = r.byName("goal") as? String ?: "(未知目标)",
+            appPackage = r.byName("app_package") as? String,
+            appVersion = r.byName("app_version") as? String,
+            status = EpisodeStatus.safe(r.byName("status") as? String),
+            startedAt = r.byName("started_at") as? Long ?: 0L,
+            finishedAt = r.byName("finished_at") as? Long,
+            actionCount = (r.byName("total_actions") as? Long)?.toInt() ?: 0,
+            manual = id.startsWith("manual_"),
+        )
 
         /** 解析器自持 Json（与实例字段同配置；纯函数路径，无实例状态）。 */
         private val parseJson = Json { ignoreUnknownKeys = true; isLenient = true }

@@ -14,7 +14,7 @@ import com.apex.agent.core.tools.mcp.McpTransport
  * 实体 + 观察 + 关系），但以 Android 进程内实现替代 Node 子进程 ——
  * - 跨会话项目知识沉淀：持久化到 `<filesDir>/mcp_memory/memory.json`，
  *   App 重启后图谱仍在；
- * - 两模式共享：Agent 与 Coding 模式经 mcp__memory__search_nodes 等
+ * - 两模式共享：Agent 与 Coding 模式经 McpMemorySearchNodes 等
  *   一等工具读写同一份图谱（结构化记忆，区别于 cs-mem 的会话记忆）；
  * - 外部 MCP 客户端语义兼容（工具名 / 参数名 / 幂等规则对齐官方）。
  */

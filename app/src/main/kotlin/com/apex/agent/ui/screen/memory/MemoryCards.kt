@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
@@ -82,6 +83,9 @@ internal fun StatCard(
     val borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
     Surface(
         modifier = modifier
+            // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 12dp 圆角卡面，
+            // 不再以矩形底浮出圆角 Surface 外
+            .clip(RoundedCornerShape(12.dp))
             .clickable(enabled = onClick != null, onClick = { onClick?.invoke() })
             .drawBehind {
                 drawRoundRect(

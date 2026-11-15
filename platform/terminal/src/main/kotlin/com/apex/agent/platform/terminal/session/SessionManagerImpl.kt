@@ -1,5 +1,7 @@
 package com.apex.agent.platform.terminal.session
 
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.platform.terminal.buffer.RingTerminalBuffer
 import com.apex.agent.platform.terminal.errors.TerminalError
 import com.apex.agent.platform.terminal.events.CloseCause
@@ -219,8 +221,15 @@ class SessionManagerImpl(
                 createdAt = System.currentTimeMillis(), lastExitCode = null, cursor = 0L,
                 backend = backend
             )
+            // #810：登记顺序 = 先 stateFlows 后 assemblies（订阅先行）——
+            // 旧序（先 assemblies 后 stateFlows）留出「会话已可见、状态流尚
+            // 未登记」窗口：窗口内 observeState 只能拿到与真实流无关联的
+            // 一次性 CLOSED 兜底流（collect 后永不再更新），list()/get() 却已
+            // 能读到该会话 → UI 对存在中的会话永久显示 CLOSED。写侧改用
+            // computeIfAbsent：与先到场的观察者兜底登记共享同一实例，后写者
+            // 不再覆盖已注册流（否则先订阅者会错过 STARTING→READY 迁移）。
+            stateFlows.computeIfAbsent(sessionId) { MutableStateFlow(SessionState.STARTING) }
             assemblies[sessionId] = SessionAssembly(session, nativeId, ringBuffer, vt, reducer, pump, observationEngine)
-            stateFlows[sessionId] = MutableStateFlow(SessionState.STARTING)
             // 3. start pump
             pump.start()
             // 4. transition to READY (S2)
@@ -388,15 +397,39 @@ class SessionManagerImpl(
         }
     }
 
-    override fun observeState(id: Long): Flow<SessionState> =
-        (stateFlows[id] ?: MutableStateFlow(SessionState.CLOSED)).asStateFlow().map { it }
+    override fun observeState(id: Long): Flow<SessionState> {
+        // #810：旧实现的兜底流是与真实流无关联的一次性实例——collect 到
+        // CLOSED 后再无任何更新（装配瞬间订阅的 UI 永久显示已关闭）。改为
+        // computeIfAbsent 登记后返回：首个订阅者触发的兜底登记即为该 id 的
+        // 权威流，后续 assembleAndStart / transition 写同一实例，订阅者不再
+        // 错过 READY 等迁移。初值取 assemblies 快照（get() 同口径），
+        // 会话确不存在/已回收时为 CLOSED。代价：被观察过的死 id 会留一条
+        // 兜底流（不与 id 复用冲突 —— 号池单调递增），可接受。
+        return stateFlows.computeIfAbsent(id) {
+            MutableStateFlow(assemblies[id]?.session?.state ?: SessionState.CLOSED)
+        }.asStateFlow().map { it }
+    }
 
     /** Internal: transition a session's state + emit StateChanged. */
     suspend fun transition(sessionId: Long, to: SessionState) {
         // P3 fix（审计 6-b）：per-session 互斥（见 transitionLocks 注释）。
         val lock = transitionLocks.computeIfAbsent(sessionId) { Mutex() }
         lock.withLock {
-            val flow = stateFlows[sessionId] ?: return
+            val flow = stateFlows[sessionId] ?: run {
+                // #810：flow 缺失但 assembly 仍在 → 状态迁移被静默丢弃。
+                // 写序修正（stateFlows 先行）后，正常装配路径不再可达；
+                // 剩余可达面 = close/回滚的并发窗口 —— 留 warn 痕迹供排查，
+                // 不再无声吞掉。双缺失（正常 close 后在途迁移 no-op，
+                // 见 reclaimAssembly 注释）保持静默。
+                if (assemblies[sessionId] != null) {
+                    AppLogger.instance.warn(
+                        LogCategory.TERMINAL, "SessionManager",
+                        "State transition to ${to.name} dropped: session $sessionId " +
+                            "present in assemblies but its state flow is missing"
+                    )
+                }
+                return
+            }
             val from = flow.value
             if (from == to) return
             flow.value = to

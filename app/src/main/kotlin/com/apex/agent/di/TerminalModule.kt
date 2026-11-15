@@ -262,6 +262,20 @@ object TerminalModule {
         supportedAbis = { Build.SUPPORTED_ABIS.toList() }
     )
 
+    /** T99: tool-triggered only; construction and backend availability never exec PRoot. */
+    @Provides
+    @Singleton
+    fun providePRootSmokeProbe(
+        binaryProvider: PRootBinaryProvider,
+        rootfsProvider: RootfsProvider,
+        hostEnv: PRootHostEnvironment
+    ): com.apex.agent.platform.terminal.proot.PRootSmokeProbe =
+        com.apex.agent.platform.terminal.proot.PRootSmokeProbe(
+            binaryProvider = binaryProvider,
+            rootfsProvider = rootfsProvider,
+            hostEnvironment = { hostEnv.prepare().getOrNull()?.let { hostEnv.hostEnv() } }
+        )
+
     /**
      * T92（D5 完成度）：argv 能力源 —— app 模块三类 argv 构造点
      * （ProotCommandSpawner / ProotGitCommandRunner / ProotMcpProcessLauncher）
@@ -342,6 +356,13 @@ object TerminalModule {
     @Singleton
     fun provideSuBinaryLocator(): SuBinaryLocator = SuBinaryLocator()
 
+    @Provides
+    @Singleton
+    fun provideSuAuthorizationCache(
+        @ApplicationContext context: android.content.Context
+    ): com.apex.agent.platform.terminal.chroot.SuAuthorizationCache =
+        com.apex.agent.platform.terminal.chroot.SuAuthorizationCache(outputDir = context.cacheDir)
+
     /**
      * T98：chroot 后端 —— 与 PRoot 后端共享同一 rootfs / workspace 池 / 持久化
      * home / guest env 基线（双模式数据互通）；仅 su + mount + chroot 的
@@ -351,6 +372,7 @@ object TerminalModule {
     @Singleton
     fun provideLinuxChrootBackend(
         suLocator: SuBinaryLocator,
+        authorizationCache: com.apex.agent.platform.terminal.chroot.SuAuthorizationCache,
         rootfsProvider: RootfsProvider,
         workspaces: LinuxWorkspaceManager,
         userHome: GuestUserHome,
@@ -358,6 +380,7 @@ object TerminalModule {
         configurator: RootfsConfigurator
     ): LinuxChrootBackend = LinuxChrootBackend(
         suLocator = suLocator,
+        authorizationCache = authorizationCache,
         rootfsProvider = rootfsProvider,
         workspaces = workspaces,
         userHome = userHome,

@@ -161,6 +161,29 @@ data class InspectReport(
     val warnings: List<String> = emptyList()
 )
 
+/**
+ * 来源钉定信息（2026-11 DSH Native Plugin Host，版本锁定链路的真实数据）：
+ * - npm：精确版本 + tarball integrity（package-lock）；
+ * - GitHub：clone 后的 commit SHA；
+ * - 账本（[ExtensionRegistry.Record.pinnedSource]）以此描述串为准 ——
+ *   真实版本不得只存在于安装结果展示文字里。
+ */
+data class PinnedSource(
+    /** 安装产物的真实版本（package.json version；git 源 = null）。 */
+    val version: String? = null,
+    /** 不可变修订（git commit SHA；npm 源 = null）。 */
+    val revision: String? = null,
+    /** npm tarball integrity（如 sha512-…；git 源 = null）。 */
+    val integrity: String? = null
+) {
+    /** 账本描述串（人读 + 漂移比对）。 */
+    fun toDescriptor(): String = when {
+        revision != null -> "git@${revision.take(12)}"
+        version != null -> "npm:${version}" + (integrity?.let { "+" + it.take(24) } ?: "")
+        else -> "unknown"
+    }
+}
+
 /** install 产物。 */
 data class InstallOutcome(
     val id: String,
@@ -169,5 +192,7 @@ data class InstallOutcome(
     /** 实际落点（如 "SkillRegistry: PdfGeneration" / "McpManager: memory"）。 */
     val where: String,
     /** 安装期说明（幂等命中 / 自动激活 / 已存在同端点…）。 */
-    val notes: List<String> = emptyList()
+    val notes: List<String> = emptyList(),
+    /** 来源钉定信息（Node 系安装器产出；其它生态 null = 无可钉定物）。 */
+    val pinned: PinnedSource? = null
 )

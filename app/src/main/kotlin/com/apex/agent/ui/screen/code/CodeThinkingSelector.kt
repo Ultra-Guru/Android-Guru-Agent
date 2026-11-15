@@ -34,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
@@ -312,6 +313,9 @@ private fun AutoTierRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 1.dp)
+            // 圆角反馈修复：clip 先于 background/clickable —— 涟漪跟随 14dp
+            // 圆角，不再以矩形底浮出圆角外
+            .clip(RoundedCornerShape(14.dp))
             .background(color = rowBg, shape = RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 7.dp)
@@ -369,6 +373,9 @@ private fun ActionRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 1.dp)
+            // 圆角反馈修复：clip 先于 background/clickable —— 涟漪跟随 14dp
+            // 圆角，不再以矩形底浮出圆角外
+            .clip(RoundedCornerShape(14.dp))
             .background(Color.Transparent, RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 7.dp)

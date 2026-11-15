@@ -36,6 +36,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -287,6 +288,10 @@ fun WebSearchMenuButton(
     Box(
         modifier = modifier
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            // 圆形反馈修复：clip 先于 background/clickable —— ripple 与圆底
+            // 同被裁成圆，按压/悬停/聚焦不再露出方形矩形底
+            // （background(CircleShape) 只裁底色，裁不住 clickable 的 ripple）。
+            .clip(CircleShape)
             .background(
                 color = if (channel != null) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                 else MaterialTheme.colorScheme.surfaceContainerHigh,

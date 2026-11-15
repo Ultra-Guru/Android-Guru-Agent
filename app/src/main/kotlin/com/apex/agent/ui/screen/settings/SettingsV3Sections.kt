@@ -81,7 +81,7 @@ import kotlin.math.roundToInt
 // ═══════════════════════════════════════════════════════════════════
 
 @Composable
-internal fun CompressionSection(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {
+internal fun CompressionSection(agent: AgentSettings, onAgent: (AgentSettings.() -> AgentSettings) -> Unit) {
     SectionCard(
         stringResource(R.string.settings_section_compression),
         Icons.Outlined.Storage,
@@ -89,29 +89,29 @@ internal fun CompressionSection(agent: AgentSettings, onAgent: (AgentSettings) -
     ) {
         IntFieldRow("Max Context Tokens", agent.maxContextTokens,
             description = stringResource(R.string.settings_max_ctx_tokens_desc),
-            min = 1000, max = 10_000_000) { onAgent(agent.copy(maxContextTokens = it)) }
+            min = 1000, max = 10_000_000) { onAgent { copy(maxContextTokens = it) } }
         SliderRow("Compression Threshold", agent.compressionThreshold, 0.5f..0.95f, 8,
             description = stringResource(R.string.settings_threshold_desc),
-            onValueChange = { onAgent(agent.copy(compressionThreshold = it)) },
+            onValueChange = { onAgent { copy(compressionThreshold = it) } },
             fmt = { String.format(Locale.US, "%.2f", it) })
         IntFieldRow("Preserve Recent Turns", agent.preserveRecentTurns,
             description = stringResource(R.string.settings_preserve_turns_desc), min = 1, max = 50) {
-            onAgent(agent.copy(preserveRecentTurns = it))
+            onAgent { copy(preserveRecentTurns = it) }
         }
         IntFieldRow("Max Tool Output Length", agent.maxToolOutputLength,
             description = stringResource(R.string.settings_tool_output_len_desc), min = 200, max = 100_000) {
-            onAgent(agent.copy(maxToolOutputLength = it))
+            onAgent { copy(maxToolOutputLength = it) }
         }
     }
 }
 
 @Composable
-internal fun AppearanceSection(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {
+internal fun AppearanceSection(agent: AgentSettings, onAgent: (AgentSettings.() -> AgentSettings) -> Unit) {
     SectionCard(stringResource(R.string.settings_section_appearance), Icons.Outlined.Palette, initiallyExpanded = true) {
         // 界面风格（极简黑白 / 液态玻璃）—— 与深浅模式正交的全局风格维度，
         // 默认极简黑白；切换立即生效（CompositionLocal 驱动，无需 recreate）
         val uiStyle = UiStyle.fromKey(agent.uiStyle)
-        UiStyleRow(selected = uiStyle, onSelect = { onAgent(agent.copy(uiStyle = it.key)) })
+        UiStyleRow(selected = uiStyle, onSelect = { onAgent { copy(uiStyle = it.key) } })
         // 语言（system | zh | en；切换后 MainActivity recreate 生效，见 LanguageManager）
         DropdownRow(
             stringResource(R.string.settings_language),
@@ -123,7 +123,7 @@ internal fun AppearanceSection(agent: AgentSettings, onAgent: (AgentSettings) ->
             agent.language,
             description = stringResource(R.string.settings_language_desc)
         ) {
-            onAgent(agent.copy(language = it))
+            onAgent { copy(language = it) }
         }
         DropdownRow(stringResource(R.string.settings_theme_mode),
             listOf(
@@ -133,17 +133,17 @@ internal fun AppearanceSection(agent: AgentSettings, onAgent: (AgentSettings) ->
             ),
             agent.themeMode,
             description = stringResource(R.string.settings_apply_now)) {
-            onAgent(agent.copy(themeMode = it))
+            onAgent { copy(themeMode = it) }
         }
         if (uiStyle == UiStyle.LIQUID_GLASS) {
             // 液态玻璃风格：Dynamic Color + 预设配色才参与配色合成
             SwitchRow(stringResource(R.string.settings_dynamic_color), agent.dynamicColor,
                 description = stringResource(R.string.settings_dynamic_color_desc)) {
-                onAgent(agent.copy(dynamicColor = it))
+                onAgent { copy(dynamicColor = it) }
             }
             AccentPaletteRow(
                 selected = AccentPalette.fromKey(agent.accentPalette),
-                onSelect = { onAgent(agent.copy(accentPalette = it.key)) }
+                onSelect = { onAgent { copy(accentPalette = it.key) } }
             )
         } else {
             // 极简黑白：配色体系不参与 —— 提示而非隐藏，让用户知道入口在哪
@@ -151,7 +151,7 @@ internal fun AppearanceSection(agent: AgentSettings, onAgent: (AgentSettings) ->
         }
         SliderRow(stringResource(R.string.settings_font_scale), agent.fontScale, 0.8f..1.4f, 12,
             description = stringResource(R.string.settings_font_scale_desc),
-            onValueChange = { onAgent(agent.copy(fontScale = it)) },
+            onValueChange = { onAgent { copy(fontScale = it) } },
             fmt = { "${(it * 100).roundToInt()}%" })
     }
 }
@@ -368,11 +368,11 @@ private fun AccentPaletteRow(
 }
 
 @Composable
-internal fun ChatDisplaySection(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {
+internal fun ChatDisplaySection(agent: AgentSettings, onAgent: (AgentSettings.() -> AgentSettings) -> Unit) {
     SectionCard(stringResource(R.string.settings_section_chat), Icons.Outlined.Chat) {
         SwitchRow(stringResource(R.string.settings_timestamps), agent.showTimestamps,
             description = stringResource(R.string.settings_timestamps_desc)) {
-            onAgent(agent.copy(showTimestamps = it))
+            onAgent { copy(showTimestamps = it) }
         }
         // 发送键行为：send → IME「发送」直接发出；newline → IME「换行」（发送用按钮）
         DropdownRow(
@@ -384,7 +384,7 @@ internal fun ChatDisplaySection(agent: AgentSettings, onAgent: (AgentSettings) -
             agent.sendKeyBehavior,
             description = stringResource(R.string.settings_send_key_desc)
         ) {
-            onAgent(agent.copy(sendKeyBehavior = it))
+            onAgent { copy(sendKeyBehavior = it) }
         }
     }
 }
@@ -406,11 +406,11 @@ internal fun ChatDisplaySection(agent: AgentSettings, onAgent: (AgentSettings) -
  * 按名解析（内置四类型之外）。key 不可与保留字或既有自定义 key 冲突。
  */
 @Composable
-internal fun SubAgentSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings) -> Unit) {
+internal fun SubAgentSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings.() -> AgentSettings) -> Unit) {
     val sub = agent.subagent
     // 预算字段统一钳制后落盘（滑块步进已保证合法，sanitized 双保险）
     val updateSub: (SubAgentSettings.() -> SubAgentSettings) -> Unit = { block ->
-        onUpdate(agent.copy(subagent = sub.block().sanitized()))
+        onUpdate { copy(subagent = sub.block().sanitized()) }
     }
     var adding by remember { mutableStateOf(false) }
 
@@ -500,16 +500,20 @@ internal fun SubAgentSettingsSection(agent: AgentSettings, onUpdate: (AgentSetti
             CustomSubAgentCard(
                 custom = custom,
                 onChange = { updated ->
-                    onUpdate(agent.copy(subagent = agent.subagent.copy(
-                        customTypes = agent.subagent.customTypes.map {
-                            if (it.key == custom.key) updated else it
-                        }
-                    )))
+                    onUpdate {
+                        copy(subagent = agent.subagent.copy(
+                            customTypes = agent.subagent.customTypes.map {
+                                if (it.key == custom.key) updated else it
+                            }
+                        ))
+                    }
                 },
                 onDelete = {
-                    onUpdate(agent.copy(subagent = agent.subagent.copy(
-                        customTypes = agent.subagent.customTypes.filter { it.key != custom.key }
-                    )))
+                    onUpdate {
+                        copy(subagent = agent.subagent.copy(
+                            customTypes = agent.subagent.customTypes.filter { it.key != custom.key }
+                        ))
+                    }
                 }
             )
         }
@@ -529,9 +533,11 @@ internal fun SubAgentSettingsSection(agent: AgentSettings, onUpdate: (AgentSetti
             existingKeys = sub.customTypes.map { it.key }.toSet(),
             onDismiss = { adding = false },
             onSave = { custom ->
-                onUpdate(agent.copy(subagent = agent.subagent.copy(
-                    customTypes = agent.subagent.customTypes + custom
-                ).sanitized()))
+                onUpdate {
+                    copy(subagent = agent.subagent.copy(
+                        customTypes = agent.subagent.customTypes + custom
+                    ).sanitized())
+                }
                 adding = false
             }
         )
@@ -581,9 +587,13 @@ private fun CustomSubAgentCard(
                 custom.description,
                 description = stringResource(R.string.settings_v3_subagent_custom_desc_hint)
             ) { desc -> onChange(custom.copy(description = desc.take(CUSTOM_DESC_LIMIT))) }
+            // B2-BUG-16:prompt 多行文本防抖写盘
+            val (promptDraft, onPromptDraft) = rememberDebouncedText(custom.systemPrompt) {
+                onChange(custom.copy(systemPrompt = it.take(CUSTOM_PROMPT_LIMIT)))
+            }
             OutlinedTextField(
-                value = custom.systemPrompt,
-                onValueChange = { prompt -> onChange(custom.copy(systemPrompt = prompt.take(CUSTOM_PROMPT_LIMIT))) },
+                value = promptDraft,
+                onValueChange = onPromptDraft,
                 label = { Text(stringResource(R.string.settings_v3_subagent_custom_prompt)) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp),
                 minLines = 3,
@@ -691,7 +701,7 @@ private fun CustomSubAgentAddDialog(
  * 提示已随 Agent 聊天会话恢复移除。
  */
 @Composable
-internal fun GoalSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings) -> Unit) {
+internal fun GoalSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings.() -> AgentSettings) -> Unit) {
     SectionCard(
         title = stringResource(R.string.settings_v3_goal_title),
         icon = Icons.Outlined.Flag,
@@ -701,12 +711,12 @@ internal fun GoalSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings)
             stringResource(R.string.settings_v3_goal_verifier),
             agent.goalVerifierEnabled,
             description = stringResource(R.string.settings_v3_goal_verifier_desc)
-        ) { on -> onUpdate(agent.copy(goalVerifierEnabled = on)) }
+        ) { on -> onUpdate { copy(goalVerifierEnabled = on) } }
         SliderRow(
             stringResource(R.string.settings_v3_goal_max_rounds),
             agent.goalMaxRounds.toFloat(), 3f..20f, 16,
             description = stringResource(R.string.settings_v3_goal_max_rounds_desc),
-            onValueChange = { onUpdate(agent.copy(goalMaxRounds = it.toInt())) },
+            onValueChange = { onUpdate { copy(goalMaxRounds = it.toInt()) } },
             fmt = { it.toInt().toString() }
         )
         DescriptionText(stringResource(R.string.settings_v3_goal_note))
@@ -725,7 +735,7 @@ internal fun GoalSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings)
  * ——无摆设开关（工具面/读守卫/自动规则三个假开关已随真设置清理移除）。
  */
 @Composable
-internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings) -> Unit) {
+internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings.() -> AgentSettings) -> Unit) {
     SectionCard(
         title = stringResource(R.string.settings_v3_coding_title),
         icon = Icons.Outlined.Terminal,
@@ -747,12 +757,7 @@ internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSetting
             ),
             selected = agent.codeOutputStyle.ifBlank { "timeline" },
             description = stringResource(R.string.settings_v3_coding_output_style_desc)
-        ) { style -> onUpdate(agent.copy(codeOutputStyle = style)) }
-        SwitchRow(
-            stringResource(R.string.rikka_thinking_default_collapsed),
-            agent.codeRikkaThinkingCollapsed,
-            description = stringResource(R.string.rikka_thinking_default_collapsed_desc)
-        ) { on -> onUpdate(agent.copy(codeRikkaThinkingCollapsed = on)) }
+        ) { style -> onUpdate { copy(codeOutputStyle = style) } }
         // ═══ v1.5 输出展示档（流式 / 整段）：Coding 屏时间轴揭示时机 ═══
         // 纯 UI 层开关（引擎/会话零参与）——流式 = 实时渲染（默认，既有
         // 行为）；整段 = 生成中仅加载进度卡、收束后一次性渲染完整时间轴。
@@ -766,24 +771,24 @@ internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSetting
             ),
             agent.codeOutputMode.ifBlank { "streaming" },
             description = stringResource(R.string.settings_v3_coding_output_mode_desc)
-        ) { mode -> onUpdate(agent.copy(codeOutputMode = mode)) }
+        ) { mode -> onUpdate { copy(codeOutputMode = mode) } }
         SwitchRow(
             stringResource(R.string.settings_v3_coding_mcp_scope),
             agent.mcpScopeIsolation,
             description = stringResource(R.string.settings_v3_coding_mcp_scope_desc)
-        ) { on -> onUpdate(agent.copy(mcpScopeIsolation = on)) }
+        ) { on -> onUpdate { copy(mcpScopeIsolation = on) } }
         // v2.1.0 浏览器角色门禁（评审 B2）：默认开 = browser_* 仅「浏览器自动化
         // 专家」角色可用；敏感四件套需二次显式授权。
         SwitchRow(
             "浏览器工具仅限专家角色",
             agent.browserRoleRestrictionEnabled,
             description = "开启后普通会话看不到 browser_* 工具；需激活模板工坊「浏览器自动化专家」"
-        ) { on -> onUpdate(agent.copy(browserRoleRestrictionEnabled = on)) }
+        ) { on -> onUpdate { copy(browserRoleRestrictionEnabled = on) } }
         SwitchRow(
             "允许浏览器敏感操作",
             agent.browserSensitiveAllowed,
             description = "execute_js / get_cookies / file_upload / clear_data 四件套的会话级授权（仍逐会话弹确认）"
-        ) { on -> onUpdate(agent.copy(browserSensitiveAllowed = on)) }
+        ) { on -> onUpdate { copy(browserSensitiveAllowed = on) } }
         // ═══ 工具循环 v2（引擎真接线，自原 Agent 执行分区迁入）：单轮并行执行上限 ═══
         HorizontalDivider()
         Text(stringResource(R.string.settings_tool_loop_section), style = MaterialTheme.typography.labelMedium)
@@ -793,7 +798,7 @@ internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSetting
             range = 1f..8f,
             steps = 6,
             description = stringResource(R.string.settings_tool_parallelism_desc),
-            onValueChange = { onUpdate(agent.copy(toolCallParallelism = it.toInt())) },
+            onValueChange = { onUpdate { copy(toolCallParallelism = it.toInt()) } },
             fmt = { it.toInt().toString() }
         )
     }

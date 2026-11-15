@@ -168,6 +168,9 @@ internal object EnginePrompts {
             appendLine("  confirmed knowledge worth reusing. Failure lessons are as valuable as success ones.")
             appendLine("- DURING chat: save durable user facts with MemorySaveFact; grow the knowledge graph with")
             appendLine("  MemoryGraph (create_entities / add_observations / create_relations / search).")
+            appendLine("- CORRECTIONS: when the user says a memory is wrong or outdated, remove it with")
+            appendLine("  MemoryForget (forget_fact / forget_entity / forget_observations), then save the")
+            appendLine("  corrected fact if needed. Never keep contradicting facts alive.")
             appendLine("- Never re-ask what memory already knows; trust it unless it looks outdated.")
             appendLine()
 
@@ -297,6 +300,13 @@ internal object EnginePrompts {
                     appendLine("Use tools aggressively: a correct action beats a long explanation.")
                     appendLine("Be efficient: batch independent reads, verify results between destructive steps.")
                 }
+            }
+            // ═══ v4 三档自主级别（提问策略）：BUILD / GOAL 经 AgentConfig 注入；
+            //     null（PLAN 模式 / 未设置）= 段落省略，既有调用方提示词零变化 ═══
+            config.autonomyLevel?.let { autonomy ->
+                appendLine()
+                append(autonomy.promptInstruction(config.fullAutoPreClarify).trimEnd())
+                appendLine()
             }
             // ═══ #169 规划期只读约束（planningPhase=true 时注入）═══
             // Plan 生成本就不携带 tools（无工具可调）；本段把“只读”显式写进

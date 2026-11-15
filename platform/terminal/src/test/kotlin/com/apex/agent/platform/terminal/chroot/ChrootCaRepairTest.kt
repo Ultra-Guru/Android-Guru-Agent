@@ -43,7 +43,7 @@ class ChrootCaRepairTest {
         var repairs = 0
         val su = File(tmp.root, "su").apply { writeText(""); setExecutable(true) }
         val backend = LinuxChrootBackend(
-            suLocator = SuBinaryLocator { listOf(su) },
+            suLocator = SuBinaryLocator(candidatesProvider = { listOf(su) }),
             rootfsProvider = provider,
             workspaces = com.apex.agent.platform.terminal.workspace.LinuxWorkspaceManager(
                 File(tmp.root, "workspaces")
@@ -65,7 +65,7 @@ class ChrootCaRepairTest {
         var repairs = 0
         val su = File(tmp.root, "su").apply { writeText(""); setExecutable(true) }
         val backend = LinuxChrootBackend(
-            suLocator = SuBinaryLocator { listOf(su) },
+            suLocator = SuBinaryLocator(candidatesProvider = { listOf(su) }),
             rootfsProvider = object : com.apex.agent.platform.terminal.linux.RootfsProvider {
                 override suspend fun current() = null
                 override suspend fun verify(rootfs: com.apex.agent.platform.terminal.linux.RootfsDescriptor) =

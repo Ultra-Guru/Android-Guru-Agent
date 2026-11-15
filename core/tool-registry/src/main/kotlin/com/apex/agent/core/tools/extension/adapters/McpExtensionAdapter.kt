@@ -86,7 +86,7 @@ class McpExtensionAdapter(
         return Result.success(
             InspectReport(
                 manifest = manifest,
-                targetRegistry = "McpManager（mcp_servers.json；启用后工具以 mcp__${config.name}__tool 一等函数进入对话）",
+                targetRegistry = "McpManager（mcp_servers.json；启用后工具以 Mcp{Server}{Tool} 一等函数进入对话）",
                 targetLocation = "MCP 配置表：${config.name}（${if (manifest.action == Actions.IMPORT) "导入既有配置" else "新增注册"}）",
                 domainDependencies = if (manifest.runtime == RuntimeDomains.UBUNTU) {
                     listOf("PRoot Ubuntu rootfs 就绪", "guest 内可解析命令：${config.command.orEmpty()}")

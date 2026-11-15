@@ -367,6 +367,10 @@ private fun NeonOrbIcon(
         modifier = Modifier
             // UI-012：48dp 触区红线（与输入栏工具行其余按钮一致）
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            // 圆形反馈修复：触区裁剪为圆 —— press/hover/focus 的 ripple
+            // （默认 indication 按布局矩形边界绘制）被 clip 到 48dp 圆内，
+            // 圆球按钮不再出现方形按压阴影（与 IconButton 内部行为对齐）。
+            .clip(CircleShape)
             .clickable(onClick = onClick)
     ) {
         // 小球本体（视觉 ~20dp，居中于 48dp 触区）

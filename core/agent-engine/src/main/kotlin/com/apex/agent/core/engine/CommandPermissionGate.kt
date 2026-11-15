@@ -84,7 +84,24 @@ class CommandPermissionGate(
         "> /sys/",
         ">> /sys/",
         "killall",
-        "pkill"
+        "pkill",
+        // Git 审计 P0-6（纵深防御）：git 破坏性/配置逃逸命令此前零覆盖，
+        // TerminalExec 里的 `git push --force` 等全部直通。这里按子串匹配
+        // 补齐经典破坏性形态——CodeGitRun 通道的精确分类在 GitCommandPolicy
+        // （解析后 argv），本表是自由命令通道的兜底（粗粒度，宁误伤不漏放）。
+        "reset --hard",
+        "push --force",
+        "push -f ",
+        "clean -f",
+        // 注意:isHighRisk 对命令 lowercase 后匹配——模式必须全小写
+        // ("branch -D" 永不命中大写原文被小写化后的文本);副作用:小写化后
+        // "git -C <dir>" 与 "git -c <k=v>" 无法区分,一并保守确认
+        "branch -d",
+        "filter-branch",
+        "reflog expire",
+        "update-ref -d",
+        "git -c ",
+        "git config "
     )
 
     /**

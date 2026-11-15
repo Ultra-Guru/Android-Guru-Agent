@@ -10,12 +10,12 @@
     <string name="goal_setup_empty_statement">Goal statement cannot be empty</string>
     <string name="goal_criteria_label">Acceptance criteria (verifiable)</string>
     <string name="goal_criteria_placeholder">All tests pass (./gradlew test, zero failures)\nApp launches to the home screen</string>
-    <string name="goal_criteria_hint">Criteria must be objectively verifiable — the verifier judges by evidence (command output / file contents / test results), not by “should be fine”.</string>
+    <string name="goal_criteria_hint">Criteria must be objectively verifiable — the verifier judges by evidence (command output / file contents / test results), not by “should be fine”. One criterion per line: the verifier checks each line and the status card shows per-criterion results.</string>
     <string name="goal_setup_empty_criteria">Acceptance criteria cannot be empty</string>
     <string name="goal_max_rounds">Max verification rounds</string>
     <string name="goal_start">Start goal</string>
     <string name="goal_how_it_works">How it works</string>
-    <string name="goal_how_it_works_body">After each round the agent finishes, a fast model checks the work against the criteria. If not met, the agent keeps working with the gap analysis injected, until the goal is achieved or the rounds run out.</string>
+    <string name="goal_how_it_works_body">The goal runs as a state machine: clarifying (fully autonomous + batch clarification) → spec ready → executing → verifying → done / blocked. After each round the agent finishes, a fast model checks the work against the criteria line by line. If not met, the agent keeps working with the gap analysis injected, until the goal is achieved or the rounds run out.</string>
 
     <!-- ═══ 状态卡（GoalStatusCard）═══ -->
     <string name="goal_status_active">In progress</string>
@@ -31,4 +31,35 @@
     <string name="goal_started_notice">Goal set: %1$s</string>
     <string name="goal_stopped_notice">Goal stopped</string>
     <string name="goal_restart_notice">Goal restarted — resuming work</string>
+
+    <!-- ═══ perf P0-3 UI 消息滑动窗口折叠摘要 ═══ -->
+    <string name="code_messages_folded_fmt">%1$d earlier messages folded — recent conversation kept; full history stays in session snapshot</string>
+    <string name="settings_page_migrated">Page &#8220;%1$s&#8221; has moved or no longer exists.</string>
+    <string name="settings_show_api_key">Show API key</string>
+    <string name="settings_hide_api_key">Hide API key</string>
+    <string name="settings_corrupt_banner">Some settings files failed to load &#8212; original data preserved, writes to those sections paused. Export diagnostics or restore from backup.</string>
+    <string name="settings_profile_copy_suffix">%1$s (copy)</string>
+    <string name="settings_num_err_empty">Value is empty.</string>
+    <string name="settings_num_err_nan">Not a number.</string>
+    <string name="settings_num_err_range_fmt">Out of range (%1$d – %2$d).</string>
+    <string name="settings_hook_op_failed">Operation failed.</string>
+    <string name="settings_prompt_preset_label">Prompt Preset</string>
+    <string name="settings_preset_android">Android Expert</string>
+    <string name="settings_preset_coding">Coding Agent</string>
+    <string name="settings_preset_automation">Automation Agent</string>
+    <string name="settings_preset_custom">Custom</string>
+    <string name="settings_preset_overwrite_title">Overwrite custom prompt?</string>
+    <string name="settings_preset_overwrite_warn">The current custom prefix will be replaced by the preset. This cannot be undone.</string>
+    <string name="settings_preset_overwrite_ok">Overwrite</string>
+    <string name="settings_rate_limit_field_friendly">Friendly rate limiting</string>
+    <string name="settings_rate_limit_field_interval">Min request interval (ms)</string>
+    <string name="settings_rate_limit_field_payload">Rich payload</string>
+    <string name="settings_rate_limit_field_parallel">Tool call parallelism</string>
+    <string name="settings_rate_limit_restart_hint">Note: tool call parallelism takes effect after app restart (DI snapshot).</string>
+    <string name="settings_rate_limit_applied">Recommended combo applied.</string>
+    <string name="settings_rate_limit_undo">Undo</string>
+    <string name="search_dispatch_failed">Failed to dispatch the service action — please retry.</string>
+    <string name="search_clear_done">Local search component cleared.</string>
+    <string name="search_clear_failed">Failed to clear the local search component.</string>
 </resources>
+

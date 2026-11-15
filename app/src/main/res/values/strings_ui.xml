@@ -36,5 +36,54 @@
 
     <!-- ═══ Glass Lab：Cloudy 真模糊材质样本（v7 agent 回复气泡）═══ -->
 
+    <!-- ═══ Glass Lab · Gate-0 productionization (dark dock v2 / side-by-side bench / recipe exporter) ═══ -->
+    <string name="glasslab_darkbar_title">Dark bar · CoolApk-style dark dock v2</string>
+    <string name="glasslab_darkbar_hint">Glass base and content are separated: the publish button pokes 18dp above the bar; 5-slot pages keep all 8 items tappable; the selection pill lives inside its own page (GlassDockMath). Switch tiers to see why the dock needs its own recipe.</string>
+    <string name="glasslab_darkbar_chip_dock">Dock</string>
+    <string name="glasslab_darkbar_chip_card">Card</string>
+    <string name="glasslab_darkbar_chip_floating">Floating</string>
+    <string name="glasslab_darkbar_chip_pale">Pale</string>
+    <string name="glasslab_darkbar_caption">8 items on 2 pages, a per-page pill, and a solid publish button lifted 18dp above the bar</string>
+    <string name="glasslab_darkbar_probe_traverse">Traverse 8 items</string>
+    <string name="glasslab_darkbar_probe_scan">Container integrity scan</string>
+    <string name="glasslab_darkbar_scan_double">Double bottom edge suspected</string>
+    <string name="glasslab_darkbar_scan_single">Single boundary (healthy)</string>
+    <string name="glasslab_darkbar_scan_unavailable">Pixel readback unavailable</string>
+    <string name="glasslab_dest_home">Home</string>
+    <string name="glasslab_dest_digital">Devices</string>
+    <string name="glasslab_dest_explore">Explore</string>
+    <string name="glasslab_dest_mine">Me</string>
+    <string name="glasslab_dest_video">Video</string>
+    <string name="glasslab_dest_game">Games</string>
+    <string name="glasslab_dest_music">Music</string>
+    <string name="glasslab_dest_settings">Settings</string>
+    <string name="glasslab_bench_title">Side-by-side bench · NIGHT vs DAY</string>
+    <string name="glasslab_bench_hint">Same GlassRecipe and scroll phase on both panes; only lighting differs. The conversation-skin preset drives the same short-circuit path as production GlassSurface (D-10).</string>
+    <string name="glasslab_bench_preset_liquid">Session: liquid glass</string>
+    <string name="glasslab_bench_preset_minimal">Session: minimal (flat)</string>
+    <string name="glasslab_bench_phase">Sampling scroll phase %1$d%%</string>
+    <string name="glasslab_bench_probe_deltae">ΔE probe</string>
+    <string name="glasslab_bench_probe_frame">Frame-time probe</string>
+    <string name="glasslab_bench_export">Export recipe</string>
+    <string name="glasslab_bench_pane_night">NIGHT pane</string>
+    <string name="glasslab_bench_pane_day">DAY pane</string>
+    <string name="glasslab_param_title">Recipe params (live)</string>
+    <string name="glasslab_param_blur">blur radius</string>
+    <string name="glasslab_param_tint">tint alpha</string>
+    <string name="glasslab_param_lens_height">lens height</string>
+    <string name="glasslab_param_lens_amount">lens amount</string>
+    <string name="glasslab_param_edge">edge alpha</string>
+    <string name="glasslab_param_specular">specular alpha</string>
+    <string name="glasslab_param_elevation">elevation</string>
+    <string name="glasslab_param_scrim">scrim alpha</string>
+    <string name="glasslab_param_corner">corner radius</string>
+    <string name="glasslab_param_chroma">chromatic aberration</string>
+    <string name="glasslab_export_title">Export recipe · %1$s</string>
+    <string name="glasslab_export_kotlin_hint">Paste this block into GlassRecipeBook; the lab and production GlassStyle then change together (closed loop).</string>
+    <string name="glasslab_export_json_hint">Flat JSON for tooling; GlassRecipe.fromJson reads it back losslessly.</string>
+    <string name="glasslab_export_copy">Copy</string>
+    <string name="glasslab_export_show_kotlin">Show Kotlin</string>
+    <string name="glasslab_export_show_json">Show JSON</string>
+    <string name="glasslab_export_close">Close</string>
 
 </resources>

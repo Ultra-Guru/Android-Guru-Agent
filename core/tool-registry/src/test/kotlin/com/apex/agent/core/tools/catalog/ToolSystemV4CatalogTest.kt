@@ -361,6 +361,34 @@ class ToolSystemV4CatalogTest {
     }
 
     @Test
+    fun `mcp server id prefix matches registered tool ids`() {
+        // 核查稿 §6.5 回归：指引注入源（app 层 CodeModule 的
+        // KitMcpInstructionSource）按 startsWith(prefix) 过滤——前缀必须与
+        // 实际注册 id 同源。旧实现手拼 "mcp__<slug>__" 与 v5 id
+        // Mcp{Server}{Tool} 永不匹配（6/6 样本失败 → instructions 从不注入）。
+        val samples = listOf(
+            "github" to "create_issue",
+            "search" to "web_search",
+            "fs" to "read_file",
+            "fs-sandbox" to "list_directory",
+            "everything-sandbox" to "echo",
+            "memory" to "create_entities"
+        )
+        for ((server, tool) in samples) {
+            val id = McpToolNaming.toolId(server, tool)
+            val prefix = McpToolNaming.serverIdPrefix(server)
+            assertTrue("prefix $prefix must prefix-match id $id", id.startsWith(prefix))
+            assertTrue("prefix must be a strict prefix (tool segment missing)", prefix.length < id.length)
+            assertFalse("prefix must not carry v4 separators", prefix.contains("__"))
+        }
+        // 命名空间收敛：同 slug 服务器的两条工具共享同一前缀
+        assertEquals(
+            McpToolNaming.serverIdPrefix("My Server"),
+            McpToolNaming.serverIdPrefix("my-server")
+        )
+    }
+
+    @Test
     fun `mcp ids are provider-legal without sanitization`() {
         val id = McpToolNaming.toolId("Fancy Server 2", "do.thing!")
         assertEquals(ToolNameSanitizer.sanitize(id), id)

@@ -44,7 +44,7 @@ import com.apex.agent.R
  *
  * RulesSettingsSection(
  *     globalRules = agent.globalRules,
- *     onGlobalRulesChange = { r -> onAgent(agent.copy(globalRules = r)) },
+ *     onGlobalRulesChange = { r -> onAgent { copy(globalRules = r) } },
  *     workspaceRootLabel = ...,      // CodeWorkspaceManager.activeWorkspace()?.root 相对 filesDir 的标签，null=无
  *     projectRulesStatus = ...,      // RulesProvider.loadProjectRules(root, null) 是否命中（IO，建议 VM 预计算）
  *     onCreateProjectRules = ...     // 在工作区根写入 AGENTS.md 模板后刷新状态；无工作区传 null
@@ -84,9 +84,13 @@ internal fun RulesSettingsSection(
             color = MaterialTheme.colorScheme.primary
         )
         val overLimit = globalRules.length > GLOBAL_RULES_TRUNCATION_LINE
+        // B2-BUG-16:防抖写盘(64KB 文本每键整份序列化 → 400ms 批量),离页冲刷
+        val (globalDraft, onGlobalDraft) = rememberDebouncedText(globalRules) {
+            onGlobalRulesChange(it.take(GLOBAL_RULES_SOFT_LIMIT))
+        }
         OutlinedTextField(
-            value = globalRules,
-            onValueChange = { onGlobalRulesChange(it.take(GLOBAL_RULES_SOFT_LIMIT)) },
+            value = globalDraft,
+            onValueChange = onGlobalDraft,
             supportingText = {
                 Text(
                     stringResource(

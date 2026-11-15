@@ -1,0 +1,39 @@
+name: Verify Gradle wrapper
+description: >-
+  校验入库的 gradle wrapper 与本流水线期望的 Gradle 版本一致 —— wrapper 是
+  构建工具链的唯一事实源，CI 只校验、漂移即红，绝不用 `gradle wrapper`
+  覆盖入库版本（#353-⑥ 确立的纪律，#782 收编为复合动作统一维护）。
+
+inputs:
+  expected-version:
+    description: 期望的 Gradle 版本（须与 gradle/wrapper/gradle-wrapper.properties 的 distributionUrl 一致）
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Verify Gradle wrapper is in sync
+      # #353-⑥：旧实现每 job 跑 `gradle wrapper --gradle-version <v>`，把仓库里
+      # 已提交的 wrapper **覆盖回 <v>**。后果：有人升级 gradle-wrapper.properties
+      # （例如为了新版 AGP）后，CI 仍然强制用旧版构建 —— 本地能过、CI 过、
+      # 发布产物与仓库声明脱钩，且全程无告警。wrapper 本身已入库
+      # （gradlew + gradle-wrapper.jar + properties），生成动作纯冗余；
+      # 改为**校验**：版本不一致就红，让漂移可见。
+      # #782：从 ci.yml 内联脚本抽为复合动作 —— apk / release / media-results
+      # 三条流水线同款反模式一并清理，单一事实源防四处漂移。
+      shell: bash
+      run: |
+        set -euo pipefail
+        PROP=gradle/wrapper/gradle-wrapper.properties
+        [ -f "$PROP" ] || { echo "::error::$PROP missing — wrapper must be committed"; exit 1; }
+        [ -f gradle/wrapper/gradle-wrapper.jar ] || { echo "::error::gradle-wrapper.jar missing — wrapper must be committed"; exit 1; }
+        ACTUAL=$(grep -E '^distributionUrl=' "$PROP" | sed -E 's#.*gradle-([0-9.]+)-(bin|all)\.zip#\1#')
+        [ -n "$ACTUAL" ] || { echo "::error::cannot parse distributionUrl in $PROP"; exit 1; }
+        WANT='${{ inputs.expected-version }}'
+        if [ "$ACTUAL" != "$WANT" ]; then
+          echo "::error::Gradle wrapper is $ACTUAL but this job expects $WANT."
+          echo "Fix: update expected-version of .github/actions/verify-wrapper in the calling workflow to $ACTUAL"
+          echo "     (or revert $PROP) — do NOT let CI silently override the wrapper."
+          exit 1
+        fi
+        echo "✅ Gradle wrapper $ACTUAL matches CI expectation"

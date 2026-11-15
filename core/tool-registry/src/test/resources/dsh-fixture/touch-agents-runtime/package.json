@@ -1,0 +1,6 @@
+{
+  "name": "dsh-fixture-touch-agents-runtime",
+  "version": "0.1.0",
+  "description": "P0 fixture: 无 inject 声明,运行时触碰 ctx.agents —— 触碰记录 + 中止",
+  "main": "index.js"
+}

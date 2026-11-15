@@ -41,8 +41,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -53,6 +51,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -63,6 +63,9 @@ import com.apex.agent.core.code.stream.LlmRetryInfo
 import com.apex.agent.core.code.stream.StreamEntry
 import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.ui.component.MarkdownText
+import com.apex.agent.ui.glass.PartSurface
+import com.apex.agent.ui.theme.CodingPart
+import androidx.compose.foundation.layout.PaddingValues
 import kotlinx.coroutines.delay
 
 /**
@@ -70,7 +73,7 @@ import kotlinx.coroutines.delay
  *
  * 胶囊时间轴（CodeStreamCards）的 Rikka 皮肤版：工具胶囊改走聚合块
  * （RikkaToolBlock，时间轴分段层负责聚段），其余成员按聊天 App 语言
- * 重绘——用户右对齐实色气泡 / 结论 Markdown 气泡 / 思考过程折叠卡 /
+ * 重绘——用户右对齐实色气泡 / 结论 Markdown 气泡 / 思考计时状态卡 /
  * 验证轮次卡 / 居中状态 pill / 错误与停止卡（含「继续完成」入口）/ 文件
  * chips / 运行统计卡。Git 操作可视化卡直接复用（GitOpVisualCard 与皮肤
  * 无关）。
@@ -83,22 +86,27 @@ import kotlinx.coroutines.delay
 internal fun RikkaStreamCard(
     entry: StreamEntry,
     onToolClick: (StreamToolCall) -> Unit,
-    thinkingCollapsed: Boolean = false,
-    onThinkingCollapsedChange: (Boolean) -> Unit = {},
-    onShowAnswer: (() -> Unit)? = null,
     llmRetry: LlmRetryInfo? = null,
     onRetryRun: (() -> Unit)? = null
 ) {
     when (entry) {
         is StreamEntry.UserEntry -> RikkaUserBubble(entry.text)
         is StreamEntry.AssistantEntry -> RikkaAssistantBubble(entry.text, entry.isStreaming)
-        is StreamEntry.ThinkingEntry -> RikkaThinkingCard(entry.text, entry.isStreaming, thinkingCollapsed, onThinkingCollapsedChange, onShowAnswer, llmRetry)
+        is StreamEntry.ThinkingEntry -> RikkaThinkingCard(entry.isStreaming, llmRetry)
         // 时间轴分段层已把连续胶囊收进 RikkaToolBlock，此分支只在单胶囊
         // 直渲染（防御）时触达——单调用块本身就是一行工具卡。
         is StreamEntry.ToolCapsuleEntry -> RikkaToolBlock(listOf(entry.call), onToolClick)
         is StreamEntry.VerifyCycleEntry -> RikkaVerifyCard(entry, onToolClick)
-        is StreamEntry.StatusEntry -> RikkaPillLine(text = entry.text, emphasized = false)
-        is StreamEntry.SystemEntry -> RikkaPillLine(text = entry.text, emphasized = true)
+        is StreamEntry.StatusEntry -> RikkaPillLine(
+            text = entry.text,
+            emphasized = false,
+            part = CodingPart.STREAM_STATUS_LINE
+        )
+        is StreamEntry.SystemEntry -> RikkaPillLine(
+            text = entry.text,
+            emphasized = true,
+            part = CodingPart.STREAM_SYSTEM_LINE
+        )
         is StreamEntry.ErrorEntry -> RikkaErrorCard(entry, onRetryRun)
         is StreamEntry.StopEntry -> RikkaStopCard(entry.reason)
         is StreamEntry.FileChipsEntry -> RikkaFileChips(entry.files)
@@ -120,16 +128,18 @@ private fun RikkaUserBubble(text: String) {
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp)
     ) {
-        Surface(
+        // v1.7 部件皮肤：stream.user_bubble —— SOLID 实色气泡（primaryContainer
+        // + widthIn(max=320)，与胶囊时间轴 UserBubble 共享同一 Part ID）。
+        PartSurface(
+            part = CodingPart.STREAM_USER_BUBBLE,
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 6.dp, bottomStart = 24.dp, bottomEnd = 24.dp),
-            color = MaterialTheme.colorScheme.primaryContainer,
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
             modifier = Modifier.widthIn(max = 320.dp)
         ) {
             Text(
                 text = text,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                color = MaterialTheme.colorScheme.onPrimaryContainer
             )
         }
         // 头像（rikkahub 同尺寸 28dp；人形图标 + 容器色底，用户身份锚点）
@@ -157,7 +167,13 @@ private fun RikkaUserBubble(text: String) {
 
 @Composable
 private fun RikkaAssistantBubble(text: String, isStreaming: Boolean) {
-    Column(
+    // v1.7 部件皮肤：结论区默认 PALE_LIQUID 浅白玻璃（§4.1 —— 与胶囊
+    // 时间轴 AssistantBubble 共享 stream.assistant_bubble）；身份头行 +
+    // Markdown + 光标零改动，只换容器。切 FLAT 可回到 rikkahub 直铺形态。
+    PartSurface(
+        part = CodingPart.STREAM_ASSISTANT_BUBBLE,
+        active = isStreaming,
+        contentPadding = PaddingValues(0.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp)
@@ -208,7 +224,8 @@ private fun RikkaAssistantBubble(text: String, isStreaming: Boolean) {
 /** 流式呼吸圆点（10dp；与 rikkahub DotLoading 同语义的轻量加载指示）。 */
 @Composable
 private fun RikkaStreamingDot() {
-    val pulse by rememberInfiniteTransition(label = "rikka-dot")
+    // perf-20261114：graphicsLayer 块内读动画 —— 零重组（旧实现组合期取值）
+    val pulse = rememberInfiniteTransition(label = "rikka-dot")
         .animateFloat(
             initialValue = 0.35f,
             targetValue = 1f,
@@ -220,45 +237,25 @@ private fun RikkaStreamingDot() {
         )
     Surface(
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.primary.copy(alpha = pulse),
-        modifier = Modifier.size(10.dp)
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .size(10.dp)
+            .graphicsLayer { alpha = pulse.value }
     ) {}
 }
 
-// ═══ 思考过程折叠卡（RikkaHub 同款：实时秒表标题 + 流式展开 / 收束折叠）═══
-// rikkahub 形态：「思考了 %1$.1f 秒」实时计时（50ms 级刷新的秒表语言），
-// 流式中标题呼吸；完成后定格总时长。UI 层测时（ThinkingEntry 无耗时
+// ═══ 思考计时状态卡（只显示计时，不展示思考详细过程——用户规格 2026-11）═══
+// rikkahub 的秒表语言保留：「思考中 · X 秒」实时计时 + 流式标题呼吸，完成
+// 后定格「思考了 X 秒」。思考文本 / 折叠展开 / 首句预览 /「直接看回答」全部
+// 移除（点击交互随之消失，无涟漪黑影）；UI 层测时（ThinkingEntry 无耗时
 // 字段，不侵入 core）：startedAt 首帧记录 + rememberSaveable 防列表滚动
 // 重建重置；收束瞬间定格 finalElapsed。
 
 @Composable
 private fun RikkaThinkingCard(
-    text: String,
     isStreaming: Boolean,
-    defaultCollapsed: Boolean,
-    onCollapsedChange: (Boolean) -> Unit,
-    onShowAnswer: (() -> Unit)?,
     llmRetry: LlmRetryInfo? = null
 ) {
-    // key 语义与胶囊思考卡同款：不能拿派生值当 key（空卡点开后首 token
-    // 到达会重置展开态）；手动干预优先于自动展开/折叠。
-    var expanded by rememberSaveable { mutableStateOf(isStreaming && !defaultCollapsed) }
-    LaunchedEffect(isStreaming) {
-        if (!isStreaming) expanded = false
-    }
-    val latestText by rememberUpdatedState(text)
-    var displayed by remember { mutableStateOf(if (isStreaming) "" else text) }
-    val reveal = remember { RikkaThinkingReveal() }
-    LaunchedEffect(isStreaming) {
-        if (!isStreaming) {
-            displayed = reveal.advance(latestText, isStreaming = false)
-        } else {
-            while (true) {
-                displayed = reveal.advance(latestText, isStreaming = true)
-                delay(25L)
-            }
-        }
-    }
     // ── 实时秒表（rikkahub「思考了 X 秒」）：首帧起表，100ms 步进；
     // 收束瞬间定格，滚动重建不重置（rememberSaveable）──
     var startedAt by rememberSaveable { mutableLongStateOf(0L) }
@@ -290,8 +287,10 @@ private fun RikkaThinkingCard(
     } else {
         stringResource(R.string.rikka_thinking_elapsed_fmt, elapsedSeconds)
     }
-    // 流式标题呼吸（rikkahub shimmer 同语义的轻量替代）
-    val titlePulse by rememberInfiniteTransition(label = "rikka-think-pulse")
+    // 流式标题呼吸（rikkahub shimmer 同语义的轻量替代）。
+    // perf-20261114：State 直传 + graphicsLayer 块内读取 —— 零重组零重测
+    //（旧实现组合期取值改 Text 颜色，思考卡随脉冲 60fps 重组）。
+    val titlePulse = rememberInfiniteTransition(label = "rikka-think-pulse")
         .animateFloat(
             initialValue = 0.6f,
             targetValue = 1f,
@@ -301,20 +300,21 @@ private fun RikkaThinkingCard(
             ),
             label = "rikka-think-pulse-alpha"
         )
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    // v1.7 部件皮肤（PartSkin spec FR-5）：思考卡默认浅白液态玻璃 ——
+    // 重试红只上图标/标题（FR-11）。纯状态卡无 onClick：无涟漪反馈。
+    PartSurface(
+        part = CodingPart.STREAM_THINKING,
+        active = isStreaming,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-                .clickable {
-                    expanded = !expanded
-                    onCollapsedChange(!expanded)
-                }
+        // v1.2 G2 内部件（P0-E）：标题行可独立换肤；默认 EMBEDDED
+        //（零容器，contentPadding=0 保持原视觉），H-4 嵌套退化生效。
+        PartSurface(
+            part = CodingPart.STREAM_THINKING_HEADER,
+            contentPadding = PaddingValues(0.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -329,40 +329,11 @@ private fun RikkaThinkingCard(
                     text = titleText,
                     style = MaterialTheme.typography.labelMedium,
                     color = if (llmRetry != null) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurfaceVariant
-                        .copy(alpha = if (isStreaming) titlePulse else 1f)
-                )
-                Spacer(Modifier.weight(1f))
-                Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.size(14.dp)
-                )
-            }
-            AnimatedVisibility(visible = expanded) {
-                Text(
-                    text = if (isStreaming) displayed else text,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 6.dp)
-                )
-            }
-            if (onShowAnswer != null) {
-                TextButton(onClick = { expanded = false; onShowAnswer() }) {
-                    Text(stringResource(R.string.rikka_thinking_show_answer))
-                }
-            }
-            if (!expanded && text.isNotBlank()) {
-                Text(
-                    text = stringResource(R.string.rikka_thinking_preview_fmt, rikkaThinkingFirstSentence(text)),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.outline,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp)
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .graphicsLayer {
+                            alpha = if (isStreaming) titlePulse.value else 1f
+                        }
                 )
             }
         }
@@ -380,62 +351,62 @@ private fun RikkaVerifyCard(entry: StreamEntry.VerifyCycleEntry, onToolClick: (S
         false -> MaterialTheme.colorScheme.error
         null -> MaterialTheme.colorScheme.outline
     }
-    Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = tint.copy(alpha = 0.06f),
+    // v1.7 部件皮肤：验证轮次卡默认 PALE_LIQUID；通过/失败语义色只上
+    // 图标与文字（FR-11 淘汰 tint.copy(alpha=0.06f) 容器染色）。
+    PartSurface(
+        part = CodingPart.STREAM_VERIFY_CYCLE,
+        onClick = { expanded = !expanded },
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 2.dp)
-            .clickable { expanded = !expanded }
     ) {
-        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    tint = tint,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = stringResource(R.string.code_stream_verify_round_fmt, entry.cycle.round),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = when (passed) {
-                        true -> stringResource(R.string.code_stream_verify_passed)
-                        false -> stringResource(R.string.code_stream_verify_failed)
-                        null -> stringResource(R.string.code_stream_verify_unknown)
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tint
-                )
-                Spacer(Modifier.weight(1f))
-                Icon(
-                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.size(14.dp)
-                )
-            }
-            AnimatedVisibility(visible = expanded) {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                    modifier = Modifier.padding(top = 6.dp)
-                ) {
-                    entry.calls.forEach { call ->
-                        RikkaToolRow(call = call, onClick = onToolClick)
-                    }
-                    if (entry.calls.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.code_stream_verify_details_gone),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                    }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = stringResource(R.string.code_stream_verify_round_fmt, entry.cycle.round),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = when (passed) {
+                    true -> stringResource(R.string.code_stream_verify_passed)
+                    false -> stringResource(R.string.code_stream_verify_failed)
+                    null -> stringResource(R.string.code_stream_verify_unknown)
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = tint
+            )
+            Spacer(Modifier.weight(1f))
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.size(14.dp)
+            )
+        }
+        AnimatedVisibility(visible = expanded) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier.padding(top = 6.dp)
+            ) {
+                entry.calls.forEach { call ->
+                    RikkaToolRow(call = call, onClick = onToolClick)
+                }
+                if (entry.calls.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.code_stream_verify_details_gone),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
                 }
             }
         }
@@ -448,76 +419,76 @@ private fun RikkaVerifyCard(entry: StreamEntry.VerifyCycleEntry, onToolClick: (S
 @Composable
 private fun RikkaRunStatsCard(entry: StreamEntry.RunStatsEntry) {
     val failed = entry.failedCalls > 0
-    val accent = if (failed) MaterialTheme.colorScheme.error
+    // v1.7 部件皮肤：统计卡默认 PALE_LIQUID；失败语义色只上图标/chip 文字
+    val statusTint = if (failed) MaterialTheme.colorScheme.error
     else MaterialTheme.colorScheme.primary
-    Surface(
+    PartSurface(
+        part = CodingPart.STREAM_RUN_STATS,
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = if (failed) Icons.Default.BugReport else Icons.Default.CheckCircle,
-                    contentDescription = null,
-                    tint = accent,
-                    modifier = Modifier.size(15.dp)
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = stringResource(R.string.code_stream_run_stats_title),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = formatCapsuleDuration(entry.durationMs),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = if (failed) Icons.Default.BugReport else Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = statusTint,
+                modifier = Modifier.size(15.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = stringResource(R.string.code_stream_run_stats_title),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = formatCapsuleDuration(entry.durationMs),
+                style = MaterialTheme.typography.labelMedium,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(top = 6.dp)
+        ) {
+            RikkaStatChip(
+                icon = Icons.Default.Loop,
+                label = stringResource(R.string.code_stream_run_iterations_fmt, entry.iterations)
+            )
+            RikkaStatChip(
+                icon = Icons.Default.Build,
+                label = stringResource(R.string.code_stream_run_tools_fmt, entry.toolCalls)
+            )
+            if (entry.skillCalls > 0) {
+                RikkaStatChip(
+                    icon = Icons.Default.AutoAwesome,
+                    label = stringResource(R.string.code_stream_run_skills_fmt, entry.skillCalls)
                 )
             }
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.padding(top = 6.dp)
-            ) {
+            if (entry.mcpCalls > 0) {
                 RikkaStatChip(
-                    icon = Icons.Default.Loop,
-                    label = stringResource(R.string.code_stream_run_iterations_fmt, entry.iterations)
+                    icon = Icons.Default.Extension,
+                    label = stringResource(R.string.code_stream_run_mcp_fmt, entry.mcpCalls)
                 )
+            }
+            if (entry.filesTouched > 0) {
                 RikkaStatChip(
-                    icon = Icons.Default.Build,
-                    label = stringResource(R.string.code_stream_run_tools_fmt, entry.toolCalls)
+                    icon = Icons.AutoMirrored.Filled.Notes,
+                    label = stringResource(R.string.code_stream_run_files_fmt, entry.filesTouched)
                 )
-                if (entry.skillCalls > 0) {
-                    RikkaStatChip(
-                        icon = Icons.Default.AutoAwesome,
-                        label = stringResource(R.string.code_stream_run_skills_fmt, entry.skillCalls)
-                    )
-                }
-                if (entry.mcpCalls > 0) {
-                    RikkaStatChip(
-                        icon = Icons.Default.Extension,
-                        label = stringResource(R.string.code_stream_run_mcp_fmt, entry.mcpCalls)
-                    )
-                }
-                if (entry.filesTouched > 0) {
-                    RikkaStatChip(
-                        icon = Icons.AutoMirrored.Filled.Notes,
-                        label = stringResource(R.string.code_stream_run_files_fmt, entry.filesTouched)
-                    )
-                }
-                if (failed) {
-                    RikkaStatChip(
-                        icon = Icons.Default.BugReport,
-                        label = stringResource(R.string.code_stream_run_failed_fmt, entry.failedCalls),
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
+            }
+            if (failed) {
+                RikkaStatChip(
+                    icon = Icons.Default.BugReport,
+                    label = stringResource(R.string.code_stream_run_failed_fmt, entry.failedCalls),
+                    tint = MaterialTheme.colorScheme.error
+                )
             }
         }
     }
@@ -560,80 +531,86 @@ private fun RikkaStatChip(
 /**
  * 错误卡（Rikka 皮肤）：与胶囊时间轴 ErrorCard 同语义——失败结尾带
  * 「继续完成」动作行（用户规格 2026-11），播放入口重放本任务输入。
+ *
+ * v1.7 部件皮肤：默认 PALE_LIQUID 浅白玻璃 —— 红色仅上图标/标题文字
+ * （FR-11 淘汰 errorContainer@0.5f 整卡染红）；正文/提示改 onSurface
+ * （NFR-6 对比度）。
  */
 @Composable
 private fun RikkaErrorCard(entry: StreamEntry.ErrorEntry, onRetryRun: (() -> Unit)? = null) {
-    Surface(
+    PartSurface(
+        part = CodingPart.STREAM_ERROR,
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.BugReport,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(15.dp)
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = if (entry.recoverable) stringResource(R.string.code_stream_error_recoverable)
-                    else stringResource(R.string.code_stream_error_fatal),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-            Text(
-                text = entry.message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-                modifier = Modifier.padding(top = 4.dp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.BugReport,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(15.dp)
             )
-            entry.hint?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f),
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-            }
-            // ═══ 继续完成（失败结尾的动作行）═══
-            if (onRetryRun != null && entry.recoverable) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = if (entry.recoverable) stringResource(R.string.code_stream_error_recoverable)
+                else stringResource(R.string.code_stream_error_fatal),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+        Text(
+            text = entry.message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+        entry.hint?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+        // ═══ 继续完成（失败结尾的动作行）═══
+        if (onRetryRun != null && entry.recoverable) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.10f),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp)
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.10f),
-                        modifier = Modifier.clickable(
+                        // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 10dp 圆角
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(
                             role = androidx.compose.ui.semantics.Role.Button
                         ) { onRetryRun() }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = stringResource(R.string.code_stream_error_continue),
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Text(
-                                text = stringResource(R.string.code_stream_error_continue),
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = stringResource(R.string.code_stream_error_continue),
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = stringResource(R.string.code_stream_error_continue),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.error
+                        )
                     }
                 }
             }
@@ -641,11 +618,32 @@ private fun RikkaErrorCard(entry: StreamEntry.ErrorEntry, onRetryRun: (() -> Uni
     }
 }
 
-// ═══ 停止卡（居中 pill）═══
+// ═══ 停止卡（v1.7 部件皮肤：stream.stop 默认 PALE_LIQUID 卡片形态）═══
 
 @Composable
 private fun RikkaStopCard(reason: String) {
-    RikkaPillLine(text = reason, emphasized = false, leading = Icons.Default.StopCircle)
+    PartSurface(
+        part = CodingPart.STREAM_STOP,
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 3.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.StopCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.size(15.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = reason,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
 
 // ═══ 受影响文件 chips ═══
@@ -653,10 +651,12 @@ private fun RikkaStopCard(reason: String) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RikkaFileChips(files: List<String>) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 2.dp)
+    // v1.7 部件皮肤：文件 chips 默认 FLAT 裸渲染（与胶囊时间轴同款 bareInFlat）。
+    PartSurface(
+        part = CodingPart.STREAM_FILE_CHIPS,
+        bareInFlat = true,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+        modifier = Modifier.fillMaxWidth()
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
@@ -706,11 +706,15 @@ private fun RikkaFileChips(files: List<String>) {
 }
 
 // ═══ 状态 / 系统 pill（居中小胶囊——聊天 App 的时间戳/事件语言）═══
+// v1.7 部件皮肤：pill 容器收编 PartSurface（FLAT 形态 ≈ 既有 surfaceContainer
+// 胶囊）；part 由调用方按 StatusEntry / SystemEntry 传入（共享 ID 两套
+// 风格同源）。
 
 @Composable
 private fun RikkaPillLine(
     text: String,
     emphasized: Boolean,
+    part: CodingPart = CodingPart.STREAM_STATUS_LINE,
     leading: androidx.compose.ui.graphics.vector.ImageVector? = null
 ) {
     Row(
@@ -719,14 +723,14 @@ private fun RikkaPillLine(
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
     ) {
-        Surface(
+        PartSurface(
+            part = part,
             shape = RoundedCornerShape(50),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 leading?.let {
                     Icon(

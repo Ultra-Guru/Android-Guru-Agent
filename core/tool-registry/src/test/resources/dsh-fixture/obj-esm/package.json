@@ -1,0 +1,7 @@
+{
+  "name": "dsh-fixture-obj-esm",
+  "version": "0.9.0",
+  "description": "P0 fixture: ESM 对象模块 + defineTool 同形构造 + inject 声明含未支持服务",
+  "type": "module",
+  "main": "index.js"
+}

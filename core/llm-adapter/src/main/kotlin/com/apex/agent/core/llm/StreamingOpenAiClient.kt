@@ -37,27 +37,26 @@ class StreamingOpenAiClient(
     private val parseFailuresLogged = java.util.concurrent.atomic.AtomicInteger()
     private val sanitizeFallbacksLogged = java.util.concurrent.atomic.AtomicInteger()
 
+    /**
+     * diag-202611（422 unknown variant 复盘）：server-side 搜索 tool 降级标记。
+     * 置位后本实例所有请求不再注入非标准 tools[].type 搜索条目 —— 由
+     * [executeWithServerToolDegrade] 在「未知 tools[].type」类请求级拒绝后
+     * 置位（每实例一次，防重复烧请求）。
+     */
+    private val serverSearchToolDegraded = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** 端点门控跳过留痕限次（首 3 次 + 之后每 50 条一条，与 #501 同模式）。 */
+    private val serverSearchSkipsLogged = java.util.concurrent.atomic.AtomicInteger()
+
     override suspend fun chat(
         messages: List<LlmMessage>,
         tools: List<ToolDefinition>,
         temperature: Float,
         maxTokens: Int
-    ): LlmResponse {
-        val body = buildRequestBody(messages, tools, temperature, maxTokens, stream = false)
-
-        val request = buildRequest(body)
-        // #259：重试在 suspend 层（可取消的 delay 退避，总预算见 SuspendHttpRetry）
-        return SuspendHttpRetry.execute(config) { httpClient.newCall(request).await() }.use { response ->
-            if (!response.isSuccessful) {
-                throw LlmException.Http(response.code, response.errorBodyHead())
-            }
-            val body = response.body ?: throw LlmException.EmptyResponse()
-            val bytes = body.byteStream().use { stream ->
-                BoundedReads.readAtMost(stream, MAX_NON_STREAM_RESPONSE_BYTES)
-            } ?: throw LlmException.ResponseTooLarge(MAX_NON_STREAM_RESPONSE_BYTES)
-            parseNonStreamResponse(bytes.toString(Charsets.UTF_8))
-        }
-    }
+    ): LlmResponse = executeWithServerToolDegrade(
+        buildBody = { buildRequestBody(messages, tools, temperature, maxTokens, stream = false) },
+        issueRequest = { body -> executeNonStream(buildRequest(body)) }
+    )
 
     // ═══ Tool System v4 — per-request tool choice（强制函数调用）═══
 
@@ -67,25 +66,15 @@ class StreamingOpenAiClient(
         temperature: Float,
         maxTokens: Int,
         toolChoice: ToolChoiceSpec?
-    ): LlmResponse {
-        val body = buildRequestBody(
-            messages, tools, temperature, maxTokens,
-            stream = false, toolChoiceOverride = toolChoice
-        )
-
-        val request = buildRequest(body)
-        // #259：重试在 suspend 层（可取消的 delay 退避，总预算见 SuspendHttpRetry）
-        return SuspendHttpRetry.execute(config) { httpClient.newCall(request).await() }.use { response ->
-            if (!response.isSuccessful) {
-                throw LlmException.Http(response.code, response.errorBodyHead())
-            }
-            val body = response.body ?: throw LlmException.EmptyResponse()
-            val bytes = body.byteStream().use { stream ->
-                BoundedReads.readAtMost(stream, MAX_NON_STREAM_RESPONSE_BYTES)
-            } ?: throw LlmException.ResponseTooLarge(MAX_NON_STREAM_RESPONSE_BYTES)
-            parseNonStreamResponse(bytes.toString(Charsets.UTF_8))
-        }
-    }
+    ): LlmResponse = executeWithServerToolDegrade(
+        buildBody = {
+            buildRequestBody(
+                messages, tools, temperature, maxTokens,
+                stream = false, toolChoiceOverride = toolChoice
+            )
+        },
+        issueRequest = { body -> executeNonStream(buildRequest(body)) }
+    )
 
     override fun chatStream(
         messages: List<LlmMessage>,
@@ -102,28 +91,19 @@ class StreamingOpenAiClient(
         maxTokens: Int,
         toolChoice: ToolChoiceSpec?
     ): Flow<LlmStreamChunk> = flow {
-        val body = buildRequestBody(
-            messages, tools, temperature, maxTokens,
-            stream = true, toolChoiceOverride = toolChoice
+        // diag-202611（422 unknown variant 复盘）：请求头阶段包一层
+        // [executeWithServerToolDegrade] —— 端点以「未知 tools[].type」拒绝时
+        // 剔除 server-side 搜索 tool 重发一次。失败发生在任何流片段发射前，
+        // 不属于 #762/#765 禁区的流重放；成功获取响应后的读循环不变。
+        val response = executeWithServerToolDegrade(
+            buildBody = {
+                buildRequestBody(
+                    messages, tools, temperature, maxTokens,
+                    stream = true, toolChoiceOverride = toolChoice
+                )
+            },
+            issueRequest = { body -> acquireStreamResponse(buildRequest(body)) }
         )
-        val request = buildRequest(body)
-
-        // #762 第 4 项安全切片（#765）：OpenAI Chat Completions 的 POST 流式
-        // **没有**可依赖的稳定事件 ID / 断点续传 —— 断线（含响应头返回前的
-        // IOException）与可重试状态码（503 等）一律直接上抛，**绝不自动重放**。
-        // 重放 = 同一请求计两次费 + 已执行的工具副作用再执行一遍；且旧路径经
-        // SuspendHttpRetry 重试时复用同一 Call，会触发 OkHttp
-        // IllegalStateException("Already Executed")。是否重发由用户在 UI 手动决定。
-        val response = httpClient.newCall(request).await()
-
-        if (!response.isSuccessful) {
-            // 错误体读取是阻塞 IO —— 包在 IO 调度器（本 flow 不再整体 flowOn，见下方读循环注释）
-            val errorBody = withContext(Dispatchers.IO) {
-                response.body?.string() ?: "Unknown error"
-            }
-            response.close()
-            throw LlmException.Http(response.code, errorBody)
-        }
 
         val responseBody = response.body ?: run {
             response.close()
@@ -289,34 +269,16 @@ class StreamingOpenAiClient(
         //    无法事后追加，只能在构建期与 function tools 一并写入。
         // OFF（默认）时 searchToolEntries 为空且下方 when 走 else —— 请求体
         // 与旧版完全一致，兼容所有端点。
+        //
+        // diag-202611（422 unknown variant 复盘）：注入逻辑收敛至
+        // [buildSearchToolEntries] —— ①端点能力门控：显式选择的 server tool
+        // 模式与真实端点不匹配（如 ZHIPU 形态 + 通用 OpenAI 兼容网关）时不再
+        // 注入；旧实现照发非标准 tools[].type，会让整请求在 Rust serde 风格
+        // 端点上 422（unknown variant `WebSearch`, expected `function`）。
+        // ②自愈降级：端点曾以该形态拒绝后，本实例后续请求一律不再注入。
+        // searchMode 同时供下方「独立顶层字段形态」 when 使用（单次解析双用）。
         val searchMode = config.webSearch.resolveFor(config.baseUrl, config.providerId)
-        val searchToolEntries: List<JsonObject> = when (searchMode) {
-            WebSearchMode.ZHIPU -> listOf(
-                // 智谱 GLM：WebSearch 作为 server-side tool 挂进 tools 数组；
-                // search_result=true 让响应携带 message.search_result[] 引用列表。
-                buildJsonObject {
-                    put("type", "WebSearch")
-                    putJsonObject("WebSearch") {
-                        put("enable", true)
-                        put("search_result", true)
-                    }
-                }
-            )
-            WebSearchMode.DEEPSEEK -> listOf(
-                // DeepSeek Responses 兼容端点：接受 {"type":"WebSearch"}
-                // （与 GLM 同为 server-side tool 形态，但无嵌套配置）。
-                buildJsonObject { put("type", "WebSearch") }
-            )
-            WebSearchMode.ANTHROPIC -> listOf(
-                // Anthropic 原生 server tool（经 OpenAI 兼容代理透传时保持同形）。
-                buildJsonObject {
-                    put("type", "web_search_20250305")
-                    put("name", "WebSearch")
-                    put("max_uses", 3)
-                }
-            )
-            else -> emptyList()
-        }
+        val searchToolEntries = buildSearchToolEntries(searchMode)
 
         return buildJsonObject {
             put("model", config.model)
@@ -627,6 +589,140 @@ class StreamingOpenAiClient(
         }
     }
     
+    // ═══ diag-202611：WebSearch server tool 注入（端点门控 + 422 自愈降级）═══
+
+    /**
+     * 构建注入 tools 数组的 server-side 搜索 tool 条目（ZHIPU / DEEPSEEK /
+     * ANTHROPIC 形态）。三种情况返回空列表（请求体与旧版 OFF 行为一致，
+     * 兼容所有端点）：
+     * 1. 解析后非 server-tool 模式（OFF / AUTO 推断不出 / 顶层字段形态）；
+     * 2. 端点能力门控不匹配（[WebSearchMode.serverToolSupportedBy]）；
+     * 3. 本实例已因「未知 tools[].type」拒绝降级（[serverSearchToolDegraded]）。
+     */
+    private fun buildSearchToolEntries(searchMode: WebSearchMode): List<JsonObject> {
+        if (serverSearchToolDegraded.get()) return emptyList()
+        if (!searchMode.serverToolSupportedBy(config.baseUrl, config.providerId)) {
+            logServerSearchToolSkipped(searchMode)
+            return emptyList()
+        }
+        return when (searchMode) {
+            WebSearchMode.ZHIPU -> listOf(
+                // 智谱 GLM：WebSearch 作为 server-side tool 挂进 tools 数组；
+                // search_result=true 让响应携带 message.search_result[] 引用列表。
+                buildJsonObject {
+                    put("type", "WebSearch")
+                    putJsonObject("WebSearch") {
+                        put("enable", true)
+                        put("search_result", true)
+                    }
+                }
+            )
+            WebSearchMode.DEEPSEEK -> listOf(
+                // DeepSeek Responses 兼容端点：接受 {"type":"WebSearch"}
+                // （与 GLM 同为 server-side tool 形态，但无嵌套配置）。
+                buildJsonObject { put("type", "WebSearch") }
+            )
+            WebSearchMode.ANTHROPIC -> listOf(
+                // Anthropic 原生 server tool（经 OpenAI 兼容代理透传时保持同形）。
+                buildJsonObject {
+                    put("type", "web_search_20250305")
+                    put("name", "WebSearch")
+                    put("max_uses", 3)
+                }
+            )
+            else -> emptyList()
+        }
+    }
+
+    /** 端点门控跳过留痕（限次：首 3 次 + 之后每 50 条一条，与 #501 同模式）。 */
+    private fun logServerSearchToolSkipped(mode: WebSearchMode) {
+        val skippedNo = serverSearchSkipsLogged.incrementAndGet()
+        if (skippedNo <= 3 || skippedNo % 50 == 0) {
+            AppLogger.instance.warn(
+                LogCategory.LLM, "StreamingOpenAiClient",
+                "webSearch mode=$mode ignored at ${config.baseUrl}: endpoint does not " +
+                    "match that provider — non-standard tools[].type would be rejected " +
+                    "(422 unknown variant) by strict OpenAI-compatible gateways " +
+                    "(skip #$skippedNo)"
+            )
+        }
+    }
+
+    /**
+     * 「未知 tools[].type」类请求级拒绝的一次性降级重发（每客户端实例一次）。
+     *
+     * 触发：[LlmException.Http]（400/422）且响应体命中 [ToolTypeRejection]
+     *（Rust serde "unknown variant" / Pydantic "Input should be 'function'" 等）。
+     * 动作：置位 [serverSearchToolDegraded] → [buildBody] 重建的请求体自动剔除
+     * server-side 搜索 tool → 重发一次。重发仍失败则原样上抛（诚实暴露，
+     * 不吞错）；非该形态的 4xx 不重试 —— 重发同一请求体只会重复失败
+     *（与 [SuspendHttpRetry]「4xx 不重试」语义一致，不烧预算）。
+     *
+     * 安全性：失败发生在响应头阶段，尚未发射任何流片段 / 产生任何工具副作用，
+     * 不属于 #762/#765 禁区的流重放。
+     */
+    private suspend fun <T> executeWithServerToolDegrade(
+        buildBody: () -> JsonObject,
+        issueRequest: suspend (JsonObject) -> T
+    ): T {
+        try {
+            return issueRequest(buildBody())
+        } catch (e: LlmException.Http) {
+            if ((e.code != 400 && e.code != 422) ||
+                !ToolTypeRejection.isUnknownToolTypeRejection(e.body)
+            ) throw e
+            if (!serverSearchToolDegraded.compareAndSet(false, true)) throw e
+            AppLogger.instance.warn(
+                LogCategory.LLM, "StreamingOpenAiClient",
+                "Endpoint rejected non-standard tools[].type (HTTP ${e.code}): " +
+                    "${e.body.take(200)} — stripping server-side web-search tools " +
+                    "and retrying once"
+            )
+            return issueRequest(buildBody())
+        }
+    }
+
+    /**
+     * 非流式请求执行（chat 两个重载共用）。
+     * #259：重试在 suspend 层（可取消的 delay 退避，总预算见 [SuspendHttpRetry]）。
+     */
+    private suspend fun executeNonStream(request: Request): LlmResponse =
+        SuspendHttpRetry.execute(config) { httpClient.newCall(request).await() }.use { response ->
+            if (!response.isSuccessful) {
+                throw LlmException.Http(response.code, response.errorBodyHead())
+            }
+            val body = response.body ?: throw LlmException.EmptyResponse()
+            val bytes = body.byteStream().use { stream ->
+                BoundedReads.readAtMost(stream, MAX_NON_STREAM_RESPONSE_BYTES)
+            } ?: throw LlmException.ResponseTooLarge(MAX_NON_STREAM_RESPONSE_BYTES)
+            parseNonStreamResponse(bytes.toString(Charsets.UTF_8))
+        }
+
+    /**
+     * 流式响应获取（chatStream 头阶段）。
+     *
+     * #762 第 4 项安全切片（#765）：OpenAI Chat Completions 的 POST 流式
+     * **没有**可依赖的稳定事件 ID / 断点续传 —— 断线（含响应头返回前的
+     * IOException）与可重试状态码（503 等）一律直接上抛，**绝不自动重放**。
+     * 重放 = 同一请求计两次费 + 已执行的工具副作用再执行一遍；且旧路径经
+     * SuspendHttpRetry 重试时复用同一 Call，会触发 OkHttp
+     * IllegalStateException("Already Executed")。是否重发由用户在 UI 手动决定
+     *（本方法只在响应头阶段抛错；「未知 tools[].type」降级重发见
+     * [executeWithServerToolDegrade]，其重发请求体与首发不同，非重放）。
+     */
+    private suspend fun acquireStreamResponse(request: Request): Response {
+        val response = httpClient.newCall(request).await()
+        if (!response.isSuccessful) {
+            // 错误体读取是阻塞 IO —— 包在 IO 调度器（本 flow 不再整体 flowOn，见下方读循环注释）
+            val errorBody = withContext(Dispatchers.IO) {
+                response.body?.string() ?: "Unknown error"
+            }
+            response.close()
+            throw LlmException.Http(response.code, errorBody)
+        }
+        return response
+    }
+
     // ═══ Tool System v4 — 请求侧工具描述/Schema 硬化 ═══
 
     /** 单工具描述在请求里的硬上限（v4：防"文档式 description"拖爆请求体）。 */

@@ -46,6 +46,9 @@ class CodeStreamSession {
     private val toolCalls = LinkedHashMap<String, StreamToolCall>()
     private val terminalBuffers = LinkedHashMap<String, TerminalPulseBuffer>()
 
+    /** 条目定位/窗口协作器(职责与维护语义见 CodeStreamEntryIndex.kt)。 */
+    private val entryIndex = StreamEntryIndex()
+
     /** 已收到过 preview 片段的 callId（结构化工具标识：权威收尾 = JSON 信封，
      * 不进终端视图；无 preview 的旧工具收尾文本仍进 —— 两种路径都保输出完整）。 */
     private val previewSeenCalls = mutableSetOf<String>()
@@ -197,7 +200,7 @@ class CodeStreamSession {
                     // 空助手位只负责等待正文；思考开始后让思考卡先于它，
                     // 使首个回答仍能在同一稳定 id 的尾部接续。
                     streamingAssistant?.takeIf { it.text.isEmpty() }?.let { pending ->
-                        entries.removeAll { it.id == pending.id }
+                        removeEntry(pending.id)
                         append(pending)
                     }
                 } else {
@@ -483,9 +486,10 @@ class CodeStreamSession {
     fun replaceAll(restored: List<StreamEntry>) {
         entries.clear()
         entries.addAll(restored)
+        entryIndex.rebuild(entries)
         // 序号回拨到恢复轴的最大 e-N：不回拨则 nextId() 从 1 重发，与恢复
         // 条目撞号 → LazyColumn 重复 key 直接崩溃（P0）
-        entrySeq = restored.maxOfOrNull { entrySeqOf(it.id) } ?: 0L
+        entrySeq = restored.maxOfOrNull { streamEntrySeqOf(it.id) } ?: 0L
         toolCalls.clear()
         terminalBuffers.clear()
         previewSeenCalls.clear()
@@ -710,7 +714,7 @@ class CodeStreamSession {
         // P0（输出完整性）：终端视图优先脉冲缓冲（含滚出裁剪标记）；
         // 缓冲空（无 preview 的旧工具/恢复会话）退回 event.output 尾窗。
         val logTail = buffer?.renderedContent()?.takeIf { it.isNotEmpty() }
-            ?: safeTakeLast(existing.logTail + event.output, NON_BASH_LOG_TAIL_CHARS)
+            ?: streamSafeTakeLast(existing.logTail + event.output, NON_BASH_LOG_TAIL_CHARS)
         previewSeenCalls.remove(event.callId)
 
         val diff = if (existing.isEditFamily) UnifiedDiffParser.parse(event.fullOutput.ifBlank { event.output }) else null
@@ -734,7 +738,9 @@ class CodeStreamSession {
             hunksTotal = hunksTotal,
             exitCode = exitCode,
             logTail = logTail,
-            diffText = diff?.takeIf { it.hunks.isNotEmpty() }?.let { event.fullOutput.ifBlank { event.output } },
+            diffText = diff?.takeIf { it.hunks.isNotEmpty() }?.let {
+                (event.fullOutput.ifBlank { event.output }).take(DIFF_TEXT_MAX_CHARS)
+            },
             progressPercent = null,
             summary = summaryOf(existing.kind, status, diff, exitCode, event.output),
             // 读取类：输出侧行号前缀解析实际范围（目录/错误输出 → null 清零）；
@@ -876,17 +882,23 @@ class CodeStreamSession {
 
     private fun append(entry: StreamEntry) {
         entries.add(entry)
-        dirty = true
+        entryIndex.onAppend(entry.id, entries.size - 1)
+        // perf P0-3:时间轴内存滑动窗口(超限裁最老,语义见 CodeStreamEntryIndex)
+        if (entryIndex.trimWindow(entries, MAX_ENTRIES_IN_MEMORY)) dirty = true
     }
 
     private fun replaceEntry(id: String, entry: StreamEntry) {
-        val idx = entries.indexOfFirst { it.id == id }
+        val idx = entryIndex.locate(id, entries)
         if (idx >= 0) entries[idx] = entry
         dirty = true
     }
 
     private fun removeEntry(id: String) {
-        entries.removeAll { it.id == id }
+        val idx = entryIndex.locate(id, entries)
+        if (idx >= 0) {
+            entries.removeAt(idx)
+            entryIndex.rebuild(entries)
+        }
         dirty = true
     }
 
@@ -939,7 +951,8 @@ class CodeStreamSession {
 
     private fun updateCall(call: StreamToolCall) {
         toolCalls[call.id] = call
-        val idx = entries.indexOfFirst { it.id == toolEntryId(call.id) }
+        // perf P0-1：分片热路径 O(1) 定位（旧实现每分片 indexOfFirst 全轴扫描）
+        val idx = entryIndex.locate(toolEntryId(call.id), entries)
         if (idx >= 0) entries[idx] = StreamEntry.ToolCapsuleEntry(toolEntryId(call.id), call)
         dirty = true
     }
@@ -949,17 +962,6 @@ class CodeStreamSession {
     private fun nextId(): String = "e-${++entrySeq}"
 
     /** 从条目 id 提取序号（“e-42” / “cycle-1-e-43” → 42/43；其余 → 0）。 */
-    private fun entrySeqOf(id: String): Long =
-        ENTRY_SEQ_REGEX.find(id)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
-
-    /** 代理对安全截断：首字符若是低代理项则让位，防 emoji 被劈成豆腐块。 */
-    private fun safeTakeLast(s: String, n: Int): String = when {
-        s.length <= n -> s
-        n <= 0 -> ""
-        Character.isLowSurrogate(s[s.length - n]) -> s.substring(s.length - n + 1)
-        else -> s.substring(s.length - n)
-    }
-
     private fun buildSnapshot(): CodeStreamSnapshot {
         val activeBuf = activeTerminalCallId?.let { terminalBuffers[it] }
         return CodeStreamSnapshot(
@@ -1183,14 +1185,14 @@ class CodeStreamSession {
         const val SUMMARY_MAX = 24
         const val NON_BASH_LOG_TAIL_CHARS = 2000
         const val EXIT_CODE_TAIL_LINES = 8
+
         /** 用户规格 LLM 重试阶梯级数（1s…180s 共 10 级）。 */
         const val LADDER_TOTAL_RETRIES = 10
 
         /** 中止文案：停止卡与中断胶囊的副标题共用。 */
         const val ABORTED_TEXT = "已中止"
         val EXIT_CODE_REGEX = Regex("""(?:exit(?:\s+code)?|Exit:)[:\s]+(\d+)\b""", RegexOption.IGNORE_CASE)
-        val ENTRY_SEQ_REGEX = Regex("""(?:^|-)e-(\d+)$""")
-        /** 网络搜索结果来源链接（去重计数用；截到右括号/引号前，容 markdown/JSON 两种形态）。 */
+            /** 网络搜索结果来源链接（去重计数用；截到右括号/引号前，容 markdown/JSON 两种形态）。 */
         val SOURCE_LINK_REGEX = Regex("""https?://[^\s\)\]>"']+""")
     }
 }

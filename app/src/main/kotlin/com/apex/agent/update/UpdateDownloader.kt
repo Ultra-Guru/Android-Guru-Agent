@@ -130,9 +130,32 @@ class UpdateDownloader(private val context: Context) {
         "ApexAgent"
     ).apply { mkdirs() }
 
-    /** SHA-256 校验：清单不带指纹（旧 schema / 内部构建）时跳过并放行。 */
+    /**
+     * SHA-256 校验 —— S-02 起无指纹 fail-closed。
+     *
+     * 清单不带指纹（旧 schema / 内部构建）时不再无条件放行：过渡期内
+     * （编译期截止点 [UpdateTrust.UNSIGNED_GRACE_UNTIL_EPOCH_MS]，不可被
+     * 远端翻转）沿用放行并 WARN 留痕；过期后一律拒绝 —— 指纹缺失不是
+     * 可信信号。本方法是补丁段 / 热更包 / 合成终局 APK 三处对账的统一
+     * 收敛点，无指纹策略只在此维护。
+     */
     fun verifySha256(file: File, expected: String?): Boolean {
-        if (expected.isNullOrBlank()) return true
+        if (expected.isNullOrBlank()) {
+            if (UpdateTrust.legacySchemaAllowed()) {
+                AppLogger.instance.warn(
+                    LogCategory.SYSTEM,
+                    "UpdateDownloader",
+                    "资产无 SHA-256 指纹（过渡期放行，截止 2027-03-01）：${file.name}"
+                )
+                return true
+            }
+            AppLogger.instance.warn(
+                LogCategory.SYSTEM,
+                "UpdateDownloader",
+                "拒绝无指纹资产（fail-closed）：${file.name}"
+            )
+            return false
+        }
         if (!file.exists()) return false
         return runCatching {
             val digest = MessageDigest.getInstance("SHA-256")

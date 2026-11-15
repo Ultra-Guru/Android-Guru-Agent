@@ -52,6 +52,9 @@ class SettingsViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context
 ) : ViewModel() {
 
+    /** B0-BUG-01:配置域解析损坏清单(横幅数据源;损坏域本次进程写回已禁用)。 */
+    val dataCorruption: StateFlow<List<String>> = repo.dataCorruption
+
     val profiles: StateFlow<List<ModelProfile>> = repo.profiles
     val providers: StateFlow<List<ProviderConfig>> = repo.providers
     val roles: StateFlow<ModelRoleConfig> = repo.roles
@@ -265,7 +268,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             hookRegistry.setEnabled(id, enabled)
                 .onFailure {
-                    _hookMessage.value = it.message ?: "操作失败"
+                    _hookMessage.value = it.message ?: languageManager.getString(R.string.settings_hook_op_failed)
                 }
         }
     }
