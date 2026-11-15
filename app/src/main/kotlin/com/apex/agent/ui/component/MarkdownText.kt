@@ -33,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -61,6 +62,12 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import coil.compose.AsyncImage
 import com.apex.agent.R
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+
+/** Markdown 重解析合窗（毫秒）：流式 token 风暴下窗口内的变更塌缩为一次解析。 */
+private const val MARKDOWN_PARSE_DEBOUNCE_MS = 50L
 
 /**
  * 聊天气泡内联 Markdown 渲染器。
@@ -77,7 +84,18 @@ fun MarkdownText(
     onImageClick: (String) -> Unit = {},
     onLinkClick: ((String) -> Unit)? = null
 ) {
-    val nodes = remember(markdown) { parseMarkdown(markdown) }
+    // perf-anr-20261115：parseMarkdown 是超线性 CPU 活（逐行 trim + 多 Regex
+    // 全文扫描），原先在主线程 remember 内同步执行 —— 长任务流式期间全量
+    // 文本逐 token 重解析，真机实测 88s 进程寿命主线程烧 85s CPU → input
+    // dispatch ANR → 进程被杀（用户感知为"闪退"；重进后首帧重解析同一全
+    // 文再次 ANR，故"重进仍闪退"）。修复 = 解析迁 Default 线程 + 合窗：
+    // ① 主线程永不阻塞（ANR 根除）；② delay 是挂起点，合窗内新 token 取
+    // 消旧任务，窗口结束只按最新全文解析一次；③ produceState 的 state 跨
+    // 键存活，重解析期间旧结果保持显示，小文本亚毫秒完成无感。
+    val nodes by produceState<List<MarkdownNode>>(emptyList(), markdown) {
+        delay(MARKDOWN_PARSE_DEBOUNCE_MS)
+        value = withContext(Dispatchers.Default) { parseMarkdown(markdown) }
+    }
     Column(modifier = modifier.fillMaxWidth()) {
         nodes.forEach { node ->
             when (node) {
