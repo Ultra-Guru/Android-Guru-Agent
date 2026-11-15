@@ -15,6 +15,9 @@ import com.apex.agent.platform.terminal.workspace.AbsolutePath
 import com.apex.agent.platform.terminal.workspace.GuestCwdMapper
 import com.apex.agent.platform.terminal.workspace.GuestUserHome
 import com.apex.agent.platform.terminal.workspace.LinuxWorkspaceManager
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
+import kotlinx.coroutines.CancellationException
 import java.io.File
 
 /**
@@ -48,15 +51,10 @@ import java.io.File
  * ```
  * <su> -c '
  *   R=<rootfs>
- *   mountpoint -q "$R/proc"      || mount -t proc  proc     "$R/proc"      2>/dev/null
- *   mountpoint -q "$R/sys"       || mount -t sysfs sys      "$R/sys"       2>/dev/null
- *   mountpoint -q "$R/dev"       || mount --bind /dev       "$R/dev"       2>/dev/null
- *   mountpoint -q "$R/root"      || mount --bind <homeDir>  "$R/root"      2>/dev/null
- *   mkdir -p "$R/workspace" 2>/dev/null
- *   mountpoint -q "$R/workspace" || mount --bind <wsDir>    "$R/workspace" 2>/dev/null
- *   [共享存储可用时] mkdir -p "$R/sdcard"; mount --bind /storage/emulated/0 "$R/sdcard"
+ *   会话共享锁 + 挂载操作锁；/proc/self/mountinfo 逐目标守卫
+ *   缺失时挂 proc/sysfs/dev/root/workspace（可选 sdcard），记录挂载 ID
  *   chroot "$R" /usr/bin/env -i 'K=V' … /bin/sh -c "cd <guestCwd> && exec /bin/bash -i"
- *   umount …（LIFO 最佳努力收尾）
+ *   EXIT trap：最后会话仅卸载挂载 ID 匹配的已管理目标
  * '
  * ```
  *
@@ -67,9 +65,9 @@ import java.io.File
  *    语义是通用的 env 清洗器；
  *  - **cwd**：chroot(1) 落 guest "/"，要进 /workspace 必须经 sh -c cd（无 -w
  *    等价物）；guestCwd 走 [GuestCwdMapper]（与 PRoot 同映射）；
- *  - **挂载幂等**：mountpoint -q 守卫 —— 上次会话异常退出留下的挂载直接复用，
- *    不叠加堆叠挂载；多个 chroot 会话并发时共享挂载（先退出的 umount 因
- *    EBUSY 静默失败，最后退出的清场 —— 最佳努力，无泄漏累积）；
+ *  - **挂载守卫**：/proc/self/mountinfo 精确匹配 + flock 跨会话锁（无 mountpoint
+ *    的 ROM 也不堆叠）；并发会话经共享使用锁复用挂载，仅最后会话卸载本后端
+ *    记录的挂载 ID；守卫不可用时 fail-closed（绝不直挂堆叠）。
  *  - **PTY 语义**：forkpty 使 su 成为会话/进程组长（PGID==su PID）→
  *    kill(-PGID)/TIOCSWINSZ/tcgetpgrp 与 LOCAL/PRoot 会话同一套语义；
  *    bash 拿到的是真 PTY slave（su/chroot 只传递 fd，不翻译）。
@@ -100,14 +98,15 @@ class LinuxChrootBackend(
     private val sharedStorage: SharedStorageBridge? = null,
     /** Explicit create preflight only; null keeps direct test/legacy constructor compatible. */
     private val authorizationCache: SuAuthorizationCache? = null,
+    /** Repair a missing legacy CA bundle only during explicit create; null keeps legacy tests compatible. */
+    private val caRepair: (suspend (File) -> Unit)? = null,
     override val id: String = ID
 ) : ExecutionBackend {
 
     override val runtimeType: BackendRuntimeType = BackendRuntimeType.LINUX
 
-    // 注意：availability/prepare 不包 withContext(Dispatchers.IO) —— 与
-    // LinuxPRootBackend 同款纪律（内部全是瞬时操作；线程归属由调用方
-    // TerminalRuntime 的 IO 协程决定）。
+    // availability 仅查询 stat/cache，不执行 su 或修复 CA；prepare 的 CA 端口
+    // 由生产 DI 显式切换到 IO，其余步骤沿用调用方调度。
     override suspend fun availability(): BackendAvailability {
         val su = suLocator.locate()
             ?: return BackendAvailability.Failed(
@@ -181,6 +180,17 @@ class LinuxChrootBackend(
             else -> Unit
         }
 
+        // Explicit, valid, authorized create only: a legacy rootfs can lack the
+        // bundled CA even when it reports READY. Repair is best-effort and must
+        // not block the terminal if no trusted source is available.
+        try {
+            caRepair?.invoke(File(rootfsPath.value))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            runCatching { AppLogger.instance.warn(LogCategory.TERMINAL, ID, "CA repair failed: ${e.message}") }
+        }
+
         // 5. guest env（env trampoline 复用 —— 与 PRoot 同源同构造）。
         val guestEnv = environment.interactiveGuestEnv(request.env)
 
@@ -240,17 +250,18 @@ class LinuxChrootBackend(
 
         // ── 1. 系统级挂载（与 SystemBindProfile.STANDARD 同集 —— /proc /dev /sys）──
         lines += "R=$r"
-        lines += "mountpoint -q \"\$R/proc\" || mount -t proc proc \"\$R/proc\" 2>/dev/null"
-        lines += "mountpoint -q \"\$R/sys\" || mount -t sysfs sys \"\$R/sys\" 2>/dev/null"
-        lines += "mountpoint -q \"\$R/dev\" || mount --bind /dev \"\$R/dev\" 2>/dev/null"
+        lines += ChrootMountScript.header(rootfsDir)
+        lines += ChrootMountScript.mount("proc", "mount", "-t", "proc", "proc")
+        lines += ChrootMountScript.mount("sys", "mount", "-t", "sysfs", "sys")
+        lines += ChrootMountScript.mount("dev", "mount", "--bind", "/dev")
 
         // ── 2. 持久化 home / workspace / 共享存储（bind）──
-        lines += "mountpoint -q \"\$R/root\" || mount --bind ${shellQuote(homeDir)} \"\$R/root\" 2>/dev/null"
-        lines += "mkdir -p \"\$R/workspace\" 2>/dev/null"
-        lines += "mountpoint -q \"\$R/workspace\" || mount --bind ${shellQuote(workspaceDir)} \"\$R/workspace\" 2>/dev/null"
+        lines += ChrootMountScript.mount("root", "mount", "--bind", homeDir)
+        lines += "mkdir -p \"\$R/workspace\" || exit 1"
+        lines += ChrootMountScript.mount("workspace", "mount", "--bind", workspaceDir)
         if (sharedStorageHostDir != null) {
-            lines += "mkdir -p \"\$R/sdcard\" 2>/dev/null"
-            lines += "mountpoint -q \"\$R/sdcard\" || mount --bind ${shellQuote(sharedStorageHostDir)} \"\$R/sdcard\" 2>/dev/null"
+            lines += "mkdir -p \"\$R/sdcard\" || exit 1"
+            lines += ChrootMountScript.mount("sdcard", "mount", "--bind", sharedStorageHostDir)
         }
 
         // ── 3. chroot + env trampoline（/usr/bin/env -i K=V … 与 PRoot 后端同源）──
@@ -260,13 +271,14 @@ class LinuxChrootBackend(
         val envTokens = PRootEnvTrampoline.guestPrefix(guestEnv)
             .drop(ENV_EXECUTABLE_PREFIX_SIZE)   // 剥掉 /usr/bin/env -i（chroot 命令自带）
             .joinToString(" ") { shellQuote(it) }
-        lines += "chroot \"\$R\" ${shellQuote(ENV_EXECUTABLE)} -i $envTokens /bin/sh -c 'cd $guestCwd && exec /bin/bash -i'"
-
-        // ── 4. LIFO 最佳努力收尾（bash 退出后执行；EBUSY=并发会话共享，静默）──
-        val umounts = mutableListOf("\$R/workspace", "\$R/root")
-        if (sharedStorageHostDir != null) umounts.add(0, "\$R/sdcard")
-        umounts += listOf("\$R/dev", "\$R/sys", "\$R/proc")
-        lines += umounts.joinToString(" ; ") { "umount \"$it\" 2>/dev/null" }
+        // Release only the operations lock; fd 9 stays open and is INHERITED by
+        // the guest. Every descendant holds the shared users lock, so when the su
+        // shell is killed but the guest survives, a later shell cannot acquire an
+        // exclusive lock and detach mounts the orphan still uses (finding #3).
+        // fd 8 is closed so a guest background job cannot hold the ops lock.
+        lines += ChrootMountScript.releaseOperationsLock
+        lines += "chroot \"\$R\" ${shellQuote(ENV_EXECUTABLE)} -i $envTokens /bin/sh -c 'cd $guestCwd && exec /bin/bash -i' 8>&-"
+        // EXIT trap in ChrootMountScript handles normal exit, signals and partial setup.
         return lines.joinToString("\n")
     }
 

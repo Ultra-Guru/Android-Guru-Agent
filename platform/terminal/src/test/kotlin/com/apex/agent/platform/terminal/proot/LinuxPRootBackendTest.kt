@@ -11,6 +11,7 @@ import com.apex.agent.platform.terminal.workspace.AbsolutePath
 import com.apex.agent.platform.terminal.workspace.GuestUserHome
 import com.apex.agent.platform.terminal.workspace.LinuxWorkspaceManager
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -76,7 +77,8 @@ class LinuxPRootBackendTest {
         homeRoot: File = File(tmp.root, "home"),
         // T82 后默认 STANDARD（/proc /dev /sys 系统 bind）； argv 契约测试显式传 NONE
         // 以保持「仅 home+workspace」的确定性断言 —— 系统 bind 另有专项测试。
-        systemBinds: SystemBindProfile = SystemBindProfile.STANDARD
+        systemBinds: SystemBindProfile = SystemBindProfile.STANDARD,
+        caRepair: (suspend (File) -> Unit)? = null
     ) = LinuxPRootBackend(
         binaryProvider = binaryProvider,
         rootfsProvider = rootfsProvider,
@@ -84,8 +86,33 @@ class LinuxPRootBackendTest {
         userHome = GuestUserHome(homeRoot),
         commandBuilder = PRootCommandBuilderImpl(),
         systemBinds = systemBinds,
+        caRepair = caRepair,
         hostEnv = null // JVM: 无 PRootHostEnvironment → 最小 env
     )
+
+    @Test
+    fun `direct PRoot create repairs missing CA before guest spawn`() = runTest {
+        val rootfs = tmp.newFolder("legacy-ca-rootfs")
+        val repaired = mutableListOf<File>()
+        val b = backend(rootfsProvider = FakeRootfsProvider(rootfs.absolutePath),
+            caRepair = { repaired += it })
+        b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80)).getOrThrow()
+        assertEquals("direct TerminalCreate must not rely on ensureReady", listOf(rootfs), repaired)
+    }
+
+    @Test
+    fun `PRoot without rootfs does not attempt CA repair`() = runTest {
+        var calls = 0
+        val b = backend(rootfsProvider = FakeRootfsProvider(null), caRepair = { calls++ })
+        assertTrue(b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80)).isFailure)
+        assertEquals(0, calls)
+    }
+
+    @Test
+    fun `PRoot CA repair IO failure is nonblocking`() = runTest {
+        val b = backend(caRepair = { throw java.io.IOException("CA store inaccessible") })
+        assertTrue(b.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80)).isSuccess)
+    }
 
     // ─── argv 契约（§5.2） ───
 

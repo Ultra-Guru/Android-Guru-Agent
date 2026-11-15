@@ -88,6 +88,11 @@ class RootfsProvisionerImpl(
             if (existing != null && _state.value == ProvisioningState.READY && matchesTarget(existing, target)) {
                 val expectedSha = runCatching { source.resolve(target).getOrNull()?.sha256 }.getOrNull()
                 if (expectedSha == null || existing.checksum == expectedSha) {
+                    existing.location?.let { location ->
+                        withContext(Dispatchers.IO) {
+                            configurator.repairCaIfMissing(File(location.value))
+                        }
+                    }
                     return ProvisioningResult.AlreadyReady(existing)
                 }
             }
@@ -558,6 +563,9 @@ class RootfsProvisionerImpl(
             if (location != null) {
                 val health = healthCheck.inspect(File(location.value))
                 if (health.valid) {
+                    withContext(Dispatchers.IO) {
+                        configurator.repairCaIfMissing(File(location.value))
+                    }
                     _state.value = ProvisioningState.READY
                     return ProvisioningResult.AlreadyReady(active)
                 }

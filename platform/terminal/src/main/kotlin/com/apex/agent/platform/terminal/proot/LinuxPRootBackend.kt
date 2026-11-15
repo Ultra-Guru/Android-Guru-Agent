@@ -11,6 +11,9 @@ import com.apex.agent.platform.terminal.runtime.SpawnSpec
 import com.apex.agent.platform.terminal.workspace.AbsolutePath
 import com.apex.agent.platform.terminal.workspace.GuestUserHome
 import com.apex.agent.platform.terminal.workspace.LinuxWorkspaceManager
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
+import kotlinx.coroutines.CancellationException
 import java.io.File
 
 /**
@@ -70,15 +73,15 @@ class LinuxPRootBackend(
      * termux-setup-storage 等价物）。null 或目录不可用 → 不 bind（诚实降级）。
      */
     private val sharedStorage: SharedStorageBridge? = null,
+    /** Repair a legacy CA bundle on explicit create; no side effects during availability. */
+    private val caRepair: (suspend (File) -> Unit)? = null,
     override val id: String = ID
 ) : ExecutionBackend {
 
     override val runtimeType: BackendRuntimeType = BackendRuntimeType.LINUX
 
-    // 注意：availability/prepare 不包 withContext(Dispatchers.IO) —— 内部全是瞬时操作
-    //（文件存在性/ELF 头读取/mkdirs；--version 探针在 provider 内同步执行）。
-    // 全局 IO 池在测试套件中会被历史泄漏的协程耗尽，若此处切换上下文会在 CI 全套件
-    // 下永久挂起（实测）。线程归属由 P73 接线时的调用方（TerminalRuntime，IO 协程）决定。
+    // availability 仅探二进制能力与 rootfs 状态，不执行 guest/修复 CA；
+    // prepare 的 CA 端口由生产 DI 显式切换到 IO，其余步骤沿用调用方调度。
     override suspend fun availability(): BackendAvailability {
         val binary = binaryProvider.locate().getOrNull()
             ?: return BackendAvailability.Failed("PRootError:BINARY_NOT_FOUND")
@@ -116,6 +119,16 @@ class LinuxPRootBackend(
             ?: return Result.failure(
                 RuntimeException("TerminalError:RootfsNotReady — rootfs 无 location")
             )
+
+        // TerminalCreate can bypass ensureUbuntuSession; repair only after the
+        // rootfs is known, never from availability. Missing CA is best-effort.
+        try {
+            caRepair?.invoke(File(rootfsPath.value))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            runCatching { AppLogger.instance.warn(LogCategory.TERMINAL, ID, "CA repair failed: ${e.message}") }
+        }
 
         // 3. T75: 解析 workspace（懒创建；非法 id → WorkspaceError:InvalidId 失败）
         val workspaceId = request.workspaceId?.trim()?.takeIf { it.isNotEmpty() }

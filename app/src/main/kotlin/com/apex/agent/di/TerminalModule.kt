@@ -189,6 +189,9 @@ object TerminalModule {
         @ApplicationContext context: Context
     ): RootfsConfigurator = RootfsConfigurator(
         dnsServers = { resolveAndroidDnsServers(context) },
+        // Android 上只采用平台过滤后的 system: 锚点。普通 host bundle 若存在，
+        // 不能绕开 AndroidCAStore 对用户停用系统 CA 的过滤。
+        hostCaBundle = { null },
         localeGen = listOf("zh_CN.UTF-8 UTF-8", "en_US.UTF-8 UTF-8"),
         timezone = java.util.TimeZone.getDefault().id,
         // 对话实录 #14：宿主补充组注入 guest /etc/group —— 消除 PRoot 启动时
@@ -202,6 +205,14 @@ object TerminalModule {
                     java.io.File("/proc/self/status").readText()
                 )
             }.getOrDefault(emptyList())
+        },
+        // T99: use Android's effective CA store, not raw system cert files.
+        // AndroidCAStore filters disabled system anchors; RootfsConfigurator imports
+        // only `system:` aliases so user-added CAs never enter the guest bundle.
+        androidCaStore = {
+            runCatching {
+                java.security.KeyStore.getInstance("AndroidCAStore").apply { load(null, null) }
+            }.getOrNull()
         }
     )
 
@@ -317,7 +328,8 @@ object TerminalModule {
         workspaces: LinuxWorkspaceManager,
         userHome: GuestUserHome,
         hostEnv: PRootHostEnvironment,
-        sharedStorage: SharedStorageBridge
+        sharedStorage: SharedStorageBridge,
+        configurator: RootfsConfigurator
     ): LinuxPRootBackend = LinuxPRootBackend(
         binaryProvider = binaryProvider,
         rootfsProvider = rootfsProvider,
@@ -327,7 +339,12 @@ object TerminalModule {
         // T82：系统级 bind（/proc /dev /sys，proot-distro 语义 —— procps 在 guest 内
         // 真实可用）+ 共享存储桥（授权可用时 → guest /sdcard；不可用 → 不 bind）。
         systemBinds = SystemBindProfile.STANDARD,
-        sharedStorage = sharedStorage
+        sharedStorage = sharedStorage,
+        caRepair = { root ->
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                configurator.repairCaIfMissing(root)
+            }
+        }
     )
 
     /**
@@ -370,14 +387,22 @@ object TerminalModule {
         rootfsProvider: RootfsProvider,
         workspaces: LinuxWorkspaceManager,
         userHome: GuestUserHome,
-        sharedStorage: SharedStorageBridge
+        sharedStorage: SharedStorageBridge,
+        configurator: RootfsConfigurator
     ): LinuxChrootBackend = LinuxChrootBackend(
         suLocator = suLocator,
         authorizationCache = authorizationCache,
         rootfsProvider = rootfsProvider,
         workspaces = workspaces,
         userHome = userHome,
-        sharedStorage = sharedStorage
+        sharedStorage = sharedStorage,
+        // T99 审计修复：显式 chroot create 绕过 ensureUbuntuSession 的 dnsRefreshFn
+        // 修复路径，须在 prepare 阶段补齐存量 rootfs 缺失 CA（幂等、host bundle 优先）。
+        caRepair = { root ->
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                configurator.repairCaIfMissing(root)
+            }
+        }
     )
 
     /**
@@ -605,9 +630,15 @@ object TerminalModule {
             bundledChecksumFn = { bundledSource.registryChecksumFor(target) },
             // P1（DNS 快照刷新）：ensureReady 短路前对一次宿主 DNS，切网自愈
             //（resolv.conf 是安装时刻快照，不刷新则切网后 guest DNS 全灭）。
+            // READY 短路和降级重试均会调用此端口：顺手修复确实缺失的
+            // 存量 CA bundle，优先保留完整 rootfs 自带证书；无可信源则不动作。
             dnsRefreshFn = {
                 provisioner.current()?.location?.let { loc ->
-                    configurator.refreshDnsIfChanged(java.io.File(loc.value))
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val root = java.io.File(loc.value)
+                        configurator.repairCaIfMissing(root)
+                        configurator.refreshDnsIfChanged(root)
+                    }
                 } ?: false
             },
             // ★ 能力探测缓存失效：bootstrap 实际执行后（BASE_PACKAGES 安装 /
