@@ -86,7 +86,7 @@ import com.apex.agent.ui.theme.UiStyle
 @Composable
 internal fun PartSkinSection(
     agent: AgentSettings,
-    onUpdate: (AgentSettings) -> Unit,
+    onUpdate: (AgentSettings.() -> AgentSettings) -> Unit,
     activation: SkinActivation,
     isRunning: Boolean,
     onApplyNowViaNewChat: () -> Unit,
@@ -200,7 +200,7 @@ internal fun PartSkinSection(
             PresetButton(
                 label = stringResource(R.string.settings_v3_parts_preset_default),
                 modifier = Modifier.weight(1f)
-            ) { onUpdate(agent.copy(partSkins = agent.partSkins.filterKeys { it.startsWith("@") })) }
+            ) { onUpdate { copy(partSkins = agent.partSkins.filterKeys { it.startsWith("@") }) } }
             PresetButton(
                 label = stringResource(R.string.settings_v3_parts_preset_pale),
                 modifier = Modifier.weight(1f)
@@ -222,7 +222,7 @@ internal fun PartSkinSection(
         }
         Spacer(Modifier.height(6.dp))
         OutlinedButton(
-            onClick = { onUpdate(agent.copy(partSkins = emptyMap())) },
+            onClick = { onUpdate { copy(partSkins = emptyMap()) } },
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(stringResource(R.string.settings_v3_parts_reset_follow))
@@ -241,7 +241,7 @@ internal fun PartSkinSection(
                 value = previewOverrides.glow,
                 range = 0f..1f,
                 description = stringResource(R.string.settings_v3_parts_glow_desc),
-                onValueChange = { onUpdate(agent.copy(partSkinGlow = it)) },
+                onValueChange = { onUpdate { copy(partSkinGlow = it) } },
                 fmt = { glow -> String.format(java.util.Locale.US, "%.2f", glow) }
             )
         }
@@ -271,7 +271,7 @@ internal fun PartSkinSection(
 @Composable
 private fun ApplyModeCard(
     agent: AgentSettings,
-    onUpdate: (AgentSettings) -> Unit,
+    onUpdate: (AgentSettings.() -> AgentSettings) -> Unit,
     activation: SkinActivation
 ) {
     val tier = activation.tier
@@ -296,7 +296,7 @@ private fun ApplyModeCard(
                     stringResource(R.string.settings_v3_parts_mid_immediate_warning)
                 else -> null
             },
-            onSelect = { onUpdate(agent.copy(skinApplyMode = mode.key)) }
+            onSelect = { onUpdate { copy(skinApplyMode = mode.key) } }
         )
     }
     // 本机分级徽标 + 一句解释（AUTO 档解析结果）
@@ -453,7 +453,7 @@ private fun GroupCard(
     ctx: com.apex.agent.ui.theme.SkinContext,
     activation: SkinActivation,
     agent: AgentSettings,
-    onUpdate: (AgentSettings) -> Unit
+    onUpdate: (AgentSettings.() -> AgentSettings) -> Unit
 ) {
     var expanded by remember { mutableStateOf(group in DEFAULT_EXPANDED_GROUPS) }
     val members = group.parts
@@ -513,9 +513,9 @@ private fun GroupCard(
             onSelected = { key ->
                 // 组行「跟随」= 移除组键（组内成员回落各自回退链）
                 if (key == PartSkin.FOLLOW.key) {
-                    onUpdate(agent.copy(partSkins = agent.partSkins - group.key))
+                    onUpdate { copy(partSkins = agent.partSkins - group.key) }
                 } else {
-                    onUpdate(agent.copy(partSkins = agent.partSkins + (group.key to key)))
+                    onUpdate { copy(partSkins = agent.partSkins + (group.key to key)) }
                 }
             }
         )
@@ -546,7 +546,7 @@ private fun PartRow(
     ctx: com.apex.agent.ui.theme.SkinContext,
     activation: SkinActivation,
     agent: AgentSettings,
-    onUpdate: (AgentSettings) -> Unit
+    onUpdate: (AgentSettings.() -> AgentSettings) -> Unit
 ) {
     val options = buildList {
         add(PartSkin.FOLLOW.key to stringResource(R.string.part_skin_follow))
@@ -573,9 +573,9 @@ private fun PartRow(
         onSelected = { key ->
             // 稀疏语义（FR-10）：「跟随」= 移除键（缺席 = 跟随上级）
             if (key == PartSkin.FOLLOW.key) {
-                onUpdate(agent.copy(partSkins = agent.partSkins - part.id))
+                onUpdate { copy(partSkins = agent.partSkins - part.id) }
             } else {
-                onUpdate(agent.copy(partSkins = agent.partSkins + (part.id to key)))
+                onUpdate { copy(partSkins = agent.partSkins + (part.id to key)) }
             }
         }
     )
@@ -603,13 +603,13 @@ private fun PresetButton(
  */
 private fun applyPreset(
     agent: AgentSettings,
-    onUpdate: (AgentSettings) -> Unit,
+    onUpdate: (AgentSettings.() -> AgentSettings) -> Unit,
     preset: PartSkinPreset
 ) {
     val groupKeys = agent.partSkins.filterKeys { it.startsWith("@") }
     val serialized = preset.generateOverrides()
         .entries.associate { (part, skin) -> part.id to skin.key }
-    onUpdate(agent.copy(partSkins = groupKeys + serialized))
+    onUpdate { copy(partSkins = groupKeys + serialized) }
 }
 
 /** 组行可选皮肤（展示序：浅白 → 经典 → 扁平 → 实色 → 霓虹 → 嵌入）。 */

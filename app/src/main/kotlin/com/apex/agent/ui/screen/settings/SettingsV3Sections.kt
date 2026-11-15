@@ -406,11 +406,11 @@ internal fun ChatDisplaySection(agent: AgentSettings, onAgent: (AgentSettings.()
  * 按名解析（内置四类型之外）。key 不可与保留字或既有自定义 key 冲突。
  */
 @Composable
-internal fun SubAgentSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings) -> Unit) {
+internal fun SubAgentSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings.() -> AgentSettings) -> Unit) {
     val sub = agent.subagent
     // 预算字段统一钳制后落盘（滑块步进已保证合法，sanitized 双保险）
     val updateSub: (SubAgentSettings.() -> SubAgentSettings) -> Unit = { block ->
-        onUpdate(agent.copy(subagent = sub.block().sanitized()))
+        onUpdate { copy(subagent = sub.block().sanitized()) }
     }
     var adding by remember { mutableStateOf(false) }
 
@@ -500,16 +500,20 @@ internal fun SubAgentSettingsSection(agent: AgentSettings, onUpdate: (AgentSetti
             CustomSubAgentCard(
                 custom = custom,
                 onChange = { updated ->
-                    onUpdate(agent.copy(subagent = agent.subagent.copy(
-                        customTypes = agent.subagent.customTypes.map {
-                            if (it.key == custom.key) updated else it
-                        }
-                    )))
+                    onUpdate {
+                        copy(subagent = agent.subagent.copy(
+                            customTypes = agent.subagent.customTypes.map {
+                                if (it.key == custom.key) updated else it
+                            }
+                        ))
+                    }
                 },
                 onDelete = {
-                    onUpdate(agent.copy(subagent = agent.subagent.copy(
-                        customTypes = agent.subagent.customTypes.filter { it.key != custom.key }
-                    )))
+                    onUpdate {
+                        copy(subagent = agent.subagent.copy(
+                            customTypes = agent.subagent.customTypes.filter { it.key != custom.key }
+                        ))
+                    }
                 }
             )
         }
@@ -529,9 +533,11 @@ internal fun SubAgentSettingsSection(agent: AgentSettings, onUpdate: (AgentSetti
             existingKeys = sub.customTypes.map { it.key }.toSet(),
             onDismiss = { adding = false },
             onSave = { custom ->
-                onUpdate(agent.copy(subagent = agent.subagent.copy(
-                    customTypes = agent.subagent.customTypes + custom
-                ).sanitized()))
+                onUpdate {
+                    copy(subagent = agent.subagent.copy(
+                        customTypes = agent.subagent.customTypes + custom
+                    ).sanitized())
+                }
                 adding = false
             }
         )
@@ -695,7 +701,7 @@ private fun CustomSubAgentAddDialog(
  * 提示已随 Agent 聊天会话恢复移除。
  */
 @Composable
-internal fun GoalSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings) -> Unit) {
+internal fun GoalSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings.() -> AgentSettings) -> Unit) {
     SectionCard(
         title = stringResource(R.string.settings_v3_goal_title),
         icon = Icons.Outlined.Flag,
@@ -705,12 +711,12 @@ internal fun GoalSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings)
             stringResource(R.string.settings_v3_goal_verifier),
             agent.goalVerifierEnabled,
             description = stringResource(R.string.settings_v3_goal_verifier_desc)
-        ) { on -> onUpdate(agent.copy(goalVerifierEnabled = on)) }
+        ) { on -> onUpdate { copy(goalVerifierEnabled = on) } }
         SliderRow(
             stringResource(R.string.settings_v3_goal_max_rounds),
             agent.goalMaxRounds.toFloat(), 3f..20f, 16,
             description = stringResource(R.string.settings_v3_goal_max_rounds_desc),
-            onValueChange = { onUpdate(agent.copy(goalMaxRounds = it.toInt())) },
+            onValueChange = { onUpdate { copy(goalMaxRounds = it.toInt()) } },
             fmt = { it.toInt().toString() }
         )
         DescriptionText(stringResource(R.string.settings_v3_goal_note))
@@ -729,7 +735,7 @@ internal fun GoalSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings)
  * ——无摆设开关（工具面/读守卫/自动规则三个假开关已随真设置清理移除）。
  */
 @Composable
-internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings) -> Unit) {
+internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSettings.() -> AgentSettings) -> Unit) {
     SectionCard(
         title = stringResource(R.string.settings_v3_coding_title),
         icon = Icons.Outlined.Terminal,
@@ -751,7 +757,7 @@ internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSetting
             ),
             selected = agent.codeOutputStyle.ifBlank { "timeline" },
             description = stringResource(R.string.settings_v3_coding_output_style_desc)
-        ) { style -> onUpdate(agent.copy(codeOutputStyle = style)) }
+        ) { style -> onUpdate { copy(codeOutputStyle = style) } }
         // ═══ v1.5 输出展示档（流式 / 整段）：Coding 屏时间轴揭示时机 ═══
         // 纯 UI 层开关（引擎/会话零参与）——流式 = 实时渲染（默认，既有
         // 行为）；整段 = 生成中仅加载进度卡、收束后一次性渲染完整时间轴。
@@ -765,24 +771,24 @@ internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSetting
             ),
             agent.codeOutputMode.ifBlank { "streaming" },
             description = stringResource(R.string.settings_v3_coding_output_mode_desc)
-        ) { mode -> onUpdate(agent.copy(codeOutputMode = mode)) }
+        ) { mode -> onUpdate { copy(codeOutputMode = mode) } }
         SwitchRow(
             stringResource(R.string.settings_v3_coding_mcp_scope),
             agent.mcpScopeIsolation,
             description = stringResource(R.string.settings_v3_coding_mcp_scope_desc)
-        ) { on -> onUpdate(agent.copy(mcpScopeIsolation = on)) }
+        ) { on -> onUpdate { copy(mcpScopeIsolation = on) } }
         // v2.1.0 浏览器角色门禁（评审 B2）：默认开 = browser_* 仅「浏览器自动化
         // 专家」角色可用；敏感四件套需二次显式授权。
         SwitchRow(
             "浏览器工具仅限专家角色",
             agent.browserRoleRestrictionEnabled,
             description = "开启后普通会话看不到 browser_* 工具；需激活模板工坊「浏览器自动化专家」"
-        ) { on -> onUpdate(agent.copy(browserRoleRestrictionEnabled = on)) }
+        ) { on -> onUpdate { copy(browserRoleRestrictionEnabled = on) } }
         SwitchRow(
             "允许浏览器敏感操作",
             agent.browserSensitiveAllowed,
             description = "execute_js / get_cookies / file_upload / clear_data 四件套的会话级授权（仍逐会话弹确认）"
-        ) { on -> onUpdate(agent.copy(browserSensitiveAllowed = on)) }
+        ) { on -> onUpdate { copy(browserSensitiveAllowed = on) } }
         // ═══ 工具循环 v2（引擎真接线，自原 Agent 执行分区迁入）：单轮并行执行上限 ═══
         HorizontalDivider()
         Text(stringResource(R.string.settings_tool_loop_section), style = MaterialTheme.typography.labelMedium)
@@ -792,7 +798,7 @@ internal fun CodingSettingsSection(agent: AgentSettings, onUpdate: (AgentSetting
             range = 1f..8f,
             steps = 6,
             description = stringResource(R.string.settings_tool_parallelism_desc),
-            onValueChange = { onUpdate(agent.copy(toolCallParallelism = it.toInt())) },
+            onValueChange = { onUpdate { copy(toolCallParallelism = it.toInt()) } },
             fmt = { it.toInt().toString() }
         )
     }
