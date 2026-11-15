@@ -59,10 +59,14 @@ fun SettingsTabBar(
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         items(tabs, key = { it }) { route ->
+            // PR1:标签 key = page.id —— 标题/图标先查注册表,旧 leaf 兜底
+            val page = SettingsPages.byId[route]
             val leaf = leafOf(route)
             SettingsTabChip(
-                title = leaf?.let { stringResource(it.titleRes) } ?: route,
-                icon = leaf?.icon,
+                title = page?.let { stringResource(it.titleRes) }
+                    ?: leaf?.let { stringResource(it.titleRes) }
+                    ?: route,
+                icon = page?.icon ?: leaf?.icon,
                 active = route == activeTab,
                 onClick = { onTabClick(route) },
                 onClose = { onTabClose(route) }
