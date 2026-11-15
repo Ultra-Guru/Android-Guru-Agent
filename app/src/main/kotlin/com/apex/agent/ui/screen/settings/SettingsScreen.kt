@@ -76,6 +76,10 @@ fun SettingsScreen(
     // ═══ v1.2/v1.3 部件外观（PartSkin spec）：会话皮肤状态机（active/pending）
     // 与「立即新建对话并应用」动作来自 CodeViewModel —— 单 Activity 架构下
     // hiltViewModel() 解析同一 ViewModelStore，与 CodeScreen 共享同一实例。═══
+    // BUG-12(Spec02 · 待 SkinActivationRepository 抽取):hiltViewModel() 默认
+    // 作用域是 NavBackStackEntry,跨目的地不保证与 Code 屏共享 —— clearConversation/
+    // discardPendingSkinChange 可能作用于孤儿实例。完整修复 = 抽皮肤激活单例仓 +
+    // 仪器测试验证「设置改皮肤 → Code 屏生效」,工程独立于本批(风险见 Spec §6)。
     val codeViewModel: com.apex.agent.ui.screen.code.CodeViewModel = hiltViewModel()
     val codeState by codeViewModel.uiState.collectAsStateWithLifecycle()
     // B0-BUG-01:配置损坏横幅(持久展示;损坏域写回已禁用,原始数据保留在 corrupt_backup_*)
@@ -101,6 +105,9 @@ fun SettingsScreen(
 
     // 各标签页面状态隔离（切标签往返：滚动位置/展开态保留 —— 与根层
     // ApexRoot 的 destinationStateHolder 同款模式）
+            // BUG-11(Spec01 · 待 page.id 元数据):SaveableStateProvider 以 route 为
+            // key —— 分类重排改 route 会丢页面状态;别名表/page.id 落地后切换,
+            // 当前 route 即现状最稳定键(B0 已保证恢复时失效 route 被过滤)。
     val pageStateHolder = rememberSaveableStateHolder()
 
     // 进入设置页即打开设置抽屉（总抽屉已由根层收回）
