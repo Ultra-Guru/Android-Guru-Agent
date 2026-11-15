@@ -2,6 +2,14 @@
 
 package com.apex.agent.ui.screen.settings
 
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -425,10 +433,28 @@ internal fun ProviderEditorDialog(
                 // 假设置清理：Auth Type / Organization / Project / Key Rotation 四项
                 // 均为“数据预埋”（无任何运行时消费方），随本轮真设置化移除
                 Text(stringResource(R.string.settings_keys_hint), style = MaterialTheme.typography.labelMedium)
+                // BUG-03:Key 输入统一遮挡(与主配置卡同口径)——旧实现明文
+                // 多行展示;运行侧只消费第一个 Key(settings_keys_hint 已注明),
+                // 多行输入是误导,收敛为单值 + 显隐切换。
+                var showApiKey by rememberSaveable { mutableStateOf(false) }
                 OutlinedTextField(
-                    p.apiKeys.joinToString("\n"),
-                    { p = p.copy(apiKeys = it.lines().map { s -> s.trim() }.filter { s -> s.isNotBlank() }) },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp), maxLines = 6
+                    p.apiKeys.firstOrNull().orEmpty(),
+                    { p = p.copy(apiKeys = listOf(it.trim())) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    visualTransformation = if (showApiKey) VisualTransformation.None
+                    else PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    trailingIcon = {
+                        IconButton(onClick = { showApiKey = !showApiKey }) {
+                            Icon(
+                                if (showApiKey) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                                contentDescription = stringResource(
+                                    if (showApiKey) R.string.settings_hide_api_key else R.string.settings_show_api_key
+                                )
+                            )
+                        }
+                    }
                 )
                 KeyValueEditor(stringResource(R.string.settings_default_headers), p.defaultHeaders) {
                     p = p.copy(defaultHeaders = it)

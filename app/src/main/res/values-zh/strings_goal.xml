@@ -33,5 +33,10 @@
 
     <!-- ═══ perf P0-3 UI 消息滑动窗口折叠摘要 ═══ -->
     <string name="code_messages_folded_fmt">早期 %1$d 条消息已折叠，近期对话完整保留；完整历史在会话快照中</string>
+    <string name="settings_page_migrated">页面「%1$s」已迁移或不存在。</string>
+    <string name="settings_open_drawer">打开设置导航</string>
+    <string name="settings_show_api_key">显示 API Key</string>
+    <string name="settings_hide_api_key">隐藏 API Key</string>
+    <string name="settings_corrupt_banner">部分配置文件读取失败——原始数据已保留，相关域已暂停写入；可导出诊断或从备份恢复。</string>
 </resources>
 

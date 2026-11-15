@@ -27,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
@@ -77,6 +78,8 @@ fun SettingsScreen(
     // hiltViewModel() 解析同一 ViewModelStore，与 CodeScreen 共享同一实例。═══
     val codeViewModel: com.apex.agent.ui.screen.code.CodeViewModel = hiltViewModel()
     val codeState by codeViewModel.uiState.collectAsStateWithLifecycle()
+    // B0-BUG-01:配置损坏横幅(持久展示;损坏域写回已禁用,原始数据保留在 corrupt_backup_*)
+    val corruptedDomains by viewModel.dataCorruption.collectAsStateWithLifecycle()
     val profiles by viewModel.profiles.collectAsStateWithLifecycle()
     val providers by viewModel.providers.collectAsStateWithLifecycle()
     val roles by viewModel.roles.collectAsStateWithLifecycle()
@@ -189,6 +192,20 @@ fun SettingsScreen(
                     .padding(padding)
                     .fillMaxSize()
             ) {
+                if (corruptedDomains.isNotEmpty()) {
+                    // BUG-01 验收:损坏横幅持久可见,不提供一键忽略
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            stringResource(R.string.settings_corrupt_banner),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        )
+                    }
+                }
                 if (activeTab.isNotEmpty()) {
                     // ═══ 浏览器式标签条：页面排在最上方（顶栏下、内容区上）═══
                     SettingsTabBar(
@@ -244,10 +261,22 @@ fun SettingsScreen(
 
 // ───────────────────────────── 页面路由 ─────────────────────────────
 
+/** 合法叶子 route 集合（恢复校验用；来自导航树全部二级叶子）。 */
+private val validTabRoutes: Set<String> by lazy {
+    SettingsNavTree.flatMap { it.children }.map { it.route }.toSet()
+}
+
+/**
+ * 恢复串 → 标签列表（BUG-08）：未知/旧 route **只丢弃该项**，不再让一个
+ * 失效标签经 Router else 分支触发 onAllTabsClosed 清空全部标签。
+ */
+internal fun sanitizeRestoredTabs(raw: String, validRoutes: Set<String>): List<String> =
+    raw.split("\u0000").filter { it.isNotEmpty() && it in validRoutes }
+
 /** 标签列表持久化 Saver：List<String> ↔ NUL 分隔串（route 不含控制字符，安全）。 */
 private val OpenTabsSaver = Saver<List<String>, String>(
     save = { it.joinToString("\u0000") },
-    restore = { s -> s.split("\u0000").filter { ch -> ch.isNotEmpty() } }
+    restore = { s -> sanitizeRestoredTabs(s, validTabRoutes) }
 )
 
 /**
@@ -362,8 +391,20 @@ private fun SettingsPageRouter(
         // ═══ 数据与备份 ═══
         "data/backup" -> SettingsLeafColumn { BackupSection() }
         "data/update" -> SettingsLeafColumn { UpdatePage(agent, onAgent) }
-        // 未知 route 兜底：回设置抽屉（不渲染空白页）
-        else -> LaunchedEffect(route) { onReturnToDrawer() }
+        // BUG-08 兜底:未知/已迁移 route 不再自动清空全部标签 —— 渲染迁移
+        // 占位页,由用户手动决定去向(OpenTabsSaver 恢复已逐项过滤,此分支
+        // 仅防御运行期动态构造的未知 route)。
+        else -> SettingsLeafColumn {
+            Text(
+                stringResource(R.string.settings_page_migrated, route),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+            TextButton(onClick = onReturnToDrawer) {
+                Text(stringResource(R.string.settings_open_drawer))
+            }
+        }
     }
 }
 
