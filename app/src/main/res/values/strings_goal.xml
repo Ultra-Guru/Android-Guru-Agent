@@ -35,7 +35,6 @@
     <!-- ═══ perf P0-3 UI 消息滑动窗口折叠摘要 ═══ -->
     <string name="code_messages_folded_fmt">%1$d earlier messages folded — recent conversation kept; full history stays in session snapshot</string>
     <string name="settings_page_migrated">Page &#8220;%1$s&#8221; has moved or no longer exists.</string>
-    <string name="settings_open_drawer">Open settings navigation</string>
     <string name="settings_show_api_key">Show API key</string>
     <string name="settings_hide_api_key">Hide API key</string>
     <string name="settings_corrupt_banner">Some settings files failed to load &#8212; original data preserved, writes to those sections paused. Export diagnostics or restore from backup.</string>
