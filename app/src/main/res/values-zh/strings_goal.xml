@@ -60,5 +60,74 @@
     <string name="search_dispatch_failed">服务动作派发失败——请重试。</string>
     <string name="search_clear_done">本地搜索组件已清除。</string>
     <string name="search_clear_failed">本地搜索组件清除失败。</string>
+    <!-- ═══ PR1 导航注册表:分组 / 页面摘要 / 生效·作用域 ═══ -->
+    <string name="settings_group_model">模型与连接</string>
+    <string name="settings_group_agent">代理与安全</string>
+    <string name="settings_group_appearance">外观与交互</string>
+    <string name="settings_group_services">扩展与服务</string>
+    <string name="settings_group_system">数据与系统</string>
+    <string name="settings_page_connection">连接与档案</string>
+    <string name="settings_page_theme">主题与风格</string>
+    <string name="settings_page_chat">聊天显示</string>
+    <string name="settings_page_skins">部件皮肤</string>
+    <string name="settings_page_background">自定义背景</string>
+    <string name="settings_page_extensions">扩展同步</string>
+    <string name="settings_page_diagnostics">诊断与高级</string>
+    <string name="settings_summary_connection">服务商账号、API Key、模型档案与连接测试</string>
+    <string name="settings_summary_generation">采样、长度限制与高级请求项</string>
+    <string name="settings_summary_reasoning">推理档位与思考预算（按档案）</string>
+    <string name="settings_summary_context">上下文窗口大小与预留（按档案）</string>
+    <string name="settings_summary_tools">工具调用、选择模式、并行与超时</string>
+    <string name="settings_summary_network">网络超时、重试策略与流式</string>
+    <string name="settings_summary_prompt">系统提示词前缀与预设模板</string>
+    <string name="settings_summary_coding">编码工位行为：输出方式、并行度与 MCP 隔离</string>
+    <string name="settings_summary_subagent">子代理预算与自定义类型</string>
+    <string name="settings_summary_goal">目标验收器与默认轮数</string>
+    <string name="settings_summary_permissions">工具权限模式与规则</string>
+    <string name="settings_summary_policy">终端命令黑白名单</string>
+    <string name="settings_summary_rules">全局与项目行为规则</string>
+    <string name="settings_summary_hooks">声明式生命周期钩子</string>
+    <string name="settings_summary_theme">界面风格、主题模式、色板、字号与语言</string>
+    <string name="settings_summary_chat">时间戳与发送键行为</string>
+    <string name="settings_summary_skins">部件玻璃皮肤、预设与光晕</string>
+    <string name="settings_summary_background">自定义壁纸与纱罩</string>
+    <string name="settings_summary_notifications">任务完成提醒与系统渠道</string>
+    <string name="settings_summary_github">GitHub 连接状态与默认仓库</string>
+    <string name="settings_summary_search">本地 SearXNG 引擎、状态与诊断</string>
+    <string name="settings_summary_memory">对话记忆摄取</string>
+    <string name="settings_summary_extensions">启动时的市场扩展自动同步</string>
+    <string name="settings_summary_keepAlive">终端后台服务保活</string>
+    <string name="settings_summary_backup">备份导出、恢复与校验</string>
+    <string name="settings_summary_update">自动更新检查与镜像选择</string>
+    <string name="settings_summary_diagnostics">全局引擎旋钮：压缩、限速、工作区、引导</string>
+    <string name="settings_ext_autosync_label">启动时自动同步扩展</string>
+    <string name="settings_ext_autosync_desc">启动时评估已装扩展源；未经确认不安装任何内容</string>
+    <string name="settings_ext_marketlinks_hint">各市场源链接在市场页管理（后续版本并入设置）。</string>
+    <string name="settings_quick_title">常用与最近</string>
+    <string name="settings_quick_onboarding">建议配置</string>
+    <string name="settings_group_page_count_fmt">%1$d 个页面</string>
+    <string name="settings_meta_sections_fmt">本页 %1$d 个分区</string>
+    <string name="settings_scope_danger">谨慎操作</string>
+    <string name="settings_favorite_add">加入常用</string>
+    <string name="settings_favorite_remove">移出常用</string>
+    <string name="settings_search_hint">搜索设置（支持 key:字段名）</string>
+    <string name="settings_search_no_result">没有匹配的设置项。</string>
+    <string name="settings_effective_immediate">立即生效</string>
+    <string name="settings_effective_next_run">下一轮生效</string>
+    <string name="settings_effective_next_session">新会话生效</string>
+    <string name="settings_effective_restart">需重启应用</string>
+    <string name="settings_scope_profile">当前档案</string>
+    <string name="settings_scope_global">全局</string>
+    <string name="settings_scope_device">本机</string>
+    <string name="settings_scope_account">账号</string>
+    <string name="settings_section_expanded">已展开</string>
+    <string name="settings_section_collapsed">已折叠</string>
+    <string name="settings_dropdown_unknown">未知（保留原值）</string>
+    <string name="settings_notif_open_failed">打开系统通知设置失败。</string>
+    <string name="settings_background_persist_warning">所选图片的持久授权失败——重启后可能需要重新选择背景。</string>
+    <string name="settings_tabs_desc">设置标签</string>
 </resources>
+
+
+
 

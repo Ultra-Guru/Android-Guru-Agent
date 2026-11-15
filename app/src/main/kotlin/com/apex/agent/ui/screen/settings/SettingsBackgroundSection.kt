@@ -9,10 +9,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Wallpaper
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -39,16 +44,20 @@ internal fun BackgroundSection(agent: AgentSettings, onAgent: (AgentSettings.() 
     val context = LocalContext.current
     val hasBackground = agent.backgroundImageUri.isNotBlank()
 
+    // B3-BUG-24:持久授权失败警告(就地可见,提供重新选择提示)
+    var bgPersistWarning by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
             // 持久授权：不 take 的 content URI 重启即失效（历史坑 C-09）。
+            var persistFailed = false
             runCatching {
                 context.contentResolver.takePersistableUriPermission(
                     uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
             }.onFailure {
+                persistFailed = true
                 runCatching {
                     AppLogger.instance.warn(
                         LogCategory.SYSTEM, "BackgroundSection",
@@ -57,6 +66,8 @@ internal fun BackgroundSection(agent: AgentSettings, onAgent: (AgentSettings.() 
                     )
                 }
             }
+            // B3-BUG-24:授权失败置位(警告条就地可见)
+            if (persistFailed) bgPersistWarning = true
             onAgent { copy(backgroundImageUri = uri.toString()) }
         }
     }
@@ -66,6 +77,14 @@ internal fun BackgroundSection(agent: AgentSettings, onAgent: (AgentSettings.() 
         icon = Icons.Outlined.Wallpaper,
         initiallyExpanded = hasBackground
     ) {
+        // B3-BUG-24:持久授权失败持久警告(提供「重新选择」语义的提示)
+        if (bgPersistWarning) {
+            Text(
+                stringResource(R.string.settings_background_persist_warning),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
         DescriptionText(stringResource(R.string.settings_background_desc))
         if (hasBackground) {
             DescriptionText(stringResource(R.string.settings_background_active))

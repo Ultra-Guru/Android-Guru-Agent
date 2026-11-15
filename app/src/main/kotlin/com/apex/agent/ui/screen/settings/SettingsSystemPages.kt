@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Update
 import androidx.compose.material.icons.outlined.Psychology
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -60,17 +61,26 @@ internal fun NotificationsPage(agent: AgentSettings, onAgent: (AgentSettings.() 
                 style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                 color = androidx.compose.material3.MaterialTheme.colorScheme.outline
             )
+            // B3-BUG-24:深链失败可见反馈(旧实现 runCatching 静默)
+            var openFailed by remember { mutableStateOf(false) }
             Button(
                 onClick = {
-                    runCatching {
+                    openFailed = runCatching {
                         ctx.startActivity(
                             Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                                 .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
                         )
-                    }
+                    }.isFailure
                 },
                 modifier = Modifier.fillMaxWidth()
             ) { Text(stringResource(R.string.settings_notif_channel_open)) }
+            if (openFailed) {
+                Text(
+                    stringResource(R.string.settings_notif_open_failed),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
         }
     }
 }

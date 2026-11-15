@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -316,14 +317,13 @@ private fun SearxngSwitchCard(
         Row(verticalAlignment = Alignment.CenterVertically) {
             when (state) {
                 is SearxngState.Ready -> {
-                    StatusDot(color = Color(0xFF2E7D32))
+                    StatusDot(color = MaterialTheme.colorScheme.primary) // B3-BUG-29:语义色替代硬编码绿
                     Spacer(Modifier.width(6.dp))
                     Text(
                         stringResource(R.string.search_status_ready),
                         style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.semantics {
-                            contentDescription = "searxng ready"
-                        }
+                        // B3-BUG-29:不再用英文覆盖可见文案
+                        modifier = Modifier.clearAndSetSemantics { }
                     )
                 }
                 is SearxngState.Stopping -> {

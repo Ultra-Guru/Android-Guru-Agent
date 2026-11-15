@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.Tune
@@ -86,6 +87,9 @@ fun SettingsScreen(
     val codeState by codeViewModel.uiState.collectAsStateWithLifecycle()
     // B0-BUG-01:配置损坏横幅(持久展示;损坏域写回已禁用,原始数据保留在 corrupt_backup_*)
     val corruptedDomains by viewModel.dataCorruption.collectAsStateWithLifecycle()
+    // PR2:导航偏好(最近/收藏/展开分组;独立 prefs 不入备份 Bundle)
+    val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val navPrefs = remember { SettingsNavPrefs(appContext) }
     val profiles by viewModel.profiles.collectAsStateWithLifecycle()
     val providers by viewModel.providers.collectAsStateWithLifecycle()
     val roles by viewModel.roles.collectAsStateWithLifecycle()
@@ -98,18 +102,23 @@ fun SettingsScreen(
     // ═══ 导航状态（rememberSaveable：旋转/进程重建不丢）═══
     // openTabs：浏览器式标签列表（叶子 route，按打开顺序；Saver 转 NUL 分隔串落盘）
     // activeTab：当前激活标签 route（空串 = 无标签，设置抽屉主导）
-    // expandedCategory：抽屉展开中的一级分类（默认模型配置）
+    // expandedGroups：抽屉展开分组多开集（PR2 FR-202）
     var openTabs by rememberSaveable(stateSaver = OpenTabsSaver) {
         mutableStateOf(emptyList<String>())
     }
     var activeTab by rememberSaveable { mutableStateOf("") }
-    var expandedCategory by rememberSaveable { mutableStateOf<String?>(SettingsNavTree.first().route) }
+    // PR2(FR-202):展开分组多开 Set(persist)
+    var expandedGroups by rememberSaveable(
+        stateSaver = Saver<Set<String>, String>(
+            save = { it.joinToString("\u0000") },
+            restore = { s -> s.split("\u0000").filter { it.isNotEmpty() }.toSet() }
+        )
+    ) { mutableStateOf(setOf(SettingsNavTree.first().route)) }
 
     // 各标签页面状态隔离（切标签往返：滚动位置/展开态保留 —— 与根层
     // ApexRoot 的 destinationStateHolder 同款模式）
-            // BUG-11(Spec01 · 待 page.id 元数据):SaveableStateProvider 以 route 为
-            // key —— 分类重排改 route 会丢页面状态;别名表/page.id 落地后切换,
-            // 当前 route 即现状最稳定键(B0 已保证恢复时失效 route 被过滤)。
+            // BUG-11 兑现(PR1):activeTab 已升级为稳定 page.id —— 分类重排
+            // 不再改变该 key,页内状态跨重排存活。
     val pageStateHolder = rememberSaveableStateHolder()
 
     // 进入设置页即打开设置抽屉（总抽屉已由根层收回）
@@ -130,14 +139,31 @@ fun SettingsScreen(
         scope.launch { settingsDrawerState.open() }
     }
     val onToggleCategory: (String) -> Unit = { route ->
-        expandedCategory = if (expandedCategory == route) null else route
+        // PR2(FR-202):多开语义 —— 点击已展开分组收起,否则加入展开集
+        expandedGroups = if (route in expandedGroups) expandedGroups - route else expandedGroups + route
     }
     // 点击叶子：追加浏览器式标签（已开则仅激活）+ 收回设置抽屉
-    val onSelectLeaf: (String) -> Unit = { route ->
-        if (!openTabs.contains(route)) openTabs = openTabs + route
-        activeTab = route
-        expandedCategory = categoryOfLeaf(route)?.route
+    val onSelectLeaf: (String) -> Unit = leaf@{ route ->
+        // PR1:抽屉仍列旧 SettingsNavTree(分类语境),标签统一存稳定 page.id
+        val pageId = SettingsNavAliases.resolvePageId(route) ?: return@leaf
+        if (!openTabs.contains(pageId)) openTabs = openTabs + pageId
+        activeTab = pageId
+        expandedGroups = expandedGroups + (categoryOfLeaf(route)?.route ?: "")
+        navPrefs.recordRecent(pageId)
+        navPrefs.markOnboardingSeen(pageId)
         scope.launch { settingsDrawerState.close() }
+    }
+
+    val onOpenPageById: (String) -> Unit = { pid ->
+        if (!openTabs.contains(pid)) openTabs = openTabs + pid
+        activeTab = pid
+        navPrefs.recordRecent(pid)
+        navPrefs.markOnboardingSeen(pid)
+    }
+    var favoritesTick by rememberSaveable { mutableStateOf(0) }
+    val onToggleFavorite: (String) -> Unit = { pid ->
+        navPrefs.toggleFavorite(pid)
+        favoritesTick++
     }
     // B1-BUG-13:全部标签关闭 → 显示设置首页(引导态),不再自动重开抽屉
     // (旧实现重复清空状态后又弹抽屉,用户被迫再面对一次遮罩)。
@@ -172,8 +198,9 @@ fun SettingsScreen(
         gesturesEnabled = false,
         drawerContent = {
             SettingsDrawerSheet(
-                expandedCategory = expandedCategory,
-                activeLeafRoute = activeTab.ifEmpty { null },
+                expandedGroups = expandedGroups,
+                // PR1:activeTab 已是 page.id —— 抽屉叶子高亮反查主旧 route
+                activeLeafRoute = legacyRouteOfCompat(activeTab.ifEmpty { null }),
                 onToggleCategory = onToggleCategory,
                 onSelectLeaf = onSelectLeaf
             )
@@ -189,7 +216,9 @@ fun SettingsScreen(
                     title = {
                         Text(
                             if (activeTab.isNotEmpty()) {
-                                leafOf(activeTab)?.let { stringResource(it.titleRes) }
+                                // PR1:page.id 标题优先,旧 leaf 兜底
+                                SettingsPages.byId[activeTab]?.let { stringResource(it.titleRes) }
+                                    ?: leafOf(activeTab)?.let { stringResource(it.titleRes) }
                                     ?: stringResource(R.string.settings_title)
                             } else stringResource(R.string.settings_title)
                         )
@@ -231,7 +260,7 @@ fun SettingsScreen(
                         activeTab = activeTab,
                         onTabClick = { route ->
                             activeTab = route
-                            expandedCategory = categoryOfLeaf(route)?.route
+                            categoryOfLeaf(route)?.route?.let { cat -> expandedGroups = expandedGroups + cat }
                         },
                         onTabClose = onCloseTab
                     )
@@ -241,8 +270,14 @@ fun SettingsScreen(
                 }
                 Box(modifier = Modifier.fillMaxSize()) {
                     if (activeTab.isEmpty()) {
-                        // 未选叶子：引导态（抽屉已打开覆盖其上，关闭后可见）
-                        SettingsLandingHint(onOpenDrawer = openSettingsDrawer)
+                        // PR2 设置首页:搜索 + quick(收藏/最近/必配) + 分组卡
+                        SettingsHomeScreen(
+                            navPrefs = navPrefs,
+                            favoritesTick = favoritesTick,
+                            onOpenPage = onOpenPageById,
+                            onToggleFavorite = onToggleFavorite,
+                            onOpenDrawer = openSettingsDrawer
+                        )
                     } else {
                         // 以标签 route 隔离页面状态：切标签往返不丢滚动位置/展开态
                         pageStateHolder.SaveableStateProvider(activeTab) {
@@ -279,22 +314,24 @@ fun SettingsScreen(
 
 // ───────────────────────────── 页面路由 ─────────────────────────────
 
-/** 合法叶子 route 集合（恢复校验用；来自导航树全部二级叶子）。 */
-private val validTabRoutes: Set<String> by lazy {
-    SettingsNavTree.flatMap { it.children }.map { it.route }.toSet()
+/** page.id → 主旧 route(抽屉叶子高亮兼容);null = 非法/未知。 */
+private fun legacyRouteOfCompat(pageId: String?): String? {
+    if (pageId.isNullOrEmpty()) return null
+    return SettingsNavAliases.legacyRouteOf(pageId)
+        ?: pageId.takeIf { it in SettingsNavTree.flatMap { c -> c.children }.map { l -> l.route } }
 }
 
 /**
- * 恢复串 → 标签列表（BUG-08）：未知/旧 route **只丢弃该项**，不再让一个
- * 失效标签经 Router else 分支触发 onAllTabsClosed 清空全部标签。
+ * 恢复串 → 标签列表（PR1 · FR-105）：逐项经别名表解析到稳定 page.id ——
+ * 旧 route 静默升级；未知/失效项**只丢弃自身**，不清空全部标签（BUG-08 契约）。
  */
-internal fun sanitizeRestoredTabs(raw: String, validRoutes: Set<String>): List<String> =
-    raw.split("\u0000").filter { it.isNotEmpty() && it in validRoutes }
+internal fun sanitizeRestoredTabs(raw: String): List<String> =
+    raw.split("\u0000").mapNotNull { SettingsNavAliases.resolvePageId(it.trim()) }
 
 /** 标签列表持久化 Saver：List<String> ↔ NUL 分隔串（route 不含控制字符，安全）。 */
 private val OpenTabsSaver = Saver<List<String>, String>(
     save = { it.joinToString("\u0000") },
-    restore = { s -> sanitizeRestoredTabs(s, validTabRoutes) }
+    restore = { s -> sanitizeRestoredTabs(s) }
 )
 
 /**
@@ -319,9 +356,12 @@ private fun SettingsPageRouter(
     onDiscardPendingSkin: () -> Unit
 ) {
     val onUpdate: (ModelProfile) -> Unit = { viewModel.upsertProfile(it) }
-    when (route) {
-        // ═══ 模型配置 ═══
-        "model/setup" -> SettingsLeafColumn {
+    // PR1:page.id 分发 —— 旧 route 在入口经别名表解析(合并页内容暂按
+    // §4.3 语义叠放,物理拆合归 PR4)。未知 pageId → 迁移占位(不清空标签)。
+    val pageId = SettingsNavAliases.resolvePageId(route)
+    when (pageId) {
+        // ═══ model:模型与连接 ═══
+        "model.connection" -> SettingsLeafColumn {
             ModelSetupCard(
                 profiles = profiles,
                 selected = selected,
@@ -330,41 +370,68 @@ private fun SettingsPageRouter(
                 onManageProviders = onManageProviders,
                 onManageRoles = onManageRoles,
             )
+            // 合并页(§4.3):providersRoles 锚点 —— 服务商/角色管理入口
+            ProvidersRolesPage(
+                onManageProviders = onManageProviders,
+                onManageRoles = onManageRoles
+            )
         }
-        "model/generation" -> SettingsLeafColumn {
+        "model.generation" -> SettingsLeafColumn {
             selected?.let { GenerationSection(it, onUpdate) } ?: EmptyProfileHint()
             // 归并页：高级选项（结构化输出/自定义头）是请求参数而非提示词，
             // 自提示词页迁入 —— 与生成参数同为「发请求时生效」的模型档位
             selected?.let { AdvancedSection(it, onUpdate) } ?: EmptyProfileHint()
         }
-        "model/reasoning" -> SettingsLeafColumn {
+        "model.reasoning" -> SettingsLeafColumn {
             selected?.let { ReasoningSection(it, onUpdate) } ?: EmptyProfileHint()
         }
-        "model/context" -> SettingsLeafColumn {
+        "model.context" -> SettingsLeafColumn {
             selected?.let { ContextSection(it, onUpdate) } ?: EmptyProfileHint()
-            // 归并页：上下文压缩（原工作台独立叶）与上下文窗口同类归为一页
+            // 归并页：上下文压缩（全局域）—— §4.3 起 PR4 迁 system.diagnostics,
+            // 迁出前保留原地渲染(相关设置跳转在 diagnostics 页同样可见)
             CompressionSection(agent, onAgent)
         }
-        "model/tools" -> SettingsLeafColumn {
+        "model.tools" -> SettingsLeafColumn {
             selected?.let { ToolsSection(it, onUpdate) } ?: EmptyProfileHint()
         }
-        "model/network" -> SettingsLeafColumn {
+        "model.network" -> SettingsLeafColumn {
             selected?.let { NetworkSection(it, onUpdate) } ?: EmptyProfileHint()
-            // 归并页：限速友好（原独立叶）与网络参数同类归为一页
+            // 归并页：限速友好（全局域）—— PR4 迁 system.diagnostics
             RateLimitSection(agent, onAgent)
         }
-        "model/prompt" -> SettingsLeafColumn {
+        "model.prompt" -> SettingsLeafColumn {
             selected?.let { PromptSection(it, onUpdate) } ?: EmptyProfileHint()
         }
-        "model/providers-roles" -> ProvidersRolesPage(
-            onManageProviders = onManageProviders,
-            onManageRoles = onManageRoles
-        )
-        // ═══ 工作台（原 Agent 配置：Agent 专属叶子已随 Agent 模式移除）═══
-        // v1.7 部件外观（PartSkin spec §9）：「流水式输出UI」分区下方 ——
-        // 部件级皮肤切换 + 浅白液态玻璃（预览 / 预设 / 光晕滑杆 / 分组下拉）
-        "workspace/coding" -> SettingsLeafColumn {
+        // ═══ agent:代理与安全 ═══
+        // v1.7 部件外观迁 appearance.skins(§4.3)—— 本页只保留行为类开关
+        "agent.coding" -> SettingsLeafColumn {
             CodingSettingsSection(agent, onAgent)
+        }
+        "agent.subagent" -> SettingsLeafColumn { SubAgentSettingsSection(agent, onAgent) }
+        "agent.permissions" -> SettingsLeafColumn {
+            PermissionSettingsSection(
+                mode = agent.permissionMode,
+                rules = agent.permissionRules,
+                onModeChange = { m -> onAgent { copy(permissionMode = m) } },
+                onRulesChange = { rs -> onAgent { copy(permissionRules = rs) } }
+            )
+        }
+        "agent.policy" -> TerminalCommandPolicyPage()
+        "agent.rules" -> SettingsLeafColumn {
+            AgentRulesSectionBlock(agent, onAgent, viewModel)
+        }
+        "agent.hooks" -> SettingsLeafColumn {
+            AgentHooksSectionBlock(viewModel)
+        }
+        "agent.goal" -> SettingsLeafColumn { GoalSettingsSection(agent, onAgent) }
+        // ═══ appearance:外观与交互(interface/appearance 一拆四)═══
+        "appearance.theme" -> SettingsLeafColumn {
+            AppearanceSection(agent, onAgent)
+        }
+        "appearance.chat" -> SettingsLeafColumn {
+            ChatDisplaySection(agent, onAgent)
+        }
+        "appearance.skins" -> SettingsLeafColumn {
             PartSkinSection(
                 agent = agent,
                 onUpdate = onAgent,
@@ -374,41 +441,41 @@ private fun SettingsPageRouter(
                 onDiscardPending = onDiscardPendingSkin
             )
         }
-        "workspace/subagent" -> SettingsLeafColumn { SubAgentSettingsSection(agent, onAgent) }
-        "workspace/permissions" -> SettingsLeafColumn {
-            PermissionSettingsSection(
-                mode = agent.permissionMode,
-                rules = agent.permissionRules,
-                onModeChange = { m -> onAgent { copy(permissionMode = m) } },
-                onRulesChange = { rs -> onAgent { copy(permissionRules = rs) } }
-            )
-        }
-        "workspace/rules" -> SettingsLeafColumn {
-            AgentRulesSectionBlock(agent, onAgent, viewModel)
-        }
-        "workspace/hooks" -> SettingsLeafColumn {
-            AgentHooksSectionBlock(viewModel)
-        }
-        "workspace/goal" -> SettingsLeafColumn { GoalSettingsSection(agent, onAgent) }
-        // ═══ 集成与扩展（v3.1 自工作台析出：外部服务 / 检索能力 / 知识扩展）═══
-        "integrations/github" -> SettingsLeafColumn { GithubSettingsSection(viewModel) }
-        "integrations/search" -> SearchLocalPage()
-        "integrations/memory" -> SettingsLeafColumn { MemoryCaptureSection(agent, onAgent) }
-        // ═══ 界面外观（对话显示归并到外观页：同为界面呈现类设置）═══
-        "interface/appearance" -> SettingsLeafColumn {
-            AppearanceSection(agent, onAgent)
+        "appearance.background" -> SettingsLeafColumn {
             BackgroundSection(agent, onAgent)
-            ChatDisplaySection(agent, onAgent)
         }
-        "interface/notifications" -> SettingsLeafColumn {
+        "appearance.notifications" -> SettingsLeafColumn {
             NotificationsPage(agent, onAgent)
         }
-        // ═══ 终端 ═══（T97：控制台退役后仅剩策略门禁与服务保活两叶）
-        "terminal/policy" -> TerminalCommandPolicyPage()
-        "terminal/service" -> TerminalServicePage(agent, onAgent)
-        // ═══ 数据与备份 ═══
-        "data/backup" -> SettingsLeafColumn { BackupSection() }
-        "data/update" -> SettingsLeafColumn { UpdatePage(agent, onAgent) }
+        // ═══ services:扩展与服务 ═══
+        "services.github" -> SettingsLeafColumn { GithubSettingsSection(viewModel) }
+        "services.search" -> SearchLocalPage()
+        "services.memory" -> SettingsLeafColumn { MemoryCaptureSection(agent, onAgent) }
+        // 新增页(§4.6):暴露既有 extensionAutoSync 字段(marketLinks 入口 PR4)
+        "services.extensions" -> SettingsLeafColumn {
+            SectionCard(
+                title = stringResource(R.string.settings_page_extensions),
+                icon = Icons.Outlined.Extension,
+                initiallyExpanded = true
+            ) {
+                SwitchRow(
+                    label = stringResource(R.string.settings_ext_autosync_label),
+                    checked = agent.extensionAutoSync,
+                    description = stringResource(R.string.settings_ext_autosync_desc),
+                    onCheckedChange = { on -> onAgent { copy(extensionAutoSync = on) } }
+                )
+                DescriptionText(stringResource(R.string.settings_ext_marketlinks_hint))
+            }
+        }
+        "services.keepAlive" -> TerminalServicePage(agent, onAgent)
+        // ═══ system:数据与系统 ═══
+        "system.backup" -> SettingsLeafColumn { BackupSection() }
+        "system.update" -> SettingsLeafColumn { UpdatePage(agent, onAgent) }
+        // 新增页(§4.3):压缩/限速等全局引擎旋钮的统一入口
+        "system.diagnostics" -> SettingsLeafColumn {
+            CompressionSection(agent, onAgent)
+            RateLimitSection(agent, onAgent)
+        }
         // BUG-08 兜底:未知/已迁移 route 不再自动清空全部标签 —— 渲染迁移
         // 占位页,由用户手动决定去向(OpenTabsSaver 恢复已逐项过滤,此分支
         // 仅防御运行期动态构造的未知 route)。
