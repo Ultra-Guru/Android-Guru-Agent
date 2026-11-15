@@ -203,11 +203,13 @@ object TerminalModule {
                 )
             }.getOrDefault(emptyList())
         },
-        // T99 审计修复：AOSP SystemCertificateSource 的 cacerts-removed 端口。
-        // 没有它 trustedAndroidSystemCas 默认 fail-closed 会跳过每个系统锚点目录，
-        // 存量 rootfs 缺 CA 时 https 永远不可用（CI 无法暴露：单测显式注入 removedDirs）。
-        androidSystemCaRemovedDirs = {
-            com.apex.agent.platform.terminal.ubuntu.AndroidSystemCaProduction.knownRemovedDirs()
+        // T99: use Android's effective CA store, not raw system cert files.
+        // AndroidCAStore filters disabled system anchors; RootfsConfigurator imports
+        // only `system:` aliases so user-added CAs never enter the guest bundle.
+        androidCaStore = {
+            runCatching {
+                java.security.KeyStore.getInstance("AndroidCAStore").apply { load(null, null) }
+            }.getOrNull()
         }
     )
 

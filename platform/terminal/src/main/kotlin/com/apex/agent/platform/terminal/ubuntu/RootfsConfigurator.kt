@@ -26,8 +26,9 @@ import java.util.Base64
  *  - DNS：优先注入（Android 生产由 DI 传系统 DNS）；其次复制 host
  *    /etc/resolv.conf（CI/Linux 有效）；最后 fallback 公共 DNS 并记录
  *    warning —— 绝不假装"配置好了"而不说明来源。
- *  - CA：已有的打包证书优先；缺失时从可信宿主 bundle 或 Android 系统证书
- *    目录修复。来源不可读则告警，不从网络或用户目录下载/拼接证书。
+ *  - CA：已有的打包证书优先；缺失时从可信宿主 bundle 或平台
+ *    AndroidCAStore 的已启用 `system:` 锚点修复，原始系统目录只作显式注入的
+ *    保守回退。来源不可用则告警，不从网络或用户目录下载/拼接证书。
  *  - 所有写入幂等：已存在且非空的非托管文件不覆盖（用户/上游改动优先）。
  */
 class RootfsConfigurator(
@@ -72,7 +73,14 @@ class RootfsConfigurator(
      * “groups: cannot find name for group ID xxx”。生产 DI 注入
      * Os.getgroups()；测试默认空（不动作）。
      */
-    private val hostSupplementaryGids: () -> List<Int> = { emptyList() }
+    private val hostSupplementaryGids: () -> List<Int> = { emptyList() },
+    /**
+     * Android 生产使用平台 `AndroidCAStore` 返回的已启用系统锚点：
+     * `aliases()` 已过滤用户停用的系统证书，另仅接受 `system:` 前缀，
+     * 不读 app 不可访问的私有 cacerts-removed 目录、不引入用户 CA。
+     * null = 平台存储不可用（CI/非 Android 等），转入原有保守目录回退。
+     */
+    private val androidCaStore: () -> java.security.KeyStore? = { null }
 ) {
 
     /** 配置结果 —— 全部动作与 warning 进入返回值（可断言、可入日志），不靠 println。 */
@@ -326,6 +334,27 @@ class RootfsConfigurator(
         java.nio.file.Files.exists(File(removedDir, caFile).toPath())
 
     private fun trustedAndroidSystemCas(): ByteArray? {
+        // Prefer the platform's effective trust view. Conscrypt's AndroidCAStore
+        // hides disabled system anchors in aliases()/getCertificate(); the raw
+        // directory is not an equivalent trust view on Android app UIDs.
+        val platformCerts = runCatching {
+            androidCaStore()?.let { store ->
+                store.aliases().asSequence()
+                    .filter { it.startsWith("system:") }
+                    .sorted()
+                    .take(MAX_SYSTEM_CERTS)
+                    .mapNotNull { alias ->
+                        runCatching { store.getCertificate(alias) as? X509Certificate }
+                            .getOrNull()?.takeIf { it.basicConstraints >= 0 }
+                    }
+                    .distinctBy { it.subjectX500Principal.name to it.serialNumber }
+                    .toList()
+            }
+        }.getOrNull()
+        if (!platformCerts.isNullOrEmpty()) return trustedBundle(platformCerts)
+
+        // Pure JVM / explicit import port: unknown revocation directory still
+        // fails closed. Android production does not inject this raw-directory port.
         val factory = CertificateFactory.getInstance("X.509")
         // APEX (Android 14+) takes precedence over the older /system store.
         // Never include user-installed credentials or arbitrary PEM files.

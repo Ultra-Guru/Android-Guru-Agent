@@ -61,6 +61,49 @@ class ChrootCaRepairTest {
     }
 
     @Test
+    fun `invalid cwd cannot repair rootfs CA`() = runTest {
+        val rootfs = tmp.newFolder("invalid-cwd-rootfs")
+        var repairs = 0
+        val su = File(tmp.root, "invalid-cwd-su").apply { writeText(""); setExecutable(true) }
+        val backend = LinuxChrootBackend(
+            suLocator = SuBinaryLocator(candidatesProvider = { listOf(su) }),
+            rootfsProvider = RepairingProvider(rootfs.absolutePath),
+            workspaces = com.apex.agent.platform.terminal.workspace.LinuxWorkspaceManager(
+                File(tmp.root, "workspaces")
+            ),
+            userHome = com.apex.agent.platform.terminal.workspace.GuestUserHome(
+                File(tmp.root, "home")
+            ),
+            caRepair = { repairs++ }
+        )
+        val result = backend.prepare(SessionSpawnRequest(cwd = "/'; rm -rf /", rows = 24, cols = 80))
+        assertTrue(result.isFailure)
+        assertEquals("invalid request must not mutate a live rootfs", 0, repairs)
+    }
+
+    @Test
+    fun `denied su cannot repair rootfs CA`() = runTest {
+        val rootfs = tmp.newFolder("denied-rootfs")
+        var repairs = 0
+        val su = File(tmp.root, "denied-su").apply { writeText(""); setExecutable(true) }
+        val backend = LinuxChrootBackend(
+            suLocator = SuBinaryLocator(candidatesProvider = { listOf(su) }),
+            rootfsProvider = RepairingProvider(rootfs.absolutePath),
+            workspaces = com.apex.agent.platform.terminal.workspace.LinuxWorkspaceManager(
+                File(tmp.root, "workspaces")
+            ),
+            userHome = com.apex.agent.platform.terminal.workspace.GuestUserHome(
+                File(tmp.root, "home")
+            ),
+            authorizationCache = SuAuthorizationCache(probe = { SuAuthorizationCache.State.DENIED }),
+            caRepair = { repairs++ }
+        )
+        val result = backend.prepare(SessionSpawnRequest(cwd = "", rows = 24, cols = 80))
+        assertTrue(result.isFailure)
+        assertEquals("denied create must not mutate a live rootfs", 0, repairs)
+    }
+
+    @Test
     fun `prepare without rootfs never calls CA repair`() = runTest {
         var repairs = 0
         val su = File(tmp.root, "su").apply { writeText(""); setExecutable(true) }
