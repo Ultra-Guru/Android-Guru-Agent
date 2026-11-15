@@ -268,7 +268,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             hookRegistry.setEnabled(id, enabled)
                 .onFailure {
-                    _hookMessage.value = it.message ?: "操作失败"
+                    _hookMessage.value = it.message ?: languageManager.getString(R.string.settings_hook_op_failed)
                 }
         }
     }

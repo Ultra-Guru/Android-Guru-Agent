@@ -581,9 +581,13 @@ private fun CustomSubAgentCard(
                 custom.description,
                 description = stringResource(R.string.settings_v3_subagent_custom_desc_hint)
             ) { desc -> onChange(custom.copy(description = desc.take(CUSTOM_DESC_LIMIT))) }
+            // B2-BUG-16:prompt 多行文本防抖写盘
+            val (promptDraft, onPromptDraft) = rememberDebouncedText(custom.systemPrompt) {
+                onChange(custom.copy(systemPrompt = it.take(CUSTOM_PROMPT_LIMIT)))
+            }
             OutlinedTextField(
-                value = custom.systemPrompt,
-                onValueChange = { prompt -> onChange(custom.copy(systemPrompt = prompt.take(CUSTOM_PROMPT_LIMIT))) },
+                value = promptDraft,
+                onValueChange = onPromptDraft,
                 label = { Text(stringResource(R.string.settings_v3_subagent_custom_prompt)) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp),
                 minLines = 3,

@@ -18,6 +18,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardActions
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -170,19 +177,74 @@ internal fun IntFieldRow(
     max: Int = Int.MAX_VALUE,
     onValueChange: (Int) -> Unit
 ) {
+    // B2-BUG-15:本地保留原始文本,失焦/IME Done 才校验提交 —— 旧实现边打字
+    // 边 coerce(0 开头中间态被改写、超 Int 静默忽略、无错误提示)。
     var text by remember(value) { mutableStateOf(value.toString()) }
+    var errorKind by remember { mutableStateOf(0) } // 0 无 / 1 空 / 2 非数字 / 3 超范围
+    fun validateAndCommit(): Boolean {
+        val trimmed = text.trim()
+        val parsed = trimmed.toIntOrNull()
+        errorKind = when {
+            trimmed.isEmpty() -> 1
+            parsed == null -> 2
+            parsed < min || parsed > max -> 3
+            else -> 0
+        }
+        if (errorKind == 0) {
+            if (parsed!! != value) onValueChange(parsed)
+            return true
+        }
+        return false
+    }
     OutlinedTextField(
         value = text,
         onValueChange = { raw ->
             text = raw
-            raw.toIntOrNull()?.let { onValueChange(it.coerceIn(min, max)) }
+            if (errorKind != 0) errorKind = 0
         },
         label = { Text(label) },
-        supportingText = description?.let { { Text(it) } },
-        modifier = Modifier.fillMaxWidth(),
+        isError = errorKind != 0,
+        supportingText = {
+            when (errorKind) {
+                1 -> Text(stringResource(R.string.settings_num_err_empty))
+                2 -> Text(stringResource(R.string.settings_num_err_nan))
+                3 -> Text(stringResource(R.string.settings_num_err_range_fmt, min, max))
+                else -> description?.let { Text(it) }
+            }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .onFocusChanged { if (!it.isFocused && errorKind != 0) validateAndCommit() },
         singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { validateAndCommit() })
     )
+}
+
+/**
+ * B2-BUG-16:防抖文本 hook(400ms + 离页冲刷)—— 多行/定制输入复用统一
+ * 写盘纪律(大文本不再每按键整份序列化);返回 (草稿, onDraftChange)。
+ */
+@Composable
+internal fun rememberDebouncedText(
+    value: String,
+    onValueChange: (String) -> Unit
+): Pair<String, (String) -> Unit> {
+    var draft by remember(value) { mutableStateOf(value) }
+    var dirty by remember { mutableStateOf(false) }
+    val latestDraft by rememberUpdatedState(draft)
+    val latestDirty by rememberUpdatedState(dirty)
+    val latestCallback by rememberUpdatedState(onValueChange)
+    LaunchedEffect(draft) {
+        if (!dirty) return@LaunchedEffect
+        delay(400)
+        onValueChange(draft)
+        dirty = false
+    }
+    DisposableEffect(Unit) {
+        onDispose { if (latestDirty) latestCallback(latestDraft) }
+    }
+    return draft to { raw -> draft = raw; dirty = true }
 }
 
 @Composable
@@ -190,15 +252,19 @@ internal fun TextFieldRow(
     label: String,
     value: String,
     description: String? = null,
+    singleLine: Boolean = true,
     onValueChange: (String) -> Unit
 ) {
+    // B2-BUG-16:本地草稿 + 400ms 防抖 + 离页冲刷 —— 旧实现每按键直写盘
+    // (64KB 全局规则每键整份序列化)。外部值写回(防抖落盘回流)时草稿对齐。
+    val (draft, setDraft) = rememberDebouncedText(value, onValueChange)
     OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
+        value = draft,
+        onValueChange = setDraft,
         label = { Text(label) },
         supportingText = description?.let { { Text(it) } },
         modifier = Modifier.fillMaxWidth(),
-        singleLine = true
+        singleLine = singleLine
     )
 }
 

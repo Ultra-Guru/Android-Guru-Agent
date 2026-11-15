@@ -267,33 +267,26 @@ internal fun NetworkSection(p: ModelProfile, onUpdate: (ModelProfile) -> Unit) {
 @Composable
 internal fun PromptSection(p: ModelProfile, onUpdate: (ModelProfile) -> Unit) {
     SectionCard(stringResource(R.string.settings_section_prompt), Icons.Outlined.EditNote) {
-        OutlinedTextField(p.systemPromptPrefix, { onUpdate(p.copy(systemPromptPrefix = it)) },
+        // B2-BUG-16:前缀多行文本防抖写盘
+        val (prefixDraft, onPrefixDraft) = rememberDebouncedText(p.systemPromptPrefix) {
+            onUpdate(p.copy(systemPromptPrefix = it))
+        }
+        OutlinedTextField(prefixDraft, onPrefixDraft,
             label = { Text(stringResource(R.string.settings_prompt_prefix_label)) },
             modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
             maxLines = 6)
-        // 修复：下拉选中值随用户选择联动（原硬编码 "default"，选后仍显示 Default）
-        var presetChoice by remember(p.id) {
-            mutableStateOf(
-                when (p.systemPromptPrefix) {
-                    PROMPT_PRESET_ANDROID -> "android_expert"
-                    PROMPT_PRESET_CODING -> "coding"
-                    PROMPT_PRESET_AUTOMATION -> "automation"
-                    "" -> "default"
-                    else -> "default" // 手改前缀无法反推预设，回退 default
-                }
-            )
+        // B2-BUG-17:预设 = 从当前前缀反推的**派生状态**(手改后显示「自定义」,
+        // 不再显示过期旧预设);选择预设前若已有自定义内容,弹确认才覆盖
+        // (旧实现静默覆盖用户手写前缀,不可撤销)。
+        val derivedPreset = when (p.systemPromptPrefix) {
+            PROMPT_PRESET_ANDROID -> "android_expert"
+            PROMPT_PRESET_CODING -> "coding"
+            PROMPT_PRESET_AUTOMATION -> "automation"
+            "" -> "default"
+            else -> "custom"
         }
-        DropdownRow("Prompt Preset",
-            listOf(
-                "default" to stringResource(R.string.settings_preset_default),
-                "android_expert" to "Android Expert",
-                "coding" to "Coding Agent",
-                "automation" to "Automation Agent",
-            ),
-            presetChoice,
-            description = stringResource(R.string.settings_preset_desc)
-        ) { preset ->
-            presetChoice = preset
+        var pendingPreset by remember { mutableStateOf<String?>(null) }
+        fun applyPreset(preset: String) {
             val template = when (preset) {
                 "android_expert" -> PROMPT_PRESET_ANDROID
                 "coding" -> PROMPT_PRESET_CODING
@@ -301,6 +294,43 @@ internal fun PromptSection(p: ModelProfile, onUpdate: (ModelProfile) -> Unit) {
                 else -> ""
             }
             onUpdate(p.copy(systemPromptPrefix = template))
+        }
+        DropdownRow(stringResource(R.string.settings_prompt_preset_label),
+            listOf(
+                "default" to stringResource(R.string.settings_preset_default),
+                "android_expert" to stringResource(R.string.settings_preset_android),
+                "coding" to stringResource(R.string.settings_preset_coding),
+                "automation" to stringResource(R.string.settings_preset_automation),
+            ) + if (derivedPreset == "custom") {
+                listOf("custom" to stringResource(R.string.settings_preset_custom))
+            } else emptyList(),
+            derivedPreset,
+            description = stringResource(R.string.settings_preset_desc)
+        ) { preset ->
+            if (preset == derivedPreset) return@DropdownRow
+            if (p.systemPromptPrefix.isNotBlank() && derivedPreset == "custom") {
+                pendingPreset = preset
+            } else {
+                applyPreset(preset)
+            }
+        }
+        pendingPreset?.let { target ->
+            AlertDialog(
+                onDismissRequest = { pendingPreset = null },
+                confirmButton = {
+                    TextButton(onClick = {
+                        applyPreset(target)
+                        pendingPreset = null
+                    }) { Text(stringResource(R.string.settings_preset_overwrite_ok)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingPreset = null }) {
+                        Text(stringResource(R.string.settings_cancel))
+                    }
+                },
+                title = { Text(stringResource(R.string.settings_preset_overwrite_title)) },
+                text = { Text(stringResource(R.string.settings_preset_overwrite_warn)) }
+            )
         }
     }
 }

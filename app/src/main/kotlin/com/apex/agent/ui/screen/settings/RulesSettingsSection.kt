@@ -84,9 +84,13 @@ internal fun RulesSettingsSection(
             color = MaterialTheme.colorScheme.primary
         )
         val overLimit = globalRules.length > GLOBAL_RULES_TRUNCATION_LINE
+        // B2-BUG-16:防抖写盘(64KB 文本每键整份序列化 → 400ms 批量),离页冲刷
+        val (globalDraft, onGlobalDraft) = rememberDebouncedText(globalRules) {
+            onGlobalRulesChange(it.take(GLOBAL_RULES_SOFT_LIMIT))
+        }
         OutlinedTextField(
-            value = globalRules,
-            onValueChange = { onGlobalRulesChange(it.take(GLOBAL_RULES_SOFT_LIMIT)) },
+            value = globalDraft,
+            onValueChange = onGlobalDraft,
             supportingText = {
                 Text(
                     stringResource(

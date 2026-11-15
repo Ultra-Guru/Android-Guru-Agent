@@ -10,6 +10,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.Alignment
+import androidx.compose.runtime.rememberSaveable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -75,22 +82,92 @@ internal fun RateLimitSection(agent: AgentSettings, onAgent: (AgentSettings.() -
                 style = MaterialTheme.typography.labelMedium
             )
             DescriptionText(stringResource(R.string.settings_rate_limit_apply_desc))
+            // B2-BUG-23:跨 4 字段批量修改先弹确认(字段/旧值/新值/生效时机),
+            // 应用后提供撤销 —— 旧实现一键静默改 4 个字段且不告知 toolCallParallelism
+            // 属 DI 快照需重启。
+            val targets = listOf(
+                Triple(stringResource(R.string.settings_rate_limit_field_friendly), agent.rateLimitFriendly, true),
+                Triple(
+                    stringResource(R.string.settings_rate_limit_field_interval),
+                    agent.rateLimitMinIntervalMs,
+                    agent.rateLimitMinIntervalMs.coerceAtLeast(4000)
+                ),
+                Triple(stringResource(R.string.settings_rate_limit_field_payload), agent.rateLimitRichPayload, true),
+                Triple(
+                    stringResource(R.string.settings_rate_limit_field_parallel),
+                    agent.toolCallParallelism,
+                    agent.toolCallParallelism.coerceAtLeast(4)
+                )
+            )
+            var showConfirm by rememberSaveable { mutableStateOf(false) }
+            var undoSnapshot by remember { mutableStateOf(agent) }
+            var undoVisible by remember { mutableStateOf(false) }
             Row(Modifier.fillMaxWidth()) {
-                Button(
-                    onClick = {
-                        onAgent(
-                            agent.copy(
-                                rateLimitFriendly = true,
-                                rateLimitMinIntervalMs = agent.rateLimitMinIntervalMs
-                                    .coerceAtLeast(4000),
-                                rateLimitRichPayload = true,
-                                toolCallParallelism = agent.toolCallParallelism.coerceAtLeast(4)
-                            )
-                        )
-                    }
-                ) {
+                Button(onClick = { showConfirm = true }) {
                     Text(stringResource(R.string.settings_rate_limit_apply))
                 }
+            }
+            if (undoVisible) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(R.string.settings_rate_limit_applied),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = {
+                        onAgent {
+                            copy(
+                                rateLimitFriendly = undoSnapshot.rateLimitFriendly,
+                                rateLimitMinIntervalMs = undoSnapshot.rateLimitMinIntervalMs,
+                                rateLimitRichPayload = undoSnapshot.rateLimitRichPayload,
+                                toolCallParallelism = undoSnapshot.toolCallParallelism
+                            )
+                        }
+                        undoVisible = false
+                    }) { Text(stringResource(R.string.settings_rate_limit_undo)) }
+                }
+            }
+            if (showConfirm) {
+                AlertDialog(
+                    onDismissRequest = { showConfirm = false },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            val before = agent
+                            onAgent {
+                                copy(
+                                    rateLimitFriendly = true,
+                                    rateLimitMinIntervalMs = rateLimitMinIntervalMs.coerceAtLeast(4000),
+                                    rateLimitRichPayload = true,
+                                    toolCallParallelism = toolCallParallelism.coerceAtLeast(4)
+                                )
+                            }
+                            undoSnapshot = before
+                            undoVisible = true
+                            showConfirm = false
+                        }) { Text(stringResource(R.string.settings_rate_limit_apply)) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showConfirm = false }) {
+                            Text(stringResource(R.string.settings_cancel))
+                        }
+                    },
+                    title = { Text(stringResource(R.string.settings_rate_limit_apply_title)) },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            targets.forEach { (label, oldV, newV) ->
+                                Text(
+                                    "$label: $oldV → $newV",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                            Text(
+                                stringResource(R.string.settings_rate_limit_restart_hint),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                )
             }
         }
     }
