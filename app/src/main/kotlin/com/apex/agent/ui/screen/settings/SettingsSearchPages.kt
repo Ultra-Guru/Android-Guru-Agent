@@ -144,6 +144,10 @@ internal fun SearchLocalPage(viewModel: SearxngViewModel = hiltViewModel()) {
     // B2-BUG-22:地址 StateFlow 化(状态变化自动刷新)+ 操作结果可见反馈
     val address by viewModel.address.collectAsStateWithLifecycle()
     var feedback by remember { mutableStateOf<String?>(null) }
+    // stringResource 仅限 Composable 上下文 —— 预取文案供回调 lambda 使用
+    val dispatchFailedText = stringResource(R.string.search_dispatch_failed)
+    val clearDoneText = stringResource(R.string.search_clear_done)
+    val clearFailedText = stringResource(R.string.search_clear_failed)
     LaunchedEffect(state) { viewModel.refreshAddress() }
     var showClearDialog by remember { mutableStateOf(false) }
 
@@ -152,9 +156,7 @@ internal fun SearchLocalPage(viewModel: SearxngViewModel = hiltViewModel()) {
             state = state,
             address = address,
             onToggle = { on ->
-                val dispatched = viewModel.setEnabled(on)
-                feedback = if (dispatched) null
-                else stringResource(R.string.search_dispatch_failed)
+                feedback = if (viewModel.setEnabled(on)) null else dispatchFailedText
             },
             onRetry = viewModel::retry
         )
@@ -274,9 +276,7 @@ internal fun SearchLocalPage(viewModel: SearxngViewModel = hiltViewModel()) {
                     showClearDialog = false
                     // B2-BUG-22:清除结果可见(旧实现忽略 Boolean 结果)
                     viewModel.clearInstall { ok ->
-                        feedback = stringResource(
-                            if (ok) R.string.search_clear_done else R.string.search_clear_failed
-                        )
+                        feedback = if (ok) clearDoneText else clearFailedText
                     }
                 }) { Text(stringResource(R.string.search_clear_confirm)) }
             },
