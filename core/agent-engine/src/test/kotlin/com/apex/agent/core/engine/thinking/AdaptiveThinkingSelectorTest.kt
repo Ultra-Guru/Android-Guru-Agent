@@ -64,11 +64,11 @@ class AdaptiveThinkingSelectorTest {
             "帮我重构这段代码并解释每一步：" +
                 "```kotlin\nfun main() { println(1) }\n```" +
                 "。要求：先分析问题，然后给出方案，接着改代码，最后跑 gradle 验证，" +
-                "并详细说明每一步的取舍与风险。" + "补充背景与约束说明。".repeat(40)
+                "并详细说明每一步的取舍与风险。" + "补充背景与约束说明。".repeat(60)
         )
-        // 代码块(+2) + 多步(+2) + 长文本(+2) = 6 → DEEP
+        // 围栏代码块(+2) + 多步(+2) + 长文本(+2) = 6 → DEEP（标签已净化，不回显围栏）
         assertEquals(ThinkingLevel.DEEP, d.level)
-        assertTrue(d.reason.contains("```"))
+        assertTrue(d.reason.contains("代码/命令+2"))
     }
 
     // ── 3. 风险词：无论其他信号 → 至少 DEEP ────────────────────
@@ -76,23 +76,42 @@ class AdaptiveThinkingSelectorTest {
     @Test
     fun `rm -rf command floors at DEEP`() {
         val d = select("rm -rf /data/test")
-        // 风险词(+3) = 3 → STANDARD → 风险词保底 DEEP
+        // 强风险(+3) = 3 → STANDARD → 风险词保底 DEEP（理由不回显原文）
         assertEquals(ThinkingLevel.DEEP, d.level)
-        assertTrue(d.reason.contains("rm -rf"))
+        assertTrue(d.reason.contains("风险词+3"))
         assertTrue(d.reason.contains("风险词保底DEEP"))
+        assertTrue("理由不应回显命中词原文：${d.reason}", !d.reason.contains("rm -rf"))
     }
 
     @Test
-    fun `chinese delete keyword floors at DEEP even when score is minimal`() {
+    fun `chinese delete keyword scores weak risk without floor`() {
+        // SPE-01：删除降为弱风险（+1，无硬保底）——「删除这个文件」不再一律 DEEP。
         val d = select("删除这个文件")
-        assertEquals(ThinkingLevel.DEEP, d.level)
-        assertTrue(d.reason.contains("删除"))
+        assertEquals(ThinkingLevel.LIGHT, d.level)
+        assertTrue(d.reason.contains("弱风险词+1"))
+        assertTrue("弱风险不保底：${d.reason}", !d.reason.contains("保底DEEP"))
     }
 
     @Test
-    fun `uninstall keyword in english floors at DEEP`() {
+    fun `context permission pairing no longer floors deep`() {
+        // SPE-01 验收：「先看一眼权限说明」不命中风险词、不保底 DEEP。
+        val d = select("先看一眼权限说明")
+        assertEquals(ThinkingLevel.LIGHT, d.level)
+        assertTrue("高频语境词不应再触发风险保底：${d.reason}", !d.reason.contains("保底DEEP"))
+    }
+
+    @Test
+    fun `uninstall keyword in english scores weak risk`() {
+        // SPE-01：uninstall 降为弱风险（+1，无硬保底）。
         val d = select("please uninstall this app for me")
-        assertEquals(ThinkingLevel.DEEP, d.level)
+        assertEquals(ThinkingLevel.LIGHT, d.level)
+    }
+
+    @Test
+    fun `negated destructive request does not floor deep`() {
+        // SPE-01 验收：否定/只读语境不按破坏性任务升档。
+        val d = select("不要删除任何文件，只读分析")
+        assertEquals(ThinkingLevel.LIGHT, d.level)
     }
 
     // ── 4. 组合高分 → MAXIMUM ───────────────────────────────────
@@ -104,7 +123,8 @@ class AdaptiveThinkingSelectorTest {
                 "接着重装并配置权限，用 git 管理改动，每一步都要验证。" +
                 "以下是详细需求与边界情况说明。".repeat(110)
         )
-        // 超长(+3) + 多步(+2) + 代码(+2) + 风险(+3) = 10 > 8 → MAXIMUM
+        // 超长(+3) + 多步(+2) + 代码(+2) + 强风险(+3) = 10 > 8 → MAXIMUM
+        // （风险维度单计：强风险命中后弱风险「卸载」不再叠加——SPE-01 双计消除）
         assertEquals(ThinkingLevel.MAXIMUM, d.level)
         assertTrue(d.reason.contains("评分 10"))
     }
