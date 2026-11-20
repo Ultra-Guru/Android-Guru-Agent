@@ -37,10 +37,13 @@
          PackageManager.canRequestPackageInstalls() 判态并跳
          ACTION_MANAGE_UNKNOWN_APP_SOURCES 引导页。 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="QueryAllPackagesPermission" />
-    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
-        tools:ignore="ProtectedPermissions" />
+    <!-- #824：QUERY_ALL_PACKAGES / PACKAGE_USAGE_STATS 已删除 —— 两者在
+         main 源集零消费点（getInstalledPackages / UsageStatsManager /
+         queryEvents 全仓无引用；插件发现的 queryIntentServices 按特定
+         action 查询，targetSdk 下不受包可见性过滤约束，无需全包可见）。
+         监控级敏感权限「声而不用」是侧载扫描红旗 + Play 政策硬伤；
+         未来做「已装应用控制/用量统计」类工具时按需加回，并用
+         <queries> 精确声明目标包名/Intent。 -->
 
     <!-- ═══ v5 增强工具集：agent 自主能力扩展 ═══ -->
     <!-- ContactSearch：读取通讯录（dangerous 权限，运行时弹窗授权） -->

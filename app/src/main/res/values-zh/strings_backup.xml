@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 备份 / 恢复区中文文案（与 values/strings_backup.xml 英文默认一一对应，Task 5-c）。 -->
+<!-- 备份 / 恢复区中文文案（与 values/strings_backup.xml 英文默认一一对应，Task 5-c；
+     #852：文案不得声称包含聊天历史 —— BackupBundle 实际仅含设置键 + 可选金库信封）。 -->
 <resources>
     <!-- ═══ 区块说明卡（含什么 / 永不包含什么）═══ -->
     <string name="backup_section_title">备份与恢复</string>
-    <string name="backup_section_desc">把设置与聊天历史导出为一个 JSON 文件，在新设备上恢复。文件保存到你选择的位置。</string>
-    <string name="backup_security_included">包含：模型 Profile、Provider、角色映射、Agent 设置与聊天历史。</string>
+    <string name="backup_section_desc">把设置（可选含金库）导出为一个 JSON 文件，在新设备上恢复。文件保存到你选择的位置。聊天历史不在备份包内。</string>
+    <string name="backup_security_included">包含：模型 Profile、Provider、角色映射与 Agent 设置 —— 开启后另含金库加密信封。聊天历史不包含在内；请在聊天页单独导出。</string>
     <string name="backup_security_never">永不以明文包含：API 密钥与金库密钥。Provider 的 API 密钥在导出时被剥离，恢复后需重新录入。</string>
     <string name="backup_vault_envelope_note">金库只能以口令加密的 AES-GCM 信封形式导出。</string>
 

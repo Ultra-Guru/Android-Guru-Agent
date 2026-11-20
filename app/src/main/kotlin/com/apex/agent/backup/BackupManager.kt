@@ -28,9 +28,13 @@ import javax.inject.Singleton
 // ─────────────────────────────────────────────────────────────────────────────
 // 备份 / 恢复体系（BackupManager）
 //
-// 换机不丢数据：把「设置中心 + 聊天历史 +（可选）Vault 金库」打包成一个
+// 换机不丢数据：把「设置中心 +（可选）Vault 金库」打包成一个
 // JSON 备份文件，经 SAF（Storage Access Framework）导出到用户选择的位置，
 // 新机上选择同一文件恢复。
+//
+// #852：BackupBundle **不含**聊天/会话/记忆数据 —— 只有 SETTINGS_KEYS
+// 四键 + 可选 vaultEnvelope。UI 文案（strings_backup.xml 双语）已按此
+// 对齐，不再声称「包含聊天历史」；聊天历史走聊天页单独导出通道。
 //
 // 备份策略（有意为之的取舍）：
 //  - 设置项**原样搬运 JSON 字符串**（model_profiles_v2 等 4 键），不依赖
