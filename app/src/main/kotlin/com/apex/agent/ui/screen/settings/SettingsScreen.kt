@@ -3,6 +3,7 @@
 package com.apex.agent.ui.screen.settings
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -292,6 +293,7 @@ fun SettingsScreen(
                                 onManageProviders = { showProviders = true },
                                 onManageRoles = { showRoles = true },
                                 onReturnToDrawer = onAllTabsClosed,
+                                onOpenPage = onOpenPageById,
                                 codeSkinActivation = codeState.conversationSkin,
                                 codeRunning = codeState.isRunning,
                                 onApplySkinViaNewChat = codeViewModel::clearConversation,
@@ -350,6 +352,7 @@ private fun SettingsPageRouter(
     onManageProviders: () -> Unit,
     onManageRoles: () -> Unit,
     onReturnToDrawer: () -> Unit,
+    onOpenPage: (String) -> Unit,
     codeSkinActivation: com.apex.agent.ui.screen.code.SkinActivation,
     codeRunning: Boolean,
     onApplySkinViaNewChat: () -> Unit,
@@ -387,17 +390,25 @@ private fun SettingsPageRouter(
         }
         "model.context" -> SettingsLeafColumn {
             selected?.let { ContextSection(it, onUpdate) } ?: EmptyProfileHint()
-            // 归并页：上下文压缩（全局域）—— §4.3 起 PR4 迁 system.diagnostics,
-            // 迁出前保留原地渲染(相关设置跳转在 diagnostics 页同样可见)
-            CompressionSection(agent, onAgent)
+            // PR4(§4.3):全局压缩分区已迁 system.diagnostics —— 原页保留
+            // 「相关设置」跳转,档案级与全局级不再混排一页
+            RelatedSettingsRow(
+                text = stringResource(R.string.settings_related_compression),
+                target = "system.diagnostics",
+                onOpenPage = onOpenPage
+            )
         }
         "model.tools" -> SettingsLeafColumn {
             selected?.let { ToolsSection(it, onUpdate) } ?: EmptyProfileHint()
         }
         "model.network" -> SettingsLeafColumn {
             selected?.let { NetworkSection(it, onUpdate) } ?: EmptyProfileHint()
-            // 归并页：限速友好（全局域）—— PR4 迁 system.diagnostics
-            RateLimitSection(agent, onAgent)
+            // PR4(§4.3):全局限速分区已迁 system.diagnostics —— 原页跳转收口
+            RelatedSettingsRow(
+                text = stringResource(R.string.settings_related_rate_limit),
+                target = "system.diagnostics",
+                onOpenPage = onOpenPage
+            )
         }
         "model.prompt" -> SettingsLeafColumn {
             selected?.let { PromptSection(it, onUpdate) } ?: EmptyProfileHint()
@@ -471,7 +482,7 @@ private fun SettingsPageRouter(
         // ═══ system:数据与系统 ═══
         "system.backup" -> SettingsLeafColumn { BackupSection() }
         "system.update" -> SettingsLeafColumn { UpdatePage(agent, onAgent) }
-        // 新增页(§4.3):压缩/限速等全局引擎旋钮的统一入口
+        // 新增页(§4.3;PR4 起为压缩/限速的**唯一**挂载点,原页跳转收口)
         "system.diagnostics" -> SettingsLeafColumn {
             CompressionSection(agent, onAgent)
             RateLimitSection(agent, onAgent)
@@ -557,5 +568,32 @@ private fun SettingsLandingHint(onOpenDrawer: () -> Unit) {
         Button(onClick = onOpenDrawer) {
             Text(stringResource(R.string.settings_open_drawer))
         }
+    }
+}
+
+/**
+ * 「相关设置」跳转行(Spec 01 §4.3):页面拆分后,原混排的全局分区在
+ * 原页保留一条明确入口,避免用户按旧路径找不到。
+ */
+@Composable
+internal fun RelatedSettingsRow(
+    text: String,
+    target: String,
+    onOpenPage: (String) -> Unit
+) {
+    Row(
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onOpenPage(target) }
+            .padding(vertical = 8.dp)
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f)
+        )
+        Text("→", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
     }
 }

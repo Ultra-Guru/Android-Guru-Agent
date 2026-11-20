@@ -127,7 +127,15 @@
     <string name="settings_notif_open_failed">Failed to open system notification settings.</string>
     <string name="settings_background_persist_warning">Persisted access to the selected image failed — the wallpaper may need re-selection after restart.</string>
     <string name="settings_tabs_desc">Settings tabs</string>
+    <string name="settings_related_compression">Related: context compression (global) → Diagnostics</string>
+    <string name="settings_related_rate_limit">Related: friendly rate limiting (global) → Diagnostics</string>
+    <string name="settings_header_key">Header</string>
+    <string name="settings_header_value">Value</string>
+    <string name="settings_header_delete">Delete header</string>
+    <string name="settings_header_add">Add header</string>
+    <string name="settings_header_key_invalid">Invalid header name (RFC 7230 token characters only).</string>
 </resources>
+
 
 
 

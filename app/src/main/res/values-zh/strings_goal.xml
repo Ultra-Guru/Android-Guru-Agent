@@ -126,7 +126,15 @@
     <string name="settings_notif_open_failed">打开系统通知设置失败。</string>
     <string name="settings_background_persist_warning">所选图片的持久授权失败——重启后可能需要重新选择背景。</string>
     <string name="settings_tabs_desc">设置标签</string>
+    <string name="settings_related_compression">相关设置：上下文压缩（全局）→ 诊断与高级</string>
+    <string name="settings_related_rate_limit">相关设置：限速友好（全局）→ 诊断与高级</string>
+    <string name="settings_header_key">Header</string>
+    <string name="settings_header_value">Value</string>
+    <string name="settings_header_delete">删除该头</string>
+    <string name="settings_header_add">添加头</string>
+    <string name="settings_header_key_invalid">头名非法（仅允许 RFC 7230 token 字符）。</string>
 </resources>
+
 
 
 
