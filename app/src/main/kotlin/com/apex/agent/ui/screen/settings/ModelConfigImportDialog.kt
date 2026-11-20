@@ -264,7 +264,7 @@ internal fun ModelConfigImportDialog(
                                     },
                                     onFailure = { applyError = it.message }
                                 )
-                            } catch (ce: kotlin.coroutines.CancellationException) {
+                            } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
                                 throw ce
                             } catch (t: Throwable) {
                                 applyError = t.message ?: t.javaClass.simpleName

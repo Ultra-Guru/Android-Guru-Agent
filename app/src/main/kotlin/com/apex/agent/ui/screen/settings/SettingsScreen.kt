@@ -293,6 +293,7 @@ fun SettingsScreen(
                                 onManageProviders = { showProviders = true },
                                 onManageRoles = { showRoles = true },
                                 onReturnToDrawer = onAllTabsClosed,
+                                onOpenPage = onOpenPageById,
                                 codeSkinActivation = codeState.conversationSkin,
                                 codeRunning = codeState.isRunning,
                                 onApplySkinViaNewChat = codeViewModel::clearConversation,
