@@ -68,6 +68,9 @@ class StreamingOpenAiClient(
         httpClient.newBuilder().callTimeout(0, TimeUnit.MILLISECONDS).build()
     }
 
+    /** SPE-05：choices>1 帧的限次告警计数。 */
+    private val multipleChoicesLogged = java.util.concurrent.atomic.AtomicInteger()
+
     override suspend fun chat(
         messages: List<LlmMessage>,
         tools: List<ToolDefinition>,
@@ -138,16 +141,28 @@ class StreamingOpenAiClient(
             ?.invokeOnCompletion { runCatching { response.close() } }
 
         try {
+            // ── SPE-05 P0-1：标准 SSE 帧状态机（[SseFrameReader]）──
+            // 多行 data: 按规范拼接后整体解析（旧实现逐行 parse 把规范分帧
+            // 拆碎 → 解析失败静默丢帧 → 回答缺字）；注释行只进心跳计数；
+            // 超长行护栏防 OOM。
+            val frames = SseFrameReader(reader)
             // 末帧兜底（v1.5.x 修复）：部分网关（智谱等）把完整正文挂在最后一帧
             // 的 choice.message 上（增量 delta 缺失/为空）—— 记录本流是否见过
             // 增量正文，parseStreamChunk 据此决定是否用 message.content 兜底
             //（见过则不用，防正文重复一遍）。
             var sawDeltaContent = false
-            // 截断守卫（#762/#765）：本流是否见过任何服务端完成标记 ——
-            // `[DONE]` 帧或携带 finish_reason 的帧（stop / tool_calls / length /
-            // content_filter … 均算正常收尾；兼容发完 finish_reason 帧就断流、
-            // 不补 [DONE] 的网关）。
+            // 截断守卫（#762/#765 + SPE-05 P0-3 语义表）：本流是否见过**干净**
+            // 的服务端完成标记 —— [DONE] 帧或 stop/tool_calls/其他 finish_reason
+            // 帧；**length 不算干净收尾**（被输出上限截断，收尾守卫统一转
+            // [LlmException.TruncatedStream] 显式错误，而非旧版「正常收尾」）。
             var sawFinish = false
+            // [DONE] 已到但仍在排空尾部帧（部分网关把 usage 统计帧放在
+            // [DONE] 之后；旧实现 DONE 即 break 直接丢弃统计）。
+            var sawDone = false
+            // 本流已接收的正文字符数（截断错误的「已保留 N 字」口径）。
+            var partialChars = 0
+            // SPE-05 P0-3：见过 finish_reason=length（输出被服务端截断）。
+            var truncatedByLength = false
             // #765：SSE 逐行读取是阻塞 IO，但本 flow 不再用 flowOn(Dispatchers.IO)
             // 整体搬运 —— flowOn 会在 emit 与收集者之间引入 ChannelFlow 中转，
             // 上游「发完最后一块后立刻抛异常」（断线 / 截断守卫）时，异常投递
@@ -156,32 +171,45 @@ class StreamingOpenAiClient(
             // 改为仅把阻塞读取包进 withContext(IO)：发射是收集者上下文里的
             // 直接挂起调用，「先收到部分输出、后收到异常」的顺序有了硬保证。
             while (true) {
-                // 每行检查一次取消状态（readLine 阻塞期间靠上面的 invokeOnCompletion 兜底）
+                // 每帧检查一次取消状态（readLine 阻塞期间靠上面的 invokeOnCompletion 兜底）
                 coroutineContext.ensureActive()
-                val currentLine = withContext(Dispatchers.IO) { reader.readLine() } ?: break
-                // 兼容 OpenAI SSE 规范允许的两种前缀：`data:` 与 `data: `。
-                // 旧实现只认 `data: `（带一个空格），部分代理发 `data:{...}` 会被静默丢弃。
-                if (!currentLine.startsWith("data:")) continue
-
-                val data = currentLine.removePrefix("data:").trim()
-                if (data == "[DONE]") {
+                val payload = try {
+                    withContext(Dispatchers.IO) { frames.nextFrame() } ?: break
+                } catch (e: IOException) {
+                    // DONE 后的排空阶段：连接以任何方式关闭（含读超时/对端半关）
+                    // 都视为正常 EOF（完成标记已见，尾部 usage 已尽力接收）。
+                    if (sawDone) break else throw e
+                }
+                if (payload == "[DONE]") {
+                    sawDone = true
                     sawFinish = true
                     emit(LlmStreamChunk(isFinish = true))
-                    break
+                    continue // 不 break：排空尾部帧（usage 统计帧可能在 DONE 之后）
                 }
 
-                parseStreamChunk(data, sawDeltaContent)?.let {
-                    if (!it.content.isNullOrEmpty()) sawDeltaContent = true
-                    if (it.isFinish || it.finishReason != null) sawFinish = true
+                parseStreamChunk(payload, sawDeltaContent)?.let {
+                    if (!it.content.isNullOrEmpty()) {
+                        sawDeltaContent = true
+                        partialChars += it.content.length
+                    }
+                    if (it.truncated) truncatedByLength = true
+                    // SPE-05 P0-3 语义表：stop/tool_calls/其他 → 干净收尾；
+                    // length → 不算（截断链路在收尾守卫统一触发）。
+                    if (it.isFinish || (it.finishReason != null && !it.truncated)) sawFinish = true
                     emit(it)
                 }
             }
-            // 截断守卫：EOF 前未见任何完成标记 —— 这不是一份完整回答。已发射
-            // 的部分输出不吞块（收集者已拿到、对话里原样保留），但流必须以异常
-            // 收尾，防止上层把残段当完整结果写进历史 / 触发后续工具轮次。
-            // 不自动重放（见上方请求阶段注释）；弱网下是否重发由用户手动决定。
-            if (!sawFinish) {
-                throw IOException(
+            // ── 收尾守卫（SPE-05 P0-3：与 isFinish 同一张语义表派生）──
+            // ① finish_reason=length：显式截断错误（携带已保留字符数，供
+            //    上层「回答可能被截断 · 保留 N 字」提示与续写决策；不再被
+            //    当正常收尾把半截回答写进历史）；
+            // ② EOF 前未见任何完成标记：断流残段（#762/#765 既有守卫，文案
+            //    不变）。
+            // 两者都只上抛、不自动重放（#762/#765 禁区），弱网下是否重发由
+            // 用户手动决定。
+            when {
+                truncatedByLength -> throw LlmException.TruncatedStream(partialChars)
+                !sawFinish -> throw IOException(
                     "SSE 流意外终止：未见完成标记（[DONE]/finish_reason），" +
                         "输出可能被截断——已收到的部分内容已保留"
                 )
@@ -196,7 +224,6 @@ class StreamingOpenAiClient(
             }
         }
     }
-
     // ═══ 内部方法 ═══
     
     private fun buildRequest(body: JsonObject): Request {
@@ -822,6 +849,39 @@ class StreamingOpenAiClient(
         else -> element
     }
 
+    /** choices 多于一帧的限次告警（首 3 次 + 之后每 50 条，与 #501 同模式）。 */
+    private fun logMultipleChoices(count: Int) {
+        val no = multipleChoicesLogged.incrementAndGet()
+        if (no <= 3 || no % 50 == 0) {
+            AppLogger.instance.warn(
+                LogCategory.LLM, "StreamingOpenAiClient",
+                "SSE chunk carries $count choices (n>1 / proxy aggregation) — parsing first, " +
+                    "others not silently dropped but not consumed either (single-answer client) (#$no)"
+            )
+        }
+    }
+
+    /**
+     * 原生思考内容提取（别名表统一，SPE-05 P1-5）。
+     *
+     * 覆盖：`reasoning_content`（DeepSeek-R1 / GLM-Z1）/ `reasoning`（部分
+     * Anthropic 代理）/ `thinking`（部分思考型网关）/
+     * `reasoning_details[].text`（聚合层结构化思维链）。
+     */
+    private fun extractReasoning(source: JsonObject?): String? {
+        if (source == null) return null
+        source["reasoning_content"]?.jsonPrimitive?.contentOrNull?.let { return it }
+        source["reasoning"]?.jsonPrimitive?.contentOrNull?.let { return it }
+        source["thinking"]?.jsonPrimitive?.contentOrNull?.let { return it }
+        (source["reasoning_details"] as? JsonArray)?.let { details ->
+            val text = details.joinToString("") { d ->
+                (d as? JsonObject)?.get("text")?.jsonPrimitive?.contentOrNull ?: ""
+            }
+            if (text.isNotEmpty()) return text
+        }
+        return null
+    }
+
     private fun parseStreamChunk(data: String, sawDeltaContent: Boolean = false): LlmStreamChunk? {
         return try {
             val json = Json.parseToJsonElement(data).jsonObject
@@ -846,6 +906,10 @@ class StreamingOpenAiClient(
             if (choices == null || choices.isEmpty()) {
                 return if (usage != null) LlmStreamChunk(usage = usage) else null
             }
+
+            // SPE-05 P1-5：choices 多于一（n>1 / 代理聚合）→ 不再静默丢弃：
+            // 首个照常解析，多余的存在限次告警（诊断口径；本客户端单回答语义）。
+            if (choices.size > 1) logMultipleChoices(choices.size)
 
             val choice = choices[0].jsonObject
             val delta = choice["delta"]?.jsonObject
@@ -873,10 +937,11 @@ class StreamingOpenAiClient(
                 else -> baseText + citations
             }
 
-            // 原生思考内容（DeepSeek-R1 `reasoning_content`、部分 Anthropic 代理 `reasoning`）。
-            // 旧实现丢弃，导致思考类模型的思维链在 UI 上不可见。
-            var reasoningOut = delta?.get("reasoning_content")?.jsonPrimitive?.contentOrNull
-                ?: delta?.get("reasoning")?.jsonPrimitive?.contentOrNull
+            // 原生思考内容（别名表统一，SPE-05 P1-5：DeepSeek-R1
+            // `reasoning_content` / Anthropic 代理 `reasoning` / 部分思考型网关
+            // `thinking` / 某些聚合层 `reasoning_details[].text`；旧实现只认
+            // 前两个别名，思维链在部分模型上不可见）。
+            var reasoningOut = extractReasoning(delta)
 
             // ═══ 末帧正文兜底（v1.5.x 修复「流式只有思考、没有回答」）═══
             // 部分网关把完整正文挂在最后一帧的 choice.message.content 上
@@ -891,8 +956,7 @@ class StreamingOpenAiClient(
                     val msgText = MultimodalOutputExtractor.parseContent(message["content"]).text
                     if (!msgText.isNullOrEmpty()) content = msgText
                     if (reasoningOut.isNullOrEmpty()) {
-                        reasoningOut = message["reasoning_content"]?.jsonPrimitive?.contentOrNull
-                            ?: message["reasoning"]?.jsonPrimitive?.contentOrNull
+                        reasoningOut = extractReasoning(message)
                     }
                 }
             }
@@ -927,7 +991,10 @@ class StreamingOpenAiClient(
                 videos = videos,
                 usage = usage,
                 isFinish = finishReason == "stop" || finishReason == "tool_calls",
-                finishReason = finishReason
+                finishReason = finishReason,
+                // SPE-05 P0-3 语义表：length = 输出被截断（与 isFinish、收尾守卫
+                // 同源；上层据此续跑或显式报错，不再当正常收尾）。
+                truncated = finishReason == "length"
             )
         } catch (e: Exception) {
             // ═══ 可观测性修复：不再无声丢弃 ═══
@@ -998,8 +1065,11 @@ class StreamingOpenAiClient(
             )
         } ?: emptyList()
 
-        val usage = json["usage"]?.jsonObject?.let { u ->
-            // intOrNull：容忍代理返回的 "1234.0" / 字符串数值，不再抛 NumberFormatException
+        val usage = (json["usage"] as? JsonObject)?.let { u ->
+            // SPE-05 P0-4：与流式路径同口径（`as? JsonObject` + intOrNull）——
+            // 代理返回 `"usage": null` / 数组 / 字符串时不再抛异常炸掉整个
+            // 非流式响应（choices 已解析成功却因统计字段失败）。
+            // intOrNull：容忍代理返回的 "1234.0" / 字符串数值。
             Usage(
                 promptTokens = u["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
                 completionTokens = u["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
@@ -1091,6 +1161,18 @@ sealed class LlmException(message: String, cause: Throwable? = null) : Exception
     /** P2 fix：响应体非法（HTML 错误页/畸形 JSON/数值类型漂移），供 ErrorClassifier 映射到
      *  ModelResponseInvalid 而非落入未分类异常。 */
     class Parse(cause: Throwable? = null) : LlmException("Response parse error: ${cause?.message}", cause)
+
+    /**
+     * SPE-05 P0-3：输出被服务端截断（`finish_reason = length`——受
+     * max_tokens / max_completion_tokens 上限裁断），流以显式错误收尾
+     * （不再被当「正常收尾」把半截回答写进历史）。
+     *
+     * 携带 [partialChars]（已保留的正文长度），供上层 UI 显示
+     * 「回答可能被截断 · 已保留 N 字」与续写/重发决策。
+     * 不自动重放（#762/#765 禁区）——重发由用户手动决定。
+     */
+    class TruncatedStream(val partialChars: Int) :
+        LlmException("回答可能被截断（finish_reason=length）：已保留 $partialChars 字")
 }
 
 /**

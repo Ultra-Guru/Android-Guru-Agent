@@ -116,6 +116,17 @@ data class LlmStreamChunk(
      */
     val finishReason: String? = null,
     /**
+     * SPE-05 P0-3：本帧携带的收尾原因是否意味着**输出被截断**
+     * （finishReason == "length"：被 max_tokens / max_completion_tokens
+     * 上限裁断）。
+     *
+     * 消费方语义分叉：标准线引擎可据此触发续跑；深潜线（无续跑通道）
+     * 由 [com.apex.agent.core.llm.StreamingOpenAiClient] 的收尾守卫转
+     * [LlmException.TruncatedStream] 显式错误（「回答可能被截断 · 已
+     * 保留 N 字」）。默认 false = 旧行为不变。
+     */
+    val truncated: Boolean = false,
+    /**
      * 原生推理/思考内容（流式增量）。
      *
      * OpenAI o-series 返回 `delta.reasoning_content`；DeepSeek-R1 返回

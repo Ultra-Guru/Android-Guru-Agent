@@ -319,6 +319,13 @@ internal object ErrorClassifier {
                 ModelRuntimeException.ModelResponseInvalid("空响应体", profileId)
             is LlmException.Parse ->
                 ModelRuntimeException.ModelResponseInvalid("响应解析失败: ${e.message}", profileId)
+            is LlmException.TruncatedStream ->
+                // SPE-05：输出截断（finish_reason=length）是响应不完整，
+                // 归 ModelResponseInvalid（可恢复/可续写），不落「网络错误」
+                // 误导口径。
+                ModelRuntimeException.ModelResponseInvalid(
+                    "回答可能被截断: ${e.message}（已收部分保留）", profileId
+                )
             is LlmException.Network -> classifyIoException(e.cause ?: e, profileId)
             else -> classifyIoException(e, profileId)
         }
