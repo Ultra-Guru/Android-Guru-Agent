@@ -198,9 +198,16 @@ class ApexAgentEngine(
 
     /** 工具输出截断器（始终生效，不依赖 contextCompressor 是否注入） */
     // internal —— EngineToolExecution.kt 同包扩展直调（输出截断）。
-    internal val toolTruncator = ToolOutputTruncator(
+    // #825：var + @Volatile —— 预算热更新（updateConfig / patchConfig 的
+    // syncTruncatorBudget）会整体换实例；旧实现冻结于构造期的
+    // maxToolOutputLength，设置页 patchConfig 热更新后截断阈值静默失效。
+    // 换实例而非改字段：ToolOutputTruncator 的 head/tail 收敛（CR #D1）
+    // 全在构造期完成，中途改 maxChars 会破坏预算一致性。
+    @Volatile
+    internal var toolTruncator = ToolOutputTruncator(
         maxChars = config.maxToolOutputLength
     )
+        private set
 
     /** #170 终端主动性顾问：一次性 shell 连击 / 工具链任务 / 失败连击 → 轮次级 System 建议（纯状态机，引擎仅两钩子）。 */
     // internal —— EngineToolExecution.kt 同包扩展直调（终端主动性滑窗）。
@@ -321,6 +328,7 @@ class ApexAgentEngine(
         val old = config
         config = newConfig
         syncCompressorWindow(old, newConfig)
+        syncTruncatorBudget(old, newConfig)
     }
 
     /**
@@ -352,6 +360,7 @@ class ApexAgentEngine(
         val old = config
         config = transform(config)
         syncCompressorWindow(old, config)
+        syncTruncatorBudget(old, config)
     }
 
     /**
@@ -362,6 +371,18 @@ class ApexAgentEngine(
     private fun syncCompressorWindow(old: AgentConfig, new: AgentConfig) {
         if (old.maxContextTokens != new.maxContextTokens) {
             contextCompressor?.updateContextWindow(new.maxContextTokens)
+        }
+    }
+
+    /**
+     * #825 — 工具输出截断预算热更新：maxToolOutputLength 变更时整体换
+     * [toolTruncator] 实例（head/tail 收敛在构造期完成，不可中途改字段）。
+     * 旧实现冻结于构造期配置 —— 设置页 patchConfig 热更新后截断阈值静默
+     * 失效，深潜任务回灌的输出预算与设置页显示值脱节。
+     */
+    private fun syncTruncatorBudget(old: AgentConfig, new: AgentConfig) {
+        if (old.maxToolOutputLength != new.maxToolOutputLength) {
+            toolTruncator = ToolOutputTruncator(maxChars = new.maxToolOutputLength)
         }
     }
 
