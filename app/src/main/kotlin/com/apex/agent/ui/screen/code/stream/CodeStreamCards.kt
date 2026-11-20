@@ -119,6 +119,9 @@ private fun UserBubble(text: String) {
 
 // ═══ 结论气泡（Markdown，流式容忍）═══
 
+/** 流式期结论气泡渲染的尾部切片上限（字符）；收束后仍渲染全文。 */
+private const val STREAM_ASSISTANT_TAIL_LIMIT = 16_000
+
 @Composable
 private fun AssistantBubble(text: String, isStreaming: Boolean) {
     // v5 流式玻璃 → v1.7 部件皮肤：结论气泡从 GlassCard(accent=primary)
@@ -134,7 +137,17 @@ private fun AssistantBubble(text: String, isStreaming: Boolean) {
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 3.dp)
     ) {
-        MarkdownText(markdown = text)
+        // perf-anr-20261115：流式期间只喂尾部切片 —— 全量文本逐 token 增长
+        // 会让 MarkdownText 的解析（虽已异步）在合窗后每窗取消重来，成本
+        // 随文本膨胀；切片把流式期解析成本钉在常数档（16KB，与 P0 diffText
+        // 上限同档），收束后一次渲染全文。前缀省略号提示上文被收起。
+        MarkdownText(
+            markdown = if (isStreaming && text.length > STREAM_ASSISTANT_TAIL_LIMIT) {
+                "…" + text.takeLast(STREAM_ASSISTANT_TAIL_LIMIT)
+            } else {
+                text
+            }
+        )
         if (isStreaming && text.isEmpty()) {
             Text(
                 text = stringResource(R.string.code_stream_status_waiting),
