@@ -70,8 +70,27 @@ data class LlmConfig(
     val stopSequences: List<String> = emptyList(),
 
     // ── Reasoning 扩展 ─────────────────────────────────────────
-    /** 思维预算（tokens），null = Auto。与 [reasoningEffort] 不强行绑定。 */
+    /**
+     * 思维预算（tokens），null = Auto。与 [reasoningEffort] 不强行绑定。
+     *
+     * SPE-04 语义收窄：**仅用于推理预算**（Anthropic `thinking.budget_tokens`
+     * / Gemini `thinking_budget`）；不再被当作输出上限下发——旧实现把它写进
+     * `max_completion_tokens`，档位预算（如 STANDARD 1024）会直接截断回答，
+     * APEXCODE 65536 会被多数端点 400 拒绝。输出上限走
+     * [maxCompletionTokens] / [maxTokens]（受 contextWindow 裁剪）。
+     */
     val thinkingBudget: Int? = null,
+
+    /**
+     * 输出上限（`max_completion_tokens`），null = 未显式设置。
+     *
+     * SPE-04 P0-1 新增：与 [thinkingBudget]（推理预算）解耦——输出上限的
+     * 取值链：显式 maxCompletionTokens > ReasoningEffort.MAX 的兜底
+     * （maxOf(requestedTokens, 8192)）> 不发（走 `max_tokens` =
+     * effectiveMaxTokens）。任何取值都受 contextWindow - reservedOutputTokens
+     * 钳制（不再出现裸 65536）。
+     */
+    val maxCompletionTokens: Int? = null,
 
     // ── Context ────────────────────────────────────────────────
     val contextWindow: Int = 128_000,

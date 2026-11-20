@@ -269,13 +269,15 @@ class StreamingOpenAiClient(
         val requiresMaxCompletionTokens = config.baseUrl.contains("api.openai.com", ignoreCase = true) &&
             (config.capabilities.reasoning || isStrictOpenAiReasoner)
 
-        // P1-3 修复：max_tokens 与 max_completion_tokens 互斥。旧实现两者同时发送
-        //（thinkingBudget 非空或 ReasoningEffort.MAX 时），OpenAI 端点对同时携带
-        // 两个参数的请求直接 400（"Unsupported parameter: 'max_tokens' is not
-        // supported with this model"）。现在发送 max_completion_tokens 时不再发
-        // max_tokens；未设置思维预算时才发 max_tokens。
+        // P1-3 修复 + SPE-04 P0-1 升级：max_tokens 与 max_completion_tokens 互斥，
+        // 且输出上限**不再读 thinkingBudget**（推理预算 ≠ 输出上限——旧实现
+        // 把档位预算（STANDARD 1024 / APEXCODE 65536）当 max_completion_tokens
+        // 下发：前者直接截断长回答，后者被多数端点 400 拒绝）。取值链：
+        //   显式 config.maxCompletionTokens（新字段，与档位解耦）
+        //   > ReasoningEffort.MAX 且推理能力位的 maxOf(requestedTokens, 8192) 兜底
+        //   > null（走 max_tokens = effectiveMaxTokens）。
         // 思维预算与 reasoning_effort 不强行绑定：显式设置时以此为准。
-        val maxCompletion = config.thinkingBudget ?: run {
+        val maxCompletion = config.maxCompletionTokens ?: run {
             if (config.reasoningEffort == ReasoningEffort.MAX &&
                 (config.capabilities.reasoning || isStrictOpenAiReasoner)
             ) maxOf(requestedTokens, 8192) else null
@@ -311,7 +313,14 @@ class StreamingOpenAiClient(
                 put("temperature", effectiveTemperature)
             }
             if (maxCompletion != null || requiresMaxCompletionTokens) {
-                put("max_completion_tokens", maxCompletion ?: effectiveMaxTokens)
+                // SPE-04 P1-4 钳制：任何输出上限都不超过 contextWindow -
+                // reservedOutputTokens（旧实现 APEXCODE 65536 裸下发会 400；
+                // contextWindow 未知(=0)时不钳——无法判定就不自我阉割，
+                // ReasoningEffort.MAX 的 8192 下限兜底保持旧语义）。
+                val outputCap = if (config.contextWindow > 0) {
+                    (config.contextWindow - config.reservedOutputTokens).coerceAtLeast(256)
+                } else Int.MAX_VALUE
+                put("max_completion_tokens", (maxCompletion ?: effectiveMaxTokens).coerceAtMost(outputCap))
             } else {
                 put("max_tokens", effectiveMaxTokens)
             }
