@@ -372,26 +372,60 @@ internal fun KeyValueEditor(
 ) {
     var key by remember { mutableStateOf("") }
     var value by remember { mutableStateOf("") }
+    var keyError by remember { mutableStateOf(false) }
+    val headerLabel = stringResource(R.string.settings_header_key)
+    val valueLabel = stringResource(R.string.settings_header_value)
+    val deleteDesc = stringResource(R.string.settings_header_delete)
+    val addDesc = stringResource(R.string.settings_header_add)
+    // B3-BUG-19:键归一(trim)→ RFC 7230 token 合法性校验 → 大小写去重
+    // (HTTP 头大小写不敏感);空 value 拦截;错误态就地提示。
+    fun normalizeKey(raw: String): String? {
+        val k = raw.trim()
+        if (k.isEmpty()) return null
+        if (!k.matches(Regex("[!#$%&'*+.^_`|~0-9A-Za-z-]+"))) return null
+        return map.keys.firstOrNull { it.equals(k, ignoreCase = true) } ?: k
+    }
+    fun tryAdd() {
+        val k = normalizeKey(key)
+        if (k == null || value.isBlank()) {
+            keyError = true
+            return
+        }
+        onChange(map + (k to value.trim()))
+        key = ""
+        value = ""
+        keyError = false
+    }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium)
         map.forEach { (k, v) ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("$k : $v", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                 // UI-012：48dp 触区红线（原 28dp）
-                IconButton(onClick = { onChange(map - k) }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                IconButton(
+                    onClick = { onChange(map - k) },
+                    modifier = Modifier
+                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .semantics { contentDescription = "$k " + deleteDesc }
+                ) {
                     Icon(Icons.Default.Delete, null, Modifier.size(16.dp))
                 }
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(key, { key = it }, label = { Text("Header") },
+            OutlinedTextField(key, { key = it; keyError = false }, label = { Text(headerLabel) },
+                isError = keyError,
+                supportingText = { if (keyError) Text(stringResource(R.string.settings_header_key_invalid)) },
                 modifier = Modifier.weight(1f), singleLine = true)
             Spacer(Modifier.width(6.dp))
-            OutlinedTextField(value, { value = it }, label = { Text("Value") },
+            OutlinedTextField(value, { value = it }, label = { Text(valueLabel) },
                 modifier = Modifier.weight(1f), singleLine = true)
-            IconButton(onClick = {
-                if (key.isNotBlank()) { onChange(map + (key to value)); key = ""; value = "" }
-            }) { Icon(Icons.Default.Add, null) }
+            IconButton(
+                onClick = { tryAdd() },
+                modifier = Modifier
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    .semantics { contentDescription = addDesc }
+            ) { Icon(Icons.Default.Add, null) }
         }
     }
 }

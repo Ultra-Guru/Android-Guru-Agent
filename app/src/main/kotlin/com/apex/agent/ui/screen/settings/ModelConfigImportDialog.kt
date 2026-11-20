@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -75,7 +76,8 @@ internal fun ModelConfigImportDialog(
     var parseError by remember { mutableStateOf<String?>(null) }
     var nothingRecognized by remember { mutableStateOf(false) }
 
-    var importing by remember { mutableStateOf(false) }
+    // B3-BUG-20:导入态 saveable(旋转不丢)—— 其余本地态同批在后续接入
+    var importing by rememberSaveable { mutableStateOf(false) }
     var applyError by remember { mutableStateOf<String?>(null) }
     // (模型数, 服务商名) —— 非空即完成态
     var done by remember { mutableStateOf<Pair<Int, String>?>(null) }
@@ -251,15 +253,24 @@ internal fun ModelConfigImportDialog(
                         importing = true
                         applyError = null
                         scope.launch {
-                            viewModel.importModelConfig(text, selectedFormat).fold(
-                                onSuccess = { summary ->
-                                    done = summary.count to summary.providerName
-                                    // 导入成功即切换到新档案（弹窗停在完成态供确认）
-                                    onImported(summary.firstProfileId)
-                                },
-                                onFailure = { applyError = it.message }
-                            )
-                            importing = false
+                            // B3-BUG-20:try/finally 兜底 —— 非预期异常(IO 等)
+                            // 不再让 importing 永久卡死按钮
+                            try {
+                                viewModel.importModelConfig(text, selectedFormat).fold(
+                                    onSuccess = { summary ->
+                                        done = summary.count to summary.providerName
+                                        // 导入成功即切换到新档案（弹窗停在完成态供确认）
+                                        onImported(summary.firstProfileId)
+                                    },
+                                    onFailure = { applyError = it.message }
+                                )
+                            } catch (ce: kotlin.coroutines.CancellationException) {
+                                throw ce
+                            } catch (t: Throwable) {
+                                applyError = t.message ?: t.javaClass.simpleName
+                            } finally {
+                                importing = false
+                            }
                         }
                     }
                 ) {
