@@ -3,6 +3,7 @@ package com.apex.agent.ui.screen.code
 import com.apex.agent.R
 import com.apex.agent.core.codetools.tools.CodeTodoTool
 import com.apex.agent.core.code.stream.reconcileStreamText
+import com.apex.agent.core.code.stream.tailAwareTruncate
 import com.apex.agent.core.engine.AgentEvent
 import kotlinx.coroutines.flow.update
 import kotlinx.serialization.json.Json
@@ -99,7 +100,9 @@ internal fun CodeViewModel.reduce(event: AgentEvent) {
             val idx = messages.indexOfLast { it.role == CodeChatMessage.Role.TOOL && it.isStreaming }
             if (idx >= 0) {
                 val m = messages[idx]
-                messages[idx] = m.copy(text = (m.text + event.chunk).take(4000))
+                // SPE-06 P1-4：头尾双窗（旧 take(4000) 只留头部——构建/测试日志
+                // 结尾的错误摘要永远丢失）。
+                messages[idx] = m.copy(text = tailAwareTruncate(m.text + event.chunk))
             }
             state.copy(messages = messages)
         }
@@ -111,7 +114,8 @@ internal fun CodeViewModel.reduce(event: AgentEvent) {
                 val card = CodeChatMessage(
                     id = idGen.incrementAndGet(),
                     role = CodeChatMessage.Role.TOOL,
-                    text = event.output.take(4000),
+                    // SPE-06 P1-4：头尾双窗（与分片通道同口径，消除两处头部截断的重复）。
+                    text = tailAwareTruncate(event.output),
                     toolName = event.toolName,
                     toolSuccess = event.success,
                     durationMs = event.durationMs,

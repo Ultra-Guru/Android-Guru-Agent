@@ -168,4 +168,35 @@ class CodeStreamModelsTest {
             ToolKind.fromToolName("mcp__other__list_files")
         )
     }
+
+    // ═══ SPE-06 P1-4：tailAwareTruncate 头尾双窗 ═══
+
+    @Test
+    fun `tailAwareTruncate keeps short text intact`() {
+        assertEquals("short", tailAwareTruncate("short"))
+        assertEquals("x".repeat(4000), tailAwareTruncate("x".repeat(4000)))
+    }
+
+    @Test
+    fun `tailAwareTruncate keeps both head and tail of long output`() {
+        // SPE-06 验收：12k 字工具输出 → 卡片同时含开头与结尾错误摘要，
+        // 中间有省略标记。
+        val head = "H".repeat(100)
+        val tail = "T".repeat(100)
+        val text = head + "m".repeat(12_000) + tail
+        val out = tailAwareTruncate(text)
+        assertTrue("开头应保留：${out.take(20)}", out.startsWith("H"))
+        assertTrue("结尾错误摘要应保留：${out.takeLast(20)}", out.endsWith("T"))
+        assertTrue("中间应有省略标记：$out", out.contains("中间省略"))
+        assertTrue("总长受限：${out.length}", out.length < 4000 + 200)
+    }
+
+    @Test
+    fun `tailAwareTruncate defaults to legacy cap`() {
+        // 4000 默认口径与旧 take(4000) 同 cap（替换后行为对齐、头部占比 2/3）。
+        val out = tailAwareTruncate("a".repeat(12_000))
+        assertTrue(out.length < 4000 + 100)
+        val marker = "…[中间省略 "
+        assertTrue(out.contains(marker))
+    }
 }
