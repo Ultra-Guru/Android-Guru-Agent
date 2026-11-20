@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- English copy for the backup / restore section (Task 5-c: settings + chat sessions + Vault encrypted envelope export/import).
+<!-- English copy for the backup / restore section (Task 5-c: settings + Vault encrypted envelope export/import;
+     #852: copy must not claim chat history — BackupBundle carries settings keys + optional vault envelope only).
      Chinese lives in values-zh/strings_backup.xml; language switching goes through LanguageManager +
      MainActivity attachBaseContext/recreate. -->
 <resources>
     <!-- ═══ Section explainer cards (what it includes / what it never includes) ═══ -->
     <string name="backup_section_title">Backup &amp; Restore</string>
-    <string name="backup_section_desc">Export your setup and chat history to a JSON file, then restore it on a new device. The file is written to a location you pick.</string>
-    <string name="backup_security_included">Includes: model profiles, providers, role mappings, agent settings and chat history.</string>
+    <string name="backup_section_desc">Export your setup (and optionally the vault) to a JSON file, then restore it on a new device. The file is written to a location you pick. Chat history is not part of this bundle.</string>
+    <string name="backup_security_included">Includes: model profiles, providers, role mappings and agent settings — plus the vault envelope when enabled. Chat history is not included; back it up separately from the chat screen.</string>
     <string name="backup_security_never">Never included in plain text: API keys and vault secrets. Provider API keys are stripped on export and must be re-entered after restore.</string>
     <string name="backup_vault_envelope_note">The vault can be exported only as an AES-GCM encrypted envelope locked by your passphrase.</string>
 

@@ -91,7 +91,9 @@ internal fun QueuedTaskCard(
                 modifier = Modifier.weight(1f)
             )
             if (!needsConfirm) {
-                IconButton(onClick = onCancel, modifier = Modifier.size(28.dp)) {
+                // #777：触控目标 48dp（项目 UI-012 红线）——图标视觉 15dp 不变，
+                // 命中区抬到 48dp，TalkBack/手势误触率同步下降。
+                IconButton(onClick = onCancel, modifier = Modifier.size(48.dp)) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = stringResource(R.string.code_queue_cancel),

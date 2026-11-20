@@ -322,7 +322,8 @@ private fun GameCard(
                     modifier = Modifier.weight(1f)
                 )
                 if (game.source == GameSource.INSTALLED) {
-                    IconButton(onClick = onUninstall, modifier = Modifier.size(28.dp)) {
+                    // #777：触控目标 48dp（UI-012）——图标视觉 18dp 不变，命中区抬到 48dp。
+                    IconButton(onClick = onUninstall, modifier = Modifier.size(48.dp)) {
                         Icon(
                             imageVector = Icons.Default.DeleteOutline,
                             contentDescription = "卸载游戏",
