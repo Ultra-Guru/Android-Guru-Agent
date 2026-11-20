@@ -2,6 +2,15 @@ name: Media Activity Results
 on:
   pull_request:
     branches: [main]
+    # #804：仪表化测试（60 分钟 emulator 槽位）按被测面精准触发 ——
+    # 仅在媒体集成测试本体、其覆盖的工具实现（ImageCaptureTool，位于
+    # core/tool-registry 的 MoreCapabilitiesTools）、kit 锁文件或本
+    # workflow 自身变更时运行；文档/徽章/changelog 类 PR 不再烧槽位。
+    paths:
+      - '.github/workflows/media-results.yml'
+      - 'app/src/androidTest/**'
+      - 'core/tool-registry/src/main/kotlin/com/apex/agent/core/tools/builtin/MoreCapabilitiesTools.kt'
+      - 'gradle/*-kit.lock'
   workflow_dispatch: {}
 permissions:
   contents: read

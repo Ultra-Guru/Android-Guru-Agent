@@ -338,8 +338,11 @@ dependencies {
     // Unit testing (pure-JVM src/test)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
-    androidTestImplementation("androidx.test:runner:1.6.2")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    // #787：androidTest 依赖走 version catalog（与 platform/terminal 同款
+    // 别名 libs.androidx.test.runner / libs.androidx.test.ext.junit），
+    // 不再硬编码版本绕过目录。
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
 }
 
 // 依赖锁定：固定已解析版本，避免 JitPack/EasyFloat 在不同时刻解析到不同工件，提升 CI 复现性

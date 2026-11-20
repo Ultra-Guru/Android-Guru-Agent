@@ -2,8 +2,10 @@ name: Mirror to Gitee
 
 on:
   push:
-    branches: ['**']
-    tags: ['**']
+    # #794：与 2026-10-06 触发去重政策对齐 —— push 只留 main 落地终态
+    #（PR 分支推送无需镜像，镜像目标是 main 终态），tag 走 v* 发布序列。
+    branches: [main]
+    tags: ['v*']
   schedule:
     - cron: '23 19 * * *'
   workflow_dispatch:
