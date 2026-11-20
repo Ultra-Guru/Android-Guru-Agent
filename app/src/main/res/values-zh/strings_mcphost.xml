@@ -7,6 +7,10 @@
     <string name="mcphost_status_running">运行中 · %1$d 个会话</string>
     <string name="mcphost_status_stopped">已停止</string>
     <string name="mcphost_error_prefix">错误：%1$s</string>
+    <!-- 监听地址行：来自服务端 ServerSocket 绑定参数的单一事实源 -->
+    <string name="mcphost_bind_running">运行中 · 监听 %1$s</string>
+    <string name="mcphost_bind_pending">准备监听 %1$s（尚未就绪）</string>
+    <string name="mcphost_bind_stopped">未监听</string>
 
     <!-- ═══ 端口 / 限速 ═══ -->
     <string name="mcphost_port_label">端口</string>
@@ -49,7 +53,8 @@
 
     <!-- ═══ 如何连接 ═══ -->
     <string name="mcphost_connect_title">如何连接（PC 端）</string>
-    <string name="mcphost_connect_hint">在 Cline / Claude Desktop（mcp-remote）中按下述 JSON 添加本服务器。手机与 PC 需在同一局域网，且需开启「允许局域网访问」（默认仅监听本机回环）；使用期间请保持本应用存活。</string>
+    <string name="mcphost_connect_hint">在 Cline / Claude Desktop（mcp-remote）中按下述 JSON 添加本服务器。URL 取决于上方显示的监听地址（默认回环模式，见红色 adb reverse 提示）；使用期间请保持本应用存活。</string>
+    <string name="mcphost_connect_loopback_hint">当前仅监听本机回环：JSON 中的 127.0.0.1 指经 adb reverse / SSH 隧道转发后的 PC 侧地址，手机自身不可直连。请先在 PC 上执行 adb reverse tcp:%1$d tcp:%1$d，再按下方 JSON 连接。</string>
     <string name="mcphost_connect_ip_placeholder">手机IP</string>
     <string name="mcphost_connect_json">{
   \"mcpServers\": {

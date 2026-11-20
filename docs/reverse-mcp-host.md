@@ -88,8 +88,28 @@ AndroidMCP 类项目（维护差、无权限门控）不满足安全要求，故
 
 ## 5. 连接指南（PC 端）
 
-手机与 PC 同一局域网；应用内「市场 → MCP → MCP Host」开启开关，复制
-token。Cline（`cline_mcp_settings.json`）：
+应用内「市场 → MCP → MCP Host」开启开关后，卡片会实时显示**真实监听地址**
+（如 `运行中 · 监听 127.0.0.1:8765`，来自服务端 ServerSocket 绑定参数，
+非 UI 反推），复制 token 后按当前绑定面选择连接模式。
+
+### 5.1 回环模式（默认，不开「允许局域网访问」）
+
+手机只监听 `127.0.0.1`，PC 无法直连手机 IP。需先在 PC 上做端口转发
+（把 PC 本机 8765 映射到手机的 8765）：
+
+```bash
+adb reverse tcp:8765 tcp:8765
+```
+
+之后 Cline（`cline_mcp_settings.json`）连 `http://127.0.0.1:8765/mcp` ——
+**JSON 里的 `127.0.0.1` 指 PC 侧被 adb reverse / SSH 隧道转发的回环地址**，
+不是手机自身地址（手机监听回环时，PC 直连手机局域网 IP 永远不通）。UI
+「如何连接」折叠区在回环态自动填 `127.0.0.1`，并常驻红色 `adb reverse`
+指引（端口跟随当前配置）。
+
+### 5.2 局域网模式（开「允许局域网访问」，明文 HTTP 风险自负）
+
+手机与 PC 同一局域网，手机监听 `0.0.0.0`：
 
 ```json
 {
@@ -103,7 +123,8 @@ token。Cline（`cline_mcp_settings.json`）：
 ```
 
 Claude Desktop 经 `mcp-remote` 连接器接入同一 URL。UI 的「如何连接」折叠
-区会自动填入本机局域网 IP 与当前端口/Token。
+区会自动填入当前监听地址对应的 host（回环态 = `127.0.0.1`，LAN 态 = 本机
+局域网 IP）与当前端口/Token。
 
 ## 6. 测试
 

@@ -82,6 +82,8 @@ class McpHostManager(
 
     /** 服务运行态 / 会话 / 审计（未启动时为空值流）。 */
     val isRunning: StateFlow<Boolean> get() = server.isRunning
+    /** 真实监听地址（来自 ServerSocket 绑定参数；未监听为 null）。UI 不反推 allowLan。 */
+    val bindHost: StateFlow<String?> get() = server.bindHost
     val sessions: StateFlow<List<com.apex.agent.platform.mcphost.HostSessionInfo>> get() = server.sessions
     val auditLog: StateFlow<List<com.apex.agent.platform.mcphost.HostAuditEntry>> get() = server.auditLog
 
