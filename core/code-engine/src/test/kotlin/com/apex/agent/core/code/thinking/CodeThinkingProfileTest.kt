@@ -29,10 +29,11 @@ class CodeThinkingProfileTest {
     }
 
     @Test
-    fun `auto falls back to standard profile`() {
-        // AUTO 元档不占表行：预检解析后用具体档画像；占位返回 STANDARD
+    fun `auto falls back to deep profile`() {
+        // AUTO 元档不占表行：预检解析后用具体档画像；占位返回
+        // AUTO_FALLBACK_LEVEL（SPE-02 P0-3 四处同源，旧 STANDARD 已对齐 DEEP）
         assertEquals(
-            CodeThinkingProfile.forLevel(CodeThinkingLevel.STANDARD),
+            CodeThinkingProfile.forLevel(CodeThinkingLevel.AUTO_FALLBACK_LEVEL),
             CodeThinkingProfile.forLevel(CodeThinkingLevel.AUTO)
         )
     }

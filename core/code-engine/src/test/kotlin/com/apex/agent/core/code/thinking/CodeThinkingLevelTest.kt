@@ -62,6 +62,28 @@ class CodeThinkingLevelTest {
     }
 
     @Test
+    fun `auto fallback level is single sourced across four consumers`() {
+        // SPE-02 P0-3 契约：AUTO 兜底四处同值（改任何一处即翻红）。
+        val fallback = CodeThinkingLevel.AUTO_FALLBACK_LEVEL
+        assertEquals(
+            "toAgentLevel(AUTO) 与 AUTO_FALLBACK_LEVEL 同源",
+            fallback.toAgentLevel(),
+            CodeThinkingLevel.AUTO.toAgentLevel()
+        )
+        assertEquals(
+            "Profile 占位行与 AUTO_FALLBACK_LEVEL 同源（旧为 STANDARD——对齐多数派 DEEP）",
+            CodeThinkingProfile.forLevel(fallback),
+            CodeThinkingProfile.forLevel(CodeThinkingLevel.AUTO)
+        )
+        assertEquals(
+            "编码指令兜底档与 AUTO_FALLBACK_LEVEL 同源",
+            fallback,
+            CodeThinkingPrompts.AUTO_FALLBACK_DIRECTIVE_LEVEL
+        )
+        assertEquals(CodeThinkingLevel.DEEP, fallback)
+    }
+
+    @Test
     fun `thinking budget ladder doubles at deep water tiers`() {
         assertEquals(0, CodeThinkingLevel.NONE.toThinkingBudget())
         assertEquals(256, CodeThinkingLevel.LIGHT.toThinkingBudget())

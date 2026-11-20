@@ -143,9 +143,10 @@ If any check fails, fix the gap with tools first; only then deliver the final an
                 uiDescriptionEn = "Architecture-level exhaustive reasoning + adversarial self-review + full verification matrix; iterations x3.0, later compression keeps more context"
             )
 
-            // AUTO 元档：预检解析出具体深度档后走对应行；此处返回 STANDARD
-            // 占位（引擎不应收到 AUTO——CodeThinkingLevel.toAgentLevel 已兜底 DEEP）。
-            CodeThinkingLevel.AUTO -> forLevel(CodeThinkingLevel.STANDARD)
+            // AUTO 元档：预检解析出具体深度档后走对应行；此处返回
+            // [CodeThinkingLevel.AUTO_FALLBACK_LEVEL] 占位（SPE-02 P0-3：
+            // 四处同源——引擎不应收到 AUTO，本行仅防御性兜底）。
+            CodeThinkingLevel.AUTO -> forLevel(CodeThinkingLevel.AUTO_FALLBACK_LEVEL)
         }
 
         // ═══ 旋钮补偿纯函数（深水两档的「映射 MAXIMUM 打底 + 增量反补」）═══
