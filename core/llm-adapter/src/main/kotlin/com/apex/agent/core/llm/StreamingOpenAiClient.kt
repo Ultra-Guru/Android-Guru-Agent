@@ -21,6 +21,7 @@ import okhttp3.Response
 import java.io.BufferedReader
 import java.io.IOException
 import java.io.InputStreamReader
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -47,6 +48,25 @@ class StreamingOpenAiClient(
 
     /** 端点门控跳过留痕限次（首 3 次 + 之后每 50 条一条，与 #501 同模式）。 */
     private val serverSearchSkipsLogged = java.util.concurrent.atomic.AtomicInteger()
+
+    /**
+     * #817：流式专用派生 client —— callTimeout 归零。
+     *
+     * OkHttp 的 callTimeout 语义是「call 创建 → 响应体关闭」的**绝对墙钟**
+     *（官方文档明确覆盖 reading the response body），不只覆盖连接/请求/响应头；
+     * 而 [httpClient] 同时服务于 chat 与 chatStream，其 callTimeout =
+     * requestTimeoutMs（默认 120s）会把 SSE 流的总时长硬性钉死在 2 分钟 ——
+     * 推理型模型长输出场景必被强制掐断，且部分输出已发射时韧性重试不放行
+     *（防重复副作用的设计是对的），整轮报废。
+     *
+     * 修复：chatStream 走 newBuilder().callTimeout(0) 的派生 client
+     *（共享连接池/调度器，OkHttp 官方推荐的按请求定制方式）；非流式 chat()
+     * 保留原 callTimeout 作为单次请求硬上限。流式活性由 readTimeout 逐包
+     * 保障（每收到一个 chunk 即重置），断流场景照常超时，无需绝对墙钟。
+     */
+    private val streamHttpClient: OkHttpClient by lazy {
+        httpClient.newBuilder().callTimeout(0, TimeUnit.MILLISECONDS).build()
+    }
 
     override suspend fun chat(
         messages: List<LlmMessage>,
@@ -711,7 +731,9 @@ class StreamingOpenAiClient(
      * [executeWithServerToolDegrade]，其重发请求体与首发不同，非重放）。
      */
     private suspend fun acquireStreamResponse(request: Request): Response {
-        val response = httpClient.newCall(request).await()
+        // #817：走 callTimeout=0 的流式派生 client（见 [streamHttpClient] KDoc），
+        // 绝对墙钟不再掐断长流；活性由 readTimeout 逐包保障。
+        val response = streamHttpClient.newCall(request).await()
         if (!response.isSuccessful) {
             // 错误体读取是阻塞 IO —— 包在 IO 调度器（本 flow 不再整体 flowOn，见下方读循环注释）
             val errorBody = withContext(Dispatchers.IO) {
