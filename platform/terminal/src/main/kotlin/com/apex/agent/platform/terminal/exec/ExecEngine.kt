@@ -1,4 +1,4 @@
-package com.apex.agent.platform.terminal.exec
+package com.apex.agent.platform.TerminalExec
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -41,6 +41,14 @@ class ExecEngine(
     /** 执行通道标识（透明转发 spawner —— 供工具层在无结果路径上报）。 */
     val channel: String get() = spawner.channel
 
+    companion object {
+        /**
+         * stdin 载荷上限（1MB）：DSH 工具参数 JSON 是 KB 级；超限 = 结构化
+         * 失败而非静默截断（截断的 JSON 比失败更危险 —— 语义不可知）。
+         */
+        const val MAX_STDIN_BYTES: Int = 1_000_000
+    }
+
 
     /**
      * 采集层预算（内存安全上限，与 [ExecRequest] 的字符预算是两层不同的防线）：
@@ -53,7 +61,21 @@ class ExecEngine(
         val postKillDrainGraceMs: Long = 800
     )
 
-    suspend fun execute(request: ExecRequest): CommandResult = withContext(dispatcher) {
+    /**
+     * 执行一个请求。
+     *
+     * @param onStdoutChunk 可选的 stdout 增量预览回调（尽力而为：仅人看实时
+     *   呈现，不保证完整/不保证 UTF-8 边界对齐；权威输出仍在返回值）。
+     *   回调在 IO drain 协程上调用 —— 实现方自行保证线程安全。
+     * @param onStderrChunk 可选的 stderr 增量预览回调（同语义；两回调各在
+     *   自己的 drain 协程上并发调用，交织顺序不保证 —— 真实终端的合并视感）。
+     *   失败型命令（gcc/python 错误全走 stderr）运行期间不再对用户隐形。
+     */
+    suspend fun execute(
+        request: ExecRequest,
+        onStdoutChunk: ((chunk: String) -> Unit)? = null,
+        onStderrChunk: ((chunk: String) -> Unit)? = null
+    ): CommandResult = withContext(dispatcher) {
         val startedAt = System.nanoTime()
 
         val spawned: SpawnedCommand = try {
@@ -77,6 +99,56 @@ class ExecEngine(
         val stderrStream = spawned.stderr
         val stderrSeparated = stderrStream != null
 
+        // ── stdin 一次性收尾（写载荷→flush→close / 无载荷直接 close）──
+        // 必须在任何等待之前完成：载荷通道是「写入即 EOF」的一次性语义；
+        // 通道不支持 stdin 而载荷非空 = 结构化失败（诚实上报，绝不假装写入）。
+        if (request.stdin != null) {
+            val stdinStream = spawned.stdin
+            if (stdinStream == null) {
+                runCatching { spawned.destroy() }
+                return@withContext CommandResult.spawnFailure(
+                    request = request,
+                    channel = spawner.channel,
+                    stderrSeparated = stderrSeparated,
+                    envApplied = spawner.supportsEnv,
+                    durationMs = (System.nanoTime() - startedAt) / 1_000_000,
+                    error = "channel '${spawner.channel}' does not support stdin, but a stdin payload was provided"
+                )
+            }
+            val payloadBytes = request.stdin.toByteArray(Charsets.UTF_8)
+            if (payloadBytes.size > MAX_STDIN_BYTES) {
+                runCatching { spawned.destroy() }
+                return@withContext CommandResult.spawnFailure(
+                    request = request,
+                    channel = spawner.channel,
+                    stderrSeparated = stderrSeparated,
+                    envApplied = spawner.supportsEnv,
+                    durationMs = (System.nanoTime() - startedAt) / 1_000_000,
+                    error = "stdin payload ${payloadBytes.size} bytes exceeds limit $MAX_STDIN_BYTES (not truncated)"
+                )
+            }
+            val stdinResult = runCatching {
+                stdinStream.write(payloadBytes)
+                stdinStream.flush()
+                stdinStream.close()
+            }
+            if (stdinResult.isFailure) {
+                // 管道破裂（进程秒退等）：不伪装成功 —— 转结构化失败
+                runCatching { spawned.destroy() }
+                return@withContext CommandResult.spawnFailure(
+                    request = request,
+                    channel = spawner.channel,
+                    stderrSeparated = stderrSeparated,
+                    envApplied = spawner.supportsEnv,
+                    durationMs = (System.nanoTime() - startedAt) / 1_000_000,
+                    error = "failed to write stdin payload: ${stdinResult.exceptionOrNull()?.message}"
+                )
+            }
+        } else {
+            // 无载荷：维持旧版「spawn 后 stdin 立即 EOF」语义（cat 类命令不挂死）
+            runCatching { spawned.stdin?.close() }
+        }
+
         val drainScope = CoroutineScope(SupervisorJob() + dispatcher)
         val drainJobs = mutableListOf<Job>()
         var exited = false
@@ -84,9 +156,9 @@ class ExecEngine(
         var exitCode: Int? = null
         try {
             // ── 并发排空（阻塞读跑在 IO 线程；waitFor 与之并发，超时才真正生效）──
-            drainJobs += drainScope.launch { drainStream(spawned.stdout, stdoutCapture) }
+            drainJobs += drainScope.launch { drainStream(spawned.stdout, stdoutCapture, onStdoutChunk) }
             if (stderrStream != null) {
-                drainJobs += drainScope.launch { drainStream(stderrStream, stderrCapture) }
+                drainJobs += drainScope.launch { drainStream(stderrStream, stderrCapture, onStderrChunk) }
             }
 
             // ── 等待退出或超时（runInterruptible：协程取消 → 线程中断 → finally 杀进程）──
@@ -148,13 +220,24 @@ class ExecEngine(
 
     // ── 内部 ──
 
-    private suspend fun CoroutineScope.drainStream(stream: InputStream, target: BoundedCapture) {
+    private suspend fun CoroutineScope.drainStream(
+        stream: InputStream,
+        target: BoundedCapture,
+        onChunk: ((chunk: String) -> Unit)? = null
+    ) {
         try {
             val buf = ByteArray(8 * 1024)
             while (true) {
                 val n = stream.read(buf)
                 if (n < 0) break
-                if (n > 0) target.write(buf, 0, n)
+                if (n > 0) {
+                    target.write(buf, 0, n)
+                    // 预览回调：尽力而为（宽容解码；跨块多字节字符可能出替换符，
+                    // 预览容错；异常不碰主流程）
+                    if (onChunk != null) {
+                        runCatching { onChunk(String(buf, 0, n, Charsets.UTF_8)) }
+                    }
+                }
             }
         } catch (_: java.io.IOException) {
             // 进程被杀/管道破裂：已采集内容即为终态 —— 诚实保留

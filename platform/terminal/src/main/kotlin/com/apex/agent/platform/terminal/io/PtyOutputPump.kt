@@ -6,7 +6,7 @@ import com.apex.agent.platform.terminal.buffer.TerminalOutputBuffer
 import com.apex.agent.platform.terminal.policy.TerminalPolicy
 import com.apex.agent.platform.terminal.screen.VirtualTerminal
 import com.apex.agent.platform.terminal.state.TerminalSemanticState
-import com.apex.agent.platform.terminal.wait.TerminalWaitEngine
+import com.apex.agent.platform.TerminalWait.TerminalWaitEngine
 
 /**
  * Implementation contract for the single PTY reader per Session.

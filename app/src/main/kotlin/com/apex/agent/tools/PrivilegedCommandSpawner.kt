@@ -1,17 +1,19 @@
 package com.apex.agent.tools
 
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.platform.privilege.PrivilegeDetector
 import com.apex.agent.platform.privilege.shizuku.ShizukuCommandExecutor
 import com.apex.agent.platform.privilege.shizuku.ShizukuProcessChannel
-import com.apex.agent.platform.terminal.exec.CommandSpawner
-import com.apex.agent.platform.terminal.exec.ProcessBuilderSpawner
-import com.apex.agent.platform.terminal.exec.SpawnRequest
-import com.apex.agent.platform.terminal.exec.SpawnedCommand
+import com.apex.agent.platform.TerminalExec.CommandSpawner
+import com.apex.agent.platform.TerminalExec.ProcessBuilderSpawner
+import com.apex.agent.platform.TerminalExec.SpawnRequest
+import com.apex.agent.platform.TerminalExec.SpawnedCommand
 import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
- * `terminal.exec` 的真实执行通道选择器（app 层接线）。
+ * `TerminalExec` 的真实执行通道选择器（app 层接线）。
  *
  * 通道优先级与 [PrivilegeDetector.executeShell] 一致：Root(`su -c`) >
  * Shizuku(ADB 级 uid=2000，IRemoteProcess) > 本地 app-shell(ProcessBuilder)。
@@ -30,10 +32,29 @@ class PrivilegedCommandSpawner : CommandSpawner {
 
     private val localSh = ProcessBuilderSpawner(channel = "local-sh", shell = "/system/bin/sh")
 
+    /** T92（#255）审计日志：TerminalExec 宿主通道选择 —— 一眼可查「这条命令走了 root-su / shizuku / local-sh」。 */
+    private fun auditChannel(channel: String, command: String) {
+        runCatching {
+            AppLogger.instance.info(
+                LogCategory.TOOL,
+                AUDIT_SOURCE,
+                "privilege-chain channel=$channel cmd=${command.logForm()}",
+                "privilege-chain", channel
+            )
+        }
+    }
+
+    /** 命令的日志形态：折叠空白 + 截断（与 PrivilegeDetector 同一纪律）。 */
+    private fun String.logForm(): String {
+        val collapsed = trim().replace(whitespaceRun, " ")
+        return if (collapsed.length <= MAX_LOG_CMD_LEN) collapsed
+        else collapsed.take(MAX_LOG_CMD_LEN) + "..."
+    }
+
     /**
      * 最近一次 [spawn] 实际选中的通道。
      *
-     * 旧实现让 [channel] / [supportsEnv] 各自调一次探测 —— 一次 `terminal.exec`
+     * 旧实现让 [channel] / [supportsEnv] 各自调一次探测 —— 一次 `TerminalExec`
      * 至少要探测 3 次（引擎读 channel、读 supportsEnv、spawn 再选一次），而探测包含
      * su 文件扫描 + `Shizuku.pingBinder()` 的 **binder IPC**：既浪费，又可能在两次探测
      * 之间授权状态变化，导致「上报的通道 ≠ 实际执行的通道」这种不诚实结果。
@@ -60,6 +81,7 @@ class PrivilegedCommandSpawner : CommandSpawner {
     override fun spawn(request: SpawnRequest): SpawnedCommand {
         val target = resolve()
         active = target
+        auditChannel(target.channel, request.command)
         return target.spawn(request)
     }
 
@@ -77,8 +99,9 @@ class PrivilegedCommandSpawner : CommandSpawner {
             val pb = ProcessBuilder("su", "-c", wrapped)
             request.cwd?.let { pb.directory(File(it)) } // su 通常忽略父 cwd，包进命令才是权威
             val proc = pb.start()
-            runCatching { proc.outputStream.close() }
-            return JvmProcessCommand(proc)
+            // stdin 收尾交 ExecEngine（su -c 的 stdin 转发语义未经验证 —— stdinSupported=false，
+            // 带载荷请求会得到诚实的「通道不支持 stdin」失败而非不可预测行为）
+            return JvmProcessCommand(proc, stdinSupported = false)
         }
     }
 
@@ -97,15 +120,26 @@ class PrivilegedCommandSpawner : CommandSpawner {
                 envArray,
                 request.cwd
             )
-            runCatching { proc.outputStream.close() }
-            return JvmProcessCommand(proc)
+            // stdin 收尾交 ExecEngine（shizuku 中转流不宣称 stdin 支持 —— 同 su 保守口径）
+            return JvmProcessCommand(proc, stdinSupported = false)
         }
     }
 
-    /** java.lang.Process → SpawnedCommand（local-su 与 shizuku 共用；waitFor 具备超时语义）。 */
-    internal class JvmProcessCommand(private val proc: Process) : SpawnedCommand {
+    /**
+     * java.lang.Process → SpawnedCommand（su/shizuku 共用；waitFor 具备超时语义）。
+     *
+     * [stdinSupported] 诚实声明通道是否提供可写 stdin：只有语义确定真实的
+     * 通道才暴露（proot-ubuntu 的 ProcessBuilder 直连 = true；su -c / shizuku
+     * 中转未经验证 = false）—— 未知能力绝不假装可用。
+     */
+    internal class JvmProcessCommand(
+        private val proc: Process,
+        private val stdinSupported: Boolean = false
+    ) : SpawnedCommand {
         override val stdout: java.io.InputStream get() = proc.inputStream
         override val stderr: java.io.InputStream get() = proc.errorStream
+        override val stdin: java.io.OutputStream?
+            get() = if (stdinSupported) proc.outputStream else null
         override fun waitFor(timeoutMs: Long): Boolean =
             proc.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
         override fun exitValue(): Int = proc.exitValue()
@@ -116,4 +150,11 @@ class PrivilegedCommandSpawner : CommandSpawner {
 
     private fun shellQuote(path: String): String =
         "'" + path.replace("'", "'\\''") + "'"
+
+    private companion object {
+        /** 审计日志来源标识与命令截断上限（与 PrivilegeDetector 保持一致）。 */
+        internal const val AUDIT_SOURCE = "PrivilegedCommandSpawner"
+        internal const val MAX_LOG_CMD_LEN = 120
+        private val whitespaceRun = Regex("\\s+")
+    }
 }

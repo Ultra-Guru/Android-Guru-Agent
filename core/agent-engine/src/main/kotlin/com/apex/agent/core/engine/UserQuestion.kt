@@ -1,9 +1,14 @@
 package com.apex.agent.core.engine
 
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withTimeout
 import java.util.UUID
@@ -42,14 +47,17 @@ data class AgentQuestion(
  * - 单选：使用 [selectedOptionId]（兼容旧字段，同时写入 [selectedOptionIds]）；
  * - 多选：使用 [selectedOptionIds]；
  * - 自定义输入：使用 [customText]；
- * - 跳过：置 [skipped] = true。
+ * - 跳过：置 [skipped] = true；
+ * - 等待超时：置 [skipped] = true 且 [timedOut] = true（#215：调用方可区分
+ *   「用户显式跳过/取消」与「等待超时未决」—— 超时不应被折叠成会话级拒绝）。
  */
 data class AgentAnswer(
     val questionId: String,
     val selectedOptionId: String? = null,
     val selectedOptionIds: List<String> = emptyList(),
     val customText: String? = null,
-    val skipped: Boolean = false
+    val skipped: Boolean = false,
+    val timedOut: Boolean = false
 )
 
 /**
@@ -57,6 +65,21 @@ data class AgentAnswer(
  */
 interface UserQuestionGateway {
     suspend fun ask(question: AgentQuestion): AgentAnswer
+
+    /**
+     * #395 — abort 语义收口：立即中止当前挂起的提问（按 skipped=true 收场）。
+     *
+     * 根因：AskUserChoice / 权限门（CommandPermissionGate/RiskAwareToolGate）
+     * 在工具 execute() 内部经 [ask] 挂起在自己的 deferred 上 —— 引擎 abort()
+     * 的 abortConfirmationChannels() 只收口引擎自有三只 deferred
+     * （userInput/plan/spec），桥接层的挂起无人唤醒 → 引擎流吃满 5 分钟
+     * 超时不收尾 → TaskRuntime pause/cancel 连续打印 "stream finalize did
+     * not complete within 10s"（真机日志实证），UI 表现为「取消卡死」。
+     *
+     * @return true = 存在挂起提问且已收口。默认 false（无挂起管理的实现，
+     *   兼容既有 fake / 二次实现零改动）。
+     */
+    fun abortActiveQuestion(): Boolean = false
 }
 
 /**
@@ -73,6 +96,14 @@ class UserQuestionBridge : UserQuestionGateway {
     private val _pendingQuestion = MutableStateFlow<AgentQuestion?>(null)
     val pendingQuestion: StateFlow<AgentQuestion?> = _pendingQuestion.asStateFlow()
 
+    /**
+     * #215 问题等待超时的对外通知。SharedFlow 而非回调：同一桥单例可能
+     * 被多个宿主订阅（Agent 聊天屏据此追加「提问已超时」系统行）；
+     * 无订阅者时发射直接丢弃（fire-and-forget，绝不阻塞 ask 收场）。
+     */
+    private val _questionExpired = MutableSharedFlow<AgentQuestion>(extraBufferCapacity = 1)
+    val questionExpired: SharedFlow<AgentQuestion> = _questionExpired.asSharedFlow()
+
     private var answerDeferred: CompletableDeferred<AgentAnswer>? = null
 
     override suspend fun ask(question: AgentQuestion): AgentAnswer {
@@ -88,9 +119,13 @@ class UserQuestionBridge : UserQuestionGateway {
                 deferred.await()
             }
         } catch (e: TimeoutCancellationException) {
+            // #215：超时按「未决」折叠并对外通知 —— timedOut=true 让调用方
+            // （风险门/权限门）能把超时与用户显式跳过/取消区分开。
+            _questionExpired.tryEmit(question)
             AgentAnswer(
                 questionId = question.id,
-                skipped = true
+                skipped = true,
+                timedOut = true
             )
         } finally {
             synchronized(this) {
@@ -104,7 +139,23 @@ class UserQuestionBridge : UserQuestionGateway {
 
     fun submit(answer: AgentAnswer) {
         synchronized(this) {
-            answerDeferred?.complete(answer)
+            val deferred = answerDeferred ?: return
+            // S-11（chaos-crash-audit L-11）：迟到/错配答案不得注入当前挂起问题。
+            // 竞态窗口：A 超时收场（或被 abort）与新问题 B 注册之间，UI 迟到的
+            // A 答案若直接 complete 到 B 的 deferred，Agent 会拿着 A 的选择继续
+            // 执行 B 的破坏性动作。比对 questionId，不一致即丢弃并留审计痕
+            // （两个 id + 时间戳），不 complete —— B 保持挂起等待真实回答。
+            val pendingId = _pendingQuestion.value?.id
+            if (pendingId != null && answer.questionId != pendingId) {
+                AppLogger.instance.warn(
+                    LogCategory.ENGINE, TAG,
+                    "dropped mismatched answer: answer.questionId=${answer.questionId} " +
+                        "!= pending.questionId=$pendingId (late or stale UI submit, " +
+                        "ts=${System.currentTimeMillis()})"
+                )
+                return
+            }
+            deferred.complete(answer)
         }
     }
 
@@ -117,4 +168,24 @@ class UserQuestionBridge : UserQuestionGateway {
             )
         )
     }
+
+    /**
+     * #395 — abort 收口：只要存在挂起的 deferred 就立即按 skipped 收场。
+     *
+     * 与 [cancelCurrentQuestion] 的差异：后者依赖 pendingQuestion 快照
+     * （竞态窗口下可能为 null 而提前返回）；本方法直接以 deferred 存在性
+     * 为准 —— 引擎 abort 路径必须保证「挂起必被唤醒」。deferred 的清理
+     * 交给 [ask] 的 finally 条件回收（不在此处置空，防覆盖新注册）。
+     */
+    override fun abortActiveQuestion(): Boolean {
+        synchronized(this) {
+            val deferred = answerDeferred ?: return false
+            val questionId = _pendingQuestion.value?.id ?: ""
+            deferred.complete(AgentAnswer(questionId = questionId, skipped = true))
+            return true
+        }
+    }
 }
+
+/** S-11：错配答案丢弃的审计日志来源标识。 */
+private const val TAG = "UserQuestionBridge"

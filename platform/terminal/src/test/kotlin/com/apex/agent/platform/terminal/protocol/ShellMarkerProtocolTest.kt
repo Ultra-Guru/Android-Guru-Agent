@@ -3,6 +3,9 @@ package com.apex.agent.platform.terminal.protocol
 import com.apex.agent.platform.terminal.io.InputOwner
 import com.apex.agent.platform.terminal.policy.TerminalPolicyImpl
 import com.apex.agent.platform.terminal.pty.FakeNativePty
+import com.apex.agent.platform.terminal.runtime.ExecutionBackendRegistry
+import com.apex.agent.platform.terminal.runtime.FixtureLinuxBackend
+import com.apex.agent.platform.terminal.runtime.LocalShellBackend
 import com.apex.agent.platform.terminal.runtime.TerminalRuntimeImpl
 import com.apex.agent.platform.terminal.screen.RealVirtualTerminal
 import kotlinx.coroutines.launch
@@ -126,6 +129,7 @@ class ShellMarkerProtocolTest {
         val rt = TerminalRuntimeImpl(
             native = FakeNativePty(),
             policy = TerminalPolicyImpl(),
+            backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend(), FixtureLinuxBackend()),
             virtualTerminalFactory = { r, c -> RealVirtualTerminal(r, c) },
             enableShellMarkers = true
         )
@@ -151,6 +155,7 @@ class ShellMarkerProtocolTest {
         val rt = TerminalRuntimeImpl(
             native = FakeNativePty(),
             policy = TerminalPolicyImpl(),
+            backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend(), FixtureLinuxBackend()),
             virtualTerminalFactory = { r, c -> RealVirtualTerminal(r, c) },
             enableShellMarkers = false
         )
@@ -181,7 +186,7 @@ class ShellMarkerProtocolTest {
         val eventBus = com.apex.agent.platform.terminal.events.TerminalEventBusImpl(
             eventLog, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob())
         )
-        val waitEngine = com.apex.agent.platform.terminal.wait.WaitEngineImpl(
+        val waitEngine = com.apex.agent.platform.TerminalWait.WaitEngineImpl(
             eventBus, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob())
         )
         val input = com.apex.agent.platform.terminal.io.InputManagerImpl(

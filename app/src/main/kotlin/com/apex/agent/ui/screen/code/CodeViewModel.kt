@@ -2,21 +2,26 @@ package com.apex.agent.ui.screen.code
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.apex.agent.R
 import com.apex.agent.core.code.CodeAgentEngine
-import com.apex.agent.core.code.longtask.LongTaskCopyOptions
-import com.apex.agent.core.code.longtask.LongTaskDiff
+import com.apex.agent.core.code.CodeEngineFacade
 import com.apex.agent.core.code.longtask.LongTaskStatus
 import com.apex.agent.core.code.longtask.LongTaskStore
-import com.apex.agent.core.code.longtask.LongTaskTemplates
+import com.apex.agent.core.code.experience.RoleExperienceStore
+import com.apex.agent.core.code.experience.RoleExperienceTracker
 import com.apex.agent.core.code.longtask.LongTaskTracker
 import com.apex.agent.core.code.longtask.TaskCopyEngine
+import com.apex.agent.core.code.standard.DualLogicCodeEngine
+import com.apex.agent.core.code.standard.MemoryAwareCodeEngine
+import com.apex.agent.core.code.CodeContextSnapshot
+import com.apex.agent.core.code.standard.StandardLogicMode
 import com.apex.agent.core.code.stream.CodeStreamCheckpoint
 import com.apex.agent.core.code.stream.CodeStreamSession
-import com.apex.agent.core.code.stream.CodeStreamSnapshot
 import com.apex.agent.core.code.stream.StreamToolCall
+import com.apex.agent.core.code.thinking.CodeAdaptiveSignalTracker
 import com.apex.agent.core.code.thinking.CodeAdaptiveThinkingSelector
-import com.apex.agent.core.code.thinking.CodeThinkingEvolutionTracker
 import com.apex.agent.core.code.thinking.CodeThinkingLevel
+import com.apex.agent.core.code.subagent.SubAgentPrompts
 import com.apex.agent.core.codetools.CodeWorkspaceRoots
 import com.apex.agent.core.codetools.tools.CodeTodoTool
 import com.apex.agent.core.engine.AgentAnswer
@@ -26,27 +31,30 @@ import com.apex.agent.core.engine.AgentMode
 import com.apex.agent.core.engine.AgentQuestion
 import com.apex.agent.core.engine.UserInput
 import com.apex.agent.core.engine.UserQuestionBridge
+import com.apex.agent.core.engine.goal.GoalModeCoordinator
 import com.apex.agent.core.llm.ReasoningEffort
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.github.GithubTokenManager
 import com.apex.agent.platform.code.ws.CodeWorkspace
 import com.apex.agent.platform.code.ws.CodeWorkspaceManager
+import com.apex.agent.slash.SlashCommand
 import com.apex.agent.slash.SlashCommandParser
 import com.apex.agent.slash.SlashCommandRouter
 import com.apex.agent.slash.SlashRouteContext
-import com.apex.agent.ui.screen.agent.CODING_SCREEN_MODES
-import com.apex.agent.ui.screen.agent.PendingPipelineCommand
-import com.apex.agent.ui.screen.agent.llmConfiguredFlow
+import com.apex.agent.ui.chatkit.CODING_SCREEN_MODES
+import com.apex.agent.ui.chatkit.PendingPipelineCommand
+import com.apex.agent.ui.chatkit.llmConfiguredFlow
 import com.apex.agent.ui.screen.code.editor.AtRefParser
+import com.apex.agent.ui.screen.code.editor.EditorFileException
 import com.apex.agent.ui.screen.code.editor.EditorFileLoader
-import com.apex.agent.ui.screen.code.session.CodeSessionSnapshot
+import com.apex.agent.ui.screen.code.editor.EditorLoadError
 import com.apex.agent.ui.screen.code.session.CodeSessionStore
-import com.apex.agent.ui.screen.code.session.toStreamEntries
-import com.apex.agent.ui.screen.code.session.toCodeTodos
-import com.apex.agent.ui.screen.code.session.toStorable
-import com.apex.agent.ui.screen.code.session.withFreshIds
-import com.apex.agent.ui.screen.agent.toolkit.ChatToolkitStore
+import com.apex.agent.ui.screen.memory.profile.topForInjection
+import com.apex.agent.ui.screen.memory.profile.toSystemContextSection
+import com.apex.agent.ui.screen.code.history.CodeHistoryStore
+import com.apex.agent.ui.screen.code.history.clearConversationWithArchive
+import com.apex.agent.ui.chatkit.ChatToolkitStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import javax.inject.Named
@@ -55,6 +63,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -68,60 +77,86 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
 
 /**
  * # Code ViewModel — Coding 模式屏的状态与事件归约
  *
- * 与 AgentChatViewModel 的关系：**平行实现而非复用**（两模式的交互面差异大 ——
- * Code 屏以工作区为中心、工具卡以 diff/验证为核心），但引擎侧契约完全一致：
+ * 与 AgentChatViewModel 的关系：**平行实现而非复用**（两模式交互面差异大
+ * —— Code 屏以工作区为中心、工具卡以 diff/验证为核心），但引擎侧契约一致：
  * AgentEvent 流 → UI 状态归约 → ConfirmationSink/submitUserInput 回传。
  *
- * 精简的事件归约（16ms 级流式节流不做 —— 编码回复长度可控，直接增量 append）：
- * - ResponseChunk → 当前助手消息追加；
- * - ToolCallStart/Complete → 工具卡（code_edit/write 渲染 diff 摘要）；
- * - UserInputRequired → 挂起等待用户输入（ask_user）；
- * - Complete/Aborted/Error → 收尾 + todo 快照刷新。
+ * 精简的事件归约（16ms 级流式节流不做 —— 编码回复长度可控，直接增量
+ * append），实现已按 God-file 预算拆至同包扩展 [CodeEventReducer.kt]
+ * （模式同 AgentChatEventApplier）：ResponseChunk → 助手消息追加；
+ * ToolCallStart/Complete → 工具卡（CodeEdit/write 渲染 diff 摘要）；
+ * UserInputRequired → 挂起等输入（AskUser）；Complete/Aborted/Error →
+ * 收尾 + todo 快照刷新。
  *
  * ## v1.0 会话恢复（#152）
  *
- * 引擎侧上下文由 CodeConversationMemory 按 workspaceId 持久化（API 级完整
- * 历史，setActiveWorkspace 时自动恢复）；本层补齐 **UI 快照**——消息列表 /
- * todos / 当前文件存 `code_sessions/ws_<id>.json`，进程被杀后回到现场：
- * - bindWorkspace 时「冲刷旧快照 → 恢复新快照」串行（Mutex 防快速切换交错）；
- * - 消息变更后 800ms 防抖落盘（对齐 Agent 模式 ChatHistoryManager 惯例）；
- * - onCleared 时经独立 IO scope 最后冲刷一次（viewModelScope 在 onCleared
- *   前已被取消，防抖窗口内的尾巴变更不能丢）。
+ * 引擎侧上下文由 CodeConversationMemory 按 workspaceId 持久化（API 级
+ * 完整历史，setActiveWorkspace 时自动恢复）；本层补齐 **UI 快照**——
+ * 消息列表 / todos / 当前文件存 `code_sessions/ws_<id>.json`：bindWorkspace
+ * 「冲刷旧快照 → 恢复新快照」串行（Mutex 防快速切换交错）；消息变更后
+ * 800ms 防抖落盘（对齐 Agent 屏惯例）；onCleared 经独立 IO scope 最后
+ * 冲刷（viewModelScope 届时已取消，防抖尾巴不能丢）。
  *
  * ## v1.0 编辑器面板与 @ 引用（#154）
  *
- * - sendMessage 前经 AtRefParser 提取 `@file:line` 选区引用：引用块拼进
- *   引擎输入（用户消息 UI 展示保持原文），首个引用设为当前文件并打开面板；
- * - code_edit / code_write 成功后自动跟随被改文件（编辑器显示最新现场）；
- * - 面板数据直读工作区文件（EditorFileLoader，绕开工具输出的 8000 字符
- *   截断），行点击回填 `@file:line` 到输入草稿。
+ * sendMessage 前经 AtRefParser 提取 `@file:line` 选区引用：引用块拼进
+ * 引擎输入（用户消息 UI 展示保持原文），首个引用设为当前文件并打开面板；
+ * CodeEdit / CodeWrite 成功后自动跟随被改文件；面板数据直读工作区文件
+ * （EditorFileLoader，绕开工具输出 8000 字符截断），行点击回填 `@file:line`。
+ *
+ * ## 文件拆分（God-file 预算纪律）
+ *
+ * VM 行数守 1200 门禁（quality-gate check_file_size）：**只减不增**。
+ * 已拆出的本包内 internal 扩展文件（模式同 Agent 屏 AgentChat* 拆分，
+ * 调用点无感知，依赖成员开放 internal）：`CodeLongTaskCenterOps.kt`（v1.2
+ * 长任务中心用户操作流；run 生命周期钩子仍在 runEngine 内）；
+ * `CodeGoalController.kt`（v3 GOAL 目标模式控制全链；模式附属动作经
+ * setMode 尾部 onEnterGoalMode 单点接入）；`CodeSessionSnapshotOps.kt`
+ * （#152 会话快照 restore/build/persist 三动作面）。
  */
 @HiltViewModel
 class CodeViewModel @Inject constructor(
     @Named("code") private val codeEngine: AgentEngine,
-    private val workspaceManager: CodeWorkspaceManager,
-    private val codeTodoTool: CodeTodoTool,
-    private val codeSessionStore: CodeSessionStore,
+    internal val workspaceManager: CodeWorkspaceManager,
+    internal val codeTodoTool: CodeTodoTool,
+    internal val codeSessionStore: CodeSessionStore,
+    // v1.4.10 Coding 历史对话：归档仓库（新会话先归档，历史面板可恢复/删除）。
+    internal val codeHistoryStore: CodeHistoryStore,
     private val workspaceRoots: CodeWorkspaceRoots,
     private val userQuestionBridge: UserQuestionBridge,
-    // Issue #164：全局规则（设置页 RulesSettingsSection 编辑）——每次发送前
-    // 同步到引擎，refreshContext 时经 RulesProvider 注入 additionalSystemContext
-    private val settingsRepository: com.apex.agent.ui.screen.settings.SettingsRepository,
-    // v1.2 长任务中心：追踪器（事件流聚合）+ 复制引擎 + 存储（列表面板直读）
-    // + 档位效能统计（长任务记录 → 工作区×档位聚合，档位效能页签数据源）
-    private val longTaskTracker: LongTaskTracker,
-    private val taskCopyEngine: TaskCopyEngine,
-    private val longTaskStore: LongTaskStore,
-    private val thinkingEvolutionTracker: CodeThinkingEvolutionTracker,
+    // v1.8.0 知识库：roleController 按当前专家角色注入专属知识库检索指引
+    internal val knowledgeBaseService: com.apex.agent.knowledge.KnowledgeBaseService,
+    // Issue #164：全局规则（设置页编辑）——发送前同步到引擎，refreshContext 时
+    // 经 RulesProvider 注入（goal 扩展 CodeGoalController.kt 同包消费）
+    internal val settingsRepository: com.apex.agent.ui.screen.settings.SettingsRepository,
+    // v1.2 长任务中心：追踪器/复制引擎/存储。longTaskTracker 供
+    // CodeEventReducer.kt；taskCopyEngine/longTaskStore 供 CodeLongTaskCenterOps.kt。
+    internal val longTaskTracker: LongTaskTracker,
+    // v1.9 角色经验卡：事件流聚合器（沉淀/注入/强化三通道，控制器代理
+    // 见 RoleExperienceController —— God-file 预算：VM 只做暴露）。
+    internal val roleExperienceTracker: RoleExperienceTracker,
+    internal val roleExperienceStore: RoleExperienceStore,
+    // 用户画像（五维长期特征）：发送路径按置信度 Top-8 注入 sessionExtras
+    //（存储在 filesDir/user_profile，蒸馏入口在记忆页画像分区）。
+    internal val userProfileStore: com.apex.agent.ui.screen.memory.profile.UserProfileStore,
+    internal val taskCopyEngine: TaskCopyEngine,
+    internal val longTaskStore: LongTaskStore,
+    // ═══ 会话用量与通知（上下文圆环详情数据面 + 任务完成通知）═══
+    // usageLedger：逐轮落账（用量仪表盘数据源，圆环详情的会话累计）；
+    // apexNotifications/foregroundTracker/appContext：任务完成通知（设置开关
+    // 真接线 —— 后台时跑完发系统通知，前台静音）。
+    internal val usageLedger: com.apex.agent.usage.UsageLedger,
+    // #221：用量归属会话（运行时层记账读取；切工作区时更新）。
+    internal val currentUsageSession: com.apex.agent.usage.CurrentUsageSession,
+    internal val apexNotifications: com.apex.agent.notify.ApexNotifications,
+    internal val foregroundTracker: com.apex.agent.notify.ForegroundTracker,
+    @dagger.hilt.android.qualifiers.ApplicationContext internal val appContext: android.content.Context,
     // AUTO 档自治选档器（发送前预检 + 运行中深水区升级观察）
     private val adaptiveSelector: CodeAdaptiveThinkingSelector,
     // #197 函数调用二级菜单候选工具（注册表快照；小圆环迁移至 Coding 屏）
@@ -129,59 +164,108 @@ class CodeViewModel @Inject constructor(
     // ═══ #197 Coding 工位升级（从 Agent 屏迁入）═══
     /** 「小圆环」函数调用/工具菜单（Coding 工位独占消费）。 */
     internal val toolkitStore: ChatToolkitStore,
-    /** GitHub PAT 连接（Coding 屏的 gh 连接入口）。 */
+    /** 「功能聚合」16 项能力注入（见 neon/NeonOrbFeatures.kt）。 */
+    internal val neonOrbStore: com.apex.agent.ui.screen.code.neon.NeonOrbStore,
+    /** GitHub PAT 连接（Coding 屏的 gh 连接入口 + v1.9 MCP 配置面对话框）。 */
     internal val githubTokenManager: GithubTokenManager,
-    /** 斜杠路由需要 MCP 连接快照（/mcp:<id> 引导提示词据此生成）。 */
-    private val mcpManager: com.apex.agent.core.tools.mcp.McpManager,
+    /** 斜杠路由需要 MCP 连接快照（/mcp:<id> 引导提示词据此生成）；
+     * v1.9 起同时喂给输入框 GitHub 图标的 MCP 配置对话框（internal）。 */
+    internal val mcpManager: com.apex.agent.core.tools.mcp.McpManager,
+    // Plugin System v2：斜杠路由需要功能性插件指令贡献快照
+    // （/plugin:<id> 命中时注入插件声明的定制 prompt）。
+    private val unifiedPluginRegistry: com.apex.agent.plugin.host.functional.UnifiedPluginRegistry,
     // i18n：用户可见系统消息按当前语言取词（组合外场景）
-    private val languageManager: com.apex.agent.ui.language.LanguageManager
+    //（GOAL 扩展同包消费：目标设定/停止/重启回执）
+    internal val languageManager: com.apex.agent.ui.language.LanguageManager,
+    // v3 GOAL 目标模式：全局目标协调器（与深潜线引擎共享单例；每轮验收钩子
+    // 在引擎侧，UI 侧驱动设定弹层/状态卡——扩展接线见 CodeGoalController.kt）
+    internal val goalCoordinator: GoalModeCoordinator,
+    // ═══ v6 Git 工作区（右上角面板直读）：PRoot 沙箱 git 执行器 ═══
+    private val gitRunner: com.apex.agent.core.codetools.git.GitCommandRunner,
+    // v1.3 设备分级采样（PartSkin spec §7.9.2）：冷启动/会话边界采样一次
+    internal val deviceTierProvider: com.apex.agent.ui.screen.settings.DeviceTierProvider,
+    // SPE-08 P1-1：流式回合诊断存储（诊断页「最近 N 次流式回合」；
+    // 收束入口见 CodeStreamDiagnosticsOps.kt）
+    internal val streamTurnStore: com.apex.agent.diagnostics.StreamTurnDiagnosticsStore
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(CodeUiState())
+    // ═══ v1.6 工作区浏览器（全屏页，apex-kit-workspace）═══
+    // 适配层薄包装（git 通道/工作区根/日志/引擎事件映射）住 WorkspaceKitHolder.kt；
+    // 控制器随 VM 生命周期，导航往返保持状态。
+    internal val workspaceKit by lazy {
+        WorkspaceKitHolder(gitRunner, workspaceRoots, viewModelScope)
+    }
+
+    internal val _uiState = MutableStateFlow(CodeUiState())
     val uiState: StateFlow<CodeUiState> = _uiState.asStateFlow()
 
-    /** 工具/权限门的主动提问（AgentQuestion 结构化选项；与 ask_user 的纯文本通道并存）。 */
+    /** 工具/权限门的主动提问（AgentQuestion 结构化选项；与 AskUser 的纯文本通道并存）。 */
     val pendingAgentQuestion: StateFlow<AgentQuestion?> = userQuestionBridge.pendingQuestion
 
-    private val idGen = AtomicLong(0)
+    internal val idGen = AtomicLong(0)
     private var runJob: Job? = null
     private var editorJob: Job? = null
-    private var sessionPersistJob: Job? = null
+    // 防抖落盘 job（扩展读写：CodeSessionSnapshotOps.kt 的 scheduleSessionPersist）
+    internal var sessionPersistJob: Job? = null
     private var sessionLoadJob: Job? = null
 
     // ═══ 胶囊时间轴（渲染通道数据源）═══
-    // 渲染半边：事件归约进 session，25ms ticker 拉快照进 uiState.stream；
-    // 副作用半边（长任务追踪/深水区观察器/落盘）仍走既有 reduce——双通道
-    // 彻底分流，引擎与既有功能零改动。
+    // 渲染半边：事件归约进 session，自适应 ticker（SPE-07 P1-1，16/25/33ms
+    // 忙档 + 50/250ms 空闲巡逻 + 事件唤醒）拉快照进 uiState.stream；副作用
+    // 半边（长任务追踪/深水区观察器/落盘）仍走既有 reduce——双通道彻底分流。
 
     /** 胶囊时间轴会话（VM 自持，跨 run 累积；恢复/清空见 bind/clear）。 */
-    private val streamSession = CodeStreamSession()
+    internal val streamSession = CodeStreamSession()
 
-    /** 渲染 ticker：运行期每 25ms 拉一次快照（≤40Hz 攒批）。 */
-    private var renderJob: Job? = null
+    /** 渲染 ticker：运行期按 [renderTickerPolicy] 自适应节拍拉快照。 */
+    internal var renderJob: Job? = null
+
+    /** 渲染节拍自适应策略（SPE-07 P1-1，纯状态机，见 CodeRenderTickerPolicy.kt）。 */
+    internal val renderTickerPolicy = RenderTickerPolicy()
+
+    /** 事件唤醒信号（合流至多 1 个 pending；事件到达即打断 ticker 的巡逻延迟）。 */
+    internal val renderWakeSignal = Channel<Unit>(Channel.CONFLATED)
+
+    /** 回复聚合器（P1 Event Aggregator，类与纪律见 CodeResponseAggregator.kt）。 */
+    internal val responseAggregator = ResponseAggregator()
+
+    /** 工具输出分片聚合器（perf P0-1，同款 25ms 批量归约，见 CodeToolChunkAggregator.kt）。 */
+    internal val toolChunkAggregator = ToolChunkAggregator()
 
     /** 当前绑定的会话归属工作区（null = 尚未绑定，不落盘）。 */
-    private var boundWorkspaceId: String? = null
+    internal var boundWorkspaceId: String? = null
 
     // ═══ AUTO 档自治状态（coding 专属，引擎零参与）═══
 
-    /** 本轮 run 累计工具调用数（深水区升级观察器信号）。 */
-    private var runToolCalls = 0
-
-    /** 本轮 run 最近 3 次工具成败滑窗（true = 成功）。 */
-    private val recentToolOutcomes = ArrayDeque<Boolean>()
+    /**
+     * AUTO 预检/升级信号追踪器（v1.5.17 提取自本 VM 四个散落字段，状态机
+     * 契约见 CodeAdaptiveSignalTracker KDoc）：预检读归档 → beginRun 只清
+     * 本轮 → onToolComplete×N → endRun 归档；会话边界（新会话/恢复历史/
+     * 切工作区）经 [resetAdaptiveThinkingSignals] 全量清零——旧会话的错误史
+     * 不再泄漏进新会话首检。
+     */
+    private val adaptiveSignals = CodeAdaptiveSignalTracker()
 
     /** 本轮 run 生效的深度档（AUTO 预检解析结果；非 AUTO = 用户显式档）。 */
     private var effectiveRunLevel: CodeThinkingLevel = CodeThinkingLevel.STANDARD
 
-    /** 上一轮 run 的工具调用总数（下轮 AUTO 预检的错误史信号）。 */
-    private var lastRunToolCalls = 0
+    /**
+     * 本轮预检基准档（SPE-02 回落目标）：AUTO 预检 select 的结果。
+     * 深水区升级后的「稳定回落」观察器以它为目标（回落档位 = 当轮
+     * select() 结果，不凭空抬升也不低于预检口径）。
+     */
+    private var autoEscalationBaseLevel: CodeThinkingLevel = CodeThinkingLevel.STANDARD
 
-    /** 上一轮 run 的错误数（引擎 3 滑窗口径近似：run 内滑窗错误峰值）。 */
-    private var lastRunErrors = 0
+    // ═══ #209 错误条「重试」通道 ═══
 
-    /** 工作区恢复/冲刷串行锁（快速连续切换时防交错）。 */
-    private val sessionMutex = Mutex()
+    /** 最近一次引擎运行的完整输入（含 @引用块/斜杠提示词；重试时原样重放）。 */
+    private var lastRunEngineInput: String? = null
+
+    /** 最近一次引擎运行的展示目标（长任务追踪文案；与 runEngine 口径一致）。 */
+    private var lastRunDisplayGoal: String? = null
+
+    /** 工作区恢复/冲刷串行锁（快速连续切换时防交错；历史恢复复用同一把锁）。 */
+    internal val sessionMutex = Mutex()
 
     /**
      * 会话落盘的独立 scope：viewModelScope 在 onCleared 之前就被取消，
@@ -189,8 +273,35 @@ class CodeViewModel @Inject constructor(
      */
     private val persistScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val codeEngineImpl: CodeAgentEngine?
-        get() = codeEngine as? CodeAgentEngine
+    internal val codeEngineImpl: CodeEngineFacade?
+        get() = codeEngine as? CodeEngineFacade
+
+    /**
+     * 双思考逻辑路由门面（右上角切换入口）。@Named("code") 自记忆 P0
+     * 起为 MemoryAwareCodeEngine 包装（四线记忆闭环）—— 先解包再回退裸
+     * DualLogicCodeEngine（防御其它装配形态，如测试 / 未来再包装）。
+     */
+    internal val dualLogicEngine: DualLogicCodeEngine?
+        get() = (codeEngine as? MemoryAwareCodeEngine)?.dualLogic
+            ?: codeEngine as? DualLogicCodeEngine
+
+    // ═══ v6 控制器接线（lazy：viewModelScope 构造后才可用；God-file 预算：
+    //     专家模板逻辑独立成文件，VM 只做暴露）═══
+
+    /** Coding 专家模板（模式行胶囊；设置流 → 引擎人设通道）。 */
+    internal val roleController: CodeRoleController by lazy {
+        CodeRoleController(settingsRepository, { codeEngineImpl }, knowledgeBaseService, viewModelScope)
+    }
+
+    /** 角色经验卡（沉淀/注入/强化三通道；经验域逻辑全在控制器内）。 */
+    internal val roleExperience: RoleExperienceController by lazy {
+        RoleExperienceController(
+            tracker = roleExperienceTracker,
+            store = roleExperienceStore,
+            settingsRepository = settingsRepository,
+            scope = viewModelScope
+        )
+    }
 
     init {
         // 工作区清单 + 激活恢复（manager init 已恢复 activeId）
@@ -199,48 +310,92 @@ class CodeViewModel @Inject constructor(
         if (active != null) {
             bindWorkspace(active)
         }
-        // v1.2 七档思考系统：恢复持久化档位（codeThinkingLevel 与聊天页
-        // thinkingLevelOverride 互不干扰，两模式各自记忆）
+        // v1.2 七档思考系统：恢复持久化档位（本字段独立记忆，
+        // 不随任何复制/模板选项覆盖 —— 档位覆盖位已随任务模板功能移除）
         restoreThinkingLevel()
+        // v1.5 双思考逻辑：恢复档位（空/未知 → 深潜）；先于 setMode（GOAL 恒深潜）
+        restoreLogicMode()
+        restoreActiveAtColdStart() // v1.7 部件皮肤会话边界状态机（v1.2/v1.3）
+        observeApplyModeAndTier()
+        observeContextDenominator() // 圆环分母热刷新（Profile 流订阅，CodeUsageOps.kt）
         // #197：Coding 屏模式同步（引擎侧恒为 BUILD/PLAN；未知值回退 BUILD）
         val startupMode = settingsRepository.agentSettings.value.let { s ->
             s.codeExecutionMode.takeIf { it.isNotBlank() }
                 ?.let { runCatching { AgentMode.valueOf(it.uppercase()) }.getOrNull() }
         } ?: AgentMode.BUILD
         setMode(if (startupMode in CODING_SCREEN_MODES) startupMode else AgentMode.BUILD)
+        // v4 三档自主级别：按当前模式恢复记忆的级别 + 引擎推送
+        //（扩展接线见 CodeModeAutonomyController.kt）
+        restoreAutonomy()
+        // v3 GOAL：协调器全局状态流 → uiState.goalState（状态卡数据源）
+        setupGoalController()
     }
+
+    // ═══ v1.5 思考逻辑四线（深潜 = 自研七档 / 标准 = 任务循环 / 织造 = 经纬交织 / 信使 = 驿传调度）═══
+
+    // ═══ 思考逻辑切换/恢复（setLogicMode/restoreLogicMode）已拆至
+    //     CodeLogicModeOps.kt（God-file 预算纪律；调用点零改动）═══
+
+    /** 上下文查看（路由到当前激活逻辑线；深潜线全量，kit 线统计降级）。 */
+    fun contextSnapshot(): CodeContextSnapshot? = codeEngineImpl?.contextSnapshot()
 
     // ═══ #197 执行模式（Build/Plan）═══
 
     /**
      * 切换执行模式：持久化（AgentSettings.codeExecutionMode）+ 引擎
-     * patchConfig 即时生效。PLAN = 先出完整计划、确认后执行；BUILD = 边想边做。
+     * patchConfig 即时生效。PLAN = 先出完整计划、确认后执行；BUILD = 边想边做；
+     * GOAL（v3）= 目标驱动验收循环——切入时强制深潜线（验收只在深潜线引擎
+     * 接线）+ 无活动目标弹设定 Sheet（逻辑单点在 [onEnterGoalMode]，选择器
+     * onSelect 与 init 恢复共用本路径）。
      */
     fun setMode(mode: AgentMode) {
         if (mode !in CODING_SCREEN_MODES) return
         settingsRepository.updateAgentSettings { copy(codeExecutionMode = mode.name.lowercase()) }
         _uiState.update { it.copy(mode = mode) }
         codeEngineImpl?.updateMode(mode)
+        if (mode == AgentMode.GOAL) onEnterGoalMode()
     }
 
     /** #197 PLAN 模式计划确认/驳回（人控门；勾选/重排同 Agent 屏口径）。 */
     fun confirmPlan(confirmed: Boolean, enabledSteps: List<Int>? = null, order: List<Int>? = null) {
         _uiState.update { it.copy(awaitingPlanConfirmation = false) }
-        codeEngineImpl?.submitPlanConfirmation(confirmed, enabledSteps, order)
+        // #340：回执 false/null = 无挂起等待（迟到/被 abort）——显式提示「未送达」。
+        if (codeEngineImpl?.submitPlanConfirmation(confirmed, enabledSteps, order) != true) {
+            appendSystemMessage(languageManager.getString(R.string.chat_plan_confirm_late))
+        }
     }
 
-    // ═══ #197 斜杠指令管线（Coding 工位：coding 域技能/MCP）═══
+    // ═══ #197 斜杠指令管线（Coding 工位：coding 域技能/MCP）；v5 多选 chip ═══
 
-    /** 挂起中的流水线指令胶囊（[/> skill: 名字]；发送时拼回斜杠命令）。 */
-    private val _pendingCommand = MutableStateFlow<PendingPipelineCommand?>(null)
-    val pendingCommand: StateFlow<PendingPipelineCommand?> = _pendingCommand.asStateFlow()
+    /**
+     * 当前挂在输入框内的技能 chip 列表（顺序 = 追加顺序；type:id 去重）。
+     * 发送时：单枚拼回 `/type:id` 走既有斜杠路由；多枚逐个路由后合并为
+     * 一轮引擎执行（见 [sendMessage] / [handleMultiChipPipeline]）。
+     */
+    private val _pendingCommands = MutableStateFlow<List<PendingPipelineCommand>>(emptyList())
+    val pendingCommands: StateFlow<List<PendingPipelineCommand>> = _pendingCommands.asStateFlow()
 
-    fun setPendingCommand(command: PendingPipelineCommand) {
-        _pendingCommand.value = command
+    /** 排队任务的 chip 恢复通道（CodeTaskQueueController 扩展访问）。 */
+    internal fun restorePendingCommands(commands: List<PendingPipelineCommand>) {
+        _pendingCommands.value = commands.distinctBy { it.type + ":" + it.id }
     }
 
-    fun clearPendingCommand() {
-        _pendingCommand.value = null
+    /** 追加一枚技能 chip（斜杠菜单/实时联想选中项；重复选择不重复挂载）。 */
+    fun addPendingCommand(command: PendingPipelineCommand) {
+        val key = command.type + ":" + command.id
+        _pendingCommands.value =
+            if (_pendingCommands.value.any { (it.type + ":" + it.id) == key }) _pendingCommands.value
+            else _pendingCommands.value + command
+    }
+
+    /** 整体同步 chip 集合（输入框内退格/点击删除 → 回报新集合；幂等）。 */
+    fun setPendingCommands(commands: List<PendingPipelineCommand>) {
+        _pendingCommands.value = commands.distinctBy { it.type + ":" + it.id }
+    }
+
+    /** 清空全部 chip。 */
+    fun clearPendingCommands() {
+        _pendingCommands.value = emptyList()
     }
 
     /** /mcp:github 未连接信号（UI 收集后打开 GithubTokenDialog）。 */
@@ -251,33 +406,109 @@ class CodeViewModel @Inject constructor(
      * 斜杠命令分派：路由出系统消息 + 引擎提示词后执行；/mcp:github 未连接
      * 时只发信号不执行（与 Agent 屏旧实现同语义，但可见域是 coding 域）。
      */
-    private fun handleSlashCommand(command: String) {
+    private fun handleSlashCommand(command: String, displayGoal: String? = null) {
         val parsed = SlashCommandParser.parse(command) ?: run {
             // 解析失败：当普通消息走引擎（不吞用户输入）
-            runEngine(command)
+            runEngine(command, displayGoal = displayGoal)
+            return
+        }
+        // ═══ v1.5 /logic:<mode> — 本地路由命令：切换双思考逻辑 ═══
+        // 纯 ViewModel 状态操作（持久化 + 门面路由 + 会话现场保留），必须在此
+        // 截获、不进通用路由。运行中拒绝切换与选择器入口同口径（防丢现场）。
+        if (parsed is SlashCommand.Logic) {
+            handleLogicCommand(parsed)
             return
         }
         val context = SlashRouteContext(
             githubConnected = githubTokenManager.isConnected(),
             githubUsername = githubTokenManager.getUsername(),
-            mcpConnected = mcpManager.getConnectedServers().toSet()
+            mcpConnected = mcpManager.getConnectedServers().toSet(),
+            functionalCommands = unifiedPluginRegistry.functionalSlashCommands()
+                .associateBy { it.commandId }
         )
         val route = SlashCommandRouter.route(parsed, context)
-        _uiState.update { state ->
-            state.copy(
-                messages = state.messages + CodeChatMessage(
-                    id = idGen.incrementAndGet(),
-                    CodeChatMessage.Role.SYSTEM,
-                    route.systemMessage
-                )
-            )
-        }
+        // 路由回执双写时间轴（injectSystem）：时间轴是唯一渲染面，只写遗留
+        // messages 列表等于「用户看不见」——MCP 未连接门控提示尤其不能丢。
+        appendSystemMessage(route.systemMessage)
         if (route.requestGithubConnect) {
             _requestGithubConnect.tryEmit(Unit)
             return
         }
         if (route.agentPrompt.isNotBlank()) {
-            runEngine(route.agentPrompt)
+            runEngine(route.agentPrompt, displayGoal = displayGoal)
+        }
+    }
+
+    /**
+     * v5 多 chip 流水线：输入框内 ≥2 枚技能 chip 时的发送执行体。
+     *
+     * 与 Agent 屏 [com.apex.agent.ui.screen.agent.AgentChatViewModel] 的同名
+     * 方法同构：逐 chip 解析路由（系统消息逐条入轴、MCP/连接态门控拦截不
+     * 阻断其余 chip），有效 agentPrompt 合并 + 用户附加文本 → **单轮**
+     * runEngine。displayGoal 用 chip 标签组合（无附加文本时用户气泡可读）。
+     */
+    private fun handleMultiChipPipeline(chips: List<PendingPipelineCommand>, userText: String) {
+        val context = SlashRouteContext(
+            githubConnected = githubTokenManager.isConnected(),
+            githubUsername = githubTokenManager.getUsername(),
+            mcpConnected = mcpManager.getConnectedServers().toSet(),
+            functionalCommands = unifiedPluginRegistry.functionalSlashCommands()
+                .associateBy { it.commandId }
+        )
+        val prompts = mutableListOf<String>()
+        chips.forEach { chip ->
+            val parsed = SlashCommandParser.parse(chip.toCommandToken()) ?: return@forEach
+            val route = SlashCommandRouter.route(parsed, context)
+            // 同 handleSlashCommand：路由回执双写时间轴（时间轴是唯一渲染面）。
+            appendSystemMessage(route.systemMessage)
+            if (route.requestGithubConnect) {
+                _requestGithubConnect.tryEmit(Unit)
+                return@forEach
+            }
+            if (route.agentPrompt.isNotBlank()) prompts += route.agentPrompt
+        }
+        if (prompts.isEmpty()) return
+
+        val combined = buildString {
+            prompts.forEachIndexed { index, prompt ->
+                if (index > 0) append("\n\n")
+                append(prompt)
+            }
+            if (userText.isNotBlank()) {
+                append("\n\n用户附加要求: ").append(userText)
+            }
+        }
+        // 用户气泡可读化：chip 选择永远可见（与多 chip 管线同款「选了什么 +
+        // 补了什么」口径），不再被附加文本吞掉。
+        val chipPart = chips.joinToString(" + ") { "「${it.label}」" }
+        val displayGoal = if (userText.isNotBlank()) "$chipPart $userText" else chipPart
+        runEngine(combined, displayGoal = displayGoal)
+    }
+
+    /**
+     * `/logic:<mode>` 执行体（v1.5 双引擎切换的命令通道，与右上角选择器
+     * 共用 [setLogicMode] 同一入口：持久化 + 门面路由 + 会话现场保留 +
+     * 系统消息回执）。
+     *
+     * - id 解析走 [StandardLogicMode.fromName] 容错别名（standard/std →
+     *   标准；deep_dive/deep/apex → 深潜）；
+     * - 未知 id → 引导消息（不进引擎、不改状态）；
+     * - 运行中拒绝切换 → 与选择器同口径提示（[R.string.code_logic_switch_blocked]）。
+     */
+    private fun handleLogicCommand(command: com.apex.agent.slash.SlashCommand.Logic) {
+        val mode = StandardLogicMode.fromName(command.id)
+        if (mode == null) {
+            appendSystemMessage(
+                languageManager.getString(R.string.code_logic_unknown_mode, command.id)
+            )
+            return
+        }
+        // setLogicMode 内部已发切换回执（code_logic_switched_*）与
+        // isRunning 拒绝分支（返回 false）；此处补齐命令通道的失败提示。
+        if (!setLogicMode(mode)) {
+            appendSystemMessage(
+                languageManager.getString(R.string.code_logic_switch_blocked)
+            )
         }
     }
 
@@ -287,36 +518,56 @@ class CodeViewModel @Inject constructor(
         settingsRepository.llmConfiguredFlow(viewModelScope)
 
     /** 函数调用二级菜单候选工具（注册表快照，含类别/风险元数据）。 */
-    fun availableTools(): List<com.apex.agent.ui.screen.agent.ToolRef> =
+    fun availableTools(): List<com.apex.agent.ui.chatkit.ToolRef> =
         toolRegistry.getAllTools()
             .map { tool ->
-                com.apex.agent.ui.screen.agent.ToolRef(
+                com.apex.agent.ui.chatkit.ToolRef(
                     id = tool.id,
                     name = tool.name,
                     category = tool.metadata.category,
                     highRisk = tool.metadata.isHighRisk
                 )
             }
-            .sortedWith(compareBy<com.apex.agent.ui.screen.agent.ToolRef> { it.category?.order ?: Int.MAX_VALUE }.thenBy { it.id })
+            .sortedWith(compareBy<com.apex.agent.ui.chatkit.ToolRef> { it.category?.order ?: Int.MAX_VALUE }.thenBy { it.id })
 
     // ═══ 消息发送 ═══
 
     fun sendMessage(text: String) {
         val trimmed = text.trim()
-        val hasPendingCapsule = _pendingCommand.value != null
-        if ((trimmed.isEmpty() && !hasPendingCapsule) || _uiState.value.isRunning) return
+        val pendingCmds = _pendingCommands.value
+        if (trimmed.isEmpty() && pendingCmds.isEmpty()) return
 
-        // ═══ #197 斜杠管线：胶囊拼回命令；/ 开头文本走路由 ═══
+        // ═══ 任务排队：运行中发出的第二条任务入队（逻辑住 CodeTaskQueueController）═══
+        if (_uiState.value.isRunning && enqueueWhileRunning(trimmed, pendingCmds)) return
+
+        // ═══ v5 多 chip：≥2 枚时逐个路由合并为一轮引擎执行 ═══
+        if (pendingCmds.size >= 2) {
+            _pendingCommands.value = emptyList()
+            _uiState.update { it.copy(inputDraft = "") }
+            handleMultiChipPipeline(pendingCmds, trimmed)
+            return
+        }
+
+        // ═══ #197 斜杠管线：单枚胶囊拼回命令；/ 开头文本走路由 ═══
         // 摘胶囊 + 清草稿（斜杠/普通发送共用收尾），再分派。
-        val pendingCmd = _pendingCommand.value
+        val pendingCmd = pendingCmds.firstOrNull()
         val effectiveText = if (pendingCmd != null) {
             if (trimmed.isEmpty()) pendingCmd.toCommandToken()
             else pendingCmd.toCommandToken() + " " + trimmed
         } else trimmed
-        _pendingCommand.value = null
+        // 选择后发送的用户气泡可读化（v5 反馈「选择后发送不显示在对话」）：
+        // 时间轴 UserEntry 显示「选了什么 chip + 补了什么话」，而不是路由
+        // 展开后的机器提示词；徒手敲的斜杠命令同样显示原始命令文本。
+        val slashDisplayGoal = pendingCmd?.let { chip ->
+            buildString {
+                append("「").append(chip.label).append("」")
+                if (trimmed.isNotBlank()) append(' ').append(trimmed)
+            }
+        } ?: trimmed
+        _pendingCommands.value = emptyList()
         if (effectiveText.startsWith("/")) {
             _uiState.update { it.copy(inputDraft = "") }
-            handleSlashCommand(effectiveText)
+            handleSlashCommand(effectiveText, displayGoal = slashDisplayGoal)
             return
         }
 
@@ -346,30 +597,19 @@ class CodeViewModel @Inject constructor(
     private fun runEngine(engineInput: String, displayGoal: String? = null) {
         val goal = displayGoal ?: engineInput
 
-        // Issue #164：发送前同步全局规则（设置页改动无需重启，下轮生效）。
-        // 引擎侧注入详见 CodeAgentEngine.refreshContext + RulesProvider。
-        codeEngineImpl?.updateGlobalRules(settingsRepository.agentSettings.value.globalRules)
+        // 在同步模型预检/工作区准备之前先把用户消息与助手等待位一起入轴；
+        // 直接发布快照，不等 25ms ticker，更不能等服务端首个 token。
+        streamSession.beginRun(goal)
+        _uiState.update { it.copy(stream = streamSession.snapshot(), isRunning = true, error = null, errorRetriable = false) }
+        // #209：记录本次运行输入 —— 失败后错误条「重试」按原样重放
+        //（sendMessage / 斜杠路由 / 模板启动等所有入口统一覆盖）。
+        lastRunEngineInput = engineInput
+        lastRunDisplayGoal = displayGoal
 
-        // ═══ #197 「小圆环」函数调用（Coding 工位独占）：会话上下文附加段 +
-        // v4 强制工具计划。prepareForTask 的 refreshContext 会把 extras 拼进
-        // additionalSystemContext（顺序：先存 extras 再刷上下文）。 ═══
-        codeEngineImpl?.updateSessionExtras(toolkitStore.buildSessionContext())
-        codeEngineImpl?.updateForcedTools(
-            forcedToolIds = toolkitStore.forcedToolIds(),
-            exposeAll = toolkitStore.exposeAllToolsEnabled()
-        )
 
-        codeEngineImpl?.prepareForTask()
-
-        // ═══ AUTO 档自治：发送前预检选档（coding 专属，引擎零参与）═══
-        // 解析结果直接下发给引擎（引擎从不接收 AUTO）；决策进系统消息 +
-        // uiState.adaptiveDecision（选择器旁回显）。非 AUTO 档直接用用户显式档。
-        resolveRuntimeThinkingLevel(goal)
-
-        // v1.2 长任务追踪：本次运行的开始（旧 run 若未收尾会被自动 ABORTED
-        // 收尾判定——见 LongTaskTracker.beginRun 防御语义）。记录的档位
-        // 用用户选择（AUTO 记 AUTO——诚实口径：统计的是"选 AUTO 这个
-        // 决策"的表现，实际生效档在 adaptiveDecision 可追溯）。
+        // v1.2 长任务追踪：本次运行的开始（旧 run 未收尾会被自动 ABORTED
+        // 收尾，见 LongTaskTracker.beginRun 防御）。档位记用户选择（AUTO 记
+        // AUTO——诚实口径，实际生效档在 adaptiveDecision 可追溯）。
         longTaskTracker.beginRun(
             goal = goal,
             workspaceId = boundWorkspaceId ?: "",
@@ -378,44 +618,102 @@ class CodeViewModel @Inject constructor(
             agentMode = _uiState.value.mode.name
         )
 
-        // 深水区升级观察器归零（新 run 重新计数）。
-        runToolCalls = 0
-        recentToolOutcomes.clear()
+        // v1.9 角色经验卡：本轮任务的聚合归零（当前激活角色领卡）。
+        roleExperience.beginRun(goal, _uiState.value.activeWorkspace?.name ?: "")
+
+        // 深水区升级观察器归零（新 run 重新计数；归档信号不动——预检已消费）。
+        adaptiveSignals.beginRun()
 
         // 胶囊时间轴：用户气泡入轴 + 渲染 ticker 启动（25ms ≤40Hz 攒批）。
-        streamSession.beginRun(goal)
+        // 输出展示档/风格本轮捕获（运行中改设置不打断当前轮，见
+        // CodeOutputModeOps.kt / CodeOutputStyleOps.kt）。
         startRenderTicker()
 
         runJob = viewModelScope.launch {
-            _uiState.update { it.copy(isRunning = true, error = null) }
+            // SPE-08 P1-3：本回合 job 快照（finally 守卫用——排队接力只在
+            // 「runJob 仍是本回合」时启动，被更新的 run 接管后不再踩线）。
+            // 取 coroutineContext[Job] 而非读 runJob 字段：viewModelScope 是
+            // Main.immediate——主线程调用时块体会先于字段赋值同步执行，
+            // 此时 runJob 仍是旧值。
+            val turnJob = coroutineContext[Job]
+            _uiState.update { it.copy(isRunning = true, error = null, errorRetriable = false) }
+            // perf P0-2:全局规则同步 / 画像·聚合·经验段组装 / AUTO 预检 /
+            // prepareForTask(同步磁盘 IO)整体迁出 UI 线程,点击发送不再冻结;
+            // 顺序契约与引擎就绪时点不变(见 CodeEngineContextPrep.kt)。
+            prepareEngineContext(goal)
             var aborted = false
             try {
                 codeEngine.execute(UserInput(text = engineInput)).collect { event ->
                     longTaskTracker.onEvent(event)
+                    roleExperience.onEvent(event)
                     maybeEscalateOnDeepWater(event)
-                    streamSession.onEvent(event)
-                    reduce(event)
+                    // SPE-07 P1-1：事件到达即唤醒渲染拍（空闲巡逻期间首
+                    // token ≤ 1 拍上屏；合流信号零堆积）
+                    renderWakeSignal.trySend(Unit)
+                    if (event is AgentEvent.ThinkingChunk && event.text.contains(GOAL_NOTICE_MARKER)) {
+                        // v3 GOAL：验收结论不走思考卡（默认折叠只有 80 字预览，
+                        // 且下一轮 ThinkingComplete 会整体覆写文本吞掉通知）
+                        // → 注入系统行，时间轴常驻可见并随会话落盘。
+                        // 系统行插队前先冲分片/回复缓冲（边界强制刷新，保顺序）。
+                        flushToolChunks()
+                        responseAggregator.flush { reduce(it) }
+                        appendSystemMessage(event.text.trim())
+                    } else {
+                        streamSession.onEvent(event)
+                    }
+                    when (event) {
+                        // P1 聚合：chunk 进缓冲由 ticker 批量归约；胶囊路径自批
+                        is AgentEvent.ResponseChunk -> responseAggregator.append(event.text)
+                        // perf P0-1：工具输出分片同款进缓冲（多工具并发时行/帧级
+                        // 频率，逐片 reduce = 每片全量复制 messages，多工具卡顿主因）
+                        is AgentEvent.ToolOutputChunk -> {
+                            responseAggregator.flush { reduce(it) }
+                            toolChunkAggregator.append(event.chunk)
+                        }
+                        // 边界事件强制先冲文本/分片再归约（保顺序，见两个聚合器）
+                        else -> {
+                            flushToolChunks()
+                            responseAggregator.flush { reduce(it) }
+                            reduce(event)
+                        }
+                    }
+                    // v1.6 工作区浏览器实时跟随：文件类工具事件 → 库控制器
+                    //（callId 幂等去重在库内；浏览器未打开时仅进 feed，零开销）
+                    workspaceKit.onAgentEvent(event)
                 }
             } catch (e: CancellationException) {
                 aborted = true
                 // abort 或 VM 清理：静默
             } catch (e: Exception) {
-                _uiState.update { it.copy(error = e.message ?: "执行失败") }
+                // collect 异常没有 Error 事件：收束空占位并保留已生成内容。
+                // SPE-08 P1-4：先冲残留正文/分片再上错误条——正文永远在错误
+                // 条之前（旧口径 catch 先发 Error、finally 后冲，时间轴上
+                // 错误条会出现在最后一段正文之前）；finally 保留同款冲刷
+                //（幂等：缓冲已空零开销），覆盖取消/正常收束路径。
+                flushToolChunks()
+                responseAggregator.flush { reduce(it) }
+                val message = sanitizeErrorText(e)
+                streamSession.onEvent(AgentEvent.Error(message, recoverable = true))
+                showError(message, retriable = true)
             } finally {
+                // 取消/收束：冲残留缓冲（先于 isStreaming 收口，冲入文本一并收口）
+                flushToolChunks()
+                responseAggregator.flush { reduce(it) }
                 _uiState.update {
                     it.copy(
                         isRunning = false,
                         messages = it.messages.map { m -> if (m.isStreaming) m.copy(isStreaming = false) else m },
                         contextUsedTokens = codeEngineImpl?.currentTokenCount() ?: 0,
-                        contextMaxTokens = codeEngineImpl?.maxContextTokens() ?: 0,
+                        contextMaxTokens = contextWindowTokens(),
                         todos = codeTodoTool.snapshot()
                     )
                 }
-                // 上一轮错误史归档（下轮 AUTO 预检的输入信号）。
-                lastRunToolCalls = runToolCalls
-                lastRunErrors = recentToolOutcomes.count { !it }
+                // 上一轮错误史归档（下轮 AUTO 预检的输入信号；SPE-02：随
+                // 归档记 goal 指纹——下轮换任务时错误史自动衰减）。
+                adaptiveSignals.endRun(goal)
                 // 渲染收尾：停 ticker 前冲最后一次快照（尾巴事件不丢）。
                 stopRenderTicker()
+                onRunSettled() // v1.3：收束后 idle 点（IMMEDIATE 自动提升，幂等）
                 // v1.2 长任务收尾：状态裁决（中止/失败/完成）+ 长任务判定入库
                 // （短任务返回 null 静默丢弃）；入库后刷新面板数据。
                 val finalError = _uiState.value.error
@@ -424,27 +722,53 @@ class CodeViewModel @Inject constructor(
                     finalError != null -> LongTaskStatus.FAILED
                     else -> LongTaskStatus.COMPLETED
                 }
-                longTaskTracker.endRun(taskStatus, errorMessage = finalError)?.let { record ->
-                    // 档位效能统计摄入（同 fire-and-forget 语义，IO 落盘在
-                    // tracker 内部 scope 完成）
-                    thinkingEvolutionTracker.ingest(record)
-                }
+                longTaskTracker.endRun(taskStatus, errorMessage = finalError)
+                // v1.9 角色经验卡：确定性提炼 + 落卷（纯聊天轮内部静默丢弃）。
+                roleExperience.endRun(taskStatus.name, errorMessage = finalError)
+                // 任务完成通知（设置 → 通知 真接线：后台时跑完发系统通知，
+                // 前台静音；中止不发 —— 用户自己按的停）。
+                notifyRunCompletion(taskStatus, lastRunDisplayGoal)
                 if (_uiState.value.longTaskSheetVisible) refreshLongTasks()
                 scheduleSessionPersist()
+                // 任务排队收尾（干净完成 → 自动接力；失败/中止 → 等确认，见 QueuedTaskPolicy）
+                // SPE-08 P1-3 收尾守卫：本 finally 期间若已被更新的 run 接管
+                //（用户直接发新消息等），旧 run 不再自动接力排队任务——
+                // 新意图优先，旧收尾不踩新执行态（streaming-turn-lifecycle 检查单）。
+                if (runJob === turnJob) {
+                    finalizeQueuedTaskAfterRun(taskStatus)
+                }
             }
         }
     }
 
     fun abort() {
         runJob?.cancel()
+        // 本地防御式收尾（对齐 Agent 屏 abort）：已取消协程上 emit(Aborted) 再抛取消异常、
+        // 事件到不了收集器，不收口则时间轴冻结（气泡挂光标、胶囊无限计时）。
+        streamSession.abortLocally()
         viewModelScope.launch { codeEngine.abort() }
+        // 收口后的时间轴立即冲最终快照，不等不会来的 tick。
         stopRenderTicker()
         _uiState.update { it.copy(isRunning = false) }
+        onRunSettled() // v1.3：点停同样到 idle 点（幂等，与 finally 不重复）
     }
 
     fun submitUserInput(answer: String) {
         _uiState.update { it.copy(pendingQuestion = null) }
         codeEngine.submitUserInput(answer)
+    }
+
+    /**
+     * #509：用户取消挂起的提问（返回键 / 取消按钮）。
+     *
+     * 必须同时关界面**并**唤醒引擎等待 —— 只清 `pendingQuestion` 会让引擎
+     * 继续挂在 5 分钟超时上，界面看似已取消而任务实际停摆。
+     * `cancelUserInput()` 以空答案唤醒，引擎侧由 `AskUserOutcome.NoAnswer`
+     * 明确告知模型「没有作答」，不再伪造 `User answered:`。
+     */
+    fun cancelPendingQuestion() {
+        _uiState.update { it.copy(pendingQuestion = null) }
+        codeEngine.cancelUserInput()
     }
 
     /** 用户回答了工具/权限门的结构化提问（QuestionCard 回传）。 */
@@ -466,27 +790,47 @@ class CodeViewModel @Inject constructor(
         userQuestionBridge.submit(AgentAnswer(questionId = question.id, skipped = true))
     }
 
-    fun dismissError() {
-        _uiState.update { it.copy(error = null) }
+    /** #237：用户看过了通知恢复提示（或点了「去开启」）—— 不再重复展示。 */
+    fun dismissNotificationRecovery() {
+        _uiState.update { it.copy(notificationRecoveryPending = false) }
     }
 
-    fun clearConversation() {
+    fun dismissError() {
+        _uiState.update { it.copy(error = null, errorRetriable = false) }
+    }
+
+    /**
+     * #209 错误条「重试」：原样重放最近一次引擎运行（runEngine 同路径 ——
+     * 不重复追加用户气泡，对话历史语义与 Agent 屏 retryLastUser 一致）。
+     * 无可重放运行或仍在运行时空操作。
+     */
+    fun retryLastRun() {
+        val input = lastRunEngineInput ?: return
         if (_uiState.value.isRunning) return
-        codeEngineImpl?.clearConversation()
-        codeTodoTool.clear()
-        boundWorkspaceId?.let { wsId ->
-            viewModelScope.launch {
-                withContext(Dispatchers.IO) { runCatching { codeSessionStore.clear(wsId) } }
-            }
-        }
-        streamSession.clear()
-        _uiState.update {
-            it.copy(
-                messages = emptyList(), todos = emptyList(), contextUsedTokens = 0,
-                inputDraft = "", editorFilePath = null, editorFile = null, editorError = null,
-                stream = CodeStreamSnapshot()
-            )
-        }
+        runEngine(input, lastRunDisplayGoal)
+    }
+
+    /**
+     * 错误条统一出口（#209）：[retriable] = true 时 UI 渲染「重试」按钮 ——
+     * 仅引擎运行失败类错误（引擎 Error 事件按 recoverable 透传、collect 异常
+     * 恒为 true）；参数校验/状态冲突类（任务运行中、工作区冲突等）默认 false，
+     * 避免把重放入口挂在语义无关的错误上。
+     */
+    internal fun showError(message: String, retriable: Boolean = false) {
+        _uiState.update { it.copy(error = message, errorRetriable = retriable) }
+    }
+
+    /**
+     * 异常 → 错误条可读文案（#209；#312 资源化）：三段策略见
+     * [CodeErrorText]（God-file 预算：净化逻辑拆至独立文件，VM 只留代理）。
+     */
+    internal fun sanitizeErrorText(e: Throwable): String =
+        CodeErrorText.sanitize(e, languageManager)
+
+    fun clearConversation() {
+        // v1.4.10：新会话 = 先归档再清空（旧实现物理删除，历史不可找回）。
+        // 实现住 CodeHistoryController.kt（God-file 预算：VM 只减不增）。
+        clearConversationWithArchive()
     }
 
     // ═══ 思考档位（coding 专属七档）═══
@@ -522,245 +866,111 @@ class CodeViewModel @Inject constructor(
     }
 
     /**
-     * AUTO 档发送前预检：解析出本轮生效深度档并下发引擎。
+     * 会话边界的 AUTO 信号全量清零（v1.5.17 修复跨会话泄漏）：
+     *
+     * 新会话 / 恢复历史 / 切换工作区都是会话边界——旧会话的错误史对新会话
+     * 首检毫无意义（上一任务的深水区失败不该抬升新任务档位）。此前四个
+     * 计数器散落本 VM 私有字段、无边界重置，AUTO 首检会把上一会话的信号
+     * 错误地带入新会话（错误史 +2 分且强制升一档，甚至可能触发深水区连环
+     * 失败保底 ULTRACODE）。
+     *
+     * 同时清掉 uiState.adaptiveDecision（选择器旁的旧会话预检回显文案）。
+     * 调用方（CodeHistoryController / bindWorkspace）均已保证非运行中调用。
+     */
+    internal fun resetAdaptiveThinkingSignals() {
+        adaptiveSignals.resetConversation()
+        _uiState.update { it.copy(adaptiveDecision = null) }
+    }
+
+    /**
+     * AUTO 档发送前预检：解析出本轮生效深度档并下发引擎（**四线统一**）。
      *
      * - 预检信号：任务 goal + 上一轮 lastRun 计数/错误史；
      * - 决策进系统消息（可解释）+ uiState.adaptiveDecision（选择器旁回显）；
      * - 生效档写 [effectiveRunLevel]（深水区升级观察器的比较基准）；
-     * - 非 AUTO 档：直接用用户显式档（effectiveRunLevel 同步）。
+     * - 非 AUTO 档：直接用用户显式档（effectiveRunLevel 同步 + 引擎档位
+     *   幂等刷新——切逻辑线后新线引擎同样拿到当前档，缓存不滞留旧值）。
      *
      * 注意：引擎 patchConfig 只接受解析后的具体档（toAgentLevel 映射 +
      * 旋钮补偿在 CodeAgentEngine.updateThinkingLevel 内完成），
-     * 引擎从不感知 AUTO——coding 自治语义。
+     * 引擎从不感知 AUTO——四条逻辑线同语义；标准/织造/信使线的适配器
+     * 收到解析后的档位各自映射回合预算倍率（KitThinkingLevel 等价枚举）。
      */
-    private fun resolveRuntimeThinkingLevel(goal: String) {
+    internal fun resolveRuntimeThinkingLevel(goal: String) {
         val selected = _uiState.value.thinkingLevel
         if (selected != CodeThinkingLevel.AUTO) {
             effectiveRunLevel = selected
             codeEngineImpl?.updateThinkingLevel(selected)
             return
         }
+        // SPE-02 P0-2：任务边界衰减——同一会话内换任务（goal 指纹变化）时
+        // 上一轮错误史归零（旧任务的深水区失败不给新任务抬档）；同任务
+        // 续跑则保留（错误史是「同一任务反复出错」的有效信号）。
+        adaptiveSignals.onNewTaskBoundary(goal)
+        val pre = adaptiveSignals.preCheckSignals()
         val decision = adaptiveSelector.select(
             goalText = goal,
-            lastRunToolCalls = lastRunToolCalls,
-            lastRunErrors = lastRunErrors
+            lastRunToolCalls = pre.lastRunToolCalls,
+            lastRunErrors = pre.lastRunErrors
         )
         effectiveRunLevel = decision.level
+        autoEscalationBaseLevel = decision.level // SPE-02：稳定回落的目标基准
         codeEngineImpl?.updateThinkingLevel(decision.level)
         _uiState.update { it.copy(adaptiveDecision = decision.reason) }
-        appendSystemMessage("🧠 自适应预检：$decision.reason")
+        // #312：前缀文案资源化（decision.reason 为 core 侧生成，另行跟踪）
+        appendSystemMessage(languageManager.getString(R.string.code_adaptive_precheck_fmt, decision.reason))
     }
 
     /**
-     * 运行中深水区升级观察器（AUTO 档专属）：ToolCallComplete 计数 +
-     * 3 次成败滑窗 → [CodeAdaptiveThinkingSelector.escalateOnDeepWater]。
+     * 运行中深水区升降档观察器（AUTO 档专属，四线统一）：
+     * ToolCallComplete 计数 + 3 次成败滑窗 →
+     * [CodeAdaptiveThinkingSelector.escalateOnDeepWater]（升级，SPE-02 后
+     * 带冷却/次数门控）；升级未触发时串联
+     * [CodeAdaptiveThinkingSelector.deescalateOnStabilized]（稳定回落）。
      *
-     * 升级落地：引擎档位热切换（下轮迭代生效）+ 系统消息说明。
+     * 升降落地：引擎档位热切换（下轮迭代生效）+ 编码指令即时重织
+     * （prepareForTask——档位的编码特化指令从本轮后续迭代起跟进）+
+     * 系统消息说明 + Tracker 滞回记账（冷却重启/连击清零/升档计数）。
      * 仅 AUTO 档参与（用户显式选档被尊重，不自动加码）；APEXCODE 已是
-     * 顶档（观察器内部短路）。
+     * 顶档（观察器内部短路）；标准/织造/信使线的 updateThinkingLevel
+     * 为纯字段写（下回合读新倍率），热切换同款安全。
      */
     private fun maybeEscalateOnDeepWater(event: AgentEvent) {
         if (event !is AgentEvent.ToolCallComplete) return
-        runToolCalls++
-        recentToolOutcomes.addLast(event.success)
-        while (recentToolOutcomes.size > RECENT_OUTCOME_WINDOW) recentToolOutcomes.removeFirst()
+        adaptiveSignals.onToolComplete(event.success)
         if (_uiState.value.thinkingLevel != CodeThinkingLevel.AUTO) return
+        val esc = adaptiveSignals.escalationSignals()
+        val gates = adaptiveSignals.adaptiveShiftGates()
         val decision = adaptiveSelector.escalateOnDeepWater(
-            runToolCalls = runToolCalls,
-            recentWindowErrors = recentToolOutcomes.count { !it },
-            current = effectiveRunLevel
-        ) ?: return
+            runToolCalls = esc.runToolCalls,
+            recentWindowErrors = esc.recentWindowErrors,
+            current = effectiveRunLevel,
+            gates = gates
+        )?.also {
+            adaptiveSignals.markEscalation()
+        } ?: adaptiveSelector.deescalateOnStabilized(
+            gates = gates,
+            current = effectiveRunLevel,
+            base = autoEscalationBaseLevel
+        )?.also {
+            adaptiveSignals.markDeescalation()
+        } ?: return
         effectiveRunLevel = decision.level
         codeEngineImpl?.updateThinkingLevel(decision.level)
-        appendSystemMessage("⚠️ ${decision.reason}")
-    }
-
-    // ═══ 长任务中心（v1.2）═══
-
-    /** 打开长任务面板（异步加载当前工作区的长任务记录 + 档位效能统计）。 */
-    fun openLongTaskCenter() {
-        _uiState.update { it.copy(longTaskSheetVisible = true, longTaskLoading = true) }
-        refreshLongTasks()
-        refreshThinkingStats()
-    }
-
-    fun closeLongTaskCenter() {
-        _uiState.update { it.copy(longTaskSheetVisible = false) }
-    }
-
-    /** 刷新长任务列表（IO 读存储；面板可见或收尾入库后调用）。 */
-    private fun refreshLongTasks() {
-        val wsId = boundWorkspaceId
-        if (wsId == null) {
-            _uiState.update { it.copy(longTasks = emptyList(), longTaskLoading = false) }
-            return
-        }
-        viewModelScope.launch {
-            val records = withContext(Dispatchers.IO) {
-                runCatching { longTaskStore.list(wsId) }.getOrDefault(emptyList())
-            }
-            _uiState.update { it.copy(longTasks = records, longTaskLoading = false) }
-        }
-    }
-
-    /** 刷新档位效能统计（IO：首次访问会同步扫一次统计文件）。 */
-    private fun refreshThinkingStats() {
-        val wsId = boundWorkspaceId
-        if (wsId == null) {
-            _uiState.update { it.copy(thinkingStats = null) }
-            return
-        }
-        viewModelScope.launch {
-            val stats = withContext(Dispatchers.IO) {
-                runCatching { thinkingEvolutionTracker.statsFor(wsId) }.getOrNull()
-            }
-            _uiState.update { it.copy(thinkingStats = stats) }
-        }
-    }
-
-    /**
-     * 复制任务（顶级优化核心）：源记录 → 新副本（parentTaskId 链）→
-     * 可选立即重跑（buildRelaunchPrompt 组装上下文后 sendMessage）。
-     */
-    fun copyTask(id: String, options: LongTaskCopyOptions, relaunch: Boolean) {
-        if (_uiState.value.isRunning) {
-            _uiState.update { it.copy(error = "任务运行中，不能复制重跑") }
-            return
-        }
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { taskCopyEngine.copy(id, options) }
-            result.onSuccess { copy ->
-                refreshLongTasks()
-                if (relaunch) {
-                    val prompt = taskCopyEngine.buildRelaunchPrompt(copy, options)
-                    closeLongTaskCenter()
-                    sendMessage(prompt)
-                } else {
-                    appendSystemMessage("已创建任务副本「${copy.title}」（可从长任务面板重跑）")
-                }
-            }.onFailure { e ->
-                _uiState.update { it.copy(error = "复制任务失败：${e.message ?: "未知错误"}") }
-            }
-        }
-    }
-
-    /** 直接重跑一条历史记录（默认携带上下文/todos/文件清单）。 */
-    fun relaunchTask(id: String) {
-        if (_uiState.value.isRunning) {
-            _uiState.update { it.copy(error = "任务运行中，不能重跑") }
-            return
-        }
-        viewModelScope.launch {
-            val record = withContext(Dispatchers.IO) { longTaskStore.get(id) }
-            if (record == null) {
-                _uiState.update { it.copy(error = "任务记录不存在") }
-                return@launch
-            }
-            val prompt = taskCopyEngine.buildRelaunchPrompt(
-                record,
-                LongTaskCopyOptions(includeConversation = true, includeTodos = true, includeFilesList = true)
-            )
-            closeLongTaskCenter()
-            sendMessage(prompt)
-        }
-    }
-
-    /**
-     * 从检查点**续跑**（顶级优化：不从头重跑，接着干）。
-     *
-     * @param checkpointId 指定检查点；null = 最后一个检查点。记录无检查点
-     *   时自动回退到 relaunchTask 语义（无进度可续，只能重跑）。
-     */
-    fun resumeTask(id: String, checkpointId: String? = null) {
-        if (_uiState.value.isRunning) {
-            _uiState.update { it.copy(error = "任务运行中，不能续跑") }
-            return
-        }
-        viewModelScope.launch {
-            val record = withContext(Dispatchers.IO) { longTaskStore.get(id) }
-            if (record == null) {
-                _uiState.update { it.copy(error = "任务记录不存在") }
-                return@launch
-            }
-            val resumePrompt = taskCopyEngine.buildResumePrompt(record, checkpointId)
-            closeLongTaskCenter()
-            if (resumePrompt.isNotEmpty()) {
-                sendMessage(resumePrompt)
-            } else {
-                // 无检查点可续 → 回退重跑（并在对话里说明）
-                appendSystemMessage("该任务无检查点可续跑，已改为带上下文重跑")
-                relaunchTask(id)
-            }
-        }
-    }
-
-    /** 删除一条长任务记录。 */
-    fun deleteLongTask(id: String) {
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) { runCatching { longTaskStore.delete(id) } }
-            refreshLongTasks()
-        }
-    }
-
-    /** 与父任务对比运行差异（复制链对比，结果以系统消息形式进对话）。 */
-    fun compareWithParent(id: String) {
-        viewModelScope.launch {
-            val record = withContext(Dispatchers.IO) { longTaskStore.get(id) }
-            val parentId = record?.parentTaskId
-            if (record == null || parentId == null) {
-                _uiState.update { it.copy(error = "无父任务可对比（非复制运行）") }
-                return@launch
-            }
-            val parent = withContext(Dispatchers.IO) { longTaskStore.get(parentId) }
-            if (parent == null) {
-                _uiState.update { it.copy(error = "父任务记录已删除") }
-                return@launch
-            }
-            val diff = LongTaskDiff.compare(parent, record)
-            appendSystemMessage(LongTaskDiff.renderText(diff, parent.title, record.title))
-        }
-    }
-
-    /** 从内置模板启动任务：应用推荐档位 + todo 骨架 + goal 模板发送。 */
-    fun startFromTemplate(key: String) {
-        val template = LongTaskTemplates.byKey(key) ?: return
-        val ws = _uiState.value.activeWorkspace
-        val record = LongTaskTemplates.instantiate(
-            template,
-            ws?.workspaceId ?: "",
-            ws?.name ?: ""
+        // 升降档的编码特化指令即时重织（深潜线 refreshContext 按新档取
+        // directive；kit 线 prepareForTask 为空实现/轻刷新，同通道零风险）。
+        codeEngineImpl?.prepareForTask()
+        appendSystemMessage(
+            languageManager.getString(R.string.code_adaptive_escalate_fmt, decision.reason)
         )
-        // 推荐档位落地（持久化 + 引擎三通道 + 原生 effort 同步）
-        CodeThinkingLevel.fromName(template.recommendedThinkingLevel)
-            ?.let { setThinkingLevel(it) }
-        // todo 骨架预置（pending 状态，模型后续可改写）
-        runCatching {
-            codeTodoTool.restore(
-                template.todoSkeleton.map { CodeTodoTool.Todo(content = it, status = "pending", priority = "medium") }
-            )
-        }.onFailure { AppLogger.instance.warn(LogCategory.UI, "LongTask", "模板 todo 预置失败：${it.message}") }
-        _uiState.update { it.copy(todos = codeTodoTool.snapshot()) }
-        closeLongTaskCenter()
-        sendMessage(record.goal)
     }
 
     /** 追加一条系统消息（时间轴主通道 + 旧消息通道双写，仅 UI 展示）。 */
-    private fun appendSystemMessage(text: String) {
+    internal fun appendSystemMessage(text: String) {
         streamSession.injectSystem(text)
         _uiState.update {
             it.copy(messages = it.messages + CodeChatMessage(idGen.incrementAndGet(), CodeChatMessage.Role.SYSTEM, text))
         }
-    }
-
-    /** todo → 可渲染行（追踪器快照用：「☑ 文本」）。 */
-    private fun renderTodosForTracker(todos: List<CodeTodoTool.Todo>): List<String> = todos.map { todo ->
-        val mark = when (todo.status) {
-            "completed" -> "☑"
-            "in_progress" -> "◐"
-            "cancelled" -> "✕"
-            else -> "☐"
-        }
-        "$mark ${todo.content}"
     }
 
     // ═══ 输入草稿（#154：@file:line 程序化插入通道）═══
@@ -802,9 +1012,16 @@ class CodeViewModel @Inject constructor(
                 }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: EditorFileException) {
+                // #312：数据层稳定错误码 → 本地化文案（编辑器面板错误行）。
+                if (_uiState.value.editorFilePath == trimmed) {
+                    _uiState.update { it.copy(editorLoading = false, editorError = editorErrorText(e)) }
+                }
             } catch (e: Exception) {
                 if (_uiState.value.editorFilePath == trimmed) {
-                    _uiState.update { it.copy(editorLoading = false, editorError = e.message ?: "文件加载失败") }
+                    // #209 收尾：编辑器加载失败同样走 sanitize —— 裸 message
+                    // （英文堆栈/null）不直出错误行。
+                    _uiState.update { it.copy(editorLoading = false, editorError = sanitizeErrorText(e)) }
                 }
             }
         }
@@ -813,6 +1030,23 @@ class CodeViewModel @Inject constructor(
     fun closeEditor() {
         editorJob?.cancel()
         _uiState.update { it.copy(editorFilePath = null, editorFile = null, editorLoading = false, editorError = null) }
+    }
+
+    /** #209 收尾：单独清掉编辑器错误行（面板保留，不整块关闭）。 */
+    fun dismissEditorError() {
+        _uiState.update { it.copy(editorError = null) }
+    }
+
+    /**
+     * #312：EditorFileLoader 稳定错误码 → 本地化文案（纯数据层不依赖
+     * Android 资源，UI 侧按码取词；上下文变量：路径 / 字节数）。
+     */
+    private fun editorErrorText(e: EditorFileException): String = when (e.code) {
+        EditorLoadError.EMPTY_PATH -> languageManager.getString(R.string.code_editor_err_empty_path)
+        EditorLoadError.PATH_ESCAPE -> languageManager.getString(R.string.code_editor_err_escape_fmt, e.path.orEmpty())
+        EditorLoadError.NOT_FOUND -> languageManager.getString(R.string.code_editor_err_not_found_fmt, e.path.orEmpty())
+        EditorLoadError.IS_DIRECTORY -> languageManager.getString(R.string.code_editor_err_directory_fmt, e.path.orEmpty())
+        EditorLoadError.TOO_LARGE -> languageManager.getString(R.string.code_editor_err_too_large_fmt, e.byteCount)
     }
 
     // ═══ 工作区管理 ═══
@@ -829,7 +1063,7 @@ class CodeViewModel @Inject constructor(
     fun createWorkspace(name: String) {
         val created = workspaceManager.create(name)
         if (created == null) {
-            _uiState.update { it.copy(error = "无法创建工作区（名称为空或已存在）") }
+            showError(languageManager.getString(R.string.code_ws_create_failed))
             return
         }
         bindWorkspace(created)
@@ -842,30 +1076,42 @@ class CodeViewModel @Inject constructor(
 
     fun deleteWorkspace(workspaceId: String) {
         if (_uiState.value.isRunning) {
-            _uiState.update { it.copy(error = "任务运行中，不能删除工作区") }
+            showError(languageManager.getString(R.string.code_ws_delete_blocked_running))
             return
         }
-        if (workspaceId == "default") {
-            _uiState.update { it.copy(error = "默认工作区不可删除") }
+        // system 根 = / 绝不可删（manager 侧恒拒，VM 前置拦截统一文案）
+        if (workspaceId == "default" || workspaceId == CodeWorkspaceManager.SYSTEM_ID) {
+            showError(languageManager.getString(R.string.code_ws_delete_default))
             return
         }
         workspaceManager.delete(workspaceId)
-        // 会话快照随工作区一并清理（引擎记忆目录由 manager 负责清理或不影响正确性）
+        // 会话快照 + 历史归档随工作区一并清理（引擎记忆目录由 manager 负责）
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { runCatching { codeSessionStore.clear(workspaceId) } }
+            withContext(Dispatchers.IO) {
+                runCatching { codeSessionStore.clear(workspaceId) }
+                runCatching { codeHistoryStore.clearWorkspace(workspaceId) }
+            }
         }
         refreshWorkspaces()
         val active = workspaceManager.activeWorkspace()
         if (active != null) bindWorkspace(active) else clearConversation()
     }
 
-    private fun bindWorkspace(ws: CodeWorkspace) {
+    internal fun bindWorkspace(ws: CodeWorkspace) {
         // 切走前捕获旧会话快照（同工作区重复 bind 不冲刷）
         val previousId = boundWorkspaceId
         val previousSnapshot = if (previousId != null && previousId != ws.workspaceId) {
             buildSessionSnapshot(previousId)
         } else null
         boundWorkspaceId = ws.workspaceId
+        // 切换到不同工作区 = 会话边界：AUTO 预检/升级信号全量清零（旧工作区
+        // 的错误史不带入新工作区首检；运行中不重置，防干扰在飞 run 的计数）。
+        if (previousId != ws.workspaceId && !_uiState.value.isRunning) {
+            resetAdaptiveThinkingSignals()
+            promotePendingAtConversationBoundary() // v1.2：会话边界提升待生效皮肤
+        }
+        // #221：用量观测在运行时层记账，需要知道当前会话归属（切工作区即换桶）。
+        currentUsageSession.bind(ws.workspaceId)
         sessionPersistJob?.cancel()
         sessionLoadJob?.cancel()
         editorJob?.cancel()
@@ -877,13 +1123,17 @@ class CodeViewModel @Inject constructor(
             root = File(ws.hostRootPath)
         )
 
-        // UI 先切到「新工作区空态」，快照异步恢复（含旧快照冲刷）
+        // UI 先切到「新工作区空态」，快照异步恢复（含旧快照冲刷）；
+        // 会话累计 token 随会话边界归零（历史归档不存 token 统计）。
         _uiState.update {
             it.copy(
                 activeWorkspace = ws,
                 workspaces = workspaceManager.list(),
                 contextUsedTokens = codeEngineImpl?.currentTokenCount() ?: 0,
-                contextMaxTokens = codeEngineImpl?.maxContextTokens() ?: 0,
+                contextMaxTokens = contextWindowTokens(),
+                sessionInputTokens = 0,
+                sessionOutputTokens = 0,
+                sessionCachedTokens = 0,
                 editorFilePath = null, editorFile = null, editorError = null,
                 editorLoading = false
             )
@@ -900,246 +1150,8 @@ class CodeViewModel @Inject constructor(
         }
     }
 
-    /** 恢复当前工作区的 UI 会话快照；无快照 = 全新会话（欢迎提示）。 */
-    private suspend fun restoreSessionSnapshot(ws: CodeWorkspace) {
-        val snapshot = withContext(Dispatchers.IO) {
-            runCatching { codeSessionStore.load(ws.workspaceId) }.getOrNull()
-        }
-        if (snapshot != null && (snapshot.messages.isNotEmpty() || snapshot.stream != null)) {
-            val restored = snapshot.messages.withFreshIds(1L)
-            idGen.set(restored.lastOrNull()?.id ?: 0L)
-            codeTodoTool.restore(snapshot.todos.toCodeTodos())
-            // 时间轴恢复：stream 检查点优先（含 diff 原文/轮次红绿态）；
-            // 旧档（null）走 messages → 条目的兼容映射（降级：无 diff 细节）
-            val timeline = snapshot.stream
-                ?.let { cp -> CodeStreamCheckpoint.toEntries(cp) }
-                ?: snapshot.messages.toStreamEntries()
-            streamSession.replaceAll(timeline)
-            _uiState.update {
-                it.copy(
-                    messages = restored,
-                    todos = snapshot.todos.toCodeTodos(),
-                    stream = streamSession.snapshot()
-                )
-            }
-            snapshot.lastActiveFile?.let { lastFile -> openEditorFile(lastFile) }
-        } else {
-            // 全新会话：清 UI 态（引擎侧 setActiveWorkspace 已重置上下文）+ 欢迎提示
-            codeTodoTool.clear()
-            // P1 回归：时间轴与 streamSession 必须一并清空——否则工作区 A 的
-            // 胶囊时间轴泄漏进新工作区 B，并经 buildSessionSnapshot 污染 B 的
-            // 落盘检查点（跨工作区数据污染被持久化）
-            streamSession.clear()
-            _uiState.update {
-                it.copy(
-                    messages = emptyList(),
-                    todos = emptyList(),
-                    stream = CodeStreamSnapshot()
-                )
-            }
-            val env = ws.detectedEnvironment ?: "空工作区"
-            _uiState.update { state ->
-                state.copy(
-                    messages = state.messages + CodeChatMessage(
-                        id = idGen.incrementAndGet(),
-                        role = CodeChatMessage.Role.SYSTEM,
-                        text = "已切换到工作区「${ws.name}」（$env）。描述你的编码任务开始吧。"
-                    )
-                )
-            }
-        }
-    }
-
-    /** 从当前 UI 态构造会话快照（消息 + todos + 当前文件 + 时间轴检查点）。 */
-    private fun buildSessionSnapshot(workspaceId: String): CodeSessionSnapshot {
-        val state = _uiState.value
-        return CodeSessionSnapshot(
-            workspaceId = workspaceId,
-            messages = state.messages.toStorable(),
-            todos = codeTodoTool.snapshot().toStorable(),
-            lastActiveFile = state.editorFilePath,
-            stream = CodeStreamCheckpoint.toCheckpoint(
-                session = streamSession,
-                workspaceId = workspaceId,
-                committedFiles = state.stream.affectedFiles
-            ),
-            updatedAt = System.currentTimeMillis()
-        )
-    }
-
-    /** 会话快照防抖落盘（800ms；对齐 Agent 模式 ChatHistoryManager 惯例）。 */
-    private fun scheduleSessionPersist() {
-        val wsId = boundWorkspaceId ?: return
-        sessionPersistJob?.cancel()
-        sessionPersistJob = viewModelScope.launch {
-            delay(800)
-            // 守卫：防抖期间工作区已切换 → 旧快照已由 bindWorkspace 冲刷，跳过
-            if (boundWorkspaceId != wsId) return@launch
-            val snapshot = buildSessionSnapshot(wsId)
-            withContext(Dispatchers.IO) { runCatching { codeSessionStore.save(snapshot) } }
-                .onFailure { AppLogger.instance.warn(LogCategory.UI, "CodeSession", "会话快照落盘失败：${it.message}") }
-        }
-    }
-
-    // ═══ 事件归约 ═══
-
-    private fun reduce(event: AgentEvent) {
-        when (event) {
-            is AgentEvent.IterationStart -> {
-                _uiState.update { it.copy(currentIteration = event.iteration) }
-                // AUTO 可解释性已前移到发送前预检（resolveRuntimeThinkingLevel
-                // 产生 adaptiveDecision + 系统消息）；引擎侧从不接收 AUTO，
-                // 此处不再拉取引擎决策。
-            }
-
-            is AgentEvent.ResponseChunk -> _uiState.update { state ->
-                val messages = state.messages.toMutableList()
-                val last = messages.lastOrNull()
-                if (last != null && last.role == CodeChatMessage.Role.ASSISTANT && last.isStreaming) {
-                    messages[messages.size - 1] = last.copy(text = last.text + event.text)
-                } else {
-                    messages += CodeChatMessage(
-                        id = idGen.incrementAndGet(),
-                        role = CodeChatMessage.Role.ASSISTANT,
-                        text = event.text,
-                        isStreaming = true
-                    )
-                }
-                state.copy(messages = messages)
-            }
-
-            is AgentEvent.ResponseComplete -> {
-                _uiState.update { state ->
-                    state.copy(
-                        messages = state.messages.map { m ->
-                            if (m.isStreaming) m.copy(isStreaming = false) else m
-                        }
-                    )
-                }
-                scheduleSessionPersist()
-            }
-
-            is AgentEvent.ThinkingChunk -> Unit // 编码屏不渲染思维链（保持输出紧凑）
-
-            is AgentEvent.ToolCallStart -> _uiState.update { state ->
-                state.copy(
-                    messages = state.messages + CodeChatMessage(
-                        id = idGen.incrementAndGet(),
-                        role = CodeChatMessage.Role.TOOL,
-                        text = "",
-                        toolName = event.toolName,
-                        isStreaming = true
-                    )
-                )
-            }
-
-            is AgentEvent.ToolOutputChunk -> _uiState.update { state ->
-                val messages = state.messages.toMutableList()
-                val idx = messages.indexOfLast { it.role == CodeChatMessage.Role.TOOL && it.isStreaming }
-                if (idx >= 0) {
-                    val m = messages[idx]
-                    messages[idx] = m.copy(text = (m.text + event.chunk).take(4000))
-                }
-                state.copy(messages = messages)
-            }
-
-            is AgentEvent.ToolCallComplete -> {
-                _uiState.update { state ->
-                    val messages = state.messages.toMutableList()
-                    val idx = messages.indexOfLast { it.role == CodeChatMessage.Role.TOOL && it.isStreaming }
-                    val card = CodeChatMessage(
-                        id = idGen.incrementAndGet(),
-                        role = CodeChatMessage.Role.TOOL,
-                        text = event.output.take(4000),
-                        toolName = event.toolName,
-                        toolSuccess = event.success,
-                        durationMs = event.durationMs,
-                        isStreaming = false
-                    )
-                    if (idx >= 0) messages[idx] = card else messages += card
-                    state.copy(messages = messages, todos = codeTodoTool.snapshot())
-                }
-                // v1.2 长任务追踪：todo 变化即刷新追踪器快照（工具完成后是
-                // code_todo 改写的主要时点）
-                longTaskTracker.noteTodos(renderTodosForTracker(codeTodoTool.snapshot()))
-                // #154：编辑/写成功的文件自动成为「当前文件」（编辑器跟随最新现场）
-                if (event.success && (event.toolName == "code_edit" || event.toolName == "code_write")) {
-                    extractToolPath(event.arguments)?.let { openEditorFile(it) }
-                }
-                scheduleSessionPersist()
-            }
-
-            is AgentEvent.UserInputRequired -> _uiState.update {
-                it.copy(pendingQuestion = event.prompt)
-            }
-
-            // ═══ #197 PLAN 模式事件（Coding 屏 Build/Plan 双档）═══
-            is AgentEvent.PlanGenerated -> _uiState.update {
-                it.copy(plan = event.plan)
-            }
-
-            is AgentEvent.PlanAwaitingConfirmation -> _uiState.update {
-                it.copy(plan = event.plan, awaitingPlanConfirmation = true)
-            }
-
-            is AgentEvent.PlanConfirmed -> _uiState.update {
-                it.copy(
-                    awaitingPlanConfirmation = false,
-                    messages = it.messages + CodeChatMessage(
-                        id = idGen.incrementAndGet(),
-                        role = CodeChatMessage.Role.SYSTEM,
-                        text = "计划已确认，开始执行（${event.plan.steps.size} 步）"
-                    )
-                )
-            }
-
-            is AgentEvent.Error -> {
-                _uiState.update { it.copy(error = event.message) }
-                scheduleSessionPersist()
-            }
-
-            is AgentEvent.ContextCompressed -> {
-                _uiState.update {
-                    it.copy(
-                        contextUsedTokens = event.afterTokens,
-                        messages = it.messages + CodeChatMessage(
-                            id = idGen.incrementAndGet(),
-                            role = CodeChatMessage.Role.SYSTEM,
-                            text = "上下文已压缩（${event.beforeTokens} → ${event.afterTokens} tokens，${event.strategy}）"
-                        )
-                    )
-                }
-                scheduleSessionPersist()
-            }
-
-            is AgentEvent.Complete -> {
-                val summary = buildString {
-                    append("完成 · ${event.totalIterations} 轮 · ${event.totalToolCalls} 次工具 · ${event.totalDurationMs / 1000}s")
-                }
-                _uiState.update {
-                    it.copy(
-                        messages = it.messages + CodeChatMessage(
-                            id = idGen.incrementAndGet(),
-                            role = CodeChatMessage.Role.SYSTEM,
-                            text = summary
-                        ),
-                        todos = codeTodoTool.snapshot()
-                    )
-                }
-                scheduleSessionPersist()
-            }
-
-            is AgentEvent.Aborted -> _uiState.update { it.copy(isRunning = false) }
-
-            // Plan/Spec/Reflection/Step 事件在 CODING(BUILD) 循环不触发，保持完备即可
-            else -> Unit
-        }
-    }
-
-    /** 从工具调用参数 JSON 里提取 path 字段（code_edit/code_write 的文件跟随）。 */
-    private fun extractToolPath(arguments: String): String? = runCatching {
-        Json.parseToJsonElement(arguments).jsonObject["path"]?.jsonPrimitive?.content
-    }.getOrNull()?.takeIf { it.isNotBlank() }
+    // ═══ 会话快照三动作面（restore/build/persist，#152）已拆至
+    //     CodeSessionSnapshotOps.kt（God-file 预算纪律；调用点零改动）═══
 
     override fun onCleared() {
         runJob?.cancel()
@@ -1156,29 +1168,7 @@ class CodeViewModel @Inject constructor(
         super.onCleared()
     }
 
-    // ═══ 胶囊时间轴：渲染 ticker 与详情数据 ═══
-
-    /** 启动渲染 ticker（25ms ≤40Hz；脏才推快照，无变更零重组）。 */
-    private fun startRenderTicker() {
-        renderJob?.cancel()
-        renderJob = viewModelScope.launch {
-            while (isActive) {
-                delay(RENDER_TICK_MS)
-                streamSession.tick()?.let { snap ->
-                    _uiState.update { it.copy(stream = snap) }
-                }
-            }
-        }
-    }
-
-    /** 停止 ticker 并冲最后一次快照（run 收尾调用）。 */
-    private fun stopRenderTicker() {
-        renderJob?.cancel()
-        renderJob = null
-        streamSession.snapshot().let { snap ->
-            _uiState.value = _uiState.value.copy(stream = snap)
-        }
-    }
+    // ═══ 胶囊时间轴：渲染 ticker 见 CodeRenderTickerOps.kt ═══
 
     /** 详情弹层的终端尾窗（历史 BASH 调用的输出回看）。 */
     fun terminalLogOf(callId: String): String? = streamSession.terminalContentOf(callId)
@@ -1186,11 +1176,8 @@ class CodeViewModel @Inject constructor(
     /** 详情弹层入参便捷转换（UI 持有 StreamToolCall 时调用）。 */
     fun toolCallById(call: StreamToolCall): StreamToolCall = call
 
-    private companion object {
-        /** 深水区升级观察器的工具成败滑窗长度（与选档器口径一致：最近 3 次）。 */
-        const val RECENT_OUTCOME_WINDOW = 3
-
-        /** 渲染攒批窗口：25ms = 上限 40Hz（规格书：脉冲式输出）。 */
-        const val RENDER_TICK_MS = 25L
+    internal companion object {
+        // 旧 RENDER_TICK_MS 固定 25ms 常量已删除（SPE-07 P1-1）：节拍单一
+        // 事实源迁至 RenderTickerPolicy（忙三档 16/25/33 + 空闲巡逻 50/250）。
     }
 }

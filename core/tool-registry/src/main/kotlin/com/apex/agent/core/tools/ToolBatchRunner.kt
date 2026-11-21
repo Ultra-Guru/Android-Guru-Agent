@@ -28,8 +28,8 @@ import kotlinx.coroutines.TimeoutCancellationException
  * `dollar-curly` placeholder syntax:
  *
  * ```
- * [ { "tool": "ui_dump", "arguments": "{}" },
- *   { "tool": "write_file", "arguments": "{'path':'dump.txt','content':'{0}'}" } ]
+ * [ { "tool": "UiDump", "arguments": "{}" },
+ *   { "tool": "Write", "arguments": "{'path':'dump.txt','content':'{0}'}" } ]
  * ```
  *
  * `{0}` inserts step 0's output (head-truncated to [referenceHeadLimit]
@@ -77,11 +77,6 @@ class ToolBatchRunner(
     ) {
         /** True when every step executed successfully. */
         val isComplete: Boolean get() = haltedAtIndex == null && !timedOut
-
-        /** Indices of steps that produced output (for `{n}` references). */
-        fun executedIndices(): List<Int> = outcomes.indices.filter {
-            outcomes[it] is StepOutcome.Executed
-        }
 
         /**
          * Rendered multi-step report for the model: one numbered block per

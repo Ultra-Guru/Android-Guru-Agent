@@ -39,6 +39,15 @@ enum class McpStartupStage {
     /** tools/list 完成（detail 携带真实发现的工具清单）。 */
     TOOLS_DISCOVERED,
 
+    /**
+     * #205 子进程 stderr 输出（detail = 截断后的真实 stderr 行）。
+     *
+     * npx 下载失败、Python 崩栈、Node 告警都走 stderr —— 握手超时前用户
+     * 在时间线上就能看到真实原因。有速率上限（每连接前 [McpClient] 侧
+     * 最多上报 N 行），不会淹没阶段事件。
+     */
+    STDERR,
+
     /** 连接失败（detail 携带真实异常信息）。 */
     FAILED
 }

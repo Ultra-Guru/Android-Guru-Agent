@@ -1,6 +1,7 @@
 package com.apex.agent.browser
 
 import com.apex.agent.R
+import com.apex.browser.engine.BrowserEngine
 import android.animation.ObjectAnimator
 import android.animation.PropertyValuesHolder
 import android.annotation.SuppressLint
@@ -25,6 +26,8 @@ import com.lzf.easyfloat.enums.ShowPattern
 import com.lzf.easyfloat.enums.SidePattern
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
+import com.apex.agent.ui.language.LanguageManager
+import com.apex.browser.chrome.LiveViewOverlay
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -35,19 +38,26 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * 赛博极客·霓虹环流球（按需出现的浮窗枢纽）。
+ * 透明玻璃·状态环流球（按需出现的浮窗枢纽，v1.4.1 透明重做；去霓虹重调）。
  *
- * 设计语言：高光黑曜石核心 + 动态等离子霓虹光环 + 物理弹力触压感。对标用户方案，
- * 但用代码绘制光环（[NeonRingView]）替代 Lottie 二进制资源，避免引入不可控资产与额外包体。
+ * 设计语言：透明玻璃核（bg_ball_glass，无重不透明底座）+ 动态状态光环
+ * （[NeonRingView] 代码绘制，已柔化为低强度慢速旋转）+ 物理弹力触压感。
+ * 视觉重量最小化——球与实时页面悬浮窗同时在场时互不抢戏。
  *
  * 【按需出现，不再常驻】球的生命周期完全由 [BrowserEngine] 状态驱动：
  * - Agent 首次 navigate / newTab(url)（网页搜索、自动化浏览）→ 状态离开 HIDDEN → 球出现；
  * - HIDDEN（会话结束，见 [BrowserEngine.releaseBrowser]）→ 球收起；
  * - App 启动不再无条件 show —— 服务里不拉起，靠状态回调自然驱动。
- * - 球颜色随引擎状态切换（RUNNING 电光蓝 / NEED_HUMAN 琥珀金 / ERROR 赛博红）。
+ * - 球颜色随引擎状态切换（RUNNING 静谧蓝 / NEED_HUMAN 柔和琥珀 / ERROR 暖红）。
  * - 订阅 [BrowserEngine] 状态：WAITING_HUMAN 时球切 NEED_HUMAN（脉冲+抖动+震动+badge）。
- * - 点击球 toggle 显式握手：AGENT_DRIVING → enterHandoffMode（展开接管面板）；
- *   WAITING_HUMAN → completeHandoff（交还 Agent）。与 BrowserOverlay 接管面板状态一致。
+ *
+ * 【v1.4.1 交互重做】点击球不再直接进入人工接管（旧路径 enterHandoffMode →
+ * 浮窗组合 → BackHandler 崩溃，#375）：
+ * - 点击 = 查看/收起**实时页面悬浮窗**（[LiveViewOverlay.toggle]，透明卡片显示
+ *   Agent 正在开的真实页面）；
+ * - WAITING_HUMAN 时点击 = 交还 Agent（completeHandoff，接管浮窗上的「我已完成
+ *   操作」同款语义）；
+ * - 人工接管入口移到实时卡片顶栏「接管」按钮与浏览器功能页（显式、可预期）。
  * - 长按球 = 结束本次浏览器会话（releaseBrowser → HIDDEN），球随之收起。
  * - 按下时 Spring 物理挤压（果冻感），松开弹回。
  *
@@ -57,6 +67,12 @@ import kotlinx.coroutines.launch
 class CyberNeonBallManager @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val engine: BrowserEngine,
+    // i18n（#2-c P1-5）：非 Compose 场景按当前语言取词（appContext 只跟系统 locale，
+    // LanguageManager 维护 in-app 语言切换后的 resolvedContext —— 与 TerminalViewModel
+    // / ApexNotifications 等同款惯例）。
+    private val languageManager: LanguageManager,
+    // v1.4.1：点击球切换实时页面悬浮窗（透明卡片，AGENT_DRIVING 自动弹出）
+    private val liveView: LiveViewOverlay,
 ) : BrowserEngine.BrowserUiCallback {
 
     enum class CyberState { RUNNING, NEED_HUMAN, ERROR, SUCCESS }
@@ -118,13 +134,17 @@ class CyberNeonBallManager @Inject constructor(
             .show()
     }
 
-    /** 点击球 toggle 显式握手 */
+    /**
+     * v1.4.1 点击语义：查看/收起实时页面悬浮窗（不再直接 enterHandoffMode ——
+     * 旧路径引发 #375 闪退，且用户要的是「点开看 Agent 在干嘛」）。
+     * WAITING_HUMAN 时点击 = 交还 Agent（与接管浮窗「我已完成操作」同语义）。
+     */
     private fun onBallClick() {
-        mainScope.launch {
-            when (engine.currentState) {
-                BrowserEngine.BrowserSessionState.WAITING_HUMAN -> engine.completeHandoff()
-                else -> engine.enterHandoffMode()
+        when (engine.currentState) {
+            BrowserEngine.BrowserSessionState.WAITING_HUMAN -> mainScope.launch {
+                engine.completeHandoff()
             }
+            else -> liveView.toggle()
         }
     }
 
@@ -133,7 +153,9 @@ class CyberNeonBallManager @Inject constructor(
         mainScope.launch {
             engine.releaseBrowser()
             android.widget.Toast.makeText(
-                appContext, "已结束浏览器会话，悬浮球已收起", android.widget.Toast.LENGTH_SHORT
+                appContext,
+                languageManager.getString(R.string.browser_session_released),
+                android.widget.Toast.LENGTH_SHORT
             ).show()
         }
     }
@@ -175,22 +197,26 @@ class CyberNeonBallManager @Inject constructor(
         val showPulse: Boolean
         when (next) {
             CyberState.RUNNING -> {
-                color = 0xFF00F0FF.toInt(); showBadge = false; showPulse = false
+                // 去霓虹重调：旧电光青 00F0FF → 静谧蓝（低饱和，专业状态色）
+                color = 0xFF4E96C7.toInt(); showBadge = false; showPulse = false
             }
             CyberState.NEED_HUMAN -> {
-                color = 0xFFFFB800.toInt(); showBadge = true; showPulse = true
+                // 柔和琥珀（警示语义保留，降饱和降亮度）
+                color = 0xFFE0A83C.toInt(); showBadge = true; showPulse = true
             }
             CyberState.ERROR -> {
-                color = 0xFFFF2A55.toInt(); showBadge = false; showPulse = false
+                // 暖红（旧霓虹红 FF2A55 重调）
+                color = 0xFFD9605E.toInt(); showBadge = false; showPulse = false
             }
             CyberState.SUCCESS -> {
-                color = 0xFF00FF87.toInt(); showBadge = false; showPulse = false
+                // 柔和绿（旧霓虹绿 00FF87 重调 —— 绿色霓虹重点整治项）
+                color = 0xFF4CAE7E.toInt(); showBadge = false; showPulse = false
             }
         }
         imgCoreIcon.setColorFilter(color)
         badgeAlert.visibility = if (showBadge) View.VISIBLE else View.GONE
 
-        // 霓虹环始终由代码绘制（NeonRingView），不依赖 Lottie 二进制资源，零额外包体
+        // 状态环始终由代码绘制（NeonRingView，已柔化），不依赖 Lottie 二进制资源，零额外包体
         neonRing.visibility = View.VISIBLE
         neonRing.setStateColor(color)
 

@@ -205,6 +205,16 @@ internal object Reflow {
 
     private fun isBlankCp(cp: Int): Boolean = cp == ' '.code || cp == 0
 
+    /** T92：整行是否「默认样式空白」（尾部空行裁剪判定 —— 带样式空白行保留）。 */
+    private fun isDefaultBlankRow(row: Array<TerminalCell>): Boolean {
+        for (c in row) {
+            if (c.codePoint != ' '.code && c.codePoint != 0) return false
+            if (c.style != TerminalStyle.DEFAULT) return false
+            if (c.combining.isNotEmpty()) return false
+        }
+        return true
+    }
+
     // ═══ 引擎接线：TerminalCore.resize（宽度变化）调用 ═══
 
     /**
@@ -212,8 +222,9 @@ internal object Reflow {
      *
      * 1. 主屏视觉行（scrollback 旧→新 + 可见屏上→下，末行不延续）拼逻辑行；
      * 2. [rewrap] 到新宽度；
-     * 3. 可见窗口选择：光标行尽量留在屏内（顶部锚定或贴底），
-     *    窗口之前的输出行回灌 scrollback（保持旧→新顺序）；
+     * 3. 可见窗口 = 重排输出的**最新 newRows 行**（底部锚定 —— Termux resize
+     *    同款零丢弃），窗口之前的输出行回灌 scrollback（保持旧→新顺序）；
+     *    光标行映射到屏内（越出窗口顶 → 钳屏顶）；
      * 4. 光标映射到屏内坐标（备用屏激活时改写的是 savedCursor —— 主屏光标的
      *    最近已知近似，native 同语义）。
      *
@@ -248,20 +259,22 @@ internal object Reflow {
 
         val out = rewrap(input, wrapped, cursorGlobal, cursorCol, newCols)
 
-        // 重建：光标行留屏（顶锚 / 贴底），溢出回灌 scrollback
+        // 重建：**底部锚定**（Termux resize 同款 —— 屏恒为重排输出的最新
+        // newRows 行，之前的行回灌 scrollback；**零丢弃**）。旧实现「光标行
+        // 留屏」锚定把光标窗口以下的所有输出行静默丢弃（列宽收缩 + 光标在
+        // 屏中部 → 光标下方整段内容消失，不可从 scrollback 找回）。光标行
+        // 落在窗口上方时钳到屏顶（Termux 同款 newCursorRow<0 → 0）。
+        //
+        // 尾部空行先裁剪再锚定：末尾若干行全部是「默认样式空白格」（来自空
+        // 屏尾行的 rewrap 产物）不是内容 —— 计入锚定会把真内容推出屏
+        //（Termux resize 的 skippedBlankLines 语义：空白行仅在有后续非空行时
+        // 才回插）。带样式的空白行（bg 块尾行）保留。
         main.resetTo(newRows, newCols)
         val total = out.rows.size
+        var contentTotal = total
+        while (contentTotal > 0 && isDefaultBlankRow(out.rows[contentTotal - 1])) contentTotal--
         val visibleCount = minOf(total, newRows)
-        var first = 0
-        if (total > visibleCount) {
-            val cursorOut = out.cursorRow.coerceAtLeast(0)
-            first = when {
-                cursorOut < visibleCount -> 0                      // 顶部锚定已覆盖光标
-                cursorOut + 1 <= total -> cursorOut + 1 - visibleCount  // 光标贴底行
-                else -> total - visibleCount
-            }
-            if (first > total - visibleCount) first = total - visibleCount
-        }
+        val first = (contentTotal - visibleCount).coerceAtLeast(0)
         for (idx in 0 until first) {
             val lineEnd = idx + 1 < total && out.lineOfRow[idx] == out.lineOfRow[idx + 1]
             main.pushScrollbackRow(out.rows[idx], lineEnd)

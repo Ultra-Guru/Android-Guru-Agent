@@ -5,7 +5,7 @@ package com.apex.agent.terminalemulator
  *
  * 服务 [TerminalEngine.encodeKey]（v0.2 契约）：native .so 加载失败回退纯
  * Kotlin 引擎时，按键编码能力不降级。语义与 native 引擎
- * （apex-vt-native v0.2 `VtKey::encode`）逐序列对齐。
+ * （apex-native-vt v0.2 `VtKey::encode`）逐序列对齐。
  *
  * xterm 修饰键协议（CSI 参数化）：
  * ```
@@ -112,7 +112,9 @@ object KeySequenceTables {
             TerminalKey.NUMPAD_9 -> if (applicationKeypad) ss3('y') else num('9', plain)
             TerminalKey.NUMPAD_DECIMAL -> if (applicationKeypad) ss3('n') else num('.', plain)
             TerminalKey.NUMPAD_ENTER -> if (applicationKeypad) ss3('M') else num2(0x0D, plain)
-            TerminalKey.NUMPAD_ADD -> if (applicationKeypad) ss3('l') else num('+', plain)
+            // T92（xterm/DEC 小键盘表修正）：+ 号是 SS3 'k'（旧实现误用分隔符
+            // 'l' —— DECKPAM 下 vim/ Midnight Commander 数字键盘加号变导航键）。
+            TerminalKey.NUMPAD_ADD -> if (applicationKeypad) ss3('k') else num('+', plain)
             TerminalKey.NUMPAD_SUBTRACT -> if (applicationKeypad) ss3('m') else num('-', plain)
             TerminalKey.NUMPAD_MULTIPLY -> if (applicationKeypad) ss3('j') else num('*', plain)
             TerminalKey.NUMPAD_DIVIDE -> if (applicationKeypad) ss3('o') else num('/', plain)

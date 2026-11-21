@@ -22,6 +22,9 @@ package com.apex.agent.core.code.stream
  *
  * 面板展示的不是全部历史（万行构建日志会把内存和渲染同时打爆），而是
  * 最新 [windowChars]（默认 16KB）尾窗——够看上下文，又常数级内存。
+ * 窗口滑动即丢弃最老内容：滚出量经 [clippedChars] 如实暴露，
+ * [renderedContent] 在头部携带裁剪告示行（对齐引擎层截断诚实上报的纪律——
+ * 「看到的是尾窗」必须显式告知，而不是静默滑动）。
  *
  * 线程模型：与引擎 Flow 收集协程同线程串行调用，无锁。
  */
@@ -35,6 +38,9 @@ class TerminalPulseBuffer(
     private var lastFlushAt = 0L
     private val window = StringBuilder()
     private var closed = false
+
+    /** 已进入窗口的总字符数（滚出量 = 本值 − 当前窗口长度）。 */
+    private var totalFlushedChars = 0L
 
     /** 追加一段流式输出（不立即返回内容——[tick] 统一取脉冲）。 */
     fun append(chunk: String) {
@@ -65,8 +71,22 @@ class TerminalPulseBuffer(
         return doFlush(nowMs)
     }
 
-    /** 当前尾窗内容（面板渲染源；含已 flush 的历史，截到 [windowChars]）。 */
+    /** 当前尾窗内容（原始数据源；面板渲染用 [renderedContent]——含裁剪告示）。 */
     fun content(): String = window.toString()
+
+    /** 已滚出窗口的字符数（0 = 尾窗即全部；观测与告示行用）。 */
+    fun clippedChars(): Long = (totalFlushedChars - window.length).coerceAtLeast(0)
+
+    /**
+     * 渲染内容：滚出量 > 0 时头部携带裁剪告示行——
+     * `[... N 字符已滚出（仅保留最新尾窗） ...]`。
+     * 用户看到的第一行永远是诚实声明，而不是误以为这就是全部输出。
+     */
+    fun renderedContent(): String {
+        val clipped = clippedChars()
+        if (clipped <= 0L) return window.toString()
+        return "[... $clipped 字符已滚出（仅保留最新尾窗） ...]\n" + window
+    }
 
     /** 是否有待 flush 的内容（测试与观测）。 */
     fun pendingSize(): Int = pending.length
@@ -81,6 +101,7 @@ class TerminalPulseBuffer(
         pending.clear()
         window.clear()
         lastFlushAt = 0L
+        totalFlushedChars = 0L
         closed = false
     }
 
@@ -88,6 +109,7 @@ class TerminalPulseBuffer(
         val out = pending.toString()
         pending.clear()
         lastFlushAt = nowMs
+        totalFlushedChars += out.length
         window.append(out)
         if (window.length > windowChars) {
             window.delete(0, window.length - windowChars)

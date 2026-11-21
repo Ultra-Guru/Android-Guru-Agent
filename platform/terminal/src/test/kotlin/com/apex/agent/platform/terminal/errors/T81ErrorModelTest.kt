@@ -1,5 +1,9 @@
 package com.apex.agent.platform.terminal.errors
 
+import com.apex.agent.platform.terminal.runtime.ExecutionBackendRegistry
+import com.apex.agent.platform.terminal.runtime.FixtureLinuxBackend
+import com.apex.agent.platform.terminal.runtime.LocalShellBackend
+
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -57,6 +61,7 @@ class T81ErrorModelTest {
         val rt = com.apex.agent.platform.terminal.runtime.TerminalRuntimeImpl(
             native = com.apex.agent.platform.terminal.pty.FakeNativePty(),
             policy = com.apex.agent.platform.terminal.policy.TerminalPolicyImpl(),
+            backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend(), FixtureLinuxBackend()),
             virtualTerminalFactory = { r, c -> com.apex.agent.platform.terminal.screen.RealVirtualTerminal(r, c) }
         )
         val r = rt.observe(9999L)   // 不存在的 session

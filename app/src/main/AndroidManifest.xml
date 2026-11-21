@@ -27,11 +27,41 @@
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="QueryAllPackagesPermission" />
-    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
-        tools:ignore="ProtectedPermissions" />
+    <!-- Onboarding v2 引导步骤 3「修改系统设置」：声明本身 normal 级，授权走
+         Settings.ACTION_MANAGE_WRITE_SETTINGS 跳本应用专属页 + Settings.System
+         .canWrite() 判态（特殊权限不可运行时弹窗）。 -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <!-- Onboarding v2 引导步骤 4「安装未知来源应用」：UpdateDownloader 的
+         FileProvider + ACTION_VIEW 安装流在 Android 8+ 需要本应用出现在
+         「未知来源」白名单（按应用逐一授权）；声明后引导页才能经
+         PackageManager.canRequestPackageInstalls() 判态并跳
+         ACTION_MANAGE_UNKNOWN_APP_SOURCES 引导页。 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- #824：QUERY_ALL_PACKAGES / PACKAGE_USAGE_STATS 已删除 —— 两者在
+         main 源集零消费点（getInstalledPackages / UsageStatsManager /
+         queryEvents 全仓无引用；插件发现的 queryIntentServices 按特定
+         action 查询，targetSdk 下不受包可见性过滤约束，无需全包可见）。
+         监控级敏感权限「声而不用」是侧载扫描红旗 + Play 政策硬伤；
+         未来做「已装应用控制/用量统计」类工具时按需加回，并用
+         <queries> 精确声明目标包名/Intent。 -->
 
+    <!-- ═══ v5 增强工具集：agent 自主能力扩展 ═══ -->
+    <!-- ContactSearch：读取通讯录（dangerous 权限，运行时弹窗授权） -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- SmsSend：发送短信（dangerous 权限，运行时弹窗授权 + 风险门会话确认） -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <!-- CalendarEventList：读取日历（dangerous 权限，运行时弹窗授权） -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <!-- ImageCapture：拍照（dangerous 权限，运行时弹窗授权） -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- AlarmSet：经 AlarmClock.ACTION_SET_ALARM 设置闹钟（normal 权限，自动授权） -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+
+    <!-- #E-⑮：多级返回（收键盘 → 收菜单 → 退出）依赖 KeyEvent 派发路径
+         （TerminalView.onKeyPreIme）；预测性返回会绕过它直接预览“退出
+         app”。本 app 钉 targetSdk 28（侧载红线）本就不受 Android 16 默认
+         开启影响 —— 显式声明 false 是防未来 targetSdk 升级时的行为漂移
+         （届时应改为逐层 OnBackPressedCallback 适配后移除）。 -->
     <application
         android:name=".ApexApp"
         android:allowBackup="true"
@@ -42,6 +72,7 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/legacy_backup_rules"
+        android:enableOnBackInvokedCallback="false"
         tools:targetApi="36">
 
         <activity
@@ -53,18 +84,8 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- v1.4.4 #7：分享接收 —— 文本与图片直达 Agent 输入区（不自动发送）。
-                 singleTop：App 已开时分享复用实例走 onNewIntent，不重建 Activity。 -->
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="image/*" />
-            </intent-filter>
+            <!-- v1.4.4 #7 分享接收 intent-filter 已随 Agent 输入区移除（消费方
+                 SharedIntake → AgentChatViewModel 已删，载荷无人订阅）。 -->
         </activity>
 
         <!-- 核心前台服务 -->
@@ -95,6 +116,29 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <!-- v5 APK 安装结果接收器：AppInstallApk / AppDownloadInstall
+             工具触发 PackageInstaller.commit 后，系统会广播 install 结果到本
+             receiver；STATUS_PENDING_USER_ACTION 时本 receiver 负责启动系统
+             安装确认 UI。导出=false（仅本应用 / 系统能投递）。 -->
+        <receiver
+            android:name="com.apex.agent.tools.ApkInstallResultReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.apex.agent.action.INSTALL_RESULT" />
+            </intent-filter>
+        </receiver>
+
+        <!-- #343 媒体结果蹦床：无 UI 上下文里的 FilePicker / CameraCapturer 经此
+             Activity 走真正的 startActivityForResult → onActivityResult 分发。
+             透明无历史、独立任务栈、不进最近任务；exported=false（仅本应用启动）。 -->
+        <activity
+            android:name="com.apex.agent.tools.MediaResultBrokerActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- WorkManager初始化 -->
         <provider

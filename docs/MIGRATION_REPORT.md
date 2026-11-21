@@ -47,7 +47,7 @@ Total: **68 Kotlin files + 3 MD docs + 1 test file, ~6900 LOC**.
 - `tools/v2/` — 9 Agent tools (create/run/observe/wait/write/signal/resize/snapshot/close)
 
 ### Phase 3 — Compat layer (11 files)
-- `tools/legacy/` — 6 legacy tool aliases (terminal_exec/read/send/signal/list/close)
+- `tools/legacy/` — 6 legacy tool aliases (TerminalExecLegacy/read/send/signal/list/close)
 - `environment/` — DepItem + EnvironmentProvisioner + SdkDownloader (extracted from TerminalViewModel)
 - `di/TerminalModule.kt`, `di/ToolRegistrationGuide.kt`
 - `ui/screen/terminalv2/` — TerminalViewModel (pure) + TerminalSettingsViewModel
@@ -79,7 +79,7 @@ Total: **68 Kotlin files + 3 MD docs + 1 test file, ~6900 LOC**.
 | `platform/terminal/src/main/cpp/ansi_filter.h` | `VT100Emulator` | DELETE |
 | `platform/terminal/src/main/cpp/ansi_filter.cpp` | `VT100Emulator` | DELETE (+ remove from CMakeLists.txt) |
 | `platform/terminal/.../AnsiStripper.kt` | `VT100Emulator` | DELETE |
-| `app/.../tools/StreamingTerminalExecTool.kt` | `terminal.run` + `terminal.observe` | DELETE (§46 id collision) |
+| `app/.../tools/StreamingTerminalExecTool.kt` | `TerminalRun` + `TerminalObserve` | DELETE (§46 id collision) |
 | `platform/terminal/.../tools/TerminalExecTool.kt` | `tools/legacy/LegacyExecTool.kt` | DELETE |
 | `platform/terminal/.../tools/TerminalSendTool.kt` | `tools/legacy/LegacySendTool.kt` / `tools/v2/TerminalWriteTool.kt` | DELETE |
 | `platform/terminal/.../tools/TerminalReadTool.kt` | `tools/legacy/LegacyReadTool.kt` / `tools/v2/TerminalObserveTool.kt` | DELETE |
@@ -94,23 +94,23 @@ The following are marked `@Deprecated` (kept for 1 version, scheduled for remova
 | API | Replacement |
 |---|---|
 | `LegacyTerminalManager` | `TerminalRuntime` (inject directly) |
-| `LegacyExecTool` (`terminal_exec`) | `tools/v2/TerminalRunTool` + `TerminalWaitTool` + `TerminalObserveTool` |
-| `LegacyReadTool` (`terminal_read`) | `tools/v2/TerminalObserveTool` (mode=RAW) |
-| `LegacySendTool` (`terminal_send`) | `tools/v2/TerminalWriteTool` |
-| `LegacySignalTool` (`terminal_signal`) | `tools/v2/TerminalSignalTool` |
-| `LegacyListTool` (`terminal_list`) | `tools/v2/TerminalSnapshotTool` (mode=SESSIONS) |
-| `LegacyCloseTool` (`terminal_close`) | `tools/v2/TerminalCloseTool` |
+| `LegacyExecTool` (`TerminalExecLegacy`) | `tools/v2/TerminalRunTool` + `TerminalWaitTool` + `TerminalObserveTool` |
+| `LegacyReadTool` (`TerminalReadLegacy`) | `tools/v2/TerminalObserveTool` (mode=RAW) |
+| `LegacySendTool` (`TerminalSendLegacy`) | `tools/v2/TerminalWriteTool` |
+| `LegacySignalTool` (`TerminalSignalLegacy`) | `tools/v2/TerminalSignalTool` |
+| `LegacyListTool` (`TerminalListLegacy`) | `tools/v2/TerminalSnapshotTool` (mode=SESSIONS) |
+| `LegacyCloseTool` (`TerminalCloseLegacy`) | `tools/v2/TerminalCloseTool` |
 
 Migration message on each `@Deprecated` points to the new API.
 
 ## 6. Compatibility layer
 
-The 6 legacy tool aliases preserve the OLD tool `id`s (`terminal_exec`, `terminal_read`, etc.) so existing Agent prompts / tool registrations continue to work during migration. Internal behavior is NEW:
-- `terminal_exec` is now synchronous `run + wait(PROCESS_EXITED) + observe(RAW)` — **settle-time is gone**, completion is `waitpid`-confirmed.
-- `terminal_read` is now `observe(RAW, afterCursor)` — cursor-based, no duplicates.
-- `terminal_send` is now `write(LINE/RAW/KEY)` — owner auto-injected.
+The 6 legacy tool aliases preserve the OLD tool `id`s (`TerminalExecLegacy`, `TerminalReadLegacy`, etc.) so existing Agent prompts / tool registrations continue to work during migration. Internal behavior is NEW:
+- `TerminalExecLegacy` is now synchronous `run + wait(PROCESS_EXITED) + observe(RAW)` — **settle-time is gone**, completion is `waitpid`-confirmed.
+- `TerminalReadLegacy` is now `observe(RAW, afterCursor)` — cursor-based, no duplicates.
+- `TerminalSendLegacy` is now `write(LINE/RAW/KEY)` — owner auto-injected.
 
-The `terminal_exec` id collision (§46) is **FIXED**: exactly one class owns `id=terminal_exec` (`LegacyExecTool`). The old `StreamingTerminalExecTool` duplicate is deleted.
+The `TerminalExecLegacy` id collision (§46) is **FIXED**: exactly one class owns `id=TerminalExecLegacy` (`LegacyExecTool`). The old `StreamingTerminalExecTool` duplicate is deleted.
 
 ## 7. Test results
 
@@ -186,7 +186,7 @@ See `docs/PERF.md` for details. Summary:
 [✓] Session lifecycle (create/close/recover) — persistence + recovery service
 [✓] Process lifecycle (exit code accurate) — waitpid via nativeWaitExit
 [✓] Android privilege awareness (NORMAL/SHIZUKU/ROOT) — PolicyEngine + Capability
-[✓] terminal_exec id collision fixed (§46)
+[✓] TerminalExecLegacy id collision fixed (§46)
 [✓] EnvironmentProvisioner extracted from TerminalViewModel (§43)
 [✓] Legacy Tool compatibility (6 aliases @Deprecated, functional)
 [✓] 9 new tools with JSON Schema (§34)

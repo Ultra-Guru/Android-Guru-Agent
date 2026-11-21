@@ -4,7 +4,7 @@
 > 审查基线：`main` @ `e34c176`（feat(agent-engine): A68.1 — Execution Orchestrator Core）
 > 审查时间：2026-08-27（UTC）
 > 审查方式：纯云端静态审查（GitHub API + 只读 clone），未执行动态/模拟器测试（原因见附录 B）
-> 关联文档：本报告是对 `docs/agent-ui-audit.md`（2026-08-11，聚焦"Agent 输出呈现"）的全应用扩展。该文档中的 P0-P3 缺口（错误高亮、工具分类、搜索结构化卡片）在当前代码中已基本落地，本报告不再重复计入。
+> 关联文档：本报告原是对 `agent-ui-audit.md`（已随 Agent 模式移除）的全应用扩展，其 P0-P3 缺口已在当前代码基本落地。
 
 ---
 
@@ -57,7 +57,7 @@
 | UI-022 | 中 | 边界 | **权限屏从系统设置返回后状态不刷新**：仅 `LaunchedEffect(Unit)` 首次检测；授予无障碍/悬浮窗后返回本屏仍显示"未获得"；`requestPermission(1001)` 异步授权后立即重读必得旧值；其余系统设置跳转失败被 `runCatching` 静默吞掉（定制 ROM 上点了没反应） | `PermissionsScreen.kt:69-80/305-311/156-204` | `LifecycleEventObserver` ON_RESUME 重检 + 注册 Shizuku 回调；跳转失败 Toast + 兜底应用详情页 | 三态 Pill 的"颜色+文字"双通道是亮点（见 §3），输在时效性 |
 | UI-023 | 中 | 性能 | **LazyColumn key 缺失或不稳定**：消息列表以 `index` 作 key（头部插入/撤回时复用错位、动画错乱）；日志列表（高频追加）无 key——行内 `remember{expanded}` 会串到错误记录；Settings/Terminal 各列表同样无 key；`itemsIndexed(steps)` 无 key | `AgentChatScreen.kt:293`（`key = { index, _ -> index }`）、`LogViewerScreen.kt:192`、`AgentChatScreen.kt:1437`、`SettingsScreen.kt:297/406/449`、`TerminalScreen.kt:336` | 消息/日志用稳定 id 作 key（LogRecord 已有 id）；步骤列表用时间戳+序号 | Skill/Memory 屏已正确用 key，可作参照 |
 | UI-024 | 中 | 布局 | **大屏/折叠屏零适配**：全应用 0 处 `widthIn/maxWidth/WindowWidthSizeClass`；平板上气泡固定 `widthIn(max=320/340.dp)`、菜单固定 `width(300/280.dp)`、抽屉内容不可滚动（横屏 ~360dp 高时底部状态区不可达）、终端抽屉固定 340dp（与主抽屉 288dp 不一致）；双 LazyColumn 各占 `weight(1f, fill=false)` 布局僵硬（Memory 屏） | grep `widthIn|maxWidth|WindowSizeClass` 0 命中；`AgentChatScreen.kt:681/754`、`BrainMenuButton.kt:111`、`ToolkitRingButton.kt:135`、`ApexDrawerContent.kt:50-220`、`TerminalScreen.kt:159`、`MemoryScreen.kt:152-177` | 引入 WindowSizeClass：≥600dp 切两栏（会话列表 + 详情）；菜单改 `widthIn(min,max)`；抽屉加 `verticalScroll` | 平板/折叠屏当前＝拉伸放大的手机 UI |
-| UI-025 | 中 | 功能 | **ask_user 选择类请求进入死路**：`UserInputDialog` 对 `InputType.CHOICE` 将提交按钮设为 `enabled = !isChoice`（恒禁用），用户只能"取消"，无法作答——Agent 等待回复直至超时 | `AgentChatScreen.kt:2384-2391`（`enabled = !isChoice // 选项类暂以确认框展示`） | CHOICE 渲染为单选列表 + 可提交；至少临时放开按钮或明示"此类型暂不支持，请取消" | 与 `AskUserChoiceTool` 能力不匹配 |
+| UI-025 | 中 | 功能 | **AskUser 选择类请求进入死路**：`UserInputDialog` 对 `InputType.CHOICE` 将提交按钮设为 `enabled = !isChoice`（恒禁用），用户只能"取消"，无法作答——Agent 等待回复直至超时 | `AgentChatScreen.kt:2384-2391`（`enabled = !isChoice // 选项类暂以确认框展示`） | CHOICE 渲染为单选列表 + 可提交；至少临时放开按钮或明示"此类型暂不支持，请取消" | 与 `AskUserChoiceTool` 能力不匹配 |
 | UI-026 | 中 | 交互 | **ImeAction.Send 使多行输入无法换行**：`AdaptiveInputField` 最大 5 行，但键盘回车键被 Send 动作占据，用户无法手动换行（只能粘贴含换行文本） | `AdaptiveInputField.kt:134-140` | `imeAction = ImeAction.Default` + 发送走独立按钮；或提供"换行/发送"切换开关 | 与 AI 聊天输入的核心诉求直接冲突 |
 | UI-027 | 中 | 边界/安全 | **FileProvider 暴露整个外部存储根**：`file_paths.xml` 兜底 `<external-path name="external" path="." />`，任何经 FileProvider 分享的 URI 授予后可读该路径 | `app/src/main/res/xml/file_paths.xml:16` | 收窄到 attachments/workspace 具体子目录；API≥29 设备可删除该条 | 附：`accessibility_config.xml` 跨模块悬空引用 app 模块字符串，重命名即断（`platform/privilege/.../accessibility_config.xml:10`） |
 | UI-028 | 中 | 一致性 | **悬浮窗 Compose 未包 ApexTheme**：浮窗内是 M3 默认紫色 scheme，硬编码 `0xFF4CAF50/0xFF2196F3/0xFFFF9800` 与全应用 mint/amber/magenta 语言冲突；6 处硬编码 `fontSize=11/12/13.sp` 绕过 Typography | `BrowserOverlay.kt:244/255-260/307` | 包 `ApexTheme` 并改用 colorScheme/typography | 品牌一致性 |
@@ -89,7 +89,7 @@
 ## 3. 亮点与良好实践
 
 1. **统一且有辨识度的设计语言**：`Theme.kt` 完整定义明暗两套 scheme（mint 主色 / amber 强调 / magenta 危险态），排版体系"显示 Sans + 正文等宽"呼应终端美学；绝大多数组件严格消费 `MaterialTheme.colorScheme/typography`，自定义动效（120-400ms tween、带 label）克制规范。
-2. **`docs/agent-ui-audit.md` 的自审文化**：团队自己维护 UI 审查文档并按 P0-P3 逐项落地（ErrorBlock 红色高亮、ToolKindBadge 五类来源徽章、WebSearchResultsCard 结构化卡片均已实现），注释中保留"缺陷 N 修复"追溯——这是本仓库最值得保持的工程习惯。
+2. **（原 agent-ui-audit.md）的自审文化**：团队自己维护 UI 审查文档并按 P0-P3 逐项落地（ErrorBlock 红色高亮、ToolKindBadge 五类来源徽章、WebSearchResultsCard 结构化卡片均已实现），注释中保留"缺陷 N 修复"追溯——这是本仓库最值得保持的工程习惯。
 3. **`GithubTokenDialog`（GithubIconButton.kt:174-259）是异步表单的正确姿势**：suspend 校验 + 验证期禁用输入/按钮 + inline 错误不关窗 + `ghp_/github_pat_` 格式预检 + `PasswordVisualTransformation`——全仓库唯一做对的密钥输入（对比 UI-006 的设置屏）。
 4. **Skill/Memory 屏的"四件套"范式**：空态文案、`items(key=)`、删除二次确认、Snackbar 反馈齐备，可直接作为其他屏幕整改模板；权限屏三态 Pill 用"颜色 + 文字"双通道表达状态，对色盲用户友好。
 5. **稳健的系统交互样板**：`FileOpener` 用 FileProvider + `ActivityNotFoundException` 替代 Android 11+ 失效的 `resolveActivity()`，配 MIME 兜底表与路径预检；`BrowserEngine` 11 处 `withContext(Dispatchers.Main)` 系统性包装 WebView 操作；输入草稿用 `SavedStateHandle`（规避 Bundle 1MB 限制）。
@@ -162,7 +162,7 @@
 - GitHub REST API（repo/issues/actions 元数据）、只读 `git clone`（`main@e34c176`，深度 50）
 - 逐行人工审查 ~12,000 行 UI 代码；ripgrep 模式扫描 10 项（见附录 A）
 - 参考基线：Material Design 3 规范（触摸目标 ≥48dp、对比度 WCAG AA 4.5:1/3:1）、Android 官方 edge-to-edge 与预测性返回指南
-- 仓库内既有文档：`docs/agent-ui-audit.md`、`docs/PERF.md`、Issue #69（用户体验优化）
+- 仓库内既有文档：`docs/PERF.md`、Issue #69（用户体验优化）
 - 交叉验证：所有"高"严重度结论均经独立 grep/源码复读复核（imePadding=0、BackHandler=0、Navigation=0、stringResource=0、rememberSaveable=0、VisualTransformation=0）
 
 ### D. 参考资料

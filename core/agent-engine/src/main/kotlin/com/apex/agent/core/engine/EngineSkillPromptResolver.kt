@@ -9,13 +9,13 @@ import com.apex.agent.core.tools.skill.SkillRegistry
  * - T76 executionTags → LlmRequestContext（tagged）；
  * - #197 双工位 × 渐进披露 —— 系统提示词的技能注入解析（自
  * [ApexAgentEngine.buildSystemPrompt] 迁出，SRP 预算腾挪；模式与
- * [EngineCompressionGate] / [EnginePromptDelegates] 相同：同包顶层扩展 +
+ * [EngineCompressionGate] 相同：同包顶层扩展 +
  * internal 成员直调，引擎调用点零改动）。
  *
  * 两条注入通道按优先级合成：
  * 1. **渐进披露**（[skillActivation] 非空，主路径）：双层结构 ——
  *    scope 过滤后的技能目录（一行摘要）+ 仅激活技能的全文注入；
- *    激活集外技能只经目录暴露，由模型调 skill_activate 按需装备。
+ *    激活集外技能只经目录暴露，由模型调 SkillActivate 按需装备。
  * 2. **legacy 全量**（[skillActivation] 为空，单测/子代理）：按
  *    [AgentConfig.skillScope] 作用域全量注入。
  *
@@ -40,8 +40,40 @@ internal val ApexAgentEngine.skillPromptInjections: List<String>
 internal val ApexAgentEngine.skillCatalogDigests: List<SkillDigest>
     get() {
         val registry: SkillRegistry = skillRegistry ?: return emptyList()
-        return if (skillActivation != null) registry.getSkillDigests(skillScopeOrNull) else emptyList()
+        if (skillActivation == null) return emptyList()
+        val digests = registry.getSkillDigests(skillScopeOrNull)
+        // #206 目录注入上限：技能库扩到 300+ 后全量目录会把系统提示词撑出
+        // 数千 token。超限时按分类域轮转均衡抽样（每个域都保持可见，
+        // 模型可经 SkillList() 查全量）—— 而不是按字典序硬截断（后者会把
+        // 排在后面的整个域整体抹掉）。
+        return if (digests.size <= MAX_CATALOG_DIGESTS) digests
+        else balancedDigestSample(digests, MAX_CATALOG_DIGESTS)
     }
+
+/** #206 目录注入条数上限（超限走域均衡抽样）。 */
+private const val MAX_CATALOG_DIGESTS = 150
+
+/**
+ * 域均衡抽样：按 category 轮转取条目直至 [limit] 条 —— 每个域都持续有
+ * 份额（先到先得，域内保持原有字典序）。未分类（category=null）排最后
+ * 参与轮转。确定性：同一份输入永远得到同一份抽样。
+ */
+private fun balancedDigestSample(digests: List<SkillDigest>, limit: Int): List<SkillDigest> {
+    val byCategory = digests.groupBy { it.category }
+        .map { (cat, list) -> cat to ArrayDeque(list) }
+        .sortedBy { (cat, _) ->
+            com.apex.agent.core.tools.skill.SkillCategory.of(cat)?.order ?: Int.MAX_VALUE
+        }
+    val out = mutableListOf<SkillDigest>()
+    while (out.size < limit && byCategory.any { (_, queue) -> queue.isNotEmpty() }) {
+        for (index in byCategory.indices) {
+            if (out.size >= limit) break
+            val queue = byCategory[index].second
+            if (queue.isNotEmpty()) out += queue.removeFirst()
+        }
+    }
+    return out
+}
 
 /** T76 — executionTags（taskId/stepId）填入 LlmRequestContext；未接线时原样返回。 */
 internal fun ApexAgentEngine.tagged(ctx: LlmRequestContext): LlmRequestContext {

@@ -80,7 +80,7 @@ class FakeNativePty : NativePty {
         env: Map<String, String>
     ): Int {
         // P71 (N1): argv 语义 —— 与 native 一致拒绝空 argv；argv[0] 作为 "shell 名"。
-        // 交互模拟行为与 nativeCreateSession 完全相同（LocalShellBackend 的
+        // 交互模拟行为与 nativeCreateSession 完全相同（朴素 shell 后端的
         // ["/system/bin/sh", "-i"] 路径 byte-equal），另记录 argv/spawnEnv 供测试断言。
         if (argv.isEmpty() || argv[0].isEmpty()) return -1
         val id = idCounter.incrementAndGet()

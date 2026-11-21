@@ -8,7 +8,7 @@ import com.apex.agent.core.tools.builtin.BaseTool
 import com.apex.agent.core.tools.toolSchema
 
 /**
- * # code_git_branch — 分支管理（经 PRoot Ubuntu 沙箱执行）
+ * # CodeGitBranch — 分支管理（经 PRoot Ubuntu 沙箱执行）
  *
  * 一个工具四个动作（action 分派）：
  *
@@ -27,7 +27,7 @@ import com.apex.agent.core.tools.toolSchema
 class GitBranchTool(
     private val runner: GitCommandRunner
 ) : BaseTool(
-    id = "code_git_branch",
+    id = "CodeGitBranch",
     name = "Code Git Branch",
     description = """
         Manage git branches of the active workspace.

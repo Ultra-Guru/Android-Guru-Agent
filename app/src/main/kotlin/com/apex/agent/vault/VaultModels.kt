@@ -26,9 +26,9 @@ data class VaultEntry(
     val origin: VaultOrigin,
     /** 创建时间（epoch ms）。 */
     val createdAt: Long,
-    /** 最近一次被 vault_paste 使用的时刻（epoch ms；0 = 从未使用）。 */
+    /** 最近一次被 VaultPaste 使用的时刻（epoch ms；0 = 从未使用）。 */
     val lastUsedAt: Long = 0,
-    /** 累计使用次数（vault_paste 成功投递 +1）。 */
+    /** 累计使用次数（VaultPaste 成功投递 +1）。 */
     val usageCount: Int = 0
 )
 
@@ -36,7 +36,7 @@ data class VaultEntry(
 enum class VaultOrigin { HUMAN, AGENT }
 
 /**
- * 脱敏快照 —— `vault_list` 与 UI 统计的唯一视图：
+ * 脱敏快照 —— `VaultList` 与 UI 统计的唯一视图：
  * id/label/note/origin/时间戳/用量/密文长度，**绝不含 secret**。
  */
 @Serializable

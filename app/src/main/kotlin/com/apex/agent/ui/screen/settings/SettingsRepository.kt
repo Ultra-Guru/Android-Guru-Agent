@@ -1,13 +1,15 @@
 package com.apex.agent.ui.screen.settings
 
 import android.content.Context
+
+import com.apex.agent.R
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
-import com.apex.agent.core.engine.modes.ModePreset
-import com.apex.agent.core.engine.modes.migrateLegacyCustomInstruction
-import com.apex.agent.core.engine.modes.selectedModePreset
+import com.apex.agent.core.code.subagent.SubAgentSettings
 import com.apex.agent.core.llm.*
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.permission.PermissionMode
 import com.apex.agent.permission.PermissionRule
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -52,6 +54,8 @@ class SettingsRepository @Inject constructor(
      * `apex_settings` 里 —— 只要设备被 root 或做一次 adb backup，Key 就裸奔。
      * 现在 Key **只**存在于此处，内存中保留一份副本供 [LlmConfig] 构建使用。
      */
+    private val appContext: Context get() = context.applicationContext
+
     private val securePrefs: SharedPreferences by lazy {
         try {
             val masterKey = MasterKey.Builder(context)
@@ -63,7 +67,17 @@ class SettingsRepository @Inject constructor(
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
         } catch (e: Exception) {
-            // 极少数设备 Keystore 初始化失败：退化为普通 SP，宁可不加密也绝不让配置丢失
+            // 极少数设备 Keystore 初始化失败：退化为普通 SP，宁可不加密也绝不让配置丢失。
+            // #257：降级不再静默 —— 留一条 WARN（诊断与安全审计可见），
+            // 与 GithubTokenManager / EncryptedPrefsVaultStore 的告警口径对齐。
+            runCatching {
+                AppLogger.instance.warn(
+                    LogCategory.SYSTEM, "SettingsRepository",
+                    "EncryptedSharedPreferences 初始化失败，LLM API Key 将以明文存储" +
+                        "（${e.javaClass.simpleName}: ${e.message}）—— 建议在系统设置中" +
+                        "清除应用数据后重新配置"
+                )
+            }
             context.getSharedPreferences(PREF_SECURE_FALLBACK, Context.MODE_PRIVATE)
         }
     }
@@ -80,22 +94,56 @@ class SettingsRepository @Inject constructor(
     private val _agentSettings = MutableStateFlow(AgentSettings())
     val agentSettings: StateFlow<AgentSettings> = _agentSettings.asStateFlow()
 
+    // ── B0-BUG-01:损坏检测(设置首页横幅数据源)──
+    // 解析失败的存储域清单;这些域在本次进程内**禁止写回**(见 init 写盘纪律),
+    // 原始串已保留到 corrupt_backup_* 键 —— 一次 JSON 损坏不再把用户配置
+    // 永久抹成默认值,修复/导入备份后可完整恢复。
+    private val corruptKeys = LinkedHashSet<String>()
+    private val _dataCorruption = MutableStateFlow<List<String>>(emptyList())
+    val dataCorruption: StateFlow<List<String>> = _dataCorruption.asStateFlow()
+
+    private fun onCorrupt(key: String, raw: String) {
+        if (corruptKeys.add(key)) {
+            // 原始串备份键永不覆盖(时间戳后缀),诊断/手工恢复入口。
+            prefs.edit()
+                .putString("corrupt_backup_" + key + "_" + System.currentTimeMillis(), raw)
+                .apply()
+            _dataCorruption.value = corruptKeys.toList()
+            AppLogger.instance.error(
+                LogCategory.SYSTEM, "SettingsRepository",
+                "配置域解析失败，已保留原始数据并禁用该域写回：$key"
+            )
+        }
+    }
+
     init {
-        // 所有状态流声明完成后，统一执行加载 / 种子 / 迁移，并立即持久化，
-        // 避免字段初始化顺序导致迁移结果被覆盖。
+        // 所有状态流声明完成后，统一执行加载 / 种子 / 迁移。
+        // B0-BUG-01/06 写盘纪律：只在「首次种子（键不存在）」或「迁移发生」
+        // 时落盘，解析失败的损坏域一律禁写（旧实现无条件四连写 —— 解析失败
+        // → 回退默认值 → 写回 = 一次文件损坏把用户配置永久重置）。
+        val freshProviders = !prefs.contains(KEY_PROVIDERS)
+        val freshProfiles = !prefs.contains(KEY_PROFILES)
+        val freshRoles = !prefs.contains(KEY_ROLES)
+        val freshAgent = !prefs.contains(KEY_AGENT)
+
         var provs = readProviders() ?: ModelProfileDefaults.builtInProviders
         var profs = (readProfiles(provs) ?: ModelProfileDefaults.defaultProfiles(provs)).toMutableList()
         provs = migrateAndHydrateApiKeys(provs)
-        migrateLegacyConfig(profs, provs) { newProvs -> provs = newProvs }
+        val legacyMigrated = migrateLegacyConfig(profs, provs) { newProvs -> provs = newProvs }
         provs = migrateAndHydrateApiKeys(provs)
         _providers.value = provs
         _profiles.value = profs
         _roles.value = readRoles(profs) ?: ModelProfileDefaults.defaultRoles(profs)
         _agentSettings.value = readAgentSettings()
-        persistProviders()
-        persistProfiles()
-        persistRoles()
-        persistAgentSettings()
+
+        // B0-BUG-02:迁移完成的旧版本用户补一次旧散装键清扫(旧实现迁移后
+        // 只置标记不删键,明文 Key 永久留在 apex_settings)。
+        clearLegacyKeysIfMigrated()
+
+        if (freshProviders || legacyMigrated) persistProviders()
+        if (freshProfiles || legacyMigrated) persistProfiles()
+        if (freshRoles || legacyMigrated) persistRoles()
+        if (freshAgent || legacyMigrated) persistAgentSettings()
     }
 
     // ── 查询辅助 ───────────────────────────────────────────────
@@ -115,8 +163,9 @@ class SettingsRepository @Inject constructor(
     /** 读取某个 Provider 的 API Key（密文；无则返回空串而非 null，便于直接判空）。 */
     fun getProviderApiKey(providerId: String): String {
         if (providerId.isBlank()) return ""
-        return securePrefs.getString(KEY_PROVIDER_KEY + providerId, null)
-            ?: prefs.getString(KEY_PROVIDER_KEY + providerId, null).orEmpty()
+        // B0-BUG-02:明文旧键回退已随迁移清扫移除 —— Key 只在加密区
+        // (Keystore 降级设备上 securePrefs 为 fallback SP,仍由此单点读取)。
+        return securePrefs.getString(KEY_PROVIDER_KEY + providerId, null).orEmpty()
     }
 
     /**
@@ -202,9 +251,11 @@ class SettingsRepository @Inject constructor(
 
     fun duplicateProfile(id: String) {
         val src = getProfile(id) ?: return
+        // B1-BUG-07:UUID 替代毫秒时间戳 —— 同一毫秒内连续复制/新建不再冲突;
+        // 副本名走资源化文案(旧 "(副本)" 中文硬编码在英文环境露出)。
         val copy = src.copy(
-            id = "profile_${System.currentTimeMillis()}",
-            name = "${src.name} (副本)",
+            id = "profile_" + java.util.UUID.randomUUID(),
+            name = appContext.getString(R.string.settings_profile_copy_suffix, src.name),
             isDefault = false
         )
         upsertProfile(copy)
@@ -257,21 +308,6 @@ class SettingsRepository @Inject constructor(
         persistAgentSettings()
     }
 
-    /**
-     * #168 当前生效的 CUSTOM 模式指令（单一解析源，AgentModule 启动快照与
-     * AgentChatViewModel 运行时热切换共用）：
-     * 1. 选中预设（[AgentSettings.selectedModePresetId] 命中内置或用户预设）
-     *    → 该预设的 instruction；
-     * 2. 未选预设 → 回退旧单串 `custom_mode_instruction`（兼容通道）；
-     * 3. 都为空 → ""（CUSTOM 模式不注入任何额外指令）。
-     */
-    fun effectiveCustomInstruction(): String {
-        val agent = _agentSettings.value
-        selectedModePreset(agent.customModePresets, agent.selectedModePresetId)
-            ?.let { return it.instruction.trim() }
-        return prefs.getString(LEGACY_KEY_CUSTOM_INSTRUCTION, null)?.trim().orEmpty()
-    }
-
     // ── 持久化 ─────────────────────────────────────────────────
     private fun persistProfiles() =
         prefs.edit().putString(KEY_PROFILES, json.encodeToString(_profiles.value)).apply()
@@ -293,52 +329,34 @@ class SettingsRepository @Inject constructor(
     private fun readProviders(): List<ProviderConfig>? {
         val raw = prefs.getString(KEY_PROVIDERS, null) ?: return null
         return runCatching { json.decodeFromString<List<ProviderConfig>>(raw) }.getOrNull()
+            .also { if (it == null) onCorrupt(KEY_PROVIDERS, raw) }
     }
 
     private fun readProfiles(providers: List<ProviderConfig>): List<ModelProfile>? {
         val raw = prefs.getString(KEY_PROFILES, null) ?: return null
-        return runCatching { json.decodeFromString<List<ModelProfile>>(raw) }.getOrNull()
-            ?: ModelProfileDefaults.defaultProfiles(providers)
+        val parsed = runCatching { json.decodeFromString<List<ModelProfile>>(raw) }.getOrNull()
+        if (parsed == null) onCorrupt(KEY_PROFILES, raw)
+        return parsed ?: ModelProfileDefaults.defaultProfiles(providers)
     }
 
     private fun readRoles(profiles: List<ModelProfile>): ModelRoleConfig? {
         val raw = prefs.getString(KEY_ROLES, null) ?: return null
-        return runCatching { json.decodeFromString<ModelRoleConfig>(raw) }.getOrNull()
-            ?: ModelProfileDefaults.defaultRoles(profiles)
+        val parsed = runCatching { json.decodeFromString<ModelRoleConfig>(raw) }.getOrNull()
+        if (parsed == null) onCorrupt(KEY_ROLES, raw)
+        return parsed ?: ModelProfileDefaults.defaultRoles(profiles)
     }
 
     private fun readAgentSettings(): AgentSettings {
         val raw = prefs.getString(KEY_AGENT, null)
         if (raw != null) {
-            runCatching { json.decodeFromString<AgentSettings>(raw) }.getOrNull()?.let { return migrateCustomModePresets(it) }
+            val parsed = runCatching { json.decodeFromString<AgentSettings>(raw) }.getOrNull()
+            if (parsed == null) onCorrupt(KEY_AGENT, raw)
+            parsed?.let { return migratePermissionDefaultBypass(it) }
         }
-        // 兼容旧版散装 Agent 设置 Key
-        return migrateCustomModePresets(
-            AgentSettings(
-                defaultMode = prefs.getString("agent_default_mode", "auto") ?: "auto",
-                thinkLevel = prefs.getString("agent_think_level", "standard") ?: "standard",
-                maxIterations = prefs.getInt("agent_max_iterations", 20),
-                keepAlive = prefs.getBoolean("agent_keep_alive", true),
-            )
-        )
-    }
-
-    /**
-     * #168 预设迁移：旧版 CUSTOM 单串指令（SharedPreferences 平键
-     * `custom_mode_instruction`，AgentChatViewModel 写入）→ 首个用户预设。
-     *
-     * 迁移条件见 [migrateLegacyCustomInstruction]（旧指令非空 + 尚无用户预设
-     * + 未迁移过 → 幂等）；迁移后自动选中，保证升级前后 CUSTOM 模式的
-     * system prompt 注入内容逐字一致（行为零变化）。新用户（无旧指令）
-     * 不产生任何预设，选中留空 = 走旧单串兼容路径（选中预设优先于旧串）。
-     */
-    private fun migrateCustomModePresets(settings: AgentSettings): AgentSettings {
-        if (settings.customModePresets.isNotEmpty()) return settings
-        val legacy = prefs.getString(LEGACY_KEY_CUSTOM_INSTRUCTION, null)
-        val migrated = migrateLegacyCustomInstruction(emptyList(), legacy) ?: return settings
-        return settings.copy(
-            customModePresets = listOf(migrated),
-            selectedModePresetId = migrated.id
+        // 兼容旧版散装 Key（仅保留仍在消费的 keepAlive；Agent 模式散装键
+        // 已随模式移除，ignoreUnknownKeys 吞掉存量 JSON 里的 Agent 字段）
+        return migratePermissionDefaultBypass(
+            AgentSettings(keepAlive = prefs.getBoolean("agent_keep_alive", true))
         )
     }
 
@@ -351,10 +369,10 @@ class SettingsRepository @Inject constructor(
         profiles: MutableList<ModelProfile>,
         providers: List<ProviderConfig>,
         onProvidersChanged: (List<ProviderConfig>) -> Unit
-    ) {
+    ): Boolean {
         val legacyKey = prefs.getString("llm_api_key", null)
-        if (legacyKey.isNullOrBlank()) return
-        if (prefs.getBoolean(KEY_LEGACY_MIGRATED, false)) return
+        if (legacyKey.isNullOrBlank()) return false
+        if (prefs.getBoolean(KEY_LEGACY_MIGRATED, false)) return false
 
         val baseUrl = prefs.getString("llm_base_url", "") ?: ""
         val model = prefs.getString("llm_model", "") ?: ""
@@ -382,7 +400,27 @@ class SettingsRepository @Inject constructor(
         if (idx >= 0) profiles[idx] = profiles[idx].copy(isDefault = false)
         profiles.add(migratedProfile)
         onProvidersChanged(providers + customProvider)
+        // B0-BUG-02:迁移体完成(旧配置已进 Profile/Provider,Key 经
+        // migrateAndHydrateApiKeys 进加密区)——旧散装键立即清除,明文 Key
+        // 不再留在 apex_settings(adb backup / 备份导出不再带得出去)。
+        clearLegacyKeys()
         prefs.edit().putBoolean(KEY_LEGACY_MIGRATED, true).apply()
+        return true
+    }
+
+    /** 旧版本迁移用户的一次性补清扫(旧实现只置标记不删键;幂等)。 */
+    private fun clearLegacyKeysIfMigrated() {
+        if (prefs.getBoolean(KEY_LEGACY_MIGRATED, false)) clearLegacyKeys()
+    }
+
+    private fun clearLegacyKeys() {
+        prefs.edit()
+            .remove("llm_api_key")
+            .remove("llm_base_url")
+            .remove("llm_model")
+            .remove("llm_temperature")
+            .remove("llm_reasoning_effort")
+            .apply()
     }
 
     companion object {
@@ -391,9 +429,6 @@ class SettingsRepository @Inject constructor(
         private const val KEY_ROLES = "model_roles_v2"
         private const val KEY_AGENT = "agent_settings_v2"
         private const val KEY_LEGACY_MIGRATED = "legacy_migrated_v2"
-
-        /** #168：旧版 CUSTOM 单串指令键（AgentChatViewModel 同款键名，迁移读取源）。 */
-        private const val LEGACY_KEY_CUSTOM_INSTRUCTION = "custom_mode_instruction"
 
         /** 加密 Preference 文件名 */
         private const val PREF_SECURE = "apex_secure_settings"
@@ -404,111 +439,131 @@ class SettingsRepository @Inject constructor(
     }
 }
 
+
 /**
- * Agent 运行参数（扩展版）。
+ * 工具权限模式兼容迁移（S-03 语义反转：不再自动提权）。
  *
- * 字段中已真正打通到 [com.apex.agent.core.engine.AgentConfig] 的有（DI 一次性快照，
- * 设置变更需重启应用生效）：
- * defaultMode / thinkLevel / maxIterations / reflection / reflectionRounds /
- * maxContextTokens / compressionThreshold / preserveRecentTurns / maxToolOutputLength
- * （streaming / temperature 则来自选中的模型 Profile）。
+ * 历史：2026-10 曾按用户反馈把默认档 DEFAULT → BYPASS，并对恰好停在旧默认
+ * DEFAULT 的存量用户做「一次性翻转」—— 这等价于在用户无感知的情况下把
+ * 权限从「高危询问」静默升到「全自动」，违反最小授权（S-03 修复对象）。
  *
- * 其余字段为数据预埋，由对应层后续接入：
- *  - loopDetection / planning / replanning / backgroundExecution / keepAlive /
- *    autoRetry 等 → Agent 引擎后续接入（UI 已逐项暴露）；
- *  - visionEnabled / screenshotQuality / maxScreenshots → 视觉管线后续接入；
- *  - themeMode / dynamicColor / fontScale / showTimestamps → 界面/主题层消费
- *    （fontScale / showTimestamps 设计为立即生效）。
+ * 现状（S-03）：
+ * - 新默认档回到 [PermissionMode.DEFAULT]（见 AgentSettings.permissionMode）；
+ * - 本迁移绝不改变 permissionMode：已停在 BYPASS 的存量用户保持不动
+ *   （无法区分「被旧迁移翻上去」与「显式选择」，反向翻转同样是无感知
+ *   变更 —— 想收紧的用户可在 设置 → 工具权限 切回；新切 BYPASS 需二次
+ *   确认，见 PermissionSettingsSection）；
+ * - 尚未跑过旧迁移（flag=false）的 DEFAULT 用户不再被翻转（自动提权
+ *   路径就此关闭）；
+ * - [AgentSettings.permissionBypassMigrated] 仅作「迁移系统已运行」标记
+ *   落位（幂等短路），字段保留是为存量 JSON 向后兼容。
+ *
+ * 文件级 internal（非成员 private）：纯函数、零 Android 依赖，单测
+ * （PermissionDefaultBypassMigrationTest）直接调用。
+ */
+internal fun migratePermissionDefaultBypass(settings: AgentSettings): AgentSettings {
+    if (settings.permissionBypassMigrated) return settings
+    return settings.copy(permissionBypassMigrated = true)
+}
+
+/**
+ * 运行参数（Agent 模式移除后的收敛版：只保留 Coding 工位与通用层仍在
+ * 消费的字段；Agent 聊天专属字段——执行模式/思考档位/预设/角色激活/
+ * 重试与循环防护/反思规划——已随模式删除，存量 JSON 由
+ * ignoreUnknownKeys 静默吞掉）。
+ *
+ * 字段中已真正打通到引擎配置（[com.apex.agent.core.engine.AgentConfig]，
+ * DI 一次性快照，设置变更需重启应用生效）的有：
+ * toolCallParallelism / maxContextTokens / compressionThreshold /
+ * preserveRecentTurns / maxToolOutputLength / rateLimit* / subagent /
+ * permissionMode / permissionRules / coding*（streaming / temperature
+ * 则来自选中的模型 Profile）。
  */
 @kotlinx.serialization.Serializable
 data class AgentSettings(
-    val defaultMode: String = "auto",        // auto | chat | build
-    val thinkLevel: String = "standard",     // standard | deep | minimal | auto
     /**
-     * #168 聊天页思考档位覆盖（持久化）："" = 未覆盖（跟随 thinkLevel 启动默认 +
-     * Profile 原生 reasoningEffort）；"auto" = AUTO 自适应；其余 = ThinkingLevel
-     * 枚举名小写（none/light/standard/deep/maximum）。聊天页选择器写入，
-     * AgentChatViewModel init 恢复（patchConfig 运行时生效，无需重启）。
+     * v1.5 Coding 屏思考逻辑（双引擎路由）："" / "deep_dive" = 深潜
+     * （自研七档思考，v1.2 既有行为）；"standard" = 标准（业界标准 Agent
+     * 任务循环：画像/权限门/子代理/压缩）。Coding 屏右上角选择器写入，
+     * CodeViewModel init 恢复（DualLogicCodeEngine.switchLogic 运行时路由）。
      */
-    val thinkingLevelOverride: String = "",
+    val codeThinkingLogic: String = "",
     /**
-     * 双级思考控制（RikkaHub 式）第二级：强制深度思考。
-     *
-     * 与第一级（模型原生 reasoningEffort，存 ModelProfile）完全解耦：
-     * - 第一级只走 API 原生参数（reasoning_effort / thinking.budget_tokens /
-     *   enable_thinking），仅对支持思考模式的模型生效；
-     * - 本开关为 true 时，引擎侧把 ThinkingLevel 钉在 MAXIMUM —— 通过
-     *   system prompt 注入七步 Tree-of-Thoughts 深度推理框架 + 工具自检 +
-     *   终检清单（提示词层强制，对**任何**模型生效，包括不支持原生思考
-     *   参数的模型），并同步迭代上限 ×1.5 / 更大工具输出预算。
-     *
-     * false = 引擎回退 STANDARD 三步 CoT（默认）。
+     * P99：上下文治理档位（0 = 宿主默认未开启；3/5/8/10/15/20/30/50/100 =
+     * ContextPreset.keepLastN 白名单值。ContextPolicySet 写入、ContextPolicyGet
+     * 回读；下轮生效）。旧持久化 JSON 反序列化零迁移（默认 0）。
      */
-    val forceDeepThinking: Boolean = false,
+    val contextPolicyPreset: Int = 0,
     /**
-     * v1.2 Coding 模式思考档位（持久化，与聊天页 thinkingLevelOverride 互不
-     * 干扰——两模式各自记忆）："" = 未设置（回退 STANDARD）；"auto" = AUTO
-     * 自适应；其余 = ThinkingLevel 枚举名小写
+     * v1.2 Coding 模式思考档位（持久化）："" = 未设置（回退 STANDARD）；
+     * "auto" = AUTO 自适应；其余 = ThinkingLevel 枚举名小写
      * （none/light/standard/deep/maximum/ultracode/apexcode）。
      * Coding 页选择器写入，CodeViewModel init 恢复（updateThinkingLevel
      * 双通道运行时生效，无需重启）。
      */
     val codeThinkingLevel: String = "",
     /**
-     * #197 Coding 屏执行模式（与 Agent 屏的 defaultMode 互不干扰，两工位各自
-     * 记忆）："" / "build" = BUILD（边想边做）；"plan" = PLAN（先出完整计划，
-     * 确认后执行）。CodeViewModel init 恢复 + setMode 双通道运行时生效。
+     * #197 Coding 屏执行模式："" / "build" = BUILD（边想边做）；
+     * "plan" = PLAN（先出完整计划，确认后执行）；
+     * "goal" = GOAL（目标验收循环）。CodeViewModel init 恢复 + setMode
+     * 双通道运行时生效。
      */
     val codeExecutionMode: String = "",
-    val maxIterations: Int = 20,
+    /**
+     * ═══ 工具循环 v2（引擎已真接线）═══
+     *
+     * 单轮并行执行上限：模型一次返回多个 tool_calls 时，同轮最多几个**同时
+     * 执行**（1..8，1 = 顺序执行）。请求参数侧的 parallel_tool_calls 开关
+     * 在 ModelProfile（两者正交：那个控制模型**能不能**一轮发多个调用，
+     * 这个控制引擎**怎么执行**它们）。高并发下终端类工具输出会交错，
+     * 追求确定性逐个执行请保持 1。
+     */
+    val toolCallParallelism: Int = 1,
+
+    /** 后台服务保活（ApexCoreService = TerminalRuntime 生命周期宿主；#236）。 */
     val keepAlive: Boolean = true,
 
-    // 重试 / 循环防护
-    val autoRetry: Boolean = true,
-    val maxRetryPerAction: Int = 2,
-    val loopDetection: Boolean = true,
-    val loopDetectionWindow: Int = 5,
-    val sameActionThreshold: Int = 3,
-    val autoRecovery: Boolean = true,
-
-    // 高级 Agent 行为（数据预埋，引擎后续接入）
-    val reflection: Boolean = true,
-    val planning: Boolean = true,
-    val replanning: Boolean = false,
-    val parallelToolExecution: Boolean = true,
-    val backgroundExecution: Boolean = false,
-
-    // 视觉 / 截图（数据预埋，引擎后续接入）
-    val visionEnabled: Boolean = true,
-    val screenshotQuality: String = "auto",   // auto | low | medium | high
-    val maxScreenshots: Int = 3,
-
     /**
-     * v1.4.4 #4：任务完成通知（✅已接线——AgentChatEventApplier Complete 钩子）。
-     * App 在后台时任务/轮次跑完发系统通知（高优先级渠道，5 分钟自动消失，
-     * 前台静音）；关闭则永不打扰。
+     * v1.4.4 #4：任务完成通知（✅已接线——引擎完成钩子）。App 在后台时
+     * 任务/轮次跑完发系统通知（高优先级渠道，5 分钟自动消失，前台静音）；
+     * 关闭则永不打扰。
      */
     val taskCompletionNotify: Boolean = true,
 
-    // ── 上下文压缩（对应 AgentConfig，重启应用/新会话后生效）──
+    /**
+     * 自动更新总开关（用户反馈：不想自动更新时应用仍在后台检查/下载）。
+     *
+     * 关闭后：
+     * - App 启动不再静默检查更新（ApexRoot 门控）→ 无新版本浮窗；
+     * - 关于页进入也不再自动检查（UpdatePanel 门控；手动「检查更新」
+     *   按钮仍可用 —— 显式操作不受限）；
+     * - 所有下载本就只由用户按钮触发，检查关掉即后台零流量。
+     * 默认开（保持既有行为）。
+     */
+    val autoUpdateCheck: Boolean = true,
+
+    /**
+     * #218：聊天记忆自动摄取总开关（默认开，保持既有行为；记忆功能主仓库
+     * 保留，设置 → 工作台 → 记忆）。
+     *
+     * 关闭后：对话内容不再自动沉淀到画像/近况/里程碑（含 LLM 蒸馏与
+     * 启发式捕获），召回注入同步静默 —— 已有记忆不受影响，可在记忆页
+     * 查看/删除。cs-mem UI 轨迹记忆（无障碍）不受此开关管辖（那是
+     * 运行时操作轨迹，另一条链路）。
+     */
+    val chatMemoryCapture: Boolean = true,
+
+    // ── 上下文压缩（对应引擎配置，重启应用/新会话后生效）──
+    // Issue #222：本字段不再是水位条/压缩门的直接分母 —— 生效值改为当前默认
+    // 模型 Profile 的 contextWindow（ModelProfile.effectiveContextWindow，切换
+    // 模型时热更新）；此处仅作 Profile 窗口字段缺失/非法（≤0）时的回退值
+    // （防分母塌 0）。
     val maxContextTokens: Int = 128_000,
     val compressionThreshold: Float = 0.8f,   // 0.5..0.95
-    val preserveRecentTurns: Int = 5,
-    val maxToolOutputLength: Int = 2000,
-
-    // ── 反思 ──
-    val reflectionRounds: Int = 1,            // 1..3（设置页 Slider 绑定）
-
-    // ═══ #168 CUSTOM 模式预设（多套命名指令）═══
-    // customModePresets 只存用户自定义预设；内置 4 套由
-    // BuiltinModePresets.ALL 运行时合成（effectiveModePresets）。
-    // selectedModePresetId = "" → 未选：回退旧单串 custom_mode_instruction
-    // （AgentChatViewModel 兼容通道）；选中预设的 instruction 由 VM 拍平进
-    // AgentConfig.customInstruction（既有 "## Custom Instructions" 注入点，
-    // 引擎/提示词零新概念）。旧单串首启自动迁移为预设（幂等，见
-    // SettingsRepository.migrateCustomModePresets）。
-    val customModePresets: List<ModePreset> = emptyList(),
-    val selectedModePresetId: String = "",
+    // 压缩三件套真接线（本轮）：默认值对齐 Coding 引擎原硬编码基准（6 轮 / 8000 字符），
+    // 保证默认用户在接线后零行为漂移；此前引擎侧硬编码 6/8000、设置侧默认 5/2000 互相打架。
+    val preserveRecentTurns: Int = 6,
+    val maxToolOutputLength: Int = 8_000,
 
     // ── 界面 ──
     val themeMode: String = "system",         // system | dark | light
@@ -518,13 +573,29 @@ data class AgentSettings(
     // matcha | peach | plum）；Dynamic Color 开启时被壁纸取色覆盖。
     // 见 ui/theme/ThemePalettes.kt。
     val accentPalette: String = "mint",
+    /**
+     * 全局界面风格（minimal | liquid_glass）—— 与深浅模式正交的外观维度：
+     *  - minimal（默认）：极简黑白 —— 纯灰阶配色 + 扁平表面（玻璃体系
+     *    整体短路），Dynamic Color / accentPalette 不参与；
+     *  - liquid_glass：液态玻璃 —— 完整玻璃材质管线 + 18 套预设强调色。
+     * 见 ui/theme/UiStyle.kt；设置中心「外观」分区切换，立即生效。
+     */
+    val uiStyle: String = "minimal",
+    /**
+     * 自定义背景图（SAF 持久授权的 content URI 字符串；空 = 不启用）。
+     * 专属优化（见 ui/theme/BackgroundImage.kt）：降采样解码（大图不爆内存）+
+     * 亮度自适应纱罩（按图片明暗自动加深/变浅保证文字可读）+ 按 URI 缓存
+     * （一次解码全 App 复用）。设置入口：界面外观 → 自定义背景。
+     */
+    val backgroundImageUri: String = "",
+    /** 背景纱罩强度 0.1..0.8（在自适应基数上的手动叠加；0 = 无纱罩交给自适应）。 */
+    val backgroundDim: Float = 0.4f,
     val fontScale: Float = 1.0f,              // 0.8..1.4
     val showTimestamps: Boolean = true,
 
     // ── 语言 / 输入行为（界面层即时消费；语言切换由 MainActivity recreate 生效）──
     val language: String = "system",          // system | zh | en
-    val sendKeyBehavior: String = "send",      // send | newline（聊天输入框 IME 行为）
-    val showRunSummary: Boolean = false,       // 任务总结卡默认隐藏
+    val sendKeyBehavior: String = "send",      // send | newline（Coding 输入框 IME 行为）
 
     // ── 新手引导 ──
     // 首次启动展示 Onboarding（欢迎/能力/权限/模型配置四页）；
@@ -532,25 +603,156 @@ data class AgentSettings(
     // 属预期行为 —— 引导页本身也承担新功能布道。
     val onboardingCompleted: Boolean = false,
 
-    // ═══ Agent 角色（人设层 · 运行时可热切换，无需重启）═══
-    // agentRoles 只存自定义角色；内置全能角色运行时合成（AgentRole.ALL_ROUNDER，
-    // 升级即最新且不可删）。activeRoleId 悬空/被删 → activeRole() 诚实回落内置。
-    // 操作助手见 AgentRole.kt（withRoleUpserted/withRoleRemoved/withRoleActivated）。
-    val agentRoles: List<AgentRole> = emptyList(),
-    val activeRoleId: String = AgentRole.BUILTIN_ALL_ROUNDER_ID,
+    // ── 新手引导 v2（权限全量引导 + 工作区选择）──
+    // 已完成的引导版本；低于引导页 OnboardingFlow.CURRENT_VERSION 时首启
+    // 重新展示（v2 语义：老用户升级后重看一次，获知新权限步骤与工作区
+    // 选择 —— onboardingCompleted 重看语义的版本化延续，字段缺省 0 对
+    // 存量 JSON 向后兼容）。
+    val onboardingVersion: Int = 0,
+    // 工作区范围（引导第 4 页选择）："all" = 操控所有公共存储（默认）；
+    // "folder" = 指定 SAF 文件夹。folderUri 是 takePersistableUriPermission
+    // 持久化授权后的 tree URI 字符串（chaos-crash-audit C-09：不持久化的
+    // content URI 重启即失效），folderName 仅显示用（从 documentId 解析）。
+    // 引擎侧接线（文件工具按此收敛沙箱）见 docs/onboarding-permissions.md
+    // 的 Phase 2 路线 —— 本 PR 先记录选择 + 就绪页回显。
+    val workspaceScope: String = "all",
+    val workspaceFolderUri: String = "",
+    val workspaceFolderName: String = "",
 
-    // ═══ 工具权限（v1.0 #155 opencode 式权限模式）═══
-    // 两模式共享的 ToolExecutor 门控：模式（BYPASS/DEFAULT/ACCEPT_EDITS/PLAN）
-    // + 按序首匹配规则三元组（ALLOW/ASK/DENY，pattern 支持尾缀星号通配，
-    // 覆盖 mcp__ 动态 id）。决策器见 PermissionDecider，门见 PermissionModeGate。
+    // ═══ Coding 专家角色（人设层 · 运行时可热切换，无需重启）═══
+    // agentRoles 只存自定义角色；内置专家模板（AgentRole.CODING_EXPERTS，
+    // 升级即最新且不可删）运行时合成。codeActiveRoleId 悬空/被删 →
+    // activeCodingRole() 诚实回落全栈置顶。操作助手见 AgentRole.kt
+    // （withRoleUpserted/withRoleRemoved/withCodingRoleActivated）。
+    val agentRoles: List<AgentRole> = emptyList(),
+    val codeActiveRoleId: String = AgentRole.BUILTIN_CODING_FULL_STACK_ID,
+
+    // ═══ 角色专属技能开关（v1.9 Git 角色先行，用户规格「默认全开」）═══
+    // skillId → false 的稀疏表：**缺席 = 默认开启**（默认全开语义在存储
+    // 形态上就是稀疏的，升级新增技能天然全开）；true 永不落盘（重新开启
+    // = 移除键）。开关面在模板工坊 → 角色详情（Git 角色 9 套专属技能），
+    // 引擎侧注入经 CodeRoleController 人设通道（roleSkillToggles 变化即
+    // 热重下人设）。操作助手见 GitRoleSkillSettings.kt。
+    val roleSkillToggles: Map<String, Boolean> = emptyMap(),
+
+    // ═══ 工具权限（v1.0 #155 业界标准式权限模式；S-03：默认档 DEFAULT）═══
+    // 引擎执行器门控：模式（BYPASS/DEFAULT/ACCEPT_EDITS/PLAN）+ 按序首匹配
+    // 规则三元组（ALLOW/ASK/DENY，pattern 支持尾缀星号通配，覆盖 Mcp*
+    // 动态 id）。决策器见 PermissionDecider，门见 PermissionModeGate。
+    // 历史：2026-10 曾按用户反馈把默认档改为 BYPASS（全自动）并对存量
+    // DEFAULT 用户一次性翻转 —— 等于无感知自动提权（S-03 修复对象）。
+    // 现状（S-03）：默认档回到 DEFAULT（高危/副作用类工具在 RiskAware-
+    // ToolGate 弹确认）；BYPASS 保留但需用户在设置页显式开启（二次确认，
+    // 见 PermissionSettingsSection），随时可关；存量 BYPASS 用户档位不动。
     val permissionMode: PermissionMode = PermissionMode.DEFAULT,
     val permissionRules: List<PermissionRule> = emptyList(),
 
+    // 迁移系统运行标记（S-03：语义反转，仅幂等短路用 —— 见
+    // [migratePermissionDefaultBypass]，不再触发任何档位变更）：存量 JSON
+    // 缺省 false → 首启执行一次并置 true（与 onboardingVersion 同款版本化
+    // 迁移惯例，字段缺省值对旧 JSON 向后兼容）。
+    val permissionBypassMigrated: Boolean = false,
+
     // ═══ 行为规则（v1.1 #164 Rules 规则系统）═══
-    // 全局规则：设置层持久化的自由文本，对所有工作区/两种模式生效，
-    // 注入系统提示词 "## Global Rules" 段（coding 模式经 additionalSystemContext
-    // 通道、agent 模式经 EnginePrompts.globalRules 参数——二选一，防双注）。
+    // 全局规则：设置层持久化的自由文本，对所有工作区生效，注入系统提示词
+    // "## Global Rules" 段（coding 模式经 additionalSystemContext 通道注入）。
     // 项目规则（AGENTS.md/CLAUDE.md/.cursorrules）不持久化，由 RulesProvider
     // 每轮从工作区即时发现。默认空串 = 无规则，向后兼容零迁移。
     val globalRules: String = "",
+
+    // ═══ v3 子代理全面完善（预算/自定义类型可配置）═══
+    // 此前全部硬编码（3 并发/300s/15 轮/8K），零可配置。接线：ToolModule
+    // 构造 SubAgentRunner 时注入快照 provider；标准线库内派发器
+    // 同款消费。自定义类型由 CodeTask 的 custom 类型 + custom_name 按名解析。
+    val subagent: SubAgentSettings = SubAgentSettings(),
+
+    // ═══ v3 GOAL 目标模式（Coding 屏 GOAL 模式默认值）═══
+    // goalMaxRounds：新目标的默认验收轮次上限（创建对话框预填）。
+    // goalVerifierEnabled：快速模型验收开关（关闭后信任主模型自评，省 token）。
+    val goalMaxRounds: Int = 8,
+    val goalVerifierEnabled: Boolean = true,
+
+    // ═══ v4 Coding 模式级联选择器：三档自主级别（提问策略）═══
+    // codeAutonomyLevel：Build 模式记忆的自主级别（interactive|semi|fully，
+    // 默认交互式）；codeGoalAutonomyLevel：Goal 模式记忆（GoalSpec 启动时
+    // 拍平快照并回写此处）。两模式各自记忆，切模式互不影响。
+    val codeAutonomyLevel: String = "interactive",
+    val codeGoalAutonomyLevel: String = "interactive",
+    // codeFullAutoPreClarify：完全自主「开始前集中澄清」开关（默认关；
+    // 切到其他自主级别时隐藏但保留状态，见 AutonomyLevel KDoc）。
+    val codeFullAutoPreClarify: Boolean = false,
+
+    // ═══ v3 Coding 工位增强 ═══
+    // codeOutputMode：Coding 屏输出展示档（揭示时机维度）——"streaming"
+    // （默认，实时渲染：逐字/逐胶囊流式）| "complete"（整段模式：生成中
+    // 仅加载进度卡，run 收束后一次性渲染完整时间轴）。与 codeOutputStyle
+    // （视觉形态维度）正交，两档均适用于两种风格。UI 渲染层开关（引擎/
+    // 会话零参与），档位在每轮 run 开始时捕获（运行中改设置不打断��前轮）。
+    // 见 ui/screen/code/CodeOutputMode.kt。
+    // codeOutputStyle：Coding 屏输出风格——"timeline"（默认，经典胶囊
+    // 时间轴：胶囊流水/同族折叠/实时代码窗）| "rikka"（Rikka 风格聊天式：
+    // 用户右对齐气泡 + Markdown 结论 + 思考计时卡 + 工具调用聚合块，含
+    // 技能/MCP 溯源标识与三分类聚合）。与 codeOutputMode（揭示时机）正交；
+    // UI 渲染层开关（引擎/会话零参与），run 粒度捕获 + idle 期设置流实时
+    // 同步。见 ui/screen/code/CodeOutputStyle.kt。
+    // mcpScopeIsolation：MCP/技能复合工具按市场分级在引擎侧隔离的开关
+    // （默认开；关闭后回到 v2 的全局可见行为）。
+    val codeOutputMode: String = "streaming",
+    val codeOutputStyle: String = "timeline",
+    val mcpScopeIsolation: Boolean = true,
+
+    // ═══ 部件级皮肤（PartSkin spec §7.2，v1.7）═══
+    // partSkins：稀疏覆盖表 Part→Skin（"stream.thinking" -> "pale_liquid"），
+    // **缺席 = 跟随上级**（与 roleSkillToggles 同款稀疏语义）；未知 key /
+    // 非法组合在解析时回退 FOLLOW（不报错）。旧 JSON 无该字段 → 空 Map
+    // → 走 §4 新默认皮肤列（思考卡/卡片族 = 浅白液态玻璃），零迁移兼容
+    // （@Serializable + ignoreUnknownKeys + 全字段默认值，导出/备份自动带上）。
+    // partSkinGlow：浅白玻璃光晕强度 0..1（0 = 纯白霜面，1 = 完整彩光，
+    // 默认 0.35 微彩；越界读入 clamp）。
+    // partSkinSchemaVersion：稀疏表结构版本号（未来 ID 重映射用；旧档
+    // 缺省 0 → 走默认解析路径）。
+    val partSkins: Map<String, String> = emptyMap(),
+    val partSkinGlow: Float = 0.35f,
+    val partSkinSchemaVersion: Int = 1,
+    // ═══ 皮肤生效方式（PartSkin spec v1.3，FR-25）═══
+    // skinApplyMode："auto"（默认，按设备分级解析：HIGH→立即 / MID·LOW→新
+    // 对话）| "immediate"（空闲时立即生效；LOW 档被 resolvePolicy 硬拒）
+    // | "on_new_chat"（v1.2 行为：仅会话边界生效）。设置项本身立即写盘，
+    // 只决定后续皮肤变更的提升点，自身不触发换皮；缺省 "auto" → 旧 JSON
+    // 零迁移。任务进行中（H-6）任何模式都冻结到收束后的第一个 idle 点。
+    val skinApplyMode: String = "auto",
+
+    // ═══ v2.1.0 浏览器角色门禁（评审 B2）═══
+    // browserRoleRestrictionEnabled：默认开 = 严格——普通会话不授予
+    // browser-automation，browser_* 工具不可见不可调（计划层+RoleGate 三处强制）；
+    // 关闭 = 所有会话默认授予 browser-automation（最小权限语义，无 ALL 全开）。
+    // browserSensitiveAllowed：敏感 tier（execute_js/get_cookies/file_upload/
+    // clear_data 四件套）的用户显式授权——即使专家角色已授，未开此开关仍不可调。
+    val browserRoleRestrictionEnabled: Boolean = true,
+    val browserSensitiveAllowed: Boolean = false,
+
+    // ═══ 模型限速友好（只针对某些用户：有 RPM/TPM/日次数配额的厂商）═══
+    // 默认全关 = 历史行为零变化。开启后的三根支柱：
+    //  - rateLimitFriendly：总开关（设置 → 模型配置 → 限速友好）；
+    //  - rateLimitMinIntervalMs：请求节流 —— 所有 LLM 请求（含压缩摘要/
+    //    子代理/验收）发出前在 RateLimitGovernor 排队，相邻起点间隔不小于
+    //    该值（llm-adapter 全局单点，无旁路）；
+    //  - rateLimitRichPayload：每请求信息密度 —— 工具输出预算 ×2、保留
+    //    近轮 +3、压缩阈值上浮（更晚压缩）—— 单请求携带更多上下文，
+    //    用更少的请求完成同样的任务（AgentModule/CodeModule 拍平进引擎）。
+    // 建议组合（设置页一键应用）：并行工具执行 ≥4（一轮多工具 = 少几轮
+    // 请求）+ 上述两项。
+    val rateLimitFriendly: Boolean = false,
+    val rateLimitMinIntervalMs: Int = 4000,    // 0..60000（0 = 不节流间隔）
+    val rateLimitRichPayload: Boolean = true,
+
+    /**
+     * 扩展自动同步（市场完全重构 PR-E）：开启后每次进程启动检查
+     * `<filesDir>/extensions/extensions.json` 声明式清单 —— resolve 全部
+     * spec，与锁文件（lock.json）比对版本漂移；**漂移/失败经系统通知提醒，
+     * 不自动安装**（防 Agent 后续会话悄悄换版本 —— 重装需用户显式操作或
+     * Agent 经 ExtensionSync update=true）。默认关（无清单时零开销）。
+     * Agent 侧经 AgentSettingSet 可改（设置 JSON 字段直通）。
+     */
+    val extensionAutoSync: Boolean = false,
 )

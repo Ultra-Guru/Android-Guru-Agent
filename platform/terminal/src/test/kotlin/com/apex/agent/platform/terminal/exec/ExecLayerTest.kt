@@ -1,4 +1,4 @@
-package com.apex.agent.platform.terminal.exec
+package com.apex.agent.platform.TerminalExec
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking

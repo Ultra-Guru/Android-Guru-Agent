@@ -193,7 +193,9 @@ data class TerminalPalette(
                 cursor = map[-3] ?: if (dark) 0xFF00FF00.toInt() else 0xFF586E75.toInt(),
                 selectionBackground = map[-4] ?: if (dark) 0x663399FF.toInt() else 0x662AA198.toInt(),
                 selectionForeground = map[-6],
-                linkColor = map[-5] ?: 0xFF6BB8FF.toInt(),
+                // L7：浅色方案默认链接色取深蓝（旧版恒 0xFF6BB8FF 浅蓝，
+                // 浅底下划线对比度不足）；-5 显式注入仍优先。
+                linkColor = map[-5] ?: if (dark) 0xFF6BB8FF.toInt() else 0xFF0066CC.toInt(),
                 boldAsBright = (map[-9] ?: 1) != 0,
                 dark = (map[-10] ?: if (dark) 1 else 0) != 0
             )

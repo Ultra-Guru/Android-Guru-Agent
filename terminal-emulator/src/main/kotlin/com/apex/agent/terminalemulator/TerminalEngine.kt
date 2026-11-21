@@ -71,7 +71,7 @@ interface TerminalEngine {
     val cursorVisible: Boolean
 
     // ═══════════════════════════════════════════════════════════════════
-    // v0.2 foundation capabilities (upstream apex-vt-native v0.2).
+    // v0.2 foundation capabilities (upstream apex-native-vt v0.2).
     //
     // These are NATIVE-first features. Default implementations report
     // "unsupported" (0 hits / null / empty) so the pure-Kotlin TerminalCore

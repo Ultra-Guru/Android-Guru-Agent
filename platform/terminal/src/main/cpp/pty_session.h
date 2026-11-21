@@ -67,13 +67,6 @@ public:
 
     bool isAlive();
     bool write(const char* data, size_t len);
-    bool writeLine(const std::string& line);
-
-    /**
-     * Legacy 读取（仅返回数据字节）。无法区分 idle/EOF/error，生产路径禁止使用 ——
-     * 一律走 readEx()（P70-1）。保留仅为 pty_engine::read 的 ABI 兼容。
-     */
-    std::string read(int maxBytes);
 
     /** P70-1：带状态的读取。语义见 [ReadStatus]。 */
     ReadResult readEx(int maxBytes);

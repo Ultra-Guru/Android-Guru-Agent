@@ -11,7 +11,7 @@ import kotlin.random.Random
  * ToolNode, AndroidWorld, Anthropic computer-use):
  *
  * - **Timeout**: the MCP spec makes client-side tool-call timeouts a MUST;
- *   a hung `http_request` on a dead network otherwise hangs the whole agent
+ *   a hung `HttpRequest` on a dead network otherwise hangs the whole agent
  *   loop, because v1/v2 execute with no deadline at all.
  * - **Retry**: LangGraph's `wrap_tool_call` interceptor retries
  *   transient failures; AutoGPT classifies errors into retryable
@@ -44,7 +44,14 @@ data class ToolRunPolicy(
     val timeoutMs: Long = 0L,
     val maxRetries: Int = 0,
     val baseRetryDelayMs: Long = 0L,
-    val rateLimitPerMinute: Int? = null
+    val rateLimitPerMinute: Int? = null,
+    /**
+     * Exact retry ladder (ms) — when set, [retryDelayMs] returns the ladder
+     * entry verbatim (deterministic, no jitter) and baseRetryDelayMs is
+     * ignored. Used by [agentLadder] (user spec: 2s/5s/10s/.../160s,
+     * auto-stop once the next step would reach 3 minutes).
+     */
+    val ladderDelays: List<Long>? = null
 ) {
 
     /** Effective attempts including the first one (1 + maxRetries). */
@@ -60,6 +67,13 @@ data class ToolRunPolicy(
      * the same recovering backend.
      */
     fun retryDelayMs(attemptIndex: Int, random: Random = Random.Default): Long {
+        // Ladder mode: exact deterministic entry (user-visible contract is
+        // 2s/5s/10s/... — jittering it would break the observable spec).
+        ladderDelays?.let { ladder ->
+            if (attemptIndex < 0) return 0L
+            return if (attemptIndex < ladder.size) ladder[attemptIndex]
+            else ToolRetrySchedules.LADDER_CAP_MS
+        }
         if (baseRetryDelayMs <= 0) return 0L
         val cappedAttempt = attemptIndex.coerceIn(0, 16)
         val cap = baseRetryDelayMs * (1L shl cappedAttempt)
@@ -89,6 +103,21 @@ data class ToolRunPolicy(
             rateLimitPerMinute = 30
         )
 
+        /**
+         * User-spec ladder retry for network-class transient failures:
+         * 2s/5s/10s/20s/40s/80s/160s — the next step would reach the
+         * 3-minute cap, so the ladder auto-stops there (the task itself
+         * continues via the engine's change-of-approach recovery).
+         * Same table as orchestrator-side RetryPolicy.AGENT_LADDER.
+         */
+        @JvmStatic
+        fun agentLadder(): ToolRunPolicy = ToolRunPolicy(
+            timeoutMs = 90_000L,
+            maxRetries = ToolRetrySchedules.AGENT_LADDER_MS.size,
+            ladderDelays = ToolRetrySchedules.AGENT_LADDER_MS,
+            rateLimitPerMinute = 30
+        )
+
         /** Mutating-tool policy: no blind retry, moderate timeout. */
         @JvmStatic
         fun mutating(): ToolRunPolicy = ToolRunPolicy(
@@ -103,7 +132,7 @@ data class ToolRunPolicy(
  *
  * [DefaultToolRunPolicyResolver] resolves from annotations + id families,
  * with an explicit per-id override map winning over everything (the app
- * can pin `shell_execute` to a longer timeout without touching inference).
+ * can pin `ShellExecute` to a longer timeout without touching inference).
  */
 interface ToolRunPolicyResolver {
     fun resolve(tool: AgentTool): ToolRunPolicy
@@ -114,26 +143,37 @@ interface ToolRunPolicyResolver {
  *
  * Resolution order:
  * 1. explicit [overrides] entry for the tool id (admin pin);
- * 2. `ask_user*` → no timeout (the user might take minutes to answer) and
+ * 2. explicit [prefixOverrides] entry for the tool id's prefix family
+ *    (longest match wins) —— 动态 id 族（Mcp{Server}{Tool}、browser_*）
+ *    无法逐个列进静态表，按前缀给整族策略；
+ * 3. `AskUser*` → no timeout (the user might take minutes to answer) and
  *    no retry (re-asking after a denial is pestering);
- * 3. open-world tools (web/MCP/GitHub) → [ToolRunPolicy.network];
- * 4. read-only / idempotent local tools → [ToolRunPolicy.quickRead];
- * 5. everything mutating → [ToolRunPolicy.mutating].
+ * 4. open-world tools (web/MCP/GitHub) → [ToolRunPolicy.network];
+ * 5. read-only / idempotent local tools → [ToolRunPolicy.quickRead];
+ * 6. everything mutating → [ToolRunPolicy.mutating].
  */
 class DefaultToolRunPolicyResolver(
-    private val overrides: Map<String, ToolRunPolicy> = emptyMap()
+    private val overrides: Map<String, ToolRunPolicy> = emptyMap(),
+    private val prefixOverrides: Map<String, ToolRunPolicy> = emptyMap()
 ) : ToolRunPolicyResolver {
 
     override fun resolve(tool: AgentTool): ToolRunPolicy {
         overrides[tool.id]?.let { return it }
 
-        if (tool.id == "ask_user" || tool.id == "ask_user_choice") {
+        // 前缀族覆盖（最长前缀胜出）：Mcp{Server}{Tool} 这类动态一等工具
+        // 无法静态枚举，按前缀整族策略。
+        prefixOverrides.entries
+            .filter { tool.id.startsWith(it.key) }
+            .maxByOrNull { it.key.length }
+            ?.let { return it.value }
+
+        if (tool.id == "AskUser" || tool.id == "AskUserChoice") {
             return ToolRunPolicy(timeoutMs = 0L, maxRetries = 0)
         }
 
         val annotations = tool.metadata.annotations
         return when {
-            annotations.openWorldHint -> ToolRunPolicy.network()
+            annotations.openWorldHint -> ToolRunPolicy.agentLadder()
             annotations.retrySafe -> ToolRunPolicy.quickRead()
             else -> ToolRunPolicy.mutating()
         }
@@ -171,6 +211,9 @@ object RetryClassifier {
      * - `sandbox_violation` — the path escaped; same payload escapes again.
      * - `invalid json` / `missing argument` / `invalid argument` /
      *   `not found` — payload is wrong or target absent.
+     * - `rate limited` — P2 修复：执行器的限流拒绝文案（与
+     *   EnhancedToolExecutor.rateLimitMessage 同源）；重放同一调用只会
+     *   再撞限流，必须等冷却或换路。
      * - `cancelled` — the user aborted the loop.
      *
      * Retryable: everything else (`timeout`, `execution failed`, I/O
@@ -184,6 +227,7 @@ object RetryClassifier {
             "Error: invalid json",
             "Error: missing argument",
             "Error: invalid argument",
+            "Error: rate limited",
             "Error: not found",
             "Error: cancelled"
         )
@@ -272,9 +316,6 @@ class ToolRateLimiter {
 
     /** Reset all buckets. */
     fun resetAll() = buckets.clear()
-
-    /** Snapshot of remaining tokens (diagnostics only — racy read). */
-    fun remainingTokens(toolId: String): Double? = buckets[toolId]?.tokens
 
     /** Compare-and-swap style guarded update (synchronized on the bucket). */
     private fun updateBucket(

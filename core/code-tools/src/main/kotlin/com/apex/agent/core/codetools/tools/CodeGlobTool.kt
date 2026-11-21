@@ -11,18 +11,18 @@ import com.apex.agent.core.tools.toolSchema
 import java.io.File
 
 /**
- * # code_glob — 文件名模式查找（编码会话专用）
+ * # CodeGlob — 文件名模式查找（编码会话专用）
  *
  * 递归后缀匹配（“** + .kt” 形态）、目录前缀 + 后缀、顶层通配三类形态的纯 JVM
- * 匹配，输出相对路径列表（字母序，上限 100 + 截断提示）。与 code_grep 一样排除噪音目录。
+ * 匹配，输出相对路径列表（字母序，上限 100 + 截断提示）。与 CodeGrep 一样排除噪音目录。
  *
  * 参数描述显式防呆："不要传字符串 'undefined'/'null'，直接省略 path"
- * （opencode 在描述里处理的同款模型坏习惯）。
+ * （业界标准 CLI 编码智能体在描述里处理的同款模型坏习惯）。
  */
 class CodeGlobTool(
     private val roots: CodeWorkspaceRoots
 ) : BaseTool(
-    id = "code_glob",
+    id = "CodeGlob",
     name = "Code Glob",
     description = """
         Find files by name pattern in the coding workspace.
@@ -31,6 +31,10 @@ class CodeGlobTool(
         Noise dirs (.git, build, node_modules, …) are excluded.
 
         Results are workspace-relative paths, alphabetically sorted, capped at 100.
+
+        For open-ended exploration that may take multiple rounds of searching,
+        consider delegating to a sub-agent via the task tool instead of searching
+        yourself.
     """.trimIndent(),
     declaredSchema = toolSchema {
         string("pattern", required = true, description = "Glob pattern, e.g. \"**/*.kt\"")

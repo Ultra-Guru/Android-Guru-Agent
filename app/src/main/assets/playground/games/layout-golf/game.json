@@ -1,0 +1,11 @@
+{
+  "id": "layout-golf",
+  "name": "排版高尔夫",
+  "nameEn": "Layout Golf",
+  "tagline": "拖动宽度滑杆让文本折成恰好目标行数，越少调整得分越高",
+  "version": 1,
+  "engine": "pretext@0.0.9",
+  "apis": ["prepare", "layout"],
+  "controls": "拖动宽度滑杆 / 键盘方向键微调",
+  "scoreKey": "aga.pg.layout-golf.hi"
+}

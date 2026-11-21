@@ -9,9 +9,9 @@ import com.apex.agent.platform.terminal.io.UnixSignal
 import com.apex.agent.platform.terminal.policy.PrivilegeLevel
 import com.apex.agent.platform.terminal.screen.TerminalScreenState
 import com.apex.agent.platform.terminal.state.TerminalSemanticState
-import com.apex.agent.platform.terminal.wait.WaitCondition
+import com.apex.agent.platform.TerminalWait.WaitCondition
 import kotlinx.coroutines.flow.Flow
-import com.apex.agent.platform.terminal.wait.WaitResult
+import com.apex.agent.platform.TerminalWait.WaitResult
 
 /**
  * The top-level Agent-Native Terminal Runtime facade.
@@ -20,15 +20,15 @@ import com.apex.agent.platform.terminal.wait.WaitResult
  *
  * This is the ONLY surface the Agent (and UI) should depend on. It exposes 9 operations:
  *
- *   terminal.create      — create a long-lived Session
- *   terminal.run         — start a Job (non-blocking, returns immediately)
- *   terminal.observe     — observe state/output (SEMANTIC / EVENT / SCREEN / RAW)
- *   terminal.wait        — block until a condition is met (EventBus-driven, no polling)
- *   terminal.write       — write input (raw / line / key)
- *   terminal.signal      — send a Unix signal
- *   terminal.resize      — resize the PTY (SIGWINCH)
- *   terminal.snapshot    — global snapshot for context recovery
- *   terminal.close       — close a Session (reap child, close fd)
+ *   TerminalCreate      — create a long-lived Session
+ *   TerminalRun         — start a Job (non-blocking, returns immediately)
+ *   TerminalObserve     — observe state/output (SEMANTIC / EVENT / SCREEN / RAW)
+ *   TerminalWait        — block until a condition is met (EventBus-driven, no polling)
+ *   TerminalWrite       — write input (raw / line / key)
+ *   TerminalSignal      — send a Unix signal
+ *   TerminalResize      — resize the PTY (SIGWINCH)
+ *   TerminalSnapshot    — global snapshot for context recovery
+ *   TerminalClose       — close a Session (reap child, close fd)
  *
  * Agent tools see ONLY these. They do NOT see nativeRead / nativeWrite / TerminalManager /
  * RingBuffer / PtyOutputPump (Spec §33).
@@ -40,19 +40,18 @@ interface TerminalRuntime {
 
     // ───────── create ─────────
     // Spec §34.1 + T73: backendId 路由（ExecutionBackendRegistry）。
-    // "local" = Android 本地 shell（默认，与历史行为一致）；"linux-ubuntu" =
-    // PRoot + Ubuntu RootFS 会话（需 rootfs 已 provision，否则失败并携带引导信息）。
+    // "linux-ubuntu"（默认）= PRoot + Ubuntu RootFS 会话（需 rootfs 已 provision，
+    // 否则失败并携带引导信息）。Android 本地 Shell 后端已移除（Ubuntu-only）。
     suspend fun create(
-        shell: String = "/system/bin/sh",
         cwd: String = "/sdcard",
         rows: Int = 24,
         cols: Int = 80,
         env: Map<String, String> = emptyMap(),
         privilege: PrivilegeLevel = PrivilegeLevel.NORMAL,
-        backendId: String = "local",
+        backendId: String = "linux-ubuntu",
         /**
          * T75: workspace id（仅 LINUX 后端；null/blank → "default"）。合法格式
-         * （^[a-z0-9][a-z0-9_-]{0,63}$）的 id 懒创建。LOCAL + 非空 → InvalidInput。
+         * （^[a-z0-9][a-z0-9_-]{0,63}$）的 id 懒创建。
          */
         workspaceId: String? = null
     ): RuntimeResult<CreateResult>
@@ -68,8 +67,8 @@ interface TerminalRuntime {
         val state: String,         // SessionState name
         val cursor: Long,
         // ── T73: 后端路由结果（Agent 可感知会话落在哪个执行环境）──
-        val backendId: String = "local",
-        val runtimeType: String = "ANDROID_LOCAL",   // BackendRuntimeType name
+        val backendId: String = "linux-ubuntu",
+        val runtimeType: String = "LINUX",   // BackendRuntimeType name
         val rootfsId: String? = null,                // LINUX: 已就绪 rootfs 的 id
         val guestCwd: String? = null,                // LINUX: guest 语义 cwd
         // ── T75: workspace（LINUX 会话的隔离文件区）──
@@ -79,13 +78,13 @@ interface TerminalRuntime {
     // ───────── backends（T73：Agent 后端能力发现）─────────
     // Spec §33（Agent 只依赖 TerminalRuntime 门面）：列出所有已注册执行后端及
     // 其真实可用性。Agent 据此决定 create(backendId=…) 的目标，或在
-    // NEEDS_ROOTFS 时先调 terminal.ubuntu.install 引导安装。
+    // NEEDS_ROOTFS 时先调 TerminalUbuntuEnsure 引导安装。
     suspend fun backends(): List<BackendStatus>
 
     /** 单个后端的可用性快照（T73）。 */
     data class BackendStatus(
         val id: String,
-        val runtimeType: String,        // BackendRuntimeType.name: ANDROID_LOCAL | LINUX
+        val runtimeType: String,        // BackendRuntimeType.name: LINUX
         val available: Boolean,         // availability is Ready
         val state: String,              // READY | NEEDS_ROOTFS[:state] | FAILED
         val detail: String? = null      // 失败原因 / 引导提示
@@ -268,7 +267,11 @@ interface TerminalRuntime {
     )
 
     // ───────── push-based observation Flows (Spec §41 — event-driven, NOT polling) ─────────
-    /** Push-based screen state for a session. Emits on every VT update. Null if session not found. */
+    /**
+     * Push-based screen state for a session — computed only while collected and
+     * throttled to ~1 frame (33ms); each new subscription first receives a fresh
+     * snapshot. Null if session not found.
+     */
     fun screenStateFlow(sessionId: Long): Flow<com.apex.agent.platform.terminal.screen.TerminalScreenState>?
 
     /** Push-based semantic state for a session. Emits on every state change. Null if session not found. */
@@ -280,6 +283,31 @@ interface TerminalRuntime {
      * projection is computed on demand — see ObservationEngine). Null if session not found.
      */
     fun styledScreenFlow(sessionId: Long): Flow<com.apex.agent.terminalemulator.TerminalRenderSnapshot?>?
+
+    /**
+     * T91（D2-D4）：per-session 事件推流（TerminalEventBus 的 crash-safe 增量订阅
+     * —— afterCursor 锚点后的 OutputProduced/ProcessExited/SessionClosed/StateChanged
+     * 全量推送）。null = session 不存在。
+     *
+     * 消费方：terminal IPC 控制器（跨进程回调桥）。与 §41 家族同源 —— 事件驱动，
+     * 非轮询。additive（PR #60 冻结规则：只加不改）。
+     */
+    fun terminalEventFlow(sessionId: Long, afterCursor: Long = 0L): Flow<TerminalEvent>?
+
+    /**
+     * OSC 52 剪贴板写入请求流（vim/tmux 远程复制 → 宿主剪贴板）。引擎侧已把
+     * base64 解码为 UTF-8 文本；pump 每次 VT feed 后 drain 上抛。null =
+     * 会话不存在或实现不支持（消费方自行降级即可）。
+     */
+    fun clipboardRequestsFlow(sessionId: Long): Flow<String>? = null
+
+    /**
+     * 全局会话生命周期事件流（SessionCreated / SessionClosed / StateChanged(SESSION)）——
+     * 会话列表（UI tab）事件驱动刷新的数据源，替代固定间隔轮询。消费方收到事件后
+     * 全量拉 snapshot(SESSIONS) 对齐（事件只做触发器，不携带完整列表）。null =
+     * 实现不支持（消费方退回轮询兜底）。
+     */
+    fun sessionLifecycleEvents(): Flow<TerminalEvent>? = null
 
     // ───────── recover ─────────
     // Spec §39 — crash recovery. Call once on startup. Returns recovered session ids.

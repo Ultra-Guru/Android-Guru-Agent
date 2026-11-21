@@ -400,5 +400,36 @@ class RootfsExtractorTest {
         assertEquals(600L, File(dir, "out/big.dat").length())
     }
 
+    // ─── #669/#643：GZIP 构造失败路径（use{} 惯用法回归锁） ───
+
+    @Test fun `non-gzip archive fails structurally without leaking streams`() = runBlocking {
+        // 档案头损坏（不是 gzip）—— GZIPInputStream **构造函数**即抛
+        // ZipException。旧实现（裸 val + 构造成功后 try/finally）此时外层
+        // fis 不会被关闭（fd 泄漏）；use{} 先包外层再包内层，任何一步
+        // 构造失败都已关闭此前打开的流。行为契约：结构化 failure，不崩溃。
+        val dir = tmpDir()
+        val archive = File(dir, "not-gzip.tar.gz").apply { writeText("definitely not gzip magic".repeat(64)) }
+        val result = RootfsExtractor().extractTarGz(archive, File(dir, "out"))
+        assertTrue("non-gzip archive is a structured failure", result.isFailure)
+        assertTrue(
+            "failure reason is the gzip constructor error, not something later",
+            result.exceptionOrNull() is java.util.zip.ZipException
+        )
+        // 目标目录不应产生任何半解压产物
+        val out = File(dir, "out")
+        if (out.exists()) {
+            assertTrue("no partial extraction", out.listFiles()?.isEmpty() ?: true)
+        }
+    }
+
+    @Test fun `empty archive file fails structurally`() = runBlocking {
+        // 0 字节档案：同样在 GZIPInputStream 构造处失败（EOFException）。
+        val dir = tmpDir()
+        val archive = File(dir, "empty.tar.gz").apply { writeText("") }
+        val result = RootfsExtractor().extractTarGz(archive, File(dir, "out"))
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is java.io.EOFException)
+    }
+
     private fun oct(v: Long, digits: Int): String = String.format("%0${digits}o", v)
 }

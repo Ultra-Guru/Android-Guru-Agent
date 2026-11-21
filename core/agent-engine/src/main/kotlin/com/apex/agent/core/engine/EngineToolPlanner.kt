@@ -4,6 +4,7 @@ import com.apex.agent.core.llm.LlmException
 import com.apex.agent.core.llm.LlmMessage
 import com.apex.agent.core.llm.ToolChoiceSpec
 import com.apex.agent.core.tools.AgentTool
+import com.apex.agent.core.tools.ToolMetadata
 import com.apex.agent.core.tools.ToolRegistry
 import com.apex.agent.core.tools.catalog.ToolActivationStore
 import com.apex.agent.core.tools.catalog.ToolRequestBudget
@@ -44,18 +45,33 @@ internal object EngineToolPlanner {
     )
 
     /**
-     * #197 AGENT 模式的编码类工具前缀黑名单——全能智能体是**非编程**工位：
-     * code_* / code_git_*（编码工作区）、github_*（GitHub 连接）与
-     * `mcp__github__*`（GitHub MCP）均属于 Coding 屏管辖，Agent 屏不可见，
-     * 从根上避免“问什么都会答编程相关的”（编程引导由提示词层完成）。
+     * v3 作用域判定：工具是否对 [skillScope]（"agent"/"coding"/"all"）可见。
+     *
+     * MCP / 技能复合工具注册时携带 [ToolMetadata.scope]（市场二级分离的
+     * 同源字段）：scope="all" 双工位可见；"agent"/"coding" 仅对应工位可见。
+     * 未声明（旧工具默认 "all"）不隔离——存量行为零变化。
      */
-    private val AGENT_EXCLUDED_TOOL_PREFIXES = listOf(
-        "code_", "github_", "mcp__github__"
-    )
+    fun isToolVisibleInScope(metadata: ToolMetadata, skillScope: String): Boolean {
+        if (skillScope.isBlank() || skillScope == SCOPE_ALL) return true
+        if (skillScope == "coding" && metadata.scope == "agent") return false
+        val scope = metadata.scope
+        return scope == SCOPE_ALL || scope == skillScope
+    }
 
-    /** #197 [AGENT_EXCLUDED_TOOL_PREFIXES] 判定（纯函数，便于单测）。 */
-    fun isCodingOrientedToolId(toolId: String): Boolean =
-        AGENT_EXCLUDED_TOOL_PREFIXES.any { toolId.startsWith(it) }
+    /** 计划级作用域隔离入口：[AgentConfig.mcpScopeIsolation] 关闭时回退 v2。
+     *
+     * （Agent 模式移除 PR 3/6：AGENT/LOOP 档位的前缀黑名单隔离
+     * （AGENT_EXCLUDED_TOOL_PREFIXES / isCodingOrientedToolId /
+     * filterOutCodingTools）已删 —— 本软件恒为编码工位，工具面不再按
+     * 工位剔除，仅保留市场分级的作用域隔离。） */
+    private fun ToolRequestBudget.RequestToolPlan.applyScopeIsolation(
+        registry: ToolRegistry,
+        config: AgentConfig
+    ): ToolRequestBudget.RequestToolPlan =
+        if (config.mcpScopeIsolation) filterOutOffScopeTools(registry, config.skillScope) else this
+
+    /** v3 作用域常量（与市场 tier / skillScope 同源：agent | coding | all）。 */
+    const val SCOPE_ALL = "all"
 
     /**
      * 本轮请求工具计划：强制（仅选中集）/ 默认（CORE+激活+连接服务+可选全量）/
@@ -75,50 +91,91 @@ internal object EngineToolPlanner {
         val forced = config.forcedToolIds
         val allowed = config.allowedToolIds
         return when {
-            // #197 聊天模式：零工具纯对话（人设 + 聊天技能在提示词层驱动）。
-            config.mode == AgentMode.CHAT -> EMPTY_TOOL_PLAN
             degradationLevel >= DEGRADATION_NO_TOOLS -> EMPTY_TOOL_PLAN
             forced.isNotEmpty() && degradationLevel == 0 ->
                 ToolRequestBudget.planForced(registry, forced)
             // #147 子代理：仅收窄工具集，不附带 tool_choice=required —— 子代理的
             // 最终轮需要能输出纯文本结论（forced 语义会迫使每轮调用工具）。
+            // 子代理**默认不继承** browser 角色（v2.1.0 文档口径）：cfg 未显式
+            // 带 grantedRoles 即为空集 = 受限角色全不可见。
             allowed.isNotEmpty() && degradationLevel == 0 ->
                 ToolRequestBudget.planForced(registry, allowed)
-            // #197 智能体模式：默认计划剔除编码工位专属工具（非编程全能工位）。
-            config.mode == AgentMode.AGENT ->
-                ToolRequestBudget.planDefault(
-                    registry = registry,
-                    activation = activation,
-                    exposeAll = config.exposeAllTools && degradationLevel == 0,
-                    coreOnly = degradationLevel >= DEGRADATION_CORE_ONLY,
-                    serviceToolIds = if (degradationLevel == 0) serviceToolIds else emptySet()
-                ).filterOutCodingTools()
+            // 默认计划（BUILD / PLAN / GOAL 同待遇：编码工位全量工具面 +
+            // 市场分级作用域隔离；AGENT/LOOP 的工具面剔除随 Agent 模式移除）。
             else -> ToolRequestBudget.planDefault(
                 registry = registry,
                 activation = activation,
                 exposeAll = config.exposeAllTools && degradationLevel == 0,
                 coreOnly = degradationLevel >= DEGRADATION_CORE_ONLY,
                 serviceToolIds = if (degradationLevel == 0) serviceToolIds else emptySet()
-            )
-        }
+            ).applyScopeIsolation(registry, config)
+        }.applyRoleIsolation(registry, config.grantedRoles)
     }
 
     /**
-     * #197 从工具计划中剔除编码工位专属工具（AGENT 模式专用）。
-     *
-     * 纯函数：基于 [RequestToolPlan] 的不可变快照重建，不触碰注册表状态；
-     * 同步维护 providerName⇆id 映射，保证模型回显名仍可路由。
+     * v2.1.0 角色可见性（评审 B1/P0-4）：[ToolMetadata.requiredRoles] 非空的工具，
+     * 要求会话授予集包含**全部**所需角色。角色是硬边界（区别于 scope 偏好）——
+     * forced/allowed/default 三条计划路径统一过滤（[buildToolPlan] 收口处一刀切），
+     * 子代理收窄路径同样被拦。
      */
-    private fun ToolRequestBudget.RequestToolPlan.filterOutCodingTools(): ToolRequestBudget.RequestToolPlan {
-        fun codingOriented(def: com.apex.agent.core.llm.ToolDefinition): Boolean {
+    fun isToolVisibleInRoles(metadata: ToolMetadata, grantedRoles: Set<String>): Boolean {
+        val required = metadata.requiredRoles
+        if (required.isEmpty()) return true
+        return grantedRoles.containsAll(required)
+    }
+
+    /** 计划级角色过滤收口：三条路径统一套用（硬边界，无开关）。 */
+    private fun ToolRequestBudget.RequestToolPlan.applyRoleIsolation(
+        registry: ToolRegistry,
+        grantedRoles: Set<String>,
+    ): ToolRequestBudget.RequestToolPlan {
+        if (grantedRoles.containsAll(
+                registry.getAllTools().asSequence()
+                    .map { it.metadata.requiredRoles }
+                    .filter { it.isNotEmpty() }
+                    .flatten().toSet()
+            )
+        ) return this // 全角色已授：快路径零过滤
+        fun offRole(def: com.apex.agent.core.llm.ToolDefinition): Boolean {
             val registryId = providerNameToId[def.name] ?: def.name
-            return isCodingOrientedToolId(registryId)
+            val metadata = registry.getTool(registryId)?.metadata ?: return false
+            return !isToolVisibleInRoles(metadata, grantedRoles)
         }
-        if (tools.none { codingOriented(it) }) return this
-        val kept = tools.filterNot { codingOriented(it) }
+        if (tools.none { offRole(it) }) return this
+        val kept = tools.filterNot { offRole(it) }
         val keptNames = kept.map { it.name }.toSet()
         val keptNameToId = providerNameToId.filterKeys { it in keptNames }
-        // 字节数与 ToolRequestBudget 同口径重算（name+schema+description+48）。
+        val keptIds = keptNameToId.values.toSet()
+        return ToolRequestBudget.RequestToolPlan(
+            tools = kept,
+            providerNameToId = keptNameToId,
+            visibleRegistryIds = visibleRegistryIds.intersect(keptIds),
+            totalBytes = kept.sumOf { it.parameters.length + it.description.length + it.name.length + 48 },
+            droppedByBudget = droppedByBudget
+        )
+    }
+
+    /**
+     * v3 从工具计划中剔除其它工位作用域的工具（MCP/技能复合工具的市场分级
+     * 隔离，缺口 A 根因修复：scope 字段此前只被市场 UI 消费，引擎侧不过滤）。
+     *
+     * 纯函数：重建快照；未注册 id 不误杀（旧 MCP 会话残留的幽灵工具由
+     * 注册表自身清理）。
+     */
+    private fun ToolRequestBudget.RequestToolPlan.filterOutOffScopeTools(
+        registry: ToolRegistry,
+        skillScope: String
+    ): ToolRequestBudget.RequestToolPlan {
+        if (skillScope.isBlank() || skillScope == SCOPE_ALL) return this
+        fun offScope(def: com.apex.agent.core.llm.ToolDefinition): Boolean {
+            val registryId = providerNameToId[def.name] ?: def.name
+            val metadata = registry.getTool(registryId)?.metadata ?: return false
+            return !isToolVisibleInScope(metadata, skillScope)
+        }
+        if (tools.none { offScope(it) }) return this
+        val kept = tools.filterNot { offScope(it) }
+        val keptNames = kept.map { it.name }.toSet()
+        val keptNameToId = providerNameToId.filterKeys { it in keptNames }
         val keptBytes = kept.sumOf { it.parameters.length + it.description.length + it.name.length + 48 }
         val keptIds = keptNameToId.values.toSet()
         return ToolRequestBudget.RequestToolPlan(
@@ -146,6 +203,24 @@ internal object EngineToolPlanner {
     }
 
     /**
+     * diag-20261011：判定异常是否为「tool_calls 配对类 400」——报错文案形如
+     * "An assistant message with 'tool_calls' must be followed by tool
+     * messages responding to each 'tool_call_id'. (insufficient tool
+     * messages following tool_calls message)"。
+     *
+     * 这是**消息历史结构错误**，不是 tools 载荷被拒：降级（砍工具清单/去
+     * tool_choice）改不了消息序列，重试必然同样失败，只会烧掉两级降级并
+     * 掩盖真错。归为非工具类 → 由 DanglingToolCallRepair 归一化历史 +
+     * 配对自愈重试（每任务一次）兜底。
+     */
+    fun isDanglingPairRejection(e: Throwable): Boolean {
+        val msg = (e.message ?: "").lowercase()
+        return msg.contains("must be followed by tool") ||
+            msg.contains("tool messages responding to each") ||
+            msg.contains("insufficient tool messages following")
+    }
+
+    /**
      * 判定异常是否与工具负载相关（降级重试的前置条件）。
      *
      * 覆盖：①模型/网关拒绝带 tools 请求的典型报错文案（函数名/schema/
@@ -160,6 +235,11 @@ internal object EngineToolPlanner {
      * 401/403（鉴权）始终排除。
      */
     fun isToolsRelatedRejection(e: Throwable): Boolean {
+        // 历史配对类 400（诊断包 2026-10-07 crash 复盘；判定提取见
+        // [isDanglingPairRejection]）：非工具载荷问题，不降级。
+        if (isDanglingPairRejection(e)) {
+            return false
+        }
         val msg = (e.message ?: "").lowercase()
         val msgHitsToolKeyword = TOOLS_REJECTION_KEYWORDS.any { msg.contains(it) }
         if (e is LlmException.Http) {
@@ -211,7 +291,7 @@ internal object EngineToolPlanner {
 
 /**
  * 多模态用户输入 → 文本上下文（图片/文件以路径清单形式告知 Agent，
- * Agent 可用 read_file 等工具读取）。纯函数，无引擎状态。
+ * Agent 可用 Read 等工具读取）。纯函数，无引擎状态。
  */
 internal fun buildUserText(input: UserInput): String {
     if (input.images.isEmpty() && input.files.isEmpty()) return input.text
@@ -222,11 +302,11 @@ internal fun buildUserText(input: UserInput): String {
         if (input.files.isNotEmpty()) {
             appendLine("[用户附加文件]")
             input.files.forEach { f ->
-                // 文档类附件标注「已支持文本提取」——引导模型放心用 read_file 读正文，
+                // 文档类附件标注「已支持文本提取」——引导模型放心用 Read 读正文，
                 // 而不是看到 .pdf 就当作二进制放弃（旧链路确实读不了，现在能读）。
                 val docHint = when {
-                    f.mimeType.contains("pdf", ignoreCase = true) || f.name.endsWith(".pdf", true) -> "，read_file 可提取文本"
-                    f.mimeType.contains("wordprocessingml", ignoreCase = true) || f.name.endsWith(".docx", true) -> "，read_file 可提取文本"
+                    f.mimeType.contains("pdf", ignoreCase = true) || f.name.endsWith(".pdf", true) -> "，Read 可提取文本"
+                    f.mimeType.contains("wordprocessingml", ignoreCase = true) || f.name.endsWith(".docx", true) -> "，Read 可提取文本"
                     else -> ""
                 }
                 appendLine("- ${f.name} (${f.mimeType}, ${f.sizeBytes} bytes$docHint) path=${f.localPath}")

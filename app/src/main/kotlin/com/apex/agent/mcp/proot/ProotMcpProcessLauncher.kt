@@ -6,14 +6,15 @@ import com.apex.agent.core.tools.mcp.McpException
 import com.apex.agent.core.tools.mcp.McpProcessHandle
 import com.apex.agent.core.tools.mcp.McpProcessLauncher
 import com.apex.agent.platform.terminal.environment.LinuxEnvironmentManager
+import com.apex.agent.platform.terminal.proot.PRootArgvCapabilities
 import com.apex.agent.platform.terminal.proot.PRootEnvTrampoline
+import com.apex.agent.platform.terminal.proot.PRootLibtallocStaging
 import com.apex.agent.platform.terminal.proot.SharedStorageBridge
 import com.apex.agent.platform.terminal.proot.SystemBindProfile
 import com.apex.agent.platform.terminal.workspace.GuestUserHome
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
-import java.nio.file.Files
 import kotlin.concurrent.thread
 
 /** stderr 环形缓冲容量（字符数）。 */
@@ -53,9 +54,10 @@ private const val TAG = "ProotMcp"
  *
  * ## bind 语义
  * - **持久化 home**：终端页 GuestUserHome 的同一 host 目录（`<filesDir>/linux/home`，
- *   由 rootfsDir 的兄弟目录推导）bind 到 guest `/root` —— 终端与 MCP 共享同一
- *   个 home，npx 缓存、npm 全局配置互通；目录不存在（终端从未初始化）时诚实
- *   跳过，guest `/root` 落回 rootfs 内部目录，MCP 依然可跑。
+ *   由 rootfsDir 上推两级到 filesDir 再拼相对路径推导）bind 到 guest `/root`
+ *   —— 终端与 MCP 共享同一个 home，npx 缓存、npm 全局配置互通；目录不存在
+ *   （终端从未初始化）时诚实跳过，guest `/root` 落回 rootfs 内部目录，MCP
+ *   依然可跑。
  * - **系统级 bind**：`/proc` `/dev` `/sys`（复用 [SystemBindProfile.STANDARD]，
  *   proot-distro 语义 —— node/python 的熵源、子进程枚举在 guest 内真实可用；
  *   host 侧不存在的路径会被其诚实过滤）。
@@ -105,7 +107,16 @@ class ProotMcpProcessLauncher(
      */
     private val rootfsDir: File,
     /** rootfs 就绪门禁（false = 未安装或不可用，launch 会抛引导性异常）。 */
-    private val isRootfsReady: () -> Boolean
+    private val isRootfsReady: () -> Boolean,
+    /**
+     * T92（D5 完成度）：argv 能力源（PRootCapabilitySource —— 非挂起读取）。
+     * 本类是唯一**不走** [com.apex.agent.platform.terminal.proot.PRootCommandBuilder]
+     * 的 argv 构造点（argv 手工内联拼装）—— 能力门在此处手工实现：
+     * `--kill-on-exit` 与 `--` 仅在探针实测支持时拼接（省略形状在任何
+     * proot 上均合法 —— env trampoline 首 token `/usr/bin/env` 天然分界）。
+     * 默认 Termux 基线仅保既有测试夹具语义；生产 DI 注入真实源。
+     */
+    private val capabilities: () -> PRootArgvCapabilities = { PRootArgvCapabilities.TERMUX_BUNDLED }
 ) : McpProcessLauncher {
 
     /** 共享存储桥：与 app TerminalModule 同款 host 目录约定。 */
@@ -164,7 +175,7 @@ class ProotMcpProcessLauncher(
                 if (versionDir.isDirectory) return versionDir
                 throw McpException(
                     "Ubuntu rootfs 已损坏：版本标记指向的目录缺失（${versionDir.absolutePath}）" +
-                        "—— 请在终端页重装 Ubuntu（terminal.ubuntu.install）"
+                        "—— 请在终端页重装 Ubuntu（TerminalUbuntuEnsure）"
                 )
             }
         }
@@ -191,15 +202,15 @@ class ProotMcpProcessLauncher(
             val tmp = File(dir)
             if (!tmp.isDirectory) runCatching { tmp.mkdirs() }
         }
-        // libtalloc.so.2 SONAME 入口：Android 打包要求 jniLibs 以 lib 前缀加 .so
-        // 结尾命名，而 proot 的 DT_NEEDED 是 libtalloc.so.2 —— 需要同名字的链接
-        // 指向真实文件（Termux/UserLAnd 先例）。逐个 LD_LIBRARY_PATH 目录兜底重建。
-        val ldPath = hostEnv["LD_LIBRARY_PATH"] ?: return
-        for (dir in ldPath.split(':').filter { it.isNotBlank() }) {
-            val talloc = File(dir, "libtalloc.so")
-            val soname = File(dir, "libtalloc.so.2")
-            if (talloc.isFile && !soname.exists()) {
-                runCatching { Files.createSymbolicLink(soname.toPath(), talloc.toPath()) }
+        // libtalloc.so.2 SONAME 入口（共享助手：LD_LIBRARY_PATH 各目录幂等
+        // 重建——含 staging 目录；悬空链接删除重建；失败不再静默吞掉，
+        // 逐目录 WARN 留痕，下次诊断日志直接可见真实异常）。
+        PRootLibtallocStaging.ensure(hostEnv, libprootPath).forEach { r ->
+            if (r.outcome == PRootLibtallocStaging.Outcome.FAILED) {
+                AppLogger.instance.warn(
+                    LogCategory.TOOL, TAG,
+                    "libtalloc.so.2 staging 失败 ${r.dir}：${r.error}"
+                )
             }
         }
     }
@@ -216,30 +227,35 @@ class ProotMcpProcessLauncher(
     }
 
     /**
-     * 完整 argv：libproot + -r/-0/--kill-on-exit + binds + -w + env trampoline + 命令。
+     * 完整 argv：libproot + -r/-0 + binds + -w + env trampoline + 命令。
      *
      * T88 根治：guest env 不再经 proot `-E`（捆绑的 5.1.107 不支持，运行时报
      * `proot error: unknown option '-E'`），改用 [PRootEnvTrampoline]
      * 的 `/usr/bin/env -i K=V … cmd` 形态（Termux proot-distro 同款）。
+     *
+     * T92（D5 完成度）：`--kill-on-exit` 与 `--` 改为能力门控（探针实测支持
+     * 才拼接 —— 此前硬编码，是 -E 事故同构风险的最后一个残留点；省略
+     * `--` 时 trampoline 首 token `/usr/bin/env` 是非选项 token，天然分界）。
      */
     internal fun buildArgv(
         rootfs: File,
         command: List<String>,
         requestEnv: Map<String, String>
     ): List<String> {
+        val caps = capabilities()
         val argv = mutableListOf<String>()
         argv.add(libprootPath)
         argv.add("-r")
         argv.add(rootfs.absolutePath)
         argv.add("-0")
-        argv.add("--kill-on-exit")
+        if (caps.supportsKillOnExit) argv.add("--kill-on-exit")
         for ((hostPath, guestPath) in buildBinds()) {
             argv.add("-b")
             argv.add("$hostPath:$guestPath")
         }
         argv.add("-w")
         argv.add(GUEST_CWD)
-        argv.add("--")
+        if (caps.supportsOptionSeparator) argv.add("--")
         argv.addAll(PRootEnvTrampoline.guestPrefix(guestEnv(requestEnv)))
         argv.addAll(command)
         return argv
@@ -260,7 +276,14 @@ class ProotMcpProcessLauncher(
             "SHELL" to "/bin/bash",
             "PATH" to LinuxEnvironmentManager.GUEST_PATH,
             "TMPDIR" to "/tmp",
-            "PWD" to GUEST_CWD
+            "PWD" to GUEST_CWD,
+            // 「本地 MCP 总是失败」的头号根因修复：沙箱内 npx -y 首次运行要
+            // 从 registry.npmjs.org 拉包 —— guest 无宿主代理（127.0.0.1 是
+            // guest 自己），该源在国内网络大面积超时，首次启动几乎必挂。
+            // 注入 npm 官方 env 机制的镜像源（npmmirror，全球 CDN），已缓存
+            // 包零影响；MCP 配置 env 显式同名键在下方最后覆盖 —— 用户自配
+            // registry / 内网源永远优先。
+            "npm_config_registry" to "https://registry.npmmirror.com"
         )
         for ((key, value) in requestEnv) {
             validateGuestEnvEntry(key, value)
@@ -285,9 +308,16 @@ class ProotMcpProcessLauncher(
 
     /** 持久化 home bind：与终端会话共享同一 host 目录；不存在时诚实跳过。 */
     private fun persistentHomeBind(): Pair<String, String>? {
-        // rootfsDir 是 <filesDir>/rootfs/ubuntu —— 兄弟目录推导与 app
-        // TerminalModule 的 provideGuestUserHome 布局约定一致。
-        val filesDir = rootfsDir.parentFile ?: return null
+        // P1 修复（home bind 路径推导错误）：rootfsDir 是
+        // `<filesDir>/rootfs/ubuntu`（TerminalModule 的 rootfsBaseDir）——
+        // 持久化 home 在 `<filesDir>/linux/home`（与 GuestUserHome 的
+        // app TerminalModule provideGuestUserHome 布局约定一致），需要上跳
+        // **两级**到 filesDir。旧实现只跳一级（得到
+        // `<filesDir>/rootfs/linux/home`，该目录永不存在），持久化 home bind
+        // 被静默跳过 —— KDoc 承诺的「终端与 MCP 共享同一 home、npx 缓存
+        // 互通」全部落空；guest HOME 落进 rootfs 版本目录内，rootfs 换版本时
+        // memory.json / npm 缓存 / .npmrc 全部丢失。
+        val filesDir = rootfsDir.parentFile?.parentFile ?: return null
         val home = File(filesDir, PERSISTENT_HOME_RELATIVE_PATH)
         return if (home.isDirectory) home.absolutePath to GuestUserHome.GUEST_PATH else null
     }
@@ -312,7 +342,7 @@ class ProotMcpProcessLauncher(
 
         /** rootfs 未就绪时的用户引导文案（Issue #149 验收口径）。 */
         internal const val ROOTFS_NOT_READY_MESSAGE =
-            "Ubuntu 沙箱未安装——先在终端页安装 Ubuntu（terminal.ubuntu.install），" +
+            "Ubuntu 沙箱未安装——先在终端页安装 Ubuntu（TerminalUbuntuEnsure），" +
                 "或在设置里初始化；随后可在沙箱内安装 nodejs：apt install -y nodejs npm"
     }
 }
@@ -321,10 +351,21 @@ class ProotMcpProcessLauncher(
  * 沙箱进程句柄：包一层 java.lang.Process，额外做两件事 ——
  * 1. daemon 线程持续 drain stderr（防管道缓冲区撑满死锁），保留最后 4KB；
  * 2. destroy 时把 stderr 尾部投递到应用日志（启动失败的真因大多在这里）。
+ *
+ * #206 stderr tee：内部 drain 线程是 stderr 的**唯一消费者**；行文本同时
+ * 复制进 [stderrTee]（有界队列），[stderr] 暴露给 [McpStdioTransport] 的
+ * 泄放泵 —— 修复旧实现「transport 与 drain 并发读同一根管道」造成的
+ * 字节撕裂（时间线上的 stderr 行残缺/乱码、诊断尾部丢数据）。
  */
 private class ProotProcessAdapter(private val process: Process) : McpProcessHandle {
 
     private val stderrTail = StringBuilder()
+    private val stderrTee = LineTeeInputStream()
+
+    // P3（pid 上报）说明：java.lang.Process.pid() 是 JDK 9+ API，Android 的
+    // compileSdk classpath 不暴露（CI :app:compileDebugKotlin 实测 Unresolved）；
+    // 反射读取又被仓库质量门禁禁止 —— 按接口契约回退 null（「无法获取时
+    // null」），宿主 JvmProcessLauncher（纯 JVM 模块）仍上报真实 pid。
 
     /** stderr 尾部快照（诊断用；最多 4KB 环形缓冲）。 */
     fun recentStderr(): String = synchronized(stderrTail) { stderrTail.toString() }
@@ -332,14 +373,15 @@ private class ProotProcessAdapter(private val process: Process) : McpProcessHand
     private val drain: Thread = thread(name = "proot-mcp-stderr", isDaemon = true) {
         runCatching {
             process.errorStream.bufferedReader(Charsets.UTF_8).use { reader ->
-                val buf = CharArray(512)
                 while (true) {
-                    val n = reader.read(buf)
-                    if (n < 0) break
-                    if (n > 0) appendTail(String(buf, 0, n))
+                    val line = reader.readLine() ?: break
+                    if (line.isEmpty()) continue
+                    appendTail(line + "\n")
+                    stderrTee.offerLine(line + "\n")
                 }
             }
         }
+        stderrTee.closeProducer()
     }
 
     private fun appendTail(chunk: String) {
@@ -355,11 +397,11 @@ private class ProotProcessAdapter(private val process: Process) : McpProcessHand
     override val stdout: InputStream get() = process.inputStream
 
     /**
-     * 原始 stderr 流。注意：内部 drain 线程正在持续消费它，外部不要再并发
-     * 读取 —— 诊断信息请用 [recentStderr]（接口契约要求暴露此流，但
-     * McpStdioTransport 实际只消费 stdin/stdout）。
+     * #206：tee 流（drain 线程喂行的只读消费口）。**不要**返回
+     * process.errorStream —— 那根管道已被内部 drain 独占消费，两读者并发
+     * 会撕裂多字节 UTF-8 序列。
      */
-    override val stderr: InputStream get() = process.errorStream
+    override val stderr: InputStream get() = stderrTee
 
     override fun isAlive(): Boolean = process.isAlive
 
@@ -375,6 +417,53 @@ private class ProotProcessAdapter(private val process: Process) : McpProcessHand
                     "沙箱 MCP 进程已销毁，stderr 尾部（${tail.length} 字符）：$tail"
                 )
             }
+        }
+    }
+}
+
+/**
+ * #206 有界行管道：生产者（drain 线程）offer 行字节，消费者（transport 的
+ * 泄放泵）阻塞 poll。队列满丢最旧（消费方不存在/读得慢都不阻塞生产者，
+ * 慢消费者丢日志好过饿死诊断线程）；生产者关闭且队列读空后返回 EOF。
+ */
+private class LineTeeInputStream : InputStream() {
+    private val queue = java.util.concurrent.ArrayBlockingQueue<ByteArray>(256)
+    private var current: ByteArray? = null
+    private var pos = 0
+
+    @Volatile
+    private var producerClosed = false
+
+    fun offerLine(line: String) {
+        val bytes = line.toByteArray(Charsets.UTF_8)
+        if (!queue.offer(bytes)) {
+            queue.poll() // 丢最旧
+            queue.offer(bytes)
+        }
+    }
+
+    fun closeProducer() {
+        producerClosed = true
+    }
+
+    override fun read(): Int {
+        while (true) {
+            current?.let { b ->
+                if (pos < b.size) return b[pos++].toInt() and 0xFF
+                current = null
+            }
+            val next = try {
+                queue.poll(250, java.util.concurrent.TimeUnit.MILLISECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return -1
+            }
+            if (next != null) {
+                current = next
+                pos = 0
+                continue
+            }
+            if (producerClosed && queue.isEmpty()) return -1
         }
     }
 }

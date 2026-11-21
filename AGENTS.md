@@ -7,11 +7,36 @@
 
 ## 构建与验证
 
-- **模块**：多模块 Gradle（app / core×6 / platform×5 / 终端双模块），
-  Kotlin 2.0.21 + AGP 8.7.3 + JDK 17 + Compose BOM 2024.12.01；
+- **模块**：多模块 Gradle（app / core×6 / platform×6 / 终端双模块），
+  Kotlin 2.3.21 + AGP 8.13.2 + Gradle 8.14 + JDK 17 + Compose BOM 2026.02.00
+  （KSP2 2.3.12 / Hilt 2.58 / Room 2.8.5 配套矩阵；液态玻璃 backdrop 保持
+  vendored —— 上游 1.0.6 二进制缺 diag-20261011 热修，
+  详见 gradle/libs.versions.toml 与 vendor/backdrop/README.md）；
+- **浏览器库（拆库后）**：BrowserEngine / chrome UI / DOM 解析已抽出为
+  [apex-kit-browser](https://github.com/Ultra-Guru/apex-kit-browser)
+  （坐标 `com.apex.browser:{core,engine,chrome}`）。本地构建把库克隆成
+  **兄弟目录** `../apex-kit-browser` 即自动 composite build（settings
+  条件 includeBuild）；CI 由 workflow 检出兄弟目录。改浏览器行为去库仓库
+  提 PR（其 consumer-check 会对本仓库跑编译防下游崩）。v1.5.0 起浏览器
+  自动化为**内置大功能**：BrowserAgentTools（browser_* 工具协议）与 DI
+  接线（`BrowserKitModule`，三层坐标 + LiveViewOverlay 实时页面悬浮窗
+  与 InAppChromeHost 内嵌宿主单例经 api 传递给 app）住在
+  `:platform:browser-agent`；app 侧只留 CyberNeonBallManager /
+  NeonRingView（透明玻璃球视觉装饰，依赖 app 的 LanguageManager 与资源；
+  点击球切换实时页面悬浮窗）、BrowserScreen 一级入口（v1.5.1 双页签：
+  浏览器页签 = App 内嵌完整浏览器 InAppBrowserPane（BrowserChrome +
+  引擎 WebView，零悬浮窗权限；承载互斥见库侧 InAppHostingArbiter），
+  仪表盘页签 = 观测/干预面板 + 悬浮窗权限引导卡）与悬浮球接线；网页
+  自动化插件壳已删除（PluginManager 对旧插件 id 拦截并引导卸载）；
 - **本地验证顺序**：改 core 层先跑对应模块 `test`，改 app 层跑
   `:app:compileDebugKotlin`；CI（pr 触发）跑静态分析 + app 编译 +
   9 步测试 + debug APK + 结构质量四门禁；
+- **插件体系（Plugin System v2，双类型）**：功能性插件
+  （`:plugin-sdk:plugin-host` functional 包）与 APK 插件（PluginManager
+  AIDL）统一经 `UnifiedPluginRegistry` 门面；改 functional 包跑
+  `:plugin-sdk:plugin-host:testDebugUnitTest`（纯 JVM，51 项契约锁），
+  契约与设计见 docs/plugin-system-v2.md——**功能性插件是数据永不 REPLACE
+  内置工具（REJECT），APK 插件同签名才 REPLACE**，改冲突语义前先读文档；
 - **绝不**在本地跑 `assembleRelease` 之外的东西来验证 UI——Compose
   编译过了 UI 仍可能崩，真机回归是最终验收。
 

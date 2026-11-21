@@ -74,7 +74,7 @@ class CodeThinkingPromptsTest {
         assertTrue(directive.contains("自适应"))
         // AUTO 兜底 = DEEP 纪律（去标题后的缩进体）
         assertTrue(directive.contains("改动集清单"))
-        assertTrue(directive.contains("code_task"))
+        assertTrue(directive.contains("CodeTask"))
     }
 
     @Test
@@ -111,7 +111,7 @@ class CodeThinkingPromptsTest {
     @Test
     fun `light directive covers glance-edit discipline`() {
         val d = CodeThinkingPrompts.thinkingDirective(CodeThinkingLevel.LIGHT)
-        assertTrue(d.contains("code_read"))
+        assertTrue(d.contains("CodeRead"))
         assertTrue(d.contains("diff"))
         assertTrue(d.contains("STANDARD")) // 退路指引
     }
@@ -119,8 +119,8 @@ class CodeThinkingPromptsTest {
     @Test
     fun `standard directive covers full edit loop`() {
         val d = CodeThinkingPrompts.thinkingDirective(CodeThinkingLevel.STANDARD)
-        assertTrue(d.contains("code_read"))
-        assertTrue(d.contains("code_edit"))
+        assertTrue(d.contains("CodeRead"))
+        assertTrue(d.contains("CodeEdit"))
         assertTrue(d.contains("诊断"))
         assertTrue(d.contains("最小 diff"))
     }
@@ -130,7 +130,7 @@ class CodeThinkingPromptsTest {
         val d = CodeThinkingPrompts.thinkingDirective(CodeThinkingLevel.DEEP)
         assertTrue(d.contains("改动集清单"))
         assertTrue(d.contains("验证"))
-        assertTrue(d.contains("code_task"))
+        assertTrue(d.contains("CodeTask"))
         assertTrue(d.contains("一致性"))
     }
 
@@ -169,7 +169,7 @@ class CodeThinkingPromptsTest {
         assertTrue(d.contains("6. **证据链汇报**"))
         // 证据与检查点纪律
         assertTrue(d.contains("path:line"))
-        assertTrue(d.contains("code_todo"))
+        assertTrue(d.contains("CodeTodo"))
     }
 
     @Test

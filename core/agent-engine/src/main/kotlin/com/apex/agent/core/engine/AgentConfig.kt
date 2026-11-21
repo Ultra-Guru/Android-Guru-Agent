@@ -1,25 +1,20 @@
 package com.apex.agent.core.engine
 
 /**
- * Agent执行模式
+ * Agent 执行模式。
  *
- * #197 双工位拆分：Agent 聊天屏只暴露 [CHAT] / [AGENT] 两种模式（全能智能体
- * 工位）；[BUILD] / [PLAN] 保留给 Coding 屏（编码工位）使用，Spec/Reflect/
- * Assist/Custom 为存量枚举（老配置反序列化兼容，不再出现在任何模式选择 UI）。
+ * Agent 模式移除（PR 3/6）：Agent 聊天屏档位（CHAT / AGENT / LOOP）与
+ * v1/v2 存量档位（SPEC / REFLECTION / HUMAN_ASSIST / CUSTOM）已删 ——
+ * 本软件为纯 Coding 模式软件，只保留编码工位三档：
+ * - [BUILD]：边想边做（ReAct 主循环）
+ * - [PLAN]：先规划确认后执行
+ * - [GOAL]：目标驱动持续验收（goal 包）
+ *
+ * 存量配置兼容：持久化的 mode 字符串经 `AgentMode.valueOf` 解析处均有
+ * runCatching 回退（CodeViewModel 启动消毒到 BUILD、LoomKitAdapter
+ * getOrDefault(BUILD)），删除的档位名解析失败自动落到 BUILD，无迁移需求。
  */
 enum class AgentMode(val displayName: String, val description: String) {
-    /**
-     * 聊天模式（Agent 屏）：纯对话——无工具、无人机协同复杂度，
-     * 人设 + 聊天 Skill 驱动的轻量陪伴/问答体验。
-     */
-    CHAT("Chat", "纯聊天：人设与聊天技能驱动的对话"),
-
-    /**
-     * 智能体模式（Agent 屏）：全能智能体——生活/知识/系统级工具自主调用，
-     * 编程类请求引导用户切换到 Coding 模式（非编程工位）。
-     */
-    AGENT("Agent", "全能智能体：自主调用通用工具完成任务"),
-
     /**
      * 构建模式（Coding 屏）：边想边做，实时执行
      */
@@ -31,28 +26,13 @@ enum class AgentMode(val displayName: String, val description: String) {
     PLAN("Plan", "先制定完整计划，确认后再执行"),
 
     /**
-     * 规格模式：先产出需求规格（目标 / 需求 / 约束 / 验收标准 / 交付物），
-     * 用户确认后再逐项执行。比 Plan 更强调"做什么、做成什么样才算完成"。
+     * 目标模式（Coding 屏，v3）：设定**可验证的完成条件**（如「所有测试
+     * 通过」）后持续工作——每轮自然收尾时由快速模型（FAST 角色）验收，
+     * 未达标自动注入差距说明续跑，直到目标达成或轮次耗尽（外部状态由
+     * [com.apex.agent.core.engine.goal.GoalModeCoordinator] 持有，引擎只挂
+     * 每轮验收钩子，见 goal 包）。
      */
-    SPEC("Spec", "先产出需求规格，确认后再执行"),
-
-    /**
-     * 反思模式：Agent 通过"生成 → 评审 → 修正"循环自我审视并改进输出，
-     * 适合代码生成、内容创作等对质量要求高的场景。
-     */
-    REFLECTION("Reflect", "生成 → 评审 → 修正，提高输出质量"),
-
-    /**
-     * 人工协助模式：Agent 遇到多种选择（方案 / 目标 / 偏好）时，
-     * 强制弹出选项菜单交由人工决策，不擅自猜测。
-     */
-    HUMAN_ASSIST("Assist", "遇多选时弹出选项菜单，人工决策"),
-
-    /**
-     * 自定义模式：附加用户自定义指令（如输出格式 / 语言 / 行为约束），
-     * 指令持久化保存并拼入 system prompt。
-     */
-    CUSTOM("Custom", "附加自定义指令运行")
+    GOAL("Goal", "目标驱动：设定可验证条件，持续工作直至达成")
 }
 
 /**
@@ -90,76 +70,13 @@ enum class ThinkingLevel(val level: Int, val description: String) {
     /**
      * 转换为 system prompt 中的思考指令。
      *
-     * 推理框架参考自失败项目 [Apex-agent] 的 ChainOfThoughtSkill / TreeOfThoughtsSkill /
-     * ReActSkill：将其中"分解-逐步推理-综合"与"多路径探索评估"的结构化骨架提炼为
-     * 思考提示词。#168 起该文本已迁移/增强到
-     * [com.apex.agent.core.engine.thinking.ThinkingProfile]（含执行策略差异），
-     * 本方法保留作为无画像路径的兼容回退。
+     * #168 起指令正文与执行策略统一建模在
+     * [com.apex.agent.core.engine.thinking.ThinkingProfile]（单一事实源）；
+     * 本方法直接委托画像表——无画像路径的兼容回退与主路径**字面同源**，
+     * 不再维护一份会漂移的副本文本。
      */
-    fun toPromptInstruction(): String = when (this) {
-        NONE -> ""
-        AUTO -> "" // AUTO 不携带静态指令：由 ThinkingModeController 选档后注入该档指令+理由
-        LIGHT -> "Briefly think about what to do next in 1-2 sentences, then act."
-        STANDARD -> """
-            Use Chain-of-Thought before acting:
-            1. Break the task into clear sub-steps.
-            2. For the current step, reason step by step what to do and which tool to use.
-            3. Execute, then observe the result before the next step.
-        """.trimIndent()
-        DEEP -> """
-            Reason carefully using a multi-path approach before acting:
-            1. Decompose the task into sequential sub-problems.
-            2. For the key decision, generate at least 2-3 candidate approaches (branch out, do not commit early).
-            3. Evaluate each on feasibility, efficiency, risk, and side effects.
-            4. Critique: "What could go wrong? What am I missing?"
-            5. Pick the best approach, explain why, then execute the first step and observe.
-        """.trimIndent()
-        MAXIMUM -> """
-            Perform exhaustive reasoning before any action:
-            1. Fully understand the task and constraints.
-            2. Decompose into sub-problems; for each, enumerate ALL plausible solution paths (Tree-of-Thoughts style).
-            3. Score each path on feasibility, efficiency, risk, and side effects.
-            4. Consider edge cases and failure modes.
-            5. Self-critique: "What could go wrong? Am I missing something?"
-            6. Synthesize the optimal execution plan from the best path.
-            7. Only then, execute the first step, observe, and re-evaluate if the outcome diverges.
-        """.trimIndent()
-    }
-    
-    /**
-     * 对应的thinking_budget（用于支持此参数的模型如Gemini）
-     */
-    fun toThinkingBudget(): Int? = when (this) {
-        NONE -> 0
-        AUTO -> null // AUTO 不直接映射：选档后用该档画像的 budget（ThinkingProfile.forLevel）
-        LIGHT -> 256
-        STANDARD -> 1024
-        DEEP -> 4096
-        MAXIMUM -> 16384
-    }
-
-    /**
-     * T1（思考程度真实化）：映射为模型原生思考强度 [com.apex.agent.core.llm.ReasoningEffort]
-     * 的枚举名，app 层（AgentChatViewModel.setThinkingLevel）转回枚举后持久化到
-     * 默认 ModelProfile —— DynamicLlmClient 监听 profiles 即时重建，下一次请求
-     * 即真实下发 reasoning_effort / thinking.budget_tokens / enable_thinking
-     * （由 StreamingOpenAiClient 按 Provider 差异化）。
-     *
-     * 返回 null（NONE 档）= 不思考：app 层应回退 [com.apex.agent.core.llm.ReasoningEffort.NONE]
-     * （apiValue 为 null，请求体不发 reasoning 字段）。
-     *
-     * 为什么返回 String 而不是枚举：agent-engine 与 ReasoningEffort 所在的
-     * llm-adapter 已有依赖，但保持 ThinkingLevel 纯枚举层不直接硬引用，
-     * 映射关系集中在本处，便于单测与后续调档。
-     */
-    fun toReasoningEffortName(): String? = when (this) {
-        NONE -> null
-        AUTO -> "adaptive" // 哨兵值：调用方（AgentChatViewModel 等）必须特判 AUTO，不回退 ReasoningEffort.NONE
-        LIGHT -> "LOW"
-        STANDARD -> "MEDIUM"
-        DEEP -> "HIGH"
-        MAXIMUM -> "MAX"
-    }
+    fun toPromptInstruction(): String =
+        com.apex.agent.core.engine.thinking.ThinkingProfile.forLevel(this).promptInstruction
 }
 
 /**
@@ -172,9 +89,30 @@ data class AgentConfig(
     /** 思考深度 */
     val thinkingLevel: ThinkingLevel = ThinkingLevel.STANDARD,
     
-    /** 最大迭代次数（防止无限循环）*/
+    /**
+     * 最大迭代轮数（防失控兜底）。**≤ 0 = 无上限**（用户显式要求：一个任务
+     * 的工具调用次数不设上限——失控防线交给循环检测 + 用户手动停止，
+     * 见 [EngineResilienceGuard] 与 loopDetector）。经
+     * [ThinkingModeController.effectiveMaxIterations] 统一消费哨兵。
+     */
     val maxIterations: Int = 25,
-    
+
+    /**
+     * 单轮并行执行上限：模型一次返回多个 tool_calls 时，引擎同轮最多
+     * 并行执行几个（1 = 顺序执行，历史默认）。仅影响**执行**并发——
+     * 请求参数侧的 parallel_tool_calls 开关在 ModelProfile（两者正交）。
+     * 并行时事件按「发言权」协议顺序放行（UI 单卡时间线不撕裂），历史
+     * ToolResult 按原始顺序落盘（配对安全），见 EngineToolExecution.kt。
+     */
+    val toolCallParallelism: Int = 1,
+
+    /**
+     * 单轮工具调用数上限（超出部分延迟到下一轮执行，附系统说明）：
+     * 0 = 不限制。来源 ModelProfile.maxToolCalls（此前是设置页 dead 字段，
+     * 这里补上引擎侧真接线——防弱模型一轮喷射几十个调用把请求打爆）。
+     */
+    val maxToolCallsPerTurn: Int = 0,
+
     /** 最大context tokens（超出触发压缩）*/
     val maxContextTokens: Int = 128000,
     
@@ -196,17 +134,9 @@ data class AgentConfig(
     /** 模型名称覆盖 */
     val modelOverride: String? = null,
 
-    /**
-     * 反思模式轮数（[AgentMode.REFLECTION] 生效）：每轮执行一次
-     * "评审 → 修正"。默认 1 轮（生成 → 评审 → 修正）。
-     */
-    val reflectionRounds: Int = 1,
-
-    /**
-     * 自定义模式附加指令（[AgentMode.CUSTOM] 生效）：
-     * 原样拼入 system prompt 的 "## Custom Instructions" 段落。
-     */
-    val customInstruction: String? = null,
+    // 反思轮数（reflectionRounds）与自定义指令（customInstruction）两个
+    // 历史遗留字段已随 Agent 模式移除收口：REFLECTION/CUSTOM 档位在 PR 3/6
+    // 删除注入点，PR 4/6（AgentSetupTools）/ PR 5/6（设置域）删除最后消费方。
 
     /**
      * 追加到 system prompt 末尾的动态上下文（任意模式生效）。
@@ -274,7 +204,42 @@ data class AgentConfig(
      * 过滤依据——agent 屏引擎只注入 agent/all 聊天技能，coding 引擎只注入
      * coding/all 编码技能，两个工位的提示词层完全独立（市场分级同源）。
      */
-    val skillScope: String = "all"
+    val skillScope: String = "all",
+
+    /**
+     * v3 工具作用域隔离开关（默认开）：MCP / 技能复合工具按注册时携带的
+     * scope（市场分级同源字段）在工具计划层隔离——agent 工位看不到
+     * coding 级 MCP 工具，反之亦然。false = 回退 v2 全局可见行为。
+     * 设置层（AgentSettings.mcpScopeIsolation）热更新，经 patchConfig 生效。
+     */
+    val mcpScopeIsolation: Boolean = true,
+
+    /**
+     * v2.1.0 会话级角色授予（评审 P0-3）：本会话已被授予的受限角色集（不可变快照）。
+     * 空集 = 未授予任何受限角色（**默认严格**：browser_* 不可见不可调）。
+     * 授予来源：设置开关关闭 → 全会话默认授 browser-automation（BrowserRolePolicy.
+     * defaultGrants）；模板工坊「浏览器自动化专家」激活 → toolRole 并入（仅内置模板
+     * 可授，评审 P0-3 可信来源约束）；browser-sensitive 仅用户显式授权。
+     * 强制点：EngineToolPlanner 计划层（按本字段过滤）+ RoleGate 调用层（现取）。
+     */
+    val grantedRoles: Set<String> = emptySet(),
+
+    // ═══ v4 三档自主级别（Coding 模式级联选择器）═══
+    // 提问策略维度（与 mode 正交）：null = 未设置（PLAN 模式 / Agent 屏等
+    // 既有消费方），EnginePrompts 不注入 Autonomy 段，行为零变化；
+    // BUILD / GOAL 由 CodeViewModel 从 AgentSettings（codeAutonomyLevel /
+    // codeGoalAutonomyLevel）按当前模式拍平注入，四线同步入口见
+    // DualLogicCodeEngine.updateAutonomy。
+
+    /** 自主级别（交互式 / 半自主 / 完全自主），null = 不注入指令。 */
+    val autonomyLevel: AutonomyLevel? = null,
+
+    /**
+     * 完全自主的「开始前集中澄清」开关（仅 [autonomyLevel] == FULLY 生效，
+     * 语义见 AutonomyLevel.promptInstruction）；默认关闭，切级别保留状态
+     * （持久化在 AgentSettings.codeFullAutoPreClarify）。
+     */
+    val fullAutoPreClarify: Boolean = false
 ) {
     companion object {
         /** 快速模式：Build + 无思考 */

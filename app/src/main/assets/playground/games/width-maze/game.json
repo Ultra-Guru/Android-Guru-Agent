@@ -1,0 +1,11 @@
+{
+  "id": "width-maze",
+  "name": "等宽迷宫",
+  "nameEn": "Width Maze",
+  "tagline": "角色是一个字符，碰撞盒就是实测宽度，拖它穿过不同宽窄的门缝",
+  "version": 1,
+  "engine": "pretext@0.0.9",
+  "apis": ["prepare", "measureNaturalWidth"],
+  "controls": "拖动字符棋子 / 点托盘换字符",
+  "scoreKey": "aga.pg.width-maze.hi"
+}

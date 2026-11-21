@@ -28,7 +28,7 @@ interface ExecutionMemoryObserver {
     /**
      * Agent 每执行完一个工具/动作后调用。对应 CsMemSessionManager.afterAction()。
      *
-     * @param actionDescription 刚执行的动作描述（如 "ui_tap(540,1200)"）
+     * @param actionDescription 刚执行的动作描述（如 "UiTap(540,1200)"）
      * @param success 该动作是否执行成功；用于 CS-Mem 蒸馏时过滤失败动作，避免把
      *  "鼠标连点失败"也压进 FSM 宏技能。默认 true 以兼容未更新的调用方。
      */
@@ -79,6 +79,20 @@ interface ExecutionMemoryObserver {
      * 默认空实现（观察者未注入 / 未实现聊天记忆时静默跳过）。
      */
     suspend fun onConversationTurn(userText: String, assistantText: String) {
+        // 默认空实现
+    }
+
+    /**
+     * 压缩捕获（记忆 P0 会话摘要双通道 —— 压缩侧）。
+     *
+     * ArchivingCompressor 在差集归档后被调用，携带被压缩裁剪的原始
+     * 消息；实现方把 User/Assistant 对转进记忆蒸馏队列（被裁内容对
+     * 记忆系统仍可见），ToolResult 丢弃。回调内必须自行限流与容错，
+     * 绝不阻断压缩主流程。
+     *
+     * 默认空实现（观察者未注入时静默跳过）。
+     */
+    suspend fun onContextPruned(pruned: List<com.apex.agent.core.llm.LlmMessage>) {
         // 默认空实现
     }
 }

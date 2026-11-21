@@ -15,8 +15,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * #171 四族合并 —— `time` 工具单测（合并 get_time/datetime/cron_next/
- * duration_convert 的全部操作面）。
+ * #171 四族合并 —— `time` 工具单测（合并 GetTimeLegacy/datetime/CronNextLegacy/
+ * DurationConvertLegacy 的全部操作面）。
  *
  * 约定（对齐 DataTimeToolsV2Test）：
  * - JUnit4 + `runTest`（execute 是 suspend）；
@@ -206,13 +206,13 @@ class TimeToolTest {
         assertTrue(result.error!!.suggestion!!.contains("1h30m"))
     }
 
-    // ═══ cron_next（next / explain / validate）═══════════════════════
+    // ═══ CronNextLegacy（next / explain / validate）═══════════════════════
 
     @Test
-    fun `cron_next computes the next run from a fixed instant`() = runTest {
+    fun `CronNextLegacy computes the next run from a fixed instant`() = runTest {
         val out = run(
             jsonArgs(
-                "op" to "cron_next",
+                "op" to "CronNext",
                 "expression" to "30 8 * * MON",
                 "from" to "2024-01-01T00:00:00Z",
                 "zone" to "UTC"
@@ -223,10 +223,10 @@ class TimeToolTest {
     }
 
     @Test
-    fun `cron_next count returns consecutive runs`() = runTest {
+    fun `CronNextLegacy count returns consecutive runs`() = runTest {
         val out = run(
             jsonArgs(
-                "op" to "cron_next",
+                "op" to "CronNext",
                 "expression" to "*/15 * * * *",
                 "from" to "2024-01-01T00:00:00Z",
                 "zone" to "UTC",
@@ -239,18 +239,18 @@ class TimeToolTest {
     }
 
     @Test
-    fun `cron_next explain reads like a human`() = runTest {
+    fun `CronNextLegacy explain reads like a human`() = runTest {
         val out = run(
-            jsonArgs("op" to "cron_next", "expression" to "30 8 * * MON", "mode" to "explain")
+            jsonArgs("op" to "CronNext", "expression" to "30 8 * * MON", "mode" to "explain")
         )
         assertEquals("Runs at 08:30 on Monday.", out)
     }
 
     @Test
-    fun `cron_next validate accepts a good expression and names the bad field`() = runTest {
-        assertEquals("valid", run(jsonArgs("op" to "cron_next", "expression" to "30 8 * * MON", "mode" to "validate")))
+    fun `CronNextLegacy validate accepts a good expression and names the bad field`() = runTest {
+        assertEquals("valid", run(jsonArgs("op" to "CronNext", "expression" to "30 8 * * MON", "mode" to "validate")))
 
-        val bad = structured(jsonArgs("op" to "cron_next", "expression" to "65 8 * * *", "mode" to "validate"))
+        val bad = structured(jsonArgs("op" to "CronNext", "expression" to "65 8 * * *", "mode" to "validate"))
         assertFalse(bad.isSuccess)
         assertEquals(ToolErrorCode.INVALID_ARGUMENT, bad.error!!.code)
         assertTrue(bad.error!!.message!!.contains("minute field '65' out of range"))
@@ -263,7 +263,7 @@ class TimeToolTest {
         // 之后的下一个“1号或周一” = 1月8日（周一）。
         val out = run(
             jsonArgs(
-                "op" to "cron_next",
+                "op" to "CronNext",
                 "expression" to "0 0 1 * 1",
                 "from" to "2024-01-01T00:00:00Z",
                 "zone" to "UTC"
@@ -279,7 +279,7 @@ class TimeToolTest {
         val result = structured(jsonArgs("op" to "yesterday"))
         assertFalse(result.isSuccess)
         assertEquals(ToolErrorCode.INVALID_ARGUMENT, result.error!!.code)
-        assertTrue(result.error!!.suggestion!!.contains("cron_next"))
+        assertTrue(result.error!!.suggestion!!.contains("CronNext"))
     }
 
     @Test

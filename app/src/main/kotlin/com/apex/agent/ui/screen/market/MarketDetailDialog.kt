@@ -27,10 +27,16 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -40,6 +46,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.apex.agent.R
+import com.apex.agent.ui.component.ReliabilityTier
+import com.apex.agent.ui.component.reliabilityTierOf
 
 /**
  * # 技能详情对话框
@@ -55,6 +63,13 @@ import com.apex.agent.R
  *
  * 数据来自 [SkillDetailUiState]（由 [SkillAnalytics.projectSkillAnalytics] 投影）。
  */
+/** 配置表单数据（详情对话框表单段渲染用，[MarketViewModel.skillConfigForm] 投影）。 */
+data class SkillConfigFormData(
+    val fields: List<com.apex.agent.core.tools.skill.UserConfigField>,
+    val values: Map<String, String>,
+    val configured: Boolean
+)
+
 @Composable
 internal fun MarketSkillDetailDialog(
     skillId: String,
@@ -63,7 +78,11 @@ internal fun MarketSkillDetailDialog(
     loading: Boolean,
     onDismiss: () -> Unit,
     /** Issue #166：内置技能（assets 释放）——标题行展示「内置」徽标。 */
-    bundled: Boolean = false
+    bundled: Boolean = false,
+    /** 就绪门禁：配置表单段（manifest 声明 userConfig 时渲染；null = 不渲染）。 */
+    configForm: SkillConfigFormData? = null,
+    /** 保存配置值（写入 SkillRegistry .config.json，菜单/徽标即时联动）。 */
+    onSaveConfig: ((Map<String, String>) -> Unit)? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -117,10 +136,94 @@ internal fun MarketSkillDetailDialog(
                     }
                 }
             } else {
-                DetailContent(detailState)
+                Column {
+                    DetailContent(detailState)
+                    // 就绪门禁表单段：技能声明了 userConfig 时提供配置入口
+                    //（配置齐了才进斜杠菜单 —— 「没有配置好的不要显示」闭环）
+                    if (configForm != null && configForm.fields.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        SkillConfigSection(skillId, configForm, onSaveConfig)
+                    }
+                }
             }
         }
     )
+}
+
+/**
+ * 技能配置表单段：按 manifest userConfig 声明渲染动态字段
+ * （boolean → 开关；enum → 选项提示的文本框；其余 → 文本框）+ 保存按钮。
+ */
+@Composable
+private fun SkillConfigSection(
+    skillId: String,
+    form: SkillConfigFormData,
+    onSaveConfig: ((Map<String, String>) -> Unit)?
+) {
+    var drafts by remember(skillId) { mutableStateOf(form.values) }
+
+    Column {
+        SectionTitle(
+            stringResource(R.string.market_skill_config_section),
+            Icons.Default.Bolt
+        )
+        if (!form.configured) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.market_skill_config_required_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        form.fields.forEach { field ->
+            val value = drafts[field.key].orEmpty()
+            val label = field.description.ifBlank { field.key }
+            if (field.type == "boolean") {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = value.isNotBlank() && value != "false",
+                        onCheckedChange = { checked ->
+                            drafts = drafts + (field.key to if (checked) "true" else "")
+                        }
+                    )
+                }
+            } else {
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { drafts = drafts + (field.key to it) },
+                    label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                    supportingText = {
+                        if (field.options.isNotEmpty()) {
+                            Text(
+                                stringResource(R.string.market_skill_config_options, field.options.joinToString(" / ")),
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    },
+                    singleLine = true,
+                    isError = field.required && value.isBlank() && field.default.isNullOrBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+        }
+        if (onSaveConfig != null) {
+            TextButton(
+                onClick = { onSaveConfig(drafts.filterValues { it.isNotBlank() }) }
+            ) {
+                Text(stringResource(R.string.market_skill_config_save))
+            }
+        }
+    }
 }
 
 @Composable
@@ -153,7 +256,7 @@ private fun DetailContent(state: SkillDetailUiState) {
         // 4. 每个工具的详细统计
         if (state.toolStats.isNotEmpty()) {
             item { SectionTitle(stringResource(R.string.market_detail_tool_stats), Icons.Default.CheckCircle) }
-            items(state.toolStats) { row -> ToolStatRow(row) }
+            items(state.toolStats, key = { it.toolId }) { row -> ToolStatRow(row) }
         }
 
         // 5. 最近轨迹（参数脱敏）
@@ -164,7 +267,8 @@ private fun DetailContent(state: SkillDetailUiState) {
                     Icons.Default.Schedule
                 )
             }
-            items(state.traces) { span -> TraceSpanRow(span) }
+            // #245：轨迹 span 实时追加 —— callId 是稳定标识，行内展开状态不再错位。
+            items(state.traces, key = { it.callId }) { span -> TraceSpanRow(span) }
         }
     }
 }
@@ -252,7 +356,12 @@ private fun CognitiveHealthPanel(state: SkillDetailUiState) {
                     )
                     StatChip(
                         stringResource(R.string.market_stat_success_rate),
-                        String.format("%.0f%%", macro.successRate * 100),
+                        tierLabel(
+                            reliabilityTierOf(
+                                macro.successRate,
+                                macro.successCount + macro.failureCount > 0
+                            )
+                        ),
                         MaterialTheme.colorScheme.tertiary
                     )
                     StatChip(
@@ -427,7 +536,7 @@ private fun UsageSummaryPanel(state: SkillDetailUiState) {
             )
             StatChip(
                 stringResource(R.string.market_stat_success_rate),
-                String.format("%.0f%%", state.successRate * 100),
+                tierLabel(reliabilityTierOf(state.successRate, state.hasUsage)),
                 MaterialTheme.colorScheme.tertiary
             )
         }
@@ -470,17 +579,24 @@ private fun ToolStatRow(row: ToolUsageRow) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.width(8.dp))
+            // #365：百分比→定性档位（稳定/一般/不稳定），语义色不变
+            val tier = reliabilityTierOf(row.successRate, row.invocations > 0)
             Text(
-                String.format("%.0f%%", row.successRate * 100),
+                tierLabel(tier),
                 style = MaterialTheme.typography.labelSmall,
-                fontFamily = FontFamily.Monospace,
-                color = if (row.successRate >= 0.9) MaterialTheme.colorScheme.primary
-                else if (row.successRate >= 0.5) MaterialTheme.colorScheme.tertiary
-                else MaterialTheme.colorScheme.error
+                fontWeight = FontWeight.SemiBold,
+                color = when (tier) {
+                    ReliabilityTier.STABLE -> MaterialTheme.colorScheme.primary
+                    ReliabilityTier.FAIR -> MaterialTheme.colorScheme.tertiary
+                    ReliabilityTier.UNSTABLE -> MaterialTheme.colorScheme.error
+                    ReliabilityTier.UNUSED -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                String.format("%.0fms", row.meanDurationMs),
+                // #454：%.0f 在土耳其语等区域输出逗号小数点 —— 与本文件
+                // 既有 java.util.Locale.US 用法（energy 行）保持一致。
+                String.format(java.util.Locale.US, "%.0fms", row.meanDurationMs),
                 style = MaterialTheme.typography.labelSmall,
                 fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -558,3 +674,7 @@ private fun formatRelative(timestampMs: Long): String {
         else -> stringResource(R.string.market_time_months_ago, delta / (30L * 86_400_000))
     }
 }
+
+/** #365：可靠性档位的本地化标签（稳定/一般/不稳定/未使用）。 */
+@Composable
+private fun tierLabel(tier: ReliabilityTier): String = tier.label()

@@ -8,7 +8,7 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * # Tool System v4 — Session tool activation
  *
- * Tools the model "opened" through `tool_open` stay callable for the rest of
+ * Tools the model "opened" through `ToolOpen` stay callable for the rest of
  * the session (the engine re-assembles the request each iteration, so an
  * activated id joins the very next request automatically — the operit
  * `use_package` pattern with native function calling instead of XML docs).
@@ -51,18 +51,6 @@ class ToolActivationStore(
         }
         if (changed) publish()
         return changed
-    }
-
-    /** Deactivate a tool id (no-op when absent). */
-    fun deactivate(toolId: String) {
-        val changed = synchronized(this) {
-            if (toolId in active) {
-                active.remove(toolId)
-                insertionOrder.remove(toolId)
-                true
-            } else false
-        }
-        if (changed) publish()
     }
 
     /** Current activated ids (insertion order preserved). */

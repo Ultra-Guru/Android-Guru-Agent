@@ -1,7 +1,7 @@
 # Operit × RikkaHub × apex-agent 三方深度对比
 
 > 状态：调研完成（v1）· 对标：AAswordman/Operit（Android 端最完整的 Agent 平台）· rikkahub/rikkahub（多供应商聊天客户端标杆）· 结论：七个能力域落地为本仓库 P9x 系列
-> 前置：[tool-system-v4.md](tool-system-v4.md)（工具渐进披露）· [agent-modes.md](agent-modes.md)（六模式）· [reverse-mcp-host.md](reverse-mcp-host.md)（逆向 MCP Host）
+> 前置：[tool-system-v4.md](tool-system-v4.md)（工具渐进披露）· [reverse-mcp-host.md](reverse-mcp-host.md)（逆向 MCP Host）（原六模式文档已随 Agent 模式移除）
 > 证据基线：三仓库本地源码精读（operit @ 1402 Kotlin 文件 / rikkahub @ 683 / apex-agent @ 1102），本文所有论断均附文件路径证据，未验证的推测明确标注「推测」。
 
 ---
@@ -172,9 +172,9 @@ apex-agent/
 │   ├── :tool-registry ─────────── AgentTool 接口 + catalog/（v4 渐进披露）+ builtin ~44 工具类
 │   ├── :logging / :code-tools / :code-engine
 ├── platform/（Android 平台能力层）
-│   ├── :privilege / :terminal / :cs-mem / :code-workspace / :mcp-host / :persistence（保活引擎）
+│   ├── :privilege / :terminal / :cs-mem / :code-workspace / :mcp-host / :persistence（保活引擎）/ :browser-agent（浏览器大功能，v1.5.0）
 ├── :terminal-emulator（Kotlin VT100）+ :terminal-native（C++17 热路径）
-└── :plugin-sdk:plugin-api / :plugin-sdk:plugin-host + :plugins:plugin-workflow / :plugins:plugin-web-automation
+└── :plugin-sdk:plugin-api / :plugin-sdk:plugin-host + :plugins:plugin-workflow
 ```
 
 - 证据：`apex: settings.gradle.kts`；分层语义见 `apex: docs/task-execution-architecture.md`。
@@ -266,7 +266,7 @@ ApexAgentEngine.execute()
   │    ├─ PLAN: 计划 JSON → 用户确认 → 逐步执行 → 总结
   │    ├─ SPEC: 规格生成 → SpecAwaitingConfirmation → 按交付物逐项执行
   │    ├─ REFLECTION: 生成 → 评审 → 修正（reflectionRounds 可调）
-  │    └─ HUMAN_ASSIST: 多方案/高风险强制 ask_user_choice
+  │    └─ HUMAN_ASSIST: 多方案/高风险强制 AskUserChoice
   ├─ BUILD 循环: LlmClient 流式 + 工具调用 + 工具相关 400/413/422 自愈降级
   │    （1=纯 CORE 工具 → 2=无工具纯对话；已流式输出的轮次不重试）
   └─ orchestrator/task/longtask 三层任务状态机（FileTaskStore 原子写 + WorkManager 长任务）
@@ -362,7 +362,7 @@ GenerationLoop.generateInternal()
 - **分发**：`operit: api/chat/llmprovider/AIServiceFactory.kt`（`buildService()` 按 `ApiProviderType` 枚举 ~35 个分发：
   OPENAI/ANTHROPIC/GOOGLE 三原生 + OPENAI_GENERIC/GEMINI_GENERIC 等兼容层 + ALIYUN/BAIDU/XUNFEI/ZHIPU/
   BAICHUAN/MOONSHOT/DEEPSEEK/MISTRAL/SILICONFLOW/OPENROUTER/…/OTHER 全家桶）。
-  面向**中转站生态**：`FOUR_ROUTER`、`INFINIAI`、`IFLOW`、`OPENCODE` 这类聚合站是一等公民。
+  面向**中转站生态**：`FOUR_ROUTER`、`INFINIAI`、`IFLOW` 这类聚合站是一等公民。
 - **装饰器栈**：`createService()` 统一包 `TokenTrackingAIService`（token 账本，测试调用传 recordTokenUsage=false 跳过）
   + `RateLimitedAIService`（限流）+ `ToolPkgJsAiProviderService`（**用 JS 实现新 Provider**——ToolPkg 生态的延伸）。
 - **双通道工具调用**：默认 XML 协议（`<tool name="x"><param name="y">v</param></tool>`，`AIToolHandler` +
@@ -406,7 +406,7 @@ GenerationLoop.generateInternal()
 |----|--------|----------|------|
 | 供应商表达 | ApiProviderType 枚举 ~35 个（代码分支） | sealed ProviderSetting 3 形态（类型系统） | ProviderConfig 数据 17 个（零分支） |
 | 工具调用协议 | XML + 原生双通道 + Bridge 三方言归一 | 原生 function calling | 原生 function calling + Gemini schema 清洗 |
-| 渐进披露 | CLI 模式 search+proxy 两工具 | 无（Gemini 内置工具检测） | catalog tool_search/tool_open/tool_list（v4） |
+| 渐进披露 | CLI 模式 search+proxy 两工具 | 无（Gemini 内置工具检测） | catalog ToolSearch/ToolOpen/ToolList（v4） |
 | 自定义请求 | customHeaders 构造注入 | **三级 header/body 合并** | LlmConfig.customHeaders 单级 |
 | 能力推断 | supportsVision 手工配 | **ModelRegistry DSL 自动推断** | CapabilityResolver 交集解析 |
 | Key 池 | MultiApiKeyProvider 完整实现 | KeyRoulette 字符串切分 | 数据预埋未实现（见 3.4） |
@@ -629,7 +629,7 @@ interface KeyRoulette { fun next(keys: String, providerId: String = ""): String 
 - `AgentTool` 接口（id/name/description/parametersSchema/metadata）+ ToolCategory 17 类 +
   ToolRisk 3 级 + ToolAnnotations；builtin ~44 工具类 + MCP 一等化（`McpAgentTool` 每远程工具→真函数）。
 - **v4 渐进激活**（`apex: core/tool-registry/.../catalog/`）：CORE_TOOL_IDS ~45 个常驻 +
-  `tool_search/tool_open/tool_list` 目录元工具（tool_open 的完整 schema 作为**工具结果**注入，
+  `ToolSearch/ToolOpen/ToolList` 目录元工具（ToolOpen 的完整 schema 作为**工具结果**注入，
   下一轮请求自动带上——operit use_package 的原生函数调用版）；
   `ToolRequestBudget` 钳制 ≤64 工具 / ≤48KB，按 provider 名稳定排序（保护前缀缓存）；
   `ToolNameSanitizer` 点号清洗 + 冲突消解 + 双向映射；`ToolSchemaSanitizer` 修复幽灵 required/坏关键字/超长。
@@ -657,7 +657,7 @@ interface KeyRoulette { fun next(keys: String, providerId: String = ""): String 
 1. **包级渐进披露的提示词结构**（`operit: core/config/SystemPromptConfig.kt`，712 行）：
    系统提示只列 "Available packages: - name : description" + use_package 指示——apex 的
    EnginePrompts "## Tool Catalog (N more available)" 段可以升级为**类别→包→工具三级目录**，
-   tool_search 支持 namespace 限定（`tool_search("terminal:")`）。
+   ToolSearch 支持 namespace 限定（`ToolSearch("terminal:")`）。
 2. **工具输出多态**（`ToolResultData`：StringResultData/UiResultData/FileChangeResultData/...）：
    apex 的 AgentTool 结果目前以文本为主，结构化结果（UI 截图/diff/文件变更）可以让 UI 渲染更富。
 3. **AITHook 的 Allow|Block 拦截器**：apex 的 hook/ 目前是会话生命周期钩子（SessionStart/Stop 等），
@@ -995,7 +995,7 @@ ignoreUnknownKeys 反序列化安全——旧数据零迁移读入）
   DDG-HTML → DDG-Lite → Bing（`attempt("duckduckgo-html") ?: attempt("duckduckgo-lite") ?: attempt("bing")`，
   全免 Key 爬虫，P0 修复过单一端点被反爬的问题）；WebFetchTool 四模式正文提取。
 - `LlmConfig.webSearch` 原生 Provider 搜索（7 种模式按 Provider 注入请求体）+ SearchCitations 引用提取。
-- `BuiltinSearchMcpTransport`（app/search/mcp/）把 web_search/web_fetch 以**进程内 MCP** 暴露——
+- `BuiltinSearchMcpTransport`（app/search/mcp/）把 WebSearch/WebFetch 以**进程内 MCP** 暴露——
   外部 MCP 客户端也能用 apex 的搜索。
 - **无任何 API-key 型搜索供应商**（Tavily/Exa/Brave/LinkUp 皆无）。
 
@@ -1035,7 +1035,7 @@ apex：双模块自研
 │ VtParser/ScreenBuffer/ │   │ （性能敏感路径下沉）    │
 │ TerminalCore/Utf8…     │   └──────────────────────┘
 └─────────┬─────────────┘
-          ▼ terminal.exec/create/run/observe/wait/snapshot
+          ▼ TerminalExec/create/run/observe/wait/snapshot
           ▼ PRoot 沙箱（MCP 暴露，见 mcp-sandbox.md）
 ```
 
@@ -1044,7 +1044,7 @@ apex：双模块自研
 | 终端形态 | **独立终端 App**（submodule，Ubuntu 24.04 PRoot/chroot 可选） | workspace 模块（PRoot rootfs 安装/补丁 + termux-terminal-view 视图） | **双模块自研**（Kotlin VT100 + C++17 native 热路径） |
 | 环境完整性 | Python/Node/vim/SSH/tmux + **SSH/SFTP 文件系统** + 多会话 | rootfs 安装 + 补丁 + shell 运行器 | PRoot Ubuntu rootfs（T72）+ 包清单 rootfs-packages.txt |
 | VT 仿真 | 终端 App 内（submodule 实现） | termux-terminal-view 复用 | **自研 VtParser/ScreenBuffer/TerminalCore** |
-| AI 工具接入 | createOrGetSession/executeCommandInSession（非流式聚合） | workspace 绑定助手 | terminal.exec/create/run/observe/wait/snapshot + PRoot 沙箱 MCP |
+| AI 工具接入 | createOrGetSession/executeCommandInSession（非流式聚合） | workspace 绑定助手 | TerminalExec/create/run/observe/wait/snapshot + PRoot 沙箱 MCP |
 | 测试 | submodule 侧 | —— | **93 个终端用例**（T85TerminalParityTest 29 + TerminalCoreTest 56 + T82CapabilityTest 8），T82 能力矩阵 150+ 项 |
 
 - **apex 在 VT 仿真上领先**：T85 奇偶校验套件覆盖 colon-style truecolor SGR、C1 控制码（0x9B CSI/
@@ -1074,7 +1074,8 @@ apex：双模块自研
   models 剥离))`——zxing QRCodeWriter 画 BitMatrix（512px 主题色）、quickie 扫码 + MLKit 相册识别 +
   粘贴板三通道导入；前缀版本号预留格式演进。**社群传播成本最低的供应商配置方式**。
 - **apex：插件 SDK（AIDL 进程间）+ ClawHub/ModelScope 市场 + 10 个捆绑技能**。
-  插件是独立 App（plugin-api/plugin-host 两模块 + plugin-workflow/plugin-web-automation 两个官方插件）；
+  插件是独立 App（plugin-api/plugin-host 两模块 + plugin-workflow 官方参考插件；
+  网页自动化插件 v1.5.0 已退役，浏览器自动化内置为 :platform:browser-agent 大功能）；
   技能是 apex-skill-v1 JSON manifest（4 类型 composite/script/prompt/connector）+ SkillRegistry
   （幂等内置释放 + .disabled sidecar + 路径穿越防御）+ 市场 SKILL.md→prompt 型转换。
 
@@ -1392,7 +1393,7 @@ createdAt（多次请求渲染稳定）。三个细节都在为「省真金白�
 | 角色/人格 | `CharacterCard` | `Assistant` | `AgentRole` |
 | 角色扮演世界书 | （tag 体系近似） | `Lorebook`（RegexInjection 触发） | （无） |
 | 工具接口 | `ToolExecutor.invoke(tool): ToolResult` | `Tool`（data/ai/tools/） | `AgentTool.execute` |
-| 工具目录发现 | `use_package` + CLI search/proxy | （无） | `tool_search/tool_open/tool_list` |
+| 工具目录发现 | `use_package` + CLI search/proxy | （无） | `ToolSearch/ToolOpen/ToolList` |
 | MCP 工具命名 | 包内工具注册 | `mcp__{server}__{tool}` | `mcp__{server}__{tool}`（McpToolNaming） |
 | 流式抽象 | 自研 `Stream<T>`（lock/unlock/savepoint） | `Flow<StreamChunk>`（okhttp-sse） | 回调式 onChunk（SSE 手解析） |
 | 系统提示装配 | `SystemPromptConfig.getSystemPrompt` | Transformer 管线（注入式） | `EnginePrompts.buildSystemPrompt` |

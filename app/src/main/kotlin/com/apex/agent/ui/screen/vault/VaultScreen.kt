@@ -74,7 +74,7 @@ import java.util.Locale
  * 保险库屏（#167）—— 人工储放加密密钥（GitHub token / AI API key 等）。
  *
  * 与 Agent 的边界（顶部安全说明）：本页对人类完全可读写（含明文查看），
- * 而 Agent 侧只能经 vault_list 看到标签与备注、经 vault_paste 直投使用，
+ * 而 Agent 侧只能经 VaultList 看到标签与备注、经 VaultPaste 直投使用，
  * 明文永不出库（工具层 + 执行器双层保证）。
  */
 @Composable
@@ -206,7 +206,7 @@ fun VaultScreen(
                     pendingDelete = null
                 }) {
                     Text(
-                        stringResource(R.string.vault_delete),
+                        stringResource(R.string.VaultDelete),
                         color = MaterialTheme.colorScheme.error
                     )
                 }
@@ -234,7 +234,9 @@ private fun vaultEventText(event: VaultEvent): String = when (event) {
 /** 系统剪贴板复制（用户随后手动粘贴到任意应用）。 */
 private fun copyToClipboard(context: Context, text: String) {
     runCatching {
-        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        // #452：CLIPBOARD_SERVICE 极端环境可能为 null —— as? 存活，
+        // 服务缺失时静默跳过（runCatching 原本就吞复制失败）。
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
         cm.setPrimaryClip(ClipData.newPlainText("vault", text))
     }
 }
@@ -400,7 +402,7 @@ private fun VaultEntryCard(
                 IconButton(onClick = onDelete) {
                     Icon(
                         Icons.Default.Delete,
-                        contentDescription = stringResource(R.string.vault_delete),
+                        contentDescription = stringResource(R.string.VaultDelete),
                         tint = MaterialTheme.colorScheme.error
                     )
                 }

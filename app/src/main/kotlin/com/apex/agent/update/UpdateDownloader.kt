@@ -5,8 +5,13 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Environment
+import android.os.StatFs
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
 
@@ -42,6 +47,18 @@ class UpdateDownloader(private val context: Context) {
         expectedSha256: String?
     ): Enqueued? {
         val dm = downloadManager ?: return null
+        // #464：更新清单来自远端（可被篡改）—— DownloadManager 只认 http(s)，
+        // 其他 scheme（file:/content:/javascript: 等）直接拒绝入队，防止
+        // 被诱导下载本地路径或非网络源。
+        val scheme = Uri.parse(url).scheme?.lowercase()
+        if (scheme != "http" && scheme != "https") {
+            AppLogger.instance.warn(
+                LogCategory.SYSTEM,
+                "UpdateDownloader",
+                "拒绝入队非 http(s) 下载源：${url.take(120)}"
+            )
+            return null
+        }
         val request = DownloadManager.Request(Uri.parse(url))
             .setTitle(title)
             .setDescription(fileName)
@@ -118,9 +135,32 @@ class UpdateDownloader(private val context: Context) {
         "ApexAgent"
     ).apply { mkdirs() }
 
-    /** SHA-256 校验：清单不带指纹（旧 schema / 内部构建）时跳过并放行。 */
+    /**
+     * SHA-256 校验 —— S-02 起无指纹 fail-closed。
+     *
+     * 清单不带指纹（旧 schema / 内部构建）时不再无条件放行：过渡期内
+     * （编译期截止点 [UpdateTrust.UNSIGNED_GRACE_UNTIL_EPOCH_MS]，不可被
+     * 远端翻转）沿用放行并 WARN 留痕；过期后一律拒绝 —— 指纹缺失不是
+     * 可信信号。本方法是补丁段 / 热更包 / 合成终局 APK 三处对账的统一
+     * 收敛点，无指纹策略只在此维护。
+     */
     fun verifySha256(file: File, expected: String?): Boolean {
-        if (expected.isNullOrBlank()) return true
+        if (expected.isNullOrBlank()) {
+            if (UpdateTrust.legacySchemaAllowed()) {
+                AppLogger.instance.warn(
+                    LogCategory.SYSTEM,
+                    "UpdateDownloader",
+                    "资产无 SHA-256 指纹（过渡期放行，截止 2027-03-01）：${file.name}"
+                )
+                return true
+            }
+            AppLogger.instance.warn(
+                LogCategory.SYSTEM,
+                "UpdateDownloader",
+                "拒绝无指纹资产（fail-closed）：${file.name}"
+            )
+            return false
+        }
         if (!file.exists()) return false
         return runCatching {
             val digest = MessageDigest.getInstance("SHA-256")
@@ -137,20 +177,130 @@ class UpdateDownloader(private val context: Context) {
         }.getOrDefault(false)
     }
 
-    /** 侧载安装：FileProvider 授权 URI → 系统包安装器。 */
-    fun installApk(file: File): Boolean {
+    /**
+     * 侧载安装：FileProvider 授权 URI → 系统包安装器（**suspend + main-safe**，
+     * #819 P0 修复）。
+     *
+     * v1.4.8 修复「未找到 SD 储存卡」：部分 ROM（MIUI / EMUI / 部分三星）
+     * 的系统安装器进程对**外部存储**的 content:// URI 解析失败（external-path
+     * 映射的 Downloads 目录在安装器进程侧权限解析异常 → 报「未找到 SD 储存卡」
+     * 或「解析包时出错」）。
+     *
+     * 修法：先把 APK 复制到 app-internal cache 目录（`cacheDir/install_apk/`），
+     * 用 FileProvider 的 `cache-path` 映射授权 —— cache 目录是 app 私有，安装器
+     * 进程持 granted URI permission 必能读，所有 ROM 兼容。原 external-path 方
+     * 式作为兜底（cache 复制失败时仍走旧路径，比直接放弃强）。
+     *
+     * #819（v1.5.75）：旧实现是普通函数，Compose 点击回调直通同步复制 ——
+     * arm64 包 ~50-117MB / universal 可达数百 MB，主线程跑满 flash 写入直至
+     * 输入派发 ANR（本仓 AnrWatchdog 5s 阈值必命中）。现改挂起函数：
+     * - 复制在 [Dispatchers.IO]（含空间预检：不足直接走 external 兜底，
+     *   不再「复制中途 IOException 卡很久然后失败」）；
+     * - [onProgress] 进度回调（约每 [PROGRESS_STEP_BYTES] 一拍，IO 线程）；
+     * - 每进度拍检查协程活性（取消即中止复制，半截文件就地清理）；
+     * - Intent 拉起回主线程（appContext + NEW_TASK 后台线程可拉，但主线程
+     *   惯例对齐全部 ROM 的 Activity 启动约束）。
+     *
+     * @param file 待安装 APK（可在 external storage 或 cache 内）
+     * @param onProgress 复制进度回调（bytesCopied / totalBytes；未走 cache
+     *   复制路径（空间预检不足 / 已在 cache）不回调）
+     * @return 安装器是否拉起成功（复制失败自动兜底 external 路径）
+     */
+    suspend fun installApk(
+        file: File,
+        onProgress: (bytesCopied: Long, totalBytes: Long) -> Unit = { _, _ -> }
+    ): Boolean {
         if (!file.exists() || file.extension != "apk") return false
-        val uri = androidx.core.content.FileProvider.getUriForFile(
-            context, "${context.packageName}.fileprovider", file
-        )
+
+        // ── 优选路径：复制到内部 cache（IO + 空间预检 + 进度）─────
+        // 兼容所有 ROM 的系统安装器（彻底解决「未找到 SD 储存卡」）。
+        val cacheUri = withContext(Dispatchers.IO) {
+            runCatching {
+                val cacheDir = File(context.cacheDir, "install_apk").apply { mkdirs() }
+                // #819 空间预检：剩余不足直接走 external 兜底 —— 不让用户
+                // 「卡很久然后失败」。
+                val required = file.length() + CACHE_SPACE_MARGIN_BYTES
+                val usable = runCatching { StatFs(cacheDir.absolutePath).availableBytes }
+                    .getOrDefault(Long.MAX_VALUE)
+                if (usable < required) {
+                    AppLogger.instance.warn(
+                        LogCategory.SYSTEM, "UpdateDownloader",
+                        "cache 剩余空间不足（free=${usable / MB}MB need=${required / MB}MB）" +
+                            "—— 跳过 cache 中转，直接走 external-path 兜底"
+                    )
+                    return@runCatching null
+                }
+                // 清理上次安装残留（同名覆盖；保留最近一份供异常诊断）
+                val cacheFile = File(cacheDir, file.name)
+                if (cacheFile.exists()) cacheFile.delete()
+                val total = file.length()
+                file.inputStream().use { input ->
+                    cacheFile.outputStream().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var copied = 0L
+                        var lastTick = -PROGRESS_STEP_BYTES  // 首拍立即上报
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            output.write(buffer, 0, read)
+                            copied += read
+                            if (copied - lastTick >= PROGRESS_STEP_BYTES) {
+                                lastTick = copied
+                                onProgress(copied, total)
+                                // 取消即中止（页面退出/重发）：半截副本
+                                // 交给下次同名覆盖或 cache 清理
+                                currentCoroutineContext().ensureActive()
+                            }
+                        }
+                    }
+                }
+                onProgress(total, total)
+                androidx.core.content.FileProvider.getUriForFile(
+                    context, "${context.packageName}.fileprovider", cacheFile
+                )
+            }.getOrNull()
+        }
+
+        val (uri, fromCache) = if (cacheUri != null) {
+            cacheUri to true
+        } else {
+            // 兜底：cache 复制失败（磁盘满/权限异常）→ 走原 external-path 方式
+            // （部分 ROM 仍可能报 SD 卡错误，但比直接放弃强 —— 至少给安装器一个机会）
+            val fallback = runCatching {
+                androidx.core.content.FileProvider.getUriForFile(
+                    context, "${context.packageName}.fileprovider", file
+                )
+            }.getOrNull() ?: return false
+            fallback to false
+        }
+
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            // MIUI 某些版本需要 NEW_TASK + RESET_TASK_IF_NEEDED 才能正确弹安装器
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
         }
-        return runCatching {
-            context.startActivity(intent)
-            true
-        }.getOrDefault(false)
+        // Intent 拉起回主线程（见 KDoc 线程注）
+        return withContext(Dispatchers.Main) {
+            runCatching {
+                context.startActivity(intent)
+                AppLogger.instance.info(
+                    LogCategory.SYSTEM, "UpdateDownloader",
+                    "安装器已拉起：${file.name}（来源=${if (fromCache) "cache-copy" else "external"}）"
+                )
+                true
+            }.getOrDefault(false)
+        }
+    }
+
+    private companion object {
+        /** cache 复制的进度拍步长（也是取消检查点；~1MB 一拍避免进度风暴）。 */
+        private const val PROGRESS_STEP_BYTES = 1L shl 20
+
+        /** 空间预检余量（文件系统元数据/临时开销）。 */
+        private const val CACHE_SPACE_MARGIN_BYTES = 16L shl 20
+
+        private const val MB = 1L shl 20
     }
 }

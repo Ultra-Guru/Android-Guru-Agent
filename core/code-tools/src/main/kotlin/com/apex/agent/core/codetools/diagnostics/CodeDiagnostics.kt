@@ -77,8 +77,8 @@ interface DiagnosticProvider {
  * - [diagnose] 收集所有 supports 命中的提供器的发现，按行列排序后截断到
  *   maxFindings（防止病态文件刷屏）；
  * - [render] 渲染为中文回注文本块，每条形如「路径:行:列 [级别 错误码] 消息」；
- * - [renderFindings]（模块内）一步完成诊断、渲染与截断标注，是 code_edit、
- *   code_write 与 code_check 回注的统一入口。
+ * - [renderFindings]（模块内）一步完成诊断、渲染与截断标注，是 CodeEdit、
+ *   CodeWrite 与 CodeCheck 回注的统一入口。
  *
  * 设计铁律：诊断永远不能让编辑失败 —— 引擎对各提供器逐一 runCatching，
  * 外层调用（[appendDiagnostics]）再兜一层。
@@ -125,7 +125,7 @@ class CodeDiagnostics(
     }
 
     /**
-     * 诊断 + 渲染一步到位（code_edit / code_write / code_check 的统一回注入口）。
+     * 诊断 + 渲染一步到位（CodeEdit / CodeWrite / CodeCheck 的统一回注入口）。
      * 无发现返回空字符串；超出上限的发现以「另有 N 项未显示」标注。
      */
     internal fun renderFindings(

@@ -164,4 +164,92 @@ class PatchIndexTest {
         assertNotNull(chain)
         assertEquals(0L, chain!!.totalBytes)
     }
+
+    // ── v1.4.5：BFS 最短路径 + 多基底直达边 ────────────────────────────
+
+    @Test
+    fun `direct edge preferred over two-hop adjacent path`() {
+        // 多基底发布：本地版既有「相邻边 → 下一版 → 目标」两跳路径，
+        // 也有「直达边 → 目标」一跳路径 —— BFS 必须选直达
+        val model = PatchIndex.parse(
+            indexJson(
+                entry(from = "v1.4.4.21", to = "v1.4.4.22", size = 100) + "," +
+                    entry(from = "v1.4.4.22", to = "v1.4.5", size = 100) + "," +
+                    entry(from = "v1.4.4.21", to = "v1.4.5", size = 120)
+            )
+        )!!
+        val chain = PatchIndex.resolveChain(model, "1.4.4.21", "v1.4.5", "arm64")
+        assertNotNull(chain)
+        assertEquals(1, chain!!.steps.size)
+        assertEquals("v1.4.4.21", chain.steps[0].fromTag)
+        assertEquals("v1.4.5", chain.steps[0].toTag)
+        assertEquals(120L, chain.totalBytes)
+    }
+
+    @Test
+    fun `direct edge wins even when listed after adjacent edges`() {
+        // 条目顺序无关性：直达边出现在索引末尾也要被选中；
+        // 同向双直达边（100/130）→ 回溯取体积小的那条
+        val model = PatchIndex.parse(
+            indexJson(
+                entry(from = "v1.4.4.22", to = "v1.4.5", size = 100) + "," +
+                    entry(from = "v1.4.4.23", to = "v1.4.5", size = 100) + "," +
+                    entry(from = "v1.4.4.22", to = "v1.4.4.23", size = 100) + "," +
+                    entry(from = "v1.4.4.22", to = "v1.4.5", size = 130)
+            )
+        )!!
+        val chain = PatchIndex.resolveChain(model, "1.4.4.22", "v1.4.5", "arm64")
+        assertNotNull(chain)
+        assertEquals(1, chain!!.steps.size)
+        assertEquals(100L, chain.totalBytes)
+    }
+
+    @Test
+    fun `blank target falls back to latestTag`() {
+        // 清单缺 tag（旧 schema）：回退索引 latestTag
+        val model = PatchIndex.parse(
+            indexJson(entry(from = "v1.4.4.4", to = "v1.4.4.5"))
+        )!!
+        val chain = PatchIndex.resolveChain(model, "1.4.4.4", "", "arm64")
+        assertNotNull(chain)
+        assertEquals(1, chain!!.steps.size)
+        assertEquals("v1.4.4.5", chain.steps[0].toTag)
+    }
+
+    @Test
+    fun `greedy min size backtrack among same hops`() {
+        // 同为两跳的两条路径：v1→a→v3（100+100）与 v1→b→v3（10+10）
+        // —— 回溯贪心选每段最小前驱边，走 b 路径
+        val model = PatchIndex.parse(
+            indexJson(
+                entry(from = "v1", to = "vA", size = 100) + "," +
+                    entry(from = "vA", to = "v3", size = 100) + "," +
+                    entry(from = "v1", to = "vB", size = 10) + "," +
+                    entry(from = "vB", to = "v3", size = 10)
+            )
+        )!!
+        val chain = PatchIndex.resolveChain(model, "1", "v3", "arm64")
+        assertNotNull(chain)
+        assertEquals(2, chain!!.steps.size)
+        assertEquals("vB", chain.steps[0].toTag)
+        assertEquals(20L, chain.totalBytes)
+    }
+
+    @Test
+    fun `chains beyond max length are rejected`() {
+        // 70 段线性链 > MAX_CHAIN_LENGTH(64) → 折叠 null（防御环形/巨型索引）
+        val entries = (0 until 70).joinToString(",") { i ->
+            entry(from = "v$i", to = "v${i + 1}", size = 10)
+        }
+        val model = PatchIndex.parse(indexJson(entries))!!
+        assertNull(PatchIndex.resolveChain(model, "0", "v70", "arm64"))
+        // 64 段以内的链正常解析（tag 前缀 v + 本地 versionName 拼合）
+        val withinEntries = (0 until 10).joinToString(",") { i ->
+            entry(from = "va$i", to = "va${i + 1}", size = 10)
+        }
+        val model2 = PatchIndex.parse(indexJson(withinEntries))!!
+        val chain = PatchIndex.resolveChain(model2, "a0", "va10", "arm64")
+        assertNotNull(chain)
+        assertEquals(10, chain!!.steps.size)
+    }
 }

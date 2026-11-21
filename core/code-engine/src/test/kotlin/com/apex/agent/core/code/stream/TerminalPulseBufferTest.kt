@@ -94,4 +94,40 @@ class TerminalPulseBufferTest {
         // 一次脉冲 = 攒住的整块（3 行）
         assertEquals("line1\nline2\nline3\n", buf.tick(0))
     }
+
+    @Test
+    fun `rendered content has no marker when nothing scrolled off`() {
+        val buf = TerminalPulseBuffer(windowChars = 100)
+        buf.append("short output")
+        buf.flush(0)
+        assertEquals(0L, buf.clippedChars())
+        assertEquals("short output", buf.renderedContent())
+    }
+
+    @Test
+    fun `rendered content prefixes clip marker once window slides`() {
+        val buf = TerminalPulseBuffer(windowChars = 10, sizeThresholdBytes = 4)
+        buf.append("0123456789AAAA")
+        buf.tick(0)
+        buf.append("BBBBBBBBBB")
+        buf.tick(0)
+        // 总 flush 24 字符，窗口只留最新 10 → 滚出 14
+        assertEquals(14L, buf.clippedChars())
+        val rendered = buf.renderedContent()
+        assertTrue(rendered.startsWith("[... 14 字符已滚出（仅保留最新尾窗） ...]\n"))
+        assertEquals("AAAABBBBBBBBBB".takeLast(10), rendered.substringAfter('\n'))
+        // 原始 content() 保持无标记（既有契约零变化）
+        assertEquals("AAAABBBBBBBBBB".takeLast(10), buf.content())
+    }
+
+    @Test
+    fun `reset clears clip accounting too`() {
+        val buf = TerminalPulseBuffer(windowChars = 5, sizeThresholdBytes = 2)
+        buf.append("0123456789")
+        buf.tick(0)
+        assertTrue(buf.clippedChars() > 0)
+        buf.reset()
+        assertEquals(0L, buf.clippedChars())
+        assertEquals("", buf.renderedContent())
+    }
 }

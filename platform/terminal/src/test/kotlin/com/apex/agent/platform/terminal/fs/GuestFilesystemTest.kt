@@ -1,7 +1,7 @@
-package com.apex.agent.platform.terminal.fs
+package com.apex.agent.platform.TerminalFs
 
-import com.apex.agent.platform.terminal.bridge.GuestBridgeService
-import com.apex.agent.platform.terminal.bridge.GuestBridgeHandler
+import com.apex.agent.platform.TerminalBridge.GuestBridgeService
+import com.apex.agent.platform.TerminalBridge.GuestBridgeHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
@@ -46,15 +46,15 @@ class GuestFilesystemTest {
     @Test fun `remove refuses root even inside guard`() {
         runBlocking {
             val r = fs.remove("/", recursive = true)
-            assertTrue(r is com.apex.agent.platform.terminal.fs.GuestFilesystem.FsResult.Err)
-            assertEquals("FsError:PathDenied", (r as com.apex.agent.platform.terminal.fs.GuestFilesystem.FsResult.Err).code)
+            assertTrue(r is com.apex.agent.platform.TerminalFs.GuestFilesystem.FsResult.Err)
+            assertEquals("FsError:PathDenied", (r as com.apex.agent.platform.TerminalFs.GuestFilesystem.FsResult.Err).code)
         }
     }
 
     @Test fun `ops fail structurally when no rootfs is installed (honest degrade)`() = runBlocking<Unit> {
         val r = fs.readText("/workspace/whatever")
-        assertTrue(r is com.apex.agent.platform.terminal.fs.GuestFilesystem.FsResult.Err)
-        assertEquals("FsError:ContextUnavailable", (r as com.apex.agent.platform.terminal.fs.GuestFilesystem.FsResult.Err).code)
+        assertTrue(r is com.apex.agent.platform.TerminalFs.GuestFilesystem.FsResult.Err)
+        assertEquals("FsError:ContextUnavailable", (r as com.apex.agent.platform.TerminalFs.GuestFilesystem.FsResult.Err).code)
     }
 
     // ─── 桥协议（基线 §11.1）───

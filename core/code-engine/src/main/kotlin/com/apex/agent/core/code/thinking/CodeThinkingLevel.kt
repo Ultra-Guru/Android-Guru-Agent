@@ -78,8 +78,8 @@ enum class CodeThinkingLevel(val level: Int, val description: String) {
      * 映射到引擎六档（执行内核的通用画像通道）。
      *
      * 深水两档映射 MAXIMUM 打底，增量经 [CodeThinkingProfile] 旋钮补偿
-     * 反补；AUTO 映射 DEEP 兜底（正常路径下 VM 已解析出具体档，引擎
-     * 不应收到 AUTO——此分支仅防御性兜底）。
+     * 反补；AUTO 映射 [AUTO_FALLBACK_LEVEL] 兜底（正常路径下 VM 已解析
+     * 出具体档，引擎不应收到 AUTO——此分支仅防御性兜底）。
      */
     fun toAgentLevel(): ThinkingLevel = when (this) {
         NONE -> ThinkingLevel.NONE
@@ -87,7 +87,7 @@ enum class CodeThinkingLevel(val level: Int, val description: String) {
         STANDARD -> ThinkingLevel.STANDARD
         DEEP -> ThinkingLevel.DEEP
         MAXIMUM, ULTRACODE, APEXCODE -> ThinkingLevel.MAXIMUM
-        AUTO -> ThinkingLevel.DEEP
+        AUTO -> AUTO_FALLBACK_LEVEL.toAgentLevel()
     }
 
     /** 对应的 thinking_budget（支持此参数的模型如 Gemini；AUTO = null 不直接映射）。 */
@@ -124,6 +124,22 @@ enum class CodeThinkingLevel(val level: Int, val description: String) {
     val isDepthTier: Boolean get() = this != AUTO
 
     companion object {
+        /**
+         * AUTO 元档的兜底档（SPE-02 P0-3：四处同源）。
+         *
+         * 消费方（契约测试断言四处相等，见 CodeThinkingLevelTest）：
+         * - 本类 [toAgentLevel]（AUTO 分支）；
+         * - [CodeThinkingProfile.forLevel]（AUTO 占位行）；
+         * - [CodeThinkingPrompts.AUTO_FALLBACK_DIRECTIVE_LEVEL]（编码
+         *   指令兜底档）；
+         * - 文档 `docs/thinking-levels.md` 的 AUTO 说明。
+         *
+         * 取 DEEP（与旧版三处中两处一致：`toAgentLevel(AUTO)=DEEP`、
+         * 编码指令兜底 DEEP；仅 Profile 占位行旧为 STANDARD——对齐到
+         * 多数派，避免「同一 AUTO 三种兜底」的档位语义分叉）。
+         */
+        val AUTO_FALLBACK_LEVEL: CodeThinkingLevel = DEEP
+
         /**
          * 持久化字符串解析（大小写不敏感）。
          *

@@ -1,6 +1,6 @@
 # ATR 2.0 — Phase 4 Deprecation & ONE-SESSION Verification
 
-> Spec ref: ATR 2.0 Final Spec §4.3 / §36 (UI architecture) / §45 Phase 4 / §46 (terminal_exec fix)
+> Spec ref: ATR 2.0 Final Spec §4.3 / §36 (UI architecture) / §45 Phase 4 / §46 (TerminalExecLegacy fix)
 
 ## 1. Files to DELETE (Phase 4, post-review)
 
@@ -13,7 +13,7 @@ a follow-up commit after you review.
 | `platform/terminal/src/main/cpp/ansi_filter.h` | `VT100Emulator` | strip-only ANSI; VT100Emulator parses it properly |
 | `platform/terminal/src/main/cpp/ansi_filter.cpp` | `VT100Emulator` | same |
 | `platform/terminal/src/main/kotlin/.../AnsiStripper.kt` | `VT100Emulator` | Kotlin-side backup stripper, now redundant |
-| `app/.../tools/StreamingTerminalExecTool.kt` | `terminal.run` + `terminal.observe` | duplicate `id=terminal_exec` (§46 collision) |
+| `app/.../tools/StreamingTerminalExecTool.kt` | `TerminalRun` + `TerminalObserve` | duplicate `id=TerminalExecLegacy` (§46 collision) |
 | `platform/terminal/.../tools/TerminalExecTool.kt` | `LegacyExecTool` | old non-streaming exec; LegacyExecTool replaces |
 | `platform/terminal/.../tools/TerminalSendTool.kt` | `LegacySendTool` / `TerminalWriteTool` | alias exists |
 | `platform/terminal/.../tools/TerminalReadTool.kt` | `LegacyReadTool` / `TerminalObserveTool` | alias exists |
@@ -41,7 +41,7 @@ by Agent and Human UI. Verify post-integration:
 
 ### 3.1 ONE SESSION
 - `SessionManagerImpl.assembly(sessionId)` returns a single `SessionAssembly`.
-- Both `terminal.observe` (Agent) and `TerminalViewModel.semanticState` (UI) read from the
+- Both `TerminalObserve` (Agent) and `TerminalViewModel.semanticState` (UI) read from the
   SAME `SemanticStateReducer` instance → same `sessionId`, same `pid`.
 
 ### 3.2 ONE PTY
@@ -49,7 +49,7 @@ by Agent and Human UI. Verify post-integration:
 - `InputManagerImpl` is the SOLE writer (serialized via `Channel<WriteOp>`).
 - UI's `TerminalInputController` calls `runtime.write(owner=USER)` → goes through InputManager,
   NOT a separate `nativeWrite`.
-- Agent's `terminal.write` calls `runtime.write(owner=AGENT)` → same InputManager.
+- Agent's `TerminalWrite` calls `runtime.write(owner=AGENT)` → same InputManager.
 
 ### 3.3 ONE SCREEN
 - `RealVirtualTerminal` is shared: `PtyOutputPump` feeds it; `TerminalRenderer` reads
@@ -64,12 +64,12 @@ by Agent and Human UI. Verify post-integration:
 ### 3.5 Verification checklist (run after Phase 5 integration)
 
 ```
-[ ] Create session via terminal.create → sessionId=12
+[ ] Create session via TerminalCreate → sessionId=12
 [ ] UI binds to same sessionId=12 (TerminalViewModel.sessionId == 12)
-[ ] Agent runs `terminal.run(12, "echo hello")` → UI sees "hello" in renderer
-[ ] UI types a key → Agent's terminal.observe sees the InputWritten event
+[ ] Agent runs `TerminalRun(12, "echo hello")` → UI sees "hello" in renderer
+[ ] UI types a key → Agent's TerminalObserve sees the InputWritten event
 [ ] Agent sends SIGINT → UI shows INTERRUPTED state
-[ ] Multiple terminal.observe calls with different afterCursor → no duplicate bytes
+[ ] Multiple TerminalObserve calls with different afterCursor → no duplicate bytes
 [ ] close(12) → both Agent and UI see SessionClosed
 ```
 

@@ -1,0 +1,3 @@
+- 王冠入口归位 Coding 模式：FUSION 工具聚合体系的王冠 👑 按钮从 Agent 聊天输入栏迁至 Coding 屏输入栏（与工作区、斜杠、GitHub、小圆环同列），激活态横幅同迁 —— Agent 屏回归纯聊天体验，与「小圆环/GitHub 工具入口迁 Coding 屏」先例同口径
+- 修复点击王冠无反应：此前王冠按钮漏挂点击处理器，点了没有任何反馈（层级菜单永远弹不出）；现已补齐，点开即见 FUSION 层级菜单（第一项体系缩写名 → 第二级 REA / Superpowers / SuperClaude / BMAD / Anthropic Skills / Claude Flow / Shrimp 具体体系包）
+- Coding 工位可激活全部七大体系：内置 FusionBundle 包的作用域统一放宽为双工位（agent + coding），Coding 屏王冠菜单不再因作用域过滤而空列表，选包激活、chip 进输入框、发送强制使用全链路在 Coding 模式生效

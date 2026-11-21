@@ -20,7 +20,7 @@ import org.xml.sax.InputSource
 import org.xml.sax.SAXParseException
 
 /**
- * `xml_extract` — 用路径从 XML 文档里抽取元素文本 / 属性值。
+ * `XmlExtract` — 用路径从 XML 文档里抽取元素文本 / 属性值。
  *
  * Why: RSS、AndroidManifest、pom.xml、SVG、站点地图——agent 常常只需要 XML
  * 里的几个值。v1 路径是 shell 里 `grep`/`sed`（正则解析 XML 必然翻车）或让
@@ -37,7 +37,7 @@ import org.xml.sax.SAXParseException
  * - 无命中 → NOT_FOUND；解析失败 → INVALID_ARGUMENT（带解析器消息）。
  */
 class XmlExtractTool : BaseTool(
-    id = "xml_extract",
+    id = "XmlExtract",
     name = "XML Extract",
     description = """
         Extract values from XML by element path (DOM-based, namespace-agnostic, XXE-safe).

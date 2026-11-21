@@ -13,8 +13,8 @@ import kotlinx.serialization.json.jsonObject
 /**
  * # Tool System v3 — Flexible JSON Argument Reading
  *
- * Composite-argument tools (`tool_batch_run`, `json_transform`,
- * `shortcut_define`, `shortcut_run`) accept one argument that is *itself
+ * Composite-argument tools (`ToolBatchRun`, `JsonTransformLegacy`,
+ * `ShortcutDefine`, `ShortcutRun`) accept one argument that is *itself
  * structured JSON*. Models emit it in either of two shapes, both valid:
  *
  * - **inline (preferred)**: `"operations": [{"op": "pick", …}]` — the
@@ -33,8 +33,12 @@ import kotlinx.serialization.json.jsonObject
 /**
  * Read [name] as a [JsonElement], accepting the inline or the
  * string-encoded form. Null when the argument is absent.
+ *
+ * 公开可见（原 module-internal）：code-tools 等下游模块的复合参数工具
+ *（CodeTodo 的 todos 等）同样需要双形态读取 —— 声明 array 供 schema
+ * 渲染 + 校验层宽容编码形态后，工具层用本函数兜住两种发射形态。
  */
-internal fun ToolArguments.flexibleElement(name: String): JsonElement? {
+fun ToolArguments.flexibleElement(name: String): JsonElement? {
     return when (val element = rawElement(name)) {
         null -> null
         is JsonPrimitive -> {
@@ -58,7 +62,7 @@ internal fun ToolArguments.flexibleElement(name: String): JsonElement? {
  * @throws com.apex.agent.core.tools.ToolArgumentException field-precise
  *   error when present but neither shape yields an array.
  */
-internal fun ToolArguments.flexibleArray(name: String): JsonArray {
+fun ToolArguments.flexibleArray(name: String): JsonArray {
     val element = flexibleElement(name)
         ?: throw com.apex.agent.core.tools.ToolArgumentException(
             com.apex.agent.core.tools.ToolErrorCode.MISSING_ARGUMENT,
@@ -83,7 +87,7 @@ internal fun ToolArguments.flexibleArray(name: String): JsonArray {
  * @throws com.apex.agent.core.tools.ToolArgumentException field-precise
  *   error when present but neither shape yields an object.
  */
-internal fun ToolArguments.flexibleObject(name: String): JsonObject {
+fun ToolArguments.flexibleObject(name: String): JsonObject {
     val element = flexibleElement(name)
         ?: throw com.apex.agent.core.tools.ToolArgumentException(
             com.apex.agent.core.tools.ToolErrorCode.MISSING_ARGUMENT,
@@ -100,10 +104,3 @@ internal fun ToolArguments.flexibleObject(name: String): JsonObject {
         )
     }
 }
-
-/**
- * Render a [JsonElement] back to compact text — the inverse of
- * [flexibleElement] for tools that forward a structured argument into a
- * downstream string-protocol call (e.g. `shortcut_run` → compiled tool).
- */
-internal fun renderCompact(element: JsonElement): String = element.toString()

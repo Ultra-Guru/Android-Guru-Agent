@@ -1,4 +1,4 @@
-package com.apex.agent.platform.terminal.wait
+package com.apex.agent.platform.TerminalWait
 
 import com.apex.agent.platform.terminal.events.CloseCause
 import com.apex.agent.platform.terminal.events.TerminalEvent

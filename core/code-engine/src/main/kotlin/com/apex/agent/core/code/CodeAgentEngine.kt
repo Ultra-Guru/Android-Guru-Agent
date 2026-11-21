@@ -5,6 +5,7 @@ import com.apex.agent.core.code.thinking.CodeThinkingProfile
 import com.apex.agent.core.code.thinking.CodeThinkingPrompts
 import com.apex.agent.core.engine.AgentEngine
 import com.apex.agent.core.engine.AgentEvent
+import com.apex.agent.core.llm.LlmMessage
 import com.apex.agent.core.engine.ApexAgentEngine
 import com.apex.agent.core.engine.UserInput
 import com.apex.agent.core.logging.AppLogger
@@ -29,6 +30,12 @@ import java.io.File
  *   发现 AGENTS.md / CLAUDE.md / .cursorrules 项目规则，连同 [globalRules]
  *   一起注入 Session Context 段（此时 EnginePrompts 的 globalRules 参数应
  *   保持为空——防双注，接线约定见 [RulesProvider] KDoc）。
+ *
+ * # 双思考逻辑（v1.5）：本类是「深潜」线——自研七档思考逻辑；对外的
+ * Coding 屏契约统一为 [CodeEngineFacade]，与「标准」线
+ * （standard/StandardKitAdapter → standard-loop 库）同构并联，
+ * 由 com.apex.agent.core.code.standard.DualLogicCodeEngine 按用户选择路由。
+ * 本类行为零变化，只是显式落实接口（方法签名本就是这份契约的出处）。
  */
 class CodeAgentEngine(
     private val delegate: ApexAgentEngine,
@@ -42,7 +49,7 @@ class CodeAgentEngine(
      * 并由 VM 在设置变更/每轮发送前调 [updateGlobalRules]。
      */
     private val rulesProvider: RulesProvider? = null
-) : AgentEngine {
+) : AgentEngine, CodeEngineFacade {
 
     private var currentWorkspaceId: String? = null
     private var currentRoot: File? = null
@@ -101,11 +108,11 @@ class CodeAgentEngine(
      * 2. 引擎历史清空后重放该工作区保存的对话（恢复会话现场）；
      * 3. JIT 上下文刷新（新工作区的环境/统计注入系统提示词）。
      */
-    fun setActiveWorkspace(
+    override fun setActiveWorkspace(
         workspaceId: String,
         name: String,
         root: File,
-        activeFile: String? = null
+        activeFile: String?
     ) {
         currentWorkspaceId = workspaceId
         currentWorkspaceName = name
@@ -126,7 +133,7 @@ class CodeAgentEngine(
     }
 
     /** 用户在编辑器里切换文件/选区时刷新上下文（不切工作区）。 */
-    fun setActiveFile(activeFile: String?) {
+    override fun setActiveFile(activeFile: String?) {
         currentActiveFile = activeFile
         refreshContext()
     }
@@ -135,14 +142,14 @@ class CodeAgentEngine(
      * 每轮发送前刷新 JIT 上下文 —— CodeViewModel 在 execute 前调用，
      * 保证系统提示词里的工作区状态是最新的。
      */
-    fun prepareForTask() = refreshContext()
+    override fun prepareForTask() = refreshContext()
 
     /**
      * 更新全局规则（#164）：VM 在设置变更或每轮发送前调用，把
      * AgentSettings.globalRules 同步进引擎（存字段，不立即刷上下文——
      * 上下文本来就是每轮 JIT 重算的，下次 [prepareForTask] 自然生效）。
      */
-    fun updateGlobalRules(rules: String) {
+    override fun updateGlobalRules(rules: String) {
         globalRules = rules
     }
 
@@ -151,20 +158,33 @@ class CodeAgentEngine(
      * PLAN = 先出完整计划、用户确认后逐步执行；BUILD = 边想边做。
      * patchConfig 即时生效（下一轮请求携带新模式）。
      */
-    fun updateMode(mode: com.apex.agent.core.engine.AgentMode) {
+    override fun updateMode(mode: com.apex.agent.core.engine.AgentMode) {
         delegate.patchConfig { cfg -> cfg.copy(mode = mode) }
     }
 
     /**
      * #197 计划确认/驳回（PLAN 模式人控门）：透传给 delegate。
      * confirmed=true 时可携带步骤勾选与重排（原 index 口径）。
+     * #340：Boolean 回执透传（false = 未送达挂起等待）。
      */
-    fun submitPlanConfirmation(
+    override fun submitPlanConfirmation(
         confirmed: Boolean,
-        enabledSteps: List<Int>? = null,
-        order: List<Int>? = null
+        enabledSteps: List<Int>?,
+        order: List<Int>?
+    ): Boolean = delegate.submitPlanConfirmation(confirmed, enabledSteps, order)
+
+    /**
+     * v4 三档自主级别（提问策略）：patchConfig 落 AgentConfig，下一轮请求
+     * 由 EnginePrompts 注入 "## Autonomy" 段；null = 清除（PLAN 模式），
+     * 段落省略、行为零变化。
+     */
+    override fun updateAutonomy(
+        level: com.apex.agent.core.engine.AutonomyLevel?,
+        preClarify: Boolean
     ) {
-        delegate.submitPlanConfirmation(confirmed, enabledSteps, order)
+        delegate.patchConfig { cfg ->
+            cfg.copy(autonomyLevel = level, fullAutoPreClarify = preClarify)
+        }
     }
 
     /**
@@ -172,15 +192,28 @@ class CodeAgentEngine(
      * 网络搜索/时间感知/结构化输出/用户规则的组装文本，refreshContext
      * 时追加在编码身份段之后（JIT 语义：存字段，下轮生效）。
      */
-    fun updateSessionExtras(extras: String?) {
+    override fun updateSessionExtras(extras: String?) {
         sessionExtras = extras?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * v6 专家模板人设：与 Agent 屏 applyRoleToEngine 同通道（AgentConfig
+     * 人设字段），即时生效——下一轮请求携带。空定义 = 清除回落默认。
+     */
+    override fun updateRolePersona(roleDefinition: String, rolePrompt: String?) {
+        delegate.patchConfig { cfg ->
+            cfg.copy(
+                roleDefinition = roleDefinition.trim(),
+                rolePrompt = rolePrompt?.trim().orEmpty()
+            )
+        }
     }
 
     /**
      * #197 强制函数调用（v4 语义）：forcedToolIds 非空 = 本轮只暴露
      * 选中工具且 tool_choice=required；exposeAllTools = 全量暴露。
      */
-    fun updateForcedTools(forcedToolIds: Set<String>, exposeAll: Boolean) {
+    override fun updateForcedTools(forcedToolIds: Set<String>, exposeAll: Boolean) {
         delegate.patchConfig { cfg ->
             cfg.copy(forcedToolIds = forcedToolIds, exposeAllTools = exposeAll)
         }
@@ -200,7 +233,7 @@ class CodeAgentEngine(
      *
      * 与 updateGlobalRules 同款 JIT 语义：不立即刷上下文，下轮生效。
      */
-    fun updateThinkingLevel(level: CodeThinkingLevel) {
+    override fun updateThinkingLevel(level: CodeThinkingLevel) {
         currentCodeThinkingLevel = level
         delegate.patchConfig { cfg ->
             cfg.copy(
@@ -219,23 +252,17 @@ class CodeAgentEngine(
     }
 
     /** 当前思考档位（UI 回显用，coding 七档枚举）。 */
-    fun thinkingLevel(): CodeThinkingLevel = currentCodeThinkingLevel
+    override fun thinkingLevel(): CodeThinkingLevel = currentCodeThinkingLevel
 
-    /**
-     * 当前档位最近一次自适应决策说明（发送前预检/运行中升级由 VM 侧
-     * CodeAdaptiveThinkingSelector 产生并自行展示——引擎侧仅透传通用
-     * 引擎的 AUTO 可解释性通道，coding 正常路径不产生非空值）。
-     */
-    fun currentThinkingDecision(): String? = delegate.currentThinkingDecision()
 
     /** 清当前工作区的对话历史（新会话）。 */
-    fun clearConversation() {
+    override fun clearConversation() {
         delegate.clearHistory()
     }
 
-    fun historyCount(): Int = codeMemory.count()
+    override fun historyCount(): Int = codeMemory.count()
 
-    fun currentWorkspace(): WorkspaceInfo? {
+    override fun currentWorkspace(): WorkspaceInfo? {
         val id = currentWorkspaceId ?: return null
         return WorkspaceInfo(id, currentWorkspaceName ?: id, currentRoot)
     }
@@ -243,8 +270,39 @@ class CodeAgentEngine(
     /** 工作区信息快照（UI 用）。 */
     data class WorkspaceInfo(val id: String, val name: String, val root: File?)
 
-    fun currentTokenCount(): Int = delegate.currentTokenCount()
-    fun maxContextTokens(): Int = delegate.maxContextTokens()
+    override fun currentTokenCount(): Int = delegate.currentTokenCount()
+    override fun maxContextTokens(): Int = delegate.maxContextTokens()
+
+    /**
+     * 上下文查看（深潜线全量导出）：codeMemory 的会话消息序列 + 规则/
+     * 「小圆环」附加注入段 + token 统计。助手纯工具调用回合（无文本）
+     * 以「→ 工具名清单」括注呈现，避免空条目。
+     */
+    override fun contextSnapshot(): CodeContextSnapshot {
+        val entries = codeMemory.load().map { msg ->
+            when (msg) {
+                is LlmMessage.System -> CodeContextEntry(CodeContextRole.SYSTEM, msg.content)
+                is LlmMessage.User -> CodeContextEntry(CodeContextRole.USER, msg.content)
+                is LlmMessage.Assistant -> CodeContextEntry(
+                    CodeContextRole.ASSISTANT,
+                    msg.content.ifBlank {
+                        msg.toolCalls.takeIf { it.isNotEmpty() }
+                            ?.joinToString(", ") { it.name }
+                            ?.let { names -> "→ $names" }
+                            ?: ""
+                    }
+                )
+                is LlmMessage.ToolResult -> CodeContextEntry(CodeContextRole.TOOL, msg.content)
+            }
+        }
+        return CodeContextSnapshot(
+            entries = entries,
+            globalRules = globalRules.takeIf { it.isNotBlank() },
+            sessionExtras = sessionExtras?.takeIf { it.isNotBlank() },
+            tokenUsed = delegate.currentTokenCount(),
+            tokenMax = delegate.maxContextTokens()
+        )
+    }
 
     // ═══ 内部 ═══
 
@@ -256,6 +314,14 @@ class CodeAgentEngine(
         // ═══ coding 七档思考系统：编码特化思考指令（NONE 档返回空串自动跳过）═══
         // 通用思考画像（推理框架 + 预算倍率）由引擎配置层的 thinkingLevel
         // 承载（updateThinkingLevel 三通道同步），此处只补编码方法论。
+        // SPE-03 P1-6：AUTO 到此即防御分支（VM 发送前 resolveRuntimeThinkingLevel
+        // 已解析具体档）——留痕告警便于发现未覆盖的入口，正常路径零出现。
+        if (currentCodeThinkingLevel == CodeThinkingLevel.AUTO) {
+            AppLogger.instance.warn(
+                LogCategory.LLM, TAG,
+                "Defensive path: AUTO reached code directive layer without VM pre-check resolution"
+            )
+        }
         CodeThinkingPrompts.thinkingDirective(currentCodeThinkingLevel)
             .takeIf { it.isNotEmpty() }
             ?.let { segments += it }

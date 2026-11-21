@@ -1,0 +1,2 @@
+- 新增 BrowserTabs 标签管理工具（list/new/switch/close）：多页面工作流（登录页 + 操作页并行、结果页比对）不再受限单标签 —— 对齐 Playwright MCP browser_tabs 与 BrowserUse 多标签工作流
+- 配合浏览器库 v1.6：实时页面悬浮窗（浏览器小窗）支持右下角把手拖拽调节大小，比例持久化；窗口拖动/缩放帧对齐节流 + 轮询自适应分档

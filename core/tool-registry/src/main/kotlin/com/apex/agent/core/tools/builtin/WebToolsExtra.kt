@@ -18,7 +18,7 @@ class DownloadFileTool(
     private val downloadDir: File
 ) : AgentTool {
 
-    override val id = "download_file"
+    override val id = "DownloadFile"
     override val name = "Download File"
     override val description = """
         Download a file from URL to device storage.

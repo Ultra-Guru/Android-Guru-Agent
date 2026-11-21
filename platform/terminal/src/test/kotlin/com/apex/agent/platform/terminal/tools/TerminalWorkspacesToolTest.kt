@@ -14,7 +14,7 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 
 /**
- * T75: terminal.workspaces 工具测试 —— JSON 契约（list/create/inspect/delete）+
+ * T75: TerminalWorkspaces 工具测试 —— JSON 契约（list/create/inspect/delete）+
  * 错误分支（Busy/NotFound/InvalidId/InvalidInput）。
  */
 class TerminalWorkspacesToolTest {

@@ -20,6 +20,15 @@ import java.io.IOException
  *   会失效）。
  * - 错误字符串统一以 `"Error:"` 开头，方便 [ApexAgentEngine] 判断失败。
  *
+ * ## 错误前缀协议（与 v3 管线同源）
+ *
+ * 折叠串的机器可判前缀与 [EnhancedToolExecutor] 的
+ * ioFailureResult / securityResult / crashResult 完全一致（英文），中文
+ * 细节放尾注：RetryClassifier 的终止前缀表（"Error: permission denied" →
+ * Terminal，不重试）与 FailureClassifier.PERMISSION_PATTERNS（contains
+ * "permission denied"）都靠英文前缀命中 —— 旧版纯中文串会把权限拒绝
+ * 误判成 Retryable，readOnlyHint 工具白白重放注定失败的调用。
+ *
  * ## 流式透传（关键）
  *
  * 本类实现 [StreamingAgentTool] 而非仅 [AgentTool]。原因：[DefaultToolExecutor]
@@ -34,10 +43,17 @@ import java.io.IOException
  *
  * 异常处理与 [execute] 对称：CancellationException 重抛，其余转成
  * [ToolStreamEvent.Error]，保证收集方永远收到完整事件序列。
+ *
+ * ## 环境前置门透传（P2 修复）
+ *
+ * [ToolEnvironmentGate] 通过 `tool as? EnvironmentAwareTool` 检测；本类
+ * 旧实现未实现该接口 → 包装后门禁恒放行（fail-open），`InputText` 等
+ * 工具的「先 UiTap 聚焦输入框」引导提示全部失效，工具真跑失败后模型
+ * 在更深的错误里打转。现在透传 delegate 的 [EnvironmentAwareTool.requiredEnv]。
  */
 class SafeAgentTool(
     private val delegate: AgentTool
-) : StreamingAgentTool {
+) : StreamingAgentTool, EnvironmentAwareTool {
 
     override val id: String get() = delegate.id
     override val name: String get() = delegate.name
@@ -47,17 +63,26 @@ class SafeAgentTool(
     /** v2 元数据透传：包装层不丢失类别/风险/标签（engine 与 UI 依赖它）。 */
     override val metadata: ToolMetadata get() = delegate.metadata
 
+    /** P2 修复：环境前置门透传 —— delegate 声明的硬前置不再被包装层吞掉。 */
+    override val requiredEnv: List<String>
+        get() = (delegate as? EnvironmentAwareTool)?.requiredEnv ?: emptyList()
+
     override suspend fun execute(arguments: String): String {
         return try {
             delegate.execute(arguments)
         } catch (e: CancellationException) {
             throw e
         } catch (e: SecurityException) {
-            "Error: 权限不足，无法执行。${e.message ?: delegate.id}"
+            // 前缀与 EnhancedToolExecutor.securityResult 同源（见类 KDoc
+            // 「错误前缀协议」），中文细节保尾注 —— 命中 RetryClassifier 终止前缀。
+            "Error: permission denied: 权限不足，无法执行。${e.message ?: delegate.id}"
         } catch (e: IOException) {
-            "Error: 权限不足或 I/O 失败。${e.message ?: delegate.id}"
+            // 前缀与 EnhancedToolExecutor.ioFailureResult 同源；I/O 抖动属
+            // Retryable（不进终止前缀表），中文细节保尾注。
+            "Error: execution failed: I/O error in '${delegate.id}': ${e.message ?: e::class.simpleName}（权限不足或 I/O 失败）"
         } catch (e: Throwable) {
-            "Error: 工具执行失败。${e.message ?: e::class.simpleName}"
+            // 前缀与 EnhancedToolExecutor.crashResult 同源。
+            "Error: execution failed: 工具执行失败（${e::class.simpleName ?: "exception"}）: ${e.message ?: "no message"}"
         }
     }
 
@@ -79,11 +104,12 @@ class SafeAgentTool(
         } catch (e: CancellationException) {
             throw e
         } catch (e: SecurityException) {
-            emit(ToolStreamEvent.Error("Error: 权限不足，无法执行。${e.message ?: delegate.id}"))
+            // 与 execute() 的折叠串逐字一致（错误前缀协议见类 KDoc）。
+            emit(ToolStreamEvent.Error("Error: permission denied: 权限不足，无法执行。${e.message ?: delegate.id}"))
         } catch (e: IOException) {
-            emit(ToolStreamEvent.Error("Error: 权限不足或 I/O 失败。${e.message ?: delegate.id}"))
+            emit(ToolStreamEvent.Error("Error: execution failed: I/O error in '${delegate.id}': ${e.message ?: e::class.simpleName}（权限不足或 I/O 失败）"))
         } catch (e: Throwable) {
-            emit(ToolStreamEvent.Error("Error: 工具执行失败。${e.message ?: e::class.simpleName}"))
+            emit(ToolStreamEvent.Error("Error: execution failed: 工具执行失败（${e::class.simpleName ?: "exception"}）: ${e.message ?: "no message"}"))
         }
     }
 }

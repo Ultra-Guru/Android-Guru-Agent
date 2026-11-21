@@ -35,7 +35,7 @@
 | `.../AgentEvent.kt` | `sealed interface AgentEvent`（21 个事件）+ `ExecutionPlan`/`PlanStep`/`ExecutionSpec`/`RiskLevel`/`InputType` | 流式事件 + Plan/Spec 产物模型 | UI 唯一消费通道 | 事件无 taskId/stepId 关联字段（StepStart 只有 index+description） | **冻结扩展**（A68 设计原则），Task 关联放 TaskLifecycleEvent 侧 |
 | `.../ConversationMemory.kt` | `interface ConversationMemory` | load/append/save/clear/count 五个方法 | 每条消息入历史即 `append()`；构造时 `load()` 恢复 | 接口无事务/原子语义 | 复用接口；Task 通过引用关联 |
 | `.../EnginePrompts.kt`（343 行）/`EngineResponseParsers.kt` | 纯函数 | system prompt 组装、Plan/Spec JSON 解析（含 fallbackPlan） | — | — | 不动 |
-| `.../CommandPermissionGate.kt` | 高危 shell 命令确认门 | 正则命中高危命令时要求用户确认 | 只覆盖 shell_execute | 工具级危险度缺失 | T76 的 ToolExecutionPolicy 与之互补 |
+| `.../CommandPermissionGate.kt` | 高危 shell 命令确认门 | 正则命中高危命令时要求用户确认 | 只覆盖 ShellExecute | 工具级危险度缺失 | T76 的 ToolExecutionPolicy 与之互补 |
 | `.../StreamingToolCallAccumulator.kt` | 流式工具调用累加器 | 以 `id || _idx_N` 复合键拼接并行工具调用参数 | — | id 依赖 LLM 返回 | 不动 |
 | `.../ExecutionMemoryObserver.kt` | 隐式记忆观察者接口 | onTaskStart/onActionExecuted/onTaskFinish/tryBypass（cs-mem 肌肉记忆旁路） | 引擎四个钩子调用 | — | 不动 |
 | `.../UserInput.kt`/`UserQuestion.kt`/`ConfirmationSink.kt` | 多模态输入/提问桥/确认下沉接口 | 类型安全桥接 | — | — | 不动 |
@@ -112,7 +112,7 @@ LLM ToolCall(id来自模型) → ApexAgentEngine.executeToolCallStreaming
 ### 4.2 与 T76 直接相关的缺口
 
 1. **无 callId 本地生成**：id 全部来自 LLM；恢复场景需要稳定 `operationId`（建议 `executionId + stepId + 序号` 本地生成，与 LLM callId 做映射记录）。
-2. **无幂等性分类**：80 个工具需要逐一归类 READ_ONLY（read_file/list_files/web_fetch/app_list/ui_dump/logcat/get_device_info...）/ IDEMPOTENT_WRITE（write_file 整覆盖、app_install、settings put）/ NON_IDEMPOTENT（app_uninstall、delete_file、ui_tap、input_text、clipboard write、terminal.run）/ UNKNOWN（shell_execute、http_request POST、plugin 工具）。**分类表是 T76 的新增交付物**，挂靠方式建议：`AgentTool` 不改（冻结），新建 `ToolExecutionPolicy` 注册表（toolId → 类别 + 恢复策略默认值），Terminal 类工具默认 UNKNOWN。
+2. **无幂等性分类**：80 个工具需要逐一归类 READ_ONLY（Read/ListFiles/WebFetch/AppList/UiDump/logcat/GetDeviceInfo...）/ IDEMPOTENT_WRITE（Write 整覆盖、AppInstall、settings put）/ NON_IDEMPOTENT（AppUninstall、DeleteFile、UiTap、InputText、clipboard write、TerminalRun）/ UNKNOWN（ShellExecute、HttpRequest POST、plugin 工具）。**分类表是 T76 的新增交付物**，挂靠方式建议：`AgentTool` 不改（冻结），新建 `ToolExecutionPolicy` 注册表（toolId → 类别 + 恢复策略默认值），Terminal 类工具默认 UNKNOWN。
 3. **实际注册工具清单**（`app/.../di/ToolModule.kt`）：73 无条件 + 7 GitHub 条件 = 80 个。其中 terminal 16+4 个、browser 15 个、cs-mem 3 个、memory 3 个。README 的 35 与注释的 53 均过期。
 4. **断链现状（记录，不顺手修）**：`SkillToolAdapter` 零实例化（skill→工具链路不存在）；`McpTools`/`SkillTools`/`FileEditTool` 定义未注册；`PluginManager.registerPluginTools` 是 TODO 空壳；`OpenAiCompatibleClient`/app 侧流式 `DownloadFileTool`/`StreamingShellExecuteTool` 为死代码（后者与已注册工具 id 冲突）。
 
@@ -144,7 +144,7 @@ LLM ToolCall(id来自模型) → ApexAgentEngine.executeToolCallStreaming
 | `RecoveryPlanner.kt`（78 行） | 循环触发时注入恢复提示词（有界 maxRecoveries） | "恢复提示"语义（注意：这是**策略性恢复**，不是**崩溃恢复**——两者在 T76 要分开） | 与崩溃恢复无关 | **原样复用**，命名注意区分 |
 | `ToolCallRunner.kt`（237 行） | 单次工具调用核心：per-attempt withTimeout + 分类 + 重试决策 + 退避 | 工具级重试执行单元 | 无 operationId、无结果落盘 | **复用**，外接 journal |
 | `ToolCallGraph.kt`（212 行）+`BatchExecutionEngine.kt`（454 行）+`ToolCallOutcome.kt` | depends_on 依赖分层 + 有界并行 + 部分失败隔离（依赖失败→SKIPPED）+ 聚合 | A68.3 并行批次 | — | **原样复用** |
-| `UserInteractionGate.kt`（61 行） | 单一 pending ask_user 挂起门 | 人工介入 | — | **原样复用** |
+| `UserInteractionGate.kt`（61 行） | 单一 pending AskUser 挂起门 | 人工介入 | — | **原样复用** |
 | `DefaultTaskOrchestrator.kt`（860 行） | 总装：BUILD 模式自跑 ReAct 循环（**自持一条独立 conversationHistory**），其余模式委托 delegate（ApexAgentEngine）并从事件流推导状态 | 见 §1 | 无持久化/无 pause/单任务假设/`execute` 入口清空 history 重新开始 | **核心改造对象**（或其上层包 TaskRuntime） |
 | `TaskOrchestratorConfig.kt`（195 行） | toolTimeoutMs=60s/taskTimeoutMs=0(禁用)/retryPolicy/loop 参数/maxRecoveries/enableParallelToolExecution/maxParallelToolCalls/emitLifecycleEvents | 配置快照语义已实现（任务开始时快照，中途 updateConfig 不影响运行中任务——**任务书 §20 的 snapshot 语义已有先例**） | — | **复用模式** |
 | `TaskResilienceRuntime.kt`（52 行） | 每任务重建的 runner+detector+planner 组合 | 所有权规则明确 | — | **原样复用** |

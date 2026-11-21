@@ -21,7 +21,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Issue #155 — opencode 式权限模式单测（纯 JVM，JUnit4 + runTest）。
+ * Issue #155 — 业界标准式权限模式单测（纯 JVM，JUnit4 + runTest）。
  *
  * 覆盖（任务书 §测试）：
  *  - 四模式决策矩阵（BYPASS / DEFAULT / ACCEPT_EDITS / PLAN）；
@@ -42,50 +42,97 @@ class PermissionDeciderTest {
     @Test
     fun `BYPASS 模式全放行且为显式放行`() {
         val decision = PermissionDecider.decide(
-            PermissionMode.BYPASS, emptyList(), writeCtx("shell_execute")
+            PermissionMode.BYPASS, emptyList(), writeCtx("ShellExecute")
         )
         assertTrue(decision is PermissionDecision.AllowExplicit)
     }
 
     @Test
-    fun `BYPASS 模式下 DENY 规则不生效（全放行是模式硬承诺）`() {
+    fun `BYPASS 模式下 DENY 规则生效（用户安全网不被全自动吞掉）`() {
         val decision = PermissionDecider.decide(
             PermissionMode.BYPASS,
             listOf(PermissionRule("*", PermissionEffect.DENY)),
             writeCtx()
         )
+        assertTrue(decision is PermissionDecision.Deny)
+    }
+
+    @Test
+    fun `BYPASS 模式下 ASK 规则生效（用户要求确认的工具照问）`() {
+        val decision = PermissionDecider.decide(
+            PermissionMode.BYPASS,
+            listOf(PermissionRule("BrowserExecuteJs", PermissionEffect.ASK)),
+            writeCtx("BrowserExecuteJs")
+        )
+        assertTrue(decision is PermissionDecision.Ask)
+    }
+
+    @Test
+    fun `BYPASS 模式下 ALLOW 规则命中敏感工具直接放行（用户已表态）`() {
+        val decision = PermissionDecider.decide(
+            PermissionMode.BYPASS,
+            listOf(PermissionRule("SmsSend", PermissionEffect.ALLOW)),
+            PermissionContext(
+                "SmsSend", readOnlyHint = false,
+                destructiveHint = false, sensitiveAction = true
+            )
+        )
         assertTrue(decision is PermissionDecision.AllowExplicit)
     }
 
     @Test
-    fun `DEFAULT 模式只读工具默认放行且仍交后续门`() {
+    fun `BYPASS 模式下敏感动作保持 Ask（付费工具逐次确认）`() {
         val decision = PermissionDecider.decide(
-            PermissionMode.DEFAULT, emptyList(), readCtx("code_read")
+            PermissionMode.BYPASS,
+            emptyList(),
+            PermissionContext(
+                "SmsSend", readOnlyHint = false,
+                destructiveHint = false, sensitiveAction = true
+            )
         )
-        assertTrue(decision is PermissionDecision.AllowDefault)
+        assertTrue(decision is PermissionDecision.Ask)
     }
 
     @Test
-    fun `DEFAULT 模式非只读工具一律询问（普通、破坏性、敏感三类同判）`() {
-        val plain = PermissionDecider.decide(
-            PermissionMode.DEFAULT, emptyList(), writeCtx("code_edit_file")
+    fun `DEFAULT 模式基础工具自动放行（只读、普通写、幂等覆写）`() {
+        val readOnly = PermissionDecider.decide(
+            PermissionMode.DEFAULT, emptyList(), readCtx("CodeRead")
         )
-        val destructive = PermissionDecider.decide(
+        // 普通编辑写（非破坏非幂等）：可恢复操作，静默放行
+        val plainWrite = PermissionDecider.decide(
+            PermissionMode.DEFAULT, emptyList(), writeCtx("CodeEditFile")
+        )
+        // 幂等覆写（破坏但可重放恢复，如 Write）：不算删除类，放行
+        val idempotentOverwrite = PermissionDecider.decide(
             PermissionMode.DEFAULT, emptyList(),
-            PermissionContext("delete_file", readOnlyHint = false, destructiveHint = true, sensitiveAction = false)
+            PermissionContext(
+                "Write", readOnlyHint = false,
+                destructiveHint = true, sensitiveAction = false, idempotentHint = true
+            )
         )
+        assertTrue(readOnly is PermissionDecision.AllowDefault)
+        assertTrue(plainWrite is PermissionDecision.AllowDefault)
+        assertTrue(idempotentOverwrite is PermissionDecision.AllowDefault)
+    }
+
+    @Test
+    fun `DEFAULT 模式删除类与敏感动作仍询问`() {
+        // 删除类 = 破坏且非幂等（delete / uninstall / force-stop 族）
+        val deleteLike = PermissionDecider.decide(
+            PermissionMode.DEFAULT, emptyList(),
+            PermissionContext("DeleteFile", readOnlyHint = false, destructiveHint = true, sensitiveAction = false)
+        )
+        assertTrue(deleteLike is PermissionDecision.Ask)
+        // 敏感动作（如读取通知）即使只读也值得一次询问——但只读判定在前，
+        // 敏感读（readOnlyHint=true）走 AllowDefault 交后续风险门把关
         val sensitiveWrite = PermissionDecider.decide(
             PermissionMode.DEFAULT, emptyList(),
             PermissionContext("sensitive_write", readOnlyHint = false, destructiveHint = false, sensitiveAction = true)
         )
-        assertTrue(plain is PermissionDecision.Ask)
-        assertTrue(destructive is PermissionDecision.Ask)
         assertTrue(sensitiveWrite is PermissionDecision.Ask)
-        // 顺序边界：readOnlyHint 先于 sensitiveAction 判定——只读但敏感的工具
-        // （如 notification_read）得到 AllowDefault，仍交后续风险门把关
         val sensitiveRead = PermissionDecider.decide(
             PermissionMode.DEFAULT, emptyList(),
-            PermissionContext("notification_read", readOnlyHint = true, destructiveHint = false, sensitiveAction = true)
+            PermissionContext("NotificationRead", readOnlyHint = true, destructiveHint = false, sensitiveAction = true)
         )
         assertTrue(sensitiveRead is PermissionDecision.AllowDefault)
     }
@@ -93,7 +140,7 @@ class PermissionDeciderTest {
     @Test
     fun `ACCEPT_EDITS 模式自动放行编辑写类工具`() {
         val decision = PermissionDecider.decide(
-            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("code_edit_file")
+            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("CodeEditFile")
         )
         assertTrue(decision is PermissionDecision.AllowExplicit)
     }
@@ -101,19 +148,74 @@ class PermissionDeciderTest {
     @Test
     fun `ACCEPT_EDITS 模式只读放行而非编辑写类仍询问`() {
         val readOnly = PermissionDecider.decide(
-            PermissionMode.ACCEPT_EDITS, emptyList(), readCtx("code_read")
+            PermissionMode.ACCEPT_EDITS, emptyList(), readCtx("CodeRead")
         )
         val notEditLike = PermissionDecider.decide(
-            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("shell_execute")
+            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("ShellExecute")
         )
         assertTrue(readOnly is PermissionDecision.AllowExplicit)
         assertTrue(notEditLike is PermissionDecision.Ask)
     }
 
     @Test
+    fun `技能与MCP常规能力工具在ACCEPT_EDITS下不再询问`() {
+        // 2026-10 用户反馈：skill 与 mcp 全部不再确认使用 —— 使用技能/MCP
+        // 是 Agent 的常规动作，ACCEPT_EDITS 下与编辑写类同口径自动放行。
+        val skillRun = PermissionDecider.decide(
+            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("skill_execute")
+        )
+        val skillActivate = PermissionDecider.decide(
+            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("skill_activate")
+        )
+        val mcpCall = PermissionDecider.decide(
+            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("mcp__github__create_issue")
+        )
+        // PascalCase 化后的技能工具 id（SkillSearch / SkillInstall…）同口径豁免
+        val skillInstall = PermissionDecider.decide(
+            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("SkillInstall")
+        )
+        val skillSearch = PermissionDecider.decide(
+            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("SkillSearch")
+        )
+        // v5 命名契约回归（T1-c）：MCP 一等工具 id 为 Mcp{Server}{Tool}，
+        // ROUTINE_CAPABILITY_PREFIXES 必须命中 —— 旧前缀表只认 mcp_ / mcp__，
+        // 对 McpGithubCreateIssue 这类真实 id 静默失配（V2 脚本面②）
+        val mcpV5Call = PermissionDecider.decide(
+            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("McpGithubCreateIssue")
+        )
+        val mcpV5Search = PermissionDecider.decide(
+            PermissionMode.ACCEPT_EDITS, emptyList(), writeCtx("McpSearchWebSearch")
+        )
+        assertTrue(mcpV5Call is PermissionDecision.AllowExplicit)
+        assertTrue(mcpV5Search is PermissionDecision.AllowExplicit)
+        assertTrue(skillRun is PermissionDecision.AllowExplicit)
+        assertTrue(skillActivate is PermissionDecision.AllowExplicit)
+        assertTrue(mcpCall is PermissionDecision.AllowExplicit)
+        assertTrue(skillInstall is PermissionDecision.AllowExplicit)
+        assertTrue(skillSearch is PermissionDecision.AllowExplicit)
+        // 规则仍可越级收紧：显式 ASK 规则首匹配优先于豁免
+        val ruleTightened = PermissionDecider.decide(
+            PermissionMode.ACCEPT_EDITS,
+            listOf(PermissionRule("skill_execute", PermissionEffect.ASK)),
+            writeCtx("skill_execute")
+        )
+        assertTrue(ruleTightened is PermissionDecision.Ask)
+        // PLAN 模式只读承诺不豁免：非只读技能调用照旧拒绝
+        val planDenied = PermissionDecider.decide(
+            PermissionMode.PLAN, emptyList(), writeCtx("skill_execute")
+        )
+        assertTrue(planDenied is PermissionDecision.Deny)
+        // DEFAULT 模式本就默认放行（mutating 非删除类）——口径不变
+        val defaultAllowed = PermissionDecider.decide(
+            PermissionMode.DEFAULT, emptyList(), writeCtx("mcp__srv__tool")
+        )
+        assertTrue(defaultAllowed is PermissionDecision.AllowDefault)
+    }
+
+    @Test
     fun `PLAN 模式只读工具默认放行`() {
         val decision = PermissionDecider.decide(
-            PermissionMode.PLAN, emptyList(), readCtx("code_read")
+            PermissionMode.PLAN, emptyList(), readCtx("CodeRead")
         )
         assertTrue(decision is PermissionDecision.AllowDefault)
     }
@@ -121,11 +223,11 @@ class PermissionDeciderTest {
     @Test
     fun `PLAN 模式拒绝非只读并给出中文原因`() {
         val decision = PermissionDecider.decide(
-            PermissionMode.PLAN, emptyList(), writeCtx("code_edit_file")
+            PermissionMode.PLAN, emptyList(), writeCtx("CodeEditFile")
         )
         val deny = decision as PermissionDecision.Deny
         assertTrue(deny.reason.contains("只读"))
-        assertTrue(deny.reason.contains("code_edit_file"))
+        assertTrue(deny.reason.contains("CodeEditFile"))
     }
 
     @Test
@@ -144,8 +246,8 @@ class PermissionDeciderTest {
     fun `ALLOW 规则越级放行 DEFAULT 模式下的非只读工具`() {
         val decision = PermissionDecider.decide(
             PermissionMode.DEFAULT,
-            listOf(PermissionRule("shell_execute", PermissionEffect.ALLOW)),
-            writeCtx("shell_execute")
+            listOf(PermissionRule("ShellExecute", PermissionEffect.ALLOW)),
+            writeCtx("ShellExecute")
         )
         assertTrue(decision is PermissionDecision.AllowExplicit)
     }
@@ -155,64 +257,68 @@ class PermissionDeciderTest {
         val decision = PermissionDecider.decide(
             PermissionMode.ACCEPT_EDITS,
             listOf(
-                PermissionRule("code_edit_file", PermissionEffect.DENY),
-                PermissionRule("code_edit_*", PermissionEffect.ALLOW)
+                PermissionRule("CodeEditFile", PermissionEffect.DENY),
+                PermissionRule("CodeEdit*", PermissionEffect.ALLOW)
             ),
-            writeCtx("code_edit_file")
+            writeCtx("CodeEditFile")
         )
         assertTrue(decision is PermissionDecision.Deny)
     }
 
     @Test
     fun `尾缀通配匹配 MCP 动态注册工具 id`() {
-        assertTrue(PermissionRuleMatcher.matches("mcp__github__*", "mcp__github__create_issue"))
-        assertTrue(PermissionRuleMatcher.matches("code_git_*", "code_git_commit"))
-        assertFalse(PermissionRuleMatcher.matches("code_git_*", "code_gitx"))
+        // v5：MCP 一等工具 id 形如 Mcp{Server}{Tool}，前缀通配照样命中运行期才知道的 id
+        assertTrue(PermissionRuleMatcher.matches("McpGithub*", "McpGithubCreateIssue"))
+        assertTrue(PermissionRuleMatcher.matches("CodeGit*", "CodeGitCommit"))
+        // PascalCase 无分隔符：通配是纯前缀语义，跨族名（CodeGrep）才是反例
+        assertFalse(PermissionRuleMatcher.matches("CodeGit*", "CodeGrep"))
         // 决策层集成：通配规则放行运行期才知道 id 的 MCP 写工具
         val decision = PermissionDecider.decide(
             PermissionMode.DEFAULT,
-            listOf(PermissionRule("mcp__github__*", PermissionEffect.ALLOW)),
-            writeCtx("mcp__github__create_issue")
+            listOf(PermissionRule("McpGithub*", PermissionEffect.ALLOW)),
+            writeCtx("McpGithubCreateIssue")
         )
         assertTrue(decision is PermissionDecision.AllowExplicit)
     }
 
     @Test
     fun `单独星号规则匹配一切工具`() {
-        assertTrue(PermissionRuleMatcher.matches("*", "shell_execute"))
-        assertTrue(PermissionRuleMatcher.matches("*", "mcp__anything__goes"))
+        assertTrue(PermissionRuleMatcher.matches("*", "ShellExecute"))
+        assertTrue(PermissionRuleMatcher.matches("*", "McpAnythingGoes"))
         val decision = PermissionDecider.decide(
             PermissionMode.DEFAULT,
             listOf(PermissionRule("*", PermissionEffect.ALLOW)),
-            writeCtx("shell_execute")
+            writeCtx("ShellExecute")
         )
         assertTrue(decision is PermissionDecision.AllowExplicit)
     }
 
     @Test
     fun `空模式规则不匹配任何工具`() {
-        assertFalse(PermissionRuleMatcher.matches("", "code_edit"))
-        assertFalse(PermissionRuleMatcher.matches("   ", "code_edit"))
+        assertFalse(PermissionRuleMatcher.matches("", "CodeEdit"))
+        assertFalse(PermissionRuleMatcher.matches("   ", "CodeEdit"))
+        // 规则不生效 → 落到模式默认；删除类上下文（destructive 且非幂等）
+        // 在 DEFAULT 下按模式默认询问，断言意图不变：空规则既不放行也不拒绝
         val decision = PermissionDecider.decide(
             PermissionMode.DEFAULT,
             listOf(PermissionRule("", PermissionEffect.ALLOW)),
-            writeCtx()
+            PermissionContext("DeleteFile", readOnlyHint = false, destructiveHint = true, sensitiveAction = false)
         )
         assertTrue(decision is PermissionDecision.Ask)
     }
 
     @Test
     fun `精确匹配大小写敏感`() {
-        assertTrue(PermissionRuleMatcher.matches("code_edit", "code_edit"))
-        assertFalse(PermissionRuleMatcher.matches("Code_Edit", "code_edit"))
+        assertTrue(PermissionRuleMatcher.matches("CodeEdit", "CodeEdit"))
+        assertFalse(PermissionRuleMatcher.matches("Code_Edit", "CodeEdit"))
     }
 
     @Test
     fun `ASK 规则对只读工具同样越级收紧触发询问`() {
         val decision = PermissionDecider.decide(
             PermissionMode.ACCEPT_EDITS,
-            listOf(PermissionRule("code_read", PermissionEffect.ASK)),
-            readCtx("code_read")
+            listOf(PermissionRule("CodeRead", PermissionEffect.ASK)),
+            readCtx("CodeRead")
         )
         assertTrue(decision is PermissionDecision.Ask)
     }
@@ -220,17 +326,17 @@ class PermissionDeciderTest {
     @Test
     fun `编辑写类前缀判定覆盖正反例`() {
         val editLike = listOf(
-            "code_edit_file", "code_write_block", "code_git_commit",
-            "code_git_branch_create", "write_file", "edit_file",
-            "delete_file", "copy_move_file"
+            "CodeEditFile", "CodeWriteBlock", "CodeGitCommit",
+            "CodeGitBranchCreate", "Write", "Edit",
+            "DeleteFile", "CopyMoveFile"
         )
         editLike.forEach { id ->
             assertTrue("应判定为编辑类：$id", PermissionDecider.isEditLike(id))
         }
         val notEditLike = listOf(
-            "code_read", "code_search", "code_task",
-            "code_git_status", "code_git_diff", "code_git_log",
-            "shell_execute", "web_fetch"
+            "CodeRead", "CodeSearch", "CodeTask",
+            "CodeGitStatus", "CodeGitDiff", "CodeGitLog",
+            "ShellExecute", "WebFetch"
         )
         notEditLike.forEach { id ->
             assertFalse("不应判定为编辑类：$id", PermissionDecider.isEditLike(id))
@@ -248,20 +354,20 @@ class PermissionDeciderTest {
             { PermissionSnapshot(PermissionMode.DEFAULT) },
             clock = { 42L }
         )
-        val tool = mutatingTool()
+        val tool = deleteLikeTool()
 
         assertTrue(gate.check(tool, "{}") is GateDecision.Allow)
         assertTrue(gate.check(tool, "{}") is GateDecision.Allow)
 
         assertEquals(1, gateway.questions.size)
-        assertEquals(mapOf("code_edit_file" to 42L), gate.sessionAllowedSnapshot())
+        assertEquals(mapOf("DeleteFile" to 42L), gate.sessionAllowedSnapshot())
     }
 
     @Test
     fun `allow_once 不记忆下次再问`() = runTest {
         val gateway = FakeGateway { q -> AgentAnswer(questionId = q.id, selectedOptionId = "allow_once") }
         val gate = PermissionModeGate(gateway, { PermissionSnapshot(PermissionMode.DEFAULT) })
-        val tool = mutatingTool()
+        val tool = deleteLikeTool()
 
         assertTrue(gate.check(tool, "{}") is GateDecision.Allow)
         assertTrue(gate.check(tool, "{}") is GateDecision.Allow)
@@ -275,11 +381,11 @@ class PermissionDeciderTest {
         val gateway = FakeGateway { q -> AgentAnswer(questionId = q.id, selectedOptionId = "deny") }
         val gate = PermissionModeGate(gateway, { PermissionSnapshot(PermissionMode.DEFAULT) })
 
-        val decision = gate.check(mutatingTool(), "{}")
+        val decision = gate.check(deleteLikeTool(), "{}")
 
         val deny = decision as GateDecision.Deny
         assertTrue(deny.reason.contains("用户拒绝"))
-        assertTrue(deny.reason.contains("code_edit_file"))
+        assertTrue(deny.reason.contains("DeleteFile"))
     }
 
     @Test
@@ -287,7 +393,7 @@ class PermissionDeciderTest {
         val gateway = FakeGateway { _ -> throw IllegalStateException("boom") }
         val gate = PermissionModeGate(gateway, { PermissionSnapshot(PermissionMode.DEFAULT) })
 
-        val decision = gate.check(mutatingTool(), "{}")
+        val decision = gate.check(deleteLikeTool(), "{}")
 
         val deny = decision as GateDecision.Deny
         assertTrue(deny.reason.contains("异常"))
@@ -299,7 +405,7 @@ class PermissionDeciderTest {
         val gate = PermissionModeGate(bridge, { PermissionSnapshot(PermissionMode.DEFAULT) })
         var result: GateDecision? = null
 
-        val job = launch { result = gate.check(mutatingTool(), "{}") }
+        val job = launch { result = gate.check(deleteLikeTool(), "{}") }
         advanceUntilIdle()                       // ask 挂起等待回答
         advanceTimeBy(5 * 60 * 1000L + 1_000L)   // 虚拟时间越过 5 分钟超时线
         advanceUntilIdle()
@@ -315,7 +421,7 @@ class PermissionDeciderTest {
         val gate = PermissionModeGate(bridge, { PermissionSnapshot(PermissionMode.DEFAULT) })
         var result: GateDecision? = null
 
-        val job = launch { result = gate.check(mutatingTool(), "{}") }
+        val job = launch { result = gate.check(deleteLikeTool(), "{}") }
         advanceUntilIdle()
         bridge.cancelCurrentQuestion()            // skipped 形态回答
         advanceUntilIdle()
@@ -329,7 +435,7 @@ class PermissionDeciderTest {
     fun `resetSession 清空会话授权记忆`() = runTest {
         val gateway = FakeGateway { q -> AgentAnswer(questionId = q.id, selectedOptionId = "allow_session") }
         val gate = PermissionModeGate(gateway, { PermissionSnapshot(PermissionMode.DEFAULT) })
-        val tool = mutatingTool()
+        val tool = deleteLikeTool()
 
         assertTrue(gate.check(tool, "{}") is GateDecision.Allow)
         assertEquals(1, gateway.questions.size)
@@ -346,7 +452,7 @@ class PermissionDeciderTest {
     fun `check 与 checkDetailed 两入口语义一致`() = runTest {
         val gateway = FakeGateway { q -> AgentAnswer(questionId = q.id, selectedOptionId = "deny") }
         val gate = PermissionModeGate(gateway, { PermissionSnapshot(PermissionMode.DEFAULT) })
-        val tool = mutatingTool()
+        val tool = deleteLikeTool()
 
         val viaCheck = gate.check(tool, "{}")
         val viaDetailed = gate.checkDetailed(tool, "{}")
@@ -362,13 +468,13 @@ class PermissionDeciderTest {
         val gate = PermissionModeGate(gateway, { PermissionSnapshot(PermissionMode.ACCEPT_EDITS) })
 
         gate.checkDetailed(
-            FakeTool("shell_execute", ToolAnnotations.mutating()),
+            FakeTool("ShellExecute", ToolAnnotations.mutating()),
             "x".repeat(500)
         )
 
         val question = gateway.questions.single()
         assertTrue(question.title.contains("工具执行授权"))
-        assertTrue(question.title.contains("shell_execute"))
+        assertTrue(question.title.contains("ShellExecute"))
         // 模式提示 + 参数摘要截 300 字符
         val description = question.description.orEmpty()
         assertTrue(description.contains("ACCEPT_EDITS"))
@@ -398,14 +504,14 @@ class PermissionDeciderTest {
                 {
                     PermissionSnapshot(
                         PermissionMode.DEFAULT,
-                        listOf(PermissionRule("code_edit_file", PermissionEffect.ALLOW))
+                        listOf(PermissionRule("DeleteFile", PermissionEffect.ALLOW))
                     )
                 }
             ),
             fallback
         )
 
-        val decision = gate.check(mutatingTool(), "{}")
+        val decision = gate.check(deleteLikeTool(), "{}")
 
         assertTrue(decision is GateDecision.Allow)
         assertTrue(fallback.checkedToolIds.isEmpty())
@@ -426,7 +532,7 @@ class PermissionDeciderTest {
 
         val deny = decision as GateDecision.Deny
         assertEquals("风险门拒绝", deny.reason)
-        assertEquals(listOf("code_read"), fallback.checkedToolIds)
+        assertEquals(listOf("CodeRead"), fallback.checkedToolIds)
     }
 
     @Test
@@ -440,7 +546,7 @@ class PermissionDeciderTest {
             fallback
         )
 
-        val decision = gate.check(mutatingTool(), "{}")
+        val decision = gate.check(deleteLikeTool(), "{}")
 
         assertTrue(decision is GateDecision.Deny)
         assertTrue(fallback.checkedToolIds.isEmpty())
@@ -452,8 +558,8 @@ class PermissionDeciderTest {
     private fun readCtx(toolId: String) =
         PermissionContext(toolId, readOnlyHint = true, destructiveHint = false, sensitiveAction = false)
 
-    /** 普通写上下文（非只读、非破坏、非敏感）。 */
-    private fun writeCtx(toolId: String = "code_edit_file") =
+    /** 普通写上下文（非只读、非破坏、非敏感、非幂等——如 Edit）。 */
+    private fun writeCtx(toolId: String = "CodeEditFile") =
         PermissionContext(toolId, readOnlyHint = false, destructiveHint = false, sensitiveAction = false)
 
     /** 元数据完全可控的假工具（annotations 决策三注解的载体）。 */
@@ -474,11 +580,15 @@ class PermissionDeciderTest {
         override suspend fun execute(arguments: String): String = "ok"
     }
 
-    private fun readonlyTool(id: String = "code_read") =
+    private fun readonlyTool(id: String = "CodeRead") =
         FakeTool(id, ToolAnnotations.readOnly())
 
-    private fun mutatingTool(id: String = "code_edit_file") =
-        FakeTool(id, ToolAnnotations.mutating())
+    /**
+     * 删除类假工具（破坏且非幂等）：DEFAULT 模式下唯一会触发询问的
+     * 非敏感类别 —— 门交互闭环测试的问答载体。
+     */
+    private fun deleteLikeTool(id: String = "DeleteFile") =
+        FakeTool(id, ToolAnnotations.destructive())
 
     /** 脚本化问答网关：记录全部问题，按脚本回放答案（可抛异常模拟通道故障）。 */
     private class FakeGateway(

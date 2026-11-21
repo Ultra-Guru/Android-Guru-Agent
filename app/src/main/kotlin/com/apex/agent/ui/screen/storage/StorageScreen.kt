@@ -18,7 +18,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
@@ -64,11 +63,10 @@ import kotlinx.coroutines.delay
 /**
  * 存储与数据管理页（抽屉「存储」目的地）。
  *
- * 四个区块（全部真实数据源）：
- *  1. 附件沙箱 —— AttachmentCleanupManager 用量/清理；
- *  2. Ubuntu rootfs —— 环境占用/删除（用户数据保留说明）；
- *  3. 会话历史 —— 全局对话条数/导出（文本分享）/清空；
- *  4. 运行日志 —— 条数/内存占用，跳转日志页由用户自行导出。
+ * 三个区块（全部真实数据源）：
+ *  1. Ubuntu rootfs —— 环境占用/删除（用户数据保留说明）；
+ *  2. 会话历史 —— 全局对话条数/导出（文本分享）/清空；
+ *  3. 运行日志 —— 条数/内存占用，跳转日志页由用户自行导出。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -127,34 +125,7 @@ fun StorageScreen(
                 }
             }
 
-            // ═══ 1. 附件沙箱 ═══
-            StorageCard(
-                icon = Icons.Default.AttachFile,
-                title = stringResource(R.string.storage_attachments),
-                tint = MaterialTheme.colorScheme.primary
-            ) {
-                StorageMetricRow(stringResource(R.string.storage_space_used), formatBytes(state.attachmentsSize))
-                StorageMetricRow(stringResource(R.string.storage_files), stringResource(R.string.storage_unit_files, state.attachmentsCount))
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = { confirmAction = "attachments" },
-                        enabled = !state.busy && state.attachmentsCount > 0,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Delete, null, Modifier.size(15.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.storage_clear_attachments), color = MaterialTheme.colorScheme.error)
-                    }
-                }
-                Text(
-                    stringResource(R.string.storage_attachments_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            // ═══ 2. Ubuntu 环境 ═══
+            // ═══ 1. Ubuntu 环境 ═══
             StorageCard(
                 icon = Icons.Default.Terminal,
                 title = stringResource(R.string.storage_ubuntu_title),
@@ -192,7 +163,7 @@ fun StorageScreen(
                 )
             }
 
-            // ═══ 3. 会话历史 ═══
+            // ═══ 2. 会话历史 ═══
             StorageCard(
                 icon = Icons.Default.Chat,
                 title = stringResource(R.string.storage_conversation_history),
@@ -221,7 +192,7 @@ fun StorageScreen(
                 )
             }
 
-            // ═══ 4. 运行日志 ═══
+            // ═══ 3. 运行日志 ═══
             StorageCard(
                 icon = Icons.Default.Info,
                 title = stringResource(R.string.storage_log_title),
@@ -271,12 +242,6 @@ fun StorageScreen(
         // i18n：约 1GB 回退文案（格式化参数在 when 内两处使用，上提取词）
         val aboutOneGb = stringResource(R.string.storage_about_1gb)
         val (title, text) = when (confirmAction) {
-            "attachments" -> stringResource(R.string.storage_confirm_attachments_title) to
-                stringResource(
-                    R.string.storage_confirm_attachments_text,
-                    state.attachmentsCount,
-                    formatBytes(state.attachmentsSize)
-                )
             "rootfs" -> stringResource(R.string.storage_confirm_rootfs_title) to
                 stringResource(
                     R.string.storage_confirm_rootfs_text,
@@ -292,7 +257,6 @@ fun StorageScreen(
             confirmButton = {
                 TextButton(onClick = {
                     when (confirmAction) {
-                        "attachments" -> viewModel.clearAttachments()
                         "rootfs" -> viewModel.removeRootfs()
                         "conversation" -> viewModel.clearConversation()
                     }

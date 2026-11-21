@@ -3,6 +3,7 @@ package com.apex.agent.platform.privilege.shizuku
 import android.content.pm.PackageManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 import java.io.BufferedReader
@@ -37,11 +38,17 @@ object ShizukuCommandExecutor {
 
     /**
      * 检查Shizuku服务是否可用（binder是否存活）
+     *
+     * 探测口径：任何失败部「不可用」——包括类加载失败（[LinkageError]：
+     * JVM 单测的 mockable android.jar 静态块抛 Stub!、残缺 classpath、
+     * OEM 异常环境）。探针不应炸穿调用链，调用方按不可用降级选路。
      */
     fun isAvailable(): Boolean {
         return try {
             Shizuku.pingBinder()
         } catch (e: Exception) {
+            false
+        } catch (e: LinkageError) {
             false
         }
     }
@@ -51,10 +58,13 @@ object ShizukuCommandExecutor {
      */
     fun hasPermission(): Boolean {
         return try {
-            if (!Shizuku.pingBinder()) return false
+            // 复用 isAvailable 的全面探测口径（含 LinkageError 兒底）
+            if (!isAvailable()) return false
             if (Shizuku.isPreV11()) return true  // 旧版直接有权限
             Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
         } catch (e: Exception) {
+            false
+        } catch (e: LinkageError) {
             false
         }
     }
@@ -67,7 +77,10 @@ object ShizukuCommandExecutor {
             if (Shizuku.isPreV11()) return
             if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) return
             Shizuku.requestPermission(requestCode)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            // #260：权限请求链路静默失败 = 用户走完引导却不知道授权没发出去
+            android.util.Log.w("ShizukuExecutor", "requestPermission failed: ${e.message}")
+        }
     }
 
     /**
@@ -126,10 +139,13 @@ object ShizukuCommandExecutor {
             val stdoutDeferred = async(Dispatchers.IO) { runCatching { stdoutR.readText() }.getOrDefault("") }
             val stderrDeferred = async(Dispatchers.IO) { runCatching { stderrR.readText() }.getOrDefault("") }
 
-            // 关键：Process.waitFor() 是非可中断的 JVM 阻塞调用 —— 用
-            // waitFor(timeoutMs, MILLISECONDS)（JDK 内部用 wait/notify 循环实现，
-            // 可超时返回 false），超时后显式 destroy 让 readText 拿到 EOF。
-            val completed = proc.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
+            // 关键：Process.waitFor() 是同步阻塞调用 —— 用
+            // waitFor(timeoutMs, MILLISECONDS)（JDK 内部用 wait/notify 循环
+            // 实现，可超时返回 false），超时后显式 destroy 让 readText 拿到 EOF。
+            // #463：runInterruptible 让协程取消可传播 —— ShizukuProcessChannel
+            // 的轮询 sleep 响应 interrupt（恢复标志位后按超时返回 false），
+            // 取消/超时不再钉死 IO 线程到全程超时。
+            val completed = runInterruptible { proc.waitFor(timeoutMs, TimeUnit.MILLISECONDS) }
             if (!completed) {
                 proc.destroyForcibly()
                 stdoutDeferred.await()
@@ -146,7 +162,15 @@ object ShizukuCommandExecutor {
             val exitCode = proc.exitValue()
             ShizukuExecResult(
                 success = exitCode == 0,
-                output = stdout.ifBlank { stderr },
+                // stderr 保留（2026-10 高错误率修复，与 PrivilegeDetector 同口径）：
+                // 旧实现 stdout 非空时静默丢弃 stderr —— 失败原因不可见。双非空时
+                // 以 [stderr] 标记追加；任一为空时行为与旧版一致。
+                output = when {
+                    stdout.isNotBlank() && stderr.isNotBlank() ->
+                        stdout + "\n[stderr]\n" + stderr
+                    stdout.isNotBlank() -> stdout
+                    else -> stderr
+                },
                 exitCode = exitCode
             )
         } catch (e: SecurityException) {
@@ -156,6 +180,11 @@ object ShizukuCommandExecutor {
                 output = "Shizuku permission denied. Please grant permission in Shizuku app.",
                 exitCode = -1
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // #463：协程取消向上传播（runInterruptible 唤醒阻塞的 waitFor 后
+            // 走这里）—— 不折叠成结果文本，保持结构化取消纪律；finally
+            // 仍收尾 reader 与进程。
+            throw e
         } catch (e: Exception) {
             ShizukuExecResult(
                 success = false,

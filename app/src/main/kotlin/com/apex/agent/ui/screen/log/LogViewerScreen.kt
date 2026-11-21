@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,11 +45,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -62,6 +65,11 @@ import com.apex.agent.R
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.core.logging.LogLevel
+import com.apex.agent.ui.theme.statusError
+import com.apex.agent.ui.theme.statusInfo
+import com.apex.agent.ui.theme.statusNeutral
+import com.apex.agent.ui.theme.statusSuccess
+import com.apex.agent.ui.theme.statusWarning
 import com.apex.agent.core.logging.LogRecord
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
@@ -88,11 +96,14 @@ fun LogViewerScreen() {
     var records by remember { mutableStateOf<List<LogRecord>>(emptyList()) }
     var stats by remember { mutableStateOf(AppLogger.instance.stats.value) }
 
-    var selectedCategory by remember { mutableStateOf<LogCategory?>(null) }
-    var minLevel by remember { mutableStateOf(LogLevel.VERBOSE) }
-    var keyword by remember { mutableStateOf("") }
-    var sessionId by remember { mutableStateOf<Long?>(null) }
-    var autoScroll by remember { mutableStateOf(true) }
+    // 过滤/滚动瞬态 rememberSaveable（#2-c P2-7）：LogCategory/LogLevel 为 enum
+    //（Serializable，可入 Bundle），旋转/进程重建后过滤条件与自动滚动不丢；
+    // records/stats 为数据流衍生态（重建后由 recordsFlow 重放），不入存档。
+    var selectedCategory by rememberSaveable { mutableStateOf<LogCategory?>(null) }
+    var minLevel by rememberSaveable { mutableStateOf(LogLevel.VERBOSE) }
+    var keyword by rememberSaveable { mutableStateOf("") }
+    var sessionId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var autoScroll by rememberSaveable { mutableStateOf(true) }
     val listState = rememberLazyListState()
 
     // 实时刷新：订阅全量快照流，在 collect 时套用当前过滤条件。
@@ -139,7 +150,8 @@ fun LogViewerScreen() {
         )
 
         // ── 工具条：复制全部 / 清空（带确认） / 导出 ──
-        var showClearConfirm by remember { mutableStateOf(false) } // 修复：清空整个环形缓冲区为破坏性操作，原一点即清
+        var showClearConfirm by rememberSaveable { mutableStateOf(false) } // 修复：清空整个环形缓冲区为破坏性操作，原一点即清
+        var exporting by rememberSaveable { mutableStateOf(false) } // E3：导出串后台拼装进行中（按钮置灰防连点）
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -171,13 +183,21 @@ fun LogViewerScreen() {
                 Text(stringResource(R.string.log_clear))
             }
             FilledTonalButton(
+                // 修复性能（#2-c P1-3）：导出串的 joinToString 同样可达数 MB，旧实现
+                // 在 onClick 主线程拼串后才进 exportAndShare（其 IO 协程只包写盘）。
+                // 照 copy 钮同款模式：copyScope + withContext(IO) 拼串；进行中
+                // 按钮置灰（防连点叠拼串任务）即导出中的 loading 反馈。
                 onClick = {
-                    exportAndShare(
-                        context,
-                        records.joinToString("\n") { it.toFlatString() },
-                        exportLogsTitle
-                    )
+                    exporting = true
+                    copyScope.launch {
+                        val text = withContext(Dispatchers.IO) {
+                            records.joinToString("\n") { it.toFlatString() }
+                        }
+                        exportAndShare(context, text, exportLogsTitle)
+                        exporting = false
+                    }
                 },
+                enabled = !exporting,
                 contentPadding = ButtonDefaults.ButtonWithIconContentPadding
             ) {
                 Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.width(16.dp))
@@ -274,11 +294,11 @@ private fun StatsBar(stats: com.apex.agent.core.logging.LogStats, onClickError: 
                 StatChip(
                     stringResource(R.string.log_errors),
                     "${stats.errorCount}",
-                    if (stats.errorCount > 0) Color(0xFFE57373) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    if (stats.errorCount > 0) levelColor(LogLevel.ERROR) else MaterialTheme.colorScheme.onSurfaceVariant,
                     onClick = onClickError
                 )
-                StatChip("WARN", "${stats.byLevel[LogLevel.WARN] ?: 0}", Color(0xFFFFB74D))
-                StatChip("INFO", "${stats.byLevel[LogLevel.INFO] ?: 0}", Color(0xFF81C784))
+                StatChip("WARN", "${stats.byLevel[LogLevel.WARN] ?: 0}", levelColor(LogLevel.WARN))
+                StatChip("INFO", "${stats.byLevel[LogLevel.INFO] ?: 0}", levelColor(LogLevel.INFO))
             }
             Spacer(Modifier.height(6.dp))
             // 分类计数横向滚动条
@@ -313,7 +333,7 @@ private fun StatsBar(stats: com.apex.agent.core.logging.LogStats, onClickError: 
                         .weight(1f)
                         .height(6.dp)
                         .clip(RoundedCornerShape(3.dp)),
-                    color = if (stats.usageRatio > 0.9f) Color(0xFFFFB74D) else MaterialTheme.colorScheme.primary,
+                    color = if (stats.usageRatio > 0.9f) statusWarning() else MaterialTheme.colorScheme.primary,
                     trackColor = MaterialTheme.colorScheme.surfaceContainer
                 )
                 Text(
@@ -420,20 +440,42 @@ private fun CategoryTab(label: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = container,
-        modifier = Modifier.clickable(onClick = onClick)
+        // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 16dp 圆角胶囊
+        modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick)
     ) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = content, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
     }
 }
 
+/**
+ * 日志等级色：#244 起统一经 ui/theme/StatusColors 语义函数取词（明暗成对、
+ * 与任务历史/用量页同一套调色板），本函数仅做 LogLevel → 语义档的映射。
+ * :core 的 LogLevel.colorArgb 是终端域单态色，不可引 Compose，:core 不动。
+ * 例外：FATAL 是日志特有的「比 ERROR 更重」一档，无通用语义槽 —— 保留
+ * 本页紫对（明暗判定沿 codeColorScheme 先例：background.luminance()，
+ * 勿用 isSystemInDarkTheme —— 主题可被设置强制）。
+ */
+@Composable
+private fun levelColor(level: LogLevel): Color = when (level) {
+    LogLevel.VERBOSE, LogLevel.SILENT -> statusNeutral()
+    LogLevel.DEBUG -> statusInfo()
+    LogLevel.INFO -> statusSuccess()
+    LogLevel.WARN -> statusWarning()
+    LogLevel.ERROR -> statusError()
+    LogLevel.FATAL ->
+        if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFFBA68C8)
+        else Color(0xFF6A1B9A)
+}
+
 @Composable
 private fun LevelChip(level: LogLevel, active: Boolean, onClick: () -> Unit) {
-    val container = if (active) Color(level.colorArgb) else MaterialTheme.colorScheme.surfaceContainer
-    val content = if (active) Color.White else Color(level.colorArgb)
+    val container = if (active) levelColor(level) else MaterialTheme.colorScheme.surfaceContainer
+    val content = if (active) Color.White else levelColor(level)
     Surface(
         shape = RoundedCornerShape(8.dp),
         color = container,
-        modifier = Modifier.clickable(onClick = onClick)
+        // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 8dp 圆角 chip
+        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick)
     ) {
         Text(level.shortTag, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = content, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
     }
@@ -444,7 +486,8 @@ private fun SessionChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
         shape = RoundedCornerShape(8.dp),
         color = if (selected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.clickable(onClick = onClick)
+        // 圆角反馈修复：clip 先于 clickable —— 涟漪跟随 8dp 圆角 chip
+        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick)
     ) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = if (selected) MaterialTheme.colorScheme.onSecondary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
     }
@@ -472,12 +515,12 @@ private fun LogRow(record: LogRecord, onCopy: () -> Unit) {
                     .width(3.dp)
                     .height(38.dp)
                     .clip(RoundedCornerShape(2.dp))
-                    .background(Color(record.level.colorArgb))
+                    .background(levelColor(record.level))
             )
             Spacer(Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(record.level.shortTag, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(record.level.colorArgb))
+                    Text(record.level.shortTag, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = levelColor(record.level))
                     Text(record.category.displayName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                     Text(record.source, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(formatTime(record.timestamp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
@@ -512,7 +555,8 @@ private fun LogRow(record: LogRecord, onCopy: () -> Unit) {
                     modifier = Modifier.padding(start = 4.dp)
                 )
             }
-            IconButton(onClick = onCopy, modifier = Modifier.width(28.dp).height(28.dp)) {
+            // UI-012：48dp 触区红线（原 28×28；行内密排但无障碍优先）
+            IconButton(onClick = onCopy, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
                 Icon(Icons.Default.ContentCopy, contentDescription = stringResource(R.string.log_copy), modifier = Modifier.width(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

@@ -10,6 +10,12 @@ import java.nio.file.Files
  */
 class RootfsConfiguratorTest {
 
+    /** Real ISRG Root X1 (Android system store shape); avoids resource/classpath coupling. */
+    private val rootX1: String by lazy {
+        requireNotNull(javaClass.getResourceAsStream("/isrg-root-x1.pem"))
+            .bufferedReader().use { it.readText() }
+    }
+
     private fun tmpRoot(): File {
         val root = Files.createTempDirectory("t72-cfg-").toFile()
         // minimal ubuntu-ish skeleton
@@ -92,9 +98,152 @@ class RootfsConfiguratorTest {
         assertTrue(report2.warnings.none { it.startsWith("apt-dir") })
     }
 
+    @Test fun `AndroidCAStore system aliases supply a legacy bundle without reading raw removal dirs`() {
+        val root = tmpRoot()
+        val factory = java.security.cert.CertificateFactory.getInstance("X.509")
+        val systemCert = factory.generateCertificate(TestCaFixtures.isrgRootX1Pem.byteInputStream())
+        val userCert = factory.generateCertificate(TestCaFixtures.userOnlyPem.byteInputStream())
+        val store = java.security.KeyStore.getInstance("JKS").apply {
+            load(null, null)
+            setCertificateEntry("system:aaaaaaaa.0", systemCert)
+            setCertificateEntry("user:bbbbbbbb.0", userCert)
+        }
+        val cfg = RootfsConfigurator(hostCaBundle = { null }, androidCaStore = { store })
+        assertTrue("enabled system anchor must repair missing CA", cfg.repairCaIfMissing(root))
+        val guest = File(root, "etc/ssl/certs/ca-certificates.crt")
+        val guestCerts = factory.generateCertificates(guest.inputStream())
+        assertEquals("only enabled system anchor is trusted", listOf(systemCert), guestCerts.toList())
+        assertFalse("user-added anchor cannot be imported", guestCerts.contains(userCert))
+        assertFalse("existing bundle must not be replaced", cfg.repairCaIfMissing(root))
+    }
+
+    @Test fun `AndroidCAStore disabled system alias is not imported`() {
+        val root = tmpRoot()
+        val cert = java.security.cert.CertificateFactory.getInstance("X.509")
+            .generateCertificate(TestCaFixtures.isrgRootX1Pem.byteInputStream())
+        val store = java.security.KeyStore.getInstance("JKS").apply {
+            load(null, null)
+            setCertificateEntry("system:aaaaaaaa.0", cert)
+        }
+        val cfg = RootfsConfigurator(hostCaBundle = { null }, androidCaStore = { store })
+        assertTrue(cfg.repairCaIfMissing(root))
+        val another = tmpRoot()
+        store.deleteEntry("system:aaaaaaaa.0") // simulate platform omitting a disabled alias
+        assertFalse(cfg.repairCaIfMissing(another))
+        assertFalse(File(another, "etc/ssl/certs/ca-certificates.crt").exists())
+    }
+
+    @Test fun `AndroidCAStore user aliases alone do not supply a guest CA`() {
+        val root = tmpRoot()
+        val cert = java.security.cert.CertificateFactory.getInstance("X.509")
+            .generateCertificate(TestCaFixtures.isrgRootX1Pem.byteInputStream())
+        val store = java.security.KeyStore.getInstance("JKS").apply {
+            load(null, null)
+            setCertificateEntry("user:bbbbbbbb.0", cert)
+        }
+        val cfg = RootfsConfigurator(hostCaBundle = { null }, androidCaStore = { store })
+        assertFalse("user-added anchors are not a system trust source", cfg.repairCaIfMissing(root))
+        assertFalse(File(root, "etc/ssl/certs/ca-certificates.crt").exists())
+    }
+
+    @Test fun `existing packaged CA is preserved even when a host store exists`() {
+        val root = tmpRoot()
+        val guest = File(root, "etc/ssl/certs/ca-certificates.crt")
+        guest.parentFile.mkdirs()
+        guest.writeText("packaged-rootfs-bundle\n")
+        val host = Files.createTempFile("host-ca", ".crt").toFile().apply { writeText("different-host-bundle") }
+        val cfg = RootfsConfigurator(dnsServers = { listOf("10.0.0.1") }, hostCaBundle = { host })
+        val report = cfg.configure(root)
+        assertEquals("packaged-rootfs-bundle\n", guest.readText())
+        assertTrue(report.actions.any { it.contains("kept existing bundle") })
+    }
+
+    @Test fun `empty legacy CA is repaired only from the trusted Android system store`() {
+        val root = tmpRoot()
+        val store = Files.createTempDirectory("android-system-cas-").toFile()
+        val pem = TestCaFixtures.isrgRootX1Pem
+        File(store, "aaaaaaaa.0").writeText(pem)
+        File(store, "bbbbbbbb.0").writeText("-----BEGIN CERTIFICATE-----\ninvalid\n-----END CERTIFICATE-----\n")
+        File(store, "rogue.pem").writeText(pem) // not a hashed system CA name
+        // Empty removal dir = no system anchor is marked as disabled (Android
+        // only creates it when a user actually disables one). This is the known
+        // revocation source that lets the store's surviving anchors be trusted.
+        val removed = File(store.parentFile, "cacerts-removed").apply { mkdirs() }
+        val guest = File(root, "etc/ssl/certs/ca-certificates.crt")
+        guest.parentFile.mkdirs()
+        guest.writeText("")
+        val cfg = RootfsConfigurator(
+            dnsServers = { listOf("10.0.0.1") }, hostCaBundle = { null },
+            androidSystemCaDirs = { listOf(store) },
+            androidSystemCaRemovedDirs = { listOf(removed) }
+        )
+        val report = cfg.configure(root)
+        assertTrue("trusted host CA installed", guest.readText().contains("-----BEGIN CERTIFICATE-----"))
+        assertEquals("only one valid, hashed CA", 1, guest.readText().split("-----BEGIN CERTIFICATE-----").size - 1)
+        assertTrue(report.warnings.none { it.contains("ca-certificates: ABSENT") })
+        assertFalse("second repair must not replace bundle", cfg.repairCaIfMissing(root))
+    }
+
+    @Test fun `repaired CA bundle is readable by non-root guest processes`() {
+        val root = tmpRoot()
+        val host = Files.createTempFile("trusted-host-ca", ".pem").toFile().apply {
+            writeText(TestCaFixtures.isrgRootX1Pem)
+        }
+        assertTrue(RootfsConfigurator(hostCaBundle = { host }).repairCaIfMissing(root))
+        val guest = File(root, "etc/ssl/certs/ca-certificates.crt")
+        val mode = Files.getPosixFilePermissions(guest.toPath())
+        assertTrue("other users must read CA", java.nio.file.attribute.PosixFilePermission.OTHERS_READ in mode)
+        assertTrue("group must read CA", java.nio.file.attribute.PosixFilePermission.GROUP_READ in mode)
+    }
+
+    @Test fun `disabled system CA is not restored from raw system directory`() {
+        val root = tmpRoot()
+        val base = Files.createTempDirectory("android-system-ca-disabled-").toFile()
+        val store = File(base, "cacerts").apply { mkdirs() }
+        File(store, "aaaaaaaa.0").writeText(TestCaFixtures.isrgRootX1Pem)
+        // Android's SystemCertificateSource skips anchors marked in the user's
+        // cacerts-removed dir; a raw directory scan would wrongly trust them.
+        File(base, "cacerts-removed").mkdirs()
+        File(base, "cacerts-removed/aaaaaaaa.0").writeText(TestCaFixtures.isrgRootX1Pem)
+        val cfg = RootfsConfigurator(
+            hostCaBundle = { null },
+            androidSystemCaDirs = { listOf(store) },
+            androidSystemCaRemovedDirs = { listOf(File(base, "cacerts-removed")) }
+        )
+        assertFalse(cfg.repairCaIfMissing(root))
+        assertFalse(File(root, "etc/ssl/certs/ca-certificates.crt").exists())
+    }
+
+    @Test fun `system CA directory without known revocation source is not trusted`() {
+        val root = tmpRoot()
+        val store = Files.createTempDirectory("android-system-ca-unknown-").toFile()
+        File(store, "aaaaaaaa.0").writeText(TestCaFixtures.isrgRootX1Pem)
+        // Unknown removal state must fail closed, not silently trust the anchor.
+        val cfg = RootfsConfigurator(
+            hostCaBundle = { null },
+            androidSystemCaDirs = { listOf(store) },
+            androidSystemCaRemovedDirs = { listOf(null) }
+        )
+        assertFalse(cfg.repairCaIfMissing(root))
+        assertFalse(File(root, "etc/ssl/certs/ca-certificates.crt").exists())
+    }
+
+    @Test fun `CA repair refuses symlink target and does not write outside rootfs`() {
+        val root = tmpRoot()
+        val outside = Files.createTempFile("outside-rootfs-", ".crt").toFile().apply { writeText("external") }
+        val guest = File(root, "etc/ssl/certs/ca-certificates.crt")
+        guest.parentFile.mkdirs()
+        Files.createSymbolicLink(guest.toPath(), outside.toPath())
+        val cfg = RootfsConfigurator(
+            dnsServers = { listOf("10.0.0.1") }, hostCaBundle = { outside }
+        )
+        assertFalse(cfg.repairCaIfMissing(root))
+        assertEquals("external", outside.readText())
+    }
+
     @Test fun `ca bundle copied when host provides one`() {
         val hostCa = Files.createTempFile("t72-ca", ".pem").toFile().apply {
-            writeText("-----BEGIN CERTIFICATE-----\nfakebundle\n-----END CERTIFICATE-----\n")
+            writeText(TestCaFixtures.isrgRootX1Pem)
         }
         val root = tmpRoot()
         val cfg = RootfsConfigurator(
@@ -163,6 +312,99 @@ class RootfsConfiguratorTest {
         // 只断言环境无关的路径：rootfs 目录不存在 → 恒 no-op 不抛错。
         val cfg = RootfsConfigurator(dnsServers = { emptyList() })
         assertFalse(cfg.refreshDnsIfChanged(File(root, "nonexistent-dir")))
+    }
+
+    // ═══ 对话实录 #14：宿主补充组 → guest /etc/group 补齐（PRoot 组噪音根因）═══
+
+    @Test fun `supplementary gids are mapped into etc group`() {
+        val root = tmpRoot()
+        // 预置一个真实组，模拟 Ubuntu Base 既有 /etc/group
+        File(root, "etc/group").writeText("root:x:0:\ndaemon:x:1:\n")
+        val cfg = RootfsConfigurator(
+            dnsServers = { listOf("10.0.0.1") },
+            hostSupplementaryGids = { listOf(3003, 9997, 3003, 0, -5) } // 去重 + 非正数过滤
+        )
+        val report = cfg.configure(root)
+        val group = File(root, "etc/group").readText()
+        assertTrue("gid 3003 必须有条目：$group", "g3003:x:3003:" in group)
+        assertTrue("gid 9997 必须有条目：$group", "g9997:x:9997:" in group)
+        assertTrue("既有条目必须保留", "root:x:0:" in group)
+        assertTrue("action logged", report.actions.any { it.startsWith("group: added") })
+    }
+
+    @Test fun `group additions are idempotent across reconfigure`() {
+        val root = tmpRoot()
+        val cfg1 = RootfsConfigurator(
+            dnsServers = { listOf("10.0.0.1") },
+            hostSupplementaryGids = { listOf(3003, 9997) }
+        )
+        cfg1.configure(root)
+        val cfg2 = RootfsConfigurator(
+            dnsServers = { listOf("10.0.0.1") },
+            hostSupplementaryGids = { listOf(3003, 9997) }
+        )
+        val report2 = cfg2.configure(root)
+        val group = File(root, "etc/group").readText()
+        assertEquals("幂等：重复 configure 不得重复追加", 1, group.lines().count { it.startsWith("g3003:") })
+        assertTrue("应报告 already mapped", report2.actions.any { it.startsWith("group: all") })
+    }
+
+    @Test fun `buildGroupAdditions skips existing gids and filters invalid ones`() {
+        val existing = "root:x:0:\ninet:x:3003:\n"
+        // 3003 已存在（真实组名 inet）→ 跳过；3004/0/负数 → 过滤
+        val additions = RootfsConfigurator.buildGroupAdditions(existing, listOf(3003, 3004, 0, -1, 3004))
+        assertEquals(listOf("g3004:x:3004:"), additions)
+        // 空内容 → 全部缺失的都补
+        assertEquals(
+            listOf("g3003:x:3003:", "g9997:x:9997:"),
+            RootfsConfigurator.buildGroupAdditions("", listOf(3003, 9997))
+        )
+    }
+
+    @Test fun `no gids injected means no group action`() {
+        val root = tmpRoot()
+        val report = RootfsConfigurator(dnsServers = { listOf("10.0.0.1") }).configure(root)
+        assertFalse("未注入 gid 时不应有 group 动作", report.actions.any { it.startsWith("group:") })
+        assertFalse(File(root, "etc/group").exists())
+    }
+
+    @Test fun `parseSupplementaryGids reads Groups line from proc status`() {
+        // 实录同款样本：PRoot 环境实测刷屏的 6 个宿主补充组 gid
+        val status = listOf(
+            "Name:\tcom.apex.agent",
+            "State:\tS (sleeping)",
+            "Tgid:\t12345",
+            "Pid:\t12345",
+            "PPid:\t1234",
+            "TracerPid:\t0",
+            "Uid:\t1079\t1079\t1079\t1079",
+            "Gid:\t1079\t1079\t1079\t1079",
+            "Groups:\t1079 3003 9997 20494 50494 99909997",
+            "FDSize:\t128",
+            "VmPeak:\t 1234567 kB"
+        ).joinToString("\n")
+        assertEquals(
+            listOf(1079, 3003, 9997, 20494, 50494, 99909997),
+            RootfsConfigurator.parseSupplementaryGids(status)
+        )
+    }
+
+    @Test fun `parseSupplementaryGids tolerates missing and malformed input`() {
+        // 无 Groups 行（极简容器环境）→ 空列表
+        assertEquals(emptyList<Int>(), RootfsConfigurator.parseSupplementaryGids("Name:\tx\n"))
+        // 空内容 / 单独一个 Groups 空值
+        assertEquals(emptyList<Int>(), RootfsConfigurator.parseSupplementaryGids(""))
+        assertEquals(emptyList<Int>(), RootfsConfigurator.parseSupplementaryGids("Groups:\t"))
+        // 混入非数字 token → 过滤，不抛错
+        assertEquals(
+            listOf(3003),
+            RootfsConfigurator.parseSupplementaryGids("Groups:\t3003 abc 9997x")
+        )
+        // 重复 gid → 去重
+        assertEquals(
+            listOf(3003, 9997),
+            RootfsConfigurator.parseSupplementaryGids("Groups:\t3003 9997 3003")
+        )
     }
 }
 

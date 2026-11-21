@@ -12,13 +12,13 @@ import com.apex.agent.core.tools.toolSchema
 import java.io.File
 
 /**
- * # code_check — 进程内即时诊断（Issue #148）
+ * # CodeCheck — 进程内即时诊断（Issue #148）
  *
  * 对工作区内单个文件跑轻量诊断引擎 [CodeDiagnostics]（JSON/XML 语法、括号
  * 配平、缩进一致性、Markdown 链接），毫秒级返回 —— 把"改完想知道有没有写错"
  * 从"跑一次构建"降为一次本地扫描。
  *
- * 与 code_edit / code_write 的自动回注互补：那是写入成功后自动附加发现，
+ * 与 CodeEdit / CodeWrite 的自动回注互补：那是写入成功后自动附加发现，
  * 本工具面向**显式**检查任意文件（包括未启用回注链路的会话）。只读、无副作用。
  *
  * 超过 512KB 的文件只诊断前 512KB 并附注说明；文件不存在时给出同目录相似名
@@ -28,7 +28,7 @@ class CodeCheckTool(
     private val roots: CodeWorkspaceRoots,
     private val diagnostics: CodeDiagnostics = CodeDiagnostics()
 ) : BaseTool(
-    id = "code_check",
+    id = "CodeCheck",
     name = "Code Check",
     description = """
         Run instant in-process diagnostics (JSON/XML syntax, bracket balance,
@@ -70,7 +70,7 @@ class CodeCheckTool(
             return ToolResult.fail(ToolErrorCode.NOT_FOUND, buildNotFoundMessage(root, file, path))
         }
         if (file.isDirectory) {
-            return ToolResult.fail(ToolErrorCode.INVALID_ARGUMENT, "not a file: $path — code_check diagnoses a single file")
+            return ToolResult.fail(ToolErrorCode.INVALID_ARGUMENT, "not a file: $path — CodeCheck diagnoses a single file")
         }
         if (!file.canRead()) {
             return ToolResult.fail(ToolErrorCode.PERMISSION_DENIED, "cannot read: $path")

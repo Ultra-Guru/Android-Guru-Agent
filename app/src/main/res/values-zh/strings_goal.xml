@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- S1 Goal 目标模式字符串（中文镜像；英文默认在 values/strings_goal.xml）。 -->
+<resources>
+
+    <!-- ═══ 设定弹层（GoalSetupSheet）═══ -->
+    <string name="goal_setup_title">设定目标</string>
+    <string name="goal_statement_label">目标陈述</string>
+    <string name="goal_statement_placeholder">修复登录页崩溃</string>
+    <string name="goal_setup_empty_statement">目标陈述不能为空</string>
+    <string name="goal_criteria_label">完成条件（可验证）</string>
+    <string name="goal_criteria_placeholder">所有测试通过（./gradlew test 零失败）\n应用能正常启动到主页</string>
+    <string name="goal_criteria_hint">条件必须可客观验证——验收器按证据（命令输出/文件内容/测试结果）判定，不接受「应该没问题」。每行一条：验收器逐条判定，状态卡逐条展示结果。</string>
+    <string name="goal_setup_empty_criteria">完成条件不能为空</string>
+    <string name="goal_max_rounds">最大验收轮次</string>
+    <string name="goal_start">开始目标</string>
+    <string name="goal_how_it_works">工作方式</string>
+    <string name="goal_how_it_works_body">目标按状态机推进：前置澄清（完全自主 + 集中澄清）→ 规格就绪 → 执行 → 验收 → 达成 / 阻塞。每轮收尾后由快速模型逐条对照条件验收，未达标自动续跑并注入差距说明，直到达标或轮次耗尽。</string>
+
+    <!-- ═══ 状态卡（GoalStatusCard）═══ -->
+    <string name="goal_status_active">进行中</string>
+    <string name="goal_status_achieved">已达成</string>
+    <string name="goal_status_stopped">已停止</string>
+    <string name="goal_rounds_progress">第 %1$d/%2$d 轮</string>
+    <string name="goal_last_check_none">尚未验收</string>
+    <string name="goal_stop">停止目标</string>
+    <string name="goal_resume">重启目标</string>
+    <string name="goal_cd_goal_status">目标状态卡</string>
+
+    <!-- ═══ 会话内系统提示（CodeGoalController）═══ -->
+    <string name="goal_started_notice">目标已设定：%1$s</string>
+    <string name="goal_stopped_notice">目标已停止</string>
+    <string name="goal_restart_notice">目标已重启，继续推进</string>
+
+    <!-- ═══ perf P0-3 UI 消息滑动窗口折叠摘要 ═══ -->
+    <string name="code_messages_folded_fmt">早期 %1$d 条消息已折叠，近期对话完整保留；完整历史在会话快照中</string>
+    <string name="settings_page_migrated">页面「%1$s」已迁移或不存在。</string>
+    <string name="settings_show_api_key">显示 API Key</string>
+    <string name="settings_hide_api_key">隐藏 API Key</string>
+    <string name="settings_corrupt_banner">部分配置文件读取失败——原始数据已保留，相关域已暂停写入；可导出诊断或从备份恢复。</string>
+    <string name="settings_profile_copy_suffix">%1$s（副本）</string>
+    <string name="settings_num_err_empty">数值为空。</string>
+    <string name="settings_num_err_nan">不是有效数字。</string>
+    <string name="settings_num_err_range_fmt">超出范围（%1$d – %2$d）。</string>
+    <string name="settings_hook_op_failed">操作失败。</string>
+    <string name="settings_prompt_preset_label">提示词预设</string>
+    <string name="settings_preset_android">Android 专家</string>
+    <string name="settings_preset_coding">Coding 智能体</string>
+    <string name="settings_preset_automation">自动化智能体</string>
+    <string name="settings_preset_custom">自定义</string>
+    <string name="settings_preset_overwrite_title">覆盖自定义提示词？</string>
+    <string name="settings_preset_overwrite_warn">当前自定义前缀将被预设替换，此操作不可撤销。</string>
+    <string name="settings_preset_overwrite_ok">覆盖</string>
+    <string name="settings_rate_limit_field_friendly">限速友好模式</string>
+    <string name="settings_rate_limit_field_interval">最小请求间隔（毫秒）</string>
+    <string name="settings_rate_limit_field_payload">高信息密度载荷</string>
+    <string name="settings_rate_limit_field_parallel">工具调用并行度</string>
+    <string name="settings_rate_limit_restart_hint">注意：工具调用并行度需重启应用生效（DI 快照）。</string>
+    <string name="settings_rate_limit_applied">推荐组合已应用。</string>
+    <string name="settings_rate_limit_undo">撤销</string>
+    <string name="search_dispatch_failed">服务动作派发失败——请重试。</string>
+    <string name="search_clear_done">本地搜索组件已清除。</string>
+    <string name="search_clear_failed">本地搜索组件清除失败。</string>
+    <!-- ═══ PR1 导航注册表:分组 / 页面摘要 / 生效·作用域 ═══ -->
+    <string name="settings_group_model">模型与连接</string>
+    <string name="settings_group_agent">代理与安全</string>
+    <string name="settings_group_appearance">外观与交互</string>
+    <string name="settings_group_services">扩展与服务</string>
+    <string name="settings_group_system">数据与系统</string>
+    <string name="settings_page_connection">连接与档案</string>
+    <string name="settings_page_theme">主题与风格</string>
+    <string name="settings_page_chat">聊天显示</string>
+    <string name="settings_page_skins">部件皮肤</string>
+    <string name="settings_page_background">自定义背景</string>
+    <string name="settings_page_extensions">扩展同步</string>
+    <string name="settings_page_diagnostics">诊断与高级</string>
+    <string name="settings_summary_connection">服务商账号、API Key、模型档案与连接测试</string>
+    <string name="settings_summary_generation">采样、长度限制与高级请求项</string>
+    <string name="settings_summary_reasoning">推理档位与思考预算（按档案）</string>
+    <string name="settings_summary_context">上下文窗口大小与预留（按档案）</string>
+    <string name="settings_summary_tools">工具调用、选择模式、并行与超时</string>
+    <string name="settings_summary_network">网络超时、重试策略与流式</string>
+    <string name="settings_summary_prompt">系统提示词前缀与预设模板</string>
+    <string name="settings_summary_coding">编码工位行为：输出方式、并行度与 MCP 隔离</string>
+    <string name="settings_summary_subagent">子代理预算与自定义类型</string>
+    <string name="settings_summary_goal">目标验收器与默认轮数</string>
+    <string name="settings_summary_permissions">工具权限模式与规则</string>
+    <string name="settings_summary_policy">终端命令黑白名单</string>
+    <string name="settings_summary_rules">全局与项目行为规则</string>
+    <string name="settings_summary_hooks">声明式生命周期钩子</string>
+    <string name="settings_summary_theme">界面风格、主题模式、色板、字号与语言</string>
+    <string name="settings_summary_chat">时间戳与发送键行为</string>
+    <string name="settings_summary_skins">部件玻璃皮肤、预设与光晕</string>
+    <string name="settings_summary_background">自定义壁纸与纱罩</string>
+    <string name="settings_summary_notifications">任务完成提醒与系统渠道</string>
+    <string name="settings_summary_github">GitHub 连接状态与默认仓库</string>
+    <string name="settings_summary_search">本地 SearXNG 引擎、状态与诊断</string>
+    <string name="settings_summary_memory">对话记忆摄取</string>
+    <string name="settings_summary_extensions">启动时的市场扩展自动同步</string>
+    <string name="settings_summary_keepAlive">终端后台服务保活</string>
+    <string name="settings_summary_backup">备份导出、恢复与校验</string>
+    <string name="settings_summary_update">自动更新检查与镜像选择</string>
+    <string name="settings_summary_diagnostics">全局引擎旋钮：压缩、限速、工作区、引导</string>
+    <string name="settings_ext_autosync_label">启动时自动同步扩展</string>
+    <string name="settings_ext_autosync_desc">启动时评估已装扩展源；未经确认不安装任何内容</string>
+    <string name="settings_ext_marketlinks_hint">各市场源链接在市场页管理（后续版本并入设置）。</string>
+    <string name="settings_quick_title">常用与最近</string>
+    <string name="settings_quick_onboarding">建议配置</string>
+    <string name="settings_group_page_count_fmt">%1$d 个页面</string>
+    <string name="settings_meta_sections_fmt">本页 %1$d 个分区</string>
+    <string name="settings_scope_danger">谨慎操作</string>
+    <string name="settings_favorite_add">加入常用</string>
+    <string name="settings_favorite_remove">移出常用</string>
+    <string name="settings_search_hint">搜索设置（支持 key:字段名）</string>
+    <string name="settings_search_no_result">没有匹配的设置项。</string>
+    <string name="settings_effective_immediate">立即生效</string>
+    <string name="settings_effective_next_run">下一轮生效</string>
+    <string name="settings_effective_next_session">新会话生效</string>
+    <string name="settings_effective_restart">需重启应用</string>
+    <string name="settings_scope_profile">当前档案</string>
+    <string name="settings_scope_global">全局</string>
+    <string name="settings_scope_device">本机</string>
+    <string name="settings_scope_account">账号</string>
+    <string name="settings_section_expanded">已展开</string>
+    <string name="settings_section_collapsed">已折叠</string>
+    <string name="settings_dropdown_unknown">未知（保留原值）</string>
+    <string name="settings_notif_open_failed">打开系统通知设置失败。</string>
+    <string name="settings_background_persist_warning">所选图片的持久授权失败——重启后可能需要重新选择背景。</string>
+    <string name="settings_tabs_desc">设置标签</string>
+    <string name="settings_related_compression">相关设置：上下文压缩（全局）→ 诊断与高级</string>
+    <string name="settings_related_rate_limit">相关设置：限速友好（全局）→ 诊断与高级</string>
+    <string name="settings_header_key">Header</string>
+    <string name="settings_header_value">Value</string>
+    <string name="settings_header_delete">删除该头</string>
+    <string name="settings_header_add">添加头</string>
+    <string name="settings_header_key_invalid">头名非法（仅允许 RFC 7230 token 字符）。</string>
+</resources>
+
+
+
+
+

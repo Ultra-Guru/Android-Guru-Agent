@@ -1,4 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- 终端模块无需额外权限，PTY通过forkpty()在进程内创建 -->
+
+    <!-- T91（D2-D4）：terminal IPC 前台服务（specialUse 类型）。权限在宿主 app
+         清单已声明（FOREGROUND_SERVICE / FOREGROUND_SERVICE_SPECIAL_USE / POST_NOTIFICATIONS）；
+         此处重复声明仅为库模块自包含 —— manifest 合并器按同节点去重，无副作用。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application>
+        <!-- T91（D2-D4）：跨进程终端服务 —— UI 经 bindService(ITerminalService) 访问，
+             ACTION_START 升前台（specialUse：PTY 会话 + Ubuntu 依赖安装的长时运行）。
+             exported=false：仅宿主进程内/同 App 消费；多进程路线见
+             docs/terminal/TERMINAL_IPC_SERVICE_T91.md（契约已预留，未启用）。 -->
+        <service
+            android:name="com.apex.agent.platform.terminal.service.TerminalService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="terminal runtime host — persistent PTY sessions and Ubuntu provisioning tasks" />
+        </service>
+    </application>
 </manifest>

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -32,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -39,11 +41,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -57,10 +61,17 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import coil.compose.AsyncImage
+import com.apex.agent.R
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+
+/** Markdown 重解析合窗（毫秒）：流式 token 风暴下窗口内的变更塌缩为一次解析。 */
+private const val MARKDOWN_PARSE_DEBOUNCE_MS = 50L
 
 /**
  * 聊天气泡内联 Markdown 渲染器。
- * 终端原生审美：行内代码用等宽 + 霓虹底，代码块用独立深色容器 + 语言标签 + 复制。
+ * 终端原生审美：行内代码用等宽 + 强调色弱底，代码块用独立深色容器 + 语言标签 + 复制。
  *
  * 多模态输出：模型生成的图片（![alt](url)）用 Coil 渲染，点击进
  * [ImageLightbox]；视频（<video src> / 视频扩展名 URL）渲染为视频卡
@@ -73,12 +84,35 @@ fun MarkdownText(
     onImageClick: (String) -> Unit = {},
     onLinkClick: ((String) -> Unit)? = null
 ) {
-    val nodes = remember(markdown) { parseMarkdown(markdown) }
+    // perf-anr-20261115：parseMarkdown 是超线性 CPU 活（逐行 trim + 多 Regex
+    // 全文扫描），原先在主线程 remember 内同步执行 —— 长任务流式期间全量
+    // 文本逐 token 重解析，真机实测 88s 进程寿命主线程烧 85s CPU → input
+    // dispatch ANR → 进程被杀（用户感知为"闪退"；重进后首帧重解析同一全
+    // 文再次 ANR，故"重进仍闪退"）。修复 = 解析迁 Default 线程 + 合窗：
+    // ① 主线程永不阻塞（ANR 根除）；② delay 是挂起点，合窗内新 token 取
+    // 消旧任务，窗口结束只按最新全文解析一次；③ produceState 的 state 跨
+    // 键存活，重解析期间旧结果保持显示，小文本亚毫秒完成无感。
+    val nodes by produceState<List<MarkdownNode>>(emptyList(), markdown) {
+        delay(MARKDOWN_PARSE_DEBOUNCE_MS)
+        value = withContext(Dispatchers.Default) { parseMarkdown(markdown) }
+    }
     Column(modifier = modifier.fillMaxWidth()) {
         nodes.forEach { node ->
             when (node) {
                 is MarkdownNode.Paragraph -> {
-                    val annotated = buildInline(node.segments)
+                    // perf-20261114：行内构建记忆化 —— 旧实现每次重组都重建
+                    // AnnotatedString（流式期间同卡其它段落/父级任何重组都会
+                    // 连带重建全部段落的行内样式串）。键 = 段落内容 + 主题色，
+                    // 未变段落零重建。
+                    val codeBg = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                    val codeFg = MaterialTheme.colorScheme.onPrimaryContainer
+                    val linkColor = MaterialTheme.colorScheme.primary
+                    val boldColor = MaterialTheme.colorScheme.onSurface
+                    val annotated = remember(
+                        node.segments, codeBg, codeFg, linkColor, boldColor
+                    ) {
+                        buildInline(node.segments, codeBg, codeFg, linkColor, boldColor)
+                    }
                     var textLayout by remember(annotated) { mutableStateOf<TextLayoutResult?>(null) }
                     val context = LocalContext.current
                     Text(
@@ -183,13 +217,16 @@ fun MarkdownText(
 }
 
 /**
- * 行内片段 → AnnotatedString。
- * 行内代码用等宽+霓虹底 span；链接带下划线 + "URL" annotation（点击命中）。
+ * 行内片段 → AnnotatedString（纯函数，perf-20261114 起由调用方 remember）。
+ * 行内代码用等宽+强调色弱底 span；链接带下划线 + "URL" annotation（点击命中）。
  */
-@Composable
-private fun buildInline(segments: List<InlineSegment>): AnnotatedString {
-    val codeBg = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-    val codeFg = MaterialTheme.colorScheme.onPrimaryContainer
+private fun buildInline(
+    segments: List<InlineSegment>,
+    codeBg: Color,
+    codeFg: Color,
+    linkColor: Color,
+    boldColor: Color
+): AnnotatedString {
     return buildAnnotatedString {
         segments.forEach { seg ->
             when (seg) {
@@ -203,14 +240,14 @@ private fun buildInline(segments: List<InlineSegment>): AnnotatedString {
                 ) { append(" ${seg.text} ") }
 
                 is InlineSegment.Bold -> withStyle(
-                    SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    SpanStyle(fontWeight = FontWeight.Bold, color = boldColor)
                 ) { append(seg.text) }
 
                 is InlineSegment.Link -> {
                     pushStringAnnotation("URL", seg.url)
                     withStyle(
                         SpanStyle(
-                            color = MaterialTheme.colorScheme.primary,
+                            color = linkColor,
                             textDecoration = TextDecoration.Underline
                         )
                     ) { append(seg.text) }
@@ -283,7 +320,8 @@ private fun VideoCard(url: String) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.PlayArrow,
-                            contentDescription = "播放视频",
+                            // #280：硬编码中文收编 R.string（原 "播放视频"）
+                            contentDescription = stringResource(R.string.chat_cd_play_video),
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.size(28.dp)
                         )
@@ -298,7 +336,8 @@ private fun VideoCard(url: String) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "视频",
+                        // #280：硬编码中文收编 R.string（原 "视频"）
+                        text = stringResource(R.string.chat_media_video_label),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -311,16 +350,18 @@ private fun VideoCard(url: String) {
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+                // #271：48dp 触区红线（原 36dp，UI-012 同款修复）
                 IconButton(
                     onClick = {
                         if (url.startsWith("http")) FileOpener.openUrl(context, url)
                         else FileOpener.openFile(context, url, "video/mp4")
                     },
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.OpenInNew,
-                        contentDescription = "打开视频",
+                        // #280：硬编码中文收编 R.string（原 "打开视频"）
+                        contentDescription = stringResource(R.string.chat_cd_open_video),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(16.dp)
                     )
@@ -378,7 +419,7 @@ private fun PendingMediaCard() {
 }
 
 /**
- * 独立代码块：深色容器 + 霓虹左条 + 语言标签 + 复制按钮（复制后短暂对勾）。
+ * 独立代码块：深色容器 + 强调色左条 + 语言标签 + 复制按钮（复制后短暂对勾）。
  */
 @Composable
 private fun CodeBlock(lang: String, code: String) {
@@ -422,16 +463,19 @@ private fun CodeBlock(lang: String, code: String) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f)
                 )
+                // #271：48dp 触区红线（原 28dp，UI-012 同款修复；代码块头部行高略增）
                 IconButton(
                     onClick = {
                         clipboardManager.setText(AnnotatedString(code))
                         copied = true
                     },
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                 ) {
                     Icon(
                         imageVector = if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
-                        contentDescription = if (copied) "已复制" else "复制代码",
+                        // #280：硬编码中文收编 R.string（原 "已复制"/"复制代码"）
+                        contentDescription = if (copied) stringResource(R.string.chat_cd_copied)
+                        else stringResource(R.string.chat_cd_copy_code),
                         modifier = Modifier.size(16.dp),
                         tint = if (copied) MaterialTheme.colorScheme.primary
                         else MaterialTheme.colorScheme.onSurfaceVariant
@@ -439,7 +483,7 @@ private fun CodeBlock(lang: String, code: String) {
                 }
             }
 
-            // 代码主体（等宽 + 横向滚动 + 左侧霓虹装饰条）
+            // 代码主体（等宽 + 横向滚动 + 左侧强调色装饰条）
             Box(
                 modifier = Modifier
                     .fillMaxWidth()

@@ -2,7 +2,6 @@
 #include <string>
 #include <vector>
 #include "pty_engine.h"
-#include "ansi_filter.h"
 
 using namespace apex;
 
@@ -171,35 +170,6 @@ Java_com_apex_agent_platform_terminal_NativePty_nativeReadBytes(
         env->SetIntArrayRegion(statusOut, 0, 3, status);
     }
     return result;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Legacy String 通道 —— 仅为 ABI 兼容保留（P70 起生产路径不再使用，
-// Kotlin 侧已标注 @Deprecated）。语义缺陷见上方 P70 注释。
-// ═══════════════════════════════════════════════════════════════════════════
-
-JNIEXPORT jboolean JNICALL
-Java_com_apex_agent_platform_terminal_NativePty_nativeWrite(
-    JNIEnv* env, jobject, jint sessionId, jstring data) {
-    std::string dataStr = jniGetString(env, data);
-    return PtyEngine::instance().writeLine(sessionId, dataStr);
-}
-
-JNIEXPORT jboolean JNICALL
-Java_com_apex_agent_platform_terminal_NativePty_nativeWriteRaw(
-    JNIEnv* env, jobject, jint sessionId, jstring data) {
-    std::string dataStr = jniGetString(env, data);
-    return PtyEngine::instance().write(sessionId, dataStr.c_str(), dataStr.size());
-}
-
-JNIEXPORT jstring JNICALL
-Java_com_apex_agent_platform_terminal_NativePty_nativeRead(
-    JNIEnv* env, jobject, jint sessionId, jint maxBytes, jboolean stripAnsi) {
-    std::string raw = PtyEngine::instance().read(sessionId, maxBytes);
-    if (stripAnsi) {
-        raw = AnsiFilter::strip(raw);
-    }
-    return env->NewStringUTF(raw.c_str());
 }
 
 JNIEXPORT jboolean JNICALL

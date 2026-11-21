@@ -1,4 +1,4 @@
-package com.apex.agent.platform.terminal.exec
+package com.apex.agent.platform.TerminalExec
 
 /**
  * Agent 视角的终端输出净化器（Kotlin 版 ansi_filter.h 的超集）。
@@ -161,7 +161,7 @@ object AnsiSanitizer {
      * CSI 擦除类序列的行内投影：`K`（EL，擦除行内）与 `J`（ED，擦除显示）。
      *
      * 只实现"影响当前行"的部分 —— 这个净化器没有光标寻址（CUP/CUU…）能力，
-     * 全屏重绘型 TUI 本就不该走一次性 exec 通道（那是 terminal.run 的活）。
+     * 全屏重绘型 TUI 本就不该走一次性 exec 通道（那是 TerminalRun 的活）。
      */
     private fun applyErase(
         input: String,

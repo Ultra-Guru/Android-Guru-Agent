@@ -63,23 +63,41 @@ data class HostAuditEntry(
  * - 每请求一连接（`Connection: close`），畸形请求一律结构化 4xx 应答，
  *   单连接异常绝不外抛、不影响服务。
  *
- * 安全三重门（按序）：
- * 1. **Bearer Token 常时比较**（[MessageDigest.isEqual] 防时序攻击；未配置
- *    token = 拒绝所有外部请求，fail-closed）；
- * 2. **限速**（每远程地址每分钟请求数，固定窗口计数）；
- * 3. **白名单 + 权限门**（[McpHostBridge]：分类白名单 / 工具黑名单 /
- *    vault 硬拦截 → v3 执行管线的环境门/权限门/风险门）。
+ * 安全四重门（按序，S-04 收窄暴露面）：
+ * 1. **绑定面**：默认只绑 loopback（127.0.0.1）—— 局域网暴露（0.0.0.0）
+ *    需配置 [McpHostConfig.allowLan] 显式开启（UI 带明文 HTTP 风险警示）；
+ * 2. **Bearer Token 常时比较**（[MessageDigest.isEqual] 防时序攻击；未配置
+ *    token = 拒绝所有外部请求，fail-closed）—— **分发层常时鉴权**：
+ *    GET / DELETE / 未知方法与 POST 同样先过 token（S-04 修复：旧实现
+ *    仅 POST 鉴权，未授权 DELETE 可直接删除任意会话）；
+ * 3. **限速**（每远程地址每分钟请求数，固定窗口计数，全方法适用）；
+ * 4. **白名单 + 权限门**（[McpHostBridge]：分类白名单 / 工具黑名单 /
+ *    HIGH 风险永禁 / 写类默认不暴露 / vault 硬拦截 → v3 执行管线的
+ *    环境门/权限门/风险门）。
  */
 class McpHostServer(
     private val configProvider: () -> McpHostConfig,
     private val bridge: McpHostBridge,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    /**
+     * S-04：serverInfo.version 注入值 —— app 层传 BuildConfig.VERSION_NAME，
+     * 消除 SERVER_VERSION 常量与 versionName 的硬编码漂移（曾 1.4.4 vs 1.5）。
+     * 缺省回落常量（纯 JVM 测试 / 未接线宿主）。
+     */
+    private val serverVersion: String = SERVER_VERSION
 ) {
 
     companion object {
         /** 支持的 MCP 协议版本（spec 2024-11-05 —— streamable HTTP 引入版）。 */
         const val PROTOCOL_VERSION = "2024-11-05"
         const val SERVER_NAME = "android-guru-agent"
+
+        /**
+         * serverInfo.version 缺省值（未注入 [McpHostServer.serverVersion] 时）。
+         * S-04：app 层经构造参数注入 BuildConfig.VERSION_NAME —— 本常量仅作
+         * 纯 JVM 测试 / 未接线宿主的回落，不再是线上事实源（曾与 versionName
+         * 漂移：1.4.4 vs 1.5）。
+         */
         const val SERVER_VERSION = "1.4.4"
         const val ENDPOINT_PATH = "/mcp"
 
@@ -113,6 +131,16 @@ class McpHostServer(
     private val _isRunning = MutableStateFlow(false)
     val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
 
+    /**
+     * 真实监听地址（单一事实源）：值即 [start] 实际传给
+     * `InetAddress.getByName()` 的绑定参数（"127.0.0.1" / "0.0.0.0"）。
+     * ServerSocket 构造成功后写入；[stop] 清 null；未监听 / 启动失败
+     * （端口占用抛异常）保持 null。UI 地址行与连接指引都读这份流，
+     * 不再用 allowLan 配置反推 —— 那是「配置意图」而非「绑定事实」。
+     */
+    private val _bindHost = MutableStateFlow<String?>(null)
+    val bindHost: StateFlow<String?> = _bindHost.asStateFlow()
+
     private val _sessions = MutableStateFlow<List<HostSessionInfo>>(emptyList())
     val sessions: StateFlow<List<HostSessionInfo>> = _sessions.asStateFlow()
 
@@ -143,9 +171,13 @@ class McpHostServer(
         synchronized(stateLock) {
             if (_isRunning.value) return
             val config = configProvider()
-            val socket = ServerSocket(config.effectivePort, 50, InetAddress.getByName("0.0.0.0"))
+            // S-04：默认 loopback —— 局域网暴露（0.0.0.0）须 allowLan 显式开启。
+            val bindAddress = if (config.allowLan) "0.0.0.0" else "127.0.0.1"
+            val socket = ServerSocket(config.effectivePort, 50, InetAddress.getByName(bindAddress))
             serverSocket = socket
             _isRunning.value = true
+            // 绑定事实（构造成功才写；端口被占用抛异常时保持 null）
+            _bindHost.value = bindAddress
             serverJob = scope.launch(Dispatchers.IO + SupervisorJob()) {
                 launch { acceptLoop(socket) }
                 // P2：空闲会话/陈旧限速器周期扫描（serverJob 取消时连带取消）
@@ -158,6 +190,7 @@ class McpHostServer(
     fun stop() {
         synchronized(stateLock) {
             _isRunning.value = false
+            _bindHost.value = null
             runCatching { serverSocket?.close() }
             serverSocket = null
             serverJob?.cancel()
@@ -222,13 +255,32 @@ class McpHostServer(
         }
     }
 
-    /** 路由：路径与方法分发。 */
+    /** 路由：路径 → 鉴权/限速（全方法）→ 方法分发。 */
     private suspend fun route(remote: String, request: HttpRequest, started: Long): HttpResponse {
         val path = request.path.substringBefore('?')
         if (path != ENDPOINT_PATH) {
             audit(remote, request.method, null, 404, started)
             return HttpCodec.error(404, "not_found", "Unknown path: only $ENDPOINT_PATH is served")
         }
+
+        // ── S-04：分发层常时鉴权（全方法）──
+        // 旧实现仅 POST 分支鉴权：未授权 DELETE /mcp 可直接删除任意会话、
+        // GET 与未知方法零鉴权。现 GET / DELETE / 未知方法与 POST 统一先过
+        // Bearer（常时比较；未配置 token = 拒绝所有，fail-closed）。
+        val config = configProvider()
+        if (!authorized(request.bearerToken, config.token)) {
+            audit(remote, request.method, null, 401, started)
+            return HttpCodec.error(401, "unauthorized", "Missing or invalid bearer token")
+        }
+
+        // ── 限速（全方法，S-04 起不再限 POST）：未授权洪水与 GET 探测
+        //    同样消耗发送方的固定窗口额度 ──
+        val limit = config.effectiveRateLimitPerMinute
+        if (!rateLimiters.computeIfAbsent(remote) { WindowCounter(limit) }.tryAcquire()) {
+            audit(remote, request.method, null, 429, started)
+            return HttpCodec.error(429, "rate_limited", "Too many requests; retry later")
+        }
+
         return when (request.method) {
             "POST" -> handlePost(remote, request, started)
             "GET" -> {
@@ -259,22 +311,9 @@ class McpHostServer(
         return HttpCodec.error(404, "session_not_found", "Unknown or missing Mcp-Session-Id")
     }
 
-    /** POST /mcp：Token → 限速 → JSON-RPC 解析 → 方法分发。 */
+    /** POST /mcp：JSON-RPC 解析 → 方法分发（鉴权与限速已上提到 route，全方法生效）。 */
     private suspend fun handlePost(remote: String, request: HttpRequest, started: Long): HttpResponse {
-        // ── ① Bearer Token 常时比较（空 token = 拒绝所有，fail-closed）──
-        val config = configProvider()
-        if (!authorized(request.bearerToken, config.token)) {
-            audit(remote, "POST", null, 401, started)
-            return HttpCodec.error(401, "unauthorized", "Missing or invalid bearer token")
-        }
-        // ── ② 限速（固定分钟窗口）──
-        val limit = config.effectiveRateLimitPerMinute
-        if (!rateLimiters.computeIfAbsent(remote) { WindowCounter(limit) }.tryAcquire()) {
-            audit(remote, "POST", null, 429, started)
-            return HttpCodec.error(429, "rate_limited", "Too many requests; retry later")
-        }
-
-        // ── ③ JSON-RPC 解析 ──
+        // ── ① JSON-RPC 解析 ──
         val rpc = JsonRpc.parseRequest(request.bodyText())
         if (rpc == null) {
             val code = if (runCatching { Json.parseToJsonElement(request.bodyText()) }.isSuccess) {
@@ -289,7 +328,7 @@ class McpHostServer(
             )
         }
 
-        // ── ④ 方法分发 ──
+        // ── ② 方法分发 ──
         return dispatch(remote, rpc, request, started)
     }
 
@@ -378,7 +417,7 @@ class McpHostServer(
             })
             put("serverInfo", buildJsonObject {
                 put("name", SERVER_NAME)
-                put("version", SERVER_VERSION)
+                put("version", serverVersion)
             })
             put(
                 "instructions",
@@ -552,6 +591,9 @@ class McpHostServer(
         try {
             HttpCodec.writeResponse(socket.getOutputStream(), response())
         } catch (_: IOException) {
+            // #260（补档说明）：本模块为纯 JVM（无日志依赖）；503 短路应答写失败
+            // 的唯一成因是对端已断开 —— 尽力而为语义，finally 保证 socket 必关。
+            // 若后续需要观测，可接入 _auditLog（状态码 499/客户端断开约定）。
         } finally {
             runCatching { socket.close() }
         }

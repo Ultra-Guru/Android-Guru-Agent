@@ -1,0 +1,456 @@
+package com.apex.agent.ui.screen.about
+
+import android.widget.Toast
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.apex.agent.R
+import com.apex.agent.update.HotPackage
+import com.apex.agent.update.PatchUpdateEngine
+import com.apex.agent.update.UpdateCenter
+import com.apex.agent.update.UpdateDownloader
+import com.apex.agent.update.UpdateManifest
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+import java.io.File
+
+/**
+ * ═══ 关于页「软件更新」对话框层（v1.4.5 从 AboutUpdatePanel 拆出）═══
+ *
+ * SRP 拆分（1200 行预算合规）：本文件只放「一次性事件对话框」—— 全量包
+ * 下载完成三态（就绪安装 / 安装器失败 / 校验失败）+ 增量流水线三态
+ *（就绪安装 / 已拉起 / 失败双路）+ 热更确认/回滚（S-02）。状态与编排在
+ * [AboutUpdatePanel]，小控件在 [AboutUpdateWidgets]。
+ */
+
+/** 下载完成后的一次性事件（全量包路径；增量路径走 PatchUpdateEngine.State）。 */
+internal sealed interface DownloadFinished {
+
+    /** 全量 APK 下载完成且校验通过 —— 弹「立即安装」确认框。 */
+    data class ApkReady(val file: File) : DownloadFinished
+
+    /** 安装器未能拉起（罕见环境）—— 展示路径让用户手动装。 */
+    data class InstallFailed(val file: File) : DownloadFinished
+
+    /** SHA-256 校验失败 —— 文件不可用。 */
+    data class VerifyFailed(val fileName: String) : DownloadFinished
+}
+
+/**
+ * 全量包下载事件对话框 —— 事件驱动，一次性消费（onDismiss/onLater/onInstall
+ * 回调把结果交还面板状态机）。
+ *
+ * @param event 当前事件（null 时什么都不渲染）
+ * @param manifest 当前命中的更新清单（版本号文案；过期时退化为通用语）
+ * @param downloader 安装器封装（ApkReady 确认键拉起）
+ * @param onLater 「稍后安装」/点外部关闭 —— 登记重入口（file 交还面板）
+ * @param onDismiss 纯关闭（VerifyFailed）
+ * @param onInstallLaunched 安装器拉起成功（面板清事件 + Toast 在本层处理）
+ * @param onInstallFailed 安装器拉起失败（面板转 InstallFailed 事件）
+ */
+@Composable
+internal fun FinishedDownloadDialogs(
+    event: DownloadFinished?,
+    manifest: UpdateManifest?,
+    downloader: UpdateDownloader,
+    onLater: (File) -> Unit,
+    onDismiss: () -> Unit,
+    onInstallLaunched: (File) -> Unit,
+    onInstallFailed: (File) -> Unit
+) {
+    when (event) {
+        is DownloadFinished.ApkReady -> {
+            // 版本号来自当前清单（下载中重查过/清单过期时退化为通用文案）
+            val launchedHint = stringResource(R.string.about_update_installer_launched_toast)
+            val context = LocalContext.current
+            // #819：cache 复制 suspend 化 —— 确认键异步拉起 + 复制期间禁用
+            // 防重入（旧实现主线程同步复制数百 MB，必 ANR）
+            val scope = rememberCoroutineScope()
+            var installing by remember { mutableStateOf(false) }
+            AlertDialog(
+                onDismissRequest = {
+                    // 点外部关闭与「稍后」同义：登记重入口（动作区一键回弹）；
+                    // 复制进行中不可关（协程随组合取消，半截副本就地作废）
+                    if (!installing) onLater(event.file)
+                },
+                title = { Text(stringResource(R.string.settings_about_update_apk_done_title)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            stringResource(
+                                R.string.settings_about_update_apk_done_body,
+                                manifest?.versionName ?: "",
+                                formatMb(event.file.length())
+                            ),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            stringResource(
+                                R.string.settings_about_update_patch_done_saved,
+                                event.file.absolutePath
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                        if (installing) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    stringResource(R.string.about_update_installing),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = !installing,
+                        onClick = {
+                            if (installing) return@TextButton
+                            installing = true
+                            scope.launch {
+                                // 取消单独重抛（不用 runCatching，取消不足失败）
+                                val ok = try {
+                                    downloader.installApk(event.file)
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    false
+                                }
+                                if (ok) {
+                                    Toast.makeText(context, launchedHint, Toast.LENGTH_SHORT).show()
+                                    onInstallLaunched(event.file)
+                                } else {
+                                    onInstallFailed(event.file)
+                                }
+                            }
+                        }
+                    ) {
+                        Text(
+                            stringResource(
+                                if (installing) R.string.about_update_installing
+                                else R.string.about_update_install_now
+                            )
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(enabled = !installing, onClick = { onLater(event.file) }) {
+                        Text(stringResource(R.string.about_update_install_later))
+                    }
+                }
+            )
+        }
+
+        is DownloadFinished.InstallFailed -> AlertDialog(
+            onDismissRequest = { onLater(event.file) },
+            title = { Text(stringResource(R.string.settings_about_update_install_failed_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.settings_about_update_install_failed,
+                        event.file.absolutePath
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { onLater(event.file) }) {
+                    Text(stringResource(R.string.settings_about_update_close))
+                }
+            }
+        )
+
+        is DownloadFinished.VerifyFailed -> AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(stringResource(R.string.settings_about_update_verify_failed_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.settings_about_update_verify_failed_body, event.fileName
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.settings_about_update_close))
+                }
+            }
+        )
+
+        null -> Unit
+    }
+}
+
+/**
+ * 增量流水线对话框：就绪弹安装按钮 / 已拉起安装器 / 失败双路（重试/改全量）。
+ *
+ * @param flow 流水线状态（Downloading/Applying 静默；三终态弹框）
+ * @param manifest 当前命中的更新清单（版本号文案）
+ * @param canRetry 失败框「重试增量」可用性（链可解析时 true）
+ * @param installing 安装器拉起进行中（#819：cache 复制期间确认键禁用 +
+ *   进度提示；false 时行为与旧版一致）
+ * @param installProgress 复制进度 0..100（-1 = indeterminate）
+ * @param onDismiss 「稍后安装」/关闭 —— 面板清中枢终态
+ * @param onInstall 就绪产物 → 系统安装器
+ * @param onRetry 重试增量（沿用同一条链重启流水线）
+ * @param onUseFull 改用全量下载
+ */
+@Composable
+internal fun PatchFlowDialogs(
+    flow: PatchUpdateEngine.State?,
+    manifest: UpdateManifest?,
+    canRetry: Boolean,
+    installing: Boolean = false,
+    installProgress: Int = -1,
+    onDismiss: () -> Unit,
+    onInstall: (File) -> Unit,
+    onRetry: () -> Unit,
+    onUseFull: () -> Unit
+) {
+    when (flow) {
+        // 合成完成且指纹对账通过 —— 用户主导安装时机（下载完弹出的安装按钮）
+        is PatchUpdateEngine.State.Ready -> AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(stringResource(R.string.about_update_install_ready_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        stringResource(
+                            R.string.about_update_install_ready_body,
+                            manifest?.versionName ?: "",
+                            formatMb(flow.sizeBytes)
+                        ),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        flow.apk.absolutePath,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    // #819：cache 复制进度（数百 MB 全量包不再冻结主线程，
+                    // 用户看得见拉起前的复制阶段）
+                    if (installing) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (installProgress >= 0) stringResource(
+                                    R.string.about_update_copy_progress, installProgress
+                                ) else stringResource(R.string.about_update_installing),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !installing,
+                    onClick = { onInstall(flow.apk) }
+                ) {
+                    Text(
+                        stringResource(
+                            if (installing) R.string.about_update_installing
+                            else R.string.about_update_install_now
+                        )
+                    )
+                }
+            },
+            dismissButton = {
+                // 稍后安装：保留 readyPatch 重入口（动作区一键回弹本框）
+                TextButton(enabled = !installing, onClick = onDismiss) {
+                    Text(stringResource(R.string.about_update_install_later))
+                }
+            }
+        )
+
+        is PatchUpdateEngine.State.Installed -> AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text(stringResource(R.string.about_update_patch_done_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        stringResource(R.string.about_update_patch_done_body),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        flow.apk.absolutePath,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.settings_about_update_close))
+                }
+            }
+        )
+
+        is PatchUpdateEngine.State.Failed -> {
+            // 失败原因按类别本地化；detail 只进日志/高级线索
+            val body = when (flow.kind) {
+                PatchUpdateEngine.FailKind.SPACE -> stringResource(
+                    R.string.about_update_patch_failed_space,
+                    // 预检 detail 形如 "need=… free=…"；UI 侧拿不到体积参数时退化为通用语
+                    flow.detail?.substringAfter("need=")?.substringBefore(" ")
+                        ?.toLongOrNull()?.let { formatMb(it) } ?: ""
+                )
+                PatchUpdateEngine.FailKind.DOWNLOAD -> stringResource(
+                    R.string.about_update_patch_failed_download
+                )
+                PatchUpdateEngine.FailKind.VERIFY -> stringResource(
+                    R.string.about_update_patch_failed_verify, flow.detail.orEmpty()
+                )
+                PatchUpdateEngine.FailKind.DECODE -> stringResource(
+                    R.string.about_update_patch_failed_decode, flow.detail.orEmpty()
+                )
+                PatchUpdateEngine.FailKind.PATCH_TOO_LARGE -> stringResource(
+                    R.string.about_update_patch_failed_too_large
+                )
+                PatchUpdateEngine.FailKind.INSTALLER -> stringResource(
+                    R.string.about_update_patch_failed_installer, flow.detail.orEmpty()
+                )
+            }
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = { Text(stringResource(R.string.about_update_patch_failed_title)) },
+                text = {
+                    Text(
+                        body,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                },
+                confirmButton = {
+                    // 重试增量：沿用同一条链重启流水线（可用性由面板判定）
+                    TextButton(onClick = onRetry, enabled = canRetry) {
+                        Text(stringResource(R.string.about_update_patch_retry))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onUseFull) {
+                        Text(stringResource(R.string.about_update_patch_use_full))
+                    }
+                }
+            )
+        }
+
+        else -> Unit
+    }
+}
+
+/**
+ * 热更确认与回滚对话框（S-02：热更内容按代码对待）。
+ *
+ * 自含状态收集（[UpdateCenter.hotConfirmRequest]）—— 面板只需一处调用，
+ * 不占用 AboutUpdatePanel 行预算：
+ * - **确认**：引擎解包复核通过后挂起，[HotPackage.Manifest] 就绪即弹框，
+ *   列出目标版本 + 变更清单（前 8 条路径 + 折叠计数）+ 生效说明；
+ *   确认/取消/点外关闭均经 [UpdateCenter.answerHotConfirmation] 回传引擎；
+ * - **回滚**：回滚到上一代热更内容（backup 位），完成后 Toast 提示；
+ *   无可回滚时按钮不可见（入口在面板 applied 区）。
+ */
+@Composable
+internal fun HotUpdateTrustDialogs(center: UpdateCenter) {
+    val request by center.hotConfirmRequest.collectAsStateWithLifecycle()
+    if (request != null) {
+        HotConfirmDialog(pkg = request!!, onAnswer = center::answerHotConfirmation)
+    }
+}
+
+/** 热更注入确认框（变更清单就绪 → 用户可取消的最终闸门）。 */
+@Composable
+private fun HotConfirmDialog(
+    pkg: HotPackage.Manifest,
+    onAnswer: (Boolean) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = { onAnswer(false) },
+        title = { Text(stringResource(R.string.about_update_hot_confirm_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    stringResource(
+                        R.string.about_update_hot_confirm_body,
+                        pkg.targetVersionName.ifBlank { "?" },
+                        pkg.entries.size
+                    ),
+                    style = MaterialTheme.typography.bodySmall
+                )
+                // 变更清单：前 8 条逐项列出，超出折叠计数（技能/MCP 目录路径）
+                pkg.entries.take(8).forEach { entry ->
+                    Text(
+                        "· ${entry.path}",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                if (pkg.entries.size > 8) {
+                    Text(
+                        stringResource(
+                            R.string.about_update_hot_confirm_more,
+                            pkg.entries.size - 8
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                Text(
+                    stringResource(R.string.about_update_hot_confirm_note),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onAnswer(true) }) {
+                Text(stringResource(R.string.about_update_hot_confirm_apply))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { onAnswer(false) }) {
+                Text(stringResource(R.string.about_update_hot_confirm_cancel))
+            }
+        }
+    )
+}

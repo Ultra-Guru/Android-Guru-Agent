@@ -20,22 +20,21 @@ class TerminalLinuxStatusToolTest {
     @Test fun `tool id is terminal linux status`() {
         // 用 null-safe 方式构造 —— health 参数在 invoke 时才用到，测试只查元数据
         // （构造一个 throwaway health 不现实；改为验证 TerminalLinuxStatusTool 的常量契约）
-        assertEquals("terminal.linux.status", "terminal.linux.status")
+        assertEquals("TerminalLinuxStatus", "TerminalLinuxStatus")
     }
 
     @Test fun `tool id constant matches spec`() {
-        // T76 §20 规定的 4 个 terminal.linux.* 工具 id
+        // T76 §20 规定的 terminal.linux.* 工具 id（P0-#3 后 Bootstrap 已移除，
+        // bootstrap 编排由 TerminalUbuntuEnsure 聚合入口承接）
         val expectedIds = setOf(
-            "terminal.linux.status",
-            "terminal.linux.bootstrap",
-            "terminal.linux.network",
-            "terminal.linux.packages"
+            "TerminalLinuxStatus",
+            "TerminalLinuxNetwork",
+            "TerminalLinuxPackages"
         )
-        assertTrue(expectedIds.contains("terminal.linux.status"))
-        assertTrue(expectedIds.contains("terminal.linux.bootstrap"))
-        assertTrue(expectedIds.contains("terminal.linux.network"))
-        assertTrue(expectedIds.contains("terminal.linux.packages"))
-        assertEquals(4, expectedIds.size)
+        assertTrue(expectedIds.contains("TerminalLinuxStatus"))
+        assertTrue(expectedIds.contains("TerminalLinuxNetwork"))
+        assertTrue(expectedIds.contains("TerminalLinuxPackages"))
+        assertEquals(3, expectedIds.size)
     }
 
     @Test fun `parameters schema for status tool accepts quick boolean`() {
@@ -44,14 +43,6 @@ class TerminalLinuxStatusToolTest {
         val schema = json.parseToJsonElement(schemaStr).jsonObject
         assertEquals("object", schema["type"]!!.jsonPrimitive.content)
         assertNotNull(schema["properties"]!!.jsonObject["quick"])
-    }
-
-    @Test fun `bootstrap tool schema accepts action enum`() {
-        val schemaStr = """{"type":"object","properties":{"action":{"type":"string","enum":["check","start","retry"],"default":"start"},"force":{"type":"boolean","default":false},"timeoutMs":{"type":"integer","default":600000}},"required":[]}"""
-        val schema = json.parseToJsonElement(schemaStr).jsonObject
-        val action = schema["properties"]!!.jsonObject["action"]!!.jsonObject
-        assertEquals("string", action["type"]!!.jsonPrimitive.content)
-        assertNotNull(action["enum"])
     }
 
     @Test fun `network tool schema accepts action enum`() {

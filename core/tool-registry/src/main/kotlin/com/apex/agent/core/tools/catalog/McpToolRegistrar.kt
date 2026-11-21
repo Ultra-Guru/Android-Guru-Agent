@@ -22,6 +22,13 @@ import java.util.concurrent.ConcurrentHashMap
  * Registration runs on the supplied [scope] (IO) because discovery is a
  * network call; unregistration is pure in-memory.
  *
+ * ## v3 作用域打标（单一读取点）
+ *
+ * 服务器级 scope（McpServerConfig.scope，与市场 tier 同源）只在
+ * [registerServer] 里读一次配置表：初始 sweep、[onServerConnected] 与
+ * Supervisor 断线重连全部汇入该函数，注册路径无第二处读配置，
+ * scope 打标天然覆盖全链路；注册表的 REPLACE 替换语义保持不变。
+ *
  * ## 竞态治理（P1：注册/注销竞态）
  *
  * 旧实现「异步注册 vs 同步注销」存在两类竞态：
@@ -57,7 +64,7 @@ class McpToolRegistrar(
         // 旧行为只挂 listener —— 若 MCP 服务器在 registrar 构造**之前**就已
         // 连接（McpModule 的 @Provides 副作用在自持 IO scope 里 ensureAndConnect，
         // 与 provideMcpToolRegistrar 的构造顺序无任何保证），fireConnected 发生在
-        // addSessionListener 之前 → 无人接收 → mcp__github__* / mcp__search__*
+        // addSessionListener 之前 → 无人接收 → McpGithub* / McpSearch*
         // 等一等工具不注册。此前靠 ApexCoreService.onCreate 的全量重连弥补，
         // 但 service 未跑的窗口期（首启竞态）一等 MCP 工具缺失。
         //
@@ -73,11 +80,17 @@ class McpToolRegistrar(
 
     /**
      * Connect/discovery/register a server right now (startup auto-connect,
-     * or after `mcp_connect`). Safe to call repeatedly — REPLACE semantics.
+     * or after `McpConnect`). Safe to call repeatedly — REPLACE semantics.
      */
     suspend fun registerServer(serverName: String) {
         lockFor(serverName).withLock {
-            val tools = manager.listServerTools(serverName)
+            // P1 修复：发现失败 → 保留已注册集合（REPLACE 清算只在成功时做）。
+            // 旧实现把失败当空清单，把该服务器的工具整体注销且不会自动回来。
+            val discovered = manager.listServerTools(serverName)
+            if (discovered.isFailure) {
+                return
+            }
+            val tools = discovered.getOrDefault(emptyList())
             // 竞态防御：discovery 期间（最长 180s）服务器可能已被断开/移除 ——
             // 注销路径（onServerDisconnected）已清理完毕，此处写回即幽灵工具
             //（执行必报 not connected）。校验连接表，不在 → 在途注册作废。
@@ -85,10 +98,16 @@ class McpToolRegistrar(
                 registered.remove(serverName)
                 return
             }
+            // v3 服务器级 scope：与市场 tier 同源的 McpServerConfig.scope，
+            // 在此单一入口读一次配置表（初始 sweep / 连接回调 / Supervisor
+            // 重连都汇入本函数）。快照语义：discovery 期间用户改 scope，下次
+            // 重连生效；配置已删（并发 removeServer）折叠 all，不阻断注册。
+            val serverScope = manager.getConfigs()
+                .firstOrNull { it.name == serverName }?.scope ?: "all"
             val ids = registered.getOrPut(serverName) { ConcurrentHashMap.newKeySet() }
             val fresh = mutableSetOf<String>()
             for (tool in tools) {
-                val mcpTool = McpAgentTool(manager, serverName, tool)
+                val mcpTool = McpAgentTool(manager, serverName, tool, serverScope)
                 registry.register(mcpTool)
                 fresh += mcpTool.id
             }

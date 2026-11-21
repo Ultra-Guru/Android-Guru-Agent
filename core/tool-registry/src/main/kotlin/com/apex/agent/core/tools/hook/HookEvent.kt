@@ -18,7 +18,7 @@ import com.apex.agent.core.tools.ToolArguments
  *    clearHistory）。
  *  - **Stop**：一次 execute 回合（用户输入 → ReAct 循环 → 最终回复）
  *    正常结束；错误/中止路径不触发（与 Claude Code 的 Stop 语义一致）。
- *  - **SubagentStop**：子代理（code_task）回合结束，由装配层在其工具
+ *  - **SubagentStop**：子代理（CodeTask）回合结束，由装配层在其工具
  *    完成处派发，引擎主循环不经手。
  *  - **PreCompact**：上下文压缩即将发生（自动阈值触发与手动压缩共用）。
  *
@@ -56,7 +56,7 @@ sealed interface HookEvent {
     /** 一次 execute 回合正常完成（每轮 Agent 回合结束）。 */
     data class Stop(val sessionId: String) : HookEvent
 
-    /** 子代理（code_task）回合结束。 */
+    /** 子代理（CodeTask）回合结束。 */
     data class SubagentStop(val sessionId: String, val subagentId: String) : HookEvent
 
     /** 上下文压缩即将发生。 */

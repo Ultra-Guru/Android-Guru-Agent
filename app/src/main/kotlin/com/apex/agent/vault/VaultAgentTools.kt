@@ -24,12 +24,12 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * ═══ 金库 Agent 工具集（#167）：vault_list / vault_save / vault_paste / vault_delete ═══
+ * ═══ 金库 Agent 工具集（#167）：VaultList / VaultSave / VaultPaste / VaultDelete ═══
  *
  * 安全契约（工具描述同步写给模型，这里是实现保证）：
- * 1. **Agent 永远看不到明文** —— vault_list 只输出脱敏快照；
- * 2. **vault_save 是 write-only** —— 成功返回仅含 label 与条目 id，写完自己也读不回；
- * 3. **vault_paste 是直投** —— 密钥经剪贴板/终端/HTTP 三通道投出，
+ * 1. **Agent 永远看不到明文** —— VaultList 只输出脱敏快照；
+ * 2. **VaultSave 是 write-only** —— 成功返回仅含 label 与条目 id，写完自己也读不回；
+ * 3. **VaultPaste 是直投** —— 密钥经剪贴板/终端/HTTP 三通道投出，
  *    返回仅含字节数/状态码/脱敏后的响应体，绝不回显内容；
  * 4. 纵深防御：所有工具输出另被 SecretRedactingExecutor 兜底脱敏。
  *
@@ -64,19 +64,19 @@ private fun JsonObject.boolOf(key: String, default: Boolean): Boolean =
 private fun formatTs(epochMs: Long): String =
     SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(epochMs))
 
-// ═════════════════════════ vault_list ═════════════════════════
+// ═════════════════════════ VaultList ═════════════════════════
 
 /**
  * 列出金库条目（脱敏快照）：每行 `- label | note | origin | used Nx | updated <date>`。
- * 只读、LOW 风险 —— Agent 用它发现可用密钥的标签，再用 vault_paste 投递。
+ * 只读、LOW 风险 —— Agent 用它发现可用密钥的标签，再用 VaultPaste 投递。
  */
 class VaultListTool(
     private val repository: VaultRepository
 ) : AgentTool {
-    override val id = "vault_list"
+    override val id = "VaultList"
     override val name = "Vault List"
     override val description = """
-        List entries in the encrypted secret vault. Returns ONLY labels, notes, origin and usage stats — secret contents are NEVER shown to you. Use vault_paste with a label to deliver a secret to the clipboard, a terminal session or an HTTP request without ever seeing it. 列出金库条目（只有标签与备注，永远看不到明文）。
+        List entries in the encrypted secret vault. Returns ONLY labels, notes, origin and usage stats — secret contents are NEVER shown to you. Use VaultPaste with a label to deliver a secret to the clipboard, a terminal session or an HTTP request without ever seeing it. 列出金库条目（只有标签与备注，永远看不到明文）。
     """.trimIndent()
     override val parametersSchema = """{"type":"object","properties":{},"required":[]}"""
 
@@ -91,7 +91,7 @@ class VaultListTool(
         val snaps = repository.snapshots()
         if (snaps.isEmpty()) {
             return "Vault is empty. Ask the user to store secrets in the Vault screen " +
-                "(drawer → Vault), then re-run vault_list."
+                "(drawer → Vault), then re-run VaultList."
         }
         return buildString {
             appendLine("Vault entries (${snaps.size}) — contents are never revealed:")
@@ -104,7 +104,7 @@ class VaultListTool(
     }
 }
 
-// ═════════════════════════ vault_save ═════════════════════════
+// ═════════════════════════ VaultSave ═════════════════════════
 
 /**
  * 把密钥写入金库（write-only）：成功返回仅含 label 与条目 id ——
@@ -114,10 +114,10 @@ class VaultListTool(
 class VaultSaveTool(
     private val repository: VaultRepository
 ) : AgentTool {
-    override val id = "vault_save"
+    override val id = "VaultSave"
     override val name = "Vault Save"
     override val description = """
-        Store a secret into the encrypted vault. WRITE-ONLY: the content is encrypted at rest and NEVER returned to you — you cannot read it back after saving. Save first, then use vault_paste when needed. Returns only the label and entry id. 参数：label/note/content/overwrite。
+        Store a secret into the encrypted vault. WRITE-ONLY: the content is encrypted at rest and NEVER returned to you — you cannot read it back after saving. Save first, then use VaultPaste when needed. Returns only the label and entry id. 参数：label/note/content/overwrite。
     """.trimIndent()
     override val parametersSchema = """
         {"type":"object","properties":{
@@ -164,7 +164,7 @@ class VaultSaveTool(
     }
 }
 
-// ═════════════════════════ vault_paste ═════════════════════════
+// ═════════════════════════ VaultPaste ═════════════════════════
 
 /**
  * 核心工具：把金库密钥**直接投递**到目标通道，内容不落模型上下文。
@@ -181,14 +181,14 @@ class VaultPasteTool(
     private val terminalWriter: suspend (Long, String) -> Boolean,
     private val httpClient: OkHttpClient
 ) : AgentTool {
-    override val id = "vault_paste"
+    override val id = "VaultPaste"
     override val name = "Vault Paste"
     override val description = """
         Deliver a vault secret DIRECTLY to a target without revealing it: to=clipboard (copies it, tell the user to paste manually), to=terminal (writes it into a PTY session, pass session_id), or to=http (sends an authenticated request: url/method/header/scheme=bearer|token|raw). The secret content is NEVER echoed — responses contain only byte counts / status codes / redacted bodies. 直接粘贴金库密钥，内容永不回显。
     """.trimIndent()
     override val parametersSchema = """
         {"type":"object","properties":{
-            "label":{"type":"string","description":"Vault entry label (see vault_list)"},
+            "label":{"type":"string","description":"Vault entry label (see VaultList)"},
             "to":{"type":"string","enum":["clipboard","terminal","http"],"description":"Delivery channel"},
             "session_id":{"type":"integer","description":"Terminal session id (required when to=terminal)"},
             "newline":{"type":"boolean","default":true,"description":"Append a newline after the secret in terminal mode"},
@@ -218,7 +218,7 @@ class VaultPasteTool(
         if (label.isEmpty()) return "Error: 'label' is required."
 
         val entry = repository.getByLabel(label)
-            ?: return "Error: no vault entry labeled '$label'. Use vault_list to see available labels."
+            ?: return "Error: no vault entry labeled '$label'. Use VaultList to see available labels."
 
         return when (to) {
             "clipboard" -> pasteToClipboard(entry)
@@ -326,19 +326,22 @@ class VaultPasteTool(
     }
 }
 
-// ═════════════════════════ vault_delete ═════════════════════════
+// ═════════════════════════ VaultDelete ═════════════════════════
 
 /** 按标签删除金库条目（HIGH 风险：不可逆销毁密钥）。 */
 class VaultDeleteTool(
     private val repository: VaultRepository
 ) : AgentTool {
-    override val id = "vault_delete"
+    override val id = "VaultDelete"
     override val name = "Vault Delete"
     override val description = """
-        Permanently delete a vault entry by label. Irreversible — the stored secret is destroyed. Confirm with the user before deleting. 按标签永久删除金库条目（不可逆，先与用户确认）。
+        Permanently delete a vault entry by label. Irreversible — the stored secret is destroyed. Requires a typed confirmation: ask the user first, and only after explicit approval retry with confirm set to the EXACT label being deleted. 按标签永久删除金库条目（不可逆，必须先征得用户明确同意，并把 confirm 设为待删除条目的标签名）。
     """.trimIndent()
     override val parametersSchema = """
-        {"type":"object","properties":{"label":{"type":"string","description":"Label of the entry to delete"}},"required":["label"]}
+        {"type":"object","properties":{
+            "label":{"type":"string","description":"Label of the entry to delete"},
+            "confirm":{"type":"string","description":"Typed confirmation: set to the EXACT label being deleted, ONLY after the user explicitly approved the deletion. Do NOT set it without asking."}
+        },"required":["label","confirm"]}
     """.trimIndent()
 
     override val metadata: ToolMetadata = ToolMetadata.meta(id) {
@@ -352,11 +355,27 @@ class VaultDeleteTool(
         val json = parseArgs(arguments) ?: return argsParseError(arguments)
         val label = json.stringOf("label")?.trim().orEmpty()
         if (label.isEmpty()) return "Error: 'label' is required."
+        // #207：代码级确认门 —— 「确认」不再只是工具描述里的提示词约束。
+        // typed confirm（值 = 待删除条目的 label）比布尔更强：模型无脑传 true
+        // 无法通过，且天然带 per-label 粒度。与 RiskAwareToolGate 的会话级
+        // HIGH 风险弹窗构成纵深：弹窗防「未经用户」，此处防「会话放行后的
+        // 任意次静默销毁」。fail-closed：confirm 缺失/不匹配一律拒绝。
+        val confirm = json.stringOf("confirm")?.trim().orEmpty()
+        if (confirm.isEmpty()) {
+            return "Error: deletion of vault entry '$label' requires explicit confirmation — " +
+                "STOP and ask the user whether to permanently destroy this secret. " +
+                "Only after the user approves, retry with confirm set to the exact label '$label'. " +
+                "Do NOT set confirm without asking."
+        }
+        if (confirm != label) {
+            return "Error: confirm mismatch — expected the exact label '$label' but got '$confirm'. " +
+                "Deletion refused. Ask the user, then retry with confirm=\"$label\"."
+        }
         val deleted = repository.deleteByLabel(label)
         return if (deleted) {
             "Deleted vault entry '$label'."
         } else {
-            "Error: no vault entry labeled '$label'. Use vault_list to see available labels."
+            "Error: no vault entry labeled '$label'. Use VaultList to see available labels."
         }
     }
 }
@@ -380,5 +399,5 @@ object VaultAgentTools {
     )
 
     /** 全部工具 id（诊断 / 测试断言 id 全局唯一用）。 */
-    val IDS: List<String> = listOf("vault_list", "vault_save", "vault_paste", "vault_delete")
+    val IDS: List<String> = listOf("VaultList", "VaultSave", "VaultPaste", "VaultDelete")
 }

@@ -17,9 +17,9 @@ import java.util.Locale
  * lambda 注入模式：工具只做参数解析与归一（JVM 可测 companion），位图
  * I/O 由注入函数完成，生产接线见 [AndroidImageIo]。
  */
-// ═══════════════════════════ image_info ═══════════════════════════
+// ═══════════════════════════ ImageInfo ═══════════════════════════
 
-/** image_convert 的归一化请求（工具层解析，I/O 层执行）。 */
+/** ImageConvert 的归一化请求（工具层解析，I/O 层执行）。 */
 data class ImageConvertRequest(
     val path: String,
     val maxWidth: Int?,
@@ -36,7 +36,7 @@ data class ImageConvertRequest(
 class ImageInfoTool(
     private val readInfo: (String) -> String
 ) : AgentTool {
-    override val id = "image_info"
+    override val id = "ImageInfo"
     override val name = "Image Info"
     override val description = """
         Read image metadata (width, height, mime type, file size) without
@@ -65,7 +65,7 @@ class ImageInfoTool(
     }
 }
 
-// ═══════════════════════════ image_convert ═══════════════════════════
+// ═══════════════════════════ ImageConvert ═══════════════════════════
 
 /**
  * 图片转换：解码 → 可选等比缩放（max_width/max_height）→ 压缩写盘。
@@ -78,7 +78,7 @@ class ImageInfoTool(
 class ImageConvertTool(
     private val convert: (ImageConvertRequest) -> String
 ) : AgentTool {
-    override val id = "image_convert"
+    override val id = "ImageConvert"
     override val name = "Image Convert"
     override val description = """
         Convert / resize an image: decode, optionally scale down to fit

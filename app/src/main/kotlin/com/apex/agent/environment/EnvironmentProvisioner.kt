@@ -3,7 +3,7 @@ package com.apex.agent.environment
 import com.apex.agent.platform.terminal.io.InputOwner
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
 import com.apex.agent.platform.terminal.ubuntu.lifecycle.UbuntuLifecycleCoordinator
-import com.apex.agent.platform.terminal.wait.WaitCondition
+import com.apex.agent.platform.TerminalWait.WaitCondition
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,14 +18,14 @@ import kotlinx.coroutines.flow.asStateFlow
  * Gradle / NDK / SDK mirrors — those belong here, in the `DeveloperEnvironment` module.
  *
  * Install flow (per dep):
- *   1. Run checkCommand via terminal.run + wait(PROCESS_EXITED)
+ *   1. Run checkCommand via TerminalRun + wait(PROCESS_EXITED)
  *      → if exit 0, already installed, skip
- *   2. Otherwise run installCommand(useMirror) via terminal.run
+ *   2. Otherwise run installCommand(useMirror) via TerminalRun
  *   3. Wait PROCESS_EXITED (reliable, no settle-time)
  *   4. Stream output to installLog StateFlow
  *   5. Re-run checkCommand to verify
  *
- * Uses the new Runtime API (terminal.run + terminal.wait + terminal.observe), NOT the old
+ * Uses the new Runtime API (TerminalRun + TerminalWait + TerminalObserve), NOT the old
  * TerminalManager.execute with settle-time.
  *
  * T82 断点修复：[DepCatalog] 的命令全部是 Ubuntu（proot）内的 apt 命令 ——
@@ -67,8 +67,17 @@ class EnvironmentProvisioner(
      * 流程：ensureReady（install→bootstrap→capability，幂等且进度不丢）→
      * create(backend="linux-ubuntu")。任一环节失败返回 null（调用方诚实降级到
      * local session —— 输出里会出现真实的 command not found，而非伪造成功）。
+     *
+     * T92：缓存会话**存活校验** —— 旧实现 `ubuntuSessionId?.let { return it }`
+     * 永不过期：会话死亡（EXITED）后每次安装都把命令写进死 PTY → job 挂到
+     * 120s 超时 → SIGKILL → 日志报「等待超时」（与真实根因不符），直到重启
+     * App。死亡即清缓存重建。
      */
     suspend fun ensureUbuntuSession(): Long? {
+        if (ubuntuSessionId != null && !isSessionAlive(ubuntuSessionId!!)) {
+            appendLog("⚠️ 缓存的 Ubuntu 会话已退出 —— 重建会话\n")
+            ubuntuSessionId = null
+        }
         ubuntuSessionId?.let { return it }
         val lc = ubuntuLifecycle ?: return null
         when (val r = lc.ensureReady()) {
@@ -98,14 +107,24 @@ class EnvironmentProvisioner(
         return sessionId
     }
 
+    /** T92：会话实时存活探测（终态黑名单：EXITED/LOST/FAILED/BROKEN/CLOSED）。 */
+    private suspend fun isSessionAlive(sessionId: Long): Boolean {
+        val snap = runtime.snapshot(
+            com.apex.agent.platform.terminal.runtime.TerminalRuntime.SnapshotMode.SESSIONS,
+            sessionId = sessionId
+        ).getOrNull() ?: return false
+        return snap.sessions.any { s ->
+            s.session.id == sessionId && s.session.state !in DEAD_SESSION_STATES
+        }
+    }
+
     /** Ubuntu 生命周期状态（UI 订阅展示安装/引导进度）。 */
     val ubuntuLifecycleState: StateFlow<UbuntuLifecycleCoordinator.LifecycleState>? =
         ubuntuLifecycle?.stateFlow
 
-    /** 依赖安装的正确 session：Ubuntu 可用走 linux-ubuntu，否则诚实降级 local。 */
-    suspend fun sessionForApt(): Long = ensureUbuntuSession()
-        ?: runtime.create().getOrNull()?.sessionId?.also { /* local fallback：apt 命令将真实失败（command not found）*/ }
-        ?: -1L
+    /** 依赖安装的正确 session：Ubuntu 可用走 linux-ubuntu，否则 -1（无降级 ——
+     *  AndroidShell 后端已移除，apt 只在 Ubuntu 会话可用）。 */
+    suspend fun sessionForApt(): Long = ensureUbuntuSession() ?: -1L
 
     /** Install a single dependency. Returns the final exit code (0 = success). */
     suspend fun installDep(sessionId: Long, item: DepItem): Int {
@@ -156,18 +175,18 @@ class EnvironmentProvisioner(
             return -1
         }
         val exitCode = when (wait) {
-            is com.apex.agent.platform.terminal.wait.WaitResult.Matched -> {
+            is com.apex.agent.platform.TerminalWait.WaitResult.Matched -> {
                 val ev = wait.event
                 if (ev is com.apex.agent.platform.terminal.events.TerminalEvent.ProcessExited)
                     ev.exitCode ?: -1
                 else 0
             }
-            is com.apex.agent.platform.terminal.wait.WaitResult.Timeout -> {
+            is com.apex.agent.platform.TerminalWait.WaitResult.Timeout -> {
                 appendLog("TIMEOUT\n")
                 runtime.signal(sessionId, com.apex.agent.platform.terminal.io.UnixSignal.SIGKILL, InputOwner.SYSTEM, run.jobId)
                 -1
             }
-            is com.apex.agent.platform.terminal.wait.WaitResult.SessionGone -> -1
+            is com.apex.agent.platform.TerminalWait.WaitResult.SessionGone -> -1
         }
         // observe the command's output (since its startCursor)
         val obs = runtime.observe(
@@ -184,5 +203,17 @@ class EnvironmentProvisioner(
 
     private fun appendLog(text: String) {
         _install.value = _install.value.copy(log = _install.value.log + text)
+    }
+
+    private companion object {
+        /** T92：终态黑名单（EXITED/LOST/FAILED/BROKEN/CLOSED —— 与
+         *  TerminalViewModel.ALIVE_STATES 互补：STOPPING 仍在收尾，写空操作无害）。 */
+        val DEAD_SESSION_STATES = setOf(
+            com.apex.agent.platform.terminal.session.SessionState.EXITED,
+            com.apex.agent.platform.terminal.session.SessionState.LOST,
+            com.apex.agent.platform.terminal.session.SessionState.FAILED,
+            com.apex.agent.platform.terminal.session.SessionState.BROKEN,
+            com.apex.agent.platform.terminal.session.SessionState.CLOSED,
+        )
     }
 }

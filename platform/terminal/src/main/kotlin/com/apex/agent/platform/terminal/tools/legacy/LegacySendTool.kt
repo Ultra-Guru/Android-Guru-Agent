@@ -11,20 +11,20 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Legacy compat tool: terminal_send
+ * Legacy compat tool: TerminalSendLegacy
  *
  * Spec ref: ATR 2.0 Final Spec §35
  *
  * Preserves the OLD contract: send input (text or special key) to a session.
  *
- * Maps to: terminal.write(kind=LINE|KEY). Owner auto-injected as AGENT.
- * Old terminal_send accepted either `text` or `key` — this compat version does the same.
+ * Maps to: TerminalWrite(kind=LINE|KEY). Owner auto-injected as AGENT.
+ * Old TerminalSendLegacy accepted either `text` or `key` — this compat version does the same.
  */
-@Deprecated("ATR 2.0 compat alias — use the new terminal.observe/write/signal/snapshot/close API instead. Scheduled for removal in a future version.")
+@Deprecated("ATR 2.0 compat alias — use the new TerminalObserve/write/signal/snapshot/close API instead. Scheduled for removal in a future version.")
 class LegacySendTool(
     private val runtime: TerminalRuntime
 ) : TerminalTool {
-    override val id: String = "terminal_send"
+    override val id: String = "TerminalSendLegacy"
     override val name: String = id
     override val parametersSchema: String = """
         {
@@ -40,7 +40,7 @@ class LegacySendTool(
     """.trimIndent()
     override val description: String = """
         [COMPAT] Send input (text line or special key) to a session. For new code prefer
-        terminal.write (explicit RAW/LINE/KEY kind). Kept for backward compat.
+        TerminalWrite (explicit RAW/LINE/KEY kind). Kept for backward compat.
     """.trimIndent()
 
     suspend fun execute(input: Input): Output {

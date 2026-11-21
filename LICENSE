@@ -1,0 +1,130 @@
+════════════════════════════════════════════════════════════════════════
+ Ultra-Guru 受限使用许可协议 (Ultra-Guru Restricted License) "UGRL" v1.0
+════════════════════════════════════════════════════════════════════════
+
+Copyright (c) 2026 Ultra-Guru 项目作者 (AceGuru-mjh)。保留所有权利。
+
+⚠️ 高危软件声明 —— 在继续之前请先读完这一段
+
+本软件内置以下高危能力：网络流量拦截与中间人解析（MITM）、CA 证书
+注入、SSL Pinning 绕过、APK 重打包、动态插桩（Frida / LSPosed）、
+root 提权操作与检测隐藏，以及可自主执行 shell 命令的 AI Agent。
+
+这些能力既是本软件的价值所在，也意味着一旦被滥用，它就是一件攻击
+工具。在绝大多数司法辖区，未经明确授权对他人设备、应用或网络实施
+上述任何操作均属违法行为。
+
+1. 定义
+
+   "本软件" 指本仓库及其发布渠道中的全部源代码、构建产物、文档与
+   资源文件，包括其任何修改版与衍生版。
+   "作者" 指上述版权持有人及其指定的项目管理维护者。
+
+2. 授权（仅此而已）
+
+   在完整接受本协议全部条款的前提下，作者仅授予你以下不可再转让、
+   不可再许可的权利：
+
+   a) 下载并查看本仓库公开的源代码；
+   b) 为个人学习与安全研究之目的，在你自己拥有全部控制权、或已
+      获得目标所有者明确书面授权的设备与应用上，编译、运行和测试
+      本软件。
+
+3. 严格禁止（未获作者事先书面许可，以下一律不得）
+
+   a) 再分发：以任何形式复制、发布、转发、镜像、打包、转售本软件
+      或其任何部分——包括修改版、衍生版、二次打包的构建产物，
+      无论是否收费；
+   b) 商业使用：将本软件或其衍生品用于任何商业目的，包括但不限于
+      销售、捆绑进产品、提供付费服务、企业内部生产使用；
+   c) 未授权测试：对本软件自身之外的、你未获得明确书面授权的任何
+      系统、应用、账号或网络实施拦截、注入、绕过、插桩或其他干预；
+   d) 违法使用：将本软件用于任何违反适用法律（包括但不限于中华人民共和国
+      《网络安全法》《刑法》及你所在司法辖区的法律）的用途；
+   e) 去标识：移除、遮蔽或更改本软件中的版权、许可或免责声明；
+   f) 规避：通过任何手段规避本协议对用途与分发的限制。
+
+4. 权利保留
+
+   本协议未明确授予的一切权利均由作者保留。本软件不是 OSI 定义下的
+   "开源软件"，也不是自由软件；它仅是 "源码可用"（source-available）
+   的受限许可软件。
+
+5. 免责声明（AS-IS，无任何担保）
+
+   本软件按 "现状" 提供，不附带任何明示或默示的担保，包括但不限于
+   适销性、特定用途适用性、不侵权以及 "不会损坏你的设备或数据" 的
+   担保。对于因使用或滥用本软件导致的任何直接或间接损失——数据泄露、
+   设备损坏、账号封禁、财产损失、法律追责或其他后果——作者一概
+   不承担责任。安装、编译或运行本软件，即表示你理解并接受：由此
+   产生的一切风险与合规义务由你独自承担。
+
+6. 许可终止
+
+   一旦违反本协议任何条款，本协议授予你的全部权利自动终止。你应
+   立即停止使用并删除手中的所有副本。作者保留追究法律责任的权利。
+
+7. 第三方组件
+
+   本软件引用的第三方库、字体、图标等仍受其各自原始许可约束；
+   本协议仅约束 Ultra-Guru 项目自身的代码与资产。
+
+8. 商用与白名单授权
+
+   任何超出第 2 条范围的使用（含商用、再分发、批量教学演示等），
+   请通过 GitHub issue 或其他渠道联系作者获取书面授权。
+
+────────────────────────────────────────────────────────────────────────
+ English Translation (仅供参考 / For reference only)
+
+ The Chinese text above is the sole authoritative version; in case of
+ any discrepancy, the Chinese version prevails.
+
+ Ultra-Guru Restricted License ("UGRL") v1.0
+
+ Copyright (c) 2026 The Ultra-Guru Authors (AceGuru-mjh).
+ All rights reserved.
+
+ ⚠ HIGH-RISK SOFTWARE NOTICE — read this before proceeding.
+
+ This software ships with high-risk capabilities: network traffic
+ interception (MITM), CA certificate injection, SSL pinning bypass,
+ APK repackaging, dynamic instrumentation (Frida / LSPosed), root
+ operations and detection hiding, plus an AI agent able to execute
+ shell commands autonomously. In the wrong hands it is an attack
+ tool, and in most jurisdictions using any of the above against
+ devices, apps or networks without explicit authorization is illegal.
+
+ 1. GRANT (and nothing more). Subject to full acceptance of these
+    terms, the author grants you a non-transferable, non-sublicensable
+    right to: (a) view the source code published in this repository;
+    (b) compile, run and test this software for personal learning and
+    security research, on devices and apps you own or have explicit
+    written authorization to test.
+
+ 2. PROHIBITIONS. Without prior written permission from the author
+    you must NOT: (a) redistribute any part of the software in any
+    form, modified or not, for a fee or not; (b) use it for any
+    commercial purpose; (c) intercept, inject, bypass or otherwise
+    tamper with any system, app, account or network you are not
+    explicitly authorized to test; (d) use it for any purpose that
+    violates applicable law; (e) remove or alter copyright, license
+    or disclaimer notices; (f) circumvent these restrictions.
+
+ 3. RESERVATION. All rights not expressly granted are reserved by the
+    author. This is NOT open-source software (OSI definition) nor
+    free software; it is restricted, source-available software.
+
+ 4. DISCLAIMER. The software is provided "AS IS", without warranty
+    of any kind, express or implied. In no event shall the author be
+    liable for any claim, damages or legal consequences arising from
+    the use or misuse of this software. You bear all risk and all
+    compliance obligations yourself.
+
+ 5. TERMINATION. Any breach of these terms automatically terminates
+    your rights; stop using and destroy all copies immediately.
+
+ 6. THIRD-PARTY COMPONENTS remain under their own licenses.
+
+ 7. COMMERCIAL / WHITELIST licensing: contact the author (GitHub
+    issue) for any use beyond section 1.

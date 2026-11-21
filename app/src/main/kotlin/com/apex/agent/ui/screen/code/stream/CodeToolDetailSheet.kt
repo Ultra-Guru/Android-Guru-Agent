@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -22,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,9 +34,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
+import com.apex.agent.ui.component.MarkdownText
 import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.core.code.stream.ToolCallStatus
 import com.apex.agent.core.code.stream.ToolKind
+import com.apex.agent.core.engine.ToolCallOrigin
 
 /**
  * # Code Tool Detail Sheet — 胶囊详情弹层（分族路由）
@@ -101,6 +105,16 @@ internal fun CodeToolDetailSheet(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    // 溯源行（v1.5.1）：技能 id / MCP 服务器名——来自哪层能力
+                    // 生态，详情页显式交代（内置工具不占行）；色与族图标同源
+                    if (call.origin != ToolCallOrigin.BUILTIN) {
+                        Text(
+                            text = originMetaText(call),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = style.color
+                        )
+                    }
                 }
             }
 
@@ -121,6 +135,17 @@ internal fun CodeToolDetailSheet(
     }
 }
 
+/** 溯源行文案：「技能 · id」/「MCP · server」（无标签退宽名）。 */
+@Composable
+private fun originMetaText(call: StreamToolCall): String {
+    val origin = when (call.origin) {
+        ToolCallOrigin.SKILL -> stringResource(R.string.code_stream_detail_origin_skill)
+        ToolCallOrigin.MCP -> stringResource(R.string.code_stream_detail_origin_mcp)
+        ToolCallOrigin.BUILTIN -> ""
+    }
+    return call.originLabel?.let { "$origin · $it" } ?: origin
+}
+
 /** 状态徽标文案（本地化；不再是裸枚举名 "PARTIAL"）。 */
 @Composable
 private fun statusLabel(status: ToolCallStatus): String = stringResource(
@@ -138,6 +163,35 @@ private fun statusLabel(status: ToolCallStatus): String = stringResource(
 
 @Composable
 private fun DiffDetailBody(call: StreamToolCall) {
+    // 流式期（参数生成/执行中）优先实时预览：用户点开等待态胶囊即可在
+    // 详情层看到正在写入的代码（绿增红删同款尾窗，规模上限高于内嵌窗）
+    val preview = call.streamingPreview
+    if (preview != null && preview.hasCode && call.isLive) {
+        Text(
+            text = stringResource(R.string.code_stream_streaming_preview_title),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+        )
+        val scroll = rememberScrollState()
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = Color.Transparent,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 480.dp)
+        ) {
+            StreamingCodeWindow(
+                preview = preview,
+                kind = call.kind,
+                status = call.status,
+                maxLines = STREAM_WINDOW_MAX_LINES_DETAIL,
+                modifier = Modifier.verticalScroll(scroll)
+            )
+        }
+        return
+    }
     val diffText = call.diffText
     Text(
         text = stringResource(R.string.code_stream_detail_diff_title),
@@ -147,11 +201,20 @@ private fun DiffDetailBody(call: StreamToolCall) {
         modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
     )
     if (diffText.isNullOrBlank()) {
-        Text(
-            text = stringResource(R.string.code_stream_detail_diff_missing),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        // 仍在流式期（diff 尚未产生）≠ 「未捕获」：措辞区分，避免误导
+        if (call.isLive) {
+            Text(
+                text = stringResource(R.string.code_stream_streaming_generating),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            Text(
+                text = stringResource(R.string.code_stream_detail_diff_missing),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     } else {
         CodeDiffView(diffText = diffText, modifier = Modifier.fillMaxWidth())
     }
@@ -184,7 +247,10 @@ private fun GrepDetailBody(call: StreamToolCall) {
                 .fillMaxWidth()
                 .heightIn(max = 480.dp)
         ) {
-            items(hits) { line ->
+            // #245：grep 命中行可能重复（同文本多行）—— key 掺入下标防撞，
+            // 换 query 重算时行状态不再错位复用。#264：从内部 key() 补丁提升为
+            // itemsIndexed 的 key 参数 —— item 级复用语义正确，删掉双重包裹。
+            itemsIndexed(hits, key = { index, line -> "$index-${line.take(64)}" }) { _, line ->
                 GrepHitRow(line)
             }
         }
@@ -226,9 +292,15 @@ private fun TerminalDetailBody(
 ) {
     Text(
         text = stringResource(
-            if (call.kind == ToolKind.BASH || call.kind == ToolKind.GIT)
-                R.string.code_stream_detail_terminal_title
-            else R.string.code_stream_detail_output_title
+            when {
+                call.kind == ToolKind.BASH || call.kind == ToolKind.GIT ->
+                    R.string.code_stream_detail_terminal_title
+                // 网络搜索族：结果是 LLM 优化的 Markdown（标题+链接列表），
+                // 走主题化 Markdown 渲染而非等宽代码块（2026-11 专属流水式）
+                call.kind == ToolKind.WEB_SEARCH ->
+                    R.string.code_stream_detail_search_title
+                else -> R.string.code_stream_detail_output_title
+            }
         ),
         style = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.SemiBold,
@@ -238,6 +310,24 @@ private fun TerminalDetailBody(
     val raw = terminalFallback?.takeIf { it.isNotBlank() } ?: call.logTail
     val text = remember(raw) { stripTerminalAnsi(raw) }
     val scroll = rememberScrollState()
+    if (call.kind == ToolKind.WEB_SEARCH) {
+        // 搜索结果主题化渲染：标题/列表/链接在浅色表面卡上直接可读
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 480.dp)
+        ) {
+            MarkdownText(
+                markdown = text.ifBlank { stringResource(R.string.code_stream_terminal_empty) },
+                modifier = Modifier
+                    .verticalScroll(scroll)
+                    .padding(10.dp)
+            )
+        }
+        return
+    }
     Surface(
         shape = RoundedCornerShape(10.dp),
         color = Color(0xFF101418),

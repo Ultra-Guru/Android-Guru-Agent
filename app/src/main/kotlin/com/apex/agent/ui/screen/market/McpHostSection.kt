@@ -56,8 +56,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
-import com.apex.agent.core.tools.ToolCategory
 import com.apex.agent.mcphost.McpHostManager
+import com.apex.agent.ui.theme.LocalExtendedColors
 import com.apex.agent.platform.mcphost.McpHostConfig
 import com.apex.agent.platform.mcphost.HostAuditEntry
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -85,6 +85,8 @@ class McpHostViewModel @Inject constructor(
 
     val config = manager.config
     val isRunning = manager.isRunning
+    /** 真实监听地址（服务端 ServerSocket 绑定参数；未监听为 null）。 */
+    val bindHost = manager.bindHost
     val sessions = manager.sessions
     val auditLog = manager.auditLog
     val lastError = manager.lastError
@@ -97,6 +99,14 @@ class McpHostViewModel @Inject constructor(
 
     fun setRateLimit(rate: Int) =
         manager.updateConfig(manager.config.value.copy(rateLimitPerMinute = rate))
+
+    /** S-04：局域网暴露开关（变更经 updateConfig 自动重启生效绑定面）。 */
+    fun setAllowLan(allow: Boolean) =
+        manager.updateConfig(manager.config.value.copy(allowLan = allow))
+
+    /** S-04：写/执行类工具暴露开关（即时生效，configProvider 每请求读取）。 */
+    fun setExposeWriteTools(expose: Boolean) =
+        manager.updateConfig(manager.config.value.copy(exposeWriteTools = expose))
 
     fun toggleCategory(name: String) = manager.toggleCategory(name)
 
@@ -111,6 +121,7 @@ private val RISKY_CATEGORIES =
 internal fun McpHostSection(viewModel: McpHostViewModel = hiltViewModel()) {
     val config by viewModel.config.collectAsStateWithLifecycle()
     val isRunning by viewModel.isRunning.collectAsStateWithLifecycle()
+    val bindHost by viewModel.bindHost.collectAsStateWithLifecycle()
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
     val auditLog by viewModel.auditLog.collectAsStateWithLifecycle()
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()
@@ -122,6 +133,8 @@ internal fun McpHostSection(viewModel: McpHostViewModel = hiltViewModel()) {
     var tokenVisible by rememberSaveable { mutableStateOf(false) }
     var showRegenDialog by remember { mutableStateOf(false) }
     var connectExpanded by rememberSaveable { mutableStateOf(false) }
+    // S-04：首次/每次启用前的确认弹窗（列明监听面、鉴权与工具暴露口径）
+    var showEnableConfirmDialog by remember { mutableStateOf(false) }
 
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -158,9 +171,43 @@ internal fun McpHostSection(viewModel: McpHostViewModel = hiltViewModel()) {
                 Spacer(Modifier.width(8.dp))
                 Switch(
                     checked = config.enabled,
-                    onCheckedChange = viewModel::setEnabled
+                    // S-04：开启须经确认弹窗（列明暴露面）；关闭直通
+                    onCheckedChange = { turningOn ->
+                        if (turningOn) showEnableConfirmDialog = true
+                        else viewModel.setEnabled(false)
+                    }
                 )
             }
+
+            // ── 监听地址行（单一事实源：服务端实际绑定参数，UI 不反推）──
+            // 三态：运行中显示真实绑定面；enabled 未就绪（重启窗口/启动失败）
+            // 显示预期地址（灰态，此处才允许由 allowLan 推断）；否则未监听。
+            // 自带「运行中」字样 —— 截图/无障碍朗读不依赖上方纯色状态灯。
+            val currentBindHost = bindHost
+            val expectedHost = if (config.allowLan) "0.0.0.0" else "127.0.0.1"
+            val bindLine = when {
+                isRunning && currentBindHost != null -> stringResource(
+                    R.string.mcphost_bind_running,
+                    "$currentBindHost:${config.effectivePort}"
+                )
+                config.enabled -> stringResource(
+                    R.string.mcphost_bind_pending,
+                    "$expectedHost:${config.effectivePort}"
+                )
+                else -> stringResource(R.string.mcphost_bind_stopped)
+            }
+            Text(
+                bindLine,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = if (isRunning) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
 
             // ── 启动失败错误 ──
             val error = lastError
@@ -193,6 +240,32 @@ internal fun McpHostSection(viewModel: McpHostViewModel = hiltViewModel()) {
                     onCommit = viewModel::setRateLimit
                 )
             }
+
+            // ── S-04：绑定面开关（默认 loopback；局域网暴露需显式开启 + 风险警示）──
+            SettingSwitchRow(
+                label = stringResource(R.string.mcphost_lan_label),
+                checked = config.allowLan,
+                onCheckedChange = viewModel::setAllowLan
+            )
+            if (config.allowLan) {
+                Text(
+                    stringResource(R.string.mcphost_lan_warning),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            // ── S-04：写/执行类工具暴露开关（默认关；高危工具永不暴露）──
+            SettingSwitchRow(
+                label = stringResource(R.string.mcphost_write_label),
+                checked = config.exposeWriteTools,
+                onCheckedChange = viewModel::setExposeWriteTools
+            )
+            Text(
+                stringResource(R.string.mcphost_write_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             // ── Token 行 ──
             Spacer(Modifier.height(8.dp))
@@ -316,6 +389,22 @@ internal fun McpHostSection(viewModel: McpHostViewModel = hiltViewModel()) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(4.dp))
+                // host 与当前绑定面一致：回环态填 PC 侧转发地址 127.0.0.1
+                //（手机自身局域网 IP 永远连不上回环监听）；LAN 态填手机站点 IP。
+                val connectHost = if (config.allowLan)
+                    ip ?: stringResource(R.string.mcphost_connect_ip_placeholder)
+                else "127.0.0.1"
+                if (!config.allowLan) {
+                    Text(
+                        stringResource(
+                            R.string.mcphost_connect_loopback_hint,
+                            config.effectivePort
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainerHighest,
                     shape = MaterialTheme.shapes.small
@@ -323,7 +412,7 @@ internal fun McpHostSection(viewModel: McpHostViewModel = hiltViewModel()) {
                     Text(
                         stringResource(
                             R.string.mcphost_connect_json,
-                            ip ?: stringResource(R.string.mcphost_connect_ip_placeholder),
+                            connectHost,
                             config.effectivePort,
                             config.token
                         ),
@@ -336,6 +425,33 @@ internal fun McpHostSection(viewModel: McpHostViewModel = hiltViewModel()) {
                 }
             }
         }
+    }
+
+    // S-04：启用确认 —— 列明端口/鉴权/绑定面/工具暴露口径，确认才真正开启
+    if (showEnableConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showEnableConfirmDialog = false },
+            title = { Text(stringResource(R.string.mcphost_enable_confirm_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.mcphost_enable_confirm_text,
+                        config.effectivePort
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.setEnabled(true)
+                    showEnableConfirmDialog = false
+                }) { Text(stringResource(R.string.mcphost_enable_confirm_ok)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEnableConfirmDialog = false }) {
+                    Text(stringResource(R.string.mcphost_enable_confirm_cancel))
+                }
+            }
+        )
     }
 
     if (showRegenDialog) {
@@ -358,6 +474,28 @@ internal fun McpHostSection(viewModel: McpHostViewModel = hiltViewModel()) {
     }
 }
 
+/** S-04：设置行形态的开关（label 左、Switch 右；与卡片内其他行密度一致）。 */
+@Composable
+private fun SettingSwitchRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1f)
+        )
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
 /** 状态灯（绿=运行 / 灰=停止）。 */
 @Composable
 private fun StatusLight(running: Boolean) {
@@ -365,7 +503,9 @@ private fun StatusLight(running: Boolean) {
         modifier = Modifier
             .size(10.dp)
             .background(
-                color = if (running) Color(0xFF4CAF50) else Color(0xFF9E9E9E),
+                // UI-016：状态色收编 token（原硬编码 4CAF50/9E9E9E 浅色 2.2:1）
+                color = if (running) LocalExtendedColors.current.success
+                else MaterialTheme.colorScheme.onSurfaceVariant,
                 shape = CircleShape
             )
     )
@@ -406,24 +546,41 @@ private fun PortField(
     )
 }
 
-/** 分类 FilterChip 组（17 分类，风险分类开启时整组上方已有关注文案）。 */
+/**
+ * 分类 FilterChip 组（18 分类，#206：按 7 域分节渲染 + 本地化标签 ——
+ * 旧实现平铺裸枚举名 SHELL/FILE…，英文用户与非开发者完全无法理解）。
+ * 存储值仍是 ToolCategory.name（兼容已存配置）。
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CategoryChips(
     allowed: List<String>,
     onToggle: (String) -> Unit
 ) {
-    FlowRow(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        ToolCategory.entries.forEach { category ->
-            val selected = allowed.any { it.equals(category.name, ignoreCase = true) }
-            FilterChip(
-                selected = selected,
-                onClick = { onToggle(category.name) },
-                label = { Text(category.name, style = MaterialTheme.typography.labelSmall) }
+    Column {
+        com.apex.agent.core.tools.ToolDomain.inDisplayOrder().forEach { domain ->
+            val domainSelected = domain.categories.count { c ->
+                allowed.any { it.equals(c.name, ignoreCase = true) }
+            }
+            Text(
+                text = "${domain.label}（$domainSelected/${domain.categories.size}）",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 1.dp)
             )
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                domain.categories.forEach { category ->
+                    val selected = allowed.any { it.equals(category.name, ignoreCase = true) }
+                    FilterChip(
+                        selected = selected,
+                        onClick = { onToggle(category.name) },
+                        label = { Text(category.label, style = MaterialTheme.typography.labelSmall) }
+                    )
+                }
+            }
         }
     }
 }
@@ -437,7 +594,17 @@ private fun AuditLogList(entries: List<HostAuditEntry>) {
             .fillMaxWidth()
             .heightIn(max = 180.dp)
     ) {
-        items(entries.size) { index ->
+        // #245 同款修复：审计环形缓冲（AUDIT_LOG_SIZE=100，头部淘汰）无 key 时
+        // 隐式 index key 会让头部淘汰后的条目错位到相邻行。HostAuditEntry 无唯一
+        // id 字段，用业务字段组合键（AggregationCenterScreen 启动事件 key 同款模式；时间戳
+        // 在 stateLock 内逐条落库，同毫秒同源同方法同工具的重复实践上不可达）。
+        items(
+            count = entries.size,
+            key = { index ->
+                val e = entries[index]
+                "${e.timestamp}:${e.remoteAddress}:${e.method}:${e.toolName}:${e.status}"
+            }
+        ) { index ->
             val entry = entries[index]
             Row(
                 modifier = Modifier

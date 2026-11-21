@@ -303,17 +303,6 @@ bool PtySession::write(const char* data, size_t len) {
     return true;
 }
 
-bool PtySession::writeLine(const std::string& line) {
-    std::string data = line + "\n";
-    return write(data.c_str(), data.size());
-}
-
-std::string PtySession::read(int maxBytes) {
-    // Legacy：仅返回数据字节，不区分 idle/EOF/error。内部统一走 readEx。
-    // 生产路径（PtyOutputPump → JniNativePty）一律使用 nativeReadBytes/readEx。
-    return readEx(maxBytes).data;
-}
-
 ReadResult PtySession::readEx(int maxBytes) {
     std::lock_guard<std::mutex> lock(ioMutex_);
     ReadResult result;

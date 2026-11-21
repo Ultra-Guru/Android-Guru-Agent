@@ -26,7 +26,7 @@ import com.apex.agent.platform.terminal.runtime.BackendSessionMetadata
  *                      Monotonic byte offset into the PTY output stream (NOT event index).
  * @param backend       T73: 会话所属执行后端元数据（backendId/rootfsId/workspaceDir/
  *                      binds/guestCwd）。null = 旧路径创建的本地会话（backendId 语义上
- *                      等同 "local"，持久化层向后兼容）。
+ *                      等同旧缺省后端，持久化层向后兼容）。
  */
 data class TerminalSession(
     val id: Long,

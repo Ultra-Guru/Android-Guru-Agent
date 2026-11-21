@@ -3,6 +3,9 @@ package com.apex.agent.platform.terminal.session
 import com.apex.agent.platform.terminal.pty.FakeNativePty
 import com.apex.agent.platform.terminal.policy.TerminalPolicyImpl
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
+import com.apex.agent.platform.terminal.runtime.ExecutionBackendRegistry
+import com.apex.agent.platform.terminal.runtime.FixtureLinuxBackend
+import com.apex.agent.platform.terminal.runtime.LocalShellBackend
 import com.apex.agent.platform.terminal.runtime.TerminalRuntimeImpl
 import com.apex.agent.platform.terminal.screen.RealVirtualTerminal
 import org.junit.Assert.*
@@ -66,6 +69,7 @@ class SessionLifecycleE2ETest {
     private fun newRuntime(): TerminalRuntimeImpl = TerminalRuntimeImpl(
         native = FakeNativePty(),
         policy = TerminalPolicyImpl(),
+        backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend(), FixtureLinuxBackend()),
         virtualTerminalFactory = { r, c -> RealVirtualTerminal(r, c) }
     )
 
@@ -131,7 +135,7 @@ class SessionLifecycleE2ETest {
         val s = rt.create().getOrThrow()
         kotlinx.coroutines.delay(100)
         val job = rt.run(s.sessionId, "echo test", com.apex.agent.platform.terminal.io.InputOwner.AGENT).getOrThrow()
-        rt.wait(s.sessionId, com.apex.agent.platform.terminal.wait.WaitCondition.ProcessExited(job.jobId), 5000)
+        rt.wait(s.sessionId, com.apex.agent.platform.TerminalWait.WaitCondition.ProcessExited(job.jobId), 5000)
         // Session should still be alive after job exits
         val snap = rt.snapshot(TerminalRuntime.SnapshotMode.SESSIONS).getOrThrow()
         assertTrue("session should survive job exit", snap.sessions.any { it.session.id == s.sessionId })

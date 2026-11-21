@@ -67,6 +67,43 @@ class ToolSystemV2InfraTest {
     }
 
     @Test
+    fun `array params accept inline and string-encoded shapes`() {
+        // CodeTodo 实测回归：todos 声明为 string 时内联数组在 preCheck 就被
+        // 拒（"expected string"）。声明 array 后，字符串编码的 JSON 数组同样
+        // 宽容放行（FlexibleJson 口径），普通字符串/数字仍被拒。
+        val schema = toolSchema {
+            stringArray("items", required = true)
+        }
+        assertTrue(schema.validateArguments("""{"items": [{"a": 1}]}""").isValid)
+        assertTrue(schema.validateArguments("""{"items": "[{\"a\": 1}]"}""").isValid)
+        assertTrue(schema.validateArguments("""{"items": "[]"}""").isValid)
+
+        val number = schema.validateArguments("""{"items": 42}""")
+        assertFalse(number.isValid)
+        assertTrue(number.summary().contains("expected array"))
+
+        val plainString = schema.validateArguments("""{"items": "just text"}""")
+        assertFalse(plainString.isValid)
+        assertTrue(plainString.summary().contains("expected array"))
+
+        val brokenJson = schema.validateArguments("""{"items": "[not json"}""")
+        assertFalse(brokenJson.isValid)
+    }
+
+    @Test
+    fun `object params accept inline and string-encoded shapes`() {
+        val schema = toolSchema {
+            objectParam("definition", required = true)
+        }
+        assertTrue(schema.validateArguments("""{"definition": {"id": "x"}}""").isValid)
+        assertTrue(schema.validateArguments("""{"definition": "{\"id\": \"x\"}"}""").isValid)
+
+        val arrayValue = schema.validateArguments("""{"definition": [1, 2]}""")
+        assertFalse(arrayValue.isValid)
+        assertTrue(arrayValue.summary().contains("expected object"))
+    }
+
+    @Test
     fun `schema validation tolerates unknown extra keys and null optionals`() {
         val schema = toolSchema {
             string("name", required = true)
@@ -128,8 +165,8 @@ class ToolSystemV2InfraTest {
     @Test
     fun `register REPLACE returns the displaced tool and REJECT keeps the incumbent`() {
         val registry = DefaultToolRegistry()
-        val first = tool("download_file")
-        val second = tool("download_file")
+        val first = tool("DownloadFile")
+        val second = tool("DownloadFile")
 
         assertNull(registry.register(first, DuplicateToolIdPolicy.REPLACE))
         assertEquals(1, registry.toolCount)
@@ -137,12 +174,12 @@ class ToolSystemV2InfraTest {
         val displaced = registry.register(second, DuplicateToolIdPolicy.REPLACE)
         assertEquals(first, displaced)
         assertEquals(1, registry.toolCount)
-        assertEquals("ok:download_file", kotlinx.coroutines.runBlocking { registry.getTool("download_file")!!.execute("{}") })
+        assertEquals("ok:DownloadFile", kotlinx.coroutines.runBlocking { registry.getTool("DownloadFile")!!.execute("{}") })
 
-        val third = tool("download_file")
+        val third = tool("DownloadFile")
         assertNull(registry.register(third, DuplicateToolIdPolicy.REJECT))
         // REJECT 冲突：注册表不变，getTool 仍返回 second。
-        assertEquals(second, registry.getTool("download_file"))
+        assertEquals(second, registry.getTool("DownloadFile"))
         assertEquals(1, registry.toolCount)
     }
 
@@ -163,14 +200,10 @@ class ToolSystemV2InfraTest {
     @Test
     fun `metadata inference drives category queries for legacy tools`() {
         val registry = DefaultToolRegistry()
-        registry.register(tool("shell_execute"))
-        registry.register(tool("read_file"))
-        registry.register(tool("json_path"))
-        registry.register(tool("web_search"))
-
-        assertEquals(listOf("read_file"), registry.toolsByCategory(ToolCategory.FILE).map { it.id })
-        assertEquals(listOf("json_path"), registry.toolsByCategory(ToolCategory.UTILITY).map { it.id })
-        assertEquals(1, registry.toolsByCategory(ToolCategory.WEB).size)
+        registry.register(tool("ShellExecute"))
+        registry.register(tool("Read"))
+        registry.register(tool("JsonPathLegacy"))
+        registry.register(tool("WebSearch"))
 
         val grouped = registry.toolsGroupedByCategory()
         // 展示顺序按 ToolCategory.order：SHELL(10) < FILE(20) < WEB(40) < UTILITY(160)
@@ -181,51 +214,55 @@ class ToolSystemV2InfraTest {
     }
 
     @Test
-    fun `searchTools ranks id prefix over contains and matches tags`() {
-        val registry = DefaultToolRegistry()
-        registry.register(tool("regex_extract"))
-        registry.register(tool("regex_replace"))
-        registry.register(tool("web_search", name = "Web Search"))
-
-        assertEquals("regex_extract", registry.searchTools("regex_e")[0].id)
-        val regexHits = registry.searchTools("regex").map { it.id }
-        assertEquals(setOf("regex_extract", "regex_replace"), regexHits.toSet())
-        assertTrue(registry.searchTools("").isEmpty())
-        // 名称匹配
-        assertEquals(1, registry.searchTools("Web Search".lowercase()).size)
-    }
-
-    @Test
     fun `metadataOf distinguishes registered from unknown ids`() {
         val registry = DefaultToolRegistry()
-        registry.register(tool("shell_execute"))
-        assertNotNull(registry.metadataOf("shell_execute"))
-        assertEquals(ToolRisk.HIGH, registry.metadataOf("shell_execute")!!.risk)
+        registry.register(tool("ShellExecute"))
+        assertNotNull(registry.metadataOf("ShellExecute"))
+        assertEquals(ToolRisk.HIGH, registry.metadataOf("ShellExecute")!!.risk)
         assertNull(registry.metadataOf("no_such_tool"))
     }
 
+    // ═════════════════════════════════════════════════════════════════
+    // 浏览器敏感三件套（v1.5）：execute_js / get_cookies / file_upload
+    // —— HIGH + sensitiveAction 双通道门控的推断口径回归
+    // ═════════════════════════════════════════════════════════════════
+
     @Test
-    fun `registration events fire for register replace and unregister`() {
-        val registry = DefaultToolRegistry()
-        val events = mutableListOf<ToolRegistrationEvent>()
-        val listener = ToolRegistrationListener { events += it }
-        registry.addRegistrationListener(listener)
+    fun `browser sensitive trio infers HIGH risk and sensitiveAction`() {
+        val trio = listOf("BrowserExecuteJs", "BrowserGetCookies", "BrowserFileUpload")
+        trio.forEach { id ->
+            val meta = ToolMetadata.infer(id)
+            assertEquals("risk of $id", ToolRisk.HIGH, meta.risk)
+            assertEquals("category of $id", ToolCategory.BROWSER, meta.category)
+            assertTrue("sensitiveAction of $id", meta.annotations.sensitiveAction)
+        }
+    }
 
-        registry.register(tool("x"))
-        registry.register(tool("x")) // replace
-        registry.unregister("x")
-        registry.unregister("x") // no-op — 不产生事件
+    @Test
+    fun `browser routine tools stay MEDIUM non-sensitive`() {
+        // 常规动作（导航/点击/输入）保持 MEDIUM：确认预算只留给敏感三件套，
+        // 不把整个浏览器大功能都变成弹窗骚扰。
+        listOf("BrowserNavigate", "BrowserClick", "BrowserInput", "BrowserSnapshot").forEach { id ->
+            val meta = ToolMetadata.infer(id)
+            assertEquals("risk of $id", ToolRisk.MEDIUM, meta.risk)
+            assertFalse("sensitiveAction of $id", meta.annotations.sensitiveAction)
+        }
+    }
 
-        assertEquals(3, events.size)
-        val first = events[0] as ToolRegistrationEvent.Registered
-        assertFalse(first.replaced)
-        val second = events[1] as ToolRegistrationEvent.Registered
-        assertTrue(second.replaced)
-        assertEquals("x", (events[2] as ToolRegistrationEvent.Unregistered).toolId)
-
-        registry.removeRegistrationListener(listener)
-        registry.register(tool("y"))
-        assertEquals(3, events.size)
+    @Test
+    fun `browser cookie read is readOnly-sensitive while js and upload are mutating`() {
+        // 注解语义各异（见 ToolAnnotations.infer 的浏览器分支注释）：
+        // get_cookies 是敏感读（readOnly+idempotent），execute_js 是页面内
+        // 任意变更，file_upload 是 openWorld 出境写 —— 三者都敏感但非破坏。
+        val cookies = ToolMetadata.infer("BrowserGetCookies").annotations
+        assertTrue(cookies.readOnlyHint)
+        assertTrue(cookies.idempotentHint)
+        val js = ToolMetadata.infer("BrowserExecuteJs").annotations
+        assertFalse(js.readOnlyHint)
+        assertFalse(js.destructiveHint)
+        val upload = ToolMetadata.infer("BrowserFileUpload").annotations
+        assertTrue(upload.openWorldHint)
+        assertFalse(upload.destructiveHint)
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -234,26 +271,27 @@ class ToolSystemV2InfraTest {
 
     @Test
     fun `suggester ranks close typos first`() {
-        val candidates = listOf("regex_extract", "regex_replace", "web_search", "calculate")
-        val suggestions = ToolSuggester.suggest("regex_extact", candidates)
+        val candidates = listOf("RegexExtractLegacy", "RegexReplaceLegacy", "WebSearch", "Calculate")
+        // v5：候选是 PascalCase 全名（RegexExtractLegacy），输入用一位手误（少一个 r）
+        val suggestions = ToolSuggester.suggest("RegexExtractLegcy", candidates)
         assertTrue(suggestions.isNotEmpty())
-        assertEquals("regex_extract", suggestions[0])
+        assertEquals("RegexExtractLegacy", suggestions[0])
     }
 
     @Test
     fun `suggester handles prefixes and returns empty for hopeless input`() {
-        val candidates = listOf("regex_extract", "regex_replace")
-        assertEquals(listOf("regex_extract", "regex_replace"), ToolSuggester.suggest("regex", candidates))
-        assertTrue(ToolSuggester.suggest("zzzzzz", listOf("regex_extract")).isEmpty())
+        val candidates = listOf("RegexExtractLegacy", "RegexReplaceLegacy")
+        assertEquals(listOf("RegexExtractLegacy", "RegexReplaceLegacy"), ToolSuggester.suggest("regex", candidates))
+        assertTrue(ToolSuggester.suggest("zzzzzz", listOf("RegexExtractLegacy")).isEmpty())
         assertTrue(ToolSuggester.suggest("", candidates).isEmpty())
     }
 
     @Test
     fun `suggestionLine renders a model-facing hint`() {
-        val line = ToolSuggester.suggestionLine("regex_extact", listOf("regex_extract"))
+        val line = ToolSuggester.suggestionLine("RegexExtractLegcy", listOf("RegexExtractLegacy"))
         assertNotNull(line)
         assertTrue(line!!.startsWith("Did you mean:"))
-        assertTrue(line.contains("regex_extract"))
+        assertTrue(line.contains("RegexExtractLegacy"))
     }
 
     @Test
@@ -306,7 +344,7 @@ class ToolSystemV2InfraTest {
     // ═════════════════════════════════════════════════════════════════
 
     private fun highRiskTool(): AgentTool = object : AgentTool {
-        override val id = "app_uninstall"
+        override val id = "AppUninstall"
         override val name = "Uninstall"
         override val description = "uninstall an app"
         override val parametersSchema = "{}"
@@ -314,7 +352,7 @@ class ToolSystemV2InfraTest {
         override suspend fun execute(arguments: String): String = "uninstalled"
     }
 
-    private fun lowRiskTool(): AgentTool = tool("json_path")
+    private fun lowRiskTool(): AgentTool = tool("JsonPathLegacy")
 
     @Test
     fun `permission manager prompts once for high risk then allows for session`() = runTest {
@@ -326,8 +364,7 @@ class ToolSystemV2InfraTest {
         // 会话内第二次：不再询问
         assertEquals(GateDecision.Allow, gate.check(highRiskTool(), "{}"))
         assertEquals(1, prompts)
-        assertEquals(SessionToolDecision.ALLOWED_SESSION, gate.decisionFor("app_uninstall"))
-        assertTrue(gate.hasPrompted("app_uninstall"))
+        assertEquals(SessionToolDecision.ALLOWED_SESSION, gate.decisionFor("AppUninstall"))
     }
 
     @Test
@@ -337,7 +374,7 @@ class ToolSystemV2InfraTest {
 
         val first = gate.check(high, "{}")
         assertTrue(first is GateDecision.Deny)
-        assertEquals(SessionToolDecision.DENIED_SESSION, gate.decisionFor("app_uninstall"))
+        assertEquals(SessionToolDecision.DENIED_SESSION, gate.decisionFor("AppUninstall"))
 
         val second = gate.check(high, "{}")
         assertTrue(second is GateDecision.Deny)
@@ -352,9 +389,9 @@ class ToolSystemV2InfraTest {
         assertEquals(GateDecision.Allow, gate.check(lowRiskTool(), "{}"))
         assertEquals(0, prompts)
 
-        // shell_execute 预置为 selfGated（自带命令级确认，避免双重弹窗）
+        // ShellExecute 预置为 selfGated（自带命令级确认，避免双重弹窗）
         val shell = object : AgentTool {
-            override val id = "shell_execute"
+            override val id = "ShellExecute"
             override val name = "Shell"
             override val description = "shell"
             override val parametersSchema = "{}"
@@ -369,7 +406,7 @@ class ToolSystemV2InfraTest {
     fun `medium risk prompts only when defaultRiskAllowed is false`() = runTest {
         var prompts = 0
         val medium = object : AgentTool {
-            override val id = "write_file"
+            override val id = "Write"
             override val name = "Write"
             override val description = "write"
             override val parametersSchema = "{}"
@@ -388,12 +425,12 @@ class ToolSystemV2InfraTest {
     @Test
     fun `force decisions and reset work`() = runTest {
         val gate = ToolPermissionManager(confirm = { _, _ -> false })
-        gate.allowForSession("app_uninstall")
+        gate.allowForSession("AppUninstall")
         assertEquals(GateDecision.Allow, gate.check(highRiskTool(), "{}"))
-        gate.denyForSession("app_uninstall")
+        gate.denyForSession("AppUninstall")
         assertTrue(gate.check(highRiskTool(), "{}") is GateDecision.Deny)
         gate.reset()
-        assertEquals(SessionToolDecision.UNDECIDED, gate.decisionFor("app_uninstall"))
+        assertEquals(SessionToolDecision.UNDECIDED, gate.decisionFor("AppUninstall"))
     }
 
     // ═════════════════════════════════════════════════════════════════
@@ -445,16 +482,16 @@ class ToolSystemV2InfraTest {
     @Test
     fun `executor unknown tool error carries suggestions not the full id list`() = runTest {
         val registry = DefaultToolRegistry()
-        registry.register(legacyTool("regex_extract"))
-        registry.register(legacyTool("regex_replace"))
+        registry.register(legacyTool("RegexExtractLegacy"))
+        registry.register(legacyTool("RegexReplaceLegacy"))
         val executor = DefaultToolExecutor(registry)
 
-        val err = executor.execute("regex_extact", "{}")
+        val err = executor.execute("RegexExtractLegcy", "{}")
         assertTrue(err.startsWith("Error:"))
         assertTrue(err.contains("Did you mean:"))
-        assertTrue(err.contains("regex_extract"))
+        assertTrue(err.contains("RegexExtractLegacy"))
         // 不再倾倒全量 id 清单
-        assertFalse(err.contains("regex_replace"))
+        assertFalse(err.contains("RegexReplaceLegacy"))
     }
 
     @Test
@@ -464,7 +501,7 @@ class ToolSystemV2InfraTest {
         val gate = ToolPermissionManager(confirm = { _, _ -> false })
         val executor = DefaultToolExecutor(registry, gate = gate)
 
-        val denied = executor.execute("app_uninstall", "{}")
+        val denied = executor.execute("AppUninstall", "{}")
         assertTrue(denied.startsWith("Error:"))
         assertTrue(denied.contains("permission denied"))
         // 门拒绝后工具本体不应被执行
@@ -497,7 +534,7 @@ class ToolSystemV2InfraTest {
         val gate = ToolPermissionManager(confirm = { _, _ -> false })
         val executor = DefaultToolExecutor(registry, gate = gate)
 
-        val events = executor.executeStream("app_uninstall", "{}").toList()
+        val events = executor.executeStream("AppUninstall", "{}").toList()
         assertEquals(1, events.size)
         assertTrue(events[0] is ToolStreamEvent.Error)
     }

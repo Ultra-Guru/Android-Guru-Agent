@@ -14,7 +14,7 @@ import org.junit.Test
 
 /**
  * #172 上下文回顾三件套单测：fake [SessionContextProvider] 驱动
- * context_recap / context_search / session_stats，以及
+ * ContextRecap / ContextSearch / SessionStats，以及
  * [toContextRecords] 转换契约（截断、[tool_call] 标记行、System 保留）。
  */
 class ContextToolsTest {
@@ -30,10 +30,10 @@ class ContextToolsTest {
         ContextRecord(1, "user", "帮我分析 /data/app 目录下哪个应用最大，然后写一份报告", 1000L),
         ContextRecord(2, "assistant", "", 1500L), // 纯工具调用轮（content 空）
         ContextRecord(3, "tool", "Error: 权限不足，无法执行。当前权限通道：app-shell。", 2000L),
-        ContextRecord(4, "assistant", "[tool_call] terminal.exec\n[tool_call] read_file", 2500L),
+        ContextRecord(4, "assistant", "[tool_call] TerminalExec\n[tool_call] Read", 2500L),
         ContextRecord(5, "tool", "com.android.chrome 320MB\ncom.tencent.mm 512MB", 3000L),
         ContextRecord(6, "user", "很好，现在把它转成 markdown 表格", 3500L),
-        ContextRecord(7, "assistant", "[tool_call] json\n[tool_call] write_file", 4000L),
+        ContextRecord(7, "assistant", "[tool_call] json\n[tool_call] Write", 4000L),
         ContextRecord(8, "tool", "wrote report.md (142 bytes)", 4500L),
         ContextRecord(9, "assistant", "报告已生成：report.md。微信(512MB)最大，Chrome(320MB)其次。", 5000L)
     )
@@ -55,7 +55,7 @@ class ContextToolsTest {
         val messages = listOf(
             LlmMessage.System("sys"),
             LlmMessage.User("hello"),
-            LlmMessage.Assistant("", toolCalls = listOf(ToolCall("id1", "read_file", "{}"))),
+            LlmMessage.Assistant("", toolCalls = listOf(ToolCall("id1", "Read", "{}"))),
             LlmMessage.ToolResult("id1", "ok")
         )
         val converted = toContextRecords(messages)
@@ -65,7 +65,7 @@ class ContextToolsTest {
         assertEquals("assistant", converted[2].role)
         assertEquals("tool", converted[3].role)
         // 纯工具调用轮：content 为空时 [tool_call] 行成为全部内容。
-        assertEquals("[tool_call] read_file", converted[2].content)
+        assertEquals("[tool_call] Read", converted[2].content)
         // 索引即会话内序号。
         assertEquals(listOf(0, 1, 2, 3), converted.map { it.index })
     }
@@ -81,12 +81,12 @@ class ContextToolsTest {
     @Test
     fun `assistant text plus tool calls are concatenated`() {
         val converted = toContextRecords(
-            listOf(LlmMessage.Assistant("thinking", listOf(ToolCall("i", "web_search", "{}"))))
+            listOf(LlmMessage.Assistant("thinking", listOf(ToolCall("i", "WebSearch", "{}"))))
         )
-        assertEquals("thinking\n[tool_call] web_search", converted[0].content)
+        assertEquals("thinking\n[tool_call] WebSearch", converted[0].content)
     }
 
-    // ═══ context_recap ═══════════════════════════════════════════════
+    // ═══ ContextRecap ═══════════════════════════════════════════════
 
     @Test
     fun `recap renders all five sections in compact markdown`() = runTest {
@@ -117,7 +117,7 @@ class ContextToolsTest {
     @Test
     fun `recap histograms tool calls from markers`() = runTest {
         val out = run(recap, """{"scope":"full"}""")
-        assertTrue(out.contains("terminal.exec×1"))
+        assertTrue(out.contains("TerminalExec×1"))
         assertTrue(out.contains("json×1"))
         assertTrue(out.contains("tool messages: 3"))
     }
@@ -146,7 +146,7 @@ class ContextToolsTest {
         assertEquals(ToolErrorCode.NOT_FOUND, result.error!!.code)
     }
 
-    // ═══ context_search ══════════════════════════════════════════════
+    // ═══ ContextSearch ══════════════════════════════════════════════
 
     @Test
     fun `search finds hits with index role locator and context`() = runTest {
@@ -220,7 +220,7 @@ class ContextToolsTest {
         assertEquals(ToolErrorCode.INVALID_ARGUMENT, result.error!!.code)
     }
 
-    // ═══ session_stats ═══════════════════════════════════════════════
+    // ═══ SessionStats ═══════════════════════════════════════════════
 
     @Test
     fun `stats reports distribution tokens histogram and error rate`() = runTest {
@@ -230,7 +230,7 @@ class ContextToolsTest {
         assertTrue(out.contains("chars: "))
         assertTrue(out.contains("est. ~"))
         assertTrue(out.contains("tool_calls: 4"))
-        assertTrue(out.contains("terminal.exec×1"))
+        assertTrue(out.contains("TerminalExec×1"))
         // 3 条 tool 记录里 1 条错误 → 33.3%。
         assertTrue(out.contains("errors: 1/3 tool records (33.3%)"))
     }

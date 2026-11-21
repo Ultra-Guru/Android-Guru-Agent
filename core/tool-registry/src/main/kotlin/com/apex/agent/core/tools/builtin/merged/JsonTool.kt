@@ -30,13 +30,13 @@ import kotlinx.serialization.json.jsonPrimitive
 /**
  * `json` — JSON 四合一工具（#171 四族合并）。
  *
- * 合并自 `json_path`（查询）与 `json_transform`（七操作重塑）（#171），
+ * 合并自 `JsonPathLegacy`（查询）与 `JsonTransformLegacy`（七操作重塑）（#171），
  * 并补齐 validate / format 两个零依赖高频操作。旧工具保留注册；旧 id 进
  * LEGACY_ALIAS_IDS。
  *
  * Why: agent 每天接收大量 JSON（工具输出、API 响应、配置）。查一个字段、
- * 换一个形状、验一段文本、美化一段输出，此前要分别打开 json_path /
- * json_transform / text_transform 三个 schema。合并后单入口，`op` 一词
+ * 换一个形状、验一段文本、美化一段输出，此前要分别打开 JsonPathLegacy /
+ * JsonTransformLegacy / TextTransform 三个 schema。合并后单入口，`op` 一词
  * 区分；查询引擎与重塑管线直接复用旧工具的核心实现（抽出的
  * [JsonTransformOps] 与 JsonPathTool 的段求值器），语义零漂移。
  *
@@ -50,7 +50,7 @@ import kotlinx.serialization.json.jsonPrimitive
  * - `format`    — 美化（缩进可调，默认 2）/ 压缩。
  */
 class JsonTool : BaseTool(
-    id = "json",
+    id = "Json",
     name = "JSON Toolkit",
     description = """
         JSON operations in one tool: JSONPath query, jq-style transform pipeline,
@@ -69,7 +69,8 @@ class JsonTool : BaseTool(
         string("op", required = true, description = "query | transform | validate | format", enumValues = listOf("query", "transform", "validate", "format"))
         string("json", required = true, description = "The JSON document (raw text)")
         string("path", description = "JSONPath expression for op=query, e.g. \$.store.book[?(@.price<10)].title")
-        string("operations", description = "JSON array of transform operations for op=transform, applied in order")
+        // 双形态（FlexibleJson 口径）：内联数组首选，字符串编码宽容。
+        stringArray("operations", description = "JSON array of transform operations for op=transform, applied in order")
         string("style", description = "op=format output style: pretty | compact (default pretty)", enumValues = listOf("pretty", "compact"), defaultValue = "pretty")
         integer("indent", description = "Pretty-print indent width for op=format (default 2, 1..8)", defaultValue = 2, minimum = 1.0, maximum = 8.0)
     }
@@ -104,7 +105,7 @@ class JsonTool : BaseTool(
         }
     }
 
-    // ── query（移植自 json_path）───────────────────────────────────────────
+    // ── query（移植自 JsonPathLegacy）───────────────────────────────────────────
 
     private fun opQuery(args: ToolArguments, jsonText: String): ToolResult {
         val path = args.requireString("path")
@@ -128,7 +129,7 @@ class JsonTool : BaseTool(
         else -> JsonArray(matches).joinToString(prefix = "[\n  ", separator = ",\n  ", postfix = "\n]")
     }
 
-    // ── transform（复用 JsonTransformOps，与 json_transform 同源）─────────
+    // ── transform（复用 JsonTransformOps，与 JsonTransformLegacy 同源）─────────
 
     private fun opTransform(args: ToolArguments, jsonText: String): ToolResult {
         var document = parseOrInvalid(jsonText) ?: return badJson(jsonText)
@@ -211,15 +212,15 @@ class JsonTool : BaseTool(
 }
 
 /**
- * 七操作 JSON 重塑核心（自 `json_transform` 抽出的共享实现，#171：新
- * `json` 工具的 transform 操作与旧 `json_transform` 工具共用，语义零漂移）。
+ * 七操作 JSON 重塑核心（自 `JsonTransformLegacy` 抽出的共享实现，#171：新
+ * `json` 工具的 transform 操作与旧 `JsonTransformLegacy` 工具共用，语义零漂移）。
  *
  * 每个操作小而全（绝不部分应用），形状不匹配抛 [ToolArgumentException]
  * 点名文档**实际**形状 —— 模型无需重倒输入即可修正管线。
  */
 internal object JsonTransformOps {
 
-    /** 已知操作名（渲染进错误建议，与 json_transform 的提示保持一致）。 */
+    /** 已知操作名（渲染进错误建议，与 JsonTransformLegacy 的提示保持一致）。 */
     const val KNOWN_OPS_HINT = "pick, omit, rename, flatten, map_pick, wrap, values"
 
     /**

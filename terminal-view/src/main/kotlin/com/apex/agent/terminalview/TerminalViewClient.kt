@@ -132,3 +132,19 @@ data class TerminalContextMenuItem(val id: String, val label: String) {
         const val ID_COPY_LINK = "terminal.copy_link"
     }
 }
+
+/** 默认选区菜单（选区存在时含 Copy；Paste/SelectAll/Clear 恒在）。 */
+fun defaultSelectionMenuItems(hasSelection: Boolean): List<TerminalContextMenuItem> {
+    val items = ArrayList<TerminalContextMenuItem>(4)
+    if (hasSelection) items.add(TerminalContextMenuItem(TerminalContextMenuItem.ID_COPY, "Copy"))
+    items.add(TerminalContextMenuItem(TerminalContextMenuItem.ID_PASTE, "Paste"))
+    items.add(TerminalContextMenuItem(TerminalContextMenuItem.ID_SELECT_ALL, "Select all"))
+    items.add(TerminalContextMenuItem(TerminalContextMenuItem.ID_CLEAR_SELECTION, "Clear"))
+    return items
+}
+
+/** URL 命中菜单（Open link / Copy link）。 */
+fun urlMenuItems(): List<TerminalContextMenuItem> = listOf(
+    TerminalContextMenuItem(TerminalContextMenuItem.ID_OPEN_LINK, "Open link"),
+    TerminalContextMenuItem(TerminalContextMenuItem.ID_COPY_LINK, "Copy link")
+)

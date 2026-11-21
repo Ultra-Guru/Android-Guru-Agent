@@ -5,14 +5,18 @@ import com.apex.agent.core.codetools.git.GitCommandRunner
 import com.apex.agent.core.codetools.git.GitCommandResult
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
+import com.apex.agent.github.GithubCredentialIssuer
+import com.apex.agent.github.GithubTerminalEnvInjector
 import com.apex.agent.platform.terminal.environment.LinuxEnvironmentManager
 import com.apex.agent.platform.terminal.linux.CpuArchitecture
 import com.apex.agent.platform.terminal.linux.LinuxDistribution
 import com.apex.agent.platform.terminal.linux.RootfsDescriptor
+import com.apex.agent.platform.terminal.proot.PRootArgvCapabilities
 import com.apex.agent.platform.terminal.proot.PRootBind
 import com.apex.agent.platform.terminal.proot.PRootCommand
 import com.apex.agent.platform.terminal.proot.PRootCommandBuilderImpl
 import com.apex.agent.platform.terminal.proot.PRootLaunchRequest
+import com.apex.agent.platform.terminal.proot.PRootLibtallocStaging
 import com.apex.agent.platform.terminal.proot.SharedStorageBridge
 import com.apex.agent.platform.terminal.proot.SystemBindProfile
 import com.apex.agent.platform.terminal.workspace.AbsolutePath
@@ -24,7 +28,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.InputStream
-import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
 import kotlin.concurrent.thread
@@ -86,6 +89,10 @@ private const val MAX_STREAM_CHARS = 1_048_576
  *   单源）、TERM=dumb（git 无终端交互）、HOME=/root（与终端会话共享持久化
  *   home——git config --global 互通）、LANG=C.UTF-8（git 报错保持英文原文，
  *   解析 "not a git repository" 等特征串才稳定）、PWD/TMPDIR 对齐 -w；
+ *   v3 S3（G2）+ Git 审计 P0-1：[GithubTerminalEnvInjector] 在此基线上
+ *   追加 GIT_ASKPASS（一次性凭据脚本路径，[GithubCredentialIssuer] 签发、
+ *   run() finally 吊销）+ GIT_TERMINAL_PROMPT=0——**PAT 零进 env**，
+ *   凭据只经脚本流向 github.com；
  * - Android app 进程的任何变量不被继承。
  *
  * ## bind 语义
@@ -113,7 +120,7 @@ private const val MAX_STREAM_CHARS = 1_048_576
  *   标记解析 versions/ 子目录）；
  * - isRootfsReady：File(filesDir, "rootfs/ubuntu", "current").exists()
  *   或 LinuxPRootBackend.availability() 为 Ready；
- * - workspaceRoots：CodeModule 既有 @Singleton（与 code_read 等工具同源，
+ * - workspaceRoots：CodeModule 既有 @Singleton（与 CodeRead 等工具同源，
  *   切工作区即时生效）；
  * - persistentHomeDir：File(filesDir, "linux/home")（与终端会话共享；
  *   不存在时自动跳过 bind）。
@@ -132,7 +139,20 @@ class ProotGitCommandRunner(
     /** 编码工作区根解析器（每次 run 现取，切换工作区即时生效）。 */
     private val workspaceRoots: CodeWorkspaceRoots,
     /** 持久化 home 宿主目录（null 或不存在 = 跳过 home bind，诚实降级）。 */
-    private val persistentHomeDir: File?
+    private val persistentHomeDir: File?,
+    /**
+     * T92（D5 完成度）：argv 能力源（PRootCapabilitySource —— 非挂起读取）。
+     * git 通道与终端会话/apt 同款版本自适应；默认 Termux 基线仅保既有测试
+     * 夹具语义，生产 DI 注入真实源。
+     */
+    private val capabilities: () -> PRootArgvCapabilities = { PRootArgvCapabilities.TERMUX_BUNDLED },
+    /**
+     * v3 S3（G2）+ Git 审计 P0-1：GitHub PAT 供应器（null = 不签发凭据，
+     * 既有测试夹具零变化）。已连接时经 [GithubCredentialIssuer] 签发一次性
+     * GIT_ASKPASS 脚本（PAT 零进 env），[GithubTerminalEnvInjector] 只把
+     * 脚本路径注入本次命令的 guest env。
+     */
+    private val gitHubTokenProvider: (() -> String?)? = null
 ) : GitCommandRunner {
 
     private val commandBuilder = PRootCommandBuilderImpl()
@@ -165,9 +185,15 @@ class ProotGitCommandRunner(
         if (!activeRoot.isDirectory) {
             return@withContext infraResult(NO_ACTIVE_WORKSPACE_MESSAGE)
         }
-        // 5. 组装 argv 并执行
-        val command = buildCommand(rootfs, activeRoot, args)
-        val result = executeBounded(command, timeoutMs)
+        // 5. 凭据签发（Git 审计 P0-1：一次性 GIT_ASKPASS 脚本，PAT 零进 env）
+        //    + 组装 argv 并执行（命令结束/超时/取消均吊销脚本）
+        val credentials = GithubCredentialIssuer.issue(rootfs, gitHubTokenProvider?.invoke())
+        val result = try {
+            val command = buildCommand(rootfs, activeRoot, args, credentials?.guestAskPassPath)
+            executeBounded(command, timeoutMs)
+        } finally {
+            credentials?.dispose()
+        }
         if (!result.success) {
             runCatching {
                 AppLogger.instance.debug(
@@ -202,7 +228,7 @@ class ProotGitCommandRunner(
                 return RootfsResolution(
                     null,
                     "Ubuntu rootfs 已损坏：版本标记指向的目录缺失（${versionDir.absolutePath}）" +
-                        "—— 请在终端页重装 Ubuntu（terminal.ubuntu.install）"
+                        "—— 请在终端页重装 Ubuntu（TerminalUbuntuEnsure）"
                 )
             }
         }
@@ -224,15 +250,15 @@ class ProotGitCommandRunner(
             val tmp = File(dir)
             if (!tmp.isDirectory) runCatching { tmp.mkdirs() }
         }
-        // libtalloc.so.2 SONAME 入口：Android 打包要求 jniLibs 以 lib 前缀加 .so
-        // 结尾命名，而 proot 的 DT_NEEDED 是 libtalloc.so.2——逐个
-        // LD_LIBRARY_PATH 目录兜底重建同名字链接（Termux/UserLAnd 先例）。
-        val ldPath = hostEnv["LD_LIBRARY_PATH"] ?: return null
-        for (dir in ldPath.split(':').filter { it.isNotBlank() }) {
-            val talloc = File(dir, "libtalloc.so")
-            val soname = File(dir, "libtalloc.so.2")
-            if (talloc.isFile && !soname.exists()) {
-                runCatching { Files.createSymbolicLink(soname.toPath(), talloc.toPath()) }
+        // libtalloc.so.2 SONAME 入口（共享助手：LD_LIBRARY_PATH 各目录幂等
+        // 重建——含 staging 目录；悬空链接删除重建；失败不再静默吞掉，
+        // 逐目录 WARN 留痕，下次诊断日志直接可见真实异常）。
+        PRootLibtallocStaging.ensure(hostEnv, libprootPath).forEach { r ->
+            if (r.outcome == PRootLibtallocStaging.Outcome.FAILED) {
+                AppLogger.instance.warn(
+                    LogCategory.TOOL, TAG,
+                    "libtalloc.so.2 staging 失败 ${r.dir}：${r.error}"
+                )
             }
         }
         return null
@@ -250,7 +276,12 @@ class ProotGitCommandRunner(
     }
 
     /** 完整命令：构建器产出 libproot + -r/-0/--kill-on-exit + binds + -w + -E 序列 + git。 */
-    internal fun buildCommand(rootfs: File, workspaceRoot: File, gitArgs: List<String>): PRootCommand {
+    internal fun buildCommand(
+        rootfs: File,
+        workspaceRoot: File,
+        gitArgs: List<String>,
+        askPassGuestPath: String?,
+    ): PRootCommand {
         val request = PRootLaunchRequest(
             // 构建器不消费 request.rootfs（真实根目录经 rootfsPath 参数传入），
             // 此处仅为请求对象完整性构造最小描述符。
@@ -267,7 +298,14 @@ class ProotGitCommandRunner(
             executable = "git",
             arguments = gitArgs,
             workingDirectory = WORKSPACE_CWD,
-            environment = guestEnv(),
+            // Git 审计 P0-1：凭据桥只注入 GIT_ASKPASS 脚本路径 +
+            // GIT_TERMINAL_PROMPT=0（PAT 零进 env——一次性 askpass 脚本由
+            // GithubCredentialIssuer 在 run() 里签发、finally 吊销）
+            environment = GithubTerminalEnvInjector.inject(
+                guestEnv(),
+                (listOf("git") + gitArgs).joinToString(" "),
+                askPassGuestPath
+            ),
             binds = buildBinds(),
             fakeRoot = true,
             killOnExit = true
@@ -276,7 +314,9 @@ class ProotGitCommandRunner(
             request,
             prootBinary = AbsolutePath(libprootPath),
             rootfsPath = AbsolutePath(rootfs.absolutePath),
-            workspacePath = AbsolutePath(workspaceRoot.absolutePath)
+            workspacePath = AbsolutePath(workspaceRoot.absolutePath),
+            // T92：探针实测能力门（预取未完成时保守省略 —— 见 PRootCapabilitySource）
+            capabilities = capabilities()
         )
     }
 
@@ -284,6 +324,9 @@ class ProotGitCommandRunner(
      * guest env 基线：PATH 用 LinuxEnvironmentManager.GUEST_PATH 单源；
      * TERM=dumb（管道执行无终端转义）；HOME=/root（持久化 home 与终端共享，
      * git 全局配置互通）；LANG=C.UTF-8 保持 git 报错为可解析的英文原文。
+     * v3 S3（G2）+ Git 审计 P0-1：GitHub 已连接时由 [buildCommand] 在此
+     * 基线上追加 GIT_ASKPASS（一次性凭据脚本路径）与 GIT_TERMINAL_PROMPT=0
+     * ——PAT 不进 env（脚本由 [GithubCredentialIssuer] 签发、run() 吊销）。
      */
     internal fun guestEnv(): Map<String, String> = linkedMapOf(
         "PATH" to LinuxEnvironmentManager.GUEST_PATH,
@@ -340,9 +383,18 @@ class ProotGitCommandRunner(
                 coroutineContext.ensureActive()
             }
             if (timedOut) {
-                runCatching { process.destroyForcibly() }
+                killProcessTree(process)
+                // #638：双保险收尾 —— 关流是主手段（阻塞 read 因管道关闭抛
+                // IOException/EOF 退出），interrupt 是副手段（对阻塞 read 无效，
+                // 但能把处于可中断状态的 drain 线程踢出等待，缩窄泄漏窗口）。
+                runCatching { stdoutDrain.interrupt() }
+                runCatching { stderrDrain.interrupt() }
                 runCatching { stdoutDrain.join(DRAIN_JOIN_MS) }
                 runCatching { stderrDrain.join(DRAIN_JOIN_MS) }
+                // join 宽限用尽 = drain 线程仍活着（孙进程持有管道）—— 如实标注
+                // 输出不完整，绝不假装完整（对齐 ExecEngine 的 markIncomplete 契约）
+                if (stdoutDrain.isAlive) stdoutCapture.markIncomplete()
+                if (stderrDrain.isAlive) stderrCapture.markIncomplete()
                 return GitCommandResult(
                     exitCode = GitCommandResult.INFRA_EXIT_CODE,
                     stdout = stdoutCapture.snapshot(),
@@ -351,16 +403,35 @@ class ProotGitCommandRunner(
             }
             runCatching { stdoutDrain.join(DRAIN_JOIN_MS) }
             runCatching { stderrDrain.join(DRAIN_JOIN_MS) }
+            if (stdoutDrain.isAlive) stdoutCapture.markIncomplete()
+            if (stderrDrain.isAlive) stderrCapture.markIncomplete()
             return GitCommandResult(
                 exitCode = process.exitValue(),
                 stdout = stdoutCapture.snapshot(),
                 stderr = stderrCapture.snapshot()
             )
         } catch (e: CancellationException) {
-            // 协程取消：销毁进程后原样上抛（保持取消语义诚实）
-            runCatching { process.destroyForcibly() }
+            // 协程取消：收尾进程树（关流+强杀）后原样上抛（保持取消语义诚实）；
+            // drain 线程同样补 interrupt（#638，同超时路径的双保险语义）
+            killProcessTree(process)
+            runCatching { stdoutDrain.interrupt() }
+            runCatching { stderrDrain.interrupt() }
             throw e
         }
+    }
+
+    /**
+     * 超时/取消收尾：先关三根流再强杀进程——关闭流使 drain 线程阻塞的
+     * read() 立即以 IOException/EOF 退出（interrupt 无法中断阻塞 read，关流
+     * 才是主手段；interrupt 作为副手段在调用点补发，见 #638）；不关流时
+     * 若 git 派生了子进程（ssh/gpg/凭据助手）持有管道写端，drain 线程会
+     * 永久泄漏。与 ProotSandboxCommandRunner.killProcessTree 同款语义。
+     */
+    private fun killProcessTree(process: Process) {
+        runCatching { process.outputStream.close() }
+        runCatching { process.inputStream.close() }
+        runCatching { process.errorStream.close() }
+        runCatching { process.destroyForcibly() }
     }
 
     /** 起一个 daemon 线程持续 drain 一根流（防管道缓冲区写满死锁）。 */
@@ -399,7 +470,7 @@ class ProotGitCommandRunner(
         /** rootfs 未就绪时的用户引导文案。 */
         internal const val ROOTFS_NOT_READY_MESSAGE =
             "Ubuntu 环境未安装或未就绪——Git 工具依赖沙箱内预装的 git，" +
-                "请先在终端页安装 Ubuntu（terminal.ubuntu.install）后再试"
+                "请先在终端页安装 Ubuntu（TerminalUbuntuEnsure）后再试"
 
         /** 无激活工作区时的引导文案。 */
         internal const val NO_ACTIVE_WORKSPACE_MESSAGE =
@@ -414,6 +485,10 @@ class ProotGitCommandRunner(
  * 两阶段策略：未达预算时全文累积；超预算后首部固化 budget/2，切换为固定
  * 容量的尾部滚动 ring，中间丢弃并在 snapshot 里打标——开头的错误上下文与
  * 末尾的摘要行都保留，海量输出不撑爆内存与上下文。
+ *
+ * 线程安全（本版加固）：单写者（drain 线程）+ join 宽限用尽时读取方与
+ * 写入方并发访问 StringBuilder（非线程安全）会拿到撕裂字符串 ——
+ * append/snapshot 加监视器锁（对齐 ExecEngine / ProotExecutor 同款纪律）。
  */
 private class BoundedCapture(private val budgetChars: Int) {
 
@@ -428,8 +503,12 @@ private class BoundedCapture(private val budgetChars: Int) {
     var charsSeen: Long = 0
         private set
 
+    /** 采集未收尾（drain 线程 join 宽限用尽仍存活）：尾巴可能缺失。 */
+    private var incomplete = false
+
     private val halfBudget: Int get() = (budgetChars / 2).coerceAtLeast(1)
 
+    @Synchronized
     fun append(buf: CharArray, len: Int) {
         if (len <= 0) return
         charsSeen += len
@@ -440,14 +519,14 @@ private class BoundedCapture(private val budgetChars: Int) {
             } else {
                 head.append(buf, 0, remainingHead.coerceAtLeast(0))
                 truncated = true
-                appendToTail(buf, remainingHead.coerceAtLeast(0), len - remainingHead.coerceAtLeast(0))
+                appendToTailLocked(buf, remainingHead.coerceAtLeast(0), len - remainingHead.coerceAtLeast(0))
             }
         } else {
-            appendToTail(buf, 0, len)
+            appendToTailLocked(buf, 0, len)
         }
     }
 
-    private fun appendToTail(buf: CharArray, offset: Int, len: Int) {
+    private fun appendToTailLocked(buf: CharArray, offset: Int, len: Int) {
         if (len <= 0) return
         tail.append(buf, offset, len)
         if (tail.length > halfBudget) {
@@ -455,15 +534,28 @@ private class BoundedCapture(private val budgetChars: Int) {
         }
     }
 
+    /** 标记采集未收尾（drain 线程仍在写入；snapshot 尾部会加不完整告示）。 */
+    fun markIncomplete() {
+        incomplete = true
+    }
+
+    @Synchronized
     fun snapshot(): String {
-        if (!truncated) return head.toString()
+        if (!truncated && !incomplete) return head.toString()
+        if (!truncated && incomplete) {
+            return head.toString() + "\n...[incomplete: drain still running when snapshot taken]...\n"
+        }
         val dropped = charsSeen - head.length - tail.length
-        return buildString(head.length + tail.length + 64) {
+        val incompleteNotice = if (incomplete) {
+            "\n...[incomplete: drain still running when snapshot taken]...\n"
+        } else ""
+        return buildString(head.length + tail.length + 96) {
             append(head)
             append("\n...[已截断 ")
-            append(dropped)
+            append(dropped.coerceAtLeast(0))
             append(" 字符]...\n")
             append(tail)
+            append(incompleteNotice)
         }
     }
 }

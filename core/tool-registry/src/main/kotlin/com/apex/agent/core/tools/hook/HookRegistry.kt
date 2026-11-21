@@ -400,7 +400,7 @@ class HookRegistry(
 
         /**
          * 工具匹配模式：单独 `*` 全匹配；前缀+尾 `*` 前缀匹配（如
-         * `code_git_*`、`mcp__github__*`）；其余按精确 id（大小写敏感）；
+         * `code_git_*`、`McpGithub*`）；其余按精确 id（大小写敏感）；
          * 空模式不匹配任何工具；不支持中间通配。语义对齐 app 层
          * PermissionRuleMatcher（core 不可依赖 app，故本地重实现）。
          */

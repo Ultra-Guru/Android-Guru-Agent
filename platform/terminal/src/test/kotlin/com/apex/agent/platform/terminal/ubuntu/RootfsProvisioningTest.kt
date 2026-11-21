@@ -524,6 +524,32 @@ class RootfsProvisioningTest {
 
     // ─── §18: repair + archive cache reuse ───
 
+    @Test fun `repair restores a missing CA bundle in an otherwise ready legacy rootfs`() = kotlinx.coroutines.test.runTest {
+        val layout = tempLayout()
+        val trustedBundle = Files.createTempFile("t99-trusted-ca-", ".crt").toFile().apply {
+            writeText(TestCaFixtures.isrgRootX1Pem)
+        }
+        var hostAvailable = false
+        val configurator = RootfsConfigurator(
+            dnsServers = { listOf("10.0.0.1") },
+            hostCaBundle = { trustedBundle.takeIf { hostAvailable } }
+        )
+        val prov = RootfsProvisionerImpl(
+            source = fakeSourceWithChecksum(buildRootfsTarGz()), validator = null,
+            layout = layout, configurator = configurator,
+            healthCheck = RootfsHealthInspector(expectedArch = null)
+        )
+        val installed = prov.install(RootfsTarget("ubuntu", "24.04", CpuArchitecture.ARM64))
+        assertTrue(installed is ProvisioningResult.Ready)
+        val ca = File(prov.current()!!.location!!.value, "etc/ssl/certs/ca-certificates.crt")
+        assertFalse("legacy install has no host CA", ca.exists())
+
+        hostAvailable = true // host trust store becomes readable without reinstalling ~300MB
+        val result = prov.repair()
+        assertTrue("rootfs remains ready: $result", result is ProvisioningResult.AlreadyReady)
+        assertTrue("legacy missing bundle must be repaired", ca.isFile && ca.readText() == trustedBundle.readText())
+    }
+
     @Test fun `repair returns AlreadyReady when rootfs is valid`() = runBlocking {
         val layout = tempLayout()
         val prov = newProvisioner(fakeSourceWithChecksum(buildRootfsTarGz()), layout)

@@ -255,6 +255,14 @@ class UnixSignalTest {
         assertEquals(18, UnixSignal.SIGCONT.number)
     }
 
+    // v3（信号语义统一）：Ctrl+Z 的真实信号 —— SUSPEND 控制此前错发 SIGSTOP(19)
+    // 导致会话假死（SIGSTOP 不可捕获，shell 不回前台）。
+    @Test fun `SIGTSTP exists with job-control semantics`() {
+        assertEquals(20, UnixSignal.valueOf("SIGTSTP").number)
+        // 两个「停止」信号语义不同、号码不同 —— 不允许混淆回归
+        assertTrue(UnixSignal.SIGTSTP.number != UnixSignal.SIGSTOP.number)
+    }
+
     @Test fun `all signals have valid numbers`() {
         for (s in UnixSignal.values()) {
             assertTrue("${s.name} should have positive number", s.number > 0)

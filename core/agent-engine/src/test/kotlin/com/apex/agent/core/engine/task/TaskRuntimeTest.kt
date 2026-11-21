@@ -11,6 +11,7 @@ import com.apex.agent.core.engine.orchestrator.FakeLlmClient
 import com.apex.agent.core.engine.orchestrator.FakeToolExecutor
 import com.apex.agent.core.engine.orchestrator.FakeToolRegistry
 import com.apex.agent.core.llm.ToolCall
+import com.apex.agent.core.llm.runtime.ModelRuntimeException
 import com.apex.agent.core.tools.ToolStreamEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -135,13 +136,13 @@ class TaskRuntimeTest {
     fun `tool call boundaries are journaled to checkpoint`() {
         val llm = FakeLlmClient(
             listOf(
-                // 轮1：调 read_file
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("call_1", "read_file", """{"path":"a"}"""))),
+                // 轮1：调 Read
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("call_1", "Read", """{"path":"a"}"""))),
                 // 轮2：纯文本收尾
                 FakeLlmClient.ScriptedResponse.Ok(content = "done")
             )
         )
-        val tools = FakeToolExecutor().apply { registerSuccess("read_file", "content-a") }
+        val tools = FakeToolExecutor().apply { registerSuccess("Read", "content-a") }
         val engine = newEngine(llm, tools)
         val rt = newRuntime(engine, CoroutineScope(SupervisorJob() + Dispatchers.IO))
 
@@ -151,7 +152,7 @@ class TaskRuntimeTest {
         assertEquals(1, task.operations.size)
         val op = task.operations[0]
         assertEquals("call_1", op.llmCallId)
-        assertEquals("read_file", op.toolName)
+        assertEquals("Read", op.toolName)
         assertEquals(OperationStatus.SUCCEEDED, op.status)
         assertEquals(ToolIdempotencyClass.READ_ONLY, op.idempotency)
         assertEquals("content-a", op.outputDigest)
@@ -166,12 +167,12 @@ class TaskRuntimeTest {
     fun `failed tool operation is journaled as FAILED`() {
         val llm = FakeLlmClient(
             listOf(
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("call_1", "shell_execute", "{}"))),
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("call_1", "ShellExecute", "{}"))),
                 FakeLlmClient.ScriptedResponse.Ok(content = "recovered")
             )
         )
         val tools = FakeToolExecutor().apply {
-            register("shell_execute", FakeToolExecutor.ScriptedTool.Events(listOf(ToolStreamEvent.Error("boom"))))
+            register("ShellExecute", FakeToolExecutor.ScriptedTool.Events(listOf(ToolStreamEvent.Error("boom"))))
         }
         val engine = newEngine(llm, tools)
         val rt = newRuntime(engine, CoroutineScope(SupervisorJob() + Dispatchers.IO))
@@ -191,15 +192,15 @@ class TaskRuntimeTest {
         // 3 轮脚本：工具 → 工具 → 文本。工具慢速执行（Delay）制造可捕获的暂停窗口。
         val llm = FakeLlmClient(
             listOf(
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "read_file", "{}"))),
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c2", "read_file", "{}"))),
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "Read", "{}"))),
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c2", "Read", "{}"))),
                 FakeLlmClient.ScriptedResponse.Ok(content = "all done"),
                 // resume 轮次：续跑到完成
                 FakeLlmClient.ScriptedResponse.Ok(content = "resumed and finished")
             )
         )
         val tools = FakeToolExecutor().apply {
-            register("read_file", FakeToolExecutor.ScriptedTool.Delay(delayMs = 400))
+            register("Read", FakeToolExecutor.ScriptedTool.Delay(delayMs = 400))
         }
         val engine = newEngine(llm, tools)
         val rt = newRuntime(engine, CoroutineScope(SupervisorJob() + Dispatchers.IO))
@@ -238,12 +239,12 @@ class TaskRuntimeTest {
     fun `cancel lands CANCELLED terminal and is NOT auto-resumed on discovery`() = runBlocking<Unit> {
         val llm = FakeLlmClient(
             listOf(
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "read_file", "{}"))),
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "Read", "{}"))),
                 FakeLlmClient.ScriptedResponse.Ok(content = "done")
             )
         )
         val tools = FakeToolExecutor().apply {
-            register("read_file", FakeToolExecutor.ScriptedTool.Delay(delayMs = 400))
+            register("Read", FakeToolExecutor.ScriptedTool.Delay(delayMs = 400))
         }
         val engine = newEngine(llm, tools)
         val rt = newRuntime(engine, CoroutineScope(SupervisorJob() + Dispatchers.IO))
@@ -264,6 +265,83 @@ class TaskRuntimeTest {
         assertEquals(0, rt2.loadTaskHistory().count { it.isActive })
     }
 
+    // ═══ #335: ask_user 全链回归（TaskRuntime 砖化修复）═══
+
+    @Test
+    fun `ask_user answered then complete reaches COMPLETED and releases claim`() = runBlocking<Unit> {
+        // 旧缺陷链：UserInputRequired → WAITING_USER 落盘 → 用户应答 → 引擎继续
+        // 至 Complete，但 onEngineEvent 无 WAITING_USER→RUNNING 回迁 →
+        // finalizeStream 走 WAITING_USER→COMPLETED（非法边）必抛
+        // IllegalTaskTransition → 清理三连被跳过 → claiming 永久 true → 砖化。
+        val llm = FakeLlmClient(
+            listOf(
+                FakeLlmClient.ScriptedResponse.Ok(
+                    toolCalls = listOf(ToolCall("c1", "AskUser", """{"question":"继续吗?","type":"text"}"""))
+                ),
+                FakeLlmClient.ScriptedResponse.Ok(content = "all done"),
+                // 第二次 execute（claim 释放验证）的收尾轮
+                FakeLlmClient.ScriptedResponse.Ok(content = "second done")
+            )
+        )
+        val tools = FakeToolExecutor()
+        val engine = newEngine(llm, tools)
+        val rt = newRuntime(engine, CoroutineScope(SupervisorJob() + Dispatchers.IO))
+
+        val job = launch(Dispatchers.Unconfined) {
+            rt.execute(UserInput.text("问个问题")).collect { event ->
+                if (event is AgentEvent.UserInputRequired) {
+                    engine.submitUserInputIfAwaiting("继续")
+                }
+            }
+        }
+        job.join()
+        val task = waitTerminal(TaskStatus.COMPLETED)
+        assertEquals(TaskStatus.COMPLETED, store.load(task.taskId)!!.status)
+
+        // 关键回归断言：claiming 已释放 —— 旧实现在此必砖（互斥拒绝后续 execute）
+        val second = launch(Dispatchers.Unconfined) {
+            rt.execute(UserInput.text("第二条消息")).collect { }
+        }
+        withTimeout(15_000L) { second.join() }
+        val task2 = waitTerminal(TaskStatus.COMPLETED)
+        assertEquals(TaskStatus.COMPLETED, store.load(task2.taskId)!!.status)
+    }
+
+    @Test
+    fun `double ask_user keeps WAITING_USER idempotent and completes`() = runBlocking<Unit> {
+        // 同任务第二次 ask_user：WAITING_USER→WAITING_USER 自环非法，旧实现
+        // 从 collect lambda 直接抛 IllegalTaskTransition → 镜像 catch 误标
+        // FAILED + 引擎流被拆断。幂等化后应保持 WAITING_USER 并继续。
+        val llm = FakeLlmClient(
+            listOf(
+                FakeLlmClient.ScriptedResponse.Ok(
+                    toolCalls = listOf(ToolCall("c1", "AskUser", """{"question":"第一个问题?","type":"text"}"""))
+                ),
+                FakeLlmClient.ScriptedResponse.Ok(
+                    toolCalls = listOf(ToolCall("c2", "AskUser", """{"question":"第二个问题?","type":"text"}"""))
+                ),
+                FakeLlmClient.ScriptedResponse.Ok(content = "done after two asks")
+            )
+        )
+        val tools = FakeToolExecutor()
+        val engine = newEngine(llm, tools)
+        val rt = newRuntime(engine, CoroutineScope(SupervisorJob() + Dispatchers.IO))
+
+        val askCount = java.util.concurrent.atomic.AtomicInteger(0)
+        val job = launch(Dispatchers.Unconfined) {
+            rt.execute(UserInput.text("连续两问")).collect { event ->
+                if (event is AgentEvent.UserInputRequired) {
+                    engine.submitUserInputIfAwaiting("答${askCount.incrementAndGet()}")
+                }
+            }
+        }
+        job.join()
+        // 双问全程无异常逃逸：任务终态 COMPLETED（而非 FAILED），两次 ask 均被应答
+        assertEquals(2, askCount.get())
+        val task = waitTerminal(TaskStatus.COMPLETED)
+        assertEquals(TaskStatus.COMPLETED, store.load(task.taskId)!!.status)
+    }
+
     // ═══ F: 崩溃恢复（模拟进程死亡）═══
 
     @Test
@@ -272,14 +350,14 @@ class TaskRuntimeTest {
         // 不调 abort/pause，直接 shutdown scope（丢弃收尾），store 留下 RUNNING 现场。
         val llm1 = FakeLlmClient(
             listOf(
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "read_file", "{}"))),
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c2", "write_file", "{}"))) // 死于此后
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "Read", "{}"))),
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c2", "Write", "{}"))) // 死于此后
             )
         )
         val tools1 = FakeToolExecutor().apply {
-            registerSuccess("read_file", "ok")
-            // write_file 慢速执行：进程死于其执行中（journal c2 RUNNING + history 悬空）
-            register("write_file", FakeToolExecutor.ScriptedTool.Delay(delayMs = 60_000))
+            registerSuccess("Read", "ok")
+            // Write 慢速执行：进程死于其执行中（journal c2 RUNNING + history 悬空）
+            register("Write", FakeToolExecutor.ScriptedTool.Delay(delayMs = 60_000))
         }
         val engine1 = newEngine(llm1, tools1)
         val scope1 = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -316,7 +394,7 @@ class TaskRuntimeTest {
         assertNotNull(flow)
         collectUntilTerminal(flow!!)
         val done = waitTerminal(TaskStatus.COMPLETED)
-        // 幂等核心验收：c1 成功操作绝不被重放（tools2 未注册 read_file，重放即报错失败）
+        // 幂等核心验收：c1 成功操作绝不被重放（tools2 未注册 Read，重放即报错失败）
         assertEquals(1, done.operations.count { it.status == OperationStatus.SUCCEEDED })
         assertEquals(TaskStatus.COMPLETED, store.load(done.taskId)!!.status)
     }
@@ -325,10 +403,10 @@ class TaskRuntimeTest {
     fun `crash mid-tool leaves RUNNING op which becomes UNKNOWN recovery input`() = runBlocking<Unit> {
         // 死在工具执行中：journal 有 c1 RUNNING（未收到 ToolCallComplete）
         val llm1 = FakeLlmClient(
-            listOf(FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "read_file", "{}"))))
+            listOf(FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "Read", "{}"))))
         )
         val tools1 = FakeToolExecutor().apply {
-            register("read_file", FakeToolExecutor.ScriptedTool.Delay(delayMs = 60_000))
+            register("Read", FakeToolExecutor.ScriptedTool.Delay(delayMs = 60_000))
         }
         val engine1 = newEngine(llm1, tools1)
         val scope1 = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -353,7 +431,7 @@ class TaskRuntimeTest {
             isUserInteraction = { false }
         )
         assertEquals(1, plan.unknownOperations.size)
-        // read_file 是 READ_ONLY → RETRY 决策
+        // Read 是 READ_ONLY → RETRY 决策
         assertEquals(1, plan.retryOperations.size)
         assertFalse(plan.highRisk)
     }
@@ -364,14 +442,14 @@ class TaskRuntimeTest {
     fun `concurrent resumes - only one succeeds`() = runBlocking<Unit> {
         val llm = FakeLlmClient(
             listOf(
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "read_file", "{}"))),
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c2", "read_file", "{}"))),
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "Read", "{}"))),
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c2", "Read", "{}"))),
                 FakeLlmClient.ScriptedResponse.Ok(content = "done"),
                 FakeLlmClient.ScriptedResponse.Ok(content = "resumed")
             )
         )
         val tools = FakeToolExecutor().apply {
-            register("read_file", FakeToolExecutor.ScriptedTool.Delay(delayMs = 600))
+            register("Read", FakeToolExecutor.ScriptedTool.Delay(delayMs = 600))
         }
         val engine = newEngine(llm, tools)
         val rt = newRuntime(engine, CoroutineScope(SupervisorJob() + Dispatchers.IO))
@@ -395,10 +473,10 @@ class TaskRuntimeTest {
     @Test
     fun `concurrent execute attempts - second is rejected`() = runBlocking<Unit> {
         val llm = FakeLlmClient(
-            listOf(FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "read_file", "{}"))))
+            listOf(FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "Read", "{}"))))
         )
         val tools = FakeToolExecutor().apply {
-            register("read_file", FakeToolExecutor.ScriptedTool.Delay(delayMs = 800))
+            register("Read", FakeToolExecutor.ScriptedTool.Delay(delayMs = 800))
         }
         val engine = newEngine(llm, tools)
         val rt = newRuntime(engine, CoroutineScope(SupervisorJob() + Dispatchers.IO))
@@ -423,8 +501,15 @@ class TaskRuntimeTest {
         // LLM 恒抛错 → 引擎 emit Error(recoverable=false) → FAILED。
         // 3 个 Throw：初始执行 + 2 次重试各消耗一个（脚本耗尽会返回空响应→
         // recoverable=true→正常收尾→COMPLETED，覆盖不到 FAILED 语义）。
+        // 用 ModelRequestRejected（不可降级、不在瞬时白名单）保证
+        // recoverable=false：未识别异常自顶层 catch 改革后改为 recoverable=true
+        //（用户可手动重试），FAILED 语义改由明确的不可恢复错误类型覆盖。
         val llm = FakeLlmClient(
-            (1..3).map { FakeLlmClient.ScriptedResponse.Throw(RuntimeException("provider down")) }
+            (1..3).map {
+                FakeLlmClient.ScriptedResponse.Throw(
+                    ModelRuntimeException.ModelRequestRejected("provider down", "p1")
+                )
+            }
         )
         val engine = newEngine(llm, FakeToolExecutor())
         val rt = TaskRuntime(
@@ -436,7 +521,12 @@ class TaskRuntimeTest {
 
         collectUntilTerminal(rt.execute(UserInput.text("会失败")))
         val failed = waitTerminal(TaskStatus.FAILED)
-        assertEquals("provider down", failed.error)
+        // #213 起引擎把原始异常映射为中文用户文案（原始 message 落日志，
+        // task.error = 中文指引 + 括号内截断摘要）——断言可定位的原始片段。
+        assertTrue(
+            "task.error 应携带原始错误摘要 provider down，实际: ${failed.error}",
+            failed.error?.contains("provider down") == true,
+        )
 
         // 重试1：RETRYING → RUNNING（LLM 仍失败 → FAILED，retryCount=1）
         val r1 = rt.retry()
@@ -460,7 +550,14 @@ class TaskRuntimeTest {
 
     @Test
     fun `abandoning failed task transitions to CANCELLED`() = runBlocking<Unit> {
-        val llm = FakeLlmClient(listOf(FakeLlmClient.ScriptedResponse.Throw(RuntimeException("fatal"))))
+        // 同上：不可恢复错误类型保证 FAILED（未识别异常已是 recoverable=true）。
+        val llm = FakeLlmClient(
+            listOf(
+                FakeLlmClient.ScriptedResponse.Throw(
+                    ModelRuntimeException.ModelRequestRejected("fatal", "p1")
+                )
+            )
+        )
         val engine = newEngine(llm, FakeToolExecutor())
         val rt = newRuntime(engine, CoroutineScope(SupervisorJob() + Dispatchers.IO))
 
@@ -479,14 +576,14 @@ class TaskRuntimeTest {
     fun `paused task survives restart discovery without auto-resume`() = runBlocking<Unit> {
         val llm = FakeLlmClient(
             listOf(
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "read_file", "{}"))),
-                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c2", "read_file", "{}"))),
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c1", "Read", "{}"))),
+                FakeLlmClient.ScriptedResponse.Ok(toolCalls = listOf(ToolCall("c2", "Read", "{}"))),
                 FakeLlmClient.ScriptedResponse.Ok(content = "done"),
                 FakeLlmClient.ScriptedResponse.Ok(content = "resumed-finish")
             )
         )
         val tools = FakeToolExecutor().apply {
-            register("read_file", FakeToolExecutor.ScriptedTool.Delay(delayMs = 400))
+            register("Read", FakeToolExecutor.ScriptedTool.Delay(delayMs = 400))
         }
         val engine = newEngine(llm, tools)
         val scope1 = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -521,7 +618,7 @@ class TaskRuntimeTest {
                     com.apex.agent.core.llm.LlmMessage.User("start"),
                     com.apex.agent.core.llm.LlmMessage.Assistant(
                         "calling",
-                        listOf(ToolCall("c1", "read_file", "{}"), ToolCall("c2", "write_file", "{}"))
+                        listOf(ToolCall("c1", "Read", "{}"), ToolCall("c2", "Write", "{}"))
                     ),
                     com.apex.agent.core.llm.LlmMessage.ToolResult("c1", "ok")
                 )
@@ -555,5 +652,47 @@ class TaskRuntimeTest {
             Thread.sleep(20)
         }
         throw AssertionError("condition not met within ${timeoutMs}ms")
+    }
+
+    // ═══ v2 回归：启动恢复扫描不炸进程（秒闪退根因修复验收） ═══
+
+    /**
+     * 磁盘存在 PENDING 态任务（任务落盘后未跑即进程死亡）时，恢复扫描
+     * 必须安静迁移到 RECOVERING —— 旧实现迁移表缺 PENDING→RECOVERING 出边，
+     * transition() 必抛 IllegalTaskTransitionException 并杀死进程。
+     */
+    @Test
+    fun `startup recovery scan tolerates PENDING leftover without throwing`() {
+        store.save(
+            AgentTask(
+                taskId = "task-pending-0001", title = "t", userInput = "u", mode = "BUILD",
+                status = TaskStatus.PENDING, createdAt = 1L
+            )
+        )
+        val engine = newEngine(FakeLlmClient(emptyList()), FakeToolExecutor())
+        val rt = newRuntime(engine, CoroutineScope(SupervisorJob() + Dispatchers.IO))
+
+        val discovered = rt.discoverRecoverableTasks()
+        assertEquals(1, discovered.size)
+        assertEquals(TaskStatus.RECOVERING, discovered[0].status)
+    }
+
+    /**
+     * PLANNING 态任务（plan 确认等待中进程被杀）同理 —— 旧表同样缺出边必炸。
+     */
+    @Test
+    fun `startup recovery scan tolerates PLANNING leftover without throwing`() {
+        store.save(
+            AgentTask(
+                taskId = "task-planning-0001", title = "t", userInput = "u", mode = "BUILD",
+                status = TaskStatus.PLANNING, createdAt = 1L
+            )
+        )
+        val engine = newEngine(FakeLlmClient(emptyList()), FakeToolExecutor())
+        val rt = newRuntime(engine, CoroutineScope(SupervisorJob() + Dispatchers.IO))
+
+        val discovered = rt.discoverRecoverableTasks()
+        assertEquals(1, discovered.size)
+        assertEquals(TaskStatus.RECOVERING, discovered[0].status)
     }
 }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material3.AlertDialog
@@ -31,11 +33,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -46,7 +46,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -54,37 +56,36 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import com.apex.agent.core.engine.templates.PromptTemplate
-import com.apex.agent.core.engine.templates.TemplateScope
-import com.apex.agent.ui.screen.settings.AgentRolesSection
+import com.apex.agent.ui.screen.settings.activeCodingRole
+import com.apex.agent.ui.screen.settings.withCodingRoleActivated
 
 /**
- * #197 模板工坊 —— Agent / Coding 双层模板的独立管理页（左侧抽屉直达入口）。
+ * 模板工坊 —— 提示词模板的独立管理页（左侧抽屉直达入口）。
  *
  * ```
  * ┌──────────────────────────────────────────────┐
- * │  [Agent 模板]  [Coding 模板]   ← 工位分层（互不串扰）
+ * │  Coding 模板                                     │
  * ├──────────────────────────────────────────────┤
- * │  Agent 层：                                  │
- * │   · Agent 角色详细设置（人设卡 CRUD + 激活）      │
- * │   · Agent 提示词模板（翻译/总结/写作…）           │
- * │  Coding 层：                                 │
- * │   · Coding 提示词模板（代码评审/提交信息…）        │
+ * │  顶部：专家角色区 [CodingRolesSection]           │
+ * │  提示词模板列表（新建/编辑/复制/删除）           │
  * └──────────────────────────────────────────────┘
  * ```
  *
- * 模板的 scope 由 [TemplateScope] 分层；Agent 角色编辑复用设置页的
- * [AgentRolesSection]（生效链路同源：agentSettings → 引擎人设字段热更新）。
+ * Coding 专家角色区（品牌图标 + 选择即激活 codeActiveRoleId，引擎人设通道热切换）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TemplateStudioScreen(
     viewModel: TemplateStudioViewModel = hiltViewModel()
 ) {
-    val tab by viewModel.tab.collectAsStateWithLifecycle()
     val templates by viewModel.templates.collectAsStateWithLifecycle()
     val editing by viewModel.editing.collectAsStateWithLifecycle()
+    val useState by viewModel.useState.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val agentSettings by viewModel.agentSettings.collectAsStateWithLifecycle()
+    // v1.9 角色详情（经验卡 + Git 技能开关；点击角色行打开）。
+    val roleDetail by viewModel.roleDetail.collectAsStateWithLifecycle()
+    val roleDetailExperiences by viewModel.roleDetailExperiences.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(message) {
@@ -96,20 +97,6 @@ fun TemplateStudioScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // ═══ 工位分层页签：Agent 模板 / Coding 模板 ═══
-            SecondaryTabRow(selectedTabIndex = tab.ordinal) {
-                Tab(
-                    selected = tab == TemplateScope.AGENT,
-                    onClick = { viewModel.selectTab(TemplateScope.AGENT) },
-                    text = { Text(stringResource(R.string.templates_tab_agent)) }
-                )
-                Tab(
-                    selected = tab == TemplateScope.CODING,
-                    onClick = { viewModel.selectTab(TemplateScope.CODING) },
-                    text = { Text(stringResource(R.string.templates_tab_coding)) }
-                )
-            }
-
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
@@ -117,51 +104,32 @@ fun TemplateStudioScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                when (tab) {
-                    TemplateScope.AGENT -> {
-                        // ═══ Agent 角色详细设置（复用设置页组件，生效链路同源）═══
-                        item(key = "agent-roles") {
-                            AgentRolesSection(
-                                agent = agentSettings,
-                                onAgent = { viewModel.updateAgentSettings { it } }
-                            )
-                        }
+                // ═══ Coding 专家角色（官方品牌图标 + 行点击打开角色详情）═══
+                item(key = "coding-roles") {
+                    CodingRolesSection(
+                        agent = agentSettings,
+                        onAgent = { transform -> viewModel.updateAgentSettings(transform) },
+                        onOpenDetail = { viewModel.openRoleDetail(it) }
+                    )
+                }
 
-                        item(key = "agent-templates-header") {
-                            TemplateListHeader(
-                                title = stringResource(R.string.templates_agent_list_title),
-                                subtitle = stringResource(R.string.templates_agent_list_subtitle),
-                                onCreate = { viewModel.openEditor(null) }
-                            )
-                        }
+                // ═══ Coding 提示词模板 ═══
+                item(key = "coding-templates-header") {
+                    TemplateListHeader(
+                        title = stringResource(R.string.templates_coding_list_title),
+                        subtitle = stringResource(R.string.templates_coding_list_subtitle),
+                        onCreate = { viewModel.openEditor(null) }
+                    )
+                }
 
-                        items(templates, key = { it.id }) { template ->
-                            TemplateCard(
-                                template = template,
-                                onEdit = { viewModel.openEditor(template) },
-                                onDuplicate = { viewModel.duplicateTemplate(template) },
-                                onDelete = { viewModel.deleteTemplate(template.id) }
-                            )
-                        }
-                    }
-                    TemplateScope.CODING -> {
-                        item(key = "coding-templates-header") {
-                            TemplateListHeader(
-                                title = stringResource(R.string.templates_coding_list_title),
-                                subtitle = stringResource(R.string.templates_coding_list_subtitle),
-                                onCreate = { viewModel.openEditor(null) }
-                            )
-                        }
-
-                        items(templates, key = { it.id }) { template ->
-                            TemplateCard(
-                                template = template,
-                                onEdit = { viewModel.openEditor(template) },
-                                onDuplicate = { viewModel.duplicateTemplate(template) },
-                                onDelete = { viewModel.deleteTemplate(template.id) }
-                            )
-                        }
-                    }
+                items(templates, key = { it.id }) { template ->
+                    TemplateCard(
+                        template = template,
+                        onUse = { viewModel.openUse(template) },
+                        onEdit = { viewModel.openEditor(template) },
+                        onDuplicate = { viewModel.duplicateTemplate(template) },
+                        onDelete = { viewModel.deleteTemplate(template.id) }
+                    )
                 }
             }
         }
@@ -177,6 +145,36 @@ fun TemplateStudioScreen(
             initial = template,
             onDismiss = viewModel::closeEditor,
             onSave = { viewModel.saveTemplate(it) }
+        )
+    }
+
+    // ═══ 使用模板（行为运行时：变量表单 → 生成 → 复制）═══
+    useState?.let { state ->
+        TemplateUseDialog(
+            state = state,
+            onVariable = viewModel::updateUseVariable,
+            onGenerate = viewModel::generateUsePrompt,
+            onDismiss = viewModel::closeUse
+        )
+    }
+
+    // ═══ v1.9 角色详情（经验卡 + Git 专属技能开关；点击角色模板查看）═══
+    roleDetail?.let { role ->
+        val activeRole = agentSettings.activeCodingRole()
+        RoleDetailSheet(
+            role = role,
+            experiences = roleDetailExperiences,
+            isActive = role.id == activeRole.id,
+            onActivate = {
+                viewModel.updateAgentSettings {
+                    it.withCodingRoleActivated(role.id)
+                }
+            },
+            onDismiss = viewModel::closeRoleDetail,
+            onDeleteExperience = viewModel::deleteRoleExperience,
+            onClearExperiences = viewModel::clearRoleExperiences,
+            skillToggles = agentSettings.roleSkillToggles,
+            onToggleSkill = viewModel::toggleRoleSkill
         )
     }
 }
@@ -215,9 +213,14 @@ private fun TemplateListHeader(
     }
 }
 
+/**
+ * 模板卡片：内置模板锁定（点击=使用；无编辑/删除），自定义模板全量操作。
+ * 「使用」是行为运行时入口：内置模板走六阶段管线，自定义走变量替换。
+ */
 @Composable
 private fun TemplateCard(
     template: PromptTemplate,
+    onUse: () -> Unit,
     onEdit: () -> Unit,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit
@@ -229,7 +232,7 @@ private fun TemplateCard(
         ),
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onEdit)
+            .clickable(onClick = onUse)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
@@ -253,7 +256,7 @@ private fun TemplateCard(
                 if (template.isBuiltIn) {
                     Icon(
                         Icons.Default.Lock,
-                        contentDescription = stringResource(R.string.templates_builtin),
+                        contentDescription = stringResource(R.string.templates_builtin_locked),
                         tint = MaterialTheme.colorScheme.outline,
                         modifier = Modifier.size(14.dp)
                     )
@@ -287,15 +290,27 @@ private fun TemplateCard(
                 } else {
                     Spacer(Modifier.weight(1f))
                 }
-                IconButton(onClick = onEdit, modifier = Modifier.size(30.dp)) {
+                // 使用（行为运行时入口；内置模板主操作）
+                IconButton(onClick = onUse, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
                     Icon(
-                        Icons.Default.Edit,
-                        contentDescription = stringResource(R.string.templates_edit),
-                        modifier = Modifier.size(15.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        Icons.Default.PlayArrow,
+                        contentDescription = stringResource(R.string.templates_use),
+                        modifier = Modifier.size(17.dp),
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
-                IconButton(onClick = onDuplicate, modifier = Modifier.size(30.dp)) {
+                if (!template.isBuiltIn) {
+                    // 内置模板不可更改：编辑/删除不出现（注册表侧同样拒绝）
+                    IconButton(onClick = onEdit, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                        Icon(
+                            Icons.Default.Edit,
+                            contentDescription = stringResource(R.string.templates_edit),
+                            modifier = Modifier.size(15.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                IconButton(onClick = onDuplicate, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
                     Icon(
                         Icons.Outlined.ContentCopy,
                         contentDescription = stringResource(R.string.templates_duplicate),
@@ -304,7 +319,7 @@ private fun TemplateCard(
                     )
                 }
                 if (!template.isBuiltIn) {
-                    IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
+                    IconButton(onClick = onDelete, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
                         Icon(
                             Icons.Default.Delete,
                             contentDescription = stringResource(R.string.templates_delete),
@@ -410,4 +425,120 @@ private fun TemplateEditorDialog(
 private fun scanVariables(content: String): List<String> {
     val regex = Regex("""[{]{2}\s*([a-zA-Z][a-zA-Z0-9_]*)""")
     return regex.findAll(content).map { it.groupValues[1] }.distinct().toList()
+}
+
+/**
+ * 使用模板对话框（行为运行时入口）：
+ * 1. 变量表单（必填标记 + 默认值预填）；
+ * 2. 生成 = 激活 + 六阶段组装（内置模板注入确定性分析附录）；
+ * 3. 结果展示（提示词 + 注入说明）+ 一键复制（粘到聊天即用）。
+ */
+@Composable
+private fun TemplateUseDialog(
+    state: TemplateUseState,
+    onVariable: (String, String) -> Unit,
+    onGenerate: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val clipboard = LocalClipboardManager.current
+    val copiedMessage = stringResource(R.string.templates_use_copied)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(R.string.templates_use_title, state.template.name),
+                style = MaterialTheme.typography.titleMedium
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // 行为能力摘要（内置 = 代码行为；自定义 = 兜底说明）
+                Text(
+                    text = state.manifestSummary,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (state.behaviorBound) MaterialTheme.colorScheme.tertiary
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                // 变量表单
+                for (variable in state.template.variables) {
+                    OutlinedTextField(
+                        value = state.variableValues[variable.name].orEmpty(),
+                        onValueChange = { onVariable(variable.name, it) },
+                        label = {
+                            Text(
+                                if (variable.required) variable.name
+                                else stringResource(R.string.templates_use_optional, variable.name)
+                            )
+                        },
+                        placeholder = {
+                            Text(variable.description, style = MaterialTheme.typography.bodySmall)
+                        },
+                        minLines = 1,
+                        maxLines = if (variable.name in setOf("code", "changes", "text", "content", "pattern")) {
+                            5
+                        } else {
+                            1
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                // 错误回填（缺必填等）
+                state.error?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+                // 生成结果
+                state.generatedPrompt?.let { prompt ->
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = stringResource(R.string.templates_use_result),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            if (state.generationNotes.isNotEmpty()) {
+                                Text(
+                                    text = state.generationNotes.joinToString(" · "),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.tertiary,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Text(
+                                text = prompt,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 10,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                state.generatedPrompt?.let { prompt ->
+                    TextButton(
+                        onClick = {
+                            clipboard.setText(AnnotatedString(prompt))
+                            onDismiss()
+                        }
+                    ) { Text(copiedMessage) }
+                }
+                TextButton(onClick = onGenerate) {
+                    Text(stringResource(R.string.templates_use_generate))
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.templates_cancel)) }
+        }
+    )
 }

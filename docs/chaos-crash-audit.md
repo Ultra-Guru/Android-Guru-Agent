@@ -32,7 +32,7 @@
 | **后果** | `IllegalStateException: TaskRuntime rejects concurrent execution` 全进程闪退 |
 | **修复** | 已落地 —— `handleSlashCommand` 内补齐与 `runEngine` 一致的 try/catch，`CancellationException` 重抛，其余降级为 `AgentUiMessage.Error` 卡片并复位 `isLoading`。 |
 
-### L-02【P0-Crash】`browser_screenshot` 后台模式 100% 抛 IllegalArgumentException
+### L-02【P0-Crash】`BrowserScreenshot` 后台模式 100% 抛 IllegalArgumentException
 
 | 项目 | 内容 |
 | :--- | :--- |
@@ -266,8 +266,8 @@ adb shell appops set com.apex.agent SYSTEM_ALERT_WINDOW allow
 adb shell pm revoke com.apex.agent android.permission.VIBRATE
 
 # 3. 启动浏览器 Agent 并驱动引擎进入 WAITING_HUMAN（人工接管）：
-#    任意触发 browser_show / 网页权限申请路径即可，例如通过 Agent 对话注入：
-#    "打开 https://example.com 并调用 browser_show"
+#    任意触发 BrowserShow / 网页权限申请路径即可，例如通过 Agent 对话注入：
+#    "打开 https://example.com 并调用 BrowserShow"
 adb shell am start -n com.apex.agent/.MainActivity
 # （在 UI 中发送上述指令，等待霓虹球变琥珀金 NEED_HUMAN 状态）
 

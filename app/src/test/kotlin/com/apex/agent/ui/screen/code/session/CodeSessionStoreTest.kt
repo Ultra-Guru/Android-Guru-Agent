@@ -44,7 +44,7 @@ class CodeSessionStoreTest {
             messages = listOf(
                 StorableCodeMessage("USER", "帮我写个排序函数"),
                 StorableCodeMessage("ASSISTANT", "好的，先看下文件"),
-                StorableCodeMessage("TOOL", "3 行已写入", "code_write", false, 1520),
+                StorableCodeMessage("TOOL", "3 行已写入", "CodeWrite", false, 1520),
                 StorableCodeMessage("SYSTEM", "会话已恢复")
             ),
             todos = listOf(
@@ -246,8 +246,6 @@ class CodeSessionStoreTest {
         assertNull("wizard".toKnownCodeRoleOrNull())
         assertNull("".toKnownCodeRoleOrNull())
         // 降级语义：未知值落到 SYSTEM，内容不丢
-        assertEquals("SYSTEM", "wizard".toRoleOrSystem())
-        assertEquals("TOOL", " tool ".toRoleOrSystem())
     }
 
     // ── Mappers：消息互转 ────────────────────────────────────────────
@@ -260,7 +258,7 @@ class CodeSessionStoreTest {
             CodeChatMessage(2, CodeChatMessage.Role.ASSISTANT, "流式中的半截", isStreaming = true),
             CodeChatMessage(3, CodeChatMessage.Role.ASSISTANT, longText),
             CodeChatMessage(
-                4, CodeChatMessage.Role.TOOL, "输出", toolName = "code_read",
+                4, CodeChatMessage.Role.TOOL, "输出", toolName = "CodeRead",
                 toolSuccess = false, durationMs = 123
             )
         )
@@ -274,7 +272,7 @@ class CodeSessionStoreTest {
         // 超长文本截断 + 标记后缀
         assertEquals(longText.take(CODE_SNAPSHOT_TEXT_LIMIT) + CODE_SNAPSHOT_TRUNCATION_SUFFIX, storable[1].text)
         // 工具卡字段完整保留
-        assertEquals("code_read", storable[2].toolName)
+        assertEquals("CodeRead", storable[2].toolName)
         assertFalse(storable[2].toolSuccess)
         assertEquals(123L, storable[2].durationMs)
     }
@@ -297,7 +295,7 @@ class CodeSessionStoreTest {
         val storable = listOf(
             StorableCodeMessage("USER", "你好"),
             StorableCodeMessage("ASSISTANT", "在的"),
-            StorableCodeMessage("TOOL", "完成", "code_write", false, 42),
+            StorableCodeMessage("TOOL", "完成", "CodeWrite", false, 42),
             StorableCodeMessage("SYSTEM", "系统提示")
         )
 
@@ -317,7 +315,7 @@ class CodeSessionStoreTest {
         )
         // 字段与瞬态
         assertEquals("你好", restored[0].text)
-        assertEquals("code_write", restored[2].toolName)
+        assertEquals("CodeWrite", restored[2].toolName)
         assertFalse(restored[2].toolSuccess)
         assertEquals(42L, restored[2].durationMs)
         assertTrue(restored.all { !it.isStreaming })

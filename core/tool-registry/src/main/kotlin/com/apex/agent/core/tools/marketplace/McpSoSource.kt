@@ -6,7 +6,6 @@ import com.apex.agent.core.tools.mcp.McpTransport
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.ByteArrayOutputStream
@@ -66,8 +65,8 @@ class McpSoSource(
     }
 
     /**
-     * 拉取目录某一页（60 条/页）。[page] 从 1 起；返回条目数 < 60 即最后一页
-     * （调用方据此置 hasMore=false）。
+     * 拉取目录某一页（60 条/页）。[page] 从 1 起；末页（含翻到整数倍页
+     * 边界后的空页）返回 success + 空列表，由调用方据此置 hasMore=false。
      */
     suspend fun listServers(
         page: Int = 1,
@@ -77,12 +76,10 @@ class McpSoSource(
         val url = "$BASE_URL/servers?page=$page&sort=${sort.param}"
         val html = fetchHtml(url)
             ?: return@withContext Result.failure(Exception(unavailableMessage()))
-        val entries = parseServerListHtml(html)
-        if (entries.isEmpty()) {
-            // 结构变更（改版/挑战页）会解析出 0 条 —— 明确报错而不是静默空目录
-            return@withContext Result.failure(Exception("mcp.so 目录解析为空（页面结构可能已变更）"))
-        }
-        Result.success(entries)
+        // P2-2：HTTP 200 但解析出 0 条是合法末页（总条数恰为 60 的整数倍时，
+        // 最后一翻会拿到空目录页）——返回空列表交由调用方收起「加载更多」；
+        // 连接失败 / 非 2xx 仍走上面的 failure 分支报真错误。
+        Result.success(parseServerListHtml(html))
     }
 
     /**
@@ -264,16 +261,15 @@ class McpSoSource(
                 ?: return Result.failure(
                     Exception(parsed.errors.firstOrNull()?.reason ?: "配置中没有任何有效服务器条目")
                 )
-            // 条目键为空时 McpConfigImport 会自动生成 "mcp-<时间戳>" 名 ——
-            // 目录卡的名字更有意义，这里用原始键判定后回退命名。
-            val rawKeyBlank = runCatching {
-                val servers = Json.parseToJsonElement(configJson).jsonObject["mcpServers"]?.jsonObject
-                servers?.keys?.firstOrNull().isNullOrBlank()
-            }.getOrDefault(false)
+            // P2（市场审计）：目录卡名（fallbackName）优先于远端 JSON 键名 ——
+            // 市场徽标判定（state.mcps.any { it.name == entry.name }）与防重复装
+            // （exists 检查）都以目录名为键；远端键名与目录名常不一致，旧策略
+            // （远端优先）导致徽标永不出 + 可重复安装同卡多份。
+            val configName = fallbackName.ifBlank { first.name }
             val shouldSandbox = first.transport == McpTransport.STDIO
             return Result.success(
                 first.copy(
-                    name = if (rawKeyBlank) fallbackName else first.name,
+                    name = configName,
                     // 安装 ≠ 启动（与官方 Hub 仓库口径一致）：enabled 恒 false
                     enabled = false,
                     runInSandbox = if (shouldSandbox) true else first.runInSandbox

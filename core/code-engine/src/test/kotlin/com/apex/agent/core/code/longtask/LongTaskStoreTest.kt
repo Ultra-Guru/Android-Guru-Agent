@@ -63,7 +63,7 @@ class LongTaskStoreTest {
         toolCalls = 33,
         durationMs = 372_500L,
         filesTouched = listOf("src/Main.kt", "src/ui/Login.kt", "src/ui/Theme.kt"),
-        toolsUsed = mapOf("code_edit" to 12, "code_read" to 15, "code_check" to 6),
+        toolsUsed = mapOf("CodeEdit" to 12, "CodeRead" to 15, "CodeCheck" to 6),
         errorMessage = "编译失败：未解析的引用 LoginViewModel",
         summary = "已完成根因定位（空指针来自延迟初始化），修复提交在 src/ui/Login.kt。",
         checkpoints = listOf(
@@ -73,7 +73,7 @@ class LongTaskStoreTest {
                 timestamp = 1500L,
                 toolCallCount = 9,
                 filesTouchedCount = 1,
-                recentExchange = listOf("用户: 修复登录崩溃", "助手: 我来定位问题", "工具 code_edit ✓"),
+                recentExchange = listOf("用户: 修复登录崩溃", "助手: 我来定位问题", "工具 CodeEdit ✓"),
                 todoDigest = listOf("☐ 定位根因", "☐ 修复")
             ),
             LongTaskCheckpoint(
@@ -82,14 +82,13 @@ class LongTaskStoreTest {
                 timestamp = 1800L,
                 toolCallCount = 20,
                 filesTouchedCount = 2,
-                recentExchange = listOf("工具 code_check ✓", "助手: 边界情况已覆盖"),
+                recentExchange = listOf("工具 CodeCheck ✓", "助手: 边界情况已覆盖"),
                 todoDigest = listOf("☑ 定位根因", "☐ 修复")
             )
         ),
         todoSnapshot = listOf("☑ 定位根因", "☐ 修复", "☐ 回归验证"),
         parentTaskId = "task-parent-0000",
         copyCount = 3,
-        isTemplate = false,
         tags = listOf("bugfix", "urgent")
     )
 
@@ -107,15 +106,14 @@ class LongTaskStoreTest {
         loaded!!
         assertEquals(LongTaskStatus.FAILED, loaded.status)
         assertEquals(3, loaded.filesTouched.size)
-        assertEquals(mapOf("code_edit" to 12, "code_read" to 15, "code_check" to 6), loaded.toolsUsed)
+        assertEquals(mapOf("CodeEdit" to 12, "CodeRead" to 15, "CodeCheck" to 6), loaded.toolsUsed)
         assertEquals(2, loaded.checkpoints.size)
-        assertEquals(listOf("用户: 修复登录崩溃", "助手: 我来定位问题", "工具 code_edit ✓"),
+        assertEquals(listOf("用户: 修复登录崩溃", "助手: 我来定位问题", "工具 CodeEdit ✓"),
             loaded.checkpoints[0].recentExchange)
         assertEquals(listOf("☐ 定位根因", "☐ 修复"), loaded.checkpoints[0].todoDigest)
         assertEquals(10, loaded.checkpoints[1].atIteration)
         assertEquals("task-parent-0000", loaded.parentTaskId)
         assertEquals(3, loaded.copyCount)
-        assertFalse(loaded.isTemplate)
         assertEquals(listOf("bugfix", "urgent"), loaded.tags)
         assertEquals("修复登录崩溃问题", loaded.title)
     }
@@ -254,31 +252,12 @@ class LongTaskStoreTest {
     }
 
     @Test
-    fun `prune exempts templates even when they are the oldest`() = runTest {
-        // 模板记录最老（updatedAt=1）
-        store.upsert(fullRecord(id = "template-bugfix-ws-alpha-1a2b3c", updatedAt = 1L)
-            .copy(isTemplate = true, parentTaskId = null, copyCount = 0))
-        repeat(5) { i ->
-            store.upsert(fullRecord(id = "task-${i}", updatedAt = 100L + i))
-        }
-        val deleted = store.prune(keep = 2)
-        assertEquals(3, deleted) // 5 条非模板裁掉最老的 3 条
-        val remaining = store.list()
-        assertEquals(3, remaining.size)
-        // 模板幸存且不占 keep 名额（2 条最新非模板 + 1 条模板）
-        assertTrue(remaining.any { it.isTemplate })
-        assertTrue(remaining.none { it.id == "task-0" || it.id == "task-1" || it.id == "task-2" })
-    }
-
-    @Test
-    fun `prune with zero keep clears all non-template records`() = runTest {
+    fun `prune with zero keep clears all records`() = runTest {
         store.upsert(fullRecord(id = "task-a"))
         store.upsert(fullRecord(id = "task-b"))
-        store.upsert(fullRecord(id = "template-docs-ws-alpha-1a2b3c").copy(isTemplate = true))
         val deleted = store.prune(keep = 0)
         assertEquals(2, deleted)
-        assertEquals(1, store.list().size)
-        assertTrue(store.list().first().isTemplate)
+        assertTrue(store.list().isEmpty())
     }
 
     @Test

@@ -8,9 +8,9 @@ import java.util.zip.ZipFile
 /**
  * 文档文本提取器（PDF / DOCX）—— 纯 JVM、零第三方依赖。
  *
- * 背景：用户把 PDF 附件交给 Agent 后，旧链路 read_file 判定「Binary file」直接
+ * 背景：用户把 PDF 附件交给 Agent 后，旧链路 Read 判定「Binary file」直接
  * 拒读 —— 模型拿不到任何正文，用户以为「AI 能读 PDF」，实际上一行都读不到。
- * 本提取器让 read_file 对 PDF/DOCX 先做文本提取，再走既有的视口滚动模式。
+ * 本提取器让 Read 对 PDF/DOCX 先做文本提取，再走既有的视口滚动模式。
  *
  * ## PDF 策略（最小可行解析器）
  * PDF 正文存放在 content stream 的文本操作符里：
@@ -35,6 +35,25 @@ object DocumentTextExtractor {
 
     /** 单次提取的字符上限：防 OOM（百 MB 级 PDF / 恶意构造文档）。 */
     private const val MAX_CHARS = 2_000_000
+
+    /**
+     * Issue #232：DOCX `word/document.xml` 的**解压后**字节预算。
+     *
+     * 上游 FileReadTool 的 16MB 上限检查的是 `file.length()` —— 那是 ZIP
+     * **压缩**尺寸；恶意构造的 .docx 可用 KB 级 zip 携带 GB 级解压产物
+     *（zip 炸弹）。旧实现 `readBytes()` 全量读入后才在字符层限长 ——
+     * 预算爆在解压阶段，进程直接 OOM。本预算对流式读取设上限：超限即停
+     * 并如实报错（对标 ProotExecutor.executeBounded 的字节预算模式 ——
+     * 绝不先全文缓存再截断，那仍会 OOM）。
+     *
+     * 取 32MB：MAX_CHARS=2M 字符正文 ≈ 6-8MB 文本 + Word 标签/属性膨胀
+     * 3-5× —— 超过此预算的文档其可提取文本也早已超出字符上限，诚实拒绝
+     * 无信息损失。
+     */
+    internal const val MAX_DOCX_XML_BYTES = 32L * 1024 * 1024
+
+    /** Issue #232：PDF 原始字节读入上限（防御纵深 —— 上游已有 16MB 拒绝）。 */
+    internal const val MAX_PDF_RAW_BYTES = 16L * 1024 * 1024
 
     private const val PDF_MAGIC = "%PDF"
 
@@ -74,7 +93,14 @@ object DocumentTextExtractor {
             ZipFile(file).use { zip ->
                 val entry = zip.getEntry("word/document.xml")
                     ?: return Extraction(emptyList(), "DOCX 内未找到 word/document.xml（非标准 Word 文档）")
-                val xml = zip.getInputStream(entry).buffered().readBytes().decodeToString()
+                // Issue #232：流式预算读 —— 解压后超 [MAX_DOCX_XML_BYTES] 即拒
+                //（zip 炸弹防线，见该常量 KDoc）。
+                val xml = boundedZipEntryText(zip, entry, MAX_DOCX_XML_BYTES)
+                    ?: return Extraction(
+                        emptyList(),
+                        "DOCX 解压后内容超过 ${MAX_DOCX_XML_BYTES / (1024 * 1024)}MB 预算（疑似 zip 炸弹或超大文档）——" +
+                            "已停止读取。建议在 Ubuntu 终端用 pandoc/libreoffice 分段转换，或仅提取需要的部分"
+                    )
                 val text = extractTextFromDocxXml(xml)
                 if (text.isEmpty()) {
                     Extraction(emptyList(), "DOCX 无文本内容（可能为空文档）")
@@ -85,6 +111,32 @@ object DocumentTextExtractor {
             }
         } catch (e: Exception) {
             Extraction(emptyList(), "DOCX 解析失败：${e.message ?: e::class.simpleName}")
+        }
+    }
+
+    /**
+     * Issue #232：流式读取 zip 条目，**解压后**字节数超 [maxBytes] 返回 null。
+     *
+     * 64KB 分块搬运：超预算在下一块写入前就判出并退出 —— 常驻内存上限
+     * ≈ maxBytes + 64KB，与文档实际膨胀率无关。
+     */
+    private fun boundedZipEntryText(
+        zip: ZipFile,
+        entry: java.util.zip.ZipEntry,
+        maxBytes: Long
+    ): String? {
+        zip.getInputStream(entry).buffered().use { input ->
+            val out = ByteArrayOutputStream(minOf(maxBytes, 1L shl 20).toInt())
+            val chunk = ByteArray(64 * 1024)
+            var total = 0L
+            while (true) {
+                val read = input.read(chunk)
+                if (read < 0) break
+                total += read
+                if (total > maxBytes) return null // 预算防线触发
+                out.write(chunk, 0, read)
+            }
+            return out.toString(Charsets.UTF_8)
         }
     }
 
@@ -133,7 +185,10 @@ object DocumentTextExtractor {
 
     private fun extractPdf(file: File): Extraction {
         return try {
-            val bytes = file.inputStream().use { it.readBytes() }
+            // Issue #232：读入上限钳制（防御纵深 —— FileReadTool 已拒 >16MB；
+            // 此处独立钳制，_extractor 直用也不过量）。截断的尾部只会让
+            // stream 扫描提前 break，行为与 PDF 结构损坏时一致（诚实降级）。
+            val bytes = file.inputStream().use { it.readNBytes(MAX_PDF_RAW_BYTES.toInt()) }
             val text = StringBuilder()
             var i = 0
             val n = bytes.size

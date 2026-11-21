@@ -4,15 +4,19 @@ import android.app.Application
 import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
-import com.apex.agent.attachment.AttachmentCleanupManager
 import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.diagnostics.AnrWatchdog
+import com.apex.agent.diagnostics.CrashLogcat
 import com.apex.agent.diagnostics.LogFileSink
+import com.apex.agent.diagnostics.LogcatCollector
 import com.apex.agent.net.NetworkMonitor
 import com.apex.agent.notify.ApexNotifications
 import com.apex.agent.notify.ForegroundTracker
 import com.apex.agent.platform.EnvironmentStateUpdater
-import com.apex.agent.platform.csmem.actor.MemoryWriterActor
-import com.apex.agent.platform.csmem.dream.DreamRenderer
+import com.apex.agent.platform.memory.di.MemoryKitInitializer
+import com.apex.agent.platform.memory.work.MaintenanceScheduler
+import com.apex.agent.platform.privilege.PrivilegeDetector
+import com.apex.agent.platform.privilege.PrivilegeManager
 import com.apex.agent.platform.terminal.ubuntu.lifecycle.UbuntuLifecycleCoordinator
 import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.core.logging.LogLevel
@@ -20,10 +24,13 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.decode.SvgDecoder
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.drop
 import rikka.shizuku.Shizuku
 import javax.inject.Inject
 
@@ -33,18 +40,17 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
     @Inject
     lateinit var workerFactory: HiltWorkerFactory
 
-    // ★ 保留此字段以触发 Hilt 创建 AttachmentCleanupManager @Singleton 实例。
-    // 实例创建时，AttachmentModule 的 @Provides apply block 会自动调用
-    // schedulePeriodicCleanup()，无需在此处手动调用。
+    // ★ #822 主线程解耦：不再 @Inject MemKit（旧写法在 Application.onCreate
+    // 主线程触发 Hilt 解析 —— runBlocking 的库加载 + 全量旧存储迁移把冷启动
+    // 钉死在主线程 + StrictMode 磁盘违例）。改经 [MemoryKitInitializer] 在
+    // IO 协程懒解析单例并顺带迁移；其他消费方（工具/记忆页/MCP/Worker）
+    // 在此之后解析时创建已在后台完成。
     @Inject
-    lateinit var attachmentCleanupManager: AttachmentCleanupManager
+    lateinit var memoryKitInitializer: MemoryKitInitializer
 
-    // ★ 触发 Hilt 创建 CS-Mem 后台管道单例，并启动写入 Actor 与梦境渲染调度。
+    // 记忆维护周期调度（WorkManager；梦境语义约束）。
     @Inject
-    lateinit var memoryWriterActor: MemoryWriterActor
-
-    @Inject
-    lateinit var dreamRenderer: DreamRenderer
+    lateinit var maintenanceScheduler: MaintenanceScheduler
 
     // T82→T85: Ubuntu 产品级生命周期 —— App 启动时恢复现场（reconcile + 状态派生），
     // T85 内置交付语义：rootfs 随 APK 内置（完整 Ubuntu ~300MB+ 档），解包**纯离线**，
@@ -60,7 +66,7 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
 
     /** T82：apexctl 桥（guest 脚本 ↔ Android 能力，经持久化 home bind 的文件队列）。 */
     @Inject
-    lateinit var guestBridgeService: com.apex.agent.platform.terminal.bridge.GuestBridgeService
+    lateinit var guestBridgeService: com.apex.agent.platform.TerminalBridge.GuestBridgeService
 
     // ★ #173 逆向 MCP Host：触发 @Singleton 创建 —— enabled 时 App 启动即自启
     //（见 McpHostManager.init；未启用则零网络副作用）。
@@ -72,6 +78,18 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
     /** #7 日志落盘管道：AppLogger INFO+ 事件 → filesDir/logs/（日切 + 保留 7 天）。 */
     @Inject
     lateinit var logFileSink: LogFileSink
+
+    /** 常驻 logcat 采集（仅本进程）：android 日志行 → AppLogger（SYSTEM/logcat）。 */
+    @Inject
+    lateinit var logcatCollector: LogcatCollector
+
+    /** 崩溃 logcat 快照（崩溃瞬间）+ 冷启动回捞（系统 crash buffer）。 */
+    @Inject
+    lateinit var crashLogcat: CrashLogcat
+
+    /** 主线程无响应看门狗：心跳 gap > 5s → 堆栈转储 filesDir/anr/ + ERROR 留痕。 */
+    @Inject
+    lateinit var anrWatchdog: AnrWatchdog
 
     /** #4 前台跟踪：ActivityLifecycleCallbacks 计数器（任务完成通知的静音判定）。 */
     @Inject
@@ -85,8 +103,28 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
     @Inject
     lateinit var networkMonitor: NetworkMonitor
 
+    /** #210/#212：特权状态真源 —— Shizuku 回调里调 refreshStatus() 回灌 StateFlow。 */
+    @Inject
+    lateinit var privilegeManager: PrivilegeManager
+
+    /** #236 收尾：设置仓库（agentSettings 流驱动 Keep Alive 服务同步）。 */
+    @Inject
+    lateinit var settingsRepository: com.apex.agent.ui.screen.settings.SettingsRepository
+
     /** 后台启动任务专用 scope（SupervisorJob：单任务失败不殊及兄弟任务）。 */
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val appScope = CoroutineScope(
+        // v1.4.9 闪退防御：追加 CoroutineExceptionHandler —— 旧实现裸 SupervisorJob，
+        // scope 内任何未捕获异常（keepAlive 服务同步 / Ubuntu 预备 / Shizuku 刷新）
+        // 会直接冒泡到线程默认 UncaughtExceptionHandler 杀死进程。后台任务是增益
+        // 路径，失败只留痕，绝不炸宿主。
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, throwable ->
+            Log.e(
+                "ApexAgent",
+                "appScope coroutine failed (suppressed, process kept alive): " +
+                    "${throwable::class.simpleName}: ${throwable.message}"
+            )
+        }
+    )
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -95,7 +133,7 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
 
     // #174 模型品牌图标：SimpleIcons CDN 提供的是 SVG，需在全局 ImageLoader
     // 注册 SvgDecoder（Coil 2.x 经 ImageLoaderFactory 接管默认加载器；
-    // 附件预览/Markdown 图片等其他 Coil 调用点不受影响，仅多一种解码能力）。
+    // Markdown 图片等其他 Coil 调用点不受影响，仅多一种解码能力）。
     override fun newImageLoader(): ImageLoader =
         ImageLoader.Builder(this)
             .components { add(SvgDecoder.Factory()) }
@@ -105,6 +143,8 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         installGlobalCrashHandler()
+        // v1.4.9：进程纪元登记（启动看门狗判定「连续崩溃」的进程身份依据）
+        runCatching { com.apex.agent.service.StartupWatchdog.noteProcessStart(this) }
         // ═══ v1.4.4：启动即初始化（顺序有意为之）═══
         // 前台跟踪最先注册：后续任何路径的 isForeground 判定都可靠；
         // 日志落盘紧随 crash handler —— 启动期日志也能留痕（重启后可查）；
@@ -112,11 +152,30 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
         // 网络监测注入即回调注册（StateFlow 初值同步探测）。
         runCatching { foregroundTracker.register(this) }
         runCatching { logFileSink.start() }
+        // 日志增强三件套：紧随 logFileSink —— 同属观测旁路，顺序为
+        // 采集（logcat tail）→ 回捞（crash buffer）→ 看门狗（ANR 心跳）。
+        // 全部失败静默（组件内部自带防御），绝不阻断启动。
+        runCatching { logcatCollector.start() }
+        runCatching { anrWatchdog.start() }
+        // 冷启动回捞：异步（子进程 exec 不占主线程；结果写 crash 文件 + 留痕）。
+        runCatching {
+            appScope.launch {
+                val summary = crashLogcat.salvageOnStartup { java.io.File(filesDir, "crash") }
+                if (summary != null) {
+                    AppLogger.instance.info(
+                        LogCategory.SYSTEM, "CrashLogcat",
+                        "冷启动回捞完成：$summary",
+                        tags = arrayOf("crash", "salvage")
+                    )
+                }
+            }
+        }
         runCatching { notifications.ensureChannels(this) }
         runCatching { networkMonitor.isOnline.value } // 触发单例创建 + 回调注册
+        // v1.4.5：更新中枢就绪（应用级增量流水线 + 断点续传 + 启动检测；
+        // 实际网络检查由 ApexRoot 的 LaunchedEffect 触发，保证 UI 已组合）
+        runCatching { com.apex.agent.update.UpdateCenter.ensure(this) }
         initShizuku()
-        // attachmentCleanupManager 字段已通过 Hilt @Inject 触发单例创建，
-        // schedulePeriodicCleanup() 已在 AttachmentModule 的 @Provides apply block 中调用。
 
         // 启动 CS-Mem 记忆写入管道与后台梦境整理（见报告 P0：初始化缺口）。
         initCsMem()
@@ -131,6 +190,35 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
         // DI 注册）。guest 侧 rootfs 安装后即可 `apexctl <action>` 调用 Android 能力。
         runCatching { guestBridgeService.start() }
             .onFailure { Log.w("ApexAgent", "guest bridge start failed: ${it.message}") }
+
+        // #236 收尾：Keep Alive 服务同步升级为**流驱动** —— 旧接线只有设置页
+        // SwitchRow 一处一次性 apply（备份恢复/导入/其他任何写入路径翻转
+        // keepAlive 时前台服务照跑）。agentSettings 流的 keepAlive 变化统一
+        // 落 CoreServiceGate（toggle 直连 apply 保留 —— 双发幂等：
+        // onStartCommand 为幂等重申；stopService 停态 no-op）。
+        initKeepAliveServiceSync()
+    }
+
+    /**
+     * #236：agentSettings.keepAlive 变化 → CoreServiceGate（start/stopService）。
+     *
+     * drop(1)（初值即当前服务态 —— 启动时不额外拉起，启动权属 MainActivity/
+     * BootReceiver）+ distinctUntilChangedBy keepAlive（仅翻转才接线）。
+     * 订阅失败不阻断 App（runCatching 兜底 + 日志）。
+     */
+    private fun initKeepAliveServiceSync() {
+        appScope.launch {
+            runCatching {
+                settingsRepository.agentSettings
+                    .drop(1)
+                    .distinctUntilChangedBy { it.keepAlive }
+                    .collect { agent ->
+                        com.apex.agent.service.CoreServiceGate.apply(this@ApexApp, agent.keepAlive)
+                    }
+            }.onFailure {
+                Log.w("ApexAgent", "keepAlive service sync failed: ${it.message}")
+            }
+        }
     }
 
     /**
@@ -158,7 +246,19 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
      *   rootfs，无网络消耗 —— 「用户没同意流量」的老顾虑已不存在）；
      * - phase == ROOTFS_READY → 引导增强也顺手补齐（bootstrap 失败自动降级，
      *   不阻塞可用性）；
+     * - phase == BOOTSTRAPPING → 上次进程崩溃/超时残留的 IN_PROGRESS 续跑。
+     *   旧条件漏掉它：phase 停在 BOOTSTRAPPING，环境面板只有 spinner、无人
+     *   恢复（用户看到的即「apt 一直没引导」）；
+     * - phase == READY 且 bootstrapNote != null（降级注记）→ 防御性补跑。
+     *   warmUp 派生下启动时不可达（恒派生 ROOTFS_READY），保留是为了让
+     *   「引导未完成态一律自动预备」的意图显式成立；
      * - FAILED → 不自动重试（用户在终端页/环境中心手动重试，保留失败现场）。
+     *
+     * 网络恢复自愈（用户反馈「Ubuntu 总是显示 apt 未引导」的自动出口）：
+     * 降级注记此前只有两个手动清除出口 —— 环境中心一键重试 / 下次重启的
+     * 启动自动预备；网络从断到通时没人重试，注记就一直挂着。下面监听
+     * NetworkMonitor 的离线→在线跃迁，仅在「引导未完成」态补一次 ensureReady
+     *（幂等单飞：编排在跑则共享结果，已完整 READY 秒回）。
      *
      * 用户体验目标：安装 APK → 打开 App → 无需任何点击，Ubuntu 在后台就绪；
      * 进终端页时看到的是实时进度而非「未解包」等待用户行动的横幅。
@@ -177,7 +277,10 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
             // 只会共享同一次编排）。IO 调度：ensureReady 链含文件解压与子进程探测。
             val phase = ubuntuLifecycle.stateFlow.value.phase
             if (phase == UbuntuLifecycleCoordinator.Phase.NOT_INSTALLED ||
-                phase == UbuntuLifecycleCoordinator.Phase.ROOTFS_READY
+                phase == UbuntuLifecycleCoordinator.Phase.ROOTFS_READY ||
+                phase == UbuntuLifecycleCoordinator.Phase.BOOTSTRAPPING ||
+                (phase == UbuntuLifecycleCoordinator.Phase.READY &&
+                    ubuntuLifecycle.stateFlow.value.bootstrapNote != null)
             ) {
                 val r = runCatching {
                     kotlinx.coroutines.withContext(Dispatchers.IO) {
@@ -190,23 +293,55 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
                 )
             }
         }
+
+        // ── 网络恢复自愈（降级注记的自动清除出口）──
+        // drop(1) 跳过订阅初值（启动链已负责首次预备），StateFlow 自带去重 ——
+        // 只有真实的离线→在线跃迁才触发。collect 串行处理：一次 ensureReady
+        // 未完成前的再次跃迁会被合并，天然节流。
+        appScope.launch {
+            networkMonitor.isOnline
+                .drop(1)
+                .collect { online ->
+                    if (!online) return@collect
+                    val st = ubuntuLifecycle.stateFlow.value
+                    val pending = st.phase == UbuntuLifecycleCoordinator.Phase.ROOTFS_READY ||
+                        st.phase == UbuntuLifecycleCoordinator.Phase.BOOTSTRAPPING ||
+                        (st.phase == UbuntuLifecycleCoordinator.Phase.READY &&
+                            st.bootstrapNote != null)
+                    if (!pending) return@collect
+                    val r = runCatching {
+                        kotlinx.coroutines.withContext(Dispatchers.IO) {
+                            ubuntuLifecycle.ensureReady()
+                        }
+                    }.getOrNull()
+                    Log.i(
+                        "ApexAgent",
+                        "Ubuntu auto-retry on network regain: " +
+                            "${r?.let { it::class.simpleName } ?: "failed"}"
+                    )
+                }
+        }
     }
 
     /**
-     * 启动 CS-Mem 后台管道。
-     * - MemoryWriterActor：无锁并发写入，必须在应用启动早期启动以接收后续写入事件。
-     * - DreamRenderer：通过 WorkManager 调度周期性记忆保鲜（依赖 DreamWorker 真正执行）。
+     * 启动记忆库后台管道（apex-kit-memory）。
+     * - MemKit（#822）：单例解析 + 旧存储一次性迁移全部在 IO 协程执行
+     *   （MemoryKitInitializer.initializeAsync；主线程零阻塞零磁盘违例）。
+     * - MaintenanceScheduler（#851）：周期维护（充电 + 电量不低 —— 原约束
+     *   组合「充电 ∧ 深度空闲」在 Doze 语义下永无交集，维护从未跑过）+
+     *   每次冷启动的一次性兜底（Worker 内电量门自适应）。
      */
     private fun initCsMem() {
         runCatching {
-            memoryWriterActor.start()
+            memoryKitInitializer.initializeAsync()
         }.onFailure {
-            Log.w("ApexAgent", "Failed to start MemoryWriterActor: ${it.message}")
+            Log.w("ApexAgent", "Failed to init memory kit in background: ${it.message}")
         }
         runCatching {
-            dreamRenderer.scheduleDreamRendering()
+            maintenanceScheduler.schedule(this)
+            maintenanceScheduler.scheduleStartupFallback(this)
         }.onFailure {
-            Log.w("ApexAgent", "Failed to schedule DreamRendering: ${it.message}")
+            Log.w("ApexAgent", "Failed to schedule memory maintenance: ${it.message}")
         }
     }
 
@@ -258,6 +393,9 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
         )
         // 只保留最近 10 个崩溃文件，防止磁盘膨胀
         crashDir.listFiles()?.sortedByDescending { it.name }?.drop(10)?.forEach { it.delete() }
+        // 日志增强：崩溃文件追加崩溃前 logcat 快照（最近 300 行本进程上下文）。
+        // FATAL 行本身由系统在 handler 链尾打印，由下次启动的 CrashLogcat 回捞补齐。
+        runCatching { crashLogcat.appendSnapshot(file) }
     }
 
     /**
@@ -276,6 +414,8 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
                     message = "Shizuku binder received — service is available",
                     tags = arrayOf("shizuku")
                 )
+                // #212：不再只打日志 —— binder 到达即回灌权限状态 + 失效选路缓存
+                onShizukuAvailabilityChanged()
             }
 
             // 监听Shizuku binder死亡（服务停止时触发）
@@ -288,6 +428,8 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
                     message = "Shizuku binder dead — service is no longer available",
                     tags = arrayOf("shizuku")
                 )
+                // #212：服务停止后 30s 缓存/旧 StateFlow 不再拖住下游选路
+                onShizukuAvailabilityChanged()
             }
 
             // 监听权限授予结果
@@ -300,6 +442,8 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
                     message = "Shizuku permission result: requestCode=$requestCode grantResult=$grantResult",
                     tags = arrayOf("shizuku", "permission")
                 )
+                // #212：授权弹窗关闭（无论授予/拒绝）立即重探，权限页与执行链同步
+                onShizukuAvailabilityChanged()
             }
 
             Log.i("ApexAgent", "Shizuku listeners registered")
@@ -319,6 +463,24 @@ class ApexApp : Application(), Configuration.Provider, ImageLoaderFactory {
                 message = "Shizuku not available on this device: ${e.message}",
                 tags = arrayOf("shizuku")
             )
+        }
+    }
+
+    /**
+     * #212：Shizuku binder 生命周期 / 授权结果变化时的统一反应。
+     * 1. PrivilegeDetector 的 30s 级别缓存立即失效 —— 终端宿主通道 spawner
+     *    （PrivilegedCommandSpawner）、persistence、ShellExecute 工具的
+     *    通道选择不再按旧状态跑满 TTL；
+     * 2. DefaultPrivilegeManager.refreshStatus() 全量重探并回灌 StateFlow ——
+     *    executeShell / executeUiAction / 权限页 / 环境遥测即时感知。
+     *    DefaultPrivilegeManager 自身也注册了 binder 监听（同步直写流），
+     *    这里是双保险 + 缓存失效的 app 层入口。
+     */
+    private fun onShizukuAvailabilityChanged() {
+        PrivilegeDetector.invalidateCache()
+        appScope.launch {
+            runCatching { privilegeManager.refreshStatus() }
+                .onFailure { Log.w("ApexAgent", "refresh privilege status failed: ${it.message}") }
         }
     }
 }

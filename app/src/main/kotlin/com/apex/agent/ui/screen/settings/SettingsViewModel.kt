@@ -6,12 +6,19 @@ import androidx.lifecycle.viewModelScope
 import com.apex.agent.R
 import com.apex.agent.core.llm.LlmClientFactory
 import com.apex.agent.core.llm.LlmConfig
+import com.apex.agent.core.llm.LlmErrorText
 import com.apex.agent.core.llm.ModelProfile
 import com.apex.agent.core.llm.ModelRoleConfig
 import com.apex.agent.core.llm.ModelsCatalog
 import com.apex.agent.core.llm.ProviderConfig
 import com.apex.agent.core.llm.RemoteModelInfo
+import com.apex.agent.core.llm.share.ModelConfigFormat
+import com.apex.agent.core.llm.share.ModelConfigImportException
+import com.apex.agent.core.llm.share.ModelConfigImporter
 import com.apex.agent.core.tools.hook.HookRegistry
+import com.apex.agent.github.GithubConnectionState
+import com.apex.agent.github.GithubTokenManager
+import com.apex.agent.tools.ModelConfigImportApplier
 import com.apex.agent.ui.language.LanguageManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -38,9 +45,15 @@ class SettingsViewModel @Inject constructor(
     private val languageManager: LanguageManager,
     // Issue #165：钩子注册表（设置页启停声明式钩子）
     private val hookRegistry: HookRegistry,
+    // v3 S4：GitHub 连接状态与默认仓库（设置页只读展示 + 仓库编辑；
+    // 真实连接 UI 在 Coding 屏，避免双份）
+    private val githubTokenManager: GithubTokenManager,
     // Issue #164：项目规则状态预计算（默认工作区 AGENTS.md 是否存在）
     @ApplicationContext private val appContext: Context
 ) : ViewModel() {
+
+    /** B0-BUG-01:配置域解析损坏清单(横幅数据源;损坏域本次进程写回已禁用)。 */
+    val dataCorruption: StateFlow<List<String>> = repo.dataCorruption
 
     val profiles: StateFlow<List<ModelProfile>> = repo.profiles
     val providers: StateFlow<List<ProviderConfig>> = repo.providers
@@ -111,9 +124,64 @@ class SettingsViewModel @Inject constructor(
             )
         }
 
+    /**
+     * 导入模型配置（多语言格式文本 → provider + profiles 落盘；返回导入摘要）。
+     *
+     * 用户需求：模型配置支持直接粘贴 Python / JSON / YAML / TOML 导入。
+     * 识别在 [ModelConfigImporter]（纯 JVM、可单测）；落盘编排在
+     * [ModelConfigImportApplier]（与 Agent 侧 ModelConfigImport 工具共用同一份
+     * 代码）；本方法只把分型异常映射成本地化用户文案。
+     */
+    suspend fun importModelConfig(text: String, format: ModelConfigFormat): Result<ModelImportSummary> =
+        withContext(Dispatchers.IO) {
+            // 落盘编排在 ModelConfigImportApplier（与 Agent 侧 ModelConfigImport
+            // 工具共用同一份代码 —— 弹窗预览与工具导入所见即所得）；本方法只把
+            // 分型异常映射成本地化用户文案。
+            try {
+                val summary = ModelConfigImportApplier.apply(repo, text, format)
+                Result.success(
+                    ModelImportSummary(summary.count, summary.firstProfileId, summary.providerName)
+                )
+            } catch (e: ModelConfigImportException.ParseFailure) {
+                Result.failure(
+                    Exception(
+                        languageManager.getString(R.string.model_import_parse_error).format(e.message)
+                    )
+                )
+            } catch (e: ModelConfigImportException.NothingRecognized) {
+                Result.failure(
+                    Exception(languageManager.getString(R.string.model_import_nothing))
+                )
+            } catch (e: ModelConfigImportException) {
+                // 分型外的兜底（未来新增子类先不至于裸奔）
+                Result.failure(
+                    Exception(
+                        languageManager.getString(R.string.model_import_apply_error).format(e.message ?: "")
+                    )
+                )
+            }
+        }
+
     // ── 角色 / Agent ───────────────────────────────────────────
     fun updateRoles(block: ModelRoleConfig.() -> ModelRoleConfig) = repo.updateRoles(block)
     fun updateAgentSettings(block: AgentSettings.() -> AgentSettings) = repo.updateAgentSettings(block)
+
+    // ═══ v3 S4：GitHub（设置页 GithubSettingsSection 数据源）═══
+    // 连接状态与默认仓库流直接转发 GithubTokenManager；保存走 suspend 契约
+    // （返回规范化结果串，null = 格式无法识别）。defaultRepo 语义：空串 = 未设置 |
+    // "owner" | "owner/repo"。
+    val githubConnection: StateFlow<GithubConnectionState> = githubTokenManager.connectionState
+    val githubDefaultRepo: StateFlow<String> = githubTokenManager.defaultRepo
+
+    // 规范化保存默认仓库；返回 null 时 UI 显示格式错误提示
+    suspend fun saveGithubDefaultRepo(input: String): String? =
+        githubTokenManager.saveDefaultRepo(input)
+
+    // 清除默认仓库（回到未设置）
+    fun clearGithubDefaultRepo() = githubTokenManager.clearDefaultRepo()
+
+    // 断开 GitHub 连接（与 Coding 屏菜单同一入口）
+    fun disconnectGithub() = githubTokenManager.disconnect()
 
     /**
      * 测试指定模型 Profile 的连接是否可用。
@@ -143,7 +211,9 @@ class SettingsViewModel @Inject constructor(
                     languageManager.getString(R.string.settings_error_base_url_empty)
                 )
             }
-            if (config.apiKey.isBlank()) {
+            // #217：本地推理端点（Ollama / LM Studio / vLLM / 内网自建）免鉴权，
+            // 不再因空 API Key 拦截测试连接 —— 与 LlmConfig.isValid 同一口径。
+            if (config.apiKey.isBlank() && !config.isLocalEndpoint) {
                 return@withContext TestResult(
                     false,
                     languageManager.getString(R.string.settings_error_api_key_empty)
@@ -169,8 +239,10 @@ class SettingsViewModel @Inject constructor(
             } catch (e: Exception) {
                 TestResult(
                     false,
+                    // #213：LLM 域错误给中文指引（这里是服务端英文 JSON 原样透传点），
+                    // 其余异常走兜底中文 + 截断摘要（summarize 保留关键信息）。
                     languageManager.getString(R.string.settings_test_failed)
-                        .format(e.message ?: e.javaClass.simpleName)
+                        .format(LlmErrorText.userMessage(e))
                 )
             }
         }
@@ -196,7 +268,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             hookRegistry.setEnabled(id, enabled)
                 .onFailure {
-                    _hookMessage.value = it.message ?: "操作失败"
+                    _hookMessage.value = it.message ?: languageManager.getString(R.string.settings_hook_op_failed)
                 }
         }
     }
@@ -265,4 +337,14 @@ AGENTS.md，越靠近当前文件的越优先）。
 data class TestResult(
     val success: Boolean,
     val message: String
+)
+
+/**
+ * 模型配置导入结果摘要：导入模型数 + 首个档案 id（供导入后自动选中）+
+ * 落盘的服务商名（完成提示 / 二次导入去重提示用）。
+ */
+data class ModelImportSummary(
+    val count: Int,
+    val firstProfileId: String,
+    val providerName: String,
 )

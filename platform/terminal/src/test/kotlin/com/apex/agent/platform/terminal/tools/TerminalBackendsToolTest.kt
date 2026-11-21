@@ -1,13 +1,16 @@
 package com.apex.agent.platform.terminal.tools
 
 import com.apex.agent.platform.terminal.runtime.BackendAvailability
+import com.apex.agent.platform.terminal.proot.PRootSmokeProbe
 import com.apex.agent.platform.terminal.runtime.BackendRuntimeType
 import com.apex.agent.platform.terminal.runtime.ExecutionBackend
 import com.apex.agent.platform.terminal.runtime.SessionSpawnRequest
 import com.apex.agent.platform.terminal.runtime.SpawnSpec
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
+import com.apex.agent.platform.terminal.tools.v2.TerminalPRootSmokeTool
 import com.apex.agent.platform.terminal.tools.v2.TerminalBackendsTool
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -15,7 +18,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 /**
- * T73 — terminal.backends 工具：后端能力发现的 Agent 出口。
+ * T73 — TerminalBackends 工具：后端能力发现的 Agent 出口。
  * 输出契约：{ backends: [ { id, runtimeType, available, state, detail? } ] }
  */
 class TerminalBackendsToolTest {
@@ -36,10 +39,10 @@ class TerminalBackendsToolTest {
 
         override suspend fun backends(): List<TerminalRuntime.BackendStatus> = statuses
         // 其余门面操作在工具测试中不可达 —— 工具只调 backends()。
-        override suspend fun create(shell: String, cwd: String, rows: Int, cols: Int, env: Map<String, String>, privilege: com.apex.agent.platform.terminal.policy.PrivilegeLevel, backendId: String, workspaceId: String?): Result<TerminalRuntime.CreateResult> = throw UnsupportedOperationException()
+        override suspend fun create(cwd: String, rows: Int, cols: Int, env: Map<String, String>, privilege: com.apex.agent.platform.terminal.policy.PrivilegeLevel, backendId: String, workspaceId: String?): Result<TerminalRuntime.CreateResult> = throw UnsupportedOperationException()
         override suspend fun run(sessionId: Long, command: String, owner: com.apex.agent.platform.terminal.io.InputOwner, background: Boolean, timeoutMs: Long): Result<TerminalRuntime.RunResult> = Result.failure(UnsupportedOperationException())
         override suspend fun observe(sessionId: Long, mode: TerminalRuntime.ObserveMode, afterCursor: Long, maxBytes: Int, maxEvents: Int, scrollbackLines: Int): Result<TerminalRuntime.ObserveResult> = Result.failure(UnsupportedOperationException())
-        override suspend fun wait(sessionId: Long, condition: com.apex.agent.platform.terminal.wait.WaitCondition, timeoutMs: Long): Result<com.apex.agent.platform.terminal.wait.WaitResult> = Result.failure(UnsupportedOperationException())
+        override suspend fun wait(sessionId: Long, condition: com.apex.agent.platform.TerminalWait.WaitCondition, timeoutMs: Long): Result<com.apex.agent.platform.TerminalWait.WaitResult> = Result.failure(UnsupportedOperationException())
         override suspend fun write(sessionId: Long, owner: com.apex.agent.platform.terminal.io.InputOwner, kind: TerminalRuntime.WriteKind, text: String?, key: com.apex.agent.platform.terminal.io.TerminalKey?, bytes: ByteArray?): Result<TerminalRuntime.WriteResult> = Result.failure(UnsupportedOperationException())
         override suspend fun signal(sessionId: Long, signal: com.apex.agent.platform.terminal.io.UnixSignal, owner: com.apex.agent.platform.terminal.io.InputOwner, jobId: Long?): Result<TerminalRuntime.SignalResult> = Result.failure(UnsupportedOperationException())
         override suspend fun signalForeground(sessionId: Long, signal: com.apex.agent.platform.terminal.io.UnixSignal, owner: com.apex.agent.platform.terminal.io.InputOwner, jobId: Long?): Result<TerminalRuntime.SignalResult> = Result.failure(UnsupportedOperationException())
@@ -51,6 +54,7 @@ class TerminalBackendsToolTest {
         override fun screenStateFlow(sessionId: Long): kotlinx.coroutines.flow.Flow<com.apex.agent.platform.terminal.screen.TerminalScreenState>? = null
         override fun semanticStateFlow(sessionId: Long): kotlinx.coroutines.flow.Flow<com.apex.agent.platform.terminal.state.TerminalSemanticState>? = null
         override fun styledScreenFlow(sessionId: Long): kotlinx.coroutines.flow.Flow<com.apex.agent.terminalemulator.TerminalRenderSnapshot?>? = null
+        override fun terminalEventFlow(sessionId: Long, afterCursor: Long): kotlinx.coroutines.flow.Flow<com.apex.agent.platform.terminal.events.TerminalEvent>? = null
         override suspend fun recover(): List<Long> = emptyList()
         override suspend fun recoveredSnapshot(sessionId: Long): com.apex.agent.platform.terminal.state.TerminalSemanticState? = null
     }
@@ -63,8 +67,8 @@ class TerminalBackendsToolTest {
         val tool = TerminalBackendsTool(
             FakeRuntime(
                 listOf(
-                    TerminalRuntime.BackendStatus("local", "ANDROID_LOCAL", true, "READY"),
-                    TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", false, "NEEDS_ROOTFS:not_provisioned", "先调用 terminal.ubuntu.install")
+                    TerminalRuntime.BackendStatus("local", "LINUX", true, "READY"),
+                    TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", false, "NEEDS_ROOTFS:not_provisioned", "先调用 TerminalUbuntuEnsure")
                 )
             )
         )
@@ -81,7 +85,7 @@ class TerminalBackendsToolTest {
         assertEquals("linux-ubuntu", ubuntu["id"]!!.jsonPrimitive.content)
         assertEquals("false", ubuntu["available"]!!.jsonPrimitive.content)
         assertEquals("NEEDS_ROOTFS:not_provisioned", ubuntu["state"]!!.jsonPrimitive.content)
-        assertEquals("先调用 terminal.ubuntu.install", ubuntu["detail"]!!.jsonPrimitive.content)
+        assertEquals("先调用 TerminalUbuntuEnsure", ubuntu["detail"]!!.jsonPrimitive.content)
     }
 
     @Test
@@ -99,5 +103,74 @@ class TerminalBackendsToolTest {
         val ubuntu = parse(tool.invoke("{}"))[0].jsonObject
         assertEquals("FAILED", ubuntu["state"]!!.jsonPrimitive.content)
         assertEquals("PRootError:BINARY_NOT_FOUND", ubuntu["detail"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `hung smoke advice comes only from the explicit tool`() = runTest {
+        val runtime = FakeRuntime(listOf(
+            TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", true, "READY"),
+            TerminalRuntime.BackendStatus("linux-ubuntu-chroot", "LINUX", true, "READY")
+        ))
+        val smoke = TerminalPRootSmokeTool(runtime) {
+            PRootSmokeProbe.SmokeResult(PRootSmokeProbe.Status.TIMED_OUT)
+        }
+        val json = kotlinx.serialization.json.Json.parseToJsonElement(smoke.invoke("{}")).jsonObject
+        assertEquals("timed_out", json["smoke"]!!.jsonPrimitive.content)
+        val advice = json["suggestion"]!!.jsonPrimitive.content
+        assertTrue(advice.contains("likely"))
+        assertTrue(advice.contains("linux-ubuntu-chroot"))
+        assertTrue(advice.contains("if superuser is granted"))
+        // 建议只是信息：smoke 工具不返回后端表、不改注册顺序或路由。
+        assertNull(json["backends"])
+    }
+
+    @Test
+    fun `ordinary binary error and healthy smoke never advise switching`() = runTest {
+        val runtime = FakeRuntime(listOf(TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", true, "READY")))
+        for ((status, expected) in listOf(
+            PRootSmokeProbe.Status.OK to "ok",
+            PRootSmokeProbe.Status.BINARY_ERROR to "binary_error"
+        )) {
+            val smoke = TerminalPRootSmokeTool(runtime) {
+                PRootSmokeProbe.SmokeResult(status, if (status == PRootSmokeProbe.Status.BINARY_ERROR) 127 else 0)
+            }
+            val json = kotlinx.serialization.json.Json.parseToJsonElement(smoke.invoke("{}")).jsonObject
+            assertEquals(expected, json["smoke"]!!.jsonPrimitive.content)
+            assertNull("$status is not evidence for ptrace advice", json["suggestion"])
+        }
+    }
+
+    @Test
+    fun `discovery is pure read-only — no smoke field or suggestion on any state`() = runTest {
+        // T99 评审 B1 回归锁：READY 查询也绝不附 smoke/suggestion（执行已拆到
+        // 显式工具）。此前 READY 会在此跑 `<proot> … /bin/true`。
+        val runtime = FakeRuntime(listOf(
+            TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", true, "READY"),
+            TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", false, "NEEDS_ROOTFS")
+        ))
+        val json = kotlinx.serialization.json.Json.parseToJsonElement(
+            TerminalBackendsTool(runtime).invoke("{}")
+        ).jsonObject
+        for (b in json["backends"]!!.jsonArray) {
+            assertNull("read-only discovery must not carry smoke", b.jsonObject["smoke"])
+        }
+        assertNull(json["suggestion"])
+    }
+
+    @Test
+    fun `guest execution lives only in the explicit non-readonly tool`() = runTest {
+        var launches = 0
+        val runtime = FakeRuntime(listOf(
+            TerminalRuntime.BackendStatus("linux-ubuntu", "LINUX", true, "READY")
+        ))
+        val smoke = TerminalPRootSmokeTool(runtime) {
+            launches++; PRootSmokeProbe.SmokeResult(PRootSmokeProbe.Status.PTRACE_SIGNAL, 159)
+        }
+        val json = kotlinx.serialization.json.Json.parseToJsonElement(smoke.invoke("{}")).jsonObject
+        assertEquals(1, launches)
+        assertEquals("TerminalPRootSmoke", json["id"]!!.jsonPrimitive.content)
+        assertEquals("true", json["proot"]!!.jsonPrimitive.content)
+        assertEquals("ptrace_signal", json["smoke"]!!.jsonPrimitive.content)
+        assertEquals(159, json["exitCode"]!!.jsonPrimitive.content.toInt())
     }
 }

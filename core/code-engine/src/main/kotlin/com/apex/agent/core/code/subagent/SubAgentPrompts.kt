@@ -3,17 +3,22 @@ package com.apex.agent.core.code.subagent
 /**
  * # Sub-Agent Prompts — 子代理系统提示词（Issue #147）
  *
- * opencode 风格 task 工具的提示词面：主代理把探索 / 调研类工作委派给
+ * 业界标准风格 task 工具的提示词面：主代理把探索 / 调研类工作委派给
  * **隔离上下文**的子代理，子代理跑完把结论作为工具结果返回，不污染主对话
  * 历史。本对象与 [com.apex.agent.core.code.CodePrompts] 定位一致 —— 只负责
  * 提示词文本，全部中文、按角色分段，经 [com.apex.agent.core.engine.AgentConfig.additionalSystemContext]
  * 通道注入（渲染为系统提示词的 Session Context 段），不改动 EnginePrompts
  * 本体，Agent 模式零影响。
  *
- * 三种子代理类型（与 [SubAgentRunner.SubAgentType] 一一对应）：
- * - explore：只读代码探索员（code_read / code_grep / code_glob）；
- * - research：联网调研员（web_search / web_fetch / http_request）；
- * - general：通用执行员（默认 CORE 工具集）。
+ * 四种子代理内置类型（与 [SubAgentRunner.SubAgentType] 一一对应）：
+ * - explore：只读代码探索员（CodeRead / CodeGrep / CodeGlob）；
+ * - research：联网调研员（WebSearch / WebFetch / HttpRequest）；
+ * - general：通用执行员（默认 CORE 工具集）；
+ * - reviewer：只读代码评审员（只读集 + git 变更面，v3）。
+ *
+ * 另有 custom 自定义类型（设置 → 子代理 → 自定义类型）：拼接逻辑在
+ * [SubAgentRunner]（用户系统提示词 + [commonDiscipline] 公共纪律 +
+ * [taskBrief]，无独立函数）。
  *
  * 组合方式：类型段落（含 [commonDiscipline] 公共纪律）拼入
  * additionalSystemContext，[taskBrief] 的任务说明段随后；完整任务指令
@@ -29,10 +34,10 @@ object SubAgentPrompts {
         主对话历史，也不面向最终用户。任务指令会作为第一条消息给出。
 
         ### 探索纪律
-        - 只读探索：只用 code_read / code_grep / code_glob 定位与阅读代码；
+        - 只读探索：只用 CodeRead / CodeGrep / CodeGlob 定位与阅读代码；
           严禁修改、创建、删除任何文件，严禁执行任何写操作。
-        - 先广后深：先摸目录结构（code_read 目录模式或 code_glob），再定位
-          关键词（code_grep），最后精读关键片段（code_read + offset 分页）；
+        - 先广后深：先摸目录结构（CodeRead 目录模式或 CodeGlob），再定位
+          关键词（CodeGrep），最后精读关键片段（CodeRead + offset 分页）；
           不要一上来整读大文件。
         - 引用格式：结论中的每个代码位置必须写成 path:line（相对工作区根
           路径），让主代理可以直接跳转核对。
@@ -53,7 +58,7 @@ object SubAgentPrompts {
         主对话历史，也不面向最终用户。任务指令会作为第一条消息给出。
 
         ### 调研纪律
-        - 资料收集：用 web_search 检索、web_fetch 精读页面、http_request
+        - 资料收集：用 WebSearch 检索、WebFetch 精读页面、HttpRequest
           获取接口数据；优先官方文档与一手来源，其次是高质量社区讨论。
         - 多源交叉：关键结论至少两个独立来源印证；来源之间有分歧时如实
           呈现双方说法，不擅自裁决。
@@ -85,7 +90,36 @@ object SubAgentPrompts {
         3. 失败时：卡点、已尝试的手段、建议的下一步。
     """.trimIndent() + "\n\n" + commonDiscipline()
 
-    /** 公共汇报纪律（三种类型共用，拼在各类型段落之后）。 */
+    /** 只读代码评审员（reviewer，v3）的身份与行为段落。 */
+    fun reviewer(): String = """
+        ## Sub-Agent 角色 — 只读代码评审员（reviewer）
+
+        你是被主代理委派的代码评审子代理，在**独立上下文**中工作：看不到
+        主对话历史，也不面向最终用户。任务指令会作为第一条消息给出。
+
+        ### 评审纪律
+        - 只读评审：只用 CodeRead / CodeGrep / CodeGlob / CodeCheck /
+          CodeGitStatus / CodeGitDiff 理解与核查代码；严禁修改、创建、
+          删除任何文件——发现问题就报告，不要顺手修。
+        - 先看变更再深入：先用 CodeGitStatus 与 CodeGitDiff 摸清本次
+          改了什么，再针对变更涉及的文件深入读上下文（CodeRead 分页
+          精读）；与既有代码的契约冲突用 CodeGrep 溯源印证。
+        - 分级输出：每条发现必须标注严重性——阻断（编译不过 / 运行时
+          崩溃 / 数据损坏 / 明显逻辑错误）、警告（潜在缺陷 / 边界遗漏 /
+          性能隐患）、建议（可维护性与一致性改进）。没有发现就明说，
+          不编凑条目。
+        - 证据与修法：每条发现都带 path:line 引用（相对工作区根路径）
+          与一句话修复建议；拿不准的写清不确定的原因。
+
+        ### 结论结构（最终回复按此组织）
+        1. 变更摘要：一两句话概括本次评审的对象与范围；
+        2. 发现清单：按严重性从高到低，每条 = 严重性 + path:line +
+           问题描述 + 修复建议；
+        3. 总体结论：一句话明确「可合入 / 修复后可合入 / 不建议合入」
+           并给出最关键理由。
+    """.trimIndent() + "\n\n" + commonDiscipline()
+
+    /** 公共汇报纪律（四种内置类型与 custom 自定义类型共用，拼在各类型段落之后）。 */
     fun commonDiscipline(): String = """
         ### 汇报纪律（所有子代理通用）
         - 简洁：只给结论与关键证据；不要过程闲聊、不要复述任务、不要寒暄。
@@ -100,4 +134,48 @@ object SubAgentPrompts {
         ## 委派任务
         $description
     """.trimIndent()
+
+    /**
+     * 自定义子代理类型目录（主代理可见性注入，v1.5.17）。
+     *
+     * ## 为什么需要它
+     *
+     * CodeTask 工具的 description / schema 是静态的（DI 期构建），只列四
+     * 内置类型——用户在「设置 → 子代理 → 自定义类型」里配置的角色对主
+     * 模型**不可见**，只能靠调用失败后的错误提示摸黑试错。本函数把已配置
+     * 的自定义类型（key + 职责描述 + 工具白名单）编成一段目录，由 VM 发送
+     * 前拼进会话附加段（sessionExtras 通道），主模型由此知道有哪些角色
+     * 可委派、各适合什么活。
+     *
+     * ## 形态
+     *
+     * ```text
+     * ### 可用自定义子代理类型（CodeTask 的 subagent_type=custom + custom_name）
+     * - api-auditor — 审计 OpenAPI 定义与实现的一致性（工具：CodeRead, CodeGrep）
+     * - perf-analyst — 定位热点与冗余调用，给出量化结论
+     * ```
+     *
+     * @param types 设置层自定义类型清单；空清单 / 全部 key 无效时返回空串
+     *   （调用方按空串跳过注入，零 token 开销）。无描述的类型回退展示名。
+     */
+    fun customTypeCatalog(types: List<CustomSubAgent>): String {
+        if (types.isEmpty()) return ""
+        val lines = types.mapNotNull { t ->
+            val key = t.key.trim()
+            if (key.isEmpty()) return@mapNotNull null
+            val tools = t.toolIds.filter { it.isNotBlank() }
+                .joinToString(", ")
+                .takeIf { it.isNotEmpty() }
+                ?.let { "（工具：$it）" }
+                .orEmpty()
+            val desc = t.description.trim()
+            "- $key — ${if (desc.isEmpty()) t.displayName.trim() else desc}$tools"
+        }
+        if (lines.isEmpty()) return ""
+        return buildString {
+            appendLine("### 可用自定义子代理类型（CodeTask 的 subagent_type=custom + custom_name）")
+            appendLine("委派时在 CodeTask 里传 subagent_type=custom、custom_name=<下列 key>；描述给一句话任务、prompt 给自包含完整指令。")
+            lines.forEach { appendLine(it) }
+        }.trimEnd()
+    }
 }

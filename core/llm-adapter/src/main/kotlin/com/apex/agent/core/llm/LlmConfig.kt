@@ -70,9 +70,27 @@ data class LlmConfig(
     val stopSequences: List<String> = emptyList(),
 
     // ── Reasoning 扩展 ─────────────────────────────────────────
-    /** 思维预算（tokens），null = Auto。与 [reasoningEffort] 不强行绑定。 */
+    /**
+     * 思维预算（tokens），null = Auto。与 [reasoningEffort] 不强行绑定。
+     *
+     * SPE-04 语义收窄：**仅用于推理预算**（Anthropic `thinking.budget_tokens`
+     * / Gemini `thinking_budget`）；不再被当作输出上限下发——旧实现把它写进
+     * `max_completion_tokens`，档位预算（如 STANDARD 1024）会直接截断回答，
+     * APEXCODE 65536 会被多数端点 400 拒绝。输出上限走
+     * [maxCompletionTokens] / [maxTokens]（受 contextWindow 裁剪）。
+     */
     val thinkingBudget: Int? = null,
-    val showThinking: Boolean = true,
+
+    /**
+     * 输出上限（`max_completion_tokens`），null = 未显式设置。
+     *
+     * SPE-04 P0-1 新增：与 [thinkingBudget]（推理预算）解耦——输出上限的
+     * 取值链：显式 maxCompletionTokens > ReasoningEffort.MAX 的兜底
+     * （maxOf(requestedTokens, 8192)）> 不发（走 `max_tokens` =
+     * effectiveMaxTokens）。任何取值都受 contextWindow - reservedOutputTokens
+     * 钳制（不再出现裸 65536）。
+     */
+    val maxCompletionTokens: Int? = null,
 
     // ── Context ────────────────────────────────────────────────
     val contextWindow: Int = 128_000,
@@ -88,7 +106,6 @@ data class LlmConfig(
     val retryDelayMs: Long = 1_000,
     val maxRetryDelayMs: Long = 10_000,
     val retryOnCodes: Set<Int> = setOf(408, 429, 500, 502, 503, 504),
-    val keepAlive: Boolean = true,
 
     // ── Tools ──────────────────────────────────────────────────
     val enableTools: Boolean = true,
@@ -104,7 +121,7 @@ data class LlmConfig(
      * - OFF（默认）：不发送任何原生搜索参数 —— 请求体与旧版完全一致，兼容所有端点；
      * - AUTO：按 baseUrl/providerId 自动选择各 Provider 的原生搜索策略（推断不出 → OFF）。
      *
-     * 与 Agent 内置 web_search 工具（客户端 HTML 抓取，脆弱且常被反爬）互补：
+     * 与 Agent 内置 WebSearch 工具（客户端 HTML 抓取，脆弱且常被反爬）互补：
      * 原生搜索由服务端执行并注入上下文，引用随响应返回（annotations/search_result）。
      * 详见 [WebSearchMode]。
      */
@@ -123,14 +140,93 @@ data class LlmConfig(
     /** 该 Profile 挂载的 Provider id。运行时按此判定是否发送 top_k/min_p/ repetition_penalty 等 provider 专有字段。 */
     val providerId: String = "",
 ) {
+    /**
+     * 是否为本地推理端点（#217）。
+     *
+     * 判定按 (providerId, baseUrl) 双信号：
+     *  - providerId 命中内置本地推理 Provider（Ollama / LM Studio / vLLM）；
+     *  - 或 baseUrl 的 host 指向本机 / 内网（localhost / 127.x / RFC1918 私网段 /
+     *    .local mDNS），含 Android 模拟器宿主别名 10.0.2.2 / 10.0.3.2。
+     *
+     * 本地推理服务（Ollama / llama.cpp / LM Studio / vLLM 自建）不校验鉴权，
+     * 该标记用于豁免 [isValid] 的 apiKey 强制检查。
+     */
+    val isLocalEndpoint: Boolean
+        get() = isLocalEndpoint(baseUrl, providerId)
+
+    /**
+     * 配置是否可发起真实请求（DynamicLlmClient 以此决定真 client vs NoOp 降级）。
+     *
+     * #217 根因修复：旧实现无条件要求 apiKey 非空——Ollama / LM Studio 等
+     * 免鉴权本地端点（内置 Provider 的 apiKeys 为空）被判「未配置」，用户被迫
+     * 伪造占位 Key 才能出话。现在本地推理端点（[isLocalEndpoint]）豁免 apiKey
+     * 检查，只要求 baseUrl + model 就绪；云端 provider 维持原校验不变。
+     *
+     * scheme 仍强制 http/https：本地端点同样不允许 file:// / 无 scheme 字符串
+     * 混过校验（否则延迟到 OkHttp 构造 Request 才抛原始异常，难以定位）。
+     */
     val isValid: Boolean
-        get() = baseUrl.isNotBlank() && apiKey.isNotBlank() && model.isNotBlank() &&
-            // 强制 http/https scheme：旧实现仅检查非空，导致 file://、ftp://、
-            // 或无 scheme 的字符串通过校验，延迟到 OkHttp 构造 Request 时才以
-            // 原始 IllegalArgumentException 抛出，用户难以定位。
-            (baseUrl.startsWith("http://") || baseUrl.startsWith("https://"))
-    
+        get() = baseUrl.isNotBlank() && model.isNotBlank() &&
+            (baseUrl.startsWith("http://") || baseUrl.startsWith("https://")) &&
+            (apiKey.isNotBlank() || isLocalEndpoint)
+
     companion object {
+        /**
+         * 内置本地推理 Provider id 集合（与 [ModelProfileDefaults.builtInProviders]
+         * 中 ollama / lmstudio / vllm 三项对应）。这些 Provider 的服务运行在
+         * 用户自己的设备或局域网内，不校验 API Key。
+         *
+         * 注：custom_openai 不入列——自定义端点可能是远程鉴权网关，是否本地
+         * 仅由 baseUrl host 判定。
+         */
+        val LOCAL_PROVIDER_IDS: Set<String> = setOf("ollama", "lmstudio", "vllm")
+
+        /**
+         * 判定 (providerId, baseUrl) 是否指向本地推理端点（详见 [isLocalEndpoint] 实例属性）。
+         * 静态入口供 ProviderConfigValidator 等无实例场景复用，保证全仓同一口径。
+         */
+        fun isLocalEndpoint(baseUrl: String, providerId: String): Boolean {
+            if (providerId.isNotBlank() && providerId.lowercase() in LOCAL_PROVIDER_IDS) return true
+            return isLocalHostUrl(baseUrl)
+        }
+
+        /** 解析 baseUrl 的 host 并判定是否本机 / 内网地址。 */
+        private fun isLocalHostUrl(baseUrl: String): Boolean {
+            val trimmed = baseUrl.trim().lowercase()
+            if (trimmed.isEmpty()) return false
+            val schemeIdx = trimmed.indexOf("://")
+            val afterScheme = if (schemeIdx >= 0) trimmed.substring(schemeIdx + 3) else trimmed
+            val hostPort = afterScheme.substringBefore('/')
+            if (hostPort.isEmpty()) return false
+            // IPv6 字面量（如 [::1]:11434）取方括号内地址；普通 host:port 截掉端口。
+            val host = if (hostPort.startsWith("[")) {
+                hostPort.substringAfter('[').substringBefore(']')
+            } else {
+                hostPort.substringBefore(':')
+            }
+            return isLocalHost(host)
+        }
+
+        /** host 归属判定：本机回环 / RFC1918 私网段 / mDNS 本地域。 */
+        private fun isLocalHost(host: String): Boolean = when {
+            host.isEmpty() -> false
+            // 本机回环（localhost / 127.0.0.0/8 / IPv6 ::1）与通配地址
+            host == "localhost" || host.endsWith(".localhost") -> true
+            host == "::1" || host == "0.0.0.0" -> true
+            host.startsWith("127.") -> true
+            // RFC1918 私网段：10.0.0.0/8（含 Android 模拟器宿主别名 10.0.2.2 /
+            // 10.0.3.2）、172.16.0.0/12、192.168.0.0/16 —— 局域网自建推理服务。
+            host.startsWith("10.") -> true
+            host.startsWith("192.168.") -> true
+            host.startsWith("172.") -> {
+                val second = host.removePrefix("172.").substringBefore('.').toIntOrNull()
+                second != null && second in 16..31
+            }
+            // mDNS 本地域名（如 ollama.local）
+            host.endsWith(".local") -> true
+            else -> false
+        }
+
         /** 预设：OpenAI */
         fun openai(apiKey: String, model: String = "gpt-4o") = LlmConfig(
             baseUrl = "https://api.openai.com/v1",
@@ -198,7 +294,6 @@ data class LlmConfig(
                 seed = profile.seed,
                 stopSequences = profile.stopSequences,
                 thinkingBudget = profile.thinkingBudget,
-                showThinking = profile.showThinking,
                 contextWindow = profile.contextWindow,
                 reservedOutputTokens = profile.reservedOutputTokens,
                 connectTimeoutMs = profile.connectTimeoutMs,
@@ -209,7 +304,6 @@ data class LlmConfig(
                 retryDelayMs = profile.retryDelayMs,
                 maxRetryDelayMs = profile.maxRetryDelayMs,
                 retryOnCodes = profile.retryOnCodes,
-                keepAlive = profile.keepAlive,
                 enableTools = profile.enableTools,
                 toolChoice = profile.toolChoice,
                 parallelToolCalls = profile.parallelToolCalls,
@@ -272,10 +366,10 @@ enum class ReasoningEffort(val apiValue: String?, val displayName: String) {
  * - AUTO：按 baseUrl/providerId 自动选择下述策略（推断不出 → OFF）
  * - OPENAI：`web_search_options`（gpt-4o-search-preview 系）
  * - DASHSCOPE：`enable_search: true`（阿里百炼 Qwen compatible-mode）
- * - ZHIPU：tools 数组追加 `{"type":"web_search",...}`（智谱 GLM server tool）
+ * - ZHIPU：tools 数组追加 `{"type":"WebSearch",...}`（智谱 GLM server tool）
  * - OPENROUTER：`plugins: [{"id":"web"}]`（等价模型名 `:online` 后缀）
  * - ANTHROPIC：tools 数组追加 `web_search_20250305`（Anthropic server tool）
- * - DEEPSEEK：tools 数组追加 `{"type":"web_search"}`（Responses 兼容端点）
+ * - DEEPSEEK：tools 数组追加 `{"type":"WebSearch"}`（Responses 兼容端点）
  *
  * 作为 [ModelProfile] 的序列化字段（带默认值 OFF，旧持久化 JSON 兼容），
  * 故标注 @Serializable（与 [ToolChoiceMode]/[StructuredOutputMode] 同风格）。
@@ -294,17 +388,17 @@ enum class WebSearchMode(val displayName: String) {
     /** 阿里百炼 DashScope compatible-mode 的 enable_search 顶层开关 */
     DASHSCOPE("DashScope enable_search"),
 
-    /** 智谱 GLM 的 web_search server-side tool（入 tools 数组） */
-    ZHIPU("Zhipu web_search tool"),
+    /** 智谱 GLM 的 WebSearch server-side tool（入 tools 数组） */
+    ZHIPU("Zhipu WebSearch tool"),
 
     /** OpenRouter 的 web 插件（等价模型名 :online 后缀） */
     OPENROUTER("OpenRouter :online"),
 
     /** Anthropic 的 web_search_20250305 server-side tool */
-    ANTHROPIC("Anthropic web_search tool"),
+    ANTHROPIC("Anthropic WebSearch tool"),
 
-    /** DeepSeek Responses 兼容端点的 web_search server tool */
-    DEEPSEEK("DeepSeek web_search tool");
+    /** DeepSeek Responses 兼容端点的 WebSearch server tool */
+    DEEPSEEK("DeepSeek WebSearch tool");
 
     /**
      * 解析该模式在给定端点下实际生效的策略（实例入口，
@@ -330,6 +424,32 @@ enum class WebSearchMode(val displayName: String) {
             url.contains("anthropic") -> ANTHROPIC
             url.contains("deepseek") -> DEEPSEEK
             else -> OFF
+        }
+    }
+
+    /**
+     * 该模式的 server-side 搜索 tool（写入 tools 数组的形态）是否被给定端点真实支持。
+     *
+     * 背景（422 unknown variant 复盘，2026-11）：[resolveFor] 只对 AUTO 做端点
+     * 推断，显式选择的 ZHIPU / DEEPSEEK / ANTHROPIC 模式原样生效 —— Profile
+     * 迁移 / 中转换端点后，webSearch 模式可能仍停在旧 provider 形态：非标准
+     * `tools[].type`（"WebSearch" / "web_search_20250305"）对 Rust serde 风格
+     * 的严格 OpenAI 兼容端点是**整请求级 422 必败体**（"tools[0].type: unknown
+     * variant `WebSearch`, expected `function`"）——同一体无论重发多少次都失败。
+     *
+     * 判定口径与 [resolveFor] 的 AUTO 分支**完全同源**（语义 = 「AUTO 在该端点
+     * 上会不会解析出该模式」）：不匹配 → 调用方跳过注入，原生搜索意图降级为
+     * 不发，而不是把任务变成协议错误。顶层字段形态（OPENAI / DASHSCOPE /
+     * OPENROUTER）不进 tools 数组，非 server-tool 模式恒真（由各自端点校验）。
+     */
+    fun serverToolSupportedBy(baseUrl: String, providerId: String): Boolean {
+        val url = baseUrl.lowercase()
+        val pid = providerId.lowercase()
+        return when (this) {
+            ZHIPU -> url.contains("bigmodel.cn") || pid.contains("zhipu") || pid.contains("glm")
+            DEEPSEEK -> url.contains("deepseek")
+            ANTHROPIC -> url.contains("anthropic")
+            else -> true
         }
     }
 

@@ -36,14 +36,14 @@ class FileTaskStoreTest {
         mode = "PLAN",
         status = status,
         steps = listOf(
-            TaskStepModel("task-1000-abcd-s0", 0, "读取文件", "read_file", listOf()),
-            TaskStepModel("task-1000-abcd-s1", 1, "写报告", "write_file", listOf(0), StepStatus.RUNNING)
+            TaskStepModel("task-1000-abcd-s0", 0, "读取文件", "Read", listOf()),
+            TaskStepModel("task-1000-abcd-s1", 1, "写报告", "Write", listOf(0), StepStatus.RUNNING)
         ),
         operations = listOf(
             ToolOperationRecord(
                 operationId = "task-1000-abcd-op0",
                 llmCallId = "call_abc",
-                toolName = "read_file",
+                toolName = "Read",
                 arguments = """{"path":"a.txt"}""",
                 status = OperationStatus.SUCCEEDED,
                 idempotency = ToolIdempotencyClass.READ_ONLY

@@ -3,6 +3,7 @@ package com.apex.agent.platform.terminal.ubuntu.lifecycle
 import com.apex.agent.platform.terminal.ubuntu.ProvisioningResult
 import com.apex.agent.platform.terminal.ubuntu.RootfsProvisioner
 import com.apex.agent.platform.terminal.ubuntu.RootfsTarget
+import com.apex.agent.platform.terminal.ubuntu.userMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,8 +25,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  *   - ApexApp 启动不触发任何 Ubuntu 生命周期；
  *   - Terminal UI 的 `ensureSession()` 永远走 local backend；
  *   - DepCatalog 的 apt 命令被投进 Android shell（必然 command not found）；
- *   - Agent 需要**三次**工具调用（terminal.ubuntu.install → terminal.linux.bootstrap
- *     → terminal.linux.capabilities）才能把 Ubuntu 拉到可用，还要自己解读三套状态机。
+ *   - Agent 需要**三次**工具调用（TerminalUbuntuInstall → TerminalLinuxBootstrap
+ *     → TerminalLinuxCapabilities）才能把 Ubuntu 拉到可用，还要自己解读三套状态机
+ *     （P0-#3 工具面收敛后这三个旧入口已移除，ensure 是唯一拉起入口）。
  *
  * ## 本类职责（编排，不重复实现）
  * 把两阶段初始化合成一个产品级入口：
@@ -90,6 +92,14 @@ class UbuntuLifecycleCoordinator(
      * 短路前刷一次（文件对比，毫秒级），切网自愈。
      */
     private val dnsRefreshFn: (suspend () -> Boolean)? = null,
+    /**
+     * ★ 能力探测缓存失效端口（生产：LinuxCapabilityProbe::invalidate；null=未接线）。
+     * 背景：probe 有 5 分钟 TTL 缓存 —— bootstrap 实际跑过（BASE_PACKAGES 安装/
+     * dpkg --configure -a 自愈）后，缓存里可能仍是旧的 BROKEN（如半装的 git）→
+     * READY 状态卡着过期的 BROKEN 能力列表。bootstrap 实际执行过（非 ALREADY_READY
+     * 短路）→ 探测前失效缓存，确保快照是刚装完的真相。
+     */
+    private val probeInvalidateFn: (() -> Unit)? = null,
     private val target: RootfsTarget,
     private val defaultTimeoutMs: Long = DEFAULT_ENSURE_TIMEOUT_MS,
     private val clock: () -> Long = { System.currentTimeMillis() },
@@ -274,7 +284,7 @@ class UbuntuLifecycleCoordinator(
      *
      * P1 修复（锁等待纳入超时）：旧实现 `withTimeoutOrNull` 在 `mutex.withLock`
      * **内部** —— 第二个 caller 的 timeoutMs 不覆盖锁排队时间。首个 caller 解包
-     * 最长 30 分钟，期间 Agent 的 terminal.ubuntu.ensure（工具层 1,830s 策略）或
+     * 最长 30 分钟，期间 Agent 的 TerminalUbuntuEnsure（工具层 1,830s 策略）或
      * UI 的任何 ensureReady 调用会挂在锁上直到外层 ToolRunPolicy 击杀（或无限
      * 等待）。现在 timeout 包住「锁等待 + 编排步骤」全程：等待超锁预算一半即
      * 诚实返回 InProgress（调用方可重试续跑），绝不无限阻塞。
@@ -323,14 +333,25 @@ class UbuntuLifecycleCoordinator(
         } catch (ce: CancellationException) {
             throw ce
         } catch (e: Exception) {
-            return markFailed(Stage.INSTALL, "install crashed: ${e.message}", retryable = true)
+            // #235：人话前置（UI 横幅 take(200) 不再被英文内部串占满），
+            // 原始异常细节保真保留在括号内（日志/Agent 诊断可见）。
+            return markFailed(
+                Stage.INSTALL,
+                "Ubuntu 安装过程异常退出（install crashed: ${e.message ?: e::class.java.simpleName}）—— 可重试",
+                retryable = true
+            )
         }
         when (installResult) {
             is ProvisioningResult.Ready, is ProvisioningResult.AlreadyReady -> Unit
             is ProvisioningResult.Failed -> {
                 return markFailed(
                     Stage.INSTALL,
-                    "${installResult.error.code}: ${installResult.error.message}",
+                    // #235 残余修复：userMessage（中文「发生了什么 + 怎么办」）前置。
+                    // 旧序 "${code}: ${message} | ${userMessage}" 把英文内部码顶在
+                    // 最前 —— UI 横幅 take(200) 先吃掉几十上百字符的技术串，
+                    // 空间不足这类高频失败的中文指引可能被截断甚至完全挤掉。
+                    // 内部码 + 原始技术串折叠为括号后缀（诊断保真，不进头部队列）。
+                    "${installResult.error.userMessage}（${installResult.error.code}: ${installResult.error.message}）",
                     installResult.error.recoverable
                 )
             }
@@ -353,6 +374,17 @@ class UbuntuLifecycleCoordinator(
         // T83 内置交付语义：rootfs 解包已就绪（离线可得），bootstrap 是需网络的
         // **增强而非门槛** —— 失败降级为 READY（bootstrapNote 携带原因），环境照常可用；
         // 网络恢复后 force=true 或 restart 后的 ensureReady 会重试引导。
+        //
+        // ★ 修复「降级重试永不自愈」（用户反馈「总是显示 apt 引导未完成」根因之一）：
+        // dnsRefreshFn 此前**只**在健康 READY 短路前调用 —— 恰恰是最需要重试的
+        // 降级路径（note != null → 完整编排）不刷新：resolv.conf 还是安装时刻/上次
+        // 网络的快照，切网（Wi-Fi→蜂窝/VPN）后重试拿着旧 DNS 跑 apt update →
+        // 官方 + 全镜像解析全败 → 再次 FAILED → 降级注记永远挂着。现在每次完整
+        // 编排（含降级重试）在 bootstrap 前对一次宿主 DNS —— 文件对比毫秒级、
+        // 失败静默（刷新失败交由 apt 的真实报错兜底，不改变降级语义）。
+        dnsRefreshFn?.let { refresh ->
+            runCatching { refresh() }
+        }
         setPhase(Phase.BOOTSTRAPPING)
         var bootstrapDegraded = false
         var bootstrapError: String? = null
@@ -389,6 +421,13 @@ class UbuntuLifecycleCoordinator(
         }
 
         // ── Stage 3: capability 快照（诊断性 —— 探测失败不否定 READY）──
+        // ★ bootstrap 实际执行过（非 ALREADY_READY 短路）→ 先失效能力探测缓存：
+        // BASE_PACKAGES 可能刚装好/自愈了半装的包（如 git BROKEN→AVAILABLE），
+        // 或 FAILED 前部分安装已落盘 —— 缓存不失效则快照里还是旧状态。
+        //（IN_PROGRESS/CANCELLED/BUSY 已在上文提前 return，不会到达此处。）
+        if (br == null || br.outcome != BootstrapOutcome.ALREADY_READY) {
+            runCatching { probeInvalidateFn?.invoke() }
+        }
         // Kotlin try/catch 的 definite assignment 规则禁止 val 双路径赋值 → var 局部。
         var caps: List<CapabilityEntry> = emptyList()
         var probeDegraded = false

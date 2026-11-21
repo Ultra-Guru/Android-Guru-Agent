@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -65,7 +66,8 @@ fun CodeEditorPanel(
     isLoading: Boolean,
     errorText: String?,
     onClose: () -> Unit,
-    onLineClick: (Int) -> Unit
+    onLineClick: (Int) -> Unit,
+    onDismissError: (() -> Unit)? = null
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -108,7 +110,8 @@ fun CodeEditorPanel(
                         modifier = Modifier.size(14.dp)
                     )
                 }
-                IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
+                // UI-012：48dp 触区红线（原 28dp）
+                IconButton(onClick = onClose, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = stringResource(R.string.code_editor_close),
@@ -121,7 +124,7 @@ fun CodeEditorPanel(
             // ── 错误态：红色提示行（不渲染正文）；否则按文件状态分支 ──
             if (errorText != null) {
                 Spacer(Modifier.size(6.dp))
-                ErrorRow(errorText)
+                ErrorRow(message = errorText, onDismiss = onDismissError)
             } else when {
                 file == null -> {
                     if (isLoading) {
@@ -163,7 +166,10 @@ private fun CodeLinesBody(file: EditorFile, filePath: String, onLineClick: (Int)
             .fillMaxWidth()
             .heightIn(max = 432.dp)
     ) {
-        itemsIndexed(file.lines, key = { index, _ -> index }) { index, line ->
+        // #264 复盘：原 key = { index, _ -> index } 与 itemsIndexed 默认位置 key
+        // 完全等价（纯冗余）——只读代码视图、整文件整体替换，位置 key 语义正确，
+        // 故删除冗余参数而非换成内容 key（换行增删时内容 key 反而全表失效）。
+        itemsIndexed(file.lines) { index, line ->
             Row(
                 verticalAlignment = Alignment.Top,
                 modifier = Modifier
@@ -237,9 +243,9 @@ private fun HighlightSpan.applyTo(builder: AnnotatedString.Builder, line: String
 
 // ═══ 辅助小组件 ═══
 
-/** 错误提示行：ErrorBar（CodeScreen）同款视觉，无关闭按钮（随面板关闭消失）。 */
+/** 错误提示行：ErrorBar（CodeScreen）同款视觉；可选关闭按钮（#209 收尾）。 */
 @Composable
-private fun ErrorRow(message: String) {
+private fun ErrorRow(message: String, onDismiss: (() -> Unit)? = null) {
     Surface(
         color = MaterialTheme.colorScheme.errorContainer,
         shape = RoundedCornerShape(6.dp),
@@ -261,8 +267,23 @@ private fun ErrorRow(message: String) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer,
                 maxLines = 3,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
             )
+            if (onDismiss != null) {
+                // #209 收尾：错误行可单独关闭（48dp 触区红线，UI-012 口径）。
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = stringResource(R.string.code_dismiss),
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
         }
     }
 }

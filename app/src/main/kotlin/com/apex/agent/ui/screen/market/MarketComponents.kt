@@ -18,9 +18,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalFireDepartment
-import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
@@ -30,7 +28,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +38,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
+import com.apex.agent.ui.component.ReliabilityTier
+import com.apex.agent.ui.component.reliabilityTierOf
 
 /**
  * ═══ 市场共享 UI 件 ═══
@@ -77,41 +76,6 @@ internal fun formatRelativeTime(timestampMs: Long): String {
         delta < 86_400_000 -> stringResource(R.string.market_time_hours_ago, delta / 3_600_000)
         delta < 30L * 86_400_000 -> stringResource(R.string.market_time_days_ago, delta / 86_400_000)
         else -> stringResource(R.string.market_time_months_ago, delta / (30L * 86_400_000))
-    }
-}
-
-/** 顶栏视图切换行 —— 市场 / 已安装管理 两个一级导航。 */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable
-internal fun MarketScopeTabs(
-    scope: MarketScope,
-    installedCount: Int,
-    onSelect: (MarketScope) -> Unit
-) {
-    PrimaryTabRow(selectedTabIndex = scope.ordinal) {
-        MarketScope.entries.forEach { item ->
-            val labelText = stringResource(item.labelRes)
-            val label = if (item == MarketScope.INSTALLED && installedCount > 0) {
-                "$labelText · $installedCount"
-            } else {
-                labelText
-            }
-            Tab(
-                selected = scope == item,
-                onClick = { onSelect(item) },
-                text = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                icon = {
-                    Icon(
-                        imageVector = if (item == MarketScope.BROWSE) {
-                            Icons.Default.Storefront
-                        } else {
-                            Icons.Default.Inventory2
-                        },
-                        contentDescription = null
-                    )
-                }
-            )
-        }
     }
 }
 
@@ -180,7 +144,9 @@ internal fun <T> MarketList(
     items: List<T>,
     emptyHint: String = "",
     header: (LazyListScope.() -> Unit)? = null,
-    key: ((T) -> Any)? = null,
+    // #264：key 必填 —— 无 key 时条目移动/增删被当作“删除+新建”整段重组；
+    // 全部 6 个调用方（MarketBrowseTabs×1 + MarketInstalledTabs×5）均已传 key。
+    key: (T) -> Any,
     itemContent: @Composable LazyItemScope.(T) -> Unit
 ) {
     if (items.isEmpty()) {
@@ -193,11 +159,7 @@ internal fun <T> MarketList(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         header?.invoke(this)
-        if (key != null) {
-            items(items, key = key, itemContent = itemContent)
-        } else {
-            items(items, itemContent = itemContent)
-        }
+        items(items, key = key, itemContent = itemContent)
     }
 }
 
@@ -378,21 +340,26 @@ internal fun MarketLowEnergyBadge(modifier: Modifier = Modifier) {
 }
 
 /**
- * 成功率微型显示 —— 用于卡片角落。
+ * 可靠性定性档位微型显示 —— 用于卡片角落。
+ *
+ * #365 反馈：百分比评分（「87%」）是假精确，用户无法据此行动。改为
+ * 定性档位（稳定/一般/不稳定/未使用），语义色沿用旧阈值：
+ * 稳定→primary、一般→tertiary、不稳定→error、未使用→中性「—」。
  */
 @Composable
 internal fun MarketSuccessRateChip(successRate: Float) {
-    val text = if (successRate > 0f) String.format(java.util.Locale.US, "%.0f%%", successRate * 100) else "—"
-    val color = when {
-        successRate >= 0.9f -> MaterialTheme.colorScheme.primary
-        successRate >= 0.5f -> MaterialTheme.colorScheme.tertiary
-        successRate > 0f -> MaterialTheme.colorScheme.error
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    val tier = reliabilityTierOf(successRate, successRate > 0f)
+    val text = tier.label()
+    val color = when (tier) {
+        ReliabilityTier.STABLE -> MaterialTheme.colorScheme.primary
+        ReliabilityTier.FAIR -> MaterialTheme.colorScheme.tertiary
+        ReliabilityTier.UNSTABLE -> MaterialTheme.colorScheme.error
+        ReliabilityTier.UNUSED -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     Text(
         text,
         style = MaterialTheme.typography.labelSmall,
-        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.SemiBold,
         color = color
     )
 }

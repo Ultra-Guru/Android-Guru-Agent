@@ -21,7 +21,7 @@ import java.io.File
  *
  * 与 [LongTaskTrackerTest] / [TaskCopyEngineTest] 的分工：那些是单类单元测试，
  * 本文件把 **真实 [LongTaskStore]（TemporaryFolder 磁盘）+ 脚本化 [AgentEvent]
- * 驱动的 [LongTaskTracker] + [TaskCopyEngine] + [LongTaskTemplates] +
+ * 驱动的 [LongTaskTracker] + [TaskCopyEngine] +
  * [LongTaskDiff]** 串成一条完整数据流，验证「事件流 → 聚合 → 落库 → 复制 →
  * 续跑 → 再留档 → 对比」的闭环语义在真实组件协作下依然成立：
  *
@@ -36,7 +36,6 @@ import java.io.File
  *    接棒任务独立计数不泄漏；
  *  - 场景 F：双工作区隔离——list(wsId) 只见各自记录，全局列表按 updatedAt
  *    新到旧排序，阻塞快照与挂起读口径一致；
- *  - 场景 G：模板实例化启动——稳定 id 入库、goal 占位符替换、复制转正为
  *    可跑的非模板记录。
  *
  * 时钟全部注入假钟（检查点时间分支可确定驱动）；persistScope 直接用 runTest
@@ -76,7 +75,7 @@ class LongTaskIntegrationTest {
         /** 续跑模拟的时长（MEDIUM 门槛之上，供场景 C 时长差断言）。 */
         const val RESUME_DURATION_MS = 120_000L
 
-        /** 续跑里 code_edit 轮换触碰的文件（前两个与源记录重叠，最后一个是新文件）。 */
+        /** 续跑里 CodeEdit 轮换触碰的文件（前两个与源记录重叠，最后一个是新文件）。 */
         val RESUME_FILES = listOf("src/Mod3.kt", "src/Mod7.kt", "src/NewModule.kt")
     }
 
@@ -86,13 +85,13 @@ class LongTaskIntegrationTest {
 
     /**
      * 一轮「迭代 + 单工具」事件对（IterationStart + ToolCallStart + 完成）。
-     * 默认 code_edit 成功编辑 src/Main.kt——与既有 [LongTaskTrackerTest] 的
+     * 默认 CodeEdit 成功编辑 src/Main.kt——与既有 [LongTaskTrackerTest] 的
      * iterationWithTool 同构，供短泵复用。
      */
     private fun toolPair(
         tracker: LongTaskTracker,
         index: Int,
-        toolName: String = "code_edit",
+        toolName: String = "CodeEdit",
         arguments: String = """{"path":"src/Main.kt"}""",
         success: Boolean = true
     ) {
@@ -111,8 +110,8 @@ class LongTaskIntegrationTest {
     }
 
     /**
-     * 场景 A 的 EPIC 事件泵：70 迭代 × 2 工具（code_edit 轮换 12 个模块文件 +
-     * code_read 只读不进 filesTouched），每 10 轮穿插一条流式助手播报
+     * 场景 A 的 EPIC 事件泵：70 迭代 × 2 工具（CodeEdit 轮换 12 个模块文件 +
+     * CodeRead 只读不进 filesTouched），每 10 轮穿插一条流式助手播报
      * （ResponseChunk → ResponseComplete），每 7 轮刷新 todo 快照；末尾追加
      * 一条 255 字符的最终长消息（尾环只保最后 200 → summary 断言依据）。
      *
@@ -121,27 +120,27 @@ class LongTaskIntegrationTest {
     private fun pumpEpicRun(tracker: LongTaskTracker) {
         for (i in 1..EPIC_ITERATIONS) {
             tracker.onEvent(AgentEvent.IterationStart(i))
-            // 工具一：code_edit 成功，i % 12 在 1..70 内覆盖 0..11 全部 12 个文件
+            // 工具一：CodeEdit 成功，i % 12 在 1..70 内覆盖 0..11 全部 12 个文件
             val editPath = "src/Mod${i % 12}.kt"
             val editArgs = """{"path":"$editPath","new_text":"change-$i"}"""
-            tracker.onEvent(AgentEvent.ToolCallStart("edit-$i", "code_edit", editArgs))
+            tracker.onEvent(AgentEvent.ToolCallStart("edit-$i", "CodeEdit", editArgs))
             tracker.onEvent(
                 AgentEvent.ToolCallComplete(
                     callId = "edit-$i",
-                    toolName = "code_edit",
+                    toolName = "CodeEdit",
                     arguments = editArgs,
                     output = "edited",
                     success = true,
                     durationMs = 30L
                 )
             )
-            // 工具二：code_read（即使带 path 也不进 filesTouched——只有编辑类工具计入）
+            // 工具二：CodeRead（即使带 path 也不进 filesTouched——只有编辑类工具计入）
             val readArgs = """{"path":"src/Main.kt"}"""
-            tracker.onEvent(AgentEvent.ToolCallStart("read-$i", "code_read", readArgs))
+            tracker.onEvent(AgentEvent.ToolCallStart("read-$i", "CodeRead", readArgs))
             tracker.onEvent(
                 AgentEvent.ToolCallComplete(
                     callId = "read-$i",
-                    toolName = "code_read",
+                    toolName = "CodeRead",
                     arguments = readArgs,
                     output = "content",
                     success = true,
@@ -185,8 +184,8 @@ class LongTaskIntegrationTest {
 
     /**
      * 场景 B/C 的续跑模拟：以续跑提示词为新用户消息（VM 的真实接线方式），
-     * 9 迭代 × 2 工具（code_edit 轮换 Mod3 → Mod7 → NewModule 三文件 +
-     * code_read），时长推进 120s 后以 COMPLETED + 显式摘要收尾。
+     * 9 迭代 × 2 工具（CodeEdit 轮换 Mod3 → Mod7 → NewModule 三文件 +
+     * CodeRead），时长推进 120s 后以 COMPLETED + 显式摘要收尾。
      */
     private fun pumpResumeRun(scope: TestScope, goal: String): LongTaskRecord {
         fakeNow += 20_000L
@@ -200,11 +199,11 @@ class LongTaskIntegrationTest {
             }
             val editArgs = """{"path":"$path","new_text":"resume-$i"}"""
             tracker.onEvent(AgentEvent.IterationStart(i))
-            tracker.onEvent(AgentEvent.ToolCallStart("r-edit-$i", "code_edit", editArgs))
+            tracker.onEvent(AgentEvent.ToolCallStart("r-edit-$i", "CodeEdit", editArgs))
             tracker.onEvent(
                 AgentEvent.ToolCallComplete(
                     callId = "r-edit-$i",
-                    toolName = "code_edit",
+                    toolName = "CodeEdit",
                     arguments = editArgs,
                     output = "edited",
                     success = true,
@@ -212,11 +211,11 @@ class LongTaskIntegrationTest {
                 )
             )
             val readArgs = """{"path":"src/Main.kt"}"""
-            tracker.onEvent(AgentEvent.ToolCallStart("r-read-$i", "code_read", readArgs))
+            tracker.onEvent(AgentEvent.ToolCallStart("r-read-$i", "CodeRead", readArgs))
             tracker.onEvent(
                 AgentEvent.ToolCallComplete(
                     callId = "r-read-$i",
-                    toolName = "code_read",
+                    toolName = "CodeRead",
                     arguments = readArgs,
                     output = "content",
                     success = true,
@@ -268,11 +267,11 @@ class LongTaskIntegrationTest {
         assertEquals(EPIC_ITERATIONS, record.iterations)
         assertEquals(EPIC_ITERATIONS * 2, record.toolCalls)
         assertEquals(
-            mapOf("code_edit" to EPIC_ITERATIONS, "code_read" to EPIC_ITERATIONS),
+            mapOf("CodeEdit" to EPIC_ITERATIONS, "CodeRead" to EPIC_ITERATIONS),
             record.toolsUsed
         )
-        // filesTouched：code_edit 的 12 个轮换文件（去重 + 字典序），
-        // code_read 的 src/Main.kt 不计入
+        // filesTouched：CodeEdit 的 12 个轮换文件（去重 + 字典序），
+        // CodeRead 的 src/Main.kt 不计入
         val expectedFiles = (0..11).map { "src/Mod$it.kt" }.sorted()
         assertEquals(expectedFiles, record.filesTouched)
 
@@ -294,10 +293,10 @@ class LongTaskIntegrationTest {
         assertEquals((25..70 step 5).toList(), record.checkpoints.map { it.atIteration })
         val lastCp = record.checkpoints.last()
         assertEquals(70, lastCp.atIteration)
-        // 第 70 轮首个完成型事件（code_edit 完成）时拍照：工具计数 2×70−1
+        // 第 70 轮首个完成型事件（CodeEdit 完成）时拍照：工具计数 2×70−1
         assertEquals(EPIC_ITERATIONS * 2 - 1, lastCp.toolCallCount)
         assertEquals(12, lastCp.filesTouchedCount)
-        assertTrue(lastCp.recentExchange.any { it.contains("工具 code_edit ✓") })
+        assertTrue(lastCp.recentExchange.any { it.contains("工具 CodeEdit ✓") })
         assertTrue(
             "检查点对话摘要行数必须钳制在 RECENT_EXCHANGE_MAX 内",
             lastCp.recentExchange.size <= LongTaskCheckpoint.RECENT_EXCHANGE_MAX
@@ -337,10 +336,10 @@ class LongTaskIntegrationTest {
     fun `场景B_复制换档_检查点续跑_三节点复制链`() = runTest {
         val source = epicRecord(this)
 
-        // —— 复制：带检查点上下文 + 换档 ULTRACODE（v1.2 旗舰用法）——
+        // —— 复制：带检查点上下文（档位沿用源记录）——
         val copy = copyEngine.copy(
             source.id,
-            LongTaskCopyOptions(includeCheckpoints = true, thinkingLevelOverride = "ULTRACODE")
+            LongTaskCopyOptions(includeCheckpoints = true)
         ).getOrThrow()
         assertFalse(copy.id == source.id)
         assertEquals(source.id, copy.parentTaskId)
@@ -351,13 +350,12 @@ class LongTaskIntegrationTest {
         assertEquals(0L, copy.durationMs)
         assertEquals(0, copy.copyCount)
         assertEquals(source.goal, copy.goal)
-        assertEquals("ULTRACODE", copy.thinkingLevel) // 换档生效
+        assertEquals(source.thinkingLevel, copy.thinkingLevel) // 档位沿用源记录
         assertEquals(source.workspaceId, copy.workspaceId)
         assertEquals(source.checkpoints, copy.checkpoints) // 检查点随行（10 个）
         assertEquals(source.filesTouched, copy.filesTouched)
         assertEquals(source.todoSnapshot, copy.todoSnapshot)
         assertEquals("${source.title}（副本 1）", copy.title)
-        assertFalse(copy.isTemplate)
         // 源计数 +1；副本已入库
         assertEquals(1, store.get(source.id)!!.copyCount)
         assertEquals(copy, store.get(copy.id))
@@ -369,7 +367,7 @@ class LongTaskIntegrationTest {
         assertTrue(resumePrompt.contains("## 进度快照（第 70 轮检查点）"))
         assertTrue(resumePrompt.contains("已进行：70 次迭代 · 139 次工具调用 · 已触碰 12 个文件"))
         assertTrue(resumePrompt.contains("最近进展"))
-        assertTrue(resumePrompt.contains("工具 code_edit ✓")) // 检查点 recentExchange 行
+        assertTrue(resumePrompt.contains("工具 CodeEdit ✓")) // 检查点 recentExchange 行
         assertTrue(resumePrompt.contains("待办状态"))
         assertTrue(resumePrompt.contains("第 63 轮更新")) // 检查点 todoDigest
         assertTrue(resumePrompt.contains("已完成项不要重做")) // 续跑收尾指令
@@ -420,7 +418,7 @@ class LongTaskIntegrationTest {
         val source = epicRecord(this)
         val copy = copyEngine.copy(
             source.id,
-            LongTaskCopyOptions(includeCheckpoints = true, thinkingLevelOverride = "ULTRACODE")
+            LongTaskCopyOptions(includeCheckpoints = true)
         ).getOrThrow()
         val resumed = pumpResumeRun(this, copyEngine.buildResumePrompt(copy))
 
@@ -612,70 +610,4 @@ class LongTaskIntegrationTest {
         assertEquals(all.map { it.id }, store.snapshotBlocking().map { it.id })
     }
 
-    // ═════════════════ 场景 G ═════════════════
-
-    /**
-     * 场景 G · 模板实例化启动：instantiate 产出稳定 id（template-前缀 +
-     * key + workspaceId）的 RUNNING 模板记录，goal 的百分之 s 占位符已替换
-     * 为工作区名、todo 快照即模板骨架（源码语义——骨架随记录入库）；入库后
-     * copy 转正为 isTemplate=false 的可跑记录（模板复制语义）。
-     */
-    @Test
-    fun `场景G_模板实例化启动_稳定id入库_复制转正为可跑记录`() = runTest {
-        val tpl = LongTaskTemplates.byKey("refactor")
-        assertNotNull(tpl)
-        tpl!!
-        val wsId = "ws-tpl-a1b2"
-        val wsName = "模板演示区"
-
-        // —— 实例化：全字段语义 ——
-        val record = LongTaskTemplates.instantiate(tpl, wsId, wsName)
-        assertEquals("template-refactor-$wsId", record.id) // 稳定 id 格式
-        assertTrue(record.isTemplate)
-        assertEquals(LongTaskStatus.RUNNING, record.status)
-        assertEquals(tpl.recommendedThinkingLevel, record.thinkingLevel)
-        assertEquals("BUILD", record.agentMode) // 编码任务默认模式
-        assertEquals(tpl.titleZh, record.title)
-        // goal 已实例化：占位符全部替换为工作区名（replace 而非 format）
-        assertEquals(tpl.goalTemplate.replace("%s", wsName), record.goal)
-        assertTrue(record.goal.contains(wsName))
-        assertFalse(record.goal.contains("%s"))
-        // todo 骨架随记录入库（VM 直接渲染成 todo 面板初稿）
-        assertEquals(tpl.todoSkeleton, record.todoSnapshot)
-        assertEquals(tpl.tags, record.tags)
-        // 运行统计归零的起点形态
-        assertNull(record.endedAt)
-        assertEquals(0, record.iterations)
-        assertEquals(0, record.toolCalls)
-        assertEquals(0L, record.durationMs)
-        assertTrue(record.filesTouched.isEmpty())
-        assertTrue(record.checkpoints.isEmpty())
-        assertEquals(record.createdAt, record.updatedAt)
-
-        // —— 入库 + 稳定 id 幂等（同工作区重复实例化是覆盖不是堆积）——
-        store.upsert(record)
-        advanceUntilIdle()
-        assertEquals(record, store.get(record.id))
-        val again = LongTaskTemplates.instantiate(tpl, wsId, wsName)
-        assertEquals(record.id, again.id)
-        // 语义字段等值（仅时间戳允许漂移）
-        assertEquals(record.copy(createdAt = again.createdAt, updatedAt = again.updatedAt), again)
-        assertEquals(1, store.list(wsId).size) // 仍是同一条记录
-
-        // 不同工作区 → 不同 id（模板菜单在每个工作区各有一份起点）
-        val other = LongTaskTemplates.instantiate(tpl, "ws-tpl-zz9", wsName)
-        assertFalse(other.id == record.id)
-
-        // —— 复制转正：模板 → 副本 isTemplate=false（可跑的真实运行起点）——
-        val copy = copyEngine.copy(record.id, LongTaskCopyOptions()).getOrThrow()
-        assertFalse(copy.isTemplate)
-        assertEquals(record.id, copy.parentTaskId)
-        assertEquals(record.goal, copy.goal) // goal 原样沿用（重跑语义锚点）
-        assertEquals(tpl.todoSkeleton, copy.todoSnapshot) // includeTodos 默认开
-        assertEquals("系统性重构（副本 1）", copy.title)
-        assertEquals(tpl.recommendedThinkingLevel, copy.thinkingLevel) // 无覆盖则沿用推荐档
-        assertEquals(1, store.get(record.id)!!.copyCount) // 模板作为复制源的计数
-        // 模板与副本都在该工作区列表里
-        assertEquals(2, store.list(wsId).size)
-    }
 }

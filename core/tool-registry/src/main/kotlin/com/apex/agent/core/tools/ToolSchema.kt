@@ -164,13 +164,18 @@ class ToolSchema internal constructor(
      *   real booleans, not `"true"`); numeric bounds when declared;
      * - *unknown extra parameters are allowed* — models add junk keys and
      *   rejecting them causes retry loops, not better behaviour.
+     *
+     * 必填参数别名互认（对话实录 #8）：模型在 camelCase 与 snake_case 两种
+     * 风格间混用是常态（session_id ↔ sessionId）。旧实现把 snake_case 别名当
+     * “未知多余键”静默忽略，再报 camelCase 缺失 —— 同一参数白丢一轮调用。
+     * 现在必填参数的另一种命名风格在场时视为已提供（工具层同步宽容读取）。
      */
     fun validate(arguments: JsonObject): SchemaValidation {
         val violations = mutableListOf<SchemaViolation>()
         for (p in params) {
             val value = arguments[p.name]
             if (value == null) {
-                if (p.required) {
+                if (p.required && aliasKeyOf(p.name, arguments) == null) {
                     violations += SchemaViolation(p.name, "required but missing")
                 }
                 continue
@@ -178,6 +183,19 @@ class ToolSchema internal constructor(
             validateValue(p, value, violations)
         }
         return SchemaValidation.of(violations)
+    }
+
+    /**
+     * 必填参数的别名在场判定：camelCase 名的 snake_case 形式
+     *（sessionId → session_id），或 snake_case 名的 camelCase 形式
+     *（provider_id → providerId），任一在场即视为参数已提供。
+     */
+    private fun aliasKeyOf(name: String, arguments: JsonObject): String? {
+        val variants = buildList {
+            if (name.any { it.isUpperCase() }) add(camelToSnake(name))
+            if (name.contains('_')) add(snakeToCamel(name))
+        }
+        return variants.firstOrNull { arguments.containsKey(it) }
     }
 
     private fun validateValue(p: ToolParam, value: JsonElement, out: MutableList<SchemaViolation>) {
@@ -227,12 +245,19 @@ class ToolSchema internal constructor(
                 }
             }
             ToolParamType.ARRAY -> {
-                if (value !is JsonArray) {
+                // 双形态宽容（builtin/FlexibleJson 同口径）：内联数组是首选
+                // 形态，字符串编码的 JSON 数组（"items": "[{…}]"）同样放行 ——
+                // 模型两种发射形态都真实存在，工具层用 flexible 读取兑底；
+                // 此处硬拒内联形态只会制造 preCheck 重试循环（CodeTodo 实测
+                // 2ms "expected string" FAILED）。普通字符串（路径/命令）解
+                // 析不出数组，不影响真正的字符串语义校验。
+                if (value !is JsonArray && !isEncodedJson(value) { it is JsonArray }) {
                     out += SchemaViolation(p.name, "expected array")
                 }
             }
             ToolParamType.OBJECT -> {
-                if (value !is JsonObject) {
+                // 同上：内联对象放行之外，字符串编码的 JSON 对象也宽容。
+                if (value !is JsonObject && !isEncodedJson(value) { it is JsonObject }) {
                     out += SchemaViolation(p.name, "expected object")
                 }
             }
@@ -242,6 +267,19 @@ class ToolSchema internal constructor(
     private fun checkBounds(p: ToolParam, v: Double, out: MutableList<SchemaViolation>) {
         p.minimum?.let { if (v < it) out += SchemaViolation(p.name, "must be >= $it") }
         p.maximum?.let { if (v > it) out += SchemaViolation(p.name, "must be <= $it") }
+    }
+
+    /**
+     * 字符串编码的 JSON 结构判定：值必须是带引号的字符串，且内容能完整
+     * 解析为 [shape] 描述的数组/对象。普通字符串（路径、命令）首字符既非
+     * `[` 也非 `{`，快速短路后交回真字符串语义的调用方。
+     */
+    private fun isEncodedJson(value: JsonElement, shape: (JsonElement) -> Boolean): Boolean {
+        val primitive = value as? JsonPrimitive ?: return false
+        if (!primitive.isString) return false
+        val text = primitive.content
+        if (text.isEmpty() || (text[0] != '[' && text[0] != '{')) return false
+        return runCatching { shape(Json.parseToJsonElement(text)) }.getOrDefault(false)
     }
 
     /**
@@ -319,10 +357,49 @@ class ToolSchema internal constructor(
             )
         )
 
+        /** 字符串数组参数（id 清单类；渲染为 array of string）。 */
+        fun stringArray(
+            name: String,
+            required: Boolean = false,
+            description: String = ""
+        ) = add(
+            ToolParam(
+                name, ToolParamType.ARRAY, required, description,
+                emptyList(), null
+            )
+        )
+
+        /**
+         * 对象参数（复合 JSON 值；渲染为 type: object）。校验层对字符串
+         * 编码的 JSON 对象同样宽容（见 validateValue）——与 flexible 读取
+         * 工具的双形态口径对齐。
+         */
+        fun objectParam(
+            name: String,
+            required: Boolean = false,
+            description: String = ""
+        ) = add(
+            ToolParam(
+                name, ToolParamType.OBJECT, required, description,
+                emptyList(), null
+            )
+        )
+
         fun build(): ToolSchema = ToolSchema(params.toList())
     }
 
     companion object {
+        /** sessionId → session_id（实录 #8 别名互认的命名变换，纯函数）。 */
+        internal fun camelToSnake(name: String): String = name.flatMap { c ->
+            if (c.isUpperCase()) listOf('_', c.lowercaseChar()) else listOf(c)
+        }.joinToString("")
+
+        /** provider_id → providerId。 */
+        internal fun snakeToCamel(name: String): String =
+            name.split('_').mapIndexed { i, part ->
+                if (i == 0 || part.isEmpty()) part else part.replaceFirstChar { it.uppercase() }
+            }.joinToString("")
+
         /**
          * Import a v1 hand-written `parametersSchema` string. Best effort:
          * reads `properties` (name/type/description/enum/required via the

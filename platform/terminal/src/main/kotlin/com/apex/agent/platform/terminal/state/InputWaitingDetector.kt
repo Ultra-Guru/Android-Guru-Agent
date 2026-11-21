@@ -19,7 +19,7 @@ import com.apex.agent.platform.terminal.screen.RealVirtualTerminal
  * NOT trigger Session→WAITING_INPUT (only HIGH_CONFIDENCE does, per Spec §9.2 S6).
  *
  * This is a heuristic — it can produce false positives (e.g. a build log line that happens
- * to end with "y/n"). The Runtime always allows the Agent to override via terminal.write()
+ * to end with "y/n"). The Runtime always allows the Agent to override via TerminalWrite()
  * regardless of detected state.
  */
 /**

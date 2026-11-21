@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.StatFs
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -21,6 +22,9 @@ import java.io.File
  * 职责边界：
  * - **顺序下载**：补丁链逐段入队系统 DownloadManager（通知栏进度、断点
  *   续传、进程被杀不丢），每段完成即 SHA-256 校验，坏一段立即失败；
+ * - **断点续传（v1.4.5）**：流水线重启时逐段检查已落盘补丁 —— 体积对账
+ *   + SHA-256 对账通过的段直接跳过下载，只补缺失/损坏的段；跨进程重启、
+ *   跨页面导航的中断都能从断点继续，不重拉已完成的分段；
  * - **链式合成**：已安装 APK（applicationInfo.sourceDir，只读）+ 补丁 1 →
  *   产物 A；A + 补丁 2 → 产物 B…… 乒乓复用临时文件，峰值磁盘 ≈
  *   2×APK + 补丁体积（开始前做剩余空间预检，不足则劝导全量/清理）；
@@ -30,8 +34,9 @@ import java.io.File
  *   授权 URI），**不直接拉起安装器** —— 先上报 [State.Ready]，由 UI 弹
  *   「立即安装」确认框（用户主导安装时机），点击后经 [launchInstaller]
  *   拉起系统安装器；
- * - **自清理**：开工先清上次残留（含旧命令行方案遗留的 .vcdiff），成功
- *   后清全部补丁与中间产物，只留最终 APK 供安装器读取。
+ * - **自清理**：开工先清上次残留（链外旧补丁 / 中间产物 / 非目标版本合成
+ *   包；**链内补丁保留供断点续传**），成功后清全部补丁与中间产物，只留
+ *   最终 APK 供安装器读取。
  *
  * 状态经 [StateListener] 单向上报（IO 线程回调，UI 层自行切主线程）；
  * 全部失败折叠为 [State.Failed]（按 [FailKind] 本地化，不向上抛）——
@@ -44,7 +49,7 @@ class PatchUpdateEngine(
 ) {
 
     /** 失败类别 —— UI 据此出本地化文案，detail 供日志/高级折叠。 */
-    enum class FailKind { SPACE, DOWNLOAD, VERIFY, DECODE, INSTALLER }
+    enum class FailKind { SPACE, DOWNLOAD, VERIFY, DECODE, INSTALLER, PATCH_TOO_LARGE }
 
     /** 流水线状态 —— UI 按类型渲染，无需解析错误码。 */
     sealed interface State {
@@ -90,7 +95,8 @@ class PatchUpdateEngine(
     /**
      * 启动流水线（幂等：正在跑则先取消旧的）。
      *
-     * @param scope 调用方组合域（离开页面即取消下载轮询与合成协程）
+     * @param scope 调用方作用域 —— v1.4.5 起传 [UpdateCenter] 的应用级作用域：
+     *   离开「关于页」不再中断下载与合成（后台持续 + 断点续传）
      * @param chain 补丁链（[UpdateChecker.resolvePatchChain] 的结果，非空有序）
      * @param manifest 更新清单（终局 SHA-256/体积对账）
      * @param mirror 已解析的下载镜像（URL 改写）
@@ -109,24 +115,44 @@ class PatchUpdateEngine(
         }
     }
 
-    /** 取消流水线并清理中间产物（补丁文件保留供人工诊断）。 */
+    /** 取消流水线（保留已下载补丁与中间产物 —— 下次 start 从断点继续）。 */
     fun cancel() {
         job?.cancel()
         job = null
-        runCatching { cleanStaleIntermediates(keepPatches = true) }
+        // 不清理：链内已验证补丁是断点续传的资产；仅在成功/换链时回收
     }
 
     /**
-     * 拉起系统安装器安装就绪产物（UI「立即安装」按钮的落地动作）。
+     * 拉起系统安装器安装就绪产物（UI「立即安装」按钮的落地动作；
+     * **suspend + main-safe**，#819 P0）。
      *
      * 与流水线解耦：[State.Ready] 之后用户可能「稍后安装」（甚至离开页面
      * 再回来）—— 本方法不依赖 engine 协程，可随时对已就绪 APK 重发。
+     * cache 中转复制（数百 MB 全量包）在 [UpdateDownloader.installApk] 内部
+     * 的 IO 调度器执行，调用方无需（也不应）再包 withContext。
      *
      * @param apk [State.Ready.apk] 携带的合成产物
-     * @param listener 结果回调（[State.Installed] / [State.Failed]）
+     * @param listener 结果回调（[State.Installed] / [State.Failed]；IO 线程）
+     * @param onProgress 复制进度回调（透传 [UpdateDownloader.installApk]）
      */
-    fun launchInstaller(apk: File, listener: StateListener) {
-        val launched = runCatching { downloader.installApk(apk) }.getOrDefault(false)
+    suspend fun launchInstaller(
+        apk: File,
+        listener: StateListener,
+        onProgress: (bytesCopied: Long, totalBytes: Long) -> Unit = { _, _ -> }
+    ) {
+        // 注意：不使用 runCatching —— 它会把协程取消（CancellationException）
+        // 一并折叠成 false，取消传播就断了；取消单独重抛。
+        val launched = try {
+            downloader.installApk(apk, onProgress)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLogger.instance.warn(
+                LogCategory.SYSTEM, "PatchUpdateEngine",
+                "安装器拉起异常：${apk.name}（${e::class.simpleName}: ${e.message}）"
+            )
+            false
+        }
         if (launched) {
             AppLogger.instance.info(
                 LogCategory.SYSTEM, "PatchUpdateEngine",
@@ -147,7 +173,7 @@ class PatchUpdateEngine(
         listener: StateListener
     ) {
         try {
-            runCatching { cleanStaleIntermediates(keepPatches = false) }
+            runCatching { cleanStaleIntermediates(chain) }
             val variant = chain.steps.first().variant
             val expectedAsset = assetForVariant(manifest, variant)
             val expectedSize = expectedAsset?.sizeBytes ?: 0L
@@ -166,11 +192,36 @@ class PatchUpdateEngine(
                 }
             }
 
-            // ── 阶段一：逐段下载补丁链 ────────────────────────────────────
+            // ── 阶段一：逐段下载补丁链（已验证段跳过 = 断点续传）──────────
             val patchFiles = ArrayList<File>(chain.steps.size)
             for ((index, step) in chain.steps.withIndex()) {
                 val number = index + 1
                 val fileName = step.url.substringAfterLast('/')
+                // #859 体积门（引擎侧防御，清单体积可谎报/缺字段）：超限段
+                // 直接判失败——readBytes() 整段入堆在中低端机必 OOM，与其下载
+                // 几百 MB 后闪退，不如开局即拦、引导全量。
+                if (step.sizeBytes > PatchIndex.MAX_PATCH_BYTES) {
+                    listener.onStateChanged(
+                        State.Failed(
+                            FailKind.PATCH_TOO_LARGE,
+                            "patch $number: $fileName (${step.sizeBytes}B > ${PatchIndex.MAX_PATCH_BYTES}B)"
+                        )
+                    )
+                    return
+                }
+                val segmentFile = downloader.localFile(fileName)
+                if (isSegmentComplete(segmentFile, step)) {
+                    // 断点续传：该段已完整落盘且指纹对账通过 —— 不重下
+                    AppLogger.instance.info(
+                        LogCategory.SYSTEM, "PatchUpdateEngine",
+                        "断点续传：补丁 $number/${chain.steps.size} 已就绪（$fileName）—— 跳过下载"
+                    )
+                    listener.onStateChanged(
+                        State.Downloading(number, chain.steps.size, 100, segmentFile.length())
+                    )
+                    patchFiles.add(segmentFile)
+                    continue
+                }
                 val enqueued = downloader.enqueue(
                     url = mirror.rewrite(step.url),
                     fileName = fileName,
@@ -189,6 +240,18 @@ class PatchUpdateEngine(
                     )
                 }
                 val file = downloader.localFile(fileName)
+                // #859 体积门（落盘后复检）：清单缺 sizeBytes 或体积谎报时，
+                // 以磁盘真实长度为准拦截，绝不让超限段进 readBytes()。
+                if (file.length() > PatchIndex.MAX_PATCH_BYTES) {
+                    runCatching { file.delete() }
+                    listener.onStateChanged(
+                        State.Failed(
+                            FailKind.PATCH_TOO_LARGE,
+                            "patch $number: $fileName (${file.length()}B on disk)"
+                        )
+                    )
+                    return
+                }
                 if (!file.exists() || !downloader.verifySha256(file, step.sha256)) {
                     listener.onStateChanged(
                         State.Failed(FailKind.VERIFY, "patch $number: $fileName")
@@ -211,6 +274,14 @@ class PatchUpdateEngine(
                 for ((index, patchFile) in patchFiles.withIndex()) {
                     val number = index + 1
                     val isLast = number == patchFiles.size
+                    // #859 体积门（断点续传资产复检）：历史落盘段同样过阈值——
+                    // 链切换/清单修正后旧资产不再无条件信任。
+                    if (patchFile.length() > PatchIndex.MAX_PATCH_BYTES) {
+                        throw FlowException(
+                            FailKind.PATCH_TOO_LARGE,
+                            "patch $number: ${patchFile.name} (${patchFile.length()}B)"
+                        )
+                    }
                     val output = if (isLast) finalApkFile(manifest) else {
                         File(workDir, "ApexAgent-chain-step$number.apk").also {
                             runCatching { it.delete() }
@@ -256,7 +327,21 @@ class PatchUpdateEngine(
             listener.onStateChanged(
                 State.Ready(finalApk, expectedAsset?.sizeBytes ?: finalApk.length())
             )
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // 取消不是失败：流水线被 cancel 时让协程正常终结（状态由调用方重置）
+            if (e is CancellationException) throw e
+            if (e is OutOfMemoryError) {
+                // #859：OOMError 不被 catch(Exception) 捕获，旧实现直接带走
+                // 整个进程（常驻前台服务宿主陪葬）——降级为可恢复失败并引导全量。
+                AppLogger.instance.error(
+                    LogCategory.SYSTEM, "PatchUpdateEngine",
+                    "增量更新内存不足（已降级为失败态，建议改用全量包）"
+                )
+                listener.onStateChanged(
+                    State.Failed(FailKind.PATCH_TOO_LARGE, "OutOfMemoryError while applying patch")
+                )
+                return
+            }
             AppLogger.instance.warn(
                 LogCategory.SYSTEM, "PatchUpdateEngine",
                 "增量更新失败：${e.message}"
@@ -310,14 +395,37 @@ class PatchUpdateEngine(
         }
     }
 
-    /** 清理旧中间产物；keepPatches=true 保留 .vcdiff 供人工诊断。 */
-    private fun cleanStaleIntermediates(keepPatches: Boolean) {
+    /**
+     * 补丁段完整性判定（断点续传的门闩）：
+     * - 体积对账先行（零成本）：清单带 sizeBytes 时长度不等 = 断段；
+     * - SHA-256 全量对账（~50ms/16MB）：防坏段/半段被误认完整；无指纹
+     *   策略统一收敛到 [UpdateDownloader.verifySha256]（S-02：fail-closed
+     *   + 编译期过渡），本方法不再单独放行无指纹段。
+     */
+    private fun isSegmentComplete(file: File, step: PatchIndex.Entry): Boolean {
+        if (!file.exists() || file.length() == 0L) return false
+        if (step.sizeBytes > 0 && file.length() != step.sizeBytes) return false
+        return downloader.verifySha256(file, step.sha256)
+    }
+
+    /**
+     * 清理旧中间产物：链式合成临时件 / **链外**旧补丁。
+     *
+     * v1.4.8 持久化修复：**不再删 -patched.apk**（用户辛苦合成的产物）。旧逻辑
+     * 开工时删所有 `ApexAgent-v*-patched.apk`，导致用户上次合成的 APK 在启动
+     * 新一轮增量时被清 —— 用户想重装只能去 MT 管理器翻。现保留所有合成包，
+     * 由关于页「本地更新包」常驻区展示 + 用户手动删。空间不足时空间预检会
+     * 提前劝导全量（不会因保留合成包而失败）。
+     *
+     * 当前链内的 .vcdiff 保留 —— 断点续传资产，成功后由流水线尾部回收。
+     */
+    private fun cleanStaleIntermediates(chain: PatchIndex.Chain) {
+        val chainFiles = chain.steps.map { it.url.substringAfterLast('/') }.toHashSet()
         val files = workDir.listFiles() ?: return
         for (file in files) {
             val name = file.name
             val stale = name.startsWith("ApexAgent-chain-step") ||
-                (name.startsWith("ApexAgent-v") && name.endsWith("-patched.apk")) ||
-                (!keepPatches && name.endsWith(".vcdiff"))
+                (name.endsWith(".vcdiff") && name !in chainFiles)
             if (stale) runCatching { file.delete() }
         }
     }

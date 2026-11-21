@@ -18,13 +18,13 @@ import java.net.URLEncoder
  * Skill 搜索工具
  *
  * Agent 用此工具在网上搜索可用的 Skill。搜索 GitHub 的 apex-skill 仓库
- * 和本地内置模板。返回结果列表，用 skill_install 安装。
+ * 和本地内置模板。返回结果列表，用 SkillInstall 安装。
  */
 class SkillSearchTool(
     private val httpClient: OkHttpClient
 ) : AgentTool {
 
-    override val id = "skill_search"
+    override val id = "SkillSearch"
     override val name = "Search Skills"
     override val description = """
         Search for available skills online.
@@ -98,24 +98,24 @@ class SkillSearchTool(
         }
 
         if (results.isEmpty()) {
-            return "No skills found for '$query'. You can create one with skill_create, or search the web with web_search."
+            return "No skills found for '$query'. You can create one with SkillCreate, or search the web with WebSearch."
         }
 
         return buildString {
             appendLine("Found ${results.size} skills for '$query':")
             appendLine("---")
             results.forEach { appendLine(it); appendLine() }
-            appendLine("Use skill_install with a URL or skill_create to make your own.")
+            appendLine("Use SkillInstall with a URL or SkillCreate to make your own.")
         }
     }
 
     private fun getBuiltinSkillTemplates(query: String): List<String> {
         val templates = mapOf(
-            "web" to "• web_scraper (内置模板)\n  网页数据提取\n  安装: skill_install({\"source\":\"template\",\"template\":\"web_scraper\"})",
-            "file" to "• file_organizer (内置模板)\n  文件自动分类整理\n  安装: skill_install({\"source\":\"template\",\"template\":\"file_organizer\"})",
-            "code" to "• code_runner (内置模板)\n  代码执行与调试\n  安装: skill_install({\"source\":\"template\",\"template\":\"code_runner\"})",
-            "data" to "• data_analyzer (内置模板)\n  数据分析与可视化\n  安装: skill_install({\"source\":\"template\",\"template\":\"data_analyzer\"})",
-            "principle" to "• coding_principles (内置模板)\n  编码协作九原则（Karpathy）\n  安装: skill_install({\"source\":\"template\",\"template\":\"coding_principles\"})"
+            "web" to "• web_scraper (内置模板)\n  网页数据提取\n  安装: SkillInstall({\"source\":\"template\",\"template\":\"web_scraper\"})",
+            "file" to "• file_organizer (内置模板)\n  文件自动分类整理\n  安装: SkillInstall({\"source\":\"template\",\"template\":\"file_organizer\"})",
+            "code" to "• code_runner (内置模板)\n  代码执行与调试\n  安装: SkillInstall({\"source\":\"template\",\"template\":\"code_runner\"})",
+            "data" to "• data_analyzer (内置模板)\n  数据分析与可视化\n  安装: SkillInstall({\"source\":\"template\",\"template\":\"data_analyzer\"})",
+            "principle" to "• coding_principles (内置模板)\n  编码协作九原则（Karpathy）\n  安装: SkillInstall({\"source\":\"template\",\"template\":\"coding_principles\"})"
         )
         return templates.filter { (key, _) -> query.contains(key, ignoreCase = true) }.values.toList()
     }
@@ -138,10 +138,16 @@ class SkillInstallTool(
     private val skillRegistry: SkillRegistry,
     private val httpClient: OkHttpClient,
     /** 安装即装备（市场热加载闭环）：非空时安装成功后直接进激活集。 */
-    private val activationStore: SkillActivationStore? = null
+    private val activationStore: SkillActivationStore? = null,
+    /**
+     * PR-B 内部转接：非空时安装走统一扩展闸门（ExtensionInstaller）——
+     * 账本/锁与 ExtensionInstall 同源；id / schema / 输出格式对模型零变化。
+     * null = 旧直连 SkillRegistry 路径（测试夹具兼容）。
+     */
+    private val extensionInstaller: com.apex.agent.core.tools.extension.ExtensionInstaller? = null
 ) : AgentTool {
 
-    override val id = "skill_install"
+    override val id = "SkillInstall"
     override val name = "Install Skill"
     override val description = """
         Install a skill from a URL, local file, or built-in template.
@@ -191,6 +197,54 @@ class SkillInstallTool(
         }
 
         if (manifestJson.startsWith("Error")) return manifestJson
+
+        // PR-B 内部转接：走统一扩展闸门（账本/锁与 ExtensionInstall 同源）；
+        // 失败回退不隐匿 —— 闸门拒绝（如 hash/确认门）按失败如实渲染。
+        if (extensionInstaller != null) {
+            val gateManifest = com.apex.agent.core.tools.extension.adapters.SkillExtensionAdapter
+                .manifestFromJson(manifestJson, spec = "skill:install")
+            val gateOutcome = gateManifest.fold(
+                onSuccess = { m ->
+                    extensionInstaller.install(
+                        m.manifestHash,
+                        manifestJson = com.apex.agent.core.tools.extension.ExtensionManifest.canonicalJson(m)
+                    )
+                },
+                onFailure = { Result.failure(it) }
+            )
+            return gateOutcome.fold(
+                onSuccess = { outcome ->
+                    val obj = runCatching {
+                        Json.parseToJsonElement(manifestJson).jsonObject
+                    }.getOrNull()
+                    activationStore?.activate(
+                        obj?.get("id")?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }
+                            ?: outcome.id.removePrefix("skill.")
+                    )
+                    buildString {
+                        appendLine("✅ Skill installed successfully!")
+                        appendLine("  Name: ${outcome.where.substringAfter(": ").ifBlank { outcome.id }}")
+                        appendLine("  ID: ${outcome.id}")
+                        appendLine("  Version: ${outcome.version}")
+                        val toolIds = obj?.get("tools")?.let { t ->
+                            runCatching { t.jsonArray.mapNotNull { e ->
+                                runCatching { e.jsonObject["id"]?.jsonPrimitive?.content }.getOrNull()
+                            } }.getOrDefault(emptyList())
+                        }.orEmpty()
+                        appendLine("  Tools added: ${toolIds.joinToString(", ").ifEmpty { "none" }}")
+                        if (obj?.get("promptInjection") != null) {
+                            appendLine("  Prompt injection: active")
+                        }
+                        if (activationStore != null) {
+                            appendLine("  Equipped: its methodology is live in your system prompt from this turn on.")
+                        }
+                        appendLine()
+                        appendLine("Hot-reload: the skill's tools register immediately — no restart needed. You may use them now.")
+                    }
+                },
+                onFailure = { e -> "❌ Skill installation failed: ${e.message}" }
+            )
+        }
 
         val result = skillRegistry.install(manifestJson)
 
@@ -287,14 +341,14 @@ class SkillInstallTool(
   "version": "1.0.0",
   "description": "从网页提取结构化数据",
   "author": "apex-builtin",
-  "requirements": {"toolsRequired": ["web_fetch", "write_file"]},
+  "requirements": {"toolsRequired": ["WebFetch", "Write"]},
   "tools": [{
     "id": "web_scrape",
     "name": "Scrape Web Data",
     "description": "Fetches URL and returns its text content for further extraction.",
     "parameters": "{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\"}},\"required\":[\"url\"]}",
     "implementation": {"type": "composite", "steps": [
-      {"tool": "web_fetch", "args": {"url": "{{url}}"}}
+      {"tool": "WebFetch", "args": {"url": "{{url}}"}}
     ]}
   }],
   "configuration": {
@@ -313,15 +367,15 @@ class SkillInstallTool(
   "version": "1.0.0",
   "description": "按类型自动分类整理文件（图片/文档/视频/音乐/归档）",
   "author": "apex-builtin",
-  "requirements": {"toolsRequired": ["list_files", "shell_execute"]},
+  "requirements": {"toolsRequired": ["ListFiles", "ShellExecute"]},
   "tools": [{
     "id": "organize_files",
     "name": "Organize Files",
     "description": "Organize files in a directory by type (images, docs, videos, etc.)",
     "parameters": "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Directory to organize\"}},\"required\":[\"path\"]}",
     "implementation": {"type": "composite", "steps": [
-      {"tool": "list_files", "args": {"path": "{{path}}"}},
-      {"tool": "shell_execute", "args": {}}
+      {"tool": "ListFiles", "args": {"path": "{{path}}"}},
+      {"tool": "ShellExecute", "args": {}}
     ]}
   }],
   "configuration": {"autoSetup": []}
@@ -336,15 +390,15 @@ class SkillInstallTool(
   "version": "1.0.0",
   "description": "编写并运行代码，自动修复错误",
   "author": "apex-builtin",
-  "requirements": {"toolsRequired": ["write_file", "shell_execute", "read_file"]},
+  "requirements": {"toolsRequired": ["Write", "ShellExecute", "Read"]},
   "tools": [{
     "id": "run_code",
     "name": "Run Code",
     "description": "Write code to a file and execute it. Returns output or errors.",
     "parameters": "{\"type\":\"object\",\"properties\":{\"language\":{\"type\":\"string\",\"enum\":[\"python\",\"shell\",\"node\"]},\"code\":{\"type\":\"string\",\"description\":\"Code to run\"}},\"required\":[\"language\",\"code\"]}",
     "implementation": {"type": "composite", "steps": [
-      {"tool": "write_file", "args": {"path": "./code_output/run.py", "content": "{{code}}"}},
-      {"tool": "shell_execute", "args": {}}
+      {"tool": "Write", "args": {"path": "./code_output/run.py", "content": "{{code}}"}},
+      {"tool": "ShellExecute", "args": {}}
     ]}
   }],
   "configuration": {"autoSetup": [
@@ -361,15 +415,15 @@ class SkillInstallTool(
   "version": "1.0.0",
   "description": "分析CSV/JSON数据，生成统计报告",
   "author": "apex-builtin",
-  "requirements": {"toolsRequired": ["read_file", "shell_execute", "write_file"]},
+  "requirements": {"toolsRequired": ["Read", "ShellExecute", "Write"]},
   "tools": [{
     "id": "analyze_data",
     "name": "Analyze Data",
     "description": "Analyze a data file (CSV/JSON) and generate statistics summary.",
     "parameters": "{\"type\":\"object\",\"properties\":{\"file\":{\"type\":\"string\",\"description\":\"Data file path\"}},\"required\":[\"file\"]}",
     "implementation": {"type": "composite", "steps": [
-      {"tool": "read_file", "args": {"path": "{{file}}", "max_lines": 10}},
-      {"tool": "shell_execute", "args": {}}
+      {"tool": "Read", "args": {"path": "{{file}}", "max_lines": 10}},
+      {"tool": "ShellExecute", "args": {}}
     ]}
   }],
   "configuration": {"autoSetup": []}
@@ -402,7 +456,7 @@ class SkillCreateTool(
     private val skillRegistry: SkillRegistry
 ) : AgentTool {
 
-    override val id = "skill_create"
+    override val id = "SkillCreate"
     override val name = "Create Skill"
     override val description = """
         Create a new skill from scratch.
@@ -462,7 +516,7 @@ class SkillCreateTool(
     /**
      * v2 修复：补齐换行/回车/制表符转义。旧实现只转义 `\\` 和 `"`，
      * 多行 description / prompt_injection 拼出的 JSON 非法，
-     * `skill_create` 对多行输入必然安装失败。
+     * `SkillCreate` 对多行输入必然安装失败。
      */
     private fun escape(s: String): String = s
         .replace("\\", "\\\\")
@@ -479,7 +533,7 @@ class SkillListTool(
     private val skillRegistry: SkillRegistry
 ) : AgentTool {
 
-    override val id = "skill_list"
+    override val id = "SkillList"
     override val name = "List Skills"
     override val description = "List all installed skills and their status."
 
@@ -490,7 +544,7 @@ class SkillListTool(
     override suspend fun execute(arguments: String): String {
         val skills = skillRegistry.getInstalled()
         if (skills.isEmpty()) {
-            return "No skills installed. Use skill_search to find skills or skill_create to make one."
+            return "No skills installed. Use SkillSearch to find skills or SkillCreate to make one."
         }
 
         return buildString {
@@ -514,7 +568,7 @@ class SkillUninstallTool(
     private val skillRegistry: SkillRegistry
 ) : AgentTool {
 
-    override val id = "skill_uninstall"
+    override val id = "SkillUninstall"
     override val name = "Uninstall Skill"
     override val description = "Remove an installed skill by ID."
 
@@ -544,7 +598,7 @@ class SkillUninstallTool(
 }
 
 /**
- * Skill 激活工具（技能渐进披露的模型侧入口，对齐 tool_open 的装载语义）。
+ * Skill 激活工具（技能渐进披露的模型侧入口，对齐 ToolOpen 的装载语义）。
  *
  * 系统提示词只携带「Skill Catalog」（全部技能的一行摘要）；技能的完整
  * 方法论（promptInjection，通常 2-4KB）默认不注入。模型判定任务命中
@@ -554,16 +608,16 @@ class SkillUninstallTool(
  *    （见 SkillRegistry.getActivePromptInjections）；
  *  - FIFO 上限淘汰最旧激活，请求体积有界。
  *
- * 与 tool_search/tool_open 的关系：工具目录装载「能力」（函数），技能
+ * 与 ToolSearch/ToolOpen 的关系：工具目录装载「能力」（函数），技能
  * 目录装载「方法论」（领域专家流程）——两者互补，模型可自由组合
- * （例：装备 travel-planner 技能 + web_search 工具做行程规划）。
+ * （例：装备 travel-planner 技能 + WebSearch 工具做行程规划）。
  */
 class SkillActivateTool(
     private val skillRegistry: SkillRegistry,
     private val activationStore: SkillActivationStore
 ) : AgentTool {
 
-    override val id = "skill_activate"
+    override val id = "SkillActivate"
     override val name = "Activate Skill"
     override val description = """
         Load a skill's full domain methodology into the session.
@@ -590,7 +644,7 @@ class SkillActivateTool(
             ?: return@withContext "Error: 'skill_id' required"
 
         val installed = skillRegistry.getInstalled().firstOrNull { it.manifest.id == skillId }
-            ?: return@withContext "Error: skill '$skillId' not installed. Call skill_list() to see installed skills."
+            ?: return@withContext "Error: skill '$skillId' not installed. Call SkillList() to see installed skills."
         if (!installed.enabled) {
             return@withContext "Error: skill '$skillId' is disabled. Ask the user to enable it in the skill market."
         }

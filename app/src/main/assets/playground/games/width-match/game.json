@@ -1,0 +1,11 @@
+{
+  "id": "width-match",
+  "name": "等宽配对",
+  "nameEn": "Width Match",
+  "tagline": "牌面由本机字体实测宽度生成：翻开两张实测等宽的字符即可消除，不同设备配对不同",
+  "version": 1,
+  "engine": "pretext@0.0.9",
+  "apis": ["prepare", "measureNaturalWidth"],
+  "controls": "点按翻牌",
+  "scoreKey": "aga.pg.width-match.hi"
+}

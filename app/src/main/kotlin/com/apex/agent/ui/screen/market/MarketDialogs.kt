@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -33,7 +34,16 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.Icon
 import com.apex.agent.R
+import com.apex.agent.core.tools.mcp.McpConfigValidator
 import com.apex.agent.core.tools.mcp.McpServerConfig
 import com.apex.agent.core.tools.mcp.McpTransport
 
@@ -53,20 +63,23 @@ import com.apex.agent.core.tools.mcp.McpTransport
  *   MCP server 的形态（`npx -y @xxx`、`uvx xxx`、`python xxx.py`）。
  * - [McpTransport.HTTP] / [McpTransport.SSE] —— 填远端 URL + 可选鉴权。
  *
- * 校验按传输方式分别生效：STDIO 要求命令非空，远端要求 URL 以 http 开头。
+ * #206：校验升级为 [McpConfigValidator] 全量预检（重名 / URL 协议 / 裸命令 /
+ *   宿主运行时缺失 / 环境变量注入字符…），错误阻断保存并逐条展示，警告仅提示。
  *
  * @param sandboxAvailable PRoot 沙箱是否就绪（内嵌 Ubuntu rootfs 已安装，由
  *   MarketViewModel 传入，Issue #163）。就绪时 STDIO 表单的「在 PRoot 沙箱中
  *   运行」开关可用且默认开（Android 宿主没有 npx/node，本地命令几乎必然要
  *   沙箱）；未就绪时开关禁用并提示先安装 Ubuntu 环境 —— 默认值 false 保证
  *   接线缺失时用户看到的是诚实的「不可用」而不是能点但必败的开关。
+ * @param validate #206 实时预检（市场 VM 提供：含既有配置名与沙箱就绪态）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddMcpDialog(
     onDismiss: () -> Unit,
     onAdd: (McpServerConfig) -> Unit,
-    sandboxAvailable: Boolean = false
+    sandboxAvailable: Boolean = false,
+    validate: ((McpServerConfig) -> List<McpConfigValidator.Finding>)? = null
 ) {
     McpConfigFormDialog(
         title = stringResource(R.string.market_mcp_add_title),
@@ -74,7 +87,8 @@ fun AddMcpDialog(
         sandboxAvailable = sandboxAvailable,
         confirmLabel = stringResource(R.string.market_mcp_add_connect),
         onDismiss = onDismiss,
-        onConfirm = onAdd
+        onConfirm = onAdd,
+        validate = validate
     )
 }
 
@@ -87,6 +101,7 @@ fun AddMcpDialog(
  *
  * @param initial 当前配置快照（预填表单）。
  * @param sandboxAvailable PRoot 沙箱就绪态（与 [AddMcpDialog] 同源）。
+ * @param validate #206 实时预检（编辑模式下重名检测会排除自身名，由 VM 侧处理）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,7 +109,8 @@ fun EditMcpDialog(
     initial: McpServerConfig,
     sandboxAvailable: Boolean = false,
     onSave: (McpServerConfig) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    validate: ((McpServerConfig) -> List<McpConfigValidator.Finding>)? = null
 ) {
     McpConfigFormDialog(
         title = stringResource(R.string.market_mcp_edit_title),
@@ -102,7 +118,8 @@ fun EditMcpDialog(
         sandboxAvailable = sandboxAvailable,
         confirmLabel = stringResource(R.string.market_mcp_edit_save),
         onDismiss = onDismiss,
-        onConfirm = onSave
+        onConfirm = onSave,
+        validate = validate
     )
 }
 
@@ -112,7 +129,12 @@ fun EditMcpDialog(
  * - initial == null → 添加模式：名称可编辑，transport 默认 STDIO，沙箱开关默认
  *   跟随可用性；
  * - initial != null → 编辑模式：名称锁定（锁定原因见 [EditMcpDialog]），全部字段
- *   预填，保留原 enabled 偏好。
+ *   预填，保留原 enabled 偏好与工位 scope（#206 修复：旧实现编辑保存会把
+ *   scope 静默重置回 "all"，分级归属丢失）。
+ *
+ * #206 预检接线：[validate] 非空时按当前草稿实时跑 [McpConfigValidator] ——
+ * 错误阻断保存（确认键禁用 + 红字逐条），警告以次要色提示（可保存）。
+ * 基础的格式校验（空名/非法字符/空命令）保留在本地，其余交给预检。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -122,7 +144,8 @@ private fun McpConfigFormDialog(
     sandboxAvailable: Boolean,
     confirmLabel: String,
     onDismiss: () -> Unit,
-    onConfirm: (McpServerConfig) -> Unit
+    onConfirm: (McpServerConfig) -> Unit,
+    validate: ((McpServerConfig) -> List<McpConfigValidator.Finding>)? = null
 ) {
     val isEdit = initial != null
     var name by remember { mutableStateOf(initial?.name ?: "") }
@@ -149,7 +172,35 @@ private fun McpConfigFormDialog(
     val isStdio = transport == McpTransport.STDIO
     val commandValid = command.trim().isNotBlank()
     val urlValid = url.trim().startsWith("http")
-    val valid = nameValid && (if (isStdio) commandValid else urlValid)
+    val baseValid = nameValid && (if (isStdio) commandValid else urlValid)
+
+    /** 当前表单草稿（确认与预检共用同一构造 —— 不会出现「预检的配置和保存的不一致」）。 */
+    fun buildDraft() = McpServerConfig(
+        name = name.trim(),
+        url = if (isStdio) "" else url.trim(),
+        transport = transport,
+        apiKey = apiKey.trim().takeIf { !isStdio && it.isNotBlank() },
+        // 编辑模式保留原 enabled 偏好（用户禁用的不会因编辑被重新打开）
+        enabled = if (isEdit) initial?.enabled ?: true else true,
+        command = command.trim().takeIf { isStdio && it.isNotBlank() },
+        args = if (isStdio) args.trim().split(ARGS_SPLIT).filter { it.isNotBlank() } else emptyList(),
+        env = if (isStdio) parseKeyValueLines(env) else emptyMap(),
+        // Issue #163：沙箱开关透传（远端形态强制 false；
+        // 未就绪时双重保险归 false，防止意外态写出沙箱配置）
+        runInSandbox = isStdio && runInSandbox && sandboxAvailable,
+        // 编辑模式保留导入路径写入的自定义请求头
+        headers = initial?.headers ?: emptyMap(),
+        // #206 修复：保留工位 scope（旧实现丢失后分级归属被打回 all）
+        scope = initial?.scope ?: "all"
+    )
+
+    // #206 预检：错误阻断保存；警告仅展示。编辑模式下名称锁定，重名检测对
+    // 自身名必然误报 —— 过滤掉（名称不可改，不会真产生覆盖）。
+    val findings = validate?.let { fn -> fn(buildDraft()) }
+        ?.filterNot { f -> isEdit && f.code == McpConfigValidator.Code.NAME_DUPLICATE }
+        .orEmpty()
+    val errorFindings = findings.filter { it.isError }
+    val valid = baseValid && errorFindings.isEmpty()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -279,30 +330,23 @@ private fun McpConfigFormDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+
+                // #206 预检结果：错误红字逐条（阻断保存），警告次要色（可保存）。
+                if (findings.isNotEmpty()) {
+                    findings.forEach { finding ->
+                        Text(
+                            text = finding.message,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (finding.isError) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = {
-                    onConfirm(
-                        McpServerConfig(
-                            name = name.trim(),
-                            url = if (isStdio) "" else url.trim(),
-                            transport = transport,
-                            apiKey = apiKey.trim().takeIf { !isStdio && it.isNotBlank() },
-                            // 编辑模式保留原 enabled 偏好（用户禁用的不会因编辑被重新打开）
-                            enabled = if (isEdit) initial?.enabled ?: true else true,
-                            command = command.trim().takeIf { isStdio && it.isNotBlank() },
-                            args = if (isStdio) args.trim().split(ARGS_SPLIT).filter { it.isNotBlank() } else emptyList(),
-                            env = if (isStdio) parseKeyValueLines(env) else emptyMap(),
-                            // Issue #163：沙箱开关透传（远端形态强制 false；
-                            // 未就绪时双重保险归 false，防止意外态写出沙箱配置）
-                            runInSandbox = isStdio && runInSandbox && sandboxAvailable,
-                            // 编辑模式保留导入路径写入的自定义请求头
-                            headers = initial?.headers ?: emptyMap()
-                        )
-                    )
-                },
+                onClick = { onConfirm(buildDraft()) },
                 enabled = valid
             ) { Text(confirmLabel) }
         },
@@ -479,6 +523,54 @@ fun ImportSkillJsonDialog(
     )
 }
 
+/**
+ * 功能性插件导入对话框（Plugin System v2）：粘贴 plugin.json 文本导入。
+ * 与 [ImportSkillJsonDialog] 同构（确认钮启用条件 = 以 JSON 对象起始），
+ * 校验门在 [com.apex.agent.plugin.host.functional.FunctionalPluginStore.install]
+ * （身份门 / 版本门 / 贡献点形状门，拒绝理由经 snackbar 人话反馈）。
+ */
+@Composable
+fun ImportFunctionalPluginDialog(
+    onDismiss: () -> Unit,
+    onImport: (json: String) -> Unit
+) {
+    var content by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.market_plugin_import_title)) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = content,
+                    onValueChange = { content = it },
+                    label = { Text(stringResource(R.string.market_plugin_import_label)) },
+                    minLines = 6,
+                    maxLines = 12,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = stringResource(R.string.market_plugin_import_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onImport(content) },
+                // JSON_OBJECT_OPEN 为 JSON 对象起始花括号（unicode 转义写法，避免
+                // 字面量大括号干扰 CI 的源码括号平衡静态检查）。
+                enabled = content.trim().startsWith(JSON_OBJECT_OPEN)
+            ) { Text(stringResource(R.string.market_action_install)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.market_action_cancel)) }
+        }
+    )
+}
+
 /** 通用 URL 导入对话框。 */
 @Composable
 fun ImportFromUrlDialog(
@@ -573,127 +665,6 @@ private val REPO_INPUT_PATTERN = Regex("[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")
 
 /** JSON 对象起始字符（unicode 转义写法，避免字面量大括号干扰 CI 括号检查）。 */
 private const val JSON_OBJECT_OPEN = "\u007B"
-
-// ═══ v2 认知市场：依赖图可视化 + 干运行预览对话框 ═══
-
-/**
- * 依赖图对话框 —— 拓扑排序展示技能依赖关系（被依赖者在前）。
- *
- * 用 [SkillDependencyResolver.buildDependencyGraph] 计算节点深度 + 边 + 环 + 缺失依赖。
- * 节点按深度缩进渲染，环节点标红，缺失依赖标黄。
- *
- * @param skills 待展示的技能清单列表
- * @param available 已安装技能 id 集（用于标记缺失/已装）
- * @param onDismiss 关闭回调
- */
-@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-@Composable
-internal fun SkillDependencyGraphDialog(
-    skills: List<com.apex.agent.core.tools.skill.SkillManifest>,
-    available: Set<String>,
-    onDismiss: () -> Unit
-) {
-    val graph = remember(skills, available) {
-        com.apex.agent.core.tools.skill.SkillDependencyResolver
-            .buildDependencyGraph(skills, available)
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.market_action_close)) }
-        },
-        title = {
-            Column {
-                Text(
-                    stringResource(R.string.market_depgraph_title),
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    stringResource(R.string.market_depgraph_subtitle, graph.nodes.size, graph.edges.size) +
-                        " · " + stringResource(
-                            if (graph.isHealthy) {
-                                R.string.market_depgraph_healthy
-                            } else {
-                                R.string.market_depgraph_unhealthy
-                            }
-                        ),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (graph.isHealthy) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.error
-                )
-            }
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                // 环警告
-                if (graph.cycles.isNotEmpty()) {
-                    Text(
-                        stringResource(R.string.market_depgraph_cycles, graph.cycles.size),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    graph.cycles.forEach { cycle ->
-                        Text(
-                            "  " + cycle.joinToString(" → "),
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                }
-                // 缺失依赖
-                if (graph.missingDependencies.isNotEmpty()) {
-                    Text(
-                        stringResource(R.string.market_depgraph_missing, graph.missingDependencies.size),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    graph.missingDependencies.forEach { dep ->
-                        Text(
-                            "  • $dep",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                }
-                // 拓扑节点列表
-                Text(
-                    stringResource(R.string.market_depgraph_topo),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(4.dp))
-                graph.nodes.forEach { node ->
-                    val indent = "  ".repeat(node.depth)
-                    val marker = when {
-                        node.isCyclic -> "⟳"
-                        node.isInstalled -> "✓"
-                        else -> "○"
-                    }
-                    val color = when {
-                        node.isCyclic -> MaterialTheme.colorScheme.error
-                        node.isInstalled -> MaterialTheme.colorScheme.primary
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                    Text(
-                        "$indent$marker ${node.name} (${node.id})",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = color
-                    )
-                }
-            }
-        }
-    )
-}
 
 /**
  * 干运行预览对话框 —— 安装前预览解析后的 manifest 摘要 + 缺失依赖 + 工具数 + 权限要求。
@@ -859,5 +830,246 @@ private fun PreviewChip(label: String, value: String) {
                 fontWeight = FontWeight.SemiBold
             )
         }
+    }
+}
+
+// ═══ GitHub 智能安装：候选选择弹窗 ═══
+
+/**
+ * GitHub 仓库多候选选择弹窗（技能集合 / MCP monorepo 仓库）。
+ *
+ * 探测发现多个可装项时由 [MarketViewModel.installFromRepoInput] 置入状态；
+ * 每行：类型徽标（技能 / MCP）+ 名称 + 描述 + 单项安装按钮；
+ * confirmButton = 一键全部安装。安装中的项与全局 busy 互斥（行按钮禁用）。
+ *
+ * 长列表用 LazyColumn + max-h-72（约 300dp）内滚动 —— 与市场其他弹窗
+ * 的滚动列表口径一致（AlertDialog 内 LazyColumn 是官方支持形态）。
+ */
+@Composable
+internal fun GithubCandidatesPickDialog(
+    repoTitle: String,
+    candidates: List<com.apex.agent.marketplace.MarketInstallManager.GithubRepoCandidate>,
+    busy: Boolean,
+    onInstallOne: (com.apex.agent.marketplace.MarketInstallManager.GithubRepoCandidate) -> Unit,
+    onInstallAll: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text(
+                    stringResource(R.string.market_github_pick_title),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    stringResource(R.string.market_github_pick_subtitle, repoTitle, candidates.size),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        text = {
+            androidx.compose.foundation.lazy.LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 300.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(
+                    count = candidates.size,
+                    key = { candidates[it].key }
+                ) { index ->
+                    val candidate = candidates[index]
+                    val kindLabel = if (candidate.kind ==
+                        com.apex.agent.marketplace.MarketInstallManager.GithubRepoCandidate.Kind.MCP
+                    ) {
+                        stringResource(R.string.market_github_pick_kind_mcp)
+                    } else {
+                        stringResource(R.string.market_github_pick_kind_skill)
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        kindLabel,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        candidate.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                                if (candidate.description.isNotBlank()) {
+                                    Text(
+                                        candidate.description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 2,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            TextButton(
+                                onClick = { onInstallOne(candidate) },
+                                enabled = !busy
+                            ) { Text(stringResource(R.string.market_github_pick_install_one)) }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onInstallAll,
+                enabled = !busy && candidates.isNotEmpty()
+            ) { Text(stringResource(R.string.market_github_pick_install_all)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.market_action_cancel)) }
+        }
+    )
+}
+
+
+/**
+ * #197 MCP 真实启动进度弹窗（连接中服务器的实时阶段）。
+ *
+ * 原位于 MarketScreen.kt（已删除，被工具聚合中心取代）——随顶层屏幕
+ * 消亡迁入本对话框集，[AggregationCenterScreen] 消费 `state.mcpStartup`
+ * 渲染。每一行都是真实事件（环境检查 / 子进程 fork（pid+argv）/
+ * initialize 握手 / initialized / tools 发现），时间戳为事件到达时刻；
+ * 进行中的阶段尾部脉冲，失败行红色展开真实错误。**没有任何模拟延时** ——
+ * 阶段间的等待就是真实的 npx 冷启动/网络握手耗时。
+ */
+@Composable
+internal fun McpStartupProgressDialog(
+    startup: McpStartupUi,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(R.string.market_mcp_startup_title, startup.serverName),
+                style = MaterialTheme.typography.titleMedium
+            )
+        },
+        text = {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .width(320.dp)
+            ) {
+                // #205：key 加 index —— stderr 事件与阶段事件同毫秒到达时
+                // "timestamp+stage" 也会撞键（两条 STDERR 同 ms 尤甚）导致崩溃。
+                itemsIndexed(
+                    startup.events,
+                    key = { i, e -> "$i-${e.timestampMs}-${e.stage.name}" }
+                ) { _, event ->
+                    val failed = event.stage == com.apex.agent.core.tools.mcp.McpStartupStage.FAILED
+                    val stderr = event.stage == com.apex.agent.core.tools.mcp.McpStartupStage.STDERR
+                    Row(
+                        verticalAlignment = Alignment.Top,
+                        modifier = Modifier.padding(vertical = if (stderr) 2.dp else 5.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (failed) Icons.Default.ErrorOutline
+                            else if (stderr) Icons.Default.Info
+                            else Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = if (failed) MaterialTheme.colorScheme.error
+                            else if (stderr) MaterialTheme.colorScheme.outline
+                            else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(17.dp)
+                        )
+                        Column(modifier = Modifier.padding(start = 8.dp)) {
+                            Text(
+                                text = stageLabel(event.stage),
+                                style = if (stderr) MaterialTheme.typography.labelSmall
+                                else MaterialTheme.typography.labelLarge
+                            )
+                            Text(
+                                text = event.detail,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = formatEventTime(event.timestampMs),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    }
+                }
+                if (startup.running) {
+                    item {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(vertical = 6.dp)
+                        ) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Text(
+                                text = stringResource(R.string.market_mcp_startup_running),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 8.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    if (startup.running) stringResource(R.string.market_mcp_startup_hide)
+                    else stringResource(R.string.market_mcp_startup_done)
+                )
+            }
+        }
+    )
+}
+
+/** 启动阶段的本地化标签（真实阶段名 → 用户可读文案）。 */
+@Composable
+private fun stageLabel(stage: com.apex.agent.core.tools.mcp.McpStartupStage): String =
+    stringResource(
+        when (stage) {
+            com.apex.agent.core.tools.mcp.McpStartupStage.ENV_CHECK -> R.string.market_mcp_stage_env
+            com.apex.agent.core.tools.mcp.McpStartupStage.SPAWN -> R.string.market_mcp_stage_spawn
+            com.apex.agent.core.tools.mcp.McpStartupStage.INITIALIZE_SENT -> R.string.market_mcp_stage_init_sent
+            com.apex.agent.core.tools.mcp.McpStartupStage.INITIALIZE_RESULT -> R.string.market_mcp_stage_init_result
+            com.apex.agent.core.tools.mcp.McpStartupStage.INITIALIZED -> R.string.market_mcp_stage_initialized
+            com.apex.agent.core.tools.mcp.McpStartupStage.TOOLS_DISCOVERED -> R.string.market_mcp_stage_tools
+            com.apex.agent.core.tools.mcp.McpStartupStage.STDERR -> R.string.market_mcp_stage_stderr
+            com.apex.agent.core.tools.mcp.McpStartupStage.FAILED -> R.string.market_mcp_stage_failed
+        }
+    )
+
+// v1.4.4 UX 审查：SimpleDateFormat 提升为复用实例（旧实现位于 items 循环体内，
+// 每行每次重组都 new 一个；对齐 LogViewerScreen 的既有模式）
+private val marketEventTimeFormat = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US)
+
+private fun formatEventTime(ts: Long): String {
+    synchronized(marketEventTimeFormat) {
+        return marketEventTimeFormat.format(java.util.Date(ts))
     }
 }

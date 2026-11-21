@@ -70,7 +70,7 @@ data class JobSnapshot(
     val finishedAt: Long?
 )
 
-/** Screen snapshot embedded in SemanticState (compact form; full state via terminal.observe SCREEN). */
+/** Screen snapshot embedded in SemanticState (compact form; full state via TerminalObserve SCREEN). */
 data class ScreenSnapshot(
     val rows: Int,
     val cols: Int,

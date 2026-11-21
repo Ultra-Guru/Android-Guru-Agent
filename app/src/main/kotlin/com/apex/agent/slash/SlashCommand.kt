@@ -10,7 +10,7 @@ package com.apex.agent.slash
  *
  * Examples:
  *     /skill:code_interpreter
- *     /skill:web_search query=Android Agent latest news
+ *     /skill:WebSearch query=Android Agent latest news
  *     /mcp:github repo=owner/name
  *     /connector:google_drive action=open
  *     /plugin:pdf_reader file=/sdcard/a.pdf
@@ -75,6 +75,49 @@ sealed interface SlashCommand {
     }
 
     /**
+     * `/fusion:<id>` —— FUSION 工具聚合体系包指令（王冠菜单选中后
+     * 以 chip 形态挂在输入框，发送时拼回此命令形态）。
+     *
+     * 语义与四类基础指令的本质差异：**强制使用**——用户已显式选用某
+     * 体系包（激活时已装技能/连 MCP/注入工作流人设），路由产出的
+     * agentPrompt 携带【强制使用要求】：agent 必须优先且强制使用该
+     * 体系的技能、MCP 工具与旗舰工具完成任务，不得静默绕过。
+     *
+     * id = FusionBundle id（如 `rea` / `superpowers`）；手动键入
+     * `/fusion:rea` 与王冠菜单选择同效（兼容性：键盘用户零障碍）。
+     */
+    data class Fusion(
+        override val id: String,
+        override val args: Map<String, String> = emptyMap(),
+        override val userExtra: String = ""
+    ) : SlashCommand {
+        override val type: String = TYPE
+        companion object { const val TYPE = "fusion" }
+    }
+
+    /**
+     * `/logic:<mode>` — Coding 屏思考逻辑切换（v1.5 双引擎）。
+     *
+     * 与其他四类命令的本质差异：**本地路由，不生成 agentPrompt**——
+     * 切换是 ViewModel 层状态操作（持久化 + 双引擎门面路由），不是
+     * 提交给 LLM 的任务。因此 Coding 屏在通用路由**之前**截获执行；
+     * Agent 屏无双引擎，走通用路由后只展示引导性系统消息（不执行、
+     * 不转发原文给引擎，防止 `/logic:foo` 被当作自由文本误执行）。
+     *
+     * id 解析交给 [com.apex.agent.core.code.standard.StandardLogicMode.fromName]
+     * （容错别名：standard/std → 标准；deep_dive/deep/apex → 深潜；
+     * 未知 id → 引导消息由 VM 层发出）。
+     */
+    data class Logic(
+        override val id: String,
+        override val args: Map<String, String> = emptyMap(),
+        override val userExtra: String = ""
+    ) : SlashCommand {
+        override val type: String = TYPE
+        companion object { const val TYPE = "logic" }
+    }
+
+    /**
      * Fallback for anything that starts with `/` but does not match the
      * `/<knownType>:<id>` shape. The raw input is preserved verbatim so the
      * agent can still see exactly what the user typed.
@@ -91,7 +134,7 @@ sealed interface SlashCommand {
     companion object {
         /** All supported command type prefixes, in slash-menu order. */
         val SUPPORTED_TYPES: List<String> = listOf(
-            Skill.TYPE, Mcp.TYPE, Connector.TYPE, Plugin.TYPE
+            Skill.TYPE, Mcp.TYPE, Connector.TYPE, Plugin.TYPE, Logic.TYPE, Fusion.TYPE
         )
 
         /**
@@ -146,6 +189,8 @@ object SlashCommandParser {
             SlashCommand.Mcp.TYPE       -> SlashCommand.Mcp(id, kvArgs, userExtra)
             SlashCommand.Connector.TYPE -> SlashCommand.Connector(id, kvArgs, userExtra)
             SlashCommand.Plugin.TYPE    -> SlashCommand.Plugin(id, kvArgs, userExtra)
+            SlashCommand.Logic.TYPE     -> SlashCommand.Logic(id, kvArgs, userExtra)
+            SlashCommand.Fusion.TYPE    -> SlashCommand.Fusion(id, kvArgs, userExtra)
             else                        -> SlashCommand.Unknown(raw)
         }
     }

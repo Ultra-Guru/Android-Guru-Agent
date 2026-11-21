@@ -51,10 +51,30 @@ sealed interface UiAction {
     data object Home : UiAction
     data object Recents : UiAction
     data object OpenNotifications : UiAction
+    /** #240 收尾：收起通知栏（a11y BACK 收合 / root `cmd statusbar collapse`）。 */
+    data object CloseNotifications : UiAction
 }
 
 data class UiResult(val success: Boolean, val message: String = "")
-data class UiTreeResult(val success: Boolean, val treeXml: String = "", val nodes: List<UiNode> = emptyList())
+
+/**
+ * UI 树捕获结果。
+ *
+ * 双视图契约（嵌套树激活后）：
+ * - [roots]：真实嵌套树根列表（父节点 children 已填充）——cs-mem 修剪/
+ *   空间拓扑边/指纹父上下文的输入契约；
+ * - [nodes]：同树的 DFS 先序扁平视图，且**剥离子节点引用**——兼容把列表
+ *   元素当独立根逐个处理的旧消费方（PrivilegeUiProvider.dumpUiTree、
+ *   CsMemSessionObserver），避免对同一子树重复递归与指纹重复。
+ * 未提供嵌套树的实现（如测试替身）只填 [nodes]，消费方按
+ * `roots.ifEmpty { nodes }` 回退为旧的扁平语义。
+ */
+data class UiTreeResult(
+    val success: Boolean,
+    val treeXml: String = "",
+    val nodes: List<UiNode> = emptyList(),
+    val roots: List<UiNode> = emptyList()
+)
 /**
  * 截图结果。
  *

@@ -17,7 +17,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
- * T76: Agent tool — terminal.linux.packages
+ * T76: Agent tool — TerminalLinuxPackages
  *
  * 统一 package API（结构化参数，不让 Agent 直接拼 apt 命令）。经 UbuntuAptPackageManager
  * → ProotExecutor → PRoot → Ubuntu rootfs，与交互式 terminal session 共享同一 dpkg
@@ -46,7 +46,7 @@ class TerminalLinuxPackagesTool(
     private val rootfsDir: () -> java.io.File? = { null },
     private val arch: () -> com.apex.agent.platform.terminal.linux.CpuArchitecture? = { null }
 ) : TerminalTool {
-    override val id: String = "terminal.linux.packages"
+    override val id: String = "TerminalLinuxPackages"
     override val name: String = id
     override val description: String = """
         Structured Ubuntu package management (wraps apt-get/dpkg via the same PRoot+rootfs

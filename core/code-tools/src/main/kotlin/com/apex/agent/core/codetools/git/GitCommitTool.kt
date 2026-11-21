@@ -8,7 +8,7 @@ import com.apex.agent.core.tools.builtin.BaseTool
 import com.apex.agent.core.tools.toolSchema
 
 /**
- * # code_git_commit — 提交助手（经 PRoot Ubuntu 沙箱执行）
+ * # CodeGitCommit — 提交助手（经 PRoot Ubuntu 沙箱执行）
  *
  * 提交工作区变更的编排工具：
  *
@@ -29,7 +29,7 @@ import com.apex.agent.core.tools.toolSchema
 class GitCommitTool(
     private val runner: GitCommandRunner
 ) : BaseTool(
-    id = "code_git_commit",
+    id = "CodeGitCommit",
     name = "Code Git Commit",
     description = """
         Commit changes in the active workspace.

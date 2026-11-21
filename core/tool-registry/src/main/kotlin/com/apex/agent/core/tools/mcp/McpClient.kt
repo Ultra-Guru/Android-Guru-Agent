@@ -1,5 +1,6 @@
 package com.apex.agent.core.tools.mcp
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -88,19 +89,34 @@ class McpClient(
     private var serverCapabilities: McpCapabilities? = null
 
     /**
+     * initialize 响应的 `instructions` 字段（服务器自述使用指引；
+     * null = 未上报）。引擎把它注入系统提示词（MCP 使用逻辑增强）。
+     */
+    @Volatile
+    var serverInstructions: String? = null
+        private set
+
+    /**
      * 传输句柄：把"远端 HTTP 端点"与"本地子进程"统一成一条 send/close 管道。
      *
      * 惰性构建 —— STDIO 会真的 fork 一个进程，配置阶段（仅落盘）不该触发。
      * 所有使用点都必须经 [transportHandle] 而不是直接读 [transport]，
      * 否则一次无害查询（如 isTransportAlive）就会白白拉起进程。
      */
-    private val transport: McpTransportHandle by lazy { createTransport() }
+    private val transport: McpTransportHandle by lazy {
+            createdTransport = true
+            createTransport()
+        }
 
     @Volatile
     private var createdTransport = false
 
     private fun transportHandle(): McpTransportHandle {
-        createdTransport = true
+        // P3 修复（createdTransport 时序）：旧实现在 lazy 初始化**之前**置位，
+        // 握手失败走 shutdown() 时 `if (createdTransport) transport.close()`
+        // 会重新触发 lazy —— createTransport() 再次执行（STDIO = 再 fork 一个
+        // 子进程又立即销毁；BUILTIN = 再调一次工厂）。现在置位收敛到 lazy
+        // 初始化器内部：只有真正创建成功才标记，失败路径 shutdown 不会二次拉起。
         return transport
     }
 
@@ -127,6 +143,9 @@ class McpClient(
             // Issue #149：宿主未注入沙箱 launcher 时保持原行为（JvmProcessLauncher）。
             // Issue #163：超时经构造参数注入（沙箱连接由 McpManager 放宽）。
             // #197：onSpawned 回调把真实 pid + argv 报给启动监听（仅在其注入时）。
+            // #205：onStderrLine 把真实 stderr 行透传给监听（每连接前
+            // [STDERR_REPORT_CAP] 行，防雪崩式刷屏时间线）。
+            val stderrReported = java.util.concurrent.atomic.AtomicInteger(0)
             McpStdioTransport(
                 command = cmdLine,
                 env = config.env,
@@ -140,7 +159,18 @@ class McpClient(
                             detail = "子进程已启动 pid=${pid ?: "?"} · ${argv.joinToString(" ")}"
                         )
                     )
-                }} else null
+                }} else null,
+                onStderrLine = if (startupListener != null) ({ line ->
+                    if (stderrReported.incrementAndGet() <= STDERR_REPORT_CAP) {
+                        startupListener.onStartupEvent(
+                            McpStartupEvent(
+                                serverName = config.name,
+                                stage = McpStartupStage.STDERR,
+                                detail = line.take(200)
+                            )
+                        )
+                    }
+                }) else null
             )
         }
         McpTransport.HTTP, McpTransport.SSE -> {
@@ -178,8 +208,14 @@ class McpClient(
                 }
             )
 
-            // #197 真实事件：initialize 请求发出（HTTP/SSE 的传输在 send 内
-            // 惰性创建，spawn 事件由各自 createTransport 路径上报）。
+            // #206 修复：传输先建再报「请求已发出」—— 旧实现惰性创建让 SPAWN
+            // 事件（pid/argv）排在 INITIALIZE_SENT 之后，时间线上的阶段顺序与
+            // 真实生命周期（spawn → initialize）相反。这里显式触发一次
+            // transportHandle()：STDIO 真正 fork，BUILTIN 走工厂，都会在
+            // INITIALIZE_SENT 之前发出自己的 SPAWN 事件。
+            transportHandle()
+
+            // #197 真实事件：initialize 请求发出（此时传输已就绪）。
             startupListener?.onStartupEvent(
                 McpStartupEvent(
                     serverName = config.name,
@@ -188,9 +224,19 @@ class McpClient(
                 )
             )
 
+            // P1 修复（空响应假成功）：HTTP 200 + 空 body（或 SSE 无 data 帧）
+            // 会被传输层折叠成 null，旧实现照旧置 initialized=true 并返回成功
+            // —— 用户看到"已连接、0 工具"，模型把失败的调用当成功。空响应在
+            // 带 id 的请求上永远是协议错误。
             val response = sendRequest(request)
-            val result = response?.get("result")?.jsonObject
-            val capabilities = result?.get("capabilities")?.jsonObject
+            // #348：initialize 响应缺 result 字段 = 远端未完成正规 JSON-RPC
+            // 握手（error 对象已在 sendRequest 掐掉，此处只剩畸形响应），
+            // 不再折叠成 capabilities 全 false 的「握手成功、零工具」假成功。
+            val result = response["result"]?.jsonObject
+                ?: throw McpException(
+                    "initialize 响应缺少 result 字段：远端未完成正规 JSON-RPC 握手"
+                )
+            val capabilities = result["capabilities"]?.jsonObject
 
             serverCapabilities = McpCapabilities(
                 tools = capabilities?.containsKey("tools") ?: false,
@@ -199,9 +245,16 @@ class McpClient(
             )
             initialized = true
 
+            // MCP 规范的 initialize 响应可携带 `instructions` 字段（服务器
+            // 自述的使用指引）——旧实现丢弃。标准任务循环引擎把它注入系统
+            // 提示词（<mcp_instructions>，仅当该服务器工具在当前工具面上），
+            // 模型拿到官方指引后对 MCP 工具的调用准确率显著提升。
+            serverInstructions = result?.get("instructions")?.jsonPrimitive?.contentOrNull
+                ?.takeIf { it.isNotBlank() }
+
             // #197 真实事件：initialize 响应到达 —— serverInfo 是服务器自报的
             // 真实身份（名称/版本），capabilities 是它真实宣告的能力面。
-            val serverInfo = result?.get("serverInfo")?.jsonObject
+            val serverInfo = result["serverInfo"]?.jsonObject
             val serverName = serverInfo?.get("name")?.jsonPrimitive?.contentOrNull
             val serverVersion = serverInfo?.get("version")?.jsonPrimitive?.contentOrNull
             startupListener?.onStartupEvent(
@@ -240,6 +293,11 @@ class McpClient(
             )
 
             Result.success(serverCapabilities!!)
+        } catch (e: CancellationException) {
+            // 全仓纪律（SafeAgentTool 同款）：协程取消必须继续抛出，
+            // 不得折叠成 Result.failure —— 否则用户 abort 时取消传播被截断。
+            // 注意：CE 分支不得进入下方 FAILED 启动事件上报（取消不是服务器故障）。
+            throw e
         } catch (e: Exception) {
             // #197 真实事件：失败详情（异常信息原样上报，不做美化）。
             startupListener?.onStartupEvent(
@@ -260,27 +318,49 @@ class McpClient(
         try {
             if (!initialized) return@withContext Result.failure(Exception("Not initialized"))
 
-            val request = McpRequest(
-                jsonrpc = "2.0",
-                id = requestId.incrementAndGet(),
-                method = "tools/list",
-                params = buildJsonObject {}
-            )
-
-            val response = sendRequest(request)
-            val tools = response?.get("result")?.jsonObject
-                ?.get("tools")?.jsonArray ?: JsonArray(emptyList())
-
-            val toolList = tools.map { toolJson ->
-                val obj = toolJson.jsonObject
-                McpToolDef(
-                    name = obj["name"]?.jsonPrimitive?.content ?: "",
-                    description = obj["description"]?.jsonPrimitive?.content ?: "",
-                    inputSchema = obj["inputSchema"]?.toString() ?: "{}"
+            // P2 修复（工具分页截断）：MCP 规范允许服务器分页返回工具清单
+            //（result.nextCursor）—— 旧实现读一页即止，工具数超过服务器
+            // 单页上限时后半部分无声消失（注册的一等工具不全，模型也不知道
+            // 少了）。现在循环跟随 nextCursor 直到取完，页数上限防御环。
+            val allTools = mutableListOf<McpToolDef>()
+            var cursor: String? = null
+            var pages = 0
+            do {
+                val request = McpRequest(
+                    jsonrpc = "2.0",
+                    id = requestId.incrementAndGet(),
+                    method = "tools/list",
+                    params = if (cursor == null) {
+                        buildJsonObject {}
+                    } else {
+                        buildJsonObject { put("cursor", cursor) }
+                    }
                 )
-            }
 
-            Result.success(toolList)
+                val response = sendRequest(request)
+                val result = response["result"]?.jsonObject
+                val tools = result?.get("tools")?.jsonArray ?: JsonArray(emptyList())
+
+                tools.forEach { toolJson ->
+                    val obj = toolJson.jsonObject
+                    // contentOrNull（JsonNull 防御，2026-11「MCP null」事故同源）：
+                    // 服务器把 name/description 序列化成 JSON null 时，`.content`
+                    // 返回字面串 "null" —— 曾把工具注册成 Mcp{Srv}Null、目录里
+                    // 出现 "MCP server/null"，模型跟随幻觉调用 null。视为缺席。
+                    allTools += McpToolDef(
+                        name = obj["name"]?.jsonPrimitive?.contentOrNull ?: "",
+                        description = obj["description"]?.jsonPrimitive?.contentOrNull ?: "",
+                        inputSchema = obj["inputSchema"]?.toString() ?: "{}"
+                    )
+                }
+                cursor = result?.get("nextCursor")?.jsonPrimitive?.contentOrNull
+                pages++
+            } while (cursor != null && pages < MAX_TOOLS_LIST_PAGES)
+
+            Result.success(allTools)
+        } catch (e: CancellationException) {
+            // 全仓纪律：协程取消必须继续抛出（不得折叠成 Result.failure）。
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -309,7 +389,7 @@ class McpClient(
             )
 
             val response = sendRequest(request)
-            val result = response?.get("result")?.jsonObject
+            val result = response["result"]?.jsonObject
 
             val content = result?.get("content")?.jsonArray?.mapNotNull { item ->
                 val obj = item.jsonObject
@@ -325,63 +405,9 @@ class McpClient(
                 content = content,
                 isError = isError
             ))
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    /**
-     * 获取资源列表
-     */
-    suspend fun listResources(): Result<List<McpResource>> = withContext(Dispatchers.IO) {
-        try {
-            val request = McpRequest(
-                jsonrpc = "2.0",
-                id = requestId.incrementAndGet(),
-                method = "resources/list",
-                params = buildJsonObject {}
-            )
-
-            val response = sendRequest(request)
-            val resources = response?.get("result")?.jsonObject
-                ?.get("resources")?.jsonArray ?: JsonArray(emptyList())
-
-            val resourceList = resources.map { resJson ->
-                val obj = resJson.jsonObject
-                McpResource(
-                    uri = obj["uri"]?.jsonPrimitive?.content ?: "",
-                    name = obj["name"]?.jsonPrimitive?.content ?: "",
-                    description = obj["description"]?.jsonPrimitive?.contentOrNull ?: "",
-                    mimeType = obj["mimeType"]?.jsonPrimitive?.contentOrNull ?: ""
-                )
-            }
-
-            Result.success(resourceList)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    /**
-     * 读取资源
-     */
-    suspend fun readResource(uri: String): Result<String> = withContext(Dispatchers.IO) {
-        try {
-            val request = McpRequest(
-                jsonrpc = "2.0",
-                id = requestId.incrementAndGet(),
-                method = "resources/read",
-                params = buildJsonObject { put("uri", uri) }
-            )
-
-            val response = sendRequest(request)
-            val contents = response?.get("result")?.jsonObject
-                ?.get("contents")?.jsonArray
-
-            val text = contents?.firstOrNull()?.jsonObject
-                ?.get("text")?.jsonPrimitive?.content ?: ""
-
-            Result.success(text)
+        } catch (e: CancellationException) {
+            // 全仓纪律：协程取消必须继续抛出（不得折叠成 Result.failure）。
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -398,16 +424,23 @@ class McpClient(
     }
 
     fun isInitialized(): Boolean = initialized
-    fun getCapabilities(): McpCapabilities? = serverCapabilities
 
     /** STDIO 子进程是否仍存活（尚未创建，或 HTTP 传输，均视为存活）。 */
     fun isTransportAlive(): Boolean = !createdTransport || transport.isHealthy()
 
     // ═══ 内部方法 ═══
 
-    private suspend fun sendRequest(request: McpRequest): JsonObject? {
+    private suspend fun sendRequest(request: McpRequest): JsonObject {
         val body = json.encodeToString(request)
-        val response = transportHandle().send(request.id, body) ?: return null
+        // #348：请求路径（id != null）传输返回 null = 通道级失败（空体 200、
+        // 连接被掐、传输异常收敛），不再折叠成「工具已运行但无输出」/
+        // 「握手成功、零工具」的假成功 —— 三个调用方（initialize/listTools/
+        // callTool）全部走这里，一处掐断全链路。
+        val response = transportHandle().send(request.id, body)
+            ?: throw McpException(
+                "MCP 传输返回空响应：服务器 '${config.name}'（${config.transport}）" +
+                    "未回传 JSON-RPC 帧 —— 通道关闭或远端异常"
+            )
 
         // Verify the JSON-RPC response id matches the request id. Without this check,
         // a stale / out-of-order / multiplexed response is silently applied to the
@@ -439,7 +472,17 @@ class McpClient(
             put("method", method)
             put("params", params)
         }.toString()
-        runCatching { transportHandle().send(null, notification) }
+        // P3 修复（取消纪律）：runCatching 会吞 CancellationException，截断
+        // 用户 abort 的取消传播（全仓纪律，见 initialize 的 CE 分支注释）。
+        // 通知尽力而为，但取消必须继续抛出。
+        try {
+            transportHandle().send(null, notification)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // 通知失败不应让调用方炸掉 —— 静默留痕即可（无日志依赖，
+            // 上层 MCP 启动时间线已覆盖握手阶段）。
+        }
     }
 
     companion object {
@@ -454,6 +497,19 @@ class McpClient(
          * 此处不放宽，桌面 JVM 行为不变；沙箱放宽常量见 [McpManager]）。
          */
         const val HOST_STDIO_REQUEST_TIMEOUT_MS = 60_000L
+
+        /**
+         * #205 单连接 stderr 上报上限：卡死的 stderr 刷屏（npm 警告洪流）
+         * 不应把时间线淹没 —— 前 N 行如实上报，之后的静默泄放（仍防死锁）。
+         */
+        const val STDERR_REPORT_CAP = 30
+
+        /**
+         * P2（工具分页）：tools/list 跟随 nextCursor 的最大页数 —— 防御
+         * 恶意/异常服务器返回永不终止的游标环。正常服务器单页几十个工具，
+         * 20 页足以覆盖任何已知实现（Kubernetes MCP 等大目录 server）。
+         */
+        const val MAX_TOOLS_LIST_PAGES = 20
     }
 }
 
@@ -567,9 +623,3 @@ data class McpToolResult(
     val isError: Boolean = false
 )
 
-data class McpResource(
-    val uri: String,
-    val name: String,
-    val description: String = "",
-    val mimeType: String = ""
-)

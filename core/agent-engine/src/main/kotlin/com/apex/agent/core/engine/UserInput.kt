@@ -10,7 +10,7 @@ import com.apex.agent.core.llm.ImageContent
  * - [images]：图片内容，直接进入 `LlmMessage.User.images`，由 Vision-capable
  *   LLM 识别。base64 编码，已压缩。
  * - [files]：非图片附件，作为文件上下文提供给 Agent（路径 + 元信息），Agent
- *   可用 `read_file` / `search_files` 等工具进一步读取。
+ *   可用 `Read` / `SearchFiles` 等工具进一步读取。
  *
  * 保留 `execute(String)` 旧接口用于兼容；内部委托给 `execute(UserInput.text(s))`。
  */

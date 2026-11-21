@@ -83,10 +83,14 @@ class EngineResilienceGuard(
         llmRetriesUsed++
         val attempt = llmRetriesUsed
         return LlmRetryDecision.Retry(
-            delayMs = backoffMs(attempt),
+            delayMs = llmRetryDelayMs(attempt),
             attempt = attempt
         )
     }
+
+    /** LLM 重试预算是否已耗尽（引擎据此把最终失败折叠为极简文案）。 */
+    val llmRetriesExhausted: Boolean
+        get() = llmRetriesUsed >= policy.maxLlmRetries && policy.maxLlmRetries > 0
 
     private fun isTransientLlmError(error: Throwable): Boolean {
         if (error is ModelRuntimeException) {
@@ -94,8 +98,12 @@ class EngineResilienceGuard(
                 is ModelRuntimeException.ModelUnavailable -> true
                 is ModelRuntimeException.ModelRateLimited -> true
                 is ModelRuntimeException.ModelTimeout -> true
-                // 鉴权失败重试无意义（Key 本身无效）；请求级 400 换时间重发
-                // 仍是同一请求体；配置错误须用户修改设置 —— 均不自动重试。
+                // ═══ 白名单扩展：响应无效（空响应/流中途解析失败）往往只是
+                // 网关抖动 —— 换次重试就能过，旧实现直接不重试 → 弱网下
+                // “动不动就停”。鉴权失败重试无意义（Key 本身无效）；请求级
+                // 400 换时间重发仍是同一请求体；配置错误须用户修改设置 ——
+                // 均不自动重试。═══
+                is ModelRuntimeException.ModelResponseInvalid -> true
                 else -> false
             }
         }
@@ -121,9 +129,26 @@ class EngineResilienceGuard(
         if (emptyRetriesUsed >= policy.maxEmptyResponseRetries) return null
         emptyRetriesUsed++
         return LlmRetryDecision.Retry(
-            delayMs = backoffMs(emptyRetriesUsed),
+            delayMs = llmRetryDelayMs(emptyRetriesUsed),
             attempt = emptyRetriesUsed
         )
+    }
+
+    // ═══ 0. LLM 重试延迟（阶梯优先，用户规格 2026-11）═══
+
+    /**
+     * 第 [attempt] 次 LLM 重试的等待毫秒：
+     * 生产默认走**精确阶梯**（1s/3s/5s/8s/13s/20s/30s/60s/120s/180s，
+     * 确定性无抖动——用户规格的可见契约）；阶梯未配置（测试预设/旧构造）
+     * 回退指数退避 [backoffMs]。阶梯越界时重复末级（180s 封顶语义）。
+     */
+    fun llmRetryDelayMs(attempt: Int): Long {
+        val ladder = policy.llmLadderDelaysMs
+        if (ladder.isNotEmpty()) {
+            val index = (attempt - 1).coerceAtLeast(0)
+            return if (index < ladder.size) ladder[index] else ladder.last()
+        }
+        return backoffMs(attempt)
     }
 
     // ═══ 3. 工具瞬时重试（复用 orchestrator RetryPolicy）═══
@@ -131,7 +156,12 @@ class EngineResilienceGuard(
     /**
      * 单个工具调用失败（流内 Error 事件 / 执行异常）后判定是否重试。
      * 与 LLM 重试分开计数：[policy.toolRetryBudget] 是任务级工具重试总预算。
+     *
+     * @Synchronized：工具循环 v2 并行批下，该方法会被多个工作协程并发调用
+     * （各自工具的重试判定）—— [toolRetriesUsed] 是任务级共享计数器，锁内
+     * 「判定 + 自增」必须原子，否则并发重试会超预算。
      */
+    @Synchronized
     fun onToolFailure(toolName: String, callId: String, errorMessage: String, attempt: Int): RetryPolicy.RetryDecision {
         val failureClass = classifier.classify(
             ToolFailure(toolName = toolName, callId = callId, errorMessage = errorMessage)
@@ -194,18 +224,27 @@ class EngineResilienceGuard(
 /**
  * 韧性策略参数（全部带默认值 —— 引擎默认构造即启用长任务韧性，
  * 测试可用零退避/零预算实例关停）。
+ *
+ * LLM 重试延迟：[llmLadderDelaysMs] 非空时按阶梯逐次取值（精确、无抖动）；
+ * 空（data 类默认 / 测试显式构造）走指数退避（initialBackoffMs ×
+ * multiplierⁿ，封顶 maxBackoffMs，±jitterRatio 抖动）——既有测试的
+ * 显式参数语义零变更。
  */
 data class EngineResiliencePolicy(
-    /** 任务内 LLM 瞬时错误自动重试上限。 */
-    val maxLlmRetries: Int = 3,
-    /** 任务内空响应自动重试上限。 */
-    val maxEmptyResponseRetries: Int = 2,
+    /** 任务内 LLM 瞬时错误自动重试上限（5→10：用户规格十级阶梯
+     *  1s/3s/5s/8s/13s/20s/30s/60s/120s/180s，弱网长任务不再被
+     *  一次抖动终结）。 */
+    val maxLlmRetries: Int = 5,
+    /** LLM 重试精确阶梯（毫秒，逐次取值）；空 = 指数退避旧路径。 */
+    val llmLadderDelaysMs: List<Long> = emptyList(),
+    /** 任务内空响应自动重试上限（2→3：空响应与瞬时错误同源，预算同步放宽）。 */
+    val maxEmptyResponseRetries: Int = 3,
     /** 首次退避延迟。 */
     val initialBackoffMs: Long = 1_200L,
     /** 退避增长因子。 */
     val backoffMultiplier: Double = 2.0,
-    /** 单次退避上限。 */
-    val maxBackoffMs: Long = 10_000L,
+    /** 单次退避上限（10s→30s：容忍网关更长的恢复窗口）。 */
+    val maxBackoffMs: Long = 30_000L,
     /** 退避抖动比例（±25% 防同步重试风暴）。 */
     val jitterRatio: Double = 0.25,
     /** 工具调用重试策略（复用 orchestrator RetryPolicy 语义与默认值）。 */
@@ -216,7 +255,35 @@ data class EngineResiliencePolicy(
     val maxRecoveryPrompts: Int = 3
 ) {
     companion object {
-        val DEFAULT = EngineResiliencePolicy()
+        /**
+         * User-spec LLM retry ladder (2026-11): 1s/3s/5s/8s/13s/20s/30s/60s/
+         * 120s/180s — ten deterministic steps, no jitter (the observable
+         * contract). A flaky network must not abort a long task while the
+         * ladder still has room; after the last step the engine folds the
+         * final failure into a one-line brief message (network/model call
+         * failed) instead of a raw stack. Tool-level retries keep
+         * [RetryPolicy.AGENT_LADDER] (2s/5s/…/160s, 3-minute cap).
+         */
+        val LLM_LADDER_MS = listOf(
+            1_000L, 3_000L, 5_000L, 8_000L, 13_000L,
+            20_000L, 30_000L, 60_000L, 120_000L, 180_000L
+        )
+
+        /**
+         * Production default. LLM retries follow [LLM_LADDER_MS] (ten
+         * deterministic steps); the engine tool-retry channel uses
+         * [RetryPolicy.AGENT_LADDER] (2s/5s/10s/…/160s, 3-minute cap
+         * auto-stop) instead of the orchestrator's 2-retry/8s ceiling:
+         * a flaky network must not abort a long task while the ladder
+         * still has room. The data-class default keeps the legacy
+         * exponential fields so test presets (FAST/DISABLED/explicit)
+         * keep their historic semantics.
+         */
+        val DEFAULT = EngineResiliencePolicy(
+            maxLlmRetries = 10,
+            llmLadderDelaysMs = LLM_LADDER_MS,
+            toolRetryPolicy = RetryPolicy.AGENT_LADDER
+        )
 
         /** 测试用：全部自动重试关闭（保留旧「遇错即停」行为以兼容断言）。 */
         val DISABLED = EngineResiliencePolicy(

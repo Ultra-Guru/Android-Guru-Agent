@@ -35,7 +35,7 @@
 | 真实退出码（OSC 633 marker 协议） | `protocol/ShellMarkers` + JobManager/Runtime 集成 | ✅ JVM 11 用例（含全链路：fake shell 模拟 printf marker → pump → listener → job EXITED(1)）；bash/mksh printf 八进制可移植性由文本契约锁定 |
 | 前台组精确信号（Ctrl-C 语义） | native `signalForegroundGroup`（tcgetpgrp only）+ JNI + runtime `signalForeground` + tool `scope=JOB` | ✅ **host 真实 forkpty**：fg SIGTERM 后 shell 存活、空闲 prompt 拒绝发信号（ALL PASS）；JVM fake 语义对齐 |
 | F1-F12 / DECCKM SS3 / 括号粘贴 | InputManagerImpl 键表 + `VtInputModes` provider + `PASTE` 写类型 | ✅ JVM 7 用例（字节级断言） |
-| scrollback 可读 | TerminalCore.scrollbackText + SCREEN observe `scrollbackLines` + terminal.observe 参数 | ✅ JVM 8 用例 |
+| scrollback 可读 | TerminalCore.scrollbackText + SCREEN observe `scrollbackLines` + TerminalObserve 参数 | ✅ JVM 8 用例 |
 | ED 3 / DEC graphics / OSC 52 / LNM | TerminalCore + ScreenBuffer | ✅ JVM（并修复：OSC52 双 substringAfter bug、ANSI 模式整体被忽略 —— IRM 通道不可达） |
 | P60 冻结 API 落地 | `api/TerminalSdk`（Terminal/TerminalSession/JobHandle 适配器） | ✅ 编译 + 类型映射（行为经 runtime 既有 1000+ 测试覆盖） |
 
@@ -45,8 +45,8 @@
 |---|---|---|
 | /proc /dev /sys bind | `SystemBindProfile.STANDARD`（proot-distro 同款） | ✅ argv 构造 + host bind 过滤测试；**真机 NOT VERIFIED**（需 rootfs 真装） |
 | 共享存储（termux-setup-storage 等价） | `SharedStorageBridge`（host 目录 provider → guest /sdcard，无权限诚实不 bind） | ✅ 构造测试；真机权限流 NOT VERIFIED |
-| guest 文件 API | `fs/GuestFilesystem`（base64 二进制安全 + 写沙箱 + ../规范化） + `terminal.fs` 工具 | ✅ JVM 10 用例（含安全回归：`/workspace/../../etc` 被拒） |
-| apexctl Android 桥（termux-api 等价） | `bridge/GuestBridge`（home bind 上的文件队列协议 + 直接分发）+ `terminal.bridge` 工具 + app 层 clipboard/device-info/battery handler | ✅ JVM 文件队列往返 + 直连 + 脚本安装幂等；**真机 guest 脚本往返 NOT VERIFIED** |
+| guest 文件 API | `fs/GuestFilesystem`（base64 二进制安全 + 写沙箱 + ../规范化） + `TerminalFs` 工具 | ✅ JVM 10 用例（含安全回归：`/workspace/../../etc` 被拒） |
+| apexctl Android 桥（termux-api 等价） | `bridge/GuestBridge`（home bind 上的文件队列协议 + 直接分发）+ `TerminalBridge` 工具 + app 层 clipboard/device-info/battery handler | ✅ JVM 文件队列往返 + 直连 + 脚本安装幂等；**真机 guest 脚本往返 NOT VERIFIED** |
 | 镜像切换（termux-change-repo 等价） | `AptMirrorRegistry`（official/TUNA/USTC/Aliyun）+ sources.apply(force) + packages tool `mirror` action | ✅ JVM（架构映射/幂等/未知镜像结构化失败） |
 | locale + 时区 | RootfsConfigurator locale.gen/timezone 注入 + essential +locales+tzdata（postinst 自动生成） | ✅ JVM 写入幂等测试；postinst 生成 NOT VERIFIED（真机） |
 | Android DNS 注入 | TerminalModule ← LinkProperties（此前只有 8.8.8.8 兜底） | 类型接线（真机 DNS 采集 NOT VERIFIED） |

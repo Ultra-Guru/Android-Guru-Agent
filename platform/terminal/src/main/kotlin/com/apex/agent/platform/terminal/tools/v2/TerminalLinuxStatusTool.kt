@@ -11,7 +11,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
- * T76: Agent tool — terminal.linux.status
+ * T76: Agent tool — TerminalLinuxStatus
  *
  * 返回 Linux 环境的统一健康快照（6 维度 + bootstrap + overall）。
  * Agent 用此判断 Ubuntu 是否可用、哪一维度降级、是否需要 bootstrap/repair。
@@ -25,7 +25,7 @@ import kotlinx.serialization.json.put
 class TerminalLinuxStatusTool(
     private val health: LinuxEnvironmentHealth
 ) : TerminalTool {
-    override val id: String = "terminal.linux.status"
+    override val id: String = "TerminalLinuxStatus"
     override val name: String = id
     override val description: String = """
         Unified health snapshot of the Ubuntu Linux environment (6 dimensions: rootfs, proot,

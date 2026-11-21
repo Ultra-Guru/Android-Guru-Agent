@@ -74,7 +74,18 @@ object JvmProcessLauncher : McpProcessLauncher {
         }
         if (workingDir != null) builder.directory(workingDir)
         builder.redirectErrorStream(false)
-        val process = builder.start()
+        // P1 修复（不可行动报错）：Android 宿主没有 node/npx，ProcessBuilder 抛的
+        // `Cannot run program "npx": error=ENOENT` 对用户与模型都无从下手。
+        // 折叠成带指引的 McpException（沙箱模式才是 Android 上的正解）。
+        val process = try {
+            builder.start()
+        } catch (e: Exception) {
+            throw McpException(
+                "无法启动本地 MCP 命令 '" + command.first() + "'：" + (e.message ?: e::class.simpleName) +
+                    "。Android 宿主通常没有 node/npx —— 请在服务器配置里开启「沙箱运行」" +
+                    "（runInSandbox=true）改用 PRoot Ubuntu 内的运行时。"
+            )
+        }
         return ProcessAdapter(process)
     }
 
@@ -128,18 +139,32 @@ interface McpTransportHandle {
  *   监视器上等待自己那条 —— 标准 MCP stdio 允许**乱序/穿插通知**，必须按 id 匹配；
  * - 不是 JSON 的行（很多 server 会往 stdout 打日志）只跳过、不抛错，
  *   这也是官方 SDK 的兼容做法；
- * - 进程死掉时等待中的请求会立刻返回 null，上层折叠成明确错误而不是挂死。
+ * - 进程死掉时等待中的请求会立刻返回 null，上层折叠成明确错误而不是挂死；
+ * - #205：stderr 由专职线程常流式清空 —— 子进程往 stderr 写满 64KB 管道
+ *   缓冲区会**阻塞自身**（写不进去 = 进程卡死 = 超时假死）；行回调
+ *   [onStderrLine] 把真实 stderr 行透传给启动监听器（时间线可见）。
  */
 class McpStdioTransport internal constructor(
     private val handle: McpProcessHandle,
     private val json: Json = Json { ignoreUnknownKeys = true },
-    private val requestTimeoutMs: Long = 60_000L
+    private val requestTimeoutMs: Long = 60_000L,
+    private val onStderrLine: ((String) -> Unit)? = null
 ) : McpTransportHandle {
 
     private val writer: BufferedWriter =
         BufferedWriter(OutputStreamWriter(handle.stdin, StandardCharsets.UTF_8))
     private val reader: BufferedReader =
         BufferedReader(InputStreamReader(handle.stdout, StandardCharsets.UTF_8))
+
+    /** P1：专用写线程 —— 阻塞写既不占协程 IO 线程，也能被 Future 超时兜住。 */
+    private val writeExecutor: java.util.concurrent.ExecutorService =
+        java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "mcp-stdio-writer").apply { isDaemon = true }
+        }
+
+    /** 写路径是否已判死（写入超时/失败）—— [isHealthy] 据此交给 Supervisor 收尸。 */
+    @Volatile
+    private var writeBroken = false
 
     private val pending = ConcurrentHashMap<Int, String>()
     private val pendingAt = ConcurrentHashMap<Int, Long>()
@@ -157,19 +182,45 @@ class McpStdioTransport internal constructor(
 
     private val pump: Thread = thread(name = "mcp-stdio-pump", isDaemon = true) { pumpLoop() }
 
+    /**
+     * #205 stderr 泄放线程：常驻读到 EOF。两个作用：
+     * 1. 防管道写满死锁（不清空 → 子进程 stderr 写满 64KB 后自身阻塞）；
+     * 2. 行回调把真实 stderr 透传给调用方（启动时间线 / 诊断日志）。
+     */
+    private val stderrPump: Thread = thread(name = "mcp-stderr-drain", isDaemon = true) {
+        val reader = BufferedReader(InputStreamReader(handle.stderr, StandardCharsets.UTF_8))
+        try {
+            while (!closed) {
+                val line = reader.readLine() ?: break
+                if (line.isBlank()) continue
+                runCatching { onStderrLine?.invoke(line) }
+            }
+        } catch (_: Exception) {
+            // 进程销毁时流关闭属正常路径
+        } finally {
+            // #508：对齐 close() 里 #453 的主 reader 收尾 —— destroy() 只关底层
+            // 进程管道，BufferedReader / InputStreamReader 的字符缓冲不释放；
+            // 多次重连会话下逐步累积。close() 时仍在 readLine 的本线程会收到
+            // StreamClosed → 既有 catch 收尾后到这里兜底关闭。
+            runCatching { reader.close() }
+        }
+    }
+
     constructor(
         command: List<String>,
         env: Map<String, String> = emptyMap(),
         launcher: McpProcessLauncher = JvmProcessLauncher,
         workingDir: File? = null,
         requestTimeoutMs: Long = 60_000L,
-        onSpawned: ((pid: Long?, argv: List<String>) -> Unit)? = null
+        onSpawned: ((pid: Long?, argv: List<String>) -> Unit)? = null,
+        onStderrLine: ((String) -> Unit)? = null
     ) : this(
         handle = launcher.launch(command, env, workingDir).also { h ->
             // #197 真实 spawn 事件：进程已 fork，pid/argv 来自真实子进程。
             onSpawned?.invoke(h.pid, command)
         },
-        requestTimeoutMs = requestTimeoutMs
+        requestTimeoutMs = requestTimeoutMs,
+        onStderrLine = onStderrLine
     )
 
     override suspend fun send(id: Int?, payload: String): JsonObject? = withContext(Dispatchers.IO) {
@@ -178,10 +229,32 @@ class McpStdioTransport internal constructor(
 
         // 报文必须是单行：内容里的换行会撕裂 NDJSON 帧
         val line = payload.replace('\n', ' ').replace('\r', ' ')
-        synchronized(writeLock) {
-            writer.write(line)
-            writer.write('\n'.code)
-            writer.flush()
+        // P1 修复（写路径无超时）：旧实现在 IO 协程里同步 write+flush —— 对端
+        // 不读 stdin（npx 卡在下载、被 SIGSTOP）时 flush 永久阻塞、writeLock 被
+        // 长期持有，后续所有请求（含 tools/list）排队，上层取消也无效。改为
+        // 专用写线程 + 有界 Future.get，超时即判传输不健康（交给 Supervisor 收尸）。
+        val writeTask = try {
+            writeExecutor.submit {
+                synchronized(writeLock) {
+                    writer.write(line)
+                    writer.write('\n'.code)
+                    writer.flush()
+                }
+            }
+        } catch (e: Exception) {
+            throw McpException("MCP 本地进程写线程不可用：${e.message ?: e::class.simpleName}")
+        }
+        try {
+            withContext(Dispatchers.IO) {
+                writeTask.get(requestTimeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+            }
+        } catch (e: java.util.concurrent.TimeoutException) {
+            writeTask.cancel(true)
+            writeBroken = true
+            throw McpException("MCP 本地进程写入超时（${requestTimeoutMs}ms）：对端没有读取 stdin")
+        } catch (e: java.util.concurrent.ExecutionException) {
+            writeBroken = true
+            throw McpException("MCP 本地进程写入失败：${e.cause?.message ?: e.message}")
         }
 
         if (id == null) return@withContext null
@@ -198,7 +271,7 @@ class McpStdioTransport internal constructor(
         }
     }
 
-    override fun isHealthy(): Boolean = !closed && handle.isAlive()
+    override fun isHealthy(): Boolean = !closed && !writeBroken && handle.isAlive()
 
     override fun close() {
         closed = true
@@ -207,8 +280,16 @@ class McpStdioTransport internal constructor(
             pendingAt.clear()
             monitor.notifyAll()
         }
+        runCatching { writeExecutor.shutdownNow() }
         runCatching { writer.close() }
+        // #206 说明：两个泵线程阻塞在不可中断的管道 readLine 上，interrupt()
+        // 对它们是无效操作（已删）—— 真正的退出机制是 destroy() 关闭进程管道
+        // → readLine 返回 EOF → 泵线程自然退出；daemon 标记兜底进程退出。
         runCatching { handle.destroy() }
+        // #453：reader 显式关闭 —— destroy 只关底层进程管道，BufferedReader /
+        // InputStreamReader 的字符缓冲不释放；多次重连会话下逐步累积。
+        // 关闭时仍在 readLine 的泵线程会收到 StreamClosed → 既有 catch 收尾。
+        runCatching { reader.close() }
         runCatching { pump.interrupt() }
     }
 

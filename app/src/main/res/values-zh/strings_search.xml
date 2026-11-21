@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ═══ SearXNG 本地搜索（SearXNG Local Search Spec v1.0 §11）═══
+         与 values/strings_search.xml 键位/占位符严格镜像（guard-rails
+         String Mirror 门禁）。 -->
+    <!-- 设置中心导航 -->
+    <string name="settings_nav_search_local">本地搜索（SearXNG）</string>
+
+    <!-- 开关卡（SearxngSwitchCard） -->
+    <string name="search_local_title">本地搜索（SearXNG）</string>
+    <string name="search_local_switch">启用本地搜索引擎</string>
+    <string name="search_local_switch_desc">在内置 Ubuntu 沙箱中运行私有 SearXNG 元搜索实例。就绪时 Agent 搜索优先走本地，不可用时自动回退远程引擎，全程无感。</string>
+
+    <!-- 状态机文案（Spec §5 状态 → UI 映射） -->
+    <string name="search_status_off">未启用</string>
+    <string name="search_status_installing">正在安装依赖</string>
+    <string name="search_status_starting">启动中…</string>
+    <string name="search_status_restarting">重启中（第 %1$d 次）…</string>
+    <string name="search_status_restarting_short">重启中…</string>
+    <string name="search_status_ready">运行中</string>
+    <string name="search_status_stopping">停止中…</string>
+    <string name="search_status_failed_reason">失败：%1$s</string>
+
+    <!-- 安装阶段（SearxngInstallStage.label → 本地化） -->
+    <string name="search_stage_apt">系统依赖（apt）</string>
+    <string name="search_stage_clone">获取源码（git clone）</string>
+    <string name="search_stage_venv">Python 环境（venv）</string>
+    <string name="search_stage_pip">安装依赖（pip）</string>
+    <string name="search_stage_verify">校验安装</string>
+
+    <!-- 失败重试 -->
+    <string name="search_retry">重试</string>
+
+    <!-- 引擎多选（F9） -->
+    <string name="search_engines_title">搜索引擎</string>
+    <string name="search_engines_desc">选择本地实例聚合的引擎。变更即时生效（运行中将自动重启守护进程）。</string>
+
+    <!-- 排查与维护（F12 + 清除入口） -->
+    <string name="search_diagnostics_title">排查与维护</string>
+    <string name="search_fallback_note">本地搜索不可用时，Agent 搜索自动回退到 DuckDuckGo → DuckDuckGo Lite → Bing 远程链，无需手动切换。</string>
+    <string name="search_clear">清除已安装的搜索组件</string>
+    <string name="search_clear_disabled_hint">请先关闭开关，再清除安装。</string>
+    <string name="search_clear_title">清除已安装的 SearXNG？</string>
+    <string name="search_clear_body">将删除 Ubuntu 沙箱内的 /opt/searxng（源码、venv 与配置，约 300\u00A0MB）。开关偏好与引擎选择保留，下次开启时重新安装。</string>
+    <string name="search_clear_confirm">清除</string>
+    <string name="search_clear_cancel">取消</string>
+</resources>

@@ -69,7 +69,9 @@ class ErrorClassifierTest {
     fun `EmptyResponse maps to ModelResponseInvalid`() {
         val err = classify(LlmException.EmptyResponse())
         assertTrue(err is ModelRuntimeException.ModelResponseInvalid)
-        assertTrue(!err.isFallbackEligible)
+        // 空响应/解析失败改为可降级：换端点（fallback Profile）后往往能恢复，
+        // 与 ModelRuntimeErrors.isFallbackEligible 的语义更新保持一致。
+        assertTrue(err.isFallbackEligible)
     }
 
     @Test

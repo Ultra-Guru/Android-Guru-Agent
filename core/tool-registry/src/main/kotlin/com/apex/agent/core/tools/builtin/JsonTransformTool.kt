@@ -15,12 +15,12 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonObject
 
 /**
- * `json_transform` — declarative reshaping of JSON documents (jq-lite).
+ * `JsonTransformLegacy` — declarative reshaping of JSON documents (jq-lite).
  *
- * `json_path` (v2) extracts; this tool *reshapes*. The gap it closes:
+ * `JsonPathLegacy` (v2) extracts; this tool *reshapes*. The gap it closes:
  * feeding one tool's output into another tool's arguments when their
- * shapes disagree — e.g. `web_search` returns objects with `title/url/`
- * `snippet`, but `write_file` wants a markdown list of just `title: url`
+ * shapes disagree — e.g. `WebSearch` returns objects with `title/url/`
+ * `snippet`, but `Write` wants a markdown list of just `title: url`
  * lines. v1/v2 forced the model to re-print the whole document and edit
  * it as text, burning context tokens proportional to document size on
  * every hop. A deterministic transform is one call, zero token burn on
@@ -45,7 +45,7 @@ import kotlinx.serialization.json.jsonObject
  * 进 LEGACY_ALIAS_IDS，向后兼容既有会话与技能）。
  */
 class JsonTransformTool : BaseTool(
-    id = "json_transform",
+    id = "JsonTransformLegacy",
     name = "JSON Transform",
     description = """
         Reshape a JSON document with a pipeline of small operations:
@@ -64,7 +64,8 @@ class JsonTransformTool : BaseTool(
     """.trimIndent(),
     declaredSchema = toolSchema {
         string("json", required = true, description = "The JSON document to transform (raw text)")
-        string(
+        // 双形态（FlexibleJson 口径）：内联数组首选，字符串编码宽容。
+        stringArray(
             "operations",
             required = true,
             description = "JSON array of operation objects, applied in order"

@@ -14,8 +14,8 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 
 /**
- * 诊断引擎（CodeDiagnostics + 五个内置提供器）与 code_check / code_write /
- * code_edit 回注链路的行为契约测试。
+ * 诊断引擎（CodeDiagnostics + 五个内置提供器）与 CodeCheck / CodeWrite /
+ * CodeEdit 回注链路的行为契约测试。
  */
 class CodeDiagnosticsTest {
 
@@ -133,7 +133,7 @@ class CodeDiagnosticsTest {
         assertTrue(block, block.contains("json.syntax"))
     }
 
-    // ── code_check 工具 ─────────────────────────────────────────────
+    // ── CodeCheck 工具 ─────────────────────────────────────────────
 
     @Test
     fun `check reports diagnostics block for broken json`() = runTest {
@@ -167,7 +167,7 @@ class CodeDiagnosticsTest {
         assertTrue(out, out.contains("app-config.json"))
     }
 
-    // ── code_write / code_edit 回注 ─────────────────────────────────
+    // ── CodeWrite / CodeEdit 回注 ─────────────────────────────────
 
     @Test
     fun `write with diagnostics appends findings for broken json`() = runTest {

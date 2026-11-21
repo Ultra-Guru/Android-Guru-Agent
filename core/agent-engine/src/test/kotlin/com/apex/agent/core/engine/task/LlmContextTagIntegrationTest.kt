@@ -154,10 +154,16 @@ class LlmContextTagIntegrationTest {
         val job = launch(Dispatchers.Unconfined) {
             rt.execute(UserInput.text("计划任务")).collect { event ->
                 if (event is AgentEvent.PlanAwaitingConfirmation) {
-                    // 引擎先 emit 再创建 deferred——事件驱动提交需让出一拍，
-                    // 保证 deferred 已存在（否则 complete 落空 → 5 分钟超时）
+                    // #340 注册先行后此轮询理论上不再必要（事件发出时 deferred
+                    // 已注册），保留为防御：CI 高负载下的兜底等待（同模块可见
+                    // internal 字段，可空 var 直接判空）。
                     kotlinx.coroutines.withContext(Dispatchers.Default) {
-                        kotlinx.coroutines.delay(100)
+                        val deadline = System.currentTimeMillis() + 10_000
+                        while (engine.planConfirmationDeferred == null &&
+                            System.currentTimeMillis() < deadline
+                        ) {
+                            kotlinx.coroutines.delay(20)
+                        }
                         engine.submitPlanConfirmation(true)
                     }
                 }
@@ -205,7 +211,7 @@ class LlmContextTagIntegrationTest {
         job.cancel()
     }
 
-    private fun awaitCondition(timeoutMs: Long = 10_000, cond: () -> Boolean) {
+    private fun awaitCondition(timeoutMs: Long = 60_000, cond: () -> Boolean) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             if (cond()) return

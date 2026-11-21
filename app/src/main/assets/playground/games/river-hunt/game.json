@@ -1,0 +1,1 @@
+{"id":"river-hunt","name":"河流猎人","nameEn":"River Hunt","tagline":"两端对齐的段落里词少的一行摊出最宽的河，把它点出来","version":1,"engine":"pretext@0.0.9","apis":["prepareWithSegments","layoutWithLines","prepare","measureNaturalWidth"],"controls":"点选河最宽的一行","scoreKey":"aga.pg.river-hunt.hi"}

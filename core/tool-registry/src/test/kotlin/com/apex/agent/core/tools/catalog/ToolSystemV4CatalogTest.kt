@@ -49,15 +49,20 @@ class ToolSystemV4CatalogTest {
     // ── ToolNameSanitizer ─────────────────────────────────────────
 
     @Test
-    fun `dots become underscores`() {
-        assertEquals("terminal_exec", ToolNameSanitizer.sanitize("terminal.exec"))
-        assertEquals("terminal_linux_bootstrap", ToolNameSanitizer.sanitize("terminal.linux.bootstrap"))
+    fun `pascal case ids stay untouched and legacy spellings fold to pascal case`() {
+        // v5：注册表 id 本身就是无分隔符 PascalCase → 清洗是恒等映射
+        assertEquals("TerminalExec", ToolNameSanitizer.sanitize("TerminalExec"))
+        assertEquals("TerminalLinuxBootstrap", ToolNameSanitizer.sanitize("TerminalLinuxBootstrap"))
+        // 旧书写（点号/下划线/连字符）折叠成 PascalCase，不再产出下划线
+        assertEquals("TerminalExec", ToolNameSanitizer.sanitize("terminal.exec"))
+        assertEquals("ReadFile", ToolNameSanitizer.sanitize("read_file"))
+        assertEquals("WebSearch", ToolNameSanitizer.sanitize("web-search"))
     }
 
     @Test
-    fun `illegal characters fold and empty becomes tool`() {
-        assertEquals("a_b-c", ToolNameSanitizer.sanitize("a b-c!"))
-        assertEquals("tool", ToolNameSanitizer.sanitize("..."))
+    fun `illegal characters fold to pascal case and empty becomes Tool`() {
+        assertEquals("ABC", ToolNameSanitizer.sanitize("a b-c!"))
+        assertEquals("Tool", ToolNameSanitizer.sanitize("..."))
     }
 
     @Test
@@ -67,24 +72,61 @@ class ToolSystemV4CatalogTest {
     }
 
     @Test
-    fun `modern dotted id wins the slot over legacy alias`() {
-        val mapping = ToolNameSanitizer.buildMapping(
-            listOf("terminal.exec", "terminal_exec")
-        )
-        assertEquals("terminal_exec", mapping["terminal.exec"])
-        // legacy alias disambiguated, not silently overwritten
-        assertTrue(mapping["terminal_exec"] != "terminal_exec")
-        assertNotNull(mapping["terminal_exec"])
+    fun `colliding sanitized names are disambiguated deterministically`() {
+        // a.b 与 a_b 都折叠成 AB → 后缀消解，映射不互踩
+        val mapping = ToolNameSanitizer.buildMapping(listOf("a.b", "a_b"))
+        assertEquals("AB", mapping["a.b"])
+        assertEquals("AB2", mapping["a_b"])
     }
 
     @Test
-    fun `resolveRegistryId round trips and falls back`() {
-        val ids = listOf("terminal.exec", "read_file")
+    fun `resolveRegistryId round trips and falls back to legacy aliases`() {
+        val ids = listOf("TerminalExec", "Read")
         val mapping = ToolNameSanitizer.buildMapping(ids)
-        assertEquals("terminal.exec", ToolNameSanitizer.resolveRegistryId("terminal_exec", mapping))
-        assertEquals("read_file", ToolNameSanitizer.resolveRegistryId("read_file", mapping))
+        assertEquals("TerminalExec", ToolNameSanitizer.resolveRegistryId("TerminalExec", mapping))
+        assertEquals("Read", ToolNameSanitizer.resolveRegistryId("Read", mapping))
+        // v5：模型回显改名前的旧 id 时经 ToolIdAliases 归一（read_file → Read）
+        assertEquals("Read", ToolNameSanitizer.resolveRegistryId("read_file", mapping))
         // unknown name falls back to itself (registry id direct lookup path)
         assertEquals("whatever", ToolNameSanitizer.resolveRegistryId("whatever", mapping))
+    }
+
+    // ── ToolIdAliases 幻觉名兜底（2026-10「执行命令出错率特别高」修复）──
+
+    @Test
+    fun `hallucinated shell tool names resolve to TerminalExec`() {
+        // 训练自 Claude Code / OpenAI 工具集的模型常调用不存在的 bash/sh ——
+        // 别名表静默路由到 TerminalExec，不再产生 Unknown tool 错误回合。
+        assertEquals("TerminalExec", ToolIdAliases.canonical("bash"))
+        assertEquals("TerminalExec", ToolIdAliases.canonical("Bash"))
+        assertEquals("TerminalExec", ToolIdAliases.canonical("sh"))
+        assertEquals("TerminalExec", ToolIdAliases.canonical("run_command"))
+        assertEquals("TerminalExec", ToolIdAliases.canonical("execute_command"))
+        assertTrue(ToolIdAliases.isHallucinatedAlias("bash"))
+        assertFalse(ToolIdAliases.isHallucinatedAlias("TerminalExec"))
+    }
+
+    @Test
+    fun `hallucinated aliases never shadow legacy ids`() {
+        // shell_execute 是 LEGACY_TO_CURRENT 里真实存在过的旧 id（→ ShellExecute）
+        // —— 幻觉表不得劫持它（两表键集无交集是硬约束）。
+        assertEquals("ShellExecute", ToolIdAliases.canonical("shell_execute"))
+        val overlap = ToolIdAliases.LEGACY_TO_CURRENT.keys intersect ToolIdAliases.HALLUCINATION_ALIASES.keys
+        assertTrue("幻觉表与旧表键冲突: $overlap", overlap.isEmpty())
+    }
+
+    @Test
+    fun `registry lookup resolves hallucinated bash to real tool`() {
+        // 端到端：getTool("bash") 在注册了 TerminalExec 的注册表里命中真工具
+        //（getTool 链：精确 → canonical → ignoreCase → sanitize）。
+        val registry = com.apex.agent.core.tools.DefaultToolRegistry()
+        registry.register(FakeTool("TerminalExec"))
+        registry.register(FakeTool("Read"))
+        assertEquals("TerminalExec", registry.getTool("bash")?.id)
+        assertEquals("Read", registry.getTool("file_read")?.id)
+        // 精确 id 优先于别名：注册表里有 bash 工具时直接命中，不被别名劫持
+        registry.register(FakeTool("bash"))
+        assertEquals("bash", registry.getTool("bash")?.id)
     }
 
     // ── ToolSchemaSanitizer ───────────────────────────────────────
@@ -156,65 +198,70 @@ class ToolSystemV4CatalogTest {
     @Test
     fun `default plan exposes core only and catalog meta tools`() {
         val registry = registryOf(
-            "read_file", "web_search", "ask_user", "tool_search", "tool_open", "tool_list",
-            "github_create_issue", "terminal.exec", "browser_click", "terminal_exec"
+            "Read", "WebSearch", "AskUser", "ToolSearch", "ToolOpen", "ToolList",
+            "GithubCreateIssue", "TerminalExec", "BrowserClick", "BrowserGetCookies", "TerminalExecLegacy"
         )
         val plan = ToolRequestBudget.planDefault(registry, ToolActivationStore())
         val names = plan.tools.map { it.name }.toSet()
-        assertTrue("read_file" in names)
-        assertTrue("web_search" in names)
-        assertTrue("tool_search" in names)
+        assertTrue("Read" in names)
+        assertTrue("WebSearch" in names)
+        assertTrue("ToolSearch" in names)
+        // 浏览器高频入口随 CORE 预载（v1.5.0：一级大功能的主干路径直达）
+        assertTrue("BrowserClick" in names)
         // non-core capabilities stay OUT of the request payload
-        assertFalse("github_create_issue" in names)
-        assertFalse("browser_click" in names)
-        // legacy alias never ships (its slot is taken by the modern tool)
-        assertTrue("terminal_exec" in names)
-        assertEquals("terminal.exec", plan.providerNameToId["terminal_exec"])
+        assertFalse("GithubCreateIssue" in names)
+        // 长尾浏览器工具（Cookie 凭据读取）仍走 ToolSearch 渐进披露
+        assertFalse("BrowserGetCookies" in names)
+        // v5：现役 id 与旧别名不再撞名（TerminalExec vs TerminalExecLegacy）——
+        // CORE 里发的是现役 id，legacy 别名永不下发。
+        assertTrue("TerminalExec" in names)
+        assertFalse("TerminalExecLegacy" in names)
+        assertEquals("TerminalExec", plan.providerNameToId["TerminalExec"])
     }
 
     @Test
     fun `activated tools join the default plan`() {
-        val registry = registryOf("read_file", "github_create_issue", "tool_search")
+        val registry = registryOf("Read", "GithubCreateIssue", "ToolSearch")
         val activation = ToolActivationStore()
-        activation.activate("github_create_issue")
+        activation.activate("GithubCreateIssue")
         val plan = ToolRequestBudget.planDefault(registry, activation)
         val names = plan.tools.map { it.name }
-        assertTrue("github_create_issue" in names)
+        assertTrue("GithubCreateIssue" in names)
     }
 
     @Test
     fun `exposeAll widens to the whole non-legacy registry`() {
-        val registry = registryOf("read_file", "github_create_issue", "browser_click", "terminal_exec")
+        val registry = registryOf("Read", "GithubCreateIssue", "BrowserClick", "TerminalExecLegacy")
         val plan = ToolRequestBudget.planDefault(registry, ToolActivationStore(), exposeAll = true)
         val names = plan.tools.map { it.name }.toSet()
-        assertTrue("github_create_issue" in names)
-        assertTrue("browser_click" in names)
+        assertTrue("GithubCreateIssue" in names)
+        assertTrue("BrowserClick" in names)
         // legacy alias still excluded even in expose-all mode
-        assertFalse("terminal_exec" in names)
+        assertFalse("TerminalExecLegacy" in names)
         assertEquals(3, plan.tools.size)
     }
 
     @Test
     fun `forced plan carries only forced ids and reports unknown ones`() {
-        val registry = registryOf("read_file", "web_search", "github_create_issue", "tool_search")
-        val plan = ToolRequestBudget.planForced(registry, setOf("web_search", "no_such_tool"))
-        assertEquals(listOf("web_search"), plan.tools.map { it.name })
+        val registry = registryOf("Read", "WebSearch", "GithubCreateIssue", "ToolSearch")
+        val plan = ToolRequestBudget.planForced(registry, setOf("WebSearch", "no_such_tool"))
+        assertEquals(listOf("WebSearch"), plan.tools.map { it.name })
         assertTrue(plan.droppedByBudget.any { it.contains("no_such_tool") })
     }
 
     @Test
     fun `coreOnly degradation drops activations and exposeAll`() {
-        val registry = registryOf("read_file", "github_create_issue", "tool_search")
-        val activation = ToolActivationStore().apply { activate("github_create_issue") }
+        val registry = registryOf("Read", "GithubCreateIssue", "ToolSearch")
+        val activation = ToolActivationStore().apply { activate("GithubCreateIssue") }
         val plan = ToolRequestBudget.planDefault(registry, activation, exposeAll = true, coreOnly = true)
         val names = plan.tools.map { it.name }.toSet()
-        assertFalse("github_create_issue" in names)
-        assertTrue("read_file" in names)
+        assertFalse("GithubCreateIssue" in names)
+        assertTrue("Read" in names)
     }
 
     @Test
     fun `plan output is name-sorted for provider prompt-cache stability`() {
-        val registry = registryOf("read_file", "ask_user", "web_search", "tool_search")
+        val registry = registryOf("Read", "AskUser", "WebSearch", "ToolSearch")
         val plan = ToolRequestBudget.planDefault(registry, ToolActivationStore())
         val names = plan.tools.map { it.name }
         assertEquals(names.sorted(), names)
@@ -234,59 +281,59 @@ class ToolSystemV4CatalogTest {
     // ── catalog meta-tools behaviour ──────────────────────────────
 
     @Test
-    fun `tool_search finds tools by keywords`() = runBlocking {
+    fun `ToolSearch finds tools by keywords`() = runBlocking {
         val registry = registryOf(
-            "github_create_issue", "github_read_file", "web_search", "tool_search"
+            "GithubCreateIssue", "GithubReadFile", "WebSearch", "ToolSearch"
         )
         val tool = ToolSearchTool(registry)
         val result = tool.execute("""{"query":"github issue"}""")
-        assertTrue(result.contains("github_create_issue"))
+        assertTrue(result.contains("GithubCreateIssue"))
     }
 
     @Test
-    fun `tool_search empty query returns invalid argument`() = runBlocking {
+    fun `ToolSearch empty query returns invalid argument`() = runBlocking {
         val result = ToolSearchTool(registryOf("a")).execute("""{"query":""}""")
         assertTrue(result.contains("invalid") || result.contains("query"))
     }
 
     @Test
-    fun `tool_open activates tool and returns schema`() = runBlocking {
+    fun `ToolOpen activates tool and returns schema`() = runBlocking {
         val registry = registryOf(
-            "github_create_issue", "tool_search"
+            "GithubCreateIssue", "ToolSearch"
         )
         val activation = ToolActivationStore()
         val result = ToolOpenTool(registry, activation).execute(
-            """{"tool_name":"github_create_issue"}"""
+            """{"tool_name":"GithubCreateIssue"}"""
         )
         assertTrue(result.contains("ACTIVE"))
-        assertTrue(result.contains("github_create_issue"))
-        assertEquals(setOf("github_create_issue"), activation.snapshot())
+        assertTrue(result.contains("GithubCreateIssue"))
+        assertEquals(setOf("GithubCreateIssue"), activation.snapshot())
         // joins the very next plan
         val plan = ToolRequestBudget.planDefault(registry, activation)
-        assertTrue(plan.tools.map { it.name }.contains("github_create_issue"))
+        assertTrue(plan.tools.map { it.name }.contains("GithubCreateIssue"))
     }
 
     @Test
-    fun `tool_open accepts sanitized name variant`() = runBlocking {
-        val registry = registryOf("terminal.linux.bootstrap", "tool_search")
+    fun `ToolOpen accepts sanitized name variant`() = runBlocking {
+        val registry = registryOf("TerminalLinuxBootstrap", "ToolSearch")
         val activation = ToolActivationStore()
         val result = ToolOpenTool(registry, activation).execute(
             """{"tool_name":"terminal_linux_bootstrap"}"""
         )
         assertTrue(result.contains("ACTIVE"))
-        assertEquals(setOf("terminal.linux.bootstrap"), activation.snapshot())
+        assertEquals(setOf("TerminalLinuxBootstrap"), activation.snapshot())
     }
 
     @Test
-    fun `tool_open unknown tool returns guidance not crash`() = runBlocking {
-        val result = ToolOpenTool(registryOf("tool_search"), ToolActivationStore())
+    fun `ToolOpen unknown tool returns guidance not crash`() = runBlocking {
+        val result = ToolOpenTool(registryOf("ToolSearch"), ToolActivationStore())
             .execute("""{"tool_name":"nope"}""")
         assertTrue(result.contains("not_found") || result.contains("Unknown tool"))
     }
 
     @Test
-    fun `tool_list renders categories with counts`() = runBlocking {
-        val registry = registryOf("read_file", "github_create_issue", "web_search")
+    fun `ToolList renders categories with counts`() = runBlocking {
+        val registry = registryOf("Read", "GithubCreateIssue", "WebSearch")
         val result = ToolListTool(registry).execute("{}")
         assertTrue(result.contains("Registered tools: 3"))
         assertTrue(result.contains("★"))
@@ -296,19 +343,49 @@ class ToolSystemV4CatalogTest {
 
     @Test
     fun `mcp tool ids are namespaced and collision free`() {
+        // v5：Mcp{Server}{Tool}，无分隔符 PascalCase（用户规格：名字里没有 - / _）
+        // 服务器名自报大小写原样保留（GitHub → McpGitHub…），工具名逐段首字母大写
         assertEquals(
-            "mcp__github__create_issue",
+            "McpGitHubCreateIssue",
             McpToolNaming.toolId("GitHub", "create_issue")
         )
         assertEquals(
-            "mcp__my_server__list",
+            "McpMyServerList",
             McpToolNaming.toolId("My Server", "list")
         )
         assertEquals(
             McpToolNaming.toolId("My Server", "x"),
             McpToolNaming.toolId("my-server", "x")
         )
-        assertEquals("srv", McpToolNaming.slug("!!!"))
+        assertEquals("Srv", McpToolNaming.slug("!!!"))
+    }
+
+    @Test
+    fun `mcp server id prefix matches registered tool ids`() {
+        // 核查稿 §6.5 回归：指引注入源（app 层 CodeModule 的
+        // KitMcpInstructionSource）按 startsWith(prefix) 过滤——前缀必须与
+        // 实际注册 id 同源。旧实现手拼 "mcp__<slug>__" 与 v5 id
+        // Mcp{Server}{Tool} 永不匹配（6/6 样本失败 → instructions 从不注入）。
+        val samples = listOf(
+            "github" to "create_issue",
+            "search" to "web_search",
+            "fs" to "read_file",
+            "fs-sandbox" to "list_directory",
+            "everything-sandbox" to "echo",
+            "memory" to "create_entities"
+        )
+        for ((server, tool) in samples) {
+            val id = McpToolNaming.toolId(server, tool)
+            val prefix = McpToolNaming.serverIdPrefix(server)
+            assertTrue("prefix $prefix must prefix-match id $id", id.startsWith(prefix))
+            assertTrue("prefix must be a strict prefix (tool segment missing)", prefix.length < id.length)
+            assertFalse("prefix must not carry v4 separators", prefix.contains("__"))
+        }
+        // 命名空间收敛：同 slug 服务器的两条工具共享同一前缀
+        assertEquals(
+            McpToolNaming.serverIdPrefix("My Server"),
+            McpToolNaming.serverIdPrefix("my-server")
+        )
     }
 
     @Test

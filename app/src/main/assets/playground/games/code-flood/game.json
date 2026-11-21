@@ -1,0 +1,1 @@
+{"id":"code-flood","name":"代码洪水","nameEn":"Code Flood","tagline":"聊天流滚滚而来，pre-wrap 实测高度，收代码块别淹了终端","version":1,"engine":"pretext@0.0.9","apis":["prepare","layout"],"controls":"点代码块收进仓库","scoreKey":"aga.pg.code-flood.hi"}

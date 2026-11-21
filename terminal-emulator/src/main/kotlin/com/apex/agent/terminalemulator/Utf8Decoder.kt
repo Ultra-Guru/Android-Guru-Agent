@@ -39,7 +39,10 @@ class Utf8Decoder {
                     // 输出 U+FFFD 污染屏幕，透传给 VT 层按 xterm C1 控制语义处理
                     //（CSI 0x9B / OSC 0x9D / NEL 0x85 …）。部分 ncurses/旧程序仍发
                     // 8 位控制序列；0xA0..0xBF 保持替换符。
-                    sink(if (b < 0xA0) b else 0xFFFD)
+                    // T92：透传字节打 [VtParser.RAW_C1_TAG] —— 与合法解码路径严格
+                    //  区分（后者落在 C1 区直接丢弃，见下方 multi-byte 分支 ——
+                    //  Termux/xterm 语义：C1 控制不可能来自 UTF-8 解码）。
+                    sink(if (b < 0xA0) b or VtParser.RAW_C1_TAG else 0xFFFD)
                 } else if (b < 0xE0) {
                     pending[0] = bytes[i]; pendingCount = 1; expectedBytes = 2
                 } else if (b < 0xF0) {
@@ -55,7 +58,12 @@ class Utf8Decoder {
                     pending[pendingCount++] = bytes[i]
                     if (pendingCount == expectedBytes) {
                         val cp = decodePending()
-                        sink(cp)
+                        // T92（Termux/xterm 对齐）：**解码产物落在 C1 区（U+0080..U+009F）
+                        // 直接丢弃** —— "It is not possible to use a C1 control obtained
+                        // from decoding the UTF-8 text"（xterm ctlseqs）；Termux 同款
+                        // 忽略。旧行为把 U+009B 当零宽组合符挂到前一个底字上
+                        // （污染正文且可能拖出重绘伪影）。
+                        if (cp !in 0x80..0x9F) sink(cp)
                         pendingCount = 0; expectedBytes = 0
                     }
                 } else {

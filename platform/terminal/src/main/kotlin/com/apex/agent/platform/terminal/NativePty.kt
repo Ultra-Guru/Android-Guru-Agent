@@ -113,28 +113,6 @@ class NativePty : NativePtyJniBridge {
      */
     override external fun nativeWriteBytes(sessionId: Int, data: ByteArray, offset: Int, len: Int): Boolean
 
-    // ─── Legacy String 通道（P70 起生产路径不再使用，仅为 ABI 兼容保留） ───
-    // nativeWrite 走 writeLine —— 会追加 '\n'（P70-3 双换行根因之一）；
-    // nativeRead 走 NewStringUTF —— NUL 截断（P70-2）且无法区分 idle/EOF/error（P70-1）。
-
-    @Deprecated(
-        "P70: 额外追加 '\\n'（与 TerminalInput.sendLine 叠加成双换行）。改用 nativeWriteBytes。",
-        ReplaceWith("nativeWriteBytes(sessionId, data.toByteArray(Charsets.UTF_8), 0, data.length)")
-    )
-    external fun nativeWrite(sessionId: Int, data: String): Boolean
-
-    @Deprecated(
-        "P70: jstring 路径对 NUL/二进制不安全。改用 nativeWriteBytes。",
-        ReplaceWith("nativeWriteBytes(sessionId, data.toByteArray(Charsets.UTF_8), 0, data.length)")
-    )
-    external fun nativeWriteRaw(sessionId: Int, data: String): Boolean
-
-    @Deprecated(
-        "P70: NewStringUTF 在 NUL 处截断、非法 UTF-8 损坏，且无法区分 idle/EOF/error。改用 nativeReadBytes。",
-        ReplaceWith("nativeReadBytes(sessionId, maxBytes, statusOut)")
-    )
-    external fun nativeRead(sessionId: Int, maxBytes: Int, stripAnsi: Boolean): String
-
     override external fun nativeHasData(sessionId: Int): Boolean
     override external fun nativeWaitForData(sessionId: Int, timeoutMs: Int): Boolean
     override external fun nativeSendSignal(sessionId: Int, signal: Int): Boolean

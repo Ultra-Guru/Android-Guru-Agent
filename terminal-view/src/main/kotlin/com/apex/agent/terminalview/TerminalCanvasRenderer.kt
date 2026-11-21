@@ -3,11 +3,10 @@ package com.apex.agent.terminalview
 import android.graphics.Canvas
 import android.graphics.LinearGradient
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.Shader
-import com.apex.agent.terminalemulator.RenderCell
+import com.apex.agent.terminalemulator.RenderRun
 import com.apex.agent.terminalemulator.TerminalRenderSnapshot
 import kotlin.math.abs
 
@@ -77,9 +76,19 @@ class TerminalCanvasRenderer {
     private var cachedFrameId = -1L
     private val runCache = HashMap<Int, List<TerminalRowRun.CellRun>>()
 
+    // ─── T92：run 实测宽度缓存（与 runCache 同代际失效）───
+    // 旧行为每次重绘（光标闪烁 500ms / 滚动）对每个 run 重新 measureText；
+    // 同代 run 文本不变 → 宽度缓存后闪烁/滚动帧零测量（Termux asciiMeasures 同思路）。
+    private val runWidthCache = HashMap<TerminalRowRun.CellRun, Float>()
+
     // ─── 着色器缓存（尺寸代际失效）───
     private var shaderWidth = -1
     private var shaderHeight = -1
+
+    // ─── T92：着色器调色板代际（换肤/OSC 10/11 动态色后必须重建，否则边缘
+    //     渐隐沿用旧主题色 —— 旧行为只按尺寸失效）───
+    private var shaderEdgeColor = 0
+    private var shaderBgColor = 0
 
     /**
      * 字体/字号变化（settings 换新、字号捏合步进后调用）。
@@ -106,6 +115,11 @@ class TerminalCanvasRenderer {
         // fake 状态复位（run 绘制前重设，防上次残留进入探测）
         textPaint.isFakeBoldText = false
         textPaint.textSkewX = 0f
+        textPaint.textScaleX = 1f
+        // H1：字号/字型变了 → run 实测宽度全部失效。宽度缓存原本只按快照
+        // 代际清除（invalidateRunCacheIfNeeded），换字号后若无新输出会一直
+        // 拿旧字号的测量值算 textScaleX —— 这里同步清掉。
+        runWidthCache.clear()
         // 窄字符探测
         val probe = PROBE_CHARS
         val narrowAdvance = textPaint.measureText(probe) / probe.length
@@ -130,8 +144,8 @@ class TerminalCanvasRenderer {
 
     /** 一帧的完整输入（View 组装；全部只读）。 */
     data class RenderFrame(
-        /** 合并网格行（scrollback+屏，快照代内不变）。 */
-        val rows: List<List<RenderCell>>,
+        /** 合并网格 run 行（scrollback+屏，快照代内不变；T95 run 投影直供）。 */
+        val rows: List<List<RenderRun>>,
         val snapshot: TerminalRenderSnapshot,
         val grid: TerminalTextGrid,
         val scroll: TerminalScrollModel,
@@ -189,9 +203,9 @@ class TerminalCanvasRenderer {
         var cursorDrawn = false
 
         for (row in range) {
-            val cells = frame.rows.getOrNull(row) ?: continue
+            val rowRuns = frame.rows.getOrNull(row) ?: continue
             val rowTop = originY + (row - firstVis) * cellH
-            val runs = runsFor(row, cells, frame)
+            val runs = runsFor(row, rowRuns, frame)
             val rowBottom = rowTop + cellH
             val rowId = rowIdBase + row
 
@@ -205,7 +219,7 @@ class TerminalCanvasRenderer {
             }
 
             // 2) 选区高亮（在文本之下 —— 文字保持原色，与旧渲染器视觉一致）
-            drawSelectionForRow(canvas, frame, row, rowId, cells, rowTop, rowBottom)
+            drawSelectionForRow(canvas, frame, row, rowId, rowRuns, rowTop, rowBottom)
 
             // 3) 文本（fake bold/skew + 列对齐校正 + 逐 run drawText）
             drawRowText(canvas, frame, runs, rowTop, cellH)
@@ -213,9 +227,10 @@ class TerminalCanvasRenderer {
             // 4) 下划线/删除线/链接装饰
             drawDecorations(canvas, frame, runs, rowTop, rowBottom, grid.cellWidthPx)
 
-            // 5) 光标（命中行才画）
+            // 5) 光标（命中行才画；T92：BLOCK 反色字符 —— 覆盖的字以背景色重绘，
+            //    可读性对齐 Termux invertCursorTextColor）
             if (!cursorDrawn) {
-                cursorDrawn = drawCursor(canvas, frame, row, rowTop, rowBottom, grid.cellWidthPx)
+                cursorDrawn = drawCursor(canvas, frame, row, rowTop, rowBottom, grid.cellWidthPx, runs, cellH)
             }
         }
 
@@ -229,30 +244,16 @@ class TerminalCanvasRenderer {
     private fun invalidateRunCacheIfNeeded(frameId: Long) {
         if (frameId != cachedFrameId) {
             runCache.clear()
+            runWidthCache.clear()
             cachedFrameId = frameId
         }
     }
 
-    private fun runsFor(row: Int, cells: List<RenderCell>, frame: RenderFrame): List<TerminalRowRun.CellRun> {
+    private fun runsFor(row: Int, rowRuns: List<RenderRun>, frame: RenderFrame): List<TerminalRowRun.CellRun> {
         runCache[row]?.let { return it }
-        val palette = frame.palette
-        val n = cells.size
-        val fg = IntArray(n)
-        val bg = IntArray(n)
-        val mono = frame.settings.monochrome
-        for (i in 0 until n) {
-            val c = cells[i]
-            if (mono) {
-                // 单色模式：颜色全默认，仅保留字形/下划线语义（旧渲染器 monochrome 同款）
-                fg[i] = palette.foreground
-                bg[i] = palette.background
-            } else {
-                val (f, b) = palette.resolveCell(c.fg, c.bg, c.flags)
-                fg[i] = f
-                bg[i] = b
-            }
-        }
-        val runs = TerminalRowRun.collapse(cells, fg, bg)
+        // T95：折叠已在引擎侧完成 —— 这里只做 per-run 调色板解析（run 内
+        // fg/bg/flags 恒定，与旧 per-cell 解析逐位同值）。
+        val runs = TerminalRowRun.fromRuns(rowRuns, frame.palette, frame.settings.monochrome)
         if (runCache.size < RUN_CACHE_MAX_ROWS) runCache[row] = runs
         return runs
     }
@@ -271,26 +272,49 @@ class TerminalCanvasRenderer {
         val baseline = baselineForRow(rowTop, cellHeight)
         for (run in runs) {
             if (run.text.isEmpty() || run.colSpan <= 0) continue
-            // 属性派生（fake bold/skewX —— 度量与绘制同源，T90）
-            val bold = run.flags and RenderCell.FLAG_BOLD != 0
-            val italic = run.flags and RenderCell.FLAG_ITALIC != 0
-            textPaint.typeface = normalTypeface
-            textPaint.isFakeBoldText = bold
-            textPaint.textSkewX = if (italic) ITALIC_SKEW else 0f
-            textPaint.color = if (run.fgArgb != 0) run.fgArgb else frame.palette.foreground
-            // 列对齐校正（Termux 技巧 —— 见类 KDoc）：实测宽度 ≠ 期望列宽 →
-            // textScaleX 缩放；**超界钳制**（不回退 1f —— 旧行为 run 无限溢出）。
-            val expected = run.colSpan * cw
-            val measured = textPaint.measureText(run.text)
-            val scaleX = if (measured > 0.5f) expected / measured else 1f
-            textPaint.textScaleX =
-                if (scaleX.isFinite()) scaleX.coerceIn(SCALE_X_MIN, SCALE_X_MAX) else 1f
-            canvas.drawText(run.text, ox + run.colStart * cw, baseline, textPaint)
+            drawRunText(canvas, frame, run, baseline, ox, cw, forcedColor = null)
         }
         // paint 状态复位（探测/下一帧不携带残留）
         textPaint.isFakeBoldText = false
         textPaint.textSkewX = 0f
         textPaint.textScaleX = 1f
+    }
+
+    /**
+     * 单 run 文本绘制（fake bold/skew + 列对齐校正 + T92 宽度缓存）。
+     * BLOCK 光标反色路径用 [forcedColor] 覆盖前景色重绘同一 run。
+     */
+    private fun drawRunText(
+        canvas: Canvas,
+        frame: RenderFrame,
+        run: TerminalRowRun.CellRun,
+        baseline: Float,
+        originX: Float,
+        cellWidthPx: Float,
+        forcedColor: Int?
+    ) {
+        // 属性派生（fake bold/skewX —— 度量与绘制同源，T90）
+        val bold = run.flags and RenderRun.FLAG_BOLD != 0
+        val italic = run.flags and RenderRun.FLAG_ITALIC != 0
+        textPaint.typeface = normalTypeface
+        textPaint.isFakeBoldText = bold
+        textPaint.textSkewX = if (italic) ITALIC_SKEW else 0f
+        textPaint.color = forcedColor ?: (if (run.fgArgb != 0) run.fgArgb else frame.palette.foreground)
+        // 列对齐校正（Termux 技巧 —— 见类 KDoc）：实测宽度 ≠ 期望列宽 →
+        // textScaleX 缩放；**超界钳制**（不回退 1f —— 旧行为 run 无限溢出）。
+        // T92：宽度缓存（同代 run 文本不变；paint 状态由 typeface/textSize/
+        // fakeBold 三元组决定 —— 均随 frameId / run.flags 稳定）。
+        val expected = run.colSpan * cellWidthPx
+        // H1：measureText 受 textScaleX 影响 —— 同一行前一个 run 的校正残值
+        // 会污染首次测量，并被宽度缓存冻结一整代（最终绘制宽 = expected /
+        // 残值）。测量前归零：缓存语义固定为「textScaleX=1 的自然宽度」，
+        // 与上面 KDoc 的三元组声明一致。
+        textPaint.textScaleX = 1f
+        val measured = runWidthCache.getOrPut(run) { textPaint.measureText(run.text) }
+        val scaleX = if (measured > 0.5f) expected / measured else 1f
+        textPaint.textScaleX =
+            if (scaleX.isFinite()) scaleX.coerceIn(SCALE_X_MIN, SCALE_X_MAX) else 1f
+        canvas.drawText(run.text, originX + run.colStart * cellWidthPx, baseline, textPaint)
     }
 
     // ─── 装饰（下划线/删除线/链接）───
@@ -308,8 +332,8 @@ class TerminalCanvasRenderer {
         val strikeY = rowTop + (rowBottom - rowTop) * 0.5f
         val ox = frame.grid.originX
         for (run in runs) {
-            val underline = run.flags and RenderCell.FLAG_UNDERLINE != 0
-            val strike = run.flags and RenderCell.FLAG_STRIKE != 0
+            val underline = run.flags and RenderRun.FLAG_UNDERLINE != 0
+            val strike = run.flags and RenderRun.FLAG_STRIKE != 0
             val linkUnderline = run.link != 0 && frame.settings.drawLinkUnderline
             if (!underline && !strike && !linkUnderline) continue
             val x0 = ox + run.colStart * cellWidthPx
@@ -337,7 +361,7 @@ class TerminalCanvasRenderer {
         frame: RenderFrame,
         row: Int,
         rowId: Long,
-        cells: List<RenderCell>,
+        rowRuns: List<RenderRun>,
         rowTop: Float,
         rowBottom: Float
     ) {
@@ -347,7 +371,7 @@ class TerminalCanvasRenderer {
         val fromCol = if (rowId == start.rowId) start.col else 0
         val toCol = if (rowId == end.rowId) end.col else Int.MAX_VALUE
         val viewW = frame.viewWidthPx.toFloat()
-        val xRange = frame.grid.selectionXRange(cells, fromCol, toCol)
+        val xRange = frame.grid.selectionXRange(rowRuns, fromCol, toCol)
         val x0: Float
         val x1: Float
         if (xRange != null) {
@@ -355,7 +379,7 @@ class TerminalCanvasRenderer {
             x1 = xRange.second.coerceIn(0f, viewW)
         } else {
             // toCol 超出行长（整行选）→ 从 fromCol 画到行尾/视口右沿
-            x0 = frame.grid.columnX(cells, fromCol).coerceIn(0f, viewW)
+            x0 = frame.grid.columnX(rowRuns, fromCol).coerceIn(0f, viewW)
             x1 = viewW
         }
         if (x1 <= x0) return
@@ -383,16 +407,18 @@ class TerminalCanvasRenderer {
         row: Int,
         rowTop: Float,
         rowBottom: Float,
-        cellWidthPx: Float
+        cellWidthPx: Float,
+        runs: List<TerminalRowRun.CellRun>,
+        cellHeight: Float
     ): Boolean {
         val snap = frame.snapshot
         if (!snap.cursorVisible) return false
         if (frame.selectionActive) return false
         val cursorRowMerged = snap.scrollback.size + snap.cursorRow
         if (cursorRowMerged != row) return false
-        val rowCells = frame.rows.getOrNull(row) ?: return false
+        val rowRuns = frame.rows.getOrNull(row) ?: return false
         if (row < 0 || row >= frame.rows.size) return false
-        val x = frame.grid.cursorPixelX(rowCells, snap.cursorCol)
+        val x = frame.grid.cursorPixelX(rowRuns, snap.cursorCol)
         val effectiveAlpha = when {
             !frame.focused -> 0.5f              // 失焦：常亮淡显（不闪烁）
             !frame.blinkOn -> 0.25f             // 闪烁灭相位
@@ -404,6 +430,25 @@ class TerminalCanvasRenderer {
             com.apex.agent.terminalemulator.CursorStyle.BLOCK -> {
                 val w = cellWidthPx.coerceAtLeast(frame.density * 2f)
                 canvas.drawRect(x, rowTop, x + w, rowBottom, cursorPaint)
+                // T92：BLOCK 光标反色字符（Termux invertCursorTextColor）——
+                // 旧行为 0.9 alpha 色块直接盖字（字几乎不可读）。命中 run 以
+                // 光标色重绘（同 clip 限定在光标 cell 内，宽字符 run 只露出
+                // 落在 cell 内的部分）。
+                val hit = runs.firstOrNull { r ->
+                    r.text.isNotEmpty() && r.colSpan > 0 &&
+                        (r.colStart < snap.cursorCol + 1 && r.colStart + r.colSpan > snap.cursorCol)
+                }
+                if (hit != null) {
+                    val baseline = baselineForRow(rowTop, cellHeight)
+                    val save = canvas.save()
+                    canvas.clipRect(x, rowTop, x + w, rowBottom)
+                    drawRunText(
+                        canvas, frame, hit, baseline,
+                        frame.grid.originX, cellWidthPx,
+                        forcedColor = frame.palette.background
+                    )
+                    canvas.restoreToCount(save)
+                }
             }
             com.apex.agent.terminalemulator.CursorStyle.UNDERLINE -> {
                 val h = (frame.density * 3f).coerceAtLeast(2f)
@@ -416,6 +461,10 @@ class TerminalCanvasRenderer {
             }
         }
         cursorPaint.alpha = 255
+        // paint 状态复位（drawRunText 残留不泄漏到下一帧）
+        textPaint.isFakeBoldText = false
+        textPaint.textSkewX = 0f
+        textPaint.textScaleX = 1f
         return true
     }
 
@@ -449,7 +498,13 @@ class TerminalCanvasRenderer {
         else (frame.density * 14f).toInt()
         if (fadePx <= 0 || frame.viewHeightPx <= fadePx * 2) return
         ensureFadeShaders(frame, fadePx.toFloat())
-        if (!frame.scroll.isAtTop && frame.scroll.firstVisibleRow > 0) {
+        // ★ 修复（首行命令被「顶栏裁切」假象）：旧条件 `!isAtTop && firstVisibleRow > 0`
+        //   在贴底（topRow == 0）且有任意 scrollback 时恒为真 —— 顶部 14dp 渐变常驻，
+        //   视口首行（通常正是提示符/输入行）上半永远被压暗半裁，用户看到的是
+        //   「命令被工具栏遮住一半」。渐隐的语义应是「当前视口之上还有真实的历史行
+        //   且用户已主动上翻」：topRow < 0 才上翻；firstVisibleRow > 0 保证视口之上
+        //   确有未显示的行（小 scrollback 上翻到头时二者共同排除误画）。
+        if (frame.scroll.topRow < 0 && frame.scroll.firstVisibleRow > 0) {
             canvas.drawRect(0f, 0f, frame.viewWidthPx.toFloat(), fadePx.toFloat(), fadePaintTop)
         }
         if (!frame.scroll.isAtBottom) {
@@ -462,11 +517,16 @@ class TerminalCanvasRenderer {
     private var fadePaintBottom = Paint()
 
     private fun ensureFadeShaders(frame: RenderFrame, fadePx: Float) {
-        if (shaderWidth == frame.viewWidthPx && shaderHeight == frame.viewHeightPx) return
-        shaderWidth = frame.viewWidthPx
-        shaderHeight = frame.viewHeightPx
         val bg = frame.palette.background
         val fg = frame.palette.foreground
+        // T92：尺寸或调色板任一变化才重建（换肤/OSC 动态色后不再沿用旧色）
+        if (shaderWidth == frame.viewWidthPx && shaderHeight == frame.viewHeightPx &&
+            shaderBgColor == bg && shaderEdgeColor == fg
+        ) return
+        shaderWidth = frame.viewWidthPx
+        shaderHeight = frame.viewHeightPx
+        shaderBgColor = bg
+        shaderEdgeColor = fg
         val edge = TerminalPalette.blend(bg, fg, 0.25f)
         fadePaintTop = Paint().apply {
             shader = LinearGradient(

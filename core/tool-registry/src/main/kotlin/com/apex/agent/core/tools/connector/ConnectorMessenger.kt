@@ -65,7 +65,7 @@ class ConnectorMessenger(
         }
     }
 
-    /** 只校验配置完整性，不发任何请求（connector_send_message 的 verify_only 模式）。 */
+    /** 只校验配置完整性，不发任何请求（ConnectorSendMessage 的 verify_only 模式）。 */
     suspend fun verifyConfig(def: ConnectorDef): SendResult = verifyByConnector(def)
 
     // ── 发送分派 ────────────────────────────────────────────

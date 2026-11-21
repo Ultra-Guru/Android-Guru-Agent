@@ -40,14 +40,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material3.DrawerState
+import androidx.compose.material3.DrawerValue
 import com.apex.agent.BuildConfig
 import com.apex.agent.R
-import com.apex.agent.github.GithubTokenManager
+import com.apex.agent.ui.theme.LocalExtendedColors
 import com.apex.agent.ui.glass.GlassNavigationItem
-import com.apex.agent.ui.screen.agent.AgentChatViewModel
 import androidx.hilt.navigation.compose.hiltViewModel
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeSource
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 
 /**
  * ═══════════════════════════════════════════════════════════════
@@ -56,23 +57,32 @@ import dev.chrisbanes.haze.hazeSource
  *
  * Spec §5B / §17：
  *  - Drawer 本体不整面玻璃化 —— 玻璃只落在每个 Navigation Item 上；
- *  - 每项保留品牌层级：霓虹指示条 + 圆形图标井 + 文字；
+ *  - 每项保留品牌层级：强调色指示条 + 圆形图标井 + 文字；
  *  - Normal 非常轻 / Selected 提亮 / Pressed 短暂高光；
- *  - 结构：氛围背景 = hazeSource —— 导航项悬浮其上做真实 backdrop 采样。
+ *  - 结构：氛围背景 = layerBackdrop 采样源 —— 导航项悬浮其上做真实
+ *    backdrop 采样（GPU blur + lens 折射）。
+ *
+ * perf-20261114：抽屉关闭期间停用真实采样 —— 关闭态导航项仍在组合树内
+ * （ModalNavigationDrawer 常驻组合），每个可见项一个 blur RenderEffect 层
+ * 随窗口重绘逐帧重复合（perfetto 实测 924x196 层 x10/帧）。关闭/无动画
+ * 时 backdrop 置 null → Ambient 档零 RenderEffect 直绘；开启动画起始帧
+ * 恢复真实采样，观感零变化（切换发生在屏外）。
  */
 @Composable
 fun ApexDrawerContent(
     currentDestination: DrawerDestination,
     onDestinationSelected: (DrawerDestination) -> Unit,
-    tokenManager: GithubTokenManager
+    drawerState: DrawerState? = null,
 ) {
-    val agentVm: AgentChatViewModel = hiltViewModel()
-    // 窄化徽标流：抽屉只需要 mode/thinkingLevel/historyDepth 三字段——
-    // 直接订阅全量 uiState 会在流式输出期间（每 token 一次 copy）把整个
-    // 抽屉重组风暴掉（抽屉关闭时也保持组合，照样重组）
-    val badges by agentVm.drawerBadges.collectAsStateWithLifecycle()
-    val githubState by tokenManager.connectionState.collectAsStateWithLifecycle()
-    val glassState = remember { HazeState() }
+    val appVm: AppStatusViewModel = hiltViewModel()
+    val githubState by appVm.githubTokenManager.connectionState.collectAsStateWithLifecycle()
+    val drawerBackdrop = rememberLayerBackdrop()
+    // 关闭且无动画 = 屏外：停用真实采样（开/关动画期间保持玻璃，滑动中
+    // 采样语义不变）
+    val glassVisible = drawerState?.let {
+        it.isOpen || it.isAnimationRunning || it.targetValue == DrawerValue.Open
+    } ?: true
+    val itemBackdrop = if (glassVisible) drawerBackdrop else null
 
     ModalDrawerSheet(
         modifier = Modifier.width(288.dp),
@@ -83,7 +93,7 @@ fun ApexDrawerContent(
             DrawerAuroraBackdrop(
                 modifier = Modifier
                     .fillMaxSize()
-                    .hazeSource(glassState)
+                    .layerBackdrop(drawerBackdrop)
             )
             Column(
                 modifier = Modifier.fillMaxSize()
@@ -95,7 +105,7 @@ fun ApexDrawerContent(
                         .fillMaxWidth()
                         .verticalScroll(rememberScrollState())
                 ) {
-                    // ═══ 品牌头部（霓虹光晕，随内容滚动） ═══
+                    // ═══ 品牌头部（柔和光晕，随内容滚动） ═══
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -114,7 +124,7 @@ fun ApexDrawerContent(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Surface(
-                                modifier = Modifier.size(48.dp),
+                                modifier = Modifier.size(40.dp),
                                 shape = CircleShape,
                                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
                                 tonalElevation = 0.dp
@@ -123,26 +133,21 @@ fun ApexDrawerContent(
                                     Icon(
                                         Icons.Default.SmartToy,
                                         contentDescription = null,
-                                        modifier = Modifier.size(28.dp),
+                                        modifier = Modifier.size(24.dp),
                                         tint = MaterialTheme.colorScheme.primary
                                     )
                                 }
                             }
                             Column {
-                                Text(
-                                    "APEX//AGENT",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
                                 Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        stringResource(R.string.drawer_tagline),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        "APEX//AGENT",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
                                     )
                                     Surface(
                                         shape = RoundedCornerShape(6.dp),
@@ -156,6 +161,11 @@ fun ApexDrawerContent(
                                         )
                                     }
                                 }
+                                Text(
+                                    stringResource(R.string.drawer_tagline),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }
@@ -168,15 +178,16 @@ fun ApexDrawerContent(
 
                     // ═══ 玻璃导航项 —— 每项独立玻璃材质，Normal 极轻 ═══
                     val destinations = listOf(
-                        DrawerDestination.Agent,
-                        // Coding 模式：与 Agent 平级的独立工作流页，导航紧随其后
+                        // Coding 模式：本软件的唯一核心工作流页
                         DrawerDestination.Code,
                         // #197 模板工坊：Agent/Coding 双层模板 + Agent 角色详细设置
                         DrawerDestination.Templates,
-                        DrawerDestination.Terminal,
-                        DrawerDestination.Market,
+                        // T97：Ubuntu 开发环境安装页（rootfs 生命周期 + 版本自选依赖）
+                        DrawerDestination.UbuntuEnv,
+                        DrawerDestination.HubCenter,
+                        // 浏览器大功能（v1.5.0 内置化）：市场后的高频工作流入口
+                        DrawerDestination.Browser,
                         DrawerDestination.Memory,
-                        DrawerDestination.Tasks,
                         // v1.4.4 #6：用量仪表盘（数据洞察，与任务历史相邻）
                         DrawerDestination.Usage,
                         DrawerDestination.Storage,
@@ -187,6 +198,9 @@ fun ApexDrawerContent(
                         // v1.4.4 #7：诊断中心（日志/崩溃/设备信息，与日志页相邻）
                         DrawerDestination.Diagnostics,
                         DrawerDestination.Settings,
+                        // 游乐场（玻璃实验室正上方）：插件化街机 —— 十款 pretext
+                        // HTML 游戏插件 + 可导入外部 HTML + 原生《字符风暴》孪生
+                        DrawerDestination.Playground,
                         DrawerDestination.GlassLab
                     )
 
@@ -196,7 +210,7 @@ fun ApexDrawerContent(
                             label = stringResource(dest.labelRes),
                             selected = currentDestination == dest,
                             onClick = { onDestinationSelected(dest) },
-                            state = glassState,
+                            backdrop = itemBackdrop,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
                         )
                         Spacer(modifier = Modifier.height(2.dp))
@@ -218,27 +232,14 @@ fun ApexDrawerContent(
                     label = stringResource(DrawerDestination.About.labelRes),
                     selected = currentDestination == DrawerDestination.About,
                     onClick = { onDestinationSelected(DrawerDestination.About) },
-                    state = glassState,
+                    backdrop = itemBackdrop,
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
 
-                // ═══ 底部状态（等宽 chip） ═══
+                // ═══ 底部状态（GitHub 连接） ═══
                 Column(
                     modifier = Modifier.padding(16.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        StatusChip("MODE", badges.mode.name)
-                        StatusChip("THINK", badges.thinkingLevel.name)
-                    }
-                    if (badges.historyDepth > 0) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        StatusChip("MEM", stringResource(R.string.drawer_mem_count, badges.historyDepth))
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    // GitHub 连接状态常显（不再仅在触发 /mcp:github 时提示）
                     GithubStatusRow(
                         isConnected = githubState.isConnected,
                         username = githubState.username
@@ -253,11 +254,20 @@ fun ApexDrawerContent(
  * 抽屉氛围背景 —— 玻璃的真实采样源。
  * 渐变 + 双光晕 + 细网格：终端质感的“可被玻璃折射的环境光”。
  * 静态绘制，无逐帧动画 —— 性能零负担。
+ *
+ * 极简黑白风格下退化为纯色底（零光晕 / 零网格）—— 环境装饰是玻璃
+ * 材质语言的配套件，扁平风格下保留会成为无声噪音。
  */
 @Composable
 private fun DrawerAuroraBackdrop(modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
+    val minimal = com.apex.agent.ui.theme.LocalUiStyle.current ==
+        com.apex.agent.ui.theme.UiStyle.MINIMAL
     val base = scheme.surfaceContainerLow
+    if (minimal) {
+        Canvas(modifier = modifier) { drawRect(base) }
+        return
+    }
     val glowA = scheme.primary.copy(alpha = 0.10f)
     val glowB = scheme.tertiary.copy(alpha = 0.07f)
     val grid = scheme.onSurfaceVariant.copy(alpha = 0.05f)
@@ -342,7 +352,10 @@ private fun GithubStatusRow(
                     .size(8.dp)
                     .clip(CircleShape)
                     .background(
-                        if (isConnected) Color(0xFF4CAF50) else Color(0xFF9E9E9E)
+                        // UI-016：连接点收编 token（原硬编码 4CAF50/9E9E9E
+                        // 浅色 2.2-2.3:1）；未连接灰用 onSurfaceVariant
+                        if (isConnected) LocalExtendedColors.current.success
+                        else MaterialTheme.colorScheme.onSurfaceVariant
                     )
             )
             Text(

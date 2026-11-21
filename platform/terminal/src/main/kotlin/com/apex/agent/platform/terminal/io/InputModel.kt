@@ -31,15 +31,15 @@ enum class ControlMode { NORMAL, TAKEOVER, WAITING_INPUT, INTERRUPTED }
  *
  * Spec ref: ATR 2.0 Final Spec §11.1 / §11.2 (InputControl state machine, transitions I1-I9)
  *
- *   I1 (FREE, NORMAL)        --Agent terminal.run-->             (AGENT, NORMAL)
+ *   I1 (FREE, NORMAL)        --Agent TerminalRun-->             (AGENT, NORMAL)
  *   I2 (AGENT, NORMAL)       --user starts typing (UI input)-->  (USER, TAKEOVER)
  *   I3 (USER, TAKEOVER)      --user releases (UI "release")-->   (AGENT, NORMAL)
- *   I4 (USER, TAKEOVER)      --Agent requests terminal.run-->    (USER, TAKEOVER) [REJECTED, OwnerBusy]
+ *   I4 (USER, TAKEOVER)      --Agent requests TerminalRun-->    (USER, TAKEOVER) [REJECTED, OwnerBusy]
  *   I5 (*, *)                --InputWaiting HIGH_CONFIDENCE-->   (owner, WAITING_INPUT)
  *   I6 (owner, WAITING_INPUT)--write(input)-->                   (owner, NORMAL)
  *   I7 (*, *)                --SIGINT from USER-->               (USER, INTERRUPTED)
  *   I8 (USER, INTERRUPTED)   --shell back to idle-->             (USER, NORMAL)
- *   I9 (AGENT, *)            --Agent terminal.close-->           (FREE, NORMAL)
+ *   I9 (AGENT, *)            --Agent TerminalClose-->           (FREE, NORMAL)
  */
 data class InputControlState(
     val owner: InputOwner,
@@ -81,7 +81,13 @@ enum class TerminalKey {
  */
 enum class UnixSignal(val number: Int) {
     SIGINT(2), SIGTERM(15), SIGKILL(9), SIGHUP(1), SIGQUIT(3),
-    SIGSTOP(19), SIGCONT(18)  // PR #51 §2: process stop/continue
+    SIGSTOP(19), SIGCONT(18),  // PR #51 §2: process stop/continue
+
+    // v3（信号语义统一）：SIGTSTP(20) = Ctrl+Z 的真实信号 —— 可被捕获/延迟/
+    // 受作业控制拦截，shell 因此收回终端回提示符（挂起 ≠ 停止）。与 SIGSTOP(19)
+    // 的关键差异：SIGSTOP 不可捕获不可忽略，作业被硬冻结且 shell 不会回前台，
+    // 语义完全不同 —— SUSPEND 控制此前错发 SIGSTOP，Ctrl+Z 后会话假死。
+    SIGTSTP(20)
 }
 
 /** Kind of input written (carried in InputWritten event). */

@@ -1,13 +1,15 @@
 package com.apex.agent.ui.glass
 
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,36 +30,48 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.apex.agent.ui.theme.LocalExtendedColors
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import dev.chrisbanes.haze.HazeDialog
-import dev.chrisbanes.haze.HazeState
+import com.kyant.backdrop.Backdrop
 
 /**
  * ═══════════════════════════════════════════════════════════════
- *  Glass Component API —— 业务层唯一入口
+ *  Glass Component API —— 业务层唯一入口（kyant0/backdrop 底座）
  * ═══════════════════════════════════════════════════════════════
  *
  * Spec §3：业务 UI 不允许直接散落第三方玻璃 API。
  * 本文件提供全部玻璃组件；内部细节封装在 GlassSurface / GlassStyle。
  *
  * 用法速查：
- *  - state 传 null = Frosted 档——无 backdrop 采样，诚实降级；
- *  - state 传 HazeState = Backdrop 档——前提：组件悬浮于 hazeSource 之上；
+ *  - backdrop 传 null = Frosted 档——无 backdrop 采样，诚实降级；
+ *  - backdrop 传 LayerBackdrop = Backdrop 档——真实采样 + blur + lens 折射；
  *  - 所有组件支持 Normal / Pressed / Focused / Selected / Disabled。
  */
 
-/** 玻璃卡片 —— Agent 卡 / Tool 卡 / 状态卡 / Plan 卡的统一容器。 */
+/**
+ * 玻璃卡片 —— Agent 卡 / Tool 卡 / 状态卡 / Plan 卡 / 设置与诊断页卡片的统一容器。
+ *
+ * PartSkin spec FR-12：新增 [contentPadding] —— 内部只保留一层 `Column`，
+ * padding 统一由本参数贡献；业务侧不再套第二层 `Column(padding)`（两层
+ * padding 叠加 + 两个不一致 radius 正是「双底边色差带」根因）。默认
+ * `PaddingValues(0.dp)` —— 既有调用点布局零变化。[onClick] 同源：
+ * 卡片级点击收在容器层，涟漪经 clip(shape) 跟随卡面圆角。
+ */
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
-    state: HazeState? = null,
+    backdrop: Backdrop? = null,
     style: GlassStyle = GlassStyle.Card,
     shape: Shape = GlassShapes.card,
     accent: Color = Color.Unspecified,
@@ -64,11 +79,13 @@ fun GlassCard(
     enabled: Boolean = true,
     focused: Boolean = false,
     interactionSource: MutableInteractionSource? = null,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     GlassSurface(
         modifier = modifier,
-        state = state,
+        backdrop = backdrop,
         style = style,
         shape = shape,
         accent = accent,
@@ -77,7 +94,17 @@ fun GlassCard(
         focused = focused,
         interactionSource = interactionSource
     ) {
-        Column { content() }
+        Column(
+            modifier = Modifier
+                .then(
+                    if (onClick != null) {
+                        Modifier.clip(shape).clickable { onClick() }
+                    } else Modifier
+                )
+                .padding(contentPadding)
+        ) {
+            content()
+        }
     }
 }
 
@@ -91,7 +118,7 @@ fun GlassIconButton(
     contentDescription: String?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    state: HazeState? = null,
+    backdrop: Backdrop? = null,
     style: GlassStyle = GlassStyle.Control,
     size: Dp = 40.dp,
     iconSize: Dp = Dp.Unspecified,
@@ -103,8 +130,11 @@ fun GlassIconButton(
     val resolvedTint = if (tint.alpha > 0f) tint else scheme.onSurfaceVariant
     val resolvedIconSize = if (iconSize == Dp.Unspecified) size * 0.55f else iconSize
     GlassSurface(
-        modifier = modifier.size(size),
-        state = state,
+        // #271：48dp 触区红线（UI-012 同款语义）—— 自绘可点击组件无 M3
+        // 最小触区补偿，视觉直径低于 48 的调用整体抬到 48；icon 仍按原
+        // 比例（resolvedIconSize 由调用方 size 派生，不随触区放大）。
+        modifier = modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).size(size),
+        backdrop = backdrop,
         style = style,
         shape = CircleShape,
         enabled = enabled,
@@ -132,7 +162,7 @@ fun GlassButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    state: HazeState? = null,
+    backdrop: Backdrop? = null,
     style: GlassStyle = GlassStyle.Control,
     accent: Color = Color.Unspecified,
     leadingIcon: ImageVector? = null,
@@ -143,7 +173,7 @@ fun GlassButton(
     val labelColor = if (accent.alpha > 0f) accent else scheme.onSurface
     GlassSurface(
         modifier = modifier,
-        state = state,
+        backdrop = backdrop,
         style = style,
         shape = GlassShapes.button,
         accent = accent,
@@ -185,7 +215,7 @@ fun GlassFloatingButton(
     contentDescription: String?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    state: HazeState? = null,
+    backdrop: Backdrop? = null,
     size: Dp = 48.dp,
     accent: Color = Color.Unspecified,
     tint: Color = Color.Unspecified,
@@ -196,7 +226,7 @@ fun GlassFloatingButton(
         contentDescription = contentDescription,
         onClick = onClick,
         modifier = modifier,
-        state = state,
+        backdrop = backdrop,
         style = GlassStyle.Floating,
         size = size,
         iconSize = size * 0.5f,
@@ -208,7 +238,7 @@ fun GlassFloatingButton(
 /**
  * 玻璃导航项 —— Drawer 每一项的专用形态。
  * Normal：非常轻；Selected：材质亮度 + 深度提升；Pressed：短暂高光。
- * 保留既有霓虹左指示条与圆形图标井 —— 品牌延续而非推翻。
+ * 保留既有强调色左指示条与圆形图标井 —— 品牌延续而非推翻。
  */
 @Composable
 fun GlassNavigationItem(
@@ -217,7 +247,7 @@ fun GlassNavigationItem(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    state: HazeState? = null,
+    backdrop: Backdrop? = null,
     enabled: Boolean = true,
     accent: Color = Color.Unspecified,
     trailing: (@Composable () -> Unit)? = null
@@ -225,15 +255,22 @@ fun GlassNavigationItem(
     val scheme = MaterialTheme.colorScheme
     val itemAccent = if (accent.alpha > 0f) accent else scheme.primary
     val interaction = remember { MutableInteractionSource() }
-    val indicatorWidth by animateDpAsState(
-        targetValue = if (selected) 3.dp else 0.dp,
+    // diag-20261011：指示条动画改为纯 draw 通道 —— 旧实现 animateDpAsState 喂
+    // Modifier.width，选中态翻转时每帧 remeasure 整列导航项（抽屉 verticalScroll
+    // Column）；与目的地切换（旧屏子树 dispose，SaveableStateProvider 换页）同帧
+    // 竞争时，draw 派发中的 measureAndLayout 会撞上已脱离 owner 的节点 ——
+    // 「LayoutNode should be attached to an owner」崩溃（crash-1791678670852 栈
+    // 形态：Scroll→Column→Row→Padding→Box/width）。固定 3dp 槽位 + drawBehind
+    // 内读动画分数：只失效 draw，零测量失效，视效保留（宽度生长）。
+    val indicatorFraction by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
         animationSpec = tween(durationMillis = 180),
         label = "glass_nav_indicator"
     )
 
     GlassSurface(
         modifier = modifier.fillMaxWidth(),
-        state = state,
+        backdrop = backdrop,
         style = GlassStyle.Navigation,
         shape = GlassShapes.navItem,
         accent = itemAccent,
@@ -243,18 +280,31 @@ fun GlassNavigationItem(
     ) {
         Row(
             modifier = Modifier
-                .glassClickable(interaction, enabled && !selected, onClick)
+                // ★ 选中项保持可点击（用户反馈：在 Agent 模式页打开抽屉后
+                // 再点「Agent 模式」抽屉收不回 —— 旧实现 enabled && !selected
+                // 把已选中项的点击禁用，onDestinationSelected 不触发、抽屉
+                // 悬停不关）。选中项点击走同一路径：navigateToTopLevel 同页
+                // 无副作用 + drawerState.close() 收起 —— 标准 drawer 惯例。
+                .glassClickable(interaction, enabled, onClick)
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // 霓虹指示条 —— 既有品牌元素，玻璃化后保留
+            // 强调色指示条 —— 既有品牌元素；draw 通道动画（宽度分数），零测量失效
             Box(
                 modifier = Modifier
-                    .width(indicatorWidth)
+                    .width(3.dp)
                     .height(24.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(itemAccent)
+                    .drawBehind {
+                        if (indicatorFraction > 0.01f) {
+                            drawRoundRect(
+                                color = itemAccent,
+                                topLeft = Offset.Zero,
+                                size = Size(size.width * indicatorFraction, size.height),
+                                cornerRadius = CornerRadius(2.dp.toPx())
+                            )
+                        }
+                    }
             )
             // 圆形图标井：选中态主色浸染，常态中性
             Box(contentAlignment = Alignment.Center) {
@@ -294,7 +344,7 @@ enum class GlassToolStatus { RUNNING, COMPLETED, FAILED, WAITING }
 fun GlassToolCard(
     status: GlassToolStatus,
     modifier: Modifier = Modifier,
-    state: HazeState? = null,
+    backdrop: Backdrop? = null,
     shape: Shape = GlassShapes.card,
     expanded: Boolean = false,
     accent: Color = Color.Unspecified,
@@ -303,13 +353,14 @@ fun GlassToolCard(
     val scheme = MaterialTheme.colorScheme
     val statusAccent = when (status) {
         GlassToolStatus.RUNNING -> scheme.primary
-        GlassToolStatus.COMPLETED -> Color(0xFF22C55E)
+        // UI-016：完成绿收编 success token（原硬编码 22C55E 浅色 2.28:1）
+        GlassToolStatus.COMPLETED -> LocalExtendedColors.current.success
         GlassToolStatus.FAILED -> scheme.error
         GlassToolStatus.WAITING -> scheme.secondary
     }
     GlassCard(
         modifier = modifier,
-        state = state,
+        backdrop = backdrop,
         style = GlassStyle.Card,
         shape = shape,
         accent = if (accent.alpha > 0f) accent else statusAccent,
@@ -320,42 +371,33 @@ fun GlassToolCard(
 
 /**
  * 玻璃对话框 —— Spec §9。
- * state != null 时走 HazeDialog：跨窗口采样 Activity 内容做真实 backdrop blur；
- * state == null 时退回普通 Dialog 窗口 + Frosted 面板。
+ * backdrop != null 时面板真实采样源内容（kyant0 GraphicsLayer 采样，
+ * 跨 Dialog 窗口的采样仍受窗口合成限制 —— 主窗口源采不到时自动表现为
+ * Frosted 档语义，不冒充）；backdrop == null 时 Frosted 面板。
  * 对话框内容保持清晰 —— 玻璃只作用于面板材质本身。
  */
 @Composable
 fun GlassDialog(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
-    state: HazeState? = null,
+    backdrop: Backdrop? = null,
     style: GlassStyle = GlassStyle.Dialog,
     shape: Shape = GlassShapes.dialog,
     properties: DialogProperties = DialogProperties(),
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val panel: @Composable () -> Unit = {
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = properties
+    ) {
         GlassSurface(
             modifier = modifier,
+            backdrop = backdrop,
             style = style,
             shape = shape
         ) {
             Column(modifier = Modifier.padding(24.dp)) { content() }
         }
-    }
-    if (state != null) {
-        HazeDialog(
-            hazeState = state,
-            onDismissRequest = onDismissRequest,
-            properties = properties,
-            content = { panel() }
-        )
-    } else {
-        Dialog(
-            onDismissRequest = onDismissRequest,
-            properties = properties,
-            content = { panel() }
-        )
     }
 }
 
@@ -363,13 +405,13 @@ fun GlassDialog(
 @Composable
 fun GlassBadge(
     modifier: Modifier = Modifier,
-    state: HazeState? = null,
+    backdrop: Backdrop? = null,
     accent: Color = Color.Unspecified,
     content: @Composable RowScope.() -> Unit
 ) {
     GlassSurface(
         modifier = modifier,
-        state = state,
+        backdrop = backdrop,
         style = GlassStyle.Subtle,
         shape = RoundedCornerShape(8.dp),
         accent = accent
@@ -380,5 +422,34 @@ fun GlassBadge(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             content = content
         )
+    }
+}
+
+/**
+ * 聊天气泡玻璃 —— Agent 回复 / 流式 / 思考三气泡专用。
+ *
+ * kyant0 时代的能力跃迁（对比 Cloudy 时代）：气泡可接收页面的氛围背景
+ * [backdrop]（屏幕背景源，与气泡不同子树 —— Haze 1.4 的嵌套限制不存在），
+ * 经 GPU blur + 轻折射得到真·液态玻璃材质；backdrop == null 或 API < 31
+ * 时退回 Frosted 档（霜面渐变 + 边缘光，零冒充）。
+ * 流式高频重排场景：GPU RenderEffect 每帧毫秒级，替代 Cloudy 的 CPU
+ * 位图回读 + NEON 迭代模糊 —— 长会话滚动/流式不再有掉帧尖峰。
+ */
+@Composable
+fun AgentBubbleGlass(
+    modifier: Modifier = Modifier,
+    backdrop: Backdrop? = null,
+    shape: Shape = RoundedCornerShape(4.dp, 18.dp, 18.dp, 18.dp),
+    accent: Color = Color.Unspecified,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    GlassSurface(
+        modifier = modifier,
+        backdrop = backdrop,
+        style = GlassStyle.Bubble,
+        shape = shape,
+        accent = accent
+    ) {
+        Column { content() }
     }
 }

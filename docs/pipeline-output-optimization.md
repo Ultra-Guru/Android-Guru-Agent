@@ -10,7 +10,7 @@
 | 文件操作 | 一段 ✅ 文本 | `FileOpCard`：按扩展名图标 + 文件名/路径 + 操作徽章（新建/覆盖/追加/编辑/删除/移动）+ 大小变更（Old→New）+ 行数统计 + 逐条编辑明细 |
 | Shell 执行 | 纯文本 | `ShellOutputCard`：`$ command` 命令头（可复制）+ 输出体，失败红色化 |
 | JSON 输出 | 原始 JSON 文本 | `JsonOutputCard`：可折叠树形查看器（深度≤2 默认展开，30 项截断，值类型着色） |
-| 连接器调用 | 无分类（表现为普通工具） | `ToolKind.CONNECTOR`（紫色 + Link 图标）：`connector*` / `http_request` / `github_*` 自动识别，`/connector:xxx` 路由专用横幅 |
+| 连接器调用 | 无分类（表现为普通工具） | `ToolKind.CONNECTOR`（紫色 + Link 图标）：`connector*` / `HttpRequest` / `github_*` 自动识别，`/connector:xxx` 路由专用横幅 |
 | 插件调用 | 无分类 | `ToolKind.PLUGIN`（琥珀 + Extension 图标）：`plugin*` 前缀识别，`/plugin:xxx` 路由专用横幅 |
 | Skill 调用 | 横幅永远"正在执行"脉冲 | `PipelineBannerCard`：运行中脉冲、结束后对勾 + 总耗时（修复永不停歇的动画） |
 | Plan 步骤 | `StepStart` 事件被丢弃 | `StepMarkerCard` 步骤分隔卡（步骤 N + 描述） |
@@ -95,3 +95,35 @@ CI 以原始字符计数检查 `.kt` 文件的括号配对（含字符串/注释
 - `StepMarkerCard`：步骤编号升级为带旗帜图标的胶囊徽章，层级更清晰；
 - `RunSummaryCard`：补充细描边，与文件操作卡/代码卡视觉同族；
 - 工具卡完成态耗时统一走 `formatDuration`（`1.2s` / `2m05s`），等宽字体对齐。
+
+---
+
+## 五、Streaming Pipeline 2.0 修订（2026-11，P0 正确性 + P1 聚合）
+
+> 本节对齐「Apex Streaming Engine 2.0」规格书的 P0/P1 条目。P0 已实施；P1 聚合已实施；SPE-05/06 批次补齐了 SSE 帧解析、截断语义与长输出头尾双窗（见下）；增量 Markdown 渲染器与动态刷新频率留作独立后续（见文末路线）。
+
+### P0 内容完整性（不丢字）——已实施（SPE-06 后双保险）
+
+**问题实证**：`TaskRuntime` 高水位（1024）丢弃 `ResponseChunk/ThinkingChunk/ToolOutputChunk/ToolProgress`（`isDroppableUnderPressure`），其契约「丢过程不丢结果」依赖 UI 在 `ResponseComplete` 用 `fullText` 回填——但 `CodeEventReducer` 旧实现只翻 `isStreaming` 标志，被丢 chunk 在 messages 路径永久缺字（`ToolOutputChunk` 有 `ToolCallComplete.output` 自愈，`ThinkingChunk` 有胶囊侧 `fullThought` 回填，唯回复文本无修复）。
+
+**修复（双层）**：① 新增 `reconcileStreamText(accumulated, fullText)` 纯函数（CodeStreamModels，双端共用+单测）——`fullText` 非空且为累积真延长时采信全文，空白/分叉时保留 UI 累积（反思修正轮文本可能从未流经引擎累积器）。`CodeEventReducer` 与 `CodeStreamSession` 两处收束统一走该仲裁。② SPE-06：`ResponseChunk` 从 `isDroppableUnderPressure` 名单移除——前缀仲裁只修「尾部丢弃」一种形态，中途丢弃会形成累积带洞且不可由 fullText 盲修；正文分片粒度是 token 级小串，背压宁可排队不丢正文（思考/工具输出/进度仍可丢：有 Complete 系列自愈）。
+
+### SPE-05/06 批次（SSE 健壮性 + 截断治理）——已实施
+
+- **SSE 帧状态机**（`SseFrameReader`）：规范多行 `data:` 拼接后整体解析（逐行拆碎 → 静默丢帧缺字已修）；注释心跳行只计数不误解析；单行 1MB 护栏。
+- **[DONE] 后排空**：usage 统计帧在 `[DONE]` 之后的网关形态被消费（旧实现 DONE 即 break 丢弃统计）。
+- **截断语义表**：`finish_reason=length` → 帧级 `truncated` 标志 + 流尾 `LlmException.TruncatedStream`（携带已保留字符数；不再被当正常收尾把半截回答写进历史）。
+- **长输出头尾双窗**（`tailAwareTruncate`）：messages 工具卡片 4000 字截断从「只留头部」改为头 2/3 + 尾 1/3（构建/测试日志结尾的错误摘要不再丢失）；分片与完成事件同口径。
+
+### P1 Event Aggregator——已实施
+
+**问题实证**：胶囊时间轴有 25ms（≤40Hz）渲染 ticker 攒批，但 messages 路径每 `ResponseChunk` 仍做一次 `_uiState.update` + 全消息列表拷贝 + 字符串追加（`CodeEventReducer.kt` 旧注释自认「不做 16ms 节流」）。
+
+**修复**：`CodeViewModel` 新增 `pendingResponseText` 聚合缓冲——`ResponseChunk` 只追加缓冲，渲染 ticker 每 25ms 批量归约；边界事件（工具开始/收束/错误/系统行插队/Complete/取消）强制先冲文本再归约，保顺序；`finally` 冲残留（取消时刷新已收到内容）。聚合只合并、不丢字。
+
+### 后续路线（独立任务）
+
+- **P1 增量 Markdown 渲染器**：现 `MarkdownText` 为 `remember(markdown)` 全量解析（流式尾段每 tick 重解析、有界但非增量）。方向：块级增量解析（已完成区块缓存 + 活动区块单独更新 + 未闭合围栏容错 + 代码块闭合后才语法高亮）。涉及 `MarkdownParser` 结构改造，独立 PR。
+- ~~P2 动态刷新频率~~ → **已实施（SPE-07 P1-1，2026-11）**：`RenderTickerPolicy` 忙三档 16/25/33ms 按单拍负载升降 + 空闲降频（50ms 巡逻 → 250ms 深巡逻，30s 空闲唤醒数降 ≥89%）+ 事件唤醒通道（合流信号打断巡逻延迟，空闲期首 token ≤ 1 拍上屏）；`stopRenderTicker` 统一 `_uiState.update` 口径 + 完整档切片缓存（`remember(entries.size)`，见 CodeStreamTimeline / RikkaStreamTimeline）。
+- ~~P2 流式诊断~~ → **已实施（SPE-08 P1-1，2026-11）**：`StreamDiagnostics` 回合级快照（首 token 延迟 / 帧间隔 P50·P95 / 帧账本 received·parsed·dropped / 截断与收尾原因 / usageSource）随 `chatStream` 流尾上抛 → `LlmStreamChunk.diagnostics` → `AgentEvent.StreamTurnStats` → `StreamTurnDiagnosticsStore`（最近 10 回合环形）→ 诊断页「最近流式回合」区 + 诊断报告 device.txt 段；看门狗（`NoFirstToken` 首 token 软超时 / `StreamStalled` 心跳停滞内联判定 / `ContentFiltered` 独立文案）与用量来源徽标（上下文仪表盘「真实（服务端）/估算/未获取」）同批落地。
+- **P2 长输出内存**：messages 路径 4000 字工具输出截断已升级为头尾双窗（SPE-06）；长回复分段落盘仍留后续。

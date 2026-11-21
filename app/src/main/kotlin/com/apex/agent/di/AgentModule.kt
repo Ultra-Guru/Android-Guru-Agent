@@ -2,27 +2,15 @@ package com.apex.agent.di
 
 import android.content.Context
 import com.apex.agent.core.engine.*
+import com.apex.agent.core.engine.compression.ArchivingCompressor
 import com.apex.agent.core.engine.compression.ContextCompressor
-import com.apex.agent.core.engine.ExecutionMemoryObserver
 import com.apex.agent.core.engine.compression.HybridCompressor
 import com.apex.agent.core.engine.compression.ToolOutputTruncator
-import com.apex.agent.core.engine.orchestrator.DefaultTaskOrchestrator
-import com.apex.agent.core.engine.orchestrator.TaskOrchestrator
-import com.apex.agent.core.engine.orchestrator.TaskOrchestratorConfig
-import com.apex.agent.core.engine.task.AgentTask
-import com.apex.agent.core.engine.task.FileTaskStore
-import com.apex.agent.core.engine.task.TaskConfigSnapshot
-import com.apex.agent.core.engine.task.TaskRuntime
-import com.apex.agent.core.engine.task.TaskStore
+import com.apex.agent.core.engine.goal.FastModelGoalVerifier
+import com.apex.agent.core.engine.goal.GoalModeCoordinator
 import com.apex.agent.core.llm.LlmClient
 import com.apex.agent.core.llm.runtime.ModelRuntime
-import com.apex.agent.core.tools.ToolExecutor
-import com.apex.agent.core.tools.ToolRegistry
-import com.apex.agent.core.tools.catalog.ToolActivationStore
-import com.apex.agent.core.tools.skill.SkillActivationStore
-import com.apex.agent.core.tools.skill.SkillRegistry
 import com.apex.agent.ui.screen.settings.SettingsRepository
-import com.apex.agent.ui.screen.settings.activeRole
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -52,76 +40,6 @@ object AgentModule {
         return AndroidEnvironmentInfoProvider(environmentState)
     }
 
-    /**
-     * AgentConfig 组装（@Provides @Singleton 一次性快照）。
-     * 注意：设置变更需重启应用生效（Singleton 快照），新会话不会重读设置。
-     */
-    @Provides
-    @Singleton
-    fun provideAgentConfig(repo: SettingsRepository): AgentConfig {
-        val agent = repo.agentSettings.value
-        val profile = repo.defaultProfile()
-        // Execution Mode → AgentMode（全档位映射；"auto"/"chat" 为旧值兼容）
-        // #197 双工位拆分：Agent 屏只保留 CHAT/AGENT 两个入口，持久化默认
-        // 值若指向编码/存量档位，一律回退 AGENT（全能智能体，向上兼容）。
-        val mode = when (agent.defaultMode) {
-            "chat" -> AgentMode.CHAT
-            "agent" -> AgentMode.AGENT
-            "build" -> AgentMode.BUILD
-            "plan" -> AgentMode.PLAN
-            "spec" -> AgentMode.SPEC
-            "reflect" -> AgentMode.REFLECTION
-            "assist" -> AgentMode.HUMAN_ASSIST
-            "custom" -> AgentMode.CUSTOM
-            else -> AgentMode.AGENT          // "auto" 及未知旧值 → 全能智能体
-        }
-        // 思考深度（六档纯净态；#168 新增 auto → AUTO 自适应选档。
-        // coding 深水两档 ULTRACODE/APEXCODE 已迁回 Coding 模式——
-        // CodeThinkingLevel 自有阶梯，Agent 聊天页不再出现编码档）
-        val thinkingLevel = when (agent.thinkLevel) {
-            "auto" -> ThinkingLevel.AUTO
-            "minimal" -> ThinkingLevel.NONE
-            "light" -> ThinkingLevel.LIGHT
-            "deep" -> ThinkingLevel.DEEP
-            "maximum" -> ThinkingLevel.MAXIMUM
-            else -> ThinkingLevel.STANDARD
-        }
-        // 双级思考控制第二级（强制深度思考）：开启时启动快照即钉 MAXIMUM ——
-        // 不必等聊天页 ViewModel 的 patchConfig（后台服务/其它入口也生效）。
-        val effectiveThinkingLevel =
-            if (agent.forceDeepThinking) ThinkingLevel.MAXIMUM else thinkingLevel
-        // ═══ Agent 角色（人设层）：激活角色拍平进引擎配置 ═══
-        // 启动快照（本方法 @Singleton 一次性）；运行时切换由 AgentChatViewModel
-        // 监听 agentSettings 热更新（patchConfig），两条路径字段一一对应。
-        val activeRole = agent.activeRole()
-        return AgentConfig(
-            mode = mode,
-            thinkingLevel = effectiveThinkingLevel,
-            maxIterations = agent.maxIterations,
-            // 上下文压缩（对应 AgentSettings 同名字段，重启应用/新会话后生效）
-            maxContextTokens = agent.maxContextTokens,
-            compressionThreshold = agent.compressionThreshold,
-            preserveRecentTurns = agent.preserveRecentTurns,
-            maxToolOutputLength = agent.maxToolOutputLength,
-            streaming = profile.streaming,
-            temperature = profile.temperature,
-            reflectionRounds = if (agent.reflection) agent.reflectionRounds.coerceIn(0, 5) else 0,
-            // #168 CUSTOM 模式预设：选中预设指令拍平进 customInstruction（启动快照；
-            // 运行时热切换由 AgentChatViewModel 的 agentSettings collector 处理，
-            // 选中预设优先，未选回退旧单串 custom_mode_instruction）。
-            customInstruction = repo.effectiveCustomInstruction().ifBlank { null },
-            // Agent 角色字段（全部空 = 内置全能角色 = 历史行为零变化）
-            agentName = if (activeRole.isBuiltIn) "" else activeRole.name,
-            userTitle = activeRole.userTitle,
-            roleDefinition = activeRole.roleDefinition,
-            rolePrompt = activeRole.systemPrompt,
-            roleStyle = activeRole.style,
-            roleLanguage = activeRole.replyLanguage,
-            // #197 工位作用域：Agent 屏引擎只注入 agent/all 聊天技能
-            skillScope = "agent"
-        )
-    }
-
     @Provides
     @Singleton
     fun provideConversationMemory(
@@ -136,188 +54,53 @@ object AgentModule {
      */
     @Provides
     @Singleton
+    fun provideContextArchive(@ApplicationContext context: Context): FileContextArchive {
+        // #396：会话级上下文归档（被压缩裁剪的原始消息）；引擎生命周期
+        // 边界（新会话/恢复会话）由 ApexAgentEngine 负责清空。
+        return FileContextArchive(java.io.File(context.filesDir, "context_archive"))
+    }
+
+    @Provides
+    @Singleton
     fun provideContextCompressor(
         llmClient: LlmClient,
         modelRuntime: ModelRuntime,
-        repo: SettingsRepository
+        repo: SettingsRepository,
+        contextArchive: FileContextArchive,
+        memoryObserver: com.apex.agent.core.engine.ExecutionMemoryObserver,
     ): ContextCompressor {
         val agent = repo.agentSettings.value
         val maxChars = agent.maxToolOutputLength.coerceIn(200, 100_000)
-        return HybridCompressor(
-            llmClient = llmClient,
-            toolTruncator = ToolOutputTruncator(
-                maxChars = maxChars,
-                headChars = (maxChars * 0.6f).toInt().coerceAtLeast(100),
-                tailChars = (maxChars * 0.3f).toInt().coerceAtLeast(50)
+        // #396：归档装饰器包裹 —— 压缩前被裁剪消息先进归档（无损可检索），
+        // 再从活跃历史移除；并在头部 upsert 一条 [CONTEXT ARCHIVE] 检索单。
+        // 记忆 P0-3 压缩捕获：被裁消息同步回调给记忆蒸馏管道（观察者内
+        // 后台执行）—— 压缩不再等于「内容对记忆系统不可见」。
+        return ArchivingCompressor(
+            delegate = HybridCompressor(
+                llmClient = llmClient,
+                toolTruncator = ToolOutputTruncator(
+                    maxChars = maxChars,
+                    headChars = (maxChars * 0.6f).toInt().coerceAtLeast(100),
+                    tailChars = (maxChars * 0.3f).toInt().coerceAtLeast(50)
+                ),
+                maxContextTokens = agent.maxContextTokens,
+                threshold = agent.compressionThreshold,
+                // T72 §十：第 3 层 LLM 摘要走 SUMMARY 角色（路由 + 降级）
+                modelRuntime = modelRuntime
             ),
-            maxContextTokens = agent.maxContextTokens,
-            threshold = agent.compressionThreshold,
-            // T72 §十：第 3 层 LLM 摘要走 SUMMARY 角色（路由 + 降级）
-            modelRuntime = modelRuntime
+            archive = contextArchive,
+            onPruned = { pruned -> memoryObserver.onContextPruned(pruned) }
         )
     }
 
     @Provides
     @Singleton
-    fun provideAgentEngine(
-        llmClient: LlmClient,
-        toolRegistry: ToolRegistry,
-        toolExecutor: ToolExecutor,
-        config: AgentConfig,
-        memory: ConversationMemory,
-        contextCompressor: ContextCompressor,
-        privilegeInfoProvider: PrivilegeInfoProvider,
-        environmentInfoProvider: EnvironmentInfoProvider,
-        skillRegistry: SkillRegistry,
-        memoryObserver: ExecutionMemoryObserver,
-        // 根因修复：已连接服务（GitHub/连接器）注入系统提示词，模型才知道
-        // github_* / connector_* 工具已就绪可主动使用
-        connectedServicesProvider: AndroidConnectedServicesProvider,
-        // T72：注入多模型运行时，按角色路由 PRIMARY/VISION/REASONING/SUMMARY
+    fun provideGoalCoordinator(
         modelRuntime: ModelRuntime,
-        // v4：会话激活存储（与目录工具/编排器共享同一实例）
-        toolActivation: ToolActivationStore,
-        // Issue #165：生命周期钩子派发口（SessionStart/UserPromptSubmit/Stop/
-        // PreCompact/SessionEnd；null 注入零开销，此处生产性传非空）
-        hookRunner: HookRunner,
-        // 技能渐进披露：会话技能激活存储（目录 + 激活双层注入；与
-        // skill_activate 工具/斜杠指令/自动装备器共享同一单例）
-        skillActivation: SkillActivationStore
-    ): AgentEngine {
-        return ApexAgentEngine(
-            llmClient = llmClient,
-            toolRegistry = toolRegistry,
-            toolExecutor = toolExecutor,
-            config = config,
-            memory = memory,
-            contextCompressor = contextCompressor,
-            skillRegistry = skillRegistry,
-            privilegeInfoProvider = privilegeInfoProvider,
-            environmentInfoProvider = environmentInfoProvider,
-            memoryObserver = memoryObserver,
-            connectedServicesProvider = connectedServicesProvider,
-            modelRuntime = modelRuntime,
-            toolActivation = toolActivation,
-            hookRunner = hookRunner,
-            skillActivation = skillActivation
-        )
-    }
+        settingsRepository: SettingsRepository
+    ): GoalModeCoordinator = GoalModeCoordinator(
+        verifier = FastModelGoalVerifier(modelRuntime),
+        verifyEnabled = { settingsRepository.agentSettings.value.goalVerifierEnabled }
+    )
 
-    /**
-     * A68.1 — Task Execution Orchestrator.
-     *
-     * Wraps the same [ApexAgentEngine] instance (so BUILD mode runs the
-     * orchestrator's own state-machine-driven loop, while PLAN/SPEC/REFLECTION
-     * modes delegate to the wrapped engine). Exposes [TaskOrchestrator.state]
-     * and [TaskOrchestrator.progress] StateFlows for UI / telemetry consumers.
-     *
-     * NOTE: the existing [provideAgentEngine] binding is unchanged — callers
-     * that inject [AgentEngine] directly (e.g. [com.apex.agent.ui.screen.agent.AgentChatViewModel])
-     * keep working exactly as before. To use the orchestrator, inject
-     * [TaskOrchestrator] instead. The two bindings share the same underlying
-     * [ApexAgentEngine] via the @Singleton-scoped delegate, so there's no
-     * duplicate engine instance.
-     */
-    // ═══════════════════════════════════════════════════════════════
-    // T76 — Agent Task Runtime（长任务执行体系，D-2 方案 B 叠加层）
-    // ═══════════════════════════════════════════════════════════════
-
-    /**
-     * T76 — 文件式任务存储（D-1：原子写 + 损坏隔离 + schema v1）。
-     *
-     * 布局 `filesDir/taskstore/<taskId>.json`；FileTaskStore 零 Android
-     * 依赖（纯 java.io），此处仅注入目录。
-     */
-    @Provides
-    @Singleton
-    fun provideTaskStore(@ApplicationContext context: Context): TaskStore {
-        return FileTaskStore(java.io.File(context.filesDir, "taskstore"))
-    }
-
-    /**
-     * T76 — TaskRuntime 装配（D-2 修正版：AgentEngine 绑定保持 ApexAgentEngine
-     * 不动，TaskRuntime 独立注入——VM 的 15 处 `as? ApexAgentEngine` cast
-     * 全兼容）。
-     *
-     * 引擎挂钩（N-9/N-12 函数式注入）：
-     * - configProvider：任务创建时快照当前生效配置（§20 配置快照语义）；
-     * - contextInjector：压缩后向引擎 history 重注入受保护任务状态消息；
-     * - tagsSetter：taskId/stepId 填入 LlmRequestContext（诊断四元贯通）。
-     *
-     * 消费方式：AgentChatViewModel 经 AgentTaskStatusController 使用（execute
-     * 走 TaskRuntime 包装流获得 checkpoint 能力；plan/spec 确认与配置更新
-     * 等仍直接 cast 引擎——两条路径共享同一 @Singleton 引擎实例）。
-     */
-    @Provides
-    @Singleton
-    fun provideTaskRuntime(
-        agentEngine: AgentEngine,
-        taskStore: TaskStore,
-        memory: ConversationMemory,
-        config: AgentConfig
-    ): TaskRuntime {
-        val apex = agentEngine as? ApexAgentEngine
-        return TaskRuntime(
-            engine = agentEngine,
-            store = taskStore,
-            memory = memory,
-            configProvider = {
-                val cfg = apex?.currentConfig() ?: config
-                TaskConfigSnapshot(
-                    mode = cfg.mode.name,
-                    thinkingLevel = cfg.thinkingLevel.name,
-                    maxIterations = cfg.maxIterations,
-                    maxContextTokens = cfg.maxContextTokens,
-                    compressionThreshold = cfg.compressionThreshold,
-                    preserveRecentTurns = cfg.preserveRecentTurns,
-                    maxToolOutputLength = cfg.maxToolOutputLength,
-                    temperature = cfg.temperature,
-                    reflectionRounds = cfg.reflectionRounds,
-                    // v4：强制函数圈选（旧 enabledToolIds 白名单已废弃）。
-                    forcedToolIds = cfg.forcedToolIds.toList(),
-                    exposeAllTools = cfg.exposeAllTools
-                )
-            },
-            contextInjector = { content -> apex?.injectSystemContext(content) },
-            tagsSetter = { taskId, stepId -> apex?.setLlmExecutionTags(taskId, stepId) }
-        )
-    }
-
-    @Provides
-    @Singleton
-    fun provideTaskOrchestrator(
-        agentEngine: AgentEngine,
-        llmClient: LlmClient,
-        toolRegistry: ToolRegistry,
-        toolExecutor: ToolExecutor,
-        config: AgentConfig,
-        memory: ConversationMemory,
-        memoryObserver: ExecutionMemoryObserver,
-        privilegeInfoProvider: PrivilegeInfoProvider,
-        contextCompressor: ContextCompressor,
-        // T72：注入多模型运行时，BUILD 循环按角色路由
-        modelRuntime: ModelRuntime,
-        // v4：与 AgentEngine 共享会话激活存储（tool_open 激活对两条执行路径同时生效）
-        toolActivation: ToolActivationStore
-    ): TaskOrchestrator {
-        return DefaultTaskOrchestrator(
-            llmClient = llmClient,
-            toolExecutor = toolExecutor,
-            toolRegistry = toolRegistry,
-            agentConfig = config,
-            initialOrchestratorConfig = TaskOrchestratorConfig.DEFAULT,
-            // Delegate non-BUILD modes to the existing ApexAgentEngine.
-            // agentEngine is @Singleton so this is the same instance every call.
-            delegate = agentEngine,
-            memory = memory,
-            memoryObserver = memoryObserver,
-            privilegeInfoProvider = privilegeInfoProvider,
-            modelRuntime = modelRuntime,
-            // P7：编排器与 AgentEngine 共享同一上下文压缩链路（HybridCompressor），
-            // 使经编排器执行的长任务同样具备三级压缩（截断/滑窗/LLM摘要），
-            // 修复"编排器路径工具输出无界增长"的上下文窗口风险。
-            contextCompressor = contextCompressor,
-            toolActivation = toolActivation
-        )
-    }
 }

@@ -4,94 +4,91 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import java.util.Locale
 
 /**
- * T89 终端统一控制台调色（深色 mint 控制台 —— 与终端内容区同一视觉锚点）。
+ * Ubuntu 环境页视觉基座（T97 —— 自 T96 终端控制台主题裁剪）。
  *
- * 背景：终端主屏是恒深色控制台（[ConsoleTheme]），但所有弹层（设置抽屉/
- * 环境中心/配色选择器/历史/新建对话框）此前跟随 App MaterialTheme —— 浅色
- * App 主题下「深色主屏 + 浅色弹层」视觉割裂（用户反馈「页面一坨」的成因
- * 之一）。本对象把终端域的全部 chrome 色收敛为单一来源，主屏与弹层同源。
+ * 控制台行模型（ConsoleLine）与语法高亮色板已随终端 UI 退役（Ubuntu 归
+ * Agent 全权掌控）；保留：
+ *  - [ConsoleTokens] GitHub Dark 令牌（恒暗 —— 环境语义要求白天模式也是深色
+ *    面板，与旧终端恒暗材质同一决策；禁用靛蓝系）；
+ *  - [TerminalConsoleTheme] M3 暗色 MaterialTheme 包装；
+ *  - [formatBytes] 磁盘用量格式化（StorageScreen 跨屏复用，保持历史导入
+ *    路径 `com.apex.agent.ui.screen.terminal.formatBytes` 不变）。
  */
-internal object ConsoleTheme {
-    /** 页面底色（顶栏/条带下的 chrome 层）。 */
-    val bg = Color(0xFF0C1210)
+internal object ConsoleTokens {
 
-    /** 顶栏 / 状态条底色。 */
-    val bar = Color(0xFF111815)
+    // ── GitHub Dark 表面系 ──
+    val background = Color(0xFF0D1117)
+    val surface = Color(0xFF0D1117)
+    val surfaceContainerHigh = Color(0xFF161B22)
+    val surfaceContainer = Color(0xFF12181F)
+    val outline = Color(0xFF30363D)
+    val outlineVariant = Color(0xFF21262D)
 
-    /** 会话 chip 底色。 */
-    val chip = Color(0xFF18211C)
-
-    /** 活跃 chip 底色。 */
-    val chipActive = Color(0xFF1F3429)
-
-    /** 分隔线。 */
-    val stroke = Color(0xFF233029)
-
-    /** 主文本（提亮至近白 —— 与 TerminalViewHost 前景统一，终端「白色字体」反馈）。 */
-    val text = Color(0xFFF2F7F4)
-
-    /** 次级文本。 */
-    val dim = Color(0xFF7E948A)
-
-    /** 强调（neon mint —— App dark primary）。 */
-    val accent = Color(0xFF4EE9B0)
-
-    /** 强调弱底（选中态 / 进度底）。 */
-    val accentSoft = Color(0xFF1B382D)
-
-    /** 警示（amber —— App dark secondary）。 */
+    // ── 文字系 ──
+    val onSurface = Color(0xFFE6EDF3)
+    val onSurfaceVariant = Color(0xFF8B949E)
+    val primary = Color(0xFF7EE787)
+    val onErrorContainer = Color(0xFFFF7B72)
     val amber = Color(0xFFFFB454)
 
-    /** 危险（magenta —— App dark tertiary）。 */
-    val danger = Color(0xFFFF6B9D)
-
-    /** 危险弱底。 */
-    val dangerSoft = Color(0xFF38182A)
+    // ── 语义色（环境卡/状态徽章/通知条消费）──
+    val lineExitOk = Color(0xFF7EE787)    // 已装徽章 / READY 徽章
+    val lineInfo = Color(0xFF8B949E)      // 能力清单
+    val lineError = Color(0xFFFF7B72)     // 失败根因 / 错误通知
 }
 
 /**
- * 终端域弹层的统一 Material 主题 —— 深色控制台配色（不随 App 浅/深主题漂移）。
+ * M3 恒暗主题包装 —— Ubuntu 环境域内所有 Composable 必须包裹在本主题内，
+ * 保证暗色令牌不随 App 亮色主题泄漏。
  *
- * 主屏 chrome（[ConsoleTheme] 直用）与弹层 Material 组件（本包装）共享同一
- * 调色板；终端整个特性在视觉上是一块完整的深色控制台表面。仅作用于终端域
- * 的弹层内容，离开弹层作用域即恢复 App 主题。
+ * 恒暗是有意决策（不读 isSystemInDarkTheme）：白天模式下环境页也是深色面板。
  */
 @Composable
 internal fun TerminalConsoleTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = darkColorScheme(
-            primary = ConsoleTheme.accent,
-            onPrimary = Color(0xFF06120D),
-            primaryContainer = ConsoleTheme.accentSoft,
-            onPrimaryContainer = ConsoleTheme.accent,
-            secondary = ConsoleTheme.amber,
-            onSecondary = Color(0xFF1A1206),
-            secondaryContainer = ConsoleTheme.accentSoft,
-            onSecondaryContainer = ConsoleTheme.amber,
-            tertiary = ConsoleTheme.danger,
-            onTertiary = Color(0xFF1F0812),
-            background = ConsoleTheme.bg,
-            onBackground = ConsoleTheme.text,
-            surface = ConsoleTheme.bar,
-            onSurface = ConsoleTheme.text,
-            surfaceVariant = ConsoleTheme.chip,
-            onSurfaceVariant = ConsoleTheme.dim,
-            surfaceDim = ConsoleTheme.bar,
-            surfaceBright = ConsoleTheme.chipActive,
-            surfaceContainerLowest = ConsoleTheme.bg,
-            surfaceContainerLow = ConsoleTheme.bar,
-            surfaceContainer = ConsoleTheme.chip,
-            surfaceContainerHigh = ConsoleTheme.chipActive,
-            surfaceContainerHighest = ConsoleTheme.chipActive,
-            outline = ConsoleTheme.stroke,
-            outlineVariant = ConsoleTheme.stroke,
-            error = ConsoleTheme.danger,
-            onError = Color(0xFF1F0812),
-            errorContainer = ConsoleTheme.dangerSoft,
-            onErrorContainer = ConsoleTheme.danger
+            primary = ConsoleTokens.primary,
+            onPrimary = Color(0xFF0D1117),
+            primaryContainer = ConsoleTokens.surfaceContainerHigh,
+            onPrimaryContainer = ConsoleTokens.onSurface,
+            secondary = ConsoleTokens.onSurfaceVariant,
+            onSecondary = Color(0xFF0D1117),
+            secondaryContainer = ConsoleTokens.surfaceContainer,
+            onSecondaryContainer = ConsoleTokens.onSurface,
+            tertiary = ConsoleTokens.amber,
+            onTertiary = Color(0xFF0D1117),
+            tertiaryContainer = ConsoleTokens.surfaceContainer,
+            onTertiaryContainer = ConsoleTokens.amber,
+            background = ConsoleTokens.background,
+            onBackground = ConsoleTokens.onSurface,
+            surface = ConsoleTokens.surface,
+            onSurface = ConsoleTokens.onSurface,
+            surfaceVariant = ConsoleTokens.surfaceContainerHigh,
+            onSurfaceVariant = ConsoleTokens.onSurfaceVariant,
+            error = ConsoleTokens.onErrorContainer,
+            onError = Color(0xFF0D1117),
+            errorContainer = Color(0xFF2D1B1E),
+            onErrorContainer = ConsoleTokens.onErrorContainer,
+            outline = ConsoleTokens.outline,
+            outlineVariant = ConsoleTokens.outlineVariant
         ),
         content = content
     )
+}
+
+/**
+ * 磁盘用量格式化（StorageScreen 以 `com.apex.agent.ui.screen.terminal.formatBytes`
+ * 路径导入 —— 本函数保持包级可见性，StorageScreen 零改动）。
+ */
+internal fun formatBytes(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val kb = bytes / 1024.0
+    if (kb < 1024.0) return String.format(Locale.US, "%.1f KB", kb)
+    val mb = kb / 1024.0
+    if (mb < 1024.0) return String.format(Locale.US, "%.1f MB", mb)
+    val gb = mb / 1024.0
+    return String.format(Locale.US, "%.2f GB", gb)
 }

@@ -47,9 +47,17 @@ data class DiagRow(val key: String, val value: String)
  */
 @Singleton
 class DiagnosticsCollector @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    // SPE-08 P1-1：最近流式回合诊断（Code 屏事件流收束进存储，本类双消费：
+    // 诊断页行 + 诊断报告 device.txt 段）。
+    private val streamTurns: StreamTurnDiagnosticsStore
 ) {
-    private val dateTimeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+    /**
+     * #479：诊断报告是给**人读也是给 issue 贴**的机器可读文本 ——
+     * `yyyy` 在泰语区域（th-TH）会按佛历输出 2569，阿拉伯语区域会输出
+     * 阿拉伯-印度数字。维修者拿到这种时间戳无法与日志对时。固定 Locale.US。
+     */
+    private val dateTimeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
     private val reportNameFormat = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
 
     // ───────────────────────── 应用信息 ─────────────────────────
@@ -199,11 +207,42 @@ class DiagnosticsCollector @Inject constructor(
         true
     }.getOrDefault(false)
 
+    // ───────────────────────── 最近流式回合（SPE-08 P1-1） ─────────────────────────
+
+    /**
+     * 最近 N 次流式回合诊断行（新→旧；空 = 本进程尚无流式回合，诊断页
+     * 空态自动隐藏整节）。每回合两行：延迟/帧间隔 + 帧账本/收尾语义。
+     */
+    fun streamTurnRows(): List<DiagRow> = streamTurns.recent().map { s ->
+        val lat = s.firstTokenLatencyMs?.let { "$it ms" } ?: "-"
+        val p95 = s.interFrameMsP95?.let { "$it ms" } ?: "-"
+        val frames = "${s.framesParsed}/${s.framesReceived}"
+        val drops = listOf(
+            s.framesDropped, s.backpressureDropped
+        ).firstOrNull { it > 0 }?.let { total -> total.toString() } ?: "0"
+        val finish = s.finishReason ?: "-"
+        val usage = when (s.usageSource) {
+            com.apex.agent.core.llm.UsageSource.REAL -> str(R.string.diag_stream_turn_usage_real)
+            com.apex.agent.core.llm.UsageSource.ESTIMATED -> str(R.string.diag_stream_turn_usage_estimated)
+            com.apex.agent.core.llm.UsageSource.MISSING -> str(R.string.diag_stream_turn_usage_missing)
+        }
+        listOf(
+            DiagRow(
+                key = str(R.string.diag_stream_turn_latency, s.turnId),
+                value = str(R.string.diag_stream_turn_latency_value, lat, p95)
+            ),
+            DiagRow(
+                key = str(R.string.diag_stream_turn_frames, s.turnId),
+                value = str(R.string.diag_stream_turn_frames_value, frames, drops, finish, usage)
+            )
+        )
+    }.flatten()
+
     // ───────────────────────── 诊断报告 ─────────────────────────
 
     /**
      * 生成诊断报告 zip（cacheDir/diagnostics/apex-diag-<yyyyMMdd-HHmmss>.zip），
-     * 内含 device.txt + logs/ + crashes/。仅当完全失败时返回 null。
+     * 内含 device.txt + logs/ + crashes/ + anr/。仅当完全失败时返回 null。
      */
     fun buildDiagnosticsReport(): File? {
         val dir = File(context.cacheDir, DIAG_DIR)
@@ -223,6 +262,8 @@ class DiagnosticsCollector @Inject constructor(
                 writeDeviceTxt(zos)
                 copyDirIntoZip(File(context.filesDir, LOG_DIR), "logs", zos)
                 copyDirIntoZip(File(context.filesDir, CRASH_DIR), "crashes", zos)
+                // 日志增强：ANR 看门狗堆栈转储一并入包（目录不存在时静默跳过）
+                copyDirIntoZip(File(context.filesDir, ANR_DIR), "anr", zos)
             }
             zip.isFile && zip.length() > 0L
         }.getOrDefault(false)
@@ -241,6 +282,8 @@ class DiagnosticsCollector @Inject constructor(
                 .append('\n')
             appInfoRows().forEach { sb.append(it.key).append(": ").append(it.value).append('\n') }
             deviceInfoRows().forEach { sb.append(it.key).append(": ").append(it.value).append('\n') }
+            // SPE-08 P1-1：最近流式回合诊断入报告（issue 贴给维修者的核心口径）
+            streamTurnRows().forEach { sb.append(it.key).append(": ").append(it.value).append('\n') }
             zos.putNextEntry(ZipEntry("device.txt"))
             zos.write(sb.toString().toByteArray(Charsets.UTF_8))
             zos.closeEntry()
@@ -280,6 +323,7 @@ class DiagnosticsCollector @Inject constructor(
         private const val DIAG_DIR = "diagnostics"
         private const val LOG_DIR = "logs"
         private const val CRASH_DIR = "crash"
+        private const val ANR_DIR = "anr"
         private const val REPORT_PREFIX = "apex-diag-"
         private const val REPORT_SUFFIX = ".zip"
         private const val REPORT_RETENTION_MS = 7L * 24 * 60 * 60 * 1000

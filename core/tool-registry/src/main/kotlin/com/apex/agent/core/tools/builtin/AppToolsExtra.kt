@@ -7,18 +7,18 @@ import kotlinx.serialization.json.*
  * 应用安装工具
  *
  * Installs an APK file already on device storage.
- * Use download_file first if the APK is from a URL.
+ * Use DownloadFile first if the APK is from a URL.
  */
 class AppInstallTool(
     private val shellExecutor: suspend (String) -> String
 ) : AgentTool {
 
-    override val id = "app_install"
+    override val id = "AppInstall"
     override val name = "Install APK"
     override val description = """
         Install an APK file on the device.
         The APK must already be on device storage.
-        Use download_file first if the APK is from a URL.
+        Use DownloadFile first if the APK is from a URL.
 
         Examples:
         - {"path": "/sdcard/Download/app.apk"}
@@ -52,7 +52,7 @@ class AppUninstallTool(
     private val shellExecutor: suspend (String) -> String
 ) : AgentTool {
 
-    override val id = "app_uninstall"
+    override val id = "AppUninstall"
     override val name = "Uninstall App"
     override val description = """
         Uninstall an app by package name.
@@ -94,7 +94,7 @@ class AppForceStopTool(
     private val shellExecutor: suspend (String) -> String
 ) : AgentTool {
 
-    override val id = "app_force_stop"
+    override val id = "AppForceStop"
     override val name = "Force Stop App"
     override val description = "Force stop a running app by package name."
 
@@ -127,7 +127,7 @@ class AppInfoTool(
     private val shellExecutor: suspend (String) -> String
 ) : AgentTool {
 
-    override val id = "app_info"
+    override val id = "AppInfo"
     override val name = "App Info"
     override val description = """
         Get detailed info about an installed app: version, permissions, storage, activities.

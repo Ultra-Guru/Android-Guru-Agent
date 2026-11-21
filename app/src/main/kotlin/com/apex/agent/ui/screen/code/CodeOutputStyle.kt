@@ -1,0 +1,64 @@
+package com.apex.agent.ui.screen.code
+
+/**
+ * # CodeOutputStyle — Coding 工位输出风格（双风格，设置项「流水式输出UI」）
+ *
+ * ## 设计立场（用户需求：「模仿 Rikka Hub 的输出方式，再做一种，与我原来的可以切换」）
+ *
+ * 与 [CodeOutputMode]（流式 / 整段 = **揭示时机**维度）正交，本枚举承载
+ * **视觉形态**维度——两风格共享同一份
+ * [com.apex.agent.core.code.stream.CodeStreamSnapshot] 渲染通道与消息
+ * 模型（不维护两套列表），只差展示皮肤：
+ *
+ * - [TIMELINE]（默认，经典胶囊时间轴）：既有行为零变化——胶囊流水 /
+ *   同族聚合防刷屏 / 实时代码窗 / 内联终端尾窗（capsule-stream 规格书）。
+ * - [RIKKA]（流水式输出UI · Rikka 聊天式）：模仿 RikkaHub 的聊天输出——
+ *   用户右对齐气泡（28dp 头像 + 24dp/6dp 顶角收紧圆角 + primaryContainer
+ *   柔和容器色）、结论 Markdown 直铺（rikkahub 默认无助手气泡）+ 身份
+ *   头行 + 流式光标、思考过程折叠卡（**实时秒表标题**「思考中 · X 秒 /
+ *   思考了 X 秒」，流式展开跟随 / 收束自动折叠）、**工具调用聚合块**
+ *   （连续工具调用收进一张卡：流式中「正在调用工具…」呼吸标题 + 实时
+ *   行（含运行中实时耗时），收束后折叠为「已调用 N 个工具」+ 内置 /
+ *   技能 / MCP 三分类 chips + **尾部露出最近 2 次调用预览**（rikkahub
+ *   ChainOfThought「默认只留最新两步」同哲学），可展开每次调用明细——
+ *   工具名 / 参数摘要 / 状态 / 耗时，点击进详情弹层看 diff / 终端全文）、
+ *   验证轮次卡 / Git 可视化卡 / 运行统计卡同风格化。
+ *
+ * ## 设置入口（2026-11 用户反馈：原下拉入口不好找 + 指定命名）
+ *
+ * 设置 → 工作区 → Coding 工位第一项「**流水式输出UI**」开关：
+ * 开 = RIKKA（聊天式流水输出），关 = TIMELINE（经典胶囊时间轴）。
+ * 持久化仍是 `codeOutputStyle`（"rikka" / "timeline"）——旧档无缝兼容。
+ *
+ * ## 切换语义（与输出方式档同款 run 粒度快照）
+ *
+ * v1.2（PartSkin spec H-5）起风格从**会话快照**（conversationSkin.active）
+ * 取值 —— 与部件皮肤/uiStyle/renderMode 同 epoch 生效（FR-21），当前
+ * 对话内冻结，改动只挂 pending，唯一提升点 = 会话边界或 IMMEDIATE idle 点。
+ * 两风格共享同一套溯源数据（引擎事件携带 skill / mcp / builtin
+ * 分类）——技能星芒 / MCP 拼图标识在两风格下同源。
+ *
+ * ## 引擎零参与
+ *
+ * 纯 UI 展示开关：CodeStreamSession 与引擎事件双通道照常消费全部事件
+ * （长任务追踪 / 落盘 / 深水区观察不受影响），风格切换只是渲染组件
+ * 的分派选择——切换不丢任何会话数据。
+ */
+enum class CodeOutputStyle(val persistenceName: String) {
+
+    /** 经典胶囊时间轴（既有行为，默认）。 */
+    TIMELINE("timeline"),
+
+    /** Rikka 风格聊天式输出（气泡 + 工具调用聚合块）。 */
+    RIKKA("rikka");
+
+    companion object {
+        /** 持久化字符串 → 风格（空/未知值回退 TIMELINE）。 */
+        fun fromName(name: String?): CodeOutputStyle? =
+            entries.firstOrNull { it.persistenceName == name?.trim()?.lowercase() }
+    }
+}
+
+/** AgentSettings.codeOutputStyle 原始字符串 → 风格（容错兜底 TIMELINE）。 */
+internal fun String?.toCodeOutputStyle(): CodeOutputStyle =
+    CodeOutputStyle.fromName(this) ?: CodeOutputStyle.TIMELINE

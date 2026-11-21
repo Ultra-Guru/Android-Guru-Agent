@@ -75,8 +75,10 @@ import java.io.IOException
  * 异常被捕获（存入 [lastAfterHookError] 供诊断），绝不吞掉/改写执行结果。
  *
  * **流式路径**：引擎生产路径全部走 [executeStream]，因此两插槽同样接入
- * 流式管线——PreToolUse 插在限流/熔断之后、首个事件发射之前（流式路径
- * v3 本就无 gate/schema 前置，此处即「进入工具执行前的最后一步」）；
+ * 流式管线——Issue #230 起 executeStream 与 execute() 共享同一
+ * [ToolExecutionPipeline.preCheck]（gate → PreToolUse → schema），流式路径
+ * 不再是门控盲区；PreToolUse 插在限流/熔断与 gate 放行之后、首个事件
+ * 发射之前；
  * PostToolUse 以终端事件（Complete/Error）为结果、以收流异常为错误路径。
  */
 class EnhancedToolExecutor(
@@ -216,7 +218,14 @@ class EnhancedToolExecutor(
 
             // Failed attempt: classify, trace, inform breaker.
             traceRecorder?.completeFailure(span, errorSlugOf(result))
-            breaker?.recordFailure(toolId, result)
+            // P1 修复（熔断误开）：域层失败（文件不存在 / grep exit=1 / 会话不存在
+            // 等正常探索结果）不再计入熔断器 —— 旧实现任何 "Error:" 前缀都
+            // recordFailure，Agent 连续探索 5 个不存在的路径就把 Read
+            // 熔断 OPEN，后续 15-120s 内全拒绝。熔断只统计基础设施失败
+            // （超时 / IO / 崩溃），域失败交给 RetryClassifier 与模型自行换路。
+            if (isInfraFailure(result)) {
+                breaker?.recordFailure(toolId, result)
+            }
 
             val retryable = annotations.retrySafe &&
                 RetryClassifier.classify(result) == RetryClassifier.Verdict.Retryable
@@ -256,20 +265,35 @@ class EnhancedToolExecutor(
             return@flow
         }
 
-        // Issue #165：PreToolUse（流式路径）—— 限流/熔断放行后、首个事件发射前
-        // 派发（见类 KDoc：流式路径无 gate/schema 前置，此处即执行前最后一步）。
-        var effectiveArguments = arguments
-        if (beforeToolHooks != null) {
-            when (val intervention = interveneBeforeExecution(toolId, arguments)) {
-                is ToolExecutionPipeline.HookIntervention.Blocked -> {
-                    emit(ToolStreamEvent.Error(intervention.message))
-                    return@flow
-                }
-                is ToolExecutionPipeline.HookIntervention.Replaced ->
-                    effectiveArguments = intervention.arguments
-                null -> Unit
+        // Issue #230（P1 security）：流式路径补齐 gate/schema 前置。
+        //
+        // 生产引擎全部走 executeStream（Agent 聊天主循环 / 任务编排 ToolCallRunner
+        // / MCP 流式消费），旧实现只有非流式 execute() 过 pipeline.preCheck——
+        // 门控链（PermissionAwareToolGate：权限模式 + RiskAwareToolGate 的
+        // Write/Edit MEDIUM 确认、HIGH 确认）在流式路径**从未被咨询**，
+        // Agent 静默覆写用户文件。此修复把流式路径对齐 [ToolExecutor] 契约
+        // （ToolRegistry KDoc：两入口共享 查找→门控→校验）与 v2
+        // DefaultToolExecutor.executeStream 的既有行为（preCheck 短路发 Error）。
+        //
+        // 顺序契约与 execute() 完全一致：gate → PreToolUse 钩子（gate 之后、
+        // schema 之前——钩子只看到权限体系确认过的调用）→ schema 校验；
+        // 拒绝以 gate 同款文案（Error: permission denied: …）短路，模型侧行为
+        // 与非流式路径逐字节一致（terminal、不重试）。
+        val pre = pipeline.preCheck(
+            toolId,
+            arguments,
+            afterGateHooks = if (beforeToolHooks != null) {
+                { _, args -> interveneBeforeExecution(toolId, args) }
+            } else {
+                null
             }
+        )
+        if (pre is ToolExecutionPipeline.PreCheck.Failed) {
+            recordSideChannelDenial(toolId, arguments, pre.message, errorSlugOf(pre.message) ?: "precheck")
+            emit(ToolStreamEvent.Error(pre.message))
+            return@flow
         }
+        var effectiveArguments = (pre as ToolExecutionPipeline.PreCheck.Ready).arguments
 
         // Capture the flow's emit as a plain suspend function so the
         // timeout wrapper can call it without extension-receiver tricks.
@@ -302,7 +326,15 @@ class EnhancedToolExecutor(
             } else {
                 emitStream(emitFn, toolId, tool, effectiveArguments, invocation)
             }
-            traceRecorder?.complete(span)
+            // 终端事件分流（与非流式失败路径 completeFailure 对齐）：流内以
+            // ToolStreamEvent.Error 收尾时，trace 不得记成功 —— 否则排障时
+            // trace 说 ok、熔断/统计说 fail，三套观测口径分裂。errorSlugOf 对
+            // 非 Error 文本返回 null，与非流式失败路径同源。
+            if (terminalIsError) {
+                traceRecorder?.completeFailure(span, errorSlugOf(terminalResult ?: ""))
+            } else {
+                traceRecorder?.complete(span)
+            }
             // 正常收流：以终端事件（Complete / Error / 空流）为结果。
             notifyAfterToolHooks(
                 toolId, effectiveArguments,
@@ -367,7 +399,11 @@ class EnhancedToolExecutor(
             if (invocation != null) {
                 if (sawError) {
                     usageTracker?.failure(invocation, lastError)
-                    breaker?.recordFailure(toolId, lastError)
+                    // P1 修复（熔断误开，与非流式路径同源）：工具自报的域层
+                    // 错误（文件不存在/退出码非零/会话不存在）不计入熔断。
+                    if (isInfraFailure(lastError)) {
+                        breaker?.recordFailure(toolId, lastError)
+                    }
                 } else {
                     usageTracker?.success(invocation)
                     breaker?.recordSuccess(toolId)
@@ -378,7 +414,9 @@ class EnhancedToolExecutor(
             if (invocation != null) {
                 if (result.startsWith("Error")) {
                     usageTracker?.failure(invocation, result)
-                    breaker?.recordFailure(toolId, result)
+                    if (isInfraFailure(result)) {
+                        breaker?.recordFailure(toolId, result)
+                    }
                 } else {
                     usageTracker?.success(invocation)
                     breaker?.recordSuccess(toolId)
@@ -468,7 +506,12 @@ class EnhancedToolExecutor(
     }
 
     private fun rateLimitMessage(toolId: String, policy: ToolRunPolicy, retryInMs: Long): String =
-        "Error: invalid argument: rate limit for '$toolId' is ${policy.rateLimitPerMinute}/min; " +
+        // P2 修复（文案语义）：旧文案前缀 "Error: invalid argument: rate limit…"
+        // 把限流伪装成参数错误 —— 对模型不诚实且误导排障。新前缀
+        // "Error: rate limited:" 同时进 RetryClassifier 终止前缀表与
+        // FailureClassifier 的守卫表（两处已同步）：执行器与引擎都不盲重放
+        // 被限流的同一调用（旧引擎层会按 TRANSIENT 重试，浪费预算且再撞限流）。
+        "Error: rate limited: '$toolId' quota ${policy.rateLimitPerMinute}/min; " +
             "next call possible in ${((retryInMs + 999) / 1000)}s. Stop repeating the same call — " +
             "inspect previous results and change your approach."
 
@@ -484,12 +527,23 @@ class EnhancedToolExecutor(
             "and tell the user what failed.")
     }
 
+    /**
+     * 任务级熔断复位（[ToolExecutor.resetBreakers] 的实现）：清零全部
+     * 熔断计数。引擎在每个新任务开始时调用 —— 见接口 KDoc。
+     */
+    override suspend fun resetBreakers() {
+        breaker?.resetAll()
+    }
+
     private fun timeoutResult(timeoutMs: Long): String =
         "Error: timeout: tool call exceeded ${timeoutMs}ms budget"
 
     private fun ioFailureResult(toolId: String, e: IOException): String =
         "Error: execution failed: I/O error in '$toolId': ${e.message ?: e::class.simpleName}"
 
+    // 注意：本方法与 SafeAgentTool 的 SecurityException 折叠串共享同一机器可判
+    // 前缀 "Error: permission denied"（RetryClassifier 终止前缀与
+    // FailureClassifier.PERMISSION_PATTERNS 均命中）—— 改措辞时两处必须同步。
     private fun securityResult(toolId: String, e: SecurityException): String =
         "Error: permission denied: ${e.message ?: toolId}"
 
@@ -503,6 +557,38 @@ class EnhancedToolExecutor(
         val slug = rest.substringBefore(':').lowercase().replace(' ', '_')
         return slug.takeIf { it.isNotBlank() && it.length <= 24 }
     }
+
+    /**
+     * P1 修复（熔断误开）：判定一条 "Error:" 结果是否为**基础设施失败** ——
+     * 熔断器只计数这类失败。
+     *
+     * 生产链路里工具几乎全部经 SafeAgentTool 包装（异常折叠为字符串），
+     * 执行器看不到异常类型；但折叠串与执行器自身的三类硬失败文案
+     * 都有稳定的机器可判签名（见 timeoutResult / ioFailureResult /
+     * crashResult 与 SafeAgentTool 的同源前缀）：
+     *
+     * - 超时：`Error: timeout: tool call exceeded …ms budget`；
+     * - IO：含 `I/O error in '…'`（执行器 ioFailureResult 与
+     *   SafeAgentTool 的 IOException 折叠串同源）；
+     * - 崩溃：`Error: execution failed: XxxException in '…'`（执行器
+     *   crashResult）或含 `工具执行失败（…）`（SafeAgentTool 的通用
+     *   Throwable 折叠串）。
+     *
+     * 域层失败（文件不存在 / exit≠0 / invalid argument / 会话不存在 /
+     * 权限拒绝等）不命中任何签名 → 不计入熔断 —— 连续探索不该把工具
+     * 锁死（误开方向的代价是整段任务的工具被禁用，漏开方向只是
+     * 少一道对系统性崩溃的熔断保护，且超时/IO/崩溃仍受保护）。
+     */
+    internal fun isInfraFailure(message: String?): Boolean {
+        if (message == null) return false
+        if (message.startsWith("Error: timeout: tool call exceeded")) return true
+        if (message.contains("I/O error in '")) return true
+        if (message.contains("工具执行失败（")) return true
+        return INFRA_CRASH_PATTERN.containsMatchIn(message)
+    }
+
+    /** 执行器 crashResult 的崩溃签名：`Error: execution failed: Xxx in 'tool'`。 */
+    private val INFRA_CRASH_PATTERN = Regex("Error: execution failed: [A-Za-z0-9_.]+Exception in '")
 }
 
 /**
@@ -514,7 +600,7 @@ class EnhancedToolExecutor(
  *     .gate(riskAwareToolGate)
  *     .usageTracker(tracker)
  *     .policyResolver(DefaultToolRunPolicyResolver(mapOf(
- *         "shell_execute" to ToolRunPolicy(timeoutMs = 120_000)
+ *         "ShellExecute" to ToolRunPolicy(timeoutMs = 120_000)
  *     )))
  *     .breaker(ToolCircuitBreaker())
  *     .tracer(ToolTraceRecorder(capacity = 300))

@@ -18,18 +18,18 @@ import kotlinx.serialization.json.jsonPrimitive
  * 连接器列表工具
  *
  * 列出当前启用的连接器（微信/飞书/Telegram 等）及其凭据配置状态。
- * 与 ConnectorListTool 配套使用：先本工具拿 id，再 connector_send_message 发送。
+ * 与 ConnectorListTool 配套使用：先本工具拿 id，再 ConnectorSendMessage 发送。
  * 只读本地配置（ConnectorRegistry 内存快照），不发任何网络请求。
  */
 class ConnectorListTool(
     private val registry: ConnectorRegistry
 ) : AgentTool {
 
-    override val id = "connector_list"
+    override val id = "ConnectorList"
     override val name = "List Connectors"
     override val description = """
         List enabled messaging/service connectors (WeChat, Feishu, Telegram, ...) with their configuration status.
-        Use connector_send_message to send text through one of them.
+        Use ConnectorSendMessage to send text through one of them.
 
         示例：
         - {} （无参数）
@@ -61,7 +61,7 @@ class ConnectorListTool(
                         appendLine("$emoji ${def.id} — ${def.name} [类型=${def.type}] 凭据: $credential")
                     }
                     appendLine()
-                    appendLine("用 connector_send_message 发送消息（可先 verify_only=true 校验凭据）。")
+                    appendLine("用 ConnectorSendMessage 发送消息（可先 verify_only=true 校验凭据）。")
                 }
             }
         } catch (e: CancellationException) {
@@ -87,10 +87,10 @@ class ConnectorSendMessageTool(
     private val messenger: ConnectorMessenger
 ) : AgentTool {
 
-    override val id = "connector_send_message"
+    override val id = "ConnectorSendMessage"
     override val name = "Send Connector Message"
     override val description = """
-        Send a text message through a configured connector (WeChat Work bot / Feishu bot / Telegram bot). Call connector_list first to get connector ids.
+        Send a text message through a configured connector (WeChat Work bot / Feishu bot / Telegram bot). Call ConnectorList first to get connector ids.
         Set verify_only=true to check credentials without sending.
         Currently supported connector ids: wechat / feishu / telegram.
     """.trimIndent()
@@ -101,7 +101,7 @@ class ConnectorSendMessageTool(
             "properties": {
                 "connector_id": {
                     "type": "string",
-                    "description": "Connector id from connector_list (wechat / feishu / telegram / ...)"
+                    "description": "Connector id from ConnectorList (wechat / feishu / telegram / ...)"
                 },
                 "message": {
                     "type": "string",

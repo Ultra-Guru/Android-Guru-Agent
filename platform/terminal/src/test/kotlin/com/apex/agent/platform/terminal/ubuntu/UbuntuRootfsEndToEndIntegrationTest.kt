@@ -114,7 +114,7 @@ class UbuntuRootfsEndToEndIntegrationTest {
          * 固定 SHA-256。下载只是测试夹具的获取手段（生产链路已是内置离线解包，零网络）。
          */
         private fun downloadFixtureArchive(): java.io.File? = try {
-            val url = "https://github.com/AceGuru-mjh/Android-Guru-Agent/releases/download/ubuntu-rootfs-24.04.4-full/apex-ubuntu-full-24.04.4-amd64.tar.gz"
+            val url = "https://github.com/Ultra-Guru/Android-Guru-Agent/releases/download/ubuntu-rootfs-24.04.4-full/apex-ubuntu-full-24.04.4-amd64.tar.gz"
             val expectedSha = "57fb03f916cae40202134594a6ad063167174714e1ad36a50f0575b015b87228"
             val tmp = java.io.File.createTempFile("t84-e2e-archive", ".tar.gz")
             val conn = (URL(url).openConnection() as HttpURLConnection).apply {
@@ -135,7 +135,7 @@ class UbuntuRootfsEndToEndIntegrationTest {
         }
 
         private fun networkReachable(): Boolean = try {
-            val conn = URL("https://github.com/AceGuru-mjh/Android-Guru-Agent/releases/tag/ubuntu-rootfs-24.04.4-full")
+            val conn = URL("https://github.com/Ultra-Guru/Android-Guru-Agent/releases/tag/ubuntu-rootfs-24.04.4-full")
                 .openConnection() as HttpURLConnection
             conn.connectTimeout = 10_000
             conn.readTimeout = 10_000
@@ -274,15 +274,25 @@ class UbuntuRootfsEndToEndIntegrationTest {
     // ─── Level 2: LinuxPRootBackend SpawnSpec → REAL proot → Ubuntu userspace ───
 
     /**
-     * argv 适配：host proot 5.x（upstream）与生产 Termux proot 5.1.107 仅两处差异：
-     *  - 去掉 `--`（upstream 自研 argv 解析器不识别；Termux 补丁支持）
-     *  - 去掉 `--kill-on-exit`（upstream 5.1.0 不认；一次性 exec 不需要）
-     * T88：**guest env 不再适配** —— env trampoline（`/usr/bin/env -i K=V …`）
-     * 在 upstream proot 上原样合法，测试真正执行生产 argv 形状（旧适配层把 -E
-     * 偷搬到宿主 env，正是 CI 全绿而设备炸 `unknown option '-E'` 的共犯）。
+     * T91（D5）：host proot 方言实测 —— 生产 provider 的能力探针（exec
+     * `--kill-on-exit --version`，不 ptrace）直接判定；argv 由 builder 按方言
+     * 自适应，**不再需要（也不再允许）测试内手工过滤 `--`/`--kill-on-exit`**。
+     * T88 时代的 adaptForUpstreamProot 适配层由此删除 —— 它与「把 -E 偷搬进
+     * 宿主 env」是同构风险：适配层改写了生产 argv，CI 绿不等于设备绿。
+     * host proot（Debian 5.4 / Ubuntu 5.1.0 均为上游方言）探针如实返回 UPSTREAM；
+     * 若用户以 T72_PROOT_BIN 指向 Termux 补丁版，则返回 TERMUX_COMPAT，
+     * argv 同样可执行（上游形状是 Termux 方言的子集）。
      */
-    private fun adaptForUpstreamProot(argv: List<String>): List<String> =
-        argv.filter { it != "--" && it != "--kill-on-exit" }
+    private fun hostCapabilities(): com.apex.agent.platform.terminal.proot.PRootArgvCapabilities {
+        val bin = prootBinary ?: return com.apex.agent.platform.terminal.proot.PRootArgvCapabilities.UPSTREAM_SAFE
+        val env = com.apex.agent.platform.terminal.proot.PRootHostEnvironment(
+            nativeLibraryDir = bin.parentFile.absolutePath,
+            baseDir = File(System.getProperty("java.io.tmpdir"), "t91-dialect-base"),
+            cacheDir = File(System.getProperty("java.io.tmpdir"), "t91-dialect-cache")
+        )
+        return com.apex.agent.platform.terminal.proot.NativeLibraryPRootBinaryProvider(env)
+            .capabilitiesFor(bin)
+    }
 
     private fun executorWith(): ProotExecutor {
         val hostEnv = mutableMapOf<String, String>(
@@ -295,10 +305,16 @@ class UbuntuRootfsEndToEndIntegrationTest {
 
     private fun realBackend(): LinuxPRootBackend {
         val bin = prootBinary!!
+        val capabilities = hostCapabilities()
         val binaryProvider = object : com.apex.agent.platform.terminal.proot.PRootBinaryProvider {
             override suspend fun locate(): Result<AbsolutePath> = Result.success(AbsolutePath(bin.absolutePath))
             override suspend fun verify(binary: AbsolutePath): Result<PRootBinaryInfo> = Result.success(
-                PRootBinaryInfo(binary, PRootVersion(5, 4, 0), CpuArchitecture.X86_64, true)
+                // T91（D5）：方言来自真实探针（非硬编码）—— 与生产
+                // NativeLibraryPRootBinaryProvider.verify 的判定路径同源。
+                PRootBinaryInfo(
+                    binary, PRootVersion(5, 4, 0), CpuArchitecture.X86_64, true,
+                    capabilities = capabilities
+                )
             )
         }
         val rootfsProvider = ProvisionedRootfsProvider(provisioner)
@@ -320,12 +336,13 @@ class UbuntuRootfsEndToEndIntegrationTest {
         }.getOrThrow()
         assertEquals("SpawnSpec argv[0] is the proot binary", prootBinary!!.absolutePath, spec.argv[0])
 
-        val adaptedArgv = adaptForUpstreamProot(spec.argv)
+        // T91（D5）：spec.argv 已按实测方言自适应（上游无 --/--kill-on-exit），
+        // 原样执行 —— 测试内适配层已删除（见 hostDialect KDoc）。
         // replace the trailing "/bin/bash -i" with the test command
         // （env trampoline 的 K=V 赋值保留在 bash 之前 —— guest 仍拿到注入的 env）
-        val bashIdx = adaptedArgv.indexOfLast { it == "/bin/bash" }
-        assertTrue("bash -i found in argv: $adaptedArgv", bashIdx > 0)
-        val finalArgv = adaptedArgv.subList(0, bashIdx) + guestCommand
+        val bashIdx = spec.argv.indexOfLast { it == "/bin/bash" }
+        assertTrue("bash -i found in argv: ${spec.argv}", bashIdx > 0)
+        val finalArgv = spec.argv.subList(0, bashIdx) + guestCommand
         val executor = executorWith()
         return executor.execute(
             PRootCommand(AbsolutePath(finalArgv[0]), finalArgv.drop(1)),

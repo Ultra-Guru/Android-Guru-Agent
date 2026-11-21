@@ -10,6 +10,7 @@ import com.apex.agent.core.tools.mcp.McpTransportHandle
 import com.apex.agent.github.GithubApiException
 import com.apex.agent.github.GithubApiService
 import com.apex.agent.github.GithubTokenManager
+import com.apex.agent.github.GithubWriteGuard
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -36,11 +37,11 @@ import kotlinx.serialization.json.putJsonObject
  * 内置 GitHub MCP 服务器的注册元数据。
  *
  * [BuiltinGithubMcpServer.ID] 同时是三处约定的 key：McpManager 配置里的服务器名、
- * `builtinTransports` 工厂注册表的 key、以及 `mcp_call` 的 `server` 参数值
+ * `builtinTransports` 工厂注册表的 key、以及 `McpCall` 的 `server` 参数值
  * （= 斜杠指令 /mcp:github 的 id）—— 三者必须一致。
  */
 object BuiltinGithubMcpServer {
-    /** 服务器名（= mcp_call 的 server 参数 = 斜杠指令 /mcp:github 的 id）。 */
+    /** 服务器名（= McpCall 的 server 参数 = 斜杠指令 /mcp:github 的 id）。 */
     const val ID = "github"
 
     /** 预置到 mcp_servers.json 的配置（transport=BUILTIN，无 URL/命令）。 */
@@ -62,7 +63,7 @@ object BuiltinGithubMcpServer {
  *
  * 把 App 已有的 [GithubApiService]（GitHub REST 直连）包装成一个**真** MCP 服务器：
  * 实现 [McpTransportHandle]（与 McpHttpTransport 同一契约），对 JSON-RPC
- * 2024-11-05 报文做进程内派发 —— 上层 McpClient/McpManager/mcp_call 元工具
+ * 2024-11-05 报文做进程内派发 —— 上层 McpClient/McpManager/McpCall 元工具
  * 完全不感知对面既不是进程也不是网络。
  *
  * 消息形态：
@@ -72,7 +73,7 @@ object BuiltinGithubMcpServer {
  *   create_issue / list_issues / search_code），各带 JSON Schema inputSchema；
  * - `tools/call` → 按名派发 [GithubApiService]，返回 MCP 标准结果
  *   `{"content":[{"type":"text","text":"..."}]}`；GitHub API 错误 / 未配置 token
- *   → `isError=true` + 友好文本（McpClient 会把 isError 透传给 mcp_call）；
+ *   → `isError=true` + 友好文本（McpClient 会把 isError 透传给 McpCall）；
  * - 通知（id=null，如 notifications/initialized）→ 忽略返回 null；
  * - 其他 method → JSON-RPC error -32601 method-not-found。
  *
@@ -168,7 +169,7 @@ class BuiltinGithubMcpTransport(
         }
     }
 
-    /** MCP 标准 text 结果（isError 会被 McpClient → mcp_call 透传为工具错误）。 */
+    /** MCP 标准 text 结果（isError 会被 McpClient → McpCall 透传为工具错误）。 */
     private fun textResult(text: String, isError: Boolean = false): JsonObject = buildJsonObject {
         putJsonArray("content") {
             add(buildJsonObject {
@@ -228,7 +229,18 @@ class BuiltinGithubMcpTransport(
         val branch = args["branch"]?.jsonPrimitive?.contentOrNull
         val explicitSha = args["sha"]?.jsonPrimitive?.contentOrNull
 
-        // 与原生 github_write_file 相同的探针：无显式 sha 时先查现存文件
+        // Git 审计 P1-13：私有仓写保护统一走 GithubWriteGuard——旧版只有
+        // 原生 GithubWriteFile 有可见性探针 + 确认标志，内置 MCP 通路可
+        // 绕过 #273/#274 防线；现在两条通路共用同一守卫（fail-closed）。
+        when (val verdict = GithubWriteGuard.ensureWritable(
+            api, owner, repo, "文件 $path（commit: $message）", GithubWriteGuard.readConfirmFlag(args)
+        )) {
+            is GithubWriteGuard.Verdict.Blocked -> return "Error: ${verdict.message}"
+            is GithubWriteGuard.Verdict.Failed -> return "Error: ${verdict.message}"
+            GithubWriteGuard.Verdict.Allowed -> {}
+        }
+
+        // 与原生 GithubWriteFile 相同的探针：无显式 sha 时先查现存文件
         // （404 → 新建；其他错误向上抛、由 callTool 折叠为工具错误），
         // 避免盲 PUT 被 GitHub 422 拒绝（"sha missing"）。
         var existingSha = explicitSha
@@ -362,7 +374,7 @@ class BuiltinGithubMcpTransport(
             })
             add(buildJsonObject {
                 put("name", "create_or_update_file")
-                put("description", "在 GitHub 仓库中创建或更新文件（自动 commit）")
+                put("description", "在 GitHub 仓库中创建或更新文件（自动 commit）。私有仓库需先向用户确认后携带 confirm_private_write=true")
                 put("inputSchema", schema(buildJsonObject {
                     put("owner", prop("string", "仓库所有者"))
                     put("repo", prop("string", "仓库名"))
@@ -371,6 +383,7 @@ class BuiltinGithubMcpTransport(
                     put("content", prop("string", "文件新内容（纯文本，base64 自动处理）"))
                     put("branch", prop("string", "目标分支，省略则用默认分支"))
                     put("sha", prop("string", "被替换文件的 blob SHA；新建文件时省略"))
+                    put("confirm_private_write", prop("boolean", "仅当用户明确同意向该私有仓库写入后才设为 true"))
                 }, listOf("owner", "repo", "path", "message", "content")))
             })
             add(buildJsonObject {
@@ -414,8 +427,8 @@ class BuiltinGithubMcpTransport(
 /**
  * 内置 GitHub MCP 的启动器：幂等预置配置 + 后台自动连接。
  *
- * 由 app 的 McpModule 在 `provideMcpManager` 里调用（@Provides 副作用模式，
- * 与 AttachmentModule 触发 schedulePeriodicCleanup 相同）—— McpManager 是
+ * 由 app 的 McpModule 在 `provideMcpManager` 里调用（@Provides 副作用模式）
+ * —— McpManager 是
  * @Singleton 懒创建，首次注入（聊天页/工具注册表/市场页）即触发本逻辑。
  *
  * ensure/connect 是挂起函数，放到自持 IO scope 执行，不阻塞注入线程；

@@ -236,7 +236,8 @@ class KeySequenceTablesTest {
         assertEquals("\u001BOp", s(KeySequenceTables.encode(TerminalKey.NUMPAD_0, 0, false, true)))
         assertEquals("\u001BOy", s(KeySequenceTables.encode(TerminalKey.NUMPAD_9, 0, false, true)))
         assertEquals("\u001BOM", s(KeySequenceTables.encode(TerminalKey.NUMPAD_ENTER, 0, false, true)))
-        assertEquals("\u001BOl", s(KeySequenceTables.encode(TerminalKey.NUMPAD_ADD, 0, false, true)))
+        // T92：xterm/DEC 小键盘表 —— 加号是 SS3 'k'（'l' 是分隔符；Termux 同款）。
+        assertEquals("\u001BOk", s(KeySequenceTables.encode(TerminalKey.NUMPAD_ADD, 0, false, true)))
     }
 
     // ── 粘贴净化 ──

@@ -7,12 +7,23 @@ import com.apex.agent.core.logging.LogLevel
 import com.apex.agent.core.tools.ToolEnvironmentState
 import com.apex.agent.platform.privilege.PrivilegeManager
 import com.apex.agent.platform.privilege.accessibility.ApexAccessibilityService
+import com.apex.agent.platform.terminal.chroot.LinuxChrootBackend
+import com.apex.agent.platform.terminal.proot.PRootSmokeProbe
+import com.apex.agent.platform.terminal.runtime.BackendAvailability
+import com.apex.agent.platform.terminal.runtime.ExecutionBackend
+import com.apex.agent.platform.terminal.runtime.ExecutionBackendRegistry
 import com.apex.agent.platform.terminal.ubuntu.lifecycle.UbuntuLifecycleCoordinator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -32,6 +43,13 @@ import javax.inject.Singleton
  *   内置 Ubuntu 环境解包/引导到 READY（含离线降级）即置 true，模型在
  *   每轮环境摘要中看到 `ubuntu=on`，据此选择 linux-ubuntu 会话而非
  *   本地 Android shell。此前该旗标仅有定义无生产接线（死遥测）。
+ * - **root_available / shizuku_available**（T92，#255 权限链审计）：收集
+ *   [PrivilegeManager.rootAvailable] / [PrivilegeManager.shizukuAvailable]
+ *   StateFlow —— 权限链真值进入 Live Environment 摘要，模型每轮看到
+ *   `root=on/off shizuku=on/off`，不再需要试探性执行命令来探权限。
+ *   这两个旗标同样在此前仅有定义无生产接线（死遥测）。注意：当前无任何
+ *   工具把它们声明为 requiredEnv（工具都自带降级链），因此接线后仅提升
+ *   prompt 可见性，不产生门控拒绝 —— 与 fail-open 哲学一致。
  *
  * 未知态语义见 [ToolEnvironmentState]：门控对未知放行 —— 桥没跑起来
  * （老进程升级、服务未启用）时工具行为与 v1 完全一致，零回归。
@@ -42,7 +60,9 @@ import javax.inject.Singleton
 class EnvironmentStateUpdater @Inject constructor(
     private val privilegeManager: PrivilegeManager,
     private val environmentState: ToolEnvironmentState,
-    private val ubuntuLifecycle: UbuntuLifecycleCoordinator
+    private val ubuntuLifecycle: UbuntuLifecycleCoordinator,
+    private val terminalBackends: ExecutionBackendRegistry,
+    private val prootSmokeProbe: PRootSmokeProbe
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -103,6 +123,39 @@ class EnvironmentStateUpdater @Inject constructor(
         scope.launch {
             ubuntuLifecycle.stateFlow.collect { state ->
                 environmentState.set(ToolEnvironmentState.Flags.UBUNTU_READY, state.phase == UbuntuLifecycleCoordinator.Phase.READY)
+                if (state.phase != UbuntuLifecycleCoordinator.Phase.READY) {
+                    prootSmokeProbe.invalidate("Ubuntu rootfs state changed")
+                }
+            }
+        }
+
+        // T99: visibility only. Refresh on rootfs phase or root-status changes; the chroot
+        // availability path is stat/cache-only, never executes su or the PRoot smoke process.
+        // Run off the App startup thread and clear unknown reads (fail-open).
+        scope.launch {
+            combine(
+                ubuntuLifecycle.stateFlow.map { it.phase }.distinctUntilChanged(),
+                privilegeManager.rootAvailable
+            ) { _, _ -> Unit }.collectLatest {
+                withContext(Dispatchers.IO) {
+                    refreshChrootAvailability(terminalBackends.get(LinuxChrootBackend.ID), environmentState)
+                }
+            }
+        }
+
+        // T92（#255 权限链审计）：权限链真值旗标 —— root / shizuku StateFlow →
+        // ToolEnvironmentState。事件源是 DefaultPrivilegeManager 的 binder 生命周期
+        // 回灌（#212）：Shizuku 起停/授权变化即时反映；root 在构造时探测一次、
+        // refreshStatus 时刷新。Live Environment 摘要（模型每轮可见）从
+        // 「root/shizuku 永远 unknown」变为实时真值。
+        scope.launch {
+            privilegeManager.rootAvailable.collect { available ->
+                environmentState.set(ToolEnvironmentState.Flags.ROOT_AVAILABLE, available)
+            }
+        }
+        scope.launch {
+            privilegeManager.shizukuAvailable.collect { available ->
+                environmentState.set(ToolEnvironmentState.Flags.SHIZUKU_AVAILABLE, available)
             }
         }
 
@@ -137,4 +190,22 @@ class EnvironmentStateUpdater @Inject constructor(
         /** 键盘活跃信号的保鲜窗口：超过即回退 unknown（fail-open）。 */
         const val KEYBOARD_TTL_MS: Long = 45_000L
     }
+}
+
+/** Pure mapping seam for JVM tests: no su exec, session creation or inference-as-gate. */
+internal suspend fun refreshChrootAvailability(backend: ExecutionBackend?, state: ToolEnvironmentState) {
+    val availability = try {
+        backend?.availability()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
+    }
+    val ready: Boolean? = when (availability) {
+        BackendAvailability.Ready -> true
+        is BackendAvailability.Failed ->
+            if (availability.reason.startsWith("ChrootError:SU_NOT_FOUND")) false else null
+        else -> null
+    }
+    state.set(ToolEnvironmentState.Flags.CHROOT_READY, ready)
 }

@@ -53,17 +53,87 @@ class SlashCommandParserTest {
         assertEquals("pdf_reader", (parsed as SlashCommand.Plugin).id)
     }
 
+    // ═════════════════════════════════════════════════════
+    // /fusion —— FUSION 工具聚合体系包（王冠菜单选中后拼回的命令形态）
+    // ═════════════════════════════════════════════════════
+
+    @Test
+    fun `bare fusion command parses to Fusion with empty args`() {
+        val parsed = SlashCommandParser.parse("/fusion:rea")
+
+        assertTrue(parsed is SlashCommand.Fusion)
+        val fusion = parsed as SlashCommand.Fusion
+        assertEquals("rea", fusion.id)
+        assertEquals(emptyMap<String, String>(), fusion.args)
+        assertEquals("", fusion.userExtra)
+    }
+
+    @Test
+    fun `fusion command carries args and user extra`() {
+        val parsed = SlashCommandParser.parse("/fusion:rea target=app.asar 逆向这个应用")
+
+        assertTrue(parsed is SlashCommand.Fusion)
+        val fusion = parsed as SlashCommand.Fusion
+        assertEquals("rea", fusion.id)
+        assertEquals(mapOf("target" to "app.asar"), fusion.args)
+        assertEquals("逆向这个应用", fusion.userExtra)
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // /logic — v1.5 双思考逻辑切换（本地路由命令）
+    // ═════════════════════════════════════════════════════
+
+    @Test
+    fun `bare logic command parses to Logic with standard id`() {
+        val parsed = SlashCommandParser.parse("/logic:standard")
+
+        assertTrue(parsed is SlashCommand.Logic)
+        val logic = parsed as SlashCommand.Logic
+        assertEquals("standard", logic.id)
+        assertEquals(emptyMap<String, String>(), logic.args)
+        assertEquals("", logic.userExtra)
+    }
+
+    @Test
+    fun `logic command accepts deep_dive id`() {
+        val parsed = SlashCommandParser.parse("/logic:deep_dive")
+
+        assertTrue(parsed is SlashCommand.Logic)
+        assertEquals("deep_dive", (parsed as SlashCommand.Logic).id)
+    }
+
+    @Test
+    fun `logic command type is case-insensitive`() {
+        // 与其他命令同口径：type 侧统一 lowercase（id 侧保留原样由 fromName 容错）。
+        val parsed = SlashCommandParser.parse("/LOGIC:STANDARD")
+
+        assertTrue(parsed is SlashCommand.Logic)
+        assertEquals("STANDARD", (parsed as SlashCommand.Logic).id)
+    }
+
+    @Test
+    fun `logic command with trailing user text keeps id clean`() {
+        // 本地路由命令不吃参数——args/userExtra 仍按通用语法解析，但切换
+        // 语义只看 id；多余文本不应破坏命令形状。
+        val parsed = SlashCommandParser.parse("/logic:standard now please")
+
+        assertTrue(parsed is SlashCommand.Logic)
+        val logic = parsed as SlashCommand.Logic
+        assertEquals("standard", logic.id)
+        assertEquals("now please", logic.userExtra)
+    }
+
     // ═══════════════════════════════════════════════════════════
     // Args + positional user text
     // ═══════════════════════════════════════════════════════════
 
     @Test
     fun `kv args and positional user text are split correctly`() {
-        val parsed = SlashCommandParser.parse("/skill:web_search query=Android latest news")
+        val parsed = SlashCommandParser.parse("/skill:WebSearch query=Android latest news")
 
         assertTrue(parsed is SlashCommand.Skill)
         val skill = parsed as SlashCommand.Skill
-        assertEquals("web_search", skill.id)
+        assertEquals("WebSearch", skill.id)
         assertEquals(mapOf("query" to "Android"), skill.args)
         assertEquals("latest news", skill.userExtra)
     }
@@ -207,7 +277,7 @@ class SlashCommandParserTest {
         // Order matters for slash-menu rendering; assert it explicitly so a
         // future reorder is a conscious decision rather than an accident.
         assertEquals(
-            listOf("skill", "mcp", "connector", "plugin"),
+            listOf("skill", "mcp", "connector", "plugin", "logic", "fusion"),
             SlashCommand.SUPPORTED_TYPES
         )
     }

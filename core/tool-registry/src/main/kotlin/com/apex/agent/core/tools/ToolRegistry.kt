@@ -1,5 +1,8 @@
 package com.apex.agent.core.tools
 
+import com.apex.agent.core.tools.catalog.ToolIdAliases
+import com.apex.agent.core.tools.catalog.ToolNameSanitizer
+
 import com.apex.agent.core.llm.ToolDefinition
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -43,7 +46,7 @@ interface ToolRegistry {
     /**
      * 带重复 id 策略的注册。默认 [DuplicateToolIdPolicy.REPLACE] 与 v1
      * `register(tool)` 语义一致（后写覆盖）；[DuplicateToolIdPolicy.REJECT]
-     * 用于启动期诊断——防止两个模块各自注册 `download_file` 时静默互踩。
+     * 用于启动期诊断——防止两个模块各自注册 `DownloadFile` 时静默互踩。
      *
      * @return 被覆盖的旧工具（REPLACE 且已存在同 id 时）；REJECT 策略下
      *   发生冲突时返回 null 且注册表不变。
@@ -53,13 +56,6 @@ interface ToolRegistry {
         register(tool)
         return null
     }
-
-    /**
-     * 按 [ToolMetadata.category] 查询（类别内按 id 排序，稳定输出）。
-     * 元数据由 [AgentTool.metadata] 提供——v1 工具自动走 id 推断。
-     */
-    fun toolsByCategory(category: ToolCategory): List<AgentTool> =
-        getAllTools().filter { it.metadata.category == category }.sortedBy { it.id }
 
     /**
      * 工具清单按类别分组（仅含有工具的类别，按 [ToolCategory.order] 排序）。
@@ -73,64 +69,12 @@ interface ToolRegistry {
     }
 
     /**
-     * 模糊搜索工具：id / 名称 / 描述 / 元数据标签中命中 [query]（大小写
-     * 不敏感），按简单相关性（id 前缀 > id 包含 > 名称包含 > 标签/描述包含）
-     * 排序。空 query 返回空列表。
-     */
-    fun searchTools(query: String): List<AgentTool> {
-        val q = query.trim().lowercase()
-        if (q.isEmpty()) return emptyList()
-        data class Ranked(val rank: Int, val id: String, val tool: AgentTool)
-
-        return getAllTools()
-            .mapNotNull { tool ->
-                val id = tool.id.lowercase()
-                val name = tool.name.lowercase()
-                val meta = tool.metadata
-                val rank = when {
-                    id.startsWith(q) -> 0
-                    id.contains(q) -> 1
-                    name.contains(q) -> 2
-                    meta.tags.any { it.contains(q) } -> 3
-                    tool.description.lowercase().contains(q) -> 4
-                    else -> return@mapNotNull null
-                }
-                Ranked(rank, tool.id, tool)
-            }
-            .sortedWith(compareBy<Ranked> { it.rank }.thenBy { it.id })
-            .map { it.tool }
-    }
-
-    /**
      * 查询单个工具的元数据（未注册返回 null——区别于推断默认值，
      * 用于“这个 id 存在吗”的判断场景）。
      */
     fun metadataOf(toolId: String): ToolMetadata? =
         getTool(toolId)?.metadata
 
-    /**
-     * 注册表变更监听：DI 构建完成后，运行期热注册（MCP server 连接、
-     * 技能安装）可通知 UI / prompt 缓存失效。监听器在注册表内部锁内
-     * 调用，必须快速返回且不得再调用注册表写方法。
-     */
-    fun addRegistrationListener(listener: ToolRegistrationListener) {}
-    fun removeRegistrationListener(listener: ToolRegistrationListener) {}
-}
-
-/** 注册表变更事件（[ToolRegistry.addRegistrationListener] 回调载荷）。 */
-sealed interface ToolRegistrationEvent {
-    data class Registered(
-        val toolId: String,
-        val replaced: Boolean,
-        val metadata: ToolMetadata
-    ) : ToolRegistrationEvent
-
-    data class Unregistered(val toolId: String) : ToolRegistrationEvent
-}
-
-/** see [ToolRegistry.addRegistrationListener]。 */
-fun interface ToolRegistrationListener {
-    fun onToolRegistrationEvent(event: ToolRegistrationEvent)
 }
 
 /**
@@ -155,7 +99,7 @@ enum class DuplicateToolIdPolicy {
  * - [execute]：一次性返回完整输出（向后兼容，现有调用点不变）。
  * - [executeStream]：返回 [ToolStreamEvent] 流，允许工具逐段输出。engine 优先
  *   使用 [executeStream]，这样实现了 [StreamingAgentTool] 的工具（如
- *   shell_execute）能逐行把输出推到 UI，而非流式工具则被透明包装成
+ *   ShellExecute）能逐行把输出推到 UI，而非流式工具则被透明包装成
  *   “单个 Output + Complete” 的事件序列。
  *
  * ## Tool System v2 执行管线
@@ -186,6 +130,17 @@ interface ToolExecutor {
      *   [ToolStreamEvent.Output] + [ToolStreamEvent.Complete]（失败时为 [ToolStreamEvent.Error]）。
      */
     fun executeStream(toolId: String, arguments: String): Flow<ToolStreamEvent>
+
+    /**
+     * 任务级熔断复位（P1 修复：跨任务熔断污染）：默认 no-op。
+     *
+     * 熔断器是进程级单例，冷却窗口 15s→120s 指数加宽；旧实现无任何生产
+     * 调用点复位 —— 上一个任务里被误开的熔断（连续探索失败等域层噪声）
+     * 会把整个冷却期带进下一个任务，新任务开局即「工具被暂时封锁」。
+     * 引擎在新任务开始时调用本方法清零计数。[EnhancedToolExecutor] 的
+     * 实现委托 [ToolCircuitBreaker.resetAll]。
+     */
+    suspend fun resetBreakers() {}
 }
 
 /**
@@ -221,7 +176,6 @@ private object InferredToolMetadata {
  */
 class DefaultToolRegistry : ToolRegistry {
     private val tools = mutableMapOf<String, AgentTool>()
-    private val listeners = mutableListOf<ToolRegistrationListener>()
     private var version = 0L
 
     override fun register(tool: AgentTool) {
@@ -236,27 +190,29 @@ class DefaultToolRegistry : ToolRegistry {
             }
             tools[tool.id] = tool
             version++
-            val event = ToolRegistrationEvent.Registered(
-                toolId = tool.id,
-                replaced = existing != null,
-                metadata = tool.metadata
-            )
-            listeners.toList().forEach { it.onToolRegistrationEvent(event) }
             return existing
         }
     }
 
     override fun unregister(toolId: String) {
         synchronized(this) {
-            if (tools.remove(toolId) != null) {
+            if (tools.remove(ToolIdAliases.canonical(toolId)) != null) {
                 version++
-                val event = ToolRegistrationEvent.Unregistered(toolId)
-                listeners.toList().forEach { it.onToolRegistrationEvent(event) }
             }
         }
     }
 
-    override fun getTool(toolId: String): AgentTool? = synchronized(this) { tools[toolId] }
+    /**
+     * 查找工具。[toolId] 可以是注册表 id、provider 洗过的名字，或**改名前的
+     * 旧 id**——旧 id 经 [ToolIdAliases] 归一、大小写漂移经 ignoreCase 兜底，
+     * 保证老会话/老技能/老收藏里的工具名依旧可执行（见 ToolIdAliases KDoc）。
+     */
+    override fun getTool(toolId: String): AgentTool? = synchronized(this) {
+        tools[toolId]
+            ?: tools[ToolIdAliases.canonical(toolId)]
+            ?: tools.entries.firstOrNull { it.key.equals(toolId, ignoreCase = true) }?.value
+            ?: tools[ToolNameSanitizer.sanitize(toolId)]
+    }
 
     override fun getAllTools(): List<AgentTool> = synchronized(this) { tools.values.toList() }
 
@@ -274,14 +230,6 @@ class DefaultToolRegistry : ToolRegistry {
 
     override val registryVersion: Long
         get() = synchronized(this) { version }
-
-    override fun addRegistrationListener(listener: ToolRegistrationListener) {
-        synchronized(this) { listeners += listener }
-    }
-
-    override fun removeRegistrationListener(listener: ToolRegistrationListener) {
-        synchronized(this) { listeners -= listener }
-    }
 
     // O(1) 直接读 map 大小，避免 getAllTools() 复制整个 values 列表。
     override val toolCount: Int
@@ -391,8 +339,26 @@ internal class ToolExecutionPipeline(
         /**
          * 未找到工具的错误信息：v2 只带相近建议（[ToolSuggester]），不再
          * 倾倒全量 id 清单（40+ 个 id 只会教模型继续猜）。
+         *
+         * v1.5.x 增强（2026-10 用户反馈「执行命令出错率特别高」）：无相近
+         * 建议时旧文案只丢一句 "Do not guess tool ids"——模型无从下手只能
+         * 继续换名猜（`bash` → `Bash` → `shell` 连环 404）。现在补两条
+         * actionable 指引：常见任务族的最短路径（命令 → TerminalExec）+
+         * ToolSearch 元工具自检索 —— 模型下一步有确定动作可执行。
+         *
+         * 畸形名专项（2026-11「MCP null」全链失效事故）：id 为空串或字面
+         * "null" 时不是模型猜错名，而是 provider/网关把 function.name 丢成
+         * JSON null（解析层曾把它误转成字面串，已改 contentOrNull；累积器
+         * 同修）。通用文案会引导模型继续换名重试直至任务报废 —— 这里明说
+         * 「名称在传输中丢失，原样重发一次完整调用」，模型有确定的自愈动作。
          */
         fun notFoundMessage(toolId: String, registry: ToolRegistry): String {
+            if (toolId.isBlank() || toolId == "null") {
+                return "Error: this tool call arrived with no usable tool name " +
+                    "(the provider dropped function.name as null/blank). " +
+                    "Do not guess tool ids — re-issue the exact same call once with a complete " +
+                    "tool id; to discover valid tool ids call ToolSearch(query) or ToolList()."
+            }
             val suggestion = ToolSuggester.suggestionLine(
                 toolId, registry.getAllTools().map { it.id }
             )
@@ -405,7 +371,8 @@ internal class ToolExecutionPipeline(
                     append(". Available categories: ")
                     append(registry.toolsGroupedByCategory().keys.joinToString(", ") { it.name })
                 }
-                append(". Do not guess tool ids.")
+                append(". Do not guess tool ids. To run shell commands use TerminalExec;")
+                append(" to discover valid tool ids call ToolSearch(query) or ToolList().")
             }
         }
     }

@@ -80,30 +80,32 @@ class ProotExecutorProotSmokeTest {
     }
 
     /**
-     * T88：host proot 5.x 与 Termux proot 5.1.107（生产目标）仅剩两处语法差异：
-     * (a) upstream 不认 `--` 分隔符 → 去掉（options 后直接跟 command）
-     * (b) upstream 旧版（5.1.0）不认 `--kill-on-exit` → 去掉（一次性 exec 不需要）
-     * **guest env 不再适配**（旧注释声称 upstream 无 -E 需搬进宿主 env —— 事实是
-     * -E 在任何 proot 版本都不存在，那是自造的 argv 形状，设备上直接拒启）。
-     * 现在 env trampoline 原样直通：guest 真实拿到 `env -i` 清洁环境，
-     * 测试与生产 argv 形状一致，语义比旧“偷搬宿主 env”更严。
+     * T91（D5）：host proot 方言实测 —— 生产 provider 的能力探针（exec
+     * `--kill-on-exit --version`，不 ptrace）直接判定，argv 构造端按方言自适应。
+     * T88 时代的 adaptForHostProot 手工过滤层已删除 —— 与「把 -E 偷搬进宿主 env」
+     * 同构风险：适配层改写生产 argv，CI 绿不等于设备绿。host proot 为
+     * Termux 补丁版时探针返回 TERMUX_COMPAT，argv 含 --kill-on-exit/--，
+     * 同样可执行（Termux 方言是上游超集）。
      */
-    private fun adaptForHostProot(argv: List<String>): Pair<List<String>, Map<String, String>> {
-        val env = mutableMapOf<String, String>("PROOT_NO_SECCOMP" to "1")
-        val out = argv.filter { it != "--" && it != "--kill-on-exit" }
-        return out to env
+    private fun hostCapabilities(bin: File): com.apex.agent.platform.terminal.proot.PRootArgvCapabilities {
+        val env = com.apex.agent.platform.terminal.proot.PRootHostEnvironment(
+            nativeLibraryDir = bin.parentFile.absolutePath,
+            baseDir = File(System.getProperty("java.io.tmpdir"), "t91-smoke-dialect-base"),
+            cacheDir = File(System.getProperty("java.io.tmpdir"), "t91-smoke-dialect-cache")
+        )
+        return com.apex.agent.platform.terminal.proot.NativeLibraryPRootBinaryProvider(env)
+            .capabilitiesFor(bin)
     }
 
-    /** 以 host-proot 兼容形式执行 builder 命令（语义等价，见 adaptForHostProot）。 */
-    private fun execAdapted(cmd: PRootCommand): ProotExecutor.Execution {
+    /** 以真实探针方言执行 builder 命令（T91：argv 原样，无适配层）。 */
+    private fun execAdapted(cmd: PRootCommand, bin: File): ProotExecutor.Execution {
         val argv = listOf(cmd.executable.value) + cmd.arguments
-        val (adapted, guestEnv) = adaptForHostProot(argv)
-        val hostEnv = guestEnv.toMutableMap()
+        val hostEnv = mutableMapOf<String, String>("PROOT_NO_SECCOMP" to "1")
         // 用户目录安装的 proot（非 ldconfig 注册）需要 LD_LIBRARY_PATH 解析 libtalloc ——
         // CI 的 dpkg 安装无此变量时为 no-op（与 T72 E2E 的 executorWith 一致）。
         System.getenv("LD_LIBRARY_PATH")?.let { hostEnv["LD_LIBRARY_PATH"] = it }
         val withEnv = ProotExecutor(hostEnv = { hostEnv })
-        return withEnv.execute(PRootCommand(AbsolutePath(adapted[0]), adapted.drop(1)))
+        return withEnv.execute(PRootCommand(AbsolutePath(argv[0]), argv.drop(1)))
     }
 
     private fun buildCommand(bin: File, guestCwd: String, command: List<String>): PRootCommand {
@@ -118,7 +120,12 @@ class ProotExecutorProotSmokeTest {
             fakeRoot = true,
             killOnExit = true
         )
-        return builder.build(launch, AbsolutePath(bin.absolutePath), AbsolutePath("/"), AbsolutePath("/tmp"))
+        // T91（D5）：按实测方言构造 argv —— 上游 proot 自动省略 --kill-on-exit/--，
+        // 测试真正执行生产 argv 形状（与设备同一 builder 路径，零手工改写）。
+        return builder.build(
+            launch, AbsolutePath(bin.absolutePath), AbsolutePath("/"), AbsolutePath("/tmp"),
+            capabilities = hostCapabilities(bin)
+        )
     }
 
     @Test
@@ -128,7 +135,7 @@ class ProotExecutorProotSmokeTest {
         assumeTrue("proot must be runnable (ptrace)", prootCanRun())
 
         val exec = ProotExecutor()
-        val result = execAdapted(buildCommand(bin!!, "/root", listOf("/bin/true")))
+        val result = execAdapted(buildCommand(bin!!, "/root", listOf("/bin/true")), bin)
 
         assertEquals("stderr: ${result.stderr}", 0, result.exitCode)
         assertTrue(result.pid > 0)
@@ -143,7 +150,8 @@ class ProotExecutorProotSmokeTest {
 
         val exec = ProotExecutor()
         val result = execAdapted(
-            buildCommand(bin!!, "/root", listOf("/bin/sh", "-c", "echo P71=\$P71_SMOKE cwd=\$(pwd)"))
+            buildCommand(bin!!, "/root", listOf("/bin/sh", "-c", "echo P71=\$P71_SMOKE cwd=\$(pwd)")),
+            bin
         )
 
         assertEquals("stderr: ${result.stderr}", 0, result.exitCode)
@@ -157,7 +165,7 @@ class ProotExecutorProotSmokeTest {
         assumeTrue("proot must be runnable (ptrace)", prootCanRun())
 
         val exec = ProotExecutor()
-        val result = execAdapted(buildCommand(bin!!, "/root", listOf("/bin/sh", "-c", "exit 42")))
+        val result = execAdapted(buildCommand(bin!!, "/root", listOf("/bin/sh", "-c", "exit 42")), bin)
 
         assertEquals(42, result.exitCode)
     }
@@ -189,7 +197,7 @@ class ProotExecutorProotSmokeTest {
         val exec = ProotExecutor()
         val samples = mutableListOf<Long>()
         repeat(5) {
-            val r = execAdapted(buildCommand(bin!!, "/root", listOf("/bin/true")))
+            val r = execAdapted(buildCommand(bin!!, "/root", listOf("/bin/true")), bin)
             assertEquals(0, r.exitCode)
             samples.add(r.durationMs)
         }

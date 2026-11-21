@@ -17,7 +17,7 @@ package com.apex.agent.core.engine.task
  * UNKNOWN(中断)  IDEMPOTENT_WRITE  → RETRY   （重放等价）
  * UNKNOWN(中断)  NON_IDEMPOTENT    → VERIFY  （可能已执行——先验证再决定）
  * UNKNOWN(中断)  UNKNOWN           → VERIFY  （不可判定——保守验证）
- * 用户交互中断    ask_user 族       → RETRY   （重新提问）
+ * 用户交互中断    AskUser 族       → RETRY   （重新提问）
  * ```
  *
  * **VERIFY 语义**：不重跑操作，而是向 LLM 注入一条提示
@@ -120,7 +120,7 @@ object RecoveryPolicy {
         val taskId: String,
         /** 中断（UNKNOWN 态）操作全量。 */
         val unknownOperations: List<ToolOperationRecord>,
-        /** 可安全重跑的（READ_ONLY / IDEMPOTENT_WRITE / ask_user）。 */
+        /** 可安全重跑的（READ_ONLY / IDEMPOTENT_WRITE / AskUser）。 */
         val retryOperations: List<ToolOperationRecord>,
         /** 需先验证的（NON_IDEMPOTENT / UNKNOWN 分类）。 */
         val verifyOperations: List<ToolOperationRecord>,

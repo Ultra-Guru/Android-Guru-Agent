@@ -91,7 +91,10 @@ class ClawHubSource(
         try {
             val root = json.parseToJsonElement(bodyText).jsonObject
             val raw = root["items"]?.jsonArray ?: emptyList()
+            // P2-1：上游重复条目按 key（owner/slug）去重 —— 消费点 LazyColumn
+            // 用 key = it.key，重复 key 会直接抛 IllegalArgumentException 崩市场页
             val entries = raw.mapNotNull { el -> (el as? JsonObject)?.let(::parseTrendingItem) }
+                .distinctBy { it.key }
             Result.success(ClawHubPage(entries, raw.size >= limit))
         } catch (e: Exception) {
             Result.failure(Exception("热门列表解析失败: ${e.message}"))
@@ -119,7 +122,9 @@ class ClawHubSource(
         try {
             val root = json.parseToJsonElement(bodyText).jsonObject
             val raw = root["results"]?.jsonArray ?: emptyList()
+            // P2-1：同 trending —— 重复 key 去重防 LazyColumn 崩溃
             val entries = raw.mapNotNull { el -> (el as? JsonObject)?.let(::parseSearchItem) }
+                .distinctBy { it.key }
             Result.success(ClawHubPage(entries, raw.size >= limit))
         } catch (e: Exception) {
             Result.failure(Exception("搜索结果解析失败: ${e.message}"))
@@ -143,7 +148,15 @@ class ClawHubSource(
             try {
                 httpClient.newCall(request).execute().use { resp ->
                     if (!resp.isSuccessful) {
-                        return@use Result.failure(Exception("HTTP ${resp.code}"))
+                        // #354 ④：安装失败的文案直接进 snackbar —— 只说状态码
+                        // 用户既不知道是哪个技能、也不知道是不是该重试。
+                        return@use Result.failure(
+                            Exception(
+                                "技能「${entry.slug}」安装包下载失败：HTTP ${resp.code}" +
+                                    "（若为 404 说明该技能已下架，可回列表刷新；" +
+                                    "5xx 或 429 请稍后重试）"
+                            )
+                        )
                     }
                     val body = resp.body ?: return@use Result.failure(Exception("空响应"))
                     val bytes = body.byteStream().use { it.readBytesLimited(MAX_ZIP_BYTES) }

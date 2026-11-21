@@ -1,0 +1,22 @@
+{
+  "id": "functional.repo-pulse",
+  "kind": "functional",
+  "name": "仓库脉搏",
+  "version": 1,
+  "versionName": "1.0.0",
+  "minHostVersion": 2,
+  "description": "只用斜杠指令的轻量插件：引导 agent 用 GitHub 工具检查仓库最近动态并汇报。演示零工具宏贡献（slashCommands-only）的插件形态。",
+  "author": "Apex Sample",
+  "tags": ["github", "devops"],
+  "scope": "coding",
+  "contributions": {
+    "slashCommands": [
+      {
+        "id": "pulse",
+        "title": "仓库脉搏",
+        "description": "检查仓库最近提交与开放 issue",
+        "prompt": "使用 GithubListRepos / GithubListIssues 等内置 GitHub 工具，检查我最近活跃仓库的提交与 open issue 状态，输出一份 5 行以内的脉搏摘要（仓库 · 最近提交 · issue 数）。"
+      }
+    ]
+  }
+}

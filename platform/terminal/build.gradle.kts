@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
@@ -10,7 +12,12 @@ import java.time.Duration
 
 android {
     namespace = "com.apex.agent.platform.terminal"
-    compileSdk = 35
+    compileSdk = 36
+
+    // T91（D2-D4）：AIDL 契约（ITerminalService / ITerminalCallback）编译开关
+    buildFeatures {
+        aidl = true
+    }
 
     defaultConfig {
         minSdk = 26
@@ -52,8 +59,14 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
+
+}
+
+// KGP 2.2：kotlinOptions DSL 已 deprecation（KGP 3.0 移除）—— 迁移到
+// 项目级 compilerOptions DSL（语义等价：等价于对全部 Kotlin 编译任务生效）。
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
@@ -66,8 +79,16 @@ dependencies {
     implementation(project(":terminal-emulator"))  // ATR 2.0 VT100/ANSI emulator
     // Native VT hot path（C++17 零分配引擎 + Kotlin 回退工厂）
     implementation(project(":terminal-native"))
+    // #595：统一日志中枢（纯 JVM：kotlin.jvm + coroutines，模块「纯 JVM 库」
+    // 边界不变）—— InputManagerImpl / RealVirtualTerminal 的诊断输出从
+    // System.err 收口到 AppLogger，release 构建不再落 stderr。
+    implementation(project(":core:logging"))
+    implementation(project(":core:su"))
     implementation(libs.coroutines.android)
     implementation(libs.serialization.json)
+    // SSH/SFTP 远程文件系统（Operit 对标 §4.7 缺项）：SSHJ 纯 JVM 客户端，
+    // 仅在 RemoteSshFilesystem 内消费（module 仍是 Android library，不破坏边界）。
+    implementation(libs.sshj)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     testImplementation(libs.junit)
@@ -81,7 +102,6 @@ dependencies {
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
 }
-
 
 // P68: show test stdout/stderr in CI log so println diagnostics are visible
 // when tests fail. Without this, Gradle captures stdout into the HTML report

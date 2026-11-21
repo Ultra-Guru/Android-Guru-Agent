@@ -51,6 +51,7 @@
 ```
 app ──▶ platform:terminal ──▶ terminal-emulator（纯 JVM）
  │              │
+ │              ├── core:logging（纯 JVM —— #595 起统一日志中枢 AppLogger）
  │              ├── kotlinx-coroutines / kotlinx-serialization（纯 JVM）
  │              └── NDK + jniLibs（libapex_terminal.so + proot 工具链）
  └──▶ core:* / plugin-sdk / ……（与 terminal 无关）

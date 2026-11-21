@@ -14,6 +14,7 @@ import com.apex.agent.platform.terminal.ubuntu.ReconciliationAction
 import com.apex.agent.platform.terminal.ubuntu.ReconciliationResult
 import com.apex.agent.platform.terminal.ubuntu.RootfsProvisioner
 import com.apex.agent.platform.terminal.ubuntu.RootfsTarget
+import com.apex.agent.platform.terminal.ubuntu.userMessage
 import com.apex.agent.platform.terminal.workspace.AbsolutePath
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -165,6 +166,8 @@ class UbuntuLifecycleCoordinatorTest {
         var probeThrows: Exception? = null,
         var probeCalls: Int = 0,
         var repairCalls: Int = 0,
+        /** P1（DNS 快照刷新）：dnsRefreshFn 端口调用计数（断言降级重试也刷新）。 */
+        var dnsRefreshCalls: Int = 0,
         /** 实例属性：测试可在构造后改写（repairFn lambda 延迟读取）。 */
         var repairOutcome: UbuntuLifecycleCoordinator.RepairOutcome? = null,
         val clockValues: ArrayDeque<Long> = ArrayDeque(), // 可编程时钟
@@ -193,6 +196,7 @@ class UbuntuLifecycleCoordinatorTest {
                 if (bundledChecksumThrows) error("registry lookup failed")
                 bundledChecksum
             },
+            dnsRefreshFn = { dnsRefreshCalls++; true },
             target = testTarget,
             defaultTimeoutMs = 5_000L,
             clock = { clockValues.removeFirstOrNull() ?: System.currentTimeMillis() }
@@ -292,6 +296,16 @@ class UbuntuLifecycleCoordinatorTest {
         assertEquals(UbuntuLifecycleCoordinator.Stage.INSTALL, r.stage)
         assertTrue(r.retryable)
         assertTrue(r.message.contains("NETWORK_FAILURE"))
+        // #235 残余回归锁：中文 userMessage 必须前置于内部码 —— UI 横幅
+        // take(200) 先读到的应是「发生了什么 + 怎么办」的人话，不是
+        // "NETWORK_FAILURE: dns down" 技术串（诊断细节保留在括号后缀里）。
+        val userMsg = ProvisioningError(ProvisioningErrorCode.NETWORK_FAILURE, "dns down").userMessage
+        val codeIdx = r.message.indexOf("NETWORK_FAILURE")
+        assertTrue("internal code kept as diagnostic suffix: ${r.message}", codeIdx > 0)
+        assertTrue(
+            "userMessage must precede internal code (UI banner truncation safety): ${r.message}",
+            r.message.indexOf(userMsg) < codeIdx
+        )
         assertEquals(UbuntuLifecycleCoordinator.Phase.FAILED, env.coordinator.stateFlow.value.phase)
         assertEquals("INSTALL", env.coordinator.stateFlow.value.failedStage)
         // bootstrap/probe 未被调用（fail fast）
@@ -402,6 +416,36 @@ class UbuntuLifecycleCoordinatorTest {
         val ready = r as UbuntuLifecycleCoordinator.EnsureResult.Ready
         assertFalse(ready.bootstrapDegraded)
         assertEquals(null, env.coordinator.stateFlow.value.bootstrapNote)
+    }
+
+    @Test
+    fun `10e full orchestration incl degraded retry refreshes guest DNS before bootstrap`() = runBlocking {
+        val env = Env()
+        // 断言刷新发生在 bootstrap 之前：bootstrapFn 启动时读取当时的调用计数。
+        var dnsCallsAtBootstrapStart = -1
+        env.bootstrap.behavior = {
+            dnsCallsAtBootstrapStart = env.dnsRefreshCalls
+            UbuntuLifecycleCoordinator.BootstrapStageResult(
+                UbuntuLifecycleCoordinator.BootstrapOutcome.FAILED,
+                "APT_UPDATE", failedStage = "APT_UPDATE", error = "resolve failed"
+            )
+        }
+        env.coordinator.ensureReady()
+        assertEquals(1, dnsCallsAtBootstrapStart)
+        assertEquals(UbuntuLifecycleCoordinator.Phase.READY, env.coordinator.stateFlow.value.phase)
+        // ★ 降级重试（note != null → 不短路 → 完整编排）必须同样先刷 DNS ——
+        // 旧实现只在健康 READY 短路路径刷新，切网后降级重试拿着旧 DNS 跑 apt
+        // 全镜像必败 → 注记永不消失（用户反馈「总是显示 apt 引导未完成」根因）。
+        env.coordinator.ensureReady()
+        assertEquals(
+            "degraded retry must refresh guest DNS again before bootstrap",
+            2, dnsCallsAtBootstrapStart
+        )
+        assertEquals(
+            "retry with still-failing bootstrap stays degraded",
+            "resolve failed（failedStage=APT_UPDATE）",
+            env.coordinator.stateFlow.value.bootstrapNote
+        )
     }
 
     @Test

@@ -1,0 +1,11 @@
+{
+  "id": "glyph-rain",
+  "name": "字符雨",
+  "nameEn": "Glyph Rain",
+  "tagline": "实测宽度的字符从天而降，接住它们拼出目标词",
+  "version": 1,
+  "engine": "pretext@0.0.9",
+  "apis": ["prepare", "measureNaturalWidth"],
+  "controls": "拖动托盘 / 键盘←→",
+  "scoreKey": "aga.pg.glyph-rain.hi"
+}

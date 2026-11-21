@@ -5,6 +5,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Api
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.apex.agent.core.tools.connector.ConnectorRegistry
@@ -12,6 +13,7 @@ import com.apex.agent.core.tools.mcp.McpManager
 import com.apex.agent.core.tools.skill.SkillMenuProvider
 import com.apex.agent.core.tools.skill.SkillRegistry
 import com.apex.agent.plugin.host.PluginManager
+import com.apex.agent.plugin.host.functional.UnifiedPluginRegistry
 import com.apex.agent.ui.language.LanguageManager
 import com.apex.agent.R
 import kotlinx.coroutines.CoroutineScope
@@ -22,6 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -55,7 +58,10 @@ class SlashMenuProvider @Inject constructor(
     private val skills: SkillMenuProvider,
     private val skillRegistry: SkillRegistry,
     private val mcpManager: McpManager,
+    private val fusionController: com.apex.agent.fusion.FusionBundleController,
     private val pluginManager: PluginManager,
+    // Plugin System v2：功能性插件的斜杠指令贡献（已激活插件快照）。
+    private val unifiedPluginRegistry: UnifiedPluginRegistry,
     private val connectorRegistry: ConnectorRegistry,
     // i18n：菜单分组/提示文案按当前语言取词（组合外场景）
     private val languageManager: LanguageManager
@@ -92,6 +98,14 @@ class SlashMenuProvider @Inject constructor(
                 rebuild()
             }
             .launchIn(scope)
+
+        // Plugin System v2：功能性插件启停/装卸/激活去激活 → 斜杠指令贡献
+        // 变化（changes 递增计数）→ 菜单重建（与去抖洪峰合并到同一次重建）。
+        unifiedPluginRegistry.changes
+            .drop(1) // StateFlow 首帧是初值 0，跳过避免无谓重建
+            .debounce(300)
+            .onEach { rebuild() }
+            .launchIn(scope)
     }
 
     /** 在 MCP 连接状态变化后手动触发全量刷新。 */
@@ -109,6 +123,7 @@ class SlashMenuProvider @Inject constructor(
             categories = listOf(
                 buildSkillsCategory(),
                 buildMcpCategory(),
+                buildFusionCategory(),
                 buildPluginsCategory(),
                 buildConnectorsCategory()
             )
@@ -121,6 +136,11 @@ class SlashMenuProvider @Inject constructor(
     // （去市场/已安装页开）。旧版还并列 5 个 legacy 内置模板（未安装也展示、
     // 状态 NOT_INSTALLED），现在全部移除——模板安装走市场页，菜单只留真货。
     // #197：逐项携带工位作用域（manifest.scope；缺省 all）——消费方按屏过滤。
+    // per-scope 启停：逐项携带生效工位集合（enabledScopes = manifest 声明 ∩
+    // 双工位启用）——Agent 屏与 Coding 屏的 / 菜单各归各（修「两屏同步显示」），
+    // 市场里只在 Coding 分级开启的技能不再出现在 Agent 屏菜单。
+    // 就绪门禁：必填配置未填齐的技能不进菜单（SkillMenuProvider 过滤，
+    // 配置保存后 registry 发 changes 自动重建）。
     private fun buildSkillsCategory(): SlashMenuCategory {
         val active = skills.getActiveSkills()
         val scopeById = skillRegistry.getInstalled()
@@ -131,7 +151,8 @@ class SlashMenuProvider @Inject constructor(
                 command = skill.command,
                 description = skill.description,
                 status = SlashItemStatus.READY,
-                scope = scopeById[skill.id] ?: "all"
+                scope = scopeById[skill.id] ?: "all",
+                enabledScopes = skill.enabledScopes
             )
         }
         return SlashMenuCategory(
@@ -141,6 +162,31 @@ class SlashMenuProvider @Inject constructor(
             items = items,
             badge = if (active.isNotEmpty()) "${active.size}" else null,
             hint = if (active.isEmpty()) languageManager.getString(R.string.chat_slash_no_skills) else null
+        )
+    }
+
+    // ── Fusion：已安装聚合包（激活即整体系就绪）——与技能/MCP 同级类目 ──
+    // 门控对齐斜杠总则：列出全部已装包（激活语义是"整队启用"而非运行态，
+    // 未激活的包同样应可见——选用动作本身就是激活入口）。
+    private fun buildFusionCategory(): SlashMenuCategory {
+        val digests = fusionController.bundles.value
+        val activeId = fusionController.activeBundle.value?.id
+        val items = digests.map { d ->
+            SlashMenuItem(
+                label = d.name,
+                command = "/fusion:${d.id} ",
+                description = d.description,
+                status = if (d.id == activeId) SlashItemStatus.CONNECTED else SlashItemStatus.READY,
+                scope = d.scope
+            )
+        }
+        return SlashMenuCategory(
+            id = "fusion",
+            title = "Fusion",
+            icon = Icons.Default.WorkspacePremium,
+            items = items,
+            badge = if (activeId != null) "1" else null,
+            hint = if (items.isEmpty()) languageManager.getString(R.string.chat_slash_no_fusion) else null
         )
     }
 
@@ -167,7 +213,10 @@ class SlashMenuProvider @Inject constructor(
             title = languageManager.getString(R.string.chat_slash_mcp_servers),
             icon = Icons.Default.Api,
             items = items,
+            // #454：显式 Locale —— 土耳其语等区域下数字/文本格式与本文件
+            // 其余 %s/%d 模式稳定一致。
             badge = if (items.isNotEmpty()) String.format(
+                java.util.Locale.US,
                 languageManager.getString(R.string.chat_slash_mcp_connected),
                 items.size
             ) else null,
@@ -175,19 +224,36 @@ class SlashMenuProvider @Inject constructor(
         )
     }
 
-    // ── 插件：从系统已安装的 Apex 插件中实时发现（10s TTL 缓存），区分「已加载」与「未加载」 ──
+    // ── 插件：Plugin System v2 双形态合并类目 ──
+    // 功能性插件：已激活插件的斜杠指令贡献（functionalSlashCommands 快照，
+    // 无 IPC / 无扫盘——纯内存读）+ unified changes 流驱动重建；
+    // APK 插件：只展示已加载（正在运行）的——发现但未加载的 NOT_INSTALLED
+    // 条目不再进菜单（用户需求：「没有启动的不要在输入框 / 按钮里显示」；
+    // 旧版把它们列为可选指令，点了也没在运行）。
     private fun buildPluginsCategory(): SlashMenuCategory {
+        // 功能性插件指令贡献：插件名前缀区分来源（同一类目内双形态并列）。
+        val functionalItems = unifiedPluginRegistry.functionalSlashCommands().map { command ->
+            SlashMenuItem(
+                label = command.title,
+                command = "/plugin:${command.commandId} ",
+                description = command.pluginName +
+                    (if (command.description.isNotBlank()) " · " + command.description else ""),
+                status = SlashItemStatus.READY
+            )
+        }
         val discovered = discoverPluginsCached()
         val loaded = pluginManager.loadedPlugins.value.keys
-        val items = discovered.map { info ->
-            val isLoaded = info.packageName in loaded
+        // 只保留已加载（运行中）的 APK 插件；未加载的走市场 → 插件页加载
+        val apkItems = discovered.mapNotNull { info ->
+            if (info.packageName !in loaded) return@mapNotNull null
             SlashMenuItem(
                 label = info.label,
                 command = "/plugin:${info.packageName} ",
                 description = info.packageName,
-                status = if (isLoaded) SlashItemStatus.CONNECTED else SlashItemStatus.NOT_INSTALLED
+                status = SlashItemStatus.CONNECTED
             )
         }
+        val items = functionalItems + apkItems
         return SlashMenuCategory(
             id = "plugins",
             title = languageManager.getString(R.string.chat_slash_plugins),
@@ -257,7 +323,14 @@ data class SlashMenuItem(
     val description: String = "",
     val status: SlashItemStatus = SlashItemStatus.READY,
     /** #197 工位作用域（"agent"/"coding"/"all"）：消费屏按此过滤可见项。 */
-    val scope: String = "all"
+    val scope: String = "all",
+    /**
+     * per-scope 启停：生效工位集合（"agent"/"coding" 子集；manifest 声明 ∩
+     * 双工位启用）。forScope 双重过滤：工位作用域匹配 且 该工位已启用 ——
+     * Agent 屏与 Coding 屏的 / 菜单各归各。默认双工位（MCP/插件/连接器等
+     * 无 per-scope 启停概念的条目）。
+     */
+    val enabledScopes: Set<String> = setOf("agent", "coding")
 )
 
 data class SlashMenuCategory(
@@ -268,9 +341,16 @@ data class SlashMenuCategory(
     val badge: String? = null,
     val hint: String? = null
 ) {
-    /** #197 按工位过滤（保留 scope=all 与匹配项）。 */
+    /**
+     * #197 按工位过滤：保留 scope=all 与匹配项。
+     * per-scope 启停双重过滤：还需该工位在 [SlashMenuItem.enabledScopes] 里
+     * （市场里只在另一分级开启的技能不再混进本屏菜单）。
+     */
     fun forScope(scope: String): SlashMenuCategory = copy(
-        items = items.filter { it.scope == "all" || it.scope == scope }
+        items = items.filter { item ->
+            (item.scope == "all" || item.scope == scope) &&
+                (scope == "all" || scope in item.enabledScopes)
+        }
     )
 }
 

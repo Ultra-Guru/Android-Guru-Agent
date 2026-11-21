@@ -8,8 +8,9 @@ import com.apex.agent.core.llm.runtime.ModelRuntime
 import com.apex.agent.core.llm.runtime.ModelRuntimeRegistry
 import com.apex.agent.core.llm.runtime.ModelRoleRouter
 import com.apex.agent.core.llm.runtime.ModelRuntimeStore
+import com.apex.agent.core.llm.runtime.RateLimitGovernor
 import com.apex.agent.ui.language.LanguageManager
-import com.apex.agent.ui.screen.agent.toolkit.ChatToolkitStore
+import com.apex.agent.ui.chatkit.ChatToolkitStore
 import com.apex.agent.ui.screen.settings.SettingsRepository
 import dagger.Module
 import dagger.Provides
@@ -69,10 +70,10 @@ object LlmModule {
         // 自动选择原生搜索策略；未知端点解析为 OFF，永不发送非标准参数）。关闭
         // 时保持 Profile 自身设置不变。
         //
-        // 根因修复：旧版开关只注入提示词求模型调 web_search 工具（依赖 DDG
+        // 根因修复：旧版开关只注入提示词求模型调 WebSearch 工具（依赖 DDG
         // 抓取、经常空结果），模型内置联网能力（OpenAI web_search_options /
-        // DashScope enable_search / Zhipu web_search / OpenRouter :online /
-        // Anthropic web_search）从未被启用。现在开关同时驱动原生搜索。
+        // DashScope enable_search / Zhipu WebSearch / OpenRouter :online /
+        // Anthropic WebSearch）从未被启用。现在开关同时驱动原生搜索。
         fun applyToggle(profiles: List<ModelProfile>, enabled: Boolean): List<ModelProfile> =
             if (enabled) profiles.map { it.copy(webSearch = WebSearchMode.AUTO) } else profiles
 
@@ -113,13 +114,36 @@ object LlmModule {
     /**
      * T72 §八 — 默认多模型运行时（角色路由 + 能力校验 + 降级 + 诊断）。
      * 引擎与压缩器注入此实例，获得完整多模型能力。
+     *
+     * 限速友好（只针对某些用户）：[RateLimitGovernor] 策略热读
+     * SettingsRepository 快照 —— 设置页改参数 → 下一个请求立即生效
+     * （无需重启 / 无需重建 runtime），关闭时零开销零行为变化。
      */
     @Provides
     @Singleton
     fun provideModelRuntime(
         router: ModelRoleRouter,
-        registry: ModelRuntimeRegistry
-    ): ModelRuntime = DefaultModelRuntime(router, registry)
+        registry: ModelRuntimeRegistry,
+        repo: SettingsRepository,
+        // #221：每请求真实用量观测（按实际 profile/model 记账，覆盖角色路由、
+        // 子代理与压缩摘要等不经主事件流的请求）。
+        usageObserver: com.apex.agent.usage.LedgerUsageObserver
+    ): ModelRuntime {
+        // Kotlin 陷阱（AGENTS.md 清单 #2）：尾随 lambda 绑定的是**末参** clock
+        // 而非 policyProvider —— 显式具名传参，防绑定错位。
+        val governor = RateLimitGovernor(policyProvider = {
+            val s = repo.agentSettings.value
+            RateLimitGovernor.RateLimitPolicy(
+                enabled = s.rateLimitFriendly,
+                minIntervalMs = s.rateLimitMinIntervalMs.toLong().coerceIn(0L, 60_000L)
+            )
+        })
+        return DefaultModelRuntime(
+            router, registry,
+            rateLimits = governor,
+            usageObserver = usageObserver
+        )
+    }
 }
 
 /**

@@ -1,0 +1,20 @@
+{
+  "schema": "apex-skill-v1",
+  "id": "extension-install",
+  "name": "Extension Install Discipline",
+  "version": "1.0.0",
+  "description": "统一扩展安装纪律：resolve → inspect → 用户确认 → install 四步闭环，禁止跳步安装",
+  "author": "Apex Agent",
+  "license": "MIT",
+  "category": "SKILL",
+  "tags": ["extension", "install", "marketplace", "mcp", "skill", "opencode", "claude", "dsh"],
+  "scope": "all",
+  "trustLevel": "verified",
+  "promptInjection": "## 扩展安装纪律（Extension Install Discipline）\n\n当用户要求安装扩展（技能 / MCP 连接器 / OpenCode / Claude / DSH 插件 / APK 扩展包）或给出 npm 包名、GitHub 链接、marketplace 名、粘贴的 JSON 配置时，**必须走统一安装闸门**，不许直接用 SkillInstall / McpConnect 或 shell 命令绕行：\n\n### 四步闭环（顺序硬约束）\n1. **ExtensionResolve(spec)**：认路 —— spec 语法：`skill:<url|json|路径>` / `mcp:{json}|mcp:import:<文件>|mcp:<目录名>` / `claude:<name>@<mp>` / `dsh:<pkg>` / `npm:<pkg>`（dsh-* 自动判 DSH）/ `github:owner/repo` / `apk:<路径>`。拿到 manifest_hash。\n2. **ExtensionInspect(spec)**：看清 —— 目标注册表、runtime 域（android/ubuntu）、权限声明、postinstall 脚本、Ubuntu 域依赖与磁盘占用、告警。拿到 manifest_hash（以 inspect 的为准）。\n3. **用户确认**：把 inspect 报告要点讲给用户。以下情况**必须停下等用户明确同意**：报告了任何 permissions、有 postinstall 脚本、来源是任意 URL/粘贴 JSON（非官方目录）、trustLevel 为 untrusted。来源不明的 GitHub 链接先说明再问。\n4. **ExtensionInstall(manifest_hash)**：装。第 3 步需要确认的场景携带 `confirm: \"confirm\"`。成功后用 ExtensionList 或对应注册表（McpList/SkillList）验证。\n\n### 硬性禁止\n- 未 inspect 就 install（hash 门会拒绝，不要绕）；\n- 用户未确认就传 confirm=\"confirm\"；权限模式为 BYPASS 也不豁免本确认；\n- 对来源不明的 URL 不做 resolve 直接执行 shell 安装；\n- 把用户输入拼进 shell 命令（适配器之外不允许任何安装路径）。\n\n### 提示\n- MCP 的 register（新增）与 import（导入桌面 Claude/Cursor 导出的配置）是两个语义，inspect 报告会标 action —— 覆盖已有同名服务器必须先征得用户同意；\n- runtime=ubuntu 的扩展需要 PRoot Ubuntu rootfs 就绪，inspect 报告会列依赖；\n- 批量场景用 ExtensionSync（先 dry-run 报告，用户同意再 install=true）。",
+  "changelog": [
+    {
+      "version": "1.0.0",
+      "notes": "市场完全重构 PR-A：统一安装闸门纪律技能（resolve→inspect→confirm→install）"
+    }
+  ]
+}

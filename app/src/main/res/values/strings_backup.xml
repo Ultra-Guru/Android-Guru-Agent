@@ -1,19 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 备份 / 恢复区英文文案（Task 5-c：设置 + 聊天会话 + Vault 加密信封导出导入）。
-     中文在 values-zh/strings_backup.xml；语言切换经 LanguageManager +
-     MainActivity attachBaseContext/recreate 生效。 -->
+<!-- English copy for the backup / restore section (Task 5-c: settings + Vault encrypted envelope export/import;
+     #852: copy must not claim chat history — BackupBundle carries settings keys + optional vault envelope only).
+     Chinese lives in values-zh/strings_backup.xml; language switching goes through LanguageManager +
+     MainActivity attachBaseContext/recreate. -->
 <resources>
-    <!-- ═══ 区块说明卡（含什么 / 永不包含什么）═══ -->
+    <!-- ═══ Section explainer cards (what it includes / what it never includes) ═══ -->
     <string name="backup_section_title">Backup &amp; Restore</string>
-    <string name="backup_section_desc">Export your setup and chat history to a JSON file, then restore it on a new device. The file is written to a location you pick.</string>
-    <string name="backup_security_included">Includes: model profiles, providers, role mappings, agent settings and chat history.</string>
+    <string name="backup_section_desc">Export your setup (and optionally the vault) to a JSON file, then restore it on a new device. The file is written to a location you pick. Chat history is not part of this bundle.</string>
+    <string name="backup_security_included">Includes: model profiles, providers, role mappings and agent settings — plus the vault envelope when enabled. Chat history is not included; back it up separately from the chat screen.</string>
     <string name="backup_security_never">Never included in plain text: API keys and vault secrets. Provider API keys are stripped on export and must be re-entered after restore.</string>
     <string name="backup_vault_envelope_note">The vault can be exported only as an AES-GCM encrypted envelope locked by your passphrase.</string>
 
-    <!-- ═══ 导出区 ═══ -->
+    <!-- ═══ Export section ═══ -->
     <string name="backup_export_title">Export</string>
-    <string name="backup_include_sessions">Include chat history</string>
-    <string name="backup_include_sessions_desc">Recent sessions with full messages (storage keeps the latest 100)</string>
     <string name="backup_include_vault">Include vault (encrypted)</string>
     <string name="backup_include_vault_desc">Encrypt the whole vault with a passphrase you will need again on import</string>
     <string name="backup_passphrase_label">Passphrase</string>
@@ -25,7 +24,7 @@
     <string name="backup_export_button">Export backup</string>
     <string name="backup_exporting">Exporting…</string>
 
-    <!-- ═══ 导入区 ═══ -->
+    <!-- ═══ Import section ═══ -->
     <string name="backup_import_title">Import</string>
     <string name="backup_import_desc">Pick a backup .json file to review its contents and choose what to restore.</string>
     <string name="backup_import_button">Choose backup file</string>
@@ -33,38 +32,33 @@
     <string name="backup_import_read_failed">Could not read the selected file</string>
     <string name="backup_import_invalid_file">Not a valid backup file</string>
 
-    <!-- ═══ 导入确认对话框（只读预览 + 恢复范围）═══ -->
+    <!-- ═══ Import confirmation dialog (read-only preview + restore scope) ═══ -->
     <string name="backup_preview_title">Restore backup</string>
     <string name="backup_preview_version_fmt">Format version: %1$d</string>
     <string name="backup_preview_created_fmt">Created: %1$s</string>
     <string name="backup_preview_from_fmt">Exported from: v%1$s</string>
-    <string name="backup_preview_sessions_fmt">Sessions: %1$d</string>
     <string name="backup_preview_vault_included">Vault: included (encrypted)</string>
     <string name="backup_preview_vault_absent">Vault: not included</string>
     <string name="backup_preview_settings_included">Settings: included</string>
     <string name="backup_preview_settings_absent">Settings: not included</string>
     <string name="backup_restore_settings">Restore settings</string>
-    <string name="backup_restore_sessions">Restore chat sessions</string>
     <string name="backup_restore_vault">Restore vault</string>
-    <string name="backup_restore_hint">Sessions that already exist on this device are kept and skipped</string>
     <string name="backup_import_passphrase_label">Vault passphrase</string>
     <string name="backup_import_passphrase_hint">Required to decrypt the vault envelope</string>
     <string name="backup_dialog_confirm">Restore</string>
     <string name="backup_dialog_cancel">Cancel</string>
 
-    <!-- ═══ 结果反馈（成功 / 失败 / 部分成功）═══ -->
+    <!-- ═══ Result feedback (success / failure / partial success) ═══ -->
     <string name="backup_export_success">Backup exported</string>
     <string name="backup_export_failed_fmt">Export failed: %1$s</string>
     <string name="backup_result_settings_ok">Settings restored</string>
     <string name="backup_result_settings_restart">Restart the app for restored settings to take full effect</string>
-    <string name="backup_result_sessions_fmt">Sessions restored: %1$d (skipped %2$d existing)</string>
     <string name="backup_result_vault_ok">Vault restored</string>
     <string name="backup_result_vault_passphrase_missing">Vault passphrase is required</string>
     <string name="backup_result_vault_decrypt_failed">Vault decryption failed — wrong passphrase or corrupted data</string>
     <string name="backup_result_vault_write_failed">Failed to write the restored vault</string>
     <string name="backup_result_providers_redact_failed">Provider list skipped: unparseable or unsafe data</string>
     <string name="backup_result_settings_write_failed_fmt">Failed to write settings key: %1$s</string>
-    <string name="backup_result_session_failed_fmt">Failed to restore session: %1$s</string>
     <string name="backup_result_unsupported_version_fmt">Backup format v%1$d is newer than this app supports. Update the app first.</string>
     <string name="backup_result_errors_prefix">Errors:</string>
     <string name="backup_message_dismiss">Dismiss message</string>

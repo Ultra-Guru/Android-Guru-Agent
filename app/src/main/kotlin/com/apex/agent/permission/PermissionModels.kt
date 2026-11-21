@@ -3,7 +3,7 @@ package com.apex.agent.permission
 import kotlinx.serialization.Serializable
 
 /**
- * ═══ opencode 式权限模式（Issue #155）—— 数据模型 ═══
+ * ═══ 业界标准式权限模式（Issue #155）—— 数据模型 ═══
  *
  * 三层结构自底向上：
  *  1. 本文件（PermissionModels.kt）—— 可序列化数据模型 + 规则匹配器，
@@ -13,15 +13,20 @@ import kotlinx.serialization.Serializable
  *  3. [PermissionModeGate] —— 挂进 v3 执行管线的门（含会话记忆与
  *     用户询问闭环），由 [PermissionAwareToolGate] 与既有风险门组合。
  *
- * 语义对齐 opencode 的 permission 三元组：每条规则是「模式 → 效应」，
+ * 语义对齐业界标准 CLI 编码智能体的 permission 三元组：每条规则是「模式 → 效应」，
  * 效应只有 allow / ask / deny 三种；模式给出兜底策略，规则可越级
  * （在 DEFAULT 下显式放行非只读工具，或在任意模式下收紧到 ASK）。
  *
- * ── 权限模式（opencode 语义）──
+ * ── 权限模式（业界标准语义）──
  *
- * - [PermissionMode.BYPASS]：全放行——不做任何询问与拦截（危险，仅供信任场景）；
- * - [PermissionMode.DEFAULT]：规则 + 按需询问——只读工具默认放行（仍交后续
- *   风险门把关），其余一律先问用户；显式 ALLOW 规则可越级放行；
+ * - [PermissionMode.BYPASS]：全放行——模式默认不做任何询问（S-03 起
+ *   非默认档：2026-10 曾短暂作为默认档（新装机即全自动），S-03 修复后
+ *   需用户在设置页显式开启（二次确认）—— 工具 / MCP / 技能 / shell
+ *   命令直接执行；用户手写的拒绝与询问规则仍生效，付费类敏感动作仍
+ *   逐次确认；即设置页的「全自动」模式，随时可关）；
+ * - [PermissionMode.DEFAULT]：规则 + 按需询问——基础工具（只读 / 普通编辑写 /
+ *   幂等覆写）默认放行（仍交后续风险门把关），仅删除类（破坏且非幂等）与
+ *   敏感动作先问用户；显式 ALLOW 规则可越级放行；
  * - [PermissionMode.ACCEPT_EDITS]：编辑类自动放行——文件编辑 / git 提交等
  *   写操作不再询问，其余非只读工具仍先问；
  * - [PermissionMode.PLAN]：只读模式——只读工具默认放行，任何会修改环境的
@@ -52,8 +57,8 @@ enum class PermissionEffect {
 /**
  * 单条权限规则：模式 + 效应。
  *
- * @param pattern 工具 id 模式——精确 id（如 code_edit），或前缀后接单个
- *   星号字符的尾缀通配（如 code_git_ 尾星、mcp__ 尾星）；单独一个星号
+ * @param pattern 工具 id 模式——精确 id（如 CodeEdit），或前缀后接单个
+ *   星号字符的尾缀通配（如 CodeGit 尾星、McpGithub 尾星）；单独一个星号
  *   字符匹配一切工具。完整匹配规则见 [PermissionRuleMatcher]。
  * @param effect 命中后的处置动作。
  */
@@ -64,14 +69,25 @@ data class PermissionRule(
 )
 
 /**
+ * #342：永不提供会话级放行的工具 id（权限门与风险门共用的单一事实源）。
+ *
+ * 这些工具的授权弹窗不出「本会话允许」选项、既有会话记忆也不生效——
+ * 强制逐次确认。当前仅 SmsSend：HIGH 风险工具中唯一有直接金钱后果的
+ * （每条真实计费）。⚠️ 工具 id 已 PascalCase 化，snake_case 旧名并存
+ * 防回归（历史会话记忆 / 旧配置里可能仍存旧名）。
+ */
+val NO_SESSION_ALLOW_TOOLS: Set<String> = setOf("SmsSend", "sms_send")
+
+/**
  * 规则模式匹配器（纯函数，无状态）。
  *
- * 匹配语义（对齐 opencode，刻意保持简单）：
+ * 匹配语义（对齐业界标准编码智能体，刻意保持简单）：
  *  - 模式非法（空串 / 纯空白）→ 永不匹配；
  *  - 单独一个星号字符 → 匹配一切工具（用户显式全放行的快捷方式）；
  *  - 以星号字符结尾 → 去掉末尾星号后做前缀匹配（尾缀通配），
- *    服务 MCP 一等工具的动态注册（mcp__github__ 前缀可命中
- *    mcp__github__create_issue 这类运行期才知道的 id）；
+ *    服务 MCP 一等工具的动态注册（McpGithub 前缀可命中
+ *    McpGithubCreateIssue 这类运行期才知道的 id —— v5 命名
+ *    Mcp{Server}{Tool}，与 McpToolNaming.toolId 同源）；
  *  - 其余 → 精确 id 相等（大小写敏感）。
  *
  * 不支持中间通配——工具 id 是受控命名空间，前缀 + 精确两级已覆盖

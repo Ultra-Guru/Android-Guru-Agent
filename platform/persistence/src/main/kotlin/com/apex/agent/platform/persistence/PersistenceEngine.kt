@@ -20,11 +20,11 @@ import javax.inject.Singleton
  *
  * 多层保活策略：
  * Layer 1: ForegroundService（specialUse类型）
- * Layer 2: AccessibilityService心跳（system_server管理，不受限）
- * Layer 3: WorkManager周期唤醒（每15分钟）
- * Layer 4: 电池优化白名单
- * Layer 5: [Root] init daemon（真正不死）
- * Layer 6: [Shizuku] 电池优化白名单
+ * Layer 2: WorkManager周期唤醒（每15分钟；原无障碍心跳层因与主进程
+ *          同进程、自检恒真，已按 #241 删除，见 ApexAccessibilityService）
+ * Layer 3: 电池优化白名单
+ * Layer 4: [Root] init daemon（真正不死）
+ * Layer 5: [Shizuku] 电池优化白名单
  */
 @Singleton
 class PersistenceEngine @Inject constructor(
@@ -42,13 +42,13 @@ class PersistenceEngine @Inject constructor(
         // Layer 1: 前台服务
         startForegroundService()
 
-        // Layer 3: WorkManager看门狗
+        // Layer 2: WorkManager看门狗
         scheduleWatchdog()
 
-        // Layer 4: 请求电池优化豁免
+        // Layer 3: 请求电池优化豁免
         requestBatteryExemption()
 
-        // Layer 5/6: 根据权限等级执行额外保活
+        // Layer 4/5: 根据权限等级执行额外保活
         val level = PrivilegeDetector.getPrivilegeLevel()
         when (level) {
             com.apex.agent.platform.privilege.PrivilegeLevel.ROOT -> {
@@ -61,6 +61,8 @@ class PersistenceEngine @Inject constructor(
         }
     }
 
+    // #260：保活链路静默失败不可诊断 —— 各层启动失败补 WARN 留痕
+    // （android.util.Log：本模块为 Android library，无 core:logging 依赖）
     private fun startForegroundService() {
         try {
             val intent = Intent().apply {
@@ -71,7 +73,9 @@ class PersistenceEngine @Inject constructor(
             } else {
                 context.startService(intent)
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "Layer1 前台服务启动失败（后台限制/组件禁用）: ${e.message}")
+        }
     }
 
     private fun scheduleWatchdog() {
@@ -89,7 +93,9 @@ class PersistenceEngine @Inject constructor(
 
     private fun requestBatteryExemption() {
         try {
-            val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            // #452：极端 ROM 上 getSystemService 可能返回 null —— as? 降级，
+            // 服务缺失时跳过豁免请求（保活路径已有 Layer4 降级兜底）。
+            val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
             if (!pm.isIgnoringBatteryOptimizations(context.packageName)) {
                 val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                     data = Uri.parse("package:${context.packageName}")
@@ -97,7 +103,10 @@ class PersistenceEngine @Inject constructor(
                 }
                 context.startActivity(intent)
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            // Layer 4 失败：系统弹窗被拒/Activity 限制 —— 保活降级但不静默
+            android.util.Log.w(TAG, "Layer4 电池优化豁免请求失败: ${e.message}")
+        }
     }
 
     private suspend fun installRootDaemon() = withContext(Dispatchers.IO) {
@@ -124,6 +133,10 @@ class PersistenceEngine @Inject constructor(
             "dumpsys deviceidle whitelist +${context.packageName}"
         )
     }
+
+    private companion object {
+        private const val TAG = "PersistenceEngine"
+    }
 }
 
 /**
@@ -136,8 +149,11 @@ class WatchdogWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
+        // #490：极端 ROM 上 ACTIVITY_SERVICE 可能拿不到 —— as? 降级 + retry，
+        // 与 #452（da536b79 六处 getSystemService 安全强转）同口径；强转失败
+        // 直接抛 ClassCastException 会让任务以失败告终而非等待下次调度。
         val am = applicationContext.getSystemService(Context.ACTIVITY_SERVICE)
-            as android.app.ActivityManager
+            as? android.app.ActivityManager ?: return Result.retry()
 
         val isRunning = am.runningAppProcesses?.any {
             it.processName == applicationContext.packageName
@@ -154,9 +170,16 @@ class WatchdogWorker(
                 } else {
                     applicationContext.startService(intent)
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                // 看门狗重启主进程失败：下次周期重试，但必须留痕（#260）
+                android.util.Log.w(TAG, "Layer3 看门狗重启主进程失败: ${e.message}")
+            }
         }
 
         return Result.success()
+    }
+
+    private companion object {
+        private const val TAG = "WatchdogWorker"
     }
 }

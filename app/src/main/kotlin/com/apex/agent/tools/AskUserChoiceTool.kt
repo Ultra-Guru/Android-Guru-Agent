@@ -37,7 +37,7 @@ class AskUserChoiceTool(
     private val gateway: UserQuestionGateway
 ) : AgentTool {
 
-    override val id: String = "ask_user_choice"
+    override val id: String = "AskUserChoice"
 
     override val name: String = "Ask User Choice"
 
@@ -153,7 +153,7 @@ class AskUserChoiceTool(
                 }
             }
         } catch (e: Exception) {
-            "Error: ask_user_choice failed: ${e.message}"
+            "Error: AskUserChoice failed: ${e.message}"
         }
     }
 

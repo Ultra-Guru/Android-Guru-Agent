@@ -18,7 +18,7 @@ import com.apex.agent.platform.terminal.io.UnixSignal
  *                     Agent tools CANNOT forge owner=USER.
  * @param background   true if command ended with `&`. Background jobs leave Session in READY
  *                     (can accept new jobs); foreground jobs put Session in RUNNING.
- * @param startCursor  Output cursor at job start. Pass as `afterCursor` to terminal.observe
+ * @param startCursor  Output cursor at job start. Pass as `afterCursor` to TerminalObserve
  *                     to read this job's output incrementally.
  * @param endCursor    Output cursor at job end (set on EXITED/INTERRUPTED/TIMED_OUT; null while RUNNING).
  * @param state        Current JobState (see JobState.kt for the state machine).

@@ -10,7 +10,7 @@ enum class ToolCategory(
     /** Stable sort key — lower sorts earlier. */
     val order: Int
 ) {
-    /** Local shell command execution (`shell_execute`). */
+    /** Local shell command execution (`ShellExecute`). */
     SHELL("Shell 执行", 10),
 
     /** Sandboxed file tree operations (read/write/edit/glob/search). */
@@ -28,7 +28,7 @@ enum class ToolCategory(
     /** Long-term memory recall (CS-Mem). */
     MEMORY("记忆", 60),
 
-    /** In-session context review tools (`context_*` / `session_stats`) — #172. */
+    /** In-session context review tools (`context_*` / `SessionStats`) — #172. */
     CONTEXT("上下文回顾", 62),
 
     /** Installed app management (list/launch/install/uninstall). */
@@ -46,7 +46,7 @@ enum class ToolCategory(
     /** Device sensors and environment (location/notifications). */
     SENSOR("传感器", 100),
 
-    /** Agent-initiated user interaction (ask_user / ask_user_choice). */
+    /** Agent-initiated user interaction (AskUser / AskUserChoice). */
     AGENT("用户交互", 110),
 
     /** Skill marketplace & installed skill tools (`skill_*` + composites). */
@@ -71,25 +71,92 @@ enum class ToolCategory(
 }
 
 /**
+ * #206 工具域 —— 18 个细分类之上的 7 域分组（选择器三级结构：域 → 类 → 工具）。
+ *
+ * **为什么**：Coding 屏的函数调用选择器直接平铺 18 个类，一屏放不下且认知
+ * 负担大；域层把同类能力聚合（执行与系统 / 代码与文件 / 网络与信息 / 记忆
+ * 与上下文 / 交互与界面 / 扩展生态 / 安全与工具），先选域再选类再选工具。
+ *
+ * **单一事实源**：类 → 域的归属只存在于 [domainOf] 的穷举 when 里，
+ * [categories] 是它的反向派生（不会出现两边清单漂移）；新增 ToolCategory
+ * 时编译器强制补映射（when 穷举）。
+ */
+enum class ToolDomain(
+    /** 域的中文标签（选择器一级菜单）。 */
+    val label: String,
+    /** 域的展示顺序。 */
+    val order: Int
+) {
+    /** 命令执行、终端、系统与应用控制、传感器。 */
+    EXECUTION("执行与系统", 10),
+
+    /** 文件树操作与代码托管连接。 */
+    CODE_AND_FILES("代码与文件", 20),
+
+    /** HTTP 网络与浏览器自动化。 */
+    WEB_AND_INFO("网络与信息", 30),
+
+    /** 长期记忆与会话上下文回顾。 */
+    MEMORY_AND_CONTEXT("记忆与上下文", 40),
+
+    /** 面向用户的交互与界面自动化。 */
+    INTERACTION("交互与界面", 50),
+
+    /** 技能 / MCP / 插件生态。 */
+    ECOSYSTEM("扩展生态", 60),
+
+    /** 安全金库与确定性实用工具。 */
+    SAFETY_AND_UTILITIES("安全与工具", 70);
+
+    /** 该域包含的工具类（domainOf 的反向派生，按 ToolCategory 自身顺序）。 */
+    val categories: List<ToolCategory>
+        get() = ToolCategory.inDisplayOrder().filter { domainOf(it) == this }
+
+    companion object {
+        /** 域按展示顺序。 */
+        fun inDisplayOrder(): List<ToolDomain> = entries.sortedBy { it.order }
+
+        /** 类 → 域的归属（穷举映射：新增 ToolCategory 必须在这里补归属）。 */
+        fun domainOf(category: ToolCategory): ToolDomain = when (category) {
+            ToolCategory.SHELL, ToolCategory.TERMINAL, ToolCategory.SYSTEM,
+            ToolCategory.APP, ToolCategory.SENSOR -> EXECUTION
+            ToolCategory.FILE, ToolCategory.GITHUB -> CODE_AND_FILES
+            ToolCategory.WEB, ToolCategory.BROWSER -> WEB_AND_INFO
+            ToolCategory.MEMORY, ToolCategory.CONTEXT -> MEMORY_AND_CONTEXT
+            ToolCategory.AGENT, ToolCategory.UI -> INTERACTION
+            ToolCategory.SKILL, ToolCategory.MCP, ToolCategory.PLUGIN -> ECOSYSTEM
+            ToolCategory.SECURITY, ToolCategory.UTILITY -> SAFETY_AND_UTILITIES
+        }
+    }
+}
+
+/**
  * Risk class of invoking a tool. Drives the v2 execution gate: HIGH-risk
  * tools prompt the user for a session-scoped approval on first use; MEDIUM
  * and LOW tools execute directly (the engine's existing command-level gate
  * still applies to shell commands inside those tools).
+ *
+ * Labels are **qualitative** (定性档位) instead of numeric grades: a tool is
+ * either "无危险" (safe), "平衡" (balanced — useful but mutates state) or
+ * "危险" (dangerous — destructive/irreversible). Percent-based risk scores
+ * were deliberately avoided: they imply false precision that users cannot
+ * act on, whereas a three-word verdict maps directly to "should I allow
+ * this?" decisions.
  */
 enum class ToolRisk(val label: String) {
     /** Read-only or pure computation — no approval ever needed. */
-    LOW("低"),
+    LOW("无危险"),
 
     /** Reads/writes within the sandbox, or executes non-destructive commands. */
-    MEDIUM("中"),
+    MEDIUM("平衡"),
 
     /**
      * Destructive, irreversible, or system-wide effects. The gate asks the
      * user once per session per tool unless the tool is marked `selfGated`
      * (it already runs its own, finer-grained confirmation flow — e.g.
-     * `shell_execute` routes through [CommandPermissionGate]).
+     * `ShellExecute` routes through [CommandPermissionGate]).
      */
-    HIGH("高");
+    HIGH("危险");
 }
 
 /**
@@ -104,20 +171,39 @@ enum class ToolRisk(val label: String) {
  *   destructive / idempotent / openWorld / sensitive). Defaults to
  *   [ToolAnnotations.infer] over id + risk so every existing tool gets
  *   hints without code changes; explicit declaration wins.
+ * @param scope v3 workspace scope ("agent" | "coding" | "all", default
+ *   "all"): which screen this tool is visible on. Sourced from the SAME
+ *   field the market tiers use (McpServerConfig.scope / skill manifest
+ *   scope) at registration time; consumed by EngineToolPlanner to enforce
+ *   mode-level isolation. "all" = both workspaces (every built-in tool
+ *   default — zero behavior change for the existing 111 tools).
  */
 data class ToolMetadata(
     val id: String,
     val category: ToolCategory,
     val risk: ToolRisk,
     val tags: List<String> = emptyList(),
-    val annotations: ToolAnnotations = ToolAnnotations.infer(id, risk)
+    val annotations: ToolAnnotations = ToolAnnotations.infer(id, risk),
+    val scope: String = "all",
+    /**
+     * v2.1.0 工具来源（评审 B1）：与 category 正交的身份面。默认按 id 推断
+     * （[BrowserRolePolicy.sourceFor]，显式声明恒覆盖）——审计与目录展示用。
+     */
+    val source: ToolSource = ToolSource.CORE,
+    /**
+     * v2.1.0 角色门禁（评审 B1/P0-4）：调用本工具所需的全部角色。
+     * 空集 = 不限制（存量 111 工具默认零漂移）；browser_* 经
+     * [BrowserRolePolicy.requiredRolesFor] 注入（infer fallback，显式声明恒覆盖）。
+     * 强制点三处：EngineToolPlanner 计划层 / RoleGate 调用层 / 目录 roleFilter。
+     */
+    val requiredRoles: Set<String> = emptySet()
 ) {
     /** True when this tool's risk level requires gated approval. */
     val isHighRisk: Boolean get() = risk == ToolRisk.HIGH
 
     /**
      * Compact one-line summary used in logs and the usage report:
-     * `json_path [UTILITY/低] tags: json,query`
+     * `JsonPathLegacy [UTILITY/低] tags: json,query`
      */
     fun summary(): String = buildString {
         append(id)
@@ -133,7 +219,22 @@ data class ToolMetadata(
         private var category: ToolCategory? = null
         private var risk: ToolRisk? = null
         private var annotations: ToolAnnotations? = null
+        private var scope: String = "all"
+        private var source: ToolSource? = null
+        private var roles: Set<String>? = null
         private val tags = mutableListOf<String>()
+
+        /** Set the workspace scope ("agent" | "coding" | "all"). */
+        fun scope(scope: String) = apply { this.scope = scope }
+
+        /** v2.1.0：显式声明来源（覆盖 id 推断）。 */
+        fun source(source: ToolSource) = apply { this.source = source }
+
+        /**
+         * v2.1.0：显式声明必需角色（**恒覆盖** [BrowserRolePolicy] 的 id 推断
+         * —— 评审 P0-9：infer 仅 fallback，细分角色从这里走）。
+         */
+        fun requiredRoles(vararg roles: String) = apply { this.roles = roles.toSet() }
 
         /** Set the category; inferred from the id if never called. */
         fun category(category: ToolCategory) = apply { this.category = category }
@@ -169,7 +270,10 @@ data class ToolMetadata(
                 category = resolvedCategory,
                 risk = resolvedRisk,
                 tags = tags,
-                annotations = annotations ?: ToolAnnotations.infer(id, resolvedRisk)
+                annotations = annotations ?: ToolAnnotations.infer(id, resolvedRisk),
+                scope = scope,
+                source = source ?: BrowserRolePolicy.sourceFor(id),
+                requiredRoles = roles ?: BrowserRolePolicy.requiredRolesFor(id)
             )
         }
     }
@@ -185,67 +289,72 @@ data class ToolMetadata(
         fun infer(id: String): ToolMetadata = ToolMetadata(
             id = id,
             category = inferCategory(id),
-            risk = inferRisk(id, inferCategory(id))
+            risk = inferRisk(id, inferCategory(id)),
+            source = BrowserRolePolicy.sourceFor(id),
+            requiredRoles = BrowserRolePolicy.requiredRolesFor(id)
         )
 
         /** Category inference from the id's prefix family. */
         @JvmStatic
         fun inferCategory(id: String): ToolCategory = when {
-            id == "shell_execute" -> ToolCategory.SHELL
+            id == "ShellExecute" -> ToolCategory.SHELL
 
-            id.startsWith("terminal.") || id.startsWith("exec_in_terminal") ||
-                id == "send_to_terminal" || id == "read_terminal" ||
-                id == "list_terminals" -> ToolCategory.TERMINAL
+            id.startsWith("Terminal") || id == "ExecInTerminal" ||
+                id == "SendToTerminal" || id == "ReadTerminal" ||
+                id == "ListTerminals" -> ToolCategory.TERMINAL
 
-            id.startsWith("file_") || id.startsWith("read_file") ||
-                id.startsWith("write_file") || id.startsWith("edit_file") ||
-                id.startsWith("list_files") || id.startsWith("delete_file") ||
-                id.startsWith("copy_file") || id.startsWith("move_file") ||
-                id.startsWith("glob_") || id.startsWith("search_files") -> ToolCategory.FILE
+            id.startsWith("Read") || id.startsWith("Write") ||
+                id.startsWith("Edit") || id.startsWith("ListFiles") ||
+                id.startsWith("GlobFiles") || id.startsWith("SearchFiles") ||
+                id.startsWith("CopyMoveFile") || id.startsWith("DeleteFile") ||
+                id.startsWith("File") -> ToolCategory.FILE
 
-            id.startsWith("web_") || id == "http_request" ||
-                id == "download_file" -> ToolCategory.WEB
+            id.startsWith("Web") || id == "HttpRequest" ||
+                id == "DownloadFile" -> ToolCategory.WEB
 
-            id.startsWith("browser_") || id.startsWith("page_") ||
-                id.startsWith("dom_") -> ToolCategory.BROWSER
+            id.startsWith("Browser") || id.startsWith("Page") ||
+                id.startsWith("Dom") -> ToolCategory.BROWSER
 
-            id.startsWith("memory_") || id.startsWith("recall") ||
-                id.startsWith("memorize") || id.startsWith("forget") ||
-                id.startsWith("episode") -> ToolCategory.MEMORY
+            id.startsWith("Memory") || id.startsWith("Recall") ||
+                id.startsWith("Memorize") || id.startsWith("Forget") ||
+                id.startsWith("Episode") -> ToolCategory.MEMORY
 
             // #172：会话内上下文回顾（区别于跨会话的 MEMORY）。
-            id.startsWith("context_") || id.startsWith("session_stats") -> ToolCategory.CONTEXT
+            id.startsWith("Context") || id.startsWith("SessionStats") -> ToolCategory.CONTEXT
 
-            id.startsWith("app_") || id == "deep_link" -> ToolCategory.APP
+            id.startsWith("App") || id == "DeepLink" -> ToolCategory.APP
 
             // #172：高级设备工具（tts/手电筒/振动/电池/网络/分享）归系统控制。
-            id.startsWith("tts_") || id.startsWith("torch") ||
-                id.startsWith("vibrate") || id.startsWith("battery_") ||
-                id.startsWith("network_") || id.startsWith("share_") ||
-                id.startsWith("device_") || id.startsWith("settings_") ||
-                id.startsWith("media_") || id.startsWith("clipboard_") ||
-                id.startsWith("get_time") || id.startsWith("logcat") ||
-                id.startsWith("screenshot") -> ToolCategory.SYSTEM
+            id.startsWith("Tts") || id.startsWith("Torch") ||
+                id.startsWith("Vibrate") || id.startsWith("Battery") ||
+                id.startsWith("Network") || id.startsWith("Share") ||
+                id.startsWith("Clipboard") || id.startsWith("GetTimeLegacy") ||
+                id.startsWith("Logcat") || id.startsWith("Screenshot") -> ToolCategory.SYSTEM
+
+            // v5：联系人 / 短信 / 日历 / 闹钟 / 通知 —— 设备级系统交互。
+            id.startsWith("Contact") || id.startsWith("Sms") ||
+                id.startsWith("Calendar") || id.startsWith("Alarm") ||
+                id.startsWith("Notification") -> ToolCategory.SYSTEM
+
+            // v5：agent 自主设置 —— 配置自管。
+            id.startsWith("Agent") -> ToolCategory.AGENT
 
             // #167 金库工具族：密钥存取与盲投递。
-            id.startsWith("vault_") -> ToolCategory.SECURITY
+            id.startsWith("Vault") -> ToolCategory.SECURITY
 
-            id.startsWith("ui_") || id.startsWith("input_text") ||
-                id.startsWith("tap_") || id.startsWith("swipe_") ||
-                id.startsWith("dump_") -> ToolCategory.UI
+            id.startsWith("Ui") || id.startsWith("InputText") -> ToolCategory.UI
 
-            id.startsWith("get_location") || id.startsWith("notification") ||
-                id.startsWith("sensor_") -> ToolCategory.SENSOR
+            id.startsWith("GetLocation") || id.startsWith("Sensor") -> ToolCategory.SENSOR
 
-            id.startsWith("ask_user") -> ToolCategory.AGENT
+            id.startsWith("AskUser") -> ToolCategory.AGENT
 
-            id.startsWith("skill_") || id.contains("skill") -> ToolCategory.SKILL
+            id.startsWith("Skill") || id.contains("Skill") -> ToolCategory.SKILL
 
-            id.startsWith("mcp_") -> ToolCategory.MCP
+            id.startsWith("Mcp") -> ToolCategory.MCP
 
-            id.startsWith("github_") -> ToolCategory.GITHUB
+            id.startsWith("Github") -> ToolCategory.GITHUB
 
-            id.startsWith("plugin") -> ToolCategory.PLUGIN
+            id.startsWith("Plugin") -> ToolCategory.PLUGIN
 
             else -> ToolCategory.UTILITY
         }
@@ -258,26 +367,47 @@ data class ToolMetadata(
         fun inferRisk(id: String, category: ToolCategory): ToolRisk = when {
             // Destructive or irreversible operations → HIGH.
             // #167：金库删除 = 不可逆销毁密钥。
-            id.startsWith("vault_delete") ||
-                id == "shell_execute" ||
-                id.startsWith("app_uninstall") || id.startsWith("app_install") ||
-                id.startsWith("app_force") ||
-                id.startsWith("settings_put") || id.startsWith("settings_") && id.endsWith("_put") ||
-                id.startsWith("delete_file") || id.startsWith("file_delete") ||
-                id.startsWith("uninstall") ||
-                id.startsWith("move_") -> ToolRisk.HIGH
+            id.startsWith("VaultDelete") ||
+                id == "ShellExecute" ||
+                id.startsWith("AppUninstall") || id.startsWith("AppInstall") ||
+                id.startsWith("AppForceStop") ||
+                id.startsWith("DeleteFile") ||
+                id.startsWith("CopyMoveFile") -> ToolRisk.HIGH
+
+            // v5：HIGH 风险——
+            //   AppInstallApk / AppDownloadInstall：安装外部 APK（系统状态变化 + 来源不可控）
+            //   AgentProviderSetKey：写入 API Key（凭据）
+            //   SmsSend：发送短信（费用 + 第三方通信）
+            id.startsWith("AppInstallApk") || id.startsWith("AppDownloadInstall") ||
+                id == "AgentProviderSetKey" || id == "SmsSend" -> ToolRisk.HIGH
+
+            // v1.5 浏览器敏感三件套 —— HIGH：
+            //   BrowserExecuteJs：页面内执行任意 JS（等效任意代码，能力不可枚举）
+            //   BrowserGetCookies：读取会话凭据（可冒充用户身份）
+            //   BrowserFileUpload：把本地文件外发到网页（数据出境）
+            // v1.7.0 第四件 —— BrowserClearData：不可逆全局效应（清 Cookie =
+            //   全部站点退出登录），与安装 APK 同级的「系统状态变化」
+            id == "BrowserExecuteJs" || id == "BrowserGetCookies" ||
+                id == "BrowserFileUpload" || id == "BrowserClearData" -> ToolRisk.HIGH
 
             // Mutating but recoverable / sandbox-scoped operations → MEDIUM.
             // #167：金库写入（覆写式）与盲投递（剪贴板/终端/HTTP 副作用）。
-            id.startsWith("vault_save") || id.startsWith("vault_paste") ||
-                id.startsWith("write_file") || id.startsWith("edit_file") ||
-                id.startsWith("file_write") || id.startsWith("file_edit") ||
-                id.startsWith("terminal.") || id == "download_file" ||
-                id.startsWith("clipboard_") || id.startsWith("ui_") ||
-                id.startsWith("input_") || id.startsWith("media_") ||
-                id.startsWith("mcp_") || id.startsWith("skill_") ||
-                id.startsWith("github_") && (id.contains("write") || id.contains("create")) ||
-                id.startsWith("plugin") -> ToolRisk.MEDIUM
+            id.startsWith("VaultSave") || id.startsWith("VaultPaste") ||
+                id.startsWith("Write") || id.startsWith("Edit") ||
+                id.startsWith("CodeWrite") || id.startsWith("CodeEdit") ||
+                id.startsWith("Terminal") || id == "DownloadFile" ||
+                id.startsWith("Clipboard") || id.startsWith("Ui") ||
+                id.startsWith("InputText") ||
+                id.startsWith("Mcp") || id.startsWith("Skill") ||
+                id.startsWith("Github") && (id.contains("Write") || id.contains("Create")) ||
+                id.startsWith("Plugin") -> ToolRisk.MEDIUM
+
+            // v5：MEDIUM 风险——agent 设置写入、profile/role 修改、
+            // 闹钟、文件选择、拍照、通知发布均涉及用户感官或运行时行为变化。
+            id.startsWith("AgentSettingSet") || id.startsWith("AgentProfileSet") ||
+                id.startsWith("AgentRoleActivate") ||
+                id == "AlarmSet" || id == "FilePick" || id == "ImageCapture" ||
+                id == "NotificationPost" -> ToolRisk.MEDIUM
 
             else -> when (category) {
                 ToolCategory.SHELL -> ToolRisk.HIGH
@@ -288,9 +418,27 @@ data class ToolMetadata(
             }
         }
 
-        /** Fluent metadata construction: `meta("json_path") { tag("json") }`. */
+        /** Fluent metadata construction: `meta("JsonPathLegacy") { tag("json") }`. */
         @JvmStatic
-        fun meta(id: String, block: Builder.() -> Unit = {}): ToolMetadata =
+        fun meta(id: String, block: Builder.() -> Unit): ToolMetadata =
             Builder(id).apply(block).build()
+
+        /**
+         * v3 作用域规范化：把市场 tier / 手改配置里的原始 scope 折叠为
+         * "agent" / "coding" / "all" 三值之一。null、空白与未知值（笔改
+         * mcp_servers.json 或 manifest 的笔误）一律按 "all" 处理——
+         * fail-open：一个拼写错误不应把工具从两个工位同时藏死。注册侧
+         * （McpToolRegistrar / SkillHotReloader）打标前统一过本函数，
+         * 保证 [scope] 恒为合法三值；市场目录侧的可见性仍按原始值精确
+         * 匹配，两侧语义互不越界。
+         */
+        @JvmStatic
+        fun normalizeScope(raw: String?): String {
+            val value = raw?.trim()?.lowercase() ?: return SCOPE_ALL
+            return if (value == "agent" || value == "coding") value else SCOPE_ALL
+        }
+
+        /** v3 作用域常量：与市场 tier / AgentConfig.skillScope 同源。 */
+        const val SCOPE_ALL = "all"
     }
 }

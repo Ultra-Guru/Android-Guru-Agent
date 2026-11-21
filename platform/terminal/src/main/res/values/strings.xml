@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- T91: terminal 前台服务通知（库模块自有资源；terminal_ 前缀防合并冲突） -->
+    <string name="terminal_service_channel_name">Terminal runtime</string>
+    <string name="terminal_service_channel_desc">Keeps terminal sessions and Ubuntu tasks running after leaving the screen</string>
+    <string name="terminal_service_notif_title">Terminal</string>
+    <string name="terminal_service_notif_text">Terminal session in progress…</string>
+</resources>

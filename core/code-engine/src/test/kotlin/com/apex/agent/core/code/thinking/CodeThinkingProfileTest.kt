@@ -1,5 +1,6 @@
 package com.apex.agent.core.code.thinking
 
+import com.apex.agent.core.engine.thinking.ThinkingProfile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -8,13 +9,16 @@ import kotlin.math.roundToInt
 /**
  * [CodeThinkingProfile] 画像表 + 旋钮补偿纯函数测试。
  *
- * 断言三件事：
+ * 断言四件事：
  * 1. 画像表：7 深度档全量覆盖，关键数值（迭代倍率 / 输出预算 / 压缩倍率）
  *    与文档表格一致，且随档位单调不降；
- * 2. 补偿数学端到端等式：base × 补偿 × 引擎 MAXIMUM 倍率 = 档位目标倍率
- *    （映射打底 + 反补的核心契约——引擎零改动的前提）；
+ * 2. 补偿数学端到端等式：base × 补偿 × 引擎映射档倍率 = 档位目标倍率
+ *    （映射打底 + 反补的核心契约——引擎零改动的前提；SPE-03 P1-5 后
+ *    引擎倍率**实时读** [ThinkingProfile] 表而非测试内写死 1.5——引擎常量
+ *    变更 → 契约测试与补偿公式同步跟随，硬编码回退即失败）；
  * 3. APEX 五问清单：五问齐全（目标 / 副作用 / 遗漏 / 不变量 / 回归），
- *    比三问清单多出后两问。
+ *    比三问清单多出后两问；
+ * 4. SPE-03 P1-3：档位自身布尔/别名单一事实源不在这里，见各自测试。
  */
 class CodeThinkingProfileTest {
 
@@ -29,10 +33,11 @@ class CodeThinkingProfileTest {
     }
 
     @Test
-    fun `auto falls back to standard profile`() {
-        // AUTO 元档不占表行：预检解析后用具体档画像；占位返回 STANDARD
+    fun `auto falls back to deep profile`() {
+        // AUTO 元档不占表行：预检解析后用具体档画像；占位返回
+        // AUTO_FALLBACK_LEVEL（SPE-02 P0-3 四处同源，旧 STANDARD 已对齐 DEEP）
         assertEquals(
-            CodeThinkingProfile.forLevel(CodeThinkingLevel.STANDARD),
+            CodeThinkingProfile.forLevel(CodeThinkingLevel.AUTO_FALLBACK_LEVEL),
             CodeThinkingProfile.forLevel(CodeThinkingLevel.AUTO)
         )
     }
@@ -78,32 +83,58 @@ class CodeThinkingProfileTest {
             }
     }
 
-    // ═══ 补偿数学：端到端等式（核心契约）═══
+    // ═══ 补偿数学：端到端等式（核心契约；引擎倍率实时读表）═══
+
+    /** 引擎侧对映射后档位的自乘倍率（SPE-03 P1-5：实时读表，不写死 1.5）。 */
+    private fun engineScale(level: CodeThinkingLevel): Float =
+        ThinkingProfile.forLevel(level.toAgentLevel()).maxIterationsScale
 
     @Test
     fun `ultracode compensated iterations reach target scale end to end`() {
         val base = 40 // CodeModule 引擎配置基数
         val compensated = CodeThinkingProfile.compensatedMaxIterations(base, CodeThinkingLevel.ULTRACODE)
-        val engineScale = 1.5f // 引擎对 MAXIMUM 档的自乘倍率（六档画像表）
-        // 引擎侧最终值：compensated × 1.5 四舍五入（resolveMaxIterations 同语义）
-        val effective = (compensated * engineScale).roundToInt()
+        val scale = engineScale(CodeThinkingLevel.ULTRACODE) // = ThinkingProfile MAXIMUM 倍率
+        // 引擎侧最终值：compensated × scale 四舍五入（resolveMaxIterations 同语义）
+        val effective = (compensated * scale).roundToInt()
         assertEquals("端到端 = 40 × 2.0 = 80（映射 MAXIMUM 打底 + 反补）", 80, effective)
-        // 补偿基数本身 = base × (2.0/1.5) 四舍五入
-        assertEquals((40 * (2.0f / 1.5f)).roundToInt(), compensated)
+        assertEquals("档位目标倍率实时读表仍为 ×2.0", 2.0f, CodeThinkingProfile.forLevel(CodeThinkingLevel.ULTRACODE).maxIterationsScale, 0.0001f)
     }
 
     @Test
     fun `apexcode compensated iterations reach target scale end to end`() {
         val base = 40
         val compensated = CodeThinkingProfile.compensatedMaxIterations(base, CodeThinkingLevel.APEXCODE)
-        // 40 × (3.0/1.5) = 80，引擎 ×1.5 = 120 = 40 × 3.0（精确无舍入损失）
-        assertEquals(80, compensated)
-        assertEquals("端到端 = 40 × 3.0 = 120", 120, (compensated * 1.5f).roundToInt())
+        val scale = engineScale(CodeThinkingLevel.APEXCODE)
+        assertEquals("端到端 = 40 × 3.0 = 120", 120, (compensated * scale).roundToInt())
+    }
+
+    /**
+     * SPE-03 P1-5 契约测试：全档位扫描——`base × 补偿 × 引擎映射档倍率 ==
+     * base × 档位目标倍率`（含舍入容差 ±1）。引擎倍率实时读取
+     * [ThinkingProfile] 表：若引擎把 MAXIMUM 倍率改为 1.6，本测试仍通过
+     * （补偿公式同步跟随）；若把补偿回退为硬编码 /1.5，本测试失败。
+     */
+    @Test
+    fun `compensation contract holds across the whole ladder reading engine table`() {
+        val bases = listOf(40, 7, 1)
+        (CodeThinkingLevel.entries).forEach { level ->
+            val target = CodeThinkingProfile.forLevel(level).maxIterationsScale
+            val engine = engineScale(level)
+            bases.forEach { base ->
+                val compensated = CodeThinkingProfile.compensatedMaxIterations(base, level)
+                val effective = (compensated * engine).roundToInt()
+                val expected = (base * target).roundToInt()
+                assertTrue(
+                    "档位 $level 基数 $base：补偿后端到端 $effective 应等于目标 $expected（±1）",
+                    kotlin.math.abs(effective - expected) <= 1
+                )
+            }
+        }
     }
 
     @Test
     fun `non deep water tiers keep base untouched for iterations`() {
-        // NONE..MAXIMUM：基数复位，由引擎自己的倍率体系接管
+        // NONE..MAXIMUM：基数复位，由引擎自己的倍率体系接管（恒等档补偿=1）
         listOf(CodeThinkingLevel.NONE, CodeThinkingLevel.LIGHT, CodeThinkingLevel.STANDARD,
             CodeThinkingLevel.DEEP, CodeThinkingLevel.MAXIMUM, CodeThinkingLevel.AUTO).forEach { level ->
             assertEquals("档位 $level 迭代基数应保持原值", 40, CodeThinkingProfile.compensatedMaxIterations(40, level))

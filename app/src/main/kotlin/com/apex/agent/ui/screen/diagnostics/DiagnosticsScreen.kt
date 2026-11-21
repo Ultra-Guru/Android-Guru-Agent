@@ -26,11 +26,17 @@ import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.FilePresent
+import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Smartphone
+import androidx.compose.material.icons.outlined.Timeline
+import androidx.compose.material.icons.outlined.Terminal
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -68,12 +74,17 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.apex.agent.R
+import com.apex.agent.core.tools.mcp.McpManager
+import com.apex.agent.core.tools.mcp.McpTransport
+import com.apex.agent.core.tools.skill.SkillRegistry
 import com.apex.agent.diagnostics.DiagRow
 import com.apex.agent.diagnostics.DiagnosticsCollector
 import com.apex.agent.diagnostics.LogFileSink
 import com.apex.agent.diagnostics.formatBytes
+import com.apex.agent.tools.ToolAuditLogger
 import com.apex.agent.ui.glass.GlassButton
 import com.apex.agent.ui.glass.GlassCard
+import com.apex.agent.ui.language.LanguageManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
 import java.text.SimpleDateFormat
@@ -113,13 +124,30 @@ data class DiagnosticsUiState(
     val busy: Boolean = false,
     val reportFile: File? = null,
     /** 报告生成失败信号（spec UiState 之外的补充字段：失败也需要一次性反馈，见 worklog）。 */
-    val reportFailed: Boolean = false
+    val reportFailed: Boolean = false,
+    // ═══ 诊断增强（用户诉求：工具 / mcp / skills / 终端调用日志 / 失败详细记录）═══
+    /** MCP 服务器快照（配置 + 连接状态）。 */
+    val mcpServers: List<McpServerRow> = emptyList(),
+    /** 已安装技能快照（双工位启用位）。 */
+    val skills: List<SkillRow> = emptyList(),
+    /** 最近工具/终端调用审计（tool-audit.jsonl）。 */
+    val toolCalls: List<ToolAuditLogger.AuditEntry> = emptyList(),
+    /** 失败子集（success=false / 拒绝类决策，含命令与详情现场）。 */
+    val failures: List<ToolAuditLogger.AuditEntry> = emptyList(),
+    /** SPE-08 P1-1：最近 N 次流式回合诊断（首 token 延迟/帧间隔分位/丢帧/收尾）。 */
+    val streamTurns: List<DiagRow> = emptyList()
 )
 
 @HiltViewModel
 class DiagnosticsViewModel @Inject constructor(
     private val collector: DiagnosticsCollector,
-    private val logSink: LogFileSink
+    private val logSink: LogFileSink,
+    // i18n：#228 查看器失败态文案（非 Compose 场景，LanguageManager 按当前语言取词）
+    private val lang: LanguageManager,
+    // ═══ 诊断增强数据源（真实运行时状态，非静态文案）═══
+    private val mcpManager: McpManager,
+    private val skillRegistry: SkillRegistry,
+    private val auditLogger: ToolAuditLogger
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DiagnosticsUiState())
@@ -133,12 +161,43 @@ class DiagnosticsViewModel @Inject constructor(
     fun refresh() {
         viewModelScope.launch {
             val snapshot = withContext(Dispatchers.Default) {
+                // ── 诊断增强：MCP / Skills / 工具审计（全部锁内快照读，零连接副作用）──
+                val connected = mcpManager.getConnectedServers().toSet()
+                val mcpRows = mcpManager.getConfigs().map { cfg ->
+                    McpServerRow(
+                        name = cfg.name,
+                        transport = cfg.transport.name + if (cfg.runInSandbox) "+SANDBOX" else "",
+                        endpoint = when (cfg.transport) {
+                            McpTransport.HTTP, McpTransport.SSE -> cfg.url.ifBlank { "-" }
+                            McpTransport.STDIO ->
+                                (cfg.command ?: "-") + cfg.args.joinToString(" ", " ")
+                            McpTransport.BUILTIN -> "builtin"
+                        },
+                        enabled = cfg.enabled,
+                        connected = cfg.name in connected
+                    )
+                }
+                val skillRows = skillRegistry.getInstalled().map { s ->
+                    SkillRow(
+                        id = s.manifest.id,
+                        name = s.manifest.name,
+                        version = s.manifest.version,
+                        toolCount = s.manifest.tools.size
+                    )
+                }
+                val toolCallRows = auditLogger.recentEntries(TOOL_CALL_ROWS)
+                val failureRows = auditLogger.recentFailures(TOOL_CALL_ROWS)
                 DiagnosticsUiState(
                     appInfo = collector.appInfoRows(),
                     deviceInfo = collector.deviceInfoRows(),
                     crashes = collector.crashFiles(),
                     logFiles = logSink.logFiles(),
-                    logBytes = logSink.totalBytes()
+                    logBytes = logSink.totalBytes(),
+                    mcpServers = mcpRows,
+                    skills = skillRows,
+                    toolCalls = toolCallRows,
+                    failures = failureRows,
+                    streamTurns = collector.streamTurnRows()
                 )
             }
             // 保留 busy/report* 旗标：刷新绝不打断进行中的报告生成或吞掉未消费的结果
@@ -184,15 +243,45 @@ class DiagnosticsViewModel @Inject constructor(
         _uiState.update { it.copy(reportFile = null, reportFailed = false) }
     }
 
-    /** 读取崩溃文件内容（转给 UI 弹窗；调用方负责切 IO 线程）。 */
-    fun readCrash(file: File): String? = runCatching { collector.readCrash(file) }.getOrNull()
+    /**
+     * 读取崩溃文件内容（转给 UI 弹窗；调用方负责切 IO 线程）。
+     * #228：失败显式分流为 [ViewerContent.Failed]（带错误摘要）——旧 getOrNull
+     * 把 IO 异常吞成 null，与加载态无法区分，弹窗只能无限转圈。
+     * 文件缺失（底层返回 null，如列表刷新前刚被清空）同样按失败呈现。
+     */
+    fun readCrash(file: File): ViewerContent = runCatching { collector.readCrash(file) }.fold(
+        onSuccess = { text ->
+            if (text != null) ViewerContent.Loaded(text)
+            else ViewerContent.Failed(lang.getString(R.string.diag_viewer_missing))
+        },
+        onFailure = { ViewerContent.Failed(it.message ?: it.javaClass.simpleName) }
+    )
 
-    /** 读取日志文件内容（512KB 截尾保留最新；调用方负责切 IO 线程）。 */
-    fun readLog(file: File): String? = runCatching { logSink.readText(file) }.getOrNull()
+    /**
+     * 读取日志文件内容（512KB 截尾保留最新；调用方负责切 IO 线程）。
+     * #228：同 readCrash —— 成功/失败三态分流，不再 getOrNull 静默。
+     */
+    fun readLog(file: File): ViewerContent = runCatching { logSink.readText(file) }.fold(
+        onSuccess = { text ->
+            if (text != null) ViewerContent.Loaded(text)
+            else ViewerContent.Failed(lang.getString(R.string.diag_viewer_missing))
+        },
+        onFailure = { ViewerContent.Failed(it.message ?: it.javaClass.simpleName) }
+    )
 
     /** 崩溃文件时间标签：优先解析文件名内嵌时间戳，回退 lastModified。 */
     fun formatCrashTime(file: File): String = synchronized(crashTimeFormat) {
         crashTimeFormat.format(Date(collector.crashFileTime(file)))
+    }
+
+    /** 审计事件时间标签（诊断增强区行首；同一格式器复用 + 同步保护）。 */
+    fun formatAuditTime(ts: Long): String = synchronized(crashTimeFormat) {
+        crashTimeFormat.format(Date(ts))
+    }
+
+    private companion object {
+        /** 工具审计展示行数（最近 N 次 + 失败 N 条；与 SystemDiagnose 工具上限同量级）。 */
+        const val TOOL_CALL_ROWS = 50
     }
 }
 
@@ -202,6 +291,19 @@ private val crashTimeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.get
 /** 弹窗查看目标：崩溃文件或日志文件（决定读取通道与是否提供删除操作）。 */
 private data class ViewerTarget(val file: File, val isCrash: Boolean)
 
+/**
+ * 崩溃/日志查看弹窗的内容状态（#228）。
+ *
+ * 旧实现用 String? 表达内容：null 同时承担「加载中」与「读取失败」两种语义，
+ * IO 一失败弹窗就永远停在转圈（无错误文案、无重试、无关闭引导）。sealed
+ * 三态让 UI 能区分加载/成功/失败，失败可重试（retryKey 驱动重读）。
+ */
+sealed interface ViewerContent {
+    data object Loading : ViewerContent
+    data class Loaded(val text: String) : ViewerContent
+    data class Failed(val error: String) : ViewerContent
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
@@ -210,13 +312,19 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
 
     var appExpanded by remember { mutableStateOf(true) }
     var deviceExpanded by remember { mutableStateOf(false) }
+    // SPE-08 P1-1：流式回合区默认展开（诊断页主力区，空态自动隐藏整节）
+    var streamTurnsExpanded by remember { mutableStateOf(true) }
     var viewer by remember { mutableStateOf<ViewerTarget?>(null) }
-    var viewerContent by remember { mutableStateOf<String?>(null) }
+    var viewerContent by remember { mutableStateOf<ViewerContent?>(null) }
+    // #228：查看器重试驱动 —— 变更 key 触发下方 LaunchedEffect 重新读取
+    var viewerRetryKey by remember { mutableStateOf(0) }
     var pendingDeleteCrash by remember { mutableStateOf<File?>(null) }
     var showClearCrashes by remember { mutableStateOf(false) }
     var showClearLogs by remember { mutableStateOf(false) }
     var showReportDialog by remember { mutableStateOf(false) }
     var showReportFailed by remember { mutableStateOf(false) }
+    // 诊断增强：失败详情弹窗选中项（点击失败行打开，看命令/详情/退出码全现场）
+    var failureDetail by remember { mutableStateOf<ToolAuditLogger.AuditEntry?>(null) }
 
     // i18n：onClick / 非组合上下文不可调 stringResource —— 上提词
     val shareChooserTitle = stringResource(R.string.diag_share_chooser)
@@ -227,11 +335,14 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
     LaunchedEffect(state.reportFile) { if (state.reportFile != null) showReportDialog = true }
     LaunchedEffect(state.reportFailed) { if (state.reportFailed) showReportFailed = true }
     // 弹窗内容加载：IO 线程读取，主线程仅渲染
-    LaunchedEffect(viewer) {
+    // #228：读取以 (viewer, retryKey) 驱动 —— 重试改 key 即重读；先置 Loading
+    // 再读，失败显式置 Failed（旧实现 null 混流是无限转圈的根因）。
+    LaunchedEffect(viewer, viewerRetryKey) {
         val target = viewer
         if (target == null) {
             viewerContent = null
         } else {
+            viewerContent = ViewerContent.Loading
             viewerContent = withContext(Dispatchers.IO) {
                 if (target.isCrash) viewModel.readCrash(target.file) else viewModel.readLog(target.file)
             }
@@ -297,6 +408,19 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
                 )
             }
 
+            // ── 最近流式回合（SPE-08 P1-1：空态自动隐藏）──
+            if (state.streamTurns.isNotEmpty()) {
+                item {
+                    InfoSectionCard(
+                        title = stringResource(R.string.diag_stream_turns_section),
+                        icon = Icons.Outlined.Timeline,
+                        expanded = streamTurnsExpanded,
+                        onToggle = { streamTurnsExpanded = !streamTurnsExpanded },
+                        rows = state.streamTurns
+                    )
+                }
+            }
+
             // ── 崩溃记录 ──
             item {
                 GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -328,6 +452,146 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
                             state.crashes.forEach { file ->
                                 val timeLabel = remember(file) { viewModel.formatCrashTime(file) }
                                 CrashFileRow(file = file, timeLabel = timeLabel, onOpen = { viewer = ViewerTarget(file, isCrash = true) })
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── MCP 服务器（诊断增强：配置/连接快照，用户诉求「便于我寻找问题」）──
+            item {
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Outlined.Hub, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Text(
+                                stringResource(R.string.diag_mcp_section),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (state.mcpServers.isNotEmpty()) {
+                                Text(
+                                    stringResource(
+                                        R.string.diag_mcp_count,
+                                        state.mcpServers.size,
+                                        state.mcpServers.count { it.connected }
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        if (state.mcpServers.isEmpty()) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(stringResource(R.string.diag_mcp_empty), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Spacer(Modifier.height(4.dp))
+                            state.mcpServers.forEach { row -> McpServerListRow(row) }
+                        }
+                    }
+                }
+            }
+
+            // ── Skills（诊断增强：安装/双工位启用快照）──
+            item {
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Outlined.Extension, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Text(
+                                stringResource(R.string.diag_skill_section),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (state.skills.isNotEmpty()) {
+                                Text(
+                                    stringResource(R.string.diag_skill_count, state.skills.size),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        if (state.skills.isEmpty()) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(stringResource(R.string.diag_skill_empty), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Spacer(Modifier.height(4.dp))
+                            state.skills.forEach { row -> SkillListRow(row) }
+                        }
+                    }
+                }
+            }
+
+            // ── 工具与终端调用日志（诊断增强：tool-audit.jsonl 最近轨迹）──
+            item {
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Outlined.Terminal, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Text(
+                                stringResource(R.string.diag_audit_section),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (state.toolCalls.isNotEmpty()) {
+                                Text(
+                                    stringResource(R.string.diag_audit_count, state.toolCalls.size),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        if (state.toolCalls.isEmpty()) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(stringResource(R.string.diag_audit_empty), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Spacer(Modifier.height(4.dp))
+                            state.toolCalls.forEach { row ->
+                                ToolAuditListRow(
+                                    entry = row,
+                                    timeLabel = viewModel.formatAuditTime(row.ts)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── 失败详细记录（诊断增强：失败子集 + 点击看命令/详情现场）──
+            item {
+                GlassCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Outlined.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                            Text(
+                                stringResource(R.string.diag_failure_section),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (state.failures.isNotEmpty()) {
+                                Text(
+                                    stringResource(R.string.diag_failure_count, state.failures.size),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                        if (state.failures.isEmpty()) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(stringResource(R.string.diag_failure_empty), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Spacer(Modifier.height(4.dp))
+                            state.failures.forEach { row ->
+                                ToolAuditListRow(
+                                    entry = row,
+                                    timeLabel = viewModel.formatAuditTime(row.ts),
+                                    isFailure = true,
+                                    onOpenDetail = { failureDetail = row }
+                                )
                             }
                         }
                     }
@@ -427,23 +691,69 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
                         overflow = TextOverflow.Ellipsis
                     )
                     Spacer(Modifier.height(8.dp))
-                    val content = viewerContent
-                    if (content == null) {
-                        Box(modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    when (val content = viewerContent) {
+                        is ViewerContent.Loaded -> {
+                            val lines = remember(content) { content.text.lines() }
+                            // 等宽 12sp 逐行渲染：512KB 上限内 LazyColumn 按需组合，滚动流畅
+                            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp)) {
+                                items(lines.size, key = { it }) { idx ->
+                                    Text(
+                                        lines[idx],
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontSize = 12.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
                         }
-                    } else {
-                        val lines = remember(content) { content.lines() }
-                        // 等宽 12sp 逐行渲染：512KB 上限内 LazyColumn 按需组合，滚动流畅
-                        LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp)) {
-                            items(lines.size, key = { it }) { idx ->
-                                Text(
-                                    lines[idx],
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = MaterialTheme.colorScheme.onSurface
+                        // #228：IO 失败 —— 错误图标 + 「读取失败」+ 错误摘要 + 重试/关闭引导
+                        is ViewerContent.Failed -> {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    Icons.Outlined.ErrorOutline,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(32.dp)
                                 )
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    stringResource(R.string.diag_viewer_failed),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    content.error,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    TextButton(onClick = { viewerRetryKey++ }) {
+                                        Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(stringResource(R.string.diag_viewer_retry))
+                                    }
+                                    TextButton(onClick = { viewer = null }) {
+                                        Text(stringResource(R.string.diag_viewer_close))
+                                    }
+                                }
+                            }
+                        }
+                        // null（弹窗刚开、effect 尚未回填）与 Loading 同渲染：居中转圈
+                        else -> {
+                            Box(modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                             }
                         }
                     }
@@ -468,6 +778,63 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
                 }
             }
         }
+    }
+
+    // ══════════ 失败详情弹窗（诊断增强：命令/详情/退出码/耗时/通道全现场）══════════
+    failureDetail?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { failureDetail = null },
+            title = { Text(stringResource(R.string.diag_failure_detail_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "${viewModel.formatAuditTime(entry.ts)} · ${entry.tool}",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text(
+                        entry.decision,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    entry.command?.let { cmd ->
+                        Text(stringResource(R.string.diag_failure_field_command), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerLow
+                        ) {
+                            Text(
+                                cmd,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.padding(8.dp)
+                            )
+                        }
+                    }
+                    entry.detail?.let { d ->
+                        Text(stringResource(R.string.diag_failure_field_detail), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(d, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                    }
+                    val meta = buildList {
+                        entry.exitCode?.let { add(stringResource(R.string.diag_failure_field_exit) + ": $it") }
+                        entry.durationMs?.let { add(stringResource(R.string.diag_failure_field_duration) + ": ${it}ms") }
+                        entry.tier?.let { add(stringResource(R.string.diag_failure_field_tier) + ": $it") }
+                    }
+                    if (meta.isNotEmpty()) {
+                        Text(
+                            meta.joinToString("  ·  "),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { failureDetail = null }) {
+                    Text(stringResource(R.string.diag_report_close))
+                }
+            }
+        )
     }
 
     // ══════════ 确认/结果对话框 ══════════

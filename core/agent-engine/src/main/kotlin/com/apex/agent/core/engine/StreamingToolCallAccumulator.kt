@@ -23,8 +23,15 @@ internal class StreamingToolCallAccumulator(
      * Latest non-blank name seen for this call. Streaming chunks may repeat
      * the name (or leave it blank after the first fragment); only non-blank
      * fragments update it.
+     *
+     * "null" literal guard（2026-11「MCP null」全链失效事故）：网关把
+     * `"function":{"name":null}` 序列化成字面串 "null"（JSON null 经
+     * JsonNull.content / 字符串化网关均会产这个形状）时，后续参数分片
+     * 会以 "null" 覆盖先到的正确名 —— 注册表收到 Tool 'null' not found。
+     * 解析层已改 contentOrNull，这里再拒收字面 "null" 名（首片与续片
+     * 同口径），双保险。
      */
-    var name: String = initialName
+    var name: String = initialName.takeUnless { it == "null" } ?: ""
         private set
 
     private val argumentsBuilder = StringBuilder()
@@ -37,7 +44,7 @@ internal class StreamingToolCallAccumulator(
      * @param fragmentArguments argument bytes carried by this chunk
      */
     fun append(fragmentName: String, fragmentArguments: String) {
-        if (fragmentName.isNotBlank()) name = fragmentName
+        if (fragmentName.isNotBlank() && fragmentName != "null") name = fragmentName
         argumentsBuilder.append(fragmentArguments)
     }
 

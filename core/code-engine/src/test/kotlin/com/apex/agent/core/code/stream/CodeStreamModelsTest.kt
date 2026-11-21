@@ -14,17 +14,18 @@ class CodeStreamModelsTest {
 
     @Test
     fun `tool names map to families`() {
-        assertEquals(ToolKind.READ_FILE, ToolKind.fromToolName("code_read"))
-        assertEquals(ToolKind.WRITE_FILE, ToolKind.fromToolName("code_write"))
-        assertEquals(ToolKind.EDIT_FILE, ToolKind.fromToolName("code_edit"))
-        assertEquals(ToolKind.GREP_SEARCH, ToolKind.fromToolName("code_grep"))
-        assertEquals(ToolKind.BASH, ToolKind.fromToolName("terminal.exec"))
-        assertEquals(ToolKind.BASH, ToolKind.fromToolName("shell_execute"))
-        assertEquals(ToolKind.GIT, ToolKind.fromToolName("code_git_diff"))
+        assertEquals(ToolKind.READ_FILE, ToolKind.fromToolName("CodeRead"))
+        assertEquals(ToolKind.WRITE_FILE, ToolKind.fromToolName("CodeWrite"))
+        assertEquals(ToolKind.EDIT_FILE, ToolKind.fromToolName("CodeEdit"))
+        assertEquals(ToolKind.GREP_SEARCH, ToolKind.fromToolName("CodeGrep"))
+        assertEquals(ToolKind.BASH, ToolKind.fromToolName("TerminalExec"))
+        assertEquals(ToolKind.BASH, ToolKind.fromToolName("ShellExecute"))
+        assertEquals(ToolKind.GIT, ToolKind.fromToolName("CodeGitDiff"))
         assertEquals(ToolKind.LINT, ToolKind.fromToolName("lint"))
         assertEquals(ToolKind.TEST, ToolKind.fromToolName("test"))
-        assertEquals(ToolKind.PLAN, ToolKind.fromToolName("code_todo"))
-        assertEquals(ToolKind.MCP_CUSTOM, ToolKind.fromToolName("mcp_web_search"))
+        assertEquals(ToolKind.PLAN, ToolKind.fromToolName("CodeTodo"))
+        // 2026-11 网络搜索族上线：mcp_web_search 归 WEB_SEARCH（原 MCP 回退化石断言）
+        assertEquals(ToolKind.WEB_SEARCH, ToolKind.fromToolName("mcp_web_search"))
         assertEquals("未知名保守归 MCP_CUSTOM", ToolKind.MCP_CUSTOM, ToolKind.fromToolName("whatever_tool"))
     }
 
@@ -84,8 +85,10 @@ class CodeStreamModelsTest {
     // ═══ 分组建议 ═══
 
     @Test
-    fun `group threshold is three`() {
-        assertEquals(3, StreamEntryGroup.GROUP_THRESHOLD)
+    fun `group threshold is one - two same-kind calls aggregate`() {
+        // 用户需求「同种工具直接放在一起」：连续胶囊数 > 阈值（即 ≥2）成组，
+        // 几十条终端命令只占一颗聚合胶囊
+        assertEquals(1, StreamEntryGroup.GROUP_THRESHOLD)
     }
 
     @Test
@@ -97,5 +100,103 @@ class CodeStreamModelsTest {
         assertEquals(null, snap.activeTerminalCallId)
         assertEquals("", snap.terminalContent)
         assertTrue(snap.affectedFiles.isEmpty())
+    }
+
+    @Test
+    fun `reconcile fullText extends accumulated prefix`() {
+        // 高水位尾部丢弃：fullText 是累积的真延长 → 采信引擎全文
+        assertEquals(
+            "今天上海的天气很好",
+            reconcileStreamText(accumulated = "今天上海", fullText = "今天上海的天气很好")
+        )
+        assertEquals("完整回复", reconcileStreamText("完整回", "完整回复"))
+    }
+
+    @Test
+    fun `reconcile blank fullText keeps accumulated`() {
+        // 反思修正轮等文本从未流经引擎累积器：fullText 空串不得清空 UI
+        assertEquals("用户看到的文本", reconcileStreamText("用户看到的文本", ""))
+        assertEquals("", reconcileStreamText("", ""))
+    }
+
+    @Test
+    fun `reconcile blank accumulated adopts fullText`() {
+        // 收集器全程缺席：UI 零累积 → 采信引擎全文
+        assertEquals("全文", reconcileStreamText("", "全文"))
+    }
+
+    @Test
+    fun `reconcile diverged texts keep accumulated`() {
+        // 引擎 fullText 与流式分片异源（末轮切片/反思轮）：用户所见优先，
+        // 盲信 fullText 会复现「跨轮结论截成末轮残句」的用户实测回归
+        assertEquals("结论如下：", reconcileStreamText("结论如下：", "好的"))
+        assertEquals("我先分析一下，结论如下：", reconcileStreamText("我先分析一下，结论如下：", "结论如下："))
+        val t = "同一段文本"
+        assertEquals(t, reconcileStreamText(t, t))
+    }
+
+    @Test
+    fun `web search family classification`() {
+        // 内置家族
+        assertEquals(ToolKind.WEB_SEARCH, ToolKind.fromToolName("web_search"))
+        assertEquals(ToolKind.WEB_SEARCH, ToolKind.fromToolName("WebSearch"))
+        assertEquals(ToolKind.WEB_SEARCH, ToolKind.fromToolName("WebFetch"))
+        assertEquals(ToolKind.WEB_SEARCH, ToolKind.fromToolName("search_hint"))
+        // MCP 搜索服务器（Searchlight / Agent Search / free-search-mcp 命名惯例）
+        assertEquals(
+            ToolKind.WEB_SEARCH,
+            ToolKind.fromToolName("mcp__searchlight__web_search")
+        )
+        assertEquals(
+            ToolKind.WEB_SEARCH,
+            ToolKind.fromToolName("mcp__agent-search__web_read")
+        )
+        assertEquals(
+            ToolKind.WEB_SEARCH,
+            ToolKind.fromToolName("mcp__free-search-mcp__web_search")
+        )
+        // searxng 命名直接命中
+        assertEquals(ToolKind.WEB_SEARCH, ToolKind.fromToolName("searxng_search"))
+        // 不误吞同尾工具：grep_search 仍是本地代码搜索
+        assertEquals(ToolKind.GREP_SEARCH, ToolKind.fromToolName("grep_search"))
+        // 泛化 MCP 的 grep 工具（非 web_* 命名）仍落 MCP_CUSTOM——规则按
+        // web_* 后缀精确归类，不做 contains 泛化（防误吞）
+        assertEquals(ToolKind.MCP_CUSTOM, ToolKind.fromToolName("mcp__x__grep_search"))
+        // 无关 MCP 工具仍落 MCP_CUSTOM
+        assertEquals(
+            ToolKind.MCP_CUSTOM,
+            ToolKind.fromToolName("mcp__other__list_files")
+        )
+    }
+
+    // ═══ SPE-06 P1-4：tailAwareTruncate 头尾双窗 ═══
+
+    @Test
+    fun `tailAwareTruncate keeps short text intact`() {
+        assertEquals("short", tailAwareTruncate("short"))
+        assertEquals("x".repeat(4000), tailAwareTruncate("x".repeat(4000)))
+    }
+
+    @Test
+    fun `tailAwareTruncate keeps both head and tail of long output`() {
+        // SPE-06 验收：12k 字工具输出 → 卡片同时含开头与结尾错误摘要，
+        // 中间有省略标记。
+        val head = "H".repeat(100)
+        val tail = "T".repeat(100)
+        val text = head + "m".repeat(12_000) + tail
+        val out = tailAwareTruncate(text)
+        assertTrue("开头应保留：${out.take(20)}", out.startsWith("H"))
+        assertTrue("结尾错误摘要应保留：${out.takeLast(20)}", out.endsWith("T"))
+        assertTrue("中间应有省略标记：$out", out.contains("中间省略"))
+        assertTrue("总长受限：${out.length}", out.length < 4000 + 200)
+    }
+
+    @Test
+    fun `tailAwareTruncate defaults to legacy cap`() {
+        // 4000 默认口径与旧 take(4000) 同 cap（替换后行为对齐、头部占比 2/3）。
+        val out = tailAwareTruncate("a".repeat(12_000))
+        assertTrue(out.length < 4000 + 100)
+        val marker = "…[中间省略 "
+        assertTrue(out.contains(marker))
     }
 }

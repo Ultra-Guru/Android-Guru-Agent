@@ -11,7 +11,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Agent tool: terminal.workspace.environment — P83（Ubuntu 开发环境闭环）
+ * Agent tool: TerminalWorkspaceEnvironment — P83（Ubuntu 开发环境闭环）
  *
  * Project → Analyzer → Ubuntu → Toolchain 的入口：
  *   - analyze  只读：workspace 标记文件扫描（python/node/jdk/cpp/rust/go profile）→
@@ -31,7 +31,7 @@ import kotlinx.serialization.json.jsonPrimitive
 class TerminalWorkspaceEnvironmentTool(
     private val coordinator: ProjectEnvironmentCoordinator
 ) : TerminalTool {
-    override val id: String = "terminal.workspace.environment"
+    override val id: String = "TerminalWorkspaceEnvironment"
     override val name: String = id
     override val description: String = """
         Project-aware Ubuntu developer environment. Analyzes a workspace's marker files

@@ -6,10 +6,13 @@ import com.apex.agent.platform.terminal.pty.FakeNativePty
 import com.apex.agent.platform.terminal.pty.NativePty
 import com.apex.agent.platform.terminal.policy.TerminalPolicyImpl
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
+import com.apex.agent.platform.terminal.runtime.ExecutionBackendRegistry
+import com.apex.agent.platform.terminal.runtime.FixtureLinuxBackend
+import com.apex.agent.platform.terminal.runtime.LocalShellBackend
 import com.apex.agent.platform.terminal.runtime.TerminalRuntimeImpl
 import com.apex.agent.platform.terminal.screen.RealVirtualTerminal
-import com.apex.agent.platform.terminal.wait.WaitCondition
-import com.apex.agent.platform.terminal.wait.WaitResult
+import com.apex.agent.platform.TerminalWait.WaitCondition
+import com.apex.agent.platform.TerminalWait.WaitResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -89,6 +92,7 @@ class NativeSessionIdIsolationTest {
         return TerminalRuntimeImpl(
             native = native,
             policy = TerminalPolicyImpl(),
+            backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend(), FixtureLinuxBackend()),
             virtualTerminalFactory = { r, c -> RealVirtualTerminal(r, c) },
             scope = CoroutineScope(SupervisorJob() + dispatcher),
             pumpScope = CoroutineScope(SupervisorJob() + dispatcher)

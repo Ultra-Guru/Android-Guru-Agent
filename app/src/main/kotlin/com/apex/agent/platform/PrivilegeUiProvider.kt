@@ -46,6 +46,8 @@ class PrivilegeUiProvider @Inject constructor(
             }
             is GestureAction.Back -> UiAction.Back
             is GestureAction.Home -> UiAction.Home
+            is GestureAction.OpenNotifications -> UiAction.OpenNotifications
+            is GestureAction.CloseNotifications -> UiAction.CloseNotifications
         }
 
         val result = privilegeManager.executeUiAction(uiAction)
@@ -120,6 +122,8 @@ class PrivilegeUiProvider @Inject constructor(
         is GestureAction.DirectionalScroll -> "scrolled ${action.direction}"
         is GestureAction.Back -> "pressed back"
         is GestureAction.Home -> "pressed home"
+        is GestureAction.OpenNotifications -> "opened notification shade"
+        is GestureAction.CloseNotifications -> "closed notification shade"
     }
 }
 

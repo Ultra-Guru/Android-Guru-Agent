@@ -37,6 +37,10 @@ sealed class GestureAction {
     data class DirectionalScroll(val direction: String, val durationMs: Int = 300) : GestureAction()
     data class Back(val x: Int = 0, val y: Int = 0) : GestureAction()
     data class Home(val x: Int = 0, val y: Int = 0) : GestureAction()
+    /** #240：展开通知栏（a11y GLOBAL_ACTION_NOTIFICATIONS / root cmd statusbar）。 */
+    data object OpenNotifications : GestureAction()
+    /** #240：收起通知栏（a11y BACK 收合 / root cmd statusbar collapse）。 */
+    data object CloseNotifications : GestureAction()
 }
 
 /**
@@ -47,11 +51,11 @@ class UiTapTool(
     private val uiProvider: UiInteractionProvider? = null
 ) : AgentTool {
 
-    override val id = "ui_tap"
+    override val id = "UiTap"
     override val name = "Tap Screen"
     override val description = """
         Tap at specific screen coordinates.
-        Use ui_dump first to find element positions, or screenshot to see the screen.
+        Use UiDump first to find element positions, or screenshot to see the screen.
         Coordinates are in pixels from top-left corner.
         When accessibility service is active, uses semantic gesture dispatch
         for more reliable interaction.
@@ -100,13 +104,19 @@ class UiTapTool(
 
 /**
  * UI滑动工具 —— 优先使用 AccessibilityService 语义交互，回退到 input 命令。
+ *
+ * @param screenMetrics 可选的真实屏幕分辨率提供者（宽,高 像素）——shell 回落
+ * 分支的方向坐标按真实分辨率计算（与 PrivilegeUiProvider.directionToCoords 同款
+ * 比例），替代 1080x2400 硬编码；a11y 分支本身经 UiInteractionProvider 走宿主
+ * 侧真实分辨率，不依赖此参数。未注入时保持 1080x2400 假设（旧行为）。
  */
 class UiSwipeTool(
     private val shellExecutor: suspend (String) -> String,
-    private val uiProvider: UiInteractionProvider? = null
+    private val uiProvider: UiInteractionProvider? = null,
+    private val screenMetrics: (() -> Pair<Int, Int>)? = null
 ) : AgentTool {
 
-    override val id = "ui_swipe"
+    override val id = "UiSwipe"
     override val name = "Swipe Screen"
     override val description = """
         Swipe from one point to another on the screen.
@@ -148,13 +158,8 @@ class UiSwipeTool(
         }
 
         if (direction != null) {
-            val coords = when (direction) {
-                "up" -> listOf(540, 1800, 540, 600)
-                "down" -> listOf(540, 600, 540, 1800)
-                "left" -> listOf(900, 1200, 180, 1200)
-                "right" -> listOf(180, 1200, 900, 1200)
-                else -> return "Error: Unknown direction"
-            }
+            val coords = directionCoords(direction)
+                ?: return "Error: Unknown direction"
             val cmd = "input swipe ${coords[0]} ${coords[1]} ${coords[2]} ${coords[3]} $duration"
 
             if (uiProvider?.isAvailable == true) {
@@ -175,6 +180,84 @@ class UiSwipeTool(
         }
         return shellExecutor("input swipe $x1 $y1 $x2 $y2 $duration")
     }
+
+    /**
+     * 方向 → 滑动坐标：垂直向取 0.75h→0.25h，水平向取 0.8w→0.2w
+     * （与 PrivilegeUiProvider.directionToCoords 同款比例，整数运算免浮点）。
+     * 未注入 [screenMetrics] 时退回 1080x2400 假设——退化值与旧硬编码一致
+     * （up = 540,1800,540,600）。
+     */
+    private fun directionCoords(direction: String): List<Int>? {
+        val (w, h) = screenMetrics?.invoke() ?: (1080 to 2400)
+        val cx = w / 2
+        val cy = h / 2
+        return when (direction) {
+            "up" -> listOf(cx, h * 3 / 4, cx, h / 4)
+            "down" -> listOf(cx, h / 4, cx, h * 3 / 4)
+            "left" -> listOf(w * 4 / 5, cy, w / 5, cy)
+            "right" -> listOf(w / 5, cy, w * 4 / 5, cy)
+            else -> null
+        }
+    }
+}
+
+/**
+ * 通知栏工具（Issue #240 的 LLM 面）—— `UiAction.OpenNotifications` 的
+ * root 误映射（`input keyevent 26` = 电源键熄屏）已在 DefaultPrivilegeManager
+ * 修正为 `cmd statusbar expand-notifications`，但该动作此前**没有任何
+ * LLM 工具会构造**——修正后仍是死代码。本工具补齐入口：open/close 语义，
+ * a11y 就绪走 GLOBAL_ACTION（无障碍通道从未受 #240 影响），否则 shell
+ * `cmd statusbar`（API 24+，root/sh 权限取决于 shellExecutor 通道）。
+ */
+class UiNotificationsTool(
+    private val shellExecutor: suspend (String) -> String,
+    private val uiProvider: UiInteractionProvider? = null
+) : AgentTool {
+
+    override val id = "UiNotifications"
+    override val name = "Open/Close Notification Shade"
+    override val description = """
+        Expand or collapse the notification shade (system notification panel).
+        Use "open" to pull down the shade and read/interact with notifications,
+        "close" to dismiss it back up.
+
+        Examples:
+        - {} - open the notification shade (default)
+        - {"action": "close"} - collapse the shade
+    """.trimIndent()
+
+    override val parametersSchema = """
+        {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["open", "close"], "description": "open = expand shade (default), close = collapse shade"}
+            },
+            "required": []
+        }
+    """.trimIndent()
+
+    override suspend fun execute(arguments: String): String {
+        val json = Json.parseToJsonElement(arguments).jsonObject
+        val action = json["action"]?.jsonPrimitive?.contentOrNull?.lowercase() ?: "open"
+        if (action != "open" && action != "close") {
+            return "Error: 'action' must be \"open\" or \"close\" (got: $action)"
+        }
+
+        // a11y 语义通道优先（GLOBAL_ACTION_NOTIFICATIONS / BACK 收合）
+        if (uiProvider?.isAvailable == true) {
+            val gesture = if (action == "open") GestureAction.OpenNotifications else GestureAction.CloseNotifications
+            return uiProvider.performGesture(gesture)
+        }
+
+        // shell 回退：cmd statusbar（API 24+）—— 绝不用 keyevent 26（电源键，
+        // #240 的原始事故：要求开通知栏结果熄了屏）。
+        val command = if (action == "open") {
+            "cmd statusbar expand-notifications"
+        } else {
+            "cmd statusbar collapse"
+        }
+        return shellExecutor(command)
+    }
 }
 
 /**
@@ -185,7 +268,7 @@ class UiDumpTool(
     private val uiProvider: UiInteractionProvider? = null
 ) : AgentTool {
 
-    override val id = "ui_dump"
+    override val id = "UiDump"
     override val name = "Dump UI Hierarchy"
     override val description = """
         Dump the current screen's UI hierarchy (view tree).
@@ -228,7 +311,7 @@ class UiDumpTool(
         }
 
         // 回退到 uiautomator dump
-        var result = shellExecutor("uiautomator dump /data/local/tmp/ui_dump.xml 2>/dev/null && cat /data/local/tmp/ui_dump.xml")
+        var result = shellExecutor("uiautomator dump /data/local/tmp/UiDump.xml 2>/dev/null && cat /data/local/tmp/UiDump.xml")
 
         if (result.contains("Error") || result.isBlank()) {
             return "UI dump failed. This may require accessibility service or specific permissions."
@@ -249,12 +332,32 @@ class UiDumpTool(
 
 /**
  * 截图工具
+ *
+ * Issue #239：新增 [privilegedScreenshot] 通道 —— app 层接线
+ * `PrivilegeManager.takeScreenshot()`（无障碍 API 30+ → root screencap+base64
+ * 回退链）。旧行为恒走 `shellExecutor`（PrivilegeDetector：root > 裸 sh）——
+ * 设备开了无障碍但无 root 时，screencap 在普通应用沙箱里必然 EACCES，
+ * 「开启无障碍 = 截图永远失败」。新顺序：特权链（a11y → root）成功直接落盘；
+ * 失败仍回退 shell（模拟器/调试构建的非特权 screencap 依旧可用），两段
+ * 失败并列上报（可诊断，不互相遮蔽）。
  */
 class ScreenshotTool(
-    private val shellExecutor: suspend (String) -> String
+    private val shellExecutor: suspend (String) -> String,
+    /** #239：特权截图供给；null = 无特权通道（纯 shell 旧行为）。 */
+    private val privilegedScreenshot: (suspend () -> PrivilegedScreenshot)? = null
 ) : AgentTool {
 
-    override val id = "screenshot"
+    /**
+     * Issue #239：特权截图通道结果（core 层中立形状 —— app 层从
+     * platform.privilege.ScreenshotResult 适配；模块方向不允许直接依赖）。
+     */
+    data class PrivilegedScreenshot(
+        /** PNG 字节（成功）；null = 失败（见 [error]）。 */
+        val pngBytes: ByteArray?,
+        val error: String?
+    )
+
+    override val id = "Screenshot"
     override val name = "Take Screenshot"
     override val description = """
         Capture the current screen as a PNG image.
@@ -279,14 +382,35 @@ class ScreenshotTool(
         val json = Json.parseToJsonElement(arguments).jsonObject
         val path = json["path"]?.jsonPrimitive?.content ?: "/sdcard/Pictures/apex_screen.png"
 
+        // #239：特权链优先 —— a11y（Android 11+）→ root screencap。
+        val privileged = privilegedScreenshot?.invoke()
+        if (privileged?.pngBytes != null) {
+            return try {
+                val out = java.io.File(path)
+                out.parentFile?.mkdirs()
+                out.writeBytes(privileged.pngBytes)
+                "OK: Screenshot saved to $path"
+            } catch (e: Exception) {
+                "Error: screenshot captured but failed to write $path: ${e.message ?: e::class.simpleName}"
+            }
+        }
+
+        // 特权链不可用/失败 → shell 兜底（保留旧行为：模拟器/调试设备上
+        // 非特权 screencap 仍可用；特权链失败时其错误一并上报，可诊断）。
         // Shell-escape the screenshot path — unescaped `;` / `$(...)` / `'` in the path
         // would inject into `screencap -p $path`.
         val result = shellExecutor("screencap -p ${ShellQuote.shellQuote(path)}")
-        return if (result.contains("Error") && !result.contains("written")) {
-            "Error: $result"
-        } else {
+        val shellOk = !(result.contains("Error") && !result.contains("written"))
+        return if (shellOk) {
             "OK: Screenshot saved to $path"
+        } else if (privileged != null) {
+            // 两段失败并列：特权链根因 + shell 兜底输出（截断防爆屏）。
+            "Error: screenshot failed. Privileged channel (accessibility/root): " +
+                "${privileged.error ?: "unavailable"}. Shell fallback: ${result.take(200)}"
+        } else {
+            "Error: $result"
         }
+        return "OK: Screenshot saved to $path"
     }
 }
 
@@ -294,7 +418,7 @@ class ScreenshotTool(
  * 文本输入工具
  *
  * Type text into the currently focused input field.
- * Make sure the target input field is focused (tap it first with ui_tap).
+ * Make sure the target input field is focused (tap it first with UiTap).
  *
  * v3：声明硬前置条件 [EnvironmentAwareTool.requiredEnv] —— 键盘未激活时
  * `input text` 必然失败，门控在执行前就挡下并给出修复指引（Mobile-Agent
@@ -307,11 +431,11 @@ class InputTextTool(
     override val requiredEnv: List<String> =
         listOf(ToolEnvironmentState.Flags.KEYBOARD_ACTIVE)
 
-    override val id = "input_text"
+    override val id = "InputText"
     override val name = "Input Text"
     override val description = """
         Type text into the currently focused input field.
-        Make sure the target input field is focused (tap it first with ui_tap).
+        Make sure the target input field is focused (tap it first with UiTap).
 
         For special keys, use key codes:
         - Enter: keyevent 66

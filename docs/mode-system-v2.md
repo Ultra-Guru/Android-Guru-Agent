@@ -99,14 +99,14 @@ C,A,B），纠正属正常行为不算警告；环/禁用依赖才产生警告�
 
 Tool-Use Policy 之后追加 MANDATORY 段，五条规则：
 
-1. 一次性命令 → `terminal.exec`（结构化 stdout/stderr/exit_code）；
+1. 一次性命令 → `TerminalExec`（结构化 stdout/stderr/exit_code）；
 2. 连续 N 次一次性 shell → STOP，切换会话流
-   `terminal.create → terminal.run(后台) → terminal.observe/terminal.wait`
+   `TerminalCreate → TerminalRun(后台) → TerminalObserve/TerminalWait`
    （会话保留 cwd/env/state）；
 3. 交互式程序（gh auth login / python REPL / vim / apt 提示）必须
-   `terminal.create + terminal.write`；
+   `TerminalCreate + TerminalWrite`；
 4. 工具链任务（apt/git clone/npm/pip/cargo/make/gcc）：先查
-   `terminal.backends`，Ubuntu 未就绪先 `terminal.ubuntu.ensure` 并向用户
+   `TerminalBackends`，Ubuntu 未就绪先 `TerminalUbuntuEnsure` 并向用户
    汇报进度；
 5. 失败的一次性命令不得盲目重跑超过两次 —— 检查输出 / 开会话 / 问用户。
 
@@ -123,7 +123,7 @@ Tool-Use Policy 之后追加 MANDATORY 段，五条规则：
 
 | 类别 | 条件 | 频控 |
 |------|------|------|
-| SESSION_FLOW | 连续 ≥3 次 shell_execute/terminal.exec（会话流工具出现即清零） | 每攒满 3 次提醒一次（3、6、9…），streak 停滞不重复 |
+| SESSION_FLOW | 连续 ≥3 次 ShellExecute/TerminalExec（会话流工具出现即清零） | 每攒满 3 次提醒一次（3、6、9…），streak 停滞不重复 |
 | ENSURE_UBUNTU | prompt 或近期一次性命令参数含工具链关键词（apt-get/apt install/git clone/npm/yarn/pip/cargo/make/gcc/python3/node/cmake）且本会话未调用过 ubuntu.ensure/install/status/backends | 每会话最多 1 次 |
 | FAILURE_RECOVERY | 一次性命令连续失败 ≥2 次（成功即清零） | 连击期间持续，附注可拼进 SESSION_FLOW |
 
@@ -182,12 +182,12 @@ AgentChatDialogs（六档选择器）──► AgentChatViewModel.setThinkingLev
 | PLAN | 规划（只读）→确认卡（勾选/重排）→拓扑锁定→按锁定序执行→只读反思 | 规划期零工具（READ-ONLY 段）；执行期全量 | 计划确认卡（Phase 3，5 分钟超时拒绝） | `## Mode: PLAN` + Planning Phase 段 |
 | SPEC | 规格（目标/需求/约束/验收/交付物）→确认→逐交付物 Build 循环→总结 | 规格期零工具；执行每步带全量规格上下文 | 规格确认卡（Phase 3） | `## Mode: SPEC` |
 | REFLECTION | 草稿（流式）→评审（ReflectionReview 卡）→修正 ×N（N=反思轮数 1-3） | 同 BUILD；评审/修正为纯 LLM 轮 | 轮间评审卡只读展示；轮数经设置页 Slider 配置 | `## Mode: REFLECTION` |
-| **HUMAN_ASSIST** | BUILD 循环 + **决策点检测拦截**：响应摆出「方案A…方案B…」→自动转人工选择→回填继续 | 同 BUILD；另要求模型主动 ask_user_choice（检测器是兜底） | **每个检出决策点**：UserInputRequired(CHOICE) 挂起等待，5 分钟超时回退草稿 | `## Mode: HUMAN_ASSIST` |
+| **HUMAN_ASSIST** | BUILD 循环 + **决策点检测拦截**：响应摆出「方案A…方案B…」→自动转人工选择→回填继续 | 同 BUILD；另要求模型主动 AskUserChoice（检测器是兜底） | **每个检出决策点**：UserInputRequired(CHOICE) 挂起等待，5 分钟超时回退草稿 | `## Mode: HUMAN_ASSIST` |
 | **CUSTOM** | BUILD 循环 + 选中预设指令注入（多套命名预设，单选即用） | 同 BUILD；预设可自带工具约束 | 预设管理（设置页 + 聊天页 chip 编辑）；无运行时打断 | `## Mode: CUSTOM` + `## Custom Instructions` |
 
 ### 5.2 HUMAN_ASSIST 决策点检测（engine/assist/）
 
-提示词要求模型多选时调 `ask_user_choice`，但模型经常**直接写出方案对比文本**
+提示词要求模型多选时调 `AskUserChoice`，但模型经常**直接写出方案对比文本**
 而不调工具——纯文本轮一结束引擎就 ResponseComplete，人工介入落空。4-c 在
 引擎纯文本响应分支加**后置兜底拦截**：
 

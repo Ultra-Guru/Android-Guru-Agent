@@ -88,3 +88,31 @@ class SharedStorageBridge(
         const val GUEST_PATH = "/sdcard"
     }
 }
+
+/**
+ * 真实系统根桥 —— host `/` → guest `/host`（2026-10 用户需求：「整个系统」
+ * 工作区必须真实可见）。
+ *
+ * 此前 Ubuntu 通道（PTY 会话 / TerminalExec）只挂 rootfs + /workspace +
+ * /sdcard —— 模型在「整个系统」工作区里用 shell 探索时看到的 `/` 永远是
+ * rootfs 沙箱，与 code_* 工具（host 根 = /）的视野割裂。本桥把真实 Android
+ * 文件系统根挂进 guest `/host`：
+ *
+ *  - `/host/system/build.prop` 即宿主 `/system/build.prop`（纯路径翻译，无拷贝）；
+ *  - 权限门禁仍是真实的 Android 权限/SELinux：`/host/data` 等返回
+ *    Permission denied（需 root，属预期）；`/system` 只读挂载写入失败（属预期）；
+ *  - 与 `/proc`、`/dev`、`/sys`（[SystemBindProfile.STANDARD]）、`/sdcard`
+ *    （[SharedStorageBridge]）同一 proot-distro 式「诚实挂载」纪律 ——
+ *    app uid 能访问什么，guest 就能看到什么；
+ *  - 消费面：PRoot 通道的 Agent 执行壳（PTY 会话 STANDARD 档 + TerminalExec
+ *    一次性命令）。STANDARD 之外的档位（NONE = 旧裸 -r 隔离语义）与市场
+ *    沙箱（ProotSandboxCommandRunner）不挂 —— 隔离收窄的调用方不被动升级。
+ */
+object HostRootBridge {
+
+    /** guest 侧真实系统根路径。 */
+    const val GUEST_PATH = "/host"
+
+    /** PRoot bind（host `/` → guest `/host`）。 */
+    fun toBind(): PRootBind = PRootBind(AbsolutePath("/"), GUEST_PATH)
+}

@@ -1,0 +1,11 @@
+{
+  "id": "bubble-sniper",
+  "name": "气泡狙击",
+  "nameEn": "Bubble Sniper",
+  "tagline": "气泡宽度是文本的收缩包裹宽度，按指令狙爆目标气泡",
+  "version": 1,
+  "engine": "pretext@0.0.9",
+  "apis": ["prepareWithSegments", "walkLineRanges", "materializeLineRange"],
+  "controls": "点按气泡",
+  "scoreKey": "aga.pg.bubble-sniper.hi"
+}

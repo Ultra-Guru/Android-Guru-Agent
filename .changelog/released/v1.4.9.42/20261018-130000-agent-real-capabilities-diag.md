@@ -1,0 +1,5 @@
+- Agent 获得真实应用控制能力（用户诉求「不能用提示词注入，要给 agent 工具」）：新增 AppScreenOpen（打开设置/诊断/市场/终端等 14 个页面，经导航桥真实压栈）、ModelProfileUpdate（修改模型档案白名单字段：模型 ID/Base URL/温度/思考档/上下文窗口等）、ModelConfigImport（JSON/Python/YAML/TOML 配置文本直接导入建档，与设置页导入弹窗共用同一份识别与落盘代码）、SystemDiagnose（采集 MCP/Skills/工具审计结构化快照，含失败详情，agent 可基于真实数据做根因分析）；四工具均有纯 JVM 单测（18 例）
+- 模型配置导入支持从文件选择（用户需求「json 导入使用」）：导入弹窗新增「从文件导入」按钮（SAF 文件选择器），选中的 .json/.yaml/.toml/.py 配置文件读入文本域后走既有防抖解析-预览-导入链，粘贴与文件两条路径完全同源
+- 诊断中心四连增强（用户诉求「便于我寻找问题」）：新增 MCP 服务器区（配置/传输形态/启用/连接状态实时快照）、技能区（安装清单+Agent/Coding 双工位启用位+工具数）、工具与终端调用日志区（tool-audit.jsonl 最近 50 条：时间/工具/决策/通道/耗时/命令）、失败详细记录区（失败子集错误色强调，点击弹窗看命令/详情/退出码/耗时/执行通道全现场）
+- ToolAuditLogger 补齐读取侧 API：recentEntries/recentFailures（倒序、上限防护、坏行容错），诊断页与 SystemDiagnose 工具共用同一数据源
+- 设置页导入逻辑提取为 ModelConfigImportApplier 共享层：设置页弹窗与 Agent 的 ModelConfigImport 工具走同一份识别与建档代码（预览所见即导入所得的唯一真源）

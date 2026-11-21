@@ -29,7 +29,16 @@ data class TerminalScreenState(
      * T82: saved scrollback depth (main screen only; 0/null on alt screen).
      * The SCROLL observation layer can additionally request the scrollback tail.
      */
-    val scrollbackLineCount: Int? = null
+    val scrollbackLineCount: Int? = null,
+    /**
+     * v3（OSC 7 / 9;9）：guest shell 上报的当前工作目录（TerminalObserve SCREEN
+     * 输出给 Agent，供后续 TerminalExec 的 cwd 续接）。
+     *
+     * 引擎覆盖诚实声明：JVM 回退引擎（TerminalCore，CI/单测）已解析 OSC 7
+     * 并填充；设备端 native 引擎（NativeVtCore）的 C++ 侧尚未解析 OSC 7，
+     * 此处返回 null —— 待 native 桥接就绪后自动生效，无需改本投影。
+     */
+    val guestCwd: String? = null
 ) {
     companion object {
         fun empty(rows: Int, cols: Int): TerminalScreenState = TerminalScreenState(

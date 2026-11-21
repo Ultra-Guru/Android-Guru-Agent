@@ -5,15 +5,16 @@ import com.apex.agent.platform.terminal.pty.JniNativePty
 import com.apex.agent.platform.terminal.pty.NativePty
 import com.apex.agent.platform.terminal.policy.TerminalPolicy
 import com.apex.agent.platform.terminal.policy.TerminalPolicyImpl
-import com.apex.agent.platform.terminal.compat.LegacyTerminalManager
 import com.apex.agent.platform.terminal.linux.CpuArchitecture
 import com.apex.agent.platform.terminal.linux.RootfsProvider
+import com.apex.agent.platform.terminal.chroot.LinuxChrootBackend
+import com.apex.agent.platform.terminal.chroot.SuBinaryLocator
 import com.apex.agent.platform.terminal.proot.LinuxPRootBackend
 import com.apex.agent.platform.terminal.proot.NativeLibraryPRootBinaryProvider
 import com.apex.agent.platform.terminal.proot.PRootBinaryProvider
+import com.apex.agent.platform.terminal.proot.PRootCapabilitySource
 import com.apex.agent.platform.terminal.proot.PRootHostEnvironment
 import com.apex.agent.platform.terminal.runtime.ExecutionBackendRegistry
-import com.apex.agent.platform.terminal.runtime.LocalShellBackend
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
 import com.apex.agent.platform.terminal.persistence.SessionMetadataStore
 import com.apex.agent.platform.terminal.runtime.TerminalRuntimeImpl
@@ -32,9 +33,9 @@ import com.apex.agent.platform.terminal.ubuntu.UbuntuBootstrapManager
 import com.apex.agent.platform.terminal.ubuntu.UbuntuSourcesList
 import com.apex.agent.platform.terminal.ubuntu.BasePackageProfile
 import com.apex.agent.platform.terminal.ubuntu.BootstrapStateStore
-import com.apex.agent.platform.terminal.bridge.GuestBridgeService
+import com.apex.agent.platform.TerminalBridge.GuestBridgeService
 import com.apex.agent.platform.terminal.environment.ProxyConfig
-import com.apex.agent.platform.terminal.fs.GuestFilesystem
+import com.apex.agent.platform.TerminalFs.GuestFilesystem
 import com.apex.agent.platform.terminal.proot.SharedStorageBridge
 import com.apex.agent.platform.terminal.proot.SystemBindProfile
 import com.apex.agent.platform.terminal.workspace.AbsolutePath
@@ -67,9 +68,23 @@ object TerminalModule {
     fun provideNativePty(): NativePty = JniNativePty()
 
     /**
+     * T97（Ubuntu 大重构）：TerminalSettingsStore（字号/亮屏 —— 控制台专属）
+     * 已随终端控制台退役删除；环境页在安装进行中自主亮屏。
+     *
+     * CommandPolicyStore（命令黑白名单）保留 —— 设置中心 terminal/policy 叶
+     * 与 [provideTerminalPolicy] 的 dynamicPolicy 共享 "apex_terminal" prefs，
+     * 是 **Agent 侧执行门禁**（Agent 工具执行与用户名单共享同一份策略）。
+     */
+    @Provides
+    @Singleton
+    fun provideCommandPolicyStore(@ApplicationContext context: Context): com.apex.agent.ui.screen.terminal.CommandPolicyStore =
+        com.apex.agent.ui.screen.terminal.CommandPolicyStore(context)
+
+
+    /**
      * 终端策略接线（设置页黑白名单 → LINE 写入策略层）。
      *
-     * TerminalViewModel 的设置页把用户黑白名单写入 "apex_terminal" prefs
+     * 设置中心 terminal/policy 页把用户黑白名单写入 "apex_terminal" prefs
      * （键 cmd_blacklist / cmd_whitelist，值 = 命令头 token 的小写集合）。
      * 此前该配置**从未被任何执行路径消费**（设置页是纯装饰）—— 这里通过
      * [TerminalPolicyImpl] 的 dynamicPolicy 每次检查时实时读取 prefs 接入：
@@ -174,8 +189,31 @@ object TerminalModule {
         @ApplicationContext context: Context
     ): RootfsConfigurator = RootfsConfigurator(
         dnsServers = { resolveAndroidDnsServers(context) },
+        // Android 上只采用平台过滤后的 system: 锚点。普通 host bundle 若存在，
+        // 不能绕开 AndroidCAStore 对用户停用系统 CA 的过滤。
+        hostCaBundle = { null },
         localeGen = listOf("zh_CN.UTF-8 UTF-8", "en_US.UTF-8 UTF-8"),
-        timezone = java.util.TimeZone.getDefault().id
+        timezone = java.util.TimeZone.getDefault().id,
+        // 对话实录 #14：宿主补充组注入 guest /etc/group —— 消除 PRoot 启动时
+        // “groups: cannot find name for group ID 3003/9997/…” 六行刷屏噪音。
+        // 采集端用 /proc/self/status 的 Groups: 行（内核态真值、全版本可读；
+        // android.system.Os 无 getgroups —— CI 实测该引用不可解析）。
+        // 读取失败（极端环境）时静默回退空列表（configure 不动作）。
+        hostSupplementaryGids = {
+            runCatching {
+                RootfsConfigurator.parseSupplementaryGids(
+                    java.io.File("/proc/self/status").readText()
+                )
+            }.getOrDefault(emptyList())
+        },
+        // T99: use Android's effective CA store, not raw system cert files.
+        // AndroidCAStore filters disabled system anchors; RootfsConfigurator imports
+        // only `system:` aliases so user-added CAs never enter the guest bundle.
+        androidCaStore = {
+            runCatching {
+                java.security.KeyStore.getInstance("AndroidCAStore").apply { load(null, null) }
+            }.getOrNull()
+        }
     )
 
     @Provides
@@ -229,6 +267,32 @@ object TerminalModule {
         supportedAbis = { Build.SUPPORTED_ABIS.toList() }
     )
 
+    /** T99: tool-triggered only; construction and backend availability never exec PRoot. */
+    @Provides
+    @Singleton
+    fun providePRootSmokeProbe(
+        binaryProvider: PRootBinaryProvider,
+        rootfsProvider: RootfsProvider,
+        hostEnv: PRootHostEnvironment
+    ): com.apex.agent.platform.terminal.proot.PRootSmokeProbe =
+        com.apex.agent.platform.terminal.proot.PRootSmokeProbe(
+            binaryProvider = binaryProvider,
+            rootfsProvider = rootfsProvider,
+            hostEnvironment = { hostEnv.prepare().getOrNull()?.let { hostEnv.hostEnv() } }
+        )
+
+    /**
+     * T92（D5 完成度）：argv 能力源 —— app 模块三类 argv 构造点
+     * （ProotCommandSpawner / ProotGitCommandRunner / ProotMcpProcessLauncher）
+     * 的非挂起能力读取桥。构造即后台预取（provider 记忆化，无重复 exec）；
+     * 预取窗口内读取 = 保守省略基线（省略形状在任何 proot 上均合法）。
+     */
+    @Provides
+    @Singleton
+    fun providePRootCapabilitySource(
+        provider: PRootBinaryProvider
+    ): PRootCapabilitySource = PRootCapabilitySource(provider)
+
     /**
      * T75: Linux workspace 管理 —— per-session 隔离文件区（bind → guest /workspace）。
      * legacyDir = P71/T73 的单 workspace 目录（首次使用时原子迁移为 default）。
@@ -264,7 +328,8 @@ object TerminalModule {
         workspaces: LinuxWorkspaceManager,
         userHome: GuestUserHome,
         hostEnv: PRootHostEnvironment,
-        sharedStorage: SharedStorageBridge
+        sharedStorage: SharedStorageBridge,
+        configurator: RootfsConfigurator
     ): LinuxPRootBackend = LinuxPRootBackend(
         binaryProvider = binaryProvider,
         rootfsProvider = rootfsProvider,
@@ -274,7 +339,12 @@ object TerminalModule {
         // T82：系统级 bind（/proc /dev /sys，proot-distro 语义 —— procps 在 guest 内
         // 真实可用）+ 共享存储桥（授权可用时 → guest /sdcard；不可用 → 不 bind）。
         systemBinds = SystemBindProfile.STANDARD,
-        sharedStorage = sharedStorage
+        sharedStorage = sharedStorage,
+        caRepair = { root ->
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                configurator.repairCaIfMissing(root)
+            }
+        }
     )
 
     /**
@@ -289,45 +359,103 @@ object TerminalModule {
             hostDirProvider = { File("/storage/emulated/0").takeIf { it.isDirectory } }
         )
 
-    /** 后端注册表：local（默认，golden 行为）+ linux-ubuntu。 */
+    /**
+     * T98：su 二进制定位器（chroot 后端 Root 门禁探测；只 stat 不 exec ——
+     * 授权弹窗副作用见 SuBinaryLocator KDoc）。
+     */
+    @Provides
+    @Singleton
+    fun provideSuBinaryLocator(): SuBinaryLocator = SuBinaryLocator()
+
+    @Provides
+    @Singleton
+    fun provideSuAuthorizationCache(
+        @ApplicationContext context: android.content.Context
+    ): com.apex.agent.platform.terminal.chroot.SuAuthorizationCache =
+        com.apex.agent.platform.terminal.chroot.SuAuthorizationCache(outputDir = context.cacheDir)
+
+    /**
+     * T98：chroot 后端 —— 与 PRoot 后端共享同一 rootfs / workspace 池 / 持久化
+     * home / guest env 基线（双模式数据互通）；仅 su + mount + chroot 的
+     * spawn 路径不同。见 LinuxChrootBackend KDoc 双模式定位表。
+     */
+    @Provides
+    @Singleton
+    fun provideLinuxChrootBackend(
+        suLocator: SuBinaryLocator,
+        authorizationCache: com.apex.agent.platform.terminal.chroot.SuAuthorizationCache,
+        rootfsProvider: RootfsProvider,
+        workspaces: LinuxWorkspaceManager,
+        userHome: GuestUserHome,
+        sharedStorage: SharedStorageBridge,
+        configurator: RootfsConfigurator
+    ): LinuxChrootBackend = LinuxChrootBackend(
+        suLocator = suLocator,
+        authorizationCache = authorizationCache,
+        rootfsProvider = rootfsProvider,
+        workspaces = workspaces,
+        userHome = userHome,
+        sharedStorage = sharedStorage,
+        // T99 审计修复：显式 chroot create 绕过 ensureUbuntuSession 的 dnsRefreshFn
+        // 修复路径，须在 prepare 阶段补齐存量 rootfs 缺失 CA（幂等、host bundle 优先）。
+        caRepair = { root ->
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                configurator.repairCaIfMissing(root)
+            }
+        }
+    )
+
+    /**
+     * 后端注册表：linux-ubuntu（默认，PRoot）+ linux-ubuntu-chroot（真 Root 设备
+     * 的原生通道，T98）。首位 = 默认后端不变；chroot 由 Agent 经
+     * TerminalBackends 发现、TerminalCreate 显式选择（不隐式自动切换 ——
+     * 见 LinuxChrootBackend KDoc 的诚实性取舍）。
+     */
     @Provides
     @Singleton
     fun provideExecutionBackendRegistry(
-        linuxBackend: LinuxPRootBackend
+        linuxBackend: LinuxPRootBackend,
+        chrootBackend: LinuxChrootBackend
     ): ExecutionBackendRegistry = ExecutionBackendRegistry.of(
-        LocalShellBackend(),
-        linuxBackend
+        linuxBackend,
+        chrootBackend
     )
 
     /** TerminalRuntime —— T73: 注入后端注册表，create(backendId=…) 路由生效。
      *  T75: 注入 workspaceBinder（LinuxWorkspaceManager）—— 会话创建/关闭时
-     *  维护活跃绑定计数（workspace delete 门禁）。 */
+     *  维护活跃绑定计数（workspace delete 门禁）。
+     *  T91（D2-D4）：创建即安装进 TerminalRuntimeRegistry —— TerminalService
+     *  （specialUse 前台服务）由此取得同一单例；AIDL 消费路径见 TerminalServiceClient）。 */
     @Provides
     @Singleton
     fun provideTerminalRuntime(
+        @ApplicationContext context: android.content.Context,
         native: NativePty,
         policy: TerminalPolicy,
         store: SessionMetadataStore,
         backends: ExecutionBackendRegistry,
         workspaceBinder: LinuxWorkspaceManager,
         provisioner: RootfsProvisioner
-    ): TerminalRuntime = TerminalRuntimeImpl(
-        native, policy,
-        backendRegistry = backends,
-        persistenceStore = store,
-        workspaceBinder = workspaceBinder,
-        // T81 (U-10)：rootfs 活跃会话绑定（provisioner.remove 门禁）。
-        rootfsBinder = com.apex.agent.platform.terminal.ubuntu.RootfsUsageBinderImpl(provisioner),
-        // T82：Shell Marker Protocol —— 每个前台 job 携带 OSC 633 marker（真实
-        // 退出码 + jobId）；prompt 启发式降级为 fallback。生产默认开启。
-        enableShellMarkers = true
-    )
-
-    /** Compat facade: old TerminalManager API → new Runtime (settle-time DELETED). Spec §35. */
-    @Provides
-    @Singleton
-    fun provideLegacyTerminalManager(runtime: TerminalRuntime): LegacyTerminalManager =
-        LegacyTerminalManager(runtime)
+    ): TerminalRuntime {
+        // #F-⑰：native VT 引擎黑匣子接线（幂等）—— 上一次未干净收尾的 feed
+        // trail 在此归因（logcat + .crash 留档）；必须在首个引擎创建前调用。
+        com.apex.agent.vtnative.VtFeedTrail.install(java.io.File(context.filesDir, "logs"))
+        return TerminalRuntimeImpl(
+            native, policy,
+            backendRegistry = backends,
+            persistenceStore = store,
+            workspaceBinder = workspaceBinder,
+            // T81 (U-10)：rootfs 活跃会话绑定（provisioner.remove 门禁）。
+            rootfsBinder = com.apex.agent.platform.terminal.ubuntu.RootfsUsageBinderImpl(provisioner),
+            // T82：Shell Marker Protocol —— 每个前台 job 携带 OSC 633 marker（真实
+            // 退出码 + jobId）；prompt 启发式降级为 fallback。生产默认开启。
+            enableShellMarkers = true
+        ).also {
+            // T91 (D2–D4)：AIDL 终端服务注册 —— 首个 Runtime 创建后立即可被
+            // 外部进程绑定（Operit 对齐）；与 #F-⑰ 前置黑匣子接线共同生效。
+            com.apex.agent.platform.terminal.service.TerminalRuntimeRegistry.install(it)
+        }
+    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // T76: Ubuntu Linux Environment Productionization —
@@ -502,11 +630,21 @@ object TerminalModule {
             bundledChecksumFn = { bundledSource.registryChecksumFor(target) },
             // P1（DNS 快照刷新）：ensureReady 短路前对一次宿主 DNS，切网自愈
             //（resolv.conf 是安装时刻快照，不刷新则切网后 guest DNS 全灭）。
+            // READY 短路和降级重试均会调用此端口：顺手修复确实缺失的
+            // 存量 CA bundle，优先保留完整 rootfs 自带证书；无可信源则不动作。
             dnsRefreshFn = {
                 provisioner.current()?.location?.let { loc ->
-                    configurator.refreshDnsIfChanged(java.io.File(loc.value))
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val root = java.io.File(loc.value)
+                        configurator.repairCaIfMissing(root)
+                        configurator.refreshDnsIfChanged(root)
+                    }
                 } ?: false
             },
+            // ★ 能力探测缓存失效：bootstrap 实际执行后（BASE_PACKAGES 安装 /
+            // dpkg --configure -a 自愈）清 LinuxCapabilityProbe 的 5min TTL 缓存，
+            // READY 快照不再挂着过期的 BROKEN（半装 git 修复后立即翻 AVAILABLE）。
+            probeInvalidateFn = { capabilityProbe.invalidate() },
             target = target
         )
     }
@@ -643,7 +781,7 @@ object TerminalModule {
 
     /**
      * P83: ProjectEnvironmentCoordinator —— Ubuntu 就绪 → 项目分析 → 能力探测 →
-     * 缺失工具链批量 apt install → 复测。Agent 入口：terminal.workspace.environment。
+     * 缺失工具链批量 apt install → 复测。Agent 入口：TerminalWorkspaceEnvironment。
      */
     @Provides
     @Singleton
@@ -679,6 +817,24 @@ object TerminalModule {
         contextFactory = contextFactory,
         executor = executor
     )
+
+    /**
+     * SSH/SFTP 远程文件系统（Operit 对标 §4.7 缺项）—— 与 GuestFilesystem 同层
+     * 注入（terminal/fs 包），但作用域是**远端主机**而非本地 rootfs。
+     * KnownHostsStore 单例由独立 @Provides 提供（app 侧 UI「信任此主机」时调用
+     * [com.apex.agent.platform.TerminalFs.KnownHostsStore.remember] 持久化）。
+     */
+    @Provides
+    @Singleton
+    fun provideKnownHostsStore(): com.apex.agent.platform.TerminalFs.KnownHostsStore =
+        com.apex.agent.platform.TerminalFs.InMemoryKnownHostsStore()
+
+    @Provides
+    @Singleton
+    fun provideRemoteSshFilesystem(
+        knownHosts: com.apex.agent.platform.TerminalFs.KnownHostsStore
+    ): com.apex.agent.platform.TerminalFs.RemoteSshFilesystem =
+        com.apex.agent.platform.TerminalFs.RemoteSshFilesystem(knownHosts = knownHosts)
 
     /**
      * T82: GuestBridgeService —— apexctl 桥宿主（guest 脚本 ↔ Android 能力）。

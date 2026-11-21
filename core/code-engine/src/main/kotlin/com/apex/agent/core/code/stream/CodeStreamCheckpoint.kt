@@ -1,5 +1,6 @@
 package com.apex.agent.core.code.stream
 
+import com.apex.agent.core.engine.ToolCallOrigin
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
 import java.io.File
@@ -35,6 +36,9 @@ import kotlinx.serialization.json.Json
  */
 object CodeStreamCheckpoint {
 
+    /** #567：工作区 id 清洗正则预编译 —— fileNameOf 每次调用复用。 */
+    private val UNSAFE_FILENAME_CHARS = Regex("[^A-Za-z0-9_-]")
+
     // ═══ 可持久化模型（全扁平，kotlinx.serialization）═══
 
     @Serializable
@@ -53,7 +57,10 @@ object CodeStreamCheckpoint {
         val exitCode: Int? = null,
         val logTail: String = "",
         val diffText: String? = null,
-        val summary: String? = null
+        val summary: String? = null,
+        // 溯源（v1.5.1）：BUILTIN 缺省 + ignoreUnknownKeys 双向兼容旧档。
+        val originName: String = "BUILTIN",
+        val originLabel: String? = null
     )
 
     @Serializable
@@ -67,7 +74,23 @@ object CodeStreamCheckpoint {
         val cycleEditIds: List<String> = emptyList(),
         val cycleVerifyIds: List<String> = emptyList(),
         val cyclePassed: Boolean? = null,
-        val files: List<String> = emptyList()
+        val files: List<String> = emptyList(),
+        // Git 操作可视化卡（type="gitop"）：结构化摘要 + 关联胶囊 callId。
+        // 默认 null + ignoreUnknownKeys 双向兼容旧档。
+        val gitOp: GitOpSummary? = null,
+        val gitOpCallId: String? = null,
+        // 运行统计收尾卡（type="runstats"）：Complete 事件的结构化数值。
+        // 默认 0 + ignoreUnknownKeys 双向兼容旧档。
+        val runIterations: Int = 0,
+        val runToolCalls: Int = 0,
+        val runFailedCalls: Int = 0,
+        val runFilesTouched: Int = 0,
+        val runDurationMs: Long = 0,
+        // 溯源分解（v1.5.1）：技能 / MCP 计数与清单；旧档缺省空。
+        val runSkillCalls: Int = 0,
+        val runMcpCalls: Int = 0,
+        val runSkills: List<String> = emptyList(),
+        val runMcpServers: List<String> = emptyList()
     )
 
     @Serializable
@@ -147,6 +170,21 @@ object CodeStreamCheckpoint {
                 "error" -> StreamEntry.ErrorEntry(storable.id, storable.text.orEmpty(), true)
                 "stop" -> StreamEntry.StopEntry(storable.id, storable.text.orEmpty())
                 "files" -> StreamEntry.FileChipsEntry(storable.id, storable.files)
+                "gitop" -> storable.gitOp?.let {
+                    StreamEntry.GitOpEntry(storable.id, it, storable.gitOpCallId)
+                }
+                "runstats" -> StreamEntry.RunStatsEntry(
+                    id = storable.id,
+                    iterations = storable.runIterations,
+                    toolCalls = storable.runToolCalls,
+                    failedCalls = storable.runFailedCalls,
+                    filesTouched = storable.runFilesTouched,
+                    durationMs = storable.runDurationMs,
+                    skillCalls = storable.runSkillCalls,
+                    mcpCalls = storable.runMcpCalls,
+                    skills = storable.runSkills,
+                    mcpServers = storable.runMcpServers
+                )
                 else -> null
             }
         }
@@ -189,7 +227,7 @@ object CodeStreamCheckpoint {
     }
 
     private fun fileNameOf(workspaceId: String): String {
-        val safe = workspaceId.replace(Regex("[^A-Za-z0-9_-]"), "_")
+        val safe = workspaceId.replace(UNSAFE_FILENAME_CHARS, "_")
         return "stream_$safe.json"
     }
 
@@ -215,7 +253,9 @@ object CodeStreamCheckpoint {
                 exitCode = call.exitCode,
                 logTail = call.logTail.take(LOG_TAIL_PERSIST_MAX),
                 diffText = call.diffText,
-                summary = call.summary
+                summary = call.summary,
+                originName = call.origin.name,
+                originLabel = call.originLabel
             )
         )
         is StreamEntry.VerifyCycleEntry -> StorableStreamEntry(
@@ -230,6 +270,23 @@ object CodeStreamCheckpoint {
         is StreamEntry.ErrorEntry -> StorableStreamEntry("error", id, message)
         is StreamEntry.StopEntry -> StorableStreamEntry("stop", id, reason)
         is StreamEntry.FileChipsEntry -> StorableStreamEntry("files", id, files = files)
+        is StreamEntry.GitOpEntry -> StorableStreamEntry(
+            "gitop", id,
+            gitOp = summary,
+            gitOpCallId = callId
+        )
+        is StreamEntry.RunStatsEntry -> StorableStreamEntry(
+            "runstats", id,
+            runIterations = iterations,
+            runToolCalls = toolCalls,
+            runFailedCalls = failedCalls,
+            runFilesTouched = filesTouched,
+            runDurationMs = durationMs,
+            runSkillCalls = skillCalls,
+            runMcpCalls = mcpCalls,
+            runSkills = skills,
+            runMcpServers = mcpServers
+        )
     }
 
     private fun StorableToolCall.toView(restoredStatus: ToolCallStatus): StreamToolCall = StreamToolCall(
@@ -247,7 +304,10 @@ object CodeStreamCheckpoint {
         exitCode = exitCode,
         logTail = logTail,
         diffText = diffText,
-        summary = summary
+        summary = summary,
+        // 溯源回放：旧档缺省 BUILTIN（未打标 = 内置，与既有渲染一致）
+        origin = runCatching { ToolCallOrigin.valueOf(originName) }.getOrDefault(ToolCallOrigin.BUILTIN),
+        originLabel = originLabel
     )
 
     private fun kindNameOf(kind: ToolKind): String = when (kind) {
@@ -255,12 +315,14 @@ object CodeStreamCheckpoint {
         ToolKind.WRITE_FILE -> "WRITE_FILE"
         ToolKind.EDIT_FILE -> "EDIT_FILE"
         ToolKind.GREP_SEARCH -> "GREP_SEARCH"
+        ToolKind.WEB_SEARCH -> "WEB_SEARCH"
         ToolKind.BASH -> "BASH"
         ToolKind.GIT -> "GIT"
         ToolKind.LINT -> "LINT"
         ToolKind.TEST -> "TEST"
         ToolKind.PLAN -> "PLAN"
         ToolKind.MCP_CUSTOM -> "MCP_CUSTOM"
+        ToolKind.SKILL -> "SKILL"
     }
 
     private fun kindOf(name: String): ToolKind = when (name) {
@@ -273,6 +335,7 @@ object CodeStreamCheckpoint {
         "LINT" -> ToolKind.LINT
         "TEST" -> ToolKind.TEST
         "PLAN" -> ToolKind.PLAN
+        "SKILL" -> ToolKind.SKILL
         else -> ToolKind.MCP_CUSTOM
     }
 

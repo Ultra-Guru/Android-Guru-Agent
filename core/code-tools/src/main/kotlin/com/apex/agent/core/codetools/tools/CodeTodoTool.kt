@@ -5,16 +5,16 @@ import com.apex.agent.core.tools.ToolErrorCode
 import com.apex.agent.core.tools.ToolMetadata
 import com.apex.agent.core.tools.ToolResult
 import com.apex.agent.core.tools.builtin.BaseTool
+import com.apex.agent.core.tools.builtin.flexibleElement
 import com.apex.agent.core.tools.toolSchema
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * # code_todo — 编码任务清单（opencode todowrite 契约）
+ * # CodeTodo — 编码任务清单（业界标准 todowrite 契约）
  *
  * 复杂编码任务（多文件重构/功能实现）的进度外化：模型把计划拆成条目，
  * 每完成一项就更新状态。价值：
@@ -29,25 +29,60 @@ import java.util.concurrent.atomic.AtomicReference
  * 开始时调用；[snapshot] 供 UI 轮询/订阅渲染。
  */
 class CodeTodoTool : BaseTool(
-    id = "code_todo",
+    id = "CodeTodo",
     name = "Code Todo",
     description = """
-        Maintain a structured task list for the current coding session.
+        Create and maintain a structured task list for the current coding session.
+        Tracks progress, organizes multi-step work, and surfaces status to the user.
 
-        When to use: any task with 3+ steps (multi-file changes, feature work,
-        refactors). Write the plan first, then keep statuses updated as you go.
+        ## When to use
+        - Any task with 3+ steps or non-trivial multi-part work
+        - The user provides multiple tasks (numbered or comma-separated)
+        - A new instruction arrives mid-task — capture it in the list so it is
+          not lost, then continue the current work
+        - Starting work on an item — mark it in_progress BEFORE beginning it
 
-        State machine rules:
-        - Exactly one item should be in_progress at a time (start it before working).
-        - Mark items completed ONLY after verifying the change (build/lint/read-back).
-        - Set cancelled (not delete) when abandoning an approach, with the reason.
-        - The call REPLACES the whole list — always send the full, current list.
+        ## When NOT to use
+        - A single trivial task
+        - A purely conversational or informational exchange
+
+        ## States
+        - pending — not started yet
+        - in_progress — currently being worked on (exactly one at a time)
+        - completed — done and verified
+        - cancelled — abandoned (keep it visible with the reason)
+
+        ## Rules
+        - Update the list in real time as you work; never batch updates.
+        - Mark an item completed ONLY after verification succeeded
+          (build/tests/read-back) — never based on intent or expectation.
+        - If blocked, keep the item in_progress and add a new item describing
+          the blocker.
+        - Keep user-provided command text verbatim in item content.
+        - Items must be concrete and actionable ("run tests for X",
+          not "work on Y").
+        - The list is fully replaced on every call — always send the complete,
+          current list.
 
         Priorities: high (blockers/core functionality) > medium > low (polish).
+
+        When in doubt, keep a todo list.
     """.trimIndent(),
     declaredSchema = toolSchema {
-        // ARRAY/OBJECT 由 raw element 读入（DSL 层声明 array 供 schema 渲染）
-        string("todos", required = true, description = "JSON array: [{\"content\": \"...\", \"status\": \"pending|in_progress|completed|cancelled\", \"priority\": \"high|medium|low\"}]")
+        // 双形态（FlexibleJson 口径）：模型既可能发内联数组（schema 渲染
+        // type: array 时的首选形态），也可能发字符串编码的 JSON 数组（引用
+        // 示例原文的习惯）——两种都合法。旧声明 string 让内联数组在
+        // preCheck 就吃 "expected string" 拒绝（实测 2ms FAILED，模型被迫
+        // 重试浪费一轮）；校验层对 ARRAY 型已宽容编码形态，工具层用
+        // flexibleElement 读取。
+        stringArray(
+            "todos",
+            required = true,
+            description = "Complete todo list (fully replaces the previous one). " +
+                "Items: [{\"content\": \"...\", \"status\": \"pending|in_progress|completed|cancelled\", " +
+                "\"priority\": \"high|medium|low\"}]. Inline JSON array preferred; " +
+                "a string containing the JSON array is also accepted."
+        )
     }
 ) {
 
@@ -59,14 +94,15 @@ class CodeTodoTool : BaseTool(
     )
 
     private val state = AtomicReference<List<Todo>>(emptyList())
-    private val json = Json { ignoreUnknownKeys = true }
 
     override fun buildMetadata(): ToolMetadata = ToolMetadata.meta(id) {
         category(com.apex.agent.core.tools.ToolCategory.AGENT)
         risk(com.apex.agent.core.tools.ToolRisk.LOW)
         tag("code")
         tag("todo")
-        annotations(com.apex.agent.core.tools.ToolAnnotations.readOnly())
+        // 注解修正：CodeTodo 维护会话态（整体覆盖清单），不是只读 ——
+        // readOnly 谎报会让重试/批放行策略按"无副作用"处理。
+        annotations(com.apex.agent.core.tools.ToolAnnotations.mutating())
     }
 
     override suspend fun executeStructured(arguments: String): ToolResult {
@@ -74,22 +110,18 @@ class CodeTodoTool : BaseTool(
             is ToolArguments.ParseOutcome.Ok -> parsed.args
             is ToolArguments.ParseOutcome.Bad -> return parsed.result
         }
-        val todosRaw = args.requireString("todos")
-
-        val parsed = try {
-            json.parseToJsonElement(todosRaw)
-        } catch (e: Exception) {
-            return ToolResult.fail(ToolErrorCode.INVALID_JSON, "todos is not valid JSON: ${e.message}")
-        }
-        val array = try {
-            parsed.jsonArray
-        } catch (e: Exception) {
+        // 双形态读取：内联数组 / 字符串编码的 JSON 数组都收（与 schema 声明
+        // 的宽容口径一致；旧 requireString 会把内联数组在工具层再拒一次）。
+        val todosElement = args.flexibleElement("todos")
+            ?: return ToolResult.fail(ToolErrorCode.MISSING_ARGUMENT, "missing required argument 'todos'")
+        val array = when (todosElement) {
+            is JsonArray -> todosElement
             // 容错：单对象 → 包装成数组
-            try {
-                JsonArray(listOf(parsed.jsonObject))
-            } catch (e2: Exception) {
-                return ToolResult.fail(ToolErrorCode.INVALID_ARGUMENT, "todos must be a JSON array of objects")
-            }
+            is JsonObject -> JsonArray(listOf(todosElement))
+            else -> return ToolResult.fail(
+                ToolErrorCode.INVALID_ARGUMENT,
+                "todos must be a JSON array of objects (inline or a string containing one)"
+            )
         }
 
         val todos = mutableListOf<Todo>()
@@ -117,10 +149,9 @@ class CodeTodoTool : BaseTool(
             }
             todos += Todo(content.take(200), status, priority)
         }
-        if (todos.size > 50) {
-            return ToolResult.fail(ToolErrorCode.INVALID_ARGUMENT, "too many todos (${todos.size}, max 50)")
-        }
-
+        // 数量不设上限（用户规格：一个流水式输出不限制清单数量）——清单是
+        // 全量覆盖式状态，条数由模型自律；单条 content 仍限 200 字符防极端
+        // 长文本撑爆上下文。
         state.set(todos.toList())
         return ToolResult.ok(render(todos))
     }

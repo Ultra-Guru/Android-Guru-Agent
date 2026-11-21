@@ -31,16 +31,20 @@ data class AdaptiveDecision(val level: ThinkingLevel, val reason: String)
 /**
  * AUTO 档自适应选档器：输入复杂度分类 → 按轮次动态选 [ThinkingLevel]（#168）。
  *
- * ## 评分模型（每项加权分，全部因子都会写进 [AdaptiveDecision.reason]）
+ * 文本信号检测与计分（长度 / 多步指示词 / 代码命令 / 风险词）委托共享核心
+ * [ThinkingSignalAnalyzer]（与 code-engine 的 Coding 选档器共用一份词表与
+ * 算术，防两模块漂移）；本类只保留 Agent 模式的**选档策略**：阈值映射、
+ * 错误恢复升档与三条档位保底。
  *
- * | 维度 | 条件 | 加分 | 说明 |
+ * ## 评分模型（共享四维 + 本类一维，全部因子写进 [AdaptiveDecision.reason]）
+ *
+ * | 维度 | 条件 | 加分 | 出处 |
  * |------|------|------|------|
- * | 文本长度 | > 500 字 | +2 | 长需求通常含隐式多步 |
- * |          | > 1500 字 | +3 | 超长需求（替换 +2，不叠加） |
- * | 多步指示词 | 先/然后/接着/步骤/first/then/step/plan/多任务 并列出现 | +2 | 显式多步任务 |
- * | 代码/命令含量 | ``` 代码块 / `$ ` 提示符 / git·npm·apt·gradle·pip 等命令词 | +2 | 技术任务需要结构化推理 |
- * | 风险词 | 删除/uninstall/rm -rf/格式化/刷机/权限 等 | +3 | **硬保底 DEEP**（无论总分） |
- * | 错误恢复 | recentErrors > 0 | +2 且**显式升一档** | 近期出错 → 当前思路有问题，加深反思避免重蹈（MAXIMUM 封顶） |
+ * | 文本长度 | > 500 字 +2；> 1500 字 +3（替换不叠加） | 长需求含隐式多步 | 共享 |
+ * | 多步指示词 | 先/然后/接着/步骤/first/then/step/plan 等 | +2 | 共享 |
+ * | 代码/命令含量 | ``` 代码块 / `$ ` 提示符 / git·npm·apt·gradle 等命令词 | +2 | 共享 |
+ * | 风险词 | 删除/uninstall/rm -rf/格式化/刷机/权限 等 | +3，**硬保底 DEEP** | 共享 |
+ * | 错误恢复 | recentErrors > 0 | +2 且**显式升一档**（MAXIMUM 封顶） | 本类 |
  *
  * ## 总分 → 档位阈值
  *
@@ -71,54 +75,25 @@ class AdaptiveThinkingSelector {
     /** @return 选档结果 + 可解释理由（UI/日志可见） */
     fun select(input: AdaptiveInput): AdaptiveDecision {
         val text = input.userText
-        val factors = mutableListOf<String>()
-        var score = 0
+        val analysis = ThinkingSignalAnalyzer.analyze(text)
+        val factors = analysis.labels.toMutableList()
+        var score = analysis.score
 
-        // ── 维度 1：文本长度（>500 +2；>1500 +3，替换不叠加）──
-        when {
-            text.length > LONG_TEXT_HEAVY -> {
-                score += 3; factors.add("超长文本+3")
-            }
-            text.length > LONG_TEXT_LIGHT -> {
-                score += 2; factors.add("长文本+2")
-            }
-        }
-
-        // ── 维度 2：多步指示词 ──
-        val indicator = MULTI_STEP_INDICATORS.firstOrNull { text.contains(it, ignoreCase = true) }
-        if (indicator != null) {
-            score += 2; factors.add("多步指示($indicator)+2")
-        }
-
-        // ── 维度 3：代码 / 命令含量 ──
-        val codeSignal = codeSignalOf(text)
-        if (codeSignal != null) {
-            score += 2; factors.add("代码/命令($codeSignal)+2")
-        }
-
-        // ── 维度 4：风险词（硬保底 DEEP）──
-        val riskWord = RISK_KEYWORDS.firstOrNull { text.contains(it, ignoreCase = true) }
-        if (riskWord != null) {
-            score += 3; factors.add("风险词($riskWord)+3")
-        }
-
-        // ── 维度 5：错误恢复（近期出错 → 加深一档反思）──
+        // ── 本类专有维度：错误恢复（近期出错 → 加深一档反思）──
         if (input.recentErrors > 0) {
             score += 2; factors.add("错误恢复(${input.recentErrors}次)+2")
         }
 
         // ── 总分 → 基础档位 ──
         var level = when {
-            score > DEEP_SCORE_CEILING -> ThinkingLevel.MAXIMUM
-            score >= DEEP_SCORE_FLOOR -> ThinkingLevel.DEEP
-            score >= STANDARD_SCORE_FLOOR -> ThinkingLevel.STANDARD
+            score > ThinkingSignalAnalyzer.DEEP_SCORE_CEILING -> ThinkingLevel.MAXIMUM
+            score >= ThinkingSignalAnalyzer.DEEP_SCORE_FLOOR -> ThinkingLevel.DEEP
+            score >= ThinkingSignalAnalyzer.STANDARD_SCORE_FLOOR -> ThinkingLevel.STANDARD
             else -> ThinkingLevel.LIGHT
         }
 
         // ── 短平快标注（< 80 字符且零信号 → LIGHT，阈值表已保证；仅补理由可读性）──
-        if (factors.isEmpty() && text.length < QUICK_TEXT_MAX) {
-            factors.add("短平快(<${QUICK_TEXT_MAX}字符)")
-        }
+        ThinkingSignalAnalyzer.quickLabel(text, factors.size)?.let { factors.add(it) }
 
         // ── 调整（升档 / 保底，逐条写进理由）──
         val adjustments = mutableListOf<String>()
@@ -136,7 +111,7 @@ class AdaptiveThinkingSelector {
             adjustments.add("错误恢复升一档")
         }
 
-        if (riskWord != null && level < ThinkingLevel.DEEP) {
+        if (analysis.riskWord != null && level < ThinkingLevel.DEEP) {
             level = ThinkingLevel.DEEP
             adjustments.add("风险词保底DEEP")
         }
@@ -144,58 +119,12 @@ class AdaptiveThinkingSelector {
             level = ThinkingLevel.STANDARD
             adjustments.add("规划期首轮保底STANDARD")
         }
-        if (input.historyToolCalls > DEEP_WATER_TOOL_CALLS && level < ThinkingLevel.STANDARD) {
+        if (input.historyToolCalls > ThinkingSignalAnalyzer.DEEP_WATER_TOOL_CALLS && level < ThinkingLevel.STANDARD) {
             level = ThinkingLevel.STANDARD
-            adjustments.add("长任务深水区(>${DEEP_WATER_TOOL_CALLS}次调用)保底STANDARD")
+            adjustments.add("长任务深水区(>${ThinkingSignalAnalyzer.DEEP_WATER_TOOL_CALLS}次调用)保底STANDARD")
         }
 
-        val reason = buildString {
-            append(factors.joinToString("、").ifEmpty { "无信号" })
-            append(" → 评分 ").append(score)
-            append(" → ").append(level.name)
-            if (adjustments.isNotEmpty()) {
-                append("（").append(adjustments.joinToString("；")).append("）")
-            }
-        }
+        val reason = ThinkingSignalAnalyzer.buildReason(factors, score, level.name, adjustments)
         return AdaptiveDecision(level, reason)
-    }
-
-    /**
-     * 代码/命令信号检测：命中任意信号返回**首个**命中的信号词（写进理由），
-     * 未命中返回 null。
-     *
-     * - ```` ``` ```` 围栏代码块；
-     * - `$ ` / `# ` shell 提示符；
-     * - git / npm / apt / pip / gradle / adb / shell / curl / kotlin / python 等命令词。
-     */
-    private fun codeSignalOf(text: String): String? = when {
-        text.contains("```") -> "```"
-        text.contains("\$ ") -> "\$ "
-        else -> CODE_COMMAND_WORDS.firstOrNull { text.contains(it, ignoreCase = true) }
-    }
-
-    private companion object {
-        /** 多步指示词（中英双语；「多任务」按词匹配，其余按子串）。 */
-        val MULTI_STEP_INDICATORS = listOf(
-            "先", "然后", "接着", "步骤", "多任务", "first", "then", "step", "plan"
-        )
-
-        /** 风险词：破坏性 / 不可逆 / 系统级操作的强信号。 */
-        val RISK_KEYWORDS = listOf(
-            "rm -rf", "删除", "uninstall", "卸载", "格式化", "刷机", "权限", "factory reset", "wipe"
-        )
-
-        /** 命令词（技术任务信号）。 */
-        val CODE_COMMAND_WORDS = listOf(
-            "git", "npm", "apt", "pip", "gradle", "adb", "shell", "curl", "kotlin", "python", "terminal"
-        )
-
-        const val LONG_TEXT_LIGHT = 500
-        const val LONG_TEXT_HEAVY = 1500
-        const val QUICK_TEXT_MAX = 80
-        const val STANDARD_SCORE_FLOOR = 3
-        const val DEEP_SCORE_FLOOR = 6
-        const val DEEP_SCORE_CEILING = 8
-        const val DEEP_WATER_TOOL_CALLS = 15
     }
 }

@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import com.apex.agent.core.tools.marketplace.HubSource
+import com.apex.agent.core.tools.marketplace.MarketNames
 import com.apex.agent.ui.component.GithubTokenDialog
 
 /**
@@ -55,8 +56,7 @@ internal fun HubSkillSection(state: MarketUiState, viewModel: MarketViewModel) {
 
     LaunchedEffect(Unit) { viewModel.hub.loadSkills() }
 
-    val tierScope = state.tier.name.lowercase()
-    val visible = hubState.skills.filter { it.visibleToScope(tierScope) }
+    val visible = hubState.skills.filter { it.visibleToScope("coding") }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
@@ -150,7 +150,7 @@ private fun HubSkillCard(
 /**
  * 官方 MCP 仓库行卡（apex-mcp-hub 目录条目）：
  * - 未安装 → 「安装」（enabled=false 落盘，安装 ≠ 启动）；
- * - 已安装未运行 → 「启动」（真实连接管线，进度弹窗见 MarketScreen）；
+ * - 已安装未运行 → 「启动」（真实连接管线，进度弹窗见 AggregationCenterScreen）；
  * - 运行中 → 「停止」；
  * - 沙箱条目带「需 Ubuntu」标签（rootfs 未装时启动会得到引导性报错）。
  */
@@ -161,7 +161,9 @@ internal fun HubMcpCatalogCard(
     hubState: MarketHubController.HubUiState,
     viewModel: MarketViewModel
 ) {
-    val installedRow = state.mcps.firstOrNull { it.name == entry.name }
+    // #346：已安装行匹配用归一化比较键（与安装防重同口径：同名服务器从
+    // 其他源安装、大小写/分隔符变体也识别为已安装）
+    val installedRow = state.mcps.firstOrNull { MarketNames.isSameServer(it.name, entry.name) }
     val installing = hubState.installingMcpName == entry.name
     Column {
         MarketCard(
@@ -313,7 +315,7 @@ internal fun ConfiguredMcpCard(
  * - **工位作用域**（agent / coding / all —— 市场分级与斜杠菜单的过滤口径）；
  * - **启停**（enabled —— 启用 = App 启动时自动连接）；
  * - **连接**（真实启动管线：进程内握手 + tools/list 发现，进度弹窗由
- *   MarketScreen 的 McpStartupProgressDialog 全局渲染）；
+ *   AggregationCenterScreen 的 McpStartupProgressDialog 全局渲染）；
  * - **GitHub 账号**（仅内置 github：嵌 GithubTokenDialog，补 token 后
  *   get_me/list_repositories 等 7 工具立即可用）。
  *
@@ -353,43 +355,16 @@ internal fun BuiltinMcpConfigDialog(
                     color = MaterialTheme.colorScheme.outline
                 )
 
-                // ── 工位作用域 ──
+                // ── 工位作用域（只读）──
                 Text(
                     text = stringResource(R.string.market_mcp_scope_label),
                     style = MaterialTheme.typography.labelMedium
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = fresh.scope == "agent",
-                        onClick = { viewModel.updateMcpScope(fresh.name, "agent") },
-                        label = {
-                            Text(
-                                stringResource(R.string.market_scope_agent),
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                    )
-                    FilterChip(
-                        selected = fresh.scope == "coding",
-                        onClick = { viewModel.updateMcpScope(fresh.name, "coding") },
-                        label = {
-                            Text(
-                                stringResource(R.string.market_scope_coding),
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                    )
-                    FilterChip(
-                        selected = fresh.scope == "all",
-                        onClick = { viewModel.updateMcpScope(fresh.name, "all") },
-                        label = {
-                            Text(
-                                stringResource(R.string.market_scope_all),
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                    )
-                }
+                Text(
+                    text = fresh.scope,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
                 // ── 启停（启用 = App 启动时自动连接）──
                 Row(
@@ -464,11 +439,14 @@ internal fun BuiltinMcpConfigDialog(
 
     if (showGithubToken) {
         val tokenManager = viewModel.hub.githubTokens
+        // v3 S3：onSuccess 第三参 = 对话框归一化后的默认仓库（null = 未填/
+        // 无法识别，不改动既有值）
         GithubTokenDialog(
             onDismiss = { showGithubToken = false },
             onSubmit = { token -> tokenManager.validateToken(token) },
-            onSuccess = { token, username ->
+            onSuccess = { token, username, normalizedRepo ->
                 tokenManager.saveToken(token, username)
+                normalizedRepo?.let { tokenManager.saveDefaultRepoCanonical(it) }
                 showGithubToken = false
             }
         )

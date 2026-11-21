@@ -1,11 +1,13 @@
 package com.apex.agent.permission
 
+import com.apex.agent.core.codetools.git.policy.GitActionClass
 import com.apex.agent.core.engine.AgentQuestion
 import com.apex.agent.core.engine.AgentQuestionOption
 import com.apex.agent.core.engine.UserQuestionGateway
 import com.apex.agent.core.tools.AgentTool
 import com.apex.agent.core.tools.GateDecision
 import com.apex.agent.core.tools.ToolExecutionGate
+import com.apex.agent.tools.GateDialogStrings
 import kotlinx.coroutines.CancellationException
 import java.util.concurrent.ConcurrentHashMap
 
@@ -25,7 +27,7 @@ data class PermissionSnapshot(
 )
 
 /**
- * ═══ opencode 式权限门（Issue #155）═══
+ * ═══ 业界标准式权限门（Issue #155）═══
  *
  * [PermissionDecider]（纯决策）+ [UserQuestionGateway]（用户询问闭环）
  * + 会话记忆的组合，实现 ToolExecutionGate 契约：
@@ -51,14 +53,17 @@ data class PermissionSnapshot(
  * 线程安全：会话记忆用并发 Map；decide 纯函数；本门可被任意线程 /
  * 任意协程并发调用（引擎会并行派发工具调用）。
  *
- * @param gateway 用户询问通道（复用 ask_user_choice 的既有对话框）。
+ * @param gateway 用户询问通道（复用 AskUserChoice 的既有对话框）。
  * @param settingsProvider 每次检查现取权限快照（设置热生效的关键）。
  * @param clock 会话授权时间戳来源（默认系统时钟；测试可注入固定值）。
+ * @param strings 弹窗文案源（#208：默认中文兜底，生产由 DI 注入资源版
+ *   按当前语言取词）。
  */
 class PermissionModeGate(
     private val gateway: UserQuestionGateway,
     private val settingsProvider: () -> PermissionSnapshot,
-    private val clock: () -> Long = System::currentTimeMillis
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val strings: GateDialogStrings = GateDialogStrings.DefaultCn
 ) : ToolExecutionGate {
 
     /**
@@ -101,7 +106,17 @@ class PermissionModeGate(
      *
      * 每次调用都现取 [PermissionSnapshot]（设置热生效）；工具上下文从
      * tool.metadata.annotations 读取（readOnlyHint / destructiveHint /
-     * sensitiveAction 三个决策注解）。
+     * idempotentHint / sensitiveAction 四个决策注解）。
+     *
+     * Git 审计 P0-5 carve-out：CodeGitRun 的单条命令先经
+     * [GitToolGateSupport.classifyRunCommand] 分类——
+     * - CONFIG_ESCAPE → 硬拒绝（规则与模式都压不过，热修版无设置开关）；
+     * - DESTRUCTIVE / OUTBOUND / ARBITRARY → **逐次确认、无会话记忆**，
+     *   BYPASS 的「全自动放行」模式承诺不覆盖它们（模式的承诺不含
+     *   「替用户改写远端历史/外发代码」）；用户手写 ALLOW 规则是显式
+     *   意志，仍然放行；
+     * - READ / LOCAL_WRITE → 走原有模式决策（READ 无副作用即问即过，
+     *   LOCAL_WRITE 保持既有确认面）。
      */
     suspend fun checkDetailed(tool: AgentTool, arguments: String): DetailedDecision {
         val snapshot = settingsProvider()
@@ -110,14 +125,118 @@ class PermissionModeGate(
             toolId = tool.id,
             readOnlyHint = annotations.readOnlyHint,
             destructiveHint = annotations.destructiveHint,
-            sensitiveAction = annotations.sensitiveAction
+            sensitiveAction = annotations.sensitiveAction,
+            idempotentHint = annotations.idempotentHint
         )
+        val gitClass = GitToolGateSupport.classifyRunCommand(tool.id, arguments)
+        if (gitClass != null) {
+            when {
+                // READ：只读 git 命令各权限档直通（含 PLAN——规划期查
+                // status/log/diff 是正当调研）；用户手写 DENY 规则仍优先
+                gitClass == GitActionClass.READ -> {
+                    val denyRule = snapshot.rules.any {
+                        it.effect == PermissionEffect.DENY && PermissionRuleMatcher.matches(it.pattern, tool.id)
+                    }
+                    if (!denyRule) return DetailedDecision.ExplicitAllow
+                }
+                gitClass == GitActionClass.CONFIG_ESCAPE ->
+                    return DetailedDecision.Denied(GitToolGateSupport.configEscapeDenial(tool.id))
+                gitClass == GitActionClass.LOCAL_WRITE -> { /* 原有模式决策 */ }
+                else -> {
+                    return when (val decision = PermissionDecider.decide(snapshot.mode, snapshot.rules, ctx)) {
+                        // DENY 规则与 PLAN 拒绝优先——策略加固不吞用户的显式拒绝
+                        is PermissionDecision.Deny -> DetailedDecision.Denied(decision.reason)
+                        is PermissionDecision.AllowExplicit -> {
+                            // 显式放行须来自规则（用户意志）才跳过逐次确认；
+                            // 来自模式承诺（BYPASS）的放行不覆盖外向/破坏性命令
+                            val ruleAllow = snapshot.rules.any {
+                                it.effect == PermissionEffect.ALLOW && PermissionRuleMatcher.matches(it.pattern, tool.id)
+                            }
+                            if (ruleAllow) DetailedDecision.ExplicitAllow
+                            else resolveGitCommandAsk(tool, arguments, gitClass)
+                        }
+                        is PermissionDecision.AllowDefault -> resolveGitCommandAsk(tool, arguments, gitClass)
+                        is PermissionDecision.Ask -> resolveGitCommandAsk(tool, arguments, gitClass)
+                    }
+                }
+            }
+        }
         return when (val decision = PermissionDecider.decide(snapshot.mode, snapshot.rules, ctx)) {
             is PermissionDecision.AllowExplicit -> DetailedDecision.ExplicitAllow
             is PermissionDecision.AllowDefault -> DetailedDecision.DefaultAllow
             is PermissionDecision.Deny -> DetailedDecision.Denied(decision.reason)
             is PermissionDecision.Ask -> resolveAsk(tool, arguments, snapshot.mode)
         }
+    }
+
+    /**
+     * git 单条命令的逐次确认闭环（Git 审计 P0-5）：无会话记忆、无
+     * 「本会话允许」选项、拒绝不写任何会话状态（拒掉一条 force-push
+     * 不应毒化后续 add/commit）。
+     */
+    private suspend fun resolveGitCommandAsk(
+        tool: AgentTool,
+        arguments: String,
+        gitClass: GitActionClass,
+    ): DetailedDecision {
+        val answer = try {
+            gateway.ask(buildGitCommandQuestion(tool, arguments, gitClass))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return DetailedDecision.Denied(
+                "权限询问通道异常（${e::class.simpleName ?: "Exception"}），git 命令已按拒绝处理；" +
+                    "请稍后重试，或在「设置 → 工具权限」中调整规则"
+            )
+        }
+        return when {
+            answer.selectedOptionId == OPTION_ALLOW_ONCE -> DetailedDecision.ExplicitAllow
+            answer.skipped -> DetailedDecision.Denied(
+                "对 git 命令的授权询问超时或未作答，已按拒绝处理；" +
+                    "请确认后再试（破坏性/外向 git 命令每次都会询问，不会会话记忆）"
+            )
+            else -> DetailedDecision.Denied(
+                "用户拒绝了这条 git 命令（分类：${gitClass.name}）；请勿重试同一命令，" +
+                    "改用其他方案或向用户说明。其他类别的 git 命令仍可正常询问"
+            )
+        }
+    }
+
+    /** git 命令确认问题（无「本会话允许」选项——逐次确认语义）。 */
+    private fun buildGitCommandQuestion(
+        tool: AgentTool,
+        arguments: String,
+        gitClass: GitActionClass,
+    ): AgentQuestion {
+        val classHint = when (gitClass) {
+            GitActionClass.DESTRUCTIVE ->
+                "破坏性 git 操作（改写历史/丢弃数据/强推远端——任何权限档都逐次确认）"
+            GitActionClass.OUTBOUND ->
+                "外向 git 操作（代码/数据将离开本机发往远端——任何权限档都逐次确认）"
+            else ->
+                "未识别的 git 子命令（按未知风险处理，逐次确认）"
+        }
+        return AgentQuestion(
+            title = "git 命令需要确认：${gitClass.name.lowercase()}（${tool.id}）",
+            description = "$classHint\n" +
+                strings.argsLine(arguments.take(300)),
+            options = buildList {
+                add(AgentQuestionOption(
+                    id = OPTION_ALLOW_ONCE,
+                    label = strings.allowOnceLabel(),
+                    description = strings.allowOnceDesc()
+                ))
+                add(AgentQuestionOption(
+                    id = OPTION_DENY,
+                    label = strings.denyLabel(),
+                    description = strings.denyDesc(),
+                    recommended = true
+                ))
+            },
+            allowCustom = false,
+            allowSkip = false,
+            timeoutMs = ASK_TIMEOUT_MS
+        )
     }
 
     /**
@@ -130,8 +249,10 @@ class PermissionModeGate(
     ): DetailedDecision {
         // 会话记忆命中：本会话内用户已授权过本工具——静默放行，且视为
         // 显式放行（用户意志已表达，跳过后续风险门，避免权限门刚问完、
-        // 风险门再问一次的双弹窗骚扰）
-        if (sessionAllowed.containsKey(tool.id)) {
+        // 风险门再问一次的双弹窗骚扰）。
+        // #342 例外：付费类工具（SmsSend）不消费会话记忆——逐次确认，
+        // 与 RiskAwareToolGate 同口径（否则权限门记住一次后连发短信）。
+        if (sessionAllowed.containsKey(tool.id) && tool.id !in NO_SESSION_ALLOW_TOOLS) {
             return DetailedDecision.ExplicitAllow
         }
 
@@ -183,33 +304,37 @@ class PermissionModeGate(
      * 授权问题构造（选项与文案对齐 RiskAwareToolGate）。
      *
      * 参数摘要截 300 字符并压平换行，避免对话框被长 JSON 撑爆。
+     * #208：文案经 [strings] 取词，不再硬编码中文。
      */
     private fun buildQuestion(
         tool: AgentTool,
         arguments: String,
         mode: PermissionMode
     ): AgentQuestion = AgentQuestion(
-        title = "工具执行授权：${tool.id}",
-        description = "当前权限模式：${modeLabel(mode)}，该工具需要你确认后才能执行。\n" +
-            "参数摘要：${arguments.take(300).replace('\n', ' ')}",
-        options = listOf(
-            AgentQuestionOption(
-                id = OPTION_ALLOW_SESSION,
-                label = "本会话允许",
-                description = "本次会话中该工具不再询问"
-            ),
-            AgentQuestionOption(
+        title = strings.permTitle(tool.id),
+        description = strings.permModeLine(mode) + "\n" + strings.argsLine(arguments),
+        options = buildList {
+            // #342：付费类工具（SmsSend）不出「本会话允许」——逐次确认
+            // （与 RiskAwareToolGate 弹窗同口径，单一事实源共用）
+            if (tool.id !in NO_SESSION_ALLOW_TOOLS) {
+                add(AgentQuestionOption(
+                    id = OPTION_ALLOW_SESSION,
+                    label = strings.allowSessionLabel(),
+                    description = strings.allowSessionDesc()
+                ))
+            }
+            add(AgentQuestionOption(
                 id = OPTION_ALLOW_ONCE,
-                label = "仅允许一次",
-                description = "下次调用将再次询问"
-            ),
-            AgentQuestionOption(
+                label = strings.allowOnceLabel(),
+                description = strings.allowOnceDesc()
+            ))
+            add(AgentQuestionOption(
                 id = OPTION_DENY,
-                label = "拒绝",
-                description = "不执行，让 Agent 改用其他方案",
+                label = strings.denyLabel(),
+                description = strings.denyDesc(),
                 recommended = true
-            )
-        ),
+            ))
+        },
         allowCustom = false,
         allowSkip = false,
         timeoutMs = ASK_TIMEOUT_MS
@@ -230,7 +355,7 @@ class PermissionModeGate(
 
     /** 模式短名（授权对话框文案用，中文）。 */
     private fun modeLabel(mode: PermissionMode): String = when (mode) {
-        PermissionMode.BYPASS -> "全放行（BYPASS）"
+        PermissionMode.BYPASS -> "全自动（BYPASS）"
         PermissionMode.DEFAULT -> "默认（DEFAULT）"
         PermissionMode.ACCEPT_EDITS -> "接受编辑（ACCEPT_EDITS）"
         PermissionMode.PLAN -> "只读规划（PLAN）"
@@ -248,7 +373,7 @@ class PermissionModeGate(
 /**
  * ═══ 权限门 × 风险门 协调组合器（Issue #155）═══
  *
- * 把 [PermissionModeGate]（opencode 式权限决策 + 询问闭环）与既有
+ * 把 [PermissionModeGate]（业界标准式权限决策 + 询问闭环）与既有
  * [ToolExecutionGate]（如 RiskAwareToolGate 风险审批门）合成为一门：
  *
  * - 显式放行（规则 / 模式承诺 / 会话记忆 / 用户刚授权）→ 直接 Allow，

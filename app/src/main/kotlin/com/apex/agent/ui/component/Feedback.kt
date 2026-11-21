@@ -35,6 +35,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -42,6 +43,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
+import com.apex.agent.ui.theme.LocalExtendedColors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicLong
@@ -52,7 +54,7 @@ import java.util.concurrent.atomic.AtomicLong
  * ═══════════════════════════════════════════════════════════════
  *
  * 现状（Task 5-d 之前）：全 app 17 处裸 `Toast.makeText` + 多处各自为政的
- * SnackbarHost（BrowserChrome / MarketScreen 各 remember 一套）+ AgentChat 的
+ * SnackbarHost（BrowserChrome / AggregationCenterScreen 各 remember 一套）+ AgentChat 的
  * `_uiFeedback` SharedFlow 再转 Toast —— 反馈路径六种风格混乱。本文件收敛为一个
  * 组件一条路径（主控接入：ApexRoot 外包一层 `FeedbackHost { ApexRoot() }`）：
  *
@@ -66,8 +68,8 @@ import java.util.concurrent.atomic.AtomicLong
  * ```
  *
  * 视觉语言对齐 GlassComponents：INFO 走 surfaceVariant 中性档（轻、不抢焦点），
- * SUCCESS/WARNING/ERROR 用固定语义容器色 + 白字（WARNING 与 OfflineBanner
- * 的琥珀警示同一视觉锚点）。
+ * SUCCESS/ERROR 用固定语义容器色；WARNING 与 OfflineBanner 共用主题
+ * 容器/文字配对（深色亮琥珀配深字，浅色深琥珀配白字）。
  *
  * 与既有 `_uiFeedback`（AgentChatViewModel）的关系：语义重叠，迁移由主控完成
  * —— Screen 层收集后改调 `LocalFeedbackController.current.show(...)`，收敛后旁路可移除。
@@ -84,10 +86,14 @@ enum class FeedbackSeverity(@StringRes val labelRes: Int) {
     ERROR(R.string.feedback_severity_error)
 }
 
-/** 语义容器色：品牌反馈绿 / 琥珀警示（与 OfflineBanner 同一锚点）/ 错误红。 */
-private val SuccessContainer = Color(0xFF3FB27F)
-private val WarningContainer = Color(0xFFE8A33D)
-private val ErrorContainer = Color(0xFFE5533D)
+/**
+ * SUCCESS/ERROR 存量局部容器色（本 PR 不处理）；WARNING 的容器与文字
+ * 已统一走 ExtendedColors（与 OfflineBanner 同一锚点），不在这里复制。
+ */
+private val SuccessContainerDark = Color(0xFF3FB27F)
+private val ErrorContainerDark = Color(0xFFE5533D)
+private val SuccessContainerLight = Color(0xFF15803D)
+private val ErrorContainerLight = Color(0xFFBA1A4A)
 
 /**
  * severity 的载体：消息本体/actionLabel/时长走标准 [SnackbarVisuals] 字段
@@ -221,8 +227,13 @@ private fun FeedbackSnackbar(data: SnackbarData) {
     val visuals = data.visuals as? FeedbackVisuals
     val severity = visuals?.severity ?: FeedbackSeverity.INFO
     val scheme = MaterialTheme.colorScheme
+    val warningColors = LocalExtendedColors.current
+    // SUCCESS/ERROR 的存量选色逻辑不变；WARNING 改用主题明暗配对。
+    val light = scheme.background.luminance() > 0.5f
 
     val containerColor: Color
+    // 存量 SUCCESS/ERROR 的白字，仅服务于两档局部容器；WARNING 不再复用它。
+    val onStatusContent = Color.White
     val contentColor: Color
     val actionColor: Color
     val icon: ImageVector
@@ -234,21 +245,21 @@ private fun FeedbackSnackbar(data: SnackbarData) {
             icon = Icons.Outlined.Info
         }
         FeedbackSeverity.SUCCESS -> {
-            containerColor = SuccessContainer
-            contentColor = Color.White
-            actionColor = Color.White
+            containerColor = if (light) SuccessContainerLight else SuccessContainerDark
+            contentColor = onStatusContent
+            actionColor = onStatusContent
             icon = Icons.Filled.CheckCircle
         }
         FeedbackSeverity.WARNING -> {
-            containerColor = WarningContainer
-            contentColor = Color.White
-            actionColor = Color.White
+            containerColor = warningColors.warningContainer
+            contentColor = warningColors.onWarningContainer
+            actionColor = warningColors.onWarningContainer
             icon = Icons.Outlined.Warning
         }
         FeedbackSeverity.ERROR -> {
-            containerColor = ErrorContainer
-            contentColor = Color.White
-            actionColor = Color.White
+            containerColor = if (light) ErrorContainerLight else ErrorContainerDark
+            contentColor = onStatusContent
+            actionColor = onStatusContent
             icon = Icons.Filled.Error
         }
     }

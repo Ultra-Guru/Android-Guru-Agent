@@ -66,10 +66,10 @@ class HubSourceTest {
         assertEquals("skills/cooking-master.json", first.file)
         assertEquals("hub/cooking-master", first.key)
 
-        // 缺省字段：version→1.0.0、scope→agent（仓库默认 agent 工位）
+        // 缺省字段：version→1.0.0、scope→coding（市场剥离 Agent 模式后的新默认）
         val second = entries[1]
         assertEquals("1.0.0", second.version)
-        assertEquals("agent", second.scope)
+        assertEquals("coding", second.scope)
         assertEquals("旅行规划师", second.name)
     }
 
@@ -108,15 +108,38 @@ class HubSourceTest {
     }
 
     @Test
+    fun `duplicate entries are deduped to protect lazy column keys`() {
+        // P2-1：上游 index.json 出现重复条目时，不去重会让消费点 LazyColumn 的
+        // key = it.key 抛 IllegalArgumentException 直接崩市场页 —— 按 key
+        // 去重且保留首见条目
+        val skillBody = """
+        {"skills": [
+            {"id": "dup", "name": "第一份", "file": "skills/dup.json"},
+            {"id": "dup", "name": "第二份", "file": "skills/dup.json"},
+            {"id": "unique", "file": "skills/unique.json"}
+        ]}
+        """.trimIndent()
+
+        val skills = HubSource.parseSkillIndex(skillBody).getOrThrow()
+        assertEquals(2, skills.size)
+        // 保留首见条目（distinctBy 语义），键唯一
+        assertEquals("第一份", skills[0].name)
+        assertEquals(skills.size, skills.map { it.key }.toSet().size)
+    }
+
+    @Test
     fun `skill entry scope visibility follows market tier semantics`() {
+        // 市场剥离 Agent 模式（PR：剥离市场 Agent 模式）：scope 过滤停用 ——
+        // 目录任何条目（agent/coding/all）对两个工位查询都返回可见，
+        // 旧分级语义（agentOnly 对 coding 不可见）不再成立。
         val agentOnly = HubSource.HubSkillEntry(id = "a", name = "A", file = "skills/a.json", scope = "agent")
         val codingOnly = HubSource.HubSkillEntry(id = "c", name = "C", file = "skills/c.json", scope = "coding")
         val both = HubSource.HubSkillEntry(id = "b", name = "B", file = "skills/b.json", scope = "all")
 
         assertTrue(agentOnly.visibleToScope("agent"))
-        assertFalse(agentOnly.visibleToScope("coding"))
+        assertTrue(agentOnly.visibleToScope("coding"))
         assertTrue(codingOnly.visibleToScope("coding"))
-        assertFalse(codingOnly.visibleToScope("agent"))
+        assertTrue(codingOnly.visibleToScope("agent"))
         assertTrue(both.visibleToScope("agent"))
         assertTrue(both.visibleToScope("coding"))
     }
@@ -197,6 +220,16 @@ class HubSourceTest {
     }
 
     @Test
+    fun `mcp index dedupes repeated server names for lazy column keys`() {
+        // P2-1：消费点（MarketBrowseMcpTab）列表 key 为 "hub-" + name ——
+        // 上游重复 name 的条目不去重会撞重复 key 崩溃，按 name 去重
+        val body = """{"servers": [{"name": "fs"}, {"name": "fs"}, {"name": "wiki"}]}"""
+        val servers = HubSource.parseMcpIndex(body).getOrThrow()
+        assertEquals(2, servers.size)
+        assertEquals(listOf("fs", "wiki"), servers.map { it.name })
+    }
+
+    @Test
     fun `mcp entry scope visibility mirrors skill semantics`() {
         val body = """
         {"servers": [
@@ -207,8 +240,9 @@ class HubSourceTest {
         """.trimIndent()
         val servers = HubSource.parseMcpIndex(body).getOrThrow().associateBy { it.name }
 
+        // 市场剥离 Agent 模式后 scope 过滤停用：全部条目双工位可见
         assertTrue(servers.getValue("a").visibleToScope("agent"))
-        assertFalse(servers.getValue("a").visibleToScope("coding"))
+        assertTrue(servers.getValue("a").visibleToScope("coding"))
         assertTrue(servers.getValue("c").visibleToScope("coding"))
         assertTrue(servers.getValue("b").visibleToScope("agent"))
         assertTrue(servers.getValue("b").visibleToScope("coding"))

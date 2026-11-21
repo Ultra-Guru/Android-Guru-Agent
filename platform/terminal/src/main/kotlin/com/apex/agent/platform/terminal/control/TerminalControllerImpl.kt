@@ -9,8 +9,8 @@ import com.apex.agent.platform.terminal.policy.CommandPolicyDecision
 import com.apex.agent.platform.terminal.runtime.TerminalRuntime
 import com.apex.agent.platform.terminal.session.TerminalSessionConfig
 import com.apex.agent.platform.terminal.session.TerminalSessionSnapshot
-import com.apex.agent.platform.terminal.wait.WaitCondition
-import com.apex.agent.platform.terminal.wait.WaitResult
+import com.apex.agent.platform.TerminalWait.WaitCondition
+import com.apex.agent.platform.TerminalWait.WaitResult
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
@@ -34,7 +34,6 @@ class TerminalControllerImpl(
     // ─── Session Control ───
     override suspend fun createSession(config: TerminalSessionConfig): Result<Long> {
         val r = runtime.create(
-            shell = config.shell ?: "/system/bin/sh",
             cwd = config.workingDirectory ?: "/sdcard",
             rows = config.rows, cols = config.cols, env = config.environment
         )

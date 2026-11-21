@@ -7,6 +7,12 @@
 
 namespace apex::vt {
 
+namespace {
+// Mirrors vt_session.cpp's codec cap (R12: cps per mark <= 16) so a
+// save/load round trip never changes what is on screen.
+constexpr size_t kRenderCpsPerMarkMax = 16;
+}  // namespace
+
 // ─── RowExtras ────────────────────────────────────────────────────────────
 
 const std::vector<uint32_t>* RowExtras::find(uint16_t col) const {
@@ -20,6 +26,11 @@ const std::vector<uint32_t>* RowExtras::find(uint16_t col) const {
 void RowExtras::add(uint16_t col, uint32_t cp) {
   for (CombiningMark& m : marks) {
     if (m.col == col) {
+      // Hardening (#395 upstream sync): cap combining marks per cell — the
+      // session codec (R12) only round-trips 16 per mark, so anything beyond
+      // is already lossy; without a cap a Zalgo/binary stream grows one
+      // cell's marks vector unboundedly (native heap + O(n) hot-path scans).
+      if (m.cps.size() >= kRenderCpsPerMarkMax) return;
       m.cps.push_back(cp);
       return;
     }
@@ -36,6 +47,9 @@ void RowExtras::removeCol(uint16_t col) {
 }
 
 void RowExtras::removeRange(int fromCol, int toCol) {
+  // P2: empty range (toCol < fromCol) skips directly — eraseRow's clamped
+  // sentinel endpoint (first-1) can reach here; erase must be a no-op.
+  if (fromCol > toCol) return;
   marks.erase(std::remove_if(marks.begin(), marks.end(), [&](const CombiningMark& m) {
                 return m.col >= fromCol && m.col <= toCol;
               }),
@@ -189,9 +203,13 @@ const std::vector<uint32_t>* Screen::combiningAt(int r, int c) const {
 
 void Screen::insertChars(int row, int fromCol, int count) {
   if (row < 0 || row >= rows_) return;
-  count = count < 1 ? 1 : count;
   if (fromCol < 0) fromCol = 0;
   if (fromCol >= cols_) return;
+  // Hardening (#395): saturate count into [1, cols_-fromCol]. The old lower
+  // clamp only let a 10-digit CSI param (parseToken passes INT32_MAX) wrap
+  // `fromCol + count` negative → memmove with a ~2GB size → SIGSEGV (ASAN
+  // proven). xterm semantics: insertion never exceeds the row end.
+  count = std::min(std::max(count, 1), cols_ - fromCol);
   int srcStart = fromCol + count;
   if (srcStart < cols_) {
     std::memmove(&cells_[idx(row, srcStart)], &cells_[idx(row, fromCol)],
@@ -208,9 +226,10 @@ void Screen::insertChars(int row, int fromCol, int count) {
 
 void Screen::deleteChars(int row, int fromCol, int count) {
   if (row < 0 || row >= rows_) return;
-  count = count < 1 ? 1 : count;
   if (fromCol < 0) fromCol = 0;
   if (fromCol >= cols_) return;
+  // Hardening (#395): same wrap as insertChars — saturate before pointer math.
+  count = std::min(std::max(count, 1), cols_ - fromCol);
   if (fromCol + count < cols_) {
     std::memmove(&cells_[idx(row, fromCol)], &cells_[idx(row, fromCol + count)],
                  size_t(cols_ - fromCol - count) * sizeof(Cell));
@@ -227,13 +246,19 @@ void Screen::deleteChars(int row, int fromCol, int count) {
 void Screen::eraseRow(int row, int fromCol, int toCol, uint16_t styleId) {
   if (row < 0 || row >= rows_) return;
   int first = std::max(fromCol, 0);
-  int last = std::min(toCol, cols_ - 1);
+  if (first >= cols_) return;
+  // Hardening (#395): ECH computes toCol = cursor.col + n - 1 at the dispatch
+  // layer — a 10-digit param wraps it very negative; the old code then read
+  // cells_[idx(row, last)] out of bounds. Clamp to [-1, cols_-1] and skip the
+  // empty range (last < first) entirely.
+  int last = std::min(std::max(toCol, first - 1), cols_ - 1);
   // P2 (Kotlin parity): pair-aware erase — if the range boundary splits a wide
   // pair, erase the out-of-range half too (xterm semantics: erasing either half
   // erases the whole pair; a surviving half becomes an orphan and misaligns).
   bool leadSplitBefore = first > 0 && (cells_[idx(row, first)].flags & kCellWideTrail) &&
                          (cells_[idx(row, first - 1)].flags & kCellWideLead);
-  bool trailSplitAfter = last < cols_ - 1 && (cells_[idx(row, last)].flags & kCellWideLead) &&
+  bool trailSplitAfter = last >= first && last >= 0 && last < cols_ - 1 &&
+                         (cells_[idx(row, last)].flags & kCellWideLead) &&
                          (cells_[idx(row, last + 1)].flags & kCellWideTrail);
   for (int c = first; c <= last; ++c) {
     Cell& dst = cells_[idx(row, c)];

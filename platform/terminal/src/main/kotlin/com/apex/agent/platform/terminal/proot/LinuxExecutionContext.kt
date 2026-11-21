@@ -47,8 +47,13 @@ class LinuxExecutionContextFactory(
         } catch (e: Exception) {
             return Result.failure(RuntimeException("AptError:PROOT_UNAVAILABLE — ${e.message}", e))
         }
+        val binaryInfo: PRootBinaryInfo
         try {
-            binaryProvider.verify(binaryPath).getOrElse { e ->
+            // T92（D5 完成度）：verify 产物不再丢弃 —— capabilities 进入上下文，
+            // apt/probe/fs 消费方据此构造版本自适应 argv（与 LinuxPRootBackend
+            // 同款能力门，根除「仅交互会话路径自适应、其余六路径默认 Termux
+            // 基线」的静默差异残留面）。
+            binaryInfo = binaryProvider.verify(binaryPath).getOrElse { e ->
                 return Result.failure(RuntimeException("AptError:PROOT_VERIFY_FAILED — ${e.message}", e))
             }
         } catch (e: Exception) {
@@ -92,7 +97,9 @@ class LinuxExecutionContextFactory(
                 hostEnvMap = hostEnvMap,
                 interactiveGuestEnv = environment.interactiveGuestEnv(),
                 aptGuestEnv = environment.aptGuestEnv(),
-                homeBind = PRootBind(AbsolutePath(homeDir.absolutePath), GuestUserHome.GUEST_PATH)
+                homeBind = PRootBind(AbsolutePath(homeDir.absolutePath), GuestUserHome.GUEST_PATH),
+                // T92：探针实测能力随上下文流转（消费方 argv 构造的单一事实源）
+                capabilities = binaryInfo.capabilities
             )
         )
     }
@@ -116,7 +123,14 @@ data class LinuxExecutionContext(
     /** apt 非交互基线（+ DEBIAN_*，TERM=dumb）。 */
     val aptGuestEnv: Map<String, String>,
     /** 持久化 home bind（host → guest /root）。 */
-    val homeBind: PRootBind
+    val homeBind: PRootBind,
+    /**
+     * T92：目标 proot 的 argv 能力集（verify 双探针实测）。
+     * 消费方构造 [PRootCommand] 时必须传入 —— 与 LinuxPRootBackend 的能力门
+     * 同源，根除「非交互路径默认 Termux 基线」的静默差异。默认值仅为既有
+     * 测试夹具兼容（生产构造点唯一：LinuxExecutionContextFactory.resolve）。
+     */
+    val capabilities: PRootArgvCapabilities = PRootArgvCapabilities.TERMUX_BUNDLED
 ) {
     /** workspace bind（host dir → guest /workspace）。 */
     val workspaceBind: PRootBind

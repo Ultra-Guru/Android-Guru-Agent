@@ -10,7 +10,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.jsonArray
 
 /**
- * Agent tool: terminal.close
+ * Agent tool: TerminalClose
  *
  * Spec ref: ATR 2.0 Final Spec §34.9
  *
@@ -26,7 +26,7 @@ import kotlinx.serialization.json.jsonArray
 class TerminalCloseTool(
     private val runtime: TerminalRuntime
 ) : TerminalTool {
-    override val id: String = "terminal.close"
+    override val id: String = "TerminalClose"
     override val name: String = id
     override val description: String = """
         Close a Session: sends SIGHUP to foreground, reaps child, closes master fd, frees resources.
@@ -47,8 +47,10 @@ class TerminalCloseTool(
 
     override suspend fun invoke(arguments: String): String {
         val json = Json.parseToJsonElement(arguments).jsonObject
-        val sessionId = json["sessionId"]?.jsonPrimitive?.content?.toLongOrNull() ?: throw IllegalArgumentException("sessionId required")
-        val force = json["force"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: false
+        // 别名宽容（实录 #8）：schema 层已互认，工具层同步读取
+        val sessionId = json.longArg("sessionId", "session_id")
+            ?: throw IllegalArgumentException("sessionId required (accepted: sessionId, session_id)")
+        val force = json.boolArg("force") ?: false
         val out = execute(Input(sessionId, force))
         return buildJsonObject { put("closed", JsonPrimitive(out.closed)); put("cause", JsonPrimitive(out.cause)); put("finalCursor", JsonPrimitive(out.finalCursor)) }.toString()
     }

@@ -227,38 +227,68 @@ class PromptTemplateRegistryTest {
 
     @Test
     fun `reseedBuiltIns is idempotent and inserts only when missing`() = runTest {
-        assertEquals(10, registry.reseedBuiltIns())
+        assertEquals(3, registry.reseedBuiltIns())
         assertEquals(0, registry.reseedBuiltIns())
         assertEquals(0, registry.reseedBuiltIns(force = true)) // 出厂态原样 → 无改动
 
         val templates = registry.list()
-        assertEquals(10, templates.size)
-        assertEquals(10, templates.map { it.id }.toSet().size)
+        assertEquals(3, templates.size)
+        assertEquals(3, templates.map { it.id }.toSet().size)
         assertTrue(templates.all { it.isBuiltIn })
-        assertEquals(10, PromptTemplateRegistry(dir).list().size) // 落盘确认
+        assertEquals(3, PromptTemplateRegistry(dir).list().size) // 落盘确认
     }
 
     @Test
-    fun `reseedBuiltIns force restores tampered built-in content`() = runTest {
+    fun `save rejects built-in mutation and disk tampering self-heals on load`() = runTest {
         registry.reseedBuiltIns()
         val pristine = registry.get("builtin_code_review")!!
-        // 用户借 save 改写内置内容（允许定制，但保护位不丢）
-        now = 5000L
-        registry.save(pristine.copy(content = "被改坏的正文", usageCount = 9))
-        val tampered = registry.get("builtin_code_review")!!
-        assertEquals("被改坏的正文", tampered.content)
-        assertTrue(tampered.isBuiltIn)
-        assertEquals(9L, tampered.usageCount)
 
-        // 非强制重播种：已有条目（即使被改）不覆盖
+        // 1) save 一刀切拒绝内置改写（哪怕内容与出厂定义完全一致）
+        assertIllegalArgument { registry.save(pristine.copy(content = "被改坏的正文")) }
+        assertIllegalArgument { registry.save(pristine.copy(usageCount = 9)) }
+        assertIllegalArgument { registry.save(pristine) } // 原样重复保存同样拒绝
+        assertEquals(pristine, registry.get("builtin_code_review"))
+
+        // 2) 绕过 save 直接篡改磁盘 JSON → 新实例加载时定义字段自愈回归出厂
+        val raw = File(dir, "templates.json").readText()
+        assertTrue(raw.contains("代码评审"))
+        File(dir, "templates.json").writeText(
+            raw.replace("你是一位资深代码评审专家", "被篡改的角色文本")
+        )
+        val fresh = PromptTemplateRegistry(dir, logger = { logs.add(it) })
+        val healed = fresh.get("builtin_code_review")!!
+        assertEquals(pristine.content, healed.content) // 定义 = 出厂
+        assertTrue(healed.isBuiltIn)
+        assertTrue(logs.any { it.contains("heal tampered built-in") })
+
+        // 3) usageCount 等运行元数据在自愈中保留（自愈只回归定义，不抹使用统计）
+        registry.incrementUsage("builtin_code_review")
+        val raw2 = File(dir, "templates.json").readText()
+        File(dir, "templates.json").writeText(
+            raw2.replace("你是一位资深代码评审专家", "又一次篡改")
+        )
+        val fresh2 = PromptTemplateRegistry(dir)
+        assertEquals(pristine.content, fresh2.get("builtin_code_review")!!.content)
+        assertEquals(1L, fresh2.get("builtin_code_review")!!.usageCount)
+    }
+
+    @Test
+    fun `reseedBuiltIns force resets drifted usage metadata to factory`() = runTest {
+        registry.reseedBuiltIns()
+        // 唯一合法的内置条目漂移通道：渲染计数（incrementUsage）
+        registry.incrementUsage("builtin_code_review")
+        registry.incrementUsage("builtin_code_review")
+        assertEquals(2L, registry.get("builtin_code_review")!!.usageCount)
+
+        // 非强制重播种：已有条目不覆盖（使用统计保留）
         assertEquals(0, registry.reseedBuiltIns())
-        assertEquals("被改坏的正文", registry.get("builtin_code_review")!!.content)
+        assertEquals(2L, registry.get("builtin_code_review")!!.usageCount)
 
-        // 强制重播种：还原出厂定义
+        // 强制重播种：整体还原出厂定义（含使用计数归零）
         assertEquals(1, registry.reseedBuiltIns(force = true))
-        val restored = registry.get("builtin_code_review")!!
-        assertEquals(pristine, restored)
-        assertFalse(restored.content.contains("被改坏"))
+        assertEquals(0L, registry.get("builtin_code_review")!!.usageCount)
+        assertEquals(BuiltinPromptTemplates.ALL.first { it.id == "builtin_code_review" },
+            registry.get("builtin_code_review"))
     }
 
     @Test
@@ -280,18 +310,16 @@ class PromptTemplateRegistryTest {
     @Test
     fun `built-ins cover five categories with consistent variable declarations`() {
         val byCategory = BuiltinPromptTemplates.ALL.groupBy { it.category }
-        assertEquals(5, byCategory.keys.size)
-        assertEquals(5, byCategory[TemplateCategory.CODING]!!.size)
-        assertNotNull(byCategory[TemplateCategory.WRITING])
-        assertNotNull(byCategory[TemplateCategory.TRANSLATION])
-        assertNotNull(byCategory[TemplateCategory.ANALYSIS])
-        assertNotNull(byCategory[TemplateCategory.PRODUCTIVITY])
+        // 市场剥离 Agent 模式：CODING 双模板 + PRODUCTIVITY 浏览器专家角色模板
+        assertEquals(2, byCategory.keys.size)
+        assertEquals(2, byCategory[TemplateCategory.CODING]!!.size)
+        assertEquals(1, byCategory[TemplateCategory.PRODUCTIVITY]!!.size)
         // 声明变量与正文引用一一对应（模板引擎缺失判定的前提）
         for (t in BuiltinPromptTemplates.ALL) {
             assertEquals("declared vs referenced mismatch: ${t.id}", t.variables.map { it.name }.toSet(), t.referencedVariables())
         }
         assertTrue(BuiltinPromptTemplates.ALL.all { it.id.startsWith(PromptTemplate.BUILTIN_ID_PREFIX) })
-        assertEquals(10, BuiltinPromptTemplates.BUILTIN_IDS.size)
+        assertEquals(3, BuiltinPromptTemplates.BUILTIN_IDS.size)
     }
 
     // ═══ 列表与分类 ═══
@@ -300,9 +328,9 @@ class PromptTemplateRegistryTest {
     fun `list filters by category`() = runTest {
         registry.reseedBuiltIns()
         registry.save(sampleTemplate(id = "tpl_mine"))
-        assertEquals(11, registry.list().size)
-        assertEquals(6, registry.list(TemplateCategory.CODING).size) // 5 内置 + 1 自定义
-        assertEquals(1, registry.list(TemplateCategory.TRANSLATION).size)
+        assertEquals(4, registry.list().size)
+        assertEquals(3, registry.list(TemplateCategory.CODING).size) // 2 内置 + 1 自定义
+        assertEquals(0, registry.list(TemplateCategory.TRANSLATION).size)
         assertEquals(0, registry.list(TemplateCategory.CUSTOM).size)
         assertTrue(registry.list(TemplateCategory.CODING).all { it.category == TemplateCategory.CODING })
     }
@@ -343,7 +371,7 @@ class PromptTemplateRegistryTest {
         val result = other.importLibrary(exported, ImportMode.MERGE)
         assertTrue(result.ok)
         assertEquals(1, result.importedCount) // 内置 10 条按规则跳过
-        assertEquals(10, result.skippedBuiltInCount)
+        assertEquals(3, result.skippedBuiltInCount)
         // MERGE 不会播种内置：空库导入后只剩自定义模板
         assertEquals(1, other.list().size)
         val reimported = other.get("tpl_sample")!!
@@ -383,7 +411,7 @@ class PromptTemplateRegistryTest {
         assertTrue(builtin.isBuiltIn)
         // 导入条目一律为自定义（防伪内置）
         assertFalse(registry.get("tpl_new_from_import")!!.isBuiltIn)
-        assertEquals(12, registry.list().size) // 10 内置 + 2 自定义
+        assertEquals(5, registry.list().size) // 3 内置 + 2 自定义
     }
 
     @Test
@@ -402,11 +430,11 @@ class PromptTemplateRegistryTest {
         assertEquals(listOf("tpl_replaced_a", "tpl_replaced_b"), registry.list().map { it.id })
 
         // REPLACE 把内置一并清空 → reseedBuiltIns 可还原（逃生通道）
-        assertEquals(10, registry.reseedBuiltIns())
-        assertEquals(12, registry.list().size)
+        assertEquals(3, registry.reseedBuiltIns())
+        assertEquals(5, registry.list().size)
 
         // 落盘确认
-        assertEquals(12, PromptTemplateRegistry(dir).list().size)
+        assertEquals(5, PromptTemplateRegistry(dir).list().size)
     }
 
     @Test
@@ -430,7 +458,7 @@ class PromptTemplateRegistryTest {
         assertNotNull(result.error)
         assertEquals(0, result.importedCount)
         // 原库不受影响
-        assertEquals(10, registry.list().size)
+        assertEquals(3, registry.list().size)
         assertTrue(logs.any { it.contains("parse failed") })
     }
 
@@ -457,7 +485,7 @@ class PromptTemplateRegistryTest {
             logger = {},
             onChanged = { changes++ }
         )
-        assertEquals(10, reg.reseedBuiltIns())
+        assertEquals(3, reg.reseedBuiltIns())
         assertEquals(1, changes)
         assertEquals(0, reg.reseedBuiltIns()) // 幂等无变化
         assertEquals(1, changes)

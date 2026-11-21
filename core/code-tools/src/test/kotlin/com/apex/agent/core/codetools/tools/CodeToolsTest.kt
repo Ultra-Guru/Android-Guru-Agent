@@ -11,7 +11,7 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 
 /**
- * code_read / code_edit / code_write / code_glob / code_grep 的行为契约测试。
+ * CodeRead / CodeEdit / CodeWrite / CodeGlob / CodeGrep 的行为契约测试。
  */
 class CodeToolsTest {
 
@@ -20,7 +20,7 @@ class CodeToolsTest {
 
     private fun roots(root: File): CodeWorkspaceRoots = CodeWorkspaceRoots { root }
 
-    // ── code_read ────────────────────────────────────────────────────
+    // ── CodeRead ────────────────────────────────────────────────────
 
     @Test
     fun `read file renders line numbers and continuation hint`() = runTest {
@@ -57,7 +57,7 @@ class CodeToolsTest {
         assertTrue(out, out.contains("Afile"))
     }
 
-    // ── code_edit ────────────────────────────────────────────────────
+    // ── CodeEdit ────────────────────────────────────────────────────
 
     @Test
     fun `edit replaces with fuzzy fallback on indent drift`() = runTest {
@@ -70,7 +70,7 @@ class CodeToolsTest {
             """{"path": "code.txt", "old_string": "start\ninner\nend", "new_string": "START\ninner\nEND"}"""
         )
         assertTrue(result.render(), result.render().contains("✅"))
-        // 语义与 opencode 对齐：new_string 原样写入（模糊匹配只定位，不改写替换内容）
+        // 语义与业界标准 edit 契约对齐：new_string 原样写入（模糊匹配只定位，不改写替换内容）
         assertEquals("START\ninner\nEND\n", file.readText())
     }
 
@@ -98,7 +98,7 @@ class CodeToolsTest {
         assertTrue(out, out.contains("matches 2 locations"))
     }
 
-    // ── code_write ───────────────────────────────────────────────────
+    // ── CodeWrite ───────────────────────────────────────────────────
 
     @Test
     fun `write refuses overwrite without flag then succeeds`() = runTest {
@@ -114,7 +114,7 @@ class CodeToolsTest {
         assertEquals("new", File(root, "f.txt").readText())
     }
 
-    // ── code_glob / code_grep ────────────────────────────────────────
+    // ── CodeGlob / CodeGrep ────────────────────────────────────────
 
     @Test
     fun `glob finds by extension recursively`() = runTest {
@@ -143,7 +143,7 @@ class CodeToolsTest {
         assertFalse(out, out.contains("two.txt"))
     }
 
-    // ── code_todo ────────────────────────────────────────────────────
+    // ── CodeTodo ────────────────────────────────────────────────────
 
     @Test
     fun `todo replaces full list and renders progress`() = runTest {
@@ -166,5 +166,37 @@ class CodeToolsTest {
         val tool = CodeTodoTool()
         val out = tool.executeSafe("""{"todos": "[{\"content\": \"a\", \"status\": \"done\"}]"}""").render()
         assertTrue(out, out.contains("invalid status"))
+    }
+
+    // ── 双形态（内联数组 / 字符串编码）与数量上限 ──────────────────
+
+    @Test
+    fun `todo accepts inline json array`() = runTest {
+        val tool = CodeTodoTool()
+        val payload = """
+            {"todos": [{"content": "a", "status": "completed"}, {"content": "b", "status": "in_progress", "priority": "high"}]}
+        """.trimIndent()
+        val out = tool.executeSafe(payload).render()
+        assertTrue(out, out.contains("1/2"))
+        assertTrue(out, out.contains("[x] 1. a"))
+        assertEquals(2, tool.snapshot().size)
+    }
+
+    @Test
+    fun `todo wraps a single inline object into an array`() = runTest {
+        val tool = CodeTodoTool()
+        val out = tool.executeSafe("""{"todos": {"content": "only", "status": "pending"}}""").render()
+        assertTrue(out, out.contains("1. only"))
+        assertEquals(1, tool.snapshot().size)
+    }
+
+    @Test
+    fun `todo has no item count limit`() = runTest {
+        // 用户规格：一个流水式输出不限制清单数量 —— 旧 max 50 硬拒绝已移除
+        val tool = CodeTodoTool()
+        val items = (1..80).joinToString(",") { """{"content": "step $it", "status": "pending"}""" }
+        val out = tool.executeSafe("""{"todos": [$items]}""").render()
+        assertTrue(out, out.contains("0/80"))
+        assertEquals(80, tool.snapshot().size)
     }
 }

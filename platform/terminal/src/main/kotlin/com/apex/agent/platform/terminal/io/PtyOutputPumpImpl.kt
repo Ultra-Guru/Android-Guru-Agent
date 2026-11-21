@@ -12,12 +12,13 @@ import com.apex.agent.platform.terminal.screen.RealVirtualTerminal
 import com.apex.agent.platform.terminal.screen.VirtualTerminal
 import com.apex.agent.platform.terminal.state.InputWaitingDetector
 import com.apex.agent.platform.terminal.state.SemanticStateReducer
-import com.apex.agent.platform.terminal.wait.TerminalWaitEngine
+import com.apex.agent.platform.TerminalWait.TerminalWaitEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
@@ -139,13 +140,16 @@ class PtyOutputPumpImpl(
                                     running.set(false)
                                     break
                                 }
-                                Thread.sleep(POLL_IDLE_MS)
+                                // T94：协程内休眠用 delay（可取消）—— Thread.sleep
+                                // 阻塞 IO worker 且对 scope.cancel 不响应（pump 停止
+                                // 要等满 sleep 余量）。
+                                delay(POLL_IDLE_MS)
                             } else {
                                 idleDeadPolls = 0
                                 native.nativeWaitForData(nativeSessionId, POLL_TIMEOUT_MS)
                             }
                             // P0（性能节流的兑底）：无数据窗口补一次屏幕刷新 —— VT 喂入
-                            // 后被 33ms 节流跳过的最后一段 styled 快照在此补算，输出停止
+                            // 后被 33ms 节流跳过的最后一段 screen/styled 快照在此补算，输出停止
                             // 后屏幕不会停在旧帧（observation 内部脏标记为空时是零成本 no-op）。
                             onOutput?.invoke()
                         }

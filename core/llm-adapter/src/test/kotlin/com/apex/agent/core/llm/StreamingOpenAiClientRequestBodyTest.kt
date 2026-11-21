@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.double
 import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
@@ -285,15 +286,97 @@ class StreamingOpenAiClientRequestBodyTest {
     // ── 既有 P1-3 行为回归（max_completion_tokens 互斥）─────────────
 
     @Test
-    fun `P1-3 thinkingBudget sends max_completion_tokens without max_tokens`() {
+    fun `SPE-04 thinkingBudget no longer acts as output cap`() {
+        // 旧实现把推理预算写进 max_completion_tokens（档位 STANDARD 1024 →
+        // 长回答被 length 截断；APEXCODE 65536 被端点 400）；现在预算只进
+        // reasoning/thinking 通道，输出上限走 max_tokens = effectiveMaxTokens。
         val config = LlmConfig(
             baseUrl = "https://api.example.com/v1", apiKey = "k", model = "some-model",
             contextWindow = 0,
             thinkingBudget = 4096
         )
         val body = body(config, temperature = 0.5f, maxTokens = 2048)
-        assertEquals(4096, body.maxCompletionTokens())
+        assertNull("推理预算不应变成 max_completion_tokens", body.maxCompletionTokens())
+        assertEquals(2048, body.maxTokens())
+    }
+
+    @Test
+    fun `SPE-04 light tier budget never truncates output on generic endpoint`() {
+        // SPE-04 验收：LIGHT 档（budget=256）+ 通用端点 → 请求体不含
+        // max_completion_tokens=256；含 max_tokens=effectiveMaxTokens。
+        val config = LlmConfig(
+            baseUrl = "https://api.example.com/v1", apiKey = "k", model = "some-model",
+            contextWindow = 32_000, reservedOutputTokens = 4096,
+            thinkingBudget = 256
+        )
+        val body = body(config, temperature = 0.5f, maxTokens = 4096)
+        assertNull(body.maxCompletionTokens())
+        assertEquals(4096, body.maxTokens())
+    }
+
+    @Test
+    fun `SPE-04 explicit maxCompletionTokens sends capped output limit`() {
+        // 新字段显式设置 → max_completion_tokens 生效且受 contextWindow 钳制。
+        val config = LlmConfig(
+            baseUrl = "https://api.example.com/v1", apiKey = "k", model = "some-model",
+            contextWindow = 16_000, reservedOutputTokens = 4096, // cap=11904
+            maxCompletionTokens = 8192
+        )
+        val body = body(config, temperature = 0.5f, maxTokens = 2048)
+        assertEquals(8192, body.maxCompletionTokens())
         assertNull(body.maxTokens())
+    }
+
+    @Test
+    fun `SPE-04 apexcode scale budget is clamped to context window`() {
+        // SPE-04 验收：APEXCODE 档 65536 作为输出上限下发 → 钳制在
+        // contextWindow - reservedOutputTokens 内，不再裸 65536（400 防线）。
+        val config = LlmConfig(
+            baseUrl = "https://api.example.com/v1", apiKey = "k", model = "some-reasoner",
+            contextWindow = 32_000, reservedOutputTokens = 4096, // cap=27904
+            reasoningEffort = ReasoningEffort.MAX,
+            capabilities = ModelCapabilities(reasoning = true),
+            maxCompletionTokens = 65_536 // 档位表原值
+        )
+        val body = body(config, temperature = 0.5f, maxTokens = 32_000)
+        assertEquals(27904, body.maxCompletionTokens())
+        assertNull(body.maxTokens())
+    }
+
+    @Test
+    fun `SPE-04 effort max fallback also clamped`() {
+        // ReasoningEffort.MAX 兜底 maxOf(requestedTokens, 8192)：requested
+        // 超大时也要被 contextWindow 钳制（不裸发）。
+        val config = LlmConfig(
+            baseUrl = "https://api.example.com/v1", apiKey = "k", model = "some-reasoner",
+            contextWindow = 16_000, reservedOutputTokens = 4096, // cap=11904
+            reasoningEffort = ReasoningEffort.MAX,
+            capabilities = ModelCapabilities(reasoning = true)
+        )
+        val body = body(config, temperature = 0.5f, maxTokens = 32_000)
+        assertEquals(11904, body.maxCompletionTokens())
+    }
+
+    @Test
+    fun `SPE-04 max_tokens and max_completion_tokens never coexist`() {
+        // SPE-04 验收：任意档位组合下二者不同时出现。
+        val combos = listOf(
+            LlmConfig(baseUrl = "https://api.example.com/v1", apiKey = "k", model = "m"),
+            LlmConfig(baseUrl = "https://api.example.com/v1", apiKey = "k", model = "m", thinkingBudget = 4096),
+            LlmConfig(baseUrl = "https://api.example.com/v1", apiKey = "k", model = "m", maxCompletionTokens = 8192),
+            LlmConfig(
+                baseUrl = "https://api.example.com/v1", apiKey = "k", model = "o3",
+                reasoningEffort = ReasoningEffort.MAX,
+                capabilities = ModelCapabilities(reasoning = true)
+            )
+        )
+        combos.forEach { config ->
+            val body = body(config, temperature = 0.5f, maxTokens = 4096)
+            assertTrue(
+                "max_tokens 与 max_completion_tokens 互斥（model=${config.model}）",
+                body.maxTokens() == null || body.maxCompletionTokens() == null
+            )
+        }
     }
 
     @Test
@@ -321,5 +404,129 @@ class StreamingOpenAiClientRequestBodyTest {
             stream = true
         )
         assertTrue(json["stream"]!!.jsonPrimitive.boolean)
+    }
+
+    // ═══ diag-202611（422 unknown variant 复盘）：WebSearch server tool 端点门控 ═══
+    // 锁定 [WebSearchMode.serverToolSupportedBy] + [StreamingOpenAiClient]
+    // buildSearchToolEntries 的组合行为：显式选择的 server tool 模式与真实
+    // 端点不匹配时不再注入非标准 tools[].type（旧实现照发 → Rust serde 风格
+    // 端点整请求 422）。真实 provider 端点保持注入（回归防阉割）。
+
+    private fun JsonObject.toolsArray() = this["tools"]?.jsonArray
+
+    private fun webSearchBody(
+        baseUrl: String,
+        providerId: String = "",
+        webSearch: WebSearchMode,
+        tools: List<ToolDefinition> = emptyList()
+    ): JsonObject = client(
+        LlmConfig(
+            baseUrl = baseUrl, apiKey = "k", model = "m",
+            providerId = providerId, webSearch = webSearch,
+            contextWindow = 0
+        )
+    ).buildRequestBody(
+        messages = listOf(LlmMessage.User("hi")),
+        tools = tools,
+        temperature = 0.5f,
+        maxTokens = 128,
+        stream = false
+    )
+
+    @Test
+    fun `websearch ZHIPU explicit on generic endpoint omits server tool`() {
+        // 显式 ZHIPU + 通用 OpenAI 兼容网关 —— 422 unknown variant 的原始复现场景。
+        val body = webSearchBody(
+            baseUrl = "https://gateway.example.com/v1", webSearch = WebSearchMode.ZHIPU
+        )
+        // 无 function tools 且搜索条目被门控 → 整个 tools 键不出现（与 OFF 同形）。
+        assertNull(body.toolsArray())
+    }
+
+    @Test
+    fun `websearch ZHIPU explicit on generic endpoint keeps only function tools`() {
+        val fn = ToolDefinition(
+            name = "web_search", description = "d",
+            parameters = """{"type":"object","properties":{}}"""
+        )
+        val body = webSearchBody(
+            baseUrl = "https://gateway.example.com/v1", webSearch = WebSearchMode.ZHIPU,
+            tools = listOf(fn)
+        )
+        val tools = body.toolsArray()!!
+        assertEquals(1, tools.size)
+        // 仅剩 function 形态 —— 非标准 type 变体绝不下发。
+        assertEquals("function", tools[0].jsonObject["type"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `websearch ZHIPU on bigmodel endpoint keeps server tool with nested config`() {
+        val body = webSearchBody(
+            baseUrl = "https://open.bigmodel.cn/api/paas/v4", webSearch = WebSearchMode.ZHIPU
+        )
+        val entry = body.toolsArray()!![0].jsonObject
+        assertEquals("WebSearch", entry["type"]!!.jsonPrimitive.content)
+        val nested = entry["WebSearch"]!!.jsonObject
+        assertTrue(nested["enable"]!!.jsonPrimitive.boolean)
+        assertTrue(nested["search_result"]!!.jsonPrimitive.boolean)
+    }
+
+    @Test
+    fun `websearch ZHIPU via providerId glm on relay baseUrl keeps server tool`() {
+        // providerId 命中 pid 分支（与 AUTO 推断同口径）—— 中转 baseUrl 仍注入；
+        // 该场景由降级重发（executeWithServerToolDegrade）兜底保护。
+        val body = webSearchBody(
+            baseUrl = "https://relay.example.com/v1", providerId = "glm",
+            webSearch = WebSearchMode.ZHIPU
+        )
+        assertEquals(
+            "WebSearch",
+            body.toolsArray()!![0].jsonObject["type"]!!.jsonPrimitive.content
+        )
+    }
+
+    @Test
+    fun `websearch DEEPSEEK on deepseek endpoint keeps bare WebSearch entry`() {
+        val body = webSearchBody(
+            baseUrl = "https://api.deepseek.com/v1", webSearch = WebSearchMode.DEEPSEEK
+        )
+        val entry = body.toolsArray()!![0].jsonObject
+        assertEquals("WebSearch", entry["type"]!!.jsonPrimitive.content)
+        assertNull(entry["WebSearch"])
+    }
+
+    @Test
+    fun `websearch DEEPSEEK explicit on generic endpoint omits server tool`() {
+        val body = webSearchBody(
+            baseUrl = "https://gateway.example.com/v1", webSearch = WebSearchMode.DEEPSEEK
+        )
+        assertNull(body.toolsArray())
+    }
+
+    @Test
+    fun `websearch ANTHROPIC on anthropic endpoint keeps web_search entry`() {
+        val body = webSearchBody(
+            baseUrl = "https://proxy.anthropic.example/v1", webSearch = WebSearchMode.ANTHROPIC
+        )
+        val entry = body.toolsArray()!![0].jsonObject
+        assertEquals("web_search_20250305", entry["type"]!!.jsonPrimitive.content)
+        assertEquals("WebSearch", entry["name"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `websearch ANTHROPIC explicit on generic endpoint omits server tool`() {
+        val body = webSearchBody(
+            baseUrl = "https://gateway.example.com/v1", webSearch = WebSearchMode.ANTHROPIC
+        )
+        assertNull(body.toolsArray())
+    }
+
+    @Test
+    fun `websearch AUTO on unknown endpoint omits server tool`() {
+        // AUTO + 未知端点 → OFF（旧行为已正确，本测试防回归）。
+        val body = webSearchBody(
+            baseUrl = "https://gateway.example.com/v1", webSearch = WebSearchMode.AUTO
+        )
+        assertNull(body.toolsArray())
     }
 }

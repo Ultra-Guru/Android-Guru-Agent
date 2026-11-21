@@ -15,7 +15,7 @@ import com.apex.agent.core.tools.ToolRisk
  * 两个工具都走 lambda 注入模式（工具只做参数解析，JVM 可测；Android
  * Intent 侧见文件底部的 [AndroidIntents] 生产接线）。
  */
-// ═══════════════════════════ share_content ═══════════════════════════
+// ═══════════════════════════ ShareContent ═══════════════════════════
 
 /**
  * 分享文本到其他应用（Android 分享面板）。参数：text（必填）、title
@@ -26,7 +26,7 @@ class ShareContentTool(
     /** (text, title?) → 结果文本。 */
     private val share: (String, String?) -> String
 ) : AgentTool {
-    override val id = "share_content"
+    override val id = "ShareContent"
     override val name = "Share Content"
     override val description = """
         Share text via the Android share sheet (user picks the target app).
@@ -55,7 +55,7 @@ class ShareContentTool(
     }
 }
 
-// ═══════════════════════════ deep_link ═══════════════════════════
+// ═══════════════════════════ DeepLink ═══════════════════════════
 
 /**
  * 打开 URI（深链）。http(s) 链接自然落到浏览器，其他 scheme（app://、
@@ -66,7 +66,7 @@ class DeepLinkTool(
     /** uri → 结果文本。 */
     private val open: (String) -> String
 ) : AgentTool {
-    override val id = "deep_link"
+    override val id = "DeepLink"
     override val name = "Deep Link / Open URI"
     override val description = """
         Open a URI on the device: http(s) links go to the browser, other
@@ -110,6 +110,18 @@ class DeepLinkTool(
                 scheme.first().isLetter() &&
                 scheme.all { it.isLetterOrDigit() || it in "+-." }
         }
+
+        /**
+         * #460：危险 scheme 判定（JVM 可测）。深链工具设计上放行 http(s)与
+         * market:///app 内部页等合法深链，但代码执行（javascript/data）、本地
+         * 文件触达（file/content）、组件穿透（intent）不属于「打开链接」语义。
+         */
+        fun isDangerousScheme(scheme: String): Boolean =
+            scheme.lowercase() in DANGEROUS_URI_SCHEMES
+
+        private val DANGEROUS_URI_SCHEMES = setOf(
+            "javascript", "vbscript", "data", "file", "content", "intent"
+        )
     }
 }
 
@@ -117,6 +129,14 @@ class DeepLinkTool(
 object AndroidIntents {
 
     fun share(context: Context, text: String, title: String?): String {
+        // Binder 事务缓冲上限 1MB（进程级共享）——超长文本直接 startActivity
+        // 会抛 TransactionTooLargeException 甚至远端崩溃；提前拒绝并给出
+        // 可操作建议（分段 / 落盘分享文件），模型能据此自修复。
+        if (text.length > MAX_SHARE_CHARS) {
+            return "Error: text is ${text.length} chars — the Android share sheet cannot " +
+                "carry more than $MAX_SHARE_CHARS chars (binder transaction limit). " +
+                "Split the content into chunks, or write it to a file and share the file instead."
+        }
         return try {
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
@@ -140,6 +160,11 @@ object AndroidIntents {
             if (uri.scheme.isNullOrBlank()) {
                 return "Error: '$uriText' has no scheme — use a full URI like https://example.com or the app's deep-link scheme."
             }
+            // #460：危险 scheme 拦截 —— 模型被诱导输出 javascript:/file: 之类
+            // URI 时在工具边界拒绝（深链语义只放行链接型 scheme）。
+            if (DeepLinkTool.isDangerousScheme(uri.scheme!!)) {
+                return "Error: scheme '${uri.scheme}' is blocked for safety — this tool only opens web links and app deep links, never executable or local-file URIs."
+            }
             val view = Intent(Intent.ACTION_VIEW, uri).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -152,4 +177,7 @@ object AndroidIntents {
             "Error: cannot open '$uriText': ${e.message ?: e::class.simpleName}"
         }
     }
+
+    /** 分享文本上限（chars）——Binder 事务 1MB 进程级共享的保守安全值。 */
+    private const val MAX_SHARE_CHARS = 200_000
 }

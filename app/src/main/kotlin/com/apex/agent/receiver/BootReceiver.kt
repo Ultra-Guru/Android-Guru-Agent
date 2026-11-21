@@ -24,6 +24,11 @@ import com.apex.agent.service.ApexCoreService
  * 无 Hilt 注入通道，直接正则快读 apex_settings/agent_settings_v2 的 keepAlive
  * 字段（与 LanguageManager.resolveLanguageFromPrefs 同款模式）；解析失败
  * 视为 true（保持旧默认行为，宁可多拉一次服务也不静默改变用户预期）。
+ *
+ * SearXNG 本地搜索（Spec F7）：searxng_prefs 的 searxng_enabled 为 true 时，
+ * 服务 Intent 附带 ACTION_START_SEARXNG —— 服务侧 reconcile/enable 幂等恢复
+ * 本地实例（Android 12+ 通知权限缺失导致的 FGS 启动失败已由 runCatching 兜底
+ * —— 降级为「下次打开 App 时恢复」，Spec §1 目标声明）。
  */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -34,7 +39,14 @@ class BootReceiver : BroadcastReceiver() {
                 Log.i("ApexAgent", "Boot auto-start skipped: keepAlive disabled by user")
                 return
             }
+            // SearXNG 开机自启（Spec F7）：意图为开时携带 START action —— 服务
+            // onCreate 的 reconcile 与 onStartCommand 的 enable 双保险（coordinator
+            // 幂等，INV1 单飞防重复拉起）。意图为关时走既有裸启动（服务自身语义）。
             val serviceIntent = Intent(context, ApexCoreService::class.java)
+            if (com.apex.agent.searxng.SearxngSettingsStore.isEnabledRaw(context)) {
+                serviceIntent.action = ApexCoreService.ACTION_START_SEARXNG
+                Log.i("ApexAgent", "Boot auto-start: searxng intent=on → START_SEARXNG action")
+            }
             runCatching {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(serviceIntent)
@@ -51,17 +63,9 @@ class BootReceiver : BroadcastReceiver() {
         }
     }
 
-    /** 快读 agent_settings_v2 JSON 的 keepAlive 布尔（缺省/损坏 → true）。 */
-    private fun keepAliveEnabled(context: Context): Boolean {
-        val raw = runCatching {
-            context.getSharedPreferences("apex_settings", Context.MODE_PRIVATE)
-                .getString("agent_settings_v2", null)
-        }.getOrNull() ?: return true
-        // "keepAlive":false 才是关；true / 缺字段 / 格式异常都视为开
-        return !KEEP_ALIVE_OFF_REGEX.containsMatchIn(raw ?: "")
-    }
-
-    private companion object {
-        val KEEP_ALIVE_OFF_REGEX = Regex("\"keepAlive\"\\s*:\\s*false")
-    }
+    /** 快读 agent_settings_v2 JSON 的 keepAlive 布尔（缺省/损坏 → true）。
+     * 实现已收口到 [CoreServiceGate.keepAliveEnabled]（MainActivity.onDestroy
+     * 同源，单一实现点）。 */
+    private fun keepAliveEnabled(context: Context): Boolean =
+        com.apex.agent.service.CoreServiceGate.keepAliveEnabled(context)
 }

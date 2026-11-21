@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FusionBundle（复合技能包）中文文案（英文默认在 values/strings_fusionbundle.xml）。 -->
+<resources>
+
+    <!-- ═══ 输入栏王冠入口按钮 ═══ -->
+    <string name="fusion_cd_bundle">FUSION 王冠：点选工具聚合体系包（技能 + MCP + 工具）</string>
+    <string name="fusion_cd_bundle_active">FUSION 体系包使用中 —— 点王冠切换或停用</string>
+
+    <!-- ═══ 王冠层级菜单 ═══ -->
+    <string name="fusion_menu_system_name">FUSION</string>
+    <string name="fusion_menu_system_tagline">工具聚合系统 · 技能 + MCP + 工具</string>
+    <string name="fusion_menu_active_badge">使用中</string>
+    <string name="fusion_menu_forced_footnote">点选体系包会固定进输入框，agent 将强制使用该体系完成任务。</string>
+
+    <!-- ═══ 选择器弹层 ═══ -->
+    <string name="fusion_picker_title">聚变包 FusionBundle</string>
+    <string name="fusion_picker_subtitle">把技能、MCP 服务器、工具与 agent 工作流聚合为一个包 —— 选用后整个体系的 agent 直接就绪。</string>
+    <string name="fusion_picker_empty">尚未安装任何聚变包。</string>
+    <string name="fusion_picker_footnote">激活会安装包内技能、连接包内 MCP 服务器并注入其工作流。内置包随应用预装、不可卸载。</string>
+    <string name="fusion_badge_bundled">内置</string>
+    <string name="fusion_row_components">%1$d 技能 · %2$d MCP · %3$d 插件 · %4$d 旗舰工具 · %5$d 可选引擎</string>
+
+    <!-- ═══ 自定义聚合（组合编辑器）═══ -->
+    <string name="fusion_composer_entry">组合我的聚合包</string>
+    <string name="fusion_composer_title">自定义聚合包</string>
+    <string name="fusion_composer_subtitle">从已安装的技能 / MCP / 功能插件中自由挑选成员，保存为一个可一键激活的聚合包 —— 1 个是聚合，多个混搭也是聚合。</string>
+    <string name="fusion_composer_name_label">聚合包名称</string>
+    <string name="fusion_composer_name_placeholder">例如：我的日常工具箱</string>
+    <string name="fusion_composer_persona_label">agent 人设（可选）</string>
+    <string name="fusion_composer_persona_placeholder">例如：效率助手 —— 优先使用本聚合包内的技能与工具</string>
+    <string name="fusion_composer_section_skills">技能</string>
+    <string name="fusion_composer_section_mcp">MCP 服务器</string>
+    <string name="fusion_composer_section_plugins">功能插件</string>
+    <string name="fusion_composer_section_empty">暂无可选成员</string>
+    <string name="fusion_composer_selected_count">已选 %1$d 项</string>
+    <string name="fusion_composer_save">保存聚合包</string>
+    <string name="fusion_composer_saved">聚合包「%1$s」已保存，可在王冠菜单选用</string>
+    <string name="fusion_composer_save_failed">保存失败：%1$s</string>
+    <string name="fusion_composer_empty_selection">请至少选择 1 个成员</string>
+    <string name="fusion_composer_edit_title">编辑聚合包</string>
+    <string name="fusion_composer_delete">删除</string>
+    <string name="fusion_composer_deleted">聚合包「%1$s」已删除</string>
+    <string name="fusion_composer_export">导出 JSON</string>
+    <string name="fusion_composer_exported">聚合包 JSON 已复制到剪贴板</string>
+    <string name="fusion_composer_custom_badge">自建</string>
+    <string name="fusion_composer_edit_rejected">内置包不可编辑，仅自建聚合包支持编辑/删除/导出</string>
+    <string name="fusion_composer_id_label">id：%1$s</string>
+    <string name="fusion_composer_close">关闭</string>
+    <string name="fusion_composer_edit_cd">编辑此自建聚合包</string>
+
+    <!-- ═══ Claude 插件包导入 ═══ -->
+    <string name="fusion_import_claude_entry">导入 Claude 插件包（.zip）</string>
+    <string name="fusion_import_claude_cd">从 zip 文件导入 Claude 插件包</string>
+    <string name="fusion_import_claude_done">「%1$s」已导入 —— %2$d 技能 · %3$d 指令 · %4$d agent</string>
+    <string name="fusion_import_claude_failed">导入失败：%1$s</string>
+
+    <!-- ═══ 功能插件 UI 页面贡献 ═══ -->
+    <string name="plugin_ui_open">打开页面</string>
+    <string name="plugin_ui_missing">UI 入口文件缺失 —— 请重装插件</string>
+    <string name="plugin_ui_signature_rejected">签名校验未通过，无法打开插件页面</string>
+
+    <!-- ═══ 安装型聚合（只装成员不激活）═══ -->
+    <string name="fusion_action_install_members">安装成员</string>
+    <string name="fusion_result_installed">「%1$s」成员已就绪 —— %2$d 技能 · %3$d MCP · %4$d 插件。</string>
+    <string name="fusion_install_failed">安装失败</string>
+    <string name="fusion_composer_section_hub_skills">官方仓库技能</string>
+    <string name="fusion_composer_section_hub_mcp">官方仓库 MCP</string>
+    <string name="fusion_composer_hub_loading">仓库目录加载中…</string>
+    <string name="fusion_composer_hub_error">仓库不可达：%1$s</string>
+
+    <!-- ═══ 工具聚合中心（取代旧市场顶层）═══ -->
+    <string name="hub_hero_title">融合面板</string>
+    <string name="hub_hero_subtitle">把技能、MCP、工具、插件融合成一个聚合 —— 一键激活整支队伍</string>
+    <string name="hub_my_aggregations">我的聚合</string>
+    <string name="hub_aggregations_empty">暂无聚合包 —— 从上方融合面板开始创建。</string>
+    <string name="hub_mode_add">添加成员</string>
+    <string name="hub_mode_mine">我的成员</string>
+    <string name="hub_edit">编辑</string>
+
+    <!-- ═══ 操作与结果 ═══ -->
+    <string name="fusion_action_activate">使用此包</string>
+    <string name="fusion_action_deactivate">停用</string>
+    <string name="fusion_result_activated">聚变包「%1$s」已激活 —— 体系 agent 就绪。</string>
+    <string name="fusion_result_deactivated">「%1$s」已停用；技能与服务器保留在体系内。</string>
+    <string name="fusion_result_failed">激活失败</string>
+    <string name="fusion_result_skipped">另有 %1$d 个组件被跳过。</string>
+
+    <!-- ═══ 激活态横幅 ═══ -->
+    <string name="fusion_banner_active">%1$s 体系 agent 运行中</string>
+    <string name="fusion_policy_section">策略（因果规则）</string>
+    <string name="fusion_policy_budget">同时激活上限（留空=默认 8）</string>
+    <string name="fusion_policy_alwayson">常驻成员（免淘汰）</string>
+    <string name="fusion_policy_exclusive">互斥组（组内同时最多激活一个）</string>
+    <string name="fusion_policy_add_group">+ 加互斥组</string>
+    <string name="fusion_policy_remove_group">Remove group</string>
+    <string name="fusion_policy_triggers">触发条件（每技能）</string>
+    <string name="fusion_policy_when_placeholder">什么场景用（如：逆向分析 APK 时）</string>
+    <string name="fusion_policy_keywords_placeholder">关键词,逗号分隔</string>
+</resources>

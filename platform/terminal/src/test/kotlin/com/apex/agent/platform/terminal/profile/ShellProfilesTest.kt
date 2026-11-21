@@ -68,6 +68,21 @@ class GuestShellProfileTest {
         assertEquals("truecolor", env["COLORTERM"]!!)
     }
 
+    @Test
+    fun `host tool guards redirect to on-device equivalents`() {
+        // T95：真机日志里用户连跑 adb shell getprop / systemd-analyze /
+        // lsb_release —— mksh 无 command_not_found 钩子，只能裸报 not found。
+        // rc 必须为这类宿主工具给出口径 + 设备侧正确替代。
+        val rc = GuestShellProfile.generate()
+        assertTrue(rc.contains("adb()"))
+        assertTrue(rc.contains("systemd-analyze()"))
+        assertTrue(rc.contains("systemctl()"))
+        assertTrue(rc.contains("lsb_release()"))
+        // 引导必须给出设备侧正确替代（getprop 家族），而不是只说「不可用」
+        assertTrue(rc.contains("getprop ro.build.version.release"))
+        assertTrue(rc.contains("getprop <name>"))
+    }
+
     private fun assertEquals(expected: String, actual: String) =
         org.junit.Assert.assertEquals(expected, actual)
 }

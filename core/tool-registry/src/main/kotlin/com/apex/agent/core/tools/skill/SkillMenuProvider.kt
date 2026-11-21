@@ -12,19 +12,36 @@ class SkillMenuProvider(
     private val skillRegistry: SkillRegistry
 ) {
     /**
-     * 获取当前可用的 Skills 列表（仅启用的）
+     * 获取当前可用的 Skills 列表（仅启用的）。
+     *
+     * per-scope 启停 + 就绪门禁（用户需求：市场按工位独立开关；未配置好的
+     * 不进菜单）：
+     * - [scope] 传 "agent" / "coding" 时只返回该工位可用的技能；
+     * - 必填配置未填齐的技能整体剔除（配置齐了 SkillRegistry 发 changes，
+     *   菜单自动重建）；
+     * - 逐项携带 [SkillMenuItem.enabledScopes]（生效工位集合 = manifest 声明 ∩
+     *   per-scope 启用），消费方（SlashMenuData.forScope）据此让 Agent 屏与
+     *   Coding 屏的 / 菜单各归各 —— 修「两屏同步显示」问题。
      */
-    fun getActiveSkills(): List<SkillMenuItem> {
+    fun getActiveSkills(scope: String? = null): List<SkillMenuItem> {
         return skillRegistry.getInstalled()
-            .filter { it.enabled }
             .map { skill ->
                 SkillMenuItem(
                     id = skill.manifest.id,
                     label = skill.manifest.name,
                     command = "/skill:${skill.manifest.id} ",
                     description = skill.manifest.description,
-                    installed = true
+                    installed = true,
+                    // 生效工位 = manifest 声明 ∩ per-scope 启用（空集 = 两屏都不可用）
+                    enabledScopes = skillRegistry.effectiveScopesOf(skill.manifest.id)
                 )
+            }
+            .filter { item ->
+                // 就绪门禁：必填配置未填齐的技能不进菜单（配置齐了
+                // SkillRegistry 发 changes，菜单自动重建条目即刻出现）
+                skillRegistry.isConfigured(item.id) &&
+                    // 工位过滤：指定 scope 时只留该工位生效的条目
+                    (scope.isNullOrBlank() || scope in item.enabledScopes)
             }
     }
 
@@ -80,5 +97,12 @@ data class SkillMenuItem(
     val command: String,
     val description: String = "",
     /** 是否已安装（消费方渲染角标/状态用，替代旧 label 字符串协议）。 */
-    val installed: Boolean = true
+    val installed: Boolean = true,
+    /**
+     * 生效工位集合（"agent"/"coding" 子集；manifest 声明 ∩ per-scope 启用）。
+     * SlashMenuData.forScope 据此与 manifest scope 双重过滤 —— Agent 屏与
+     * Coding 屏的 / 菜单各归各（市场里只在 Coding 分级开启的技能不再出现在
+     * Agent 屏菜单）。默认双工位（MCP/插件/连接器等无 per-scope 启停概念的条目）。
+     */
+    val enabledScopes: Set<String> = setOf(SkillRegistry.SCOPE_AGENT, SkillRegistry.SCOPE_CODING)
 )

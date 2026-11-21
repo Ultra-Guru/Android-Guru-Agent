@@ -2,6 +2,7 @@ package com.apex.agent.platform.terminal.runtime
 
 import com.apex.agent.platform.terminal.buffer.TerminalOutputBuffer
 import com.apex.agent.platform.terminal.errors.TerminalError
+import com.apex.agent.platform.terminal.errors.asTerminalError
 import com.apex.agent.platform.terminal.events.TerminalEvent
 import com.apex.agent.platform.terminal.events.TerminalEventBus
 import com.apex.agent.platform.terminal.events.TerminalEventBusImpl
@@ -35,9 +36,9 @@ import com.apex.agent.platform.terminal.screen.VirtualTerminal
 import com.apex.agent.platform.terminal.session.SessionManagerImpl
 import com.apex.agent.platform.terminal.session.SessionState
 import com.apex.agent.platform.terminal.state.TerminalSemanticState
-import com.apex.agent.platform.terminal.wait.WaitCondition
-import com.apex.agent.platform.terminal.wait.WaitEngineImpl
-import com.apex.agent.platform.terminal.wait.WaitResult
+import com.apex.agent.platform.TerminalWait.WaitCondition
+import com.apex.agent.platform.TerminalWait.WaitEngineImpl
+import com.apex.agent.platform.TerminalWait.WaitResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -52,16 +53,16 @@ import kotlinx.coroutines.cancel
  *
  * Spec ref: ATR 2.0 Final Spec §6.1 / §33 / §34
  *
- * T73: create() 统一经 [ExecutionBackendRegistry] 路由 —— backendId="local" 走
- * LocalShellBackend（与旧硬编码 spawn 逐字节一致，ExecutionBackendGoldenTest 锁定），
- * backendId="linux-ubuntu" 走 LinuxPRootBackend（forkpty → proot → Ubuntu bash）。
+ * T73: create() 统一经 [ExecutionBackendRegistry] 路由 —— backendId="linux-ubuntu"
+ * 走 LinuxPRootBackend（forkpty → proot → Ubuntu bash）。
  * 会话的后端元数据进 TerminalSession.backend 并持久化（SessionRecord schema v2）。
+ * AndroidShell 后端已移除（Ubuntu-only 收敛；测试夹具 LocalShellBackend 在测试源集）。
  *
  * Construction (Hilt in real repo; manual here):
  *   val runtime = TerminalRuntimeImpl(
  *       native = FakeNativePty() or JniNativePty(),
  *       policy = TerminalPolicyImpl(),
- *       backendRegistry = ExecutionBackendRegistry.of(LocalShellBackend(), linuxBackend),
+ *       backendRegistry = ExecutionBackendRegistry.of(linuxBackend),
  *       virtualTerminalFactory = { r, c -> RealVirtualTerminal(r, c) }   // Phase 2: real VT
  *   )
  *
@@ -73,7 +74,7 @@ import kotlinx.coroutines.cancel
 class TerminalRuntimeImpl(
     private val native: NativePty,
     private val policy: TerminalPolicy,
-    private val backendRegistry: ExecutionBackendRegistry = ExecutionBackendRegistry.of(LocalShellBackend()),
+    private val backendRegistry: ExecutionBackendRegistry,
     private val virtualTerminalFactory: (Int, Int) -> VirtualTerminal = { r, c ->
         com.apex.agent.platform.terminal.screen.RealVirtualTerminal(r, c)
     },
@@ -107,8 +108,16 @@ class TerminalRuntimeImpl(
     private val enableShellMarkers: Boolean = false
 ) : TerminalRuntime {
 
+    /**
+     * T94：autoSave 专用 IO 域 —— 定时器每 2s 对每个会话做 FileOutputStream+
+     * fsync 落盘，跑在注入的 Default 域上会占用 CPU 池（违背
+     * SessionManagerImpl「阻塞循环绝不能占 CPU 池」的自家纪律，2 核设备有感）。
+     * 独立于 [scope]（shutdown 先停定时器再停主域，顺序见 [shutdown]）。
+     */
+    private val recoveryScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     private val recoveryService: RuntimeRecoveryService? = persistenceStore?.let {
-        RuntimeRecoveryService(it, this, scope)
+        RuntimeRecoveryService(it, this, recoveryScope)
     }
 
     /** T81 §15：shutdown 幂等门（首次进入后 create/reject 新请求）。 */
@@ -116,7 +125,8 @@ class TerminalRuntimeImpl(
     private var shutdownResult: Result<TerminalRuntime.ShutdownResult>? = null
 
     private val eventLog: TerminalEventLog = TerminalEventLogImpl()
-    private val eventBus: TerminalEventBus = TerminalEventBusImpl(eventLog, scope)
+    private val eventBusImpl: TerminalEventBusImpl = TerminalEventBusImpl(eventLog, scope)
+    private val eventBus: TerminalEventBus = eventBusImpl
     // P1/P2 fix（审计 P1-3/P2-5）：注入 eventLog 作为订阅锚点来源 ——
     // WaitEngine 的 await/awaitIdle 只匹配「调用时刻之后」的新事件（原 afterCursor=0
     // 全量重放历史：IdleFor 永不满足+忙转；wait() 被陈旧事件假阳性命中）。
@@ -196,7 +206,7 @@ class TerminalRuntimeImpl(
 
     // ───────── create ─────────
     override suspend fun create(
-        shell: String, cwd: String, rows: Int, cols: Int,
+        cwd: String, rows: Int, cols: Int,
         env: Map<String, String>, privilege: PrivilegeLevel,
         backendId: String, workspaceId: String?
     ): Result<CreateResult> {
@@ -204,8 +214,7 @@ class TerminalRuntimeImpl(
         if (shutdownGate.get()) {
             return Result.failure(com.apex.agent.platform.terminal.errors.TerminalOperationException(com.apex.agent.platform.terminal.errors.TerminalError.UnsupportedOperation, "runtime 已 shutdown"))
         }
-        // T73: 后端路由。local 默认 —— 与历史行为一致（golden）；
-        // linux-ubuntu —— 失败时给出可行动错误（引导 Agent 先装 rootfs）。
+        // T73: 后端路由。linux-ubuntu（默认）—— 失败时给出可行动错误（引导先装 rootfs）。
         val backend = backendRegistry.get(backendId)
             ?: return Result.failure(
                 RuntimeException(
@@ -213,21 +222,12 @@ class TerminalRuntimeImpl(
                         backendRegistry.list().joinToString(", ") { it.id } + "）"
                 )
             )
-        // T75: workspace 是 LINUX 后端概念 —— LOCAL 会话拒绝（显式报错优于静默忽略）。
-        if (!workspaceId.isNullOrBlank() && backend.runtimeType != BackendRuntimeType.LINUX) {
-            return Result.failure(
-                IllegalArgumentException(
-                    "TerminalError:InvalidInput — workspaceId 仅支持 LINUX 后端" +
-                        "（当前 backend='${backend.id}'）。workspace 管理见 terminal.workspaces。"
-                )
-            )
-        }
         when (val av = backend.availability()) {
             is BackendAvailability.Ready -> Unit
             is BackendAvailability.NeedsRootfs -> return Result.failure(
                 RuntimeException(
                     "TerminalError:RootfsNotReady — backend '${backend.id}' 需要 Ubuntu rootfs" +
-                        "（state=${av.state}）。先用 terminal.ubuntu.install 离线解包内置 rootfs，再重试 create。"
+                        "（state=${av.state}）。先用 TerminalUbuntuEnsure 离线解包内置 rootfs，再重试 create。"
                 )
             )
             is BackendAvailability.Failed -> return Result.failure(
@@ -237,12 +237,26 @@ class TerminalRuntimeImpl(
             )
         }
         val request = SessionSpawnRequest(
-            shellHint = shell.takeIf { backendId == LocalShellBackend.ID },
             cwd = cwd, rows = rows, cols = cols, env = env, privilege = privilege,
             workspaceId = workspaceId
         )
         val spec = backend.prepare(request).getOrElse { e ->
-            return Result.failure(com.apex.agent.platform.terminal.errors.TerminalOperationException(com.apex.agent.platform.terminal.errors.TerminalError.PtyUnavailable, "backend prepare failed: ${e.message}", e))
+            // T95：prepare 失败根因保真 —— 旧版一律包成 PtyUnavailable，
+            // 「RootfsNotReady / PRootError:*」被降维，真因（多为裸
+            // FileNotFoundException，message 只剩一条路径）被「Pty 不可用」
+            // 误导。现在：已带 TerminalError 语义的异常原样透传；未知异常
+            // 补上异常类名再包（用户反馈：「backend prepare failed:
+            // /data/user/0/com…」看不出哪里坏了）。
+            val failure: Throwable = if (e.asTerminalError() != null) {
+                e
+            } else {
+                com.apex.agent.platform.terminal.errors.TerminalOperationException(
+                    com.apex.agent.platform.terminal.errors.TerminalError.PtyUnavailable,
+                    "backend prepare failed: ${e.javaClass.simpleName}: ${e.message}",
+                    e
+                )
+            }
+            return Result.failure(failure)
         }
         val r = sessionManager.createFromSpec(spec, rows, cols, privilege)
         return r.map { s ->
@@ -286,7 +300,7 @@ class TerminalRuntimeImpl(
                 is BackendAvailability.NeedsRootfs -> TerminalRuntime.BackendStatus(
                     id = b.id, runtimeType = b.runtimeType.name,
                     available = false, state = "NEEDS_ROOTFS:${av.state}",
-                    detail = "Ubuntu rootfs 未就绪 —— 调用 terminal.ubuntu.install 解包内置档案后重试（离线，完整环境约 2~5 分钟）"
+                    detail = "Ubuntu rootfs 未就绪 —— 调用 TerminalUbuntuEnsure 解包内置档案后重试（离线，完整环境约 2~5 分钟）"
                 )
                 is BackendAvailability.Failed -> TerminalRuntime.BackendStatus(
                     id = b.id, runtimeType = b.runtimeType.name,
@@ -464,7 +478,15 @@ class TerminalRuntimeImpl(
         val semantics = filtered.mapNotNull { s ->
             sessionManager.assembly(s.id)?.semanticReducer?.snapshot()
         }
-        val globalCursor = semantics.maxOfOrNull { it.session.cursor } ?: 0L
+        // #223：合并恢复的会话视图（Spec §39 —— App 被杀重启后 recover() 装载的
+        // 持久化记录进入会话列表，UI tab / Agent 上下文均可见）。视图状态为
+        // EXITED/BROKEN（只读，绝不伪造存活）；活跃会话 id 优先（recover() 已抬
+        // id 地板，此处过滤是对 id 复用的防御 —— 活跃视图与恢复视图不同时出现）。
+        val liveIds = sessions.asSequence().map { it.id }.toSet()
+        val recovered = (recoveryService?.recoveredSessionsExcluding(liveIds) ?: emptyList())
+            .filter { sessionId == null || it.session.id == sessionId }
+        val all = semantics + recovered
+        val globalCursor = all.maxOfOrNull { it.session.cursor } ?: 0L
         val recent = if (sessionId != null) eventLog.tail(sessionId, recentEvents)
                      else eventLog.let { log -> filtered.flatMap { log.tail(it.id, recentEvents / maxOf(1, filtered.size)) } }
         val recentOut = filtered.joinToString("") { s ->
@@ -473,7 +495,7 @@ class TerminalRuntimeImpl(
         }
         return Result.success(
             SnapshotResult(
-                sessions = semantics, globalCursor = globalCursor,
+                sessions = all, globalCursor = globalCursor,
                 recentEvents = recent, recentOutput = recentOut
             )
         )
@@ -501,6 +523,12 @@ class TerminalRuntimeImpl(
         // PR #54 §4: idempotent — if already closed, return success
         val a = sessionManager.assembly(sessionId)
         if (a == null) {
+            // #223：无 assembly = 恢复视图（进程已死）或早已关闭的会话。同步清理
+            // 持久化记录 + 恢复缓存 —— 否则恢复的死会话关不掉（下次启动 recover()
+            // 又捞回来，僵尸 tab 永生）。delete/forget 对不存在条目均为 no-op，
+            // 幂等语义不变。
+            persistenceStore?.delete(sessionId)
+            recoveryService?.forget(sessionId)
             // Already closed (assembly removed) — return idempotent success
             return Result.success(CloseResult(closed = true, cause = "ALREADY_CLOSED", finalCursor = 0L))
         }
@@ -531,6 +559,9 @@ class TerminalRuntimeImpl(
             // 原路径依赖 collector 收到 SessionClosed 时 autoSave，与 assembly
             // 移除存在竞态，CLOSED 终态可能从未落盘）。
             persistenceStore?.delete(sessionId)
+            // #223：恢复视图缓存同步驱逐 —— 会话 id 与恢复记录撞车时，防止关闭
+            // 活跃会话后旧的恢复视图借尸还魂（重新出现在 snapshot 里）。
+            recoveryService?.forget(sessionId)
         }
         return r.map {
             val cause = when {
@@ -626,12 +657,41 @@ class TerminalRuntimeImpl(
         return a.observationEngine.styledState
     }
 
+    // T91（D2-D4）：terminal IPC 事件桥 —— 会话存在性守卫后直通 EventBus
+    //（crash-safe 增量订阅语义；订阅不存在会话会惰性建 bus 条目，故先探活）。
+    override fun terminalEventFlow(
+        sessionId: Long,
+        afterCursor: Long
+    ): kotlinx.coroutines.flow.Flow<TerminalEvent>? {
+        sessionManager.assembly(sessionId) ?: return null
+        return eventBus.subscribe(sessionId, afterCursor)
+    }
+
+    /** OSC 52 剪贴板请求（ObservationEngine 的 feed 钩子驱动 —— 详见其 KDoc）。 */
+    override fun clipboardRequestsFlow(sessionId: Long): kotlinx.coroutines.flow.Flow<String>? {
+        val a = sessionManager.assembly(sessionId) ?: return null
+        return a.observationEngine.clipboardRequests
+    }
+
+    /** 会话生命周期事件（bus 的全局镜像 —— UI 会话列表事件驱动）。 */
+    override fun sessionLifecycleEvents(): kotlinx.coroutines.flow.Flow<TerminalEvent> =
+        eventBusImpl.lifecycleEvents
+
     /**
      * Recover persisted sessions on startup (Spec §39).
      * Returns recovered session ids (now visible via snapshot()).
      * PTY fds cannot be reattached in v1; recovered sessions are EXITED/BROKEN (read-only).
+     *
+     * #223：恢复的会话真实进入 snapshot()（UI 会话列表 + Agent 上下文重建）——
+     * 原实现仅返回 id、恢复态从未注册，日志打出 Recovered N 后列表里什么都
+     * 看不到。同时把 SessionManager 的 id 计数器抬过全部恢复 id：新建会话不与
+     * 恢复视图撞车（撞车时活跃视图优先 + 记录被 autoSave 覆盖，恢复条目凭空消失）。
      */
-    override suspend fun recover(): List<Long> = recoveryService?.recover() ?: emptyList()
+    override suspend fun recover(): List<Long> {
+        val ids = recoveryService?.recover() ?: return emptyList()
+        if (ids.isNotEmpty()) sessionManager.ensureIdFloor(ids.max())
+        return ids
+    }
 
     /** Get a recovered session's last-known SemanticState (read-only, from persisted metadata). */
     override suspend fun recoveredSnapshot(sessionId: Long): com.apex.agent.platform.terminal.state.TerminalSemanticState? =
@@ -672,9 +732,16 @@ class TerminalRuntimeImpl(
         // 3. 停止全部超时定时器 + autoSave
         timeoutController.cancelAll()
         recoveryService?.stopAutoSave()
+        // T94：autoSave 域一并收敛（stopAutoSave 只 cancel 定时 job，域本身
+        // 不再复用 —— shutdown 后 runtime 不可重建）。
+        recoveryScope.cancel()
         // 4. native 兕底：Kotlin 侧可能因历史 bug/重建失步残留 native session
         //    （closeAll 幂等，对已关 id 无副作用）。
-        try { native.nativeCloseAll() } catch (_: Exception) {}
+        // #260：关停兜底失败留痕 —— 静默时 native 残留泄漏无从诊断
+        //（VtFeedTrail 只记录 feed 序列，不覆盖 close 失败）。
+        try { native.nativeCloseAll() } catch (e: Exception) {
+            android.util.Log.w("TerminalRuntime", "nativeCloseAll fallback failed: ${e.message}")
+        }
         // 5. 停协程域（listener/exit watcher/pump 域 —— SupervisorJob 的 cancel 是协作式）
         scope.cancel()
         pumpScope.cancel()

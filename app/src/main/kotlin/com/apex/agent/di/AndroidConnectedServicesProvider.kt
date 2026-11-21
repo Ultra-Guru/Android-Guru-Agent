@@ -11,16 +11,23 @@ import javax.inject.Singleton
  * Android 侧已连接服务聚合器（[ConnectedServicesProvider] 实现）。
  *
  * 系统提示词 "## Connected Services" 段的数据源：
- * - GitHub：Token 已配置 → 告知登录名 + 首个验证动作（github_get_user）
+ * - GitHub：Token 已配置 → 登录名 + 默认仓库 + **主动使用指令**（v3 S3
+ *   升级：明确告知 agent 现在就能自主使用 github_* 工具、优先于 WebFetch、
+ *   沙箱内 git clone/push 亦可用凭据 —— 用户核心诉求「确保 agent 会主动
+ *   利用这个方式调用 GitHub，他要能知道自己能够使用」）；未配置 → 一行
+ *   可行动指引（Coding 屏 GitHub 图标）——9 个 github_* 工具在 ToolModule
+ *   无条件注册、工具目录里始终可见，沉默会让 agent 撞工具报错才知未连；
  * - 消息连接器：微信 / 飞书 / Telegram 已启用且配置凭据 → 告知
- *   connector_list / connector_send_message 可用
+ *   ConnectorList / ConnectorSendMessage 可用。
  *
  * 设计要点：
- * - 只读快照，无 IO（TokenManager / ConnectorRegistry 均为内存 + 本地存储）；
- *   引擎每轮 buildSystemPrompt 调用一次，开销可忽略。
- * - 未连接服务**不注入**（与 Live Environment 的 fail-open 一致：不知道
- *   的不说，避免教模型一个错误事实）。未连接时模型调用 github_* 会拿到
- *   可行动的引导文案（见 GithubTools 的错误处理），那是执行侧的职责。
+ * - 只读快照，无 IO（TokenManager / ConnectorRegistry 均为内存 + 本地
+ *   存储）；引擎每轮 buildSystemPrompt 调用一次，开销可忽略。
+ * - 除 GitHub 外未连接服务仍**不注入**（与 Live Environment 的 fail-open
+ *   一致：不知道的不说，避免教模型一个错误事实）—— GitHub 是唯一例外：
+ *   其工具恒注册在场（见上），未连接一行指引比沉默更诚实。未连接时模型
+ *   调用 github_* 会拿到可行动的引导文案（见 GithubTools 的错误处理），
+ *   两处文案指向同一入口。
  */
 @Singleton
 class AndroidConnectedServicesProvider @Inject constructor(
@@ -36,11 +43,26 @@ class AndroidConnectedServicesProvider @Inject constructor(
         // ═══ GitHub ═══
         if (githubTokenManager.isConnected()) {
             val login = githubTokenManager.getUsername() ?: "(unknown)"
+            // 默认仓库未设置时同样可行动：问用户或用 GithubSearchRepos 自找
+            val repo = githubTokenManager.defaultRepo.value.ifBlank {
+                "not set — ask the user or use GithubSearchRepos"
+            }
             sections.add(
                 "GitHub: CONNECTED as $login.\n" +
-                    "  github_* tools are ready: verify with github_get_user, browse with\n" +
-                    "  github_list_repos, read/write files with github_read_file / github_write_file,\n" +
-                    "  find code with github_search_code. Prefer these over generic web_fetch for GitHub tasks."
+                    "  Default workspace repo: $repo.\n" +
+                    "  You CAN and SHOULD use GitHub autonomously right now: verify with\n" +
+                    "  GithubGetUser, read/write files with GithubReadFile / GithubWriteFile,\n" +
+                    "  manage issues with GithubCreateIssue / GithubListIssues, search code\n" +
+                    "  with GithubSearchCode. Prefer github_* tools over generic WebFetch\n" +
+                    "  for ANY github.com task. git clone/push inside the Ubuntu sandbox also\n" +
+                    "  works with your credentials (TerminalExec / git tools inject them)."
+            )
+        } else {
+            // v3 S3：未连接也注入一行可行动指引（github_* 工具恒注册在场，
+            // 沉默只会让 agent 撞工具报错；见类 KDoc 的例外说明）
+            sections.add(
+                "GitHub: NOT connected — ask the user to tap the GitHub icon on the " +
+                    "Coding toolbar to add a PAT (Settings → GitHub also works)."
             )
         }
 
@@ -55,8 +77,8 @@ class AndroidConnectedServicesProvider @Inject constructor(
                 }
                 sections.add(
                     "Messaging/service connectors (ENABLED):\n$lines\n" +
-                        "  Call connector_list to see live status; send messages with\n" +
-                        "  connector_send_message (WeChat Work bot / Feishu bot / Telegram bot)."
+                        "  Call ConnectorList to see live status; send messages with\n" +
+                        "  ConnectorSendMessage (WeChat Work bot / Feishu bot / Telegram bot)."
                 )
             }
         }
@@ -72,7 +94,7 @@ class AndroidConnectedServicesProvider @Inject constructor(
         if (githubTokenManager.isConnected()) {
             ids += GITHUB_TOOL_IDS
         }
-        // ═══ 已连接 MCP 服务器的一等工具（mcp__{server}__{tool}）═══
+        // ═══ 已连接 MCP 服务器的一等工具（Mcp{Server}{Tool}，上限 MAX_MCP_TOOLS）═══
         // 注册表快照即「当前真实可用」；连接中的沙箱/远程服务器同样适用。
         // 上限保护：MCP 工具总量钳制（大服务器几十个工具时不挤占 CORE 集的
         // 请求预算 —— ToolRequestBudget.MAX_TOOLS=64，超出部分按名称序丢弃）。
@@ -89,9 +111,9 @@ class AndroidConnectedServicesProvider @Inject constructor(
     companion object {
         /** GithubTools.kt 注册的 9 个原生工具 id（连接即全部可见）。 */
         private val GITHUB_TOOL_IDS: Set<String> = setOf(
-            "github_get_user", "github_list_repos", "github_read_file",
-            "github_write_file", "github_create_issue", "github_list_issues",
-            "github_search_code", "github_list_branches", "github_search_repos"
+            "GithubGetUser", "GithubListRepos", "GithubReadFile",
+            "GithubWriteFile", "GithubCreateIssue", "GithubListIssues",
+            "GithubSearchCode", "GithubListBranches", "GithubSearchRepos"
         )
 
         /**

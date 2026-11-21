@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * 关键语义：
  * - **懒创建**：resolve(id) 对合法 id 自动建目录+元数据（Agent 的
- *   terminal.create(workspaceId=…) 无需先 create —— "workspace-per-task" 零摩擦）。
+ *   TerminalCreate(workspaceId=…) 无需先 create —— "workspace-per-task" 零摩擦）。
  * - **活跃绑定计数**：bind(sessionId, id)/unbind(sessionId) 由 TerminalRuntime
  *   在会话创建/关闭时调用；delete 拒绝有活跃会话的 workspace（数据安全优先 ——
  *   Agent 必须先 close 会话再 delete）。计数偏保守（进程退出但未 close 的会话
@@ -141,7 +141,7 @@ class LinuxWorkspaceManager(
                 if (sessions.isNotEmpty()) {
                     return Result.failure(IllegalStateException(
                         "WorkspaceError:Busy — workspace '$wsId' 有活跃会话 ${sessions.sorted()}，" +
-                            "先 terminal.close 再删除"
+                            "先 TerminalClose 再删除"
                     ))
                 }
             }
@@ -240,7 +240,7 @@ class LinuxWorkspaceManager(
     /**
      * P83 (T5)：扁平沙箱目录 → default workspace 的一次性内容迁移。
      *
-     * 背景：ToolModule 的文件工具（read_file/write_file/…）历史上落在
+     * 背景：ToolModule 的文件工具（Read/Write/…）历史上落在
      * `<filesDir>/workspace`（扁平沙箱）——与 Linux 会话的 workspace
      * （`<filesDir>/linux/workspaces/<id>`，bind 到 guest /workspace）互不可见：
      * Agent 写的文件 Ubuntu 终端看不到，终端里的构建产物文件工具也读不到。

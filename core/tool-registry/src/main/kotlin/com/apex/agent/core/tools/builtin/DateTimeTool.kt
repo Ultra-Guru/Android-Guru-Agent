@@ -20,7 +20,7 @@ import java.time.format.DateTimeFormatter
 /**
  * `datetime` — the six date/time operations an agent actually needs.
  *
- * v1's `get_time` prints "now" and nothing else. Every real task needs
+ * v1's `GetTimeLegacy` prints "now" and nothing else. Every real task needs
  * more: "what day was 1700000000", "how long between X and Y", "add 3
  * days to this timestamp", "convert to Tokyo time", "validate this date
  * string". Doing that with shell `date` commands is a gate round trip per
@@ -42,7 +42,7 @@ import java.time.format.DateTimeFormatter
  * unparseable input lists the accepted forms.
  */
 class DateTimeTool : BaseTool(
-    id = "datetime",
+    id = "DatetimeLegacy",
     name = "Date Time Tool",
     description = """
         Date/time operations: now, format, add, diff, parse, convert.

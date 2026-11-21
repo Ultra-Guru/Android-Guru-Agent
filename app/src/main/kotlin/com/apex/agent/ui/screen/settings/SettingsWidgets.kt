@@ -1,0 +1,447 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
+package com.apex.agent.ui.screen.settings
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import kotlinx.coroutines.delay
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+
+import com.apex.agent.R
+
+/**
+ * 设置页通用控件（v2 抽屉化重构自 SettingsScreen.kt 原样迁出，零行为变更）。
+ *
+ * 迁移动机：设置页重构为「抽屉导航 + 页面路由」后 SettingsScreen 只保留
+ * 顶层骨架，控件层独立成文件避免单文件超 1200 行预算红线；所有可见性
+ * 保持 internal —— SettingsV3Sections / ModelSections 等分区文件继续复用。
+ */
+@Composable
+internal fun SectionCard(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    subtitle: String? = null,
+    initiallyExpanded: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    // B1-BUG-14:折叠态 saveable + 以 initiallyExpanded 为 key —— 外部语义
+    // 变化(如背景选图完成 hasBackground=true)时卡片随新初值重置展开,
+    // 修复「选完背景图卡片仍折叠、看不到清除/纱罩控件」;旋转/重建不丢。
+    var expanded by rememberSaveable(initiallyExpanded) { mutableStateOf(initiallyExpanded) }
+    val expandedDesc = stringResource(R.string.settings_section_expanded)
+    val collapsedDesc = stringResource(R.string.settings_section_collapsed)
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    // B3-BUG-27:折叠头语义(TalkBack 可朗读角色与展开状态)
+                    .clickable(
+                        role = androidx.compose.ui.semantics.Role.Button,
+                        onClickLabel = title
+                    ) { expanded = !expanded }
+                    .semantics {
+                        stateDescription = if (expanded) expandedDesc else collapsedDesc
+                    },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    icon, null, tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clearAndSetSemantics { }
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium)
+                    if (subtitle != null) {
+                        Text(
+                            subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                }
+                Icon(
+                    if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    null,
+                    modifier = Modifier.clearAndSetSemantics { }
+                )
+            }
+            AnimatedVisibility(expanded) {
+                Column(
+                    Modifier.padding(top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) { content() }
+            }
+        }
+    }
+}
+
+/** 控件下方的一行小字说明；为 null 时不占位。（internal：分区文件复用） */
+@Composable
+internal fun DescriptionText(description: String?) {
+    if (description != null) {
+        Text(
+            description,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline
+        )
+    }
+}
+
+@Composable
+internal fun SwitchRow(
+    label: String,
+    checked: Boolean,
+    description: String? = null,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, Modifier.weight(1f))
+            Switch(checked, onCheckedChange)
+        }
+        DescriptionText(description)
+    }
+}
+
+@Composable
+internal fun SliderRow(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    steps: Int = 0,
+    description: String? = null,
+    fmt: (Float) -> String = { it.toString() },
+    onValueChange: (Float) -> Unit
+) {
+    // 拖动期间只更新本地值，松手才回调（避免每个 tick 写 SharedPreferences）
+    var local by remember(value) { mutableStateOf(value) }
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth()) {
+            Text(label, Modifier.weight(1f))
+            Text(
+                fmt(local.coerceIn(range)),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Slider(
+            value = local.coerceIn(range),
+            onValueChange = { local = it },
+            valueRange = range,
+            steps = steps,
+            onValueChangeFinished = { onValueChange(local.coerceIn(range)) },
+            modifier = Modifier.semantics { contentDescription = label } // 修复：TalkBack 播报滑块名称
+        )
+        DescriptionText(description)
+    }
+}
+
+@Composable
+internal fun IntFieldRow(
+    label: String,
+    value: Int,
+    description: String? = null,
+    min: Int = Int.MIN_VALUE,
+    max: Int = Int.MAX_VALUE,
+    onValueChange: (Int) -> Unit
+) {
+    // B2-BUG-15:本地保留原始文本,失焦/IME Done 才校验提交 —— 旧实现边打字
+    // 边 coerce(0 开头中间态被改写、超 Int 静默忽略、无错误提示)。
+    var text by remember(value) { mutableStateOf(value.toString()) }
+    var errorKind by remember { mutableStateOf(0) } // 0 无 / 1 空 / 2 非数字 / 3 超范围
+    fun validateAndCommit(): Boolean {
+        val trimmed = text.trim()
+        val parsed = trimmed.toIntOrNull()
+        errorKind = when {
+            trimmed.isEmpty() -> 1
+            parsed == null -> 2
+            parsed < min || parsed > max -> 3
+            else -> 0
+        }
+        if (errorKind == 0) {
+            if (parsed!! != value) onValueChange(parsed)
+            return true
+        }
+        return false
+    }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { raw ->
+            text = raw
+            if (errorKind != 0) errorKind = 0
+        },
+        label = { Text(label) },
+        isError = errorKind != 0,
+        supportingText = {
+            when (errorKind) {
+                1 -> Text(stringResource(R.string.settings_num_err_empty))
+                2 -> Text(stringResource(R.string.settings_num_err_nan))
+                3 -> Text(stringResource(R.string.settings_num_err_range_fmt, min, max))
+                else -> description?.let { Text(it) }
+            }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .onFocusChanged { if (!it.isFocused && errorKind != 0) validateAndCommit() },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { validateAndCommit() })
+    )
+}
+
+/**
+ * B2-BUG-16:防抖文本 hook(400ms + 离页冲刷)—— 多行/定制输入复用统一
+ * 写盘纪律(大文本不再每按键整份序列化);返回 (草稿, onDraftChange)。
+ */
+@Composable
+internal fun rememberDebouncedText(
+    value: String,
+    onValueChange: (String) -> Unit
+): Pair<String, (String) -> Unit> {
+    var draft by remember(value) { mutableStateOf(value) }
+    var dirty by remember { mutableStateOf(false) }
+    val latestDraft by rememberUpdatedState(draft)
+    val latestDirty by rememberUpdatedState(dirty)
+    val latestCallback by rememberUpdatedState(onValueChange)
+    LaunchedEffect(draft) {
+        if (!dirty) return@LaunchedEffect
+        delay(400)
+        onValueChange(draft)
+        dirty = false
+    }
+    DisposableEffect(Unit) {
+        onDispose { if (latestDirty) latestCallback(latestDraft) }
+    }
+    return draft to { raw -> draft = raw; dirty = true }
+}
+
+@Composable
+internal fun TextFieldRow(
+    label: String,
+    value: String,
+    description: String? = null,
+    singleLine: Boolean = true,
+    onValueChange: (String) -> Unit
+) {
+    // B2-BUG-16:本地草稿 + 400ms 防抖 + 离页冲刷 —— 旧实现每按键直写盘
+    // (64KB 全局规则每键整份序列化)。外部值写回(防抖落盘回流)时草稿对齐。
+    val (draft, setDraft) = rememberDebouncedText(value, onValueChange)
+    OutlinedTextField(
+        value = draft,
+        onValueChange = setDraft,
+        label = { Text(label) },
+        supportingText = description?.let { { Text(it) } },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = singleLine
+    )
+}
+
+/** 只读下拉（ExposedDropdownMenuBox 实现，替代旧的 AlertDialog + RadioButton）。 */
+@Composable
+internal fun <T> DropdownRow(
+    label: String,
+    options: List<Pair<T, String>>,
+    selected: T,
+    description: String? = null,
+    onSelected: (T) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    // B3-BUG-18:未知选中值显示「未知(保留原值)」而非裸 toString()
+    val current = options.firstOrNull { it.first == selected }?.second
+        ?: stringResource(R.string.settings_dropdown_unknown)
+    Column(Modifier.fillMaxWidth()) {
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = it }
+        ) {
+            OutlinedTextField(
+                value = current,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text(label) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
+            )
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false }
+            ) {
+                options.forEach { (v, text) ->
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = v == selected, onClick = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(text)
+                            }
+                        },
+                        onClick = { onSelected(v); expanded = false }
+                    )
+                }
+            }
+        }
+        DescriptionText(description)
+    }
+}
+
+@Composable
+internal fun ChipMultiSelect(
+    label: String,
+    options: List<Int>,
+    selected: Set<Int>,
+    onToggle: (Int) -> Unit
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Text(label, style = MaterialTheme.typography.labelMedium)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(options, key = { it }) { code ->
+                FilterChip(
+                    selected = selected.contains(code),
+                    onClick = { onToggle(code) },
+                    label = { Text(code.toString()) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun KeyValueEditor(
+    label: String,
+    map: Map<String, String>,
+    onChange: (Map<String, String>) -> Unit
+) {
+    var key by remember { mutableStateOf("") }
+    var value by remember { mutableStateOf("") }
+    var keyError by remember { mutableStateOf(false) }
+    val headerLabel = stringResource(R.string.settings_header_key)
+    val valueLabel = stringResource(R.string.settings_header_value)
+    val deleteDesc = stringResource(R.string.settings_header_delete)
+    val addDesc = stringResource(R.string.settings_header_add)
+    // B3-BUG-19:键归一(trim)→ RFC 7230 token 合法性校验 → 大小写去重
+    // (HTTP 头大小写不敏感);空 value 拦截;错误态就地提示。
+    fun normalizeKey(raw: String): String? {
+        val k = raw.trim()
+        if (k.isEmpty()) return null
+        if (!k.matches(Regex("[!#$%&'*+.^_`|~0-9A-Za-z-]+"))) return null
+        return map.keys.firstOrNull { it.equals(k, ignoreCase = true) } ?: k
+    }
+    fun tryAdd() {
+        val k = normalizeKey(key)
+        if (k == null || value.isBlank()) {
+            keyError = true
+            return
+        }
+        onChange(map + (k to value.trim()))
+        key = ""
+        value = ""
+        keyError = false
+    }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium)
+        map.forEach { (k, v) ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("$k : $v", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                // UI-012：48dp 触区红线（原 28dp）
+                IconButton(
+                    onClick = { onChange(map - k) },
+                    modifier = Modifier
+                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .semantics { contentDescription = "$k " + deleteDesc }
+                ) {
+                    Icon(Icons.Default.Delete, null, Modifier.size(16.dp))
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(key, { key = it; keyError = false }, label = { Text(headerLabel) },
+                isError = keyError,
+                supportingText = { if (keyError) Text(stringResource(R.string.settings_header_key_invalid)) },
+                modifier = Modifier.weight(1f), singleLine = true)
+            Spacer(Modifier.width(6.dp))
+            OutlinedTextField(value, { value = it }, label = { Text(valueLabel) },
+                modifier = Modifier.weight(1f), singleLine = true)
+            IconButton(
+                onClick = { tryAdd() },
+                modifier = Modifier
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    .semantics { contentDescription = addDesc }
+            ) { Icon(Icons.Default.Add, null) }
+        }
+    }
+}
+
+/** 叶子页面通用容器：滚动列布局（16dp 边距 + 12dp 间距）。 */
+@Composable
+internal fun SettingsLeafColumn(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        content = content
+    )
+}

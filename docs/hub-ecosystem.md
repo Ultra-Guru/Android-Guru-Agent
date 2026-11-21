@@ -1,12 +1,35 @@
 # Hub 生态：官方技能 / MCP 仓库 × 斜杠门控 × 市场配置启动闭环
 
-> 状态：已落地（v1）
+> 状态：已落地（v2，2026-10 重组）
 > 主题：内置收敛 + 仓库分发 + 使用门控——技能与 MCP 从「全量内置」演进为
-> 「少量必要内置 + 官方仓库按需安装」，市场完成 安装 → 配置 → 启动 全闭环。
-> 前置：[agent-life-skills-and-memory.md](agent-life-skills-and-memory.md)（技能矩阵与渐进披露）
+> 「官方仓库按需安装」，市场完成 安装 → 配置 → 启动 全闭环。
 > · [mcp-sandbox.md](mcp-sandbox.md)（PRoot 沙箱 MCP）
-> 参考：[opencode](https://opencode.ai/docs/skills/) 的远程技能注册表模式
+> 参考：业界标准 CLI 编码智能体的远程技能注册表模式
 > （`index.json` 元数据索引 + 按需下载 + 缓存原子更新）。
+
+---
+
+## ⚡ v2 重组（2026-10）：内置归零，全部走仓库
+
+用户反馈「市场技能显示内置、但实际没下载，需要点击安装」+「生活相关技能删除，
+从多个仓库找新技能改名优化入仓，要分类」——v2 把「少量必要内置」也砍掉，
+APK 不再打包任何技能 / 目录资产：
+
+| 项 | v1 | v2 |
+| --- | --- | --- |
+| 随包技能（assets/skills） | 13 核心 + #206 扩到 238 | **0**（全部走仓库；升级用户由 pruneStaleBundled 空白名单四清旧内置残留） |
+| 随包 MCP 目录（assets/mcp_catalog） | 16 分类 / 42 条 | **0**（退役；加载器允许缺失，市场目录段无条目自动隐藏，热更 overlay 通道保留） |
+| apex-skill-hub | 62 生活/通用（AGENT/PRODUCTIVITY 旧词表） | **117 专业/效率**（v3）：v2 时 67（45 生活类退役 + 17 保留 + 50 三源新增）→ v3 再增 50 个编码与复杂任务技能（架构与分布式 12 + 语言与代码工艺 13 + DevOps 与质量 13 + 复杂任务执行与协作 12，全部原创方法论），14 域（SkillCategory 24 域词表） |
+| apex-mcp-hub | 8 台 | **80 台 / 18 类**（v2.1）：v2 时 50 台/15 类（并入宿主目录 32 + 修复 fetch/time 坏包 + 新增 10 台实测）→ v2.1 再增 30 台编码与复杂任务向（数据库 6 + 云 2 + 可观测 2 + 文档 3 + devtools 5 + 效率/设计/通信/搜索等，npm/PyPI 包名逐一经 registry 200 实测）；新增 devtools/security/ai-ml 三类 |
+| 双仓 CI | 无 | `validate.yml`：索引↔正文交叉校验 / category 词表 / 2MB 红线 / 凭据扫描 + 在线冒烟（npm/PyPI 包存在性 + HTTP initialize 握手 + raw URL 可达性），MCP 仓另有每周例行巡检 |
+| guard-rails（本仓） | check_mcp_catalog.py 要求目录非空 | 目录缺失/为空 = 合法退役态（通过）；条目校验对热更 fixture / 未来重新随包分发保持生效 |
+
+App 侧改动面（本 commit）：删 `app/src/main/assets/skills/`（238 文件）与
+`app/src/main/assets/mcp_catalog/`（16 文件）；`SkillModule` 注释更新（释放管线
+保留用于热更重放 + 旧内置四清）；`MarketViewModelMcpCatalog` 去掉「目录资产缺失」
+require；`MarketBrowseMcpTab` 精选目录段空集守卫。**零 schema 变更**——
+HubSource 解析本来就 `ignoreUnknownKeys`，hub 新增的 `category`/`envSchema`/
+`homepage` 字段向前兼容。
 
 ---
 
@@ -15,7 +38,7 @@
 内置瘦身到「必要最小集」，其余技能 / MCP 服务器全部放进两个 GitHub 仓库
 （`apex-skill-hub` / `apex-mcp-hub`），市场直连安装；聊天斜杠菜单只放行
 「已安装且已启用」的技能与「已安装且正在运行」的 MCP；MCP 的配置 / 启动 /
-停止全部收敛进市场页。
+停止全部收敛进市场页。v2 起「必要最小集」也归零——**一切技能与目录皆仓库按需下载**。
 
 ## 1. 用户反馈与根因
 
@@ -23,7 +46,7 @@
 | --- | --- | --- |
 | 「Coding 的 skill 与 Agent 的 skill 要分开，市场分两级」 | 59/75 内置技能 scope 缺省 `all`，双工位市场都出现 | 生活技能全部 scope=agent 且迁出 APK；市场按 Agent/Coding 分级过滤（scope 口径贯通斜杠与注入） |
 | 「生活相关技能全部删除，只内置几个功能强大的」 | 75 个全内置 = APK 膨胀 + 档案污染 | 保留 13 核心（8 coding + 3 agent + 2 all），62 个迁官方仓库 |
-| 「新建一个仓库，市场直接下载里面的技能」 | 无自有分发渠道（ClawHub/魔搭是第三方） | 新建 `AceGuru-mjh/apex-skill-hub`（62 技能）+ `apex-mcp-hub`（8 台 MCP），市场「官方仓库」源直装 |
+| 「新建一个仓库，市场直接下载里面的技能」 | 无自有分发渠道（ClawHub/魔搭是第三方） | 新建 `Ultra-Guru/apex-skill-hub`（62 技能）+ `apex-mcp-hub`（8 台 MCP），市场「官方仓库」源直装 |
 | 「MCP 同样处理，但要内置几个必要的（如 GitHub MCP）」 | 沙箱预置随启动自动写入 | 保留 5 台进程内 BUILTIN（github/search/fs/memory/thinking）；3 台 npx 沙箱预置迁仓库目录，不再自动写入 |
 | 「软件中的 MCP 所有的都没有配置按钮」 | BUILTIN 行无 Edit（旧设计认为"无用户可配字段"） | 所有 MCP 行（含 BUILTIN）都有「配置」：BUILTIN 配置对话框（作用域/启停/连接/GitHub Token），自建复用 EditMcpDialog |
 | 「MCP 本地运行需要启动；没安装/没启动的不能在斜杠里选」 | 斜杠菜单列 enabled 配置（离线也列出）；未连接的 `/mcp:x` 仍发空转提示词 | 菜单只列 connected；路由器对未运行的 MCP 拦截（空 agentPrompt + 引导语）；市场内完成安装→配置→启动 |
@@ -41,7 +64,7 @@ skills/<id>.json      # apex-skill-v1 完整 manifest（promptInjection 正文�
 - `index.json` 只放元数据（id/name/version/description/category/tags/scope/
   author/file）——小体积一次拉全，市场按工位分级过滤；
 - 技能正文按需单文件下载
-  （`raw.githubusercontent.com/AceGuru-mjh/apex-skill-hub/main/<file>`）；
+  （`raw.githubusercontent.com/Ultra-Guru/apex-skill-hub/main/<file>`）；
 - 全部条目 `scope=agent`（生活/通用技能归 Agent 工位）。
 
 ### apex-mcp-hub（MCP 服务器）
@@ -77,7 +100,7 @@ requiresRootfs/vendor/tags），一次请求即完整目录。收录 8 台：
 | 门控 | `slash/SlashCommandRouter` | 未运行 MCP → 空 agentPrompt + 引导语（两 VM 均有 isNotBlank 门，不发空转提示词） |
 | UI | `code/CodeThinkingSelector`（重写） | 28dp 胶囊 + 300dp 结构化下拉（深度七档段 / AUTO 段 / 指南段；Check 当前档、预算徽标、仅选中档展开说明、本地化短档名） |
 | UI | `code/CodeScreen` | 「新会话」文字按钮 → Add 图标按钮（28/18dp，对齐 Agent 屏）；去掉根部重复 `.imePadding()`（双重 IME 抬升根因） |
-| UI | `agent/PipelineCapsuleRow`（重写胶囊） | 28dp 紧凑档（视觉 12dp 关闭钮、触区 28dp 圆形；48dp 红线保留给时间轴大胶囊） |
+| UI | `component/SkillChipInputField`（v5 取代 PipelineCapsuleRow） | 技能/MCP/连接器以**行内 chip** 直接追加进输入框文字后（`\uFFFC` + ReplacementSpan 自绘胶囊）：多选依次追加、`type:id` 去重、退格/点击删除；发送时纯文本与 chip 集合分通道上报 —— 独立胶囊行与输入框的重叠观感消除（PipelineCapsuleRow 已删除） |
 
 ## 4. 门控语义总表
 
@@ -97,7 +120,7 @@ requiresRootfs/vendor/tags），一次请求即完整目录。收录 8 台：
 2. **为什么 MCP 目录单文件内联而技能按需单文件**：MCP 配置几百字节/条，
    索引内联一次拉全；技能正文 1.5-2.3KB/个 × 62 ≈ 130KB，索引只放元数据，
    安装时才拉正文（省流量 + 冷启动快）。
-3. **为什么安装 ≠ 启动**（学习 opencode 的 `enabled:false` 预置语义）：
+3. **为什么安装 ≠ 启动**（学习业界标准 CLI 编码智能体的 `enabled:false` 预置语义）：
    沙箱 MCP 启动有真实成本（npx 冷启动 + rootfs 门禁）；显式启动让
    「正在运行」状态对用户可预期，斜杠门控才站得住。
 4. **为什么保留 5 台 BUILTIN**：能力在二进制里（github REST / 搜索 / 工作区

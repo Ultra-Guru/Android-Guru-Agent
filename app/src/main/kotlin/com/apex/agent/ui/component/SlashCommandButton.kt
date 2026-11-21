@@ -1,5 +1,6 @@
 package com.apex.agent.ui.component
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloatAsState
@@ -18,18 +19,24 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -39,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.apex.agent.R
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -53,72 +61,113 @@ import kotlinx.coroutines.flow.StateFlow
  * 菜单在展示前经 [SlashMenuData.forScope] 过滤，两工位各自看到自己的
  * 技能/MCP 子集（市场分级同源口径）。"all" = 不过滤（调试用）。
  *
- * ## v4：选中回调携带完整 [SlashMenuItem]
+ * ## v5：技能 chip 输入框（多选）配套
  *
- * 调用方（AgentChatScreen）需要 label（展示名）把选中项挂成输入栏迷你胶囊
- * （`[</> skill: 名字]`）；旧回调只给 command 字符串，展示名被迫丢失。
- * 非斜杠管线场景可自行从 item.command 取命令串，信息严格超集，无回退需求。
+ * - `onItemSelected` 改为返回 Boolean：**true = 菜单保持展开**（流水线条目
+ *   选中 → 追加为输入框内 chip，可继续多选），false = 选中即收起（普通
+ *   文本插入类指令）；
+ * - `isSelected`：条目当前是否已挂载为 chip（菜单内显示 ✓ 勾选态，再点
+ *   一次由调用方摘除）；
+ * - 弹窗 `focusable = false`：不抢主窗口焦点 —— **键盘不收起**，选完继续
+ *   打字；返回键经 [BackHandler] 关菜单。
+ *
+ * ## v5：空间翻转（用户反馈「选择技能时 UI 重叠」）
+ *
+ * 旧实现固定 `BottomStart` 向上生长，键盘弹出/小屏时上方可用高度不足，
+ * 系统把弹窗钳位到可用区内 → 面板直接盖住输入行。现在实测锚点在窗口
+ * 可视区（扣除 IME）内的上方空间，不足 320dp 自动**向下翻转**（TopStart）。
  *
  * ## v3 修复：点击卡死（ANR）
- * 旧实现把 [Popup]（`PopupProperties(focusable = true)`）**无条件**留在组合树里，
- * 仅靠内层 AnimatedVisibility 控制内容显隐 —— 这与 Material3 DropdownMenu 的
- * `if (expanded) { Popup(...) }` 模式相悖：
- *  - 聊天页一进入组合，就存在一个**常驻的 focusable 弹窗窗口**：它在出现瞬间
- *    抢走主窗口焦点（IME 关闭/输入框失焦），且把全屏触摸作为 ACTION_OUTSIDE
- *    消费用于"关闭弹窗"，但弹窗本身因无条件组合永远不会真正移除 ——
- *    焦点在弹窗窗口与主窗口之间反复拉锯，点击斜杠按钮弹开内容的瞬间
- *    窗口尺寸变化 + 焦点迁移叠加，主线程输入管线卡死，表现为"一点就死机"。
- *  - v3 对齐 M3 模式：**菜单打开时才组合 Popup，关闭即整体移除**。
- *    弹窗锚定按钮左下角向上生长（BottomStart），限高 400dp 内部滚动；
- *    点外部 / 返回键关闭（focusable 弹窗的标准语义）。
+ *
+ * 旧实现把 [Popup]（focusable = true）**无条件**留在组合树里，仅靠内层
+ * AnimatedVisibility 控制显隐 —— 常驻 focusable 弹窗抢焦点引发输入管线
+ * 卡死。v3 起对齐 M3 模式：菜单打开时才组合 Popup，关闭即整体移除。
  */
 @Composable
 fun SlashCommandButton(
     slashMenuProvider: SlashMenuProvider,
-    onItemSelected: (SlashMenuItem) -> Unit,
+    onItemSelected: (SlashMenuItem) -> Boolean,
     modifier: Modifier = Modifier,
-    scope: String = "agent"
+    scope: String = "agent",
+    isSelected: (SlashMenuItem) -> Boolean = { false },
+    menuOpen: Boolean? = null,
+    onMenuDismiss: (() -> Unit)? = null,
+    triggerHidden: Boolean = false
 ) {
-    var showMenu by remember { mutableStateOf(false) }
+    // 弹层状态外提（2026-10 工具台重排）：menuOpen 非空 = 调用方托管
+    //（Code 屏展开菜单锚点模式，triggerHidden 时不画触发钮仅留 1dp 锚点）；
+    // null = 内部自管（Agent 屏既有行为零改动）。
+    var internalOpen by remember { mutableStateOf(false) }
+    val showMenu = menuOpen ?: internalOpen
+    val closeMenu: () -> Unit = {
+        if (menuOpen == null) internalOpen = false else onMenuDismiss?.invoke()
+    }
 
+    // UI-016：青粉硬编码渐变改 primary→tertiary token —— 暗态恰为薄荷→玫瑰
+    // （强调色双端身份保留，已随去霓虹重调转为低饱和），亮态 0E7A57→B33A65 对浅底达 AA（原青 00E5FF 仅 1.44:1）
     val slashGradient = Brush.linearGradient(
-        colors = listOf(Color(0xFF00E5FF), Color(0xFFFF4081))
+        colors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)
     )
+    val openMenuCd = stringResource(R.string.chat_cd_slash_menu)
+
+    // 锚点在窗口内的纵坐标（翻转判定用；组合期由 onGloballyPositioned 持续刷新）
+    var anchorTopInWindow by remember { mutableStateOf(Float.MAX_VALUE) }
 
     Box(
-        modifier = modifier
-            .size(40.dp)
-            .background(
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                shape = CircleShape // 精修：与 Attach/Github/Toolkit 统一圆形剪裁（原 10dp 方角，行内独树一帜）
-            )
-            .semantics { contentDescription = "打开斜杠指令菜单" }
-            .clickable { showMenu = true },
-        contentAlignment = Alignment.Center
+        modifier = modifier.onGloballyPositioned { coords ->
+            anchorTopInWindow = coords.positionInWindow().y
+        }
     ) {
-        Canvas(modifier = Modifier.size(22.dp)) {
-            val canvasSize = size
-            val strokeWidth = canvasSize.width * 0.18f
-            drawLine(
-                brush = slashGradient,
-                start = Offset(canvasSize.width * 0.78f, canvasSize.height * 0.18f),
-                end = Offset(canvasSize.width * 0.22f, canvasSize.height * 0.82f),
-                strokeWidth = strokeWidth,
-                cap = StrokeCap.Round
-            )
+        if (!triggerHidden) {
+            Box(
+                modifier = Modifier
+                    // UI-012：48dp 触区红线（原 40dp 视觉系提升为 48 系，与
+                    // Attach/Github/Send/Toolkit 全行统一；圆底视觉随节点同步放大）
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    // 圆形反馈修复：clip 先于 background/clickable —— ripple 与
+                    // 底色同被裁成圆，按压/悬停/聚焦不再露出方形矩形底
+                    // （原 background(CircleShape) 只裁底色，裁不住 clickable 的 ripple）。
+                    .clip(CircleShape)
+                    .background(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                        shape = CircleShape // 精修：与 Attach/Github/Toolkit 统一圆形剪裁（原 10dp 方角，行内独树一帜）
+                    )
+                    .semantics { contentDescription = openMenuCd }
+                    .clickable { internalOpen = true },
+                contentAlignment = Alignment.Center
+            ) {
+                Canvas(modifier = Modifier.size(22.dp)) {
+                    val canvasSize = size
+                    val strokeWidth = canvasSize.width * 0.18f
+                    drawLine(
+                        brush = slashGradient,
+                        start = Offset(canvasSize.width * 0.78f, canvasSize.height * 0.18f),
+                        end = Offset(canvasSize.width * 0.22f, canvasSize.height * 0.82f),
+                        strokeWidth = strokeWidth,
+                        cap = StrokeCap.Round
+                    )
+                }
+            }
+        } else {
+            // 锚点模式：1dp 占位维持 Popup 空间翻转判定的坐标测量
+            Box(modifier = Modifier.size(1.dp))
         }
 
-        // v3：菜单打开时才组合 Popup —— focusable 弹窗窗口不再常驻。
-        // 锚定在按钮 Box 上（BottomStart：弹窗底边对齐按钮底边，向上生长）。
+        // v3：菜单打开时才组合 Popup —— 弹窗窗口不再常驻。
+        // （外提后挂在外层锚点 Box：锚点坐标 = 触发钮/1dp 占位所在处）
         if (showMenu) {
             SlashMenuPopup(
                 menuFlow = slashMenuProvider.menu,
                 scope = scope,
+                anchorTopInWindow = anchorTopInWindow,
+                isSelected = isSelected,
                 onRefresh = slashMenuProvider::refresh,
-                onDismiss = { showMenu = false },
+                onDismiss = closeMenu,
                 onItemSelected = { item ->
-                    onItemSelected(item)
-                    showMenu = false
+                    // 调用方决定保持展开（多选 chip）还是收起（普通指令）
+                    val keepOpen = onItemSelected(item) && showMenu
+                    if (menuOpen == null) internalOpen = keepOpen
+                    else if (!keepOpen) onMenuDismiss?.invoke()
                 }
             )
         }
@@ -128,13 +177,16 @@ fun SlashCommandButton(
 /**
  * 动态级联菜单弹窗（数据驱动）。
  *
- * v3：仅在 [SlashCommandButton] 菜单打开期间存在；关闭（onDismiss / 选中命令）
- * 即整体离开组合，focusable 窗口随之销毁 —— 不再有常驻弹窗抢焦点/吞触摸。
+ * v5：①上方空间不足自动向下翻转（不再盖住输入行）②focusable = false
+ * 保键盘 ③多选：流水线条目选中保持展开 + ✓ 勾选态 ④文案全部 i18n
+ * （原硬编码中文）。
  */
 @Composable
 private fun SlashMenuPopup(
     menuFlow: StateFlow<SlashMenuData>,
     scope: String,
+    anchorTopInWindow: Float,
+    isSelected: (SlashMenuItem) -> Boolean,
     onRefresh: () -> Unit,
     onDismiss: () -> Unit,
     onItemSelected: (SlashMenuItem) -> Unit
@@ -144,13 +196,31 @@ private fun SlashMenuPopup(
     val menuData = remember(menuDataRaw, scope) { menuDataRaw.forScope(scope) }
     var expandedCategory by remember { mutableStateOf<String?>(null) }
 
+    // ── 空间翻转判定：锚点上方（窗口可视区，扣除 IME）能否容下 320dp ──
+    // Popup 仅在菜单打开时组合（v3 模式）→ 每次打开都重估；锚点位移（键盘
+    // 弹出/收起改变可视区）也触发重估。无需 showMenu 键（不在本作用域）。
+    val view = LocalView.current
+    val density = LocalDensity.current
+    val flipDown = remember(anchorTopInWindow) {
+        val visible = android.graphics.Rect()
+        view.getWindowVisibleDisplayFrame(visible)
+        val spaceAbovePx = anchorTopInWindow - visible.top
+        val needPx = with(density) { 320.dp.toPx() }
+        spaceAbovePx < needPx
+    }
+
     Popup(
         onDismissRequest = onDismiss,
-        alignment = Alignment.BottomStart,
-        // 向上留 4dp 呼吸间隙，避免弹窗底边紧贴按钮底边
-        offset = IntOffset(0, with(LocalDensity.current) { (-4).dp.roundToPx() }),
-        properties = PopupProperties(focusable = true)
+        alignment = if (flipDown) Alignment.TopStart else Alignment.BottomStart,
+        // 4dp 呼吸间隙：向上生长取负（底边上移），向下翻转取正（顶边下移）
+        offset = IntOffset(0, with(density) { (if (flipDown) 4 else -4).dp.roundToPx() }),
+        // focusable = false：不抢焦点（键盘不收起、输入框组合段不被打断）；
+        // 点外部仍走 onDismissRequest，返回键由 BackHandler 兜住。
+        properties = PopupProperties(focusable = false)
     ) {
+        // 返回键关菜单（非 focusable 弹窗不消费按键，须在组合层拦截）
+        BackHandler(onBack = onDismiss)
+
         // 入场动画：组合即播放（MutableTransitionState 初始 false → 目标 true）
         val entrance = remember { MutableTransitionState(false).apply { targetState = true } }
         AnimatedVisibility(
@@ -158,7 +228,7 @@ private fun SlashMenuPopup(
             enter = fadeIn(tween(150)) +
                 scaleIn(initialScale = 0.95f, animationSpec = tween(150)) +
                 slideInVertically(
-                    initialOffsetY = { -8 },
+                    initialOffsetY = { if (flipDown) 8 else -8 },
                     animationSpec = tween(150)
                 )
         ) {
@@ -171,7 +241,7 @@ private fun SlashMenuPopup(
                 Column(
                     modifier = Modifier
                         .padding(8.dp)
-                        // 限高：菜单向上生长，超出部分内部滚动 —— 弹窗永不顶出屏幕
+                        // 限高：菜单主体超出部分内部滚动 —— 弹窗永不顶出屏幕
                         .heightIn(max = 400.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
@@ -182,18 +252,19 @@ private fun SlashMenuPopup(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            "快捷指令",
+                            stringResource(R.string.chat_slash_menu_title),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f)
                         )
                         IconButton(
                             onClick = onRefresh,
-                            modifier = Modifier.size(28.dp)
+                            // UI-012：48dp 触区红线（原 28dp）
+                            modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
-                                contentDescription = "刷新菜单",
+                                contentDescription = stringResource(R.string.chat_slash_refresh),
                                 modifier = Modifier.size(18.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -204,6 +275,7 @@ private fun SlashMenuPopup(
                         DynamicCategoryItem(
                             category = category,
                             isExpanded = expandedCategory == category.id,
+                            isSelected = isSelected,
                             onToggle = {
                                 expandedCategory =
                                     if (expandedCategory == category.id) null else category.id
@@ -221,6 +293,7 @@ private fun SlashMenuPopup(
 private fun DynamicCategoryItem(
     category: SlashMenuCategory,
     isExpanded: Boolean,
+    isSelected: (SlashMenuItem) -> Boolean,
     onToggle: () -> Unit,
     onItemClick: (SlashMenuItem) -> Unit
 ) {
@@ -290,14 +363,18 @@ private fun DynamicCategoryItem(
             Column(modifier = Modifier.padding(start = 20.dp)) {
                 if (category.items.isEmpty()) {
                     Text(
-                        text = category.hint ?: "暂无可用项",
+                        text = category.hint ?: stringResource(R.string.chat_slash_empty),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = 22.dp, top = 4.dp, bottom = 4.dp)
                     )
                 } else {
                     category.items.forEach { item ->
-                        SlashItemRow(item = item, onClick = { onItemClick(item) })
+                        SlashItemRow(
+                            item = item,
+                            selected = isSelected(item),
+                            onClick = { onItemClick(item) }
+                        )
                     }
                 }
             }
@@ -308,12 +385,16 @@ private fun DynamicCategoryItem(
 @Composable
 private fun SlashItemRow(
     item: SlashMenuItem,
+    selected: Boolean,
     onClick: () -> Unit
 ) {
+    val selectedCd = stringResource(R.string.chat_slash_cd_selected)
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(6.dp)
+        shape = RoundedCornerShape(6.dp),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+        else Color.Transparent
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -342,30 +423,40 @@ private fun SlashItemRow(
                 }
             }
             StatusChip(status = item.status)
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = selectedCd,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .padding(start = 4.dp)
+                        .size(16.dp)
+                )
+            }
         }
     }
 }
 
 @Composable
 private fun StatusChip(status: SlashItemStatus) {
-    val (text, containerColor, contentColor) = when (status) {
+    val (textRes, containerColor, contentColor) = when (status) {
         SlashItemStatus.CONNECTED -> Triple(
-            "已连接",
+            R.string.chat_slash_status_connected,
             MaterialTheme.colorScheme.primaryContainer,
             MaterialTheme.colorScheme.onPrimaryContainer
         )
         SlashItemStatus.OFFLINE -> Triple(
-            "离线",
+            R.string.chat_slash_status_offline,
             MaterialTheme.colorScheme.surfaceVariant,
             MaterialTheme.colorScheme.onSurfaceVariant
         )
         SlashItemStatus.NOT_INSTALLED -> Triple(
-            "未安装",
+            R.string.chat_slash_status_not_installed,
             MaterialTheme.colorScheme.errorContainer,
             MaterialTheme.colorScheme.onErrorContainer
         )
         SlashItemStatus.EXTERNAL -> Triple(
-            "示例",
+            R.string.chat_slash_status_external,
             MaterialTheme.colorScheme.tertiaryContainer,
             MaterialTheme.colorScheme.onTertiaryContainer
         )
@@ -377,7 +468,7 @@ private fun StatusChip(status: SlashItemStatus) {
         modifier = Modifier.padding(start = 6.dp)
     ) {
         Text(
-            text = text,
+            text = stringResource(textRes),
             style = MaterialTheme.typography.labelSmall,
             color = contentColor,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)

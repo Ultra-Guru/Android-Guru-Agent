@@ -8,6 +8,7 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
@@ -45,6 +46,22 @@ class TerminalEventBusImpl(
     )
 
     private val sessions = ConcurrentHashMap<Long, SessionBus>()
+
+    /**
+     * 全局会话生命周期镜像流：SessionCreated / SessionClosed / StateChanged(SESSION)。
+     *
+     * 会话列表事件驱动的数据源 —— 订阅者（UI 的会话 tab 列表）不再需要 2s 轮询
+     * snapshot(SESSIONS) 对齐漂移（agent 关会话后 tab 残留到下个轮询窗）。
+     * 与 per-session [subscribe] 互补：那个按 sessionId 过滤 + 游标重放，本流是
+     * 跨会话的实时广播（无重放，丟帧无害 —— 消费者每次收到后全量拉 snapshot）。
+     * tryEmit + DROP_OLDEST：不阻塞 emitter（pump/close 链路），溢出时最旧事件
+     * 被挤掉，消费者以全量刷新自愈。
+     */
+    private val _lifecycleEvents = MutableSharedFlow<TerminalEvent>(
+        extraBufferCapacity = LIFECYCLE_BUFFER,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val lifecycleEvents: SharedFlow<TerminalEvent> = _lifecycleEvents.asSharedFlow()
 
     private fun busFor(sessionId: Long): SessionBus =
         sessions.computeIfAbsent(sessionId) {
@@ -116,6 +133,14 @@ class TerminalEventBusImpl(
         // in practice DROP_OLDEST on a large buffer is acceptable for Phase 1 and the
         // EventLog still retains the full history (subscribers re-sync via afterCursor).
         bus.flow.tryEmit(event)
+        // 会话生命周期事件同步镜像到全局流（UI 会话列表事件驱动；见 lifecycleEvents）。
+        // StateChanged 只镜像 SESSION 类 —— JOB 类高频且与列表无关。
+        if (event is TerminalEvent.SessionCreated ||
+            event is TerminalEvent.SessionClosed ||
+            (event is TerminalEvent.StateChanged && event.kind == StateKind.SESSION)
+        ) {
+            _lifecycleEvents.tryEmit(event)
+        }
     }
 
     override fun subscriberCount(sessionId: Long): Int =
@@ -133,5 +158,8 @@ class TerminalEventBusImpl(
 
         /** T81 (D-4)：订阅启动窗口的填补重放深度（与 subscribe 的 seen 去重配合）。 */
         private const val REPLAY_WINDOW = 64
+
+        /** 生命周期镜像流缓冲（会话创建/关闭/状态迁移低频，溢出 = 全量刷新自愈）。 */
+        private const val LIFECYCLE_BUFFER = 64
     }
 }

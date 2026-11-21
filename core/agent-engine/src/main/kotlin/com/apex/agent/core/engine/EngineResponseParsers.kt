@@ -8,18 +8,21 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Response parsing for the PLAN / SPEC modes of [ApexAgentEngine].
+ * Response parsing for the PLAN mode of [ApexAgentEngine].
  *
  * Extracted from [ApexAgentEngine] (single-responsibility split): turning an
  * LLM response (possibly fenced or prose-wrapped) into a structured
- * [ExecutionPlan] / [ExecutionSpec] — with conservative fallbacks — is a pure
- * function family, separate from engine loop mechanics.
+ * [ExecutionPlan] — with conservative fallbacks — is a pure function family,
+ * separate from engine loop mechanics.
  *
  * Parsing philosophy: never throw. A malformed response degrades to a
- * single-step fallback plan / goal-only fallback spec that still records the
- * raw response in its reasoning for observability.
+ * single-step fallback plan that still records the raw response in its
+ * reasoning for observability.
  */
 internal object EngineResponseParsers {
+
+    /** #568：国栏提取正则预编译 —— 每条 LLM 响应解析都走这里，避免函数体内重复编译。 */
+    private val FENCE_REGEX = Regex("```(?:json)?\\s*([\\s\\S]*?)```")
 
     // ═══════════════════════════════════════════════════════
     // Plan parsing
@@ -71,8 +74,7 @@ internal object EngineResponseParsers {
         // Try fenced ```json ... ``` first. 一段 LLM 响应里可能出现多个国栏代码块（如先一个 ```text 说明、再一个 ```json 真正计划），
         // 旧实现只取第一个，若第一个不是 JSON 就静默退化为单步 fallback 计划。
         // 这里改为遍历所有国栏块 + 裸响应，返回第一个能被 kotlinx.serialization 成功解析为 JSON 对象的候选。
-        val fenceRegex = Regex("```(?:json)?\\s*([\\s\\S]*?)```")
-        val candidates = fenceRegex.findAll(response).map { it.groupValues[1].trim() }.toList() +
+        val candidates = FENCE_REGEX.findAll(response).map { it.groupValues[1].trim() }.toList() +
             listOf(response.trim())
 
         for (candidate in candidates) {
@@ -100,62 +102,6 @@ internal object EngineResponseParsers {
         estimatedToolCalls = 1,
         riskLevel = RiskLevel.MEDIUM,
         reasoning = "Could not parse LLM's plan JSON; falling back to single-step execution. " +
-            "Raw LLM response kept for reference in the engine log.\n\n$response".take(500)
-    )
-
-    // ═══════════════════════════════════════════════════════
-    // Spec parsing
-    // ═══════════════════════════════════════════════════════
-
-    fun parseExecutionSpec(response: String, originalTask: String): ExecutionSpec {
-        val jsonStr = extractJsonFromResponse(response) ?: return fallbackSpec(response, originalTask)
-        return try {
-            val json = Json.parseToJsonElement(jsonStr).jsonObject
-
-            val goal = json["goal"]?.jsonPrimitive?.contentOrNull ?: originalTask
-            val reasoning = json["reasoning"]?.jsonPrimitive?.contentOrNull
-                ?: "Auto-generated spec (LLM did not provide reasoning)."
-            val estimatedToolCalls = json["estimated_tool_calls"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
-                ?: 1
-            val riskLevel = json["risk_level"]?.jsonPrimitive?.contentOrNull
-                ?.let { parseRiskLevel(it) } ?: RiskLevel.MEDIUM
-
-            fun parseList(key: String): List<String> = (json[key] as? JsonArray)
-                ?.mapNotNull { it.jsonPrimitive.contentOrNull?.trim()?.takeIf { s -> s.isNotBlank() } }
-                ?: emptyList()
-
-            val requirements = parseList("requirements")
-            val constraints = parseList("constraints")
-            val acceptanceCriteria = parseList("acceptance_criteria")
-            val deliverables = parseList("deliverables")
-
-            if (requirements.isEmpty() && acceptanceCriteria.isEmpty() && deliverables.isEmpty()) {
-                return fallbackSpec(response, originalTask)
-            }
-
-            ExecutionSpec(
-                goal = goal,
-                requirements = requirements,
-                constraints = constraints,
-                acceptanceCriteria = acceptanceCriteria,
-                deliverables = deliverables,
-                estimatedToolCalls = estimatedToolCalls,
-                riskLevel = riskLevel,
-                reasoning = reasoning
-            )
-        } catch (e: Exception) {
-            fallbackSpec(response, originalTask)
-        }
-    }
-
-    fun fallbackSpec(response: String, originalTask: String): ExecutionSpec = ExecutionSpec(
-        goal = originalTask,
-        requirements = listOf("完成：$originalTask"),
-        acceptanceCriteria = listOf("任务目标达成，结果可直接使用或验证。"),
-        deliverables = listOf(originalTask),
-        estimatedToolCalls = 1,
-        riskLevel = RiskLevel.MEDIUM,
-        reasoning = "Could not parse LLM's spec JSON; falling back to goal-only execution. " +
             "Raw LLM response kept for reference in the engine log.\n\n$response".take(500)
     )
 }

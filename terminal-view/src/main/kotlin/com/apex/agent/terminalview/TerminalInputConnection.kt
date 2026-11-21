@@ -156,14 +156,21 @@ class TerminalInputConnection(private val terminalView: TerminalView) :
         /**
          * View 的 `onCreateInputConnection` 调用：填 EditorInfo（inputType/ime 选项
          * 的集中决策 —— 见类 KDoc）。
+         *
+         * T92：**删除 IME_FLAG_FORCE_ASCII** —— 该 flag 语义是「请求 IME 切到
+         * ASCII/英文直通」，Gboard 中文/搜狗/百度等主流中文输入法会响应它直接
+         * **关掉组合通道**（打不出任何中文），与整套 sentComposing 差分管线
+         *（专为中文 IME 设计）自相矛盾。Termux 从不使用该 flag。
+         * 同时 IME_ACTION_NONE → IME_ACTION_GO：NONE 会让 Android TV/部分第三方
+         * 键盘的回车键失效（termux-app#221）；GO 走 performEditorAction →
+         * BaseInputConnection 默认发 KEYCODE_ENTER → sendKeyEvent 归一路径。
          */
         fun populateEditorInfo(outAttrs: EditorInfo) {
             outAttrs.inputType = InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN or
                 EditorInfo.IME_FLAG_NO_EXTRACT_UI or
-                EditorInfo.IME_FLAG_FORCE_ASCII or
-                EditorInfo.IME_ACTION_NONE
+                EditorInfo.IME_ACTION_GO
         }
     }
 }

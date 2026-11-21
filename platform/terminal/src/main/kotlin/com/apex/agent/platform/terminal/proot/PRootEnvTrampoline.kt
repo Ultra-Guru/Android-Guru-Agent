@@ -98,7 +98,12 @@ object PRootEnvTrampoline {
  * 本对象把「合法 argv」固化为可执行检查，供三处消费：
  *  1. golden 单测（[PRootCommandBuilderImpl] 全路径快照）
  *  2. proot 5.1 兼容回归（[LEGACY_INCOMPATIBLE_FLAGS] 永不为空命中）
- *  3. 诊断工具运行时自检（terminal.diagnostics 的 argv 审计）
+ *  3. 诊断工具运行时自检（TerminalDiagnostics 的 argv 审计）
+ *
+ * T91（D5）：argv 的合法形状由能力集决定（双探针实测 —— 见 [PRootArgvCapabilities]）：
+ *  - Termux 方言：`…options -- /usr/bin/env -i K=V… cmd args…`；
+ *  - 上游方言：`…options /usr/bin/env -i K=V… cmd args…`（无 `--` 终结符，
+ *    首个非选项 token 即命令起点）。两个检查均接受两种形状。
  */
 object PRootArgvContract {
 
@@ -120,24 +125,44 @@ object PRootArgvContract {
     )
 
     /**
-     * argv 中 proot 选项段（第一个 `--` 之前）是否含 5.1.107 不支持的 flag。
+     * argv 中 proot 选项段是否含 5.1.107 不支持的 flag。
      * 返回命中的 flag 列表（空 = 合规）。argv[0] 是 proot 本体，跳过。
+     *
+     * T91（D5）：选项段边界按方言自适应 —— 有 `--` 终结符时到 `--` 止；
+     * 无 `--`（上游方言）时到 env trampoline 首个 token（`/usr/bin/env`）止，
+     * 避免 guest 命令段被误扫描（如 bash 的 `-i` —— 虽不在黑名单，
+     * 但边界语义必须是「仅扫描 proot 自己看到的选项」）。
      */
     fun legacyIncompatibleFlags(argv: List<String>): List<String> {
         val dd = argv.indexOf("--")
-        val optionSegment = if (dd >= 0) argv.subList(0, dd) else argv
+        val optionSegment = if (dd >= 0) {
+            argv.subList(0, dd)
+        } else {
+            // 上游方言：env trampoline 开头 = 命令段起点（T88 后生产 argv 必然以
+            // trampoline 开头 —— trampoline 缺失时退化为全 argv 扫描，保持旧语义）。
+            val cmdStart = argv.indexOfFirst { it == PRootEnvTrampoline.ENV_EXECUTABLE }
+            if (cmdStart > 0) argv.subList(0, cmdStart) else argv
+        }
         return optionSegment.filter { it in LEGACY_INCOMPATIBLE_FLAGS }
     }
 
     /**
-     * guest 命令段（`--` 之后）应为一个 env trampoline：
-     * `[env, -i, K=V…, executable, args…]`。
-     * 返回 false = argv 形状违规（生产诊断用）。
+     * guest 命令段应为一个 env trampoline：`[env, -i, K=V…, executable, args…]`。
+     * T91（D5）：接受两种方言形状 —— `--` 后紧跟 trampoline（Termux），或无
+     * `--` 时选项段后直接是 trampoline（上游）。返回 false = argv 形状违规。
      */
     fun hasEnvTrampoline(argv: List<String>): Boolean {
         val dd = argv.indexOf("--")
-        if (dd < 0 || dd + 1 >= argv.size) return false
-        return argv[dd + 1] == PRootEnvTrampoline.ENV_EXECUTABLE &&
-            argv.getOrNull(dd + 2) == PRootEnvTrampoline.CLEAN_ENV_FLAG
+        val guestCmd = if (dd >= 0) {
+            argv.subList(dd + 1, argv.size)
+        } else {
+            // 上游方言：首个非选项 token 起 = 命令段。trampoline 必然以
+            // /usr/bin/env 开头 —— 直接定位它（找不到 = 无 trampoline）。
+            val envIdx = argv.indexOfFirst { it == PRootEnvTrampoline.ENV_EXECUTABLE }
+            if (envIdx <= 0) return false
+            argv.subList(envIdx, argv.size)
+        }
+        return guestCmd.getOrNull(0) == PRootEnvTrampoline.ENV_EXECUTABLE &&
+            guestCmd.getOrNull(1) == PRootEnvTrampoline.CLEAN_ENV_FLAG
     }
 }

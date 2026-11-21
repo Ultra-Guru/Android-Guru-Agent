@@ -11,6 +11,9 @@ import com.apex.agent.platform.terminal.runtime.SpawnSpec
 import com.apex.agent.platform.terminal.workspace.AbsolutePath
 import com.apex.agent.platform.terminal.workspace.GuestUserHome
 import com.apex.agent.platform.terminal.workspace.LinuxWorkspaceManager
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
+import kotlinx.coroutines.CancellationException
 import java.io.File
 
 /**
@@ -70,15 +73,15 @@ class LinuxPRootBackend(
      * termux-setup-storage 等价物）。null 或目录不可用 → 不 bind（诚实降级）。
      */
     private val sharedStorage: SharedStorageBridge? = null,
+    /** Repair a legacy CA bundle on explicit create; no side effects during availability. */
+    private val caRepair: (suspend (File) -> Unit)? = null,
     override val id: String = ID
 ) : ExecutionBackend {
 
     override val runtimeType: BackendRuntimeType = BackendRuntimeType.LINUX
 
-    // 注意：availability/prepare 不包 withContext(Dispatchers.IO) —— 内部全是瞬时操作
-    //（文件存在性/ELF 头读取/mkdirs；--version 探针在 provider 内同步执行）。
-    // 全局 IO 池在测试套件中会被历史泄漏的协程耗尽，若此处切换上下文会在 CI 全套件
-    // 下永久挂起（实测）。线程归属由 P73 接线时的调用方（TerminalRuntime，IO 协程）决定。
+    // availability 仅探二进制能力与 rootfs 状态，不执行 guest/修复 CA；
+    // prepare 的 CA 端口由生产 DI 显式切换到 IO，其余步骤沿用调用方调度。
     override suspend fun availability(): BackendAvailability {
         val binary = binaryProvider.locate().getOrNull()
             ?: return BackendAvailability.Failed("PRootError:BINARY_NOT_FOUND")
@@ -101,9 +104,11 @@ class LinuxPRootBackend(
         val binaryPath = binaryProvider.locate().getOrElse { e ->
             return Result.failure(e)
         }
-        binaryProvider.verify(binaryPath).getOrElse { e ->
+        // T91（D5）：verify 结果不再只作门禁 —— 能力集（双探针实测）参与 argv
+        // 决策（目标 proot 不认的选项自动省略，根除版本静默差异）。
+        val verifiedInfo = binaryProvider.verify(binaryPath).getOrElse { e ->
             return Result.failure(e)
-        } // verify 仅为校验门禁（存在性/ABI/可执行），结果信息在 availability() 中上报
+        }
 
         // 2. rootfs
         val rootfs: RootfsDescriptor = rootfsProvider.current()
@@ -114,6 +119,16 @@ class LinuxPRootBackend(
             ?: return Result.failure(
                 RuntimeException("TerminalError:RootfsNotReady — rootfs 无 location")
             )
+
+        // TerminalCreate can bypass ensureUbuntuSession; repair only after the
+        // rootfs is known, never from availability. Missing CA is best-effort.
+        try {
+            caRepair?.invoke(File(rootfsPath.value))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            runCatching { AppLogger.instance.warn(LogCategory.TERMINAL, ID, "CA repair failed: ${e.message}") }
+        }
 
         // 3. T75: 解析 workspace（懒创建；非法 id → WorkspaceError:InvalidId 失败）
         val workspaceId = request.workspaceId?.trim()?.takeIf { it.isNotEmpty() }
@@ -133,11 +148,16 @@ class LinuxPRootBackend(
         // 5. 构造 launch request（guest env 经 trampoline；T75: 用户 home → /root 持久化 bind）
         val guestEnv = buildGuestEnv(request.env)
         // T82：home bind + 系统级 bind（/proc /dev /sys，proot-distro 语义）+
-        // 共享存储 bind（授权可用时 → guest /sdcard）。
+        // 共享存储 bind（授权可用时 → guest /sdcard）+
+        // 真实系统根 bind（2026-10「整个系统」工作区 → guest /host；跟随
+        // STANDARD 档 —— NONE 档保持旧裸 -r 隔离语义，绝不满地开花）。
         val binds = buildList {
             add(PRootBind(AbsolutePath(userHomeDir.absolutePath), GuestUserHome.GUEST_PATH))
             addAll(systemBinds.toBinds())
             sharedStorage?.toBind()?.let { add(it) }
+            if (systemBinds == SystemBindProfile.STANDARD) {
+                add(HostRootBridge.toBind())
+            }
         }
         val launch = PRootLaunchRequest(
             rootfs = rootfs,
@@ -151,9 +171,13 @@ class LinuxPRootBackend(
             killOnExit = true
         )
 
-        // 6. argv（PRootCommandBuilder：request.binds + workspace bind）
+        // 6. argv（PRootCommandBuilder：request.binds + workspace bind；T91（D5）：
+        //    按双探针实测能力集自适应 —— 捆绑 Termux 5.1.107 发 --kill-on-exit/--，
+        //    上游 5.1.0 两者皆省，Debian 5.4 只发 --kill-on-exit）
         val workspaceHostDir = AbsolutePath(workspaceDir.absolutePath)
-        val command = commandBuilder.build(launch, binaryPath, rootfsPath, workspaceHostDir)
+        val command = commandBuilder.build(
+            launch, binaryPath, rootfsPath, workspaceHostDir, capabilities = verifiedInfo.capabilities
+        )
         val argv = listOf(command.executable.value) + command.arguments
 
         // 7. host env（G4：guest 变量绝不在其中）
@@ -195,18 +219,11 @@ class LinuxPRootBackend(
         environment.interactiveGuestEnv(requestEnv)
 
     /**
-     * request.cwd → guest cwd。"/" 或空 → /workspace。
-     * T73: "/sdcard" 是 TerminalRuntime 的 LOCAL 默认 cwd（Android host 路径）——
-     * 在 guest 内无意义，落 /workspace（与 "" 同语义）。显式 guest 绝对路径仍直通。
+     * request.cwd → guest cwd（T98 起委托 [GuestCwdMapper] 单一事实源 ——
+     * chroot 后端逐字节同映射；语义见其 KDoc，行为与 T73 内联版完全一致）。
      */
-    internal fun mapGuestCwd(cwd: String): String {
-        val trimmed = cwd.trim()
-        if (trimmed.isEmpty() || trimmed == "/") return "/workspace"
-        if (trimmed == com.apex.agent.platform.terminal.runtime.LocalShellBackend.LEGACY_DEFAULT_CWD) {
-            return "/workspace"
-        }
-        return if (trimmed.startsWith("/")) trimmed else "/workspace/$trimmed"
-    }
+    internal fun mapGuestCwd(cwd: String): String =
+        com.apex.agent.platform.terminal.workspace.GuestCwdMapper.map(cwd)
 
     companion object {
         const val ID = "linux-ubuntu"

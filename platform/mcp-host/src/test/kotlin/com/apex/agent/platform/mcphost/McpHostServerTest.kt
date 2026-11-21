@@ -14,7 +14,9 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -37,8 +39,8 @@ class McpHostServerTest {
 
     /** 简单加法工具（UTILITY 分类，默认白名单内）。 */
     private class AddTool : AgentTool {
-        override val id = "calculate"
-        override val name = "calculate"
+        override val id = "Calculate"
+        override val name = "Calculate"
         override val description = "Add two integers (a + b)"
         override val parametersSchema = """
             {"type":"object","properties":{"a":{"type":"integer"},"b":{"type":"integer"}},"required":["a","b"]}
@@ -59,8 +61,8 @@ class McpHostServerTest {
 
     /** 金库工具（SECURITY 分类）—— 绝不允许经 MCP Host 暴露。 */
     private class VaultTool : AgentTool {
-        override val id = "vault_save"
-        override val name = "vault_save"
+        override val id = "VaultSave"
+        override val name = "VaultSave"
         override val description = "vault save (must never be exposed)"
         override val parametersSchema = """{"type":"object"}"""
         override suspend fun execute(arguments: String): String = "SECRET-LEAKED"
@@ -83,9 +85,10 @@ class McpHostServerTest {
         path: String,
         body: String? = null,
         token: String? = TOKEN,
-        session: String? = null
+        session: String? = null,
+        host: String = "127.0.0.1"
     ): Resp {
-        val conn = URL("http://127.0.0.1:$port$path").openConnection() as HttpURLConnection
+        val conn = URL("http://$host:$port$path").openConnection() as HttpURLConnection
         conn.requestMethod = method
         conn.connectTimeout = 5000
         conn.readTimeout = 10_000
@@ -157,6 +160,118 @@ class McpHostServerTest {
 
     // ═══ initialize / 会话 ═══
 
+    // ═══ S-04：分发层常时鉴权（GET / DELETE / 未知方法）═══
+
+    @Test
+    fun `DELETE without token yields 401 and keeps session alive`() {
+        // S-04 核心回归：旧实现 DELETE 不鉴权，未授权方可直接删除任意会话
+        val sessionId = initialize()
+        val resp = http("DELETE", "/mcp", session = sessionId, token = null)
+        assertEquals(401, resp.status)
+        // 会话不受影响：带 token 仍可正常请求
+        val alive = http(
+            "POST", "/mcp",
+            body = """{"jsonrpc":"2.0","id":61,"method":"tools/list"}""",
+            session = sessionId
+        )
+        assertEquals(200, alive.status)
+    }
+
+    @Test
+    fun `GET without token yields 401`() {
+        val resp = http("GET", "/mcp", token = null)
+        assertEquals(401, resp.status)
+    }
+
+    @Test
+    fun `unknown method without token yields 401`() {
+        val resp = http("PUT", "/mcp", token = null)
+        assertEquals(401, resp.status)
+    }
+
+    // ═══ S-04：默认绑定 loopback；allowLan 才监听全部网卡 ═══
+
+    /** 站点本地 IPv4（CI runner / 本机 eth0；取不到返回 null 则跳过断言）。 */
+    private fun siteLocalAddress(): String? = runCatching {
+        java.net.NetworkInterface.getNetworkInterfaces().asSequence()
+            .filter { it.isUp && !it.isLoopback }
+            .flatMap { it.inetAddresses.asSequence() }
+            .filterIsInstance<java.net.Inet4Address>()
+            .firstOrNull { it.isSiteLocalAddress }
+            ?.hostAddress
+    }.getOrNull()
+
+    @Test
+    fun `default binding is loopback only`() {
+        val external = siteLocalAddress() ?: return // 无非回环网卡的环境无法验证
+        val resp = runCatching { http("POST", "/mcp", body = initBody(), host = external) }
+        assertTrue("非回环地址连接必须被拒绝（默认只绑 127.0.0.1）", resp.isFailure)
+    }
+
+    @Test
+    fun `allowLan true binds all interfaces`() {
+        val external = siteLocalAddress() ?: return // 无非回环网卡的环境无法验证
+        val lanPort = freePort()
+        val lanStore = InMemoryMcpHostConfigStore(
+            McpHostConfig(enabled = true, port = lanPort, token = TOKEN, allowLan = true)
+        )
+        val emptyRegistry = DefaultToolRegistry()
+        val lanServer = McpHostServer(
+            configProvider = lanStore::load,
+            bridge = McpHostBridge(emptyRegistry, DefaultToolExecutor(emptyRegistry), lanStore::load),
+            scope = scope
+        )
+        lanServer.start()
+        val savedPort = port
+        try {
+            port = lanPort
+            val resp = http("POST", "/mcp", body = initBody(), host = external)
+            assertEquals(200, resp.status)
+        } finally {
+            port = savedPort
+            lanServer.stop()
+        }
+    }
+
+    // ═══ 地址行单一事实源：bindHost 状态暴露（UI 不反推 allowLan）═══
+    // 上方两个测试验证的是网络可达性；以下验证的是对外暴露的状态值 ——
+    // 两者互补，别合并。
+
+    @Test
+    fun `bindHost is 127_0_0_1 by default`() {
+        assertTrue(server.isRunning.value)
+        assertEquals("127.0.0.1", server.bindHost.value)
+    }
+
+    @Test
+    fun `bindHost is 0_0_0_0 when allowLan enabled`() {
+        val lanPort = freePort()
+        val lanStore = InMemoryMcpHostConfigStore(
+            McpHostConfig(enabled = true, port = lanPort, token = TOKEN, allowLan = true)
+        )
+        val emptyRegistry = DefaultToolRegistry()
+        val lanServer = McpHostServer(
+            configProvider = lanStore::load,
+            bridge = McpHostBridge(emptyRegistry, DefaultToolExecutor(emptyRegistry), lanStore::load),
+            scope = scope
+        )
+        lanServer.start()
+        try {
+            assertTrue(lanServer.isRunning.value)
+            assertEquals("0.0.0.0", lanServer.bindHost.value)
+        } finally {
+            lanServer.stop()
+        }
+    }
+
+    @Test
+    fun `bindHost clears on stop`() {
+        assertEquals("127.0.0.1", server.bindHost.value)
+        server.stop()
+        assertFalse(server.isRunning.value)
+        assertNull(server.bindHost.value)
+    }
+
     @Test
     fun `initialize returns session id and server info`() {
         val resp = http("POST", "/mcp", body = initBody())
@@ -216,10 +331,10 @@ class McpHostServerTest {
         val result = Json.parseToJsonElement(resp.body).jsonObject["result"]!!.jsonObject
         val tools = result["tools"]!!.jsonArray
         val names = tools.map { it.jsonObject["name"]!!.jsonPrimitive.content }
-        assertTrue(names.contains("calculate"))
-        assertTrue(!names.contains("vault_save"))
+        assertTrue(names.contains("Calculate"))
+        assertTrue(!names.contains("VaultSave"))
         // inputSchema 为对象且从 parametersSchema 解析
-        val calc = tools.first { it.jsonObject["name"]!!.jsonPrimitive.content == "calculate" }.jsonObject
+        val calc = tools.first { it.jsonObject["name"]!!.jsonPrimitive.content == "Calculate" }.jsonObject
         assertTrue(calc["inputSchema"]!!.jsonObject.containsKey("properties"))
     }
 
@@ -229,7 +344,7 @@ class McpHostServerTest {
         val resp = http(
             "POST", "/mcp",
             body = """{"jsonrpc":"2.0","id":3,"method":"tools/call",
-                      "params":{"name":"calculate","arguments":{"a":19,"b":23}}}""",
+                      "params":{"name":"Calculate","arguments":{"a":19,"b":23}}}""",
             session = sessionId
         )
         assertEquals(200, resp.status)
@@ -255,7 +370,7 @@ class McpHostServerTest {
 
     @Test
     fun `tools call vault tool rejected even if forced into whitelist`() {
-        // 即使客户端绕过列表直接调 vault_save —— Bridge 硬拦截
+        // 即使客户端绕过列表直接调 VaultSave —— Bridge 硬拦截
         store.save(
             McpHostConfig(
                 enabled = true, port = port, token = TOKEN,
@@ -267,7 +382,7 @@ class McpHostServerTest {
         val resp = http(
             "POST", "/mcp",
             body = """{"jsonrpc":"2.0","id":5,"method":"tools/call",
-                      "params":{"name":"vault_save","arguments":{"label":"x"}}}""",
+                      "params":{"name":"VaultSave","arguments":{"label":"x"}}}""",
             session = sessionId
         )
         assertEquals(200, resp.status)

@@ -15,10 +15,10 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 
 /**
- * `text_diff` — line-level diff between two texts (Myers O((N+M)D)).
+ * `TextDiff` — line-level diff between two texts (Myers O((N+M)D)).
  *
  * Why: the agent's core verification loop is "edit → read back → confirm".
- * For single files `edit_file` returns the changed hunk, but comparing two
+ * For single files `Edit` returns the changed hunk, but comparing two
  * texts (draft vs. revised, file vs. clipboard, before/after a transform)
  * required either `shell diff` (command-gate round trip, not available in
  * sandboxed contexts) or dumping both texts and asking the model to eyeball
@@ -36,7 +36,7 @@ import kotlinx.serialization.json.putJsonArray
  * only produces noise for the model).
  */
 class TextDiffTool : BaseTool(
-    id = "text_diff",
+    id = "TextDiff",
     name = "Text Diff",
     description = """
         Line-level diff of two texts (Myers algorithm). Formats: unified (default), stat, json.

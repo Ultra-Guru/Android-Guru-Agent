@@ -1,0 +1,11 @@
+{
+  "id": "shrink-stack",
+  "name": "收缩塔",
+  "nameEn": "Shrink Stack",
+  "tagline": "板材宽高全是实测排版尺寸：收缩宽度叠塔，越叠越窄越险",
+  "version": 1,
+  "engine": "pretext@0.0.9",
+  "apis": ["prepare", "prepareWithSegments", "measureLineStats", "layoutWithLines"],
+  "controls": "点按落板 / 拖动对位",
+  "scoreKey": "aga.pg.shrink-stack.hi"
+}

@@ -8,11 +8,25 @@
     <string name="mcphost_status_running">Running · %1$d session(s)</string>
     <string name="mcphost_status_stopped">Stopped</string>
     <string name="mcphost_error_prefix">Error: %1$s</string>
+    <!-- Bind address line: single source of truth from ServerSocket bind params -->
+    <string name="mcphost_bind_running">Running · listening on %1$s</string>
+    <string name="mcphost_bind_pending">Preparing %1$s (not listening yet)</string>
+    <string name="mcphost_bind_stopped">Not listening</string>
 
     <!-- ═══ Port / rate limit fields ═══ -->
     <string name="mcphost_port_label">Port</string>
     <string name="mcphost_rate_label">Rate limit (req/min)</string>
     <string name="mcphost_field_range">Enter %1$d–%2$d</string>
+
+    <!-- ═══ S-04: binding & exposure switches ═══ -->
+    <string name="mcphost_lan_label">Allow LAN access (bind all interfaces)</string>
+    <string name="mcphost_lan_warning">⚠️ Traffic is plain HTTP — anyone on the same network can intercept it. Default binding is loopback-only (127.0.0.1); PC clients need this switch on a trusted network (an SSH tunnel is safer).</string>
+    <string name="mcphost_write_label">Expose write/exec tools</string>
+    <string name="mcphost_write_hint">Off by default: file writes, git commits and other side-effect tools are not exposed to external AI; read-only tools are unaffected. High-risk tools (delete / uninstall / force-stop) are never exposed.</string>
+    <string name="mcphost_enable_confirm_title">Enable MCP Host?</string>
+    <string name="mcphost_enable_confirm_text">Starts a local HTTP server on port %1$d. Every request must carry the bearer token. Default binding is loopback-only; only read-only tools are exposed by default (write tools need their own switch, high-risk tools are never exposed).</string>
+    <string name="mcphost_enable_confirm_ok">Enable</string>
+    <string name="mcphost_enable_confirm_cancel">Not now</string>
 
     <!-- ═══ Token row ═══ -->
     <string name="mcphost_token_label">Access token (bearer)</string>
@@ -28,7 +42,7 @@
     <!-- ═══ Category whitelist ═══ -->
     <string name="mcphost_categories_title">Tool category whitelist</string>
     <string name="mcphost_categories_hint">Only tools in allowed categories are exposed to external AI. Default set is read-friendly; high-risk categories are off.</string>
-    <string name="mcphost_categories_risky">⚠ High-risk categories enabled (SHELL / TERMINAL / APP / UI / GITHUB / SECURITY): external AI can act directly on your phone. Enable with care.</string>
+    <string name="mcphost_categories_risky">Dangerous categories enabled (SHELL / TERMINAL / APP / UI / GITHUB / SECURITY): an external agent can act directly on your phone. Enable with care.</string>
 
     <!-- ═══ Hard blacklist ═══ -->
     <string name="mcphost_blacklist_title">Blocked tools (read-only)</string>
@@ -41,7 +55,8 @@
 
     <!-- ═══ How to connect ═══ -->
     <string name="mcphost_connect_title">How to connect (PC side)</string>
-    <string name="mcphost_connect_hint">Add this server in Cline / Claude Desktop (mcp-remote) with the JSON below. Phone and PC must be on the same LAN; keep this app alive while connected.</string>
+    <string name="mcphost_connect_hint">Add this server in Cline / Claude Desktop (mcp-remote) with the JSON below. The URL host follows the listening address shown above (loopback by default — see the red adb reverse hint); keep this app alive while connected.</string>
+    <string name="mcphost_connect_loopback_hint">Loopback-only mode: the 127.0.0.1 in the JSON is the PC-side address reached through adb reverse / an SSH tunnel — the phone itself is not directly reachable. Run adb reverse tcp:%1$d tcp:%1$d on the PC first, then use the JSON as-is.</string>
     <string name="mcphost_connect_ip_placeholder">phone-ip</string>
     <string name="mcphost_connect_json">{
   \"mcpServers\": {

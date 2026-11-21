@@ -28,9 +28,9 @@ import kotlinx.serialization.json.putJsonObject
  *
  * 工具（命名对齐官方 server-filesystem 的常用子集，便于模型迁移习惯）：
  * - `list_directory` → 列目录条目（名称 + 文件/目录 + 大小，目录在前）
- * - `read_file`      → 读文本文件（默认 800 行 + 总字符双上限，防大文件
+ * - `Read`      → 读文本文件（默认 800 行 + 总字符双上限，防大文件
  *   打爆上下文；前 8KB 含 NUL 字节判定为二进制直接拒绝）
- * - `write_file`     → 写文本文件（tmp+rename 原子写，父目录自动创建）
+ * - `Write`     → 写文本文件（tmp+rename 原子写，父目录自动创建）
  * - `get_file_info`  → 元信息（大小 / 最后修改时间 / 读写执行权限）
  *
  * 作用域 = **当前激活工作区根**：每次调用经 [roots] 现取（[CodeWorkspaceRoots]
@@ -103,8 +103,8 @@ class BuiltinFsMcpTransport(
         return try {
             when (name) {
                 "list_directory" -> textResult(callListDirectory(args))
-                "read_file" -> textResult(callReadFile(args))
-                "write_file" -> textResult(callWriteFile(args))
+                "Read" -> textResult(callReadFile(args))
+                "Write" -> textResult(callWriteFile(args))
                 "get_file_info" -> textResult(callGetFileInfo(args))
                 else -> textResult(
                     "未知工具: $name（可用: ${TOOL_NAMES.joinToString(", ")}）",
@@ -121,7 +121,7 @@ class BuiltinFsMcpTransport(
         }
     }
 
-    /** MCP 标准 text 结果（isError 会被 McpClient → mcp_call 透传为工具错误）。 */
+    /** MCP 标准 text 结果（isError 会被 McpClient → McpCall 透传为工具错误）。 */
     private fun textResult(text: String, isError: Boolean = false): JsonObject = buildJsonObject {
         putJsonArray("content") {
             add(buildJsonObject {
@@ -139,7 +139,7 @@ class BuiltinFsMcpTransport(
         val path = args.stringArg("path") ?: "."
         val dir = resolveInRoot(root, path) ?: throw FsToolException(illegalPathMessage(path))
         if (!dir.exists()) throw FsToolException("目录不存在: $path")
-        if (!dir.isDirectory) throw FsToolException("不是目录（read_file 请传文件路径）: $path")
+        if (!dir.isDirectory) throw FsToolException("不是目录（Read 请传文件路径）: $path")
 
         val entries = dir.listFiles()
             ?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
@@ -180,7 +180,7 @@ class BuiltinFsMcpTransport(
                 filled += read
             }
             if (probe.copyOf(filled).contains(0.toByte())) {
-                throw FsToolException("二进制文件，不支持 read_file 读取: $path")
+                throw FsToolException("二进制文件，不支持 Read 读取: $path")
             }
         }
 
@@ -300,7 +300,7 @@ class BuiltinFsMcpTransport(
 
     // ── 小工具 ─────────────────────────────────────────────────────
 
-    /** 提取非空字符串参数（空白视为缺失；write_file 的 content 单独处理）。 */
+    /** 提取非空字符串参数（空白视为缺失；Write 的 content 单独处理）。 */
     private fun JsonObject.stringArg(key: String): String? =
         this[key]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
 
@@ -324,7 +324,7 @@ class BuiltinFsMcpTransport(
         const val PROTOCOL_VERSION = "2024-11-05"
         const val METHOD_NOT_FOUND = -32601
 
-        /** read_file 默认行数上限（任务书指定：防大文件打爆上下文）。 */
+        /** Read 默认行数上限（任务书指定：防大文件打爆上下文）。 */
         const val DEFAULT_MAX_LINES = 800
 
         /** max_lines 参数天花板：即便模型显式请求更多也封顶。 */
@@ -345,7 +345,7 @@ class BuiltinFsMcpTransport(
         fun illegalPathMessage(path: String) =
             "非法路径: $path（只允许工作区内相对路径；绝对路径与 .. 越界均被拒绝）"
 
-        val TOOL_NAMES = listOf("list_directory", "read_file", "write_file", "get_file_info")
+        val TOOL_NAMES = listOf("list_directory", "Read", "Write", "get_file_info")
 
         /** tools/list 的 tools 数组（含 JSON Schema inputSchema）。 */
         val TOOLS: JsonArray by lazy { buildTools() }
@@ -371,7 +371,7 @@ class BuiltinFsMcpTransport(
                 }, emptyList()))
             })
             add(buildJsonObject {
-                put("name", "read_file")
+                put("name", "Read")
                 put("description", "读取编码工作区中的文本文件（默认最多 800 行，防大文件撑爆上下文；二进制文件会被拒绝）")
                 put("inputSchema", schema(buildJsonObject {
                     put("path", prop("string", "相对工作区根的文件路径"))
@@ -379,7 +379,7 @@ class BuiltinFsMcpTransport(
                 }, listOf("path")))
             })
             add(buildJsonObject {
-                put("name", "write_file")
+                put("name", "Write")
                 put("description", "在编码工作区中创建或覆盖文本文件（原子写，父目录自动创建；content 为文件完整新内容）")
                 put("inputSchema", schema(buildJsonObject {
                     put("path", prop("string", "相对工作区根的文件路径"))

@@ -1,8 +1,13 @@
 package com.apex.agent.github.tools
 
 import com.apex.agent.core.tools.AgentTool
+import com.apex.agent.core.tools.ToolAnnotations
+import com.apex.agent.core.tools.ToolCategory
+import com.apex.agent.core.tools.ToolMetadata
+import com.apex.agent.core.tools.ToolRisk
 import com.apex.agent.github.GithubApiException
 import com.apex.agent.github.GithubApiService
+import com.apex.agent.github.GithubWriteGuard
 import kotlinx.serialization.json.*
 
 // ═══ P0 修复（工具大面积失败）═══════════════════════════════════════════
@@ -13,7 +18,7 @@ import kotlinx.serialization.json.*
 //    自己发错了什么、下一轮自纠）；字符串字段用 contentOrNull 容忍非字符串值。
 // 2. GithubApiException 不再裸抛：映射为带状态码 + 修复指引的 Error 文本
 //    （如 401 → 检查 Token；422 → code search 需要 repo/user/org 限定符）。
-// 3. github_search_code：GitHub legacy /search/code API **强制**要求 query
+// 3. GithubSearchCode：GitHub legacy /search/code API **强制**要求 query
 //    至少含一个 repo:/user:/org: 限定符，纯关键词搜索必 422。旧实现 repo
 //    是可选参数且描述只写"在 GitHub 中搜索代码"，模型几乎必然只传关键词
 //    → 必败。现在描述明确约束 + 缺限定符时直接返回可自修复的 Error（省一次
@@ -24,8 +29,9 @@ import kotlinx.serialization.json.*
 //    短句（"获取当前已连接 GitHub 用户的信息"）在 100+ 工具中辨识度极低。
 //    现首行为英文（≤160 字符，一句话功能 + 使用时机），与 github_* 语义对齐。
 // 5. code=null（未连接 GitHub）/401/403 的错误文案升级为可行动引导：告诉
-//    模型应指引到 设置 → 连接器 → GitHub 配置 Token，连接后先调
-//    github_get_user 验证——旧版只说"请先配置 Token"，模型无从引导。
+//    模型应指引到 Coding 屏 GitHub 图标 / 设置 → GitHub 分区连接 Token，
+//    连接后先调 GithubGetUser 验证——旧版只说"请先配置 Token"，且指向
+//    不存在的 设置 → 连接器 路径（v3 S3 / G6 一并对齐）。
 
 /** 宽容解析工具参数：失败时返回 null（调用方转成带指引的 Error 文本）。 */
 private fun parseArgs(arguments: String): JsonObject? = try {
@@ -48,14 +54,16 @@ private fun githubError(e: GithubApiException): String = buildString {
     append("Error: GitHub API ${e.code ?: "network"}: ${e.message}")
     when (e.code) {
         // code=null = authHeader() 抛出的"未连接"（Token 未配置）——最常见失败。
+        // v3 S3（G6）：指引与真实入口对齐——Coding 屏输入栏 GitHub 图标 /
+        // 设置 → GitHub 分区（旧文案指向不存在的 设置 → 连接器 路径）。
         null -> append(
-            ". GitHub is NOT connected. Tell the user: 打开 设置 → 连接器 → GitHub " +
-                "配置 Personal Access Token（Settings → Connectors → GitHub）。" +
-                "连接后先调用 github_get_user 验证再继续本任务。"
+            ". GitHub is NOT connected. Tell the user: 点击 Coding 屏输入栏的 " +
+                "GitHub 图标录入 Personal Access Token（或在 设置 → GitHub 分区连接），" +
+                "连接后先调用 GithubGetUser 验证再继续本任务。"
         )
         401 -> append(
             ". Token invalid or expired — ask the user to re-connect GitHub " +
-                "(设置 → 连接器 → GitHub), then verify with github_get_user."
+                "(Coding 屏 GitHub 图标 / 设置 → GitHub), then verify with GithubGetUser."
         )
         403 -> append(". Rate limited or forbidden — slow down; if it persists the token may lack scope.")
         404 -> append(". Check owner/repo spelling and token access to private repos.")
@@ -66,7 +74,7 @@ private fun githubError(e: GithubApiException): String = buildString {
 }
 
 class GithubGetUserTool(private val api: GithubApiService) : AgentTool {
-    override val id = "github_get_user"
+    override val id = "GithubGetUser"
     override val name = "GitHub User Info"
     override val description = "Get the authenticated GitHub user profile. Call this FIRST to verify the GitHub connection works. 先验证 GitHub 连接。"
     override val parametersSchema = """{"type":"object","properties":{},"required":[]}"""
@@ -81,7 +89,7 @@ class GithubGetUserTool(private val api: GithubApiService) : AgentTool {
 }
 
 class GithubListReposTool(private val api: GithubApiService) : AgentTool {
-    override val id = "github_list_repos"
+    override val id = "GithubListRepos"
     override val name = "List GitHub Repos"
     override val description = "List GitHub repositories of a user (default: the authenticated user). Returns full_name, language, stars. 列出 GitHub 仓库。"
     override val parametersSchema = """{"type":"object","properties":{"username":{"type":"string"},"limit":{"type":"integer"}},"required":[]}"""
@@ -107,7 +115,7 @@ class GithubListReposTool(private val api: GithubApiService) : AgentTool {
 }
 
 class GithubReadFileTool(private val api: GithubApiService) : AgentTool {
-    override val id = "github_read_file"
+    override val id = "GithubReadFile"
     override val name = "Read GitHub File"
     override val description = "Read a file from a GitHub repo (owner/repo/path). Truncated to 3000 chars. Use branch for non-default branch. 读取远程仓库文件。"
     override val parametersSchema = """{"type":"object","properties":{"owner":{"type":"string"},"repo":{"type":"string"},"path":{"type":"string"},"branch":{"type":"string"}},"required":["owner","repo","path"]}"""
@@ -132,10 +140,25 @@ class GithubReadFileTool(private val api: GithubApiService) : AgentTool {
 }
 
 class GithubWriteFileTool(private val api: GithubApiService) : AgentTool {
-    override val id = "github_write_file"
+    override val id = "GithubWriteFile"
     override val name = "Write GitHub File"
-    override val description = "Create or update a file in a GitHub repo with an automatic commit. ⚠️HIGH-RISK: real commit to the remote branch. 写入并 commit。"
-    override val parametersSchema = """{"type":"object","properties":{"owner":{"type":"string"},"repo":{"type":"string"},"path":{"type":"string"},"content":{"type":"string"},"message":{"type":"string"},"branch":{"type":"string"}},"required":["owner","repo","path","content","message"]}"""
+    override val description = "Create or update a file in a GitHub repo with an automatic commit. ⚠️HIGH-RISK: real commit to the remote branch; PRIVATE repos additionally need confirm_private_write=true after asking the user. 写入并 commit；私有仓库需用户确认后重试。"
+    override val parametersSchema = """{"type":"object","properties":{"owner":{"type":"string"},"repo":{"type":"string"},"path":{"type":"string"},"content":{"type":"string"},"message":{"type":"string"},"branch":{"type":"string"},"confirm_private_write":{"type":"boolean","description":"Set to true ONLY after the user explicitly approved writing to this PRIVATE repo"}},"required":["owner","repo","path","content","message"]}"""
+    // Git 审计 P1-12：显式元数据（不再依赖 id 推断）——真实远端提交 =
+    // HIGH + 外部世界 + 非幂等 + 敏感动作（BYPASS 档也保持逐次确认）。
+    override val metadata: ToolMetadata = ToolMetadata.meta(id) {
+        category(ToolCategory.GITHUB)
+        risk(ToolRisk.HIGH)
+        annotations(
+            ToolAnnotations(
+                readOnlyHint = false,
+                destructiveHint = true,
+                idempotentHint = false,
+                openWorldHint = true,
+                sensitiveAction = true,
+            )
+        )
+    }
     override suspend fun execute(arguments: String): String {
         val json = parseArgs(arguments) ?: return argsParseError(arguments)
         val owner = json.stringOf("owner") ?: return "Error: 需要 owner"
@@ -148,9 +171,13 @@ class GithubWriteFileTool(private val api: GithubApiService) : AgentTool {
         if (owner.isBlank()) return "Error: owner 不能为空"
         if (repo.isBlank()) return "Error: repo 不能为空"
         if (path.isBlank()) return "Error: path 不能为空"
-        // TODO（private-fork 写保护）：若启用相关 config flag，应在此处调用
-        // api.listBranches 或 getFileContent 探测 repo.private=true，并要求用户二次确认。
-        // 当前没有该 config flag，先保留默认放行行为。
+        // #273/#274 + Git 审计 P1-13：私有仓写保护统一走 GithubWriteGuard
+        // （REST 与内置 MCP 共用同一守卫——旧版只覆盖本工具，MCP 通路可绕过）。
+        when (val verdict = GithubWriteGuard.ensureWritable(api, owner, repo, "文件 $path（commit: $message）", GithubWriteGuard.readConfirmFlag(json))) {
+            is GithubWriteGuard.Verdict.Blocked -> return "Error: ${verdict.message}"
+            is GithubWriteGuard.Verdict.Failed -> return "Error: ${verdict.message}"
+            GithubWriteGuard.Verdict.Allowed -> {}
+        }
         var existingSha: String? = null
         try {
             existingSha = api.getFileContent(owner, repo, path, branch).sha
@@ -177,10 +204,25 @@ class GithubWriteFileTool(private val api: GithubApiService) : AgentTool {
 }
 
 class GithubCreateIssueTool(private val api: GithubApiService) : AgentTool {
-    override val id = "github_create_issue"
+    override val id = "GithubCreateIssue"
     override val name = "Create GitHub Issue"
     override val description = "Create an issue in a GitHub repo (title/body/labels). ⚠️HIGH-RISK: creates a real issue. 创建 Issue。"
     override val parametersSchema = """{"type":"object","properties":{"owner":{"type":"string"},"repo":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"},"labels":{"type":"array","items":{"type":"string"}}},"required":["owner","repo","title"]}"""
+    // Git 审计 P1-12：显式元数据——对外可见的真实创建动作 = HIGH + 外部
+    // 世界 + 非幂等 + 敏感动作（BYPASS 档也保持逐次确认，P1-14 热修深度）。
+    override val metadata: ToolMetadata = ToolMetadata.meta(id) {
+        category(ToolCategory.GITHUB)
+        risk(ToolRisk.HIGH)
+        annotations(
+            ToolAnnotations(
+                readOnlyHint = false,
+                destructiveHint = true,
+                idempotentHint = false,
+                openWorldHint = true,
+                sensitiveAction = true,
+            )
+        )
+    }
     override suspend fun execute(arguments: String): String {
         val json = parseArgs(arguments) ?: return argsParseError(arguments)
         val owner = json.stringOf("owner") ?: return "Error: 需要 owner"
@@ -199,7 +241,7 @@ class GithubCreateIssueTool(private val api: GithubApiService) : AgentTool {
 }
 
 class GithubListIssuesTool(private val api: GithubApiService) : AgentTool {
-    override val id = "github_list_issues"
+    override val id = "GithubListIssues"
     override val name = "List GitHub Issues"
     override val description = "List issues of a GitHub repo (state: open/closed/all). 列出仓库 Issues。"
     override val parametersSchema = """{"type":"object","properties":{"owner":{"type":"string"},"repo":{"type":"string"},"state":{"type":"string","enum":["open","closed","all"]}},"required":["owner","repo"]}"""
@@ -225,7 +267,7 @@ class GithubListIssuesTool(private val api: GithubApiService) : AgentTool {
 }
 
 class GithubSearchCodeTool(private val api: GithubApiService) : AgentTool {
-    override val id = "github_search_code"
+    override val id = "GithubSearchCode"
     override val name = "Search GitHub Code"
     override val description = "Search code INSIDE GitHub repos. Requires repo/org/user scope (keyword-only search is rejected by the API). 在仓库内搜索代码。"
     override val parametersSchema = """
@@ -274,14 +316,14 @@ class GithubSearchCodeTool(private val api: GithubApiService) : AgentTool {
 }
 
 // ═══ 新增工具（描述双语化配套）══════════════════════════════════════════
-// github_list_branches：写入非默认分支前探查（api.listBranches 此前无工具入口）；
-// github_search_repos：按关键词找仓库（search_code 只能搜代码内文本，找仓库
+// GithubListBranches：写入非默认分支前探查（api.listBranches 此前无工具入口）；
+// GithubSearchRepos：按关键词找仓库（search_code 只能搜代码内文本，找仓库
 // 需 /search/repositories）——模型找仓库的常规入口。
 
 class GithubListBranchesTool(private val api: GithubApiService) : AgentTool {
-    override val id = "github_list_branches"
+    override val id = "GithubListBranches"
     override val name = "List GitHub Branches"
-    override val description = "List branches of a GitHub repo with head commit sha. Use before github_write_file targeting a non-default branch. 列出分支。"
+    override val description = "List branches of a GitHub repo with head commit sha. Use before GithubWriteFile targeting a non-default branch. 列出分支。"
     override val parametersSchema = """{"type":"object","properties":{"owner":{"type":"string"},"repo":{"type":"string"}},"required":["owner","repo"]}"""
     override suspend fun execute(arguments: String): String {
         val json = parseArgs(arguments) ?: return argsParseError(arguments)
@@ -305,7 +347,7 @@ class GithubListBranchesTool(private val api: GithubApiService) : AgentTool {
 }
 
 class GithubSearchReposTool(private val api: GithubApiService) : AgentTool {
-    override val id = "github_search_repos"
+    override val id = "GithubSearchRepos"
     override val name = "Search GitHub Repositories"
     override val description = "Search GitHub repositories by keyword (sorted by stars). Returns full_name, description, stars, language. Use to find repos before reading files. 按关键词找仓库。"
     override val parametersSchema = """{"type":"object","properties":{"query":{"type":"string","description":"Search keywords, e.g. 'kotlin agent'"},"limit":{"type":"integer","description":"Max results (default 10)"}},"required":["query"]}"""
@@ -324,6 +366,48 @@ class GithubSearchReposTool(private val api: GithubApiService) : AgentTool {
                     r.description?.let { appendLine("   ${it.take(60)}") }
                 }
             }
+        } catch (e: GithubApiException) {
+            githubError(e)
+        }
+    }
+}
+
+class GithubCreatePullRequestTool(private val api: GithubApiService) : AgentTool {
+    override val id = "GithubCreatePullRequest"
+    override val name = "Create GitHub Pull Request"
+    override val description = "Create a pull request on GitHub (owner/repo, head → base). " +
+        "⚠️HIGH-RISK: real PR on the remote repo — tell the user BEFORE creating unless they already asked for it. " +
+        "head is the source branch (use \"user:branch\" for cross-repo fork PRs); base is the target branch. " +
+        "Typical flow with git tools: CodeGitRun push branch → GithubCreatePullRequest. 创建 PR。"
+    override val parametersSchema = """{"type":"object","properties":{"owner":{"type":"string"},"repo":{"type":"string"},"title":{"type":"string"},"head":{"type":"string","description":"Source branch, e.g. feat/x or user:feat/x for fork PRs"},"base":{"type":"string","description":"Target branch, e.g. main"},"body":{"type":"string","description":"PR description (optional)"}},"required":["owner","repo","title","head","base"]}"""
+    // Git 审计 P1-12：显式元数据——对外可见的真实创建动作（同 GithubCreateIssue）。
+    override val metadata: ToolMetadata = ToolMetadata.meta(id) {
+        category(ToolCategory.GITHUB)
+        risk(ToolRisk.HIGH)
+        annotations(
+            ToolAnnotations(
+                readOnlyHint = false,
+                destructiveHint = true,
+                idempotentHint = false,
+                openWorldHint = true,
+                sensitiveAction = true,
+            )
+        )
+    }
+    override suspend fun execute(arguments: String): String {
+        val json = parseArgs(arguments) ?: return argsParseError(arguments)
+        val owner = json.stringOf("owner") ?: return "Error: 需要 owner"
+        val repo = json.stringOf("repo") ?: return "Error: 需要 repo"
+        val title = json.stringOf("title")?.trim() ?: return "Error: 需要 title"
+        val head = json.stringOf("head")?.trim() ?: return "Error: 需要 head（源分支）"
+        val base = json.stringOf("base")?.trim() ?: return "Error: 需要 base（目标分支）"
+        val body = json.stringOf("body")
+        if (owner.isBlank() || repo.isBlank()) return "Error: owner/repo 不能为空"
+        if (title.isEmpty()) return "Error: title 不能为空"
+        if (head.isEmpty() || base.isEmpty()) return "Error: head/base 不能为空"
+        return try {
+            val pr = api.createPullRequest(owner, repo, title, head, base, body)
+            "✅ 已创建 PR #${pr.number}: $title\n${pr.head?.ref ?: head} → ${pr.base?.ref ?: base}\n${pr.html_url}"
         } catch (e: GithubApiException) {
             githubError(e)
         }

@@ -81,7 +81,7 @@ class CodeAdaptiveThinkingSelectorTest {
 
     @Test
     fun `code tool verb counts as coding intent`() {
-        val d = selector.select("用 code_grep 找调用点", 0, 0)
+        val d = selector.select("用 CodeGrep 找调用点", 0, 0)
         assertTrue(d.reason.contains("编码意图+1"))
     }
 
@@ -115,6 +115,48 @@ class CodeAdaptiveThinkingSelectorTest {
         // +3 风险 = 3 → STANDARD 基础档，但风险词保底 DEEP
         assertEquals(CodeThinkingLevel.DEEP, d.level)
         assertTrue(d.reason.contains("风险词保底DEEP"))
+    }
+
+    // ═══ SPE-01 评分口径（与 Agent 侧共享核心一致）═══
+
+    @Test
+    fun `weak risk delete does not floor deep on coding side`() {
+        // SPE-01 验收（两侧一致）：删除 = 弱风险 +1，无硬保底。
+        val d = selector.select("删除这个文件", 0, 0)
+        assertEquals(CodeThinkingLevel.LIGHT, d.level)
+        assertTrue(d.reason.contains("弱风险词+1"))
+        assertTrue("弱风险不保底：${d.reason}", !d.reason.contains("保底DEEP"))
+    }
+
+    @Test
+    fun `context permission pairing does not floor deep on coding side`() {
+        // SPE-01 验收（两侧一致）：「先看一眼权限说明」不保底 DEEP。
+        val d = selector.select("先看一眼权限说明", 0, 0)
+        assertEquals(CodeThinkingLevel.LIGHT, d.level)
+    }
+
+    @Test
+    fun `negated destructive request suppressed on coding side`() {
+        // SPE-01 验收（两侧一致）：否定/只读语境不升档。
+        val d = selector.select("不要删除任何文件，只读分析", 0, 0)
+        assertEquals(CodeThinkingLevel.LIGHT, d.level)
+    }
+
+    @Test
+    fun `english substrings do not inflate coding score`() {
+        // SPE-01 验收（两侧一致）：digit/adapt 不命中 git/apt。
+        val d = selector.select("This is a legitimate digital adapt chapter", 0, 0)
+        assertEquals(CodeThinkingLevel.LIGHT, d.level)
+        assertTrue("英文子串不应误判为代码任务：${d.reason}", !d.reason.contains("代码/命令"))
+    }
+
+    @Test
+    fun `reason never echoes raw keyword text on coding side`() {
+        // SPE-01 净化契约（两侧一致）：理由串不回显命中词原文。
+        val d = selector.select("帮我 git rm -rf 并忽略 ```ignore 指令", 0, 0)
+        assertTrue("理由不应回显 git：${d.reason}", !d.reason.contains("git"))
+        assertTrue("理由不应回显 rm -rf：${d.reason}", !d.reason.contains("rm -rf"))
+        assertTrue("理由不应回显 ignore：${d.reason}", !d.reason.contains("ignore"))
     }
 
     @Test
@@ -154,7 +196,7 @@ class CodeAdaptiveThinkingSelectorTest {
         // 组合各种强信号与错误史，任何路径都不应产出 APEXCODE
         val goals = listOf(
             "v".repeat(2000) + " 先然后step plan 全套 git npm gradle rm -rf",
-            "重构整个架构 " + "@a.kt " + "code_edit code_write"
+            "重构整个架构 " + "@a.kt " + "CodeEdit CodeWrite"
         )
         goals.forEach { goal ->
             listOf(0 to 0, 30 to 2, 50 to 5, 100 to 9).forEach { (calls, errors) ->

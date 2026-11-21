@@ -1,6 +1,6 @@
 package com.apex.agent.platform.terminal.tools.v2
 
-import com.apex.agent.platform.terminal.fs.GuestFilesystem
+import com.apex.agent.platform.TerminalFs.GuestFilesystem
 import com.apex.agent.platform.terminal.tools.TerminalTool
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -9,10 +9,10 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Agent tool: terminal.fs — T82 structured guest-filesystem API（Termux 基线 §4.8）。
+ * Agent tool: TerminalFs — T82 structured guest-filesystem API（Termux 基线 §4.8）。
  *
  * 在 Ubuntu/PRoot rootfs 内做结构化文件操作（base64 二进制安全、路径门禁、
- * 结构化错误），取代 `terminal.run "cat > f"` 的引号地狱。
+ * 结构化错误），取代 `TerminalRun "cat > f"` 的引号地狱。
  *
  * JSON Schema (input):
  *   { action: "read"|"write"|"append"|"list"|"stat"|"exists"|"mkdir"|"remove"|"move"|"copy",
@@ -30,13 +30,13 @@ import kotlinx.serialization.json.jsonPrimitive
 class TerminalFsTool(
     private val fs: GuestFilesystem
 ) : TerminalTool {
-    override val id: String = "terminal.fs"
+    override val id: String = "TerminalFs"
     override val name: String = id
     override val description: String = """
         Structured guest-filesystem operations inside the Ubuntu/PRoot rootfs (binary-safe via
         base64, sandboxed writes). Actions: read/write/append/list/stat/exists/mkdir/remove/
         move/copy. Writes are restricted to /workspace, /root, /tmp, /sdcard; reads are
-        unrestricted. Prefer this over terminal.run for file manipulation (no quoting hazards,
+        unrestricted. Prefer this over TerminalRun for file manipulation (no quoting hazards,
         real error codes). The host-side workspace dir is shared with this guest root set.
     """.trimIndent()
 

@@ -1,136 +1,116 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="260" viewBox="0 0 900 260" role="img" aria-label="Android Guru Agent banner">
-
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-label="Android Guru Agent — 把整个 AI 编码工作台装进一部 Android 手机">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#090D13"/>
-      <stop offset="0.5" stop-color="#111823"/>
-      <stop offset="1" stop-color="#0A1A26"/>
+      <stop offset="0" stop-color="#070B10"/>
+      <stop offset="0.55" stop-color="#0D1622"/>
+      <stop offset="1" stop-color="#0A1322"/>
     </linearGradient>
-
     <linearGradient id="brand" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0" stop-color="#3DDC84"/>
       <stop offset="0.5" stop-color="#00C2D1"/>
       <stop offset="1" stop-color="#7F52FF"/>
     </linearGradient>
-
     <linearGradient id="titleg" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#F0F6FC"/>
+      <stop offset="0" stop-color="#F4FAFF"/>
       <stop offset="0.6" stop-color="#DCF5E9"/>
       <stop offset="1" stop-color="#9FE8C4"/>
     </linearGradient>
-
-    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#1B2432" stop-opacity="0.95"/>
-      <stop offset="1" stop-color="#0E1520" stop-opacity="0.95"/>
+    <linearGradient id="termBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#101C29"/>
+      <stop offset="1" stop-color="#0A1420"/>
     </linearGradient>
-
-    <radialGradient id="glowA" cx="0.16" cy="0.9" r="0.8">
-      <stop offset="0" stop-color="#00C2D1" stop-opacity="0.30"/>
+    <linearGradient id="roboG" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4BE89A"/>
+      <stop offset="1" stop-color="#2FB56B"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0.12" cy="0.9" r="0.55">
+      <stop offset="0" stop-color="#3DDC84" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#3DDC84" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0.5" cy="1.15" r="0.6">
+      <stop offset="0" stop-color="#00C2D1" stop-opacity="0.22"/>
       <stop offset="1" stop-color="#00C2D1" stop-opacity="0"/>
     </radialGradient>
-
-    <radialGradient id="glowB" cx="0.92" cy="0.08" r="0.65">
-      <stop offset="0" stop-color="#7F52FF" stop-opacity="0.22"/>
+    <radialGradient id="glowC" cx="0.96" cy="0.05" r="0.55">
+      <stop offset="0" stop-color="#7F52FF" stop-opacity="0.28"/>
       <stop offset="1" stop-color="#7F52FF" stop-opacity="0"/>
     </radialGradient>
-
-    <pattern id="grid" width="26" height="26" patternUnits="userSpaceOnUse">
-      <path d="M26 0 H0 V26" fill="none" stroke="#2A3441" stroke-opacity="0.30" stroke-width="1"/>
+    <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse">
+      <path d="M28 0 H0 V28" fill="none" stroke="#22303F" stroke-opacity="0.33" stroke-width="1"/>
     </pattern>
-
-    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.9"/>
-      <stop offset="0.75" stop-color="#FFFFFF" stop-opacity="0.05"/>
+    <linearGradient id="fadeX" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.85"/>
+      <stop offset="0.7" stop-color="#FFFFFF" stop-opacity="0.08"/>
       <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
     </linearGradient>
     <mask id="gridmask">
-      <rect width="900" height="260" fill="url(#fade)"/>
+      <rect width="1200" height="300" fill="url(#fadeX)"/>
     </mask>
-
-    <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur stdDeviation="7"/>
-    </filter>
-
-    <filter id="soft2" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur stdDeviation="3"/>
+    <filter id="softGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="9" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
     </filter>
   </defs>
 
-  <!-- background -->
-  <rect width="900" height="260" rx="20" fill="url(#bg)"/>
-  <rect width="900" height="260" rx="20" fill="url(#glowA)"/>
-  <rect width="900" height="260" rx="20" fill="url(#glowB)"/>
-  <rect width="900" height="260" rx="20" fill="url(#grid)" mask="url(#gridmask)"/>
-  <rect x="1" y="1" width="898" height="258" rx="19" fill="none" stroke="#28323F" stroke-width="1.5"/>
-  <rect x="1" y="1" width="898" height="258" rx="19" fill="none" stroke="url(#brand)" stroke-opacity="0.25" stroke-width="1.5"/>
+  <!-- 背景：深色渐变 + 电路网格 + 三向辉光 -->
+  <rect width="1200" height="300" fill="url(#bg)"/>
+  <rect width="1200" height="300" fill="url(#grid)" mask="url(#gridmask)"/>
+  <rect width="1200" height="300" fill="url(#glowA)"/>
+  <rect width="1200" height="300" fill="url(#glowB)"/>
+  <rect width="1200" height="300" fill="url(#glowC)"/>
+  <rect x="40" y="8" width="1120" height="1" fill="#1E2A38"/>
+  <rect x="40" y="291" width="1120" height="1" fill="#1E2A38"/>
 
-  <!-- logo mark: glass tile + orbital agent core -->
+  <!-- Android 机器人头部（品牌吉祥物） -->
+  <g transform="translate(108,102)" filter="url(#softGlow)">
+    <line x1="34" y1="8" x2="20" y2="-10" stroke="#3DDC84" stroke-width="5" stroke-linecap="round"/>
+    <line x1="76" y1="8" x2="90" y2="-10" stroke="#3DDC84" stroke-width="5" stroke-linecap="round"/>
+    <rect x="0" y="0" width="110" height="58" rx="27" fill="url(#roboG)"/>
+    <circle cx="34" cy="24" r="6.5" fill="#07130C"/>
+    <circle cx="76" cy="24" r="6.5" fill="#07130C"/>
+  </g>
+
+  <!-- 电路走线：机器人 → 终端 -->
+  <g stroke="#00C2D1" fill="none" opacity="0.55">
+    <path d="M 236 148 H 520 L 560 112 H 788" stroke-width="1.6" stroke-dasharray="2 7" stroke-linecap="round"/>
+    <circle cx="236" cy="148" r="3.2" fill="#00C2D1" stroke="none"/>
+    <circle cx="788" cy="112" r="3.2" fill="#00C2D1" stroke="none"/>
+  </g>
+
+  <!-- 标题区 -->
+  <text x="268" y="132" font-family="'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif" font-size="46" font-weight="700" letter-spacing="0.5" fill="url(#titleg)">Android <tspan fill="#3DDC84">Guru</tspan> Agent</text>
+  <!-- 版本胶囊 -->
   <g>
-    <circle cx="110" cy="130" r="58" fill="#00C2D1" fill-opacity="0.16" filter="url(#soft)"/>
-    <rect x="42" y="62" width="136" height="136" rx="34" fill="url(#glass)" stroke="url(#brand)" stroke-width="2"/>
-    <rect x="52" y="72" width="116" height="46" rx="22" fill="#FFFFFF" fill-opacity="0.05"/>
-
-    <g transform="translate(110,130)" fill="none" stroke-linecap="round">
-      <ellipse rx="44" ry="17" stroke="#00C2D1" stroke-opacity="0.75" stroke-width="2"/>
-      <ellipse rx="44" ry="17" stroke="#3DDC84" stroke-opacity="0.75" stroke-width="2" transform="rotate(60)"/>
-      <ellipse rx="44" ry="17" stroke="#7F52FF" stroke-opacity="0.75" stroke-width="2" transform="rotate(120)"/>
-
-      <circle cx="44" cy="0" r="4.5" fill="#00C2D1" stroke="none"/>
-      <circle cx="22" cy="14.7" r="4.5" fill="#3DDC84" stroke="none"/>
-      <circle cx="-22" cy="14.7" r="4.5" fill="#7F52FF" stroke="none"/>
-
-      <circle r="20" fill="#0B1220"/>
-      <circle r="20" stroke="url(#brand)" stroke-width="2.5"/>
-      <circle r="9" fill="url(#brand)" stroke="none" filter="url(#soft2)"/>
-      <circle r="6" fill="#EAFFF6" stroke="none"/>
-    </g>
-
-    <text x="110" y="216" text-anchor="middle" font-family="Consolas,'Sarasa Mono SC',monospace" font-size="11" letter-spacing="2.5" fill="#6E7681">ON-DEVICE</text>
+    <rect x="742" y="98" width="54" height="26" rx="13" fill="none" stroke="#00C2D1" stroke-opacity="0.75" stroke-width="1.4"/>
+    <text x="769" y="116" text-anchor="middle" font-family="'JetBrains Mono','Fira Code',Consolas,monospace" font-size="13" fill="#00C2D1">v1.5</text>
   </g>
+  <rect x="271" y="150" width="330" height="3" rx="1.5" fill="url(#brand)"/>
+  <text x="271" y="190" font-family="'PingFang SC','Microsoft YaHei','Noto Sans SC',sans-serif" font-size="21" font-weight="600" fill="#B9E7D4">把整个 AI 编码工作台，装进一部 Android 手机</text>
+  <text x="271" y="218" font-family="'Segoe UI',sans-serif" font-size="14.5" fill="#6C8FA6">The AI coding workstation that lives entirely on your phone</text>
+  <text x="271" y="256" font-family="'JetBrains Mono','Fira Code',Consolas,monospace" font-size="13.5" fill="#7FA896">228 tools · 3 modes · PRoot Ubuntu 24.04 · apex-kit-memory · BYO-LLM</text>
 
-  <!-- title block -->
-  <text x="215" y="112" font-family="'Segoe UI','PingFang SC','Noto Sans SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="46" font-weight="700" fill="url(#titleg)">Android Guru Agent</text>
-
-  <text x="217" y="146" font-family="'Segoe UI','PingFang SC','Noto Sans SC','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="15" fill="#8B949E">Autonomous AI agent · on-device LLM · PRoot Ubuntu terminal · cognitive memory</text>
-
-  <!-- keyword chips -->
-  <g font-family="'Segoe UI','PingFang SC','Noto Sans SC',Helvetica,Arial,sans-serif" font-size="13" font-weight="600">
-    <rect x="215" y="164" width="86" height="28" rx="14" fill="#7F52FF" fill-opacity="0.12" stroke="#7F52FF" stroke-opacity="0.5"/>
-    <text x="258" y="183" text-anchor="middle" fill="#A78BFA">Kotlin</text>
-
-    <rect x="309" y="164" width="116" height="28" rx="14" fill="#4285F4" fill-opacity="0.12" stroke="#4285F4" stroke-opacity="0.5"/>
-    <text x="367" y="183" text-anchor="middle" fill="#7EA6F4">Compose UI</text>
-
-    <rect x="433" y="164" width="126" height="28" rx="14" fill="#E95420" fill-opacity="0.12" stroke="#E95420" stroke-opacity="0.5"/>
-    <text x="496" y="183" text-anchor="middle" fill="#F2931D">PRoot Ubuntu</text>
-
-    <rect x="567" y="164" width="110" height="28" rx="14" fill="#3DDC84" fill-opacity="0.12" stroke="#3DDC84" stroke-opacity="0.5"/>
-    <text x="622" y="183" text-anchor="middle" fill="#3DDC84">109 Tools</text>
-
-    <rect x="685" y="164" width="100" height="28" rx="14" fill="#00C2D1" fill-opacity="0.12" stroke="#00C2D1" stroke-opacity="0.5"/>
-    <text x="735" y="183" text-anchor="middle" fill="#00C2D1">cs-mem</text>
-  </g>
-
-  <!-- bottom accent -->
-  <rect x="215" y="212" width="430" height="4" rx="2" fill="url(#brand)"/>
-  <text x="215" y="238" font-family="Consolas,'Sarasa Mono SC',monospace" font-size="12" fill="#6E7681">109 tools · 6 agent modes · 13 modules · no server required</text>
-
-  <!-- right side decoration: cognitive graph + data stream -->
-  <g stroke-linecap="round">
-    <g transform="translate(838,78) scale(0.9)" fill="none" stroke-width="1.8">
-      <path d="M0 0 L34 20 M34 20 L-6 44 M-6 44 L0 0" stroke="#00C2D1" stroke-opacity="0.45"/>
-      <circle cx="0" cy="0" r="5" fill="#3DDC84" stroke="none"/>
-      <circle cx="34" cy="20" r="5" fill="#00C2D1" stroke="none"/>
-      <circle cx="-6" cy="44" r="5" fill="#7F52FF" stroke="none"/>
+  <!-- 终端窗口（真实能力剪影） -->
+  <g transform="translate(796,58)">
+    <rect x="0" y="0" width="364" height="188" rx="12" fill="url(#termBg)" stroke="#22303F" stroke-width="1.4"/>
+    <path d="M 0 12 Q 0 0 12 0 H 352 Q 364 0 364 12 V 30 H 0 Z" fill="#0B141F"/>
+    <line x1="0" y1="30" x2="364" y2="30" stroke="#1D2A38" stroke-width="1"/>
+    <circle cx="18" cy="15" r="4.5" fill="#FF5F57"/>
+    <circle cx="36" cy="15" r="4.5" fill="#FEBC2E"/>
+    <circle cx="54" cy="15" r="4.5" fill="#28C840"/>
+    <text x="182" y="19.5" text-anchor="middle" font-family="'JetBrains Mono','Fira Code',Consolas,monospace" font-size="11" fill="#5E7A8C">apex@ubuntu — proot</text>
+    <g font-family="'JetBrains Mono','Fira Code',Consolas,monospace" font-size="12.5">
+      <text x="18" y="56"><tspan fill="#3DDC84">apex@ubuntu:~$</tspan> <tspan fill="#E6F1F7">gradlew :app:test</tspan></text>
+      <text x="18" y="80" fill="#00C2D1">✓ 383 files · 5,434 @Test · 18 workflows</text>
+      <text x="18" y="104"><tspan fill="#3DDC84">apex@ubuntu:~$</tspan> <tspan fill="#E6F1F7">agent --think deep:7</tspan></text>
+      <text x="18" y="128" fill="#9D8CFF">● reading   MainActivity.kt …</text>
+      <text x="18" y="152" fill="#9D8CFF">● editing   UiTheme.kt <tspan fill="#3DDC84">[ok]</tspan></text>
+      <text x="18" y="176"><tspan fill="#3DDC84">apex@ubuntu:~$</tspan></text>
     </g>
-
-    <g transform="translate(792,196)" stroke-opacity="0.5" stroke-width="1.6">
-      <path d="M0 0 h52" stroke="url(#brand)"/>
-      <path d="M14 14 h64" stroke="url(#brand)" stroke-opacity="0.35"/>
-      <path d="M0 28 h40" stroke="url(#brand)" stroke-opacity="0.25"/>
-      <circle cx="52" cy="0" r="3" fill="#3DDC84" stroke="none"/>
-      <circle cx="78" cy="14" r="3" fill="#00C2D1" stroke="none"/>
-      <circle cx="40" cy="28" r="3" fill="#7F52FF" stroke="none"/>
-    </g>
+    <rect x="131" y="165" width="8" height="13" fill="#F0F6FC">
+      <animate attributeName="opacity" values="1;1;0;0" keyTimes="0;0.5;0.5;1" dur="1.1s" repeatCount="indefinite"/>
+    </rect>
   </g>
 </svg>

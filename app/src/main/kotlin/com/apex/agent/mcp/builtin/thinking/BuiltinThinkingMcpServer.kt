@@ -7,7 +7,7 @@ import com.apex.agent.core.tools.mcp.McpTransport
  * 内置顺序思考 MCP 服务器（thinking）的注册元数据。
  *
  * [ID] 与 McpManager 配置里的服务器名、`builtinTransports` 工厂注册表的
- * key、`mcp_call` 的 server 参数（= 斜杠指令 /mcp:thinking 的 id）四处约定
+ * key、`McpCall` 的 server 参数（= 斜杠指令 /mcp:thinking 的 id）四处约定
  * 一致 —— 模式同 [com.apex.agent.search.mcp.BuiltinSearchMcpServer]。
  *
  * 价值：复刻官方 @modelcontextprotocol/server-sequential-thinking 的
@@ -17,7 +17,7 @@ import com.apex.agent.core.tools.mcp.McpTransport
  */
 object BuiltinThinkingMcpServer {
 
-    /** 服务器名（= mcp_call 的 server 参数 = 斜杠指令 /mcp:thinking 的 id）。 */
+    /** 服务器名（= McpCall 的 server 参数 = 斜杠指令 /mcp:thinking 的 id）。 */
     const val ID = "thinking"
 
     /** 预置到 mcp_servers.json 的配置（transport=BUILTIN，无 URL/命令）。 */

@@ -13,11 +13,12 @@ import kotlinx.coroutines.CancellationException
  * # Tool System v4 — MCP tools as first-class functions
  *
  * Before v4 the model could only reach MCP servers through the
- * `mcp_call(server, tool, args)` proxy — it had to *know* remote tool names
+ * `McpCall(server, tool, args)` proxy — it had to *know* remote tool names
  * with no schemas, which is exactly why "MCP 没什么用". v4 registers every
  * discovered remote tool as a real [AgentTool]:
  *
- * - registry id: `mcp__{server}__{tool}` (see [McpToolNaming]) — collision
+ * - registry id: `Mcp{Server}{Tool}`（v5 无分隔符 PascalCase，见
+ *   [McpToolNaming]；v4 旧形式 `mcp__{server}__{tool}` 已废弃）—— collision
  *   free across servers, and the dots/illegal chars never leave the app
  *   because [ToolNameSanitizer] maps ids to provider-safe names;
  * - schema: the remote `inputSchema`, repaired by [ToolSchemaSanitizer];
@@ -26,12 +27,22 @@ import kotlinx.coroutines.CancellationException
  * - metadata: MCP category, MEDIUM risk (unknown remote capability),
  *   non-idempotent & non-retry-safe — the v3 run policy never blind-retries
  *   a remote side effect (rikkahub-agent gates *all* MCP calls behind
- *   approval; our v3 risk gate covers the same surface via MEDIUM/HIGH).
+ *   approval; our v3 risk gate covers the same surface via MEDIUM/HIGH);
+ * - scope: v3 服务器级工位作用域（McpServerConfig.scope，"agent" |
+ *   "coding" | "all"）由 [McpToolRegistrar] 注册时从配置表读入并打进
+ *   [ToolMetadata] —— 与市场 tier 同源字段，引擎计划层据此做双工位
+ *   隔离（缺口 A：scope 此前只被市场 UI 消费，引擎侧不消费）。
  */
 class McpAgentTool(
     private val manager: McpManager,
     private val serverName: String,
-    private val toolDef: McpToolDef
+    private val toolDef: McpToolDef,
+    /**
+     * v3 工位作用域（服务器级；默认 all = 双工位可见，兼容旧调用点）。
+     * 命名避开 [ToolMetadata.Builder] 的同名私有字段，防止元数据
+     * lambda 内引用它时的名字解析歧义。
+     */
+    private val serverScope: String = "all"
 ) : AgentTool {
 
     override val id: String = McpToolNaming.toolId(serverName, toolDef.name)
@@ -50,6 +61,8 @@ class McpAgentTool(
         category(ToolCategory.MCP)
         risk(ToolRisk.MEDIUM)
         tag("mcp", "server:$serverName")
+        // v3 作用域打标：与市场 tier 同源，供引擎计划层隔离；脏值折叠 all。
+        scope(ToolMetadata.normalizeScope(serverScope))
         annotations(
             ToolAnnotations(
                 readOnlyHint = false,
@@ -66,20 +79,31 @@ class McpAgentTool(
             result.fold(
                 onSuccess = { r ->
                     when {
-                        r.isError -> "MCP error from '$serverName/${toolDef.name}': ${clamp(r.content)}"
+                        // "Error:" prefix matters: the engine's success
+                        // detection is string-protocol based — a bare
+                        // "MCP error from ..." used to be counted as
+                        // SUCCESS, hiding the failure from the model and
+                        // the recovery prompt entirely.
+                        r.isError -> renderServerError(serverName, toolDef.name, clamp(r.content))
                         else -> clamp(r.content.ifBlank { "(empty result)" })
                     }
                 },
                 onFailure = { e ->
-                    "Error calling MCP tool '$serverName/${toolDef.name}': " +
-                        "${e.message ?: e::class.simpleName}. " +
-                        "If the server disconnected, call mcp_connect('$serverName') and retry."
+                    renderTransportFailure(
+                        serverName = serverName,
+                        toolName = toolDef.name,
+                        detail = e.message ?: e::class.simpleName ?: "unknown error"
+                    )
                 }
             )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            "Error calling MCP tool '$serverName/${toolDef.name}': ${e.message ?: e::class.simpleName}"
+            renderTransportFailure(
+                serverName = serverName,
+                toolName = toolDef.name,
+                detail = e.message ?: e::class.simpleName ?: "unknown error"
+            )
         }
     }
 
@@ -87,33 +111,87 @@ class McpAgentTool(
         if (content.length <= max) content
         else content.take(max) + "\n[MCP result truncated at $MAX_RESULT_CHARS chars]"
 
-    private companion object {
+    internal companion object {
+
         const val MAX_RESULT_CHARS = 16_000
+
+        /**
+         * Server-reported failure (isError=true). "Error:"-prefixed so the
+         * string-protocol success detection classifies it as a failure,
+         * plus change-of-approach guidance: the task is NOT aborted — the
+         * model must pick a different path instead of repeating the call.
+         */
+        fun renderServerError(serverName: String, toolName: String, content: String): String =
+            "Error: MCP server '$serverName/$toolName' reported a failure: $content\n" +
+                FALLBACK_GUIDANCE
+
+        /**
+         * Transport/exception failure (disconnect, timeout, crash).
+         * Same "Error:" protocol + explicit reconnect hint + fallback
+         * guidance.
+         */
+        fun renderTransportFailure(serverName: String, toolName: String, detail: String): String =
+            "Error: MCP tool '$serverName/$toolName' failed: $detail. " +
+                "If the server disconnected, call McpConnect('$serverName') once and retry.\n" +
+                FALLBACK_GUIDANCE
+
+        /**
+         * The user-spec "MCP tools fail -> try a different approach, the
+         * task continues" contract, spelled out for the model. The engine
+         * loop feeds this back as the tool result; the model reads it and
+         * switches strategy instead of the task dying.
+         */
+        private const val FALLBACK_GUIDANCE =
+            "[FALLBACK] This MCP tool is currently unavailable. The task is NOT aborted - " +
+                "continue with a different approach: (a) use a built-in tool covering the " +
+                "same need, (b) use another connected MCP server (McpList), or (c) complete " +
+                "the step manually and state the limitation. Do not repeat this identical call."
     }
 }
 
 /**
- * Registry-id scheme for MCP tools: `mcp__{server}__{tool}`.
+ * Registry-id scheme for MCP tools: `Mcp{Server}{Tool}`（无分隔符 PascalCase）。
  *
- * Both server and tool names are normalized to `[a-z0-9_]` (lowercase;
- * other characters fold to `_`, runs collapse). The rikkahub-agent lesson:
- * namespacing by a *normalized* server slug avoids collisions between
- * "My Server" and "my-server", and keeps ids valid function names after
- * [ToolNameSanitizer] (which is a no-op for these ids).
+ * 服务器名与工具名都归一为"逐段首字母大写连写"（`my-server` → `MyServer`，
+ * `create_issue` → `CreateIssue`）——v5 命名改造要求工具名里不出现 `-` 与
+ * `_`，而 `Mcp` 前缀天然把一等 MCP 工具与内置工具分族（ToolKind 徽章、
+ * 作用域打标、`Mcp` 类别推断都靠它）。
+ *
+ * 归一化仍保留 rikkahub 的教训：命名空间基于**归一后**的服务器 slug，"My
+ * Server" 与 "my-server" 收敛到同一个前缀，不会各注册一套同名工具。
+ *
+ * 极端情况下 (server="ab", tool="c") 与 (server="a", tool="bc") 会撞名 ——
+ * 这与 v4 的 `mcp__ab__c` / `mcp__a__bc` 一样属于"服务器自己起名撞车"，
+ * 由 [ToolRegistrar][McpToolRegistrar] 的 REPLACE 语义与
+ * [ToolNameSanitizer] 的确定性去重兜底。
  */
 object McpToolNaming {
 
-    private val INVALID = Regex("[^a-z0-9_]")
-    private val UNDERSCORE_RUN = Regex("_+")
+    private val NON_ALNUM = Regex("[^A-Za-z0-9]")
 
     /** Provider/registry id for a server+tool pair. */
     fun toolId(serverName: String, toolName: String): String =
-        "mcp__${slug(serverName)}__${slug(toolName)}"
+        "Mcp" + slug(serverName) + slug(toolName)
 
-    /** Normalize an arbitrary server/tool name into a slug. */
-    fun slug(raw: String): String {
-        val lowered = raw.trim().lowercase().replace('-', '_').replace(' ', '_')
-        val cleaned = INVALID.replace(lowered, "_")
-        return UNDERSCORE_RUN.replace(cleaned, "_").trim('_').ifEmpty { "srv" }
-    }
+    /**
+     * 服务器级 id 前缀（`Mcp{Server}`）：该服务器全部一等工具的公共前缀。
+     *
+     * 指引注入源（app 层 CodeModule 的 KitMcpInstructionSource）按
+     * `toolId.startsWith(prefix)` 过滤——只有该服务器工具真的在当前工具面上，
+     * `initialize.instructions` 才注入（防幻觉指引）。
+     *
+     * ⚠️ 必须与 [toolId] 同源推导，禁止手拼：v5 命名改造时 CodeModule 里
+     * 残留的 v4 写法 `"mcp__" + slug(server) + "__"` 与实际注册 id
+     * `Mcp{Server}{Tool}` 永不匹配，导致 initialize.instructions 从不注入
+     * （核查稿 §6.5，6/6 样本 startsWith 失败）。本方法是那处漂移的
+     * 单一真相源修复。
+     */
+    fun serverIdPrefix(serverName: String): String = "Mcp" + slug(serverName)
+
+    /** Normalize an arbitrary server/tool name into a PascalCase segment. */
+    fun slug(raw: String): String =
+        raw.split(NON_ALNUM)
+            .filter { it.isNotEmpty() }
+            .joinToString("") { it.replaceFirstChar { ch -> ch.uppercaseChar() } }
+            .ifEmpty { "Srv" }
 }

@@ -22,7 +22,7 @@ import com.apex.agent.core.llm.ModelRole
  * - [ModelTimeout]                   — 超时 / 408（可降级）。
  * - [ModelAuthenticationFailed]      — 401/403（可降级到持有不同 Key 的下一个 Profile）。
  * - [ModelRequestRejected]           — 400/404 等请求级拒绝（不可降级：换模型也是同一请求体）。
- * - [ModelResponseInvalid]           — 空响应 / 响应体无法解析（不可降级）。
+ * - [ModelResponseInvalid]           — 空响应 / 响应体无法解析（可降级：换端点后往往能恢复）。
  * - [ModelFallbackExhausted]         — fallback 链全部尝试完毕仍失败。
  *
  * 每个子类都携带 `profileId`（除配置级错误），便于诊断；**绝不**携带 API Key
@@ -90,7 +90,7 @@ sealed class ModelRuntimeException(
         cause: Throwable? = null
     ) : ModelRuntimeException(message, cause)
 
-    /** 响应无效（空响应 / 解析失败）。不可降级。 */
+    /** 响应无效（空响应 / 解析失败）。可降级（换端点后往往能恢复）。 */
     class ModelResponseInvalid(
         message: String,
         val profileId: String
@@ -107,11 +107,12 @@ sealed class ModelRuntimeException(
      * 该错误是否允许降级到 fallback 链中的下一个 Profile。
      *
      * - 可降级：[ModelUnavailable] / [ModelRateLimited] / [ModelTimeout] /
-     *   [ModelAuthenticationFailed]（换 Profile = 换端点/Key，可能恢复）。
-     * - 不可降级：[ModelRequestRejected] / [ModelResponseInvalid] /
-     *   [ModelConfigurationError] / [ProviderConfigurationError] /
-     *   [ModelCapabilityMismatch] / [ModelFallbackExhausted]（请求本身或配置
-     *   本身有问题，换模型无意义）。
+     *   [ModelAuthenticationFailed] / [ModelResponseInvalid]（换 Profile = 换端点/
+     *   Key/网关，空响应与解析失败往往随之恢复 —— 生产反馈证实原“不可降级”
+     *   标记让单一网关的瞬时抖动直接终结任务）。
+     * - 不可降级：[ModelRequestRejected] / [ModelConfigurationError] /
+     *   [ProviderConfigurationError] / [ModelCapabilityMismatch] /
+     *   [ModelFallbackExhausted]（请求本身或配置本身有问题，换模型无意义）。
      */
     val isFallbackEligible: Boolean
         get() = when (this) {
@@ -120,7 +121,7 @@ sealed class ModelRuntimeException(
             is ModelTimeout -> true
             is ModelAuthenticationFailed -> true
             is ModelRequestRejected -> false
-            is ModelResponseInvalid -> false
+            is ModelResponseInvalid -> true
             is ModelConfigurationError -> false
             is ProviderConfigurationError -> false
             is ModelCapabilityMismatch -> false

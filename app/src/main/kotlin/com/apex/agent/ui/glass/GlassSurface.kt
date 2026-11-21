@@ -1,54 +1,77 @@
 package com.apex.agent.ui.glass
 
+import android.os.Build
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.drawOutline
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.dp
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeEffect
+import com.apex.agent.ui.screen.code.LocalConversationSkin
+import com.apex.agent.ui.theme.LocalUiStyle
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.BackdropEffectScope
+import com.kyant.backdrop.backdrops.emptyBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.highlight.HighlightStyle
+import com.kyant.backdrop.shadow.InnerShadow
+import androidx.compose.ui.unit.DpOffset
 
 /**
  * ═══════════════════════════════════════════════════════════════
- *  GlassSurface —— 统一玻璃渲染核心
+ *  GlassSurface —— 统一玻璃渲染核心（kyant0/backdrop 底座）
  * ═══════════════════════════════════════════════════════════════
  *
- * 业务 UI 禁止直接散落 Haze / 第三方玻璃 API —— 一律经由本系统。
- * 底层库替换时只需改本文件，业务组件零感知。
+ * 业务 UI 禁止直接散落玻璃 API —— 一律经由本系统。底层库替换时只需改
+ * ui/glass 包，业务组件零感知。
  *
  * 真实能力分层（诚实声明，禁止冒充）：
- *  - Backdrop：仅当 state != null 且本组件悬浮于 hazeSource 内容之上时生效；
- *    Haze 通过 GraphicsLayer 采样背后内容，API 32+ 走 GPU RenderEffect 模糊，
- *    低版本自动降级 scrim —— 不虚报为 blur。
- *  - Material response：pressed / focused / selected / disabled 驱动
- *    激活度动画，影响高光亮度、边缘强度与按压缩放；动画短促、非循环。
- *  - Edge lighting：drawOutline 内描边渐变 —— 上强下弱的受光边缘。
- *  - Depth：外阴影 + 底部内阴影两级线索。
- *  - Refraction：未实现 —— 本组件不声明折射位移。
+ *  - Backdrop 档（[backdrop] != null 且 API 31+）：kyant0 backdrop 真实采样
+ *    源内容 → GPU RenderEffect blur →（API 33+）AGSL lens 折射/色散 →
+ *    tint 霜面 → Highlight 边缘受光 → InnerShadow 厚度定界。折射形变与
+ *    按压缩放经 layerBlock 反演，采样内容不随形变错位（kyant0 核心能力）。
+ *  - Ambient 档（[backdrop] == null 且 API 31+）：程序化材质源
+ *    （[rememberAmbientBackdrop]：主题霜面 + 斜向光带）流经同一条玻璃管线
+ *    （blur + lens + tint）—— 不是背后内容的采样，不冒充 Backdrop；
+ *    纯色背景页面（设置/诊断/气泡）的统一材质语言。
+ *  - Frosted 档（API < 31）：无 RenderEffect —— 霜面渐变 + 边缘光，零管线。
+ *
+ * 采样源由页面提供：`val backdrop = rememberLayerBackdrop()` 挂在内容上
+ * （Modifier.layerBackdrop(backdrop)），玻璃件悬浮其上；气泡等列表内嵌件
+ * 可采样屏幕氛围背景（kyant0 支持任意同布局树源 —— Haze 时代的嵌套限制不存在）。
+ *
+ * 渲染层级（自下而上）：Compose shadow（裁剪外，可外溢）→ RenderNode 圆角
+ * 裁剪层（v1.4.5 白天方角根因的同款保证，杜绝 blur 角部外溢）→ kyant0
+ * drawBackdrop（Highlight/InnerShadow 自管理形状）→ 内容。
+ *
+ * NFR-5 豁免（PartSkin spec）：[forceGlass] 为真时绕过 MINIMAL 短路 ——
+ * 供 PaleLiquidSurface 在部件显式开启 forceGlassInMinimal 时保留玻璃管线；
+ * 默认 false，既有调用点行为零变化（短路纪律单点不破）。
  */
 @Composable
 fun GlassSurface(
     modifier: Modifier = Modifier,
-    state: HazeState? = null,
+    backdrop: Backdrop? = null,
     style: GlassStyle = GlassStyle.Card,
     shape: Shape = GlassShapes.card,
     accent: Color = Color.Unspecified,
@@ -57,13 +80,16 @@ fun GlassSurface(
     focused: Boolean = false,
     interactionSource: MutableInteractionSource? = null,
     scaleOnPress: Boolean = true,
+    forceGlass: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val interaction = interactionSource ?: remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
 
     // ═══ 激活度：Normal 0 / Focused 0.35 / Selected 0.55 / Pressed 1 —— Spec §14 ═══
-    val activation by animateFloatAsState(
+    // #262 延迟读取：保留 State，layerBlock（graphicsLayer 块）内取值 ——
+    // 按压缩放动画期间 GlassSurface 零重组（组合期读取会让每帧重组）。
+    val activationState = animateFloatAsState(
         targetValue = when {
             !enabled -> 0f
             pressed -> 1f
@@ -75,150 +101,279 @@ fun GlassSurface(
         label = "glass_activation"
     )
 
-    val palette = glassPalette(style = style, accent = accent)
-    val hazeState = state
+    // ═══ 极简黑白风格：玻璃管线整体短路为扁平表面 ═══
+    // 风格层的唯一扁平化收敛点（UiStyle Spec：业务组件零感知）—— 实色
+    // 底 + 发丝描边 + 同款激活度/按压缩放，零 blur / 零折射 / 零光带。
+    // 置于激活度计算之后：交互反馈语言在两种风格间保持一致。
+    // forceGlass = NFR-5 豁免（PartSkin spec）：部件级 forceGlassInMinimal
+    // 显式开启时才绕过短路，默认关 —— 短路纪律不破。
+    // v1.2 双 Local 分离（PartSkin spec §7.5.1）：Coding 子树内材质短路从
+    // 会话快照取（LocalConversationSkin —— 会话内冻结，改动只挂 pending）；
+    // 壳层 / 设置页 / GlassLab 无会话 → 回落全局 LocalUiStyle（外观不受
+    // 「待生效」影响，配色类仍由 ApexTheme 全局下发）。
+    //
+    // Gate-0 D-10：判定经 [GlassSkinGate]（纯函数）—— 生产与玻璃实验室
+    // 并排台（GlassLabBench 显式 provide 会话快照）读同一条短路路径，
+    // Gate0ParityTest 锁语义；实验室结论从此对生产可信。
+    val conversation = LocalConversationSkin.current
+    val minimalStyle = GlassSkinGate.shortCircuitsToFlat(
+        conversationUiStyleKey = conversation?.uiStyle?.key,
+        globalUiStyleKey = LocalUiStyle.current.key
+    )
+    if (minimalStyle && !forceGlass) {
+        FlatSurface(
+            modifier = modifier,
+            style = style,
+            shape = shape,
+            selected = selected,
+            enabled = enabled,
+            activationState = activationState,
+            scaleOnPress = scaleOnPress,
+            content = content
+        )
+        return
+    }
 
-    // ═══ 材质层 ═══
-    val materialModifier = if (hazeState != null) {
-        // Backdrop 档：真实采样 + 模糊 + tint + noise 全由 Haze 绘制
-        Modifier.hazeEffect(
-            state = hazeState,
-            style = style.toHazeStyle(palette)
-        )
+    val palette = glassPalette(style = style, accent = accent)
+
+    // ═══ 能力门禁：RenderEffect 是玻璃管线的硬前提（API 31+）═══
+    // 低于 31 无法 blur/lens —— 整档降级 Frosted（霜面 + 边缘光，零管线、诚实）。
+    val canRender = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+
+    // ═══ perf-20261114：Ambient 档剥离 RenderEffect ═══
+    // Ambient 源是纯程序化静态纹理（垂直霜面渐变 + 两条斜向光带，
+    // rememberAmbientBackdrop 的 onDraw 不随帧变化且与坐标无关）——
+    // 对静态软渐变叠 blur(10-24dp) 的输出与输入几乎不可区分，但每帧
+    // 重新执行高斯模糊链（流式期间时间轴上全部卡片 × 60fps）。改为
+    // 直绘纹理 + 霜面（零 RenderEffect），观感几乎一致、GPU 负载归零。
+    // 真实采样源（backdrop != null）不受影响 —— blur/lens 语义完整保留。
+    val ambientTier = backdrop == null && canRender
+
+    // ═══ 三档源选择 ═══
+    // Backdrop：页面提供真实采样源；Ambient：程序化材质源（perf-20261114
+    // 起零 RenderEffect 直绘）；Frosted：API < 31 的零管线降级。
+    val ambient = rememberAmbientBackdrop(palette)
+    val effectiveBackdrop: Backdrop = when {
+        backdrop != null && canRender -> backdrop
+        canRender -> ambient
+        else -> emptyBackdrop()
+    }
+
+    // 边缘受光：kyant0 Highlight —— BlurMaskFilter 柔边描边（全 API 一致），
+    // 选中态提亮 + 强调色浸染（低饱和倾向，不刷屏）。
+    val highlightAlpha = (style.specularAlpha + if (selected) 0.12f else 0f)
+        .coerceAtMost(1f)
+    val highlightColor = if (accent.alpha > 0f && selected) {
+        accent.copy(alpha = 0.55f).compositeOver(palette.edgeColor)
     } else {
-        // Frosted 档：主题色薄霜渐变 —— 明确不冒充 backdrop
-        Modifier.background(
-            brush = Brush.verticalGradient(
-                colors = listOf(palette.frostLift, palette.frostBase),
-                startY = 0f,
-                endY = Float.POSITIVE_INFINITY
-            ),
-            shape = shape
+        palette.edgeColor
+    }
+
+    // Frosted 档霜面渐变（组合期构建，draw 零分配 —— #262）
+    val frostBrush = remember(palette) {
+        Brush.verticalGradient(
+            colors = listOf(palette.frostLift, palette.frostBase),
+            startY = 0f,
+            endY = Float.POSITIVE_INFINITY
         )
+    }
+
+    // ═══ diag-20261011：drawBackdrop 全部 lambda 记忆化 ═══
+    // ModifierNodeElement.equals 对 lambda 按身份比较 —— 每次重组新建 lambda
+    // 恒不等 → 每次重组都 update() → invalidateDraw/DrawCache → 启动期大量
+    // 玻璃件（抽屉 16 项/气泡/输入栏）形成 draw 失效风暴，放大换页 dispose
+    // 与在途回调帧的竞争窗口（detached-remeasure 崩溃）。记忆化后等值重组
+    // 零 update；键即各 lambda 捕获的全部值。
+    val shapeBlock = remember(shape) { { shape } }
+    // 显式带接收者类型：嵌套在 remember 内的 lambda 需要期望类型传播，
+    // 否则 vibrancy/blur/lens/drawRect 无接收者上下文无法解析。
+    // perf-20261114：Ambient 档空效果链 —— 静态纹理不进 blur/lens 管线。
+    val effectsBlock: BackdropEffectScope.() -> Unit = remember(style, canRender, ambientTier) {
+        {
+            if (canRender && !ambientTier) {
+                if (style.vibrancy > 0f) runCatching { vibrancy() }
+                runCatching { blur(style.blurRadius.toPx()) }
+                if (style.lensHeight > 0.dp) {
+                    runCatching {
+                        lens(
+                            refractionHeight = style.lensHeight.toPx(),
+                            refractionAmount = style.lensAmount.toPx(),
+                            chromaticAberration = style.chromaticAberration
+                        )
+                    }
+                }
+            }
+        }
+    }
+    val highlightBlock = remember(highlightAlpha, highlightColor) {
+        {
+            Highlight(
+                width = 0.8.dp,
+                blurRadius = 1.2.dp,
+                alpha = highlightAlpha,
+                style = HighlightStyle.Plain(
+                    color = highlightColor,
+                    blendMode = androidx.compose.ui.graphics.BlendMode.Plus
+                )
+            )
+        }
+    }
+    val innerShadowBlock = remember(palette.dark) {
+        {
+            InnerShadow(
+                radius = 6.dp,
+                offset = DpOffset(0.dp, 3.dp),
+                color = Color.Black.copy(
+                    alpha = if (palette.dark) 0.35f else 0.18f
+                ),
+                alpha = 0.6f
+            )
+        }
+    }
+    // perf-20261114：Ambient 档表面层改霜面渐变（替代 blur 后的 tint）
+    // —— 与 Frosted 档同语言，保持「有渐变」的材质观感。
+    val surfaceBlock: DrawScope.() -> Unit = remember(canRender, ambientTier, palette, frostBrush) {
+        {
+            if (canRender && !ambientTier) {
+                drawRect(palette.glassTint)
+            } else {
+                drawRect(frostBrush)
+            }
+        }
+    }
+    // activationState 是跨重组稳定的 State 实例（#262 延迟读取），不需作键。
+    val scaleLayerBlock = remember(style, scaleOnPress) {
+        glassScaleLayerBlock(style, activationState, scaleOnPress)
     }
 
     Box(
         modifier = modifier
-            // 深度：外阴影在最外层，不被裁剪
-            .shadow(elevation = style.elevation, shape = shape, clip = false)
-            // 按压缩放：玻璃的“形变”反馈 —— 替代涟漪的材质语言
-            .glassScale(style, activation, scaleOnPress)
-            // 禁用态整体降权
-            .graphicsLayer { alpha = if (enabled) 1f else 0.55f }
-            .clip(shape)
-            .then(materialModifier)
-            // 边缘光 / 镜面高光 / 底部内阴影 / 激活增亮 —— 绘制在材质之上、内容之下
-            .drawBehind {
-                drawGlassOverlays(shape, palette, activation, selected, accent)
-            },
+            // 深度：外阴影在最外层，不被裁剪（Compose shadow 形状感知；
+            // 影色随主题派生 —— 白天淡影防「灰框脏边」，夜间深影撑发光材质）
+            .shadow(
+                elevation = style.elevation,
+                shape = shape,
+                clip = false,
+                ambientColor = palette.shadowColor,
+                spotColor = palette.shadowColor
+            )
+            // ═══ 层级裁剪（白天模式矩形露角根因，v1.4.5 同款保证）═══
+            // RenderNode 级圆角裁剪：blur/lens 的 backdrop 绘制、霜面、内容
+            // 任何子层都无法以方角浮出圆角卡片。禁用态 alpha 合并进同一层。
+            .graphicsLayer {
+                this.shape = shape
+                this.clip = true
+                alpha = if (enabled) 1f else 0.55f
+            }
+            // ═══ kyant0 backdrop 引擎 ═══
+            // v1.4.9 闪退防御：blur/vibrancy/lens 运行在 draw 阶段 —— OEM
+            // RenderEffect/AGSL（RuntimeShader 编译）差异可在首帧直接炸掉
+            // RenderThread 或主线程。效果级 runCatching：单项失败降级为
+            // 无该效果（Frosted 观感），组合树与进程存活优先。
+            .drawBackdrop(
+                backdrop = effectiveBackdrop,
+                shape = shapeBlock,
+                effects = effectsBlock,
+                highlight = highlightBlock,
+                // 深度走外层 Compose shadow（可外溢）；kyant0 Shadow 元素
+                // 会被本组件的裁剪层截断，故不启用。
+                shadow = { null },
+                innerShadow = innerShadowBlock,
+                // 按压缩放：graphicsLayer 块内读 State（#262 零重组）；
+                // kyant0 把同一 layerBlock 反演到 backdrop 采样 —— 表面
+                // 形变时镜中世界保持对位（液态玻璃的「果冻挤压」语义）。
+                layerBlock = scaleLayerBlock,
+                // ═══ 霜面染色：绘制在模糊材质之上、内容之下 ═══
+                // Backdrop/Ambient 档 = 透出模糊材质的 tint；Frosted 档 = 霜面渐变。
+                onDrawSurface = surfaceBlock
+            ),
         contentAlignment = Alignment.Center
     ) {
         content()
     }
 }
 
-/** 按压缩放 —— activation 已经是动画值，直接映射，无需额外动画。 */
-private fun Modifier.glassScale(
+/**
+ * 极简黑白风格的扁平表面 —— GlassSurface 的风格短路分支。
+ *
+ * 材质语义：实色 surfaceContainer 底 + 发丝描边（outlineVariant）分层；
+ * 选中态描边换主色（墨/纸）加粗，禁用态降透明度，按压沿用同一激活度
+ * 缩放曲线 —— 与玻璃风格共享交互语言，仅材质语言不同。
+ *
+ * 描边经 graphicsLayer 裁剪后可见约一半宽度（1dp 描边 ≈ 0.5dp 发丝线）
+ * —— 刻意的 hairline 观感，与极简风格的克制一致。
+ */
+@Composable
+private fun FlatSurface(
+    modifier: Modifier,
     style: GlassStyle,
-    activation: Float,
-    scaleOnPress: Boolean
-): Modifier = if (!scaleOnPress || style.pressedScale >= 1f) this else graphicsLayer {
-    val scale = 1f - (1f - style.pressedScale) * activation
-    scaleX = scale
-    scaleY = scale
+    shape: Shape,
+    selected: Boolean,
+    enabled: Boolean,
+    activationState: State<Float>,
+    scaleOnPress: Boolean,
+    content: @Composable () -> Unit
+) {
+    val scheme = androidx.compose.material3.MaterialTheme.colorScheme
+    val borderColor = if (selected) scheme.primary else scheme.outlineVariant
+    val borderWidth = if (selected) 1.5.dp else 1.dp
+    Box(
+        modifier = modifier
+            .shadow(
+                elevation = style.elevation,
+                shape = shape,
+                clip = false,
+                ambientColor = scheme.scrim,
+                spotColor = scheme.scrim
+            )
+            .graphicsLayer {
+                this.shape = shape
+                this.clip = true
+                alpha = if (enabled) 1f else 0.55f
+                if (scaleOnPress && style.pressedScale < 1f) {
+                    val activation = activationState.value
+                    val scale = 1f - (1f - style.pressedScale) * activation
+                    scaleX = scale
+                    scaleY = scale
+                }
+            }
+            .background(scheme.surfaceContainer, shape)
+            .border(borderWidth, borderColor, shape),
+        contentAlignment = Alignment.Center
+    ) {
+        content()
+    }
 }
 
 /**
- * 玻璃叠加层 —— 全部为单次绘制，不产生额外图层分配。
- * activation 提升边缘与高光亮度，形成“按压即受光”的材质响应。
+ * 按压缩放 —— kyant0 layerBlock 形态。
+ *
+ * #262：接收 State 在 graphicsLayer 块内读取 —— 动画只失效图层属性，
+ * 不触发重组。
  */
-private fun DrawScope.drawGlassOverlays(
-    shape: Shape,
-    palette: GlassPalette,
-    activation: Float,
-    selected: Boolean,
-    accent: Color
-) {
-    if (size.width <= 0f || size.height <= 0f) return
-    val outline = shape.createOutline(
-        size = size,
-        layoutDirection = layoutDirection,
-        density = this
-    )
-    val boost = 1f + activation * 0.9f
-
-    // ═══ 边缘高光：上缘受光强、下缘余晖 —— 真实的“玻璃边”层次 ═══
-    val edgeTop = palette.edgeTop.copy(alpha = (palette.edgeTop.alpha * boost).coerceAtMost(0.9f))
-    val edgeBottom = palette.edgeBottom.copy(
-        alpha = (palette.edgeBottom.alpha * (0.6f + activation * 0.8f)).coerceAtMost(0.7f)
-    )
-    drawOutline(
-        outline = outline,
-        brush = Brush.verticalGradient(
-            colors = listOf(edgeTop, edgeBottom),
-            startY = 0f,
-            endY = size.height
-        ),
-        style = Stroke(width = 1.5.dp.toPx())
-    )
-
-    // ═══ 镜面高光：斜向扫掠（Liquid Glass 标志性受光）═══
-    // 修复白天模式玻璃「一片死白没质感」：原纯垂直渐变在乳白底上几乎不可见。
-    // 改为左上→右下的斜向扫掠（真实玻璃面板的受光方向），白天在乳白底上
-    // 仍能看出光带流动；夜间在暗底上形成斜向光纹。
-    val specular = palette.specular.copy(
-        alpha = (palette.specular.alpha * boost).coerceAtMost(0.35f)
-    )
-    if (specular.alpha > 0.005f) {
-        drawOutline(
-            outline = outline,
-            brush = Brush.linearGradient(
-                colors = listOf(specular, Color.Transparent),
-                start = Offset(size.width * 0.08f, 0f),
-                end = Offset(size.width * 0.92f, size.height * 0.62f)
-            )
-        )
+private fun glassScaleLayerBlock(
+    style: GlassStyle,
+    activationState: State<Float>,
+    scaleOnPress: Boolean
+): (GraphicsLayerScope.() -> Unit)? =
+    if (!scaleOnPress || style.pressedScale >= 1f) null else {
+        {
+            val activation = activationState.value
+            val scale = 1f - (1f - style.pressedScale) * activation
+            scaleX = scale
+            scaleY = scale
+        }
     }
 
-    // ═══ 中带分隔高光：玻璃「厚度」层次 ═══
-    // 顶部受光带与底部定界之间加一条极淡的水平亮线（玻璃板中层的
-    // 内反射），白天模式下给乳白霜面提供纵深，不再是平面的白块。
-    if (!palette.dark) {
-        val mid = size.height * 0.55f
-        drawOutline(
-            outline = outline,
-            brush = Brush.verticalGradient(
-                colors = listOf(Color.Transparent, Color.White.copy(alpha = 0.05f * boost), Color.Transparent),
-                startY = mid - size.height * 0.08f,
-                endY = mid + size.height * 0.08f
-            )
-        )
-    }
-
-    // ═══ 底部内阴影：自下而上的深度渐暗 ═══
-    // 白天模式减弱（暗色在乳白底上极易显脏，原 0.07 会被误读为灰框脏边）
-    val bottomShadeAlpha = if (palette.dark) 0.07f + activation * 0.05f else 0.035f + activation * 0.03f
-    drawOutline(
-        outline = outline,
-        brush = Brush.verticalGradient(
-            colors = listOf(Color.Transparent, Color.Black.copy(alpha = bottomShadeAlpha)),
-            startY = size.height * 0.65f,
-            endY = size.height
-        )
+/** 混色辅助 —— 选中态强调色边缘光的低饱和倾向。 */
+private fun Color.compositeOver(overlay: Color): Color {
+    if (overlay.alpha <= 0f) return this
+    return Color(
+        red = red * (1f - overlay.alpha) + overlay.red * overlay.alpha,
+        green = green * (1f - overlay.alpha) + overlay.green * overlay.alpha,
+        blue = blue * (1f - overlay.alpha) + overlay.blue * overlay.alpha,
+        alpha = alpha
     )
-
-    // ═══ 选中态强调浸染：低饱和 wash，拒绝大面积刷色 ═══
-    if (selected && accent.alpha > 0f) {
-        drawOutline(
-            outline = outline,
-            brush = Brush.verticalGradient(
-                colors = listOf(
-                    accent.copy(alpha = 0.05f + activation * 0.05f),
-                    accent.copy(alpha = 0.03f)
-                )
-            )
-        )
-    }
 }
 
 /**

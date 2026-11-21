@@ -1,11 +1,10 @@
 # 思考程度系统 — Coding 模式专属七档思考阶梯
 
 > **Coding 页专属**的思考深度控制体系（7 深度档 + 1 个 AUTO 元档）。
-> Agent 聊天页是**另一套独立**的六档体系（NONE/LIGHT/STANDARD/DEEP/
-> MAXIMUM + AUTO，见 `core/agent-engine` 的 `thinking` 包与
-> `docs/modes-guide.md` 相关章节）——两页面各自解释自己的思考阶梯，
-> 枚举 / 画像 / 选档器 / 效能统计 / 文案 / 持久化字段全部分立，
-> 仅共享引擎执行内核（见「二、三层注入架构」）。
+> （原 Agent 聊天页的独立六档体系已随 Agent 模式移除至 Theocracy 仓库 ——
+> 本仓库仅存 Coding 一套阶梯，枚举 / 画像 / 选档器 / 文案 /
+> 持久化字段即本文件的唯一主体，仅共享引擎执行内核，
+> 见「二、三层注入架构」。档位效能统计已随 v1.5.8 用户反馈移除。）
 
 ## 一、七档阶梯总览
 
@@ -45,20 +44,28 @@ AUTO）：
 1. **发送前预检**（`CodeAdaptiveThinkingSelector.select`）：VM 在每次
    发送前按复杂度评分解析出具体深度档，决策进系统消息 +
    `uiState.adaptiveDecision`（选择器旁回显）；
-2. **运行中深水区升级**（`escalateOnDeepWater` 观察器）：本轮工具
-   调用 >30 且最近 3 次成败滑窗内 ≥2 次失败 → 热切换 ULTRACODE +
-   系统消息说明。
+2. **运行中深水区升降档**（`escalateOnDeepWater` / `deescalateOnStabilized`
+   观察器，SPE-02 后带滞回）：本轮工具调用 >30 且最近 3 次成败滑窗内
+   ≥2 次失败 → 热切换 ULTRACODE + 系统消息说明；升级后冷却窗口（15 次
+   调用）内不再重复升/降，冷却结束且连续 5 次成功 → 回落到本轮预检
+   基准档（不再整个 run 锁死 ULTRACODE）；单 run 自动升档次数上限 1 次
+   （成本防线）。
 
-预检评分模型（每项写进决策理由）：
+预检评分模型（每项写进决策理由；SPE-01 后口径升级，理由不回显命中词原文）：
 
 | 维度 | 条件 | 加分 |
 |------|------|------|
-| 文本长度 | >500 字 +2；>1500 字 +3 | 长需求含隐式多步 |
-| 多步指示词 | 先/然后/接着/步骤/first/then/step/plan | +2 |
-| 代码/命令含量 | ``` 围栏 / `$ ` / git·npm·gradle 等 | +2 |
-| **编码意图**（coding 专有） | @file 引用 / code_edit·code_grep 语义词 / 「实现/重构+函数/类」形态 | **+1** |
-| 风险词 | rm -rf/删除/uninstall/格式化/刷机/权限 | +3（硬保底 DEEP） |
-| 错误史 | 上一轮 run 有失败 | +2 且显式升一档 |
+| 文本长度（有效口径） | 剥离代码围栏/@file/URL 后 >500 字 +2；>1500 字 +3 | 长需求含隐式多步 |
+| 多步指示词 | 然后/接着/步骤/多任务 或词边界 first/then/step/plan | +2 |
+| 代码/命令含量 | ``` 围栏 / `$ ` / 词边界 git·npm·gradle 等 | +2 |
+| **编码意图**（coding 专有） | @file 引用 / CodeEdit·CodeGrep 语义词 / 「实现/重构+函数/类」形态 | **+1** |
+| 强风险词 | rm -rf/格式化/刷机/factory reset/wipe | +3（硬保底 DEEP） |
+| 弱风险词 | 删除/uninstall/卸载 | +1（不保底） |
+| 语境风险词 | 动作动词搭配的「权限」 | +1（不保底） |
+| 错误史 | 上一轮 run 有失败（换任务时衰减清零） | +2 且显式升一档 |
+
+否定/只读语境（「不要删除」「只读分析」「dry-run」）在命中词前 12 字符
+窗口内 → 风险维度整体抑制。
 
 总分 → 档位：`<3 LIGHT · 3..5 STANDARD · 6..8 DEEP · 9..11 MAXIMUM ·
 >11 ULTRACODE`。另有上轮深水区规则：上轮调用 >30 且错误 ≥2 →
@@ -110,7 +117,25 @@ AUTO）：
 | 引擎同步 | `CodeAgentEngine.updateThinkingLevel`：三通道（①档位映射 ②旋钮补偿 ③编码指令） |
 | 原生 effort | T1 通道（默认 Profile 持久化 + 即时重建）；AUTO 档不动 effort |
 | AUTO 可解释 | 预检决策进 `adaptiveDecision` + 「🧠 自适应预检：…」系统消息；深水区升级「⚠️」系统消息 |
-| 档位效能 | `CodeThinkingEvolutionTracker`（见 [long-tasks.md](long-tasks.md) §5） |
+| 四线统一（SPE-03 P1，2026-11） | `EngineRuntimeState` 运行态快照：切线后整包重放档位/模式/自主级别/规则（切完即读即一致）；`DualLogicCodeEngine` 显式 `activeMode` 字段替代引用反推 + 构造期 DI 误配防护；旋钮补偿除数实时读引擎 `ThinkingProfile` 表（常量变更端到端等式恒成立，契约测试锁定） |
+
+### 四线统一与档位映射一致性（SPE-03 P1，2026-11 批次）
+
+- **切线零滞留**：`CodeLogicModeOps.setLogicMode / restoreLogicMode` 切线后经
+  `applyRuntimeState(engineRuntimeSnapshot())` 整包重放（档位路由当前线、
+  四线同步通道广播幂等刷新）——「设置 ULTRACODE → 切 LOOM → 立刻读
+  `thinkingLevel()`」不再依赖下一次发送前的预检刷新；
+- **显式状态**：`DualLogicCodeEngine.activeLogic()` 直读 `activeMode` 显式
+  字段（`switchLogic` 与引擎引用同一赋值点写入）；构造期 `require` 四线
+  引用两两互异，DI 误配即刻暴露；
+- **枚举收口**：`StandardLogicMode` 三布尔改为派生属性（单一事实源 =
+  枚举自身），持久化别名集中进 `LEGACY_ALIASES`（仅读不写回）；
+- **决策来源统一**：`currentThinkingDecision()` 从 `CodeEngineFacade`
+  移除——UI 一律读 `CodeUiState.adaptiveDecision`（VM 四线统一预检/升降档
+  的唯一回显通道），旧口径 kit 三线恒 null 易误判「本轮无决策」；
+- **补偿去硬编码**：`compensatedMaxIterations` 除数实时读
+  `ThinkingProfile.forLevel(level.toAgentLevel()).maxIterationsScale`（引擎
+  常量变更 → 公式自动跟随，契约测试读表断言全档位端到端等式）。
 
 ### 档位描述文案
 
@@ -124,13 +149,11 @@ AUTO）：
 | `core/code-engine/.../code/thinking/CodeThinkingLevel.kt` | coding 七档枚举（7 深度档 + AUTO）+ toAgentLevel 映射 + fromName 解析 |
 | `core/code-engine/.../code/thinking/CodeThinkingProfile.kt` | 七档画像表 + APEX 五问清单 + compensated* 旋钮补偿纯函数 |
 | `core/code-engine/.../code/thinking/CodeAdaptiveThinkingSelector.kt` | AUTO 预检选档 + 深水区升级观察器（纯函数） |
-| `core/code-engine/.../code/thinking/CodeThinkingEvolutionTracker.kt` | 档位效能统计（工作区 × 档位聚合） |
 | `core/code-engine/.../code/thinking/CodeThinkingPrompts.kt` | 编码特化思考指令（7 档 + AUTO 兜底 + APEX 五问内嵌） |
 | `core/code-engine/.../code/CodeAgentEngine.kt` | updateThinkingLevel 三通道 + 旋钮基数快照 |
 | `app/.../ui/screen/code/CodeThinkingSelector.kt` | Coding 屏选择器（含预检决策回显） |
 | `app/.../ui/screen/code/CodeThinkingGuideSheet.kt` | 档位指南弹层 |
 | `app/.../di/CodeModule.kt` | 选档器 DI 注册 + 引擎装配 |
-| `app/.../di/CodeLongTaskModule.kt` | 效能统计 DI（长任务中心共用） |
 
 （Agent 聊天页六档体系的文件在 `core/agent-engine/.../engine/thinking/`
 与 `AgentChatDialogs.kt` / `ModeGuideSheet.kt`，与本文档无耦合。）
@@ -142,10 +165,12 @@ AUTO）：
 开销与时长。把「最强档」交给启发式自动触发，等于让一个评分函数替
 用户做成本决策——这类决策应保留给人。
 
-**Q: ULTRACODE/APEXCODE 的 thinking_budget 会被 Provider 钳制吗？**
-32768/65536 是发给支持 `thinking.budget_tokens` 类参数 Provider 的
-请求值；个别 Provider 有自己的上限会按其实现钳制（服务端行为），
-客户端按档位如实下发，不预先自我阉割。
+**Q: ULTRACODE/APEXCODE 的 thinking_budget 会被钳制吗？**
+推理预算（`thinking.budget_tokens` 通道）按档位如实下发给支持该参数的
+Provider，个别 Provider 有自己的上限会按其实现钳制（服务端行为）。但
+**输出上限通道**（`max_completion_tokens`）不同：SPE-04 后推理预算不再
+被当作输出上限下发（旧实现会把档位预算变成回答截断线），任何输出上限
+都受 `contextWindow - reservedOutputTokens` 客户端钳制（防 400）。
 
 **Q: 换档位对正在运行的会话生效吗？**
 生效。patchConfig 是运行时通道，下一次迭代即用新画像；原生 effort

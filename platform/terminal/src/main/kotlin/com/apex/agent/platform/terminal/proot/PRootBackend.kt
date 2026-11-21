@@ -26,11 +26,52 @@ import com.apex.agent.platform.terminal.workspace.WorkspacePath
  */
 
 // ─── Section 6/7: PRoot Binary Provider + Info ───
+
+/**
+ * T91（D5）：PRoot argv 能力集 —— 两个 Termux 补丁选项的**独立**实测结果。
+ *
+ * 背景（「版本静默差异」根因档案 + CI 实测修正）：仓库面对的 proot 对
+ * Termux 补丁选项的支持是**正交的两项**，不能耦合在单一方言枚举里：
+ *
+ * | 二进制 | `--kill-on-exit` | `--` 终结符 |
+ * |---|---|---|
+ * | 捆绑 Termux 补丁版 5.1.107.92（APK jniLibs，设备生产） | ✅ | ✅ |
+ * | 上游 5.1.0（Ubuntu 24.04 存档） | ❌ | ❌ |
+ * | Debian 5.4.0（CI E2E 的 host proot，实测） | ✅（上游已采纳） | ❌（unknown option） |
+ *
+ * T88 时代测试里靠 `adaptForUpstreamProot` 手工过滤 —— 与 -E 事故同构的
+ * 「适配层遮蔽真实 argv」风险。T91 起由 [NativeLibraryPRootBinaryProvider]
+ * 的双能力探针在 verify 时实测判定，argv 构造端（[PRootCommandBuilder]）
+ * 按能力自适应 —— **同一个 builder 对任何 proot 产出可执行 argv**。
+ * 探针不可判定（exec 异常/超时）时保守省略（两项的省略在任何 proot 上
+ * 均合法：guest 命令恒以非选项 token `/usr/bin/env` 开头，天然分界）。
+ */
+data class PRootArgvCapabilities(
+    /** 支持 `--kill-on-exit`（proot 退出时杀光 guest 进程树）。 */
+    val supportsKillOnExit: Boolean,
+    /** 支持 `--` 选项终结符（guest 命令与 proot 选项的显式分界）。 */
+    val supportsOptionSeparator: Boolean
+) {
+    companion object {
+        /** 捆绑 Termux 5.1.107 的已知能力（测试夹具/诊断基线；设备 argv 逐字节不变）。 */
+        val TERMUX_BUNDLED = PRootArgvCapabilities(supportsKillOnExit = true, supportsOptionSeparator = true)
+
+        /** 保守形状：两项皆省 —— 任何 proot（含纯上游）均可执行。 */
+        val UPSTREAM_SAFE = PRootArgvCapabilities(supportsKillOnExit = false, supportsOptionSeparator = false)
+    }
+}
+
 data class PRootBinaryInfo(
     val path: AbsolutePath,
     val version: PRootVersion?,
     val architecture: CpuArchitecture,
-    val executable: Boolean
+    val executable: Boolean,
+    /**
+     * T91（D5）：argv 能力集（双探针实测；探针不可用时保守省略两项 ——
+     * 见 [PRootArgvCapabilities] KDoc）。默认捆绑 Termux 基线（既有
+     * 测试夹具的构造点不变）。
+     */
+    val capabilities: PRootArgvCapabilities = PRootArgvCapabilities.TERMUX_BUNDLED
 )
 
 data class PRootVersion(val major: Int?, val minor: Int?, val patch: Int?)
@@ -65,7 +106,14 @@ data class PRootCommand(
 )
 
 interface PRootCommandBuilder {
-    fun build(request: PRootLaunchRequest, prootBinary: AbsolutePath, rootfsPath: AbsolutePath, workspacePath: AbsolutePath): PRootCommand
+    fun build(
+        request: PRootLaunchRequest,
+        prootBinary: AbsolutePath,
+        rootfsPath: AbsolutePath,
+        workspacePath: AbsolutePath,
+        /** T91（D5）：目标 proot 能力集（默认捆绑 Termux 基线 —— 既有调用点行为不变）。 */
+        capabilities: PRootArgvCapabilities = PRootArgvCapabilities.TERMUX_BUNDLED
+    ): PRootCommand
 }
 
 class PRootCommandBuilderImpl : PRootCommandBuilder {
@@ -73,7 +121,8 @@ class PRootCommandBuilderImpl : PRootCommandBuilder {
         request: PRootLaunchRequest,
         prootBinary: AbsolutePath,
         rootfsPath: AbsolutePath,
-        workspacePath: AbsolutePath
+        workspacePath: AbsolutePath,
+        capabilities: PRootArgvCapabilities
     ): PRootCommand {
         val args = mutableListOf<String>()
         // Root
@@ -81,8 +130,11 @@ class PRootCommandBuilderImpl : PRootCommandBuilder {
         args.add(rootfsPath.value)
         // Fake root
         if (request.fakeRoot) args.add("-0")
-        // Kill on exit
-        if (request.killOnExit) args.add("--kill-on-exit")
+        // Kill on exit —— T91（D5）：仅当目标 proot 实测支持时才发。
+        // 上游 5.1.0 的选项表没有它（Debian 5.4 已采纳）；盲发在 5.1.0 上
+        // 直接 unknown option 拒启 —— 此前 CI 靠测试内适配层偷偷过滤
+        //（-E 事故同构风险），现在由探针结果参与决策，根除静默差异。
+        if (request.killOnExit && capabilities.supportsKillOnExit) args.add("--kill-on-exit")
         // Binds
         for (bind in request.binds) {
             // TM6: argument-injection guard — proot splits `-b host:guest[:options]`
@@ -118,7 +170,12 @@ class PRootCommandBuilderImpl : PRootCommandBuilder {
         //
         // TM6 历史注释存档：原 -E 守卫拒绝 value 中的 `\n`/NUL，语义由
         // PRootEnvTrampoline.guestPrefix 完整平移并加强（key 形态校验）。
-        args.add("--")
+        //
+        // T91（D5）：`--` 终结符独立探针实测（Debian 5.4 实测不支持 —— 即使它
+        // 已支持 --kill-on-exit）。不支持时省略：proot 选项解析遇首个非选项
+        // token 即视为命令起点，`/usr/bin/env` 开头的 trampoline 天然分界
+        //（上游 5.1.0/5.4 E2E 实测同形可用；省略在任何 proot 上均合法）。
+        if (capabilities.supportsOptionSeparator) args.add("--")
         args.addAll(PRootEnvTrampoline.guestPrefix(request.environment))
         args.add(request.executable)
         args.addAll(request.arguments)

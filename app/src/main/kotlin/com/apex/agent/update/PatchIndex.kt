@@ -37,10 +37,19 @@ object PatchIndex {
 
     /** 发布仓库 main 分支上的补丁索引固定地址（CI 自动维护）。 */
     const val PATCH_INDEX_URL =
-        "https://raw.githubusercontent.com/AceGuru-mjh/Android-Guru-Agent-Release/main/patches.json"
+        "https://raw.githubusercontent.com/Ultra-Guru/Android-Guru-Agent-Release/main/patches.json"
 
     /** 链上补丁数量上限 —— 防御环形索引（CI bug / 被篡改）导致死循环。 */
     private const val MAX_CHAIN_LENGTH = 64
+
+    /**
+     * 单段补丁体积硬上限（#859）：解码器把整段补丁 readBytes() 载入堆
+     * （[com.apex.agent.update.VcdiffDecoder] 的内存策略假设 ≤ ~20MB 量级），
+     * 而「链总价 ≤ 全量 60%」的体积门在 rootfs 大改版本可合法放行 100MB+
+     * 的单段——中低端机（dalvik heap 128-256MB）解码必然 OOM。超限链直接
+     * 判不可增量（调用方回退全量），引擎侧再作同阈值防御（清单体积可谎报）。
+     */
+    const val MAX_PATCH_BYTES: Long = 32L * 1024 * 1024
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -82,16 +91,19 @@ object PatchIndex {
         .getOrNull()
 
     /**
-     * 解析「本地版本 → 目标 tag」的最短补丁链。
+     * 解析「本地版本 → 目标 tag」的**最短**补丁链（BFS）。
      *
-     * 图结构：fromTag → toTag 有向边（按 variant 过滤）。用哈希表逐跳
-     * 推进；同一 from 出现多条边时取**第一条**（CI 语义下 from 唯一），
-     * visited 集合防环。任一跳断链（该版本无后继补丁）即整体失败，
-     * 调用方回退全量。
+     * 图结构：fromTag → toTag 有向边（按 variant 过滤）。多基底发布后同一
+     * fromTag 会有多条出边（相邻版边 + 跨版直达边）—— 逐跳推走第一条边的
+     * 旧算法会错过「v1.4.4.21 → v1.4.5」直达边而绕行走两段相邻边。BFS
+     * 保证：存在直达边必选直达（跳数最少）；同跳数回溯时贪心取每段体积
+     * 最小的前驱边（真实索引出边稀疏，贪心即近优）。
+     *
+     * 断链（本地版本无任何出边可达目标）→ null，调用方回退全量。
      *
      * @param index 索引模型
      * @param localVersionName 本地 versionName（如 "1.4.4.3"）
-     * @param targetTag 目标 tag（如 "v1.4.4.5"）
+     * @param targetTag 目标 tag（如 "v1.4.4.5"）；空白时回退 index.latestTag
      * @param variant 设备 ABI 变体（"arm64" / "universal"）
      */
     fun resolveChain(
@@ -101,25 +113,65 @@ object PatchIndex {
         variant: String
     ): Chain? {
         val from = "v$localVersionName"
-        if (from == targetTag) return null
-        val outgoing = HashMap<String, Entry>()
+        val target = targetTag.ifBlank { index.latestTag.orEmpty() }
+        if (target.isBlank() || from == target) return null
+
+        // 邻接表：fromTag → 出边（多基底 = 多条）
+        val outgoing = HashMap<String, MutableList<Entry>>()
         for (entry in index.patches) {
             if (entry.variant != variant) continue
             if (entry.url.isBlank()) continue
-            // 保留首个出现的历史条目（向后兼容早期索引的重复写入）
-            outgoing.putIfAbsent(entry.fromTag, entry)
+            outgoing.getOrPut(entry.fromTag) { ArrayList(1) }.add(entry)
         }
-        val visited = HashSet<String>()
-        val steps = ArrayList<Entry>()
-        var cursor = from
-        while (cursor != targetTag) {
-            if (!visited.add(cursor) || steps.size >= MAX_CHAIN_LENGTH) return null
-            val edge = outgoing[cursor] ?: return null
-            steps.add(edge)
-            cursor = edge.toTag
+
+        // ── BFS 求最短跳数 ────────────────────────────────────────────
+        // dist[fromTag] = 最少补丁段数；队列逐层扩张，命中 target 即停。
+        val dist = HashMap<String, Int>()
+        dist[from] = 0
+        val queue = ArrayDeque<String>()
+        queue.add(from)
+        while (queue.isNotEmpty()) {
+            val cursor = queue.removeFirst()
+            val d = dist.getValue(cursor)
+            if (d >= MAX_CHAIN_LENGTH) continue
+            for (edge in outgoing[cursor].orEmpty()) {
+                if (edge.toTag == target) {
+                    dist[edge.toTag] = d + 1
+                    queue.clear()
+                    break
+                }
+                if (!dist.containsKey(edge.toTag)) {
+                    dist[edge.toTag] = d + 1
+                    queue.add(edge.toTag)
+                }
+            }
         }
+        val hops = dist[target] ?: return null
+        if (hops <= 0 || hops > MAX_CHAIN_LENGTH) return null
+
+        // ── 回溯重构路径：同跳数前驱中取体积最小（下载量最优）────────────
+        val steps = ArrayList<Entry>(hops)
+        var cursor = target
+        while (cursor != from) {
+            val nextHop = dist.getValue(cursor)
+            val predecessor = outgoing.entries
+                .asSequence()
+                .filter { dist.getValueOrDefault(it.key, Int.MAX_VALUE) == nextHop - 1 }
+                .flatMap { it.value.asSequence() }
+                .filter { it.toTag == cursor }
+                .minByOrNull { it.sizeBytes.coerceAtLeast(0L) }
+                ?: return null
+            steps.add(predecessor)
+            cursor = predecessor.fromTag
+        }
+        steps.reverse()
         if (steps.isEmpty()) return null
         val total = steps.fold(0L) { acc, entry -> acc + entry.sizeBytes.coerceAtLeast(0L) }
         return Chain(steps, total)
     }
 }
+
+/** [HashMap.getValueOrDefault] —— Kotlin/JVM 无此内联（getOrDefault 是 JRE 方法，
+ *  MinSdk 26 可用；此处显式包装避免可空读取歧义）。 */
+private fun <K, V> Map<K, V>.getValueOrDefault(key: K, default: V): V =
+    if (containsKey(key)) getValue(key) else default

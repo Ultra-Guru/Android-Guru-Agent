@@ -1,12 +1,15 @@
 package com.apex.agent.core.llm
 
+import com.apex.agent.core.logging.AppLogger
+import com.apex.agent.core.logging.LogCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 import okhttp3.Call
 import okhttp3.Callback
@@ -16,7 +19,9 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.BufferedReader
+import java.io.IOException
 import java.io.InputStreamReader
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.coroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -29,24 +34,52 @@ class StreamingOpenAiClient(
     private val httpClient: OkHttpClient
 ) : LlmClient {
 
+    /** 解析失败限次计数（防整页 HTML 错误片段刷屏日志；实例可能被并发流共享 → 原子）。 */
+    private val parseFailuresLogged = java.util.concurrent.atomic.AtomicInteger()
+    private val sanitizeFallbacksLogged = java.util.concurrent.atomic.AtomicInteger()
+
+    /**
+     * diag-202611（422 unknown variant 复盘）：server-side 搜索 tool 降级标记。
+     * 置位后本实例所有请求不再注入非标准 tools[].type 搜索条目 —— 由
+     * [executeWithServerToolDegrade] 在「未知 tools[].type」类请求级拒绝后
+     * 置位（每实例一次，防重复烧请求）。
+     */
+    private val serverSearchToolDegraded = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** 端点门控跳过留痕限次（首 3 次 + 之后每 50 条一条，与 #501 同模式）。 */
+    private val serverSearchSkipsLogged = java.util.concurrent.atomic.AtomicInteger()
+
+    /**
+     * #817：流式专用派生 client —— callTimeout 归零。
+     *
+     * OkHttp 的 callTimeout 语义是「call 创建 → 响应体关闭」的**绝对墙钟**
+     *（官方文档明确覆盖 reading the response body），不只覆盖连接/请求/响应头；
+     * 而 [httpClient] 同时服务于 chat 与 chatStream，其 callTimeout =
+     * requestTimeoutMs（默认 120s）会把 SSE 流的总时长硬性钉死在 2 分钟 ——
+     * 推理型模型长输出场景必被强制掐断，且部分输出已发射时韧性重试不放行
+     *（防重复副作用的设计是对的），整轮报废。
+     *
+     * 修复：chatStream 走 newBuilder().callTimeout(0) 的派生 client
+     *（共享连接池/调度器，OkHttp 官方推荐的按请求定制方式）；非流式 chat()
+     * 保留原 callTimeout 作为单次请求硬上限。流式活性由 readTimeout 逐包
+     * 保障（每收到一个 chunk 即重置），断流场景照常超时，无需绝对墙钟。
+     */
+    private val streamHttpClient: OkHttpClient by lazy {
+        httpClient.newBuilder().callTimeout(0, TimeUnit.MILLISECONDS).build()
+    }
+
+    /** SPE-05：choices>1 帧的限次告警计数。 */
+    private val multipleChoicesLogged = java.util.concurrent.atomic.AtomicInteger()
+
     override suspend fun chat(
         messages: List<LlmMessage>,
         tools: List<ToolDefinition>,
         temperature: Float,
         maxTokens: Int
-    ): LlmResponse {
-        val body = buildRequestBody(messages, tools, temperature, maxTokens, stream = false)
-
-        val request = buildRequest(body)
-        val response = httpClient.newCall(request).await()
-        val responseBody = response.body?.string() ?: throw LlmException.EmptyResponse()
-
-        if (!response.isSuccessful) {
-            throw LlmException.Http(response.code, responseBody)
-        }
-
-        return parseNonStreamResponse(responseBody)
-    }
+    ): LlmResponse = executeWithServerToolDegrade(
+        buildBody = { buildRequestBody(messages, tools, temperature, maxTokens, stream = false) },
+        issueRequest = { body -> executeNonStream(buildRequest(body)) }
+    )
 
     // ═══ Tool System v4 — per-request tool choice（强制函数调用）═══
 
@@ -56,22 +89,15 @@ class StreamingOpenAiClient(
         temperature: Float,
         maxTokens: Int,
         toolChoice: ToolChoiceSpec?
-    ): LlmResponse {
-        val body = buildRequestBody(
-            messages, tools, temperature, maxTokens,
-            stream = false, toolChoiceOverride = toolChoice
-        )
-
-        val request = buildRequest(body)
-        val response = httpClient.newCall(request).await()
-        val responseBody = response.body?.string() ?: throw LlmException.EmptyResponse()
-
-        if (!response.isSuccessful) {
-            throw LlmException.Http(response.code, responseBody)
-        }
-
-        return parseNonStreamResponse(responseBody)
-    }
+    ): LlmResponse = executeWithServerToolDegrade(
+        buildBody = {
+            buildRequestBody(
+                messages, tools, temperature, maxTokens,
+                stream = false, toolChoiceOverride = toolChoice
+            )
+        },
+        issueRequest = { body -> executeNonStream(buildRequest(body)) }
+    )
 
     override fun chatStream(
         messages: List<LlmMessage>,
@@ -88,20 +114,19 @@ class StreamingOpenAiClient(
         maxTokens: Int,
         toolChoice: ToolChoiceSpec?
     ): Flow<LlmStreamChunk> = flow {
-        val body = buildRequestBody(
-            messages, tools, temperature, maxTokens,
-            stream = true, toolChoiceOverride = toolChoice
+        // diag-202611（422 unknown variant 复盘）：请求头阶段包一层
+        // [executeWithServerToolDegrade] —— 端点以「未知 tools[].type」拒绝时
+        // 剔除 server-side 搜索 tool 重发一次。失败发生在任何流片段发射前，
+        // 不属于 #762/#765 禁区的流重放；成功获取响应后的读循环不变。
+        val response = executeWithServerToolDegrade(
+            buildBody = {
+                buildRequestBody(
+                    messages, tools, temperature, maxTokens,
+                    stream = true, toolChoiceOverride = toolChoice
+                )
+            },
+            issueRequest = { body -> acquireStreamResponse(buildRequest(body)) }
         )
-        val request = buildRequest(body)
-
-        val call = httpClient.newCall(request)
-        val response = call.await()
-
-        if (!response.isSuccessful) {
-            val errorBody = response.body?.string() ?: "Unknown error"
-            response.close()
-            throw LlmException.Http(response.code, errorBody)
-        }
 
         val responseBody = response.body ?: run {
             response.close()
@@ -116,35 +141,133 @@ class StreamingOpenAiClient(
             ?.invokeOnCompletion { runCatching { response.close() } }
 
         try {
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                // 每行检查一次取消状态（readLine 阻塞期间靠上面的 invokeOnCompletion 兜底）
-                coroutineContext.ensureActive()
-                val currentLine = line ?: break
-                // 兼容 OpenAI SSE 规范允许的两种前缀：`data:` 与 `data: `。
-                // 旧实现只认 `data: `（带一个空格），部分代理发 `data:{...}` 会被静默丢弃。
-                if (!currentLine.startsWith("data:")) continue
+            // ── SPE-05 P0-1：标准 SSE 帧状态机（[SseFrameReader]）──
+            // 多行 data: 按规范拼接后整体解析（旧实现逐行 parse 把规范分帧
+            // 拆碎 → 解析失败静默丢帧 → 回答缺字）；注释行只进心跳计数；
+            // 超长行护栏防 OOM。
+            val frames = SseFrameReader(
+                reader,
+                clock = System::currentTimeMillis,
+                heartbeatStallTimeoutMs = HEARTBEAT_STALL_TIMEOUT_MS
+            )
+            // SPE-08 P1-1：回合级诊断采集器（帧计数/首 token 延迟/帧间隔分位
+            // /收尾语义/用量来源；随流尾最后一帧上抛，诊断页消费）。
+            val stats = TurnStatsCollector()
+            // 末帧兜底（v1.5.x 修复）：部分网关（智谱等）把完整正文挂在最后一帧
+            // 的 choice.message 上（增量 delta 缺失/为空）—— 记录本流是否见过
+            // 增量正文，parseStreamChunk 据此决定是否用 message.content 兜底
+            //（见过则不用，防正文重复一遍）。
+            var sawDeltaContent = false
+            // 截断守卫（#762/#765 + SPE-05 P0-3 语义表）：本流是否见过**干净**
+            // 的服务端完成标记 —— [DONE] 帧或 stop/tool_calls/其他 finish_reason
+            // 帧；**length 不算干净收尾**（被输出上限截断，收尾守卫统一转
+            // [LlmException.TruncatedStream] 显式错误，而非旧版「正常收尾」）。
+            var sawFinish = false
+            // [DONE] 已到但仍在排空尾部帧（部分网关把 usage 统计帧放在
+            // [DONE] 之后；旧实现 DONE 即 break 直接丢弃统计）。
+            var sawDone = false
+            // 本流已接收的正文字符数（截断错误的「已保留 N 字」口径）。
+            var partialChars = 0
+            // SPE-05 P0-3：见过 finish_reason=length（输出被服务端截断）。
+            var truncatedByLength = false
+            // SPE-08 P1-2：见过 finish_reason=content_filter（内容过滤拒发）。
+            var contentFiltered = false
+            // #765：SSE 逐行读取是阻塞 IO，但本 flow 不再用 flowOn(Dispatchers.IO)
+            // 整体搬运 —— flowOn 会在 emit 与收集者之间引入 ChannelFlow 中转，
+            // 上游「发完最后一块后立刻抛异常」（断线 / 截断守卫）时，异常投递
+            // 可能跑赢缓冲里的部分输出，把它整个丢掉 —— 恰好违背本 PR
+            // 「部分输出留存」的目标（复现：runTest 下约 1/3 概率丢块）。
+            // 改为仅把阻塞读取包进 withContext(IO)：发射是收集者上下文里的
+            // 直接挂起调用，「先收到部分输出、后收到异常」的顺序有了硬保证。
+            try {
+                while (true) {
+                    // 每帧检查一次取消状态（readLine 阻塞期间靠上面的 invokeOnCompletion 兜底）
+                    coroutineContext.ensureActive()
+                    val payload = try {
+                        withContext(Dispatchers.IO) { frames.nextFrame() } ?: break
+                    } catch (e: IOException) {
+                        // DONE 后的排空阶段：连接以任何方式关闭（含读超时/对端半关）
+                        // 都视为正常 EOF（完成标记已见，尾部 usage 已尽力接收）。
+                        if (sawDone) break else throw e
+                    }
+                    stats.onFrameArrived()
+                    // SPE-08 P1-2 软看门狗：帧仍在到但迟迟无内容（正文/思考/工具
+                    // 调用任一）→ 首 token 超时（完全静默的连接由 OkHttp
+                    // readTimeout 兜底，见常量 KDoc）。
+                    checkFirstTokenWatchdog(stats)
+                    if (payload == "[DONE]") {
+                        sawDone = true
+                        sawFinish = true
+                        stats.onFrameParsed() // DONE = 成功处理的帧（dropped 账本口径）
+                        stats.onFinishReason("done")
+                        emit(LlmStreamChunk(isFinish = true))
+                        continue // 不 break：排空尾部帧（usage 统计帧可能在 DONE 之后）
+                    }
 
-                val data = currentLine.removePrefix("data:").trim()
-                if (data == "[DONE]") {
-                    emit(LlmStreamChunk(isFinish = true))
-                    break
+                    parseStreamChunk(payload, sawDeltaContent)?.let {
+                        stats.onFrameParsed()
+                        if (!it.content.isNullOrEmpty()) {
+                            sawDeltaContent = true
+                            stats.onFirstToken()
+                            partialChars += it.content.length
+                        }
+                        if (!it.reasoningContent.isNullOrEmpty()) stats.onFirstToken()
+                        if (it.toolCalls.isNotEmpty()) stats.onFirstToken()
+                        if (it.truncated) {
+                            truncatedByLength = true
+                            stats.onTruncated()
+                        }
+                        if (it.finishReason == "content_filter") contentFiltered = true
+                        stats.onFinishReason(it.finishReason)
+                        if (it.usage != null) stats.onUsageSeen()
+                        // SPE-05 P0-3 语义表：stop/tool_calls/其他 → 干净收尾；
+                        // length → 不算（截断链路在收尾守卫统一触发）。
+                        if (it.isFinish || (it.finishReason != null && !it.truncated)) sawFinish = true
+                        emit(it)
+                    }
                 }
-
-                parseStreamChunk(data)?.let { emit(it) }
+                // ── 收尾守卫（SPE-05 P0-3：与 isFinish 同一张语义表派生）──
+                // ① finish_reason=length：显式截断错误（携带已保留字符数，供
+                //    上层「回答可能被截断 · 保留 N 字」提示与续写决策；不再被
+                //    当正常收尾把半截回答写进历史）；
+                // ② finish_reason=content_filter（SPE-08 P1-2）：内容被服务端
+                //    过滤拒发——独立错误类型与文案，不与网络/截断混淆；
+                // ③ EOF 前未见任何完成标记：断流残段（#762/#765 既有守卫，
+                //    文案不变）。
+                // 全部只上抛、不自动重放（#762/#765 禁区），弱网下是否重发由
+                // 用户手动决定。
+                when {
+                    truncatedByLength -> throw LlmException.TruncatedStream(partialChars)
+                    contentFiltered -> throw LlmException.ContentFiltered(partialChars)
+                    !sawFinish -> throw IOException(
+                        "SSE 流意外终止：未见完成标记（[DONE]/finish_reason），" +
+                            "输出可能被截断——已收到的部分内容已保留"
+                    )
+                }
+            } finally {
+                // SPE-08 P1-1：诊断快照随流尾最后一帧上抛（成功/异常共用路径；
+                // 收集者已取消时静默放弃——诊断不掩盖也不拖累主流程）。
+                val snapshot = stats.snapshot()
+                runCatching { emit(LlmStreamChunk(diagnostics = snapshot)) }
             }
         } finally {
             cancelHandle?.dispose()
-            reader.close()
-            response.close()
+            // 关闭是阻塞 IO：即便协程已被取消也要完成（NonCancellable），
+            // 且 runCatching 防止 close 自身的异常掩盖真正的失败原因。
+            withContext(NonCancellable + Dispatchers.IO) {
+                runCatching { reader.close() }
+                runCatching { response.close() }
+            }
         }
-    }.flowOn(Dispatchers.IO)
-
+    }
     // ═══ 内部方法 ═══
     
     private fun buildRequest(body: JsonObject): Request {
+        // 完全自定义端点（用户反馈）：baseUrl 已含 /chat/completions（或旧版
+        // /completions）时原样直发，不再双拼；根路径 / /v1 等照旧追加。
+        // 归一化口径见 [EndpointResolver.chatCompletions]（设置页预览同源）。
         val builder = Request.Builder()
-            .url("${config.baseUrl.trimEnd('/')}/chat/completions")
+            .url(EndpointResolver.chatCompletions(config.baseUrl))
             .addHeader("Content-Type", "application/json")
             .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
         
@@ -198,24 +321,26 @@ class StreamingOpenAiClient(
         }
 
         // ── B3/T4：OpenAI 官方严格推理模型识别（o1/o3/o4-mini/gpt-5）──────────
-        // 这些模型的 API 硬性拒绝 temperature 与 max_tokens：
-        //  - 带 temperature → 400 "Unsupported parameter: 'temperature'"
-        //  - 带 max_tokens → 400 "…'max_tokens' is not supported with this model"
-        //    （必须改用 max_completion_tokens）
-        val isStrictOpenAiReasoner = OPENAI_STRICT_REASONER.containsMatchIn(config.model)
+        // 这些模型的 API 硬性拒绝 temperature 与 max_tokens（400
+        // "Unsupported parameter"）；正则口径统一收口至
+        // [EndpointResolver.isStrictOpenAiReasoner]（Coding 屏思考档位生效
+        // 提示与其共用同一份判定，防两处漂移）。
+        val isStrictOpenAiReasoner = EndpointResolver.isStrictOpenAiReasoner(config.model)
         // T4：OpenAI 官方端点 + 推理模型 → max_tokens 必须换成 max_completion_tokens。
         // 官方端点判定 = baseUrl 含 "api.openai.com"（第三方 OpenAI 兼容网关大多
         // 仍接受 max_tokens，不误伤）。
         val requiresMaxCompletionTokens = config.baseUrl.contains("api.openai.com", ignoreCase = true) &&
             (config.capabilities.reasoning || isStrictOpenAiReasoner)
 
-        // P1-3 修复：max_tokens 与 max_completion_tokens 互斥。旧实现两者同时发送
-        //（thinkingBudget 非空或 ReasoningEffort.MAX 时），OpenAI 端点对同时携带
-        // 两个参数的请求直接 400（"Unsupported parameter: 'max_tokens' is not
-        // supported with this model"）。现在发送 max_completion_tokens 时不再发
-        // max_tokens；未设置思维预算时才发 max_tokens。
+        // P1-3 修复 + SPE-04 P0-1 升级：max_tokens 与 max_completion_tokens 互斥，
+        // 且输出上限**不再读 thinkingBudget**（推理预算 ≠ 输出上限——旧实现
+        // 把档位预算（STANDARD 1024 / APEXCODE 65536）当 max_completion_tokens
+        // 下发：前者直接截断长回答，后者被多数端点 400 拒绝）。取值链：
+        //   显式 config.maxCompletionTokens（新字段，与档位解耦）
+        //   > ReasoningEffort.MAX 且推理能力位的 maxOf(requestedTokens, 8192) 兜底
+        //   > null（走 max_tokens = effectiveMaxTokens）。
         // 思维预算与 reasoning_effort 不强行绑定：显式设置时以此为准。
-        val maxCompletion = config.thinkingBudget ?: run {
+        val maxCompletion = config.maxCompletionTokens ?: run {
             if (config.reasoningEffort == ReasoningEffort.MAX &&
                 (config.capabilities.reasoning || isStrictOpenAiReasoner)
             ) maxOf(requestedTokens, 8192) else null
@@ -229,34 +354,16 @@ class StreamingOpenAiClient(
         //    无法事后追加，只能在构建期与 function tools 一并写入。
         // OFF（默认）时 searchToolEntries 为空且下方 when 走 else —— 请求体
         // 与旧版完全一致，兼容所有端点。
+        //
+        // diag-202611（422 unknown variant 复盘）：注入逻辑收敛至
+        // [buildSearchToolEntries] —— ①端点能力门控：显式选择的 server tool
+        // 模式与真实端点不匹配（如 ZHIPU 形态 + 通用 OpenAI 兼容网关）时不再
+        // 注入；旧实现照发非标准 tools[].type，会让整请求在 Rust serde 风格
+        // 端点上 422（unknown variant `WebSearch`, expected `function`）。
+        // ②自愈降级：端点曾以该形态拒绝后，本实例后续请求一律不再注入。
+        // searchMode 同时供下方「独立顶层字段形态」 when 使用（单次解析双用）。
         val searchMode = config.webSearch.resolveFor(config.baseUrl, config.providerId)
-        val searchToolEntries: List<JsonObject> = when (searchMode) {
-            WebSearchMode.ZHIPU -> listOf(
-                // 智谱 GLM：web_search 作为 server-side tool 挂进 tools 数组；
-                // search_result=true 让响应携带 message.search_result[] 引用列表。
-                buildJsonObject {
-                    put("type", "web_search")
-                    putJsonObject("web_search") {
-                        put("enable", true)
-                        put("search_result", true)
-                    }
-                }
-            )
-            WebSearchMode.DEEPSEEK -> listOf(
-                // DeepSeek Responses 兼容端点：接受 {"type":"web_search"}
-                // （与 GLM 同为 server-side tool 形态，但无嵌套配置）。
-                buildJsonObject { put("type", "web_search") }
-            )
-            WebSearchMode.ANTHROPIC -> listOf(
-                // Anthropic 原生 server tool（经 OpenAI 兼容代理透传时保持同形）。
-                buildJsonObject {
-                    put("type", "web_search_20250305")
-                    put("name", "web_search")
-                    put("max_uses", 3)
-                }
-            )
-            else -> emptyList()
-        }
+        val searchToolEntries = buildSearchToolEntries(searchMode)
 
         return buildJsonObject {
             put("model", config.model)
@@ -269,7 +376,14 @@ class StreamingOpenAiClient(
                 put("temperature", effectiveTemperature)
             }
             if (maxCompletion != null || requiresMaxCompletionTokens) {
-                put("max_completion_tokens", maxCompletion ?: effectiveMaxTokens)
+                // SPE-04 P1-4 钳制：任何输出上限都不超过 contextWindow -
+                // reservedOutputTokens（旧实现 APEXCODE 65536 裸下发会 400；
+                // contextWindow 未知(=0)时不钳——无法判定就不自我阉割，
+                // ReasoningEffort.MAX 的 8192 下限兜底保持旧语义）。
+                val outputCap = if (config.contextWindow > 0) {
+                    (config.contextWindow - config.reservedOutputTokens).coerceAtLeast(256)
+                } else Int.MAX_VALUE
+                put("max_completion_tokens", (maxCompletion ?: effectiveMaxTokens).coerceAtMost(outputCap))
             } else {
                 put("max_tokens", effectiveMaxTokens)
             }
@@ -567,6 +681,142 @@ class StreamingOpenAiClient(
         }
     }
     
+    // ═══ diag-202611：WebSearch server tool 注入（端点门控 + 422 自愈降级）═══
+
+    /**
+     * 构建注入 tools 数组的 server-side 搜索 tool 条目（ZHIPU / DEEPSEEK /
+     * ANTHROPIC 形态）。三种情况返回空列表（请求体与旧版 OFF 行为一致，
+     * 兼容所有端点）：
+     * 1. 解析后非 server-tool 模式（OFF / AUTO 推断不出 / 顶层字段形态）；
+     * 2. 端点能力门控不匹配（[WebSearchMode.serverToolSupportedBy]）；
+     * 3. 本实例已因「未知 tools[].type」拒绝降级（[serverSearchToolDegraded]）。
+     */
+    private fun buildSearchToolEntries(searchMode: WebSearchMode): List<JsonObject> {
+        if (serverSearchToolDegraded.get()) return emptyList()
+        if (!searchMode.serverToolSupportedBy(config.baseUrl, config.providerId)) {
+            logServerSearchToolSkipped(searchMode)
+            return emptyList()
+        }
+        return when (searchMode) {
+            WebSearchMode.ZHIPU -> listOf(
+                // 智谱 GLM：WebSearch 作为 server-side tool 挂进 tools 数组；
+                // search_result=true 让响应携带 message.search_result[] 引用列表。
+                buildJsonObject {
+                    put("type", "WebSearch")
+                    putJsonObject("WebSearch") {
+                        put("enable", true)
+                        put("search_result", true)
+                    }
+                }
+            )
+            WebSearchMode.DEEPSEEK -> listOf(
+                // DeepSeek Responses 兼容端点：接受 {"type":"WebSearch"}
+                // （与 GLM 同为 server-side tool 形态，但无嵌套配置）。
+                buildJsonObject { put("type", "WebSearch") }
+            )
+            WebSearchMode.ANTHROPIC -> listOf(
+                // Anthropic 原生 server tool（经 OpenAI 兼容代理透传时保持同形）。
+                buildJsonObject {
+                    put("type", "web_search_20250305")
+                    put("name", "WebSearch")
+                    put("max_uses", 3)
+                }
+            )
+            else -> emptyList()
+        }
+    }
+
+    /** 端点门控跳过留痕（限次：首 3 次 + 之后每 50 条一条，与 #501 同模式）。 */
+    private fun logServerSearchToolSkipped(mode: WebSearchMode) {
+        val skippedNo = serverSearchSkipsLogged.incrementAndGet()
+        if (skippedNo <= 3 || skippedNo % 50 == 0) {
+            AppLogger.instance.warn(
+                LogCategory.LLM, "StreamingOpenAiClient",
+                "webSearch mode=$mode ignored at ${config.baseUrl}: endpoint does not " +
+                    "match that provider — non-standard tools[].type would be rejected " +
+                    "(422 unknown variant) by strict OpenAI-compatible gateways " +
+                    "(skip #$skippedNo)"
+            )
+        }
+    }
+
+    /**
+     * 「未知 tools[].type」类请求级拒绝的一次性降级重发（每客户端实例一次）。
+     *
+     * 触发：[LlmException.Http]（400/422）且响应体命中 [ToolTypeRejection]
+     *（Rust serde "unknown variant" / Pydantic "Input should be 'function'" 等）。
+     * 动作：置位 [serverSearchToolDegraded] → [buildBody] 重建的请求体自动剔除
+     * server-side 搜索 tool → 重发一次。重发仍失败则原样上抛（诚实暴露，
+     * 不吞错）；非该形态的 4xx 不重试 —— 重发同一请求体只会重复失败
+     *（与 [SuspendHttpRetry]「4xx 不重试」语义一致，不烧预算）。
+     *
+     * 安全性：失败发生在响应头阶段，尚未发射任何流片段 / 产生任何工具副作用，
+     * 不属于 #762/#765 禁区的流重放。
+     */
+    private suspend fun <T> executeWithServerToolDegrade(
+        buildBody: () -> JsonObject,
+        issueRequest: suspend (JsonObject) -> T
+    ): T {
+        try {
+            return issueRequest(buildBody())
+        } catch (e: LlmException.Http) {
+            if ((e.code != 400 && e.code != 422) ||
+                !ToolTypeRejection.isUnknownToolTypeRejection(e.body)
+            ) throw e
+            if (!serverSearchToolDegraded.compareAndSet(false, true)) throw e
+            AppLogger.instance.warn(
+                LogCategory.LLM, "StreamingOpenAiClient",
+                "Endpoint rejected non-standard tools[].type (HTTP ${e.code}): " +
+                    "${e.body.take(200)} — stripping server-side web-search tools " +
+                    "and retrying once"
+            )
+            return issueRequest(buildBody())
+        }
+    }
+
+    /**
+     * 非流式请求执行（chat 两个重载共用）。
+     * #259：重试在 suspend 层（可取消的 delay 退避，总预算见 [SuspendHttpRetry]）。
+     */
+    private suspend fun executeNonStream(request: Request): LlmResponse =
+        SuspendHttpRetry.execute(config) { httpClient.newCall(request).await() }.use { response ->
+            if (!response.isSuccessful) {
+                throw LlmException.Http(response.code, response.errorBodyHead())
+            }
+            val body = response.body ?: throw LlmException.EmptyResponse()
+            val bytes = body.byteStream().use { stream ->
+                BoundedReads.readAtMost(stream, MAX_NON_STREAM_RESPONSE_BYTES)
+            } ?: throw LlmException.ResponseTooLarge(MAX_NON_STREAM_RESPONSE_BYTES)
+            parseNonStreamResponse(bytes.toString(Charsets.UTF_8))
+        }
+
+    /**
+     * 流式响应获取（chatStream 头阶段）。
+     *
+     * #762 第 4 项安全切片（#765）：OpenAI Chat Completions 的 POST 流式
+     * **没有**可依赖的稳定事件 ID / 断点续传 —— 断线（含响应头返回前的
+     * IOException）与可重试状态码（503 等）一律直接上抛，**绝不自动重放**。
+     * 重放 = 同一请求计两次费 + 已执行的工具副作用再执行一遍；且旧路径经
+     * SuspendHttpRetry 重试时复用同一 Call，会触发 OkHttp
+     * IllegalStateException("Already Executed")。是否重发由用户在 UI 手动决定
+     *（本方法只在响应头阶段抛错；「未知 tools[].type」降级重发见
+     * [executeWithServerToolDegrade]，其重发请求体与首发不同，非重放）。
+     */
+    private suspend fun acquireStreamResponse(request: Request): Response {
+        // #817：走 callTimeout=0 的流式派生 client（见 [streamHttpClient] KDoc），
+        // 绝对墙钟不再掐断长流；活性由 readTimeout 逐包保障。
+        val response = streamHttpClient.newCall(request).await()
+        if (!response.isSuccessful) {
+            // 错误体读取是阻塞 IO —— 包在 IO 调度器（本 flow 不再整体 flowOn，见下方读循环注释）
+            val errorBody = withContext(Dispatchers.IO) {
+                response.body?.string() ?: "Unknown error"
+            }
+            response.close()
+            throw LlmException.Http(response.code, errorBody)
+        }
+        return response
+    }
+
     // ═══ Tool System v4 — 请求侧工具描述/Schema 硬化 ═══
 
     /** 单工具描述在请求里的硬上限（v4：防"文档式 description"拖爆请求体）。 */
@@ -586,11 +836,29 @@ class StreamingOpenAiClient(
     private fun sanitizeParameters(parameters: String): JsonElement {
         val parsed = runCatching { Json.parseToJsonElement(parameters) }
             .getOrElse {
+                // #500：静默空 schema 会把该工具的调用能力一并静默禁用 ——
+                // 限次留痕（与 #501 parseFailuresLogged 同模式）供诊断。
+                logSanitizeFallback("tool parameters are not valid JSON", it, parameters)
                 return Json.parseToJsonElement("""{"type":"object","properties":{}}""")
             }
         if (!isGeminiCompatEndpoint()) return parsed
         return runCatching { stripGeminiUnsupported(parsed) }
-            .getOrDefault(Json.parseToJsonElement("""{"type":"object","properties":{}}"""))
+            .getOrElse {
+                logSanitizeFallback("stripGeminiUnsupported failed", it, parameters)
+                Json.parseToJsonElement("""{"type":"object","properties":{}}""")
+            }
+    }
+
+    /** #500：sanitize 回退空 schema 的限次日志（首 3 次 + 之后每 50 条一条）。 */
+    private fun logSanitizeFallback(reason: String, e: Throwable, parameters: String) {
+        val failureNo = sanitizeFallbacksLogged.incrementAndGet()
+        if (failureNo <= 3 || failureNo % 50 == 0) {
+            AppLogger.instance.warn(
+                LogCategory.LLM, "StreamingOpenAiClient",
+                "sanitizeParameters fallback #$failureNo: $reason — " +
+                    "${e::class.simpleName}: ${e.message?.take(120)} — schema head: ${parameters.take(80)}"
+            )
+        }
     }
 
     private fun isGeminiCompatEndpoint(): Boolean {
@@ -617,7 +885,55 @@ class StreamingOpenAiClient(
         else -> element
     }
 
-    private fun parseStreamChunk(data: String): LlmStreamChunk? {
+    /** choices 多于一帧的限次告警（首 3 次 + 之后每 50 条，与 #501 同模式）。 */
+    private fun logMultipleChoices(count: Int) {
+        val no = multipleChoicesLogged.incrementAndGet()
+        if (no <= 3 || no % 50 == 0) {
+            AppLogger.instance.warn(
+                LogCategory.LLM, "StreamingOpenAiClient",
+                "SSE chunk carries $count choices (n>1 / proxy aggregation) — parsing first, " +
+                    "others not silently dropped but not consumed either (single-answer client) (#$no)"
+            )
+        }
+    }
+
+    /**
+     * 原生思考内容提取（别名表统一，SPE-05 P1-5）。
+     *
+     * 覆盖：`reasoning_content`（DeepSeek-R1 / GLM-Z1）/ `reasoning`（部分
+     * Anthropic 代理）/ `thinking`（部分思考型网关）/
+     * `reasoning_details[].text`（聚合层结构化思维链）。
+     */
+    private fun extractReasoning(source: JsonObject?): String? {
+        if (source == null) return null
+        source["reasoning_content"]?.jsonPrimitive?.contentOrNull?.let { return it }
+        source["reasoning"]?.jsonPrimitive?.contentOrNull?.let { return it }
+        source["thinking"]?.jsonPrimitive?.contentOrNull?.let { return it }
+        (source["reasoning_details"] as? JsonArray)?.let { details ->
+            val text = details.joinToString("") { d ->
+                (d as? JsonObject)?.get("text")?.jsonPrimitive?.contentOrNull ?: ""
+            }
+            if (text.isNotEmpty()) return text
+        }
+        return null
+    }
+
+    /**
+     * SPE-08 P1-2 软看门狗：帧在到但迟迟无任何内容帧（含思考/工具调用）→
+     * [LlmException.NoFirstToken] 上抛（不自动重发）。
+     *
+     * 只在**帧到达后**检查（完全静默的连接阻塞在 readLine，由 OkHttp
+     * readTimeout 兜底；心跳停滞则由 [SseFrameReader] 内联看门狗拦截）。
+     */
+    private fun checkFirstTokenWatchdog(stats: TurnStatsCollector) {
+        if (stats.hasFirstToken()) return
+        val elapsed = stats.elapsedMs()
+        if (elapsed > FIRST_TOKEN_TIMEOUT_MS) {
+            throw LlmException.NoFirstToken(elapsedMs = elapsed)
+        }
+    }
+
+    private fun parseStreamChunk(data: String, sawDeltaContent: Boolean = false): LlmStreamChunk? {
         return try {
             val json = Json.parseToJsonElement(data).jsonObject
             // ── 真实用量统计帧（stream_options.include_usage）──
@@ -633,13 +949,18 @@ class StreamingOpenAiClient(
                 Usage(
                     promptTokens = u["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
                     completionTokens = u["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-                    totalTokens = u["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+                    totalTokens = u["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
+                    cachedTokens = parseCachedTokens(u)
                 )
             }
             val choices = json["choices"]?.jsonArray
             if (choices == null || choices.isEmpty()) {
                 return if (usage != null) LlmStreamChunk(usage = usage) else null
             }
+
+            // SPE-05 P1-5：choices 多于一（n>1 / 代理聚合）→ 不再静默丢弃：
+            // 首个照常解析，多余的存在限次告警（诊断口径；本客户端单回答语义）。
+            if (choices.size > 1) logMultipleChoices(choices.size)
 
             val choice = choices[0].jsonObject
             val delta = choice["delta"]?.jsonObject
@@ -653,18 +974,42 @@ class StreamingOpenAiClient(
             // 原生联网搜索引用：OpenAI/DeepSeek 的 delta.annotations（或 content-parts
             // 内嵌 annotations）、智谱的 delta.search_result；部分网关（智谱等）把
             // 引用挂在流式最后一帧的 message 上（delta 缺失）—— 用 message 兜底。
-            // 注意：只从 message 取引用、不取正文 —— 正文已由前面的增量 delta 流过，
-            // 再合并 message.content 会把整段答案重复一遍（引用是元数据、无此风险）。
+            // 注意：引用是元数据、无重复风险，无条件兜底；**正文**的 message 兜底
+            // 见下方末帧兜底块（v1.5.x —— 按 sawDeltaContent 门控，防正文重复一遍）。
             // 提取后格式化为 Markdown Sources 块追加到 content 尾部，让引擎/UI 都能
             // 看到搜索来源；无引用时 content 保持原样（非搜索模型行为不变）。
             val citations = SearchCitations.extractAndFormat(
                 delta ?: choice["message"]?.let { m -> runCatching { m.jsonObject }.getOrNull() }
             )
             val baseText = contentMedia.text
-            val content = when {
+            var content = when {
                 citations == null -> baseText
                 baseText == null || baseText.isEmpty() -> citations
                 else -> baseText + citations
+            }
+
+            // 原生思考内容（别名表统一，SPE-05 P1-5：DeepSeek-R1
+            // `reasoning_content` / Anthropic 代理 `reasoning` / 部分思考型网关
+            // `thinking` / 某些聚合层 `reasoning_details[].text`；旧实现只认
+            // 前两个别名，思维链在部分模型上不可见）。
+            var reasoningOut = extractReasoning(delta)
+
+            // ═══ 末帧正文兜底（v1.5.x 修复「流式只有思考、没有回答」）═══
+            // 部分网关把完整正文挂在最后一帧的 choice.message.content 上
+            //（增量 delta 缺失或为空）—— 旧实现刻意不读 message 正文，本流
+            // 全程零 content，引擎 contentBuilder 恒空 → 终局按空响应报错。
+            // 门控（防重复）：仅末帧（finishReason 非空）且本流此前从未见过
+            // 增量正文（sawDeltaContent=false）且当前帧 delta 正文为空时，才
+            // 用 message.content 补发；思考内容挂末帧 message 的网关同理兜底。
+            if (finishReason != null && !sawDeltaContent && content.isNullOrEmpty()) {
+                val message = choice["message"]?.let { m -> runCatching { m.jsonObject }.getOrNull() }
+                if (message != null) {
+                    val msgText = MultimodalOutputExtractor.parseContent(message["content"]).text
+                    if (!msgText.isNullOrEmpty()) content = msgText
+                    if (reasoningOut.isNullOrEmpty()) {
+                        reasoningOut = extractReasoning(message)
+                    }
+                }
             }
 
             // message 级 images / video_url（GLM CogView chat 式生图 / 生视频网关）
@@ -674,12 +1019,10 @@ class StreamingOpenAiClient(
                 listOfNotNull(MultimodalOutputExtractor.parseVideo(delta?.get("video_url"))) +
                 MultimodalOutputExtractor.parseVideosArray(delta?.get("videos"))
 
-            // 原生思考内容（DeepSeek-R1 `reasoning_content`、部分 Anthropic 代理 `reasoning`）。
-            // 旧实现丢弃，导致思考类模型的思维链在 UI 上不可见。
-            val reasoningContent = delta?.get("reasoning_content")?.jsonPrimitive?.contentOrNull
-                ?: delta?.get("reasoning")?.jsonPrimitive?.contentOrNull
-
-            // 流式tool_calls
+            // 流式tool_calls —— JsonNull 陷阱修复（2026-11「MCP null」全链失效）：
+            // JsonNull.content 返回字面串 "null"，`?: ""` 兜不了「值为 JSON null」；
+            // 网关在参数续块重复发 name:null 时，旧解析产出的 "null" 名会被累积器
+            // 反向覆盖正确名 → Tool 'null' not found。改 contentOrNull 视为缺席。
             val toolCalls = mutableListOf<ToolCall>()
             delta?.get("tool_calls")?.jsonArray?.forEach { tc ->
                 val tcObj = tc.jsonObject
@@ -687,9 +1030,9 @@ class StreamingOpenAiClient(
                 // 读取 index（并行工具调用必需），默认 -1 表示非流式/不适用。
                 val idx = tcObj["index"]?.jsonPrimitive?.intOrNull ?: -1
                 toolCalls.add(ToolCall(
-                    id = tcObj["id"]?.jsonPrimitive?.content ?: "",
-                    name = func?.get("name")?.jsonPrimitive?.content ?: "",
-                    arguments = func?.get("arguments")?.jsonPrimitive?.content ?: "",
+                    id = tcObj["id"]?.jsonPrimitive?.contentOrNull ?: "",
+                    name = func?.get("name")?.jsonPrimitive?.contentOrNull ?: "",
+                    arguments = func?.get("arguments")?.jsonPrimitive?.contentOrNull ?: "",
                     index = idx
                 ))
             }
@@ -697,13 +1040,29 @@ class StreamingOpenAiClient(
             LlmStreamChunk(
                 content = content,
                 toolCalls = toolCalls,
-                reasoningContent = reasoningContent,
+                reasoningContent = reasoningOut,
                 images = images,
                 videos = videos,
                 usage = usage,
-                isFinish = finishReason == "stop" || finishReason == "tool_calls"
+                isFinish = finishReason == "stop" || finishReason == "tool_calls",
+                finishReason = finishReason,
+                // SPE-05 P0-3 语义表：length = 输出被截断（与 isFinish、收尾守卫
+                // 同源；上层据此续跑或显式报错，不再当正常收尾）。
+                truncated = finishReason == "length"
             )
         } catch (e: Exception) {
+            // ═══ 可观测性修复：不再无声丢弃 ═══
+            // 服务端中途返回非 JSON 片段（网关 HTML 错误页 / 截断帧）时，旧实现
+            // 静默吞掉 → 用户只看到气泡停滞，无从诊断。限次记录（首 3 条 +
+            // 之后每 50 条一条）防整页失败时的日志洪峰；不影响热路径重试语义。
+            val failureNo = parseFailuresLogged.incrementAndGet()
+            if (failureNo <= 3 || failureNo % 50 == 0) {
+                AppLogger.instance.warn(
+                    LogCategory.LLM, "StreamingOpenAiClient",
+                    "SSE chunk parse failed (#$failureNo): " +
+                        "${e::class.simpleName}: ${e.message?.take(120)} — data head: ${data.take(80)}"
+                )
+            }
             null
         }
     }
@@ -732,31 +1091,45 @@ class StreamingOpenAiClient(
         // 提取结果为 null，content 保持原样（行为不变）。
         val citations = SearchCitations.extractAndFormat(message)
         val baseText = contentMedia.text
-        val content = when {
+        var content = when {
             citations == null -> baseText
             baseText == null || baseText.isEmpty() -> citations
             else -> baseText + citations
+        }
+        // reasoning-only 兜底（v1.5.x，与流式末帧兜底同族）：思考型模型把
+        // 最终回答整体写进 message.reasoning_content、正文为空 —— 旧实现
+        // 返回空 content，调用方按无效响应处理。正文为空且思考通道非空时
+        // 以思考文本兜底（非思考模型 content 非空，行为不变）。
+        if (content.isNullOrEmpty()) {
+            val reasoning = message?.get("reasoning_content")?.jsonPrimitive?.contentOrNull
+                ?: message?.get("reasoning")?.jsonPrimitive?.contentOrNull
+            if (!reasoning.isNullOrEmpty()) content = reasoning
         }
         val images = contentMedia.images +
             MultimodalOutputExtractor.parseImagesArray(message?.get("images"))
         val videos = contentMedia.videos +
             listOfNotNull(MultimodalOutputExtractor.parseVideo(message?.get("video_url"))) +
             MultimodalOutputExtractor.parseVideosArray(message?.get("videos"))
+        // 同款 JsonNull 防御见上方流式 tool_calls 解析处（contentOrNull）。
         val toolCalls = message?.get("tool_calls")?.jsonArray?.map { tc ->
             val tcObj = tc.jsonObject
             ToolCall(
-                id = tcObj["id"]?.jsonPrimitive?.content ?: "",
-                name = tcObj["function"]?.jsonObject?.get("name")?.jsonPrimitive?.content ?: "",
-                arguments = tcObj["function"]?.jsonObject?.get("arguments")?.jsonPrimitive?.content ?: "{}"
+                id = tcObj["id"]?.jsonPrimitive?.contentOrNull ?: "",
+                name = tcObj["function"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull ?: "",
+                arguments = tcObj["function"]?.jsonObject?.get("arguments")?.jsonPrimitive?.contentOrNull ?: "{}"
             )
         } ?: emptyList()
 
-        val usage = json["usage"]?.jsonObject?.let { u ->
-            // intOrNull：容忍代理返回的 "1234.0" / 字符串数值，不再抛 NumberFormatException
+        val usage = (json["usage"] as? JsonObject)?.let { u ->
+            // SPE-05 P0-4：与流式路径同口径（`as? JsonObject` + intOrNull）——
+            // 代理返回 `"usage": null` / 数组 / 字符串时不再抛异常炸掉整个
+            // 非流式响应（choices 已解析成功却因统计字段失败）。
+            // intOrNull：容忍代理返回的 "1234.0" / 字符串数值。
             Usage(
                 promptTokens = u["prompt_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
                 completionTokens = u["completion_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
-                totalTokens = u["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0
+                totalTokens = u["total_tokens"]?.jsonPrimitive?.intOrNull ?: 0,
+                cachedTokens = parseCachedTokens(u)
             )
         }
 
@@ -781,6 +1154,18 @@ class StreamingOpenAiClient(
     }
 
     private companion object {
+        const val MAX_NON_STREAM_RESPONSE_BYTES = 8_000_000
+        const val MAX_ERROR_BODY_BYTES = 200
+        /**
+         * SPE-08 P1-2 首 token 软看门狗：帧仍在到但迟迟无任何内容帧的阈值
+         * （毫秒）。软检查只在帧到达后执行——完全静默的连接阻塞在
+         * readLine，由 OkHttp readTimeout 兜底（流式 client callTimeout=0
+         * 依赖读超时）；纯心跳停滞由 [SseFrameReader] 内联看门狗拦截。
+         */
+        const val FIRST_TOKEN_TIMEOUT_MS = 120_000L
+
+        /** SPE-08 P1-2 心跳停滞看门狗：距上一数据行超过此时长仍只有心跳 → 上抛。 */
+        const val HEARTBEAT_STALL_TIMEOUT_MS = 60_000L
         /**
          * 已知接受 top_k / min_p / repetition_penalty 等非标准采样参数的 Provider。
          * OpenAI / Anthropic / Google / DeepSeek / OpenRouter 的官方端点不接受这些参数
@@ -791,24 +1176,11 @@ class StreamingOpenAiClient(
         )
 
         /**
-         * B3/T4：OpenAI 官方"严格"推理模型（硬性拒绝 temperature / max_tokens）。
-         *
-         * 词边界正则（大小写不敏感），单测风格边界示例：
-         *  - 命中："o1"、"o3"、"o3-mini"、"o3-mini-high"、"o1-preview"、
-         *    "o4-mini"、"gpt-5"、"gpt-5-mini"、"gpt-5-chat-latest"、
-         *    "chatgpt-5-latest"、"O3-MINI"
-         *  - 不命中："neo3x"（o3 前是字母，lookbehind 拦截）、"hero1"（同上）、
-         *    "o1abc"（o1 后紧跟字母，lookahead 拦截）、"gpt-4o"、"gpt-4.1"、
-         *    "deepseek-chat"
-         */
-        val OPENAI_STRICT_REASONER: Regex = Regex(
-            "(?<![a-z0-9])o[134](-mini|-preview)?(?![a-z0-9])|gpt-5",
-            RegexOption.IGNORE_CASE
-        )
-
-        /**
          * T1/T3：Anthropic `thinking.budget_tokens` 的 effort 档位映射
          * （thinkingBudget 未显式设置时使用）。
+         *
+         * 注：OPENAI_STRICT_REASONER 正则已上提至
+         * [EndpointResolver.isStrictOpenAiReasoner]（单一口径）。
          */
         val EFFORT_THINKING_BUDGETS: Map<ReasoningEffort, Int> = mapOf(
             ReasoningEffort.LOW to 2048,
@@ -817,34 +1189,8 @@ class StreamingOpenAiClient(
             ReasoningEffort.MAX to 16384
         )
     }
+
+    private fun Response.errorBodyHead(): String = body?.byteStream()?.use { stream ->
+        BoundedReads.readHead(stream, MAX_ERROR_BODY_BYTES).toString(Charsets.UTF_8)
+    } ?: "Unknown error"
 }
-
-/**
- * T72 §十四 — 适配层异常类型化。
- *
- * 旧实现仅有一个 `class LlmException(message: String)`，上层只能靠字符串匹配
- * 区分"超时/限流/鉴权失败"——脆弱且不可靠。现在拆成 sealed 层级，运行时
- * [com.apex.agent.core.llm.runtime.ErrorClassifier] 据子类型精确映射到
- * [com.apex.agent.core.llm.runtime.ModelRuntimeException]。
- *
- * 向后兼容：仍是 [Exception] 子类，旧的 `catch (e: Exception)` / `catch (e: LlmException)`
- * 仍能捕获（sealed 基类即 [LlmException]）。
- */
-sealed class LlmException(message: String, cause: Throwable? = null) : Exception(message, cause) {
-    /** HTTP 非 2xx 响应。携带状态码 [code] 与响应体 [body]。 */
-    class Http(val code: Int, val body: String) : LlmException("API error $code: $body")
-
-    /** 响应体为空（非流式）。 */
-    class EmptyResponse : LlmException("Empty response")
-
-    /** 流式响应体为空。 */
-    class EmptyBody : LlmException("Empty response body")
-
-    /** 网络层错误（连接失败 / DNS / SocketTimeout 等），包装原始 [IOException]。 */
-    class Network(cause: java.io.IOException) : LlmException("Network error: ${cause.message}", cause)
-
-    /** P2 fix：响应体非法（HTML 错误页/畸形 JSON/数值类型漂移），供 ErrorClassifier 映射到
-     *  ModelResponseInvalid 而非落入未分类异常。 */
-    class Parse(cause: Throwable? = null) : LlmException("Response parse error: ${cause?.message}", cause)
-}
-

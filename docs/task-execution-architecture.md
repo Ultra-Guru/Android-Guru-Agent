@@ -164,10 +164,10 @@ App 启动 → VM init → TaskRuntime.discoverRecoverableTasks()
 
 | 类别 | 语义 | 代表工具 | 恢复动作 |
 |---|---|---|---|
-| READ_ONLY | 重放无副作用 | read_file / list_files / web_search / ui_dump / logcat / browser_snapshot | RETRY |
-| IDEMPOTENT_WRITE | 重放等价 | write_file（整覆盖）/ app_install / create_directory / browser_navigate / github_write_file | RETRY |
-| NON_IDEMPOTENT | 重放重复副作用 | app_uninstall / ui_tap / input_text / browser_click / terminal_send / alarm | VERIFY |
-| UNKNOWN | 行为不可判定 | shell_execute / http_request / mcp_call / terminal_exec / code_runner | VERIFY |
+| READ_ONLY | 重放无副作用 | Read / ListFiles / WebSearch / UiDump / logcat / BrowserSnapshot | RETRY |
+| IDEMPOTENT_WRITE | 重放等价 | Write（整覆盖）/ AppInstall / create_directory / BrowserNavigate / GithubWriteFile | RETRY |
+| NON_IDEMPOTENT | 重放重复副作用 | AppUninstall / UiTap / InputText / BrowserClick / TerminalSendLegacy / alarm | VERIFY |
+| UNKNOWN | 行为不可判定 | ShellExecute / HttpRequest / McpCall / TerminalExecLegacy / code_runner | VERIFY |
 
 **决策矩阵**（`RecoveryPolicy.decideForOperation`）：
 
@@ -176,7 +176,7 @@ SUCCEEDED   → SKIP（绝不重复执行已成功落盘的操作——幂等性
 FAILED      → SKIP（错误已在历史，LLM 自行重规划）
 NOT_STARTED → SKIP（从未执行）
 UNKNOWN/中断:
-  ask_user 族        → RETRY（重新提问）
+  AskUser 族        → RETRY（重新提问）
   READ_ONLY          → RETRY
   IDEMPOTENT_WRITE   → RETRY
   NON_IDEMPOTENT     → VERIFY（提示 LLM 先验证再决定）

@@ -98,7 +98,7 @@ App 层：`MarketMcpSoController`（与 MarketHubController 同构的独立状�
   `SlidingWindowCompressor` 把中间段压成一条规则摘要（取**前 3 条**用户
   消息 + **前 3 条**工具结果 —— 与任务无关的早期闲聊占据摘要，关键细节
   反被丢弃）；
-- `context_search` 工具是纯子串匹配 —— 模型记错一个词（"apikey" vs
+- `ContextSearch` 工具是纯子串匹配 —— 模型记错一个词（"apikey" vs
   "api key"）就零命中。
 
 ### 方案：TextRelevance（共享 BM25-lite 评分器，CJK 感知）
@@ -115,7 +115,7 @@ App 层：`MarketMcpSoController`（与 MarketHubController 同构的独立状�
    最后一条 User 消息）对被压缩段做相关性排序 —— 摘要选录改为相关性
    选录；额外注入 `[RELEVANT RECALL]` 块（top-3 相关消息逐字摘录，每条
    ≤300 字），压缩后模型仍能引用任务关键细节（报错原文/参数/约束）；
-2. **会话检索（context_search）**：新增 `mode` 参数（auto|exact|fuzzy，
+2. **会话检索（ContextSearch）**：新增 `mode` 参数（auto|exact|fuzzy，
    默认 auto）—— 精确零命中自动 BM25 回退（`~#index [role]` 标记），
    换词/转写也能找到；
 3. `relatedness` 便捷口径供后续记忆管线复用。
@@ -141,7 +141,7 @@ MarketBrowseTabs / MarketplaceModule / strings）沿用既有模式，由 CI 的
 
 - `EngineResiliencePolicy.DISABLED` 完整保留旧「遇错即停」行为（测试断言
   基线）；
-- `context_search` 默认 auto（模糊回退）：两个纯精确语义的存量测试改传
+- `ContextSearch` 默认 auto（模糊回退）：两个纯精确语义的存量测试改传
   `mode=exact`（测试意图 —— 窗口裁剪 / system 跳过 —— 不变）；
 - 压缩摘要文本格式扩展（新增 `[RELEVANT RECALL]` 块），`CompressionCompat`
   事件与 checkpoint 语义零改动（559 个引擎测试全绿）。

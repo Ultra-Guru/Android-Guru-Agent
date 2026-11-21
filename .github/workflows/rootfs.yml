@@ -33,6 +33,11 @@ concurrency:
   group: rootfs-${{ github.ref }}
   cancel-in-progress: false
 
+# 最小权限默认（#353-③）：build job 原先继承仓库默认（若 read-write 则过权）。
+# publish 自带块（contents: write）完全覆盖本默认，不受影响。
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build full rootfs (${{ matrix.arch }})

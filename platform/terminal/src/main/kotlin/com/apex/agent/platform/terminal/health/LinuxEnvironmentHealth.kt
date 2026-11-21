@@ -15,7 +15,7 @@ import java.io.File
 /**
  * T76: Linux Environment Health —— 统一健康门面（6 维度）。
  *
- * 把分散的健康检查聚合为单一 [LinuxHealthReport]，让 Agent 一次 `terminal.linux.status`
+ * 把分散的健康检查聚合为单一 [LinuxHealthReport]，让 Agent 一次 `TerminalLinuxStatus`
  * 就拿到全貌（T76 §19 / §20），而非自己拼凑 rootfs/proot/network/apt/home/workspace。
  *
  * 6 维度：
@@ -29,7 +29,7 @@ import java.io.File
  * 输出：每维 READY/DEGRADED/FAILED + code/message/repairable；overall 聚合。
  *
  * 性能：health check 全是轻量操作（文件存在性 + 短探针），不跑 apt update。
- * 完整网络 diagnose 由 `terminal.linux.network` 工具按需触发（避免每次 status 都
+ * 完整网络 diagnose 由 `TerminalLinuxNetwork` 工具按需触发（避免每次 status 都
  * 跑 apt update）。
  */
 class LinuxEnvironmentHealth(
@@ -172,6 +172,20 @@ class LinuxEnvironmentHealth(
                     DimensionCheck("apt", HealthStatus.FAILED, LinuxErrorCode.APT_UNAVAILABLE.name, "apt unavailable: ${status.manager}", true)
                 status.databaseState == com.apex.agent.platform.terminal.pkg.PackageDatabaseState.BROKEN ->
                     DimensionCheck("apt", HealthStatus.DEGRADED, LinuxErrorCode.APT_FAILED.name, "dpkg database broken", true)
+                // ★ 半装状态（用户实测缺陷）：apt-get install 被强杀后 dpkg 留下
+                // unpacked-not-configured / updates 残留 —— 每次后续 apt 写操作立即
+                // 报 "dpkg was interrupted"。此前 status() 用 dpkg --version 判
+                // HEALTHY（半装完全不可见）→ autoRepair 永不触发 → 降级注记永挂。
+                // 现由 UbuntuAptPackageManager.status 的 dpkg --audit 产出
+                // NEEDS_CONFIGURATION + brokenPackages —— 此处归 DEGRADED(可修复)，
+                // EnvironmentRepairService.autoRepair 即会执行 dpkg --configure -a。
+                status.databaseState == com.apex.agent.platform.terminal.pkg.PackageDatabaseState.NEEDS_CONFIGURATION ->
+                    DimensionCheck(
+                        "apt", HealthStatus.DEGRADED, LinuxErrorCode.DPKG_INTERRUPTED.name,
+                        "dpkg interrupted — ${status.brokenPackages.size} half-configured package(s): " +
+                            status.brokenPackages.take(8).joinToString(","),
+                        true
+                    )
                 status.lockState == com.apex.agent.platform.terminal.pkg.PackageLockState.LOCKED ->
                     DimensionCheck("apt", HealthStatus.DEGRADED, LinuxErrorCode.APT_LOCKED.name, "apt lock held", false)
                 else ->

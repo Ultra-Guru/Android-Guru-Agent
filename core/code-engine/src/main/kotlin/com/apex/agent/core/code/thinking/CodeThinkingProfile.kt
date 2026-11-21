@@ -1,5 +1,6 @@
 package com.apex.agent.core.code.thinking
 
+import com.apex.agent.core.engine.thinking.ThinkingProfile
 import kotlin.math.roundToInt
 
 /**
@@ -14,6 +15,7 @@ import kotlin.math.roundToInt
  * 的结果交给引擎（NONE..MAXIMUM 一一对应，引擎自己的倍率体系生效）；
  * 深水两档映射 MAXIMUM 打底后，其**超出 MAXIMUM 的增量**由本类的
  * compensated\* 纯函数反补（经 `patchConfig` 覆写引擎配置基数）：
+ * 补偿除数实时读引擎 [ThinkingProfile] 表（SPE-03 P1-5，无硬编码关联）。
  *
  * | 档位      | budget | effort | 迭代倍率 | 工具输出预算 | 压缩倍率 |
  * |-----------|--------|--------|----------|--------------|----------|
@@ -143,27 +145,41 @@ If any check fails, fix the gap with tools first; only then deliver the final an
                 uiDescriptionEn = "Architecture-level exhaustive reasoning + adversarial self-review + full verification matrix; iterations x3.0, later compression keeps more context"
             )
 
-            // AUTO 元档：预检解析出具体深度档后走对应行；此处返回 STANDARD
-            // 占位（引擎不应收到 AUTO——CodeThinkingLevel.toAgentLevel 已兜底 DEEP）。
-            CodeThinkingLevel.AUTO -> forLevel(CodeThinkingLevel.STANDARD)
+            // AUTO 元档：预检解析出具体深度档后走对应行；此处返回
+            // [CodeThinkingLevel.AUTO_FALLBACK_LEVEL] 占位（SPE-02 P0-3：
+            // 四处同源——引擎不应收到 AUTO，本行仅防御性兜底）。
+            CodeThinkingLevel.AUTO -> forLevel(CodeThinkingLevel.AUTO_FALLBACK_LEVEL)
         }
 
         // ═══ 旋钮补偿纯函数（深水两档的「映射 MAXIMUM 打底 + 增量反补」）═══
 
         /**
+         * 引擎侧对映射后六档的自乘迭代倍率（SPE-03 P1-5：单一事实源 =
+         * agent-engine [ThinkingProfile] 画像表，除数不再硬编码——引擎把
+         * MAXIMUM 倍率从 1.5 调整时，补偿公式自动跟随，端到端等式恒成立）。
+         */
+        private val engineScaleOf: (CodeThinkingLevel) -> Float =
+            { level -> ThinkingProfile.forLevel(level.toAgentLevel()).maxIterationsScale }
+
+        /**
          * 补偿后的引擎 maxIterations 基数。
          *
-         * 引擎对 MAXIMUM 档自乘 ×1.5（六档画像），深水两档要达到目标倍率：
-         * - ULTRACODE ×2.0 → 基数补 (2.0 / 1.5)，引擎 1.5 × 补偿 = 2.0；
-         * - APEXCODE ×3.0 → 基数补 (3.0 / 1.5)，引擎 1.5 × 补偿 = 3.0。
+         * 引擎对映射后档位自乘其画像倍率（六档表，如 MAXIMUM ×1.5），coding
+         * 档要达到目标倍率 → 基数补 (目标倍率 ÷ 映射档引擎倍率)：
+         * - ULTRACODE ×2.0 / 引擎 MAXIMUM ×1.5 → 补偿后引擎 1.5 × 补偿 = 2.0；
+         * - APEXCODE ×3.0 / 引擎 MAXIMUM ×1.5 → 同理 3.0；
+         * - NONE..MAXIMUM 档映射自身：coding 目标倍率与引擎倍率同值 → 补偿
+         *   恒为 1.0（基数原值，引擎自己的倍率体系生效）。
          *
-         * NONE..MAXIMUM 与 AUTO 档返回 base 原值（引擎自己的倍率体系生效）。
-         * 端到端等式见 CodeThinkingProfileTest（base × 补偿 × 引擎倍率 = 目标倍率）。
+         * 端到端等式见 CodeThinkingProfileTest（base × 补偿 × 引擎倍率 =
+         * base × 档位目标倍率，引擎倍率**实时读取** ThinkingProfile 表而非
+         * 测试内再写死 1.5——引擎常量变更即契约测试失败，补偿公式同步跟随）。
          */
-        fun compensatedMaxIterations(base: Int, level: CodeThinkingLevel): Int = when (level) {
-            CodeThinkingLevel.ULTRACODE -> (base * ULTRACODE_ITER_DIVISOR).roundToInt().coerceAtLeast(1)
-            CodeThinkingLevel.APEXCODE -> (base * APEXCODE_ITER_DIVISOR).roundToInt().coerceAtLeast(1)
-            else -> base
+        fun compensatedMaxIterations(base: Int, level: CodeThinkingLevel): Int {
+            val target = forLevel(level).maxIterationsScale
+            val engineScale = engineScaleOf(level)
+            if (target == engineScale) return base // 恒等档：基数复位零除法风险
+            return (base * target / engineScale).roundToInt().coerceAtLeast(1)
         }
 
         /**
@@ -190,11 +206,5 @@ If any check fails, fix the gap with tools first; only then deliver the final an
                 .coerceIn(0.1f, 0.98f)
             else -> base
         }
-
-        /** ULTRACODE 迭代补偿系数（目标 ×2.0 ÷ 引擎 MAXIMUM ×1.5）。 */
-        private const val ULTRACODE_ITER_DIVISOR = 2.0f / 1.5f
-
-        /** APEXCODE 迭代补偿系数（目标 ×3.0 ÷ 引擎 MAXIMUM ×1.5）。 */
-        private const val APEXCODE_ITER_DIVISOR = 3.0f / 1.5f
     }
 }

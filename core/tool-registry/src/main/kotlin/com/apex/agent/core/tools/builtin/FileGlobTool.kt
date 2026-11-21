@@ -11,10 +11,10 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * 文件发现工具（glob_files）
+ * 文件发现工具（GlobFiles）
  *
  * 按模式匹配查找文件（类似find/glob）。
- * 与search_files不同：search_files搜索文件内容，glob_files搜索文件名/路径。
+ * 与SearchFiles不同：SearchFiles搜索文件内容，GlobFiles搜索文件名/路径。
  *
  * 用途：
  * - 找到所有Python文件
@@ -34,14 +34,16 @@ class FileGlobTool(
 
         fun formatTimestamp(epochMs: Long): String {
             synchronized(LOCK) {
-                val fmt = sharedFormat ?: SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+                // #479：本工具输出直接进模型上下文 —— 阿拉伯语等区域默认 Locale
+                // 会产出阿拉伯-印度数字（٠٩:٣٠），模型无法据此判断文件新旧。
+                val fmt = sharedFormat ?: SimpleDateFormat("MM-dd HH:mm", Locale.US)
                     .also { sharedFormat = it }
                 return fmt.format(Date(epochMs))
             }
         }
     }
 
-    override val id = "glob_files"
+    override val id = "GlobFiles"
     override val name = "Find Files"
     override val description = """
         Find files by name pattern, extension, size, or modification time.

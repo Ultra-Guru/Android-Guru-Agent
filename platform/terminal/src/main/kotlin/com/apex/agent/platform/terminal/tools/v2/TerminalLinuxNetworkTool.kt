@@ -10,7 +10,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
 /**
- * T76: Agent tool — terminal.linux.network
+ * T76: Agent tool — TerminalLinuxNetwork
  *
  * 分维网络诊断：DNS / HTTP / HTTPS / APT_REPOSITORY。
  * 不再笼统报"网络失败"——Agent 据此精准决策（DNS→修 resolv.conf；TLS→装
@@ -26,7 +26,7 @@ import kotlinx.serialization.json.put
 class TerminalLinuxNetworkTool(
     private val networkProbe: LinuxNetworkProbe
 ) : TerminalTool {
-    override val id: String = "terminal.linux.network"
+    override val id: String = "TerminalLinuxNetwork"
     override val name: String = id
     override val description: String = """
         Per-dimension network diagnostics for the Ubuntu environment: DNS / HTTP / HTTPS /

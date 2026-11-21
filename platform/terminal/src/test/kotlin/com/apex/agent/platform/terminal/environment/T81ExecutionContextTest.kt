@@ -1,6 +1,7 @@
 package com.apex.agent.platform.terminal.environment
 
 import com.apex.agent.platform.terminal.proot.PRootBind
+import com.apex.agent.platform.terminal.proot.PRootArgvCapabilities
 import com.apex.agent.platform.terminal.proot.PRootBinaryInfo
 import com.apex.agent.platform.terminal.proot.PRootCommand
 import com.apex.agent.platform.terminal.proot.PRootCommandBuilderImpl
@@ -119,6 +120,18 @@ class T81ExecutionContextTest {
             Result.success(PRootBinaryInfo(AbsolutePath("/fake/proot.so"), null, CpuArchitecture.ARM64, executable = true))
     }
 
+    /** T92：能力可注入的 provider —— 验证 resolve 把 verify 能力集贯入上下文。 */
+    private class CapabilitiesBin(private val capabilities: PRootArgvCapabilities) : PRootBinaryProvider {
+        override suspend fun locate(): Result<AbsolutePath> = Result.success(AbsolutePath("/fake/proot.so"))
+        override suspend fun verify(binary: AbsolutePath): Result<PRootBinaryInfo> =
+            Result.success(
+                PRootBinaryInfo(
+                    AbsolutePath("/fake/proot.so"), null, CpuArchitecture.ARM64, executable = true,
+                    capabilities = capabilities
+                )
+            )
+    }
+
     private class FakeRfs(private val rootfs: RootfsDescriptor?) : RootfsProvider {
         override suspend fun current(): RootfsDescriptor? = rootfs
         override suspend fun verify(rootfs: RootfsDescriptor): Result<RootfsVerification> =
@@ -174,6 +187,26 @@ class T81ExecutionContextTest {
         )
         val ctx = factory.resolve("  ").getOrThrow()
         assertEquals(LinuxWorkspaceManager.DEFAULT_ID, ctx.workspaceId)
+    }
+
+    // ─── T92（D5 完成度）：verify 能力集贯入上下文 ───
+
+    @Test fun `T92 resolve carries verified capabilities into context (apt-probe-fs argv single source)`() = runBlocking {
+        for (caps in listOf(
+            PRootArgvCapabilities.TERMUX_BUNDLED,
+            PRootArgvCapabilities.UPSTREAM_SAFE,
+            PRootArgvCapabilities(supportsKillOnExit = true, supportsOptionSeparator = false) // Debian 5.4 混合形态
+        )) {
+            val factory = LinuxExecutionContextFactory(
+                binaryProvider = CapabilitiesBin(caps),
+                rootfsProvider = FakeRfs(descriptor(tmp.newFolder("rootfs-$caps"))),
+                workspaces = LinuxWorkspaceManager(tmp.newFolder("ws-$caps")),
+                userHome = GuestUserHome(tmp.newFolder("home-$caps")),
+                hostEnv = null
+            )
+            val ctx = factory.resolve().getOrThrow()
+            assertEquals("caps=$caps 必须随上下文流转（消费方 argv 能力门输入）", caps, ctx.capabilities)
+        }
     }
 }
 

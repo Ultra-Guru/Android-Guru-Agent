@@ -1,5 +1,11 @@
 package com.apex.agent.ui.screen.settings
 
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -13,11 +19,11 @@ import com.apex.agent.R
 import kotlinx.coroutines.launch
 
 /**
- * # Issue #164 / #165 —— AgentTab 的规则与钩子扩展区（挂载块抽出）
+ * # Issue #164 / #165 —— Agent 分类的规则与钩子叶子页（挂载块抽出）。
  *
- * [SettingsScreen] 已贴近文件预算红线（check_file_size 1200 行门禁），
- * v1.1 的两个新设置区（全局规则 + AGENTS.md 状态、钩子启停）的挂载逻辑
- * 内聚到本文件，AgentTab 只留一行调用。
+ * v2 抽屉化重构：原 AgentRulesAndHooksSections（规则+钩子一体挂载）拆为
+ * 两个独立块，分别服务 `agent/rules` 与 `agent/hooks` 两个二级页面；
+ * IO 纪律不变（见下）。
  *
  * ## IO 纪律
  * 规则文件命中（`projectRulesFileName`）与模板创建（`createProjectRulesTemplate`）
@@ -26,9 +32,9 @@ import kotlinx.coroutines.launch
  * 重查（不用 Snackbar：本页无挂载的 Host，showSnackbar 会永久挂起）。
  */
 @Composable
-internal fun AgentRulesAndHooksSections(
+internal fun AgentRulesSectionBlock(
     agent: AgentSettings,
-    onAgent: (AgentSettings) -> Unit,
+    onAgent: (AgentSettings.() -> AgentSettings) -> Unit,
     viewModel: SettingsViewModel
 ) {
     // ═══ 规则（#164）：全局规则（Agent/coding 双模式）+ 默认工作区 AGENTS.md ═══
@@ -44,7 +50,7 @@ internal fun AgentRulesAndHooksSections(
     val loadedFmt = stringResource(R.string.code_rules_project_status_loaded_fmt)
     RulesSettingsSection(
         globalRules = agent.globalRules,
-        onGlobalRulesChange = { rules -> onAgent(agent.copy(globalRules = rules)) },
+        onGlobalRulesChange = { rules -> onAgent { copy(globalRules = rules) } },
         workspaceRootLabel = "linux/workspaces/default",
         projectRulesStatus = projectRulesFile?.let { fileName -> loadedFmt.format(fileName) },
         onCreateProjectRules = {
@@ -54,9 +60,30 @@ internal fun AgentRulesAndHooksSections(
             }
         }
     )
+}
 
-    // ═══ 钩子（#165）：声明式钩子启停（工具前后 / 会话生命周期）═══
+/** 钩子（#165）：声明式钩子启停（工具前后 / 会话生命周期）。 */
+@Composable
+internal fun AgentHooksSectionBlock(viewModel: SettingsViewModel) {
     val hooks by viewModel.hooks.collectAsStateWithLifecycle()
+    // B2-BUG-21:启停失败提示有人消费了 —— 旧实现 _hookMessage 全模块无订阅
+    // 点,开关失败(IO 写 hooks.json 失败)时 UI 毫无反应。
+    val hookMessage by viewModel.hookMessage.collectAsStateWithLifecycle()
+    var hookMsgShown by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(hookMessage) {
+        hookMessage?.let {
+            hookMsgShown = it
+            viewModel.consumeHookMessage()
+        }
+    }
+    hookMsgShown?.let { msg ->
+        Text(
+            msg,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(vertical = 4.dp)
+        )
+    }
     HooksSettingsSection(
         hooks = hooks,
         onToggle = { id, enabled -> viewModel.setHookEnabled(id, enabled) }

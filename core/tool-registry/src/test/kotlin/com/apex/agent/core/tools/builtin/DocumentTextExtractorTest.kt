@@ -40,6 +40,64 @@ class DocumentTextExtractorTest {
         assertEquals(listOf("第一段：Hello", "第二段：World & more"), extraction.lines)
     }
 
+    // ═══════════════════════ Issue #232 · 字节预算防线 ═══════════════════════
+
+    @Test
+    fun `zip 炸弹 docx 解压超预算被拒绝而非 OOM`() {
+        // 33MB 解压产物（重复 <w:t> run）打包进 ~KB 级 zip —— file.length()
+        // 远小于 16MB 上限，但解压后超过 MAX_DOCX_XML_BYTES（32MB）。
+        val sb = StringBuilder("<w:document><w:body>")
+        val run = "<w:p><w:r><w:t>xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</w:t></w:r></w:p>"
+        repeat(33 * 1024 * 1024 / run.length) { sb.append(run) }
+        sb.append("</w:body></w:document>")
+        val file = tmp.newFile("bomb.docx")
+        writeDocx(file, sb.toString())
+        assertTrue(
+            "夹具自检：压缩尺寸远小于 16MB（zip 炸弹特征）",
+            file.length() < 16L * 1024 * 1024
+        )
+
+        val extraction = DocumentTextExtractor.extractIfDocument(file)
+        assertNotNull(extraction)
+        assertTrue("解压预算防线触发（空行 + 说明）", extraction!!.isEmpty)
+        assertNotNull("如实报错（含预算说明与替代指引）", extraction.note)
+        assertTrue(extraction.note!!.contains("预算"))
+    }
+
+    @Test
+    fun `接近预算的合法大 docx 正常提取`() {
+        // ~8MB 解压 XML —— 在 32MB 预算内正常走通（防误杀回归）
+        val sb = StringBuilder("<w:document><w:body>")
+        val run = "<w:p><w:r><w:t>0123456789abcdef</w:t></w:r></w:p>"
+        repeat(8 * 1024 * 1024 / run.length) { sb.append(run) }
+        sb.append("</w:body></w:document>")
+        val file = tmp.newFile("big-but-legal.docx")
+        writeDocx(file, sb.toString())
+
+        val extraction = DocumentTextExtractor.extractIfDocument(file)
+        assertNotNull(extraction)
+        assertNull("预算内不报错", extraction!!.note)
+        assertTrue("正常提取出大量段落", extraction.lines.size > 100_000)
+    }
+
+    @Test
+    fun `FileReadTool 对超过 16MB 的 docx 在文档分支之前拒绝`() = kotlinx.coroutines.test.runTest {
+        // #232 主防线：size cap 前置于 documentLines —— 16MB+1 字节的 .docx
+        // 直接拒读，绝不进解压路径。
+        val dir = tmp.newFolder()
+        val file = File(dir, "huge.docx")
+        val tool = FileReadTool(dir)
+        // 稀疏写法：先铺 1MB 真实头（通过 zip 魔数嗅探也无妨），再追加零字节到 16MB+1
+        val head = ByteArray(1024 * 1024) { 'x'.code.toByte() }
+        file.writeBytes(head)
+        java.io.RandomAccessFile(file, "rw").use { raf ->
+            raf.setLength(16L * 1024 * 1024 + 1)
+        }
+        val result = tool.execute("{\"path\": \"huge.docx\"}")
+        assertTrue(result, result.startsWith("Error: file too large"))
+        assertTrue(result, result.contains("16"))
+    }
+
     @Test
     fun `非文档文件返回 null 走普通路径`() {
         val file = tmp.newFile("plain.txt")

@@ -19,7 +19,7 @@ import kotlinx.coroutines.delay
  * paint, a keyboard must close — and the natural modelling is a bounded,
  * cancellable pause the agent plans for explicitly. On this project the
  * gap is sharper: `shell sleep` routes through the permission gate and a
- * shell round-trip; `terminal.wait` waits for *terminal output*, not for
+ * shell round-trip; `TerminalWait` waits for *terminal output*, not for
  * wall-clock time.
  *
  * Contract (mirrors Anthropic's `wait`, 2026-08 toolset):
@@ -32,7 +32,7 @@ import kotlinx.coroutines.delay
  * Idempotent, read-only, no side effects — the safest tool in the box.
  */
 class WaitTool : BaseTool(
-    id = "wait",
+    id = "Wait",
     name = "Wait",
     description = """
         Pause for a bounded duration before the next action. Use it when

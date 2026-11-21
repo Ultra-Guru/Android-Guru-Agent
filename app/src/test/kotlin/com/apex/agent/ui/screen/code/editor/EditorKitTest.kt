@@ -132,8 +132,9 @@ class EditorKitTest {
         try {
             EditorFileLoader.loadEditorFile(root, "../outside.kt")
             fail("应拒绝 .. 穿越")
-        } catch (e: IllegalArgumentException) {
-            assertTrue(e.message!!.contains("越界"))
+        } catch (e: EditorFileException) {
+            // #312：稳定错误码断言（文案资源化后 message 为机器可读形态）
+            assertEquals(EditorLoadError.PATH_ESCAPE, e.code)
         }
     }
 
@@ -143,8 +144,8 @@ class EditorKitTest {
         try {
             EditorFileLoader.loadEditorFile(root, "/etc/passwd")
             fail("应拒绝根外绝对路径")
-        } catch (e: IllegalArgumentException) {
-            assertTrue(e.message!!.contains("越界"))
+        } catch (e: EditorFileException) {
+            assertEquals(EditorLoadError.PATH_ESCAPE, e.code)
         }
     }
 
@@ -155,8 +156,9 @@ class EditorKitTest {
         try {
             EditorFileLoader.loadEditorFile(root, "giant.txt")
             fail("应拒绝超过 5MB 的文件")
-        } catch (e: IllegalArgumentException) {
-            assertTrue(e.message!!.contains("过大"))
+        } catch (e: EditorFileException) {
+            assertEquals(EditorLoadError.TOO_LARGE, e.code)
+            assertTrue(e.byteCount > EditorFileLoader.MAX_FILE_BYTES)
         }
     }
 
@@ -166,8 +168,8 @@ class EditorKitTest {
         try {
             EditorFileLoader.loadEditorFile(root, "   ")
             fail("应拒绝空白路径")
-        } catch (e: IllegalArgumentException) {
-            // require 抛出即预期
+        } catch (e: EditorFileException) {
+            assertEquals(EditorLoadError.EMPTY_PATH, e.code)
         }
     }
 
@@ -177,8 +179,9 @@ class EditorKitTest {
         try {
             EditorFileLoader.loadEditorFile(root, "ghost.kt")
             fail("应报告文件不存在")
-        } catch (e: IllegalArgumentException) {
-            assertTrue(e.message!!.contains("不存在"))
+        } catch (e: EditorFileException) {
+            assertEquals(EditorLoadError.NOT_FOUND, e.code)
+            assertEquals("ghost.kt", e.path)
         }
     }
 
@@ -189,8 +192,8 @@ class EditorKitTest {
         try {
             EditorFileLoader.loadEditorFile(root, "pkg")
             fail("应拒绝目录目标")
-        } catch (e: IllegalArgumentException) {
-            assertTrue(e.message!!.contains("目录"))
+        } catch (e: EditorFileException) {
+            assertEquals(EditorLoadError.IS_DIRECTORY, e.code)
         }
     }
 

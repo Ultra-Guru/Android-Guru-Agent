@@ -14,7 +14,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * #171 四族合并 —— `regex` 工具单测（合并 regex_extract + regex_replace，
+ * #171 四族合并 —— `regex` 工具单测（合并 RegexExtractLegacy + RegexReplaceLegacy，
  * 新增 test / match_all / split）。
  */
 class RegexToolTest {

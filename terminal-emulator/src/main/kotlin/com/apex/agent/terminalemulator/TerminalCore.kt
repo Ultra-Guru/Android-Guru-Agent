@@ -148,6 +148,9 @@ class TerminalCore(
 
     /** Feed raw PTY bytes. Emits mutations via [onMutation] (batched). */
     override fun feed(bytes: ByteArray, offset: Int, length: Int) {
+        // #C-⑦：chunk 边界上的停滞检测 —— 中途态停留超过 SEQUENCE_STALE_TIMEOUT_MS
+        // 即复位（半截序列不再吞掉后续 chunk 的正常文本）。
+        parser.chunkArrived()
         utf8.feed(bytes, offset, length) { cp ->
             parser.feed(cp) { ev -> handleEvent(ev) }
         }
@@ -266,15 +269,17 @@ class TerminalCore(
             0x0A, 0x0B, 0x0C -> {  // LF/VT/FF
                 // T82: LNM (ANSI 20) —— LF 同时回列首（NEWLINE MODE 语义）
                 if (modes.newlineMode) cursor.column = margins.effectiveLeft()
-                cursor.row++
                 cursor.wrapPending = false
-                if (cursor.row > scrollRegion.bottom) {
-                    // v0.3：滚屏作用域 = 垂直滚区 ∩ 左右边距窗口（Termux 同款
-                    // scrollScreen(top,bottom,left,right)；旧实现全宽滚屏会把
-                    // 窗口外列一起卷走）。
+                // T92（Termux doLinefeed 对齐）：光标在滚区**内**且位于底边距上才滚屏；
+                // 光标在滚区**下方**（DECSTBM 后光标被定位到区外）只下移不滚、停在屏底。
+                // 旧判据 `row++ 后 > bottom` 在区外场景把滚区内容卷走且把光标强行拉回
+                // 滚区底（tmux 底栏重绘/vttest 必踩）。
+                if (cursor.row == scrollRegion.bottom) {
                     currentBuffer.scrollUp(1, scrollRegion.top, scrollRegion.bottom,
                         margins.effectiveLeft(), margins.effectiveRight(cols))
                     cursor.row = scrollRegion.bottom
+                } else if (cursor.row < rows - 1) {
+                    cursor.row++
                 }
             }
             0x0D -> { cursor.column = margins.effectiveLeft(); cursor.wrapPending = false }  // CR（v0.3：边距感知）
@@ -323,8 +328,11 @@ class TerminalCore(
             '@' -> CsiOps.insertChars(currentBuffer, cursor, seq.paramOrDefault(0, 1),
                 margins.effectiveLeft(), margins.effectiveRight(cols))  // ICH
             'X' -> {  // ECH（v0.3：终点被右边距裁剪）
+                // diag-20261017 崩溃热修（P0）：参数先钳到行宽再算终点 —— 防
+                // cursor.column + n - 1 整型溢出为极负（与 native 派发层同款防线；
+                // ScreenBuffer.eraseRow 内已加第二道钳位）。
                 currentBuffer.eraseRow(cursor.row, cursor.column,
-                    (cursor.column + seq.paramOrDefault(0, 1) - 1).coerceAtMost(margins.effectiveRight(cols)), currentStyle)
+                    (cursor.column + seq.paramOrDefault(0, 1).coerceAtMost(cols) - 1).coerceAtMost(margins.effectiveRight(cols)), currentStyle)
                 mutations += ScreenMutation.rows(cursor.row, cursor.row)
             }
             'm' -> currentStyle = SgrApplier.apply(currentStyle, seq)  // SGR（含冒号子参数 + SGR 58）
@@ -358,6 +366,14 @@ class TerminalCore(
                     5, 6 -> CursorStyle.BAR
                     else -> CursorStyle.BLOCK  // 0/1/2 及其他
                 }
+            } else if (seq.privateMarker == '>') {
+                // v3：XTVERSION —— `CSI > Ps q` 终端标识查询。无应答时等待方
+                // （tmux 的 detect-terminal、nvim 的 vim.tgid 探测等）只能靠
+                // 超时放弃。应答格式 xterm 规范：`DCS > | 文本 ST`。
+                // 标识与 DA2 的人设一致（xterm 系），写 patch 号 377 ——
+                // 消费方（嵌套检测/能力绕障）按子串匹配，xterm(377) 中性且
+                // 不触发 tmux/screen/kitty 的特殊分支。
+                respond("\u001BP>|xterm(377)\u001B\\")
             }
             // T85：DA1/DA2 应答 —— 程序能力探测（无应答则 vim/resize 等行为异常）。
             // 应答与 Termux 一致：DA1=`ESC[?6c`（VT102），DA2=`ESC[>0;276;0c`。
@@ -408,6 +424,13 @@ class TerminalCore(
             }
             'u' -> { cursor.restoreFrom(savedCursor); currentStyle = savedStyle }  // restore
             'Z' -> { cursor.column = tabStops.prevTab(cursor.column); cursor.wrapPending = false }  // CBT — cursor backward tab
+            // T92：CHT —— 光标前移 Ps 个制表位（ncurses/vttest/TUI 框架用；
+            // 旧实现缺失，`CSI I` 被静默吞掉，Tab 布局型 TUI 跳位错乱）。
+            'I' -> {
+                val n = seq.paramOrDefault(0, 1).coerceIn(1, cols)
+                repeat(n) { cursor.column = tabStops.nextTab(cursor.column) }
+                cursor.wrapPending = false
+            }
             'g' -> {  // TBC — tab clear
                 when (seq.param(0, 0)) {
                     0 -> tabStops.clear(cursor.column)
@@ -612,25 +635,22 @@ class TerminalCore(
                 else if (cursor.row > 0) cursor.row--
             }
             'D' -> {  // IND — index (move down, scroll if needed)
-                cursor.row++
-                if (cursor.row > scrollRegion.bottom) {
-                    // v0.3：IND 与 LF 同语义 —— 滚区∩边距窗口内上滚
-                    // （Termux scrollScreen 四参数；旧实现全宽滚屏）。
+                // T92（Termux doLinefeed 同款）：与 LF 同语义 —— 区内底边滚屏、
+                // 区外只下移停屏底。
+                if (cursor.row == scrollRegion.bottom) {
                     currentBuffer.scrollUp(1, scrollRegion.top, scrollRegion.bottom,
                         margins.effectiveLeft(), margins.effectiveRight(cols))
-                    cursor.row = scrollRegion.bottom
+                } else if (cursor.row < rows - 1) {
+                    cursor.row++
                 }
             }
-            'E' -> {  // NEL — next line：下移一行 + 复位到左边距；越滚屏区下界时滚屏
-                // P3 fix（审计 6-b）：补齐与 IND 'D' 一致的滚屏逻辑 —— 原实现裸
-                // cursor.row++，光标可越过 scrollRegion.bottom 悬在屏外（后续 putChar
-                // 越界/静默丢字符）。v0.3：滚屏同样被边距窗口裁剪 + 列复位到
-                // 左边距（DECLRMM 时光标恒在窗口内）。
-                cursor.row++
-                if (cursor.row > scrollRegion.bottom) {
+            'E' -> {  // NEL — next line：下移一行 + 复位到左边距；区内底边滚屏
+                // T92（同 IND/LF 的滚区外语义 —— 光标在区外只下移停屏底）。
+                if (cursor.row == scrollRegion.bottom) {
                     currentBuffer.scrollUp(1, scrollRegion.top, scrollRegion.bottom,
                         margins.effectiveLeft(), margins.effectiveRight(cols))
-                    cursor.row = scrollRegion.bottom
+                } else if (cursor.row < rows - 1) {
+                    cursor.row++
                 }
                 cursor.column = margins.effectiveLeft()
             }
@@ -666,7 +686,15 @@ class TerminalCore(
             1 -> modes.applicationCursor = enable
             4 -> modes.insertMode = enable
             5 -> modes.reverseVideo = enable
-            6 -> modes.originMode = enable
+            // T92（DEC STD 070 / xterm ctlseqs）：DECOM 置位/复位时光标归位到
+            // 新 origin home（滚区顶/屏顶，列归左边距）—— vim/带滚区 TUI 假定
+            // `?6h/l` 后光标在 home。旧实现只改标志不动光标。
+            6 -> {
+                modes.originMode = enable
+                cursor.row = if (enable) scrollRegion.top else 0
+                cursor.column = margins.effectiveLeft()
+                cursor.wrapPending = false
+            }
             7 -> modes.autoWrap = enable
             25 -> modes.cursorVisible = enable
             // v0.3：DECLRMM（69）—— 左右边距模式；关闭时边距即刻回全宽。
@@ -677,6 +705,13 @@ class TerminalCore(
             2004 -> modes.bracketedPaste = enable
             47, 1047 -> switchAlternateScreen(enable, saveCursor = false)
             1049 -> switchAlternateScreen(enable, saveCursor = true)
+            // T92：1048 —— 保存/恢复光标（ANSI.SYS 形式，less/emacs 变体与
+            // `?1049h` 组合使用；Termux 同款）。字符集状态随 DECSC/DECRC 一起保存。
+            1048 -> if (enable) {
+                savedCursor = cursor.saveTo(); savedStyle = currentStyle; charsets.save()
+            } else {
+                cursor.restoreFrom(savedCursor); currentStyle = savedStyle; charsets.restore()
+            }
             // ── Termux 对齐：鼠标/焦点报告模式（vim/tmux/htop 触摸交互的前提）──
             1004 -> focusReporting = FocusReporting.apply(focusReporting, enable)
             // v0.3 修复：9（X10）此前漏在列表外 —— `CSI ?9h` 被静默吞掉，
@@ -874,7 +909,11 @@ class TerminalCore(
             dynamicBackground = dynamicColors.background?.let { RenderRowMapper.colorArgb(it) },
             dynamicCursorColor = dynamicColors.cursor?.let { RenderRowMapper.colorArgb(it) },
             guestCwd = guestCwd,
-            requestedResize = resizeRequest
+            requestedResize = resizeRequest,
+            // T95：run 投影（Kotlin 引擎路径与 cell 投影同帧派生 —— 合并语义与
+            // native fastpath（vt_runs.cpp）逐位一致，UI 消费方零引擎感知）。
+            runLines = RenderRuns.deriveRows(visible),
+            runScrollback = RenderRuns.deriveRows(sb)
         )
     }
 

@@ -5,7 +5,7 @@ package com.apex.agent.core.logging
  *
  * 除了 [level]（多严重）与 [category]（哪类业务）两个主维度外，还携带
  * [tags]——一组自由字符串元数据标签。标签让调用方可以按任意自定义维度
- * 检索，例如 `tool:shell_execute`、`session:abc`、`http:429`，弥补固定枚举
+ * 检索，例如 `tool:ShellExecute`、`session:abc`、`http:429`，弥补固定枚举
  * 维度无法表达的细粒度场景。
  *
  * [approxBytes] 是写入缓冲时估算的字节占用，用于体积感知的淘汰策略。

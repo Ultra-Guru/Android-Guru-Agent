@@ -30,6 +30,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -61,8 +62,11 @@ import com.apex.agent.core.logging.LogCategory
 import com.apex.agent.ui.glass.GlassButton
 import com.apex.agent.ui.glass.GlassCard
 import com.apex.agent.ui.glass.GlassIconButton
+import com.apex.agent.ui.theme.statusSuccess
+import com.apex.agent.ui.theme.statusWarning
 import com.apex.agent.usage.UsageDaily
 import com.apex.agent.usage.UsageLedger
+import com.apex.agent.usage.ModelPricing
 import com.apex.agent.usage.UsageModelStat
 import com.apex.agent.usage.UsageSessionStat
 import com.apex.agent.usage.UsageTotals
@@ -251,7 +255,7 @@ fun UsageDashboardScreen(viewModel: UsageDashboardViewModel = hiltViewModel()) {
             // 全空态：账本一条记录都没有
             totals.totalRequests == 0 -> UsageEmptyState()
             else -> {
-                SummaryCard(totals)
+                SummaryCard(totals, state.models)
                 DailyChartCard(state.daily)
                 ModelBreakdownCard(state.models)
                 TopSessionsCard(state.sessions)
@@ -301,9 +305,13 @@ private fun CardHeader(icon: ImageVector, title: String, hint: String) {
     }
 }
 
-/** 汇总卡：累计总量 / 今日 / 最近 7 天 / 最近 30 天 + 总请求数（含每请求均值）。 */
+/**
+ * 汇总卡：累计总量 / 今日 / 最近 7 天 / 最近 30 天 + 总请求数（含每请求均值）。
+ * #221：底部费用估算行 —— 按内置牌价对模型分解逐档计费求和；未全命中
+ * 费率时标「≈」（估算为下限，未知模型未计入）。
+ */
 @Composable
-private fun SummaryCard(totals: UsageTotals) {
+private fun SummaryCard(totals: UsageTotals, models: List<UsageModelStat>) {
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             CardHeader(
@@ -313,10 +321,11 @@ private fun SummaryCard(totals: UsageTotals) {
             )
             Row(Modifier.fillMaxWidth()) {
                 StatCell(stringResource(R.string.usage_stat_all_time), totals.allTimeTokens, MaterialTheme.colorScheme.primary, Modifier.weight(1f))
-                StatCell(stringResource(R.string.usage_stat_today), totals.todayTokens, Green, Modifier.weight(1f))
+                // #244：汇总色改语义函数（明暗成对；旧硬编码 Green/Amber 单态 hex）
+                StatCell(stringResource(R.string.usage_stat_today), totals.todayTokens, statusSuccess(), Modifier.weight(1f))
             }
             Row(Modifier.fillMaxWidth()) {
-                StatCell(stringResource(R.string.usage_stat_7d), totals.last7dTokens, Amber, Modifier.weight(1f))
+                StatCell(stringResource(R.string.usage_stat_7d), totals.last7dTokens, statusWarning(), Modifier.weight(1f))
                 StatCell(stringResource(R.string.usage_stat_30d), totals.last30dTokens, MaterialTheme.colorScheme.onSurface, Modifier.weight(1f))
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -336,6 +345,32 @@ private fun SummaryCard(totals: UsageTotals) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontFamily = FontFamily.Monospace
                     )
+                }
+            }
+            // ═══ #221：全库费用估算（静态牌价 · 供参考的实际账单折算基线）═══
+            val (costUsd, allKnown) = remember(models) { ModelPricing.estimateTotalUsd(models) }
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            (if (allKnown) "" else "≈ ") + stringResource(R.string.usage_cost_estimated, formatCost(costUsd)),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            stringResource(R.string.usage_cost_note),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -434,7 +469,11 @@ private fun ModelBreakdownCard(models: List<UsageModelStat>) {
                         )
                         Text(
                             stringResource(R.string.usage_tokens_count, formatTokens(m.totalTokens)) + " · " +
-                                stringResource(R.string.usage_requests_count, m.requests),
+                                stringResource(R.string.usage_requests_count, m.requests) +
+                                // #221：模型行费用（未收录费率的模型标「—」）
+                                (" · " + ModelPricing.rateFor(m.modelId)
+                                    ?.let { stringResource(R.string.usage_cost_estimated, formatCost(it.costUsd(m.promptTokens, m.completionTokens))) }
+                                    ?: stringResource(R.string.usage_cost_unknown)),
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -527,12 +566,12 @@ private fun ClearConfirmDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
 //  工具
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** 语义色（与 TaskHistoryScreen 统计卡一致的仓库既有调色板）。 */
-private val Green = Color(0xFF3E9C51)
-private val Amber = Color(0xFFE0A63C)
-
 /** 千分位分组的整数格式（跟随系统 Locale）。 */
 private fun formatTokens(n: Long): String = String.format(Locale.getDefault(), "%,d", n)
+
+/** #221：费用展示 —— <$0.01 显示 "<$0.01"，其余两位小数（USD）。 */
+private fun formatCost(usd: Double): String =
+    if (usd in 0.0..0.009999) "<$0.01" else String.format(Locale.US, "$%.2f", usd)
 
 /**
  * 日期标签锚点：≤5 天逐日全标；>5 天取首/1⁄4/中/3⁄4/末 5 个（首末精确对齐

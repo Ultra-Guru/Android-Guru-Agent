@@ -19,14 +19,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BlurOn
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.NightsStay
@@ -51,6 +49,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -59,10 +60,11 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.apex.agent.R
 import com.apex.agent.ui.glass.GlassBadge
 import com.apex.agent.ui.glass.GlassButton
 import com.apex.agent.ui.glass.GlassCard
@@ -71,8 +73,10 @@ import com.apex.agent.ui.glass.GlassIconButton
 import com.apex.agent.ui.glass.GlassShapes
 import com.apex.agent.ui.glass.GlassStyle
 import com.apex.agent.ui.theme.ApexTheme
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeSource
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -87,17 +91,20 @@ import kotlin.math.sin
  *  - Backdrop 采样验证区：可拖动玻璃片 + 网格 + 文字 + 漂移光斑，
  *    证明 backdrop 采样的是实时内容而非静态贴图；
  *  - 交互状态 / 档位阶梯 / 工具卡状态 / 输入聚焦：材质分级与状态驱动；
- *  - 玻璃对话框：HazeDialog 跨窗口采样验证区内容；
- *  - 诚实验收清单：运行时逐项核对能力声明 —— Refraction 未实现即红字示警。
+ *  - 玻璃对话框：Ambient 材质面板（Dialog 独立窗口采不到主窗口源，
+ *    跨窗口采样已随 Haze 迁移移除）；
+ *  - 诚实验收清单：运行时逐项核对能力声明 —— lens 折射按 API 级如实示警
+ *    （33+ PASS / 以下 FALLBACK），无等效能力的项如实标注已移除。
  *    （以上共享小节在 [GlassLabSections.kt]，SRP 行数预算拆分）
  *
  * ## v2：夜间 / 白天 双实验室
  * 单页拆成两个独立实验室（顶部切换）：
- *  - **夜间模式**：强制深色主题 —— 近黑基底 + 霓虹光斑，验证玻璃在
- *    暗环境下的"发光材质"表现（HazeTint 提亮 + 主色浸染）；
- *  - **白天模式**：强制浅色主题 —— 白霜玻璃 + 柔光细网，且**更精致**：
- *    三段天空渐变底、20dp 发丝级细网格、三枚低饱和粉彩光斑、
- *    对角柔光带扫掠，并附带「日间精修」独有小节（强调色浸染速览）。
+ *  - **夜间模式**：强制深色主题 —— 近黑基底 + 柔和光斑，验证玻璃在
+ *    暗环境下的"发光材质"表现（tint 霜面提亮 + 主色浸染）；
+ *  - **白天模式**：强制浅色主题 —— 白霜玻璃 v3：三段天空渐变压入冷灰
+ *    深色衬底、暗线+亮线的浮雕细网、明暗成对柔光带、加深 tint 光斑 ——
+ *    玻璃靠「透射与明暗差」立质感，不靠灰边硬描。
+ *    并附带「日间精修」独有小节（强调色浸染速览）。
  *
  * 两个实验室各自包裹独立 [ApexTheme]，与系统深浅色设置互不影响 ——
  * 同一设备上并排验证玻璃材质的 Light / Dark 双态表现。
@@ -139,10 +146,19 @@ fun GlassLabScreen() {
         LabModeSwitcher(mode = mode, onSelect = { mode = it })
 
         when (mode) {
-            GlassLabMode.NIGHT -> ApexTheme(darkTheme = true) {
+            // 玻璃实验室是液态玻璃体系的验证屏 —— 无论全局风格设置如何，
+            // 在此强制液态玻璃风格（极简模式会把玻璃短路成扁平表面，
+            // 验证屏将失去验证对象）。
+            GlassLabMode.NIGHT -> ApexTheme(
+                darkTheme = true,
+                uiStyle = com.apex.agent.ui.theme.UiStyle.LIQUID_GLASS
+            ) {
                 GlassLabContent(mode = GlassLabMode.NIGHT)
             }
-            GlassLabMode.DAY -> ApexTheme(darkTheme = false) {
+            GlassLabMode.DAY -> ApexTheme(
+                darkTheme = false,
+                uiStyle = com.apex.agent.ui.theme.UiStyle.LIQUID_GLASS
+            ) {
                 GlassLabContent(mode = GlassLabMode.DAY)
             }
         }
@@ -176,7 +192,7 @@ private fun LabModeSwitcher(mode: GlassLabMode, onSelect: (GlassLabMode) -> Unit
             }
         }
         Text(
-            text = "两个实验室各自强制对应深浅主题（不影响系统设置）—— 夜间验证霓虹发光材质，白天验证白霜精修材质。",
+            text = "两个实验室各自强制对应深浅主题（不影响系统设置）—— 夜间验证暗底发光材质，白天验证白霜精修材质。",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -186,10 +202,19 @@ private fun LabModeSwitcher(mode: GlassLabMode, onSelect: (GlassLabMode) -> Unit
 /** 实验室主体 —— 处于强制主题内，页面底色随模式走专属渐变。 */
 @Composable
 private fun GlassLabContent(mode: GlassLabMode) {
-    // 全页唯一 HazeState：验证区背景源与对话框跨窗口采样共用同一份
-    val backdropState = remember { HazeState() }
+    // 全页唯一页面级 LayerBackdrop（kyant0 采样源）：BackdropZone 验证区的
+    // 真实源。样品陈列馆各区自带独立源 —— kyant0 的采样基于 GraphicsLayer
+    // 单层录制，一个 LayerBackdrop 只承载一个源区域（Haze 多区共享同一
+    // state 的语义不存在）；对话框已改为 Ambient 面板，不再跨窗口采样。
+    val backdropState = rememberLayerBackdrop()
     var showDialog by remember { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
+
+    // ═══ Gate-0 探针枢纽：各小节写入实测读数，验收清单读取显示（P-4）═══
+    // 降级档探针在本页一次性采集（NFR-14 采样纪律），其余探针由
+    // 并排台 / Dark 栏的按钮触发写入。
+    val probeHub = rememberGlassProbeHub()
+    LadderProbeEffect(probeHub = probeHub)
 
     // 模式专属页面底色：夜间近黑渐沉，白天通透提亮 —— 保证 Frosted 档
     // （无 backdrop 采样）也坐在正确的明暗基底上，不与外层主题串色。
@@ -198,10 +223,14 @@ private fun GlassLabContent(mode: GlassLabMode) {
             colors = listOf(scheme.surfaceContainerLowest, scheme.background)
         )
     } else {
+        // 白天 v3：底部压入冷灰深色衬底 —— 玻璃是透射材质，纯白页底上
+        // 白霜玻璃没有可透的层次（被批「像磨砂塑料片」）；底部压暗后
+        // 下半页玻璃卡有了明度参照，霜面/边缘/光带都能被读到
         Brush.verticalGradient(
             0f to Color.White,
-            0.55f to scheme.background,
-            1f to scheme.primaryContainer.copy(alpha = 0.35f)
+            0.45f to scheme.background,
+            0.80f to scheme.surfaceContainerLow.copy(alpha = 0.55f),
+            1f to scheme.primaryContainer.copy(alpha = 0.40f)
         )
     }
 
@@ -214,10 +243,21 @@ private fun GlassLabContent(mode: GlassLabMode) {
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         LabHeader(mode)
-        // v1.4.3：顶阶动态（流光边框/镜面扫掠/呼吸光晕）—— 页头之后首个区块
+        // v1.4.3：顶阶动态（边界光轨/呼吸光晕；镜面扫掠已随 kyant0 迁移退役）
+        // —— 页头之后首个区块
         DynamicsSection()
+        // v1.4.9：特效工坊 —— 边界光系扩展陈列（常驻循环集中于此，
+        // 本页为动效验证屏的豁免规则见文件头）
+        EffectsWorkshopSection()
         BackdropZone(state = backdropState, mode = mode)
-        SamplesSection(state = backdropState, mode = mode)
+        // v1.5.2 酷安式深色 Dock → Gate-0 v2（D-1～D-7 修复版，布局数学在
+        // GlassDockMath；v1 已随 Gate-0 退役）—— 模式驱动采样源明暗（D-5）
+        DarkBarSectionV2(mode = mode, probeHub = probeHub)
+        // Gate-0 P-2：双态并排台（同一配方 × 夜/日双基底 + 会话快照预设 D-10）
+        SideBySideBenchSection(probeHub = probeHub)
+        SamplesSection(mode = mode)
+        // kyant0：Ambient 材质对照样本（agent 回复气泡同款，白天/夜间自动跟随主题）
+        AmbientMaterialSection()
         if (mode == GlassLabMode.DAY) {
             DaylightRefinementSection()
         }
@@ -226,12 +266,13 @@ private fun GlassLabContent(mode: GlassLabMode) {
         ToolStatesSection()
         InputSection()
         DialogSection(onOpen = { showDialog = true })
-        ChecklistSection(mode = mode)
+        ChecklistSection(mode = mode, probeHub = probeHub)
     }
 
     if (showDialog) {
+        // 对话框面板走 Ambient 材质（backdrop = null）—— Dialog 独立窗口采不到
+        // 主窗口 LayerBackdrop，跨窗口采样已随 Haze 移除，故不再传采样源。
         LabGlassDialog(
-            state = backdropState,
             onDismiss = { showDialog = false }
         )
     }
@@ -244,11 +285,11 @@ private fun GlassLabContent(mode: GlassLabMode) {
 @Composable
 private fun LabHeader(mode: GlassLabMode) {
     val subtitle = if (mode == GlassLabMode.NIGHT) {
-        "夜间实验室：近黑基底上的发光玻璃 —— HazeTint 提亮 + 主色浸染，" +
-            "霓虹光斑验证实时采样。终端与页面背景本身不是玻璃，不做冒充。"
+        "夜间实验室：近黑基底上的发光玻璃 —— tint 霜面提亮 + 主色浸染，" +
+            "彩色光斑验证实时采样。终端与页面背景本身不是玻璃，不做冒充。"
     } else {
-        "白天实验室：白基底上的乳白霜面玻璃 —— 更精致的发丝细网、三枚粉彩光斑与" +
-            "对角柔光带。边缘转向冷灰以在白底上可见，材质克制不刷屏。"
+        "白天实验室：白基底上的乳白霜面玻璃 —— 冷灰衬底 + 浮雕细网 + 明暗成对光带，" +
+            "玻璃靠透射与明暗差立质感，不靠灰边硬描。"
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -296,11 +337,13 @@ private fun LabHeader(mode: GlassLabMode) {
 
 // ═══════════════════════════════════════════════════════════════
 //  Backdrop 采样验证区 —— 本页核心
-//  haze 源与玻璃叠加件必须是同一 Box 下的兄弟节点，绝不能嵌进源子树
+//  layerBackdrop 源把验证区内容录制进 GraphicsLayer，玻璃叠加件为其
+//  同层兄弟节点（kyant0 支持任意同布局树源 —— Haze 时代的嵌套限制
+//  不复存在，本区沿用兄弟叠加的经典布局）
 // ═══════════════════════════════════════════════════════════════
 
 @Composable
-private fun BackdropZone(state: HazeState, mode: GlassLabMode) {
+private fun BackdropZone(state: LayerBackdrop, mode: GlassLabMode) {
     var zoneSize by remember { mutableStateOf(IntSize.Zero) }
     // 按压演示反馈：材质验收页的按钮职能是「按下去看玻璃变化」—— 触觉反馈让按压
     // 有真实回响（原空 onClick 会让用户怀疑按钮失效）。
@@ -312,7 +355,7 @@ private fun BackdropZone(state: HazeState, mode: GlassLabMode) {
     SectionHeader(
         title = "Backdrop 真实采样",
         hint = if (mode == GlassLabMode.NIGHT) {
-            "拖动玻璃片扫过网格、文字与霓虹光斑 —— 玻璃内部画面必须实时变化"
+            "拖动玻璃片扫过网格、文字与彩色光斑 —— 玻璃内部画面必须实时变化"
         } else {
             "拖动玻璃片扫过细网、文字与粉彩光斑 —— 白霜玻璃下的画面必须实时变化"
         }
@@ -330,25 +373,26 @@ private fun BackdropZone(state: HazeState, mode: GlassLabMode) {
             )
             .onSizeChanged { coordinates -> zoneSize = coordinates }
     ) {
-        // ── haze 源：静态层（渐变底 / 网格 / 文字，尺寸或主题变化才重绘）
-        //    + 光斑层（每帧仅 2-3 个圆）。分层后动画帧绘制调用极少，
-        //    光斑以低透明度叠加在静态内容之上 —— 灯光漫射语义，采样层不变。 ──
+        // ── 采样源（layerBackdrop 录制进 GraphicsLayer）：静态层（渐变底 /
+        //    网格 / 文字，尺寸或主题变化才重绘）+ 光斑层（每帧仅 2-3 个圆）。
+        //    分层后动画帧绘制调用极少，光斑以低透明度叠加在静态内容之上
+        //    —— 灯光漫射语义，采样层不变。 ──
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .hazeSource(state)
+                .layerBackdrop(state)
         ) {
             StaticBackdropCanvas(modifier = Modifier.fillMaxSize(), mode = mode)
             GlowCanvas(modifier = Modifier.fillMaxSize(), mode = mode)
         }
 
-        // ── 可拖动玻璃片：与 haze 源同层叠加，位置随手势累积 ──
+        // ── 可拖动玻璃片：与采样源同层叠加，位置随手势累积 ──
         DraggableGlassChip(
             state = state,
             zoneSize = zoneSize
         )
 
-        // ── 底部悬浮件组：全部接同一个 HazeState ──
+        // ── 底部悬浮件组：全部接同一个 LayerBackdrop ──
         Row(
             modifier = Modifier
                 .align(Alignment.BottomStart)
@@ -359,54 +403,56 @@ private fun BackdropZone(state: HazeState, mode: GlassLabMode) {
             GlassButton(
                 text = "玻璃按钮",
                 onClick = pressFeedback,
-                state = state
+                backdrop = state
             )
             GlassIconButton(
                 icon = Icons.Default.BlurOn,
-                contentDescription = "采样验证图标按钮",
+                // #280：硬编码中文收编 R.string（原 "采样验证图标按钮"）
+                contentDescription = stringResource(R.string.glasslab_cd_icon_button),
                 onClick = pressFeedback,
-                state = state
+                backdrop = state
             )
             GlassFloatingButton(
                 icon = Icons.Default.PlayArrow,
-                contentDescription = "采样验证悬浮球",
+                // #280：硬编码中文收编 R.string（原 "采样验证悬浮球"）
+                contentDescription = stringResource(R.string.glasslab_cd_floating_button),
                 onClick = pressFeedback,
-                state = state,
+                backdrop = state,
                 accent = MaterialTheme.colorScheme.primary
             )
         }
 
-        // ── 右上角引擎徽标：运行时判定本设备模糊实现（真 blur 还是 scrim 兜底） ──
+        // ── 右上角引擎徽标：运行时判定本设备模糊实现（真 blur 还是 Frosted 霜面兜底） ──
         GlassBadge(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(12.dp),
-            state = state,
-            accent = if (Build.VERSION.SDK_INT >= 32) {
+            backdrop = state,
+            accent = if (Build.VERSION.SDK_INT >= 31) {
                 MaterialTheme.colorScheme.primary
             } else {
                 MaterialTheme.colorScheme.tertiary
             }
         ) {
             Icon(
-                imageVector = if (Build.VERSION.SDK_INT >= 32) {
+                imageVector = if (Build.VERSION.SDK_INT >= 31) {
                     Icons.Default.BlurOn
                 } else {
                     Icons.Default.Warning
                 },
                 contentDescription = null,
                 modifier = Modifier.size(12.dp),
-                tint = if (Build.VERSION.SDK_INT >= 32) {
+                tint = if (Build.VERSION.SDK_INT >= 31) {
                     MaterialTheme.colorScheme.primary
                 } else {
                     MaterialTheme.colorScheme.tertiary
                 }
             )
             Text(
-                text = if (Build.VERSION.SDK_INT >= 32) {
-                    "RenderEffect GPU 模糊"
+                text = if (Build.VERSION.SDK_INT >= 31) {
+                    "RenderEffect GPU 模糊（API 31+）"
                 } else {
-                    "API ${Build.VERSION.SDK_INT} · scrim 兜底"
+                    "API ${Build.VERSION.SDK_INT} · Frosted 霜面兜底"
                 },
                 style = MaterialTheme.typography.labelSmall,
                 fontFamily = FontFamily.Monospace,
@@ -419,7 +465,7 @@ private fun BackdropZone(state: HazeState, mode: GlassLabMode) {
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(12.dp),
-            state = state,
+            backdrop = state,
             accent = MaterialTheme.colorScheme.primary
         ) {
             Icon(
@@ -444,8 +490,10 @@ private fun BackdropZone(state: HazeState, mode: GlassLabMode) {
  *
  * 夜间 / 白天两套配方：
  *  - 夜间：surfaceVariant→background 深渐变 + 24dp 网格（0.35 线透明度）；
- *  - 白天（更精致）：白→背景→薄荷 tint 三段天空渐变 + 20dp 发丝细网
- *    （0.22 线透明度、亚像素描边）+ 对角柔光带 —— 白底玻璃的精细光影。
+ *  - 白天（v3 精修）：白→背景→冷灰衬底→薄荷 tint 四段天空渐变
+ *    （0.80 处压入深色衬底段，白霜玻璃压过才有透射对比）+
+ *    20dp 浮雕细网（暗线 0.30 + 白色偏移亮线成对，白底上清晰可读）+
+ *    明暗成对柔光带（投影带压衬度、受光带才可读）。
  */
 @Composable
 private fun StaticBackdropCanvas(modifier: Modifier, mode: GlassLabMode) {
@@ -462,35 +510,41 @@ private fun StaticBackdropCanvas(modifier: Modifier, mode: GlassLabMode) {
         textMeasurer.measure(text = GridRowText, style = rowStyle)
     }
 
+    // #323：渐变笔刷只随（主题, 模式）变化 —— 提升到 remember，
+    // Canvas 每帧重绘零分配（旧实现 draw 内逐帧 Brush.verticalGradient×2）
+    val nightGradient = remember(scheme) {
+        Brush.verticalGradient(colors = listOf(scheme.surfaceVariant, scheme.background))
+    }
+    val dayGradient = remember(scheme) {
+        Brush.verticalGradient(
+            0f to Color.White,
+            0.55f to scheme.background,
+            0.80f to scheme.surfaceContainerHigh.copy(alpha = 0.75f),
+            1f to scheme.primaryContainer.copy(alpha = 0.45f)
+        )
+    }
+
     Canvas(modifier = modifier) {
-        // 1. 渐变底
+        // 1. 渐变底（笔刷已 remember，绘制期零分配）
         if (mode == GlassLabMode.NIGHT) {
-            drawRect(
-                brush = Brush.verticalGradient(
-                    colors = listOf(scheme.surfaceVariant, scheme.background),
-                    startY = 0f,
-                    endY = size.height
-                )
-            )
+            drawRect(brush = nightGradient)
         } else {
-            // 白天三段天空渐变：白 → 背景灰 → 薄荷 tint，柔和而有层次
-            drawRect(
-                brush = Brush.verticalGradient(
-                    0f to Color.White,
-                    0.6f to scheme.background,
-                    1f to scheme.primaryContainer.copy(alpha = 0.45f),
-                    startY = 0f,
-                    endY = size.height
-                )
-            )
+            // 白天天空渐变 v3：白 → 背景灰 → 冷灰衬底 → 薄荷 tint。
+            // 0.80 深色衬底段是关键新增：验证区底部有「深色可透」，
+            // 白霜玻璃压上去才有明度差（原三段全浅色，玻璃毫无透射对比）
+            drawRect(brush = dayGradient)
         }
 
         // 2. 细网格 —— 模糊真伪一照便知
-        //    夜间 24dp 常规网格；白天 20dp 发丝级细网（更细更淡更精致）
+        //    夜间 24dp 常规网格；白天 20dp 浮雕细网：暗线 + 白色偏移亮线成对。
+        //    原 0.22 alpha / 0.8px 亚像素单色细线在白底上读不出（被批「发丝
+        //    细网格读不出玻璃质感」）；改成「暗线压色 + 亮线偏移 1.2px」的
+        //    浮雕对 —— 网格清晰可辨，且像刻在玻璃下的压花而非印上去的线
         val cell = (if (mode == GlassLabMode.NIGHT) 24.dp else 20.dp).toPx()
-        val gridAlpha = if (mode == GlassLabMode.NIGHT) 0.35f else 0.22f
+        val gridAlpha = if (mode == GlassLabMode.NIGHT) 0.35f else 0.30f
         val gridColor = scheme.onSurfaceVariant.copy(alpha = gridAlpha)
-        val gridStroke = if (mode == GlassLabMode.NIGHT) 1f else 0.8f
+        val gridStroke = 1f
+        val isDay = mode == GlassLabMode.DAY
         var gx = cell
         while (gx < size.width) {
             drawLine(
@@ -499,6 +553,15 @@ private fun StaticBackdropCanvas(modifier: Modifier, mode: GlassLabMode) {
                 end = Offset(x = gx, y = size.height),
                 strokeWidth = gridStroke
             )
+            if (isDay) {
+                // 白天浮雕亮线：向右下偏移的白色高光线，与暗线成对
+                drawLine(
+                    color = Color.White.copy(alpha = 0.55f),
+                    start = Offset(x = gx + 1.2f, y = 0f),
+                    end = Offset(x = gx + 1.2f, y = size.height),
+                    strokeWidth = 1f
+                )
+            }
             gx += cell
         }
         var gy = cell
@@ -509,22 +572,48 @@ private fun StaticBackdropCanvas(modifier: Modifier, mode: GlassLabMode) {
                 end = Offset(x = size.width, y = gy),
                 strokeWidth = gridStroke
             )
+            if (isDay) {
+                drawLine(
+                    color = Color.White.copy(alpha = 0.55f),
+                    start = Offset(x = 0f, y = gy + 1.2f),
+                    end = Offset(x = size.width, y = gy + 1.2f),
+                    strokeWidth = 1f
+                )
+            }
             gy += cell
         }
 
-        // 3. 白天专属：对角柔光带 —— 一道斜向日光扫过采样面
+        // 3. 白天专属：明暗成对柔光带 —— 一道投影压衬度 + 一道受光带。
+        //    白底上纯白光带不可见（白上白，被批「白做动画」）：
+        //    先用低 alpha onSurface 投影带压出暗部衬底，白色受光带才有
+        //    「被照亮」可读 —— 光影必须成对出现，这是白天光影的基本法
         if (mode == GlassLabMode.DAY) {
-            val sweepWidth = size.width * 0.30f
-            val sweepCenterX = size.width * 0.62f
-            rotate(
-                degrees = 16f,
-                pivot = Offset(size.width / 2f, size.height / 2f)
-            ) {
+            val pivot = Offset(size.width / 2f, size.height / 2f)
+            rotate(degrees = 16f, pivot = pivot) {
+                // 投影带：onSurface 低 alpha —— 白底上的「衬底暗部」
+                val shadeWidth = size.width * 0.16f
+                val shadeCenterX = size.width * 0.30f
+                drawRect(
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(
+                            scheme.onSurface.copy(alpha = 0f),
+                            scheme.onSurface.copy(alpha = 0.07f),
+                            scheme.onSurface.copy(alpha = 0f)
+                        ),
+                        startX = shadeCenterX - shadeWidth,
+                        endX = shadeCenterX + shadeWidth
+                    ),
+                    topLeft = Offset(shadeCenterX - shadeWidth, -size.height * 0.25f),
+                    size = Size(shadeWidth * 2f, size.height * 1.5f)
+                )
+                // 受光带：白色高光 —— 在投影衬度上才读得出，alpha 提到 0.55
+                val sweepWidth = size.width * 0.30f
+                val sweepCenterX = size.width * 0.62f
                 drawRect(
                     brush = Brush.horizontalGradient(
                         colors = listOf(
                             Color.White.copy(alpha = 0f),
-                            Color.White.copy(alpha = 0.30f),
+                            Color.White.copy(alpha = 0.55f),
                             Color.White.copy(alpha = 0f)
                         ),
                         startX = sweepCenterX - sweepWidth,
@@ -557,8 +646,8 @@ private fun StaticBackdropCanvas(modifier: Modifier, mode: GlassLabMode) {
  * 本页被明确豁免循环动画禁令，仅供采样验证。
  * 性能：每帧仅 2-3 个 drawCircle（静态内容已剥离至 [StaticBackdropCanvas]）。
  *
- * 夜间：双霓虹光斑（primary / tertiary，0.18）；
- * 白天：三枚低饱和粉彩光斑（primary / secondary / tertiary，0.10-0.14）+ 更慢速漂移。
+ * 夜间：双柔和光斑（primary / tertiary，0.18）；
+ * 白天：三枚加深 tint 光斑（向 onSurface 混 30%，径向软边 0.16-0.22）+ 更慢速漂移。
  */
 @Composable
 private fun GlowCanvas(modifier: Modifier, mode: GlassLabMode) {
@@ -592,9 +681,39 @@ private fun GlowCanvas(modifier: Modifier, mode: GlassLabMode) {
         label = "glow_tertiary"
     )
 
+    // #323：blob 色（白天模式向 onSurface 混 30%）提升到组合层 ——
+    // 颜色只随主题变化，逐帧 lerp×3 是 draw 期分配残留的根因之一
+    val blobPrimary = lerp(scheme.primary, scheme.onSurface, 0.30f)
+    val blobSecondary = lerp(scheme.secondary, scheme.onSurface, 0.30f)
+    val blobTertiary = lerp(scheme.tertiary, scheme.onSurface, 0.30f)
+
+    // #323：径向渐变笔刷按「零点为心」静态构建一次，逐帧仅 translate
+    // 到光斑当前位置 —— 每帧零 Brush 分配（旧实现逐帧 Brush.radialGradient×3）
+    val blobBrushA = remember(blobPrimary) {
+        Brush.radialGradient(
+            colors = listOf(blobPrimary.copy(alpha = 0.22f), Color.Transparent),
+            center = Offset.Zero,
+            radius = 1f
+        )
+    }
+    val blobBrushB = remember(blobSecondary) {
+        Brush.radialGradient(
+            colors = listOf(blobSecondary.copy(alpha = 0.19f), Color.Transparent),
+            center = Offset.Zero,
+            radius = 1f
+        )
+    }
+    val blobBrushC = remember(blobTertiary) {
+        Brush.radialGradient(
+            colors = listOf(blobTertiary.copy(alpha = 0.16f), Color.Transparent),
+            center = Offset.Zero,
+            radius = 1f
+        )
+    }
+
     Canvas(modifier = modifier) {
         if (mode == GlassLabMode.NIGHT) {
-            // 双霓虹光斑 —— 主色 / 三级色，慢速环游，叠加在静态层之上
+            // 双彩色光斑 —— 主色 / 三级色，慢速环游，叠加在静态层之上
             val angleA = phaseA * 2f * PI.toFloat()
             val angleB = phaseB * 2f * PI.toFloat() + 2.1f
             drawCircle(
@@ -614,34 +733,39 @@ private fun GlowCanvas(modifier: Modifier, mode: GlassLabMode) {
                 )
             )
         } else {
-            // 三枚粉彩光斑 —— 薄荷 / 琥珀 / 品红，低饱和漫射
+            // 三枚光斑 v3：加深 tint + 径向渐变软边 —— 原低饱和粉彩纯色圆
+            // （0.10-0.14）在白底上进退两难：调饱和显脏、调低不可见。
+            // 解法是动「明度」而不是 alpha：向 onSurface 加深 30%，
+            // 低 alpha 也能与白底拉开明度差，且径向软边更像「光斑」
+            // 而非色块，白底上干净可读
             val angleA = phaseA * 2f * PI.toFloat()
             val angleB = phaseB * 2f * PI.toFloat() + 2.1f
             val angleC = phaseC * 2f * PI.toFloat() + 4.2f
-            drawCircle(
-                color = scheme.primary.copy(alpha = 0.14f),
-                radius = 130.dp.toPx(),
-                center = Offset(
-                    x = size.width * (0.5f + 0.32f * sin(angleA)),
-                    y = size.height * (0.40f + 0.26f * cos(angleA))
-                )
+
+            val centerA = Offset(
+                x = size.width * (0.5f + 0.32f * sin(angleA)),
+                y = size.height * (0.40f + 0.26f * cos(angleA))
             )
-            drawCircle(
-                color = scheme.secondary.copy(alpha = 0.12f),
-                radius = 100.dp.toPx(),
-                center = Offset(
-                    x = size.width * (0.5f + 0.36f * cos(angleB)),
-                    y = size.height * (0.58f + 0.28f * sin(angleB))
-                )
+            val radiusA = 130.dp.toPx()
+            translate(centerA.x, centerA.y) {
+                drawCircle(brush = blobBrushA, radius = radiusA, center = Offset.Zero)
+            }
+            val centerB = Offset(
+                x = size.width * (0.5f + 0.36f * cos(angleB)),
+                y = size.height * (0.58f + 0.28f * sin(angleB))
             )
-            drawCircle(
-                color = scheme.tertiary.copy(alpha = 0.10f),
-                radius = 90.dp.toPx(),
-                center = Offset(
-                    x = size.width * (0.5f + 0.30f * sin(angleC + 1.3f)),
-                    y = size.height * (0.50f + 0.32f * cos(angleC))
-                )
+            val radiusB = 100.dp.toPx()
+            translate(centerB.x, centerB.y) {
+                drawCircle(brush = blobBrushB, radius = radiusB, center = Offset.Zero)
+            }
+            val centerC = Offset(
+                x = size.width * (0.5f + 0.30f * sin(angleC + 1.3f)),
+                y = size.height * (0.50f + 0.32f * cos(angleC))
             )
+            val radiusC = 90.dp.toPx()
+            translate(centerC.x, centerC.y) {
+                drawCircle(brush = blobBrushC, radius = radiusC, center = Offset.Zero)
+            }
         }
     }
 }
@@ -652,16 +776,23 @@ private fun GlowCanvas(modifier: Modifier, mode: GlassLabMode) {
  * —— 采样必须跟随位置实时更新，这是比光斑更强的逐帧验证信号。
  */
 @Composable
-private fun DraggableGlassChip(state: HazeState, zoneSize: IntSize) {
+private fun DraggableGlassChip(state: Backdrop, zoneSize: IntSize) {
     var chipOffset by remember { mutableStateOf(Offset.Zero) }
 
     GlassCard(
         modifier = Modifier
-            .offset {
-                IntOffset(
-                    x = chipOffset.x.roundToInt(),
-                    y = chipOffset.y.roundToInt()
-                )
+            // diag-20261011（GlassLab 续）：拖拽位移改纯 draw 通道（graphicsLayer
+            // translation）—— 旧实现 offset{} 延迟 lambda 在 placement 通道读
+            // chipOffset（OffsetPxNode.layout 块内求值），拖动每帧触发布局类失
+            // 效；与换页 dispose（SaveableStateProvider 换目的地/模式切换）同帧
+            // 竞争时，draw 派发中的 measureAndLayout 会撞上已脱离 owner 的节点
+            //——「LayoutNode should be attached to an owner」（crash-1791688161738，
+            // 栈形态 Scroll→Column→子 remeasure）。与 b4648f22 同配方：translation
+            // 保持视觉/命中等效（层变换参与命中测试，芯片在位移后位置仍可抓取），
+            // 测量/布局通道零失效。
+            .graphicsLayer {
+                translationX = chipOffset.x
+                translationY = chipOffset.y
             }
             .size(width = ChipWidth, height = ChipHeight)
             .pointerInput(Unit) {
@@ -683,7 +814,7 @@ private fun DraggableGlassChip(state: HazeState, zoneSize: IntSize) {
                     )
                 }
             },
-        state = state,
+        backdrop = state,
         style = GlassStyle.Floating,
         shape = GlassShapes.card
     ) {

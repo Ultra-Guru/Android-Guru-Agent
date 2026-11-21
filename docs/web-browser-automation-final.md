@@ -52,8 +52,8 @@ Operit 的网页自动化 = 内置 `WebView` + 把渲染后 DOM 精简成「带*
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │  Agent (LLM)                                                   │
-│   工具: browser_navigate / snapshot / click / input / scroll / screenshot │
-│   人工接管: browser_show   (展开浮窗 → 人类登录/过验证)          │
+│   工具: BrowserNavigate / snapshot / click / input / scroll / screenshot │
+│   人工接管: BrowserShow   (展开浮窗 → 人类登录/过验证)          │
 └───────┬───────────────────────────────────┬──────────────────┘
         │ ToolRegistry                        │ 人类真实触控 (同一 WebView)
 ┌───────▼──────────────────────┐  ┌──────────▼──────────────────────────┐
@@ -76,7 +76,7 @@ Operit 的网页自动化 = 内置 `WebView` + 把渲染后 DOM 精简成「带*
 └────────────────────────────────────────────────────────────────┘
 ```
 
-数据流：`navigate` → `snapshot`（拿 `r_<hash>` 列表）→ `input`+`click`（物理触摸）→ `screenshot` 确认 → 遇登录/验证码 `browser_show` 展开浮窗 → 人类操作 → 点「我已完成」→ 引擎自动 `snapshot` 一次 → Agent 继续。
+数据流：`navigate` → `snapshot`（拿 `r_<hash>` 列表）→ `input`+`click`（物理触摸）→ `screenshot` 确认 → 遇登录/验证码 `BrowserShow` 展开浮窗 → 人类操作 → 点「我已完成」→ 引擎自动 `snapshot` 一次 → Agent 继续。
 
 ---
 
@@ -124,8 +124,8 @@ Operit 的网页自动化 = 内置 `WebView` + 把渲染后 DOM 精简成「带*
 - 新增 `BrowserSessionState` 枚举：`HIDDEN` / `AGENT_DRIVING` / `WAITING_HUMAN` / `HANDOFF_COMPLETE`。
 - `BrowserEngine`：`enterHandoffMode()` / `completeHandoff()` / `assertAgentControl()`（抛 `HandoffLockedException`）。
 - `BrowserOverlay`：`WAITING_HUMAN` 态常驻「我已完成操作」按钮；`AGENT_DRIVING` 态半透明遮罩防人类误触；地址栏/前进后退在 `WAITING_HUMAN` 隐藏。
-- 所有 `BrowserAgentTools` 执行前调用 `assertAgentControl()`，锁定期返回友好 `SYSTEM_LOCKED` 提示。
-- `browser_show` 工具：展开浮窗并 `enterHandoffMode()`；人类点完成后 `completeHandoff()` + 自动 `snapshot`。
+- 所有 `BrowserAgentTools` 执行前调用 `assertAgentControl()`，锁定期返回结构化 `SYSTEM_LOCKED` JSON（`status`/`reason`/`hint`）——模型能稳定区分「可等待恢复的锁定」与「永久失败」。
+- `BrowserShow` 工具：展开浮窗并 `enterHandoffMode()`；人类点完成后 `completeHandoff()` + 自动 `snapshot`。
 
 ### [P1] Token 预算与剪枝测试
 - CI 用 5 个重型页（淘宝/ X / GitHub / 知乎 / 银行登录）验证快照 ≤ 4096 tokens。
@@ -144,15 +144,28 @@ Operit 的网页自动化 = 内置 `WebView` + 把渲染后 DOM 精简成「带*
 
 | 工具 | 参数 | 返回 | 状态机约束 |
 | --- | --- | --- | --- |
-| `browser_navigate` | `url`, `new_tab?` | 加载后概要 | AGENT_DRIVING |
-| `browser_snapshot` | — | 带 `r_<hash>` 可交互元素列表 + 概要 | 锁定期返回 `SYSTEM_LOCKED` |
-| `browser_click` | `ref` | 物理触摸点击结果 | 锁定期返回 `SYSTEM_LOCKED` |
-| `browser_input` | `ref`, `text` | 填值结果 | 锁定期返回 `SYSTEM_LOCKED` |
-| `browser_scroll` | `delta_y?` | 滚动结果 | 锁定期返回 `SYSTEM_LOCKED` |
-| `browser_screenshot` | — | PNG base64（视口） | 锁定期返回 `SYSTEM_LOCKED` |
-| `browser_show` | `expand?`(默认 true) | 展开/收起浮窗，进入/退出人工接管 | 触发 `enterHandoffMode`/`completeHandoff` |
+| `BrowserNavigate` | `url`, `new_tab?` | 加载后概要 | AGENT_DRIVING |
+| `BrowserSnapshot` | — | 带 `r_<hash>` 可交互元素列表 + 概要 | 锁定期返回 `SYSTEM_LOCKED` |
+| `BrowserClick` | `ref` | 物理触摸点击结果 | 锁定期返回 `SYSTEM_LOCKED` |
+| `BrowserInput` | `ref`, `text` | 填值结果 | 锁定期返回 `SYSTEM_LOCKED` |
+| `BrowserScroll` | `delta_y?` | 滚动结果 | 锁定期返回 `SYSTEM_LOCKED` |
+| `BrowserScreenshot` | — | PNG base64（视口） | 锁定期返回 `SYSTEM_LOCKED` |
+| `BrowserShow` | `expand?`(默认 true) | 展开/收起浮窗，进入/退出人工接管 | 触发 `enterHandoffMode`/`completeHandoff` |
 
-`browser_snapshot` 返回示例（语义哈希 ref，稳定）：
+### 6.1 v1.1.0 高级动作空间（apex-kit-browser PR #3 落地）
+
+| 工具 | 参数 | 返回 | 用途 |
+| --- | --- | --- | --- |
+| `BrowserPressKey` | `key`（enter/tab/escape/方向键/单字符） | 动作后验证摘要 | 搜索回车（隐式提交）、Tab 切换、ESC 关弹窗 |
+| `BrowserHover` | `ref` | 动作后验证摘要 | 悬停式下拉菜单/导航、tooltip |
+| `BrowserDrag` | `from_ref`, `to_ref`, `steps?` | 动作后验证摘要 | 滑块验证、列表排序、看板拖放 |
+| `BrowserExtractContent` | `mode?`（article/tables/links/meta） | 结构化 JSON | 读正文/表格/链接/元信息，优先于 snapshot 读内容 |
+| `BrowserExecuteJs` | `script`, `timeout_ms?` | 结果字符串 | 原生 JS 逃生舱：长尾页面逻辑兜底 |
+| `BrowserGetCookies` | `url?` | `k1=v1; k2=v2` | 登录态诊断（trace 结果自动脱敏） |
+| `BrowserLocate` | `text`, `tag?`, `limit?` | ref/tag/text 列表 | ref 失配时按可见文本重锚定（与引擎模糊自愈同源） |
+| `BrowserNetworkLog` | `limit?`, `url_contains?`（v1.1.0 新增过滤） | fetch/xhr 日志 | 定位数据 API，按 URL 子串快速过滤 |
+
+`BrowserSnapshot` 返回示例（语义哈希 ref，稳定）：
 ```
 ⊕ 页面可交互元素（共 12 个，ref 稳定）：
   [r_a1b2] 链接 首页
@@ -171,13 +184,13 @@ Operit 的网页自动化 = 内置 `WebView` + 把渲染后 DOM 精简成「带*
 | `core/.../browser/DomParser.kt` | 读 `data-apex-ref` 作 `ref` | 改读 `data-apex-hash`；`bid` 仅展示序号；summary 用 `ref` |
 | `core/.../browser/DomElement.kt` | `ref` 字段已有 | 注释改为「语义哈希」；`bid` 标记展示用途 |
 | `app/.../browser/BrowserEngine.kt` | `clickElement` 用 `el.click()`；无状态机 | 改物理触摸注入；新增 `BrowserSessionState` + 状态锁 + `enterHandoffMode`/`completeHandoff`/`assertAgentControl`；`ref` 定位改用 `data-apex-hash` |
-| `app/.../browser/BrowserAgentTools.kt` | 6 工具，`bid` 参数 | 参数改 `ref`；各工具头部加 `assertAgentControl()` 守卫；新增 `browser_show` 的握手触发 |
+| `app/.../browser/BrowserAgentTools.kt` | 6 工具，`bid` 参数 | 参数改 `ref`；各工具头部加 `assertAgentControl()` 守卫；新增 `BrowserShow` 的握手触发 |
 | `app/.../browser/BrowserOverlay.kt` | 已实现 | `WindowManager` 浮窗 + Compose 控制条；与引擎**共享 activeTab WebView**（`onStateChanged` 订阅状态：`WAITING_HUMAN` 自动展开并挂 WebView，其余态收起 detach）；`RECOVERING` 橙色徽章、`AGENT_DRIVING` 蓝、`WAITING_HUMAN` 绿 + 「我已完成操作」按钮；折叠/收起；无 `SYSTEM_ALERT_WINDOW` 权限时静默降级 |
 | `app/.../browser/OverlayLifecycleOwner.kt` | 已实现 | 浮窗 ComposeView 独立 `LifecycleOwner`（onCreate/start/resume/pause/stop/destroy） |
 | `app/.../browser/CyberNeonBallManager.kt` | 已实现 | **赛博极客·霓虹环流球**（常驻收缩态枢纽）。`EasyFloat` 全局浮窗；高光黑曜石 `bg_obsidian_glossy` + `NeonRingView` 代码绘制等离子环流（默认，零资源依赖）+ 可选 `LottieAnimationView`（`res/raw/anim_neon_<state>.json` 存在时优先加载并运行时改色）；`SpringAnimation` 物理挤压（按下 0.88 弹回）；点击球 toggle 显式握手（`enterHandoffMode`/`completeHandoff`）；状态色 RUNNING 蓝/NEED_HUMAN 金+脉冲+抖动+震动/badge、ERROR 红、SUCCESS 绿；订阅 `BrowserEngine` 多播状态回调 |
 | `app/.../browser/NeonRingView.kt` | 已实现 | 代码绘制霓虹等离子光环（多层旋转 SweepGradient + 呼吸透明度），替代 Lottie 二进制资源的默认兜底，零包体 |
 | `app/src/main/res/raw/anim_neon_running.json` | 已实现（真实资源） | 从 LottieFiles 公开 CDN 下载的真实免费 Lottie（105KB），Running 态默认加载并染成电光蓝；`warning/error/success` 三态 raw 待补（放入即自动生效） |
-| `app/.../di/ToolModule.kt` | 已注册 6 工具 | `browser_show` 加握手；注入 `BrowserOverlay`（P1） |
+| `app/.../di/ToolModule.kt` | 已注册 6 工具 | `BrowserShow` 加握手；注入 `BrowserOverlay`（P1） |
 
 ---
 
@@ -213,15 +226,15 @@ Operit 的网页自动化 = 内置 `WebView` + 把渲染后 DOM 精简成「带*
 
 | 审计缺口 | 落地位置 | 实现要点 |
 | --- | --- | --- |
-| #1 页面加载等待 | `BrowserEngine.navigate` | `onPageFinished` 基础等待 + 可选 `wait_for` 元素轮询（10s）+ 15s 超时兜底；工具 `browser_navigate` 新增 `wait_for`/`timeout_ms` |
+| #1 页面加载等待 | `BrowserEngine.navigate` | `onPageFinished` 基础等待 + 可选 `wait_for` 元素轮询（10s）+ 15s 超时兜底；工具 `BrowserNavigate` 新增 `wait_for`/`timeout_ms` |
 | #2 动作后验证 | `BrowserEngine.probePage`/`PostActionState` | 点击/输入/选择后对比 URL/标题/可交互元素数；工具返回 `动作完成·URL变化/新增元素` 摘要 |
 | #3 JS 弹窗处理 | `BrowserEngine.createWebView` 的 `WebChromeClient` | `onJsAlert/Confirm/Prompt` 接管并自动 confirm，文本存入 `lastDialog` 注入下次 snapshot |
 | #4 渲染进程崩溃 | `WebViewClient.onRenderProcessGone` | 崩溃即销毁重建 WebView，置 `RECOVERING` 状态，返回 true 不 crash 宿主 |
-| #5 动作空间补全 | `selectOption`/`toggle`/`respondFileChooser` + 工具 `browser_select`/`browser_toggle`/`browser_file_upload` | `<select>` 按 value/文本选；checkbox/radio 走物理触摸；文件选择挂起回调 |
+| #5 动作空间补全 | `selectOption`/`toggle`/`respondFileChooser` + 工具 `BrowserSelect`/`BrowserToggle`/`BrowserFileUpload` | `<select>` 按 value/文本选；checkbox/radio 走物理触摸；文件选择挂起回调 |
 | #6 Cookie 持久化 | `flushCookies()`（`CookieManager.flush`） | 接管完成、导航完成、销毁时强制刷盘；`WebSettings` 开 domStorage |
 | （主线）语义哈希 ref | `BrowserScript.SNAPSHOT_JS` 写 `data-apex-hash`；`DomParser`/`DomElement` 读之 | `ref="r_<hash>"`，`bid` 降级仅展示序号（抗 SPA 局部刷新） |
 | （主线）物理触摸注入 | `BrowserEngine.clickElement` | `data-apex-hash` 定位 → WebView 坐标 → `dispatchTouchEvent`（DOWN~UP 随机 30~80ms） |
-| （主线）显式握手 | `BrowserSessionState` + `enterHandoffMode`/`completeHandoff`/`assertAgentControl` | 工具前置守卫返回 `SYSTEM_LOCKED`；`browser_show` 触发握手 |
+| （主线）显式握手 | `BrowserSessionState` + `enterHandoffMode`/`completeHandoff`/`assertAgentControl` | 工具前置守卫返回 `SYSTEM_LOCKED`；`BrowserShow` 触发握手 |
 | #10 无限滚动（P1 增强） | `BrowserEngine.scroll`/`ScrollResult` | `wait_for_new` 检测新增元素数 |
 | #11 安全加固（P1 基线） | `createWebView` | 禁 `allowFileAccess`/`allowContentAccess`/file-from-URL（防 UXSS/路径穿越） |
 
@@ -238,11 +251,121 @@ Operit 的网页自动化 = 内置 `WebView` + 把渲染后 DOM 精简成「带*
 | 审计缺口 | 落地位置 | 实现要点 |
 | --- | --- | --- |
 | #7 错误恢复/重试 | `RetryPolicy.kt`（`RetryPolicy`+`CircuitBreaker`+`withRetry`）；`BrowserEngine` 的 `clickElement`/`inputText`/`selectOption`/`snapshot` 包 `withRetry` | 指数退避（500ms×2^n，上限 5s，最多 3 次）；`ElementNotFoundException`/`TimeoutException`/`WebViewNotRespondingException` 可重试；`HandoffLockedException` 等语义错误**不重试**；连续 5 次失败熔断 30s |
-| #9 可观测性 | `BrowserTracer.kt` + `BrowserAgentTools.TracedTool` 包装 | 内存环形缓冲(100 条)记录 工具/参数/结果/耗时/URL/状态；`browser_debug_dump(limit)` 导出最近 N 条 |
-| #8 上下文管理（轻量） | `BrowserTracer.contextSummary` + `browser_context_summary` 工具 | 最近 3 步保留详情，更早步骤压成单行；始终保留 URL 关键帧 |
+| #9 可观测性 | `BrowserTracer.kt` + `BrowserAgentTools.TracedTool` 包装 | 内存环形缓冲(100 条)记录 工具/参数/结果/耗时/URL/状态；`BrowserDebugDump(limit)` 导出最近 N 条 |
+| #8 上下文管理（轻量） | `BrowserTracer.contextSummary` + `BrowserContextSummary` 工具 | 最近 3 步保留详情，更早步骤压成单行；始终保留 URL 关键帧 |
 
-**新增/修改文件**：`app/.../browser/RetryPolicy.kt`（新）、`app/.../browser/BrowserTracer.kt`（新）、`BrowserEngine.kt`（接 withRetry + snapshot 8s 超时 → `WebViewNotRespondingException`）、`BrowserAgentTools.kt`（TracedTool 包装 + `browser_debug_dump`/`browser_context_summary`）、`ToolModule.kt`（`BrowserTracer` 注入，`BrowserEngine` 改由 @Inject 构造提供）、`app/.../test/.../RetryPolicyTest.kt` + `BrowserTracerTest.kt`（意图测试）。
+**新增/修改文件**：`app/.../browser/RetryPolicy.kt`（新）、`app/.../browser/BrowserTracer.kt`（新）、`BrowserEngine.kt`（接 withRetry + snapshot 8s 超时 → `WebViewNotRespondingException`）、`BrowserAgentTools.kt`（TracedTool 包装 + `BrowserDebugDump`/`BrowserContextSummary`）、`ToolModule.kt`（`BrowserTracer` 注入，`BrowserEngine` 改由 @Inject 构造提供）、`app/.../test/.../RetryPolicyTest.kt` + `BrowserTracerTest.kt`（意图测试）。
 
 **未做（P1 剩余 / P2）**：#7 的持久化 trace 落盘/OpenTelemetry（仅内存）、#8 的 Agent 框架层完整滑动窗口（本层只提供摘要工具）、#10 已在 P0 做、#11 已在 P0 做、#12 权限请求、#13 反爬隐身、#14 下载、#15 内存维护、#16 多标签并发上限、#17 Accessibility Tree、#18 网络拦截、#19 任务规划、#20 可编程剪枝。**浮窗 UI（BrowserOverlay）已完成**（P1 最后一步，按用户要求延后至此）。
 
 **验证**：`RetryPolicyTest`/`BrowserTracerTest` 验证重试熔断与上下文压缩意图；lint 0 错误；完整编译/测试依赖 CI。
+
+---
+
+## 13. v1.5.0 插件形态退役（浏览器自动化内置化）
+
+> 本章为主项目改造（Android-Guru-Agent `feat/browser-agent-builtin`）的定论记录。
+
+### 13.1 动机
+
+- **清单漂移**：插件 APK 声明 15 个 `browser_*` 工具描述符，而宿主
+  BrowserAgentTools 实际注册 24 个（v1.1.0 库升级新增 press_key / hover /
+  drag / extract_content / execute_js / get_cookies / locate / wait_for /
+  page_type 后插件壳未同步）——插件 REPLACE 覆盖内置注册时，Agent 能力
+  静默降级回 15 工具；
+- **双源维护**：同一功能两份清单（插件 BrowserToolCatalog 与宿主
+  BrowserAgentTools），每次工具增删都要跨仓同步，漂移只是时间问题；
+- **IPC 绕行无增益**：插件进程没有浏览器引擎，执行恒经 IApexPluginHost
+  回宿主 BrowserEngine——跨进程 binder 往返 + 120s runBlocking 超时包装，
+  只增加延迟与故障面（宿主桥断连时错误文案直接进模型上下文）；进程隔离
+  对浏览器自动化没有安全收益（引擎本就活在宿主进程）。
+
+### 13.2 改造内容
+
+| 项 | 位置 | 说明 |
+| --- | --- | --- |
+| 删除插件壳 | `plugins/` 下的网页自动化插件目录（整目录删除）+ settings include + apk.yml / release.yml 构建与发布段 | 15 工具声明壳退役；官方参考插件只剩 plugin-workflow |
+| 新建平台模块 | `:platform:browser-agent` | 对齐 platform:* 大功能范式：BrowserAgentTools（工具协议）+ BrowserKitModule（库 DI 接线）迁入，只改 package 声明；apex-kit-browser 三层经 `api` 传递给 app；namespace `com.apex.agent.platform.browser` |
+| app 侧接线 | `app/build.gradle.kts` / `di/ToolModule.kt` / `plugin/host/PluginHostBridge.kt` | 三条库坐标替换为模块依赖；import 更新为新包；CyberNeonBallManager / NeonRingView 视觉装饰留 app（LanguageManager 与 app 资源依赖），悬浮球/浮窗链路零变化 |
+| 旧插件拦截 | `PluginManager`（plugin-sdk/plugin-host） | metadata.id 命中退役 id 时拒绝加载：日志警告「已内置，建议卸载」+ post 解绑，不注册任何工具（防旧 15 工具清单 REPLACE 覆盖内置 24 工具，与签名门同款 fail-closed 语义） |
+| 一级 UI 入口 | `DrawerDestination.Browser` + `ui/screen/browser/BrowserScreen.kt` / `BrowserViewModel.kt` | 抽屉「浏览器」页（Market 之后 Memory 之前，Language 地球图标）：会话状态卡（状态机四态人话解释 + 当前页面）+ 标签列表（tabsSnapshot）+ 最近自动化动作（tracer.recent(10)：工具/结果摘要/耗时/状态）+ 人工操作（newTab / releaseBrowser / enterHandoffMode / completeHandoff 按 WAITING_HUMAN 切换）+ 内置说明卡 |
+
+### 13.3 旧插件用户引导
+
+**无需任何操作即可获得完整功能**：24 个 `browser_*` 工具随宿主 APK 内置，
+Agent 对话中直接可用（浏览器被使用后悬浮球 / 浮窗照常出现）。已侧载旧
+插件 APK 的用户**卸载它即可**——宿主 PluginManager 会在加载时拦截并
+日志引导卸载；旧插件不再注册任何工具，留着无害但无益。
+
+### 13.4 与 apex-kit-browser v1.2.0 的协同
+
+- 主项目消费坐标仍为 `com.apex.browser:{core,engine,chrome}`（composite
+  build / 远端 Maven 双通道不变），本次模块化改造对库**零要求**——v1.1.0
+  即可跑通全部 24 工具；
+- 库侧 v1.2.0（ChromeStrings 注入接口，additive API）将消解 chrome 逻辑层
+  硬编码中文的已知取舍（5 条 snackbar / 4 条建议副标题 / 3 条 JS 弹窗
+  按钮），宿主升级坐标即可获得完整 i18n；两仓各自发版、互不阻塞；
+- 拆库边界进一步清晰：库管引擎与 chrome UI，工具协议（AgentTool 契约）
+  与 DI 接线归宿主 `:platform:browser-agent` ——「协议在宿主、引擎在库」。
+
+---
+
+## §14 v1.7.0 会话面扩容（34 工具 + 人用 Chrome 增强，2026-10-18）
+
+> 判决背景：v1.6 的 BrowserTabs 已把工具面带到 25，但「引擎侧已具备、
+> Agent 工具面缺位」的能力仍有九项（goBack/goForward/reload 首次暴露、
+> recentHistory 首次暴露、findInPage 首次暴露、下载只有 lastDownload
+> 瞬时值、书签为零、显示控制为零、全页截图为零）。本次按
+> 「对标 Playwright MCP 会话面 + 桌面浏览器 UX 基线」一次性补齐——
+> 全部走 apex-kit-browser v1.7.0 新组件（库侧），宿主只加协议与接线。
+
+### 14.1 会话工具集（:platform:browser-agent 新增 BrowserSessionTools，9 工具）
+
+| 工具 | 引擎面 | 语义 |
+| --- | --- | --- |
+| `BrowserBack` / `BrowserForward` | `goBack()/goForward()`（既有） | 历史栈导航，历史边界返回提示（Playwright browser_go_back/forward 对齐） |
+| `BrowserReload` | `reload(timeout)`（既有） | 带 onPageFinished 等待的就绪重载，超时兜底 |
+| `BrowserHistory` | `recentHistory(limit)`（既有） | 浏览历史查询（此前只喂地址栏联想，Agent 不可见） |
+| `BrowserFind` | `findInPage(query)`（既有） | 页内查找计数 + 首个匹配高亮（chrome 人用查找的 Agent 对位面） |
+| `BrowserDownloads` | `DownloadCenter`（库 v1.7.0 新） | 全量下载台账（跨重启持久）+ cancel / retry（转发 Cookie）/ forget / open；list 带状态/进度/字节 |
+| `BrowserBookmarks` | `BookmarkStore`（库 v1.7.0 新） | list（MRU）/ add（utm 变体归一去重）/ remove / search；与 chrome 书签面板共用存储 |
+| `BrowserZoom` | `EngineDisplayController`（库 v1.7.0 新） | 文字缩放 50..200 跨页保持（截图可读性 / 无障碍） |
+| `BrowserClearData` | 同上 | cookies / caches / histories / all；**HIGH 风险 + destructive 注解**（清 Cookie = 全站点登出） |
+
+守卫 / trace / SafeAgentTool 包装与 BrowserAgentTools 完全同款
+（SYSTEM_LOCKED 结构化锁定语义不变）；注册点 ToolModule §3.5b；
+PluginHostBridge 一并暴露（插件侧 34 工具全量可见）。
+
+### 14.2 既有工具增强
+
+- `BrowserScreenshot` 增 `full_page`（默认 false 保持视口语义）：滚动
+  分段 + Canvas 拼接（上限 5 屏、OOM 防线返回 null、截后恢复滚动位），
+  引擎扩展 `fullPageScreenshot`（库 v1.7.0，零 BrowserEngine.kt 行数增量）。
+
+### 14.3 工具系统口径同步（既有缺口的顺手清偿）
+
+- `ToolIdAliases`：补 `browser_tabs` 漏项（v1.4.9.33 加工具时未同步）+
+  9 个新别名 → 34 别名全量；
+- `ToolExecutionPolicy`：v1.1.0 的 8 个高级工具 + BrowserTabs 此前落
+  UNKNOWN（重试语义退化为引擎兜底），本次连同 9 新工具全量补齐 34 口径；
+- `ToolMetadata`/`ToolAnnotations`：BrowserClearData 升 HIGH（第四件
+  敏感件，唯一 destructive=true）；文案 24→34（strings_browser /
+  strings_core 四处 + UI KDoc）。
+
+### 14.4 人用 Chrome 增强（库 v1.7.0，宿主零接线获得）
+
+书签面板（搜索/文件夹/MRU/收藏当前页）、阅读模式全屏层（结构块 + 目录
+锚点跳转 + 字号 0.8..1.6）、显示设置面板（缩放档位 + 夜间模式反色 +
+清除数据确认流）、真实 favicon（DuckDuckGo Icons，host 级取图 +
+LRU32 + 失败回退首字母）、「复制干净链接」（UrlCleaner 剔除 40+ 精确
+跟踪参数 + 16 前缀族，剔除数入轻提示）。全部经 Gateway additive 成员
+接线（未接线自动隐藏，FakeGateway 零改动）。
+
+### 14.5 已知取舍（诚实清单）
+
+- 全页截图 sticky 顶栏每段重复（Canvas 快照固有形态，非 CDP 通道）；
+- 夜间模式为算法反色（iframe/个别 fixed 层可能半亮半暗）；
+- 清除浏览数据不含地址栏联想历史（引擎 ArrayDeque 无清空 API，后续补）；
+- 下载 pause/resume 非公开 SDK API（DownloadManager @hide）——控制面为
+  cancel/retry/forget/open，系统自动暂停照常可见（PAUSED 状态映射保留）；
+- DownloadCenter 台账只记本库发起的下载（不吞系统全量列表——职责边界）。

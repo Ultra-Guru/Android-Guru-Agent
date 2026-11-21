@@ -10,7 +10,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 
 /**
- * 文件编辑工具（搜索-替换块模式）
+ * 文件编辑工具（搜索-替换块模式）—— 既有文件的唯一修改入口
  *
  * 采用"搜索-替换"模式而非全文覆写：
  * - 指定要替换的原文（必须精确匹配文件中的内容）
@@ -29,10 +29,10 @@ class FileEditTool(
     private val basePath: File
 ) : AgentTool {
 
-    override val id = "edit_file"
-    override val name = "Edit File"
+    override val id = "Edit"
+    override val name = "Edit"
     override val description = """
-        Edit a file using search-and-replace blocks.
+        Edit an EXISTING file using search-and-replace blocks (use Write to create a new file).
         Each edit specifies the exact text to find and what to replace it with.
         The search text must match the file content EXACTLY (including whitespace).
 
@@ -103,14 +103,14 @@ class FileEditTool(
                     file.parentFile?.mkdirs()
                     file.createNewFile()
                 } else {
-                    return "Error: File not found: $path. Use write_file to create, or set create_if_missing=true."
+                    return "Error: File not found: $path. Use Write to create, or set create_if_missing=true."
                 }
             }
 
             // Size cap: a multi-GB file would otherwise OOM the agent on readText().
             if (file.length() > MAX_FILE_BYTES) {
                 return "Error: file too large (${file.length()} bytes, max ${MAX_FILE_BYTES} bytes). " +
-                    "Use shell_execute with sed/awk for large files."
+                    "Use ShellExecute with sed/awk for large files."
             }
 
             var content = file.readText()
@@ -148,7 +148,7 @@ class FileEditTool(
                                     appendLine("❌ Edit failed: search text not found in file.")
                                     appendLine("Searched for: '${search.take(100)}'")
                                     appendLine()
-                                    appendLine("Tip: Use read_file first to see the exact content,")
+                                    appendLine("Tip: Use Read first to see the exact content,")
                                     appendLine("then copy the exact text (including spaces/indentation).")
                                 }
                             }
@@ -166,8 +166,8 @@ class FileEditTool(
                 }
             }
 
-            // 写入文件
-            file.writeText(content)
+            // 写入文件（#258：原子写 —— 同目录 tmp + renameTo，断电/崩溃不留截断文件）
+            val atomic = AtomicFileWrite.writeText(file, content)
 
             // 生成变更摘要
             val addedLines = content.lines().size - originalContent.lines().size
@@ -178,6 +178,8 @@ class FileEditTool(
                     appendLine("  Net change: ${if (addedLines > 0) "+" else ""}$addedLines lines")
                 }
                 appendLine("  File now: ${content.lines().size} lines, ${formatSize(content.length.toLong())}")
+                // #258：仅罕见的 rename 失败回退时注记（成功路径输出保持不变）。
+                if (!atomic) appendLine("  (non-atomic fallback: rename failed)")
             }
         } catch (e: Exception) {
             "Edit error: ${e.message}"

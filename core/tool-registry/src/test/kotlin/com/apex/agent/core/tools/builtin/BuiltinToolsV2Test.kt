@@ -27,7 +27,7 @@ import java.nio.file.Files
 
 /**
  * JUnit4 tests for the first wave of Tool System v2 builtins:
- * [JsonPathTool] (json_path), [RegexExtractTool] / [RegexReplaceTool],
+ * [JsonPathTool] (JsonPathLegacy), [RegexExtractTool] / [RegexReplaceTool],
  * [TextDiffTool], [DateTimeTool], [UuidGenerateTool] and [FileHashTool].
  *
  * Conventions (mirroring DefaultToolExecutorStreamingTest):
@@ -38,7 +38,7 @@ import java.nio.file.Files
  *   [StructuredAgentTool.executeStructured].
  *
  * Determinism: every datetime wall-clock assertion pins zone "UTC" and fixed
- * instants; the file_hash sandbox is a fresh temp directory per test.
+ * instants; the FileHash sandbox is a fresh temp directory per test.
  */
 class BuiltinToolsV2Test {
 
@@ -112,11 +112,11 @@ class BuiltinToolsV2Test {
     private val HELLO_SHA256 = "a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447"
 
     // ═══════════════════════════════════════════════════════════
-    // json_path
+    // JsonPathLegacy
     // ═══════════════════════════════════════════════════════════
 
     @Test
-    fun `json_path simple member returns the book array`() = runTest {
+    fun `JsonPathLegacy simple member returns the book array`() = runTest {
         val out = jp("$.store.book")
         val books = parseArray(out)
         assertEquals(4, books.size)
@@ -124,17 +124,17 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `json_path index access returns first book title`() = runTest {
+    fun `JsonPathLegacy index access returns first book title`() = runTest {
         assertEquals("\"Sayings of the Century\"", jp("$.store.book[0].title"))
     }
 
     @Test
-    fun `json_path negative index counts from the end`() = runTest {
+    fun `JsonPathLegacy negative index counts from the end`() = runTest {
         assertEquals("\"The Lord of the Rings\"", jp("$.store.book[-1].title"))
     }
 
     @Test
-    fun `json_path slice is end-exclusive`() = runTest {
+    fun `JsonPathLegacy slice is end-exclusive`() = runTest {
         val sliced = parseArray(jp("$.store.book[0:2].title"))
         assertEquals(2, sliced.size)
         assertEquals("Sayings of the Century", sliced[0].jsonPrimitive.content)
@@ -142,18 +142,18 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `json_path open-ended slice takes the prefix`() = runTest {
+    fun `JsonPathLegacy open-ended slice takes the prefix`() = runTest {
         assertEquals("\"Sayings of the Century\"", jp("$.store.book[:1].title"))
     }
 
     @Test
-    fun `json_path index union picks the listed elements`() = runTest {
+    fun `JsonPathLegacy index union picks the listed elements`() = runTest {
         val union = parseArray(jp("$.store.book[0,2].title"))
         assertEquals(listOf("Sayings of the Century", "Moby Dick"), union.map { it.jsonPrimitive.content })
     }
 
     @Test
-    fun `json_path wildcard over book authors yields all four`() = runTest {
+    fun `JsonPathLegacy wildcard over book authors yields all four`() = runTest {
         val authors = parseArray(jp("$.store.book[*].author"))
         assertEquals(4, authors.size)
         assertEquals("Nigel Rees", authors[0].jsonPrimitive.content)
@@ -161,7 +161,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `json_path recursive descent finds every author`() = runTest {
+    fun `JsonPathLegacy recursive descent finds every author`() = runTest {
         val authors = parseArray(jp("$.store..author"))
         assertEquals(
             listOf("Nigel Rees", "Evelyn Waugh", "Herman Melville", "J. R. R. Tolkien"),
@@ -170,7 +170,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `json_path root-anchored recursive descent dollar dot dot name`() = runTest {
+    fun `JsonPathLegacy root-anchored recursive descent dollar dot dot name`() = runTest {
         // "$..author" must be recursive descent from the root (the canonical
         // JSONPath form) — a regression here once shipped as plain member
         // access and returned not_found.
@@ -182,7 +182,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `json_path numeric filter price below ten matches two books`() = runTest {
+    fun `JsonPathLegacy numeric filter price below ten matches two books`() = runTest {
         val out = jp("$.store.book[?(@.price<10)]")
         val cheap = parseArray(out)
         assertEquals(2, cheap.size)
@@ -191,7 +191,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `json_path string equality filter matches fiction`() = runTest {
+    fun `JsonPathLegacy string equality filter matches fiction`() = runTest {
         val out = jp("$.store.book[?(@.category==\"fiction\")]")
         val fiction = parseArray(out)
         assertEquals(3, fiction.size)
@@ -199,7 +199,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `json_path filter supports and and or`() = runTest {
+    fun `JsonPathLegacy filter supports and and or`() = runTest {
         val andOut = jp("$.store.book[?(@.category==\"fiction\" && @.price<10)]")
         val only = Json.parseToJsonElement(andOut) as JsonObject // single match renders bare
         assertEquals("Moby Dick", only["title"]!!.jsonPrimitive.content)
@@ -211,19 +211,19 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `json_path filter on the element itself for a number array`() = runTest {
+    fun `JsonPathLegacy filter on the element itself for a number array`() = runTest {
         val out = jp("$[?(@>2)]", "[1, 2, 3, 4]")
         val kept = parseArray(out)
         assertEquals(listOf("3", "4"), kept.map { it.jsonPrimitive.content })
     }
 
     @Test
-    fun `json_path bracketed member access works`() = runTest {
+    fun `JsonPathLegacy bracketed member access works`() = runTest {
         assertEquals("\"Sayings of the Century\"", jp("$['store']['book'][0]['title']"))
     }
 
     @Test
-    fun `json_path invalid path is a field-precise error`() = runTest {
+    fun `JsonPathLegacy invalid path is a field-precise error`() = runTest {
         val args = jsonArgs("json" to STORE, "path" to "$.store.book[abc]")
         val out = run(jsonPath, args)
         assertTrue(out.startsWith("Error:"))
@@ -235,7 +235,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `json_path no match is structured not found`() = runTest {
+    fun `JsonPathLegacy no match is structured not found`() = runTest {
         val args = jsonArgs("json" to STORE, "path" to "$.store.magazine")
         val out = run(jsonPath, args)
         assertTrue(out.startsWith("Error:"))
@@ -244,7 +244,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `json_path invalid json argument is a field-precise error`() = runTest {
+    fun `JsonPathLegacy invalid json argument is a field-precise error`() = runTest {
         val args = jsonArgs("json" to "{ not json }", "path" to "$.a")
         val out = run(jsonPath, args)
         assertTrue(out.startsWith("Error:"))
@@ -255,23 +255,23 @@ class BuiltinToolsV2Test {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // regex_extract
+    // RegexExtractLegacy
     // ═══════════════════════════════════════════════════════════
 
     @Test
-    fun `regex_extract returns the first match only`() = runTest {
+    fun `RegexExtractLegacy returns the first match only`() = runTest {
         val out = run(regexExtract, jsonArgs("text" to "call 555-1234 or 555-5678", "pattern" to "555-\\d{4}"))
         assertEquals("555-1234", out)
     }
 
     @Test
-    fun `regex_extract renders numbered groups`() = runTest {
+    fun `RegexExtractLegacy renders numbered groups`() = runTest {
         val out = run(regexExtract, jsonArgs("text" to "call 555-1234 now", "pattern" to "(\\d{3})-(\\d{4})"))
         assertEquals("match: 555-1234\ngroup_1: 555\ngroup_2: 1234", out)
     }
 
     @Test
-    fun `regex_extract renders named groups by name`() = runTest {
+    fun `RegexExtractLegacy renders named groups by name`() = runTest {
         val out = run(regexExtract, jsonArgs("text" to "on 2024-03-05", "pattern" to "(?<year>\\d{4})-(?<month>\\d{2})"))
         assertTrue(out.contains("match: 2024-03"))
         assertTrue(out.contains("year: 2024"))
@@ -279,7 +279,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `regex_extract all returns a parseable json array with count line`() = runTest {
+    fun `RegexExtractLegacy all returns a parseable json array with count line`() = runTest {
         val out = run(regexExtract, jsonArgs("text" to "call 555-1234 or 555-5678", "pattern" to "555-\\d{4}", "all" to true))
         assertTrue(out.startsWith("2 match(es):"))
         val arr = parseArray(out.substringAfter('\n'))
@@ -288,14 +288,14 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `regex_extract limit caps the match count`() = runTest {
+    fun `RegexExtractLegacy limit caps the match count`() = runTest {
         val out = run(regexExtract, jsonArgs("text" to "1 2 3 4 5 6 7 8 9", "pattern" to "\\d", "all" to true, "limit" to 4))
         assertTrue(out.startsWith("4 match(es):"))
         assertEquals(4, parseArray(out.substringAfter('\n')).size)
     }
 
     @Test
-    fun `regex_extract zero matches is structured not found`() = runTest {
+    fun `RegexExtractLegacy zero matches is structured not found`() = runTest {
         val args = jsonArgs("text" to "nothing here", "pattern" to "\\d+")
         val out = run(regexExtract, args)
         assertTrue(out.startsWith("Error:"))
@@ -304,7 +304,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `regex_extract invalid pattern is a field-precise error`() = runTest {
+    fun `RegexExtractLegacy invalid pattern is a field-precise error`() = runTest {
         val args = jsonArgs("text" to "x", "pattern" to "[unclosed")
         val out = run(regexExtract, args)
         assertTrue(out.startsWith("Error:"))
@@ -314,18 +314,18 @@ class BuiltinToolsV2Test {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // regex_replace
+    // RegexReplaceLegacy
     // ═══════════════════════════════════════════════════════════
 
     @Test
-    fun `regex_replace replaces every occurrence and reports the count`() = runTest {
+    fun `RegexReplaceLegacy replaces every occurrence and reports the count`() = runTest {
         val out = run(regexReplace, jsonArgs("text" to "cat cat dog", "pattern" to "cat", "replacement" to "dog"))
         assertEquals("dog dog dog", out.lines()[0])
         assertTrue(out.contains("(replaced 2 of 2 match(es))"))
     }
 
     @Test
-    fun `regex_replace expands dollar-one group references`() = runTest {
+    fun `RegexReplaceLegacy expands dollar-one group references`() = runTest {
         val out = run(
             regexReplace,
             jsonArgs(
@@ -338,21 +338,21 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `regex_replace expands named group references in braces`() = runTest {
+    fun `RegexReplaceLegacy expands named group references in braces`() = runTest {
         val replacement = "<" + '$' + "{word}>"
         val out = run(regexReplace, jsonArgs("text" to "hello world", "pattern" to "(?<word>\\w+)", "replacement" to replacement))
         assertEquals("<hello> <world>", out.lines()[0])
     }
 
     @Test
-    fun `regex_replace limit caps the number of replacements`() = runTest {
+    fun `RegexReplaceLegacy limit caps the number of replacements`() = runTest {
         val out = run(regexReplace, jsonArgs("text" to "a b c", "pattern" to "\\w", "replacement" to "X", "limit" to 1))
         assertEquals("X b c", out.lines()[0])
         assertTrue(out.contains("(replaced 1 of 3 match(es))"))
     }
 
     @Test
-    fun `regex_replace with no matches returns the text unchanged plus notice`() = runTest {
+    fun `RegexReplaceLegacy with no matches returns the text unchanged plus notice`() = runTest {
         val out = run(regexReplace, jsonArgs("text" to "aaa", "pattern" to "z", "replacement" to "X"))
         assertTrue(out.startsWith("aaa"))
         assertTrue(out.contains("no matches"))
@@ -360,7 +360,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `regex_replace ignoreCase matches case-insensitively`() = runTest {
+    fun `RegexReplaceLegacy ignoreCase matches case-insensitively`() = runTest {
         val out = run(regexReplace, jsonArgs("text" to "Hello World", "pattern" to "hello", "replacement" to "bye", "ignoreCase" to true))
         assertEquals("bye World", out.lines()[0])
 
@@ -369,11 +369,11 @@ class BuiltinToolsV2Test {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // text_diff
+    // TextDiff
     // ═══════════════════════════════════════════════════════════
 
     @Test
-    fun `text_diff identical texts report identical`() = runTest {
+    fun `TextDiff identical texts report identical`() = runTest {
         assertEquals("identical (no changes)", run(textDiff, jsonArgs("text1" to "a\nb\n", "text2" to "a\nb\n")))
         assertEquals(
             "identical (no changes)",
@@ -382,7 +382,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `text_diff insertion appears as a plus line`() = runTest {
+    fun `TextDiff insertion appears as a plus line`() = runTest {
         val out = run(textDiff, jsonArgs("text1" to "first\nsecond\nthird", "text2" to "first\nsecond\nthird\nfourth"))
         assertTrue(out.startsWith("--- text1"))
         assertTrue(out.contains("+++ text2"))
@@ -392,7 +392,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `text_diff deletion appears as a minus line`() = runTest {
+    fun `TextDiff deletion appears as a minus line`() = runTest {
         val out = run(textDiff, jsonArgs("text1" to "a\nb\nc", "text2" to "a\nc"))
         assertTrue(out.contains("-b"))
         assertFalse(out.contains("+b"))
@@ -401,7 +401,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `text_diff modification counts one added and one removed`() = runTest {
+    fun `TextDiff modification counts one added and one removed`() = runTest {
         val a = "one\ntwo\nthree"
         val b = "one\nTWO\nthree"
         val stat = run(textDiff, jsonArgs("text1" to a, "text2" to b, "format" to "stat"))
@@ -412,13 +412,13 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `text_diff insertion stat summary format`() = runTest {
+    fun `TextDiff insertion stat summary format`() = runTest {
         val stat = run(textDiff, jsonArgs("text1" to "first\nsecond\nthird", "text2" to "first\nsecond\nthird\nfourth", "format" to "stat"))
         assertEquals("1 line(s) added, 0 line(s) removed", stat)
     }
 
     @Test
-    fun `text_diff json format is a parseable op list`() = runTest {
+    fun `TextDiff json format is a parseable op list`() = runTest {
         val out = run(textDiff, jsonArgs("text1" to "one\ntwo\nthree", "text2" to "one\nTWO\nthree", "format" to "json"))
         val ops = parseArray(out)
         assertTrue(ops.isNotEmpty())
@@ -434,7 +434,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `text_diff contextLines zero renders only changed lines`() = runTest {
+    fun `TextDiff contextLines zero renders only changed lines`() = runTest {
         val out = run(textDiff, jsonArgs("text1" to "1\n2\n3\n4\n5", "text2" to "1\n2\nX\n4\n5", "contextLines" to 0))
         val lines = out.lines()
         val hunkStart = lines.indexOfFirst { it.startsWith("@@") }
@@ -443,13 +443,13 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `text_diff ignores crlf versus lf differences`() = runTest {
+    fun `TextDiff ignores crlf versus lf differences`() = runTest {
         val out = run(textDiff, jsonArgs("text1" to "a\r\nb", "text2" to "a\nb"))
         assertEquals("identical (no changes)", out)
     }
 
     @Test
-    fun `text_diff ignores a trailing newline`() = runTest {
+    fun `TextDiff ignores a trailing newline`() = runTest {
         val out = run(textDiff, jsonArgs("text1" to "a\n", "text2" to "a"))
         assertEquals("identical (no changes)", out)
     }
@@ -567,11 +567,11 @@ class BuiltinToolsV2Test {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // uuid_generate
+    // UuidGenerateLegacy
     // ═══════════════════════════════════════════════════════════
 
     @Test
-    fun `uuid_generate count five yields five distinct v4 uuids`() = runTest {
+    fun `UuidGenerateLegacy count five yields five distinct v4 uuids`() = runTest {
         val out = run(uuidTool, jsonArgs("count" to 5))
         val lines = out.lines()
         assertEquals(5, lines.size)
@@ -580,20 +580,20 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `uuid_generate default single v4 is well formed`() = runTest {
+    fun `UuidGenerateLegacy default single v4 is well formed`() = runTest {
         val out = run(uuidTool, "{}")
         assertTrue(UUID_V4.matches(out))
         assertFalse(UUID_V7.matches(out))
     }
 
     @Test
-    fun `uuid_generate v7 carries the version nibble seven`() = runTest {
+    fun `UuidGenerateLegacy v7 carries the version nibble seven`() = runTest {
         val out = run(uuidTool, jsonArgs("version" to "v7", "count" to 10))
         out.lines().forEach { assertTrue(UUID_V7.matches(it)) }
     }
 
     @Test
-    fun `uuid_generate uppercase renders hex capitals`() = runTest {
+    fun `UuidGenerateLegacy uppercase renders hex capitals`() = runTest {
         val out = run(uuidTool, jsonArgs("count" to 3, "uppercase" to true))
         out.lines().forEach {
             assertEquals(it, it.uppercase())
@@ -602,7 +602,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `uuid_generate hyphens false yields 32 hex chars`() = runTest {
+    fun `UuidGenerateLegacy hyphens false yields 32 hex chars`() = runTest {
         val out = run(uuidTool, jsonArgs("count" to 3, "hyphens" to false))
         out.lines().forEach {
             assertEquals(32, it.length)
@@ -612,7 +612,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `uuid_generate invalid version is a field-precise error`() = runTest {
+    fun `UuidGenerateLegacy invalid version is a field-precise error`() = runTest {
         val args = jsonArgs("version" to "v6")
         val out = run(uuidTool, args)
         assertTrue(out.startsWith("Error:"))
@@ -623,30 +623,30 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `uuid_generate count is clamped to one hundred`() = runTest {
+    fun `UuidGenerateLegacy count is clamped to one hundred`() = runTest {
         val out = run(uuidTool, jsonArgs("count" to 500))
         assertEquals(100, out.lines().size)
     }
 
     // ═══════════════════════════════════════════════════════════
-    // file_hash
+    // FileHash
     // ═══════════════════════════════════════════════════════════
 
     @Test
-    fun `file_hash md5 matches the known vector`() = runTest {
+    fun `FileHash md5 matches the known vector`() = runTest {
         val out = run(fileHash, jsonArgs("path" to "hello.txt", "algorithm" to "md5"))
         assertEquals("$HELLO_MD5  hello.txt  (12 bytes, md5)", out)
     }
 
     @Test
-    fun `file_hash sha256 default matches the known vector`() = runTest {
+    fun `FileHash sha256 default matches the known vector`() = runTest {
         val out = run(fileHash, jsonArgs("path" to "hello.txt"))
         assertEquals("$HELLO_SHA256  hello.txt  (12 bytes, sha256)", out)
         assertTrue(Regex("^[0-9a-f]{64}$").matches(out.substringBefore("  ")))
     }
 
     @Test
-    fun `file_hash rejects path traversal as a sandbox violation`() = runTest {
+    fun `FileHash rejects path traversal as a sandbox violation`() = runTest {
         val args = jsonArgs("path" to "../outside.txt")
         val out = run(fileHash, args)
         assertTrue(out.startsWith("Error:"))
@@ -655,7 +655,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `file_hash absolute path never escapes the sandbox root`() = runTest {
+    fun `FileHash absolute path never escapes the sandbox root`() = runTest {
         // The leading '/' is stripped and the path resolves inside the temp root,
         // where no such file exists — an Error either way, never the real /etc/passwd.
         val out = run(fileHash, jsonArgs("path" to "/etc/passwd"))
@@ -664,7 +664,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `file_hash missing file is not found`() = runTest {
+    fun `FileHash missing file is not found`() = runTest {
         val args = jsonArgs("path" to "ghost.txt")
         val out = run(fileHash, args)
         assertTrue(out.startsWith("Error:"))
@@ -673,7 +673,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `file_hash algorithm all reports four digests with distinct lengths`() = runTest {
+    fun `FileHash algorithm all reports four digests with distinct lengths`() = runTest {
         val out = run(fileHash, jsonArgs("path" to "hello.txt", "algorithm" to "all"))
         val lines = out.lines()
         assertEquals(4, lines.size)
@@ -683,7 +683,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `file_hash directory is an invalid path error`() = runTest {
+    fun `FileHash directory is an invalid path error`() = runTest {
         val args = jsonArgs("path" to "subdir")
         val out = run(fileHash, args)
         assertTrue(out.startsWith("Error:"))
@@ -694,7 +694,7 @@ class BuiltinToolsV2Test {
     }
 
     @Test
-    fun `file_hash rejects a symlink escaping the sandbox root`() = runTest {
+    fun `FileHash rejects a symlink escaping the sandbox root`() = runTest {
         val outside = Files.createTempFile("v2tools-outside", ".txt").toFile().apply { writeText("secret") }
         val link = File(root, "escape.txt")
         try {

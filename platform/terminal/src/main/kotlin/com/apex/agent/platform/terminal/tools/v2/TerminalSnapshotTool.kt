@@ -12,7 +12,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.add
 
 /**
- * Agent tool: terminal.snapshot
+ * Agent tool: TerminalSnapshot
  *
  * Spec ref: ATR 2.0 Final Spec §34.8
  *
@@ -28,7 +28,7 @@ import kotlinx.serialization.json.add
 class TerminalSnapshotTool(
     private val runtime: TerminalRuntime
 ) : TerminalTool {
-    override val id: String = "terminal.snapshot"
+    override val id: String = "TerminalSnapshot"
     override val name: String = id
     override val description: String = """
         Return a global snapshot of all Sessions + recent events + recent output. Primary entry
@@ -57,10 +57,11 @@ class TerminalSnapshotTool(
 
     override suspend fun invoke(arguments: String): String {
         val json = Json.parseToJsonElement(arguments).jsonObject
-        val mode = runCatching { TerminalRuntime.SnapshotMode.valueOf(json["mode"]?.jsonPrimitive?.content ?: "SESSIONS") }.getOrDefault(TerminalRuntime.SnapshotMode.SESSIONS)
-        val sessionId = json["sessionId"]?.jsonPrimitive?.content?.toLongOrNull()
-        val recentEvents = json["recentEvents"]?.jsonPrimitive?.content?.toIntOrNull() ?: 50
-        val recentOutputBytes = json["recentOutputBytes"]?.jsonPrimitive?.content?.toIntOrNull() ?: 4096
+        val mode = runCatching { TerminalRuntime.SnapshotMode.valueOf(json.stringArg("mode") ?: "SESSIONS") }.getOrDefault(TerminalRuntime.SnapshotMode.SESSIONS)
+        // 别名宽容（实录 #8）：schema 层已互认，工具层同步读取
+        val sessionId = json.longArg("sessionId", "session_id")
+        val recentEvents = json.intArg("recentEvents", "recent_events") ?: 50
+        val recentOutputBytes = json.intArg("recentOutputBytes", "recent_output_bytes") ?: 4096
         val out = execute(Input(mode, sessionId, recentEvents, recentOutputBytes))
         return buildJsonObject {
             put("globalCursor", JsonPrimitive(out.globalCursor))

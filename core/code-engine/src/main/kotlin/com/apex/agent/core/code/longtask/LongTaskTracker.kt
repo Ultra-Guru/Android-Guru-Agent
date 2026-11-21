@@ -27,7 +27,7 @@ import java.util.UUID
  * |------|----------|
  * | IterationStart | 迭代计数 +1（计数而非取事件序号：Plan 多步执行每步从 1 重新编号） |
  * | ToolCallStart | 工具计数 +1、toolsUsed[名] +1 |
- * | ToolCallComplete | 对话行「工具 <名> ✓/✗」；成功且是 code_edit/code_write 时从 arguments 提取 path 入 filesTouched |
+ * | ToolCallComplete | 对话行「工具 <名> ✓/✗」；成功且是 CodeEdit/CodeWrite 时从 arguments 提取 path 入 filesTouched |
  * | ResponseChunk | 追加进 200 字符尾环缓冲（当前助手消息的尾巴） |
  * | ResponseComplete | 尾巴定格为「已完成消息」，对话行「助手: …」，环复位 |
  * | 其余事件 | 忽略（思考流 / 计划 / 进度等对本聚合无贡献） |
@@ -96,7 +96,7 @@ class LongTaskTracker(
     private var toolCallCount = 0
     private val toolsUsed = LinkedHashMap<String, Int>()
 
-    /** code_edit / code_write 成功调用提取的 path（LinkedHashSet 保插入序，组装时再排序）。 */
+    /** CodeEdit / CodeWrite 成功调用提取的 path（LinkedHashSet 保插入序，组装时再排序）。 */
     private val filesTouched = LinkedHashSet<String>()
 
     /** 当前助手消息的尾环缓冲（≤[TAIL_RING_CHARS] 字符，溢出删头）。 */
@@ -311,7 +311,7 @@ class LongTaskTracker(
     /**
      * 从工具 arguments（JSON 字符串）防御式提取顶层字符串字段 `path`。
      *
-     * code_edit / code_write 的参数 schema 顶层就是 path（相对工作区根）。
+     * CodeEdit / CodeWrite 的参数 schema 顶层就是 path（相对工作区根）。
      * 空白 / 非 JSON / path 缺失 / path 非字符串 → null（事件流是外部输入，
      * 任何形状都必须吞得下）。kotlinx 的 SerializationException 是
      * IllegalArgumentException 子类，一并兜住。
@@ -455,9 +455,9 @@ class LongTaskTracker(
         const val CHECKPOINT_INTERVAL_MS = 60_000L
 
         /** 计入 filesTouched 的工具（coding 模式的两个落盘编辑工具）。 */
-        val FILE_TOUCH_TOOLS = setOf("code_edit", "code_write")
+        val FILE_TOUCH_TOOLS = setOf("CodeEdit", "CodeWrite")
 
-        /** 工具参数里承载文件路径的字段名（code_edit / code_write schema）。 */
+        /** 工具参数里承载文件路径的字段名（CodeEdit / CodeWrite schema）。 */
         const val PATH_FIELD = "path"
 
         const val SUCCESS_MARK = "✓"

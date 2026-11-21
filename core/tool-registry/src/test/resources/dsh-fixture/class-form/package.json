@@ -1,0 +1,6 @@
+{
+  "name": "dsh-fixture-class-form",
+  "version": "0.1.0",
+  "description": "P0 fixture: 类形态插件 —— 宿主明确不支持,如实上报",
+  "main": "index.js"
+}
