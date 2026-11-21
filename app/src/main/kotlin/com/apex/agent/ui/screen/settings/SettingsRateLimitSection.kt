@@ -98,7 +98,7 @@ internal fun RateLimitSection(agent: AgentSettings, onAgent: (AgentSettings) -> 
         // toolCallParallelism 属 DI 快照字段（需重启生效）完全不告知。
         if (pendingApply) {
             val targetFriendly = true
-            val targetInterval = maxOf(agent.rateLimitMinIntervalMs, 4000L)
+            val targetInterval = maxOf(agent.rateLimitMinIntervalMs, 4000)
             val targetRich = true
             val targetParallel = maxOf(agent.toolCallParallelism, 4)
             AlertDialog(

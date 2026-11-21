@@ -20,6 +20,11 @@ import androidx.compose.ui.unit.dp
 import com.apex.agent.R
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.material3.MaterialTheme
 
 /**
  * ═══ 自定义背景（interface/appearance 叶子页第二分区）═══
