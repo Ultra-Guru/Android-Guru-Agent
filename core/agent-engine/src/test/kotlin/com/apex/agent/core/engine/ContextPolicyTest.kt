@@ -1,6 +1,8 @@
 package com.apex.agent.core.engine
 
 import com.apex.agent.core.tools.ToolResult
+import com.apex.agent.core.tools.contextpolicy.ContextPreset
+import com.apex.agent.core.tools.contextpolicy.ContextPolicyState
 import com.apex.agent.core.tools.builtin.context.ContextPolicyGet
 import com.apex.agent.core.tools.builtin.context.ContextPolicySet
 import kotlinx.coroutines.test.runTest

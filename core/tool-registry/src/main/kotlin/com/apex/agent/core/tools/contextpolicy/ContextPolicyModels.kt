@@ -1,22 +1,16 @@
-package com.apex.agent.core.engine
+package com.apex.agent.core.tools.contextpolicy
 
 /**
- * # Context Policy — 上下文治理档位（P99）
+ * # Context Policy Models — 上下文治理档位（P99）
  *
- * 补上「模型能查询并调节自己上下文」的白名单档位面（对齐 Operit
- * context_limiter_c 的语义，用本仓状态机与压缩门实现）：
+ * **模块方向**：模型定义在本层（tool-registry）——`ContextPolicyGet` /
+ * `ContextPolicySet` 工具住本层，agent-engine → tool-registry 单向依赖
+ * （放 engine 会成环，同 P97 PromptModels 的方向修正）；压缩门与引擎
+ * 状态组装住 agent-engine，import 本文件类型。
  *
- * - **只白名单不任意覆写**：[ContextPreset] 九档（keepLastN / maxTokens
- *   成对绑定），非法档位返回可操作错误（列全允许值）；
- * - **SYSTEM 段与 PromptSection 骨架永不裁**：[ContextPreset.keepLastN]
- *   只影响非 SYSTEM 消息保留层数；「压缩前抢救」（SessionContextArchive）
- *   保护**没有关闭开关**；
- * - **下轮生效**：写入经 `SettingsRepository.updateAgentSettings`（原子
- *   tmp+renameTo），本轮提示词不变；
- * - [ContextPolicyState] 为 `ContextPolicyGet` 的返回口径（compressed /
- *   tokenEstimate / line 由引擎侧组装）。
- *
- * 纯 JVM、无 Android 依赖；真值源 = AgentConfig + 引擎历史。
+ * 只白名单不任意覆写：[ContextPreset] 九档（keepLastN / maxTokens 成对
+ * 绑定）；SYSTEM 段与 PromptSection 骨架永不裁（keepLastN 只作用于非
+ * SYSTEM 消息保留层数）；压缩前抢救保护无关闭开关。
  */
 enum class ContextPreset(val keepLastN: Int, val maxTokens: Int) {
     P3(3, 4_000),
@@ -39,7 +33,7 @@ enum class ContextPreset(val keepLastN: Int, val maxTokens: Int) {
 }
 
 /**
- * 上下文策略状态快照（ContextPolicyGet 的结构化口径）。
+ * 上下文策略状态快照（ContextPolicyGet 的结构化口径；引擎侧组装同源值）。
  *
  * @param preset null = 宿主默认（未开启自定义）
  * @param keepLastN 当前生效的最近轮保护层数（预设或引擎默认）

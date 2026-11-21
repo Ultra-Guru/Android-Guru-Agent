@@ -1,8 +1,9 @@
 package com.apex.agent.core.tools.builtin.context
 
-import com.apex.agent.core.engine.ContextPreset
-import com.apex.agent.core.engine.ContextPolicyState
+import com.apex.agent.core.tools.contextpolicy.ContextPreset
+import com.apex.agent.core.tools.contextpolicy.ContextPolicyState
 import com.apex.agent.core.tools.ToolAnnotations
+import com.apex.agent.core.tools.ToolArguments
 import com.apex.agent.core.tools.ToolCategory
 import com.apex.agent.core.tools.ToolErrorCode
 import com.apex.agent.core.tools.ToolMetadata
@@ -104,7 +105,7 @@ class ContextPolicySet(
             is ToolArguments.ParseOutcome.Bad -> return parsed.result
         }
         val raw = args.optionalInt("preset")
-            ?: return ToolResult.invalid("preset", "preset is required", "use one of ${ContextPreset.ALLOWED.joinToString('/')}")
+            ?: return ToolResult.invalid("preset", "preset is required", "use one of ${ContextPreset.ALLOWED.joinToString("/")}")
         if (raw == 0) {
             // 0 = 宿主默认（清除自定义档位）
             val ok = write(0, args.stringWithDefault("reason", ""))
@@ -114,7 +115,7 @@ class ContextPolicySet(
             ?: return ToolResult.invalid(
                 "preset",
                 "Unsupported preset $raw. Allowed: ${ContextPreset.ALLOWED.joinToString("/")}. Use ContextPolicyGet() first.",
-                "pick one of ${ContextPreset.ALLOWED.joinToString('/')}"
+                "pick one of ${ContextPreset.ALLOWED.joinToString("/")}"
             )
         val reason = args.stringWithDefault("reason", "")
         val ok = write(preset.keepLastN, reason)

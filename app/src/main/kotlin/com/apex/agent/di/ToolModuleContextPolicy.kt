@@ -1,6 +1,6 @@
 package com.apex.agent.di
 
-import com.apex.agent.core.engine.ContextPolicyState
+import com.apex.agent.core.tools.contextpolicy.ContextPolicyState
 import com.apex.agent.core.tools.DefaultToolRegistry
 import com.apex.agent.core.tools.SafeAgentTool
 import com.apex.agent.core.tools.builtin.context.ContextPolicyGet
