@@ -1,7 +1,7 @@
 package com.apex.agent.platform.terminal.tools.v2
 
-import com.apex.agent.platform.TerminalFs.RemoteSshFilesystem
-import com.apex.agent.platform.TerminalFs.SshTarget
+import com.apex.agent.platform.terminal.fs.RemoteSshFilesystem
+import com.apex.agent.platform.terminal.fs.SshTarget
 import com.apex.agent.platform.terminal.tools.TerminalTool
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
