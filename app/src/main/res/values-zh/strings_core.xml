@@ -788,6 +788,8 @@
     <string name="about_update_install_ready_entry">安装已就绪的 v%1$s 更新包（%2$s）</string>
     <string name="about_update_install_full_entry">安装已下载的完整包（%1$s）</string>
     <string name="about_update_installer_launched_toast">已拉起安装器，请在系统弹窗中点击「安装」</string>
+    <string name="about_update_installing">正在准备安装…</string>
+    <string name="about_update_copy_progress">正在复制安装包到缓存 %1$d%%</string>
     <string name="about_update_signature_warning">签名不一致：当前安装包与官方发布签名不同，覆盖安装会被系统拒绝。建议使用下方热更新，或先卸载再安装完整包</string>
     <string name="about_update_hot_title">热更新 · 推荐</string>
     <string name="about_update_hot_badge">免安装</string>

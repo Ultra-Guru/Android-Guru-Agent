@@ -788,6 +788,8 @@
     <string name="about_update_install_ready_entry">Install the ready v%1$s update (%2$s)</string>
     <string name="about_update_install_full_entry">Install the downloaded full package (%1$s)</string>
     <string name="about_update_installer_launched_toast">Installer launched — tap \"Install\" in the system dialog</string>
+    <string name="about_update_installing">Preparing installer…</string>
+    <string name="about_update_copy_progress">Copying APK to cache %1$d%%</string>
     <string name="about_update_signature_warning">Signature mismatch: this build is signed differently from the official release, so an in-place install will be rejected by Android. Use the hot update below, or uninstall first and then install the full package</string>
     <string name="about_update_hot_title">Hot update · recommended</string>
     <string name="about_update_hot_badge">No install</string>
