@@ -649,6 +649,7 @@ class CodeViewModel @Inject constructor(
                     maybeEscalateOnDeepWater(event)
                     // SPE-07 P1-1：事件到达即唤醒渲染拍（空闲巡逻期间首
                     // token ≤ 1 拍上屏；合流信号零堆积）
+                    renderTickerPolicy.wakeUp()
                     renderWakeSignal.trySend(Unit)
                     if (event is AgentEvent.ThinkingChunk && event.text.contains(GOAL_NOTICE_MARKER)) {
                         // v3 GOAL：验收结论不走思考卡（默认折叠只有 80 字预览，
