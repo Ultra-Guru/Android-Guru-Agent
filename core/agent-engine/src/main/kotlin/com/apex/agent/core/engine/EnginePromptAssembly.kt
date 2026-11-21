@@ -3,6 +3,7 @@ package com.apex.agent.core.engine
 import com.apex.agent.core.llm.LlmMessage
 import com.apex.agent.core.logging.AppLogger
 import com.apex.agent.core.logging.LogCategory
+import com.apex.agent.core.engine.task.DanglingToolCallRepair
 
 /**
  * EnginePromptAssembly — 请求组装卫星文件（自 [ApexAgentEngine] 迁出，

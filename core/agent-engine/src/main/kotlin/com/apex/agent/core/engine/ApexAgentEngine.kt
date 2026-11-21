@@ -1,6 +1,7 @@
 package com.apex.agent.core.engine
 
 import com.apex.agent.core.tools.contextpolicy.ContextPreset
+import com.apex.agent.core.tools.contextpolicy.ContextPolicyState
 import com.apex.agent.core.engine.compression.ContextCompressor
 import com.apex.agent.core.engine.compression.CompressionReport
 import com.apex.agent.core.engine.compression.TokenEstimator
