@@ -3,6 +3,7 @@ package com.apex.agent.ui.component
 import android.content.res.TypedArray
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -52,9 +53,11 @@ fun AgentOrbIndicator(
     }
     val frames by produceState<List<ImageBitmap>?>(initialValue = null) {
         value = withContext(Dispatchers.Default) {
-            frameIds.mapNotNull { id ->
-                BitmapFactory.decodeResource(context.resources, id)?.asImageBitmap()
+            val decoded = mutableListOf<ImageBitmap>()
+            for (id in frameIds) {
+                BitmapFactory.decodeResource(context.resources, id)?.let { decoded.add(it.asImageBitmap()) }
             }
+            decoded
         }
     }
     var index by remember { mutableIntStateOf(0) }
