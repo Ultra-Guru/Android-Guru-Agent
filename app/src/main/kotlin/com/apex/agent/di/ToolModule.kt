@@ -396,6 +396,8 @@ object ToolModule {
         privilegeUiProvider: PrivilegeUiProvider,
         // Issue #165：钩子注册表（主执行器插槽 + SubagentStop 派发）
         hookRegistry: HookRegistry,
+        // P97：Prompt 快照源挂载点（PromptDump / PromptSectionList 数据源）
+        promptPipelineHolder: PromptPipelineHolder,
         memoryRecentEpisodesTool: MemoryRecentEpisodesTool,
         knowledgeBaseService: com.apex.agent.knowledge.KnowledgeBaseService,
         memorySearchNodesTool: MemorySearchNodesTool,
@@ -939,6 +941,14 @@ object ToolModule {
             hubSource = hubSource,
             extensionLedger = extensionLedger,
             extensionAdapters = extensionAdapters
+        )
+
+        // ═══ 12b2. Prompt 段级观测工具 —— 注册体拆至 ToolModulePromptIntrospection.kt（P97）═══
+        registerPromptIntrospectionTools(
+            registry = registry,
+            holder = promptPipelineHolder,
+            auditLogger = toolAuditLogger,
+            appContext = context
         )
 
         // ═══ 12c. 统一扩展模型 —— 七工具注册体拆至卫星文件（hash 门/确认门/账本/锁）

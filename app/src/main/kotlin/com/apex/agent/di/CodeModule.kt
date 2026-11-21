@@ -328,7 +328,9 @@ object CodeModule {
         goalCoordinator: com.apex.agent.core.engine.goal.GoalModeCoordinator,
         // #395 abort 语义收口：弹窗提问（AskUserChoice/权限门）随 abort 即时收场，
         // 引擎流不再吃满 5 分钟超时（取消卡死根因）
-        userQuestionBridge: com.apex.agent.core.engine.UserQuestionBridge
+        userQuestionBridge: com.apex.agent.core.engine.UserQuestionBridge,
+        // P97：Prompt 快照源挂载（PromptDump / PromptSectionList 工具数据源）
+        promptPipelineHolder: PromptPipelineHolder
     ): AgentEngine {
         // 工具循环 v2 + 限速友好：设置层快照拍平进编码引擎（与 Agent 屏
         // AgentModule 同源字段；maxIterations 0 = 无上限哨兵）。
@@ -362,8 +364,8 @@ object CodeModule {
             // （与 Agent 屏的聊天技能提示词层完全独立）
             skillScope = "coding"
         )
-        val deepDive = CodeAgentEngine(
-            delegate = ApexAgentEngine(
+        // P97：深潜线引擎先取引用（构造后 promptPipeline 挂给 PromptDump 工具）
+        val deepDiveDelegate = ApexAgentEngine(
                 llmClient = llmClient,
                 toolRegistry = toolRegistry,
                 toolExecutor = toolExecutor,
@@ -387,13 +389,18 @@ object CodeModule {
                 // #395 abort 语义收口（与 Agent 屏同源）：取消任务时同步
                 // 收口桥接层挂起的提问/权限弹窗
                 userQuestionGateway = userQuestionBridge
-            ),
+        )
+        val deepDive = CodeAgentEngine(
+            delegate = deepDiveDelegate,
             codeMemory = codeMemory,
             contextProvider = codeContextProvider,
             // Issue #164：规则提供者（无状态可直 new）——refreshContext 时
             // 组装 Global/Project Rules 追加进 additionalSystemContext
             rulesProvider = RulesProvider()
         )
+        // P97：深潜线引擎的 Prompt 段级管道挂载（PromptDump / PromptSectionList
+        // 的快照源；kit 三线提示词在库内组装不可及，快照 line 字段如实标注）
+        promptPipelineHolder.attach(deepDiveDelegate.promptPipeline)
         // 设置层权限快照源：模式 + 规则三元组实时读取（与 PermissionModeGate
         // 的 settingsProvider 同款模式——改设置即时生效）；含空格的模式串
         // 视为 shell 命令模式（如 "git push*"），其余为工具 id 模式。
