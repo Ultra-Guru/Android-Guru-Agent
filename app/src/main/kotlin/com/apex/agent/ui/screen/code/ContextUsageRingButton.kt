@@ -146,7 +146,7 @@ internal fun ContextUsageRingButton(
 
                     // ── 极细深色轮廓兜底（浅色主题白弧边界清晰）──
                     val outlineStroke = Stroke(
-                        width = strokeWidthPx + 0.8.dp.toPx(),
+                        width = strokeWidthPx + outlineWidthExtraPx,
                         cap = progressCap
                     )
                     drawArc(
