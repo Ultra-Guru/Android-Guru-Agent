@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import kotlin.math.abs
+import kotlin.math.max
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
@@ -32,6 +33,16 @@ import kotlinx.coroutines.launch
  *   才锁存「正在阅读」—— 轻触/误触不中断跟随（20261101 修复）。
  *   回到底部（[isAtBottom] 翻真）自动解锁，恢复跟随。
  * - **拖拽期停跟 [userDragging]**：手指在屏期间一律不做程序化滚动。
+ *
+ * ## 20261121 修复：滚动到底部时顶栏上下抖动
+ *
+ * 旧 `snapToLast()` 在每次跟随时无条件执行 `scrollBy(viewportEndOffset)` 大位移：
+ * 当列表尚未完全贴底但scrollToItem已经把末项拉到视口附近时，大位移scrollBy
+ * 触发LazyList内部反复clamp+重测，连续帧内布局震荡带动顶栏/底部栏高度
+ * 回摆，表现为圆环上下抖动。修复：
+ * 1. 先 scrollToItem 定位末项；
+ * 2. 下一帧对齐后计算实际剩余滚动量，仅当确实未贴底时才执行精准小步长scrollBy；
+ * 3. 避免无意义的大位移正向滚动，消除布局震荡。
  *
  * ## 20261101 修复：跟随自行中断
  *
@@ -149,22 +160,37 @@ class StreamScrollAnchor(
     /**
      * 即时跟随末项（流式期间）。
      *
-     * 双步贴底（20261101 修复）：`scrollToItem(total-1)` 可能把 1dp 哨兵
-     * 定在视口顶（不 clamp 到 max scroll），可见内容被推出视口上方；
-     * 追加正向 `scrollBy` 强制滑到 max scroll —— 内容底对齐视口底减
-     * afterContentPadding（即工具栏上方），不再跑到输入栏遮挡区。
+     * 20261121 抖动修复：旧实现双步贴底无条件大位移 scrollBy，在连续流式输出
+     * 触发布局震荡导致顶栏圆环上下抖动。改为：
+     * 1. 先 scrollToItem 定位到最后一项，让列表完成一次布局；
+     * 2. 对齐到下一帧后重新计算实际剩余滚动距离；
+     * 3. 仅当确实存在剩余滚动量（未贴底）时，执行精确的小步长scrollBy补到最大滚动位置；
+     * 4. 已贴底直接返回，不做多余滚动操作，从根源消除布局震荡。
      */
     suspend fun snapToLast() {
         val total = listState.layoutInfo.totalItemsCount
-        if (total > 0) {
-            programmaticScrollUntil = System.currentTimeMillis() + PROGRAMMATIC_GRACE_MS
-            try {
-                listState.scrollToItem(total - 1)
-                // 双步贴底：正向大步长 scrollBy，LazyList 内部 clamp 到 max scroll
-                listState.scrollBy(listState.layoutInfo.viewportEndOffset.toFloat())
-            } finally {
-                // 时间戳自动过期，无需手动复位
+        if (total <= 0) return
+        programmaticScrollUntil = System.currentTimeMillis() + PROGRAMMATIC_GRACE_MS
+        try {
+            listState.scrollToItem(total - 1)
+            // 对齐下一帧让scrollToItem的布局完成，再精确判断是否需要补滚
+            withFrameNanos { }
+            // 精准计算实际剩余滚动量，不盲目大位移scrollBy
+            if (!isAtBottom) {
+                val info = listState.layoutInfo
+                val lastVisible = info.visibleItemsInfo.lastOrNull()
+                if (lastVisible != null) {
+                    val remaining = (lastVisible.offset + lastVisible.size) -
+                        info.viewportEndOffset + info.afterContentPadding
+                    // 只滚动实际需要的距离，加2px余量确保完全贴底，最多滚动viewport高度
+                    val scrollDistance = max(0f, remaining.toFloat() + 2f)
+                    if (scrollDistance > 0.5f) {
+                        listState.scrollBy(scrollDistance.coerceAtMost(info.viewportEndOffset.toFloat()))
+                    }
+                }
             }
+        } finally {
+            // 时间戳自动过期，无需手动复位
         }
     }
 
