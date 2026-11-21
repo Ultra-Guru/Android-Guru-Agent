@@ -35,11 +35,11 @@ internal const val WORKSPACE_ROOT_PATH = "linux/workspaces/default"
  */
 @Composable
 internal fun AgentRulesSectionBlock(
-    val context = LocalContext.current
     agent: AgentSettings,
     onAgent: (AgentSettings) -> Unit,
     viewModel: SettingsViewModel
 ) {
+    val context = LocalContext.current
     // ═══ 规则（#164）：全局规则（Agent/coding 双模式）+ 默认工作区 AGENTS.md ═══
     var rulesRefreshKey by remember { mutableStateOf(0) }
     val projectRulesFile by produceState<String?>(
