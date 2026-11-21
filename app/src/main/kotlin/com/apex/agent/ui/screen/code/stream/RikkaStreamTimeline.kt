@@ -36,6 +36,7 @@ import com.apex.agent.R
 import com.apex.agent.core.code.stream.CodeStreamSnapshot
 import com.apex.agent.core.code.stream.StreamEntry
 import com.apex.agent.core.code.stream.StreamToolCall
+import com.apex.agent.core.code.stream.ToolCallStatus
 import com.apex.agent.ui.component.imeDismissOnTap
 import com.apex.agent.ui.component.rememberImeDismisser
 import com.apex.agent.ui.screen.code.CodeOutputMode
@@ -254,6 +255,10 @@ internal fun rikkaSegments(entries: List<StreamEntry>): List<RikkaSegment> {
 
     entries.forEach { entry ->
         if (entry is StreamEntry.ToolCapsuleEntry) {
+            // 用户规格 2026-11:WAITING(未开始运行)不出胶囊,与默认皮肤
+            // groupConsecutive 同口径——开始运行才入场,左下动效球承担
+            // 「任务进行中」信号(PR#921)。
+            if (entry.call.status == ToolCallStatus.WAITING) return@forEach
             buffer += entry
         } else {
             flush()
