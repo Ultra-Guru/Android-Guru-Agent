@@ -223,15 +223,16 @@ fun ApexRoot() {
     // ═══ v1.4.5：启动即检查更新（UpdateCenter 内部 6h 节流；进程重建不重复拉）═══
     // v1.4.9 闪退防御：整体 runCatching —— requireContext 在中枢未就绪时
     // error() 抛 ISE，裸 LaunchedEffect 协程异常同样杀死进程。
-    // 自动更新总开关（设置→关于页可关）：关闭后启动零检查零浮窗 ——
-    // 用户显式控制更新节奏（后台不再有任何更新流量）。
+    // 自动更新补丁总开关（关于页面板顶部）：默认关 —— 关闭后启动零检查
+    // 零浮窗零下载；开启后命中新版自动在后台下载增量补丁（autoDownloadPatch）。
     LaunchedEffect(Unit) {
         runCatching {
             if (appVm.settingsRepository.agentSettings.value.autoUpdateCheck) {
                 UpdateCenter.checkForUpdate(
                     currentVersionCode = BuildConfig.VERSION_CODE,
                     force = false,
-                    fromTrigger = "app-start"
+                    fromTrigger = "app-start",
+                    autoDownloadPatch = true
                 )
             }
         }.onFailure {
@@ -384,9 +385,12 @@ fun ApexRoot() {
                 // ═══ 更新日志弹窗（changelog 通道 v1）═══
                 // 升级/热更后首启弹「本次更新内容」（每版一次，「知道了」落已读）；
                 // 远端领先且自动检查开启时弹「发现新版本」（日志 + 前往下载）。
+                // 「前往下载」= 应用内压栈进关于页（补丁就在那里下载/安装，
+                // 用户要求：不再跳 GitHub 发布页；浮窗「查看」同款语义）。
                 // 离线/异常静默降级，绝不阻塞启动；详见 com.apex.agent.changelog 包。
                 ChangelogStartupHost(
-                    autoUpdateCheck = appVm.settingsRepository.agentSettings.value.autoUpdateCheck
+                    autoUpdateCheck = appVm.settingsRepository.agentSettings.value.autoUpdateCheck,
+                    onGoToUpdate = { navStack.push(DrawerDestination.About) }
                 )
 
                 // ═══ 顶部上下文仪表盘长条（全局）—— v1.4.11 整体移除 ═══

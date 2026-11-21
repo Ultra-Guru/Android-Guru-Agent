@@ -240,11 +240,16 @@ object UpdateCenter {
      *
      * @param force true = 跳过节流（用户手动点「检查更新」/关于页进入）
      * @param fromTrigger 调用来源（日志定位用）
+     * @param autoDownloadPatch true = 命中新版且增量链可用时**自动在后台
+     *   启动补丁流水线**（下载→合成→关于页就绪展示；安装仍由用户点击
+     *   主导）。调用方以「自动更新补丁」开关（autoUpdateCheck）取值传入
+     *   —— 开关关闭时的手动检查不会触发后台下载。
      */
     fun checkForUpdate(
         currentVersionCode: Int,
         force: Boolean = false,
-        fromTrigger: String = "manual"
+        fromTrigger: String = "manual",
+        autoDownloadPatch: Boolean = false
     ) {
         val context = requireContext()
         if (!force && isThrottled(context)) {
@@ -274,7 +279,14 @@ object UpdateCenter {
                 if (result is UpdateCheckResult.Available) {
                     // 有新版才拉补丁全量索引（多基底单跳/跨版链数据源）；
                     // 验签硬失败（ManifestTrustException）上抛 —— 拒绝整个更新
-                    _patchIndex.value = checker.fetchPatchIndex()
+                    val index = checker.fetchPatchIndex()
+                    _patchIndex.value = index
+                    // 自动更新补丁（用户要求，默认关）：开关开启时命中新版
+                    // 即自动在后台启动增量流水线 —— 下载完成后关于页就绪展示，
+                    // 用户点「更新」拉起系统安装器（安装时机始终用户主导）
+                    if (autoDownloadPatch) {
+                        maybeAutoDownloadPatch(result.latest, index)
+                    }
                 }
                 _checkState.value = CheckState.Done(result)
                 markChecked(context)
@@ -303,6 +315,50 @@ object UpdateCenter {
                 }
             }
         }
+    }
+
+    /**
+     * 自动补丁下载门控（「自动更新补丁」开关开启时由 [checkForUpdate] 调用）。
+     *
+     * 守卫链（任一命中即静默跳过，绝不打扰）：
+     * - 增量流水线在跑 / 已有就绪未安装产物（Ready 终态保留等用户安装）——
+     *   重复启动会被 [startPatchFlow] 防重入拦下，这里提前短路更省事；
+     * - 签名预检不一致（增量装必撞签名冲突，自动下载纯属浪费流量）；
+     * - 增量链不可解析（无索引/无单补丁/链超全量 60% 不划算）—— 回退全量
+     *   的决定交给用户，绝不自动下载几百 MB 的全量包。
+     *
+     * 镜像取用户已保存的偏好；AUTO 档不现场测速（四节点探测是页面交互，
+     * 后台静默路径直连 GitHub —— 与关于页「AUTO 无测速数据时直连」同策略）。
+     * Failed 终态不拦：下次检查自动重试（断点续传只补缺失分段）。
+     */
+    private fun maybeAutoDownloadPatch(manifest: UpdateManifest, index: PatchIndex.Model?) {
+        if (patchEngine.isRunning) return
+        if (_patchState.value is PatchUpdateEngine.State.Ready) return
+        if (signatureMismatch(manifest)) {
+            AppLogger.instance.info(
+                LogCategory.SYSTEM, "UpdateCenter",
+                "自动补丁下载跳过：签名预检不一致（增量安装必冲突）"
+            )
+            return
+        }
+        val chain = checker.resolvePatchChain(index, manifest, BuildConfig.VERSION_NAME)
+        if (chain == null) {
+            AppLogger.instance.info(
+                LogCategory.SYSTEM, "UpdateCenter",
+                "自动补丁下载跳过：增量链不可解析（回退全量的决定交给用户）"
+            )
+            return
+        }
+        val context = requireContext()
+        val saved = runCatching { MirrorPrefs.load(context) }
+            .getOrDefault(DownloadMirror.AUTO)
+        val mirror = if (saved == DownloadMirror.AUTO) DownloadMirror.DIRECT else saved
+        AppLogger.instance.info(
+            LogCategory.SYSTEM, "UpdateCenter",
+            "自动补丁下载启动：${chain.steps.size} 段链 → " +
+                "v${manifest.versionName}（镜像=${mirror.id}，后台流水线）"
+        )
+        startPatchFlow(chain, manifest, mirror)
     }
 
     private fun isThrottled(context: Context): Boolean {

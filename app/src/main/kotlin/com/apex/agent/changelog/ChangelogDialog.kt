@@ -100,9 +100,14 @@ private enum class ChangelogDialogMode {
  * @param autoUpdateCheck 设置中心「自动检查更新」开关 —— 关闭时零网络请求
  *   （对齐设置页「关闭后启动零检查零浮窗」的承诺），仅本地内置副本参与的
  *   「本版日志」判定照常（升级后仍能看到本版更新内容）。
+ * @param onGoToUpdate 「发现新版本」弹窗「前往下载」的应用内出口 —— 压栈进
+ *   关于页（补丁在那里下载/安装）。null 时回退浏览器打开发布页（旧行为）。
  */
 @Composable
-fun ChangelogStartupHost(autoUpdateCheck: Boolean) {
+fun ChangelogStartupHost(
+    autoUpdateCheck: Boolean,
+    onGoToUpdate: (() -> Unit)? = null
+) {
     val context = LocalContext.current
     val store = remember { SeenChangelogStore(context) }
     // 仓储用 applicationContext —— remember 跨配置变更存活，绝不持 Activity
@@ -140,6 +145,7 @@ fun ChangelogStartupHost(autoUpdateCheck: Boolean) {
             ChangelogEntryDialog(
                 entry = decision.entry,
                 mode = ChangelogDialogMode.NEW_VERSION,
+                onGoToUpdate = onGoToUpdate,
                 onDismiss = {
                     store.markAvailableSeen(decision.entry.versionCode)
                     active = ChangelogGate.Decision.None
@@ -178,7 +184,9 @@ private fun ChangelogEntryDialog(
     entry: ChangelogEntry,
     mode: ChangelogDialogMode,
     onDismiss: () -> Unit,
-    onOpenUrl: ((String) -> Unit)? = null
+    onOpenUrl: ((String) -> Unit)? = null,
+    /** NEW_VERSION 模式「前往下载」的应用内出口（压栈关于页）；null 回退浏览器。 */
+    onGoToUpdate: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val noBrowserHint = stringResource(R.string.settings_about_no_browser)
@@ -357,11 +365,19 @@ private fun ChangelogEntryDialog(
 
                     ChangelogDialogMode.NEW_VERSION -> Button(
                         onClick = {
-                            openInBrowser(
-                                context,
-                                entry.releaseUrl ?: RELEASES_FALLBACK_URL,
-                                noBrowserHint
-                            )
+                            // 「前往下载」= 应用内进关于页（补丁在关于页下载/安装
+                            // —— 用户要求不再跳 GitHub 发布页）；无出口时回退
+                            // 浏览器（旧行为兜底）
+                            val go = onGoToUpdate
+                            if (go != null) {
+                                go()
+                            } else {
+                                openInBrowser(
+                                    context,
+                                    entry.releaseUrl ?: RELEASES_FALLBACK_URL,
+                                    noBrowserHint
+                                )
+                            }
                             onDismiss()
                         }
                     ) {
