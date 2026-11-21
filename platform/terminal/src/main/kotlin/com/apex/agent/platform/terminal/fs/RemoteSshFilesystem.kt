@@ -404,7 +404,7 @@ class RemoteSshFilesystem(
             val client = SSHClient()
             try {
                 client.timeout = timeoutMs.toInt()
-                client.connection.keepAlive.keepAliveInterval = 30
+                client.connection.keepAlive.setKeepAliveInterval(30)
                 if (target.privateKey.isNullOrBlank() && target.password.isNullOrBlank()) {
                     return@withContext null
                 }
