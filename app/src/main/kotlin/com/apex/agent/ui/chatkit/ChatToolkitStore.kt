@@ -185,7 +185,15 @@ class ChatToolkitStore @Inject constructor(
             appendLine("### 网络搜索（强制）")
             when (_searchChannelHint.value?.kind) {
                 SearchChannelHint.Kind.MCP -> {
-                    appendLine("用户已启用本地搜索 MCP「${_searchChannelHint.value?.displayName}」。")
+                    // null 安全（2026-11「MCP null」清理）：displayName 为空/缺失时
+                    // 提示语会渲染成「MCP「null」」诱导模型把工具名叫成 null ——
+                    // 缺名时退回通用指引，不插值可空字段。
+                    val channelName = _searchChannelHint.value?.displayName
+                    if (channelName.isNullOrBlank()) {
+                        appendLine("用户已启用本地搜索 MCP 服务器。")
+                    } else {
+                        appendLine("用户已启用本地搜索 MCP「$channelName」。")
+                    }
                     appendLine("涉及实时信息、新闻、天气、价格、文档、不确定的事实时，必须优先调用该服务器的")
                     appendLine("搜索工具（注册名形如 Mcp<Server>WebSearch，可用 ToolSearch/工具列表检索），")
                     appendLine("需要读取网页全文时调用其读取工具（如 Mcp<Server>WebRead）。")
