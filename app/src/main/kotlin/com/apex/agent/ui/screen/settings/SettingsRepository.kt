@@ -215,76 +215,76 @@ class SettingsRepository @Inject constructor(
         val corrupts = listOf(provRead, profRead, roleRead, agentRead)
             .filterIsInstance<PrefRead.Corrupt>()
         corrupts.forEach { flagCorrupt(it.key, it.raw, it.cause) }
-        if (corrupts.isNotEmpty()) {
+        if (corrupts.isEmpty()) {
+            var provs = when (val r = provRead) {
+                is PrefRead.Ok<*> -> r.value as List<ProviderConfig>
+                else -> {
+                    dirty = true
+                    ModelProfileDefaults.builtInProviders
+                }
+            }
+            var profs = when (val r = profRead) {
+                is PrefRead.Ok<*> -> (r.value as List<ModelProfile>).toMutableList()
+                else -> {
+                    dirty = true
+                    ModelProfileDefaults.defaultProfiles(provs).toMutableList()
+                }
+            }
+            provs = migrateAndHydrateApiKeys(provs)
+            dirty = migrateLegacyConfig(profs, provs) { newProvs -> provs = newProvs } || dirty
+            provs = migrateAndHydrateApiKeys(provs)
+            _providers.value = provs
+            _profiles.value = profs
+
+            val roles = when (val r = roleRead) {
+                is PrefRead.Ok<*> -> r.value as ModelRoleConfig
+                else -> {
+                    dirty = true
+                    ModelProfileDefaults.defaultRoles(profs)
+                }
+            }
+            _roles.value = roles
+
+            val agentSettings = when (val r = agentRead) {
+                is PrefRead.Ok<*> -> {
+                    val before = r.value as AgentSettings
+                    val after = migratePermissionDefaultBypass(before)
+                    // 权限迁移标记落位 = 一次真实迁移，同样需要写盘
+                    if (after.permissionBypassMigrated != before.permissionBypassMigrated) {
+                        dirty = true
+                    }
+                    after
+                }
+                else -> {
+                    dirty = true
+                    // 兼容旧版散装 Key（仅保留仍在消费的 keepAlive；Agent 模式散装键
+                    // 已随模式移除，ignoreUnknownKeys 吞掉存量 JSON 里的 Agent 字段）
+                    migratePermissionDefaultBypass(
+                        AgentSettings(keepAlive = prefs.getBoolean("agent_keep_alive", true))
+                    )
+                }
+            }
+            _agentSettings.value = agentSettings
+
+            // BUG-02：清掉历史明文 API Key 残留（含迁移完成后的散装键）
+            sweepPlaintextApiKeys()
+
+            if (dirty) {
+                if (!persistAllBlocking()) {
+                    AppLogger.instance.warn(
+                        LogCategory.SYSTEM, "SettingsRepository",
+                        "种子 / 迁移后的设置写盘 commit 失败 —— 配置仅存于内存，建议在诊断中检查存储可用性"
+                    )
+                }
+            }
+        } else {
             // 只读安全模式：内存用默认值保证 UI 可用，磁盘原始串原样保留
             //（已备份到 settings-corrupt/），本次 init 零写盘。
+            // （init 块不允许裸 return —— 用 if/else 分支而非提前返回）
             _providers.value = ModelProfileDefaults.builtInProviders
             _profiles.value = ModelProfileDefaults.defaultProfiles(_providers.value)
-            _roles.value = ModelProfileDefaults.defaultRoles(_providers.value)
+            _roles.value = ModelProfileDefaults.defaultRoles(_profiles.value)
             _agentSettings.value = AgentSettings()
-            return
-        }
-
-        var provs = when (val r = provRead) {
-            is PrefRead.Ok<*> -> r.value as List<ProviderConfig>
-            else -> {
-                dirty = true
-                ModelProfileDefaults.builtInProviders
-            }
-        }
-        var profs = when (val r = profRead) {
-            is PrefRead.Ok<*> -> (r.value as List<ModelProfile>).toMutableList()
-            else -> {
-                dirty = true
-                ModelProfileDefaults.defaultProfiles(provs).toMutableList()
-            }
-        }
-        provs = migrateAndHydrateApiKeys(provs)
-        dirty = migrateLegacyConfig(profs, provs) { newProvs -> provs = newProvs } || dirty
-        provs = migrateAndHydrateApiKeys(provs)
-        _providers.value = provs
-        _profiles.value = profs
-
-        val roles = when (val r = roleRead) {
-            is PrefRead.Ok<*> -> r.value as ModelRoleConfig
-            else -> {
-                dirty = true
-                ModelProfileDefaults.defaultRoles(profs)
-            }
-        }
-        _roles.value = roles
-
-        val agentSettings = when (val r = agentRead) {
-            is PrefRead.Ok<*> -> {
-                val before = r.value as AgentSettings
-                val after = migratePermissionDefaultBypass(before)
-                // 权限迁移标记落位 = 一次真实迁移，同样需要写盘
-                if (after.permissionBypassMigrated != before.permissionBypassMigrated) {
-                    dirty = true
-                }
-                after
-            }
-            else -> {
-                dirty = true
-                // 兼容旧版散装 Key（仅保留仍在消费的 keepAlive；Agent 模式散装键
-                // 已随模式移除，ignoreUnknownKeys 吞掉存量 JSON 里的 Agent 字段）
-                migratePermissionDefaultBypass(
-                    AgentSettings(keepAlive = prefs.getBoolean("agent_keep_alive", true))
-                )
-            }
-        }
-        _agentSettings.value = agentSettings
-
-        // BUG-02：清掉历史明文 API Key 残留（含迁移完成后的散装键）
-        sweepPlaintextApiKeys()
-
-        if (dirty) {
-            if (!persistAllBlocking()) {
-                AppLogger.instance.warn(
-                    LogCategory.SYSTEM, "SettingsRepository",
-                    "种子 / 迁移后的设置写盘 commit 失败 —— 配置仅存于内存，建议在诊断中检查存储可用性"
-                )
-            }
         }
     }
 
