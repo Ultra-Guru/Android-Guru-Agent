@@ -470,7 +470,6 @@ class StandardKitAdapter(
 
     override fun thinkingLevel(): CodeThinkingLevel = loopEngine.thinkingLevel().toHost()
 
-    override fun currentThinkingDecision(): String? = null
 
     override fun clearConversation() = loopEngine.clearConversation()
 

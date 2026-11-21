@@ -67,7 +67,6 @@ class MemoryAwareCodeEngineTest {
         override fun updateForcedTools(forcedToolIds: Set<String>, exposeAll: Boolean) { calls += "forced" }
         override fun updateThinkingLevel(level: CodeThinkingLevel) { calls += "tier:${level.name}" }
         override fun thinkingLevel(): CodeThinkingLevel = CodeThinkingLevel.STANDARD
-        override fun currentThinkingDecision(): String? = null
         override fun clearConversation() { calls += "clear" }
         override fun historyCount(): Int = 1
         override fun currentWorkspace(): com.apex.agent.core.code.CodeAgentEngine.WorkspaceInfo? = null
