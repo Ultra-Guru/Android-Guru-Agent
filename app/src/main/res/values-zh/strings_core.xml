@@ -914,4 +914,21 @@
     <string name="settings_key_hide">隐藏 API Key</string>
     <string name="settings_corrupt_banner_title">部分设置读取失败</string>
     <string name="settings_corrupt_banner_body">原始文件已备份，本应用不会用默认值覆盖它们；可人工修复或重新导入备份恢复。备份位于应用存储 settings-corrupt/ 目录。</string>
+    <string name="settings_int_error_empty">值不能为空</string>
+    <string name="settings_int_error_not_number">不是合法数字</string>
+    <string name="settings_int_error_out_of_range">超出范围（%1$d .. %2$d）</string>
+    <string name="settings_unknown_value">未知（保留原值）</string>
+    <string name="settings_kv_key">Header</string>
+    <string name="settings_kv_value">Value</string>
+    <string name="settings_kv_delete">删除 %1$s</string>
+    <string name="settings_kv_add">添加条目</string>
+    <string name="settings_kv_invalid">无效条目：键不能为空、不得重名（不区分大小写）、值不能为空</string>
+    <string name="settings_preset_label">提示词预设</string>
+    <string name="settings_preset_android_expert">Android 专家</string>
+    <string name="settings_preset_coding">编码代理</string>
+    <string name="settings_preset_automation">自动化代理</string>
+    <string name="settings_preset_custom">自定义</string>
+    <string name="settings_preset_overwrite_title">覆盖当前提示词？</string>
+    <string name="settings_preset_overwrite_body">选择预设将覆盖你手写的提示词前缀；保存前可自行改回。</string>
+    <string name="settings_preset_overwrite_confirm">覆盖</string>
 </resources>

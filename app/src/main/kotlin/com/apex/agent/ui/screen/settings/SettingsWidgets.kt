@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -40,16 +41,27 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * 设置页通用控件（v2 抽屉化重构自 SettingsScreen.kt 原样迁出，零行为变更）。
@@ -158,6 +170,9 @@ internal fun SliderRow(
     }
 }
 
+/** BUG-15（设置 spec 02）数字输入三类错误：空 / 非数字 / 超范围。 */
+private enum class IntFieldError { EMPTY, NOT_NUMBER, OUT_OF_RANGE }
+
 @Composable
 internal fun IntFieldRow(
     label: String,
@@ -167,18 +182,115 @@ internal fun IntFieldRow(
     max: Int = Int.MAX_VALUE,
     onValueChange: (Int) -> Unit
 ) {
-    var text by remember(value) { mutableStateOf(value.toString()) }
+    // BUG-15（设置 spec 02）：不再边打字边钳制 —— 旧实现清空后输入「0」
+    // 开头的合法中间态会被立即改写成 min、超大整数 toIntOrNull 静默吞掉、
+    // 非法输入无提示，且 remember(value) 在外部值回写时重置光标文本。
+    // 现改为：本地保留原始文本，IME Done / 失焦时校验提交；提交失败保留
+    // 文本并按三类错误显示 isError + supportingText；范围提示随 description。
+    var text by rememberSaveable { mutableStateOf(value.toString()) }
+    var error by rememberSaveable { mutableStateOf<IntFieldError?>(null) }
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
+
+    fun commit() {
+        val t = text.trim()
+        val parsed = when {
+            t.isEmpty() -> {
+                error = IntFieldError.EMPTY
+                return
+            }
+            else -> t.toIntOrNull() ?: run {
+                error = IntFieldError.NOT_NUMBER
+                return
+            }
+        }
+        if (parsed < min || parsed > max) {
+            error = IntFieldError.OUT_OF_RANGE
+            return
+        }
+        error = null
+        if (parsed != value) currentOnValueChange(parsed)
+    }
+
+    // 外部值回写 → 仅当本地文本不再等于外部值时同步（不重置正在输入的中间态）
+    LaunchedEffect(value) {
+        if (text.trim().toIntOrNull() != value) text = value.toString()
+    }
+    OutlinedTextField(
+        value = text,
+        onValueChange = {
+            text = it
+            error = null
+        },
+        label = { Text(label) },
+        isError = error != null,
+        supportingText = {
+            when (error) {
+                IntFieldError.EMPTY -> Text(stringResource(R.string.settings_int_error_empty))
+                IntFieldError.NOT_NUMBER -> Text(stringResource(R.string.settings_int_error_not_number))
+                IntFieldError.OUT_OF_RANGE ->
+                    Text(stringResource(R.string.settings_int_error_out_of_range, min, max))
+                null -> description?.let { Text(it) }
+            }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .onFocusChanged { if (!it.isFocused) commit() },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { commit() })
+    )
+}
+
+/**
+ * BUG-16（设置 spec 02）：防抖文本输入 —— 逐字符直接回调会让大文本
+ * （64KB 全局规则 / 系统提示词）每按键整份序列化落盘。300ms 防抖 +
+ * 失焦 / 离页冲刷（最后一次编辑不丢）；外部值回写仅在「与本地不同」时
+ * 同步，不重置光标。旋转后草稿可恢复（rememberSaveable，非敏感项）。
+ */
+@Composable
+internal fun DebouncedTextField(
+    label: String,
+    value: String,
+    description: String? = null,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    singleLine: Boolean = true,
+    maxLines: Int = if (singleLine) 1 else 6,
+) {
+    var text by rememberSaveable { mutableStateOf(value) }
+    val currentOnValueChange by rememberUpdatedState(onValueChange)
+    val currentValue by rememberUpdatedState(value)
+    LaunchedEffect(value) { if (value != text) text = value }
+    val scope = rememberCoroutineScope()
+    var job by remember { mutableStateOf<Job?>(null) }
+
+    fun flushNow() {
+        job?.cancel()
+        job = null
+        if (text != currentValue) currentOnValueChange(text)
+    }
+    // 失焦冲刷：切到下一个控件前把最后编辑落盘
+    val focusModifier = modifier
+        .fillMaxWidth()
+        .onFocusChanged { if (!it.isFocused) flushNow() }
+    // 离页冲刷：组合销毁（返回 / 切标签）时补交最后一次编辑
+    DisposableEffect(Unit) { onDispose { flushNow() } }
+
     OutlinedTextField(
         value = text,
         onValueChange = { raw ->
             text = raw
-            raw.toIntOrNull()?.let { onValueChange(it.coerceIn(min, max)) }
+            job?.cancel()
+            job = scope.launch {
+                delay(300)
+                if (raw != currentValue) currentOnValueChange(raw)
+            }
         },
         label = { Text(label) },
         supportingText = description?.let { { Text(it) } },
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+        modifier = focusModifier,
+        singleLine = singleLine,
+        maxLines = maxLines,
     )
 }
 
@@ -189,13 +301,13 @@ internal fun TextFieldRow(
     description: String? = null,
     onValueChange: (String) -> Unit
 ) {
-    OutlinedTextField(
+    // BUG-16：统一走防抖（300ms + 失焦/离页冲刷），全部文本类设置项
+    // 自动受益，调用方零改动。
+    DebouncedTextField(
+        label = label,
         value = value,
+        description = description,
         onValueChange = onValueChange,
-        label = { Text(label) },
-        supportingText = description?.let { { Text(it) } },
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = true
     )
 }
 
@@ -209,7 +321,10 @@ internal fun <T> DropdownRow(
     onSelected: (T) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val current = options.firstOrNull { it.first == selected }?.second ?: selected.toString()
+    // BUG-18（设置 spec 02）：未知选中值不再裸显 toString() —— 给人话标签
+    //（值本身保留，不做任何猜测性改写）
+    val current = options.firstOrNull { it.first == selected }?.second
+        ?: stringResource(R.string.settings_unknown_value)
     Column(Modifier.fillMaxWidth()) {
         ExposedDropdownMenuBox(
             expanded = expanded,
@@ -274,28 +389,61 @@ internal fun KeyValueEditor(
     map: Map<String, String>,
     onChange: (Map<String, String>) -> Unit
 ) {
-    var key by remember { mutableStateOf("") }
-    var value by remember { mutableStateOf("") }
+    // BUG-19（设置 spec 02）：键 trim + 非空校验 + 大小写去重（HTTP 头不
+    // 区分大小写）+ 空值拦截；硬编码 Header/Value 文案与删除/添加按钮的
+    // 语义标签全部走资源（双语）。
+    var key by rememberSaveable { mutableStateOf("") }
+    var value by rememberSaveable { mutableStateOf("") }
+    var invalid by rememberSaveable { mutableStateOf(false) }
+    val addDescription = stringResource(R.string.settings_kv_add)
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium)
         map.forEach { (k, v) ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("$k : $v", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                 // UI-012：48dp 触区红线（原 28dp）
-                IconButton(onClick = { onChange(map - k) }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                IconButton(
+                    onClick = { onChange(map - k) },
+                    modifier = Modifier
+                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                        .semantics { contentDescription = stringResource(R.string.settings_kv_delete, k) },
+                ) {
                     Icon(Icons.Default.Delete, null, Modifier.size(16.dp))
                 }
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(key, { key = it }, label = { Text("Header") },
-                modifier = Modifier.weight(1f), singleLine = true)
+            OutlinedTextField(
+                key,
+                { key = it; invalid = false },
+                label = { Text(stringResource(R.string.settings_kv_key)) },
+                isError = invalid,
+                supportingText = if (invalid) {
+                    { Text(stringResource(R.string.settings_kv_invalid), style = MaterialTheme.typography.labelSmall) }
+                } else {
+                    null
+                },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+            )
             Spacer(Modifier.width(6.dp))
-            OutlinedTextField(value, { value = it }, label = { Text("Value") },
+            OutlinedTextField(value, { value = it }, label = { Text(stringResource(R.string.settings_kv_value)) },
                 modifier = Modifier.weight(1f), singleLine = true)
-            IconButton(onClick = {
-                if (key.isNotBlank()) { onChange(map + (key to value)); key = ""; value = "" }
-            }) { Icon(Icons.Default.Add, null) }
+            IconButton(
+                onClick = {
+                    val k = key.trim()
+                    // 校验：键非空、值非空、大小写不敏感去重
+                    if (k.isBlank() || value.isBlank() || map.keys.any { it.equals(k, ignoreCase = true) }) {
+                        invalid = true
+                        return@IconButton
+                    }
+                    onChange(map + (k to value))
+                    key = ""
+                    value = ""
+                    invalid = false
+                },
+                modifier = Modifier.semantics { contentDescription = addDescription },
+            ) { Icon(Icons.Default.Add, null) }
         }
     }
 }

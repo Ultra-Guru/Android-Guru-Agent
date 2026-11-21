@@ -272,42 +272,72 @@ internal fun NetworkSection(p: ModelProfile, onUpdate: (ModelProfile) -> Unit) {
 @Composable
 internal fun PromptSection(p: ModelProfile, onUpdate: (ModelProfile) -> Unit) {
     SectionCard(stringResource(R.string.settings_section_prompt), Icons.Outlined.EditNote) {
-        OutlinedTextField(p.systemPromptPrefix, { onUpdate(p.copy(systemPromptPrefix = it)) },
-            label = { Text(stringResource(R.string.settings_prompt_prefix_label)) },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
-            maxLines = 6)
-        // 修复：下拉选中值随用户选择联动（原硬编码 "default"，选后仍显示 Default）
-        var presetChoice by remember(p.id) {
-            mutableStateOf(
-                when (p.systemPromptPrefix) {
-                    PROMPT_PRESET_ANDROID -> "android_expert"
-                    PROMPT_PRESET_CODING -> "coding"
-                    PROMPT_PRESET_AUTOMATION -> "automation"
-                    "" -> "default"
-                    else -> "default" // 手改前缀无法反推预设，回退 default
-                }
-            )
+        // BUG-16（设置 spec 02）：前缀逐键落盘 → 防抖（300ms + 失焦/离页冲刷）
+        DebouncedTextField(
+            label = stringResource(R.string.settings_prompt_prefix_label),
+            value = p.systemPromptPrefix,
+            onValueChange = { onUpdate(p.copy(systemPromptPrefix = it)) },
+            singleLine = false,
+        )
+        // BUG-17（设置 spec 02）：预设改为「从当前前缀反推」的派生状态 ——
+        // 用户手改后显示「自定义」，不再停留在旧预设；选预设若会覆盖自定义
+        // 内容，先弹确认（旧实现静默覆盖且无法反推）。
+        val presetChoice = when (p.systemPromptPrefix) {
+            PROMPT_PRESET_ANDROID -> "android_expert"
+            PROMPT_PRESET_CODING -> "coding"
+            PROMPT_PRESET_AUTOMATION -> "automation"
+            "" -> "default"
+            else -> "custom"
         }
-        DropdownRow("Prompt Preset",
+        var pendingPreset by rememberSaveable { mutableStateOf<String?>(null) }
+        DropdownRow(
+            stringResource(R.string.settings_preset_label),
             listOf(
                 "default" to stringResource(R.string.settings_preset_default),
-                "android_expert" to "Android Expert",
-                "coding" to "Coding Agent",
-                "automation" to "Automation Agent",
+                "android_expert" to stringResource(R.string.settings_preset_android_expert),
+                "coding" to stringResource(R.string.settings_preset_coding),
+                "automation" to stringResource(R.string.settings_preset_automation),
+                "custom" to stringResource(R.string.settings_preset_custom),
             ),
             presetChoice,
-            description = stringResource(R.string.settings_preset_desc)
+            description = stringResource(R.string.settings_preset_desc),
         ) { preset ->
-            presetChoice = preset
-            val template = when (preset) {
-                "android_expert" -> PROMPT_PRESET_ANDROID
-                "coding" -> PROMPT_PRESET_CODING
-                "automation" -> PROMPT_PRESET_AUTOMATION
-                else -> ""
+            if (preset == presetChoice) return@DropdownRow
+            if (preset != "default" && presetChoice == "custom") {
+                // 将覆盖手写前缀 → 先确认
+                pendingPreset = preset
+            } else {
+                applyPromptPreset(preset, p, onUpdate)
             }
-            onUpdate(p.copy(systemPromptPrefix = template))
+        }
+        pendingPreset?.let { target ->
+            AlertDialog(
+                onDismissRequest = { pendingPreset = null },
+                title = { Text(stringResource(R.string.settings_preset_overwrite_title)) },
+                text = { Text(stringResource(R.string.settings_preset_overwrite_body)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        applyPromptPreset(target, p, onUpdate)
+                        pendingPreset = null
+                    }) { Text(stringResource(R.string.settings_preset_overwrite_confirm)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingPreset = null }) { Text(stringResource(R.string.settings_cancel)) }
+                },
+            )
         }
     }
+}
+
+/** BUG-17：预设应用统一入口（确认弹窗与直选共用）。 */
+private fun applyPromptPreset(preset: String, p: ModelProfile, onUpdate: (ModelProfile) -> Unit) {
+    val template = when (preset) {
+        "android_expert" -> PROMPT_PRESET_ANDROID
+        "coding" -> PROMPT_PRESET_CODING
+        "automation" -> PROMPT_PRESET_AUTOMATION
+        else -> ""
+    }
+    onUpdate(p.copy(systemPromptPrefix = template))
 }
 
 // Prompt Preset 模板（供选中值反推复用）

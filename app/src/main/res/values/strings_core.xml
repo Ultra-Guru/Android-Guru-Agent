@@ -914,4 +914,21 @@
     <string name="settings_key_hide">Hide API key</string>
     <string name="settings_corrupt_banner_title">Some settings failed to load</string>
     <string name="settings_corrupt_banner_body">Your original files were backed up and will NOT be overwritten with defaults. Fix or re-import your backup to restore; backups are in app storage under settings-corrupt/.</string>
+    <string name="settings_int_error_empty">Value is required</string>
+    <string name="settings_int_error_not_number">Not a valid number</string>
+    <string name="settings_int_error_out_of_range">Out of range (%1$d .. %2$d)</string>
+    <string name="settings_unknown_value">Unknown (value preserved)</string>
+    <string name="settings_kv_key">Header</string>
+    <string name="settings_kv_value">Value</string>
+    <string name="settings_kv_delete">Delete %1$s</string>
+    <string name="settings_kv_add">Add entry</string>
+    <string name="settings_kv_invalid">Invalid entry: key must be non-empty, unique (case-insensitive), and value non-empty</string>
+    <string name="settings_preset_label">Prompt Preset</string>
+    <string name="settings_preset_android_expert">Android Expert</string>
+    <string name="settings_preset_coding">Coding Agent</string>
+    <string name="settings_preset_automation">Automation Agent</string>
+    <string name="settings_preset_custom">Custom</string>
+    <string name="settings_preset_overwrite_title">Overwrite current prompt?</string>
+    <string name="settings_preset_overwrite_body">Choosing a preset replaces your custom prompt prefix. Re-edit before saving to undo.</string>
+    <string name="settings_preset_overwrite_confirm">Overwrite</string>
 </resources>
