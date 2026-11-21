@@ -148,12 +148,13 @@ internal fun SwitchRow(
     label: String,
     checked: Boolean,
     description: String? = null,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit
 ) {
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(label, Modifier.weight(1f))
-            Switch(checked, onCheckedChange)
+            Switch(checked, onCheckedChange, enabled = enabled)
         }
         DescriptionText(description)
     }

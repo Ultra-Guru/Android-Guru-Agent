@@ -91,6 +91,18 @@ class SearxngViewModel @Inject constructor(
     /** 地址展示（F12 排查用）。 */
     val address: String get() = coordinator.address()
 
+    /**
+     * BUG-22（设置 spec 02）：服务动作失败/清除结果的一次性反馈通道 ——
+     * 此前 startForegroundService 被 runCatching 静默吞掉、clearInstall
+     * 的 Boolean 结果被 `{ }` 丢弃，失败对用户完全不可见。
+     */
+    private val _searchMessage = MutableStateFlow<String?>(null)
+    val searchMessage: StateFlow<String?> = _searchMessage.asStateFlow()
+
+    fun consumeSearchMessage() {
+        _searchMessage.value = null
+    }
+
     /** 开关切换：先写意图再发 action（Spec §8 事务语义；失败由 reconcile 补偿）。 */
     fun setEnabled(enabled: Boolean) {
         settingsStore.setEnabled(enabled)
@@ -98,6 +110,10 @@ class SearxngViewModel @Inject constructor(
         runCatching {
             val intent = android.content.Intent(appContext, ApexCoreService::class.java).setAction(action)
             ContextCompat.startForegroundService(appContext, intent)
+        }.onFailure {
+            _searchMessage.value =
+                appContext.getString(R.string.search_action_failed) +
+                    (it.message?.let { m -> ": $m" } ?: "")
         }
     }
 
@@ -131,6 +147,8 @@ class SearxngViewModel @Inject constructor(
 
 @Composable
 internal fun SearchLocalPage(viewModel: SearxngViewModel = hiltViewModel()) {
+    // BUG-22:服务动作失败/清除结果的一次性反馈(见 SearxngViewModel 文档)
+    val searchMessage by viewModel.searchMessage.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val engines by viewModel.engines.collectAsStateWithLifecycle()
     var showClearDialog by remember { mutableStateOf(false) }
@@ -140,6 +158,7 @@ internal fun SearchLocalPage(viewModel: SearxngViewModel = hiltViewModel()) {
             state = state,
             address = viewModel.address,
             onToggle = viewModel::setEnabled,
+            errorMessage = searchMessage,
             onRetry = viewModel::retry
         )
 
@@ -248,7 +267,12 @@ internal fun SearchLocalPage(viewModel: SearxngViewModel = hiltViewModel()) {
             confirmButton = {
                 TextButton(onClick = {
                     showClearDialog = false
-                    viewModel.clearInstall { }
+                    // BUG-22：清除失败不再被 { } 丢弃 —— 结果经反馈通道展示
+                    viewModel.clearInstall { ok ->
+                        if (!ok) {
+                            _searchMessage.value = appContext.getString(R.string.search_clear_failed)
+                        }
+                    }
                 }) { Text(stringResource(R.string.search_clear_confirm)) }
             },
             dismissButton = {
@@ -268,7 +292,8 @@ private fun SearxngSwitchCard(
     state: SearxngState,
     address: String,
     onToggle: (Boolean) -> Unit,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    errorMessage: String? = null
 ) {
     SectionCard(
         title = stringResource(R.string.search_local_title),
@@ -276,14 +301,25 @@ private fun SearxngSwitchCard(
         subtitle = address,
         initiallyExpanded = true
     ) {
-        val installing = state is SearxngState.Installing
-        val checked = state !is SearxngState.Off
+        // BUG-22（设置 spec 02）：开关按状态机分档 —— Installing/Starting/
+        // Restarting/Stopping 转换中禁用；Failed 视为关，重新打开即重试。
+        val busy = state is SearxngState.Installing || state is SearxngState.Stopping ||
+            state is SearxngState.Starting || state is SearxngState.Restarting
+        val checked = state !is SearxngState.Off && state !is SearxngState.Failed
         SwitchRow(
             label = stringResource(R.string.search_local_switch),
             checked = checked,
             description = stringResource(R.string.search_local_switch_desc),
+            enabled = !busy,
             onCheckedChange = { on -> onToggle(on) }
         )
+        errorMessage?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
         // 状态行（Inv4：由状态流驱动）
         Row(verticalAlignment = Alignment.CenterVertically) {
             when (state) {
