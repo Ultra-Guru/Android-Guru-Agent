@@ -408,4 +408,105 @@ class SubAgentRunnerTest {
         assertTrue(output.startsWith("Error:"))
         assertTrue(output.contains("网关 502"))
     }
+
+    // ── Fleet 仪表盘观察通道（Spec §7.2：start→stop 且 SubAgentResult 不变）──
+
+    /** 记录型观察者：回调痕迹按序落盘，断言生命周期形态。 */
+    private class RecordingObserver : SubAgentObserver {
+        val trace = mutableListOf<String>()
+        override fun onStart(runId: String, typeKey: String, description: String) {
+            trace += "start:$runId:$typeKey:$description"
+        }
+
+        override fun onProgress(runId: String, iterations: Int, toolCalls: Int) {
+            trace += "progress:$iterations/$toolCalls"
+        }
+
+        override fun onToolEvent(runId: String, event: AgentEvent) {
+            trace += "tool:" + event::class.simpleName
+        }
+
+        override fun onStop(runId: String, cause: SubAgentObserver.StopCause, result: SubAgentRunner.SubAgentResult?) {
+            trace += "stop:$cause:${result?.output}"
+        }
+    }
+
+    @Test
+    fun `observer receives lifecycle events and result stays identical`() = runTest {
+        val observer = RecordingObserver()
+        val runner = SubAgentRunner(
+            RecordingFactory(successEvents("找到了 3 处引用")).factory,
+            observer = observer
+        )
+
+        val result = runner.run(
+            SubAgentRunner.SubAgentType.EXPLORE,
+            "找出所有调用 loginUser 的地方",
+            "在工作区内检索 loginUser 的全部调用点并给出 path:line"
+        )
+
+        // 结果语义与无观察者时完全一致（Spec §7.2：SubAgentResult 不变）
+        assertTrue(result.isSuccess)
+        assertEquals("找到了 3 处引用", result.getOrThrow().output)
+        assertEquals(2, result.getOrThrow().iterations)
+        assertEquals(1, result.getOrThrow().toolCalls)
+        // 观察痕迹：runId 与 SubagentStop 钩子同构；start→tool→progress→…→stop(COMPLETED)
+        assertEquals("start:CodeTask-explore-找出所有调用 loginUser 的地方:explore:找出所有调用 loginUser 的地方", observer.trace.first())
+        assertTrue(observer.trace.last().startsWith("stop:COMPLETED:找到了 3 处引用"))
+        assertTrue(observer.trace.any { it == "tool:ToolCallStart" })
+        assertTrue(observer.trace.any { it == "tool:ToolCallComplete" })
+        assertTrue(observer.trace.any { it.startsWith("progress:2/1") })
+    }
+
+    @Test
+    fun `default no-op observer keeps runner behavior identical`() = runTest {
+        // 默认 NoOp：既有构造（仅传工厂）行为零差异——回归锁定
+        val runner = SubAgentRunner(RecordingFactory(successEvents("结论")).factory)
+        val result = runner.run(SubAgentRunner.SubAgentType.EXPLORE, "描述", "指令")
+        assertTrue(result.isSuccess)
+        assertEquals("结论", result.getOrThrow().output)
+    }
+
+    @Test
+    fun `observer exceptions are isolated from run result`() = runTest {
+        val boom = object : SubAgentObserver {
+            override fun onStart(runId: String, typeKey: String, description: String) {
+                throw IllegalStateException("observer boom")
+            }
+        }
+        val runner = SubAgentRunner(
+            RecordingFactory(successEvents("结论")).factory,
+            observer = boom
+        )
+        // 钩子纪律：生命周期回调异常被 runCatching 隔离，不影响工具结果
+        val result = runner.run(SubAgentRunner.SubAgentType.EXPLORE, "描述", "指令")
+        assertTrue(result.isSuccess)
+    }
+
+    @Test
+    fun `timeout and abort map to distinct stop causes`() = runTest {
+        // 超时（无输出）→ TIMED_OUT
+        val timedOut = RecordingObserver()
+        val timeoutRunner = SubAgentRunner(
+            RecordingFactory(emptyList(), tailDelayMs = 60_000).factory,
+            timeoutMs = 100,
+            observer = timedOut
+        )
+        timeoutRunner.run(SubAgentRunner.SubAgentType.EXPLORE, "描述", "指令")
+        assertTrue(timedOut.trace.last().startsWith("stop:TIMED_OUT:"))
+
+        // 引擎 Error → FAILED
+        val failed = RecordingObserver()
+        val failedRunner = SubAgentRunner(
+            RecordingFactory(
+                listOf(
+                    AgentEvent.Error("网关 502"),
+                    AgentEvent.Complete(summary = "", totalIterations = 1, totalToolCalls = 0, totalDurationMs = 1)
+                )
+            ).factory,
+            observer = failed
+        )
+        failedRunner.run(SubAgentRunner.SubAgentType.EXPLORE, "描述", "指令")
+        assertTrue(failed.trace.last().startsWith("stop:FAILED:"))
+    }
 }

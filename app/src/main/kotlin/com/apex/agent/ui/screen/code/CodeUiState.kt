@@ -145,7 +145,12 @@ data class CodeUiState(
     // ── 任务排队（输入框上方的排队卡）──
     // 运行中发送 → 入队 WAITING_AUTO（完成自动发送）；上一任务失败/中止
     // → 转_NEEDS_CONFIRM（用户点「开始排队」才继续）。详见 CodeTaskQueue.kt。
-    val queuedTask: QueuedTask? = null
+    val queuedTask: QueuedTask? = null,
+
+    // ── 子 Agent / 终端命令仪表盘（fleet 包，工具栏行右端按钮）──
+    // 浮层可见性（会话边界不自动关——用户上次选择保持；数据态在
+    // AgentFleetStore 分桶，切换即清）。徽标/列表数据不进本快照。
+    val fleetDashboardVisible: Boolean = false
 )
 
 /**

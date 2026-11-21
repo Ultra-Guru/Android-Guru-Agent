@@ -13,6 +13,43 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
+ * 子代理只读观察者（Fleet 仪表盘旁路通道，可选项默认 NoOp 零开销）。
+ *
+ * 埋点契约（全部具名方法 + 默认空实现 → 未接线时与旧版行为完全一致）：
+ * - [onStart] / [onStop] 包一个完整回合；[onProgress] 回合内计数推进；
+ * - [onToolEvent] 仅旁路 `ToolCallStart` / `ToolCallComplete`（消费端自行
+ *   过滤命令族；不旁路 chunk 类过程事件，防流式期每帧回调）；
+ * - 全部回调在 run 的执行协程内同步触发，异常由 [SubAgentRunner]
+ *   runCatching 隔离（钩子纪律：生命周期事件不得影响工具结果）；
+ * - 观察数据**只进旁路消费方**（UI 仪表盘内存态），不进主对话历史、
+ *   不进 CodeConversationMemory、不进检查点——隔离上下文设计零变化。
+ *
+ * conversationId 由装配层观察者在 onStart 时绑定（会话级 Provider 读取，
+ * 不可用降级 unbound 桶不展示）——core 层无会话概念，本接口不携带该字段。
+ */
+interface SubAgentObserver {
+    /** 回合开始（参数校验/设置闸通过后、引擎执行前；runId 与 SubagentStop 钩子同构）。 */
+    fun onStart(runId: String, typeKey: String, description: String) {}
+
+    /** 回合内进度（迭代轮数 / 工具调用计数——消费端 max 合并）。 */
+    fun onProgress(runId: String, iterations: Int, toolCalls: Int) {}
+
+    /** 子代理内部引擎事件旁路（只读；仅 Start/Complete，无输出正文）。 */
+    fun onToolEvent(runId: String, event: AgentEvent) {}
+
+    /** 回合收官（结果返回前）：[cause] 为终态唯一事实源（不靠结果文本猜）。 */
+    fun onStop(runId: String, cause: StopCause, result: SubAgentRunner.SubAgentResult?) {}
+
+    /** 收官原因（仪表盘终态映射的唯一事实源）。 */
+    enum class StopCause { COMPLETED, TIMED_OUT, ABORTED, FAILED }
+
+    companion object {
+        /** 未接线时的默认观察者（全空实现，零开销）。 */
+        val NO_OP: SubAgentObserver = object : SubAgentObserver {}
+    }
+}
+
+/**
  * 子代理执行种类（v3 全面完善）：内置类型或用户自定义类型。
  *
  * - [Builtin]：四内置类型之一（explore / research / general / reviewer）；
@@ -110,7 +147,14 @@ class SubAgentRunner(
      */
     private val settingsProvider: () -> SubAgentSettings = {
         SubAgentSettings(maxConcurrent = maxConcurrent, timeoutMs = timeoutMs)
-    }
+    },
+    /**
+     * Fleet 仪表盘旁路（可选只读观察者，默认 [SubAgentObserver.NO_OP]）：
+     * 回合生命周期与内部命令事件汇入 UI 只读观察层，不进主对话历史、
+     * 不改执行与结果语义（既有装配与测试零行为差异）。回调异常一律
+     * runCatching 隔离 + AppLogger 留痕（钩子体系纪律）。
+     */
+    private val observer: SubAgentObserver = SubAgentObserver.NO_OP
 ) {
 
     /**
@@ -242,6 +286,8 @@ class SubAgentRunner(
         }
         val kindKey = kind.externalKey
         val budget = resolveBudget(kind, s)
+        // Fleet 仪表盘：稳定 runId（与 SubagentStop 钩子的 subagentId 同构）。
+        val runId = "CodeTask-$kindKey-${trimmedDescription.take(32)}"
 
         val startedAt = System.currentTimeMillis()
         val chunkOutput = StringBuilder()
@@ -258,6 +304,7 @@ class SubAgentRunner(
                 "concurrency ${s.maxConcurrent} / toolOut ${budget.toolOutputLimit} / " +
                 "ctx ${budget.contextBudget / 1000}k / temp ${budget.temperature})"
         )
+        notifyObserver { onStart(runId, kindKey, trimmedDescription) }
 
         // 超时包整体：闸门排队 + 引擎构建与收集都计入预算。
         val completed = withTimeoutOrNull(budget.timeoutMs) {
@@ -273,16 +320,24 @@ class SubAgentRunner(
                             // 首个 ResponseComplete 为准（BUILD 模式只发一次）
                             if (finalOutput == null) finalOutput = event.fullText
                         }
+                        is AgentEvent.ToolCallStart -> {
+                            // Fleet 仪表盘：内部命令旁路（纯观察，不改语义）
+                            notifyObserver { onToolEvent(runId, event) }
+                        }
                         is AgentEvent.ToolCallComplete -> {
                             toolCalls++
+                            notifyObserver { onToolEvent(runId, event) }
+                            notifyObserver { onProgress(runId, iterations, toolCalls) }
                         }
                         is AgentEvent.IterationStart -> {
                             iterations = maxOf(iterations, event.iteration)
+                            notifyObserver { onProgress(runId, iterations, toolCalls) }
                         }
                         is AgentEvent.Complete -> {
                             // 必然收尾事件：取统计总数兜底，不作成功判据
                             iterations = maxOf(iterations, event.totalIterations)
                             toolCalls = maxOf(toolCalls, event.totalToolCalls)
+                            notifyObserver { onProgress(runId, iterations, toolCalls) }
                         }
                         is AgentEvent.Error -> {
                             if (errorMessage == null) errorMessage = event.message
@@ -345,6 +400,20 @@ class SubAgentRunner(
                 )
                 Result.success(SubAgentResult(output, iterations, toolCalls, durationMs, truncated = tooLong))
             }
+        }
+        // Fleet 仪表盘收官旁路：cause 是终态唯一事实源（超时/中止/失败/
+        // 完成），不靠结果文本猜测；先于 SubagentStop 钩子（两通道互不干扰）。
+        notifyObserver {
+            onStop(
+                runId,
+                when {
+                    completed == null -> SubAgentObserver.StopCause.TIMED_OUT
+                    aborted -> SubAgentObserver.StopCause.ABORTED
+                    errorMessage != null -> SubAgentObserver.StopCause.FAILED
+                    else -> SubAgentObserver.StopCause.COMPLETED
+                },
+                result.getOrNull()
+            )
         }
         // Issue #165 —— SubagentStop：回合收官点（结果返回前）。回调自身
         // 异常由装配层隔离（见参数 KDoc），不碰 result。
@@ -455,6 +524,17 @@ class SubAgentRunner(
     /** 闸门释放（finally 兜底；AtomicInteger 无挂起点，已取消协程内同样安全）。 */
     private fun releaseGate() {
         runningCount.decrementAndGet()
+    }
+
+    /** 观察者旁路（异常隔离：runCatching 吞掉 + AppLogger 留痕，不碰执行链）。 */
+    private inline fun notifyObserver(block: SubAgentObserver.() -> Unit) {
+        runCatching { observer.block() }
+            .onFailure {
+                AppLogger.instance.warn(
+                    LogCategory.ENGINE, TAG,
+                    "SubAgentObserver 回调异常（已隔离）: ${it.message}"
+                )
+            }
     }
 
     /** 超长输出裁剪：保留前 limit 字符并追加提示行。 */

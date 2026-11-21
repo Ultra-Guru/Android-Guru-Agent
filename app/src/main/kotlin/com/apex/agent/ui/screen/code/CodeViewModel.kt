@@ -186,7 +186,9 @@ class CodeViewModel @Inject constructor(
     internal val deviceTierProvider: com.apex.agent.ui.screen.settings.DeviceTierProvider,
     // SPE-08 P1-1：流式回合诊断存储（诊断页「最近 N 次流式回合」；
     // 收束入口见 CodeStreamDiagnosticsOps.kt）
-    internal val streamTurnStore: com.apex.agent.diagnostics.StreamTurnDiagnosticsStore
+    internal val streamTurnStore: com.apex.agent.diagnostics.StreamTurnDiagnosticsStore,
+    // 子 Agent/命令仪表盘只读观察层（fleet 包；VM 接线见 CodeFleetOps.kt）。
+    internal val fleetStore: com.apex.agent.ui.screen.code.fleet.AgentFleetStore
 ) : ViewModel() {
 
     // ═══ v1.6 工作区浏览器（全屏页，apex-kit-workspace）═══
@@ -329,6 +331,8 @@ class CodeViewModel @Inject constructor(
         restoreAutonomy()
         // v3 GOAL：协调器全局状态流 → uiState.goalState（状态卡数据源）
         setupGoalController()
+        // Fleet 仪表盘：冷启动铸首个会话号（绑定见 CodeFleetOps.kt）。
+        initFleetConversation()
     }
 
     // ═══ v1.5 思考逻辑四线（深潜 = 自研七档 / 标准 = 任务循环 / 织造 = 经纬交织 / 信使 = 驿传调度）═══
@@ -647,6 +651,8 @@ class CodeViewModel @Inject constructor(
                     longTaskTracker.onEvent(event)
                     roleExperience.onEvent(event)
                     maybeEscalateOnDeepWater(event)
+                    // Fleet 仪表盘：主代理命令旁路（只读；见 CodeFleetOps.kt）。
+                    onFleetEngineEvent(event)
                     // SPE-07 P1-1：事件到达即唤醒渲染拍（空闲巡逻期间首
                     // token ≤ 1 拍上屏；合流信号零堆积）
                     renderTickerPolicy.wakeUp()
@@ -747,6 +753,8 @@ class CodeViewModel @Inject constructor(
         // 本地防御式收尾（对齐 Agent 屏 abort）：已取消协程上 emit(Aborted) 再抛取消异常、
         // 事件到不了收集器，不收口则时间轴冻结（气泡挂光标、胶囊无限计时）。
         streamSession.abortLocally()
+        // Fleet 仪表盘：在飞 RUNNING 行就地收口（同根因同口径）。
+        onFleetAbort()
         viewModelScope.launch { codeEngine.abort() }
         // 收口后的时间轴立即冲最终快照，不等不会来的 tick。
         stopRenderTicker()
@@ -1110,6 +1118,7 @@ class CodeViewModel @Inject constructor(
         if (previousId != ws.workspaceId && !_uiState.value.isRunning) {
             resetAdaptiveThinkingSignals()
             promotePendingAtConversationBoundary() // v1.2：会话边界提升待生效皮肤
+            fleetResetConversation() // Fleet 仪表盘：切工作区换号弃旧桶
         }
         // #221：用量观测在运行时层记账，需要知道当前会话归属（切工作区即换桶）。
         currentUsageSession.bind(ws.workspaceId)

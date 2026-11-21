@@ -4,6 +4,7 @@ import com.apex.agent.R
 import com.apex.agent.core.code.stream.CodeStreamSnapshot
 import com.apex.agent.ui.screen.code.CodeViewModel
 import com.apex.agent.ui.screen.code.buildSessionSnapshot
+import com.apex.agent.ui.screen.code.fleetResetConversation
 import com.apex.agent.ui.screen.code.promotePendingAtConversationBoundary
 import com.apex.agent.ui.screen.code.session.CodeSessionSnapshot
 import com.apex.agent.core.logging.AppLogger
@@ -65,6 +66,9 @@ internal fun CodeViewModel.clearConversationWithArchive() {
     // 会话边界：AUTO 预检/升级信号全量清零（旧会话错误史不带入新会话首检，
     // 见 CodeViewModel.resetAdaptiveThinkingSignals）。
     resetAdaptiveThinkingSignals()
+    // Fleet 仪表盘：新会话换号弃旧桶（迟到旧 id 事件即丢弃；恢复后为空
+    // ——严格「关闭即清」，不随归档落盘）。
+    fleetResetConversation()
     // v1.2（PartSkin spec FR-20）：新对话 = 会话边界 —— 提升待生效皮肤
     // （运行中由开头 isRunning 守卫拦住，与 H-6 天然一致）。
     promotePendingAtConversationBoundary()
@@ -126,6 +130,8 @@ internal fun CodeViewModel.restoreCodeHistoryEntry(entry: CodeHistoryEntry) {
             // 未随快照保存，新现场从零计数；同工作区重绨不触发 bind 侧边界重置，
             // 必须在此显式清零）。
             resetAdaptiveThinkingSignals()
+            // Fleet 仪表盘：恢复历史同样换号（仪表盘不随归档持久化——恢复后为空）。
+            fleetResetConversation()
             // v1.2（PartSkin spec FR-24）：恢复历史同样是会话边界 —— 提升待生效皮肤。
             promotePendingAtConversationBoundary()
             withContext(Dispatchers.IO) {
