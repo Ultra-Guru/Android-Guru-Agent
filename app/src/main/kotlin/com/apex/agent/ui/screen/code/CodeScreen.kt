@@ -55,6 +55,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import com.apex.agent.ui.screen.code.neon.NeonOrbButton
 import com.apex.agent.core.codetools.tools.CodeTodoTool
+import com.apex.agent.ui.component.AgentOrbIndicator
 import com.apex.agent.ui.component.GithubIconButton
 import com.apex.agent.ui.component.GithubTokenDialog
 import com.apex.agent.ui.component.SlashAutoCompleteHost
@@ -1034,6 +1035,10 @@ private fun CodeInputBar(
                 verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                if (isRunning) {
+                    // 品牌动效:任务进行中固定左下角,任务结束随组合消失
+                    AgentOrbIndicator(modifier = Modifier.padding(bottom = 10.dp))
+                }
                 Box(modifier = Modifier.weight(1f)) {
                     // ═══ v5 技能 chip 输入框（与 Agent 屏同款组件）═══
                     // 回车行为接线（修复：此前未传 sendKeyBehavior/onSend ——

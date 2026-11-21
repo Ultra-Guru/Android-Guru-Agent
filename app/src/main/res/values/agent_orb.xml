@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 「霓虹魔法环」任务动效帧索引:27 帧按播放顺序聚合,
+     与 drawable-nodpi 下的 agent_orb_f00 至 f26 一一对应 -->
+<resources>
+    <array name="agent_orb_frames">
+        <item>@drawable/agent_orb_f00</item>
+        <item>@drawable/agent_orb_f01</item>
+        <item>@drawable/agent_orb_f02</item>
+        <item>@drawable/agent_orb_f03</item>
+        <item>@drawable/agent_orb_f04</item>
+        <item>@drawable/agent_orb_f05</item>
+        <item>@drawable/agent_orb_f06</item>
+        <item>@drawable/agent_orb_f07</item>
+        <item>@drawable/agent_orb_f08</item>
+        <item>@drawable/agent_orb_f09</item>
+        <item>@drawable/agent_orb_f10</item>
+        <item>@drawable/agent_orb_f11</item>
+        <item>@drawable/agent_orb_f12</item>
+        <item>@drawable/agent_orb_f13</item>
+        <item>@drawable/agent_orb_f14</item>
+        <item>@drawable/agent_orb_f15</item>
+        <item>@drawable/agent_orb_f16</item>
+        <item>@drawable/agent_orb_f17</item>
+        <item>@drawable/agent_orb_f18</item>
+        <item>@drawable/agent_orb_f19</item>
+        <item>@drawable/agent_orb_f20</item>
+        <item>@drawable/agent_orb_f21</item>
+        <item>@drawable/agent_orb_f22</item>
+        <item>@drawable/agent_orb_f23</item>
+        <item>@drawable/agent_orb_f24</item>
+        <item>@drawable/agent_orb_f25</item>
+        <item>@drawable/agent_orb_f26</item>
+    </array>
+</resources>

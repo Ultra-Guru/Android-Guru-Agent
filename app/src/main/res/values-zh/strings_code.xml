@@ -451,4 +451,5 @@
     <string name="code_skin_pending_new_chat">外观已切换 · 新对话后生效</string>
     <string name="code_skin_pending_apply_now">立即应用</string>
     <string name="code_skin_pending_discard">撤销</string>
+    <string name="agent_orb_running">Agent 任务运行中</string>
 </resources>
