@@ -143,6 +143,11 @@
     <string name="code_context_usage_cache">缓存命中率</string>
     <string name="code_context_usage_pct_fmt">%1$d%%</string>
     <string name="code_context_usage_cache_na">暂无数据</string>
+    <!-- SPE-08 P1-4：用量来源徽标（真实（服务端）/估算/未获取） -->
+    <string name="code_context_usage_source">用量来源</string>
+    <string name="code_usage_source_real">真实（服务端）</string>
+    <string name="code_usage_source_estimated">估算</string>
+    <string name="code_usage_source_missing">未获取</string>
     <string name="code_context_usage_messages">消息条数</string>
     <string name="code_context_usage_tokens_fmt">%1$d</string>
 

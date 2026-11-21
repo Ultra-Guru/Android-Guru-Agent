@@ -107,4 +107,13 @@
     <string name="diag_failure_field_exit">退出码</string>
     <string name="diag_failure_field_duration">耗时</string>
     <string name="diag_failure_field_tier">执行通道</string>
+    <!-- ═══ SPE-08 P1-1：最近流式回合诊断（首 token 延迟/帧间隔分位/帧账本/收尾）═══ -->
+    <string name="diag_stream_turns_section">最近流式回合</string>
+    <string name="diag_stream_turn_latency">%1$s · 延迟</string>
+    <string name="diag_stream_turn_latency_value">首 token %1$s · 帧间隔 P95 %2$s</string>
+    <string name="diag_stream_turn_frames">%1$s · 帧账本</string>
+    <string name="diag_stream_turn_frames_value">解析 %1$s · 丢弃 %2$s · 收尾 %3$s · 用量 %4$s</string>
+    <string name="diag_stream_turn_usage_real">真实</string>
+    <string name="diag_stream_turn_usage_estimated">估算</string>
+    <string name="diag_stream_turn_usage_missing">未获取</string>
 </resources>

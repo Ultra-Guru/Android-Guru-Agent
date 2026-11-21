@@ -41,7 +41,19 @@ import java.io.BufferedReader
 class SseFrameReader(
     private val reader: BufferedReader,
     /** 单行护栏（字符数）：超限行跳过 + 限次留痕。1 MB 覆盖合法长帧，拦恶意畸形。 */
-    private val maxLineChars: Int = MAX_SSE_LINE_CHARS
+    private val maxLineChars: Int = MAX_SSE_LINE_CHARS,
+    /** 假钟（SPE-08 看门狗测试注入；生产 = System::currentTimeMillis）。 */
+    private val clock: () -> Long = System::currentTimeMillis,
+    /**
+     * 纯心跳停滞看门狗（SPE-08 P1-2）：距上一个**数据行**超过该毫秒数仍
+     * 只有注释/心跳行到达 → 抛 [LlmException.StreamStalled]（只上抛不重发）。
+     * null = 关闭（默认；非流式测试/旧调用零变化）。
+     *
+     * 必须在**读取器内部**逐行判定：纯心跳停滞时 nextFrame 永不返回（注释行
+     * 被内联消费、循环继续扫下一行），客户端层的外层软检查永远等不到执行机会；
+     * 心跳会持续重置 OkHttp readTimeout，靠读超时也排不掉——必须在这里拦。
+     */
+    private val heartbeatStallTimeoutMs: Long? = null
 ) {
 
     /** 注释行（心跳）累计——SPE-05 P0-2 / SPE-08 的无数据心跳观测口径。 */
@@ -51,6 +63,9 @@ class SseFrameReader(
     /** 因超长被跳过的行数（诊断口径）。 */
     var oversizedLinesSkipped: Int = 0
         private set
+
+    /** 上一个数据行时刻（看门狗基准；首行前 = 构造时刻）。 */
+    private var lastDataLineMs: Long = clock()
 
     /** 读下一帧的 data 负载：拼接多行 data；无 data 的事件跳过继续扫描。
      *  EOF → null。 */
@@ -65,7 +80,11 @@ class SseFrameReader(
                     if (hasData) return data.toString()
                     continue
                 }
-                line.startsWith(":") -> { commentLines++; continue }
+                line.startsWith(":") -> {
+                    commentLines++
+                    checkHeartbeatStall()
+                    continue
+                }
                 line.startsWith("data:") -> {
                     val payload = line.removePrefix("data:")
                     // 规范：`data:` 后若紧跟一个空格则剥掉一个（兼容 `data: x` / `data:x`）。
@@ -78,6 +97,7 @@ class SseFrameReader(
                     if (hasData) data.append('\n')
                     data.append(stripped)
                     hasData = true
+                    lastDataLineMs = clock()
                 }
                 // event:/id:/retry:/未知字段行：规范内字段被消费；未知行忽略。
                 else -> continue
@@ -85,6 +105,15 @@ class SseFrameReader(
         }
         // EOF：冲刷未 dispatch 的半截事件（宁解析勿丢帧，见类 KDoc）。
         return if (hasData) data.toString() else null
+    }
+
+    /** 心跳停滞看门狗：注释行到达时检查距上一个数据行的间隔。 */
+    private fun checkHeartbeatStall() {
+        val timeout = heartbeatStallTimeoutMs ?: return
+        val gap = clock() - lastDataLineMs
+        if (gap > timeout) {
+            throw LlmException.StreamStalled(gapMs = gap, commentLines = commentLines)
+        }
     }
 
     private fun logOversized(stripped: String) {

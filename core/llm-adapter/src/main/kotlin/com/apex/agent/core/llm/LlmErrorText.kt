@@ -51,6 +51,15 @@ object LlmErrorText {
     /** SPE-05：输出被服务端截断（finish_reason=length，已保留部分内容）。 */
     const val RESPONSE_TRUNCATED = "回答可能被截断（已达输出上限），已保留已收到的部分，可重发或调高输出上限"
 
+    /** SPE-08 P1-2：内容被服务端过滤拒发（finish_reason=content_filter）。 */
+    const val CONTENT_FILTERED = "内容被服务端安全过滤，未产出完整回答；可调整提问措辞后重试"
+
+    /** SPE-08 P1-2：帧在到但迟迟无内容帧（服务端有响应但不出 token）。 */
+    const val NO_FIRST_TOKEN = "服务端长时间未返回内容（首 token 超时），可重试或稍后再试"
+
+    /** SPE-08 P1-2：连接只有心跳无数据帧（流停滞）。 */
+    const val STREAM_STALLED = "服务端有连接但未返回数据（流停滞），可重试或稍后再试"
+
     /** Profile / Provider 配置非法。 */
     const val CONFIG_INVALID = "模型配置不完整，请在设置中检查模型配置"
 
@@ -158,6 +167,11 @@ object LlmErrorText {
         is LlmException.Network -> NETWORK_FAILED
         is LlmException.ResponseTooLarge -> RESPONSE_TOO_LARGE
         is LlmException.TruncatedStream -> RESPONSE_TRUNCATED
+        // SPE-08 P1-2：内容过滤 / 首 token 超时 / 心跳停滞 —— 独立类型独立
+        // 文案，与网络错误明确区分（用户决策不同：改措辞 vs 稍后再试）。
+        is LlmException.ContentFiltered -> CONTENT_FILTERED
+        is LlmException.NoFirstToken -> NO_FIRST_TOKEN
+        is LlmException.StreamStalled -> STREAM_STALLED
         is LlmException.EmptyResponse, is LlmException.EmptyBody, is LlmException.Parse ->
             RESPONSE_INVALID
     }

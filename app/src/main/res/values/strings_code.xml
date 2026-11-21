@@ -143,6 +143,11 @@
     <string name="code_context_usage_cache">Cache hit rate</string>
     <string name="code_context_usage_pct_fmt">%1$d%%</string>
     <string name="code_context_usage_cache_na">n/a</string>
+    <!-- SPE-08 P1-4：用量来源徽标（真实（服务端）/估算/未获取） -->
+    <string name="code_context_usage_source">Usage source</string>
+    <string name="code_usage_source_real">Real (server)</string>
+    <string name="code_usage_source_estimated">Estimated</string>
+    <string name="code_usage_source_missing">Not reported</string>
     <string name="code_context_usage_messages">Messages</string>
     <string name="code_context_usage_tokens_fmt">%1$d</string>
 

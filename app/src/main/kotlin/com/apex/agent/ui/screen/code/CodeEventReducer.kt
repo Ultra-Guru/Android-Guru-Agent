@@ -195,6 +195,9 @@ internal fun CodeViewModel.reduce(event: AgentEvent) {
         //（输入/输出/缓存命中，详情弹层数据面）+ 用量账本逐轮落账（仪表盘
         // 数据源）。胶囊时间轴不展示用量条目（见 CodeStreamSession 同分支）。
         is AgentEvent.UsageUpdated -> recordUsage(event)
+        // SPE-08 P1-1：流式回合诊断快照 → 诊断存储 + 用量来源徽标
+        //（低频事件：每次 chatStream 流尾一条，不冲击流式管线）。
+        is AgentEvent.StreamTurnStats -> onStreamTurnStats(event)
 
         is AgentEvent.Complete -> {
             val summary = languageManager.getString(

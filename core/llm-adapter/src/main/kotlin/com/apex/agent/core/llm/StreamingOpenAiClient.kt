@@ -145,7 +145,14 @@ class StreamingOpenAiClient(
             // 多行 data: 按规范拼接后整体解析（旧实现逐行 parse 把规范分帧
             // 拆碎 → 解析失败静默丢帧 → 回答缺字）；注释行只进心跳计数；
             // 超长行护栏防 OOM。
-            val frames = SseFrameReader(reader)
+            val frames = SseFrameReader(
+                reader,
+                clock = System::currentTimeMillis,
+                heartbeatStallTimeoutMs = HEARTBEAT_STALL_TIMEOUT_MS
+            )
+            // SPE-08 P1-1：回合级诊断采集器（帧计数/首 token 延迟/帧间隔分位
+            // /收尾语义/用量来源；随流尾最后一帧上抛，诊断页消费）。
+            val stats = TurnStatsCollector()
             // 末帧兜底（v1.5.x 修复）：部分网关（智谱等）把完整正文挂在最后一帧
             // 的 choice.message 上（增量 delta 缺失/为空）—— 记录本流是否见过
             // 增量正文，parseStreamChunk 据此决定是否用 message.content 兜底
@@ -163,6 +170,8 @@ class StreamingOpenAiClient(
             var partialChars = 0
             // SPE-05 P0-3：见过 finish_reason=length（输出被服务端截断）。
             var truncatedByLength = false
+            // SPE-08 P1-2：见过 finish_reason=content_filter（内容过滤拒发）。
+            var contentFiltered = false
             // #765：SSE 逐行读取是阻塞 IO，但本 flow 不再用 flowOn(Dispatchers.IO)
             // 整体搬运 —— flowOn 会在 emit 与收集者之间引入 ChannelFlow 中转，
             // 上游「发完最后一块后立刻抛异常」（断线 / 截断守卫）时，异常投递
@@ -170,49 +179,75 @@ class StreamingOpenAiClient(
             // 「部分输出留存」的目标（复现：runTest 下约 1/3 概率丢块）。
             // 改为仅把阻塞读取包进 withContext(IO)：发射是收集者上下文里的
             // 直接挂起调用，「先收到部分输出、后收到异常」的顺序有了硬保证。
-            while (true) {
-                // 每帧检查一次取消状态（readLine 阻塞期间靠上面的 invokeOnCompletion 兜底）
-                coroutineContext.ensureActive()
-                val payload = try {
-                    withContext(Dispatchers.IO) { frames.nextFrame() } ?: break
-                } catch (e: IOException) {
-                    // DONE 后的排空阶段：连接以任何方式关闭（含读超时/对端半关）
-                    // 都视为正常 EOF（完成标记已见，尾部 usage 已尽力接收）。
-                    if (sawDone) break else throw e
-                }
-                if (payload == "[DONE]") {
-                    sawDone = true
-                    sawFinish = true
-                    emit(LlmStreamChunk(isFinish = true))
-                    continue // 不 break：排空尾部帧（usage 统计帧可能在 DONE 之后）
-                }
-
-                parseStreamChunk(payload, sawDeltaContent)?.let {
-                    if (!it.content.isNullOrEmpty()) {
-                        sawDeltaContent = true
-                        partialChars += it.content.length
+            try {
+                while (true) {
+                    // 每帧检查一次取消状态（readLine 阻塞期间靠上面的 invokeOnCompletion 兜底）
+                    coroutineContext.ensureActive()
+                    val payload = try {
+                        withContext(Dispatchers.IO) { frames.nextFrame() } ?: break
+                    } catch (e: IOException) {
+                        // DONE 后的排空阶段：连接以任何方式关闭（含读超时/对端半关）
+                        // 都视为正常 EOF（完成标记已见，尾部 usage 已尽力接收）。
+                        if (sawDone) break else throw e
                     }
-                    if (it.truncated) truncatedByLength = true
-                    // SPE-05 P0-3 语义表：stop/tool_calls/其他 → 干净收尾；
-                    // length → 不算（截断链路在收尾守卫统一触发）。
-                    if (it.isFinish || (it.finishReason != null && !it.truncated)) sawFinish = true
-                    emit(it)
+                    stats.onFrameArrived()
+                    // SPE-08 P1-2 软看门狗：帧仍在到但迟迟无内容（正文/思考/工具
+                    // 调用任一）→ 首 token 超时（完全静默的连接由 OkHttp
+                    // readTimeout 兜底，见常量 KDoc）。
+                    checkFirstTokenWatchdog(stats)
+                    if (payload == "[DONE]") {
+                        sawDone = true
+                        sawFinish = true
+                        stats.onFinishReason("done")
+                        emit(LlmStreamChunk(isFinish = true))
+                        continue // 不 break：排空尾部帧（usage 统计帧可能在 DONE 之后）
+                    }
+
+                    parseStreamChunk(payload, sawDeltaContent)?.let {
+                        stats.onFrameParsed()
+                        if (!it.content.isNullOrEmpty()) {
+                            sawDeltaContent = true
+                            stats.onFirstToken()
+                            partialChars += it.content.length
+                        }
+                        if (!it.reasoningContent.isNullOrEmpty()) stats.onFirstToken()
+                        if (it.toolCalls.isNotEmpty()) stats.onFirstToken()
+                        if (it.truncated) {
+                            truncatedByLength = true
+                            stats.onTruncated()
+                        }
+                        if (it.finishReason == "content_filter") contentFiltered = true
+                        stats.onFinishReason(it.finishReason)
+                        if (it.usage != null) stats.onUsageSeen()
+                        // SPE-05 P0-3 语义表：stop/tool_calls/其他 → 干净收尾；
+                        // length → 不算（截断链路在收尾守卫统一触发）。
+                        if (it.isFinish || (it.finishReason != null && !it.truncated)) sawFinish = true
+                        emit(it)
+                    }
                 }
-            }
-            // ── 收尾守卫（SPE-05 P0-3：与 isFinish 同一张语义表派生）──
-            // ① finish_reason=length：显式截断错误（携带已保留字符数，供
-            //    上层「回答可能被截断 · 保留 N 字」提示与续写决策；不再被
-            //    当正常收尾把半截回答写进历史）；
-            // ② EOF 前未见任何完成标记：断流残段（#762/#765 既有守卫，文案
-            //    不变）。
-            // 两者都只上抛、不自动重放（#762/#765 禁区），弱网下是否重发由
-            // 用户手动决定。
-            when {
-                truncatedByLength -> throw LlmException.TruncatedStream(partialChars)
-                !sawFinish -> throw IOException(
-                    "SSE 流意外终止：未见完成标记（[DONE]/finish_reason），" +
-                        "输出可能被截断——已收到的部分内容已保留"
-                )
+                // ── 收尾守卫（SPE-05 P0-3：与 isFinish 同一张语义表派生）──
+                // ① finish_reason=length：显式截断错误（携带已保留字符数，供
+                //    上层「回答可能被截断 · 保留 N 字」提示与续写决策；不再被
+                //    当正常收尾把半截回答写进历史）；
+                // ② finish_reason=content_filter（SPE-08 P1-2）：内容被服务端
+                //    过滤拒发——独立错误类型与文案，不与网络/截断混淆；
+                // ③ EOF 前未见任何完成标记：断流残段（#762/#765 既有守卫，
+                //    文案不变）。
+                // 全部只上抛、不自动重放（#762/#765 禁区），弱网下是否重发由
+                // 用户手动决定。
+                when {
+                    truncatedByLength -> throw LlmException.TruncatedStream(partialChars)
+                    contentFiltered -> throw LlmException.ContentFiltered(partialChars)
+                    !sawFinish -> throw IOException(
+                        "SSE 流意外终止：未见完成标记（[DONE]/finish_reason），" +
+                            "输出可能被截断——已收到的部分内容已保留"
+                    )
+                }
+            } finally {
+                // SPE-08 P1-1：诊断快照随流尾最后一帧上抛（成功/异常共用路径；
+                // 收集者已取消时静默放弃——诊断不掩盖也不拖累主流程）。
+                val snapshot = stats.snapshot()
+                runCatching { emit(LlmStreamChunk(diagnostics = snapshot)) }
             }
         } finally {
             cancelHandle?.dispose()
@@ -882,6 +917,21 @@ class StreamingOpenAiClient(
         return null
     }
 
+    /**
+     * SPE-08 P1-2 软看门狗：帧在到但迟迟无任何内容帧（含思考/工具调用）→
+     * [LlmException.NoFirstToken] 上抛（不自动重发）。
+     *
+     * 只在**帧到达后**检查（完全静默的连接阻塞在 readLine，由 OkHttp
+     * readTimeout 兜底；心跳停滞则由 [SseFrameReader] 内联看门狗拦截）。
+     */
+    private fun checkFirstTokenWatchdog(stats: TurnStatsCollector) {
+        if (stats.hasFirstToken()) return
+        val elapsed = stats.elapsedMs()
+        if (elapsed > FIRST_TOKEN_TIMEOUT_MS) {
+            throw LlmException.NoFirstToken(elapsedMs = elapsed)
+        }
+    }
+
     private fun parseStreamChunk(data: String, sawDeltaContent: Boolean = false): LlmStreamChunk? {
         return try {
             val json = Json.parseToJsonElement(data).jsonObject
@@ -1102,6 +1152,16 @@ class StreamingOpenAiClient(
         const val MAX_NON_STREAM_RESPONSE_BYTES = 8_000_000
         const val MAX_ERROR_BODY_BYTES = 200
         /**
+         * SPE-08 P1-2 首 token 软看门狗：帧仍在到但迟迟无任何内容帧的阈值
+         * （毫秒）。软检查只在帧到达后执行——完全静默的连接阻塞在
+         * readLine，由 OkHttp readTimeout 兜底（流式 client callTimeout=0
+         * 依赖读超时）；纯心跳停滞由 [SseFrameReader] 内联看门狗拦截。
+         */
+        const val FIRST_TOKEN_TIMEOUT_MS = 120_000L
+
+        /** SPE-08 P1-2 心跳停滞看门狗：距上一数据行超过此时长仍只有心跳 → 上抛。 */
+        const val HEARTBEAT_STALL_TIMEOUT_MS = 60_000L
+        /**
          * 已知接受 top_k / min_p / repetition_penalty 等非标准采样参数的 Provider。
          * OpenAI / Anthropic / Google / DeepSeek / OpenRouter 的官方端点不接受这些参数
          * （会返回 400），故仅对本地推理与自定义兼容端点发送。
@@ -1129,65 +1189,3 @@ class StreamingOpenAiClient(
         BoundedReads.readHead(stream, MAX_ERROR_BODY_BYTES).toString(Charsets.UTF_8)
     } ?: "Unknown error"
 }
-
-/**
- * T72 §十四 — 适配层异常类型化。
- *
- * 旧实现仅有一个 `class LlmException(message: String)`，上层只能靠字符串匹配
- * 区分"超时/限流/鉴权失败"——脆弱且不可靠。现在拆成 sealed 层级，运行时
- * [com.apex.agent.core.llm.runtime.ErrorClassifier] 据子类型精确映射到
- * [com.apex.agent.core.llm.runtime.ModelRuntimeException]。
- *
- * 向后兼容：仍是 [Exception] 子类，旧的 `catch (e: Exception)` / `catch (e: LlmException)`
- * 仍能捕获（sealed 基类即 [LlmException]）。
- */
-sealed class LlmException(message: String, cause: Throwable? = null) : Exception(message, cause) {
-    /** HTTP 非 2xx 响应。携带状态码 [code] 与响应体 [body]。 */
-    class Http(val code: Int, val body: String) : LlmException("API error $code: $body")
-
-    /** 响应体为空（非流式）。 */
-    class EmptyResponse : LlmException("Empty response")
-
-    /** 流式响应体为空。 */
-    class EmptyBody : LlmException("Empty response body")
-
-    /** The endpoint returned more than the bounded non-stream response limit. */
-    class ResponseTooLarge(val limitBytes: Int) :
-        LlmException("Response body exceeds the $limitBytes-byte limit")
-
-    /** 网络层错误（连接失败 / DNS / SocketTimeout 等），包装原始 [IOException]。 */
-    class Network(cause: java.io.IOException) : LlmException("Network error: ${cause.message}", cause)
-
-    /** P2 fix：响应体非法（HTML 错误页/畸形 JSON/数值类型漂移），供 ErrorClassifier 映射到
-     *  ModelResponseInvalid 而非落入未分类异常。 */
-    class Parse(cause: Throwable? = null) : LlmException("Response parse error: ${cause?.message}", cause)
-
-    /**
-     * SPE-05 P0-3：输出被服务端截断（`finish_reason = length`——受
-     * max_tokens / max_completion_tokens 上限裁断），流以显式错误收尾
-     * （不再被当「正常收尾」把半截回答写进历史）。
-     *
-     * 携带 [partialChars]（已保留的正文长度），供上层 UI 显示
-     * 「回答可能被截断 · 已保留 N 字」与续写/重发决策。
-     * 不自动重放（#762/#765 禁区）——重发由用户手动决定。
-     */
-    class TruncatedStream(val partialChars: Int) :
-        LlmException("回答可能被截断（finish_reason=length）：已保留 $partialChars 字")
-}
-
-/**
- * 解析 usage 里的缓存命中 token（OpenAI 兼容端点：`prompt_tokens_details.
- * cached_tokens`；Anthropic 兼容字段 `cache_read_input_tokens` 兜底）。
- *
- * 两个安全口径：`prompt_tokens_details` 可能缺席 / 为 null / 非对象（部分
- * 中转站裁剪该字段）——`as? JsonObject` 静默降级 0；数值宽容 `intOrNull`
- * （容忍字符串 / 小数形态），与两条 usage 解析路径同口径。
- */
-private fun parseCachedTokens(usage: JsonObject): Int {
-    (usage["prompt_tokens_details"] as? JsonObject)?.let { details ->
-        details["cached_tokens"]?.jsonPrimitive?.intOrNull?.let { return it }
-    }
-    usage["cache_read_input_tokens"]?.jsonPrimitive?.intOrNull?.let { return it }
-    return 0
-}
-
