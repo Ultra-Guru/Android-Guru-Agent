@@ -458,4 +458,25 @@
     <string name="code_skin_pending_apply_now">Apply now</string>
     <string name="code_skin_pending_discard">Revert</string>
     <string name="agent_orb_running">Agent task running</string>
+
+    <!-- ═══ Sub-agent / terminal command dashboard (fleet; toolbar-row button + overlay) ═══ -->
+    <string name="code_fleet_button_cd">Sub-agent and command monitor</string>
+    <string name="code_fleet_title">Agents · commands</string>
+    <string name="code_fleet_close_cd">Close dashboard</string>
+    <string name="code_fleet_tab_subagents">Sub-agents · %1$d</string>
+    <string name="code_fleet_tab_commands">Commands · %1$d</string>
+    <string name="code_fleet_empty_subagents">No sub-agents in this conversation yet</string>
+    <string name="code_fleet_empty_commands">No terminal commands in this conversation yet</string>
+    <string name="code_fleet_status_queued">Queued</string>
+    <string name="code_fleet_status_waiting">Waiting</string>
+    <string name="code_fleet_status_running">Running</string>
+    <string name="code_fleet_status_success">Done</string>
+    <string name="code_fleet_status_failed">Failed</string>
+    <string name="code_fleet_status_timeout">Timed out</string>
+    <string name="code_fleet_status_cancelled">Cancelled</string>
+    <string name="code_fleet_status_partial">Interrupted</string>
+    <string name="code_fleet_exit_fmt">exit %1$d</string>
+    <string name="code_fleet_duration_ms_fmt">%1$d ms</string>
+    <string name="code_fleet_stats_fmt">%1$d turns · %2$d tools · %3$ds</string>
+    <string name="code_fleet_owner_main">Main agent</string>
 </resources>

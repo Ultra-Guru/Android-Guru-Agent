@@ -103,6 +103,29 @@ object CodeModule {
     @Singleton
     fun provideCodeTodoTool(): CodeTodoTool = CodeTodoTool()
 
+    /**
+     * 子 Agent / 终端命令仪表盘只读观察层（fleet 包，Spec §3.3）：
+     * VM（事件旁路 / 会话换号）与装配层观察者（SubAgentRunner 旁路）共享
+     * **同一单例**——store.currentConversationId() 即「会话级 Provider」的
+     * 唯一事实源（会话边界换号，两通道同源不串台）。纯内存态、不落盘。
+     */
+    @Provides
+    @Singleton
+    fun provideAgentFleetStore(): com.apex.agent.ui.screen.code.fleet.AgentFleetStore =
+        com.apex.agent.ui.screen.code.fleet.AgentFleetStore()
+
+    /**
+     * SubAgentRunner 的观察者接线（Spec §3.2 通道二/三）：装配层在 onStart
+     * 时从 store 读 conversationId 绑定 runId——不可用降级 unbound 桶
+     * （不展示）；迟到旧 id 事件由 store 丢弃。
+     */
+    @Provides
+    @Singleton
+    fun provideFleetSubAgentObserver(
+        store: com.apex.agent.ui.screen.code.fleet.AgentFleetStore
+    ): com.apex.agent.core.code.subagent.SubAgentObserver =
+        com.apex.agent.ui.screen.code.fleet.FleetSubAgentObserver(store)
+
     /** AUTO 档自治选档器（纯函数无状态；VM 发送前预检 + 运行中深水区升级观察）。 */
     @Provides
     @Singleton

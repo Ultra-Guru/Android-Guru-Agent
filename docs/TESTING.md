@@ -294,7 +294,7 @@ src/androidTest/kotlin/com/apex/agent/platform/terminal/   （5，真机）
 </details>
 
 <details>
-<summary><b>app / platform:privilege / terminal-emulator（11）</b></summary>
+<summary><b>app / platform:privilege / terminal-emulator（12）</b></summary>
 
 ```
 app/src/test/kotlin/com/apex/agent/
@@ -302,6 +302,8 @@ app/src/test/kotlin/com/apex/agent/
 ├── browser/RetryPolicyTest.kt
 ├── slash/SlashCommandParserTest.kt
 ├── slash/SlashCommandRouterTest.kt
+├── ui/screen/code/fleet/AgentFleetStoreTest.kt （子 Agent/命令仪表盘归约器：
+│                                        幂等合并/会话隔离/迟到丢弃/上限/中止收口）
 └── ui/screen/terminal/            （T96 终端大重构：真实执行管线）
     ├── RawStreamSanitizerTest.kt
     ├── RealCommandExecutorTest.kt （手写 FakeRuntime）
