@@ -968,15 +968,10 @@ class StreamingOpenAiClient(
                 listOfNotNull(MultimodalOutputExtractor.parseVideo(delta?.get("video_url"))) +
                 MultimodalOutputExtractor.parseVideosArray(delta?.get("videos"))
 
-            // 流式tool_calls
-            // ═══ JsonNull 陷阱修复（2026-11 用户反馈「MCP null」全链失效）═══
-            // kotlinx 的 JsonNull 是 JsonPrimitive，`.content` 返回字面串 "null"；
-            // `?: ""` 只兑底「键缺失」，兑不了「值为 JSON null」。部分网关在
-            // 参数续块上重复发 "function":{"name":null} —— 旧解析把名字变成
-            // 字符串 "null"，累积器又以后到分片覆盖先到的正确名，最终注册表
-            // 收到 Tool 'null' not found，模型有效调用全链报废。改用
-            // contentOrNull：JsonNull 一律视为字段缺席（与上方 finish_reason
-            // 同款防御，本仓多处已有此惯例）。
+            // 流式tool_calls —— JsonNull 陷阱修复（2026-11「MCP null」全链失效）：
+            // JsonNull.content 返回字面串 "null"，`?: ""` 兜不了「值为 JSON null」；
+            // 网关在参数续块重复发 name:null 时，旧解析产出的 "null" 名会被累积器
+            // 反向覆盖正确名 → Tool 'null' not found。改 contentOrNull 视为缺席。
             val toolCalls = mutableListOf<ToolCall>()
             delta?.get("tool_calls")?.jsonArray?.forEach { tc ->
                 val tcObj = tc.jsonObject
