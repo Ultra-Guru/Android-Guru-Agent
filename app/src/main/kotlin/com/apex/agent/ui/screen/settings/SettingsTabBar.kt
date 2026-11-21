@@ -30,6 +30,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
+import androidx.compose.foundation.layout.sizeIn
 
 /**
  * 浏览器式标签条（设置页面完全重构第二阶段）。
@@ -115,13 +116,13 @@ private fun SettingsTabChip(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.widthIn(max = 132.dp)
             )
-            // 叉号：点按关闭（触区收紧到 28dp——浏览器 tab 惯例密度，
-            // 外层已有 8dp 垂直 padding 补足最小触区）
+            // 叉号：点按关闭 —— BUG-28（设置 spec 02）：触区统一 ≥48dp
+            //（视觉图标保持 14dp;此前 28dp 低于无障碍触区红线）
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .padding(start = 2.dp)
-                    .size(28.dp)
+                    .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                     .clickable(onClickLabel = closeDesc) { onClose() }
                     .semantics { contentDescription = closeDesc }
             ) {

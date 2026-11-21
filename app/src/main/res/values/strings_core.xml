@@ -931,4 +931,16 @@
     <string name="settings_preset_overwrite_title">Overwrite current prompt?</string>
     <string name="settings_preset_overwrite_body">Choosing a preset replaces your custom prompt prefix. Re-edit before saving to undo.</string>
     <string name="settings_preset_overwrite_confirm">Overwrite</string>
+    <string name="settings_rate_limit_confirm_title">Apply recommended limits?</string>
+    <string name="settings_rate_limit_field_friendly">Rate-limit friendly</string>
+    <string name="settings_rate_limit_field_interval">Min interval (ms)</string>
+    <string name="settings_rate_limit_field_rich">Rich payload</string>
+    <string name="settings_rate_limit_field_parallel">Tool call parallelism</string>
+    <string name="settings_rate_limit_confirm_apply">Apply</string>
+    <string name="settings_effect_restart">Restart required</string>
+    <string name="settings_confirm_unchanged">unchanged</string>
+    <string name="settings_section_expanded">Expanded</string>
+    <string name="settings_section_collapsed">Collapsed</string>
+    <string name="settings_open_system_settings_failed">Could not open system notification settings</string>
+    <string name="settings_background_perm_failed">Could not persist background image permission — it may be lost after restart. Re-pick the image to retry.</string>
 </resources>

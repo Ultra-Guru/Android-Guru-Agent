@@ -20,6 +20,7 @@ import androidx.compose.ui.res.stringResource
 import com.apex.agent.R
 import com.apex.agent.update.DownloadMirror
 import com.apex.agent.update.MirrorPrefs
+import androidx.compose.runtime.saveable.rememberSaveable
 
 /**
  * 设置中心「通知」「应用更新」与「记忆摄取」叶子（扩展阶段）。
@@ -40,6 +41,8 @@ import com.apex.agent.update.MirrorPrefs
 @Composable
 internal fun NotificationsPage(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {
     val ctx = LocalContext.current
+    // BUG-24（设置 spec 02）：系统设置深链失败此前被 runCatching 静默吞掉
+    var openError by rememberSaveable { mutableStateOf(false) }
     SettingsLeafColumn {
         SectionCard(
             title = stringResource(R.string.settings_notifications_section),
@@ -67,10 +70,19 @@ internal fun NotificationsPage(agent: AgentSettings, onAgent: (AgentSettings) ->
                             Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                                 .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
                         )
-                    }
+                    }.onFailure { openError = true }
                 },
                 modifier = Modifier.fillMaxWidth()
-            ) { Text(stringResource(R.string.settings_notif_channel_open)) }
+            ) {
+                Text(stringResource(R.string.settings_notif_channel_open))
+            }
+            if (openError) {
+                Text(
+                    stringResource(R.string.settings_open_system_settings_failed),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
         }
     }
 }

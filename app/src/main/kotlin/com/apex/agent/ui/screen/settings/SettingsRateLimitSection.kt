@@ -15,6 +15,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 
 /**
  * ═══ 模型限速友好（model/rate-limit 叶子页）═══
@@ -38,6 +47,9 @@ import com.apex.agent.R
  */
 @Composable
 internal fun RateLimitSection(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {
+    // BUG-23（设置 spec 02）：一键组合的待确认状态（确认前不写盘）
+    var pendingApply by rememberSaveable { mutableStateOf(false) }
+
     SectionCard(
         title = stringResource(R.string.settings_rate_limit_section),
         icon = Icons.Outlined.Speed,
@@ -76,22 +88,96 @@ internal fun RateLimitSection(agent: AgentSettings, onAgent: (AgentSettings) -> 
             )
             DescriptionText(stringResource(R.string.settings_rate_limit_apply_desc))
             Row(Modifier.fillMaxWidth()) {
-                Button(
-                    onClick = {
-                        onAgent(
-                            agent.copy(
-                                rateLimitFriendly = true,
-                                rateLimitMinIntervalMs = agent.rateLimitMinIntervalMs
-                                    .coerceAtLeast(4000),
-                                rateLimitRichPayload = true,
-                                toolCallParallelism = agent.toolCallParallelism.coerceAtLeast(4)
-                            )
-                        )
-                    }
-                ) {
+                Button(onClick = { pendingApply = true }) {
                     Text(stringResource(R.string.settings_rate_limit_apply))
                 }
             }
         }
+        // BUG-23（设置 spec 02）：跨四字段批量修改先弹确认表（字段/旧值→新值/
+        // 生效时机），确认前不写盘 —— 此前一键组合静默覆盖，且
+        // toolCallParallelism 属 DI 快照字段（需重启生效）完全不告知。
+        if (pendingApply) {
+            val targetFriendly = true
+            val targetInterval = maxOf(agent.rateLimitMinIntervalMs, 4000L)
+            val targetRich = true
+            val targetParallel = maxOf(agent.toolCallParallelism, 4)
+            AlertDialog(
+                onDismissRequest = { pendingApply = false },
+                title = { Text(stringResource(R.string.settings_rate_limit_confirm_title)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ConfirmRow(
+                            stringResource(R.string.settings_rate_limit_field_friendly),
+                            agent.rateLimitFriendly, targetFriendly
+                        )
+                        ConfirmRow(
+                            stringResource(R.string.settings_rate_limit_field_interval),
+                            agent.rateLimitMinIntervalMs, targetInterval
+                        )
+                        ConfirmRow(
+                            stringResource(R.string.settings_rate_limit_field_rich),
+                            agent.rateLimitRichPayload, targetRich
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            ConfirmRow(
+                                stringResource(R.string.settings_rate_limit_field_parallel),
+                                agent.toolCallParallelism, targetParallel
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            // DI 快照字段：需重启生效（spec 明示必须告知）
+                            Surface(
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                shape = MaterialTheme.shapes.small,
+                            ) {
+                                Text(
+                                    stringResource(R.string.settings_effect_restart),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        onAgent(
+                            agent.copy(
+                                rateLimitFriendly = targetFriendly,
+                                rateLimitMinIntervalMs = targetInterval,
+                                rateLimitRichPayload = targetRich,
+                                toolCallParallelism = targetParallel
+                            )
+                        )
+                        pendingApply = false
+                    }) { Text(stringResource(R.string.settings_rate_limit_confirm_apply)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingApply = false }) { Text(stringResource(R.string.settings_cancel)) }
+                },
+            )
+        }
+    }
+}
+
+/** BUG-23：确认表单行「字段： 旧值 → 新值」（相同则显示「不变」）。 */
+@Composable
+private fun ConfirmRow(label: String, old: Any?, new: Any?) {
+    val unchanged = old == new
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+        Text(
+            if (unchanged) {
+                stringResource(R.string.settings_confirm_unchanged)
+            } else {
+                "$old → $new"
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (unchanged) {
+                MaterialTheme.colorScheme.outline
+            } else {
+                MaterialTheme.colorScheme.primary
+            },
+        )
     }
 }

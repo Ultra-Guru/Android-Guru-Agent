@@ -38,6 +38,9 @@ import com.apex.agent.core.logging.LogCategory
 internal fun BackgroundSection(agent: AgentSettings, onAgent: (AgentSettings) -> Unit) {
     val context = LocalContext.current
     val hasBackground = agent.backgroundImageUri.isNotBlank()
+    // BUG-24（设置 spec 02）：持久授权失败此前仅 AppLogger.warn —— 部分机型
+    // 重启后背景图失效,用户无从得知原因;现内联警告提示重新选择。
+    var permWarning by rememberSaveable { mutableStateOf(false) }
 
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -49,6 +52,7 @@ internal fun BackgroundSection(agent: AgentSettings, onAgent: (AgentSettings) ->
                     uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
             }.onFailure {
+                permWarning = true
                 runCatching {
                     AppLogger.instance.warn(
                         LogCategory.SYSTEM, "BackgroundSection",
@@ -78,6 +82,14 @@ internal fun BackgroundSection(agent: AgentSettings, onAgent: (AgentSettings) ->
                 Text(
                     if (hasBackground) stringResource(R.string.settings_background_replace)
                     else stringResource(R.string.settings_background_pick)
+                )
+            }
+            // BUG-24：持久授权失败可见警告（并提供「重新选择」即上方按钮）
+            if (permWarning) {
+                Text(
+                    stringResource(R.string.settings_background_perm_failed),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
                 )
             }
             if (hasBackground) {

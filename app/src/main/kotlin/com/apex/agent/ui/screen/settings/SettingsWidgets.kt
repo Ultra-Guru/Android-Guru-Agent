@@ -63,6 +63,9 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 
 /**
  * 设置页通用控件（v2 抽屉化重构自 SettingsScreen.kt 原样迁出，零行为变更）。
@@ -80,10 +83,23 @@ internal fun SectionCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     var expanded by remember { mutableStateOf(initiallyExpanded) }
+    // BUG-27（设置 spec 02）：头部可点击行补齐语义 —— Role.Button +
+    // stateDescription(已展开/已折叠) + onClickLabel;箭头为纯装饰,
+    // 显式 clearAndSetSemantics 防止 TalkBack 播报空节点。
+    val stateDesc = stringResource(
+        if (expanded) R.string.settings_section_expanded
+        else R.string.settings_section_collapsed
+    )
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Row(
-                Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(onClickLabel = title) { expanded = !expanded }
+                    .semantics {
+                        role = Role.Button
+                        stateDescription = stateDesc
+                    },
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
@@ -98,7 +114,11 @@ internal fun SectionCard(
                         )
                     }
                 }
-                Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
+                Icon(
+                    if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    null,
+                    Modifier.clearAndSetSemantics {}
+                )
             }
             AnimatedVisibility(expanded) {
                 Column(

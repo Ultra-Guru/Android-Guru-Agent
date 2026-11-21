@@ -931,4 +931,16 @@
     <string name="settings_preset_overwrite_title">覆盖当前提示词？</string>
     <string name="settings_preset_overwrite_body">选择预设将覆盖你手写的提示词前缀；保存前可自行改回。</string>
     <string name="settings_preset_overwrite_confirm">覆盖</string>
+    <string name="settings_rate_limit_confirm_title">应用推荐限速组合？</string>
+    <string name="settings_rate_limit_field_friendly">限速友好</string>
+    <string name="settings_rate_limit_field_interval">最小间隔 (ms)</string>
+    <string name="settings_rate_limit_field_rich">富载荷</string>
+    <string name="settings_rate_limit_field_parallel">工具调用并行数</string>
+    <string name="settings_rate_limit_confirm_apply">应用</string>
+    <string name="settings_effect_restart">需重启生效</string>
+    <string name="settings_confirm_unchanged">不变</string>
+    <string name="settings_section_expanded">已展开</string>
+    <string name="settings_section_collapsed">已折叠</string>
+    <string name="settings_open_system_settings_failed">无法打开系统通知设置</string>
+    <string name="settings_background_perm_failed">背景图持久授权失败——重启后可能失效，请重新选择背景图。</string>
 </resources>
