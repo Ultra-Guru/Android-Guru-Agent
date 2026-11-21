@@ -55,7 +55,10 @@ class TemplateStudioViewModel @Inject constructor(
     private val templateRegistry: PromptTemplateRegistry,
     private val templateRuntime: TemplateRuntime,
     // v1.9 角色经验卡：模板工坊 → 角色详情 → 经验卡列表/删除/清空。
-    private val roleExperienceStore: RoleExperienceStore
+    private val roleExperienceStore: RoleExperienceStore,
+    // task-playbooks：「发送到 Coding 屏」手递手通道（PlaybookHandoffStore
+    // 单例，Code 屏消费为待发送条 —— 补齐「使用模板」只有剪贴板的断环）。
+    private val handoffStore: com.apex.agent.ui.screen.code.PlaybookHandoffStore
 ) : ViewModel() {
 
     /** v2.1.0：模板激活的角色授予入口（仅 isBuiltIn 模板可授——可信来源约束）。 */
@@ -230,6 +233,12 @@ class TemplateStudioViewModel @Inject constructor(
                 error = null
             )
         }
+    }
+
+    /** 生成结果手递手到 Coding 屏（待发送条；对话框保持打开，用户可继续复制/调整）。 */
+    fun sendToCodingScreen() {
+        val prompt = _useState.value?.generatedPrompt ?: return
+        handoffStore.offer(prompt)
     }
 
     fun clearMessage() {

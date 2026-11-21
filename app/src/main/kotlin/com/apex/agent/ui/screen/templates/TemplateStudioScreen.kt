@@ -154,6 +154,7 @@ fun TemplateStudioScreen(
             state = state,
             onVariable = viewModel::updateUseVariable,
             onGenerate = viewModel::generateUsePrompt,
+            onSendToCode = viewModel::sendToCodingScreen,
             onDismiss = viewModel::closeUse
         )
     }
@@ -438,6 +439,7 @@ private fun TemplateUseDialog(
     state: TemplateUseState,
     onVariable: (String, String) -> Unit,
     onGenerate: () -> Unit,
+    onSendToCode: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val clipboard = LocalClipboardManager.current
@@ -531,6 +533,11 @@ private fun TemplateUseDialog(
                             onDismiss()
                         }
                     ) { Text(copiedMessage) }
+                    // task-playbooks：手递手到 Coding 屏（PlaybookHandoffStore
+                    // 待发送条 —— 不再只有剪贴板一条路）。
+                    TextButton(onClick = onSendToCode) {
+                        Text(stringResource(R.string.playbook_send_to_code))
+                    }
                 }
                 TextButton(onClick = onGenerate) {
                     Text(stringResource(R.string.templates_use_generate))

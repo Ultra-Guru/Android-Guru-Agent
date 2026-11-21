@@ -510,6 +510,13 @@ data class AgentSettings(
      */
     val codeExecutionMode: String = "",
     /**
+     * 任务剧本自动挂载档（task-playbooks）："off" = 不自动识别（仅手动/
+     * 工具通道）；"suggest" = 识别命中弹建议条（默认）；"auto" = 静默
+     * 挂载（chip 可卸载）。模板工坊 Coding 页剧本区写入；识别器发送前
+     * 消费（CodePlaybookController.prepareForRun）。旧 JSON 零迁移。
+     */
+    val playbookAutoMount: String = "suggest",
+    /**
      * ═══ 工具循环 v2（引擎已真接线）═══
      *
      * 单轮并行执行上限：模型一次返回多个 tool_calls 时，同轮最多几个**同时

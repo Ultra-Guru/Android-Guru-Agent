@@ -45,11 +45,19 @@ internal suspend fun CodeViewModel.prepareEngineContext(goal: String) {
                 settingsRepository.agentSettings.value.subagent.customTypes
             ).takeIf { it.isNotBlank() }?.let { "$base\n\n$it" } ?: base
         }
+    // task-playbooks：发送前剧本识别/挂载决策先行，指令段拼在 extras 最末
+    // （控制器缓存基串供幕推进热重织整串重推）。未挂载 = 原串零注入。
     codeEngineImpl?.updateSessionExtras(
         roleExperience.enrichExtras(
             base = if (profileSection == null) baseExtras else "$profileSection\n\n$baseExtras",
             goal = goal
-        )
+        ).let { enriched ->
+            playbookController.prepareForRun(
+                baseExtras = enriched,
+                goal = goal,
+                hasWorkspace = boundWorkspaceId != null
+            )
+        }
     )
     codeEngineImpl?.updateForcedTools(
         forcedToolIds = toolkitStore.forcedToolIds(),
