@@ -47,6 +47,16 @@ MCP × 技能 × 市场 × 插件四层扩展 —— 全部跑在一台手机上
 <a href="#faq"><img src="https://img.shields.io/badge/❓_FAQ-1C2A3A?style=flat-square" alt="FAQ"/></a>
 <a href="https://github.com/Ultra-Guru/Android-Guru-Agent/releases"><img src="https://img.shields.io/badge/📦_Releases-1C2A3A?style=flat-square" alt="Releases"/></a>
 
+**🎬 54 秒宣传片 · 一眼看懂全貌**
+
+<p align="center">
+  <video src="docs/promo/android-guru-agent-promo.mp4" poster="docs/promo/promo-poster.jpg" width="880" controls muted loop preload="metadata">
+    您的浏览器不支持 video 标签 —— 前往 docs/promo/android-guru-agent-promo.mp4 下载观看
+  </video>
+</p>
+
+<p align="center"><sub>纯代码生成 · Material Design 3 暗色 · 1080p30 · 合成电子配乐（120 BPM 帧级卡点 · −14 LUFS 流媒体响度）</sub></p>
+
 </div>
 
 ---
