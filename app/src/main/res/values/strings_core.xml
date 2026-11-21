@@ -945,4 +945,6 @@
     <string name="settings_background_perm_failed">Could not persist background image permission — it may be lost after restart. Re-pick the image to retry.</string>
     <string name="settings_workspace_copy_path">Copy path</string>
     <string name="settings_workspace_label">Default workspace</string>
+    <string name="search_action_failed">SearXNG service action failed</string>
+    <string name="search_clear_failed">Failed to clear the SearXNG installation</string>
 </resources>

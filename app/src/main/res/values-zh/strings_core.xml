@@ -945,4 +945,6 @@
     <string name="settings_background_perm_failed">背景图持久授权失败——重启后可能失效，请重新选择背景图。</string>
     <string name="settings_workspace_copy_path">复制路径</string>
     <string name="settings_workspace_label">默认工作区</string>
+    <string name="search_action_failed">SearXNG 服务操作失败</string>
+    <string name="search_clear_failed">SearXNG 安装清除失败</string>
 </resources>

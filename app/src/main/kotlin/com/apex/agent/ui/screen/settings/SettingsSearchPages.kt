@@ -103,6 +103,11 @@ class SearxngViewModel @Inject constructor(
         _searchMessage.value = null
     }
 
+    /** BUG-22:页面层上报反馈(清除失败等)—— 私有流不外泄。 */
+    fun reportSearchError(message: String) {
+        _searchMessage.value = message
+    }
+
     /** 开关切换：先写意图再发 action（Spec §8 事务语义；失败由 reconcile 补偿）。 */
     fun setEnabled(enabled: Boolean) {
         settingsStore.setEnabled(enabled)
@@ -147,6 +152,7 @@ class SearxngViewModel @Inject constructor(
 
 @Composable
 internal fun SearchLocalPage(viewModel: SearxngViewModel = hiltViewModel()) {
+    val context = LocalContext.current
     // BUG-22:服务动作失败/清除结果的一次性反馈(见 SearxngViewModel 文档)
     val searchMessage by viewModel.searchMessage.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -267,10 +273,13 @@ internal fun SearchLocalPage(viewModel: SearxngViewModel = hiltViewModel()) {
             confirmButton = {
                 TextButton(onClick = {
                     showClearDialog = false
-                    // BUG-22：清除失败不再被 { } 丢弃 —— 结果经反馈通道展示
+                    // BUG-22：清除失败不再被 { } 丢弃 —— 结果经公开 API
+                    // 进反馈通道展示
                     viewModel.clearInstall { ok ->
                         if (!ok) {
-                            _searchMessage.value = appContext.getString(R.string.search_clear_failed)
+                            viewModel.reportSearchError(
+                                context.getString(R.string.search_clear_failed)
+                            )
                         }
                     }
                 }) { Text(stringResource(R.string.search_clear_confirm)) }
