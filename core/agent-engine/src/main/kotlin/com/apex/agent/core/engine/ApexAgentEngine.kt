@@ -140,7 +140,7 @@ class ApexAgentEngine(
      * 接线赋值（val + 命名构造会挡住既有调用方）。
      */
     @Volatile
-    internal var contextPolicyPresetProvider: () -> Int? = { null },
+    var contextPolicyPresetProvider: () -> Int? = { null },
     /**
      * 长任务韧性守卫：LLM 瞬时错误退避重试 / 空响应重试 / 工具瞬时重试 /
      * 连续失败换路提示。默认启用（长任务需求）；测试可注入

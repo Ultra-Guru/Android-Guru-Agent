@@ -76,11 +76,12 @@ class ContextPolicyTest {
         var written: Int? = null
         val set = ContextPolicySet(write = { p, _ -> written = p; true })
         val result = set.executeStructured("""{"preset": 10, "reason": "long build task"}""")
-        assertTrue(result.output.isNotBlank())
-        assertTrue(result.output.contains("NEXT turn"))
+        val out = result.output.orEmpty()
+        assertTrue(out.isNotBlank())
+        assertTrue(out.contains("NEXT turn"))
         assertEquals(10, written)
         // 压缩保护不可关闭（文案契约）
-        assertTrue(result.output.contains("not disableable"))
+        assertTrue(out.contains("not disableable"))
     }
 
     @Test
