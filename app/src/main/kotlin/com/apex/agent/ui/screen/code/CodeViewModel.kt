@@ -406,10 +406,10 @@ class CodeViewModel @Inject constructor(
      * 斜杠命令分派：路由出系统消息 + 引擎提示词后执行；/mcp:github 未连接
      * 时只发信号不执行（与 Agent 屏旧实现同语义，但可见域是 coding 域）。
      */
-    private fun handleSlashCommand(command: String) {
+    private fun handleSlashCommand(command: String, displayGoal: String? = null) {
         val parsed = SlashCommandParser.parse(command) ?: run {
             // 解析失败：当普通消息走引擎（不吞用户输入）
-            runEngine(command)
+            runEngine(command, displayGoal = displayGoal)
             return
         }
         // ═══ v1.5 /logic:<mode> — 本地路由命令：切换双思考逻辑 ═══
@@ -427,21 +427,15 @@ class CodeViewModel @Inject constructor(
                 .associateBy { it.commandId }
         )
         val route = SlashCommandRouter.route(parsed, context)
-        _uiState.update { state ->
-            state.copy(
-                messages = state.messages + CodeChatMessage(
-                    id = idGen.incrementAndGet(),
-                    CodeChatMessage.Role.SYSTEM,
-                    route.systemMessage
-                )
-            )
-        }
+        // 路由回执双写时间轴（injectSystem）：时间轴是唯一渲染面，只写遗留
+        // messages 列表等于「用户看不见」——MCP 未连接门控提示尤其不能丢。
+        appendSystemMessage(route.systemMessage)
         if (route.requestGithubConnect) {
             _requestGithubConnect.tryEmit(Unit)
             return
         }
         if (route.agentPrompt.isNotBlank()) {
-            runEngine(route.agentPrompt)
+            runEngine(route.agentPrompt, displayGoal = displayGoal)
         }
     }
 
@@ -465,15 +459,8 @@ class CodeViewModel @Inject constructor(
         chips.forEach { chip ->
             val parsed = SlashCommandParser.parse(chip.toCommandToken()) ?: return@forEach
             val route = SlashCommandRouter.route(parsed, context)
-            _uiState.update { state ->
-                state.copy(
-                    messages = state.messages + CodeChatMessage(
-                        id = idGen.incrementAndGet(),
-                        CodeChatMessage.Role.SYSTEM,
-                        route.systemMessage
-                    )
-                )
-            }
+            // 同 handleSlashCommand：路由回执双写时间轴（时间轴是唯一渲染面）。
+            appendSystemMessage(route.systemMessage)
             if (route.requestGithubConnect) {
                 _requestGithubConnect.tryEmit(Unit)
                 return@forEach
@@ -491,7 +478,10 @@ class CodeViewModel @Inject constructor(
                 append("\n\n用户附加要求: ").append(userText)
             }
         }
-        val displayGoal = userText.ifBlank { chips.joinToString(" + ") { it.label } }
+        // 用户气泡可读化：chip 选择永远可见（与多 chip 管线同款「选了什么 +
+        // 补了什么」口径），不再被附加文本吞掉。
+        val chipPart = chips.joinToString(" + ") { "「${it.label}」" }
+        val displayGoal = if (userText.isNotBlank()) "$chipPart $userText" else chipPart
         runEngine(combined, displayGoal = displayGoal)
     }
 
@@ -565,10 +555,19 @@ class CodeViewModel @Inject constructor(
             if (trimmed.isEmpty()) pendingCmd.toCommandToken()
             else pendingCmd.toCommandToken() + " " + trimmed
         } else trimmed
+        // 选择后发送的用户气泡可读化（v5 反馈「选择后发送不显示在对话」）：
+        // 时间轴 UserEntry 显示「选了什么 chip + 补了什么话」，而不是路由
+        // 展开后的机器提示词；徒手敲的斜杠命令同样显示原始命令文本。
+        val slashDisplayGoal = pendingCmd?.let { chip ->
+            buildString {
+                append("「").append(chip.label).append("」")
+                if (trimmed.isNotBlank()) append(' ').append(trimmed)
+            }
+        } ?: trimmed
         _pendingCommands.value = emptyList()
         if (effectiveText.startsWith("/")) {
             _uiState.update { it.copy(inputDraft = "") }
-            handleSlashCommand(effectiveText)
+            handleSlashCommand(effectiveText, displayGoal = slashDisplayGoal)
             return
         }
 
