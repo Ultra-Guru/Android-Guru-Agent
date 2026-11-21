@@ -79,7 +79,11 @@ class TmuxSessionManager(
                     put("activeSession", name)
                 }.let { json.encodeToString(it) }
             }
-            val dir = sanitizeDir(workingDirectory) ?: return@withLock errorJson("InvalidInput", "workingDirectory 含非法控制字符")
+            val dir = sanitizeDir(workingDirectory)
+            // blank/null → 无 cwd（合法缺省）；非空但 sanitize 归 null → 控制字符（拒绝）
+            if (dir == null && !workingDirectory.isNullOrBlank()) {
+                return@withLock errorJson("InvalidInput", "workingDirectory 含非法控制字符")
+            }
             val cmd = buildString {
                 append(tmuxBin())
                 append(" new-session -d -s ").append(quote(name))
@@ -102,7 +106,7 @@ class TmuxSessionManager(
 
     /** ── 列出全部存活会话（权威：`tmux ls`；store 仅提供 active 标注）。 ── */
     suspend fun listSessions(): String {
-        ensureTmuxAvailable()
+        ensureTmuxAvailable()?.let { return it }
         val sessions = rawList()
         val active = store.load()?.lastActiveSession
         val arr = buildJsonArray {
@@ -216,13 +220,12 @@ class TmuxSessionManager(
     // ───────────────────────── internals ─────────────────────────
 
     /**
-     * `tmux ls` 真实解析（格式串：name:windows:created:attached）。
+     * `tmux list-sessions` 真实解析（默认行格式：`name: N windows (created X) (attached)`）。
      * 无任何会话时 tmux 以 exit 1 + "no server running" 退出 —— 这是**正常空态**，
      * 不是失败（诚实上报 count=0，绝不抛异常让 Agent 误判环境坏了）。
      */
     private suspend fun rawList(): List<TmuxSession> {
-        val cmd = "${tmuxBin()} list-sessions -F " + quote("#S\t#{session_windows}\t#{session_created}\t#{session_attached}")
-        val result = executor(cmd, DEFAULT_TIMEOUT_MS)
+        val result = executor("${tmuxBin()} list-sessions", DEFAULT_TIMEOUT_MS)
         val code = result.exitCode
         if (code != null && code != 0) {
             val combined = (result.stderr + result.stdout).lowercase()
@@ -236,21 +239,28 @@ class TmuxSessionManager(
         return parseListOutput(result.stdout)
     }
 
-    /** 解析 list-sessions 的制表符分隔输出；畸形行跳过（不臆造会话）。 */
+    /** 解析 list-sessions 默认格式；畸形行跳过（不臆造会话）。 */
     internal fun parseListOutput(stdout: String): List<TmuxSession> =
         stdout.lines()
             .map { it.trim() }
             .filter { it.isNotEmpty() }
-            .mapNotNull { line ->
-                val parts = line.split('\t')
-                if (parts.size < 4) return@mapNotNull null
-                val name = parts[0].substringBefore(':').trim()
-                if (name.isEmpty()) return@mapNotNull null
-                val windows = parts[1].trim().toIntOrNull() ?: return@mapNotNull null
-                val created = parts[2].trim().toLongOrNull()
-                val attached = parts[3].trim() == "1"
-                TmuxSession(name, windows, created, attached)
-            }
+            .mapNotNull { line -> parseSessionLine(line) }
+
+    /**
+     * 单行解析：`name: N windows (created <x>) (attached)`。
+     *  - `(attached)` 后缀可选（有 → attached=true）；
+     *  - created 段非纯数字（真实 tmux 输出日期串）时诚实置 null；
+     *  - 不匹配默认格式的行（含畸形行）返回 null 跳过。
+     */
+    private fun parseSessionLine(line: String): TmuxSession? {
+        val m = DEFAULT_LIST_LINE.matchEntire(line) ?: return null
+        val name = m.groupValues[1]
+        if (name.isEmpty()) return null
+        val windows = m.groupValues[2].toIntOrNull() ?: return null
+        val created = m.groupValues[3].toLongOrNull()
+        val attached = m.groupValues[4].isNotEmpty()
+        return TmuxSession(name, windows, created, attached)
+    }
 
     private suspend fun ensureTmuxAvailable(): String? {
         val probe = executor("command -v ${tmuxBin()} || command -v tmux", PROBE_TIMEOUT_MS)
@@ -350,6 +360,10 @@ class TmuxSessionManager(
         const val MAX_CAPTURE_LINES = 10_000
         const val NAME_PATTERN_TEXT = "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
         private val NAME_PATTERN = Regex(NAME_PATTERN_TEXT)
+
+        /** `tmux ls` 默认行格式：`name: N windows (created <x>) (attached)`。 */
+        private val DEFAULT_LIST_LINE =
+            Regex("""^([^\s:]+):\s*(\d+)\s+windows\s+\(created ([^)]*)\)( \(attached\))?$""")
 
         /** 供测试/工具层复用的 result 工厂。 */
         fun result(exitCode: Int?, stdout: String, stderr: String) =
