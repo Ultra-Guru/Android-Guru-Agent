@@ -37,6 +37,8 @@ class CodePlaybookController(
     /** 自动挂载档位供给（"off"/"suggest"/"auto"；宿主接设置流快照，测试可注入常量）。 */
     private val autoMountRaw: () -> String,
     private val registry: PlaybookRegistry,
+    /** 工具通道会话桥（PR-C；null = 纯 UI 态，测试可不接）。 */
+    private val sessionStore: PlaybookSessionStore? = null,
     private val classifier: CodeTaskClassifier = CodeTaskClassifier()
 ) {
 
@@ -166,6 +168,50 @@ class CodePlaybookController(
     /** 卸载（chip 动作；下一轮发送自然失效）。 */
     fun unmount() {
         _state.value = _state.value.copy(mounted = null)
+        publishSnapshot()
+    }
+
+    /**
+     * 工具通道手动推进（advance 命令；显式工具调用语义 = 信任直推，
+     * 不走回包判定器——判定器管被动推进）。
+     */
+    fun manualAdvance(fromStageIndex: Int?): AdvanceOutcome? {
+        val mounted = _state.value.mounted ?: return null
+        if (fromStageIndex != null && fromStageIndex != mounted.stageIndex) return null
+        if (mounted.stageIndex >= mounted.playbook.stageCount - 1) return null
+        val nextIndex = mounted.stageIndex + 1
+        _state.value = _state.value.copy(
+            mounted = mounted.copy(
+                stageIndex = nextIndex,
+                completedStages = (mounted.completedStages + listOf(mounted.stageIndex)).distinct().sorted(),
+                reconLines = reconFor(mounted.playbook, nextIndex)
+            )
+        )
+        publishSnapshot()
+        return AdvanceOutcome(
+            kind = PlaybookAdvanceJudge.AdvanceKind.ADVANCED,
+            reason = "agent 自报幕${mounted.stageIndex + 1}完成（工具通道）",
+            playbookName = mounted.playbook.name,
+            newStageIndex = nextIndex
+        )
+    }
+
+    /** 会话快照下发工具通道（无挂载 = null）。 */
+    private fun publishSnapshot() {
+        val store = sessionStore ?: return
+        val mounted = _state.value.mounted
+        store.publish(
+            mounted?.let {
+                PlaybookSessionStore.SessionSnapshot(
+                    playbookId = it.playbook.id,
+                    playbookName = it.playbook.name,
+                    stageIndex = it.stageIndex,
+                    stageCount = it.playbook.stageCount,
+                    stageTitle = it.playbook.stageAt(it.stageIndex)?.title ?: "",
+                    completedStageIndexes = it.completedStages
+                )
+            }
+        )
     }
 
     /** 幕进度 sheet 手动跳幕（校验范围）。 */
@@ -180,6 +226,7 @@ class CodePlaybookController(
                 reconLines = reconFor(mounted.playbook, stageIndex)
             )
         )
+        publishSnapshot()
         return true
     }
 
@@ -208,6 +255,7 @@ class CodePlaybookController(
                 reconLines = reconFor(mounted.playbook, nextIndex)
             )
         )
+        publishSnapshot()
         return AdvanceOutcome(
             kind = decision.kind,
             reason = decision.reason,
@@ -238,6 +286,7 @@ class CodePlaybookController(
         // 使用计数走注册表通道（incrementUsage 是 suspend——记账回调由宿主
         // VM 接 viewModelScope 异步执行，失败不阻断挂载）。
         onMountRecorded?.invoke(playbook.id)
+        publishSnapshot()
     }
 
     /** 挂载记账回调（宿主接 suspend incrementUsage，见 CodeViewModel）。 */
