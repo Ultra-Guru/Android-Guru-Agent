@@ -27,6 +27,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -103,6 +105,17 @@ fun SettingsScreen(
     var showProviders by remember { mutableStateOf(false) }
     var showRoles by remember { mutableStateOf(false) }
 
+    // BUG-21（设置 spec 02）：钩子启停失败的 hookMessage 此前无任何 UI
+    // 消费 —— 失败对用户完全不可见。挂 SnackbarHost 一次性播报。
+    val snackbarHostState = remember { SnackbarHostState() }
+    val hookMessage by viewModel.hookMessage.collectAsStateWithLifecycle()
+    LaunchedEffect(hookMessage) {
+        hookMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.consumeHookMessage()
+        }
+    }
+
     // Agent 设置统一更新入口
     val onAgent: (AgentSettings) -> Unit = { next -> viewModel.updateAgentSettings { next } }
 
@@ -158,6 +171,7 @@ fun SettingsScreen(
         Scaffold(
             // 内层 Scaffold 置零 insets：状态栏已由根 Scaffold 顶栏承担，避免双重叠加
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 TopAppBar(
                     // 顶栏置零 windowInsets，避免与根 Scaffold 状态栏双重叠加
