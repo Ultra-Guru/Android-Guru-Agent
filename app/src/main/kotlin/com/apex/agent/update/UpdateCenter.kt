@@ -175,6 +175,22 @@ object UpdateCenter {
     @Volatile
     private var hotConfirmDeferred: CompletableDeferred<Boolean>? = null
 
+    // ═══ 安装器拉起态（#819）══════════════════════════════════════
+
+    /**
+     * 安装器拉起进行中（cache 复制 / Intent 拉起）—— UI 据此禁用全部
+     * 「立即安装」入口防重入，并在本地包常驻区展示进度。
+     */
+    private val _installerBusy = MutableStateFlow(false)
+    val installerBusy: StateFlow<Boolean> = _installerBusy.asStateFlow()
+
+    /**
+     * cache 复制进度 0..100（-1 = 未知/未走复制路径：空间预检不足直接
+     * external 兜底时不产生进度拍，UI 退化 indeterminate）。
+     */
+    private val _installerProgress = MutableStateFlow(-1)
+    val installerProgress: StateFlow<Int> = _installerProgress.asStateFlow()
+
     /**
      * 热更落位前确认闸门 —— 引擎解包复核通过后挂起在此，等 UI 答复；
      * 超时由引擎侧 withTimeout 兑现（按取消处理）。
@@ -315,9 +331,42 @@ object UpdateCenter {
         }
     }
 
-    /** 就绪产物 → 系统安装器（不依赖流水线协程，可对 Ready 产物反复重发）。 */
+    /**
+     * 就绪产物 → 系统安装器（不依赖流水线协程，可对 Ready 产物反复重发；
+     * **async 化**，#819 P0）。
+     *
+     * 主线程点击回调直通同步复制的时代结束：cache 中转复制（数百 MB）在
+     * 自有 scope 的 IO 调度器执行，本方法立即返回（fire-and-forget），
+     * 结果经 [patchState] 回流（Installed / Failed）；[installerBusy] /
+     * [installerProgress] 驱动 UI 禁用与进度展示；重复请求在 busy 期间
+     * 被忽略（防重入）。
+     */
     fun launchInstaller(apk: java.io.File) {
-        patchEngine.launchInstaller(apk) { state -> _patchState.value = state }
+        if (_installerBusy.value) {
+            AppLogger.instance.warn(
+                LogCategory.SYSTEM, "UpdateCenter",
+                "上一次安装拉起仍在进行，忽略重复请求：${apk.name}"
+            )
+            return
+        }
+        _installerBusy.value = true
+        _installerProgress.value = -1
+        scope.launch {
+            try {
+                patchEngine.launchInstaller(
+                    apk = apk,
+                    listener = { state -> _patchState.value = state },
+                    onProgress = { copied, total ->
+                        _installerProgress.value =
+                            if (total > 0) ((copied * 100) / total).toInt().coerceIn(0, 100)
+                            else 0
+                    }
+                )
+            } finally {
+                _installerBusy.value = false
+                _installerProgress.value = -1
+            }
+        }
     }
 
     // ═══ 热更流水线（v1.4.7 —— 零安装通道）════════════════════════════

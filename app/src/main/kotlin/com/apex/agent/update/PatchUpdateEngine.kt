@@ -123,16 +123,36 @@ class PatchUpdateEngine(
     }
 
     /**
-     * 拉起系统安装器安装就绪产物（UI「立即安装」按钮的落地动作）。
+     * 拉起系统安装器安装就绪产物（UI「立即安装」按钮的落地动作；
+     * **suspend + main-safe**，#819 P0）。
      *
      * 与流水线解耦：[State.Ready] 之后用户可能「稍后安装」（甚至离开页面
      * 再回来）—— 本方法不依赖 engine 协程，可随时对已就绪 APK 重发。
+     * cache 中转复制（数百 MB 全量包）在 [UpdateDownloader.installApk] 内部
+     * 的 IO 调度器执行，调用方无需（也不应）再包 withContext。
      *
      * @param apk [State.Ready.apk] 携带的合成产物
-     * @param listener 结果回调（[State.Installed] / [State.Failed]）
+     * @param listener 结果回调（[State.Installed] / [State.Failed]；IO 线程）
+     * @param onProgress 复制进度回调（透传 [UpdateDownloader.installApk]）
      */
-    fun launchInstaller(apk: File, listener: StateListener) {
-        val launched = runCatching { downloader.installApk(apk) }.getOrDefault(false)
+    suspend fun launchInstaller(
+        apk: File,
+        listener: StateListener,
+        onProgress: (bytesCopied: Long, totalBytes: Long) -> Unit = { _, _ -> }
+    ) {
+        // 注意：不使用 runCatching —— 它会把协程取消（CancellationException）
+        // 一并折叠成 false，取消传播就断了；取消单独重抛。
+        val launched = try {
+            downloader.installApk(apk, onProgress)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLogger.instance.warn(
+                LogCategory.SYSTEM, "PatchUpdateEngine",
+                "安装器拉起异常：${apk.name}（${e::class.simpleName}: ${e.message}）"
+            )
+            false
+        }
         if (launched) {
             AppLogger.instance.info(
                 LogCategory.SYSTEM, "PatchUpdateEngine",

@@ -424,6 +424,8 @@ internal fun HotFlowProgress(flow: HotUpdateEngine.State) {
 @Composable
 internal fun LocalApkInventorySection(
     entries: List<LocalApkEntry>,
+    installing: Boolean = false,
+    installProgress: Int = -1,
     onInstall: (LocalApkEntry) -> Unit,
     onDelete: (LocalApkEntry) -> Unit
 ) {
@@ -472,6 +474,18 @@ internal fun LocalApkInventorySection(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.outline
             )
+            // #819：安装拉起进行中 —— 常驻区顶部进度条（cache 复制数百 MB
+            // 的可见反馈；-1 = indeterminate（空间预检不足直连 external）
+            if (installing) {
+                if (installProgress >= 0) {
+                    LinearProgressIndicator(
+                        progress = { installProgress / 100f },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
+            }
             // 列表区（高度上限避免过长挤压状态主体）
             Column(
                 Modifier
@@ -488,6 +502,7 @@ internal fun LocalApkInventorySection(
                     }
                     LocalApkRow(
                         entry,
+                        installEnabled = !installing,
                         onInstall = { onInstall(entry) },
                         onDelete = { onDelete(entry) }
                     )
@@ -501,6 +516,7 @@ internal fun LocalApkInventorySection(
 @Composable
 private fun LocalApkRow(
     entry: LocalApkEntry,
+    installEnabled: Boolean,
     onInstall: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -548,6 +564,7 @@ private fun LocalApkRow(
             )
         }
         OutlinedButton(
+            enabled = installEnabled,
             onClick = onInstall,
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
                 horizontal = 10.dp, vertical = 4.dp

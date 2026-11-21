@@ -134,6 +134,9 @@ internal fun UpdatePanel() {
     val patchIndex by center.patchIndex.collectAsStateWithLifecycle()
     val patchFlow by center.patchState.collectAsStateWithLifecycle()
     val hotFlow by center.hotState.collectAsStateWithLifecycle()
+    // #819：安装拉起进行中（cache 复制异步化后的防重入/进度源）
+    val installerBusy by center.installerBusy.collectAsStateWithLifecycle()
+    val installerProgress by center.installerProgress.collectAsStateWithLifecycle()
     val updateState: UpdateUiState = when (val s = checkStateRaw) {
         UpdateCenter.CheckState.Idle -> UpdateUiState.Idle
         UpdateCenter.CheckState.Checking -> UpdateUiState.Checking
@@ -529,6 +532,8 @@ internal fun UpdatePanel() {
             // 任何状态下都可见可装可删 —— 不再依赖「就绪重入口」的条件复活。
             LocalApkInventorySection(
                 entries = localApks,
+                installing = installerBusy,
+                installProgress = installerProgress,
                 onInstall = { entry -> installNow(entry.file) },
                 onDelete = { entry ->
                     scope.launch {
@@ -1106,6 +1111,8 @@ internal fun UpdatePanel() {
         flow = patchFlow,
         manifest = availableManifest,
         canRetry = retryChain != null,
+        installing = installerBusy,
+        installProgress = installerProgress,
         onDismiss = { center.resetPatchState() },
         onInstall = { apk -> installNow(apk) },
         onRetry = {

@@ -3,12 +3,23 @@ package com.apex.agent.ui.screen.about
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -20,6 +31,8 @@ import com.apex.agent.update.PatchUpdateEngine
 import com.apex.agent.update.UpdateCenter
 import com.apex.agent.update.UpdateDownloader
 import com.apex.agent.update.UpdateManifest
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import java.io.File
 
 /**
@@ -71,10 +84,15 @@ internal fun FinishedDownloadDialogs(
             // 版本号来自当前清单（下载中重查过/清单过期时退化为通用文案）
             val launchedHint = stringResource(R.string.about_update_installer_launched_toast)
             val context = LocalContext.current
+            // #819：cache 复制 suspend 化 —— 确认键异步拉起 + 复制期间禁用
+            // 防重入（旧实现主线程同步复制数百 MB，必 ANR）
+            val scope = rememberCoroutineScope()
+            var installing by remember { mutableStateOf(false) }
             AlertDialog(
                 onDismissRequest = {
-                    // 点外部关闭与「稍后」同义：登记重入口（动作区一键回弹）
-                    onLater(event.file)
+                    // 点外部关闭与「稍后」同义：登记重入口（动作区一键回弹）；
+                    // 复制进行中不可关（协程随组合取消，半截副本就地作废）
+                    if (!installing) onLater(event.file)
                 },
                 title = { Text(stringResource(R.string.settings_about_update_apk_done_title)) },
                 text = {
@@ -96,22 +114,56 @@ internal fun FinishedDownloadDialogs(
                             fontFamily = FontFamily.Monospace,
                             color = MaterialTheme.colorScheme.outline
                         )
+                        if (installing) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    stringResource(R.string.about_update_installing),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = {
-                        if (downloader.installApk(event.file)) {
-                            Toast.makeText(context, launchedHint, Toast.LENGTH_SHORT).show()
-                            onInstallLaunched(event.file)
-                        } else {
-                            onInstallFailed(event.file)
+                    TextButton(
+                        enabled = !installing,
+                        onClick = {
+                            if (installing) return@TextButton
+                            installing = true
+                            scope.launch {
+                                // 取消单独重抛（不用 runCatching，取消不足失败）
+                                val ok = try {
+                                    downloader.installApk(event.file)
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    false
+                                }
+                                if (ok) {
+                                    Toast.makeText(context, launchedHint, Toast.LENGTH_SHORT).show()
+                                    onInstallLaunched(event.file)
+                                } else {
+                                    onInstallFailed(event.file)
+                                }
+                            }
                         }
-                    }) {
-                        Text(stringResource(R.string.about_update_install_now))
+                    ) {
+                        Text(
+                            stringResource(
+                                if (installing) R.string.about_update_installing
+                                else R.string.about_update_install_now
+                            )
+                        )
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { onLater(event.file) }) {
+                    TextButton(enabled = !installing, onClick = { onLater(event.file) }) {
                         Text(stringResource(R.string.about_update_install_later))
                     }
                 }
@@ -167,6 +219,9 @@ internal fun FinishedDownloadDialogs(
  * @param flow 流水线状态（Downloading/Applying 静默；三终态弹框）
  * @param manifest 当前命中的更新清单（版本号文案）
  * @param canRetry 失败框「重试增量」可用性（链可解析时 true）
+ * @param installing 安装器拉起进行中（#819：cache 复制期间确认键禁用 +
+ *   进度提示；false 时行为与旧版一致）
+ * @param installProgress 复制进度 0..100（-1 = indeterminate）
  * @param onDismiss 「稍后安装」/关闭 —— 面板清中枢终态
  * @param onInstall 就绪产物 → 系统安装器
  * @param onRetry 重试增量（沿用同一条链重启流水线）
@@ -177,6 +232,8 @@ internal fun PatchFlowDialogs(
     flow: PatchUpdateEngine.State?,
     manifest: UpdateManifest?,
     canRetry: Boolean,
+    installing: Boolean = false,
+    installProgress: Int = -1,
     onDismiss: () -> Unit,
     onInstall: (File) -> Unit,
     onRetry: () -> Unit,
@@ -203,16 +260,42 @@ internal fun PatchFlowDialogs(
                         fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.outline
                     )
+                    // #819：cache 复制进度（数百 MB 全量包不再冻结主线程，
+                    // 用户看得见拉起前的复制阶段）
+                    if (installing) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (installProgress >= 0) stringResource(
+                                    R.string.about_update_copy_progress, installProgress
+                                ) else stringResource(R.string.about_update_installing),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { onInstall(flow.apk) }) {
-                    Text(stringResource(R.string.about_update_install_now))
+                TextButton(
+                    enabled = !installing,
+                    onClick = { onInstall(flow.apk) }
+                ) {
+                    Text(
+                        stringResource(
+                            if (installing) R.string.about_update_installing
+                            else R.string.about_update_install_now
+                        )
+                    )
                 }
             },
             dismissButton = {
                 // 稍后安装：保留 readyPatch 重入口（动作区一键回弹本框）
-                TextButton(onClick = onDismiss) {
+                TextButton(enabled = !installing, onClick = onDismiss) {
                     Text(stringResource(R.string.about_update_install_later))
                 }
             }
