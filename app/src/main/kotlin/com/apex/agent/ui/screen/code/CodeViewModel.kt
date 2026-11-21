@@ -238,6 +238,13 @@ class CodeViewModel @Inject constructor(
     /** 本轮 run 生效的深度档（AUTO 预检解析结果；非 AUTO = 用户显式档）。 */
     private var effectiveRunLevel: CodeThinkingLevel = CodeThinkingLevel.STANDARD
 
+    /**
+     * 本轮预检基准档（SPE-02 回落目标）：AUTO 预检 select 的结果。
+     * 深水区升级后的「稳定回落」观察器以它为目标（回落档位 = 当轮
+     * select() 结果，不凭空抬升也不低于预检口径）。
+     */
+    private var autoEscalationBaseLevel: CodeThinkingLevel = CodeThinkingLevel.STANDARD
+
     // ═══ #209 错误条「重试」通道 ═══
 
     /** 最近一次引擎运行的完整输入（含 @引用块/斜杠提示词；重试时原样重放）。 */
@@ -676,8 +683,9 @@ class CodeViewModel @Inject constructor(
                         todos = codeTodoTool.snapshot()
                     )
                 }
-                // 上一轮错误史归档（下轮 AUTO 预检的输入信号）。
-                adaptiveSignals.endRun()
+                // 上一轮错误史归档（下轮 AUTO 预检的输入信号；SPE-02：随
+                // 归档记 goal 指纹——下轮换任务时错误史自动衰减）。
+                adaptiveSignals.endRun(goal)
                 // 渲染收尾：停 ticker 前冲最后一次快照（尾巴事件不丢）。
                 stopRenderTicker()
                 onRunSettled() // v1.3：收束后 idle 点（IMMEDIATE 自动提升，幂等）
@@ -865,6 +873,10 @@ class CodeViewModel @Inject constructor(
             codeEngineImpl?.updateThinkingLevel(selected)
             return
         }
+        // SPE-02 P0-2：任务边界衰减——同一会话内换任务（goal 指纹变化）时
+        // 上一轮错误史归零（旧任务的深水区失败不给新任务抬档）；同任务
+        // 续跑则保留（错误史是「同一任务反复出错」的有效信号）。
+        adaptiveSignals.onNewTaskBoundary(goal)
         val pre = adaptiveSignals.preCheckSignals()
         val decision = adaptiveSelector.select(
             goalText = goal,
@@ -872,6 +884,7 @@ class CodeViewModel @Inject constructor(
             lastRunErrors = pre.lastRunErrors
         )
         effectiveRunLevel = decision.level
+        autoEscalationBaseLevel = decision.level // SPE-02：稳定回落的目标基准
         codeEngineImpl?.updateThinkingLevel(decision.level)
         _uiState.update { it.copy(adaptiveDecision = decision.reason) }
         // #312：前缀文案资源化（decision.reason 为 core 侧生成，另行跟踪）
@@ -879,13 +892,15 @@ class CodeViewModel @Inject constructor(
     }
 
     /**
-     * 运行中深水区升级观察器（AUTO 档专属，**四线统一**）：
+     * 运行中深水区升降档观察器（AUTO 档专属，四线统一）：
      * ToolCallComplete 计数 + 3 次成败滑窗 →
-     * [CodeAdaptiveThinkingSelector.escalateOnDeepWater]。
+     * [CodeAdaptiveThinkingSelector.escalateOnDeepWater]（升级，SPE-02 后
+     * 带冷却/次数门控）；升级未触发时串联
+     * [CodeAdaptiveThinkingSelector.deescalateOnStabilized]（稳定回落）。
      *
-     * 升级落地：引擎档位热切换（下轮迭代生效）+ 编码指令即时重织
-     * （prepareForTask——升级档的编码特化指令从本轮后续迭代起跟进，
-     * 不再等下一次发送）+ 系统消息说明。
+     * 升降落地：引擎档位热切换（下轮迭代生效）+ 编码指令即时重织
+     * （prepareForTask——档位的编码特化指令从本轮后续迭代起跟进）+
+     * 系统消息说明 + Tracker 滞回记账（冷却重启/连击清零/升档计数）。
      * 仅 AUTO 档参与（用户显式选档被尊重，不自动加码）；APEXCODE 已是
      * 顶档（观察器内部短路）；标准/织造/信使线的 updateThinkingLevel
      * 为纯字段写（下回合读新倍率），热切换同款安全。
@@ -895,14 +910,24 @@ class CodeViewModel @Inject constructor(
         adaptiveSignals.onToolComplete(event.success)
         if (_uiState.value.thinkingLevel != CodeThinkingLevel.AUTO) return
         val esc = adaptiveSignals.escalationSignals()
+        val gates = adaptiveSignals.adaptiveShiftGates()
         val decision = adaptiveSelector.escalateOnDeepWater(
             runToolCalls = esc.runToolCalls,
             recentWindowErrors = esc.recentWindowErrors,
-            current = effectiveRunLevel
-        ) ?: return
+            current = effectiveRunLevel,
+            gates = gates
+        )?.also {
+            adaptiveSignals.markEscalation()
+        } ?: adaptiveSelector.deescalateOnStabilized(
+            gates = gates,
+            current = effectiveRunLevel,
+            base = autoEscalationBaseLevel
+        )?.also {
+            adaptiveSignals.markDeescalation()
+        } ?: return
         effectiveRunLevel = decision.level
         codeEngineImpl?.updateThinkingLevel(decision.level)
-        // 升级档的编码特化指令即时重织（深潜线 refreshContext 按新档取
+        // 升降档的编码特化指令即时重织（深潜线 refreshContext 按新档取
         // directive；kit 线 prepareForTask 为空实现/轻刷新，同通道零风险）。
         codeEngineImpl?.prepareForTask()
         appendSystemMessage(

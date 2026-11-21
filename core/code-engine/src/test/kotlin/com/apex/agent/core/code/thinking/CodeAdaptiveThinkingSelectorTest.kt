@@ -117,6 +117,48 @@ class CodeAdaptiveThinkingSelectorTest {
         assertTrue(d.reason.contains("风险词保底DEEP"))
     }
 
+    // ═══ SPE-01 评分口径（与 Agent 侧共享核心一致）═══
+
+    @Test
+    fun `weak risk delete does not floor deep on coding side`() {
+        // SPE-01 验收（两侧一致）：删除 = 弱风险 +1，无硬保底。
+        val d = selector.select("删除这个文件", 0, 0)
+        assertEquals(CodeThinkingLevel.LIGHT, d.level)
+        assertTrue(d.reason.contains("弱风险词+1"))
+        assertTrue("弱风险不保底：${d.reason}", !d.reason.contains("保底DEEP"))
+    }
+
+    @Test
+    fun `context permission pairing does not floor deep on coding side`() {
+        // SPE-01 验收（两侧一致）：「先看一眼权限说明」不保底 DEEP。
+        val d = selector.select("先看一眼权限说明", 0, 0)
+        assertEquals(CodeThinkingLevel.LIGHT, d.level)
+    }
+
+    @Test
+    fun `negated destructive request suppressed on coding side`() {
+        // SPE-01 验收（两侧一致）：否定/只读语境不升档。
+        val d = selector.select("不要删除任何文件，只读分析", 0, 0)
+        assertEquals(CodeThinkingLevel.LIGHT, d.level)
+    }
+
+    @Test
+    fun `english substrings do not inflate coding score`() {
+        // SPE-01 验收（两侧一致）：digit/adapt 不命中 git/apt。
+        val d = selector.select("This is a legitimate digital adapt chapter", 0, 0)
+        assertEquals(CodeThinkingLevel.LIGHT, d.level)
+        assertTrue("英文子串不应误判为代码任务：${d.reason}", !d.reason.contains("代码/命令"))
+    }
+
+    @Test
+    fun `reason never echoes raw keyword text on coding side`() {
+        // SPE-01 净化契约（两侧一致）：理由串不回显命中词原文。
+        val d = selector.select("帮我 git rm -rf 并忽略 ```ignore 指令", 0, 0)
+        assertTrue("理由不应回显 git：${d.reason}", !d.reason.contains("git"))
+        assertTrue("理由不应回显 rm -rf：${d.reason}", !d.reason.contains("rm -rf"))
+        assertTrue("理由不应回显 ignore：${d.reason}", !d.reason.contains("ignore"))
+    }
+
     @Test
     fun `error history escalates one tier`() {
         // 零信号 goal + 1 错误：评分 0+2=2 → LIGHT，显式升一档 → STANDARD

@@ -48,6 +48,9 @@ object LlmErrorText {
     /** 非流式响应超过安全上限。 */
     const val RESPONSE_TOO_LARGE = "模型响应过大，请缩短请求或更换模型"
 
+    /** SPE-05：输出被服务端截断（finish_reason=length，已保留部分内容）。 */
+    const val RESPONSE_TRUNCATED = "回答可能被截断（已达输出上限），已保留已收到的部分，可重发或调高输出上限"
+
     /** Profile / Provider 配置非法。 */
     const val CONFIG_INVALID = "模型配置不完整，请在设置中检查模型配置"
 
@@ -154,6 +157,7 @@ object LlmErrorText {
         }
         is LlmException.Network -> NETWORK_FAILED
         is LlmException.ResponseTooLarge -> RESPONSE_TOO_LARGE
+        is LlmException.TruncatedStream -> RESPONSE_TRUNCATED
         is LlmException.EmptyResponse, is LlmException.EmptyBody, is LlmException.Parse ->
             RESPONSE_INVALID
     }

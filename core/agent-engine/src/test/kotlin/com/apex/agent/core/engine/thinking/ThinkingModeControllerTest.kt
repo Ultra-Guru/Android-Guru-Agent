@@ -60,7 +60,7 @@ class ThinkingModeControllerTest {
         val c = ThinkingModeController()
         c.onIterationStart(config(ThinkingLevel.AUTO), 1, userText = "现在几点了") // LIGHT
         assertEquals(ThinkingLevel.LIGHT, c.lastDecision!!.level)
-        c.onIterationStart(config(ThinkingLevel.AUTO), 2, userText = "先删除再重建整个目录结构") // DEEP+
+        c.onIterationStart(config(ThinkingLevel.AUTO), 2, userText = "先格式化再重建整个目录结构") // 强风险保底 DEEP+
         assertTrue(c.lastDecision!!.level >= ThinkingLevel.DEEP)
     }
 

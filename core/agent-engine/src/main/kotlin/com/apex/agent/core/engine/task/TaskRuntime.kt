@@ -854,7 +854,12 @@ class TaskRuntime(
      * Plan/Spec 确认类、Usage/压缩）永不丢。
      */
     private fun AgentEvent.isDroppableUnderPressure(): Boolean = when (this) {
-        is AgentEvent.ResponseChunk,
+        // SPE-06 P0-1（取舍版）：ResponseChunk 从可丢名单移除——正文分片是
+        // 「不可再生」的最终内容组成部分（Complete 事件的 fullText 与流式
+        // 累积可能异源/分叉，见 CodeStreamModels.reconcileStreamText 的诚实
+        // 边界：中途丢弃会形成累积带洞，前缀仲裁修不了）。背压宁可排队也
+        // 不丢正文（分片粒度是 token 级小串，内存可控）；思考/工具输出/进度
+        // 仍是可再生或可由 Complete/ToolCallComplete 携带的过程事件，维持可丢。
         is AgentEvent.ThinkingChunk,
         is AgentEvent.ToolOutputChunk,
         is AgentEvent.ToolProgress -> true

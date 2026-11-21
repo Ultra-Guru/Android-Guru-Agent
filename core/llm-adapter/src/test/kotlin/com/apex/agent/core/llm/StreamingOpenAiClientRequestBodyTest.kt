@@ -286,15 +286,97 @@ class StreamingOpenAiClientRequestBodyTest {
     // ── 既有 P1-3 行为回归（max_completion_tokens 互斥）─────────────
 
     @Test
-    fun `P1-3 thinkingBudget sends max_completion_tokens without max_tokens`() {
+    fun `SPE-04 thinkingBudget no longer acts as output cap`() {
+        // 旧实现把推理预算写进 max_completion_tokens（档位 STANDARD 1024 →
+        // 长回答被 length 截断；APEXCODE 65536 被端点 400）；现在预算只进
+        // reasoning/thinking 通道，输出上限走 max_tokens = effectiveMaxTokens。
         val config = LlmConfig(
             baseUrl = "https://api.example.com/v1", apiKey = "k", model = "some-model",
             contextWindow = 0,
             thinkingBudget = 4096
         )
         val body = body(config, temperature = 0.5f, maxTokens = 2048)
-        assertEquals(4096, body.maxCompletionTokens())
+        assertNull("推理预算不应变成 max_completion_tokens", body.maxCompletionTokens())
+        assertEquals(2048, body.maxTokens())
+    }
+
+    @Test
+    fun `SPE-04 light tier budget never truncates output on generic endpoint`() {
+        // SPE-04 验收：LIGHT 档（budget=256）+ 通用端点 → 请求体不含
+        // max_completion_tokens=256；含 max_tokens=effectiveMaxTokens。
+        val config = LlmConfig(
+            baseUrl = "https://api.example.com/v1", apiKey = "k", model = "some-model",
+            contextWindow = 32_000, reservedOutputTokens = 4096,
+            thinkingBudget = 256
+        )
+        val body = body(config, temperature = 0.5f, maxTokens = 4096)
+        assertNull(body.maxCompletionTokens())
+        assertEquals(4096, body.maxTokens())
+    }
+
+    @Test
+    fun `SPE-04 explicit maxCompletionTokens sends capped output limit`() {
+        // 新字段显式设置 → max_completion_tokens 生效且受 contextWindow 钳制。
+        val config = LlmConfig(
+            baseUrl = "https://api.example.com/v1", apiKey = "k", model = "some-model",
+            contextWindow = 16_000, reservedOutputTokens = 4096, // cap=11904
+            maxCompletionTokens = 8192
+        )
+        val body = body(config, temperature = 0.5f, maxTokens = 2048)
+        assertEquals(8192, body.maxCompletionTokens())
         assertNull(body.maxTokens())
+    }
+
+    @Test
+    fun `SPE-04 apexcode scale budget is clamped to context window`() {
+        // SPE-04 验收：APEXCODE 档 65536 作为输出上限下发 → 钳制在
+        // contextWindow - reservedOutputTokens 内，不再裸 65536（400 防线）。
+        val config = LlmConfig(
+            baseUrl = "https://api.example.com/v1", apiKey = "k", model = "some-reasoner",
+            contextWindow = 32_000, reservedOutputTokens = 4096, // cap=27904
+            reasoningEffort = ReasoningEffort.MAX,
+            capabilities = ModelCapabilities(reasoning = true),
+            maxCompletionTokens = 65_536 // 档位表原值
+        )
+        val body = body(config, temperature = 0.5f, maxTokens = 32_000)
+        assertEquals(27904, body.maxCompletionTokens())
+        assertNull(body.maxTokens())
+    }
+
+    @Test
+    fun `SPE-04 effort max fallback also clamped`() {
+        // ReasoningEffort.MAX 兜底 maxOf(requestedTokens, 8192)：requested
+        // 超大时也要被 contextWindow 钳制（不裸发）。
+        val config = LlmConfig(
+            baseUrl = "https://api.example.com/v1", apiKey = "k", model = "some-reasoner",
+            contextWindow = 16_000, reservedOutputTokens = 4096, // cap=11904
+            reasoningEffort = ReasoningEffort.MAX,
+            capabilities = ModelCapabilities(reasoning = true)
+        )
+        val body = body(config, temperature = 0.5f, maxTokens = 32_000)
+        assertEquals(11904, body.maxCompletionTokens())
+    }
+
+    @Test
+    fun `SPE-04 max_tokens and max_completion_tokens never coexist`() {
+        // SPE-04 验收：任意档位组合下二者不同时出现。
+        val combos = listOf(
+            LlmConfig(baseUrl = "https://api.example.com/v1", apiKey = "k", model = "m"),
+            LlmConfig(baseUrl = "https://api.example.com/v1", apiKey = "k", model = "m", thinkingBudget = 4096),
+            LlmConfig(baseUrl = "https://api.example.com/v1", apiKey = "k", model = "m", maxCompletionTokens = 8192),
+            LlmConfig(
+                baseUrl = "https://api.example.com/v1", apiKey = "k", model = "o3",
+                reasoningEffort = ReasoningEffort.MAX,
+                capabilities = ModelCapabilities(reasoning = true)
+            )
+        )
+        combos.forEach { config ->
+            val body = body(config, temperature = 0.5f, maxTokens = 4096)
+            assertTrue(
+                "max_tokens 与 max_completion_tokens 互斥（model=${config.model}）",
+                body.maxTokens() == null || body.maxCompletionTokens() == null
+            )
+        }
     }
 
     @Test

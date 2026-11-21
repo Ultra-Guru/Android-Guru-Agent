@@ -34,14 +34,15 @@ package com.apex.agent.core.code.thinking
  *
  * AUTO 档：VM 发送前经 [CodeAdaptiveThinkingSelector] 预检解析出具体
  * 深度档（引擎接收的是解析后的档位），本类注入一行「预检自适应」说明 +
- * [AUTO_FALLBACK_DIRECTIVE_LEVEL]（DEEP）的编码纪律兜底。
+ * [AUTO_FALLBACK_DIRECTIVE_LEVEL]（[CodeThinkingLevel.AUTO_FALLBACK_LEVEL]，
+ * SPE-02 P0-3 四处同源）的编码纪律兜底。
  *
  * 纯静态、无副作用；同档位多次调用返回等值字符串（幂等，JIT 刷新安全）。
  */
 object CodeThinkingPrompts {
 
-    /** AUTO 档的编码纪律兜底档（见类 KDoc：自适应实际档位 ≥STANDARD 全适用）。 */
-    val AUTO_FALLBACK_DIRECTIVE_LEVEL: CodeThinkingLevel = CodeThinkingLevel.DEEP
+    /** AUTO 档的编码纪律兜底档（SPE-02 P0-3：与 [CodeThinkingLevel.AUTO_FALLBACK_LEVEL] 同源）。 */
+    val AUTO_FALLBACK_DIRECTIVE_LEVEL: CodeThinkingLevel = CodeThinkingLevel.AUTO_FALLBACK_LEVEL
 
     /**
      * 按档位返回编码特化思考指令（拼进 additionalSystemContext）。

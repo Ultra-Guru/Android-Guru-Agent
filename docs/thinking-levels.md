@@ -44,20 +44,28 @@ AUTO）：
 1. **发送前预检**（`CodeAdaptiveThinkingSelector.select`）：VM 在每次
    发送前按复杂度评分解析出具体深度档，决策进系统消息 +
    `uiState.adaptiveDecision`（选择器旁回显）；
-2. **运行中深水区升级**（`escalateOnDeepWater` 观察器）：本轮工具
-   调用 >30 且最近 3 次成败滑窗内 ≥2 次失败 → 热切换 ULTRACODE +
-   系统消息说明。
+2. **运行中深水区升降档**（`escalateOnDeepWater` / `deescalateOnStabilized`
+   观察器，SPE-02 后带滞回）：本轮工具调用 >30 且最近 3 次成败滑窗内
+   ≥2 次失败 → 热切换 ULTRACODE + 系统消息说明；升级后冷却窗口（15 次
+   调用）内不再重复升/降，冷却结束且连续 5 次成功 → 回落到本轮预检
+   基准档（不再整个 run 锁死 ULTRACODE）；单 run 自动升档次数上限 1 次
+   （成本防线）。
 
-预检评分模型（每项写进决策理由）：
+预检评分模型（每项写进决策理由；SPE-01 后口径升级，理由不回显命中词原文）：
 
 | 维度 | 条件 | 加分 |
 |------|------|------|
-| 文本长度 | >500 字 +2；>1500 字 +3 | 长需求含隐式多步 |
-| 多步指示词 | 先/然后/接着/步骤/first/then/step/plan | +2 |
-| 代码/命令含量 | ``` 围栏 / `$ ` / git·npm·gradle 等 | +2 |
+| 文本长度（有效口径） | 剥离代码围栏/@file/URL 后 >500 字 +2；>1500 字 +3 | 长需求含隐式多步 |
+| 多步指示词 | 然后/接着/步骤/多任务 或词边界 first/then/step/plan | +2 |
+| 代码/命令含量 | ``` 围栏 / `$ ` / 词边界 git·npm·gradle 等 | +2 |
 | **编码意图**（coding 专有） | @file 引用 / CodeEdit·CodeGrep 语义词 / 「实现/重构+函数/类」形态 | **+1** |
-| 风险词 | rm -rf/删除/uninstall/格式化/刷机/权限 | +3（硬保底 DEEP） |
-| 错误史 | 上一轮 run 有失败 | +2 且显式升一档 |
+| 强风险词 | rm -rf/格式化/刷机/factory reset/wipe | +3（硬保底 DEEP） |
+| 弱风险词 | 删除/uninstall/卸载 | +1（不保底） |
+| 语境风险词 | 动作动词搭配的「权限」 | +1（不保底） |
+| 错误史 | 上一轮 run 有失败（换任务时衰减清零） | +2 且显式升一档 |
+
+否定/只读语境（「不要删除」「只读分析」「dry-run」）在命中词前 12 字符
+窗口内 → 风险维度整体抑制。
 
 总分 → 档位：`<3 LIGHT · 3..5 STANDARD · 6..8 DEEP · 9..11 MAXIMUM ·
 >11 ULTRACODE`。另有上轮深水区规则：上轮调用 >30 且错误 ≥2 →
@@ -138,10 +146,12 @@ AUTO）：
 开销与时长。把「最强档」交给启发式自动触发，等于让一个评分函数替
 用户做成本决策——这类决策应保留给人。
 
-**Q: ULTRACODE/APEXCODE 的 thinking_budget 会被 Provider 钳制吗？**
-32768/65536 是发给支持 `thinking.budget_tokens` 类参数 Provider 的
-请求值；个别 Provider 有自己的上限会按其实现钳制（服务端行为），
-客户端按档位如实下发，不预先自我阉割。
+**Q: ULTRACODE/APEXCODE 的 thinking_budget 会被钳制吗？**
+推理预算（`thinking.budget_tokens` 通道）按档位如实下发给支持该参数的
+Provider，个别 Provider 有自己的上限会按其实现钳制（服务端行为）。但
+**输出上限通道**（`max_completion_tokens`）不同：SPE-04 后推理预算不再
+被当作输出上限下发（旧实现会把档位预算变成回答截断线），任何输出上限
+都受 `contextWindow - reservedOutputTokens` 客户端钳制（防 400）。
 
 **Q: 换档位对正在运行的会话生效吗？**
 生效。patchConfig 是运行时通道，下一次迭代即用新画像；原生 effort

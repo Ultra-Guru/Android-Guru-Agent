@@ -117,6 +117,25 @@ fun reconcileStreamText(accumulated: String, fullText: String): String = when {
 }
 
 /**
+ * 头尾双窗截断（SPE-06 P1-4）：长工具输出/长回复在 UI 卡片里的保真裁剪。
+ *
+ * 旧实现 `.take(cap)` 只留**头部**——构建/测试日志里**结尾**的错误摘要
+ * （最关键的信息）永远丢失。头尾双窗保两端：头部 2/3（上下文），尾部
+ * 1/3（错误结论），中间用省略标记交代跳过长度。
+ *
+ * 等价于 [com.apex.agent.core.engine.AgentEvent.ToolCallComplete] 的
+ * messages 通道与工具分片通道共用的截断口径（两处 take(4000) 同款替换，
+ * 消除「分片头 4000 + 完成再头 4000」的重复）。
+ */
+fun tailAwareTruncate(text: String, cap: Int = 4000): String {
+    if (text.length <= cap) return text
+    val headLen = cap * 2 / 3
+    val tailLen = cap - headLen
+    val omitted = text.length - headLen - tailLen
+    return text.take(headLen) + "\n…[中间省略 $omitted 字]…\n" + text.takeLast(tailLen)
+}
+
+/**
  * 流式任务清单条目（PLAN 族参数预览的提取结果）。
  *
  * 字段与 CodeTodoTool.Todo 同构（content/status/priority），刻意不复用
