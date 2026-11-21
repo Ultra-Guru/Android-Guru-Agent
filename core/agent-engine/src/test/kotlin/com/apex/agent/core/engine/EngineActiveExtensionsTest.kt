@@ -34,9 +34,10 @@ class EngineActiveExtensionsTest {
     fun `budget truncates in declared order and keeps thinking line`() {
         // 五行大列表（超 500 token）：从头部按序截（Skills 先丢），
         // Thinking（末行）永不截 + 追加截断标记。
+        // 数据量刻意超预算（≈680 token > 500）：Skills 行 ~420 token 先牺牲
         val lines = listOf(
-            "Skills: " + (1..40).joinToString(", ") { "skill_long_name_number_$it" },
-            "Opened tools: " + (1..40).joinToString(", ") { "ToolLongName$it" },
+            "Skills: " + (1..60).joinToString(", ") { "skill_long_name_number_$it" },
+            "Opened tools: " + (1..60).joinToString(", ") { "ToolLongName$it" },
             "MCP connected: server-a, server-b",
             "Fusion: bundle-x",
             "Thinking: AUTO"
