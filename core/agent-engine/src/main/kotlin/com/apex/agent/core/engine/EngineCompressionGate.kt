@@ -21,7 +21,13 @@ internal suspend fun ApexAgentEngine.maybeCompressContext(emit: suspend (AgentEv
     val compressor = contextCompressor ?: return
 
     val currentTokens = TokenEstimator.estimateHistory(conversationHistory)
-    val thresholdTokens = (config.maxContextTokens *
+    // P99：白名单档位（SettingsRepository.contextPolicyPreset）实时读取——
+    // preset.maxTokens 只会更早压缩（coerceAtMost 引擎窗口，防越窗覆写）；
+    // keepLastN 只裁非 SYSTEM 轮次（压缩器既有语义，SYSTEM 段永不裁）。
+    val policyPreset = contextPolicyPresetProvider()?.let { ContextPreset.from(it) }
+    val thresholdBaseTokens = (policyPreset?.maxTokens ?: config.maxContextTokens)
+        .coerceAtMost(config.maxContextTokens)
+    val thresholdTokens = (thresholdBaseTokens *
         thinkingController.resolveCompressionThreshold(config.compressionThreshold)).toInt()
 
     if (currentTokens <= thresholdTokens) return
@@ -33,7 +39,7 @@ internal suspend fun ApexAgentEngine.maybeCompressContext(emit: suspend (AgentEv
     val report = try {
         compressor.compress(
             history = conversationHistory,
-            preserveRecent = config.preserveRecentTurns
+            preserveRecent = policyPreset?.keepLastN ?: config.preserveRecentTurns
         )
     } catch (e: Exception) {
         // 压缩失败不应该中断主流程，但必须留痕：否则每轮迭代都会无日志地
@@ -48,6 +54,10 @@ internal suspend fun ApexAgentEngine.maybeCompressContext(emit: suspend (AgentEv
 
     // 同步到持久化记忆（如果存在）
     memory?.save(conversationHistory)
+
+    // P99：压缩事实置位（ContextPolicyGet 口径；「压缩前抢救」保护由
+    // SessionContextArchive 既有纪律承担，本门无关闭开关）。
+    lastContextCompressed = true
 
     // 压缩后失效陈旧真实 usage（圆环口径修复 2026-11）：lastRealUsage 是
     // 压缩前全上下文的统计，保留会让 currentTokenCount 在压缩后回跳到

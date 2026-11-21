@@ -132,6 +132,14 @@ class ApexAgentEngine(
      */
     internal val skillActivation: SkillActivationStore? = null,
     /**
+     * P99：上下文治理档位读取（SettingsRepository.contextPolicyPreset 的
+     * 引擎侧通道；null/0 = 宿主默认——压缩门用 config 原值，既有行为零变化）。
+     * 每轮压缩判定前实时读取（Set 下轮生效语义）。var：CodeModule 构造后
+     * 接线赋值（val + 命名构造会挡住既有调用方）。
+     */
+    @Volatile
+    internal var contextPolicyPresetProvider: () -> Int? = { null },
+    /**
      * 长任务韧性守卫：LLM 瞬时错误退避重试 / 空响应重试 / 工具瞬时重试 /
      * 连续失败换路提示。默认启用（长任务需求）；测试可注入
      * EngineResilienceGuard(EngineResiliencePolicy.DISABLED) 回退旧「遇错即停」行为。
@@ -241,6 +249,31 @@ class ApexAgentEngine(
      * EnginePromptAssembly.kt。
      */
     val promptPipeline = PromptStageRunner()
+
+    /**
+     * P99：本轮会话是否已发生压缩（ContextPolicyGet 口径；压缩门置位，
+     * 新 execute 复位——「会话内至少压过一次」语义）。
+     */
+    @Volatile
+    internal var lastContextCompressed = false
+
+    /**
+     * P99：上下文策略状态快照（ContextPolicyGet 工具数据源；引擎侧组装
+     * ——档位/窗口/估算/压缩事实全部同源，不另起计数）。
+     */
+    fun currentContextPolicyState(): ContextPolicyState {
+        val preset = contextPolicyPresetProvider()?.let { ContextPreset.from(it) }
+        return ContextPolicyState(
+            preset = preset,
+            keepLastN = preset?.keepLastN ?: config.preserveRecentTurns,
+            maxTokens = (preset?.maxTokens ?: config.maxContextTokens)
+                .coerceAtMost(config.maxContextTokens),
+            compressed = lastContextCompressed,
+            tokenEstimate = com.apex.agent.core.engine.compression.TokenEstimator
+                .estimateHistory(conversationHistory),
+            line = "deep_dive"
+        )
+    }
 
     /**
      * 工具请求降级等级（0=正常 / 1=纯 CORE 无强制 / 2=无工具）。
@@ -524,6 +557,8 @@ class ApexAgentEngine(
     override fun execute(input: UserInput): Flow<AgentEvent> = flow {
         isRunning = true
         anyActionFailed = false
+        // P99：新会话压缩事实复位（ContextPolicyGet 的「会话内已压缩」口径）。
+        lastContextCompressed = false
         // v4：新任务开始 —— 会话激活的工具不跨任务泄漏；降级状态复位。
         toolActivation.reset()
         toolDegradationLevel = 0

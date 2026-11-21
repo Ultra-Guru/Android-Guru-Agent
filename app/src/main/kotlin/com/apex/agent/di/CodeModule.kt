@@ -330,7 +330,9 @@ object CodeModule {
         // 引擎流不再吃满 5 分钟超时（取消卡死根因）
         userQuestionBridge: com.apex.agent.core.engine.UserQuestionBridge,
         // P97：Prompt 快照源挂载（PromptDump / PromptSectionList 工具数据源）
-        promptPipelineHolder: PromptPipelineHolder
+        promptPipelineHolder: PromptPipelineHolder,
+        // P99：上下文策略状态源（ContextPolicyGet 数据源；压缩门读设置档位）
+        contextPolicyStateHolder: ContextPolicyStateHolder
     ): AgentEngine {
         // 工具循环 v2 + 限速友好：设置层快照拍平进编码引擎（与 Agent 屏
         // AgentModule 同源字段；maxIterations 0 = 无上限哨兵）。
@@ -401,6 +403,12 @@ object CodeModule {
         // P97：深潜线引擎的 Prompt 段级管道挂载（PromptDump / PromptSectionList
         // 的快照源；kit 三线提示词在库内组装不可及，快照 line 字段如实标注）
         promptPipelineHolder.attach(deepDiveDelegate.promptPipeline)
+        // P99：上下文策略状态源挂载（ContextPolicyGet 同源读引擎状态）+
+        // 压缩门档位通道（SettingsRepository.contextPolicyPreset 实时读取）
+        contextPolicyStateHolder.attach(deepDiveDelegate::currentContextPolicyState)
+        deepDiveDelegate.contextPolicyPresetProvider = {
+            settingsRepository.agentSettings.value.contextPolicyPreset.takeIf { it != 0 }
+        }
         // 设置层权限快照源：模式 + 规则三元组实时读取（与 PermissionModeGate
         // 的 settingsProvider 同款模式——改设置即时生效）；含空格的模式串
         // 视为 shell 命令模式（如 "git push*"），其余为工具 id 模式。
