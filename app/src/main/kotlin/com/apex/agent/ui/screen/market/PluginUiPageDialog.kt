@@ -144,8 +144,8 @@ fun PluginUiPageDialog(
                                     ) {
                                         // 资产域请求交 AssetLoader（域/前缀匹配 →
                                         // 边界复核 → 开流；handler 返回 null 时
-                                        // 它兜底 404 响应）
-                                        return assetLoader.shouldInterceptRequest(request)
+                                        // 它兜底 404 响应）。注意官方签名收 Uri。
+                                        return assetLoader.shouldInterceptRequest(url)
                                     }
                                     // 离线自包含契约：其余一切请求（外链/子资源/
                                     // 任意 scheme）以 403 空响应阻断 —— XHR 不走
