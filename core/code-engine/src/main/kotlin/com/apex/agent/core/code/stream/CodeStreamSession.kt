@@ -177,7 +177,6 @@ class CodeStreamSession {
         when (event) {
             // SPE-08 P1-1：流式回合诊断快照（低频观测事件）不进时间轴状态机
             is AgentEvent.StreamTurnStats -> Unit
-
             // 迭代声明不进时间轴（用户反馈：「每次调用工具都显示迭代，这个词
             // 没有意义」）——「第 N 轮迭代」状态行对流程理解零增益，工具胶囊
             // / 思考 / 输出本身已经构成完整时序；轮次统计仍由 Complete 收尾行
