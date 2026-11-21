@@ -81,7 +81,10 @@ internal suspend fun ApexAgentEngine.buildSystemPrompt(planningPhase: Boolean = 
         // Issue #164：全局规则（引擎直注通道；coding 实例不设值，见 updateGlobalRules KDoc）
         globalRules = globalRulesText,
         // 聊天记忆召回（execute() 置位，finally 复位）。
-        memoryContext = chatMemoryNote
+        memoryContext = chatMemoryNote,
+        // P102：本轮激活能力清单（数据源注入——提示词层零 IO；空行集
+        // 整段省略，500 token 预算内按序截断见 EnginePrompts）。
+        activeExtensions = buildActiveExtensions()
     )
     // P97：段级管道（快照供 PromptDump/PromptSectionList 消费；钩子默认
     // 空注册 = 原文直通。toolIds 与请求 tools 数组同源（计划可见集）。
@@ -92,3 +95,34 @@ internal suspend fun ApexAgentEngine.buildSystemPrompt(planningPhase: Boolean = 
         line = "deep_dive"
     )
 }
+
+/**
+ * P102：本轮激活能力清单组装（引擎侧数据源：已激活技能 / 工具激活存储 +
+ * 已连接服务工具 / 当前思考档位；未知状态整行省略——fail-open 不教假事实；
+ * MCP 服务器名与 Fusion 激活集不在引擎可达面，行省略）。
+ */
+internal fun ApexAgentEngine.buildActiveExtensions(): List<String> {
+    val lines = mutableListOf<String>()
+    // 已激活技能（SkillActivate 的会话激活集；与 ## Active Skills 全文注入分工）
+    skillActivation?.snapshot()?.takeIf { it.isNotEmpty() }?.let { ids ->
+        lines += "Skills: " + ids.sorted().joinToString(", ")
+    }
+    // 已展开工具（ToolActivationStore 会话激活 + 已连接服务并入的工具 id，
+    // 上限 24 与 ToolActivationStore.maxActive 同口径）
+    val opened = (toolActivation.snapshot() +
+        (connectedServicesProvider?.connectedToolIds() ?: emptySet()))
+        .sorted()
+        .take(ACTIVE_EXTENSIONS_TOOLS_CAP)
+    if (opened.isNotEmpty()) {
+        lines += "Opened tools: " + opened.joinToString(", ")
+    }
+    // 思考档位（决策关键——预算内永不截断，恒末行）
+    val profile = thinkingController.profileFor(config)
+    val reason = thinkingController.lastDecision?.reason
+    lines += "Thinking: " + profile.level.name + (reason?.let { " (${it.take(REASON_HEAD_CHARS)})" } ?: "")
+    return lines
+}
+
+private const val ACTIVE_EXTENSIONS_TOOLS_CAP = 24
+private const val REASON_HEAD_CHARS = 60
+
