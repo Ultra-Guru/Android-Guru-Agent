@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.Flow
  * | updateGlobalRules / updateSessionExtras / updateForcedTools / updateMode | 四条线同步（廉价缓存写入） |
  * | prepareForTask / updateThinkingLevel / thinkingLevel / 仪表读数 | 当前激活引擎 |
  * | submitPlanConfirmation | 当前激活引擎（四条线各自的人控门互不串扰） |
+ * | applyRuntimeState | 四线同步通道广播 + 档位路由当前线（见 [CodeEngineFacade.applyRuntimeState]） |
  *
  * ## 现场隔离
  *
@@ -43,8 +44,10 @@ import kotlinx.coroutines.flow.Flow
  * 现场保留，切回来继续。用户「新会话」清空四条线（意图 = 全新开始，残留
  * 半截现场反而困惑）。
  *
- * 线程契约：[switchLogic] 仅赋一个 volatile 引用 + 同步四线轻量缓存；
- * 运行中切换由 VM 侧 uiState.isRunning 拦截（发送前判断）。
+ * 线程契约：[switchLogic] 仅赋两个 volatile 字段（引擎引用 + 显式逻辑
+ * 状态，SPE-03 P1-2 同一赋值点）+ 同步四线轻量缓存；运行中切换由 VM 侧
+ * uiState.isRunning 拦截（发送前判断）。切线后档位等运行态由 VM 经
+ * [applyRuntimeState] 整包重放（SPE-03 P1-1，见 CodeLogicModeOps）。
  */
 class DualLogicCodeEngine(
     /** 深潜线（自研思考逻辑）。 */
@@ -66,16 +69,35 @@ class DualLogicCodeEngine(
     private val userQuestionGateway: UserQuestionGateway? = null
 ) : AgentEngine, CodeEngineFacade {
 
+    init {
+        // SPE-03 P1-2：DI 误配防护——四线引用两两互异（引用相等反推旧口径下，
+        // 两条线指向同一实例会静默路由错线；显式状态口径下仍会混淆审计与
+        // kit 可用性判断，构造期即暴露而非运行期静默）。
+        require(deepDive !== standard) { "deepDive 与 standard 不能共用同一实例" }
+        loom?.let { l ->
+            require(l !== deepDive && l !== standard) { "loom 线不能与深潜/标准线共用实例" }
+        }
+        courier?.let { c ->
+            require(c !== deepDive && c !== standard && (loom == null || c !== loom)) {
+                "courier 线不能与其他任何线共用实例"
+            }
+        }
+    }
+
+    /** 当前激活引擎引用（路由用）。 */
     @Volatile
     private var active: CodeEngineFacade = deepDive
 
-    /** 当前思考逻辑（持久化由 VM 侧负责，本类只持有运行态）。 */
-    fun activeLogic(): StandardLogicMode = when (active) {
-        standard -> StandardLogicMode.STANDARD
-        loom -> StandardLogicMode.LOOM
-        courier -> StandardLogicMode.COURIER
-        else -> StandardLogicMode.DEEP_DIVE
-    }
+    /**
+     * 当前思考逻辑（SPE-03 P1-2：显式状态字段，与 [active] 在
+     * [switchLogic] 同一赋值点同步写入——替代旧「引用相等 when 反推」，
+     * DI 误配/新增第五条线不再改变正确性；持久化由 VM 侧负责）。
+     */
+    @Volatile
+    private var activeMode: StandardLogicMode = StandardLogicMode.DEEP_DIVE
+
+    /** 当前思考逻辑（显式状态直读，不再反推）。 */
+    fun activeLogic(): StandardLogicMode = activeMode
 
     /**
      * 切换思考逻辑。
@@ -91,6 +113,7 @@ class DualLogicCodeEngine(
         }
         if (active === target) return true
         active = target
+        activeMode = mode // 与 active 同一赋值点（P1-2：避免双字段漂移）
         AppLogger.instance.info(
             LogCategory.SYSTEM, TAG,
             "Coding thinking-logic switched to ${mode.persistenceName}"
@@ -205,8 +228,6 @@ class DualLogicCodeEngine(
         active.updateThinkingLevel(level)
 
     override fun thinkingLevel(): CodeThinkingLevel = active.thinkingLevel()
-
-    override fun currentThinkingDecision(): String? = active.currentThinkingDecision()
 
     override fun historyCount(): Int = active.historyCount()
 

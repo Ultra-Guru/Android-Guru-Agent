@@ -117,6 +117,25 @@ AUTO）：
 | 引擎同步 | `CodeAgentEngine.updateThinkingLevel`：三通道（①档位映射 ②旋钮补偿 ③编码指令） |
 | 原生 effort | T1 通道（默认 Profile 持久化 + 即时重建）；AUTO 档不动 effort |
 | AUTO 可解释 | 预检决策进 `adaptiveDecision` + 「🧠 自适应预检：…」系统消息；深水区升级「⚠️」系统消息 |
+| 四线统一（SPE-03 P1，2026-11） | `EngineRuntimeState` 运行态快照：切线后整包重放档位/模式/自主级别/规则（切完即读即一致）；`DualLogicCodeEngine` 显式 `activeMode` 字段替代引用反推 + 构造期 DI 误配防护；旋钮补偿除数实时读引擎 `ThinkingProfile` 表（常量变更端到端等式恒成立，契约测试锁定） |
+
+### 四线统一与档位映射一致性（SPE-03 P1，2026-11 批次）
+
+- **切线零滞留**：`CodeLogicModeOps.setLogicMode / restoreLogicMode` 切线后经
+  `applyRuntimeState(engineRuntimeSnapshot())` 整包重放（档位路由当前线、
+  四线同步通道广播幂等刷新）——「设置 ULTRACODE → 切 LOOM → 立刻读
+  `thinkingLevel()`」不再依赖下一次发送前的预检刷新；
+- **显式状态**：`DualLogicCodeEngine.activeLogic()` 直读 `activeMode` 显式
+  字段（`switchLogic` 与引擎引用同一赋值点写入）；构造期 `require` 四线
+  引用两两互异，DI 误配即刻暴露；
+- **枚举收口**：`StandardLogicMode` 三布尔改为派生属性（单一事实源 =
+  枚举自身），持久化别名集中进 `LEGACY_ALIASES`（仅读不写回）；
+- **决策来源统一**：`currentThinkingDecision()` 从 `CodeEngineFacade`
+  移除——UI 一律读 `CodeUiState.adaptiveDecision`（VM 四线统一预检/升降档
+  的唯一回显通道），旧口径 kit 三线恒 null 易误判「本轮无决策」；
+- **补偿去硬编码**：`compensatedMaxIterations` 除数实时读
+  `ThinkingProfile.forLevel(level.toAgentLevel()).maxIterationsScale`（引擎
+  常量变更 → 公式自动跟随，契约测试读表断言全档位端到端等式）。
 
 ### 档位描述文案
 

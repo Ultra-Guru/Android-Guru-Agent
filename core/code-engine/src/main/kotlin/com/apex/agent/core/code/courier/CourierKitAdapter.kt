@@ -255,7 +255,6 @@ class CourierKitAdapter(
 
     override fun thinkingLevel(): CodeThinkingLevel = engine.thinkingLevel().toHost()
 
-    override fun currentThinkingDecision(): String? = engine.currentThinkingDecision()
 
     override fun clearConversation() {
         engine.clearConversation()

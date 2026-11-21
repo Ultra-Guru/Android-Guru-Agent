@@ -1,5 +1,8 @@
 package com.apex.agent.core.llm
 
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.intOrNull
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -154,7 +157,14 @@ data class LlmStreamChunk(
      * 引擎据此刷新上下文仪表盘（替代纯启发式估算，用户可看到服务端返回的
      * 真实 token 数）。仅携带 usage 的统计帧其余字段均为默认值。
      */
-    val usage: Usage? = null
+    val usage: Usage? = null,
+    /**
+     * SPE-08 P1-1：本回合（chatStream 调用）的流式诊断快照——仅随**流尾
+     * 最后一帧**携带（其余帧恒 null，默认值零改动）；引擎转
+     * `AgentEvent.StreamTurnStats` 上抛，诊断页「最近 N 次流式回合」消费。
+     * 成功 / 截断 / 断流异常路径都会带上（诊断优先于异常上抛）。
+     */
+    val diagnostics: StreamDiagnostics? = null
 )
 
 data class ToolCall(
@@ -187,3 +197,20 @@ data class ToolDefinition(
     val description: String,
     val parameters: String  // JSON Schema string
 )
+
+/**
+ * 解析 usage 里的缓存命中 token（OpenAI 兼容端点：`prompt_tokens_details.
+ * cached_tokens`；Anthropic 兼容字段 `cache_read_input_tokens` 兜底）。
+ *
+ * 两个安全口径：`prompt_tokens_details` 可能缺席 / 为 null / 非对象（部分
+ * 中转站裁剪该字段）——`as? JsonObject` 静默降级 0；数值宽容 `intOrNull`
+ * （容忍字符串 / 小数形态），与两条 usage 解析路径同口径。
+ * SPE-08 批次自 StreamingOpenAiClient 迁入（文件行数预算，Usage 数据类的同族职责）。
+ */
+internal fun parseCachedTokens(usage: JsonObject): Int {
+    (usage["prompt_tokens_details"] as? JsonObject)?.let { details ->
+        details["cached_tokens"]?.jsonPrimitive?.intOrNull?.let { return it }
+    }
+    usage["cache_read_input_tokens"]?.jsonPrimitive?.intOrNull?.let { return it }
+    return 0
+}

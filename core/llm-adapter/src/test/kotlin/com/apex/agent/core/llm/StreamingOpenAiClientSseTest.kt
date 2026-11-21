@@ -175,8 +175,9 @@ class StreamingOpenAiClientSseTest {
         val chunks = client().chatStream(
             listOf(LlmMessage.User("hi")), emptyList(), 0.5f, 100
         ).toList()
-        // 心跳行不产生 chunk：仅正文+完成帧与 [DONE] 帧。
-        assertEquals(2, chunks.size)
+        // 心跳行不产生 chunk：正文+完成帧与 [DONE] 帧（SPE-08 P1-1 后流尾
+        // 另有一帧诊断快照——content 为 null，无正文语义）。
+        assertEquals(3, chunks.size)
         assertTrue(chunks.any { it.content == "ok" })
     }
 

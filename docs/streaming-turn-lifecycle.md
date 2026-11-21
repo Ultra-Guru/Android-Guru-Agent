@@ -81,6 +81,19 @@ finalizeEngineTurn(turnJob)  守卫式幂等收尾：
    —— 不得裸 `viewModelScope.launch`（绕过 finally 兜底即回到旧世界）；
 4. 引擎历史变更（restore/clear）前必须先 `await taskController.cancel()`。
 
+## 4.5 Coding 屏入口核对（SPE-08 P1-3，2026-11 批次）
+
+Agent 屏检查单在 Coding 屏（`CodeViewModel.runEngine`）逐入口核对：
+
+| 入口 | 核对结果 |
+|---|---|
+| `sendMessage`（含斜杠单 chip / 多 chip 管线 → 统一收敛到 runEngine） | `runJob = viewModelScope.launch` + **try/finally 兜底**：finally 冲残留缓冲 → isRunning=false → 停 ticker → 长任务收尾 → 通知/落盘，任何退出路径不复位缺口 |
+| 模板启动 / resume / retry | 同 runEngine 收口（prepareEngineContext 在 runJob 内，收尾顺序契约同 §2 关键不变式） |
+| 排队接力 `finalizeQueuedTaskAfterRun` | 位于 finally 末段 + **turnJob 守卫**（`runJob === turnJob` 才接力——本 finally 期间被更新的 run 接管后不再自动接力，新意图优先、旧收尾不踩新执行态） |
+| `restoreChatSession` / `newChat`（clearConversationWithArchive） | 先取消旧 run（`runJob?.cancel()`）再动历史；CodeEventReducer 的 resetAdaptiveThinkingSignals 均非运行中调用 |
+| runJob / renderJob 取消顺序 | finally 统一序：冲残留 → isRunning=false → `stopRenderTicker()`（停前冲最后快照，SPE-07 P1-4 统一 `_uiState.update` 口径）→ onRunSettled → 追加收尾 |
+| 错误与残留文本时序 | catch 内**先冲正文/分片再发 Error**（SPE-08 P1-4：错误条永远在最后一段正文之后，旧口径时序倒挂已修） |
+
 ## 5. 验证
 
 - 门禁：`kotlin_balance.py`（7 文件）/ `check_file_size.sh` / `check_code_quality.sh` / `check_string_mirror.py` 全绿；

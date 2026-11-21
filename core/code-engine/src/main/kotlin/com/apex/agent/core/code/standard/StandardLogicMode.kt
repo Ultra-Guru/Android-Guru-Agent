@@ -58,44 +58,52 @@ package com.apex.agent.core.code.standard
  * （未知值回退深潜，脏值不致崩溃）。
  */
 enum class StandardLogicMode(
-    /** 持久化名（小写稳定，跨版本兼容）。 */
-    val persistenceName: String,
-    /** 是否标准任务循环引擎。 */
-    val isStandard: Boolean,
-    /** 是否织造引擎。 */
-    val isLoom: Boolean,
-    /** 是否信使引擎。 */
-    val isCourier: Boolean
+    /** 持久化名（小写稳定，跨版本兼容；**唯一**合法写入值）。 */
+    val persistenceName: String
 ) {
     /** 深潜（自研思考逻辑，v1.2 既有行为）。 */
-    DEEP_DIVE("deep_dive", isStandard = false, isLoom = false, isCourier = false),
+    DEEP_DIVE("deep_dive"),
 
     /** 标准（业界标准 Agent 任务循环）。 */
-    STANDARD("standard", isStandard = true, isLoom = false, isCourier = false),
+    STANDARD("standard"),
 
     /** 织造（经纬交织范式：in-band 协议 + 梭回合机 + 子线程群）。 */
-    LOOM("loom", isStandard = false, isLoom = true, isCourier = false),
+    LOOM("loom"),
 
     /** 信使（驿传调度范式：收发匣 + 趟次步进机 + 勘合门 + 下站前哨）。 */
-    COURIER("courier", isStandard = false, isLoom = false, isCourier = true);
+    COURIER("courier");
+
+    /** 是否标准任务循环引擎（SPE-03 P1-3：派生属性，单一事实源=枚举自身）。 */
+    val isStandard: Boolean get() = this == STANDARD
+
+    /** 是否织造引擎（派生属性，构造期即排除非法组合）。 */
+    val isLoom: Boolean get() = this == LOOM
+
+    /** 是否信使引擎（派生属性，构造期即排除非法组合）。 */
+    val isCourier: Boolean get() = this == COURIER
 
     companion object {
         /**
+         * 历史别名 → 规范档（**仅读**：迁移兼容，不作新写入值——
+         * `persistenceName` 才是唯一合法写回值，别名命中只出现在
+         * 旧版本升级后的首次恢复）。
+         *
+         * - 深潜："deep"/"apex"/"custom"（早期实验名，一律折叠深潜防脏值切线）；
+         * - 标准 "std"、织造 "weave"、信使 "express"。
+         */
+        private val LEGACY_ALIASES: Map<String, StandardLogicMode> = mapOf(
+            "deep" to DEEP_DIVE, "apex" to DEEP_DIVE, "custom" to DEEP_DIVE,
+            "std" to STANDARD, "weave" to LOOM, "express" to COURIER
+        )
+
+        /**
          * 持久化字符串解析（大小写不敏感；空/未知 → null 由调用方兜底深潜）。
          *
-         * 同时接受历史值 "custom"/"apex"（早期实验名）一律折叠为深潜，
-         * 防止脏值把用户无声切进新引擎。
+         * 先查规范名表，再查 [LEGACY_ALIASES]；未知值 → null。
          */
-        fun fromName(name: String?): StandardLogicMode? =
-            name?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
-                ?.let { raw ->
-                    when (raw) {
-                        DEEP_DIVE.persistenceName, "deep", "apex", "custom" -> DEEP_DIVE
-                        STANDARD.persistenceName, "std" -> STANDARD
-                        LOOM.persistenceName, "weave" -> LOOM
-                        COURIER.persistenceName, "express" -> COURIER
-                        else -> null
-                    }
-                }
+        fun fromName(name: String?): StandardLogicMode? {
+            val raw = name?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: return null
+            return entries.firstOrNull { it.persistenceName == raw } ?: LEGACY_ALIASES[raw]
+        }
     }
 }

@@ -1,10 +1,12 @@
 package com.apex.agent.core.code.standard
 
 import com.apex.agent.core.code.CodeEngineFacade
+import com.apex.agent.core.code.EngineRuntimeState
 import com.apex.agent.core.code.thinking.CodeThinkingLevel
 import com.apex.agent.core.engine.AgentEngine
 import com.apex.agent.core.engine.AgentEvent
 import com.apex.agent.core.engine.AgentMode
+import com.apex.agent.core.engine.AutonomyLevel
 import com.apex.agent.core.engine.UserInput
 import java.io.File
 import kotlinx.coroutines.flow.Flow
@@ -12,6 +14,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -21,9 +24,10 @@ import org.junit.Test
  */
 class DualLogicCodeEngineTest {
 
-    /** 记录型假门面（实现 CodeEngineFacade 全契约）。 */
+    /** 记录型假门面（实现 CodeEngineFacade 全契约；档位字段状态化，SPE-03 验收用）。 */
     private class RecordingFacade(private val tag: String) : CodeEngineFacade {
         val calls = mutableListOf<String>()
+        var tier: CodeThinkingLevel = CodeThinkingLevel.STANDARD
 
         override fun execute(input: String): Flow<AgentEvent> = flow {
             emit(AgentEvent.ResponseChunk("[$tag]"))
@@ -46,14 +50,19 @@ class DualLogicCodeEngineTest {
             calls += "plan:$confirmed"
             return true
         }
+        override fun updateAutonomy(level: AutonomyLevel?, preClarify: Boolean) {
+            calls += "autonomy:${level?.name ?: "null"}:$preClarify"
+        }
         override fun updateSessionExtras(extras: String?) { calls += "extras" }
         override fun updateRolePersona(roleDefinition: String, rolePrompt: String?) { calls += "persona" }
         override fun updateForcedTools(forcedToolIds: Set<String>, exposeAll: Boolean) {
             calls += "forced"
         }
-        override fun updateThinkingLevel(level: CodeThinkingLevel) { calls += "tier:${level.name}" }
-        override fun thinkingLevel(): CodeThinkingLevel = CodeThinkingLevel.STANDARD
-        override fun currentThinkingDecision(): String? = null
+        override fun updateThinkingLevel(level: CodeThinkingLevel) {
+            calls += "tier:${level.name}"
+            tier = level
+        }
+        override fun thinkingLevel(): CodeThinkingLevel = tier
         override fun clearConversation() { calls += "clear" }
         override fun historyCount(): Int = 1
         override fun currentWorkspace(): com.apex.agent.core.code.CodeAgentEngine.WorkspaceInfo? = null
@@ -258,5 +267,133 @@ class DualLogicCodeEngineTest {
         assertEquals(10, dual.currentTokenCount())
         dualEngine.switchLogic(StandardLogicMode.LOOM)
         assertEquals(10, dual.currentTokenCount())
+    }
+
+    // ═══ SPE-03 P1-2：显式状态 + 构造防护 ═══
+
+    @Test
+    fun `explicit active mode field tracks every switch`() {
+        val deep = RecordingFacade("deep")
+        val std = RecordingFacade("std")
+        val loom = RecordingFacade("loom")
+        val courier = RecordingFacade("courier")
+        val dual = DualLogicCodeEngine(
+            deepDive = deep, standard = std, loom = loom, courier = courier
+        )
+        // 默认深潜 → 显式字段同源
+        assertEquals(StandardLogicMode.DEEP_DIVE, dual.activeLogic())
+        // 逐线切换：activeLogic（显式状态字段）逐次跟随（execute 路由一致性由首测覆盖）
+        listOf(
+            StandardLogicMode.STANDARD,
+            StandardLogicMode.LOOM,
+            StandardLogicMode.COURIER,
+            StandardLogicMode.DEEP_DIVE
+        ).forEach { mode ->
+            assertTrue(dual.switchLogic(mode))
+            assertEquals(mode, dual.activeLogic())
+        }
+    }
+
+    @Test
+    fun `duplicate line instances fail fast at construction`() {
+        val deep = RecordingFacade("deep")
+        val std = RecordingFacade("std")
+        val loom = RecordingFacade("loom")
+        // deepDive 与 standard 同实例 → 构造期拒绝（SPE-03 P1-2 DI 误配防护）
+        assertThrows(IllegalArgumentException::class.java) {
+            DualLogicCodeEngine(deepDive = deep, standard = deep)
+        }
+        // loom 与 standard 同实例 → 同样拒绝
+        assertThrows(IllegalArgumentException::class.java) {
+            DualLogicCodeEngine(deepDive = deep, standard = std, loom = std)
+        }
+        // courier 与 loom 同实例 → 同样拒绝
+        assertThrows(IllegalArgumentException::class.java) {
+            DualLogicCodeEngine(deepDive = deep, standard = std, loom = loom, courier = loom)
+        }
+    }
+
+    // ═══ SPE-03 P1-1：运行态快照整包重放 ═══
+
+    @Test
+    fun `applyRuntimeState replays full snapshot to target line after switch`() {
+        val deep = RecordingFacade("deep")
+        val std = RecordingFacade("std")
+        val loom = RecordingFacade("loom")
+        val dual = DualLogicCodeEngine(deepDive = deep, standard = std, loom = loom)
+        assertTrue(dual.switchLogic(StandardLogicMode.LOOM))
+
+        dual.applyRuntimeState(
+            EngineRuntimeState(
+                thinkingLevel = CodeThinkingLevel.ULTRACODE,
+                mode = AgentMode.PLAN,
+                autonomy = AutonomyLevel.FULLY,
+                preClarify = true,
+                replayAutonomy = true,
+                globalRules = "rule-1",
+                sessionExtras = "extras-1",
+                rolePersona = "expert" to "hint",
+                forcedToolIds = setOf("CodeRead"),
+                exposeAllTools = true
+            )
+        )
+
+        // 四线同步通道广播到所有线（规则/extras/人设/强制工具）
+        listOf(deep, std, loom).forEach { facade ->
+            assertTrue(facade.calls.contains("rules"))
+            assertTrue(facade.calls.contains("extras"))
+            assertTrue(facade.calls.contains("persona"))
+            assertTrue(facade.calls.contains("forced"))
+            assertTrue(facade.calls.contains("mode:PLAN"))
+            assertTrue(facade.calls.contains("autonomy:FULLY:true"))
+        }
+        // 档位路由当前激活线（LOOM）：切完即读即一致，无需等下一次发送
+        assertEquals(CodeThinkingLevel.ULTRACODE, dual.thinkingLevel())
+        assertEquals(CodeThinkingLevel.ULTRACODE, loom.tier)
+        assertTrue(loom.calls.contains("tier:ULTRACODE"))
+    }
+
+    @Test
+    fun `snapshot nullable channels are skipped not cleared`() {
+        val deep = RecordingFacade("deep")
+        val std = RecordingFacade("std")
+        val dual = DualLogicCodeEngine(deepDive = deep, standard = std)
+        // 先写入完整状态
+        dual.updateSessionExtras("keep-me")
+        dual.updateRolePersona("persona-keep", null)
+        // 最小快照：只重放档位 + 模式；其余通道缺席 = 不重放（不清空）
+        dual.applyRuntimeState(
+            EngineRuntimeState(
+                thinkingLevel = CodeThinkingLevel.DEEP,
+                mode = AgentMode.BUILD
+            )
+        )
+        // 缺席通道未收到清空调用（extras/persona 只在最初写入过一次）
+        assertEquals(1, std.calls.count { it == "extras" })
+        assertEquals(1, std.calls.count { it == "persona" })
+        // 档位路由当前激活线（默认深潜）；模式广播四线
+        assertTrue(deep.calls.contains("tier:DEEP"))
+        assertTrue(std.calls.contains("mode:BUILD"))
+    }
+
+    @Test
+    fun `tier carries over across switches without waiting for next send`() {
+        val deep = RecordingFacade("deep")
+        val std = RecordingFacade("std")
+        val loom = RecordingFacade("loom")
+        val courier = RecordingFacade("courier")
+        val dual = DualLogicCodeEngine(
+            deepDive = deep, standard = std, loom = loom, courier = courier
+        )
+        // 设置 ULTRACODE（深潜线，切线前）
+        dual.updateThinkingLevel(CodeThinkingLevel.ULTRACODE)
+        // 四线各切一遍：模拟 CodeLogicModeOps 口径——switchLogic 后整包重放
+        // 档位快照；每线立刻读档位都应一致（SPE-03 验收 #1：无需等发送前刷新）
+        listOf(StandardLogicMode.STANDARD, StandardLogicMode.LOOM, StandardLogicMode.COURIER)
+            .forEach { mode ->
+                assertTrue(dual.switchLogic(mode))
+                dual.applyRuntimeState(EngineRuntimeState(CodeThinkingLevel.ULTRACODE))
+                assertEquals("切到 $mode 并重放快照后立刻读档位应为 ULTRACODE", CodeThinkingLevel.ULTRACODE, dual.thinkingLevel())
+            }
     }
 }

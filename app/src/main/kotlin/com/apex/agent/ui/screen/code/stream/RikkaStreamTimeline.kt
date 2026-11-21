@@ -83,8 +83,14 @@ internal fun RikkaStreamTimeline(
     // ═══ 完整档切片（与胶囊时间轴同款）：生成中只留用户输入及更早的
     // 终态内容，本轮过程条目静默——切片是纯派生视图，session 数据不变 ═══
     val completeActive = isStreaming && renderMode == CodeOutputMode.COMPLETE
-    val visibleEntries = remember(snapshot.entries, completeActive) {
-        if (completeActive) completeModeVisibleEntries(snapshot.entries) else snapshot.entries
+    // SPE-07 P1-4：完整档切片缓存 —— remember 键用 (entries.size, completeActive)：
+    // 流式文本分片走 replaceEntry 原位合并（size 不变）→ 不再每拍全量重扫切片；
+    // beginRun 追加 UserEntry / 新条目（size 变化）自动失效重算。流式档恒
+    // 直读快照（零切片零缓存——remember 键含快照实例会退化为每拍重算）。
+    val visibleEntries = if (completeActive) {
+        remember(snapshot.entries.size, completeActive) { completeModeVisibleEntries(snapshot.entries) }
+    } else {
+        snapshot.entries
     }
     // Rikka 分段：连续工具胶囊（跨族）聚合为一块——聊天形态下工具过程
     // 整体收进抽屉，台面只留结论气泡与聚合块头行。

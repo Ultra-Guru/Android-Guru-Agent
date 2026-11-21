@@ -22,11 +22,13 @@ internal class ResponseAggregator {
         buffer.append(text)
     }
 
-    /** 冲刷缓冲 → 归约（无内容零开销；调用方传 [reduce] 出口）。 */
-    fun flush(reduce: (AgentEvent) -> Unit) {
-        if (buffer.isEmpty()) return
+    /** 冲刷缓冲 → 归约（无内容零开销；调用方传 [reduce] 出口）。
+     * @return true = 本拍有文本上屏（SPE-07 P1-1 空闲检测输入）。 */
+    fun flush(reduce: (AgentEvent) -> Unit): Boolean {
+        if (buffer.isEmpty()) return false
         val text = buffer.toString()
         buffer.setLength(0)
         reduce(AgentEvent.ResponseChunk(text))
+        return true
     }
 }

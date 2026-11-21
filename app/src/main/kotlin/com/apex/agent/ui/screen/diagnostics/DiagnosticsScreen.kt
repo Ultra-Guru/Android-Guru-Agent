@@ -34,6 +34,7 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Smartphone
+import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AlertDialog
@@ -132,7 +133,9 @@ data class DiagnosticsUiState(
     /** 最近工具/终端调用审计（tool-audit.jsonl）。 */
     val toolCalls: List<ToolAuditLogger.AuditEntry> = emptyList(),
     /** 失败子集（success=false / 拒绝类决策，含命令与详情现场）。 */
-    val failures: List<ToolAuditLogger.AuditEntry> = emptyList()
+    val failures: List<ToolAuditLogger.AuditEntry> = emptyList(),
+    /** SPE-08 P1-1：最近 N 次流式回合诊断（首 token 延迟/帧间隔分位/丢帧/收尾）。 */
+    val streamTurns: List<DiagRow> = emptyList()
 )
 
 @HiltViewModel
@@ -193,7 +196,8 @@ class DiagnosticsViewModel @Inject constructor(
                     mcpServers = mcpRows,
                     skills = skillRows,
                     toolCalls = toolCallRows,
-                    failures = failureRows
+                    failures = failureRows,
+                    streamTurns = collector.streamTurnRows()
                 )
             }
             // 保留 busy/report* 旗标：刷新绝不打断进行中的报告生成或吞掉未消费的结果
@@ -308,6 +312,8 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
 
     var appExpanded by remember { mutableStateOf(true) }
     var deviceExpanded by remember { mutableStateOf(false) }
+    // SPE-08 P1-1：流式回合区默认展开（诊断页主力区，空态自动隐藏整节）
+    var streamTurnsExpanded by remember { mutableStateOf(true) }
     var viewer by remember { mutableStateOf<ViewerTarget?>(null) }
     var viewerContent by remember { mutableStateOf<ViewerContent?>(null) }
     // #228：查看器重试驱动 —— 变更 key 触发下方 LaunchedEffect 重新读取
@@ -400,6 +406,19 @@ fun DiagnosticsScreen(viewModel: DiagnosticsViewModel = hiltViewModel()) {
                     onToggle = { deviceExpanded = !deviceExpanded },
                     rows = state.deviceInfo
                 )
+            }
+
+            // ── 最近流式回合（SPE-08 P1-1：空态自动隐藏）──
+            if (state.streamTurns.isNotEmpty()) {
+                item {
+                    InfoSectionCard(
+                        title = stringResource(R.string.diag_stream_turns_section),
+                        icon = Icons.Outlined.Timeline,
+                        expanded = streamTurnsExpanded,
+                        onToggle = { streamTurnsExpanded = !streamTurnsExpanded },
+                        rows = state.streamTurns
+                    )
+                }
             }
 
             // ── 崩溃记录 ──

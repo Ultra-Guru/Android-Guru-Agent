@@ -124,6 +124,6 @@ CI 以原始字符计数检查 `.kt` 文件的括号配对（含字符串/注释
 ### 后续路线（独立任务）
 
 - **P1 增量 Markdown 渲染器**：现 `MarkdownText` 为 `remember(markdown)` 全量解析（流式尾段每 tick 重解析、有界但非增量）。方向：块级增量解析（已完成区块缓存 + 活动区块单独更新 + 未闭合围栏容错 + 代码块闭合后才语法高亮）。涉及 `MarkdownParser` 结构改造，独立 PR。
-- **P2 动态刷新频率**：25ms 固定档 → 按设备负载 16/25/33ms 自适应。
-- **P2 流式诊断**：首 token 延迟 / 数据间隔 / 丢弃计数上报诊断页（`SseFrameReader` 已结构化心跳/超长行计数；TaskRuntime 的 droppedUnderPressure 日志可继续结构化）。
+- ~~P2 动态刷新频率~~ → **已实施（SPE-07 P1-1，2026-11）**：`RenderTickerPolicy` 忙三档 16/25/33ms 按单拍负载升降 + 空闲降频（50ms 巡逻 → 250ms 深巡逻，30s 空闲唤醒数降 ≥89%）+ 事件唤醒通道（合流信号打断巡逻延迟，空闲期首 token ≤ 1 拍上屏）；`stopRenderTicker` 统一 `_uiState.update` 口径 + 完整档切片缓存（`remember(entries.size)`，见 CodeStreamTimeline / RikkaStreamTimeline）。
+- ~~P2 流式诊断~~ → **已实施（SPE-08 P1-1，2026-11）**：`StreamDiagnostics` 回合级快照（首 token 延迟 / 帧间隔 P50·P95 / 帧账本 received·parsed·dropped / 截断与收尾原因 / usageSource）随 `chatStream` 流尾上抛 → `LlmStreamChunk.diagnostics` → `AgentEvent.StreamTurnStats` → `StreamTurnDiagnosticsStore`（最近 10 回合环形）→ 诊断页「最近流式回合」区 + 诊断报告 device.txt 段；看门狗（`NoFirstToken` 首 token 软超时 / `StreamStalled` 心跳停滞内联判定 / `ContentFiltered` 独立文案）与用量来源徽标（上下文仪表盘「真实（服务端）/估算/未获取」）同批落地。
 - **P2 长输出内存**：messages 路径 4000 字工具输出截断已升级为头尾双窗（SPE-06）；长回复分段落盘仍留后续。

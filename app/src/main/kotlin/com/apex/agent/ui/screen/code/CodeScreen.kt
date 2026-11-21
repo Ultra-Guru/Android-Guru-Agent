@@ -696,7 +696,8 @@ fun CodeScreen(
                 contextMaxTokens = state.contextMaxTokens,
                 sessionInputTokens = state.sessionInputTokens,
                 sessionOutputTokens = state.sessionOutputTokens,
-                sessionCachedTokens = state.sessionCachedTokens
+                sessionCachedTokens = state.sessionCachedTokens,
+                usageSource = state.usageSource
             ),
             onDismiss = { showContextSheet = false }
         )

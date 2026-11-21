@@ -209,7 +209,20 @@ sealed interface AgentEvent {
          * 缓存命中率 = cachedTokens / promptTokens）。 */
         val cachedTokens: Int = 0
     ) : AgentEvent
-    
+
+    /**
+     * SPE-08 P1-1：一次 LLM 流式回合的诊断快照（每次 chatStream 调用随流尾
+     * 上抛一条；低频事件，不冲击流式管线）。
+     *
+     * 采集点链路：`StreamingOpenAiClient.chatStream`（帧级）→
+     * `LlmStreamChunk.diagnostics` → 本事件 → VM 收束进诊断存储
+     * （诊断页「最近 N 次流式回合」）。字段语义见
+     * [com.apex.agent.core.llm.StreamDiagnostics]。
+     */
+    data class StreamTurnStats(
+        val diagnostics: com.apex.agent.core.llm.StreamDiagnostics
+    ) : AgentEvent
+
     /** 需要用户输入/确认 */
     data class UserInputRequired(
         val prompt: String,

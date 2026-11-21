@@ -899,6 +899,8 @@ class ApexAgentEngine(
                 }
                 // 真实用量统计帧（流尾帧）：记录 + 发射 UsageUpdated。
                 recordAndEmitUsage(chunk.usage, emit)
+                // SPE-08 P1-1：流式回合诊断快照（流尾一帧）→ 诊断页消费。
+                chunk.diagnostics?.let { emit(AgentEvent.StreamTurnStats(it)) }
                 // 多模态输出：模型生成的图片/视频转 markdown 注入回复流
                 //（复用 ResponseChunk 管线直达 UI）。
                 MediaMarkdown.from(chunk.images, chunk.videos)?.let { mediaMd ->

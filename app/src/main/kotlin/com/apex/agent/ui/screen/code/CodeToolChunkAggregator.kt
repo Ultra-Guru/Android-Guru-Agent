@@ -39,9 +39,10 @@ internal class ToolChunkAggregator {
 }
 
 /** 冲刷工具分片缓冲 → 归约（无内容零开销）。callId 置空：reducer 按
- *  「当前活跃工具消息」定位（发言权协议下单活跃，见类 KDoc）。 */
-internal fun CodeViewModel.flushToolChunks() {
-    toolChunkAggregator.flushOrNull()?.let { text ->
-        reduce(AgentEvent.ToolOutputChunk(callId = "", chunk = text))
-    }
+ *  「当前活跃工具消息」定位（发言权协议下单活跃，见类 KDoc）。
+ *  @return true = 本拍有分片上屏（SPE-07 P1-1 空闲检测输入）。 */
+internal fun CodeViewModel.flushToolChunks(): Boolean {
+    val text = toolChunkAggregator.flushOrNull() ?: return false
+    reduce(AgentEvent.ToolOutputChunk(callId = "", chunk = text))
+    return true
 }

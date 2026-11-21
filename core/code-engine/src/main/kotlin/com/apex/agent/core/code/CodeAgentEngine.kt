@@ -254,12 +254,6 @@ class CodeAgentEngine(
     /** 当前思考档位（UI 回显用，coding 七档枚举）。 */
     override fun thinkingLevel(): CodeThinkingLevel = currentCodeThinkingLevel
 
-    /**
-     * 当前档位最近一次自适应决策说明（发送前预检/运行中升级由 VM 侧
-     * CodeAdaptiveThinkingSelector 产生并自行展示——引擎侧仅透传通用
-     * 引擎的 AUTO 可解释性通道，coding 正常路径不产生非空值）。
-     */
-    override fun currentThinkingDecision(): String? = delegate.currentThinkingDecision()
 
     /** 清当前工作区的对话历史（新会话）。 */
     override fun clearConversation() {
@@ -320,6 +314,14 @@ class CodeAgentEngine(
         // ═══ coding 七档思考系统：编码特化思考指令（NONE 档返回空串自动跳过）═══
         // 通用思考画像（推理框架 + 预算倍率）由引擎配置层的 thinkingLevel
         // 承载（updateThinkingLevel 三通道同步），此处只补编码方法论。
+        // SPE-03 P1-6：AUTO 到此即防御分支（VM 发送前 resolveRuntimeThinkingLevel
+        // 已解析具体档）——留痕告警便于发现未覆盖的入口，正常路径零出现。
+        if (currentCodeThinkingLevel == CodeThinkingLevel.AUTO) {
+            AppLogger.instance.warn(
+                LogCategory.LLM, TAG,
+                "Defensive path: AUTO reached code directive layer without VM pre-check resolution"
+            )
+        }
         CodeThinkingPrompts.thinkingDirective(currentCodeThinkingLevel)
             .takeIf { it.isNotEmpty() }
             ?.let { segments += it }

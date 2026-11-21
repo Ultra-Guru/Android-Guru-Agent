@@ -8,26 +8,69 @@ import com.apex.agent.core.engine.AutonomyLevel
 import java.io.File
 
 /**
- * # Code Engine Facade — Coding 屏引擎对外契约（双思考逻辑共用）
+ * SPE-03 P1-1：四线统一运行态快照 —— 切换思考逻辑线后整包重放目标线，
+ * 替代散落的一两行 update\* 补写（旧口径只补 mode+档位，其余通道靠
+ * 四线同步 API 的副作用链，无契约保障）。
  *
- * Coding 屏的「思考逻辑」有两条引擎线（见 [StandardLogicMode]）：
+ * 可空通道语义 =「不重放」：null 字段在 [CodeEngineFacade.applyRuntimeState]
+ * 中被跳过（保留目标线现有缓存），调用方按需增量重放；非空字段语义与
+ * 对应 update\* 通道逐字相同（如 sessionExtras = "" 即清空）。
+ *
+ * [replayAutonomy] 独立成标志位而非以 autonomy==null 判缺席：
+ * `updateAutonomy(null, …)` 本身是合法指令（PLAN 模式清除自主级别），
+ * 与「不重放该通道」语义不可共用同一可空位。
+ */
+data class EngineRuntimeState(
+    /** 思考档位（七档；AUTO 由 VM 发送前预检解析后传入具体档）。 */
+    val thinkingLevel: CodeThinkingLevel,
+    /** 执行模式（BUILD/PLAN；null = 不重放）。 */
+    val mode: AgentMode? = null,
+    /** 自主级别（null = 清除指令，仅当 [replayAutonomy] 时生效）。 */
+    val autonomy: AutonomyLevel? = null,
+    /** 前置澄清开关（与 autonomy 同通道）。 */
+    val preClarify: Boolean = false,
+    /** 是否重放自主级别通道（false = 跳过，见类 KDoc）。 */
+    val replayAutonomy: Boolean = false,
+    /** 全局规则（null = 不重放；空串 = 清空）。 */
+    val globalRules: String? = null,
+    /** 会话附加段（null = 不重放；空串 = 清空）。 */
+    val sessionExtras: String? = null,
+    /** 角色人设（definition + 自定义提示词；null = 不重放）。 */
+    val rolePersona: Pair<String, String?>? = null,
+    /** 强制工具集（null = 不重放）。 */
+    val forcedToolIds: Set<String>? = null,
+    /** 强制工具模式下是否全量暴露其余工具（与 forcedToolIds 同通道）。 */
+    val exposeAllTools: Boolean = false
+)
+
+/**
+ * # Code Engine Facade — Coding 屏引擎对外契约（四思考逻辑线共用）
+ *
+ * Coding 屏的「思考逻辑」有四条引擎线（见 [StandardLogicMode]）：
  * - **深潜**（[CodeAgentEngine]，自研七档思考）；
- * - **标准**（`StandardKitAdapter` → standard-loop 库，业界标准 Agent 任务循环）。
+ * - **标准**（`StandardKitAdapter` → standard-loop 库，业界标准 Agent 任务循环）；
+ * - **织造**（`LoomKitAdapter` → loom-weave 库，经纬交织范式）；
+ * - **信使**（`CourierKitAdapter` → courier-dispatch 库，驿传调度范式）。
  *
- * 两条线都实现本接口，[CodeViewModel] 只面向本接口编程，
+ * 四条线都实现本接口，[CodeViewModel] 只面向本接口编程，
  * [com.apex.agent.core.code.standard.DualLogicCodeEngine] 按
  * [StandardLogicMode] 把调用路由到当前激活引擎——VM 永远不知道
  * 「背后换引擎了」，胶囊时间轴 / 长任务追踪 / 权限问答闭环
- * （全部消费 AgentEvent）自然两线通用。
+ * （全部消费 AgentEvent）自然四线通用。
  *
  * 方法清单 = `CodeViewModel` 实际使用的 `codeEngineImpl.*` 调用面
  * （签名与 [CodeAgentEngine] 逐一对齐，深潜线零改动即实现）。
+ *
+ * 自适应决策说明已从本接口移除（SPE-03 P1-4 统一决策来源）：
+ * UI 一律读 `CodeUiState.adaptiveDecision`（VM 侧四线统一预检/
+ * 升降档的唯一回显通道），引擎侧不再各自暴露可能为 null 的
+ * 决策快照——旧口径 kit 三线恒 null，新调用方易误判「本轮无决策」。
  */
 interface CodeEngineFacade : AgentEngine {
 
     /**
      * 切换激活的编码工作区：绑定 per-workspace 记忆 + 重放该工作区
-     * 历史 + 刷新 JIT 上下文。双引擎门面会把本调用同步到**两条**引擎线
+     * 历史 + 刷新 JIT 上下文。门面会把本调用同步到**四条**引擎线
      * （各自独立记忆通道，切回时现场不丢）。
      */
     fun setActiveWorkspace(
@@ -92,8 +135,26 @@ interface CodeEngineFacade : AgentEngine {
     /** 当前思考档位（UI 回显用）。 */
     fun thinkingLevel(): CodeThinkingLevel
 
-    /** 最近一次自适应决策说明（标准引擎恒 null——它没有 AUTO 预检通道）。 */
-    fun currentThinkingDecision(): String?
+    /**
+     * SPE-03 P1-1：一次性重放运行态快照（默认实现拆解为既有 update\* 通道，
+     * 四条线零新增实现负担；四线同步通道在 [DualLogicCodeEngine] 广播，
+     * 档位路由当前激活线）。
+     *
+     * 调用时机：① 切线后对目标线重放（消除档位缓存滞留，切完即读即一致，
+     * 无需等下一次发送）；② 发送前整包收口（prepareEngineContext 语义化）。
+     * 可空通道跳过语义见 [EngineRuntimeState] KDoc。
+     */
+    fun applyRuntimeState(state: EngineRuntimeState) {
+        updateThinkingLevel(state.thinkingLevel)
+        state.mode?.let { updateMode(it) }
+        if (state.replayAutonomy) {
+            updateAutonomy(state.autonomy, state.preClarify)
+        }
+        state.globalRules?.let { updateGlobalRules(it) }
+        state.sessionExtras?.let { updateSessionExtras(it) }
+        state.rolePersona?.let { (definition, prompt) -> updateRolePersona(definition, prompt) }
+        state.forcedToolIds?.let { updateForcedTools(it, state.exposeAllTools) }
+    }
 
     /** 清空当前工作区的对话历史（新会话）。 */
     fun clearConversation()

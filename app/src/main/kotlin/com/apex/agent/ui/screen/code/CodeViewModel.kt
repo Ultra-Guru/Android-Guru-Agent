@@ -63,6 +63,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -182,7 +183,10 @@ class CodeViewModel @Inject constructor(
     // ═══ v6 Git 工作区（右上角面板直读）：PRoot 沙箱 git 执行器 ═══
     private val gitRunner: com.apex.agent.core.codetools.git.GitCommandRunner,
     // v1.3 设备分级采样（PartSkin spec §7.9.2）：冷启动/会话边界采样一次
-    internal val deviceTierProvider: com.apex.agent.ui.screen.settings.DeviceTierProvider
+    internal val deviceTierProvider: com.apex.agent.ui.screen.settings.DeviceTierProvider,
+    // SPE-08 P1-1：流式回合诊断存储（诊断页「最近 N 次流式回合」；
+    // 收束入口见 CodeStreamDiagnosticsOps.kt）
+    internal val streamTurnStore: com.apex.agent.diagnostics.StreamTurnDiagnosticsStore
 ) : ViewModel() {
 
     // ═══ v1.6 工作区浏览器（全屏页，apex-kit-workspace）═══
@@ -206,14 +210,21 @@ class CodeViewModel @Inject constructor(
     private var sessionLoadJob: Job? = null
 
     // ═══ 胶囊时间轴（渲染通道数据源）═══
-    // 渲染半边：事件归约进 session，25ms ticker 拉快照进 uiState.stream；副作用
+    // 渲染半边：事件归约进 session，自适应 ticker（SPE-07 P1-1，16/25/33ms
+    // 忙档 + 50/250ms 空闲巡逻 + 事件唤醒）拉快照进 uiState.stream；副作用
     // 半边（长任务追踪/深水区观察器/落盘）仍走既有 reduce——双通道彻底分流。
 
     /** 胶囊时间轴会话（VM 自持，跨 run 累积；恢复/清空见 bind/clear）。 */
     internal val streamSession = CodeStreamSession()
 
-    /** 渲染 ticker：运行期每 25ms 拉一次快照（≤40Hz 攒批）。 */
+    /** 渲染 ticker：运行期按 [renderTickerPolicy] 自适应节拍拉快照。 */
     internal var renderJob: Job? = null
+
+    /** 渲染节拍自适应策略（SPE-07 P1-1，纯状态机，见 CodeRenderTickerPolicy.kt）。 */
+    internal val renderTickerPolicy = RenderTickerPolicy()
+
+    /** 事件唤醒信号（合流至多 1 个 pending；事件到达即打断 ticker 的巡逻延迟）。 */
+    internal val renderWakeSignal = Channel<Unit>(Channel.CONFLATED)
 
     /** 回复聚合器（P1 Event Aggregator，类与纪律见 CodeResponseAggregator.kt）。 */
     internal val responseAggregator = ResponseAggregator()
@@ -620,6 +631,12 @@ class CodeViewModel @Inject constructor(
         startRenderTicker()
 
         runJob = viewModelScope.launch {
+            // SPE-08 P1-3：本回合 job 快照（finally 守卫用——排队接力只在
+            // 「runJob 仍是本回合」时启动，被更新的 run 接管后不再踩线）。
+            // 取 coroutineContext[Job] 而非读 runJob 字段：viewModelScope 是
+            // Main.immediate——主线程调用时块体会先于字段赋值同步执行，
+            // 此时 runJob 仍是旧值。
+            val turnJob = coroutineContext[Job]
             _uiState.update { it.copy(isRunning = true, error = null, errorRetriable = false) }
             // perf P0-2:全局规则同步 / 画像·聚合·经验段组装 / AUTO 预检 /
             // prepareForTask(同步磁盘 IO)整体迁出 UI 线程,点击发送不再冻结;
@@ -631,6 +648,9 @@ class CodeViewModel @Inject constructor(
                     longTaskTracker.onEvent(event)
                     roleExperience.onEvent(event)
                     maybeEscalateOnDeepWater(event)
+                    // SPE-07 P1-1：事件到达即唤醒渲染拍（空闲巡逻期间首
+                    // token ≤ 1 拍上屏；合流信号零堆积）
+                    renderWakeSignal.trySend(Unit)
                     if (event is AgentEvent.ThinkingChunk && event.text.contains(GOAL_NOTICE_MARKER)) {
                         // v3 GOAL：验收结论不走思考卡（默认折叠只有 80 字预览，
                         // 且下一轮 ThinkingComplete 会整体覆写文本吞掉通知）
@@ -667,6 +687,12 @@ class CodeViewModel @Inject constructor(
                 // abort 或 VM 清理：静默
             } catch (e: Exception) {
                 // collect 异常没有 Error 事件：收束空占位并保留已生成内容。
+                // SPE-08 P1-4：先冲残留正文/分片再上错误条——正文永远在错误
+                // 条之前（旧口径 catch 先发 Error、finally 后冲，时间轴上
+                // 错误条会出现在最后一段正文之前）；finally 保留同款冲刷
+                //（幂等：缓冲已空零开销），覆盖取消/正常收束路径。
+                flushToolChunks()
+                responseAggregator.flush { reduce(it) }
                 val message = sanitizeErrorText(e)
                 streamSession.onEvent(AgentEvent.Error(message, recoverable = true))
                 showError(message, retriable = true)
@@ -706,7 +732,12 @@ class CodeViewModel @Inject constructor(
                 if (_uiState.value.longTaskSheetVisible) refreshLongTasks()
                 scheduleSessionPersist()
                 // 任务排队收尾（干净完成 → 自动接力；失败/中止 → 等确认，见 QueuedTaskPolicy）
-                finalizeQueuedTaskAfterRun(taskStatus)
+                // SPE-08 P1-3 收尾守卫：本 finally 期间若已被更新的 run 接管
+                //（用户直接发新消息等），旧 run 不再自动接力排队任务——
+                // 新意图优先，旧收尾不踩新执行态（streaming-turn-lifecycle 检查单）。
+                if (runJob === turnJob) {
+                    finalizeQueuedTaskAfterRun(taskStatus)
+                }
             }
         }
     }
@@ -1147,7 +1178,7 @@ class CodeViewModel @Inject constructor(
     fun toolCallById(call: StreamToolCall): StreamToolCall = call
 
     internal companion object {
-        /** 渲染攒批窗口：25ms = 上限 40Hz（Pipeline 2.0 目标带 16~33ms 取中）。 */
-        const val RENDER_TICK_MS = 25L
+        // 旧 RENDER_TICK_MS 固定 25ms 常量已删除（SPE-07 P1-1）：节拍单一
+        // 事实源迁至 RenderTickerPolicy（忙三档 16/25/33 + 空闲巡逻 50/250）。
     }
 }

@@ -238,6 +238,20 @@ private fun UsageStatsCard(snapshot: CodeContextSnapshot, usage: CodeSessionUsag
                     stringResource(R.string.code_context_usage_cache_na)
                 }
             )
+            // SPE-08 P1-4：用量来源徽标——统计帧到达 = 真实（服务端）；缺失
+            // 时明确「未获取」，不再让用户静默质疑「已用 token 是假的」。
+            usage?.usageSource?.let { source ->
+                UsageRow(
+                    label = stringResource(R.string.code_context_usage_source),
+                    value = stringResource(
+                        when (source) {
+                            com.apex.agent.core.llm.UsageSource.REAL -> R.string.code_usage_source_real
+                            com.apex.agent.core.llm.UsageSource.ESTIMATED -> R.string.code_usage_source_estimated
+                            com.apex.agent.core.llm.UsageSource.MISSING -> R.string.code_usage_source_missing
+                        }
+                    )
+                )
+            }
             UsageRow(
                 label = stringResource(R.string.code_context_usage_messages),
                 value = stringResource(R.string.code_context_usage_tokens_fmt, snapshot.entries.size)

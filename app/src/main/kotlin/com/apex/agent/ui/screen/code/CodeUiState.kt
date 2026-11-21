@@ -6,6 +6,7 @@ import com.apex.agent.core.code.stream.CodeStreamSnapshot
 import com.apex.agent.core.code.thinking.CodeThinkingLevel
 import com.apex.agent.core.codetools.tools.CodeTodoTool
 import com.apex.agent.core.engine.goal.GoalRuntimeState
+import com.apex.agent.core.llm.UsageSource
 import com.apex.agent.platform.code.ws.CodeWorkspace
 import com.apex.agent.ui.screen.code.editor.EditorFile
 
@@ -66,6 +67,12 @@ data class CodeUiState(
     val sessionOutputTokens: Int = 0,
     /** 命中缓存的输入侧 token 累计（端点不返回时恒 0 → 详情页显示「暂无数据」）。 */
     val sessionCachedTokens: Int = 0,
+    /**
+     * SPE-08 P1-4：用量来源徽标（真实（服务端）/估算/未获取）——统计帧
+     * 到达 = REAL；缺失 = MISSING（ESTIMATED 留给启发式估算路径）。
+     * null = 本会话尚无流式回合（不显示徽标）。上下文仪表盘消费。
+     */
+    val usageSource: UsageSource? = null,
 
     // ── 思考档位（coding 专属七档）──
     // 选择器直改 + AgentSettings.codeThinkingLevel 持久化，引擎侧三通道
@@ -180,7 +187,9 @@ data class CodeSessionUsage(
     /** 本会话累计输出侧 token。 */
     val sessionOutputTokens: Int,
     /** 本会话累计命中缓存的输入侧 token。 */
-    val sessionCachedTokens: Int
+    val sessionCachedTokens: Int,
+    /** SPE-08 P1-4：用量来源徽标（真实（服务端）/估算/未获取；null = 尚无回合）。 */
+    val usageSource: UsageSource? = null
 )
 
 /**
