@@ -25,9 +25,13 @@ class PlaybookRegistryTest {
 
     private lateinit var registry: PlaybookRegistry
 
+    /** 与 [registry] 同一存储目录（重开/篡改断言必须同路径）。 */
+    private lateinit var storeDir: File
+
     @Before
     fun setUp() {
-        registry = PlaybookRegistry(storageDir = tmp.newFolder("playbooks"))
+        storeDir = tmp.newFolder("playbooks")
+        registry = PlaybookRegistry(storageDir = storeDir)
     }
 
     private fun userPlaybook(id: String = "user_pb_1") = PlaybookDefinition(
@@ -53,7 +57,7 @@ class PlaybookRegistryTest {
     @Test
     fun `重开注册表 roundtrip 持久化`() = runTest {
         registry.save(userPlaybook())
-        val reopened = PlaybookRegistry(storageDir = tmp.root)
+        val reopened = PlaybookRegistry(storageDir = storeDir)
         assertEquals("自定义剧本", reopened.get("user_pb_1")!!.name)
     }
 
@@ -81,12 +85,12 @@ class PlaybookRegistryTest {
     fun `篡改内置条目加载时自愈回出厂定义`() = runTest {
         registry.reseedBuiltIns()
         // 模拟外部改写磁盘 JSON（老版本遗留 / 手改）。
-        val file = File(tmp.root, "playbooks.json")
+        val file = File(storeDir, "playbooks.json")
         val payload = file.readText()
             .replace("代码审查剧本", "被篡改的名字")
         file.writeText(payload)
 
-        val reopened = PlaybookRegistry(storageDir = tmp.root)
+        val reopened = PlaybookRegistry(storageDir = storeDir)
         val healed = reopened.get(BuiltinPlaybooks.ALL.first().id)!!
         assertEquals("代码审查剧本", healed.name)
     }
@@ -96,7 +100,7 @@ class PlaybookRegistryTest {
         registry.reseedBuiltIns()
         registry.incrementUsage(BuiltinPlaybooks.ALL.first().id)
         registry.incrementUsage(BuiltinPlaybooks.ALL.first().id)
-        val reopened = PlaybookRegistry(storageDir = tmp.root)
+        val reopened = PlaybookRegistry(storageDir = storeDir)
         assertEquals(2L, reopened.get(BuiltinPlaybooks.ALL.first().id)!!.usageCount)
     }
 
@@ -108,7 +112,7 @@ class PlaybookRegistryTest {
 
         // 留下运行元数据（usageCount）：自愈保留它，force 才整体还原出厂定义。
         registry.incrementUsage("builtin_playbook_test_cases")
-        val reopened = PlaybookRegistry(storageDir = tmp.root)
+        val reopened = PlaybookRegistry(storageDir = storeDir)
         assertEquals(1L, reopened.get("builtin_playbook_test_cases")!!.usageCount)
         val restored = kotlinx.coroutines.runBlocking { reopened.reseedBuiltIns(force = true) }
         assertEquals(1, restored)
@@ -136,17 +140,17 @@ class PlaybookRegistryTest {
     @Test
     fun `损坏 JSON 备份后空库启动`() = runTest {
         registry.save(userPlaybook())
-        File(tmp.root, "playbooks.json").writeText("{not-json")
-        val reopened = PlaybookRegistry(storageDir = tmp.root)
+        File(storeDir, "playbooks.json").writeText("{not-json")
+        val reopened = PlaybookRegistry(storageDir = storeDir)
         assertTrue(reopened.list().isEmpty())
-        assertTrue(File(tmp.root, "playbooks.json.corrupt").exists())
+        assertTrue(File(storeDir, "playbooks.json.corrupt").exists())
     }
 
     @Test
     fun `原子写无 temp 残留`() = runTest {
         registry.save(userPlaybook())
-        assertFalse(File(tmp.root, "playbooks.json.tmp").exists())
-        assertTrue(File(tmp.root, "playbooks.json").exists())
+        assertFalse(File(storeDir, "playbooks.json.tmp").exists())
+        assertTrue(File(storeDir, "playbooks.json").exists())
     }
 
     @Test
