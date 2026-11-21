@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 任务剧本（task-playbooks）UI 文案（中文）。镜像纪律：values/ 与 values-zh/ 键一一对应。 -->
+<resources>
+    <!-- 建议条 -->
+    <string name="playbook_suggest_title">检测到「%1$s」相关任务 → 挂载剧本？</string>
+    <string name="playbook_suggest_accept">挂载</string>
+    <string name="playbook_suggest_dismiss">本次不用</string>
+    <!-- 挂载态 chip -->
+    <string name="playbook_chip_label">剧本《%1$s》·幕%2$d/%3$d</string>
+    <!-- 幕进度弹层 -->
+    <string name="playbook_sheet_title">剧本《%1$s》· 幕进度</string>
+    <string name="playbook_sheet_hint">点击任意幕跳转；卸载在下一轮发送生效。</string>
+    <string name="playbook_stage_item_fmt">幕%1$d</string>
+    <string name="playbook_stage_done">已完成</string>
+    <string name="playbook_stage_current">进行中</string>
+    <string name="playbook_stage_pending">待办</string>
+    <string name="playbook_unmount">卸载剧本</string>
+    <!-- 幕推进系统消息 -->
+    <string name="playbook_stage_advanced">剧本《%1$s》推进至幕%2$d（%3$s）</string>
+    <string name="playbook_stage_stayed">剧本《%1$s》仍在幕%2$d：产出需以本幕章节头开始。</string>
+    <string name="playbook_completed">剧本《%1$s》已完成 🎉</string>
+    <!-- 工坊手递手 -->
+    <string name="playbook_send_to_code">发送到 Coding 屏</string>
+    <string name="playbook_handoff_title">工坊生成的提示词已就绪，可发送</string>
+    <string name="playbook_handoff_send">发送</string>
+    <string name="playbook_handoff_discard">丢弃</string>
+</resources>

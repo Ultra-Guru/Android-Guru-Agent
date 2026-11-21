@@ -35,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
@@ -468,6 +469,10 @@ fun CodeScreen(
                         onDiscard = viewModel::discardPendingSkinChange
                     )
 
+                    // ═══ task-playbooks：建议条/手递手条/幕进度弹层组合入口 ═══
+                    var showPlaybookSheet by remember { mutableStateOf(false) }
+                    CodePlaybookBarsSection(viewModel, showPlaybookSheet) { showPlaybookSheet = false }
+
                     // ═══ #197 模式 + 思考档位选择器行（Build/Plan 双档 + 七档思考）═══
                     //（GOAL 切入的弹层/深潜线保障在 VM setMode → onEnterGoalMode 单点，
                     // 此处保持纯方法引用——选择器与 init 恢复共用同一路径）
@@ -481,6 +486,8 @@ fun CodeScreen(
                             .horizontalScroll(rememberScrollState())
                             .padding(horizontal = 12.dp, vertical = 2.dp)
                     ) {
+                        // task-playbooks：挂载态剧本 chip（sheet 入口）
+                        CodePlaybookChipMount(viewModel) { showPlaybookSheet = true }
                         AgentRoleSelector(
                             current = activeCodingRole,
                             roles = codingRoles,
