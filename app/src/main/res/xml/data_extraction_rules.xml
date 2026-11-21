@@ -19,11 +19,14 @@
         <exclude domain="sharedpref" path="vault_prefs_fallback.xml" />
         <exclude domain="sharedpref" path="apex_secure_settings.xml" />
         <exclude domain="sharedpref" path="apex_secure_settings_fallback.xml" />
-        <!-- S-05：逆向 MCP Host 的 Bearer token（McpHostManager，明文 prefs）；
+        <!-- S-05：逆向 MCP Host 的 Bearer token（McpHostManager）；
              PulseMCP 凭据（PulseMcpCredentialsStore，EncryptedSharedPreferences
              + keystore 失配时的明文 fallback）—— 与上方六项同源缺口：
-             密文迁移到新机必触发明文降级，明文 token 更不该出设备。 -->
+             密文迁移到新机必触发明文降级，明文 token 更不该出设备。
+             #818：token 迁入 mcp_host_secure_prefs（Keystore 绑定密文）——
+             同样排除（迁移必解密失败，新机重新生成即可）。 -->
         <exclude domain="sharedpref" path="mcp_host_prefs.xml" />
+        <exclude domain="sharedpref" path="mcp_host_secure_prefs.xml" />
         <exclude domain="sharedpref" path="pulse_mcp_secure_prefs.xml" />
         <exclude domain="sharedpref" path="pulse_mcp_secure_prefs-fallback.xml" />
         <!-- Git 审计 P2-10（#836）：file domain 一并排除——logs/ 含
@@ -50,8 +53,10 @@
         <exclude domain="sharedpref" path="apex_secure_settings_fallback.xml" />
         <!-- S-05：同 cloud-backup —— 凭据类 prefs 不随设备迁移出设备。
              Git 审计 P2-10 + 记忆 P0（#836 补全）：file domain 同源排除
-             （审计日志/崩溃现场/ANR 转储/MCP 配置/记忆库本体/沙箱本体）。 -->
+             （审计日志/崩溃现场/ANR 转储/MCP 配置/记忆库本体/沙箱本体）；
+             #818：mcp_host_secure_prefs 密文同排除。 -->
         <exclude domain="sharedpref" path="mcp_host_prefs.xml" />
+        <exclude domain="sharedpref" path="mcp_host_secure_prefs.xml" />
         <exclude domain="sharedpref" path="pulse_mcp_secure_prefs.xml" />
         <exclude domain="sharedpref" path="pulse_mcp_secure_prefs-fallback.xml" />
         <exclude domain="file" path="logs/" />

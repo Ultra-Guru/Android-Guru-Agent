@@ -108,15 +108,18 @@ class UnifiedPluginRegistry(
         store.manifestOf(id)?.contributions?.ui.orEmpty()
 
     /**
-     * 功能性插件 UI 入口的绝对文件（WebView file:// 装载用）：
+     * 功能性插件 UI 页面目标（root + entry 对，app 层资产域装载用）：
      * `plugins/functional/<id>/<entry>` 的 canonical 拼接；文件不存在或
      * canonical path 逃逸插件目录（运行期复核，防手改磁盘）返回 null。
+     *
+     * v1.5.75（#818）：入口由 file:// 改 https 资产域装载 —— 渲染面需要
+     * 插件根目录作边界复核基准，原「只返回 entry 绝对路径」的形状不够。
      */
-    fun functionalUiEntryFile(id: String, entry: String): java.io.File? = runCatching {
+    fun functionalUiTarget(id: String, entry: String): Pair<java.io.File, java.io.File>? = runCatching {
         val dir = store.pluginDirOf(id).canonicalFile
         val target = java.io.File(dir, entry.trim()).canonicalFile
         if (!target.path.startsWith(dir.path + java.io.File.separator)) null
-        else target.takeIf { it.isFile }
+        else if (target.isFile) dir to target else null
     }.getOrNull()
 
     /**

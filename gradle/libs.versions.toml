@@ -70,6 +70,10 @@ compose-material-icons = "1.7.8"
 # 1.10.3 消费端可用）；仅引 compose 核心（不引 m2/m3 主题模块，避免与本项目
 # Material3 主题冲突）。
 vico = "1.13.1"
+# androidx.webkit —— WebViewAssetLoader（#818）：功能性插件 UI 页的 file:// 域
+# 根除方案。1.12.1 稳定线：minSdk 21 / compileSdk 34+，本项目 compileSdk 36
+# 完全覆盖；WebViewCompat 特性检测为 no-op（资产域映射不依赖平台版本）。
+webkit = "1.12.1"
 
 [libraries]
 # Compose
@@ -153,6 +157,9 @@ workspace-explorer = { group = "com.apex.workspace", name = "workspace-explorer"
 
 # Vico 开源图表库（Maven Central，稳定线 1.13.1）—— 任务历史/记忆统计可视化
 vico-compose = { group = "com.patrykandpatrick.vico", name = "compose", version.ref = "vico" }
+
+# WebViewAssetLoader（androidx.webkit 稳定线）—— 插件 UI 页 https 资产域映射
+androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
 
 # Room
 room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
