@@ -3,6 +3,7 @@ package com.apex.agent.ui.screen.code
 import com.apex.agent.R
 import com.apex.agent.core.engine.AgentEvent
 import com.apex.agent.core.engine.templates.playbook.PlaybookAdvanceJudge
+import kotlinx.coroutines.launch
 
 /**
  * 任务剧本 Ops 扩展（CodeViewModel internal 扩展，Ops 拆分模式同
@@ -47,6 +48,28 @@ internal fun CodeViewModel.maybeAdvancePlaybook(event: AgentEvent) {
                     )
                 )
             }
+        }
+    }
+}
+
+/**
+ * 工具通道 advance 命令收集（VM init 单行调用，viewModelScope 常驻）：
+ * PlaybookTool.advance → store.commands → 控制器手动推进 → 系统消息 +
+ * extras 热重织（与回包判定推进同一收口）。
+ */
+internal fun CodeViewModel.collectPlaybookCommands() {
+    viewModelScope.launch {
+        playbookSessionStore.commands.collect { command ->
+            val outcome = playbookController.manualAdvance(command.fromStageIndex) ?: return@collect
+            appendSystemMessage(
+                languageManager.getString(
+                    R.string.playbook_stage_advanced,
+                    outcome.playbookName,
+                    outcome.newStageIndex + 1,
+                    outcome.reason
+                )
+            )
+            repushPlaybookExtras()
         }
     }
 }

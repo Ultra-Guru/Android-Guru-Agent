@@ -33,10 +33,13 @@ class CodePlaybookControllerTest {
     }
 
     private fun controller(): CodePlaybookController {
-        val controller = CodePlaybookController({ autoMount }, registry)
+        val controller = CodePlaybookController({ autoMount }, registry, PlaybookSessionStore())
         controller.onMountRecorded = { mountRecorded.add(it) }
         return controller
     }
+
+    private fun controllerWithoutStore(): CodePlaybookController =
+        CodePlaybookController({ autoMount }, registry)
 
     @Test
     fun `suggest 档命中出建议不直接挂载`() {
@@ -166,5 +169,48 @@ class CodePlaybookControllerTest {
     fun `非挂载态推进判定返回 null`() {
         val controller = controller()
         assertNull(controller.onAdvanceJudged("【幕1·x】" + "y".repeat(200)))
+    }
+
+    // ═══ PR-C 工具通道 ═══
+
+    @Test
+    fun `挂载后快照发布到 store 卸载清空`() {
+        autoMount = "auto"
+        val store = PlaybookSessionStore()
+        val controller = CodePlaybookController({ autoMount }, registry, store)
+        controller.prepareForRun("基串", "帮我审查这段代码", hasWorkspace = true)
+        val snapshot = store.snapshot.value
+        assertNotNull(snapshot)
+        assertEquals("builtin_playbook_code_review", snapshot!!.playbookId)
+        assertEquals(0, snapshot.stageIndex)
+        assertEquals(4, snapshot.stageCount)
+        controller.unmount()
+        assertNull(store.snapshot.value)
+    }
+
+    @Test
+    fun `manualAdvance 信任直推并刷新快照`() {
+        autoMount = "auto"
+        val controller = controller()
+        controller.prepareForRun("基串", "帮我审查这段代码", hasWorkspace = true)
+        val outcome = controller.manualAdvance(fromStageIndex = 0)!!
+        assertEquals("ADVANCED", outcome.kind.name)
+        assertEquals(1, controller.state.value.mounted!!.stageIndex)
+        assertEquals(listOf(0), controller.state.value.mounted!!.completedStages)
+        // 幕序不符拒绝。
+        assertNull(controller.manualAdvance(fromStageIndex = 0))
+        // 末幕手动推进拒绝（由完成标记收尾）。
+        controller.jumpToStage(3)
+        assertNull(controller.manualAdvance(fromStageIndex = 3))
+    }
+
+    @Test
+    fun `无 store 构造不崩（纯 UI 态兼容）`() {
+        val bare = controllerWithoutStore()
+        autoMount = "auto"
+        bare.prepareForRun("基串", "帮我审查这段代码", hasWorkspace = true)
+        assertNotNull(bare.state.value.mounted)
+        bare.unmount()
+        assertNull(bare.state.value.mounted)
     }
 }
