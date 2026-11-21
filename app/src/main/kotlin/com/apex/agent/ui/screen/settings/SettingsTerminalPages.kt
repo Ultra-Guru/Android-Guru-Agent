@@ -31,6 +31,7 @@ import com.apex.agent.R
 import com.apex.agent.ui.screen.terminal.CommandPolicyStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import androidx.compose.foundation.layout.Column
 
 /**
  * 设置中心「终端」大分类（T97 裁剪版）。
