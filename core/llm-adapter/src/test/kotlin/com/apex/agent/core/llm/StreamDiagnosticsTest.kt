@@ -123,7 +123,7 @@ class StreamDiagnosticsTest {
     }
 
     /** 收集 + 捕获异常（截断/过滤路径流尾抛错，诊断帧在异常前已上抛）。 */
-    private fun collectWithThrowable(vararg blocks: String): Pair<List<LlmStreamChunk>, Throwable?> {
+    private suspend fun collectWithThrowable(vararg blocks: String): Pair<List<LlmStreamChunk>, Throwable?> {
         server.enqueue(sse(*blocks))
         val collected = mutableListOf<LlmStreamChunk>()
         val error = try {
