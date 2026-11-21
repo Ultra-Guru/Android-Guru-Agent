@@ -3,6 +3,7 @@ package com.apex.agent.ui.screen.code
 import com.apex.agent.R
 import com.apex.agent.core.engine.AgentEvent
 import com.apex.agent.core.engine.templates.playbook.PlaybookAdvanceJudge
+import kotlinx.coroutines.launch
 
 /**
  * 任务剧本 Ops 扩展（CodeViewModel internal 扩展，Ops 拆分模式同
