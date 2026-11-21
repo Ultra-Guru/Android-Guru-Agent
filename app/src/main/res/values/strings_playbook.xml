@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 任务剧本（task-playbooks）UI 文案。镜像纪律：values/ 与 values-zh/ 键一一对应。 -->
+<resources>
+    <!-- 建议条 -->
+    <string name="playbook_suggest_title">检测到「%1$s」相关任务 → 挂载剧本？</string>
+    <string name="playbook_suggest_accept">Mount</string>
+    <string name="playbook_suggest_dismiss">Not now</string>
+    <!-- 挂载态 chip -->
+    <string name="playbook_chip_label">Playbook “%1$s” · Stage %2$d/%3$d</string>
+    <!-- 幕进度弹层 -->
+    <string name="playbook_sheet_title">Playbook “%1$s” · Stage Progress</string>
+    <string name="playbook_sheet_hint">Tap a stage to jump; unmount takes effect on next send.</string>
+    <string name="playbook_stage_item_fmt">Stage %1$d</string>
+    <string name="playbook_stage_done">done</string>
+    <string name="playbook_stage_current">current</string>
+    <string name="playbook_stage_pending">pending</string>
+    <string name="playbook_unmount">Unmount</string>
+    <!-- 幕推进系统消息 -->
+    <string name="playbook_stage_advanced">Playbook “%1$s” → stage %2$d ( %3$s )</string>
+    <string name="playbook_stage_stayed">Playbook “%1$s” stays at stage %2$d: output must start with the stage header.</string>
+    <string name="playbook_completed">Playbook “%1$s” completed 🎉</string>
+    <!-- 工坊手递手 -->
+    <string name="playbook_send_to_code">Send to Coding</string>
+    <string name="playbook_handoff_title">Generated prompt from workshop is ready to send</string>
+    <string name="playbook_handoff_send">Send</string>
+    <string name="playbook_handoff_discard">Discard</string>
+</resources>
