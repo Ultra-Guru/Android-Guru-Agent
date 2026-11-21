@@ -25,7 +25,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,8 +61,8 @@ internal fun CodePlaybookBarsSection(
     showSheet: Boolean,
     onDismissSheet: () -> Unit
 ) {
-    val state by viewModel.playbookController.state.collectAsState()
-    val handoff by viewModel.playbookHandoffStore.pending.collectAsState()
+    val state by viewModel.playbookController.state.collectAsStateWithLifecycle()
+    val handoff by viewModel.playbookHandoffStore.pending.collectAsStateWithLifecycle()
     state.suggest?.let { suggestion ->
         CodePlaybookSuggestBar(
             playbookName = suggestion.playbook.name,
@@ -107,7 +107,7 @@ internal fun CodePlaybookChipMount(
     viewModel: CodeViewModel,
     onClick: () -> Unit
 ) {
-    val state by viewModel.playbookController.state.collectAsState()
+    val state by viewModel.playbookController.state.collectAsStateWithLifecycle()
     state.mounted?.let { mounted ->
         CodePlaybookChip(
             playbookName = mounted.playbook.name,
