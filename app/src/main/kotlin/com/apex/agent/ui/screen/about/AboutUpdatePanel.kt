@@ -164,11 +164,14 @@ internal fun UpdatePanel() {
 
     fun triggerCheck() {
         if (updateState is UpdateUiState.Checking) return
-        // 关于页手动检查 = 强制（跳过 6h 节流）：用户进更新面板即期待最新结果
+        // 关于页手动检查 = 强制（跳过 6h 节流）：用户进更新面板即期待最新结果。
+        // autoDownloadPatch 随「自动更新补丁」开关 —— 开关关闭时的手动检查
+        // 只查不下载（后台零流量承诺）；开启时命中新版即自动下载补丁。
         center.checkForUpdate(
             currentVersionCode = BuildConfig.VERSION_CODE,
             force = true,
-            fromTrigger = "about-page"
+            fromTrigger = "about-page",
+            autoDownloadPatch = agentSettings.autoUpdateCheck
         )
     }
 

@@ -752,8 +752,8 @@
     <string name="about_section_links">Links</string>
     <string name="about_update_current">Currently on v%1$s (%2$d)</string>
     <string name="about_update_auto_hint">Checks automatically each time this page opens</string>
-    <string name="about_update_auto_toggle">Auto-install update patches</string>
-    <string name="about_update_auto_toggle_desc">On: silently check for new versions at startup and prompt. Off: zero background checks or downloads — control updates yourself with the Check now button</string>
+    <string name="about_update_auto_toggle">Auto-update patches</string>
+    <string name="about_update_auto_toggle_desc">On: silently check for new versions and auto-download the incremental patch in the background — when done it shows up here, tap Update to install. Off: zero background checks or downloads — fully manual via Check now</string>
     <string name="about_update_auto_off_hint">Auto-update is off — check manually below</string>
     <string name="about_update_retry">Retry</string>
     <string name="about_update_progress_mb">Downloading… %1$d%% · %2$s downloaded</string>
