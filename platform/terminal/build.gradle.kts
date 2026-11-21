@@ -86,6 +86,9 @@ dependencies {
     implementation(project(":core:su"))
     implementation(libs.coroutines.android)
     implementation(libs.serialization.json)
+    // SSH/SFTP 远程文件系统（Operit 对标 §4.7 缺项）：SSHJ 纯 JVM 客户端，
+    // 仅在 RemoteSshFilesystem 内消费（module 仍是 Android library，不破坏边界）。
+    implementation(libs.sshj)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     testImplementation(libs.junit)

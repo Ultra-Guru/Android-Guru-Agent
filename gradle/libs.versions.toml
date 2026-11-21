@@ -74,6 +74,9 @@ vico = "1.13.1"
 # 根除方案。1.12.1 稳定线：minSdk 21 / compileSdk 34+，本项目 compileSdk 36
 # 完全覆盖；WebViewCompat 特性检测为 no-op（资产域映射不依赖平台版本）。
 webkit = "1.12.1"
+# SSHJ —— SSH/SFTP 客户端（纯 JVM，com.hierynomus:sshj）。Operit 对标 §4.7 缺项：
+# SSH/SFTP 远程文件系统。Apache-2.0，依赖 BouncyCastle（SSHJ POM 传递），Maven Central。
+sshj = "0.38.0"
 
 [libraries]
 # Compose
@@ -160,6 +163,9 @@ vico-compose = { group = "com.patrykandpatrick.vico", name = "compose", version.
 
 # WebViewAssetLoader（androidx.webkit 稳定线）—— 插件 UI 页 https 资产域映射
 androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
+# SSHJ —— SSH/SFTP 客户端（纯 JVM，Apache-2.0）。SSH/SFTP 远程文件系统（Operit §4.7 缺项）。
+# 传递依赖 BouncyCastle / asn-one / eddsa 均在 Maven Central，与本仓 FAIL_ON_PROJECT_REPOS 兼容。
+sshj = { group = "com.hierynomus", name = "sshj", version.ref = "sshj" }
 
 # Room
 room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }

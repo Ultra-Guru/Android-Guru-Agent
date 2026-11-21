@@ -430,6 +430,8 @@ object ToolModule {
         projectEnvironment: com.apex.agent.platform.terminal.environment.ProjectEnvironmentCoordinator,
         // T82：guest fs API + apexctl 桥 + 镜像/ensure 接线（rootfsTarget 见上方 P83 区）
         guestFilesystem: com.apex.agent.platform.TerminalFs.GuestFilesystem,
+        // Operit §4.7 对标缺项补齐：SSH/SFTP 远程文件系统（作用域=远端主机，非本地 rootfs）
+        remoteSshFilesystem: com.apex.agent.platform.TerminalFs.RemoteSshFilesystem,
         guestBridgeService: com.apex.agent.platform.TerminalBridge.GuestBridgeService,
         ubuntuSourcesList: com.apex.agent.platform.terminal.ubuntu.UbuntuSourcesList,
         rootfsBaseDir: java.io.File,
@@ -874,6 +876,9 @@ object ToolModule {
                 exitCode = r.exitCode, stdout = r.stdout, stderr = r.stderr
             )
         }
+        // ═══ Operit §4.7 对标缺项补齐：SSH/SFTP 远程文件系统（逻辑在 ToolModuleSshRegistration.kt）═══
+        // （SRP 预算：ToolModule.kt 逼近 1200 行上限，故 SSH 接线抽到独立 helper，保持边界干净）
+        ToolModuleSshRegistration.register(registry, remoteSshFilesystem)
         // 4 legacy compat aliases (@Deprecated, Spec §35) — old tool ids preserved for backward compat.
         registry.register(SafeAgentTool(TerminalToolAdapter(LegacyExecTool(terminalRuntime))))
         registry.register(SafeAgentTool(TerminalToolAdapter(LegacySendTool(terminalRuntime))))
