@@ -27,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -66,17 +67,19 @@ internal fun ModelConfigImportDialog(
     onDismiss: () -> Unit,
     onImported: (String) -> Unit
 ) {
-    var text by remember { mutableStateOf("") }
-    var selectedFormat by remember { mutableStateOf(ModelConfigFormat.AUTO) }
+    // BUG-20（设置 spec 02）：标量编辑态改 rememberSaveable —— 旋转/进程
+    // 重建不再丢草稿与格式选择（preview/done 为复杂类型维持 remember）。
+    var text by rememberSaveable { mutableStateOf("") }
+    var selectedFormat by rememberSaveable { mutableStateOf(ModelConfigFormat.AUTO) }
 
     // 实时解析结果（预览用，与导入走同一识别器）
     var preview by remember { mutableStateOf<ImportedModelConfig?>(null) }
     var detectedFormat by remember { mutableStateOf(ModelConfigFormat.AUTO) }
-    var parseError by remember { mutableStateOf<String?>(null) }
-    var nothingRecognized by remember { mutableStateOf(false) }
+    var parseError by rememberSaveable { mutableStateOf<String?>(null) }
+    var nothingRecognized by rememberSaveable { mutableStateOf(false) }
 
-    var importing by remember { mutableStateOf(false) }
-    var applyError by remember { mutableStateOf<String?>(null) }
+    var importing by rememberSaveable { mutableStateOf(false) }
+    var applyError by rememberSaveable { mutableStateOf<String?>(null) }
     // (模型数, 服务商名) —— 非空即完成态
     var done by remember { mutableStateOf<Pair<Int, String>?>(null) }
 
@@ -251,15 +254,23 @@ internal fun ModelConfigImportDialog(
                         importing = true
                         applyError = null
                         scope.launch {
-                            viewModel.importModelConfig(text, selectedFormat).fold(
-                                onSuccess = { summary ->
-                                    done = summary.count to summary.providerName
-                                    // 导入成功即切换到新档案（弹窗停在完成态供确认）
-                                    onImported(summary.firstProfileId)
-                                },
-                                onFailure = { applyError = it.message }
-                            )
-                            importing = false
+                            // BUG-20（设置 spec 02）：导入协程任何异常（非 Result
+                            // 包装的 IO/OOM 等）都不得卡死 importing —— finally
+                            // 复位按钮态，异常进 applyError 人话展示。
+                            try {
+                                viewModel.importModelConfig(text, selectedFormat).fold(
+                                    onSuccess = { summary ->
+                                        done = summary.count to summary.providerName
+                                        // 导入成功即切换到新档案（弹窗停在完成态供确认）
+                                        onImported(summary.firstProfileId)
+                                    },
+                                    onFailure = { applyError = it.message }
+                                )
+                            } catch (t: Throwable) {
+                                applyError = t.message ?: t.javaClass.simpleName
+                            } finally {
+                                importing = false
+                            }
                         }
                     }
                 ) {
