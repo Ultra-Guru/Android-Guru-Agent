@@ -41,6 +41,7 @@ import com.apex.agent.core.code.stream.CodeStreamSnapshot
 import com.apex.agent.core.code.stream.StreamEntry
 import com.apex.agent.core.code.stream.StreamEntryGroup
 import com.apex.agent.core.code.stream.StreamToolCall
+import com.apex.agent.core.code.stream.ToolCallStatus
 import com.apex.agent.core.code.stream.ToolKind
 import com.apex.agent.ui.component.imeDismissOnTap
 import com.apex.agent.ui.component.rememberImeDismisser
@@ -414,6 +415,10 @@ internal fun groupConsecutive(
 
     entries.forEach { entry ->
         if (entry is StreamEntry.ToolCapsuleEntry) {
+            // 用户规格 2026-11(PR#921 动效球入驻后):工具未开始运行
+            // (WAITING)不出胶囊——「任务进行中」信号由输入栏左下动效球
+            // 承担,胶囊开始运行才入场;被中止而停留在 WAITING 的调用不回放。
+            if (entry.call.status == ToolCallStatus.WAITING) return@forEach
             // 聚合模式跨族连片（族切换不拆段）；流式模式按族分段（同族 ≥2
             // 折叠为聚合胶囊行——防刷屏且最新命令可见的既有语义）。
             if (!aggregateTools && bufferKind != null && bufferKind != entry.call.kind) flush()
