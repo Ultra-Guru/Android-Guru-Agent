@@ -127,7 +127,7 @@ class RemoteSshFilesystem(
                 try {
                     val attrs = sftp.stat(path)
                     if (attrs.size > MAX_READ_BYTES) {
-                        return@withClient SshFsResult.Err<SshReadResult>(
+                        return@withClient SshFsResult.Err(
                             "SshFsError:TooLarge",
                             "remote file ${attrs.size}B > $MAX_READ_BYTES — use SFTP tooling outside the agent"
                         )
@@ -347,7 +347,7 @@ class RemoteSshFilesystem(
                 if (fp == null) {
                     return@timed SshFsResult.Err(
                         "SshFsError:ConnectFailed",
-                        "handshake completed but host key not captured", 0L
+                        "handshake completed but host key not captured"
                     )
                 }
                 SshFsResult.Ok(fp, System.currentTimeMillis() - t0)
@@ -404,7 +404,7 @@ class RemoteSshFilesystem(
             val client = SSHClient()
             try {
                 client.timeout = timeoutMs.toInt()
-                client.connectionKeepAlive.timeout = 30
+                client.connection.keepAlive.keepAliveInterval = 30
                 if (target.privateKey.isNullOrBlank() && target.password.isNullOrBlank()) {
                     return@withContext null
                 }
