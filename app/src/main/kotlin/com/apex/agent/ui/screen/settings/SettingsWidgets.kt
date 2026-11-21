@@ -66,6 +66,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.role
 
 /**
  * 设置页通用控件（v2 抽屉化重构自 SettingsScreen.kt 原样迁出，零行为变更）。
@@ -423,11 +424,13 @@ internal fun KeyValueEditor(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("$k : $v", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                 // UI-012：48dp 触区红线（原 28dp）
+                // BUG-19:stringResource 是 @Composable,不能进 semantics lambda —— 上提
+                val deleteDesc = stringResource(R.string.settings_kv_delete, k)
                 IconButton(
                     onClick = { onChange(map - k) },
                     modifier = Modifier
                         .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                        .semantics { contentDescription = stringResource(R.string.settings_kv_delete, k) },
+                        .semantics { contentDescription = deleteDesc },
                 ) {
                     Icon(Icons.Default.Delete, null, Modifier.size(16.dp))
                 }

@@ -21,6 +21,7 @@ import com.apex.agent.R
 import com.apex.agent.update.DownloadMirror
 import com.apex.agent.update.MirrorPrefs
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material3.MaterialTheme
 
 /**
  * 设置中心「通知」「应用更新」与「记忆摄取」叶子（扩展阶段）。
