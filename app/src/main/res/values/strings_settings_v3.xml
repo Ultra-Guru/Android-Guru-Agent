@@ -80,4 +80,6 @@
     <string name="settings_v3_coding_output_mode_desc">Streaming = live typing, live tool windows; Complete = a progress card while generating (with live skill/MCP/tool counters), then the run is revealed at once — tool calls collapsed into aggregate cards (skill / MCP / built-in breakdown, expandable details). Takes effect on the next run.</string>
     <string name="settings_v3_coding_output_mode_streaming">Streaming (live typing)</string>
     <string name="settings_v3_coding_output_mode_complete">Complete (reveal when done)</string>
+    <!-- SettingsTabBar BUG-29: tab bar container semantics description -->
+    <string name="settings_tab_bar_desc">Settings page tabs</string>
 </resources>
