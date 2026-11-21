@@ -64,9 +64,9 @@ class TmuxSessionManager(
 
     /** ── 创建命名会话（幂等：同名且存活 → 直接返回成功，不报错）。 ── */
     suspend fun createSession(name: String, workingDirectory: String? = null): String {
-        validateName(name)
+        validateName(name)?.let { return it }
         return mutex.withLock {
-            ensureTmuxAvailable()
+            ensureTmuxAvailable()?.let { return@withLock it }
             val existing = rawList()
             if (existing.any { it.name == name }) {
                 // 幂等创建（对齐 LinuxWorkspaceManager.create 的同款语义）。
@@ -79,14 +79,14 @@ class TmuxSessionManager(
                     put("activeSession", name)
                 }.let { json.encodeToString(it) }
             }
-            val dir = sanitizeDir(workingDirectory)
+            val dir = sanitizeDir(workingDirectory) ?: return@withLock errorJson("InvalidInput", "workingDirectory 含非法控制字符")
             val cmd = buildString {
                 append(tmuxBin())
                 append(" new-session -d -s ").append(quote(name))
                 if (dir != null) append(" -c ").append(quote(dir))
             }
             val result = executor(cmd, DEFAULT_TIMEOUT_MS)
-            requireExitZero(result, "new-session '$name'")
+            requireExitZero(result, "new-session '$name'")?.let { return@withLock it }
             markActive(name)
             persistRegistration(name, dir)
             buildJsonObject {
@@ -127,12 +127,12 @@ class TmuxSessionManager(
 
     /** ── 切换活动会话（仅存活会话；store 落 lastActive 供下一次默认）。 ── */
     suspend fun switchSession(name: String): String {
-        validateName(name)
+        validateName(name)?.let { return it }
         return mutex.withLock {
-            ensureTmuxAvailable()
+            ensureTmuxAvailable()?.let { return@withLock it }
             val sessions = rawList()
             if (sessions.none { it.name == name }) {
-                throw TmuxException.SessionNotFound(name)
+                return@withLock errorJson("SessionNotFound", "session '$name' 不存在")
             }
             markActive(name)
             touchAttachment(name)
@@ -147,16 +147,16 @@ class TmuxSessionManager(
 
     /** ── 终止会话（kill-session；幂等：不存在 → SessionNotFound）。 ── */
     suspend fun killSession(name: String): String {
-        validateName(name)
+        validateName(name)?.let { return it }
         return mutex.withLock {
-            ensureTmuxAvailable()
+            ensureTmuxAvailable()?.let { return@withLock it }
             val sessions = rawList()
             if (sessions.none { it.name == name }) {
-                throw TmuxException.SessionNotFound(name)
+                return@withLock errorJson("SessionNotFound", "session '$name' 不存在")
             }
             val cmd = "${tmuxBin()} kill-session -t ${quote(name)}"
             val result = executor(cmd, DEFAULT_TIMEOUT_MS)
-            requireExitZero(result, "kill-session '$name'")
+            requireExitZero(result, "kill-session '$name'")?.let { return@withLock it }
             forgetRegistration(name)
             buildJsonObject {
                 put("ok", true)
@@ -168,20 +168,20 @@ class TmuxSessionManager(
 
     /** ── 向目标会话发送一行命令（send-keys；多会话并行的实际价值点）。 ── */
     suspend fun sendKeys(name: String, command: String): String {
-        validateName(name)
+        validateName(name)?.let { return it }
         if (command.isBlank()) {
-            throw TmuxException.InvalidInput("command 不能为空（send-keys 需要有效载荷）")
+            return errorJson("InvalidInput", "command 不能为空（send-keys 需要有效载荷）")
         }
         return mutex.withLock {
-            ensureTmuxAvailable()
+            ensureTmuxAvailable()?.let { return@withLock it }
             val sessions = rawList()
             if (sessions.none { it.name == name }) {
-                throw TmuxException.SessionNotFound(name)
+                return@withLock errorJson("SessionNotFound", "session '$name' 不存在")
             }
             val payload = quote(command.replace("\n", " ").trim())
             val cmd = "${tmuxBin()} send-keys -t ${quote(name)} $payload Enter"
             val result = executor(cmd, DEFAULT_TIMEOUT_MS)
-            requireExitZero(result, "send-keys '$name'")
+            requireExitZero(result, "send-keys '$name'")?.let { return@withLock it }
             buildJsonObject {
                 put("ok", true)
                 put("action", "sendKeys")
@@ -192,17 +192,17 @@ class TmuxSessionManager(
 
     /** ── 抓取目标会话当前屏面（capture-pane；Agent 无需 attach 即可读输出）。 ── */
     suspend fun capturePane(name: String, lines: Int = 200): String {
-        validateName(name)
+        validateName(name)?.let { return it }
         val bounded = lines.coerceIn(MIN_CAPTURE_LINES, MAX_CAPTURE_LINES)
         return mutex.withLock {
-            ensureTmuxAvailable()
+            ensureTmuxAvailable()?.let { return@withLock it }
             val sessions = rawList()
             if (sessions.none { it.name == name }) {
-                throw TmuxException.SessionNotFound(name)
+                return@withLock errorJson("SessionNotFound", "session '$name' 不存在")
             }
             val cmd = "${tmuxBin()} capture-pane -t ${quote(name)} -p -S -$bounded"
             val result = executor(cmd, DEFAULT_TIMEOUT_MS)
-            requireExitZero(result, "capture-pane '$name'")
+            requireExitZero(result, "capture-pane '$name'")?.let { return@withLock it }
             buildJsonObject {
                 put("ok", true)
                 put("action", "capture")
@@ -252,14 +252,15 @@ class TmuxSessionManager(
                 TmuxSession(name, windows, created, attached)
             }
 
-    private suspend fun ensureTmuxAvailable() {
+    private suspend fun ensureTmuxAvailable(): String? {
         val probe = executor("command -v ${tmuxBin()} || command -v tmux", PROBE_TIMEOUT_MS)
         if (probe.exitCode != 0 || probe.stdout.isBlank()) {
-            throw TmuxException.TmuxUnavailable(
-                "guest rootfs 内未找到 tmux —— 先 TerminalUbuntuEnsure / " +
-                    "TerminalLinuxPackages(action=install, packages=[\"tmux\"]) 补装"
+            return errorJson(
+                "TmuxUnavailable",
+                "guest rootfs 内未找到 tmux —— 先 TerminalUbuntuEnsure / TerminalLinuxPackages(action=install, packages=[\"tmux\"]) 补装"
             )
         }
+        return null
     }
 
     private suspend fun markActive(name: String) {
@@ -293,38 +294,47 @@ class TmuxSessionManager(
         store.save(current.copy(sessions = next, lastActiveSession = lastActive, updatedAt = clock()))
     }
 
-    private fun requireExitZero(result: TmuxCommandResult, op: String) {
+    private suspend fun requireExitZero(result: TmuxCommandResult, op: String): String? {
         val code = result.exitCode
         if (code == null) {
-            throw TmuxException.TmuxCommandFailed("$op spawn 失败: ${result.stderr.ifBlank { "no stderr" }}")
+            return errorJson("TmuxCommandFailed", "$op spawn 失败: ${result.stderr.ifBlank { "no stderr" }}")
         }
         if (code != 0) {
-            throw TmuxException.TmuxCommandFailed(
-                "$op 失败（exit=$code）: ${result.stderr.ifBlank { result.stdout }}"
-            )
+            return errorJson("TmuxCommandFailed", "$op 失败（exit=$code）: ${result.stderr.ifBlank { result.stdout }}")
         }
+        return null
     }
+
+    /** 错误 JSON（对齐 message 约定 `TmuxError:<code> — <detail>` 的结构化形式）。 */
+    private fun errorJson(code: String, detail: String): String =
+        json.encodeToString(buildJsonObject {
+            put("ok", false)
+            put("errorCode", code)
+            put("error", "TmuxError:$code — $detail")
+            put("detail", detail)
+        })
 
     private fun tmuxBin(): String = "tmux"
 
-    private fun validateName(name: String?) {
+    /** 校验失败返回错误 JSON（非 null）；通过返回 null。 */
+    private fun validateName(name: String?): String? {
         if (name.isNullOrBlank()) {
-            throw TmuxException.InvalidInput("name 不能为空")
+            return errorJson("InvalidInput", "name 不能为空")
         }
         if (name.length > MAX_NAME_LENGTH) {
-            throw TmuxException.InvalidInput("name 过长（>${MAX_NAME_LENGTH} 字符）")
+            return errorJson("InvalidInput", "name 过长（>${MAX_NAME_LENGTH} 字符）")
         }
         if (!NAME_PATTERN.matches(name)) {
-            throw TmuxException.InvalidInput(
-                "name '$name' 含非法字符（规则: $NAME_PATTERN_TEXT；tmux 目标名禁 `.` `:` 等定位符）"
-            )
+            return errorJson("InvalidInput", "name '$name' 含非法字符（规则: $NAME_PATTERN_TEXT；tmux 目标名禁 `.` `:` 等定位符）")
         }
+        return null
     }
 
+    /** 目录含控制字符返回 null（调用方转 errorJson）。 */
     private fun sanitizeDir(dir: String?): String? {
         if (dir.isNullOrBlank()) return null
         if (dir.contains('\n') || dir.contains('\u0000')) {
-            throw TmuxException.InvalidInput("workingDirectory 含非法控制字符")
+            return null
         }
         return dir.trim()
     }
