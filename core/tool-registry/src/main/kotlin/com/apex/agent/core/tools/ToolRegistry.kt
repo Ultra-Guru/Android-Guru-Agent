@@ -345,8 +345,20 @@ internal class ToolExecutionPipeline(
          * 继续换名猜（`bash` → `Bash` → `shell` 连环 404）。现在补两条
          * actionable 指引：常见任务族的最短路径（命令 → TerminalExec）+
          * ToolSearch 元工具自检索 —— 模型下一步有确定动作可执行。
+         *
+         * 畸形名专项（2026-11「MCP null」全链失效事故）：id 为空串或字面
+         * "null" 时不是模型猜错名，而是 provider/网关把 function.name 丢成
+         * JSON null（解析层曾把它误转成字面串，已改 contentOrNull；累积器
+         * 同修）。通用文案会引导模型继续换名重试直至任务报废 —— 这里明说
+         * 「名称在传输中丢失，原样重发一次完整调用」，模型有确定的自愈动作。
          */
         fun notFoundMessage(toolId: String, registry: ToolRegistry): String {
+            if (toolId.isBlank() || toolId == "null") {
+                return "Error: this tool call arrived with no usable tool name " +
+                    "(the provider dropped function.name as null/blank). " +
+                    "Do not guess tool ids — re-issue the exact same call once with a complete " +
+                    "tool id; to discover valid tool ids call ToolSearch(query) or ToolList()."
+            }
             val suggestion = ToolSuggester.suggestionLine(
                 toolId, registry.getAllTools().map { it.id }
             )

@@ -343,9 +343,13 @@ class McpClient(
 
                 tools.forEach { toolJson ->
                     val obj = toolJson.jsonObject
+                    // contentOrNull（JsonNull 防御，2026-11「MCP null」事故同源）：
+                    // 服务器把 name/description 序列化成 JSON null 时，`.content`
+                    // 返回字面串 "null" —— 曾把工具注册成 Mcp{Srv}Null、目录里
+                    // 出现 "MCP server/null"，模型跟随幻觉调用 null。视为缺席。
                     allTools += McpToolDef(
-                        name = obj["name"]?.jsonPrimitive?.content ?: "",
-                        description = obj["description"]?.jsonPrimitive?.content ?: "",
+                        name = obj["name"]?.jsonPrimitive?.contentOrNull ?: "",
+                        description = obj["description"]?.jsonPrimitive?.contentOrNull ?: "",
                         inputSchema = obj["inputSchema"]?.toString() ?: "{}"
                     )
                 }

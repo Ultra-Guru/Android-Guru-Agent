@@ -969,6 +969,14 @@ class StreamingOpenAiClient(
                 MultimodalOutputExtractor.parseVideosArray(delta?.get("videos"))
 
             // 流式tool_calls
+            // ═══ JsonNull 陷阱修复（2026-11 用户反馈「MCP null」全链失效）═══
+            // kotlinx 的 JsonNull 是 JsonPrimitive，`.content` 返回字面串 "null"；
+            // `?: ""` 只兑底「键缺失」，兑不了「值为 JSON null」。部分网关在
+            // 参数续块上重复发 "function":{"name":null} —— 旧解析把名字变成
+            // 字符串 "null"，累积器又以后到分片覆盖先到的正确名，最终注册表
+            // 收到 Tool 'null' not found，模型有效调用全链报废。改用
+            // contentOrNull：JsonNull 一律视为字段缺席（与上方 finish_reason
+            // 同款防御，本仓多处已有此惯例）。
             val toolCalls = mutableListOf<ToolCall>()
             delta?.get("tool_calls")?.jsonArray?.forEach { tc ->
                 val tcObj = tc.jsonObject
@@ -976,9 +984,9 @@ class StreamingOpenAiClient(
                 // 读取 index（并行工具调用必需），默认 -1 表示非流式/不适用。
                 val idx = tcObj["index"]?.jsonPrimitive?.intOrNull ?: -1
                 toolCalls.add(ToolCall(
-                    id = tcObj["id"]?.jsonPrimitive?.content ?: "",
-                    name = func?.get("name")?.jsonPrimitive?.content ?: "",
-                    arguments = func?.get("arguments")?.jsonPrimitive?.content ?: "",
+                    id = tcObj["id"]?.jsonPrimitive?.contentOrNull ?: "",
+                    name = func?.get("name")?.jsonPrimitive?.contentOrNull ?: "",
+                    arguments = func?.get("arguments")?.jsonPrimitive?.contentOrNull ?: "",
                     index = idx
                 ))
             }
@@ -1056,12 +1064,13 @@ class StreamingOpenAiClient(
         val videos = contentMedia.videos +
             listOfNotNull(MultimodalOutputExtractor.parseVideo(message?.get("video_url"))) +
             MultimodalOutputExtractor.parseVideosArray(message?.get("videos"))
+        // 同款 JsonNull 防御见上方流式 tool_calls 解析处（contentOrNull）。
         val toolCalls = message?.get("tool_calls")?.jsonArray?.map { tc ->
             val tcObj = tc.jsonObject
             ToolCall(
-                id = tcObj["id"]?.jsonPrimitive?.content ?: "",
-                name = tcObj["function"]?.jsonObject?.get("name")?.jsonPrimitive?.content ?: "",
-                arguments = tcObj["function"]?.jsonObject?.get("arguments")?.jsonPrimitive?.content ?: "{}"
+                id = tcObj["id"]?.jsonPrimitive?.contentOrNull ?: "",
+                name = tcObj["function"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull ?: "",
+                arguments = tcObj["function"]?.jsonObject?.get("arguments")?.jsonPrimitive?.contentOrNull ?: "{}"
             )
         } ?: emptyList()
 
