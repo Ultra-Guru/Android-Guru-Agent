@@ -147,12 +147,13 @@ class StreamDiagnosticsTest {
         val diag = chunks.lastOrNull { it.diagnostics != null }?.diagnostics
         assertNotNull("流尾最后一帧应携带诊断快照", diag)
         diag!!
-        // 帧账本：3 个数据帧（he/llo/统计帧）+ [DONE] = received 4；[DONE] 不走
-        // parseStreamChunk → parsed 3（he、llo、usage 统计帧）。
+        // 帧账本：3 个数据帧（he/llo/统计帧）+ [DONE] = received 4；DONE 按
+        // 成功处理帧计入 parsed（he、llo、usage 统计帧、DONE）→ dropped 0。
         assertEquals(4, diag.framesReceived)
-        assertEquals(3, diag.framesParsed)
+        assertEquals(4, diag.framesParsed)
         assertEquals(0, diag.framesDropped)
-        assertEquals("done", diag.finishReason)
+        // 真实收尾原因（stop）优先：DONE 的 "done" 通用标记不覆盖
+        assertEquals("stop", diag.finishReason)
         assertEquals(UsageSource.REAL, diag.usageSource)
         assertNotNull("有内容帧 → 首 token 延迟可测", diag.firstTokenLatencyMs)
         assertTrue(chunks.any { it.usage != null })
