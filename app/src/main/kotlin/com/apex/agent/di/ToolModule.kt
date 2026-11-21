@@ -860,6 +860,16 @@ object ToolModule {
             com.apex.agent.platform.terminal.tools.v2.TerminalFsTool(guestFilesystem))))
         registry.register(SafeAgentTool(TerminalToolAdapter(
             com.apex.agent.platform.terminal.tools.v2.TerminalBridgeTool(guestBridgeService))))
+        // ═══ PR2: tmux 多会话注册（Operit §4.7 对标）—— 逻辑在 ToolModuleTmuxRegistration.kt ═══
+        // （SRP 预算：ToolModule.kt 逼近 1200 行上限，故 tmux 接线抽到独立 helper，保持边界干净）
+        ToolModuleTmuxRegistration.register(registry, context) { cmd, timeoutMs ->
+            val r = ExecEngine(prootSpawner).execute(
+                com.apex.agent.platform.TerminalExec.ExecRequest(command = cmd, timeoutMs = timeoutMs)
+            )
+            com.apex.agent.platform.terminal.tmux.TmuxSessionManager.TmuxCommandResult(
+                exitCode = r.exitCode, stdout = r.stdout, stderr = r.stderr
+            )
+        }
         // 4 legacy compat aliases (@Deprecated, Spec §35) — old tool ids preserved for backward compat.
         registry.register(SafeAgentTool(TerminalToolAdapter(LegacyExecTool(terminalRuntime))))
         registry.register(SafeAgentTool(TerminalToolAdapter(LegacySendTool(terminalRuntime))))
