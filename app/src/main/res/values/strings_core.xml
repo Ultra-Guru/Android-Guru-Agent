@@ -943,4 +943,6 @@
     <string name="settings_section_collapsed">Collapsed</string>
     <string name="settings_open_system_settings_failed">Could not open system notification settings</string>
     <string name="settings_background_perm_failed">Could not persist background image permission — it may be lost after restart. Re-pick the image to retry.</string>
+    <string name="settings_workspace_copy_path">Copy path</string>
+    <string name="settings_workspace_label">Default workspace</string>
 </resources>

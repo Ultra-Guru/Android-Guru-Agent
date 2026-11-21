@@ -943,4 +943,6 @@
     <string name="settings_section_collapsed">已折叠</string>
     <string name="settings_open_system_settings_failed">无法打开系统通知设置</string>
     <string name="settings_background_perm_failed">背景图持久授权失败——重启后可能失效，请重新选择背景图。</string>
+    <string name="settings_workspace_copy_path">复制路径</string>
+    <string name="settings_workspace_label">默认工作区</string>
 </resources>

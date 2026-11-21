@@ -52,10 +52,12 @@ fun SettingsTabBar(
     onTabClose: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // BUG-29（设置 spec 02）：容器语义文案资源化（此前硬编码英文）
+    val tabGroupDesc = stringResource(R.string.settings_tab_bar_desc)
     LazyRow(
         modifier = modifier
             .fillMaxWidth()
-            .semantics { contentDescription = "Settings tabs" },
+            .semantics { contentDescription = tabGroupDesc },
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {

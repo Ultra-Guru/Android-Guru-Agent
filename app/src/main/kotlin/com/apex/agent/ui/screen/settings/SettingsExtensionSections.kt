@@ -11,6 +11,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import kotlinx.coroutines.launch
+import android.content.ClipboardManager
+import android.content.Context
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.runtime.saveable.rememberSaveable
+
+/** BUG-33:工作区根的真实内部路径 —— UI 用人话标签,路径仅经「复制」给需要的用户。 */
+internal const val WORKSPACE_ROOT_PATH = "linux/workspaces/default"
 
 /**
  * # Issue #164 / #165 —— Agent 分类的规则与钩子叶子页（挂载块抽出）。
@@ -27,6 +35,7 @@ import kotlinx.coroutines.launch
  */
 @Composable
 internal fun AgentRulesSectionBlock(
+    val context = LocalContext.current
     agent: AgentSettings,
     onAgent: (AgentSettings) -> Unit,
     viewModel: SettingsViewModel
@@ -39,13 +48,22 @@ internal fun AgentRulesSectionBlock(
     ) {
         value = viewModel.projectRulesFileName()
     }
+    // BUG-33:人话标签 + 剪贴板(真实路径经「复制路径」按钮给需要的用户)
+    val workspaceLabel = stringResource(R.string.settings_workspace_label)
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
     val coroutineScope = rememberCoroutineScope()
     // stringResource 不能在 let 回调（非 Composable）里调——先提升格式串
     val loadedFmt = stringResource(R.string.code_rules_project_status_loaded_fmt)
     RulesSettingsSection(
         globalRules = agent.globalRules,
         onGlobalRulesChange = { rules -> onAgent(agent.copy(globalRules = rules)) },
-        workspaceRootLabel = "linux/workspaces/default",
+        // BUG-33（设置 spec 02）：内部路径不再直接展示给用户 —— 人话标签
+        // + 「复制路径」按钮（真实路径经剪贴板给需要的用户）
+        workspaceRootLabel = workspaceLabel,
+        workspaceCopyPath = WORKSPACE_ROOT_PATH,
+        onCopyWorkspacePath = {
+            coroutineScope.launch { clipboard.setText(AnnotatedString(WORKSPACE_ROOT_PATH)) }
+        },
         projectRulesStatus = projectRulesFile?.let { fileName -> loadedFmt.format(fileName) },
         onCreateProjectRules = {
             coroutineScope.launch {

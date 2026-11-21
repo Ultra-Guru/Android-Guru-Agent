@@ -288,14 +288,13 @@ private fun SearxngSwitchCard(
         Row(verticalAlignment = Alignment.CenterVertically) {
             when (state) {
                 is SearxngState.Ready -> {
-                    StatusDot(color = Color(0xFF2E7D32))
+                    // BUG-29（设置 spec 02）：状态色走主题语义色;可见文案已
+                    // 本地化,不再用硬编码英文覆盖其无障碍播报
+                    StatusDot(color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(6.dp))
                     Text(
                         stringResource(R.string.search_status_ready),
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.semantics {
-                            contentDescription = "searxng ready"
-                        }
+                        style = MaterialTheme.typography.bodyMedium
                     )
                 }
                 is SearxngState.Stopping -> {

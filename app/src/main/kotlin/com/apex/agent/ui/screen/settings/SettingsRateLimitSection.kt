@@ -28,7 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 
 /**
- * ═══ 模型限速友好（model/rate-limit 叶子页）═══
+ * ═══ 模型限速友好（挂载于 model/network 页;全局分区,另见 system.diagnostics）═══
  *
  * **只针对某些用户**：所用厂商有 RPM / TPM / 日请求次数配额（免费档、
  * 按次计费网关、严格限流端点）时才需要打开；配额充裕的用户保持默认关

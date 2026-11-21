@@ -146,13 +146,11 @@ private fun CommandSetEditor(
         onAdd = onAdd
     )
     if (items.isNotEmpty()) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height((items.size.coerceAtMost(6) * 36).dp)
-        ) {
-            // #245：列表源是 Set<String>（去重保证），内容即稳定 key
-            items(items, key = { it }) { cmd ->
+        // BUG-31（设置 spec 02）：名单内联全量展开 —— 此前固定高度
+        // LazyColumn 嵌在 verticalScroll 的 Column 里，>6 项时双滚动冲突
+        // 且无「还有 N 项」提示。父容器本就是滚动列，内联即自然滚动。
+        Column {
+            items.forEach { cmd ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

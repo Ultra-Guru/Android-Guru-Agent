@@ -160,7 +160,9 @@ private fun HookRow(
 /** 「内置」徽标：中性蓝灰（区别于权限效应的三色语义——钩子无好坏之分）。 */
 @Composable
 private fun BuiltinBadge() {
-    val foreground = Color(0xFF3D6A96)
+    // BUG-29（设置 spec 02）：硬编码蓝灰 → 主题语义色（secondary，中性、
+    // 深浅主题均保持对比度），不再随写死色值破坏深色模式
+    val foreground = MaterialTheme.colorScheme.secondary
     Surface(
         shape = RoundedCornerShape(6.dp),
         color = foreground.copy(alpha = 0.12f),
