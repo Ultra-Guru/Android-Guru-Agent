@@ -134,6 +134,16 @@ object CodePrompts {
         if (!environmentSummary.isNullOrBlank()) appendLine("- environment: $environmentSummary")
         if (!projectStats.isNullOrBlank()) appendLine("- project: $projectStats")
         if (!activeFile.isNullOrBlank()) appendLine("- user is viewing: $activeFile")
+
+        // ═══ P101：工作区工程纪律（改码前先建立全局视野）═══
+        // 与 codingIdentity（读码工具名）/ Shell Dialect Map（方言）/ File
+        // Operation Strategy（六步）去重：本段只补「绝对路径 + environment
+        // 显式传递 + 改前三级跳 + 回验」的全局视野纪律。
+        appendLine("### 工作区工程纪律（改码前先建立全局视野）")
+        appendLine("- **绝对路径**：所有工作区文件操作以本 host root 为根，工具参数一律绝对路径；相对路径只用于文件内容里的项目内部引用。")
+        appendLine("- **environment**：跨 Android 宿主 / PRoot Ubuntu / 附加仓库操作时显式传 environment，不要靠默认通道猜测；双 shell 方言见 \"## Shell Dialect Map\"。")
+        appendLine("- **改前三级跳**：先用 CodeRepoMap 拿全仓骨架（目录 + 定义签名 + 依赖相关度），再 CodeGrep 定位命中，最后 CodeRead 精读目标文件；禁止未看结构就盲改。")
+        appendLine("- **验证**：改完回到 \"## File Operation Strategy\" 的 VERIFY 步，用 CodeRead 复核改动位置。")
     }
 
     /** 整个系统工作区的 host 根（CodeWorkspaceManager.SYSTEM 工作区 root 值）。 */

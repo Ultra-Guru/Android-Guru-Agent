@@ -74,3 +74,22 @@ Coding 屏有两种流水式输出 UI（设置 → 工作区 → Coding 工位 �
    `<!-- pr: 分支名 -->` 锚）；
 5. 提交信息格式：`类型(范围): 中文摘要 —— 关键词 / 关键词`；
 6. PR 描述附验证表（编译 / 测试 / 门禁结果），由仓库主人合并。
+
+## 六、根目录布局地图（改到哪层就去哪层）
+
+| 目录 | 职责 |
+| --- | --- |
+| app/ | UI + ViewModel + Hilt DI 装配 + assets（knowledge / playground / packages） |
+| core/（×8，纯 Kotlin） | agent-engine / code-engine / code-tools / code-native / tool-registry / llm-adapter / logging / su —— 引擎与契约层 |
+| platform/（×7） | browser-agent / terminal / persistence / memory-host / privilege / code-workspace / mcp-host —— 设备能力宿主层 |
+| terminal-emulator · terminal-view · terminal-native | 终端 UI / VT 渲染 / C++17 JNI 热路径 |
+| plugin-sdk/ · plugins/ | 功能性插件宿主 + APK 插件（AIDL、同签名） |
+| ComposeFoundry/ | 独立 Gradle 工程，不参与主构建（DSL → 预览 → 落码实验场） |
+| playground/ | 内置触屏游戏 + HTML→APK 插件模板 |
+| docs/ | 一个特性一篇文档；90+ 篇深潜文档与验收矩阵 |
+| scripts/ | 文件预算 / 反模式 / 括号平衡 / changelog 工具链 |
+| .changelog/ | unreleased 片段 → released 归档，两级更新日志 |
+| vendor/ · gradle/*.lock | vendored backdrop 与 6 个 kit 兄弟库锁版本 |
+
+- kit 兄弟库（apex-kit-browser / standard / loom / courier / workspace / memory / apex-native-vt）见「三、附属仓库地图」；本地克隆成兄弟目录即自动 composite build。
+- 模块清单以根 `settings.gradle.kts` 为准；子模块状态以 `.gitmodules` 为准。

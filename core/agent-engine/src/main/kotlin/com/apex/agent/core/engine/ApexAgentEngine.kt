@@ -1,5 +1,7 @@
 package com.apex.agent.core.engine
 
+import com.apex.agent.core.tools.contextpolicy.ContextPreset
+import com.apex.agent.core.tools.contextpolicy.ContextPolicyState
 import com.apex.agent.core.engine.compression.ContextCompressor
 import com.apex.agent.core.engine.compression.CompressionReport
 import com.apex.agent.core.engine.compression.TokenEstimator
@@ -83,8 +85,8 @@ class ApexAgentEngine(
     internal val contextArchive: SessionContextArchive? = null,
     internal val skillRegistry: SkillRegistry? = null,
 
-    private val privilegeInfoProvider: PrivilegeInfoProvider? = null,
-    private val environmentInfoProvider: EnvironmentInfoProvider? = null,
+    internal val privilegeInfoProvider: PrivilegeInfoProvider? = null,
+    internal val environmentInfoProvider: EnvironmentInfoProvider? = null,
     // internal —— EngineToolExecution.kt 同包扩展直调（隐式记忆采集）。
     internal val memoryObserver: ExecutionMemoryObserver? = null,
     /**
@@ -94,7 +96,7 @@ class ApexAgentEngine(
      * 根因修复：旧版模型不知道 GitHub 已连接，106 个工具里 7 个
      * github_* 从不被选中；连接器同理。为空则省略该段（测试兼容）。
      */
-    private val connectedServicesProvider: ConnectedServicesProvider? = null,
+    internal val connectedServicesProvider: ConnectedServicesProvider? = null,
     /**
      * T72 — 多模型运行时。非空时所有 LLM 调用按 [LlmRequestContext.role] 路由到
      * 对应 Profile / Client，并做能力校验、降级、诊断。
@@ -112,7 +114,7 @@ class ApexAgentEngine(
      * 为空时引擎自建实例（单引擎场景等价）；DI 注入与 McpToolRegistrar /
      * 编排器共享同一实例。任务开始时 [execute] 会 reset（激活不跨会话泄漏）。
      */
-    private val toolActivation: ToolActivationStore = ToolActivationStore(),
+    internal val toolActivation: ToolActivationStore = ToolActivationStore(),
     /**
      * Issue #165 — 生命周期钩子派发口（SessionStart/UserPromptSubmit/Stop/
      * PreCompact/SessionEnd）。装配层传 [HookRegistryHookRunner]；本类内部
@@ -131,6 +133,14 @@ class ApexAgentEngine(
      * 既有单测与子代理零改动兼容。
      */
     internal val skillActivation: SkillActivationStore? = null,
+    /**
+     * P99：上下文治理档位读取（SettingsRepository.contextPolicyPreset 的
+     * 引擎侧通道；null/0 = 宿主默认——压缩门用 config 原值，既有行为零变化）。
+     * 每轮压缩判定前实时读取（Set 下轮生效语义）。var：CodeModule 构造后
+     * 接线赋值（val + 命名构造会挡住既有调用方）。
+     */
+    @Volatile
+    var contextPolicyPresetProvider: () -> Int? = { null },
     /**
      * 长任务韧性守卫：LLM 瞬时错误退避重试 / 空响应重试 / 工具瞬时重试 /
      * 连续失败换路提示。默认启用（长任务需求）；测试可注入
@@ -174,7 +184,7 @@ class ApexAgentEngine(
      * 系统提示词据此注入 "## Remembered About You" 段。
      */
     @Volatile
-    private var chatMemoryNote: String? = null
+    internal var chatMemoryNote: String? = null
 
     /** T76 — 压缩后重注入的任务状态 system 消息（N-9，TaskRuntime 调用）。 */
     fun injectSystemContext(content: String) {
@@ -235,11 +245,44 @@ class ApexAgentEngine(
     internal var currentToolPlan: ToolRequestBudget.RequestToolPlan? = null
 
     /**
+     * P97：Prompt 段级观测管道（快照环形存储 + 可选钩子派发）——
+     * `PromptDump` / `PromptSectionList` 工具的数据源（app 层 DI 挂载，
+     * public 可见性）；无钩子注册时提示词逐字节不变。组装接线见
+     * EnginePromptAssembly.kt。
+     */
+    val promptPipeline = PromptStageRunner()
+
+    /**
+     * P99：本轮会话是否已发生压缩（ContextPolicyGet 口径；压缩门置位，
+     * 新 execute 复位——「会话内至少压过一次」语义）。
+     */
+    @Volatile
+    internal var lastContextCompressed = false
+
+    /**
+     * P99：上下文策略状态快照（ContextPolicyGet 工具数据源；引擎侧组装
+     * ——档位/窗口/估算/压缩事实全部同源，不另起计数）。
+     */
+    fun currentContextPolicyState(): ContextPolicyState {
+        val preset = contextPolicyPresetProvider()?.let { ContextPreset.from(it) }
+        return ContextPolicyState(
+            preset = preset,
+            keepLastN = preset?.keepLastN ?: config.preserveRecentTurns,
+            maxTokens = (preset?.maxTokens ?: config.maxContextTokens)
+                .coerceAtMost(config.maxContextTokens),
+            compressed = lastContextCompressed,
+            tokenEstimate = com.apex.agent.core.engine.compression.TokenEstimator
+                .estimateHistory(conversationHistory),
+            line = "deep_dive"
+        )
+    }
+
+    /**
      * 工具请求降级等级（0=正常 / 1=纯 CORE 无强制 / 2=无工具）。
      * Provider 以 4xx 拒绝带 tools 的请求时逐级降级重试同一轮，
      * 保证“直接发送对话”永远有响应而非直接报错。
      */
-    private var toolDegradationLevel = 0
+    internal var toolDegradationLevel = 0
 
     /**
      * LLM 重试阶梯耗尽标记（本任务内）：主循环 Stop 分支置位，外层 catch
@@ -274,7 +317,7 @@ class ApexAgentEngine(
         CopyOnWriteArrayList<LlmMessage>().apply {
             memory?.load()?.let { addAll(it) }
         }
-    private val historyLock = Any()
+    internal val historyLock = Any()
     // P2-10：isRunning 跨线程读写需 volatile（abort 在引擎循环外调用）。
     // TODO(结构化改造): conversationHistory 的跨协程写入（contextInjector）应
     // 收敛为显式队列（diag-20261011 已消主要并发源：compressNow 运行期拒绝）。
@@ -337,7 +380,7 @@ class ApexAgentEngine(
      * 两通道互斥防双注）。
      */
     @Volatile
-    private var globalRulesText: String = ""
+    internal var globalRulesText: String = ""
 
     /** 更新全局规则（VM 监听设置流调用；下轮 buildSystemPrompt 生效）。 */
     fun updateGlobalRules(rules: String) { globalRulesText = rules }
@@ -516,6 +559,8 @@ class ApexAgentEngine(
     override fun execute(input: UserInput): Flow<AgentEvent> = flow {
         isRunning = true
         anyActionFailed = false
+        // P99：新会话压缩事实复位（ContextPolicyGet 的「会话内已压缩」口径）。
+        lastContextCompressed = false
         // v4：新任务开始 —— 会话激活的工具不跨任务泄漏；降级状态复位。
         toolActivation.reset()
         toolDegradationLevel = 0
@@ -864,6 +909,8 @@ class ApexAgentEngine(
             currentToolPlan = plan
 
             val messages = buildMessages()
+            // P97：AFTER_SEND fire-and-forget（无钩子零开销，不阻塞回包）
+            promptPipeline.dispatchAfterSend()
 
             val contentBuilder = StringBuilder()
             val reasoningBuilder = StringBuilder()
@@ -1093,69 +1140,10 @@ class ApexAgentEngine(
     }
 
     // ═══════════════════════════════════════════════════════
-    // Prompt builders
+    // Prompt builders —— buildMessages / repairDanglingToolCalls /
+    // buildSystemPrompt 已迁至 EnginePromptAssembly.kt（SRP 预算腾挪，
+    // P97 段级管道接线见该文件）。
     // ═══════════════════════════════════════════════════════
-
-    private fun buildMessages(): List<LlmMessage> {
-        repairDanglingToolCalls()
-        val messages = mutableListOf<LlmMessage>()
-        messages.add(LlmMessage.System(buildSystemPrompt()))
-        messages.addAll(conversationHistory)
-        return messages
-    }
-
-    /**
-     * P0 修复（会话级报废根因）：发送前修补悬空 tool_call 历史。
-     *
-     * 引擎在 `addMessage(Assistant(toolCalls))` 后、ToolResult 补齐前被中断
-     * （cancel/进程被杀/AskUser 等待中退出）→ 历史末尾留下无配对 tool_calls
-     * → OpenAI 兼容端点对后续每次请求都 400，会话级报废。现每次构建请求前
-     * 幂等修补（[DanglingToolCallRepair]）：无悬空零开销，有则改写内存历史
-     * 并持久化。diag-20261011：修复器升级为全面归一化（分离应答回迁/孤儿
-     * 丢弃/重复 id 剥离），返回是否有修补供自愈重试判定。
-     *
-     * @return true = 历史被归一化改写（调用方可安全重试请求）
-     */
-    private fun repairDanglingToolCalls(): Boolean {
-        val report = DanglingToolCallRepair.repair(conversationHistory)
-        if (!report.hasRepairs) return false
-        // #809：clear+addAll 复合替换经 historyLock 串行化（与 restoreHistory
-        // 同语义；repair() 自身的迭代在 COW 快照上进行，天然安全）。
-        synchronized(historyLock) {
-            conversationHistory.clear()
-            conversationHistory.addAll(report.repairedHistory)
-        }
-        memory?.save(conversationHistory)
-        AppLogger.instance.warn(
-            LogCategory.ENGINE, "AgentEngine",
-            "History normalized: ${report.repairedCallIds.size} synthesized, " +
-                "${report.movedCallIds.size} moved back, " +
-                "${report.droppedToolResultIds.size} orphan toolResults dropped, " +
-                "${report.strippedCallIds.size} duplicate declarations stripped",
-            tags = arrayOf("dangling-repair")
-        )
-        return true
-    }
-
-    internal fun buildSystemPrompt(planningPhase: Boolean = false): String = EnginePrompts.buildSystemPrompt(
-        config = config,
-        currentProfile = thinkingController.profileFor(config),
-        planningPhase = planningPhase,
-        privilegeLevel = privilegeInfoProvider?.currentLevel() ?: "NORMAL_SHELL",
-        visibleTools = EngineToolPlanner.visibleToolsFor(currentToolPlan, toolRegistry),
-        catalogTools = EngineToolPlanner.catalogToolsFor(currentToolPlan, toolRegistry),
-        toolNameMap = EngineToolPlanner.idToProviderName(currentToolPlan),
-        toolsUnavailable = currentToolPlan?.tools?.isEmpty() == true &&
-            toolDegradationLevel >= EngineToolPlanner.DEGRADATION_NO_TOOLS,
-        skillPrompts = skillPromptInjections, // 解析在 EngineSkillPromptResolver.kt
-        skillCatalog = skillCatalogDigests,
-        environmentSummary = environmentInfoProvider?.environmentSummary(),
-        connectedServices = connectedServicesProvider?.connectedServicesSummary(),
-        // Issue #164：全局规则（引擎直注通道；coding 实例不设值，见 updateGlobalRules KDoc）
-        globalRules = globalRulesText,
-        // 聊天记忆召回（execute() 置位，finally 复位）。
-        memoryContext = chatMemoryNote
-    )
 
     // （Agent 模式移除 PR 3/6：SPEC / Reflection 模式 prompt 包装器
     // （原 EnginePromptDelegates.kt）已随档位删除。）

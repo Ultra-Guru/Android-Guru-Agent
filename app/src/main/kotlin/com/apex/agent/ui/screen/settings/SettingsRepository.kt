@@ -489,6 +489,12 @@ data class AgentSettings(
      */
     val codeThinkingLogic: String = "",
     /**
+     * P99：上下文治理档位（0 = 宿主默认未开启；3/5/8/10/15/20/30/50/100 =
+     * ContextPreset.keepLastN 白名单值。ContextPolicySet 写入、ContextPolicyGet
+     * 回读；下轮生效）。旧持久化 JSON 反序列化零迁移（默认 0）。
+     */
+    val contextPolicyPreset: Int = 0,
+    /**
      * v1.2 Coding 模式思考档位（持久化）："" = 未设置（回退 STANDARD）；
      * "auto" = AUTO 自适应；其余 = ThinkingLevel 枚举名小写
      * （none/light/standard/deep/maximum/ultracode/apexcode）。

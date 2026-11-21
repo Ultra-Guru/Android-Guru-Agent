@@ -112,6 +112,12 @@ internal object EnginePrompts {
          * skillPrompts 全量注入的 legacy 行为）。
          */
         skillCatalog: List<SkillDigest> = emptyList(),
+        /**
+         * P102 — 本轮激活能力清单（一行式，引擎侧组装的已去重排序行：
+         * Skills / Opened tools / MCP / Fusion / Thinking）。空 = 整段省略
+         * （旧调用方零变化）；500 token 预算内按序截断（Thinking 行不截）。
+         */
+        activeExtensions: List<String> = emptyList(),
     ): String {
         val thinking = currentProfile?.promptInstruction ?: config.thinkingLevel.toPromptInstruction()
         return buildString {
@@ -281,6 +287,16 @@ internal object EnginePrompts {
                 appendLine(connectedServices)
                 appendLine("These services are already connected/configured — their tools work right now.")
                 appendLine("When the task touches them, use their tools directly; no need to ask the user to set up.")
+                appendLine()
+            }
+
+            // ═══ P102：本轮激活能力清单（Operit ACTIVE_PACKAGES_SECTION 同构位）═══
+            // 一行式清单（与 ## Active Skills 的方法论全文分工：这里只报状态）；
+            // 空列表整段省略；预算内截断（见 renderActiveExtensions）。
+            if (activeExtensions.isNotEmpty()) {
+                appendLine("## Active Extensions (this turn)")
+                renderActiveExtensions(activeExtensions).forEach { appendLine(it) }
+                appendLine("These are active RIGHT NOW; prefer them over re-discovering. Unknown state is omitted, never guessed.")
                 appendLine()
             }
 
@@ -580,6 +596,23 @@ internal object EnginePrompts {
      *  - 用户自定义提示词（rolePrompt）是最后拼入的自由文本层，
      *    原样保留不加工（用户预期：写了什么就是什么）。
      */
+    /** P102：激活清单段 token 预算（规格 01/06 §4 硬约束 ≤500）。 */
+    private const val ACTIVE_EXTENSIONS_TOKEN_BUDGET = 500
+
+    /**
+     * P102：激活清单预算渲染（≤[ACTIVE_EXTENSIONS_TOKEN_BUDGET] token，chars/4）。
+     * 超预算按声明序从头截断（Skills → Opened tools → MCP → Fusion），
+     * **最后一行（Thinking）永不截**（档位是决策关键）；保留行重排序输出。
+     */
+    internal fun renderActiveExtensions(lines: List<String>): List<String> {
+        if (lines.isEmpty()) return lines
+        var kept = lines
+        while (kept.size > 1 && kept.sumOf { it.length } / 4 > ACTIVE_EXTENSIONS_TOKEN_BUDGET) {
+            kept = kept.drop(1)
+        }
+        return if (kept.size < lines.size) kept + listOf("… (truncated)") else kept
+    }
+
     private fun StringBuilder.appendRoleSection(config: AgentConfig) {
         // 先解析风格/语言键（未知键 → null → 不参与判定也不渲染），
         // 只在「有实际可渲染内容」时输出段落 —— 未知键不触发空段落。
