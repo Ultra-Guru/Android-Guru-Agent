@@ -1,4 +1,4 @@
-package com.apex.agent.platform.terminal.fs
+package com.apex.agent.platform.TerminalFs
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
