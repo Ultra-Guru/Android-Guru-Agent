@@ -283,10 +283,10 @@ internal fun InstalledPluginsTab(state: MarketUiState, viewModel: MarketViewMode
 
     // 功能性插件 UI 页面（ui 贡献点的 WebView 渲染面）。
     uiOpen?.let { (pluginId, contribution) ->
-        val entryFile = remember(pluginId, contribution.entry) {
-            viewModel.functionalUiEntryFile(pluginId, contribution.entry)
+        val uiTarget = remember(pluginId, contribution.entry) {
+            viewModel.functionalUiTarget(pluginId, contribution.entry)
         }
-        if (entryFile == null) {
+        if (uiTarget == null) {
             AlertDialog(
                 onDismissRequest = { uiOpen = null },
                 title = { Text(stringResource(R.string.plugin_ui_open)) },
@@ -300,7 +300,8 @@ internal fun InstalledPluginsTab(state: MarketUiState, viewModel: MarketViewMode
         } else {
             PluginUiPageDialog(
                 title = contribution.displayTitle,
-                entryFile = entryFile,
+                rootDir = uiTarget.first,
+                entryFile = uiTarget.second,
                 onDismiss = { uiOpen = null }
             )
         }

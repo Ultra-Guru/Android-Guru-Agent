@@ -18,8 +18,10 @@
          记忆 P0（#836 补全）：file domain 排除与 Android 12+ 通道对齐 ——
          logs/（工具审计命令串）/ crash/（崩溃现场）/ anr/（看门狗堆栈）/
          mcp_config/（MCP 服务器配置）/ memory_kit/（认知记忆库本体）/
-         rootfs/（Ubuntu 沙箱本体）全部不出设备。 -->
+         rootfs/（Ubuntu 沙箱本体）全部不出设备。
+         #818：mcp_host_secure_prefs（token 加密密文，Keystore 绑定）同排除。 -->
     <exclude domain="sharedpref" path="mcp_host_prefs.xml" />
+    <exclude domain="sharedpref" path="mcp_host_secure_prefs.xml" />
     <exclude domain="sharedpref" path="pulse_mcp_secure_prefs.xml" />
     <exclude domain="sharedpref" path="pulse_mcp_secure_prefs-fallback.xml" />
     <exclude domain="file" path="logs/" />

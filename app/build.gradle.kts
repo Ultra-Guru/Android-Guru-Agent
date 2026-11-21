@@ -334,6 +334,10 @@ dependencies {
     implementation(libs.vico.compose)
     // 物理弹力手势（SpringAnimation 按压挤压形变 / 吸附）
     implementation(libs.dynamicanimation)
+    // androidx.webkit（#818）：WebViewAssetLoader —— 功能性插件 UI 页的
+    // https 资产域映射，根除 WebView file:// 域任意读攻击面（allowFileAccessFromFileURLs
+    // 曾置 true，页面 XHR 可读 App 私有目录，含明文 MCP Host token）。
+    implementation(libs.androidx.webkit)
 
     // Unit testing (pure-JVM src/test)
     testImplementation(libs.junit)

@@ -462,12 +462,12 @@ class MarketViewModel @Inject constructor(
         unifiedPluginRegistry.functionalUiEntries(pluginId)
 
     /**
-     * 功能性插件 UI 入口的绝对路径（WebView file:// 装载用）：插件目录
+     * 功能性插件 UI 页面目标（root + entry 对，资产域装载用）：插件目录
      * 内相对 entry 的 canonical 拼接；逃逸插件目录（手改磁盘文件后的
      * 运行期复核）返回 null——调用方如实反馈不可打开。
      */
-    fun functionalUiEntryFile(pluginId: String, entry: String): java.io.File? =
-        unifiedPluginRegistry.functionalUiEntryFile(pluginId, entry)
+    fun functionalUiTarget(pluginId: String, entry: String): Pair<java.io.File, java.io.File>? =
+        unifiedPluginRegistry.functionalUiTarget(pluginId, entry)
 
     /** APK 插件的 UI 入口声明（ui_entries meta-data；未声明返回空）。 */
     fun apkPluginUiEntries(
