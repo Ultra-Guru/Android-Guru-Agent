@@ -198,6 +198,7 @@ class StreamingOpenAiClient(
                     if (payload == "[DONE]") {
                         sawDone = true
                         sawFinish = true
+                        stats.onFrameParsed() // DONE = 成功处理的帧（dropped 账本口径）
                         stats.onFinishReason("done")
                         emit(LlmStreamChunk(isFinish = true))
                         continue // 不 break：排空尾部帧（usage 统计帧可能在 DONE 之后）

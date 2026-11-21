@@ -174,7 +174,7 @@ class StreamDiagnosticsTest {
             chunk(content = "partial"), chunk(finish = "content_filter"), "data: [DONE]"
         )
         assertTrue("content_filter → 独立异常类型", error is LlmException.ContentFiltered)
-        assertEquals(1, (error as LlmException.ContentFiltered).partialChars)
+        assertEquals(7, (error as LlmException.ContentFiltered).partialChars) // "partial" = 7 字符
         // 诊断快照先于异常上抛（诊断不因异常丢失）。
         val diag = chunks.lastOrNull { it.diagnostics != null }?.diagnostics
         assertNotNull("异常路径同样携带诊断快照", diag)

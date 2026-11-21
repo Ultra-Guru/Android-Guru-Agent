@@ -99,9 +99,14 @@ internal class TurnStatsCollector(
         if (firstTokenLatencyMs == null) firstTokenLatencyMs = clock() - startMs
     }
 
-    /** 收尾原因到达（取最后一次；[DONE] 传入 "done"）。 */
+    /**
+     * 收尾原因到达（真实 finish_reason 优先——[DONE] 的通用 "done" 标记
+     * 不覆盖先前已见的 length/content_filter 等真实收尾语义）。
+     */
     fun onFinishReason(reason: String?) {
-        if (reason != null) finishReason = reason
+        if (reason == null) return
+        if (reason == "done" && finishReason != null) return
+        finishReason = reason
     }
 
     /** finish_reason=length 截断。 */

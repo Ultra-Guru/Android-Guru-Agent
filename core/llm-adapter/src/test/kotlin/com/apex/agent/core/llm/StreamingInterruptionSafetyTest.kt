@@ -90,7 +90,8 @@ class StreamingInterruptionSafetyTest {
             }).collect { chunks += it }
             fail("truncated SSE must not succeed")
         } catch (e: Exception) {
-            assertEquals("partial", chunks.single().content)
+            // SPE-08 P1-1：流尾追加一帧诊断快照（content=null）——按内容帧过滤
+            assertEquals("partial", chunks.single { it.content != null }.content)
             assertTrue(e is IOException || e is LlmException)
         }
     }
