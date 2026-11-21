@@ -43,8 +43,9 @@ class EngineActiveExtensionsTest {
             "Thinking: AUTO"
         )
         val out = EnginePrompts.renderActiveExtensions(lines)
-        // 截断语义（不比行数——截断标记 + 头部牺牲 + 预算达标三联证）
-        assertEquals("Thinking 恒保留（末行不截）", "Thinking: AUTO", out.last())
+        // 截断语义（截断标记 + 头部牺牲 + Thinking 保留 + 预算达标四联证；
+        // 标记追加在末位，Thinking 保留但不必是最后一行）
+        assertTrue("Thinking 恒保留（不截）", out.contains("Thinking: AUTO"))
         assertTrue("截断标记存在", out.any { it.startsWith("… (truncated)") })
         assertFalse("头部行（Skills）被按序牺牲", out.first().startsWith("Skills:"))
         assertTrue("截断后达预算（含标记 ≤500 token）", out.sumOf { it.length } / 4 <= 500)
