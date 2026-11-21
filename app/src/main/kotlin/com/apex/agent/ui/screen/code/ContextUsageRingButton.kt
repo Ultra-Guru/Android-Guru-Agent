@@ -128,7 +128,7 @@ internal fun ContextUsageRingButton(
                     val isFullCircle = fraction >= FULL_FRACTION_THRESHOLD || sweep >= 359.9f
                     val progressCap = if (isFullCircle) StrokeCap.Butt else StrokeCap.Round
                     val progressStroke = Stroke(width = strokeWidthPx, cap = progressCap)
-                    val haloStrokeWidth = min(haloWidthPx, drawDiameter * 0.3f).coerceAtMost(strokeWidthPx + 2.5.dp.toPx())
+                    val haloStrokeWidth = min(haloWidthPx, drawDiameter * 0.3f).coerceAtMost(strokeWidthPx + extraHaloPaddingPx)
                     val haloStroke = Stroke(width = haloStrokeWidth, cap = progressCap)
                     // 外晕实际sweep：满圆时画完整360度，否则保持弧长一致
                     val haloSweep = if (isFullCircle) 360f else sweep
