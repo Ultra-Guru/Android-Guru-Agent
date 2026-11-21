@@ -1,6 +1,7 @@
 package com.apex.agent.core.llm
 
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
@@ -98,8 +99,12 @@ class ToolCallJsonNullNameTest {
         assertEquals("", tc.arguments)
     }
 
+    // 注：chat()（非流式）经 SuspendHttpRetry 的 withTimeoutOrNull(requestTimeoutMs)
+    // 包裹 —— runTest 虚拟时间下，等待 OkHttp 真实线程回调时调度器唯一可推进的
+    // 定时任务就是那个总预算超时，虚拟时间会瞬间跳到超时点误报「预算耗尽」。
+    // 与 DefaultModelRuntimeTest 同款改用 runBlocking（真实时钟）驱动。
     @Test
-    fun `非流式响应 name 为 JSON null 时解析为空串而非字面 null`() = runTest {
+    fun `非流式响应 name 为 JSON null 时解析为空串而非字面 null`() = runBlocking {
         val body =
             """{"choices":[{"message":{"content":null,"tool_calls":[{"id":null,""" +
                 """"type":"function","function":{"name":null,"arguments":"{}"}}]}}],""" +
@@ -111,7 +116,7 @@ class ToolCallJsonNullNameTest {
     }
 
     @Test
-    fun `非流式响应合法工具调用不受影响`() = runTest {
+    fun `非流式响应合法工具调用不受影响`() = runBlocking {
         val body =
             """{"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_9",""" +
                 """"type":"function","function":{"name":"McpSearchlightWebSearch",""" +
