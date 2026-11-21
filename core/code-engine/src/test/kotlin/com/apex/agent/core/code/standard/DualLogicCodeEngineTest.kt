@@ -327,7 +327,7 @@ class DualLogicCodeEngineTest {
             EngineRuntimeState(
                 thinkingLevel = CodeThinkingLevel.ULTRACODE,
                 mode = AgentMode.PLAN,
-                autonomy = AutonomyLevel.FULL_AUTO,
+                autonomy = AutonomyLevel.FULLY,
                 preClarify = true,
                 replayAutonomy = true,
                 globalRules = "rule-1",
@@ -345,7 +345,7 @@ class DualLogicCodeEngineTest {
             assertTrue(facade.calls.contains("persona"))
             assertTrue(facade.calls.contains("forced"))
             assertTrue(facade.calls.contains("mode:PLAN"))
-            assertTrue(facade.calls.contains("autonomy:FULL_AUTO:true"))
+            assertTrue(facade.calls.contains("autonomy:FULLY:true"))
         }
         // 档位路由当前激活线（LOOM）：切完即读即一致，无需等下一次发送
         assertEquals(CodeThinkingLevel.ULTRACODE, dual.thinkingLevel())
