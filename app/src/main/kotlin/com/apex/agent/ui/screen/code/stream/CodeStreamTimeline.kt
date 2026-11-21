@@ -112,8 +112,14 @@ internal fun CodeStreamTimeline(
     // ═══ 完整档切片：生成中只留用户输入及更早的终态内容，本轮过程条目
     // 静默（切片是纯派生视图——session 侧数据不变，切换不丢任何条目）═══
     val completeActive = isStreaming && renderMode == CodeOutputMode.COMPLETE
-    val visibleEntries = remember(snapshot.entries, completeActive) {
-        if (completeActive) completeModeVisibleEntries(snapshot.entries) else snapshot.entries
+    // SPE-07 P1-4：完整档切片缓存 —— remember 键用 (entries.size, completeActive)：
+    // 流式文本分片走 replaceEntry 原位合并（size 不变）→ 不再每拍全量重扫切片；
+    // beginRun 追加 UserEntry / 新条目（size 变化）自动失效重算。流式档恒
+    // 直读快照（零切片零缓存——remember 键含快照实例会退化为每拍重算）。
+    val visibleEntries = if (completeActive) {
+        remember(snapshot.entries.size, completeActive) { completeModeVisibleEntries(snapshot.entries) }
+    } else {
+        snapshot.entries
     }
     // 完整档聚合（聚合抽屉）：收束后的连续工具胶囊段折叠为聚合卡
     //（技能 / MCP / 内置三分类摘要 + 可展开明细）；生成中同款适用——历史轮

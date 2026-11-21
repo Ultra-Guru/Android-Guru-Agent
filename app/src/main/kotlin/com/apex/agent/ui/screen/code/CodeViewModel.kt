@@ -63,6 +63,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -206,14 +207,21 @@ class CodeViewModel @Inject constructor(
     private var sessionLoadJob: Job? = null
 
     // ═══ 胶囊时间轴（渲染通道数据源）═══
-    // 渲染半边：事件归约进 session，25ms ticker 拉快照进 uiState.stream；副作用
+    // 渲染半边：事件归约进 session，自适应 ticker（SPE-07 P1-1，16/25/33ms
+    // 忙档 + 50/250ms 空闲巡逻 + 事件唤醒）拉快照进 uiState.stream；副作用
     // 半边（长任务追踪/深水区观察器/落盘）仍走既有 reduce——双通道彻底分流。
 
     /** 胶囊时间轴会话（VM 自持，跨 run 累积；恢复/清空见 bind/clear）。 */
     internal val streamSession = CodeStreamSession()
 
-    /** 渲染 ticker：运行期每 25ms 拉一次快照（≤40Hz 攒批）。 */
+    /** 渲染 ticker：运行期按 [renderTickerPolicy] 自适应节拍拉快照。 */
     internal var renderJob: Job? = null
+
+    /** 渲染节拍自适应策略（SPE-07 P1-1，纯状态机，见 CodeRenderTickerPolicy.kt）。 */
+    internal val renderTickerPolicy = RenderTickerPolicy()
+
+    /** 事件唤醒信号（合流至多 1 个 pending；事件到达即打断 ticker 的巡逻延迟）。 */
+    internal val renderWakeSignal = Channel<Unit>(Channel.CONFLATED)
 
     /** 回复聚合器（P1 Event Aggregator，类与纪律见 CodeResponseAggregator.kt）。 */
     internal val responseAggregator = ResponseAggregator()
@@ -631,6 +639,9 @@ class CodeViewModel @Inject constructor(
                     longTaskTracker.onEvent(event)
                     roleExperience.onEvent(event)
                     maybeEscalateOnDeepWater(event)
+                    // SPE-07 P1-1：事件到达即唤醒渲染拍（空闲巡逻期间首
+                    // token ≤ 1 拍上屏；合流信号零堆积）
+                    renderWakeSignal.trySend(Unit)
                     if (event is AgentEvent.ThinkingChunk && event.text.contains(GOAL_NOTICE_MARKER)) {
                         // v3 GOAL：验收结论不走思考卡（默认折叠只有 80 字预览，
                         // 且下一轮 ThinkingComplete 会整体覆写文本吞掉通知）
@@ -1147,7 +1158,7 @@ class CodeViewModel @Inject constructor(
     fun toolCallById(call: StreamToolCall): StreamToolCall = call
 
     internal companion object {
-        /** 渲染攒批窗口：25ms = 上限 40Hz（Pipeline 2.0 目标带 16~33ms 取中）。 */
-        const val RENDER_TICK_MS = 25L
+        // 旧 RENDER_TICK_MS 固定 25ms 常量已删除（SPE-07 P1-1）：节拍单一
+        // 事实源迁至 RenderTickerPolicy（忙三档 16/25/33 + 空闲巡逻 50/250）。
     }
 }
