@@ -819,6 +819,24 @@ object TerminalModule {
     )
 
     /**
+     * SSH/SFTP 远程文件系统（Operit 对标 §4.7 缺项）—— 与 GuestFilesystem 同层
+     * 注入（terminal/fs 包），但作用域是**远端主机**而非本地 rootfs。
+     * KnownHostsStore 单例由独立 @Provides 提供（app 侧 UI「信任此主机」时调用
+     * [com.apex.agent.platform.TerminalFs.KnownHostsStore.remember] 持久化）。
+     */
+    @Provides
+    @Singleton
+    fun provideKnownHostsStore(): com.apex.agent.platform.TerminalFs.KnownHostsStore =
+        com.apex.agent.platform.TerminalFs.InMemoryKnownHostsStore()
+
+    @Provides
+    @Singleton
+    fun provideRemoteSshFilesystem(
+        knownHosts: com.apex.agent.platform.TerminalFs.KnownHostsStore
+    ): com.apex.agent.platform.TerminalFs.RemoteSshFilesystem =
+        com.apex.agent.platform.TerminalFs.RemoteSshFilesystem(knownHosts = knownHosts)
+
+    /**
      * T82: GuestBridgeService —— apexctl 桥宿主（guest 脚本 ↔ Android 能力）。
      * 桥根目录落在持久化 home bind 下（host `<filesDir>/linux/home/.apex/bridge`
      * = guest `/root/.apex/bridge`）—— 复用既有 bind，不引入新 bind 面。
