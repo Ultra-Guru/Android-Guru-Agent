@@ -452,4 +452,5 @@
     <string name="code_skin_pending_new_chat">Appearance switched · applies in a new chat</string>
     <string name="code_skin_pending_apply_now">Apply now</string>
     <string name="code_skin_pending_discard">Revert</string>
+    <string name="agent_orb_running">Agent task running</string>
 </resources>
