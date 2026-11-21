@@ -27,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
@@ -43,7 +44,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import java.io.File
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
@@ -183,6 +186,12 @@ fun SettingsScreen(
                     .padding(padding)
                     .fillMaxSize()
             ) {
+                // BUG-01（设置 spec 02）：只读安全模式持久横幅 —— 配置读取
+                // 失败时告知原始文件已保留、不会被默认值覆盖，以及恢复路径
+                val corruptReads by viewModel.corruptReads.collectAsStateWithLifecycle()
+                if (corruptReads.isNotEmpty()) {
+                    SettingsCorruptBanner(corruptReads)
+                }
                 if (activeTab.isNotEmpty()) {
                     // ═══ 浏览器式标签条：页面排在最上方（顶栏下、内容区上）═══
                     SettingsTabBar(
@@ -404,6 +413,43 @@ private fun SettingsLandingHint(onOpenDrawer: () -> Unit) {
         )
         Button(onClick = onOpenDrawer) {
             Text(stringResource(R.string.settings_open_drawer))
+        }
+    }
+}
+
+/**
+ * BUG-01（设置 spec 02）：只读安全模式横幅 —— 配置读取失败时持久展示
+ * 备份位置与恢复路径，绝不静默吞掉「配置损坏」这一事实。
+ * 验收（spec）：注入损坏 JSON 后启动，原始字符串仍可读、默认值不覆盖
+ * 磁盘、UI 显示诊断横幅。
+ */
+@Composable
+private fun SettingsCorruptBanner(corruptReads: List<CorruptRead>) {
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Text(
+                text = stringResource(R.string.settings_corrupt_banner_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Spacer(Modifier.size(4.dp))
+            Text(
+                text = stringResource(R.string.settings_corrupt_banner_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Spacer(Modifier.size(4.dp))
+            corruptReads.forEach { cr ->
+                Text(
+                    text = "• ${cr.prefKey} → ${File(cr.backupPath).name}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
         }
     }
 }

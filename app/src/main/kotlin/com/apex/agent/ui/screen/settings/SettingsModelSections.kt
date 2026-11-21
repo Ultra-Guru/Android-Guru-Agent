@@ -9,13 +9,17 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.EditNote
@@ -26,6 +30,8 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -35,11 +41,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import com.apex.agent.R
 import com.apex.agent.core.llm.ModelProfile
 import com.apex.agent.core.llm.ModelRole
@@ -412,7 +425,15 @@ internal fun ProviderEditorDialog(
     viewModel: SettingsViewModel,
     onDismiss: () -> Unit
 ) {
-    var p by remember { mutableStateOf(provider) }
+    // BUG-03（设置 spec 02）：Key 输入改单值 + 密码遮挡 + 显隐切换（对齐
+    // MarketRegistrySections 的既有模式），多行输入删除 —— 运行时只消费
+    // 第一个 Key，多行是假能力；编辑态改 rememberSaveable（旋转不再丢编辑）。
+    val providerSaver = Saver<ProviderConfig, String>(
+        save = { Json.encodeToString(it) },
+        restore = { runCatching { Json.decodeFromString<ProviderConfig>(it) }.getOrDefault(provider) },
+    )
+    var p by rememberSaveable(stateSaver = providerSaver) { mutableStateOf(provider) }
+    var keyVisible by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = { TextButton(onClick = { viewModel.upsertProvider(p); onDismiss() }) { Text(stringResource(R.string.settings_save)) } },
@@ -424,11 +445,32 @@ internal fun ProviderEditorDialog(
                 TextFieldRow("Base URL", p.baseUrl, description = stringResource(R.string.settings_base_url_hint)) { p = p.copy(baseUrl = it) }
                 // 假设置清理：Auth Type / Organization / Project / Key Rotation 四项
                 // 均为“数据预埋”（无任何运行时消费方），随本轮真设置化移除
-                Text(stringResource(R.string.settings_keys_hint), style = MaterialTheme.typography.labelMedium)
                 OutlinedTextField(
-                    p.apiKeys.joinToString("\n"),
-                    { p = p.copy(apiKeys = it.lines().map { s -> s.trim() }.filter { s -> s.isNotBlank() }) },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp), maxLines = 6
+                    value = p.apiKeys.firstOrNull().orEmpty(),
+                    onValueChange = { p = p.copy(apiKeys = listOf(it.trim()).filter { s -> s.isNotBlank() }) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("API Key") },
+                    supportingText = { Text(stringResource(R.string.settings_keys_hint), style = MaterialTheme.typography.labelMedium) },
+                    visualTransformation = if (keyVisible) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    trailingIcon = {
+                        IconButton(onClick = { keyVisible = !keyVisible }) {
+                            Icon(
+                                imageVector = if (keyVisible) Icons.Filled.VisibilityOff
+                                else Icons.Filled.Visibility,
+                                contentDescription = stringResource(
+                                    if (keyVisible) R.string.settings_key_hide
+                                    else R.string.settings_key_show
+                                ),
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    },
                 )
                 KeyValueEditor(stringResource(R.string.settings_default_headers), p.defaultHeaders) {
                     p = p.copy(defaultHeaders = it)

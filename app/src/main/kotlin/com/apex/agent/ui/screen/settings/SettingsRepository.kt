@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.apex.agent.R
 import com.apex.agent.core.code.subagent.SubAgentSettings
 import com.apex.agent.core.llm.*
 import com.apex.agent.core.logging.AppLogger
@@ -16,8 +17,21 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.io.File
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/**
+ * BUG-01（设置 spec 02）：损坏读取现场 —— 只读安全模式的 UI 数据面。
+ * [backupPath] 指向 `files/settings-corrupt/` 下的原始串备份，可人工恢复
+ * 或经「重新导入备份」流程回灌。
+ */
+data class CorruptRead(
+    val prefKey: String,
+    val backupPath: String,
+    val error: String,
+)
 
 /**
  * 设置中心持久化层（单一可信源）。
@@ -90,22 +104,188 @@ class SettingsRepository @Inject constructor(
     private val _agentSettings = MutableStateFlow(AgentSettings())
     val agentSettings: StateFlow<AgentSettings> = _agentSettings.asStateFlow()
 
+    /**
+     * BUG-01（设置 spec 02）只读安全模式状态：损坏读取的现场列表。
+     * 非空 = 本次启动至少一个设置键存在但解析失败 —— 原始串已落盘备份、
+     * init 禁止写回；UI 应显示持久诊断横幅（见 SettingsScreen）。
+     */
+    private val _corruptReads = MutableStateFlow(emptyList<CorruptRead>())
+    val corruptReads: StateFlow<List<CorruptRead>> = _corruptReads.asStateFlow()
+
+    /**
+     * 单键读取三分态（BUG-01）：Missing = 首次启动（键不存在）；Ok = 正常；
+     * Corrupt = 键存在但解析失败 —— 三者此前混在一个 null 里，是「损坏即
+     * 被默认值覆盖」的根因。
+     */
+    private sealed interface PrefRead<out T> {
+        data object Missing : PrefRead<Nothing>
+        data class Ok<T>(val value: T) : PrefRead<T>
+        data class Corrupt(val key: String, val raw: String, val cause: Throwable) : PrefRead<Nothing>
+    }
+
+    private fun readProvidersPref(): PrefRead<List<ProviderConfig>> {
+        val raw = prefs.getString(KEY_PROVIDERS, null) ?: return PrefRead.Missing
+        return runCatching { json.decodeFromString<List<ProviderConfig>>(raw) }
+            .fold({ PrefRead.Ok(it) }, { PrefRead.Corrupt(KEY_PROVIDERS, raw, it) })
+    }
+
+    private fun readProfilesPref(): PrefRead<List<ModelProfile>> {
+        val raw = prefs.getString(KEY_PROFILES, null) ?: return PrefRead.Missing
+        return runCatching { json.decodeFromString<List<ModelProfile>>(raw) }
+            .fold({ PrefRead.Ok(it) }, { PrefRead.Corrupt(KEY_PROFILES, raw, it) })
+    }
+
+    private fun readRolesPref(): PrefRead<ModelRoleConfig> {
+        val raw = prefs.getString(KEY_ROLES, null) ?: return PrefRead.Missing
+        return runCatching { json.decodeFromString<ModelRoleConfig>(raw) }
+            .fold({ PrefRead.Ok(it) }, { PrefRead.Corrupt(KEY_ROLES, raw, it) })
+    }
+
+    private fun readAgentSettingsPref(): PrefRead<AgentSettings> {
+        val raw = prefs.getString(KEY_AGENT, null) ?: return PrefRead.Missing
+        return runCatching { json.decodeFromString<AgentSettings>(raw) }
+            .fold({ PrefRead.Ok(it) }, { PrefRead.Corrupt(KEY_AGENT, raw, it) })
+    }
+
+    /**
+     * BUG-01：损坏现场落盘备份（原始串可用于人工恢复 / 重新导入），
+     * 并把现场暴露给 UI 横幅。备份文件名按 spec：`apex_settings_corrupt_<key>_<ts>`。
+     */
+    private fun flagCorrupt(key: String, raw: String, cause: Throwable) {
+        val dir = File(context.filesDir, "settings-corrupt").apply { mkdirs() }
+        val backup = File(dir, "apex_settings_corrupt_${key}_${System.currentTimeMillis()}.txt")
+        runCatching {
+            backup.writeText(
+                "# $key 解析失败，原始内容如下（可用于人工恢复或重新导入）\n" +
+                    "# error: ${cause.javaClass.simpleName}: ${cause.message}\n\n$raw\n"
+            )
+        }
+        AppLogger.instance.warn(
+            LogCategory.SYSTEM, "SettingsRepository",
+            "设置项 $key 解析失败 —— 原始内容已备份到 ${backup.name}；" +
+                "本次启动进入只读安全模式，不写回默认值"
+        )
+        _corruptReads.value = _corruptReads.value + CorruptRead(
+            prefKey = key,
+            backupPath = backup.absolutePath,
+            error = "${cause.javaClass.simpleName}: ${cause.message}",
+        )
+    }
+
+    /**
+     * BUG-02：启动清扫历史明文 `provider_api_key_*` 残留 —— 密文区已有则
+     * 直接删明文；密文区没有则先搬进密文再删。`getProviderApiKey` 的明文
+     * 回退分支随之删除（见其 KDoc）。
+     */
+    private fun sweepPlaintextApiKeys() {
+        prefs.all.keys.filter { it.startsWith(KEY_PROVIDER_KEY) }.forEach { k ->
+            val plain = prefs.getString(k, null) ?: return@forEach
+            if (securePrefs.getString(k, null) == null && plain.isNotBlank()) {
+                securePrefs.edit().putString(k, plain).commit()
+            }
+            prefs.edit().remove(k).apply()
+        }
+    }
+
+    /** BUG-06：种子 / 迁移后的关键写入 —— 单次批量 commit，结果上报。 */
+    private fun persistAllBlocking(): Boolean =
+        prefs.edit()
+            .putString(KEY_PROVIDERS, json.encodeToString(providersForPersist()))
+            .putString(KEY_PROFILES, json.encodeToString(_profiles.value))
+            .putString(KEY_ROLES, json.encodeToString(_roles.value))
+            .putString(KEY_AGENT, json.encodeToString(_agentSettings.value))
+            .commit()
+
     init {
-        // 所有状态流声明完成后，统一执行加载 / 种子 / 迁移，并立即持久化，
-        // 避免字段初始化顺序导致迁移结果被覆盖。
-        var provs = readProviders() ?: ModelProfileDefaults.builtInProviders
-        var profs = (readProfiles(provs) ?: ModelProfileDefaults.defaultProfiles(provs)).toMutableList()
+        // 所有状态流声明完成后，统一执行加载 / 种子 / 迁移。
+        //
+        // BUG-01（设置 spec 02）：区分「首次启动（键不存在）」与「解析失败
+        // （键存在但非法）」—— 解析失败 → 原始串落盘备份 + 只读安全模式 +
+        // 绝不写回默认值。此前两者混在一个 null 里，一次 JSON 损坏就会在
+        // 启动时把用户全部配置永久重置。
+        // BUG-06：写盘只发生在「种子 / 迁移」真正发生时（dirty 门控）；
+        // 关键写入单次批量 commit 并校验结果，失败进日志（诊断可见）。
+        var dirty = false
+
+        val provRead = readProvidersPref()
+        val profRead = readProfilesPref()
+        val roleRead = readRolesPref()
+        val agentRead = readAgentSettingsPref()
+
+        val corrupts = listOf(provRead, profRead, roleRead, agentRead)
+            .filterIsInstance<PrefRead.Corrupt>()
+        corrupts.forEach { flagCorrupt(it.key, it.raw, it.cause) }
+        if (corrupts.isNotEmpty()) {
+            // 只读安全模式：内存用默认值保证 UI 可用，磁盘原始串原样保留
+            //（已备份到 settings-corrupt/），本次 init 零写盘。
+            _providers.value = ModelProfileDefaults.builtInProviders
+            _profiles.value = ModelProfileDefaults.defaultProfiles(_providers.value)
+            _roles.value = ModelProfileDefaults.defaultRoles(_providers.value)
+            _agentSettings.value = AgentSettings()
+            return
+        }
+
+        var provs = when (val r = provRead) {
+            is PrefRead.Ok<*> -> r.value as List<ProviderConfig>
+            else -> {
+                dirty = true
+                ModelProfileDefaults.builtInProviders
+            }
+        }
+        var profs = when (val r = profRead) {
+            is PrefRead.Ok<*> -> (r.value as List<ModelProfile>).toMutableList()
+            else -> {
+                dirty = true
+                ModelProfileDefaults.defaultProfiles(provs).toMutableList()
+            }
+        }
         provs = migrateAndHydrateApiKeys(provs)
-        migrateLegacyConfig(profs, provs) { newProvs -> provs = newProvs }
+        dirty = migrateLegacyConfig(profs, provs) { newProvs -> provs = newProvs } || dirty
         provs = migrateAndHydrateApiKeys(provs)
         _providers.value = provs
         _profiles.value = profs
-        _roles.value = readRoles(profs) ?: ModelProfileDefaults.defaultRoles(profs)
-        _agentSettings.value = readAgentSettings()
-        persistProviders()
-        persistProfiles()
-        persistRoles()
-        persistAgentSettings()
+
+        val roles = when (val r = roleRead) {
+            is PrefRead.Ok<*> -> r.value as ModelRoleConfig
+            else -> {
+                dirty = true
+                ModelProfileDefaults.defaultRoles(profs)
+            }
+        }
+        _roles.value = roles
+
+        val agentSettings = when (val r = agentRead) {
+            is PrefRead.Ok<*> -> {
+                val before = r.value as AgentSettings
+                val after = migratePermissionDefaultBypass(before)
+                // 权限迁移标记落位 = 一次真实迁移，同样需要写盘
+                if (after.permissionBypassMigrated != before.permissionBypassMigrated) {
+                    dirty = true
+                }
+                after
+            }
+            else -> {
+                dirty = true
+                // 兼容旧版散装 Key（仅保留仍在消费的 keepAlive；Agent 模式散装键
+                // 已随模式移除，ignoreUnknownKeys 吞掉存量 JSON 里的 Agent 字段）
+                migratePermissionDefaultBypass(
+                    AgentSettings(keepAlive = prefs.getBoolean("agent_keep_alive", true))
+                )
+            }
+        }
+        _agentSettings.value = agentSettings
+
+        // BUG-02：清掉历史明文 API Key 残留（含迁移完成后的散装键）
+        sweepPlaintextApiKeys()
+
+        if (dirty) {
+            if (!persistAllBlocking()) {
+                AppLogger.instance.warn(
+                    LogCategory.SYSTEM, "SettingsRepository",
+                    "种子 / 迁移后的设置写盘 commit 失败 —— 配置仅存于内存，建议在诊断中检查存储可用性"
+                )
+            }
+        }
     }
 
     // ── 查询辅助 ───────────────────────────────────────────────
@@ -122,11 +302,16 @@ class SettingsRepository @Inject constructor(
     fun defaultProvider(): ProviderConfig? = getProvider(defaultProfile().providerId)
 
     // ── API Key：加密存储 ───────────────────────────────────────
-    /** 读取某个 Provider 的 API Key（密文；无则返回空串而非 null，便于直接判空）。 */
+    /**
+     * 读取某个 Provider 的 API Key（密文；无则返回空串而非 null，便于直接判空）。
+     *
+     * BUG-02（设置 spec 02）：明文回退分支已删除 —— 明文残留由启动清扫
+     * （[sweepPlaintextApiKeys]）迁移进密文区后清除，读取路径不再接触
+     * `apex_settings`。
+     */
     fun getProviderApiKey(providerId: String): String {
         if (providerId.isBlank()) return ""
-        return securePrefs.getString(KEY_PROVIDER_KEY + providerId, null)
-            ?: prefs.getString(KEY_PROVIDER_KEY + providerId, null).orEmpty()
+        return securePrefs.getString(KEY_PROVIDER_KEY + providerId, null).orEmpty()
     }
 
     /**
@@ -213,8 +398,12 @@ class SettingsRepository @Inject constructor(
     fun duplicateProfile(id: String) {
         val src = getProfile(id) ?: return
         val copy = src.copy(
-            id = "profile_${System.currentTimeMillis()}",
-            name = "${src.name} (副本)",
+            // BUG-07（设置 spec 02）：毫秒时间戳在同一毫秒内连续复制会碰撞
+            // 出相同 ID 导致静默覆盖 —— 改 UUID；副本名走本地化资源
+            // （settings_profile_copy_suffix，values/values-zh 镜像），
+            // 英文环境不再显示「(副本)」。
+            id = "profile_" + UUID.randomUUID(),
+            name = "${src.name}${context.getString(R.string.settings_profile_copy_suffix)}",
             isDefault = false
         )
         upsertProfile(copy)
@@ -285,49 +474,29 @@ class SettingsRepository @Inject constructor(
         prefs.edit().putString(KEY_AGENT, json.encodeToString(_agentSettings.value)).apply()
 
     // ── 加载 / 种子 / 迁移 ──────────────────────────────────────
-    private fun readProviders(): List<ProviderConfig>? {
-        val raw = prefs.getString(KEY_PROVIDERS, null) ?: return null
-        return runCatching { json.decodeFromString<List<ProviderConfig>>(raw) }.getOrNull()
-    }
-
-    private fun readProfiles(providers: List<ProviderConfig>): List<ModelProfile>? {
-        val raw = prefs.getString(KEY_PROFILES, null) ?: return null
-        return runCatching { json.decodeFromString<List<ModelProfile>>(raw) }.getOrNull()
-            ?: ModelProfileDefaults.defaultProfiles(providers)
-    }
-
-    private fun readRoles(profiles: List<ModelProfile>): ModelRoleConfig? {
-        val raw = prefs.getString(KEY_ROLES, null) ?: return null
-        return runCatching { json.decodeFromString<ModelRoleConfig>(raw) }.getOrNull()
-            ?: ModelProfileDefaults.defaultRoles(profiles)
-    }
-
-    private fun readAgentSettings(): AgentSettings {
-        val raw = prefs.getString(KEY_AGENT, null)
-        if (raw != null) {
-            runCatching { json.decodeFromString<AgentSettings>(raw) }.getOrNull()
-                ?.let { return migratePermissionDefaultBypass(it) }
-        }
-        // 兼容旧版散装 Key（仅保留仍在消费的 keepAlive；Agent 模式散装键
-        // 已随模式移除，ignoreUnknownKeys 吞掉存量 JSON 里的 Agent 字段）
-        return migratePermissionDefaultBypass(
-            AgentSettings(keepAlive = prefs.getBoolean("agent_keep_alive", true))
-        )
-    }
+    // （BUG-01：原 readProviders/readProfiles/readRoles/readAgentSettings
+    //   的「缺失与损坏同返回 null」实现已由 PrefRead 三分态取代，见文件头。）
 
     /**
      * 迁移旧版散装配置（llm_base_url 等）为一个 Custom Profile + Provider，并设为默认。
      * 通过 [onProvidersChanged] 回调把新增的 Provider 回传给调用方（init 中赋值给可变变量），
      * 避免在字段初始化顺序未确定的情况下直接改写 [_providers]。
+     *
+     * BUG-02（设置 spec 02）修复：迁移现在是一个**完整事务** ——
+     * ① 旧 Key 先写入加密区并 `commit()` 确认成功；② 确认成功后才删除
+     * 明文散装键（`llm_api_key` 等）；③ 最后才置 `KEY_LEGACY_MIGRATED`。
+     * 此前只置标记、明文 Key 永久留在 `apex_settings`（adb backup / 文件
+     * 导出可带出）。任一步失败都不置标记 —— 下次启动自动重试，绝不因
+     * 半程失败而永久丢失旧配置。返回是否真的执行了迁移（init 写盘门控）。
      */
     private fun migrateLegacyConfig(
         profiles: MutableList<ModelProfile>,
         providers: List<ProviderConfig>,
         onProvidersChanged: (List<ProviderConfig>) -> Unit
-    ) {
+    ): Boolean {
         val legacyKey = prefs.getString("llm_api_key", null)
-        if (legacyKey.isNullOrBlank()) return
-        if (prefs.getBoolean(KEY_LEGACY_MIGRATED, false)) return
+        if (legacyKey.isNullOrBlank()) return false
+        if (prefs.getBoolean(KEY_LEGACY_MIGRATED, false)) return false
 
         val baseUrl = prefs.getString("llm_base_url", "") ?: ""
         val model = prefs.getString("llm_model", "") ?: ""
@@ -350,12 +519,33 @@ class SettingsRepository @Inject constructor(
             reasoningEffort = effort,
             isDefault = true,
         )
+        // ① 旧 Key 进密文区，commit() 确认落盘成功
+        val secureOk = securePrefs.edit()
+            .putString(KEY_PROVIDER_KEY + customProvider.id, legacyKey)
+            .commit()
+        if (!secureOk) {
+            AppLogger.instance.warn(
+                LogCategory.SYSTEM, "SettingsRepository",
+                "旧配置迁移的 API Key 加密写入失败（commit=false）—— 保留明文键，" +
+                    "下次启动重试迁移（绝不因半程失败而永久丢失旧配置）"
+            )
+            return false
+        }
         // 旧的默认 Profile 取消默认
         val idx = profiles.indexOfFirst { it.isDefault }
         if (idx >= 0) profiles[idx] = profiles[idx].copy(isDefault = false)
         profiles.add(migratedProfile)
         onProvidersChanged(providers + customProvider)
-        prefs.edit().putBoolean(KEY_LEGACY_MIGRATED, true).apply()
+        // ② ③ 密文确认成功 → 明文散装键清场 + 迁移标记落位（单事务）
+        prefs.edit()
+            .remove("llm_api_key")
+            .remove("llm_base_url")
+            .remove("llm_model")
+            .remove("llm_temperature")
+            .remove("llm_reasoning_effort")
+            .putBoolean(KEY_LEGACY_MIGRATED, true)
+            .commit()
+        return true
     }
 
     companion object {

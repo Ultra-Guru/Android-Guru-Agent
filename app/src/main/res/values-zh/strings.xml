@@ -6,4 +6,5 @@
 <resources>
     <!-- 无障碍服务描述（系统设置页展示；platform/privilege accessibility_config.xml 引用） -->
     <string name="accessibility_description">Apex AI Agent 需要无障碍权限来读取屏幕内容和执行 UI 操作。这是 Agent「看见」和「操作」设备的核心能力。</string>
+    <string name="settings_profile_copy_suffix">（副本）</string>
 </resources>

@@ -255,7 +255,7 @@
     <string name="settings_cancel">Cancel</string>
     <string name="settings_save">Save</string>
     <string name="settings_edit_provider">Edit provider</string>
-    <string name="settings_keys_hint">API Keys (one per line; currently the first key is always used)</string>
+    <string name="settings_keys_hint">Only the first stored key is used by the runtime; it is masked — use the eye icon to reveal.</string>
     <string name="settings_default_headers">Default Headers (provider-level defaults)</string>
     <string name="settings_base_url_hint">OpenAI-compatible endpoint, e.g. https://api.openai.com/v1</string>
 
@@ -910,4 +910,8 @@
     <string name="tool_cat_utility">Utilities</string>
     <string name="settings_test_connection">Test Connection</string>
     <string name="settings_json_schema_label">JSON Schema</string>
+    <string name="settings_key_show">Show API key</string>
+    <string name="settings_key_hide">Hide API key</string>
+    <string name="settings_corrupt_banner_title">Some settings failed to load</string>
+    <string name="settings_corrupt_banner_body">Your original files were backed up and will NOT be overwritten with defaults. Fix or re-import your backup to restore; backups are in app storage under settings-corrupt/.</string>
 </resources>

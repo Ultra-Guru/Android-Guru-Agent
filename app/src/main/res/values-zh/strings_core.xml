@@ -255,7 +255,7 @@
     <string name="settings_cancel">取消</string>
     <string name="settings_save">保存</string>
     <string name="settings_edit_provider">编辑 Provider</string>
-    <string name="settings_keys_hint">API Keys（每行一个；当前始终使用第一个 Key）</string>
+    <string name="settings_keys_hint">运行时仅使用第一个存储的 Key；默认遮挡，点眼睛图标显示。</string>
     <string name="settings_default_headers">Default Headers（Provider 级默认请求头）</string>
     <string name="settings_base_url_hint">OpenAI 兼容端点，如 https://api.openai.com/v1</string>
 
@@ -910,4 +910,8 @@
     <string name="tool_cat_utility">实用工具</string>
     <string name="settings_test_connection">测试连接</string>
     <string name="settings_json_schema_label">JSON Schema</string>
+    <string name="settings_key_show">显示 API Key</string>
+    <string name="settings_key_hide">隐藏 API Key</string>
+    <string name="settings_corrupt_banner_title">部分设置读取失败</string>
+    <string name="settings_corrupt_banner_body">原始文件已备份，本应用不会用默认值覆盖它们；可人工修复或重新导入备份恢复。备份位于应用存储 settings-corrupt/ 目录。</string>
 </resources>

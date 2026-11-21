@@ -57,6 +57,13 @@ class SettingsViewModel @Inject constructor(
     val roles: StateFlow<ModelRoleConfig> = repo.roles
     val agentSettings: StateFlow<AgentSettings> = repo.agentSettings
 
+    /**
+     * BUG-01（设置 spec 02）：损坏读取现场 —— 非空 = 本次启动有设置键解析
+     * 失败，仓库已进入只读安全模式（不写回默认值）；设置页顶部持久横幅
+     * 消费此流，备份文件路径可直接给人话展示。
+     */
+    val corruptReads: StateFlow<List<CorruptRead>> = repo.corruptReads
+
     val defaultProfile: ModelProfile get() = repo.defaultProfile()
 
     // ── Profile 操作 ───────────────────────────────────────────

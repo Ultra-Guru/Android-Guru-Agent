@@ -6,4 +6,5 @@
          description shown in system Settings — deleting it would break AAPT link.
          English default here; Chinese translation in values-zh/strings.xml. -->
     <string name="accessibility_description">Apex AI Agent needs accessibility permission to read screen content and perform UI actions. This is the core ability for the Agent to see and operate the device.</string>
+    <string name="settings_profile_copy_suffix"> (copy)</string>
 </resources>

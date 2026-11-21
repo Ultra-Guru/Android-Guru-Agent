@@ -203,7 +203,9 @@ internal fun ModelSetupCard(
         flushEdits()
         val newProviderId = providers.firstOrNull { it.id == "custom_openai" }?.id
             ?: providers.firstOrNull()?.id ?: ""
-        val id = "profile_${System.currentTimeMillis()}"
+        // BUG-07（设置 spec 02）：毫秒时间戳在快速连续新建时会生成相同 ID
+        // 导致静默覆盖 —— 改 UUID
+        val id = "profile_" + java.util.UUID.randomUUID()
         viewModel.upsertProfile(
             ModelProfile(id = id, name = newProfileName, providerId = newProviderId, modelId = "")
         )
