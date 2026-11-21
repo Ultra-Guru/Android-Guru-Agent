@@ -51,6 +51,28 @@ internal fun CodeViewModel.maybeAdvancePlaybook(event: AgentEvent) {
     }
 }
 
+/**
+ * 工具通道 advance 命令收集（VM init 单行调用，viewModelScope 常驻）：
+ * PlaybookTool.advance → store.commands → 控制器手动推进 → 系统消息 +
+ * extras 热重织（与回包判定推进同一收口）。
+ */
+internal fun CodeViewModel.collectPlaybookCommands() {
+    viewModelScope.launch {
+        playbookSessionStore.commands.collect { command ->
+            val outcome = playbookController.manualAdvance(command.fromStageIndex) ?: return@collect
+            appendSystemMessage(
+                languageManager.getString(
+                    R.string.playbook_stage_advanced,
+                    outcome.playbookName,
+                    outcome.newStageIndex + 1,
+                    outcome.reason
+                )
+            )
+            repushPlaybookExtras()
+        }
+    }
+}
+
 /** 幕推进/跳幕后 extras 整串重推 + prepareForTask 热重织。 */
 internal fun CodeViewModel.repushPlaybookExtras() {
     val recomposed = playbookController.recomposedExtras() ?: return
