@@ -2,6 +2,8 @@ package com.apex.agent.tools
 
 import com.apex.agent.core.engine.templates.playbook.PlaybookRegistry
 import com.apex.agent.ui.screen.code.PlaybookSessionStore
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -108,10 +110,10 @@ class PlaybookToolTest {
         val out = exec("""{"action":"advance","playbook_id":"builtin_playbook_code_review"}""")
         assertTrue(out.contains("已受理"))
         val received = mutableListOf<PlaybookSessionStore.AdvanceCommand>()
-        val job = kotlinx.coroutines.launch {
+        val job = launch {
             store.commands.collect { received.add(it) }
         }
-        kotlinx.coroutines.delay(100)
+        delay(100)
         job.cancel()
         assertEquals(1, received.size)
         assertEquals(0, received.first().fromStageIndex)
