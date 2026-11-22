@@ -118,8 +118,19 @@ jobs:
       - name: Provider connection draft regression (production Kotlin + JUnit)
         run: |
           set -euo pipefail
-          curl -fsSL --retry 3 https://repo.maven.apache.org/maven2/junit/junit/4.13.2/junit-4.13.2.jar -o /tmp/apex-libs/junit-4.13.2.jar
-          curl -fsSL --retry 3 https://repo.maven.apache.org/maven2/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar -o /tmp/apex-libs/hamcrest-core-1.3.jar
+          # 2026-11-22 Maven Central 429 事故加固：junit/hamcrest 首跑已落进
+          # /tmp/apex-libs 并随「Cache Kotlin compiler + Maven jars」缓存；
+          # 旧实现每跑无条件重下，限流窗口内必红。非空即跳过 + 退避重试
+          # （curl --retry 原生覆盖 429/5xx 瞬态）。
+          for dep in \
+            junit/junit/4.13.2/junit-4.13.2.jar \
+            org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar; do
+            out="/tmp/apex-libs/$(basename "$dep")"
+            [ -s "$out" ] && continue
+            curl --fail --silent --show-error --location \
+              --retry 5 --retry-delay 5 --connect-timeout 30 \
+              "https://repo.maven.apache.org/maven2/$dep" -o "$out"
+          done
           CP="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')"
           kotlinc -jvm-target 17 -cp "$CP" -d /tmp/build/provider-drafts \
             app/src/main/kotlin/com/apex/agent/ui/screen/settings/ProviderConnectionEditor.kt \
@@ -162,11 +173,16 @@ jobs:
       - name: MCP aggregation regression tests
         run: |
           set -euo pipefail
+          # 同上 429 加固：非空即跳过（缓存命中零网络）+ 退避重试。
           for dep in \
             junit/junit/4.13.2/junit-4.13.2.jar \
             org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar \
             org/jetbrains/kotlinx/kotlinx-coroutines-test-jvm/1.10.2/kotlinx-coroutines-test-jvm-1.10.2.jar; do
-            curl --fail --silent --show-error --location --retry 3 "https://repo.maven.apache.org/maven2/$dep" -o "/tmp/apex-libs/$(basename "$dep")"
+            out="/tmp/apex-libs/$(basename "$dep")"
+            [ -s "$out" ] && continue
+            curl --fail --silent --show-error --location \
+              --retry 5 --retry-delay 5 --connect-timeout 30 \
+              "https://repo.maven.apache.org/maven2/$dep" -o "$out"
           done
           CLASSPATH="$(find /tmp/apex-libs -name '*.jar' | tr '\n' ':')/tmp/build/llm-adapter:/tmp/build/logging:/tmp/build/tool-registry"
           kotlinc -cp "$CLASSPATH" -d /tmp/build/mcp-tests \
@@ -1060,8 +1076,23 @@ jobs:
           gradle-version: '8.2'
 
       - name: Build ComposeFoundry (compile gate)
+        # 2026-11-22 Maven Central 429 事故加固：Gradle 依赖解析遇 429/瞬态
+        # 网络错误时整 job 直接红（PR #941/#942 实录：GUH 缓存命中但细粒度
+        # dependencies 缓存未恢复 → 全量走网络 → 限流窗口内必翻车）。本 job
+        # 与 app-compile 的 Prewarm（5 次退避重试）对齐，但按「网络类失败才
+        # 重试」收窄：真编译错误二次仍红，不遮蔽、不白烧 60s。
         run: |
           cd ComposeFoundry
-          gradle :app:assembleDebug --no-daemon --stacktrace
+          set -o pipefail
+          if ! gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/foundry-build.log; then
+            if grep -qE "Could not (resolve|find|GET)|Received status code (429|5[0-9][0-9])|Connection (timed out|reset)" /tmp/foundry-build.log; then
+              echo "::warning::依赖解析疑似网络瞬态失败（Maven Central 429 限流?）—— 退避 60s 重试一次"
+              sleep 60
+              gradle :app:assembleDebug --no-daemon --stacktrace
+            else
+              echo "::error::ComposeFoundry 构建失败（非网络原因，不重试）"
+              exit 1
+            fi
+          fi
           APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
           echo "✅ ComposeFoundry 构建通过：$APK（$(du -m "$APK" | cut -f1) MB）"

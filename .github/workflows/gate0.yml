@@ -65,13 +65,25 @@ jobs:
       - name: Download JUnit + kotlin-stdlib
         # kotlin-stdlib 必须在**运行期** classpath 上（编译期 kotlinc 自带
         # bundled stdlib，测试进程却没有 —— ClassNotFoundException 教训）。
+        # 2026-11-22 Maven Central 429 事故加固：缓存命中时这三个 jar 已由上方
+        # actions/cache 恢复进 /tmp/gate0-libs，旧实现仍无条件重下 —— 限流窗口
+        # 内三连 429 直接翻红。现改为「非空即跳过」（fetch_static_analysis_deps.sh
+        # 同款口径），真下载时退避重试 5 次（curl --retry 原生覆盖 429/5xx）。
         run: |
+          set -euo pipefail
           mkdir -p /tmp/gate0-libs
           for dep in \
             junit/junit/4.13.2/junit-4.13.2.jar \
             org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar \
             org/jetbrains/kotlin/kotlin-stdlib/2.3.21/kotlin-stdlib-2.3.21.jar; do
-            curl --fail --silent --show-error --location --retry 3 "https://repo1.maven.org/maven2/$dep" -o "/tmp/gate0-libs/$(basename "$dep")"
+            out="/tmp/gate0-libs/$(basename "$dep")"
+            if [ -s "$out" ]; then
+              echo "✅ 已就绪（缓存命中）：$out"
+              continue
+            fi
+            curl --fail --silent --show-error --location \
+              --retry 5 --retry-delay 5 --connect-timeout 30 \
+              "https://repo1.maven.org/maven2/$dep" -o "$out"
           done
 
       - name: Compile Gate-0 pure sources + tests
