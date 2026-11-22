@@ -186,7 +186,10 @@ class CodeViewModel @Inject constructor(
     internal val deviceTierProvider: com.apex.agent.ui.screen.settings.DeviceTierProvider,
     // SPE-08 P1-1：流式回合诊断存储（诊断页「最近 N 次流式回合」；
     // 收束入口见 CodeStreamDiagnosticsOps.kt）
-    internal val streamTurnStore: com.apex.agent.diagnostics.StreamTurnDiagnosticsStore
+    internal val streamTurnStore: com.apex.agent.diagnostics.StreamTurnDiagnosticsStore,
+    // task-playbooks：剧本注册表（识别/挂载/幕推进接线见 CodePlaybookController）
+    internal val playbookRegistry: com.apex.agent.core.engine.templates.playbook.PlaybookRegistry,
+    internal val playbookHandoffStore: PlaybookHandoffStore
 ) : ViewModel() {
 
     // ═══ v1.6 工作区浏览器（全屏页，apex-kit-workspace）═══
@@ -291,6 +294,15 @@ class CodeViewModel @Inject constructor(
     /** Coding 专家模板（模式行胶囊；设置流 → 引擎人设通道）。 */
     internal val roleController: CodeRoleController by lazy {
         CodeRoleController(settingsRepository, { codeEngineImpl }, knowledgeBaseService, viewModelScope)
+    }
+
+    // task-playbooks：任务剧本控制器（识别/挂载/幕推进单点）。
+    internal val playbookController: CodePlaybookController by lazy {
+        CodePlaybookController({ settingsRepository.agentSettings.value.playbookAutoMount }, playbookRegistry).also {
+            it.onMountRecorded = { id ->
+                viewModelScope.launch { runCatching { playbookRegistry.incrementUsage(id) } }
+            }
+        }
     }
 
     /** 角色经验卡（沉淀/注入/强化三通道；经验域逻辑全在控制器内）。 */
@@ -647,6 +659,7 @@ class CodeViewModel @Inject constructor(
                     longTaskTracker.onEvent(event)
                     roleExperience.onEvent(event)
                     maybeEscalateOnDeepWater(event)
+                    maybeAdvancePlaybook(event) // task-playbooks 幕推进
                     // SPE-07 P1-1：事件到达即唤醒渲染拍（空闲巡逻期间首
                     // token ≤ 1 拍上屏；合流信号零堆积）
                     renderTickerPolicy.wakeUp()
