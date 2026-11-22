@@ -17,6 +17,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.apex.agent.R
 import kotlinx.coroutines.launch
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import androidx.compose.ui.platform.LocalContext
+
+/** BUG-33（设置 spec 02）：工作区根的真实内部路径 —— UI 用人话标签，路径仅经「复制」给需要的用户。 */
+internal const val WORKSPACE_ROOT_PATH = "linux/workspaces/default"
 
 /**
  * # Issue #164 / #165 —— Agent 分类的规则与钩子叶子页（挂载块抽出）。
@@ -45,13 +52,23 @@ internal fun AgentRulesSectionBlock(
     ) {
         value = viewModel.projectRulesFileName()
     }
+    val context = LocalContext.current
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    // BUG-33:人话标签(stringResource 不能在 let 回调里调,先提升)
+    val workspaceLabel = stringResource(R.string.settings_workspace_label)
     val coroutineScope = rememberCoroutineScope()
     // stringResource 不能在 let 回调（非 Composable）里调——先提升格式串
     val loadedFmt = stringResource(R.string.code_rules_project_status_loaded_fmt)
     RulesSettingsSection(
         globalRules = agent.globalRules,
         onGlobalRulesChange = { rules -> onAgent { copy(globalRules = rules) } },
-        workspaceRootLabel = "linux/workspaces/default",
+        // BUG-33（设置 spec 02）：内部路径不再直排展示 —— 人话标签 +
+        // 「复制路径」按钮（真实路径经剪贴板给需要的用户）
+        workspaceRootLabel = workspaceLabel,
+        workspaceCopyPath = WORKSPACE_ROOT_PATH,
+        onCopyWorkspacePath = {
+            clipboard.setPrimaryClip(ClipData.newPlainText("workspace", WORKSPACE_ROOT_PATH))
+        },
         projectRulesStatus = projectRulesFile?.let { fileName -> loadedFmt.format(fileName) },
         onCreateProjectRules = {
             coroutineScope.launch {
