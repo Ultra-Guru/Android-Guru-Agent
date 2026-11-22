@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+// matchParentSize() 是 BoxScope 的成员扩展：使用点位于根 Box 内容 lambda 内，
+// 经隐式接收者解析——不能也不需要顶层 import（bogus 导入即 Unresolved
+// reference 编译失败，CI #943 首跑根因）。
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,7 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.Checklist
-import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.AddComment
 import androidx.compose.material.icons.outlined.FolderOpen
@@ -33,7 +35,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -80,6 +81,8 @@ import com.apex.agent.core.code.stream.StreamToolCall
 import com.apex.agent.core.llm.EndpointResolver
 import com.apex.agent.ui.chatkit.OutputFormat
 import com.apex.agent.ui.screen.code.editor.CodeEditorPanel
+import com.apex.agent.ui.screen.code.fleet.AgentFleetDashboard
+import com.apex.agent.ui.screen.code.fleet.FleetDashboardButton
 import com.apex.agent.ui.screen.code.history.CodeHistoryIconButton
 import com.apex.agent.ui.screen.code.history.CodeHistorySheet
 import com.apex.agent.ui.screen.code.longtask.CodeLongTaskSheet
@@ -131,6 +134,8 @@ fun CodeScreen(
     val pendingAgentQuestion by viewModel.pendingAgentQuestion.collectAsStateWithLifecycle()
     val pendingCommands by viewModel.pendingCommands.collectAsStateWithLifecycle()
     val llmConfigured by viewModel.llmConfigured.collectAsStateWithLifecycle()
+    // 子 Agent/命令仪表盘数据面（fleet 包；扩展属性转发 store 的 StateFlow）。
+    val fleetState by viewModel.fleetDashboard.collectAsStateWithLifecycle()
 
     // ═══ 「小大脑」模型选择数据面（用户反馈：Coding 模式此前无模型入口）═══
     // 扩展属性/函数见 CodeModelSelection.kt（God-file 预算拆分同款模式）。
@@ -541,6 +546,15 @@ fun CodeScreen(
                         // 回车键行为（与 Agent 屏同源设置；此前 Coding 屏落默认值，
                         // Enter 被消费却无动作 —— 换不了行的直接根因）
                         sendKeyBehavior = uiSettings.sendKeyBehavior,
+                        // ═══ Fleet 仪表盘小按钮（Spec §2.1：工具栏行右端第 4 位，
+                        // 展开 ▲ 之后；徽标 = 运行中子 Agent + 运行中命令）═══
+                        fleetButton = {
+                            FleetDashboardButton(
+                                state = fleetState,
+                                dashboardOpen = state.fleetDashboardVisible,
+                                onToggle = { viewModel.toggleFleetDashboard() }
+                            )
+                        },
                         // 「小大脑」模型菜单插槽（Agent 屏同款组件；providerNameOf
                         // 回调在非 @Composable 上下文触发 —— 兜底文案预解析）
                         modelMenu = {
@@ -596,6 +610,26 @@ fun CodeScreen(
                 onOpenSettings = viewModel::dismissNotificationRecovery,
                 onDismiss = viewModel::dismissNotificationRecovery
             )
+        }
+
+        // ═══ 子 Agent / 终端命令仪表盘浮层（Spec §2.2：工具栏行右端按钮触发；
+        // 卡片落消息区中部、不遮挡底部悬浮栈；关闭即全量消失，不出 App）═══
+        if (state.fleetDashboardVisible) {
+            CompositionLocalProvider(
+                LocalConversationSkin provides activeSkin,
+                LocalPartSkins provides activeSkin.partSkins,
+                LocalSkinContext provides skinContext,
+                LocalParentSkin provides null
+            ) {
+                AgentFleetDashboard(
+                    state = fleetState,
+                    onDismiss = { viewModel.toggleFleetDashboard() },
+                    onTabSelect = { viewModel.selectFleetTab(it) },
+                    modifier = Modifier
+                        .matchParentSize()
+                        .zIndex(12f)
+                )
+            }
         }
     }
 
@@ -937,6 +971,9 @@ private fun CodeInputBar(
     // 「功能聚合」store（16 项能力面板）：2026-10 工具台重排后触发钮收进
     // 展开菜单，弹层经锚点托管 —— 直传 store 替代原插槽挂载点
     neonOrbStore: com.apex.agent.ui.screen.code.neon.NeonOrbStore? = null,
+    // Fleet 仪表盘小按钮插槽（Spec §2.1：工具栏行右端；数据/回调由
+    // CodeScreen 组合层闭合 —— 插槽化避免参数爆炸）
+    fleetButton: @Composable () -> Unit = {},
     toolkitState: ToolkitUiState
 ) {
     // ═══ v5 玻璃输入栏（Agent 屏同款）：Floating 档 + 顶部双角圆角，悬浮栈
@@ -1029,6 +1066,9 @@ private fun CodeInputBar(
                         neonOrbStore = neonOrbStore
                     )
                 }
+
+                // ═══ Fleet 仪表盘：第 4 位（子 Agent/命令状态 + 徽标）═══
+                fleetButton()
             }
             Spacer(Modifier.height(4.dp))
 
@@ -1136,57 +1176,3 @@ private fun CodeInputBar(
     }
 }
 
-/**
- * #197 模型 API 未配置浮窗（Coding 屏版本；同 Agent 屏语义）。
- * 4.5s 自动消散；Coding 屏无直达设置页的路由参数——提示用户去抽屉设置。
- */
-@Composable
-private fun ApiMissingFloatingNotice(
-    modifier: Modifier = Modifier,
-    onOpenSettings: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(4_500)
-        onDismiss()
-    }
-    androidx.compose.animation.AnimatedVisibility(
-        visible = true,
-        enter = androidx.compose.animation.slideInVertically(initialOffsetY = { -it }) +
-            androidx.compose.animation.fadeIn(),
-        modifier = modifier.padding(top = 8.dp)
-    ) {
-        Surface(
-            color = MaterialTheme.colorScheme.errorContainer,
-            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-            shape = RoundedCornerShape(14.dp),
-            tonalElevation = 6.dp,
-            shadowElevation = 8.dp,
-            modifier = Modifier
-                .fillMaxWidth(0.92f)
-                .padding(horizontal = 12.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-            ) {
-                Icon(Icons.Default.ErrorOutline, contentDescription = null, modifier = Modifier.size(20.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.chat_api_missing_title),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = stringResource(R.string.chat_api_missing_body),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-                TextButton(onClick = { onOpenSettings(); onDismiss() }) {
-                    Text(stringResource(R.string.code_api_missing_got_it))
-                }
-            }
-        }
-    }
-}

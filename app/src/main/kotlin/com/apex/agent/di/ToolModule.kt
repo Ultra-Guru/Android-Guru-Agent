@@ -382,6 +382,8 @@ object ToolModule {
         @ApplicationContext context: Context,
         httpClient: OkHttpClient,
         toolActivation: ToolActivationStore,
+        // Fleet 仪表盘：子代理只读观察者（CodeModule 提供的 store 包装）。
+        fleetObserver: com.apex.agent.core.code.subagent.SubAgentObserver,
         terminalRuntime: TerminalRuntime,
         prootSmokeProbe: com.apex.agent.platform.terminal.proot.PRootSmokeProbe,
         rootfsProvisioner: RootfsProvisioner,
@@ -1115,6 +1117,9 @@ object ToolModule {
                     skillActivation = skillActivation
                 )
             },
+            // Fleet 仪表盘旁路（只读观察层；内部命令事件经 observer 汇入，
+            // 不进主对话历史——隔离上下文语义零变化）。
+            observer = fleetObserver,
             // v3 设置层预算接线（设置 → 子代理）：每次 run 读快照，改设置
             // 即时生效；sanitized 收敛旧版本/手改 JSON 的越界值。
             settingsProvider = { settingsRepository.agentSettings.value.subagent.sanitized() },

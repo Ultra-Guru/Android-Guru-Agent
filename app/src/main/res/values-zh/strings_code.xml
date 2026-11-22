@@ -457,4 +457,25 @@
     <string name="code_skin_pending_apply_now">立即应用</string>
     <string name="code_skin_pending_discard">撤销</string>
     <string name="agent_orb_running">Agent 任务运行中</string>
+
+    <!-- ═══ 子 Agent / 终端命令仪表盘（fleet 包；工具栏行右端按钮 + 浮层）═══ -->
+    <string name="code_fleet_button_cd">子 Agent 与命令监控</string>
+    <string name="code_fleet_title">子 Agent · 命令监控</string>
+    <string name="code_fleet_close_cd">关闭仪表盘</string>
+    <string name="code_fleet_tab_subagents">子 Agent · %1$d</string>
+    <string name="code_fleet_tab_commands">命令 · %1$d</string>
+    <string name="code_fleet_empty_subagents">本对话暂无子 Agent</string>
+    <string name="code_fleet_empty_commands">本对话暂无终端命令</string>
+    <string name="code_fleet_status_queued">排队</string>
+    <string name="code_fleet_status_waiting">等待</string>
+    <string name="code_fleet_status_running">运行中</string>
+    <string name="code_fleet_status_success">成功</string>
+    <string name="code_fleet_status_failed">失败</string>
+    <string name="code_fleet_status_timeout">超时</string>
+    <string name="code_fleet_status_cancelled">已取消</string>
+    <string name="code_fleet_status_partial">已中断</string>
+    <string name="code_fleet_exit_fmt">exit %1$d</string>
+    <string name="code_fleet_duration_ms_fmt">%1$d ms</string>
+    <string name="code_fleet_stats_fmt">%1$d 轮 · %2$d 工具 · %3$ds</string>
+    <string name="code_fleet_owner_main">主代理</string>
 </resources>
