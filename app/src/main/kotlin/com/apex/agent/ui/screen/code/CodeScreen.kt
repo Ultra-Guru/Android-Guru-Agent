@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.matchParentSize
+// matchParentSize() 是 BoxScope 的成员扩展：使用点位于根 Box 内容 lambda 内，
+// 经隐式接收者解析——不能也不需要顶层 import（bogus 导入即 Unresolved
+// reference 编译失败，CI #943 首跑根因）。
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
