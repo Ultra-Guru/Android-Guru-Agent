@@ -189,7 +189,8 @@ class CodeViewModel @Inject constructor(
     internal val streamTurnStore: com.apex.agent.diagnostics.StreamTurnDiagnosticsStore,
     // task-playbooks：剧本注册表（识别/挂载/幕推进接线见 CodePlaybookController）
     internal val playbookRegistry: com.apex.agent.core.engine.templates.playbook.PlaybookRegistry,
-    internal val playbookHandoffStore: PlaybookHandoffStore
+    internal val playbookHandoffStore: PlaybookHandoffStore,
+    internal val playbookSessionStore: PlaybookSessionStore, // PR-C 工具通道桥
 ) : ViewModel() {
 
     // ═══ v1.6 工作区浏览器（全屏页，apex-kit-workspace）═══
@@ -298,7 +299,7 @@ class CodeViewModel @Inject constructor(
 
     // task-playbooks：任务剧本控制器（识别/挂载/幕推进单点）。
     internal val playbookController: CodePlaybookController by lazy {
-        CodePlaybookController({ settingsRepository.agentSettings.value.playbookAutoMount }, playbookRegistry).also {
+        CodePlaybookController({ settingsRepository.agentSettings.value.playbookAutoMount }, playbookRegistry, playbookSessionStore).also {
             it.onMountRecorded = { id ->
                 viewModelScope.launch { runCatching { playbookRegistry.incrementUsage(id) } }
             }
@@ -316,6 +317,7 @@ class CodeViewModel @Inject constructor(
     }
 
     init {
+        collectPlaybookCommands() // task-playbooks PR-C：advance 命令常驻收集
         // 工作区清单 + 激活恢复（manager init 已恢复 activeId）
         refreshWorkspaces()
         val active = workspaceManager.activeWorkspace()
