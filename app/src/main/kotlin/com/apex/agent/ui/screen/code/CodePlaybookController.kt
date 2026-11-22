@@ -105,13 +105,13 @@ class CodePlaybookController(
         lastBaseExtras = baseExtras
         lastGoal = goal
         lastHasWorkspace = hasWorkspace
-        val mounted = _state.value.mounted
-        val directive = if (mounted != null) {
-            directiveFor(mounted)
-        } else {
+        // 未挂载时先做识别/挂载决策，再统一取**最新**挂载态产指令段——
+        // AUTO 静默挂载发生在本次调用内，必须同轮注入（旧实现取调用前
+        // 快照，静默档首轮拿不到剧本上下文）。
+        if (_state.value.mounted == null) {
             evaluateAutoMount(goal, hasWorkspace)
-            null
         }
+        val directive = _state.value.mounted?.let { directiveFor(it) }
         return directive?.let { "$baseExtras\n\n$it" } ?: baseExtras
     }
 
