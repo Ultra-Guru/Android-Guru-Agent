@@ -5,6 +5,7 @@ import com.apex.agent.core.engine.templates.playbook.PlaybookRegistry
 import com.apex.agent.core.tools.AgentTool
 import com.apex.agent.ui.screen.code.PlaybookSessionStore
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive

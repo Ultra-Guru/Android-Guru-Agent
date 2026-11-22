@@ -1,5 +1,6 @@
 package com.apex.agent.ui.screen.code
 
+import androidx.lifecycle.viewModelScope
 import com.apex.agent.R
 import com.apex.agent.core.engine.AgentEvent
 import com.apex.agent.core.engine.templates.playbook.PlaybookAdvanceJudge
