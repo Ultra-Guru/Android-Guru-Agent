@@ -44,7 +44,7 @@ for dep in "${DEPS[@]}"; do
   fi
   missing=$((missing + 1))
   echo "[static-analysis-deps] downloading $fname"
-  curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 30 \
+  curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 30 \
     "$REPO_BASE/$dep" -o "$DEST/$fname" \
     || fail "download failed: $REPO_BASE/$dep"
   # 空文件是典型的「HTTP 200 但内容是错误页」——必须拦住
