@@ -922,4 +922,6 @@
     <string name="tool_cat_utility">实用工具</string>
     <string name="settings_test_connection">测试连接</string>
     <string name="settings_json_schema_label">JSON Schema</string>
+    <string name="settings_workspace_copy_path">复制路径</string>
+    <string name="settings_workspace_label">默认工作区</string>
 </resources>

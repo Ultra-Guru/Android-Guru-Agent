@@ -12,12 +12,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.apex.agent.R
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 
 /**
  * ═══ 行为规则分区（设置 → Agent 页，Issue #164）═══
@@ -69,6 +74,9 @@ internal fun RulesSettingsSection(
     globalRules: String,
     onGlobalRulesChange: (String) -> Unit,
     workspaceRootLabel: String?,
+    /** BUG-33（设置 spec 02）：真实内部路径 —— 非空时显示「复制路径」按钮。 */
+    workspaceCopyPath: String? = null,
+    onCopyWorkspacePath: (() -> Unit)? = null,
     projectRulesStatus: String?,
     onCreateProjectRules: (() -> Unit)?
 ) {
@@ -132,11 +140,26 @@ internal fun RulesSettingsSection(
                 color = MaterialTheme.colorScheme.outline
             )
         } else {
-            Text(
-                workspaceRootLabel,
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    workspaceRootLabel,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                if (workspaceCopyPath != null && onCopyWorkspacePath != null) {
+                    val copyDesc = stringResource(R.string.settings_workspace_copy_path)
+                    TextButton(
+                        onClick = onCopyWorkspacePath,
+                        modifier = Modifier.semantics { contentDescription = copyDesc }
+                    ) {
+                        Text(
+                            stringResource(R.string.settings_workspace_copy_path),
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+            }
             Text(
                 projectRulesStatus
                     ?: stringResource(R.string.code_rules_project_status_missing),
