@@ -109,7 +109,16 @@ class ProotCommandSpawner(
      * 命令首词为 git/gh 且已连接时注入凭据（agent 经 TerminalExec 跑
      * git clone / gh repo list 等真实可用）。
      */
-    private val gitHubTokenProvider: (() -> String?)? = null
+    private val gitHubTokenProvider: (() -> String?)? = null,
+    /**
+     * S07：Android 专有可执行名集合的 **manifest 派生源**（DCP intents.json
+     * 的 argv[0] 集合）。null = 仅用下方历史手写集合（零回归）；非 null 时
+     * 并入派生集合 —— 新增设备命令只改 JSON 不改 Kotlin，消除手写清单与
+     * 工具描述漂移（历史清单保留为底线：manifest 未覆盖的名字如 input/wm/
+     * screencap/logcat 等回落语义不变，[AndroidOnlyCommandsConsistencyTest]
+     * 锁定差异只增不减）。
+     */
+    private val manifestAndroidCommands: (() -> Set<String>)? = null
 ) : CommandSpawner {
 
     private val commandBuilder = PRootCommandBuilderImpl()
@@ -293,8 +302,16 @@ class ProotCommandSpawner(
             ?.trim('"', '\'', '(', ')')
             ?.substringAfterLast('/')
             ?: return false
-        return first in ANDROID_ONLY_COMMANDS
+        return first in androidOnlyCommands()
     }
+
+    /**
+     * S07：生效集合 = 历史手写底线 ∪ manifest 派生（argv[0] 集合）。
+     * 历史集合保留全部 25 个名字（零回归：manifest 只增不减）；
+     * [AndroidOnlyCommandsConsistencyTest] 锁定两者差异只增不减。
+     */
+    internal fun androidOnlyCommands(): Set<String> =
+        LEGACY_ANDROID_ONLY_COMMANDS + (manifestAndroidCommands?.invoke() ?: emptySet())
 
     /** rootfs 基目录 → 真实根目录（current 标记 → versions/ 子目录；兼容裸布局）。 */
     private fun resolveActiveRootfs(): File? {
@@ -655,14 +672,25 @@ class ProotCommandSpawner(
         }
 
         /**
-         * Android 专有二进制集合：这些命令只在宿主有意义。
+         * Android 专有二进制集合（**历史底线**，S07 起保留全量零回归）。
          * 集合刻意保守 —— 只收录 Ubuntu base 里确定不存在、且语义纯 Android 的名字。
+         *
+         * S07：运行时生效集合 = 本底线 ∪ manifest 派生（intents.json 的
+         * argv[0] 集合，见 [androidOnlyCommands] 与构造参数 manifestAndroidCommands）。
+         * 底线不删（input/wm/screencap/logcat 等 manifest 未覆盖的名字回落语义
+         * 不变）；差异由 [AndroidOnlyCommandsConsistencyTest] 锁定只增不减。
          */
-        internal val ANDROID_ONLY_COMMANDS: Set<String> = setOf(
+        internal val LEGACY_ANDROID_ONLY_COMMANDS: Set<String> = setOf(
             "am", "pm", "dumpsys", "cmd", "settings", "getprop", "setprop",
             "input", "wm", "screencap", "screenrecord", "service", "logcat",
             "content", "sm", "adb", "fastboot", "uiautomator", "resetprop",
             "magisk", "su", "toybox", "settings-provider", "appops", "atrace"
         )
+
+        /**
+         * S07 兼容别名：既有测试与调用方仍按旧名引用历史底线集合
+         * （语义 = 仅底线，不含 manifest 派生 —— 一致性测试据此锁定差异）。
+         */
+        internal val ANDROID_ONLY_COMMANDS: Set<String> = LEGACY_ANDROID_ONLY_COMMANDS
     }
 }

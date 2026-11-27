@@ -66,6 +66,13 @@ jobs:
       - name: Comment integrity gate (premature `*/` / dangling nested `/*`)
         run: python3 scripts/check_comment_integrity.py
 
+      # DCP（S02）：意图清单结构门禁 —— id 唯一 / 枚举合法 / 占位符闭合 /
+      # argv[0] 白名单 / 不可逆意图必有 preflight+verify+rollback / 覆盖下限
+      #（package≥10 / file≥8 / system≥6 / probe≥4）。与
+      # IntentCatalog.validate() 同口径（runtime 兜底 + CI 前移双保险）。
+      - name: DCP intents manifest gate
+        run: python3 scripts/check_intents.py app/src/main/assets/device/intents.json
+
       # issue #276 测试纪律棘轮：runBlocking / Thread.sleep 存量基线 696 / 33，
       # 只降不升 —— 新测试一律 runTest + 假钟注入；清理存量后跑
       # `scripts/check_test_discipline.py --update-baseline` 重钉（只降不升）。

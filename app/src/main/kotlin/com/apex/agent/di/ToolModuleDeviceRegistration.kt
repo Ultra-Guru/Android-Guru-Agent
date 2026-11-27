@@ -23,6 +23,7 @@ import com.apex.agent.core.tools.builtin.UiDumpTool
 import com.apex.agent.core.tools.builtin.UiNotificationsTool
 import com.apex.agent.core.tools.builtin.UiSwipeTool
 import com.apex.agent.core.tools.builtin.UiTapTool
+import com.apex.agent.core.tools.device.DeviceOpsPort
 import com.apex.agent.platform.PrivilegeUiProvider
 import com.apex.agent.platform.privilege.PrivilegeManager
 
@@ -40,20 +41,26 @@ import com.apex.agent.platform.privilege.PrivilegeManager
  * - `shellExec` —— 设备类短命令通道（输出不带 via 标记，默认 30s 超时）；
  * - UI 族优先 AccessibilityService 语义交互，shell 为回落；
  * - Screenshot 走特权链（a11y API 30+ → root screencap 回退）。
+ *
+ * S05 委托：AppUninstall / AppForceStop 注入 [DeviceOpsPort] —— DCP 启用
+ * 时内部走结构化 argv + preflight 守卫 + 语义分级确认（返回文本向后兼容）；
+ * `dcp.enabled=false` 时 executeLegacy 返回 DCP_DISABLED，走原 shellExec 链
+ * （行为与旧版逐字节一致）。
  */
 internal fun registerDeviceTools(
     registry: ToolRegistry,
     shellExec: suspend (String) -> String,
     privilegeUiProvider: PrivilegeUiProvider,
     privilegeManager: PrivilegeManager,
-    context: Context
+    context: Context,
+    deviceOpsPort: DeviceOpsPort? = null
 ) {
     // ═══ 5. 应用管理 (6) ═══
     registry.register(SafeAgentTool(AppListTool(shellExec)))
     registry.register(SafeAgentTool(AppLaunchTool(shellExec)))
     registry.register(SafeAgentTool(AppInstallTool(shellExec)))
-    registry.register(SafeAgentTool(AppUninstallTool(shellExec)))
-    registry.register(SafeAgentTool(AppForceStopTool(shellExec)))
+    registry.register(SafeAgentTool(AppUninstallTool(shellExec, deviceOpsPort)))
+    registry.register(SafeAgentTool(AppForceStopTool(shellExec, deviceOpsPort)))
     registry.register(SafeAgentTool(AppInfoTool(shellExec)))
 
     // ═══ 6. 系统控制 (6) ═══

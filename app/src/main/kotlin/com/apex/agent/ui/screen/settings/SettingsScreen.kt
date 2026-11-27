@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Extension
+import androidx.compose.material.icons.outlined.PhonelinkSetup
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.Tune
@@ -476,6 +477,21 @@ private fun SettingsPageRouter(
                     onCheckedChange = { on -> onAgent { copy(extensionAutoSync = on) } }
                 )
                 DescriptionText(stringResource(R.string.settings_ext_marketlinks_hint))
+            }
+        }
+        // ═══ DCP 设备控制面（S07 feature flag）：默认关 = 旧行为不变 ═══
+        "services.deviceControl" -> SettingsLeafColumn {
+            SectionCard(
+                title = stringResource(R.string.settings_page_device_control),
+                icon = Icons.Outlined.PhonelinkSetup,
+                initiallyExpanded = true
+            ) {
+                SwitchRow(
+                    label = stringResource(R.string.settings_dcp_label),
+                    checked = agent.dcpEnabled,
+                    description = stringResource(R.string.settings_dcp_desc),
+                    onCheckedChange = { on -> onAgent { copy(dcpEnabled = on) } }
+                )
             }
         }
         "services.keepAlive" -> TerminalServicePage(agent, onAgent)

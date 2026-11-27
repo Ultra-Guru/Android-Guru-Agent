@@ -13,6 +13,7 @@ import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Subject
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.PhonelinkSetup
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Rule
 import androidx.compose.material.icons.outlined.Search
@@ -258,6 +259,17 @@ object SettingsPages {
             keywords = listOf("扩展", "同步", "extensions", "market", "autoSync"),
             sectionIds = listOf("autoSync", "marketLinks"),
             scope = Scope.DEVICE, effective = Effective.RESTART
+        ),
+        // ═══ DCP 设备控制面（S07 feature flag 暴露：设置 → 扩展与服务 → 设备控制面）═══
+        // 默认关：行为与 main 逐字节一致；开启后 DeviceOps / 旧设备工具委托进入
+        // preflight → 守卫 → gate → token → verify 的结构化流程。
+        SettingsPage(
+            id = "services.deviceControl", groupId = "services",
+            titleRes = R.string.settings_page_device_control, summaryRes = R.string.settings_summary_device_control,
+            icon = Icons.Outlined.PhonelinkSetup,
+            keywords = listOf("设备", "控制面", "DCP", "Shizuku", "device", "uninstall", "实验"),
+            sectionIds = listOf("dcp"),
+            scope = Scope.DEVICE, effective = Effective.IMMEDIATE
         ),
         SettingsPage(
             id = "services.keepAlive", groupId = "services",

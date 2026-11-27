@@ -495,7 +495,12 @@ object ToolModule {
         apexNotifications: com.apex.agent.notify.ApexNotifications,
         // Phase 6 收尾：事件总线（工具事件源）+ DSH 注册器（启动 sweep）
         pluginEventBus: com.apex.agent.core.tools.pluginhost.bridge.PluginEventBus,
-        dshToolRegistrar: com.apex.agent.core.tools.extension.dsh.DshToolRegistrar
+        dshToolRegistrar: com.apex.agent.core.tools.extension.dsh.DshToolRegistrar,
+        // DCP 设备控制面（S01–S07）：统一入口 + 能力自省 + 审计查询三件套。
+        deviceOpsPort: com.apex.agent.core.tools.device.DeviceOpsPort,
+        deviceCapabilityProbe: com.apex.agent.core.tools.device.CapabilityProbe,
+        deviceIntentCatalog: com.apex.agent.core.tools.device.IntentCatalog,
+        deviceAuditQueryHost: com.apex.agent.core.tools.builtin.DeviceAuditQueryTool.Host
     ): ToolRegistry {
         val registry = DefaultToolRegistry()
 
@@ -641,7 +646,10 @@ object ToolModule {
             // T92：argv 能力门（与终端会话/apt 同款版本自适应）
             capabilities = capabilitySource::invoke,
             // v3 S3（G2）：git/gh 命令凭据注入（未连接返回 null = 不注入）
-            gitHubTokenProvider = { githubTokenManager.getToken() }
+            gitHubTokenProvider = { githubTokenManager.getToken() },
+            // S07：Android 专有命令集合由 intents.json 派生（历史底线 ∪ manifest），
+            // 消除手写清单与工具描述漂移；一致性测试锁定差异只增不减。
+            manifestAndroidCommands = { deviceIntentCatalog.androidOnlyExecutables() }
         )
         registry.register(SafeAgentTool(TerminalToolAdapter(TerminalExecTool(
             engine = ExecEngine(prootSpawner),
@@ -781,7 +789,19 @@ object ToolModule {
             shellExec = shellExec,
             privilegeUiProvider = privilegeUiProvider,
             privilegeManager = privilegeManager,
-            context = context
+            context = context,
+            deviceOpsPort = deviceOpsPort
+        )
+
+        // ═══ 5b. DCP 设备控制面（3：DeviceOps / DeviceCapability / DeviceAuditQuery）═══
+        // 注册体拆至 [ToolModuleDeviceControlRegistration.kt]（SRP 预算：同
+        // registerDeviceTools 拆分模式；feature flag 默认关，关闭时行为与旧版一致）。
+        registerDeviceControlTools(
+            registry = registry,
+            port = deviceOpsPort,
+            probe = deviceCapabilityProbe,
+            catalog = deviceIntentCatalog,
+            auditHost = deviceAuditQueryHost
         )
 
         // ═══ 9. 实用工具 (2 v1 + 15 v2) —— 注册体拆至 ToolModuleJvmToolsRegistration.kt

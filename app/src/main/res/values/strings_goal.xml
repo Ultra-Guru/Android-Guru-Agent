@@ -104,6 +104,10 @@
     <string name="settings_ext_autosync_label">Auto-sync extensions on startup</string>
     <string name="settings_ext_autosync_desc">Evaluate installed extension sources at launch; nothing installs without confirmation</string>
     <string name="settings_ext_marketlinks_hint">Per-market links are managed from the marketplace page (coming to settings later).</string>
+    <string name="settings_page_device_control">Device Control Plane</string>
+    <string name="settings_summary_device_control">Structured device ops via Shizuku (experimental)</string>
+    <string name="settings_dcp_label">Device Control Plane (DCP)</string>
+    <string name="settings_dcp_desc">Structured device operations (uninstall/disable apps, /sdcard file ops) over the Shizuku channel with dry-run, confirm tokens and audit; off keeps legacy tool behavior unchanged</string>
     <string name="settings_quick_title">Quick &amp; Recent</string>
     <string name="settings_quick_onboarding">Suggested</string>
     <string name="settings_group_page_count_fmt">%1$d pages</string>
