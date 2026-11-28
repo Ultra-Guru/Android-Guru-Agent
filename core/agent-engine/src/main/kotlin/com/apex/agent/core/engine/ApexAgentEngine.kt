@@ -814,14 +814,27 @@ class ApexAgentEngine(
         // Phase 4: execute each step in locked order.
         // Each step is a single iteration of the Build loop with a step-scoped user message.
         var iterations = 0
+        // #828：步骤结果采集 —— Phase 5 反思的 ground truth（旧反思请求不含任何
+        // 执行结果，模型被要求汇报交付物却只能凭计划文本编造）。
+        val stepOutcomes = mutableListOf<String>()
         for ((index, step) in locked.plan.steps.withIndex()) {
-            if (!isRunning) break
+            if (!isRunning) {
+                stepOutcomes += EnginePrompts.renderStepOutcome(index, step.description, null, null, true)
+                continue
+            }
             emit(AgentEvent.StepStart(index, step.description))
 
             addMessage(LlmMessage.User(EnginePrompts.buildStepExecutionPrompt(locked.plan, step, index)))
 
-            val stepIters = executeBuildLoop { event -> emit(event) }
+            var stepFinalText: String? = null
+            var stepError: String? = null
+            val stepIters = executeBuildLoop { event ->
+                if (event is AgentEvent.ResponseComplete) stepFinalText = event.fullText
+                if (event is AgentEvent.Error) stepError = event.message
+                emit(event)
+            }
             iterations += stepIters
+            stepOutcomes += EnginePrompts.renderStepOutcome(index, step.description, stepFinalText, stepError, false)
         }
 
         // Phase 5: reflection（只读总结，同样生效 planningPhase 约束）
@@ -829,7 +842,7 @@ class ApexAgentEngine(
         runtime.chatStream(
             context = tagged(LlmRequestContext.primary("plan_reflection")),
             messages = listOf(LlmMessage.System(buildSystemPrompt(planningPhase = true))) +
-                LlmMessage.User(EnginePrompts.buildReflectionPrompt(locked.plan))
+                LlmMessage.User(EnginePrompts.buildReflectionPrompt(locked.plan, stepOutcomes))
         ).collect { chunk ->
             chunk.content?.let {
                 reflectionBuilder.append(it)
