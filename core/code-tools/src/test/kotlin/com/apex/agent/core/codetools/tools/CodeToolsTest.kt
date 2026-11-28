@@ -57,6 +57,66 @@ class CodeToolsTest {
         assertTrue(out, out.contains("Afile"))
     }
 
+    @Test
+    fun `read file enforces cumulative 50KB output cap with continuation hint`() = runTest {
+        val root = tmp.newFolder("ws")
+        // 300 行 × 300 字符 ≈ 90KB —— 单轮 limit=2000 旧实现可整读（≈90KB
+        // 输出），承诺的 50KB 累计上限此前不存在（#830：实为 4MB）。
+        val big = buildString { repeat(300) { appendLine("x".repeat(300)) } }
+        File(root, "big.txt").writeText(big)
+        val tool = CodeReadTool(roots(root))
+
+        val out = tool.executeSafe("""{"path": "big.txt"}""").render()
+        assertTrue(
+            "output must stay under ~50KB (was ${out.toByteArray().size})",
+            out.toByteArray().size <= 51 * 1024
+        )
+        assertTrue(out, out.contains("50KB per-read limit"))
+        assertTrue(out, out.contains("Use offset="))
+        // 截停后给出的续读行号必须是尚未输出的下一行（300B/行 → ~170 行打满）。
+        val nextOffset = Regex("Use offset=(\\d+)").find(out)!!.groupValues[1].toInt()
+        assertTrue("next offset must be past the shown range (was $nextOffset)", nextOffset in 101..180)
+    }
+
+    @Test
+    fun `read resumes from hinted offset after cap`() = runTest {
+        val root = tmp.newFolder("ws")
+        val big = buildString { repeat(300) { appendLine("x".repeat(300)) } }
+        File(root, "big.txt").writeText(big)
+        val tool = CodeReadTool(roots(root))
+
+        val first = tool.executeSafe("""{"path": "big.txt"}""").render()
+        val nextOffset = Regex("Use offset=(\\d+)").find(first)!!.groupValues[1].toInt()
+        val second = tool.executeSafe("""{"path": "big.txt", "offset": $nextOffset}""").render()
+        assertTrue(second, second.contains("$nextOffset: "))
+        // 续读内容与首轮无重叠：首轮最后输出的行号 < 续读首行号。
+        val lastShown = Regex("at line (\\d+)").find(first)!!.groupValues[1].toInt()
+        assertTrue("no overlap expected (last=$lastShown next=$nextOffset)", lastShown < nextOffset)
+    }
+
+    @Test
+    fun `read offset beyond EOF clamps to last line`() = runTest {
+        val root = tmp.newFolder("ws")
+        File(root, "five.txt").writeText("l1\nl2\nl3\nl4\nl5\n")
+        val tool = CodeReadTool(roots(root))
+
+        val out = tool.executeSafe("""{"path": "five.txt", "offset": 100}""").render()
+        // 旧 coerceIn(0, total-1) 行为保留：越界钳到末行（流式窗口同语义）。
+        assertTrue(out, out.contains("5: l5"))
+        assertFalse(out, out.contains("4: l4"))
+        assertTrue(out, out.contains("(Showing lines 5-5 of 5.)"))
+    }
+
+    @Test
+    fun `read file without trailing newline keeps last line`() = runTest {
+        val root = tmp.newFolder("ws")
+        File(root, "nonl.txt").writeText("a\nb\nc")
+        val tool = CodeReadTool(roots(root))
+        val out = tool.executeSafe("""{"path": "nonl.txt"}""").render()
+        assertTrue(out, out.contains("3: c"))
+        assertTrue(out, out.contains("<total_lines>3</total_lines>"))
+    }
+
     // ── CodeEdit ────────────────────────────────────────────────────
 
     @Test
