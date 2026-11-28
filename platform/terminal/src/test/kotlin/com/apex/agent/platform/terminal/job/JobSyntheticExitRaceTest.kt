@@ -75,6 +75,14 @@ class JobSyntheticExitRaceTest {
                     .getOrThrow()
                 sm.createFromSpec(spec, 24, 80, PrivilegeLevel.NORMAL).getOrThrow()
             }
+            // 模拟 runtime 的 session listener（与 ShellMarkerProtocolTest 同款）：
+            // bus 事件 → JobManager.onEvent —— 提示符启发式的合成退出经 bus 往返
+            // 后推进终态（无 listener 时 emitProcessExited 的事件无人消费）。
+            CoroutineScope(SupervisorJob()).launch {
+                eventBus.subscribe(session.id, afterCursor = 0L)
+                    .takeWhile { ev -> ev !is TerminalEvent.SessionClosed }
+                    .collect { ev -> runCatching { jm.onEvent(ev) } }
+            }
         }
 
         fun startJob(command: String): Long = runBlocking {
@@ -110,6 +118,10 @@ class JobSyntheticExitRaceTest {
         assertEquals("RUNNING", f.jm.get(jobId)!!.state.name)
         f.jm.onEvent(f.waitingInput(cursor = startCursor + 1))
         // 新输出后的提示符才是完成证据 → 合成退出照常触发（既有行为不回归）。
+        // 合成事件经 bus 往返（listener 异步消费）→ 轮询收敛到终态。
+        kotlinx.coroutines.withTimeout(5_000) {
+            while (f.jm.get(jobId)!!.state == JobState.RUNNING) kotlinx.coroutines.delay(10)
+        }
         assertEquals("EXITED", f.jm.get(jobId)!!.state.name)
     }
 
