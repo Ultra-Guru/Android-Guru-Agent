@@ -8,6 +8,9 @@ import com.apex.agent.core.llm.LlmClient
 import com.apex.agent.core.llm.LlmMessage
 import com.apex.agent.core.llm.LlmResponse
 import com.apex.agent.core.llm.LlmStreamChunk
+import com.apex.agent.core.llm.ToolCall
+import com.apex.agent.core.llm.ToolChoiceSpec
+import com.apex.agent.core.llm.ToolDefinition
 import com.apex.agent.core.tools.AgentTool
 import com.apex.agent.core.tools.DefaultToolExecutor
 import com.apex.agent.core.tools.ToolRegistry
