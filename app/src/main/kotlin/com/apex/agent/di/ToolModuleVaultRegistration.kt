@@ -5,7 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import com.apex.agent.core.tools.SafeAgentTool
 import com.apex.agent.platform.terminal.io.InputOwner
-import com.apex.agent.platform.terminal.TerminalRuntime
+import com.apex.agent.platform.terminal.runtime.TerminalRuntime
 import com.apex.agent.vault.VaultAgentTools
 import com.apex.agent.vault.VaultRepository
 import okhttp3.OkHttpClient
