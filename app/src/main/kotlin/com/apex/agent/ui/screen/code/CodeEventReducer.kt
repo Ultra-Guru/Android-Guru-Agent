@@ -35,6 +35,11 @@ internal fun CodeViewModel.reduce(event: AgentEvent) {
             // AUTO 可解释性已前移到发送前预检（resolveRuntimeThinkingLevel
             // 产生 adaptiveDecision + 系统消息）；引擎侧从不接收 AUTO，
             // 此处不再拉取引擎决策。
+            // #820 防御线：新迭代开始 = 上一逻辑轮已彻底结束。若上一条助手
+            // 气泡仍 isStreaming（引擎 continue 路径漏发 ResponseComplete 的
+            // 契约破坏），就地收口 —— 否则下一轮首个 ResponseChunk 命中
+            // 「append to last streaming」分支，两轮文本粘连成一条消息。
+            closeStreamingAssistantBubble()
         }
 
         is AgentEvent.ResponseChunk -> _uiState.update { state ->
@@ -221,6 +226,26 @@ internal fun CodeViewModel.reduce(event: AgentEvent) {
 
         // Plan/Spec/Reflection/Step 事件在 CODING(BUILD) 循环不触发，保持完备即可
         else -> Unit
+    }
+}
+
+/**
+ * #820 防御线：把仍处于流式状态的末尾助手气泡收口（isStreaming=false）。
+ *
+ * 引擎契约是「每个 ResponseChunk 流必有 ResponseComplete 收尾」；任何 continue
+ * 路径漏发 Complete 时（契约破坏），本函数在 [AgentEvent.IterationStart] 兜底
+ * 收口 —— 保证下一轮首个 ResponseChunk 建新气泡而不是拼进旧文本尾部。
+ * 无流式气泡时是零成本 no-op（常规路径：Complete 已先行收口）。
+ */
+internal fun CodeViewModel.closeStreamingAssistantBubble() {
+    _uiState.update { state ->
+        val last = state.messages.lastOrNull() ?: return@update state
+        if (!(last.role == CodeChatMessage.Role.ASSISTANT && last.isStreaming)) return@update state
+        state.copy(
+            messages = state.messages.toMutableList().also { msgs ->
+                msgs[msgs.size - 1] = last.copy(isStreaming = false)
+            }
+        )
     }
 }
 

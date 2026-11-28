@@ -881,11 +881,12 @@ class ApexAgentEngine(
             // 本轮 LLM；不匹配/失败照常走 LLM。
             when (val bypass = memoryObserver?.tryBypass()) {
                 is BypassOutcome.Executed -> {
-                    emit(
-                        AgentEvent.ResponseChunk(
-                            "⚡ 肌肉记忆旁路执行完成（${bypass.actionCount} 步，已跳过 LLM 推理）。"
-                        )
-                    )
+                    val bypassNote =
+                        "⚡ 肌肉记忆旁路执行完成（${bypass.actionCount} 步，已跳过 LLM 推理）。"
+                    emit(AgentEvent.ResponseChunk(bypassNote))
+                    // #820：chunk 流必有 Complete —— 否则 UI 气泡永久流式，
+                    // 下一轮首个 ResponseChunk 会把两轮文本粘连成一条消息。
+                    emit(AgentEvent.ResponseComplete(bypassNote))
                     continue
                 }
                 is BypassOutcome.Failed -> {
@@ -1079,6 +1080,9 @@ class ApexAgentEngine(
                     ) {
                         promiseNudged = true
                         addMessage(LlmMessage.Assistant(contentBuilder.toString()))
+                        // #820：本轮已发 ResponseChunk，continue 前必须 Complete
+                        // 收口（否则催促后的修正输出拼进旧气泡尾部）。
+                        emit(AgentEvent.ResponseComplete(contentBuilder.toString()))
                         addMessage(
                             LlmMessage.System(com.apex.agent.core.engine.assist.PromiseDetector.NUDGE_MESSAGE)
                         )
@@ -1092,6 +1096,8 @@ class ApexAgentEngine(
                         when (decision) {
                             is GoalDecision.Continue -> {
                                 addMessage(LlmMessage.Assistant(contentBuilder.toString()))
+                                // #820：同型 —— 本轮 chunk 流在 continue 前收口。
+                                emit(AgentEvent.ResponseComplete(contentBuilder.toString()))
                                 addMessage(LlmMessage.System(decision.continuationNote))
                                 emit(AgentEvent.ThinkingChunk(decision.userNotice))
                                 continue
