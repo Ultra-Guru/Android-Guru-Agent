@@ -13,6 +13,7 @@ import com.apex.agent.platform.terminal.screen.RealVirtualTerminal
 import com.apex.agent.platform.terminal.session.TerminalSession
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
