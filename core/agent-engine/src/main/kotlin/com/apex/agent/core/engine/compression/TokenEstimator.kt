@@ -12,8 +12,18 @@ import com.apex.agent.core.llm.LlmMessage
  * - 英文：1 token ≈ 4 chars
  * - 中文：1 token ≈ 1.5 chars（中文字符信息密度更高）
  * - 其他：1 token ≈ 3 chars
+ * - 图片（#827）：服务端 vision 计费与图片内容相关，本地无法精确；
+ *   计保守固定成本（每张 [IMAGE_FIXED_TOKENS]）+ base64 体量分量，
+ *   使压缩门与用量仪表盘对图片占位不再失明（旧实现计 0 → 永不触发压缩
+ *   → 服务端 400 兑底）。远端 URL 图片按 URL 文本估算 + 固定成本。
  */
 object TokenEstimator {
+
+    /**
+     * 单张图片保守 token 成本（对齐主流 vision 服务的下限量级：
+     * 低分辨率档约数百 token；取 1000 使压缩门偏早触发而非偏晚）。
+     */
+    private const val IMAGE_FIXED_TOKENS = 1000
 
     /**
      * 估算单条消息的token数
@@ -27,7 +37,21 @@ object TokenEstimator {
             }
             is LlmMessage.ToolResult -> msg.content
         }
-        return estimateText(text)
+        val imageTokens = if (msg is LlmMessage.User) estimateImages(msg) else 0
+        return estimateText(text) + imageTokens
+    }
+
+    /**
+     * #827：估算 User 消息携带图片的 token 成本（旧实现恒 0）。
+     *
+     * - base64 图：固定成本 + 体量分量（约 4KB base64 → 1 token 的保守折算，
+     *   只用于压缩门与仪表盘「看到占位」，不冒充计费精确值）；
+     * - 远端 URL 图：固定成本 + URL 文本估算。
+     */
+    fun estimateImages(msg: LlmMessage.User): Int = msg.images.sumOf { image ->
+        val urlTokens = image.url?.let { estimateText(it) } ?: 0
+        val payloadTokens = if (image.url != null) 0 else image.base64Data.length / 4096
+        IMAGE_FIXED_TOKENS + urlTokens + payloadTokens
     }
 
     /**

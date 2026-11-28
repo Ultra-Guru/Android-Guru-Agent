@@ -201,6 +201,15 @@ class ApexAgentEngine(
     /** diag-20261011：配对类 400 自愈重试已用次数（每任务至多 1 次）。 */
     private var pairingRepairAttempts = 0
 
+    /**
+     * #826 — 上一轮请求固定开销（system prompt + tools 数组载荷）的 token
+     * 估算，组装点缓存（见 executeBuildLoop）；压缩门按组装态口径消费
+     *（estimateHistory + 本值）。首轮组装前为 0（首轮历史本来就小）。
+     */
+    @Volatile
+    internal var lastRequestOverheadTokens = 0
+        private set
+
     /** T76 — TaskRuntime 设置当前任务/步骤诊断标签（null = 清理）。 */
     fun setLlmExecutionTags(taskId: String?, stepId: String?) {
         executionTags = taskId?.let { it to stepId }
@@ -909,6 +918,10 @@ class ApexAgentEngine(
             currentToolPlan = plan
 
             val messages = buildMessages()
+            // #826：组装态计量 —— 本轮请求固定开销（system prompt + tools
+            // 数组）缓存给压缩门（下一轮判定用），避免门内重复整段估算。
+            lastRequestOverheadTokens =
+                estimateRequestOverhead(messages, plan.tools)
             // P97：AFTER_SEND fire-and-forget（无钩子零开销，不阻塞回包）
             promptPipeline.dispatchAfterSend()
 

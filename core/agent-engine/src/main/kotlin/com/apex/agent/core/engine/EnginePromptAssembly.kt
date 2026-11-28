@@ -15,6 +15,7 @@ import com.apex.agent.core.engine.task.DanglingToolCallRepair
  */
 internal suspend fun ApexAgentEngine.buildMessages(): List<LlmMessage> {
     repairDanglingToolCalls()
+    stripConsumedHistoryImages()
     val messages = mutableListOf<LlmMessage>()
     messages.add(LlmMessage.System(buildSystemPrompt()))
     val dropped = promptPipeline.lastDroppedTurnIndices
@@ -23,6 +24,48 @@ internal suspend fun ApexAgentEngine.buildMessages(): List<LlmMessage> {
         else conversationHistory.filterIndexed { idx, _ -> idx !in dropped }
     )
     return messages
+}
+
+/**
+ * #827 — 图片生命周期：首轮已消费的图片不再逐轮重传。
+ *
+ * 模型在含图轮次的 ReAct 请求里已经看过 base64 并产出文字描述/工具调用；
+ * 此后每轮重发同一张图的边际价值趋零，却按 vision 全价计费、内存常驻。
+ * 本函数把「已被模型响应过」的带图 User 消息（其后存在 Assistant /
+ * ToolResult 即为响应证据；System 提示不算 —— 首轮组装前也可能先注入
+ * System 注记）就地改写为文本占位：
+ *
+ * - 请求体不再携带原图 base64（第 2 轮起），vision 路由随之回落 PRIMARY；
+ * - 内存历史与压缩门口径同步（占位文本按普通文本估算，不再恒计图片成本）；
+ * - 幂等：无符合条件的消息时零开销直接返回（历史无图 = 一次 none 检查）。
+ *
+ * 仍处于尾部（尚无模型响应）的带图 User 消息保留原图 —— 本轮 vision
+ * 请求需要它。改写经 [historyLock] 串行化（与 repairDanglingToolCalls /
+ * restoreHistory 同语义），并同步持久化。
+ */
+internal fun ApexAgentEngine.stripConsumedHistoryImages() {
+    if (conversationHistory.none { it is LlmMessage.User && it.images.isNotEmpty() }) return
+    var changed = false
+    val rewritten = conversationHistory.mapIndexed { idx, msg ->
+        if (msg is LlmMessage.User && msg.images.isNotEmpty() &&
+            conversationHistory.drop(idx + 1)
+                .any { it is LlmMessage.Assistant || it is LlmMessage.ToolResult }
+        ) {
+            changed = true
+            msg.copy(
+                images = emptyList(),
+                content = msg.content +
+                    "\n[Images attached to this turn were already shown to you earlier; " +
+                    "they are omitted from later requests to save context.]"
+            )
+        } else msg
+    }
+    if (!changed) return
+    synchronized(historyLock) {
+        conversationHistory.clear()
+        conversationHistory.addAll(rewritten)
+    }
+    memory?.save(conversationHistory)
 }
 
 /**
