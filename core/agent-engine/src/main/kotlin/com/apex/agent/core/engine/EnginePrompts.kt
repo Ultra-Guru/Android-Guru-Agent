@@ -6,6 +6,7 @@ import com.apex.agent.core.tools.AgentTool
 import com.apex.agent.core.tools.ToolCategory
 import com.apex.agent.core.tools.ToolRisk
 import com.apex.agent.core.tools.catalog.PrivilegeLadder
+import com.apex.agent.core.tools.catalog.ToolRequestBudget
 import com.apex.agent.core.tools.skill.SkillDigest
 
 /**
@@ -665,8 +666,24 @@ internal object EnginePrompts {
         appendLine("Task: $input")
         appendLine()
         appendLine("Available tools:")
-        tools.forEach { tool ->
-            appendLine("- ${tool.id}: ${tool.description.take(120)}")
+        // #826：PLAN 提示词此前把 getAllTools() 全量注入（228 工具 × ~120 字符
+        // ≈ 30-40KB），绕过了请求侧 ToolRequestBudget 的 48KB 预算护栏 ——
+        // 8K 窗口模型仅工具清单就能吃掉半窗。与请求侧同口径收敛（条数 +
+        // 总字节一起卡），截断时如实声明省略数（计划仍可引用 CORE 工具；
+        // 执行期 BUILD 循环会带完整渐进披露目录）。
+        var listed = 0
+        var listedBytes = 0
+        for (tool in tools) {
+            if (listed >= ToolRequestBudget.MAX_TOOLS ||
+                listedBytes >= ToolRequestBudget.MAX_TOTAL_BYTES
+            ) {
+                appendLine("... (${tools.size - listed} more tools omitted; the catalog is discoverable at execution time)")
+                break
+            }
+            val line = "- ${tool.id}: ${tool.description.take(120)}"
+            appendLine(line)
+            listed++
+            listedBytes += line.length
         }
         appendLine()
         appendLine("Output a JSON plan with EXACTLY this structure (no prose, no markdown fences):")

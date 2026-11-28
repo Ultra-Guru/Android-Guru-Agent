@@ -1,5 +1,7 @@
 package com.apex.agent.core.engine
 
+import com.apex.agent.core.llm.LlmMessage
+import com.apex.agent.core.llm.ToolDefinition
 import com.apex.agent.core.tools.contextpolicy.ContextPreset
 import com.apex.agent.core.engine.compression.TokenEstimator
 import com.apex.agent.core.logging.AppLogger
@@ -21,7 +23,14 @@ import com.apex.agent.core.logging.LogCategory
 internal suspend fun ApexAgentEngine.maybeCompressContext(emit: suspend (AgentEvent) -> Unit) {
     val compressor = contextCompressor ?: return
 
-    val currentTokens = TokenEstimator.estimateHistory(conversationHistory)
+    // #826：组装态口径 —— 历史只是真实请求的一部分；system prompt（每轮
+    // 重建，工具目录 + 技能 + 环境摘要）与 tools 数组载荷是「固定开销」，
+    // 旧实现完全不计量 → 8K 窗口模型固定开销即可超窗，压缩门却永远
+    // 「合格」，只能等服务端 400 兜底。lastRequestOverheadTokens 在组装点
+    // 顺手计量缓存（见 executeBuildLoop）；首轮（尚未组装）为 0，首轮
+    // 历史本来就小，无害。
+    val currentTokens = TokenEstimator.estimateHistory(conversationHistory) +
+        lastRequestOverheadTokens
     // P99：白名单档位（SettingsRepository.contextPolicyPreset）实时读取——
     // preset.maxTokens 只会更早压缩（coerceAtMost 引擎窗口，防越窗覆写）；
     // keepLastN 只裁非 SYSTEM 轮次（压缩器既有语义，SYSTEM 段永不裁）。
@@ -77,4 +86,23 @@ internal suspend fun ApexAgentEngine.maybeCompressContext(emit: suspend (AgentEv
             messagesTruncated = report.messagesTruncated
         )
     )
+}
+
+/**
+ * #826 — 请求固定开销估算（system prompt + tools 数组载荷的 token 量）。
+ *
+ * 在组装点（buildMessages + buildToolPlan 之后）由 executeBuildLoop 调用，
+ * 结果缓存进 [ApexAgentEngine.lastRequestOverheadTokens] 供压缩门读取 ——
+ * 避免压缩门重复整段估算（system prompt 每轮已重建，计量即组装副产品）。
+ * tools 侧按 name + description + parametersSchema 字符数折算（与
+ * ToolRequestBudget.MAX_TOTAL_BYTES 的字节口径同源，token ≈ bytes/4）。
+ */
+internal fun estimateRequestOverhead(
+    messages: List<LlmMessage>,
+    tools: List<ToolDefinition>
+): Int {
+    val promptTokens = (messages.firstOrNull() as? LlmMessage.System)
+        ?.let { TokenEstimator.estimateText(it.content) } ?: 0
+    val toolsBytes = tools.sumOf { it.name.length + it.description.length + it.parametersSchema.length }
+    return promptTokens + toolsBytes / 4
 }
