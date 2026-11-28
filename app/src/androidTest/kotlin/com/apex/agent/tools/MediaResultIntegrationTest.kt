@@ -40,7 +40,9 @@ class MediaResultIntegrationTest {
     }
 
     @Test fun selectedDocumentIsReturnedByRealHost() = runBlocking {
-        val file = File(context.cacheDir, "picked.txt").apply { writeText("selected") }
+        // #858：file_paths.xml 已收窄为具体子目录 —— 测试件须落在 provider 覆盖
+        // 根内（cache/exports/），cache 根目录文件不再可授权。
+        val file = File(File(context.cacheDir, "exports").apply { mkdirs() }, "picked.txt").apply { writeText("selected") }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         external(Intent.ACTION_OPEN_DOCUMENT, Activity.RESULT_OK, Intent().setData(uri)) {
             runBlocking {

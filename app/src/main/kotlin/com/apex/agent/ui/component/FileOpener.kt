@@ -15,8 +15,11 @@ import java.io.File
  * 通过 FileProvider 唤起外部应用打开附件。
  *
  * 必须在 AndroidManifest 中注册 FileProvider，并配置 res/xml/file_paths.xml。
- * 注意：res/xml/file_paths.xml 已覆盖 files/cache/external-files/external-cache 全部根目录，
- * 这样无论附件落在哪个沙箱路径下都能正确生成 content:// URI，避免 IllegalArgumentException。
+ * #858 起 file_paths.xml 已收窄为各调用点实际使用的子目录（不再覆盖全部
+ * files/cache 根），且本入口的路径全部来自**模型可控**的 Markdown 媒体卡
+ * （VideoCard / 图片链接）——因此路径先经 [MediaOpenPolicy] 白名单把关：
+ * 仅公共存储媒体/下载目录放行，应用私有目录（/data/ 下）一律拒绝，
+ * 防止模型一句话把私有数据授权给任意外部应用。
  *
  * 在 Android 11+（API 30+）上 `resolveActivity()` 受 `<queries>` 限制会返回 null，
  * 因此这里直接 startActivity 并捕获 [ActivityNotFoundException]，比 resolveActivity 更可靠。
@@ -26,13 +29,22 @@ object FileOpener {
     private const val TAG = "FileOpener"
 
     /**
-     * 唤起外部应用打开文件。
+     * 唤起外部应用打开文件（模型可控本地路径入口，#858 起白名单放行）。
      *
      * @param context 任意 Context（内部会调用 startActivity，自动加 NEW_TASK flag）
-     * @param filePath 文件绝对路径（必须在 file_paths.xml 覆盖的目录内）
+     * @param filePath 文件绝对路径（必须通过 [MediaOpenPolicy] 白名单：公共存储
+     * 媒体/下载目录；应用私有目录会被拒绝并提示）
      * @param mimeType 文件 MIME；为 null 时根据文件名兜底推断
      */
     fun openFile(context: Context, filePath: String, mimeType: String? = null) {
+        // #858：本入口的全部调用方（Markdown 媒体卡）路径均为模型可控 ——
+        // 白名单外的路径（应用私有数据 / 非常规 scheme / 路径穿越）直接拒绝，
+        // 不再依赖 FileProvider 根收窄后的 IllegalArgumentException 兜底。
+        if (!MediaOpenPolicy.isAllowed(filePath)) {
+            Toast.makeText(context, context.getString(R.string.file_open_provider_reject), Toast.LENGTH_SHORT).show()
+            Log.w(TAG, "Blocked non-whitelisted media path: ${filePath.take(160)}")
+            return
+        }
         try {
             val file = File(filePath)
             if (!file.exists() || !file.canRead()) {
@@ -66,7 +78,8 @@ object FileOpener {
         } catch (e: ActivityNotFoundException) {
             Toast.makeText(context, context.getString(R.string.file_open_no_app), Toast.LENGTH_SHORT).show()
         } catch (e: IllegalArgumentException) {
-            // FileProvider 路径越界（理论上 file_paths.xml 覆盖全路径后不会触发）
+            // FileProvider 路径越界（#858 起根已收窄为白名单目录；白名单外的
+            // 路径已被 MediaOpenPolicy 前置拦截，这里是双保险兜底）
             Toast.makeText(context, context.getString(R.string.file_open_provider_reject), Toast.LENGTH_SHORT).show()
             Log.w(TAG, "FileProvider rejected path: ${e.message}")
         } catch (e: Exception) {

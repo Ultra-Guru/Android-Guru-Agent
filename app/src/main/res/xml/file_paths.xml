@@ -1,17 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  #858：FileProvider 根收窄。原五根全部 path="."（files / cache 全量 +
+  external 整个外部存储），任何拿到 content:// 授权的外部应用理论上可
+  读取应用私有数据（金库 / 记忆库 / 审计日志 / 终端工作区等）—— 收窄为
+  getUriForFile 各调用点实际使用的子目录，逐一对应：
+
+    files/logs、files/crash      → DiagnosticsScreen 分享（DiagnosticsCollector）
+    files/exports                → LongTaskExporter 导出
+    cache/logs                   → LogViewerScreen 导出分享
+    cache/exports                → StorageViewModel / CodeHistoryExport 会话导出
+    cache/usage-export           → UsageDashboardScreen 用量 CSV
+    cache/diagnostics            → 诊断报告 zip（DiagnosticsCollector）
+    cache/install_apk            → UpdateDownloader 安装中转（#819 ROM 兼容）
+    cache/camera                 → CameraCapturer 临时拍摄件
+    external DCIM/Pictures/Movies/Music/Download
+                                 → 媒体卡本地路径白名单（MediaOpenPolicy）
+                                   与 UpdateDownloader 公共 Download/ApexAgent
+                                   兜底安装路径（被 Download 根覆盖）
+
+  external-path 根（整个外部存储）已移除；external-files-path 与
+  external-cache-path 无调用点，不再声明。模型可控的 Markdown 媒体卡
+  本地路径另由 ui/component/MediaOpenPolicy.kt 白名单把关（与上面五个
+  external-path 根一一对应）。新增共享目录时：先核对全部 getUriForFile
+  调用点，再补对应根，并同步 MediaOpenPolicy（若面向模型可控路径）。
+-->
 <paths>
-    <!-- 覆盖内部存储 files 目录及所有子目录（workspace / agent_memory 等） -->
-    <files-path name="files" path="." />
+    <!-- files-path：内部 files 目录实际使用的子目录 -->
+    <files-path name="files_logs" path="logs/" />
+    <files-path name="files_crash" path="crash/" />
+    <files-path name="files_exports" path="exports/" />
 
-    <!-- 覆盖内部存储 cache 目录及所有子目录 -->
-    <cache-path name="cache" path="." />
+    <!-- cache-path：内部 cache 目录实际使用的子目录 -->
+    <cache-path name="cache_logs" path="logs/" />
+    <cache-path name="cache_exports" path="exports/" />
+    <cache-path name="cache_usage_export" path="usage-export/" />
+    <cache-path name="cache_diagnostics" path="diagnostics/" />
+    <cache-path name="cache_install_apk" path="install_apk/" />
+    <cache-path name="cache_camera" path="camera/" />
 
-    <!-- 覆盖外部存储 Android/data/<pkg>/files 目录 -->
-    <external-files-path name="external_files" path="." />
-
-    <!-- 覆盖外部存储 cache 目录 -->
-    <external-cache-path name="external_cache" path="." />
-
-    <!-- 兜底：external-path（旧式外部存储根目录，API ≤ 28 才需要） -->
-    <external-path name="external" path="." />
+    <!-- external-path：仅公共媒体与下载目录（原根 path="." 已移除；
+         与 MediaOpenPolicy.PUBLIC_MEDIA_TOP_DIRS 保持一致） -->
+    <external-path name="external_dcim" path="DCIM/" />
+    <external-path name="external_pictures" path="Pictures/" />
+    <external-path name="external_movies" path="Movies/" />
+    <external-path name="external_music" path="Music/" />
+    <external-path name="external_download" path="Download/" />
 </paths>
